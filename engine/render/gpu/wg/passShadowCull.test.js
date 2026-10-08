@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { makeMockGpuDevice } from '../../../test/assert.js';
 import { DrawList, DRAW_INSTANCED, LevelMeshCache } from '../../../mesh/DrawList.js';
 import { buildShadowList, createShadowList, shadowWorldZ } from '../../../mesh/shadowList.js';
-import { InstanceGroups, INSTANCE_STRIDE } from '../../../mesh/instances.js';
+import { InstanceGroups, INSTANCE_STRIDE, touchInstances, writeUnitInstance } from '../../../mesh/instances.js';
 import { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, resolveSunShadowOptions } from '../../shadowSun.js';
 import { dirFromAzEl } from '../../../core/transform.js';
 import { CULL_SHADOW_WGSL, CULL_SHADOW_BLOCK } from '../wgsl/cullShadow.wgsl.js';
@@ -160,8 +160,32 @@ const mkP = (cam, ig) => ({ _light: { sun }, _cam: cam, _world: world, _table: n
   d._dispatches = 0;
   sh.run(p, raster); assert.equal(sh.renders, 1); const n = d._dispatches; assert.equal(n, 2);
   sh.run(p, raster); assert.equal(sh.skips, 1); assert.equal(d._dispatches, n, 'skipped frame: no dispatch');
-  A.gt.ib.f32[3] += 1.5;
+  A.gt.ib.f32[3] += 1.5; touchInstances(A.gt.ib); // raw writer: explicit version bump
   sh.run(p, raster); assert.equal(sh.renders, 2, 'GPU-owned instance moved -> re-render'); assert.equal(d._dispatches, 2 * n);
+  sh.run(p, raster); assert.equal(sh.skips, 2, 'static again -> skip');
+  // WG-4b(c): writeUnitInstance bumps only on a real change (a static unit rewritten every frame keeps skipping)
+  const v0 = A.gv.ib.version;
+  writeUnitInstance(A.gv.ib, 3, 5, 6, 0, 0, 77, 1); assert.notEqual(A.gv.ib.version, v0, 'row changed -> version bump');
+  const v1 = A.gv.ib.version;
+  writeUnitInstance(A.gv.ib, 3, 5, 6, 0, 0, 77, 1); assert.equal(A.gv.ib.version, v1, 'identical rewrite -> no bump');
+  sh.run(p, raster); assert.equal(sh.renders, 3, 'voxel group row changed -> re-render');
+  writeUnitInstance(A.gv.ib, 3, 5, 6, 0, 0, 77, 1);
+  sh.run(p, raster); assert.equal(sh.skips, 3, 'identical rewrite -> skip');
+  A.gv.count -= 1;
+  sh.run(p, raster); assert.equal(sh.renders, 4, 'count change -> re-render');
+  // CPU-owned (multi-range) group rows never touch the GPU key: they go through the CPU list hash
+  // the eye crossing a 1 m cell re-renders (band edge pickup), sub-cell motion skips
+  const r = sh.renders, cam = p._cam;
+  cam.x += 0.2; sh.run(p, raster);
+  cam.x += 3; sh.run(p, raster); assert.ok(sh.renders > r, 'eye crossed a cell -> re-render');
+  // no row walk on the frame path: a static scene's skip frame costs O(groups), independent of row count
+  let rowReads = 0;
+  const gtf = A.gt.ib, saved = gtf.f32;
+  gtf.f32 = new Proxy(saved, { get(t, k) { if (typeof k === 'string' && /^\d+$/.test(k)) rowReads++; const v = Reflect.get(t, k, t); return typeof v === 'function' ? v.bind(t) : v; } });
+  const s0 = sh.skips; sh.run(p, raster); sh.run(p, raster);
+  gtf.f32 = saved;
+  assert.ok(sh.skips >= s0 + 1, 'static frames skip');
+  assert.equal(rowReads, 0, 'skip frames read no GPU-owned rows (version key, no walk)');
   sh.dispose();
 }
 

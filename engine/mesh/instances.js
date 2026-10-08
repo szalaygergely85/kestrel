@@ -37,15 +37,21 @@ export const MAX_INSTANCES_PER_FRAME = 4096;
  * @property {Float32Array} f32
  * @property {Uint32Array} u32 - same memory as `f32`
  * @property {number} capacity - instances
+ * @property {number} version - WG-4b(c): write counter (int32 wrap). `writeUnitInstance` bumps it when a row's words actually change, `touchInstances`
+ *   is the explicit bump for raw `f32`/`u32` writers. The WebGPU shadow dirty-skip keys GPU-owned groups on (group.id, ib.version, count) instead of hashing rows.
  */
 
 /** @param {number} capacity @returns {InstanceBuffer} */
 export function createInstanceBuffer(capacity) {
   const buf = new ArrayBuffer(capacity * INSTANCE_BYTES);
-  return { f32: new Float32Array(buf), u32: new Uint32Array(buf), capacity };
+  return { f32: new Float32Array(buf), u32: new Uint32Array(buf), capacity, version: 0 };
 }
 
+/** Raw writers (anything that writes `ib.f32`/`ib.u32` without `writeUnitInstance`) call this once per batch of writes. @param {InstanceBuffer} ib */
+export function touchInstances(ib) { ib.version = (ib.version + 1) | 0; }
+
 const _cs = new Float64Array(2);
+const _old = new Uint32Array(INSTANCE_STRIDE);
 
 /**
  * Writes a yaw-only unit instance (feet position x,y,z; yaw in degrees).
@@ -58,7 +64,8 @@ const _cs = new Float64Array(2);
 export function writeUnitInstance(ib, i, x, y, z, yawDeg, objectId, team) {
   cosSinDeg(yawDeg, _cs);
   const c = _cs[0], s = _cs[1];
-  const f = ib.f32, o = i * INSTANCE_STRIDE;
+  const f = ib.f32, o = i * INSTANCE_STRIDE, u = ib.u32;
+  for (let w = 0; w < INSTANCE_STRIDE; w++) _old[w] = u[o + w];
   f[o] = c; f[o + 1] = -s; f[o + 2] = 0; f[o + 3] = x;
   f[o + 4] = s; f[o + 5] = c; f[o + 6] = 0; f[o + 7] = y;
   f[o + 8] = 0; f[o + 9] = 0; f[o + 10] = 1; f[o + 11] = z;
@@ -66,6 +73,7 @@ export function writeUnitInstance(ib, i, x, y, z, yawDeg, objectId, team) {
   ib.u32[o + 12] = objectId >>> 0;
   ib.u32[o + 13] = (aligned | ((team & 7) << INST_TEAM_SHIFT)) >>> 0;
   f[o + 14] = 0; f[o + 15] = 0;
+  for (let w = 0; w < INSTANCE_STRIDE; w++) if (u[o + w] !== _old[w]) { ib.version = (ib.version + 1) | 0; break; } // unchanged rewrite (static units every frame) keeps the version
 }
 
 /**
@@ -226,6 +234,7 @@ export function fillShadowBands(g, ex, ey, lod0M, castM, planes, R) {
 
 /**
  * @typedef {Object} InstanceGroup
+ * @property {number} id - unique per group (WG-4b(c) shadow dirty-skip key)
  * @property {string} modelKey
  * @property {any} [mesh] - TREES-LP-b: registry MeshData (kind 9, unresolved) for a `meshGroup`; undefined for voxel groups
  * @property {InstanceBuffer} ib - the game writes instances here, never written by the engine
@@ -251,8 +260,10 @@ export function fillShadowBands(g, ex, ey, lod0M, castM, planes, R) {
  * @param {string} modelKey @param {number} capacity - instances
  * @returns {InstanceGroup}
  */
+let _groupSeq = 0;
 export function makeInstanceGroup(modelKey, capacity) {
   const g = {
+    id: ++_groupSeq, // WG-4b(c): stable identity for the shadow dirty-skip key
     modelKey, ib: createInstanceBuffer(capacity), count: 0,
     pose: { clip: -1, frame: 0, tMs: 0 }, parts: createInstanceParts(), used: true,
     // RE-15a (28.13 point 3): both LOD buckets allocated now (index 1 is

@@ -1,5 +1,5 @@
 // ENV-01a2 (37.4). Load-time master words; camera-local, allocation-free feed.
-import { createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE,
+import { createInstanceBuffer, writeUnitInstance, touchInstances, INSTANCE_STRIDE,
   MAX_INSTANCE_GROUPS, MAX_INSTANCES_PER_FRAME } from './instances.js';
 import { resolveGfxKnobs, keepPlacement } from './gfxKnobs.js';
 
@@ -94,6 +94,7 @@ export function feedDetail(binding, eyeX, eyeY, force = false) {
     }
     if (fed === binding.maxDraw) break;
   }
+  for (let g = 0; g < groups.length; g++) touchInstances(groups[g].ib); // WG-4b(c): raw row copies above -> version bump (shadow dirty-skip)
   binding.lastX = eyeX; binding.lastY = eyeY; binding.fed = fed;
   return fed;
 }

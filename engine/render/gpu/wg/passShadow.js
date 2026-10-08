@@ -20,7 +20,7 @@ import { createShadowList, buildShadowList, shadowWorldZ } from '../../../mesh/s
 import { DRAW_STATIC, DRAW_VOXEL, DRAW_TERRAIN, DRAW_INSTANCED, DRAW_CLOTH } from '../../../mesh/DrawList.js';
 import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
 import { sharedVoxelMeshCache } from '../../../mesh/voxelMesh.js';
-import { INSTANCE_BYTES, INSTANCE_STRIDE, MAX_INSTANCES_PER_FRAME, SHADOW_BAND_HYST_M } from '../../../mesh/instances.js';
+import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME, SHADOW_BAND_HYST_M } from '../../../mesh/instances.js';
 import { WgCullPass } from './passCull.js';
 import { resolveSunShadowOptions, SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../../shadowSun.js';
 
@@ -100,18 +100,16 @@ export class WgShadowPass {
     return true;
   }
 
-  // Dirty-skip key part for the GPU-owned groups (their rows never reach the CPU list hash): count + quantized rows (like shadowInputHash, 2 cm / 1/256)
-  // + the eye cell (1 m): a band crossing is picked up within a metre of eye travel.
+  // Dirty-skip key part for the GPU-owned groups (their rows never reach the CPU list hash), O(groups) per frame, no row walk (WG-4b(c)):
+  // (group id, ib.version, count) per group - writers bump the version (writeUnitInstance on change, touchInstances for raw writers) - plus the eye cell
+  // (1 m, as before): the kernel's band hysteresis state depends on the exact eye, so a band crossing is picked up within a metre of eye travel.
+  // The sun-box frustum part of the cut is in key[0] (sun matrix hash).
   _gpuHash(cam) {
     let h = 0x2545f491 | 0;
     h = Math.imul(h ^ Math.floor(cam.x), 16777619); h = Math.imul(h ^ Math.floor(cam.y), 16777619);
     for (let k = 0; k < this.gpuN; k++) {
-      const g = this.gpuGroups[k], f = g.ib.f32, u = g.ib.u32, n = g.count * INSTANCE_STRIDE;
-      h = Math.imul(h ^ g.count, 16777619);
-      for (let o = 0; o < n; o += INSTANCE_STRIDE) {
-        for (let w = 0; w < 12; w++) h = Math.imul(h ^ Math.round(f[o + w] * ((w & 3) === 3 ? 50 : 256)), 16777619);
-        h = Math.imul(h ^ u[o + 12], 16777619); h = Math.imul(h ^ u[o + 13], 16777619);
-      }
+      const g = this.gpuGroups[k];
+      h = Math.imul(h ^ g.id, 16777619); h = Math.imul(h ^ g.ib.version, 16777619); h = Math.imul(h ^ g.count, 16777619);
     }
     return h;
   }
