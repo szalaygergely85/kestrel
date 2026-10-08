@@ -48,6 +48,7 @@ export { PROJ_HFOV_DEG as HFOV_DEG } from './render/projection.js';
 export { sunFromWorld } from './render/lighting.js';
 export { shadeTerrainCells } from './render/terrainShade.js';
 export { sunFromHours, sunPathFrom, SUN_PATH_DEFAULT } from './core/sunPath.js';
+export { windAt, windAtParams, windParams, WIND_DEFAULT } from './core/wind.js';
 export { shadeTerrain, makeTerrainShadeCtx } from './render/terrainShade.js';
 export { packTerrainTextures, TLOOK_WIDTH } from './render/gpu/TerrainTextures.js';
 export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';

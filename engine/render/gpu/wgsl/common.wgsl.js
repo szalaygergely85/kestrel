@@ -170,3 +170,19 @@ fn lineGlyphCodeFast(cx: f32, cy: f32, fr: f32, cellAspect: f32) -> i32 {
   return select(select(LINE_BACKSLASH, LINE_SLASH, k == 2), LINE_PIPE, k == 1);
 }
 `;
+
+// S8-B2-05: twin of engine/core/wind.js windAtParams (the shared deterministic wind field). Args: world x/z, time in seconds,
+// then windParams() = (dirX, dirZ, speed, gust). Phase in turns wrapped with floor (f32-safe far from the origin).
+export const WIND_AT_WGSL = `
+fn windAt(x: f32, z: f32, t: f32, dirX: f32, dirZ: f32, speed: f32, gust: f32) -> vec2f {
+  let along = x * dirX + z * dirZ;
+  let across = z * dirX - x * dirZ;
+  let p1 = along * 0.013 - t * 0.11;
+  let p2 = along * 0.041 + across * 0.023 - t * 0.27 + 0.37;
+  let g1 = sin(6.28318530718 * (p1 - floor(p1)));
+  let g2 = sin(6.28318530718 * (p2 - floor(p2)));
+  let mag = speed * max(0.0, 1.0 + gust * (0.65 * g1 + 0.35 * g2));
+  let side = speed * gust * 0.25 * g2;
+  return vec2f(dirX * mag - dirZ * side, dirZ * mag + dirX * side);
+}
+`;
