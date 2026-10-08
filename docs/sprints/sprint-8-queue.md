@@ -58,6 +58,7 @@ ARCH: `WgCullPass.removeBatch` already frees the buffers; missing = args-slot fr
 - [ ] Node test: add/remove 500 groups in a loop keeps live batches <= 64 and never falls back to CPU cull.
 - [ ] 0 new device resources after warm-up.
 Files: `wg/passCull.js`.
+NOTE WRITTEN: architecture.md 38.10a
 
 ### S8-B1-07 WebGPU per-pass GPU timer (timestamp-query) [P1, ~0.75 d, deps: none]
 Use `timestamp-query` when the adapter has it: ms for cull / raster / shadow / light / shade / edge / sprites in the F3 panel (EMA), nothing when unsupported.
@@ -73,17 +74,20 @@ ARCH: the timestamp ring already exists (WG-1b3 da34e69: `device/WebGpuTimer.js`
 Files: `game/js/gfxAutoRun.js`, `gfxAuto.js` (+tests).
 ARCH: deps also = GFX-02 ARCH CHANGES fixes (cb0bca2, batch 6) landed + pc-b merged (files exist only on pc-b). Note is `docs/test-reports/GFX-02.md`. `AutoBench.sample()` just needs the WebGpuTimer p95 sum. Risk: GFX-02.md says ultra is unreachable under vsync on the 4060 (GL timer included the vsync wait) - the AC must state vsync on/off.
 
-### S8-B1-09 Async pipeline compile behind the loading card [P1, ~0.5 d, deps: none]
+### S8-B1-09 Async pipeline compile behind the loading card [P1, ~0.75 d total = 09a ~0.4 d device side (beginCompileBatch/endCompileBatch, createPipelineAsync, createComputePipelineAsync; GL2 + mock resolve sync) + 09b ~0.35 d pipeline + boot wiring; note architecture.md 38.10b; deps: none]
 ARCH-NOTE NEEDED (small, S8-A-01: `createPipelineAsync`/`createComputePipelineAsync` on the `GpuDevice` interface, GL2 + mock resolve sync; none exists today). Build all WG render/compute pipelines with `createRenderPipelineAsync`/`createComputePipelineAsync` during boot and log compile ms per pipeline.
 - [ ] No first-frame hitch: first 5 frames after boot all < 50 ms in a headless capture trace.
 - [ ] Boot log lists pipeline name + ms, total printed; Node mock test that boot waits on all promises.
 Files: `GpuDeviceWebGPU.js`, `wg/WgCellPipeline.js`, `main.js`.
+NOTE WRITTEN: architecture.md 38.10b
 
-### S8-B1-10 Device-lost recovery [P1, ~0.5 d, deps: none]
+### S8-B1-10 Device-lost: pause + autosave + reload card [P1, ~0.5 d, RE-SCOPED per architecture.md 38.10c, deps: S8-B1-01]
+RE-SCOPED 2026-10-08: ACs below replace the old ones (pipelines rebuilt / scene back in 2 s). New ACs: (1) Node mock device firing `lost` -> game pauses, one autosave, card "GPU reset - press R or click to reload" shown; (2) dev hook `window.__kestrel.loseDevice()` triggers it; reload boots from the autosave. Full in-place rebuild = later story DEVICE-LOST-2 (> 1 d; needs a renderer-swap seam in the engine).
 ARCH-NOTE NEEDED - re-scope: today `WgCellPipeline._onLost` + `RenderTargetWebGPU` warn and set `ready=false` ("reload to recover", 38.8a(9)); a real rebuild touches every GPU resource owner (targets, MeshBuffers/world/terrain textures, all passes, sprite atlas) = > 1 d. Proposed 0.5 d instead: lost -> autosave (S8-B1-01) + "GPU reset, reload" card + one-key reload; full rebuild = later story. Original: On `device.lost` rebuild device, pipelines and world uploads once; second loss in 10 s shows a "GPU reset, reload" card.
 - [ ] Node test with a mock device firing `lost`: pipelines rebuilt, `ready` true again, second loss shows the card.
 - [ ] Headless: `device.destroy()` via a dev hook, scene reappears within 2 s.
 Files: `GpuDeviceWebGPU.js`, `wg/WgCellPipeline.js`, `main.js`.
+NOTE WRITTEN: architecture.md 38.10c
 
 ### S8-B1-11 Zero per-frame allocation in the WG frame loop [P1, ~0.5 d, deps: none]
 Cache bind groups and descriptors in `WgCellPipeline.run` and the passes it calls.
@@ -404,12 +408,13 @@ Editor panel: brush raise/lower/smooth/flatten, radius, strength, material paint
 - [ ] Brush radius 1..16 and strength are clamped; save/load round trip.
 Files: `tools/editor/terrain*.js`, `panel.js` section + test. Owner look at the walk-through.
 
-### S8-C-20 ED-GROUP-1c prefab UI + BUG-RTS-002 + BUG-ED-VOX-1 [P1, ~1 d, deps: PC-A `prefab` seam in loadPack (S8-A-02)]
+### S8-C-20 SPLIT: C-20a BUG-RTS-002 (DONE 150ccf5) + BUG-ED-VOX-1 [~0.25 d, no deps]; C-20b ED-GROUP-1c prefab UI [~0.75 d, deps: PREFAB-SEAM (B1), architecture.md 38.11]
 Prefab save/place panel (group selection -> `.prefab.json` -> place instance) and the two dev-page bugs: fix BUG-RTS-002 and BUG-ED-VOX-1 per their backlog rows.
 - [ ] Node: group -> prefab -> place twice gives two independent instances; undo removes one.
 - [ ] Both bug rows have a Node or capture check named in the row and pass.
 Files: `tools/editor/*`, `game/js/dev/` page files. Do the two bugs first (0.25 d) if the seam is late; prefab part waits.
 ARCH: size not honest at 1 d (prefab UI + 2 bugs); split into C-20a (BUG-RTS-002 + BUG-ED-VOX-1, both already in lane C queue add 4) and C-20b (prefab UI after S8-A-02). Seam today: `engine/content/loadPack.js` `KNOWN_KINDS = ['level','world','mesh','terrainEdits','mask']` - no `prefab`.
+NOTE WRITTEN: architecture.md 38.11
 
 ## PC-A
 
@@ -420,11 +425,13 @@ Short notes (architecture.md 38.x) before dev for S8-B1-05, 06, 07, 10, 11, 12 (
 - [ ] One section per ID with invariants, seams and the test the programmer must write.
 - [ ] Stories for which no note is needed are listed (B1-01..04, 08, 09, 13..20).
 ARCH 2026-10-08: corrected list = notes for B1-06, 09, 10 only (05 DONE; 07 timer exists, 38.7 covers it; 11/12 verify-first stories, 38.8a(17) covers them).
+NOTE WRITTEN: architecture.md 38.10
 
 ### S8-A-02 [architect, opus] Seam notes: `prefab` kind in loadPack + MESH-SCALE-01 [P0, ~0.5 d, deps: none]
 Unblocks S8-C-20 and S8-C-16: where the `prefab` kind lives (engine/content/loadPack.js), data shape, who owns it (B1 or B2), and the scale field path through placeMesh and colliders.
 - [ ] Note + named owner lane for each; story rows added to the B1/B2 lists by the main session.
 ARCH 2026-10-08: MESH-SCALE-01 half is done (73ddef1 ARCH OK, pc-b2); this row = `prefab` kind only (~0.25 d).
+NOTE WRITTEN: architecture.md 38.11
 
 ### S8-A-03 [architect, opus] Tech notes for B2 stories [P1, ~0.75 d, deps: none]
 Notes for S8-B2-03 (LRU), 04 (AO), 06/07 (wind sway, dither), 08 (flicker slot in the 1264 B light block), 10 (HZB occlusion), 13 (ripple), 17/18 (particle kernel seam, 32.x), 19 (cloth path).
@@ -520,3 +527,9 @@ Run the WG-4c full-detail walk with the owner; gpucompare for Low/Med/High/Ultra
 Write `.claude/skills/pc-a-merge-master/SKILL.md` (merge pc-b/pc-c + pc-a, run-tests, check-deps, gpucompare, push). Janitor: archive done/cut rows to `docs/backlog-archive.md` after S8-A-17, and report dead code / unused exports.
 - [ ] Skill lists the exact commands and the order; used once for the next merge.
 - [ ] Backlog under ~150 KB; dead-code report lists files only (no edits).
+
+### PREFAB-SEAM (new, lane B1) [P1, ~0.25 d, deps: none; note architecture.md 38.11]
+`prefab` kind: `schema.js`, NEW pure `engine/content/prefabFile.js` (`prefabFromJSON`, `placePrefabItems`), `loadPack.js` KNOWN_KINDS + `bundle.prefabs`; prefab ids lowercase_underscore (37.11 example becomes `crate_corner`). Tests: 3 files per 38.11. Unblocks S8-C-20b. Engine never writes files; placing a prefab = one undo step.
+
+### DEVICE-LOST-2 (backlog idea, not scheduled) [P2, > 1 d]
+Rebuild every GPU resource owner in place after `device.lost` (list in architecture.md 38.10c); needs a renderer-swap seam. Only if the reload-card version proves annoying.
