@@ -51,3 +51,30 @@ export function windAtParams(x, z, t, p, out = { x: 0, z: 0 }) {
   out.z = dirZ * mag + dirX * side;
   return out;
 }
+
+// S8-B2-06: foliage sway. Vertices of an instance flagged INST_FLAG_SWAY (instance flags word bit 1) move by
+//   d = wind(instance base x, y, t) * (h^2 * SWAY_K),  h = height above the instance base (trunk base fixed),
+// the horizontal vector length capped at SWAY_MAX. windAt's (x, z) are the world horizontal plane here (world x, y; z is up).
+// Wind is sampled once per instance (coherent crown, no per-vertex trig). Zero wind (speed 0) = no displacement, bit-identical to before.
+// Cull bounds (instance sphere) and shadow-cull bounds must grow by SWAY_MAX when wind is on (host: NEEDS B1).
+export const INST_FLAG_SWAY = 2;
+export const SWAY_K = 0.004;
+export const SWAY_MAX = 1.0;
+
+const _w = { x: 0, z: 0 };
+/**
+ * Sway displacement of one vertex (the JS twin of the instanced vertex stage; the shader runs it in f32).
+ * @param {number} baseX instance base world x @param {number} baseY instance base world y @param {number} h vertex height above the base
+ * @param {number} t seconds @param {number[]|Float32Array|Float64Array} p windParams() @param {{x:number,y:number}} out
+ */
+export function swayOffset(baseX, baseY, h, t, p, out) {
+  out.x = 0; out.y = 0;
+  if (!(p[2] > 0) || !(h > 0)) return out;
+  windAtParams(baseX, baseY, t, p, _w);
+  const k = h * h * SWAY_K;
+  let dx = _w.x * k, dy = _w.z * k;
+  const dl = Math.hypot(dx, dy);
+  if (dl > SWAY_MAX) { const s = SWAY_MAX / dl; dx *= s; dy *= s; }
+  out.x = dx; out.y = dy;
+  return out;
+}
