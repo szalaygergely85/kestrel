@@ -170,7 +170,11 @@ After saving world structures or Terrain brush edits into `content/`, run
 shipping the edit. The chart reads final terrain heights, including brush
 deltas, ring floors, roads and water. It stays below 100 KB at 240x120 cells.
 For a release from staged/tracked files, use `--index` on both commands;
-the Node freshness test checks that release snapshot. Working-file `--check`
+run `node tools/bake-chart.mjs --check --index` as a separate merge-time gate.
+The default Node suite checks small fixtures, determinism and stale-input
+refusal; it does not rebake the full world. Any change to world_m1, its terrain
+recipe or terrain edits requires a rebake followed by this merge-time gate.
+Working-file `--check`
 also detects unsaved owner placements that differ from the indexed chart.
 MAP-01a's final glyphs and MAP-01c's live map remain separate queue items.
 

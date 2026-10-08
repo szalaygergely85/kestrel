@@ -1,5 +1,12 @@
 # MAP-01b final-terrain chart baker
 
+2026-10-08 ARCH follow-up: removed the full indexed world rebake from the
+default suite. Small fixtures still cover final Terrain brush/paint and
+World ring-floor integration, deterministic bytes, input-hash stale checks,
+footprints and the size limit. The release freshness gate is now the explicit
+`node tools/bake-chart.mjs --check --index` merge step. Any world_m1 or terrain
+change requires a rebake; the editor README documents both commands.
+
 `node tools/bake-chart.mjs` writes `content/chart/world_m1.chart.json`; `--check` recomputes and rejects stale or altered data without writing. The 240x120 grid covers the 2048 m world, with x east and y south. Semantic category codes are provisional until MAP-01a supplies its glyph table. A separate sixteen-level height shade plane stores sampled elevation, while slope, forest/rock, road, water and structure categories occupy the glyph plane. Output is 63,430 bytes, below the strict 100,000-byte limit.
 
 The tool uses public `loadContentPack`, `AssetRegistry` and `World.load`, with gameplay props/behaviours removed from the sample-only world. It evaluates the existing terrain recipe and reads registered terrain edit files. Engine Terrain analytic heights include editor brush deltas and placed-level ring blending. Placed mesh/level bounds, narrow road segments and small world water regions mark intersecting cells. No render, palette, game boot or owner world edits.

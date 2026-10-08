@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { Terrain, World, AssetRegistry, createEditLayer, setSampleDh, setSampleType, editLayerToJSON, editLayerFromJSON } from '../engine/index.js';
-import { bakeChart, chartText, checkChart, inputFingerprint, bakeRepository } from './bake-chart.mjs';
+import { bakeChart, chartText, checkChart, inputFingerprint } from './bake-chart.mjs';
 
 const terrain = { heightAt:(x,y) => 0.1*x + Math.max(0,x-8), typeAt:x => x > 6 ? 1 : 0, typeName:id => ['grass','forest'][id] };
 const opts = { terrain, bounds:{x0:0,y0:0,x1:12,y1:8}, width:6, rows:4,
@@ -46,6 +46,8 @@ assert.equal(base.heightAt(402,402)+300,edited.heightAt(402,402),'base and edite
 
 // Real World.load injects structure bbox and ring floor BEFORE the terrain is sampled.
 recipe.structures = structureDefs;
+// This fixture needs only an 8 m patch, not the production 384 m near-band bake.
+recipe.chunk = {...recipe.chunk,size:8};
 const level = {name:'fixture',start:{x:0.5,y:0.5},rows:['..','..'],legend:{'.':{floorH:10,ceilH:'sky',solid:false,floorMat:'grass',wallMat:'grass',ceilMat:'sky'}}};
 const assets = new AssetRegistry({palette:{},terrain:{overworld_far:recipe},levels:{fixture:level}});
 const world = World.load({terrain:'overworld_far',structures:[{id:'tower',level:'fixture',origin:{x:400,y:400,z:2}}]},assets);
@@ -53,12 +55,6 @@ assert.equal(world.terrain.heightAt(400.5,400.5),12,'final structure ring floor 
 const blended = bakeChart({...target,terrain:world.terrain,structures:world.structures});
 assert.equal(blended.glyphs[0][0],'5','structure edge intersection, not only centre sampling');
 
-// Shipped data is built from the index, so unsaved editor worlds are never silently published.
-// CI/staged input changes must rebake this chart; local working-file freshness uses --check.
-const shipped = await bakeRepository({index:true,check:true});
-assert.equal(shipped.width,240); assert.equal(shipped.rows,120);
-assert.ok(Buffer.byteLength(chartText(shipped))<100000);
-assert.ok(Object.keys(shipped.inputs).some(file=>file.endsWith('.edits.json')),'edit file included in freshness inputs');
-assert.ok(Object.keys(shipped.inputs).some(file=>file.endsWith('.level.json')),'ring floor input included');
-assert.ok(Object.keys(shipped.inputs).some(file=>file.endsWith('.mesh.json')),'mesh footprints included');
-console.log('bake-chart: final terrain/brush/structure blending, water/road footprints, determinism and indexed freshness PASS');
+// The full indexed world freshness check is a separate merge gate:
+// node tools/bake-chart.mjs --check --index (see tools/editor/README.md).
+console.log('bake-chart: final terrain/brush/structure blending, water/road footprints, determinism and stale-input refusal PASS');
