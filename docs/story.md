@@ -407,3 +407,18 @@ Wall-scrawl system as US-078. Capitals are knife-cut and ASCII, one glyph per ce
 | `scrawl.waystone` | Base of the waystone, half under moss | `... --- ...  FURTHER ON` | 23 | The SOS pattern in the keeper's notation, pointing on along the line. It hints that the signal goes further without saying who sends it. |
 
 NPC lines: M1 has no NPCs and no dialogue (GDD 7). The first speaking NPC is the bear (section 8, M2), so no new NPC lines are written here.
+
+### Waystone (WAYSTONE-01w)
+
+Touching the stone saves, heals and sets the respawn point (GDD 11: rest = save + heal + respawn point). Toasts are max 38 chars. Use `place.waystone` (`The Waystone`) as the toast title. The healing comes from the stone, not from a potion. The fade lines use the death card's voice: first person, never named.
+
+| Key | Where | Text | len |
+|---|---|---|---|
+| `prompt.waystone` | Interact line, near the stone | `[E] Touch the waystone` | 22 |
+| `toast.waystone.saved` | HUD toast after the touch | `Saved. The stone will remember.` | 31 |
+| `toast.waystone.healed` | HUD toast after the touch, under the saved toast | `Warmth in the hands. Hearts full.` | 33 |
+| `fade.respawn.waystone` | Death fade / wake line, respawn at the stone | `I wake against the humming stone.` | 33 |
+| `fade.respawn.start` | Same slot, no stone touched yet (spawn point) | `No stone yet. I wake by the wreck.` | 34 |
+| `lore.waystone` | Optional echo (first touch, or the item-card line) | `Old road stone. The signal hums in it.` | 38 |
+
+The quest `done` line `The stone hums. The signal answers.` stays on the objective. `lore.waystone` is a separate line and does not replace it.

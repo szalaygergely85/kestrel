@@ -542,3 +542,38 @@ Rebuild every GPU resource owner in place after `device.lost` (list in architect
 
 ### LEAF-PREVIEW-01 (new, lane C) [P1, ~0.5 d, deps: ALPHA-01c/01d on pc-b]
 Standalone leaf-fixture preview page for the owner (see docs/lanes/pc-c.md QUEUE TOP). AC: page opens on webgpu, soft-edge toggle, one real-GPU screenshot in the report; no engine or main.js edits.
+
+## Playable-loop additions (PO, D-050)
+
+Seam = `game/js/gameHooks.js` from S8-B1-01 (`onBoot`, `onTick(dt)`, `onEvent(name,data)` with `area:entered`/`prop:touched`/`beast:died`/`item:got`/`player:died`/`flag:set`, `drawHud(cells)`, `onRespawn`). Lane C owns `game/js/quest/wire/**` and never edits main.js, engine or the seam; a missing hook point = `NEEDS B1:`. Supersedes the B1 hook parts of S8-B1-02 and S8-B1-04 (B1 keeps S8-B1-01/03). Order for C: WAYSTONE-01 -> after seam lands: WAYSTONE-01w, S8-C-HOOK-QUEST, S8-C-HOOK-CHEST.
+
+### WAYSTONE-01 sim: save point, heal, respawn [P0, lane C, ~0.5 d, deps: US-089a saveState.js, vitals]
+Pure sim, no main.js. Touching a waystone = autosave request + heal to full + sets the respawn point; death respawns at the last waystone.
+- [ ] Node test: `touch(id)` sets hearts to max, stores `{waystoneId, pos}`; `onDeath()` returns that pos + full hearts; with no waystone touched it returns the spawn point.
+- [ ] Node test: state is plain JSON, round-trips via `collectSave`/`applySave` byte-stable; same input sequence gives the same state (no Date/Math.random).
+Files: `game/js/quest/sim/waystone.js` + `waystone.test.js`. No owner look.
+
+### WAYSTONE-01w wire: waystone on the seam [P0, lane C, ~0.5 d, deps: WAYSTONE-01, S8-B1-01 seam, S8-A-08 waystone prop]
+Register on the seam: `prop:touched` (waystone) -> sim touch + save request + HUD toast; `player:died` -> sim respawn; `onRespawn` returns the point.
+- [ ] Node test with a fake seam: touch event heals, requests one save, queues one toast; death event respawns at that waystone.
+- [ ] Headless capture: touch a waystone, take damage, die, respawn on the stone with full hearts; toast visible in `drawHud`. Toast text from `docs/story.md` '## Sprint 8 texts' (`place.waystone` as title, done line `The stone hums. The signal answers.`). If no dedicated toast key exists: `NEEDS WRITER:` one line <= 38 chars, do not invent.
+Files: `game/js/quest/wire/waystone.js` + test. Owner look. NEEDS B1: gameHooks seam (S8-B1-01).
+
+### S8-C-HOOK-QUEST objective line + quest log wiring (replaces S8-B1-02 hook) [P0, lane C, ~0.5 d, deps: S8-B1-01 seam, US-096a quest.js, S8-A-11 texts in m1.quest.json]
+Feed seam events (`beast:died`, `item:got`, `area:entered`, `flag:set`) into quest.js; show the current objective text in the HUD slot via `drawHud`; quest state saved.
+- [ ] Node test with a fake seam: scripted event sequence advances wake -> waystone to done; HUD line equals the story.md text for each step.
+- [ ] Quest state is in the save (round trip via saveState) and survives reload (headless capture).
+- [ ] questLog (S8-C-12 view, if landed) opens from the seam input event; else leave a `NEEDS B1:` note for the key binding.
+Files: `game/js/quest/wire/quest.js` + test. Owner look. NEEDS B1: gameHooks seam.
+
+### S8-C-HOOK-CHEST chest + item-get card wiring (replaces S8-B1-04 hook) [P1, lane C, ~0.5 d, deps: S8-B1-01 seam, S8-C-06 chest sim, S8-C-07 item-get card, S8-A-06/07 designer assets]
+On `prop:touched` for a chest: sim open once, item into inventory, item-get card via `drawHud`, chest opened flag saved.
+- [ ] Node test with a fake seam: chest opens once, item added once, a second touch does nothing, state persisted.
+- [ ] Headless capture of the item-get card at 400x150; reload keeps the chest open. Owner look.
+Files: `game/js/quest/wire/chest.js` + test. NEEDS B1: gameHooks seam (open-clip trigger via event if the seam lacks it).
+
+### SEAM-REVIEW gameHooks seam diff review [P0, architect (opus), ~0.25 d, deps: S8-B1-01 landed]
+Diff-only review of the S8-B1-01 commit's `game/js/gameHooks.js` and its call points in main.js. Short verdict.
+- [ ] `ARCH OK`/`ARCH CHANGES`: the six events, `onTick`, `drawHud`, `onRespawn` are called at fixed points; handler errors cannot break the frame; wire modules can register without touching main.js.
+- [ ] Confirms lane C can build WAYSTONE-01w, S8-C-HOOK-QUEST, S8-C-HOOK-CHEST on it unchanged; missing hook points listed for B1. Gates the three wire stories.
+Files: read-only. No owner look.
