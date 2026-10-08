@@ -31,7 +31,7 @@ export async function createRenderer(o) {
         const rt = new RenderTargetWebGPU(canvas, cpuGrid.cols, cpuGrid.rows, device);
         // WG-2a: the skeleton cell pipeline (debug view only; the CPU path still renders the scene). `gpu:false` (?gpu=0) = none.
         let pipeline = null;
-        if (gpu) pipeline = new WgCellPipeline(rt, { rays: o.rays, terrainEnabled: o.terrainEnabled, shadows: o.shadows });
+        if (gpu) pipeline = new WgCellPipeline(rt, { rays: o.rays, terrainEnabled: o.terrainEnabled, shadows: o.shadows, gpuCull: o.gpuCull });
         // 38.8a item 18: async validation errors (WGSL, pipeline layouts) never throw; any error = failure -> fallback
         if (typeof device.checkErrors === 'function') {
           const errs = await device.checkErrors();

@@ -137,6 +137,19 @@ shadowSunMatrix(dirFromAzEl(135, 40, new Float64Array(3)), new Float64Array(3), 
   ok('0 allocation over 1000 frames (camera + shadow feeds)', grew < 32 * 1024, `grew ${grew}`);
 }
 
+// ---- WG-4a: meshDraw.gpu hook - an accepted group is not compacted on the CPU and pushes no item; a refusing hook = unchanged path --------
+{
+  const ig = new InstanceGroups(); const g = mkGroup(ig);
+  const seen = []; const accept = (grp, m0, m1) => { seen.push([grp, m0, m1]); return true; };
+  const l = new DrawList(); l.begin();
+  g.drawCount[0] = 0;
+  ig.addToDrawList(l, null, planes, 10, M, ROWS, { cache: new MeshDrawCache(), idFor, gpu: { accept } });
+  ok('gpu hook accepted: no item, no CPU compaction', l.count === 0 && g.drawCount[0] === 0 && seen.length === 1 && seen[0][0] === g && !!seen[0][1] && seen[0][2] === null);
+  const l2 = new DrawList(); l2.begin();
+  ig.addToDrawList(l2, null, planes, 11, M, ROWS, { cache: new MeshDrawCache(), idFor, gpu: { accept: () => false } });
+  ok('gpu hook refusing: CPU path as before', l2.count === 1 && g.drawCount[0] > 0);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((m) => console.error('FAIL:', m)); process.exit(1); }
 console.log('ALL PASS');

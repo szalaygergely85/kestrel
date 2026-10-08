@@ -17,53 +17,65 @@
 // Static batches (rows never change after build: MeshGroupSet groups) upload once with `cull.setStatic(group, true)`; `invalidate(group)` re-uploads.
 import { createInstanceBuffer, groupRadius, INSTANCE_BYTES, INSTANCE_STRIDE } from '../../../mesh/instances.js';
 import { CULL_BLOCK, CULL_BUFFERS, CULL_WGSL, CULL_WORKGROUP } from '../wgsl/cull.wgsl.js';
+import { CULL_SHADOW_BLOCK, CULL_SHADOW_BUFFERS, CULL_SHADOW_WGSL } from '../wgsl/cullShadow.wgsl.js';
 
 export const MAX_CULL_BATCHES = 64;
 const ARGS_WORDS = 5; // indexCount, instanceCount, firstIndex, baseVertex, firstInstance
 const ARGS_BYTES = ARGS_WORDS * 4;
 const W = (n) => CULL_BLOCK.field(n).word;
+const WS = (n) => CULL_SHADOW_BLOCK.field(n).word; // WG-4b shadow mode block
 const PLANES = W('planes'), EYE = W('eye'), LODROW = W('lodRow'), PARAMS = W('params'), COUNT = W('count'), LODON = W('lodOn'), SLOT0 = W('slot0'), SLOT1 = W('slot1');
 
 /** @typedef {{group: any, lod: number, mesh: any, instanceBuffer: any, argsBuffer: any, argsOffset: number, maxInstances: number, parts: any, active: boolean}} CullEntry */
 
-/** @param {any} device @returns {any} the compute pipeline (create once; `device.createComputePipeline` is WebGPU/mock only) */
-export function createCullPipeline(device) {
+/** @param {any} device @param {boolean} [shadow] WG-4b shadow-caster kernel (cullShadow.wgsl.js) @returns {any} the compute pipeline (create once; `device.createComputePipeline` is WebGPU/mock only) */
+export function createCullPipeline(device, shadow = false) {
+  if (shadow) return device.createComputePipeline({ src: { wgsl: CULL_SHADOW_WGSL, entry: 'cs_main' }, bindings: { uniformBytes: CULL_SHADOW_BLOCK.sizeBytes, buffers: [...CULL_SHADOW_BUFFERS] } });
   return device.createComputePipeline({ src: { wgsl: CULL_WGSL, entry: 'cs_main' }, bindings: { uniformBytes: CULL_BLOCK.sizeBytes, buffers: [...CULL_BUFFERS] } });
 }
 
 export class WgCullPass {
-  /** @param {any} device @param {{maxBatches?: number}} [opts] */
+  /** @param {any} device @param {{maxBatches?: number, shadow?: boolean}} [opts] shadow = WG-4b sun-shadow caster mode (see `begin`/`add`) */
   constructor(device, opts = {}) {
     this.device = device;
+    this.shadow = !!opts.shadow;
     this.maxBatches = opts.maxBatches || MAX_CULL_BATCHES;
-    this.pipeline = createCullPipeline(device);
+    this.pipeline = createCullPipeline(device, this.shadow);
     this.argsCpu = new Uint32Array(this.maxBatches * 2 * ARGS_WORDS);
     this.argsBuffer = device.createBuffer({ usage: 'indirect', bytes: this.argsCpu.byteLength });
     /** @type {Map<any, any>} group -> batch state */
     this.batches = new Map();
     this._nextSlot = 0;
-    this._ub = new ArrayBuffer(CULL_BLOCK.sizeBytes);
-    this._uv = CULL_BLOCK.createViews(this._ub);
+    /** @type {Uint32Array} args words of the used slots; rebuilt only when _nextSlot changes (no per-frame subarray, arch 2026-10-08) */
+    this._argsView = this.argsCpu.subarray(0, 0);
+    /** @type {Set<any>} groups marked static before their first add() */
+    this._pendingStatic = new Set();
+    const block = this.shadow ? CULL_SHADOW_BLOCK : CULL_BLOCK;
+    this._ub = new ArrayBuffer(block.sizeBytes);
+    this._uv = block.createViews(this._ub);
     this._bind = { buffers: [{ slot: 0, buffer: null }, { slot: 1, buffer: null }, { slot: 2, buffer: null }, { slot: 3, buffer: null }, { slot: 4, buffer: null }], uniforms: this._uv.f32 };
     /** @type {any[]} batches queued this frame */
     this.queue = [];
-    this.frame = { planes: /** @type {Float64Array|null} */ (null), viewProj: /** @type {Float64Array|null} */ (null), rows: 0, eye: /** @type {any} */ (null), maxDistM: 0 };
+    this.frame = { planes: /** @type {Float64Array|null} */ (null), viewProj: /** @type {Float64Array|null} */ (null), rows: 0, eye: /** @type {any} */ (null), maxDistM: 0, castM: 0, hystM: 0 };
     this.stats = { batches: 0, dispatches: 0, instances: 0, uploads: 0, argsBytes: 0 };
   }
 
   /**
    * @param {{planes: Float64Array|null, viewProj?: Float64Array|null, rows?: number, eye?: {x: number, y: number, z: number}|null, maxDistM?: number}} f
    * planes null = no frustum cull; viewProj + rows enable the LOD pick for groups with `lodCells > 0`; eye + maxDistM > 0 enable the distance cull.
+   * Shadow mode (WG-4b): planes = the sun-box planes, eye = camera eye (xy used), `castM` = band 1 radius (instCastM), `hystM` = band hysteresis;
+   * the per-batch band-0 radius and group radius come with `add`.
    */
   begin(f) {
     const fr = this.frame;
+    fr.castM = /** @type {any} */ (f).castM || 0; fr.hystM = /** @type {any} */ (f).hystM || 0;
     fr.planes = f.planes || null; fr.viewProj = f.viewProj || null; fr.rows = f.rows || 0; fr.eye = f.eye || null; fr.maxDistM = f.maxDistM || 0;
     this.queue.length = 0;
     const s = this.stats; s.batches = 0; s.dispatches = 0; s.instances = 0; s.uploads = 0; s.argsBytes = 0;
   }
 
   /** Marks a batch as static (rows uploaded once, then only on `invalidate`). @param {any} group @param {boolean} [on] */
-  setStatic(group, on = true) { const b = this.batches.get(group); if (b) b.static = on; else this._pendingStatic = on ? group : null; }
+  setStatic(group, on = true) { const b = this.batches.get(group); if (b) b.static = on; else if (on) this._pendingStatic.add(group); else this._pendingStatic.delete(group); }
   /** Forces the next frame to re-upload `group`'s rows. @param {any} group */
   invalidate(group) { const b = this.batches.get(group); if (b) b.uploaded = -1; }
 
@@ -71,15 +83,38 @@ export class WgCullPass {
    * Queues one batch for this frame. `meshes[0]` = LOD0 draw mesh, `meshes[1]` = LOD1 draw mesh or null (then the group's `lodCells` is ignored and everything is LOD0).
    * @param {any} group an InstanceGroup (ib rows, count, lodCells, _R, parts)
    * @param {[any, any|null]} meshes resolved draw meshes (MeshDrawCache.get / voxel mesh cache)
+   * @param {number} [lod0M] shadow mode: band 0 radius (m); band 1 reaches `castM` @param {number} [R] shadow mode: the group radius the CPU twin uses
    * @returns {CullEntry[]} the batch's two entries (`entries[1].active` false without a LOD1 mesh)
    */
-  add(group, meshes) {
+  add(group, meshes, lod0M = 0, R = 0) {
     let b = this.batches.get(group);
     if (!b) b = this._create(group, meshes);
-    b.meshes0 = meshes[0]; b.meshes1 = meshes[1] || null;
+    b.meshes0 = meshes[0]; b.meshes1 = meshes[1] || null; b.lod0M = lod0M; b.R = R; // lod0M / R: shadow mode only
     this._fillEntries(b);
     this.queue.push(b);
     return b.entries;
+  }
+
+  /**
+   * B1 wiring (WG-4a): can this batch go through the kernel? ONE_PART only - a meshGroup (`g.mesh`, any static range count: drawn as one range),
+   * or a voxel unit whose meshes are ONE range covering the whole mesh - and a free batch slot (or `g` is already a batch). Never throws.
+   * @param {any} g @param {[any, any|null]|any[]} meshes
+   */
+  supports(g, meshes) {
+    if (!this.batches.has(g) && this._nextSlot + 2 > this.maxBatches * 2) return false;
+    for (let i = 0; i < 2; i++) {
+      const m = meshes[i];
+      if (!m) continue;
+      if (this.shadow) { // shadow: the CPU caster loop draws ranges[0] only for a meshGroup (parts 1.. are zero matrices); a voxel unit needs ONE range
+        const r = m.ranges;
+        if (!r || r.length < 1 || (!g.mesh && r.length !== 1)) return false;
+        continue;
+      }
+      if (g.mesh) continue;
+      const r = m.ranges;
+      if (!r || r.length !== 1 || (r[0].start || 0) !== 0 || r[0].count !== m.triCount) return false;
+    }
+    return true;
   }
 
   /** @param {any} g @param {[any, any|null]} meshes */
@@ -87,12 +122,12 @@ export class WgCullPass {
     if (this._nextSlot + 2 > this.maxBatches * 2) throw new Error(`WgCullPass: over ${this.maxBatches} batches`);
     for (const m of meshes) {
       if (!m) continue;
-      if (m.ranges && m.ranges.length > 1 && !(m.layout === 'static' && g.mesh)) throw new Error('WgCullPass: multi-range meshes need an args slot per range (ONE_PART batches only)');
+      if (!this.shadow && m.ranges && m.ranges.length > 1 && !(m.layout === 'static' && g.mesh)) throw new Error('WgCullPass: multi-range meshes need an args slot per range (ONE_PART batches only)');
     }
     const d = this.device;
     const cap = g.ib.capacity;
     const b = {
-      g, cap, slot: this._nextSlot, static: this._pendingStatic === g, uploaded: -1, view: /** @type {any} */ (null), viewCount: -1,
+      g, cap, slot: this._nextSlot, static: this._pendingStatic.delete(g), uploaded: -1, view: /** @type {any} */ (null), viewCount: -1,
       src: d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES }),
       lodPrev: d.createBuffer({ usage: 'storage', data: new Uint32Array(cap) }),
       dst: [d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES }), d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES })],
@@ -100,6 +135,7 @@ export class WgCullPass {
       entries: /** @type {CullEntry[]} */ ([]),
     };
     this._nextSlot += 2;
+    this._argsView = this.argsCpu.subarray(0, this._nextSlot * ARGS_WORDS);
     for (let lod = 0; lod < 2; lod++) {
       b.entries.push({ group: g, lod, mesh: null, instanceBuffer: b.dst[lod], argsBuffer: this.argsBuffer, argsOffset: (b.slot + lod) * ARGS_BYTES, maxInstances: cap, parts: g.parts, active: false });
     }
@@ -114,8 +150,13 @@ export class WgCullPass {
       const e = b.entries[lod];
       e.mesh = mesh; e.active = !!mesh; e.parts = b.g.parts;
       const o = (b.slot + lod) * ARGS_WORDS;
-      this.argsCpu[o] = mesh ? mesh.triCount * 3 : 0; // ONE_PART: the whole mesh as one range (rasterJS _oneRange)
-      this.argsCpu[o + 1] = 0; this.argsCpu[o + 2] = 0; this.argsCpu[o + 3] = 0; this.argsCpu[o + 4] = 0;
+      let first = 0;
+      if (this.shadow) { // WG-4b: the shadow caster loop draws ranges[0] (r.start * 3, r.count * 3) with the identity part
+        const r0 = mesh && mesh.ranges && mesh.ranges[0];
+        this.argsCpu[o] = r0 && r0.count > 0 ? r0.count * 3 : 0; first = r0 ? (r0.start || 0) * 3 : 0;
+        e.active = e.active && this.argsCpu[o] > 0;
+      } else this.argsCpu[o] = mesh ? mesh.triCount * 3 : 0; // ONE_PART: the whole mesh as one range (rasterJS _oneRange)
+      this.argsCpu[o + 1] = 0; this.argsCpu[o + 2] = first; this.argsCpu[o + 3] = 0; this.argsCpu[o + 4] = 0;
     }
   }
 
@@ -124,7 +165,7 @@ export class WgCullPass {
     const d = this.device, fr = this.frame, uv = this._uv, f = uv.f32, u = uv.u32, s = this.stats;
     // args: every used slot is rewritten (instanceCount 0 again) with ONE writeBuffer of the used range
     const usedWords = this._nextSlot * ARGS_WORDS;
-    if (usedWords > 0) { d.writeBuffer(this.argsBuffer, this.argsCpu.subarray(0, usedWords), 0); s.argsBytes = usedWords * 4; }
+    if (usedWords > 0) { d.writeBuffer(this.argsBuffer, this._argsView, 0); s.argsBytes = usedWords * 4; }
     const planes = fr.planes;
     for (let q = 0; q < this.queue.length; q++) {
       const b = this.queue[q], g = b.g, n = g.count;
@@ -133,6 +174,20 @@ export class WgCullPass {
       if (!b.static || b.uploaded < 0 || b.uploaded < cnt) {
         if (b.viewCount !== cnt) { b.view = g.ib.u32.subarray(0, cnt * INSTANCE_STRIDE); b.viewCount = cnt; }
         d.writeBuffer(b.src, b.view, 0); b.uploaded = cnt; s.uploads++;
+      }
+      if (this.shadow) {
+        const eye = fr.eye, f = uv.f32, u = uv.u32;
+        if (fr.planes) { for (let i = 0; i < 24; i++) f[WS('planes') + i] = fr.planes[i]; }
+        else { for (let i = 0; i < 6; i++) { const o = WS('planes') + i * 4; f[o] = 0; f[o + 1] = 0; f[o + 2] = 0; f[o + 3] = 1; } }
+        const e = WS('eye'), pa = WS('params');
+        f[e] = eye ? eye.x : 0; f[e + 1] = eye ? eye.y : 0; f[e + 2] = b.lod0M; f[e + 3] = fr.castM;
+        f[pa] = b.R; f[pa + 1] = fr.hystM; f[pa + 2] = 0; f[pa + 3] = 0;
+        u[WS('count')] = cnt; u[WS('slot0')] = b.slot * ARGS_WORDS; u[WS('slot1')] = (b.slot + 1) * ARGS_WORDS; u[WS('pad')] = 0;
+        const bd = this._bind.buffers;
+        bd[0].buffer = b.src; bd[1].buffer = b.lodPrev; bd[2].buffer = b.dst[0]; bd[3].buffer = b.dst[1]; bd[4].buffer = this.argsBuffer;
+        d.dispatch(this.pipeline, this._bind, Math.ceil(cnt / CULL_WORKGROUP), 1, 1);
+        s.dispatches++; s.instances += cnt;
+        continue;
       }
       let R = g._R;
       if (!(R > 0)) {

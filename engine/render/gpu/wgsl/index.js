@@ -17,6 +17,7 @@ import { WATER_COMPOSITE_WGSL } from './waterComposite.wgsl.js';
 import { SPRITES_WGSL } from './sprites.wgsl.js';
 import { OVERLAY_WGSL } from './overlay.wgsl.js';
 import { CULL_WGSL } from './cull.wgsl.js';
+import { CULL_SHADOW_WGSL } from './cullShadow.wgsl.js';
 
 /** @type {ReadonlyArray<{name: string, code: string}>} */
 export const WGSL_MODULES = Object.freeze([
@@ -40,6 +41,7 @@ export const WGSL_MODULES = Object.freeze([
   { name: 'sprites', code: SPRITES_WGSL },
   { name: 'overlay', code: OVERLAY_WGSL },
   { name: 'cull', code: CULL_WGSL }, // WG-4a compute (entry cs_main)
+  { name: 'cullShadow', code: CULL_SHADOW_WGSL }, // WG-4b compute (entry cs_main)
   // WG-3d 24b: sun shadow vertex variants (depth in [0.5, 1])
   { name: 'rasterShadowStatic', code: RASTER_SHADOW_WGSL },
   { name: 'rasterShadowVoxel', code: RASTER_VOXEL_SHADOW_WGSL },

@@ -57,8 +57,9 @@ Options:
   --palette-map <json>  texture -> palette keys table for --uvmap (default design/meshes/quaternius/palette-map.json)
   --simplify <tris>   reduce to about <tris> triangles (quadric edge collapse, ME-SIMPLIFY-01; planar UVs only)
   --budget            --simplify to the per-mesh triangle budget of tools/mesh-budgets.mjs (by id basename)
-  --masks <dir|none>  ALPHA-01a (arch 37.17): alpha-cutout materials (glTF alphaMode MASK) become masked ranges (opaque ranges first, uvMask = TEXCOORD_0);
-                      the 8-bit alpha masks are written to <dir>/<pack>/<texture>.mask.json (default content/masks; 'none' = ignore alpha, import as before).
+  --masks <dir>       ALPHA-01a (arch 37.17), OPT-IN until ALPHA-01c is wired (default: none = ignore alpha, import as before): alpha-cutout materials
+                      (glTF alphaMode MASK) become masked ranges (opaque ranges first, uvMask = TEXCOORD_0); the 8-bit alpha masks are written
+                      to <dir>/<pack>/<texture>.mask.json (e.g. content/masks; 'none' = off).
                       Auto-opaque rule: a MASK material with no texel under its cutoff inside its UV region is imported opaque with a WARN
   --mask-res <n>      mask resolution, power of two <= 1024 (default 256; box-average downsample of the texture alpha)
   --opaque <names>    comma list of material names forced opaque although alphaMode is MASK
@@ -230,7 +231,7 @@ export function readMaskTextures(gltfPath, json, id, maskRes = 256, cache = new 
     if (m.alphaMode !== 'MASK' || !m.name) continue;
     const ref = m.pbrMetallicRoughness && m.pbrMetallicRoughness.baseColorTexture;
     const img = ref && json.textures && json.images && json.images[json.textures[ref.index].source];
-    if (!img || !img.uri || img.uri.startsWith('data:')) throw new Error(`gltf-import: MASK material "${m.name}" has no external baseColorTexture file (use --opaque ${m.name} or --masks none)`);
+    if (!img || !img.uri || img.uri.startsWith('data:')) throw new Error(`gltf-import: MASK material "${m.name}" has no external baseColorTexture file (use --opaque ${m.name} or omit --masks)`);
     const file = path.join(path.dirname(gltfPath), decodeURIComponent(img.uri));
     const base = path.basename(file).replace(/\.png$/i, '');
     const tex = pack ? `${pack}/${base}` : base;
@@ -273,13 +274,14 @@ export async function runCli(argv) {
 
   // ALPHA-01a: alpha-cutout materials (a .gltf with external textures; --masks none = import as before)
   let maskTextures = null;
-  if (!isGlb(raw) && args.masks !== 'none') {
+  const masksOn = !!args.masks && args.masks !== 'none'; // ALPHA-01b ARCH CHANGES: opt-in
+  if (!isGlb(raw) && masksOn) {
     const gj = JSON.parse(raw.toString('utf8'));
     if ((gj.materials || []).some((m) => m.alphaMode === 'MASK')) {
       maskTextures = readMaskTextures(inPath, gj, id, args.maskRes || 256);
       opts.alpha = true; opts.textures = maskTextures; opts.opaque = args.opaque || []; opts.warnings = [];
     }
-  } else if (args.opaque || args.maskRes) throw new Error('gltf-import: --opaque / --mask-res need a .gltf with MASK materials and no --masks none');
+  } else if (args.opaque || args.maskRes) throw new Error('gltf-import: --opaque / --mask-res need a .gltf with MASK materials and without --masks <dir>');
   if (args.uv) opts.uv = args.uv;
   if (args.budget && !args.simplify) args.simplify = budgetFor(id) || 0;
   if (args.simplify) {
@@ -327,7 +329,7 @@ export async function runCli(argv) {
   }
 
   const outPath = args.out || path.join('content', 'meshes', `${id}.mesh.json`);
-  const masksDir = args.masks && args.masks !== 'none' ? args.masks : 'content/masks';
+  const masksDir = masksOn ? args.masks : 'content/masks';
   const usedMasks = [...new Set(meshJson.ranges.filter((r) => r.mask).map((r) => r.mask.tex))].sort();
   const maskFiles = usedMasks.map((tex) => {
     const entry = Object.values(maskTextures || {}).find((t) => t.tex === tex);

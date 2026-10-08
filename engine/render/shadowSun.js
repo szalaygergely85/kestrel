@@ -20,6 +20,8 @@ import { forwardOf } from '../core/transform.js';
  * @property {number} normalOffsetTexels - receiver offset along the surface normal, in texels
  * @property {number} meshLod0M - ME-15f: instanced casters within this eye distance use LOD0 (also the ALPHA-01e mesh-group LOD option)
  * @property {number} instCastM - ME-15f: instanced casters up to this eye distance use LOD1; none beyond
+ * @property {number} meshCastM - MESH-SHADOW-02: eye cut (m) for placed kind-9 mesh casters; 0 = budget off (default, whole sun box)
+ * @property {number} meshCastCap - MESH-SHADOW-02: safety cap of kept placed-mesh casters when meshCastM > 0 (1..MAX_MESH_DRAWS, default MAX_MESH_DRAWS)
  * @property {boolean} dirtySkip - ME-15d: skip the depth pass while the input hash is unchanged
  */
 
@@ -34,6 +36,8 @@ export const SUN_SHADOW_DEFAULTS = Object.freeze({
   normalOffsetTexels: 1.5,
   meshLod0M: 25, // ME-15f (27.9a amendment 5)
   instCastM: 48,
+  meshCastM: 0, // MESH-SHADOW-02 (25 m = the budget cut; 0 = off, owner 2026-10-07)
+  meshCastCap: 64, // = MAX_MESH_DRAWS (kept literal: shadowSun stays import-free)
   dirtySkip: true, // ME-15d: re-render the map only when its inputs changed (false = every frame, the perf worst case)
 });
 
@@ -50,6 +54,8 @@ export function resolveSunShadowOptions(user, renderer) {
   if (o.sun === 'map' && renderer !== 'mesh') throw new Error(`shadows.sun 'map' needs renderer 'mesh' (got '${renderer}')`);
   if (!(o.res > 0) || (o.res & 1)) throw new Error(`shadows.res must be a positive even integer (got ${o.res})`);
   if (!(o.meshLod0M > 0) || !(o.meshLod0M <= o.instCastM)) throw new Error(`shadows: need 0 < meshLod0M <= instCastM (got ${o.meshLod0M}, ${o.instCastM})`);
+  o.meshCastM = Number.isFinite(o.meshCastM) && o.meshCastM > 0 ? Math.min(o.meshCastM, 2000) : 0;
+  o.meshCastCap = Number.isFinite(o.meshCastCap) ? Math.max(0, Math.min(64, Math.floor(o.meshCastCap))) : 64;
   return o;
 }
 

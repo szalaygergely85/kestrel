@@ -20,7 +20,8 @@ import { createShadowList, buildShadowList, shadowWorldZ } from '../../../mesh/s
 import { DRAW_STATIC, DRAW_VOXEL, DRAW_TERRAIN, DRAW_INSTANCED, DRAW_CLOTH } from '../../../mesh/DrawList.js';
 import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
 import { sharedVoxelMeshCache } from '../../../mesh/voxelMesh.js';
-import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME } from '../../../mesh/instances.js';
+import { INSTANCE_BYTES, INSTANCE_STRIDE, MAX_INSTANCES_PER_FRAME, SHADOW_BAND_HYST_M } from '../../../mesh/instances.js';
+import { WgCullPass } from './passCull.js';
 import { resolveSunShadowOptions, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../../shadowSun.js';
 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
@@ -34,7 +35,7 @@ const INSTANCE_LAYOUT = [
 ];
 
 export class WgShadowPass {
-  /** @param {any} device @param {{shadows?: any, buffers?: MeshBuffers, renderer?: string}} [opts] */
+  /** @param {any} device @param {{shadows?: any, buffers?: MeshBuffers, renderer?: string, gpuCull?: boolean}} [opts] gpuCull (default true, `?gpucull=0` = off): WG-4b compute cull of instanced casters */
   constructor(device, opts = {}) {
     this.device = device;
     const so = this.shadowOpts = resolveSunShadowOptions(opts.shadows, opts.renderer || 'mesh');
@@ -46,8 +47,11 @@ export class WgShadowPass {
     this.ownBuffers = !opts.buffers; this.buffers = opts.buffers || new MeshBuffers(device);
     this.sunMat = createSunShadowMatrix(); this.sunMatF32 = new Float32Array(16);
     this.list = createShadowList(); this.centre = new Float64Array(3); this.worldZ = { min: 0, max: 0 };
-    this.key = new Int32Array(2); this.keyPrev = new Int32Array(2); this.keyValid = false;
-    this.src = { centre: { x: 0, y: 0, z: 0 }, eye: { x: 0, y: 0 }, meshLod0M: 25, instCastM: 48, cache: null, terrainSet: null, voxelPool: null, voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: null, cloths: null, matIdFor: undefined, meshCache: null, meshIdFor: undefined };
+    this.key = new Int32Array(3); this.keyPrev = new Int32Array(3); this.keyValid = false;
+    this.src = { centre: { x: 0, y: 0, z: 0 }, eye: { x: 0, y: 0 }, meshLod0M: 25, instCastM: 48, cache: null, terrainSet: null, voxelPool: null, voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: null, cloths: null, matIdFor: undefined, meshCache: null, meshIdFor: undefined, gpu: /** @type {any} */ (null) };
+    // WG-4b: instanced casters (meshGroup + single-range voxel units, buildShadowList `src.gpu`) cut on the GPU by the shadow kernel (cullShadow.wgsl.js); the rest stays on the CPU list
+    this.cull = null; this.gpuGroups = []; this.gpuM0 = []; this.gpuM1 = []; this.gpuR = []; this.gpuL0 = []; this.gpuEntries = []; this.gpuN = 0; this._pair = [null, null];
+    this._gpuHook = { accept: (g, m0, m1, R, lod0M) => this._accept(g, m0, m1, R, lod0M) };
     this.u = new Float32Array(RASTER_BLOCK.sizeWords);
     this.baseU = new Float32Array(this.u.buffer, 0, RASTER_BASE_BLOCK.sizeWords);
     this.tu = new Float32Array(SHADOW_TERRAIN_BLOCK.sizeWords); this.tbits = new Uint32Array(this.tu.buffer);
@@ -69,6 +73,7 @@ export class WgShadowPass {
       this.instancePipe = this._pipeline(RASTER_INSTANCED_SHADOW_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', RASTER_BLOCK, true);
       this.clothPipe = this._pipeline(RASTER_CLOTH_SHADOW_WGSL, CLOTH_DYN_LAYOUT, CLOTH_STRIDE_BYTES, 'none', RASTER_BASE_BLOCK, false, [{ layout: CLOTH_UV_LAYOUT, strideBytes: 8 }]);
       this.terrainPipe = this._pipeline(SHADOW_TERRAIN_WGSL, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, 'none', SHADOW_TERRAIN_BLOCK, false, null, 'fs_main');
+      if (opts.gpuCull !== false && typeof device.createComputePipeline === 'function') { this.cull = new WgCullPass(device, { shadow: true }); this.src.gpu = this._gpuHook; }
     } catch (e) { this.dispose(); throw e; }
   }
 
@@ -82,6 +87,40 @@ export class WgShadowPass {
       depth: { test: true, write: true }, depthBias: this.depthBias, cull, frontFace: 'cw' });
     this.pipes.push(pipe);
     return pipe;
+  }
+
+  _accept(g, m0, m1, R, lod0M) {
+    const cull = this.cull, n = this.gpuN;
+    if (!cull) return false;
+    const pair = this._pair; pair[0] = m0; pair[1] = m1;
+    if (!cull.supports(g, pair)) return false;
+    this.gpuGroups[n] = g; this.gpuM0[n] = m0; this.gpuM1[n] = m1; this.gpuR[n] = R; this.gpuL0[n] = lod0M; this.gpuN = n + 1;
+    return true;
+  }
+
+  // Dirty-skip key part for the GPU-owned groups (their rows never reach the CPU list hash): count + quantized rows (like shadowInputHash, 2 cm / 1/256)
+  // + the eye cell (1 m): a band crossing is picked up within a metre of eye travel.
+  _gpuHash(cam) {
+    let h = 0x2545f491 | 0;
+    h = Math.imul(h ^ Math.floor(cam.x), 16777619); h = Math.imul(h ^ Math.floor(cam.y), 16777619);
+    for (let k = 0; k < this.gpuN; k++) {
+      const g = this.gpuGroups[k], f = g.ib.f32, u = g.ib.u32, n = g.count * INSTANCE_STRIDE;
+      h = Math.imul(h ^ g.count, 16777619);
+      for (let o = 0; o < n; o += INSTANCE_STRIDE) {
+        for (let w = 0; w < 12; w++) h = Math.imul(h ^ Math.round(f[o + w] * ((w & 3) === 3 ? 50 : 256)), 16777619);
+        h = Math.imul(h ^ u[o + 12], 16777619); h = Math.imul(h ^ u[o + 13], 16777619);
+      }
+    }
+    return h;
+  }
+
+  // Outside any pass, before _render: queue the accepted batches and run the shadow kernel (one dispatch each).
+  _cullRun(planes, cam, so) {
+    const n = this.gpuN, cull = this.cull, pair = this._pair;
+    if (!n) return;
+    cull.begin({ planes, eye: cam, castM: so.instCastM, hystM: SHADOW_BAND_HYST_M });
+    for (let i = 0; i < n; i++) { pair[0] = this.gpuM0[i]; pair[1] = this.gpuM1[i]; this.gpuEntries[i] = cull.add(this.gpuGroups[i], pair, this.gpuL0[i], this.gpuR[i]); }
+    cull.run();
   }
 
   /** The light pass inputs for sunMode 2 (one reused object, refreshed per call). */
@@ -102,6 +141,21 @@ export class WgShadowPass {
     }
     this.tbits[T_COUNT] = n;
     return n;
+  }
+
+  /**
+   * TEST-ONLY (shadowParity.js): the CPU oracle caster list of the last frame. GPU-culled groups (WG-4b) are not in `this.list`, so with any of them the
+   * list is rebuilt once with the hook off (full CPU path, same planes/sources) into a separate list; the twin then rasters it against the kernel's map.
+   * @returns {import('../../../mesh/DrawList.js').DrawList}
+   */
+  casterList() {
+    if (!this.gpuN || !this._raster || !this._world) return this.list;
+    const src = this.src, hook = src.gpu;
+    if (!this._refList) this._refList = createShadowList();
+    src.gpu = null;
+    buildShadowList(this._refList, this._raster.list, this._world, this.sunMat.planes, src);
+    src.gpu = hook;
+    return this._refList;
   }
 
   /** TEST-ONLY (shadowParity.js): the carve footprints of the last frame, same fields the JS twin ctx wants. @returns {{foot: Float32Array, count: number}|null} */
@@ -134,7 +188,7 @@ export class WgShadowPass {
   run(p, raster) {
     this.active = false;
     if (!this.enabled) return false;
-    this._world = p._world;
+    this._world = p._world; this._raster = raster;
     const so = this.shadowOpts, light = p._light, cam = p._cam, world = p._world, sun = light && light.sun;
     if (!sun || !sun.on || !cam || !world) return false;
     const list = this.list, src = this.src, st = this.stats;
@@ -146,7 +200,8 @@ export class WgShadowPass {
     const vp = p._voxelPool;
     if (vp && vp.shadowView) { vp.projectShadow(); src.voxelPool = vp.shadowView; } else src.voxelPool = null;
     src.instances = p._instances || null;
-    src.eye.x = cam.x; src.eye.y = cam.y; src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM;
+    this.gpuN = 0;
+    src.eye.x = cam.x; src.eye.y = cam.y; src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM; src.meshCastM = so.meshCastM; src.meshCastCap = so.meshCastCap;
     src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null;
     src.matIdFor = p._table ? p._table.idFor : undefined;
     src.meshCache = raster.meshCache; src.meshIdFor = raster.strictMatIdFor || undefined;
@@ -157,13 +212,15 @@ export class WgShadowPass {
     for (let i = 0; i < 16; i++) Mf[i] = sm.M[i];
     buildShadowList(list, raster.list, world, sm.planes, src);
     const key = shadowInputHash(list, sm.M, world.structVersion | 0, this.key);
+    key[2] = this.gpuN ? this._gpuHash(cam) : 0;
     st.shadowCpuMs = performance.now() - tCpu0;
     const prev = this.keyPrev;
-    if (so.dirtySkip && this.keyValid && key[0] === prev[0] && key[1] === prev[1]) {
+    if (so.dirtySkip && this.keyValid && key[0] === prev[0] && key[1] === prev[1] && key[2] === prev[2]) {
       this.active = true; this.skips++; st.shadowItems = list.count; st.shadowDraws = 0;
       return true;
     }
-    prev[0] = key[0]; prev[1] = key[1]; this.keyValid = true; this.renders++;
+    prev[0] = key[0]; prev[1] = key[1]; prev[2] = key[2]; this.keyValid = true; this.renders++;
+    this._cullRun(sm.planes, cam, so);
     this._render(list, world, Mf);
     this.active = true; st.shadowItems = list.count; st.shadowDraws = this.draws;
     return true;
@@ -206,6 +263,17 @@ export class WgShadowPass {
           const r = ranges[part]; if (r.count <= 0) continue;
           this._model(item.partMatrices, part * 12);
           this._draw(this.instancePipe, entry, r.count * 3, r.start * 3, buffer, n);
+        }
+      }
+      for (let i = 0; i < this.gpuN; i++) { // WG-4b: GPU-culled instanced casters, one indirect draw per active band (identity part 0, as the CPU loop)
+        const entries = this.gpuEntries[i];
+        for (let band = 0; band < 2; band++) {
+          const e = entries[band];
+          if (!e.active) continue;
+          this._model(e.parts.m, 0);
+          const entry = this.buffers.getVoxel(e.mesh), bd = this.bindDesc;
+          bd.uniforms = this.u; bd.vertexBuffer = entry.vertexBuffer; bd.indexBuffer = entry.indexBuffer || null; bd.instanceBuffer = e.instanceBuffer; bd.extraBuffers = null;
+          d.bind(this.instancePipe, bd); d.drawIndirect(e.argsBuffer, e.argsOffset); this.draws++;
         }
       }
       const b = this.bindDesc;
@@ -261,6 +329,7 @@ export class WgShadowPass {
     this.pipes.length = 0;
     for (const h of [this.copyPipe, this.copyTarget, this.copyTex, this.target, this.depthTex]) if (h) d.dispose(h);
     this.copyPipe = this.copyTarget = this.copyTex = this.target = this.depthTex = null;
+    if (this.cull) { this.cull.dispose(); this.cull = null; this.src.gpu = null; }
     for (const buffer of this.instanceBuffers.values()) d.dispose(buffer);
     this.instanceBuffers.clear();
     if (this.ownBuffers) this.buffers.dispose();
