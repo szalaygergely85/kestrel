@@ -1,5 +1,11 @@
 # EP-DESKTOP-SPIKE — Electron disk loading
 
+2026-10-08 ARCH follow-up: dependency checker now skips nested node_modules,
+with clean/installed/scoped-package and similarly named project-directory
+fixtures. Installed Electron no longer expands the project's scan: check-deps
+OK (521 project files, existing warnings). Full 305/305 PASS, zero
+FAIL/TIMEOUT/WARN. No scanner rules or warning thresholds were relaxed.
+
 2026-10-08, lane C, after merging PC-A/master 3989731 (WG-3f + WG-4a/4b). Report-only development
 launcher under `tools/desktop/`; game and engine code unchanged. No release
 archive, installer or third-party asset was generated or committed.
