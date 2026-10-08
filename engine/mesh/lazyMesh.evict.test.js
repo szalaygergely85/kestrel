@@ -116,6 +116,22 @@ await test('1000-frame loop route: loaded count and GPU buffers stay bounded, he
   console.log(`   loop: max loaded ${maxReady}/3, max GPU buffers ${maxLive}, evicted ${s.st.stats.evicted}, fetches ${s.fetched.length}${global.gc ? `, heap MB ${heap.map((h) => Math.round(h / 1e6))}` : ''}`);
 });
 
+await test('meshGroup (getVoxel, instanced path) buffers are freed on eviction too (arch 2026-10-08 verdicts 13)', async () => {
+  const s = scene();
+  for (let i = 0; i < 6; i++) await s.frame(0, 16);
+  const m = s.meshes[IDS[0]];
+  assert.ok(meshReady(m));
+  s.mb.getVoxel(s.cache.get(m, ID_FOR, null)); // what InstanceGroups.meshGroup draws use
+  assert.ok(s.mb.voxelCache.has(m.id));
+  const liveLoaded = s.gpuLive();
+  assert.ok(liveLoaded >= 3, `static + voxel buffers live (${liveLoaded})`);
+  const t0 = s.clock.t;
+  while (s.clock.t - t0 < 25000 + SWEEP_EVERY * 100) await s.frame(HOLD_M + 40, 100);
+  assert.ok(!meshReady(m), 'evicted');
+  assert.ok(!s.mb.voxelCache.has(m.id), 'voxelCache entry released');
+  assert.equal(s.gpuLive(), 0, 'every GPU buffer of the mesh freed (static + voxel)');
+});
+
 await test('editor path ensure() pins a mesh; evictAfterMs 0 disables eviction', async () => {
   const s = scene();
   await s.st.ensure(s.meshes[IDS[0]]);

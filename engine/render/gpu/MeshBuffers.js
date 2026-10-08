@@ -230,14 +230,25 @@ export class MeshBuffers {
     this._unsubEvict = onMeshEvicted((m) => this.release(m));
   }
 
-  /** Frees the static-layout GPU buffers of one mesh (no-op when absent). @param {any} mesh */
+  /**
+   * Frees the GPU buffers of one mesh (no-op when absent): the static-layout entry AND the 32 B voxel-layout entry
+   * (`getVoxel`, the instanced meshGroup path of TREES-LP-b / MESH-INST-01). Both are keyed by id.
+   * @param {any} mesh
+   */
   release(mesh) {
     const e = this.cache.get(mesh.id);
-    if (!e) return; // keyed by id: the entry's mesh is the resolved draw copy of the registry mesh
-    this.device.dispose(e.vertexBuffer);
-    if (e.indexBuffer) this.device.dispose(e.indexBuffer);
-    if (e.uvMaskBuffer) this.device.dispose(e.uvMaskBuffer);
-    this.cache.delete(mesh.id);
+    if (e) { // keyed by id: the entry's mesh is the resolved draw copy of the registry mesh
+      this.device.dispose(e.vertexBuffer);
+      if (e.indexBuffer) this.device.dispose(e.indexBuffer);
+      if (e.uvMaskBuffer) this.device.dispose(e.uvMaskBuffer);
+      this.cache.delete(mesh.id);
+    }
+    const v = this.voxelCache.get(mesh.id);
+    if (v) {
+      this.device.dispose(v.vertexBuffer);
+      this.device.dispose(v.indexBuffer);
+      this.voxelCache.delete(mesh.id);
+    }
   }
 
   /**
