@@ -12,6 +12,7 @@
 // path keeps PRESENTING the CPU cells (rt.gpuActive false, frameComplete false) until sprites/overlay/water/shadow-map land (WG-3d..3f):
 // presenting GPU-shaded cells earlier would drop sprites, overlay, water and map shadows that only the CPU compositor draws. The GPU
 // result is observable through readbackCells() (`?gpucompare=1` / `=shade` cell rows).
+import { bootNow, span as bootSpan } from '../../../core/bootMarks.js'; // BOOT-SPEED-01
 import { allocWgTargets, freeWgTargets } from './targets.js';
 import { DEBUG_BLOCK, DEBUG_WGSL, DEBUG_TEXTURES } from '../wgsl/debug.wgsl.js';
 import { WgRasterPass } from './passRaster.js';
@@ -79,19 +80,26 @@ export class WgCellPipeline {
     this._debugTex = [{ slot: 0, texture: null }, { slot: 1, texture: null }, { slot: 2, texture: null }];
     this._debugBind = { uniforms: this._debugU, textures: this._debugTex };
     try {
+      let tp = bootNow();
       this._t = allocWgTargets(this.device, this.cols, this.rows, this.rays);
+      bootSpan('WgCellPipeline targets', tp);
       this._pipeDebug = this.device.createPipeline({
         vertex: { src: { wgsl: DEBUG_WGSL } },
         fragment: { src: { wgsl: DEBUG_WGSL }, targets: 2 },
         bindings: { uniformBytes: DEBUG_BLOCK.sizeBytes, textures: DEBUG_TEXTURES.slice() },
         targetFormats: ['rgba8', 'rgba8'],
       });
+      tp = bootNow();
       this._rasterPass = new WgRasterPass(this.device, { gpuCull: this.gpuCull });
+      bootSpan('pass raster (ctor total)', tp); tp = bootNow();
       this._meshDrawList = this._rasterPass.list;
       this._shadowPass = new WgShadowPass(this.device, { shadows: this.shadowOpts, renderer: this.renderer, buffers: this._rasterPass.buffers, gpuCull: this.gpuCull });
+      bootSpan('pass shadow (ctor total)', tp); tp = bootNow();
       this._waterPass = new WgWaterPass(this.device);
       this._waterPass.resize(this.cols, this.rows, this.rays);
+      bootSpan('pass water (ctor total)', tp); tp = bootNow();
       this._cellPass = new WgCellPass(this.device, this._shadowPass, this._waterPass);
+      bootSpan('pass cell (ctor total)', tp);
       this.shadowOpts = this._shadowPass.shadowOpts; // resolved (GL pipeline exposes the same field)
       this.portedPasses.push('debug', 'raster', 'resolve', 'deriv', 'light', 'shade', 'edge');
       if (this._shadowPass.enabled) this.portedPasses.push('shadow');
@@ -144,12 +152,14 @@ export class WgCellPipeline {
       if (this._spritesPass) this._spritesPass.dispose();
       if (this._overlayPass) this._overlayPass.dispose();
       this._spritesPass = null; this._overlayPass = null;
+      const tp = bootNow();
       this._spritesPass = new WgSpritesPass(this.device, { pool, atlas, palette });
       this._spritesPass.resize(this.cols, this.rows);
       if (particleLayer) this._spritesPass.bindParticleLayer(particleLayer);
       this._overlayPass = new WgOverlayPass(this.device, overlay);
       this._overlayPass.resize(this.cols, this.rows);
       this._overlayPass.setTarget(this._spritesPass.outFg);
+      bootSpan('bindSprites (sprites + overlay passes)', tp);
     } catch (e) {
       console.warn('[WgCellPipeline] sprites/overlay init failed (CPU compositor keeps drawing them):', e);
       for (const k of ['_spritesPass', '_overlayPass']) { if (this[k]) { try { this[k].dispose(); } catch (_) { /* best effort */ } this[k] = null; } }

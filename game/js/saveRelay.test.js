@@ -6,6 +6,8 @@ import { World, AssetRegistry } from '../../engine/index.js';
 class Events { constructor() { this.m = {}; } on(n, f) { (this.m[n] ||= []).push(f); return () => { this.m[n] = this.m[n].filter((g) => g !== f); }; } emit(n, p) { for (const f of this.m[n] || []) f(p); } }
 import { ensureInventory } from './quest/sim/inventory.js';
 import { createSaveRelay } from './saveRelay.js';
+import { createGameHooks, bridgeEngineEvents } from './gameHooks.js';
+import { DONE_TEXT } from './questRelay.js';
 
 const questDef = JSON.parse(readFileSync(new URL('../../content/quests/m1.quest.json', import.meta.url)));
 // objective texts come from the content (writer pass may change them), not from this test
@@ -25,6 +27,10 @@ const events = new Events();
 const A = createSaveRelay({ storage, questDef });
 A.onWorldLoaded();
 A.bindEvents(events);
+const H = createGameHooks(); // the seam: engine events -> bridge -> relay handlers
+H.register(A.handlers());
+bridgeEngineEvents(events, H);
+A.quest.onPoll = (n, a, b) => H.emitSimple(n, a, b);
 const breach = { x: 100, y: 50, z: 6 };
 const facts = (o) => ({ wakeDone: false, lanternTaken: false, swordTaken: false, endStarted: false, x: 0, y: 0, z: 0, ...o });
 assert.equal(A.quest.objectiveText(), OBJ.wake);
@@ -47,7 +53,8 @@ events.emit('beast:died', { id: 'boar2' });
 assert.equal(A.quest.objectiveText(), OBJ.waystone);
 A.quest.poll(facts({ endStarted: true }), breach);
 assert.equal(A.quest.done, true, 'scripted sequence completes the demo quest');
-assert.equal(A.quest.objectiveText(), 'All objectives complete');
+assert.equal(A.quest.objectiveText(), DONE_TEXT);
+assert.equal(DONE_TEXT, 'The pencil line runs on.');
 
 // ---- HUD: the current objective is drawn into the UI layer, top-left ----
 {
@@ -59,7 +66,7 @@ assert.equal(A.quest.objectiveText(), 'All objectives complete');
   assert.equal(row.trim(), ('> ' + OBJ.wake).slice(0, 40).trim(), 'objective line at row 1');
   A.quest.draw(C); // done quest: plain line
   row = ''; for (let x = 0; x < 40; x++) row += C.cells.get(1000 + x) ?? '';
-  assert.ok(row.includes('All objectives complete'));
+  assert.ok(row.includes(DONE_TEXT));
 }
 
 // ---- save, reload into a fresh relay + world, save again: byte-stable ----

@@ -3,6 +3,7 @@
 import { createQuest, applyQuestEvent, questObjectives } from './quest/sim/quest.js';
 
 const BREACH_R2 = 3 * 3, BREACH_DZ = 2.5; // "reached the breach": within 3 m (xy) of the marker and 2.5 m in z
+export const DONE_TEXT = 'The pencil line runs on.';
 const PLATE = [10, 11, 16], TEXT = [226, 214, 176], DIM = [140, 134, 112];
 
 /**
@@ -31,14 +32,16 @@ export function createQuestRelay(def, saved = null) {
 
   const relay = {
     def,
+    /** Optional (name, a, b) callback for every event poll() fires (main.js points it at the gameHooks seam). */
+    onPoll: null,
     get state() { return state; },
     get done() { return state.completed.length >= def.objectives.length; },
     get dirty() { return dirty; },
     clearDirty() { dirty = false; },
     feed,
-    /** Current objective text (first not-complete objective) or the done line. */
+    /** Current objective text (first not-complete objective) or the done line (writer: "The pencil line runs on."). */
     objectiveText() {
-      return state.completed.length < def.objectives.length ? def.objectives[state.completed.length].text : 'All objectives complete';
+      return state.completed.length < def.objectives.length ? def.objectives[state.completed.length].text : (def.doneText || DONE_TEXT);
     },
     /** Replace the quest (restore from a save, or a fresh run when `saved` is null). */
     reset(savedState = null) {
@@ -50,16 +53,17 @@ export function createQuestRelay(def, saved = null) {
      * @param {{x:number,y:number,z:number}|null} breach world-space breach marker
      */
     poll(f, breach) {
-      if (f.wakeDone && !fired.wake) { fired.wake = true; feed({ type: 'flag:set', key: 'wake', value: true }); }
-      if (f.lanternTaken && !fired.lantern) { fired.lantern = true; feed({ type: 'item:got', id: 'lantern' }); }
-      if (f.swordTaken && !fired.sword) { fired.sword = true; feed({ type: 'item:got', id: 'sword' }); }
+      if (f.wakeDone && !fired.wake) { fired.wake = true; feed({ type: 'flag:set', key: 'wake', value: true }); if (relay.onPoll) relay.onPoll('flag:set', 'wake', true); }
+      if (f.lanternTaken && !fired.lantern) { fired.lantern = true; feed({ type: 'item:got', id: 'lantern' }); if (relay.onPoll) relay.onPoll('item:got', 'lantern', 1); }
+      if (f.swordTaken && !fired.sword) { fired.sword = true; feed({ type: 'item:got', id: 'sword' }); if (relay.onPoll) relay.onPoll('item:got', 'sword', 1); }
       if (breach && !fired.breach) {
         const dx = f.x - breach.x, dy = f.y - breach.y;
-        if (dx * dx + dy * dy <= BREACH_R2 && Math.abs(f.z - breach.z) <= BREACH_DZ) { fired.breach = true; feed({ type: 'area:entered', id: 'breach' }); }
+        if (dx * dx + dy * dy <= BREACH_R2 && Math.abs(f.z - breach.z) <= BREACH_DZ) { fired.breach = true; feed({ type: 'area:entered', id: 'breach' }); if (relay.onPoll) relay.onPoll('area:entered', 'breach'); }
       }
-      if (f.endStarted && !fired.waystone) { fired.waystone = true; feed({ type: 'area:entered', id: 'waystone' }); }
+      if (f.endStarted && !fired.waystone) { fired.waystone = true; feed({ type: 'area:entered', id: 'waystone' }); if (relay.onPoll) relay.onPoll('area:entered', 'waystone'); }
     },
-    /** HUD: objective line at the top-left of the UI layer (setCellRGB cells; no allocation). */
+    /** HUD: objective line at the top-left of the UI layer (setCellRGB cells; no allocation).
+     *  TEMPORARY (D-050): lane C's quest HUD replaces this line; until then it is the only objective line (never draw two). */
     draw(ui) {
       const text = relay.objectiveText();
       if (text !== lineFor) { lineFor = text; line = relay.done ? text : '> ' + text; } // rebuilt only when the text changes

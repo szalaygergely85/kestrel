@@ -16,6 +16,7 @@ import { createUniformRing, UNIFORM_SLOT_ALIGN } from '../wgsl/uniformBlock.js';
 import { MAX_DRAW_ITEMS } from '../../../mesh/DrawList.js';
 import { textureFormatFor, depthFormatFor, vertexFormatFor, readbackLayout, depadRows } from './webgpuFormats.js';
 import { WebGpuTimer } from './WebGpuTimer.js';
+import { bootNow, span as bootSpan } from '../../../core/bootMarks.js'; // BOOT-SPEED-01
 
 /** @typedef {import('./GpuDevice.js').GpuHandle} GpuHandle */
 
@@ -27,6 +28,11 @@ const ZERO4 = [0, 0, 0, 0];
 function globalConsts() {
   const g = /** @type {any} */ (globalThis);
   return { buf: g.GPUBufferUsage, tex: g.GPUTextureUsage, stage: g.GPUShaderStage, map: g.GPUMapMode };
+}
+
+/** BOOT-SPEED-01: a readable name for the boot table (optional `label`, else an entry point). @param {any} d @param {string} dflt */
+function bootLabel(d, dflt) {
+  return d.label || (d.fragment && d.fragment.src && d.fragment.src.entry) || (d.vertex && d.vertex.src && d.vertex.src.entry) || (d.src && d.src.entry) || dflt;
 }
 
 export class GpuDeviceWebGPU {
@@ -261,7 +267,9 @@ export class GpuDeviceWebGPU {
       pd.depthStencil = { format: depthFormatFor(desc.depthFormat), depthWriteEnabled: !!d.write, depthCompare: d.test ? 'less' : 'always' };
       if (desc.depthBias) { pd.depthStencil.depthBias = desc.depthBias.units; pd.depthStencil.depthBiasSlopeScale = desc.depthBias.factor; }
     }
+    const tP = bootNow();
     const gpu = this._validatedCreate('createRenderPipeline', pd);
+    bootSpan('pipeline ' + bootLabel(desc, 'render'), tP);
     return {
       kind: 'pipeline', gpu, extraBase, bgl0, uniformGroup, uniformBytes: uBytes, texKinds, samplerBinding,
       texCur: new Array(texKinds.length).fill(null), texGroup: null, texDirty: texKinds.length > 0, indexed: false,
@@ -285,7 +293,9 @@ export class GpuDeviceWebGPU {
     const uniformGroup = uBytes > 0
       ? this._validatedCreate('createBindGroup', { layout: bgl1, entries: [{ binding: 0, resource: { buffer: this._ringBuf, offset: 0, size: uBytes } }] })
       : null;
+    const tP = bootNow();
     const gpu = this._validatedCreate('createComputePipeline', { layout, compute: { module: this._module(desc.src), entryPoint: desc.src.entry || 'cs_main' } });
+    bootSpan('compute ' + bootLabel(desc, 'cs_main'), tP);
     return { kind: 'computePipeline', gpu, bgl0, uniformGroup, uniformBytes: uBytes, nbuf: kinds.length, groups: /** @type {{bufs: any[], group: any}[]} */ ([]) };
   }
 

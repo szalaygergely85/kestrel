@@ -133,6 +133,7 @@ export function createVitals(world, events, cfg, hooks) {
     sim.cardReady = false;
     const body = player.components && player.components.body;
     eyeHStart = body && typeof body.eyeH === 'number' ? body.eyeH : 1.6;
+    if (typeof h.onDied === 'function' && player && player.transform) h.onDied(player.transform); // gameHooks 'player:died'
   }
 
   function respawn() {
@@ -140,7 +141,11 @@ export function createVitals(world, events, cfg, hooks) {
     const state = world.state || {};
     const sx = state['save.x'], sy = state['save.y'], sz = state['save.z'], syaw = state['save.yaw'];
     const t = player.transform;
-    if (typeof sx === 'number' && typeof sy === 'number' && typeof sz === 'number') {
+    const over = typeof h.respawnPose === 'function' ? h.respawnPose() : null; // gameHooks onRespawn(): first non-null wins
+    if (over) {
+      t.x = over.x; t.y = over.y; t.z = over.z;
+      if (typeof over.yawDeg === 'number') t.yawDeg = over.yawDeg;
+    } else if (typeof sx === 'number' && typeof sy === 'number' && typeof sz === 'number') {
       t.x = sx; t.y = sy; t.z = sz;
       if (typeof syaw === 'number') t.yawDeg = syaw;
     } else if (spawnDefault) {

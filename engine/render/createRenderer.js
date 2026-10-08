@@ -5,6 +5,7 @@
 // at `cpuGrid` (no WebGPU cell pipeline until WG-2, so never the 320x120 GPU grid). On any failure: warn and build the
 // webgl2 target on the SAME canvas (the failed request leaves it free). This file and the F3 line are the only places that
 // read `device.backend` (check-deps / 38.2).
+import { bootNow, span as bootSpan } from '../core/bootMarks.js'; // BOOT-SPEED-01
 import { RenderTarget } from './RenderTarget.js';
 import { RenderTargetWebGPU } from './RenderTargetWebGPU.js';
 import { createGpuDevice } from './gpu/device/createGpuDevice.js';
@@ -26,15 +27,23 @@ export async function createRenderer(o) {
     let device = null;
     try {
       // fallback:false -> we do the webgl2 fallback ourselves (createGpuDevice's own fallback would touch the canvas)
+      const tG = bootNow();
       device = await createGpuDevice({ backend: 'webgpu', canvas, fallback: false, warn });
+      bootSpan('createGpuDevice total (adapter, device, self-test)', tG);
       if (device.backend === 'webgpu') {
+        const tR = bootNow();
         const rt = new RenderTargetWebGPU(canvas, cpuGrid.cols, cpuGrid.rows, device);
+        bootSpan('new RenderTargetWebGPU', tR);
         // WG-2a: the skeleton cell pipeline (debug view only; the CPU path still renders the scene). `gpu:false` (?gpu=0) = none.
         let pipeline = null;
+        const tW = bootNow();
         if (gpu) pipeline = new WgCellPipeline(rt, { rays: o.rays, terrainEnabled: o.terrainEnabled, shadows: o.shadows, gpuCull: o.gpuCull });
+        bootSpan('new WgCellPipeline total', tW);
         // 38.8a item 18: async validation errors (WGSL, pipeline layouts) never throw; any error = failure -> fallback
         if (typeof device.checkErrors === 'function') {
+          const tE = bootNow();
           const errs = await device.checkErrors();
+          bootSpan('device.checkErrors', tE);
           if (errs.length) { if (pipeline) pipeline.dispose(); throw new Error('webgpu validation error: ' + errs[0]); }
         }
         if (pipeline && !pipeline.ready) pipeline = null; // failed init already warned and freed itself
