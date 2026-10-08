@@ -349,7 +349,7 @@ export class MeshDrawCache {
    */
   get(mesh, idFor, atlas) {
     const hit = this._map.get(mesh);
-    if (hit && hit.idFor === idFor && (!hit.atlas || (hit.atlas === atlas && hit.atlasVersion === atlas.version))) return hit.copy;
+    if (hit && hit.idFor === idFor && (!hit.atlas || (hit.atlas === atlas && hit.atlasVersion === atlas.version)) && !(hit.noAtlas && atlas)) return hit.copy;
     const mats = mesh.mats || {};
     const copy = { ...mesh, flat: mesh.flat.slice(), matsResolved: false };
     resolveMats(copy, (name) => {
@@ -357,9 +357,12 @@ export class MeshDrawCache {
       if (key === undefined) throw new Error(`mesh "${mesh.id}": material "${name}" has no mats entry`);
       return idFor(key);
     });
-    let usedAtlas = null;
+    let usedAtlas = null, noAtlas = false;
     if (mesh.ranges.some((r) => r.mask)) {
-      if (!atlas) throw new Error(`mesh "${mesh.id}": masked ranges need a MaskAtlas (cache.get(mesh, idFor, atlas))`);
+      if (!atlas) { // no atlas (world.maskAtlas null, masks not wired yet): masked ranges draw opaque, warn once per mesh
+        noAtlas = true;
+        console.warn(`mesh "${mesh.id}": masked ranges but no MaskAtlas - drawn opaque`);
+      } else {
       const mr = new Int32Array(mesh.ranges.length * 5);
       for (let i = 0; i < mesh.ranges.length; i++) {
         const m = mesh.ranges[i].mask, o = i * 5;
@@ -370,8 +373,9 @@ export class MeshDrawCache {
       }
       copy.maskRanges = mr;
       usedAtlas = atlas;
+      }
     }
-    this._map.set(mesh, { idFor, copy, atlas: usedAtlas, atlasVersion: usedAtlas ? usedAtlas.version : -1 });
+    this._map.set(mesh, { idFor, copy, noAtlas, atlas: usedAtlas, atlasVersion: usedAtlas ? usedAtlas.version : -1 });
     return copy;
   }
 }

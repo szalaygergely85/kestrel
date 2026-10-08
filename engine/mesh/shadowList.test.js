@@ -4,10 +4,10 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { DrawList, DRAW_STATIC, LevelMeshCache, MeshDrawCache, addStructures, MAX_DRAW_ITEMS } from './DrawList.js';
-import { buildShadowList, createShadowList, shadowWorldZ, trimShadowList, meshShadowBudget } from './shadowList.js';
+import { buildShadowList, createShadowList, shadowWorldZ, trimShadowList } from './shadowList.js';
 import { frustumPlanes } from './culling.js';
 import { projTerms, shearProjection } from '../render/projection.js';
-import { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, SUN_SHADOW_DEFAULTS } from '../render/shadowSun.js';
+import { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, SUN_SHADOW_DEFAULTS, resolveSunShadowOptions } from '../render/shadowSun.js';
 const OPTS_DEF = { ...SUN_SHADOW_DEFAULTS }; // SHADOW-ROT: the shipped box (192 m, 64 m ahead)
 import { dirFromAzEl } from '../core/transform.js';
 import { makeOk } from '../test/assert.js';
@@ -242,23 +242,26 @@ function cameraPlanes() {
     const ids = []; for (let i = 0; i < sl.count; i++) ids.push(sl.items[i].objectId & 0xFFF);
     return ids;
   };
-  const saved = meshShadowBudget.cap; const savedEnabled = meshShadowBudget.enabled; meshShadowBudget.enabled = true;
-  meshShadowBudget.cap = 3;
-  ok('distance cut: props beyond meshLod0M dropped', run([2, 10, 40, 90]).join() === '0,1');
-  ok('cap keeps the 3 nearest, nearest first', run([30, 5, 20, 1, 12].map((x) => x - 0)).join() === '3,1,4', run([30, 5, 20, 1, 12]).join());
-  ok('tie order by object id', run([6, 6, 6, 6, 3]).join() === '4,0,1', run([6, 6, 6, 6, 3]).join());
-  ok('cap 0 drops every prop', (meshShadowBudget.cap = 0, run([1, 2]).length === 0));
-  meshShadowBudget.cap = 3;
-  ok('no eye: old behaviour (all, no cut, no cap)', run([2, 10, 40, 90], { eye: undefined }).length === 4);
-  ok('deterministic across rebuilds', run([30, 5, 20, 1, 12]).join() === run([30, 5, 20, 1, 12]).join());
+  const on = { meshCastM: 25, meshCastCap: 64 }; // budget on (default is off), cap = safety only
+  ok('distance cut: props beyond the cut dropped', run([2, 10, 40, 90], on).join() === '0,1');
+  ok('every caster inside the cut is kept (30 props, none dropped), nearest first', (() => { const xs = []; for (let i = 0; i < 30; i++) xs.push(1 + i * 0.8); return run(xs, on).length === 30; })());
+  ok('near props never dropped by the order of placement', run([30, 5, 20, 1, 12], on).join() === '3,1,4,2', run([30, 5, 20, 1, 12], on).join());
+  ok('tie order by object id', run([6, 6, 6, 6, 3], on).join() === '4,0,1,2,3', run([6, 6, 6, 6, 3], on).join());
+  ok('safety cap bites only beyond meshCastCap (3 nearest, ties by id)', run([6, 6, 6, 6, 3], { ...on, meshCastCap: 3 }).join() === '4,0,1');
+  ok('cap 0 drops every prop', run([1, 2], { ...on, meshCastCap: 0 }).length === 0);
+  ok('budget off by default: no cut, whole box', run([2, 10, 40, 90]).length === 4 && run([2, 10, 40, 90], { meshCastM: 0 }).length === 4);
+  ok('no eye: old behaviour (all, no cut, no cap)', run([2, 10, 40, 90], { ...on, eye: undefined }).length === 4);
+  ok('deterministic across rebuilds', run([30, 5, 20, 1, 12], on).join() === run([30, 5, 20, 1, 12], on).join());
   // protected kinds: voxel structures, terrain and cloth are not budgeted (feed is untouched) - structures list stays
   stub.structures.length = 0;
   const w2 = { structures: [struct(0, 0, 0), struct(1, 60, 0)], structVersion: 1, terrain: null };
   const sl2 = createShadowList(), sm2 = createSunShadowMatrix();
   shadowSunMatrix(sunDir, new Float64Array(3), { ...OPTS, boxM: 400 }, { min: -1, max: 10 }, sm2);
-  meshShadowBudget.cap = 0;
-  ok('voxel structures never budgeted (cap 0, 60 m away still cast)', buildShadowList(sl2, null, w2, sm2.planes, { centre: { x: 0, y: 0, z: 0 }, eye, meshLod0M: 25, cache: new LevelMeshCache() }) === 2);
-  meshShadowBudget.cap = saved; meshShadowBudget.enabled = savedEnabled;
+  ok('voxel structures never budgeted (cap 0, 60 m away still cast)', buildShadowList(sl2, null, w2, sm2.planes, { centre: { x: 0, y: 0, z: 0 }, eye, meshLod0M: 25, meshCastM: 25, meshCastCap: 0, cache: new LevelMeshCache() }) === 2);
+  // options resolver
+  const r = (u) => resolveSunShadowOptions(u, 'mesh');
+  ok('options: defaults meshCastM 0 / cap 64', r(null).meshCastM === 0 && r(null).meshCastCap === 64);
+  ok('options: clamp (neg/NaN -> off, cap 999 -> 64, cap -3 -> 0, cut 1e9 -> 2000)', r({ meshCastM: -5 }).meshCastM === 0 && r({ meshCastM: NaN }).meshCastM === 0 && r({ meshCastCap: 999 }).meshCastCap === 64 && r({ meshCastCap: -3 }).meshCastCap === 0 && r({ meshCastM: 1e9 }).meshCastM === 2000);
 }
 
 // ---- SHADOW-ROT (owner bug 2026-10-07): turning the camera at a fixed eye never changes the placed-mesh casters ----

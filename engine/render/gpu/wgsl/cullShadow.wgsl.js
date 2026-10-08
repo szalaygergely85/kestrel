@@ -4,7 +4,7 @@
 //      1 = LOD1 band, 2 = none; initial 0 like `g.shadowBand`): band 2 -> no shadow.
 //   2. sun-box planes: world AABB t +- R against the 6 `shadowSunMatrix().planes` (same aabbOutside as cull.wgsl.js).
 //   3. compaction by band into dst0 (band 0) / dst1 (band 1) with atomicAdd on the batch's indirect-args slot (word +1 = instanceCount).
-// Band 2 never mutates anything but `band[i]`. The mesh shadow budget (meshShadowBudget, 25 m cut / cap) is not part of this kernel: it only
+// Band 2 never mutates anything but `band[i]`. The mesh shadow budget (shadows.meshCastM / meshCastCap, opt-in) is not part of this kernel: it only
 // applies to placed kind-9 props (MeshGroupSet), never to instanced groups, and is off by default. Order of the drawn rows is not stable (atomics).
 // Bindings: @group(0) 0 src (read), 1 band (rw, u32 per instance), 2 dst0, 3 dst1, 4 args (rw atomic); @group(1) @binding(0) CullShadowU. Workgroup 64.
 import { defineUniformBlock } from './uniformBlock.js';

@@ -279,7 +279,7 @@ test('mask downsample: hand-checked 2x2 -> 1x1 box average, rounded', () => {
 });
 
 await testAsync('CommonTree_1 dry-run: 2 ranges (bark opaque by the auto rule, leaves masked), WARN, mask file named', async () => {
-  const r = await runCli([QGLTF, 'quaternius/CommonTree_1', '--dry-run']);
+  const r = await runCli([QGLTF, 'quaternius/CommonTree_1', '--dry-run', '--masks', 'content/masks']);
   assert.strictEqual(r.report.ranges.length, 2);
   assert.strictEqual(r.report.ranges[0].mask, undefined);
   assert.strictEqual(r.report.ranges[0].count, 4345);
@@ -309,11 +309,17 @@ await testAsync('CommonTree_1: .mesh.json + .mask.json written, re-run byte-iden
     const none = await runCli([QGLTF, 'quaternius/CommonTree_1', '--out', path.join(dir, 'none.json'), '--masks', 'none']);
     assert.strictEqual(none.report.ranges.length, 2);
     assert.ok(!JSON.parse(fs.readFileSync(path.join(dir, 'none.json'), 'utf8')).uvMask, '--masks none imports as before (no uvMask)');
-    const low = await runCli([QGLTF, 'quaternius/CommonTree_1', '--dry-run', '--mask-res', '64']);
+    const low = await runCli([QGLTF, 'quaternius/CommonTree_1', '--dry-run', '--masks', 'content/masks', '--mask-res', '64']);
     assert.ok(low.report.maskFiles.length === 1);
-    const forced = await runCli([QGLTF, 'quaternius/CommonTree_1', '--dry-run', '--opaque', 'Leaves_NormalTree']);
+    const forced = await runCli([QGLTF, 'quaternius/CommonTree_1', '--dry-run', '--masks', 'content/masks', '--opaque', 'Leaves_NormalTree']);
     assert.ok(forced.report.ranges.every((r) => !r.mask), '--opaque forces the leaf material opaque');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+await testAsync('ALPHA-01b ARCH CHANGES: masks are opt-in - no --masks = old output (no uvMask, no mask files, no mask warnings)', async () => {
+  const r = await runCli([QGLTF, 'quaternius/CommonTree_1', '--dry-run']);
+  assert.ok(r.report.ranges.every((x) => !x.mask), 'no masked range by default');
+  assert.strictEqual(r.report.maskFiles.length, 0);
 });
 
 await testAsync('Ruins import unchanged by ALPHA-01a: no uvMask/mask, render data equals the committed content mesh', async () => {

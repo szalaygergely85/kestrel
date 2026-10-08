@@ -201,7 +201,7 @@ export class WgShadowPass {
     if (vp && vp.shadowView) { vp.projectShadow(); src.voxelPool = vp.shadowView; } else src.voxelPool = null;
     src.instances = p._instances || null;
     this.gpuN = 0;
-    src.eye.x = cam.x; src.eye.y = cam.y; src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM;
+    src.eye.x = cam.x; src.eye.y = cam.y; src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM; src.meshCastM = so.meshCastM; src.meshCastCap = so.meshCastCap;
     src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null;
     src.matIdFor = p._table ? p._table.idFor : undefined;
     src.meshCache = raster.meshCache; src.meshIdFor = raster.strictMatIdFor || undefined;

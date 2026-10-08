@@ -11,18 +11,18 @@
 // cast) and RE-06 instanced groups (`src.instances`) are added with their FULL
 // instance buffer `g.ib` (not the camera-compacted `drawIb`): units in the sun
 // outside the view still shadow what is on screen; the sun-plane cull is per group.
-import { DrawList, addStructures, addMeshStructures, pushClothItem, DRAW_TERRAIN, DRAW_FLAG_ONE_PART, MAX_DRAW_ITEMS } from './DrawList.js';
+import { DrawList, addStructures, addMeshStructures, pushClothItem, DRAW_TERRAIN, DRAW_FLAG_ONE_PART, MAX_DRAW_ITEMS, MAX_MESH_DRAWS } from './DrawList.js';
 import { addVoxelInstances } from './voxelMesh.js';
 import { fillShadowBands, groupRadius } from './instances.js';
 
 /**
- * MESH-SHADOW-02 (37.19 option 1): placed kind-9 mesh props only (towers, terrain, cloth, voxel props, instanced groups are never
- * budgeted). Cut-off = `src.meshLod0M` from the eye; `cap` = max props kept (nearest first, ties by object id). `cap` is a
- * mutable tunable (probes/sweeps); both the GL pass and the JS twin read this one list, so parity is unaffected.
+ * MESH-SHADOW-02 (37.19 option 1, reworked 38.8a item 25a): budget for placed kind-9 mesh props only (towers, terrain, cloth,
+ * voxel props, instanced groups are never budgeted). Tunables live in the shadow options (`src.meshCastM`, `src.meshCastCap`,
+ * resolved by `resolveSunShadowOptions`): `meshCastM` 0 (default) = budget OFF = whole sun box, nearest-MAX_MESH_DRAWS pick;
+ * > 0 = props farther than that eye distance are dropped, every prop inside the cut is kept (near props are never dropped);
+ * `meshCastCap` (default MAX_MESH_DRAWS) is only a safety cap. Both the GL pass and the JS twin read this one list.
  */
-export const MESH_SHADOW_CAP = 4;
-export const meshShadowBudget = { enabled: false, cap: MESH_SHADOW_CAP, cutM: /** @type {number|null} */ (null) }; // enabled=false (owner 2026-10-07: props must keep shadows out to the sun box); the Low/Mid/High shadow setting (GFX-03) switches the budget on // cutM null = src.meshLod0M (probe override only)
-const _budget = { eye: /** @type {any} */ (null), cutM: 25, cap: MESH_SHADOW_CAP };
+const _budget = { eye: /** @type {any} */ (null), cutM: 25, cap: MAX_MESH_DRAWS };
 
 /** Builder output capacity before the overflow trim (the trim keeps `MAX_DRAW_ITEMS`). */
 export const SHADOW_BUILD_CAPACITY = 1024;
@@ -43,6 +43,8 @@ export function createShadowList(capacity = SHADOW_BUILD_CAPACITY) {
  * @property {import('./instances.js').InstanceGroups|null} [instances] - RE-06 groups (ME-15c): parts from the camera pass
  * @property {{x:number,y:number}} [eye] - ME-15f: camera eye xy; also the ranking point of the placed-mesh nearest-64 pick (SHADOW-ROT); with it instanced groups are distance-banded (LOD0 <= meshLod0M, LOD1 <= instCastM, none beyond) into engine-owned `g.shadowIb`; without it the full `g.ib` at LOD0 (old behaviour)
  * @property {number} [meshLod0M] - ME-15f (default 25)
+ * @property {number} [meshCastM] - MESH-SHADOW-02: placed-mesh eye cut in m; 0/undefined = budget off (default)
+ * @property {number} [meshCastCap] - MESH-SHADOW-02: safety cap of kept props when the cut is on (default MAX_MESH_DRAWS)
  * @property {number} [instCastM] - ME-15f (default 48)
  * @property {{count:number, cloths:any[], meshes:any[], mats:(string|null)[], castShadow?:ArrayLike<number>}|null} [cloths] - CLOTH-1b1 (33.5): the cloth system; every cloth with `castShadow` (drawn or not) is pushed, the sun-plane cull decides
  * @property {import('./DrawList.js').MeshDrawCache} [meshCache] - ME-14c2: draw copies of placed glTF meshes (casters need `meshIdFor` too)
@@ -66,7 +68,7 @@ export function buildShadowList(list, cameraList, world, planes, src) {
   addStructures(list, world, c, src.cache, src.fogFarM || 2000);
   if (src.meshCache && src.meshIdFor) {
     let b = null;
-    if (src.eye && meshShadowBudget.enabled) { b = _budget; b.eye = src.eye; b.cutM = meshShadowBudget.cutM || src.meshLod0M || 25; b.cap = meshShadowBudget.cap; } // MESH-SHADOW-02; no eye = old behaviour
+    if (src.eye && src.meshCastM && src.meshCastM > 0) { b = _budget; b.eye = src.eye; b.cutM = src.meshCastM; b.cap = src.meshCastCap == null ? MAX_MESH_DRAWS : src.meshCastCap; } // MESH-SHADOW-02; no eye = old behaviour
     // SHADOW-ROT fix: the nearest-MAX_MESH_DRAWS (64) pick is ranked from the EYE (as the camera feed), never from the
     // yaw-dependent box centre (aheadM in front): ranking from the centre swapped out the props around the player when the
     // camera turned (world_m1 has > 64 placements in range). Same set as the camera draws; the sun-plane cull decides.

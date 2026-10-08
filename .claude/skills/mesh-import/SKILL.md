@@ -15,6 +15,8 @@ Sources: `design/meshes/quaternius/glTF/` (Kenney DAE: `design/meshes/kenney/dae
 5. Look: headless capture at `game/index.html?pose=roadSouth` before (clean worktree `../game_project_test`) vs after; captures go to `docs/test-reports/captures/` (git-ignored). Owner look for anything visible.
 6. Bench stays green: `node tools/bench-mesh-collide.mjs` (<= 1.5 us/call).
 
+Alpha masks are OPT-IN until ALPHA-01c is wired: `gltf-import.mjs ... --masks content/masks` writes masked ranges + `.mask.json`; without `--masks` the import ignores alpha (old output).
+
 Per-triangle palette keys from the colour texture (MESH-UVMAP-01): `node tools/reimport-quaternius.mjs --uvmap [names]` or `gltf-import.mjs --uvmap auto --budget`; table `design/meshes/quaternius/palette-map.json` (texture -> keys + reference colours; keys must exist in design/palette.js).
 
 Kenney Collada (.dae): `node tools/dae-import.mjs design/meshes/kenney/dae/<name>.dae kenney/<name> --budget` (colour -> key table `design/meshes/kenney/palette-map.json`, importer `scale`; trees budget 600 tris, trunk prism collider; test `tools/dae-import.test.mjs`). Trunk-aware collision lives in the shared plan: json `colliderParts` (material keys, set by dae-import for trees) limits the prism to those ranges in `withCollision`/`planMeshCollision`, so gen-mesh-colliders keeps it.
