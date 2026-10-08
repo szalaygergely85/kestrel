@@ -177,5 +177,26 @@
     }
   };
 
+  // ---- S8-A-05 (appended, v1.41): the third state for the S8-C-09 view. normal = slot.border / hands.frame,
+  // focus = slot.selected (unchanged). disabled = a slot or hand that cannot take input right now (slots past the pack
+  // capacity, a hand locked while a spell charges / a cutscene runs). Preview: design/preview/ui-menu-settings.html.
+  A.uiStyle.inventory.slot.disabled = {
+    corner: '.', h: '.', v: ':', fg: [74, 58, 34], innerBg: [14, 12, 10],
+    glyph: 'x', x: 4, y: 2, glyphFg: [62, 54, 44], focusable: false,
+    rule: 'dotted rope border (ropeDark x 0.8), darker interior, one quiet x in the middle; the cursor skips it; drawn BEFORE ' +
+          'normal slots so a shared border with a live slot shows the live border'
+  };
+  A.uiStyle.inventory.hands.disabled = {
+    frame: { corner: '+', h: '-', v: ':', fg: [74, 58, 34], cornerFg: [94, 74, 44] },
+    label: { fg: RGB.uiDim }, tag: { text: '(busy)', fg: RGB.uiDim, gap: 1, note: 'after the [LMB] / [RMB] button text' },
+    rule: 'a hand locked for now (charging, cutscene): bronze frame drops to dotted rope, item icon still drawn, Q/E flash refuse'
+  };
+  A.uiStyle.inventory.states = {
+    slot: { normal: 'slot.border', focus: 'slot.selected', disabled: 'slot.disabled' },
+    hand: { normal: 'hands.frame', focus: 'slot.selected', disabled: 'hands.disabled' },
+    detailLine: 'details.name / kind / status / desc (unchanged); a disabled slot shows details.emptySlot with text "Locked"',
+    lockedText: 'Locked'
+  };
+
   if (typeof module === 'object' && module && module.exports) module.exports = A.uiStyle.inventory;
 })(typeof window !== 'undefined' ? window : globalThis);

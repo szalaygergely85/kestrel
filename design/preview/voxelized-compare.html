@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - voxelized Quaternius meshes (experiment)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 16px 30px; }
+  h1 { font-size:18px; margin:12px 0 2px; color:#ffd24a; }
+  .note { color:#8a8778; font-size:12px; max-width:1200px; }
+  .row { display:flex; gap:8px; margin:8px 0; }
+  .cell { flex:1 1 0; min-width:0; }
+  canvas { width:100%; aspect-ratio:4/3; display:block; background:#12141c; border:1px solid #22252e; }
+  .cap { font:11px Consolas, monospace; color:#b8b29c; margin-top:2px; }
+</style>
+</head>
+<body>
+<h1>Voxelized Quaternius meshes: original vs 24 / 48 / 96 voxels (longest side)</h1>
+<div class="note">Experiment (tools/voxelize-mesh.mjs, design/models/_preview_voxelized.js). Surface voxels only, colour = nearest palette key from the glTF texture (palette base colour, lit with one sun + ambient, plain cubes, no ASCII pass). Serve over http from the repo root.</div>
+<div id="rows"></div>
+<script src="../palette.js"></script>
+<script src="../models/_preview_voxelized.js"></script>
+<script>
+(function () {
+  var NAMES = ['DeadTree_1', 'Rock_Medium_1'], RES = [24, 48, 96];
+  var GL_DIR = '../meshes/quaternius/glTF/';
+  var VS = 'attribute vec3 p;attribute vec3 n;attribute vec2 t;attribute vec3 c;uniform mat4 m;uniform vec3 r;varying vec3 vn;varying vec2 vt;varying vec3 vc;' +
+    'void main(){gl_Position=m*vec4(p,1.0);vn=n;vt=t;vc=c;}';
+  var FS = 'precision mediump float;varying vec3 vn;varying vec2 vt;varying vec3 vc;uniform sampler2D tx;uniform float useTex;uniform vec3 sun;' +
+    'void main(){vec3 base=useTex>0.5?texture2D(tx,vt).rgb:vc;float d=max(dot(normalize(vn),normalize(sun)),0.0);' +
+    'vec3 col=base*(0.32+0.85*d);gl_FragColor=vec4(col,1.0);}';
+  var cells = [];
+
+  function mkProg(gl) {
+    function sh(type, src) { var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+    var pr = gl.createProgram(); gl.attachShader(pr, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(pr);
+    if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr));
+    return pr;
+  }
+  // interleaved verts: pos3 nrm3 uv2 col3 = 11 floats
+  function addCell(parent, caption, build) {
+    var wrap = document.createElement('div'); wrap.className = 'cell';
+    var cv = document.createElement('canvas'); cv.width = 480; cv.height = 360; wrap.appendChild(cv);
+    var cp = document.createElement('div'); cp.className = 'cap'; cp.textContent = caption; wrap.appendChild(cp);
+    parent.appendChild(wrap);
+    var gl = cv.getContext('webgl', { antialias: true, preserveDrawingBuffer: true });
+    var pr = mkProg(gl), c = { gl: gl, pr: pr, buf: gl.createBuffer(), idxBuf: null, count: 0, tex: null, useTex: 0, radius: 1, cy: 0, cap: cp, base: caption };
+    cells.push(c); return c;
+  }
+  function upload(c, verts, idx, radius, cy) {
+    var gl = c.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, c.buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+    c.idxBuf = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, c.idxBuf);
+    var big = verts.length / 11 > 65535; c.u32 = big && gl.getExtension('OES_element_index_uint');
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, c.u32 ? new Uint32Array(idx) : new Uint16Array(idx), gl.STATIC_DRAW);
+    c.count = idx.length; c.radius = radius; c.cy = cy;
+  }
+  function mat(a, cy, r) { // y-rotation by a, orthographic-ish perspective, looking at centre height cy, fit radius r
+    var s = Math.sin(a), co = Math.cos(a), k = 1 / (r * 1.15), tilt = 0.28, ct = Math.cos(tilt), st = Math.sin(tilt);
+    // world -> rotate y -> translate -> tilt x -> scale
+    function f(x, y, z) { var X = co * x + s * z, Z = -s * x + co * z, Y = y - cy; return [X * k * 0.75, (Y * ct - Z * st) * k, (Y * st + Z * ct) * k * 0.5]; }
+    var a0 = f(1, 0, 0), a1 = f(0, 1, 0), a2 = f(0, 0, 1), o = f(0, 0, 0);
+    var u = [a0[0] - o[0], a0[1] - o[1], a0[2] - o[2]], v = [a1[0] - o[0], a1[1] - o[1], a1[2] - o[2]], w = [a2[0] - o[0], a2[1] - o[1], a2[2] - o[2]];
+    return new Float32Array([u[0], u[1], u[2], 0, v[0], v[1], v[2], 0, w[0], w[1], w[2], 0, o[0], o[1], o[2], 1]);
+  }
+  function draw(c, ang) {
+    var gl = c.gl; if (!c.count) return;
+    gl.viewport(0, 0, 480, 360); gl.clearColor(0.07, 0.08, 0.11, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); gl.enable(gl.DEPTH_TEST);
+    gl.useProgram(c.pr); gl.bindBuffer(gl.ARRAY_BUFFER, c.buf); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, c.idxBuf);
+    var S = 44, loc = function (n) { return gl.getAttribLocation(c.pr, n); };
+    [['p', 3, 0], ['n', 3, 12], ['t', 2, 24], ['c', 3, 32]].forEach(function (a) { var l = loc(a[0]); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, a[1], gl.FLOAT, false, S, a[2]); });
+    gl.uniformMatrix4fv(gl.getUniformLocation(c.pr, 'm'), false, mat(ang, c.cy, c.radius));
+    gl.uniform1f(gl.getUniformLocation(c.pr, 'useTex'), c.useTex); gl.uniform3f(gl.getUniformLocation(c.pr, 'sun'), -0.5, 0.8, 0.6);
+    if (c.tex) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, c.tex); gl.uniform1i(gl.getUniformLocation(c.pr, 'tx'), 0); }
+    gl.drawElements(gl.TRIANGLES, c.count, c.u32 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0);
+  }
+
+  // ---- original mesh: parse glTF + bin + texture in the browser
+  async function loadOriginal(name, c) {
+    var g = await (await fetch(GL_DIR + name + '.gltf')).json(), bin = await (await fetch(GL_DIR + g.buffers[0].uri)).arrayBuffer();
+    var prim = g.meshes[0].primitives[0];
+    function acc(i) { var a = g.accessors[i], bv = g.bufferViews[a.bufferView], n = { VEC2: 2, VEC3: 3, SCALAR: 1 }[a.type] || 4, off = (bv.byteOffset || 0) + (a.byteOffset || 0);
+      var T = { 5126: Float32Array, 5123: Uint16Array, 5125: Uint32Array }[a.componentType]; return new T(bin.slice(off, off + a.count * n * T.BYTES_PER_ELEMENT)); }
+    var pos = acc(prim.attributes.POSITION), nrm = acc(prim.attributes.NORMAL), uv = acc(prim.attributes.TEXCOORD_0), idx = acc(prim.indices);
+    var nv = pos.length / 3, verts = new Array(nv * 11), mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
+    for (var i = 0; i < nv; i++) { for (var a = 0; a < 3; a++) { mn[a] = Math.min(mn[a], pos[i * 3 + a]); mx[a] = Math.max(mx[a], pos[i * 3 + a]); } }
+    var cx = (mn[0] + mx[0]) / 2, cz = (mn[2] + mx[2]) / 2, H = mx[1] - mn[1];
+    for (i = 0; i < nv; i++) { var o = i * 11; verts[o] = pos[i * 3] - cx; verts[o + 1] = pos[i * 3 + 1] - mn[1]; verts[o + 2] = pos[i * 3 + 2] - cz; verts[o + 3] = nrm[i * 3]; verts[o + 4] = nrm[i * 3 + 1]; verts[o + 5] = nrm[i * 3 + 2]; verts[o + 6] = uv[i * 2]; verts[o + 7] = uv[i * 2 + 1]; verts[o + 8] = verts[o + 9] = verts[o + 10] = 1; }
+    var texImg = g.images[g.textures[g.materials[prim.material].pbrMetallicRoughness.baseColorTexture.index].source];
+    var im = new Image(); im.src = GL_DIR + texImg.uri; await im.decode();
+    var gl = c.gl; c.tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, c.tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, im);
+    var pot = (im.width & (im.width - 1)) === 0 && (im.height & (im.height - 1)) === 0;
+    if (pot) { gl.generateMipmap(gl.TEXTURE_2D); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); } else gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    c.useTex = 1; upload(c, verts, Array.prototype.slice.call(idx), H * 0.62, H / 2);
+    c.cap.textContent = c.base + ' - ' + (idx.length / 3) + ' tris';
+    return H;
+  }
+
+  // ---- voxel model: exposed faces only, scaled so every version of a model has the same height
+  function buildVoxels(def, c, H) {
+    var v = def.voxel, sx = v.size[0], sy = v.size[1], sz = v.size[2], L = v.layers, rgb = def.preview.rgb;
+    function solid(x, y, z) { return x >= 0 && y >= 0 && z >= 0 && x < sx && y < sy && z < sz && L[z][y][x] !== '.'; }
+    var verts = [], idx = [], cs = v.cellM, ox = v.anchor[0], oy = v.anchor[1], nq = 0;
+    var D = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+    // face corner offsets per direction (model space), CCW seen from outside
+    var Q = [[[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]], [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]], [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]],
+      [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]], [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]], [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]]];
+    for (var z = 0; z < sz; z++) for (var y = 0; y < sy; y++) for (var x = 0; x < sx; x++) {
+      var ch = L[z][y][x]; if (ch === '.') continue; var col = rgb[ch];
+      for (var d = 0; d < 6; d++) {
+        if (solid(x + D[d][0], y + D[d][1], z + D[d][2])) continue;
+        var b = verts.length / 11;
+        for (var q = 0; q < 4; q++) { var o = Q[d][q];
+          // model (x,y,z Z-up) -> gl (x, z, y); normal likewise
+          verts.push((x + o[0] - ox) * cs, (z + o[2]) * cs, (y + o[1] - oy) * cs, D[d][0], D[d][2], D[d][1], 0, 0, col[0] / 255, col[1] / 255, col[2] / 255); }
+        idx.push(b, b + 1, b + 2, b, b + 2, b + 3); nq++;
+      }
+    }
+    upload(c, verts, idx, H * 0.62, H / 2);
+    c.cap.textContent = c.base + ' - ' + def.preview.voxels + ' voxels, ' + sx + 'x' + sy + 'x' + sz + ', ' + nq + ' quads';
+  }
+
+  async function init() {
+    var rowsEl = document.getElementById('rows'), pending = [];
+    var plan = [];
+    NAMES.forEach(function (name) {
+      var row = document.createElement('div'); row.className = 'row'; rowsEl.appendChild(row);
+      var co = addCell(row, name + ' original'), vs = RES.map(function (r) { return [r, addCell(row, name + ' ' + r + ' vox')]; });
+      plan.push([name, co, vs]);
+    });
+    for (var i = 0; i < plan.length; i++) {
+      var H = await loadOriginal(plan[i][0], plan[i][1]);
+      plan[i][2].forEach(function (e) { buildVoxels(ASSETS.voxelModels['vx_' + plan[i][0] + '_' + e[0]], e[1], H); });
+      if (window.__ang === undefined) window.__ang = 0;
+    }
+    var t0 = performance.now(), fixed = /[?&]t=([\d.]+)/.exec(location.search);
+    function frame() { var a = fixed ? +fixed[1] : (performance.now() - t0) / 3000; cells.forEach(function (c) { draw(c, a); }); if (!fixed) requestAnimationFrame(frame); }
+    frame(); document.title += ' '; window.__ready = true;
+  }
+  init().catch(function (e) { document.body.insertAdjacentHTML('beforeend', '<pre style="color:#f55">' + e.stack + '</pre>'); window.__err = String(e); });
+})();
+</script>
+</body>
+</html>
