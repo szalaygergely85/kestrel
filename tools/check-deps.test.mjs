@@ -234,6 +234,27 @@ ok('rule 17: comment mention NOT flagged', !/comment17\.js/.test(output), output
 ok('rule 17: game/ GPUShaderStage flagged', /game\/js\/bad17c\.js:1:.*GPUShaderStage/.test(output), output);
 ok('rule 17: game/ test file navigator.gpu flagged', /bad17d\.test\.js:1:.*navigator\.gpu/.test(output), output);
 
+// Installing a tool's dependencies must not change the project's findings or scan count.
+const installed = fs.mkdtempSync(path.join(os.tmpdir(), 'check-deps-installed-'));
+try {
+  writeFile(installed, 'engine/index.js', 'export const ready = true;\n');
+  writeFile(installed, 'tools/desktop/owned.mjs', 'export const ready = true;\n');
+  const clean = execFileSync(process.execPath, [CHECKER], { cwd:installed, encoding:'utf8' });
+  for (const dir of ['engine/node_modules/pkg', 'game/js/node_modules/pkg',
+    'tools/desktop/node_modules/@vendor/pkg', 'design/node_modules/pkg']) {
+    writeFile(installed, `${dir}/third-party.js`, "import fs from 'node:fs'; export const foreign = navigator.gpu;\n");
+  }
+  const withDependencies = execFileSync(process.execPath, [CHECKER], { cwd:installed, encoding:'utf8' });
+  ok('nested/scoped node_modules ignored with identical scan count and findings', withDependencies === clean, withDependencies);
+  writeFile(installed, 'tools/desktop/node_modules_extra/owned.mjs', 'export const ready = true;\n');
+  const sibling = execFileSync(process.execPath, [CHECKER], { cwd:installed, encoding:'utf8' });
+  ok('similarly named project directories still scanned', sibling !== clean && /check-deps OK/.test(sibling), sibling);
+} finally {
+  const relative = path.relative(fs.realpathSync(os.tmpdir()), fs.realpathSync(installed));
+  if (relative.startsWith('..') || path.isAbsolute(relative) || !path.basename(installed).startsWith('check-deps-installed-')) throw new Error('unsafe installed fixture cleanup');
+  fs.rmSync(installed, { recursive:true, force:true });
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 
 console.log(`\n${pass} passed, ${fail} failed.`);
