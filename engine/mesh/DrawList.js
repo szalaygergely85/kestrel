@@ -21,7 +21,7 @@ import { cutoffByte } from '../render/MaskAtlas.js';
 import { localDirToWorld } from '../core/transform.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
 import { groupRadius } from './instances.js';
-import { setLazyView, pumpLazyMeshes, requestMesh, LOAD_MARGIN_M } from './lazyMesh.js';
+import { setLazyView, pumpLazyMeshes, requestMesh, touchMesh, lazyHoldRadius, LOAD_MARGIN_M } from './lazyMesh.js';
 import { createClothMesh, updateClothMesh } from './clothMesh.js';
 
 /** `DrawItem.type` values. */
@@ -364,7 +364,8 @@ export class MeshDrawCache {
   get(mesh, idFor, atlas) {
     if (mesh.lazy) throw new Error(`MeshDrawCache.get: mesh "${mesh.id}" payload is not loaded (MESH-LOAD-01: feeds must skip shells)`);
     const hit = this._map.get(mesh);
-    if (hit && hit.idFor === idFor && (!hit.atlas || (hit.atlas === atlas && hit.atlasVersion === atlas.version)) && !(hit.noAtlas && atlas)) return hit.copy;
+    const lo = /** @type {any} */ (mesh).lazyOrigin; if (lo) lo.caches.add(this); // S8-B2-03: an eviction drops this copy
+    if (hit && hit.copy.pos === mesh.pos && hit.idFor === idFor && (!hit.atlas || (hit.atlas === atlas && hit.atlasVersion === atlas.version)) && !(hit.noAtlas && atlas)) return hit.copy;
     const mats = mesh.mats || {};
     const copy = { ...mesh, flat: mesh.flat.slice(), matsResolved: false };
     resolveMats(copy, (name) => {
@@ -424,6 +425,7 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
     if (structs[i].kind !== 'mesh') continue;
     if (shadowOnly && structs[i].castShadow === false) continue; // MESH-SHADOW-01
     const d = bEye ? bboxDist(bEye, structs[i].bbox) : bboxDist(cam, structs[i].bbox);
+    if (!shadowOnly && structs[i].mesh.lazyOrigin && !structs[i].mesh.lazy && d <= lazyHoldRadius()) touchMesh(structs[i].mesh); // S8-B2-03: LRU keep-alive inside loadM + 60 m
     if (structs[i].mesh.lazy) { // MESH-LOAD-01: payload not loaded = draws nothing; ask for it when within draw distance + margin
       if (!shadowOnly && d <= fogFarM + LOAD_MARGIN_M) requestMesh(structs[i].mesh);
       continue;

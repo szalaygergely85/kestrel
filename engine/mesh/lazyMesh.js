@@ -17,17 +17,36 @@ export const BUDGET_MS = 4;
 export const MAX_INFLIGHT = 4;
 /** Extra metres beyond the draw distance (fogFarM) within which a shell is requested, so it is ready before it becomes visible. */
 export const LOAD_MARGIN_M = 20;
+/** S8-B2-03 LRU: a ready mesh is kept while some placement is within loadM + HOLD_MARGIN_M of the eye (hysteresis band, > 0 so a
+ * mesh at the load edge never thrashes) and is released when it was not touched for EVICT_AFTER_MS. */
+export const HOLD_MARGIN_M = 60;
+export const EVICT_AFTER_MS = 20000;
+/** The eviction sweep runs once per this many `pump()` calls (one per camera feed). */
+export const SWEEP_EVERY = 30;
 
 /** Bumped whenever ANY shell becomes real (MeshGroupSet rebuilds on a change). */
 let lazyVersion = 0;
 export function lazyMeshVersion() { return lazyVersion; }
 
-/** Stores with pending work (pumped by `pumpLazyMeshes`). */
+/** Stores with pending work or evictable ready meshes (pumped by `pumpLazyMeshes`). */
 const activeStores = new Set();
 /** Eye + load radius of the last camera feed (set by addMeshStructures); scatter groups use it for their distance test. */
 const view = { x: 0, y: 0, loadM: Infinity, known: false };
 export function setLazyView(x, y, fogFarM) { view.x = x; view.y = y; view.loadM = fogFarM + LOAD_MARGIN_M; view.known = true; }
 export function lazyLoadRadius() { return view.loadM; }
+/** Distance (m) from the eye within which a ready mesh counts as used (`touchMesh` callers). */
+export function lazyHoldRadius() { return view.loadM + HOLD_MARGIN_M; }
+
+/** S8-B2-03: GPU-side owners of per-mesh buffers (MeshBuffers) subscribe to be told when a mesh payload is released. @type {Set<(mesh: any) => void>} */
+const evictListeners = new Set();
+/** @param {(mesh: any) => void} fn @returns {() => void} unsubscribe */
+export function onMeshEvicted(fn) { evictListeners.add(fn); return () => { evictListeners.delete(fn); }; }
+
+/** Marks a ready lazy mesh as used this frame (no-op for eager meshes / shells). @param {any} mesh */
+export function touchMesh(mesh) {
+  const rec = mesh.lazyOrigin;
+  if (rec) rec.lastUsed = rec.store.clock;
+}
 
 /** @param {any} mesh @returns {boolean} true when the mesh has its vertex payload (always true for an eager mesh) */
 export function meshReady(mesh) { return !mesh.lazy; }
@@ -47,12 +66,13 @@ export function pumpLazyMeshes() { for (const s of activeStores) s.pump(); }
  * @param {any} mesh @param {{ib: {f32: Float32Array}, count: number}} g
  */
 export function requestMeshForGroup(mesh, g) {
-  const rec = mesh.lazy;
-  if (!rec || rec.promise) return;
+  const rec = mesh.lazy || mesh.lazyOrigin;
+  if (!rec || (mesh.lazy && rec.promise)) return;
+  const ready = !mesh.lazy;
   if (view.known) {
     if (rec.scanAt > 0) { rec.scanAt--; return; }
     rec.scanAt = 30;
-    const f = g.ib.f32, r2 = view.loadM * view.loadM;
+    const f = g.ib.f32, r2 = (ready ? lazyHoldRadius() : view.loadM) ** 2;
     let near = false;
     for (let i = 0; i < g.count && !near; i++) {
       const dx = f[i * 16 + 3] - view.x, dy = f[i * 16 + 7] - view.y;
@@ -60,7 +80,7 @@ export function requestMeshForGroup(mesh, g) {
     }
     if (!near) return;
   }
-  rec.store.request(mesh);
+  if (ready) rec.lastUsed = rec.store.clock; else rec.store.request(mesh);
 }
 
 /**
@@ -76,7 +96,8 @@ const STREAMS = ['pos', 'uv', 'uvMask', 'nrm', 'flat', 'aux', 'idx'];
 
 export class LazyMeshStore {
   /**
-   * @param {{fetchBytes: (url: string) => Promise<ArrayBuffer|Uint8Array>, now?: () => number, log?: ((msg: string) => void)|null, maxInflight?: number, maxDecodes?: number, budgetMs?: number}} o
+   * @param {{fetchBytes: (url: string) => Promise<ArrayBuffer|Uint8Array>, now?: () => number, log?: ((msg: string) => void)|null, maxInflight?: number, maxDecodes?: number, budgetMs?: number, evictAfterMs?: number}} o
+   *   `evictAfterMs` (default EVICT_AFTER_MS; 0 or Infinity = never): S8-B2-03 LRU release of untouched ready meshes
    */
   constructor(o) {
     this.fetchBytes = o.fetchBytes;
@@ -85,11 +106,16 @@ export class LazyMeshStore {
     this.maxInflight = o.maxInflight || MAX_INFLIGHT;
     this.maxDecodes = o.maxDecodes || MAX_DECODES_PER_FRAME;
     this.budgetMs = o.budgetMs || BUDGET_MS;
+    this.evictAfterMs = o.evictAfterMs === undefined ? EVICT_AFTER_MS : (o.evictAfterMs > 0 ? o.evictAfterMs : Infinity);
+    /** Time of the last `pump()` (ms); `touchMesh` stamps with it so a touch costs no clock read. */
+    this.clock = this.now();
+    this._sweepIn = SWEEP_EVERY;
+    this._ready = 0; // ready (evictable) meshes
     /** @type {Map<string, any>} id -> shell */ this.shells = new Map();
     /** @type {any[]} */ this.fetchQueue = [];
     /** @type {any[]} */ this.decodeQueue = [];
     this.inflight = 0;
-    this.stats = { registered: 0, requested: 0, fetched: 0, fetchedBytes: 0, decoded: 0, failed: 0, pumps: 0, maxDecodesPerPump: 0, maxPumpMs: 0 };
+    this.stats = { evicted: 0, registered: 0, requested: 0, fetched: 0, fetchedBytes: 0, decoded: 0, failed: 0, pumps: 0, maxDecodesPerPump: 0, maxPumpMs: 0 };
     this._logged = 0;
   }
 
@@ -112,6 +138,10 @@ export class LazyMeshStore {
       ...(meta.colliderB64 ? { collider: base64ToF32(meta.colliderB64) } : {}),
       lazy: rec,
     };
+    Object.defineProperty(shell, 'lazyOrigin', { value: rec, enumerable: false, configurable: true, writable: true });
+    rec.caches = new Set(); // draw caches (MeshDrawCache) holding a copy of this mesh's arrays
+    rec.lastUsed = this.clock;
+    rec.pinned = false;
     this.shells.set(meta.id, shell);
     this.stats.registered++;
     return shell;
@@ -136,7 +166,7 @@ export class LazyMeshStore {
   ensure(mesh) {
     const rec = mesh.lazy;
     if (!rec) return Promise.resolve(mesh);
-    rec.force = true;
+    rec.force = true; rec.pinned = true; // editor path: never evicted
     const p = this.request(mesh);
     if (rec.state === 'fetched') this._decode(rec, mesh);
     return p;
@@ -179,7 +209,9 @@ export class LazyMeshStore {
     }
     rec.bytes = null;
     rec.state = 'ready';
+    rec.lastUsed = this.clock;
     delete mesh.lazy;
+    this._ready++;
     lazyVersion++;
     this.stats.decoded++;
     rec.resolve(mesh);
@@ -188,8 +220,9 @@ export class LazyMeshStore {
 
   /** Decodes queued payloads: at most `maxDecodes` meshes or `budgetMs` per call (the first one always runs). */
   pump() {
+    const t0 = this.clock = this.now();
+    if (--this._sweepIn <= 0) { this._sweepIn = SWEEP_EVERY; this.sweep(); }
     if (!this.decodeQueue.length) return;
-    const t0 = this.now();
     let n = 0;
     while (this.decodeQueue.length && n < this.maxDecodes) {
       const rec = this.decodeQueue.shift();
@@ -202,10 +235,43 @@ export class LazyMeshStore {
     if (ms > this.stats.maxPumpMs) this.stats.maxPumpMs = ms;
   }
 
+  /**
+   * S8-B2-03 LRU: releases every ready, unpinned mesh not touched for `evictAfterMs` (called every SWEEP_EVERY pumps).
+   * The mesh object stays the same (placements, colliders and groups keep their reference); it goes back to a shell.
+   * @returns {number} meshes released
+   */
+  sweep() {
+    if (!this._ready || this.evictAfterMs === Infinity) return 0;
+    let n = 0;
+    for (const mesh of this.shells.values()) {
+      const rec = mesh.lazyOrigin;
+      if (mesh.lazy || rec.pinned || rec.state !== 'ready') continue;
+      if (this.clock - rec.lastUsed >= this.evictAfterMs) { this.evict(mesh); n++; }
+    }
+    if (n) this._idle();
+    return n;
+  }
+
+  /** Back to a shell: payload streams dropped (CPU), draw copies and GPU buffers released through the listeners. @param {any} mesh */
+  evict(mesh) {
+    const rec = mesh.lazyOrigin;
+    if (!rec || mesh.lazy || rec.state !== 'ready') return;
+    mesh.pos = EMPTY_F32; mesh.uv = EMPTY_F32; mesh.nrm = EMPTY_U32; mesh.flat = EMPTY_U32; mesh.aux = EMPTY_F32; mesh.idx = null;
+    delete mesh.uvMask;
+    for (const c of rec.caches) c._map.delete(mesh);
+    rec.caches.clear();
+    rec.state = 'idle'; rec.promise = null; rec.resolve = null; rec.reject = null; rec.force = false; rec.scanAt = 0;
+    mesh.lazy = rec;
+    this._ready--;
+    lazyVersion++;
+    this.stats.evicted++;
+    for (const fn of evictListeners) fn(mesh);
+  }
+
   /** Everything settled: leave the pump list and log the running totals once. */
   _idle() {
     if (this.inflight || this.fetchQueue.length || this.decodeQueue.length) return;
-    activeStores.delete(this);
+    if (!(this._ready > 0 && this.evictAfterMs !== Infinity)) activeStores.delete(this); // evictable meshes keep the store in the sweep list
     if (this.log && this.stats.decoded !== this._logged) {
       this._logged = this.stats.decoded;
       this.log(`[lazymesh] ${this.stats.decoded}/${this.stats.registered} lazy meshes loaded (${Math.round(this.stats.fetchedBytes / 1024)} KB fetched)`);
