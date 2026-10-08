@@ -1475,7 +1475,9 @@ function runGame(mode, cinematic = null) {
       if (questUiActive && !ending) {
         if (saveRelay && (!isCaptureOrBench || params.get('save') === '1') && !wakeOut.inputLocked) saveRelay.quest.draw(ui); // US-096w: current objective (placeholder text) top-left
         drawHints(ui, assets.uiStyle, fadeLut);
-        drawEyelid(rt, assets.uiStyle, wakeOut.blinkOpen); // 17.4: stays in the scene grid (an eyelid over the 3D view, not UI text)
+        // 17.4: an eyelid over the 3D view, not UI text. BUG-WEBGPU-EYELID-01: once the WebGPU frame is complete its presenter shows the sprite-pass
+        // output, so CPU scene-cell writes never appear -> draw the lid on the UI layer there (an opaque full-row overlay); else in the scene grid.
+        drawEyelid(wgActive && wgPipeline.frameComplete ? ui : rt, assets.uiStyle, wakeOut.blinkOpen);
         drawTitleCard(ui, fb.timeSec * 1000, wakeOut.titleA, wakeOut.titleState, fadeLut);
         const mapPanel = getMapPanel();
         if (mapPanel) drawUiPanel(ui, mapPanel, fb.timeSec * 1000, fadeLut);

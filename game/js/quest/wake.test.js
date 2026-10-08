@@ -1,6 +1,7 @@
 // game/js/quest/wake.test.js (US-015). Headless Node ESM, no framework.
 // Run: node game/js/quest/wake.test.js
-import { wakeFrame, applyWakeOnLoad } from './wake.js';
+import { wakeFrame, applyWakeOnLoad, drawEyelid } from './wake.js';
+import { createUiLayer } from '../../../engine/index.js';
 import { makeOk } from '../../../engine/test/assert.js';
 
 let pass = 0, fail = 0;
@@ -62,6 +63,18 @@ ok('titleDoneAtSec = wakeDoneAtSec + 1+3+1', near(out.titleDoneAtSec, 2.5 + 5.0)
   const o2 = {}, b2 = { eyeH: 0.3 };
   ok('fresh start (wakeT 0) not restored', applyWakeOnLoad({ 'quest.wakeT': 0 }, cfg, o2, b2) === false && o2.inputLocked === true && b2.eyeH === 0.3);
   ok('no wakeT (other world) not restored', applyWakeOnLoad({}, cfg, {}, { eyeH: 1.6 }) === false);
+}
+
+// BUG-WEBGPU-EYELID-01: the lid is drawn on the UI layer (opaque cells, mask 255) so the WebGPU presenter shows it
+{
+  const ui = createUiLayer({ cols: 160 }), blink = { edgeGlyph: '-', edgeColor: '#ff0000', edgeRows: 1 };
+  ui.clear();
+  drawEyelid(ui, { blink }, 0.25);
+  const rowCells = (y) => { let n = 0; for (let x = 0; x < ui.cols; x++) if (ui.cells.bg[(y * ui.cols + x) * 4 + 3] === 255) n++; return n; };
+  ok('ui lid: top row closed (opaque full row)', rowCells(0) === ui.cols && rowCells(ui.rows - 1) === ui.cols);
+  ok('ui lid: centre row open (transparent)', rowCells(ui.rows >> 1) === 0 && rowCells((ui.rows >> 1) - 1) === 0);
+  ui.clear(); drawEyelid(ui, { blink }, 1);
+  ok('ui lid: fully open draws nothing', rowCells(0) === 0);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
