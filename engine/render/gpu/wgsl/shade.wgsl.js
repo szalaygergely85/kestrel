@@ -25,6 +25,7 @@ import { SKY_LUT_N } from '../glsl/common.js';
 import { MAX_LEVELS } from '../ShadeTextures.js';
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
 import { KIND_TERRAIN, KIND_MODEL, KIND_MESH, FACE_PACKED } from '../../GBuffer.js';
+import { WET_DARK, WET_SPEC } from '../../detailShade.js';
 import { SUN_N_SHIFT, SUN_N_MASK } from '../../shadowSun.js';
 import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE } from '../../terrainShade.js';
 
@@ -41,7 +42,7 @@ export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'cellAspect', type: 'f32' }, { name: 'cutoff', type: 'f32' }, { name: 'lift', type: 'f32' }, { name: 'fgMin', type: 'f32' },
   { name: 'fgMaxGain', type: 'f32' }, { name: 'tintK', type: 'f32' }, { name: 'overbright', type: 'f32' }, { name: 'overbrightMax', type: 'f32' },
   { name: 'aoR', type: 'f32' }, { name: 'aoK', type: 'f32' }, { name: 'fogStipple0', type: 'f32' }, { name: 'fogStipple1', type: 'f32' },
-  { name: 'fogSparse', type: 'f32' }, { name: 'hashCell', type: 'f32' }, { name: 'closeBand', type: 'f32' }, { name: 'pad0', type: 'f32' },
+  { name: 'fogSparse', type: 'f32' }, { name: 'hashCell', type: 'f32' }, { name: 'closeBand', type: 'f32' }, { name: 'wetness', type: 'f32' }, // S8-B2-14 (was pad0, layout unchanged)
   { name: 'handover', type: 'vec2' }, // recipe.nearLOD.handover [h0, h1]
   { name: 'n', type: 'i32' }, { name: 'gpuSky', type: 'i32' },
   { name: 'projMode', type: 'i32' }, { name: 'sunMapOn', type: 'i32' }, { name: 'nearDetailOn', type: 'i32' },
@@ -217,6 +218,11 @@ fn samplePowLUT(x: f32) -> f32 {
   let xc = clamp(x, 0.0, 1.0);
   let idx = i32(xc * 255.0 + 0.5);
   return textureLoad(uGain, vec2i(idx, 0), 0).r;
+}
+
+// S8-B2-14: literal twin of detailShade.js wetGain (wetness 0 returns gain untouched, so the default is bit-identical).
+fn wetGain(gain: f32, bc: f32) -> f32 {
+  return select(gain, min(su.fgMaxGain, gain + su.wetness * ${WET_SPEC.toFixed(4)} * smoothstepFast(0.5, 1.0, bc)), su.wetness > 0.0);
 }
 
 fn levelFromThresholds(setId: i32, levels: i32, gb: f32, cutoff: f32) -> i32 {
@@ -478,7 +484,7 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
   var aok = 1.0;
   if (aoD < su.aoR) { aok = su.aoK + (1.0 - su.aoK) * smoothstepFast(0.0, su.aoR, aoD); }
   let jit = 1.0 + jitter * (hA * 2.0 - 1.0);
-  let b = Lm * albedo * shadeK * fk * aok * jit + mf1.x;
+  let b = Lm * albedo * shadeK * fk * aok * jit * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness) + mf1.x;
   var gb = 0.0;
   if (!(b < su.cutoff)) { gb = su.lift + (1.0 - su.lift) * min(b, 1.0); }
 
@@ -675,6 +681,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   let bc = max(bAvg, 0.0);
   var gain = su.fgMin + (1.0 - su.fgMin) * samplePowLUT(bc);
   if (bc > 1.0) { gain = min(su.fgMaxGain, gain + (bc - 1.0) * 0.5); }
+  gain = wetGain(gain, bc);
   var rgbF = vec3f(crAvg, cgAvg, cbAvg) * (1.0 + (hcol - 1.0) * su.tintK) * gain;
   if (bc > 1.0) {
     let hot = min(su.overbrightMax, (bc - 1.0) * su.overbright);

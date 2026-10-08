@@ -51,6 +51,16 @@ function levelFast(n, gb, cutoff, gamma) {
 // angle formula (a = atan2(dy,dx) mod 180; h if a<22||a>158; v if
 // 68<a<112) rewritten as the slope compares that boundary implies - no
 // atan2, no per-cell trig at all.
+// S8-B2-14 wetness (rain): `table.shading.wetness` 0..1 (absent = 0 = today's output bit for bit). Darkens the lit term (emissive kept)
+// by up to WET_DARK and lifts the highlight gain by up to WET_SPEC (a wet surface is darker but keeps a sharper glint).
+// Twin: shade.wgsl.js (su.wetness in shadeCore, wetGain in the tail); the terrain path (terrainShade.js) does not read it yet.
+export const WET_DARK = 0.7;
+export const WET_SPEC = 0.35;
+/** Highlight gain with wetness `w` (w == 0 returns `gain` untouched). */
+export function wetGain(gain, bc, w, fgMaxGain) {
+  return w > 0 ? Math.min(fgMaxGain, gain + w * WET_SPEC * smoothstepFast(0.5, 1, bc)) : gain;
+}
+
 function orientClassFast(cx, cy, cellAspect) {
   const gy = cy / cellAspect;
   const dx = -gy, dy = cx;
@@ -539,7 +549,7 @@ export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist
   let aok = 1;
   if (aoD < table.ao.r) aok = table.ao.k + (1 - table.ao.k) * smoothstepFast(0, table.ao.r, aoD);
   const jit = 1 + rec.jitter * (hA * 2 - 1);
-  const b = Lm * rec.albedo * shadeK * fk * aok * jit + rec.emissive;
+  const b = Lm * rec.albedo * shadeK * fk * aok * jit * (1 - WET_DARK * (shading.wetness || 0)) + rec.emissive;
   const lift = shading.lift;
   const gb = b < cutoff ? 0 : lift + (1 - lift) * Math.min(b, 1);
 
@@ -587,6 +597,7 @@ function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff
   const bc = core.b < 0 ? 0 : core.b;
   let gain = fgMin + (1 - fgMin) * samplePowLUT(table.gainLUT, bc);
   if (bc > 1) gain = Math.min(shading.fgMaxGain, gain + (bc - 1) * 0.5);
+  gain = wetGain(gain, bc, shading.wetness || 0, shading.fgMaxGain);
   let r = core.cr * (1 + (hr - 1) * k) * gain, gg = core.cg * (1 + (hg - 1) * k) * gain, bl = core.cb * (1 + (hb - 1) * k) * gain;
   if (bc > 1) {
     const hot = Math.min(shading.overbrightMax, (bc - 1) * shading.overbright);
