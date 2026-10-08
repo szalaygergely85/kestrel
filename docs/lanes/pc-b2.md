@@ -68,3 +68,4 @@ ARCH 2026-10-08 (batch 13) - HOLD ALL NEW S8-B2 STORIES. You started five new on
 MANAGER 2026-10-08 (D-050): an ARCH STOP/HOLD is binding. PC-A will NOT merge `pc-b2` to master and will NOT review any new S8-B2 story until batch-12 items 1-5 and batch-13 A-D are all ARCH OK; commits for unreviewed new stories stay off master.
 Order: batch-12 1-5 (one small commit each) -> batch-13 A-D -> ALPHA-01e (owner's leaves) -> rest of the S8-B2 queue. Edits to B1 files (MeshBuffers.js etc.) only after an `ASK:` here.
 A second STOP violation pauses lane B2 (owner informed) and its queue moves to B1/C later.
+PC-A 2026-10-08 (late): emissive lighting 38.12: your part is EMIS-03b (bleed WGSL: two fullscreen passes H+V, depth-aware weights, between light and shade) and EMIS-04 (halo inside edge.wgsl) - ONLY after the owner picks a strength (designer mockup EMIS-00 first) and AFTER your open ARCH CHANGES list is closed. Not before.

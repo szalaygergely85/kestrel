@@ -1,0 +1,931 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - EMIS-00: emissive glow strength mockups (off / subtle / medium / strong)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:17px; margin:30px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  h3 { font-size:14px; margin:12px 0 2px; color:#e8c27a; }
+  .note { color:#8a8778; font-size:12px; max-width:1300px; }
+  .fail { color:#ff3b3b; white-space:pre-wrap; font:12px Consolas, monospace; } .warn { color:#ffb04a; } .pass { color:#6fdc7a; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; image-rendering:pixelated; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; font-size:13px; }
+  .sliders { background:#0d0f16; border:1px solid #22252e; border-radius:4px; padding:6px 10px; margin:8px 0;
+             display:flex; flex-wrap:wrap; gap:6px 18px; font-size:12px; align-items:center; }
+  .sl { display:flex; align-items:center; gap:6px; }
+  .sl span.k { font-family:Consolas, monospace; color:#b8b2a0; min-width:150px; display:inline-block; }
+  .sl input[type=range] { width:120px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:40px; display:inline-block; }
+  .cap { font:12px Consolas, monospace; color:#a9a390; margin:2px 0; max-width:1500px; }
+  .cap b { color:#ffd27a; }
+  table { border-collapse:collapse; font:12px Consolas, monospace; margin:4px 0 10px; }
+  td, th { border:1px solid #22252e; padding:3px 8px; text-align:left; vertical-align:top; }
+  th { color:#ffc23c; background:#10121a; }
+  code { color:#e8c27a; }
+  pre.json { background:#0b0c12; border:1px solid #22252e; padding:8px; font:11px/1.35 Consolas, monospace; color:#cfe3c0;
+             max-height:340px; overflow:auto; white-space:pre; }
+  button { background:#1a1d28; color:#d8d2c0; border:1px solid #33384a; border-radius:3px; padding:3px 9px; cursor:pointer; }
+  button.on { background:#3a3218; color:#ffd27a; border-color:#6a5a28; }
+  button.copy { background:#1d3a22; color:#8fe09a; border-color:#2e5a35; }
+  input.ramp { width:90px; font:13px Consolas, monospace; background:#0b0c12; color:#ffd27a; border:1px solid #33384a; }
+  select { background:#1a1d28; color:#d8d2c0; border:1px solid #33384a; }
+  ul { margin:4px 0 8px 20px; padding:0; max-width:1300px; } li { margin:2px 0; font-size:13px; }
+  .scene { margin:6px 0 16px; }
+  .cols { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; }
+  .cell { display:flex; flex-direction:column; gap:2px; }
+  .cell .hd { font:11px/1.3 Consolas, monospace; color:#a9a390; max-width:380px; min-height:30px; }
+  .cell .hd b { color:#ffd27a; }
+  .cell.pick canvas { outline:2px solid #ffd24a; }
+  .rampdemo { font:16px Consolas, monospace; background:#050814; padding:0 6px; letter-spacing:3px; }
+</style>
+</head>
+<body>
+<h1>Kestrel : EMIS-00 : emissive glow, 3 strengths for the owner to pick</h1>
+<div class="note">
+  Design note: <code>docs/architecture.md</code> 38.12 (derived point lights + soft bleed pass + halo in edge), queue
+  <code>docs/sprints/sprint-8-queue.md</code> "Emissive lighting". Every panel is a <b>coloured-letter mockup computed by
+  this page</b> (a tiny cell ray caster on a crop of the 400 x 150 frame, 75 deg HFOV, cells twice as tall as wide, the real
+  voxel data of <code>questMark</code>, <code>chestSmall</code> and the hook <code>lantern</code>, palette colours /
+  materials / ramps). It is <b>not</b> an engine capture: no textures, no edge pass, no shadows, no LVIS occlusion.
+  Columns: <b>off</b> = today (material self-emissive only; placed lights such as the hook lamp and the brazier torch stay on),
+  <b>subtle</b>, <b>medium</b>, <b>strong</b> = derived lights + bleed + halo (the 38.12 High tier) at three strengths.
+  Sliders edit the preset picked under "edit preset"; <b>copy values</b> emits the 38.12 keys.
+  <b>Nothing is applied:</b> palette.js, detail-pass.js, models, levels and engine are unchanged. Works from file:// (classic scripts).
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <span>time (chest + brazier rows) <span id="todBtns"></span></span>
+  <span class="sl"><span class="k" style="min-width:auto">R_MAX (cells)</span><input type="range" id="rmax" min="1" max="6" step="1" value="4"><span class="val" id="rmaxV">4</span>
+    <button id="tierHigh">High 4</button><button id="tierUltra">Ultra 6</button></span>
+  <span class="sl"><span class="k" style="min-width:auto">R_m (m)</span><input type="range" id="rm" min="0.2" max="3" step="0.1" value="1.2"><span class="val" id="rmV">1.2</span></span>
+  <label>derived light <select id="lightSrc">
+    <option value="formula" selected>38.12 (1) formula from the voxels</option>
+    <option value="override">def override (questMarkFx / chestFx light, lamp + brazier light:false)</option></select></label>
+  <label>glow hue <select id="hueMode">
+    <option value="glowColor" selected>glowColor proposal (brass_glint -> brassLight gold)</option>
+    <option value="base">base colour as 38.12 (brass_glint = white)</option></select></label>
+  <label title="proposal: 2x2x2 ember_core + 2x2 ember_glow voxels as the lamp wick (the flame itself is a sprite and cannot feed the bleed)"><input type="checkbox" id="wick" checked> lamp wick voxels (proposal)</label>
+  <label title="proposal: a coal bed of ember_glow / ember_core voxels in the brazier bowl (today: sprite fire only)"><input type="checkbox" id="coal" checked> brazier coal voxels (proposal)</label>
+  <label><input type="checkbox" id="anim" checked> animate</label>
+  <span class="sl"><span class="k" style="min-width:auto">'!' yaw (anim off)</span><input type="range" id="spin" min="-180" max="180" step="5" value="25"><span class="val" id="spinV">25</span></span>
+  <label>cell px <select id="cellPx"><option value="4x8">4 x 8</option><option value="5x10" selected>5 x 10</option><option value="6x12">6 x 12</option><option value="8x16">8 x 16</option></select></label>
+  <span class="note" id="perf"></span>
+</div>
+
+<div class="sliders" id="presetCtl"></div>
+<div id="presetTab"></div>
+
+<div id="scenes"></div>
+
+<h2>Copy values <button class="copy" id="copyBtn">copy values</button> <span class="note" id="cpMsg"></span></h2>
+<pre class="json" id="json"></pre>
+<div class="note">
+  <b>38.12 key names used as-is:</b> <code>bleedGain</code>, <code>haloBg</code>, <code>haloMin</code>, <code>glyphRamps.halo</code>
+  (in palette.js this is <code>ramps.halo</code>; ramps are indexed by order, so append it LAST), <code>R_MAX</code>, <code>R_m</code>,
+  <code>EMISSIVE_LIGHT_MIN</code>, <code>rt.emissive {derived, bleed, halo}</code>, <code>gfxPresets.emissive 'off'|'derived'|'full'</code>,
+  the model def override <code>light: {preset} | false</code>.<br>
+  <b>Invented by this page (not in 38.12):</b> <code>lightGain</code> (multiplier on the derived intensity = the "light intensity"
+  slider), <code>haloR</code> (halo reach in cells on sky / far cells; 38.12 uses k &lt;= 1), <code>haloK</code> (halo transfer
+  <code>a = 1 - exp(-haloK * sum)</code>), <code>bleedNorm: 'kernel'</code> (the bleed sum is divided by the full kernel weight at
+  the cell's R, so R changes the reach and not the strength), <code>glowMin</code> (38.12's literal 0.3 source threshold),
+  <code>materials[k].glowColor</code> (glow / derived-light colour when the base colour is wrong for the glow, e.g. brass_glint white).
+</div>
+
+<h2>Findings (for the PO / architect)</h2>
+<ul id="findings">
+  <li><b>Hue:</b> <code>brass_glint</code> (the '!' core, the chest seam, the lamp glint) has <code>base: 'white'</code>. With 38.12 as written,
+    the derived light and the bleed of the golden '!' are <b>white</b>. Toggle "glow hue" to compare. Proposal: an optional
+    material field <code>glowColor</code> (palette colour key; default = base): <code>brass_glint.glowColor = 'brassLight'</code>
+    (palette edit, owner OK needed; no silent asset change).</li>
+  <li><b>Hidden voxels count:</b> the pack-time derive counts every voxel with emissive &gt;= 0.5 in the model, including the
+    sealed glint plus in the chest floor / lamp base and the chest loot pool (still lit after <code>opened</code> hides it).
+    chestSmall: same light closed, open and opened. Suggest def overrides: chests and the hook lantern <code>light: false</code>
+    (their fx / placed lights already follow the state), questMark either the formula or <code>light: {preset}</code> from
+    <code>questMarkFx.light</code>. Compare with the "derived light" select.</li>
+  <li><b>Halo reach:</b> the '!' core line sits 2 voxels inside the gold bevel + 1 voxel dark rim, so it is >= 3 cells from the
+    sky at 12 m (~13 cells at 3 m). With 38.12's <code>k &lt;= 1</code> kind-0 kernel the '!' gets <b>no halo at all</b>. The mock
+    uses the bleed kernel shape up to <code>haloR</code> cells (&lt;= R_MAX) on kind-0 cells; haloR 1 reproduces 38.12.</li>
+  <li><b>Bleed range:</b> R = clamp(R_m * planeDistY / dist, 1, R_MAX) is always clamped to R_MAX here (planeDistY ~130 rows/m:
+    R_m 1.2 m = 52 cells at 3 m). 4 cells = ~5 cm at 3 m, ~20 cm at 12 m: the bleed is a soft rim on the glowing object and its
+    contact surfaces; the pool of light on the ground / wall comes from the derived point light.</li>
+  <li><b>Sprites:</b> the lamp flame and the brazier fire are sprites (drawn after edge), so they cannot feed bleed / halo (38.12).
+    Only emissive voxels glow. The wick / coal-bed proposals (existing <code>ember_core</code> / <code>ember_glow</code> materials,
+    toggles above) show what the lamp and brazier would gain; without them the lamp and brazier columns differ only by derived
+    lights from the sealed lamp glint.</li>
+</ul>
+
+<script src="../palette.js"></script>
+<script src="../models/voxel_props.js"></script>
+<script src="../models/chest.js"></script>
+<script src="../models/quest_mark.js"></script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  function fail(e) { $('fatal').textContent = 'ERROR: ' + (e && e.stack ? e.stack : e); }
+  try { main(); } catch (e) { fail(e); }
+
+  function main() {
+    var A = window.ASSETS || {};
+    var P = A.palette;
+    if (!P) throw new Error('../palette.js did not load (ASSETS.palette missing)');
+    var VM = A.voxelModels || {};
+    ['questMark', 'chestSmall', 'lantern'].forEach(function (k) {
+      if (!VM[k] || !VM[k].voxel) throw new Error('voxel model missing: ' + k + ' (models/*.js not loaded?)');
+    });
+    var QFX = A.questMarkFx, CFX = A.chestFx;
+    if (!QFX || !CFX) throw new Error('ASSETS.questMarkFx / chestFx missing');
+
+    // ------------------------------------------------------------------ math
+    function clamp(x, a, b) { return x < a ? a : x > b ? b : x; }
+    function mixv(a, b, t) { return a + (b - a) * t; }
+    function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+    function hash3(x, y, z) {
+      var h = (Math.imul(x | 0, 73856093) ^ Math.imul(y | 0, 19349663) ^ Math.imul(z | 0, 83492791)) >>> 0;
+      h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+      return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+    }
+    function wk(k, R) { if (k > R) return 0; var q = k / R; q = 1 - q * q; return q * q; }   // 38.12 kernel (1-(k/R)^2)^2
+    function kernSum(R, lim) { var s = 0, n = Math.floor(lim), k; for (k = -n; k <= n; k++) s += wk(Math.abs(k), R); return s; }
+
+    // ------------------------------------------------------------------ colours + materials
+    function rgbK(k) { var c = P.rgb[k]; if (!c) throw new Error('palette colour missing: ' + k); return c; }
+    function hueOf(c) { var m = Math.max(c[0], c[1], c[2], 1e-6); return [c[0] / m, c[1] / m, c[2] / m]; }
+    function hueK(k) { return hueOf(rgbK(k)); }
+    var GLOW_COLOR = { brass_glint: 'brassLight' };      // INVENTED: materials[k].glowColor proposal
+    var MATC = {};
+    function mat(k) {
+      if (MATC[k]) return MATC[k];
+      var m = P.materials[k];
+      if (!m) throw new Error('palette material missing: ' + k);
+      var b = rgbK(m.base);
+      MATC[k] = { key: k, base: [b[0] / 255, b[1] / 255, b[2] / 255], albedo: m.albedo != null ? m.albedo : 1,
+        ramp: P.ramps[m.ramp] || P.ramps['default'], e: m.emissive || 0, bgK: m.bg && m.bg.k != null ? m.bg.k : 0.2 };
+      return MATC[k];
+    }
+    function glowRGB(k) {   // GLOW colour (0..1) before x emissive
+      var ck = S.hueMode === 'glowColor' && GLOW_COLOR[k];
+      if (ck) { var c = rgbK(ck); return [c[0] / 255, c[1] / 255, c[2] / 255]; }
+      return mat(k).base;
+    }
+
+    // ------------------------------------------------------------------ state + presets
+    var S = { tod: 'night', R_MAX: 4, R_m: 1.2, glowMin: 0.3, EMIN: 0.5, haloK: 4, lightSrc: 'formula', hueMode: 'glowColor',
+              wick: true, coal: true, anim: true, spin: 25, cell: [5, 10], edit: 'medium', pick: 'medium' };
+    var ORDER = ['off', 'subtle', 'medium', 'strong'];
+    var DEFAULTS = {
+      off:    { derived: false, bleed: false, halo: false, lightGain: 0,    bleedGain: 0,   haloBg: 0,    haloMin: 1,    haloR: 1, ramp: ' ' },
+      subtle: { derived: true,  bleed: true,  halo: true,  lightGain: 0.5,  bleedGain: 0.6, haloBg: 0.25, haloMin: 0.15, haloR: 2, ramp: " .'" },
+      medium: { derived: true,  bleed: true,  halo: true,  lightGain: 0.8,  bleedGain: 1.2, haloBg: 0.45, haloMin: 0.08, haloR: 3, ramp: " .':" },
+      strong: { derived: true,  bleed: true,  halo: true,  lightGain: 1.0,  bleedGain: 2.2, haloBg: 0.7,  haloMin: 0.04, haloR: 4, ramp: " .':*" }
+    };
+    var PR = JSON.parse(JSON.stringify(DEFAULTS));
+    var LABEL = { off: 'off (today)', subtle: 'subtle', medium: 'medium', strong: 'strong' };
+
+    // ------------------------------------------------------------------ time of day
+    function dirTo(azDeg, elDeg) {   // direction TO the light; az 0 = behind the camera (-y), 90 = right (+x)
+      var a = azDeg * Math.PI / 180, e = elDeg * Math.PI / 180;
+      return norm([Math.sin(a) * Math.cos(e), -Math.cos(a) * Math.cos(e), Math.sin(e)]);
+    }
+    var TOD = {
+      night:  { name: 'night', amb: hueK('ambientNight'), ambI: 0.30, key: { d: dirTo(-50, 35), h: hueK('moon'), I: 0.22 },
+                sky: ['skyNightHorizon', 'skyNightMid', 'skyNightTop'], fog: 'fogNight', fogMax: 0.6, stars: true },
+      dusk:   { name: 'dusk', amb: hueK('ambientDusk'), ambI: 0.34, key: { d: dirTo(70, 8), h: hueK('sunDusk'), I: 0.55 },
+                sky: ['skyDuskHorizon', 'skyDuskMid', 'skyDuskTop'], fog: 'fogDusk', fogMax: 0.5 },
+      day:    { name: 'day', amb: hueK('ambientNoon'), ambI: 0.55, key: { d: dirTo(30, 55), h: hueK('sunNoon'), I: 1.0 },
+                sky: ['skyHorizon', 'skyMid', 'skyTop'], fog: 'fogFarNear', fogMax: 0.45 },
+      indoor: { name: 'tower hall (interior, any time)', amb: hueK('ambient'), ambI: 0.16, key: null,
+                sky: ['skyNightHorizon', 'skyNightMid', 'skyNightTop'], fog: 'fogV2', fogMax: 0.55, indoor: true }
+    };
+    function skyCol(tod, dz) {
+      var el = Math.asin(clamp(dz, -1, 1)) * 180 / Math.PI, t = clamp(el / 45, 0, 1);
+      var a = rgbK(tod.sky[0]), b = rgbK(tod.sky[1]), c = rgbK(tod.sky[2]), u;
+      if (t < 0.4) { u = t / 0.4; return [mixv(a[0], b[0], u), mixv(a[1], b[1], u), mixv(a[2], b[2], u)]; }
+      u = (t - 0.4) / 0.6; return [mixv(b[0], c[0], u), mixv(b[1], c[1], u), mixv(b[2], c[2], u)];
+    }
+
+    // ------------------------------------------------------------------ camera (400 x 150 frame, 75 deg HFOV, 1:2 cells)
+    var FW = 400, FH = 150, HFOV = 75 * Math.PI / 180;
+    var FX = (FW / 2) / Math.tan(HFOV / 2);   // columns per unit at 1 m
+    var FY = FX / 2;                          // rows per unit at 1 m (= 38.12 planeDistY)
+    var FAR_M = 70;                           // beyond: kind 0 (far), like the cast's sky / far cells
+    function makeCam(pos, pitchDeg) {
+      var p = pitchDeg * Math.PI / 180;
+      return { o: pos, f: [0, Math.cos(p), Math.sin(p)], r: [1, 0, 0], u: [0, -Math.sin(p), Math.cos(p)] };
+    }
+    function project0(cam, p) {
+      var rx = p[0] - cam.o[0], ry = p[1] - cam.o[1], rz = p[2] - cam.o[2];
+      var z = rx * cam.f[0] + ry * cam.f[1] + rz * cam.f[2];
+      var x = rx * cam.r[0] + ry * cam.r[1] + rz * cam.r[2];
+      var y = rx * cam.u[0] + ry * cam.u[1] + rz * cam.u[2];
+      return [FW / 2 + FX * x / z, FH / 2 - FY * y / z, z];
+    }
+    function proj(sc, p) { var q = project0(sc.cam, p); return [q[0] - sc.c0, q[1] - sc.r0, q[2]]; }
+
+    // ------------------------------------------------------------------ voxel grids
+    function Grid(sx, sy, sz, cellM, anchor) {
+      this.sx = sx; this.sy = sy; this.sz = sz; this.cellM = cellM; this.anchor = anchor;
+      this.data = new Uint8Array(sx * sy * sz); this.mats = [null]; this.mi = {};
+    }
+    Grid.prototype.set = function (x, y, z, mk) {
+      if (x < 0 || y < 0 || z < 0 || x >= this.sx || y >= this.sy || z >= this.sz) return;
+      var id = 0;
+      if (mk) { if (this.mi[mk] == null) { this.mats.push(mk); this.mi[mk] = this.mats.length - 1; } id = this.mi[mk]; }
+      this.data[x + this.sx * (y + this.sy * z)] = id;
+    };
+    Grid.prototype.get = function (x, y, z) { return this.data[x + this.sx * (y + this.sy * z)]; };
+    function gridFromDef(v, yOff) {
+      yOff = yOff || 0;
+      var g = new Grid(v.size[0], v.size[1] + yOff, v.size[2], v.cellM, [v.anchor[0], v.anchor[1] + yOff, v.anchor[2]]);
+      var x, y, z;
+      for (z = 0; z < v.size[2]; z++) for (y = 0; y < v.size[1]; y++) {
+        var row = v.layers[z] && v.layers[z][y];
+        if (!row) continue;
+        for (x = 0; x < v.size[0]; x++) {
+          var ch = row.charAt(x);
+          if (ch && ch !== '.' && ch !== ' ' && v.mats[ch]) g.set(x, y + yOff, z, v.mats[ch]);
+        }
+      }
+      return g;
+    }
+    // chest closed, glint frame (clip closed key 1): the brass_glint plus stands on the hasp front (one extra front row)
+    function chestClosedGrid() {
+      var g = gridFromDef(VM.chestSmall.voxel, 1);
+      var hx = 7, hz = 7;
+      [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]].forEach(function (o) { g.set(hx + o[0], 0, hz + o[1], 'brass_glint'); });
+      return g;
+    }
+    // chest open (lid -90 about the back hinge; the clip's -110 rests just past this)
+    function chestOpenGrid() {
+      var v = VM.chestSmall.voxel, sx = v.size[0], sy = v.size[1], sz = v.size[2];
+      var zs = v.parts.lid.box[2], nl = sz - zs - 1;
+      var g = new Grid(sx, sy + nl, zs + sy + 1, v.cellM, v.anchor.slice());
+      var x, y, z;
+      for (z = 0; z < sz; z++) for (y = 0; y < sy; y++) for (x = 0; x < sx; x++) {
+        var mk = v.mats[v.layers[z][y].charAt(x)];
+        if (!mk) continue;
+        var inLoot = z === zs && y >= 1, inLid = !inLoot && z >= zs;
+        if (inLid) g.set(x, sy + z - zs - 1, zs + sy - y, mk); else g.set(x, y, z, mk);
+      }
+      return g;
+    }
+    function lanternGrid(wick) {
+      var g = gridFromDef(VM.lantern.voxel), x, y;
+      if (wick) for (x = 3; x <= 4; x++) for (y = 3; y <= 4; y++) {
+        g.set(x, y, 5, 'ember_core'); g.set(x, y, 6, 'ember_core'); g.set(x, y, 7, 'ember_glow');
+      }
+      return g;
+    }
+    // brazier (mock shape, not a game model): iron stem + flared bowl, ash fill, coal bed proposal on top
+    function brazierGrid(coal) {
+      var g = new Grid(16, 16, 13, 0.05, [8, 8, 0]), x, y, z;
+      for (z = 0; z < 13; z++) for (y = 0; y < 16; y++) for (x = 0; x < 16; x++) {
+        var r = Math.hypot(x + 0.5 - 8, y + 0.5 - 8);
+        if (z <= 4) { if (r <= 2.4) g.set(x, y, z, z === 4 ? 'iron_light' : 'iron_dark'); continue; }
+        if (z === 5) { if (r <= 3.6) g.set(x, y, z, 'iron_dark'); continue; }
+        var R = 3.6 + (z - 5) * 0.6;
+        if (r <= R && r > R - 1.2) g.set(x, y, z, z === 12 ? 'iron_light' : 'iron_dark');
+        else if (r <= R - 1.2) {
+          if (z < 10) g.set(x, y, z, 'ash');
+          else if (z === 10 || (z === 11 && r < 3.2)) {
+            g.set(x, y, z, coal ? (hash3(x, y, z) < 0.3 ? 'ember_core' : 'ember_glow') : 'ash');
+          }
+        }
+      }
+      return g;
+    }
+
+    // ------------------------------------------------------------------ ray tests
+    function traceBox(b, o, d, tMax) {
+      var t0 = 1e-4, t1 = tMax, ax = -1, sg = 0, a;
+      for (a = 0; a < 3; a++) {
+        if (Math.abs(d[a]) < 1e-12) { if (o[a] < b.min[a] || o[a] > b.max[a]) return null; continue; }
+        var ta = (b.min[a] - o[a]) / d[a], tb = (b.max[a] - o[a]) / d[a];
+        if (ta > tb) { var q = ta; ta = tb; tb = q; }
+        if (ta > t0) { t0 = ta; ax = a; sg = d[a] > 0 ? -1 : 1; }
+        if (tb < t1) t1 = tb;
+        if (t0 > t1) return null;
+      }
+      if (ax < 0) return null;
+      var n = [0, 0, 0]; n[ax] = sg;
+      return { t: t0, n: n, mk: b.mat };
+    }
+    function traceGrid(it, o, d, tMax) {
+      var g = it.g, cs = g.cellM, co = it._c, si = it._s;   // cos / sin of -yaw
+      var rx = o[0] - it.pos[0], ry = o[1] - it.pos[1], rz = o[2] - it.pos[2] - it.bob;
+      var O = [(rx * co - ry * si) / cs + g.anchor[0], (rx * si + ry * co) / cs + g.anchor[1], rz / cs + g.anchor[2]];
+      var D = [(d[0] * co - d[1] * si) / cs, (d[0] * si + d[1] * co) / cs, d[2] / cs];
+      var B = [g.sx, g.sy, g.sz], t0 = 0, t1 = tMax, ax = -1, a;
+      for (a = 0; a < 3; a++) {
+        if (Math.abs(D[a]) < 1e-12) { if (O[a] < 0 || O[a] > B[a]) return null; continue; }
+        var ta = (0 - O[a]) / D[a], tb = (B[a] - O[a]) / D[a];
+        if (ta > tb) { var q = ta; ta = tb; tb = q; }
+        if (ta > t0) { t0 = ta; ax = a; }
+        if (tb < t1) t1 = tb;
+        if (t0 > t1) return null;
+      }
+      var I = [0, 0, 0], step = [0, 0, 0], tM = [0, 0, 0], tD = [0, 0, 0];
+      for (a = 0; a < 3; a++) {
+        var p = O[a] + D[a] * (t0 + 1e-7);
+        I[a] = clamp(Math.floor(p), 0, B[a] - 1);
+        if (D[a] > 0) { step[a] = 1; tM[a] = (I[a] + 1 - O[a]) / D[a]; tD[a] = 1 / D[a]; }
+        else if (D[a] < 0) { step[a] = -1; tM[a] = (I[a] - O[a]) / D[a]; tD[a] = -1 / D[a]; }
+        else { step[a] = 0; tM[a] = Infinity; tD[a] = Infinity; }
+      }
+      var t = t0, axis = ax, k;
+      for (k = 0; k < 256; k++) {
+        var id = g.get(I[0], I[1], I[2]);
+        if (id) {
+          var nl = [0, 0, 0];
+          if (axis >= 0) nl[axis] = -step[axis]; else nl = [-D[0], -D[1], -D[2]];
+          var c2 = Math.cos(it.yaw * Math.PI / 180), s2 = Math.sin(it.yaw * Math.PI / 180);
+          return { t: t, n: norm([nl[0] * c2 - nl[1] * s2, nl[0] * s2 + nl[1] * c2, nl[2]]), mk: g.mats[id] };
+        }
+        if (tM[0] < tM[1] && tM[0] < tM[2]) { axis = 0; } else if (tM[1] < tM[2]) { axis = 1; } else { axis = 2; }
+        t = tM[axis]; tM[axis] += tD[axis]; I[axis] += step[axis];
+        if (I[axis] < 0 || I[axis] >= B[axis] || t > t1) return null;
+      }
+      return null;
+    }
+    function trace(sc, o, d) {
+      var best = null, tMax = 1e4, i, h;
+      if (d[2] < -1e-6 && o[2] > 0) { var t = -o[2] / d[2]; if (t < tMax) { tMax = t; best = { t: t, n: [0, 0, 1], mk: sc.ground }; } }
+      for (i = 0; i < sc.prims.length; i++) { h = traceBox(sc.prims[i], o, d, tMax); if (h) { tMax = h.t; best = h; } }
+      for (i = 0; i < sc.insts.length; i++) { h = traceGrid(sc.insts[i], o, d, tMax); if (h) { tMax = h.t; best = h; } }
+      return best;
+    }
+    function texOf(mk, p, n) {
+      var h = hash3(Math.floor(p[0] * 14), Math.floor(p[1] * 14), Math.floor(p[2] * 14)), v = 0.9 + 0.2 * h;
+      if (mk === 'stone') {
+        var zz = p[2] / 0.25, row = Math.floor(zz);
+        var hu = (Math.abs(n[0]) > 0.5 ? p[1] : p[0]) / 0.5 + (row % 2) * 0.5;
+        if (Math.abs(n[2]) < 0.5 && (zz - row < 0.1 || hu - Math.floor(hu) < 0.06)) v *= 0.45;
+      } else if (mk === 'floor') {
+        var a = p[0] / 0.5, b = p[1] / 0.5;
+        if (a - Math.floor(a) < 0.05 || b - Math.floor(b) < 0.05) v *= 0.5;
+      } else if (mk === 'grass') v = 0.6 + 0.6 * h;
+      return v;
+    }
+
+    // ------------------------------------------------------------------ scenes
+    var NOTE_Z = 0.02;
+    function box(x0, y0, z0, x1, y1, z1, m) { return { min: [x0, y0, z0], max: [x1, y1, z1], mat: m }; }
+    function inst(o) { var it = { yaw: 0, bob: 0, _c: 1, _s: 0 }; for (var k in o) it[k] = o[k]; return it; }
+    function toWorld(it, l, g) {
+      var c = g.cellM, vx = (l[0] - g.anchor[0]) * c, vy = (l[1] - g.anchor[1]) * c, vz = (l[2] - g.anchor[2]) * c;
+      var y = it.yaw * Math.PI / 180, co = Math.cos(y), si = Math.sin(y);
+      return [it.pos[0] + vx * co - vy * si, it.pos[1] + vx * si + vy * co, it.pos[2] + it.bob + vz];
+    }
+    function makeScene(o) {
+      var pf = project0(o.cam, o.focus);
+      o.c0 = clamp(Math.round(pf[0] - o.cw / 2), 0, FW - o.cw);
+      o.r0 = clamp(Math.round(pf[1] - o.ch / 2), 0, FH - o.ch);
+      return o;
+    }
+    function questScene(dist, todMode) {
+      var v = VM.questMark.voxel, y = dist, near = dist < 6;
+      var g = gridFromDef(v);
+      var qm = inst({ name: 'questMark', g: g, cg: g, pos: [0, y, NOTE_Z + QFX.placement.noteZOffsetM], anim: 'qm',
+        override: { at: v.mounts.light.at, color: QFX.light.color, intensity: QFX.light.intensity, radius: QFX.light.radius,
+                    label: 'questMarkFx.light' } });
+      return makeScene({ id: 'qm' + dist + todMode, group: "The golden quest '!' over a note on the ground",
+        title: "'!' at " + dist + ' m, ' + todMode + (near ? ' (glyph ~37 x 39 cells: the core band, rim + bevel)' : ' (glyph ~10 x 10 cells, note + ground in view)'),
+        todMode: todMode, cam: makeCam([0, 0, 1.6], near ? 12 : 0), focus: [0, y, near ? 2.37 : 1.25],
+        cw: near ? 56 : 44, ch: near ? 50 : 40, ground: 'grass',
+        prims: [box(-0.12, y - 0.09, 0, 0.12, y + 0.09, NOTE_Z, 'linen_light'),
+                box(0.34, y - 0.2, 0, 0.64, y + 0.2, 2.5, 'stone'),
+                box(-7, y + 6, 0, 7, y + 6.6, 2.3, 'stone')],
+        insts: [qm], placed: [],
+        dressing: 'note (linen_light) on grass, broken stone pillar 0.1 m right of the marker, ruin wall 6 m behind' });
+    }
+    function chestScene(open) {
+      var v = VM.chestSmall.voxel, y = 4, L = open ? CFX.light.open : CFX.light.closed;
+      var it = inst({ name: 'chestSmall', g: open ? chestOpenGrid() : chestClosedGrid(), cg: gridFromDef(v), pos: [0, y, 0],
+        override: { at: v.mounts.light.at, color: CFX.light.color, intensity: L.intensity, radius: L.radius,
+                    label: 'chestFx.light.' + (open ? 'open' : 'closed') } });
+      return makeScene({ id: 'chest' + (open ? 'O' : 'C'), group: 'Treasure chest (chestSmall), 4 m',
+        title: open ? 'open (lid up, the loot pool glowing)' : 'closed, glint frame (clip closed key 1: the plus on the hasp) + the light seam',
+        todMode: 'global', cam: makeCam([0, 0, 1.6], -16), focus: [0, y, open ? 0.5 : 0.3], cw: 64, ch: open ? 44 : 38,
+        ground: 'grass', prims: [box(0.55, y - 0.25, 0, 0.95, y + 0.2, 0.32, 'rock'), box(-6, y + 2.5, 0, 6, y + 3.0, 1.3, 'stone')],
+        insts: [it], placed: [], dressing: 'grass, a rock 0.2 m right of the chest, ruin wall 2.5 m behind' });
+    }
+    function lampScene() {
+      var v = VM.lantern.voxel, y = 2.2, g = lanternGrid(S.wick);
+      var it = inst({ name: 'lantern', g: g, cg: g, pos: [0, y, 1.3], override: false });
+      var sc = makeScene({ id: 'lamp', group: 'Tower hall: the brass hook lamp (voxel lantern, lit) on its wall bracket, 3.2 m',
+        title: 'lit lamp: placed light lanternHook (' + P.lights.lanternHook.intensity + ' / ' + P.lights.lanternHook.radius +
+               ' m) + lampFlame sprite' + (S.wick ? ' + wick voxels (proposal)' : ' (no emissive voxels except the sealed glint)'),
+        todMode: 'indoor', cam: makeCam([0, -1.0, 1.5], 0), focus: [0, y, 1.45], cw: 64, ch: 56, ground: 'floor',
+        prims: [box(-4, y + 0.1, 0, 4, y + 0.6, 4, 'stone'), box(-1.5, -1, 0, -1.1, y + 0.1, 4, 'stone'),
+                box(-0.55, y - 0.55, 0, -0.05, y + 0.05, 0.9, 'wood')],
+        insts: [it], dressing: 'stone wall behind + left, flagstone floor, a wooden crate under the lamp' });
+      sc.placed = [{ name: 'lanternHook', p: toWorld(it, v.mounts.light.at, g), preset: P.lights.lanternHook }];
+      sc.sprites = function (sc2, t) { return flameSprite(sc2, toWorld(it, v.mounts.flame.at, g), 0.09, 0.13, t, 1); };
+      return sc;
+    }
+    function brazierScene() {
+      var y = 5, g = brazierGrid(S.coal);
+      var it = inst({ name: 'brazier', g: g, cg: g, pos: [0, y, 0], override: false });
+      var sc = makeScene({ id: 'brazier', group: 'Ember brazier on a ruin terrace, 5 m (mock shape)',
+        title: 'burning: placed light torch (' + P.lights.torch.intensity + ' / ' + P.lights.torch.radius + ' m) + fire sprite + ember sprites' +
+               (S.coal ? ' + coal bed voxels (proposal)' : ' (ash bed, no emissive voxels)'),
+        todMode: 'global', cam: makeCam([0, 0, 1.6], -10), focus: [0, y, 0.55], cw: 72, ch: 48, ground: 'floor',
+        prims: [box(-5, y + 1.3, 0, 5, y + 1.8, 2.0, 'stone')], insts: [it],
+        dressing: 'flagstones, stone wall 1.3 m behind' });
+      sc.placed = [{ name: 'torch', p: [0, y, 0.85], preset: P.lights.torch }];
+      sc.sprites = function (sc2, t) { return flameSprite(sc2, [0, y, 0.6], 0.34, 0.5, t, 3).concat(embers(sc2, [0, y, 0.62], t)); };
+      return sc;
+    }
+    var SCENES = [];
+    function buildScenes() {
+      SCENES = [questScene(3, 'night'), questScene(12, 'night'), questScene(3, 'dusk'), questScene(12, 'dusk'),
+                chestScene(false), chestScene(true), lampScene(), brazierScene()];
+      SCENES.forEach(function (sc) { if (!sc.placed) sc.placed = []; });
+    }
+
+    // ------------------------------------------------------------------ sprites (drawn after edge: no bleed, no halo)
+    function flameSprite(sc, base, wM, hM, t, seed) {
+      var q = proj(sc, base), out = [];
+      if (q[2] <= 0.05) return out;
+      var ramp = P.ramps.fire, wC = wM * FX / q[2], hC = hM * FY / q[2];
+      var hh = hC * (S.anim ? 1 + 0.12 * Math.sin(t * 13 + seed) + 0.08 * Math.sin(t * 23 + seed * 2) : 1);
+      var j0 = Math.floor(q[1] - hh), j1 = Math.floor(q[1]), i, j;
+      for (j = j0; j <= j1; j++) {
+        var v = clamp((q[1] - (j + 0.5)) / hh, 0, 1);
+        var half = Math.max(0.5, wC / 2 * Math.pow(1 - v, 0.7));
+        var sway = S.anim ? Math.sin(t * 6 + v * 5 + seed) * 0.18 * wC * v : 0;
+        for (i = Math.floor(q[0] - half + sway - 1); i <= Math.ceil(q[0] + half + sway); i++) {
+          var uu = (i + 0.5 - q[0] - sway) / half;
+          if (Math.abs(uu) > 1 || i < 0 || j < 0 || i >= sc.cw || j >= sc.ch) continue;
+          var heat = clamp((1 - v) * (1 - 0.55 * uu * uu) + 0.15 * (hash3(i, j, Math.floor(t * 12)) - 0.5), 0, 1);
+          var gi = clamp(Math.round(heat * (ramp.length - 1) + 0.5), 2, ramp.length - 1);
+          var ck = heat > 0.78 ? 'flameCore' : heat > 0.55 ? 'flameMid' : heat > 0.3 ? 'flameOuter' : 'flameTip';
+          out.push({ i: i, j: j, g: ramp.charAt(gi), c: rgbK(ck) });
+        }
+      }
+      return out;
+    }
+    function embers(sc, base, t) {
+      var out = [], k;
+      for (k = 0; k < 9; k++) {
+        var ph = ((S.anim ? t : 0.7) * 0.45 + k * 0.137) % 1;
+        var p = [base[0] + Math.sin(k * 2.3 + ph * 3) * 0.18, base[1] + Math.cos(k * 1.7) * 0.1, base[2] + 0.15 + ph * 1.1];
+        var q = proj(sc, p), i = Math.floor(q[0]), j = Math.floor(q[1]);
+        if (i < 0 || j < 0 || i >= sc.cw || j >= sc.ch) continue;
+        out.push({ i: i, j: j, g: ph < 0.3 ? '*' : ph < 0.65 ? "'" : '.', c: rgbK(ph < 0.4 ? 'emberHot' : ph < 0.7 ? 'ember' : 'emberDim') });
+      }
+      return out;
+    }
+
+    // ------------------------------------------------------------------ derived lights (38.12 (1))
+    function formulaOf(it) {
+      var g = it.cg, n = 0, cx = 0, cy = 0, cz = 0, hr = 0, hg = 0, hb = 0, x, y, z;
+      for (z = 0; z < g.sz; z++) for (y = 0; y < g.sy; y++) for (x = 0; x < g.sx; x++) {
+        var id = g.get(x, y, z);
+        if (!id) continue;
+        var mk = g.mats[id], m = mat(mk);
+        if (m.e < S.EMIN) continue;
+        n += m.e; cx += (x + 0.5) * m.e; cy += (y + 0.5) * m.e; cz += (z + 0.5) * m.e;
+        var c = glowRGB(mk); hr += c[0] * m.e; hg += c[1] * m.e; hb += c[2] * m.e;
+      }
+      if (!n) return null;
+      var sq = Math.sqrt(n);
+      return { n: n, local: [cx / n, cy / n, cz / n], h: hueOf([hr, hg, hb]),
+               I: clamp(0.12 * sq, 0.15, 0.9), r: clamp(1.5 + 0.35 * sq, 2, 6) };
+    }
+    function derived(it) {
+      if (S.lightSrc === 'override' && it.override !== undefined) {
+        if (it.override === false) return null;
+        var o = it.override;
+        return { p: toWorld(it, o.at, it.cg), h: hueK(o.color), I: o.intensity, r: o.radius, src: o.label };
+      }
+      var f = it.formula;
+      if (!f) return null;
+      return { p: toWorld(it, f.local, it.cg), h: f.h, I: f.I, r: f.r, src: 'formula n ' + f.n.toFixed(1) };
+    }
+    function lightsFor(sc, pr, t) {
+      var L = [];
+      sc.placed.forEach(function (pl) {
+        var q = pl.preset, f = q.flicker, I = q.intensity;
+        if (f && S.anim) I *= 1 + f.amount * (0.6 * Math.sin(2 * Math.PI * f.hzMin * t) + 0.4 * Math.sin(2 * Math.PI * f.hzMax * t + 1.3));
+        L.push({ p: pl.p, h: hueK(q.color), I: I, r: q.radius, name: pl.name, placed: true });
+      });
+      if (pr.derived) sc.insts.forEach(function (it) {
+        var dl = derived(it);
+        if (dl) L.push({ p: dl.p, h: dl.h, I: dl.I * pr.lightGain, r: dl.r, name: it.name, src: dl.src });
+      });
+      return L;
+    }
+
+    // ------------------------------------------------------------------ G-buffer pass (once per scene per frame)
+    function todOf(sc) { return sc.todMode === 'global' ? S.tod : sc.todMode; }
+    function geom(sc, t) {
+      sc.insts.forEach(function (it) {
+        if (it.anim === 'qm') {
+          if (S.anim) {
+            it.yaw = ((t * 360 * QFX.spinRevPerS) % 360) - 180;
+            it.bob = QFX.bobM * Math.sin(2 * Math.PI * t * 1000 / QFX.bobPeriodMs);
+          } else { it.yaw = S.spin; it.bob = 0; }
+        }
+        it._c = Math.cos(-it.yaw * Math.PI / 180); it._s = Math.sin(-it.yaw * Math.PI / 180);
+      });
+      var W = sc.cw, H = sc.ch, N = W * H;
+      if (!sc.G || sc.G.n !== N) sc.G = { n: N, kind: new Int8Array(N), dist: new Float32Array(N), pos: new Float32Array(N * 3),
+        nrm: new Float32Array(N * 3), mat: new Array(N), tex: new Float32Array(N), sky: new Float32Array(N * 3),
+        star: new Uint8Array(N), R: new Float32Array(N), Nk: new Float32Array(N), src: [] };
+      var G = sc.G, cam = sc.cam, tod = TOD[todOf(sc)], i, j;
+      G.src = [];
+      for (j = 0; j < H; j++) for (i = 0; i < W; i++) {
+        var d = i + j * W;
+        var u = (sc.c0 + i + 0.5 - FW / 2) / FX, v = -(sc.r0 + j + 0.5 - FH / 2) / FY;
+        var dir = norm([cam.f[0] + u * cam.r[0] + v * cam.u[0], cam.f[1] + u * cam.r[1] + v * cam.u[1], cam.f[2] + u * cam.r[2] + v * cam.u[2]]);
+        var h = trace(sc, cam.o, dir);
+        if (!h) {
+          G.kind[d] = 0; G.mat[d] = null; G.dist[d] = 1e4;
+          var sk = skyCol(tod, dir[2]); G.sky[d * 3] = sk[0]; G.sky[d * 3 + 1] = sk[1]; G.sky[d * 3 + 2] = sk[2];
+          G.star[d] = tod.stars && hash3(sc.c0 + i, sc.r0 + j, 7) < 0.012 ? 1 : 0;
+          continue;
+        }
+        var p = [cam.o[0] + dir[0] * h.t, cam.o[1] + dir[1] * h.t, cam.o[2] + dir[2] * h.t];
+        G.kind[d] = h.t > FAR_M ? 0 : 1; G.dist[d] = h.t; G.mat[d] = h.mk; G.star[d] = 0;
+        G.pos[d * 3] = p[0]; G.pos[d * 3 + 1] = p[1]; G.pos[d * 3 + 2] = p[2];
+        G.nrm[d * 3] = h.n[0]; G.nrm[d * 3 + 1] = h.n[1]; G.nrm[d * 3 + 2] = h.n[2];
+        G.tex[d] = texOf(h.mk, p, h.n);
+        var R = clamp(S.R_m * FY / h.t, 1, S.R_MAX), ks = kernSum(R, R);
+        G.R[d] = R; G.Nk[d] = ks * ks;
+        if (G.kind[d] === 1) {
+          var m = mat(h.mk);
+          if (m.e >= S.glowMin) {
+            var c = glowRGB(h.mk);
+            G.src.push({ i: i, j: j, dist: h.t, w: m.e, rgb: [c[0] * m.e, c[1] * m.e, c[2] * m.e], hue: hueOf(c) });
+          }
+        }
+      }
+      sc.spr = sc.sprites ? sc.sprites(sc, t) : [];
+    }
+
+    // ------------------------------------------------------------------ shade one column (preset)
+    function shade(sc, pr, t) {
+      var G = sc.G, W = sc.cw, H = sc.ch, N = W * H, tod = TOD[todOf(sc)];
+      if (!sc.buf || sc.buf.n !== N) sc.buf = { n: N, glyph: new Array(N), fg: new Float32Array(N * 3), bg: new Float32Array(N * 3),
+        bl: new Float32Array(N * 3), ha: new Float32Array(N), hc: new Float32Array(N * 3) };
+      var B = sc.buf; B.bl.fill(0); B.ha.fill(0); B.hc.fill(0);
+      var lights = lightsFor(sc, pr, t), RM = Math.floor(S.R_MAX), s, dx, dy, x, y, d, ax, ay, w, si;
+      // (2) bleed: source cells (GLOW.w >= glowMin) splat into geometry cells within R (depth-aware), own cell excluded
+      if (pr.bleed && pr.bleedGain > 0) for (si = 0; si < G.src.length; si++) {
+        s = G.src[si];
+        for (dy = -RM; dy <= RM; dy++) {
+          y = s.j + dy; if (y < 0 || y >= H) continue;
+          for (dx = -RM; dx <= RM; dx++) {
+            if (!dx && !dy) continue;
+            x = s.i + dx; if (x < 0 || x >= W) continue;
+            d = x + y * W;
+            if (G.kind[d] !== 1) continue;
+            var R = G.R[d]; ax = dx < 0 ? -dx : dx; ay = dy < 0 ? -dy : dy;
+            if (ax > R || ay > R) continue;
+            var dc = G.dist[d];
+            w = wk(ax, R) * wk(ay, R) * Math.exp(-Math.abs(s.dist - dc) / (0.12 * dc)) / G.Nk[d];
+            B.bl[d * 3] += w * s.rgb[0]; B.bl[d * 3 + 1] += w * s.rgb[1]; B.bl[d * 3 + 2] += w * s.rgb[2];
+          }
+        }
+      }
+      // (3) halo: kind-0 (sky / far) cells within haloR of a source, no depth term
+      var Rh = Math.max(1, Math.min(Math.round(pr.haloR), RM)), Rk = Rh + 1, nkh = kernSum(Rk, Rh), NkH = nkh * nkh;
+      if (pr.halo) for (si = 0; si < G.src.length; si++) {
+        s = G.src[si];
+        for (dy = -Rh; dy <= Rh; dy++) {
+          y = s.j + dy; if (y < 0 || y >= H) continue;
+          for (dx = -Rh; dx <= Rh; dx++) {
+            x = s.i + dx; if (x < 0 || x >= W) continue;
+            d = x + y * W;
+            if (G.kind[d] !== 0) continue;
+            w = wk(dx < 0 ? -dx : dx, Rk) * wk(dy < 0 ? -dy : dy, Rk) * s.w / NkH;
+            B.ha[d] += w; B.hc[d * 3] += w * s.hue[0]; B.hc[d * 3 + 1] += w * s.hue[1]; B.hc[d * 3 + 2] += w * s.hue[2];
+          }
+        }
+      }
+      var fogC = rgbK(tod.fog), bleedMax = 0, haloCells = 0, li;
+      for (d = 0; d < N; d++) {
+        var k = G.kind[d], mk = G.mat[d], g, fr, fgg, fb, br, bgg, bb;
+        if (!mk) {
+          br = G.sky[d * 3]; bgg = G.sky[d * 3 + 1]; bb = G.sky[d * 3 + 2];
+          if (G.star[d]) { g = '.'; fr = 150; fgg = 170; fb = 215; } else { g = ' '; fr = br; fgg = bgg; fb = bb; }
+        } else {
+          var m = mat(mk), px = G.pos[d * 3], py = G.pos[d * 3 + 1], pz = G.pos[d * 3 + 2];
+          var nx = G.nrm[d * 3], ny = G.nrm[d * 3 + 1], nz = G.nrm[d * 3 + 2];
+          var Lr = tod.amb[0] * tod.ambI, Lg = tod.amb[1] * tod.ambI, Lb = tod.amb[2] * tod.ambI;
+          if (tod.key) {
+            var nd = nx * tod.key.d[0] + ny * tod.key.d[1] + nz * tod.key.d[2], lk = clamp((nd + 0.2) / 1.2, 0, 1) * tod.key.I;
+            Lr += tod.key.h[0] * lk; Lg += tod.key.h[1] * lk; Lb += tod.key.h[2] * lk;
+          }
+          if (k === 1) {
+            for (li = 0; li < lights.length; li++) {
+              var l = lights[li], lx = l.p[0] - px, ly = l.p[1] - py, lz = l.p[2] - pz, d2 = lx * lx + ly * ly + lz * lz, r2 = l.r * l.r;
+              if (d2 >= r2) continue;
+              var dd = Math.sqrt(d2) || 1e-6, f0 = 1 - d2 / r2, ndl = (nx * lx + ny * ly + nz * lz) / dd;
+              var am = l.I * f0 * f0 * clamp((ndl + 0.3) / 1.3, 0, 1);
+              Lr += l.h[0] * am; Lg += l.h[1] * am; Lb += l.h[2] * am;
+            }
+            if (pr.bleed) {
+              var b0 = B.bl[d * 3] * pr.bleedGain, b1 = B.bl[d * 3 + 1] * pr.bleedGain, b2 = B.bl[d * 3 + 2] * pr.bleedGain;
+              Lr += b0; Lg += b1; Lb += b2;
+              var bm = 0.3 * b0 + 0.59 * b1 + 0.11 * b2; if (bm > bleedMax) bleedMax = bm;
+            }
+          }
+          var a = m.albedo * G.tex[d], lum = 0.3 * Lr + 0.59 * Lg + 0.11 * Lb, bri = lum * a + m.e, ramp = m.ramp;
+          g = ramp.charAt(clamp(Math.round(clamp(bri, 0, 1) * (ramp.length - 1)), 0, ramp.length - 1));
+          fr = Math.min(255, 255 * m.base[0] * (Lr * a + m.e));
+          fgg = Math.min(255, 255 * m.base[1] * (Lg * a + m.e));
+          fb = Math.min(255, 255 * m.base[2] * (Lb * a + m.e));
+          br = fr * m.bgK; bgg = fgg * m.bgK; bb = fb * m.bgK;
+          var dist = G.dist[d];
+          var ff = tod.indoor ? clamp((dist - 3) / 12, 0, 1) * tod.fogMax : clamp((dist - 14) / 60, 0, 1) * tod.fogMax;
+          if (ff > 0) {
+            fr = mixv(fr, fogC[0], ff); fgg = mixv(fgg, fogC[1], ff); fb = mixv(fb, fogC[2], ff);
+            br = mixv(br, fogC[0] * 0.85, ff); bgg = mixv(bgg, fogC[1] * 0.85, ff); bb = mixv(bb, fogC[2] * 0.85, ff);
+          }
+        }
+        if (k === 0 && pr.halo && B.ha[d] > 0) {
+          var ah = 1 - Math.exp(-S.haloK * B.ha[d]);
+          if (ah >= pr.haloMin) {
+            var hh = hueOf([B.hc[d * 3], B.hc[d * 3 + 1], B.hc[d * 3 + 2]]), hr = 255 * hh[0], hg = 255 * hh[1], hb = 255 * hh[2];
+            br = mixv(br, hr, ah * pr.haloBg); bgg = mixv(bgg, hg, ah * pr.haloBg); bb = mixv(bb, hb, ah * pr.haloBg);
+            if (g === ' ') {
+              var n = pr.ramp.length, ki = Math.round(ah * (n - 1));
+              if (ki > 0) { g = pr.ramp.charAt(ki); var qq = 0.5 + 0.5 * ah; fr = mixv(br, hr, qq); fgg = mixv(bgg, hg, qq); fb = mixv(bb, hb, qq); }
+            }
+            haloCells++;
+          }
+        }
+        B.glyph[d] = g;
+        B.fg[d * 3] = fr; B.fg[d * 3 + 1] = fgg; B.fg[d * 3 + 2] = fb;
+        B.bg[d * 3] = br; B.bg[d * 3 + 1] = bgg; B.bg[d * 3 + 2] = bb;
+      }
+      for (si = 0; si < sc.spr.length; si++) {
+        var c = sc.spr[si]; d = c.i + c.j * W;
+        B.glyph[d] = c.g; B.fg[d * 3] = c.c[0]; B.fg[d * 3 + 1] = c.c[1]; B.fg[d * 3 + 2] = c.c[2];
+        B.bg[d * 3] = mixv(B.bg[d * 3], c.c[0], 0.22); B.bg[d * 3 + 1] = mixv(B.bg[d * 3 + 1], c.c[1], 0.22); B.bg[d * 3 + 2] = mixv(B.bg[d * 3 + 2], c.c[2], 0.22);
+      }
+      return { lights: lights, bleedMax: bleedMax, haloCells: haloCells, src: G.src.length };
+    }
+
+    // ------------------------------------------------------------------ draw
+    function drawCanvas(cv, sc) {
+      var B = sc.buf, W = sc.cw, H = sc.ch, cw = S.cell[0], ch = S.cell[1], i, j, d;
+      if (cv.width !== W * cw || cv.height !== H * ch) { cv.width = W * cw; cv.height = H * ch; }
+      var ctx = cv.getContext('2d'), img = ctx.createImageData(W * cw, H * ch), D = img.data, stride = W * cw;
+      for (j = 0; j < H; j++) for (i = 0; i < W; i++) {
+        d = i + j * W;
+        var r = B.bg[d * 3], g = B.bg[d * 3 + 1], b = B.bg[d * 3 + 2], yy, xx;
+        for (yy = 0; yy < ch; yy++) {
+          var o = ((j * ch + yy) * stride + i * cw) * 4;
+          for (xx = 0; xx < cw; xx++) { D[o] = r; D[o + 1] = g; D[o + 2] = b; D[o + 3] = 255; o += 4; }
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      ctx.font = ch + 'px Consolas, "Courier New", monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      var last = '';
+      for (j = 0; j < H; j++) for (i = 0; i < W; i++) {
+        d = i + j * W;
+        var gch = B.glyph[d];
+        if (gch === ' ') continue;
+        var col = 'rgb(' + (B.fg[d * 3] | 0) + ',' + (B.fg[d * 3 + 1] | 0) + ',' + (B.fg[d * 3 + 2] | 0) + ')';
+        if (col !== last) { ctx.fillStyle = col; last = col; }
+        ctx.fillText(gch, i * cw + cw / 2, j * ch + ch / 2 + 1);
+      }
+    }
+
+    // ------------------------------------------------------------------ DOM
+    function buildDOM() {
+      var root = $('scenes'), lastGroup = '';
+      root.innerHTML = '';
+      SCENES.forEach(function (sc) {
+        if (sc.group !== lastGroup) {
+          var h2 = document.createElement('h2'); h2.textContent = sc.group; root.appendChild(h2); lastGroup = sc.group;
+        }
+        var div = document.createElement('div'); div.className = 'scene';
+        var h3 = document.createElement('h3'); h3.id = 'tt_' + sc.id; div.appendChild(h3);
+        var cap = document.createElement('div'); cap.className = 'cap'; cap.id = 'cap_' + sc.id; div.appendChild(cap);
+        var cols = document.createElement('div'); cols.className = 'cols'; div.appendChild(cols);
+        sc.cv = {}; sc.hd = {}; sc.cellDiv = {};
+        ORDER.forEach(function (k) {
+          var c = document.createElement('div'); c.className = 'cell';
+          var hd = document.createElement('div'); hd.className = 'hd';
+          var cv = document.createElement('canvas');
+          c.appendChild(hd); c.appendChild(cv); cols.appendChild(c);
+          sc.cv[k] = cv; sc.hd[k] = hd; sc.cellDiv[k] = c;
+        });
+        root.appendChild(div);
+      });
+    }
+    function f2(x) { return (Math.round(x * 100) / 100).toFixed(2); }
+    function sceneCap(sc) {
+      var parts = [];
+      sc.insts.forEach(function (it) {
+        var f = it.formula;
+        var s = '<b>' + it.name + '</b> 38.12 (1): ' + (f ? 'n ' + f.n.toFixed(1) + ' -> I ' + f2(f.I) + ' / r ' + f.r.toFixed(2) + ' m' : 'no voxel >= ' + S.EMIN);
+        if (it.override === false) s += ' | def override: <code>light: false</code>';
+        else if (it.override) s += ' | def override (' + it.override.label + '): ' + it.override.color + ' ' + f2(it.override.intensity) + ' / r ' + it.override.radius + ' m';
+        s += ' | using: <b>' + (S.lightSrc === 'override' && it.override !== undefined ? 'override' : 'formula') + '</b>';
+        parts.push(s);
+      });
+      sc.placed.forEach(function (pl) { parts.push('placed <b>' + pl.name + '</b> ' + pl.preset.intensity + ' / r ' + pl.preset.radius + ' m (all columns)'); });
+      parts.push('time: <b>' + TOD[todOf(sc)].name + '</b>');
+      parts.push('crop ' + sc.cw + ' x ' + sc.ch + ' of the 400 x 150 frame at (' + sc.c0 + ', ' + sc.r0 + ')');
+      parts.push(sc.dressing);
+      return parts.join(' &middot; ');
+    }
+    function headerText(k, st) {
+      var pr = PR[k], s = '<b>' + LABEL[k] + '</b>' + (k === S.pick ? ' [pick]' : '');
+      if (k === 'off') return s + '<br>material self-emissive only; placed lights stay';
+      var dl = st.lights.filter(function (l) { return !l.placed; });
+      s += '<br>light ' + (dl.length ? dl.map(function (l) { return f2(l.I) + '/' + l.r.toFixed(1) + 'm'; }).join(', ') : 'none');
+      s += ' &middot; bleed ' + (pr.bleed ? '+' + f2(st.bleedMax) : 'off') + ' &middot; halo ' + (pr.halo ? st.haloCells + ' cells' : 'off');
+      return s;
+    }
+
+    var renderMs = 0;
+    function renderAll(t) {
+      var t0 = performance.now();
+      SCENES.forEach(function (sc) {
+        geom(sc, t);
+        sc.insts.forEach(function (it) { it.formula = formulaOf(it); });
+        $('tt_' + sc.id).textContent = sc.title;
+        $('cap_' + sc.id).innerHTML = sceneCap(sc);
+        ORDER.forEach(function (k) {
+          var st = shade(sc, PR[k], t);
+          drawCanvas(sc.cv[k], sc);
+          sc.hd[k].innerHTML = headerText(k, st);
+          sc.cellDiv[k].className = 'cell' + (k === S.pick ? ' pick' : '');
+        });
+      });
+      renderMs = performance.now() - t0;
+      $('perf').textContent = 'mock frame ' + renderMs.toFixed(0) + ' ms (page cost, not the engine)';
+    }
+
+    // ------------------------------------------------------------------ controls
+    function refresh() { if (!S.anim) renderAll(0.35); updateTable(); updateJSON(); }
+    function bindRange(id, key, fmt, after) {
+      var el = $(id), vEl = $(id + 'V');
+      el.addEventListener('input', function () { S[key] = +el.value; if (vEl) vEl.textContent = fmt ? fmt(+el.value) : el.value; if (after) after(); refresh(); });
+    }
+    function setRmax(v) { S.R_MAX = v; $('rmax').value = v; $('rmaxV').textContent = v; }
+    bindRange('rmax', 'R_MAX');
+    bindRange('rm', 'R_m');
+    bindRange('spin', 'spin');
+    $('tierHigh').addEventListener('click', function () { setRmax(4); refresh(); });
+    $('tierUltra').addEventListener('click', function () { setRmax(6); refresh(); });
+    $('lightSrc').addEventListener('change', function () { S.lightSrc = this.value; refresh(); });
+    $('hueMode').addEventListener('change', function () { S.hueMode = this.value; refresh(); });
+    $('wick').addEventListener('change', function () { S.wick = this.checked; buildScenes(); buildDOM(); refresh(); if (S.anim) renderAll(clock()); });
+    $('coal').addEventListener('change', function () { S.coal = this.checked; buildScenes(); buildDOM(); refresh(); if (S.anim) renderAll(clock()); });
+    $('anim').addEventListener('change', function () { S.anim = this.checked; refresh(); });
+    $('cellPx').addEventListener('change', function () { var p = this.value.split('x'); S.cell = [+p[0], +p[1]]; refresh(); if (S.anim) renderAll(clock()); });
+    (function () {
+      var host = $('todBtns');
+      ['day', 'dusk', 'night'].forEach(function (k) {
+        var b = document.createElement('button'); b.textContent = k; b.dataset.k = k;
+        b.addEventListener('click', function () { S.tod = k; markTod(); refresh(); });
+        host.appendChild(b);
+      });
+    })();
+    function markTod() { Array.prototype.forEach.call($('todBtns').children, function (b) { b.className = b.dataset.k === S.tod ? 'on' : ''; }); }
+
+    var SL = [
+      ['lightGain', 'light intensity (lightGain)', 0, 1.5, 0.05],
+      ['bleedGain', 'bleedGain', 0, 4, 0.05],
+      ['haloBg', 'haloBg', 0, 1, 0.05],
+      ['haloMin', 'haloMin', 0, 0.6, 0.01],
+      ['haloR', 'haloR (cells, <= R_MAX)', 1, 6, 1]
+    ];
+    function buildPresetCtl() {
+      var host = $('presetCtl'), html = '';
+      html += '<label>edit preset <select id="editSel">' + ['subtle', 'medium', 'strong'].map(function (k) {
+        return '<option value="' + k + '"' + (k === S.edit ? ' selected' : '') + '>' + k + '</option>'; }).join('') + '</select></label>';
+      html += '<label><input type="checkbox" id="pDerived"> derived lights</label>';
+      html += '<label><input type="checkbox" id="pBleed"> bleed</label>';
+      html += '<label><input type="checkbox" id="pHalo"> halo on</label>';
+      SL.forEach(function (s) {
+        html += '<span class="sl"><span class="k">' + s[1] + '</span><input type="range" id="p_' + s[0] + '" min="' + s[2] + '" max="' + s[3] +
+                '" step="' + s[4] + '"><span class="val" id="p_' + s[0] + 'V"></span></span>';
+      });
+      html += '<span class="sl"><span class="k">glyphRamps.halo</span><input class="ramp" id="pRamp" maxlength="12"> <span class="rampdemo" id="rampDemo"></span></span>';
+      html += '<button id="pReset">reset presets</button>';
+      html += '<label>owner pick <select id="pickSel">' + ['subtle', 'medium', 'strong'].map(function (k) {
+        return '<option value="' + k + '"' + (k === S.pick ? ' selected' : '') + '>' + k + '</option>'; }).join('') + '</select></label>';
+      host.innerHTML = html;
+      $('editSel').addEventListener('change', function () { S.edit = this.value; loadPresetCtl(); });
+      $('pickSel').addEventListener('change', function () { S.pick = this.value; refresh(); });
+      $('pDerived').addEventListener('change', function () { PR[S.edit].derived = this.checked; refresh(); });
+      $('pBleed').addEventListener('change', function () { PR[S.edit].bleed = this.checked; refresh(); });
+      $('pHalo').addEventListener('change', function () { PR[S.edit].halo = this.checked; refresh(); });
+      SL.forEach(function (s) {
+        $('p_' + s[0]).addEventListener('input', function () { PR[S.edit][s[0]] = +this.value; $('p_' + s[0] + 'V').textContent = this.value; refresh(); });
+      });
+      $('pRamp').addEventListener('input', function () {
+        var v = this.value.replace(/[^\x20-\x7e]/g, '');
+        if (v.charAt(0) !== ' ') v = ' ' + v;           // ramps start with space (palette.validate rule)
+        PR[S.edit].ramp = v; demoRamp(); refresh();
+      });
+      $('pReset').addEventListener('click', function () { PR = JSON.parse(JSON.stringify(DEFAULTS)); loadPresetCtl(); refresh(); });
+      loadPresetCtl();
+    }
+    function demoRamp() {
+      var r = PR[S.edit].ramp, c = rgbK('brassLight'), out = '', i;
+      for (i = 0; i < r.length; i++) {
+        var a = r.length > 1 ? i / (r.length - 1) : 1;
+        out += '<span style="color:rgb(' + Math.round(mixv(40, c[0], 0.5 + 0.5 * a)) + ',' + Math.round(mixv(40, c[1], 0.5 + 0.5 * a)) + ',' +
+               Math.round(mixv(60, c[2], 0.5 + 0.5 * a)) + ')">' + (r.charAt(i) === ' ' ? '&nbsp;' : r.charAt(i).replace('&', '&amp;').replace('<', '&lt;')) + '</span>';
+      }
+      $('rampDemo').innerHTML = out;
+    }
+    function loadPresetCtl() {
+      var p = PR[S.edit];
+      $('pDerived').checked = p.derived; $('pBleed').checked = p.bleed; $('pHalo').checked = p.halo;
+      SL.forEach(function (s) { $('p_' + s[0]).value = p[s[0]]; $('p_' + s[0] + 'V').textContent = p[s[0]]; });
+      $('pRamp').value = p.ramp; demoRamp();
+    }
+    function updateTable() {
+      var keys = ['derived', 'bleed', 'halo', 'lightGain', 'bleedGain', 'haloBg', 'haloMin', 'haloR', 'ramp'];
+      var html = '<table><tr><th>preset</th>' + keys.map(function (k) { return '<th>' + (k === 'ramp' ? 'glyphRamps.halo' : k) + '</th>'; }).join('') + '</tr>';
+      ORDER.forEach(function (k) {
+        html += '<tr><td>' + LABEL[k] + (k === S.pick ? ' <b style="color:#ffd24a">pick</b>' : '') + '</td>' + keys.map(function (q) {
+          var v = PR[k][q];
+          if (q === 'ramp') return '<td>"' + String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '"</td>';
+          return '<td>' + (typeof v === 'boolean' ? (v ? 'on' : 'off') : v) + '</td>';
+        }).join('') + '</tr>';
+      });
+      html += '</table><div class="note">Global: R_MAX ' + S.R_MAX + ' (tier: High 4 / Ultra 6, not a strength), R_m ' + S.R_m +
+              ' m, glowMin ' + S.glowMin + ', EMISSIVE_LIGHT_MIN ' + S.EMIN + ', haloK ' + S.haloK + ', bleedNorm kernel.</div>';
+      $('presetTab').innerHTML = html;
+    }
+
+    // ------------------------------------------------------------------ copy values
+    function presetJSON(k) {
+      var p = PR[k];
+      return { emissive: p.derived && (p.bleed || p.halo) ? 'full' : p.derived ? 'derived' : 'off',
+               'rt.emissive': { derived: p.derived, bleed: p.bleed, halo: p.halo },
+               bleedGain: p.bleedGain, haloBg: p.haloBg, haloMin: p.haloMin, 'glyphRamps.halo': p.ramp,
+               R_MAX: S.R_MAX, R_m: S.R_m, EMISSIVE_LIGHT_MIN: S.EMIN,
+               lightGain: p.lightGain, haloR: Math.min(p.haloR, S.R_MAX) };
+    }
+    function valuesJSON() {
+      var lightOv = {
+        questMark: S.lightSrc === 'override' ? { preset: { color: QFX.light.color, intensity: QFX.light.intensity, radius: QFX.light.radius, mount: 'light' } } : 'derived (formula)',
+        chestSmall: S.lightSrc === 'override' ? false : 'derived (formula; counts the sealed glint + the loot pool in every state)',
+        chestBig: S.lightSrc === 'override' ? false : 'derived (formula)',
+        lantern: S.lightSrc === 'override' ? false : 'derived (formula; sealed glint' + (S.wick ? ' + wick proposal' : '') + ')'
+      };
+      return {
+        story: 'EMIS-00', page: 'design/preview/emissive-glow.html', design: 'docs/architecture.md 38.12',
+        pick: S.pick,
+        gfxPresets: { low: { emissive: 'off' }, medium: { emissive: 'derived' }, high: { emissive: 'full', R_MAX: 4 }, ultra: { emissive: 'full', R_MAX: 6 } },
+        presets: { off: presetJSON('off'), subtle: presetJSON('subtle'), medium: presetJSON('medium'), strong: presetJSON('strong') },
+        applied: presetJSON(S.pick),
+        glyphRamps: { halo: PR[S.pick].ramp },
+        light: lightOv,
+        materials: S.hueMode === 'glowColor' ? { brass_glint: { glowColor: GLOW_COLOR.brass_glint } } : {},
+        derivedFormula: { intensity: 'clamp(0.12*sqrt(n), 0.15, 0.9) * lightGain', radius: 'clamp(1.5 + 0.35*sqrt(n), 2, 6)', n: 'sum(emissive) of voxels with emissive >= EMISSIVE_LIGHT_MIN' },
+        bleed: { kernel: '(1-(k/R)^2)^2 per axis * exp(-|dist_s-dist_c|/(0.12*dist_c))', R: 'clamp(R_m*planeDistY/dist_c, 1, R_MAX)', bleedNorm: 'kernel', glowMin: S.glowMin },
+        halo: { kernel: 'per axis (1-(k/(haloR+1))^2)^2, |k| <= haloR, no depth term, kind-0 cells only', a: '1 - exp(-haloK * sum(w * GLOW.w) / (sum w)^2)', haloK: S.haloK,
+                bg: 'mix(bg, glow*255, a*haloBg) when a >= haloMin', glyph: 'space cells only: glyphRamps.halo[round(a*(n-1))]' },
+        invented: ['lightGain', 'haloR', 'haloK', 'bleedNorm', 'glowMin', 'materials[k].glowColor']
+      };
+    }
+    function updateJSON() { $('json').textContent = JSON.stringify(valuesJSON(), null, 2); }
+    $('copyBtn').addEventListener('click', function () {
+      var txt = JSON.stringify(valuesJSON(), null, 2);
+      function done(ok) { $('cpMsg').textContent = ok ? 'copied (' + txt.length + ' chars)' : 'clipboard blocked: select the JSON below and copy'; }
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(function () { done(true); }, function () { done(false); });
+      else {
+        var r = document.createRange(); r.selectNodeContents($('json'));
+        var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+        try { done(document.execCommand('copy')); } catch (e) { done(false); }
+      }
+    });
+
+    // ------------------------------------------------------------------ boot + animation
+    var startT = performance.now();
+    function clock() { return (performance.now() - startT) / 1000; }
+    buildScenes(); buildDOM(); buildPresetCtl(); markTod();
+    renderAll(S.anim ? 0 : 0.35); updateTable(); updateJSON();
+    var lastDraw = 0;
+    function tick(now) {
+      requestAnimationFrame(tick);
+      if (!S.anim) return;
+      var gap = Math.max(120, renderMs * 2);
+      if (now - lastDraw < gap) return;
+      lastDraw = now;
+      try { renderAll(clock()); } catch (e) { S.anim = false; fail(e); }
+    }
+    requestAnimationFrame(tick);
+  }
+})();
+</script>
+</body>
+</html>

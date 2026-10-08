@@ -589,3 +589,22 @@ Owner: WoW-style golden 3D '!' above the active quest note; note 1 "find somethi
 `game/js/quest/wire/questMarks.js` on `onBoot/onTick/onEvent(flag:set|item:got|beast:died|prop:touched)`: spawn/hide `questMark` voxel entities (`components.voxel.hidden` seam, US-079b0) at `markerTargets()` anchors, play pop on appear and fade on TAKE (`prop:touched` / `flag:set` quest-taken), cull beyond visibleRangeM. No main.js/engine edits (NEEDS B1 line if a hook point is missing). Owner look: marker readable at 3 m and 12 m, disappears the moment the quest is taken.
 ### QUEST-TEXT-02 [writer, ~0.25 d]
 Texts for note1, note2 ("kill 5 boars" in canon voice), objective lines for `note1/note2/beasts(5)`, HUD <= 38 chars. Append to docs/story.md '## Sprint 8 texts'.
+
+## Emissive lighting (owner ask 2026-10-08)
+Owner: glowing voxels (chest glint, quest '!', lamps, signal relay, embers, runes) light their surroundings; nicest look at good speed. Design: architecture.md 38.12 (derived point lights: DO first; bleed pass: High/Ultra; halo in edge: High/Ultra; Low = material self-emissive only; all three forced off in every `?gpucompare=` mode). Order: owner sees derived lights first, bleed/halo after picking a strength in EMIS-00.
+### EMIS-00 strength mockups [designer, ~0.5 d, deps: none]
+`design/preview/emissive.html`: night scene with the '!' at 3 m and 12 m, a lamp, embers; weak / medium / strong (`bleedGain`, `haloBg`, `glyphRamps.halo`). Owner picks one.
+### EMIS-01a derive emissive lights [lane B1, ~0.75 d, deps: none]
+`engine/voxel/emissiveLight.js` (pure `deriveEmissiveLight`), stored on the packed model, def override `light: {preset} | false`, flicker from the material. Node tests (38.12 (1)). Ends in arch-review.
+### EMIS-01b LightSet derived pool + feed [lane B1, ~0.75 d, deps: EMIS-01a]
+`LightSet.beginDerived/offerDerived/endDerived` (ranking, 1.25x hysteresis, zero alloc), voxel-pool feed (root pose), `gfxPresets` knob `emissive`, forced off under `?gpucompare=`. Tests + bench row. Ends in arch-review.
+### EMIS-02 gate + perf, owner shot [PC-A, ~0.25 d, deps: EMIS-01b]
+gpucompare rows unchanged; perf table derived on/off (Arc 400x150 High); slot swaps per minute on the m1 route; night owner shot of the '!' and a lamp.
+### EMIS-03a bleed plumbing + JS twin [lane B1, ~0.5 d, deps: EMIS-00 pick]
+MatF `GLOW` column, `rt.emissive` flags + presets, `PASS_NAMES += 'bleed'` + frame timer slot move, `engine/render/bleed.js` `bleedCell` twin + tests.
+### EMIS-03b bleed WGSL pass [lane B2, ~1 d, deps: EMIS-03a]
+`wgsl/bleed.wgsl.js` (H+V, depth-aware, sky halo in .a) + `wg/passBleed.js`, shade binding 16 adds `texBleed.rgb * bleedGain` to Lc. WGSL string tests. Ends in arch-review.
+### EMIS-04 halo in edge [lane B2, ~0.5 d, deps: EMIS-03b]
+edge.wgsl.js + edgePass.js twin: bg lift + `glyphRamps.halo` on space cells only. Ends in arch-review.
+### EMIS-05 compare rows + perf table [PC-A, ~0.25 d, deps: EMIS-04]
+`?gpucompare=emissive` rows, perf table High 400x150 / Ultra 480x180 (target < 1 ms total), Low 240x90 night readability check (fallback: 1-cell halo at Low).
