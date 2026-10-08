@@ -50,7 +50,7 @@ import { isPaused, resetSimAccumulator, duckAudio, unduckAudio, installAutoPause
 import { initAudio, setMuted, toggleMute, isMuted } from './audio/synth.js';
 import { resetGameAudio, stepGameAudio } from './audio/sfx.js';
 // ---- end US-020a ----
-import { loadSettings, saveSettings } from './platform/index.js'; // US-060: remembered mute (D-012)
+import { loadSettings, saveSettings, getSaveStorage } from './platform/index.js'; // US-060: remembered mute (D-012)
 import { applyLocalOverlay } from './localOverlay.js';
 import { applyPlaytestOverlay } from './dev/playtest.js'; // US-034: editor play-test handoff (docs/architecture.md 24.11)
 import { computeEndCardState, drawEndCard } from './ui/endCard.js';
@@ -63,6 +63,7 @@ import { resetNoteRead, stepNoteRead, isNoteOpen, pushNoteDim, drawNotePanel } f
 import { wakeFrame, drawEyelid } from './quest/wake.js';
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel } from './quest/mapCard.js';
 import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
+import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
@@ -331,6 +332,15 @@ const engine = createEngine({
   shadows: shadowOpts, // ME-15c/e/f (27.9a, D-043): see shadowOpts above
   gfx: bootOpts.gfx, // GFX-03/GFX-01w: scatter density + LOD scale from the preset (undefined = engine defaults)
 });
+// US-089w/US-096w: save relay (autosave 60 s + waystone, load at boot) and quest hook. `?save=0` off; capture/bench/compare/cinematic
+// pages and automated browsers never load or save unless `?save=1` forces it (the headless reload check does).
+const saveEnabled = params.get('save') !== '0' && (params.get('save') === '1' || !(isCaptureOrBench || params.get('capture') === '1' || navigator.webdriver));
+let saveRelay = null;
+try {
+  const questDef = await (await fetch('../content/quests/m1.quest.json')).json();
+  saveRelay = createSaveRelay({ storage: getSaveStorage(), questDef, enabled: saveEnabled });
+  saveRelay.bindEvents(engine.events);
+} catch (e) { console.warn('[save] relay unavailable:', e && e.message); }
 // D-025 (US-038a): `renderTarget` now resizes IN PLACE (`engine.setGrid`
 // never replaces the object), so `rt` itself could be `const` - kept `let`
 // only because `depthBuffer`/`gbuf` are still replaced with new
@@ -649,6 +659,7 @@ engine.events.on('grid:changed', ({ cols, rows }) => {
 // Internal hook for manual/automated smoke-testing in a console - not part
 // of the game's own UI.
 window.__debug = { input, overlay, rt, engine, gpuPipeline, gbuf, matTable, ambientL, depthBuffer, sprites };
+window.__debug.saveRelay = saveRelay; // US-089w: test hook (headless reload check)
 
 // US-048 (PC-B QUEUE 4 item 2): the shared `ctx` every game/js/dev/modes/*
 // module's `run(ctx)` reads from - built once here, after every module-scope
@@ -803,6 +814,7 @@ function runGame(mode, cinematic = null) {
     // the 'world:loaded' handler" rule).
     engine.events.on('world:loaded', (evt) => {
       const world = evt.world;
+      if (saveRelay) saveRelay.onWorldLoaded(); // US-089w: consume a pending restore (or reset game data on restart) before any sim is created
       decalBind = bindDecals(engine.overlay, world.decals);
       if (cinematic || Number.isFinite(timeHour)) worldSunPath = sunPathFrom(world.sun || assets.palette.lights.sun);
       // US-020a: reset every module-level audio counter (sector-anim rate
@@ -866,6 +878,7 @@ function runGame(mode, cinematic = null) {
       // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.
       if (beasts) beasts.dispose();
       beasts = createBeastSim(world, { nav: worldDef.nav && buildBeastNav(world, worldDef.nav), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events });
+      if (saveRelay) saveRelay.applyDeadToBeasts(beasts); // US-089w: restored dead beasts stay gone (create reset them alive)
       if (sword) sword.dispose();
       sword = createSwordSim(world, engine.events, SWORD_CFG, { spendMana: (n) => vitals && vitals.spendMana(n) }); // US-078d (30.1)
       hands = createHands(engine.events); // HANDS-01b: fresh router per load (the inventory is seeded just below)
@@ -981,7 +994,7 @@ function runGame(mode, cinematic = null) {
       window.__debug.world = world;
       window.__debug.playerHandle = playerHandle;
       window.__debug.look = look;
-      window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; // HANDS-01b: test hooks
+      window.__debug.beasts = beasts; window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; // HANDS-01b: test hooks
     });
 
     // ME-11c (architecture.md 27.18): `?physics=mesh` opts into the mesh
@@ -1001,6 +1014,14 @@ function runGame(mode, cinematic = null) {
     // spawned test sprites, exactly like a restart's `deserialize` would
     // reproduce.
     initialState = serialize(engine.world);
+    // US-089w: a saved slot replaces the fresh world (same swap the `R` restart uses); a bad save falls back to the fresh start.
+    const savedWorld = saveRelay ? saveRelay.load(assets, worldLoadOpts) : null;
+    if (savedWorld) {
+      try { engine.setWorld(savedWorld); } catch (err) {
+        console.warn('[save] restore failed, starting fresh:', err && err.message);
+        guardLoad(() => engine.setWorld(deserialize(initialState, assets, worldLoadOpts)));
+      }
+    }
   }
 
   function update(dt) {
@@ -1227,6 +1248,8 @@ function runGame(mode, cinematic = null) {
         stepHints(engine.world, assets.uiStyle, dt, hintSignals); // reused object (7.6 item 9: no per-step allocation)
         prevLookYaw = look.yawDeg; prevLookPitch = look.pitchDeg;
       }
+      // US-089w/US-096w: world facts -> quest events, play clock, autosave (60 s, waystone). Not while dead/ending/waking.
+      if (saveRelay) saveRelay.stepGame(dt, engine.world, playerHandle.data.transform, { wakeDone: questUiActive && !wakeOut.inputLocked, canSave: !ending && !wakeOut.inputLocked && !(vitals && vitals.dead) });
       lap(SEC.quest);
       engine.world.flushEvents();
       lap(SEC.events);
@@ -1442,6 +1465,7 @@ function runGame(mode, cinematic = null) {
       // regardless of `?grid=`.
       if (!ending && !uiLockedNow && !cinematic && !isWaterfallPreview) drawCrosshair(ui, crosshairStyle, engine.world.interaction);
       if (questUiActive && !ending) {
+        if (saveRelay && (!isCaptureOrBench || params.get('save') === '1') && !wakeOut.inputLocked) saveRelay.quest.draw(ui); // US-096w: current objective (placeholder text) top-left
         drawHints(ui, assets.uiStyle, fadeLut);
         drawEyelid(rt, assets.uiStyle, wakeOut.blinkOpen); // 17.4: stays in the scene grid (an eyelid over the 3D view, not UI text)
         drawTitleCard(ui, fb.timeSec * 1000, wakeOut.titleA, wakeOut.titleState, fadeLut);

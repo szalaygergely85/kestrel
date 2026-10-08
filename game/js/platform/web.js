@@ -82,6 +82,9 @@ function getStorage() {
   }
 }
 
+/** US-089w: the platform storage object for game saves (`null` when unavailable); saveRelay/saveState never touch `window`. */
+export function getSaveStorage() { return getStorage(); }
+
 function isBoolean(v) { return typeof v === 'boolean'; }
 function isFiniteNumber(v) { return typeof v === 'number' && Number.isFinite(v); }
 

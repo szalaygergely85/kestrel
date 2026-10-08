@@ -1,0 +1,133 @@
+// US-089w: relay between the live game and the lane-C save module (quest/save/saveState.js).
+// Owns the game-side facts a WorldState does not hold (quest, opened chests, dead beasts, play time), autosaves,
+// and restores them before the beast sim is created (beastSim resets every beast to alive on create).
+// No window/DOM access: the platform storage object is injected, so everything here runs in Node.
+import { localToWorld } from '../../engine/index.js';
+import { collectSave, applySave, createStorageAdapter } from './quest/save/saveState.js';
+import { createQuestRelay } from './questRelay.js';
+
+export const AUTOSAVE_SEC = 60;
+const STATE_GONE = 12; // beastSim.STATE_GONE (hidden, skipped everywhere) - same literal beastSim exports
+
+/**
+ * @param {{storage:any, questDef:any, slot?:number, enabled?:boolean, autosaveSec?:number, playerName?:string, place?:string}} o
+ */
+export function createSaveRelay({ storage, questDef, slot = 0, enabled = true, autosaveSec = AUTOSAVE_SEC, playerName = 'Wick', place = 'Kestrel' }) {
+  const adapter = storage ? createStorageAdapter(storage) : null;
+  const quest = createQuestRelay(questDef);
+  const chests = new Set(), dead = new Set();
+  const facts = { wakeDone: false, lanternTaken: false, swordTaken: false, endStarted: false, x: 0, y: 0, z: 0 };
+  const tmp = { x: 0, y: 0, z: 0 };
+  let breach = null, breachFor = null;
+  let playSec = 0, sinceSave = 0, pending = null, lastResult = null;
+
+  const relay = {
+    enabled, quest, adapter, slot,
+    get openedChests() { return [...chests]; },
+    get deadBeasts() { return [...dead]; },
+    get playTimeSec() { return playSec; },
+    get lastResult() { return lastResult; },
+
+    /** Subscribes to game events; returns an unsubscribe function. */
+    bindEvents(events) {
+      const offs = [
+        events.on('beast:died', (p) => { if (p && typeof p.id === 'string') { dead.add(p.id); quest.feed({ type: 'beast:died', id: p.id }); } }),
+        events.on('chest:opened', (p) => { if (p && typeof p.id === 'string') chests.add(p.id); }),
+        events.on('inventory:added', (p) => { if (p && typeof p.id === 'string') quest.feed({ type: 'item:got', id: p.id }); }),
+      ];
+      return () => { for (const off of offs) off(); };
+    },
+
+    /** Reads the slot; when a save exists returns the restored World (caller swaps it in) and arms the pending restore. */
+    load(assets, worldOpts = {}) {
+      if (!enabled || !adapter) return null;
+      const r = adapter.readSlot(slot);
+      if (!r.ok) { lastResult = { op: 'load', ok: false, error: r.error }; return null; }
+      if (!r.save) return null;
+      try {
+        const a = applySave(r.save, assets, { questDef, worldOptions: worldOpts });
+        pending = a;
+        lastResult = { op: 'load', ok: true };
+        return a.world;
+      } catch (e) { lastResult = { op: 'load', ok: false, error: String(e) }; return null; }
+    },
+
+    /** 'world:loaded' (first thing): consume a pending restore, else a fresh run (also `R` restart). */
+    onWorldLoaded() {
+      chests.clear(); dead.clear(); sinceSave = 0;
+      if (pending) {
+        quest.reset(pending.quest ? pending.quest : null);
+        for (const id of pending.openedChests) chests.add(id);
+        for (const id of pending.deadBeasts) dead.add(id);
+        playSec = pending.meta.playTimeSec;
+        pending = null;
+      } else { quest.reset(null); playSec = 0; }
+    },
+
+    /** After createBeastSim: restored dead beasts stay gone (the sim made them alive again). */
+    applyDeadToBeasts(beasts) {
+      if (!beasts || !beasts.slotOf) return;
+      for (const id of dead) {
+        const i = beasts.slotOf(id);
+        if (i < 0) continue;
+        beasts.state[i] = STATE_GONE;
+        beasts.steer.removeAgent(i);
+        const h = beasts.entities[i].components.health;
+        if (h) h.hp = 0;
+      }
+    },
+
+    /** Writes the slot now. `ending` (end walk running) saves with the end trigger un-started so a load does not replay it. */
+    save(world, { ending = false } = {}) {
+      if (!enabled || !adapter || !world) return false;
+      let save;
+      try {
+        save = collectSave(world, { quest: quest.state, questDef, openedChests: [...chests], deadBeasts: [...dead], playerName, place, playTimeSec: playSec });
+        if (ending && save.world.state) save.world.state['quest.endT'] = -1;
+      } catch (e) { lastResult = { op: 'save', ok: false, error: String(e) }; return false; }
+      const r = adapter.writeSlot(slot, save);
+      lastResult = { op: 'save', ok: r.ok, error: r.error };
+      sinceSave = 0;
+      return r.ok;
+    },
+
+    /**
+     * One fixed step: world facts -> quest events, play-time clock, autosave (every autosaveSec, and once on waystone touch).
+     * @param {number} dt seconds
+     * @param {any} world live World
+     * @param {{x:number,y:number,z:number}} pos player transform
+     * @param {{wakeDone:boolean, canSave:boolean}} o
+     */
+    stepGame(dt, world, pos, o) {
+      if (breachFor !== world) { breachFor = world; breach = resolveBreach(world, tmp); }
+      const ws = world.state, wasWay = quest.state.areas.includes('waystone');
+      facts.wakeDone = o.wakeDone; facts.lanternTaken = ws['tower.lantern.taken'] === true; facts.swordTaken = ws['tower.sword.taken'] === true;
+      facts.endStarted = typeof ws['quest.endT'] === 'number' && ws['quest.endT'] >= 0;
+      facts.x = pos.x; facts.y = pos.y; facts.z = pos.z;
+      quest.poll(facts, breach);
+      if (!wasWay && quest.state.areas.includes('waystone')) { relay.save(world, { ending: true }); playSec += dt; return; }
+      relay.tick(dt, world, o.canSave && !facts.endStarted);
+    },
+
+    /** Per-frame clock; autosaves every `autosaveSec` of play when `canSave`. Returns true when it saved. */
+    tick(dtSec, world, canSave, opts) {
+      playSec += dtSec; sinceSave += dtSec;
+      if (enabled && canSave && sinceSave >= autosaveSec) return relay.save(world, opts);
+      return false;
+    },
+  };
+  return relay;
+}
+
+/** World-space breach marker from the tower structure's level markers (null when the world has none). */
+function resolveBreach(world, out) {
+  for (const s of world.structures) {
+    const m = s.level && s.level.def && s.level.def.markers && s.level.def.markers.breach;
+    if (!m) continue;
+    const frame = world.frameOf(s.id);
+    if (!frame) continue;
+    localToWorld(frame, m.x, m.y, m.z, out);
+    return { x: out.x, y: out.y, z: out.z };
+  }
+  return null;
+}
