@@ -5,6 +5,7 @@
 // WebGL2 until WG-5 (`fallback:false` makes it throw instead). The canvas is attached to WebGPU only after
 // the adapter/device/self-test succeeded, so a failed request leaves it free for a WebGL2 context.
 
+import { bootNow, span as bootSpan } from '../../../core/bootMarks.js'; // BOOT-SPEED-01
 import { GpuDeviceGL2 } from './GpuDeviceGL2.js';
 import { GpuDeviceWebGPU } from './GpuDeviceWebGPU.js';
 import { REQUIRED_LIMITS, evaluateWebGpuLimits } from './webgpuProbe.js';
@@ -27,7 +28,9 @@ async function createWebGpuDevice(opts) {
   const gpu = opts.navigatorGpu !== undefined ? opts.navigatorGpu
     : (typeof navigator !== 'undefined' ? /** @type {any} */ (navigator).gpu : undefined);
   if (!gpu) throw new Error('WebGPU unavailable (no navigator.gpu)');
+  const tA = bootNow();
   const adapter = await gpu.requestAdapter();
+  bootSpan('webgpu requestAdapter', tA);
   if (!adapter) throw new Error('WebGPU unavailable (no adapter)');
   const limits = adapter.limits || {};
   const ev = evaluateWebGpuLimits(limits);
@@ -39,7 +42,9 @@ async function createWebGpuDevice(opts) {
   /** @type {string[]} */
   const requiredFeatures = [];
   if (adapter.features && adapter.features.has && adapter.features.has('timestamp-query')) requiredFeatures.push('timestamp-query');
+  const tD = bootNow();
   const gpuDevice = await adapter.requestDevice({ requiredLimits, requiredFeatures });
+  bootSpan('webgpu requestDevice', tD);
   const canvasFormat = typeof gpu.getPreferredCanvasFormat === 'function' ? gpu.getPreferredCanvasFormat() : 'bgra8unorm';
   return new GpuDeviceWebGPU(gpuDevice, { adapter, canvasFormat, ringSlots: opts.ringSlots });
 }

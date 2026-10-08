@@ -13,7 +13,7 @@ import { gatherAdapterInfo, showCard, AutoBench } from './gfxAutoRun.js';
 import {
   probeWebGpu, AssetRegistry, createEngine, createRenderer, clampGrid, GRID_DEFAULT_COLS, resolveShadowLevel,
   GBuffer, bindShading, bindLevel,
-  DebugOverlay,
+  DebugOverlay, bootMark, bootSpan, bootNow, freezeBootMarks, bootEntries, bootReport, // BOOT-SPEED-01
   integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations,
   GpuCellPipeline, GpuOverlayPass, PASS_NAMES,
   VoxelPool, bindDecals, drawDecals,
@@ -63,6 +63,7 @@ import { resetNoteRead, stepNoteRead, isNoteOpen, pushNoteDim, drawNotePanel } f
 import { wakeFrame, drawEyelid, applyWakeOnLoad } from './quest/wake.js';
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel } from './quest/mapCard.js';
 import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
+import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-050: the one seam to game content
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { buildBeastNav } from './quest/sim/beastNav.js';
@@ -195,6 +196,8 @@ function startAutoBench(at, redetect) {
 function redetectQuality() { return startAutoBench(bootOpts.quality ? bootOpts.quality.name : 'high', true); }
 window.redetectQuality = redetectQuality;
 
+let bootPrinted = false; // BOOT-SPEED-01: true after the first frame (declared before runGame can run)
+bootMark('main.js module start (imports done)');
 const canvas = document.getElementById('screen');
 // US-027b (docs/architecture.md 21.9): tower/test_room/world_m1 are now
 // content/*.json, loaded through the US-027a loader; `window.ASSETS` still
@@ -209,10 +212,13 @@ if (bundle.lazyMeshes) window.__lazyMeshStore = bundle.lazyMeshes; // MESH-LOAD-
 // unsaved) level/world edits from `kestrel.playtest` onto `bundle` BEFORE
 // the registry is built, so the rest of boot is unaware anything special
 // happened - same content shape either way.
+bootMark('content pack loaded (manifest + JSON + meshes)');
 applyPlaytestOverlay(bundle);
 await applyLocalOverlay(bundle, params, undefined, { lazyMeshes }); // git-ignored content/local/ (licence-restricted assets, this PC only)
 if (window.ASSETS.spellFx) window.ASSETS.spellFx.attach(); // SPELL-01b: fireball sprites -> ASSETS.models (atlas) + presets -> ASSETS.particles, BEFORE the registry/atlas/defineEmitter loop
+bootMark('local overlay applied');
 const assets = AssetRegistry.fromJSON(bundle, window.ASSETS);
+bootMark('AssetRegistry built');
 
 // ART-01a (architecture.md 37.18 item 2): `?look=<key>` selects the active
 // timeOfDay record BEFORE `bindShading`/`buildLightSet`/the terrain sun read it
@@ -317,9 +323,12 @@ const sceneDim = createSceneDim();
 if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
 // WG-1c2: `?backend=webgpu|webgl2` (default webgl2); webgpu falls back to webgl2 with a warning (38.8a 16).
 const shadowOpts = bootOpts.shadowOpts; // GFX-01w: shadow level from the preset (resolveShadowLevel) + ?shadows= / ?shadowinst / ?shadowres / ?shadowcast overrides (ME-15e/f, D-043: map is the default)
+const tCR = bootNow();
 const { rt: builtRt, pipeline: wgPipeline, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
   shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0' }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
+bootSpan('createRenderer total (' + rendererInfo.label + ')', tCR);
+const tCE = bootNow();
 const engine = createEngine({
   canvas, assets, cols: gridResult.cols, rows: gridResult.rows, rays,
   renderTarget: builtRt,
@@ -333,14 +342,18 @@ const engine = createEngine({
   shadows: shadowOpts, // ME-15c/e/f (27.9a, D-043): see shadowOpts above
   gfx: bootOpts.gfx, // GFX-03/GFX-01w: scatter density + LOD scale from the preset (undefined = engine defaults)
 });
+bootSpan('createEngine', tCE);
 // US-089w/US-096w: save relay (autosave 60 s + waystone, load at boot) and quest hook. `?save=0` off; capture/bench/compare/cinematic
 // pages and automated browsers never load or save unless `?save=1` forces it (the headless reload check does).
-const saveEnabled = params.get('save') !== '0' && (params.get('save') === '1' || !(isCaptureOrBench || params.get('capture') === '1' || navigator.webdriver));
+const saveEnabled = params.get('save') !== '0' && (params.get('save') === '1' || !(isCaptureOrBench || params.get('capture') === '1' || params.has('at') || navigator.webdriver)); // `?at` = dev pose: never autosave it into slot 0
 let saveRelay = null;
 try {
   const questDef = await (await fetch('../content/quests/m1.quest.json')).json();
   saveRelay = createSaveRelay({ storage: getSaveStorage(), questDef, enabled: saveEnabled });
   saveRelay.bindEvents(engine.events);
+  gameHooks.register(saveRelay.handlers());
+  saveRelay.quest.onPoll = (name, a, b) => gameHooks.emitSimple(name, a, b);
+  gameHooks.onSaveRequest(() => { if (saveRelay && gameHooks.ctx.world) saveRelay.save(gameHooks.ctx.world, { ending: gameHooks.ctx.state.ending }); });
 } catch (e) { console.warn('[save] relay unavailable:', e && e.message); }
 // D-025 (US-038a): `renderTarget` now resizes IN PLACE (`engine.setGrid`
 // never replaces the object), so `rt` itself could be `const` - kept `let`
@@ -426,6 +439,7 @@ const pitchClampDeg = PITCH_CLAMP_PITCHED_DEG;
 // D-025 (US-038a): `let`, not `const` - a live grid change rebuilds this
 // (cellAspect = pxCellH/pxCellW changes with the grid) in the `grid:changed`
 // handler below, same reasoning as `gbuf`/`rt`'s own re-read comment above.
+bootMark('before bindShading/materials');
 let matTable = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
 const detailPass = useDetail ? assets.detailPass : null;
 let gbuf = new GBuffer(rt.cols, rt.rows);
@@ -448,6 +462,7 @@ console.log(`[RenderTarget] back-end: ${rt.backend}`); // D-005: which back-end 
 // guards) lives in engine/render/gpu/ and engine/render/{detailShade,
 // edgePass,CellBuffer,RenderTargetGL}.js, none of which is compositor.js/
 // world/* (US-025, off-limits this story).
+bootMark('after GBuffer/materials, before GL2 GpuCellPipeline');
 let gpuPipeline = null;
 if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.allV2) {
   const candidate = new GpuCellPipeline(rt, { rays, terrainEnabled, shadows: engine.shadows });
@@ -507,6 +522,7 @@ const inactiveReason = gpuPipeline
 console.log(`[GpuCellPipeline] ${gpuPipeline ? 'active (' + gpuPipeline.rendererString + ')' : 'inactive' + inactiveReason}`);
 
 // ---- US-030c (ARCH CHANGES item 1): sprite system, after the pipeline gate ----
+bootMark('GL2 GpuCellPipeline built (webgl2 only) / sprite system next');
 const sprites = createSpriteSystem({ assets, rt, gpuPipeline, wgPipeline });
 if (gpuPipeline && gpuPipeline.ready && rt.backend === 'gl2') new GpuOverlayPass(rt, gpuPipeline, engine.overlay); // RE-07b (28.9)
 // ---- end US-030c ----
@@ -515,7 +531,9 @@ if (gpuPipeline && gpuPipeline.ready && rt.backend === 'gl2') new GpuOverlayPass
 // already runs inside createEngine - US-053a's own precedent, nothing to do here for that). ----
 if (sprites.pass) sprites.pass.bindParticleLayer(engine.particleLayer);
 // WG-3f: WebGPU sprites + particles + fade/dim + overlay passes (frameComplete -> rt.gpuActive -> the CPU compositor stops drawing them)
+bootMark('sprites/overlay bind start');
 if (wgPipeline && wgPipeline.ready && rt.backend === 'webgpu') wgPipeline.bindSprites({ pool: sprites.pool, atlas: sprites.atlas, palette: assets.palette, particleLayer: engine.particleLayer, overlay: engine.overlay });
+bootMark('sprites/overlay bound');
 // GFX-01w/02: createRenderer builds the webgpu target at the CPU grid (38.8a item 14, pre-WG-3f rule). Once the WebGPU pipeline owns
 // the whole frame, the requested (preset/URL) grid applies; otherwise (e.g. ?shadows=dda -> CPU shading) the CPU grid stays.
 if (wgPipeline && wgPipeline.frameComplete && rt.backend === 'webgpu' && (rt.cols !== gridResult.cols || rt.rows !== gridResult.rows)) {
@@ -660,6 +678,7 @@ engine.events.on('grid:changed', ({ cols, rows }) => {
 // Internal hook for manual/automated smoke-testing in a console - not part
 // of the game's own UI.
 window.__debug = { input, overlay, rt, engine, gpuPipeline, gbuf, matTable, ambientL, depthBuffer, sprites };
+bridgeEngineEvents(engine.events, gameHooks); // beast:died / inventory:added -> seam events
 window.__debug.saveRelay = saveRelay; // US-089w: test hook (headless reload check)
 
 // US-048 (PC-B QUEUE 4 item 2): the shared `ctx` every game/js/dev/modes/*
@@ -815,6 +834,7 @@ function runGame(mode, cinematic = null) {
     // the 'world:loaded' handler" rule).
     engine.events.on('world:loaded', (evt) => {
       const world = evt.world;
+      bootMark('world:loaded (world built, handler start)');
       if (saveRelay) saveRelay.onWorldLoaded(); // US-089w: consume a pending restore (or reset game data on restart) before any sim is created
       decalBind = bindDecals(engine.overlay, world.decals);
       if (cinematic || Number.isFinite(timeHour)) worldSunPath = sunPathFrom(world.sun || assets.palette.lights.sun);
@@ -898,6 +918,8 @@ function runGame(mode, cinematic = null) {
       engine.overlay.setGroundFn(world.terrain ? (x, y) => world.terrain.groundAt(x, y) : null);
       if (vitals) vitals.dispose(); // Q9 item 1a: drop the old world's `combat:hit` listener before a new one is added below
       vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting,
+        respawnPose: () => gameHooks.respawn(), // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
+        onDied: (t) => gameHooks.emitSimple('player:died', t.x, t.y, t.z),
         syncFacing: (t) => {
           if (!look) return;
           look.clearLock();
@@ -945,10 +967,11 @@ function runGame(mode, cinematic = null) {
         Object.assign(startT, { x: c.x, y: c.y, z: gz - engine.physics.eyeHeight, yawDeg: c.yawDeg, pitchDeg: c.pitchDeg });
         playerHandle.data.components.body.peakZ = startT.z;
       }
-      // Dev: `?at=x,y,z,yaw,pitch` = the F3 `world (x, y, z) yaw pitch` line (z = eye height in world metres); no wake sequence.
-      const atParts = mode === 'world' && params.get('at') ? params.get('at').split(',').map(Number) : null;
-      if (atParts && atParts.length >= 3 && atParts.slice(0, 3).every(Number.isFinite)) {
-        Object.assign(startT, { x: atParts[0], y: atParts[1], z: atParts[2] - engine.physics.eyeHeight, yawDeg: atParts[3] || 0, pitchDeg: atParts[4] || 0 });
+      // Dev: `?at=x,y,z,yaw,pitch` = the F3 `world (x, y, z) yaw pitch` line (z = the F3 z = feet height in world metres); no wake sequence.
+      let atParts = mode === 'world' && params.get('at') ? params.get('at').split(',').map(Number) : null;
+      if (atParts && !(atParts.length >= 3 && atParts.slice(0, 3).every(Number.isFinite))) atParts = null; // a failed parse must not suppress the wake
+      if (atParts) {
+        Object.assign(startT, { x: atParts[0], y: atParts[1], z: atParts[2], yawDeg: atParts[3] || 0, pitchDeg: atParts[4] || 0 });
         playerHandle.data.components.body.peakZ = startT.z;
       }
       const waterfallView = worldDef.name === 'waterfall_test' && waterfallPreset?.views[params.get('waterfallview')];
@@ -966,6 +989,7 @@ function runGame(mode, cinematic = null) {
 
       // ---- US-015: wake sequence + title card + map card + hints (7.6 item 6: runtime rebuilt here, every load AND every restart) ----
       questUiActive = typeof world.state['quest.wakeT'] === 'number' && !gatePose && !atParts && !cinematic;
+      gameHooks.boot(world, playerHandle.data, engine.events, vitals, playerHandle.data.components.inventory || null); // D-050 seam (after vitals + inventory exist)
       if (questUiActive && assets.uiStyle) {
         const spawnDef = (worldDef.entities || []).find((e) => e.id === 'player' && e.spawn);
         const spawnStruct = spawnDef && world.structures.find((s) => s.id === spawnDef.spawn.structure);
@@ -1015,6 +1039,7 @@ function runGame(mode, cinematic = null) {
       engine.world.terrain.bakeFarSync();
       prebuildTerrainMesh(engine.world.terrain);
       console.log(`[terrain] mesh prebuild ${(performance.now() - tb).toFixed(0)} ms`);
+      bootSpan('terrain mesh prebuild', tb);
     }
     // US-017: taken right after World.load (the listener above has already
     // run synchronously by the time `loadWorld` returns - `Events.emit` is
@@ -1257,7 +1282,9 @@ function runGame(mode, cinematic = null) {
         prevLookYaw = look.yawDeg; prevLookPitch = look.pitchDeg;
       }
       // US-089w/US-096w: world facts -> quest events, play clock, autosave (60 s, waystone). Not while dead/ending/waking.
-      if (saveRelay) saveRelay.stepGame(dt, engine.world, playerHandle.data.transform, { wakeDone: questUiActive && !wakeOut.inputLocked, canSave: !ending && !wakeOut.inputLocked && !(vitals && vitals.dead) });
+      const hs = gameHooks.ctx.state; // facts the handlers cannot derive from the world
+      hs.wakeDone = questUiActive && !wakeOut.inputLocked; hs.ending = !!ending; hs.canSave = !ending && !wakeOut.inputLocked && !(vitals && vitals.dead);
+      gameHooks.tick(dt);
       lap(SEC.quest);
       engine.world.flushEvents();
       lap(SEC.events);
@@ -1320,6 +1347,7 @@ function runGame(mode, cinematic = null) {
 
   function render(alpha) {
     const renderStart = performance.now();
+    const bootFirst = !bootPrinted;
     // OWN-REQ-003 (17.4): fresh/transparent every rendered frame, same
     // precedent as the scene's own per-frame overwrite (fillSky paints every
     // cell) - anything not redrawn below (e.g. a hint that just timed out)
@@ -1473,9 +1501,11 @@ function runGame(mode, cinematic = null) {
       // regardless of `?grid=`.
       if (!ending && !uiLockedNow && !cinematic && !isWaterfallPreview) drawCrosshair(ui, crosshairStyle, engine.world.interaction);
       if (questUiActive && !ending) {
-        if (saveRelay && (!isCaptureOrBench || params.get('save') === '1') && !wakeOut.inputLocked) saveRelay.quest.draw(ui); // US-096w: current objective (placeholder text) top-left
+        if ((!isCaptureOrBench || params.get('save') === '1') && !wakeOut.inputLocked) gameHooks.drawHud(ui); // D-050 seam: today the quest relay's TEMPORARY objective line, top-left
         drawHints(ui, assets.uiStyle, fadeLut);
-        drawEyelid(rt, assets.uiStyle, wakeOut.blinkOpen); // 17.4: stays in the scene grid (an eyelid over the 3D view, not UI text)
+        // 17.4: an eyelid over the 3D view, not UI text. BUG-WEBGPU-EYELID-01: once the WebGPU frame is complete its presenter shows the sprite-pass
+        // output, so CPU scene-cell writes never appear -> draw the lid on the UI layer there (an opaque full-row overlay); else in the scene grid.
+        drawEyelid(wgActive && wgPipeline.frameComplete ? ui : rt, assets.uiStyle, wakeOut.blinkOpen);
         drawTitleCard(ui, fb.timeSec * 1000, wakeOut.titleA, wakeOut.titleState, fadeLut);
         const mapPanel = getMapPanel();
         if (mapPanel) drawUiPanel(ui, mapPanel, fb.timeSec * 1000, fadeLut);
@@ -1538,6 +1568,7 @@ function runGame(mode, cinematic = null) {
     if (gpuPipeline) gpuPipeline.setPassTiming(overlay.visible || benchActive || (autoBench !== null && autoBench.phase !== 'done')); // GFX-02: pass timers = sum of passes, not the vsync-padded whole-frame span
 
     const lastRenderMs = performance.now() - renderStart;
+    if (bootFirst) { bootPrinted = true; bootMark('first frame rendered'); freezeBootMarks(); console.info('[boot] breakdown (ms since navigation start)\n' + bootReport()); window.__bootReport = bootReport(); }
     // US-018: the overlay text is only ever built while it will actually be
     // shown (`shouldRefresh` = visible + <= 4 Hz) - `?bench=1` builds/owns
     // its own overlay text instead (dev/perfBench.js), so it skips this.
@@ -1583,6 +1614,7 @@ function runGame(mode, cinematic = null) {
         extra += `\nworld (${t.x.toFixed(2)}, ${t.y.toFixed(2)}, ${t.z.toFixed(2)}) yaw ${look.yawDeg.toFixed(0)} pitch ${look.pitchDeg.toFixed(0)}` +
           `${look.locked ? '' : ' [unlocked]'}  grounded: ${grounded}\nstructure: ${struct ? struct.id : '(none)'} sector: '${sectorCh}'${sector ? '' : ' (outside)'}\n${terrainInfo}`;
       }
+      if (bootPrinted) extra += '\nboot: ' + bootSummary();
       overlay.update(engine.loop.fps, engine.loop.frameMs, extra);
     }
     lap(SEC.overlay);
@@ -1608,6 +1640,13 @@ function runGame(mode, cinematic = null) {
   if (mode === 'world' && benchActive) {
     runPerfBench({ engine, playerHandle, overlay, gpuPipeline, input, rt, look, prof });
   }
+}
+
+/** F3: first-frame time + the 6 longest spans (full table: console / window.__bootReport). */
+function bootSummary() {
+  const e = bootEntries(), last = e.length ? e[e.length - 1].t : 0;
+  const top = e.filter((x) => x.ms > 0).sort((a, b) => b.ms - a.ms).slice(0, 6).map((x) => `${x.label.replace(/ \(.*$/, '')} ${x.ms.toFixed(0)}`).join(', ');
+  return `first frame ${last.toFixed(0)} ms; top spans: ${top}`;
 }
 
 function round2(n) {

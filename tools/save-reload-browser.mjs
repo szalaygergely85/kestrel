@@ -7,13 +7,15 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
-import { rmSync } from 'node:fs';
+import { rmSync, readFileSync } from 'node:fs';
 import { ROOT, findBrowserBinary, waitForHttp, killTree, connectCdp, buildLaunchFlags, validatePort } from './capture-browser.mjs';
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
 const port = Number(args.port); validatePort(port);
 const grid = args.grid || '240x90';
 const base = `http://127.0.0.1:${port}/game/index.html?voxelbench=0&grid=${grid}`;
+// expected objective text comes from the quest content (writer pass may change it)
+const BREACH_TEXT = JSON.parse(readFileSync(path.join(ROOT, 'content/quests/m1.quest.json'), 'utf8')).objectives.find((o) => o.id === 'breach').text;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const handles = {};
 const errors = [];
@@ -83,7 +85,7 @@ try {
   cdp.close();
 } finally { cleanup(); }
 const ok = res.posDelta < 0.01 && res.after.hp === res.before.hp && res.before.slot > 0 && res.after.lantern === true
-  && res.after.objective === 'Climb to the breach at the top' && res.after.dead.includes('boar1') && res.after.boarState === 12
+  && res.after.objective === BREACH_TEXT && res.after.dead.includes('boar1') && res.after.boarState === 12
   && Math.abs(res.after.eyeH - res.after.standEyeH) < 1e-6 && res.after.wakeT >= 100 // BUG-SAVE-WAKE-01: standing after reload
   && res.plain.enabled === false && res.plain.lantern === false && res.errors.length === 0;
 console.log(JSON.stringify(res, null, 1));

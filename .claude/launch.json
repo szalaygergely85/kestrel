@@ -60,6 +60,17 @@
         "C:/dev/projects/game_project_test"
       ],
       "port": 9140
+    },
+    {
+      "name": "pcb-test",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "tools/serve.py",
+        "9141",
+        "--directory",
+        "C:/MyFiles/CodingProjects/game_project_test"
+      ],
+      "port": 9141
     }
   ]
 }

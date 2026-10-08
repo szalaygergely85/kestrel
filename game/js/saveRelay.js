@@ -28,14 +28,28 @@ export function createSaveRelay({ storage, questDef, slot = 0, enabled = true, a
     get playTimeSec() { return playSec; },
     get lastResult() { return lastResult; },
 
-    /** Subscribes to game events; returns an unsubscribe function. */
+    /** Subscribes to engine events the seam has no name for (chest:opened); beast:died / item:got arrive via handlers().
+     *  Returns an unsubscribe function. */
     bindEvents(events) {
       const offs = [
-        events.on('beast:died', (p) => { if (p && typeof p.id === 'string') { dead.add(p.id); quest.feed({ type: 'beast:died', id: p.id }); } }),
         events.on('chest:opened', (p) => { if (p && typeof p.id === 'string') chests.add(p.id); }),
-        events.on('inventory:added', (p) => { if (p && typeof p.id === 'string') quest.feed({ type: 'item:got', id: p.id }); }),
       ];
       return () => { for (const off of offs) off(); };
+    },
+
+    /** gameHooks handler set: quest + save relay on the seam (onBoot keeps ctx, onTick steps, onEvent feeds the quest, drawHud = TEMPORARY objective line). */
+    handlers() {
+      let ctx = null;
+      return {
+        onBoot(c) { ctx = c; },
+        onTick(dt) { if (ctx && ctx.world && ctx.player) relay.stepGame(dt, ctx.world, ctx.player.transform, ctx.state); },
+        onEvent(name, d) {
+          if (name === 'beast:died') { dead.add(d.id); quest.feed({ type: name, id: d.id }); }
+          else if (name === 'item:got' || name === 'area:entered') quest.feed({ type: name, id: d.id });
+          else if (name === 'flag:set') quest.feed({ type: name, key: d.key, value: d.value });
+        },
+        drawHud(ui) { relay.quest.draw(ui); },
+      };
     },
 
     /** Reads the slot; when a save exists returns the restored World (caller swaps it in) and arms the pending restore. */

@@ -270,8 +270,9 @@ console.log('passRaster.test.js (WG-4a): all checks passed.');
   // 0 allocation per frame: prepare + run on warm state create no resources (heap growth is bounded by the existing 1000-frame checks above)
   const rp2 = new WgRasterPass(dev); const created = m5.createCount, cams = [mk(1486.5, 1025.0), mk(1500, 1030)];
   for (let i = 0; i < 20; i++) rp2.prepare(cams[i & 1]);
-  const h0 = process.memoryUsage().heapUsed;
+  global.gc(); const h0 = process.memoryUsage().heapUsed; // gc first, like the 1000-frame check above (garbage left by earlier blocks is not growth)
   for (let i = 0; i < 100000; i++) rp2.prepare(cams[i & 1]);
+  global.gc();
   assert.ok(process.memoryUsage().heapUsed - h0 < 4e6, 'prepare allocates nothing per frame, < 40 B/frame over 100k (origin + viewRel are reused)');
   assert.equal(m5.createCount, created);
   console.log('passRaster.test.js (PREC-01a): all checks passed.');

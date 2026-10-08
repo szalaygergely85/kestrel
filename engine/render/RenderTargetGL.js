@@ -14,7 +14,7 @@
 // cellW, cellH, backend, setCell, setCellRGB, clear, present, resize.
 
 import { CellBuffer } from './CellBuffer.js';
-import { computeCellBox } from './glyphMetrics.js';
+import { computeCellBox, fitCssSize } from './glyphMetrics.js';
 import { GLYPH_COUNT, rasterizeGlyphAtlas } from './glyphAtlas.js'; // WG-1c1: shared with RenderTargetWebGPU
 import { compileShader, linkProgram, deleteTexture2D, glCounts } from './gpu/glUtil.js';
 import { computeGridLimits } from './gpu/gridTargets.js';
@@ -285,10 +285,9 @@ export class RenderTargetGL {
     this.cellW = this.pxCellW / dpr;
     this.cellH = this.pxCellH / dpr;
 
-    const cssW = this.cellW * this.cols;
-    const cssH = this.cellH * this.rows;
-    this.canvas.style.width = cssW + 'px';
-    this.canvas.style.height = cssH + 'px';
+    const css = fitCssSize(this.cellW * this.cols, this.cellH * this.rows, availW, availH); // display-only fit
+    this.canvas.style.width = css.w + 'px';
+    this.canvas.style.height = css.h + 'px';
     this.canvas.width = this.pxCellW * this.cols;
     this.canvas.height = this.pxCellH * this.rows;
 
