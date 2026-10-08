@@ -64,7 +64,7 @@ function signature(src, fnName) {
   const m = src.match(new RegExp(`fn\\s+${fnName}\\s*\\(([^)]*(?:\\([^)]*\\)[^)]*)*)\\)\\s*(?:->\\s*([^{]+))?\\{`));
   return m ? { params: m[1], ret: (m[2] || '').trim() } : null;
 }
-function locationsOf(text) { return new Set([...text.matchAll(/@location((d+))/g)].map((m) => +m[1])); }
+function locationsOf(text) { return new Set([...text.matchAll(/@location\((\d+)\)/g)].map((m) => +m[1])); }
 function structLocations(src, name) {
   const m = src.match(new RegExp(`struct\\s+${name}\\s*\\{([^}]*)\\}`));
   return m ? [...m[1].matchAll(/@location\((\d+)\)/g)].map((x) => +x[1]) : [];
@@ -117,12 +117,18 @@ if (failures.length) { console.error('WGSL limit failures:\n  ' + failures.join(
   assert.strictEqual(nine.targets, 9);
   const vin = measure({ code: 'struct V { ' + Array.from({ length: 17 }, (_, i) => `@location(${i}) a${i}: f32,`).join(' ') + ' };\n@vertex fn vs_main(v: V) -> @builtin(position) vec4f { return vec4f(0.0); }' });
   assert.strictEqual(vin.vertexAttributes, 17);
+  // arch 2026-10-08 (verdicts 12): inline @location params / returns (no struct) must be counted too
+  const vinInline = measure({ code: '@vertex fn vs_main(' + Array.from({ length: 17 }, (_, i) => `@location(${i}) a${i}: f32`).join(', ') + ') -> @builtin(position) vec4f { return vec4f(0.0); }' });
+  assert.strictEqual(vinInline.vertexAttributes, 17, 'inline vertex params counted');
+  const fsInline = measure({ code: '@fragment fn fs_main() -> @location(8) vec4f { return vec4f(0.0); }' });
+  assert.strictEqual(fsInline.targets, 9, 'inline fragment return location counted');
 }
 // Known anchors (guard against the parser silently returning zeros).
 const by = Object.fromEntries(rows.map((r) => [r.name, r]));
 assert.strictEqual(by.shade.textures, 16, 'shade sits exactly at the 16-texture limit');
 assert.ok(by.cull.storageBuffers >= 1 && by.rasterInstanced.vertexAttributes >= 7, 'anchors: cull storage, rasterInstanced attributes');
 assert.ok(by.shade.uniformBytes > 0 && by.light.uniformBytes > 0, 'uniform sizes measured');
+assert.ok(by.light.targets >= 1, 'anchor: light has an inline colour target (a regression to 0 = the location regex broke)');
 if (!process.exitCode) {
   console.log('name'.padEnd(22) + 'tex uni sto uniB  vAttr tgt');
   for (const r of rows) console.log(r.name.padEnd(22) + [r.textures, r.uniformBuffers, r.storageBuffers].map((x) => String(x).padStart(3)).join(' ') + String(r.uniformBytes).padStart(6) + String(r.vertexAttributes).padStart(6) + String(r.targets).padStart(4));
