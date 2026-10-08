@@ -40,10 +40,10 @@ try {
     assert.ok(analyzeMeshFile(closed, { maxTris: 3 }).over[0].startsWith('tris 4 > 3'));
     assert.ok(analyzeMeshFile(closed, { maxBytes: 10 }).over[0].startsWith('bytes'));
   });
-  test('runCli exit codes: 0 under budget, 1 over, table has a row per mesh', () => {
+  test('runCli exit codes: report-only by default, --strict 1 over, table has a row per mesh', () => {
     const log = console.log; let out = '';
     console.log = (s) => { out += s + '\n'; };
-    try { assert.strictEqual(runCli([dir, '--max-ranges', '9']), 0); assert.strictEqual(runCli([dir]), 1); } finally { console.log = log; }
+    try { assert.strictEqual(runCli([dir, '--max-ranges', '9']), 0); assert.strictEqual(runCli([dir]), 0, 'report-only by default'); assert.strictEqual(runCli([dir, '--strict']), 1, '--strict exits 1 over budget'); assert.strictEqual(runCli([dir, '--strict', '--max-ranges', '9']), 0); } finally { console.log = log; }
     assert.ok(/closed/.test(out) && /OVER: ranges 9 > 8/.test(out) && /3 meshes/.test(out));
     assert.ok(formatTable([analyzeMeshFile(closed)]).split('\n').length === 2);
   });

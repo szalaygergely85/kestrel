@@ -1,10 +1,13 @@
 // S8-B2-02: per-mesh budget report for content/meshes (tris, ranges, bytes, collider kind, open-edge %).
-//   node tools/validate-mesh.mjs [dir-or-file ...] [--max-tris 20000] [--max-ranges 8] [--max-bytes 1048576] [--json]
-// Exit 1 when any mesh is over a budget. Read-only; works on the meta+bin and the legacy all-JSON form.
+//   node tools/validate-mesh.mjs [dir-or-file ...] [--max-tris 20000] [--max-ranges 8] [--max-bytes 1048576] [--json] [--strict]
+// Report-only (MESH-FULL-01): over-budget rows are printed as warnings and the exit code is 0; --strict exits 1 when any mesh
+// is over a global cap. The per-id triangle budget from mesh-budgets.mjs (budgetFor) is shown as a column + warning only.
+// Read-only; works on the meta+bin and the legacy all-JSON form.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readMeshJSON } from './mesh-file.mjs';
+import { budgetFor } from './mesh-budgets.mjs';
 
 export const DEFAULT_BUDGET = Object.freeze({ maxTris: 20000, maxRanges: 8, maxBytes: 1024 * 1024 });
 
@@ -46,7 +49,8 @@ export function analyzeMeshFile(file, budget = {}) {
   if (typeof meta.bin === 'string') bytes += fs.statSync(path.join(path.dirname(file), meta.bin)).size;
   const full = typeof meta.bin === 'string' ? readMeshJSON(file) : meta;
   const tris = full.triCount ?? full.pos.length / 9;
-  const row = { file: file.split(path.sep).join('/'), id: full.id, tris, ranges: (full.ranges || []).length, bytes, collider: colliderKind(meta), openEdgePct: Math.round(openEdgePercent(full.pos, tris) * 10) / 10, over: [] };
+  const row = { file: file.split(path.sep).join('/'), id: full.id, tris, ranges: (full.ranges || []).length, bytes, collider: colliderKind(meta), openEdgePct: Math.round(openEdgePercent(full.pos, tris) * 10) / 10, idBudget: budgetFor(full.id), over: [], warn: [] };
+  if (row.idBudget != null && tris > row.idBudget) row.warn.push(`tris ${tris} > id budget ${row.idBudget}`);
   if (tris > b.maxTris) row.over.push(`tris ${tris} > ${b.maxTris}`);
   if (row.ranges > b.maxRanges) row.over.push(`ranges ${row.ranges} > ${b.maxRanges}`);
   if (bytes > b.maxBytes) row.over.push(`bytes ${bytes} > ${b.maxBytes}`);
@@ -65,21 +69,22 @@ export function findMeshFiles(targets) {
 }
 
 export function formatTable(rows) {
-  const head = ['id', 'tris', 'ranges', 'bytes', 'collider', 'open%', 'status'];
-  const lines = [head, ...rows.map((r) => [r.id, r.tris, r.ranges, r.bytes, r.collider, r.openEdgePct, r.over.length ? 'OVER: ' + r.over.join('; ') : 'ok'])].map((l) => l.map(String));
+  const head = ['id', 'tris', 'idBudget', 'ranges', 'bytes', 'collider', 'open%', 'status'];
+  const lines = [head, ...rows.map((r) => [r.id, r.tris, r.idBudget ?? '-', r.ranges, r.bytes, r.collider, r.openEdgePct, r.over.length ? 'OVER: ' + r.over.join('; ') : r.warn.length ? 'warn: ' + r.warn.join('; ') : 'ok'])].map((l) => l.map(String));
   const w = head.map((_, i) => Math.max(...lines.map((l) => l[i].length)));
-  return lines.map((l) => l.map((c, i) => (i === 0 || i >= 4 ? c.padEnd(w[i]) : c.padStart(w[i]))).join('  ').trimEnd()).join('\n');
+  return lines.map((l) => l.map((c, i) => (i === 0 || i >= 5 ? c.padEnd(w[i]) : c.padStart(w[i]))).join('  ').trimEnd()).join('\n');
 }
 
 export function runCli(argv) {
   const budget = {}, targets = [];
-  let json = false;
+  let json = false, strict = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--max-tris') budget.maxTris = Number(argv[++i]);
     else if (a === '--max-ranges') budget.maxRanges = Number(argv[++i]);
     else if (a === '--max-bytes') budget.maxBytes = Number(argv[++i]);
     else if (a === '--json') json = true;
+    else if (a === '--strict') strict = true;
     else if (a.startsWith('--')) throw new Error(`validate-mesh: unknown flag ${a}`);
     else targets.push(a);
   }
@@ -88,7 +93,7 @@ export function runCli(argv) {
   const over = rows.filter((r) => r.over.length);
   if (json) console.log(JSON.stringify({ meshes: rows, over: over.length }, null, 2));
   else console.log(formatTable(rows) + `\n${rows.length} meshes, ${over.length} over budget.`);
-  return over.length ? 1 : 0;
+  return strict && over.length ? 1 : 0;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
