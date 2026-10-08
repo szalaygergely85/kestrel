@@ -106,6 +106,7 @@ function walk(dir, exts = ['.js', '.mjs']) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
+      if (entry.name === 'node_modules') continue;
       out.push(...walk(full, exts));
     } else if (exts.includes(path.extname(entry.name))) {
       out.push(full);
