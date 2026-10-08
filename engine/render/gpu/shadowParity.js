@@ -5,6 +5,17 @@
 import { createRasterTarget, clearRasterTarget, rasterDrawList } from '../../mesh/rasterJS.js';
 import { compareShadowDepth } from './gpuCompare.js';
 
+/**
+ * WebGPU sun maps store depth in [0.5, 1] (raster.wgsl.js SHADOW_Z_LINE, 38.5 item 6): converts float32 depth bits to the twin's [0, 1]
+ * convention in place, `(d - 0.5) * 2` (exact in float32 for d in [0.5, 1]; the 1.0 clear value stays 1.0).
+ * @param {Uint32Array} bits
+ */
+export function halfRangeDepthBitsToUnit(bits) {
+  const f = new Float32Array(bits.buffer, bits.byteOffset, bits.length);
+  for (let i = 0; i < f.length; i++) f[i] = (f[i] - 0.5) * 2;
+  return bits;
+}
+
 /** @param {number} res shadow map side (must equal the pipeline's `shadowOpts.res`) */
 export function createShadowParityRunner(res) {
   const bits = new Uint32Array(res * res);
@@ -25,13 +36,20 @@ export function createShadowParityRunner(res) {
     async runAsync(pipeline) {
       const sh = pipeline._shadowPass;
       if (!sh || !(await sh.readbackDepth(bits))) return null;
+      if (pipeline.shadowDepthHalfRange) halfRangeDepthBitsToUnit(bits);
       const fp = sh.footprints();
       return compare(sh.list, sh.sunMat.M, sh.shadowOpts, fp ? fp.foot : null, fp ? fp.count : 0);
     },
     /** @param {import('./GpuCellPipeline.js').GpuCellPipeline} pipeline @returns {object|null} null when no sun pass ran this frame */
     run(pipeline) {
-      if (!pipeline.readbackShadowDepthBits(bits)) return null;
-      return compare(pipeline._shadowList, pipeline._sunMat.M, pipeline.shadowOpts, pipeline._meshStructFoot, pipeline._structCount);
+      const rb = pipeline.readbackShadowDepthBits(bits);
+      // WebGPU readbacks are Promises (38.6): then run() returns a Promise of the result
+      if (rb && typeof rb.then === 'function') return rb.then((ok) => (ok ? finish(pipeline) : null));
+      return rb ? finish(pipeline) : null;
     },
   };
+  function finish(pipeline) {
+    if (pipeline.shadowDepthHalfRange) halfRangeDepthBitsToUnit(bits);
+    return compare(pipeline._shadowList, pipeline._sunMat.M, pipeline.shadowOpts, pipeline._meshStructFoot, pipeline._structCount);
+  }
 }

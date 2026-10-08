@@ -8,7 +8,8 @@
 // Imports only engine/index.js + ray.js (the editor boundary rule).
 import { projectPoint, cameraBasis } from './ray.js';
 import { selectionEntityId, selectionItemData } from './doc.js';
-import { localToWorld } from '../../engine/index.js';
+import { localToWorld, createPitchedTerms, pitchedTerms, worldToCell } from '../../engine/index.js';
+import { EDITOR_PLATE_BG } from './overlayStyle.js';
 
 /**
  * Model world-space radius/height for the highlight box (same rule as
@@ -58,22 +59,53 @@ export function computeHighlightRect(cam, cols, rows, pxCellW, pxCellH, center, 
 
 const MAX_HIGHLIGHT_CELLS = 400; // 24.14 budget guard - a degenerate huge/close rect never spends unbounded per-frame cells
 
+const meshTerms = createPitchedTerms(), meshCell = new Float64Array(3);
+const meshGrid = { cols:0, rows:0, pxCellW:0, pxCellH:0 };
+const meshRect = { minCol:0, maxCol:0, minRow:0, maxRow:0 };
+/** World bbox corners, optionally translated for a doc-only drag ghost. */
+export function computeMeshHighlightRect(cam, cols, rows, pxCellW, pxCellH, bbox, dx=0, dy=0, dz=0) {
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  meshGrid.cols=cols;meshGrid.rows=rows;meshGrid.pxCellW=pxCellW;meshGrid.pxCellH=pxCellH;
+  pitchedTerms(cam,meshGrid,meshTerms);
+  for(let i=0;i<8;i++) {
+    worldToCell(meshTerms,(i&1?bbox.x1:bbox.x0)+dx,(i&2?bbox.y1:bbox.y0)+dy,(i&4?bbox.z1:bbox.z0)+dz,meshCell);
+    if(!(meshCell[2]>0))return null;
+    x0=Math.min(x0,meshCell[0]);x1=Math.max(x1,meshCell[0]);y0=Math.min(y0,meshCell[1]);y1=Math.max(y1,meshCell[1]);
+  }
+  meshRect.minCol=Math.round(x0);meshRect.maxCol=Math.round(x1);meshRect.minRow=Math.round(y0);meshRect.maxRow=Math.round(y1);
+  return meshRect;
+}
+
+/** Large mesh bounds get short corner brackets within the existing overlay budget. */
+export function drawMeshHighlightRect(rt, rect, fgHex) {
+  const {minCol,maxCol,minRow,maxRow}=rect;
+  const w=maxCol-minCol,h=maxRow-minRow;
+  if(w<0||h<0)return;
+  if(w*h<=MAX_HIGHLIGHT_CELLS && 2*(w+h)+8<=MAX_HIGHLIGHT_CELLS) { drawHighlightRect(rt,rect,fgHex);return; }
+  for(let i=0;i<4;i++) {
+    const right=!!(i&1), bottom=!!(i&2), x=right?maxCol+1:minCol-1,y=bottom?maxRow+1:minRow-1;
+    rt.setCell(x,y,'+',fgHex,EDITOR_PLATE_BG);
+    rt.setCell(x+(right?-1:1),y,'-',fgHex,EDITOR_PLATE_BG);
+    rt.setCell(x,y+(bottom?-1:1),'|',fgHex,EDITOR_PLATE_BG);
+  }
+}
+
 /** Draws a `+ - |` bracket just OUTSIDE `rect` (never inside - the sprite pass composites after the cell pass, 24.7). */
 export function drawHighlightRect(rt, rect, fgHex) {
   const { minCol, maxCol, minRow, maxRow } = rect;
   const w = maxCol - minCol, h = maxRow - minRow;
   if (w < 0 || h < 0 || w * h > MAX_HIGHLIGHT_CELLS) return;
-  rt.setCell(minCol - 1, minRow - 1, '+', fgHex);
-  rt.setCell(maxCol + 1, minRow - 1, '+', fgHex);
-  rt.setCell(minCol - 1, maxRow + 1, '+', fgHex);
-  rt.setCell(maxCol + 1, maxRow + 1, '+', fgHex);
+  rt.setCell(minCol - 1, minRow - 1, '+', fgHex, EDITOR_PLATE_BG);
+  rt.setCell(maxCol + 1, minRow - 1, '+', fgHex, EDITOR_PLATE_BG);
+  rt.setCell(minCol - 1, maxRow + 1, '+', fgHex, EDITOR_PLATE_BG);
+  rt.setCell(maxCol + 1, maxRow + 1, '+', fgHex, EDITOR_PLATE_BG);
   for (let c = minCol; c <= maxCol; c++) {
-    rt.setCell(c, minRow - 1, '-', fgHex);
-    rt.setCell(c, maxRow + 1, '-', fgHex);
+    rt.setCell(c, minRow - 1, '-', fgHex, EDITOR_PLATE_BG);
+    rt.setCell(c, maxRow + 1, '-', fgHex, EDITOR_PLATE_BG);
   }
   for (let r = minRow; r <= maxRow; r++) {
-    rt.setCell(minCol - 1, r, '|', fgHex);
-    rt.setCell(maxCol + 1, r, '|', fgHex);
+    rt.setCell(minCol - 1, r, '|', fgHex, EDITOR_PLATE_BG);
+    rt.setCell(maxCol + 1, r, '|', fgHex, EDITOR_PLATE_BG);
   }
 }
 
@@ -83,8 +115,14 @@ export function drawHighlightRect(rt, rect, fgHex) {
  * (prop/world entity - projects its cylinder) and a marker-only item
  * (light/interactable - a single highlighted cell at its point).
  */
-export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, world, assets, doc, selection, fgHex, renderer = 'dda') {
+export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, world, assets, doc, selection, fgHex, renderer = 'dda', previewItems) {
   if (!selection) return;
+  if (selection.collection === 'structures') {
+    const s=world.structures.find(s=>s.id===selection.id && s.kind==='mesh');
+    const rect=s && computeMeshHighlightRect(cam,cols,rows,pxCellW,pxCellH,s.bbox);
+    if(rect)drawMeshHighlightRect(rt,rect,fgHex);
+    return;
+  }
   const entId = selectionEntityId(world, selection);
   if (entId) {
     const data = world.entity(entId);
@@ -93,7 +131,7 @@ export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, wo
       const extent = modelExtent(assets, data.components || {}, scale);
       if (extent) {
         const rect = computeHighlightRect(cam, cols, rows, pxCellW, pxCellH, data.transform, extent.radius, extent.height, renderer);
-        if (rect) drawHighlightRect(rt, rect, fgHex);
+        if (rect) drawMeshHighlightRect(rt, rect, fgHex);
         return;
       }
     }
@@ -104,14 +142,15 @@ export function drawSelectionHighlight(rt, cam, cols, rows, pxCellW, pxCellH, wo
   // right frame; falls back to the level-name match for an older-shaped
   // selection with no `structId`.
   if (selection.collection === 'lights' || selection.collection === 'interactables') {
-    const item = selectionItemData(doc, selection);
+    const authored = selectionItemData(doc, selection);
+    const item = previewItems?.get(authored) || authored;
     const s = selection.structId != null
       ? world.structures.find((st) => st.id === selection.structId)
       : world.structures.find((st) => st.level && st.level.name === selection.fileId.slice('level/'.length));
     if (item && s) {
       const point = localToWorld(s.frame, item.x, item.y, item.z || 0, { x: 0, y: 0, z: 0 });
       const proj = projectPoint(cam, cols, rows, pxCellW, pxCellH, point, renderer);
-      if (proj.depth > 0) rt.setCell(Math.round(proj.col), Math.round(proj.row), '*', fgHex);
+      if (proj.depth > 0) rt.setCell(Math.round(proj.col), Math.round(proj.row), '*', fgHex, EDITOR_PLATE_BG);
     }
   }
 }
@@ -124,7 +163,7 @@ const MAX_MARKER_CELLS = 200; // 24.7 budget
  * outliner is the way to select them, per the architecture note); this is a
  * documented limitation, not an oversight.
  */
-export function drawMarkers(rt, cam, cols, rows, pxCellW, pxCellH, world, palette, selection, renderer = 'dda') {
+export function drawMarkers(rt, cam, cols, rows, pxCellW, pxCellH, world, palette, selection, renderer = 'dda', previewItems) {
   let budget = MAX_MARKER_CELLS;
   const put = (x, y, z, glyph, fgHex) => {
     if (budget <= 0) return;
@@ -132,7 +171,7 @@ export function drawMarkers(rt, cam, cols, rows, pxCellW, pxCellH, world, palett
     if (!(proj.depth > 0)) return;
     const c = Math.round(proj.col), r = Math.round(proj.row);
     if (c < 0 || c >= cols || r < 0 || r >= rows) return;
-    rt.setCell(c, r, glyph, fgHex);
+    rt.setCell(c, r, glyph, fgHex, EDITOR_PLATE_BG);
     budget--;
   };
   const dimHex = (palette.colors && palette.colors.uiDim) || '#666666';
@@ -145,7 +184,8 @@ export function drawMarkers(rt, cam, cols, rows, pxCellW, pxCellH, world, palett
     if (!s.level) continue; // mesh/road structures carry no level markers
     const def = s.level.def;
     const sameStruct = (sel) => sel.structId == null || sel.structId === s.id;
-    for (const l of def.lights || []) {
+    for (const authored of def.lights || []) {
+      const l=previewItems?.get(authored) || authored;
       const on = l.on !== false;
       const sel = selection && selection.collection === 'lights' && selection.id === l.id
         && selection.fileId === `level/${s.level.name}` && sameStruct(selection);
@@ -169,5 +209,5 @@ export function drawMarkers(rt, cam, cols, rows, pxCellW, pxCellH, world, palett
  */
 export function drawHoverOutline(rt, col, row, fgHex) {
   if (col == null || row == null) return;
-  rt.setCell(col, row, '.', fgHex);
+  rt.setCell(col, row, '.', fgHex, EDITOR_PLATE_BG);
 }

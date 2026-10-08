@@ -986,6 +986,9 @@ async function runGpuCompareSceneMode(ctx) {
         infoRows.push({ pose: poseName, cmpCells: cmpCells2, cmpGeom: cmpGeom2, kindOk: cmpGeom2.kindMatchPct >= 99.5 });
         console.log(`[gpucompare] INFO n=2 ${poseName}: kind=${cmpGeom2.kindMatchPct.toFixed(2)}%(>=99.5% required) glyph=${cmpCells2.glyphMatchPct.toFixed(2)}%(reported only) holes=${cmpGeom2.holes}`);
       }
+      // 38.8a 26b: the constructor re-hooked rt.setCellPass; release pipeline2's GPU resources and give the hook back to the rays-1 pipeline
+      pipeline2.dispose();
+      if (base2.ready) base2.setEnabled(true);
     } else {
       console.warn('[gpucompare] ?rays=2 informational row requested but the second GpuCellPipeline failed to compile - skipped.');
     }

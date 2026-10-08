@@ -491,12 +491,14 @@ export function shortShaSync(cwd = ROOT) {
   }
 }
 
-export function captureFilePath({ date, sha, mode, grid, variant }) {
+export function captureFilePath({ date, sha, mode, grid, variant, backend }) {
   const g = (grid || 'grid').replace(/[^\w-]/g, '');
   // ME-06: a `--variant` (mesh/shade/world) gets its own file, so e.g. a
   // `?gpucompare=mesh` run no longer overwrites the plain `?gpucompare=1` one.
   const v = variant ? `-${String(variant).replace(/[^\w-]/g, '')}` : '';
-  return path.join(CAPTURES_DIR, `${date}-${sha}-${mode}${v}-${g}.json`);
+  // 38.8a 26a: a `--backend webgpu` run gets its own file (it used to overwrite the WebGL2 capture); webgl2/default keeps the old name
+  const b = backend === 'webgpu' ? '-webgpu' : '';
+  return path.join(CAPTURES_DIR, `${date}-${sha}-${mode}${v}${b}-${g}.json`);
 }
 
 // ME-06: `?gpucompare=mesh` rows carry a `diffPng` data URL per pose. They are
@@ -838,7 +840,7 @@ async function main() {
     const { ua, gpuRenderer } = live;
     const date = todayStr();
     const sha = shortShaSync();
-    const filePath = captureFilePath({ date, sha, mode, grid: opts.grid || live.raw.grid || null, variant: opts.variant });
+    const filePath = captureFilePath({ date, sha, mode, grid: opts.grid || live.raw.grid || null, variant: opts.variant, backend: opts.backend });
     const stripped = stripDiffPngs(live.raw, filePath);
     const raw = stripped.raw;
     normalized = normalizeLiveResult(mode, raw, { variant: opts.variant });
@@ -857,7 +859,7 @@ async function main() {
       rows: normalized.rows,
       raw,
     };
-    const finalPath = captureFilePath({ date, sha, mode, grid, variant: opts.variant });
+    const finalPath = captureFilePath({ date, sha, mode, grid, variant: opts.variant, backend: opts.backend });
     if (finalPath !== filePath) stripped.files = stripDiffPngs(live.raw, finalPath).files, payload.raw = stripDiffPngs(live.raw, finalPath).raw;
     writeCapture(finalPath, payload);
     writeDiffPngs(stripped.files);

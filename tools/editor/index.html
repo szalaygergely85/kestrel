@@ -456,6 +456,7 @@
           <div id="tree-chips">
             <button type="button" class="tree-chip active" data-filter="all">ALL (0)</button>
             <button type="button" class="tree-chip" data-filter="entities">STRUCT (0)</button>
+            <button type="button" class="tree-chip" data-filter="structures">MESHES (0)</button>
             <button type="button" class="tree-chip" data-filter="props">PROPS (0)</button>
             <button type="button" class="tree-chip" data-filter="lights">LIGHTS (0)</button>
             <button type="button" class="tree-chip" data-filter="triggers">TRIGGERS (0)</button>
@@ -470,7 +471,7 @@
              model-picker modal uses). -->
         <div id="assets-panel" class="dock-panel">
           <div id="assets-search-row">
-            <input type="text" id="assets-search-input" placeholder="search models..." autocomplete="off" />
+            <input type="text" id="assets-search-input" placeholder="search assets..." autocomplete="off" />
             <!-- OWN-REQ-011: pick a MagicaVoxel .vox file from disk, parse it
                  in-browser (tools/voxParse.js), auto-match its colors to
                  design/palette.js materials (tools/voxAutoMap.js) and
@@ -534,9 +535,12 @@
       <div id="drawer-body">
         <div id="status" class="active"></div>
         <div id="keys-panel">
-          click: select/drag &middot; arrows/PgUp/PgDn: nudge &middot; [ ]: snap<br/>
+          click: select/drag &middot; Shift/Ctrl+click: toggle props/lights<br/>
+          drag empty space: box select &middot; arrows/PgUp/PgDn: nudge &middot; [ ]: snap<br/>
           Q/E: yaw &middot; G: drop to floor &middot; Del: delete &middot; Esc: cancel drag/place<br/>
           Ctrl+Z/Y: undo/redo &middot; T: teleport to selection &middot; M: markers<br/>
+          Ctrl+G: group &middot; Ctrl+Shift+G: ungroup &middot; Alt+click: one member<br/>
+          Ctrl+D: duplicate &middot; multi-select: move/yaw/delete together<br/>
           1/2/3/4: place prop/light/trigger/interactable, then click<br/>
           Ctrl+S: save &middot; P: play-test (new tab) &middot; H: key-help overlay
         </div>

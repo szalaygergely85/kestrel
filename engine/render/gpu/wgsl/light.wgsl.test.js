@@ -156,3 +156,11 @@ let probes = 0;
   assert.ok(lit > 300 && shadow > 300, `probe set exercises both outcomes (lit ${lit}, shadow ${shadow})`);
 }
 console.log(`light.wgsl.test.js: string/layout rules and ${probes} JS-evaluated probes vs the JS twins passed.`);
+
+// 38.8a 24b / 38.5 item 6: the sun map holds depth in [0.5, 1]; the taps compare against 0.5 + 0.5 * sd (box test stays on sd)
+{
+  const fn = LIGHT_WGSL.slice(LIGHT_WGSL.indexOf('fn sunShadowTaps'), LIGHT_WGSL.indexOf('fn faceNormal'));
+  assert.ok(/let sdm = 0\.5 \+ 0\.5 \* sd;/.test(fn), 'sdm = 0.5 + 0.5 * sd');
+  assert.ok(/if \(sdm <= textureLoad\(uSunShadow, t, 0\)\)/.test(fn) && !/if \(sd <= textureLoad/.test(fn), 'tap compare uses sdm');
+  assert.ok(/sd < 0\.0 \|\| sd > 1\.0/.test(fn), 'receiver box test stays on sd');
+}

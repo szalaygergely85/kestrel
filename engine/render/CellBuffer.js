@@ -14,6 +14,16 @@
 
 const MAX_COLOR_CACHE = 1024;
 
+const VALID_HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+let badColorWarned = false;
+function warnBadColorOnce(str) {
+  if (badColorWarned) return;
+  badColorWarned = true;
+  console.warn('[CellBuffer] invalid colour string', JSON.stringify(str === undefined ? 'undefined' : str), "(expected '#rgb' or '#rrggbb') - using white; further invalid colours are not reported");
+}
+/** Test hook: re-arm the warn-once latch. */
+export function _resetBadColorWarning() { badColorWarned = false; }
+
 export class CellBuffer {
   constructor(cols, rows) {
     this.cols = cols;
@@ -52,6 +62,7 @@ export class CellBuffer {
     if (rgb) return rgb;
 
     let r = 255, g = 255, b = 255;
+    if (!VALID_HEX.test(str)) warnBadColorOnce(str); // UI-PLATE-01 AC2: still falls back to white, but a typo is no longer silent
     if (str && str[0] === '#') {
       if (str.length === 7) {
         r = parseInt(str.slice(1, 3), 16);

@@ -31,8 +31,9 @@
 import { localToWorld, localYawToWorld } from '../../engine/index.js';
 
 /** Local point of `frame` -> world point; `frame = null` = identity (already world-space). */
-function toWorldPoint(frame, lx, ly, lz) {
-  return frame ? localToWorld(frame, lx, ly, lz, { x: 0, y: 0, z: 0 }) : { x: lx, y: ly, z: lz };
+function toWorldPoint(frame, lx, ly, lz, out = {x:0,y:0,z:0}) {
+  if (frame) return localToWorld(frame,lx,ly,lz,out);
+  out.x=lx; out.y=ly; out.z=lz; return out;
 }
 
 /** Prop fields patchable straight onto a live entity's `transform` (position + facing + ED-SCALE-1c's uniform scale). */
@@ -57,13 +58,13 @@ function fieldChanged(a, b) {
  * True when `rec` (a `commands.js` `EditRecord`, or one already run through
  * `invert()` for undo/redo) is a plain field edit whose changed keys are ALL
  * inside `PROP_LIVE_FIELDS`/`LIGHT_LIVE_FIELDS` for its collection - i.e. it
- * can be applied live with no `World.load` rebuild. A `batch` (rename),
- * an insert (`before == null`) or a delete (`after == null`) is always
- * `false` (main.js keeps the full rebuild for those, per the US-064 AC).
+ * can be applied live with no `World.load` rebuild. A nonempty batch is
+ * patchable only when every member is; inserts, deletes and renames rebuild.
  * @param {{batch?:Object[], before:Object|null, after:Object|null, collection:string}} rec
  */
 export function isPatchableRecord(rec) {
-  if (!rec || rec.batch) return false;
+  if (!rec) return false;
+  if (rec.batch) return rec.batch.length > 0 && rec.batch.every(isPatchableRecord);
   if (rec.before == null || rec.after == null) return false;
   const changed = Object.keys(rec.after).filter((k) => fieldChanged(rec.before[k], rec.after[k]));
   if (!changed.length) return false;
@@ -91,8 +92,8 @@ export function isPatchableRecord(rec) {
  * @param {Object} item the doc item's new (`after`) state
  * @param {import('../../engine/index.js').Frame|null} frame the item's owning structure's frame, or `null` for a world-space item (CO-7)
  */
-export function applyPropTransformPatch(transform, item, frame) {
-  const p = toWorldPoint(frame, item.x, item.y, typeof item.z === 'number' ? item.z : 0);
+export function applyPropTransformPatch(transform, item, frame, scratch) {
+  const p = toWorldPoint(frame, item.x, item.y, typeof item.z === 'number' ? item.z : 0, scratch);
   transform.x = p.x;
   transform.y = p.y;
   if (typeof item.z === 'number') transform.z = p.z;
@@ -139,10 +140,11 @@ export function resolveLightPreset(palette, presetName) {
  * @param {import('../../engine/index.js').Frame|null} frame the item's owning structure's frame, or `null` for a world-space item (CO-7)
  * @param {Object} [palette] `assets.palette`, required only for a `preset` edit
  */
-export function applyLightPatch(ls, handle, item, frame, palette) {
+export function applyLightPatch(ls, handle, item, frame, palette, scratch, positionOnly = false) {
   const zLocal = typeof item.z === 'number' ? item.z : 0;
-  const p = toWorldPoint(frame, item.x, item.y, zLocal);
+  const p = toWorldPoint(frame, item.x, item.y, zLocal, scratch);
   ls.move(handle, p.x, p.y, p.z);
+  if (positionOnly) return;
   if (typeof item.on === 'boolean') ls.setOn(handle, item.on);
   if (typeof item.preset === 'string' && typeof ls.setParams === 'function') {
     const params = resolveLightPreset(palette, item.preset);

@@ -21,6 +21,8 @@ const TEAM_SLOT = RASTER_BLOCK.field('teamSlot').word, TEAM_MAT = RASTER_BLOCK.f
 const T_MODEL = TERRAIN_BLOCK.field('model').word, T_VIEW = TERRAIN_BLOCK.field('viewProj').word;
 const T_NEAR = TERRAIN_BLOCK.field('nearMap').word, T_FAR = TERRAIN_BLOCK.field('farMap').word, T_FOOT = TERRAIN_BLOCK.field('structFoot').word;
 const T_OBJECT = TERRAIN_BLOCK.field('objectId').word, T_READY = TERRAIN_BLOCK.field('nearReady').word, T_COUNT = TERRAIN_BLOCK.field('structCount').word;
+/** Shared empty list for worlds without `structures` (no per-frame `|| []` allocation). */
+export const NO_STRUCTURES = Object.freeze([]);
 const INSTANCE_LAYOUT = [
   { name: 'iRow0', location: 6, components: 4, type: 'float', offsetBytes: 0 },
   { name: 'iRow1', location: 7, components: 4, type: 'float', offsetBytes: 16 },
@@ -112,7 +114,7 @@ export class WgRasterPass {
     }
     const fg = terrain._farGridDraw;
     if (fg) { tu[T_FAR] = fg.x0; tu[T_FAR + 1] = fg.y0; tu[T_FAR + 2] = terrain.mapCell; tu[T_FAR + 3] = terrain.mapW; }
-    const structs = world.structures || [];
+    const structs = world.structures || NO_STRUCTURES;
     let n = 0;
     for (let i = 0; i < structs.length && n < MAX_STRUCTS; i++) {
       if (structs[i].kind === 'mesh') continue; // ME-14c1

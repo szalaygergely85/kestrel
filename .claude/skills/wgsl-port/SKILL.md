@@ -13,7 +13,7 @@ description: Rules and checklist for kestrel WG-1..WG-5 WebGPU stories (GLSL -> 
 - No raw `%` outside `common.wgsl.js` (use `fmodGlsl/imod/umod`); no `round` (use `floor(x+0.5)`); no `dpdx/dpdy/fwidth/frag_depth`; `textureSample` only in present.
 - `atan(y,x)->atan2`, `inversesqrt->inverseSqrt`, `floatBitsToUint->bitcast<u32>`, `texelFetch->textureLoad(t,c,0)`, `gl_FrontFacing->@builtin(front_facing)`. Hash math in `u32` with `u` literals.
 - Fullscreen passes index with `@builtin(position).xy` (memory rows, no flip). Raster vertex shaders end `pos.y=-pos.y; pos.z=0.5*(pos.z+pos.w);` with `frontFace:'cw'`. Present pass does NOT copy RenderTargetGL's flip.
-- Mirrored view-model items (HANDS-01a, det<0): WebGL2 flips `gl.frontFace` per draw; WebGPU fixes `frontFace` in the pipeline, so mirrored items need a second raster pipeline with `frontFace:'cw'` + `cullMode:'back'` (arch review 2026-10-07).
+- Mirrored view-model items (HANDS-01a, det<0): WebGL2 flips `gl.frontFace` per draw; WebGPU fixes `frontFace` in the pipeline, so mirrored items need a second raster pipeline whose frontFace is the OPPOSITE of the default raster pipeline (default 'cw' -> mirrored 'ccw') + `cullMode:'back'` (arch review 2026-10-07; WG-2b ratified).
 - Raster G-buffer = 36 B/sample: request adapter `maxColorAttachmentBytesPerSample >= 36` (else ESCALATE TO MANAGER). Integer textures: `textureLoad` only. Explicit bind layouts (never `layout:'auto'`).
 - Readbacks return Promises: always `await` (no-op on GL2). Not ported: dda / terrain-caster / voxel-caster. No storage buffers before WG-4.
 

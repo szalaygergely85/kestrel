@@ -384,7 +384,7 @@ const _mDist = new Float64Array(MAX_MESH_DRAWS);
  * planeIdOr = (slot & 0xFF) << 20 (draw order, neighbours outline), objectId = 0xA000 | structureIndex.
  * @param {DrawList} list
  * @param {import('../world/World.js').World} world
- * @param {{x:number,y:number,z:number}} cam
+ * @param {{x:number,y:number,z?:number}} cam
  * @param {MeshDrawCache} cache
  * @param {(key: string) => number} idFor
  * @param {number} fogFarM

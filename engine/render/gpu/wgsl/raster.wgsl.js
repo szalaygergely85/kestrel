@@ -157,7 +157,27 @@ ${cloth ? '' : `  if (vKind == KIND_MESH) {
 `;
 }
 
+/** The raster vertex stages' depth line (z -> [0,1], the GL2 convention after the y flip). */
+export const RASTER_Z_LINE = 'o.pos.z = 0.5 * (o.pos.z + o.pos.w);';
+/**
+ * Sun shadow vertex line (38.5 item 6, depth32float): clip z lands in [0.5, 1] so one float ULP / depthBias unit is 2^-24 at every
+ * depth (= the twin's 24-bit model). light.wgsl.js sunShadowTaps compares against 0.5 + 0.5 * sd; shadowParity converts back (d - 0.5) * 2.
+ */
+export const SHADOW_Z_LINE = 'o.pos.z = 0.25 * (o.pos.z + o.pos.w) + 0.5 * o.pos.w;';
+/** Swaps the raster depth line of a vertex module for the shadow one; throws unless it matches exactly once. */
+export function toShadowVertexWgsl(code) {
+  const parts = code.split(RASTER_Z_LINE);
+  if (parts.length !== 2) throw new Error(`toShadowVertexWgsl: expected exactly one raster z line, found ${parts.length - 1}`);
+  return parts.join(SHADOW_Z_LINE);
+}
+
 export const RASTER_WGSL = rasterWgsl('static');
 export const RASTER_VOXEL_WGSL = rasterWgsl('voxel');
 export const RASTER_INSTANCED_WGSL = rasterWgsl('instanced');
 export const RASTER_CLOTH_WGSL = rasterWgsl('cloth');
+
+// Sun shadow VERTEX variants (WgShadowPass): same stages, depth mapped to [0.5, 1]. Terrain: SHADOW_TERRAIN_WGSL (shadow.wgsl.js) owns its vs_main.
+export const RASTER_SHADOW_WGSL = toShadowVertexWgsl(RASTER_WGSL);
+export const RASTER_VOXEL_SHADOW_WGSL = toShadowVertexWgsl(RASTER_VOXEL_WGSL);
+export const RASTER_INSTANCED_SHADOW_WGSL = toShadowVertexWgsl(RASTER_INSTANCED_WGSL);
+export const RASTER_CLOTH_SHADOW_WGSL = toShadowVertexWgsl(RASTER_CLOTH_WGSL);

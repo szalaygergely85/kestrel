@@ -9,13 +9,12 @@
 //   uSunShadowBiasM = shadowOpts.biasM, uSunShadowNormalOff = shadowOpts.normalOffsetTexels (or read sh.lightParams()).
 //   gpucompare: `await sh.readbackDepth(out)` fills Uint32Array(res*res) with the float32 bits of depth (shadowParity.js contract).
 // The map is independent of the cell grid: no resize hook is needed. While `active` is false the light pass binds a dummy 1x1 depth texture.
-// NEEDS DEVICE (not edited here): GpuDeviceWebGPU.createPipeline drops the fragment stage when targets == 0, so the terrain
-// footprint carve (`fs_shadow`, named in fragment.src.entry) only runs after the condition becomes
-// `targetFormats.length || (desc.fragment.src && desc.fragment.src.entry)`.
+// Depth range: every shadow vertex stage maps z into [0.5, 1] (raster.wgsl.js SHADOW_Z_LINE; 38.5 item 6) so the depthBias unit is 2^-24 at any depth;
+// the terrain stage is SHADOW_TERRAIN_WGSL (own vs_main + fs_main, ONE shared block). GpuDeviceWebGPU keeps its fragment stage via fragment.src.entry.
 import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from '../MeshBuffers.js';
-import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL } from '../wgsl/raster.wgsl.js';
-import { TERRAIN_BLOCK } from '../wgsl/terrainRaster.wgsl.js';
-import { SHADOW_DEPTH_COPY_WGSL, SHADOW_DEPTH_COPY_TEXTURES, SHADOW_TERRAIN_PIPE_WGSL } from '../wgsl/shadow.wgsl.js';
+import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_SHADOW_WGSL, RASTER_VOXEL_SHADOW_WGSL, RASTER_INSTANCED_SHADOW_WGSL, RASTER_CLOTH_SHADOW_WGSL } from '../wgsl/raster.wgsl.js';
+import { SHADOW_TERRAIN_BLOCK, SHADOW_TERRAIN_WGSL, SHADOW_DEPTH_COPY_WGSL, SHADOW_DEPTH_COPY_TEXTURES } from '../wgsl/shadow.wgsl.js';
+import { NO_STRUCTURES } from './passRaster.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../../../mesh/shadowList.js';
 import { DRAW_STATIC, DRAW_VOXEL, DRAW_TERRAIN, DRAW_INSTANCED, DRAW_CLOTH } from '../../../mesh/DrawList.js';
@@ -25,16 +24,14 @@ import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME } from '../../../mesh/instances
 import { resolveSunShadowOptions, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../../shadowSun.js';
 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
-const T_MODEL = TERRAIN_BLOCK.field('model').word, T_VIEW = TERRAIN_BLOCK.field('viewProj').word;
-const T_FOOT = TERRAIN_BLOCK.field('structFoot').word, T_COUNT = TERRAIN_BLOCK.field('structCount').word;
+const T_MODEL = SHADOW_TERRAIN_BLOCK.field('model').word, T_VIEW = SHADOW_TERRAIN_BLOCK.field('viewProj').word;
+const T_FOOT = SHADOW_TERRAIN_BLOCK.field('structFoot').word, T_COUNT = SHADOW_TERRAIN_BLOCK.field('structCount').word;
 const INSTANCE_LAYOUT = [
   { name: 'iRow0', location: 6, components: 4, type: 'float', offsetBytes: 0 },
   { name: 'iRow1', location: 7, components: 4, type: 'float', offsetBytes: 16 },
   { name: 'iRow2', location: 8, components: 4, type: 'float', offsetBytes: 32 },
   { name: 'iMeta', location: 9, components: 2, type: 'uint', offsetBytes: 48 },
 ];
-
-export { SHADOW_TERRAIN_PIPE_WGSL };
 
 export class WgShadowPass {
   /** @param {any} device @param {{shadows?: any, buffers?: MeshBuffers, renderer?: string}} [opts] */
@@ -53,7 +50,7 @@ export class WgShadowPass {
     this.src = { centre: { x: 0, y: 0, z: 0 }, eye: { x: 0, y: 0 }, meshLod0M: 25, instCastM: 48, cache: null, terrainSet: null, voxelPool: null, voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: null, cloths: null, matIdFor: undefined, meshCache: null, meshIdFor: undefined };
     this.u = new Float32Array(RASTER_BLOCK.sizeWords);
     this.baseU = new Float32Array(this.u.buffer, 0, RASTER_BASE_BLOCK.sizeWords);
-    this.tu = new Float32Array(TERRAIN_BLOCK.sizeWords); this.tbits = new Uint32Array(this.tu.buffer);
+    this.tu = new Float32Array(SHADOW_TERRAIN_BLOCK.sizeWords); this.tbits = new Uint32Array(this.tu.buffer);
     this.bindDesc = { uniforms: this.baseU, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: null };
     this.clothStreams = [null];
     this.instanceBuffers = new Map();
@@ -67,11 +64,11 @@ export class WgShadowPass {
       this.target = device.createTarget({ color: [], depth: this.depthTex });
       // GL polygonOffset(factor, units): factor = slope scale, units = constant (WebGPU: integer).
       this.depthBias = { factor: so.depthBias[0], units: Math.round(so.depthBias[1]) };
-      this.staticPipe = this._pipeline(RASTER_WGSL, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, 'none', RASTER_BASE_BLOCK);
-      this.voxelPipe = this._pipeline(RASTER_VOXEL_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', RASTER_BASE_BLOCK);
-      this.instancePipe = this._pipeline(RASTER_INSTANCED_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', RASTER_BLOCK, true);
-      this.clothPipe = this._pipeline(RASTER_CLOTH_WGSL, CLOTH_DYN_LAYOUT, CLOTH_STRIDE_BYTES, 'none', RASTER_BASE_BLOCK, false, [{ layout: CLOTH_UV_LAYOUT, strideBytes: 8 }]);
-      this.terrainPipe = this._pipeline(SHADOW_TERRAIN_PIPE_WGSL, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, 'none', TERRAIN_BLOCK, false, null, 'fs_shadow');
+      this.staticPipe = this._pipeline(RASTER_SHADOW_WGSL, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, 'none', RASTER_BASE_BLOCK);
+      this.voxelPipe = this._pipeline(RASTER_VOXEL_SHADOW_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', RASTER_BASE_BLOCK);
+      this.instancePipe = this._pipeline(RASTER_INSTANCED_SHADOW_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', RASTER_BLOCK, true);
+      this.clothPipe = this._pipeline(RASTER_CLOTH_SHADOW_WGSL, CLOTH_DYN_LAYOUT, CLOTH_STRIDE_BYTES, 'none', RASTER_BASE_BLOCK, false, [{ layout: CLOTH_UV_LAYOUT, strideBytes: 8 }]);
+      this.terrainPipe = this._pipeline(SHADOW_TERRAIN_WGSL, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, 'none', SHADOW_TERRAIN_BLOCK, false, null, 'fs_main');
     } catch (e) { this.dispose(); throw e; }
   }
 
@@ -96,7 +93,7 @@ export class WgShadowPass {
   }
 
   _fillFoot(world) {
-    const structs = world.structures || [], tu = this.tu;
+    const structs = world.structures || NO_STRUCTURES, tu = this.tu;
     let n = 0;
     for (let i = 0; i < structs.length && n < MAX_STRUCTS; i++) {
       if (structs[i].kind === 'mesh') continue; // ME-14c1

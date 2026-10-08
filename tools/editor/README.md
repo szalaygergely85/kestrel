@@ -43,6 +43,22 @@ only has a software GL renderer, use `?gpu=0`.
 - **Left-click** an entity (a prop, a billboard, a voxel model) to select it;
   click again and drag to move it in the horizontal plane; release to commit.
   `Esc` while dragging cancels and snaps back.
+- Imported mesh geometry follows the cursor during a move drag, including
+  its ground-snapped height. Release saves one move; `Esc` restores the original
+  position. A drop with no valid floor cancels the move.
+- **Shift/Ctrl+click** toggles props and lights in the selection, in the viewport
+  or Scene Tree. Drag on empty space to box-select their pivots; hold Shift/Ctrl
+  to add to the current selection. `Esc` cancels a box gesture. All selected
+  items are highlighted; the inspector identifies the primary item it edits.
+- With multiple props/lights selected, arrows move the whole set, Q/E rotate
+  around its centre, and Delete removes it as one undo step (the whole delete
+  is refused if any member is referenced). Re-click a selected member and drag
+  in Move/Yaw mode to preview the whole set; release commits once, Esc restores.
+  Ctrl+D duplicates it one metre to the east and selects the copies.
+- Ctrl+G stores a group in one file; Ctrl+Shift+G removes it. Clicking a grouped
+  item selects its members; Alt+click selects just that member. Groups cannot
+  span files, but a mixed-file selection can move/rotate/duplicate/delete.
+  Two placements of the same shared content item cannot be edited together.
 - Lights and interactables have no visible mesh - they're picked as small
   markers (`*` for a light, `o` for an interactable) when **markers** are on
   (`M` toggles them, default on). You can also always select any item from
@@ -65,6 +81,20 @@ only has a software GL renderer, use `?gpu=0`.
   is (an invalid edit is refused inline, in red, and never committed).
 
 ## Place new things
+
+The **Assets** tab also lists imported meshes in **Meshes / <pack>** folders.
+Search matches their asset ids and pack names. These rows show rendered mesh
+previews and triangle counts in their tooltips. Click a mesh row and then the
+viewport, or drag the row onto a surface, to place it with footprint ground
+snapping. Select placed meshes from the Scene Tree's **Meshes** group to edit
+world position, yaw, shadow/collision overrides, or delete them. Arrow keys,
+PgUp/PgDn, Q/E, G and undo/redo also apply. Click a mesh in the scene to select
+it; click again with **Move** and drag to move its geometry live. Release to
+commit, or press Esc to restore its original position. Shadow and collision
+checkboxes save placement flags and support undo/redo. Shadows apply on reload;
+gameplay collision changes await the engine loader's placement-flag support.
+Collision is disabled in the inspector when the mesh asset itself disables
+collision. Mesh scale still awaits engine support; the scale keys apply to props.
 
 Press a number key to arm placement mode, then click a surface:
 

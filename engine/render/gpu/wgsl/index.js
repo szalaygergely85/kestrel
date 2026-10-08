@@ -9,8 +9,8 @@ import { DERIV_WGSL } from './deriv.wgsl.js';
 import { LIGHT_WGSL } from './light.wgsl.js';
 import { SHADE_WGSL } from './shade.wgsl.js';
 import { EDGE_WGSL } from './edge.wgsl.js';
-import { SHADOW_WGSL, SHADOW_TERRAIN_WGSL, SHADOW_TERRAIN_PIPE_WGSL, SHADOW_DEPTH_COPY_WGSL } from './shadow.wgsl.js';
-import { RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL } from './raster.wgsl.js';
+import { SHADOW_WGSL, SHADOW_TERRAIN_WGSL, SHADOW_DEPTH_COPY_WGSL } from './shadow.wgsl.js';
+import { RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL, RASTER_SHADOW_WGSL, RASTER_VOXEL_SHADOW_WGSL, RASTER_INSTANCED_SHADOW_WGSL, RASTER_CLOTH_SHADOW_WGSL } from './raster.wgsl.js';
 import { TERRAIN_RASTER_WGSL } from './terrainRaster.wgsl.js';
 import { WATER_WGSL } from './water.wgsl.js';
 import { WATER_COMPOSITE_WGSL } from './waterComposite.wgsl.js';
@@ -34,13 +34,17 @@ export const WGSL_MODULES = Object.freeze([
   { name: 'edge', code: EDGE_WGSL },
   { name: 'shadow', code: SHADOW_WGSL },
   { name: 'shadowTerrain', code: SHADOW_TERRAIN_WGSL },
-  { name: 'shadowTerrainPipe', code: SHADOW_TERRAIN_PIPE_WGSL },
   { name: 'shadowDepthCopy', code: SHADOW_DEPTH_COPY_WGSL },
   { name: 'water', code: WATER_WGSL },
   { name: 'waterComposite', code: WATER_COMPOSITE_WGSL },
   { name: 'sprites', code: SPRITES_WGSL },
   { name: 'overlay', code: OVERLAY_WGSL },
   { name: 'cull', code: CULL_WGSL }, // WG-4a compute (entry cs_main)
+  // WG-3d 24b: sun shadow vertex variants (depth in [0.5, 1])
+  { name: 'rasterShadowStatic', code: RASTER_SHADOW_WGSL },
+  { name: 'rasterShadowVoxel', code: RASTER_VOXEL_SHADOW_WGSL },
+  { name: 'rasterShadowInstanced', code: RASTER_INSTANCED_SHADOW_WGSL },
+  { name: 'rasterShadowCloth', code: RASTER_CLOTH_SHADOW_WGSL },
 ]);
 
 /**

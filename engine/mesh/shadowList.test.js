@@ -7,7 +7,8 @@ import { DrawList, DRAW_STATIC, LevelMeshCache, MeshDrawCache, addStructures, MA
 import { buildShadowList, createShadowList, shadowWorldZ, trimShadowList, meshShadowBudget } from './shadowList.js';
 import { frustumPlanes } from './culling.js';
 import { projTerms, shearProjection } from '../render/projection.js';
-import { createSunShadowMatrix, shadowSunMatrix, SUN_SHADOW_DEFAULTS } from '../render/shadowSun.js';
+import { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, SUN_SHADOW_DEFAULTS } from '../render/shadowSun.js';
+const OPTS_DEF = { ...SUN_SHADOW_DEFAULTS }; // SHADOW-ROT: the shipped box (192 m, 64 m ahead)
 import { dirFromAzEl } from '../core/transform.js';
 import { makeOk } from '../test/assert.js';
 import fs from 'node:fs';
@@ -241,7 +242,7 @@ function cameraPlanes() {
     const ids = []; for (let i = 0; i < sl.count; i++) ids.push(sl.items[i].objectId & 0xFFF);
     return ids;
   };
-  const saved = meshShadowBudget.cap;
+  const saved = meshShadowBudget.cap; const savedEnabled = meshShadowBudget.enabled; meshShadowBudget.enabled = true;
   meshShadowBudget.cap = 3;
   ok('distance cut: props beyond meshLod0M dropped', run([2, 10, 40, 90]).join() === '0,1');
   ok('cap keeps the 3 nearest, nearest first', run([30, 5, 20, 1, 12].map((x) => x - 0)).join() === '3,1,4', run([30, 5, 20, 1, 12]).join());
@@ -257,7 +258,32 @@ function cameraPlanes() {
   shadowSunMatrix(sunDir, new Float64Array(3), { ...OPTS, boxM: 400 }, { min: -1, max: 10 }, sm2);
   meshShadowBudget.cap = 0;
   ok('voxel structures never budgeted (cap 0, 60 m away still cast)', buildShadowList(sl2, null, w2, sm2.planes, { centre: { x: 0, y: 0, z: 0 }, eye, meshLod0M: 25, cache: new LevelMeshCache() }) === 2);
-  meshShadowBudget.cap = saved;
+  meshShadowBudget.cap = saved; meshShadowBudget.enabled = savedEnabled;
+}
+
+// ---- SHADOW-ROT (owner bug 2026-10-07): turning the camera at a fixed eye never changes the placed-mesh casters ----
+// > MAX_MESH_DRAWS placements around the eye; the box centre moves with yaw (aheadM), the nearest-64 pick must not.
+{
+  const rock = meshFromJSON(JSON.parse(fs.readFileSync(new URL('../../content/meshes/quaternius/Rock_Medium_1.mesh.json', import.meta.url), 'utf8')));
+  const stub = { structures: [], renderVersion: 0, structVersion: 0, events: null };
+  let n = 0;
+  for (let gx = -5; gx <= 5; gx++) for (let gy = -5; gy <= 5; gy++) World.prototype.placeMesh.call(stub, rock, { x: 100 + gx * 6, y: 50 + gy * 6, z: 0 }, `r${n++}`, 0); // 121 rocks, +-30 m
+  const eyeCam = { x: 100.3, y: 50.2, z: 1.6, pitchDeg: -20, yawDeg: 0 };
+  const sl = createShadowList(), sm = createSunShadowMatrix(), cv = new Float64Array(3);
+  const src = { centre: { x: 0, y: 0, z: 0 }, eye: { x: eyeCam.x, y: eyeCam.y }, meshLod0M: 25, instCastM: 48, cache: new LevelMeshCache(), meshCache: new MeshDrawCache(), meshIdFor: () => 1 };
+  const casters = (yaw) => {
+    eyeCam.yawDeg = yaw;
+    sunShadowCentre(eyeCam, OPTS_DEF, cv);
+    src.centre.x = cv[0]; src.centre.y = cv[1]; src.centre.z = cv[2];
+    shadowSunMatrix(sunDir, cv, OPTS_DEF, { min: -1, max: 10 }, sm);
+    buildShadowList(sl, null, stub, sm.planes, src);
+    const ids = []; for (let i = 0; i < sl.count; i++) if ((sl.items[i].objectId & 0xF000) === 0xA000) ids.push(sl.items[i].objectId & 0xFFF);
+    return ids.sort((a, b) => a - b).join();
+  };
+  const ref = casters(206);
+  let same = true, bad = '';
+  for (const yaw of [0, 45, 90, 135, 180, 218, 250, 270, 300, 315]) { const s = casters(yaw); if (s !== ref) { same = false; bad = `yaw ${yaw}`; } }
+  ok('rotation at a fixed eye: same placed-mesh caster set (nearest 64 from the eye)', same && ref.split(',').length === 64, bad);
 }
 
 // ---- AC 5: zero allocation over N frames ---------------------------------------

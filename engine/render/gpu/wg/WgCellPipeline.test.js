@@ -174,14 +174,28 @@ assert.notStrictEqual(p._t.texSGI, oldGI); assert.strictEqual(oldGI._disposed, t
 assert.deepStrictEqual([p._t.texSGI.desc.width, p.cols, p.rows], [40, 20, 10]);
 const beforeResizeHook = passes.length;
 hook(); assert.strictEqual(passes.length, beforeResizeHook + 4, 'cleared again after resize');
-// failed resize keeps the old set
+// successful resize drains the error scopes once (38.8a 23a/24a) and warns on errors
 {
-  const keep = p._t; const orig = device.createTexture;
+  let drained = 0; const hadCE = device.checkErrors; const w = console.warn; const warns = [];
+  device.checkErrors = () => { drained++; return Promise.resolve(['bad']); };
+  console.warn = (...a) => warns.push(a.join(' '));
+  p.resizeGrid(20, 10);
+  await Promise.resolve(); await Promise.resolve();
+  console.warn = w; device.checkErrors = hadCE;
+  assert.strictEqual(drained, 1, 'checkErrors drained once per good resize'); assert.ok(warns.some((m) => /validation errors/.test(m)));
+}
+// failed resize keeps the old set but disables the pipeline (rt/pipeline grids must not diverge)
+{
+  const keep = p._t; const orig = device.createTexture; let drained = 0; const hadCE = device.checkErrors;
+  device.checkErrors = () => { drained++; return Promise.resolve([]); };
   device.createTexture = () => { throw new Error('oom'); };
-  const e = console.error; console.error = () => {};
+  const w = console.warn; const warns = []; console.warn = (...a) => warns.push(a.join(' '));
   p.resizeGrid(99, 99);
-  console.error = e; device.createTexture = orig;
-  assert.strictEqual(p._t, keep); assert.strictEqual(p.ready, true); assert.strictEqual(p.cols, 20);
+  console.warn = w; device.createTexture = orig; device.checkErrors = hadCE;
+  assert.strictEqual(p._t, keep); assert.strictEqual(p.ready, false); assert.strictEqual(p.cols, 20); assert.strictEqual(hook, null, 'setEnabled(false) removed the hook');
+  assert.strictEqual(warns.length, 1); assert.strictEqual(drained, 0);
+  p.ready = true; p.setEnabled(true); // restore for the following checks
+  assert.ok(hook, 'hook restored');
 }
 
 // readbackGeometry: payload shape (4-wide GI/GA/Depth), Depth spread from the 1-wide r32uint

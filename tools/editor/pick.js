@@ -7,6 +7,7 @@
 //
 // Imports only engine/index.js + ray.js (the editor boundary rule).
 import { KIND_TERRAIN, localToWorld, worldToLocal } from '../../engine/index.js';
+import { resolveMeshPick } from './meshPick.js';
 import {
   unprojectCell, rayPoint, projectPoint, decodePlaneId, rayPickEntities, resolveVoxelSlot,
   KIND_WALL, KIND_STEP, KIND_UPPER,
@@ -110,6 +111,12 @@ export function pickAt(col, row, ctx) {
       const entId = findEntityForVoxelInstance(world, inst);
       if (entId) { result.kind = 'entity'; result.entityId = entId; }
     }
+  } else if (decoded.type === 'mesh' || decoded.type === 'cloth') {
+    result.world = rayPoint(ray, surf.depth);
+    if (decoded.type === 'mesh') {
+      result.structureId = resolveMeshPick(world, ray, surf.depth);
+      result.kind = result.structureId ? 'meshStructure' : 'surface';
+    } else result.kind = 'surface';
   } else if (decoded.type === 'structure') {
     const s = world.structures[decoded.structSeq];
     result.kind = 'surface';

@@ -304,6 +304,10 @@ check('todayStr format', /^\d{4}-\d{2}-\d{2}$/.test(todayStr(new Date('2026-09-2
   check('captureFilePath in captures dir', p.replace(/\\/g, '/').includes('docs/test-reports/captures/'));
   const pv = captureFilePath({ date: '2026-09-25', sha: 'abc1234', mode: 'gpucompare', grid: null, variant: 'mesh' });
   check('captureFilePath keeps variants apart', pv.endsWith('2026-09-25-abc1234-gpucompare-mesh-grid.json'));
+  const pw = captureFilePath({ date: '2026-09-25', sha: 'abc1234', mode: 'gpucompare', grid: null, backend: 'webgpu' });
+  const pg = captureFilePath({ date: '2026-09-25', sha: 'abc1234', mode: 'gpucompare', grid: null, backend: 'webgl2' });
+  check('captureFilePath webgpu gets its own name', pw.endsWith('2026-09-25-abc1234-gpucompare-webgpu-grid.json') && pw !== pg);
+  check('captureFilePath webgl2/default name unchanged', pg.endsWith('2026-09-25-abc1234-gpucompare-grid.json'));
 }
 
 // --- ME-06 diff PNG helpers ---
