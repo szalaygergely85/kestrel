@@ -127,7 +127,7 @@ test(`every content mesh (${metaFiles.length}): bin MeshData == JSON-path MeshDa
     const viaJson = meshFromJSON(JSON.parse(JSON.stringify(meshToJSON(fromBin))));
     assert.equal(diff(viaJson, fromBin), '', f);
     // and a re-encode of the decoded mesh reproduces the committed file exactly (canonical encoder)
-    assert.deepEqual(Buffer.from(encodeMeshBin(fromBin)), Buffer.from(bytes), `${f}: re-encode differs`);
+    assert.deepEqual(Buffer.from(encodeMeshBin(fromBin, { collider: false })), Buffer.from(bytes), `${f}: re-encode differs`);
   }
 });
 test('DeadTree_1 payload <= 0.3 MB (was ~3 MB of json)', () => {

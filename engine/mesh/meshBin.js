@@ -117,9 +117,10 @@ function planarModes(pos, uv, count) {
 /**
  * Packs the vertex/collider streams of a MeshData into one binary blob. The result is deterministic.
  * @param {import('./MeshData.js').MeshData} mesh
+ * @param {{collider?: boolean}} [opts] - `collider: false` leaves the collision proxy out of the bin (MESH-LOAD-01: it lives in the meta as `colliderB64`)
  * @returns {Uint8Array}
  */
-export function encodeMeshBin(mesh) {
+export function encodeMeshBin(mesh, opts = {}) {
   const vertCount = mesh.pos.length / 3;
   /** @type {{id:number, enc:number, count:number, extra:number, parts:Uint8Array[], size:number}[]} */
   const secs = [];
@@ -141,7 +142,7 @@ export function encodeMeshBin(mesh) {
   add(SEC.FLAT, mesh.flat, mesh.flat.length / 2);
   add(SEC.AUX, mesh.aux, mesh.aux.length / 8);
   if (mesh.idx) add(SEC.IDX, Uint32Array.from(mesh.idx), mesh.idx.length);
-  if (mesh.collider) add(SEC.COLLIDER, mesh.collider, mesh.collider.length / 9);
+  if (mesh.collider && opts.collider !== false) add(SEC.COLLIDER, mesh.collider, mesh.collider.length / 9);
 
   let off = al(HEADER + secs.length * ENTRY);
   const offs = secs.map((s) => { const o = off; off = al(off + s.size); return o; });
@@ -273,7 +274,28 @@ export function meshBinMeta(mesh, binName) {
     matsResolved: mesh.matsResolved, meshVersion: mesh.meshVersion,
     ...(mesh.castShadow === false ? { castShadow: false } : {}),
     ...(mesh.collide === false ? { collide: false } : {}),
+    ...(mesh.collider ? { colliderB64: f32ToBase64(mesh.collider) } : {}), // MESH-LOAD-01: the proxy is tiny and must exist before the bin does (colliders stay eager)
   };
+}
+
+/** @param {Float32Array} a @returns {string} little-endian float32 bytes, base64 (lossless) */
+export function f32ToBase64(a) {
+  const u8 = new Uint8Array(a.length * 4), dv = new DataView(u8.buffer);
+  for (let i = 0; i < a.length; i++) dv.setFloat32(i * 4, a[i], true);
+  let bin = '';
+  for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+/** @param {string} b64 @returns {Float32Array} */
+export function base64ToF32(b64) {
+  const bin = atob(b64);
+  if (bin.length % 4) fail('colliderB64 length is not a multiple of 4 bytes');
+  const u8 = new Uint8Array(bin.length), dv = new DataView(u8.buffer);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  const out = new Float32Array(bin.length / 4);
+  for (let i = 0; i < out.length; i++) out[i] = dv.getFloat32(i * 4, true);
+  return out;
 }
 
 /**
@@ -308,6 +330,6 @@ export function meshFromBin(meta, bytes) {
     meshVersion: meta.meshVersion,
     ...(meta.castShadow === false ? { castShadow: false } : {}),
     ...(meta.collide === false ? { collide: false } : {}),
-    ...(d.collider ? { collider: d.collider } : {}),
+    ...(meta.colliderB64 ? { collider: base64ToF32(meta.colliderB64) } : d.collider ? { collider: d.collider } : {}),
   };
 }

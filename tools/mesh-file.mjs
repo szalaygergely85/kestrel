@@ -25,7 +25,7 @@ export function renderMeshFiles(file, full) {
   const binName = path.basename(file).replace(/\.mesh\.json$/, '.mesh.bin');
   const mesh = meshFromJSON(full);
   const meta = { kind: 'mesh', schema: full.schema ?? 1, id: full.id, nextId: full.nextId ?? 1, ...meshBinMeta(mesh, binName), ...(full.colliderParts ? { colliderParts: full.colliderParts } : {}) };
-  return { metaText: stringifyContent(meta), bin: encodeMeshBin(mesh), binName };
+  return { metaText: stringifyContent(meta), bin: encodeMeshBin(mesh, { collider: false }), binName };
 }
 
 /** Writes the meta + bin pair next to `file`. */

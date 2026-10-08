@@ -85,7 +85,7 @@ export function bindScatterInstances(world, instances, previous = [], owner = nu
   }
   if (owner && world?.detail) {
     try {
-      owner._detail = bindDetailInstances(world.detail, instances, world.terrain.recipe.recipe.detail, keep ? keep.reduce((a, b) => a + b, 0) : scatter?.count || 0, knobs);
+      owner._detail = bindDetailInstances(world.detail, instances, world.terrain.recipe.recipe.detail, keep ? keep.reduce((a, b) => a + b, 0) : scatter?.count || 0, knobs, world.detailMeshes);
       feedDetail(owner._detail, world.def?.spawn?.x || 0, world.def?.spawn?.y || 0, true);
     } catch (error) {
       for (const group of groups) instances.remove(group);

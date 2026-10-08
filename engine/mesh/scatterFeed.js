@@ -6,7 +6,7 @@ import { resolveGfxKnobs, keepPlacement } from './gfxKnobs.js';
 export const DETAIL_OBJECT_BASE = 0x40000;
 
 /** @param {{scatterDensity?:number, lodScale?:number, tuftDrawScale?:number}} [gfx] GFX-03 knobs (gfxKnobs.js), defaults = unchanged */
-export function bindDetailInstances(detail, instances, cfg, treeInstances = 0, gfx = undefined) {
+export function bindDetailInstances(detail, instances, cfg, treeInstances = 0, gfx = undefined, meshes = null) {
   const knobs = resolveGfxKnobs(gfx);
   const maxDraw = cfg.maxDraw ?? 768, refeedM = cfg.refeedM ?? 4;
   if (!Number.isInteger(maxDraw) || maxDraw <= 0 || treeInstances + maxDraw > MAX_INSTANCES_PER_FRAME) {
@@ -26,8 +26,10 @@ export function bindDetailInstances(detail, instances, cfg, treeInstances = 0, g
   for (let s = 0; s < counts.length; s++) {
     if (!counts[s]) continue;
     const def = detail.speciesDefs[s];
-    if (!instances.pool?.models.has(def.model)) throw new Error(`bindDetailInstances: missing voxel model ${def.model}`);
-    const key = def.model + '|' + def.shadow + '|' + def.lodCells;
+    if (def.mesh !== undefined) { // TREES-LP-c: kind-9 mesh species (World.load resolved it into world.detailMeshes)
+      if (!meshes?.[def.mesh]) throw new Error(`bindDetailInstances: unresolved mesh ${def.mesh}`);
+    } else if (!instances.pool?.models.has(def.model)) throw new Error(`bindDetailInstances: missing voxel model ${def.model}`);
+    const key = (def.mesh !== undefined ? 'mesh:' + def.mesh : def.model) + '|' + def.shadow + '|' + def.lodCells;
     let g = renderKeys.get(key);
     if (g === undefined) {
       g = defs.length;
@@ -52,8 +54,9 @@ export function bindDetailInstances(detail, instances, cfg, treeInstances = 0, g
   for (let i = 0; i < offsets.length; i++) { offsetX[i] = offsets[i].dx; offsetY[i] = offsets[i].dy; }
   const master = createInstanceBuffer(detail.count), groups = [];
   for (let g = 0; g < defs.length; g++) {
-    const def = defs[g], group = instances.group(def.model, Math.min(groupCounts[g], maxDraw));
-    group.lodCells = def.lodCells / knobs.lodScale; // GFX-03: distance x lodScale = lodCells / lodScale
+    const def = defs[g], cap = Math.min(groupCounts[g], maxDraw);
+    const group = def.mesh !== undefined ? instances.meshGroup(meshes[def.mesh], cap) : instances.group(def.model, cap);
+    if (def.mesh === undefined) group.lodCells = def.lodCells / knobs.lodScale; // GFX-03; mesh groups: no LOD yet (37.15 item 6)
     group.castShadow = def.shadow;
     groups.push(group);
   }

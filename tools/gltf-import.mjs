@@ -34,6 +34,7 @@ import { budgetFor } from './mesh-budgets.mjs';
 import { readPng } from './png-read.mjs';
 import { textureTable, classify } from './uvmap.mjs'; // MESH-UVMAP-01
 import { writeMeshFiles } from './mesh-file.mjs';
+import { bakeVertexAo, writeVertexAo } from './vertex-ao.mjs'; // ME-20a
 import { loadGltf, meshToJSON, meshFromJSON, validateMesh, planMeshCollision, stringifyContent, maskToJSON, downsampleAlpha } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 
 const HELP = `gltf-import - glTF/.glb static mesh -> content/meshes/<id>.mesh.json (ME-13b)
@@ -59,6 +60,8 @@ Options:
   --palette-map <json>  texture -> palette keys table for --uvmap (default design/meshes/quaternius/palette-map.json)
   --simplify <tris>   reduce to about <tris> triangles (quadric edge collapse, ME-SIMPLIFY-01; planar UVs only)
   --budget            --simplify to the per-mesh triangle budget of tools/mesh-budgets.mjs (by id basename)
+  --ao [rays]         ME-20a, OPT-IN (default off = meshes unchanged): bake per-vertex ambient occlusion (hemisphere ray test, default 32 rays,
+                      deterministic) into aux[5..7] of each triangle (AO of its 3 vertices, 1 = open); nothing reads it before ME-20b
   --masks <dir>       ALPHA-01a (arch 37.17), OPT-IN until ALPHA-01c is wired (default: none = ignore alpha, import as before): alpha-cutout materials
                       (glTF alphaMode MASK) become masked ranges (opaque ranges first, uvMask = TEXCOORD_0); the 8-bit alpha masks are written
                       to <dir>/<pack>/<texture>.mask.json (e.g. content/masks; 'none' = off).
@@ -86,6 +89,7 @@ function parseArgs(argv) {
     if (a === '--out') { args.out = argv[++i]; continue; }
     if (a === '--simplify') { args.simplify = Number(argv[++i]); if (!(args.simplify >= 4)) throw new Error('--simplify needs a triangle target >= 4'); continue; }
     if (a === '--budget') { args.budget = true; continue; }
+    if (a === '--ao') { args.ao = /^d+$/.test(argv[i + 1] || '') ? Number(argv[++i]) : true; continue; } // ME-20a
     if (a === '--masks') { args.masks = argv[++i]; if (!args.masks) throw new Error('--masks needs a directory or none'); continue; }
     if (a === '--mask-res') { args.maskRes = Number(argv[++i]); if (![16, 32, 64, 128, 256, 512, 1024].includes(args.maskRes)) throw new Error('--mask-res must be a power of two from 16 to 1024'); continue; }
     if (a === '--opaque') { args.opaque = (args.opaque || []).concat(String(argv[++i] || '').split(',').filter(Boolean)); if (!args.opaque.length) throw new Error('--opaque needs material names'); continue; }
@@ -196,6 +200,7 @@ export function stringifyMeshJSON(json) {
  */
 export function importGltfBytes(bytes, id, opts = {}, materialKeys = null) {
   const mesh = loadGltf(bytes, id, opts);
+  if (opts.ao) writeVertexAo(mesh, bakeVertexAo(mesh, { rays: opts.ao === true ? undefined : opts.ao })); // ME-20a: opt-in, per-vertex AO in aux[5..7]
   const { errors } = validateMesh(mesh);
   if (errors.length) throw new Error(`gltf-import: generated mesh failed validateMesh:\n${errors.join('\n')}`);
   const groupCount = countSmoothGroups(mesh);
@@ -286,6 +291,7 @@ export async function runCli(argv) {
     }
   } else if (args.opaque || args.maskRes) throw new Error('gltf-import: --opaque / --mask-res need a .gltf with MASK materials and without --masks <dir>');
   if (args.uv) opts.uv = args.uv;
+  if (args.ao) opts.ao = args.ao;
   if (args.budget && !args.simplify) args.simplify = budgetFor(id) || 0;
   if (args.simplify) {
     const full = loadGltf(raw, id, opts).triCount; // untouched count -> ratio

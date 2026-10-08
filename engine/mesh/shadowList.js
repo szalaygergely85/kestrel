@@ -87,6 +87,7 @@ export function buildShadowList(list, cameraList, world, planes, src) {
       const g = groups[k];
       if (g.count <= 0 || g.castShadow === false) continue;
       if (g.mesh) { // TREES-LP-b: kind-9 mesh group; one band (<= instCastM), no LOD1
+        if (g.mesh.lazy) continue; // MESH-LOAD-01: payload not loaded yet
         if (!src.meshCache || !src.meshIdFor) continue;
         const draw = src.meshCache.get(g.mesh, src.meshIdFor);
         let it = null;

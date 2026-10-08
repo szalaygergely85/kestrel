@@ -3,6 +3,7 @@
 // the manifest URL and injects the file reader.
 import { meshFromJSON, validateMesh } from '../mesh/MeshData.js';
 import { meshFromBin } from '../mesh/meshBin.js';
+import { LazyMeshStore, lazyEligible } from '../mesh/lazyMesh.js';
 import { ContentError } from './ContentError.js';
 import { migrateContent, MIGRATIONS } from './migrate.js';
 import { editLayerFromJSON } from '../world/terrainEdits.js';
@@ -31,6 +32,11 @@ async function defaultFetchText(url) {
   return r.text();
 }
 
+/** `?lazymesh=1` in the page url (browser only; the engine reads no URL params itself, so a plain regex on location.search). */
+function lazyFromLocation() {
+  return /[?&]lazymesh=1(?:&|$)/.test(globalThis.location?.search || '');
+}
+
 function failBin(name) { throw new Error(`mesh.bin "${name}" was not fetched`); }
 
 function asContentError(err, file, field) {
@@ -57,12 +63,16 @@ function checkRefField(obj, ref, href, errors, idSets) {
 
 /**
  * @param {string} manifestUrl
- * @param {{fetchText?: (url:string)=>Promise<string>, fetchBytes?: (url:string)=>Promise<ArrayBuffer|Uint8Array>, migrations?: Object, latest?: Object}} [opts]
+ * @param {{fetchText?: (url:string)=>Promise<string>, fetchBytes?: (url:string)=>Promise<ArrayBuffer|Uint8Array>, lazyMeshes?: boolean, lazyLog?: ((msg:string)=>void)|null, migrations?: Object, latest?: Object}} [opts]
  * @returns {Promise<Object>} ContentBundle (see architecture.md 21.4)
  */
 export async function loadContentPack(manifestUrl, opts = {}) {
   const fetchText = opts.fetchText || defaultFetchText;
   const fetchBytes = opts.fetchBytes || defaultFetchBytes; // MESH-BIN-01: <id>.mesh.bin payloads
+  // MESH-LOAD-01: lazy payloads. Explicit option wins; undefined = off, unless the page url says `?lazymesh=1` (dev/headless opt-in; `?lazymesh=0` forces off)
+  const lazyOpt = opts.lazyMeshes !== undefined ? opts.lazyMeshes : lazyFromLocation();
+  const lazyStore = lazyOpt ? new LazyMeshStore({ fetchBytes, log: opts.lazyLog }) : null;
+  if (lazyStore && typeof window !== 'undefined') window.__lazyMeshStore = window.__lazyMeshStore || lazyStore; // debug/trace handle (tools/lazymesh-trace.mjs)
   const migrations = opts.migrations || MIGRATIONS;
   const latest = opts.latest || LATEST_SCHEMA;
 
@@ -103,7 +113,7 @@ export async function loadContentPack(manifestUrl, opts = {}) {
       if (href.endsWith('.mesh.json') && text.length < 262144 && text.includes('"bin"')) {
         let meta = null;
         try { meta = JSON.parse(text); } catch { /* reported by the parse below */ }
-        if (meta && typeof meta.bin === 'string') bytes = await fetchBytes(new URL(meta.bin, href).href);
+        if (meta && typeof meta.bin === 'string' && !(lazyStore && lazyEligible(meta))) bytes = await fetchBytes(new URL(meta.bin, href).href);
       }
       return { href, text, bytes };
     } catch (e) {
@@ -118,6 +128,7 @@ export async function loadContentPack(manifestUrl, opts = {}) {
     worlds: {},
     models: {},
     meshes: {},
+    lazyMeshes: lazyStore, // MESH-LOAD-01: the LazyMeshStore (null = every mesh payload is loaded)
     terrainEdits: {},
     masks: {},
     meta: { level: {}, world: {}, mesh: {}, terrainEdits: {}, mask: {}, manifest: { [manifest.id]: { url: manifestHref, schema: manifest.schema, nextId: null } } },
@@ -224,9 +235,13 @@ export async function loadContentPack(manifestUrl, opts = {}) {
 
     if (kind === 'mesh') {
       try {
-        const mesh = typeof migrated.bin === 'string' ? meshFromBin(migrated, bytes ?? failBin(migrated.bin)) : meshFromJSON(migrated);
-        const checked = validateMesh(mesh);
-        if (checked.errors.length) throw new Error(checked.errors.join('; '));
+        const lazy = !!lazyStore && lazyEligible(migrated) && bytes === undefined; // MESH-LOAD-01: shell, payload on demand
+        const mesh = lazy ? lazyStore.makeShell(migrated, new URL(migrated.bin, href).href)
+          : typeof migrated.bin === 'string' ? meshFromBin(migrated, bytes ?? failBin(migrated.bin)) : meshFromJSON(migrated);
+        if (!lazy) {
+          const checked = validateMesh(mesh);
+          if (checked.errors.length) throw new Error(checked.errors.join('; '));
+        }
         const mats = migrated.mats === undefined ? {} : migrated.mats;
         if (!mats || typeof mats !== 'object' || Array.isArray(mats)
             || Object.values(mats).some((v) => typeof v !== 'string' || !v)) {
