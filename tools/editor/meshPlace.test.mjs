@@ -73,7 +73,7 @@ assert.ok(prepareMeshEdit(valid,{yawDeg:1.1},editCtx).errors.length);
 assert.ok(prepareMeshEdit(valid,{origin:{...valid.origin,z:Infinity}},editCtx).errors.length);
 assert.ok(prepareMeshEdit(valid,{origin:{...valid.origin,x:221}}, {...editCtx,world:{...floor,floorAt:()=>null}}).errors.length);
 assert.deepEqual(validateMeshStructure(valid,ctx),[]);
-for(const patch of [{id:'1bad'},{id:'mesh_999999'},{mesh:'missing'},{origin:{x:0,y:0,z:NaN}},{yawDeg:360},{yawDeg:0.5},{castShadow:'false'},{collide:0},{scale:1},{level:'tower'},{yawSteps:0},{dynamics:{}},{origin:{x:0,y:0,z:0,w:1}}]) assert.ok(validateMeshStructure({...valid,...patch},ctx).length,JSON.stringify(patch));
+for(const patch of [{id:'1bad'},{id:'mesh_999999'},{mesh:'missing'},{origin:{x:0,y:0,z:NaN}},{yawDeg:360},{yawDeg:0.5},{castShadow:'false'},{collide:0},{scale:0.1},{scale:9},{scale:NaN},{level:'tower'},{yawSteps:0},{dynamics:{}},{origin:{x:0,y:0,z:0,w:1}}]) assert.ok(validateMeshStructure({...valid,...patch},ctx).length,JSON.stringify(patch));
 assert.ok(validateMeshStructure(valid,{...ctx,siblingIds:new Set([valid.id])}).length);
 assert.ok(validateMeshRename('hand_123').length); assert.deepEqual(validateMeshRename('roadS00'),[]);
 const clashFile={def:{structures:[{id:'mesh_1'}]},meta:{nextId:1}};
