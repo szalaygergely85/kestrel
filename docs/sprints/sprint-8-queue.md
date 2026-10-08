@@ -617,11 +617,11 @@ Owner on `game/index.html?backend=webgpu` (master): the wake-up eyelid blink is 
 ### BOOT-SPEED-01 (owner 2026-10-08: "slow, already taking 3 sec") [B1, P1]
 WebGPU boot takes ~3 s before the first frame: expected cause = synchronous pipeline compile (~25 pass constructors). This is S8-B1-09 (architecture.md 38.10b: compile batch + loading card, boot waits on all promises, log per-pipeline ms). Raise it to the top of B1's post-hook list; first step: a boot-time breakdown (`performance.now()` marks: adapter, device, each pass constructor, content load, mesh load, first frame) printed to the console and F3 so the 3 s is measured, then 09a/09b.
 
-### Owner to-dos after PO batch 1 (2026-10-08)
-1. Title menu: walk main menu + delete confirmation on WebGPU and Arc webgl2 (LOOK RISK: confirm screen loses frame/hints); decide on opus PO look.
-2. Item card, credits, inventory states, quest log: open each preview (`tools/verify-*.mjs 9886`), judge look on WebGPU and Arc webgl2 (icon/frame/footer holes).
-3. Leaf preview `game/leaf-preview.html?backend=webgpu`: is the leaf look good enough to unlock QUAT-TREES-01?
-4. Reload after wake-up (BUG-SAVE-WAKE-01) and Esc on a note (BUG-NOTE-ESC-01) in real Chrome.
-5. Editor: scale a rock (SCALE 1.35, undo/redo, save/reload); import one of your own .vox files.
-6. Not walkable until gameHooks ARCH OK: waystone, quest markers, chest/card, credits/title wiring, crafting. Boot time (BOOT-SPEED-01) and lazy mesh loading unmeasured.
-7. PC-A decisions owed: settings shadow values, boar roster/anchors, chest reward/anchor, spawn anchor, recipes. pc-b merge blocked on batch-14 fix (5).
+### Owner to-dos after PO batch 2 (2026-10-09)
+1. Window fit: normal Chrome window, quality high 400x150 + 480x180, then medium and low: hearts + top-left objective visible (BUG-HUD-OFFSCREEN-01); WebGPU wake-up blink visible (EYELID); reload after wake + Esc on a note.
+2. Pop check: `?at=1446.63,1024.64,2.02,227,1` and `?at=1448.31,1026.52,2.08,229,3` (z = feet): dead tree + rock drawn at both, no popping on a 2 m step (BUG-MESH-MISSING-01); webgl2 `waystoneLookBack` known-FAIL ruling is PC-A's.
+3. Leaves: `game/leaf-preview.html?backend=webgpu` look, and PICK LOD1 in `design/preview/lod1-trees.html` (unblocks QUAT-LOD-01 + species switch; forest still voxel until ALPHA-01f).
+4. Map: open `game/js/quest/mapCard.preview.html` and `?fog=1`: chart readable, arrow ok; decide fog scale (100 m = ~5 glyphs: accept or ask for zoom/larger reveal). Not in the game until S8-B1-15/16.
+5. Title menu + item card + credits + quest log previews (WebGPU and Arc webgl2); confirm-screen frame loss LOOK RISK.
+6. RECIPES-01 quantities (torch/shield/bow); data only. PC-A decisions owed: settings shadows, boar roster/chest/spawn anchors, breach trigger = marker proximity via AREAS-01 (PO proposal, B1 hook).
+7. Not walkable yet: waystone, quest markers, chests/card, bindings, crafting, map keys (wiring by B1 after gameHooks ARCH OK); boot time + lazy mesh unmeasured. pc-b/pc-b2 merge waits on D-039/D-051 known-FAIL records.
