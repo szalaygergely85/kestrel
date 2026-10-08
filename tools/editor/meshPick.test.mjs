@@ -17,6 +17,8 @@ const back={id:'back',kind:'mesh',frame,bbox,mesh:{pos:tri(5.05)}};
 const ray={ox:0,oy:0,oz:1,dx:0,dy:1,dz:0};
 assert.equal(resolveMeshPick({structures:[back,front]},ray,5),'front','triangle distance wins over draw order');
 assert.equal(resolveMeshPick({structures:[front,back]},ray,5),'front');
+const scaled={...front,id:'scaled',scale:2,mesh:{pos:tri(2.5)}};
+assert.equal(resolveMeshPick({structures:[back,scaled]},ray,5),'scaled','scaled local triangles preserve world-space ray distance');
 assert.equal(resolveMeshPick({structures:[front]},ray,5),'front');
 assert.equal(resolveMeshPick({structures:[front]},ray,10),null);
 const small={...back,id:'small',bbox:{...bbox,x0:-0.2,x1:0.2},mesh:{pos:tri(8)}};

@@ -1,6 +1,14 @@
 // ED-MESH-01b: placement data contract (architecture.md 37.20).
 import { mintId } from './doc.js';
 import { classifyPlacement } from './panel.js';
+import { clampScale } from './scale.js';
+import { PROP_SCALE_MIN, PROP_SCALE_MAX } from '../../engine/index.js';
+
+/** Typed values refuse outside the shared prop range; valid mesh values snap to 0.05. */
+export function meshScale(value) {
+  if(!Number.isFinite(value) || value<PROP_SCALE_MIN || value>PROP_SCALE_MAX)throw new Error(`scale: must be between ${PROP_SCALE_MIN} and ${PROP_SCALE_MAX}`);
+  return clampScale(Math.round(value/0.05)*0.05);
+}
 
 export const LIFT = Object.freeze({ tree: 0.2, rock: 0.15, rockpath: -0.02, pebble: -0.01, grass: 0, mushroom: 0, other: 0 });
 export const SHADOW = Object.freeze({ tree: true, rock: true, rockpath: false, pebble: false, grass: false, mushroom: false, other: true });
@@ -14,10 +22,10 @@ export const roundMeshPosition = v => +v.toFixed(2);
 export const meshYaw = v => ((Math.round(v) % 360) + 360) % 360;
 
 /** Highest of the centre and four footprint samples; a courtyard gap is never a surface. */
-export function snapMeshOrigin(world, mesh, key, x, y) {
+export function snapMeshOrigin(world, mesh, key, x, y, scale = 1) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   x = roundMeshPosition(x); y = roundMeshPosition(y);
-  const b = mesh.bbox, e = 0.25 * Math.max(b[3] - b[0], b[4] - b[1]);
+  const b = mesh.bbox, e = 0.25 * Math.max(b[3] - b[0], b[4] - b[1]) * scale;
   let highest = -Infinity;
   for (const [sx, sy] of [[x, y], [x + e, y], [x - e, y], [x, y + e], [x, y - e]]) {
     if (classifyPlacement(world, { x: sx, y: sy }).zone === 'gap') return null;
@@ -39,7 +47,8 @@ export function validateMeshStructure(item, { assets, siblingIds = new Set(), ne
   for (const axis of ['x', 'y', 'z']) if (!Number.isFinite(item.origin?.[axis])) errors.push(`origin.${axis}: must be finite`);
   if (!Number.isInteger(item.yawDeg) || item.yawDeg < 0 || item.yawDeg > 359) errors.push('yawDeg: must be an integer from 0 to 359');
   for (const field of ['castShadow', 'collide']) if (field in item && typeof item[field] !== 'boolean') errors.push(`${field}: must be boolean`);
-  const allowed = new Set(['id', 'mesh', 'origin', 'yawDeg', 'castShadow', 'collide', 'note']);
+  if('scale' in item)try{meshScale(item.scale);}catch(error){errors.push(error.message);}
+  const allowed = new Set(['id', 'mesh', 'origin', 'yawDeg', 'castShadow', 'collide', 'note', 'scale']);
   for (const field of Object.keys(item)) if (!allowed.has(field)) errors.push(`${field}: unsupported mesh placement field`);
   if (item.origin && Object.keys(item.origin).some(k => !['x', 'y', 'z'].includes(k))) errors.push('origin: only x, y and z are supported');
   return errors;
@@ -52,11 +61,15 @@ export function validateMeshRename(id) {
 /** Mesh field edits stay canonical; horizontal moves re-snap, explicit z edits do not. */
 export function prepareMeshEdit(item, patch, { assets, world, file }) {
   let after = { ...item, ...patch };
+  if('scale' in after) {
+    try {after.scale=meshScale(after.scale);}catch(error){return {after:null,errors:[error.message]};}
+    if(after.scale===1)delete after.scale;
+  }
   if (patch.origin) {
     if (!['x', 'y', 'z'].every(k => Number.isFinite(patch.origin[k]))) return { after: null, errors: ['origin: x, y and z must be finite'] };
     const moved = patch.origin.x !== item.origin.x || patch.origin.y !== item.origin.y;
     const typedZ = patch.origin.z !== item.origin.z;
-    after.origin = moved && !typedZ ? snapMeshOrigin(world, assets.mesh(item.mesh), item.mesh, patch.origin.x, patch.origin.y)
+    after.origin = moved && !typedZ ? snapMeshOrigin(world, assets.mesh(item.mesh), item.mesh, patch.origin.x, patch.origin.y,after.scale ?? 1)
       : Object.fromEntries(['x', 'y', 'z'].map(k => [k, roundMeshPosition(patch.origin[k])]));
     if (!after.origin) return { after: null, errors: ['origin: no floor under mesh footprint'] };
   }
@@ -68,12 +81,14 @@ export function prepareMeshEdit(item, patch, { assets, world, file }) {
 }
 
 /** Build + validate before minting. Does not insert into doc or mutate the runtime world. */
-export function createMeshPlacement(file, key, pt, { assets, world, yawDeg = 0, snapStep = 0 }) {
+export function createMeshPlacement(file, key, pt, { assets, world, yawDeg = 0, snapStep = 0, scale = 1 }) {
   if (!assets.has('mesh', key)) return { item: null, errors: ['mesh: unknown registered mesh'], warnings: [] };
   const snap = v => snapStep > 0 ? Math.round(v / snapStep) * snapStep : v;
-  const origin = snapMeshOrigin(world, assets.mesh(key), key, snap(pt.x), snap(pt.y));
+  try{scale=meshScale(scale);}catch(error){return {item:null,errors:[error.message],warnings:[]};}
+  const origin = snapMeshOrigin(world, assets.mesh(key), key, snap(pt.x), snap(pt.y),scale);
   if (!origin) return { item: null, errors: ['origin: no floor or courtyard gap under mesh footprint'], warnings: [] };
   const item = { id: 'meshPreview', mesh: key, origin, yawDeg: meshYaw(yawDeg) };
+  if(scale!==1)item.scale=scale;
   if (!SHADOW[meshClass(key)]) item.castShadow = false;
   const errors = validateMeshStructure(item, { assets, nextId: file.meta.nextId });
   if (errors.length) return { item: null, errors, warnings: [] };
