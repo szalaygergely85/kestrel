@@ -1,10 +1,10 @@
 # Kestrel – Product Backlog
 
-> **PC-B handoff 2026-10-07 (session closed at owner's request):** Editor startup errors and slow stages are visible; F3 shows WebGPU present cost.
-> For PC-A review: WG-2a corrections, timer, test gaps, editor startup and PREC-04b2 (5fe40f2, pushed). Merged PC-A through 8cf06a3.
-> PREC-04b2 restores every full-detail exception row to PASS here. The partial WG-2b port is saved on `wip/pc-b-wg-2b`, separate from pc-b.
-> WG-2b needs cloth streams, a readiness/resize hook and a ruling on unavailable source features; recommendations are in its row.
-> On resumption: resolve those WG-2b questions and finish its gate, then WG-2c and WG-3. SwiftShader crash still needs PC-A logs.
+> **PC-B handoff 2026-10-08 (two lanes B1 `pc-b` + B2 `pc-b2`; session stopped at owner request; pc-b = pc-b2 + WG-3e).**
+> For PC-A batch review (all `arch-review`, details in each `docs/test-reports/<ID>.md`): WG-2b (+ fix b634728: WebGPU raster uses the MESH-INST-01 grouped feed), WG-2c, WG-3a, WG-3b, WG-3c, WG-3d, WG-3e (gpucompare WebGPU = WebGL2: sun map 140/6, `--shadows dda` 66/7); MESH-SHADOW-02 (cap 4 nearest props within 25 m, owner look pending), MESH-INST-01 (55 -> 20 draws at roadSouth), TREES-LP-b (item 4 crease gate NEEDS PC-A: needs GLSL), ALPHA-01b JS side. PC-B decisions PC-A may overrule: WG-2b cloth extra vertex streams / port shipped geometry only / setGrid via createEngine({renderPipeline}); MESH-SHADOW-02 + MESH-INST-01 rules (rows/lane log).
+> Standalone, not wired yet (B2, plug-in APIs in `docs/lanes/pc-b2.md`): WG-3f WgSpritesPass + WgOverlayPass; WG-4a device compute + cull.wgsl + WgCullPass (cs_main compile-checked only). Device: rgba8ui + writeTexture dataOffset (webgl2 gpucompare identical).
+> Owner side work: CHAR-IMPORT-01 (Unity exporter `tools/unity/`, local-only overlay `content/local/`, Synty character stays out of git) + CHAR-COL-01 (skin/hair_dark materials; v2 records added in cfdcb58 after a missing v2 record switched the GPU pipeline off) -> po-review. Owner to re-export once with the generalized exporter.
+> Next on resume: B1 wires WG-3f (sprites/overlay) -> rt.gpuActive/frameComplete on WebGPU, then WG-4a wiring (B2 part done), WG-4b. B2: idle until then (no unblocked B2-only items; QUAT-LOD-01 waits for lane C trees). Port 8000 here currently serves the Codex clone (`kestrel_c`); this tree runs on 9510 (`pcb-main`).
 
 > **PC-A note to PC-B 2026-10-07 (evening; D-044 full WebGPU; read this first, replaces the earlier PC-A note and the "Next PC-B" lines below).**
 > **FIRST THING: `git fetch origin && git merge origin/pc-a`, then `node tools/run-tests.mjs` + `node tools/check-deps.mjs`.** PC-A pushed pc-a up to bb59a99: D-044 full WebGPU; D-045 known-FAIL exception; WG-1a/1b1/1b2/1c1/1c2/2a done; MESH-GPUCMP-01 A7 fix done (gpucompare 26 -> 14); MESH-FULL-01 merged with 15 rows as known-FAIL baselines (`docs/test-reports/MESH-FULL-01.md`); PREC-04 partial (28 -> 19 FAIL, 9 rows wait for the architect, PREC-04b, PC-A).
