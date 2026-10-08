@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - item icons + item-get card (S8-A-07)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1300px; }
+  canvas { display:block; background:#000; }
+  .bar { background:#0e1016; border:1px solid #22252e; border-radius:4px; padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  select, button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+  table { border-collapse:collapse; font-size:12px; font-family:Consolas, monospace; }
+  td, th { border:1px solid #22252e; padding:2px 8px; text-align:left; }
+  th { color:#ffc23c; }
+</style>
+</head>
+<body>
+<h1>Item icons + item-get card</h1>
+<div class="note">S8-A-07. The 12 icons of the S8-A-07 list (ids from the writer list, docs/story.md "S8-A-13 Items"), 5 x 3 UI cells each, in a
+pack slot box, next to a 1-colour fallback (every glyph in uiText). Then the same icons at 2x, the 1-cell hand/toast glyphs, and the item-get card
+(<code>ASSETS.uiStyle.itemGetCard</code>) over a scene. Everything is on the fixed 160 x 60 UI layer, so the look is the same at 240x90, 400x150 and
+480x180; at 1920 x 1080 one UI cell = 12 x 18 px (pick "12 px" to see true size). <b>cog</b> = currency, <b>pending owner</b>. The "potion" icon is
+<code>orb.hp</code> (Herb Flask): canon has no potions.</div>
+
+<div class="bar">
+  <label>UI cell <select id="cell"><option value="6">6 px</option><option value="8" selected>8 px</option><option value="12">12 px (1920 true size)</option></select></label>
+  <label>scene grid <select id="sceneGrid"><option value="240">240x90</option><option value="400" selected>400x150</option></select></label>
+  <label>backdrop <select id="tod"><option value="day">day</option><option value="night">night</option></select></label>
+</div>
+
+<h2>1. Icon sheet (1x): colour | 1-colour fallback</h2>
+<canvas id="sheet"></canvas>
+<h2>2. Icons at 2x + 1-cell glyphs</h2>
+<canvas id="sheet2"></canvas>
+
+<h2>3. Item-get card</h2>
+<div class="bar">
+  <button id="grant3">Grant 3 (queue: shield, cog x12, heart piece 2/4)</button>
+  <label>single <select id="single"></select></label>
+  <button id="grant1">Grant</button>
+  <button id="key">Any key</button>
+  <label><input type="checkbox" id="hold"> freeze (no auto-close)</label>
+  <label><input type="checkbox" id="rm"> reduce motion</label>
+  <label><input type="checkbox" id="full"> pack full</label>
+  <span id="state" class="note"></span>
+</div>
+<canvas id="card" tabindex="0"></canvas>
+<div class="note">Click the card canvas and press any key to dismiss (keys in the first 0.25 s are ignored). Auto-close after 1.5 s unless frozen.</div>
+
+<h2>4. Data</h2>
+<table id="tbl"></table>
+
+<h2>5. Checks</h2>
+<div id="checks"></div>
+
+<script src="../palette.js"></script>
+<script src="../models/title.js"></script>
+<script src="../items.js"></script>
+<script src="../models/inventory_ui.js"></script>
+<script src="../models/menu_ui.js"></script>
+<script>
+(function () {
+'use strict';
+const A = window.ASSETS, P = A.palette, IT = A.items, INV = A.uiStyle.inventory, K = A.uiStyle.itemGetCard;
+const FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+const $ = (id) => document.getElementById(id);
+const COLS = 160, ROWS = 60;
+
+// ------------------------------------------------------------ colours: palette key | card bg name | literal rgb
+function C(k) {
+  if (Array.isArray(k)) return k;
+  if (P.rgb[k]) return P.rgb[k];
+  if (K.bgRgb[k]) return K.bgRgb[k];
+  throw new Error('unknown colour ' + k);
+}
+function iconRgb(ch) { const k = IT.keys[ch]; return k ? P.rgb[k.c] : P.rgb.uiText; }
+
+// ------------------------------------------------------------ UI buffer
+function makeUi(cols, rows, defBg) { return { cols, rows, g: new Array(cols * rows).fill(null), fg: new Array(cols * rows), bg: new Array(cols * rows), defBg }; }
+function put(U, x, y, ch, fg, bg) {
+  if (x < 0 || y < 0 || x >= U.cols || y >= U.rows) return;
+  const i = y * U.cols + x; U.g[i] = ch; U.fg[i] = C(fg); if (bg !== undefined) U.bg[i] = C(bg); else if (!U.bg[i]) U.bg[i] = U.defBg;
+}
+function text(U, x, y, s, fg, bg) { for (let k = 0; k < s.length; k++) put(U, x + k, y, s[k], fg, bg); }
+function fill(U, x, y, w, h, bg) { for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) put(U, x + c, y + r, ' ', 'uiText', bg); }
+function box(U, x, y, w, h, corner, hz, v, fg, cornerFg, innerBg) {
+  for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) {
+    const top = r === 0 || r === h - 1, side = c === 0 || c === w - 1;
+    if (top && side) put(U, x + c, y + r, corner, cornerFg || fg);
+    else if (top) put(U, x + c, y + r, hz, fg);
+    else if (side) put(U, x + c, y + r, v, fg);
+    else if (innerBg) put(U, x + c, y + r, ' ', 'uiText', innerBg);
+  }
+}
+function drawIcon(U, x, y, def, mono, bg) {
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) {
+    const g = def.icon.glyphs[r][c], f = def.icon.fg[r][c];
+    if (g === ' ') continue;
+    put(U, x + c, y + r, g, mono ? 'uiText' : iconRgb(f), bg);
+  }
+}
+
+function canvas(id, cols, rows, cw) {
+  const cv = $(id), ch = cw * 1.5, dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(cols * cw * dpr); cv.height = Math.round(rows * ch * dpr);
+  cv.style.width = cols * cw + 'px'; cv.style.height = rows * ch + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  return { cv, ctx, cw, ch, cols, rows };
+}
+function blit(G, U, k) {
+  k = k === undefined ? 1 : k;
+  const ctx = G.ctx; ctx.font = Math.round(G.ch * 0.9) + 'px ' + FONT;
+  for (let i = 0; i < U.cols * U.rows; i++) {
+    if (U.g[i] === null) continue;
+    const x = (i % U.cols) * G.cw, y = Math.floor(i / U.cols) * G.ch, bg = U.bg[i], fg = U.fg[i];
+    ctx.fillStyle = `rgb(${bg[0] * k | 0},${bg[1] * k | 0},${bg[2] * k | 0})`; ctx.fillRect(x, y, G.cw + 0.5, G.ch + 0.5);
+    if (U.g[i] !== ' ') { ctx.fillStyle = `rgb(${fg[0] * k | 0},${fg[1] * k | 0},${fg[2] * k | 0})`; ctx.fillText(U.g[i], x + G.cw / 2, y + G.ch / 2 + 1); }
+  }
+}
+// stand-in scene (same as ui-menu-settings.html): sky, hills, tower, meadow; dimmed under the card
+function sceneDraw(G, dim) {
+  const sc = +$('sceneGrid').value, sr = sc === 240 ? 90 : 150, cw = COLS * G.cw / sc, ch = ROWS * G.ch / sr, ctx = G.ctx;
+  const night = $('tod').value === 'night', s = sc / COLS;
+  ctx.font = Math.max(3, Math.round(ch * 0.9)) + 'px ' + FONT;
+  for (let r = 0; r < sr; r++) for (let c = 0; c < sc; c++) {
+    const v = r / sr, h = ((c * 7 + r * 13) % 11) / 11, hill = 0.46 + 0.05 * Math.sin(c / sc * 9) + 0.03 * Math.sin(c / sc * 23);
+    const tower = Math.abs(c / sc - 0.72) < 0.018 && v > 0.2 && v < hill + 0.02;
+    let fg, bg, g;
+    if (tower) { bg = night ? [24, 22, 30] : [92, 86, 80]; fg = night ? [60, 56, 70] : [150, 140, 128]; g = (r % 3) ? '#' : '='; }
+    else if (v < hill) { bg = night ? [10, 16, 34] : [111, 163, 220]; fg = night ? [180, 190, 220] : [196, 220, 239]; g = h > 0.93 ? (night ? '.' : '~') : ' '; }
+    else { bg = night ? [16, 30, 20] : [60, 100, 40]; fg = night ? [44, 80, 50] : [120 + 40 * h, 170 + 30 * h, 74]; g = '",\';:'[(c * 3 + r) % 5]; }
+    let k = 1;
+    if (dim) {
+      k = dim.sceneDim;
+      const p = dim.panel, pad = dim.pad;
+      if (c >= Math.floor((p.x - pad) * s) && c <= Math.ceil((p.x + p.w + pad) * s) - 1 && r >= Math.floor((p.y - pad) * s) && r <= Math.ceil((p.y + p.h + pad) * s) - 1) k = dim.plate;
+    }
+    ctx.fillStyle = `rgb(${bg[0] * k | 0},${bg[1] * k | 0},${bg[2] * k | 0})`; ctx.fillRect(c * cw, r * ch, cw + 0.5, ch + 0.5);
+    if (g !== ' ') { ctx.fillStyle = `rgb(${fg[0] * k | 0},${fg[1] * k | 0},${fg[2] * k | 0})`; ctx.fillText(g, c * cw + cw / 2, r * ch + ch / 2 + 1); }
+  }
+}
+
+// ============================================================ 1. icon sheet
+const SLOT = INV.slot, RGB = INV.rgb;
+function slotBox(U, x, y) { box(U, x, y, 9, 5, SLOT.border.corner, SLOT.border.h, SLOT.border.v, RGB.ropeDark, RGB.ropeDark, RGB.slotIn); }
+function drawSheet() {
+  const extra = IT.order.filter(id => !IT.iconSet.includes(id));
+  const ids = IT.iconSet.concat(extra), rowsN = Math.ceil(ids.length / 6);
+  const rows = 2 + rowsN * 8 + 1, U = makeUi(COLS, rows, RGB.panel);
+  fill(U, 0, 0, COLS, rows, RGB.panel);
+  text(U, 1, 0, 'S8-A-07 icon set (12) then the other pack icons. Left box = colour, right box = 1-colour fallback.', RGB.uiHint);
+  ids.forEach((id, n) => {
+    const d = IT.defs[id], tx = 2 + (n % 6) * 26, ty = 2 + Math.floor(n / 6) * 8;
+    slotBox(U, tx, ty); drawIcon(U, tx + SLOT.icon.x, ty + SLOT.icon.y, d, false);
+    slotBox(U, tx + 11, ty); drawIcon(U, tx + 11 + SLOT.icon.x, ty + SLOT.icon.y, d, true);
+    put(U, tx + 21, ty + 2, d.glyph.ch, d.glyph.c);
+    text(U, tx, ty + 5, d.name.slice(0, 24), IT.iconSet.includes(id) ? RGB.uiText : RGB.uiDim);
+    text(U, tx, ty + 6, id, RGB.uiDim);
+    if (d.pending) text(U, tx + id.length + 1, ty + 6, '(pending owner)', RGB.ember);
+    if (n === 12) for (let c = 1; c < COLS - 1; c++) put(U, c, ty - 1, '-', RGB.ropeDark);
+  });
+  const G = canvas('sheet', COLS, rows, +$('cell').value); blit(G, U);
+}
+function drawSheet2() {
+  const ids = IT.iconSet, cols = 62, rows = 2 * 6 + 4, U = makeUi(cols, rows, RGB.panel);
+  fill(U, 0, 0, cols, rows, RGB.panel);
+  ids.forEach((id, n) => { const tx = 1 + (n % 6) * 10, ty = 1 + Math.floor(n / 6) * 6; slotBox(U, tx, ty); drawIcon(U, tx + 2, ty + 1, IT.defs[id], false); });
+  // the 1-cell glyphs as the toast / hands strip draws them: "{glyph} +1 {name}"
+  const glyphRow = (start, y) => { let x = 1; for (let n = start; n < Math.min(start + 4, ids.length); n++) { const d = IT.defs[ids[n]]; put(U, x, y, d.glyph.ch, d.glyph.c); text(U, x + 2, y, '+1', 'gold'); text(U, x + 5, y, d.name.slice(0, 9), 'uiText'); x += 15; } };
+  glyphRow(0, 13); glyphRow(4, 14); glyphRow(8, 15);
+  const G = canvas('sheet2', cols, rows, 2 * +$('cell').value); blit(G, U);
+}
+
+// ============================================================ 3. the card
+const W = { queue: [], cur: null, t: 0, phase: 'idle', last: performance.now() };
+const SC = { G: null, key: '', off: null };
+function grant(list) { for (const it of list) W.queue.push(Object.assign({}, it)); if (!W.cur) next(); }
+function next() {
+  if (!W.queue.length) { W.cur = null; W.phase = 'idle'; return; }
+  const it = W.queue.shift();
+  W.cur = { item: it, i: (W.cur ? W.cur.i + 1 : 1), total: W.cur ? W.cur.total : W.queue.length + 1 };
+  W.t = 0; W.phase = 'in';
+}
+function dismiss() { if (W.cur && W.phase === 'show' && W.t >= K.timing.keyLockSec) { W.phase = 'out'; W.t = 0; } }
+function kindLine(d) { return (K.kind.text[d.kindNext || d.kind] || d.kind) + (d.hand ? K.kind.handSuffix : ''); }
+function wrap(s, w) { if (s.length <= w) return [s]; let at = s.lastIndexOf(' ', w); if (at < 1) at = w; return [s.slice(0, at), s.slice(at).trim().slice(0, w)]; }
+
+function drawCard(U, cur, tShow) {
+  const p = K.panel, x0 = p.x, y0 = p.y, d = IT.defs[cur.item.id], rm = $('rm').checked;
+  fill(U, x0, y0, p.w, p.h, 'plate');
+  // frame + rivets
+  const F = K.frame;
+  for (let c = 0; c < p.w; c++) {
+    const corner = c === 0 || c === p.w - 1, riv = F.rivets.cols.includes(c);
+    for (const yy of [y0, y0 + p.h - 1]) put(U, x0 + c, yy, corner ? F.corner : riv ? F.rivets.glyph : F.h, corner ? F.cornerFg : riv ? F.rivets.fg : F.fg);
+  }
+  for (let r = 1; r < p.h - 1; r++) { put(U, x0, y0 + r, F.v, F.fg); put(U, x0 + p.w - 1, y0 + r, F.v, F.fg); }
+  const tag = F.tag.bracket[0] + F.tag.text + F.tag.bracket[1], tgx = x0 + ((p.w - tag.length) >> 1);
+  text(U, tgx, y0, tag, F.tag.bracketFg); text(U, tgx + F.tag.bracket[0].length, y0, F.tag.text, F.tag.fg);
+  // title bar
+  const TB = K.titleBar;
+  for (let c = TB.from; c <= TB.to; c++) put(U, x0 + c, y0 + TB.row, ' ', 'uiText', TB.bg);
+  const s = TB.decor[0] + d.name + TB.decor[1], sx = x0 + ((p.w - s.length) >> 1);
+  text(U, sx, y0 + TB.row, TB.decor[0], TB.decorFg, TB.bg);
+  text(U, sx + TB.decor[0].length, y0 + TB.row, d.name, tShow < TB.pop.sec ? TB.pop.fg : TB.fg, TB.bg);
+  text(U, sx + TB.decor[0].length + d.name.length, y0 + TB.row, TB.decor[1], TB.decorFg, TB.bg);
+  // separator
+  for (let c = K.separator.from; c <= K.separator.to; c++) put(U, x0 + c, y0 + K.separator.row, K.separator.glyph, K.separator.fg);
+  // icon box with pulse
+  const IB = K.iconBox, ph = rm ? 0 : (Math.sin(tShow * Math.PI * 2 / IB.pulse.periodSec) + 1) / 2, hot = ph > 0.5 ? 1 : 0;
+  box(U, x0 + IB.x, y0 + IB.y, IB.w, IB.h, IB.border.corner, IB.border.h, IB.border.v, IB.pulse.fg[hot], IB.cornerFg, IB.pulse.innerBg[hot]);
+  drawIcon(U, x0 + IB.x + IB.icon.x, y0 + IB.y + IB.icon.y, d, false);
+  // sparkles
+  if (!rm) {
+    const SP = K.sparkles, step = Math.floor(tShow / SP.stepSec);
+    SP.cells.forEach(([cx, cy], i) => { const f = (step + 3 * i) % SP.frames.length; if (SP.frames[f] !== ' ') put(U, x0 + cx, y0 + cy, SP.frames[f], SP.fg[f]); });
+  }
+  // body
+  const lines = wrap(d.desc, K.desc.w); lines.forEach((l, k) => text(U, x0 + K.desc.x, y0 + K.desc.y + k, l, K.desc.fg));
+  text(U, x0 + K.kind.x, y0 + K.kind.y, kindLine(d), K.kind.fg);
+  const n = cur.item.n, pr = K.count.progress[cur.item.id];
+  if ($('full').checked) text(U, x0 + K.count.x, y0 + K.count.y, K.count.full.text, K.count.full.fg);
+  else if (pr) text(U, x0 + K.count.x, y0 + K.count.y, pr.format.replace('{n}', n), pr.fg);
+  else if (d.stackMax > 1 && n >= 2) text(U, x0 + K.count.x, y0 + K.count.y, K.count.format.replace('{n}', n), K.count.fg);
+  if (d.pending) text(U, x0 + K.pending.x, y0 + K.pending.y, K.pending.text, K.pending.fg);
+  // footer
+  const FT = K.footer;
+  if (cur.total >= 2) text(U, x0 + FT.queue.col, y0 + FT.row, FT.queue.format.replace('{i}', cur.i).replace('{n}', cur.total), FT.queue.fg);
+  const bl = FT.continue.blink, cyc = bl.onSec + bl.offSec;
+  if (tShow >= K.timing.keyLockSec && (rm || ((tShow - K.timing.keyLockSec) % cyc) < bl.onSec))
+    text(U, x0 + FT.continue.colEnd - FT.continue.text.length + 1, y0 + FT.row, FT.continue.text, FT.continue.fg);
+}
+
+function frame() {
+  const now = performance.now(), dt = Math.min(0.1, (now - W.last) / 1000); W.last = now;
+  const T = K.timing;
+  if (W.cur) {
+    W.t += dt;
+    if (W.phase === 'in' && W.t >= T.fadeIn) { W.phase = 'show'; W.t = 0; }
+    else if (W.phase === 'show' && !$('hold').checked && W.t >= T.holdSec) { W.phase = 'out'; W.t = 0; }
+    else if (W.phase === 'out' && W.t >= T.fadeOut + T.gapSec) { next(); }
+  }
+  const showing = !!W.cur, cw = +$('cell').value;
+  const key = [cw, $('sceneGrid').value, $('tod').value, showing].join('|');
+  if (!SC.G || SC.key !== key) {          // scene is static: draw it once per setting into an offscreen canvas
+    SC.G = canvas('card', COLS, ROWS, cw);
+    const off = document.createElement('canvas'); off.width = SC.G.cv.width; off.height = SC.G.cv.height;
+    const octx = off.getContext('2d'), dpr = window.devicePixelRatio || 1; octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    octx.textAlign = 'center'; octx.textBaseline = 'middle';
+    sceneDraw({ cw: SC.G.cw, ch: SC.G.ch, ctx: octx }, showing ? { sceneDim: K.sceneDim.bgMul, plate: K.plate.bgMul, pad: K.plate.pad, panel: K.panel } : null);
+    SC.off = off; SC.key = key;
+  }
+  const G = SC.G;
+  G.ctx.save(); G.ctx.setTransform(1, 0, 0, 1, 0, 0); G.ctx.drawImage(SC.off, 0, 0); G.ctx.restore();
+  if (showing) {
+    const U = makeUi(COLS, ROWS, C('plate'));
+    let k = 1, tShow = 0;
+    if (W.phase === 'in') k = W.t / T.fadeIn;
+    else if (W.phase === 'show') tShow = W.t;
+    else k = Math.max(0, 1 - W.t / T.fadeOut);
+    if (W.phase === 'out') tShow = T.holdSec;
+    drawCard(U, W.cur, tShow);
+    if (k > 0) blit(G, U, Math.max(0, Math.min(1, k)));
+    $('state').textContent = `card ${W.cur.i}/${W.cur.total}: ${W.cur.item.id}  phase ${W.phase}  t ${W.t.toFixed(2)} s  queue ${W.queue.length}`;
+  } else $('state').textContent = 'no card (press Grant)';
+  requestAnimationFrame(frame);
+}
+
+// ============================================================ 4. data table
+function drawTable() {
+  const rows = ['<tr><th>#</th><th>id</th><th>name (len)</th><th>kind / kindNext</th><th>hand</th><th>stack</th><th>desc (len)</th><th>glyph</th></tr>'];
+  IT.iconSet.forEach((id, n) => {
+    const d = IT.defs[id];
+    rows.push(`<tr><td>${n + 1}</td><td>${id}${d.pending ? ' <b style="color:#d67040">pending owner</b>' : ''}</td><td>${d.name} (${d.name.length})</td><td>${d.kind}${d.kindNext ? ' / ' + d.kindNext : ''}</td><td>${d.hand}</td><td>${d.stackMax}</td><td>${d.desc} (${d.desc.length})</td><td style="color:${P.colors[d.glyph.c]}">${d.glyph.ch}</td></tr>`);
+  });
+  $('tbl').innerHTML = rows.join('');
+}
+
+// ============================================================ 5. checks
+function checks() {
+  const out = [], ok = (name, pass, info) => out.push(`<div style="color:${pass ? '#4fd66a' : '#ff3b3b'}">${pass ? 'PASS' : 'FAIL'}  ${name}${!pass && info ? '  - ' + info : ''}</div>`);
+  const errs = IT.validate(P); ok('items.validate(palette) is empty', errs.length === 0, errs.join('; '));
+  ok('iconSet has 12 ids, all defined', IT.iconSet.length === 12 && IT.iconSet.every(id => IT.defs[id]), IT.iconSet.filter(id => !IT.defs[id]).join(','));
+  const NEW = { shield: ['Brass Buckler', 'Gondola plate, bent round a strap.'], lantern: ['Kestrel Lamp', "The gondola's lamp. It still burns."],
+    'key.small': ['Small Key', 'Iron, brown with rust. Fits one lock.'], bow: ["Hunter's Bow", 'Yew and gut. Quiet, and it reaches.'],
+    bomb: ['Blast Pot', 'Clay, black powder, a short fuse.'], 'heart.piece': ['Heart Piece', 'A warm red stone. Four make a heart.'],
+    cog: ['Brass Cog', "Ferrum's small change. Worth a trade."], 'brass.scrap': ['Brass Scrap', 'From the Kestrel. Ferrum, in pieces.'] };
+  for (const id in NEW) ok(`${id}: writer name + line`, IT.defs[id] && IT.defs[id].name === NEW[id][0] && IT.defs[id].desc === NEW[id][1]);
+  ok('existing ids still present (sword, spell.fireball, torch, boar.*, orb.*)', ['sword', 'spell.fireball', 'torch', 'boar.meat', 'boar.hide', 'boar.tusk', 'orb.hp', 'orb.mp'].every(id => IT.defs[id] && IT.defs[id].id === id));
+  const GAME_KINDS = ['weapon', 'spell', 'tool', 'food', 'material', 'pickup'];
+  ok('every def kind is in the game validateItemDefs KINDS (boot does not throw)', Object.keys(IT.defs).every(id => GAME_KINDS.includes(IT.defs[id].kind)));
+  ok('order lists every def once', Object.keys(IT.defs).every(id => IT.order.filter(x => x === id).length === 1) && IT.order.length === Object.keys(IT.defs).length);
+  ok('cog marked pending owner', IT.defs.cog.pending === 'owner');
+  ok('iconSet names <= 14, lines <= 38 (writer limits)', IT.iconSet.every(id => IT.defs[id].name.length <= 14 && IT.defs[id].desc.length <= 38));
+  // distinct icons: no two of the 12 share the same glyph art
+  const art = IT.iconSet.map(id => IT.defs[id].icon.glyphs.join('|')); ok('12 icons have distinct glyph art (1-colour fallback tells them apart)', new Set(art).size === 12);
+  // icon fill: every icon uses >= 7 of its 15 cells (reads as a shape, not a speck; the old sword / tusk are 7)
+  ok('every iconSet icon fills >= 7 / 15 cells', IT.iconSet.every(id => IT.defs[id].icon.glyphs.join('').replace(/ /g, '').length >= 7),
+     IT.iconSet.filter(id => IT.defs[id].icon.glyphs.join('').replace(/ /g, '').length < 7).join(','));
+  // contrast: brightest cell of each icon vs the slot interior
+  const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  ok('each icon has a cell >= 100 luminance over the slot bg', IT.iconSet.every(id => { const f = IT.defs[id].icon.fg.join(''); let m = 0; for (const ch of f) if (ch !== ' ') m = Math.max(m, lum(iconRgb(ch))); return m >= 100; }));
+  // card
+  for (const k in K.hex) ok(`card hex.${k} = palette`, P.colors[k] && P.colors[k].toLowerCase() === K.hex[k].toLowerCase(), K.hex[k] + ' vs ' + P.colors[k]);
+  const hx = (c) => '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
+  ok('card bg hex = bgRgb', Object.keys(K.bgRgb).every(n => K.bg[n] === hx(K.bgRgb[n])));
+  ok('card fits the 160 x 60 UI grid, centred', K.panel.x + K.panel.w <= 160 && K.panel.y + K.panel.h <= 60 && K.panel.x === (160 - K.panel.w) >> 1 && K.panel.y === (60 - K.panel.h) >> 1);
+  ok('desc column fits 38 chars inside the frame', K.desc.x + K.desc.w <= K.panel.w - 2);
+  ok('longest iconSet name + decor fits the title bar', IT.iconSet.every(id => IT.defs[id].name.length + 6 <= K.titleBar.to - K.titleBar.from + 1));
+  ok('sparkle cells inside the card interior', K.sparkles.cells.every(([x, y]) => x >= 1 && x <= K.panel.w - 2 && y >= 1 && y <= K.panel.h - 2));
+  ok('kind text exists for every def kind / kindNext', Object.keys(IT.defs).every(id => K.kind.text[IT.defs[id].kindNext || IT.defs[id].kind]));
+  ok('card.continue text = writer key', K.footer.continue.text === '- any key -');
+  ok('mock queue ids exist', K.mock.queue.every(q => IT.defs[q.id]));
+  let ascii = true; for (const id in IT.defs) for (const r of IT.defs[id].icon.glyphs) for (const ch of r) if (ch.charCodeAt(0) < 32 || ch.charCodeAt(0) > 126) ascii = false;
+  ok('all icon glyphs printable ASCII', ascii);
+  const fails = out.filter(s => s.includes('FAIL')).length;
+  $('checks').innerHTML = `<div style="color:${fails ? '#ff3b3b' : '#4fd66a'}">${fails ? fails + ' FAIL' : 'ALL PASS'} (${out.length} checks)</div>` + out.join('');
+}
+
+// ============================================================ wiring
+for (const id of IT.iconSet) { const o = document.createElement('option'); o.value = id; o.textContent = id; $('single').appendChild(o); }
+$('grant3').onclick = () => grant(K.mock.queue);
+$('grant1').onclick = () => grant([{ id: $('single').value, n: 1 }]);
+$('key').onclick = dismiss;
+$('card').addEventListener('keydown', (e) => { e.preventDefault(); dismiss(); });
+$('card').addEventListener('mousedown', () => { $('card').focus(); dismiss(); });
+const redraw = () => { drawSheet(); drawSheet2(); };
+for (const id of ['cell', 'sceneGrid', 'tod']) $(id).onchange = redraw;
+redraw(); drawTable(); checks();
+grant(K.mock.queue); $('hold').checked = false;
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
