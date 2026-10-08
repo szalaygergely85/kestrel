@@ -82,6 +82,23 @@ export class WgCullPass {
     return b.entries;
   }
 
+  /**
+   * B1 wiring (WG-4a): can this batch go through the kernel? ONE_PART only - a meshGroup (`g.mesh`, any static range count: drawn as one range),
+   * or a voxel unit whose meshes are ONE range covering the whole mesh - and a free batch slot (or `g` is already a batch). Never throws.
+   * @param {any} g @param {[any, any|null]|any[]} meshes
+   */
+  supports(g, meshes) {
+    if (!this.batches.has(g) && this._nextSlot + 2 > this.maxBatches * 2) return false;
+    for (let i = 0; i < 2; i++) {
+      const m = meshes[i];
+      if (!m) continue;
+      if (g.mesh) continue;
+      const r = m.ranges;
+      if (!r || r.length !== 1 || (r[0].start || 0) !== 0 || r[0].count !== m.triCount) return false;
+    }
+    return true;
+  }
+
   /** @param {any} g @param {[any, any|null]} meshes */
   _create(g, meshes) {
     if (this._nextSlot + 2 > this.maxBatches * 2) throw new Error(`WgCullPass: over ${this.maxBatches} batches`);

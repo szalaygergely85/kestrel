@@ -345,7 +345,7 @@ export class InstanceGroups {
    *   `undefined`-frameNo calls in a row see "unchanged" and wrongly reuse a stale memo).
    * @param {Float64Array|null} [viewProj] - RE-15c: column-major viewProj (same as `planes`'); with `rows` enables LOD where `g.lodCells > 0`
    * @param {number} [rows] - RE-15c: grid rows
-   * @param {{cache: import('./DrawList.js').MeshDrawCache, idFor: ((key: string) => number)|null}|null} [meshDraw] - TREES-LP-b: resolves mesh groups' draw copies; null/omitted = mesh groups skipped
+   * @param {{cache: import('./DrawList.js').MeshDrawCache, idFor: ((key: string) => number)|null, gpu?: {accept: (g: any, mesh0: any, mesh1: any) => boolean}|null}|null} [meshDraw] - TREES-LP-b: resolves mesh groups' draw copies; null/omitted = mesh groups skipped
    */
   addToDrawList(list, cache, planes, frameNo, viewProj, rows, meshDraw) {
     const pool = this.pool;
@@ -357,12 +357,14 @@ export class InstanceGroups {
       this.stats.instancesCulled = 0;
       this.stats.instancesLod1 = 0;
     }
+    const gpu = (meshDraw && meshDraw.gpu) || null; // WG-4a: `gpu.accept(g, mesh0, mesh1)` true = the GPU cull kernel owns this group (no CPU compaction, no list item)
     for (let k = 0; k < groups.length; k++) {
       const g = groups[k];
       if (g.count <= 0) continue;
       if (g.mesh) { // TREES-LP-b: kind-9 mesh group, one identity part, no LOD
         if (!meshDraw || !meshDraw.idFor) continue;
         const draw = meshDraw.cache.get(g.mesh, meshDraw.idFor);
+        if (gpu && gpu.accept(g, draw, null)) continue;
         if (!memo || g._memoFrameNo !== frameNo) {
           if (!(g._R > 0)) g._R = groupRadius(draw, g.parts);
           const kept = compactGroup(g, planes, g._R, null, 0);
@@ -380,6 +382,13 @@ export class InstanceGroups {
       const mesh = cache.get(pm, g.modelKey, names);
       const lodOn = g.lodCells > 0 && !!viewProj;
       const mesh1 = (lodOn || g.drawCount[1] > 0) ? cache.get(pm, g.modelKey, names, 1) : null;
+      if (gpu && gpu.accept(g, mesh, mesh1)) { // same per-frame parts + radius as below; the kernel does cull + LOD
+        computeGroupParts(pm, g.pose, g.parts);
+        let R = groupRadius(mesh, g.parts);
+        if (mesh1) { const R1 = groupRadius(mesh1, g.parts); if (R1 > R) R = R1; }
+        g._R = R;
+        continue;
+      }
       if (!memo || g._memoFrameNo !== frameNo) {
         computeGroupParts(pm, g.pose, g.parts);
         let R = groupRadius(mesh, g.parts);

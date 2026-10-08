@@ -40,6 +40,7 @@ export class WgCellPipeline {
     this.terrainEnabled = opts.terrainEnabled !== false;
     this.renderer = 'mesh';
     this.shadowOpts = opts.shadows || null;
+    this.gpuCull = opts.gpuCull !== false; // WG-4a compute cull of instance batches (`?gpucull=0` = CPU path)
     this.ready = false;
     /** passes that really execute in this build; `frameComplete` = the pipeline can replace the CPU shading entirely */
     this.portedPasses = [];
@@ -85,7 +86,7 @@ export class WgCellPipeline {
         bindings: { uniformBytes: DEBUG_BLOCK.sizeBytes, textures: DEBUG_TEXTURES.slice() },
         targetFormats: ['rgba8', 'rgba8'],
       });
-      this._rasterPass = new WgRasterPass(this.device);
+      this._rasterPass = new WgRasterPass(this.device, { gpuCull: this.gpuCull });
       this._meshDrawList = this._rasterPass.list;
       this._shadowPass = new WgShadowPass(this.device, { shadows: this.shadowOpts, renderer: this.renderer, buffers: this._rasterPass.buffers });
       this._waterPass = new WgWaterPass(this.device);
