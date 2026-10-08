@@ -204,6 +204,7 @@ const canvas = document.getElementById('screen');
 // MESH-LOAD-01: lazy mesh payloads in the game (colliders stay eager); capture/bench/compare pages stay eager so their results stay comparable. ?lazymesh=0 = eager.
 const lazyMeshes = !isCaptureOrBench && params.get('lazymesh') !== '0';
 const bundle = await loadContentPack('../content/manifest.json', { lazyMeshes });
+if (bundle.lazyMeshes) window.__lazyMeshStore = bundle.lazyMeshes; // MESH-LOAD-01: dev handle (tools/lazymesh-trace.mjs, F3 debugging); the engine no longer sets it
 // US-034 (24.11): `?playtest=1` overlays the editor's in-memory (possibly
 // unsaved) level/world edits from `kestrel.playtest` onto `bundle` BEFORE
 // the registry is built, so the rest of boot is unaware anything special
