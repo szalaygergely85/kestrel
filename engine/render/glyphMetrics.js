@@ -59,14 +59,24 @@ export function computeCellBox(measureCtx, cols, rows, availPxW, availPxH, maxRo
   // Small safety margin: glyph metrics don't scale perfectly linearly with
   // font size (hinting/rounding), so back off very slightly from the naive
   // linear estimate before re-measuring for the real box.
-  const fontPx = Math.max(1, Math.floor(REF * scale * 0.97));
-  const metrics = measureGlyphs(measureCtx, fontPx);
+  let fontPx = Math.max(1, Math.floor(REF * scale * 0.97));
+  let metrics = measureGlyphs(measureCtx, fontPx);
+  let pxCellW = Math.max(1, Math.ceil(metrics.width));
+  // +1px padding guards against sub-pixel rounding in measureText itself.
+  let pxCellH = Math.max(1, Math.ceil(metrics.height) + 1);
+  // BUG-HUD-OFFSCREEN-01: the ceil()/+1 rounding above can push cols*pxCellW / rows*pxCellH past the budget (e.g. 150 rows of
+  // 5 px in 720 px) so the canvas ran off the window and the bottom HUD vanished. Shrink the font until the whole grid fits.
+  while (fontPx > 1 && (pxCellW * cols > availPxW || pxCellH * rows > Math.min(availPxH, maxRowPxH * rows))) {
+    fontPx--;
+    metrics = measureGlyphs(measureCtx, fontPx);
+    pxCellW = Math.max(1, Math.ceil(metrics.width));
+    pxCellH = Math.max(1, Math.ceil(metrics.height) + 1);
+  }
 
   return {
     fontPx,
-    // +1px padding guards against sub-pixel rounding in measureText itself.
-    pxCellW: Math.max(1, Math.ceil(metrics.width)),
-    pxCellH: Math.max(1, Math.ceil(metrics.height) + 1),
+    pxCellW,
+    pxCellH,
     glyphAscent: Math.ceil(metrics.ascent) + 1,
   };
 }
