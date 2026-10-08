@@ -73,6 +73,7 @@ export const SHADOW_LEVELS = Object.freeze(['off', 'low', 'mid', 'high']);
  * GFX-03: shadow level -> plain shadow options (spread into `createEngine({ shadows })`). 'high' is exactly today's defaults.
  * low/mid numbers are PROPOSED (not measured; the owner wants them from a measurement, GFX-04 on PC-A). There is no PCF tap knob:
  * the 4-tap quantised PCF is fixed by the JS/GLSL/WGSL twins, so the level changes res, caster distances and the mesh budget only.
+ * Mesh renderer only: 'map'/'off' throw on renderer 'dda'.
  * @param {'off'|'low'|'mid'|'high'} level
  * @returns {Partial<SunShadowOptions>}
  */

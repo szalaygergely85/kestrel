@@ -29,3 +29,10 @@ URL knob (?grid ?rays ?shadows ?shadowinst/res/cast ?scatter ?lodScale ?shadowQu
 - NEEDS C: Settings Quality row (none exists yet; so no live grid / "restart to apply" hook was wired). Saving works via `saveSettings({quality, shadowQuality})`.
 - Shadow `mid` instCastM is 36 while high is kept at 32 (legacy), so mid reaches farther than high; GFX-04 numbers should fix the table.
 - `?scatter=0` keeps its old meaning (no detail tufts) and now also means density 0.
+
+## ARCH CHANGES 2026-10-08 (batch 5) - done
+1. Sun 'off' GPU check, one capture per backend (in-app browser, RTX 4060, tree 0bc20ba + this fix, `?shadows=off&pose=roadSouth&autoquality=0&f3=1`, default preset high):
+   - webgpu: F3 `backend: webgpu (nvidia/lovelace)`, `path: gpu grid 400x150 rays 2`, `shadows high/off`; console: WgCellPipeline passes `debug,raster,resolve,deriv,light,shade,edge,water` (no shadow pass), frame owned by the GPU (grid 160x60 -> 400x150 = frameComplete, rt.gpuActive), scene sunlit (N.L), no cast shadows.
+   - webgl2: F3 `path: gpu grid 400x150 rays 2`, pass list `shadow n/a`, scene sunlit, no cast shadows.
+   - Both: no GL/WebGPU validation errors; the only console errors are 404s for the optional local pack `design/local/voxel_pack.js` (not in git, unrelated).
+2. JSDoc on `resolveShadowLevel` (engine/render/shadowSun.js): "Mesh renderer only: 'map'/'off' throw on renderer 'dda'."
