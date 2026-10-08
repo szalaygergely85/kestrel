@@ -99,6 +99,10 @@ export function makeMockGpuDevice() {
     writeTexture(tex, data, rect, dataOffset) { tex._texWrites = (tex._texWrites || 0) + 1; tex._lastTexWrite = { data, rect: rect || null, dataOffset: dataOffset || 0 }; state.texWriteCount++; },
     canvasTarget() { if (!device._canvasTarget) device._canvasTarget = makeHandle('target', { canvas: true }); return device._canvasTarget; },
     submit() { state.submitCount++; },
+    // WG-4a (38.3): the mock records, never computes.
+    createComputePipeline(desc) { return makeHandle('computePipeline', desc); },
+    dispatch(pipeline, desc, x, y = 1, z = 1) { device._dispatches = (device._dispatches || 0) + 1; device._lastDispatch = { pipeline, desc, x, y, z }; },
+    drawIndirect(buffer, offsetBytes) { device._indirectDraws = (device._indirectDraws || 0) + 1; device._lastIndirect = { pipeline: device._activePipeline, buffer, offsetBytes }; },
     dispose(handle) {
       // Two call shapes on purpose: `device.dispose()` (whole-device
       // teardown, GpuDevice.js's own contract) frees every live handle;

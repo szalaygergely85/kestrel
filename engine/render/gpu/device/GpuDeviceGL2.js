@@ -91,6 +91,7 @@ export class GpuDeviceGL2 {
 
   /** @param {BufferDesc} desc */
   createBuffer(desc) {
+    if (desc.usage === 'storage' || desc.usage === 'indirect') throw new Error('GpuDeviceGL2: compute not supported');
     const gl = this.gl;
     const target = gl[USAGE_TO_GL_TARGET[desc.usage]];
     const buf = gl.createBuffer();
@@ -169,6 +170,11 @@ export class GpuDeviceGL2 {
 
   /** WG-1b1 (38.3): end of frame - nothing to flush on WebGL2. */
   submit() {}
+
+  // WG-4a (38.3): compute is WebGPU only.
+  createComputePipeline() { throw new Error('GpuDeviceGL2: compute not supported'); }
+  dispatch() { throw new Error('GpuDeviceGL2: compute not supported'); }
+  drawIndirect() { throw new Error('GpuDeviceGL2: compute not supported'); }
 
   /** @param {TargetDesc} desc */
   createTarget(desc) {

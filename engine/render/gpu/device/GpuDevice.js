@@ -21,7 +21,7 @@
 
 /**
  * @typedef {Object} BufferDesc
- * @property {'vertex'|'index'|'uniform'} usage
+ * @property {'vertex'|'index'|'uniform'|'storage'|'indirect'} usage - WG-4a (38.3): `storage` = compute-writable storage that is also usable as a vertex/instance buffer (copy src/dst); `indirect` = draw-args buffer written by compute (storage + indirect + copy src/dst). WebGPU only: GL2 throws 'compute not supported'
  * @property {number} [bytes] - allocate this many bytes, uninitialised (mutually exclusive with `data`)
  * @property {ArrayBufferView} [data] - allocate + upload this data (mutually exclusive with `bytes`)
  * @property {boolean} [dynamic] - CLOTH-1b2: the buffer is rewritten via `writeBuffer` (GL2: DYNAMIC_DRAW instead of STATIC_DRAW)
@@ -80,6 +80,22 @@
  * @property {GpuHandle} [instanceBuffer] - WG-1b1 (38.3): per-instance vertex buffer for `PipelineStageDesc.instanceLayout`
  * @property {GpuHandle[]} [extraBuffers] - WG-2b: buffers for `PipelineStageDesc.extraLayouts`, same order
  * @property {number} [uniformOffsetBytes] - WG-1b1 (38.4): dynamic offset of this draw's block in the uniform ring (WebGPU; GL2 ignores)
+ */
+
+/**
+ * WG-4a (38.3): a compute pipeline. `@group(0)`: storage buffers at binding = slot (`buffers[slot]` = 'read' -> `var<storage, read>`,
+ * 'rw' -> `var<storage, read_write>`); `@group(1) @binding(0)`: the same dynamic-offset uniform block as render pipelines (`uniformBytes` 0 = none).
+ * Entry point default `cs_main` (`src.entry` overrides). WebGPU only.
+ * @typedef {Object} ComputePipelineDesc
+ * @property {{wgsl: string, entry?: string}} src
+ * @property {{uniformBytes: number, buffers: ('read'|'rw')[]}} bindings
+ */
+
+/**
+ * @typedef {Object} ComputeBindDesc
+ * @property {{slot: number, buffer: GpuHandle}[]} buffers - every slot of the pipeline; the bind group is cached per distinct handle set
+ * @property {Float32Array|Int32Array|Uint32Array} [uniforms]
+ * @property {number} [uniformOffsetBytes]
  */
 
 /** Opaque handle - never inspected outside device/* (27.2). @typedef {Object} GpuHandle */
@@ -148,8 +164,21 @@ export class GpuDevice {
    * @returns {void|Promise<void>}
    */
   readback(tex, rect, out) { throw new Error('GpuDevice.readback: not implemented'); }
-  // WG-4a-LATER (38.3, typedef only, NOT in GPU_DEVICE_METHODS yet): createBuffer({usage:'storage'|'indirect'}),
-  // createComputePipeline(desc), dispatch(x, y, z), drawIndirect(buffer, offsetBytes).
+  /**
+   * WG-4a (38.3, WebGPU only; GL2 throws 'compute not supported'; listed in GPU_COMPUTE_METHODS, not GPU_DEVICE_METHODS).
+   * @param {ComputePipelineDesc} desc @returns {GpuHandle}
+   */
+  createComputePipeline(desc) { throw new Error('GpuDevice.createComputePipeline: not implemented'); }
+  /**
+   * WG-4a: records ONE compute pass with one dispatch (call outside a render pass; the commands join the frame encoder, so
+   * compute -> render ordering follows call order). @param {GpuHandle} pipeline @param {ComputeBindDesc} desc @param {number} x @param {number} [y] @param {number} [z]
+   */
+  dispatch(pipeline, desc, x, y, z) { throw new Error('GpuDevice.dispatch: not implemented'); }
+  /**
+   * WG-4a: inside a render pass, after `bind`: draws with args read from `buffer` at `offsetBytes` (indexed pipelines read
+   * 5 u32 {indexCount, instanceCount, firstIndex, baseVertex, firstInstance}, non-indexed 4 u32). @param {GpuHandle} buffer @param {number} offsetBytes
+   */
+  drawIndirect(buffer, offsetBytes) { throw new Error('GpuDevice.drawIndirect: not implemented'); }
   /** WG-2a (38.8a item 18), OPTIONAL (WebGPU only; callers test `typeof device.checkErrors === 'function'`): resolves to the validation error messages seen so far (empty = ok). @returns {Promise<string[]>} */
   checkErrors() { return Promise.resolve([]); }
   /** @returns {Promise<any>} WG-1b1: resolves when the device is lost (WebGPU); never resolves on GL2/mock. */
@@ -181,3 +210,6 @@ export const GPU_DEVICE_METHODS = Object.freeze([
   'beginPass', 'bind', 'draw', 'endPass', 'readback', 'dispose',
   'writeTexture', 'canvasTarget', 'submit', // WG-1b1 (38.3)
 ]);
+
+/** WG-4a (38.3): the compute additions. Optional: GpuDeviceWebGPU and the Node mock implement them, GL2 throws 'compute not supported'. */
+export const GPU_COMPUTE_METHODS = Object.freeze(['createComputePipeline', 'dispatch', 'drawIndirect']);

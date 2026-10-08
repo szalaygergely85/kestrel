@@ -95,7 +95,10 @@ export class GpuDeviceWebGPU {
   /** @param {import('./GpuDevice.js').BufferDesc} desc */
   createBuffer(desc) {
     const c = this._c.buf;
-    const usage = (desc.usage === 'vertex' ? c.VERTEX : desc.usage === 'index' ? c.INDEX : c.UNIFORM) | c.COPY_DST;
+    // WG-4a: 'storage' = compute-writable AND bindable as a vertex/instance buffer; 'indirect' = draw args written by compute
+    const usage = (desc.usage === 'vertex' ? c.VERTEX : desc.usage === 'index' ? c.INDEX
+      : desc.usage === 'storage' ? (c.STORAGE | c.VERTEX | c.COPY_SRC)
+      : desc.usage === 'indirect' ? (c.INDIRECT | c.STORAGE | c.COPY_SRC) : c.UNIFORM) | c.COPY_DST;
     const bytes = desc.data ? desc.data.byteLength : (desc.bytes || 0);
     const buf = this.gpu.createBuffer({ size: Math.max(4, (bytes + 3) & ~3), usage });
     this._live.push(buf);
@@ -263,6 +266,82 @@ export class GpuDeviceWebGPU {
       kind: 'pipeline', gpu, extraBase, bgl0, uniformGroup, uniformBytes: uBytes, texKinds, samplerBinding,
       texCur: new Array(texKinds.length).fill(null), texGroup: null, texDirty: texKinds.length > 0, indexed: false,
     };
+  }
+
+  /**
+   * WG-4a (38.3): compute pipeline. @group(0) = storage buffers at binding = slot ('read' -> read-only-storage, 'rw' -> storage),
+   * @group(1) @binding(0) = the dynamic-offset uniform block (same ring as render pipelines). Entry `cs_main`.
+   * @param {import('./GpuDevice.js').ComputePipelineDesc} desc
+   */
+  createComputePipeline(desc) {
+    const stage = this._c.stage;
+    const kinds = desc.bindings.buffers || [];
+    const bgl0 = this.gpu.createBindGroupLayout({ entries: kinds.map((k, i) => ({ binding: i, visibility: stage.COMPUTE, buffer: { type: k === 'rw' ? 'storage' : 'read-only-storage' } })) });
+    const uBytes = desc.bindings.uniformBytes || 0;
+    const bgl1 = uBytes > 0
+      ? this.gpu.createBindGroupLayout({ entries: [{ binding: 0, visibility: stage.COMPUTE, buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: uBytes } }] })
+      : null;
+    const layout = this.gpu.createPipelineLayout({ bindGroupLayouts: bgl1 ? [bgl0, bgl1] : [bgl0] });
+    const uniformGroup = uBytes > 0
+      ? this._validatedCreate('createBindGroup', { layout: bgl1, entries: [{ binding: 0, resource: { buffer: this._ringBuf, offset: 0, size: uBytes } }] })
+      : null;
+    const gpu = this._validatedCreate('createComputePipeline', { layout, compute: { module: this._module(desc.src), entryPoint: desc.src.entry || 'cs_main' } });
+    return { kind: 'computePipeline', gpu, bgl0, uniformGroup, uniformBytes: uBytes, nbuf: kinds.length, groups: /** @type {{bufs: any[], group: any}[]} */ ([]) };
+  }
+
+  /**
+   * WG-4a: one compute pass, one dispatch. The buffer bind group is cached per distinct handle set (element-wise compare, no
+   * allocation once seen; a new set builds one group: create them at init/resize, not per frame).
+   * @param {GpuHandle} pipeline @param {import('./GpuDevice.js').ComputeBindDesc} desc @param {number} x @param {number} [y] @param {number} [z]
+   */
+  dispatch(pipeline, desc, x, y = 1, z = 1) {
+    if (this._pass) throw new Error('GpuDeviceWebGPU.dispatch: a render pass is open');
+    const p = pipeline;
+    const bufs = desc.buffers;
+    if (bufs.length !== p.nbuf) throw new Error(`GpuDeviceWebGPU.dispatch: ${bufs.length} buffers bound, pipeline has ${p.nbuf}`);
+    let grp = null;
+    for (let g = 0; g < p.groups.length && !grp; g++) {
+      const cur = p.groups[g].bufs;
+      let same = true;
+      for (let i = 0; i < bufs.length; i++) if (cur[bufs[i].slot] !== bufs[i].buffer) { same = false; break; }
+      if (same) grp = p.groups[g].group;
+    }
+    if (!grp) {
+      const cur = new Array(p.nbuf).fill(null);
+      const entries = [];
+      for (let i = 0; i < bufs.length; i++) { cur[bufs[i].slot] = bufs[i].buffer; entries.push({ binding: bufs[i].slot, resource: { buffer: bufs[i].buffer.gpu } }); }
+      grp = this._validatedCreate('createBindGroup', { layout: p.bgl0, entries });
+      p.groups.push({ bufs: cur, group: grp });
+    }
+    if (!this._encoder) this._encoder = this.gpu.createCommandEncoder();
+    const cp = this._encoder.beginComputePass();
+    cp.setPipeline(p.gpu);
+    cp.setBindGroup(0, grp);
+    if (p.uniformGroup) {
+      const ring = this.uniformRing;
+      let off = desc.uniformOffsetBytes;
+      if (off === undefined) {
+        if (!desc.uniforms) throw new Error('GpuDeviceWebGPU.dispatch: pipeline has a uniform block but BindDesc has neither uniforms nor uniformOffsetBytes');
+        off = ring.alloc(p.uniformBytes);
+      }
+      if (desc.uniforms) {
+        const u = desc.uniforms;
+        if (u.byteLength > p.uniformBytes) throw new Error(`GpuDeviceWebGPU.dispatch: uniforms ${u.byteLength} B > block ${p.uniformBytes} B`);
+        (u instanceof Int32Array ? ring.i32 : u instanceof Uint32Array ? ring.u32 : ring.f32).set(/** @type {any} */ (u), off >> 2);
+      }
+      this._dyn[0] = off;
+      cp.setBindGroup(1, p.uniformGroup, this._dyn);
+    }
+    cp.dispatchWorkgroups(x, y, z);
+    cp.end();
+  }
+
+  /** WG-4a: indirect draw with the args of `buffer` at `offsetBytes` (indexed vs not follows the last `bind`). @param {GpuHandle} buffer @param {number} offsetBytes */
+  drawIndirect(buffer, offsetBytes) {
+    const p = this._curPipeline;
+    if (!this._pass) throw new Error('GpuDeviceWebGPU.drawIndirect: no open pass');
+    if (p && p.indexed) this._pass.drawIndexedIndirect(buffer.gpu, offsetBytes);
+    else this._pass.drawIndirect(buffer.gpu, offsetBytes);
   }
 
   // ---- frame -------------------------------------------------------------------------------------------------
