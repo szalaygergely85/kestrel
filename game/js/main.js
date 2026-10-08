@@ -433,6 +433,7 @@ if (rt.backend === 'gl2' && !gpuPipeline) {
 // rendering); it only draws `?gpudebug=kind|plane|normal|depth` (G-buffer debug view) over the cells.
 if (wgPipeline && wgPipeline.ready && rt.backend === 'webgpu') {
   wgPipeline.bind(matTable, assets.palette);
+  wgPipeline.setWaterLooks(window.ASSETS.waterLooks); // WG-3e: same designer table as the GL pipeline (US-055a2c)
   const wgDebug = { kind: 0, plane: 1, normal: 2, depth: 3 }[params.get('gpudebug')];
   if (wgDebug !== undefined) wgPipeline.setDebugMode(wgDebug);
   console.log(`[WgCellPipeline] skeleton active (ported passes: ${wgPipeline.portedPasses.join(',')})${wgDebug !== undefined ? ', debug view ' + params.get('gpudebug') : ''}`);

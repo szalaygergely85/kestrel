@@ -14,6 +14,7 @@ import { DEBUG_BLOCK, DEBUG_WGSL, DEBUG_TEXTURES } from '../wgsl/debug.wgsl.js';
 import { WgRasterPass } from './passRaster.js';
 import { WgCellPass } from './passCell.js';
 import { WgShadowPass } from './passShadow.js';
+import { WgWaterPass } from './passWater.js';
 
 // Same list/order as GpuCellPipeline.PASS_NAMES (stats.passMs* line up with it).
 export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge', 'shadow', 'water', 'wcomp']);
@@ -38,7 +39,7 @@ export class WgCellPipeline {
     /** passes that really execute in this build; `frameComplete` = the pipeline can replace the CPU shading entirely */
     this.portedPasses = [];
     this.frameComplete = false;
-    this.rendererString = 'webgpu (WG-3d resolve+deriv+shadow+light+shade+edge)';
+    this.rendererString = 'webgpu (WG-3d resolve+deriv+shadow+water+light+shade+edge)';
     this._source = 'scene'; // 'upload' = `?gpucompare=shade` test source (CPU G-buffer -> cell-res textures)
     // same shape as GpuCellPipeline.stats so F3 / benches read it unchanged
     this.stats = {
@@ -61,6 +62,7 @@ export class WgCellPipeline {
     this._rasterPass = null;
     this._cellPass = null;
     this._shadowPass = null;
+    this._waterPass = null;
     this._outTarget = null; this._outFg = null; this._outBg = null;
     this._gbufCleared = false; this._cellsShaded = false;
     this._clearOpts = { clear: true };
@@ -78,10 +80,13 @@ export class WgCellPipeline {
       this._rasterPass = new WgRasterPass(this.device);
       this._meshDrawList = this._rasterPass.list;
       this._shadowPass = new WgShadowPass(this.device, { shadows: this.shadowOpts, renderer: this.renderer, buffers: this._rasterPass.buffers });
-      this._cellPass = new WgCellPass(this.device, this._shadowPass);
+      this._waterPass = new WgWaterPass(this.device);
+      this._waterPass.resize(this.cols, this.rows, this.rays);
+      this._cellPass = new WgCellPass(this.device, this._shadowPass, this._waterPass);
       this.shadowOpts = this._shadowPass.shadowOpts; // resolved (GL pipeline exposes the same field)
       this.portedPasses.push('debug', 'raster', 'resolve', 'deriv', 'light', 'shade', 'edge');
       if (this._shadowPass.enabled) this.portedPasses.push('shadow');
+      this.portedPasses.push('water');
       this.ready = true;
       this.setEnabled(true);
       if (this.device.lost && typeof this.device.lost.then === 'function') {
@@ -130,6 +135,7 @@ export class WgCellPipeline {
     freeWgTargets(this.device, this._t);
     this._t = t;
     this.cols = cols; this.rows = rows;
+    if (this._waterPass) this._waterPass.resize(cols, rows, this.rays);
     this._gbufCleared = false; this._cellsShaded = false;
     this._dropOutTarget();
   }
@@ -143,13 +149,15 @@ export class WgCellPipeline {
   bindVoxels(pool) { this._voxelPool = pool; }
   bindViewModel(vm) { this._viewModel = vm; }
   bindInstances(groups) { this._instances = groups; }
-  setWaterLooks(_looks) { /* WG-3 */ }
+  setWaterLooks(looks) { if (this._waterPass) this._waterPass.setLooks(looks); }
   /** Test-only (14.2 item 7): 'upload' feeds the CPU fb.gbuf into the cell-res textures (`?gpucompare=shade`); 'scene' = raster path. */
   setSource(mode) { this._source = mode === 'upload' ? 'upload' : 'scene'; }
 
   /** Called once per frame before present(): remembers inputs; GPU commands run in the render-target hook. */
   frame(fb, light, cam, world) {
     this._fb = fb; this._light = light; this._cam = cam || null; this._world = world || null;
+    if (this._waterPass && this._world) this._waterPass.bindWorld(this._world);
+    this.stats.waterSlots = this._waterPass ? this._waterPass.stats.waterSlots : 0; this.stats.waterDraws = this._waterPass ? this._waterPass.stats.waterDraws : 0;
     if (this.device.timer.writeStats) this.device.timer.writeStats(this.stats);
   }
 
@@ -203,7 +211,8 @@ export class WgCellPipeline {
     await this.device.readback(t.texFinalBg, rect, outBg);
     return { fg: outFg, bg: outBg };
   }
-  async readbackWater() { return null; }
+  /** WG-3e: the WATER layer (rgba32uint, 4 words/cell); null when no water drew this frame. */
+  async readbackWater(out) { return this._waterPass ? this._waterPass.readbackWater(out) : null; }
   /** WG-3d: the sun map depth as float32 bits (res*res Uint32Array); false = no map rendered this frame (gpucompare shadowDepth row). */
   async readbackShadowDepthBits(out) { return this._shadowPass ? this._shadowPass.readbackDepth(out) : false; }
 
@@ -263,6 +272,8 @@ export class WgCellPipeline {
     this._cellPass = null;
     if (this._shadowPass) this._shadowPass.dispose();
     this._shadowPass = null;
+    if (this._waterPass) this._waterPass.dispose();
+    this._waterPass = null;
     freeWgTargets(this.device, this._t);
     this._t = null;
   }

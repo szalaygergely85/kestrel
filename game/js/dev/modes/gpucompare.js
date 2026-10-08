@@ -608,6 +608,26 @@ function buildCompareRuns(ctx) {
  * RE-07b: per touched overlay cell, "GPU shows the overlay" vs "JS twin shows it" (fg rgb + glyph equal to the layer).
  * Cells where the depth compare sits within 1e-3 * ref of the bias edge are boundary cells (excluded from mismatch).
  */
+/** US-142a1 / WG-3e: waterfall sheet layer (flags + depth on interior sheet cells) vs the JS twin's fbCompare.water; null for other poses. */
+function waterfallRow(poseName, waterBits, jt, n, cols, rows) {
+  if (!poseName.includes('waterfall')) return null;
+  const floats = waterBits ? new Float32Array(waterBits.buffer) : null;
+  let tested = 0, flags = 0, depthOk = 0, hits = 0;
+  for (let i = 0; jt && waterBits && i < n; i++) {
+    if (!jt.kind[i] || (jt.objectId[i] & 32) === 0) continue;
+    hits++;
+    const x = i % cols, y = (i / cols) | 0;
+    if (x === 0 || y === 0 || x === cols - 1 || y === rows - 1) continue;
+    if (![i - 1, i + 1, i - cols, i + cols].every((j) => jt.kind[j] && (jt.objectId[j] & 32) !== 0)) continue;
+    tested++;
+    if (waterBits[i * 4 + 3] === jt.objectId[i]) flags++;
+    if (Math.abs(floats[i * 4] - jt.depth[i]) <= jt.depth[i] * 0.01) depthOk++;
+  }
+  const waterfall = { hits, tested, flags, depthOk, pass: tested > 0 && flags / tested >= 0.995 && depthOk === tested };
+  console.log(`[gpucompare] waterfall layer ${poseName}: ${JSON.stringify(waterfall)}`);
+  return waterfall;
+}
+
 function compareOverlayCells(ov, twinFg, gpuFg, depth) {
   const r = { cells: ov.stats.cells, shownTwin: 0, shownGpu: 0, hidden: 0, mismatch: 0, boundary: 0, boundaryPct: 0 };
   for (let t = 0; t < ov.stats.cells; t++) {
@@ -783,7 +803,7 @@ async function runGpuCompareSceneMode(ctx) {
     const gpuFg = rb ? rb.fg : rbw ? rbw.fg : null, gpuBg = rb ? rb.bg : rbw ? rbw.bg : null;
     const { GI, GA, Depth } = await gpuPipeline.readbackGeometry();
     const lightBuf = await gpuPipeline.readbackLight(); // WG-3b: WebGPU too (null only while the pass is not ported)
-    const waterBits = !wg && poseName.includes('waterfall') ? await gpuPipeline.readbackWater() : null;
+    const waterBits = poseName.includes('waterfall') ? await gpuPipeline.readbackWater() : null; // WG-3e: WebGPU too
     if (shadowRunner) {
       const sd = wg ? await shadowRunner.runAsync(gpuPipeline) : shadowRunner.run(gpuPipeline);
       if (sd) {
@@ -836,7 +856,7 @@ async function runGpuCompareSceneMode(ctx) {
       const lightWaits = false;
       const lightOkW = !cmpLightW || cmpLightW.pass;
       // WG-3c: shade + edge cell row, same bars as the WebGL2 rows. Poses whose JS twin includes layers WebGPU has not ported yet are
-      // recorded but not gated: water (WG-3e), sprites/particles/overlay (WG-3f).
+      // recorded but not gated: sprites/particles/overlay/fade/dim (WG-3f). Water is ported (WG-3e) and gated.
       let cmpCellsW = null, cellsOkW = true, cellsWait = null;
       if (gpuFg) {
         cmpCellsW = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.005, 64, false, cmpGeom.excludeMask);
@@ -848,15 +868,14 @@ async function runGpuCompareSceneMode(ctx) {
           cmpCellsW.outsideFrac <= 0.005 && cmpCellsW.glyphMatchPct >= 99.9 && cmpCellsW.bgMax <= 64 && cmpCellsW.poisonedSurvivors === 0;
         cellsOkW = !!(cmpCellsW.pass || meshColourOkW || pitchedHashOkW);
         // only a row that would FAIL is held back, and only for a layer WebGPU has not ported (row passes keep their honest OK)
-        const waterCellsJs = !!(fbCompare.waterMask && fbCompare.waterMask.some((v) => v)); // JS twin water composite on cells (e.g. the world_m1 pond in towerShadowGrass)
-        const wantWait = (poseName.includes('water') || waterCellsJs) ? 'WG-3e'
-          : (overlayOps || sprites.pool.count > 0 || (engine.particleLayer && engine.particleLayer.stats.cells > 0) || fbCompare.sceneFade < 1 || compareSceneDim.all < 1 || compareSceneDim.n > 0) ? 'WG-3f' : null;
+        const wantWait = (overlayOps || sprites.pool.count > 0 || (engine.particleLayer && engine.particleLayer.stats.cells > 0) || fbCompare.sceneFade < 1 || compareSceneDim.all < 1 || compareSceneDim.n > 0) ? 'WG-3f' : null;
         if (!cellsOkW && wantWait) { cellsWait = wantWait; cellsOkW = true; }
       }
-      const okW = geomOk && k8OkW && instOkW && vmOkW && lightOkW && cellsOkW;
+      const waterfallW = waterfallRow(poseName, waterBits, fbCompare.water, n, cols, rows);
+      const okW = geomOk && k8OkW && instOkW && vmOkW && lightOkW && cellsOkW && (!waterfallW || waterfallW.pass);
       overallOk = overallOk && okW;
       console.log(`[gpucompare] ${okW ? 'PASS' : 'FAIL'} ${poseName} [webgpu geometry]: kind=${cmpGeom.kindMatchPct.toFixed(2)}% holes=${cmpGeom.holes} geomViolCells=${cmpGeom.geomViolCells} violNonK8=${cmpGeom.violNonK8} depthViol=${cmpGeom.depthViol} uvViol=${cmpGeom.uvViol} faceViol=${cmpGeom.faceViol} nrmViol=${cmpGeom.nrmViol} nrmMaxDeg=${cmpGeom.nrmMaxDeg} k8cpu=${cmpGeom.k8Cpu} k8gpu=${cmpGeom.k8Gpu} inst=${instOkW} vm=${vmOkW}(${vmItemsGpu}/${vmItemsJs}) cells=${cmpCellsW ? (cellsWait ? 'WAIT-' + cellsWait + '(glyph ' + cmpCellsW.glyphMatchPct.toFixed(2) + '%, fgOut ' + cmpCellsW.fgOutside + ')' : (cellsOkW ? 'OK' : 'MISMATCH') + '(glyph ' + cmpCellsW.glyphMatchPct.toFixed(2) + '%, fgOut ' + cmpCellsW.fgOutside + ', bgOut ' + cmpCellsW.bgOutside + ', fgMax ' + cmpCellsW.fgMax + ', bgMax ' + cmpCellsW.bgMax + ', outside ' + (cmpCellsW.outsideFrac * 100).toFixed(3) + '%, poisoned ' + cmpCellsW.poisonedSurvivors + ')') : 'n/a'} light=${cmpLightW ? (cmpLightW.pass ? 'OK' : lightWaits ? 'WAIT-WG3d' : 'MISMATCH') : 'n/a'}${cmpLightW ? `(sunlit ${cmpLightW.sunlitMismatch}, dLMax ${cmpLightW.dLMax.toFixed(4)}, dLViol ${cmpLightW.dLViol}, nMismatch ${cmpLightW.nMismatch})` : ''} stats=${JSON.stringify({ mesh: gpuPipeline.stats.meshDraws, voxel: gpuPipeline.stats.voxelDraws, vm: gpuPipeline.stats.vmDraws, inst: gpuPipeline.stats.instancedDraws, cloth: gpuPipeline.stats.clothDraws })}`);
-      rowsOut.push({ pose: poseName, cmpGeom, cmpLight: cmpLightW, cmpCells: cmpCellsW, cellsWait, lightWaits, ok: okW, geomOk, wg: true, k8Ok: k8OkW, instOk: instOkW, vmOk: vmOkW, ...(vmAssert ? { vmItemsGpu, vmItemsJs } : {}) });
+      rowsOut.push({ ...(waterfallW ? { waterfall: waterfallW } : {}), pose: poseName, cmpGeom, cmpLight: cmpLightW, cmpCells: cmpCellsW, cellsWait, lightWaits, ok: okW, geomOk, wg: true, k8Ok: k8OkW, instOk: instOkW, vmOk: vmOkW, ...(vmAssert ? { vmItemsGpu, vmItemsJs } : {}) });
       continue;
     }
     const cmpCells = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.005, 64, false, cmpGeom.excludeMask);
@@ -906,23 +925,7 @@ async function runGpuCompareSceneMode(ctx) {
       vmOk = vmItemsGpu > 0 && vmItemsJs > 0;
       console.log(`[gpucompare] viewModel ${poseName}: itemsGpu=${vmItemsGpu} itemsJs=${vmItemsJs} ${vmOk ? 'OK' : 'FAIL'}`);
     }
-    let waterfall = null;
-    if (poseName.includes('waterfall')) {
-      const floats = waterBits ? new Float32Array(waterBits.buffer) : null, jt = fbCompare.water;
-      let tested = 0, flags = 0, depthOk = 0, hits = 0;
-      for (let i = 0; jt && waterBits && i < n; i++) {
-        if (!jt.kind[i] || (jt.objectId[i] & 32) === 0) continue;
-        hits++;
-        const x = i % cols, y = (i / cols) | 0;
-        if (x === 0 || y === 0 || x === cols - 1 || y === rows - 1) continue;
-        if (![i - 1, i + 1, i - cols, i + cols].every((j) => jt.kind[j] && (jt.objectId[j] & 32) !== 0)) continue;
-        tested++;
-        if (waterBits[i * 4 + 3] === jt.objectId[i]) flags++;
-        if (Math.abs(floats[i * 4] - jt.depth[i]) <= jt.depth[i] * 0.01) depthOk++;
-      }
-      waterfall = { hits, tested, flags, depthOk, pass: tested > 0 && flags / tested >= 0.995 && depthOk === tested };
-      console.log(`[gpucompare] waterfall layer ${poseName}: ${JSON.stringify(waterfall)}`);
-    }
+    const waterfall = waterfallRow(poseName, waterBits, fbCompare.water, n, cols, rows);
     const ok = (cmpCells.pass || meshColourOk || pitchedHashOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok && ovlOk && anchorOk && instOk && vmOk && (!waterfall || waterfall.pass);
     overallOk = overallOk && ok;
     rowsOut.push({ ...(waterfall ? { waterfall } : {}), pose: instNote ? `${poseName} ${instNote}` : poseName, cmpCells, cmpGeom, cmpLight, ok, geomOk, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null, ...(vmAssert ? { vmItemsGpu, vmItemsJs, vmOk } : {}) });

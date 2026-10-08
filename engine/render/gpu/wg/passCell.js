@@ -22,7 +22,8 @@ export function derivTerms(cols, rows, pxCellW, pxCellH, out) {
 }
 
 export class WgCellPass {
-  constructor(device, shadowPass = null) {
+  constructor(device, shadowPass = null, waterPass = null) {
+    this.water = waterPass; // WG-3e WgWaterPass (owned by the pipeline)
     this.device = device;
     this.pipeResolve = device.createPipeline({
       vertex: { src: { wgsl: RESOLVE_WGSL } }, fragment: { src: { wgsl: RESOLVE_WGSL }, targets: 3 },
@@ -60,6 +61,9 @@ export class WgCellPass {
       this.shaded = this.shadePass.run(p, t, this.lightPass.cam);
       return;
     }
+    const wp = this.water, sceneOk = !!(p._cam && p._world);
+    if (wp) wp.active = false;
+    if (wp && sceneOk) wp.prepare(p, p._rasterPass); // selection needs the camera/frustum of this frame's raster pass
     const rTex = this.rTex;
     rTex[0].texture = t.texSGI; rTex[1].texture = t.texSGA; rTex[2].texture = t.texSDepth; rTex[3].texture = t.texMask;
     this.ri[R_N] = p.rays;
@@ -76,10 +80,11 @@ export class WgCellPass {
     d.bind(this.pipeDeriv, this.dBind);
     d.draw(3);
     d.endPass();
+    if (wp && wp.active) wp.runWater(t.texDepth); // WG-3e: water layer after deriv, before light
     // WG-3b: light (needs the camera + world; without them the frame has no lit content)
-    if (p._cam && p._world) {
+    if (sceneOk) {
       this.lightPass.run(p, t);
-      this.shaded = this.shadePass.run(p, t, this.lightPass.cam); // WG-3c
+      this.shaded = this.shadePass.run(p, t, this.lightPass.cam, wp); // WG-3c (+ water composite WG-3e)
     }
   }
 
