@@ -130,3 +130,27 @@ assert.ok(grew < 64 * 1024, `heap growth over 1000 frames ${grew} B`);
 
 sh2.dispose(); sh.dispose(); d.dispose(tvb); d.dispose(tib);
 console.log(`passShadow.test.js: all checks passed (heap +${grew} B / 1000 frames).`);
+
+// ALPHA-01c: masked static casters draw per range with the discard pipeline (fragment entry fs_mask_shadow, texMask from the raster pass); opaque ranges keep staticPipe.
+{
+  const { RASTER_MASK_BLOCK } = await import('../wgsl/raster.wgsl.js');
+  const m4 = makeMockGpuDevice(), dev = m4.device, dr = [];
+  dev.draw = (c, f, i) => dr.push({ pipe: dev._activePipeline, c, f, u: new Uint32Array(dev._lastBind.uniforms.buffer, dev._lastBind.uniforms.byteOffset, dev._lastBind.uniforms.length).slice(), bind: dev._lastBind });
+  const s4 = new WgShadowPass(dev, { shadows: { res: 256 } });
+  assert.equal(s4.maskPipe.desc.fragment.src.entry, 'fs_mask_shadow'); assert.equal(s4.maskPipe.desc.fragment.targets, 0);
+  assert.deepEqual(s4.maskPipe.desc.bindings.textures, ['uint']); assert.equal(s4.maskPipe.desc.depthFormat, 'depth32f');
+  assert.ok(s4.maskPipe.desc.vertex.src.wgsl.includes(SHADOW_Z_LINE), 'shadow depth line');
+  const tex = dev.createTexture({ format: 'r8ui', width: 2, height: 2 }), vb = dev.createBuffer({ usage: 'vertex', bytes: 64 }), uvb = dev.createBuffer({ usage: 'vertex', bytes: 64 });
+  const mesh = { ranges: [{ start: 0, count: 2 }, { start: 2, count: 2 }], maskRanges: new Int32Array([0, 0, -1, 0, 0, 3, 1, 4, 4, 77]) };
+  const item = { mesh, rangeFirst: 0, rangeCount: 4 }, entry = { vertexBuffer: vb, uvMaskBuffer: uvb };
+  s4._raster = { maskReady: true, maskTex: tex };
+  s4._staticCaster(item, entry);
+  assert.deepEqual(dr.map((x) => [x.pipe === s4.maskPipe, x.c, x.f]), [[false, 6, 0], [true, 6, 6]]);
+  const W = (n) => dr[1].u[RASTER_MASK_BLOCK.field(n).word];
+  assert.deepEqual([W('maskX0'), W('maskY0'), W('maskW'), W('maskH'), W('maskCut')], [3, 1, 4, 4, 77]);
+  assert.equal(dr[1].bind.textures[0].texture, tex); assert.equal(dr[1].bind.extraBuffers[0], uvb);
+  dr.length = 0; s4._raster.maskReady = false; s4._staticCaster(item, entry);
+  assert.deepEqual(dr.map((x) => [x.pipe === s4.staticPipe, x.c, x.f]), [[true, 12, 0]], 'no atlas: one opaque caster draw');
+  s4.dispose(); dev.dispose(tex); dev.dispose(vb); dev.dispose(uvb); assert.equal(m4.liveCount(), 0);
+  console.log('passShadow.test.js (ALPHA-01c): masked casters ok.');
+}

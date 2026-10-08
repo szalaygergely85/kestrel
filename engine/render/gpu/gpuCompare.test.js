@@ -423,5 +423,28 @@ const geom = (f, opts) => compareGeometry(f.gbuf, f.depth, f.giBuf, f.gaBuf, f.d
   ok('A9 cap denominator excludes sky', nonSkyCap.texelTiesMax === 16);
 }
 
+// --- ALPHA-01c (37.17 item 9): mask ties (opts.maskPose) ---------------------------------------------------------
+{
+  const C = 8, R = 8, n = C * R;
+  const mk = () => { // JS: kind 9, planeId 77 for x < 4, 88 for x >= 4 (a mask edge between two cards at column 3|4); GPU identical
+    const f = makeGeomFixture(9, 5, 77, 1.5, 2.5, 10, n);
+    for (let y = 0; y < R; y++) for (let x = 4; x < C; x++) { const i = y * C + x; f.gbuf.planeId[i] = 88; f.giBuf[i * 4] = 88; }
+    return f;
+  };
+  const g = (f, opts) => compareGeometry(f.gbuf, f.depth, f.giBuf, f.gaBuf, f.depthBuf, C, R, opts);
+  const f1 = mk(); const edgeCell = 2 * C + 3; f1.giBuf[edgeCell * 4] = 88; // GPU draws the other card on the JS edge cell
+  const r1 = g(f1, { maskPose: true });
+  ok('ALPHA-01c mask tie: coverage tie next to a JS-side edge counts as maskTies', r1.maskTies === 1 && r1.meshTies === 1 && r1.maskTiesOk && r1.meshTiesOk);
+  ok('ALPHA-01c mask tie cap: max(4, 2 % of 64 geometry cells) = 4', r1.maskTiesMax === 4);
+  const f2 = mk(); const deep = 4 * C + 1; f2.giBuf[deep * 4] = 88; // JS 3x3 all equal: GPU disagreement deep inside a card = twin bug
+  const r2 = g(f2, { maskPose: true });
+  ok('ALPHA-01c deep disagreement is NOT a mask tie (stays a violation)', r2.maskTies === 0 && r2.meshTies === 0 && r2.planeEqual < r2.matched);
+  const r3 = g(f1);
+  ok('ALPHA-01c outside mask poses maskTies = 0 and the old rule applies', r3.maskTies === 0 && r3.meshTies === 1 && r3.maskTiesMax === 0);
+  const f4 = mk(); for (let y = 0; y < 6; y++) { const i = y * C + 3; f4.giBuf[i * 4] = 88; } // 6 edge-cell ties > cap 4
+  const r4 = g(f4, { maskPose: true });
+  ok('ALPHA-01c over the cap -> maskTiesOk false, pass false', r4.maskTies === 6 && !r4.maskTiesOk && !r4.meshTiesOk && r4.pass === false);
+}
+
 console.log(`\n[gpuCompare.test.js] ${pass} passed, ${fail} failed`);
 if (fail) { for (const f of failures) console.error('  FAIL: ' + f); process.exit(1); }

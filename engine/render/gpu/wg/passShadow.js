@@ -11,8 +11,8 @@
 // The map is independent of the cell grid: no resize hook is needed. While `active` is false the light pass binds a dummy 1x1 depth texture.
 // Depth range: every shadow vertex stage maps z into [0.5, 1] (raster.wgsl.js SHADOW_Z_LINE; 38.5 item 6) so the depthBias unit is 2^-24 at any depth;
 // the terrain stage is SHADOW_TERRAIN_WGSL (own vs_main + fs_main, ONE shared block). GpuDeviceWebGPU keeps its fragment stage via fragment.src.entry.
-import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from '../MeshBuffers.js';
-import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_SHADOW_WGSL, RASTER_VOXEL_SHADOW_WGSL, RASTER_INSTANCED_SHADOW_WGSL, RASTER_CLOTH_SHADOW_WGSL } from '../wgsl/raster.wgsl.js';
+import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, MASK_UV_LAYOUT, MASK_UV_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from '../MeshBuffers.js';
+import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_MASK_BLOCK, RASTER_MASK_SHADOW_WGSL, RASTER_SHADOW_WGSL, RASTER_VOXEL_SHADOW_WGSL, RASTER_INSTANCED_SHADOW_WGSL, RASTER_CLOTH_SHADOW_WGSL } from '../wgsl/raster.wgsl.js';
 import { SHADOW_TERRAIN_BLOCK, SHADOW_TERRAIN_WGSL, SHADOW_DEPTH_COPY_WGSL, SHADOW_DEPTH_COPY_TEXTURES } from '../wgsl/shadow.wgsl.js';
 import { NO_STRUCTURES } from './passRaster.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
@@ -25,6 +25,8 @@ import { WgCullPass } from './passCull.js';
 import { resolveSunShadowOptions, SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../../shadowSun.js';
 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
+const M_X0 = RASTER_MASK_BLOCK.field('maskX0').word, M_Y0 = RASTER_MASK_BLOCK.field('maskY0').word, M_W = RASTER_MASK_BLOCK.field('maskW').word;
+const M_H = RASTER_MASK_BLOCK.field('maskH').word, M_CUT = RASTER_MASK_BLOCK.field('maskCut').word;
 const T_MODEL = SHADOW_TERRAIN_BLOCK.field('model').word, T_VIEW = SHADOW_TERRAIN_BLOCK.field('viewProj').word;
 const T_FOOT = SHADOW_TERRAIN_BLOCK.field('structFoot').word, T_COUNT = SHADOW_TERRAIN_BLOCK.field('structCount').word;
 const INSTANCE_LAYOUT = [
@@ -59,6 +61,11 @@ export class WgShadowPass {
     this.tu = new Float32Array(SHADOW_TERRAIN_BLOCK.sizeWords); this.tbits = new Uint32Array(this.tu.buffer);
     this.bindDesc = { uniforms: this.baseU, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: null };
     this.clothStreams = [null];
+    // ALPHA-01c: masked static casters (leaf-shaped shadows): own uniform copy + bind desc; the atlas texture is the raster pass's (`raster.maskTex`)
+    this.mu = new Float32Array(RASTER_MASK_BLOCK.sizeWords); this.mbits = new Uint32Array(this.mu.buffer);
+    this.maskTexBind = [{ slot: 0, texture: null }]; this.maskExtra = [null];
+    this.maskBind = { uniforms: this.mu, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: this.maskExtra, textures: this.maskTexBind };
+    this.maskDraws = 0;
     this.instanceBuffers = new Map();
     this.passOpts = { clear: true };
     this.copyTex = null; this.copyTarget = null; this.copyPipe = null; this.copyBind = null;
@@ -72,6 +79,7 @@ export class WgShadowPass {
       this.depthBias = { factor: so.depthBias[0], units: Math.round(so.depthBias[1]) };
       this.staticPipe = this._pipeline(RASTER_SHADOW_WGSL, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, 'none', RASTER_BASE_BLOCK);
       this.voxelPipe = this._pipeline(RASTER_VOXEL_SHADOW_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', RASTER_BASE_BLOCK);
+      this.maskPipe = this._pipeline(RASTER_MASK_SHADOW_WGSL, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, 'none', RASTER_MASK_BLOCK, false, [{ layout: MASK_UV_LAYOUT, strideBytes: MASK_UV_STRIDE_BYTES }], 'fs_mask_shadow', ['uint']);
       this.instancePipe = this._pipeline(RASTER_INSTANCED_SHADOW_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', RASTER_BLOCK, true);
       this.clothPipe = this._pipeline(RASTER_CLOTH_SHADOW_WGSL, CLOTH_DYN_LAYOUT, CLOTH_STRIDE_BYTES, 'none', RASTER_BASE_BLOCK, false, [{ layout: CLOTH_UV_LAYOUT, strideBytes: 8 }]);
       this.terrainPipe = this._pipeline(SHADOW_TERRAIN_WGSL, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, 'none', SHADOW_TERRAIN_BLOCK, false, null, 'fs_main');
@@ -80,12 +88,12 @@ export class WgShadowPass {
   }
 
   // Vertex stage from the raster module; fragment stage omitted (depth only) unless `fragEntry` names one (terrain carve).
-  _pipeline(code, layout, stride, cull, block, instanced = false, extraLayouts = null, fragEntry = null) {
+  _pipeline(code, layout, stride, cull, block, instanced = false, extraLayouts = null, fragEntry = null, textures = []) {
     const vertex = { src: { wgsl: code }, layout, strideBytes: stride };
     if (instanced) { vertex.instanceLayout = INSTANCE_LAYOUT; vertex.instanceStrideBytes = INSTANCE_BYTES; }
     if (extraLayouts) vertex.extraLayouts = extraLayouts;
     const pipe = this.device.createPipeline({ vertex, fragment: { src: fragEntry ? { wgsl: code, entry: fragEntry } : null, targets: 0 },
-      bindings: { uniformBytes: block.sizeBytes, textures: [] }, targetFormats: [], depthFormat: 'depth32f',
+      bindings: { uniformBytes: block.sizeBytes, textures }, targetFormats: [], depthFormat: 'depth32f',
       depth: { test: true, write: true }, depthBias: this.depthBias, cull, frontFace: 'cw' });
     this.pipes.push(pipe);
     return pipe;
@@ -173,6 +181,24 @@ export class WgShadowPass {
     M[n + 12] = m[o + 9]; M[n + 13] = m[o + 10]; M[n + 14] = m[o + 11]; M[n + 15] = 1;
   }
 
+  /** ALPHA-01c: a static caster; masked ranges draw per range with the discard pipeline (the JS depth-only twin skips the same fragments). */
+  _staticCaster(item, entry) {
+    const mesh = item.mesh, mr = mesh.maskRanges, raster = this._raster;
+    if (!mr || !raster || !raster.maskReady || !entry.uvMaskBuffer) { this._draw(this.staticPipe, entry, item.rangeCount * 3, item.rangeFirst * 3); return; }
+    const rs = mesh.ranges, first = item.rangeFirst, last = first + item.rangeCount, bits = this.mbits;
+    for (let p = 0; p < rs.length; p++) {
+      const a = Math.max(first, rs[p].start), b = Math.min(last, rs[p].start + rs[p].count);
+      if (b <= a) continue;
+      if (mr[p * 5 + 2] < 0) { this._draw(this.staticPipe, entry, (b - a) * 3, a * 3); continue; }
+      this.mu.set(this.baseU);
+      bits[M_X0] = mr[p * 5]; bits[M_Y0] = mr[p * 5 + 1]; bits[M_W] = mr[p * 5 + 2]; bits[M_H] = mr[p * 5 + 3]; bits[M_CUT] = mr[p * 5 + 4];
+      const bd = this.maskBind;
+      bd.vertexBuffer = entry.vertexBuffer; bd.indexBuffer = null; bd.instanceBuffer = null; this.maskExtra[0] = entry.uvMaskBuffer; this.maskTexBind[0].texture = raster.maskTex;
+      this.device.bind(this.maskPipe, bd); this.device.draw((b - a) * 3, a * 3, 1);
+      this.draws++; this.maskDraws++;
+    }
+  }
+
   _draw(pipe, entry, count, first, instanceBuffer = null, instances = 1) {
     const b = this.bindDesc;
     b.uniforms = pipe === this.instancePipe ? this.u : this.baseU;
@@ -242,7 +268,7 @@ export class WgShadowPass {
         const item = list.items[i];
         if (item.type !== DRAW_STATIC || !item.mesh || item.rangeCount <= 0) continue;
         this._model(item.matrix);
-        this._draw(this.staticPipe, this.buffers.get(item.mesh), item.rangeCount * 3, item.rangeFirst * 3);
+        this._staticCaster(item, this.buffers.get(item.mesh));
       }
       for (let i = 0; i < list.count; i++) { // voxel props: one draw per part
         const item = list.items[i];

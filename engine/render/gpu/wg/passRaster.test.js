@@ -166,3 +166,44 @@ console.log('passRaster.test.js: all checks passed.');
   on.dispose(); off.dispose();
 }
 console.log('passRaster.test.js (WG-4a): all checks passed.');
+
+// ALPHA-01c: masked static mesh = per-range draws (opaque ranges: staticPipe, masked ranges: maskPipe + mask uniforms + uv extra stream + atlas texture);
+// the R8UI atlas is uploaded once (never per frame); no atlas / no uv stream = one opaque draw as before.
+{
+  const { RASTER_MASK_BLOCK } = await import('../wgsl/raster.wgsl.js');
+  const { MaskAtlas } = await import('../../MaskAtlas.js');
+  const m3 = makeMockGpuDevice(), dev = m3.device, dr = [];
+  dev.draw = (c, f, i) => dr.push({ pipe: dev._activePipeline, c, f, i, bind: dev._lastBind, u: new Uint32Array(dev._lastBind.uniforms.buffer, dev._lastBind.uniforms.byteOffset, dev._lastBind.uniforms.length).slice() });
+  const ps = new WgRasterPass(dev, { gpuCull: false });
+  const atlas = new MaskAtlas(); atlas.add('t/a', 2, 2, new Uint8Array([9, 9, 9, 9])); atlas.add('t/checker', 4, 4, new Uint8Array(16));
+  const vb = dev.createBuffer({ usage: 'vertex', bytes: 64 }), uvb = dev.createBuffer({ usage: 'vertex', bytes: 64 });
+  let withUv = true;
+  ps.buffers.get = () => (withUv ? { vertexBuffer: vb, uvMaskBuffer: uvb } : { vertexBuffer: vb });
+  const mm = { triCount: 6, ranges: [{ start: 0, count: 2 }, { start: 2, count: 3 }, { start: 5, count: 1 }], maskRanges: new Int32Array([0, 0, -1, 0, 0, /**/ 2, 0, 4, 4, 128, /**/ 0, 0, -1, 0, 0]) };
+  const world = { maskAtlas: atlas };
+  ps.prepare = () => { ps._maskTexture(world); ps.list.begin(); const it = ps.list.push(); it.type = DRAW_STATIC; it.mesh = mm; it.rangeFirst = 0; it.rangeCount = 6; it.matrix.set([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]); it.planeIdOr = 0x30000000; };
+  ps.vmList = null;
+  const pp = { _t: { targetRaster: {}, targetVmDepth: {} }, stats: {} };
+  ps.run(pp);
+  assert.deepEqual(dr.map((x) => [x.pipe === ps.maskPipe ? 'mask' : 'opaque', x.c, x.f]), [['opaque', 6, 0], ['mask', 9, 6], ['opaque', 3, 15]], 'ranges in order, one draw each');
+  const md = dr[1], MU = (n) => md.u[RASTER_MASK_BLOCK.field(n).word];
+  assert.deepEqual([MU('maskX0'), MU('maskY0'), MU('maskW'), MU('maskH'), MU('maskCut')], [2, 0, 4, 4, 128], 'atlas rect + cutoff byte in the uniform block');
+  assert.equal(MU('planeIdOr'), 0x30000000, 'base words copied into the mask block');
+  assert.equal(md.bind.extraBuffers[0], uvb); assert.equal(md.bind.textures[0].slot, 0); assert.equal(md.bind.textures[0].texture, ps.maskTex);
+  assert.equal(md.pipe.desc.cull, 'none'); assert.deepEqual(md.pipe.desc.bindings.textures, ['uint']); assert.equal(md.pipe.desc.vertex.extraLayouts[0].layout[0].location, 10);
+  assert.equal(pp.stats.maskDraws, 1); assert.equal(pp.stats.maskUploads, 1);
+  const created = m3.createCount, wr = m3.writeCount;
+  for (let i = 0; i < 500; i++) ps.run(pp);
+  assert.equal(pp.stats.maskUploads, 1, '0 atlas uploads per frame after warm-up'); assert.equal(m3.createCount, created, 'no resources created per frame'); assert.equal(m3.writeCount, wr, 'no writeTexture per frame');
+  atlas.add('t/c', 2, 2, new Uint8Array(4)); ps.run(pp);
+  assert.equal(pp.stats.maskUploads, 2, 'a new atlas version re-uploads once');
+  // item window clips the ranges (rasterDrawList parity)
+  dr.length = 0; ps.prepare = () => { ps._maskTexture(world); ps.list.begin(); const it = ps.list.push(); it.type = DRAW_STATIC; it.mesh = mm; it.rangeFirst = 3; it.rangeCount = 2; };
+  ps.run(pp); assert.deepEqual(dr.map((x) => [x.c, x.f]), [[6, 9]], 'window [3,5) = 2 triangles of the masked range');
+  // fallbacks: no uv stream or no atlas -> a single opaque draw over the whole item
+  dr.length = 0; withUv = false; ps.prepare = () => { ps._maskTexture(world); ps.list.begin(); const it = ps.list.push(); it.type = DRAW_STATIC; it.mesh = mm; it.rangeFirst = 0; it.rangeCount = 6; };
+  ps.run(pp); assert.deepEqual(dr.map((x) => [x.pipe === ps.staticPipe, x.c, x.f]), [[true, 18, 0]]);
+  dr.length = 0; withUv = true; world.maskAtlas = null; ps.run(pp); assert.deepEqual(dr.map((x) => [x.pipe === ps.staticPipe, x.c, x.f]), [[true, 18, 0]]);
+  ps.dispose(); dev.dispose(vb); dev.dispose(uvb); assert.equal(m3.liveCount(), 0, 'mask texture + pipelines disposed');
+  console.log('passRaster.test.js (ALPHA-01c): all checks passed.');
+}

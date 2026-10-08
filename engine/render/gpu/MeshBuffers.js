@@ -72,6 +72,10 @@ export const STATIC_VERTEX_LAYOUT = Object.freeze([
   { name: 'aAux4567', location: 5, components: 4, type: 'float', offsetBytes: 48 },
 ]);
 
+/** ALPHA-01c: the optional mask-uv vertex stream (8 B/vertex, `mesh.uvMask`), bound as an extra stream at location 10 (WebGPU `extraLayouts`). */
+export const MASK_UV_LAYOUT = Object.freeze([{ name: 'aUVMask', location: 10, components: 2, type: 'float', offsetBytes: 0 }]);
+export const MASK_UV_STRIDE_BYTES = 8;
+
 /** RE-06b (architecture 28.7): bytes per voxel vertex = the first 32 B of the static vertex (pos, uv, nrm, flat); aux is constant zero. */
 export const VOXEL_STRIDE_BYTES = 32;
 const VOXEL_STRIDE_WORDS = VOXEL_STRIDE_BYTES / 4; // 8
@@ -215,7 +219,7 @@ export class MeshBuffers {
   /** @param {import('./device/GpuDevice.js').GpuDevice} device */
   constructor(device) {
     this.device = device;
-    /** @type {Map<string, {vertexBuffer: any, version: number, mesh: any, vertexCount: number, indexBuffer?: any, indexCount?: number}>} */
+    /** @type {Map<string, {vertexBuffer: any, version: number, mesh: any, vertexCount: number, indexBuffer?: any, indexCount?: number, uvMaskBuffer?: any}>} */
     this.cache = new Map();
     /** RE-06b: voxel-only entries (32 B vertex + index buffer), separate from `cache` so `get()` is untouched. @type {Map<string, {vertexBuffer: any, indexBuffer: any, indexType: 'u16'|'u32', version: number, mesh: any, vertexCount: number, indexCount: number}>} */
     this.voxelCache = new Map();
@@ -282,7 +286,7 @@ export class MeshBuffers {
 
   /**
    * @param {import('../../mesh/MeshData.js').MeshData} mesh
-   * @returns {{vertexBuffer: any, vertexCount: number, indexBuffer?: any, indexCount?: number, version: number, mesh: import('../../mesh/MeshData.js').MeshData}}
+   * @returns {{vertexBuffer: any, vertexCount: number, indexBuffer?: any, indexCount?: number, uvMaskBuffer?: any, version: number, mesh: import('../../mesh/MeshData.js').MeshData}}
    */
   get(mesh) {
     const existing = this.cache.get(mesh.id);
@@ -290,6 +294,7 @@ export class MeshBuffers {
     if (existing) {
       this.device.dispose(existing.vertexBuffer);
       if (existing.indexBuffer) this.device.dispose(existing.indexBuffer);
+      if (existing.uvMaskBuffer) this.device.dispose(existing.uvMaskBuffer);
     }
     let entry;
     if (mesh.layout === 'terrain') {
@@ -307,7 +312,9 @@ export class MeshBuffers {
     } else if (mesh.layout === 'static') {
       const data = buildStaticVertexData(mesh);
       const vertexBuffer = this.device.createBuffer({ usage: 'vertex', data: new Uint8Array(data) });
-      entry = { vertexBuffer, version: mesh.meshVersion, mesh, vertexCount: mesh.pos.length / 3 };
+      entry = /** @type {any} */ ({ vertexBuffer, version: mesh.meshVersion, mesh, vertexCount: mesh.pos.length / 3 });
+      // ALPHA-01c: per-vertex mask uv as its own stream (the 64 B static stride is unchanged); masked-range draws bind it as an extra stream
+      if (mesh.uvMask) entry.uvMaskBuffer = this.device.createBuffer({ usage: 'vertex', data: mesh.uvMask });
     } else {
       throw new Error(`MeshBuffers.get: mesh "${mesh.id}" has unsupported layout "${mesh.layout}" (static/terrain only - ME-06)`);
     }
@@ -320,6 +327,7 @@ export class MeshBuffers {
     for (const entry of this.cache.values()) {
       this.device.dispose(entry.vertexBuffer);
       if (entry.indexBuffer) this.device.dispose(entry.indexBuffer);
+      if (entry.uvMaskBuffer) this.device.dispose(entry.uvMaskBuffer);
     }
     this.cache.clear();
     for (const entry of this.voxelCache.values()) {

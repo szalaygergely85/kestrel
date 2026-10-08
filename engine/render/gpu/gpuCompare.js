@@ -254,6 +254,22 @@ function gbufAoBits(gbuf, i) {
   return _aoAlias[i] >>> 0;
 }
 
+// ALPHA-01c (37.17 item 9): `opts.maskPose` marks a pose whose kind-9 content carries alpha-cutout masks. There a coverage tie only counts as a MASK tie when the
+// JS twin's own 3x3 neighbourhood of the cell holds a kind/planeId change (a mask edge or silhouette: the f32-vs-f64 `uvMask` interpolation can move that edge by
+// less than a cell; JS kind 9 vs GPU sky also counts there when the JS 3x3 holds a planeId change, e.g. a card edge over another card); a disagreeing cell deep inside a card (all 3x3 JS neighbours equal) is a twin bug and stays a hole/violation. maskTies cap: max(4, 2 % of geometry cells).
+export function maskTiesCap(geometryCells) { return Math.max(4, Math.ceil(0.02 * geometryCells)); }
+function jsBoundary3x3(kind, planeId, cols, rows, x, y, i) {
+  for (let dy = -1; dy <= 1; dy++) {
+    const yy = y + dy; if (yy < 0 || yy >= rows) continue;
+    for (let dx = -1; dx <= 1; dx++) {
+      const xx = x + dx; if (xx < 0 || xx >= cols) continue;
+      const j = yy * cols + xx;
+      if (kind[j] !== kind[i] || planeId[j] !== planeId[i]) return true;
+    }
+  }
+  return false;
+}
+
 // Test-only options: fogMax/suppress run edge-rule parity; table/jsLight/pitched enable the A9 shade oracle.
 // jsLight has the same {uniform, rgb} layout consumed by shadeSurfaces; all other shade inputs stay on the JS side.
 export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, rows, opts = null) {
@@ -298,7 +314,9 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
   // PREC-04b1 (37.1 A9 item 1): mesh coverage tie = planeId differs AND (i) both twins non-sky and either is kind 9 (kind-crossing:
   // mesh over terrain/sector, buried base, ...) or (ii) JS kind 9, GPU sky, on a JS kind-edge cell (silhouette). Left out of holes,
   // every geometry violation count, compareLight and the glyph/colour counts; counted in meshTies (cap below).
-  let kind9Cells = 0, meshTies = 0, meshTiesEdge = 0, meshBoundaryCells = 0;
+  let kind9Cells = 0, meshTies = 0, meshTiesEdge = 0, meshBoundaryCells = 0, maskTies = 0;
+  const maskPose = !!(opts && opts.maskPose);
+  const holeCells = []; // first 20 hole cells (diagnosis)
   const meshTieMask = new Uint8Array(n), meshTieCells = []; // geomViolCells: distinct cells with any depth/uv/ao/z/face/nrm violation
 
   for (let y = 0; y < rows; y++) {
@@ -317,9 +335,10 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
       const jsEdge = isEdgeCell(kind, cols, rows, x, y, i);
       const edge = jsEdge || isEdgeCellU32(giBuf, cols, rows, x, y, i);
       const planeDiffers = planeId[i] !== (giBuf[i * 4] | 0);
-      const isTie = planeDiffers && ((kind[i] !== 0 && gpuKind !== 0 && (kind[i] === 9 || gpuKind === 9)) || (kind[i] === 9 && gpuKind === 0 && jsEdge));
+      let isTie = planeDiffers && ((kind[i] !== 0 && gpuKind !== 0 && (kind[i] === 9 || gpuKind === 9)) || (kind[i] === 9 && gpuKind === 0 && (jsEdge || (maskPose && jsBoundary3x3(kind, planeId, cols, rows, x, y, i)))));
+      if (isTie && maskPose) { if (jsBoundary3x3(kind, planeId, cols, rows, x, y, i)) maskTies++; else isTie = false; } // ALPHA-01c: mask tie only next to a JS-side edge
       if (gpuKind === 0 && kind[i] !== 0 && !isTie) {
-        holes++;
+        holes++; if (holeCells.length < 20) holeCells.push(i);
         if (!cpuIsVoxel) holesExclK8++;
       }
       if (isTie) {
@@ -397,7 +416,10 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
     }
   }
 
-  const meshTiesMax = meshTiesCap(meshBoundaryCells), meshTiesOk = meshTies <= meshTiesMax;
+  let geometryCells = 0;
+  if (maskPose) for (let i = 0; i < n; i++) if (kind[i] !== 0) geometryCells++;
+  const maskTiesMax = maskPose ? maskTiesCap(geometryCells) : 0, maskTiesOk = maskTies <= maskTiesMax;
+  const meshTiesMax = maskPose ? maskTiesMax : meshTiesCap(meshBoundaryCells), meshTiesOk = meshTies <= meshTiesMax; // mask poses: the mask-tie cap replaces the boundary cap
   const kindMatchPct = kindChecked ? 100 * (kindChecked - kindMismatch) / kindChecked : 100;
   const kindMatchPctExclK8 = kindCheckedExclK8 ? 100 * (kindCheckedExclK8 - kindMismatchExclK8) / kindCheckedExclK8 : 100;
   const res = {
@@ -405,7 +427,7 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
     kindCheckedExclK8, kindMismatchExclK8, kindMatchPctExclK8, holesExclK8, // ME-06: voxel (kind-8) cells excluded, see comment above
     matched, matEqual, planeEqual, depthViol, uvViol, holes,
     faceViol, zViol, aoViol, violNonK8, geomViolCells, faceSample, aoSampleCpu, aoSampleGpu, aoSampleIdx, nrmViol, nrmMaxDeg, matSample, terrainUvMaxErr, terrainUvMaxAt, // ME-06: reported only
-    kind9Cells, meshBoundaryCells, meshTies, meshTiesEdge, meshTiesMax, meshTiesOk, meshTieCells, // PREC-04 (meshTieMask is attached non-enumerable below)
+    kind9Cells, meshBoundaryCells, meshTies, meshTiesEdge, meshTiesMax, meshTiesOk, meshTieCells, holeCells, maskTies, maskTiesMax, maskTiesOk, // PREC-04; ALPHA-01c maskTies (0 outside mask poses) (meshTieMask is attached non-enumerable below)
     edgeCells, edgeKindMismatch, // reported only, does not affect `pass`
     k8Cpu, k8Gpu, // reported only here; voxel-pose callers gate on both > 0
     pass: kindMatchPct >= 99.5 && depthViol === 0 && uvViol === 0 && holes === 0 && meshTiesOk,

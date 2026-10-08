@@ -9,6 +9,10 @@ const RASTER_FIELDS = [
   { name: 'flat', type: 'vec2' },
 ];
 export const RASTER_BASE_BLOCK = defineUniformBlock('RasterU', RASTER_FIELDS);
+// ALPHA-01c: static mesh with a mask range (one draw per masked range): the base block + the atlas rect (x0,y0,w,h) and the cutoff byte
+export const RASTER_MASK_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS,
+  { name: 'maskX0', type: 'u32' }, { name: 'maskY0', type: 'u32' }, { name: 'maskW', type: 'u32' }, { name: 'maskH', type: 'u32' }, { name: 'maskCut', type: 'u32' },
+]);
 export const RASTER_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS,
   { name: 'teamSlot', type: 'vec4' }, { name: 'teamMat', type: 'vec4', count: 8 },
 ]);
@@ -42,18 +46,36 @@ fn unpackNormalOct(bits: u32) -> vec3f {
 }
 `;
 
-/** @param {'static'|'voxel'|'instanced'|'cloth'} variant */
+/**
+ * ALPHA-01c (37.17 items 2-3): the texel rule of MaskAtlas.texel / MaskAtlas.sample, literally: repeat wrap in f32 (u - floor(u) is exact in
+ * f32), f32 product, floor, clamp to w-1; discard iff the R8UI texel < the cutoff byte. textureLoad only (no filter, no mips).
+ */
+export const MASK_TEXEL_WGSL = `
+fn maskTexel(c: f32, w: u32) -> u32 {
+  let tc = c - floor(c);
+  let t = u32(floor(tc * f32(w)));
+  return min(t, w - 1u);
+}
+fn maskDiscard(uvm: vec2f, x0: u32, y0: u32, w: u32, h: u32, cut: u32) -> bool {
+  let a = textureLoad(texMask, vec2u(x0 + maskTexel(uvm.x, w), y0 + maskTexel(uvm.y, h)), 0).x;
+  return a < cut;
+}
+`;
+
+/** @param {'static'|'voxel'|'instanced'|'cloth'|'mask'} variant 'mask' = the static layout + per-vertex mask uv (location 10) + texMask discard */
 export function rasterWgsl(variant = 'static') {
-  const cloth = variant === 'cloth', instanced = variant === 'instanced', compact = variant === 'voxel' || instanced;
-  return `${(instanced ? RASTER_BLOCK : RASTER_BASE_BLOCK).wgsl}
+  const cloth = variant === 'cloth', instanced = variant === 'instanced', compact = variant === 'voxel' || instanced, mask = variant === 'mask';
+  return `${(instanced ? RASTER_BLOCK : mask ? RASTER_MASK_BLOCK : RASTER_BASE_BLOCK).wgsl}
 @group(1) @binding(0) var<uniform> u: RasterU;
-${OCT_NORMAL}
+${mask ? '@group(0) @binding(0) var texMask: texture_2d<u32>;' : ''}
+${OCT_NORMAL}${mask ? MASK_TEXEL_WGSL : ''}
 struct VertexIn {
   @location(0) aPos: vec3f,
   @location(1) aUV: vec2f,
   @location(2) aNrmBits: u32,
 ${cloth ? '' : '  @location(3) aFlat: vec2u,'}
 ${cloth || compact ? '' : '  @location(4) aAux0123: vec4f,\n  @location(5) aAux4567: vec4f,'}
+${mask ? '  @location(10) aUVMask: vec2f,' : ''}
 ${instanced ? '  @location(6) iRow0: vec4f,\n  @location(7) iRow1: vec4f,\n  @location(8) iRow2: vec4f,\n  @location(9) iMeta: vec2u,' : ''}
 };
 struct VertexOut {
@@ -65,6 +87,7 @@ struct VertexOut {
   @location(4) vNrmS: vec3f,
   @location(5) vUV: vec2f,
   @location(6) vWorldZ: f32,
+${mask ? '  @location(7) vUVMask: vec2f,' : ''}
 };
 @vertex fn vs_main(a: VertexIn) -> VertexOut {
   var o: VertexOut;
@@ -93,6 +116,7 @@ ${instanced ? `  let lp = (u.model * vec4f(a.aPos, 1.0)).xyz;
 `}
 ${cloth || compact ? '' : '  o.aux0123 = a.aAux0123; o.aux4567 = vec4f(a.aAux4567.xy, o.aux4567.z, 0.0);'}
   o.vUV = a.aUV; o.vWorldZ = worldPos.z;
+${mask ? '  o.vUVMask = a.aUVMask;' : ''}
   o.pos = u.viewProj * worldPos;
   o.pos.y = -o.pos.y; o.pos.z = 0.5 * (o.pos.z + o.pos.w);
   return o;
@@ -134,6 +158,7 @@ fn roundedFace(nWorld: vec3f) -> u32 {
 struct FragmentOut { @location(0) GI: vec4u, @location(1) GA: vec4u, @location(2) Depth: u32, };
 @fragment fn fs_main(v: VertexOut, @builtin(front_facing) front: bool) -> FragmentOut {
   var out: FragmentOut;
+${mask ? '  if (maskDiscard(v.vUVMask, u.maskX0, u.maskY0, u.maskW, u.maskH, u.maskCut)) { discard; }' : ''}
   let vKind = v.packed.y & 0xffu; let vFace = (v.packed.y >> 8u) & 0xfu; let vMat = (v.packed.y >> 16u) & 0xffffu;
   let aoD = computeAoD(v.aux0123.y, v.vUV.x, v.vUV.y, v.aux0123.x, v.aux0123.z, v.aux0123.w, v.aux4567.x, v.aux4567.y);
   let z = v.vWorldZ - v.aux4567.z - v.aux0123.x;
@@ -145,7 +170,7 @@ ${cloth ? '  var nrmW = normalize(v.vNrmS); if (!front) { nrmW = -nrmW; }' : '  
     else { face = FACE_PACKED; nrmBits = packNormalOct(nrmW); gaW = nrmBits; }
   }
 ${cloth ? '' : `  if (vKind == KIND_MESH) {
-    let nm = normalize(v.vNrmS); nrmBits = packNormalOct(nm);
+    ${mask ? 'var nm = normalize(v.vNrmS); if (!front) { nm = -nm; }' : 'let nm = normalize(v.vNrmS);'} nrmBits = packNormalOct(nm);
     if (max(abs(nm.x), max(abs(nm.y), abs(nm.z))) >= 0.9) { face = roundedFace(nm); }
     else { face = FACE_PACKED; gaW = nrmBits; }
   }`}
@@ -154,7 +179,10 @@ ${cloth ? '' : `  if (vKind == KIND_MESH) {
   out.Depth = bitcast<u32>(dist);
   return out;
 }
-`;
+${mask ? `@fragment fn fs_mask_shadow(v: VertexOut) {
+  if (maskDiscard(v.vUVMask, u.maskX0, u.maskY0, u.maskW, u.maskH, u.maskCut)) { discard; }
+}
+` : ''}`;
 }
 
 /** The raster vertex stages' depth line (z -> [0,1], the GL2 convention after the y flip). */
@@ -175,9 +203,11 @@ export const RASTER_WGSL = rasterWgsl('static');
 export const RASTER_VOXEL_WGSL = rasterWgsl('voxel');
 export const RASTER_INSTANCED_WGSL = rasterWgsl('instanced');
 export const RASTER_CLOTH_WGSL = rasterWgsl('cloth');
+export const RASTER_MASK_WGSL = rasterWgsl('mask'); // ALPHA-01c
 
 // Sun shadow VERTEX variants (WgShadowPass): same stages, depth mapped to [0.5, 1]. Terrain: SHADOW_TERRAIN_WGSL (shadow.wgsl.js) owns its vs_main.
 export const RASTER_SHADOW_WGSL = toShadowVertexWgsl(RASTER_WGSL);
 export const RASTER_VOXEL_SHADOW_WGSL = toShadowVertexWgsl(RASTER_VOXEL_WGSL);
 export const RASTER_INSTANCED_SHADOW_WGSL = toShadowVertexWgsl(RASTER_INSTANCED_WGSL);
 export const RASTER_CLOTH_SHADOW_WGSL = toShadowVertexWgsl(RASTER_CLOTH_WGSL);
+export const RASTER_MASK_SHADOW_WGSL = toShadowVertexWgsl(RASTER_MASK_WGSL); // ALPHA-01c: fragment entry fs_mask_shadow (discard only)

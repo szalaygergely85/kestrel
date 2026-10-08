@@ -1,6 +1,6 @@
 import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
-  meshFromJSON, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
+  meshFromJSON, buildMeshFromTris, MaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
 } from '../../../../engine/index.js';
 import {
@@ -601,6 +601,51 @@ function buildCompareRuns(ctx) {
       spritesExtra: (pool) => { const b = at(3.5, -0.2); pool.push('fireballBlast', 'burst', 2, b[0], b[1], b[2]); } });
   }
 
+  // ALPHA-01c (37.17 step c): alpha-cutout poses `alphaLeaves` (6 m) and `alphaLeavesFar` (30 m). TEST-ONLY world: a second load of world_m1 with its own
+  // MaskAtlas and a leaf-card fixture built here from code (4 vertical cards + 1 tilted card, 2 m, 8x8 checker mask, an opaque post first), placed only in this
+  // world, so no committed content or earlier pose changes. Appended LAST. WebGL2 draws the masked ranges opaque (D-044: no GLSL) = recorded known-FAIL rows.
+  if (ctx.renderer === 'mesh') {
+    const aw = loadCompareWorld(assets.world('world_m1'), { physics: 'mesh' });
+    aw.terrain.bakeFarSync();
+    const atlas = new MaskAtlas();
+    const chk = new Uint8Array(64);
+    for (let j = 0; j < 8; j++) for (let i = 0; i < 8; i++) chk[j * 8 + i] = (i + j) % 2 === 0 ? 255 : 0;
+    atlas.add('test/checker8', 8, 8, chk);
+    aw.maskAtlas = atlas;
+    const tris = [];
+    const quad = (cx, cy, cz, yawDeg, w, h, tiltDeg, mat) => { // w x h card centred on (cx, cy, cz), uv = unit square (v = 0 on top)
+      const yw = yawDeg * Math.PI / 180, tl = tiltDeg * Math.PI / 180;
+      const ax = Math.cos(yw) * w / 2, ay = Math.sin(yw) * w / 2;
+      const ux = -Math.sin(yw) * Math.sin(tl) * h / 2, uy = Math.cos(yw) * Math.sin(tl) * h / 2, uz = Math.cos(tl) * h / 2;
+      const P = { tl: [cx - ax + ux, cy - ay + uy, cz + uz], tr: [cx + ax + ux, cy + ay + uy, cz + uz], br: [cx + ax - ux, cy + ay - uy, cz - uz], bl: [cx - ax - ux, cy - ay - uy, cz - uz] };
+      const UV = { tl: [0, 0], tr: [1, 0], br: [1, 1], bl: [0, 1] };
+      const tri = (a, b, c) => {
+        const e1 = [P[b][0] - P[a][0], P[b][1] - P[a][1], P[b][2] - P[a][2]], e2 = [P[c][0] - P[a][0], P[c][1] - P[a][1], P[c][2] - P[a][2]];
+        const n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]], l = Math.hypot(n[0], n[1], n[2]);
+        return { p0: P[a], p1: P[b], p2: P[c], normal: [n[0] / l, n[1] / l, n[2] / l], matName: mat, uv0: UV[a], uv1: UV[b], uv2: UV[c] };
+      };
+      tris.push(tri('tl', 'bl', 'br'), tri('tl', 'br', 'tr'));
+    };
+    quad(0, 0, 1.5, 0, 0.3, 3, 0, 'post'); // opaque range first (37.17: opaque before masked)
+    const nOpaque = tris.length;
+    quad(0, 0.1, 2.2, 20, 2, 2, 0, 'leaf'); quad(1.2, 0.7, 2.7, 75, 2, 2, 0, 'leaf'); quad(-1.3, 0.4, 1.8, -40, 2, 2, 0, 'leaf'); quad(0.2, 0.1, 1.0, 10, 2, 2, 55, 'leaf');
+    const nLeaf = tris.length - nOpaque;
+    quad(0.3, -0.8, 3.0, 110, 2, 2, 0, 'leaf_dark');
+    const mask = { tex: 'test/checker8', cutoff: 0.5 };
+    const alphaMesh = buildMeshFromTris(tris, [{ part: 'post', triStart: 0, triCount: nOpaque }, { part: 'leaf', triStart: nOpaque, triCount: nLeaf, mask },
+      { part: 'leaf_dark', triStart: nOpaque + nLeaf, triCount: tris.length - nOpaque - nLeaf, mask }], 'test/alphaCards');
+    alphaMesh.mats = { post: 'timber_old', leaf: 'leaf', leaf_dark: 'leaf_dark' };
+    const cx = 1456, cy = 1046, gz = aw.terrain.groundAt(cx, cy);
+    aw.placeMesh(alphaMesh, { x: cx, y: cy, z: gz }, 'test.alphaCards');
+    const alphaLights = lightsEnabled ? buildLightSet(aw, assets.palette) : null;
+    const fwd = forwardOf(0, [0, 0]);
+    for (const [label, d] of [['alphaLeaves (ALPHA-01c, masked leaf cards, eye 6 m)', 6], ['alphaLeavesFar (ALPHA-01c, eye 30 m)', 30]]) {
+      const ex = cx - fwd[0] * d, ey = cy - fwd[1] * d;
+      runs.push({ world: aw, lights: alphaLights, name: `world_m1: ${label}`, cam: { x: ex, y: ey, z: aw.terrain.groundAt(ex, ey) + 1.6, yawDeg: 0, pitchDeg: d === 6 ? 8 : 2 },
+        real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, maskPose: true, before: () => engine.setWorld(aw) });
+    }
+  }
+
   return { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances };
 }
 
@@ -737,7 +782,7 @@ async function runGpuCompareSceneMode(ctx) {
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert, vmAssert, decalAssert, timeSec: poseTime } of poseRuns) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert, vmAssert, decalAssert, timeSec: poseTime } of poseRuns) {
     if (restoreSun) { restoreSun(); restoreSun = null; }
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
@@ -804,10 +849,18 @@ async function runGpuCompareSceneMode(ctx) {
     const { GI, GA, Depth } = await gpuPipeline.readbackGeometry();
     const lightBuf = await gpuPipeline.readbackLight(); // WG-3b: WebGPU too (null only while the pass is not ported)
     const waterBits = poseName.includes('waterfall') ? await gpuPipeline.readbackWater() : null; // WG-3e: WebGPU too
+    if (maskPose && wg && wg._shadowPass && wg._shadowPass.casterList) { // ALPHA-01c: are the cards in the sun caster list, and drawn by the discard pipeline?
+      const sh = wg._shadowPass, L = sh.casterList();
+      let cards = 0, withMask = 0;
+      for (let i = 0; i < L.count; i++) { const m = L.items[i].mesh; if (m && m.id === 'test/alphaCards') { cards++; if (m.maskRanges) withMask++; } }
+      console.log(`[gpucompare] maskCasters ${poseName}: items=${L.count} cards=${cards} withMask=${withMask} maskDraws=${sh.maskDraws} raster.maskDraws=${wg._rasterPass ? wg._rasterPass.maskDraws : '?'}`);
+    }
     if (shadowRunner) {
       const sd = wg ? await shadowRunner.runAsync(gpuPipeline) : shadowRunner.run(gpuPipeline);
       if (sd) {
-        shadowRows.push({ pose: `${poseName} [shadow depth parity]`, ok: sd.pass, shadowDepth: sd });
+        // ALPHA-01c: on a mask pose a leaf-shaped shadow is the gate: with the twin skipping the same fragments the >1024-code outliers (card depth vs the ground behind a masked-out texel) stay at the content baseline
+        if (maskPose) sd.maskShadowOk = sd.hist.big < 200; // world_m1 content alone gives ~100-145 in every row; 5 opaque cards would add ~330
+        shadowRows.push({ pose: `${poseName} [shadow depth parity]`, ok: sd.pass && (!maskPose || sd.maskShadowOk), shadowDepth: sd });
         console.log(`[gpucompare] shadowDepth ${sd.pass ? 'PASS' : 'FAIL'} ${poseName}: items=${sd.items} both=${sd.both} slopeAwareWithin=${sd.withinPct.toFixed(4)}%(>=99.9) flat16=${sd.within16Pct.toFixed(3)}% maxUlp=${sd.maxUlp} covMismatch=${sd.covMismatchPct.toFixed(4)}%(<=0.3, union ${sd.covMismatchUnionPct.toFixed(3)}%) gpuOnly=${sd.gpuOnly} jsOnly=${sd.jsOnly} outside16: le64=${sd.hist.le64} le1024=${sd.hist.le1024} big=${sd.hist.big} ratioHist(<=.02/.05/.1/.25/1/>1 texel)=${sd.ratioHist}`);
       } else {
         console.log(`[gpucompare] shadowDepth SKIP ${poseName} (no sun pass this pose)`);
@@ -841,8 +894,10 @@ async function runGpuCompareSceneMode(ctx) {
 
     const cmpGeom = compareGeometry(gbuf, depthBuffer.depth, GI, GA, Depth, cols, rows, {
       fogMax: fbCompare.detailPass ? fbCompare.detailPass.edges.fogMax : undefined, suppress: fbCompare.waterMask || null,
-      table: matTable, jsLight: fbCompare.light, pitched: !!(cam && (cam.projection === 'pitched' || pitchedDefault)),
+      table: matTable, jsLight: fbCompare.light, pitched: !!(cam && (cam.projection === 'pitched' || pitchedDefault)), maskPose: !!maskPose,
     }); // PREC-04b2: oracle ties before cmpCells (exclude mask)
+    const maskOk = !maskPose || cmpGeom.kind9Cells > 0; // ALPHA-01c: the fixture must be in view on the JS twin (else a pass would be vacuous)
+    if (maskPose) console.log(`[gpucompare] maskTies ${poseName}: ${cmpGeom.maskTies}/${cmpGeom.maskTiesMax} k9=${cmpGeom.kind9Cells} holes=${cmpGeom.holes}${cmpGeom.holes ? ' cells ' + cmpGeom.holeCells.join(',') : ''}${maskOk ? '' : ' FIXTURE NOT IN VIEW'}`);
     const geomBaseOkG = cmpGeom.kindMatchPct >= 99.5 && cmpGeom.holes === 0 && cmpGeom.meshTiesOk && cmpGeom.texelTiesOk;
     // geometry-only verdict (same terms as the geometry half of the mesh gate below); recorded on both backends so a WebGL2 run is the WG-2b baseline
     const geomOk = cmpGeom.pass || (geomBaseOkG && cmpGeom.geomViolCells <= 4 && cmpGeom.violNonK8 === 0 && cmpGeom.aoViol === 0);
@@ -868,7 +923,7 @@ async function runGpuCompareSceneMode(ctx) {
         cellsOkW = !!(cmpCellsW.pass || meshColourOkW || pitchedHashOkW);
       }
       const waterfallW = waterfallRow(poseName, waterBits, fbCompare.water, n, cols, rows);
-      const okW = geomOk && k8OkW && instOkW && vmOkW && lightOkW && cellsOkW && (!waterfallW || waterfallW.pass);
+      const okW = maskOk && geomOk && k8OkW && instOkW && vmOkW && lightOkW && cellsOkW && (!waterfallW || waterfallW.pass);
       overallOk = overallOk && okW;
       console.log(`[gpucompare] ${okW ? 'PASS' : 'FAIL'} ${poseName} [webgpu geometry]: kind=${cmpGeom.kindMatchPct.toFixed(2)}% holes=${cmpGeom.holes} geomViolCells=${cmpGeom.geomViolCells} violNonK8=${cmpGeom.violNonK8} depthViol=${cmpGeom.depthViol} uvViol=${cmpGeom.uvViol} faceViol=${cmpGeom.faceViol} nrmViol=${cmpGeom.nrmViol} nrmMaxDeg=${cmpGeom.nrmMaxDeg} k8cpu=${cmpGeom.k8Cpu} k8gpu=${cmpGeom.k8Gpu} inst=${instOkW} vm=${vmOkW}(${vmItemsGpu}/${vmItemsJs}) cells=${cmpCellsW ? (cellsWait ? 'WAIT-' + cellsWait + '(glyph ' + cmpCellsW.glyphMatchPct.toFixed(2) + '%, fgOut ' + cmpCellsW.fgOutside + ')' : (cellsOkW ? 'OK' : 'MISMATCH') + '(glyph ' + cmpCellsW.glyphMatchPct.toFixed(2) + '%, fgOut ' + cmpCellsW.fgOutside + ', bgOut ' + cmpCellsW.bgOutside + ', fgMax ' + cmpCellsW.fgMax + ', bgMax ' + cmpCellsW.bgMax + ', outside ' + (cmpCellsW.outsideFrac * 100).toFixed(3) + '%, poisoned ' + cmpCellsW.poisonedSurvivors + ')') : 'n/a'} light=${cmpLightW ? (cmpLightW.pass ? 'OK' : lightWaits ? 'WAIT-WG3d' : 'MISMATCH') : 'n/a'}${cmpLightW ? `(sunlit ${cmpLightW.sunlitMismatch}, dLMax ${cmpLightW.dLMax.toFixed(4)}, dLViol ${cmpLightW.dLViol}, nMismatch ${cmpLightW.nMismatch})` : ''} stats=${JSON.stringify({ mesh: gpuPipeline.stats.meshDraws, voxel: gpuPipeline.stats.voxelDraws, vm: gpuPipeline.stats.vmDraws, inst: gpuPipeline.stats.instancedDraws, gpuCull: gpuPipeline.stats.gpuCullDraws || 0, cloth: gpuPipeline.stats.clothDraws })}`);
       rowsOut.push({ ...(waterfallW ? { waterfall: waterfallW } : {}), pose: poseName, cmpGeom, cmpLight: cmpLightW, cmpCells: cmpCellsW, cellsWait, lightWaits, ok: okW, geomOk, wg: true, k8Ok: k8OkW, instOk: instOkW, vmOk: vmOkW, ...(vmAssert ? { vmItemsGpu, vmItemsJs } : {}) });
@@ -922,7 +977,7 @@ async function runGpuCompareSceneMode(ctx) {
       console.log(`[gpucompare] viewModel ${poseName}: itemsGpu=${vmItemsGpu} itemsJs=${vmItemsJs} ${vmOk ? 'OK' : 'FAIL'}`);
     }
     const waterfall = waterfallRow(poseName, waterBits, fbCompare.water, n, cols, rows);
-    const ok = (cmpCells.pass || meshColourOk || pitchedHashOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok && ovlOk && anchorOk && instOk && vmOk && (!waterfall || waterfall.pass);
+    const ok = maskOk && (cmpCells.pass || meshColourOk || pitchedHashOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok && ovlOk && anchorOk && instOk && vmOk && (!waterfall || waterfall.pass);
     overallOk = overallOk && ok;
     rowsOut.push({ ...(waterfall ? { waterfall } : {}), pose: instNote ? `${poseName} ${instNote}` : poseName, cmpCells, cmpGeom, cmpLight, ok, geomOk, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null, ...(vmAssert ? { vmItemsGpu, vmItemsJs, vmOk } : {}) });
   }
