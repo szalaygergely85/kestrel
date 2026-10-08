@@ -24,6 +24,9 @@ export function renderMeshPanel(container, item, { assets, onFieldCommit, onRena
   const mesh = document.createElement('div'); mesh.className = 'insp-field-row'; mesh.textContent = item.mesh; container.appendChild(mesh);
   for (const axis of ['x', 'y', 'z']) field(axis, 'number', item.origin[axis], value => onFieldCommit({ origin: { ...item.origin, [axis]: value } }));
   field('yawDeg', 'number', item.yawDeg, value => onFieldCommit({ yawDeg: value }));
+  const scaleInput=field('scale','number',item.scale ?? 1,value=>onFieldCommit({scale:value}));
+  scaleInput.step='0.05';scaleInput.min='0.25';scaleInput.max='4';
+  scaleInput.addEventListener('keydown',event=>{if(event.key==='Enter')scaleInput.blur();});
   const meshDef = assets.mesh(item.mesh);
   for (const key of ['castShadow', 'collide']) {
     const unavailable = key === 'collide' && meshDef.collide === false;

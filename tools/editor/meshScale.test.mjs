@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import {World,stringifyContent} from '../../engine/index.js';
+import '../../design/palette.js';
+import '../../design/detail-pass.js';
+import {loadTestAssets} from '../testing/content-node.mjs';
+import {createMeshPlacement,prepareMeshEdit,meshScale,snapMeshOrigin} from './meshPlace.js';
+import {createDoc} from './doc.js';
+import {makeRecord,applyEdit,invert} from './commands.js';
+import {toFileObject} from './io.js';
+
+const {assets}=await loadTestAssets(), key='quaternius/Rock_Medium_1',mesh=assets.mesh(key);
+const floor={floorAt:()=>0,structureAt:()=>null,sectorAt:()=>null};
+const file={def:{terrain:null,structures:[],entities:[]},meta:{schema:1,nextId:1}};
+for(const scale of [0.1,9,NaN,Infinity,'1']) {
+  assert.throws(()=>meshScale(scale),/scale/);
+  assert.equal(createMeshPlacement(file,key,{x:0,y:0},{assets,world:floor,scale}).item,null);
+  assert.equal(file.meta.nextId,1,'invalid scale never mints or inserts');
+}
+assert.equal(meshScale(1.37),1.35);assert.equal(meshScale(0.25),0.25);assert.equal(meshScale(4),4);
+const item=createMeshPlacement(file,key,{x:0,y:0},{assets,world:floor,scale:1.37}).item;
+assert.equal(item.scale,1.35);file.def.structures.push(item);
+const context={assets,world:floor,file};
+assert.equal(prepareMeshEdit(item,{scale:9},context).after,null);
+assert.equal(prepareMeshEdit(item,{scale:1},context).after.scale,undefined,'unit scale omitted');
+const after=prepareMeshEdit(item,{scale:2},context).after;
+const doc=createDoc(assets,null);doc.files.set('world/fixture',{...file,kind:'world',id:'fixture'});
+const record=makeRecord('scale','world/fixture','structures',item.id,0,item,after);
+const beforeText=stringifyContent(toFileObject(doc.files.get('world/fixture')));
+applyEdit(doc,record);const afterText=stringifyContent(toFileObject(doc.files.get('world/fixture')));
+assert.notEqual(afterText,beforeText);assert.equal(doc.files.get('world/fixture').def.structures[0].scale,2);
+applyEdit(doc,invert(record));assert.equal(stringifyContent(toFileObject(doc.files.get('world/fixture'))),beforeText);
+applyEdit(doc,record);assert.equal(stringifyContent(toFileObject(doc.files.get('world/fixture'))),afterText);
+const world=World.load(doc.files.get('world/fixture').def,assets,{physics:'mesh'});
+const placed=world.structures[0];assert.equal(placed.scale,2);
+assert.ok(Math.abs((placed.bbox.x1-placed.bbox.x0)-2*(mesh.bbox[3]-mesh.bbox[0]))<1e-8,'runtime bbox reflects scale');
+assert.equal(JSON.parse(afterText).structures[0].scale,2,'authored JSON round trip');
+const e=.25*Math.max(mesh.bbox[3]-mesh.bbox[0],mesh.bbox[4]-mesh.bbox[1]);
+const sloped={...floor,floorAt:x=>x};
+assert.equal(snapMeshOrigin(sloped,mesh,key,0,0,2).z,+(2*e+.15).toFixed(2),'drop/move snap samples scaled footprint');
+console.log('mesh scale: refuse-before-mint, 0.05 snap, unit omission, canonical undo/redo, runtime bbox/save and scaled floor footprint PASS');

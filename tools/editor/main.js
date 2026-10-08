@@ -954,6 +954,10 @@ function applyScaleStep(dir, fine) {
   if (!selection) { flash('scale: nothing selected'); return; }
   const item = selectionItemData(doc, selection);
   if (!item) return;
+  if(selection.collection==='structures' && item.mesh) {
+    const next=clampScale(fineScale(item.scale ?? 1,dir));
+    commitMeshPatch(item,{scale:next},'scale');return;
+  }
   if (!isVoxelScaleItem(kindForSelection(selection), item, assets)) { flash('scale: voxel models only'); return; }
   const cur = typeof item.scale === 'number' ? item.scale : 1;
   const next = clampScale(fine ? fineScale(cur, dir) : nextScale(cur, dir));
@@ -967,7 +971,7 @@ function dropToFloor() {
   const item = selectionItemData(doc, selection);
   if (!item) return;
   if (selection.collection === 'structures') {
-    const origin = snapMeshOrigin(world, assets.mesh(item.mesh), item.mesh, item.origin.x, item.origin.y);
+    const origin = snapMeshOrigin(world, assets.mesh(item.mesh), item.mesh, item.origin.x, item.origin.y,item.scale ?? 1);
     if (!origin) { flash('drop refused: no floor under mesh footprint'); return; }
     commitMeshPatch(item, { origin }, 'drop'); return;
   }
@@ -1995,7 +1999,7 @@ window.addEventListener('mousemove', (e) => {
       cancelMeshDragPreview(world,meshDrag.preview);meshDrag=null;frame.markDirty();return;
     }
     const x=snapTo(meshDrag.startOrigin.x+point.x-meshDrag.point.x,snap), y=snapTo(meshDrag.startOrigin.y+point.y-meshDrag.point.y,snap);
-    meshDrag.origin=snapMeshOrigin(world,assets.mesh(item.mesh),item.mesh,x,y);
+    meshDrag.origin=snapMeshOrigin(world,assets.mesh(item.mesh),item.mesh,x,y,item.scale ?? 1);
     if (meshDrag.origin) updateMeshDragPreview(world,meshDrag.preview,meshDrag.origin);
     else flash('move: no floor here; release cancels, Esc restores');
     frame.markDirty(); return;

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Leaf preview</title>
+<style>
+body { margin: 0; background: #101218; color: #eee; font: 16px system-ui; overflow: hidden; }
+header { padding: 16px; } button, a { margin-right: 12px; color: inherit; }
+button { background: #30343c; padding: 8px; border: 1px solid #aaa; }
+canvas { display: block; margin: auto; image-rendering: pixelated; }
+</style>
+<header>
+<h1>Leaf preview</h1>
+<button id="soft" aria-pressed="true">Soft edges: on</button>
+<button id="distance">Distance: 6 m</button>
+<a href="?backend=webgpu">WebGPU</a><a href="?backend=webgl2">WebGL2</a>
+<p>Checkerboard leaf cards from the alphaLeaves fixture. WebGL2 shows opaque cards by design.</p>
+<p id="status" role="status">Loading renderer...</p>
+</header>
+<canvas id="screen" aria-label="Leaf fixture at player eye height"></canvas>
+<script src="../design/palette.js"></script>
+<script src="../design/detail-pass.js"></script>
+<script type="module" src="js/dev/leafPreview.js"></script>
+</html>

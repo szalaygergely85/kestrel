@@ -28,7 +28,8 @@ export function resolveMeshPick(world, ray, depth) {
   for(const s of candidates) {
     const o=worldToLocal(s.frame,ray.ox,ray.oy,ray.oz,{x:0,y:0,z:0});
     const end=worldToLocal(s.frame,ray.ox+ray.dx,ray.oy+ray.dy,ray.oz+ray.dz,{x:0,y:0,z:0});
-    const local={...o,dX:end.x-o.x,dY:end.y-o.y,dZ:end.z-o.z};
+    const k=s.scale ?? 1;
+    const local={x:o.x/k,y:o.y/k,z:o.z/k,dX:(end.x-o.x)/k,dY:(end.y-o.y)/k,dZ:(end.z-o.z)/k};
     let hit=Infinity;
     for(let i=0;i<s.mesh.pos.length;i+=9)hit=Math.min(hit,triangleHit(local,s.mesh.pos,i));
     if(Math.abs(hit-depth)<=0.1 && hit<bestDepth){best=s;bestDepth=hit;}
