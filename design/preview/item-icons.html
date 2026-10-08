@@ -291,7 +291,7 @@ function checks() {
     cog: ['Brass Cog', "Ferrum's small change. Worth a trade."], 'brass.scrap': ['Brass Scrap', 'From the Kestrel. Ferrum, in pieces.'] };
   for (const id in NEW) ok(`${id}: writer name + line`, IT.defs[id] && IT.defs[id].name === NEW[id][0] && IT.defs[id].desc === NEW[id][1]);
   ok('existing ids still present (sword, spell.fireball, torch, boar.*, orb.*)', ['sword', 'spell.fireball', 'torch', 'boar.meat', 'boar.hide', 'boar.tusk', 'orb.hp', 'orb.mp'].every(id => IT.defs[id] && IT.defs[id].id === id));
-  const GAME_KINDS = ['weapon', 'spell', 'tool', 'food', 'material', 'pickup'];
+  const GAME_KINDS = ['weapon', 'spell', 'tool', 'food', 'material', 'pickup', 'shield', 'key', 'upgrade', 'currency'];
   ok('every def kind is in the game validateItemDefs KINDS (boot does not throw)', Object.keys(IT.defs).every(id => GAME_KINDS.includes(IT.defs[id].kind)));
   ok('order lists every def once', Object.keys(IT.defs).every(id => IT.order.filter(x => x === id).length === 1) && IT.order.length === Object.keys(IT.defs).length);
   ok('cog marked pending owner', IT.defs.cog.pending === 'owner');

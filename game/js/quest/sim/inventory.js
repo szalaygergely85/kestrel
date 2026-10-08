@@ -53,7 +53,7 @@ export function ensureInventory(player, start) {
  * @param {Record<string, any>} defs
  */
 export function validateItemDefs(defs) {
-  const KINDS = { weapon: 1, spell: 1, tool: 1, food: 1, material: 1, pickup: 1 };
+  const KINDS = { weapon: 1, spell: 1, tool: 1, food: 1, material: 1, pickup: 1, shield: 1, key: 1, upgrade: 1, currency: 1 };
   for (const id in defs) {
     const d = defs[id];
     if (!d || d.id !== id) throw new Error(`[items] bad def "${id}": id mismatch`);
@@ -150,8 +150,8 @@ export function countOf(inv, id) {
 
 /**
  * Assigns `id` (or null, to empty the hand) to `hand` ('left' | 'right'). Returns true on success.
- * `id` must already be in the pack (`countOf > 0`); the caller filters by `defs[id].kind` being
- * `weapon|spell|tool` (this function has no defs, so it cannot). Putting an item in one hand empties the
+ * `id` must already be in the pack (`countOf > 0`); the caller checks `defs[id].hand === true`
+ * (this function has no defs, so it cannot). Putting an item in one hand empties the
  * other hand if it held the same id - one item is never in both hands.
  * @param {{slots: Array<{id: string|null, n: number}>, left: string|null, right: string|null}} inv
  * @param {'left'|'right'} hand
