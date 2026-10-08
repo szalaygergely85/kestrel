@@ -6,8 +6,10 @@
 // (engine/entities/Player.js, engine/physics/*), so this now comes from
 // engine/index.js like everything else (check-deps rule 3).
 
+import { loadPresets, resolveQuality } from './ui/gfxPresets.js';
+import { resolveBootOptions, describeQuality } from './gfxBoot.js';
 import {
-  AssetRegistry, createEngine, createRenderer, clampGrid, GRID_DEFAULT_COLS,
+  AssetRegistry, createEngine, createRenderer, clampGrid, GRID_DEFAULT_COLS, resolveShadowLevel,
   GBuffer, bindShading, bindLevel,
   DebugOverlay,
   integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations,
@@ -120,39 +122,28 @@ const compareNearStep = params.get('nearstep') === '1';
 // window-independent fixed camera box, not just the DDA/geometry one - see
 // the `rt.resize(GPU_COMPARE_REF_*)` comment below.
 const isGpuCompareMode = isGeometryCompare || params.get('gpucompare') === 'shade';
-const gridParam = params.get('grid');
-let reqCols = GRID_DEFAULT_COLS, reqRows;
-if (gridParam) {
-  const m = /^(\d+)x(\d+)$/i.exec(gridParam.trim());
-  if (m) { reqCols = Number(m[1]); reqRows = Number(m[2]); }
-  else console.warn(`[grid] ?grid=${gridParam} not "WxH" - using the default ${GRID_DEFAULT_COLS}`);
-}
-// US-038b: a saved grid choice applies at boot, unless ?grid= overrides it for
-// this session - or unless this is a capture/bench/compare page (?bench=,
-// ?voxelbench=, ?gpucompare=), which must stay comparable across runs
-// regardless of what the player last saved (PC-A PO REJECT, backlog row 30f).
+// GFX-01w: quality preset (grid, rays, shadow level, scatter density, LOD scale) resolved once at boot; explicit URL knobs win.
+// Precedence: URL knob > ?quality= > saved > auto (GFX-02) > 'high'. Presets failing to load -> boot exactly as before (no preset).
+// Capture/bench/compare pages stay on today's options unless ?quality= is given (must stay comparable across runs).
 const savedSettings = loadSettings();
 const isWaterfallPreview = params.get('waterfallpreview') === '1' && params.get('world') === 'waterfall_test';
 const isCaptureOrBench = !!params.get('bench') || !!params.get('voxelbench') || !!params.get('gpucompare') || !!params.get('cinematic') || isWaterfallPreview;
-if (!gridParam && !isCaptureOrBench) {
-  const gm = /^(\d+)x(\d+)$/.exec(savedSettings.grid);
-  if (gm) { reqCols = Number(gm[1]); reqRows = Number(gm[2]); }
-}
-if (isGeometryCompare) { reqCols = 160; reqRows = 60; }
-const gridResult = clampGrid(reqCols, reqRows);
+let resolvedQuality = null;
+try {
+  await loadPresets();
+  resolvedQuality = resolveQuality({ param: params, saved: { quality: savedSettings.quality, shadowQuality: savedSettings.shadowQuality }, auto: null });
+} catch (err) { console.warn(`[quality] presets unavailable (${err.message}) - booting without a preset`); }
+const bootOpts = resolveBootOptions({ params, resolved: resolvedQuality, savedSettings, captureLike: isCaptureOrBench, geometryCompare: isGeometryCompare,
+  defaultCols: GRID_DEFAULT_COLS, shadowLevel: resolveShadowLevel });
+const gridParam = bootOpts.gridParam;
+const gridResult = clampGrid(bootOpts.reqCols, bootOpts.reqRows);
 if (gridParam && gridResult.clamped) {
   console.warn(`[grid] ?grid=${gridParam} clamped to ${gridResult.cols}x${gridResult.rows} (allowed range 160x60..480x180, 8:3 aspect - D-025)`);
 }
-const rayParam = Number(params.get('rays'));
-// US-030b (14.2 item 5): default 2 (2x2 coverage vote) on the gl2 GPU path -
-// `?rays=1..4` overrides for A/B (the flicker-metric page compares 1 vs the
-// default). `?gpucompare=1` always forces n=1 regardless of `?rays=` (14.2
-// item 8's parity contract): the DDA/geometry compare's "N=1 matches the JS
-// caster exactly" AC would otherwise need the vote/average path to be a
-// no-op, which it already is at n=1 - forcing it here just keeps the page's
-// intent explicit and immune to a stray `?rays=` in the URL.
-let rays = Number.isFinite(rayParam) && rayParam >= 1 && rayParam <= 4 ? Math.round(rayParam) : 2;
-if (isGeometryCompare) rays = 1;
+// US-030b (14.2 item 5): default 2 on the gl2 GPU path (preset rays: low 1, medium 2, high 2, ultra 4); `?rays=1..4` overrides.
+// `?gpucompare=1` always forces n=1 (14.2 item 8's parity contract), resolved inside resolveBootOptions.
+const rayParam = Number(params.get('rays')); // raw URL value, passed to the compare/bench harnesses as before
+const rays = bootOpts.rays;
 
 const canvas = document.getElementById('screen');
 // US-027b (docs/architecture.md 21.9): tower/test_room/world_m1 are now
@@ -272,7 +263,7 @@ const fadeLut = createFadeLut(defaultRamp, defaultRamp.length - 1, 0.12);
 const sceneDim = createSceneDim();
 if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
 // WG-1c2: `?backend=webgpu|webgl2` (default webgl2); webgpu falls back to webgl2 with a warning (38.8a 16).
-const shadowOpts = { sun: params.get('shadows') === 'dda' ? 'dda' : 'map', instCastM: params.get('shadowinst') ? Number(params.get('shadowinst')) : 32, ...(params.get('shadowres') ? { res: Number(params.get('shadowres')) } : {}), ...(params.get('shadowcast') ? { meshCastM: Number(params.get('shadowcast')) } : {}) }; // ME-15e/f (owner 2026-10-06 "looks cool", D-043): sun shadow MAP is the default, trees cast to 32 m (+1.6 ms p95 accepted); `?shadows=dda` = old sun DDA until ME-19c, `?shadowinst=N` / `?shadowres=N` / `?shadowcast=M` (MESH-SHADOW-02 placed-mesh eye cut in m, default off) dev overrides
+const shadowOpts = bootOpts.shadowOpts; // GFX-01w: shadow level from the preset (resolveShadowLevel) + ?shadows= / ?shadowinst / ?shadowres / ?shadowcast overrides (ME-15e/f, D-043: map is the default)
 const { rt: builtRt, pipeline: wgPipeline, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
   shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0' }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
@@ -287,6 +278,7 @@ const engine = createEngine({
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
   // ME-15c/e/f (27.9a, D-043): the sun shadow MAP is the default; `?shadows=dda` keeps the old sun DDA until ME-19c.
   shadows: shadowOpts, // ME-15c/e/f (27.9a, D-043): see shadowOpts above
+  gfx: bootOpts.gfx, // GFX-03/GFX-01w: scatter density + LOD scale from the preset (undefined = engine defaults)
 });
 // D-025 (US-038a): `renderTarget` now resizes IN PLACE (`engine.setGrid`
 // never replaces the object), so `rt` itself could be `const` - kept `let`
@@ -1461,6 +1453,7 @@ function runGame(mode, cinematic = null) {
     if (!benchActive && overlay.shouldRefresh(performance.now())) {
       // US-030a (14.2 item 7): "path: gpu|cpu  grid: WxH  rays: n" on the overlay.
       let extra = `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rendererInfo.label}` +
+        `\n${describeQuality(bootOpts, rt.cols, rt.rows, engine.rays)}` + // GFX-01w
         `\npath: ${rt.gpuActive ? 'gpu' : 'cpu'}  grid: ${rt.cols}x${rt.rows}  rays: ${engine.rays}` +
         (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` +
           // ARCH CHANGES item 4: `terrainSubmitMs*` is CPU draw-call submit

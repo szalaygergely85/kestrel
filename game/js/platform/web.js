@@ -23,6 +23,7 @@
 // stays a thin, generic storage adapter, not a second copy of the option
 // definitions.
 import { GRID_VALUES } from '../settings/options.js';
+import { QUALITY_CHOICES, SHADOW_CHOICES } from '../ui/gfxPresets.js';
 
 const STORAGE_KEY = 'kestrel.settings';
 const SETTINGS_VERSION = 1;
@@ -121,6 +122,9 @@ export function loadSettings() {
     out.mouseSensitivity = parsed.mouseSensitivity;
   }
   if (isBoolean(parsed.invertY)) out.invertY = parsed.invertY;
+  // GFX-01w: optional quality choice + shadow level (absent = never chosen; unknown values dropped)
+  if (QUALITY_CHOICES.includes(parsed.quality)) out.quality = parsed.quality;
+  if (SHADOW_CHOICES.includes(parsed.shadowQuality)) out.shadowQuality = parsed.shadowQuality;
   // settingsVersion is informational only for now (single version exists);
   // kept as the constant so a future migration has a stable field to read.
 
@@ -147,6 +151,11 @@ export function saveSettings(partial) {
       ? p.mouseSensitivity : current.mouseSensitivity,
     invertY: isBoolean(p.invertY) ? p.invertY : current.invertY,
   };
+  // GFX-01w: only written once chosen, so existing blobs stay byte-identical
+  const quality = QUALITY_CHOICES.includes(p.quality) ? p.quality : current.quality;
+  if (quality !== undefined) next.quality = quality;
+  const shadowQuality = SHADOW_CHOICES.includes(p.shadowQuality) ? p.shadowQuality : current.shadowQuality;
+  if (shadowQuality !== undefined) next.shadowQuality = shadowQuality;
   if (!storage) return next; // no persistence available, but callers still get a valid object back
 
   try {
