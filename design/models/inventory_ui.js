@@ -120,7 +120,7 @@
         right: [' .|||. ', '\\|   | ', '  \\_/  '],
         fg: RGB.ghost
       },
-      kindText: { weapon: 'Weapon', spell: 'Spell', tool: 'Tool' }
+      kindText: { weapon: 'Weapon', spell: 'Spell', tool: 'Tool', shield: 'Shield' }
     },
 
     // ---- the 6 x 4 pack grid (rows 8-24) ----
@@ -139,7 +139,8 @@
       name: { x: 66, y: 9, fg: RGB.uiText },
       kind: { x: 66, y: 10, fg: RGB.uiHint,
               text: { weapon: 'Weapon - either hand', spell: 'Spell - either hand', tool: 'Tool - either hand',
-                      food: 'Food', material: 'Material' } },
+                      food: 'Food', material: 'Material', shield: 'Shield - either hand',
+                      key: 'Key', upgrade: 'Upgrade', currency: 'Currency' } },
       status: { x: 66, y: 11, fg: RGB.heroGreen, inLeft: 'In your left hand', inRight: 'In your right hand',
                 count: { format: 'x{n} in the pack', fg: RGB.uiHint }, note: 'hand state wins over the count line' },
       desc: { x: 55, y: 14, w: 42, maxLines: 4, fg: RGB.uiText, wrap: 'word wrap at w; a word longer than w is cut', src: 'items.defs[id].desc' },

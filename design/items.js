@@ -9,7 +9,7 @@
  * WHAT THIS FILE SETS
  *   ASSETS.items = { version, order, defs, keys, loot, toast, validate(palette) }
  *     defs[id]  = { id, name, kind, stackMax, desc, hand, inPack, use?, glyph: {ch, c}, icon: {glyphs[3], fg[3]},
- *                   sprite?, placeholderName: true }
+ *                   sprite?, placeholderName: false }
  *     keys      = icon colour keys: one char -> { c: palette colour key, e?: true (emissive / glow) }
  *     loot      = drop tables (seeded rolls in game/js/quest/sim/loot.js; this file only holds the data)
  *     toast     = the "+1 Boar Meat" toast style (UI layer, literal RGB like uiStyle.vitals)
@@ -20,7 +20,7 @@
  *   - Gameplay numbers that tune the fight (damage, mana cost, cooldowns) live in game/js/quest/*Config.js. The few
  *     numbers here (stack sizes, meat +10 HP, drop chances) are the design defaults the US-091a ACs name; a config
  *     may read them from here or copy them, but there is one source per number.
- *   - Names are PLACEHOLDERS (placeholderName: true): the writer may rename; ids never change (saves use the ids).
+ *   - Names and descriptions are approved writer copy; ids never change (saves use the ids).
  *   - Icons: 5 x 3 cells (cells are ~1:1.5, so 5 x 3 reads about square), printable ASCII, a space glyph with a space
  *     fg key = transparent (the slot background shows). Every icon has a 1-cell `glyph` for the hands strip / toast.
  *   - Colour language: fire = flame + ember keys, HP = vital crimson, MP = mana blue, steel = mirror, bronze guard,
@@ -62,8 +62,8 @@
   var defs = {
     // ---------------- hand items ----------------
     sword: {
-      id: 'sword', name: 'Ruin-steel Sword', kind: 'weapon', stackMax: 1, hand: true, inPack: true,
-      desc: 'Old watch steel, nicked but true. Tap to slash, hold to swing hard.',
+      id: 'sword', name: 'Ruin Steel', kind: 'weapon', stackMax: 1, hand: true, inPack: true,
+      desc: 'Old watch steel. Nicked, still true.',
       glyph: { ch: '/', c: 'mirror' },
       //  .        cross-guard top
       // o+==>     pommel, guard, blade, point
@@ -73,7 +73,7 @@
     },
     'spell.fireball': {
       id: 'spell.fireball', name: 'Ember', kind: 'spell', stackMax: 1, hand: true, inPack: true,
-      desc: 'A coal that answers your hand. Tap to throw, hold to throw it hot. Costs mana.',
+      desc: 'A coal that answers the hand.',
       glyph: { ch: '*', c: 'flameMid' },
       //  .^,      flame tips
       // (*@*)     the burning ball, white-hot core
@@ -83,7 +83,7 @@
     },
     torch: {
       id: 'torch', name: 'Torch', kind: 'tool', stackMax: 1, hand: true, inPack: true,
-      desc: 'Pitch and rag on a stick. Light to see by. (TORCH-01b: def only this sprint.)',
+      desc: 'Pitch and rag on a stick. See by it.',
       glyph: { ch: '^', c: 'flameMid' },
       //  '^'      flame
       //  [#]      iron band round the burning head
@@ -94,7 +94,7 @@
     // ---------------- boar loot ----------------
     'boar.meat': {
       id: 'boar.meat', name: 'Boar Meat', kind: 'food', stackMax: 10, hand: false, inPack: true,
-      desc: 'A haunch, still warm. Eat it to heal.',
+      desc: 'A haunch, still warm. Eat to heal.',
       use: { heal: 10, sound: 'eat', fullHpToast: 'Not hurt' },
       glyph: { ch: '%', c: 'goreRed' },
       sprite: 'lootMeat',
@@ -106,7 +106,7 @@
     },
     'boar.hide': {
       id: 'boar.hide', name: 'Boar Hide', kind: 'material', stackMax: 20, hand: false, inPack: true,
-      desc: 'Coarse bristled hide. Good for something, someday.',
+      desc: 'Coarse, bristled. Good for something.',
       use: { none: 'Material - no use yet' },
       glyph: { ch: '&', c: 'wood' },
       sprite: 'lootHide',
@@ -118,7 +118,7 @@
     },
     'boar.tusk': {
       id: 'boar.tusk', name: 'Boar Tusk', kind: 'material', stackMax: 20, hand: false, inPack: true,
-      desc: 'A yellowed curve of ivory, sharp at the tip.',
+      desc: 'Yellow ivory, sharp at the tip.',
       use: { none: 'Material - no use yet' },
       glyph: { ch: ')', c: 'linenLight' },
       sprite: 'lootTusk',
@@ -131,7 +131,7 @@
     // ---------------- ground orbs (US-080b drops; NOT stored: used on touch) ----------------
     'orb.hp': {
       id: 'orb.hp', name: 'Herb Flask', kind: 'pickup', stackMax: 0, hand: false, inPack: false,
-      desc: 'Red wax, bitter herbs. Restores health on touch.',
+      desc: 'Bitter herbs under red wax. Heals.',
       use: { heal: 10, onTouch: true, note: 'existing pickups.js kind hp (PICKUP_AMOUNT 10); def is for the toast only' },
       glyph: { ch: '+', c: 'vital' },
       sprite: 'pickupHp',
@@ -140,7 +140,7 @@
     },
     'orb.mp': {
       id: 'orb.mp', name: 'Cold Shard', kind: 'pickup', stackMax: 0, hand: false, inPack: false,
-      desc: 'A splinter of cold light. Restores mana on touch.',
+      desc: 'A sliver of teal light. Restores MP.',
       use: { mana: 10, onTouch: true, note: 'existing pickups.js kind mp (PICKUP_AMOUNT 10); def is for the toast only' },
       glyph: { ch: '*', c: 'manaLight' },
       sprite: 'pickupMp',
@@ -148,16 +148,13 @@
                  ['  gq ', ' gQq ', ' gq  '])
     }
   };
-  for (var id in defs) defs[id].placeholderName = true;
 
   // ==================================================================================================================
   // S8-A-07 (appended, v1.43): the 12-icon set. 4 icons already exist above (sword, orb.hp = the "potion" icon - canon
   // has no potions -, boar.hide, boar.tusk); the 8 below are NEW ids from the writer list (docs/story.md "S8-A-13
-  // Items"), names + lines are the writer's (final, placeholderName false). Defs are added after the placeholder loop
-  // and by assignment, so the block above is untouched.
-  // KINDS: the game's validateItemDefs (inventory.js) and validate() below accept only weapon / spell / tool / food /
-  // material / pickup, so every new def uses one of those; `kindNext` is the kind S8-C-08 should switch to once it adds
-  // it to both KINDS lists (key, upgrade, currency, shield). Until then these items are inert data: nothing grants them.
+  // Items"), names + lines are the writer's (final, placeholderName false). All definitions carry the approved writer copy.
+  // S8-C-08: explicit shield / key / upgrade / currency kinds are accepted by both validators.
+  // These definitions do not grant items; currency rewards still await the owner decision.
   // ==================================================================================================================
   // new icon colour keys (one char -> palette key; all existing palette colours)
   keys.A = { c: 'brassLight' };  keys.B = { c: 'brass' };        keys.J = { c: 'brassDark' };
@@ -167,7 +164,7 @@
   keys.X = { c: 'lantern', e: true };
 
   defs.shield = {
-    id: 'shield', name: 'Brass Buckler', kind: 'weapon', kindNext: 'shield', stackMax: 1, hand: true, inPack: true,
+    id: 'shield', name: 'Brass Buckler', kind: 'shield', stackMax: 1, hand: true, inPack: true,
     desc: 'Gondola plate, bent round a strap.',
     glyph: { ch: 'O', c: 'brass' },
     // /=o=\     rim + top rivet
@@ -188,7 +185,7 @@
                [' BAB ', 'BXCXB', ' JBJ '])
   };
   defs['key.small'] = {
-    id: 'key.small', name: 'Small Key', kind: 'tool', kindNext: 'key', stackMax: 9, hand: false, inPack: true,
+    id: 'key.small', name: 'Small Key', kind: 'key', stackMax: 9, hand: false, inPack: true,
     desc: 'Iron, brown with rust. Fits one lock.',
     use: { opens: 'lock', note: 'consumed by the lock it opens (door / chest story); no use from the pack' },
     glyph: { ch: 'F', c: 'ironLight' },
@@ -220,7 +217,7 @@
                [' FpDE', 'FpDpo', 'oopoo'])
   };
   defs['heart.piece'] = {
-    id: 'heart.piece', name: 'Heart Piece', kind: 'material', kindNext: 'upgrade', stackMax: 3, hand: false, inPack: true,
+    id: 'heart.piece', name: 'Heart Piece', kind: 'upgrade', stackMax: 3, hand: false, inPack: true,
     desc: 'A warm red stone. Four make a heart.',
     use: { note: 'the 4th piece is consumed at once: +1 heart (max HP), a later sim story; stackMax 3 = never 4 in the pack' },
     glyph: { ch: 'v', c: 'vitalLight' },
@@ -231,7 +228,7 @@
                ['LPddd', ' Ldd ', '  d  '])
   };
   defs.cog = {
-    id: 'cog', name: 'Brass Cog', kind: 'material', kindNext: 'currency', stackMax: 99, hand: false, inPack: true,
+    id: 'cog', name: 'Brass Cog', kind: 'currency', stackMax: 99, hand: false, inPack: true,
     desc: "Ferrum's small change. Worth a trade.",
     pending: 'owner', pendingNote: 'currency is an open owner question (GDD 10); icon + def ready, nothing grants it yet',
     glyph: { ch: '@', c: 'brass' },
@@ -255,6 +252,8 @@
   // the S8-A-07 icon list in sheet order (sword, shield, lantern, potion, key, bow, bomb, heart piece, currency, 3 materials)
   var iconSet = ['sword', 'shield', 'lantern', 'orb.hp', 'key.small', 'bow', 'bomb', 'heart.piece', 'cog',
                  'boar.hide', 'boar.tusk', 'brass.scrap'];
+
+  for (var id in defs) defs[id].placeholderName = false;
 
   // ---- loot tables: one independent roll per entry (seeded, sim side). `n` = count when the roll succeeds. ----
   var loot = {
@@ -350,7 +349,7 @@
   // Data self-check: [] = OK. palette = ASSETS.palette (optional: checks colour keys exist).
   function validate(palette) {
     var errs = [], rgb = palette && palette.rgb, id, d, r, j, cc, ch;
-    var KINDS = { weapon: 1, spell: 1, tool: 1, food: 1, material: 1, pickup: 1 };
+    var KINDS = { weapon: 1, spell: 1, tool: 1, food: 1, material: 1, pickup: 1, shield: 1, key: 1, upgrade: 1, currency: 1 };
     for (ch in keys) if (rgb && !rgb[keys[ch].c]) errs.push('keys.' + ch + ': unknown colour ' + keys[ch].c);
     for (id in defs) {
       d = defs[id];

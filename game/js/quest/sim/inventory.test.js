@@ -231,6 +231,31 @@ function killAndRespawn(vitals, player) {
   ok('a bad def throws naming its id', !!threw && /bad\.item/.test(threw.message), threw && threw.message);
 }
 
+// S8-C-08: explicit kinds preserve authored stack limits, hand assignment and saved ids.
+{
+  const expected = { shield: 'shield', 'key.small': 'key', 'heart.piece': 'upgrade', cog: 'currency' };
+  const world = buildWorld([playerEntity()]);
+  const inv = ensureInventory(world.get('player').data, EMPTY_START);
+  for (const [id, kind] of Object.entries(expected)) {
+    ok(`${id} has its explicit kind`, defs[id].kind === kind && !('kindNext' in defs[id]));
+    const cap = defs[id].stackMax;
+    ok(`${id} stacks at its authored cap`, addItem(inv, defs, id, cap + 1) === cap + 1 && countOf(inv, id) === cap + 1);
+    const stacks = inv.slots.filter((slot) => slot.id === id);
+    ok(`${id} splits overflow`, stacks.length === 2 && stacks[0].n === cap && stacks[1].n === 1);
+  }
+  ok('shield equips using the existing hand rule', defs.shield.hand && assignHand(inv, 'left', 'shield') && inv.left === 'shield');
+  const loaded = deserialize(JSON.parse(JSON.stringify(serialize(world))), assets, {});
+  const saved = loaded.get('player').data.components.inventory;
+  ok('all new kinds retain ids/counts/hands through the real save path', JSON.stringify(saved) === JSON.stringify(inv));
+  ok('removing a shield clears its hand when the final copy goes', removeItem(inv, 'shield', 2) === 2 && inv.left === null);
+  const A = globalThis.ASSETS;
+  ok('designer validator accepts all shipped kinds', A.items.validate(A.palette).length === 0);
+  for (const id of A.items.iconSet) {
+    const d = defs[id];
+    ok(`${id} fits the approved card copy limits`, d.name.length <= 14 && d.desc.length <= 38 && /^[ -~]+$/.test(d.name + d.desc) && d.placeholderName === false);
+  }
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

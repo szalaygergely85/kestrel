@@ -6,7 +6,7 @@ const ascii = value => value.replace(/[^\x20-\x7e]/g, '?');
 function clipped(text, width) { return text.length <= width ? text : text.slice(0,width-3)+'...'; }
 
 /** Call update on quest changes; drawHud/drawLog never format or allocate rows.
- * Existing placeholder plate/foreground; final objective text stays in content.
+ * Approved writer copy stays in content; existing plate/foreground retained.
  */
 export function createQuestLog(def, {hudWidth=60,width=72,fg='#e8e2d0',bg='#0a0b10'} = {}) {
   validateQuestDefinition(def);
@@ -34,7 +34,7 @@ export function createQuestLog(def, {hudWidth=60,width=72,fg='#e8e2d0',bg='#0a0b
   function drawLog(ui) {
     bounds.x=Math.floor((ui.cols-width)/2); bounds.y=Math.floor((ui.rows-bounds.h)/2);
     for (let y=0;y<bounds.h;y++) for(let x=0;x<width;x++) ui.setCell(bounds.x+x,bounds.y+y,' ',fg,bg);
-    drawText(ui,bounds.x+3,bounds.y+1,'Quest log',fg,bg);
+    drawText(ui,bounds.x+3,bounds.y+1,'PENCIL NOTES',fg,bg);
     for (let i=0;i<rendered.length;i++) drawText(ui,bounds.x+3,bounds.y+4+i*2,rendered[i],fg,bg);
     return bounds;
   }
