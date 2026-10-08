@@ -47,7 +47,7 @@ export class WgCellPipeline {
     this.frameComplete = false;
     /** the sun map holds depth in [0.5, 1] (38.5 item 6): shadowParity converts `(d - 0.5) * 2` before the twin compare */
     this.shadowDepthHalfRange = true;
-    this.rendererString = 'webgpu (WG-3d resolve+deriv+shadow+water+light+shade+edge)';
+    this.rendererString = 'webgpu (WG-4b raster+cull+shadow+water+light+shade+edge+sprites+overlay)';
     this._source = 'scene'; // 'upload' = `?gpucompare=shade` test source (CPU G-buffer -> cell-res textures)
     // same shape as GpuCellPipeline.stats so F3 / benches read it unchanged
     this.stats = {
@@ -125,7 +125,7 @@ export class WgCellPipeline {
   /** WG-3f: `frameComplete` + `rt.gpuActive` follow the wiring (rt.gpuActive is left alone while the pipeline was never complete). */
   _syncActive() {
     const complete = !!(this.ready && this._enabled && this._spritesBound && this._spritesPass && this._overlayPass &&
-      this._waterPass && this._shadowPass && this._shadowPass.enabled && this._source === 'scene');
+      this._waterPass && this._shadowPass && (this._shadowPass.enabled || this._shadowPass.off) && this._source === 'scene');
     this.frameComplete = complete;
     const rt = this.rt;
     if (complete || rt.gpuActive) rt.gpuActive = complete;
@@ -304,7 +304,7 @@ export class WgCellPipeline {
       if (this._shadowPass) this._shadowPass.active = false; // no camera/world: no valid map (the light pass falls back to the dummy)
     }
     const sh = this._shadowPass;
-    if (sh && sh.enabled) {
+    if (sh && (sh.enabled || sh.off)) {
       try { sh.run(this, this._rasterPass); }
       catch (e) { sh.active = false; console.warn('[WgCellPipeline] sun shadow map failed this frame (DDA sun):', e); }
       this.stats.shadowItems = sh.stats.shadowItems; this.stats.shadowDraws = sh.stats.shadowDraws; this.stats.shadowCpuMs = sh.stats.shadowCpuMs;

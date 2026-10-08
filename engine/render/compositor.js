@@ -24,7 +24,7 @@ import { frustumPlanes } from '../mesh/culling.js';
 import { renderWaterJS } from './water.js';
 import { waterCompositeJS } from './waterComposite.js';
 // ME-15c (27.9a): JS twin of the GPU sun shadow pass (same list builder, matrix, polygon offset, depth-only raster).
-import { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar } from './shadowSun.js';
+import { SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar } from './shadowSun.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../mesh/shadowList.js';
 
 const MAX_STRUCTS = 8; // structSeq is a 3-bit field (arch 7.2) - never exceeded, never wrapped.
@@ -66,6 +66,8 @@ const sunShadowRasterCtx = { M: sunShadowMat.M, depthBias: { factor: 0, units: 0
 const sunMapState = { map: /** @type {any} */ (null), M: sunShadowMat.M, opts: /** @type {any} */ (null) };
 /** @type {import('../mesh/rasterJS.js').RasterTarget|null} */
 let _sunShadowTarget = null;
+/** GFX-03 `shadows.sun: 'off'`: no map, no pass; `sunShadowTaps` sees every receiver outside the box (SUN_OFF_MATRIX) = fully sunlit. */
+const sunOffState = { map: /** @type {any} */ (null), M: SUN_OFF_MATRIX, opts: /** @type {any} */ (null) };
 
 /**
  * Renders the sun shadow map for this frame (called by `renderWorldMesh` after the camera list was built and
@@ -75,6 +77,7 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
   const so = fb.shadowOpts;
   const sun = fb.lights && fb.lights.sun;
   fb.sunMap = null;
+  if (so && so.sun === 'off' && sun && sun.on) { sunOffState.opts = so; fb.sunMap = sunOffState; return; }
   if (!so || so.sun !== 'map' || !sun || !sun.on) return;
   if (!_sunShadowTarget || _sunShadowTarget.cols !== so.res) _sunShadowTarget = createRasterTarget(so.res, so.res, 1, { depthOnly: true });
   else clearRasterTarget(_sunShadowTarget);

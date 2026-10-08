@@ -22,7 +22,7 @@ import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
 import { sharedVoxelMeshCache } from '../../../mesh/voxelMesh.js';
 import { INSTANCE_BYTES, INSTANCE_STRIDE, MAX_INSTANCES_PER_FRAME, SHADOW_BAND_HYST_M } from '../../../mesh/instances.js';
 import { WgCullPass } from './passCull.js';
-import { resolveSunShadowOptions, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../../shadowSun.js';
+import { resolveSunShadowOptions, SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../../shadowSun.js';
 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
 const T_MODEL = SHADOW_TERRAIN_BLOCK.field('model').word, T_VIEW = SHADOW_TERRAIN_BLOCK.field('viewProj').word;
@@ -40,12 +40,14 @@ export class WgShadowPass {
     this.device = device;
     const so = this.shadowOpts = resolveSunShadowOptions(opts.shadows, opts.renderer || 'mesh');
     this.enabled = so.sun === 'map';
+    this.off = so.sun === 'off';         // GFX-03: sun lights, no shadows: no depth pass; `run` only publishes the "everything outside the box" matrix (sunMode 2, dummy depth texture)
     this.active = false;                 // this frame's map is valid (= GL shadowActive): light sunMode 2
     this.renders = 0; this.skips = 0;
     this.stats = { shadowItems: 0, shadowDraws: 0, shadowCpuMs: 0 };
     this.depthTex = null; this.target = null; this.pipes = [];
     this.ownBuffers = !opts.buffers; this.buffers = opts.buffers || new MeshBuffers(device);
     this.sunMat = createSunShadowMatrix(); this.sunMatF32 = new Float32Array(16);
+    if (this.off) { for (let i = 0; i < 16; i++) this.sunMatF32[i] = SUN_OFF_MATRIX[i]; this.sunMat.texelM = 1; }
     this.list = createShadowList(); this.centre = new Float64Array(3); this.worldZ = { min: 0, max: 0 };
     this.key = new Int32Array(3); this.keyPrev = new Int32Array(3); this.keyValid = false;
     this.src = { centre: { x: 0, y: 0, z: 0 }, eye: { x: 0, y: 0 }, meshLod0M: 25, instCastM: 48, cache: null, terrainSet: null, voxelPool: null, voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: null, cloths: null, matIdFor: undefined, meshCache: null, meshIdFor: undefined, gpu: /** @type {any} */ (null) };
@@ -187,6 +189,12 @@ export class WgShadowPass {
    */
   run(p, raster) {
     this.active = false;
+    if (this.off) { // GFX-03: no caster list, no pass; the light pass samples nothing (receivers are outside the box)
+      const sun = p._light && p._light.sun;
+      this.active = !!(sun && sun.on);
+      this.stats.shadowItems = 0; this.stats.shadowDraws = 0; this.stats.shadowCpuMs = 0;
+      return this.active;
+    }
     if (!this.enabled) return false;
     this._world = p._world; this._raster = raster;
     const so = this.shadowOpts, light = p._light, cam = p._cam, world = p._world, sun = light && light.sun;
