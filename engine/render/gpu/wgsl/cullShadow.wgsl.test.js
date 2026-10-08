@@ -26,7 +26,7 @@ assert.equal(SHADOW_BAND_HYST_M, 2);
 let seed = 4242; const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
 const planes = new Float64Array([1, 0, 0, 60, -1, 0, 0, 60, 0, 1, 0, 40, 0, -1, 0, 40, 0, 0, 1, 10, 0, 0, -1, 100]);
 const R = 3.5, LOD0 = 25, CAST = 48;
-const u = { planes: [], eye: { x: 0, y: 0, z: LOD0, w: CAST }, params: { x: R, y: SHADOW_BAND_HYST_M, z: 0, w: 0 } };
+const u = { planes: [], eye: { x: 0, y: 0, z: LOD0, w: CAST }, params: { x: R, y: SHADOW_BAND_HYST_M, z: 0, w: 0 }, swayPad: 0 };
 for (let i = 0; i < 6; i++) u.planes.push({ x: planes[i * 4], y: planes[i * 4 + 1], z: planes[i * 4 + 2], w: planes[i * 4 + 3] });
 const aabbOutside = compileFn(CULL_SHADOW_WGSL, 'aabbOutside', { u });
 const bandUpdate = compileFn(CULL_SHADOW_WGSL, 'bandUpdate', { u });
@@ -63,5 +63,16 @@ for (const [d, prev, exp] of [[10, 0, 0], [26.9, 0, 0], [27.1, 0, 1], [22.5, 1, 
   const want = (() => { let b = prev; if (b === 2 && d < CAST - 2) b = 1; if (b === 1 && d < LOD0 - 2) b = 0; if (b === 0 && d > LOD0 + 2) b = 1; if (b === 1 && d > CAST + 2) b = 2; return b; })();
   assert.equal(want, exp, `fixture sanity d=${d} prev=${prev}`);
   assert.equal(bandUpdate(d, prev), exp, `band d=${d} prev=${prev}`);
+}
+// S8-B2-06 swayPad: fillShadowBands(.., swayPad) == the kernel with u.swayPad (sphere grows, bands unchanged)
+{
+  u.swayPad = 1; u.eye.x = 0; u.eye.y = 0;
+  const gp = makeInstanceGroup('trees', N); gp.count = N; gp.ib.f32.set(g.ib.f32.subarray(0, N * INSTANCE_STRIDE));
+  const keep = (pad) => { const gg = makeInstanceGroup('t2', N); gg.count = N; gg.ib.f32.set(g.ib.f32.subarray(0, N * INSTANCE_STRIDE)); fillShadowBands(gg, 0, 0, LOD0, CAST, planes, R, pad); return gg.shadowCount[0] + gg.shadowCount[1]; };
+  const k0 = keep(0), k1 = keep(1);
+  let want = 0; const bd = new Uint32Array(N);
+  for (let i = 0; i < N; i++) { const o = i * INSTANCE_STRIDE; const b = bandUpdate(Math.fround(Math.hypot(g.ib.f32[o + 3], g.ib.f32[o + 7])), bd[i]); if (b !== 2 && !aabbOutside(g.ib.f32[o + 3], g.ib.f32[o + 7], g.ib.f32[o + 11])) want++; }
+  assert.equal(k1, want, 'padded kernel == padded CPU twin'); assert.ok(k1 > k0, `the pad rescues edge instances (${k0} -> ${k1})`);
+  u.swayPad = 0;
 }
 console.log('cullShadow.wgsl.test OK');

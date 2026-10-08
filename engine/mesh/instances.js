@@ -154,8 +154,9 @@ export function groupRadius(mesh, parts) {
  * @param {number} R - conservative radius over both LOD meshes
  * @param {Float64Array|null} vp
  * @param {number} rows
+ * @param {number} [swayPad] - S8-B2-06: extra metres on the cull sphere (SWAY_MAX while wind sway is on); the LOD cell estimate keeps plain `R`
  */
-export function compactGroup(g, planes, R, vp, rows) {
+export function compactGroup(g, planes, R, vp, rows, swayPad = 0) {
   const srcF = g.ib.f32, srcU = g.ib.u32;
   const dst0 = g.drawIb[0].u32, dst1 = g.drawIb[1].u32;
   const n = g.count;
@@ -164,11 +165,12 @@ export function compactGroup(g, planes, R, vp, rows) {
   let k = 0;
   if (lodOn) k = R * Math.sqrt(vp[1] * vp[1] + vp[5] * vp[5] + vp[9] * vp[9]) * rows;
   const lodPrev = g.lodPrev;
+  const Rc = R + swayPad;
   let w0 = 0, w1 = 0;
   for (let i = 0; i < n; i++) {
     const o = i * INSTANCE_STRIDE;
     const tx = srcF[o + 3], ty = srcF[o + 7], tz = srcF[o + 11];
-    if (planes && classifyAABB(planes, tx - R, ty - R, tz - R, tx + R, ty + R, tz + R) === CULL_OUT) continue;
+    if (planes && classifyAABB(planes, tx - Rc, ty - Rc, tz - Rc, tx + Rc, ty + Rc, tz + Rc) === CULL_OUT) continue;
     let lod = 0;
     if (lodOn) {
       const cw = vp[3] * tx + vp[7] * ty + vp[11] * tz + vp[15];
@@ -211,14 +213,16 @@ export const SHADOW_BAND_HYST_M = 2;
  * @param {number} lod0M @param {number} castM
  * @param {Float64Array|null} planes
  * @param {number} R - conservative radius over both LOD meshes
+ * @param {number} [swayPad] - S8-B2-06: extra metres on the plane-cull sphere (SWAY_MAX while wind sway is on)
  * @returns {number} kept instances (both bands)
  */
-export function fillShadowBands(g, ex, ey, lod0M, castM, planes, R) {
+export function fillShadowBands(g, ex, ey, lod0M, castM, planes, R, swayPad = 0) {
   const srcF = g.ib.f32, srcU = g.ib.u32;
   const dst0 = g.shadowIb[0].u32, dst1 = g.shadowIb[1].u32;
   const band = g.shadowBand;
   const h = SHADOW_BAND_HYST_M;
   const n = g.count;
+  const Rc = R + swayPad;
   let w0 = 0, w1 = 0;
   for (let i = 0; i < n; i++) {
     const o = i * INSTANCE_STRIDE;
@@ -233,7 +237,7 @@ export function fillShadowBands(g, ex, ey, lod0M, castM, planes, R) {
     band[i] = b;
     if (b === 2) continue;
     const tz = srcF[o + 11];
-    if (planes && classifyAABB(planes, tx - R, ty - R, tz - R, tx + R, ty + R, tz + R) === CULL_OUT) continue;
+    if (planes && classifyAABB(planes, tx - Rc, ty - Rc, tz - Rc, tx + Rc, ty + Rc, tz + Rc) === CULL_OUT) continue;
     const dst = b ? dst1 : dst0;
     const wo = (b ? w1 : w0) * INSTANCE_STRIDE;
     for (let c = 0; c < INSTANCE_STRIDE; c++) dst[wo + c] = srcU[o + c];
@@ -304,6 +308,8 @@ export class InstanceGroups {
     // per group/call) so a second same-frameNo `addToDrawList` call never
     // double-counts. `instancesLod1` stays 0 until RE-15c.
     this.stats = { instances: 0, instancesCulled: 0, instancesLod1: 0 };
+    /** S8-B2-06: metres added to every group's cull / shadow-cull sphere; the host sets SWAY_MAX while wind sway is on (windSwayOn), else 0. */
+    this.swayPad = 0;
     /** @type {number|null} the last `frameNo` seen by `addToDrawList` */
     this._lastFrameNo = null;
   }
@@ -392,7 +398,7 @@ export class InstanceGroups {
         if (gpu && gpu.accept(g, draw, null)) continue;
         if (!memo || g._memoFrameNo !== frameNo) {
           if (!(g._R > 0)) g._R = groupRadius(draw, g.parts);
-          const kept = compactGroup(g, planes, g._R, null, 0);
+          const kept = compactGroup(g, planes, g._R, null, 0, this.swayPad);
           g._memoFrameNo = frameNo;
           this.stats.instances += kept;
           this.stats.instancesCulled += g.count - kept;
@@ -419,7 +425,7 @@ export class InstanceGroups {
         let R = groupRadius(mesh, g.parts);
         if (mesh1) { const R1 = groupRadius(mesh1, g.parts); if (R1 > R) R = R1; }
         g._R = R;
-        const kept = compactGroup(g, planes, R, viewProj || null, rows || 0);
+        const kept = compactGroup(g, planes, R, viewProj || null, rows || 0, this.swayPad);
         g._memoFrameNo = frameNo;
         this.stats.instances += kept;
         this.stats.instancesCulled += g.count - kept;

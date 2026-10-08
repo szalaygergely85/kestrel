@@ -48,7 +48,7 @@ export { PROJ_HFOV_DEG as HFOV_DEG } from './render/projection.js';
 export { sunFromWorld } from './render/lighting.js';
 export { shadeTerrainCells } from './render/terrainShade.js';
 export { sunFromHours, sunPathFrom, SUN_PATH_DEFAULT } from './core/sunPath.js';
-export { windAt, windAtParams, windParams, WIND_DEFAULT, swayOffset, INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from './core/wind.js';
+export { swayOffset, packWindUniforms, windSwayOn, INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from './mesh/sway.js'; // S8-B2-06
 export { shadeTerrain, makeTerrainShadeCtx } from './render/terrainShade.js';
 export { packTerrainTextures, TLOOK_WIDTH } from './render/gpu/TerrainTextures.js';
 export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
