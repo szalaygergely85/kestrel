@@ -1,5 +1,12 @@
 # Lane B1 - WebGPU spine (Claude, PC-B main tree, branch `pc-b`)
 
+**B1 ORDER NOW (D-050, manager 2026-10-08) - overrides every queue below until step 3 is done:**
+1. GFX-02 two ARCH fixes (`0x0*7d|0x0*64` + label-only test; AutoBench Node test), one commit, push today -> PC-A merges pc-b (presets on master).
+2. S8-B1-01 save relay + autosave 60 s + waystone-touch save + load at boot, AND in the same commit the seam `game/js/gameHooks.js` (`onBoot`, `onTick(dt)`, `onEvent(name,data)` for `area:entered`/`prop:touched`/`beast:died`/`item:got`/`player:died`/`flag:set`, `drawHud(cells)`, `onRespawn`) called from main.js; opus arch review of the seam.
+3. S8-B1-03 title menu mount + confirm-screen draw fix. Then: 4060 numbers for WG-4c prep (~0.25 d) -> ONEPART-a/b -> ED-MESH-01e -> PREFAB-SEAM -> S8-B1-06..14.
+4. S8-B1-02, S8-B1-04, waystone heal/respawn and S8-B1-15/16 move to lane C (via the seam); answer C's `NEEDS B1:` for missing hook points quickly.
+5. No new WG/ALPHA/PREC work before step 3 is done, except gate-blocking fixes. WG-5 waits for WG-4c (PC-A + owner walk).
+
 Skill: `parallel-lanes`, `wgsl-port`, `pc-b-sync-verify`, `gpucompare`. Spec: architecture.md 38.x (read 38.8a items 20-22), D-044, D-045.
 Order (WG first, owner 2026-10-07): 0 merge origin/pc-a + suites; 1 PREC-04b2 (A9 items 4+5; gates need it); 2 WG-2b mesh raster (A6 smooth normal, A7 edge rule, mirrored-item pipeline frontFace cw, ALPHA-01c discard); 3 WG-2c terrain/voxel raster; 4 integrate B2's WGSL modules one per commit with its gate: WG-3a resolve+deriv, 3b light, 3c shade+edge, 3d sun shadow, 3e water, 3f sprites+overlay; 5 MESH-INST-01 (pull forward, WG-4a needs it; B2 may build it) then WG-4a compute cull, WG-4b; 6 WG-5a/5b only after WG-4c (PC-A + owner walk).
 Gate per step: gpucompare rows reach the WebGL2 PASS set on this machine, no PASS->FAIL, deltas in the row.

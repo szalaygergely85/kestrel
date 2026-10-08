@@ -1,5 +1,11 @@
 # Sprint 8 queue (PO draft, 2026-10-08)
 
+**PO RECOMMENDED ORDER 2026-10-08 (goal: playable loop with save + title menu; gap list in docs/sprints/sprint-7.md "Review 2026-10-08 (PO)"; B1 hooks before B1 engine items, needs manager OK):**
+1. B1 GFX-02 two ARCH fixes (~0.25 d) -> PC-A merges pc-b to master. 2. B1 S8-B1-01 save relay + autosave + waystone-touch save + load (~0.75 d). 3. B1 S8-B1-03 title menu mount + confirm-screen draw fix (~0.5 d).
+4. C pastes S8-A-11 objective texts into `m1.quest.json` (~0.25 d), then B1 S8-B1-02 quest hook + questLog HUD (~0.5 d). 5. C S8-C-06 chest sim (~0.75 d) and 6. C S8-C-07 item-get card (~0.5 d), both in parallel with B1 steps 1-4.
+7. B1 S8-B1-04 chest hook (~0.5 d). 8. PC-A MAP-01a chart design + text (~1 d, parallel now). 9. C S8-C-14 chart card -> B1 S8-B1-15 `M` wiring (~1.25 d). 10. NEW row (PO to write): waystone heal + respawn-at-last-waystone (C sim + B1 hook, ~0.5 d).
+Parallel, off the critical path: B2 finishes the 5 batch-12 fixes, then ALPHA-01e -> C QUAT-TREES-01 (forest look). PREFAB-SEAM, ED-MESH-01e, ONEPART and S8-B1-06..14 wait until step 7 is done.
+
 Rules: D-044 (no new GLSL, WGSL only for render features), JS twin = oracle, never widen a gpucompare threshold (D-039 known-FAIL only), engine never imports `game/`, `engine/physics/` stand-alone. B1 owns `game/js/main.js`, `wg/**`, `createRenderer.js`, `capture-browser.mjs`, `gpuCompare.js`; B2 owns `engine/render/gpu/wgsl/**` modules, `wg/pass*.js` new standalone files it created, `engine/mesh/**`, importer/gltf tools. Every engine item ends in `arch-review`. Format: `[priority, size, deps]`. "owner look" = owner-visible.
 
 **ARCH validation 2026-10-08 (architect, against origin/master 82de306 + origin/pc-b a27dffc + origin/pc-b2 24b13dc).** Markers: `ARCH-NOTE NEEDED` (no dev before the note), `DUP of X` / `DONE` / `DROP: reason`, `ARCH:` = corrected file/seam/dep. Not merged to master yet: GFX-02 + GFX-01w (pc-b), MESH-SCALE-01 73ddef1 + MESH-BIN-01 24b13dc (pc-b2).
