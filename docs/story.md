@@ -251,3 +251,159 @@ Shown when Wick falls, before he wakes at the last save point (relay or autosave
 1. `The dark again. The light still blinks.` **(PICK)** The signal is still sending, so he gets up. It answers "nothing" without saying the word.
 2. `Cold stone. Not nothing. Not yet.` This one echoes the Crown print directly. It is stronger, but it leans close to panel 5.
 3. `Ash in my mouth. I am still here.` The most bodily of the three, and the plainest.
+
+## Sprint 8 texts
+
+Writer pass for S8-A-11, S8-A-12 and S8-A-13 (2026-10-08). All strings are ASCII only, and lengths were counted by hand. Programmers and lane C paste these strings into the data files; this section does not edit any code or JSON. Name rule (D-013): "Wick" appears only in save-slot labels. No objective, item, scrawl or prompt says it.
+
+### S8-A-11 Objectives (`content/quests/m1.quest.json`)
+
+The chain is wake -> lantern -> breach -> sword -> beasts -> waystone. Max 38 chars for HUD and done lines, max 40 for hints. Keep the ids. Paste the HUD line into `objectives[id].text`. The quest file has no done/hint fields today. If S8-C-12/S8-C-13 add them, use the key names `done` and `hint` (a proposal, not a schema decision).
+
+| Objective id | `text` (HUD) | len | `done` | len | `hint` | len |
+|---|---|---|---|---|---|---|
+| `wake` | `Get up from the wreck` | 21 | `Up. Ribs aching. Still here.` | 28 | `Move with WASD. Look with the mouse.` | 36 |
+| `lantern` | `Take the Kestrel's lamp` | 23 | `Warm light in hand. Now climb.` | 30 | `The warm glow by the burner. Press E.` | 37 |
+| `breach` | `Climb to the breach at the top` | 30 | `Ferrum behind. The signal ahead.` | 32 | `Space jumps the gap. E pulls the lever.` | 39 |
+| `sword` | `Take up the ruin steel` | 22 | `Old steel. It still holds an edge.` | 34 | `Look where the stone says STEEL.` | 32 |
+| `beasts` | `Bring down the two wild boars` | 29 | `The hill goes quiet again.` | 26 | `Wait out the charge, then strike.` | 33 |
+| `waystone` | `Walk the pencil line to the waystone` | 36 | `The stone hums. The signal answers.` | 35 | `Press M. The pencil line leads on.` | 34 |
+
+Notes:
+- The id `lantern` stays, but the on-screen word is "lamp" (canon: the *Kestrel*'s gondola lamp).
+- The `sword` hint points at the `STEEL FOR THE HUSH` scrawl, which is cut beside the sword wherever it is placed (US-078).
+- "Waystone" is treated as an old road-marker stone on the pencil line. It adds no lore beyond "it hums with the signal", like the relay stones do.
+
+Quest-level strings (for the quest log, S8-C-12):
+
+| Key | Text | len |
+|---|---|---|
+| `quest.m1.title` | `The Awakening` | 13 |
+| `quest.m3.title` | `Steel and Hush` | 14 |
+| `quest.m1.done` | `The pencil line runs on.` | 24 |
+| `quest.log.header` | `PENCIL NOTES` | 12 |
+| `quest.log.empty` | `Nothing yet. Not nothing.` | 25 |
+
+If the M3 beats (`breach`, `sword`, `beasts`) move to a separate quest file under S8-C-13, the objective rows above move with their ids unchanged.
+
+### S8-A-12 Title, settings and credits labels
+
+Max 20 chars unless marked LONG. `{n}` = slot number (1-3).
+
+| Key | Text | len |
+|---|---|---|
+| `title.heading` | `KESTREL` | 7 |
+| `title.pressEnter` | `Press Enter` | 11 |
+| `title.new` | `New game` | 8 |
+| `title.continue` | `Continue` | 8 |
+| `title.continue.disabled` | `Continue (no save)` | 18 |
+| `title.settings` | `Settings` | 8 |
+| `title.credits` | `Credits` | 7 |
+| `title.delete` | `Delete slot` | 11 |
+| `title.back` | `Back` | 4 |
+| `title.chooseSlot` | `Choose a slot` | 13 |
+| `slot.empty` | `Slot {n}: Empty` | 15 |
+| `slot.unavailable` | `Slot {n}: Unreadable` | 20 |
+| `slot.filled` (LONG, D-013) | `Slot {n}: Wick - {place} - {h:mm}` | ~40 |
+| `confirm.delete` | `Delete slot {n}?` | 16 |
+| `confirm.replace` | `Overwrite slot {n}?` | 19 |
+| `confirm.yes` | `Yes` | 3 |
+| `confirm.cancel` | `Cancel` | 6 |
+| `msg.slotEmpty` | `This slot is empty.` | 19 |
+| `msg.loadFail` | `Could not read slot.` | 20 |
+| `msg.deleteFail` | `Could not delete.` | 17 |
+| `msg.deleted` | `Slot deleted.` | 13 |
+| `title.keys` (LONG) | `Arrows select  Enter choose  Del delete  Esc back` | 49 |
+
+Place names for `{place}` in slot labels (save meta):
+
+| Key | Text | len |
+|---|---|---|
+| `place.tower` | `Hollow Watchtower` | 17 |
+| `place.summit` | `Tower Summit` | 12 |
+| `place.hillside` | `The Hillside` | 12 |
+| `place.waystone` | `The Waystone` | 12 |
+
+Settings (`uiStyle.settings.labels`; the ids follow `options.js` and the S8-C-04 rows):
+
+| Key | Label | len | Values |
+|---|---|---|---|
+| `settings.title` | `SETTINGS` | 8 | - |
+| `quality` | `Quality` | 7 | `Low` / `Medium` / `High` / `Ultra` |
+| `shadows` | `Shadows` | 7 | `off` / `soft` / `sharp` |
+| `grid` | `Grid` | 4 | as now (`480x180 ultra`) |
+| `volume` | `Volume` | 6 | `0`..`10` |
+| `mute` | `Mute` | 4 | `off` / `on` |
+| `textSize` | `Text size` | 9 | `Small` / `Normal` / `Large` |
+| `reduceMotion` | `Reduce motion` | 13 | `off` / `on` |
+| `fullscreen` | `Fullscreen` | 10 | `off` / `on` |
+| `mouseSensitivity` | `Mouse speed` | 11 | number as now |
+| `invertY` | `Invert look` | 11 | `off` / `on` |
+| `controls` | `Controls` | 8 | - |
+| `back` | `Back` | 4 | - |
+| note `reduceMotion` (LONG) | `Less head bob and camera kick` | 29 | shown when selected |
+| note `quality.Ultra` (LONG) | `Needs a fast GPU` | 16 | shown when selected |
+
+Credits (`creditsView.js`):
+
+| Key | Text | len |
+|---|---|---|
+| `credits.title` | `CREDITS` | 7 |
+| `credits.madeBy` | `Made by` | 7 |
+| `credits.assets` | `Third-party assets` | 18 |
+| `credits.thanks` | `With thanks` | 11 |
+| `credits.stickyBizcuit` (LONG, OWN-REQ-013) | `Voxel assets by StickyBizcuit` | 29 |
+| `credits.closing` | `Thanks for flying.` | 18 |
+| `credits.keys` | `Esc back` | 8 |
+
+The credit names come from `docs/licence-inventory.json`, and the writer does not invent any.
+
+### S8-A-13 Items (`design/items.js` defs, S8-C-08 ids)
+
+Max 14 chars for names and 38 for lines. The first 12 rows match the S8-A-07 icon list (the potion icon = `orb.hp`; canon says no potions in M4). New ids are marked NEW: they are proposals for S8-C-08, and the designer checks them before drawing icons. All ids are lowercase dot ids, like the existing ones. The old line in `sword.desc` held control text; that text moves to the inventory key hints.
+
+| Id | Name | len | Line (`desc`, item-get card) | len |
+|---|---|---|---|---|
+| `sword` | `Ruin Steel` | 10 | `Old watch steel. Nicked, still true.` | 36 |
+| `shield` NEW | `Brass Buckler` | 13 | `Gondola plate, bent round a strap.` | 34 |
+| `lantern` NEW (quest item id) | `Kestrel Lamp` | 12 | `The gondola's lamp. It still burns.` | 35 |
+| `orb.hp` (potion icon) | `Herb Flask` | 10 | `Bitter herbs under red wax. Heals.` | 34 |
+| `key.small` NEW | `Small Key` | 9 | `Iron, brown with rust. Fits one lock.` | 37 |
+| `bow` NEW | `Hunter's Bow` | 12 | `Yew and gut. Quiet, and it reaches.` | 35 |
+| `bomb` NEW | `Blast Pot` | 9 | `Clay, black powder, a short fuse.` | 33 |
+| `heart.piece` NEW | `Heart Piece` | 11 | `A warm red stone. Four make a heart.` | 36 |
+| `cog` NEW (currency) | `Brass Cog` | 9 | `Ferrum's small change. Worth a trade.` | 37 |
+| `boar.hide` | `Boar Hide` | 9 | `Coarse, bristled. Good for something.` | 37 |
+| `boar.tusk` | `Boar Tusk` | 9 | `Yellow ivory, sharp at the tip.` | 31 |
+| `brass.scrap` NEW (material 3) | `Brass Scrap` | 11 | `From the Kestrel. Ferrum, in pieces.` | 36 |
+| `spell.fireball` | `Ember` | 5 | `A coal that answers the hand.` | 29 |
+| `torch` | `Torch` | 5 | `Pitch and rag on a stick. See by it.` | 36 |
+| `boar.meat` | `Boar Meat` | 9 | `A haunch, still warm. Eat to heal.` | 34 |
+| `orb.mp` | `Cold Shard` | 10 | `A sliver of teal light. Restores MP.` | 36 |
+
+Open points:
+- `cog`: currency is an open owner question (GDD 10). This is only a proposal: salvaged Crown brass as small change.
+- `spell.fireball` "Ember" stays a demo spell. It is not Spark and must not be called Spark: Spark stays the gauntlet's first light verb.
+- After this pass, `placeholderName` can be set to false for every existing id in the table.
+
+Prompts (interact line, `[E]` style per GDD 7.4):
+
+| Key | Text | len |
+|---|---|---|
+| `prompt.chest` | `[E] Open chest` | 14 |
+| `prompt.lootBoar` | `[E] Loot boar` | 13 |
+| `prompt.takeSword` | `[E] Take sword` | 14 |
+| `card.continue` | `- any key -` | 11 |
+
+### S8-A-13 Scrawl (M1 area; no dialogue in M1)
+
+Wall-scrawl system as US-078. Capitals are knife-cut and ASCII, one glyph per cell. None of them is signed or names anyone.
+
+| Key | Where | Text | len | Why |
+|---|---|---|---|---|
+| `scrawl.hiddenChest` | Hillside, on the rock that hides the chest, low and facing the chest | `FOR THE NEXT ONE OUT` | 20 | Someone else got out before, and left something for whoever came after. This fits the exiles ("cast out") and all three M4 candidates. |
+| `scrawl.breach` | Summit, inside face of the breach parapet, at eye height as you step out | `NOT NOTHING` | 11 | Answers the chart's `BEYOND THE WALL: NOTHING` at the exact place where the world opens. Not the same text as the death card. |
+| `scrawl.boarRock` | Hillside, a boulder on the path down where the boars roam | `THEY FEAR THE LIGHT` | 19 | A quiet tip that matches canon (beasts avoid relay light). It gives a reason to carry the lamp. |
+| `scrawl.waystone` | Base of the waystone, half under moss | `... --- ...  FURTHER ON` | 23 | The SOS pattern in the keeper's notation, pointing on along the line. It hints that the signal goes further without saying who sends it. |
+
+NPC lines: M1 has no NPCs and no dialogue (GDD 7). The first speaking NPC is the bear (section 8, M2), so no new NPC lines are written here.

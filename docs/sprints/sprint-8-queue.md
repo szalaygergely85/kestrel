@@ -533,3 +533,6 @@ Write `.claude/skills/pc-a-merge-master/SKILL.md` (merge pc-b/pc-c + pc-a, run-t
 
 ### DEVICE-LOST-2 (backlog idea, not scheduled) [P2, > 1 d]
 Rebuild every GPU resource owner in place after `device.lost` (list in architecture.md 38.10c); needs a renderer-swap seam. Only if the reload-card version proves annoying.
+
+### LEAF-PREVIEW-01 (new, lane C) [P1, ~0.5 d, deps: ALPHA-01c/01d on pc-b]
+Standalone leaf-fixture preview page for the owner (see docs/lanes/pc-c.md QUEUE TOP). AC: page opens on webgpu, soft-edge toggle, one real-GPU screenshot in the report; no engine or main.js edits.
