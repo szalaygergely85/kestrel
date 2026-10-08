@@ -178,6 +178,7 @@ export class World {
     /** @type {any[]|null} TREES-LP-b: per forest species index, the resolved registry MeshData for `mesh` species (null for voxel `model` species) */
     this.scatterMeshes = null;
     this.decals = []; // DECAL-01: derived wall text, never serialized.
+    this.detailMeshes = null; // TREES-LP-c: {meshId: MeshData} for ground-cover species with `mesh`
     this.detail = null; // ENV-01a1: derived ground detail, never serialized.
     this._groundSnap = []; // ED-TERRAIN-1b: [{id, x, y}] of `z: 'ground'` props/entities, re-snapped after a terrain stroke.
     this._detailCtx = null; // ED-TERRAIN-1b: {cfg, keepOut} the detail scatter was built with.
@@ -447,6 +448,12 @@ export class World {
         }
       }
       w._detailCtx = { cfg, keepOut };
+      w.detailMeshes = null;
+      for (const layer of cfg.layers || []) for (const list of Object.values(layer.ground || {})) for (const sp of list || []) {
+        if (typeof sp?.mesh !== 'string') continue;
+        if (!assets || !assets.has('mesh', sp.mesh)) throw new Error(`World.load: detail species references unknown mesh "${sp.mesh}"`);
+        (w.detailMeshes || (w.detailMeshes = {}))[sp.mesh] = assets.mesh(sp.mesh);
+      }
       w.detail = scatterDetail(w.terrain, w.structures, keepOut, cfg);
     }
     if (w.physicsMode === 'mesh' && w.scatter) {
