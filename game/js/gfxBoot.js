@@ -92,7 +92,7 @@ export function resolveBootOptions({ params, resolved, savedSettings = {}, captu
 
 /** One F3 line: `quality: high (default)  grid 400x150  rays 2  shadows high  scatter 1  lodScale 1`. */
 export function describeQuality(opts, cols, rows, rays) {
-  const q = opts.quality ? `${opts.quality.name} (${opts.quality.source})` : 'none (presets unavailable or capture page)';
+  const q = opts.quality ? `${opts.quality.name} (${opts.quality.source}${opts.quality.source === 'auto' ? `: ${opts.quality.reason || 'adapter tier, benchmarking'}${opts.quality.note ? '; ' + opts.quality.note : ''}` : ''})` : 'none (presets unavailable or capture page)';
   const sun = opts.shadowOpts.sun;
   const sh = opts.shadowLevel ? (sun !== 'map' && sun !== opts.shadowLevel ? `${opts.shadowLevel}/${sun}` : opts.shadowLevel) : sun;
   const g = opts.gfx;

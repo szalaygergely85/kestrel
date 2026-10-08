@@ -6,10 +6,12 @@
 // (engine/entities/Player.js, engine/physics/*), so this now comes from
 // engine/index.js like everything else (check-deps rule 3).
 
-import { loadPresets, resolveQuality } from './ui/gfxPresets.js';
+import { loadPresets, resolveQuality, saveQuality, knobsFor } from './ui/gfxPresets.js';
 import { resolveBootOptions, describeQuality } from './gfxBoot.js';
+import { pickQuality, tierFromAdapter, p95 } from './gfxAuto.js'; // GFX-02
+import { gatherAdapterInfo, showCard, AutoBench } from './gfxAutoRun.js';
 import {
-  AssetRegistry, createEngine, createRenderer, clampGrid, GRID_DEFAULT_COLS, resolveShadowLevel,
+  probeWebGpu, AssetRegistry, createEngine, createRenderer, clampGrid, GRID_DEFAULT_COLS, resolveShadowLevel,
   GBuffer, bindShading, bindLevel,
   DebugOverlay,
   integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations,
@@ -128,10 +130,25 @@ const isGpuCompareMode = isGeometryCompare || params.get('gpucompare') === 'shad
 const savedSettings = loadSettings();
 const isWaterfallPreview = params.get('waterfallpreview') === '1' && params.get('world') === 'waterfall_test';
 const isCaptureOrBench = !!params.get('bench') || !!params.get('voxelbench') || !!params.get('gpucompare') || !!params.get('cinematic') || isWaterfallPreview;
+// GFX-02: auto-pick runs only on a first launch (nothing saved, no ?quality=), never on capture/bench/compare/cinematic pages or
+// automated browsers (navigator.webdriver); `?autoquality=0` skips it, `?autoquality=1` forces it (dev). Provisional preset = the adapter's
+// candidate tier (chosen before createEngine, so no reboot is needed); the timed benchmark then confirms or steps it (see runGame).
+const autoParam = params.get('autoquality');
+const wantAutoQuality = autoParam === '1' || (autoParam !== '0' && savedSettings.quality === undefined && !params.has('quality') &&
+  !isCaptureOrBench && params.get('capture') !== '1' && !navigator.webdriver);
+let autoAdapter = null, autoProvisional = null;
+if (wantAutoQuality) {
+  try {
+    autoAdapter = await gatherAdapterInfo(probeWebGpu);
+    autoProvisional = { name: tierFromAdapter(autoAdapter).tier };
+  } catch (err) { console.warn(`[quality] auto-pick adapter probe failed (${err.message})`); }
+}
 let resolvedQuality = null;
 try {
   await loadPresets();
-  resolvedQuality = resolveQuality({ param: params, saved: { quality: savedSettings.quality, shadowQuality: savedSettings.shadowQuality }, auto: null });
+  // ?autoquality=1 ignores a saved choice (dev / redetect); otherwise saved wins as before.
+  const savedForBoot = autoParam === '1' && autoProvisional ? undefined : savedSettings.quality;
+  resolvedQuality = resolveQuality({ param: params, saved: { quality: savedForBoot, shadowQuality: savedSettings.shadowQuality }, auto: autoProvisional });
 } catch (err) { console.warn(`[quality] presets unavailable (${err.message}) - booting without a preset`); }
 const bootOpts = resolveBootOptions({ params, resolved: resolvedQuality, savedSettings, captureLike: isCaptureOrBench, geometryCompare: isGeometryCompare,
   defaultCols: GRID_DEFAULT_COLS, shadowLevel: resolveShadowLevel });
@@ -144,6 +161,38 @@ if (gridParam && gridResult.clamped) {
 // `?gpucompare=1` always forces n=1 (14.2 item 8's parity contract), resolved inside resolveBootOptions.
 const rayParam = Number(params.get('rays')); // raw URL value, passed to the compare/bench harnesses as before
 const rays = bootOpts.rays;
+
+// GFX-02: timed benchmark behind a loading card. Grid applies live (engine.setGrid); rays/shadows/scatter/LOD apply on the next launch
+// (the preset is saved either way). `redetectQuality()` (window.redetectQuality, for the Settings "Detect again" button) re-runs it at
+// the preset that is currently running and saves the result.
+let autoBench = null, autoCard = null, autoRunning = null; // autoRunning = preset name the benchmark is measuring
+let lastFrameT = 0, lastFrameDt = NaN;
+function startAutoBench(at, redetect) {
+  if (autoBench && autoBench.phase !== 'done') return false;
+  autoRunning = at; autoCard = showCard();
+  autoBench = new AutoBench({
+    sample: () => (gpuPipeline && gpuPipeline.stats ? gpuPipeline.stats.gpuMsP95 : NaN),
+    intervalMs: () => lastFrameDt,
+    onDone: ({ samples, kind, minSamples, frameSamples }) => {
+      if (autoCard) { autoCard.remove(); autoCard = null; }
+      const r = pickQuality(autoAdapter, samples, { kind, at, minSamples, frameSamples });
+      const saved = saveQuality(r.name, { save: saveSettings, load: loadSettings });
+      let applied = 'unchanged';
+      if (r.name !== at) {
+        const m = /^(\d+)x(\d+)$/.exec(knobsFor(r.name).grid);
+        if (m && !params.has('grid')) { const g = clampGrid(Number(m[1]), Number(m[2])); engine.setGrid(g.cols, g.rows); applied = `grid ${g.cols}x${g.rows} live, rest next launch`; }
+        else applied = 'next launch';
+        bootOpts.quality = { name: r.name, source: 'auto', reason: r.reason, note: applied };
+      } else bootOpts.quality = { name: r.name, source: 'auto', reason: r.reason };
+      const sv = [...samples].sort((a, b) => a - b);
+      window.__autoQuality = { ...r, kind, samples: samples.length, p50: sv[sv.length >> 1], max: sv[sv.length - 1], frameP95: p95(frameSamples), adapter: autoAdapter, saved: saved.saved, applied, at };
+      console.log(`[quality] auto-pick: ${r.name} (${r.reason}) saved=${saved.saved} ${applied}`);
+    },
+  });
+  return true;
+}
+function redetectQuality() { return startAutoBench(bootOpts.quality ? bootOpts.quality.name : 'high', true); }
+window.redetectQuality = redetectQuality;
 
 const canvas = document.getElementById('screen');
 // US-027b (docs/architecture.md 21.9): tower/test_room/world_m1 are now
@@ -454,6 +503,13 @@ if (gpuPipeline && gpuPipeline.ready && rt.backend === 'gl2') new GpuOverlayPass
 if (sprites.pass) sprites.pass.bindParticleLayer(engine.particleLayer);
 // WG-3f: WebGPU sprites + particles + fade/dim + overlay passes (frameComplete -> rt.gpuActive -> the CPU compositor stops drawing them)
 if (wgPipeline && wgPipeline.ready && rt.backend === 'webgpu') wgPipeline.bindSprites({ pool: sprites.pool, atlas: sprites.atlas, palette: assets.palette, particleLayer: engine.particleLayer, overlay: engine.overlay });
+// GFX-01w/02: createRenderer builds the webgpu target at the CPU grid (38.8a item 14, pre-WG-3f rule). Once the WebGPU pipeline owns
+// the whole frame, the requested (preset/URL) grid applies; otherwise (e.g. ?shadows=dda -> CPU shading) the CPU grid stays.
+if (wgPipeline && wgPipeline.frameComplete && rt.backend === 'webgpu' && (rt.cols !== gridResult.cols || rt.rows !== gridResult.rows)) {
+  engine.setGrid(gridResult.cols, gridResult.rows, { immediate: true });
+  depthBuffer = engine.depthBuffer;
+  gbuf = new GBuffer(rt.cols, rt.rows);
+}
 const particlePresets = window.ASSETS.particles;
 if (window.ASSETS.boarFx) window.ASSETS.boarFx.attach(); // US-079b: copy boarFx's corpseDust preset into particles.presets before the defineEmitter loop below
 if (particlePresets) {
@@ -1441,10 +1497,11 @@ function runGame(mode, cinematic = null) {
     lap(SEC.gpuFrame);
     rt.present();
     lap(SEC.present);
+    if (autoBench && autoBench.phase !== 'done') { const t = performance.now(); lastFrameDt = lastFrameT ? t - lastFrameT : NaN; lastFrameT = t; autoBench.tick(); } // GFX-02
     // US-018 (architecture.md 16): "do not leave pass timing on when the
     // overlay is hidden and no bench runs" - a plain boolean set, cheap
     // enough to do unconditionally every frame.
-    if (gpuPipeline) gpuPipeline.setPassTiming(overlay.visible || benchActive);
+    if (gpuPipeline) gpuPipeline.setPassTiming(overlay.visible || benchActive || (autoBench !== null && autoBench.phase !== 'done')); // GFX-02: pass timers = sum of passes, not the vsync-padded whole-frame span
 
     const lastRenderMs = performance.now() - renderStart;
     // US-018: the overlay text is only ever built while it will actually be
@@ -1497,6 +1554,7 @@ function runGame(mode, cinematic = null) {
     lap(SEC.overlay);
   }
 
+  if (wantAutoQuality && mode === 'world' && !cinematic && resolvedQuality) startAutoBench(resolvedQuality.name, false); // GFX-02
   const loop = engine.run({ update, render });
   if (cinematic && params.get('capture') === '1') {
     loop.stop();
