@@ -13,7 +13,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { importGltfBytes, runCli, countSmoothGroups, loadEngineMaterialKeys, stringifyMeshJSON } from './gltf-import.mjs';
+import { importGltfBytes, runCli, parseArgs, countSmoothGroups, loadEngineMaterialKeys, stringifyMeshJSON } from './gltf-import.mjs';
 import { meshFromJSON, validateMesh } from '../engine/index.js';
 import { budgetFor } from './mesh-budgets.mjs';
 
@@ -341,3 +341,13 @@ await testAsync('Ruins import unchanged by ALPHA-01a: no uvMask/mask, render dat
 
 console.log(`${passed} passed, ${process.exitCode ? 'some failed' : '0 failed'}.`);
 if (!process.exitCode) console.log('ALL PASS');
+
+// ME-20a ARCH CHANGES (verdicts 12): --ao [rays] parse
+{
+  assert.strictEqual(parseArgs(['--ao']).ao, true);
+  assert.strictEqual(parseArgs(['--ao', '64']).ao, 64);
+  const a = parseArgs(['--ao', '--budget', 'x.glb']);
+  assert.strictEqual(a.ao, true); assert.strictEqual(a.budget, true); assert.deepStrictEqual(a._, ['x.glb']);
+  assert.deepStrictEqual(parseArgs(['--ao', '64', 'x.glb'])._, ['x.glb'], '64 is not a positional arg');
+  console.log('gltf-import parseArgs --ao OK');
+}

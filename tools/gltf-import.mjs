@@ -77,7 +77,7 @@ skinning, animation, morph targets, non-triangle primitives, quantized
 accessors (ME-13a: static meshes only) - naming the file.
 `;
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = { _: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -89,7 +89,7 @@ function parseArgs(argv) {
     if (a === '--out') { args.out = argv[++i]; continue; }
     if (a === '--simplify') { args.simplify = Number(argv[++i]); if (!(args.simplify >= 4)) throw new Error('--simplify needs a triangle target >= 4'); continue; }
     if (a === '--budget') { args.budget = true; continue; }
-    if (a === '--ao') { args.ao = /^d+$/.test(argv[i + 1] || '') ? Number(argv[++i]) : true; continue; } // ME-20a
+    if (a === '--ao') { args.ao = /^\d+$/.test(argv[i + 1] || '') ? Number(argv[++i]) : true; continue; } // ME-20a
     if (a === '--masks') { args.masks = argv[++i]; if (!args.masks) throw new Error('--masks needs a directory or none'); continue; }
     if (a === '--mask-res') { args.maskRes = Number(argv[++i]); if (![16, 32, 64, 128, 256, 512, 1024].includes(args.maskRes)) throw new Error('--mask-res must be a power of two from 16 to 1024'); continue; }
     if (a === '--opaque') { args.opaque = (args.opaque || []).concat(String(argv[++i] || '').split(',').filter(Boolean)); if (!args.opaque.length) throw new Error('--opaque needs material names'); continue; }
