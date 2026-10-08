@@ -8,7 +8,7 @@
  *   <script src="../design/models/quest_mark.js">       (browser, game/index.html, after props_m1.js)
  *   import '../../../design/models/quest_mark.js';       (Node tests: side-effect import; module.exports below)
  * Sets ASSETS.voxelModels.questMark / questMarkTurnIn (= ASSETS.models.*, no billboard) and ASSETS.questMarkFx.
- * Only ALREADY-MERGED materials (palette.materials AND detailPass.materials, the chest's brass set + iron_dark):
+ * Only ALREADY-MERGED materials (palette.materials AND detailPass.materials: brass_glint, brass_hot, ember_glow):
  * no palette.js / detail-pass.js edit. Format: design/README.md sections 7 + 20, architecture.md 15.1 (VoxelModelDef).
  * Preview: design/preview/quest-mark.html.
  *
@@ -18,21 +18,26 @@
  *            simply the top of whatever the marker hovers over (a note lying on the ground: z = ground + 1.55 puts the
  *            glyph's bottom 1.9 m above the note, see questMarkFx.placement). Instance scale (pop / fade) shrinks the
  *            float too, so the marker grows out of / sinks into its target.
- *   z7..z24  the glyph: 16 rows of gold + a 1-voxel dark outline row below and above.
+ *   z7, z24  empty 1-voxel pads (v1.49: were the dark outline rows); z8..z23 the glyph: 16 rows, all glowing.
  *
- * Look (style guide: gold = loot / reward / quest language, 2 hue families = gold + iron dark):
- *   GOLD SLAB: the glyph S (7 x 16 cells, rounded bar tapering to a point, a 3-row gap, a 5 x 3 dot) is 5 voxels deep.
- *     faces y0 / y4: edge cells brass_light (bevel), interior brass_hot (warm, emissive 0.10), a CORE line brass_glint
- *       (white-gold, emissive 0.90) down the bar and across the dot: the emboss highlight by day, the glowing stroke
- *       at night. The back face carries the mirrored core (x -> 6 - x) so the mark reads the same from behind.
+ * Look (style guide: gold = loot / reward / quest language; v1.49 owner 2026-10-08 "the whole sign white or orange,
+ * not a dark silhouette": EVERY voxel is an emissive material, 2 hue families = white-gold + a touch of ember orange):
+ *   GLOWING SLAB: the glyph S (7 x 16 cells, rounded bar tapering to a point, a 3-row gap, a 5 x 3 dot) is 5 voxels deep.
+ *     faces y0 / y4: body brass_hot (white-hot gold #fff0b4, emissive 0.10), a CORE band brass_glint (white, emissive
+ *       0.90) down the bar and across the dot, and the BOTTOM LIP of every stroke (a face cell with no glyph cell
+ *       under it) ember_glow (orange, emissive 0.90): white-hot on top, cooling to orange underneath, like hot metal.
+ *       The back face carries the mirrored core (x -> 6 - x) so the mark reads the same from behind.
  *       v1.47 (owner: glow + read at 12 m night on Low 240x90): core rule = 3-wide band on strokes 5+ wide (the '!'
  *       bar head), 1-voxel line on 3-wide strokes, solid 3 x 3 dot core (0.15 x 0.15 m > one 240x90 cell at 12 m).
- *     y1 / y3: brass_light. y2: brass_dark = a dark coin-edge seam on the sides when it turns edge-on.
- *   DARK PLATE: layer y2 also carries the outline ring O (iron_dark): every cell 4-adjacent to S. From the front it is
- *     a 1-voxel dark rim round the gold, so the '!' reads against a bright sky (and its rounded corners stay round:
- *     4-adjacency leaves the diagonal corners empty). Total width with the rim = 9 voxels = 0.45 m.
- *   READABILITY (400x150, 75 deg HFOV): 3 m ~52 rows x ~37 cols; 12 m ~13 rows x ~10 cols, the gold gap between the
- *     bar and the dot = 4 voxels (0.20 m: tip, outline, empty, outline) ~3 rows at 12 m, so '!' never fuses into 'l'.
+ *     y1 / y3: brass_hot. y2: ember_glow on the glyph's outer wall = a thin orange seam along every side edge when it
+ *       turns (replaces the v1.46 brass_dark seam); hidden y2 interior voxels brass_hot (so the pack-time derived-light
+ *       count, architecture.md 38.12, is not inflated by sealed emissive voxels).
+ *   NO DARK RIM (v1.49): the v1.46 iron_dark back plate / outline ring is gone. The bright-sky read comes from the cell
+ *     itself: every material here has bg 'darken' k 0.20-0.30, so each mark cell is a warm dark-gold block with a
+ *     bright glyph against the light-blue sky cells (preview check "reads against bright day sky", stated rule there).
+ *     Width stays 9 voxels (0.45 m): x0 / x8 are empty pads, so size, anchor, pivot and mounts are unchanged.
+ *   READABILITY (400x150, 75 deg HFOV): 3 m ~52 rows x ~37 cols; 12 m ~13 rows x ~10 cols, the gap between the
+ *     bar tip and the dot = 3 empty voxels (0.15 m) ~2 rows at 12 m, so '!' never fuses into 'l'.
  *
  * Parts: mark  root  box [0,0,7, 9,5,25]  pivot [4.5, 2.5, 16] = the glyph centre (spin about the vertical axis).
  * Clips (lane C / content: components.voxel.anim = the clip name; questMarkFx.clipFor maps marker state -> clip):
@@ -58,16 +63,14 @@
   var SW = 7, SH = 16;         // glyph S: 7 cols x 16 rows (top-down)
   var SX = SW + 2, SY = 5, SZ = FLOAT + SH + 2;   // 9 x 5 x 25
 
-  // every key is already merged in palette.materials + detailPass.materials (the chest set)
+  // every key is already merged in palette.materials + detailPass.materials; ALL emissive (v1.49: no dark voxel)
   var MATS = {
-    d: 'iron_dark',     // outline ring / back plate (layer y2)
-    D: 'brass_dark',    // the side seam (layer y2 inside the glyph)
-    R: 'brass_light',   // face bevel (edge cells), the y1 / y3 slabs
-    H: 'brass_hot',     // face interior (emissive 0.10)
-    G: 'brass_glint'    // the core line (emissive 0.90)
+    H: 'brass_hot',     // the body: face cells, y1 / y3 slabs, hidden y2 interior (white-hot gold, emissive 0.10)
+    G: 'brass_glint',   // the core band / line + the 3 x 3 dot core (white, emissive 0.90)
+    E: 'ember_glow'     // the touch of orange: face bottom lips + the y2 side seam (emissive 0.90)
   };
 
-  // Glyphs drawn TOP-DOWN (row 0 = top), 'R' = gold. core = [row, col] cells that get brass_glint on the FRONT face
+  // Glyphs drawn TOP-DOWN (row 0 = top), 'R' = glyph cell. core = [row, col] cells that get brass_glint on the FRONT face
   // (the back face uses col -> 6 - col).
   var GLYPHS = {
     bang: {
@@ -82,9 +85,9 @@
         '..RRR..',   // 7
         '..RRR..',   // 8
         '...R...',   // 9  tip
-        '.......',   // 10 (outline under the tip)
-        '.......',   // 11 empty: the gap
-        '.......',   // 12 (outline over the dot)
+        '.......',   // 10 the gap (3 empty rows = 0.15 m)
+        '.......',   // 11
+        '.......',   // 12
         '.RRRRR.',   // 13 dot
         '.RRRRR.',   // 14
         '.RRRRR.'    // 15
@@ -98,7 +101,7 @@
       rows: [
         '.RRRRR.',   // 0  top of the hook
         'RRRRRRR',   // 1
-        'RRR.RRR',   // 2  counter (filled dark by the outline plate)
+        'RRR.RRR',   // 2  counter (open notch since v1.49: no back plate)
         'RR..RRR',   // 3  left end of the hook
         '....RRR',   // 4
         '...RRR.',   // 5
@@ -126,7 +129,7 @@
   function build(G) {
     function inS(c, r) { return c >= 0 && c < SW && r >= 0 && r < SH && G.rows[r].charAt(c) === 'R'; }
     function edge(c, r) { return !inS(c - 1, r) || !inS(c + 1, r) || !inS(c, r - 1) || !inS(c, r + 1); }
-    function inO(c, r) { return !inS(c, r) && (inS(c - 1, r) || inS(c + 1, r) || inS(c, r - 1) || inS(c, r + 1)); }
+    function lip(c, r) { return !inS(c, r + 1); }   // rows are top-down: r + 1 = the cell below (stroke underside)
     var coreF = {}, coreB = {}, i;
     for (i = 0; i < G.core.length; i++) {
       coreF[G.core[i][0] + ',' + G.core[i][1]] = 1;
@@ -142,10 +145,10 @@
           if (z >= FLOAT && inS(c, r)) {
             if (y === 0 || y === SY - 1) {
               var core = y === 0 ? coreF : coreB;
-              ch = core[r + ',' + c] ? 'G' : edge(c, r) ? 'R' : 'H';
-            } else if (y === 2) ch = 'D';
-            else ch = 'R';
-          } else if (z >= FLOAT && y === 2 && inO(c, r)) ch = 'd';
+              ch = core[r + ',' + c] ? 'G' : lip(c, r) ? 'E' : 'H';
+            } else if (y === 2) ch = edge(c, r) ? 'E' : 'H';
+            else ch = 'H';
+          }
           row += ch;
         }
         L.push(row);
@@ -222,7 +225,8 @@
 
   A.voxelModels.questMark = record('questMark', GLYPHS.bang,
     'Quest marker (owner 2026-10-08): a bold golden 3D "!" floating 0.35 m over the active quest step\'s target, ' +
-    '0.45 x 0.25 x 0.90 m, dark iron rim plate, glowing white-gold core line. Spins 0.5 rev/s and bobs 0.08 m.');
+    '0.45 x 0.25 x 0.90 m, the whole glyph glowing (v1.49): white-hot gold body, white core band, ember-orange ' +
+    'underside lips and side seam, no dark rim. Spins 0.5 rev/s and bobs 0.08 m.');
   A.voxelModels.questMarkTurnIn = record('questMarkTurnIn', GLYPHS.query,
     'LATER (not used by any step yet): the golden 3D "?" turn-in marker, same style, size and clips as questMark.');
   A.models.questMark = A.voxelModels.questMark;

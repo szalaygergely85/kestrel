@@ -106,8 +106,10 @@
     chestSmall: same light closed, open and opened. Suggest def overrides: chests and the hook lantern <code>light: false</code>
     (their fx / placed lights already follow the state), questMark either the formula or <code>light: {preset}</code> from
     <code>questMarkFx.light</code>. Compare with the "derived light" select.</li>
-  <li><b>Halo reach:</b> the '!' core line sits 2 voxels inside the gold bevel + 1 voxel dark rim, so it is >= 3 cells from the
-    sky at 12 m (~13 cells at 3 m). With 38.12's <code>k &lt;= 1</code> kind-0 kernel the '!' gets <b>no halo at all</b>. The mock
+  <li><b>Halo reach:</b> (v1.46 model) the '!' core line sat 2 voxels inside the gold bevel + 1 voxel dark rim, so it was >= 3 cells from the
+    sky at 12 m (~13 cells at 3 m). v1.49 (owner: whole sign glowing) drops the dark rim and puts ember_glow (emissive 0.9) on every
+    stroke's bottom lip and the side seam, so strong emitters now touch the sky on the underside; the core band still sits
+    1-2 voxels inside the brass_hot body. This page reads the live model data, so the mock already shows the v1.49 mark. With 38.12's <code>k &lt;= 1</code> kind-0 kernel the '!' gets <b>no halo at all</b>. The mock
     uses the bleed kernel shape up to <code>haloR</code> cells (&lt;= R_MAX) on kind-0 cells; haloR 1 reproduces 38.12.</li>
   <li><b>Bleed range:</b> R = clamp(R_m * planeDistY / dist, 1, R_MAX) is always clamped to R_MAX here (planeDistY ~130 rows/m:
     R_m 1.2 m = 52 cells at 3 m). 4 cells = ~5 cm at 3 m, ~20 cm at 12 m: the bleed is a soft rim on the glowing object and its
@@ -393,7 +395,7 @@
         override: { at: v.mounts.light.at, color: QFX.light.color, intensity: QFX.light.intensity, radius: QFX.light.radius,
                     label: 'questMarkFx.light' } });
       return makeScene({ id: 'qm' + dist + todMode, group: "The golden quest '!' over a note on the ground",
-        title: "'!' at " + dist + ' m, ' + todMode + (near ? ' (glyph ~37 x 39 cells: the core band, rim + bevel)' : ' (glyph ~10 x 10 cells, note + ground in view)'),
+        title: "'!' at " + dist + ' m, ' + todMode + (near ? ' (glyph ~37 x 39 cells: core band, gold body, ember lips; no rim since v1.49)' : ' (glyph ~10 x 10 cells, note + ground in view)'),
         todMode: todMode, cam: makeCam([0, 0, 1.6], near ? 12 : 0), focus: [0, y, near ? 2.37 : 1.25],
         cw: near ? 56 : 44, ch: near ? 50 : 40, ground: 'grass',
         prims: [box(-0.12, y - 0.09, 0, 0.12, y + 0.09, NOTE_Z, 'linen_light'),
