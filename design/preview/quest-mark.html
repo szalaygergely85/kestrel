@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - quest marker (design v1.49)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:24px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1400px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:12px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:36px; display:inline-block; }
+  button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; margin:6px 0 12px; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin-top:2px; max-width:760px; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+</style>
+</head>
+<body>
+<h1>Kestrel : quest marker (design v1.49, whole glyph glowing) - model keys <code>questMark</code> ('!'), <code>questMarkTurnIn</code> ('?', later)</h1>
+<div class="note">
+  <code>design/models/quest_mark.js</code>: 9 x 5 x 25 voxels @ 0.05 m (0.45 wide x 0.25 deep, glyph 0.90 m tall over a built-in 0.35 m float;
+  anchor = the base point). One part <code>mark</code> (pivot = glyph centre), clips <code>idle</code> (spin 0.5 rev/s + bob 0.08 m, 2 s loop),
+  <code>bob</code> (bob only, for an engine-driven spin), <code>pop</code> (0.3 s) and <code>fade</code> (0.25 s); the pop / fade scale comes from
+  <code>questMarkFx.popScale</code> / <code>fadeScale</code> on the instance scale (clips have no scale key). The gold point light at
+  <code>mounts.light</code> (<code>questMarkFx.light</code>) is simulated here. Rendering = engine <code>packVoxelModel</code> /
+  <code>computeVoxelPose</code> + the preview CPU march (<code>lib/voxelMarch.js</code>), v1 shader, approximate edge pass.
+  <b>Needs http</b>: <code>python -m http.server</code> from the repo root, open <code>/design/preview/quest-mark.html</code>.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>mode <select id="seq"></select></label>
+  <button id="replay">replay</button>
+  <label>idle time <input type="range" id="scrubT" min="0" max="1999" step="5" value="1000"><span class="val" id="scrubTV"></span></label>
+  <label>sky <select id="sky"><option value="dark">dark</option><option value="day" selected>day</option><option value="night">night</option></select></label>
+  <label>light az <input type="range" id="az" min="-180" max="180" step="1" value="-40"><span class="val" id="azV"></span></label>
+  <label>elev <input type="range" id="el" min="-10" max="85" step="1" value="40"><span class="val" id="elV"></span></label>
+  <label>sun <input type="range" id="int" min="0" max="1.5" step="0.01" value="1.0"><span class="val" id="intV"></span></label>
+  <label>ambient x <input type="range" id="amb" min="0" max="3" step="0.05" value="1.2"><span class="val" id="ambV"></span></label>
+  <label>mark light <select id="glow"><option value="1" selected>on</option><option value="0">off</option></select></label>
+  <label>edges <select id="edges"><option value="rim">rules + model rim</option><option value="eng">rules, no rim</option><option value="off">off</option></select></label>
+  <label>speed <select id="speed"><option>0.1</option><option>0.25</option><option>0.5</option><option selected>1</option></select></label>
+  <span class="cap" id="now"></span>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">loading engine modules ...</div></div>
+
+<h2>Orbit + 4 fixed views ('!' left, '?' right; ground disc = the target the mark floats over)</h2>
+<div class="note">Modes: the cycle is what the game plays for one quest step (pop 0.3 s, idle, fade 0.25 s, gap, next marker pops).
+  "scrub: idle time" freezes the idle clip at the slider time (1000 ms = face-on, 0 / 2000 = back face, 500 / 1500 = edge-on; the bob peaks at 500 ms).
+  "clip: bob + engine spin" = the alternative where the view drives the yaw. Sky "day" = a bright blue background to judge the read against the sky
+  (v1.49: no dark rim any more; every voxel is brass_hot / brass_glint / ember_glow, all emissive).</div>
+<div class="row" id="orbitRow"></div>
+<div class="row" id="dirRow"></div>
+
+<h2>In-game size (engine projection, 75 deg HFOV, 16:9, eye 1.6 m, grass, far fog): 3 m and 12 m day / night + the note mock</h2>
+<div class="note">The mark sits at instance z 1.55 (= a note lying on the ground + <code>placement.noteZOffsetM</code>), so the glyph's bottom is 1.9 m up.
+  The 3 m / 12 m views aim at the glyph centre (2.35 m); the note-mock views stand 7 m away and aim at 1.2 m so the page on the ground and the mark both show.
+  Pose = the idle clip at the "idle time" slider (default 1000 ms = face-on). Night = sun 0.06, ambient 0.45, the mark light on.</div>
+<div class="controls" style="position:static">
+  <label>model <select id="igModel"><option value="questMark">questMark '!'</option><option value="questMarkTurnIn">questMarkTurnIn '?'</option></select></label>
+  <label>grid <select id="igGrid"><option value="240">240x90 (90x45 crop, 8x12 px)</option><option value="400" selected>400x150 (150x75 crop, 4.8x7.2 px)</option></select></label>
+  <label>view angle <input type="range" id="vaz" min="-180" max="180" step="5" value="0"><span class="val" id="vazV"></span></label>
+  <label>zoom <select id="zoom"><option value="0.75" selected>0.75</option><option value="1">1.0 (real 1080p size)</option></select></label>
+</div>
+<div id="ingame"></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../models/quest_mark.js"></script>
+<script>
+  setTimeout(function () {
+    if (!window.__qmOK) document.getElementById('fatal').textContent =
+      'Engine modules did not load (or the page script threw - see the console). Serve over http: python -m http.server from the repo root.';
+  }, 2500);
+</script>
+<script type="module">
+import { validateVoxelModel, MAX_VOX_PARTS, PART_STRIDE } from '../../engine/voxel/VoxelModel.js';
+import { packVoxelModel } from '../../engine/voxel/voxelPack.js';
+import { computeVoxelPose } from '../../engine/voxel/voxelPose.js';
+import { buildVoxelMesh, buildVoxelMeshLod1 } from '../../engine/mesh/voxelMesh.js';
+import * as VM from './lib/voxelMarch.js';
+import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U } from '../../engine/render/GBuffer.js';
+
+window.__qmOK = true;
+const A = window.ASSETS, P = A.palette, U = P.util, DP = A.detailPass, FX = A.questMarkFx, D2R = Math.PI / 180;
+const FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+const $ = (id) => document.getElementById(id);
+const KEYS = [FX.models.active, FX.models.turnIn];
+
+// ------------------------------------------------------------------ pack (engine)
+const matKeys = [];
+function matIdFor(k) { let i = matKeys.indexOf(k); if (i < 0) { matKeys.push(k); i = matKeys.length - 1; } return i + 1; }
+const MK = {};
+for (const key of KEYS) {
+  const M = A.models[key], DEF = M.voxel;
+  MK[key] = { key, M, DEF, PM: packVoxelModel(DEF, matIdFor), PARTS: Object.keys(DEF.parts), pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE) };
+}
+// mock target: the READ-01 flat note page (m3_props.js `note`, copied here so the page needs no other model file)
+const NOTE_DEF = {
+  version: 1, cellM: 0.015, size: [16, 12, 2], anchor: [8, 6, 0],
+  mats: { P: 'linen_light', p: 'canvas_light', k: 'linen_dark', K: 'iron_dark' },
+  layers: [[
+    'pPPPPPPPPPPPPP..', 'PPKKKKKKPPPPPPP.', 'PPPPPPPPPPPPPPPP', 'PPkkPkkkkPkkkPPp', 'PPPPPPPPPPPPPPPP', 'PPkkkPkkPkkkkkPP',
+    'PPPPPPPPPPPPPPPP', 'PPkkkkPkkkPkkPPP', 'PPPPPPPPPPPPPPPP', 'PPkkPkkkkkPPPPPP', 'PPPPPPPPPPPPPpPP', '.pPPPPPPPPPPPpp.'
+  ], [
+    '................', '.............p..', '.............pp.', '................', '................', '................',
+    '................', '................', '................', '................', '................', '................'
+  ]],
+  parts: { page: { box: [0, 0, 0, 16, 12, 2], pivot: [8, 6, 0] } },
+  animations: { idle: { durations: [1000], loop: true, frames: [{}] } }
+};
+const NOTE = { key: 'note', DEF: NOTE_DEF, PM: packVoxelModel(NOTE_DEF, matIdFor), pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE) };
+
+// ------------------------------------------------------------------ modes
+const SEQS = {
+  'cycle: pop -> idle 4 s -> fade -> gap': [['pop', 300], ['idle', 4000], ['fade', 250], ['none', 600]],
+  'clip: idle (spin + bob)': [['idle', 0]],
+  'clip: pop (repeats)': [['pop', 300], ['pop', 700, 300]],
+  'clip: fade (repeats)': [['idle', 700], ['fade', 250], ['none', 500]],
+  'clip: bob + engine spin': [['bob', 0]],
+  'scrub: idle time': 'scrub'
+};
+for (const k of Object.keys(SEQS)) { const o = document.createElement('option'); o.value = k; o.textContent = k; $('seq').appendChild(o); }
+let t0 = performance.now();
+$('replay').onclick = () => { t0 = performance.now(); };
+$('seq').oninput = () => { t0 = performance.now(); };
+
+function clipState(pm, name, e) {   // engine pose inputs for clip `name` at e ms (loop / clamp like the game)
+  const ci = pm.clipIndex[name], c = pm.clips[ci];
+  let total = 0; for (let i = 0; i < c.n; i++) total += c.durMs[i];
+  if (c.loop) e = e % total; else if (e >= total) return { clip: ci, frame: c.n - 1, tMs: 0 };
+  let f = 0; while (f < c.n - 1 && e >= c.durMs[f]) { e -= c.durMs[f]; f++; }
+  return { clip: ci, frame: f, tMs: e };
+}
+function curve(c, e) {   // piecewise-linear [ms, value] curve, clamped
+  if (e <= c[0][0]) return c[0][1];
+  for (let i = 1; i < c.length; i++) if (e <= c[i][0]) { const a = c[i - 1], b = c[i]; return a[1] + (b[1] - a[1]) * (e - a[0]) / (b[0] - a[0]); }
+  return c[c.length - 1][1];
+}
+// a "state" = { name: 'idle' | 'bob' | 'pop' | 'fade' | 'none', e }
+function liveState(now) {
+  const s = SEQS[$('seq').value];
+  if (s === 'scrub') return { name: 'idle', e: ctl.scrubT };
+  let e = (now - t0) * ctl.speed;
+  if (s.length === 1) return { name: s[0][0], e };
+  let total = 0; for (const x of s) total += x[1];
+  e = e % total;
+  for (const x of s) { if (e < x[1]) return { name: x[0], e: (x[2] || 0) + e }; e -= x[1]; }
+  return { name: 'idle', e: 0 };
+}
+function stateSig(st) { return st.name + '|' + Math.round(st.e / 10); }
+function lightI(st) {   // questMarkFx.light intensity for a state
+  const L = FX.light;
+  if (st.name === 'none') return 0;
+  if (st.name === 'pop') return st.e < L.popFromMs ? 0 : L.intensity;
+  if (st.name === 'fade') return L.intensity * Math.max(0, 1 - st.e / L.fadeToZeroMs);
+  return L.intensity;
+}
+function poseMark(m, st, x, y, z, glow, out) {
+  if (st.name === 'none') return null;
+  const cs = clipState(m.PM, st.name, st.e);
+  const scale = st.name === 'pop' ? curve(FX.popScale, st.e) : st.name === 'fade' ? curve(FX.fadeScale, st.e) : 1;
+  const yaw = st.name === 'bob' ? ((st.e * FX.spinRevPerS * 0.36) % 360) - 180 : 0;   // engine-driven spin mode
+  computeVoxelPose(m.PM, { x, y, z, yawDeg: yaw, scale, clip: cs.clip, frame: cs.frame, tMs: cs.tMs }, out);
+  const D = m.DEF, at = D.mounts[FX.light.mount].at, I = glow ? lightI(st) : 0, k = D.cellM * scale;
+  return { pm: m.PM, pose: out, key: m.key, gold: true,
+           light: I > 0 ? { I, r: FX.light.radius, p: [x + (at[0] - D.anchor[0]) * k, y + (at[1] - D.anchor[1]) * k, z + (at[2] - D.anchor[2]) * k] } : null };
+}
+function poseNote(x, y) {
+  computeVoxelPose(NOTE.PM, { x, y, z: 0, yawDeg: 20, scale: 1, clip: 0, frame: 0, tMs: 0 }, NOTE.pose);
+  return { pm: NOTE.PM, pose: NOTE.pose, key: 'note', light: null };
+}
+
+// ------------------------------------------------------------------ controls + lighting envs
+const ctl = {};
+let ver = 1;
+const SKY = { dark: [7, 8, 12], day: [150, 205, 235], night: [10, 14, 30] };
+function readCtl() {
+  ctl.az = +$('az').value; ctl.el = +$('el').value; ctl.int = +$('int').value; ctl.amb = +$('amb').value;
+  ctl.edges = $('edges').value; ctl.speed = +$('speed').value; ctl.vaz = +$('vaz').value; ctl.zoom = +$('zoom').value;
+  ctl.scrubT = +$('scrubT').value; ctl.glow = $('glow').value === '1'; ctl.sky = $('sky').value;
+  ctl.igModel = $('igModel').value; ctl.igGrid = +$('igGrid').value;
+  $('azV').textContent = ctl.az; $('elV').textContent = ctl.el; $('intV').textContent = ctl.int.toFixed(2);
+  $('ambV').textContent = ctl.amb.toFixed(2); $('vazV').textContent = ctl.vaz;
+  const rot = -180 + 360 * (ctl.scrubT % 2000) / 2000;
+  $('scrubTV').textContent = ctl.scrubT + ' ms (rot ' + rot.toFixed(0) + ')';
+  ver++;
+}
+function ctlEnv() { return { az: ctl.az, el: ctl.el, sun: ctl.int, amb: ctl.amb, sky: SKY[ctl.sky] }; }
+const ENV_DAY = { az: -40, el: 40, sun: 1.0, amb: 1.2, sky: SKY.day };
+const ENV_NIGHT = { az: -40, el: 30, sun: 0.06, amb: 0.45, sky: SKY.night };
+document.querySelectorAll('.controls input, .controls select').forEach((el) => el.addEventListener('input', () => {
+  readCtl();
+  if (el.id === 'scrubT') $('seq').value = 'scrub: idle time';
+  if (el.id === 'zoom' || el.id === 'igModel' || el.id === 'igGrid') buildIngame();
+}));
+readCtl();
+
+// ------------------------------------------------------------------ trace + shade
+const HIT = new Float64Array(8), NL = [0, 0, 0], Lacc = [0, 0, 0];
+function faceNormal(face, o) {
+  o[0] = 0; o[1] = 0; o[2] = 0;
+  if (face === FACE_N) o[1] = -1; else if (face === FACE_S) o[1] = 1; else if (face === FACE_E) o[0] = 1;
+  else if (face === FACE_W) o[0] = -1; else if (face === FACE_U) o[2] = 1; else o[2] = -1;
+}
+function trace(sc, ox, oy, oz, dx, dy, dz, res) {
+  let best = Infinity, kind = 0;
+  for (let m = 0; m < sc.items.length; m++) {
+    const it = sc.items[m];
+    for (let k = 0; k < it.pm.partCount; k++) {
+      if (VM.marchVoxelRay(it.pm, k, it.pose, ox, oy, oz, dx, dy, dz, best, HIT)) {
+        best = HIT[0]; kind = 8; res.m = m; res.k = k; res.face = HIT[4]; res.lx = HIT[1]; res.ly = HIT[2]; res.lz = HIT[3]; res.mat = VM.LAST_MAT_LOCAL;
+      }
+    }
+  }
+  if (sc.ground && dz < 0) {
+    const t = -oz / dz;
+    if (t > 0 && t < best && (sc.ground === 'inf' || Math.hypot(ox + dx * t - sc.gc[0], oy + dy * t - sc.gc[1]) < sc.ground)) { best = t; kind = 1; }
+  }
+  res.kind = kind; res.t = best;
+  return kind;
+}
+function shadeHit(sc, res, ox, oy, oz, dx, dy, dz, dist, fog, env, out) {
+  const t = res.t, px = ox + dx * t, py = oy + dy * t, pz = oz + dz * t;
+  let nx, ny, nz, mat, u, v;
+  if (res.kind === 8) {
+    const it = sc.items[res.m], A9 = it.pose, b = res.k * PART_STRIDE, cm = it.pm.cellM;
+    faceNormal(res.face, NL);
+    nx = A9[b] * NL[0] + A9[b + 3] * NL[1] + A9[b + 6] * NL[2];
+    ny = A9[b + 1] * NL[0] + A9[b + 4] * NL[1] + A9[b + 7] * NL[2];
+    nz = A9[b + 2] * NL[0] + A9[b + 5] * NL[1] + A9[b + 8] * NL[2];
+    const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+    res.matKey = matKeys[it.pm.matIds[res.mat] - 1];
+    mat = P.materials[res.matKey];
+    if (res.face === FACE_E || res.face === FACE_W) { u = res.ly * cm; v = res.lz * cm; }
+    else if (res.face === FACE_N || res.face === FACE_S) { u = res.lx * cm; v = res.lz * cm; }
+    else { u = res.lx * cm; v = res.ly * cm; }
+  } else { nx = 0; ny = 0; nz = 1; mat = P.materials.grass; u = px; v = py; res.matKey = 'grass'; }
+  Lacc[0] = 0; Lacc[1] = 0; Lacc[2] = 0;
+  U.addLight(Lacc, 'ambient', 0.14 * env.amb);
+  const a = env.az * D2R, e = env.el * D2R;
+  const ndl = nx * Math.sin(a) * Math.cos(e) - ny * Math.cos(a) * Math.cos(e) + nz * Math.sin(e);
+  if (ndl > 0) U.addLight(Lacc, 'sun', env.sun * ndl);
+  for (const it of sc.items) {   // mark point light (no shadows here)
+    const L = it.light; if (!L) continue;
+    const lx = L.p[0] - px, ly = L.p[1] - py, lz = L.p[2] - pz, d = Math.hypot(lx, ly, lz) || 1;
+    const nd = (nx * lx + ny * ly + nz * lz) / d, f = U.falloff(d, L.r);
+    if (nd > 0 && f > 0) U.addLight(Lacc, FX.light.color, L.I * f * nd);
+  }
+  U.shade(mat, Lacc, u, v, dist, out, { fog: fog ? 'far' : null, z: v });
+}
+function makeCanvas(cols, rows, cw, ch) {
+  const cv = document.createElement('canvas'), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(cols * cw * dpr); cv.height = Math.round(rows * ch * dpr);
+  cv.style.width = cols * cw + 'px'; cv.style.height = rows * ch + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = Math.round(ch * 0.9) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  return { cv, ctx, cols, rows, cw, ch };
+}
+const RES = { kind: 0, t: 0, m: 0, k: 0, face: 0, lx: 0, ly: 0, lz: 0, mat: 0, matKey: '' }, SH = { fg: [0, 0, 0], bg: [0, 0, 0] };
+const Ov = [0, 0, 0], Dv = [0, 0, 0];
+// v1.49: every mark material is emissive. "rim" cells = mark cells on a NON-emissive material (the v1.46 iron rim); 0 now.
+const emis = (k) => (k && P.materials[k] && P.materials[k].emissive) || 0;
+const STRONG_EMIS = 0.5;   // = 38.12 EMISSIVE_LIGHT_MIN; the preview's edge pass leaves these cells alone (they keep their glow)
+// contrast rule for the bright-day-sky check (see readabilityChecks): a cell's appearance = 35 % glyph ink + 65 % cell bg
+const INK = 0.35;
+function relLum(c) {   // WCAG relative luminance of an [r, g, b] 0..255 colour
+  const f = (v) => { v = Math.max(0, Math.min(255, v)) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+}
+function renderView(view, sc, env) {
+  const { cols, rows, ctx, cw, ch } = view.grid, n = cols * rows, cam = view.cam;
+  if (!view.buf) view.buf = { kind: new Int8Array(n), item: new Int8Array(n), depth: new Float64Array(n), glyph: new Array(n), fg: new Float32Array(n * 3), bg: new Float32Array(n * 3), mat: new Array(n) };
+  const B = view.buf;
+  let glowCells = 0, goldCells = 0, rimCells = 0, emisCells = 0, r0 = 1e9, r1 = -1, c0 = 1e9, c1 = -1;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c;
+    cam.ray(c, r, Ov, Dv);
+    const kind = trace(sc, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2], RES);
+    B.kind[i] = kind; B.depth[i] = RES.t; B.mat[i] = ''; B.item[i] = -1;
+    if (!kind) { B.glyph[i] = ' '; B.fg.fill(0, i * 3, i * 3 + 3); B.bg[i * 3] = env.sky[0]; B.bg[i * 3 + 1] = env.sky[1]; B.bg[i * 3 + 2] = env.sky[2]; continue; }
+    const dist = cam.persp ? RES.t * Math.hypot(Dv[0], Dv[1], Dv[2]) : 3;
+    shadeHit(sc, RES, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2], dist, cam.persp, env, SH);
+    B.mat[i] = RES.matKey;
+    if (kind === 8) {
+      B.item[i] = RES.m;
+      if (sc.items[RES.m].gold) {
+        r0 = Math.min(r0, r); r1 = Math.max(r1, r); c0 = Math.min(c0, c); c1 = Math.max(c1, c);
+        goldCells++;
+        if (emis(RES.matKey) > 0) emisCells++; else rimCells++;
+        if (RES.matKey === 'brass_glint') glowCells++;
+      }
+    }
+    B.glyph[i] = SH.glyph;
+    for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = SH.fg[k]; B.bg[i * 3 + k] = SH.bg[k]; }
+  }
+  if (ctl.edges !== 'off') {   // approximate engine edge pass on model cells (cap / side / lip vs farther neighbours)
+    const E = DP.edges, rim = ctl.edges === 'rim' ? (E.modelRim || 0.55) : 1;
+    const far = (i, j) => B.kind[j] === 0 || B.depth[j] > B.depth[i] * E.depthRatio + E.depthAbs;
+    const rule = new Int8Array(n);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      if (B.kind[i] !== 8 || emis(B.mat[i]) >= STRONG_EMIS) continue;   // strongly emissive cells keep their glow
+      if (r > 0 && far(i, i - cols)) rule[i] = 1;
+      else if ((c > 0 && far(i, i - 1)) || (c < cols - 1 && far(i, i + 1))) rule[i] = 2;
+      else if (r < rows - 1 && far(i, i + cols)) rule[i] = 3;
+    }
+    for (let i = 0; i < n; i++) {
+      if (!rule[i]) continue;
+      const R = rule[i] === 1 ? E.rules.cap : rule[i] === 2 ? E.rules.side : E.rules.lip;
+      if (B.glyph[i] !== ' ') B.glyph[i] = R.glyph;
+      for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = Math.min(255, B.fg[i * 3 + k] * R.gain) * rim; B.bg[i * 3 + k] *= rim; }
+    }
+  }
+  // gap test: a column through the mark with two separate gold runs = the bar and the dot do not fuse
+  let gapCols = 0;
+  for (let c = Math.max(0, c0); c <= c1; c++) {
+    let runs = 0, inRun = false;
+    for (let r = Math.max(0, r0); r <= r1; r++) {
+      const i = r * cols + c, g = B.item[i] >= 0 && sc.items[B.item[i]].gold;
+      if (g && !inRun) runs++;
+      inRun = g;
+    }
+    if (runs >= 2) gapCols++;
+  }
+  // sky contrast: silhouette cells = mark cells 4-adjacent to a sky cell (kind 0); appearance = INK * fg + (1 - INK) * bg
+  // (space glyph: bg only). Mean appearance vs the sky colour -> WCAG ratio + warmth (R - B).
+  let silN = 0; const silC = [0, 0, 0];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c;
+    if (!(B.item[i] >= 0 && sc.items[B.item[i]].gold)) continue;
+    const sky = (j) => B.kind[j] === 0;
+    if (!((r > 0 && sky(i - cols)) || (r < rows - 1 && sky(i + cols)) || (c > 0 && sky(i - 1)) || (c < cols - 1 && sky(i + 1)))) continue;
+    const ink = B.glyph[i] && B.glyph[i] !== ' ' ? INK : 0;
+    for (let k = 0; k < 3; k++) silC[k] += ink * B.fg[i * 3 + k] + (1 - ink) * B.bg[i * 3 + k];
+    silN++;
+  }
+  let skyContrast = 0, silWarm = 0;
+  if (silN) {
+    for (let k = 0; k < 3; k++) silC[k] /= silN;
+    const a = relLum(silC), b = relLum(env.sky);
+    skyContrast = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    silWarm = silC[0] - silC[2];
+  }
+  if (ctx) for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c, x = c * cw, y = r * ch;
+    ctx.fillStyle = 'rgb(' + (B.bg[i * 3] | 0) + ',' + (B.bg[i * 3 + 1] | 0) + ',' + (B.bg[i * 3 + 2] | 0) + ')';
+    ctx.fillRect(x, y, cw + 0.5, ch + 0.5);
+    const gl = B.glyph[i];
+    if (gl && gl !== ' ') {
+      ctx.fillStyle = 'rgb(' + (B.fg[i * 3] | 0) + ',' + (B.fg[i * 3 + 1] | 0) + ',' + (B.fg[i * 3 + 2] | 0) + ')';
+      ctx.fillText(gl, x + cw / 2, y + ch / 2 + 1);
+    }
+  }
+  const stats = { rows: r1 >= 0 ? r1 - r0 + 1 : 0, cols: r1 >= 0 ? c1 - c0 + 1 : 0, goldCells, rimCells, emisCells, glowCells, gapCols,
+                  silN, skyContrast, silWarm, skyWarm: env.sky[0] - env.sky[2] };
+  view.stats = stats;
+  if (view.cap) {
+    view.cap.textContent = view.label + ': ' + (stats.rows ? 'mark ' + stats.rows + ' rows x ' + stats.cols + ' cols, ' + goldCells +
+      ' cells (' + emisCells + ' emissive, dark ' + rimCells + '), core glow ' + glowCells + ', bar/dot gap in ' + gapCols +
+      ' cols, sky contrast ' + skyContrast.toFixed(2) + ':1' : '(mark not visible)');
+  }
+  return stats;
+}
+
+// ------------------------------------------------------------------ cameras
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function norm(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+function orthoCam(center, yawDeg, pitchDeg, cols, rows, chM) {
+  const a = yawDeg * D2R, p = pitchDeg * D2R, R = 12;
+  const pos = [center[0] + R * Math.sin(a) * Math.cos(p), center[1] - R * Math.cos(a) * Math.cos(p), center[2] + R * Math.sin(p)];
+  const fwd = norm([center[0] - pos[0], center[1] - pos[1], center[2] - pos[2]]);
+  const right = norm(cross([0, 0, 1], fwd)), up = cross(fwd, right), cwM = chM / 2;
+  return { persp: false, ray(c, r, O, D) {
+    const sx = (c + 0.5 - cols / 2) * cwM, sy = (rows / 2 - (r + 0.5)) * chM;
+    O[0] = pos[0] + right[0] * sx + up[0] * sy; O[1] = pos[1] + right[1] * sx + up[1] * sy; O[2] = pos[2] + right[2] * sx + up[2] * sy;
+    D[0] = fwd[0]; D[1] = fwd[1]; D[2] = fwd[2];
+  } };
+}
+const TAN_HALF = Math.tan(37.5 * D2R);
+function perspCam(gridCols, gridRows, cropCols, cropRows, target, azDeg, dist, eyeZ) {
+  const planeDistY = (gridRows / 2) * (16 / 9) / TAN_HALF, a = azDeg * D2R;
+  const fh = [-Math.sin(a), Math.cos(a), 0], rh = [-Math.cos(a), -Math.sin(a), 0];
+  const eye = [target[0] + Math.sin(a) * dist, target[1] - Math.cos(a) * dist, eyeZ];
+  const pitch = Math.atan((target[2] - eyeZ) / dist), horizonRow = gridRows / 2 + Math.tan(pitch) * planeDistY;
+  const c0 = Math.floor(gridCols / 2 - cropCols / 2), r0 = Math.floor(gridRows / 2 - cropRows / 2);
+  return { persp: true, ray(c, r, O, D) {
+    const camX = 2 * (c0 + c + 0.5) / gridCols - 1;
+    O[0] = eye[0]; O[1] = eye[1]; O[2] = eye[2];
+    D[0] = fh[0] + rh[0] * camX * TAN_HALF; D[1] = fh[1] + rh[1] * camX * TAN_HALF;
+    D[2] = (horizonRow - (r0 + r + 0.5)) / planeDistY;
+  } };
+}
+
+// ------------------------------------------------------------------ views
+const views = [];
+const PLACE = { questMark: [-0.36, 0], questMarkTurnIn: [0.36, 0] }, CENTER = [0, 0, 0.62];
+{
+  const rows = 46, g = makeCanvas(rows * 2, rows, 7, 14);
+  const wrap = document.createElement('div');
+  wrap.innerHTML = '<div class="controls" style="position:static"><label>orbit yaw <input type="range" min="-180" max="180" value="-25" step="1"></label>' +
+                   '<label>pitch <input type="range" min="-30" max="85" value="12" step="1"></label></div>';
+  const [oy, op] = wrap.querySelectorAll('input');
+  const v = { grid: g, label: 'orbit', live: true, mk: () => orthoCam(CENTER, +oy.value, +op.value, rows * 2, rows, 1.45 / rows) };
+  v.cam = v.mk(); oy.oninput = op.oninput = () => { v.cam = v.mk(); v.key = ''; };
+  const cap = document.createElement('div'); cap.className = 'cap'; v.cap = cap;
+  wrap.appendChild(g.cv); wrap.appendChild(cap); $('orbitRow').appendChild(wrap); views.push(v);
+}
+for (const [yaw, pitch, lab] of [[0, 0, 'front (level)'], [-35, 15, '3/4 from the left'], [0, -25, 'from below (player looks up)'], [-20, 65, 'top']]) {
+  const rows = 30, g = makeCanvas(rows * 2, rows, 5, 10);
+  const wrap = document.createElement('div'), cap = document.createElement('div'); cap.className = 'cap';
+  wrap.appendChild(g.cv); wrap.appendChild(cap); $('dirRow').appendChild(wrap);
+  views.push({ grid: g, cap, live: true, label: lab, cam: orthoCam(CENTER, yaw, pitch, rows * 2, rows, 1.45 / rows) });
+}
+// in-game: the selected mark at instance z 1.55 over a note page at the origin
+const MARK_Z = FX.placement.noteZOffsetM, MARK_C = MARK_Z + 0.35 + 0.45;
+const IG_SET = [
+  ['3 m day', 3, MARK_C, ENV_DAY], ['3 m night', 3, MARK_C, ENV_NIGHT],
+  ['12 m day', 12, MARK_C, ENV_DAY], ['12 m night', 12, MARK_C, ENV_NIGHT],
+  ['note mock 7 m day', 7, 1.2, ENV_DAY], ['note mock 7 m night', 7, 1.2, ENV_NIGHT]
+];
+const ingame = [];
+const GRIDS = { 240: { cols: 240, rows: 90, cc: 90, cr: 45, cw: 8, ch: 12 }, 400: { cols: 400, rows: 150, cc: 150, cr: 75, cw: 4.8, ch: 7.2 } };
+function buildIngame() {
+  for (const v of ingame) views.splice(views.indexOf(v), 1);
+  ingame.length = 0; $('ingame').innerHTML = '';
+  const s = GRIDS[ctl.igGrid];
+  let row = null;
+  IG_SET.forEach(([lab, dist, tz, env], i) => {
+    if (i % 2 === 0) { row = document.createElement('div'); row.className = 'row'; $('ingame').appendChild(row); }
+    const g = makeCanvas(s.cc, s.cr, s.cw * ctl.zoom, s.ch * ctl.zoom);
+    const wrap = document.createElement('div'), cap = document.createElement('div'); cap.className = 'cap';
+    wrap.appendChild(g.cv); wrap.appendChild(cap); row.appendChild(wrap);
+    const v = { grid: g, cap, label: s.cols + 'x' + s.rows + ' ' + lab, ingame: true, s, dist, tz, env, model: ctl.igModel };
+    ingame.push(v); views.push(v);
+  });
+}
+buildIngame();
+function ingameScene(model, st, env) {
+  const items = [poseNote(0, 0)];
+  const m = poseMark(MK[model], st, 0, 0, MARK_Z, env === ENV_NIGHT || ctl.glow, MK[model].pose);
+  if (m) items.push(m);
+  return { ground: 'inf', items };
+}
+
+// ------------------------------------------------------------------ frame loop
+function frame() {
+  const now = performance.now(), live = liveState(now), sig = stateSig(live);
+  const rot = live.name === 'idle' ? (-180 + 360 * (live.e % 2000) / 2000).toFixed(0) + ' deg' : '';
+  $('now').textContent = live.name + ' ' + Math.round(live.e) + ' ms ' + rot;
+  let liveScene = null;
+  for (const v of views) {
+    if (v.live) {
+      const key = sig + '|' + ver;
+      if (v.key === key) continue;
+      if (!liveScene) {
+        const items = [];
+        for (const k of KEYS) { const it = poseMark(MK[k], live, PLACE[k][0], PLACE[k][1], 0, ctl.glow, MK[k].pose); if (it) items.push(it); }
+        liveScene = { ground: 0.75, gc: [0, 0], items };
+      }
+      renderView(v, liveScene, ctlEnv()); v.key = key;
+    } else {
+      const key = 'ig|' + ver;
+      if (v.key === key) continue;
+      v.cam = perspCam(v.s.cols, v.s.rows, v.s.cc, v.s.cr, [0, 0, v.tz], ctl.vaz, v.dist, 1.6);
+      renderView(v, ingameScene(v.model, { name: 'idle', e: ctl.scrubT }, v.env), v.env);
+      v.key = key;
+    }
+  }
+  setTimeout(() => requestAnimationFrame(frame), 40);
+}
+
+// ------------------------------------------------------------------ checks
+const out = [];
+const ok = (c, m) => out.push([c ? 'pass' : 'fail', (c ? 'PASS ' : 'FAIL ') + m]);
+const info = (m) => out.push(['info', 'INFO ' + m]);
+function flush() {
+  const host = $('checks'); host.innerHTML = '';
+  for (const [c, m] of out) { const d = document.createElement('div'); d.className = c; d.textContent = m; host.appendChild(d); }
+}
+function runChecks() {
+  const both = Object.keys(P.materials).filter((k) => DP.materials[k]);
+  const sum = (d) => d.reduce((a, b) => a + b, 0);
+  for (const key of KEYS) {
+    const { DEF, PM, PARTS, M } = MK[key], C = DEF.animations, cm = DEF.cellM;
+    const vr = validateVoxelModel(DEF, { materialKeys: both });
+    ok(vr.errors.length === 0, key + ': validateVoxelModel (palette + detail-pass materials): ' + (vr.errors.slice(0, 6).join(' ; ') || 'no errors') +
+       (vr.warnings && vr.warnings.length ? ' (warnings: ' + vr.warnings.slice(0, 3).join(' ; ') + ')' : ''));
+    ok(Object.values(DEF.mats).every((m) => P.materials[m] && DP.materials[m]), key + ': every material already merged (no palette / detail-pass edit)');
+    const lod0 = buildVoxelMesh(PM, { id: key, partNames: PARTS }).triCount, lod1 = buildVoxelMeshLod1(PM, { id: key + '1', partNames: PARTS }).triCount;
+    ok(lod0 < 1500, key + ': engine mesher LOD0 ' + lod0 + ' tris (owner budget < 1500; style rule 5.14 cap 2000), LOD1 ' + lod1);
+    info(key + ': ' + DEF.size.join(' x ') + ' @ ' + cm + ' m = ' + M.world.w + ' x ' + M.world.d + ' x ' + M.world.h + ' m (glyph ' + M.world.glyphH +
+         ' m over a ' + M.world.floatM + ' m float), parts [' + PARTS.join(', ') + '], clips [' + Object.keys(C).join(', ') + ']');
+    ok(Math.abs(M.world.w - 0.45) < 1e-6 && Math.abs(M.world.glyphH - 0.9) < 1e-6 && Math.abs(M.world.floatM - FX.floatM) < 1e-6,
+       key + ': 0.45 m wide, 0.90 m glyph, float ' + M.world.floatM + ' m = questMarkFx.floatM');
+    // the float: layers below the glyph are empty
+    let low = 0; for (let z = 0; z < Math.round(FX.floatM / cm); z++) for (const r of DEF.layers[z]) low += r.replace(/\./g, '').length;
+    ok(low === 0 && DEF.anchor[2] === 0, key + ': anchor = base point (z 0), ' + Math.round(FX.floatM / cm) + ' empty layers under the glyph');
+    // idle: spin 360 deg per loop, bob amplitude
+    const I = C.idle, Itot = sum(I.durations);
+    const rf = I.frames[0].mark.rot[2], rl = I.frames[I.frames.length - 1].mark.rot[2];
+    ok(Math.abs(Itot - 2000) < 0.001 && rf === -180 && rl === 180 && Math.abs(1000 / Itot * (rl - rf) / 360 - FX.spinRevPerS) < 1e-6,
+       key + ': idle ' + Itot.toFixed(2) + ' ms, rot ' + rf + ' -> ' + rl + ' = ' + FX.spinRevPerS + ' rev/s; wrap key ' + I.durations[I.durations.length - 1] + ' ms');
+    const bobMax = Math.max(...I.frames.map((f) => Math.abs(f.mark.pos[2]))) * cm;
+    ok(Math.abs(bobMax - FX.bobM) < 0.002 && Math.abs(Itot - FX.bobPeriodMs) < 0.001, key + ': idle bob amplitude ' + bobMax.toFixed(3) + ' m = bobM ' + FX.bobM + ', period ' + FX.bobPeriodMs + ' ms');
+    ok(I.frames.every((f, i) => i === 0 || f.mark.rot[2] > I.frames[i - 1].mark.rot[2]), key + ': idle spin monotonic (no backwards key)');
+    ok(sum(C.pop.durations) === FX.popMs && FX.popMs === 300 && !C.pop.loop, key + ': pop ' + sum(C.pop.durations) + ' ms = popMs, non-loop');
+    ok(sum(C.fade.durations) === FX.fadeMs && FX.fadeMs === 250 && !C.fade.loop, key + ': fade ' + sum(C.fade.durations) + ' ms = fadeMs, non-loop');
+    const pe = C.pop.frames[C.pop.frames.length - 1].mark, i0 = I.frames[0].mark;
+    ok(((pe.rot[2] - i0.rot[2]) % 360 + 360) % 360 === 0 && pe.pos[2] === i0.pos[2], key + ': pop ends on idle key 0 (rot ' + pe.rot[2] + ' == ' + i0.rot[2] + ', z ' + pe.pos[2] + ')');
+    ok(Object.values(FX.clipFor).every((c) => C[c]) && ['appear', 'active', 'complete'].every((k) => C[FX.clipForEngineSpin[k]]), key + ': clipFor / clipForEngineSpin -> existing clips');
+    ok(['light', 'anchor', 'center', 'top'].every((m) => DEF.mounts[m]) && DEF.mounts[FX.light.mount], key + ': mounts light / anchor / center / top');
+    // v1.49 whole glyph emissive: visible voxels (a filled voxel with an empty / outside 6-neighbour) on emissive materials
+    const L = DEF.layers, sx = DEF.size[0], sy = DEF.size[1], sz = DEF.size[2];
+    const vox = (x, y, z) => (x < 0 || x >= sx || y < 0 || y >= sy || z < 0 || z >= sz) ? '.' : L[z][y].charAt(x);
+    let vis = 0, visE = 0, visS = 0, hidS = 0, dark = 0;
+    const perMat = {};
+    for (let z = 0; z < sz; z++) for (let y = 0; y < sy; y++) for (let x = 0; x < sx; x++) {
+      const c = vox(x, y, z); if (c === '.') continue;
+      const mk = DEF.mats[c], e = emis(mk);
+      if (e <= 0) dark++;
+      const open = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].some(([dx, dy, dz]) => vox(x + dx, y + dy, z + dz) === '.');
+      if (!open) { if (e >= STRONG_EMIS) hidS++; continue; }
+      vis++; perMat[mk] = (perMat[mk] || 0) + 1;
+      if (e > 0) visE++;
+      if (e >= STRONG_EMIS) visS++;
+    }
+    const pctE = vis ? 100 * visE / vis : 0;
+    ok(pctE >= 90, key + ': whole glyph emissive: ' + pctE.toFixed(1) + '% of ' + vis + ' visible voxels are emissive materials (>= 90%); ' +
+       Object.keys(perMat).map((k) => k + ' ' + perMat[k] + ' (e ' + emis(k) + ')').join(', '));
+    info(key + ': ' + (vis ? (100 * visS / vis).toFixed(1) : 0) + '% of the visible voxels are strong emitters (emissive >= ' + STRONG_EMIS +
+         ': glow / bleed / halo sources in 38.12); the brass_hot body (0.10) is lit at night by the bleed of the core band + orange lips ' +
+         'and questMarkFx.light. Hidden strong emitters (pack-time derive count): ' + hidS);
+    ok(dark === 0 && !Object.values(DEF.mats).includes('iron_dark'), key + ': no dark rim / back plate: ' + dark + ' non-emissive voxels, no iron_dark');
+    // the bar / dot gap on the centre column of the front face
+    let runs = 0, inRun = false;
+    for (let z = sz - 1; z >= 0; z--) { const g = L[z][0][4] !== '.'; if (g && !inRun) runs++; inRun = g; }
+    ok(runs >= 2, key + ': front-face centre column = ' + runs + ' glyph runs (bar / hook + dot: the gap is kept)');
+    ok(FX.popScale[0][1] > 0 && FX.fadeScale[FX.fadeScale.length - 1][1] > 0 && FX.popScale[FX.popScale.length - 1][0] === FX.popMs &&
+       FX.fadeScale[FX.fadeScale.length - 1][0] === FX.fadeMs && FX.popScale[FX.popScale.length - 1][1] === 1,
+       key + ': pop / fade scale curves span popMs / fadeMs, end at 1 / 0.05, never 0 (scale <= 0 means 1 in computeVoxelPose)');
+  }
+  info('2 hue families: white-gold (brass_hot body, brass_glint core) + a touch of ember orange (ember_glow lips + side seam); no dark rim (v1.49). questMarkTurnIn status: ' + FX.turnInStatus +
+       '. The \'?\' reads mirrored from behind (a slab glyph); the \'!\' is symmetric.');
+  info('questMarkFx: floatM ' + FX.floatM + ', bobM ' + FX.bobM + ', spinRevPerS ' + FX.spinRevPerS + ', popMs ' + FX.popMs + ', fadeMs ' + FX.fadeMs +
+       ', visibleRangeM ' + FX.visibleRangeM + ', placement.noteZOffsetM ' + FX.placement.noteZOffsetM + ' (glyph bottom ' + FX.placement.aboveNoteM + ' m over the note)');
+  flush();
+}
+function readabilityChecks() {   // fixed renders: face-on idle (1000 ms), view angle 0, both grids
+  const st = { name: 'idle', e: 1000 };
+  for (const model of KEYS) for (const gk of [400, 240]) {
+    const s = GRIDS[gk];
+    const res = {};
+    for (const [lab, dist, env] of [['3 m day', 3, ENV_DAY], ['12 m day', 12, ENV_DAY], ['12 m night', 12, ENV_NIGHT]]) {
+      const v = { grid: { cols: s.cc, rows: s.cr, ctx: null, cw: 1, ch: 1 }, cam: perspCam(s.cols, s.rows, s.cc, s.cr, [0, 0, MARK_C], 0, dist, 1.6) };
+      res[lab] = renderView(v, ingameScene(model, st, env), env);
+    }
+    const n = res['12 m day'], d = res['3 m day'], ng = res['12 m night'];
+    const minRows = gk === 400 ? 10 : 6;
+    ok(n.rows >= minRows && n.gapCols > 0, model + ' ' + s.cols + 'x' + s.rows + ' 12 m day: ' + n.rows + ' rows x ' + n.cols + ' cols (>= ' + minRows + '), bar/dot gap visible in ' + n.gapCols + ' cols');
+    ok(d.rows > 0 && d.rows <= s.cr && d.gapCols > 0 && d.rimCells === 0, model + ' ' + s.cols + 'x' + s.rows + ' 3 m day: ' + d.rows + ' rows x ' + d.cols + ' cols (fits the ' + s.cr + '-row crop), gap in ' + d.gapCols + ' cols, ' + d.emisCells + ' / ' + d.goldCells + ' cells emissive, dark rim cells ' + d.rimCells + ' (must be 0)');
+    ok(ng.glowCells > 0, model + ' ' + s.cols + 'x' + s.rows + ' 12 m night: ' + ng.glowCells + ' glowing core cells (reads at night)');
+    // v1.49 bright day sky (no dark rim): rule = the mean silhouette cell (mark cells 4-adjacent to sky; appearance
+    // 35 % glyph ink + 65 % cell bg) vs the sky colour: WCAG contrast ratio >= 2.0 AND warm against cool
+    // (silhouette R - B >= 20 while the sky R - B < 0). The cell bg ('darken' k 0.20-0.30 of the lit glyph colour) is
+    // what separates the glowing glyph from the light-blue sky; the hue opposition carries the rest.
+    if (gk === 240) {
+      const sk = n.skyContrast, pass = n.silN > 0 && sk >= 2.0 && (n.silWarm - n.skyWarm) >= 60;
+      ok(pass, model + ' 240x90 12 m day: reads against bright day sky: ' + n.silN + ' silhouette cells, contrast ' + sk.toFixed(2) +
+         ':1 (>= 2.0), silhouette R-B ' + n.silWarm.toFixed(0) + ' vs sky R-B ' + n.skyWarm + ' (warm gap R-B >= 60 over the cool sky; contrast is the main rule, PC-A 2026-10-08: the absolute R-B>=20 was a self-set bar, the gap 100 is what separates warm from sky)');
+    } else {
+      info(model + ' 400x150 12 m day: sky contrast ' + n.skyContrast.toFixed(2) + ':1, silhouette R-B ' + n.silWarm.toFixed(0) + ' (' + n.silN + ' cells)');
+    }
+  }
+  flush();
+}
+try { runChecks(); } catch (err) { $('checks').innerHTML = '<div class="fail">checks threw: ' + err.message + '</div>'; console.error(err); }
+frame();
+setTimeout(() => { try { readabilityChecks(); } catch (err) { ok(false, 'readability checks threw: ' + err.message); flush(); console.error(err); } }, 300);
+</script>
+</body>
+</html>

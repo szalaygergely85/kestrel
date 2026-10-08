@@ -10,8 +10,11 @@
 // checks themselves being too strict - see validate-content.mjs's "3. Voxel
 // models" comment for a real example of a check that started out too
 // strict before this fixture existed).
-import { validateContent } from './validate-content.mjs';
+import { validateContent, loadQuestFiles } from './validate-content.mjs';
 import { makeOk } from '../engine/test/assert.js';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -423,6 +426,59 @@ function assetsWithRingWorld() {
   const a = goodAssets();
   const { warnings } = validateContent(a);
   ok('world without terrain is never warned about sun', !warnings.some((w) => w.includes('worlds.w1.sun')), JSON.stringify(warnings));
+}
+
+// S8-C-17: quest refs share the existing inventory/pickup and world sources.
+function questFixture() {
+  const a = goodAssets();
+  a.items = { defs: { sword: { id: 'sword', name: 'Sword', desc: 'Old steel.' } }, loot: { boar: { entries: [{ item: 'sword' }] } } };
+  a.levels.room.interactables[0].interact = 'lantern.take';
+  a.worlds.w1.entities.push({ id: 'boar1', type: 'beast', model: 'farTower', x: 1, y: 1 });
+  const def = { version: 1, id: 'm1', objectives: [
+    { id: 'lamp', text: 'Take the lamp', when: { type: 'item', id: 'lamp' } },
+    { id: 'steel', text: 'Take the sword', when: { type: 'item', id: 'sword' } },
+    { id: 'fight', text: 'Defeat a beast', when: { type: 'beasts', ids: ['boar1'], count: 1 } },
+    { id: 'breach', text: 'Reach the breach', when: { type: 'area', id: 'breach' } },
+  ] };
+  return { a, quests: [{ path: 'm1.quest.json', def }] };
+}
+{
+  const { a, quests } = questFixture();
+  const before = JSON.stringify({ a, quests });
+  const { errors } = validateContent(a, { quests });
+  ok('quest refs resolve inventory, pickup and beast ids; area checks deferred by D-049', errors.length === 0, JSON.stringify(errors));
+  ok('lint does not change content', JSON.stringify({ a, quests }) === before);
+}
+const questCases = [
+  ['unknown item', (a, q) => { q[0].def.objectives[1].when.id = 'swrod'; }, ['objectives[steel].when.id', 'swrod', 'not found']],
+  ['pickup must be declared', (a) => { delete a.levels.room.interactables[0].interact; }, ['objectives[lamp].when.id', 'not found']],
+  ['unknown beast', (a, q) => { q[0].def.objectives[2].when.ids = ['tower']; }, ['objectives[fight].when.ids', 'tower', 'not found']],
+  ['duplicate quest', (a, q) => { q.push({ path: 'copy.quest.json', def: structuredClone(q[0].def) }); }, ['copy.quest.json.id', 'duplicate quest']],
+  ['duplicate objective', (a, q) => { q[0].def.objectives[1].id = 'lamp'; }, ['m1.quest.json', 'duplicate objective']],
+  ['empty objective text', (a, q) => { q[0].def.objectives[0].text = ' '; }, ['objectives[lamp].text', 'required']],
+  ['non-ASCII objective', (a, q) => { q[0].def.objectives[0].text = '\u2026'; }, ['objectives[lamp].text', 'ASCII']],
+  ['missing item name', (a) => { delete a.items.defs.sword.name; }, ['items.defs.sword.name', 'required']],
+  ['invalid item description', (a) => { a.items.defs.sword.desc = 42; }, ['items.defs.sword.desc', 'required']],
+  ['mismatched item id', (a) => { a.items.defs.sword.id = 'lamp'; }, ['items.defs.sword.id', 'match']],
+  ['loot ref', (a) => { a.items.loot.boar.entries[0].item = 'missing'; }, ['items.loot.boar.entries[0].item', 'not found']],
+];
+for (const [name, breakFixture, finding] of questCases) {
+  const { a, quests } = questFixture(); breakFixture(a, quests);
+  const { errors } = validateContent(a, { quests });
+  ok(`quest lint reports ${name}`, hasFinding(errors, finding), JSON.stringify(errors));
+}
+{
+  const dir = mkdtempSync(join(tmpdir(), 'kestrel-quest-lint-'));
+  try {
+    mkdirSync(join(dir, 'nested'));
+    const { quests } = questFixture();
+    writeFileSync(join(dir, 'nested', 'm1.quest.json'), JSON.stringify(quests[0].def));
+    writeFileSync(join(dir, 'bad.quest.json'), '{');
+    writeFileSync(join(dir, 'ignore.json'), '{');
+    const loaded = loadQuestFiles(dir);
+    ok('quest scanner includes nested definitions and ignores unrelated files', loaded.quests.length === 1 && loaded.quests[0].def.id === 'm1');
+    ok('quest scanner reports bad JSON without dropping other files', loaded.errors.length === 1 && loaded.errors[0].includes('bad.quest.json: JSON parse failed'));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
 console.log(`${pass} passed, ${fail} failed`);

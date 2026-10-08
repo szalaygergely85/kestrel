@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { World, AssetRegistry } from '../../../../engine/index.js';
 import { ensureInventory } from '../sim/inventory.js';
 import { createQuest, applyQuestEvent } from '../sim/quest.js';
-import { collectSave,applySave,stringifyGameSave,parseGameSave,createMemoryAdapter,createStorageAdapter } from './saveState.js';
+import { collectSave,applySave,stringifyGameSave,parseGameSave,createMemoryAdapter,createStorageAdapter,createPlayTime } from './saveState.js';
 const assets=new AssetRegistry({palette:{}}),world=World.load({name:'save_fixture',terrain:null,structures:[],entities:[]},assets,{});
 const player=world.spawn('unit',{x:12.25,y:-3.5,z:2,yawDeg:123,pitchDeg:-9},{health:{hp:3,max:5,invuln:0},mana:{mp:7,max:10}},'player');
 ensureInventory(player.data,{pack:[{id:'lantern',n:1},{id:'sword',n:1}],left:'lantern',right:'sword'});
@@ -39,4 +39,27 @@ assert.equal(unavailable.writeSlot(0,save).ok,false);assert.equal(unavailable.re
 const corrupt=createStorageAdapter({getItem:()=>'{bad',setItem:()=>{},removeItem:()=>{}});assert.equal(corrupt.readSlot(0).ok,false);
 assert.equal(createStorageAdapter({getItem:()=>null,setItem:()=>{},removeItem:()=>{}}).writeSlot(0,save).ok,false,'read-back detects silent write loss');
 assert.deepEqual(world.get('player').data.components.inventory,save.world.entities[0].components.inventory);
-console.log('saveState: player components/hands, quest/chests/deaths, byte-stable round trip, CO-5 migration and isolated/error-safe slots PASS');
+// S8-C-02: active simulation time only, resumed through the existing save envelope.
+const clock = createPlayTime(save.meta.playTimeSec);
+assert.equal(clock.tick(12,false),125.5,'menus/paused time excluded');
+assert.equal(clock.tick(0.25,true),125.75);
+assert.equal(clock.tick(0,true),125.75);
+const timedSave = collectSave(world,{...options,playTimeSec:clock.seconds});
+adapter.writeSlot(1,timedSave);
+const resumedClock = createPlayTime(adapter.readSlot(1).save.meta.playTimeSec);
+for (let i=0;i<600;i++) resumedClock.tick(1/60,i%2===0);
+assert.ok(Math.abs(resumedClock.seconds-130.75)<1e-10,'only 300 active steps counted');
+const persisted = stringifyGameSave(collectSave(world,{...options,playTimeSec:resumedClock.seconds}));
+assert.equal(createPlayTime(parseGameSave(persisted).meta.playTimeSec).seconds,resumedClock.seconds);
+assert.equal(adapter.readSlot(2).save.meta.playTimeSec,125.5,'other slot time unchanged');
+const independent = createPlayTime(); assert.equal(independent.tick(3,true),3);
+assert.equal(independent.tick(5,undefined),3,'explicit active flag required');
+for (const invalid of [-1,NaN,Infinity,'1']) {
+  assert.throws(()=>createPlayTime(invalid),RangeError);
+  assert.throws(()=>clock.tick(invalid,true),RangeError);
+  assert.equal(clock.seconds,125.75,'invalid step changes nothing');
+}
+const overflow = createPlayTime(Number.MAX_VALUE);
+assert.throws(()=>overflow.tick(Number.MAX_VALUE,true),RangeError);
+assert.equal(overflow.seconds,Number.MAX_VALUE);
+console.log('saveState: player components/hands, quest/chests/deaths, byte-stable round trip, CO-5 migration, isolated/error-safe slots and active play time PASS');

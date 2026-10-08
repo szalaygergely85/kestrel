@@ -161,13 +161,13 @@ function rig({ hp = 20, max = 30, pack = true } = {}) {
   const ui = makeUi(); r.view.draw(ui);
   const row = (y, a = 0, b = P.w) => ui.row(P.y + y, P.x + a, P.x + b);
   ok('title row', row(0).includes(' PACK '));
-  ok('hands strip names', row(3).includes('Ruin-steel Sword') && row(3).includes('Ember'));
+  ok('hands strip names', row(3).includes('Ruin Steel') && row(3).includes('Ember'));
   ok('hand labels + buttons', row(2).includes('LEFT HAND [LMB]') && row(2).includes('RIGHT HAND [RMB]'));
   ok('L / R tags on the grid slots', row(8, 3, 20).charAt(1) === 'L' && row(8, 3, 20).charAt(9) === 'R');
   ok('stack count x3 on the meat slot border', row(12, 19, 28).includes('x3'));
   ok('key hints row', row(26).includes('Enter use'));
   ok('paused tag', row(P.h - 1).includes(' paused '));
-  ok('details: name of slot 0', row(9, 66).startsWith('Ruin-steel Sword'));
+  ok('details: name of slot 0', row(9, 66).startsWith('Ruin Steel'));
   r.step('KeyD'); r.step('KeyD'); r.view.draw(ui);
   ok('details: meat actions "Eat (+10 HP)"', row(19, 55).includes('Eat (+10 HP)'));
   let inside = true;

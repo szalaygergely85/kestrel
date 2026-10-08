@@ -1,5 +1,11 @@
 # Sprint 8 queue (PO draft, 2026-10-08)
 
+**PO RECOMMENDED ORDER 2026-10-08 (goal: playable loop with save + title menu; gap list in docs/sprints/sprint-7.md "Review 2026-10-08 (PO)"; B1 hooks before B1 engine items, needs manager OK):**
+1. B1 GFX-02 two ARCH fixes (~0.25 d) -> PC-A merges pc-b to master. 2. B1 S8-B1-01 save relay + autosave + waystone-touch save + load (~0.75 d). 3. B1 S8-B1-03 title menu mount + confirm-screen draw fix (~0.5 d).
+4. C pastes S8-A-11 objective texts into `m1.quest.json` (~0.25 d), then B1 S8-B1-02 quest hook + questLog HUD (~0.5 d). 5. C S8-C-06 chest sim (~0.75 d) and 6. C S8-C-07 item-get card (~0.5 d), both in parallel with B1 steps 1-4.
+7. B1 S8-B1-04 chest hook (~0.5 d). 8. PC-A MAP-01a chart design + text (~1 d, parallel now). 9. C S8-C-14 chart card -> B1 S8-B1-15 `M` wiring (~1.25 d). 10. NEW row (PO to write): waystone heal + respawn-at-last-waystone (C sim + B1 hook, ~0.5 d).
+Parallel, off the critical path: B2 finishes the 5 batch-12 fixes, then ALPHA-01e -> C QUAT-TREES-01 (forest look). PREFAB-SEAM, ED-MESH-01e, ONEPART and S8-B1-06..14 wait until step 7 is done.
+
 Rules: D-044 (no new GLSL, WGSL only for render features), JS twin = oracle, never widen a gpucompare threshold (D-039 known-FAIL only), engine never imports `game/`, `engine/physics/` stand-alone. B1 owns `game/js/main.js`, `wg/**`, `createRenderer.js`, `capture-browser.mjs`, `gpuCompare.js`; B2 owns `engine/render/gpu/wgsl/**` modules, `wg/pass*.js` new standalone files it created, `engine/mesh/**`, importer/gltf tools. Every engine item ends in `arch-review`. Format: `[priority, size, deps]`. "owner look" = owner-visible.
 
 **ARCH validation 2026-10-08 (architect, against origin/master 82de306 + origin/pc-b a27dffc + origin/pc-b2 24b13dc).** Markers: `ARCH-NOTE NEEDED` (no dev before the note), `DUP of X` / `DONE` / `DROP: reason`, `ARCH:` = corrected file/seam/dep. Not merged to master yet: GFX-02 + GFX-01w (pc-b), MESH-SCALE-01 73ddef1 + MESH-BIN-01 24b13dc (pc-b2).
@@ -536,3 +542,77 @@ Rebuild every GPU resource owner in place after `device.lost` (list in architect
 
 ### LEAF-PREVIEW-01 (new, lane C) [P1, ~0.5 d, deps: ALPHA-01c/01d on pc-b]
 Standalone leaf-fixture preview page for the owner (see docs/lanes/pc-c.md QUEUE TOP). AC: page opens on webgpu, soft-edge toggle, one real-GPU screenshot in the report; no engine or main.js edits.
+
+## Playable-loop additions (PO, D-050)
+
+Seam = `game/js/gameHooks.js` from S8-B1-01 (`onBoot`, `onTick(dt)`, `onEvent(name,data)` with `area:entered`/`prop:touched`/`beast:died`/`item:got`/`player:died`/`flag:set`, `drawHud(cells)`, `onRespawn`). Lane C owns `game/js/quest/wire/**` and never edits main.js, engine or the seam; a missing hook point = `NEEDS B1:`. Supersedes the B1 hook parts of S8-B1-02 and S8-B1-04 (B1 keeps S8-B1-01/03). Order for C: WAYSTONE-01 -> after seam lands: WAYSTONE-01w, S8-C-HOOK-QUEST, S8-C-HOOK-CHEST.
+
+### WAYSTONE-01 sim: save point, heal, respawn [P0, lane C, ~0.5 d, deps: US-089a saveState.js, vitals]
+Pure sim, no main.js. Touching a waystone = autosave request + heal to full + sets the respawn point; death respawns at the last waystone.
+- [ ] Node test: `touch(id)` sets hearts to max, stores `{waystoneId, pos}`; `onDeath()` returns that pos + full hearts; with no waystone touched it returns the spawn point.
+- [ ] Node test: state is plain JSON, round-trips via `collectSave`/`applySave` byte-stable; same input sequence gives the same state (no Date/Math.random).
+Files: `game/js/quest/sim/waystone.js` + `waystone.test.js`. No owner look.
+
+### WAYSTONE-01w wire: waystone on the seam [P0, lane C, ~0.5 d, deps: WAYSTONE-01, S8-B1-01 seam, S8-A-08 waystone prop]
+Register on the seam: `prop:touched` (waystone) -> sim touch + save request + HUD toast; `player:died` -> sim respawn; `onRespawn` returns the point.
+- [ ] Node test with a fake seam: touch event heals, requests one save, queues one toast; death event respawns at that waystone.
+- [ ] Headless capture: touch a waystone, take damage, die, respawn on the stone with full hearts; toast visible in `drawHud`. Toast text from `docs/story.md` '## Sprint 8 texts' (`place.waystone` as title, done line `The stone hums. The signal answers.`). If no dedicated toast key exists: `NEEDS WRITER:` one line <= 38 chars, do not invent.
+Files: `game/js/quest/wire/waystone.js` + test. Owner look. NEEDS B1: gameHooks seam (S8-B1-01).
+
+### S8-C-HOOK-QUEST objective line + quest log wiring (replaces S8-B1-02 hook) [P0, lane C, ~0.5 d, deps: S8-B1-01 seam, US-096a quest.js, S8-A-11 texts in m1.quest.json]
+Feed seam events (`beast:died`, `item:got`, `area:entered`, `flag:set`) into quest.js; show the current objective text in the HUD slot via `drawHud`; quest state saved.
+- [ ] Node test with a fake seam: scripted event sequence advances wake -> waystone to done; HUD line equals the story.md text for each step.
+- [ ] Quest state is in the save (round trip via saveState) and survives reload (headless capture).
+- [ ] questLog (S8-C-12 view, if landed) opens from the seam input event; else leave a `NEEDS B1:` note for the key binding.
+Files: `game/js/quest/wire/quest.js` + test. Owner look. NEEDS B1: gameHooks seam.
+
+### S8-C-HOOK-CHEST chest + item-get card wiring (replaces S8-B1-04 hook) [P1, lane C, ~0.5 d, deps: S8-B1-01 seam, S8-C-06 chest sim, S8-C-07 item-get card, S8-A-06/07 designer assets]
+On `prop:touched` for a chest: sim open once, item into inventory, item-get card via `drawHud`, chest opened flag saved.
+- [ ] Node test with a fake seam: chest opens once, item added once, a second touch does nothing, state persisted.
+- [ ] Headless capture of the item-get card at 400x150; reload keeps the chest open. Owner look.
+Files: `game/js/quest/wire/chest.js` + test. NEEDS B1: gameHooks seam (open-clip trigger via event if the seam lacks it).
+
+### SEAM-REVIEW gameHooks seam diff review [P0, architect (opus), ~0.25 d, deps: S8-B1-01 landed]
+Diff-only review of the S8-B1-01 commit's `game/js/gameHooks.js` and its call points in main.js. Short verdict.
+- [ ] `ARCH OK`/`ARCH CHANGES`: the six events, `onTick`, `drawHud`, `onRespawn` are called at fixed points; handler errors cannot break the frame; wire modules can register without touching main.js.
+- [ ] Confirms lane C can build WAYSTONE-01w, S8-C-HOOK-QUEST, S8-C-HOOK-CHEST on it unchanged; missing hook points listed for B1. Gates the three wire stories.
+Files: read-only. No owner look.
+
+## Quest markers + chain v2 (owner idea 2026-10-08, PC-A)
+Owner: WoW-style golden 3D '!' above the active quest note; note 1 "find something to defend yourself in the wild" -> take the sword; a second note on the way up "kill 5 boars"; after the 5th boar the next '!' is on the waystone. Today `content/quests/m1.quest.json` has wake -> lantern -> breach -> sword -> beasts (2: boar1, boar2) -> waystone; world_m1 has only 2 boars.
+### QUEST-MARK-01 asset [designer, IN PROGRESS 2026-10-08]
+`design/models/quest_mark.js`: `questMark` (gold '!'), `questMarkTurnIn` (gold '?', later), `ASSETS.questMarkFx` {floatM 0.35, bobM 0.08, spin 0.5 rev/s, popMs 300, fadeMs 250, visibleRangeM 40}, clips idle/pop/fade, preview design/preview/quest-mark.html.
+**MARKER RULE (owner 2026-10-08): the '!' shows over a quest that is AVAILABLE and disappears the moment the player TAKES it (reads the note / touches the giver), not when the step is completed.** After taking, the HUD objective line carries the step; the next '!' appears only when the next quest becomes available (note2 after the sword is taken; the waystone '!' after the 5th boar dies). Optional later: gold '?' (`questMarkTurnIn`) at a turn-in target.
+### QUEST-CHAIN-02 sim + content [lane C, ~0.75 d, deps: none for sim; NEEDS PC-A decision on boar count]
+(1) m1.quest.json: new objective `note1` "Read the note: find something to defend yourself" (flag/prop touch) before `sword`; `note2` (second note on the way up) before `beasts`; `beasts` count 2 -> 5 with boar ids boar1..boar5; waystone last. (2) `game/js/quest/sim/questMarkers.js` (+ Node test): `markerTargets()` returns the id(s) of the prop/area that carry a '!' = quests AVAILABLE and NOT YET TAKEN (note1 until read; sword step has no marker once note1 is taken, the sword is its own pickup; note2 once the sword is taken, until read; beasts: none; waystone '!' once the 5th boar died, until touched); a taken quest never shows a marker; deterministic, save-safe, zero alloc per step. (3) content: 3 more boars (boar3..5) with home positions on the hillside path in world_m1.world.json (shared file: ask PC-A for the coordinates or propose them in the log), second note decal/prop `note2` text from the writer. Owner look: boar count/placement and note text.
+### QUEST-MARK-01w wire [lane C via gameHooks seam, ~0.5 d, deps: seam ARCH OK (B1), QUEST-MARK-01, QUEST-CHAIN-02]
+`game/js/quest/wire/questMarks.js` on `onBoot/onTick/onEvent(flag:set|item:got|beast:died|prop:touched)`: spawn/hide `questMark` voxel entities (`components.voxel.hidden` seam, US-079b0) at `markerTargets()` anchors, play pop on appear and fade on TAKE (`prop:touched` / `flag:set` quest-taken), cull beyond visibleRangeM. No main.js/engine edits (NEEDS B1 line if a hook point is missing). Owner look: marker readable at 3 m and 12 m, disappears the moment the quest is taken.
+### QUEST-TEXT-02 [writer, ~0.25 d]
+Texts for note1, note2 ("kill 5 boars" in canon voice), objective lines for `note1/note2/beasts(5)`, HUD <= 38 chars. Append to docs/story.md '## Sprint 8 texts'.
+
+## Emissive lighting (owner ask 2026-10-08)
+Owner: glowing voxels (chest glint, quest '!', lamps, signal relay, embers, runes) light their surroundings; nicest look at good speed. Design: architecture.md 38.12 (derived point lights: DO first; bleed pass: High/Ultra; halo in edge: High/Ultra; Low = material self-emissive only; all three forced off in every `?gpucompare=` mode). Order: owner sees derived lights first, bleed/halo after picking a strength in EMIS-00.
+### EMIS-00 strength mockups [designer, ~0.5 d, deps: none]
+`design/preview/emissive.html`: night scene with the '!' at 3 m and 12 m, a lamp, embers; weak / medium / strong (`bleedGain`, `haloBg`, `glyphRamps.halo`). Owner picks one.
+### EMIS-01a derive emissive lights [lane B1, ~0.75 d, deps: none]
+`engine/voxel/emissiveLight.js` (pure `deriveEmissiveLight`), stored on the packed model, def override `light: {preset} | false`, flicker from the material. Node tests (38.12 (1)). Ends in arch-review.
+### EMIS-01b LightSet derived pool + feed [lane B1, ~0.75 d, deps: EMIS-01a]
+`LightSet.beginDerived/offerDerived/endDerived` (ranking, 1.25x hysteresis, zero alloc), voxel-pool feed (root pose), `gfxPresets` knob `emissive`, forced off under `?gpucompare=`. Tests + bench row. Ends in arch-review.
+### EMIS-02 gate + perf, owner shot [PC-A, ~0.25 d, deps: EMIS-01b]
+gpucompare rows unchanged; perf table derived on/off (Arc 400x150 High); slot swaps per minute on the m1 route; night owner shot of the '!' and a lamp.
+### EMIS-03a bleed plumbing + JS twin [lane B1, ~0.5 d, deps: EMIS-00 pick]
+MatF `GLOW` column, `rt.emissive` flags + presets, `PASS_NAMES += 'bleed'` + frame timer slot move, `engine/render/bleed.js` `bleedCell` twin + tests.
+### EMIS-03b bleed WGSL pass [lane B2, ~1 d, deps: EMIS-03a]
+`wgsl/bleed.wgsl.js` (H+V, depth-aware, sky halo in .a) + `wg/passBleed.js`, shade binding 16 adds `texBleed.rgb * bleedGain` to Lc. WGSL string tests. Ends in arch-review.
+### EMIS-04 halo in edge [lane B2, ~0.5 d, deps: EMIS-03b]
+edge.wgsl.js + edgePass.js twin: bg lift + `glyphRamps.halo` on space cells only. Ends in arch-review.
+### EMIS-05 compare rows + perf table [PC-A, ~0.25 d, deps: EMIS-04]
+`?gpucompare=emissive` rows, perf table High 400x150 / Ultra 480x180 (target < 1 ms total), Low 240x90 night readability check (fallback: 1-cell halo at Low).
+
+### EMIS owner picks (2026-10-08)
+Strength = MEDIUM (lightGain 0.8, bleedGain 1.2, haloBg 0.45, haloMin 0.08, haloR 3, ramp ` .':`; designer: haloR >= 3 or the '!' gets no halo at 12 m). Glow hue = warm orange-gold (a little orange): approves `materials[k].glowColor` (small palette edit, append-only; e.g. emberHot/brassLight family). Owner wants the WHOLE quest '!' glowing (white-gold with a little orange), NOT a dark silhouette: QUEST-MARK rework (dark iron outline removed or one faint warm-dark rim voxel; whole glyph emissive). Still open for the owner: derived light off for chests/hook lamp?; wick/coal voxels for lamp+brazier?; bleed reach.
+
+### BUG-WEBGPU-EYELID-01 (owner walk-test 2026-10-08) [B1, P1, ~0.25 d]
+Owner on `game/index.html?backend=webgpu` (master): the wake-up eyelid blink is NOT visible (WebGL2 shows it). Cause (confirmed by code read): `drawEyelid(rt, uiStyle, open)` (game/js/quest/wake.js:79, called main.js:1396) writes CPU cells into `rt.cells`, but with `frameComplete` the WebGPU presenter shows the sprite-pass output (rt.setPresentCells, WgCellPipeline.js:9-10/125), so CPU scene-cell writes are never shown. Fix: draw the eyelid through the path the GPU frame DOES present (the engine ui/overlay layer, same as the editor help overlay fix, or a tiny eyelid overlay pass), keep the WebGL2 result identical. AC: Node test for the eyelid cells on the ui layer; headless capture at t=0.3 s on both backends shows the lid; owner look.
+### BOOT-SPEED-01 (owner 2026-10-08: "slow, already taking 3 sec") [B1, P1]
+WebGPU boot takes ~3 s before the first frame: expected cause = synchronous pipeline compile (~25 pass constructors). This is S8-B1-09 (architecture.md 38.10b: compile batch + loading card, boot waits on all promises, log per-pipeline ms). Raise it to the top of B1's post-hook list; first step: a boot-time breakdown (`performance.now()` marks: adapter, device, each pass constructor, content load, mesh load, first frame) printed to the console and F3 so the 3 s is measured, then 09a/09b.

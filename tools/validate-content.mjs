@@ -55,11 +55,14 @@ import { resolve as resolvePath } from 'node:path';
 import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, meshFromBin, validateMesh, validateLook, maskFromJSON } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
+import { validateQuestDefinition } from '../game/js/quest/sim/quest.js';
 
 const CLASSIC_SCRIPTS = [
   '../design/palette.js',
   '../design/detail-pass.js',
+  '../design/items.js',
   '../design/models/title.js',
+  '../design/models/menu_ui.js',
   '../design/models/lantern.js',
   '../design/models/brazier.js',
   '../design/models/lever.js',
@@ -533,6 +536,49 @@ export function validateContent(ASSETS, opts = {}) {
     }
   }
 
+  // S8-C-17 / D-049: current inline copy and references only. A carried
+  // quest item can be an inventory def or a declared level pickup (lantern).
+  const itemDefs = ASSETS?.items?.defs || {};
+  const itemIds = new Set(Object.keys(itemDefs));
+  const inlineText = (text, path) => check(typeof text === 'string' && text.trim().length > 0 && isAscii(text), path, 'required printable ASCII text is missing or invalid');
+  for (const [id, def] of Object.entries(itemDefs)) {
+    check(def?.id === id, `items.defs.${id}.id`, 'must match the item key');
+    inlineText(def?.name, `items.defs.${id}.name`);
+    inlineText(def?.desc, `items.defs.${id}.desc`);
+  }
+  for (const [id, table] of Object.entries(ASSETS?.items?.loot || {})) {
+    for (const [i, entry] of (table.entries || []).entries()) {
+      check(itemIds.has(entry.item), `items.loot.${id}.entries[${i}].item`, `item "${entry.item}" not found`);
+    }
+  }
+  for (const level of Object.values(levels)) {
+    for (const pickup of level.interactables || []) {
+      if (typeof pickup.interact === 'string' && pickup.interact.endsWith('.take')) itemIds.add(pickup.id);
+    }
+  }
+  const beastIds = new Set();
+  for (const world of Object.values(worlds)) {
+    for (const entity of world.entities || []) if (entity.type === 'beast') beastIds.add(entity.id);
+  }
+  const quests = opts.quests || [];
+  const questIds = new Set();
+  for (const { path, def } of quests) {
+    check(!questIds.has(def?.id), `${path}.id`, `duplicate quest id "${def?.id}"`);
+    questIds.add(def?.id);
+    try { validateQuestDefinition(def); check(true, path, ''); }
+    catch (e) { check(false, path, e.message); continue; }
+    for (const objective of def.objectives) {
+      const base = `${path}.objectives[${objective.id}]`;
+      inlineText(objective.text, `${base}.text`);
+      if (objective.when.type === 'item') {
+        check(itemIds.has(objective.when.id), `${base}.when.id`, `item "${objective.when.id}" not found in item defs or level pickups`);
+      }
+      if (objective.when.type === 'beasts') {
+        for (const id of objective.when.ids) check(beastIds.has(id), `${base}.when.ids`, `beast "${id}" not found in world entities`);
+      }
+    }
+  }
+
   // ---- 6. CO-8 (docs/coordinates.md section 8): coordinate/frame content rules ----
   // World structures: origin.x/y/z finite, yawSteps an integer 0..3.
   for (const worldKey of Object.keys(worlds)) {
@@ -709,11 +755,29 @@ export function validateMaskFiles(dir) {
 // ---------------------------------------------------------------------------
 // CLI entry point
 // ---------------------------------------------------------------------------
+export function loadQuestFiles(dir) {
+  const quests = [], errors = [];
+  const walk = (d) => {
+    for (const entry of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = `${d}/${entry.name}`;
+      if (entry.isDirectory()) walk(path);
+      else if (entry.name.endsWith('.quest.json')) {
+        try { quests.push({ path, def: JSON.parse(readFileSync(path, 'utf8')) }); }
+        catch (e) { errors.push(`${path}: JSON parse failed: ${e.message}`); }
+      }
+    }
+  };
+  if (existsSync(dir)) walk(dir);
+  return { quests, errors };
+}
+
 async function main() {
   const ASSETS = await loadDesignAssets();
   const meshFilesDir = fileURLToPath(new URL('../content/meshes', import.meta.url));
   const maskFilesDir = fileURLToPath(new URL('../content/masks', import.meta.url));
-  const { errors: allErrors, warnings, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir });
+  const questFiles = loadQuestFiles(fileURLToPath(new URL('../content/quests', import.meta.url)));
+  const { errors: allErrors, warnings, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, quests: questFiles.quests });
+  allErrors.push(...questFiles.errors);
   for (const w of warnings) console.warn(`WARN ${w}`);
   const meshOnlyText = meshOnlyCount ? `, ${meshOnlyCount} mesh-only model(s)` : '';
   if (allErrors.length) {

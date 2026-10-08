@@ -40,13 +40,15 @@ export function beastLoot(ctx) {
 /**
  * @param {import('../../../../engine/index.js').World} world
  * @param {{on: Function, emit: Function}} events
- * @param {{items: Record<string, any>, beasts: any, rng: any, inventoryOf: () => any, table: any}} opts
+ * @param {{items: Record<string, any>, beasts?: any, kind?: string, rng: any, inventoryOf: () => any, table: any}} opts
  *   `items` = item defs (ASSETS.items.defs), `beasts` = the createBeastSim result, `rng` = this module's own
  *   stream (`createRng(((nav.seed ?? 1) ^ LOOT_SEED_SALT) >>> 0)`), `inventoryOf()` = the player's inventory
  *   component (or null), `table` = LOOT_TABLE.boar.
- * @returns {null | ReturnType<typeof buildLoot>} `null` when there is no beast sim.
+ *   For a chest table, pass kind:'chest' and no beast sim; world is unused in that branch.
+ * @returns {null | ReturnType<typeof buildLoot> | ReturnType<typeof buildChestLoot>} `null` when there is no beast sim (boar branch).
  */
 export function createLoot(world, events, opts) {
+  if (opts.kind === 'chest') return buildChestLoot(events, opts);
   if (!opts.beasts) return null;
   return buildLoot(world, events, opts);
 }
@@ -170,4 +172,66 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table }) {
   };
 
   return loot;
+}
+
+// S8-C-06: the chest branch shares createLoot and inventory transfer rather than a second loot service.
+// A table contains fixed [{item,n}] plus one optional weighted pick [{item,n,weight}].
+// Roll once at create with a chest-owned stream. claim is all-or-nothing so openedChests is sufficient to save it.
+function buildChestLoot(events, {items, table, rng, inventoryOf}) {
+  if (!table || !Array.isArray(table.fixed) || !Array.isArray(table.weighted)) throw new Error('chest loot: invalid table');
+  const ids = [], counts = [], caps = [];
+  let weight = 0, claimed = false;
+  function validate(row, weighted) {
+    const d = row && items[row.item];
+    if (!d || !Number.isSafeInteger(row.n) || row.n < 1 || row.n > 2147483647
+      || !Number.isSafeInteger(d.stackMax) || d.stackMax < 1 || d.pending === 'owner') throw new Error('chest loot: invalid or pending item');
+    if (weighted && (!Number.isFinite(row.weight) || row.weight <= 0)) throw new Error('chest loot: invalid weight');
+  }
+  for (const row of table.fixed) validate(row, false);
+  for (const row of table.weighted) { validate(row, true); weight += row.weight; }
+  if (!Number.isFinite(weight) || !table.fixed.length && !table.weighted.length) throw new Error('chest loot: empty or overflowing table');
+  function add(row) {
+    let i = ids.indexOf(row.item);
+    if (i < 0) { i = ids.length; ids.push(row.item); counts.push(0); caps.push(items[row.item].stackMax); }
+    counts[i] += row.n;
+    if (!Number.isSafeInteger(counts[i]) || counts[i] > 2147483647) throw new Error('chest loot: count overflow');
+  }
+  for (const row of table.fixed) add(row);
+  if (table.weighted.length) {
+    let pick = rng.nextFloat() * weight;
+    for (let i = 0; i < table.weighted.length; i++) {
+      const row = table.weighted[i]; pick -= row.weight;
+      if (pick < 0 || i === table.weighted.length - 1) { add(row); break; }
+    }
+  }
+  const added = {id:'', n:0};
+  function fits(inv) {
+    if (!inv) return false;
+    let empty = 0, needed = 0;
+    for (let j = 0; j < inv.slots.length; j++) if (!inv.slots[j].id) empty++;
+    for (let i = 0; i < ids.length; i++) {
+      let n = counts[i];
+      for (let j = 0; j < inv.slots.length; j++) {
+        const slot = inv.slots[j];
+        if (slot.id === ids[i]) n -= Math.max(0, caps[i] - slot.n);
+      }
+      if (n > 0) needed += Math.ceil(n / caps[i]);
+    }
+    return needed <= empty;
+  }
+  return {
+    canClaim() { return !claimed && fits(inventoryOf()); },
+    claim() {
+      const inv = inventoryOf();
+      if (claimed || !fits(inv)) return false;
+      for (let i = 0; i < ids.length; i++) addItem(inv, items, ids[i], counts[i]);
+      claimed = true;
+      return true;
+    },
+    // Caller commits its opened state BEFORE emitting, so an event-triggered save is consistent.
+    emitAdded() {
+      if (!claimed) return;
+      for (let i = 0; i < ids.length; i++) { added.id = ids[i]; added.n = counts[i]; events.emit('inventory:added', added); }
+    },
+  };
 }
