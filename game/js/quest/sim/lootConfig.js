@@ -25,3 +25,9 @@ export const LOOT_TABLE = {
 
 /** The loot RNG's own stream (37.16.3): XORed into the world nav seed so the beast wander RNG is never perturbed. */
 export const LOOT_SEED_SALT = 0x10075;
+
+/** S8-C-06: default chest interaction; facingCos is cos(70 degrees), precomputed for the sim. */
+export const CHEST_DEFAULTS = {
+  openSeconds: 0.6, radius: 1.6, facingDeg: 70, facingCos: 0.3420201433256687,
+  prompt: '[E] Open chest',
+};
