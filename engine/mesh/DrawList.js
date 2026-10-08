@@ -335,6 +335,19 @@ export function frameMatrix12(frame, out) {
 }
 
 /**
+ * MESH-SCALE-01: model matrix of a placed mesh = `frameMatrix12` with the placement's uniform `scale` (> 0, absent/1 = none)
+ * folded into the 3x3 (rows scaled; translation unchanged). One source for the single draw, the instance matrix and the
+ * collider bake. Normals stay correct because every consumer renormalises (rasterJS transformVertex, WGSL vs_main).
+ * @param {{frame:any, scale?:number}} placed @param {Float64Array} out @returns {Float64Array}
+ */
+export function placementMatrix12(placed, out) {
+  frameMatrix12(placed.frame, out);
+  const k = placed.scale;
+  if (k !== undefined && k !== 1) for (let i = 0; i < 9; i++) out[i] *= k;
+  return out;
+}
+
+/**
  * Resolved-materials draw copies of registry `MeshData` (which stays unresolved, shared with colliders). Per mesh in a
  * WeakMap, rebuilt when `idFor` changes. Allocates only on first use.
  */
@@ -429,7 +442,7 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
     const s = structs[si];
     const mesh = cache.get(s.mesh, idFor, world.maskAtlas);
     const item = list.push(mesh, DRAW_STATIC);
-    frameMatrix12(s.frame, item.matrix);
+    placementMatrix12(s, item.matrix);
     item.zBase = s.origin.z;
     item.planeIdOr = (k & 0xFF) << 20;
     item.objectId = 0xA000 | si;

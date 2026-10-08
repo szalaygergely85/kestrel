@@ -1,5 +1,6 @@
 // ME-14c2: independent double-sided ray/triangle oracle (architecture 27.15 step 3, 37.1).
 // Reads authored content as data; no product/design imports and no raster coverage implementation in the oracle.
+import { readMeshJSON } from '../test/meshFile.test.js';
 import { readFileSync } from 'node:fs';
 import { meshFromJSON, resolveMats } from '../mesh/MeshData.js';
 import { DrawList, DRAW_STATIC } from '../mesh/DrawList.js';
@@ -12,7 +13,7 @@ import { makeOk } from '../test/assert.js';
 let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
-const mesh = meshFromJSON(JSON.parse(readFileSync(new URL('../../content/meshes/ruins/Fences/Line.mesh.json', import.meta.url), 'utf8')));
+const mesh = meshFromJSON(readMeshJSON(new URL('../../content/meshes/ruins/Fences/Line.mesh.json', import.meta.url)));
 resolveMats(mesh, () => 17);
 const COLS = 80, ROWS = 40, origin = [1000, 700, 0], yaw = 37 * Math.PI / 180;
 const c = Math.cos(yaw), s = Math.sin(yaw);

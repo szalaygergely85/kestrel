@@ -8,6 +8,7 @@
 // purpose: every fixture file in this repo builds its own binary buffers
 // in-code rather than sharing a test-only module).
 
+import { readMeshJSON } from './mesh-file.mjs';
 import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -166,12 +167,19 @@ await testAsync('runCli: writes a .mesh.json that round-trips', async () => {
   const result = await runCli([glbPath, 'test:tri-cli', '--out', outPath]);
   assert.strictEqual(result.wrote, outPath);
   assert.strictEqual(result.report.triCount, 1);
-  const text = fs.readFileSync(outPath, 'utf8');
-  assert.match(text, /"pos": \[.*\]/);
-  const written = JSON.parse(text);
-  const mesh = meshFromJSON(written);
+  // MESH-BIN-01: default = small meta + .mesh.bin
+  const meta = JSON.parse(fs.readFileSync(outPath, 'utf8'));
+  assert.strictEqual(meta.bin, 'tri.mesh.bin');
+  assert.ok(!('pos' in meta) && fs.existsSync(path.join(tmpDir, 'out', 'tri.mesh.bin')));
+  const mesh = meshFromJSON(readMeshJSON(outPath));
   const { errors } = validateMesh(mesh);
   assert.deepStrictEqual(errors, []);
+  // --json = the legacy single all-JSON file
+  const legacy = path.join(tmpDir, 'out', 'legacy.mesh.json');
+  await runCli([glbPath, 'test:tri-cli', '--json', '--out', legacy]);
+  const text = fs.readFileSync(legacy, 'utf8');
+  assert.match(text, /"pos": \[.*\]/);
+  assert.deepStrictEqual(validateMesh(meshFromJSON(JSON.parse(text))).errors, []);
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
@@ -205,11 +213,8 @@ await testAsync('runCli: --mats reads and persists the sidecar', async () => {
     fs.writeFileSync(map, JSON.stringify({ TestMat: 'stone' }));
     const result = await runCli([glb, 'test_mapped_cli', '--mats', map, '--out', out]);
     assert.deepStrictEqual(result.report.unmapped, []);
-    assert.deepStrictEqual(JSON.parse(fs.readFileSync(out, 'utf8')).mats, { TestMat: 'stone' });
-  } finally {
-    for (const file of [glb, map, out]) if (fs.existsSync(file)) fs.unlinkSync(file);
-    fs.rmdirSync(dir);
-  }
+    assert.deepStrictEqual(readMeshJSON(out).mats, { TestMat: 'stone' });
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 // 3. --simplify / --budget (MESH-SIMP-01)
@@ -228,11 +233,12 @@ await testAsync('runCli: --simplify reaches about the target, stays valid and de
     fs.writeFileSync(glb, gridGlb(16)); // 512 tris
     const r = await runCli([glb, 'test_simp', '--simplify', '100', '--out', a]);
     assert.ok(r.report.triCount >= 90 && r.report.triCount <= 110, `triCount ${r.report.triCount}`);
-    const json = JSON.parse(fs.readFileSync(a, 'utf8'));
+    const json = readMeshJSON(a);
     assert.strictEqual(json.triCount, r.report.triCount);
     assert.strictEqual(validateMesh(meshFromJSON(json)).errors.length, 0);
     await runCli([glb, 'test_simp', '--simplify', '100', '--out', b]);
-    assert.strictEqual(fs.readFileSync(a, 'utf8'), fs.readFileSync(b, 'utf8'));
+    assert.deepStrictEqual(fs.readFileSync(path.join(dir, 'a.mesh.bin')), fs.readFileSync(path.join(dir, 'b.mesh.bin')));
+    assert.deepStrictEqual(readMeshJSON(a), { ...readMeshJSON(b) });
     const full = await runCli([glb, 'test_simp', '--simplify', '5000', '--dry-run']); // target above the count: untouched
     assert.strictEqual(full.report.triCount, 512);
     await assert.rejects(() => runCli([glb, 'test_simp', '--simplify', '2', '--dry-run']), /triangle target/);
@@ -327,7 +333,7 @@ await testAsync('Ruins import unchanged by ALPHA-01a: no uvMask/mask, render dat
   try {
     const out = path.join(dir, 'Line.json');
     await runCli(['design/meshes/ruins/Fences/Line.glb', 'ruins/Fences/Line', '--out', out]);
-    const now = JSON.parse(fs.readFileSync(out, 'utf8')), was = JSON.parse(fs.readFileSync('content/meshes/ruins/Fences/Line.mesh.json', 'utf8'));
+    const now = JSON.parse(fs.readFileSync(out, 'utf8')), was = readMeshJSON('content/meshes/ruins/Fences/Line.mesh.json');
     assert.ok(!('uvMask' in now));
     for (const k of ['pos', 'uv', 'nrm', 'flat', 'aux', 'bbox', 'ranges', 'matKeys', 'triCount']) assert.deepStrictEqual(now[k], was[k], k);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }

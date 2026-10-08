@@ -1,5 +1,6 @@
 // engine/mesh/meshInstances.test.js (TREES-LP-b: InstanceGroups.meshGroup, `meshDraw` arg, shadow branch).
 // Run: node engine/mesh/meshInstances.test.js  (re-spawns itself with --expose-gc for the zero-alloc gate)
+import { readMeshJSON } from '../test/meshFile.test.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
@@ -23,7 +24,7 @@ let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
-const load = (n) => meshFromJSON(JSON.parse(fs.readFileSync(new URL(`../../content/meshes/kenney/${n}.mesh.json`, import.meta.url), 'utf8')));
+const load = (n) => meshFromJSON(readMeshJSON(new URL(`../../content/meshes/kenney/${n}.mesh.json`, import.meta.url)));
 const oak = load('tree_oak');
 const idFor = () => 1;
 const COLS = 240, ROWS = 90, rt = { cols: COLS, rows: ROWS, pxCellW: 1, pxCellH: 1 };

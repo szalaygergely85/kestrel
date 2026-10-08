@@ -4,6 +4,7 @@
 // MESH-UVMAP-01: --uvmap re-imports with per-triangle palette keys from the colour texture (--uvmap auto, tools/uvmap.mjs); default names =
 // the meshes placed in content/worlds/world_m1.world.json; every mesh is re-imported, within budget or not.
 // Meshes listed in content/manifest.json are written in canonical stringifyContent form, the others in the importer's packed form.
+import { readMeshJSON } from './mesh-file.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -26,7 +27,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'reimport-'));
 const rows = [];
 for (const name of names) {
   const file = path.join(dir, `${name}.mesh.json`);
-  const cur = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const cur = readMeshJSON(file);
   const budget = budgetFor(name);
   if (!uvmap && !full && (!budget || cur.triCount <= budget)) { rows.push([name, cur.triCount, cur.triCount, budget, 'ok']); continue; }
   const t0 = Date.now();
@@ -39,7 +40,8 @@ for (const name of names) {
     if (!uvmap || !/palette-map has no entry/.test(e.message)) throw e;
     mapped = false; r = await runCli(args(['--mats', matsPath]));
   }
-  if (!dry && listed.has(`meshes/quaternius/${name}.mesh.json`)) fs.writeFileSync(file, stringifyContent(JSON.parse(fs.readFileSync(file, 'utf8'))), 'utf8');
+  // MESH-BIN-01: the importer writes meta + .mesh.bin (meta is already canonical stringifyContent); legacy all-JSON registered files keep the canonical rewrite
+  if (!dry && listed.has(`meshes/quaternius/${name}.mesh.json`) && typeof JSON.parse(fs.readFileSync(file, 'utf8')).bin !== 'string') fs.writeFileSync(file, stringifyContent(JSON.parse(fs.readFileSync(file, 'utf8'))), 'utf8');
   rows.push([name, cur.triCount, r.report.triCount, budget, (dry ? 'dry' : 'reimported') + (full && budget && r.report.triCount > budget ? ' (over budget, kept)' : ''), ...(uvmap ? [mapped ? Object.entries(r.report.uvmap.tris).map(([k, n]) => `${k}=${n}`).join(' ') : '(mats kept)', `${Date.now() - t0}ms`] : [])]);
 }
 fs.rmSync(tmp, { recursive: true, force: true });

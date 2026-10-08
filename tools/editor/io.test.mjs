@@ -109,7 +109,9 @@ const codeParts = { palette: {}, models: {}, worlds: {}, levels: {}, uiStyle: nu
 {
   const { readFileSync } = await import('node:fs');
   const { loadContentPack } = await import('../../engine/index.js');
-  const meshText = readFileSync(new URL('../../content/meshes/quaternius/DeadTree_1.mesh.json', import.meta.url), 'utf8');
+  const { readMeshJSON } = await import('../mesh-file.mjs');
+  const { fileURLToPath } = await import('node:url');
+  const meshText = JSON.stringify(readMeshJSON(fileURLToPath(new URL('../../content/meshes/quaternius/DeadTree_1.mesh.json', import.meta.url))));
   const mem = new Map([['m.json', JSON.stringify({ kind: 'manifest', schema: 1, id: 'm', contentVersion: 0, files: ['DeadTree_1.mesh.json'] })], ['DeadTree_1.mesh.json', meshText]]);
   const reference = await loadContentPack('http://x.invalid/m.json', { fetchText: (u) => { const k = new URL(u).pathname.slice(1); return mem.has(k) ? Promise.resolve(mem.get(k)) : Promise.reject(new Error('HTTP 404')); } });
   const meshId = Object.keys(reference.meshes)[0];

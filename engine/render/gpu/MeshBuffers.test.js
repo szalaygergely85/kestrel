@@ -22,6 +22,7 @@
 //     `TerrainMeshSet` chunk (ME-05's own tower-band fixture).
 //
 //   node engine/render/gpu/MeshBuffers.test.js
+import { readMeshJSON } from '../../test/meshFile.test.js';
 import {
   buildStaticVertexData, STATIC_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, MeshBuffers,
   buildTerrainVertexData, TERRAIN_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT,
@@ -370,7 +371,7 @@ function decode(buf, vertCount) {
 {
   const fs2 = await import('node:fs');
   const { meshFromJSON } = await import('../../mesh/MeshData.js');
-  const rock = meshFromJSON(JSON.parse(fs2.readFileSync(new URL('../../../content/meshes/quaternius/Rock_Medium_1.mesh.json', import.meta.url), 'utf8')));
+  const rock = meshFromJSON(readMeshJSON(new URL('../../../content/meshes/quaternius/Rock_Medium_1.mesh.json', import.meta.url)));
   const e = buildVoxelVertexData(rock);
   const V = rock.triCount * 3;
   ok('kind-9 mesh: 3 verts + 3 sequential indices per triangle', e.vertexCount === V && e.indexCount === V && e.index.length === V && e.index[V - 1] === V - 1 && e.vertex.byteLength === V * VOXEL_STRIDE_BYTES);

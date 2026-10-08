@@ -1,6 +1,7 @@
 // engine/mesh/shadowList.test.js (ME-15a, docs/architecture.md 27.9a item 4, ACs 3 and 5).
 // Zero-allocation gate is hard: when `global.gc` is missing this file re-runs itself with `--expose-gc`.
 // Run: node engine/mesh/shadowList.test.js
+import { readMeshJSON } from '../test/meshFile.test.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { DrawList, DRAW_STATIC, LevelMeshCache, MeshDrawCache, addStructures, MAX_DRAW_ITEMS } from './DrawList.js';
@@ -210,7 +211,7 @@ function cameraPlanes() {
 
 // ---- MESH-SHADOW-01: per-mesh / per-placement castShadow -------------------------
 {
-  const load = (n) => meshFromJSON(JSON.parse(fs.readFileSync(new URL(`../../content/meshes/quaternius/${n}.mesh.json`, import.meta.url), 'utf8')));
+  const load = (n) => meshFromJSON(readMeshJSON(new URL(`../../content/meshes/quaternius/${n}.mesh.json`, import.meta.url)));
   const pebble = load('Pebble_Round_1'), path = load('RockPath_Round_Wide'), rock = load('Rock_Medium_1'), tree = load('DeadTree_1');
   ok('import rule: pebble / path stone flagged, rock / tree not', pebble.castShadow === false && path.castShadow === false && rock.castShadow === undefined && tree.castShadow === undefined);
   const stub = { structures: [], renderVersion: 0, structVersion: 0, events: null };
@@ -229,7 +230,7 @@ function cameraPlanes() {
 
 // ---- MESH-SHADOW-02: placed-mesh caster budget (distance cut + nearest-first cap) ------------
 {
-  const rock = meshFromJSON(JSON.parse(fs.readFileSync(new URL('../../content/meshes/quaternius/Rock_Medium_1.mesh.json', import.meta.url), 'utf8')));
+  const rock = meshFromJSON(readMeshJSON(new URL('../../content/meshes/quaternius/Rock_Medium_1.mesh.json', import.meta.url)));
   const stub = { structures: [], renderVersion: 0, structVersion: 0, events: null };
   const eye = { x: 0, y: 0 };
   const run = (xs, opts = {}) => {
@@ -267,7 +268,7 @@ function cameraPlanes() {
 // ---- SHADOW-ROT (owner bug 2026-10-07): turning the camera at a fixed eye never changes the placed-mesh casters ----
 // > MAX_MESH_DRAWS placements around the eye; the box centre moves with yaw (aheadM), the nearest-64 pick must not.
 {
-  const rock = meshFromJSON(JSON.parse(fs.readFileSync(new URL('../../content/meshes/quaternius/Rock_Medium_1.mesh.json', import.meta.url), 'utf8')));
+  const rock = meshFromJSON(readMeshJSON(new URL('../../content/meshes/quaternius/Rock_Medium_1.mesh.json', import.meta.url)));
   const stub = { structures: [], renderVersion: 0, structVersion: 0, events: null };
   let n = 0;
   for (let gx = -5; gx <= 5; gx++) for (let gy = -5; gy <= 5; gy++) World.prototype.placeMesh.call(stub, rock, { x: 100 + gx * 6, y: 50 + gy * 6, z: 0 }, `r${n++}`, 0); // 121 rocks, +-30 m

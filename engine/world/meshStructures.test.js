@@ -67,4 +67,22 @@ for (const yaw of [0, 35, 90, -20, 225]) {
 const overlap = World.load({ structures: [{ id: 'imported', mesh: 'wall', origin: { x: 1, y: 1, z: 0 }, yawDeg: 35 }, levelPlacement] }, assets);
 equal(overlap.structureAt(1, 1).id, 'room'); equal(overlap.floorAt(1, 1), 0);
 assert.throws(() => new World().placeMesh(mesh, { x: 0, y: 0, z: 0 }, 'bad', NaN), /finite/); checks++;
+// MESH-SCALE-01: placement scale loads (validated), scales bbox + collider, round-trips through serialize; absent = unchanged.
+{
+  const sw = World.load({ name: 'scaled', structures: [{ id: 'a', mesh: 'wall', origin: { x: 20, y: -3, z: 1.5 }, yawDeg: 0 },
+    { id: 'b', mesh: 'wall', origin: { x: 40, y: -3, z: 1.5 }, yawDeg: 0, scale: 2 }] }, assets, { physics: 'mesh' });
+  const [pa, pb] = sw.structures;
+  equal(pa.scale, undefined); equal(pb.scale, 2);
+  equal(pb.bbox.x1 - pb.bbox.x0, 2 * (pa.bbox.x1 - pa.bbox.x0)); equal(pb.bbox.z1 - 1.5, 2 * (pa.bbox.z1 - 1.5));
+  const hit = {}; // ray along +y at x = 40 + 3 (inside the scaled wall's x extent -2..4, outside the unscaled -1..2) hits the wall at y = -3
+  equal(raycastColliders(sw.colliders, sw.colliders.length, 40 + 3, -8, 1.5 + 0.2, 0, 1, 0, 10, hit), true);
+  assert.ok(Math.abs(hit.t - 5) < 1e-9); checks++;
+  equal(raycastColliders(sw.colliders, sw.colliders.length, 20 + 3, -8, 1.5 + 0.2, 0, 1, 0, 10, hit), false);
+  const st = serialize(sw);
+  equal(Object.keys(st.structures[0]).sort(), ['id', 'mesh', 'origin', 'yawDeg']);
+  equal(Object.keys(st.structures[1]).sort(), ['id', 'mesh', 'origin', 'scale', 'yawDeg']);
+  const back = deserialize(JSON.parse(JSON.stringify(st)), assets, { physics: 'mesh' });
+  equal(back.structures[1].scale, 2); equal(serialize(back), st);
+  assert.throws(() => World.load({ name: 'bad', structures: [{ id: 'x', mesh: 'wall', origin: { x: 0, y: 0, z: 0 }, scale: 9 }] }, assets), /scale/); checks++;
+}
 console.log(`${checks} passed, 0 failed. ALL PASS`);

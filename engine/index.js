@@ -86,6 +86,7 @@ export { MaskAtlas, buildMaskAtlas, cutoffByte } from './render/MaskAtlas.js'; /
 // documented public shape (27.3), these are just its (de)serialize/validate
 // functions.
 export { meshToJSON, meshFromJSON, validateMesh } from './mesh/MeshData.js';
+export { encodeMeshBin, decodeMeshBin, meshFromBin, meshBinMeta, MESH_BIN_VERSION } from './mesh/meshBin.js'; // MESH-BIN-01
 export { simplifyTriangles } from './mesh/simplify.js'; // TREES-LP-a: tools/dae-import.mjs
 export { buildPrismProxy, planMeshCollision, PROXY_BAND_H, WALK_OVER_H } from './mesh/colliderProxy.js';
 export { VoxelPool } from './render/voxelPool.js';

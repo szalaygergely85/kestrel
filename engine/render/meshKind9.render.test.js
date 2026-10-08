@@ -1,5 +1,6 @@
 // ME-14c2 (docs/architecture.md 37.1): kind-9 (KIND_MESH) in the JS frame path - rasterJS face rule, detail shading,
 // edge pass, compositor feed. Run: node engine/render/meshKind9.render.test.js
+import { readMeshJSON } from '../test/meshFile.test.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
@@ -31,7 +32,7 @@ let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
-const loadRuins = (rel) => meshFromJSON(JSON.parse(readFileSync(new URL('../../content/meshes/ruins/' + rel, import.meta.url), 'utf8')));
+const loadRuins = (rel) => meshFromJSON(readMeshJSON(new URL('../../content/meshes/ruins/' + rel, import.meta.url)));
 const line = loadRuins('Fences/Line.mesh.json');
 const moss = loadRuins('Moss/GroundMossXS.mesh.json');
 // The committed meshes carry an empty `mats` (sidecars arrive with ME-14c4): map them here.

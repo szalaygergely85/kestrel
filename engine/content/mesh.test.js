@@ -1,4 +1,5 @@
 // ME-14a: actual content loader -> registry, malformed asset errors, and mesh-frame transforms.
+import { readMeshJSON } from '../test/meshFile.test.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { loadContentPack } from './loadPack.js';
@@ -8,7 +9,7 @@ import { AssetRegistry } from '../core/assets.js';
 import { makeFrame, localToWorld, worldToLocal, localDirToWorld, localYawToWorld, worldYawToLocal, frameBBox, frameEquals } from '../core/transform.js';
 import { meshFromJSON, meshToJSON } from '../mesh/MeshData.js';
 
-const sample = JSON.parse(readFileSync(new URL('../../content/meshes/ruins/Fences/Line.mesh.json', import.meta.url), 'utf8'));
+const sample = readMeshJSON(new URL('../../content/meshes/ruins/Fences/Line.mesh.json', import.meta.url));
 sample.mats = { [sample.matKeys[0]]: 'stone' };
 const manifest = { kind: 'manifest', schema: 1, id: 'mesh_pack', nextId: 1, contentVersion: 7, files: ['line.mesh.json'] };
 async function load(def = sample, files = manifest.files) {

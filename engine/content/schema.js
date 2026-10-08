@@ -50,7 +50,7 @@ export const KEY_ORDER = {
   manifest: [...ENVELOPE_KEYS, 'contentVersion', 'files', 'masks'],
   // ALPHA-01a (37.17): alpha mask file (no nextId, no id collections)
   mask: ['kind', 'schema', 'id', 'w', 'h', 'cutoffDefault', 'data'],
-  mesh: [...ENVELOPE_KEYS, 'version', 'layout', 'pos', 'uv', 'uvMask', 'nrm', 'flat', 'aux', 'idx', 'triCount', 'bbox', 'ranges', 'matKeys', 'mats', 'matsResolved', 'meshVersion', 'collide', 'collider', 'castShadow'],
+  mesh: [...ENVELOPE_KEYS, 'version', 'layout', 'bin', 'pos', 'uv', 'uvMask', 'nrm', 'flat', 'aux', 'idx', 'triCount', 'bbox', 'ranges', 'matKeys', 'mats', 'matsResolved', 'meshVersion', 'collide', 'collider', 'castShadow', 'colliderParts'],
   level: [...ENVELOPE_KEYS, 'name', 'title', 'version', 'cellSize', 'size', 'rows', 'legend', 'layers', 'tilt', 'start', 'sun', 'ambient', 'lights', 'props', 'interactables', 'triggers', 'markers', 'route', 'routeNotes'],
   // US-026a (architecture.md 23.2): `bounds`/`triggers` are additive
   // optional keys - schema stays 1, a world file without them still loads.

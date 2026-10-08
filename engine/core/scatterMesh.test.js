@@ -1,4 +1,5 @@
 // TREES-LP-b (37.15 item 5): forest species `mesh` XOR `model`. Run: node engine/core/scatterMesh.test.js
+import { readMeshJSON } from '../test/meshFile.test.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createEngine, SCATTER_OBJECT_BASE } from './engine.js';
@@ -8,7 +9,7 @@ import { meshFromJSON } from '../mesh/MeshData.js';
 
 let checks = 0;
 const ok = (v, m) => { assert.ok(v, m); checks++; };
-const oak = meshFromJSON(JSON.parse(fs.readFileSync(new URL('../../content/meshes/kenney/tree_oak.mesh.json', import.meta.url), 'utf8')));
+const oak = meshFromJSON(readMeshJSON(new URL('../../content/meshes/kenney/tree_oak.mesh.json', import.meta.url)));
 const cfg = { seed: 7349, cellM: 6, jitter: 1.5, fill: 0.8, maxTrees: 1500, lodCells: 6,
   species: [{ model: 'oak', weight: 1, trunkR: 0.4, trunkH: 3 },
     { mesh: 'trees/oakA', weight: 3, trunkR: 0.5, trunkH: 4, shadow: false }] };

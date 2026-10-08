@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeMeshFiles } from './mesh-file.mjs';
 import { buildMeshFromTris, simplifyTriangles, meshToJSON, meshFromJSON, validateMesh } from '../engine/index.js';
 import { budgetFor } from './mesh-budgets.mjs';
 import { rgbToLab } from './uvmap.mjs';
@@ -306,7 +307,7 @@ export async function runCli(argv) {
   const { mesh, tab, report } = importDae(fs.readFileSync(inPath, 'utf8'), id, { map, scale: args.scale ?? map.scale, simplifyTo: args.simplify });
   const json = daeToJson(mesh, tab, keys);
   const outPath = args.out || path.join('content', 'meshes', `${id}.mesh.json`);
-  if (!args.dryRun) { fs.mkdirSync(path.dirname(outPath), { recursive: true }); fs.writeFileSync(outPath, stringifyMeshJSON(json), 'utf8'); }
+  if (!args.dryRun) { fs.mkdirSync(path.dirname(outPath), { recursive: true }); if (outPath.endsWith('.mesh.json')) writeMeshFiles(outPath, json); else fs.writeFileSync(outPath, stringifyMeshJSON(json), 'utf8'); } // MESH-BIN-01: meta + .mesh.bin
   return { help: false, wrote: args.dryRun ? null : outPath, report, json };
 }
 async function main() {

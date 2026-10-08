@@ -1,11 +1,16 @@
 // engine/mesh/meshGroups.test.js (MESH-INST-01: CPU batching of repeated placed kind-9 meshes).
 // Run: node engine/mesh/meshGroups.test.js  (re-spawns itself with --expose-gc for the zero-alloc gate)
+import { readMeshJSON } from '../test/meshFile.test.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import { World } from '../world/World.js';
 import { meshFromJSON } from './MeshData.js';
 import { DrawList, DRAW_STATIC, DRAW_INSTANCED, DRAW_FLAG_ONE_PART, MeshDrawCache, LevelMeshCache, addMeshStructures } from './DrawList.js';
+import { unpackNormalOct } from '../voxel/octNormal.js';
+import { buildWorldColliders } from '../world/colliders.js';
+import { moveCircleMesh } from '../physics/meshCollide.js';
+import { groupRadius } from './instances.js';
 import { MeshGroupSet, addMeshStructuresBatched, meshIsSolid, MAX_GROUPED_INSTANCES } from './meshGroups.js';
 import { rasterDrawList, createRasterTarget } from './rasterJS.js';
 import { frustumPlanes } from './culling.js';
@@ -23,7 +28,7 @@ let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
-const load = (n) => meshFromJSON(JSON.parse(fs.readFileSync(new URL(`../../content/meshes/quaternius/${n}.mesh.json`, import.meta.url), 'utf8')));
+const load = (n) => meshFromJSON(readMeshJSON(new URL(`../../content/meshes/quaternius/${n}.mesh.json`, import.meta.url)));
 const grass = load('Grass_Common_Tall');
 const rockA = load('Rock_Medium_1'), rockB = load('Rock_Medium_2'), tree = load('DeadTree_1');
 const idFor = () => 1;
@@ -61,9 +66,11 @@ const place = (w, m, x, y, yaw = 0, over) => World.prototype.placeMesh.call(w, m
   const w = mkWorld();
   place(w, rockA, 0, 0); place(w, rockA, 3, 0); const sc = place(w, rockA, 6, 0); sc.scale = 2; place(w, rockA, 9, 0);
   const g = new MeshGroupSet(); g.update(w, new MeshDrawCache(), idFor);
-  ok('scaled placement excluded (3 grouped of 4)', g.has(0) && g.has(1) && !g.has(2) && g.has(3) && g.stats.members === 3);
+  ok('MESH-SCALE-01: scaled placement joins the group (4 of 4)', g.has(0) && g.has(1) && g.has(2) && g.has(3) && g.stats.members === 4);
   const l = new DrawList(); l.begin(); addMeshStructuresBatched(l, w, { x: 0, y: 14, z: 1.7 }, new MeshDrawCache(), idFor, 2000, g, null);
-  ok('scaled placement still drawn as its own single item', l.count === 2 && l.items.slice(0, 2).some((it) => it.type === DRAW_STATIC && it.objectId === (0xA000 | 2)));
+  ok('one instanced item for all 4 (scale in the matrix)', l.count === 1 && l.items[0].type === DRAW_INSTANCED && l.items[0].instCount === 4);
+  const ib = l.items[0].instBuf.f32;
+  ok('instance 2 matrix diagonal = 2 (yaw 0), instances 0/1 = 1; translation unchanged', ib[2 * 16] === 2 && ib[2 * 16 + 5] === 2 && ib[2 * 16 + 10] === 2 && ib[2 * 16 + 3] === 6 && ib[0] === 1 && ib[16 + 5] === 1);
   const masked = { ...rockA, id: 'masked', ranges: [{ start: 0, count: rockA.triCount, mask: { tex: 't', cutoff: 0.5 } }] };
   const w2 = mkWorld(); place(w2, masked, 0, 0); place(w2, masked, 3, 0);
   const g2 = new MeshGroupSet(); g2.update(w2, { get: () => rockA }, idFor);
@@ -114,11 +121,16 @@ const place = (w, m, x, y, yaw = 0, over) => World.prototype.placeMesh.call(w, m
   const old = w.structures[2]; w.structures[2] = { ...old, frame: { ...old.frame } }; g.update(w, cache, idFor);
   ok('replaced structure object rebuilds', g.stats.builds === 5);
   w.structures[2].scale = 3; g.update(w, cache, idFor);
-  ok('scale set on a member rebuilds and excludes it', g.stats.builds === 6 && !g.has(2) && g.has(0) && g.has(1));
+  ok('scale set on a member rebuilds and keeps it grouped (MESH-SCALE-01)', g.stats.builds === 6 && g.has(2) && g.has(0) && g.has(1));
+  w.structures[2].scale = 1; g.update(w, cache, idFor);
+  ok('scale reset to 1 rebuilds too', g.stats.builds === 7);
+  w.structures[2].scale = undefined; g.update(w, cache, idFor);
+  ok('scale 1 vs undefined is the same snapshot (no rebuild)', g.stats.builds === 7);
+  w.structures[2].scale = 3; g.update(w, cache, idFor);
   g.update(w, cache, () => 2);
-  ok('material resolver change rebuilds', g.stats.builds === 7);
+  ok('material resolver change rebuilds', g.stats.builds === 9);
   w.structures.pop(); g.update(w, cache, () => 2);
-  ok('removed placement rebuilds (2 left -> still a group)', g.stats.builds === 8 && g.stats.members === 2);
+  ok('removed placement rebuilds (2 left -> still a group)', g.stats.builds === 10 && g.stats.members === 2);
 }
 
 // ---- 4. raster parity: grouped == single draws (JS twin), cells + ids ------------------------
@@ -156,6 +168,90 @@ const place = (w, m, x, y, yaw = 0, over) => World.prototype.placeMesh.call(w, m
   ok('kind / objectId / mat identical per cell', kindD === 0 && idD === 0 && matD === 0, `kind ${kindD} id ${idD} mat ${matD}`);
   ok('depth equal within f32 (1e-3 rel)', depthD === 0, `depthD ${depthD}`);
   ok('smooth normal bits identical', nrmD <= covered * 0.002, `nrmD ${nrmD}`);
+}
+
+// ---- 4b. MESH-SCALE-01: scaled placements, grouped == single draws (JS twin), bbox, colliders ------
+{
+  const w = mkWorld();
+  const scales = [0.5, 1, 1.5, 2.5, 0.75, 1.25, 3, 0.25];
+  scales.forEach((k, i) => { const p = place(w, i % 2 ? rockB : rockA, -7 + i * 2, 0, i * 41); if (k !== 1) p.scale = k; });
+  // placeMesh(scale) path: same thing through the API (bbox scaled with it)
+  const wk = mkWorld();
+  World.prototype.placeMesh.call(wk, rockA, { x: 4, y: 2, z: 0 }, 'a', 30);
+  World.prototype.placeMesh.call(wk, rockA, { x: 4, y: 2, z: 0 }, 'b', 30, undefined, 2);
+  const [pa, pb] = wk.structures;
+  ok('placeMesh(scale): scale stored only when != 1', pa.scale === undefined && pb.scale === 2);
+  ok('placeMesh(scale): bbox grows about the origin (z 2x, xy ~2x)', Math.abs(pb.bbox.z1 - 2 * pa.bbox.z1) < 1e-9 && Math.abs(pb.bbox.z0 - 2 * pa.bbox.z0) < 1e-9 && pb.bbox.x1 - pb.bbox.x0 > 1.9 * (pa.bbox.x1 - pa.bbox.x0), JSON.stringify([pa.bbox, pb.bbox]));
+
+  const cam = { x: 0, y: 12, z: 1.7, yawDeg: 0, pitchDeg: 0 };
+  const COLS = 240, ROWS = 90, rt = { cols: COLS, rows: ROWS, pxCellW: 1, pxCellH: 1 };
+  const terms = {}, M = new Float64Array(16), planes = new Float64Array(24);
+  projTerms(cam, rt, terms); shearProjection(terms, M); frustumPlanes(M, planes);
+  const render = (groups) => {
+    const l = new DrawList(); l.begin();
+    addMeshStructuresBatched(l, w, cam, new MeshDrawCache(), idFor, 2000, groups, planes);
+    l.cull(planes);
+    const t = createRasterTarget(COLS, ROWS, 1, {});
+    rasterDrawList(l, t, { M, terms, snap: true });
+    return { t, items: l.count };
+  };
+  const a = render(null), b = render(new MeshGroupSet());
+  let covered = 0, kindD = 0, idD = 0, matD = 0, depthD = 0, nrmD = 0;
+  for (let i = 0; i < COLS * ROWS; i++) {
+    if (a.t.kind[i] === 0 && b.t.kind[i] === 0) continue;
+    covered++;
+    if (a.t.kind[i] !== b.t.kind[i]) { kindD++; continue; }
+    if (a.t.objectId[i] !== b.t.objectId[i]) idD++;
+    if (a.t.mat[i] !== b.t.mat[i]) matD++;
+    if (Math.abs(a.t.depth[i] - b.t.depth[i]) > 1e-3 * a.t.depth[i]) depthD++;
+    if (a.t.nrm[i] !== b.t.nrm[i]) nrmD++;
+  }
+  console.log(`  scaled raster parity: ${covered} covered cells, items ${a.items} -> ${b.items}, kind ${kindD}, objectId ${idD}, mat ${matD}, depth ${depthD}, nrm ${nrmD}`);
+  ok('scaled: 8 singles -> 2 instanced groups', a.items === 8 && b.items === 2, `${a.items} -> ${b.items}`);
+  ok('scaled: scene covered', covered > 300, `covered ${covered}`);
+  ok('scaled: kind / objectId / mat identical (0 diffs)', kindD === 0 && idD === 0 && matD === 0, `kind ${kindD} id ${idD} mat ${matD}`);
+  ok('scaled: depth equal within f32', depthD === 0, `depthD ${depthD}`);
+  ok('scaled: normal bits identical', nrmD <= covered * 0.002, `nrmD ${nrmD}`);
+  let maxDev = 0;
+  const u = new Float64Array(3);
+  for (let i = 0; i < COLS * ROWS; i++) if (b.t.kind[i] === 9) { unpackNormalOct(b.t.nrm[i], u); maxDev = Math.max(maxDev, Math.abs(Math.hypot(u[0], u[1], u[2]) - 1)); }
+  ok('scaled: cell normals unit length (renormalised)', maxDev < 1e-3, `dev ${maxDev}`);
+
+  // cull radius uses the largest member scale
+  const wc = mkWorld();
+  place(wc, rockA, 0, 0); place(wc, rockA, -9, 0).scale = 3;
+  const gc = new MeshGroupSet(), cc = new MeshDrawCache(); gc.update(wc, cc, idFor);
+  ok('group radius scales with the largest member', gc.groups.length === 1 && gc.groups[0]._R > 2.99 * groupRadius(cc.get(rockA, idFor), gc.groups[0].parts));
+
+  // colliders: the merged BVH holds the scaled proxy (2x tall, 2x wide about the placement origin)
+  const cw = mkWorld();
+  place(cw, rockA, 0, 0); place(cw, rockA, 20, 0).scale = 2;
+  const m = buildWorldColliders(cw).find((c) => c.id === 'meshes:static');
+  const tri = m.bvh.tri;
+  let zA = -Infinity, zB = -Infinity, aLo = Infinity, aHi = -Infinity, bLo = Infinity, bHi = -Infinity;
+  for (let i = 0; i < m.bvh.triCount * 9; i += 3) {
+    const x = tri[i], z = tri[i + 2];
+    if (x < 10) { zA = Math.max(zA, z); aLo = Math.min(aLo, x); aHi = Math.max(aHi, x); } else { zB = Math.max(zB, z); bLo = Math.min(bLo, x); bHi = Math.max(bHi, x); }
+  }
+  ok('collider: scaled proxy is 2x tall', Math.abs(zB - 2 * zA) < 1e-4 && zA > 0.1, `zA ${zA} zB ${zB}`);
+  ok('collider: scaled proxy is 2x wide about its origin', Math.abs((bHi - bLo) - 2 * (aHi - aLo)) < 1e-4 && Math.abs((bHi - 20) - 2 * aHi) < 1e-4, `${aLo},${aHi} ${bLo},${bHi}`);
+  ok('collider: collider AABB grew with the scale', m.max[0] > 20 + 1.9 * aHi, `max ${m.max[0]} aHi ${aHi}`);
+  // a circle walking +x toward the scaled rock stops at its SCALED west face (an unscaled collider would stop 2x closer to the origin)
+  const mvOut = { x: 0, y: 0, blockedX: false, blockedY: false, nx: 0, ny: 0, overflow: false };
+  // walk +x in 0.1 m steps until the circle stops advancing (blocked): returns the stall x
+  const walkTo = (colls, x0, y) => { let x = x0; for (let i = 0; i < 400; i++) { const q = moveCircleMesh(colls, colls.length, x, y, 0.1, 0, 0.3, 0.5, true, { height: 1.7, stepUpMax: 0.1, walkCos: 0.7 }, mvOut); if (q.x < x + 0.05) return q.x; x = q.x; } return Infinity; };
+  const stallA = walkTo([m], -8, 0), stallB = walkTo([m], 12, 0);
+  ok('collider: unscaled circle stalls at the proxy west face - radius', Math.abs(stallA - (aLo - 0.3)) < 0.1, `stall ${stallA} aLo ${aLo}`);
+  ok('collider: circle walking +x stalls at the SCALED west face - radius', Math.abs(stallB - (bLo - 0.3)) < 0.1 && stallB < 20 + 2 * aLo + 0.5, `stall ${stallB} bLo ${bLo}`);
+
+  // zero allocation with scaled members
+  const list = new DrawList(), cache = new MeshDrawCache(), groups = new MeshGroupSet();
+  const frame = () => { list.begin(); addMeshStructuresBatched(list, w, cam, cache, idFor, 2000, groups, planes); list.cull(planes); };
+  for (let i = 0; i < 2000; i++) frame();
+  global.gc(); const h0 = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 1000; i++) frame();
+  global.gc(); const grew = process.memoryUsage().heapUsed - h0;
+  ok('scaled: 0 allocation over 1000 batched feeds', grew < 32 * 1024, `grew ${grew}`);
 }
 
 // ---- 5. shadow feed: groups never used, MESH-SHADOW-02 budget unchanged -----------------------
