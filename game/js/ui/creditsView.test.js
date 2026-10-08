@@ -1,0 +1,41 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import {createUiLayer} from '../../../engine/index.js';
+import {createCreditsView} from './creditsView.js';
+
+const context=vm.createContext({});
+vm.runInContext(readFileSync(new URL('../../../design/models/menu_ui.js',import.meta.url),'utf8'),context);
+const style=JSON.parse(JSON.stringify(context.ASSETS.uiStyle.menu));
+const inventory=JSON.parse(readFileSync(new URL('../../../docs/licence-inventory.json',import.meta.url)));
+const before=JSON.stringify(inventory), view=createCreditsView(inventory,{style});
+const ui=createUiLayer({cols:160});
+const snap=view.snapshot();
+assert.deepEqual(snap.entries,inventory.files.map(({path,group})=>({path,group})),'every inventory entry exactly once and in source order');
+assert.equal(new Set(snap.entries.map(entry=>entry.path)).size,inventory.files.length);
+assert.equal(snap.stickyBizcuit,true);
+snap.entries[0].path='changed';assert.equal(view.snapshot().entries[0].path,inventory.files[0].path);
+const bounds=view.draw(ui);assert.equal(view.draw(ui),bounds);
+const line=(r)=>Array.from(ui.cells.glyphIdx.slice((bounds.y+r)*ui.cols+bounds.x,(bounds.y+r)*ui.cols+bounds.x+bounds.w),v=>String.fromCharCode(v+32)).join('');
+assert.ok(line(2).includes('CREDITS'));assert.ok(line(5).includes('Voxel assets by StickyBizcuit'));
+for(let y=0;y<bounds.h;y++)for(let x=0;x<bounds.w;x++) {
+  const i=((bounds.y+y)*ui.cols+bounds.x+x)*4;
+  assert.deepEqual([...ui.cells.bg.slice(i,i+4)],[10,11,16,255]);
+}
+assert.equal(view.handleKey('KeyQ'),false);
+assert.equal(view.handleKey('ArrowUp'),true);assert.equal(view.snapshot().page,0);
+view.handleKey('Enter');assert.equal(view.snapshot().page,1);
+view.handleKey('End');assert.equal(view.snapshot().page,snap.pages-1);
+view.handleKey('ArrowDown');assert.equal(view.snapshot().page,snap.pages-1);
+view.handleKey('Home');assert.equal(view.snapshot().page,0);
+view.handleKey('Escape');assert.equal(view.takeAction(),'back');assert.equal(view.takeAction(),null);
+const empty=createCreditsView({files:[]},{style});assert.equal(empty.snapshot().pages,1);assert.equal(empty.snapshot().stickyBizcuit,false);
+ui.clear();const eb=empty.draw(ui);
+assert.ok(!Array.from(ui.cells.glyphIdx.slice((eb.y+5)*ui.cols+eb.x,(eb.y+5)*ui.cols+eb.x+eb.w),v=>String.fromCharCode(v+32)).join('').includes('StickyBizcuit'));
+const copy={files:[{path:'a'.repeat(2000),group:'project'}]};const copied=createCreditsView(copy,{style});copy.files[0].path='modified';
+assert.equal(copied.snapshot().entries[0].path,'a'.repeat(2000));assert.ok(copied.snapshot().pages>1);
+assert.throws(()=>createCreditsView({files:[{path:'a',group:'x'},{path:'a',group:'y'}]},{style}),/duplicate/);
+assert.throws(()=>createCreditsView({files:[{path:'a'}]},{style}),/invalid/);
+assert.throws(()=>createCreditsView(inventory),/style/);
+assert.equal(JSON.stringify(inventory),before,'draw and input never change licence evidence');
+console.log('creditsView: complete inventory, conditional attribution, copied evidence, opaque supplied frame, paging and back action PASS');
