@@ -6,7 +6,7 @@ import { KIND_TERRAIN, FACE_PACKED } from '../../GBuffer.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 
 export const TERRAIN_BLOCK = defineUniformBlock('TerrainU', [
-  { name: 'model', type: 'mat4' }, { name: 'viewProj', type: 'mat4' },
+  { name: 'model', type: 'mat4' }, { name: 'viewProj', type: 'mat4' }, { name: 'modelRel', type: 'mat4' }, // PREC-01a: chunk translation - O, clip only
   { name: 'nearMap', type: 'vec4' }, { name: 'farMap', type: 'vec4' },
   { name: 'structFoot', type: 'vec4', count: MAX_STRUCTS },
   { name: 'objectId', type: 'u32' }, { name: 'nearReady', type: 'u32' }, { name: 'structCount', type: 'u32' },
@@ -31,7 +31,7 @@ struct VertexOut {
 @vertex fn vs_main(a: VertexIn) -> VertexOut {
   var o: VertexOut;
   let worldPos = u.model * vec4f(a.aPos, 1.0);
-  o.pos = u.viewProj * worldPos;
+  o.pos = u.viewProj * (u.modelRel * vec4f(a.aPos, 1.0)); // PREC-01a: camera-relative clip; vWorldPos below stays absolute (kind 7 GA.xy = world metres)
   o.pos.y = -o.pos.y; o.pos.z = 0.5 * (o.pos.z + o.pos.w);
   o.vWorldPos = worldPos.xyz;
   o.vNormal = unpackNormalOct(a.aNrmBits);

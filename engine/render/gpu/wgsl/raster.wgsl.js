@@ -13,7 +13,9 @@ export const RASTER_BASE_BLOCK = defineUniformBlock('RasterU', RASTER_FIELDS);
 export const RASTER_MASK_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS,
   { name: 'maskX0', type: 'u32' }, { name: 'maskY0', type: 'u32' }, { name: 'maskW', type: 'u32' }, { name: 'maskH', type: 'u32' }, { name: 'maskCut', type: 'u32' },
 ]);
-export const RASTER_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS,
+// PREC-01a: instanced variant only: `origin` (xy render origin O of the camera-relative raster, 37.9 step 4) sits in the 8-byte hole after `flat`
+// (RASTER_BASE_BLOCK stays a prefix, size unchanged). Shadow passes leave it 0 (absolute, step 5).
+export const RASTER_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS, { name: 'origin', type: 'vec2' },
   { name: 'teamSlot', type: 'vec4' }, { name: 'teamMat', type: 'vec4', count: 8 },
 ]);
 
@@ -93,7 +95,7 @@ ${mask ? '  @location(7) vUVMask: vec2f,' : ''}
   var o: VertexOut;
   let modelN = mat3x3f(u.model[0].xyz, u.model[1].xyz, u.model[2].xyz);
 ${instanced ? `  let lp = (u.model * vec4f(a.aPos, 1.0)).xyz;
-  let wp = vec3f(dot(a.iRow0.xyz, lp) + a.iRow0.w, dot(a.iRow1.xyz, lp) + a.iRow1.w, dot(a.iRow2.xyz, lp) + a.iRow2.w);
+  let wp = vec3f(dot(a.iRow0.xyz, lp) + (a.iRow0.w - u.origin.x), dot(a.iRow1.xyz, lp) + (a.iRow1.w - u.origin.y), dot(a.iRow2.xyz, lp) + a.iRow2.w);
   let worldPos = vec4f(wp, 1.0);
   let planeId = a.aFlat.x | u.planeIdOr | ((a.iMeta.x & 0xFu) << 24u);
   var mat = (a.aFlat.y >> 16u) & 0xffffu;

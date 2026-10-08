@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { makeMockGpuDevice } from '../../../test/assert.js';
 import { StaticMeshBuilder } from '../../../mesh/MeshData.js';
 import { DrawList, DRAW_TERRAIN, DRAW_STATIC, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH } from '../../../mesh/DrawList.js';
-import { WgRasterPass, NO_STRUCTURES } from './passRaster.js';
+import { WgRasterPass, NO_STRUCTURES, TERRAIN_REBASE } from './passRaster.js';
 import { RASTER_BLOCK } from '../wgsl/raster.wgsl.js';
 import { TERRAIN_BLOCK } from '../wgsl/terrainRaster.wgsl.js';
 
@@ -206,4 +206,65 @@ console.log('passRaster.test.js (WG-4a): all checks passed.');
   dr.length = 0; withUv = true; world.maskAtlas = null; ps.run(pp); assert.deepEqual(dr.map((x) => [x.pipe === ps.staticPipe, x.c, x.f]), [[true, 18, 0]]);
   ps.dispose(); dev.dispose(vb); dev.dispose(uvb); assert.equal(m3.liveCount(), 0, 'mask texture + pipelines disposed');
   console.log('passRaster.test.js (ALPHA-01c): all checks passed.');
+}
+
+// PREC-01a (37.9, WebGPU twin): camera-relative raster. view/planes stay absolute f64; every camera raster uniform carries view * T(O) and model - O.
+{
+  const { frameMatrix } = await import('../../projection.js');
+  const m5 = makeMockGpuDevice(), dev = m5.device;
+  const rp = new WgRasterPass(dev), dr = [];
+  dev.beginPass = () => {};
+  dev.draw = (count, first, instances) => dr.push({ pipe: dev._activePipeline, u: new Float32Array(dev._lastBind.uniforms.buffer).slice() });
+  const mk = (x, y, z = 7.6) => ({ _cam: { x, y, z, yawDeg: 255, pitchDeg: 20 }, _world: {}, cols: 160, rows: 60, rt: { pxCellW: 1, pxCellH: 2 }, terrainEnabled: false,
+    _voxelPool: null, _instances: null, _viewModel: null, _table: null, stats: {}, _t: { targetRaster: {}, targetVmDepth: {} } });
+  const grid = { cols: 160, rows: 60, pxCellW: 1, pxCellH: 2 };
+  const p1 = mk(1486.5, 1025.0);
+  rp.prepare(p1);
+  assert.deepEqual([rp.ox, rp.oy], [1472, 1024], 'O = floor(cam.xy / 16) * 16');
+  const M = frameMatrix(p1._cam, grid, new Float64Array(16), 'mesh');
+  for (let k = 0; k < 16; k++) assert.equal(rp.view[k], M[k], 'culling matrix stays the absolute f64 matrix');
+  for (let k = 0; k < 12; k++) assert.equal(rp.u[RASTER_BLOCK.field('viewProj').word + k], Math.fround(M[k]));
+  for (let k = 0; k < 4; k++) assert.equal(rp.u[RASTER_BLOCK.field('viewProj').word + 12 + k], Math.fround(M[k] * 1472 + M[4 + k] * 1024 + M[12 + k]), 'translation column = M*T(O) in f64, then f32');
+  assert.deepEqual([rp.u[RASTER_BLOCK.field('origin').word], rp.u[RASTER_BLOCK.field('origin').word + 1]], [1472, 1024], 'origin words in the instanced block');
+  const rel = rp.viewRel.slice();
+  rp.prepare(mk(1487.9, 1030.2)); assert.deepEqual([rp.ox, rp.oy], [1472, 1024], 'no O change inside a 16 m cell');
+  rp.prepare(mk(1488.0, 1040.0)); assert.deepEqual([rp.ox, rp.oy], [1488, 1040], 'O snaps at the cell border');
+  rp.prepare(mk(1486.5, 1025.0)); assert.deepEqual([...rp.viewRel], [...rel], 'same pose -> same matrix');
+  // draws: translation - O in f64 before the f32 store; instanced local part matrices are NOT rebased; terrain keeps `model` absolute, `modelRel` = model - O
+  const sm = new StaticMeshBuilder('prec-quad'); sm.addQuad([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0], [0, 0, 1, 0, 1, 1, 0, 1], 0, 0, 1, 0xf0000001, 9 | (5 << 8) | (3 << 16), [0, 0, 0, 0, 0, 0, 0, 0]);
+  const msh = sm.build(); msh.ranges = [{ start: 0, count: 2 }];
+  const T = [1, 0, 0, 0, 1, 0, 0, 0, 1, 1486.5123, 1025.0123, 6];
+  rp.prepare = () => {};
+  rp.list.begin();
+  const si = rp.list.push(); si.type = DRAW_STATIC; si.mesh = msh; si.rangeCount = 2; si.matrix.set(T);
+  const vi = rp.list.push(); vi.type = DRAW_VOXEL; vi.mesh = msh; vi.partMatrices.set(T);
+  const ii = rp.list.push(); ii.type = DRAW_INSTANCED; ii.mesh = msh; ii.instBuf = { f32: new Float32Array(16) }; ii.instCount = 1; ii.partMatrices.set(T);
+  const ci = rp.list.push(); ci.type = DRAW_CLOTH; ci.mesh = { matId: 1 }; ci.rangeCount = 1; ci.matrix.set(T);
+  rp.buffers.getCloth = () => ({ vertexBuffer: dev.createBuffer({ usage: 'vertex', bytes: 64 }), uvBuffer: dev.createBuffer({ usage: 'vertex', bytes: 32 }), indexBuffer: dev.createBuffer({ usage: 'index', bytes: 12 }) });
+  const ti = rp.list.push(); ti.type = DRAW_TERRAIN; ti.mesh = { layout: 'terrain' }; ti.rangeCount = 1; ti.matrix.set(T);
+  const tvb2 = dev.createBuffer({ usage: 'vertex', bytes: 64 }), tib2 = dev.createBuffer({ usage: 'index', bytes: 24 });
+  const og = rp.buffers.get; rp.buffers.get = (m) => m === ti.mesh ? { vertexBuffer: tvb2, indexBuffer: tib2 } : og.call(rp.buffers, m);
+  rp.ox = 1472; rp.oy = 1024; rp.vmList = null;
+  rp._terrainUniforms({ terrain: { nearReady: false, near: null, _farGridDraw: null, mapCell: 1, mapW: 1 } }); // fills tu viewProj from the last prepare
+  rp.run(p1);
+  const MW = RASTER_BLOCK.field('model').word + 12;
+  const tr = (x) => [x.u[MW], x.u[MW + 1], x.u[MW + 2]];
+  const pick = (pipe) => dr.find((x) => x.pipe === pipe);
+  assert.deepEqual(tr(pick(rp.staticPipe)), [Math.fround(1486.5123 - 1472), Math.fround(1025.0123 - 1024), 6], 'static: translation - O');
+  assert.deepEqual(tr(pick(rp.voxelPipe)), tr(pick(rp.staticPipe)), 'voxel (and view model) rebased the same way');
+  assert.deepEqual(tr(pick(rp.clothPipe)), tr(pick(rp.staticPipe)), 'cloth rebased the same way');
+  assert.deepEqual(tr(pick(rp.instancePipe)), [Math.fround(1486.5123), Math.fround(1025.0123), 6], 'instanced part matrix is local: not rebased (rows carry iRow.w - origin in the shader)');
+  const td2 = pick(rp.terrainPipe).u, TM = TERRAIN_BLOCK.field('model').word + 12, TR = TERRAIN_BLOCK.field('modelRel').word + 12;
+  assert.deepEqual([td2[TM], td2[TM + 1], td2[TM + 2]], [Math.fround(1486.5123), Math.fround(1025.0123), 6], 'terrain model stays absolute (vWorldPos)');
+  assert.deepEqual([td2[TR], td2[TR + 1], td2[TR + 2]], TERRAIN_REBASE ? [Math.fround(1486.5123 - 1472), Math.fround(1025.0123 - 1024), 6] : [Math.fround(1486.5123), Math.fround(1025.0123), 6], 'terrain modelRel = model - O (clip only) when TERRAIN_REBASE, else = model');
+  assert.deepEqual([...td2.slice(TERRAIN_BLOCK.field('viewProj').word, TERRAIN_BLOCK.field('viewProj').word + 16)], [...Float32Array.from(TERRAIN_REBASE ? rp.viewRel : rp.view)], 'terrain viewProj matches its modelRel space');
+  assert.deepEqual([...td2.slice(TERRAIN_BLOCK.field('viewProj').word, TERRAIN_BLOCK.field('viewProj').word + 16)].length, 16);
+  // 0 allocation per frame: prepare + run on warm state create no resources (heap growth is bounded by the existing 1000-frame checks above)
+  const rp2 = new WgRasterPass(dev); const created = m5.createCount, cams = [mk(1486.5, 1025.0), mk(1500, 1030)];
+  for (let i = 0; i < 20; i++) rp2.prepare(cams[i & 1]);
+  const h0 = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 100000; i++) rp2.prepare(cams[i & 1]);
+  assert.ok(process.memoryUsage().heapUsed - h0 < 4e6, 'prepare allocates nothing per frame, < 40 B/frame over 100k (origin + viewRel are reused)');
+  assert.equal(m5.createCount, created);
+  console.log('passRaster.test.js (PREC-01a): all checks passed.');
 }

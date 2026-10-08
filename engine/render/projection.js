@@ -537,3 +537,17 @@ export function frameMatrix(cam, grid, out16, renderer = 'mesh') {
   }
   return out16;
 }
+
+/**
+ * PREC-01a (37.9 step 1): viewProj * T(ox, oy, 0) for a camera-relative render origin. Columns 0-2 are copied, the translation column is
+ * `M[0..3]*ox + M[4..7]*oy + M[12..15]` in f64 and only then stored to `outF32` (the formula water uses). Zero allocation.
+ * @param {ArrayLike<number>} M64 column-major world -> clip, f64
+ * @param {number} ox @param {number} oy
+ * @param {Float32Array|Float64Array} outF32
+ * @returns {Float32Array|Float64Array}
+ */
+export function viewProjAtOrigin(M64, ox, oy, outF32) {
+  for (let k = 0; k < 12; k++) outF32[k] = M64[k];
+  for (let k = 0; k < 4; k++) outF32[12 + k] = M64[k] * ox + M64[4 + k] * oy + M64[12 + k];
+  return outF32;
+}

@@ -10,7 +10,7 @@ import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../../mesh/voxelMesh.js';
 import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME } from '../../../mesh/instances.js';
 import { KIND_MODEL, FACE_PACKED } from '../../GBuffer.js';
-import { projTerms, shearProjection, pitchedTerms, createPitchedTerms, resolveProjection } from '../../projection.js';
+import { projTerms, shearProjection, pitchedTerms, createPitchedTerms, resolveProjection, viewProjAtOrigin } from '../../projection.js';
 import { frustumPlanes } from '../../../mesh/culling.js';
 import { WgCullPass } from './passCull.js';
 
@@ -21,9 +21,16 @@ const FLAT = RASTER_BLOCK.field('flat').word;
 const TEAM_SLOT = RASTER_BLOCK.field('teamSlot').word, TEAM_MAT = RASTER_BLOCK.field('teamMat').word;
 const M_X0 = RASTER_MASK_BLOCK.field('maskX0').word, M_Y0 = RASTER_MASK_BLOCK.field('maskY0').word, M_W = RASTER_MASK_BLOCK.field('maskW').word;
 const M_H = RASTER_MASK_BLOCK.field('maskH').word, M_CUT = RASTER_MASK_BLOCK.field('maskCut').word;
+const ORIGIN = RASTER_BLOCK.field('origin').word, T_MODEL_REL = TERRAIN_BLOCK.field('modelRel').word;
 const T_MODEL = TERRAIN_BLOCK.field('model').word, T_VIEW = TERRAIN_BLOCK.field('viewProj').word;
 const T_NEAR = TERRAIN_BLOCK.field('nearMap').word, T_FAR = TERRAIN_BLOCK.field('farMap').word, T_FOOT = TERRAIN_BLOCK.field('structFoot').word;
 const T_OBJECT = TERRAIN_BLOCK.field('objectId').word, T_READY = TERRAIN_BLOCK.field('nearReady').word, T_COUNT = TERRAIN_BLOCK.field('structCount').word;
+/**
+ * PREC-01b (37.9 step 6) switch. true = terrain clip is camera-relative too (viewRel + modelRel = model - O). Measured 2026-10-08: with it ON the PASS row
+ * 'signal tower' regresses (one far-terrain cell, 702 m, grazing: depth 702.52 vs 702.68, normal 0.94 deg); OFF = terrain stays absolute (its vertices are
+ * 700 m+ away and no target row needs it) and every other PREC-01a gain is unchanged. Open ASK ARCHITECT, see docs/test-reports/PREC-01a.md.
+ */
+export const TERRAIN_REBASE = false;
 /** Shared empty list for worlds without `structures` (no per-frame `|| []` allocation). */
 export const NO_STRUCTURES = Object.freeze([]);
 const INSTANCE_LAYOUT = [
@@ -44,7 +51,11 @@ export class WgRasterPass {
     this._oneRange = [{ start: 0, count: 0 }];
     this.grid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
     this.terms = {}; this.pitch = createPitchedTerms();
+    // PREC-01a (37.9, WebGPU twin of the GLSL plan): camera-relative raster. `view`/`planes` stay absolute f64 (culling, WG-4 cull kernels);
+    // `viewRel` = view * T(O) (f32) is what every camera raster uniform carries. O = floor(cam.xy / 16) * 16 (z not rebased) snaps, so it rarely changes.
+    // Shadow pass (sun matrix) and water stay absolute on purpose (37.9 step 5).
     this.view = new Float64Array(16); this.planes = new Float64Array(24);
+    this.viewRel = new Float32Array(16); this.ox = 0; this.oy = 0;
     this.u = new Float32Array(RASTER_BLOCK.sizeWords); this.bits = new Uint32Array(this.u.buffer);
     this.baseU = new Float32Array(this.u.buffer, 0, RASTER_BASE_BLOCK.sizeWords);
     this.bindDesc = { uniforms: this.u, vertexBuffer: null, indexBuffer: null, instanceBuffer: null };
@@ -175,7 +186,7 @@ export class WgRasterPass {
   // Per-frame terrain uniforms (GpuCellPipeline._passRaster terrain block): maps, near gate, structure footprint carve.
   _terrainUniforms(world) {
     const terrain = world.terrain, tu = this.tu;
-    for (let i = 0; i < 16; i++) tu[T_VIEW + i] = this.view[i];
+    for (let i = 0; i < 16; i++) tu[T_VIEW + i] = TERRAIN_REBASE ? this.viewRel[i] : this.view[i];
     this.tbits[T_READY] = terrain.nearReady ? 1 : 0;
     if (terrain.nearReady && terrain.near) {
       const ng = terrain.near; tu[T_NEAR] = ng.x0; tu[T_NEAR + 1] = ng.y0; tu[T_NEAR + 2] = ng.cell; tu[T_NEAR + 3] = ng.w;
@@ -204,6 +215,9 @@ export class WgRasterPass {
       tu[n + 4] = mm[1]; tu[n + 5] = mm[4]; tu[n + 6] = mm[7]; tu[n + 7] = 0;
       tu[n + 8] = mm[2]; tu[n + 9] = mm[5]; tu[n + 10] = mm[8]; tu[n + 11] = 0;
       tu[n + 12] = mm[9]; tu[n + 13] = mm[10]; tu[n + 14] = mm[11]; tu[n + 15] = 1;
+      const r = T_MODEL_REL; // clip-only copy with the translation - O (f64 subtract before the f32 store); `model` stays absolute for vWorldPos
+      for (let k = 0; k < 12; k++) tu[r + k] = tu[n + k];
+      tu[r + 12] = TERRAIN_REBASE ? mm[9] - this.ox : mm[9]; tu[r + 13] = TERRAIN_REBASE ? mm[10] - this.oy : mm[10]; tu[r + 14] = mm[11]; tu[r + 15] = 1;
       this.tbits[T_OBJECT] = item.objectId;
       b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer;
       this.device.bind(this.terrainPipe, b); this.device.draw(item.rangeCount * 3, item.rangeFirst * 3, 1);
@@ -228,7 +242,10 @@ export class WgRasterPass {
     this.pitched = resolveProjection(cam, 'mesh') === 'pitched';
     if (this.pitched) { pitchedTerms(cam, grid, this.pitch); this.view.set(this.pitch.M); }
     else { projTerms(cam, grid, this.terms); shearProjection(this.terms, this.view); }
-    for (let i = 0; i < 16; i++) this.u[VIEW + i] = this.view[i];
+    this.ox = Math.floor(cam.x / 16) * 16; this.oy = Math.floor(cam.y / 16) * 16;
+    viewProjAtOrigin(this.view, this.ox, this.oy, this.viewRel);
+    for (let i = 0; i < 16; i++) this.u[VIEW + i] = this.viewRel[i];
+    this.u[ORIGIN] = this.ox; this.u[ORIGIN + 1] = this.oy; // instanced variant only (iRow.w - origin); the other variants' blocks end before it
     frustumPlanes(this.view, this.planes);
     const list = this.list;
     list.begin();
@@ -254,12 +271,13 @@ export class WgRasterPass {
     for (let k = 0; k < 32; k++) this.u[TEAM_MAT + k] = team ? team.mat[k] : 0;
   }
 
-  _model(m, o = 0) {
+  // ox/oy: render origin subtracted from the translation in f64 before the f32 store (world-space matrices); 0 for the instanced local part matrices.
+  _model(m, o = 0, ox = 0, oy = 0) {
     const M = this.u, n = MODEL;
     M[n] = m[o]; M[n + 1] = m[o + 3]; M[n + 2] = m[o + 6]; M[n + 3] = 0;
     M[n + 4] = m[o + 1]; M[n + 5] = m[o + 4]; M[n + 6] = m[o + 7]; M[n + 7] = 0;
     M[n + 8] = m[o + 2]; M[n + 9] = m[o + 5]; M[n + 10] = m[o + 8]; M[n + 11] = 0;
-    M[n + 12] = m[o + 9]; M[n + 13] = m[o + 10]; M[n + 14] = m[o + 11]; M[n + 15] = 1;
+    M[n + 12] = m[o + 9] - ox; M[n + 13] = m[o + 10] - oy; M[n + 14] = m[o + 11]; M[n + 15] = 1;
   }
 
   _item(item) {
@@ -305,7 +323,7 @@ export class WgRasterPass {
       const item = list.items[i];
       if (item.type !== DRAW_CLOTH || !item.mesh || item.rangeCount <= 0) continue;
       const entry = this.buffers.getCloth(item.mesh);
-      this._item(item); this._model(item.matrix);
+      this._item(item); this._model(item.matrix, 0, this.ox, this.oy);
       this.bits[FLAT] = 0; this.bits[FLAT + 1] = (KIND_MODEL | (FACE_PACKED << 8) | (item.mesh.matId << 16)) >>> 0;
       this.clothStreams[0] = entry.uvBuffer;
       b.uniforms = this.baseU; b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer; b.instanceBuffer = null; b.extraBuffers = this.clothStreams;
@@ -324,7 +342,7 @@ export class WgRasterPass {
       this._item(item);
       for (let part = 0; part < ranges.length; part++) {
         const r = ranges[part]; if (r.count <= 0) continue;
-        this._model(item.partMatrices, part * 12); this.bits[AXIS] = item.partFlags[part] & 1;
+        this._model(item.partMatrices, part * 12, this.ox, this.oy); this.bits[AXIS] = item.partFlags[part] & 1;
         this._draw(item.mirror ? this.mirrorPipe : this.voxelPipe, entry, r.count * 3, r.start * 3); draws++;
       }
     }
@@ -342,7 +360,7 @@ export class WgRasterPass {
       for (let i = 0; i < list.count; i++) {
         const item = list.items[i];
         if (item.type !== DRAW_STATIC || !item.mesh || item.rangeCount <= 0) continue;
-        this._item(item); this._model(item.matrix);
+        this._item(item); this._model(item.matrix, 0, this.ox, this.oy);
         this._staticMesh(item, this.staticPipe, this.maskPipe, this.mu, this.mbits, this.buffers.get(item.mesh)); staticDraws++;
       }
       p.stats.voxelDraws = this._voxels(list);

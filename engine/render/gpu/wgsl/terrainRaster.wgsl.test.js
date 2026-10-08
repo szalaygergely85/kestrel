@@ -68,4 +68,8 @@ assert.deepEqual(TERRAIN_TEXTURES, ['uint', 'uint']);
 assert.ok(src.includes('@group(0) @binding(0) var uNearType: texture_2d<u32>;') && src.includes('@group(0) @binding(1) var uFarType: texture_2d<u32>;'));
 assert.ok(WGSL_MODULES.some((m) => m.name === 'rasterTerrain' && m.code === TERRAIN_RASTER_WGSL));
 assert.equal(TERRAIN_BLOCK.sizeBytes % 16, 0);
+// PREC-01a (37.9 step 6): clip from the rebased modelRel, vWorldPos still from the absolute model (kind-7 GA.xy = world metres).
+assert.ok(TERRAIN_RASTER_WGSL.includes('o.pos = u.viewProj * (u.modelRel * vec4f(a.aPos, 1.0));'));
+assert.ok(TERRAIN_RASTER_WGSL.includes('let worldPos = u.model * vec4f(a.aPos, 1.0);') && TERRAIN_RASTER_WGSL.includes('o.vWorldPos = worldPos.xyz;'));
+assert.ok(!/origin/.test(TERRAIN_RASTER_WGSL));
 console.log('terrainRaster.wgsl.test.js: 6000 type-lookup probes (near ' + near + ') and shader/layout checks passed. block ' + TERRAIN_BLOCK.sizeBytes + ' B');

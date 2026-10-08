@@ -78,4 +78,12 @@ assert.ok(RASTER_MASK_SHADOW_WGSL.includes('fn fs_mask_shadow(v: VertexOut)') &&
 for (const src of [RASTER_MASK_WGSL, RASTER_MASK_SHADOW_WGSL]) assert.ok(!/\bround\s*\(|dpdx|dpdy|fwidth|frag_depth|textureSample|%/.test(src));
 for (const src of [RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL]) assert.ok(!/texMask|aUVMask|maskDiscard/.test(src), 'opaque variants are unchanged');
 assert.equal(RASTER_MASK_BLOCK.field('maskX0').word, 38); assert.equal(RASTER_MASK_BLOCK.sizeBytes, 176);
+// PREC-01a (37.9 step 4): `origin` exists in the instanced variant only; the instanced vertex stage subtracts it from the f32 row translation (x, y) and not from z.
+{
+  assert.ok(RASTER_INSTANCED_WGSL.includes('origin: vec2f'), 'instanced block carries origin');
+  assert.ok(RASTER_INSTANCED_WGSL.includes('(a.iRow0.w - u.origin.x)') && RASTER_INSTANCED_WGSL.includes('(a.iRow1.w - u.origin.y)') && RASTER_INSTANCED_WGSL.includes('dot(a.iRow2.xyz, lp) + a.iRow2.w'));
+  assert.ok(RASTER_INSTANCED_WGSL.includes('o.aux4567.z = a.iRow2.w;'), 'vZBase stays absolute (z is not rebased)');
+  for (const src of [RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_CLOTH_WGSL, RASTER_MASK_WGSL]) assert.ok(!/origin/.test(src), 'static/voxel/cloth/mask sources are unchanged (rebase is in uModel)');
+  assert.equal(RASTER_BLOCK.field('origin').offset, 152, 'origin fills the 8-byte hole after flat; base block stays a prefix, size unchanged');
+}
 console.log(`raster.wgsl.test.js: 2000 oracle probes, ${texelProbes} mask texel probes (${discards} discards) and shader/layout checks passed.`);
