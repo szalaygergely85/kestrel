@@ -1385,6 +1385,125 @@
     { a: { shade: 1.00 }, p: { shade: 0.80, tint: 'woodDark', amount: 0.3, glyph: ':' } },
     ['apaa', 'aaap', 'paaa', 'aapa']);
 
+  // CHARGEN-01 (v1.54, EP-CHARGEN, architecture 38.29 item 3): the character-generator ramps. ONE table drives
+  // (1) new colors, (2) new v1 materials (appended last, so no material id moves), (3) the v2 records in detail-pass.js
+  // (loop over palette.chargen.newMaterials) and (4) the kit ramps built by design/chargen/human_kit.js.
+  // Skin: 5 tones (fair, warm, medium, brown, dark) x 8 keys (light, base, shade, deep + flush, nail, vein, glow); `medium` IS the existing hand skin, so
+  // the default first-person hand does not change. Hair 6 x 3 (darkbrown base = the existing hair_dark), eyes 3,
+  // natural dyes 6 x 3 (+ `undyed` = the existing linen keys). Muted, never pink, never a reserved hue (style-guide 2).
+  var chargen = (function () {
+    var SK = ['light', 'base', 'shade', 'deep', 'flush', 'nail', 'vein', 'glow'];
+    var SKIN = {   // tone -> 8 hex in SK order; null = reuse the existing hand keys
+      fair:   ['#f2d3bf', '#e3b89f', '#b88a74', '#6e4a3c', '#d99a84', '#f5e0d2', '#9c8c98', '#ffa274'],
+      warm:   ['#e6bb98', '#d0a07f', '#a2765e', '#634232', '#c4846b', '#edd0ba', '#93797c', '#ff9c64'],
+      medium: null,
+      brown:  ['#a87452', '#8b5a3c', '#5f3b27', '#3b2419', '#8f4f3b', '#c9a089', '#5f474a', '#f08a4c'],
+      dark:   ['#7a5039', '#5c3a27', '#3d2519', '#23150e', '#62352a', '#a58571', '#45312f', '#e07c42']
+    };
+    var MEDIUM = { light: 'skin_light', base: 'skin', shade: 'skin_shade', deep: 'skin_deep', flush: 'skin_flush',
+                   nail: 'skin_nail', vein: 'skin_vein', glow: 'skin_glow' };
+    var HAIR = {   // id -> [light, base, dark]; null entry = reuse an existing key
+      black:     ['#3a3532', '#1f1b19', '#100d0c'],
+      darkbrown: ['#5a4334', null, '#22180f'],
+      brown:     ['#8a6646', '#6a4a30', '#45301f'],
+      auburn:    ['#a0573a', '#7a3e24', '#4e2616'],
+      blond:     ['#d2b47e', '#b08f5a', '#7d6440'],
+      grey:      ['#c8c4bc', '#9a958d', '#6a665f']
+    };
+    var EYES = { brown: '#4a2e1c', grey: '#6a7a88', green: '#5c6a3c' };
+    var DYES = {   // natural dyes: id -> [light, base, dark]
+      madder:  ['#b4624a', '#8e4234', '#5a2a22'],   // madder root: muted brick red (never `danger`)
+      woad:    ['#6c7e96', '#4a5a72', '#2e3a4c'],   // woad: indigo-grey blue (never mana / aether)
+      weld:    ['#cdb46a', '#a8904a', '#6e5e30'],   // weld: ochre yellow (below gold)
+      walnut:  ['#8a6a4c', '#654a34', '#3e2e20'],   // walnut hulls: brown
+      lincoln: ['#7e8458', '#5c6440', '#3a4028'],   // weld + woad: olive sage (never heroGreen)
+      gall:    ['#8a8682', '#5e5a56', '#3a3734']    // oak gall + iron: grey
+    };
+    function camel(k) { return k.replace(/_([a-z])/g, function (m, c) { return c.toUpperCase(); }); }
+    var out = { version: 1, skinShades: SK, skin: {}, hair: {}, eyes: {}, dyes: {}, handTint: {}, newMaterials: [] };
+    function add(key, hex, kind, desc, albedo, bgK, accent, extra) {
+      var ck = camel(key);
+      colors[ck] = hex;
+      out.newMaterials.push({ key: key, color: ck, kind: kind, desc: desc, albedo: albedo, bgK: bgK, accent: accent,
+                              emissive: extra || 0 });
+      return key;
+    }
+    var SKIN_ALB = { light: 0.92, base: 0.88, shade: 0.80, deep: 0.70, flush: 0.88, nail: 0.96, vein: 0.84, glow: 0.92 };
+    var t, i, id, row;
+    for (t in SKIN) {
+      var m = {};
+      if (!SKIN[t]) { for (i = 0; i < SK.length; i++) m[SK[i]] = MEDIUM[SK[i]]; }
+      else {
+        for (i = 0; i < SK.length; i++) {
+          var k = SK[i] === 'base' ? 'skin_' + t : 'skin_' + t + '_' + SK[i];
+          m[SK[i]] = k;
+        }
+        for (i = 0; i < SK.length; i++) {
+          add(m[SK[i]], SKIN[t][i], 'skin', 'CHARGEN skin (' + t + ' tone): ' + SK[i] + '.', SKIN_ALB[SK[i]],
+              SK[i] === 'glow' ? 0.22 : 0.15, SK[i] === 'shade' || SK[i] === 'deep' ? camel(m.base) : camel(m.shade),
+              SK[i] === 'glow' ? 0.35 : 0);
+        }
+      }
+      out.skin[t] = m;
+      out.handTint[t] = { skin: m.base, skin_light: m.light, skin_shade: m.shade, skin_deep: m.deep,
+                          skin_flush: m.flush, skin_nail: m.nail, skin_vein: m.vein, skin_glow: m.glow };
+    }
+    var HN = ['light', 'base', 'dark'], HALB = [0.80, 0.72, 0.64];
+    for (id in HAIR) {
+      row = {};
+      for (i = 0; i < 3; i++) {
+        if (!HAIR[id][i]) { row[HN[i]] = 'hair_dark'; continue; }
+        row[HN[i]] = add('hair_' + id + (i === 1 ? '' : '_' + HN[i]), HAIR[id][i], 'hair',
+                         'CHARGEN hair (' + id + '): ' + HN[i] + ', strand glyph |.', HALB[i], 0.14, null);
+      }
+      out.hair[id] = row;
+    }
+    for (id in EYES) out.eyes[id] = { iris: add('eye_' + id, EYES[id], 'eye', 'CHARGEN eyes (' + id + ' iris).', 0.80, 0.12, null) };
+    var DALB = [0.90, 0.84, 0.66];
+    for (id in DYES) {
+      row = {};
+      for (i = 0; i < 3; i++) row[HN[i]] = add('dye_' + id + (i === 1 ? '' : '_' + HN[i]), DYES[id][i], 'dye',
+                                                'CHARGEN natural dye (' + id + '): ' + HN[i] + ', faint weave ~.', DALB[i], 0.15, null);
+      out.dyes[id] = row;
+    }
+    out.dyes.undyed = { light: 'linen_light', base: 'linen', dark: 'linen_dark' };
+    // accents that reference keys created later in the same group (hair/dye: the dark / light sibling)
+    for (i = 0; i < out.newMaterials.length; i++) {
+      var r = out.newMaterials[i];
+      if (r.accent) continue;
+      var sib = r.key.replace(/_(light|dark)$/, '');
+      var grp = r.kind === 'hair' ? out.hair[sib.slice(5)] : r.kind === 'dye' ? out.dyes[sib.slice(4)] : null;
+      r.accent = grp ? camel(/_dark$/.test(r.key) ? grp.base : grp.dark) : r.color;
+    }
+    return out;
+  })();
+  (function () {
+    var i, r, acc;
+    for (i = 0; i < chargen.newMaterials.length; i++) {
+      r = chargen.newMaterials[i]; acc = r.accent;
+      if (r.kind === 'skin' && r.emissive) {
+        materials[r.key] = {
+          desc: r.desc + ' Skin touched by its own fire (emissive 0.35), like skin_glow.',
+          base: r.color, albedo: r.albedo, ramp: 'fabric', spec: 0, emissive: r.emissive, bg: { mode: 'darken', k: r.bgK },
+          textureFade: [4, 12],
+          texture: { w: 4, h: 4, scale: [16, 16], key: { a: { shade: 1.00 }, s: { shade: 0.90, tint: acc, amount: 0.35 } },
+                     rows: ['aaaa', 'asaa', 'aaaa', 'aaas'] }
+        };
+      } else if (r.kind === 'skin') {
+        materials[r.key] = fabricMat(r.desc, r.color, r.albedo, r.bgK,
+          { a: { shade: 1.00 }, s: { shade: 0.92, tint: acc, amount: 0.3 } }, ['aaaa', 'aasa', 'aaaa', 'saaa']);
+      } else if (r.kind === 'hair') {
+        materials[r.key] = fabricMat(r.desc, r.color, r.albedo, r.bgK,
+          { a: { shade: 1.00 }, h: { shade: 1.12, glyph: '|' }, d: { shade: 0.9, tint: acc, amount: 0.3 } }, ['ahaa', 'aaah', 'hada', 'aaha']);
+      } else if (r.kind === 'eye') {
+        materials[r.key] = fabricMat(r.desc, r.color, r.albedo, r.bgK, { a: { shade: 1.00 } }, ['aaaa', 'aaaa', 'aaaa', 'aaaa']);
+      } else {
+        materials[r.key] = fabricMat(r.desc, r.color, r.albedo, r.bgK,
+          { a: { shade: 1.00 }, w: { shade: 0.92, tint: acc, amount: 0.25, glyph: '~' } }, ['awaa', 'aaaw', 'waaa', 'aawa']);
+      }
+    }
+  })();
+
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)
   // ---------------------------------------------------------------------------
@@ -1661,6 +1780,7 @@
     timeOfDay: timeOfDay,
     defaultTime: 'morning',
     materials: materials,
+    chargen: chargen,  // CHARGEN-01: skin / hair / eye / dye ramps + hand tint maps + the list of appended keys
     semantic: semantic,
     ui: ui,
     util: {
