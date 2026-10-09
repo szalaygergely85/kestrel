@@ -10,7 +10,7 @@ import '../../../design/models/sword.js'; import '../../../design/models/m3_prop
 import '../../../design/models/ferrum_lights.js'; import '../../../design/models/voxel_beast.js'; import '../../../design/models/voxel_bear.js';
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../engine/test/assert.js';
-import { createNpcTurn, NEAR_M, FAR_M, MAX_DEG_S, RETURN_DELAY_S } from './npcBear.js';
+import { createNpcTurn, NEAR_M, MAX_DEG_S, RETURN_DELAY_S } from './npcBear.js';
 import { createDialogueCtl, setDialogueApi, npcTalk } from './dialogueCtl.js';
 
 paletteMod; detailPassMod; terrainMod;
@@ -55,37 +55,43 @@ ok('breach exit is visible: tower start is within 25 m', Math.hypot(tower.origin
   ok('free ground next to it is not blocked', x2 > t.x + 3.0);
 }
 
-// ---- turn to player ---------------------------------------------------------------------------------------------
+// ---- turn to player (BEAR-FOLLOW-01: calm bear, no tracking) ------------------------------------------------------
 {
   const dt = 1 / 60;
-  const fake = { y: 0, d: { transform: { x: 0, y: 0, z: 0, yawDeg: 90 } } };
+  const fake = { d: { transform: { x: 0, y: 0, z: 0, yawDeg: 90 } } };
   const w = { get: () => ({ data: fake.d }) };
   const turn = createNpcTurn(w, 'n'), tr = fake.d.transform;
   ok('createNpcTurn returns null for a missing entity', createNpcTurn({ get: () => null }, 'x') === null);
-  // player north (y -5 -> yaw 0 target): outside 4 m -> no turn
-  for (let i = 0; i < 60; i++) turn.step(dt, 0, -5);
-  ok('no turning beyond 4 m', tr.yawDeg === 90);
-  // enters 3 m north: target yaw 0, 90 deg away -> 0.75 s at 120 deg/s
+  ok('constants', NEAR_M === 2.5 && MAX_DEG_S === 120 && RETURN_DELAY_S === 2);
+  // player walks past at 3-6 m: no turning at all, even when standing still at 3 m
+  for (let i = 0; i < 600; i++) turn.step(dt, -6 + 12 * i / 600, -3 - 3 * (i % 100) / 100);
+  ok('no turning while the player walks past at 3-6 m', tr.yawDeg === 90, `yaw ${tr.yawDeg}`);
+  for (let i = 0; i < 120; i++) turn.step(dt, 0, -3);
+  ok('no turning when stopped at 3 m', tr.yawDeg === 90);
+  // walking by at 1.5 m (close but moving): no turn
+  for (let i = 0; i < 240; i++) turn.step(dt, -2 + 4 * i / 240, -1.5);
+  ok('no turning while walking by at 1.5 m', tr.yawDeg === 90, `yaw ${tr.yawDeg}`);
+  // close and stopped: turns (north, target 0), rate-limited, then holds; walking away then returns home after the delay
   const seq = [];
-  for (let i = 0; i < 120; i++) { const before = tr.yawDeg; turn.step(dt, 0, -3); seq.push(before - tr.yawDeg); }
-  ok('rate <= 120 deg/s each step', seq.every((d) => d <= MAX_DEG_S * dt + 1e-9));
-  ok('monotonic approach, no overshoot', seq.every((d) => d >= -1e-9) && tr.yawDeg >= -1e-9);
-  ok('final error < 2 deg', Math.abs(tr.yawDeg) < 2, `yaw ${tr.yawDeg}`);
-  ok('takes about 0.75 s (45 steps of 2 deg)', seq.findIndex((d) => d === 0) >= 44 && seq.findIndex((d) => d === 0) <= 48);
-  // hysteresis: 5 m away holds facing (no return)
-  for (let i = 0; i < 300; i++) turn.step(dt, -5, 0);
-  ok('between 4 and 6 m it keeps facing the player (west, -90)', Math.abs(((tr.yawDeg - yawFromDelta(-5, 0) + 540) % 360) - 180) < 2, `yaw ${tr.yawDeg}`);
-  // beyond 6 m: holds for 2 s, then eases home (90)
+  for (let i = 0; i < 120; i++) { const before = tr.yawDeg; turn.step(dt, 0, -2); seq.push(before - tr.yawDeg); }
+  ok('turns when close (<=2.5 m) and stopped', Math.abs(tr.yawDeg) < 2, `yaw ${tr.yawDeg}`);
+  ok('rate <= 120 deg/s, monotonic, no overshoot', seq.every((d) => d <= MAX_DEG_S * dt + 1e-9 && d >= -1e-9));
   const hold = tr.yawDeg;
-  for (let i = 0; i < 100; i++) turn.step(dt, 0, 8); // 1.67 s
-  ok('holds yaw during the 2 s delay', tr.yawDeg === hold);
-  for (let i = 0; i < 400; i++) turn.step(dt, 0, 8);
-  ok('returns to the home yaw after the delay', Math.abs(tr.yawDeg - 90) < 2, `yaw ${tr.yawDeg}`);
-  ok('constants match the AC', NEAR_M === 4 && FAR_M === 6 && MAX_DEG_S === 120 && RETURN_DELAY_S === 2);
-  // wrap: player behind across the 180 seam takes the short way
-  tr.yawDeg = 170; turn.step(dt, 0, 3); // target 180
-  ok('shortest-way wrap', tr.yawDeg > 170 && tr.yawDeg <= 180 || tr.yawDeg < -179);
-  // heap growth over 10k steps
+  for (let i = 0; i < 100; i++) turn.step(dt, 8 + i * 0.05, 0); // walking off, 1.67 s
+  ok('holds facing during the delay', tr.yawDeg === hold);
+  for (let i = 0; i < 400; i++) turn.step(dt, 20, 0);
+  ok('returns to home yaw after the delay', Math.abs(tr.yawDeg - 90) < 2, `yaw ${tr.yawDeg}`);
+  // talking turns him even from 5 m and while moving; ends -> back home
+  for (let i = 0; i < 120; i++) turn.step(dt, -5 + i * 0.001, 0, true);
+  ok('turns to the player when talking (5 m)', Math.abs(((tr.yawDeg - yawFromDelta(-5, 0) + 540) % 360) - 180) < 2, `yaw ${tr.yawDeg}`);
+  for (let i = 0; i < 60; i++) turn.step(dt, 20, 0, false);
+  ok('after talking he waits, then turns home', tr.yawDeg !== 90);
+  for (let i = 0; i < 400; i++) turn.step(dt, 20, 0, false);
+  ok('back home after the delay', Math.abs(tr.yawDeg - 90) < 2);
+  // position constant over 1e4 steps, whatever the player does
+  tr.x = 12.5; tr.y = -3.25; tr.z = 7;
+  for (let i = 0; i < 10000; i++) turn.step(dt, 12.5 + 8 * Math.sin(i * 0.01), -3.25 + 8 * Math.cos(i * 0.013), i % 700 < 100);
+  ok('position constant over 1e4 steps', tr.x === 12.5 && tr.y === -3.25 && tr.z === 7);
   if (global.gc) { global.gc(); const h0 = process.memoryUsage().heapUsed; for (let i = 0; i < 10000; i++) turn.step(dt, i & 1 ? 2 : 9, 0); global.gc(); ok('0 heap growth over 10k steps', process.memoryUsage().heapUsed - h0 < 50000); }
 }
 
