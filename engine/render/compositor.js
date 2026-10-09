@@ -20,7 +20,8 @@ import { MeshGroupSet, addMeshStructuresBatched } from '../mesh/meshGroups.js';
 import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget, clearRasterDepth } from '../mesh/rasterJS.js';
 import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
-import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer, pitchedFogScale, orthoHashCell } from './projection.js';
+import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer, pitchedFogScale, orthoHashCell, isPitchedFamily } from './projection.js';
+import { lodCentreX, lodCentreY } from '../core/camFocus.js';
 import { frustumPlanes } from '../mesh/culling.js';
 import { renderWaterJS } from './water.js';
 import { waterCompositeJS } from './waterComposite.js';
@@ -99,7 +100,7 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
   const vp = fb.voxelPool;
   if (vp && vp.shadowView) { vp.projectShadow(); src.voxelPool = vp.shadowView; } else src.voxelPool = null;
   src.instances = fb.instances || null;
-  src.eye.x = cam.x; src.eye.y = cam.y; src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM; src.meshCastM = so.meshCastM; src.meshCastCap = so.meshCastCap; // ME-15f / MESH-SHADOW-02
+  src.eye.x = lodCentreX(cam); src.eye.y = lodCentreY(cam); src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM; src.meshCastM = so.meshCastM; src.meshCastCap = so.meshCastCap; // ME-15f / MESH-SHADOW-02
   src.fogFarM = sunShadowFogFar(fb.palette, so);
   src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null; // CLOTH-1b1
   src.matIdFor = fb.matTable ? fb.matTable.idFor : undefined;
@@ -173,7 +174,7 @@ function renderWorldMesh(fb, world, cam) {
   meshGrid.cols = cols; meshGrid.rows = rows;
   meshGrid.pxCellW = (fb.rt && fb.rt.pxCellW) || 1;
   meshGrid.pxCellH = (fb.rt && fb.rt.pxCellH) || 1;
-  meshPitched = resolveProjection(cam, fb.renderer || 'mesh') === 'pitched';
+  meshPitched = isPitchedFamily(resolveProjection(cam, fb.renderer || 'mesh'));
   projTerms(cam, meshGrid, meshTerms);
   // The JS deriv fallback reads `gbuf.cam` (castSectors normally sets it; it never runs on mesh), so
   // write it on every mesh frame (RE-02a review: shear frames left it stale / at defaults).

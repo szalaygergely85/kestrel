@@ -33,7 +33,7 @@ import { sunFromHours } from '../core/sunPath.js';
 import { gridLocal } from '../world/gridLocal.js';
 import { FACE_PACKED, KIND_TERRAIN } from './GBuffer.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
-import { createPitchedTerms, pitchedTerms, unprojectPitched, resolveProjection } from './projection.js';
+import { createPitchedTerms, pitchedTerms, unprojectPitched, resolveProjection, isPitchedFamily } from './projection.js';
 import { sunShadowTaps, sunShadowInfo } from './shadowSun.js';
 import { resolveLook } from './look.js'; // ART-01a (37.18 item 3)
 import { cloudShadeQ } from './cloudShadow.js'; // S8-B2-12c (38.13)
@@ -1152,7 +1152,7 @@ export function lightSurfaces(fb, lights, cam, world) {
   const sunMap = fb.sunMap || null;
   lb.sunMapOn = !!sunMap;
   // RE-02a (28.1 A2 item 2): pitched twin of `cellRayPitched` - P = `unprojectPitched(d = vd)`.
-  const pitched = resolveProjection(cam, fb.renderer) === 'pitched';
+  const pitched = isPitchedFamily(resolveProjection(cam, fb.renderer));
   if (pitched) {
     litGrid.cols = cols; litGrid.rows = rows; litGrid.pxCellW = rt.pxCellW || 1; litGrid.pxCellH = rt.pxCellH || 1;
     pitchedTerms(cam, litGrid, litPitchTerms);

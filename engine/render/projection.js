@@ -532,6 +532,9 @@ export function fpVfovDeg(grid) {
 /** Look-pitch clamp on the pitched camera (28.1 A2 item 6); the shear clamp stays 35. */
 export const PITCH_CLAMP_PITCHED_DEG = 70;
 
+/** US-068b3a: true for the pitched camera family ('pitched' and 'ortho' share basis, terms and the worldToCell path). @param {string} proj a `resolveProjection` result */
+export function isPitchedFamily(proj) { return proj === 'pitched' || proj === 'ortho'; }
+
 /** The 28.1 throw: DDA, voxel march and the CPU caster only know the shear camera. */
 export function assertProjectionRenderer(cam, renderer) {
   const rp = resolveProjection(cam, renderer);
