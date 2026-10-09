@@ -12,6 +12,7 @@ const STEP_MS = 1000 / 60;
 const K_IDLE = 0, K_CHARGE = 1, K_HOLD = 2, K_CAST = 3, K_OUT = 4;
 const CAST_FROM_MS = 300; // fireCast: charge part [0,300] is skipped (the real charge happened on press)
 const TAP_RAMP_MS = 100;  // quick tap (charged < 300 ms): fireCast starts at the matching charge pose and catches up to 300 ms in <= this long
+const FLAME_MIN_DEPTH = 0.72; // sprite near cull is 0.6 m (engine/render/sprites.js SPRITE_NEAR_DEPTH)
 const ROLES = ['idle', 'charge', 'hold', 'cast', 'out'];
 
 /** Clip state machine memory (one for the render frames, one for the sim-step particles; both read the same sim). */
@@ -45,7 +46,8 @@ export function loadHandFireView(vm, def, pool) {
   for (const role of Object.keys(keyV)) for (const v of keyV[role]) if (v && v[0] !== '@' && plain[v] === undefined) plain[v] = vid(v);
   const defaultId = vid(def.defaultVariant || 'open');
   return { vm, h, def, clip, dur, keyT, keyV, glowOf, cycles, plain, defaultId, cap: def.glowCap || 9,
-           kind: K_IDLE, clock: newClock(), fxClock: newClock(), names, fx: null, glow: 1, variant: defaultId };
+           kind: K_IDLE, clock: newClock(), fxClock: newClock(), names, fx: null, glow: 1, variant: defaultId,
+           flame: { on: false, x: 0, y: 0, z: 0, charged: false, t: 0 } };
 }
 
 /** Variant shown at clip time t: the last key (<= t) carrying `v`, else the default. */
@@ -134,6 +136,24 @@ export function presentHandFire(vmh, hand, simTime, bobPhase, moving, sim) {
   return vmh.glow;
 }
 
+/**
+ * HAND-FIRE-FX-01: the translucent flame body over the hand = the fireball's core sprite art at hand scale (`handFlame`, or
+ * `handFlameCharged` while the fist gathers). Render side: main.js stores the world position of the core mount each frame
+ * (`setHandFlame`), the sprite pool's `extra` callback pushes it (`pushHandFlame`). 0 alloc.
+ */
+export function setHandFlame(vmh, on, x, y, z, simTime, cx, cy, cz) {
+  const f = vmh.flame;
+  // the sprite pass culls anything nearer than 0.6 m: slide the point out along the eye ray to >= 0.72 m (art is sized for that)
+  const dx = x - cx, dy = y - cy, dz = z - cz, d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1, k = d < FLAME_MIN_DEPTH ? FLAME_MIN_DEPTH / d : 1;
+  f.on = on; f.x = cx + dx * k; f.y = cy + dy * k; f.z = cz + dz * k; f.t = simTime;
+  f.charged = vmh.kind === K_CHARGE || vmh.kind === K_HOLD;
+}
+export function pushHandFlame(vmh, pool) {
+  const f = vmh && vmh.flame;
+  if (!f || !f.on) return;
+  pool.push(f.charged ? 'handFlameCharged' : 'handFlame', 'fly', Math.floor(f.t * 12) & 3, f.x, f.y, f.z);
+}
+
 // ---- particles (HAND-WIRE-02): def.particles[clip] rules -> persistent burst emitters, sim side (hashed, 37.8: origin from the
 // eye + the cast offset, never the render pose). One persistent emitter per preset (setEmitterPos + burst), recreated if a
 // world reload cleared it. No attractor. 0 alloc per step.
@@ -170,7 +190,8 @@ export function stepHandFx(vmh, hand, sim, ex, ey, ez, fx, fy, ax, ay, az) {
   f.prevT = t;
   if (rules.length === 0) return;
   const sg = hand === 'left' ? -1 : 1, o = f.off;
-  const x = ex + fy * sg * o.right + fx * o.fwd, y = ey - fx * sg * o.right + fy * o.fwd, z = ez - o.down;
+  // same maths as the fireball cast point (sim/fireball.js): engine right = (-fy, fx) for forward (fx, fy) = (sinY, -cosY)
+  const x = ex - fy * sg * o.right + fx * o.fwd, y = ey + fx * sg * o.right + fy * o.fwd, z = ez - o.down;
   for (let i = 0; i < rules.length; i++) {
     const r = rules[i];
     if (r.def < 0) continue;

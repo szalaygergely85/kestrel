@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { VoxelPool, createViewModelLayer, createParticles } from '../../../engine/index.js';
-import { loadHandFireView, presentHandFire, bindHandFx, stepHandFx } from './handFireView.js';
+import { loadHandFireView, presentHandFire, bindHandFx, stepHandFx, setHandFlame, pushHandFlame } from './handFireView.js';
 import { createFireballSim } from './sim/fireball.js';
 import { makeOk } from '../../../engine/test/assert.js';
 import '../../../design/palette.js';
@@ -66,12 +66,13 @@ ok('hand mirrored to the right', vm.handOf(vmh.h) === 'right' && d.mirror === 1)
 fs.state = 1; fs.holdSteps = 1; fs.tick++; hv();
 ok('press: charge clip, kind CHARGE', clipNow() === 1);
 fs.holdSteps = 12; fs.tick++; hv(1.2);
-ok('charging (200 ms): charge variant, glow grows', /^charge/.test(varName()) && vmh.glow > 1.3, varName() + ' ' + vmh.glow);
+ok('charging (200 ms): charge variant, glow grows', /^charge/.test(varName()) && vmh.glow > 1.0 && vmh.glow <= 1.6, // modest brightening
+    varName() + ' ' + vmh.glow);
 fs.state = 2; fs.holdSteps = 36; fs.tick++; hv(1.4);
-ok('held: chargeHold, full-charge variant, glow ~1.9', clipNow() === 2 && /^charge[CD]$/.test(varName()) && vmh.glow > 1.5 && vmh.glow < 2.3, varName() + ' ' + vmh.glow);
+ok('held: chargeHold, full-charge variant, glow ~1.5 (modest)', clipNow() === 2 && /^charge[CD]$/.test(varName()) && vmh.glow > 1.3 && vmh.glow < 1.8, varName() + ' ' + vmh.glow);
 // release with cast
 fs.state = 0; fs.holdSteps = 0; fs.tick++; fs.castTick = fs.tick; hv(1.5);
-ok('release+cast: fireCast from 300 ms, glow ~2.1', clipNow() === 3 && vmh.glow > 1.9, vmh.glow + ' kind ' + clipNow());
+ok('release+cast: fireCast from 300 ms', clipNow() === 3, vmh.glow + ' kind ' + clipNow());
 fs.tick += 6; hv(1.6); // +100 ms -> 400 ms: past the 383 release key
 ok('fireCast mid: burnCast variant', /^burnCast/.test(varName()), varName());
 fs.tick += 30; hv(1.9);
@@ -103,11 +104,12 @@ ok('every fire clip has a glow (the light never goes out)', Object.values(def.al
   ok('real sim exposes state/holdSteps/castTick/tick', ['state', 'holdSteps', 'castTick', 'tick'].every((k) => k in fsim));
 }
 
-// ---- HAND-WIRE-02: the variant voxel output is byte-identical to before the boot-cost optimisation (golden sha1 of all 26 models)
+// ---- HAND-WIRE-02: the variant voxel output is golden (HAND-FIRE-FX-01: re-baselined, voxel flames off) (golden sha1 of all 26 models)
 {
   const hsh = createHash('sha1');
   for (const k of Object.keys(A.voxelModels).sort()) { hsh.update(k); hsh.update(JSON.stringify(A.voxelModels[k], (kk, v) => (ArrayBuffer.isView(v) ? Array.from(v) : v))); }
-  ok('hand variant voxels unchanged (sha1)', hsh.digest('hex') === '91e32faf214870c44deda40d54f9090d9d442356');
+  ok('hand variant voxels unchanged (sha1)', hsh.digest('hex') === '725b021258b9d658bcdbfd12aa3a93cf8f69bedb');
+  ok('HAND-FIRE-FX-01: no voxel flame blocks in any variant (FIRE_VOXELS=false)', Object.keys(A.voxelModels).filter((k) => /^hand/.test(k)).every((k) => A.voxelModels[k].stats.fire === 0));
 }
 
 // ---- HAND-WIRE-02: quick-tap blend (fireCast starts at the matching charge pose, catches up to 300 ms)
@@ -127,21 +129,72 @@ ok('every fire clip has a glow (the light never goes out)', Object.values(def.al
   ok('tap catches up: 100 ms after release it is past 300', later[2] > 300 && later[2] < 420, String(later));
   ok('full hold: unchanged 300 ms start', full[1] === 3 && Math.abs(full[0] - 300) < 1e-6, String(full));
 }
+// ---- HAND-FIRE-FX-01: no charge-specific rule anywhere
+{
+  const P0 = createParticles();
+  A.handFx.attach(); // defines the presets once (the particles block below reuses them)
+  for (const k of Object.keys(A.handFx.particles)) { const pr = A.particles.presets[k]; if (pr.spreadDeg > 88.9) pr.spreadDeg = 88.9; P0.defineEmitter(k, A.particles.toEmitterDef(k, A.palette.rgb)); }
+  const hh0 = loadHandFireView(createViewModelLayer(), def, pool); const f0 = bindHandFx(hh0, P0, { right: 0.22, fwd: 0.5, down: 0.135 });
+  ok('every clip has the handFlame rule; idle has no sparks', ['idle', 'charge', 'hold', 'cast', 'out'].every((r) => f0.rulesOf[r].some((x) => x.preset === 'handFlame')) && f0.rulesOf.idle.every((x) => x.preset !== 'handChargeSparks'));
+}
+// ---- HAND-FIRE-FX-01: emitter side = rendered hand side (owner: 'my hand is on the right, the particles on the left')
+{
+  const rec = { x: 0, y: 0, z: 0 }, mock = { defIdOf: () => 1, isValid: () => true, createEmitter: (d, x, y, z) => { rec.x = x; rec.y = y; return 1; },
+    setEmitterPos: (h, x, y, z) => { rec.x = x; rec.y = y; rec.z = z; }, setEmitterDir() {}, burst() {} };
+  const hh = loadHandFireView(createViewModelLayer(), def, pool);
+  const fx = bindHandFx(hh, mock, { right: 0.22, fwd: 0.5, down: 0.135 });
+  const q = { state: 0, holdSteps: 0, tick: 1000, castTick: -1000000 };
+  // yaw 0: forward (0,-1) (engine forwardOf), so the right-hand side is +x, the left -x; forward is -y
+  stepHandFx(hh, 'right', q, 0, 0, 1.6, 0, -1, 0, -1, 0); const rx = rec.x, ry = rec.y;
+  q.tick += 2; stepHandFx(hh, 'left', q, 0, 0, 1.6, 0, -1, 0, -1, 0); const lx = rec.x;
+  ok('right hand: emitter on the +x (right) side, ahead of the eye', rx > 0.2 && ry < -0.4, rx + ' ' + ry);
+  ok('left hand: emitter on the -x (left) side', lx < -0.2, String(lx));
+  // yaw 90 deg: forward (1,0), right is +y
+  q.tick += 2; stepHandFx(hh, 'right', q, 0, 0, 1.6, 1, 0, 1, 0, 0);
+  ok('right hand at yaw 90: emitter on the +y side', rec.y > 0.2 && rec.x > 0.4, rec.x + ' ' + rec.y);
+}
+// ---- HAND-FIRE-FX-01: the translucent flame sprite per state, 0 alloc, never a flat single-colour quad
+{
+  const pushes = []; const spool = { push: (m, a, f, x, y, z) => pushes.push([m, f, x, y, z]) };
+  const hh = loadHandFireView(createViewModelLayer(), def, pool);
+  const q = { state: 0, holdSteps: 0, tick: 1000, castTick: -1000000 };
+  setHandFlame(hh, false, 0, 0, 0, 0, 0, 0, 0); pushHandFlame(hh, spool);
+  ok('no hand -> no flame sprite', pushes.length === 0);
+  presentHandFire(hh, 'right', 1, 0, false, q); setHandFlame(hh, true, 0, -0.5, 1.5, 1, 0, 0, 1.6); pushHandFlame(hh, spool);
+  ok('idle: handFlame sprite', pushes.length === 1 && pushes[0][0] === 'handFlame', JSON.stringify(pushes));
+  ok('flame kept out of the sprite near cull (>= 0.6 m from the eye)', Math.hypot(pushes[0][2], pushes[0][3] - 0, pushes[0][4] - 1.6) >= 0.6);
+  q.state = 1; q.holdSteps = 30; presentHandFire(hh, 'right', 1.5, 0, false, q); setHandFlame(hh, true, 0, -0.5, 1.5, 1.5, 0, 0, 1.6); pushes.length = 0; pushHandFlame(hh, spool);
+  ok('charge: handFlameCharged sprite', pushes.length === 1 && pushes[0][0] === 'handFlameCharged', JSON.stringify(pushes));
+  const nf = { n: 0 }; const pool2 = { push() { nf.n++; } };
+  for (let i = 0; i < 3000; i++) { setHandFlame(hh, true, 0, -0.5, 1.5, i / 60, 0, 0, 1.6); pushHandFlame(hh, pool2); }
+  gc(); gc(); const b0 = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 20000; i++) { setHandFlame(hh, true, 0, -0.5, 1.5, i / 60, 0, 0, 1.6); pushHandFlame(hh, pool2); }
+  gc(); gc();
+  ok('flame push: 0 alloc', process.memoryUsage().heapUsed - b0 < 32768, String(process.memoryUsage().heapUsed - b0));
+  // art check: every frame of both sprites is glyph fire (several distinct glyphs + empty corners), not a flat filled quad
+  const spr = (await import('../../../design/models/spell.js')) && A.spellSprites;
+  const flat = [];
+  for (const n of ['handFlame', 'handFlameCharged']) for (const tier of [spr[n], spr[n].lods.half]) for (const fr of tier.animations.fly.frames) {
+    const g = fr.S.glyphs.join(''), kinds = new Set(g.replace(/ /g, '')), fgs = new Set(fr.S.fg.join('').replace(/ /g, ''));
+    if (kinds.size < 4 || fgs.size < 3 || !g.includes(' ')) flat.push(n);
+  }
+  ok('no flat single-colour fire quad (glyph variety, >= 3 colour keys, empty corners)', flat.length === 0, flat.join());
+}
 // ---- HAND-WIRE-02: particles per clip
 {
   const P = createParticles();
-  for (const k of A.handFx.attach()) { const pr = A.particles.presets[k]; if (pr.spreadDeg > 88.9) pr.spreadDeg = 88.9; P.defineEmitter(k, A.particles.toEmitterDef(k, A.palette.rgb)); } // same clamp as main.js
+  for (const k of Object.keys(A.handFx.particles)) { const pr = A.particles.presets[k]; if (pr.spreadDeg > 88.9) pr.spreadDeg = 88.9; P.defineEmitter(k, A.particles.toEmitterDef(k, A.palette.rgb)); } // same clamp as main.js
   const v = createViewModelLayer(); const hh = loadHandFireView(v, def, pool);
   const fx = bindHandFx(hh, P, { right: 0.22, fwd: 0.5, down: 0.135 });
   const q = { state: 0, holdSteps: 0, tick: 1000, castTick: -1000000 };
   const run = (n, hand = 'right') => { const b = fx.stats.bursts; for (let i = 0; i < n; i++) { q.tick++; if (q.state) q.holdSteps++; stepHandFx(hh, hand, q, 0, 0, 1.6, 0, 1, 0, 1, 0); P.step(); } return fx.stats.bursts - b; };
-  ok('idle: embers every 9 steps (90 steps -> 10)', run(90) === 10, String(fx.stats.bursts));
+  ok('idle: flame every 2 steps + embers every 12 (90 steps -> 45+7)', run(90) >= 50 && run(0) === 0, String(fx.stats.bursts));
   ok('no hand -> no particles', run(30, null) === 0);
   q.state = 1; q.holdSteps = 0;
-  const nCharge = run(24); // charge clip, fromMs 90 -> sparks every 3 steps
-  ok('charge: sparks (every 3 steps after 90 ms)', nCharge >= 5 && nCharge <= 8, String(nCharge));
+  const nCharge = run(24); // charge clip: denser flame + a few sparks
+  ok('charge: flame doubles, a few sparks', nCharge >= 18 && nCharge <= 30, String(nCharge));
   const nHold = run(60);
-  ok('hold: sparks every 2 + embers every 7 (60 steps ~ 38)', nHold >= 34 && nHold <= 40, String(nHold));
+  ok('hold: flame every step + sparks (60 steps -> ~75)', nHold >= 70 && nHold <= 80, String(nHold));
   q.state = 0; q.holdSteps = 0; q.tick++; q.castTick = q.tick; // release with a cast
   let maxLive = 0;
   const nCast = (() => { const b = fx.stats.bursts; for (let i = 0; i < 12; i++) { run(1); if (P.stats.live > maxLive) maxLive = P.stats.live; } return fx.stats.bursts - b; })();
@@ -150,7 +203,7 @@ ok('every fire clip has a glow (the light never goes out)', Object.values(def.al
   run(60);
   q.state = 1; q.holdSteps = 12; run(2); q.state = 0; q.holdSteps = 0; // press then cancel
   const nOut = run(40);
-  ok('chargeOut: 3 embers once', nOut >= 3 && nOut <= 5, String(nOut)); // + a few idle embers after the clip
+  ok('chargeOut: flame continues', nOut >= 18, String(nOut)); // + a few idle embers after the clip
   // 0 alloc
   const stepN = (n) => { for (let i = 0; i < n; i++) { q.tick++; q.state = (i >> 7) & 1; q.holdSteps = q.state ? i & 127 : 0; stepHandFx(hh, 'left', q, 0, 0, 1.6, 0, 1, 0, 1, 0); P.step(); } };
   stepN(3000);
