@@ -129,6 +129,7 @@ export { isSoftwareRenderer } from './render/gpu/glUtil.js';
 export { probeWebGpu, evaluateWebGpuLimits } from './render/gpu/device/webgpuProbe.js'; // WG-1a
 export { createGpuDevice, selfTestDevice } from './render/gpu/device/createGpuDevice.js'; // WG-1b2
 export { createRenderer } from './render/createRenderer.js'; // WG-1c2
+export { WG_PASS_NAMES } from './render/gpu/wg/WgCellPipeline.js'; // S8-B1-07: WgCellPipeline's real per-pass GPU timer names
 export { RenderTargetWebGPU } from './render/RenderTargetWebGPU.js'; // WG-1c1
 export { CellBuffer } from './render/CellBuffer.js'; // WG-1c1 (present test page)
 export { WGSL_MODULES, summarizeCompilation } from './render/gpu/wgsl/index.js'; // WG-1c1

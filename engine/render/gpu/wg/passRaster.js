@@ -13,6 +13,7 @@ import { KIND_MODEL, FACE_PACKED } from '../../GBuffer.js';
 import { projTerms, shearProjection, pitchedTerms, createPitchedTerms, resolveProjection, viewProjAtOrigin } from '../../projection.js';
 import { frustumPlanes } from '../../../mesh/culling.js';
 import { WgCullPass } from './passCull.js';
+import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
 const PLANE = RASTER_BLOCK.field('planeIdOr').word, ZBASE = RASTER_BLOCK.field('zBase').word;
@@ -351,45 +352,50 @@ export class WgRasterPass {
   run(p) {
     this.prepare(p);
     const list = this.list, d = this.device;
-    this._cullRun(p);
-    d.beginPass(p._t.targetRaster, this.clearOpts);
+    // S8-B1-07: cull (compute) and raster (render) are separate timer slots - one span each, never nested.
+    wgSpanBegin(p, WG_PASS_SLOT.cull);
+    try { this._cullRun(p); } finally { wgSpanEnd(p); }
     let staticDraws = 0, instancedDraws = 0, instances = 0;
     this.maskDraws = 0;
+    wgSpanBegin(p, WG_PASS_SLOT.raster);
     try {
-      for (let i = 0; i < list.count; i++) {
-        const item = list.items[i];
-        if (item.type !== DRAW_STATIC || !item.mesh || item.rangeCount <= 0) continue;
-        this._item(item); this._model(item.matrix, 0, this.ox, this.oy);
-        this._staticMesh(item, this.staticPipe, this.maskPipe, this.mu, this.mbits, this.buffers.get(item.mesh)); staticDraws++;
-      }
-      p.stats.voxelDraws = this._voxels(list);
-      for (let i = 0; i < list.count; i++) {
-        const item = list.items[i];
-        if (item.type !== DRAW_INSTANCED || !item.mesh || !item.instBuf) continue;
-        instances += item.instCount;
-        if (instances > MAX_INSTANCES_PER_FRAME) throw new Error(`instanced units over ${MAX_INSTANCES_PER_FRAME} per frame`);
-        let buffer = this.instanceBuffers.get(item.instBuf);
-        if (!buffer) { buffer = d.createBuffer({ usage: 'vertex', data: item.instBuf.f32, dynamic: true }); this.instanceBuffers.set(item.instBuf, buffer); }
-        else d.writeBuffer(buffer, item.instBuf.f32, 0);
-        this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0;
-        const entry = this.buffers.getVoxel(item.mesh);
-        const ranges = instancedRanges(item);
-        for (let part = 0; part < ranges.length; part++) {
-          const r = ranges[part]; if (r.count <= 0) continue;
-          this._model(item.partMatrices, part * 12); this.bits[AXIS] = item.partFlags[part] & 1;
-          this._draw(this.instancePipe, entry, r.count * 3, r.start * 3, buffer, item.instCount); instancedDraws++;
+      d.beginPass(p._t.targetRaster, this.clearOpts);
+      try {
+        for (let i = 0; i < list.count; i++) {
+          const item = list.items[i];
+          if (item.type !== DRAW_STATIC || !item.mesh || item.rangeCount <= 0) continue;
+          this._item(item); this._model(item.matrix, 0, this.ox, this.oy);
+          this._staticMesh(item, this.staticPipe, this.maskPipe, this.mu, this.mbits, this.buffers.get(item.mesh)); staticDraws++;
         }
-      }
-      if (this.gpuN) { const gd = this._cullDraw(); instancedDraws += gd; p.stats.gpuCullDraws = gd; } else p.stats.gpuCullDraws = 0;
-      p.stats.clothDraws = this._cloths(list);
-      p.stats.terrainDraws = this._terrain(list);
-    } finally { d.endPass(); }
-    if (this.vmList) {
-      // A depth-only target clears the same depth attachment, preserving all colour G-buffer values.
-      d.beginPass(p._t.targetVmDepth, this.vmClearOpts); d.endPass();
-      d.beginPass(p._t.targetRaster);
-      try { p.stats.vmDraws = this._voxels(this.vmList); } finally { d.endPass(); }
-    } else p.stats.vmDraws = 0;
+        p.stats.voxelDraws = this._voxels(list);
+        for (let i = 0; i < list.count; i++) {
+          const item = list.items[i];
+          if (item.type !== DRAW_INSTANCED || !item.mesh || !item.instBuf) continue;
+          instances += item.instCount;
+          if (instances > MAX_INSTANCES_PER_FRAME) throw new Error(`instanced units over ${MAX_INSTANCES_PER_FRAME} per frame`);
+          let buffer = this.instanceBuffers.get(item.instBuf);
+          if (!buffer) { buffer = d.createBuffer({ usage: 'vertex', data: item.instBuf.f32, dynamic: true }); this.instanceBuffers.set(item.instBuf, buffer); }
+          else d.writeBuffer(buffer, item.instBuf.f32, 0);
+          this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0;
+          const entry = this.buffers.getVoxel(item.mesh);
+          const ranges = instancedRanges(item);
+          for (let part = 0; part < ranges.length; part++) {
+            const r = ranges[part]; if (r.count <= 0) continue;
+            this._model(item.partMatrices, part * 12); this.bits[AXIS] = item.partFlags[part] & 1;
+            this._draw(this.instancePipe, entry, r.count * 3, r.start * 3, buffer, item.instCount); instancedDraws++;
+          }
+        }
+        if (this.gpuN) { const gd = this._cullDraw(); instancedDraws += gd; p.stats.gpuCullDraws = gd; } else p.stats.gpuCullDraws = 0;
+        p.stats.clothDraws = this._cloths(list);
+        p.stats.terrainDraws = this._terrain(list);
+      } finally { d.endPass(); }
+      if (this.vmList) {
+        // A depth-only target clears the same depth attachment, preserving all colour G-buffer values.
+        d.beginPass(p._t.targetVmDepth, this.vmClearOpts); d.endPass();
+        d.beginPass(p._t.targetRaster);
+        try { p.stats.vmDraws = this._voxels(this.vmList); } finally { d.endPass(); }
+      } else p.stats.vmDraws = 0;
+    } finally { wgSpanEnd(p); }
     p.stats.meshDraws = staticDraws; p.stats.maskDraws = this.maskDraws; p.stats.maskUploads = this.maskUploads; p.stats.instancedDraws = instancedDraws; p.stats.instances = instances;
     p.stats.voxelDraws += instancedDraws;
   }
