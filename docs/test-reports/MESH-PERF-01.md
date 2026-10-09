@@ -83,3 +83,16 @@ Caveats: (1) world_m1 still scatters the six voxel species (mesh switch prepared
 | roadSouth | 21 | 7 inst, 34 635 | 7 inst, 24 294 | 7 inst, 67 678 | **126 607** | 126 607 |
 
 Findings: at the recipe's `lodCells` 6 (and up to 24-48) no tree switches to LOD1, because the group radius R (bbox corners over both LODs, 5-9 m) makes the projected size large; LOD1 only starts to bite at `lodCells` ~48-96 (roadSouth 126 607 -> 87 027 at 48, 84 837 at 96; forestWalk stays 420 463 at 48, 405 788 at 96). So the species switch needs a mesh-specific `lodCells` (tune with this tool) before LOD1 saves anything. TwistedTree is 70 % of the forestWalk budget (about 11 ms at the ~26 us / 1k tris measured above): a TwistedTree LOD1 (15 % pick, ~1.4-1.5k tris) is the biggest lever; without it forestWalk is ~420k tris.
+
+### MESH-LOD-CELLS-01 recommendation (2026-10-09)
+Per-species `lodCells` / `lod0Cap` now honoured (scatter species; default unchanged). Tool sweep (`--lod-cells C`, one value for all families; TwistedTree has no LOD1 so stays LOD0):
+
+| lodCells | forestWalk tris | roadSouth tris |
+|---|---|---|
+| 6 (today, mesh = off) | 420 463 | 126 607 |
+| 24 | 420 463 | 121 850 |
+| 48 | 420 463 | 87 027 |
+| 96 | 405 788 | 84 837 |
+| 150 | 380 032 | 84 837 |
+
+lod0Cap 8 changed nothing (<= 8 LOD0 trees in range). Recommend CommonTree + Pine `lodCells: 150` (near trees stay LOD0: 9/16 and 8/14 in forestWalk). Finding: TwistedTree is 294k of 420k tris and has no LOD1; no lodCells value fixes forestWalk below ~380k. It needs an LOD1 mesh (NEEDS C: TwistedTree `lods` mesh, then `lodCells` 150). 

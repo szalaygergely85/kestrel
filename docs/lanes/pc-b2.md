@@ -221,3 +221,7 @@ Test: engine/mesh/instancedMaskAtlas.test.js (one cache entry over 3 frames, mas
 ### ALPHA-01f-fix2 ARCH CHANGES (kestrel-4) -> arch re-review
 shadowList.js passes src.maskAtlas at both meshCache.get; src.maskAtlas set in passShadow.js (literal + :271), compositor.js, GpuCellPipeline.js. instancedMaskAtlas.test.js case 1 now runs buildShadowList on the same cache (same copy, 0 warns); fails with change 1 reverted (2 FAIL), passes restored.
 --filter mesh/passShadow/compositor/shadow PASS; check-deps in run-tests PASS.
+
+### MESH-LOD-CELLS-01 (kestrel-3) -> arch-review
+Optional per-species `lodCells` (>0) / `lod0Cap` (int>=0) in forest scatter species: validated in engine/world/scatter.js, applied in engine/core/engine.js bindScatterInstances (mesh groups LOD off by default, so unchanged without the field). Test: scatterMesh.test.js (+11 checks). scatter/instances/mesh/tri-budget suites PASS, check-deps OK.
+NEEDS C: world_m1 forest species CommonTree + Pine `lodCells: 150`; TwistedTree needs an LOD1 mesh (294k of 420k tris) first. Numbers in MESH-PERF-01.md.
