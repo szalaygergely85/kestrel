@@ -1112,7 +1112,8 @@ async function runGame(mode, cinematic = null) {
         onClose: () => { if (invWasLocked) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* click to resume */ } } },
       }) : null;
       if (craftView && craftView.isOpen) craftView.close();
-      craftView = itemDefs && recipeList && window.ASSETS.uiStyle.inventory ? createCraftView({
+      // owner 2026-10-09: "leave the crafting for now" - the C list is off unless ?craft=1 (module + tests stay)
+      craftView = params.get('craft') === '1' && itemDefs && recipeList && window.ASSETS.uiStyle.inventory ? createCraftView({
         crafting: createCrafting(recipeList, { items: itemDefs }), recipes: recipeList, defs: itemDefs, rgb: window.ASSETS.uiStyle.inventory.rgb || assets.palette.rgb, toast: toasts,
         inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
         onOpen: () => { craftWasLocked = !!(look && look.locked); if (craftWasLocked && document.exitPointerLock) document.exitPointerLock(); },

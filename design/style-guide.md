@@ -2,6 +2,15 @@
 
 Owner: Designer. Data formats: `design/README.md`. Colors, ramps and materials: `design/palette.js`. Preview: `design/preview/palette.html`.
 
+## 0. Owner art rules (binding, owner 2026-10-09) - read BEFORE modelling anything
+Models are expensive; a model made against these rules gets redone. Check every new model, clip and effect against this list first.
+1. **Realistic things, built from squares.** Realistic anatomy, proportions and posture, made of voxels. Not cartoony, chibi or anthropomorphic. Use real reference (animal and hand anatomy).
+2. **Animals stay natural.** Four-legged animals stand and move on all four legs in every clip, talking NPCs included (they talk with head, jaw and ears, not by standing up). Example: Burl the bear v1 was upright and was rejected.
+3. **No boxy look.** No flat cube faces readable at 3-6 m: round the body, head, limbs and paws with chamfers and tapered slices, and vary the colour naturally (fur, skin).
+4. **The first-person hand is realistic**: knuckles, tendons, finger joints, a natural thumb, skin variation. The fire burns around the hand ALL THE TIME; closing the hand (fist) charges.
+5. **UI text: never print "Esc to close" / "[Esc] close" / "Esc: leave"** hints. Esc may close; it is just not written.
+6. When unsure about pose or style, make one small preview first and ask the owner before building the full model and all clips.
+
 ## 1. Order of importance
 From GDD pillar 4, the same order decides every art call:
 1. **Silhouette**: can you tell what the shape is from its outline alone?
