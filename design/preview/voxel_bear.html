@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Kestrel - talking bear (design v1.51)</title>
+<title>Kestrel - talking bear v2 (design v1.52)</title>
 <style>
   body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
   h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
@@ -27,10 +27,10 @@
 </style>
 </head>
 <body>
-<h1>Kestrel : talking brown bear (design v1.51) - model key <code>bear</code></h1>
+<h1>Kestrel : talking brown bear v2 (design v1.52) - model key <code>bear</code></h1>
 <div class="note">
-  <code>design/models/voxel_bear.js</code>: 28 x 21 x 40 voxels @ 0.05 m (2.0 m to the ear tips, 1.3 m across the arms), 8 parts
-  (body, head, jaw, ears, armL, armR, legL, legR), meshOnly. Upright for talking, on all fours for walking (drop / walk / rise), seated option.
+  <code>design/models/voxel_bear.js</code>: 28 x 34 x 22 voxels @ 0.05 m (realistic brown bear: 1.1 m at the shoulder hump, 1.7 m nose to rump), 8 parts
+  (body, head, jaw, ears, armL, armR, legL, legR), meshOnly. On ALL FOURS in every clip (style-guide 0.2): talking = head raised toward the player, jaw, ears.
   Rendering = the engine's <code>packVoxelModel</code> / <code>computeVoxelPose</code>, the preview CPU march (<code>lib/voxelMarch.js</code>), the v1 shader
   (<code>palette.util.shade</code>) and an approximate edge pass, same as <code>boar.html</code>. Tri count from <code>engine/mesh/voxelMesh.js</code>.
   <b>Needs http</b>: <code>python -m http.server</code> from the repo root, open <code>/design/preview/voxel_bear.html</code>.
@@ -52,14 +52,13 @@
 </div>
 
 <h2>Talk demo (the dialogue sync rule in <code>ASSETS.bearFx.talk</code>)</h2>
-<div class="note">The line types on at <code>textCps</code>; <code>talk</code> (or <code>sitTalk</code>) plays while it types; at , ; : - the clip is held on the
+<div class="note">The line types on at <code>textCps</code>; <code>talk</code> plays while it types; at , ; : - the clip is held on the
   closed-jaw key (<code>pauseAtMs</code>) for 180 ms, at . ! ? for 380 ms, then resumes from that key; when the line is complete the bear
-  switches to <code>listen</code> (seated: holds <code>sit</code>), then idles. Placeholder text: the writer owns the real lines.</div>
+  switches to <code>listen</code>, then idles. Placeholder text: the writer owns the real lines.</div>
 <div class="row" style="flex-direction:column;gap:6px">
   <input id="line">
   <div style="display:flex;gap:12px;align-items:center;font-size:13px">
     <button id="say">say it</button>
-    <label><input type="checkbox" id="seated"> seated</label>
     <label><input type="checkbox" id="happy"> happy line (laugh first)</label>
     <label>chars/s <input type="range" id="cps" min="12" max="50" step="1" value="28"><span class="val" id="cpsV"></span></label>
   </div>
@@ -119,9 +118,9 @@ $('eyes').oninput = () => { DEF.mats.E = $('eyes').value; pack(); ver++; };
 const CLIPS = Object.keys(DEF.animations);
 const SEQS = {
   'loop: idle': [['idle', 0]],
-  'greet: wave -> idle': [['wave', 1700], ['idle', 2500]],
-  'move: drop -> walk -> rise -> idle': [['drop', 750], ['walk', 2800], ['rise', 800], ['idle', 1500]],
-  'rest: sit -> sitTalk -> standUp': [['sit', 800], ['sit', 600], ['sitTalk', 3200], ['standUp', 750], ['idle', 1200]],
+  'greet: wave -> idle': [['wave', 1800], ['idle', 2500]],
+  'move: walk -> turn -> idle': [['walk', 2800], ['turn', 1200], ['idle', 1500]],
+  'chat: talk -> listen': [['talk', 3200], ['listen', 2400]],
   'joke: talk -> laugh -> listen': [['talk', 1600], ['laugh', 1600], ['listen', 2400]]
 };
 for (const c of CLIPS) SEQS['clip: ' + c] = [[c, 0]];
@@ -169,10 +168,10 @@ $('say').onclick = () => {
     if (p && i < text.length - 1) { segs.push({ type: 'speak', dur: speak }); segs.push({ type: 'pause', dur: p }); speak = 0; t += p; }
   }
   if (speak > 0) segs.push({ type: 'speak', dur: speak });
-  demo = { t0: performance.now(), text, charAt, segs, lead, end: t, seated: $('seated').checked };
+  demo = { t0: performance.now(), text, charAt, segs, lead, end: t };
 };
 function demoState(now) {
-  const e = (now - demo.t0) * ctl.speed, T = FX.talk, talkClip = demo.seated ? 'sitTalk' : 'talk';
+  const e = (now - demo.t0) * ctl.speed, T = FX.talk, talkClip = 'talk';
   let n = 0; while (n < demo.charAt.length && demo.charAt[n] <= e) n++;
   $('dlgText').textContent = demo.text.slice(0, n) + (n < demo.text.length ? '' : ' v');
   if (e < demo.lead) return { name: 'laugh', st: clipState('laugh', e) };
@@ -188,7 +187,6 @@ function demoState(now) {
     }
   }
   const after = e - demo.end;
-  if (demo.seated) return { name: 'sit (listening)', st: clipState('sit', 1e9) };
   if (after < 3000) return { name: 'listen', st: clipState('listen', after) };
   return { name: 'idle', st: clipState('idle', after - 3000) };
 }
@@ -335,7 +333,7 @@ function perspCam(gridCols, gridRows, cropCols, cropRows, target, azDeg, dist, e
 
 // ------------------------------------------------------------------ views
 const views = [];
-const CENTER = [0, -0.25, 1.05];   // between the upright bear and the all-fours bear (it reaches ~1 m forward)
+const CENTER = [0, 0, 0.6];         // the bear on all fours: 1.7 m long, 1.1 m at the hump
 {
   const rows = 52, g = makeCanvas(rows * 2, rows, 7, 14);
   const wrap = document.createElement('div');
@@ -379,7 +377,7 @@ function frame() {
   const sig = S.name + '|' + S.st.clip + '|' + S.st.frame + '|' + Math.round(S.st.tMs);
   $('now').textContent = S.name + ' key ' + S.st.frame + ' +' + Math.round(S.st.tMs) + ' ms';
   for (const v of views) {
-    if (v.ingame) v.cam = perspCam(v.s.cols, v.s.rows, v.s.cc, v.s.cr, [0, 0, 1.0], ctl.vaz, v.dist, 1.6);
+    if (v.ingame) v.cam = perspCam(v.s.cols, v.s.rows, v.s.cc, v.s.cr, [0, 0, 0.6], ctl.vaz, v.dist, 1.6);
     const key = sig + '|' + ver;
     if (v.key === key) continue;
     renderView(v, { pose: POSE, ground: !!v.ground });
@@ -402,14 +400,16 @@ function runChecks() {
   ok(sums.every((s) => s <= 48), 'style 5.14 part box sx+sy+sz <= 48: ' + sums.join(' / '));
   const lod0 = buildVoxelMesh(PM, { id: 'bear', partNames: PARTS }).triCount, lod1 = buildVoxelMeshLod1(PM, { id: 'bear1', partNames: PARTS }).triCount;
   ok(lod0 <= 2000, 'engine mesher: LOD0 ' + lod0 + ' tris (budget 2000), LOD1 ' + lod1);
-  let top = -1; DEF.layers.forEach((l, z) => { if (l.some((r) => /[^. ]/.test(r))) top = z; });
-  const h = (top + 1) * DEF.cellM;
-  ok(h >= 1.9 && h <= 2.1, 'standing height ' + h.toFixed(2) + ' m to the ear tips (1.9 .. 2.1)');
+  let top = -1, y0 = 99, y1 = -1;
+  DEF.layers.forEach((l, z) => l.forEach((r, y) => { if (/[^. ]/.test(r)) { top = z; y0 = Math.min(y0, y); y1 = Math.max(y1, y); } }));
+  const h = (top + 1) * DEF.cellM, len = (y1 + 1 - y0) * DEF.cellM;
+  ok(h >= 1.0 && h <= 1.2 && len >= 1.5 && len <= 1.8, 'quadruped: hump ' + h.toFixed(2) + ' m (1.0 .. 1.2), nose to rump ' + len.toFixed(2) + ' m (1.5 .. 1.8)');
   const M = DEF.mats, L = (c) => lum(M[c]);
   ok(L('M') > L('b') && L('b') > L('B') && L('B') > L('D'), 'value ladder muzzle ' + L('M').toFixed(0) + ' > face ' + L('b').toFixed(0) + ' > body ' + L('B').toFixed(0) + ' > paws ' + L('D').toFixed(0));
   for (const c of ['talk', 'listen', 'wave', 'laugh']) ok(!!DEF.animations[c], 'clip `' + c + '` (dialogue contract)');
-  // ground contact on all fours: lowest posed limb-box corner (engine FORWARD transforms)
-  for (const [cn, fr] of [['drop', 4], ['walk', 1], ['walk', 3]]) {
+  // ground contact on all fours: lowest posed limb-box corner (engine FORWARD transforms; box corners, so a few cm of
+  // slack vs tools/voxel-bear.test.mjs, which checks the real voxels of every key)
+  for (const [cn, fr] of [['idle', 1], ['talk', 5], ['listen', 1], ['laugh', 1], ['walk', 1], ['walk', 3]]) {
     computeVoxelPose(PM, { x: 0, y: 0, z: 0, yawDeg: 0, scale: 1, clip: PM.clipIndex[cn], frame: fr, tMs: 0 }, POSE);
     const mins = ['armL', 'armR', 'legL', 'legR'].map((n) => {
       const k = PARTS.indexOf(n), b = DEF.parts[n].box, f = k * 12; let m = Infinity;
@@ -418,9 +418,10 @@ function runChecks() {
     });
     ok(mins.every((m) => Math.abs(m) <= 0.06), cn + ' key ' + fr + ' (all fours): paws / feet lowest point ' + mins.map((m) => m.toFixed(3)).join(' / ') + ' m (|z| <= 0.06)');
   }
-  computeVoxelPose(PM, { x: 0, y: 0, z: 0, yawDeg: 0, scale: 1, clip: PM.clipIndex.sit, frame: 3, tMs: 0 }, POSE);
-  { const k = PARTS.indexOf('head'), f = k * 12, e = [14, 5, 33.5];
-    info('seated eye height ' + (FORWARD[f + 6] * e[0] + FORWARD[f + 7] * e[1] + FORWARD[f + 8] * e[2] + FORWARD[f + 11]).toFixed(2) + ' m (player eye 1.6 m); standing ' + (33.5 * DEF.cellM).toFixed(2) + ' m'); }
+  { const k = PARTS.indexOf('head'), f = k * 12, e = DEF.mounts.eyes.at;
+    const eyeZ = (clip) => { computeVoxelPose(PM, { x: 0, y: 0, z: 0, yawDeg: 0, scale: 1, clip, frame: 0, tMs: 0 }, POSE);
+      return FORWARD[f + 6] * e[0] + FORWARD[f + 7] * e[1] + FORWARD[f + 8] * e[2] + FORWARD[f + 11]; };
+    info('eye height: rest ' + eyeZ(-1).toFixed(2) + ' m (head carried low), talk ' + eyeZ(PM.clipIndex.talk).toFixed(2) + ' m (head raised toward the player eye 1.6 m)'); }
   info(DEF.size.join(' x ') + ' @ ' + DEF.cellM + ' m, meshOnly ' + DEF.meshOnly + ', clips: ' + CLIPS.map((c) => c + ' ' + clipTotal(c) + ' ms').join(', '));
   const host = $('checks'); host.innerHTML = '';
   for (const [c, m] of out) { const d = document.createElement('div'); d.className = c; d.textContent = m; host.appendChild(d); }
