@@ -46,6 +46,15 @@ assert.equal(boot('', { saved: { grid: '320x120' } }).reqCols, 320);
 assert.equal(boot('', { saved: { grid: '320x120', quality: 'low' } }).reqCols, 240);
 // gpucompare forces its grid/rays; capture pages keep today's options unless ?quality=
 o = boot('gpucompare=1', { captureLike: true, geometryCompare: true }); assert.deepEqual([o.reqCols, o.reqRows, o.rays], [160, 60, 1]);
+// GFX-04-pc: ?gpucompare=1&quality=<preset> changes only the preset knobs (shadows/scatter/lodScale); grid + rays stay forced
+const gcKnobs = {};
+for (const p of ['low', 'medium', 'high', 'ultra']) {
+  o = boot(`gpucompare=1&quality=${p}`, { captureLike: true, geometryCompare: true });
+  assert.deepEqual([o.reqCols, o.reqRows, o.rays, o.quality.name], [160, 60, 1, p]);
+  gcKnobs[p] = [o.shadowLevel, o.gfx.scatterDensity, o.gfx.lodScale];
+}
+assert.deepEqual(gcKnobs, { low: ['low', 0.5, 0.6], medium: ['mid', 0.75, 0.8], high: ['high', 1, 1], ultra: ['high', 1, 1.25] });
+o = boot('gpucompare=1', { captureLike: true, geometryCompare: true }); assert.deepEqual([o.quality, o.gfx], [null, undefined]); // no preset = today
 o = boot('bench=1', { captureLike: true, saved: { quality: 'ultra', grid: '480x180' } });
 assert.deepEqual([o.reqCols, o.reqRows, o.rays, o.quality, o.gfx], [240, undefined, 2, null, undefined]);
 assert.equal(boot('bench=1&quality=low', { captureLike: true }).rays, 1);
