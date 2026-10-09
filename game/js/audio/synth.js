@@ -28,9 +28,10 @@ let armed = false;
 // retuning individual peaks back up if 0.25 reads as too quiet in practice.
 export const MASTER_GAIN = 0.25;
 
+let volume = 1; // SETTINGS-MOUNT-01: 0..1 user volume, scales MASTER_GAIN
 function makeMaster() {
   master = ctx.createGain();
-  master.gain.value = muted ? 0 : MASTER_GAIN;
+  master.gain.value = muted ? 0 : MASTER_GAIN * volume;
   master.connect(ctx.destination);
 }
 
@@ -93,8 +94,15 @@ export function setMuted(m) {
   const t = ctx.currentTime;
   master.gain.cancelScheduledValues(t);
   master.gain.setValueAtTime(master.gain.value, t);
-  master.gain.linearRampToValueAtTime(muted ? 0 : MASTER_GAIN, t + 0.03);
+  master.gain.linearRampToValueAtTime(muted ? 0 : MASTER_GAIN * volume, t + 0.03);
 }
+
+/** SETTINGS-MOUNT-01: user volume 0..1 (applies live; mute still wins). */
+export function setVolume(v) {
+  volume = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
+  setMuted(muted);
+}
+export function getVolume() { return volume; }
 
 export function toggleMute() { setMuted(!muted); }
 

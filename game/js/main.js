@@ -49,7 +49,7 @@ import { createCreditsView } from './ui/creditsView.js'; // CREDITS-MOUNT-01
 import { updateSettings, drawSettingsPanel, isSettingsOpen, openSettings } from './ui/settings.js'; // US-038b
 import { isPaused, resetSimAccumulator, duckAudio, unduckAudio, installAutoPause } from './ui/pause.js'; // US-062
 // ---- US-020a: minimal procedural sound slice (game/js/audio/*, D-004) ----
-import { initAudio, setMuted, toggleMute, isMuted } from './audio/synth.js';
+import { initAudio, setMuted, setVolume, toggleMute, isMuted } from './audio/synth.js';
 import { resetGameAudio, stepGameAudio } from './audio/sfx.js';
 // ---- end US-020a ----
 import { createSafeBindings, resolveGameKeys } from './gameKeys.js'; // BINDINGS-WIRE-01
@@ -177,7 +177,7 @@ try {
   await loadPresets();
   // ?autoquality=1 ignores a saved choice (dev / redetect); otherwise saved wins as before.
   const savedForBoot = autoParam === '1' && autoProvisional ? undefined : savedSettings.quality;
-  resolvedQuality = resolveQuality({ param: params, saved: { quality: savedForBoot, shadowQuality: savedSettings.shadowQuality }, auto: autoProvisional });
+  resolvedQuality = resolveQuality({ param: params, saved: { quality: savedForBoot, shadowQuality: savedSettings.shadowQuality, lodScale: savedSettings.lodScale }, auto: autoProvisional });
 } catch (err) { console.warn(`[quality] presets unavailable (${err.message}) - booting without a preset`); }
 const hitStop = createHitStop({ enabled: hitStopEnabled(params, isCaptureOrBench) }); // HITSTOP-01: off in capture/bench(+combat)/compare and ?fx=0
 let deathRespawnDue = false; // DEATH-FLOW-01: fade finished -> next vitals.step gets a virtual [E] (its normal respawn path, pose logic untouched)
@@ -844,6 +844,7 @@ async function runGame(mode, cinematic = null) {
   // US-020a: arms the (one-shot) first-gesture listeners only - creates
   // nothing yet, so there is no autoplay warning and no sound before input.
   initAudio();
+  setVolume(loadSettings().volume); // SETTINGS-MOUNT-01
   setMuted(loadSettings().muted); // US-060: apply the remembered mute before any sound can play
 
   let simTime = 0;

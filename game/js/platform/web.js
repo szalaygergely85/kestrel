@@ -27,6 +27,8 @@ import { QUALITY_CHOICES, SHADOW_CHOICES } from '../ui/gfxPresets.js';
 
 const STORAGE_KEY = 'kestrel.settings';
 const SETTINGS_VERSION = 1;
+const TEXT_SIZES = ['small', 'normal', 'large'];
+const validLod = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0.25 && v <= 4;
 const MOUSE_SENS_MIN = 0.05, MOUSE_SENS_MAX = 0.40;
 
 export const DEFAULT_SETTINGS = Object.freeze({
@@ -130,6 +132,10 @@ export function loadSettings() {
   // GFX-01w: optional quality choice + shadow level (absent = never chosen; unknown values dropped)
   if (QUALITY_CHOICES.includes(parsed.quality)) out.quality = parsed.quality;
   if (SHADOW_CHOICES.includes(parsed.shadowQuality)) out.shadowQuality = parsed.shadowQuality;
+  // SETTINGS-MOUNT-01: optional comfort + LOD choices (absent = never chosen)
+  if (TEXT_SIZES.includes(parsed.textSize)) out.textSize = parsed.textSize;
+  if (isBoolean(parsed.reduceMotion)) out.reduceMotion = parsed.reduceMotion;
+  if (validLod(parsed.lodScale)) out.lodScale = parsed.lodScale;
   // BINDINGS-WIRE-01: optional saved control bindings (plain object; the bindings module validates the contents)
   if (isPlainObject(parsed.bindings)) out.bindings = parsed.bindings;
   // settingsVersion is informational only for now (single version exists);
@@ -163,6 +169,12 @@ export function saveSettings(partial) {
   if (quality !== undefined) next.quality = quality;
   const shadowQuality = SHADOW_CHOICES.includes(p.shadowQuality) ? p.shadowQuality : current.shadowQuality;
   if (shadowQuality !== undefined) next.shadowQuality = shadowQuality;
+  const textSize = TEXT_SIZES.includes(p.textSize) ? p.textSize : current.textSize;
+  if (textSize !== undefined) next.textSize = textSize;
+  const reduceMotion = isBoolean(p.reduceMotion) ? p.reduceMotion : current.reduceMotion;
+  if (reduceMotion !== undefined) next.reduceMotion = reduceMotion;
+  const lodScale = validLod(p.lodScale) ? p.lodScale : current.lodScale;
+  if (lodScale !== undefined) next.lodScale = lodScale;
   const bindings = isPlainObject(p.bindings) ? p.bindings : current.bindings;
   if (bindings !== undefined) next.bindings = bindings;
   if (!storage) return next; // no persistence available, but callers still get a valid object back

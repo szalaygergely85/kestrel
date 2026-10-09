@@ -56,6 +56,11 @@ export function resolveQuality({ param = new URLSearchParams(), saved = null, au
     if (validKnob('shadowQuality', savedShadow)) { knobs.shadowQuality = savedShadow; knobSources.shadowQuality = 'saved'; }
     else warn(`Invalid saved shadowQuality ${String(savedShadow)}; using preset`);
   }
+  const savedLod = typeof saved === 'object' && saved?.lodScale; // SETTINGS-MOUNT-01: saved LOD distance (next launch)
+  if (savedLod !== undefined && savedLod !== false && savedLod !== null) {
+    if (validKnob('lodScale', savedLod)) { knobs.lodScale = savedLod; knobSources.lodScale = 'saved'; }
+    else warn(`Invalid saved lodScale ${String(savedLod)}; using preset`);
+  }
   for (const key of KNOBS) {
     if (!params.has(key)) continue;
     const raw = params.get(key);

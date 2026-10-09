@@ -1,4 +1,7 @@
 import { makeOk } from '../../../engine/test/assert.js';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import {createUiLayer} from '../../../engine/index.js';
 // game/js/ui/settings.test.js (US-038b, docs/backlog.md row 30f). Headless
 // Node ESM, no framework - same style as titleCard.test.js/mapCard.test.js.
 // Run: node game/js/ui/settings.test.js
@@ -276,6 +279,24 @@ function recordingUi(cols = 160, rows = 60) {
 }
 
 // ---- PC-A PO REJECT fix 2 (backlog row 30f): click-to-resume (look.locked) closes the panel ----
+{
+  const context = vm.createContext({});
+  for (const file of ['palette.js','models/menu_ui.js']) vm.runInContext(readFileSync(new URL('../../../design/'+file,import.meta.url),'utf8'),context);
+  const menu = context.ASSETS.uiStyle.menu;
+  const styledAssets = {uiStyle:{settings:style,menu},palette:context.ASSETS.palette};
+  const input = fakeInput(); input._press('KeyS');
+  updateSettings(1 / 60,input,{assets:styledAssets,engine:fakeEngine(),look:{},canOpen:true});
+  const ui = createUiLayer({cols:160});
+  drawSettingsPanel(ui,fakeRt(),styledAssets);
+  const row = y => Array.from(ui.cells.glyphIdx.slice(y*160+44,y*160+116),v=>String.fromCharCode(v+32)).join('');
+  ok('shared title/pause Settings uses spaced menu title',row(18).includes('S E T T I N G S'));
+  ok('shared Settings preserves configured row order',row(22).includes('Resolution') && row(25).toLowerCase().includes('fullscreen') && row(37).includes('Back'));
+  ok('shared Settings has both menu focus markers',row(22)[2] === '>' && row(22)[69] === '<');
+  const bg = [...ui.cells.bg.slice((22*160+45)*4,(22*160+45)*4+3)];
+  ok('shared Settings reads menu focus background',bg.join(',') === menu.bgRgb.band.join(','));
+  input._clearFrame(); input._press('Escape');
+  for(let i=0;i<20;i++)updateSettings(1 / 60,input,{assets:styledAssets,engine:fakeEngine(),look:{},canOpen:true});
+}
 {
   const input = fakeInput();
   input._press('KeyS');
