@@ -22,6 +22,7 @@ import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
 import { sharedVoxelMeshCache } from '../../../mesh/voxelMesh.js';
 import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME, SHADOW_BAND_HYST_M } from '../../../mesh/instances.js';
 import { WgCullPass } from './passCull.js';
+import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 import { resolveSunShadowOptions, SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../../shadowSun.js';
 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
@@ -252,8 +253,9 @@ export class WgShadowPass {
       return true;
     }
     prev[0] = key[0]; prev[1] = key[1]; prev[2] = key[2]; this.keyValid = true; this.renders++;
-    this._cullRun(sm.planes, cam, so);
-    this._render(list, world, Mf);
+    // S8-B1-07: cull (WG-4b, compute) + render (the depth map) share one 'shadow' timer slot - building the map is one bucket.
+    wgSpanBegin(p, WG_PASS_SLOT.shadow);
+    try { this._cullRun(sm.planes, cam, so); this._render(list, world, Mf); } finally { wgSpanEnd(p); }
     this.active = true; st.shadowItems = list.count; st.shadowDraws = this.draws;
     return true;
   }
