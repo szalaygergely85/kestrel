@@ -245,6 +245,12 @@ if (!pipeline && rt.backend === 'gl2') {
   }
 }
 await frame.ready;
+// createRenderer builds the webgpu target at the CPU grid (38.8a item 14); once the pipeline owns the whole frame apply the requested grid
+// (240x90 default, same as the old GL editor and the game).
+if (pipeline && rt.backend === 'webgpu' && (rt.cols !== g.cols || rt.rows !== g.rows)) {
+  engine.setGrid(g.cols, g.rows, { immediate: true });
+  frame.resize(rt.cols, rt.rows);
+}
 // The render target defaults to the full window. Fit the editor's centre pane
 // so its canvas and UI aren't cropped behind the docks/toolbars.
 const viewport = canvas.parentElement;
