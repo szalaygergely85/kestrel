@@ -90,7 +90,7 @@ test('materials per character <= 255; quads within the 38.29 budget (<= 6000)', 
 test('deterministic: two builds give identical text', () => {
   assert.strictEqual(CK.stringifyKit(CK.buildHumanKit(P)), CK.stringifyKit(kit));
 });
-test('content/chargen/human.charkit.json equals the generator (run node design/chargen/build_human_kit.mjs)', () => {
+test('content/chargen/human.charkit.json equals the generator (run node tools/chargen-build-kit.mjs)', () => {
   const url = new URL('../content/chargen/human.charkit.json', import.meta.url);
   assert.ok(fs.existsSync(url), 'missing JSON');
   assert.strictEqual(fs.readFileSync(url, 'utf8'), CK.stringifyKit(kit));

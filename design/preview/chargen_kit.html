@@ -30,7 +30,7 @@
 <body>
 <h1>Kestrel : CHARGEN-01 preview - human kit v0, base <code>m_avg</code> (design v1.54) - owner: please OK the realism before CHARGEN-04</h1>
 <div class="note">
-  Kit = <code>content/chargen/human.charkit.json</code> (the only source), written by <code>node design/chargen/build_human_kit.mjs</code> from
+  Kit = <code>content/chargen/human.charkit.json</code> (the only source), written by <code>node tools/chargen-build-kit.mjs</code> from
   <code>design/chargen/human_kit.js</code>. A realistic 1.75 m man built from 2.5 cm voxels (37 x 20 x 70), 22 humanoid bones (rigid, one bone per
   voxel), folding to 8 parts in-game. Bald on purpose: hair, beards and clothes are CHARGEN-04b pieces; the base wears undyed linen braies.
   Section 1-2 = the lit mesh look (flat cubes, palette colours, key light + sky light + shadows: roughly what the exported <code>.glb</code> shows in
@@ -520,10 +520,10 @@
     if (text === genText) {
       jsonLine = ['pass', 'PASS content/chargen/human.charkit.json equals the generator (showing the JSON)'];
       kit = JSON.parse(text); setup();
-    } else jsonLine = ['fail', 'FAIL content/chargen/human.charkit.json is stale: re-run node design/chargen/build_human_kit.mjs (showing the generator)'];
+    } else jsonLine = ['fail', 'FAIL content/chargen/human.charkit.json is stale: re-run node tools/chargen-build-kit.mjs (showing the generator)'];
     runChecks(); renderAll();
   }).catch(function (e) {
-    jsonLine = ['warn', 'WARN content/chargen/human.charkit.json not readable (' + e.message + '): run node design/chargen/build_human_kit.mjs and serve over http (showing the generator)'];
+    jsonLine = ['warn', 'WARN content/chargen/human.charkit.json not readable (' + e.message + '): run node tools/chargen-build-kit.mjs and serve over http (showing the generator)'];
     runChecks();
   });
 })();

@@ -1,16 +1,16 @@
-// node design/chargen/build_human_kit.mjs - writes content/chargen/human.charkit.json (CHARGEN-01) from
+// node tools/chargen-build-kit.mjs - writes content/chargen/human.charkit.json (CHARGEN-01) from
 // design/chargen/human_kit.js + design/palette.js. The JSON is the only source the core / app / game read;
 // re-run this after any change to human_kit.js or the palette.chargen table. Deterministic (same bytes every run).
 // `--check` only compares (exit 1 when the JSON on disk is stale).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import '../palette.js';
-import '../detail-pass.js';
-import './human_kit.js';
+import '../design/palette.js';
+import '../design/detail-pass.js';
+import '../design/chargen/human_kit.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const out = path.resolve(here, '../../content/chargen/human.charkit.json');
+const out = path.resolve(here, '../content/chargen/human.charkit.json');
 const A = globalThis.ASSETS, CK = A.chargenKit;
 const kit = CK.buildHumanKit(A.palette);
 const res = CK.checkKit(kit, A.palette, A.detailPass);

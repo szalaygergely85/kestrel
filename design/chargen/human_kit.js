@@ -2,7 +2,7 @@
  * design/chargen/human_kit.js - CHARGEN-01 Human kit v0 GENERATOR (designer script, architecture 38.29 items 1-3).
  *
  * The kit JSON `content/chargen/human.charkit.json` is the ONLY source the core / app / game read. This file just
- * writes it (node design/chargen/build_human_kit.mjs) and is loaded by the preview design/preview/chargen_kit.html,
+ * writes it (node tools/chargen-build-kit.mjs) and is loaded by the preview design/preview/chargen_kit.html,
  * which checks that the JSON on disk equals what this script builds.
  *
  * BASE m_avg (style-guide 0: realistic, built from 2.5 cm voxels, not boxy, natural skin variation):
