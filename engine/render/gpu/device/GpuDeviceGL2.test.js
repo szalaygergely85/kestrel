@@ -100,6 +100,21 @@ function makeMockGL() {
   ok('canvasTarget owns no GL object', live.framebuffer === before);
 }
 
+// ---- S8-B1-09a: compile batch API resolves synchronously on GL2; errors surface as rejections ----
+{
+  const { gl } = makeMockGL();
+  const device = new GpuDeviceGL2(/** @type {any} */(gl));
+  device.beginCompileBatch();
+  ok('GL2 compile batch: end resolves [] and compiling is false', device.compiling === false && (await device.endCompileBatch()).length === 0);
+  const h = await device.createPipelineAsync({
+    vertex: { src: { glsl: 'x' }, layout: [{ name: 'aPos', location: 0, components: 3, type: 'float', offsetBytes: 0 }], strideBytes: 12 },
+    fragment: { src: { glsl: 'x' }, targets: 1 }, depth: { test: true, write: true }, cull: 'none',
+  });
+  ok('GL2 createPipelineAsync resolves a linked pipeline handle', h && h.kind === 'pipeline');
+  let rejected = false; try { await device.createComputePipelineAsync({}); } catch (_) { rejected = true; }
+  ok('GL2 createComputePipelineAsync rejects (compute unsupported)', rejected);
+}
+
 // ---- createBuffer / createTexture / createTarget / createPipeline alloc + dispose() free ----
 {
   const { gl, live } = makeMockGL();

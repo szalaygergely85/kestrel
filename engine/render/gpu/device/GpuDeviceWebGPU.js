@@ -50,6 +50,7 @@ export class GpuDeviceWebGPU {
     /** Captured creation errors plus uncaptured asynchronous GPU errors; self-test and tests read this. @type {string[]} */
     this.gpuErrors = [];
     this._pendingScopes = [];
+    /** @type {((done: number, total: number) => void) | null} boot card: called per resolved pipeline */ this.onCompileProgress = null;
     this._checkingScopes = null;
     if (typeof gpuDevice.addEventListener === 'function') {
       gpuDevice.addEventListener('uncapturederror', (/** @type {any} */ ev) => {
@@ -267,13 +268,73 @@ export class GpuDeviceWebGPU {
       pd.depthStencil = { format: depthFormatFor(desc.depthFormat), depthWriteEnabled: !!d.write, depthCompare: d.test ? 'less' : 'always' };
       if (desc.depthBias) { pd.depthStencil.depthBias = desc.depthBias.units; pd.depthStencil.depthBiasSlopeScale = desc.depthBias.factor; }
     }
-    const tP = bootNow();
-    const gpu = this._validatedCreate('createRenderPipeline', pd);
-    bootSpan('pipeline ' + bootLabel(desc, 'render'), tP);
-    return {
-      kind: 'pipeline', gpu, extraBase, bgl0, uniformGroup, uniformBytes: uBytes, texKinds, samplerBinding,
+    const handle = {
+      kind: 'pipeline', gpu: null, failed: false, label: bootLabel(desc, 'render'), extraBase, bgl0, uniformGroup, uniformBytes: uBytes, texKinds, samplerBinding,
       texCur: new Array(texKinds.length).fill(null), texGroup: null, texDirty: texKinds.length > 0, indexed: false,
     };
+    this._makePipe('createRenderPipeline', pd, handle);
+    return handle;
+  }
+
+  /**
+   * S8-B1-09a (38.10b): inside a compile batch the pipeline is created with the *Async API (handle.gpu stays null until it
+   * resolves; endCompileBatch awaits all). Outside a batch (or without the async API, e.g. fake GPUs) it stays synchronous.
+   * @param {string} method 'createRenderPipeline'|'createComputePipeline' @param {any} pd @param {any} handle
+   */
+  _makePipe(method, pd, handle) {
+    const g = this.gpu, asyncName = method + 'Async';
+    const label = (method === 'createRenderPipeline' ? 'pipeline ' : 'compute ') + handle.label;
+    const t0 = bootNow();
+    if (!this._batch || typeof g[asyncName] !== 'function') {
+      if (!this._batch && typeof g[asyncName] === 'function' && !this._warnedLate) { this._warnedLate = true; console.info('[GpuDeviceWebGPU] late sync pipeline ' + handle.label); }
+      handle.gpu = this._validatedCreate(method, pd);
+      bootSpan(label, t0);
+      return;
+    }
+    const entry = { label: handle.label, ms: 0, ok: true, promise: /** @type {any} */ (null) };
+    const batch = this._batch;
+    const tick = () => { if (this.onCompileProgress) { this._compileDone = (this._compileDone || 0) + 1; this.onCompileProgress(this._compileDone, this._compileTotal); } };
+    this._compileTotal = (this._compileTotal || 0) + 1;
+    entry.promise = g[asyncName](pd).then((/** @type {any} */ p) => { handle.gpu = p; entry.ms = bootNow() - t0; tick(); }, (/** @type {any} */ err) => {
+      entry.ok = false; entry.ms = bootNow() - t0; handle.failed = true; tick();
+      if (this.gpuErrors.length < 20) this.gpuErrors.push(`${handle.label}: ${String(err && err.message || err)}`);
+    });
+    batch.push(entry);
+  }
+
+  /** S8-B1-09a: start collecting pipeline creations (nestable; the outermost endCompileBatch resolves them). */
+  beginCompileBatch() {
+    this._batchDepth = (this._batchDepth || 0) + 1;
+    if (!this._batch) this._batch = [];
+  }
+
+  /** True while an async pipeline compile is still outstanding. */
+  get compiling() { return !!(this._batch && this._batch.length) || this._compilingN > 0; }
+
+  /**
+   * S8-B1-09a: resolves when every pipeline created since the matching beginCompileBatch has compiled.
+   * @returns {Promise<{label: string, ms: number, ok: boolean}[]>} creation order; ms = start -> resolve (they overlap)
+   */
+  endCompileBatch() {
+    this._batchDepth = Math.max(0, (this._batchDepth || 0) - 1);
+    if (this._batchDepth > 0) return Promise.resolve([]);
+    const list = this._batch || [];
+    this._batch = null;
+    this._compilingN = (this._compilingN || 0) + 1;
+    return Promise.all(list.map((e) => e.promise)).then(() => {
+      this._compilingN--;
+      return list.map((e) => ({ label: e.label, ms: e.ms, ok: e.ok }));
+    });
+  }
+
+  /** @param {import('./GpuDevice.js').PipelineDesc} desc @returns {Promise<GpuHandle>} */
+  async createPipelineAsync(desc) {
+    this.beginCompileBatch(); const h = this.createPipeline(desc); await this.endCompileBatch(); return h;
+  }
+
+  /** @param {import('./GpuDevice.js').ComputePipelineDesc} desc @returns {Promise<GpuHandle>} */
+  async createComputePipelineAsync(desc) {
+    this.beginCompileBatch(); const h = this.createComputePipeline(desc); await this.endCompileBatch(); return h;
   }
 
   /**
@@ -293,10 +354,9 @@ export class GpuDeviceWebGPU {
     const uniformGroup = uBytes > 0
       ? this._validatedCreate('createBindGroup', { layout: bgl1, entries: [{ binding: 0, resource: { buffer: this._ringBuf, offset: 0, size: uBytes } }] })
       : null;
-    const tP = bootNow();
-    const gpu = this._validatedCreate('createComputePipeline', { layout, compute: { module: this._module(desc.src), entryPoint: desc.src.entry || 'cs_main' } });
-    bootSpan('compute ' + bootLabel(desc, 'cs_main'), tP);
-    return { kind: 'computePipeline', gpu, bgl0, uniformGroup, uniformBytes: uBytes, nbuf: kinds.length, groups: /** @type {{bufs: any[], group: any}[]} */ ([]) };
+    const handle = { kind: 'computePipeline', gpu: null, failed: false, label: bootLabel(desc, 'cs_main'), bgl0, uniformGroup, uniformBytes: uBytes, nbuf: kinds.length, groups: /** @type {{bufs: any[], group: any}[]} */ ([]) };
+    this._makePipe('createComputePipeline', { layout, compute: { module: this._module(desc.src), entryPoint: desc.src.entry || 'cs_main' } }, handle);
+    return handle;
   }
 
   /**
@@ -307,6 +367,7 @@ export class GpuDeviceWebGPU {
   dispatch(pipeline, desc, x, y = 1, z = 1) {
     if (this._pass) throw new Error('GpuDeviceWebGPU.dispatch: a render pass is open');
     const p = pipeline;
+    if (p.gpu === null) throw new Error('pipeline still compiling: ' + p.label);
     const bufs = desc.buffers;
     if (bufs.length !== p.nbuf) throw new Error(`GpuDeviceWebGPU.dispatch: ${bufs.length} buffers bound, pipeline has ${p.nbuf}`);
     let grp = null;
@@ -388,6 +449,7 @@ export class GpuDeviceWebGPU {
     const pass = this._pass;
     if (!pass) throw new Error('GpuDeviceWebGPU.bind: no open pass');
     const p = pipeline;
+    if (p.gpu === null) throw new Error('pipeline still compiling: ' + p.label);
     if (p !== this._curPipeline) {
       pass.setPipeline(p.gpu); this._curPipeline = p;
       if (p.texKinds.length === 0) pass.setBindGroup(0, this._emptyGroup()); // group 0 is in the layout: always set

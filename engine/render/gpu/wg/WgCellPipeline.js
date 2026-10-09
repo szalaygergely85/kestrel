@@ -79,6 +79,11 @@ export class WgCellPipeline {
     this._debugU = new Float32Array(DEBUG_BLOCK.sizeWords);
     this._debugTex = [{ slot: 0, texture: null }, { slot: 1, texture: null }, { slot: 2, texture: null }];
     this._debugBind = { uniforms: this._debugU, textures: this._debugTex };
+    // S8-B1-09b (38.10b): every pass pipeline is created inside ONE compile batch; `compiled` resolves to the per-pipeline list
+    // (an `ok:false` entry or a creation throw disables the pipeline). createRenderer awaits it behind the loading card.
+    /** @type {Promise<{label: string, ms: number, ok: boolean}[]>} */ this.compiled = Promise.resolve([]);
+    const batched = typeof this.device.beginCompileBatch === 'function' && typeof this.device.endCompileBatch === 'function';
+    if (batched) this.device.beginCompileBatch();
     try {
       let tp = bootNow();
       this._t = allocWgTargets(this.device, this.cols, this.rows, this.rays);
@@ -104,15 +109,26 @@ export class WgCellPipeline {
       this.portedPasses.push('debug', 'raster', 'resolve', 'deriv', 'light', 'shade', 'edge');
       if (this._shadowPass.enabled) this.portedPasses.push('shadow');
       this.portedPasses.push('water');
+      if (batched) this.compiled = this._watchCompile(this.device.endCompileBatch());
       this.ready = true;
       this.setEnabled(true);
       if (this.device.lost && typeof this.device.lost.then === 'function') {
         this.device.lost.then((info) => { if (!(info && info.reason === 'destroyed')) this._onLost(); });
       }
     } catch (e) {
+      if (batched) { try { this.device.endCompileBatch().catch(() => {}); } catch (_) { /* best effort */ } }
       console.warn('[WgCellPipeline] init failed:', e);
       this.dispose();
     }
+  }
+
+  /** Turns a failed compile (any `ok:false`) into `ready=false` + warn; the list itself is passed through. @param {Promise<any[]>} p */
+  _watchCompile(p) {
+    return p.then((list) => {
+      const bad = list.filter((x) => !x.ok);
+      if (bad.length) { console.warn('[WgCellPipeline] pipeline compile failed:', bad.map((x) => x.label).join(', ')); this.ready = false; this.setEnabled(false); }
+      return list;
+    }, (e) => { console.warn('[WgCellPipeline] pipeline compile failed:', e); this.ready = false; this.setEnabled(false); return []; });
   }
 
   _onLost() {
@@ -153,6 +169,7 @@ export class WgCellPipeline {
       if (this._overlayPass) this._overlayPass.dispose();
       this._spritesPass = null; this._overlayPass = null;
       const tp = bootNow();
+      if (this.device.beginCompileBatch) this.device.beginCompileBatch();
       this._spritesPass = new WgSpritesPass(this.device, { pool, atlas, palette });
       this._spritesPass.resize(this.cols, this.rows);
       if (particleLayer) this._spritesPass.bindParticleLayer(particleLayer);
@@ -160,7 +177,19 @@ export class WgCellPipeline {
       this._overlayPass.resize(this.cols, this.rows);
       this._overlayPass.setTarget(this._spritesPass.outFg);
       bootSpan('bindSprites (sprites + overlay passes)', tp);
+      if (this.device.endCompileBatch) {
+        const pending = this.device.endCompileBatch();
+        // asynchronous devices: the passes only count as wired once their pipelines exist (draw before that would throw)
+        if (this.device.compiling) {
+          this._spritesBound = false; this._spritesPending = true;
+          this.spritesCompiled = this._watchCompile(pending).then((list) => { this._spritesPending = false; if (this.ready) { this._spritesBound = true; this._syncActive(); } return list; });
+          if (!this.portedPasses.includes('sprites')) this.portedPasses.push('sprites', 'overlay');
+          this._syncActive();
+          return true;
+        }
+      }
     } catch (e) {
+      if (this.device.endCompileBatch) { try { this.device.endCompileBatch().catch(() => {}); } catch (_) { /* best effort */ } }
       console.warn('[WgCellPipeline] sprites/overlay init failed (CPU compositor keeps drawing them):', e);
       for (const k of ['_spritesPass', '_overlayPass']) { if (this[k]) { try { this[k].dispose(); } catch (_) { /* best effort */ } this[k] = null; } }
       this._spritesBound = false;
@@ -345,7 +374,7 @@ export class WgCellPipeline {
   _runSprites(t) {
     const sp = this._spritesPass;
     this._spritesRan = false;
-    if (!sp || !this._cellsShaded) { this._setPresent(null, null); return; }
+    if (!sp || !this._cellsShaded || this._spritesPending) { this._setPresent(null, null); return; } // pending = pipelines still compiling
     try {
       sp.run({ gi: t.texGI, depth: t.texDepth, edgeFg: t.texFinalFg, edgeBg: t.texFinalBg });
       this._overlayPass.run(t.texDepth);

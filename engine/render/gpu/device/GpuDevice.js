@@ -59,6 +59,7 @@
  * @property {{src: {glsl?: string, wgsl?: string}, targets: number}} fragment - `targets` = number of colour draw buffers written (0 = depth-only, ME-15b)
  * @property {{test: boolean, write: boolean}} [depth]
  * @property {'none'|'back'|'front'} [cull]
+ * @property {string} [label] - S8-B1-09: name in the [boot] pipeline list (default: the shader entry point)
  * @property {'cw'|'ccw'} [frontFace] - WG-2b: baked raster winding, default cw after the clip-y flip; mirrored items use ccw
  * @property {{factor: number, units: number}} [depthBias] - ME-15b (27.9a item 7): polygon offset (GL2: `POLYGON_OFFSET_FILL` enabled on bind, disabled again by `endPass`); no hardware depth compare is ever used
  * @property {{uniformBytes: number, textures: ('uint'|'sint'|'float'|'depth'|'filtered')[]}} [bindings] - WG-1b1 (38.3/38.4): explicit WebGPU bind layout (`@group(0)` textures in slot order, `@group(1)` one dynamic-offset uniform block of `uniformBytes`); GL2 ignores it
@@ -89,6 +90,7 @@
  * @typedef {Object} ComputePipelineDesc
  * @property {{wgsl: string, entry?: string}} src
  * @property {{uniformBytes: number, buffers: ('read'|'rw')[]}} bindings
+ * @property {string} [label]
  */
 
 /**
@@ -134,6 +136,17 @@ export class GpuDevice {
   /** @param {PipelineDesc} desc @returns {GpuHandle} */
   createPipeline(desc) { throw new Error('GpuDevice.createPipeline: not implemented'); }
   /**
+   * S8-B1-09a (38.10b): pipelines created between begin and end are compiled concurrently (WebGPU: *Async API; their `gpu` is
+   * null until `endCompileBatch` resolved, bind/dispatch throw 'pipeline still compiling'). GL2 + mock link synchronously:
+   * begin is a no-op and end resolves `[]`. A creation error surfaces as `ok:false` entry (+ `gpuErrors` on WebGPU), never a throw.
+   * @returns {void}
+   */
+  beginCompileBatch() { throw new Error('GpuDevice.beginCompileBatch: not implemented'); }
+  /** @returns {Promise<{label: string, ms: number, ok: boolean}[]>} per pipeline in creation order (ms = start -> resolve; they overlap) */
+  endCompileBatch() { throw new Error('GpuDevice.endCompileBatch: not implemented'); }
+  /** S8-B1-09a: begin + createPipeline + end for one pipeline. @param {PipelineDesc} desc @returns {Promise<GpuHandle>} */
+  createPipelineAsync(desc) { throw new Error('GpuDevice.createPipelineAsync: not implemented'); }
+  /**
    * CLOTH-1b2 (33.5): overwrite `data.byteLength` bytes of an existing buffer starting at `dstOffsetBytes` (WebGPU
    * `queue.writeBuffer`; GL2 `bufferSubData`). Never allocates a new buffer: callers upload only when their data changed.
    * @param {GpuHandle} handle @param {ArrayBufferView} data @param {number} [dstOffsetBytes]
@@ -169,6 +182,8 @@ export class GpuDevice {
    * @param {ComputePipelineDesc} desc @returns {GpuHandle}
    */
   createComputePipeline(desc) { throw new Error('GpuDevice.createComputePipeline: not implemented'); }
+  /** S8-B1-09a: async twin of createComputePipeline (WebGPU createComputePipelineAsync; mock resolves sync). @param {ComputePipelineDesc} desc @returns {Promise<GpuHandle>} */
+  createComputePipelineAsync(desc) { throw new Error('GpuDevice.createComputePipelineAsync: not implemented'); }
   /**
    * WG-4a: records ONE compute pass with one dispatch (call outside a render pass; the commands join the frame encoder, so
    * compute -> render ordering follows call order). @param {GpuHandle} pipeline @param {ComputeBindDesc} desc @param {number} x @param {number} [y] @param {number} [z]
@@ -209,7 +224,8 @@ export const GPU_DEVICE_METHODS = Object.freeze([
   'createBuffer', 'writeBuffer', 'createTexture', 'createTarget', 'createPipeline',
   'beginPass', 'bind', 'draw', 'endPass', 'readback', 'dispose',
   'writeTexture', 'canvasTarget', 'submit', // WG-1b1 (38.3)
+  'beginCompileBatch', 'endCompileBatch', 'createPipelineAsync', // S8-B1-09a (38.10b)
 ]);
 
 /** WG-4a (38.3): the compute additions. Optional: GpuDeviceWebGPU and the Node mock implement them, GL2 throws 'compute not supported'. */
-export const GPU_COMPUTE_METHODS = Object.freeze(['createComputePipeline', 'dispatch', 'drawIndirect']);
+export const GPU_COMPUTE_METHODS = Object.freeze(['createComputePipeline', 'createComputePipelineAsync', 'dispatch', 'drawIndirect']);

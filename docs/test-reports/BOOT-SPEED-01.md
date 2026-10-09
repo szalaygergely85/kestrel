@@ -36,3 +36,13 @@ Machine: PC-B, headless Chrome, WebGPU = NVIDIA/lovelace, WebGL2 = headless GL (
 4. World build 0.42 s; first frame 0.34 s (first GPU uploads).
 Content/mesh load is small (~70 ms; lazy meshes). Adapter/device are cheap (~70 ms).
 Next step (not done here): S8-B1-09a/b async compile, then overlap terrain prebuild with the compile wait.
+
+# Step 2 (S8-B1-09a/09b, 2026-10-09): async pipeline compile batch + loading progress bar
+Change: all 23 WgCellPipeline pipelines (render + 2 compute) are created inside one `device.beginCompileBatch()` / `endCompileBatch()` (WebGPU `createRenderPipelineAsync` / `createComputePipelineAsync`, compiled concurrently); `createRenderer` awaits `pipeline.compiled` and logs the per-pipeline ms (`[boot] pipelines: ...`, report rows `  pipeline <label>`). Same headless method (shot-browser, webgpu, grid 240x90), 3 runs:
+| metric | before (step 1) | after |
+|---|---|---|
+| pipeline compile wall wait (was `device.checkErrors`) | 1023-1221 ms | **365-399 ms** (23 pipelines, each 108-266 ms, concurrent; `checkErrors` now 0.8 ms) |
+| `createRenderer` total | ~1.1-1.3 s | ~0.52 s |
+| first frame | 3.5 / 3.9 / 3.5 s | **3.0 / 2.83 / 2.80 s** |
+Remaining: the RenderTargetWebGPU present pipelines (3, created before the batch) stay sync (`late sync pipeline` info line); sprites/overlay pipelines compile in their own batch (`bindSprites`; the sprite pass is skipped until `spritesCompiled`, main.js awaits it before harness modes).
+Loading card: `?bootcard=0` off / `=1` forced; default on, not on bench/gpucompare/cinematic/capture pages. Phases + weights in `engine/core/bootProgress.js` (content .03, assets .02, renderer .05, compile .30 counted n/23, engine .06, world .44 (one synchronous block, cannot repaint inside), first frame .10). Mid-boot shot: `BOOT-SPEED-01-card.png` (33%, "Compiling shaders 18/23").

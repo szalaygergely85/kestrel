@@ -279,6 +279,25 @@ hook(); assert.strictEqual(passes.length, beforeResizeHook + 4, 'cleared again a
   assert.strictEqual(q3.frameComplete, false); assert.notStrictEqual(rt3.gpuActive, true); q3.dispose();
 }
 
+// S8-B1-09b: the constructor builds all pipelines in one compile batch; `compiled` resolves to the list, a failed entry disables
+{
+  const ev = [];
+  const fake = { ...device, beginCompileBatch() { ev.push('begin'); }, endCompileBatch() { ev.push('end'); return Promise.resolve([{ label: 'x', ms: 1, ok: true }]); } };
+  const q = new WgCellPipeline({ ...rt, device: fake, setCellPass() {} });
+  assert.strictEqual(ev.join(), 'begin,end', 'one batch around pass construction');
+  assert.strictEqual(q.ready, true);
+  assert.deepStrictEqual(await q.compiled, [{ label: 'x', ms: 1, ok: true }]);
+  assert.strictEqual(q.ready, true);
+  q.dispose();
+  const bad = { ...device, beginCompileBatch() {}, endCompileBatch() { return Promise.resolve([{ label: 'broken', ms: 2, ok: false }]); } };
+  const w = console.warn; console.warn = () => {};
+  const q2 = new WgCellPipeline({ ...rt, device: bad, setCellPass() {} });
+  await q2.compiled;
+  console.warn = w;
+  assert.strictEqual(q2.ready, false, 'an ok:false pipeline disables the pipeline');
+  q2.dispose();
+}
+
 // dispose
 const debugPipeline = p._pipeDebug;
 p.dispose();

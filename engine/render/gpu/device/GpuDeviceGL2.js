@@ -173,6 +173,12 @@ export class GpuDeviceGL2 {
 
   // WG-4a (38.3): compute is WebGPU only.
   createComputePipeline() { throw new Error('GpuDeviceGL2: compute not supported'); }
+  createComputePipelineAsync() { return Promise.reject(new Error('GpuDeviceGL2: compute not supported')); }
+  // S8-B1-09a: programs link synchronously, so a batch has nothing to wait for
+  beginCompileBatch() {}
+  endCompileBatch() { return Promise.resolve([]); }
+  createPipelineAsync(desc) { try { return Promise.resolve(this.createPipeline(desc)); } catch (e) { return Promise.reject(e); } }
+  get compiling() { return false; }
   dispatch() { throw new Error('GpuDeviceGL2: compute not supported'); }
   drawIndirect() { throw new Error('GpuDeviceGL2: compute not supported'); }
 

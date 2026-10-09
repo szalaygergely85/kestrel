@@ -52,6 +52,7 @@ import { resetGameAudio, stepGameAudio } from './audio/sfx.js';
 // ---- end US-020a ----
 import { loadSettings, saveSettings, getSaveStorage } from './platform/index.js'; // US-060: remembered mute (D-012)
 import { applyLocalOverlay } from './localOverlay.js';
+import { createBootCard } from './bootCard.js'; // boot loading card + ASCII progress bar
 import { applyPlaytestOverlay } from './dev/playtest.js'; // US-034: editor play-test handoff (docs/architecture.md 24.11)
 import { computeEndCardState, drawEndCard } from './ui/endCard.js';
 import { initTitleCard, drawTitleCard } from './ui/titleCard.js';
@@ -198,6 +199,9 @@ window.redetectQuality = redetectQuality;
 
 let bootPrinted = false; // BOOT-SPEED-01: true after the first frame (declared before runGame can run)
 bootMark('main.js module start (imports done)');
+// Boot loading card with an ASCII progress bar (not on capture/bench/gpucompare pages; `?bootcard=0` off, `=1` forces it).
+const bootCard = (params.get('bootcard') === '1' || (params.get('bootcard') !== '0' && !isCaptureOrBench && params.get('capture') !== '1')) ? createBootCard() : null;
+const bootProg = bootCard ? bootCard.progress : null, bootPaint = bootCard ? bootCard.paint : async () => {};
 const canvas = document.getElementById('screen');
 // US-027b (docs/architecture.md 21.9): tower/test_room/world_m1 are now
 // content/*.json, loaded through the US-027a loader; `window.ASSETS` still
@@ -213,12 +217,14 @@ if (bundle.lazyMeshes) window.__lazyMeshStore = bundle.lazyMeshes; // MESH-LOAD-
 // the registry is built, so the rest of boot is unaware anything special
 // happened - same content shape either way.
 bootMark('content pack loaded (manifest + JSON + meshes)');
+if (bootProg) { bootProg.phase('registry'); await bootPaint(); }
 applyPlaytestOverlay(bundle);
 await applyLocalOverlay(bundle, params, undefined, { lazyMeshes }); // git-ignored content/local/ (licence-restricted assets, this PC only)
 if (window.ASSETS.spellFx) window.ASSETS.spellFx.attach(); // SPELL-01b: fireball sprites -> ASSETS.models (atlas) + presets -> ASSETS.particles, BEFORE the registry/atlas/defineEmitter loop
 bootMark('local overlay applied');
 const assets = AssetRegistry.fromJSON(bundle, window.ASSETS);
 bootMark('AssetRegistry built');
+if (bootProg) { bootProg.phase('renderer'); await bootPaint(); }
 
 // ART-01a (architecture.md 37.18 item 2): `?look=<key>` selects the active
 // timeOfDay record BEFORE `bindShading`/`buildLightSet`/the terrain sun read it
@@ -326,8 +332,10 @@ const shadowOpts = bootOpts.shadowOpts; // GFX-01w: shadow level from the preset
 const tCR = bootNow();
 const { rt: builtRt, pipeline: wgPipeline, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
-  shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0' }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
+  shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0',
+  onCompileProgress: bootProg ? (done, total) => bootProg.count('compile', done, total) : undefined }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
 bootSpan('createRenderer total (' + rendererInfo.label + ')', tCR);
+if (bootProg) { bootProg.phase('engine'); await bootPaint(); }
 const tCE = bootNow();
 const engine = createEngine({
   canvas, assets, cols: gridResult.cols, rows: gridResult.rows, rays,
@@ -689,6 +697,8 @@ window.__debug.saveRelay = saveRelay; // US-089w: test hook (headless reload che
 // before any later mutation - e.g. the `grid:changed` handler re-assigning
 // `matTable`/`gbuf` - could happen), so passing them by value like this is
 // behaviour-identical to the old closures.
+// S8-B1-09b: the WebGPU sprite/overlay pipelines compile asynchronously; harness modes (gpucompare, bench) need them wired before pose 1
+if (wgPipeline && wgPipeline.spritesCompiled) await wgPipeline.spritesCompiled;
 const ctx = {
   params, assets, rt, overlay, gpuPipeline, wgPipeline, matTable, gbuf, depthBuffer, detailPass,
   engine, sprites, fadeLut,
@@ -736,7 +746,9 @@ if (gpuBlocked) {
     console.error(error);
   });
 } else {
+  if (bootProg) { bootProg.phase('world'); await bootPaint(); } // the world build below is one synchronous block: paint the phase first
   runGame('world'); // default: US-025 World (world_m1, or ?level=<name> for a bare single-level world)
+  if (bootProg) bootProg.phase('frame');
 }
 
 function runGame(mode, cinematic = null) {
@@ -1568,6 +1580,7 @@ function runGame(mode, cinematic = null) {
     if (gpuPipeline) gpuPipeline.setPassTiming(overlay.visible || benchActive || (autoBench !== null && autoBench.phase !== 'done')); // GFX-02: pass timers = sum of passes, not the vsync-padded whole-frame span
 
     const lastRenderMs = performance.now() - renderStart;
+    if (bootFirst && bootProg) bootProg.finish();
     if (bootFirst) { bootPrinted = true; bootMark('first frame rendered'); freezeBootMarks(); console.info('[boot] breakdown (ms since navigation start)\n' + bootReport()); window.__bootReport = bootReport(); }
     // US-018: the overlay text is only ever built while it will actually be
     // shown (`shouldRefresh` = visible + <= 4 Hz) - `?bench=1` builds/owns

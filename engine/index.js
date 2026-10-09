@@ -12,6 +12,7 @@
 
 // ---- bootstrap --------------------------------------------------------
 export { mark as bootMark, span as bootSpan, bootNow, freezeBootMarks, bootEntries, bootReport } from './core/bootMarks.js'; // BOOT-SPEED-01
+export { createBootProgress, asciiBar, BOOT_PHASES } from './core/bootProgress.js'; // boot loading card model
 export { createEngine, clampGrid, GRID_MIN_COLS, GRID_MAX_COLS, GRID_DEFAULT_COLS } from './core/engine.js';
 
 // ---- CO-1 coordinate/transform API (docs/coordinates.md section 3) ------------

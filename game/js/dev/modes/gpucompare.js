@@ -180,6 +180,11 @@ function buildCompareRuns(ctx) {
       cam: { x: 1401.80, y: 1038.32, z: -0.78, yawDeg: 83, pitchDeg: 14 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: forestEdge (ME-06b background canopy face)',
       cam: { x: 1401.80, y: 1038.32, z: -0.78, yawDeg: 240, pitchDeg: 10 }, real: true },
+    // BUG-MESH-MISSING-01: owner eyes (F3 feet z + eye height); trees/props missing without the B2 cap fix.
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: ownerTreesA (1446.63, 1024.64) yaw 227 pitch 1',
+      cam: { x: 1446.63, y: 1024.64, z: 2.02 + engine.physics.eyeHeight, yawDeg: 227, pitchDeg: 1 }, real: true },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: ownerTreesB (1448.31, 1026.52) yaw 229 pitch 3',
+      cam: { x: 1448.31, y: 1026.52, z: 2.08 + engine.physics.eyeHeight, yawDeg: 229, pitchDeg: 3 }, real: true },
   ];
 
   // US-078a: the view model's held sword (`voxelModels.swordHeld`) is not in ASSETS.models yet (game wiring = US-078d);
