@@ -25,7 +25,7 @@ Runs in parallel with the D-038 game work (which must not add GLSL). Cheapest-fi
 - **WG-2 mesh pass** (~3 d): mesh + terrain raster G-buffer in WGSL, instanced batches from MESH-INST-01, kind-9 smooth normals; gpucompare PASS set on mesh poses = WebGL2's.
 - **WG-3 cell + light passes** (~4-5 d): resolve/deriv/light/shade/edge, sprites, particles, cloth, water, sun + point shadow maps; full gpucompare PASS set = WebGL2's (D-039 baselines carried). From here new render features are WGSL-only.
 - **WG-4 compute culling** (~2-3 d): GPU frustum/distance/shadow-caster cull + LOD select + indirect draws; gate = owner walk at `?pose=roadSouth` with full-detail meshes and ~300 placements, no lag, F3 p95 vs the MESH-PERF-01 bar.
-- **WG-5 drop WebGL2** (~1 d): WebGPU default, delete `GpuDeviceWebGL2` + GLSL + `dda` (ME-19), "WebGPU required" screen, bench/capture tools on WebGPU.
+- **WG-5 drop WebGL2** (~1 d; prerequisite: ED-WG-01 editor on the WebGPU frame renderer, D-052): WebGPU default, delete `GpuDeviceWebGL2` + GLSL + `dda` (ME-19), "WebGPU required" screen, bench/capture tools on WebGPU.
 - **Later - EP-DESKTOP:** Electron packaging (pinned Chromium) with the D-012 Steam work; pulled forward only if browser WebGPU coverage blocks the demo.
 
 ## LATER (after D-038 items 1-2): "Show it" - showcase + first income (owner 2026-10-02, D-036) - runs before the rest of M3-M6
@@ -74,7 +74,7 @@ Goal: a polished 3–5 minute playable slice, from waking at the bottom of the H
 
 **Exit criteria:** PO OK + tester PASS on every P0 story; the owner's end-to-end walk-test (sprint 1 exit) passes; a stranger finishes the slice without instructions and without taking the lantern; `tools/check-deps.mjs` reports no engine -> game/design imports.
 
-## Milestone 1.5 – "Editor Preview" (D-010) — status: unlocked (M1 done); editor code from sprint 4 at the earliest, after US-027a/b (D-023)
+## Milestone 1.5 – "Editor Preview" (D-010) — status: DONE (2026-10-09, D-052; US-046 -> ED-WG-01 in the WebGPU track, US-068 later)
 Level viewer + object placer in `tools/editor/`, a second client of `engine/index.js`.
 - **In:** load world, fly-cam, idle re-render skip; pick/select/move/yaw/delete; place props (existing models), lights (presets), triggers/hint zones; property panel (JSON components, behaviour-name dropdown); undo/redo; save/load world JSON (File System Access API + download fallback); Play-test in the game via `?world=` (world-file loading half of US-027).
 - **Out:** terrain paint, structure/sector editing, model editing, multi-viewport, prefabs, CPU fallback, visual scripting, asset store.
@@ -83,7 +83,7 @@ Level viewer + object placer in `tools/editor/`, a second client of `engine/inde
 
 **Story (D-011 amendment 2, D-013):** fantasy canon with steampunk machine accents. Wick, a young man from machine-only Ferrum (no amnesia), is shot down in the stolen balloon *Kestrel* and holds a Crown sky-chart with his pencil course to the SOS (3 short, 3 long, 3 short). M1 is a text and art reskin only (lamp, wreckage, relay, signal tower). The only scope change is the US-015 map card (static overlay, `M` re-opens it).
 
-## Milestone 2 – "Out of the Wreck" — status: IN PROGRESS (sprint 3 closing; sprint 4 = mesh engine, D-029)
+## Milestone 2 – "Out of the Wreck" — status: DONE (2026-10-09, D-052; ME-12b leftovers, BUG-FP-001 remainder, US-026b/CO-6 moved to M3)
 **Goal:** the M1 slice and the walk-out (wake -> breach -> hillside -> waystone) run on our own mesh renderer + mesh physics, looking the same or better.
 **Epics:** EP-MESH phases 0-2 (ME-00..ME-12; phase 3 ME-13..21 runs on into M3), EP-COORD (CO-1..CO-8), EP-WORLD part 1 (US-026b S1-S4, S6, S7 streaming + `content/chunks/` + OWN-REQ-002), EP-PHYS part 1 (US-051a after the phase-2 gate). Done in M2: US-027a/b, US-038a/b, US-058, US-060, US-026a.
 **Exit test:** phase-1 gate + phase-2 gate passed (below); the owner walks wake -> waystone on `?renderer=mesh&physics=mesh` with no seams, no fall-through, `?bench=1` inside the D-029 budget; all Node suites + check-deps + typecheck green.
