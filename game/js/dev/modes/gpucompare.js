@@ -255,6 +255,16 @@ function buildCompareRuns(ctx) {
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: rtsHillSky15 (RE-02a pitched, sky + fog scale)',
     cam: rtsHillPose(-15), real: true, meshOnly: true });
 
+  // US-068b3b (38.19 item 2): ortho ISO pose over the roadSouth area (look-at 20 m along the roadSouth view, yaw 240).
+  // Eye = focus - 500 m*F (ORTHO_BACK_M), halfH 20 m. NEW row: JS twin (meshPitched path) vs WG under the pitched gate rules.
+  const orthoIsoPose = () => {
+    const fx = 1448.7, fy = 1025.0, fz = worldM1.terrain ? worldM1.terrain.groundAt(fx, fy) : 0;
+    const e = pitchedEyeFromFocus(fx, fy, fz, 45, -35.264, 500, [0, 0, 0]);
+    return { x: e[0], y: e[1], z: e[2], yawDeg: 45, pitchDeg: -35.264, projection: 'ortho', orthoHalfH: 20, focusX: fx, focusY: fy, focusZ: fz };
+  };
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: orthoIso (US-068b3b ortho yaw 45 pitch -35.264, halfH 20, roadSouth area)',
+    cam: orthoIsoPose(), real: true, meshOnly: true });
+
   // RE-07b (28.9 "Tests"): mesh-only overlay pose. Same pitched -58 RTS view as rtsHill58 but focused on the
   // signal tower so rings behind it fail the depth test: 30 rings (6x5 lattice, r 1 m), 30 bars, 1 screen rect.
   // The JS twin = rtsHill58-style CPU render + `overlay.renderCpu`; the GPU result is the GpuOverlayPass.
@@ -903,7 +913,7 @@ async function runGpuCompareSceneMode(ctx) {
 
     const cmpGeom = compareGeometry(gbuf, depthBuffer.depth, GI, GA, Depth, cols, rows, {
       fogMax: fbCompare.detailPass ? fbCompare.detailPass.edges.fogMax : undefined, suppress: fbCompare.waterMask || null,
-      table: matTable, jsLight: fbCompare.light, pitched: !!(cam && (cam.projection === 'pitched' || pitchedDefault)), maskPose: !!maskPose,
+      table: matTable, jsLight: fbCompare.light, pitched: !!(cam && (cam.projection === 'pitched' || cam.projection === 'ortho' || pitchedDefault)), maskPose: !!maskPose,
     }); // PREC-04b2: oracle ties before cmpCells (exclude mask)
     const maskOk = !maskPose || cmpGeom.kind9Cells > 0; // ALPHA-01c: the fixture must be in view on the JS twin (else a pass would be vacuous)
     if (maskPose) console.log(`[gpucompare] maskTies ${poseName}: ${cmpGeom.maskTies}/${cmpGeom.maskTiesMax} k9=${cmpGeom.kind9Cells} holes=${cmpGeom.holes}${cmpGeom.holes ? ' cells ' + cmpGeom.holeCells.join(',') : ''}${maskOk ? '' : ' FIXTURE NOT IN VIEW'}`);
@@ -927,7 +937,7 @@ async function runGpuCompareSceneMode(ctx) {
         const geomBaseOkW = cmpGeom.kindMatchPct >= 99.5 && cmpGeom.holes === 0 && cmpGeom.meshTiesOk && cmpGeom.texelTiesOk;
         const meshColourOkW = renderer === 'mesh' && geomBaseOkW && cmpGeom.geomViolCells <= 4 && cmpGeom.violNonK8 === 0 && cmpGeom.aoViol === 0 &&
           cmpCellsW.glyphMatchPct >= 99.5 && cmpCellsW.poisonedSurvivors === 0 && cmpCellsMeshW.pass;
-        const pitchedHashOkW = renderer === 'mesh' && cam && (cam.projection === 'pitched' || pitchedDefault) && geomBaseOkW &&
+        const pitchedHashOkW = renderer === 'mesh' && cam && (cam.projection === 'pitched' || cam.projection === 'ortho' || pitchedDefault) && geomBaseOkW &&
           cmpCellsW.outsideFrac <= 0.005 && cmpCellsW.glyphMatchPct >= 99.9 && cmpCellsW.bgMax <= 64 && cmpCellsW.poisonedSurvivors === 0;
         cellsOkW = !!(cmpCellsW.pass || meshColourOkW || pitchedHashOkW);
       }
@@ -956,7 +966,7 @@ async function runGpuCompareSceneMode(ctx) {
     // BUG-RTS-001 (architecture.md 28.11, architect 2026-09-30): pitched poses (pitchedHashCell > 0) have a
     // 0.25 m terrain look-hash; GPU float32 u/v vs the JS double twin flip a few boundary cells, so fgMax is
     // reported but not gated there: outside <= 0.5 %, glyph >= 99.9 %, bgMax <= 64. Shear/dda poses unchanged.
-    const pitchedHashOk = renderer === 'mesh' && cam && (cam.projection === 'pitched' || pitchedDefault) && geomBaseOk &&
+    const pitchedHashOk = renderer === 'mesh' && cam && (cam.projection === 'pitched' || cam.projection === 'ortho' || pitchedDefault) && geomBaseOk &&
       cmpCells.outsideFrac <= 0.005 && cmpCells.glyphMatchPct >= 99.9 && cmpCells.bgMax <= 64 && cmpCells.poisonedSurvivors === 0;
     // RE-02b b3 anchor: the same pose's shear JS twin vs the pitched GPU output, same mesh bars.
     let anchorOk = true;

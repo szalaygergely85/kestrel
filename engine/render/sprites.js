@@ -41,7 +41,7 @@
 // still +Inf (sky). One shared sprite pass/shader, no separate draw path.
 import { PROJ_HFOV_DEG as HFOV_DEG } from './projection.js';
 import { lightAt } from './lighting.js';
-import { createPitchedTerms, pitchedTerms, worldToCell, resolveProjection, isPitchedFamily } from './projection.js';
+import { createPitchedTerms, pitchedTerms, worldToCell, resolveProjection, isPitchedFamily, ORTHO_BACK_M } from './projection.js';
 
 export const MAX_SPRITES = 64;
 export const SPR_TEXELS = 5;
@@ -130,7 +130,10 @@ export function projectSprite(cb, cam, px, py, pz, worldH, out) {
     const vd = _w3[2];
     if (!(vd > MIN_DEPTH)) return false;
     out.depth = vd;
-    const hd = relX * cb.dirX + relY * cb.dirY;
+    let hd;
+    if (cb.pt.ortho) { // US-068b3b: eye is 500 m back; fog on the focus-plane depth * cosP (constant horizontal fog scale, 38.19)
+      hd = (cam.focusX !== undefined ? vd - ORTHO_BACK_M : vd) * cb.pt.cosP;
+    } else hd = relX * cb.dirX + relY * cb.dirY;
     out.fogDepth = hd > 0 ? hd : 0;
     out.colCenter = _w3[0] + 0.5;
     out.feetRow = _w3[1];

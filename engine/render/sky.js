@@ -1,7 +1,7 @@
 // ME-19b: sky/ambient moved verbatim from sectorCaster; shear stays until ME-19d.
 import { fastShadeSky, primeFastShadeFrame } from './fastShade.js';
 import { clampByte } from '../core/math.js';
-import { PROJ_HFOV_DEG as HFOV_DEG, createPitchedTerms, pitchedTerms, screenRay, resolveProjection } from './projection.js';
+import { PROJ_HFOV_DEG as HFOV_DEG, createPitchedTerms, pitchedTerms, screenRay, resolveProjection, isPitchedFamily } from './projection.js';
 // ART-04a (docs/architecture.md 37.18 item 5): the cloud deck reuses the bit-exact
 // `hashFast01` value-noise twin (period 256, seed-keyed) so the JS path and the
 // future GLSL kind-0 branch can never drift; `resolveLook` supplies the resolved
@@ -216,7 +216,7 @@ export function fillSky(fb, cam) {
 
   // RE-02a (28.1 A2 item 2): the pitched sky twin - per cell the `screenRay` direction gives
   // azimuth and elevation (GLSL: `pitchedCellDir` in shade.frag.js's sky branch).
-  const pitched = resolveProjection(cam, fb.renderer) === 'pitched';
+  const pitched = isPitchedFamily(resolveProjection(cam, fb.renderer)); // US-068b3b: ortho sky = pitched sky for the same F
   if (pitched) {
     skyGrid.cols = cols; skyGrid.rows = rows; skyGrid.pxCellW = rt.pxCellW || 1; skyGrid.pxCellH = rt.pxCellH || 1;
     pitchedTerms(cam, skyGrid, skyTerms);

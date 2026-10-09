@@ -7,6 +7,14 @@ import { isPitchedFamily, resolveProjection, createPitchedTerms, pitchedTerms, w
 import { lodCentreX, lodCentreY, lodCentreZ } from '../core/camFocus.js';
 import { computeProjectionPitched, instanceRect } from '../voxel/instanceRect.js';
 import { sunShadowCentre } from './shadowSun.js';
+import { fillSky } from './sky.js';
+import { beginFrame } from './compositor.js';
+import { fastShadeSky } from './fastShade.js';
+import { CellBuffer } from './CellBuffer.js';
+import { DepthBuffer } from './DepthBuffer.js';
+import { GBuffer } from './GBuffer.js';
+import palette from '../../design/palette.js';
+import { ORTHO_BACK_M } from './projection.js';
 
 const rt = { cols: 160, rows: 50, pxCellW: 8, pxCellH: 16 };
 assert.ok(isPitchedFamily('pitched') && isPitchedFamily('ortho') && !isPitchedFamily('shear'));
@@ -74,5 +82,40 @@ const orthoCam = (fx) => ({ x: 0, y: 0, z: 0, yawDeg: 45, pitchDeg: -35.264, pro
   const c = new Float64Array(3);
   sunShadowCentre(orthoCam(40), { boxM: 192, res: 1024 }, c);
   assert.equal(c[0], 40); assert.equal(c[1], 5); assert.equal(c[2], 2);
+}
+// 6. US-068b3b fogDepth: ortho = focus-plane depth * cosP (not the 500 m eye distance); pitched unchanged
+{
+  const cam = orthoCam(10), cb = camBasis(cam, rt, {}, 'mesh'), o = {}, f = cb.pt;
+  for (const k of [0, 10, 60]) {
+    assert.ok(projectSprite(cb, cam, 10 + k * f.fX, 5 + k * f.fY, 2 + k * f.fZ, 1.8, o));
+    assert.ok(Math.abs(o.fogDepth - k * f.cosP) < 1e-6, `fog ${o.fogDepth} vs ${k * f.cosP}`);
+    assert.ok(Math.abs(o.depth - (ORTHO_BACK_M + k)) < 1e-6);
+  }
+  const pc = { x: 3, y: 4, z: 6, yawDeg: 30, pitchDeg: -25, projection: 'pitched' };
+  const pb = camBasis(pc, rt, {}, 'mesh');
+  assert.ok(projectSprite(pb, pc, 10, -20, 0, 1.8, o));
+  assert.equal(o.fogDepth, Math.max(0, (10 - 3) * pb.dirX + (-20 - 4) * pb.dirY));
+}
+// 7. US-068b3b sky: ortho takes the pitched-family path - every cell is the sky of direction F, same F as pitched
+{
+  const cols = 16, rows = 8;
+  const mk = () => { const r = new CellBuffer(cols, rows); r.pxCellW = 8; r.pxCellH = 16;
+    return { rt: r, depth: new DepthBuffer(cols, rows), gbuf: new GBuffer(cols, rows), palette, renderer: 'mesh' }; };
+  for (const [yaw, pitch] of [[45, -35.264], [200, 10]]) {
+    const fo = mk(), fp = mk(); beginFrame(fo); beginFrame(fp);
+    const oc = { x: 0, y: 0, z: 0, yawDeg: yaw, pitchDeg: pitch, projection: 'ortho', orthoHalfH: 10, focusX: 0, focusY: 0, focusZ: 0 };
+    fillSky(fo, oc);
+    const t = createPitchedTerms(); pitchedTerms(oc, { cols, rows, pxCellW: 8, pxCellH: 16 }, t);
+    let az = Math.atan2(t.fX, -t.fY) * 180 / Math.PI; if (az < 0) az += 360;
+    const el = Math.atan2(t.fZ, Math.hypot(t.fX, t.fY)) * 180 / Math.PI;
+    const ref = { fg: [0, 0, 0], bg: [0, 0, 0], glyphIdx: 0 };
+    fastShadeSky(palette, az, el, palette.defaultTime, ref);
+    for (let c = 0; c < 3; c++) assert.ok(Math.abs(fo.rt.bg[c] - ref.bg[c]) <= 1, `ortho sky == sky(F) ch${c}: ${fo.rt.bg[c]} vs ${ref.bg[c]}`);
+    const i0 = 0, i1 = cols * rows - 1;
+    for (const i of [i0, i1, 5 * cols + 3]) for (let c = 0; c < 3; c++) assert.equal(fo.rt.bg[i * 4 + c], fo.rt.bg[c], 'ortho sky uniform');
+    // same yaw/pitch pitched: the centre-ish row equals F's sky only near b=0; ortho must differ from shear (fallback) path
+    fillSky(fp, { ...oc, projection: 'pitched', x: 0, y: 0, z: 0 });
+    assert.ok(fo.rt.glyphIdx[0] === fo.rt.glyphIdx[i1], 'ortho sky glyph uniform');
+  }
 }
 console.log('sprites.ortho.test OK');
