@@ -112,7 +112,7 @@ import { runPerfBench } from './dev/perfBench.js'; // US-018 (architecture.md 16
 import { createSpriteSystem, spawnTestSprites } from './dev/spriteDev.js';
 // ---- end US-030c ----
 // ---- US-010: quest behaviours (registered by name before any World loads) ----
-import { validateBehaviours } from '../../engine/index.js';
+import { validateBehaviours, createRipples } from '../../engine/index.js';
 import './quest/index.js';
 // ---- end US-010 ----
 
@@ -364,6 +364,10 @@ const engine = createEngine({
   gfx: bootOpts.gfx, // GFX-03/GFX-01w: scatter density + LOD scale from the preset (undefined = engine defaults)
 });
 bootSpan('createEngine', tCE);
+// S8-B2-13b NEEDS B1-main (38.14 "Owners"): one ripples ring buffer for the whole session, presentation-only
+// (not saved, not hashed). `fb.ripples = ripples` below hands it to the renderer (duck-typed `{packInto}`,
+// waterComposite.js twin/WGSL); the dev hook and the splash-entry call (US-055b) both call `ripples.add`.
+const ripples = createRipples();
 // US-089w/US-096w: save relay (autosave 60 s + waystone, load at boot) and quest hook. `?save=0` off; capture/bench/compare/cinematic
 // pages and automated browsers never load or save unless `?save=1` forces it (the headless reload check does).
 const saveEnabled = params.get('save') !== '0' && (params.get('save') === '1' || !(isCaptureOrBench || params.get('capture') === '1' || params.has('at') || navigator.webdriver)); // `?at` = dev pose: never autosave it into slot 0
@@ -401,9 +405,10 @@ watchDeviceLost(gpuDevice, {
 if (params.get('dev') === '1') {
   window.__kestrel = window.__kestrel || {};
   window.__kestrel.loseDevice = () => { if (gpuDevice && typeof gpuDevice._forceLost === 'function') gpuDevice._forceLost('dev hook'); };
-  // S8-B2-13 NEEDS B1 item (2) (from 38.14): window.__kestrel.ripple(x, y, amp) for the owner look - the
-  // passWater composite upload that actually draws the rings is another slot's item.
-  window.__kestrel.ripple = (x, y, amp) => { if (engine.world && engine.world.water) engine.world.water.addRipple(x, y, amp); };
+  // S8-B2-13b NEEDS B1-main item (2) (from 38.14): window.__kestrel.ripple(x, y, amp) for the owner look - the
+  // passWater composite upload that actually draws the rings is another slot's item. Ripples live in the
+  // module-scope `ripples` ring buffer (engine/fx/ripples.js), not `world.water` (that field was removed).
+  window.__kestrel.ripple = (x, y, amp) => { ripples.add(x, y, amp, fb ? fb.timeSec : 0); };
 }
 // S8-B1-15: MAP-01c baked chart (MAP-01b bake tool, content/chart/world_m1.chart.json) for the map card
 // (quest/mapCard.js). Loaded once, like questDef above; a missing/bad file degrades to the plain (unbaked) card
@@ -1488,6 +1493,7 @@ async function runGame(mode, cinematic = null) {
     instances: engine.instances, // RE-06 (28.6)
     viewModel: engine.viewModel, // US-078a (30.1): the held sword; both mesh twins draw it when shown
     waterLooks: resolveWaterLooks(window.ASSETS.waterLooks), // US-055a2c (Q12 item 8): JS twin, same table as gpuPipeline.setWaterLooks
+    ripples, // S8-B2-13b NEEDS B1-main (38.14): duck-typed {packInto} read by waterComposite.js; owned by the module-scope singleton above
     // US-030a: true once a ready GPU pipeline owns casting - `renderWorld`
     // (compositor.js) reads this and skips its whole CPU sequence; kept in
     // sync with `gpuPipeline`/`rt.gpuActive` right below `mode === 'world'`.
@@ -1897,6 +1903,7 @@ function runVoxelBenchMode() {
   const fb = {
     rt, depth: depthBuffer, palette: assets.palette, gbuf, matTable, detailPass,
     lights, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gpu: true, renderer: 'mesh', voxelPool: pool,
+    ripples, // S8-B2-13b NEEDS B1-main (38.14): absent would be fine too (duck-typed), set for consistency with the gameplay fb
   };
 
   const FRAMES = 300;
