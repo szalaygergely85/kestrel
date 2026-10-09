@@ -241,3 +241,5 @@ SKY_LUT_N -> wgsl/skyLut.js; GLSL_VERSION/PRECISION/GBUF_UNPACK/BYTE_OUT/CELL_RA
 
 ## WG-5a-3 (kestrel-4, B2)
 Moved terrain/water GLSL reference sources to wgsl/{terrainVert,waterVert,waterFrag,waterComposite}.glslref.js + wgsl/glslref.extra.js (HASH_FAST/CELL_RAY/PITCH_UNIFORMS/NEAR|FAR_TYPE_NEAREST); glsl files re-export; wgsl/** and wg/** import nothing from ../glsl/. wgsl/glsl/terrain/water suites PASS. -> arch-review
+## LIGHT-ALLOC-01 ARCH CHANGES (kestrel-4, B2)
+cloudShadow.js cnQ octave 2.03 -> 2.0 (CLOUD-WRAP-01; sky.js here still 2.03 until the main-session merge), comment now points at new cloudShadow.parity.test.js (noise bit-exact 5000 + wrap, cloudShadeQ vs reference 5000); test hook cloudNoiseScratch exported.
