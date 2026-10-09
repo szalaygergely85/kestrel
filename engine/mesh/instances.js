@@ -166,16 +166,25 @@ export function compactGroup(g, planes, R, vp, rows, swayPad = 0) {
   if (lodOn) k = R * Math.sqrt(vp[1] * vp[1] + vp[5] * vp[5] + vp[9] * vp[9]) * rows;
   const lodPrev = g.lodPrev;
   const Rc = R + swayPad;
+  // QUAT-LOD-01 part 2: near-LOD0 cap, only meaningful with LOD on (there must be an LOD1 bucket to push the excess into).
+  // Natural LOD0 survivors are buffered (index + projected `cells`) instead of written straight to dst0, so the top
+  // `g.lod0Cap` by `cells` (= nearest by the engine's own LOD metric) can be picked after the loop. `lodPrev` is left as the
+  // NATURAL hysteresis state (cap never perturbs it): the cap is a pure per-frame draw-bucket decision on top.
+  const capOn = lodOn && g.lod0Cap > 0;
+  const lod0Idx = g._lod0Idx, lod0Cells = g._lod0Cells;
+  let nat0 = 0;
   let w0 = 0, w1 = 0;
   for (let i = 0; i < n; i++) {
     const o = i * INSTANCE_STRIDE;
     const tx = srcF[o + 3], ty = srcF[o + 7], tz = srcF[o + 11];
     if (planes && classifyAABB(planes, tx - Rc, ty - Rc, tz - Rc, tx + Rc, ty + Rc, tz + Rc) === CULL_OUT) continue;
     let lod = 0;
+    let cellsForCap = Infinity; // w <= 1e-6 (behind/at the eye): no projected size, treat as nearest (top cap priority)
     if (lodOn) {
       const cw = vp[3] * tx + vp[7] * ty + vp[11] * tz + vp[15];
       if (cw > 1e-6) {
         const cells = k / cw;
+        cellsForCap = cells;
         lod = cells < lo ? 1 : cells > hi ? 0 : lodPrev[i];
         if (g.lodDither && cells >= lo && cells <= hi) { // S8-B2-07: screen-door crossfade, both copies with complementary coverage bits
           const f = lodBandFrac(cells, lo, hi);
@@ -189,13 +198,50 @@ export function compactGroup(g, planes, R, vp, rows, swayPad = 0) {
       }
       lodPrev[i] = lod;
     }
-    const dst = lod ? dst1 : dst0;
-    const wo = (lod ? w1 : w0) * INSTANCE_STRIDE;
-    for (let c = 0; c < INSTANCE_STRIDE; c++) dst[wo + c] = srcU[o + c];
-    if (lod) w1++; else w0++;
+    if (lod) {
+      const wo = w1 * INSTANCE_STRIDE;
+      for (let c = 0; c < INSTANCE_STRIDE; c++) dst1[wo + c] = srcU[o + c];
+      w1++;
+    } else if (capOn) {
+      lod0Idx[nat0] = i; lod0Cells[nat0] = cellsForCap; nat0++;
+    } else {
+      const wo = w0 * INSTANCE_STRIDE;
+      for (let c = 0; c < INSTANCE_STRIDE; c++) dst0[wo + c] = srcU[o + c];
+      w0++;
+    }
+  }
+  if (capOn) {
+    const cap = g.lod0Cap;
+    if (nat0 <= cap) {
+      for (let j = 0; j < nat0; j++) { const o = lod0Idx[j] * INSTANCE_STRIDE, wo = w0 * INSTANCE_STRIDE; for (let c = 0; c < INSTANCE_STRIDE; c++) dst0[wo + c] = srcU[o + c]; w0++; }
+    } else {
+      // Partial selection: the `cap` largest-`cells` entries end up in [0,cap) (order scrambled), the rest in [cap,nat0).
+      for (let s = 0; s < cap; s++) {
+        let best = s, bestC = lod0Cells[s];
+        for (let j = s + 1; j < nat0; j++) if (lod0Cells[j] > bestC) { bestC = lod0Cells[j]; best = j; }
+        if (best !== s) {
+          const ti = lod0Idx[s]; lod0Idx[s] = lod0Idx[best]; lod0Idx[best] = ti;
+          const tc = lod0Cells[s]; lod0Cells[s] = lod0Cells[best]; lod0Cells[best] = tc;
+        }
+      }
+      _insertionSortByIdx(lod0Idx, 0, cap); // stable game order within each written bucket
+      _insertionSortByIdx(lod0Idx, cap, nat0);
+      for (let j = 0; j < cap; j++) { const o = lod0Idx[j] * INSTANCE_STRIDE, wo = w0 * INSTANCE_STRIDE; for (let c = 0; c < INSTANCE_STRIDE; c++) dst0[wo + c] = srcU[o + c]; w0++; }
+      for (let j = cap; j < nat0; j++) { const o = lod0Idx[j] * INSTANCE_STRIDE, wo = w1 * INSTANCE_STRIDE; for (let c = 0; c < INSTANCE_STRIDE; c++) dst1[wo + c] = srcU[o + c]; w1++; }
+    }
   }
   g.drawCount[0] = w0; g.drawCount[1] = w1;
   return w0 + w1;
+}
+
+/** Plain insertion sort of `idx[lo..hi)` ascending, in place. Zero allocation; `hi-lo` is `lod0Cap`-sized (small). */
+function _insertionSortByIdx(idx, lo, hi) {
+  for (let i = lo + 1; i < hi; i++) {
+    const v = idx[i];
+    let j = i - 1;
+    while (j >= lo && idx[j] > v) { idx[j + 1] = idx[j]; j--; }
+    idx[j + 1] = v;
+  }
 }
 
 /** ME-15f (27.9a amendment 5): hysteresis half-width (m) of the shadow distance bands. */
@@ -260,6 +306,12 @@ export function fillShadowBands(g, ex, ey, lod0M, castM, planes, R, swayPad = 0)
  * @property {number} _R - cached group radius (both LODs) for the memoized frame
  * @property {boolean} [lodDither] - S8-B2-07: crossfade the LOD hysteresis band by screen-door dither (lodDither.js); undefined/false = off
  * @property {number} lodCells - RE-15c: projected-size LOD threshold in cells; 0 (default) = LOD off
+ * @property {number} lod0Cap - QUAT-LOD-01 part 2: max LOD0 instances drawn per frame (0 default = no cap); the nearest
+ *   (largest projected `cells`) `lod0Cap` naturally-LOD0 instances stay LOD0, the rest draw at LOD1 (needs a ready LOD1 mesh).
+ * @property {any} [_mesh1] - QUAT-LOD-01 part 2: `g.mesh`'s resolved LOD1 registry mesh (via `resolveGroupLod1`), cached once;
+ *   `undefined` = not yet attempted, `null` = none (no `lods`, no resolver, or lookup miss - permanent).
+ * @property {Uint32Array} _lod0Idx - QUAT-LOD-01 part 2: cap scratch, game-slot indices of this frame's natural-LOD0 survivors
+ * @property {Float32Array} _lod0Cells - QUAT-LOD-01 part 2: cap scratch, projected `cells` paired with `_lod0Idx`
  * @property {boolean} castShadow - ENV-01a2: false excludes the group from the sun caster list; default true
  * @property {Uint8Array} lodPrev - RE-15c: previous LOD per game slot (hysteresis)
  * @property {[number, number]} drawCount - survivor counts into `drawIb[0]`/`drawIb[1]`
@@ -290,8 +342,27 @@ export function makeInstanceGroup(modelKey, capacity) {
     shadowCount: /** @type {[number, number]} */ ([0, 0]), shadowBand: new Uint8Array(capacity),
     lodCells: 0, castShadow: true, lodPrev: new Uint8Array(capacity), _R: 0,
     _memoFrameNo: /** @type {number|null} */ (null),
+    // QUAT-LOD-01 part 2: near-LOD0 cap (0 = off) + its scratch, and the lazily-resolved LOD1 registry mesh for `g.mesh` groups.
+    lod0Cap: 0, _mesh1: undefined, _lod0Idx: new Uint32Array(capacity), _lod0Cells: new Float32Array(capacity),
   };
   return g;
+}
+
+/**
+ * QUAT-LOD-01 part 2: resolves a `meshGroup`'s LOD1 registry mesh from its LOD0 `mesh.lods[0].mesh` id, once (cached on
+ * `g._mesh1`; `undefined` = not yet attempted this group's lifetime). `lookup` resolves a registry mesh id to its MeshData
+ * (host-bound via `InstanceGroups.bindMeshResolver`, e.g. `assets.mesh`); no `lods`, no `lookup`, or a lookup miss caches
+ * `null` forever (a mesh's `lods` never changes after load). Ready-ness (`!mesh.lazy`, MESH-LOAD-01) is re-checked every
+ * call - cheap property read, no re-resolution - so an unloaded/evicted LOD1 shell correctly reports "not ready" (caller
+ * falls back to LOD0, no pop to nothing) until its payload arrives.
+ * @param {InstanceGroup} g @param {((id: string) => any)|null|undefined} lookup @returns {any|null} ready LOD1 mesh, or null
+ */
+export function resolveGroupLod1(g, lookup) {
+  if (g._mesh1 === undefined) {
+    const spec = g.mesh && g.mesh.lods && g.mesh.lods[0];
+    g._mesh1 = (spec && spec.mesh && lookup) ? (lookup(spec.mesh) || null) : null;
+  }
+  return (g._mesh1 && !g._mesh1.lazy) ? g._mesh1 : null;
 }
 
 /**
@@ -312,10 +383,15 @@ export class InstanceGroups {
     this.swayPad = 0;
     /** @type {number|null} the last `frameNo` seen by `addToDrawList` */
     this._lastFrameNo = null;
+    /** @type {((id: string) => any)|null} QUAT-LOD-01 part 2: resolves a registry mesh id to its MeshData, for `g.mesh.lods[0].mesh`; unbound (null) = mesh groups never get LOD1 (`resolveGroupLod1` always returns null). */
+    this._meshLookup = null;
   }
 
   /** @param {any} pool - the bound VoxelPool (models registry + partNamesFor) */
   bindPool(pool) { this.pool = pool; }
+
+  /** QUAT-LOD-01 part 2: binds the registry mesh-id resolver (e.g. `(id) => assets.mesh(id)`) `meshGroup` LOD1 lookups use. @param {(id: string) => any} fn */
+  bindMeshResolver(fn) { this._meshLookup = fn; }
 
   /**
    * @param {string} modelKey
@@ -390,23 +466,30 @@ export class InstanceGroups {
     for (let k = 0; k < groups.length; k++) {
       const g = groups[k];
       if (g.count <= 0) continue;
-      if (g.mesh) { // TREES-LP-b: kind-9 mesh group, one identity part, no LOD
+      if (g.mesh) { // TREES-LP-b: kind-9 mesh group, one identity part; QUAT-LOD-01 part 2: optional LOD1 via `g.mesh.lods`
         if (!meshDraw || !meshDraw.idFor) continue;
         if (g.mesh.lazy) { requestMeshForGroup(g.mesh, g); continue; }
         if (g.mesh.lazyOrigin) requestMeshForGroup(g.mesh, g); // S8-B2-03: throttled LRU keep-alive (touch) for a ready lazy mesh // MESH-LOAD-01: payload not loaded = group draws nothing yet
         const draw = meshDraw.cache.get(g.mesh, meshDraw.idFor);
         if (gpu && gpu.accept(g, draw, null)) continue;
+        // LOD1: resolved once (cached on g._mesh1); null when not loaded yet (MESH-LOAD-01) -> LOD0 only, no pop to nothing.
+        const lod1Mesh = (g.lodCells > 0 && viewProj) ? resolveGroupLod1(g, this._meshLookup) : null;
+        const draw1 = lod1Mesh ? meshDraw.cache.get(lod1Mesh, meshDraw.idFor) : null;
         if (!memo || g._memoFrameNo !== frameNo) {
-          if (!(g._R > 0)) g._R = groupRadius(draw, g.parts);
-          const kept = compactGroup(g, planes, g._R, null, 0, this.swayPad);
+          let R = groupRadius(draw, g.parts);
+          if (draw1) { const R1 = groupRadius(draw1, g.parts); if (R1 > R) R = R1; }
+          g._R = R;
+          const kept = compactGroup(g, planes, R, draw1 ? viewProj : null, draw1 ? (rows || 0) : 0, this.swayPad);
           g._memoFrameNo = frameNo;
           this.stats.instances += kept;
           this.stats.instancesCulled += g.count - kept;
+          this.stats.instancesLod1 += g.drawCount[1];
         }
         // ALPHA-01f (b): ONE_PART collapses instancedRanges() to one synthetic whole-mesh range (rasterJS.js rasterInstanced's
         // `onePart` guard then drops per-range masking) - only opaque-only groups get it; a masked group keeps its real
         // mesh.ranges so passRaster.js's instanced-masked draw sees each range's mask rect (JS-twin parity, ALPHA-01f a).
         if (g.drawCount[0] > 0) { const it = list.addInstances(draw, g.parts, g.drawIb[0], g.drawCount[0], g._R); if (it && !g.mesh.maskRanges) it.flags |= DRAW_FLAG_ONE_PART; }
+        if (draw1 && g.drawCount[1] > 0) { const it1 = list.addInstances(draw1, g.parts, g.drawIb[1], g.drawCount[1], g._R); if (it1 && !lod1Mesh.maskRanges) it1.flags |= DRAW_FLAG_ONE_PART; }
         continue;
       }
       if (!pool) continue;
