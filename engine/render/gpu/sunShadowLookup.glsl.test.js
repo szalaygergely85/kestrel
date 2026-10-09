@@ -19,7 +19,7 @@ ok('light: bounds check precedes the fetch on all four sides',
   /t\.x < 0 \|\| t\.y < 0 \|\| t\.x >= res \|\| t\.y >= res\) \{ n\+\+; continue; \}/.test(fn) && fn.indexOf('t.x >= res') < fn.indexOf('texelFetch(uSunShadow'));
 ok('light: outside the box (uv/depth outside [0,1]) is sunlit (n = 4)', /d < 0\.0 \|\| d > 1\.0\) return 4;/.test(fn));
 ok('light: explicit compare, no hardware compare / sampler2DShadow', !/sampler2DShadow|textureProj|shadow2D/.test(LIGHT_FRAG_SRC));
-ok('light: shadow-map sun replaces the DDA (uSunMode == 2 branch before sunVisible)', LIGHT_FRAG_SRC.indexOf('if (uSunMode == 2)') > 0 && LIGHT_FRAG_SRC.indexOf('if (uSunMode == 2)') < LIGHT_FRAG_SRC.indexOf('if (sunVisible(S, uSunDir))'));
+ok('light: shadow-map sun replaced the DDA (ME-19c2: uSunMode == 2 branch, no sunVisible/uWorldGeom)', LIGHT_FRAG_SRC.indexOf('if (uSunMode == 2)') > 0 && !/sunVisible|uWorldGeom|uStructA/.test(LIGHT_FRAG_SRC));
 ok('light: no shadow resolution / bias literals (uniforms only)', !/2048|0\.04|1\.5\b/.test(fn));
 ok('light writes n at bits 16..18', LIGHT_FRAG_SRC.includes(`uint SUN_N_SHIFT = ${SUN_N_SHIFT}u`) && LIGHT_FRAG_SRC.includes('uint(sunN) << SUN_N_SHIFT'));
 ok('shade reads n with the same shift/mask and scales only the terrain sun term',
