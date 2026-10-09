@@ -222,7 +222,7 @@ export class MeshBuffers {
     this.device = device;
     /** @type {Map<string, {vertexBuffer: any, version: number, mesh: any, vertexCount: number, indexBuffer?: any, indexCount?: number, uvMaskBuffer?: any}>} */
     this.cache = new Map();
-    /** RE-06b: voxel-only entries (32 B vertex + index buffer), separate from `cache` so `get()` is untouched. @type {Map<string, {vertexBuffer: any, indexBuffer: any, indexType: 'u16'|'u32', version: number, mesh: any, vertexCount: number, indexCount: number}>} */
+    /** RE-06b: voxel-only entries (32 B vertex + index buffer), separate from `cache` so `get()` is untouched. @type {Map<string, {vertexBuffer: any, indexBuffer: any, indexType: 'u16'|'u32', version: number, mesh: any, vertexCount: number, indexCount: number, uvMaskBuffer?: any}>} */
     this.voxelCache = new Map();
     /** CLOTH-1b2: cloth entries (dynamic 16 B vertex buffer + static uv + static index), keyed by `mesh.id`. @type {Map<string, any>} */
     this.clothCache = new Map();

@@ -98,7 +98,7 @@ shadowSunMatrix(dirFromAzEl(135, 40, new Float64Array(3)), new Float64Array(3), 
   ok('meshDraw null/omitted/idFor null -> no items, no throw', l.count === 0);
   let threw = false;
   try { ig.meshGroup({ layout: 'static', ranges: [{ mask: 1 }] }, 2); } catch { threw = true; }
-  ok('masked range throws', threw);
+  ok('masked range accepted (ALPHA-01f host b lifted the guard)', !threw);
   threw = false;
   try { ig.meshGroup(null, 2); } catch { threw = true; }
   ok('missing mesh throws', threw);
