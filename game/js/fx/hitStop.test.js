@@ -21,13 +21,13 @@ test('stacking caps at 120 and never accumulates across frames', () => {
   assert.equal(h.remainingMs, 120);
   for (let i = 0; i < 100; i++) h.scale(16.6667);
   assert.equal(h.remainingMs, 0);
-  h.trigger('light'); assert.equal(h.remainingMs, 50);
+  h.trigger('light'); assert.equal(h.remainingMs, 70);
 });
 
 test('fake clock: a 70 ms freeze delays a boar windup by exactly 70 ms, no drift', () => {
   const WINDUP_STEPS = 30, DT = 10; // stub boar: windup counted in sim steps
   const run = (freeze) => {
-    const h = createHitStop(); if (freeze) h.trigger('heavy');
+    const h = createHitStop(); if (freeze) h.trigger('light');
     let t = 0, timer = WINDUP_STEPS;
     while (timer > 0) { t += DT; if (h.due(DT)) timer--; }
     return t;
