@@ -2,8 +2,9 @@
 // main.js parses once, then reads the FILTERED params everywhere, so every dev flag outside the allow-list is ignored.
 export const DEMO_ALLOW = Object.freeze(['quality', 'res', 'fx']);
 export const DEMO_STORAGE_SUFFIX = ':demo'; // the "demo" save slot name: every save key is namespaced, slots 1-3 stay untouched
-export const DEMO_BUILD_LINE = 'demo build';
-export const END_CARD_TEXT = 'NEEDS WRITER: demo.endcard'; // docs/story.md has no end-card key yet (<= 38 chars)
+export const DEMO_BUILD_LINE = 'Demo build'; // text key: demo.titleTag (docs/story.md)
+export const END_CARD_TEXT = 'End of the demo. Not of the line.'; // text key: demo.endcard (docs/story.md), <= 38 chars
+export const END_CARD_SUB = 'The signal still blinks, further on.'; // text key: demo.endcard.sub (docs/story.md), <= 38 chars
 export const END_CARD_CHOICES = ['Restart', 'Keep exploring'];
 
 /** @param {string|URLSearchParams|null|undefined} search @returns {{on:boolean, allow:string[]}} garbage -> off. */
@@ -47,7 +48,7 @@ function text(ui, x, y, s, fg) { for (let i = 0; i < s.length; i++) put(ui, x + 
  * End card shown once per run on the waystone done event. `onRestart` / `onKeep` are injected callbacks.
  * Keys: ArrowLeft/ArrowRight/KeyA/KeyD select, Enter/Space choose.
  */
-export function createEndCard({ onRestart, onKeep, text: msg = END_CARD_TEXT } = {}) {
+export function createEndCard({ onRestart, onKeep, text: msg = END_CARD_TEXT, sub = END_CARD_SUB } = {}) {
   let shown = false, open = false, sel = 0;
   const card = {
     get open() { return open; },
@@ -63,12 +64,13 @@ export function createEndCard({ onRestart, onKeep, text: msg = END_CARD_TEXT } =
     },
     draw(ui) {
       if (!open) return;
-      const w = Math.max(msg.length, END_CARD_CHOICES.join('    ').length) + 6, h = 7;
+      const w = Math.max(msg.length, sub.length, END_CARD_CHOICES.join('    ').length) + 6, h = 8;
       const x0 = Math.floor((ui.cols - w) / 2), y0 = Math.floor(ui.rows / 2) - 3;
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) put(ui, x0 + x, y0 + y, ' ', FG);
       text(ui, x0 + Math.floor((w - msg.length) / 2), y0 + 2, msg, FG);
+      text(ui, x0 + Math.floor((w - sub.length) / 2), y0 + 3, sub, DIM);
       let x = x0 + Math.floor((w - (END_CARD_CHOICES[0].length + END_CARD_CHOICES[1].length + 8)) / 2);
-      for (let i = 0; i < 2; i++) { const s = (sel === i ? '> ' : '  ') + END_CARD_CHOICES[i]; text(ui, x, y0 + 4, s, sel === i ? SEL : DIM); x += s.length + 4; }
+      for (let i = 0; i < 2; i++) { const s = (sel === i ? '> ' : '  ') + END_CARD_CHOICES[i]; text(ui, x, y0 + 5, s, sel === i ? SEL : DIM); x += s.length + 4; }
     },
   };
   return card;

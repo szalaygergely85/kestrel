@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { parseDemo, filterDemoParams, demoStorage, blockFKeys, createEndCard, DEMO_ALLOW, END_CARD_TEXT } from './demoMode.js';
+import { parseDemo, filterDemoParams, demoStorage, blockFKeys, createEndCard, DEMO_ALLOW, END_CARD_TEXT, END_CARD_SUB, DEMO_BUILD_LINE } from './demoMode.js';
 import { createStorageAdapter } from './quest/save/saveState.js';
 
 for (const g of [undefined, null, '', 'demo=0', 'demo=2', 'x=1', 42, {}]) assert.equal(parseDemo(g).on, false, String(g));
@@ -24,7 +24,10 @@ assert.equal(inp.pressed('F3'), false); assert.equal(inp.pressed('KeyW'), true);
 
 let r = 0, k = 0;
 const card = createEndCard({ onRestart: () => r++, onKeep: () => k++ });
-assert.ok(END_CARD_TEXT.length <= 38);
+assert.ok(END_CARD_TEXT.length <= 38 && END_CARD_SUB.length <= 38);
+assert.equal(END_CARD_TEXT, 'End of the demo. Not of the line.');
+assert.equal(END_CARD_SUB, 'The signal still blinks, further on.');
+assert.equal(DEMO_BUILD_LINE, 'Demo build');
 assert.equal(card.trigger(), true); assert.equal(card.trigger(), false);
 card.step((c) => c === 'ArrowRight'); card.step((c) => c === 'Enter');
 assert.deepEqual([r, k, card.open], [0, 1, false]);
