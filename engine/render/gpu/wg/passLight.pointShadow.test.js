@@ -7,7 +7,7 @@ import { LIGHT_BLOCK } from '../wgsl/light.wgsl.js';
 import { WG_PASS_SLOT, WG_PASS_NAMES, FRAME_TIMER_SLOT } from '../device/WebGpuTimer.js';
 
 const W = (n) => LIGHT_BLOCK.field(n).word;
-assert.equal(WG_PASS_SLOT.pshadow, 10); assert.equal(WG_PASS_NAMES[10], 'pshadow'); assert.ok(FRAME_TIMER_SLOT > 10, 'frame slot does not collide');
+assert.equal(WG_PASS_SLOT.pshadow, WG_PASS_NAMES.indexOf('pshadow')); assert.ok(WG_PASS_SLOT.pshadow >= 0 && FRAME_TIMER_SLOT > WG_PASS_SLOT.pshadow, 'frame slot does not collide');
 
 const mk = () => {
   const mock = makeMockGpuDevice(), d = mock.device, wl = new WgLightPass(d);

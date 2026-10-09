@@ -2,7 +2,7 @@
 // Pass descriptors and recording metadata are preallocated; full rings drop timing, never wait.
 export const FRAME_TIMER_SLOT = 15; // OCCL-STATS-01: moved from 10 (pass slots 0..14, SLOT_COUNT 16); ME-16e pshadow = 13
 // S8-B1-07: one slot per real WG pass (WgCellPipeline + passRaster/passShadow/passCell/passShade/passSprites/passOverlay),
-// slots 0-10 so FRAME_TIMER_SLOT (11) never collides - `writePassStats` reads slot === array index directly. 'resolve' covers
+// slots 0-13 so FRAME_TIMER_SLOT (15) never collides - `writePassStats` reads slot === array index directly. 'resolve' covers
 // both the resolve and deriv draw calls (GpuCellPipeline.PASS_RESOLVE precedent: one query spans both). Mutually exclusive
 // with FRAME_TIMER_SLOT per frame (spans never nest - see WgCellPipeline._hook): when per-pass timing is on, the pipeline
 // ends the whole-frame span early (still unwritten at that point) so each pass below can open its own.
