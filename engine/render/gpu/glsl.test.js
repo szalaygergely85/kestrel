@@ -8,10 +8,8 @@ import { SHADE_FRAG_SRC } from './glsl/shade.frag.js';
 import { EDGE_FRAG_SRC } from './glsl/edge.frag.js';
 import { DEBUG_FRAG_SRC } from './glsl/debug.frag.js';
 import { CELL_VERT_SRC } from './glsl/cell.vert.js';
-import { DDA_FRAG_SRC } from './glsl/dda.frag.js';
 import { DERIV_FRAG_SRC } from './glsl/deriv.frag.js';
 import { TERRAIN_FRAG_SRC } from './glsl/terrain.frag.js';
-import { VOXEL_FRAG_SRC } from './glsl/voxel.frag.js';
 import { LIGHT_FRAG_SRC } from './glsl/light.frag.js';
 import { MESH_VERT_SRC, MESH_INST_VERT_SRC, MESH_CLOTH_VERT_SRC, meshVertSrc } from './glsl/mesh.vert.js';
 import { MESH_FRAG_SRC, MESH_CLOTH_FRAG_SRC, meshFragSrc } from './glsl/mesh.frag.js';
@@ -25,9 +23,7 @@ const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
 // ME-19b/37.13.5: frozen program strings captured at a24ab04 (unchanged since ME-19a).
-ok('ME-19b: dda source hash unchanged', createHash('sha256').update(DDA_FRAG_SRC).digest('hex') === '915306986f4b3c6ff427e3f7e9734583c566ccb6a6f4495ab1c370989bfa3749');
 ok('ME-19b: terrain source hash unchanged', createHash('sha256').update(TERRAIN_FRAG_SRC).digest('hex') === 'd256d14c21bb316c5c58968384f9cd02325bdceae02cc40f620eb3c53f4b38e0');
-ok('ME-19b: voxel source hash unchanged', createHash('sha256').update(VOXEL_FRAG_SRC).digest('hex') === 'a9871e8136295aebdc4a68ace00ab8699366584a0b89473c55002864afec94a2');
 
 const HASH_CONSTANTS = ['0x27d4eb2d', '0x165667b1', '0x9e3779b1', '0x85ebca6b', '0xc2b2ae35'];
 
@@ -54,7 +50,6 @@ function checkOnlyAddressLine(name, src) {
 checkOnlyAddressLine('shade.frag.js', SHADE_FRAG_SRC);
 checkOnlyAddressLine('edge.frag.js', EDGE_FRAG_SRC);
 checkOnlyAddressLine('debug.frag.js', DEBUG_FRAG_SRC);
-checkOnlyAddressLine('dda.frag.js', DDA_FRAG_SRC);
 checkOnlyAddressLine('deriv.frag.js', DERIV_FRAG_SRC);
 ok('cell.vert.js: no gl_FragCoord (vertex stage)', !CELL_VERT_SRC.includes('gl_FragCoord'));
 
@@ -63,7 +58,7 @@ function stripComments(src) {
 }
 for (const [name, src] of [
   ['shade.frag.js', SHADE_FRAG_SRC], ['edge.frag.js', EDGE_FRAG_SRC], ['debug.frag.js', DEBUG_FRAG_SRC],
-  ['cell.vert.js', CELL_VERT_SRC], ['dda.frag.js', DDA_FRAG_SRC], ['deriv.frag.js', DERIV_FRAG_SRC],
+  ['cell.vert.js', CELL_VERT_SRC], ['deriv.frag.js', DERIV_FRAG_SRC],
 ]) {
   ok(`${name}: no round(`, !stripComments(src).includes('round('));
 }
@@ -73,7 +68,7 @@ for (const [name, src] of [
 // smell markers we can detect lexically.
 for (const [name, src] of [
   ['shade.frag.js', SHADE_FRAG_SRC], ['edge.frag.js', EDGE_FRAG_SRC],
-  ['dda.frag.js', DDA_FRAG_SRC], ['deriv.frag.js', DERIV_FRAG_SRC],
+  ['deriv.frag.js', DERIV_FRAG_SRC],
 ]) {
   ok(`${name}: no EXT_color_buffer_float`, !src.includes('EXT_color_buffer_float'));
   ok(`${name}: no 'layout(std140'`, !src.includes('layout(std140'));
@@ -82,9 +77,6 @@ for (const [name, src] of [
 // US-030a (14.2 item 1/3, backlog tech notes item 10): the DDA/deriv passes
 // must use the shared JS constants (not hand-copied numbers) and the
 // all-uint `floatBitsToUint` output convention.
-ok('dda.frag.js contains MAX_RAY_STEPS', DDA_FRAG_SRC.includes('MAX_RAY_STEPS'));
-ok('dda.frag.js contains MAX_DIST', DDA_FRAG_SRC.includes('MAX_DIST'));
-ok('dda.frag.js contains floatBitsToUint', DDA_FRAG_SRC.includes('floatBitsToUint'));
 ok('deriv.frag.js contains floatBitsToUint', DERIV_FRAG_SRC.includes('floatBitsToUint'));
 ok('shade.frag.js reads uGA/uDepth back with uintBitsToFloat', SHADE_FRAG_SRC.includes('uintBitsToFloat'));
 ok('edge.frag.js reads uDepth back with uintBitsToFloat', EDGE_FRAG_SRC.includes('uintBitsToFloat'));
@@ -140,18 +132,6 @@ ok('light.frag.js skips the sun for terrain (kindU != uint(KIND_TERRAIN))', LIGH
 // US-040 (15.2 item 8): voxel.frag.js - the JS-injected constants, the
 // verbatim axis-choice rule, the +Inf aoD bit pattern, and the numeric ban
 // list (no Infinity/round() in GLSL - 14.1 item 5).
-checkOnlyAddressLine('voxel.frag.js', VOXEL_FRAG_SRC);
-ok('voxel.frag.js: no round(', !stripComments(VOXEL_FRAG_SRC).includes('round('));
-ok('voxel.frag.js: no EXT_color_buffer_float', !VOXEL_FRAG_SRC.includes('EXT_color_buffer_float'));
-ok('voxel.frag.js: no layout(std140', !VOXEL_FRAG_SRC.includes('layout(std140'));
-ok('voxel.frag.js: no Infinity', !VOXEL_FRAG_SRC.includes('Infinity'));
-ok('voxel.frag.js contains MAX_VOX_STEPS', VOXEL_FRAG_SRC.includes('MAX_VOX_STEPS'));
-ok('voxel.frag.js contains MAX_VOX_INSTANCES', VOXEL_FRAG_SRC.includes('MAX_VOX_INSTANCES'));
-ok('voxel.frag.js contains MAX_VOX_PARTS', VOXEL_FRAG_SRC.includes('MAX_VOX_PARTS'));
-ok('voxel.frag.js contains the verbatim axis rule', /if \(tMaxX < tMaxY\) axis = tMaxX < tMaxZ \? 0 : 2; else axis = tMaxY < tMaxZ \? 1 : 2;/.test(VOXEL_FRAG_SRC));
-ok('voxel.frag.js contains the +Inf aoD bit pattern 0x7f800000u', VOXEL_FRAG_SRC.includes('0x7f800000u'));
-ok('voxel.frag.js contains floatBitsToUint', VOXEL_FRAG_SRC.includes('floatBitsToUint'));
-ok('voxel.frag.js contains KIND_MODEL', VOXEL_FRAG_SRC.includes('KIND_MODEL'));
 
 // ME-04 (docs/backlog.md, docs/architecture.md 27.4, 27.7 item 1, 27.11
 // ME-04 row): the raster pass' vertex/fragment pair writes the SAME 3
@@ -187,8 +167,6 @@ ok('mesh.frag.js contains the AO_PLANE formula (literal to rasterJS.js computeAo
 // ME-06 (docs/backlog.md, docs/architecture.md 27.1 item 5, 27.4): every GI
 // writer/copy-through now declares `out uvec4 outGI` (RGBA32UI) - the
 // kind-7 (terrain) normal moves to GI.z, objectId to GI.w.
-ok('dda.frag.js writes out uvec4 outGI', DDA_FRAG_SRC.includes('out uvec4 outGI'));
-ok('voxel.frag.js writes out uvec4 outGI', VOXEL_FRAG_SRC.includes('out uvec4 outGI'));
 ok('terrain.frag.js writes out uvec4 outGI', TERRAIN_FRAG_SRC.includes('out uvec4 outGI'));
 ok('resolve.frag.js writes out uvec4 outGI', RESOLVE_FRAG_SRC.includes('out uvec4 outGI'));
 ok('terrain.frag.js no longer writes the normal into GA.w (aoD is +Inf again for kind 7)', TERRAIN_FRAG_SRC.includes('floatBitsToUint(1.0e30)') && !/outGA = uvec4\([^)]*packNormalOct/.test(TERRAIN_FRAG_SRC));
@@ -216,18 +194,6 @@ ok('mesh.vert.js declares uObjectId/uAxisAligned uniforms', MESH_VERT_SRC.includ
 ok('mesh.vert.js outputs flat vec3 vNrmW = normalize(mat3(uModel) * unpackNormalOct(aNrmBits))', MESH_VERT_SRC.includes('flat out vec3 vNrmW;') && MESH_VERT_SRC.includes('vNrmW = normalize(mat3(uModel) * unpackNormalOct(aNrmBits));'));
 ok('mesh.frag.js reads flat in vec3 vNrmW + the vObjectId/vAxisAligned varyings (RE-06: no uObjectId/uAxisAligned uniforms any more)', MESH_FRAG_SRC.includes('flat in vec3 vNrmW;') && MESH_FRAG_SRC.includes('flat in uint vObjectId, vAxisAligned;') && !MESH_FRAG_SRC.includes('uniform int uObjectId') && !MESH_FRAG_SRC.includes('uniform int uAxisAligned'));
 ok('mesh.frag.js GI.w = vObjectId, kind 8 packs the normal for face 7', MESH_FRAG_SRC.includes('nrmBits, vObjectId)') && MESH_FRAG_SRC.includes('packNormalOct(vNrmW)') && MESH_FRAG_SRC.includes('roundedFace(vNrmW)'));
-{
-  // roundedFace body (the 3 comparison lines) must be string-equal with voxel.frag.js (whitespace-normalised).
-  const norm = (s) => s.replace(/\s+/g, ' ').trim();
-  const grab = (src) => {
-    const a = src.indexOf('float anx = abs(nWorld.x)');
-    const endMark = 'hitFace = nWorld.z >= 0.0 ? FACE_U : FACE_D;';
-    const b = src.indexOf(endMark, a);
-    return a < 0 || b < 0 ? null : norm(src.slice(a, b + endMark.length));
-  };
-  const vb = grab(VOXEL_FRAG_SRC), mb = grab(MESH_FRAG_SRC);
-  ok('mesh.frag.js roundedFace body is string-equal with voxel.frag.js (whitespace-normalised)', vb !== null && vb === mb, String(mb));
-}
 
 
 // CLOTH-1b2 (docs/architecture.md 33.5): the cloth variant of the mesh vertex/fragment pair.
