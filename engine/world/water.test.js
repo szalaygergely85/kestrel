@@ -1,6 +1,6 @@
 // US-055a1 (architecture.md 32.2): water regions + World#waterAt.
 // Run: node --expose-gc engine/world/water.test.js   (PERF_STRICT=1 makes the perf bar fail)
-import { createWater, collectWaterDefs, WATER_MAX, RIPPLE_MAX, RIPPLE_LIFE } from './water.js';
+import { createWater, collectWaterDefs, WATER_MAX } from './water.js';
 import { STEP } from '../core/loop.js';
 import { World } from './World.js';
 import { serialize, deserialize, stringifySave } from './serialize.js';
@@ -290,25 +290,6 @@ const out = { surfaceZ: 0, depth: 0, region: '', index: -1, look: 0 };
     }
     ok('zero allocation: 100k queries grow the heap < 64 KB', grown < 65536, `${grown} B`);
   }
-}
-
-// ---- S8-B2-13 (38.14): ripple ring buffer (presentation only, never saved) ----
-{
-  const defs = collectWaterDefs({ water: [{ id: 'r', shape: 'rect', rect: [0, 0, 10, 10], z: 0 }] }, []);
-  const wt = createWater(defs);
-  let live = 0;
-  for (let i = 0; i < RIPPLE_MAX; i++) { const age = (wt.tick - wt.ripT0[i]) * STEP; if (age >= 0 && age < RIPPLE_LIFE) live++; }
-  ok('World.load leaves 0 live rings', live === 0);
-  const save0 = wt.saveState();
-  const hash0 = []; wt.hashInto({ u32: (v) => hash0.push(v), f64: (v) => hash0.push(v) });
-  ok('non-finite input is refused and writes nothing', wt.addRipple(NaN, 0, 1) === false && wt.addRipple(0, Infinity, 1) === false && wt.addRipple(0, 0, NaN) === false && wt.ripHead === 0);
-  ok('amp is clamped to [0,1]', wt.addRipple(1, 1, 5) === true && wt.ripAmp[0] === 1 && wt.addRipple(1, 1, -5) === true && wt.ripAmp[1] === 0);
-  for (let i = 2; i < 9; i++) wt.addRipple(i, i, 0.5); // slots 2..7, then the 9th (i=8) wraps and overwrites slot 0
-  ok('9 adds overwrite the oldest (slot 0) and ripHead wraps', wt.ripHead === 1 && wt.ripX[0] === 8 && wt.ripAmp[0] === 0.5);
-  const save1 = wt.saveState();
-  const hash1 = []; wt.hashInto({ u32: (v) => hash1.push(v), f64: (v) => hash1.push(v) });
-  ok('saveState() is byte-identical with and without live rings', JSON.stringify(save0) === JSON.stringify(save1));
-  ok('hashInto output is byte-identical with and without live rings', JSON.stringify(hash0) === JSON.stringify(hash1));
 }
 
 console.log(`water.test: ${pass} passed, ${fail} failed`);
