@@ -8,7 +8,7 @@ export function parseOccl(params, backend) {
 }
 
 /**
- * Calls `pipeline.invalidateHzb()` on every cut. `getPipeline()` may return null (gl2 / occl off / not ready) = no-op.
+ * Calls `pipeline.invalidateHzb()` (+ `invalidateHistory()` for the US-073c stable pass) on every cut. `getPipeline()` may return null (gl2 / occl off / not ready) = no-op.
  * `trackPose` catches any pose jump nobody announced (waystone, save load, dev pose) when the eye moves > jumpM in one frame.
  */
 export function createHzbInvalidator(getPipeline, { jumpM = 6 } = {}) {
@@ -16,7 +16,8 @@ export function createHzbInvalidator(getPipeline, { jumpM = 6 } = {}) {
   function invalidate(reason) {
     const p = getPipeline();
     if (!p || typeof p.invalidateHzb !== 'function') return false;
-    p.invalidateHzb(); count++; lastReason = reason || '';
+    p.invalidateHzb(); if (typeof p.invalidateHistory === 'function') p.invalidateHistory(); // US-073c: the stable pass drops its glyph history on the same cuts
+    count++; lastReason = reason || '';
     px = NaN; // forget the pose so the next trackPose does not double-fire
     return true;
   }

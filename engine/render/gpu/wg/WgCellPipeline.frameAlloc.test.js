@@ -21,6 +21,7 @@ import detailPassModule from '../../../../design/detail-pass.js';
 // scavenge runs inside the 1000 frames (otherwise garbage is silently collected); the post-gc check stays as the leak check.
 const SELF = fileURLToPath(import.meta.url);
 const FLAGS = ['--expose-gc', '--max-semi-space-size=64', '--no-concurrent-recompilation']; // sync tier-up: deterministic (a late concurrent compile left some runs at 123 vs 395 B/frame)
+const STABLE = process.env.FRAMEALLOC_STABLE === '1'; // US-073c: the same 1000-frame gate with the stable pass on (child run)
 const MUTATE = process.env.FRAMEALLOC_MUTATE === '1'; // self-test child: allocates every frame, MUST fail
 if (typeof global.gc !== 'function' || !process.execArgv.includes(FLAGS[1])) {
   const res = spawnSync(process.execPath, [...FLAGS, SELF], { stdio: 'inherit' });
@@ -58,7 +59,7 @@ const rt = {
   setPresentCells() {},
 };
 
-const p = new WgCellPipeline(rt, { rays: 1 });
+const p = new WgCellPipeline(rt, { rays: 1, stable: STABLE });
 assert.strictEqual(p.ready, true, 'pipeline ready on the mock device');
 assert.strictEqual(typeof hook, 'function', 'cell-pass hook installed');
 
@@ -106,6 +107,7 @@ function stepFrame(i) {
 for (let i = 0; i < 20000; i++) stepFrame(i);
 assert.ok(p._cellsShaded, 'warm-up: shade actually ran (table bound, camera+world present)');
 assert.ok(drawCount > 0, 'warm-up: passes actually drew');
+if (STABLE) assert.ok(p._stableRan, 'warm-up: the stable pass ran (pitched camera, cells shaded)');
 
 const liveAfterWarmup = liveCount();
 const createAfterWarmup = mock.createCount;
@@ -123,6 +125,7 @@ for (let i = 20000; i < 20000 + FRAMES; i++) stepFrame(i);
 const h1 = process.memoryUsage().heapUsed; // BEFORE gc: sees per-frame garbage (no scavenge with the 64 MB semi-space)
 const garbage = h1 - h0;
 global.gc();
+if (process.env.FRAMEALLOC_VERBOSE) console.log(`garbage ${garbage} B / ${FRAMES} frames (stable ${STABLE})`);
 const grew = process.memoryUsage().heapUsed - h0; // retained growth (leak check)
 
 ok('WgCellPipeline frame loop: 0 new device resources over 1000 frames (mock liveCount flat)', liveCount() === liveAfterWarmup, `live ${liveAfterWarmup} -> ${liveCount()}`);
@@ -134,6 +137,12 @@ ok('WgCellPipeline frame loop: per-frame garbage < budget over 1000 frames (heap
 ok('WgCellPipeline frame loop: no significant retained heap growth over 1000 frames (--expose-gc)', grew < 64 * 1024, `grew by ${grew} bytes over ${FRAMES} frames (${(grew / FRAMES).toFixed(1)} B/frame)`);
 
 p.dispose();
+
+// US-073c: the same gate with `stable: true` (per-frame beginFrame + uniforms + draw must also stay allocation-free)
+if (!MUTATE && !STABLE) {
+  const r = spawnSync(process.execPath, [...FLAGS, SELF], { env: { ...process.env, FRAMEALLOC_STABLE: '1' }, encoding: 'utf8' });
+  ok('stable on: the 1000-frame zero-allocation gate passes', r.status === 0, `status ${r.status} ${(r.stderr || '').split(String.fromCharCode(10)).slice(0, 4).join(' | ')}`);
+}
 
 // Self-test (mutation): the same file with a per-frame allocation must FAIL the garbage check.
 if (!MUTATE) {

@@ -1,17 +1,19 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createQuest, applyQuestEvent, questObjectives, stringifyQuest, questHash, validateQuestDefinition } from './quest.js';
+import {makeFrame,localToWorld} from '../../../../engine/index.js';
+import {createSaveRelay} from '../../saveRelay.js';
 const def=JSON.parse(readFileSync(new URL('../../../../content/quests/m1.quest.json',import.meta.url)));
 const events=[{type:'flag:set',key:'wake',value:true},{type:'item:got',id:'lantern'},{type:'area:entered',id:'breach'},
- {type:'item:got',id:'sword'},{type:'beast:died',id:'boar1'},{type:'beast:died',id:'boar2'},{type:'area:entered',id:'waystone'}];
+ {type:'item:got',id:'sword'},{type:'beast:died',id:'boar1'},{type:'beast:died',id:'boar2'},{type:'beast:died',id:'boar3'},{type:'beast:died',id:'boar4'},{type:'beast:died',id:'boar5'},{type:'area:entered',id:'waystone'}];
 const state=createQuest(def);
 assert.equal(questObjectives(state,def)[0].status,'active');
-applyQuestEvent(state,events[6],def);assert.deepEqual(state.completed,[],'early facts cannot skip predecessors');
+applyQuestEvent(state,events.at(-1),def);assert.deepEqual(state.completed,[],'early facts cannot skip predecessors');
 for(const e of events.slice(0,5)) applyQuestEvent(state,e,def);
 assert.equal(questObjectives(state,def)[4].progress,1);
 assert.equal(applyQuestEvent(state,events[4],def),false,'same beast cannot count twice');
 applyQuestEvent(state,{type:'beast:died',id:'unrelated'},def);assert.equal(questObjectives(state,def)[4].progress,1);
-applyQuestEvent(state,events[5],def);assert.deepEqual(state.completed,def.objectives.map(o=>o.id));
+for(const e of events.slice(5)) applyQuestEvent(state,e,def);assert.deepEqual(state.completed,def.objectives.map(o=>o.id));
 applyQuestEvent(state,{type:'flag:set',key:'wake',value:false},def);assert.equal(state.completed.length,6,'completed objectives are latched');
 const bytes=stringifyQuest(state,def);
 assert.equal(stringifyQuest(createQuest(def,JSON.parse(bytes)),def),bytes);
@@ -80,12 +82,68 @@ applyQuestEvent(earlySword,events[3],def);assert.equal(active(earlySword),'breac
 earlySword=restore(earlySword);applyQuestEvent(earlySword,events[2],def);
 assert.equal(active(earlySword),'beasts','early sword fact satisfies its beat as soon as breach completes');
 for(const s of [m3,earlySword]) {
- applyQuestEvent(s,events[4],def);assert.equal(active(s),'beasts');
- applyQuestEvent(s,events[5],def);assert.equal(active(s),'waystone');
- applyQuestEvent(s,events[6],def);assert.equal(active(s),undefined);
+ for(let i=4;i<8;i++){applyQuestEvent(s,events[i],def);assert.equal(active(s),'beasts');}
+ applyQuestEvent(s,events[8],def);assert.equal(active(s),'waystone');
+ applyQuestEvent(s,events[9],def);assert.equal(active(s),undefined);
 }
 // The unrelated raw end fact/real pickup flag may be present only in m3; both
 // paths still produce exactly the same completed objective prefix.
 assert.deepEqual(m3.completed,earlySword.completed);
 assert.deepEqual(m3.completed,def.objectives.map(o=>o.id));
+
+// S8-C-13b: exercise the shipped marker resolver/poller, not a second trigger.
+const structure=worldDef.structures.find(s=>s.id===target.structure);
+const frame=makeFrame(structure.origin.x,structure.origin.y,structure.origin.z,structure.yawSteps);
+const marker=towerDef.markers[target.marker], markerWorld={x:0,y:0,z:0};
+localToWorld(frame,marker.x,marker.y,marker.z,markerWorld);
+const proximityWorld={state:{'tower.lantern.taken':true},
+ structures:[{id:structure.id,level:{def:towerDef}}],frameOf:id=>id===structure.id?frame:null};
+function proximityRelay(saved=null) {
+ const r=createSaveRelay({questDef:def,enabled:false,storage:null});
+ r.quest.reset(saved);
+ return r;
+}
+let proximity=proximityRelay(), breachEvents=0;
+const onPoll=(name,id)=>{if(name==='area:entered'&&id==='breach')breachEvents++;};
+proximity.quest.onPoll=onPoll;
+const facts={wakeDone:true,canSave:false};
+const outside={...markerWorld,x:markerWorld.x+3.001};
+const below={...markerWorld,z:frame.z};
+proximity.stepGame(1/60,proximityWorld,outside,facts);
+assert.equal(active(proximity.quest.state),'breach');
+proximity.stepGame(1/60,proximityWorld,below,facts);
+assert.equal(active(proximity.quest.state),'breach','standing below the summit cannot complete breach');
+proximity.stepGame(1/60,proximityWorld,{...markerWorld,z:markerWorld.z+2.501},facts);
+assert.equal(active(proximity.quest.state),'breach','vertical radius enforced');
+proximity=proximityRelay(JSON.parse(stringifyQuest(proximity.quest.state,def)));
+proximity.quest.onPoll=onPoll;
+const boundary={...markerWorld,x:markerWorld.x+3,z:markerWorld.z+2.5};
+proximity.stepGame(1/60,proximityWorld,boundary,facts);
+assert.equal(active(proximity.quest.state),'sword','inclusive marker radius enters the breach beat');
+assert.equal(breachEvents,1);
+for(let i=0;i<20;i++)proximity.stepGame(1/60,proximityWorld,markerWorld,facts);
+assert.equal(breachEvents,1,'staying inside fires once');
+const enteredBytes=stringifyQuest(proximity.quest.state,def);
+proximity=proximityRelay(JSON.parse(enteredBytes));proximity.quest.onPoll=onPoll;
+proximity.stepGame(1/60,proximityWorld,outside,facts);proximity.stepGame(1/60,proximityWorld,markerWorld,facts);
+assert.equal(breachEvents,1,'leaving/re-entering after reload never re-fires');
+assert.equal(stringifyQuest(proximity.quest.state,def),enteredBytes);
+for(const e of events.slice(3))proximity.quest.feed(e);
+assert.deepEqual(proximity.quest.state.completed,def.objectives.map(o=>o.id),'marker completion continues the full chain');
+function proximityReplay(resumeTick=-1) {
+ let r=proximityRelay(), hash=0, entered=0;
+ const count=(name,id)=>{if(name==='area:entered'&&id==='breach')entered++;};
+ r.quest.onPoll=count;
+ for(let tick=0;tick<600;tick++) {
+  if(tick===resumeTick){r=proximityRelay(JSON.parse(stringifyQuest(r.quest.state,def)));r.quest.onPoll=count;}
+  r.stepGame(1/60,proximityWorld,tick<300?outside:markerWorld,facts);
+  hash=Math.imul(hash^questHash(r.quest.state,def),16777619)>>>0;
+ }
+ return {hash,entered,bytes:stringifyQuest(r.quest.state,def)};
+}
+const proximityBaseline=proximityReplay();
+assert.equal(proximityBaseline.entered,1);
+assert.deepEqual(proximityReplay(299),proximityBaseline,'reload before radius entry preserves replay');
+assert.deepEqual(proximityReplay(301),proximityBaseline,'reload after radius entry preserves replay');
+console.log('breach marker proximity replay hash '+proximityBaseline.hash+' (600 ticks; one entry)');
 console.log('quest: ordered objectives, early facts, deduplicated deaths, atomic validation, canonical restore and 600-step replay PASS');

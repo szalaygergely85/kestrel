@@ -164,6 +164,7 @@ export { drawCrosshair } from './ui/crosshair.js';
 
 // ---- US-015 UI panels, rich text, scene dim (docs/architecture.md 7.6) ------
 export { compileRichLine, drawRichLine, hexToRgb } from './ui/richText.js';
+export { compileDialogue, validateDialogue, createDialogueRunner } from './ui/dialogue.js'; // DIALOGUE-01a1 (38.28)
 export { buildPanelArt, createPanel, drawPanel, Panel } from './ui/panel.js';
 export { createSceneDim, resetSceneDim, pushDimRect, applySceneDim } from './ui/sceneDim.js';
 // ---- OWN-REQ-003 UI layer (docs/architecture.md 17) -------------------------

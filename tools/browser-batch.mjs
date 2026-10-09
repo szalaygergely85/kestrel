@@ -8,7 +8,7 @@
 // so tools that also open port+1 for CDP never collide). Full output of every check goes to <log-dir>/<n>.log; on FAIL the
 // last lines are printed. Exit 1 if any check fails. Writes <log-dir>/summary.json.
 import { spawn } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, appendFileSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -42,9 +42,9 @@ export function parseArgs(argv) {
 export function buildChecks(o) {
   const list = [];
   if (o.presets) {
-    for (const p of PRESETS) list.push({ name: `gpucompare webgpu ${p}`, cmd: `node tools/capture-browser.mjs --mode gpucompare --backend webgpu --port {port} --timeout-ms 900000 --query "gpucompare=1&quality=${p}" --baseline ${presetBaselinePath(o.gpu, p)}` });
+    for (const p of PRESETS) list.push({ name: `gpucompare webgpu ${p}`, cmd: `node tools/capture-browser.mjs --mode gpucompare --backend webgpu --port {port} --timeout-ms 300000 --query "gpucompare=1&quality=${p}" --baseline ${presetBaselinePath(o.gpu, p)}` });
   } else if (o.defaults) {
-    list.push({ name: 'gpucompare webgpu', cmd: `node tools/capture-browser.mjs --mode gpucompare --backend webgpu --port {port} --timeout-ms 900000 --baseline ${o.baseline}` });
+    list.push({ name: 'gpucompare webgpu', cmd: `node tools/capture-browser.mjs --mode gpucompare --backend webgpu --port {port} --timeout-ms 300000 --baseline ${o.baseline}` });
     list.push({ name: 'route walk (browser)', cmd: 'node tools/route-walk-browser.mjs --port {port}' });
   }
   for (const c of o.extra) list.push({ name: c.replace(/^node\s+/, '').split(/\s+/)[0], cmd: c });
@@ -57,9 +57,12 @@ function run(cmd, logFile) {
   return new Promise((resolve) => {
     const child = spawn(cmd, { shell: true, cwd: process.cwd() });
     let out = '';
-    child.stdout.on('data', (d) => { out += d; });
-    child.stderr.on('data', (d) => { out += d; });
-    child.on('close', (code) => { writeFileSync(logFile, out); resolve({ code: code ?? 1, out, ms: Date.now() - t0 }); });
+    writeFileSync(logFile, '');
+    // stream to the log as the child runs (a hung/killed check still leaves its output)
+    const sink = (d) => { out += d; try { appendFileSync(logFile, d); } catch {} };
+    child.stdout.on('data', sink);
+    child.stderr.on('data', sink);
+    child.on('close', (code) => { resolve({ code: code ?? 1, out, ms: Date.now() - t0 }); });
   });
 }
 

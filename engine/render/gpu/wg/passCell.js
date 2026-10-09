@@ -23,7 +23,8 @@ export function derivTerms(cols, rows, pxCellW, pxCellH, out) {
 }
 
 export class WgCellPass {
-  constructor(device, shadowPass = null, waterPass = null) {
+  /** @param {{stable?: boolean}} [opts] stable (US-073c): shade also writes the ramp-level target; absent = unchanged */
+  constructor(device, shadowPass = null, waterPass = null, opts = null) {
     this.water = waterPass; // WG-3e WgWaterPass (owned by the pipeline)
     this.device = device;
     this.pipeResolve = device.createPipeline({
@@ -37,7 +38,7 @@ export class WgCellPass {
       targetFormats: ['rgba32ui'],
     });
     this.lightPass = new WgLightPass(device, shadowPass);
-    this.shadePass = new WgShadePass(device); // WG-3c: shade + edge after light
+    this.shadePass = new WgShadePass(device, opts && opts.stable ? { stable: true } : null); // WG-3c: shade + edge after light
     this.shaded = false; // true when this frame's shade + edge ran (final cells valid)
     this.upload = new WgUploadSource(device);  // WG-3c: `?gpucompare=shade` test source
     this.ru = new Float32Array(RESOLVE_BLOCK.sizeWords); this.ri = new Int32Array(this.ru.buffer);

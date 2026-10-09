@@ -102,10 +102,13 @@ function angDelta(a, b) {
  * @param {object} cam - pitched/ortho cam ({x,y,z,yawDeg,pitchDeg,...})
  * @param {{cols:number,rows:number,pxCellW?:number,pxCellH?:number}} grid - the REAL grid (pxCellW/pxCellH)
  * @param {{invalidate?:boolean}} [flags] - invalidate: resize, quality change, cells not shaded, debug mode, teleport/cut, world load, enable
+ * @param {object} [terms] - optional precomputed `pitchedTerms(cam, grid)` of this frame (device pass: skips the recompute and the twin-only eye-relative sets)
  */
-export function beginFrame(st, cam, grid, flags) {
+export function beginFrame(st, cam, grid, flags, terms) {
   const t = st.prev; st.prev = st.cur; st.cur = t; // swap, no alloc
-  pitchedTerms(cam, grid, st.cur);
+  // US-073c: the device pass hands in the terms the raster pass already built this frame (same cam + grid): copying them is
+  // allocation-free, a second pitchedTerms call boxes ~48 B of doubles per frame (PITCHED-ALLOC) and the GPU path never needs relCur/relPrev.
+  if (terms) copyTerms(st.cur, terms); else pitchedTerms(cam, grid, st.cur);
   const c = st.cur, p = st.prev;
   let valid = st.hasPrev && !(flags && flags.invalidate);
   if (valid && (c.cols !== p.cols || c.rows !== p.rows || c.ortho !== p.ortho
@@ -119,6 +122,7 @@ export function beginFrame(st, cam, grid, flags) {
   }
   st.hasPrev = true;
   st.histValid = valid;
+  if (terms) return valid; // device path: the WGSL pass takes the basis vectors and dEye from st.cur/st.prev
   // eye-relative term sets (eye = 0); dEye is added to the unprojected point
   copyTerms(st.relCur, c); st.relCur.eyeX = 0; st.relCur.eyeY = 0; st.relCur.eyeZ = 0;
   copyTerms(st.relPrev, p); st.relPrev.eyeX = 0; st.relPrev.eyeY = 0; st.relPrev.eyeZ = 0;

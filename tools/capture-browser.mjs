@@ -85,6 +85,7 @@ export function parseArgs(argv) {
     else if (a === '--variant') opts.variant = next();
     else if (a === '--rays') opts.rays = Number(next());
     else if (a === '--query') opts.query = next();
+    else if (a === '--stable') opts.stable = true; // FLICKER-WG-01 (flicker mode: &stable=1)
     else if (a === '--shadows') opts.shadows = next(); // ME-15e: appends &shadows=<map|off; dda maps to map> to the mode's own query
     else if (a === '--global') opts.global = next();
     else if (a === '--swiftshader') opts.swiftshader = true;
@@ -151,7 +152,7 @@ export function buildLaunchFlags(opts = {}, platform = process.platform) {
 export const PRESENTDIFF_POSES = ['crash', 'brazier', 'roadSouth'];
 const WEBGPU_PAGE_MODES = new Set(['webgpu-probe', 'wgsl', 'webgpu-present']);
 
-export function buildQuery(mode, { grid, variant, rays, shadows, backend } = {}) {
+export function buildQuery(mode, { grid, variant, rays, shadows, backend, stable } = {}) {
   const parts = [];
   if (WEBGPU_PAGE_MODES.has(mode)) return ''; // dedicated page, no query (see pagePathFor)
   if (mode === 'gpucompare') {
@@ -179,6 +180,7 @@ export function buildQuery(mode, { grid, variant, rays, shadows, backend } = {})
     parts.push('force2d=1'); // WG-5b: the CPU Canvas2D path is the oracle
   } else if (mode === 'flicker') {
     parts.push('flicker=1'); // ME-08c: `window.__flicker` (jsRow/gpuRow changed-glyph share)
+    if (stable) parts.push('stable=1'); // FLICKER-WG-01: US-073 stable pass on (measure with vs without)
   } else {
     throw new Error(`unknown --mode '${mode}' (expected gpucompare|voxelbench|bench|flicker|webgpu-probe|wgsl|webgpu-present|presentdiff)`);
   }

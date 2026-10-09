@@ -122,7 +122,7 @@ export function setRot(rx, ry, rz, out) {
  */
 const _rotOut = new Float64Array(MAX_VOX_PARTS * 3);
 const _posOut = new Float64Array(MAX_VOX_PARTS * 3);
-function samplePose(pm, inst) {
+function sampleClip(pm, inst) {
   const partCount = pm.partCount;
   const clipIdx = inst.clip;
   if (clipIdx === undefined || clipIdx < 0 || !pm.clips || clipIdx >= pm.clips.length) {
@@ -146,6 +146,18 @@ function samplePose(pm, inst) {
       const v = v0 + (v1 - v0) * alpha;
       if (c < 3) _rotOut[p * 3 + c] = v; else _posOut[p * 3 + (c - 3)] = v;
     }
+  }
+}
+
+// TALK-E1 (38.28 item 7): optional extra rotation (degrees, part-local) added on top of the clip rotation
+// of one part (`inst.addPart` = part index, `addRx/Ry/Rz`). Undefined/-1 addPart -> byte-identical output.
+function samplePose(pm, inst) {
+  sampleClip(pm, inst);
+  const ap = inst.addPart;
+  if (ap >= 0 && ap < pm.partCount) {
+    _rotOut[3 * ap] += inst.addRx;
+    _rotOut[3 * ap + 1] += inst.addRy;
+    _rotOut[3 * ap + 2] += inst.addRz;
   }
 }
 

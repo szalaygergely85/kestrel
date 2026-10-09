@@ -32,7 +32,7 @@ const w = World.load(def, assets, { physics: 'mesh' });
 const structure = w.structures.find(s => s.id === 'tower'), O = structure.origin;
 const c = w.colliders.find(c => c.id === 'props:static');
 ok(c && w.colliders.filter(c => c.id === 'props:static').length === 1, 'one static prop collider');
-ok(c.bvh.triCount === 176 + 4 * 32, '11 piece boxes, gondola box, practice-post prism, 3 wall-lamp prisms (BUG-LAMP-COLLIDE) + the pick-up lamp (BUG-LAMP-COLLIDE-02)');
+ok(c.bvh.triCount === 176 + 5 * 32, 'NPC-BEAR-01 bear prism (components.collider) + 11 piece boxes, gondola box, practice-post prism, 3 wall-lamp prisms (BUG-LAMP-COLLIDE) + the pick-up lamp (BUG-LAMP-COLLIDE-02)');
 const hashes = {
   gondola: 'bd66286192399a8c8ebf35ae625edd1f526e3c22d96fa8ce111468ff54134ce3', // owner 2026-10-06: basket back to its original wood/brass mats (cloth meant the balloon fabric),
   practiceTarget: 'be119136a64f6a554ed0297179999144e32cd758f1f23f6a97b2b5b351327a83',

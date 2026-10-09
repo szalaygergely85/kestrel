@@ -224,6 +224,21 @@ function run(st, cam, inpFn, hist, flags) {
   ok('stabilize(): 0 alloc over 1e4 frames', per2 < 16, `${per2.toFixed(2)} B/frame`);
 }
 
+// US-073c: beginFrame(st, cam, grid, flags, terms) with the raster pass's terms == the self-computed path (cur/prev/dEye/histValid), device path only
+{
+  const { createPitchedTerms, pitchedTerms } = await import('./projection.js');
+  const a = createStableState(), b = createStableState(), tm = createPitchedTerms();
+  const grid = { cols: 160, rows: 60, pxCellW: 8, pxCellH: 16 };
+  let same = true;
+  for (let i = 0; i < 4; i++) {
+    const cam = { x: 10 + i * 0.3, y: 20, z: 1.6, yawDeg: i * 0.5, pitchDeg: -20 };
+    const va = beginFrame(a, cam, grid, null), vb = beginFrame(b, cam, grid, null, pitchedTerms(cam, grid, tm));
+    for (const k of ['fX', 'fY', 'fZ', 'rX', 'rY', 'uX', 'uY', 'uZ', 'tanHalfX', 'tanHalfY', 'eyeX', 'eyeY', 'eyeZ']) if (a.cur[k] !== b.cur[k] || a.prev[k] !== b.prev[k]) same = false;
+    if (va !== vb || a.dEx !== b.dEx || a.dEy !== b.dEy || a.dEz !== b.dEz) same = false;
+  }
+  ok('beginFrame with precomputed terms == own pitchedTerms (cur, prev, dEye, validity)', same);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
