@@ -127,20 +127,35 @@ export class WgRasterPass {
     cull.run();
   }
 
+  // ALPHA-01f (d): entries are laid out `[lod*R + r]` (R = entries.length/2, fixed per batch); R = 1 (today's ONE_PART shape) is
+  // the same [e0, e1] pair as before. A masked meshGroup range (mr[r*5+2] >= 0) draws through instanceMaskPipe (mask uniforms +
+  // uv extra stream + atlas texture, same as _instancedMaskedRange's CPU path); an opaque range draws through instancePipe, unchanged.
   _cullDraw() {
     let draws = 0;
     const b = this.bindDesc;
     for (let i = 0; i < this.gpuN; i++) {
-      const entries = this.gpuEntries[i];
+      const entries = this.gpuEntries[i], R = entries.length >> 1;
       for (let lod = 0; lod < 2; lod++) {
-        const e = entries[lod];
-        if (!e.active) continue;
-        this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0;
-        this._model(e.parts.m, 0); this.bits[AXIS] = e.parts.flags[0] & 1;
-        const entry = this.buffers.getVoxel(e.mesh);
-        b.uniforms = this.u; b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer || null; b.instanceBuffer = e.instanceBuffer; b.extraBuffers = null;
-        this.device.bind(this.instancePipe, b); this.device.drawIndirect(e.argsBuffer, e.argsOffset);
-        draws++;
+        for (let r = 0; r < R; r++) {
+          const e = entries[lod * R + r];
+          if (!e.active) continue;
+          this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0;
+          this._model(e.parts.m, 0); this.bits[AXIS] = e.parts.flags[0] & 1;
+          const entry = this.buffers.getVoxel(e.mesh);
+          const mr = e.mesh.maskRanges;
+          if (mr && this.maskReady && entry.uvMaskBuffer && mr[r * 5 + 2] >= 0) {
+            this.iu.set(this.u);
+            const ib = this.ibits;
+            ib[IM_X0] = mr[r * 5]; ib[IM_Y0] = mr[r * 5 + 1]; ib[IM_W] = mr[r * 5 + 2]; ib[IM_H] = mr[r * 5 + 3]; ib[IM_CUT] = mr[r * 5 + 4];
+            const bd = this.instanceMaskBind;
+            bd.vertexBuffer = entry.vertexBuffer; bd.indexBuffer = null; bd.instanceBuffer = e.instanceBuffer; this.maskExtraInst[0] = entry.uvMaskBuffer; this.maskTexBind[0].texture = this.maskTex;
+            this.device.bind(this.instanceMaskPipe, bd); this.device.drawIndirect(e.argsBuffer, e.argsOffset);
+          } else {
+            b.uniforms = this.u; b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer || null; b.instanceBuffer = e.instanceBuffer; b.extraBuffers = null;
+            this.device.bind(this.instancePipe, b); this.device.drawIndirect(e.argsBuffer, e.argsOffset);
+          }
+          draws++;
+        }
       }
     }
     return draws;

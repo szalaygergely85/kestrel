@@ -326,15 +326,32 @@ export class WgShadowPass {
           }
         }
       }
-      for (let i = 0; i < this.gpuN; i++) { // WG-4b: GPU-culled instanced casters, one indirect draw per active band (identity part 0, as the CPU loop)
-        const entries = this.gpuEntries[i];
+      // WG-4b / ALPHA-01f (d): GPU-culled instanced casters, one indirect draw per active (band, range) entry (identity part 0, as the CPU
+      // loop). entries are laid out `[band*R + r]` (R = entries.length/2, fixed per batch); R = 1 is the same [e0, e1] pair as before.
+      // A masked range (mr[r*5+2] >= 0) draws through instanceMaskPipe (mask uniforms + uv extra stream + atlas texture), same as
+      // _instancedMaskedCaster's CPU path; an opaque range draws through instancePipe, unchanged.
+      for (let i = 0; i < this.gpuN; i++) {
+        const entries = this.gpuEntries[i], R = entries.length >> 1;
         for (let band = 0; band < 2; band++) {
-          const e = entries[band];
-          if (!e.active) continue;
-          this._model(e.parts.m, 0);
-          const entry = this.buffers.getVoxel(e.mesh), bd = this.bindDesc;
-          bd.uniforms = this.u; bd.vertexBuffer = entry.vertexBuffer; bd.indexBuffer = entry.indexBuffer || null; bd.instanceBuffer = e.instanceBuffer; bd.extraBuffers = null;
-          d.bind(this.instancePipe, bd); d.drawIndirect(e.argsBuffer, e.argsOffset); this.draws++;
+          for (let r = 0; r < R; r++) {
+            const e = entries[band * R + r];
+            if (!e.active) continue;
+            this._model(e.parts.m, 0);
+            const entry = this.buffers.getVoxel(e.mesh);
+            const mr = e.mesh.maskRanges, raster = this._raster;
+            if (mr && raster && raster.maskReady && entry.uvMaskBuffer && mr[r * 5 + 2] >= 0) {
+              this.iu.set(this.u);
+              const ib = this.ibits;
+              ib[IM_X0] = mr[r * 5]; ib[IM_Y0] = mr[r * 5 + 1]; ib[IM_W] = mr[r * 5 + 2]; ib[IM_H] = mr[r * 5 + 3]; ib[IM_CUT] = mr[r * 5 + 4];
+              const bd = this.instanceMaskBind;
+              bd.vertexBuffer = entry.vertexBuffer; bd.indexBuffer = null; bd.instanceBuffer = e.instanceBuffer; this.maskExtraInst[0] = entry.uvMaskBuffer; this.maskTexBind[0].texture = raster.maskTex;
+              d.bind(this.instanceMaskPipe, bd); d.drawIndirect(e.argsBuffer, e.argsOffset); this.draws++;
+            } else {
+              const bd = this.bindDesc;
+              bd.uniforms = this.u; bd.vertexBuffer = entry.vertexBuffer; bd.indexBuffer = entry.indexBuffer || null; bd.instanceBuffer = e.instanceBuffer; bd.extraBuffers = null;
+              d.bind(this.instancePipe, bd); d.drawIndirect(e.argsBuffer, e.argsOffset); this.draws++;
+            }
+          }
         }
       }
       const b = this.bindDesc;
