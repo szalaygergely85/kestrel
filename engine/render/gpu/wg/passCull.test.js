@@ -284,11 +284,11 @@ const oneRangeMesh = { triCount: 4, bbox: mesh0.bbox, ranges: [{ start: 0, count
   dv.dispatch = (pipeline, desc, x) => rec.push({ slots: desc.buffers.map((b) => b.slot), bufs: desc.buffers.map((b) => b.buffer), u: Uint32Array.from(new Uint32Array(desc.uniforms.buffer, desc.uniforms.byteOffset, desc.uniforms.length)), x });
   const OC = (n) => CULL_BLOCK.field(n).word;
   const g = makeGroup(40, 0);
-  // occlusion off (default): 7 entries, the SAME 16 B dummy at 5 and 6, all occlusion words 0 -> today's behaviour
+  // occlusion off (default): 7 entries, a 16 B dummy each at 5 and 6, all occlusion words 0 -> today's behaviour
   const off = new WgCullPass(dv);
   off.begin({ planes: null }); off.add(g, [mesh0, null]); off.run();
   assert.deepEqual(rec[0].slots, [0, 1, 2, 3, 4, 5, 6], 'bind group has 7 entries');
-  assert.ok(rec[0].bufs[5] === off._dummy && rec[0].bufs[6] === off._dummy, 'dummy at 5 and 6');
+  assert.ok(rec[0].bufs[5] === off._dummy && rec[0].bufs[6] === off._dummy2 && off._dummy !== off._dummy2, 'distinct dummies at 5 and 6 (same buffer read+rw = WebGPU usage conflict)');
   for (let i = OC('vp'); i <= OC('slot3'); i++) assert.equal(rec[0].u[i], 0, `occlusion word ${i} is 0 with occl off`);
   off.begin({ planes: null, hzb: { buffer: off._dummy, w: 8, h: 8, levels: 4, fwd: [0, 1, 0] }, viewProj: new Float64Array(16) }); off.add(g, [mesh0, null]); off.run(); off.runPhase2({ buffer: off._dummy });
   assert.equal(rec.length, 2, 'occl off: no phase-2 dispatch, hzb ignored'); assert.equal(rec[1].u[OC('hzbOn')], 0);
@@ -299,7 +299,7 @@ const oneRangeMesh = { triCount: 4, bbox: mesh0.bbox, ranges: [{ start: 0, count
   const hz = { buffer: dv.createBuffer({ usage: 'storage', bytes: 1024 }), w: 8, h: 8, levels: 4, pitch: 64, fwd: [0, 1, 0] };
   on.begin({ planes: null, viewProj: vp, rows: 60 }); const e1 = on.add(g, [mesh0, null]); on.run(); on.runPhase2(hz);
   assert.equal(rec.length, 1, 'first frame (no HZB): phase 1 only, hzbOn 0, no phase 2');
-  assert.equal(rec[0].u[OC('hzbOn')], 0); assert.ok(rec[0].bufs[5] === on._dummy && rec[0].bufs[6] === on._dummy);
+  assert.equal(rec[0].u[OC('hzbOn')], 0); assert.ok(rec[0].bufs[5] === on._dummy && rec[0].bufs[6] === on._dummy2);
   const b = on.batches.get(g), e2 = on.phase2Entries(g);
   assert.ok(e2.length === e1.length && e2[0].instanceBuffer === b.dst2[0] && e2[0].argsOffset === b.slot2 * 20 && b.slot2 !== b.slot, 'own dst2 + args records');
   rec.length = 0;

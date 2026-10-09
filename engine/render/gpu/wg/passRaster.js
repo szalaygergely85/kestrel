@@ -89,7 +89,6 @@ export class WgRasterPass {
     // WG-4a: GPU cull of InstanceGroups batches (meshGroup + single-range voxel units). instances.js hands each supported group to `accept` instead of
     // compacting it on the CPU; MeshGroupSet groups (nearest-64 `chosen` selection is CPU-side) and multi-range voxel units keep the CPU path.
     this.cull = null;
-    /** @type {any} S8-B2-10c HZB builder (only with opts.occl) */ this.hzb = null; this._hzbFwd = { x: 0, y: 1, z: 0 }; this._phase2 = false;
     /** @type {any} S8-B2-10c HZB builder (only with opts.occl) */ this.hzb = null;
     this._hzbFwd = { x: 0, y: 1, z: 0 }; this._phase2 = false;
     this.gpuGroups = []; this.gpuM0 = []; this.gpuM1 = []; this.gpuEntries = []; this.gpuN = 0; this._pair = [null, null];

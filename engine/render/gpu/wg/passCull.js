@@ -70,10 +70,12 @@ export class WgCullPass {
     this._uv = block.createViews(this._ub);
     this._bind = { buffers: [{ slot: 0, buffer: null }, { slot: 1, buffer: null }, { slot: 2, buffer: null }, { slot: 3, buffer: null }, { slot: 4, buffer: null }], uniforms: this._uv.f32 };
     /** S8-B2-10c: the cull pipeline declares 7 buffers (5 hzb f32 read, 6 occl u32 rw); occlusion off / no valid HZB binds this 16 B dummy at both (created once). */
-    this._dummy = null;
+    // TWO distinct dummies: one buffer bound as read (5) AND read_write (6) in one dispatch is a WebGPU usage-conflict validation error (killed all culled draws).
+    this._dummy = null; this._dummy2 = null;
     if (!this.shadow) {
       this._dummy = device.createBuffer({ usage: 'storage', bytes: 16 });
-      this._bind.buffers.push({ slot: 5, buffer: this._dummy }, { slot: 6, buffer: this._dummy });
+      this._dummy2 = device.createBuffer({ usage: 'storage', bytes: 16 });
+      this._bind.buffers.push({ slot: 5, buffer: this._dummy }, { slot: 6, buffer: this._dummy2 });
     }
     /** @type {any[]} batches queued this frame */
     this.queue = [];
@@ -313,7 +315,7 @@ export class WgCullPass {
       this._writeOcc(hz, on, 0, b); // 10c: all-zero words (hzbOn 0) when occlusion is off, no valid HZB (first frame / resize / cut) or no occl buffers
       const bd = this._bind.buffers;
       bd[0].buffer = b.src; bd[1].buffer = b.lodPrev; bd[2].buffer = b.dst[0]; bd[3].buffer = b.dst[1]; bd[4].buffer = this.argsBuffer;
-      bd[5].buffer = on ? hz.buffer : this._dummy; bd[6].buffer = on ? b.occlBuf : this._dummy;
+      bd[5].buffer = on ? hz.buffer : this._dummy; bd[6].buffer = on ? b.occlBuf : this._dummy2;
       d.dispatch(this.pipeline, this._bind, Math.ceil(cnt / CULL_WORKGROUP), 1, 1);
       s.dispatches++; s.instances += cnt;
     }
@@ -399,6 +401,7 @@ export class WgCullPass {
     this.releaseAll();
     this.device.dispose(this.argsBuffer);
     if (this._dummy) this.device.dispose(this._dummy);
+    if (this._dummy2) this.device.dispose(this._dummy2);
     this.device.dispose(this.pipeline);
     this.queue.length = 0;
   }
