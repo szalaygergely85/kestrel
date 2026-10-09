@@ -3,7 +3,7 @@ import {spawn} from 'node:child_process';
 import assert from 'node:assert/strict';
 import {writeFileSync,mkdtempSync,rmSync,mkdirSync} from 'node:fs';
 import path from 'node:path';import os from 'node:os';
-import {ROOT,validatePort,findBrowserBinary,buildLaunchFlags,waitForHttp,connectCdp,evaluate,killTree} from './capture-browser.mjs';
+import {ROOT,validatePort,findBrowserBinary,buildLaunchFlags,waitForHttp,connectCdp,evaluate,evaluateAsync,killTree} from './capture-browser.mjs';
 const port=Number(process.argv[2] || 9886), backend=process.argv[3] || 'webgpu';
 validatePort(port);
 if(port<9800 || port>9998)throw new Error('Lane C port must be 9800..9998');
@@ -27,10 +27,45 @@ try {
  await key('ArrowRight');assert.equal(await evaluate(cdp,'__settingsPreview.view.snapshot().quality'),'ultra');
  await key('ArrowDown');assert.equal(await evaluate(cdp,'__settingsPreview.view.selectedId()'),'shadows');
  await key('ArrowLeft');assert.equal(await evaluate(cdp,'__settingsPreview.view.snapshot().shadows'),'low');
- await key('ArrowDown');await key('ArrowDown');await key('ArrowLeft');assert.equal(await evaluate(cdp,'__settingsPreview.view.snapshot().volume'),0.6);
+ await key('ArrowDown');assert.equal(await evaluate(cdp,'__settingsPreview.view.selectedId()'),'lodScale');
+ await key('ArrowRight');assert.equal(await evaluate(cdp,'__settingsPreview.view.snapshot().lodScale'),1.25);
+ await key('ArrowDown');await key('ArrowLeft');assert.equal(await evaluate(cdp,'__settingsPreview.view.snapshot().grid'),'320x120');
+ await key('ArrowDown');await key('ArrowLeft');assert.equal(await evaluate(cdp,'__settingsPreview.view.snapshot().volume'),0.6);
  await key('ArrowDown');await key('Enter');assert.equal(await evaluate(cdp,'__settingsPreview.view.snapshot().mute'),true);
  await key('Escape');assert.equal(await evaluate(cdp,'document.querySelector("#status").textContent'),'Back action received by preview');
- assert.deepEqual(errors,[]);console.log('Settings physical quality/shadows/volume/toggle/Esc and real-GPU preview PASS');
+ await cdp.send('Page.navigate',{url:`http://127.0.0.1:${port}/game/js/ui/titleMenu.preview.html?backend=${backend}`});
+ for(let i=0;i<100;i++){await pause(100);if(await evaluate(cdp,'!!window.__titleMenuPreview'))break;}
+ await key('ArrowDown');await key('ArrowDown');await key('ArrowDown');await key('Enter');
+ assert.ok(await evaluate(cdp,'!!__titleMenuPreview.settings'));
+ await pause(350);const titleShot=await cdp.send('Page.captureScreenshot',{format:'png'});writeFileSync(path.join(out,'settings-title-'+backend+'.png'),Buffer.from(titleShot.data,'base64'));
+ await key('Escape');assert.equal(await evaluate(cdp,'__titleMenuPreview.settings'),null);
+ if(process.argv.includes('--game')) {
+  await cdp.send('Page.navigate',{url:`http://127.0.0.1:${port}/game/index.html?quality=high&grid=400x150&backend=${backend}`});
+  let loaded=false;for(let i=0;i<1000;i++){await pause(300);if(await evaluate(cdp,'!!window.__debug?.menuHost && !!window.__bootReport')){loaded=true;break;}}
+  assert.ok(loaded,'game menu never booted: '+JSON.stringify(errors));
+  const gridSet=await evaluate(cdp,'__debug.engine.setGrid(400,150,{immediate:true})');assert.ok(!gridSet.error,JSON.stringify(gridSet));
+  const gpu=await evaluate(cdp,'({backend:__debug.rt.backend,grid:[__debug.rt.cols,__debug.rt.rows],adapter:__debug.rt.device?.adapterInfo})');
+  assert.deepEqual(gpu.grid,[400,150]);
+  assert.equal(gpu.backend,backend==='webgl2'?'gl2':backend);assert.doesNotMatch(JSON.stringify(gpu),/swiftshader|software|llvmpipe|"fallback":true/i);
+  await cdp.send('Runtime.evaluate',{expression:'document.querySelector("canvas").focus()'});
+  // Existing host reads key edges at fixed steps: hold briefly for the game loop.
+  async function gameKey(code,keyChar=code){await cdp.send('Input.dispatchKeyEvent',{type:'keyDown',code,key:keyChar});await pause(150);await cdp.send('Input.dispatchKeyEvent',{type:'keyUp',code,key:keyChar});await pause(150);}
+  for(let i=0;i<5;i++) {
+   if(await evaluate(cdp,'__debug.menuHost.menu.snapshot().rows[__debug.menuHost.menu.snapshot().selected].id === "settings"'))break;
+   await gameKey('ArrowDown');
+  }
+  await gameKey('Enter');
+  assert.ok(await evaluateAsync(cdp,'import("./js/ui/settings.js").then(m=>m.isSettingsOpen())'));
+  await pause(350);const gameShot=await cdp.send('Page.captureScreenshot',{format:'png'});writeFileSync(path.join(out,'settings-game-title-'+backend+'.png'),Buffer.from(gameShot.data,'base64'));
+  await gameKey('Escape');
+  // Start a fresh game, then open the same Settings module through pause's S key.
+  await cdp.send('Runtime.evaluate',{expression:'__debug.menuHost.menu.handleKey("Escape"); while(__debug.menuHost.menu.snapshot().rows[__debug.menuHost.menu.snapshot().selected].id !== "new") __debug.menuHost.menu.handleKey("ArrowUp"); __debug.menuHost.menu.handleKey("Enter"); __debug.menuHost.menu.handleKey("Enter"); __debug.menuHost.consume()'});
+  await pause(10000);await gameKey('Escape');await gameKey('KeyS','s');
+  assert.ok(await evaluateAsync(cdp,'import("./js/ui/settings.js").then(m=>m.isSettingsOpen())'),'pause Settings did not open');
+  await pause(350);const pauseShot=await cdp.send('Page.captureScreenshot',{format:'png'});writeFileSync(path.join(out,'settings-game-pause-'+backend+'.png'),Buffer.from(pauseShot.data,'base64'));
+  console.log('Real game title and pause Settings WebGPU captures PASS '+JSON.stringify(gpu));
+ }
+ assert.deepEqual(errors,[]);console.log('Settings physical quality/shadows/LOD/resolution/volume/toggle/Esc, title entry/return and real-GPU preview PASS');
 } finally {
  cdp?.close();if(browser?.pid)killTree(browser.pid);if(server.pid)killTree(server.pid);
  if(path.dirname(path.resolve(profile))!==path.resolve(os.tmpdir()))throw Error('Unexpected profile path');

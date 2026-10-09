@@ -325,6 +325,12 @@ export function drawSettingsPanel(ui, rt, assets, ctx = {}) {
     return;
   }
 
+  if (assets.uiStyle.menu) {
+    dimSceneRect(rt, ui, 0, 0, ui.cols, ui.rows, 1 + (assets.uiStyle.menu.sceneDim.bgMul - 1) * panel.a);
+    drawMenuSettingsPanel(ui, assets);
+    return;
+  }
+
   const a = panel.a;
   const { x, y, w, h } = style.panel;
   const sceneDimMul = 1 + ((style.sceneDim.bgMul) - 1) * a;
@@ -335,6 +341,65 @@ export function drawSettingsPanel(ui, rt, assets, ctx = {}) {
 
   drawFrame(ui, style, palette);
   drawRows(ui, style, palette);
+}
+
+const menuPanelCache = new WeakMap();
+function drawMenuSettingsPanel(ui, assets) {
+  const menu = assets.uiStyle.menu, source = assets.uiStyle.settings, rgb = assets.palette.rgb;
+  let cached = menuPanelCache.get(source);
+  if (!cached || cached.menu !== menu) {
+    const style = menuSettingsStyle(source, menu, false);
+    cached = {menu, style, title:settingsTitle(style), values:{}, raw:{}, notes:{}, separatorRows:[4,style.separator.row]};
+    cached.cell = function(x, y, ch, fg, backing = style.bgRgb.panel) {
+      const c = rgb[fg], target = cached.ui;
+      if (x < 0 || y < 0 || x >= target.cols || y >= target.rows || !c) return;
+      target.setCellRGB(x, y, ch.charCodeAt(0) - 32, c[0], c[1], c[2], backing[0], backing[1], backing[2]);
+    };
+    cached.text = function(x, y, str, fg, backing = style.bgRgb.panel) {
+      for (let j = 0; j < str.length && x + j < style.panel.x + style.panel.w - 1; j++) cached.cell(x + j, y, str[j], fg, backing);
+    };
+    menuPanelCache.set(source, cached);
+  }
+  cached.ui = ui;
+  const {style, title} = cached, p = style.panel, bg = style.bgRgb.panel;
+  const {cell, text} = cached;
+  for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) cell(p.x + x, p.y + y, ' ', menu.frame.fg);
+  for (let x = 0; x < p.w; x++) {
+    const ch = x === 0 || x === p.w - 1 ? menu.frame.corner : menu.frame.h;
+    const fg = x === 0 || x === p.w - 1 ? menu.frame.cornerFg : menu.frame.fg;
+    cell(p.x + x, p.y, ch, fg); cell(p.x + x, p.y + p.h - 1, ch, fg);
+  }
+  for (let y = 1; y < p.h - 1; y++) { cell(p.x, p.y + y, menu.frame.v, menu.frame.fg); cell(p.x + p.w - 1, p.y + y, menu.frame.v, menu.frame.fg); }
+  for (const x of menu.frame.rivets.cols) { cell(p.x + x, p.y, menu.frame.rivets.glyph, menu.frame.rivets.fg); cell(p.x + x, p.y + p.h - 1, menu.frame.rivets.glyph, menu.frame.rivets.fg); }
+  const start = p.x + Math.floor((p.w - title.length) / 2);
+  for (let j = 0; j < title.length; j++) {
+    const ch = title[j], fg = ch === '-' ? menu.title.decorFg[0] : ch === '=' ? menu.title.decorFg[1] : ch === '[' || ch === ']' ? menu.title.bracketFg : menu.title.fg;
+    cell(start + j, p.y + menu.title.row, ch, fg);
+  }
+  for (const row of cached.separatorRows) for (let x = style.separator.inset; x < p.w - style.separator.inset; x++) cell(p.x + x, p.y + row, style.separator.glyph, style.separator.color);
+  for (let i = 0; i < visibleRows.length; i++) {
+    const id = visibleRows[i], y = p.y + 6 + i * 3, focused = i === selected;
+    const off = id === 'grid' && gridFailed.has(values[id]), token = off ? menu.row.disabled : focused ? menu.row.focus : menu.row.normal;
+    const backing = focused ? style.bgRgb.band : bg;
+    for (let x = menu.row.bandFrom; x <= menu.row.bandTo; x++) cell(p.x + x, y, ' ', token.fg, backing);
+    const opt = findOption(id), label = style.labels[id] || opt?.label || id;
+    text(p.x + menu.row.textCol, y, label, token.fg, backing);
+    if (focused) { cell(p.x + menu.row.markerCol, y, menu.row.focus.marker, menu.row.focus.markerFg, backing); cell(p.x + menu.row.focus.markerRightCol, y, menu.row.focus.markerRight, menu.row.focus.markerFg, backing); }
+    if (opt) {
+      const raw = values[id];
+      if (cached.raw[id] !== raw) {
+        cached.raw[id] = raw;
+        const value = style.valueText[id]?.[String(raw)] || formatValue(opt, raw);
+        cached.values[id] = (source.value?.format || '< {text} >').replace('{text}', value);
+        cached.notes[id] = source.notes?.[id]?.[String(raw)] || source.notes?.[id]?.default || '';
+      }
+      text(p.x + style.rows.valueCol, y, cached.values[id], token.fg, backing);
+      if (focused && cached.notes[id]) text(p.x + style.note.col, y + style.rows.noteOffset, cached.notes[id], style.note.color);
+    }
+  }
+  const hints = style.keyHints, hintX = p.x + Math.floor((p.w - hints.text.length) / 2);
+  text(hintX, p.y + hints.row, hints.text, hints.color);
+  for (const key of hints.keys) { const at = hints.text.indexOf(key); if (at >= 0) text(hintX + at, p.y + hints.row, key, hints.key); }
 }
 
 // S8-C-04: opt-in full Settings view. The host owns persistence/application;
@@ -349,23 +414,63 @@ const FULL_OPTIONS = [
   { id: 'reduceMotion', values: [false, true], default: false },
 ];
 
+// Reuse the title card's skin without changing designer-owned assets or option data.
+function menuSettingsStyle(style, menu, full = true) {
+  const h = full ? 36 : menu.panel.h, w = menu.panel.w;
+  return {
+    ...style,
+    panel: { x: Math.floor((160 - w) / 2), y: Math.floor((60 - h) / 2), w, h },
+    bgRgb: { panel: menu.bgRgb.plate, band: menu.bgRgb.band },
+    frame: { ...menu.frame, color: menu.frame.fg, cornerColor: menu.frame.cornerFg,
+      rivets: { ...menu.frame.rivets, color: menu.frame.rivets.fg } },
+    title: { ...menu.title, text: style.title.text, color: menu.title.fg },
+    rows: { ...style.rows, markerCol: menu.row.markerCol, labelCol: menu.row.textCol,
+      bandFrom: menu.row.bandFrom, bandTo: menu.row.bandTo, valueCol: 22, valueW: 46 },
+    section: { ...style.section, color: menu.title.decorFg[0],
+      rule: { glyph: menu.separators[0].glyph, color: menu.separators[0].fg, toCol: menu.separators[0].to } },
+    layout: [{section:'GRAPHICS',y:4},{id:'quality',y:6},{id:'shadows',y:8},
+      {id:'lodScale',y:10},{id:'grid',y:12},{section:'SOUND',y:15},{id:'volume',y:17},
+      {id:'mute',y:19},{section:'COMFORT',y:22},{id:'textSize',y:24},
+      {id:'reduceMotion',y:26},{id:'back',y:29}],
+    rowOrder: ['quality','shadows','lodScale','grid','volume','mute','textSize','reduceMotion','back'],
+    labels: { ...style.labels, grid: 'Resolution', lodScale: 'LOD distance' },
+    controlOf: { ...style.controlOf, lodScale: 'select' },
+    valueText: { ...style.valueText, lodScale: {0.6:'0.6x',0.8:'0.8x',1:'1x',1.25:'1.25x'} },
+    notes: { ...style.notes, lodScale: {default:'Restart to apply'} },
+    note: { ...style.note, color: menu.keyHints.fg },
+    separator: { row: h - 5, glyph: menu.separators[0].glyph, color: menu.separators[0].fg, inset: menu.separators[0].from },
+    keyHints: { ...style.keyHints, row: h - 3, color: menu.keyHints.fg, key: menu.keyHints.keyFg },
+  };
+}
+
+function settingsTitle(style) {
+  if (!style.title.letterSpace) return '[ ' + style.title.text + ' ]';
+  return style.title.decor[0] + style.title.text.split('').join(' '.repeat(style.title.letterSpace)) + style.title.decor[1];
+}
+
 /** Pure full-panel view; `options`/snapshot use volume 0..1 and the designer's row ids.
  * Host maps mute -> muted and shadows -> shadowQuality for platform storage.
  * onChange runs only on a valid change, never during draw; takeAction returns Back once.
  */
-export function createSettingsView(options = {}, { style, controls, quality, rgb, onChange, isDisabled } = {}) {
+export function createSettingsView(options = {}, { style, controls, quality, rgb, onChange, isDisabled, menuStyle = globalThis.ASSETS?.uiStyle?.menu } = {}) {
   if (!style || !controls || !quality || !rgb) throw new TypeError('Settings style, controls, quality and rgb required');
+  const optionDefs = menuStyle ? [...FULL_OPTIONS, {id:'lodScale', values:[0.6,0.8,1,1.25], default:1}] : FULL_OPTIONS;
+  if (menuStyle) {
+    style = menuSettingsStyle(style, menuStyle);
+    controls = { ...controls, label: {normal:menuStyle.row.normal.fg, focus:menuStyle.row.focus.fg, disabled:menuStyle.row.disabled.fg},
+      marker: {glyph:menuStyle.row.focus.marker, fg:menuStyle.row.focus.markerFg} };
+  }
   const state = {};
-  for (const opt of FULL_OPTIONS) {
+  for (const opt of optionDefs) {
     const value = options[opt.id] ?? opt.default;
     if (opt.type === 'range' ? typeof value !== 'number' || !Number.isFinite(value) || value < opt.min || value > opt.max : !opt.values.includes(value)) {
       throw new TypeError('Invalid settings option: ' + opt.id);
     }
     state[opt.id] = value;
   }
-  const optionById = Object.fromEntries(FULL_OPTIONS.map(opt => [opt.id, opt]));
+  const optionById = Object.fromEntries(optionDefs.map(opt => [opt.id, opt]));
   const rows = style.rowOrder.slice();
-  if (rows.length !== 8 || new Set(rows).size !== 8 || !rows.includes('back') || FULL_OPTIONS.some(o => !rows.includes(o.id))) throw new TypeError('Invalid Settings rows');
+  if (rows.length !== optionDefs.length + 1 || new Set(rows).size !== rows.length || !rows.includes('back') || optionDefs.some(o => !rows.includes(o.id))) throw new TypeError('Invalid Settings rows');
   const rowY = {};
   for (const row of style.layout) if (row.id) rowY[row.id] = row.y;
   if (rows.some(id => !Number.isInteger(rowY[id]))) throw new TypeError('Missing Settings row layout');
@@ -384,7 +489,7 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
     } else labels[id] = '< ' + (id === 'shadows' && value === 'mid' ? 'Mid' : style.valueText[id]?.[value] || value) + ' >';
     notes[id] = id === 'quality' || id === 'shadows' ? 'Restart to apply' : id === 'reduceMotion' ? 'Less head bob and camera kick' : (style.notes[id]?.[value] || style.notes[id]?.default || '');
   }
-  for (const opt of FULL_OPTIONS) refresh(opt.id);
+  for (const opt of optionDefs) refresh(opt.id);
   function disabled(id, value) { return !!isDisabled && !!isDisabled(id, value); }
   function move(dir) {
     for (let i = 1; i <= rows.length; i++) {
@@ -393,7 +498,7 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
     }
   }
   function step(dir, toggle = false) {
-    const id = rows[focus], opt = FULL_OPTIONS.find(o => o.id === id);
+    const id = rows[focus], opt = optionById[id];
     if (!opt || disabled(id)) return;
     const current = state[id];
     const next = toggle && typeof current === 'boolean' ? !current : stepOptionValue(opt, current, dir, value => disabled(id, value));
@@ -413,7 +518,8 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
   }
   const p = style.panel, r = style.rows, bg = style.bgRgb.panel;
   let drawingUi;
-  const titleText = '[ ' + style.title.text + ' ]';
+  const titleText = settingsTitle(style);
+  const titleStart = Math.floor((p.w - titleText.length) / 2);
   const stripLabels = quality.choices.map(choice => ({choice, normal: ' ' + quality.text[choice] + ' ', current: '[' + quality.text[choice] + ']'}));
   function cell(x, y, ch, fg, backing = bg) {
     if (x < 0 || x >= drawingUi.cols || y < 0 || y >= drawingUi.rows) return;
@@ -433,6 +539,11 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
     for (let x = 1; x < p.w - 1; x++) { cell(p.x + x, p.y, style.frame.h, style.frame.color); cell(p.x + x, p.y + p.h - 1, style.frame.h, style.frame.color); }
     for (let y = 1; y < p.h - 1; y++) { cell(p.x, p.y + y, style.frame.v, style.frame.color); cell(p.x + p.w - 1, p.y + y, style.frame.v, style.frame.color); }
     text(p.x + Math.floor((p.w - titleText.length) / 2), p.y + style.title.row, titleText, style.title.color);
+    if (menuStyle) for (let j = 0; j < titleText.length; j++) {
+      const ch = titleText[j];
+      if (ch === '-' || ch === '=' || ch === '[' || ch === ']') cell(p.x + titleStart + j, p.y + style.title.row, ch,
+        ch === '-' ? menuStyle.title.decorFg[0] : ch === '=' ? menuStyle.title.decorFg[1] : menuStyle.title.bracketFg);
+    }
     for (const x of style.frame.rivets.cols) { cell(p.x + x, p.y, style.frame.rivets.glyph, style.frame.rivets.color); cell(p.x + x, p.y + p.h - 1, style.frame.rivets.glyph, style.frame.rivets.color); }
     for (const row of style.layout) {
       if (row.section) {
@@ -447,6 +558,7 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
       for (let x = r.bandFrom; x <= r.bandTo; x++) cell(p.x + x, y, ' ', controls.label[mode], band);
       text(p.x + r.labelCol, y, style.labels[id], controls.label[mode], band, r.valueCol - r.labelCol - 1);
       if (selected) cell(p.x + r.markerCol, y, controls.marker.glyph, controls.marker.fg, band);
+      if (selected && menuStyle) cell(p.x + menuStyle.row.focus.markerRightCol, y, menuStyle.row.focus.markerRight, menuStyle.row.focus.markerFg, band);
       if (id === 'back') continue;
       if (id === 'quality') {
         let x = p.x + r.valueCol;
@@ -479,6 +591,10 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
     for (let x = style.separator.inset; x < p.w - style.separator.inset; x++) cell(p.x + x, p.y + style.separator.row, style.separator.glyph, style.separator.color);
     const hints = style.keyHints;
     text(p.x + Math.floor((p.w - hints.text.length) / 2), p.y + hints.row, hints.text, hints.color);
+    for (const key of hints.keys) {
+      const at = hints.text.indexOf(key);
+      if (at >= 0) text(p.x + Math.floor((p.w - hints.text.length) / 2) + at, p.y + hints.row, key, hints.key);
+    }
   }
   return {
     handleKey, draw,
