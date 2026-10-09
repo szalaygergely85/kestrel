@@ -133,7 +133,7 @@ fn stableCell(cell: vec2i) -> SCell {
   if (fgC.x != sf.x || fgC.y != sf.y || fgC.z != sf.z || fgC.w != sf.w || bgC.x != sb.x || bgC.y != sb.y || bgC.z != sb.z) { return o; }
   // water-layer cell (ripples must not freeze): the layer word holds a finite vD
   let wl = textureLoad(uWater, cell, 0);
-  if (wl.x != 0x7f800000u && (wl.w & 32u) == 0u) { return o; }
+  if (u.pad0 != 0 && wl.x != 0x7f800000u && (wl.w & 32u) == 0u) { return o; } // pad0 = waterOn: the 1x1 dummy reads 0 (= 'water') out of bounds
   let vd = bitcast<f32>(textureLoad(uDepth, cell, 0).x);
   if (!(vd > 0.0) || vd > 1.0e38) { return o; }
 

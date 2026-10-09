@@ -57,7 +57,7 @@ export class WgCellPipeline {
     // S8-B2-10c two-phase HZB occlusion (`?occl=1`), default OFF
     this.gpuCull = opts.gpuCull !== false; // WG-4a compute cull of instance batches (`?gpucull=0` = CPU path)
     // US-073c (38.25): temporal glyph stability, `?stable=1`; absent = no pass, no extra target, frame byte-identical to before
-    this.stableOpt = !!opts.stable; this._stablePass = null; this._stableOn = false; this._stableRan = false; this._stInp = { shadeFg: null, shadeBg: null, water: null };
+    this.stableOpt = !!opts.stable; this._stablePass = null; this._stableOn = false; this._stableRan = false; this._stInp = { shadeFg: null, shadeBg: null, water: null, waterOn: false };
     this.ready = false;
     /** passes that really execute in this build; `frameComplete` = the pipeline can replace the CPU shading entirely */
     this.portedPasses = [];
@@ -468,7 +468,7 @@ export class WgCellPipeline {
     const rp = this._rasterPass;
     if (!this._cellsShaded || this.debugMode >= 0 || !rp || !rp.pitched || !this._cam || !t.texLevel) { sp.invalidate(); return; }
     const wp = this._waterPass, wOn = !!(wp && wp.active), inp = this._stInp;
-    inp.shadeFg = wOn ? wp.edgeFg : t.texShadeFg; inp.shadeBg = wOn ? wp.edgeBg : t.texShadeBg; inp.water = wp ? wp.edgeWaterTexture : null;
+    inp.shadeFg = wOn ? wp.edgeFg : t.texShadeFg; inp.shadeBg = wOn ? wp.edgeBg : t.texShadeBg; inp.water = wp ? wp.edgeWaterTexture : null; inp.waterOn = wOn;
     try {
       this._begin(WG_PASS_SLOT.stable);
       try { sp.beginFrame(this._cam, rp.grid, null, rp.pitch); this._stableRan = sp.run(this, t, inp); } finally { this._end(); }
