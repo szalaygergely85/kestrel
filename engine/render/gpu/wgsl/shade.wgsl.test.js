@@ -159,8 +159,11 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   const fns = core(SHADE_WGSL);
   let bad = 0, n = 0, nonZero = 0, orientedSeen = 0;
   const matIds = []; for (let id = 1; id < nMat; id++) if (table.records[id] && table.records[id].v2) matIds.push(id);
+  // Odd probes cycle only materials whose face sets (near/mid/far) are oriented, so oriented coverage does not depend on how many
+  // non-oriented materials the table holds (same dilution fix as the joint/line probes above).
+  const orIds = matIds.filter((m) => { const f = table.records[m].v2.face; return [f.near, f.mid, f.far].some((s) => table.sets[s] && table.sets[s].oriented); });
   for (let t = 0; t < 4000; t++) {
-    const id = matIds[t % matIds.length], rec = table.records[id].v2;
+    const id = orIds.length && (t & 1) ? orIds[(t >> 1) % orIds.length] : matIds[(t >> 1) % matIds.length], rec = table.records[id].v2;
     const kind = 1 + Math.floor(rand() * 5), face = 1 + Math.floor(rand() * 6);
     const u = rand() * 30, v = rand() * 30, z = rand() * 6, dist = rand() * Math.max(0.1, table.fog.start - 0.5);
     const dudx = (rand() - 0.5) * 0.4, dvdx = (rand() - 0.5) * 0.4, dudy = (rand() - 0.5) * 0.4, dvdy = (rand() - 0.5) * 0.4;
