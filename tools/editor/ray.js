@@ -47,7 +47,7 @@ const _terms = createPitchedTerms();
 const _grid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 const _c3 = new Float64Array(3);
 function pitchedFor(cam, cols, rows, pxCellW, pxCellH, renderer) {
-  if (resolveProjection(cam, renderer) !== 'pitched') return null;
+  if (resolveProjection(cam, renderer) === 'shear') return null; // pitched + ortho share the terms path (US-068d)
   _grid.cols = cols; _grid.rows = rows; _grid.pxCellW = pxCellW || 1; _grid.pxCellH = pxCellH || 1;
   return pitchedTerms(cam, _grid, _terms);
 }

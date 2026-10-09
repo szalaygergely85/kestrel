@@ -12,7 +12,7 @@ import {
   listOutlinerItems, frameFor, itemToWorld, worldToItem, mintId, fileKey,
 } from './doc.js';
 import { createOverlayTarget } from './overlayTarget.js';
-import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, applyViewPreset } from './camera.js';
+import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, applyViewPreset, toggleOrtho, adjustOrthoHalfH, lookAlongAxis } from './camera.js';
 import { createAxisGizmo } from './axisGizmo.js';
 import { unprojectCell, rayPoint, projectPoint } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
@@ -1014,9 +1014,9 @@ function deleteSelected() {
   renderProperties();
 }
 
-function teleportToSelection() {
+function selectionPoint() {
   const selection = primarySelection();
-  if (!selection) return;
+  if (!selection) return null;
   let point = null;
   const entId = selectionEntityId(world, selection);
   if (entId) {
@@ -1032,6 +1032,11 @@ function teleportToSelection() {
       point = itemToWorld(sFrame, item.x, item.y, z);
     }
   }
+  return point;
+}
+function teleportToSelection() {
+  if (!primarySelection()) return;
+  const point = selectionPoint();
   if (!point) { flash('teleport: no position for this item'); return; }
   cam.x = point.x;
   cam.y = point.y + 2; // 2 m south (+y), looking north at it (24.5)
@@ -2246,6 +2251,7 @@ speedInput.addEventListener('change', () => {
 });
 canvas.addEventListener('wheel', (e) => {
   if (!editorKeysActive()) return;
+  if (cam.projection === 'ortho') { cam.orthoHalfH = adjustOrthoHalfH(cam.orthoHalfH, e.deltaY); frame.markDirty(); e.preventDefault(); return; }
   speed = adjustSpeed(speed, e.deltaY);
   speedInput.value = speed.toFixed(2);
   e.preventDefault();
@@ -2256,6 +2262,19 @@ animateToggle.addEventListener('change', () => { animate = animateToggle.checked
 
 // US-068c view presets: orbit around the point VIEW_PIVOT_M ahead of the eye (no selection logic), perspective only.
 const VIEW_PIVOT_M = 10;
+// US-068d: focus = selection centre, else the pivot ahead of the eye
+function currentFocus() {
+  const sp = selectionPoint();
+  if (sp) return { x: sp.x, y: sp.y, z: sp.z };
+  if (cam.projection === 'ortho') return { x: cam.x, y: cam.y, z: cam.z };
+  const y = cam.yawDeg * Math.PI / 180, p = cam.pitchDeg * Math.PI / 180;
+  return {
+    x: cam.x + Math.sin(y) * Math.cos(p) * VIEW_PIVOT_M,
+    y: cam.y - Math.cos(y) * Math.cos(p) * VIEW_PIVOT_M,
+    z: cam.z + Math.sin(p) * VIEW_PIVOT_M,
+  };
+}
+function toggleOrthoView() { toggleOrtho(cam, currentFocus()); axisGizmo.update(); frame.markDirty(); }
 function setViewPreset(name) {
   const y = cam.yawDeg * Math.PI / 180, p = cam.pitchDeg * Math.PI / 180;
   const focus = {
@@ -2267,12 +2286,14 @@ function setViewPreset(name) {
   axisGizmo.update();
   frame.markDirty();
 }
-const axisGizmo = createAxisGizmo(document.getElementById('viewport'), { getView: () => cam, onPreset: setViewPreset });
+const axisGizmo = createAxisGizmo(document.getElementById('viewport'), { getView: () => cam, onPreset: setViewPreset,
+  onAxis: (k) => { lookAlongAxis(cam, k, currentFocus()); axisGizmo.update(); frame.markDirty(); } });
 
 function update(dt) {
   if (!editorKeysActive()) { input.endFrame(); return; }
   if (input.pressed('F3')) overlay.toggle();
   if (input.pressed('Home')) { cam = startPose(); axisGizmo.update(); frame.markDirty(); }
+  if (input.pressed('Numpad5')) toggleOrthoView();
   if (input.pressed('Numpad7')) setViewPreset('TOP');
   if (input.pressed('Numpad1')) setViewPreset('FRONT');
   if (input.pressed('Numpad9')) setViewPreset('ISO');

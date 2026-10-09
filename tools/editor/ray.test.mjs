@@ -166,6 +166,24 @@ const COLS = 240, ROWS = 90, PX_W = 8, PX_H = 16;
   ok('guard: 4th alias (index 65, slot 1)', resolveVoxelSlot(big, 1, { x: 195, y: 0, z: 1 }) === 65);
 }
 
+// ---- US-068d: ortho round trip through ray.js (renderer 'mesh') -----------
+{
+  for (const [yaw, pitch] of [[0, -90], [0, 0], [45, -35.264], [-90, -90]]) {
+    for (const halfH of [4, 40]) {
+      const cam = { x: 10, y: 20, z: 3, yawDeg: yaw, pitchDeg: pitch, projection: 'ortho', orthoHalfH: halfH, focusX: 10, focusY: 20, focusZ: 3 };
+      let worst = 0, parallel = true, f0 = null;
+      for (const [col, row, vd] of [[120, 45, 500], [10, 80, 480], [230, 5, 520], [3.5, 7.25, 505]]) {
+        const ray = unprojectCell(cam, COLS, ROWS, PX_W, PX_H, col, row, 'mesh');
+        const proj = projectPoint(cam, COLS, ROWS, PX_W, PX_H, rayPoint(ray, vd), 'mesh');
+        worst = Math.max(worst, Math.abs(proj.col - col), Math.abs(proj.row - row), Math.abs(proj.depth - vd));
+        if (!f0) f0 = [ray.dx, ray.dy, ray.dz]; else if (Math.hypot(ray.dx - f0[0], ray.dy - f0[1], ray.dz - f0[2]) > 1e-12) parallel = false;
+      }
+      ok(`ortho round trip yaw ${yaw} pitch ${pitch} halfH ${halfH} <= 1e-6 (worst ${worst})`, worst <= 1e-6);
+      ok('ortho rays parallel', parallel);
+    }
+  }
+}
+
 console.log(`ray.test.mjs: ${pass} passed, ${fail} failed`);
 if (fail) {
   for (const f of failures) console.error(`  FAIL: ${f}`);
