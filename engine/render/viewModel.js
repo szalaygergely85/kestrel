@@ -39,6 +39,7 @@ const KEY_STRIDE = 7; // t, px, py, pz, rx, ry, rz
  * @property {(h:number)=>void} capture   snapshot of the last shown pose = the blend source
  * @property {(phase:number, amount:number, h?:number)=>void} setBob   def.bob numbers; shared phase = eyeFeel bobPhase, amount 0..1; omitted handle sets every item
  * @property {(h:number, clip:number, tMs:number, mount:number, out3:Float64Array)=>Float64Array} mountEye   pure: eye-space mount at a clip time (no bob)
+ * @property {(h:number, name:string, out3:Float64Array)=>boolean} mountNowEye   HAND-FIRE-WRAP-01: eye-space mount of the drawn variant on the pose buildList draws next (last pose + bob); false when hidden / unknown
  * @property {(cam:Object, pe:ArrayLike<number>, out3:Float64Array)=>Float64Array} eyeToWorld
  * @property {(h:number, name:string)=>number} variantId   HAND-WIRE-01: index of def.variants[name]
  * @property {(h:number, v:number|string)=>void} setVariant   HAND-WIRE-01: swap the drawn model to a variant (same anchor/parts); lazy build on first use
@@ -305,6 +306,39 @@ class ViewModelLayerImpl {
     out3[2] = R[6] * mx + R[7] * my + R[8] * mz + p[2];
     if (d.mirror) out3[0] = -out3[0]; // HANDS-01a: S = diag(-1,1,1) is the last step
     return out3;
+  }
+
+  /**
+   * HAND-FIRE-WRAP-01: eye-space point of mount `name` of the model variant CURRENTLY drawn, on the pose the next buildList()
+   * draws (last shown pose + walk bob, blend included). Variants have their own grid origin, so the mount comes from the
+   * active model (`d.pm`), not the base. Returns false (out3 untouched) when the handle is hidden or has no such mount.
+   * Same maths as buildList's part matrix, so a flame anchored here sits on the drawn voxels. 0 alloc.
+   */
+  mountNowEye(h, name, out3) {
+    const d = this._defs[h];
+    if (!d.visible) return false;
+    const m = d.pm.mounts && d.pm.mounts[name];
+    if (!m) return false;
+    const p = this._pose;
+    p.set(d.last);
+    const amt = d.bobAmount;
+    if (amt > 0) {
+      p[2] += d.bobZ * Math.sin(this._bobPhase) * amt;
+      const h2 = Math.sin(this._bobPhase * 0.5) * amt;
+      p[0] += d.bobX * h2;
+      p[4] += d.bobRoll * h2;
+    }
+    const fo = m.partIdx * 12, F = d.forward, ax = m.at[0], ay = m.at[1], az = m.at[2];
+    const mx = F[fo] * ax + F[fo + 1] * ay + F[fo + 2] * az + F[fo + 9];
+    const my = F[fo + 3] * ax + F[fo + 4] * ay + F[fo + 5] * az + F[fo + 10];
+    const mz = F[fo + 6] * ax + F[fo + 7] * ay + F[fo + 8] * az + F[fo + 11];
+    const R = this._R;
+    setRot(p[3], p[4], p[5], R);
+    out3[0] = R[0] * mx + R[1] * my + R[2] * mz + p[0];
+    out3[1] = R[3] * mx + R[4] * my + R[5] * mz + p[1];
+    out3[2] = R[6] * mx + R[7] * my + R[8] * mz + p[2];
+    if (d.mirror) out3[0] = -out3[0];
+    return true;
   }
 
   /**

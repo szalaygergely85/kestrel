@@ -12,7 +12,6 @@ const STEP_MS = 1000 / 60;
 const K_IDLE = 0, K_CHARGE = 1, K_HOLD = 2, K_CAST = 3, K_OUT = 4;
 const CAST_FROM_MS = 300; // fireCast: charge part [0,300] is skipped (the real charge happened on press)
 const TAP_RAMP_MS = 100;  // quick tap (charged < 300 ms): fireCast starts at the matching charge pose and catches up to 300 ms in <= this long
-const FLAME_MIN_DEPTH = 0.72; // sprite near cull is 0.6 m (engine/render/sprites.js SPRITE_NEAR_DEPTH)
 const ROLES = ['idle', 'charge', 'hold', 'cast', 'out'];
 
 /** Clip state machine memory (one for the render frames, one for the sim-step particles; both read the same sim). */
@@ -47,7 +46,7 @@ export function loadHandFireView(vm, def, pool) {
   const defaultId = vid(def.defaultVariant || 'open');
   return { vm, h, def, clip, dur, keyT, keyV, glowOf, cycles, plain, defaultId, cap: def.glowCap || 9,
            kind: K_IDLE, clock: newClock(), fxClock: newClock(), names, fx: null, glow: 1, variant: defaultId,
-           flame: { on: false, x: 0, y: 0, z: 0, charged: false, t: 0 } };
+           flame: { on: false, n: 0, charged: false, t: 0, pos: new Float64Array(NFL * 3), size: new Uint8Array(NFL), phase: new Uint8Array(NFL) } };
 }
 
 /** Variant shown at clip time t: the last key (<= t) carrying `v`, else the default. */
@@ -136,23 +135,68 @@ export function presentHandFire(vmh, hand, simTime, bobPhase, moving, sim) {
   return vmh.glow;
 }
 
-/**
- * HAND-FIRE-FX-01: the translucent flame body over the hand = the fireball's core sprite art at hand scale (`handFlame`, or
- * `handFlameCharged` while the fist gathers). Render side: main.js stores the world position of the core mount each frame
- * (`setHandFlame`), the sprite pool's `extra` callback pushes it (`pushHandFlame`). 0 alloc.
- */
-export function setHandFlame(vmh, on, x, y, z, simTime, cx, cy, cz) {
+// HAND-FIRE-WRAP-01: several small fireball-style flame sprites WRAPPED AROUND the hand. Each flame is a fixed mix of the hand
+// model's mounts (wrist W, palm P, knuckles K, tip T, core C of the variant drawn right now, engine viewModel.mountNowEye) plus a
+// lift along the palm normal L = C - P, so it follows the hand in every pose / clip / variant / bob. The sprites are flagged
+// `nearOk` (engine: exempt from the 0.6 m near cull) and depth-tested against the hand voxels, so a flame behind the hand is
+// hidden and one in front of it is drawn over it. Sizes: 0 = tongue, 1 = small tongue, 2 = ember (model per size and charge).
+//          W     P     K     T     C-P lift  size charge-only phase
+const FLAMES = [
+  [0.00, 1.00, 0.00, 0.00, 0.30, 0, false, 0],   // palm centre
+  [0.00, 0.00, 1.00, 0.00, 0.25, 0, false, 1],   // knuckles (over the base of the fingers)
+  [0.00, 0.00, 0.00, 1.00, 0.15, 1, false, 2],   // fingertip, curling up
+  [0.00, 0.00, 0.50, 0.50, 0.35, 1, false, 3],   // between the fingers
+  [0.35, 0.65, 0.00, 0.00, 0.20, 1, false, 0],   // back of the hand / heel of the palm
+  [0.00, 0.50, 0.50, 0.00, 0.80, 2, false, 2],   // ember curling up off the hand
+  [0.20, 0.30, 0.00, 0.50, 0.55, 2, false, 1],   // ember by the fingers
+  [0.00, 0.50, 0.00, 0.50, 0.45, 1, true, 3],    // charge: extra flame along the fingers
+  [0.00, 0.00, 1.00, 0.00, 0.90, 2, true, 0],    // charge: extra ember
+  [0.30, 0.70, 0.00, 0.00, 0.60, 2, true, 2]     // charge: extra ember
+];
+const NFL = FLAMES.length;
+const FLAME_MODEL = ['handFlame', 'handFlameSmall', 'handFlameEmber'];
+const FLAME_MODEL_CHARGED = ['handFlameCharged', 'handFlameChargedSmall', 'handFlameEmber'];
+const NEAR_OK = { nearOk: true }; // billboard descriptor, shared (no per-frame alloc)
+const _mt = new Float64Array(15), _fe = new Float64Array(3), _fw = new Float64Array(3);
+const MOUNTS = ['wrist', 'palm', 'knuckles', 'tip', 'core'];
+
+/** Render side, once per frame before sprites.render: world positions of every hand flame (from the drawn hand's mounts). 0 alloc. */
+export function setHandFlame(vmh, on, cam, simTime) {
   const f = vmh.flame;
-  // the sprite pass culls anything nearer than 0.6 m: slide the point out along the eye ray to >= 0.72 m (art is sized for that)
-  const dx = x - cx, dy = y - cy, dz = z - cz, d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1, k = d < FLAME_MIN_DEPTH ? FLAME_MIN_DEPTH / d : 1;
-  f.on = on; f.x = cx + dx * k; f.y = cy + dy * k; f.z = cz + dz * k; f.t = simTime;
-  f.charged = vmh.kind === K_CHARGE || vmh.kind === K_HOLD;
+  f.n = 0; f.on = false;
+  if (!on) return;
+  const vm = vmh.vm, h = vmh.h;
+  for (let i = 0; i < 5; i++) {
+    _fe[0] = 0; _fe[1] = 0; _fe[2] = 0;
+    if (!vm.mountNowEye(h, MOUNTS[i], _fe)) return; // hand hidden / not drawn: no flames
+    _mt[i * 3] = _fe[0]; _mt[i * 3 + 1] = _fe[1]; _mt[i * 3 + 2] = _fe[2];
+  }
+  const charged = vmh.kind === K_CHARGE || vmh.kind === K_HOLD;
+  f.charged = charged; f.t = simTime; f.on = true;
+  const pos = f.pos, size = f.size, ph = f.phase;
+  let n = 0;
+  for (let k = 0; k < NFL; k++) {
+    const d = FLAMES[k];
+    if (d[6] && !charged) continue;
+    for (let c = 0; c < 3; c++) {
+      const lift = _mt[12 + c] - _mt[3 + c]; // core - palm
+      _fe[c] = d[0] * _mt[c] + d[1] * _mt[3 + c] + d[2] * _mt[6 + c] + d[3] * _mt[9 + c] + d[4] * lift;
+    }
+    vm.eyeToWorld(cam, _fe, _fw);
+    pos[n * 3] = _fw[0]; pos[n * 3 + 1] = _fw[1]; pos[n * 3 + 2] = _fw[2];
+    size[n] = d[5]; ph[n] = d[7]; n++;
+  }
+  f.n = n;
 }
+/** Sprite pool `extra` callback. */
 export function pushHandFlame(vmh, pool) {
   const f = vmh && vmh.flame;
   if (!f || !f.on) return;
-  pool.push(f.charged ? 'handFlameCharged' : 'handFlame', 'fly', Math.floor(f.t * 12) & 3, f.x, f.y, f.z);
+  const models = f.charged ? FLAME_MODEL_CHARGED : FLAME_MODEL;
+  const fr = Math.floor(f.t * 12);
+  for (let i = 0; i < f.n; i++) pool.push(models[f.size[i]], 'fly', (fr + f.phase[i]) & 3, f.pos[i * 3], f.pos[i * 3 + 1], f.pos[i * 3 + 2], NEAR_OK);
 }
+export const HAND_FLAME_COUNT = NFL;
 
 // ---- particles (HAND-WIRE-02): def.particles[clip] rules -> persistent burst emitters, sim side (hashed, 37.8: origin from the
 // eye + the cast offset, never the render pose). One persistent emitter per preset (setEmitterPos + burst), recreated if a

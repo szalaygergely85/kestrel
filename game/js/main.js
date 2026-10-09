@@ -1706,8 +1706,8 @@ async function runGame(mode, cinematic = null) {
           _emberEye[0] = (sh === 'left' ? -1 : 1) * FIREBALL_CFG.castOffset.right; _emberEye[1] = -FIREBALL_CFG.castOffset.fwd; _emberEye[2] = -FIREBALL_CFG.castOffset.down;
           spellVmH.vm.eyeToWorld(cam, _emberEye, _emberWorld);
           fbView.presentEmber(true, spellVmH.glow, _emberWorld[0], _emberWorld[1], _emberWorld[2]);
-          if (handFxOn) setHandFlame(spellVmH, true, _emberWorld[0], _emberWorld[1], _emberWorld[2], simTime, cam.x, cam.y, cam.z); // HAND-FIRE-FX-01
-        } else { fbView.presentEmber(false, 1, 0, 0, 0); if (handFxOn) setHandFlame(spellVmH, false, 0, 0, 0, simTime, 0, 0, 0); }
+          if (handFxOn) setHandFlame(spellVmH, true, cam, simTime); // HAND-FIRE-WRAP-01: flames wrapped round the drawn hand's mounts
+        } else { fbView.presentEmber(false, 1, 0, 0, 0); if (handFxOn) setHandFlame(spellVmH, false, cam, simTime); }
       }
       // US-006: carried-light sync (US-012's lantern, `components.light`)
       // then flicker/vis-grid update, once per rendered frame, BEFORE either

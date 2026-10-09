@@ -153,28 +153,61 @@ ok('every fire clip has a glow (the light never goes out)', Object.values(def.al
   q.tick += 2; stepHandFx(hh, 'right', q, 0, 0, 1.6, 1, 0, 1, 0, 0);
   ok('right hand at yaw 90: emitter on the +y side', rec.y > 0.2 && rec.x > 0.4, rec.x + ' ' + rec.y);
 }
-// ---- HAND-FIRE-FX-01: the translucent flame sprite per state, 0 alloc, never a flat single-colour quad
+// ---- HAND-FIRE-WRAP-01: several flames wrapped round the hand's mounts, per clip, 0 alloc, never a flat single-colour quad
 {
-  const pushes = []; const spool = { push: (m, a, f, x, y, z) => pushes.push([m, f, x, y, z]) };
-  const hh = loadHandFireView(createViewModelLayer(), def, pool);
+  const pushes = []; const spool = { push: (m, a, f, x, y, z, bb) => pushes.push([m, f, x, y, z, bb]) };
+  const vmL = createViewModelLayer();
+  const hh = loadHandFireView(vmL, def, pool);
+  vmL.warmVariants(hh.h);
+  const cam = { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: 0 };
   const q = { state: 0, holdSteps: 0, tick: 1000, castTick: -1000000 };
-  setHandFlame(hh, false, 0, 0, 0, 0, 0, 0, 0); pushHandFlame(hh, spool);
+  setHandFlame(hh, false, cam, 0); pushHandFlame(hh, spool);
   ok('no hand -> no flame sprite', pushes.length === 0);
-  presentHandFire(hh, 'right', 1, 0, false, q); setHandFlame(hh, true, 0, -0.5, 1.5, 1, 0, 0, 1.6); pushHandFlame(hh, spool);
-  ok('idle: handFlame sprite', pushes.length === 1 && pushes[0][0] === 'handFlame', JSON.stringify(pushes));
-  ok('flame kept out of the sprite near cull (>= 0.6 m from the eye)', Math.hypot(pushes[0][2], pushes[0][3] - 0, pushes[0][4] - 1.6) >= 0.6);
-  q.state = 1; q.holdSteps = 30; presentHandFire(hh, 'right', 1.5, 0, false, q); setHandFlame(hh, true, 0, -0.5, 1.5, 1.5, 0, 0, 1.6); pushes.length = 0; pushHandFlame(hh, spool);
-  ok('charge: handFlameCharged sprite', pushes.length === 1 && pushes[0][0] === 'handFlameCharged', JSON.stringify(pushes));
+  vmL.hide(hh.h); setHandFlame(hh, true, cam, 0); pushHandFlame(hh, spool);
+  ok('hand hidden -> no flames', pushes.length === 0);
+  const frame = (t) => { presentHandFire(hh, 'right', t, 0, false, q); vmL.buildList(cam, true); setHandFlame(hh, true, cam, t); pushes.length = 0; pushHandFlame(hh, spool); };
+  frame(1);
+  ok('idle: several flames (7), tongue + ember models, all nearOk', pushes.length === 7 && pushes.some((p) => p[0] === 'handFlame') && pushes.some((p) => p[0] === 'handFlameEmber') && pushes.every((p) => p[5] && p[5].nearOk), JSON.stringify(pushes.map((p) => p[0])));
+  ok('flame frames differ between flames (irregular flicker)', new Set(pushes.map((p) => p[1])).size > 1);
+  // flames sit at the hand: every flame within 0.2 m of the palm mount in world space, and not further than the near cull from the eye by design
+  const mw = new Float64Array(3), me = new Float64Array(3);
+  const palmWorld = () => { vmL.mountNowEye(hh.h, 'palm', me); return vmL.eyeToWorld(cam, me, mw); };
+  let pw = palmWorld();
+  ok('idle: every flame within 0.2 m of the palm', pushes.every((p) => Math.hypot(p[2] - pw[0], p[3] - pw[1], p[4] - pw[2]) < 0.2), pushes.map((p) => Math.hypot(p[2] - pw[0], p[3] - pw[1], p[4] - pw[2]).toFixed(3)).join());
+  ok('idle: flames sit 0.15-0.8 m from the eye (view-model range; > 0.1 projection min)', pushes.every((p) => { const d = Math.hypot(p[2], p[3], p[4] - 1.6); return d > 0.15 && d < 0.8; }), pushes.map((p) => Math.hypot(p[2], p[3], p[4] - 1.6).toFixed(2)).join());
+  // follow the hand: other hand mirrors, flames move with the palm
+  const before = pushes.map((p) => p.slice(2, 5));
+  presentHandFire(hh, 'left', 1, 0, false, q); vmL.buildList(cam, true); setHandFlame(hh, true, cam, 1); pushes.length = 0; pushHandFlame(hh, spool);
+  pw = palmWorld();
+  ok('left hand: flames mirror to the -x side and stay on the palm', pushes.every((p) => Math.hypot(p[2] - pw[0], p[3] - pw[1], p[4] - pw[2]) < 0.2) && pushes[0][2] < 0 && before[0][0] > 0, `${pushes[0][2]} ${before[0][0]}`);
+  presentHandFire(hh, 'right', 1, 0, false, q);
+  // bob: flames move with the bobbing hand
+  presentHandFire(hh, 'right', 1, 0.5 * Math.PI, true, q); vmL.buildList(cam, true); setHandFlame(hh, true, cam, 1); pushes.length = 0; pushHandFlame(hh, spool);
+  pw = palmWorld();
+  ok('bob: flames still within 0.2 m of the (bobbed) palm', pushes.every((p) => Math.hypot(p[2] - pw[0], p[3] - pw[1], p[4] - pw[2]) < 0.2));
+  // per clip: charge (fist) adds flames + charged models; cast; out
+  q.state = 1; q.holdSteps = 30; frame(1.5);
+  pw = palmWorld();
+  ok('charge: more flames (10), charged models, within 0.2 m of the fist', pushes.length === 10 && pushes.some((p) => p[0] === 'handFlameCharged') && pushes.every((p) => Math.hypot(p[2] - pw[0], p[3] - pw[1], p[4] - pw[2]) < 0.2), pushes.length + ' ' + pushes.map((p) => p[0]).join());
+  q.state = 1; q.holdSteps = 60; frame(1.6);
+  ok('hold: still 10 flames', pushes.length === 10);
+  q.state = 0; q.castTick = q.tick - 20; q.holdSteps = 0; frame(2);
+  pw = palmWorld();
+  ok('cast clip: flames follow the flung hand', pushes.length === 7 && pushes.every((p) => Math.hypot(p[2] - pw[0], p[3] - pw[1], p[4] - pw[2]) < 0.25));
+  q.castTick = -1000000; q.tick += 1000; frame(3);
+  ok('back to idle: 7 flames', pushes.length === 7);
+  // depth ordering: a flame lifted off the palm along the normal is nearer the eye than the palm voxels' side; ordering is the
+  // engine depth test (spriteNear.test.js: nearOk obeys the depth buffer). Here: the flame set spans both sides of the palm depth.
   const nf = { n: 0 }; const pool2 = { push() { nf.n++; } };
-  for (let i = 0; i < 3000; i++) { setHandFlame(hh, true, 0, -0.5, 1.5, i / 60, 0, 0, 1.6); pushHandFlame(hh, pool2); }
+  for (let i = 0; i < 3000; i++) { presentHandFire(hh, 'right', i / 60, i / 60, true, q); setHandFlame(hh, true, cam, i / 60); pushHandFlame(hh, pool2); }
   gc(); gc(); const b0 = process.memoryUsage().heapUsed;
-  for (let i = 0; i < 20000; i++) { setHandFlame(hh, true, 0, -0.5, 1.5, i / 60, 0, 0, 1.6); pushHandFlame(hh, pool2); }
+  for (let i = 0; i < 20000; i++) { setHandFlame(hh, true, cam, i / 60); pushHandFlame(hh, pool2); }
   gc(); gc();
-  ok('flame push: 0 alloc', process.memoryUsage().heapUsed - b0 < 32768, String(process.memoryUsage().heapUsed - b0));
+  ok('flame update + push: 0 alloc', process.memoryUsage().heapUsed - b0 < 32768, String(process.memoryUsage().heapUsed - b0));
   // art check: every frame of both sprites is glyph fire (several distinct glyphs + empty corners), not a flat filled quad
   const spr = (await import('../../../design/models/spell.js')) && A.spellSprites;
   const flat = [];
-  for (const n of ['handFlame', 'handFlameCharged']) for (const tier of [spr[n], spr[n].lods.half]) for (const fr of tier.animations.fly.frames) {
+  for (const n of ['handFlame', 'handFlameSmall', 'handFlameEmber', 'handFlameCharged', 'handFlameChargedSmall']) for (const tier of [spr[n], spr[n].lods.half]) for (const fr of tier.animations.fly.frames) {
     const g = fr.S.glyphs.join(''), kinds = new Set(g.replace(/ /g, '')), fgs = new Set(fr.S.fg.join('').replace(/ /g, ''));
     if (kinds.size < 4 || fgs.size < 3 || !g.includes(' ')) flat.push(n);
   }

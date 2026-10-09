@@ -43,6 +43,7 @@ try {
     if (args.log && m === 'Runtime.consoleAPICalled') console.error('[page ' + p.type + '] ' + (p.args || []).map((a) => a.value ?? a.description).join(' ').slice(0, 200));
     if (m === 'Runtime.consoleAPICalled' && p.type === 'error') errors.push('console.error: ' + (p.args || []).map((a) => a.value ?? a.description).join(' ').slice(0, 300));
   });
+  if (args.viewport) { const [vw, vh] = args.viewport.split('x').map(Number); await cdp.send('Emulation.setDeviceMetricsOverride', { width: vw, height: vh, deviceScaleFactor: 1, mobile: false }); } // optional --viewport WxH
   const loaded = new Promise((r) => cdp.onEvent((m) => { if (m === 'Page.loadEventFired') r(); }));
   await cdp.send('Page.navigate', { url });
   await loaded;

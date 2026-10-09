@@ -37,10 +37,20 @@ row(0, 0.6, false, 0); drawSprites(fb, pool);
 ok(lastSpriteDepth()[0] === Infinity, 'lit sprite still obeys the visibility flag');
 row(0, 2, true); depth.depth[0] = 1; drawSprites(fb, pool);
 ok(lastSpriteDepth()[0] === Infinity, 'far sprites retain scene-depth occlusion');
+// HAND-FIRE-WRAP-01: nearOk (T3.w = 1) sprites draw inside the near cutoff but still obey the depth buffer (hand voxels)
+function rowNear(slot, distance) { row(slot, distance, true); spr[slot * SPR_STRIDE + 15] = 1; }
+pool.count = 1; cells.clear('#102030'); depth.depth[0] = 10; rowNear(0, 0.3); drawSprites(fb, pool);
+ok(lastSpriteDepth()[0] === Math.fround(0.3), 'nearOk sprite draws at 0.3 m (inside the near cull)');
+depth.depth[0] = 0.2; drawSprites(fb, pool);
+ok(lastSpriteDepth()[0] === Infinity, 'nearOk sprite behind a nearer hand voxel (depth 0.2) is hidden');
+depth.depth[0] = 0.4; drawSprites(fb, pool);
+ok(lastSpriteDepth()[0] === Math.fround(0.3), 'nearOk sprite in front of the hand voxel (depth 0.4) is visible');
+row(0, 0.3, true); drawSprites(fb, pool);
+ok(lastSpriteDepth()[0] === Infinity, 'an ordinary sprite at 0.3 m is still culled');
 for (const depthUint of [false, true]) {
   const shader = spritesFragSrc({ depthUint });
   ok(shader.includes(`const float SPRITE_NEAR_DEPTH = ${SPRITE_NEAR_DEPTH};`), 'GPU uses identical f32 cutoff');
-  ok(shader.indexOf('if (p.y < SPRITE_NEAR_DEPTH) continue;') < shader.indexOf('bool emissive ='), 'GPU culls before either texel lighting path');
+  ok(shader.indexOf('if (p.y < SPRITE_NEAR_DEPTH && texelFetch(uSpr, ivec2(3, s), 0).w < 0.5) continue;') < shader.indexOf('bool emissive ='), 'GPU culls before either texel lighting path');
 }
 
 console.log(`sprite near cutoff: ${checks} checks. ALL PASS`);
