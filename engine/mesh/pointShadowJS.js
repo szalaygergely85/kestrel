@@ -1,12 +1,12 @@
 // engine/mesh/pointShadowJS.js (ME-16f, note 38.22): JS twin of the GPU point-light shadow pass (oracle for ?gpucompare=pointshadow).
 // Per shadowed light: caster list (injected `build`, the compositor wires buildShadowList with box = origin +- radius), then 6 depth-only
 // perspective renders (face matrices of render/shadowPoint.js, no polygon offset) into a Float32Array layer (slot*6+face), stored depth
-// 0.5 + 0.5 * NDC z (cleared = 1). Publishes `lights.pointShadow`-shaped state {depth, res, slot, O, opts} (what lighting.js lightAt reads).
+// 0.75 + 0.25 * NDC z (shadowDepthStore, the sun caster convention; cleared = 1). Polygon offset = the sun's depthBias (rctx.depthBias or SUN_SHADOW_DEFAULTS). Publishes `lights.pointShadow`-shaped state {depth, res, slot, O, opts} (what lighting.js lightAt reads).
 // Dirty key per slot (pointShadowKey): unchanged -> no re-render (zero alloc in steady state).
 import { createRasterTarget, clearRasterTarget, rasterDrawList } from './rasterJS.js';
 import { createShadowList } from './shadowList.js';
-import { shadowInputHash } from '../render/shadowSun.js';
-import { createShadowLightState, selectShadowLights, pointFaceMatrix, pointShadowKey, quantiseOrigin } from '../render/shadowPoint.js';
+import { shadowInputHash, SUN_SHADOW_DEFAULTS } from '../render/shadowSun.js';
+import { createShadowLightState, selectShadowLights, pointFaceMatrix, pointShadowKey, quantiseOrigin, shadowDepthStore } from '../render/shadowPoint.js';
 
 const MAX_LIGHTS = 64;
 
@@ -58,6 +58,8 @@ export function updatePointShadowTwin(tw, lights, cam, opts, build, rctx, struct
   tw.stats.rendered = 0; tw.stats.skipped = 0;
   if (occ === 0) return null;
   const res = tw.res, layerLen = res * res, ctx = tw.ctx, O3 = tw.O3;
+  const db = (rctx && rctx.depthBias) || SUN_SHADOW_DEFAULTS.depthBias; // the GPU point faces inherit the sun caster pipelines' depthBias
+  ctx.depthBias.factor = db[0]; ctx.depthBias.units = db[1];
   if (rctx) { ctx.structFoot = rctx.structFoot; ctx.structCount = rctx.structCount; ctx.wind = rctx.wind; ctx.maskAtlas = rctx.maskAtlas; }
   for (let s = 0; s < n; s++) {
     const h = tw.sel.slots[s];
@@ -79,7 +81,7 @@ export function updatePointShadowTwin(tw, lights, cam, opts, build, rctx, struct
       ctx.M = tw.M;
       rasterDrawList(list, tw.target, ctx);
       const z = tw.target.zbuf, base = (s * 6 + f) * layerLen, d = out.depth;
-      for (let i = 0; i < layerLen; i++) d[base + i] = 0.5 + 0.5 * z[i]; // Float32 store rounds like the GPU's depth texture
+      for (let i = 0; i < layerLen; i++) d[base + i] = shadowDepthStore(z[i]); // Float32 store rounds like the GPU's depth texture
     }
     tw.keys[s * 2] = tw.key[0]; tw.keys[s * 2 + 1] = tw.key[1]; tw.keyValid[s] = 1; tw.holder[s] = h; tw.stats.rendered++;
   }

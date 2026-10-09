@@ -29,6 +29,7 @@ import { waterCompositeJS } from './waterComposite.js';
 import { SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar } from './shadowSun.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../mesh/shadowList.js';
 import { createPointShadowTwin, updatePointShadowTwin } from '../mesh/pointShadowJS.js'; // ME-16f
+import { pointCasterOpts } from './shadowPoint.js'; // ME-16d/f: one caster-option helper shared with the GPU point pass
 
 const MAX_STRUCTS = 8; // structSeq is a 3-bit field (arch 7.2) - never exceeded, never wrapped.
 // ---------------------------------------------------------------------------
@@ -127,12 +128,12 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
  */
 const pointTwin = createPointShadowTwin();
 const pointSrc = { centre: { x: 0, y: 0, z: 0 }, cache: /** @type {any} */ (null), terrainSet: /** @type {any} */ (null), voxelPool: /** @type {any} */ (null), voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, eye: { x: 0, y: 0 }, meshLod0M: 25, instCastM: 48, instances: /** @type {any} */ (null), cloths: /** @type {any} */ (null), matIdFor: /** @type {any} */ (undefined), gpu: null };
-const pointRasterExtras = { structFoot: /** @type {any} */ (null), structCount: 0, wind: /** @type {any} */ (null), maskAtlas: /** @type {any} */ (null) };
-let _pointWorld = null, _pointCameraList = null;
+const pointRasterExtras = { depthBias: /** @type {any} */ (null), structFoot: /** @type {any} */ (null), structCount: 0, wind: /** @type {any} */ (null), maskAtlas: /** @type {any} */ (null) };
+let _pointWorld = null, _pointCameraList = null, _pointShadowOpts = null;
 function buildPointCasters(list, O, radius, planes) {
   const src = pointSrc, c = src.centre;
   c.x = O[0]; c.y = O[1]; c.z = O[2]; src.eye.x = O[0]; src.eye.y = O[1];
-  src.instCastM = radius; src.fogFarM = radius + 64;
+  pointCasterOpts(src, radius, _pointShadowOpts); // shared with the GPU pass (NEEDS B1: passPointShadow._build uses it too)
   buildShadowList(list, _pointCameraList, _pointWorld, planes, src);
 }
 function renderPointShadowsJS(fb, world, cam, cameraList, cache, terrainMeshSet, structCount) {
@@ -151,9 +152,10 @@ function renderPointShadowsJS(fb, world, cam, cameraList, cache, terrainMeshSet,
   pointRasterExtras.structFoot = meshStructFoot; pointRasterExtras.structCount = structCount;
   pointRasterExtras.maskAtlas = world.maskAtlas || null;
   pointRasterExtras.wind = windCtx(world, fb, true);
-  _pointWorld = world; _pointCameraList = cameraList;
+  _pointWorld = world; _pointCameraList = cameraList; _pointShadowOpts = fb.shadowOpts || null;
+  pointRasterExtras.depthBias = _pointShadowOpts ? _pointShadowOpts.depthBias : null;
   lights.pointShadow = updatePointShadowTwin(pointTwin, lights, cam, po, buildPointCasters, pointRasterExtras);
-  _pointWorld = _pointCameraList = null;
+  _pointWorld = _pointCameraList = _pointShadowOpts = null;
 }
 
 /** Resolved-materials draw copies of placed glTF meshes (ME-14c2); per mesh, rebuilt when the matTable's idFor changes. */
