@@ -144,6 +144,29 @@ const derivedSeeds = (ls) => { const o = []; for (let h = ls.baseCount; h < ls.c
   const sw = ls.derivedStats.swaps;
   for (let i = 0; i < 100; i++) { push(); pool.offerEmissive(ls, { x: 0, y: 0, z: 0 }); }
   ok('pool steady frames: no swaps', ls.derivedStats.swaps === sw);
+
+  // ---- EMIS-01b: pushInstance's integer-hash seed (Math.round*100 + Math.imul, no strings) ----
+  pool.beginFrame(); pool.pushInstance('lamp', 10, 20, 1, 0, -1, 0, 0);
+  const seedA = pool.raw[0].seed;
+  pool.beginFrame(); pool.pushInstance('lamp', 10, 20, 1, 0, -1, 0, 0);
+  const seedA2 = pool.raw[0].seed;
+  ok('pushInstance seed: same model+position -> same seed', seedA === seedA2 && seedA !== 0);
+  pool.beginFrame(); pool.pushInstance('lamp', 10.01, 20, 1, 0, -1, 0, 0);
+  const seedB = pool.raw[0].seed;
+  pool.beginFrame(); pool.pushInstance('lamp', 10, 20.01, 1, 0, -1, 0, 0);
+  const seedC = pool.raw[0].seed;
+  ok('pushInstance seed: nearby distinct positions -> distinct seeds', seedB !== seedA && seedC !== seedA && seedB !== seedC);
+  if (global.gc) {
+    pool.beginFrame(); pool.pushInstance('lamp', 10, 20, 1, 0, -1, 0, 0); // warm up
+    global.gc();
+    const before = process.memoryUsage().heapUsed;
+    for (let f = 0; f < 200; f++) { pool.beginFrame(); pool.pushInstance('lamp', 10, 20, 1, 0, -1, 0, 0); }
+    global.gc();
+    const after = process.memoryUsage().heapUsed;
+    ok('pushInstance seed: 200 pushes does not grow the heap materially', after - before < 200000, `${before} -> ${after}`);
+  } else {
+    console.log('SKIP zero-alloc seed check (run with --expose-gc)');
+  }
 }
 
 console.log(`${pass} pass, ${fail} fail`);
