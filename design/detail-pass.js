@@ -1234,6 +1234,26 @@
     fur_agouti: 'fur_agouti', fur_agouti_dark: 'fur_agouti_dark', fur_agouti_light: 'fur_agouti_light', fur_cream: 'fur_cream',
     fur_roe: 'fur_roe', fur_roe_dark: 'fur_roe_dark', fur_roe_light: 'fur_roe_light', antler: 'antler'
   };
+  // CHARGEN-01 (v1.54): one v2 record (+ remap k -> k) per key appended by palette.js `chargen.newMaterials`
+  // (skin tones, hair, eyes, natural dyes). Generated from the same table, so the two files cannot drift.
+  // Seeds 930 + i in table order; 2.5 cm grid (the character cell).
+  (function () {
+    var list = (P.chargen && P.chargen.newMaterials) || [], i, r;
+    for (i = 0; i < list.length; i++) {
+      r = list[i];
+      if (materials[r.key]) continue;
+      materials[r.key] = {
+        v1: r.key, seed: 930 + i, desc: r.desc,
+        albedo: r.albedo, bgK: r.bgK, detail: 32, jitter: r.kind === 'eye' ? 0.02 : 0.04,
+        tones: r.emissive ? [[r.color, 3], [r.accent, 1], ['flameOuter', 1]] : [[r.color, 4], [r.accent, 1]],
+        grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+        face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+        lod: { mid: 12, far: 25, dither: 3 }
+      };
+      if (r.emissive) materials[r.key].emissive = r.emissive;
+      remap[r.key] = r.key;
+    }
+  })();
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.
   var levelOverrides = {
