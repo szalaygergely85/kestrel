@@ -14,6 +14,9 @@ import { MAX_STRUCTS } from '../WorldTextures.js';
 import { FACE_PACKED, KIND_TERRAIN, KIND_MESH } from '../../GBuffer.js';
 import { SUN_N_SHIFT, CLOUD_Q_SHIFT } from '../../shadowSun.js';
 import { AO_MAX } from '../../horizonAo.js';
+import { PSH_NEAR } from '../../shadowPoint.js';
+
+export const PSH_MAX_SLOTS = 6;
 
 const FACE_N = 1, FACE_E = 2, FACE_S = 3, FACE_W = 4, FACE_U = 5, FACE_D = 6;
 
@@ -45,10 +48,16 @@ export const LIGHT_BLOCK = defineUniformBlock('LightU', [
   { name: 'cloudB', type: 'vec4' },
   // S8-B2-20b (38.16): AO params appended at the very END: (radiusM, bias, maxCells, 0). aoStrength stays word 31.
   { name: 'aoP', type: 'vec4' },
+  // ME-16d (38.22 item 3): point-light shadow maps, appended at the very END (no word moves). pshA = (count n, res, biasM,
+  // normalOffTexels); count 0 = off (the old LVIS line runs). pshO[slot] = (origin xyz, far). pshSlot: light i -> slot + 1, 0 = unshadowed
+  // (16 floats = 4 vec4, light i at pshSlot[i >> 2][i & 3]).
+  { name: 'pshA', type: 'vec4' },
+  { name: 'pshO', type: 'vec4', count: PSH_MAX_SLOTS },
+  { name: 'pshSlot', type: 'vec4', count: MAX_LIGHTS / 4 },
 ]);
 
 /** Texture slot kinds for PipelineDesc.bindings.textures. */
-export const LIGHT_TEXTURES = Object.freeze(['uint', 'uint', 'uint', 'uint', 'float', 'uint', 'depth']);
+export const LIGHT_TEXTURES = Object.freeze(['uint', 'uint', 'uint', 'uint', 'float', 'uint', 'depth', 'depthArray']);
 export const LIGHT_TARGETS = Object.freeze(['rgba32uint']);
 
 export const LIGHT_WGSL = `
@@ -60,6 +69,7 @@ ${LIGHT_BLOCK.wgsl}
 @group(0) @binding(4) var uWorldGeom: texture_2d<f32>;   // rgba32float: floorH, ceilH, topH, ceilOpenH (unused)
 @group(0) @binding(5) var uWorldFlags: texture_2d<u32>;  // rg8uint: r = solid|ceilSky<<1|topSky<<2|dynamic<<3
 @group(0) @binding(6) var uSunShadow: texture_depth_2d;  // depth32float, textureLoad (NEAREST, no hardware compare)
+@group(0) @binding(7) var uPointShadow: texture_depth_2d_array; // ME-16d: layer = slot*6 + face, depth in [0,1] (off: 1x1x6 dummy, never sampled)
 @group(1) @binding(0) var<uniform> u: LightU;
 
 const MAX_VIS_DIM: i32 = ${MAX_VIS_DIM};
@@ -68,6 +78,7 @@ const MAX_SUN_STEPS: i32 = ${MAX_SUN_STEPS};
 const FACE_N: i32 = ${FACE_N}; const FACE_E: i32 = ${FACE_E}; const FACE_S: i32 = ${FACE_S};
 const FACE_W: i32 = ${FACE_W}; const FACE_U: i32 = ${FACE_U}; const FACE_D: i32 = ${FACE_D};
 const FACE_PACKED: i32 = ${FACE_PACKED};
+const PSH_NEAR: f32 = ${PSH_NEAR};
 const SUN_N_SHIFT: u32 = ${SUN_N_SHIFT}u;
 // US-026a S5: kind 7 (terrain) is lit by the sun analytically in the terrain shade pass (D-007).
 const KIND_TERRAIN: i32 = ${KIND_TERRAIN};
@@ -223,6 +234,45 @@ fn sunShadowTaps(P: vec3f, N: vec3f) -> i32 {
   return n;
 }
 
+// ME-16d (38.22 item 3): point-light shadow taps, scalar form (JS twin: shadowPoint.js pointShadowTaps, same op order).
+// (dx,dy,dz) = P - O (O = unjittered map origin), n = N. Face = largest |axis| (ties X, Y, Z; zero counts positive), (a, b, c) = (right, up,
+// forward) components per FACE_TABLE. 2x2 taps at floor(uv*res - 0.5) clamped to the face (no cross-face taps). Beyond far / inside near -> 4.
+fn pointShadowTapsS(slot: i32, dx: f32, dy: f32, dz: f32, nx: f32, ny: f32, nz: f32, far: f32) -> i32 {
+  let res = u.pshA.y;
+  let ma = max(max(abs(dx), abs(dy)), abs(dz));
+  let len = sqrt(dx * dx + dy * dy + dz * dz);
+  let no = u.pshA.w * (2.0 * ma / res);
+  let il = select(0.0, 1.0 / len, len > 0.0);
+  let vx = dx + (nx * no - dx * il * u.pshA.z);
+  let vy = dy + (ny * no - dy * il * u.pshA.z);
+  let vz = dz + (nz * no - dz * il * u.pshA.z);
+  let ax = abs(vx); let ay = abs(vy); let az = abs(vz);
+  var face: i32 = 4; var a: f32 = vx; var b: f32 = vy; var c: f32 = vz;
+  if (ax >= ay && ax >= az) {
+    if (vx >= 0.0) { face = 0; a = vy; b = vz; c = vx; } else { face = 1; a = vz; b = vy; c = -vx; }
+  } else if (ay >= az) {
+    if (vy >= 0.0) { face = 2; a = vz; b = vx; c = vy; } else { face = 3; a = vx; b = vz; c = -vy; }
+  } else if (vz < 0.0) { face = 5; a = vy; b = vx; c = -vz; }
+  if (c >= far || c <= PSH_NEAR) { return 4; }
+  let rd = 0.5 + 0.5 * ((far + PSH_NEAR) / (far - PSH_NEAR) - 2.0 * far * PSH_NEAR / ((far - PSH_NEAR) * c));
+  let fu = (a / c * 0.5 + 0.5) * res - 0.5;
+  let fv = (b / c * 0.5 + 0.5) * res - 0.5;
+  let x0 = i32(floor(fu)); let y0 = i32(floor(fv));
+  let last = i32(res) - 1;
+  let layer = slot * 6 + face;
+  var n = 0;
+  for (var k = 0; k < 4; k++) {
+    let x = clamp(x0 + (k & 1), 0, last);
+    let y = clamp(y0 + (k >> 1u), 0, last);
+    if (rd <= textureLoad(uPointShadow, vec2i(x, y), layer, 0)) { n++; }
+  }
+  return n;
+}
+fn pointShadowTaps(slot: i32, P: vec3f, N: vec3f) -> i32 {
+  let o = u.pshO[slot];
+  return pointShadowTapsS(slot, P.x - o.x, P.y - o.y, P.z - o.z, N.x, N.y, N.z, o.w);
+}
+
 fn faceNormal(face: u32) -> vec3f {
   if (face == u32(FACE_N)) { return vec3f(0.0, -1.0, 0.0); }
   if (face == u32(FACE_E)) { return vec3f(1.0, 0.0, 0.0); }
@@ -281,7 +331,11 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
     if (ndotl <= 0.0) { continue; }
     // BUG-LIGHT-001: sample at S = P + (L-P)/|L-P| * 0.02, toward the LIGHT (not along N)
     let toLight = d3 / d;
-    let vis = sampleVis(i, P.x + toLight.x * 0.02, P.y + toLight.y * 0.02);
+    var vis: f32;
+    var psl = 0;
+    if (u.pshA.x > 0.0) { let iu = u32(i); psl = i32(u.pshSlot[iu >> 2u][iu & 3u]); } // ME-16d: 0 = unshadowed / off
+    if (psl > 0) { vis = f32(pointShadowTaps(psl - 1, P, N)) * 0.25; }
+    else { vis = sampleVis(i, P.x + toLight.x * 0.02, P.y + toLight.y * 0.02); }
     if (vis <= 0.0) { continue; }
     L += u.lightCol[i].rgb * (fo * ndotl * vis);
     litCount++;

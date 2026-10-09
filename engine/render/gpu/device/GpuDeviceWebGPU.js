@@ -76,6 +76,8 @@ export class GpuDeviceWebGPU {
     this._live = /** @type {{destroy: () => void}[]} */ ([]);
     /** @type {any[]} every computePipeline handle (38.10a: dispose(buffer) prunes their dispatch bind-group caches) */
     this._computePipes = [];
+    /** @type {Map<any,{gpu:any,bytes:number,busy:boolean}>} OCCL-STATS-01b: readBufferAsync staging per source buffer handle */
+    this._readStaging = new Map();
     this._moduleCache = new Map();
     // uniform ring (CPU ArrayBuffer + one GPU buffer; one writeBuffer at submit)
     const slots = opts.ringSlots || DEFAULT_RING_SLOTS;
@@ -136,11 +138,22 @@ export class GpuDeviceWebGPU {
   createTexture(desc) {
     const t = this._c.tex;
     const f = textureFormatFor(desc.format, !!desc.sampled);
+    // ME-16b (38.22): `layers` = a 2d-array texture, `depth24`+`sampled` only (depth32float array, one view per layer, cached)
+    const layers = desc.layers;
+    if (layers !== undefined && (desc.format !== 'depth24' || !desc.sampled || !(layers >= 1) || (layers | 0) !== layers)) {
+      throw new Error('GpuDeviceWebGPU.createTexture: `layers` needs format depth24 + sampled and an integer >= 1');
+    }
     const tex = this.gpu.createTexture({
-      size: [desc.width, desc.height, 1], format: f.gpu, dimension: '2d',
+      size: [desc.width, desc.height, layers || 1], format: f.gpu, dimension: '2d',
       usage: t.TEXTURE_BINDING | t.RENDER_ATTACHMENT | t.COPY_SRC | t.COPY_DST,
     });
     this._live.push(tex);
+    if (layers !== undefined) {
+      return {
+        kind: 'texture', gpu: tex, view: tex.createView({ dimension: '2d-array', baseArrayLayer: 0, arrayLayerCount: layers }), sampler: null,
+        width: desc.width, height: desc.height, layers, layerViews: new Array(layers).fill(null), format: desc.format, gpuFormat: f.gpu, bpp: f.bpp, isDepth: true,
+      };
+    }
     const linear = desc.filter === 'linear' && desc.format === 'rgba8';
     const sampler = desc.format === 'rgba8'
       ? this.gpu.createSampler({ magFilter: linear ? 'linear' : 'nearest', minFilter: linear ? 'linear' : 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
@@ -173,7 +186,16 @@ export class GpuDeviceWebGPU {
     const colorAttachments = desc.color.map((t) => ({ view: t.view, loadOp: 'load', storeOp: 'store', clearValue: ZERO4 }));
     /** @type {any} */
     const pass = { colorAttachments };
-    if (desc.depth) pass.depthStencilAttachment = { view: desc.depth.view, depthLoadOp: 'load', depthStoreOp: 'store', depthClearValue: 1 };
+    if (desc.depth) {
+      const d = desc.depth;
+      let view = d.view;
+      if (d.layers !== undefined) { // ME-16b: array texture -> attach one layer (view cached per layer, reused by every target of it)
+        const L = desc.layer;
+        if (!(L >= 0 && L < d.layers) || (L | 0) !== L) throw new Error(`GpuDeviceWebGPU.createTarget: layer ${L} out of range 0..${d.layers - 1}`);
+        view = d.layerViews[L] || (d.layerViews[L] = d.gpu.createView({ dimension: '2d', baseArrayLayer: L, arrayLayerCount: 1 }));
+      } else if (desc.layer !== undefined) throw new Error('GpuDeviceWebGPU.createTarget: `layer` on a texture without layers');
+      pass.depthStencilAttachment = { view, depthLoadOp: 'load', depthStoreOp: 'store', depthClearValue: 1 };
+    }
     return { kind: 'target', isCanvas: false, passDesc: pass, colorCount: desc.color.length, hasDepth: !!desc.depth, width: first ? first.width : 0, height: first ? first.height : 0 };
   }
 
@@ -224,6 +246,7 @@ export class GpuDeviceWebGPU {
       if (k === 'uint') e0.push({ binding: i, visibility: vis, texture: { sampleType: 'uint' } });
       else if (k === 'sint') e0.push({ binding: i, visibility: vis, texture: { sampleType: 'sint' } });
       else if (k === 'depth') e0.push({ binding: i, visibility: vis, texture: { sampleType: 'depth' } });
+      else if (k === 'depthArray') e0.push({ binding: i, visibility: vis, texture: { sampleType: 'depth', viewDimension: '2d-array' } }); // ME-16b
       else if (k === 'filtered') e0.push({ binding: i, visibility: vis, texture: { sampleType: 'float' } });
       else e0.push({ binding: i, visibility: vis, texture: { sampleType: 'unfilterable-float' } }); // 'float': textureLoad only
     });
@@ -567,6 +590,36 @@ export class GpuDeviceWebGPU {
   }
 
   /**
+   * OCCL-STATS-01b: non-blocking buffer readback for stats. Records buf -> a cached MAP_READ staging buffer (one per source
+   * buffer, created once, recreated only if `bytes` grows), SUBMITS the encoder (so the copy is ordered before the map),
+   * then `mapAsync(READ)` and copies into the caller's preallocated `outU32`, then calls `cb(outU32)`. At most one read in
+   * flight per source buffer (returns false when busy or on error, true when started). Per call the only allocations are
+   * what the WebGPU API returns (the mapAsync Promise, the mapped ArrayBuffer view); staging buffers are released by dispose.
+   * @param {GpuHandle} buf @param {number} bytes multiple of 4, <= buffer size @param {Uint32Array} outU32 @param {(out:Uint32Array)=>void} cb
+   * @returns {boolean}
+   */
+  readBufferAsync(buf, bytes, outU32, cb) {
+    if (this._pass) throw new Error('GpuDeviceWebGPU.readBufferAsync: a pass is still open');
+    if (!buf || buf.kind !== 'buffer') throw new Error('GpuDeviceWebGPU.readBufferAsync: buf must be a buffer handle');
+    if (!(bytes > 0) || bytes % 4 || bytes > buf.gpu.size) throw new Error('GpuDeviceWebGPU.readBufferAsync: bytes must be a positive multiple of 4 and <= the buffer size');
+    if (!(outU32 instanceof Uint32Array) || outU32.length * 4 < bytes) throw new Error('GpuDeviceWebGPU.readBufferAsync: outU32 too small');
+    let st = this._readStaging.get(buf);
+    if (st && st.busy) return false;
+    if (st && st.bytes < bytes) { st.gpu.destroy(); st = null; }
+    if (!st) { st = { gpu: this.gpu.createBuffer({ size: bytes, usage: this._c.buf.MAP_READ | this._c.buf.COPY_DST }), bytes, busy: false }; this._readStaging.set(buf, st); }
+    st.busy = true;
+    if (!this._encoder) this._encoder = this.gpu.createCommandEncoder();
+    this._encoder.copyBufferToBuffer(buf.gpu, 0, st.gpu, 0, bytes);
+    this.submit();
+    st.gpu.mapAsync(this._c.map.READ).then(() => {
+      outU32.set(new Uint32Array(st.gpu.getMappedRange(0, bytes)));
+      st.gpu.unmap(); st.busy = false;
+      cb(outU32);
+    }, () => { st.busy = false; }); // destroyed/lost mid-flight: drop silently
+    return true;
+  }
+
+  /**
    * Test-only, always a Promise (38.6): records `copyTextureToBuffer` (rows padded to 256 B) into the current
    * encoder, submits it (so the result is fixed at call time), maps the staging buffer and de-pads into `out`.
    * @param {GpuHandle} tex @param {{x:number,y:number,w:number,h:number}} rect @param {ArrayBufferView} out
@@ -640,6 +693,8 @@ export class GpuDeviceWebGPU {
         const pi = this._computePipes.indexOf(handle);
         if (pi >= 0) this._computePipes.splice(pi, 1);
       }
+      const rs = this._readStaging.get(handle);
+      if (rs) { this._readStaging.delete(handle); rs.gpu.destroy(); }
       const o = handle.gpu;
       const i = this._live.indexOf(o);
       if (i >= 0) { this._live.splice(i, 1); o.destroy(); }
@@ -650,6 +705,8 @@ export class GpuDeviceWebGPU {
     this._live.length = 0;
     for (const pool of this._staging.values()) for (const b of pool) b.destroy();
     this._staging.clear();
+    for (const rs of this._readStaging.values()) rs.gpu.destroy();
+    this._readStaging.clear();
     this._computePipes.length = 0;
   }
 }

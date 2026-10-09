@@ -14,6 +14,7 @@
 import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, MASK_UV_LAYOUT, MASK_UV_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from '../MeshBuffers.js';
 import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_MASK_BLOCK, RASTER_MASK_SHADOW_WGSL, RASTER_SHADOW_WGSL, RASTER_VOXEL_SHADOW_WGSL, RASTER_INSTANCED_SHADOW_WGSL, RASTER_CLOTH_SHADOW_WGSL, RASTER_INSTANCED_MASK_BLOCK, RASTER_INSTANCED_MASK_SHADOW_WGSL } from '../wgsl/raster.wgsl.js';
 import { SHADOW_TERRAIN_BLOCK, SHADOW_TERRAIN_WGSL, SHADOW_DEPTH_COPY_WGSL, SHADOW_DEPTH_COPY_TEXTURES } from '../wgsl/shadow.wgsl.js';
+import { lodCentreX, lodCentreY } from '../../../core/camFocus.js';
 import { NO_STRUCTURES } from './passRaster.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../../../mesh/shadowList.js';
@@ -44,7 +45,7 @@ const INSTANCE_LAYOUT = [
 ];
 
 export class WgShadowPass {
-  /** @param {any} device @param {{shadows?: any, buffers?: MeshBuffers, renderer?: string, gpuCull?: boolean}} [opts] gpuCull (default true, `?gpucull=0` = off): WG-4b compute cull of instanced casters */
+  /** @param {any} device @param {{shadows?: any, buffers?: MeshBuffers, renderer?: string, gpuCull?: boolean, casters?: boolean}} [opts] casters (ME-16c): build the caster pipelines even when the sun map is off (point-shadow caster renderer); gpuCull (default true, `?gpucull=0` = off): WG-4b compute cull of instanced casters */
   constructor(device, opts = {}) {
     this.device = device;
     const so = this.shadowOpts = resolveSunShadowOptions(opts.shadows, opts.renderer || 'mesh');
@@ -84,11 +85,13 @@ export class WgShadowPass {
     this.passOpts = { clear: true };
     this.copyTex = null; this.copyTarget = null; this.copyPipe = null; this.copyBind = null;
     this.draws = 0; this._lp = null;
-    if (!this.enabled) return;
+    if (!this.enabled && !opts.casters) return;
     try {
       const res = so.res;
-      this.depthTex = device.createTexture({ format: 'depth24', width: res, height: res, sampled: true });
-      this.target = device.createTarget({ color: [], depth: this.depthTex });
+      if (this.enabled) { // ME-16c: `casters: true` builds the caster pipelines only (WgPointShadowPass owns no sun map)
+        this.depthTex = device.createTexture({ format: 'depth24', width: res, height: res, sampled: true });
+        this.target = device.createTarget({ color: [], depth: this.depthTex });
+      }
       // GL polygonOffset(factor, units): factor = slope scale, units = constant (WebGPU: integer).
       this.depthBias = { factor: so.depthBias[0], units: Math.round(so.depthBias[1]) };
       this.staticPipe = this._pipeline(RASTER_SHADOW_WGSL, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, 'none', RASTER_BASE_BLOCK);
@@ -267,7 +270,7 @@ export class WgShadowPass {
     if (vp && vp.shadowView) { vp.projectShadow(); src.voxelPool = vp.shadowView; } else src.voxelPool = null;
     src.instances = p._instances || null;
     this.gpuN = 0;
-    src.eye.x = cam.x; src.eye.y = cam.y; src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM; src.meshCastM = so.meshCastM; src.meshCastCap = so.meshCastCap;
+    src.eye.x = lodCentreX(cam); src.eye.y = lodCentreY(cam); src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM; src.meshCastM = so.meshCastM; src.meshCastCap = so.meshCastCap;
     src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null;
     src.matIdFor = p._table ? p._table.idFor : undefined;
     src.meshCache = raster.meshCache; src.meshIdFor = raster.strictMatIdFor || undefined;
@@ -294,20 +297,29 @@ export class WgShadowPass {
     return true;
   }
 
-  _render(list, world, Mf) {
+  _render(list, world, Mf) { this.renderCasters(this.target, Mf, list, world, null, 0, true); }
+
+  /**
+   * ME-16c: draw one caster list into `target` (depth only, cleared to 1) with view-projection `Mf` (column-major 16). Shared by the sun map and
+   * WgPointShadowPass. `idx`/`idxN`: draw only list.items[idx[0..idxN)] in that order (null = the whole list); `gpuCulled`: also draw the WG-4b
+   * kernel entries (sun only). Resets and counts `this.draws`. Zero allocation.
+   * @param {any} target @param {Float32Array|Float64Array} Mf @param {any} list @param {any} world @param {Uint16Array|null} idx @param {number} idxN @param {boolean} gpuCulled
+   */
+  renderCasters(target, Mf, list, world, idx, idxN, gpuCulled) {
     const d = this.device, u = this.u, tu = this.tu;
     for (let i = 0; i < 16; i++) { u[VIEW + i] = Mf[i]; tu[T_VIEW + i] = Mf[i]; }
     this.draws = 0;
-    d.beginPass(this.target, this.passOpts); // clears depth to 1
+    const n = idx ? idxN : list.count;
+    d.beginPass(target, this.passOpts); // clears depth to 1
     try {
-      for (let i = 0; i < list.count; i++) { // static level quads
-        const item = list.items[i];
+      for (let k = 0; k < n; k++) { // static level quads
+        const item = list.items[idx ? idx[k] : k];
         if (item.type !== DRAW_STATIC || !item.mesh || item.rangeCount <= 0) continue;
         this._model(item.matrix);
         this._staticCaster(item, this.buffers.get(item.mesh));
       }
-      for (let i = 0; i < list.count; i++) { // voxel props: one draw per part
-        const item = list.items[i];
+      for (let k = 0; k < n; k++) { // voxel props: one draw per part
+        const item = list.items[idx ? idx[k] : k];
         if (item.type !== DRAW_VOXEL || !item.mesh) continue;
         const entry = this.buffers.getVoxel(item.mesh), ranges = item.mesh.ranges;
         for (let part = 0; part < ranges.length; part++) {
@@ -317,8 +329,8 @@ export class WgShadowPass {
         }
       }
       let instTotal = 0; // instanced casters; overflow past the per-frame cap drops the rest (never throw for a shadow)
-      for (let i = 0; i < list.count; i++) {
-        const item = list.items[i];
+      for (let k = 0; k < n; k++) {
+        const item = list.items[idx ? idx[k] : k];
         if (item.type !== DRAW_INSTANCED || !item.mesh || !item.instBuf) continue;
         const n = item.instCount;
         if (instTotal + n > MAX_INSTANCES_PER_FRAME) break;
@@ -343,7 +355,7 @@ export class WgShadowPass {
       // loop). entries are laid out `[band*R + r]` (R = entries.length/2, fixed per batch); R = 1 is the same [e0, e1] pair as before.
       // A masked range (mr[r*5+2] >= 0) draws through instanceMaskPipe (mask uniforms + uv extra stream + atlas texture), same as
       // _instancedMaskedCaster's CPU path; an opaque range draws through instancePipe, unchanged.
-      for (let i = 0; i < this.gpuN; i++) {
+      for (let i = 0, gn = gpuCulled ? this.gpuN : 0; i < gn; i++) {
         const entries = this.gpuEntries[i], R = entries.length >> 1;
         for (let band = 0; band < 2; band++) {
           for (let r = 0; r < R; r++) {
@@ -368,8 +380,8 @@ export class WgShadowPass {
         }
       }
       const b = this.bindDesc;
-      for (let i = 0; i < list.count; i++) { // cloth: two-sided, position + uv stream like the raster pass
-        const item = list.items[i];
+      for (let k = 0; k < n; k++) { // cloth: two-sided, position + uv stream like the raster pass
+        const item = list.items[idx ? idx[k] : k];
         if (item.type !== DRAW_CLOTH || !item.mesh || item.rangeCount <= 0) continue;
         const entry = this.buffers.getCloth(item.mesh);
         this._model(item.matrix);
@@ -378,8 +390,8 @@ export class WgShadowPass {
         d.bind(this.clothPipe, b); d.draw(item.rangeCount * 3, item.rangeFirst * 3, 1); this.draws++;
       }
       let footDone = false; // terrain: footprint carve in the fragment stage
-      for (let i = 0; i < list.count; i++) {
-        const item = list.items[i];
+      for (let k = 0; k < n; k++) {
+        const item = list.items[idx ? idx[k] : k];
         if (item.type !== DRAW_TERRAIN || !item.mesh || item.rangeCount <= 0) continue;
         if (!footDone) { this._fillFoot(world); footDone = true; }
         const entry = this.buffers.get(item.mesh), mm = item.matrix, n = T_MODEL;

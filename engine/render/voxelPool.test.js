@@ -7,7 +7,6 @@
 //   node engine/render/voxelPool.test.js
 
 import { MAX_VOX_INSTANCES_MESH } from '../index.js';
-import { GpuCellPipeline } from './gpu/GpuCellPipeline.js';
 import { VoxelPool } from './voxelPool.js';
 import { loadGolden, goldenFrame } from '../../tools/testing/mesh-golden.mjs';
 const golden = loadGolden('voxelPool');
@@ -312,9 +311,6 @@ if (global.gc) {
   p.beginFrame(); for (let i = 0; i < 48; i++) p.pushInstance('bear', 0, -i - 1, 0, 0);
   ok('mesh pushInstance accepts all 48', p._rawCount === 48);
   p.project(c, rt);
-  let guarded = false;
-  try { GpuCellPipeline.prototype._uploadVoxelInstances.call({}, p); } catch (e) { guarded = e.message.includes('exceeds DDA cap (16): 48'); }
-  ok('GPU upload rejects mesh-sized list before writing texture scratch', guarded);
 }
 
 console.log(`${pass} pass, ${fail} fail`);

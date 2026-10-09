@@ -367,3 +367,41 @@ console.log('passRaster.test.js (WG-4a): all checks passed.');
   rp2b.dispose();
   console.log('passRaster.test.js (S8-B2-05/06 wind host wiring): all checks passed.');
 }
+
+// ME-20c-c (38.18): vertex AO wiring - flag bit 1 + ao pipelines + stream at location 11 only for entries with aoBuffer while strength > 0.
+{
+  const { RASTER_FLAG_VAO } = await import('../wgsl/raster.wgsl.js');
+  const m3 = makeMockGpuDevice(), dv = m3.device, dr = [];
+  dv.draw = (count, first, instances) => dr.push({ pipe: dv._activePipeline, extra: dv._lastBind.extraBuffers, u: new Uint32Array(dv._lastBind.uniforms.buffer).slice() });
+  dv.beginPass = () => {};
+  const ps = new WgRasterPass(dv), AX = RASTER_BLOCK.field('axisAligned').word;
+  const vb = dv.createBuffer({ usage: 'vertex', bytes: 64 }), ib = dv.createBuffer({ usage: 'index', bytes: 24 }), aob = dv.createBuffer({ usage: 'vertex', bytes: 16 });
+  const entries = { ao: { vertexBuffer: vb, indexBuffer: ib, aoBuffer: aob }, plain: { vertexBuffer: vb, indexBuffer: ib } };
+  let cur = 'ao'; ps.buffers.getVoxel = () => entries[cur]; ps.vmList = null; ps.prepare = () => {};
+  const ib2 = { f32: new Float32Array(32) };
+  const build = () => {
+    ps.list.begin();
+    const v = ps.list.push(); v.type = DRAW_VOXEL; v.mesh = mesh; v.partMatrices.set(staticItem.matrix); v.partFlags[0] = 1;
+    const mv = ps.list.push(); mv.type = DRAW_VOXEL; mv.mesh = mesh; mv.mirror = 1; mv.partMatrices.set(staticItem.matrix); mv.partFlags[0] = 0;
+    const it = ps.list.push(); it.type = DRAW_INSTANCED; it.mesh = mesh; it.instBuf = ib2; it.instCount = 2; it.partMatrices.set(staticItem.matrix); it.partFlags[0] = 1;
+  };
+  const run = () => { dr.length = 0; build(); ps.run({ _t: { targetRaster: {}, targetVmDepth: {} }, stats: {} }); return dr.slice(); };
+  // off (strength 0): exactly the old draws - plain pipes, no extra stream, flag word == aligned bit only
+  ps.vaoOn = false; let r = run();
+  assert.deepEqual(r.map((x) => x.pipe), [ps.voxelPipe, ps.mirrorPipe, ps.instancePipe]);
+  assert.ok(r.every((x) => !x.extra) && r.map((x) => x.u[AX]).join() === '1,0,1' && ps.aoPipes.voxel === null, 'strength 0 builds/binds nothing new');
+  // on + AO entry: ao pipelines, stream bound, bit 1 set (bit 0 kept)
+  ps.vaoOn = true; r = run();
+  assert.deepEqual(r.map((x) => x.pipe), [ps.aoPipes.voxel, ps.aoPipes.mirror, ps.aoPipes.instance]);
+  assert.equal(ps.aoPipes.mirror.desc.frontFace, 'ccw'); assert.equal(ps.aoPipes.instance.desc.vertex.instanceStrideBytes > 0, true);
+  for (const x of r) { assert.equal(x.extra[0], aob); }
+  assert.equal(ps.aoPipes.voxel.desc.vertex.extraLayouts[0].layout[0].location, 11);
+  assert.deepEqual(r.map((x) => x.u[AX]), [1 | RASTER_FLAG_VAO, RASTER_FLAG_VAO, 1 | RASTER_FLAG_VAO]);
+  // on + entry without AO: old draw
+  cur = 'plain'; r = run();
+  assert.deepEqual(r.map((x) => x.pipe), [ps.voxelPipe, ps.mirrorPipe, ps.instancePipe]); assert.deepEqual(r.map((x) => x.u[AX]), [1, 0, 1]);
+  // warm frames allocate no resources
+  cur = 'ao'; const c0 = m3.createCount; for (let i = 0; i < 20; i++) run(); assert.equal(m3.createCount - c0, 0, 'ao pipelines are cached');
+  ps.dispose();
+}
+console.log('passRaster.test.js: vertex AO wiring ok.');

@@ -369,6 +369,11 @@ import { instanceOccluded } from '../../../mesh/occlusion.js';
       assert.deepEqual(got, exp, `phase 2 LOD${l} rows == pending minus still-occluded (stored lod, band copies, dither bits)`);
       for (let r = 0; r < rc; r++) assert.equal(b.args[slot + r * CULL_ARGS_WORDS + 1], got.length, `phase 2 LOD${l} range ${r} instanceCount`);
     }
+    // OCCL-STATS-01b: after phase 2 rescued rows have occl word 0; remaining bit-0 count == brute-force still-occluded
+    {
+      let left = 0; for (let i = 0; i < N; i++) { const id = 1000 + i; if (pend.has(id)) { if (freshOcc.has(id)) { assert.equal(occl[i] & 1, 1, 'still occluded keeps bit 0: ' + id); left++; } else assert.equal(occl[i], 0, 'rescued row cleared: ' + id); } else assert.equal(occl[i], 0, 'non-pending row 0: ' + id); }
+      assert.equal(left, freshOcc.size, 'occl counter == brute-force occluded');
+    }
     // union of both phases = baseline minus still-occluded: nothing wrongly culled
     for (let l = 0; l < 2; l++) {
       const un = [...rowsOf(l ? b.dst1 : b.dst0, b.args[(l ? S1 : S0) + 1]), ...rowsOf(l ? p2.dst1 : p2.dst0, b.args[(l ? S3 : S2) + 1])].sort();
