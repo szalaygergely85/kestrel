@@ -46,6 +46,7 @@ const litGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 const litP3 = new Float64Array(3);
 // S8-B2-20 (38.17): scratch for lightSurfaces' AO tap block (zero allocation per frame/cell).
 const aoTapP = new Float64Array(3);
+const aoPar = new Float64Array(14); // per-cell AO tap parameters (cam, dir, plane, horizon, normal, radius, bias)
 const aoAcc = new Float64Array(1); // tap occlusion accumulator (no boxed-double returns across calls)
 
 export const MAX_LIGHTS = 16;
@@ -1100,14 +1101,15 @@ function cellPointInto(pitched, terms, tx, ty, d, cols, camX, camY, camZ, dirX, 
  * the WGSL `aoTapCell`) a non-finite/non-positive depth (synthetic test fixtures can hold garbage depth at a
  * kind != 0 cell; real resolve output never does).
  */
-function aoTapInto(tx, ty, kind, depth, cols, rows, pitched, terms, camX, camY, camZ, dirX, dirY, planeX, planeY, horizonRow, planeDistY, P, nx, ny, nz, radiusM, bias) {
+function aoTapInto(tx, ty, kind, depth, cols, rows, pitched, terms, P) {
+  // TEST-FLAKY-AO-01: doubles come from the aoPar scratch (not 14 double args, which V8 boxes as HeapNumbers per call).
   if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) return;
   const ti = ty * cols + tx;
   if (kind[ti] === 0) return;
   const td = depth[ti];
   if (!(td > 0) || !Number.isFinite(td)) return;
-  cellPointInto(pitched, terms, tx, ty, td, cols, camX, camY, camZ, dirX, dirY, planeX, planeY, horizonRow, planeDistY, aoTapP);
-  aoAcc[0] += aoTapOcc(nx, ny, nz, aoTapP[0] - P[0], aoTapP[1] - P[1], aoTapP[2] - P[2], radiusM, bias);
+  cellPointInto(pitched, terms, tx, ty, td, cols, aoPar[0], aoPar[1], aoPar[2], aoPar[3], aoPar[4], aoPar[5], aoPar[6], aoPar[7], aoPar[8], aoTapP);
+  aoAcc[0] += aoTapOcc(aoPar[9], aoPar[10], aoPar[11], aoTapP[0] - P[0], aoTapP[1] - P[1], aoTapP[2] - P[2], aoPar[12], aoPar[13]);
 }
 
 export function lightSurfaces(fb, lights, cam, world) {
@@ -1208,11 +1210,13 @@ export function lightSurfaces(fb, lights, cam, world) {
         litP3[0] = px; litP3[1] = py; litP3[2] = pz; // reuse: P is not read again for this cell after this point
         const rc = aoTapCells(aoR, planeDistY, depth[i], ao.maxCells);
         // tap order -x, +x, -y, +y (ratified, matches WGSL)
+        aoPar[0] = cam.x; aoPar[1] = cam.y; aoPar[2] = cam.z; aoPar[3] = dirX; aoPar[4] = dirY; aoPar[5] = planeX; aoPar[6] = planeY; aoPar[7] = horizonRow; aoPar[8] = planeDistY;
+        aoPar[9] = nx; aoPar[10] = ny; aoPar[11] = nz; aoPar[12] = aoR; aoPar[13] = aoB;
         aoAcc[0] = 0;
-        aoTapInto(x - rc, y, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz, aoR, aoB);
-        aoTapInto(x + rc, y, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz, aoR, aoB);
-        aoTapInto(x, y - rc, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz, aoR, aoB);
-        aoTapInto(x, y + rc, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz, aoR, aoB);
+        aoTapInto(x - rc, y, kind, depth, cols, rows, pitched, litPitchTerms, litP3);
+        aoTapInto(x + rc, y, kind, depth, cols, rows, pitched, litPitchTerms, litP3);
+        aoTapInto(x, y - rc, kind, depth, cols, rows, pitched, litPitchTerms, litP3);
+        aoTapInto(x, y + rc, kind, depth, cols, rows, pitched, litPitchTerms, litP3);
         const aoF = aoFactor(aoAcc[0] * 0.25, ao.strength);
         const k = 1 - aoF;
         rgb[o] -= lights.ambient[0] * k; rgb[o + 1] -= lights.ambient[1] * k; rgb[o + 2] -= lights.ambient[2] * k;
