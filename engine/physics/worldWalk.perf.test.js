@@ -410,8 +410,10 @@ const PARITY_TOL = 0.01; // 1 cm, per the ME-11c spec
     const level = assets.level(key);
     return { ...level, props: (level.props || []).map(p => ({ ...p, colliders: [] })) };
   };
-  const wg = World.load(assets.world('world_m1'), parityAssets, {});
-  const wm = World.load(assets.world('world_m1'), parityAssets, { physics: 'mesh' });
+  // NPC-BEAR-01: world-level entity colliders (Burl) are authored solids too - strip them for the same structural fixture.
+  const parityWorld = (() => { const w = assets.world('world_m1'); return { ...w, entities: (w.entities || []).map(e => (e.components && e.components.collider) ? { ...e, components: { ...e.components, collider: undefined } } : e) }; })();
+  const wg = World.load(parityWorld, parityAssets, {});
+  const wm = World.load(parityWorld, parityAssets, { physics: 'mesh' });
   ok('structural parity fixture explicitly opts out of authored prop colliders', !wm.colliders.some(c => c.id === 'props:static'));
   ok('grid-mode world_m1 loads with physicsMode "grid"', wg.physicsMode === 'grid', `physicsMode=${wg.physicsMode}`);
   const pg = makePlayer(TOWER_ORIGIN.x + startPose.x, TOWER_ORIGIN.y + startPose.y, 1);
