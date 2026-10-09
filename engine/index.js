@@ -238,6 +238,9 @@ export { createFireGrid } from './world/fireGrid.js';
 export { createParticles, PARTICLE_CAP, MAX_EMITTERS as PARTICLE_MAX_EMITTERS } from './fx/particles.js';
 export { createEntityEmitters } from './world/entityEmitters.js';
 
+// ---- S8-B2-13b splash ripples (docs/architecture.md 38.14, the note of record) ----
+export { createRipples, RIPPLE_LIFE, RIPPLE_SPEED, RIPPLE_W } from './fx/ripples.js';
+
 // ---- US-055a1 water regions + query (architecture.md 32.2; the query is `World#waterAt`) ----
 export { createWater, collectWaterDefs, WATER_MAX } from './world/water.js';
 export { createWaterfalls, collectWaterfallDefs } from './world/waterfalls.js';
