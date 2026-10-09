@@ -398,9 +398,16 @@ export class MeshDrawCache {
 
 const _mOrder = new Int32Array(MAX_MESH_DRAWS);
 const _mDist = new Float64Array(MAX_MESH_DRAWS);
+const _mKey = new Float64Array(MAX_MESH_DRAWS);
+const MIN_RANK_RADIUS_M = 0.25;
+/** BUG-MESH-MISSING-01: selection key (smaller = kept first) = distance / bbox radius, i.e. inverse projected size: a 6 m dead tree at 30 m (key 10) beats a 0.2 m pebble at 12 m (key 48). Size-first, so a 2 m eye step barely reorders big props. @param {any} b bbox @param {number} d */
+function rankKey(b, d) {
+  const r = 0.5 * Math.hypot(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0);
+  return (d + 0.5) / (r > MIN_RANK_RADIUS_M ? r : MIN_RANK_RADIUS_M);
+}
 
 /**
- * One `DRAW_STATIC` item per placed `kind:'mesh'` structure, nearest `MAX_MESH_DRAWS` within `fogFarM`, near -> far.
+ * One `DRAW_STATIC` item per placed `kind:'mesh'` structure, best `MAX_MESH_DRAWS` (smallest distance / bbox radius) within `fogFarM`, drawn near -> far; grouped placements are uncapped.
  * planeIdOr = (slot & 0xFF) << 20 (draw order, neighbours outline), objectId = 0xA000 | structureIndex.
  * @param {DrawList} list
  * @param {import('../world/World.js').World} world
@@ -431,12 +438,14 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
       continue;
     }
     if (d > fogFarM || (bEye && d > bCut)) continue;
+    if (groups && groups.has(i)) { groups.chosen[i] = 1; continue; } // BUG-MESH-MISSING-01: instanced groups are not capped (cheap); only the frustum cull in push() thins them
+    const key = rankKey(structs[i].bbox, d);
     if (count < maxKeep) {
-      _mOrder[count] = i; _mDist[count] = d; count++;
+      _mOrder[count] = i; _mDist[count] = d; _mKey[count] = key; count++;
     } else if (maxKeep > 0) {
-      let worst = 0, worstD = _mDist[0];
-      for (let k = 1; k < maxKeep; k++) if (_mDist[k] > worstD || (_mDist[k] === worstD && _mOrder[k] > _mOrder[worst])) { worstD = _mDist[k]; worst = k; } // ties: evict the highest object id (MESH-SHADOW-02)
-      if (d < worstD) { _mOrder[worst] = i; _mDist[worst] = d; }
+      let worst = 0, worstK = _mKey[0];
+      for (let k = 1; k < maxKeep; k++) if (_mKey[k] > worstK || (_mKey[k] === worstK && _mOrder[k] > _mOrder[worst])) { worstK = _mKey[k]; worst = k; } // ties: evict the highest object id (MESH-SHADOW-02)
+      if (key < worstK) { _mOrder[worst] = i; _mDist[worst] = d; _mKey[worst] = key; }
     }
   }
   for (let i = 1; i < count; i++) {
@@ -447,7 +456,6 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
   }
   for (let k = 0; k < count; k++) {
     const si = _mOrder[k];
-    if (groups && groups.has(si)) { groups.chosen[si] = 1; continue; } // MESH-INST-01: drawn by its instanced group (same nearest-64 set as singles)
     const s = structs[si];
     const mesh = cache.get(s.mesh, idFor, world.maskAtlas);
     const item = list.push(mesh, DRAW_STATIC);

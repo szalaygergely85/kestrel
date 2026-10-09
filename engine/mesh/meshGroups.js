@@ -214,8 +214,8 @@ export class MeshGroupSet {
   }
 
   /**
-   * One `DRAW_INSTANCED` item per group with >= 1 survivor. Survivors = members picked by the feed's nearest-64 selection
-   * (`chosen`, so the drawn prop set is exactly the single-draw path's) that are not outside the frustum; stable order,
+   * One `DRAW_INSTANCED` item per group with >= 1 survivor. Survivors = members within draw distance
+   * (`chosen`, uncapped) that are not outside the frustum; stable order,
    * 16 words copied through the u32 view (bit-exact). Zero allocation.
    * @param {import('./DrawList.js').DrawList} list
    * @param {Float64Array|null} planes - `frustumPlanes` output; null = keep all
@@ -246,7 +246,7 @@ export class MeshGroupSet {
 
 /**
  * Camera feed for placed kind-9 meshes with batching: grouped placements become instanced items, everything else goes
- * through `addMeshStructures` exactly as before. The nearest-`MAX_MESH_DRAWS` (64) selection is unchanged and covers grouped placements too, so the drawn prop set (and every cell) equals the single-draw path; only the number of draw items drops. Lifting the cap for groups is a follow-up (it adds far props: a visible change). `groups` null = old behaviour.
+ * through `addMeshStructures` exactly as before. BUG-MESH-MISSING-01: grouped placements are NOT subject to the `MAX_MESH_DRAWS` cap (every one within fogFarM is `chosen`, the frustum cull thins them); only singles are capped, ranked by projected size. `groups` null = old behaviour.
  * @param {import('./DrawList.js').DrawList} list
  * @param {import('../world/World.js').World} world
  * @param {{x:number,y:number,z:number}} cam

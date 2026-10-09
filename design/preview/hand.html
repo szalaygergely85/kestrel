@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - the hand + the burning hand (HAND-ART-01 / HAND-BURN-01)</title>
+<style>
+  body { background: #07080c; color: #cfd3dc; font: 13px/1.45 Consolas, Menlo, monospace; margin: 16px; }
+  h1 { font-size: 18px; margin: 0 0 4px; color: #ffc23c; }
+  h2 { font-size: 15px; margin: 22px 0 6px; color: #e8c8b0; border-bottom: 1px solid #222632; padding-bottom: 3px; }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+  label { white-space: nowrap; }
+  select, button, input { background: #141824; color: #cfd3dc; border: 1px solid #2c3242; font: inherit; }
+  button { padding: 2px 8px; cursor: pointer; }
+  canvas { display: block; background: #000; }
+  .ok { color: #7ccf6a; } .bad { color: #ff6a5a; } .dim { color: #7b8190; }
+  .sheet { display: grid; grid-template-columns: repeat(5, auto); gap: 10px; }
+  .cell { background: #0b0d14; padding: 4px; }
+  .cap { font-size: 11px; color: #8a8f9a; margin-top: 3px; }
+  table { border-collapse: collapse; font-size: 12px; }
+  td, th { border: 1px solid #222632; padding: 2px 6px; text-align: right; }
+  th { color: #e8c8b0; } td:first-child, th:first-child { text-align: left; }
+  textarea { width: 100%; height: 90px; background: #0b0d14; color: #cfd3dc; border: 1px solid #2c3242; font: 12px monospace; }
+</style>
+</head>
+<body>
+<h1>The hand + the burning hand</h1>
+<div class="dim">design/models/hand.js - 1 cm voxels, authored LEFT, the right hand is the engine mirror (37.8a). Mockup ray caster with the
+palette shader (no engine: no edge pass, shadows or bleed). Works from file:// (the engine format check needs http).</div>
+
+<h2>Checks</h2>
+<div id="checks"></div>
+
+<h2>First-person view</h2>
+<div class="row">
+  <label>grid <select id="grid"><option>240x90</option><option selected>400x150</option><option>480x180</option></select></label>
+  <label>px/cell <input id="px" type="range" min="2" max="8" value="3"></label>
+  <label>time <select id="time"><option value="night" selected>night</option><option value="dusk">dusk</option><option value="morning">day</option></select></label>
+  <label>left clip <select id="clipL"></select></label>
+  <label>right clip <select id="clipR"></select></label>
+  <label>speed <select id="speed"><option>0.25</option><option>0.5</option><option selected>1</option></select></label>
+  <button id="restart">restart clips</button>
+  <label><input id="pause" type="checkbox"> pause</label>
+  <label><input id="parts" type="checkbox" checked> particles</label>
+  <label><input id="flick" type="checkbox" checked> light flicker</label>
+</div>
+<div class="row">
+  <label>sun / moon direction <input id="sunAz" type="range" min="0" max="360" value="300"></label>
+  <label>elevation <input id="sunEl" type="range" min="5" max="85" value="45"></label>
+  <span class="dim">(the slider moves the scene light; the hand's own fire light stays at its core)</span>
+</div>
+<canvas id="view"></canvas>
+<div id="info" class="dim"></div>
+
+<h2>Fire tuning (rebuilds the burning variants; copy the values into handFx TUNE)</h2>
+<div class="row">
+  <label>shell density <input id="tShell" type="range" min="0" max="2" step="0.05" value="1"></label><span id="vShell"></span>
+  <label>tongues <input id="tTongues" type="range" min="0" max="60" step="1" value="26"></label><span id="vTongues"></span>
+  <label>tongue length <input id="tLength" type="range" min="0.3" max="2" step="0.05" value="1"></label><span id="vLength"></span>
+  <label>core radius <input id="tCore" type="range" min="0" max="4" step="0.1" value="2.4"></label><span id="vCore"></span>
+  <label>fire reaches wrist z <input id="tWrist" type="range" min="-14" max="0" step="0.5" value="-7.5"></label><span id="vWrist"></span>
+  <button id="rebuild">rebuild</button> <button id="copy">copy values</button>
+</div>
+<textarea id="out" readonly></textarea>
+
+<h2>Variants (all 15 baked models, orbit)</h2>
+<div class="row">
+  <label>yaw <input id="oyaw" type="range" min="-180" max="180" value="0"></label>
+  <label>pitch <input id="opitch" type="range" min="-90" max="90" value="0"></label>
+  <label><input id="sheetAnim" type="checkbox" checked> animate burn cycle in the sheet</label>
+</div>
+<div class="sheet" id="sheet"></div>
+
+<h2>Voxel counts</h2>
+<div id="counts"></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../models/particles.js"></script>
+<script src="../models/hand.js"></script>
+<script>
+(function () {
+  'use strict';
+  var A = window.ASSETS, P = A.palette, PU = P.util, FX = A.handFx, DEF = A.viewModels.hand, U = FX.util;
+  var $ = function (id) { return document.getElementById(id); };
+  var TANH = Math.tan(37.5 * Math.PI / 180), TANV = TANH * 9 / 16;
+  var CLIPS = Object.keys(DEF.clips);
+  var DEMO = [['raise', 300], ['idle', 3000], ['burnStart', 300], ['burnLoop', 3000], ['burnCast', 700], ['burnLoop', 1200],
+              ['hold', 2400], ['burnOut', 500], ['breathe', 1600], ['cast', 700], ['idle', 1400], ['lower', 250], ['lower', 500]];
+  var DEMO_T = DEMO.reduce(function (s, d) { return s + d[1]; }, 0);
+
+  // ---------------------------------------------------------------- controls
+  function fillClipSel(sel, def) {
+    ['demo', 'off'].concat(CLIPS).forEach(function (c) { var o = document.createElement('option'); o.textContent = c; sel.appendChild(o); });
+    sel.value = def;
+  }
+  fillClipSel($('clipL'), 'demo'); fillClipSel($('clipR'), 'burnLoop');
+  var t0 = performance.now(), pausedAt = 0, simTime = 0, lastNow = t0;
+  $('restart').onclick = function () { simTime = 0; particles.length = 0; };
+
+  // ---------------------------------------------------------------- checks
+  function showChecks() {
+    var errs = FX.validate(P), pe = PU.validate(), html = '';
+    html += line(errs.length === 0, 'handFx.validate(palette): ' + (errs.length ? errs.slice(0, 12).join(' | ') : 'OK (variants, cycles, clip keys, core mount identical in every variant, core on screen in every clip, particles, materials v1 + v2, light handFire)'));
+    html += line(pe.length === 0, 'palette.util.validate(): ' + (pe.length ? pe.slice(0, 6).join(' | ') : 'OK'));
+    var co = DEF.castOffset;
+    html += line(true, 'castOffset (core mount at rest, left hand = negative right): right ' + co.right + ', fwd ' + co.fwd + ', down ' + co.down +
+                 ' m; carriedLight offset ' + JSON.stringify(DEF.carriedLight.offset));
+    var maxT = 0, maxN = '';
+    Object.keys(DEF.variants).forEach(function (v) { var s = A.voxelModels[DEF.variants[v]].stats; if (s.total > maxT) { maxT = s.total; maxN = v; } });
+    html += line(maxT <= 4000, 'largest variant ' + maxN + ': ' + maxT + ' voxels (designer cap 4000 per view-model variant)');
+    var ascii = true;
+    Object.keys(P.ramps).forEach(function (r) { for (var i = 0; i < P.ramps[r].length; i++) { var c = P.ramps[r].charCodeAt(i); if (c < 32 || c > 126) ascii = false; } });
+    html += line(ascii, 'all ramps / glyphs ASCII 32..126');
+    $('checks').innerHTML = html + '<div id="engineCheck" class="dim">engine validateVoxelModel: loading...</div>';
+    try {
+      import('../../engine/voxel/VoxelModel.js').then(function (m) {
+        var bad = [], keys = Object.keys(P.materials);
+        Object.keys(DEF.variants).forEach(function (v) {
+          var r = m.validateVoxelModel(A.voxelModels[DEF.variants[v]].voxel, { materialKeys: keys });
+          if (r.errors.length) bad.push(v + ': ' + r.errors.slice(0, 3).join('; '));
+        });
+        $('engineCheck').outerHTML = line(bad.length === 0, 'engine validateVoxelModel (15 variants): ' + (bad.length ? bad.join(' | ') : 'OK'));
+      }).catch(function () { $('engineCheck').textContent = 'engine validateVoxelModel: skipped (open over http to run it)'; });
+    } catch (e) { $('engineCheck').textContent = 'engine validateVoxelModel: skipped'; }
+  }
+  function line(ok, txt) { return '<div class="' + (ok ? 'ok' : 'bad') + '">' + (ok ? 'PASS ' : 'FAIL ') + esc(txt) + '</div>'; }
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+
+  function showCounts() {
+    var h = '<table><tr><th>variant</th><th>model</th><th>size (cells)</th><th>hand</th><th>fire</th><th>emissive</th><th>total</th></tr>';
+    Object.keys(DEF.variants).forEach(function (v) {
+      var r = A.voxelModels[DEF.variants[v]], s = r.stats;
+      h += '<tr><td>' + v + '</td><td>' + r.name + '</td><td>' + s.size.join(' x ') + '</td><td>' + s.hand + '</td><td>' + s.fire + '</td><td>' + s.emissive + '</td><td>' + s.total + '</td></tr>';
+    });
+    $('counts').innerHTML = h + '</table>';
+  }
+
+  // ---------------------------------------------------------------- model cache + ray cast
+  var cache = {};
+  function compiled(name) {
+    var c = cache[name];
+    if (c) return c;
+    var V = A.voxelModels[name].voxel, sx = V.size[0], sy = V.size[1], sz = V.size[2], vox = new Uint8Array(sx * sy * sz), x, y, z;
+    for (z = 0; z < sz; z++) for (y = 0; y < sy; y++) {
+      var row = V.layers[z][y];
+      for (x = 0; x < sx; x++) { var ch = row.charCodeAt(x); if (ch !== 46) vox[x + sx * (y + sy * z)] = ch; }
+    }
+    var matOf = {};
+    Object.keys(V.mats).forEach(function (k) { matOf[k.charCodeAt(0)] = V.mats[k]; });
+    c = cache[name] = { sx: sx, sy: sy, sz: sz, vox: vox, an: V.anchor, cm: V.cellM, matOf: matOf };
+    return c;
+  }
+  function inst(name, pose, mirror) {
+    return { m: compiled(name), pos: pose.pos, R: [U.rotApply(pose.rot, [1, 0, 0]), U.rotApply(pose.rot, [0, 1, 0]), U.rotApply(pose.rot, [0, 0, 1])],
+             mir: mirror ? -1 : 1 };
+  }
+  // ray from the eye (origin) along unit d; returns t or -1, fills hit
+  function cast(I, d, hit) {
+    var m = I.m, R = I.R, cm = m.cm, mdx = d[0] * I.mir, mdy = d[1], mdz = d[2];
+    var px = -I.pos[0], py = -I.pos[1], pz = -I.pos[2];
+    var o = [m.an[0] + (R[0][0] * px + R[0][1] * py + R[0][2] * pz) / cm,
+             m.an[1] + (R[1][0] * px + R[1][1] * py + R[1][2] * pz) / cm,
+             m.an[2] + (R[2][0] * px + R[2][1] * py + R[2][2] * pz) / cm];
+    var dv = [(R[0][0] * mdx + R[0][1] * mdy + R[0][2] * mdz) / cm,
+              (R[1][0] * mdx + R[1][1] * mdy + R[1][2] * mdz) / cm,
+              (R[2][0] * mdx + R[2][1] * mdy + R[2][2] * mdz) / cm];
+    var S = [m.sx, m.sy, m.sz], t0 = 0, t1 = 1e9, ax = 2, a;
+    for (a = 0; a < 3; a++) {
+      if (Math.abs(dv[a]) < 1e-12) { if (o[a] < 0 || o[a] > S[a]) return -1; continue; }
+      var ta = -o[a] / dv[a], tb = (S[a] - o[a]) / dv[a];
+      if (ta > tb) { var tmp = ta; ta = tb; tb = tmp; }
+      if (ta > t0) { t0 = ta; ax = a; }
+      if (tb < t1) t1 = tb;
+      if (t0 > t1) return -1;
+    }
+    var te = t0 + 1e-7, c = [0, 0, 0], st = [0, 0, 0], tm = [0, 0, 0], td = [0, 0, 0];
+    for (a = 0; a < 3; a++) {
+      c[a] = Math.floor(o[a] + dv[a] * te);
+      if (c[a] < 0) c[a] = 0; if (c[a] > S[a] - 1) c[a] = S[a] - 1;
+      if (dv[a] > 0) { st[a] = 1; tm[a] = (c[a] + 1 - o[a]) / dv[a]; td[a] = 1 / dv[a]; }
+      else if (dv[a] < 0) { st[a] = -1; tm[a] = (c[a] - o[a]) / dv[a]; td[a] = -1 / dv[a]; }
+      else { st[a] = 0; tm[a] = 1e30; td[a] = 1e30; }
+    }
+    var t = t0, n;
+    for (n = 0; n < 600; n++) {
+      var code = m.vox[c[0] + m.sx * (c[1] + m.sy * c[2])];
+      if (code) {
+        hit.t = t; hit.code = code; hit.m = m; hit.I = I; hit.ax = ax; hit.sg = dv[ax] > 0 ? -1 : 1;
+        hit.mx = o[0] + dv[0] * t; hit.my = o[1] + dv[1] * t; hit.mz = o[2] + dv[2] * t;
+        return t;
+      }
+      if (tm[0] < tm[1] && tm[0] < tm[2]) { ax = 0; } else if (tm[1] < tm[2]) { ax = 1; } else { ax = 2; }
+      t = tm[ax]; c[ax] += st[ax]; tm[ax] += td[ax];
+      if (c[ax] < 0 || c[ax] >= S[ax] || t > t1) return -1;
+    }
+    return -1;
+  }
+
+  // ---------------------------------------------------------------- lighting helpers
+  function vnoise(x, seed) {
+    var i = Math.floor(x), f = x - i, a = hash1(i, seed), b = hash1(i + 1, seed);
+    f = f * f * (3 - 2 * f);
+    return (a + (b - a) * f) * 2 - 1;
+  }
+  function hash1(i, s) { var h = Math.imul(i ^ (s * 7919), 2654435761) >>> 0; h ^= h >>> 15; h = Math.imul(h, 2246822519) >>> 0; return (h >>> 0) / 4294967296; }
+  function flicker(preset, t, seed) {
+    var f = preset.flicker;
+    if (!f || !$('flick').checked) return 1;
+    return 1 + f.amount * (0.6 * vnoise(t * f.hzMin, seed) + 0.4 * vnoise(t * f.hzMax, seed + 3)) + f.jitter * (hash1(Math.floor(t * 30), seed + 9) - 0.5);
+  }
+  function addL(L, key, amt) { if (amt > 0) PU.addLight(L, key, amt); }
+
+  // scene lights for one frame: { amb: [key, I], sun: [key, I, dir], fires: [{p, I, r, key}] }
+  function sceneLights(timeKey) {
+    var T = P.timeOfDay[timeKey], az = +$('sunAz').value * Math.PI / 180, el = +$('sunEl').value * Math.PI / 180;
+    return { amb: [T.ambient, T.ambientI], sun: [T.sun, T.sunI * 0.8, [Math.sin(az) * Math.cos(el), -Math.cos(az) * Math.cos(el), Math.sin(el)]], fires: [] };
+  }
+  function lightAt(SL, p, n, L, nearFire) {
+    L[0] = 0; L[1] = 0; L[2] = 0;
+    addL(L, SL.amb[0], SL.amb[1]);
+    var s = SL.sun, ndl = n[0] * s[2][0] + n[1] * s[2][1] + n[2] * s[2][2];
+    addL(L, s[0], s[1] * Math.max(0, ndl));
+    for (var i = 0; i < SL.fires.length; i++) {
+      var F = SL.fires[i], dx = F.p[0] - p[0], dy = F.p[1] - p[1], dz = F.p[2] - p[2], d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
+      var nd = (n[0] * dx + n[1] * dy + n[2] * dz) / d;
+      var wrap = nearFire ? 0.3 + 0.7 * Math.max(0, nd) : Math.max(0, nd);
+      addL(L, F.key, F.I * PU.falloff(d, F.r) * wrap);
+    }
+    return L;
+  }
+
+  // ---------------------------------------------------------------- renderer
+  var dirCache = {};
+  function dirs(W, H) {
+    var k = W + 'x' + H;
+    if (dirCache[k]) return dirCache[k];
+    var D = new Float32Array(W * H * 3), i, j;
+    for (j = 0; j < H; j++) for (i = 0; i < W; i++) {
+      var x = (2 * (i + 0.5) / W - 1) * TANH, z = (1 - 2 * (j + 0.5) / H) * TANV, l = Math.sqrt(x * x + 1 + z * z), o = (j * W + i) * 3;
+      D[o] = x / l; D[o + 1] = -1 / l; D[o + 2] = z / l;
+    }
+    return (dirCache[k] = D);
+  }
+  var OUT = { fg: [0, 0, 0], bg: [0, 0, 0] }, LL = [0, 0, 0], HIT = {}, BEST = {};
+  function copyHit(a, b) { for (var k in a) b[k] = a[k]; }
+  // opts: { canvas, W, H, cw, insts, lights, room, zbuf? }
+  function render(opts) {
+    var W = opts.W, H = opts.H, cw = opts.cw, chh = cw * 1.5, cv = opts.canvas, ctx = cv.getContext('2d');
+    if (cv.width !== Math.round(W * cw) || cv.height !== Math.round(H * chh)) { cv.width = Math.round(W * cw); cv.height = Math.round(H * chh); }
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.font = Math.max(4, Math.round(chh)) + 'px Consolas, Menlo, monospace'; ctx.textBaseline = 'top';
+    var D = dirs(W, H), zb = opts.zbuf || new Float32Array(W * H), i, j, q;
+    for (j = 0; j < H; j++) for (i = 0; i < W; i++) {
+      var o = (j * W + i) * 3, d = [D[o], D[o + 1], D[o + 2]], bt = 1e9, got = false;
+      for (q = 0; q < opts.insts.length; q++) { var tt = cast(opts.insts[q], d, HIT); if (tt > 0 && tt < bt) { bt = tt; copyHit(HIT, BEST); got = true; } }
+      var mat = null, p, n, u, v;
+      if (got) {
+        var I = BEST.I, ax = BEST.ax, sg = BEST.sg, col = I.R[ax];
+        n = [col[0] * sg * I.mir, col[1] * sg, col[2] * sg];
+        p = [d[0] * bt, d[1] * bt, d[2] * bt];
+        mat = BEST.m.matOf[BEST.code];
+        var cmm = BEST.m.cm;
+        if (ax === 0) { u = BEST.my * cmm; v = BEST.mz * cmm; } else if (ax === 1) { u = BEST.mx * cmm; v = BEST.mz * cmm; } else { u = BEST.mx * cmm; v = BEST.my * cmm; }
+        lightAt(opts.lights, p, n, LL, true);
+        PU.shade(mat, LL, u, v, bt, OUT, { fog: null });
+        zb[j * W + i] = bt;
+      } else if (opts.room) {
+        // room: wall 2.4 m ahead, floor 1.55 m below the eye, ceiling 1.5 m above
+        var tw = d[1] < 0 ? -2.4 / d[1] : 1e9, tf = d[2] < 0 ? -1.55 / d[2] : 1e9, tc = d[2] > 0 ? 1.5 / d[2] : 1e9;
+        var tm2 = Math.min(tw, tf, tc);
+        p = [d[0] * tm2, d[1] * tm2, d[2] * tm2];
+        if (tm2 === tw) { n = [0, 1, 0]; mat = 'stone'; u = p[0] + 10; v = p[2] + 1.55; }
+        else if (tm2 === tf) { n = [0, 0, 1]; mat = 'floor'; u = p[0] + 10; v = p[1] + 10; }
+        else { n = [0, 0, -1]; mat = 'stone'; u = p[0] + 10; v = p[1] + 10; }
+        lightAt(opts.lights, p, n, LL, false);
+        PU.shade(mat, LL, u, v, tm2, OUT, { fog: 'interior', z: v });
+        zb[j * W + i] = tm2;
+      } else { zb[j * W + i] = 1e9; continue; }
+      var x0 = i * cw, y0 = j * chh;
+      if (OUT.bg[0] + OUT.bg[1] + OUT.bg[2] > 3) { ctx.fillStyle = 'rgb(' + (OUT.bg[0] | 0) + ',' + (OUT.bg[1] | 0) + ',' + (OUT.bg[2] | 0) + ')'; ctx.fillRect(x0, y0, Math.ceil(cw), Math.ceil(chh)); }
+      if (OUT.glyph && OUT.glyph !== ' ') { ctx.fillStyle = 'rgb(' + (OUT.fg[0] | 0) + ',' + (OUT.fg[1] | 0) + ',' + (OUT.fg[2] | 0) + ')'; ctx.fillText(OUT.glyph, x0, y0); }
+    }
+    return zb;
+  }
+
+  // ---------------------------------------------------------------- particles (preview sim in eye space, sim-side in the game)
+  var particles = [];
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+  function spawn(presetKey, at, n, aim) {
+    var pr = FX.particles[presetKey], k;
+    for (k = 0; k < n; k++) {
+      var sp = rnd(pr.spreadDeg * -1, pr.spreadDeg) * Math.PI / 180, az = Math.random() * Math.PI * 2, s = rnd(pr.speed[0], pr.speed[1]);
+      var dir = aim ? [0, -Math.cos(sp), Math.sin(sp) * 0.5 + 0.2] : [Math.sin(sp) * Math.cos(az), Math.sin(sp) * Math.sin(az), Math.cos(sp)];
+      particles.push({ pr: pr, p: [at[0] + rnd(-1, 1) * pr.box[0], at[1] + rnd(-1, 1) * pr.box[1], at[2] + rnd(-1, 1) * pr.box[2]],
+                       v: [dir[0] * s, dir[1] * s, dir[2] * s], age: 0, life: rnd(pr.life[0], pr.life[1]) });
+    }
+  }
+  function stepParticles(dt) {
+    for (var i = particles.length - 1; i >= 0; i--) {
+      var q = particles[i], pr = q.pr;
+      q.age += dt;
+      if (q.age >= q.life) { particles.splice(i, 1); continue; }
+      q.v[2] += pr.accelZ * dt;
+      var dr = Math.max(0, 1 - pr.drag * dt);
+      q.v[0] *= dr; q.v[1] *= dr; q.v[2] *= dr;
+      q.v[0] += (Math.random() - 0.5) * pr.wind * dt;
+      q.p[0] += q.v[0] * dt; q.p[1] += q.v[1] * dt; q.p[2] += q.v[2] * dt;
+    }
+  }
+  function drawParticles(ctx, W, H, cw, zb) {
+    var chh = cw * 1.5;
+    particles.forEach(function (q) {
+      var s = -q.p[1];
+      if (s < 0.05) return;
+      var i = Math.floor(((q.p[0] / s) / TANH + 1) / 2 * W), j = Math.floor((1 - (q.p[2] / s) / TANV) / 2 * H);
+      if (i < 0 || j < 0 || i >= W || j >= H || zb[j * W + i] < s) return;
+      var pr = q.pr, k = Math.min(pr.glyphs.length - 1, Math.floor(q.age / q.life * pr.glyphs.length)), c = P.rgb[pr.colors[k]];
+      var mulc = pr.emissive ? 1 : 0.8;
+      ctx.fillStyle = 'rgb(' + ((c[0] * mulc) | 0) + ',' + ((c[1] * mulc) | 0) + ',' + ((c[2] * mulc) | 0) + ')';
+      ctx.fillText(pr.glyphs.charAt(k), i * cw, j * chh);
+    });
+  }
+
+  // ---------------------------------------------------------------- per-hand clip state
+  function clipAt(sel, tMs, offset) {
+    if (sel === 'off') return null;
+    if (sel !== 'demo') {
+      var cl = DEF.clips[sel], T = cl.keys[cl.keys.length - 1].t;
+      return { clip: sel, t: cl.loop ? tMs + offset : (tMs + offset) % (T + 900) };   // one-shot clips replay after a 0.9 s hold
+    }
+    var tt = ((tMs + offset) % DEMO_T + DEMO_T) % DEMO_T, i;
+    for (i = 0; i < DEMO.length; i++) { if (tt < DEMO[i][1]) return { clip: DEMO[i][0], t: tt }; tt -= DEMO[i][1]; }
+    return { clip: 'idle', t: 0 };
+  }
+  var prevClipT = { L: null, R: null };
+  function emitFor(side, cs, pose, mirror, stepNow) {
+    var rules = DEF.particles[cs.clip];
+    if (!rules || !$('parts').checked) return;
+    var at = U.mountEye(pose.model, pose, 'core', mirror);
+    var prev = prevClipT[side];
+    rules.forEach(function (r) {
+      if (r.atMs != null) {
+        if (prev && prev.clip === cs.clip && prev.t < r.atMs && cs.t >= r.atMs) spawn(r.preset, at, r.n, r.dir === 'aim');
+      } else if (r.everySteps && stepNow % r.everySteps === 0) {
+        if ((r.fromMs == null || cs.t >= r.fromMs) && (r.toMs == null || cs.t < r.toMs)) spawn(r.preset, at, r.n, false);
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------- main loop
+  var lastStep = 0, frameMs = 0;
+  function frame(now) {
+    var dt = Math.min(0.1, (now - lastNow) / 1000);
+    lastNow = now;
+    if (!$('pause').checked) simTime += dt * +$('speed').value;
+    var g = $('grid').value.split('x'), W = +g[0], H = +g[1], cw = +$('px').value, timeKey = $('time').value;
+    var SL = sceneLights(timeKey), insts = [], info = [], tMs = simTime * 1000, stepNow = Math.floor(simTime * 60);
+    [['L', $('clipL').value, false, 0], ['R', $('clipR').value, true, 1700]].forEach(function (h) {
+      var cs = clipAt(h[1], tMs, h[3]);
+      if (!cs) { prevClipT[h[0]] = null; return; }
+      var pose = U.sampleClip(DEF, cs.clip, cs.t, simTime + (h[2] ? 0.37 : 0));
+      insts.push(inst(pose.model, pose, h[2]));
+      if (pose.glow > 0) {
+        var lp = P.lights[DEF.carriedLight.preset];
+        SL.fires.push({ p: U.mountEye(pose.model, pose, 'core', h[2]), I: lp.intensity * pose.glow * flicker(lp, simTime, h[2] ? 17 : 5), r: lp.radius, key: lp.color });
+      }
+      if (stepNow !== lastStep) emitFor(h[0], cs, pose, h[2], stepNow);
+      prevClipT[h[0]] = { clip: cs.clip, t: cs.t };
+      info.push((h[2] ? 'RIGHT (mirrored)' : 'LEFT (authored)') + ': ' + cs.clip + ' ' + Math.round(cs.t) + ' ms, key ' + pose.key + ' -> ' + pose.variant +
+                ' (' + pose.model + ', ' + A.voxelModels[pose.model].stats.total + ' vox), glow ' + pose.glow.toFixed(2));
+    });
+    if (stepNow !== lastStep) { stepParticles((stepNow - lastStep) / 60); lastStep = stepNow; }
+    var t1 = performance.now();
+    var cv = $('view'), zb = render({ canvas: cv, W: W, H: H, cw: cw, insts: insts, lights: SL, room: true });
+    drawParticles(cv.getContext('2d'), W, H, cw, zb);
+    frameMs = frameMs * 0.9 + (performance.now() - t1) * 0.1;
+    $('info').textContent = info.join('  |  ') + '  |  particles ' + particles.length + '  |  mockup ' + frameMs.toFixed(0) + ' ms/frame';
+    if (sheetDirty) { sheetTick = Math.floor(simTime * 6); drawSheet(false); }
+    else if ($('sheetAnim').checked && Math.floor(simTime * 6) !== sheetTick) { sheetTick = Math.floor(simTime * 6); drawSheet(true); }
+    requestAnimationFrame(frame);
+  }
+
+  // ---------------------------------------------------------------- variant sheet (orbit)
+  var sheetDirty = true, sheetTick = -1, sheetCanvases = {};
+  function buildSheet() {
+    var root = $('sheet');
+    root.innerHTML = '';
+    Object.keys(DEF.variants).forEach(function (v) {
+      var d = document.createElement('div'), c = document.createElement('canvas'), cap = document.createElement('div');
+      d.className = 'cell'; cap.className = 'cap';
+      cap.textContent = v + ' - ' + DEF.variants[v] + ' (' + A.voxelModels[DEF.variants[v]].stats.total + ' vox)';
+      d.appendChild(c); d.appendChild(cap); root.appendChild(d);
+      sheetCanvases[v] = c;
+    });
+  }
+  function drawSheet(onlyCycle) {
+    sheetDirty = false;
+    var yaw = +$('oyaw').value, pitch = +$('opitch').value, timeKey = $('time').value;
+    var rot = [80 + pitch, 8, 10 + yaw], centre = U.rotApply(rot, [0, 0.015, 0.07]), pos = [-centre[0], -0.40 - centre[1], -centre[2]];
+    Object.keys(DEF.variants).forEach(function (v) {
+      var name = DEF.variants[v];
+      if (onlyCycle && !/^burn[A-D]$/.test(v)) return;
+      if (/^burn[A-D]$/.test(v) && $('sheetAnim').checked) {
+        var cyc = DEF.cycles.burn.variants, idx = cyc.indexOf(v);
+        name = DEF.variants[cyc[(idx + sheetTick) % cyc.length]];
+      }
+      var pose = { pos: pos, rot: rot }, SL = sceneLights(timeKey);
+      if (/^burn/.test(v)) {
+        var lp = P.lights.handFire;
+        SL.fires.push({ p: U.mountEye(name, pose, 'core', false), I: lp.intensity * (v === 'burnEmber' ? 0.2 : v === 'burnKindle' ? 0.4 : 1), r: lp.radius, key: lp.color });
+      }
+      render({ canvas: sheetCanvases[v], W: 90, H: 50, cw: 3, insts: [inst(name, pose, false)], lights: SL, room: false });
+    });
+  }
+
+  // ---------------------------------------------------------------- tuning
+  var TK = [['tShell', 'shell', 'vShell'], ['tTongues', 'tongues', 'vTongues'], ['tLength', 'length', 'vLength'], ['tCore', 'coreR', 'vCore'], ['tWrist', 'wristTo', 'vWrist']];
+  function readTune() { var t = {}; TK.forEach(function (k) { t[k[1]] = +$(k[0]).value; $(k[2]).textContent = $(k[0]).value; }); return t; }
+  TK.forEach(function (k) { $(k[0]).oninput = readTune; });
+  $('rebuild').onclick = function () {
+    FX.rebuild(readTune());
+    cache = {};
+    buildSheet(); sheetDirty = true; showChecks(); showCounts();
+    $('out').value = JSON.stringify({ tune: FX.tune }, null, 1);
+  };
+  $('copy').onclick = function () {
+    $('out').value = JSON.stringify({ tune: FX.tune }, null, 1);
+    $('out').select();
+    try { document.execCommand('copy'); } catch (e) { /* select is enough */ }
+  };
+  ['oyaw', 'opitch', 'time', 'sunAz', 'sunEl'].forEach(function (id) { $(id).addEventListener('input', function () { sheetDirty = true; }); });
+  $('grid').onchange = function () { $('px').value = $('grid').value === '240x90' ? 5 : 3; };
+
+  readTune();
+  $('out').value = JSON.stringify({ tune: FX.tune }, null, 1);
+  showChecks(); showCounts(); buildSheet();
+  requestAnimationFrame(function (n) { lastNow = n; frame(n); });
+})();
+</script>
+</body>
+</html>

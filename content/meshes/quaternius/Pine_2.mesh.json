@@ -1,0 +1,36 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Pine_2",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Pine_2.mesh.bin",
+  "triCount": 3648,
+  "bbox": [
+    -2.89196,
+    -2.52751,
+    -0.23509,
+    2.83613,
+    2.6937,
+    7.14115
+  ],
+  "ranges": [
+    {"count": 2878, "part": "Pine_2#0", "start": 0},
+    {"count": 770, "mask": {"cutoff": 0.2, "tex": "quaternius/Leaf_Pine_C"}, "part": "Pine_2#1", "start": 2878}
+  ],
+  "matKeys": [
+    "Bark_NormalTree",
+    "Leaves_Pine"
+  ],
+  "mats": {
+    "Bark_NormalTree": "timber_old",
+    "Leaves_Pine": "leaf_dark"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "nMRgvy2yrT/Xo3C+9P0Uv65H4b3Xo3C+9P0Uv65H4b2BldtAnMRgvy2yrT/Xo3C+9P0Uv65H4b2BldtAnMRgvy2yrT+BldtA9P0Uv65H4b3Xo3C+z/dTPn0/tb/Xo3C+z/dTPn0/tb+BldtA9P0Uv65H4b3Xo3C+z/dTPn0/tb+BldtA9P0Uv65H4b2BldtAz/dTPn0/tb/Xo3C+cT2KPlyPsr/Xo3C+cT2KPlyPsr+BldtAz/dTPn0/tb/Xo3C+cT2KPlyPsr+BldtAz/dTPn0/tb+BldtAcT2KPlyPsr/Xo3C+309NP8P1qD7Xo3C+309NP8P1qD6BldtAcT2KPlyPsr/Xo3C+309NP8P1qD6BldtAcT2KPlyPsr+BldtA309NP8P1qD7Xo3C+g8BKPiUG8T/Xo3C+g8BKPiUG8T+BldtA309NP8P1qD7Xo3C+g8BKPiUG8T+BldtA309NP8P1qD6BldtAg8BKPiUG8T/Xo3C+BFYOPlg59D/Xo3C+BFYOPlg59D+BldtAg8BKPiUG8T/Xo3C+BFYOPlg59D+BldtAg8BKPiUG8T+BldtABFYOPlg59D/Xo3C+mplZvylcvz/Xo3C+mplZvylcvz+BldtABFYOPlg59D/Xo3C+mplZvylcvz+BldtABFYOPlg59D+BldtAmplZvylcvz/Xo3C+nMRgvy2yrT/Xo3C+nMRgvy2yrT+BldtAmplZvylcvz/Xo3C+nMRgvy2yrT+BldtAmplZvylcvz+BldtAnMRgvy2yrT+BldtA9P0Uv65H4b2BldtAz/dTPn0/tb+BldtAnMRgvy2yrT/Xo3C+z/dTPn0/tb/Xo3C+9P0Uv65H4b3Xo3C+nMRgvy2yrT+BldtAz/dTPn0/tb+BldtAcT2KPlyPsr+BldtAnMRgvy2yrT/Xo3C+cT2KPlyPsr/Xo3C+z/dTPn0/tb/Xo3C+nMRgvy2yrT+BldtAcT2KPlyPsr+BldtA309NP8P1qD6BldtAnMRgvy2yrT/Xo3C+309NP8P1qD7Xo3C+cT2KPlyPsr/Xo3C+nMRgvy2yrT+BldtA309NP8P1qD6BldtAg8BKPiUG8T+BldtAnMRgvy2yrT/Xo3C+g8BKPiUG8T/Xo3C+309NP8P1qD7Xo3C+nMRgvy2yrT+BldtAg8BKPiUG8T+BldtABFYOPlg59D+BldtAnMRgvy2yrT/Xo3C+BFYOPlg59D/Xo3C+g8BKPiUG8T/Xo3C+nMRgvy2yrT+BldtABFYOPlg59D+BldtAmplZvylcvz+BldtAnMRgvy2yrT/Xo3C+mplZvylcvz/Xo3C+BFYOPlg59D/Xo3C+",
+  "colliderParts": [
+    "Pine_2#0"
+  ]
+}

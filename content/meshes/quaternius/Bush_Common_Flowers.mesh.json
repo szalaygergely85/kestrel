@@ -1,0 +1,33 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Bush_Common_Flowers",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Bush_Common_Flowers.mesh.bin",
+  "triCount": 1368,
+  "bbox": [
+    -0.92348,
+    -0.99075,
+    -0.23469,
+    0.99137,
+    0.97439,
+    1.34709
+  ],
+  "ranges": [
+    {"count": 900, "mask": {"cutoff": 0.2, "tex": "quaternius/Leaves_NormalTree_C"}, "part": "Bush_Common_Flowers#0", "start": 0},
+    {"count": 468, "mask": {"cutoff": 0.2, "tex": "quaternius/Flowers"}, "part": "Bush_Common_Flowers#1", "start": 900}
+  ],
+  "matKeys": [
+    "Leaves_NormalTree",
+    "Flowers"
+  ],
+  "mats": {
+    "Flowers": "petal_yellow",
+    "Leaves_NormalTree": "leaf"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "dZN4v/T91LzXo3C+nMTgvo2Xbr/Xo3C+nMTgvo2Xbr9/aqw/dZN4v/T91LzXo3C+nMTgvo2Xbr9/aqw/dZN4v/T91Lx/aqw/nMTgvo2Xbr/Xo3C+KVwPvh1ahL/Xo3C+KVwPvh1ahL9/aqw/nMTgvo2Xbr/Xo3C+KVwPvh1ahL9/aqw/nMTgvo2Xbr9/aqw/KVwPvh1ahL/Xo3C+XrpJPxkEFr/Xo3C+XrpJPxkEFr9/aqw/KVwPvh1ahL/Xo3C+XrpJPxkEFr9/aqw/KVwPvh1ahL9/aqw/XrpJPxkEFr/Xo3C+bxKDPyuHFr7Xo3C+bxKDPyuHFr5/aqw/XrpJPxkEFr/Xo3C+bxKDPyuHFr5/aqw/XrpJPxkEFr9/aqw/bxKDPyuHFr7Xo3C+2c5XP4lBID/Xo3C+2c5XP4lBID9/aqw/bxKDPyuHFr7Xo3C+2c5XP4lBID9/aqw/bxKDPyuHFr5/aqw/2c5XP4lBID/Xo3C+j8L1PlK4fj/Xo3C+j8L1PlK4fj9/aqw/2c5XP4lBID/Xo3C+j8L1PlK4fj9/aqw/2c5XP4lBID9/aqw/j8L1PlK4fj/Xo3C+tMi2vlCNdz/Xo3C+tMi2vlCNdz9/aqw/j8L1PlK4fj/Xo3C+tMi2vlCNdz9/aqw/j8L1PlK4fj9/aqw/tMi2vlCNdz/Xo3C+dZN4v/T91LzXo3C+dZN4v/T91Lx/aqw/tMi2vlCNdz/Xo3C+dZN4v/T91Lx/aqw/tMi2vlCNdz9/aqw/dZN4v/T91Lx/aqw/nMTgvo2Xbr9/aqw/KVwPvh1ahL9/aqw/dZN4v/T91LzXo3C+KVwPvh1ahL/Xo3C+nMTgvo2Xbr/Xo3C+dZN4v/T91Lx/aqw/KVwPvh1ahL9/aqw/XrpJPxkEFr9/aqw/dZN4v/T91LzXo3C+XrpJPxkEFr/Xo3C+KVwPvh1ahL/Xo3C+dZN4v/T91Lx/aqw/XrpJPxkEFr9/aqw/bxKDPyuHFr5/aqw/dZN4v/T91LzXo3C+bxKDPyuHFr7Xo3C+XrpJPxkEFr/Xo3C+dZN4v/T91Lx/aqw/bxKDPyuHFr5/aqw/2c5XP4lBID9/aqw/dZN4v/T91LzXo3C+2c5XP4lBID/Xo3C+bxKDPyuHFr7Xo3C+dZN4v/T91Lx/aqw/2c5XP4lBID9/aqw/j8L1PlK4fj9/aqw/dZN4v/T91LzXo3C+j8L1PlK4fj/Xo3C+2c5XP4lBID/Xo3C+dZN4v/T91Lx/aqw/j8L1PlK4fj9/aqw/tMi2vlCNdz9/aqw/dZN4v/T91LzXo3C+tMi2vlCNdz/Xo3C+j8L1PlK4fj/Xo3C+"
+}

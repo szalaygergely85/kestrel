@@ -44,6 +44,24 @@
     "meshes/quaternius/RockPath_Square_Small_2.mesh.json",
     "meshes/quaternius/RockPath_Square_Small_3.mesh.json",
     "meshes/quaternius/RockPath_Square_Thin.mesh.json",
+    "meshes/quaternius/Bush_Common_Flowers.mesh.json",
+    "meshes/quaternius/Bush_Common.mesh.json",
+    "meshes/quaternius/Pine_5.mesh.json",
+    "meshes/quaternius/Pine_4.mesh.json",
+    "meshes/quaternius/Pine_3.mesh.json",
+    "meshes/quaternius/Pine_2.mesh.json",
+    "meshes/quaternius/Pine_1.mesh.json",
+    "meshes/quaternius/CommonTree_5.mesh.json",
+    "meshes/quaternius/CommonTree_4.mesh.json",
+    "meshes/quaternius/CommonTree_3.mesh.json",
+    "meshes/quaternius/CommonTree_2.mesh.json",
+    "meshes/quaternius/CommonTree_1.mesh.json",
     "terrain/overworld_far.edits.json"
+  ],
+  "masks": [
+    "masks/quaternius/Flowers.mask.json",
+    "masks/quaternius/Leaf_Pine_C.mask.json",
+    "masks/quaternius/Leaves_NormalTree_C.mask.json",
+    "masks/quaternius/Leaves_TwistedTree_C.mask.json"
   ]
 }

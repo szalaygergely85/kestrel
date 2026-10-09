@@ -30,7 +30,7 @@ The 2026-10-07 audit in `docs/licences.md` and per-file `docs/licence-inventory.
 
 ## Quaternius - Stylized Nature MegaKit [Standard] (CC0)
 - Files: the free Standard tier's 68 glTF models + their `.bin` and textures, **committed** in `design/meshes/quaternius/glTF/` (~48 MB) so both PCs can import them; the zip's FBX/OBJ/previews stay in git-ignored `design/meshes/source/quaternius_stylized_nature/`.
-- Derived `.mesh.json` content: 35 models (DeadTree_1..5, Rock_Medium_1..3, Pebble_*, RockPath_*, Mushroom_Common, Mushroom_Laetiporus, Grass_*) **committed** in `content/meshes/quaternius/` (converted via `tools/gltf-import.mjs`, same CC0 terms).
+- Derived `.mesh.json` content: 47 models (CommonTree_1..5, Pine_1..5, Bush_Common, Bush_Common_Flowers with alpha masks `content/masks/quaternius/*.mask.json` derived from the leaf textures [ALPHA-01e], DeadTree_1..5, Rock_Medium_1..3, Pebble_*, RockPath_*, Mushroom_Common, Mushroom_Laetiporus, Grass_*) **committed** in `content/meshes/quaternius/` (converted via `tools/gltf-import.mjs`, same CC0 terms).
 - Licence: **CC0 1.0** (public domain), see `design/meshes/quaternius/License_Standard.txt`. Author: Quaternius (quaternius.com). Credit appreciated, not required. D-041.
 - Source: [Quaternius Stylized Nature MegaKit](https://quaternius.com/packs/stylizednaturemegakit.html). Commercial use and redistribution permitted by CC0 for the identified Standard inputs and derivatives.
 

@@ -88,20 +88,47 @@ const place = (w, m, x, y, yaw = 0, over) => World.prototype.placeMesh.call(w, m
   ok('over MAX_GROUPED_INSTANCES: whole mesh falls back to singles', g4.groups.length === 0);
 }
 
-// ---- 2b. the nearest-64 selection (MAX_MESH_DRAWS) is unchanged: same drawn prop set as singles -------
+// ---- 2b. BUG-MESH-MISSING-01: grouped placements are uncapped; the single cap ranks by projected size -------
 {
   const w = mkWorld();
   for (let i = 0; i < 90; i++) place(w, i % 2 ? rockB : rockA, (i % 30) * 2.5 - 37, Math.floor(i / 30) * 6);
   const cam = { x: 3, y: 20, z: 1.7 };
   const cache = new MeshDrawCache();
   const single = new DrawList(); single.begin(); addMeshStructures(single, w, cam, cache, idFor, 2000);
-  const want = new Set(); for (let i = 0; i < single.count; i++) want.add(single.items[i].objectId);
   const bl = new DrawList(); bl.begin(); const gs = new MeshGroupSet();
   addMeshStructuresBatched(bl, w, cam, cache, idFor, 2000, gs, null);
   const got = new Set();
   for (let i = 0; i < bl.count; i++) { const it = bl.items[i]; if (it.type === DRAW_INSTANCED) for (let j = 0; j < it.instCount; j++) got.add(it.instBuf.u32[j * 16 + 12]); else got.add(it.objectId); }
-  ok('90 placements: 64 drawn, 2 items instead of 64', single.count === 64 && want.size === 64 && bl.count === 2, `single ${single.count} batched items ${bl.count}`);
-  ok('batched feed draws exactly the single-draw prop set (ids)', got.size === 64 && [...want].every((id) => got.has(id)));
+  ok('90 placements: singles capped at 64, groups draw all 90 in 2 items', single.count === 64 && bl.count === 2 && got.size === 90, `single ${single.count} batched items ${bl.count} ids ${got.size}`);
+}
+{
+  // owner repro: pebbles/mushrooms (near, 11-15 m) used to fill the 64 slots and the DeadTrees/rocks at ~30 m dropped
+  const pebble = load('Pebble_Round_1'), mush = load('Mushroom_Common');
+  const eyes = [[1446.63, 1024.64, 2.02], [1448.31, 1026.52, 2.08]];
+  const build = (grouped) => {
+    const w = mkWorld(), big = [];
+    const cx = 1448, cy = 1026;
+    for (let i = 0; i < 100; i++) { const a = i * 2.399, r = 8 + (i % 7) * 1.2; place(w, i % 3 ? (grouped ? pebble : { ...pebble, id: 'p' + i }) : (grouped ? mush : { ...mush, id: 'm' + i }), cx + Math.cos(a) * r, cy + Math.sin(a) * r, i * 7); }
+    const trees = [tree, load('DeadTree_2'), load('DeadTree_3'), rockA, rockB, load('Rock_Medium_3')];
+    for (let i = 0; i < 12; i++) { const a = 0.4 + i * 0.5, r = 22 + (i % 4) * 4; const m = trees[i % trees.length]; big.push(w.structures.length); place(w, grouped ? m : { ...m, id: m.id + '#' + i }, cx + Math.cos(a) * r, cy + Math.sin(a) * r, i * 31); }
+    return { w, big };
+  };
+  for (const grouped of [true, false]) {
+    const { w, big } = build(grouped);
+    const sets = eyes.map((e) => {
+      const l = new DrawList(); l.begin(); const g = new MeshGroupSet();
+      addMeshStructuresBatched(l, w, { x: e[0], y: e[1], z: e[2] }, new MeshDrawCache(), idFor, 2000, g, null);
+      const ids = new Set();
+      for (let i = 0; i < l.count; i++) { const it = l.items[i]; if (it.type === DRAW_INSTANCED) for (let j = 0; j < it.instCount; j++) ids.add(it.instBuf.u32[j * 16 + 12] & 0xFFF); else ids.add(it.objectId & 0xFFF); }
+      return ids;
+    });
+    const tag = grouped ? 'grouped' : 'singles';
+    for (let k = 0; k < 2; k++) {
+      const within = big.filter((si) => { const b = w.structures[si].bbox; const dx = Math.max(b.x0 - eyes[k][0], 0, eyes[k][0] - b.x1), dy = Math.max(b.y0 - eyes[k][1], 0, eyes[k][1] - b.y1); return Math.hypot(dx, dy) <= 40; });
+      ok(`${tag}: every DeadTree/rock within 40 m of owner eye ${k + 1} is selected (${within.length})`, within.length >= 8 && within.every((si) => sets[k].has(si)), `missing ${within.filter((si) => !sets[k].has(si))}`);
+    }
+    ok(`${tag}: big-prop set identical across the 2 m eye step`, big.every((si) => sets[0].has(si) === sets[1].has(si)));
+  }
 }
 
 // ---- 3. invalidation --------------------------------------------------------------------------

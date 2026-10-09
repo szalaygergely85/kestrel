@@ -131,6 +131,12 @@ Once the engine supports v2, these rules apply:
 - Motion by preset: canvas billows, banner swings heavy, silk ripples. All settle within ~4 s when the wind stops and then sleep (no glyph shimmer at rest).
 - **Static fabric on voxel props** (v1.39, owner "the balloon should look like cloth"): own `balloon*` / `tarp*` materials with the `fabricFace` set and the `fabric` ramp - soft glyphs only (`. '`, backtick, `~ - ) ( "`), never `= % #` (on a flat voxel face they read as stone or planks). Shape it like cloth, not a solid: a heightfield that sags toward its edges, folds that drift diagonally, each fold top shaded by its height (crest light / valley dark), a scalloped hem that sags between its eyelets, gaps and a torn corner. Gores run the length of an envelope and squeeze together at the crown.
 
+## 7e. Hands and the burning hand (HAND-ART-01 / HAND-BURN-01, `models/hand.js`)
+- **Hands are finer than props:** 1 cm voxels (props 5-12 cm, the glove 2 cm). At 0.45 m a cube is 3 cells wide on 240x90 and 5 on 400x150, so fingers (2 cubes), nails and knuckles (1 cube) read. Never thinner than 2 cubes for a finger.
+- **Skin in 4 tones:** `skin_light` (knuckles, finger ridges, tendons), `skin`, `skin_shade` (creases between fingers, palm lines, joint folds), `skin_nail`. Muted warm skin, never pink; the sleeve / wrap stay in linen and leather (<= 3 hue families: skin, fire, cloth).
+- **A burning hand burns all round:** a broken flame shell on every side (dense on the up side, thin under the back of the hand), tongues that climb the fingers, lick out between them and curl round the edges, a white-hot core in the palm, red ragged tips that break away, ember cubes above. Heat walks `ember_core` (white-yellow root) -> `ember_glow` (orange body) -> `flame_tip` (red tip). Skin touching the fire is `skin_glow`; the hand must still read as a hand through the fire (fingers visible between tongues).
+- **Fire life without part clips:** 4 baked flicker frames at 12 fps + the carried light flicker + sim-side embers. Flicker frames differ in tongue placement, not in the hand.
+
 ## 8. Mood target for M1 (the Awakening)
 **D-011 update:** the same room, now the site of the crash. The brazier pool of light is the *Kestrel's* copper burner. The brass gondola with its KESTREL board sits on the floor, torn canvas hangs in the stairwell, and ivy spills in where the crown broke. At the summit a dead relay sits grey until the lamp wakes it: then the scene's first cold teal light appears. Reference picture: `preview/wreckage.html`.
 

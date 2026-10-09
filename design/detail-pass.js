@@ -824,7 +824,7 @@
     },
     // ME-06c4 forest tree canopies (design/models/forest_trees.js; palette.js v1 records of the same key).
     leaf: {
-      v1: 'leaf', seed: 601,
+      v1: 'leaf', seed: 601, edge: 'soft', // ALPHA-01e
       desc: 'FOREST TREES (ME-06c4). Broadleaf crown: mid green clumps, lighter leaf tips, darker pockets. ivy glyphs ' +
             '(lit levels & @ %), so a sunlit crown reads as leaves, never as turf.',
       albedo: 0.82, bgK: 0.18, detail: 32, jitter: 0.08,
@@ -834,7 +834,7 @@
       lod: { mid: 12, far: 25, dither: 3 }
     },
     leaf_dark: {
-      v1: 'leaf_dark', seed: 602,
+      v1: 'leaf_dark', seed: 602, edge: 'soft', // ALPHA-01e
       desc: 'FOREST TREES (ME-06c4). Shaded lower crown + pine needles: cool deep green, forestDark pockets, a few ' +
             'leaf-green tips. moss glyphs (denser, darker texture than the lit crown).',
       albedo: 0.74, bgK: 0.14, detail: 32, jitter: 0.08,
@@ -844,7 +844,7 @@
       lod: { mid: 12, far: 25, dither: 3 }
     },
     leaf_light: {
-      v1: 'leaf_light', seed: 603,
+      v1: 'leaf_light', seed: 603, edge: 'soft', // ALPHA-01e
       desc: 'FOREST TREES (ME-06c4). Birch upper crown: light yellow-green, airy, leaf-green shade pockets. ivy glyphs.',
       albedo: 0.88, bgK: 0.20, detail: 32, jitter: 0.08,
       tones: [['leafLight', 4], ['grassLight', 1], ['leaf', 2]],
@@ -1020,6 +1020,61 @@
       grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
       face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
       lod: { mid: 12, far: 25, dither: 3 }
+    },
+    // HAND-ART-01 / HAND-BURN-01 (design/models/hand.js; palette.js v1 records of the same key). 1 cm voxels: tone grid 1 cm.
+    skin_light: {
+      v1: 'skin_light', seed: 912,
+      desc: 'HAND (HAND-ART-01). Knuckles, finger ridges, tendons: lit warm skin.',
+      albedo: 0.92, bgK: 0.16, detail: 32, jitter: 0.04,
+      tones: [['skinLight', 4], ['skin', 1]],
+      grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    skin_shade: {
+      v1: 'skin_shade', seed: 913,
+      desc: 'HAND (HAND-ART-01). Creases between fingers, palm lines, joint folds.',
+      albedo: 0.80, bgK: 0.14, detail: 32, jitter: 0.04,
+      tones: [['skinShade', 4], ['skin', 1]],
+      grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    skin_nail: {
+      v1: 'skin_nail', seed: 914,
+      desc: 'HAND (HAND-ART-01). Pale nails.',
+      albedo: 0.96, bgK: 0.18, detail: 32, jitter: 0.04,
+      tones: [['skinNail', 4], ['skinLight', 1]],
+      grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    skin_glow: {
+      v1: 'skin_glow', seed: 915,
+      desc: 'HAND (HAND-BURN-01). Skin touched by its own fire, emissive 0.35.',
+      albedo: 0.92, bgK: 0.22, detail: 32, jitter: 0.05,
+      tones: [['skinGlow', 3], ['skin', 1], ['flameOuter', 1]],
+      grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }, emissive: 0.35
+    },
+    skin_char: {
+      v1: 'skin_char', seed: 916,
+      desc: 'HAND (HAND-BURN-01). Sooty nails and fingertips with ember flecks.',
+      albedo: 0.62, bgK: 0.12, detail: 32, jitter: 0.05,
+      tones: [['skinChar', 4], ['emberDim', 1]],
+      grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    flame_tip: {
+      v1: 'flame_tip', seed: 917,
+      desc: 'HAND (HAND-BURN-01). Red flame tips + breakaway cubes: flameTip / flameOuter, emissive 0.75.',
+      albedo: 1.00, bgK: 0.28, detail: 40, jitter: 0.05,
+      tones: [['flameTip', 3], ['flameOuter', 1]],
+      grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
+      face: { set: 'glint', mid: 'glint', far: 'glint' },
+      lod: { mid: 12, far: 25, dither: 3 }, emissive: 0.75
     }
   };
 
@@ -1059,7 +1114,10 @@
     balloon_light: 'balloon_light', balloon: 'balloon', balloon_dark: 'balloon_dark', balloon_red_light: 'balloon_red_light',
     balloon_red: 'balloon_red', balloon_red_dark: 'balloon_red_dark', tarp_light: 'tarp_light', tarp: 'tarp', tarp_dark: 'tarp_dark',
     // CHAR-COL-01 character materials, same key in both files.
-    skin: 'skin', hair_dark: 'hair_dark'
+    skin: 'skin', hair_dark: 'hair_dark',
+    // HAND-ART-01 / HAND-BURN-01 (design/models/hand.js), same key in both files.
+    skin_light: 'skin_light', skin_shade: 'skin_shade', skin_nail: 'skin_nail', skin_glow: 'skin_glow', skin_char: 'skin_char',
+    flame_tip: 'flame_tip'
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.

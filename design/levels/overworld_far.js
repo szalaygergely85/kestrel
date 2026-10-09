@@ -48,6 +48,9 @@
                  trees: {
                    seed: 7349, cellM: 6.5, jitter: 1.5, fill: 0.72, maxTrees: 1500, lodCells: 6,
                    species: [
+                     // ALPHA-01e SWITCH PREPARED, NOT ACTIVE (blocked: InstanceGroups.meshGroup rejects masked ranges, see docs/lanes/pc-b2.md ALPHA-01e).
+                     // Replace the six voxel species with: mesh quaternius/CommonTree_1..5 (weights 14,14,12,10,10; trunkR 0.5,0.5,0.5,0.5,0.45; trunkH 2.3,2.8,2.5,5.0,2.3),
+                     // Pine_1..5 (10,10,8,6,6; trunkR 0.45 x4 + 0.35; trunkH 2.1,1.1,3.0,2.4,1.4), DeadTree_1 (3; 0.5; 3.0). trunkR = bark radius at z 0.4..1.4, trunkH = lowest leaf card.
                      { model: 'forestOakSmall',   weight: 22, trunkR: 0.53, trunkH: 2.55 },   // 7.20 m (raw import, owner 2026-10-04)
                      { model: 'forestOakLarge',   weight: 18, trunkR: 0.63, trunkH: 3.06 },   // 8.64 m (raw import, owner 2026-10-04)
                      { model: 'forestBirchSmall', weight: 15, trunkR: 0.39, trunkH: 2.70 },   // 6.00 m (raw import, owner 2026-10-04)

@@ -279,7 +279,12 @@
     // Lamps (light presets lanternHang / windowGlow; emissive glass):
     lanternWarm: '#ffc456',      // hanging lantern glass + light (oranger + paler-low than gold/alert: world light, not UI)
     lanternCore: '#fff2b4',      // lantern flame core
-    windowGlow: '#ffb446'        // lit window glass + spill
+    windowGlow: '#ffb446',       // lit window glass + spill
+    // HAND-ART-01 / HAND-BURN-01 (design/models/hand.js): bare-hand tones next to skin / skinShade + the burning hand
+    skinLight: '#d6a07c',        // knuckles, finger ridges, back-of-hand tendons (lit skin)
+    skinNail: '#e8c8b0',         // pale nails
+    skinGlow: '#ff9858',         // skin touched by its own fire (emissive 0.35)
+    skinChar: '#3a2620'          // sooty nails / fingertips after the burn
   };
 
   // ---------------------------------------------------------------------------
@@ -394,7 +399,11 @@
     lanternHang: { color: 'lanternWarm', intensity: 0.9, type: 'point', radius: 3.0, falloff: 'smooth',
                    flicker: { hzMin: 6, hzMax: 10, amount: 0.08, jitter: 0.02 } },
     windowGlow:  { color: 'windowGlow', intensity: 0.35, type: 'point', radius: 1.2, falloff: 'smooth',
-                   flicker: { hzMin: 3, hzMax: 6, amount: 0.05, jitter: 0.01 } }
+                   flicker: { hzMin: 3, hzMax: 6, amount: 0.05, jitter: 0.01 } },
+    // HAND-BURN-01 (design/models/hand.js): the burning hand's CARRIED light (attach 'eye', viewModels.hand.carriedLight;
+    // replaces spellEmber / torch in the one carried slot). Intensity x hand glow (0 .. 2.6) via setParams, radius fixed.
+    handFire:    { color: 'torch', intensity: 0.7, type: 'point', radius: 3.5, falloff: 'smooth',
+                   flicker: { hzMin: 8, hzMax: 14, amount: 0.20, jitter: 0.06 } }
   };
 
   // ---------------------------------------------------------------------------
@@ -1150,6 +1159,7 @@
   };
   // ME-06c4 forest tree canopies (design/models/forest_trees.js), appended last so no material id moves.
   materials.leaf = {
+    edge: 'soft', // ALPHA-01e: leaf cards of the imported Quaternius trees/bushes (37.17 step d)
     desc: 'FOREST TREES (ME-06c4). Broadleaf crown (oak upper canopy, pine tips, birch lower crown): mid green, ' +
           'clumps `&` lighter, pockets `%` darker. Foliage ramp, so a lit crown climbs to & @.',
     base: 'leaf', albedo: 0.82, ramp: 'foliage', bg: { mode: 'darken', k: 0.18 }, textureFade: [4, 14],
@@ -1158,6 +1168,7 @@
     }, rows: ['alad', 'daal', 'adla', 'ldaa'] }
   };
   materials.leaf_dark = {
+    edge: 'soft', // ALPHA-01e: leaf cards of the imported Quaternius trees/bushes (37.17 step d)
     desc: 'FOREST TREES (ME-06c4). Shaded lower crown of the oak + the pine needles: cool deep green, darker pockets, ' +
           'few highlights, so the inside of the forest reads dark under a lit roof.',
     base: 'leafDark', albedo: 0.74, ramp: 'foliage', bg: { mode: 'darken', k: 0.14 }, textureFade: [4, 14],
@@ -1166,6 +1177,7 @@
     }, rows: ['adaa', 'aald', 'daaa', 'alad'] }
   };
   materials.leaf_light = {
+    edge: 'soft', // ALPHA-01e: leaf cards of the imported Quaternius trees/bushes (37.17 step d)
     desc: 'FOREST TREES (ME-06c4). Birch upper crown: light yellow-green, airy (small `\'` gaps), brighter than the ' +
           'oak so the birches pop between the darker trees.',
     base: 'leafLight', albedo: 0.88, ramp: 'foliage', bg: { mode: 'darken', k: 0.20 }, textureFade: [4, 14],
@@ -1274,6 +1286,34 @@
   materials.hair_dark = fabricMat('CHARACTER (CHAR-COL-01). Dark brown hair and beard: strand glyph |, darker than leather.', 'hairDark', 0.70, 0.14,
     { a: { shade: 1.00 }, h: { shade: 1.12, glyph: '|' } },
     ['ahaa', 'aaah', 'haaa', 'aaha']);
+  // HAND-ART-01 / HAND-BURN-01 (design/models/hand.js, 1 cm voxel hand): skin tones, nails, fire-lit skin, char, and the
+  // red flame tips of the burning hand. Appended last so no material id moves; v2 records in detail-pass.js.
+  materials.skin_light = fabricMat('HAND (HAND-ART-01). Knuckles, finger ridges, tendons: lit warm skin.', 'skinLight', 0.92, 0.16,
+    { a: { shade: 1.00 }, s: { shade: 0.94, tint: 'skin', amount: 0.3 } },
+    ['aaaa', 'asaa', 'aaaa', 'aaas']);
+  materials.skin_shade = fabricMat('HAND (HAND-ART-01). Creases between fingers, palm lines, joint folds.', 'skinShade', 0.80, 0.14,
+    { a: { shade: 1.00 }, s: { shade: 0.92, tint: 'skin', amount: 0.2 } },
+    ['aaaa', 'aasa', 'aaaa', 'saaa']);
+  materials.skin_nail = fabricMat('HAND (HAND-ART-01). Pale nails, a faint sheen.', 'skinNail', 0.96, 0.18,
+    { a: { shade: 1.00 }, h: { shade: 1.08, glyph: '"' } },
+    ['aaha', 'aaaa', 'haaa', 'aaaa']);
+  materials.skin_glow = {
+    desc: 'HAND (HAND-BURN-01). Skin touched by its own fire: orange-lit, slightly emissive so the hand reads lit at night.',
+    base: 'skinGlow', albedo: 0.92, ramp: 'fabric', spec: 0, emissive: 0.35, bg: { mode: 'darken', k: 0.22 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, s: { shade: 0.90, tint: 'skin', amount: 0.35 }
+    }, rows: ['aaaa', 'asaa', 'aaaa', 'aaas'] }
+  };
+  materials.skin_char = fabricMat('HAND (HAND-BURN-01). Sooty nails and fingertips, a few ember flecks.', 'skinChar', 0.62, 0.12,
+    { a: { shade: 1.00 }, e: { shade: 1.30, tint: 'emberDim', amount: 0.6, glyph: '.' } },
+    ['aaaa', 'aaea', 'aaaa', 'eaaa']);
+  materials.flame_tip = {
+    desc: 'HAND (HAND-BURN-01). The red ragged tips of the hand\'s flame tongues + breakaway cubes: flameTip, emissive 0.75.',
+    base: 'flameTip', albedo: 1.00, ramp: 'fire', spec: 0, emissive: 0.75, bg: { mode: 'darken', k: 0.28 }, textureFade: [4, 12],
+    texture: { w: 2, h: 2, scale: [50, 50], key: {
+      a: { shade: 1.00, glyph: '^' }, m: { shade: 0.95, tint: 'flameOuter', amount: 0.4, glyph: "'" }
+    }, rows: ['am', 'ma'] }
+  };
 
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)
