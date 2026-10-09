@@ -259,3 +259,14 @@ SKY_LUT_N -> wgsl/skyLut.js; GLSL_VERSION/PRECISION/GBUF_UNPACK/BYTE_OUT/CELL_RA
 Moved terrain/water GLSL reference sources to wgsl/{terrainVert,waterVert,waterFrag,waterComposite}.glslref.js + wgsl/glslref.extra.js (HASH_FAST/CELL_RAY/PITCH_UNIFORMS/NEAR|FAR_TYPE_NEAREST); glsl files re-export; wgsl/** and wg/** import nothing from ../glsl/. wgsl/glsl/terrain/water suites PASS. -> arch-review
 ## LIGHT-ALLOC-01 ARCH CHANGES (kestrel-4, B2)
 cloudShadow.js cnQ octave 2.03 -> 2.0 (CLOUD-WRAP-01; sky.js here still 2.03 until the main-session merge), comment now points at new cloudShadow.parity.test.js (noise bit-exact 5000 + wrap, cloudShadeQ vs reference 5000); test hook cloudNoiseScratch exported.
+
+(PC-B PO, owner-authorised while PC-A offline) claims-based batch review:
+PO 2026-10-09 (PC-B batch): S8-B2-12c -> PO OK (owner look needed): WebGPU only, `?cloudshadow=1`, Node-only verification (no browser run reported). PARTIAL-note: gpucompare + re-baseline of cloud sky rows still owed by main session.
+PO 2026-10-09 (PC-B batch): CLOUD-WRAP-01 (+01b wisp 1.78x/1.18x faster drift) -> PO OK (owner look needed): seamless wrap tested; owner confirm the faster wisp drift still looks calm and nothing pops. Sky rows with clouds shift slightly -> re-baseline.
+PO 2026-10-09 (PC-B batch): S8-B2-20b -> PO OK (owner look needed): `?ao=1` WebGPU, JS twin + WGSL probes within 1e-5, default look byte-identical. Owner look at a tower-interior corner, ao=0 vs ao=1.
+PO 2026-10-09 (PC-B batch): FOLIAGE-SWAY-01 (trees, grass, host follow-up, 10 Hz shadow) -> PO OK (owner look needed): flags + host + shadow re-render covered by Node; no browser check yet. Needs wind on to see.
+PO 2026-10-09 (PC-B batch): MESH-QA-01 -> PO OK -> testing: tool + 11 asserts + report (forestWalk 420k tris, TwistedTree 70 % with no LOD1).
+PO 2026-10-09 (PC-B batch): MESH-LOD-CELLS-01 -> PARTIAL: engine knob and tests done, but inert until lane C sets `lodCells: 150` for CommonTree + Pine in world_m1 and TwistedTree LOD1 exists; no in-game effect/measurement yet.
+PO 2026-10-09 (PC-B batch): US-068b1 -> PO OK -> testing (engine-internal; see pc-b1.md for host halves).
+[B2 2026-10-09] ME-20c numeric probes: new engine/render/gpu/wgsl/vao.wgsl.test.js (light vao term from real WGSL line vs twin 2000 cases max 2.4e-8; AO interp 500 tris; & 1u masking enumerated). lighting.test.js 'AO adds ~0 garbage' flake left alone (fixed by kestrel-4 7fe7f10, not in pc-b2 yet).
+- RUNTESTS-FILTER-01: run-tests --filter takes comma lists/repeats (OR); 0-match term prints 'no suites match "<f>"', exits 1 if nothing ran (no caller relied on exit 0); tests added.
