@@ -23,7 +23,7 @@ import {
   buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun,
   isSoftwareRenderer,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
-  createSceneDim, resetSceneDim, applySceneDim, drawPanel as drawUiPanel,
+  createSceneDim, resetSceneDim, applySceneDim,
   loadContentPack, createRng, prebuildTerrainMesh,
   forwardOf, DEG2RAD, hexToRgb, resolveWaterLooks, createEntityEmitters,
 } from '../../engine/index.js';
@@ -62,7 +62,7 @@ import { stepLantern } from './quest/lantern.js'; // OWN-REQ-006: hook-light off
 import { removeSwordIfTaken } from './quest/swordTake.js'; // US-078c
 import { resetNoteRead, stepNoteRead, isNoteOpen, pushNoteDim, drawNotePanel } from './quest/noteRead.js'; // READ-01
 import { wakeFrame, drawEyelid, applyWakeOnLoad } from './quest/wake.js';
-import { initMapCard, stepMapCard, isMapOpen, getMapPanel } from './quest/mapCard.js';
+import { initMapCard, stepMapCard, isMapOpen, getMapPanel, getMapChart, drawMapCard } from './quest/mapCard.js';
 import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
 import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-050: the one seam to game content
 import { createTitleMenuHost } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
@@ -366,6 +366,13 @@ try {
   saveRelay.quest.onPoll = (name, a, b) => gameHooks.emitSimple(name, a, b);
   gameHooks.onSaveRequest(() => { if (saveRelay && gameHooks.ctx.world) saveRelay.save(gameHooks.ctx.world, { ending: gameHooks.ctx.state.ending }); });
 } catch (e) { console.warn('[save] relay unavailable:', e && e.message); }
+// S8-B1-15: MAP-01c baked chart (MAP-01b bake tool, content/chart/world_m1.chart.json) for the map card
+// (quest/mapCard.js). Loaded once, like questDef above; a missing/bad file degrades to the plain (unbaked) card
+// (initMapCard's 4th arg stays null below) rather than breaking world load.
+let chartData = null;
+try {
+  chartData = await (await fetch('../content/chart/world_m1.chart.json')).json();
+} catch (e) { console.warn('[map] chart unavailable:', e && e.message); }
 // S8-B1-04: chest sim (quest/sim/chest.js) + item-get card (ui/itemGetCard.js), wired through the seam only - see
 // game/js/chestHook.js. `defs: []` (NEEDS C: no content/chests/*.json / placement yet) - harmless no-op today.
 const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
@@ -1049,7 +1056,25 @@ function runGame(mode, cinematic = null) {
         // centre-scaling - panel.js/titleCard.js's sx/sy become 1), not the
         // scene's - the panel/title now draw into `ui`, not `rt`.
         initTitleCard(assets, ui.cols, ui.rows);
-        initMapCard(assets, ui.cols, ui.rows);
+        // S8-B1-15: resolve the two world-space chart markers from live entities (never literal coordinates,
+        // US-010 tech note 1) - the waystone is a top-level world prop, the relay is tower.level.json's
+        // `beaconBowl` prop, namespaced `${structId}.${propId}` by World.load (engine/world/World.js:544).
+        // `?level=`/adhoc worlds have neither entity and fall back to the plain (unbaked) card below.
+        let chartOptions = null;
+        if (chartData) {
+          const markers = [];
+          const waystone = world.get('endMarker');
+          if (waystone) markers.push({ kind: 'waystone', x: waystone.data.transform.x, y: waystone.data.transform.y });
+          const relay = world.get('tower.beaconBowl');
+          if (relay) markers.push({ kind: 'relay', x: relay.data.transform.x, y: relay.data.transform.y });
+          chartOptions = { chart: chartData, markers };
+        }
+        try {
+          initMapCard(assets, ui.cols, ui.rows, chartOptions);
+        } catch (e) {
+          console.warn('[map] chart card init failed, falling back to the plain card:', e && e.message);
+          initMapCard(assets, ui.cols, ui.rows);
+        }
         resetHints();
       }
       // US-017 tester fix pass 2 (BUG-2): `window.__debug.world/playerHandle/look`
@@ -1064,6 +1089,7 @@ function runGame(mode, cinematic = null) {
       window.__debug.playerHandle = playerHandle;
       window.__debug.look = look;
       window.__debug.beasts = beasts; window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; // HANDS-01b: test hooks
+      window.__debug.isMapOpen = isMapOpen; window.__debug.getMapPanel = getMapPanel; window.__debug.getMapChart = getMapChart; // S8-B1-15: test hook (tools/verify-map-wire.mjs)
     });
 
     // ME-11c (architecture.md 27.18): `?physics=mesh` opts into the mesh
@@ -1581,8 +1607,10 @@ function runGame(mode, cinematic = null) {
         // output, so CPU scene-cell writes never appear -> draw the lid on the UI layer there (an opaque full-row overlay); else in the scene grid.
         if (!(menuHost && menuHost.active)) drawEyelid(wgActive && wgPipeline.frameComplete ? ui : rt, assets.uiStyle, wakeOut.blinkOpen);
         drawTitleCard(ui, fb.timeSec * 1000, wakeOut.titleA, wakeOut.titleState, fadeLut);
-        const mapPanel = getMapPanel();
-        if (mapPanel) drawUiPanel(ui, mapPanel, fb.timeSec * 1000, fadeLut);
+        // S8-B1-15: the map card's own draw seam (mapCard.js:drawMapCard), not the generic drawUiPanel - it gives
+        // blank (unexplored fog) cells an opaque black backing so they never show the scene through (ARCH note,
+        // docs/lanes/pc-c.md batch 16); a no-op difference today since fog isn't fed yet (S8-B1-16).
+        drawMapCard(ui, fb.timeSec * 1000, fadeLut);
         // US-080a2/080b (30.2): HP+MP HUD + hurt edge - hidden on title/map/end/death cards (visibleRule, uiStyle.vitals).
         if (vitals) {
           // Q9 item 2c: hidden on the title (wakeOut.inputLocked covers the wake/title timeline) and map cards too,
