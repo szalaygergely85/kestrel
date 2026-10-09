@@ -48,6 +48,13 @@ Species switch stays blocked on the owner LOD1 pick + forestWalk tri budget (PC-
 - **kestrel-3/4 (B2):** S8-B2-16 ARCH CHANGES: (1) the `colliderHull: true` data flag alone must select the hull (today a default `gen-mesh-colliders` run / re-import turns it back into the prism and `--check` fails); (2) `engine/mesh/hullProxy.test.js` takes 9.5 s (> 5 s): drop the full-content `--check` spawn at line 150; mention in the mesh-import skill that the hull is built from 18 sampled points (can be smaller than the mesh). Nit ALPHA-01f(b): `RASTER_INSTANCED_MASK_BLOCK` should share one field array with `RASTER_BLOCK`.
 - ARCH OK/done: S8-B1-06, S8-B1-12, S8-B2-14b, S8-B2-15, ALPHA-01f (a)(b)(c), ALPHA-01e nit. ALPHA-01f host wiring (uvMask stream, passRaster, shadow ONE_PART fix for masked groups in `shadowList.js`, gpucompare row) = kestrel-2; then step (d).
 
+**PC-B fill 2026-10-09 (PO; specs under `## PC-B fill 2026-10-09 (PO)` in `docs/sprints/sprint-8-queue.md`; append at the END of each slot's list):**
+- **kestrel-1:** PBF-K1-01 wire registry (unblocks all lane C wire modules; wire/ is empty) - PBF-K1-02 eyelid fix on WebGPU (after K2-02) - PBF-K1-03 beast level badge HUD - PBF-K1-04 desktop/Electron boot notice + start grid - PBF-K1-05 `item:got`/`flag:set`/`beast:died` emit audit.
+- **kestrel-2:** PBF-K2-01 flicker measurement (`capture-browser --mode flicker`) - PBF-K2-02 overlay path for CPU UI under WebGPU (ARCH-NOTE NEEDED, small).
+- **kestrel-3:** PBF-K3-01 walk slope limit + border tests - PBF-K3-02 bridge deck collider test - PBF-K3-03 wade surface flag (ARCH-NOTE NEEDED) - PBF-K3-04 biome map layer read by scatter (ARCH-NOTE NEEDED) - PBF-K3-05 BUG-WHITE-PIXELS-01 diagnosis.
+- **kestrel-4:** PBF-K4-01 forest triangle budget report - PBF-K4-02 asset licence gate script.
+- Waystone heal/respawn, objective line, chest wiring = lane C wire modules (`NEEDS C`: WAYSTONE-01w, S8-C-HOOK-QUEST/CHEST; only the sims exist). Blocked on owner: valley layout approval (river widen, bridge placement), bridge B rule, spell upgrades, AREAS-01 breach trigger.
+
 **Held / owner:** D-050 hold: PC-A reviews no NEW S8-B2 story until batch-12 items 4/5 + batch-13 B are re-reviewed. B2 keeps building (ALPHA-01f is ARCH-approved); unreviewed commits stay off master. Owner: LOD1 pick (`design/preview/lod1-trees.html`), glow strength, title-menu + glow-light + squares looks (PC-B handoff 2026-10-09).
 
 ---
