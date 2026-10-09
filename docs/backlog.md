@@ -1510,7 +1510,7 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
 | CHARGEN-16 | Player look: `player.look` in the save + `hand@look` retint + owner walk (picks option A/B) | P1 | todo [PC-B B1, 0.5 d] | `game/js/quest/save/saveState.js`, `game/js/main.js` |
 | CHARGEN-17 | New-game creation screen (title-menu skin, in-game-look preview built at runtime) | P1 | todo [PC-B B1, 0.75 d] - deps RIG-02 | `game/js/ui/charCreate.js` + test, `game/js/titleMenuHost.js` |
 | CHARGEN-18 | Builds slim/heavy (m, f) + elder overlay + piece set 2 | P2 | todo [PC-B designer, 0.75 d] | kit JSON |
-| KPKG-01 | `engine/content/zip.js` reader + writer (stored + deflate via platform streams) | P1 | todo [PC-B B2, 0.5 d] -> arch-review | `engine/content/zip.js` + test + fixture zip |
+| KPKG-01 | `engine/content/zip.js` reader + writer (stored + deflate via platform streams) | P1 | arch-review [PC-B B2, 0.5 d] -> arch-review | `engine/content/zip.js` + test + fixture zip |
 | KPKG-02 | `engine/content/package.js`: kestrel.json validate, openPackage, mountPackages, deps, duplicate ids | P1 | todo [PC-B B2, 0.75 d] -> arch-review | `engine/content/package.js` + test, `engine/index.js` |
 | KPKG-03 | `tools/pack.mjs` / `unpack.mjs` + package specs | P1 | todo [PC-B B1, 0.5 d] | `tools/pack.mjs`, `tools/unpack.mjs`, `content/packages/*.pkg.json` + tests |
 | KPKG-04 | Game boot `?pack=` mounts packages | P1 | todo [PC-B B1, 0.5 d] | `game/js/main.js` |
@@ -1647,7 +1647,7 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
   - no Esc hint text;
   - a Node flow test and one capture.
 
-### KPKG-01 Zip  [P1] [todo] [PC-B B2]
+### KPKG-01 Zip  [P1] [arch-review] [PC-B B2]
 - [ ] Reads a Python `zipfile` fixture with stored and deflate entries.
 - [ ] Write -> read round trip. Stored-only output is byte-deterministic.
 - [ ] Errors for:
