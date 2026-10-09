@@ -258,3 +258,4 @@ export { createWaterfalls, collectWaterfallDefs } from './world/waterfalls.js';
 // DECAL-01: wall-text bindings over the shared overlay layer.
 export { bindDecals, drawDecals } from './ui/decals.js';
 export { LazyMeshStore, ensureMesh, requestMesh, meshReady } from './mesh/lazyMesh.js'; // MESH-LOAD-01
+export * from './chargen/index.js'; // CHARGEN-02..03 (38.29)
