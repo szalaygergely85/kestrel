@@ -46,6 +46,7 @@ import { parseCloudShadowFlag, devCloudShadow, parseAoStrength } from './cloudPa
 import { MODES } from './dev/modes/index.js';
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
+import { createCreditsView } from './ui/creditsView.js'; // CREDITS-MOUNT-01
 import { updateSettings, drawSettingsPanel, isSettingsOpen, openSettings } from './ui/settings.js'; // US-038b
 import { isPaused, resetSimAccumulator, duckAudio, unduckAudio, installAutoPause } from './ui/pause.js'; // US-062
 // ---- US-020a: minimal procedural sound slice (game/js/audio/*, D-004) ----
@@ -876,6 +877,7 @@ async function runGame(mode, cinematic = null) {
   let loot = null; // US-091a2 (37.16.3): rebuilt on every 'world:loaded', after beasts + the pack
   let toasts = null; // US-091a2: the loot toast view, rebuilt with loot
   let invView = null; // US-091b: the pack screen (`I`), rebuilt with the pack
+  let creditsInv = null; // CREDITS-MOUNT-01
   let menuHost = null; // US-090w: title menu host while it is up (null = no menu / already closed)
   let invWasLocked = false; // pointer lock state when the pack opened (re-lock on close)
   let waterfallHooks = null;
@@ -1207,7 +1209,10 @@ async function runGame(mode, cinematic = null) {
           }
         },
         onSettings: () => openSettings({ assets, engine, look }),
+        // CREDITS-MOUNT-01: licence inventory is fetched lazily on first open (menu only, never in capture/bench paths)
+        createCredits: () => creditsInv && window.ASSETS?.uiStyle?.menu ? createCreditsView(creditsInv, { style: window.ASSETS.uiStyle.menu }) : null,
       });
+      fetch('../docs/licence-inventory.json').then((r) => r.json()).then((j) => { creditsInv = j; }).catch(() => {});
       window.__debug.menuHost = menuHost;
     }
   }
