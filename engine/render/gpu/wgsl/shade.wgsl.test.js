@@ -113,8 +113,11 @@ function runCore(src, trials) {
   // detailShade.js hashFast divides the full 32 bits by 2^32, the GLSL/WGSL twin keeps 24 (>> 8): <= 2^-24 apart (accepted, D-039).
   const closeF = (a, b) => Math.abs(a - b) <= 2e-5 * Math.max(1, Math.abs(a), Math.abs(b));
   const matIds = []; for (let id = 1; id < nMat; id++) if (table.records[id] && table.records[id].v2) matIds.push(id);
+  // Every 2nd probe cycles only the line-grid materials (grid.lines, the only ones that can hit a joint/line): joint/line coverage must not depend on how many non-grid
+  // materials the table holds (new packs/palettes dilute a plain round-robin; it fell to 89/77 of 6000).
+  const gridIds = matIds.filter((m) => table.records[m].v2.grid && table.records[m].v2.grid.lines);
   for (let t = 0; t < trials; t++) {
-    const id = matIds[t % matIds.length], rec = table.records[id].v2;
+    const id = gridIds.length && (t & 1) ? gridIds[(t >> 1) % gridIds.length] : matIds[(t >> 1) % matIds.length], rec = table.records[id].v2;
     const kind = [1, 2, 3, 4, 5, 8, 9][Math.floor(rand() * 7)], face = 1 + Math.floor(rand() * 7);
     const u = rand() * 40 - 5, v = rand() * 40 - 5, z = rand() * 12, dist = 0.5 + rand() * 60;
     const aoD = rand() < 0.3 ? 1e30 : rand() * 3;
