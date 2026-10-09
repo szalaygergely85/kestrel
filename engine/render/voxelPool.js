@@ -21,6 +21,11 @@ function hashStr(str, h = 0x811c9dc5) {
   for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
   return h | 0;
 }
+// EMIS-01b: mixes a running hash with an already-integer value (Math.imul, no strings/allocation).
+function hashInt(h, v) {
+  h ^= v | 0;
+  return Math.imul(h, 0x01000193) | 0;
+}
 const _poolPitch = createPitchedTerms(); // RE-02a
 const _poolGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 
@@ -163,8 +168,11 @@ export class VoxelPool {
     slot.frame = frame || 0;
     slot.tMs = tMs || 0;
     slot.scale = scale > 0 ? scale : 1; // ED-SCALE-1a (34.2 item 5)
-    // EMIS-01b: harness instances have no entity id -> identity from model + position
-    slot.seed = pm.emissiveLight ? hashStr(modelKey, hashStr(x.toFixed(2) + ',' + y.toFixed(2) + ',' + z.toFixed(2))) || 1 : 0;
+    // EMIS-01b: harness instances have no entity id -> identity from model + position.
+    // Integer hash (Math.round to 1cm buckets, Math.imul mixing) instead of string concat - no strings/allocation per push.
+    slot.seed = pm.emissiveLight
+      ? (hashInt(hashInt(hashInt(hashStr(modelKey), Math.round(x * 100)), Math.round(y * 100)), Math.round(z * 100)) || 1)
+      : 0;
     this._rawCount++;
   }
 

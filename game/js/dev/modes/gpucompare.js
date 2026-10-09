@@ -140,6 +140,8 @@ function buildCompareRuns(ctx) {
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg } },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: BUG-OWN-001 owner repro (1500.69, 1027.36) yaw 236 pitch -29',
       cam: { x: 1500.69, y: 1027.36, z: 3.00 + engine.physics.eyeHeight, yawDeg: 236, pitchDeg: -29 } },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: BUG-WHITE-PIXELS-01 repro (1500.58, 1022.77) yaw 185 pitch -24',
+      cam: { x: 1500.58, y: 1022.77, z: 1.80 + engine.physics.eyeHeight, yawDeg: 185, pitchDeg: -24 } },
     { world: worldM1, lights: worldM1Lights, name: `world_m1: player spawn, sceneFade=0.5`,
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg }, fade: 0.5 },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: player spawn, card open (sceneDim 0.35 + plate 0.18)',
@@ -639,7 +641,7 @@ function buildCompareRuns(ctx) {
     const mask = { tex: 'test/checker8', cutoff: 0.5 };
     const alphaMesh = buildMeshFromTris(tris, [{ part: 'post', triStart: 0, triCount: nOpaque }, { part: 'leaf', triStart: nOpaque, triCount: nLeaf, mask },
       { part: 'leaf_dark', triStart: nOpaque + nLeaf, triCount: tris.length - nOpaque - nLeaf, mask }], 'test/alphaCards');
-    alphaMesh.mats = { post: 'timber_old', leaf: 'leaf_softtest', leaf_dark: 'leaf_dark_softtest' }; // ALPHA-01d: test-only edge:'soft' clones of leaf / leaf_dark
+    alphaMesh.mats = { post: 'timber_old', leaf: 'leaf', leaf_dark: 'leaf_dark' }; // EMIS-01b/kestrel-2#0: repointed to leaf/leaf_dark directly (already edge:'soft', ALPHA-01e); *_softtest clones removed
     const cx = 1456, cy = 1046, gz = aw.terrain.groundAt(cx, cy);
     aw.placeMesh(alphaMesh, { x: cx, y: cy, z: gz }, 'test.alphaCards');
     const alphaLights = lightsEnabled ? buildLightSet(aw, assets.palette) : null;
