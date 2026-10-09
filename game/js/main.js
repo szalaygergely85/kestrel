@@ -120,6 +120,10 @@ import { createNpcTurn } from './quest/npcBear.js'; // NPC-BEAR-01 (38.28): turn
 import { LOOT_TABLE, LOOT_SEED_SALT } from './quest/sim/lootConfig.js';
 import { createToastView } from './quest/toastView.js';
 import { createInventoryView } from './quest/inventoryView.js'; // US-091b
+import { createQuestMarkers } from './quest/sim/questMarkers.js'; // QUEST-MARK-01w
+import { registerQuestMarks } from './quest/wire/questMarks.js';
+import { createCrafting } from './quest/sim/crafting.js'; // MAIN-WIRE-01: crafting list on C
+import { createCraftView } from './ui/craftView.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
 import { ensureBenchBoars } from './dev/combatBench.js'; // COMBAT-BENCH-01
@@ -405,6 +409,7 @@ const ripples = createRipples();
 // pages and automated browsers never load or save unless `?save=1` forces it (the headless reload check does).
 const saveEnabled = params.get('save') !== '0' && (params.get('save') === '1' || !(isCaptureOrBench || params.get('capture') === '1' || params.has('at') || navigator.webdriver)); // `?at` = dev pose: never autosave it into slot 0
 let saveRelay = null;
+let markWorld = null; // QUEST-MARK-01w: the current World (set per load before gameHooks.boot)
 let titleMenuActive = true; // S8-B1-10: mirrors menuHost.active each frame (true until the first frame says otherwise); gates the loss autosave
 let deviceLostFrozen = false; // S8-B1-10 (38.10c): set once by watchDeviceLost's `freeze` hook below; gates `paused` in the frame loop
 try {
@@ -414,7 +419,34 @@ try {
   gameHooks.register(saveRelay.handlers());
   saveRelay.quest.onPoll = (name, a, b) => gameHooks.emitSimple(name, a, b);
   gameHooks.onSaveRequest(() => { if (saveRelay && gameHooks.ctx.world) saveRelay.save(gameHooks.ctx.world, { ending: gameHooks.ctx.state.ending }); });
+  // QUEST-MARK-01w: '!' markers over available take steps (patch docs/patches/QUEST-MARK-01w.diff). Off in capture/bench/?save=0.
+  if (saveEnabled && window.ASSETS && window.ASSETS.questMarkFx) {
+    const qm = createQuestMarkers(questDef, [{ objectiveId: 'waystone', targets: ['endMarker'] }]); // other take steps (wake/breach) have no prop to mark yet
+    const MARK_TOP = { endMarker: 3.0 }; // prop top above its base z (waystone 24 voxels x 0.125 m); notes would use z + 1.55
+    gameHooks.setQuestSource((out) => { const st = saveRelay.quest.state; out.done = saveRelay.quest.done; out.id = out.done ? '' : questDef.objectives[st.completed.length].id; out.targets = qm.markerTargets(st); });
+    let markN = 0;
+    const markHandle = () => { // entity handle for one marker; re-spawns itself when a world reload dropped the entity
+      const id = 'questMark_' + (markN++); let w = null, ent = null, hidden = true, scale = 1, anim = 'idle', x = 0, y = 0, z = 0;
+      const cur = () => {
+        const mw = markWorld; if (!mw) return null;
+        if (w !== mw || !ent || !ent.alive) { w = mw; ent = mw.get(id) || mw.spawn('prop', { x, y, z, yawDeg: 0, scale }, { voxel: { model: 'questMark', anim, loop: true, hidden } }, id); }
+        return ent.data;
+      };
+      const push = () => { const d = cur(); if (!d) return; Object.assign(d.transform, { x, y, z }); d.transform.scale = scale; d.components.voxel.hidden = hidden; d.components.voxel.anim = anim; w.renderVersion++; };
+      return {
+        get hidden() { return hidden; }, set hidden(v) { if (v !== hidden) { hidden = v; push(); } },
+        get scale() { return scale; }, set scale(v) { if (v !== scale) { scale = v; push(); } },
+        get anim() { return anim; }, set anim(v) { if (v !== anim) { anim = v; push(); } },
+        setPos(a, b, c) { x = a; y = b; z = c; push(); },
+      };
+    };
+    const markResolve = (id, out) => { const h = markWorld && markWorld.get(id), t = h && h.data && h.data.transform; if (!t) return false; out.x = t.x; out.y = t.y; out.z = t.z + (MARK_TOP[id] || 1.55); return true; };
+    registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: markHandle });
+  }
 } catch (e) { console.warn('[save] relay unavailable:', e && e.message); }
+// MAIN-WIRE-01: crafting recipes (content/items/recipes.json), loaded once; the craft view (key C) is built with the pack.
+let recipeList = null;
+try { recipeList = (await (await fetch('../content/items/recipes.json')).json()).recipes; } catch (e) { console.warn('[craft] recipes unavailable:', e && e.message); }
 // S8-B1-10 (docs/architecture.md 38.10c "This story (~0.5 d)"): on device.lost (ignoring our own 'destroyed'
 // dispose unless forced) stop stepping the sim, one synchronous autosave through the existing save relay
 // (gameHooks.ctx.requestSave -> saveRelay.save, registered above), then a reload card. Logic lives in the pure
@@ -704,7 +736,7 @@ const swordStyleIds = {
 sprites.pool.renderer = renderer; // review item 1: sprite rects follow the pitched scene
 const wgActive = !!(wgPipeline && wgPipeline.ready && rt.backend === 'webgpu'); // WG-2b: geometry-only WebGPU pipeline (CPU still shades)
 engine.events.on('combat:hit', (p) => { if (p && p.source === 'player') hitStop.trigger(p.heavy ? 'heavy' : 'light'); }); // HITSTOP-01
-const hzb = createHzbInvalidator(() => (occlOpt.enabled && wgActive && wgPipeline.ready ? wgPipeline : null)); // OCCL-MAIN-01: cuts invalidate the HZB
+const hzb = createHzbInvalidator(() => ((occlOpt.enabled || params.get('stable') === '1') && wgActive && wgPipeline.ready ? wgPipeline : null)); // OCCL-MAIN-01 (+ US-073c): cuts invalidate the HZB and the stable-pass history
 if (wgActive) { wgPipeline.bindVoxels(gameVoxelPool); wgPipeline.bindViewModel(engine.viewModel); }
 engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); // RE-06 (28.6)
 if (wgActive) wgPipeline.bindInstances(engine.instances);
@@ -876,6 +908,7 @@ async function runGame(mode, cinematic = null) {
   let loot = null; // US-091a2 (37.16.3): rebuilt on every 'world:loaded', after beasts + the pack
   let toasts = null; // US-091a2: the loot toast view, rebuilt with loot
   let invView = null; // US-091b: the pack screen (`I`), rebuilt with the pack
+  let craftView = null, craftWasLocked = false; // MAIN-WIRE-01: crafting list (`C`), rebuilt with the pack
   let creditsInv = null; // CREDITS-MOUNT-01
   let menuHost = null; // US-090w: title menu host while it is up (null = no menu / already closed)
   let invWasLocked = false; // pointer lock state when the pack opened (re-lock on close)
@@ -1078,6 +1111,13 @@ async function runGame(mode, cinematic = null) {
         onOpen: () => { invWasLocked = !!(look && look.locked); if (invWasLocked && document.exitPointerLock) document.exitPointerLock(); },
         onClose: () => { if (invWasLocked) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* click to resume */ } } },
       }) : null;
+      if (craftView && craftView.isOpen) craftView.close();
+      craftView = itemDefs && recipeList && window.ASSETS.uiStyle.inventory ? createCraftView({
+        crafting: createCrafting(recipeList, { items: itemDefs }), recipes: recipeList, defs: itemDefs, rgb: window.ASSETS.uiStyle.inventory.rgb || assets.palette.rgb, toast: toasts,
+        inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
+        onOpen: () => { craftWasLocked = !!(look && look.locked); if (craftWasLocked && document.exitPointerLock) document.exitPointerLock(); },
+        onClose: () => { if (craftWasLocked) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* click to resume */ } } },
+      }) : null;
       resetNoteRead(assets.uiStyle); // READ-01: a restart never carries an open note panel over (runtime-only state, 7.6 item 6)
       const startT = playerHandle.data.transform;
       Object.assign(playerHandle.data.components.body || (playerHandle.data.components.body = {}), {
@@ -1115,6 +1155,7 @@ async function runGame(mode, cinematic = null) {
 
       // ---- US-015: wake sequence + title card + map card + hints (7.6 item 6: runtime rebuilt here, every load AND every restart) ----
       questUiActive = typeof world.state['quest.wakeT'] === 'number' && !gatePose && !atParts && !cinematic;
+      markWorld = world;
       gameHooks.boot(world, playerHandle.data, engine.events, vitals, playerHandle.data.components.inventory || null); // D-050 seam (after vitals + inventory exist)
       if (questUiActive && assets.uiStyle) {
         const spawnDef = (worldDef.entities || []).find((e) => e.id === 'player' && e.spawn);
@@ -1287,11 +1328,17 @@ async function runGame(mode, cinematic = null) {
     // US-091b: the pack screen. Steps while paused too; eats every key edge while open (so M / S / N stay quiet).
     if (dialogueCtl && mode === 'world' && playerHandle && !ending) dialogueCtl.step(dt, input, look ? look.locked : undefined); // DIALOGUE-01b2: early, so the lock covers the closing key press
     if (invView && mode === 'world' && playerHandle) {
-      invView.step(dt, input, !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look
+      invView.step(dt, input, !ending && !(craftView && craftView.isOpen) && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look
         && !(vitals && (vitals.dead || vLocked())) && !(questUiActive && wakeOut.inputLocked));
     }
+    const invOpen0 = !!(invView && invView.isOpen);
+    if (craftView && mode === 'world' && playerHandle) { // MAIN-WIRE-01: C opens the crafting list anywhere (no workbench in the spec); same lock gate as the pack
+      if (!craftView.isOpen && !invOpen0 && input.pressed('KeyC') && !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look
+        && !(vitals && (vitals.dead || vLocked())) && !(questUiActive && wakeOut.inputLocked)) { craftView.open(); if (input.consumePressed) input.consumePressed(); }
+      else craftView.step(dt, input);
+    }
     if (chestHook && mode === 'world' && playerHandle) chestHook.stepUi(dt, input.pressed(gameKeys.interact)); // S8-B1-04: steps while paused too (an open card pauses the sim)
-    const invOpen = !!(invView && invView.isOpen);
+    const invOpen = !!(invView && invView.isOpen) || !!(craftView && craftView.isOpen); // MAIN-WIRE-01: craft list locks input / pauses like the pack
     const cardOpen = !!(chestHook && chestHook.card.isOpen); // S8-B1-04: item-get card gates input same as invOpen
     // ---- US-015: wake timeline + map card (world_m1 only, questUiActive) ----
     let uiLocked = false;
@@ -1677,6 +1724,7 @@ async function runGame(mode, cinematic = null) {
       // `fb.sceneFade` just above.
       resetSceneDim(sceneDim);
       if (invView) invView.pushDim(sceneDim); // US-091b
+      if (craftView) craftView.pushDim(sceneDim); // MAIN-WIRE-01
       if (chestHook) chestHook.card.pushDim(sceneDim); // S8-B1-04
       pushNoteDim(sceneDim); // READ-01: whole-scene x 0.35 while a note is open (no-op otherwise), before applySceneDim/setSceneDim below
       if (questUiActive && !ending) {
@@ -1732,6 +1780,7 @@ async function runGame(mode, cinematic = null) {
       drawNotePanel(ui, window.ASSETS.notes, assets.uiStyle);
       if (dialogueCtl) dialogueCtl.draw(ui, fb.timeSec); // DIALOGUE-01b2
       if (invView) invView.draw(ui); // US-091b: the pack screen, over HUD + toast
+      if (craftView) craftView.draw(ui); // MAIN-WIRE-01
       // US-080a1/a2 (30.2): death fade (CPU path, same gating as the end-card
       // scene fade above) + the death card (typed line + "[E] Wake again").
       if (vitals && vitals.dead && !deathFlow.active) { // DEATH-FLOW-01 part 2: the flow replaces the old fade+card (old path stays when the flow is off)
@@ -1748,9 +1797,9 @@ async function runGame(mode, cinematic = null) {
     if (menuHost && menuHost.active && !isSettingsOpen()) menuHost.draw(ui); // US-090w: the card owns the screen (no pause text under it)
     if (demo.on && menuHost && menuHost.active && !isSettingsOpen()) drawDemoBuildLine(ui);
     if (demoEnd) demoEnd.draw(ui);
-    if (mode === 'world' && !look.locked && !isMapOpen() && !(invView && invView.isOpen) && !cinematic && !isWaterfallPreview && !(menuHost && menuHost.active)) drawPauseOverlay(ui, rt, assets);
+    if (mode === 'world' && !look.locked && !isMapOpen() && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !cinematic && !isWaterfallPreview && !(menuHost && menuHost.active)) drawPauseOverlay(ui, rt, assets);
     // US-038b: settings panel, drawn over the pause overlay when open
-    if (!cinematic && !isWaterfallPreview) drawSettingsPanel(ui, rt, assets, { showEntry: mode === 'world' && !(menuHost && menuHost.active) && !look.locked && !isMapOpen() && !(invView && invView.isOpen) });
+    if (!cinematic && !isWaterfallPreview) drawSettingsPanel(ui, rt, assets, { showEntry: mode === 'world' && !(menuHost && menuHost.active) && !look.locked && !isMapOpen() && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) });
     // US-029/US-030a: the real GPU work happens inside `rt.present()`'s
     // hook, right below - `cam`/`engine.world` are only meaningful in
     // 'world' mode (fb.gpu is false otherwise, so the pipeline falls
