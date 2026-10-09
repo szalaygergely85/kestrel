@@ -156,3 +156,5 @@ B1 2026-10-09 (batch 19/20 ARCH CHANGES: S8-B1-10, S8-B1-18, S8-B1-04) -> arch-r
 - S8-B1-04: new `chestHook.stepUi(dt, ePressed)` called every frame next to invView.step in main.js (outside !paused); card.step dropped from onTick. chestHook.test.js rig now main.js-shaped (no onTick while card open) + soft-lock test; preview updated.
 - Suites: deviceLost/ambient/chestHook PASS; node --check main.js + verify-motes.mjs OK.
 - verify-motes now asserts alive>0, no NaN, positions near playerHandle.data.transform. Cmd: node tools/verify-motes.mjs {port} [webgpu|webgl2] (not run; Node-only rule).
+
+- US-068c (kestrel-1): tools/editor/axisGizmo.js (+test), camera.js applyViewPreset/VIEW_PRESETS (+tests in axisGizmo.test.mjs; unknown preset throws; TOP clamped -70), main.js keys Numpad7/1/9 (inside editorKeysActive guard) + corner buttons (bottom-left gizmo overlay). Orbits around a point 10 m ahead of the eye. No index.html change needed (overlay built in JS). -> po-review (owner editor look): open tools/editor/index.html, press Numpad7/1/9 or the TOP/FRONT/ISO buttons bottom-left; gizmo axes follow RMB look.
