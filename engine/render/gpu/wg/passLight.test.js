@@ -47,4 +47,30 @@ const baseLight = () => ({
   assert.equal(wl.lu[W('cloudCover')], 0); assert.equal(wl.lu[W('cloud')], 0);
 }
 
-console.log('passLight.test.js (ALPHA-01f cloud item 1): all checks passed.');
+// S8-B2-20 (38.17) item (1): light.ao present -> aoStrength (word 31) lands at the cached word index, f32-rounded.
+{
+  const light = baseLight();
+  light.ao = { strength: 0.75 };
+  wl._uploadLight(light);
+  assert.equal(wl.lu[W('aoStrength')], Math.fround(0.75), 'aoStrength <- ao.strength');
+}
+
+// no light.ao on a full light set: zeroed (strength 0 = bit-identical to no AO).
+{
+  const light = baseLight();
+  wl.lu[W('aoStrength')] = 9;
+  wl._uploadLight(light);
+  assert.equal(wl.lu[W('aoStrength')], 0);
+}
+
+// bare ambient-array back-compat path (`!isSet`): aoStrength zeroed too, never stale.
+{
+  wl.lu[W('aoStrength')] = 9;
+  wl._uploadLight([0.1, 0.1, 0.1]);
+  assert.equal(wl.lu[W('aoStrength')], 0);
+  wl.lu[W('aoStrength')] = 9;
+  wl._uploadLight(null);
+  assert.equal(wl.lu[W('aoStrength')], 0);
+}
+
+console.log('passLight.test.js (ALPHA-01f cloud item 1 + S8-B2-20 aoStrength): all checks passed.');

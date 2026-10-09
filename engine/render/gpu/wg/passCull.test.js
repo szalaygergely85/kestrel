@@ -219,4 +219,38 @@ const oneRangeMesh = { triCount: 4, bbox: mesh0.bbox, ranges: [{ start: 0, count
   cull.dispose();
 }
 
+// ---- ALPHA-01f (d): masked meshGroup with R=3 ranges -> one args record per range, rangeCount0/1 = R, free/reuse by block size only ----
+{
+  const cull = new WgCullPass(d);
+  const g = makeGroup(4, 0); g.mesh = {};
+  const rangedMesh = { triCount: 10, bbox: mesh0.bbox, ranges: [{ start: 0, count: 2 }, { start: 2, count: 3 }, { start: 5, count: 4 }] };
+  cull.begin({ planes: null });
+  const ents = cull.add(g, [rangedMesh, null]);
+  assert.equal(ents.length, 6, 'R=3: 6 entries (3 ranges x 2 LODs)');
+  assert.deepEqual(ents.map((e) => e.active), [true, true, true, false, false, false], 'LOD1 has no mesh: all 3 range-entries inactive');
+  let slot = cull.batches.get(g).slot;
+  assert.deepEqual(Array.from(cull.argsCpu.subarray(slot * 5, slot * 5 + 15)),
+    [6, 0, 0, 0, 0, 9, 0, 6, 0, 0, 12, 0, 15, 0, 0], 'LOD0: 3 contiguous args records, static words from mesh.ranges[r] (*3)');
+  cull.begin({ planes: null }); cull.add(g, [rangedMesh, null]); cull.run();
+  const uu = cull._uv.u32, UW = (n) => CULL_BLOCK.field(n).word;
+  assert.equal(uu[UW('rangeCount0')], 3, 'rangeCount0 = R'); assert.equal(uu[UW('rangeCount1')], 3, 'rangeCount1 = R');
+  assert.equal(uu[UW('slot1')], (slot + 3) * 5, 'slot1 = slot + R records');
+  const offsetBefore = ents[0].argsOffset;
+  cull.removeBatch(g);
+  const g2 = makeGroup(4, 0); g2.mesh = {};
+  cull.begin({ planes: null });
+  const ents2 = cull.add(g2, [rangedMesh, null]);
+  assert.equal(ents2[0].argsOffset, offsetBefore, 'a freed 6-slot block is reused by the next R=3 batch');
+  const g3 = makeGroup(4, 0); g3.mesh = {};
+  cull.begin({ planes: null });
+  const ents3 = cull.add(g3, [oneRangeMesh, null]); // R=1 (ONE_PART mesh, one range matching triCount)
+  assert.notEqual(ents3[0].argsOffset, ents2[0].argsOffset, 'R=1 and R=3 batches never share a slot block');
+  cull.removeBatch(g2); cull.removeBatch(g3);
+  const g4 = makeGroup(4, 0); g4.mesh = {};
+  cull.begin({ planes: null });
+  const ents4 = cull.add(g4, [rangedMesh, null]);
+  assert.equal(ents4[0].argsOffset, offsetBefore, 'R=3 free list is reused by the next R=3 batch, not an R=1 freed slot (never aliased)');
+  cull.removeBatch(g4);
+  cull.dispose();
+}
 console.log('passCull.test OK');
