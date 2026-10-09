@@ -102,6 +102,7 @@ import { createWaterfallHooks } from './quest/waterfallHooks.js';
 import { createAmbientMotes } from './quest/ambient.js';
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
 import { createHitStop, hitStopEnabled } from './fx/hitStop.js'; // HITSTOP-01 (lane B1)
+import { createDeathFlow, deathFlowEnabled } from './fx/deathFade.js'; // DEATH-FLOW-01 part 1 (lane B1)
 import { createHurtFx, hurtFxEnabled } from './fx/hurtFx.js'; // HURT-FX-01 (lane B1): low-hearts pulse only (hurt edge + kick = US-080a2)
 import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-SPARK-WIRE (lane B1)
 import { parsePointShadows } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
@@ -178,6 +179,8 @@ try {
   resolvedQuality = resolveQuality({ param: params, saved: { quality: savedForBoot, shadowQuality: savedSettings.shadowQuality }, auto: autoProvisional });
 } catch (err) { console.warn(`[quality] presets unavailable (${err.message}) - booting without a preset`); }
 const hitStop = createHitStop({ enabled: hitStopEnabled(params, isCaptureOrBench) }); // HITSTOP-01: off in capture/bench(+combat)/compare and ?fx=0
+let deathRespawnDue = false; // DEATH-FLOW-01: fade finished -> next vitals.step gets a virtual [E] (its normal respawn path, pose logic untouched)
+const deathFlow = createDeathFlow({ enabled: deathFlowEnabled(params, isCaptureOrBench), onRespawn: () => { deathRespawnDue = true; } });
 const hurtFx = createHurtFx({ enabled: hurtFxEnabled(params, isCaptureOrBench) }); // HURT-FX-01: off in capture/bench/compare and ?fx=0
 const bootOpts = resolveBootOptions({ params, resolved: resolvedQuality, savedSettings, captureLike: isCaptureOrBench, geometryCompare: isGeometryCompare,
   defaultCols: GRID_DEFAULT_COLS, shadowLevel: resolveShadowLevel });
@@ -1068,7 +1071,7 @@ async function runGame(mode, cinematic = null) {
       hurtFx.reset();
       vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting,
         respawnPose: () => { hzb.invalidate('respawn'); return gameHooks.respawn(); }, // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
-        onDied: (t) => gameHooks.emitSimple('player:died', t.x, t.y, t.z),
+        onDied: (t) => { gameHooks.emitSimple('player:died', t.x, t.y, t.z); deathFlow.died(performance.now()); },
         syncFacing: (t) => {
           if (!look) return;
           look.clearLock();
@@ -1428,7 +1431,10 @@ async function runGame(mode, cinematic = null) {
       }
       if (practiceTarget) practiceTarget.step();
       if (vitals) {
-        vitals.step(playerHandle.data, input.pressed(gameKeys.interact)); // US-080a1 (30.2)
+        const wasDead = vitals.dead;
+        vitals.step(playerHandle.data, input.pressed(gameKeys.interact) || (deathFlow.active && deathRespawnDue)); // US-080a1 (30.2); DEATH-FLOW-01: fade end = virtual [E]
+        if (wasDead && !vitals.dead) { deathRespawnDue = false; deathFlow.respawned(performance.now()); }
+        deathFlow.step(performance.now());
         hurtFx.step(1000 / 60, vitals.hp, !vitals.dead); // HURT-FX-01
         stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
         // US-080a1 AC5 (`?debug=1` only): F8 toggles invulnerability, F9 deals 5 HP.
@@ -1741,6 +1747,7 @@ async function runGame(mode, cinematic = null) {
           drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals);
           drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals);
           hurtFx.draw(ui); // HURT-FX-01
+          deathFlow.draw(ui, ui.cols, ui.rows); // DEATH-FLOW-01
           presentPickups(engine.world, assets.pickupStyle, fb.timeSec); // US-080b
           if (toasts && !vitals.dead && !wakeOut.inputLocked && !isMapOpen()) toasts.draw(ui, fb.timeSec); // US-091a2 loot toast
         }
