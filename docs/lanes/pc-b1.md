@@ -344,3 +344,4 @@ B1 2026-10-09 (kestrel-1) SETTINGS-MOUNT-01 -> po-review: full createSettingsVie
 - AI-LEASH-01/PERCEIVE ARCH CHANGES (kestrel-1): leash.js, perceive.js, tests, beastSim adapter, arch 38.27 renamed z/fz/homeZ -> y/fy/homeY (ground axis); beastSim hashes unchanged, suites green; awaiting ARCH re-check.
 - 2026-10-09 MAIN-GL-DEAD-01 (kestrel-1): removed dead gpuPipeline branches/let from main.js (-41 net lines incl. dev/spriteDev/gpucompare tidy), voxelbench + console line point at wgPipeline; syntax check, check-deps OK; uncommitted.
 - 2026-10-09 BEAST-TUNING-01 (kestrel-1): taken from lane C (offline). COMBAT_TARGETS in beastConfig.js + sim/combatBalance.test.js (16 checks, PASS on today's defaults, no value changed; dodge AC = NEEDS DESIGN). Uncommitted.
+- 2026-10-09 M3-EXIT-WALK-01 (kestrel-1): taken from lane C (offline). docs/test-reports/M3-exit-walk.md written (checklist only; 5-boar rows from kestrel-4 WIP, not yet on pc-b).
