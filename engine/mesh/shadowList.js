@@ -13,7 +13,7 @@
 // outside the view still shadow what is on screen; the sun-plane cull is per group.
 import { DrawList, addStructures, addMeshStructures, pushClothItem, DRAW_TERRAIN, DRAW_FLAG_ONE_PART, MAX_DRAW_ITEMS, MAX_MESH_DRAWS } from './DrawList.js';
 import { addVoxelInstances } from './voxelMesh.js';
-import { fillShadowBands, groupRadius, resolveGroupLod1 } from './instances.js';
+import { fillShadowBands, groupRadius, resolveGroupLod1, meshIsMasked } from './instances.js';
 
 /**
  * MESH-SHADOW-02 (37.19 option 1, reworked 38.8a item 25a): budget for placed kind-9 mesh props only (towers, terrain, cloth,
@@ -108,8 +108,8 @@ export function buildShadowList(list, cameraList, world, planes, src) {
         // ALPHA-01f (c): ONE_PART collapses instancedRanges() to one synthetic whole-mesh range (passShadow.js / rasterJS.js's
         // `onePart` guard then drops per-range masking) - only opaque-only groups get it, so a masked group still casts a
         // leaf-shaped (not range[0]-only, unmasked) shadow once passShadow.js's instanced-masked caster path runs.
-        if (it && !g.mesh.maskRanges) it.flags |= DRAW_FLAG_ONE_PART;
-        if (it1 && !lod1Mesh.maskRanges) it1.flags |= DRAW_FLAG_ONE_PART;
+        if (it && !meshIsMasked(g.mesh)) it.flags |= DRAW_FLAG_ONE_PART;
+        if (it1 && !meshIsMasked(lod1Mesh)) it1.flags |= DRAW_FLAG_ONE_PART;
         continue;
       }
       if (!ig.pool || !src.voxelMeshCache) continue;

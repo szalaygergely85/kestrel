@@ -329,6 +329,14 @@ export function fillShadowBands(g, ex, ey, lod0M, castM, planes, R, swayPad = 0)
  * @returns {InstanceGroup}
  */
 let _groupSeq = 0;
+/** ALPHA-01f-fix: true when a mesh has any masked range (registry MeshData: `ranges[].mask`; draw copy: `maskRanges`). `maskRanges` exists only on draw copies. */
+export function meshIsMasked(m) {
+  if (m.maskRanges) return true;
+  const rs = m.ranges;
+  if (rs) for (let i = 0; i < rs.length; i++) if (rs[i].mask) return true;
+  return false;
+}
+
 export function makeInstanceGroup(modelKey, capacity) {
   const g = {
     id: ++_groupSeq, // WG-4b(c): stable identity for the shadow dirty-skip key
@@ -419,8 +427,12 @@ export class InstanceGroups {
     if (this.groups.length >= MAX_INSTANCE_GROUPS) throw new Error(`InstanceGroups: over ${MAX_INSTANCE_GROUPS} groups`);
     const g = makeInstanceGroup(mesh.id || 'mesh', capacity);
     g.mesh = mesh;
-    g.parts.m[0] = 1; g.parts.m[4] = 1; g.parts.m[8] = 1; // identity part (the DRAW_FLAG_ONE_PART draw reads partMatrices[range])
-    g.parts.flags[0] = 1; g.parts.count = 1;
+    // ALPHA-01f-fix: a masked mesh is drawn per range WITHOUT DRAW_FLAG_ONE_PART, so the CPU loops read partMatrices[range*12]
+    // for every range: identity into parts 0..R-1 (unmasked groups: one identity part, read via DRAW_FLAG_ONE_PART).
+    const R = meshIsMasked(mesh) ? mesh.ranges.length : 1;
+    if (R > MAX_VOX_PARTS) throw new Error(`InstanceGroups.meshGroup: masked mesh has ${R} ranges (> ${MAX_VOX_PARTS})`);
+    for (let p = 0; p < R; p++) { const o = p * 12; g.parts.m[o] = 1; g.parts.m[o + 4] = 1; g.parts.m[o + 8] = 1; g.parts.flags[p] = 1; }
+    g.parts.count = R;
     this.groups.push(g);
     return g;
   }
@@ -450,7 +462,7 @@ export class InstanceGroups {
    *   `undefined`-frameNo calls in a row see "unchanged" and wrongly reuse a stale memo).
    * @param {Float64Array|null} [viewProj] - RE-15c: column-major viewProj (same as `planes`'); with `rows` enables LOD where `g.lodCells > 0`
    * @param {number} [rows] - RE-15c: grid rows
-   * @param {{cache: import('./DrawList.js').MeshDrawCache, idFor: ((key: string) => number)|null, gpu?: {accept: (g: any, mesh0: any, mesh1: any) => boolean}|null}|null} [meshDraw] - TREES-LP-b: resolves mesh groups' draw copies; null/omitted = mesh groups skipped
+   * @param {{cache: import('./DrawList.js').MeshDrawCache, idFor: ((key: string) => number)|null, maskAtlas?: any, gpu?: {accept: (g: any, mesh0: any, mesh1: any) => boolean}|null}|null} [meshDraw] - TREES-LP-b: resolves mesh groups' draw copies; null/omitted = mesh groups skipped
    */
   addToDrawList(list, cache, planes, frameNo, viewProj, rows, meshDraw) {
     const pool = this.pool;
@@ -470,11 +482,11 @@ export class InstanceGroups {
         if (!meshDraw || !meshDraw.idFor) continue;
         if (g.mesh.lazy) { requestMeshForGroup(g.mesh, g); continue; }
         if (g.mesh.lazyOrigin) requestMeshForGroup(g.mesh, g); // S8-B2-03: throttled LRU keep-alive (touch) for a ready lazy mesh // MESH-LOAD-01: payload not loaded = group draws nothing yet
-        const draw = meshDraw.cache.get(g.mesh, meshDraw.idFor);
+        const draw = meshDraw.cache.get(g.mesh, meshDraw.idFor, meshDraw.maskAtlas || undefined);
         if (gpu && gpu.accept(g, draw, null)) continue;
         // LOD1: resolved once (cached on g._mesh1); null when not loaded yet (MESH-LOAD-01) -> LOD0 only, no pop to nothing.
         const lod1Mesh = (g.lodCells > 0 && viewProj) ? resolveGroupLod1(g, this._meshLookup) : null;
-        const draw1 = lod1Mesh ? meshDraw.cache.get(lod1Mesh, meshDraw.idFor) : null;
+        const draw1 = lod1Mesh ? meshDraw.cache.get(lod1Mesh, meshDraw.idFor, meshDraw.maskAtlas || undefined) : null;
         if (!memo || g._memoFrameNo !== frameNo) {
           let R = groupRadius(draw, g.parts);
           if (draw1) { const R1 = groupRadius(draw1, g.parts); if (R1 > R) R = R1; }
@@ -488,8 +500,8 @@ export class InstanceGroups {
         // ALPHA-01f (b): ONE_PART collapses instancedRanges() to one synthetic whole-mesh range (rasterJS.js rasterInstanced's
         // `onePart` guard then drops per-range masking) - only opaque-only groups get it; a masked group keeps its real
         // mesh.ranges so passRaster.js's instanced-masked draw sees each range's mask rect (JS-twin parity, ALPHA-01f a).
-        if (g.drawCount[0] > 0) { const it = list.addInstances(draw, g.parts, g.drawIb[0], g.drawCount[0], g._R); if (it && !g.mesh.maskRanges) it.flags |= DRAW_FLAG_ONE_PART; }
-        if (draw1 && g.drawCount[1] > 0) { const it1 = list.addInstances(draw1, g.parts, g.drawIb[1], g.drawCount[1], g._R); if (it1 && !lod1Mesh.maskRanges) it1.flags |= DRAW_FLAG_ONE_PART; }
+        if (g.drawCount[0] > 0) { const it = list.addInstances(draw, g.parts, g.drawIb[0], g.drawCount[0], g._R); if (it && !meshIsMasked(g.mesh)) it.flags |= DRAW_FLAG_ONE_PART; }
+        if (draw1 && g.drawCount[1] > 0) { const it1 = list.addInstances(draw1, g.parts, g.drawIb[1], g.drawCount[1], g._R); if (it1 && !meshIsMasked(lod1Mesh)) it1.flags |= DRAW_FLAG_ONE_PART; }
         continue;
       }
       if (!pool) continue;

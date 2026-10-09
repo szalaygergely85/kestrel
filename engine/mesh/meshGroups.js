@@ -123,7 +123,7 @@ export class MeshGroupSet {
     const ver = /** @type {any} */ (world).structVersion | 0;
     let dirty = lazyMeshVersion() !== this._lazyVer || structs !== this._structs || structs.length !== this._len || ver !== this._ver || idFor !== this._idFor || cache !== this._cache;
     if (!dirty) dirty = !this._snapshotValid(structs);
-    if (dirty) this._build(structs, ver, cache, idFor);
+    if (dirty) this._build(structs, ver, cache, idFor, world.maskAtlas || null);
   }
 
   /** @param {any[]} structs */
@@ -145,7 +145,7 @@ export class MeshGroupSet {
   }
 
   /** @param {any[]} structs @param {number} ver */
-  _build(structs, ver, cache, idFor) {
+  _build(structs, ver, cache, idFor, atlas) {
     this._lazyVer = lazyMeshVersion();
     this._structs = structs; this._len = structs.length; this._ver = ver; this._idFor = idFor; this._cache = cache;
     this.stats.builds++;
@@ -175,7 +175,7 @@ export class MeshGroupSet {
       const [mesh, list] = picked[p];
       const n = list.length;
       const g = /** @type {any} */ (makeInstanceGroup(mesh.id || 'mesh', n));
-      const draw = cache.get(mesh, idFor);
+      const draw = cache.get(mesh, idFor, atlas);
       g.mesh = mesh; g.draw = draw; g.members = Int32Array.from(list);
       g.refs = new Array(n); g.steps = new Int32Array(n);
       g.count = n;
