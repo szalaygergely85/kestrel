@@ -25,7 +25,7 @@ import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME, SHADOW_BAND_HYST_M } from '../
 import { WgCullPass } from './passCull.js';
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 import { resolveSunShadowOptions, SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../../shadowSun.js';
-import { windSwayOn, windShadowKey, packWindUniforms, SWAY_MAX, SWAY_SHADOW_HZ } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
+import { windSwayOn, windShadowKey, packWindUniforms, SWAY_MAX, sunWindClock } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
 // S8-B2-05/06: wind/sway uniforms (RASTER_BLOCK, instanced variant only; same word offsets as passRaster.js).
@@ -258,7 +258,7 @@ export class WgShadowPass {
     this.windOn = windSwayOn(world.wind);
     const fbT = p._fb; let tSec = 0; if (fbT) { const v = fbT.timeSec; if (v) tSec = v; } // no tagged phi: avoids a per-frame HeapNumber
     // pack the 10 Hz-quantised clock (same step as windShadowKey) so the sun map is a pure function of its key; the key itself uses raw tSec
-    packWindUniforms(world.wind, Math.floor(tSec * SWAY_SHADOW_HZ) / SWAY_SHADOW_HZ, this.windV, this.windTV, this.windKV);
+    packWindUniforms(world.wind, sunWindClock(tSec), this.windV, this.windTV, this.windKV);
     if (p._instances) p._instances.swayPad = this.windOn ? SWAY_MAX : 0;
     const list = this.list, src = this.src, st = this.stats;
     const tCpu0 = performance.now();
