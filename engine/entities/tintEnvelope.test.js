@@ -18,7 +18,7 @@ ok(tintAt(W, 800, o).k === 1, 'windup k=1 at windupSec');
 ok(tintAt(W, 800 + 100, o).k === 1 && tintAt(W, 800 + 300, o).k === 0.7, 'flicker 2 Hz');
 ok(tintAt(W, 800 + 1100, o).k === tintAt(W, 800 + 100, o).k, 'flicker periodic/deterministic');
 ok(tintAt({ name: 'hit' }, 79, o).k === 1 && Math.abs(tintAt({ name: 'hit' }, 140, o).k - 0.5) < 1e-9 && tintAt({ name: 'hit' }, 200, o).k === 0, 'hit');
-ok(Math.abs(tintAt({ name: 'hurt' }, 0, o).k - 0.6) < 1e-9 && tintAt({ name: 'hurt' }, 300, o).k === 0 && o.r === 1, 'hurt');
+ok(Math.abs(tintAt({ name: 'hurt' }, 0, o).k - 0.5) < 1e-9 && tintAt({ name: 'hurt' }, 300, o).k === 0 && Math.abs(o.r - 0.45) < 1e-9, 'hurt');
 const e = {}; setTint(e, 'hit', 1000);
 ok(sampleTint(e, 1010, o).k === 1 && sampleTint({}, 5, o).k === 0, 'component');
 for (let i = 0; i < 1e4; i++) { tintAt(W, i, o); sampleTint(e, i, o); }

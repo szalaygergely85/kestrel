@@ -2,7 +2,7 @@
 // envelopes (windup / hit / hurt). NOT wired: no render path takes a per-entity
 // tint yet (see docs/lanes/pc-b2.md). `tMs` is ELAPSED ms since the envelope start.
 export const TINT_NAMES = ['windup', 'hit', 'hurt'];
-const WINDUP_RGB = [1, 0.55, 0.1], HIT_RGB = [1, 1, 1], HURT_RGB = [1, 0.1, 0.1];
+const WINDUP_RGB = [1, 0.55, 0.1], HIT_RGB = [1, 1, 1], HURT_RGB = [0.45, 0.03, 0.03];
 const FLICKER_PERIOD_MS = 500; // 2 Hz
 const FLICKER_LOW = 0.7;       // deterministic square flicker: 1 for the first half period, 0.7 for the second
 
@@ -26,7 +26,7 @@ export function tintAt(env, tMs, out) {
     case 'hit':
       return put(out, HIT_RGB, t < 80 ? 1 : t < 200 ? 1 - (t - 80) / 120 : 0);
     case 'hurt':
-      return put(out, HURT_RGB, t < 300 ? 0.6 * (1 - t / 300) : 0);
+      return put(out, HURT_RGB, t < 300 ? 0.5 * (1 - t / 300) : 0);
     default:
       return put(out, HIT_RGB, 0);
   }

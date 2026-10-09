@@ -187,7 +187,7 @@
     // US-079b hurt: every damaging hit. 6 steps (100 ms) white, the whole boar snaps head-UP (body rx -8) and jolts
     // 0.1 m back. Children at rest so the white shell covers everything.
     hurt:   { durations: [50, 50], loop: false, interp: 'step', frames: [
-      pose({ b: [-8, 0, 0, 0, 2, 0] }, true), pose({ b: [-5, 0, 0, 0, 2, 0] }, true)
+      pose({ b: [-8, 0, 0, 0, 2, 0] }, false), pose({ b: [-5, 0, 0, 0, 2, 0] }, false) /* HIT-BLEED-01: shell stays hidden; hurt = jolt + dark-red tint + blood */
     ] },
     // flinch follow-through: 9 steps (150 ms), flash off; the head drops past rest, the forelegs brace, tail clamps.
     flinch: { durations: [60, 90, 100], loop: false, frames: [

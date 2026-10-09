@@ -276,7 +276,7 @@
       animations: {
         idle:   { durations: [1000], loop: true, frames: [pellPose(0, false)] },
         // 6 steps at 60 Hz = 100 ms (= US-078 AC "flashes white for 0.1 s"); the head twists 4 -> 8 deg (impact)
-        flash:  { durations: [50, 50], loop: false, interp: 'step', frames: [pellPose(4, true), pellPose(8, true)] },
+        flash:  { durations: [50, 50], loop: false, interp: 'step', frames: [pellPose(4, false), pellPose(8, false)] }  /* HIT-BLEED-01: no white shell; chips fly instead */,
         // follow-through after the flash (optional but recommended): 8 -> -5 -> 2 -> 0 deg, linear, 530 ms = 32 steps
         wobble: { durations: [90, 110, 130, 200], loop: false, frames: [pellPose(8, false), pellPose(-5, false), pellPose(2, false), pellPose(0, false)] }
       },

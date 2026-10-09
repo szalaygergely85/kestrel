@@ -75,6 +75,10 @@
     flameOuter:     '#ff8a24',
     flameTip:       '#e8401c',
     ember:          '#ff5a1f',
+    bloodWet:       '#7a1212',   // HIT-BLEED-01: fresh blood, dark and dull (not cartoon red)
+    blood:          '#5a0d0d',
+    bloodDark:      '#3a0808',
+    bloodDried:     '#22080a',
     emberDark:      '#8a2a10',
     // --- far overworld (US-016) ---
     grassLight:     '#a6d060',
