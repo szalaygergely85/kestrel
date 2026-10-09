@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { makeMockGpuDevice } from '../../../test/assert.js';
 import { DrawList, LevelMeshCache, addStructures } from '../../../mesh/DrawList.js';
+import { createUniformRing } from '../wgsl/uniformBlock.js';
 import { WgShadowPass } from './passShadow.js';
 import { WgPointShadowPass } from './passPointShadow.js';
 
@@ -101,6 +102,48 @@ const frame = (lights) => ({ _light: lights, _cam: cam, _world: world, _table: n
 {
   const { ps, passes } = mk({ pointShadows: { n: 0 } });
   assert.equal(ps.enabled, false); assert.equal(ps.run(frame(makeLights(1)), raster), false); assert.equal(passes.length, 0); ps.dispose();
+}
+
+// ---- ME-16 fix: uniform-ring budget. 4 lights x 6 faces x ~130 draws/face on the real 832-slot ring must not throw; faces resume next frame ----
+{
+  const bigWorld = { structures: [], structVersion: 1, terrain: null }, all = [];
+  const bigList = new DrawList(256); bigList.begin(); // addStructures caps at 8 structs per call: 17 batches of 8 = ~136 casters near the light
+  for (let b = 0; b < 17; b++) {
+    bigWorld.structures.length = 0;
+    for (let i = 0; i < 8; i++) { const st = struct(b * 8 + i, i * 0.5, -22 + b * 0.25); bigWorld.structures.push(st); all.push(st); }
+    addStructures(bigList, bigWorld, cam, levelCache, 2000);
+  }
+  bigWorld.structures = all;
+  const bigRaster = { list: bigList, levelCache, meshCache: null, strictMatIdFor: null };
+  const { d, ps } = mk({ level: 'high' });
+  const ring = createUniformRing(832, 256); d.uniformRing = ring; // as GpuDeviceWebGPU: DEFAULT_RING_SLOTS = MAX_DRAW_ITEMS*3+64
+  let open = 0, maxDraws = 0, perFace = 0;
+  d.beginPass = () => { assert.equal(open, 0, 'previous pass not ended'); open = 1; perFace = 0; };
+  d.endPass = () => { open = 0; if (perFace > maxDraws) maxDraws = perFace; };
+  d.bind = () => { ring.alloc(256); };
+  d.draw = () => { perFace++; };
+  // shadowList caps structures, so the 130 draws/face are simulated at the renderCasters boundary (one bind+draw each, a ring slot per bind)
+  const cs = ps.casters;
+  cs.renderCasters = (target) => { d.beginPass(target, {}); for (let i = 0; i < 130; i++) { d.bind({}, {}); d.draw(1, 0, 1); } d.endPass(); cs.draws = 130; };
+  const lights = makeLights(4), p = { ...frame(lights), _world: bigWorld };
+  let frames = 0;
+  const allReady = () => ps.ready[0] + ps.ready[1] + ps.ready[2] + ps.ready[3] === 4;
+  while (!allReady() && frames < 60) { ring.reset(); ring.alloc(256 * 300); /* sun + raster already used 300 slots */ ps.run(p, bigRaster); frames++; assert.equal(open, 0); assert.ok(ring.usedSlots <= 832, 'ring never overflows'); }
+  assert.ok(allReady(), `all 4 lights complete over ${frames} frames`);
+  assert.ok(maxDraws >= 100, `stress face has ${maxDraws} draws`);
+  // forced throw inside a face: no open pass left, next frame renders
+  lights.defX[0] += 1; let boom = 1; d.draw = () => { if (boom) { boom = 0; throw new Error('boom'); } perFace++; };
+  cs.renderCasters = (target) => { d.beginPass(target, {}); try { for (let i = 0; i < 130; i++) { d.bind({}, {}); d.draw(1, 0, 1); } } finally { d.endPass(); } cs.draws = 130; };
+  ring.reset(); assert.throws(() => ps.run(p, bigRaster), /boom/); assert.equal(open, 0, 'pass ended after a throw');
+  let ok = false; for (let i = 0; i < 20 && !ok; i++) { ring.reset(); ps.run(p, bigRaster); ok = ps.ready[0] === 1 && ps.faceMask[0] === 0; }
+  assert.ok(ok, 'next frames render after the throw');
+  // steady state: nothing dirty -> no allocation
+  d.draw = () => {}; d.beginPass = () => {}; d.endPass = () => {};
+  for (let i = 0; i < 2000; i++) { ring.reset(); ps.run(p, bigRaster); }
+  global.gc(); const h1 = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 1000; i++) { ring.reset(); ps.run(p, bigRaster); }
+  global.gc(); const g1 = process.memoryUsage().heapUsed - h1;
+  assert.ok(g1 < 64 * 1024, `steady-state heap growth ${g1} B`);
 }
 
 // ---- zero allocation once warm (moving light renders every frame) ----

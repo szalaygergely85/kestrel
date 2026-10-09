@@ -18,7 +18,8 @@ import { windShadowKey } from '../../../mesh/sway.js';
 import { resolvePointShadowOptions, createShadowLightState, selectShadowLights, pointFaceMatrix, pointFacePlanes, pointShadowKeyO, quantiseOrigin } from '../../shadowPoint.js';
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js';
 
-const IDENT = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+const RING_RESERVE = 160; // uniform-ring slots left for the passes after the point shadows (resolve/light/shade/edge/sprites/overlays)
+const IDENT =new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
 export class WgPointShadowPass {
   /** @param {any} device @param {{pointShadows?: any, level?: string, casters?: WgShadowPass, buffers?: any}} [opts] */
@@ -37,6 +38,7 @@ export class WgPointShadowPass {
     this.keys = new Int32Array(m * 2); this.pendKey = new Int32Array(m * 2);
     this.keyValid = new Uint8Array(m); this.keyHolder = new Int32Array(m).fill(-1);
     this.dirty = new Uint8Array(m); this.moving = new Uint8Array(m); this.hasInst = new Uint8Array(m);
+    this.faceMask = new Uint8Array(m); this.partKey = new Int32Array(m * 2); this.partHolder = new Int32Array(m); this.ringSkips = 0; this.lastFaceDraws = 0; // faces done for the pending key (bit f), resumed across frames when the uniform ring is short
     this.rr = 0; this._lastBuilt = -1;
     this.lists = []; this.key2 = new Int32Array(2); this.hash3 = new Int32Array(3);
     this.O = new Float64Array(4); this.M = new Float64Array(16); this.planes = new Float64Array(24); this.box = new Float64Array(24); // O = xyz + radius (pointShadowKeyO reads it: no boxed-double args)
@@ -92,17 +94,25 @@ export class WgPointShadowPass {
     return pointShadowKeyO(this.key2, O, hs[0], hs[1], world.structVersion | 0, inst ? windShadowKey(world.wind, tSec) : 0, q);
   }
 
-  /** Render all 6 faces of slot s (its list and this.O are current). */
+  /**
+   * Render the missing faces of slot s (its list and this.O are current). The device uniform ring (one per frame, fixed size) is shared with
+   * every other pass, so each face first checks its worst-case draw count against the ring headroom (minus RING_RESERVE for the cell passes);
+   * a face that does not fit stops the slot and resumes next frame (faceMask keeps the finished faces). @returns {number} faces rendered now
+   */
   _renderSlot(s, world) {
     const list = this.lists[s], O = this.O, far = this.origins[s * 4 + 3], M = this.M, pl = this.planes, idx = this.idx, items = list.items, cs = this.casters;
+    const ring = this.device.uniformRing; let done = 0;
     for (let f = 0; f < 6; f++) {
+      if (this.faceMask[s] & (1 << f)) continue;
       pointFaceMatrix(O, far, f, M); pointFacePlanes(O, far, f, pl);
       let k = 0;
       for (let i = 0; i < list.count; i++) { const a = items[i].aabb; if (classifyAABB(pl, a[0], a[1], a[2], a[3], a[4], a[5]) !== CULL_OUT) idx[k++] = i; }
+      if (ring && Math.max(k + (k >> 1) + 4, this.lastFaceDraws) > ring.slots - ring.usedSlots - RING_RESERVE) { this.ringSkips++; break; } // masked ranges can split an item into several draws
       cs.renderCasters(this.targets[s * 6 + f], M, list, world, idx, k, false);
-      this.stats.draws += cs.draws;
+      this.stats.draws += cs.draws; this.lastFaceDraws = cs.draws; this.faceMask[s] |= 1 << f; done++;
     }
-    this.facesRendered += 6; this.stats.faces += 6;
+    this.facesRendered += done; this.stats.faces += done;
+    return done;
   }
 
   /** @returns {boolean} any slot holds a shadow map (see `ready`) */
@@ -122,12 +132,14 @@ export class WgPointShadowPass {
     let nDirty = 0;
     for (let s = 0; s < n; s++) {
       const h = state.slots[s]; this.slotLight[s] = h; this.dirty[s] = 0; this.moving[s] = 0;
-      if (h < 0) { this.ready[s] = 0; this.keyValid[s] = 0; this.keyHolder[s] = -1; continue; }
+      if (h < 0) { this.ready[s] = 0; this.keyValid[s] = 0; this.keyHolder[s] = -1; this.faceMask[s] = 0; continue; }
       const key = this._build(s, raster, world, lights, tSec); st.slots++;
       const o = s * 4; this.origins[o] = this.O[0]; this.origins[o + 1] = this.O[1]; this.origins[o + 2] = this.O[2]; this.origins[o + 3] = lights.pos[h * 4 + 3];
       const sameHolder = this.keyValid[s] === 1 && this.keyHolder[s] === h;
       if (sameHolder && this.keys[s * 2] === key[0] && this.keys[s * 2 + 1] === key[1]) { this.skips++; continue; }
       if (!sameHolder) this.ready[s] = 0; // new holder: the old layers show another light
+      if (this.faceMask[s] !== 0 && (this.partHolder[s] !== h || this.partKey[s * 2] !== key[0] || this.partKey[s * 2 + 1] !== key[1])) this.faceMask[s] = 0; // inputs changed mid-way: start over
+      this.partKey[s * 2] = key[0]; this.partKey[s * 2 + 1] = key[1]; this.partHolder[s] = h;
       this.dirty[s] = 1; nDirty++;
       this.moving[s] = sameHolder || (lights.entity && lights.entity[h]) ? 1 : 0; // key moved under the same holder, or a carried light: first in the queue
       this.pendKey[s * 2] = key[0]; this.pendKey[s * 2 + 1] = key[1];
@@ -144,7 +156,9 @@ export class WgPointShadowPass {
             if (spent > 0 && spent + 6 > this.opts.faceCap) continue;
             if (this._lastBuilt !== s && this.hasInst[s]) this._build(s, raster, world, lights, tSec); // restores this slot's g.shadowIb banding
             else { this.O[0] = this.origins[s * 4]; this.O[1] = this.origins[s * 4 + 1]; this.O[2] = this.origins[s * 4 + 2]; }
-            this._renderSlot(s, world); spent += 6;
+            const nf = this._renderSlot(s, world); spent += nf;
+            if (this.faceMask[s] !== 63) break; // ring ran short: resume next frame
+            this.faceMask[s] = 0;
             this.keys[s * 2] = this.pendKey[s * 2]; this.keys[s * 2 + 1] = this.pendKey[s * 2 + 1];
             this.keyValid[s] = 1; this.keyHolder[s] = state.slots[s]; this.ready[s] = 1; this.dirty[s] = 0; this.renders++;
             if (ph === 1) this.rr = (s + 1) % n;
