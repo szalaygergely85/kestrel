@@ -33,7 +33,7 @@ function qmul(a, ao, b, bo, out) { // out = a * b (x,y,z,w)
 }
 
 export function collapseRig(rigged, partMap) {
-  if (!Array.isArray(partMap) || !partMap.length) throw new Error('collapseRig: empty partMap');
+  if (!Array.isArray(partMap) || !partMap.length) throw new Error('collapseRig: partMap must be a non-empty array [{name,bones,parent,compose?}] (the only accepted shape)');
   if (partMap.length > MAX_PARTS) throw new Error(`collapseRig: ${partMap.length} parts, max ${MAX_PARTS}`);
   const boneIdx = new Map(rigged.bones.map((b, i) => [b.name, i]));
   const partOfBone = new Map();

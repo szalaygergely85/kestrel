@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateKit, validateRecipe, composeCharacter } from './index.js';
+import { validateKit, validateRecipe, composeCharacter, SLOTS, KIT_ATTACH_SLOTS } from './index.js';
 import { makeOk } from '../test/assert.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -114,10 +114,38 @@ const has = (r, re) => r.errors.some((e) => re.test(e));
 {
   const k = makeKit(); k.bases.m.stretchRows = [4]; // row 4 holds Spine and LeftUpperArm voxels
   const r = validateKit(k, MATS);
-  ok('rule: stretch row through a forbidden bone', has(r, /row 4 runs through forbidden bone "LeftUpperArm"/), r.errors.join('; '));
+  ok('rule: stretch row through one arm only is asymmetric', has(r, /row 4 crosses "LeftUpperArm" but not "RightUpperArm"/), r.errors.join('; '));
+  const ka = makeKit(); ka.bases.m.stretchRows = [3]; // row 3: Spine + (hand-free) arm voxels, still only the left arm
+  ok('arm bones are stretch bones (no forbidden-bone error)', !has(validateKit(ka, MATS), /forbidden bone "(Left|Right)(Upper|Lower)Arm"/));
   const k2 = makeKit(); k2.bases.m.stretchRows = [7];
   ok('stretch row through Head is forbidden', has(validateKit(k2, MATS), /forbidden bone "Head"/));
   ok('stretch row through Hips only is fine', validateKit(makeKit(), MATS).errors.length === 0);
+}
+{
+  // overlay = kit-only attachment slot (CHARGEN-02 arch changes)
+  const k = makeKit();
+  k.attachments.push({ id: 'eo', slot: 'overlay', bone: 'Head', anchor: 'head_top', offset: [0, 0, -2], box: [1, 1, 1], layers: [[['S']].map((r) => r[0])] });
+  ok('overlay attachment slot accepted', validateKit(k, MATS).errors.length === 0, validateKit(k, MATS).errors.join('; '));
+  ok('overlay is not a recipe slot', !SLOTS.includes('overlay') && KIT_ATTACH_SLOTS.includes('overlay'));
+}
+{
+  // partMap: canonical array form
+  const good = () => [{ name: 'body', bones: ['Hips', 'Spine'], parent: null, compose: 2 }, { name: 'head', bones: ['Head'], parent: 'body' }, { name: 'armL', bones: ['LeftUpperArm'], parent: 'body' }];
+  const withPm = (pm) => { const k = makeKit(); k.partMap = pm; return validateKit(k, MATS); };
+  ok('partMap: valid array accepted', withPm(good()).errors.length === 0, withPm(good()).errors.join('; '));
+  ok('partMap: object form rejected', has(withPm({ body: ['Hips'] }), /partMap: must be an array/));
+  const m1 = good(); m1[2].bones = [];
+  ok('partMap: empty part rejected', has(withPm(m1), /non-empty bones/));
+  const m2 = good(); m2.pop();
+  ok('partMap: bone in no part', has(withPm(m2), /bone "LeftUpperArm" is in no part/));
+  const m3 = good(); m3[2].bones = ['LeftUpperArm', 'Head'];
+  ok('partMap: bone twice', has(withPm(m3), /bone "Head" is already in part "head"/));
+  const m4 = good(); m4[1].parent = 'armL';
+  ok('partMap: parent listed after', has(withPm(m4), /parent "armL" is unknown or listed after/));
+  const m5 = good(); m5[2].parent = 'head';
+  ok('partMap: root bone parent not in parent part', has(withPm(m5), /first bone "LeftUpperArm" has its parent bone in part "body", not in parent "head"/), withPm(m5).errors.join('; '));
+  const m6 = []; for (let i = 0; i < 9; i++) m6.push({ name: 'p' + i, bones: ['Hips'], parent: null });
+  ok('partMap: more than 8 parts', has(withPm(m6), /9 parts/));
 }
 {
   const k = makeKit(); k.shells[0].slot = 'cape'; k.attachments[0].anchor = 'nowhere';
