@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kestrel chest hook preview</title>
+<style>
+html,body {margin:0;background:#000;color:#e8e2d0;font:16px monospace;overflow:hidden}
+canvas {display:block;margin:auto;max-width:100%;max-height:90vh;image-rendering:pixelated}
+#controls {position:fixed;left:8px;bottom:8px} button {font:inherit}
+</style>
+<canvas id="screen" aria-label="Chest hook preview"></canvas>
+<div id="controls"><button id="face">Face chest + open (E)</button> <button id="away">Face away (E)</button>
+<span id="status"></span></div>
+<script src="../../design/palette.js"></script>
+<script src="../../design/items.js"></script>
+<script src="../../design/models/title.js"></script>
+<script src="../../design/models/inventory_ui.js"></script>
+<script src="../../design/models/menu_ui.js"></script>
+<script src="../../design/models/chest.js"></script>
+<script type="module" src="./chestHook.preview.js"></script>
+</html>
