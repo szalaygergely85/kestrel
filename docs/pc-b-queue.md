@@ -55,6 +55,8 @@ Species switch stays blocked on the owner LOD1 pick + forestWalk tri budget (PC-
 - **kestrel-4:** PBF-K4-01 forest triangle budget report - PBF-K4-02 asset licence gate script.
 - Waystone heal/respawn, objective line, chest wiring = lane C wire modules (`NEEDS C`: WAYSTONE-01w, S8-C-HOOK-QUEST/CHEST; only the sims exist). Blocked on owner: valley layout approval (river widen, bridge placement), bridge B rule, spell upgrades, AREAS-01 breach trigger.
 
+- **kestrel-4 (new, report only):** NEWPACK-03 - can the importer read `.fbx`/`.obj`? (docs/sprints/sprint-8-queue.md '## New Quaternius packs'); NEWPACK-01/02 are lane C.
+
 **Held / owner:** D-050 hold: PC-A reviews no NEW S8-B2 story until batch-12 items 4/5 + batch-13 B are re-reviewed. B2 keeps building (ALPHA-01f is ARCH-approved); unreviewed commits stay off master. Owner: LOD1 pick (`design/preview/lod1-trees.html`), glow strength, title-menu + glow-light + squares looks (PC-B handoff 2026-10-09).
 
 ---

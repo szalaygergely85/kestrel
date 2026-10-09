@@ -52,3 +52,4 @@ Inventory comes from `git ls-files` (not recursive filesystem inclusion), distin
 | `RawsNumbers.vox` | `6B05C0F90ED64FA659A6D0BD9C37950F88D62C1F34323A92DB364F09D3A71B2E` |
 
 D-046's KEEP decision remains in effect: this follow-up changes evidence records only. No assets downloaded, deleted, quarantined or relicensed; release/demo inclusion remains an owner/PC-A decision. The tracked-file inventory is unchanged.
+| Quaternius Textured Stylized Trees (2020), Ultimate Stylized Nature (2022), Fantasy Props MegaKit Standard: `design/meshes/source/quaternius_*` (git-ignored; no derived content yet) | Local `License.txt` / `License_Standard.txt` in each pack (owner download 2026-10-09) | CC0 1.0; credit optional | Yes | Yes under CC0 (sources git-ignored by repo rule) | Untracked sources only |

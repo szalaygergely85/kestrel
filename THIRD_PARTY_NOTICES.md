@@ -42,3 +42,9 @@ The 2026-10-07 audit in `docs/licences.md` and per-file `docs/licence-inventory.
 ## Fonts, reference pages and audio
 - Game/editor use browser-installed font fallbacks; no font binaries are bundled. Audio is authored procedural WebAudio, with no tracked third-party sound files.
 - `design/reference/stitch-editor/` is reference-only and links to Google Fonts (JetBrains Mono/Space Grotesk: SIL OFL 1.1; Material Symbols: Apache 2.0), Tailwind CDN (MIT), and images with unrecorded provenance. These are not game/editor runtime dependencies. See `docs/licences.md` for original licence links and obligations if copies are redistributed. Font licences do not grant rights to the linked images.
+
+## Quaternius - Textured Stylized Trees (May 2020), Ultimate Stylized Nature (May 2022), Fantasy Props MegaKit [Standard] (CC0)
+- Files (added 2026-10-09, owner download): sources only, **git-ignored** in `design/meshes/source/quaternius_textured_stylized_trees/`, `quaternius_ultimate_stylized_nature/`, `quaternius_fantasy_props_megakit/` (FBX/OBJ/glTF + textures; `.blend` not copied). Nothing is committed or derived yet; each import follows skill `mesh-import` and adds its `content/meshes/` entries here.
+- Licence: **CC0 1.0** (public domain), each pack's `License.txt` / `License_Standard.txt` (the Fantasy Props one is the free Standard tier, a subset of the paid PRO kit). Author: Quaternius (quaternius.com). Credit appreciated, not required.
+- Source: quaternius.com packs (Textured Stylized Trees, Ultimate Stylized Nature, Fantasy Props MegaKit).
+
