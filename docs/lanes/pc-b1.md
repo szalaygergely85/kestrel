@@ -162,3 +162,6 @@ B1 2026-10-09 (batch 19/20 ARCH CHANGES: S8-B1-10, S8-B1-18, S8-B1-04) -> arch-r
 ### S8-B1-18 follow-up (verify-motes)
 - tools/verify-motes.mjs: `look.locked` is reset by the game (pointerlock handlers), so a one-shot assignment did not stick; now a 30 ms setInterval in the page pins it true (sim runs). Pose `?pose=roadSouth` (env POSE overrides); prints particles.stats on failure.
 - Result (webgpu): n=55 live motes, bad=0, maxD 32.8, no errors -> PASS. ambient.js sunlit gate NOT changed: sunFromWorld dir = toward sun (dirZ=sin elev), same convention as lighting.js:843 use of sunVisible; no gate bug found.
+
+## S8-B2-12c run 2 (B1 importers) -> arch-review
+passLight.js: cloudA/cloudB <- packCloudUniforms(light.cloud, fb.timeSec, this.cloud8) (preallocated Float32Array(8), null/bare-array -> zeros); _uploadLight(light, timeSec); test updated. gpucompare.js both sites: `lights.cloud = null`. main.js: setCloudShadow gone, `?cloudshadow=1` (not gl2) sets lights.cloud = devCloudShadow() (cloudParam.js default block) after buildLightSet; `?clouds=` void. cloudParam/cloudForce tests updated. Node suites lighting/passLight/cloud/gpucompare + check-deps pass; no browser. Note: main.js never calls setLook, so the dev block carries its own seed/wind (not the look's).
