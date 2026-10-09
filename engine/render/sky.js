@@ -131,7 +131,7 @@ export function cloudAt(dx, dy, dz, elevDeg, C, off, out) {
   // q = cloud-deck projection, drifted once per frame (off).
   const qx = (dx / (dz + C.bias)) * C.scale + off[0];
   const qy = (dy / (dz + C.bias)) * C.scale + off[1];
-  const puff = cloudValueNoise(qx, qy, seed) * 0.65 + cloudValueNoise(qx * 2.03 + 17.0, qy * 2.03 + 17.0, seed) * 0.35;
+  const puff = cloudValueNoise(qx, qy, seed) * 0.65 + cloudValueNoise(qx * 2.0 + 17.0, qy * 2.0 + 17.0, seed) * 0.35;
   // wisp: stretched 3x along x (the wind axis).
   const wisp = cloudValueNoise(qx * 0.33 * 1.7 + 41.0, qy * 1.7 + 41.0, seed);
   const cb = out.band;

@@ -225,3 +225,8 @@ shadowList.js passes src.maskAtlas at both meshCache.get; src.maskAtlas set in p
 ### MESH-LOD-CELLS-01 (kestrel-3) -> arch-review
 Optional per-species `lodCells` (>0) / `lod0Cap` (int>=0) in forest scatter species: validated in engine/world/scatter.js, applied in engine/core/engine.js bindScatterInstances (mesh groups LOD off by default, so unchanged without the field). Test: scatterMesh.test.js (+11 checks). scatter/instances/mesh/tri-budget suites PASS, check-deps OK.
 NEEDS C: world_m1 forest species CommonTree + Pine `lodCells: 150`; TwistedTree needs an LOD1 mesh (294k of 420k tris) first. Numbers in MESH-PERF-01.md.
+
+### CLOUD-WRAP-01 (kestrel-3) -> arch-review + owner look
+2nd cloud octave `q*2.03+17` -> `q*2.0+17` in sky.js `cloudAt`, cloudShadow.js `cloudShadeQ`, common.wgsl.js `cloudVN` call (cloudShadeQ4); a 256 drift wrap now moves it by 512 (2 periods) = seamless. No GLSL file carries 2.03 (grep clean). Tests: cloudShadow.test (2000 pts, q at off == off-256 + 2nd-octave noise <=1e-6), sky.test (cloudAt seamless, wispK=0); parity probes + sky/cloud/wgsl/lighting suites PASS.
+OPEN: the sky wisp octave (`qx*0.33*1.7+41`, `qy*1.7+41`, sky.js:136, no WGSL twin in cloud shadow) also pops on wrap (shift 143.6 / 435.2); not in scope, needs its own fix (e.g. 0.33*1.7 -> scales giving multiples of 256).
+Main session: gpucompare + re-baseline the sky rows with clouds (look.clouds enabled, any cloud/cloud-shadow row; subtle puff-detail shift) then owner look.

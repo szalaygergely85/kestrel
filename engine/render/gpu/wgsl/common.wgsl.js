@@ -202,7 +202,7 @@ fn cloudShadeQ4(P: vec3f, sd: vec3f, A: vec4f, B: vec4f) -> u32 {
   let qx = (P.x + sd.x * t) * A.z + A.x;
   let qy = (P.y + sd.y * t) * A.z + A.y;
   let seed = i32(B.w);
-  let n = cloudVN(qx, qy, seed) * 0.65 + cloudVN(qx * 2.03 + 17.0, qy * 2.03 + 17.0, seed) * 0.35;
+  let n = cloudVN(qx, qy, seed) * 0.65 + cloudVN(qx * 2.0 + 17.0, qy * 2.0 + 17.0, seed) * 0.35;
   let tt = clamp((n - B.x) / B.y, 0.0, 1.0);
   let d = tt * tt * (3.0 - 2.0 * tt);
   return u32(floor(A.w * 0.6 * d * 255.0 + 0.5));
