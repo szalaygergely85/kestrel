@@ -259,11 +259,20 @@
   // one voxel centre -> { ch, own (1..5 finger/thumb, 6 palm, 7 arm, 8 knuckle), tip } or null
   function classify(p, segs) {
     var best = null, bd = 0, si, fi;
+    // segment scan with scalar math (boot cost: no per-segment arrays; same operations in the same order as segDist -> identical floats)
+    var px = p[0], py = p[1], pz = p[2];
     for (si = 0; si < segs.length; si++) {
-      var s = segs[si], r = segDist(p, s), rad = lerp(s.r0, s.r1, r.t);
-      if (s.ph >= 0) { var uu = r.t * s.L; rad += JOINT_BULGE[s.ph] * Math.exp(-uu * uu / 0.5) - 0.05 * Math.sin(Math.PI * r.t); }
-      var dd = r.d - rad;
-      if (dd <= 0 && (best === null || dd < bd)) { best = { s: s, t: r.t, c: r.c, rad: rad }; bd = dd; }
+      var s = segs[si], sa = s.a, sb = s.b, bb = s.bb;
+      if (px < bb[0] || px > bb[1] || py < bb[2] || py > bb[3] || pz < bb[4] || pz > bb[5]) continue;  // outside radius+bulge: dd > 0 for sure
+      var abx = sb[0] - sa[0], aby = sb[1] - sa[1], abz = sb[2] - sa[2];
+      var apx = px - sa[0], apy = py - sa[1], apz = pz - sa[2], L2 = abx * abx + aby * aby + abz * abz;
+      var rt = L2 > 0 ? clamp((apx * abx + apy * aby + apz * abz) / L2, 0, 1) : 0;
+      var cx = sa[0] + abx * rt, cy = sa[1] + aby * rt, cz = sa[2] + abz * rt;
+      var ex = px - cx, ey = py - cy, ez = pz - cz;
+      var rd = Math.sqrt(ex * ex + ey * ey + ez * ez), rad = lerp(s.r0, s.r1, rt);
+      if (s.ph >= 0) { var uu = rt * s.L; rad += JOINT_BULGE[s.ph] * Math.exp(-uu * uu / 0.5) - 0.05 * Math.sin(Math.PI * rt); }
+      var dd = rd - rad;
+      if (dd <= 0 && (best === null || dd < bd)) { best = { s: s, t: rt, c: [cx, cy, cz], rad: rad }; bd = dd; }
     }
     if (best) {
       var s2 = best.s, rel = dot(sub(p, best.c), s2.dors) / best.rad, ch, ph = s2.ph, u = best.t * s2.L;
@@ -342,6 +351,11 @@
     var ts = thumbSegs(pose.thumb);
     segs = segs.concat(ts);
     segs.push(webSeg(ts));
+    for (i = 0; i < segs.length; i++) {   // reject box per segment: its endpoints' box grown by the largest radius + joint bulge (+ slack)
+      var sg = segs[i], m = Math.max(sg.r0, sg.r1) + 0.15 + 0.01;
+      sg.bb = [Math.min(sg.a[0], sg.b[0]) - m, Math.max(sg.a[0], sg.b[0]) + m, Math.min(sg.a[1], sg.b[1]) - m, Math.max(sg.a[1], sg.b[1]) + m,
+               Math.min(sg.a[2], sg.b[2]) - m, Math.max(sg.a[2], sg.b[2]) + m];
+    }
     var H = new Uint8Array(NCELL), own = new Uint8Array(NCELL), tip = new Uint8Array(NCELL);
     for (k = 0; k < GN[2]; k++) {
       var zc = k + 0.5 + GO[2];
@@ -956,7 +970,7 @@
     handChargeSparks: {
       rate: 0, burst: 1,
       life: [0.18, 0.4], speed: [0.1, 0.35],
-      dir: [0, 0, 1], spreadDeg: 180, box: [0.06, 0.06, 0.05],
+      dir: [0, 0, 1], spreadDeg: 88, box: [0.06, 0.06, 0.05],
       accelZ: 0.25, drag: 3.5, wind: 0.1,
       maxLive: 30, killBelow: null,
       glyphs: "*+'.",

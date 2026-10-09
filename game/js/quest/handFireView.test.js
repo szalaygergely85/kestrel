@@ -1,9 +1,10 @@
 // game/js/quest/handFireView.test.js - HAND-WIRE-01: viewModel variants + the realistic burning hand's clip sequence on
 // press / hold / release / cancel, the always-on mapping and the glow. REAL view-model layer + the designer's hand asset.
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { VoxelPool, createViewModelLayer } from '../../../engine/index.js';
-import { loadHandFireView, presentHandFire } from './handFireView.js';
+import { VoxelPool, createViewModelLayer, createParticles } from '../../../engine/index.js';
+import { loadHandFireView, presentHandFire, bindHandFx, stepHandFx } from './handFireView.js';
 import { createFireballSim } from './sim/fireball.js';
 import { makeOk } from '../../../engine/test/assert.js';
 import '../../../design/palette.js';
@@ -100,6 +101,62 @@ ok('every fire clip has a glow (the light never goes out)', Object.values(def.al
 {
   const fsim = createFireballSim({ solidAt: () => false, heightAt: () => 0 }, { emit() {} }, (await import('./spellConfig.js')).FIREBALL_CFG, { n: 0, x: [], y: [], z: [], h: [], ent: [] }, { spendMana: () => true });
   ok('real sim exposes state/holdSteps/castTick/tick', ['state', 'holdSteps', 'castTick', 'tick'].every((k) => k in fsim));
+}
+
+// ---- HAND-WIRE-02: the variant voxel output is byte-identical to before the boot-cost optimisation (golden sha1 of all 26 models)
+{
+  const hsh = createHash('sha1');
+  for (const k of Object.keys(A.voxelModels).sort()) { hsh.update(k); hsh.update(JSON.stringify(A.voxelModels[k], (kk, v) => (ArrayBuffer.isView(v) ? Array.from(v) : v))); }
+  ok('hand variant voxels unchanged (sha1)', hsh.digest('hex') === '91e32faf214870c44deda40d54f9090d9d442356');
+}
+
+// ---- HAND-WIRE-02: quick-tap blend (fireCast starts at the matching charge pose, catches up to 300 ms)
+{
+  const castT = (holdSteps, afterSteps) => { // press, hold `holdSteps`, release+cast, then `afterSteps` later: the fireCast clip time
+    const q = { state: 1, holdSteps: 0, tick: 1000, castTick: -1000000 };
+    const v = createViewModelLayer(); const hh = loadHandFireView(v, def, pool);
+    for (let i = 1; i <= holdSteps; i++) { q.holdSteps = i; q.tick++; presentHandFire(hh, 'right', q.tick / 60, 0, false, q); }
+    q.state = 0; q.holdSteps = 0; q.tick++; q.castTick = q.tick;
+    presentHandFire(hh, 'right', q.tick / 60, 0, false, q);
+    const t0 = hh.clock.tMs, k0 = hh.clock.kind;
+    q.tick += afterSteps; presentHandFire(hh, 'right', q.tick / 60, 0, false, q);
+    return [t0, k0, hh.clock.tMs, hh.clock.kind];
+  };
+  const tap = castT(6, 0), later = castT(6, 6), full = castT(30, 0);
+  ok('tap (100 ms): fireCast starts at the matching pose, not 300', tap[1] === 3 && Math.abs(tap[0] - 100) < 1e-6, String(tap));
+  ok('tap catches up: 100 ms after release it is past 300', later[2] > 300 && later[2] < 420, String(later));
+  ok('full hold: unchanged 300 ms start', full[1] === 3 && Math.abs(full[0] - 300) < 1e-6, String(full));
+}
+// ---- HAND-WIRE-02: particles per clip
+{
+  const P = createParticles();
+  for (const k of A.handFx.attach()) { const pr = A.particles.presets[k]; if (pr.spreadDeg > 88.9) pr.spreadDeg = 88.9; P.defineEmitter(k, A.particles.toEmitterDef(k, A.palette.rgb)); } // same clamp as main.js
+  const v = createViewModelLayer(); const hh = loadHandFireView(v, def, pool);
+  const fx = bindHandFx(hh, P, { right: 0.22, fwd: 0.5, down: 0.135 });
+  const q = { state: 0, holdSteps: 0, tick: 1000, castTick: -1000000 };
+  const run = (n, hand = 'right') => { const b = fx.stats.bursts; for (let i = 0; i < n; i++) { q.tick++; if (q.state) q.holdSteps++; stepHandFx(hh, hand, q, 0, 0, 1.6, 0, 1, 0, 1, 0); P.step(); } return fx.stats.bursts - b; };
+  ok('idle: embers every 9 steps (90 steps -> 10)', run(90) === 10, String(fx.stats.bursts));
+  ok('no hand -> no particles', run(30, null) === 0);
+  q.state = 1; q.holdSteps = 0;
+  const nCharge = run(24); // charge clip, fromMs 90 -> sparks every 3 steps
+  ok('charge: sparks (every 3 steps after 90 ms)', nCharge >= 5 && nCharge <= 8, String(nCharge));
+  const nHold = run(60);
+  ok('hold: sparks every 2 + embers every 7 (60 steps ~ 38)', nHold >= 34 && nHold <= 40, String(nHold));
+  q.state = 0; q.holdSteps = 0; q.tick++; q.castTick = q.tick; // release with a cast
+  let maxLive = 0;
+  const nCast = (() => { const b = fx.stats.bursts; for (let i = 0; i < 12; i++) { run(1); if (P.stats.live > maxLive) maxLive = P.stats.live; } return fx.stats.bursts - b; })();
+  ok('cast: ignite (383 ms) + at most one leftover spark in the first 200 ms', nCast >= 1 && nCast <= 2, String(nCast));
+  ok('ignite particles are live (12-spark burst)', maxLive >= 10, String(maxLive));
+  run(60);
+  q.state = 1; q.holdSteps = 12; run(2); q.state = 0; q.holdSteps = 0; // press then cancel
+  const nOut = run(40);
+  ok('chargeOut: 3 embers once', nOut >= 3 && nOut <= 5, String(nOut)); // + a few idle embers after the clip
+  // 0 alloc
+  const stepN = (n) => { for (let i = 0; i < n; i++) { q.tick++; q.state = (i >> 7) & 1; q.holdSteps = q.state ? i & 127 : 0; stepHandFx(hh, 'left', q, 0, 0, 1.6, 0, 1, 0, 1, 0); P.step(); } };
+  stepN(3000);
+  let grown = Infinity;
+  for (let r = 0; r < 3; r++) { gc(); gc(); const b = process.memoryUsage().heapUsed; stepN(5000); gc(); gc(); grown = Math.min(grown, process.memoryUsage().heapUsed - b); }
+  ok('particle step: 0 alloc (< 32 KB / 5000 steps)', grown < 32768, grown + ' bytes');
 }
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
