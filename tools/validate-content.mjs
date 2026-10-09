@@ -52,7 +52,7 @@ import { resolve as resolvePath } from 'node:path';
 // loadContentPack (same loader the game uses) and merged onto the
 // `globalThis.ASSETS` the remaining classic scripts (palette, models,
 // overworld_far's terrain RECIPE - still code, unaffected) already built.
-import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, meshFromBin, validateMesh, validateLook, maskFromJSON } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
+import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, meshFromBin, validateMesh, validateLook, maskFromJSON, validateDialogue } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { validateQuestDefinition } from '../game/js/quest/sim/quest.js';
@@ -731,7 +731,51 @@ export function validateContent(ASSETS, opts = {}) {
     errors.push(...scanned.errors);
     checks += scanned.checks;
   }
+  if (opts.dialogueFilesDir) {
+    const dl = validateDialogueFiles(opts.dialogueFilesDir, models);
+    errors.push(...dl.errors);
+    warnings.push(...dl.warnings);
+    checks += dl.checks;
+  }
   return { errors, warnings, checks, meshOnlyCount };
+}
+
+// DIALOGUE-01a2 (38.28): content/dialogue/*.dialogue.json - engine rules via validateDialogue, plus the one
+// cross-file check: every node `clip` (and the runtime `talk`/`listen` clips) exists on the NPC model named by
+// the file's optional top-level `model`. A model that is not registered (yet) is a warning, not an error.
+const DIALOGUE_RUNTIME_CLIPS = ['talk', 'listen'];
+export function validateDialogueFiles(dir, models = {}) {
+  const errors = [], warnings = [];
+  let checks = 0;
+  const files = [];
+  const walk = (d) => {
+    let entries;
+    try { entries = readdirSync(d, { withFileTypes: true }); } catch (e) { if (e && e.code === 'ENOENT') return; throw e; }
+    for (const entry of entries) {
+      const full = `${d}/${entry.name}`;
+      if (entry.isDirectory()) walk(full); else if (entry.name.endsWith('.dialogue.json')) files.push(full);
+    }
+  };
+  walk(dir);
+  for (const full of files) {
+    checks++;
+    let def;
+    try { def = JSON.parse(readFileSync(full, 'utf8')); } catch (e) { errors.push(`${full}: JSON parse failed: ${e.message}`); continue; }
+    const r = validateDialogue(def);
+    for (const m of r.errors) errors.push(`${full}: ${m}`);
+    for (const m of r.warnings) warnings.push(`${full}: ${m}`);
+    if (def.model === undefined) continue;
+    checks++;
+    const model = typeof def.model === 'string' ? models[def.model] : null;
+    if (!model) { warnings.push(`${full}: model "${def.model}" is not registered, clips not checked`); continue; }
+    const used = new Set(DIALOGUE_RUNTIME_CLIPS);
+    for (const n of Object.values(def.nodes || {})) if (n && typeof n.clip === 'string') used.add(n.clip);
+    for (const c of used) {
+      checks++;
+      if (!hasClip(model, c)) errors.push(`${full}: clip "${c}" not found on model "${def.model}"`);
+    }
+  }
+  return { errors, warnings, checks };
 }
 
 function validateVoxelModelSafe(def, opts) {
@@ -851,9 +895,10 @@ async function main() {
   const ASSETS = await loadDesignAssets();
   const meshFilesDir = fileURLToPath(new URL('../content/meshes', import.meta.url));
   const maskFilesDir = fileURLToPath(new URL('../content/masks', import.meta.url));
+  const dialogueFilesDir = fileURLToPath(new URL('../content/dialogue', import.meta.url));
   const questFiles = loadQuestFiles(fileURLToPath(new URL('../content/quests', import.meta.url)));
   const recipeFile = loadRecipeFile(fileURLToPath(new URL('../content/items/recipes.json', import.meta.url)));
-  const { errors: allErrors, warnings, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, quests: questFiles.quests, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile });
+  const { errors: allErrors, warnings, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, dialogueFilesDir, quests: questFiles.quests, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile });
   allErrors.push(...questFiles.errors);
   allErrors.push(...recipeFile.errors);
   for (const w of warnings) console.warn(`WARN ${w}`);

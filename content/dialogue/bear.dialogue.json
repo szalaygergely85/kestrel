@@ -1,0 +1,40 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "bear",
+  "speakers": {
+    "burl": {"label": "BURL"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "bear.repeat", "requires": "bear.talked"},
+    {"node": "bear.d1.l1"}
+  ],
+  "nodes": {
+    "bear.d1.l1": {"clip": "wave", "lines": [
+      "Well. A cub from the loud hill, fallen out of the sky."
+    ], "next": "bear.d1.l2", "speaker": "burl"},
+    "bear.d1.l2": {"lines": [
+      "...Bears don't talk."
+    ], "next": "bear.d1.l3", "speaker": "you"},
+    "bear.d1.l3": {"choices": [{"next": "bear.d1.a.l1", "text": "It's a trick. A speaking-tube."}, {"next": "bear.d1.b.l1", "text": "Can I have a berry?"}, {"next": "bear.d1.c.l1", "text": "Have you seen the blinking light?"}], "lines": [
+      "And cubs don't fly. Yet here we both are."
+    ], "speaker": "burl"},
+    "bear.d1.a.l1": {"lines": [
+      "Check my ears for brass, then. Gently."
+    ], "next": "bear.d1.close", "speaker": "burl"},
+    "bear.d1.b.l1": {"clip": "laugh", "lines": [
+      "One. The blue ones are mine. They are all blue."
+    ], "next": "bear.d1.close", "speaker": "burl"},
+    "bear.d1.c.l1": {"lines": [
+      "Since my grandmother was a cub. It never tires."
+    ], "next": "bear.d1.close", "speaker": "burl"},
+    "bear.d1.close": {"end": true, "lines": [
+      "Go on, sky-cub. Walk soft. The wild is listening."
+    ], "setFlag": "bear.talked", "speaker": "burl"},
+    "bear.repeat": {"end": true, "lines": [
+      "Back again? The berries are still mine. Mostly."
+    ], "speaker": "burl"}
+  },
+  "model": "bear"
+}
