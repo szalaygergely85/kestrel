@@ -7,7 +7,8 @@
 // Reprojection is eye-relative f64: P - eyePrev = dEye + vd*dirCur (both term sets re-centred on eye 0, dEye added),
 // using the real `unprojectPitched` / `worldToCell`. History cell = floor(x + 0.5) (never round-half-even).
 // Integer rules: |c-p| > CHANNEL_SNAP ? c : (p + c + 1) >> 1 per byte; glyph held while |lvC - lvP| <= 1.
-// Always-fresh cells: sky (kind 0), kind 8, water, edge, level 255 (either side), kind/planeId mismatch, UV drift.
+// Always-fresh cells: sky (kind 0), kind 8, water, edge, level 254 (animated, either side), mixed 255/ramp, kind/planeId mismatch, UV drift.
+// 38.25 amendment: UV drift limit = 1.0/detail; both-sides-255 cells blend colours and hold the glyph unless the fg snapped (anchor u/v kept).
 // Zero allocation per frame once `createStableState()` and the buffers exist.
 
 import { createPitchedTerms, pitchedTerms, unprojectPitched, worldToCell } from './projection.js';
@@ -22,6 +23,10 @@ export const CUT_DIST_M = 2;
 export const CUT_ANGLE_DEG = 3;
 /** Level byte meaning "no ramp glyph / passthrough". */
 export const LEVEL_NONE = 255;
+/** Level byte meaning "animated glyph, never hold" (shade's terrain shimmer branch). Ramp levels stay < 254. */
+export const LEVEL_ANIM = 254;
+/** UV drift limit in texels-of-1/detail units (38.25 amendment B). */
+export const UV_LIM_TEXELS = 1.0;
 const TIE_EPS_CELL = 1e-3;
 const TIE_EPS_UV = 1e-4;
 
@@ -65,6 +70,8 @@ export function createStableBuffers(cols, rows) {
     fg: new Uint32Array(n), bg: new Uint32Array(n),
     tie: new Uint8Array(n), // output only: 1 = half-cell / half-texel case where f32 may differ from f64
     fresh: new Uint8Array(n), // output only: 1 = cell took no history
+    hsrc: new Int32Array(n), // output only: history cell index the cell reprojected to (-1 = none), set before the kind/plane reject
+    held255: new Uint8Array(n), // output only: 1 = both-255 glyph held (STABLE-LEVEL255-01)
   };
 }
 
@@ -160,9 +167,9 @@ export function stabilize(inp, hist, out, st) {
       const kind = inp.kind[i], lvC = inp.level[i];
       out.kind[i] = kind; out.planeId[i] = inp.planeId[i]; out.u[i] = inp.u[i]; out.v[i] = inp.v[i];
       out.level[i] = lvC; out.glyph[i] = inp.glyph[i]; out.fg[i] = inp.fg[i]; out.bg[i] = inp.bg[i];
-      out.tie[i] = 0; out.fresh[i] = 1;
+      out.tie[i] = 0; out.fresh[i] = 1; out.hsrc[i] = -1; out.held255[i] = 0;
       if (!valid) continue;
-      if (kind === KIND_NONE || kind === KIND_MODEL || lvC === LEVEL_NONE) continue;
+      if (kind === KIND_NONE || kind === KIND_MODEL || lvC === LEVEL_ANIM) continue;
       if (inp.edge && inp.edge[i]) continue;
       if (inp.water && inp.water[i]) continue;
       const vd = inp.vd[i];
@@ -180,20 +187,31 @@ export function stabilize(inp, hist, out, st) {
       const hc = Math.floor(colF + 0.5), hr = Math.floor(rowF + 0.5);
       if (!(hc >= 0 && hc < cols && hr >= 0 && hr < rows)) continue;
       const h = hr * cols + hc;
+      out.hsrc[i] = h;
 
       if (hist.kind[h] !== kind || hist.planeId[h] !== inp.planeId[i]) continue;
       const lvP = hist.level[h];
-      if (lvP === LEVEL_NONE) continue;
+      if (lvP === LEVEL_ANIM) continue;
+      const c255 = lvC === LEVEL_NONE, p255 = lvP === LEVEL_NONE;
+      if (c255 !== p255) continue; // mixed ramp/non-ramp: a real pattern edge, always fresh
       const detail = (inp.detail ? inp.detail[i] : 0) || DEFAULT_DETAIL;
       const du = inp.u[i] - hist.u[h], dv = inp.v[i] - hist.v[h];
       const dUV = Math.sqrt(du * du + dv * dv);
-      const lim = 0.5 / detail;
+      const lim = UV_LIM_TEXELS / detail;
       if (Math.abs(dUV - lim) < TIE_EPS_UV) out.tie[i] = 1;
       if (dUV >= lim) continue;
 
       out.fresh[i] = 0; used++;
       out.fg[i] = blend(hist.fg[h], inp.fg[i]);
       out.bg[i] = blend(hist.bg[h], inp.bg[i]);
+      if (c255) {
+        // both sides non-ramp: hold the texture glyph unless the fg snapped (light/door/flash re-rolls the cell); keep the history's anchor u/v
+        const a = hist.fg[h], b = inp.fg[i];
+        const snapped = Math.abs(((b >> 16) & 255) - ((a >> 16) & 255)) > CHANNEL_SNAP || Math.abs(((b >> 8) & 255) - ((a >> 8) & 255)) > CHANNEL_SNAP
+          || Math.abs((b & 255) - (a & 255)) > CHANNEL_SNAP;
+        if (!snapped) { out.glyph[i] = hist.glyph[h]; out.u[i] = hist.u[h]; out.v[i] = hist.v[h]; out.held255[i] = 1; }
+        continue;
+      }
       const hold = Math.abs(lvC - lvP) <= 1;
       if (hold) { out.glyph[i] = hist.glyph[h]; out.level[i] = lvP; }
     }

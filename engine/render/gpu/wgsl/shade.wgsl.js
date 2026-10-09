@@ -201,8 +201,10 @@ function buildShadeWgsl(withLevel) {
     lvOut = u32(levelFromThresholds(setIdPick, t0.z, gbAvg, su.cutoff));`,
       stip: ' lvOut = 255u;',
       out: ' o.lvl = lvOut;',
+      // 38.25 amendment C.1: terrain with the shimmer flag (TLOOK texel 3 .y, the branch that re-rolls the glyph on a timer) = level 254 'animated, never hold'
+      terr: ' o.lvl = select(255u, 254u, textureLoad(uTlook, vec2i(3, typeId), 0).y > 0.5);',
     }
-    : { field: '', init: '', vars: '', set: '', stip: '', out: '' };
+    : { field: '', init: '', vars: '', set: '', stip: '', out: '', terr: '' };
   return `
 ${SHADE_BLOCK.wgsl}
 @group(0) @binding(0) var uGI: texture_2d<u32>;    // resolved: x = planeId, y = kind|face|mask|cov|mat, z = packed normal (terrain)
@@ -616,7 +618,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
     let fgQ = floor(clamp(to.fg, 0.0, 255.0) + 0.5);
     let fbQ = floor(clamp(to.fb, 0.0, 255.0) + 0.5);
     o.fg = vec4f(toByte01(frQ + LcT.x * 0.5 * 255.0), toByte01(fgQ + LcT.y * 0.5 * 255.0), toByte01(fbQ + LcT.z * 0.5 * 255.0), toByte01(f32(to.glyph)));
-    o.bg = vec4f(toByte01(to.br), toByte01(to.bg), toByte01(to.bb), 1.0);
+    o.bg = vec4f(toByte01(to.br), toByte01(to.bg), toByte01(to.bb), 1.0);${L.terr}
     return o;
   }
 

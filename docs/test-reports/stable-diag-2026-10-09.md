@@ -39,3 +39,20 @@ Target <= 0.6 not met: even a perfect stable on all "took" cells (21852 -> 0) le
 - **STABLE-LEVEL255-01** [B2/ASK ARCHITECT, changes 38.25 item 4]: allow history for level-255 cells too (hold glyph when kind/plane/UV match and the *glyph* code is a texel glyph, i.e. replace `level == 255` rejects by a rule "level 255 both sides: hold glyph if UV drift < lim", keep sky/model/edge/water rejects). Expected: flips 68463 -> ~28000 (level255 cur 29154 + hist 10970 mostly become held) => ratio ~0.45-0.55. Risk: a held non-ramp glyph (e.g. gradient/overlay glyph) lags animated materials; limit by kind/material flag.
 - **STABLE-UVLIM-01** [B2, small]: UV window `0.5/detail` -> `1.0/detail` (or use the cell's real texel density instead of DEFAULT 16): recovers ~3-4k of 4905 uvDrift flips => ratio -0.05. Needs architect OK (38.25 rule).
 - **STABLE-GATE-TEST-01** [B2]: gpucompare `stable` row must run once with water inactive (dummy) so this class of bug is caught (`used%` of the GPU, not only the twin, e.g. compare GPU out != final count).
+
+## 38.25 amendment measured (STABLE-GATE-TEST-01 + UVLIM-01 + LEVEL255-01a/b, 2026-10-09, kestrel-2, uncommitted)
+Same command and pose (160x60, 90 pairs, 826175 non-sky cell-pairs). Changes: UV limit 1.0/detail, level 254 'animated', mixed 255/ramp fresh,
+both-255 hold unless fg snapped (anchor u/v), flags default OFF (`?stable=1`).
+changed-glyph share (gpuRow.avg): stable OFF 8.61 %, stable ON **6.92 %** -> **ratio 0.80** (was 0.86; target <= 0.6 NOT met; the estimate 0.57 was too optimistic).
+Flips (same surface key): OFF 68463, ON 54509 (0.80). Per class (cur-frame cell), flips ON / cells: took ramp 12607 / 469054; **both255 6656 / 202760**
+(was ~11000 + 29141 flipped as 'level 255', now held mostly); **mixed255 22840 / 32130 (71 % of those cells flip, the biggest remaining class, 42 % of ON flips)**;
+uvDrift 10403 / 64338; edge 1972 / 54579.
+Why UVLIM gave little: 60706 of 64338 uvDrift cells are at 1-2x the (now 1/16 m) limit, while the camera moves 0.02 m/frame. The drift is the
+nearest-history-cell offset (up to half a cell footprint, 0.1-0.3 m at range), not motion, so a fixed 1/detail limit rejects most distant cells; a limit
+scaled by the cell footprint (needs per-cell footprint, e.g. from GD/deriv) is the lever, not a bigger constant. mixed255 (ramp<->non-ramp across the
+reprojected neighbour) is the other: when a texel/ramp boundary sits on a cell, the 1-cell history offset flips the class between frames.
+gpucompare (webgpu, RTX 4060): `stable pan` sub-case water inactive PASS (used 66.1 %, held twin/gpu 501/501, held255 1222, ties 0.458 %, 0 mismatches);
+sub-case water drawn (water pond top-down, waterOn true) PASS (live 48.3 % of non-sky, held 541/541, held255 3365, ties 0 %, 0 mismatches). The 2 FAIL rows
+(crash room, voxel half occluded) are the recorded known-FAIL rows of the baseline. No new rows, no regressions in the stable-off rows seen.
+Not decided here (architect note says no further rules without a new note): footprint-scaled UV limit, and a mixed255 rule (e.g. allow mixed when the
+current cell is on the same reprojected ramp level +-1 and fg is within snap).

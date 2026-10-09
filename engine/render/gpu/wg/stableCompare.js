@@ -5,6 +5,8 @@
 import { beginFrame, stabilize, createStableState, createStableBuffers, edgeMaskFromShade, waterMaskFromLayer } from '../../temporalStable.js';
 
 export const STABLE_TIE_MAX_FRAC = 0.005;
+/** STABLE-GATE-TEST-01 liveness floor: the twin must take history on at least this share of the non-sky cells (a reject-everything bug cannot pass). */
+export const STABLE_LIVE_MIN_FRAC = 0.2;
 const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
 const bitsToF = (b) => { u32[0] = b; return f32[0]; };
 const rgb = (a, i) => (a[i * 4] << 16) | (a[i * 4 + 1] << 8) | a[i * 4 + 2];
@@ -39,9 +41,15 @@ export function compareStableRow(a) {
   inp.edge = edgeMaskFromShade(inp.fg, inp.bg, inp.glyph, shFg, shBg, shGl, new Uint8Array(n));
   inp.water = waterMaskFromLayer(wx, ww, new Uint8Array(n));
   const used = stabilize(inp, hist, out, st);
-  let ties = 0, mism = 0, tieMism = 0; const bad = [];
+  let ties = 0, mism = 0, tieMism = 0, nonSky = 0, heldTwin = 0, heldGpu = 0, held255 = 0; const bad = [];
   for (let i = 0; i < n; i++) {
+    if (inp.kind[i] !== 0) nonSky++;
     const tie = out.tie[i] === 1; if (tie) ties++;
+    if (!tie && out.hsrc[i] >= 0) { // 'held' = the output glyph is the history glyph and that differs from this frame's final glyph (a reject-everything GPU cannot hold)
+      const hg = hist.glyph[out.hsrc[i]], fg0 = inp.glyph[i];
+      if (hg !== fg0) { if (out.glyph[i] === hg) heldTwin++; if (B.outFg[i * 4 + 3] === hg) heldGpu++; }
+    }
+    if (out.held255[i] === 1 && !tie) held255++;
     const same = out.fg[i] === rgb(B.outFg, i) && out.bg[i] === rgb(B.outBg, i) && out.glyph[i] === B.outFg[i * 4 + 3];
     if (same) continue;
     if (tie) { tieMism++; continue; }
@@ -49,16 +57,19 @@ export function compareStableRow(a) {
   }
   const tieFrac = ties / n;
   const vacuous = !histValid || used < n * 0.02; // the sequence must really exercise history
-  return { ok: !vacuous && mism === 0 && tieFrac <= STABLE_TIE_MAX_FRAC, histValid, used, usedPct: 100 * used / n, ties, tiePct: 100 * tieFrac, mismatches: mism, tieMismatches: tieMism, vacuous, bad };
+  const liveFrac = nonSky > 0 ? used / nonSky : 0, liveOk = liveFrac >= STABLE_LIVE_MIN_FRAC, heldOk = heldTwin === heldGpu;
+  return { ok: !vacuous && mism === 0 && tieFrac <= STABLE_TIE_MAX_FRAC && liveOk && heldOk, histValid, used, usedPct: 100 * used / n, nonSky, livePct: 100 * liveFrac, liveOk, heldTwin, heldGpu, heldOk, held255, ties, tiePct: 100 * tieFrac, mismatches: mism, tieMismatches: tieMism, vacuous, bad };
 }
 
 /**
  * Device side: frame A (history invalid) -> read A's output -> frame B -> read B's inputs + output -> compare.
  * @param {any} p WgCellPipeline built with `stable: true` @param {() => void} renderA @param {() => void} renderB  each renders + presents one GPU frame
  */
-export async function runStableRow(p, camA, camB, renderA, renderB) {
+export async function runStableRow(p, camA, camB, renderA, renderB, opts) {
   const sp = p._stablePass, d = p.device, cols = p.cols, rows = p.rows, n = cols * rows, rect = { x: 0, y: 0, w: cols, h: rows };
   if (!sp) return { ok: false, skipped: true, reason: 'no stable pass (pipeline built without stable)' };
+  const wp = p._waterPass, waterOff = !!(opts && opts.waterOff), wasForce = wp ? wp.forceOff : false;
+  if (waterOff && wp) wp.forceOff = true; // sub-case (ii): the 1x1 dummy is bound and waterOn = 0
   p.setStable(true);
   const rb8 = async (tex, w) => { const o = new Uint8Array(n * w); await d.readback(tex, rect, o); return o; };
   const rb32 = async (tex, w) => { const o = new Uint32Array(n * w); await d.readback(tex, rect, o); return o; };
@@ -75,6 +86,8 @@ export async function runStableRow(p, camA, camB, renderA, renderB) {
       water: waterOn ? await rb32(inp.water, 4) : null, outFg: await rb8(sp.outFg, 4), outBg: await rb8(sp.outBg, 4),
     };
     const grid = p._rasterPass.grid;
-    return compareStableRow({ cols, rows, camA, camB, grid: { cols: grid.cols, rows: grid.rows, pxCellW: grid.pxCellW, pxCellH: grid.pxCellH }, A, B });
-  } finally { p.setStable(false); }
+    const res = compareStableRow({ cols, rows, camA, camB, grid: { cols: grid.cols, rows: grid.rows, pxCellW: grid.pxCellW, pxCellH: grid.pxCellH }, A, B });
+    res.waterOn = waterOn; res.waterOff = waterOff;
+    return res;
+  } finally { p.setStable(false); if (wp) wp.forceOff = wasForce; }
 }

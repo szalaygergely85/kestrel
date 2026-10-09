@@ -60,6 +60,18 @@ function build(camBUse) {
   const r = compareStableRow({ cols: COLS, rows: ROWS, camA, camB, grid, A, B });
   assert.strictEqual(r.mismatches, 0, JSON.stringify(r.bad));
   assert.ok(r.ok && r.histValid && r.usedPct > 50, JSON.stringify(r));
+  // STABLE-GATE-TEST-01: liveness floor + held counts
+  assert.ok(r.liveOk && r.livePct >= 20 && r.nonSky === N, `liveness ${r.livePct}`);
+  assert.ok(r.heldOk && r.heldTwin > N * 0.3 && r.heldGpu === r.heldTwin, `held twin ${r.heldTwin} gpu ${r.heldGpu}`);
+  // a reject-everything GPU (every cell shows this frame's final glyph) fails: mismatches AND held counts differ
+  const allFresh = { ...B, outFg: B.finalFg.slice(), outBg: B.finalBg.slice() };
+  const dead = compareStableRow({ cols: COLS, rows: ROWS, camA, camB, grid, A, B: allFresh });
+  assert.ok(!dead.ok && dead.heldGpu === 0 && dead.heldTwin > 0 && !dead.heldOk, 'reject-everything GPU is caught by the held count');
+  // a reject-everything TWIN (all cells model kind -> fresh): liveness floor fails even if the GPU agrees
+  const sky = { ...B, GI: B.GI.slice(), outFg: B.finalFg.slice(), outBg: B.finalBg.slice() };
+  for (let i = 0; i < N; i++) sky.GI[i * 4 + 1] = 8; // KIND_MODEL: never takes history
+  const lowLive = compareStableRow({ cols: COLS, rows: ROWS, camA, camB, grid, A, B: sky });
+  assert.ok(lowLive.mismatches === 0 && !lowLive.liveOk && !lowLive.ok, 'twin that takes no history fails the liveness floor');
   // mutation: one GPU glyph byte differs on a history cell outside the tie mask
   const B2 = { ...B, outFg: B.outFg.slice() };
   let hit = -1; for (let i = 0; i < N && hit < 0; i++) if (B2.outFg[i * 4 + 3] === 60) hit = i; // a held-glyph cell
