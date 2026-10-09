@@ -115,6 +115,14 @@ function errs(mutate) { return validateLook(withLook(mutate), 'afternoon', () =>
   check('haze edgeMax > 1 -> error', errs((r) => { r.haze.edgeMax = 1.5; }).length > 0);
   check('clouds.lit colour missing -> error', errs((r) => { r.clouds.lit = 'nope'; }).length > 0);
   check('clouds.shade colour missing -> error', errs((r) => { r.clouds.shade = 'nope'; }).length > 0);
+  // S8-B2-12c (38.13): clouds.shadow {strength, scale, cover, soft, deckH} validation
+  const SH = { strength: 0.5, scale: 0.02, cover: 0.4, soft: 0.2, deckH: 300 };
+  check('clouds.shadow valid -> no error', errs((r) => { r.clouds.shadow = { ...SH }; }).length === 0);
+  check('clouds.shadow.strength > 1 -> error', errs((r) => { r.clouds.shadow = { ...SH, strength: 1.5 }; }).length > 0);
+  check('clouds.shadow.scale <= 0 -> error', errs((r) => { r.clouds.shadow = { ...SH, scale: 0 }; }).length > 0);
+  check('clouds.shadow.cover out of [0,1] -> error', errs((r) => { r.clouds.shadow = { ...SH, cover: 2 }; }).length > 0);
+  check('clouds.shadow.soft <= 0 -> error', errs((r) => { r.clouds.shadow = { ...SH, soft: 0 }; }).length > 0);
+  check('clouds.shadow.deckH <= 0 -> error', errs((r) => { r.clouds.shadow = { ...SH, deckH: 0 }; }).length > 0);
   check('clouds.scale <= 0 -> error', errs((r) => { r.clouds.scale = 0; }).length > 0);
   check('clouds.bias <= 0 -> error', errs((r) => { r.clouds.bias = -1; }).length > 0);
   check('clouds.cover out of [0,1] -> error', errs((r) => { r.clouds.cover = 1.5; }).length > 0);
@@ -130,6 +138,21 @@ function errs(mutate) { return validateLook(withLook(mutate), 'afternoon', () =>
   const e = validateLook(P2, 'afternoon', (m) => warnings.push(m));
   check('haze.far !== sky[0].c is a WARNING, not an error', e.length === 0 && warnings.length === 1);
   check('matching haze.far produces no warning', (() => { const w = []; validateLook(P, 'afternoon', (m) => w.push(m)); return w.length === 0; })());
+}
+
+// ---- S8-B2-20b (38.16): look.ao resolve + validate ---------------------------
+{
+  check('no look.ao -> rec.ao null', resolveLook(P, 'morning').ao === null);
+  const P3 = makePalette();
+  P3.timeOfDay.afternoon = { ...P3.timeOfDay.afternoon, ao: { strength: 0.5 } };
+  const a = resolveLook(P3, 'afternoon').ao;
+  check('look.ao defaults (radiusM 0.8, bias 0.15, maxCells 4)', a && a.strength === 0.5 && a.radiusM === 0.8 && a.bias === 0.15 && a.maxCells === 4);
+  check('valid look.ao has no errors', validateLook(P3, 'afternoon').length === 0);
+  for (const [bad, what] of [[{ strength: 1.5 }, 'strength'], [{ radiusM: 0 }, 'radiusM'], [{ radiusM: 9 }, 'radiusM'], [{ bias: 1 }, 'bias'], [{ bias: -1 }, 'bias'], [5, 'ao']]) {
+    const P4 = makePalette();
+    P4.timeOfDay.afternoon = { ...P4.timeOfDay.afternoon, ao: bad };
+    check(`look.ao ${JSON.stringify(bad)} -> error on ${what}`, validateLook(P4, 'afternoon').some((m) => m.includes('.ao')));
+  }
 }
 
 console.log(`look.test.js: ${pass} passed, ${fail} failed`);

@@ -1,7 +1,5 @@
 import { STEP } from '../../../core/loop.js';
 import { WIND_K_SIZE } from '../../../world/wind.js';
-import { CLOUD_SALT } from '../../cloudShadow.js';
-import { AO_RADIUS_M, AO_BIAS } from '../../horizonAo.js';
 
 // WG-3a (docs/architecture.md 38.5): WGSL twins of the shared GLSL snippets in glsl/common.js that more than one
 // module needs. Pure strings, no GPU globals. No raw `%` anywhere (38.5 item 1); add fmodGlsl/imod/umod here when a
@@ -176,29 +174,31 @@ fn lineGlyphCodeFast(cx: f32, cy: f32, fr: f32, cellAspect: f32) -> i32 {
 }
 `;
 
-// S8-B2-12a (docs/architecture.md 38.13): twin of cloudShadow.js's `cloudCov`/`vnoise` (value noise, 256-periodic
-// integer lattice). Needs `hashFast` (HASH_FAST_WGSL) already in scope - the including module interpolates both,
-// exactly once each, same convention as shade.wgsl.js/waterComposite.wgsl.js interpolating HASH_FAST_WGSL once.
+// S8-B2-12c (docs/architecture.md 38.13): twin of cloudShadow.js `cloudShadeQ` + sky.js `cloudValueNoise` (256-periodic
+// lattice, no raw `%`, no `round`). Needs `hashFast` (HASH_FAST_WGSL) in scope - the including module interpolates both,
+// once each. `cloudShadeQ4` is pure (A = (offX, offY, scale, strength), B = (cover, soft, deckH, seed)); light.wgsl.js
+// wraps it as `cloudShadeQ(P, sd)` reading the LightU fields.
 export const CLOUD_SHADOW_WGSL = `
-const CLOUD_SALT: i32 = ${CLOUD_SALT};
-fn vnoiseCloud(u: f32, v: f32, s: i32) -> f32 {
-  let iu = i32(floor(u)); let iv = i32(floor(v));
-  let fu = u - f32(iu); let fv = v - f32(iv);
-  let su = fu * fu * (3.0 - 2.0 * fu); let sv = fv * fv * (3.0 - 2.0 * fv);
-  let h00 = hashFast(iu & 255, iv & 255, s);
-  let h10 = hashFast((iu + 1) & 255, iv & 255, s);
-  let h01v = hashFast(iu & 255, (iv + 1) & 255, s);
-  let h11 = hashFast((iu + 1) & 255, (iv + 1) & 255, s);
-  let a = h00 + (h10 - h00) * su;
-  let b = h01v + (h11 - h01v) * su;
-  return a + (b - a) * sv;
+fn cloudVN(x: f32, y: f32, seed: i32) -> f32 {
+  let ix = i32(floor(x)); let iy = i32(floor(y));
+  let fx = x - f32(ix); let fy = y - f32(iy);
+  let v00 = hashFast(ix & 255, iy & 255, seed);
+  let v10 = hashFast((ix + 1) & 255, iy & 255, seed);
+  let v01 = hashFast(ix & 255, (iy + 1) & 255, seed);
+  let v11 = hashFast((ix + 1) & 255, (iy + 1) & 255, seed);
+  let sx = fx * fx * (3.0 - 2.0 * fx); let sy = fy * fy * (3.0 - 2.0 * fy);
+  return v00 + (v10 - v00) * sx + (v01 - v00) * sy + (v11 - v10 - v01 + v00) * sx * sy;
 }
 
-fn cloudCov(px: f32, py: f32, invS: f32, offU: f32, offV: f32, cover: f32) -> f32 {
-  let u = px * invS + offU; let v = py * invS + offV;
-  let n = 0.65 * vnoiseCloud(u, v, CLOUD_SALT) + 0.35 * vnoiseCloud(2.0 * u, 2.0 * v, CLOUD_SALT + 1);
-  let t = clamp((n - cover) / 0.25, 0.0, 1.0);
-  return t * t * (3.0 - 2.0 * t);
+fn cloudShadeQ4(P: vec3f, sd: vec3f, A: vec4f, B: vec4f) -> u32 {
+  let t = (B.z - P.z) / max(sd.z, 0.2);
+  let qx = (P.x + sd.x * t) * A.z + A.x;
+  let qy = (P.y + sd.y * t) * A.z + A.y;
+  let seed = i32(B.w);
+  let n = cloudVN(qx, qy, seed) * 0.65 + cloudVN(qx * 2.03 + 17.0, qy * 2.03 + 17.0, seed) * 0.35;
+  let tt = clamp((n - B.x) / B.y, 0.0, 1.0);
+  let d = tt * tt * (3.0 - 2.0 * tt);
+  return u32(floor(A.w * 0.6 * d * 255.0 + 0.5));
 }
 `;
 
@@ -206,14 +206,16 @@ fn cloudCov(px: f32, py: f32, invS: f32, offU: f32, offV: f32, cover: f32) -> f3
 // taps). Pure - N (receiver's unit normal) and v (Pt - P, tap minus receiver) only, no textures/uniforms. The
 // including module (light.wgsl.js) defines `fn cellPoint(...)` and the per-cell tap loop around this.
 export const HORIZON_AO_WGSL = `
-const AO_RADIUS_M: f32 = ${AO_RADIUS_M};
-const AO_BIAS: f32 = ${AO_BIAS};
-fn aoTapOcc(N: vec3f, v: vec3f) -> f32 {
+// rc: tap offset in whole cells (twin of horizonAo.js aoTapCells, same op order); maxCells arrives as f32 (aoP.z).
+fn aoRc(R: f32, planeDistY: f32, dist: f32, maxCells: f32) -> i32 {
+  return i32(clamp(floor(R * planeDistY / dist + 0.5), 1.0, maxCells));
+}
+fn aoTapOcc(N: vec3f, v: vec3f, R: f32, bias: f32) -> f32 {
   let d2 = dot(v, v);
-  if (d2 < 1e-8 || d2 >= AO_RADIUS_M * AO_RADIUS_M) { return 0.0; }
+  if (d2 < 1e-8 || d2 >= R * R) { return 0.0; }
   let d = sqrt(d2);
-  let c = dot(N, v) / d - AO_BIAS;
-  if (c > 0.0) { return c * (1.0 - d / AO_RADIUS_M); }
+  let c = dot(N, v) / d - bias;
+  if (c > 0.0) { return c * (1.0 - d / R); }
   return 0.0;
 }
 `;

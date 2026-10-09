@@ -95,6 +95,8 @@ const _fwd = [0, 0];
 
 /** `LIGHT.w` layout (27.9a item 6): bits 0 sunlit, 8..15 litCount, 16..18 the quantised PCF tap count `n`. */
 export const SUN_N_SHIFT = 16;
+// S8-B2-12c (38.13): cloud-darkening byte q (0 = no cloud) in LIGHT.w bits 24..31.
+export const CLOUD_Q_SHIFT = 24;
 export const SUN_N_MASK = 7;
 
 /**

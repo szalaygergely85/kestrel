@@ -102,7 +102,8 @@ export { createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE, UNIT_OBJECT_B
 export { bindDetailInstances, feedDetail, removeDetailInstances, DETAIL_OBJECT_BASE } from './mesh/scatterFeed.js';
 // GFX-03: quality knobs (scatter density, LOD scale, tuft draw scale) and the sun shadow levels / 'off'.
 export { GFX_DEFAULTS, GFX_RANGES, resolveGfxKnobs } from './mesh/gfxKnobs.js';
-export { resolveShadowLevel, SHADOW_LEVELS, resolveSunShadowOptions, SUN_SHADOW_DEFAULTS } from './render/shadowSun.js';
+export { CLOUD_Q_SHIFT, resolveShadowLevel, SHADOW_LEVELS, resolveSunShadowOptions, SUN_SHADOW_DEFAULTS } from './render/shadowSun.js';
+export { cloudShadeQ, cloudMul, packCloudUniforms } from './render/cloudShadow.js'; // S8-B2-12c (38.13)
 export { buildTeamRemap, TEAM_SLOTS, MAX_TEAMS } from './render/teamRemap.js';
 // US-047: computeDerivatives/shadeSurfaces/shadeV2 (detailShade.js) and
 // edgePass moved to engine/dev.js - pass internals + parity tooling only,
@@ -116,8 +117,7 @@ export { packLevel, repackMaterials } from './world/packed.js';
 export {
   LightSet, buildLightSet, setWorldSun, applySunHours, syncEntityLights, lightAt, lightSurfaces,
   computeVisGrid, sunVisible, falloff as lightFalloff, packLightUniforms,
-  makeLightBuffer, MAX_LIGHTS, setLook, OUTDOOR_SHIFT, setCloudShadow, // S8-B2-12a NEEDS B1 item (2)/(3): `?clouds=` + gpucompare force-0
-  setHorizonAo, // S8-B2-20 NEEDS B1 item (1)/(3): `?ao=` + gpucompare force-0
+  makeLightBuffer, MAX_LIGHTS, setLook, OUTDOOR_SHIFT,
 } from './render/lighting.js';
 
 // ---- ART-01a look + roof map (docs/architecture.md 37.18 items 2/3) ----------
