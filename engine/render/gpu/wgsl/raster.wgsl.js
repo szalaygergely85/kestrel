@@ -275,3 +275,7 @@ export const RASTER_VOXEL_SHADOW_WGSL = toShadowVertexWgsl(RASTER_VOXEL_WGSL);
 export const RASTER_INSTANCED_SHADOW_WGSL = toShadowVertexWgsl(RASTER_INSTANCED_WGSL);
 export const RASTER_CLOTH_SHADOW_WGSL = toShadowVertexWgsl(RASTER_CLOTH_WGSL);
 export const RASTER_MASK_SHADOW_WGSL = toShadowVertexWgsl(RASTER_MASK_WGSL); // ALPHA-01c: fragment entry fs_mask_shadow (discard only)
+// ALPHA-01f (c): instanced masked shadow caster - same swap (depth -> [0.5,1]) applied to RASTER_INSTANCED_MASK_WGSL, which
+// already carries fs_mask_shadow (rasterWgsl's `mask` branch covers both 'mask' and 'instancedMask'), so the discard-only
+// fragment is reused verbatim (same maskDiscard call, same texMask binding) - leaf holes let the sun through for instanced groups.
+export const RASTER_INSTANCED_MASK_SHADOW_WGSL = toShadowVertexWgsl(RASTER_INSTANCED_MASK_WGSL);

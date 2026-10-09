@@ -10,7 +10,7 @@ import { LIGHT_WGSL } from './light.wgsl.js';
 import { SHADE_WGSL } from './shade.wgsl.js';
 import { EDGE_WGSL } from './edge.wgsl.js';
 import { SHADOW_WGSL, SHADOW_TERRAIN_WGSL, SHADOW_DEPTH_COPY_WGSL } from './shadow.wgsl.js';
-import { RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL, RASTER_SHADOW_WGSL, RASTER_VOXEL_SHADOW_WGSL, RASTER_INSTANCED_SHADOW_WGSL, RASTER_CLOTH_SHADOW_WGSL, RASTER_MASK_WGSL, RASTER_MASK_SHADOW_WGSL, RASTER_INSTANCED_MASK_WGSL } from './raster.wgsl.js';
+import { RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL, RASTER_SHADOW_WGSL, RASTER_VOXEL_SHADOW_WGSL, RASTER_INSTANCED_SHADOW_WGSL, RASTER_CLOTH_SHADOW_WGSL, RASTER_MASK_WGSL, RASTER_MASK_SHADOW_WGSL, RASTER_INSTANCED_MASK_WGSL, RASTER_INSTANCED_MASK_SHADOW_WGSL } from './raster.wgsl.js';
 import { TERRAIN_RASTER_WGSL } from './terrainRaster.wgsl.js';
 import { WATER_WGSL } from './water.wgsl.js';
 import { WATER_COMPOSITE_WGSL } from './waterComposite.wgsl.js';
@@ -53,8 +53,10 @@ export const WGSL_MODULES = Object.freeze([
   { name: 'rasterShadowMask', code: RASTER_MASK_SHADOW_WGSL },
   { name: 'hzb', code: HZB_WGSL }, // S8-B2-09 compute (entry cs_main): HZB max-depth downsample
   // ALPHA-01f (b): instanced mesh with a per-range mask discard (location 10 aUVMask stream, same texel/discard rule as rasterMask).
-  // No shadow variant yet (host wiring + the shadow variant are steps B1/ (c), not built here).
   { name: 'rasterInstancedMask', code: RASTER_INSTANCED_MASK_WGSL },
+  // ALPHA-01f (c): instanced masked shadow caster (fs_mask_shadow discard, depth in [0.5,1] like the other rasterShadow* variants).
+  // Host wiring (passShadow.js pipeline/draw selection) is NEEDS B1, not built here.
+  { name: 'rasterShadowInstancedMask', code: RASTER_INSTANCED_MASK_SHADOW_WGSL },
 ]);
 
 /**

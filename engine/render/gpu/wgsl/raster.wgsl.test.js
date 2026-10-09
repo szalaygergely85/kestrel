@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { packNormalOct, unpackNormalOct } from '../../../voxel/octNormal.js';
 import { meshFragSrc } from '../glsl/mesh.frag.js';
-import { RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL, RASTER_MASK_WGSL, RASTER_MASK_SHADOW_WGSL, MASK_TEXEL_WGSL, RASTER_BASE_BLOCK, RASTER_BLOCK, RASTER_MASK_BLOCK, RASTER_INSTANCED_MASK_WGSL, RASTER_INSTANCED_MASK_BLOCK } from './raster.wgsl.js';
+import { RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL, RASTER_MASK_WGSL, RASTER_MASK_SHADOW_WGSL, MASK_TEXEL_WGSL, RASTER_BASE_BLOCK, RASTER_BLOCK, RASTER_MASK_BLOCK, RASTER_INSTANCED_MASK_WGSL, RASTER_INSTANCED_MASK_BLOCK, RASTER_INSTANCED_MASK_SHADOW_WGSL } from './raster.wgsl.js';
 import { MaskAtlas } from '../../MaskAtlas.js';
 import { compileFn, makeTex, textureLoad } from './wgslProbe.js';
 import { WGSL_MODULES } from './index.js';
@@ -155,4 +155,65 @@ console.log(`raster.wgsl.test.js: 2000 oracle probes, ${texelProbes} mask texel 
   }
   assert.ok(diffs === zeroCellsSeen && diffs > 0, `mutation: cutoff boundary caught on all ${zeroCellsSeen} zero cells (${diffs} diverged)`);
   console.log(`raster.wgsl.test.js (ALPHA-01f b): instanced+mask layout/discard-order/two-sided checks, uniform block offsets, regression guard on the plain instanced/static mask variants, and a ${zeroCellsSeen}-cell cutoff mutation caught.`);
+}
+
+// ALPHA-01f (c): instanced masked SHADOW caster. RASTER_INSTANCED_MASK_SHADOW_WGSL = toShadowVertexWgsl(RASTER_INSTANCED_MASK_WGSL):
+// same vertex/layout/uniform block as the colour variant (b), only the clip-space z line swapped to the sun-shadow convention
+// ([0.5, 1], 38.5 item 6), and the SAME fs_mask_shadow discard-only fragment entry (reused verbatim, not reimplemented) so leaf
+// holes let the sun through for instanced mesh groups exactly as they already do for the static masked caster (RASTER_MASK_SHADOW_WGSL).
+{
+  const src = RASTER_INSTANCED_MASK_SHADOW_WGSL;
+  // depth convention: the shadow z line present, the plain raster z line gone (toShadowVertexWgsl swapped it, not duplicated it)
+  assert.ok(src.includes('o.pos.z = 0.25 * (o.pos.z + o.pos.w) + 0.5 * o.pos.w;'), 'sun shadow depth convention');
+  assert.ok(!src.includes('o.pos.z = 0.5 * (o.pos.z + o.pos.w);'), 'plain raster z line replaced, not duplicated');
+  // discard-only fragment entry present and textually identical to the already-probed static mask shadow fragment (same
+  // maskDiscard call, same texMask binding rule) - this is what makes leaf holes cast through for instanced groups.
+  assert.ok(src.includes('fn fs_mask_shadow(v: VertexOut)'), 'discard-only shadow fragment entry present');
+  assert.ok(src.includes('if (maskDiscard(v.vUVMask, u.maskX0, u.maskY0, u.maskW, u.maskH, u.maskCut)) { discard; }\n}\n'), 'fs_mask_shadow body: mask discard only');
+  assert.ok(src.includes(MASK_TEXEL_WGSL), 'reuses the exact, already-probed mask texel rule verbatim');
+  // layout/uniform block carried over unchanged from the colour variant (same instanced attributes + mask uv stream + own block)
+  assert.ok(src.includes('@location(10) aUVMask: vec2f') && src.includes('@location(6) iRow0: vec4f') && src.includes('@location(9) iMeta: vec2u'), 'instanced + mask vertex layout carried over');
+  assert.ok(src.includes(RASTER_INSTANCED_MASK_BLOCK.wgsl), 'uses the same combined uniform block as the colour variant (no new block)');
+  assert.ok(!/\bround\s*\(|dpdx|dpdy|fwidth|frag_depth|textureSample|%/.test(src));
+  // registered for compilation validation (capture-browser --mode wgsl), append-only
+  assert.ok(WGSL_MODULES.some((m) => m.name === 'rasterShadowInstancedMask' && m.code === RASTER_INSTANCED_MASK_SHADOW_WGSL), 'registered in WGSL_MODULES');
+  // regression: the other shadow variants and the colour instancedMask variant are untouched by this addition
+  assert.ok(RASTER_MASK_SHADOW_WGSL.includes('fn fs_mask_shadow(v: VertexOut)'), 'static mask shadow variant unaffected');
+  assert.ok(!RASTER_MASK_SHADOW_WGSL.includes('iRow0'), 'static mask shadow variant still has no instanced attributes');
+  assert.ok(RASTER_INSTANCED_MASK_WGSL.includes('o.pos.z = 0.5 * (o.pos.z + o.pos.w);'), 'colour instancedMask variant keeps the plain raster z line (b unaffected by c)');
+  console.log('raster.wgsl.test.js (ALPHA-01f c): instanced masked shadow variant layout/z-convention/fs_mask_shadow checks + regression guards passed.');
+}
+// mutation test: the shadow variant's maskDiscard/maskTexel text must be the real rule, not a stub that always skips the
+// discard (which would make masked leaves cast fully-opaque rectangular shadows again, the exact bug this story prevents).
+// Same technique as the colour-variant mutation above (checker atlas, CUT=0 tie case), run against the SHADOW text.
+{
+  const maskTexelFn = compileFn(RASTER_INSTANCED_MASK_SHADOW_WGSL, 'maskTexel', {});
+  const tex = makeTex(4, 4, Array.from(checker, (v) => [v, v, v, v]));
+  const vec2u = (a, b) => ({ x: a, y: b });
+  const maskDiscardFn = compileFn(RASTER_INSTANCED_MASK_SHADOW_WGSL, 'maskDiscard', { textureLoad, texMask: tex, vec2u, maskTexel: maskTexelFn });
+  const CUT0 = 0;
+  let zeroCellsSeen = 0;
+  for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
+    if (checker[j * 4 + i] !== 0) continue;
+    zeroCellsSeen++;
+    assert.equal(maskDiscardFn({ x: (i + 0.5) / 4, y: (j + 0.5) / 4 }, 0, 0, 4, 4, CUT0), false, 'unmutated shadow maskDiscard: a < cut is false when a === cut === 0');
+  }
+  // mutation A: cutoff operator widened (`<` -> `<=`) - every zero texel now discards (shadow holes grow)
+  const mutCutoff = RASTER_INSTANCED_MASK_SHADOW_WGSL.replace('return a < cut;', 'return a <= cut;');
+  assert.notEqual(mutCutoff, RASTER_INSTANCED_MASK_SHADOW_WGSL, 'cutoff mutation anchor found exactly once');
+  const maskTexelMutFn = compileFn(mutCutoff, 'maskTexel', {});
+  const maskDiscardMutFn = compileFn(mutCutoff, 'maskDiscard', { textureLoad, texMask: tex, vec2u, maskTexel: maskTexelMutFn });
+  let diffsA = 0;
+  for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
+    if (checker[j * 4 + i] !== 0) continue;
+    if (maskDiscardFn({ x: (i + 0.5) / 4, y: (j + 0.5) / 4 }, 0, 0, 4, 4, CUT0) !== maskDiscardMutFn({ x: (i + 0.5) / 4, y: (j + 0.5) / 4 }, 0, 0, 4, 4, CUT0)) diffsA++;
+  }
+  assert.ok(diffsA === zeroCellsSeen && diffsA > 0, `shadow cutoff mutation caught on all ${zeroCellsSeen} zero cells (${diffsA} diverged)`);
+  // mutation B: the "mask is ignored" bug itself - fs_mask_shadow's discard call deleted (the shadow caster would then
+  // write depth everywhere, same as an opaque mesh: exactly the regression ALPHA-01f (c) must prevent). Caught structurally.
+  const mutIgnored = RASTER_INSTANCED_MASK_SHADOW_WGSL.replace('if (maskDiscard(v.vUVMask, u.maskX0, u.maskY0, u.maskW, u.maskH, u.maskCut)) { discard; }\n}\n', '}\n');
+  assert.notEqual(mutIgnored, RASTER_INSTANCED_MASK_SHADOW_WGSL, 'mask-ignored mutation anchor found exactly once');
+  assert.ok(mutIgnored.includes('fn fs_mask_shadow(v: VertexOut) {\n  }\n'), 'mutated fs_mask_shadow body is now empty (no discard at all)');
+  assert.ok(mutIgnored.includes('maskDiscard(v.vUVMask'), 'the colour fragment (fs_main) still has its own, unrelated mask discard - only fs_mask_shadow was mutated');
+  console.log(`raster.wgsl.test.js (ALPHA-01f c): shadow mutation tests caught cutoff widening (${diffsA}/${zeroCellsSeen} cells) and the mask-ignored regression.`);
 }
