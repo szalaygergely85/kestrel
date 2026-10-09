@@ -17,6 +17,7 @@ import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clo
 import { createAxisGizmo } from './axisGizmo.js';
 import { unprojectCell, rayPoint, projectPoint, screenCentreGroundHit } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
+import { resolveMeshClick } from './meshClick.js';
 import { drawSelectionHighlight, drawMarkers, drawHoverOutline, drawMeshHighlightRect } from './select.js';
 import {
   makeRecord, makeFieldEditRecord, makeDeleteRecord, makeInsertRecord, makeRenameBatch,
@@ -1616,14 +1617,12 @@ async function doImportVox() {
     // runtime add is invisible to it until re-bound (placed prop rendered
     // nothing). Re-bind with the live material table; bumps atlas.version so
     // the GPU re-uploads lazily.
-    frame.voxelPool.bind(assets, frame.fb.matTable);
+    frame.refreshAssets(assets); // ED-MESH-1e: re-binds the pool + pipeline voxels, marks dirty
     frame.markDirty();
     requestIcon(name, true);
     renderAssetsList(assetsSearchInput.value);
     armModelPlacement(name);
-    flash(def.meshOnly && RENDERER !== 'mesh'
-      ? `imported: ${name} (too large for the editor view: mesh-only model, placed but NOT drawn here - only on ?renderer=mesh; max 32 per axis to see it)`
-      : `imported: ${name} (click viewport to place)`);
+    flash(`imported: ${name} (click viewport to place)`);
   } catch (e) {
     flash(`import .vox failed: ${e && e.message ? e.message : e}`);
   }
@@ -1906,17 +1905,18 @@ canvas.addEventListener('mousedown', async (e) => {
     return;
   }
 
-  const result = await pickAt(col, row, pickCtx());
-  if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+  const decision = await resolveMeshClick(clickGuard, col, row, pickCtx(), tok); // ED-MESH-1g: the one click-resolution path
+  if (decision.action === 'stale') return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+  const result = decision.result;
   lastPickText = formatPickResult(result);
 
-  if (result.kind === 'meshStructure' && result.structureId) {
-    const item = { fileId: fileKey('world', doc.worldId), collection:'structures', id:result.structureId, structId:null };
+  if (decision.action === 'mesh') {
+    const item = { fileId: fileKey('world', doc.worldId), collection:'structures', id:decision.structureId, structId:null };
     const already = primarySelection()?.collection === 'structures' && primarySelection().id === item.id;
     selectItem(item);
     if (already && toolMode === 'move') {
       const data = selectionItemData(doc,item), s=world.structures.find(s=>s.id===item.id);
-      if(data?.mesh && s) meshDrag={ item, startOrigin:{...data.origin}, point:result.world, origin:null, preview:beginMeshDragPreview(world,item.id) };
+      if(data?.mesh && s) meshDrag={ item, startOrigin:{...data.origin}, point:decision.world, origin:null, preview:beginMeshDragPreview(world,item.id) };
     }
     return;
   }
