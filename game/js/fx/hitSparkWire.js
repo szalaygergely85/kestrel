@@ -1,6 +1,6 @@
 // HIT-SPARK-WIRE (lane B1): `combat:hit` (player's sword) -> engine/fx/hitSparks.js burst at the hit point.
 // Normal points back toward the attacker (-dir); fallback is target -> player. Gold normally, red (hue 1) on a kill.
-import { defineHitSparks, hitSparks } from '../../../engine/fx/hitSparks.js';
+import { defineHitSparks, hitSparks } from '../../../engine/index.js';
 
 export function hitSparksEnabled(params, captureLike) {
   return params.get('hitsparks') === '1' && !captureLike && params.get('capture') !== '1' && params.get('fx') !== '0'; // opt-in (main session 2026-10-09): quest/particleHooks.js already bursts design 'sparks' on every hit - owner compares, then one is kept
