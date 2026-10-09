@@ -112,6 +112,16 @@ export function h01(a, b = 0, c = 0) {
   return (h >>> 0) / 4294967296;
 }
 
+// FRAME-ALLOC-01: scratch-writing twin of h01 (same bits) so LightSet.update keeps its doubles unboxed.
+const _hs = new Float64Array(8);
+function h01s(slot, a, b, c) {
+  let h = (Math.imul(a | 0, 0x27d4eb2d) ^ Math.imul(b | 0, 0x165667b1) ^ Math.imul(c | 0, 0x9e3779b1)) | 0;
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  h ^= h >>> 16;
+  _hs[slot] = (h >>> 0) / 4294967296;
+}
+
 function smoothstep01(t) {
   if (t < 0) t = 0; else if (t > 1) t = 1;
   return t * t * (3 - 2 * t);
@@ -133,6 +143,7 @@ export class LightSet {
     // look state (off until `setLook` turns it on); `roof` = the roof map the
     // light pass samples for indoor/outdoor (null until a look needs it, set by
     // the game's per-frame roof bind in ART-01b).
+    this.timeBuf = new Float64Array(1); // FRAME-ALLOC-01: unboxed time hand-off for updateBuffered
     this.hemi = { on: false, sky: new Float32Array(3), ground: new Float32Array(3), tint: new Float32Array(3), tintK: 0 };
     this.roof = null;
     this.cloud = null; // S8-B2-12c: null | {strength, scale, cover, soft, deckH, seed, wind} (setLook from look.clouds.shadow)
@@ -435,22 +446,35 @@ export class LightSet {
    * latest position. No allocation.
    */
   update(timeSec, world) {
+    this.timeBuf[0] = timeSec;
+    this.updateBuffered(world);
+  }
+
+  /**
+   * FRAME-ALLOC-01: `update` with the time read from `timeBuf[0]` - the per-frame caller writes `timeBuf[0] = fb.timeSec`
+   * so no boxed double is passed across the call. Identical result to `update(timeBuf[0], world)`.
+   */
+  updateBuffered(world) {
+    const timeSec = this.timeBuf[0];
     for (let i = 0; i < this.count; i++) {
       const seed = this.seed[i];
       const hzMin = this.flickerHzMin[i], hzMax = this.flickerHzMax[i];
       const amount = this.flickerAmount[i], jitter = this.flickerJitter[i];
-      let v0 = 0, v1 = 0, v2 = 0;
+      _hs[5] = 0; _hs[6] = 0; _hs[7] = 0; // v0, v1, v2
       if (amount > 0 || jitter > 0) {
-        const f = hzMin + (hzMax - hzMin) * h01(seed);
-        const u = timeSec * f + 7.31 * h01(seed + 1);
+        h01s(0, seed, 0, 0);
+        const f = hzMin + (hzMax - hzMin) * _hs[0];
+        h01s(0, seed + 1, 0, 0);
+        const u = timeSec * f + 7.31 * _hs[0];
         const k = Math.floor(u);
         const s = smoothstep01(u - k);
-        v0 = (h01(k, seed, 0) + (h01(k + 1, seed, 0) - h01(k, seed, 0)) * s) * 2 - 1;
-        v1 = (h01(k, seed, 1) + (h01(k + 1, seed, 1) - h01(k, seed, 1)) * s) * 2 - 1;
-        v2 = (h01(k, seed, 2) + (h01(k + 1, seed, 2) - h01(k, seed, 2)) * s) * 2 - 1;
+        for (let c = 0; c < 3; c++) {
+          h01s(1, k, seed, c); h01s(2, k + 1, seed, c);
+          _hs[5 + c] = (_hs[1] + (_hs[2] - _hs[1]) * s) * 2 - 1;
+        }
       }
-      const intensity = this.baseIntensity[i] * (1 + amount * v0);
-      const x = this.defX[i] + jitter * v1, y = this.defY[i] + jitter * v2, z = this.defZ[i];
+      const intensity = this.baseIntensity[i] * (1 + amount * _hs[5]);
+      const x = this.defX[i] + jitter * _hs[6], y = this.defY[i] + jitter * _hs[7], z = this.defZ[i];
       const o4 = i * 4;
       this.pos[o4] = x; this.pos[o4 + 1] = y; this.pos[o4 + 2] = z; this.pos[o4 + 3] = this.radius[i];
       this.col[o4] = this.baseHue[i * 3] * intensity;
@@ -589,8 +613,10 @@ export function setLook(lights, look) {
  * `palette` resolves `light.preset` -> `{hue, intensity, radius, flicker}`
  * (same `P.lights[preset]`/`P.hue[color]` rule as `buildLightSet`).
  */
-export function syncEntityLights(lights, world, palette, attachedLightPos, out) {
-  world.forEachEntity((e) => {
+// FRAME-ALLOC-01: module-level callback + context (no per-frame closure).
+const _syncCtx = { lights: null, world: null, palette: null, attachedLightPos: null, out: null };
+function syncOneEntityLight(e) {
+    const { lights, world, palette, attachedLightPos, out } = _syncCtx;
     const light = e.components && e.components.light;
     if (!light) {
       const h = lights.entityHandle.get(e.id);
@@ -620,7 +646,12 @@ export function syncEntityLights(lights, world, palette, attachedLightPos, out) 
       lights.move(h, out[0], out[1], out[2]);
       lights.setOn(h, light.on !== false);
     }
-  });
+}
+
+export function syncEntityLights(lights, world, palette, attachedLightPos, out) {
+  _syncCtx.lights = lights; _syncCtx.world = world; _syncCtx.palette = palette;
+  _syncCtx.attachedLightPos = attachedLightPos; _syncCtx.out = out;
+  world.forEachEntity(syncOneEntityLight);
 }
 
 // BUG-OWN-007: distance (m) an attached light is kept in front of the first

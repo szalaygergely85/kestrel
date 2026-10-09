@@ -161,13 +161,7 @@ ok('idleSkip: farBaking renders', idleSkip(false, false, true).shouldRender === 
   const garbage = process.memoryUsage().heapUsed - h0;
   global.gc();
   const grew = process.memoryUsage().heapUsed - h0;
-  // LightSet.update (engine/render/lighting.js, not part of this module) itself allocates ~112 B/call today; measure it alone
-  // and subtract so this gate covers frameRenderer's own overhead (lead: see lane note, fix belongs to lighting.js).
-  const ls = fr.lightSet; global.gc();
-  const l0 = process.memoryUsage().heapUsed;
-  for (let j = 0; j < 1000; j++) ls.update(j / 60, world);
-  const lightGarbage = process.memoryUsage().heapUsed - l0;
-  ok('zero-alloc: < 100 KB own garbage over 1000 steps (target 16 KB: open, see lane note) (LightSet.update subtracted)', garbage - lightGarbage < 100 * 1024, `${garbage} B total, ${lightGarbage} B in LightSet.update (${((garbage - lightGarbage) / 1000).toFixed(1)} B/step own)`);
+  ok('zero-alloc: < 96 KB garbage over 1000 steps incl. LightSet.update (target 16 KB: ~80 B/step left, outside lighting/animate path: renderWorld/spritePool.project/particles)', garbage < 96 * 1024, `${garbage} B total (${(garbage / 1000).toFixed(1)} B/step)`);
   ok('zero-alloc: no retained growth', grew < 64 * 1024, `${grew} B`);
   ok('zero-alloc: presented every step', fr.presented === 11000);
   void rt;

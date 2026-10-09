@@ -12,8 +12,8 @@ import { buildSpriteAtlas } from './gpu/spritesAtlas.js';
 import { SpritePool, drawSprites } from './sprites.js';
 import { buildLightSet, syncEntityLights, makeLightBuffer } from './lighting.js';
 import { attachedLightPos } from '../entities/attach.js';
-import { stepAnimations } from '../entities/animation.js';
-import { stepSectorAnims } from '../world/World.js';
+import { stepAnimationsBuf } from '../entities/animation.js';
+import { stepSectorAnimsBuf } from '../world/World.js';
 import { prebuildTerrainMesh } from '../mesh/terrainMesh.js';
 
 const _u32 = new Uint32Array(1), _f32 = new Float32Array(_u32.buffer);
@@ -90,6 +90,7 @@ export function createFrameRenderer({ engine, rt, pipeline = null, assets, idleS
     dirty = true;
   });
 
+  const dtBuf = new Float64Array(1);
   const api = {
     fb, voxelPool, sprites, ready,
     get gpuOwnsFrame() { return !!pipeline && !!pipeline.frameComplete && !!rt.gpuActive; },
@@ -102,9 +103,10 @@ export function createFrameRenderer({ engine, rt, pipeline = null, assets, idleS
       const animate = opts.animate;
       lastWorld = world; lastCam = cam;
       if (animate) {
-        stepAnimations(world, opts.dt * 1000);
-        stepSectorAnims(world, opts.dt);
-        fb.timeSec += opts.dt;
+        dtBuf[0] = opts.dt; // FRAME-ALLOC-01: unboxed dt hand-off
+        stepAnimationsBuf(world, dtBuf);
+        stepSectorAnimsBuf(world, dtBuf);
+        fb.timeSec += dtBuf[0];
       }
       const farBaking = !!(world.terrain && !world.terrain.farReady);
       if (useIdleSkip) {
@@ -117,7 +119,8 @@ export function createFrameRenderer({ engine, rt, pipeline = null, assets, idleS
       fb.lights = lightSet;
       if (lightSet) {
         syncEntityLights(lightSet, world, palette, attachedLightPos, lightSyncScratch);
-        lightSet.update(fb.timeSec, world);
+        lightSet.timeBuf[0] = fb.timeSec;
+        lightSet.updateBuffered(world);
       }
       fb.gpu = !!pipeline && pipeline.frameComplete && rt.gpuActive;
       voxelPool.collect(world, cam);
