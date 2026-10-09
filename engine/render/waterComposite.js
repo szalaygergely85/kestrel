@@ -13,6 +13,7 @@
 //   shore (36.1c): foam glyph and rim foreground from column depth / edge distance; background unchanged.
 //   fog (own distance dW, x pitched fog scale): see waterLook.js `waterFogParams`.
 //   flow (US-141a, 35.4): a flowing slot replaces the ramp glyph by `look.streak` where the advected streak hash (waterLook.js `flowStreakHit`) says so.
+//   ripples (S8-B2-13, 38.14): !sheet cells only, composite-only (no geometry change); `waterLook.js packRipples`/`rippleStrength` on `world.water`'s ring buffer.
 // Edge suppression: an opaque (a >= seeThrough) surface cell sets `fb.waterMask[i] = 1`; `edgePass` skips masked cells so a
 // submerged silhouette never draws through opaque water.
 //
@@ -21,10 +22,11 @@
 import { sunFromWorld } from './lighting.js';
 import { unprojectCell, unprojectPitched, pitchedFogScale } from './projection.js';
 import { lastWaterSelection } from './water.js';
-import { WL_STRIDE, WL_SLOTS, WFOG_LEN, fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit, waterSurfaceHash, waterEdgeDistance, waterfallHash } from './waterLook.js';
+import { WL_STRIDE, WL_SLOTS, WFOG_LEN, RIPPLE_MIN, fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit, waterSurfaceHash, waterEdgeDistance, waterfallHash, packRipples, rippleStrength } from './waterLook.js';
 
 const _table = new Float32Array(WL_SLOTS * WL_STRIDE);
 const _fog = new Float32Array(WFOG_LEN);
+const _rip = new Float32Array(32); // S8-B2-13 (38.14): 8 rings x (x, y, r, s)
 const _p = new Float64Array(3);
 const _floorP = new Float64Array(3);
 const _sun = { dirX: 0, dirY: 0, dirZ: 1, ambientI: 0, sunI: 0 };
@@ -52,6 +54,7 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
   const sel = lastWaterSelection();
   fillWaterSlotTable(sel, world, fb.waterLooks || defaultWaterLooks(), _table, fb.timeSec || 0);
   waterFogParams(fb.matTable, fb.palette, !!world.terrain, _fog);
+  const ripCount = packRipples(world.water, _rip); // S8-B2-13 (38.14): deterministic off the water sim clock
   const sun = sunFromWorld(world, fb.palette, _sun);
   const light = fb.light;
   const sunMapOn = !!(light && !light.uniform && light.sunMapOn);
@@ -99,6 +102,15 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
       if (flowStreakHit(_table, lb, _p[0], _p[1])) glyph = _table[lb + 24]; // US-141a (35.4): flowing water streaks
       if ((h >>> 8) * (1 / 16777216) > 1 - _table[lb + 15]) {
         wr += (_table[lb + 8] - wr) * 0.5; wg += (_table[lb + 9] - wg) * 0.5; wb += (_table[lb + 10] - wb) * 0.5;
+      }
+    }
+    // S8-B2-13 (38.14): splash ripples, !sheet only (incl. see-through: replaces the floor glyph), before the sheet/shore blocks.
+    if (!sheet) {
+      const rs = rippleStrength(_rip, ripCount, _p[0], _p[1]);
+      if (rs > RIPPLE_MIN) {
+        glyph = _table[lb + 54];
+        const m = _table[lb + 55] * rs;
+        wr += (_table[lb + 8] - wr) * m; wg += (_table[lb + 9] - wg) * m; wb += (_table[lb + 10] - wb) * m;
       }
     }
     if (sheet) {
