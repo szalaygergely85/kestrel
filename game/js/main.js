@@ -122,9 +122,12 @@ import { createSpriteSystem, spawnTestSprites } from './dev/spriteDev.js';
 // ---- US-010: quest behaviours (registered by name before any World loads) ----
 import { validateBehaviours, createRipples } from '../../engine/index.js';
 import './quest/index.js';
+import { parseDemo, filterDemoParams, demoStorage, blockFKeys, createEndCard, drawDemoBuildLine } from './demoMode.js';
 // ---- end US-010 ----
 
-const params = new URLSearchParams(window.location.search);
+const demo = parseDemo(window.location.search); // DEMO-MODE-01: `?demo=1` public build; off = everything below is unchanged
+const params = filterDemoParams(new URLSearchParams(window.location.search), demo); // demo: only quality/res/fx survive
+const saveStorage = () => (demo.on ? demoStorage(getSaveStorage()) : getSaveStorage()); // demo: own save namespace, slots 1-3 untouched
 
 // US-030a (docs/architecture.md 14.2 item 5), range widened by D-025
 // (US-038a, architecture.md 22.2): `?grid=WxH` clamped to 160x60..480x180
@@ -390,7 +393,7 @@ let titleMenuActive = true; // S8-B1-10: mirrors menuHost.active each frame (tru
 let deviceLostFrozen = false; // S8-B1-10 (38.10c): set once by watchDeviceLost's `freeze` hook below; gates `paused` in the frame loop
 try {
   const questDef = await (await fetch('../content/quests/m1.quest.json')).json();
-  saveRelay = createSaveRelay({ storage: getSaveStorage(), questDef, enabled: saveEnabled });
+  saveRelay = createSaveRelay({ storage: saveStorage(), questDef, enabled: saveEnabled });
   saveRelay.bindEvents(engine.events);
   gameHooks.register(saveRelay.handlers());
   saveRelay.quest.onPoll = (name, a, b) => gameHooks.emitSimple(name, a, b);
@@ -457,6 +460,12 @@ const menuWanted = params.get('title') !== '0' && !isCaptureOrBench && params.ge
 // item 2) and by any later live grid change (the `grid:changed` handler).
 let { renderTarget: rt, depthBuffer } = engine;
 const { input } = engine;
+if (demo.on) blockFKeys(input); // demo: no F3 / F-key dev overlays
+// DEMO-MODE-01: end card once per run on the waystone done event; Restart wipes the demo save and reloads.
+const demoEnd = demo.on ? createEndCard({
+  onRestart: () => { const a = createStorageAdapter(saveStorage()); for (let i = 0; i < 3; i++) a.deleteSlot(i); window.location.reload(); },
+  onKeep: () => {} }) : null;
+if (demoEnd) gameHooks.register({ onEvent(name, d) { if (name === 'area:entered' && d && d.id === 'waystone') demoEnd.trigger(); } });
 // OWN-REQ-003 (architecture.md 17.1): `engine.ui` is a single UiLayer for
 // the whole run - `engine.setGrid` re-binds it in place (never replaces it),
 // so capturing it once here (unlike `depthBuffer`) stays valid
@@ -833,7 +842,7 @@ if (gpuBlocked) {
   runVoxelBenchMode();
 } else if (params.get('glyphs') === '1') {
   modeByName.get('glyphs').run(ctx);
-} else if (params.get('demo') === '1') {
+} else if (new URLSearchParams(window.location.search).get('demo') === 'scene') { // DEMO-MODE-01: the old US-048 dev scene moved from ?demo=1 to ?demo=scene
   modeByName.get('demo').run(ctx);
 } else if (params.has('cinematic')) {
   loadCinematic(params.get('cinematic')).then((path) => runGame('world', path)).catch((error) => {
@@ -1217,7 +1226,7 @@ async function runGame(mode, cinematic = null) {
     // Continue swaps in the chosen slot (same swap as the boot load / `R`), Settings opens the normal panel on top.
     if (menuWanted && !cinematic) {
       menuHost = createTitleMenuHost({
-        adapter: createStorageAdapter(getSaveStorage()),
+        adapter: createStorageAdapter(saveStorage()),
         style: window.ASSETS && window.ASSETS.uiStyle ? window.ASSETS.uiStyle.menu : null,
         onNewGame: (slot) => { if (saveRelay) saveRelay.setSlot(slot); },
         onContinue: (slot, save) => {
@@ -1267,6 +1276,7 @@ async function runGame(mode, cinematic = null) {
     // US-020a: `N` = mute toggle, always available (does not conflict with
     // `M`'s map card, US-015) - a single flag in audio/synth.js's module
     // state (later Settings, US-038, can read it the same way).
+    if (demoEnd) demoEnd.step((c) => input.pressed(c));
     if (input.pressed(gameKeys.mute)) { toggleMute(); saveSettings({ muted: isMuted() }); } // US-060: remember across reload
     if (input.pressed('F3')) overlay.toggle();
     // D-025 (US-038a AC "dev switch until US-038b ships"): `?debug=1` only -
@@ -1751,6 +1761,8 @@ async function runGame(mode, cinematic = null) {
     // US-015 tester BUG-1: the map card owns the screen while open (its own
     // click/key dismiss), so the pause text must not overprint it (160x60).
     if (menuHost && menuHost.active && !isSettingsOpen()) menuHost.draw(ui); // US-090w: the card owns the screen (no pause text under it)
+    if (demo.on && menuHost && menuHost.active && !isSettingsOpen()) drawDemoBuildLine(ui);
+    if (demoEnd) demoEnd.draw(ui);
     if (mode === 'world' && !look.locked && !isMapOpen() && !(invView && invView.isOpen) && !cinematic && !isWaterfallPreview && !(menuHost && menuHost.active)) drawPauseOverlay(ui, rt, assets);
     // US-038b: settings panel, drawn over the pause overlay when open
     if (!cinematic && !isWaterfallPreview) drawSettingsPanel(ui, rt, assets, { showEntry: mode === 'world' && !(menuHost && menuHost.active) && !look.locked && !isMapOpen() && !(invView && invView.isOpen) });
