@@ -268,9 +268,9 @@ function checkConsumerFile(file, src) {
         findings.push(`${rel(file)}:${line}: deep import "${spec}" - game/tools must import exactly engine/index.js (or engine/dev.js where allowed)`);
       }
     }
-    // Rule 18 (ED-WG-01c): no GL-only classes/modules in tools/editor/**.
-    if (isEditorFile && GL_ONLY_RE.test(spec.split('\\').join('/'))) {
-      findings.push(`${rel(file)}:${line}: import "${spec}" is a GL-only module - tools/editor/** must stay backend-neutral (rule 18, architecture.md 38.21)`);
+    // Rule 18 (ED-WG-01c, WG-5b: now engine-wide): the WebGL2 classes/modules are deleted; nothing may import them again.
+    if (!/.test.mjs$/.test(file) && GL_ONLY_RE.test(spec.split('\\').join('/'))) {
+      findings.push(`${rel(file)}:${line}: import "${spec}" is a GL-only module - WebGL2 was removed (WG-5b, rule 18, architecture.md 38.21)`);
     }
     // Rule 6: tools/editor/** is a second client of engine/index.js only -
     // it must never depend on game/ (architecture.md 24.2).
@@ -313,8 +313,6 @@ const COORD_ALLOW = [
   'engine/render/terrainCaster.js',       // hot loop
   'engine/render/sprites.js',             // hot loop
   'engine/render/detailShade.js',         // hot loop
-  'engine/render/gpu/GpuCellPipeline.js', // JS twin of the GLSL cast
-  'engine/render/gpu/glsl/',              // GLSL-generating files
   'game/js/dev/',                         // page harnesses / parity modes
 ];
 const COORD_PATTERNS = [

@@ -168,28 +168,25 @@ const consts = {
   d.endPass();
 }
 
-// ---- createGpuDevice failure / fallback paths
+// ---- createGpuDevice failure paths (WG-5b: WebGPU only, every failure throws; no fallback)
 const warns = [];
-const gl = { fake: 'gl', getParameter: () => 4, getExtension: () => null, createQuery: () => ({}) };
 const okLimits = { maxColorAttachmentBytesPerSample: 64, maxSampledTexturesPerShaderStage: 16, maxColorAttachments: 8 };
-const fakeCanvas = { getContext: (k) => (k === 'webgl2' ? gl : null) };
+const fakeCanvas = { getContext: () => null };
 const run = async (name, opts, expect) => {
   warns.length = 0;
   let res, err = null;
   try { res = await createGpuDevice({ canvas: fakeCanvas, warn: (m) => warns.push(m), ...opts }); } catch (e) { err = e; }
   ok(name, expect(res, err), String((err && err.message) || (res && res.backend) || warns[0]));
 };
-await run('webgl2 request returns GL2 device', { backend: 'webgl2' }, (r) => r && r.backend === 'webgl2');
-await run('webgl2 without context throws', { backend: 'webgl2', canvas: { getContext: () => null } }, (r, e) => !!e && /WebGL2 unavailable/.test(e.message));
-await run('webgpu: no navigator.gpu -> warn + webgl2', { backend: 'webgpu', navigatorGpu: null }, (r) => r && r.backend === 'webgl2' && warns.length === 1 && /no navigator\.gpu/.test(warns[0]));
-await run('webgpu fallback:false -> throws', { backend: 'webgpu', navigatorGpu: null, fallback: false }, (r, e) => !!e && /no navigator\.gpu/.test(e.message));
-await run('webgpu: no adapter -> fallback', { backend: 'webgpu', navigatorGpu: { requestAdapter: async () => null } }, (r) => r && r.backend === 'webgl2' && /no adapter/.test(warns[0]));
-await run('webgpu: adapter below limits -> fallback names the limit', {
+await run('webgl2 request throws (removed in WG-5b)', { backend: 'webgl2' }, (r, e) => !!e && /removed/.test(e.message));
+await run('webgpu: no navigator.gpu -> throws + warns', { backend: 'webgpu', navigatorGpu: null }, (r, e) => !!e && /no navigator\.gpu/.test(e.message) && warns.length === 1 && /no navigator\.gpu/.test(warns[0]));
+await run('webgpu: no adapter -> throws', { backend: 'webgpu', navigatorGpu: { requestAdapter: async () => null } }, (r, e) => !!e && /no adapter/.test(e.message));
+await run('webgpu: adapter below limits -> throws naming the limit', {
   backend: 'webgpu', navigatorGpu: { requestAdapter: async () => ({ limits: { ...okLimits, maxColorAttachmentBytesPerSample: 32 } }) },
-}, (r) => r && r.backend === 'webgl2' && /maxColorAttachmentBytesPerSample 32 < 36/.test(warns[0]));
-await run('webgpu: requestDevice rejects -> fallback', {
+}, (r, e) => !!e && /maxColorAttachmentBytesPerSample 32 < 36/.test(e.message));
+await run('webgpu: requestDevice rejects -> throws', {
   backend: 'webgpu', navigatorGpu: { requestAdapter: async () => ({ limits: okLimits, features: new Set(), requestDevice: async () => { throw new Error('boom'); } }) },
-}, (r) => r && r.backend === 'webgl2' && /boom/.test(warns[0]));
+}, (r, e) => !!e && /boom/.test(e.message));
 {
   let asked = null;
   const adapter = { limits: okLimits, features: new Set(['timestamp-query']), requestDevice: async (d) => { asked = d; return mockGpu(); } };
@@ -197,17 +194,17 @@ await run('webgpu: requestDevice rejects -> fallback', {
   await run('webgpu: mock device, selfTest:false -> webgpu, adapter limits requested', {
     backend: 'webgpu', selfTest: false, canvas: null, navigatorGpu: { requestAdapter: async () => adapter, getPreferredCanvasFormat: () => 'rgba8unorm' },
   }, (r) => r && r.backend === 'webgpu' && asked.requiredLimits.maxColorAttachmentBytesPerSample === 64 && asked.requiredFeatures.includes('timestamp-query'));
-  await run('webgpu: self-test failure (mock cannot readback) -> fallback to webgl2', {
+  await run('webgpu: self-test failure (mock cannot readback) -> throws', {
     backend: 'webgpu', navigatorGpu: { requestAdapter: async () => adapter },
-  }, (r) => r && r.backend === 'webgl2' && /self-test failed/.test(warns[0]));
-  // 38.8a: fallback:false must never touch canvas.getContext on a WebGPU failure (canvas stays free for the caller)
+  }, (r, e) => !!e && /self-test failed/.test(e.message));
+  // the canvas is attached only after success: a failure never touches canvas.getContext
   const calls = [];
   const spyCanvas = { getContext: (k) => { calls.push(k); return null; } };
-  const runSpy = async (opts) => { try { await createGpuDevice({ canvas: spyCanvas, warn: () => {}, fallback: false, backend: 'webgpu', ...opts }); } catch (_) { /* expected */ } };
+  const runSpy = async (opts) => { try { await createGpuDevice({ canvas: spyCanvas, warn: () => {}, backend: 'webgpu', ...opts }); } catch (_) { /* expected */ } };
   await runSpy({ navigatorGpu: { requestAdapter: async () => null } });
-  ok('fallback:false, no adapter: canvas.getContext never called', calls.length === 0, calls.join());
+  ok('no adapter: canvas.getContext never called', calls.length === 0, calls.join());
   await runSpy({ navigatorGpu: { requestAdapter: async () => adapter } });
-  ok('fallback:false, self-test fails: canvas.getContext never called', calls.length === 0, calls.join());
+  ok('self-test fails: canvas.getContext never called', calls.length === 0, calls.join());
   const st = await selfTestDevice({ backend: 'webgl2' });
   ok('selfTestDevice on webgl2 is skipped ok', st.ok && !!st.skipped);
 }

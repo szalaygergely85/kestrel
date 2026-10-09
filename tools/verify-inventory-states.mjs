@@ -1,11 +1,11 @@
-// S8-C-09: real-GPU inventory state preview. Run: node tools/verify-inventory-states.mjs 9886 webgpu (or webgl2)
+// S8-C-09: real-GPU inventory state preview. Run: node tools/verify-inventory-states.mjs 9886 webgpu
 import {spawn} from 'node:child_process';
 import assert from 'node:assert/strict';
 import {writeFileSync,mkdtempSync,rmSync,mkdirSync} from 'node:fs';
 import path from 'node:path';import os from 'node:os';
 import {ROOT,validatePort,findBrowserBinary,buildLaunchFlags,waitForHttp,connectCdp,evaluate,killTree} from './capture-browser.mjs';
 const port=Number(process.argv[2] || 9886),backend=process.argv[3] || 'webgpu';validatePort(port);
-if(port<9800 || port>9998)throw new Error('Lane C port must be 9800..9998');assert.ok(['webgpu','webgl2'].includes(backend));
+if(port<9800 || port>9998)throw new Error('Lane C port must be 9800..9998');assert.ok(['webgpu'].includes(backend));
 const profile=mkdtempSync(path.join(os.tmpdir(),'kestrel-inventory-states-'));
 const out=path.join(ROOT,'docs/test-reports/captures');mkdirSync(out,{recursive:true});
 const server=spawn('python',['-c','import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()',String(port)],{cwd:ROOT,stdio:'ignore',windowsHide:true});
@@ -19,7 +19,7 @@ try {
  await cdp.send('Page.navigate',{url:`http://127.0.0.1:${port}/game/js/quest/inventoryView.preview.html?backend=${backend}`});
  let ready=false;for(let i=0;i<100;i++){await pause(300);if(await evaluate(cdp,'!!window.__inventoryPreview')){ready=true;break;}}assert.ok(ready,JSON.stringify(errors));
  const state=await evaluate(cdp,`(()=>{const p=__inventoryPreview;return {info:p.info,grid:[p.rt.cols,p.rt.rows],gpu:p.rt.gl ? p.rt.gl.getParameter(p.rt.gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL) : p.info.label,items:p.ids.length};})()`);
- assert.equal(state.info.backend,backend==='webgl2' ? 'gl2' : backend);assert.deepEqual(state.grid,[400,150]);assert.doesNotMatch(state.gpu,/swiftshader|software|llvmpipe/i);assert.equal(state.items,12);console.log(JSON.stringify(state));
+ assert.equal(state.info.backend,backend);assert.deepEqual(state.grid,[400,150]);assert.doesNotMatch(state.gpu,/swiftshader|software|llvmpipe/i);assert.equal(state.items,12);console.log(JSON.stringify(state));
  await pause(350);const shot=await cdp.send('Page.captureScreenshot',{format:'png'});writeFileSync(path.join(out,'inventory-states-'+backend+'.png'),Buffer.from(shot.data,'base64'));
  async function key(code,key=code){await cdp.send('Input.dispatchKeyEvent',{type:'keyDown',code,key});await cdp.send('Input.dispatchKeyEvent',{type:'keyUp',code,key});}
  await key('KeyE','e');assert.equal(await evaluate(cdp,'__inventoryPreview.inv.right'),'spell.fireball');
