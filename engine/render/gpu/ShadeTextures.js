@@ -40,6 +40,7 @@ export const F_HAS_OVERLAY = 1 << 12;
 export const F_OV_BAND = 1 << 13;
 export const F_HAS_SPECKLE = 1 << 14;
 export const F_HAS_LOD = 1 << 15;
+export const F_GRID_TEXEL = 1 << 17; // GRID-TEXEL-GLYPH-01: grid.glyph 'texel'
 export const F_SOFT_EDGE = 1 << 16; // ALPHA-01d: `edge: 'soft'` (read by edge.wgsl.js only; shade ignores the bit)
 
 function assert(cond, msg) { if (!cond) throw new Error('ShadeTextures: ' + msg); }
@@ -110,6 +111,7 @@ function packMaterial(rec, matFRow, matIRow, setIdOf) {
     if (g.tie) flags |= F_GRID_TIE;
     if (g.lines) flags |= F_GRID_LINES;
     if (g.isGap) flags |= F_GRID_GAP;
+    if (g.texel) flags |= F_GRID_TEXEL;
   }
   if (bevel) flags |= F_HAS_BEVEL;
   if (band) {
