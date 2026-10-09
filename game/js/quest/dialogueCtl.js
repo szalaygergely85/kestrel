@@ -5,6 +5,7 @@
 // Zero allocation per step: keys are interned constants, clip names are data strings.
 import { createDialogueRunner } from '../../../engine/index.js';
 import { createDialogueView } from './dialogueView.js';
+import { createJawSync } from './jawSync.js';
 
 const CONFIRM_KEYS = ['KeyE', 'Enter'];
 const UP_KEYS = ['KeyW', 'ArrowUp'], DOWN_KEYS = ['KeyS', 'ArrowDown'];
@@ -37,6 +38,8 @@ export function createDialogueCtl(opt) {
   let pendingClip = null; // node clip waiting to be played once
   let oneShot = false;    // a node clip is playing
   let lastBase = null;    // last talk/listen/idle we asked for
+  const jaw = createJawSync({ maxDeg: opt.jawOpenDeg }); // opt.jawOpenDeg = model def's jawOpenDeg, else fallback
+  let jawComp = null;     // voxel component of the NPC whose jaw we drive
   const runner = createDialogueRunner({
     cps: opt.cps,
     onEvent(name) {
@@ -104,6 +107,7 @@ export function createDialogueCtl(opt) {
      */
     step(dt, input, lookLocked) {
       if (ctl._closing) { ctl._closing = false; ctl.locked = false; } // the closing step is over
+      ctl._jaw(dt);
       if (!ctl.open) { if (runner.state === 'ended') runner.state = 'idle'; return; }
       if (lookLocked === false) { ctl.close(); return; }
       if (input.pressed('Escape')) { ctl.close(); return; }
@@ -130,6 +134,16 @@ export function createDialogueCtl(opt) {
       }
       const base = runner.state === 'typing' && !runner.isPlayer ? 'talk' : 'listen';
       if (base !== lastBase) { lastBase = base; ctl._play(base, false); }
+    },
+    /** Jaw lip-sync: follows the typed char while open; eases closed afterwards (then drops the ref). */
+    _jaw(dt) {
+      if (jawComp === null && npcId !== null) {
+        const h = world.get(npcId), c = h && h.data && h.data.components && h.data.components.voxel;
+        if (c) jawComp = c;
+      }
+      if (jawComp === null) return;
+      jaw.step(dt, ctl.open ? runner : null, jawComp);
+      if (!ctl.open && jaw.angle === 0) jawComp = null;
     },
     _play(clip, once) {
       const h = world.get(npcId);
