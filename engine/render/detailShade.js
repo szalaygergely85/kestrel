@@ -53,7 +53,8 @@ function levelFast(n, gb, cutoff, gamma) {
 // atan2, no per-cell trig at all.
 // S8-B2-14 wetness (rain): `table.shading.wetness` 0..1 (absent = 0 = today's output bit for bit). Darkens the lit term (emissive kept)
 // by up to WET_DARK and lifts the highlight gain by up to WET_SPEC (a wet surface is darker but keeps a sharper glint).
-// Twin: shade.wgsl.js (su.wetness in shadeCore, wetGain in the tail); the terrain path (terrainShade.js) does not read it yet.
+// Twin: shade.wgsl.js (su.wetness in shadeCore, wetGain in the tail). S8-B2-14b: the terrain path
+// (terrainShade.js shadeTerrain / shade.wgsl.js's WGSL shadeTerrain) reuses WET_DARK/wetGain from here too.
 export const WET_DARK = 0.7;
 export const WET_SPEC = 0.35;
 /** Highlight gain with wetness `w` (w == 0 returns `gain` untouched). */

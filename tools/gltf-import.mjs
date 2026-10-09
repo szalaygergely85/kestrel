@@ -60,6 +60,10 @@ Options:
   --palette-map <json>  texture -> palette keys table for --uvmap (default design/meshes/quaternius/palette-map.json)
   --simplify <tris>   reduce to about <tris> triangles (quadric edge collapse, ME-SIMPLIFY-01; planar UVs only)
   --budget            --simplify to the per-mesh triangle budget of tools/mesh-budgets.mjs (by id basename)
+  --crease <deg>      S8-B2-15, OPT-IN (default off = unchanged 5 deg smoothing-group angle): weld
+                      vertices and average normals across a shared edge whenever its face-normal angle
+                      is below <deg> (0..180); triangle count is never changed, only how smoothing
+                      groups split. Without this flag, output is byte-identical to before S8-B2-15.
   --ao [rays]         ME-20a, OPT-IN (default off = meshes unchanged): bake per-vertex ambient occlusion (hemisphere ray test, default 32 rays,
                       deterministic) into aux[5..7] of each triangle (AO of its 3 vertices, 1 = open); nothing reads it before ME-20b
   --masks <dir>       ALPHA-01a (arch 37.17), OPT-IN until ALPHA-01c is wired (default: none = ignore alpha, import as before): alpha-cutout materials
@@ -89,6 +93,7 @@ export function parseArgs(argv) {
     if (a === '--out') { args.out = argv[++i]; continue; }
     if (a === '--simplify') { args.simplify = Number(argv[++i]); if (!(args.simplify >= 4)) throw new Error('--simplify needs a triangle target >= 4'); continue; }
     if (a === '--budget') { args.budget = true; continue; }
+    if (a === '--crease') { args.crease = Number(argv[++i]); if (!(args.crease >= 0 && args.crease <= 180)) throw new Error('--crease needs a degree value from 0 to 180'); continue; } // S8-B2-15
     if (a === '--ao') { args.ao = /^\d+$/.test(argv[i + 1] || '') ? Number(argv[++i]) : true; continue; } // ME-20a
     if (a === '--masks') { args.masks = argv[++i]; if (!args.masks) throw new Error('--masks needs a directory or none'); continue; }
     if (a === '--mask-res') { args.maskRes = Number(argv[++i]); if (![16, 32, 64, 128, 256, 512, 1024].includes(args.maskRes)) throw new Error('--mask-res must be a power of two from 16 to 1024'); continue; }
@@ -168,15 +173,21 @@ export async function loadEngineMaterialKeys(load = (url) => import(url.href)) {
 /**
  * MESH-PHYS-01: add `collide: false` (walk-over piece) or the `collider` proxy (prism, <= 28 tris) to a static mesh json.
  * Optional `colliderParts` (material keys, e.g. a tree's trunk keys) restricts the prism to those ranges. Idempotent; the render data is untouched.
+ * S8-B2-16: a mesh json flagged `colliderHull: true` gets a convex-hull proxy (<= 32 tris) instead of the prism, but
+ * ONLY when the caller also opts in with `{ hull: true }` (the tool's `--hull` flag) - the data flag alone never
+ * changes default output, so `gen-mesh-colliders --check` (no `--hull`) stays 0 diffs for every mesh, flagged or not.
  */
-export function withCollision(json) {
+export function withCollision(json, { hull = false } = {}) {
   if (json.layout !== 'static') return json;
-  // ALPHA-01e: leafy trees (CommonTree/Pine/TwistedTree_n): the crown ranges are masked cards, so the prism comes from the opaque (bark) ranges only
-  if (!json.colliderParts && /^(CommonTree|Pine|TwistedTree)_\d/.test(String(json.id).split('/').pop()) && json.ranges) {
-    const trunk = json.ranges.filter((r) => !r.mask).map((r) => r.part);
-    if (trunk.length && trunk.length < json.ranges.length) json = { ...json, colliderParts: trunk };
+  // ALPHA-01e nit (ARCH batch 16): data-driven, no name regex - ANY mesh with both masked and opaque
+  // ranges (leafy trees, or anything future) gets colliderParts = its opaque ranges, since the masked
+  // ranges are cutout cards (leaves/flowers), not solid. A mesh that's masked-only (e.g. the bushes,
+  // which have no opaque range at all) or already has colliderParts set is left alone.
+  if (!json.colliderParts && json.ranges) {
+    const opaque = json.ranges.filter((r) => !r.mask).map((r) => r.part);
+    if (opaque.length && opaque.length < json.ranges.length) json = { ...json, colliderParts: opaque };
   }
-  const plan = planMeshCollision(json.id, json.pos, { parts: json.colliderParts, ranges: json.ranges });
+  const plan = planMeshCollision(json.id, json.pos, { parts: json.colliderParts, ranges: json.ranges, hull: hull && !!json.colliderHull });
   const next = { ...json };
   delete next.collide; delete next.collider; delete next.castShadow;
   if (!plan.castShadow) next.castShadow = false; // MESH-SHADOW-01: same rule as walk-over
@@ -296,6 +307,7 @@ export async function runCli(argv) {
     }
   } else if (args.opaque || args.maskRes) throw new Error('gltf-import: --opaque / --mask-res need a .gltf with MASK materials and without --masks <dir>');
   if (args.uv) opts.uv = args.uv;
+  if (args.crease !== undefined) opts.crease = args.crease; // S8-B2-15
   if (args.budget && !args.simplify) args.simplify = budgetFor(id) || 0;
   if (args.simplify) {
     const full = loadGltf(raw, id, opts).triCount; // untouched count -> ratio
