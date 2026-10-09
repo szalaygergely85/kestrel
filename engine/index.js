@@ -105,6 +105,7 @@ export { bindDetailInstances, feedDetail, removeDetailInstances, DETAIL_OBJECT_B
 // GFX-03: quality knobs (scatter density, LOD scale, tuft draw scale) and the sun shadow levels / 'off'.
 export { GFX_DEFAULTS, GFX_RANGES, resolveGfxKnobs } from './mesh/gfxKnobs.js';
 export { CLOUD_Q_SHIFT, resolveShadowLevel, SHADOW_LEVELS, resolveSunShadowOptions, SUN_SHADOW_DEFAULTS } from './render/shadowSun.js';
+export { PSH_NEAR, POINT_SHADOW_DEFAULTS, resolvePointShadowOptions, FACE_TABLE, pointFaceOf, pointFaceMatrix, pointFacePlanes, pointFaceBounds, pointSphereBounds, pointDepthEncode, pointDepthDecode, pointShadowTaps, pointShadowInfo, pointShadowKey, quantiseOrigin, createShadowLightState, selectShadowLights } from './render/shadowPoint.js';
 export { cloudShadeQ, cloudMul, packCloudUniforms } from './render/cloudShadow.js'; // S8-B2-12c (38.13)
 export { buildTeamRemap, TEAM_SLOTS, MAX_TEAMS } from './render/teamRemap.js';
 // US-047: computeDerivatives/shadeSurfaces/shadeV2 (detailShade.js) and
