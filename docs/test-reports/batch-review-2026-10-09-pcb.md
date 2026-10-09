@@ -220,3 +220,95 @@ Diff-only review on pc-b. Probes: spriteNear, viewModel, handFireView, stableCom
 8. **Batch 6 fix commit (ee65a09d)**: ARCH OK. All Batch 6 items are closed. `held255 > 0 && held255Gpu === held255` is in `ok` with a dropped-hold FAIL test. `poisonedSurvivors === 0` is kept with `frameGate:false`, with a test and the JSDoc scope. `pad0` -> `waterOn` in the block, WGSL, pass and tests (the mutation test still targets the gate). `shadeOut.level` is 255. The dialogueCtl `runner.state` write is gone and jawComp is re-picked per NPC. The docs line for the entity collider was added.
 
 **Summary:** ARCH OK for 7 (HAND-WIRE-02, HIT-BLEED-01, MESH-PLACE-01, MESH-PACKS-01, PAUSE-MENU-01, BEAR-FOLLOW-01, ee65a09d). 2 ARCH CHANGES, both small and engine-API hygiene only: HAND-WIRE-01 (stale base mounts in `mountEye` after a variant swap, no base restore in `warmVariants`, an engine test + docs) and HAND-FIRE-WRAP-01 (WGSL assertion + SPR T3.w docs).
+
+## Batch 8: TREES-DEFAULT-01 gate (opus architect, owner-authorised while PC-A is offline; PC-A may re-check)
+
+Scope: kestrel-4 `treesdef` 1b585dc9; log `%TEMP%/gc-treesdef.log` (RTX 4060 baseline): `forestWalk` geometry + `[shadow depth parity]` PASS->FAIL, `swayWindy` NEW FAIL. Probe: one headless gpucompare with `gpucull=0` (port 9712) -> forestWalk/swayWindy numbers bit-identical (kind 97.73 %, holes 449, slopeAwareWithin 99.058 %), so the GPU cull kernel/LOD is not the cause.
+
+**Verdict: (A) real parity bug, not precision. No known-FAIL, no re-baseline of a FAIL, no threshold change.**
+
+Root cause: the instanced masked pipelines cull back faces on the GPU, while the JS twin draws masked ranges two-sided.
+- JS (`engine/mesh/rasterJS.js` ~l.564/585): masked range -> `twoSided = _mW >= 0`, `cullBack = ... && _mW < 0` -> no back-face cull, N flipped on back faces; this applies to the colour pass and the depth-only (shadow) twin.
+- GPU: `passRaster.js` l.120 `instanceMaskPipe` and l.203 (`_aoPipe('instanceMask')`) are built with cull `'back'`; `passShadow.js` l.102 `instanceMaskPipe` also uses `'back'`. Only the static `maskPipe` (alphaLeaves fixture, l.115 / shadow l.99) uses `'none'`, so the fixture rows pass and the bug only shows on instanced masked trees (ALPHA-01f copied the cull mode from `instancePipe`).
+- Evidence matches: holes = JS leaf / GPU sky in contiguous runs (cells 112-123, 274-281: whole back-facing cards at the screen top, eye under the canopy at pitch +30), not scattered texel-edge cells; `maskTies` 0, `texelTies` 0; shadow coverage identical (terrain) but 35.7k texels with ratio > 1 (another surface entirely: back-facing cards cast in JS, not on the GPU), `jsOnly` 2, `gpuOnly` 0. Mask sampling itself is at parity (`MaskAtlas.texel/sample` vs WGSL `maskTexel/maskDiscard`, nearest r8uint `textureLoad`, `a < cut`, checked in ALPHA-01c).
+- This is also a visible game bug: Quaternius leaf cards are single-sided, so seen from behind (from below, or the far side of a crown) about half the cards vanish on the GPU. The owner approved the look with these cards missing.
+
+Fix (one small step, ~0.25 d, PC-B programmer; ID suggestion **ALPHA-01f-fix3**; WGSL is unchanged, only the pipeline state):
+1. `engine/render/gpu/wg/passRaster.js`: cull `'back'` -> `'none'` for `instanceMaskPipe` (l.120) and the `instanceMask` AO variant in `_aoPipe` (l.203). Keep `'back'` for `instancePipe` / voxel / mirror.
+2. `engine/render/gpu/wg/passShadow.js` l.102: `instanceMaskPipe` cull `'back'` -> `'none'` (the JS depth-only twin does not cull masked ranges).
+3. Tests: `passRaster.test.js` + `passShadow.test.js` assert `instanceMaskPipe.desc.cull === 'none'` (and the AO variant), and `instancePipe` stays `'back'`.
+4. Gate: one headless gpucompare (`gpucompare` skill). forestWalk + its shadow row must be back to PASS vs `-webgpu-rtx4060`. Record swayWindy (+ shadow) as NEW PASS in the baseline. If a residual remains after this, it is a new finding: report the numbers, don't widen anything. The back-face `!front -> -N` flip in the `instancedMask` WGSL now runs for the first time: confirm `nrmViol` 0 / `nMismatch` on forestWalk (same `'cw'` convention as the static mask pipe, which passes).
+5. Perf: masked leaves now rasterise both faces (about 2x leaf fragments). Re-run the forest route walk / bench once and put the number in the story. The owner's "perf is fine" was measured with the culled cards.
+
+Follow-up (not blocking, separate row, PC-A track): `engine/mesh/instances.js` `addToDrawList` calls `gpu.accept(g, draw, null)` for mesh groups *before* LOD1 is resolved. The GPU camera cull therefore never gets a LOD1 mesh for mesh trees (`b.meshes1 = null` -> `lodOn` false, rc from LOD0 only), while the CPU path selects LOD1 when it is resident. It did not cause this FAIL (the gpucull=0 run is bit-identical, so LOD1 is not resident or selected in this pose), but it means mesh trees may never LOD on the default WebGPU path. Resolve `lod1Mesh/draw1` first and pass `draw1` to `accept` (the shadow list already does). Check whether `lods[0]` of lazy mesh groups is ever requested.
+
+TREES-DEFAULT-01 stays BLOCKED on ALPHA-01f-fix3 (merge after the gate is green). The content/boot changes in 1b585dc9 are fine.
+
+## Batch 9: KPKG-01..04, CHARGEN-01..03 + the STRETCH_BONES question (opus architect, owner-authorised while PC-A is offline; PC-A may re-check)
+
+Scope: 6409f001 (KPKG-01), 5b675dd3 (KPKG-02), eba0b65d (KPKG-03), d210df0c (KPKG-04), 7fc50b8b + 11194773 (CHARGEN-01), 4efe1384 (CHARGEN-02), 4ad032d3 (CHARGEN-03; sampleClip as now on pc-b after ebb03160) against architecture.md 38.29 / 38.30. Runs: zip 42/42 (0.2 s), package 44/44 (0.2 s), pack 12/12 (**8.3 s**), chargen 49/49, chargen mesh 37/37 (0.5 s; sampleClip ~0 B/call), chargen-kit 10/10, check-deps OK. Probe on the real kit: engine `validateKit(human.charkit.json, palette.materials)` gives 0 errors; compose+mesh 1927 quads, 12 materials, ~18 ms cold; `collapseRig(rigged, kit.partMap)` **throws "empty partMap"** (shape mismatch, see CHARGEN-01/03).
+
+Security summary (zip/package): the zip-slip guard (`..`, leading `/`, `\`, drive, control chars) runs on read and on write; entries, total size and ratio are limited; inflate is capped at the declared size (a lying header is rejected); CRC and size are checked; there is no zip64 and no encryption; and nothing is evaluated (JSON.parse plus typed views only). That is good. There are two gaps, listed below: `:` inside a path (NTFS alternate data streams via unpack on Windows), and code files that are only refused when the manifest references them.
+
+1. **KPKG-01 zip.js**: ARCH CHANGES.
+   1. `checkZipPath`: reject `:` anywhere in the path, not only `X:` at the start. `tools/unpack.mjs` would otherwise write `content/a.json:evil` as an NTFS alternate data stream on Windows. Add a test row.
+
+   Notes:
+   - Determinism with deflate holds only within one runtime: Node zlib and the browser stream can produce different bytes. Golden-hash tests (38.29 item 6 exports, `savePackage`) must therefore hash the entries, or use `{deflate:false}`, never compressed archive bytes. Add that one line to 38.30 item 3.
+   - Everything else matches 38.30: limits, sorted entries with `kestrel.json` first, 1980 DOS date, stored `.glb/.png/.bin/.vox`, zero-copy reads, and a Python fixture for interop.
+2. **KPKG-02 package.js**: ARCH CHANGES.
+   1. Data-only contract: `openPackage` must refuse any zip entry that matches `CODE_EXT` (`.js/.mjs/.cjs/.wgsl/.glsl/.html/.wasm`), not only paths that the manifest references. Today an unreferenced `x.js` is mounted and served by `fetchText`. Add a test.
+
+   Notes:
+   - The API shape matches the notes (`validatePackageManifest`, `openPackage`, `mountPackages` -> `{fetchText, fetchBytes, manifestUrl}`).
+   - The other checks are good: caret/exact-only semver, refusal of a newer `formatVersion`, the duplicate-id error that names both packages, a mounted package twice, a `kpkg://` relative-URL test, and loose == mounted deep-equal.
+   - Not blocking: `contributedIds` parses every content JSON at mount, so there is a second full parse at boot. It is acceptable for v1; measure it at KPKG-07.
+3. **KPKG-03 pack/unpack**: ARCH CHANGES.
+   1. `tools/pack.test.mjs` takes 8.3 s, over the ~5 s per-suite rule. It deflates the whole 6.5 MB base package and loads it twice. Give `packSpec(spec, root, {deflate})` an option and run the base == loose check with `deflate:false` (keep one small deflated round-trip), or check a subset of the base. The target is < 5 s.
+
+   Notes:
+   - Spec -> generated `kestrel.json` -> `openPackage` self-check is correct. `unpack` has the second `startsWith(root+sep)` guard, and the base spec excludes `*.js`, `editor/` and `packages/`.
+   - The `:` fix is in KPKG-01 item 1.
+4. **KPKG-04 packBoot + main.js hook**: ARCH OK.
+   - The game reads `?pack=` only. Without it, `null` falls back to the loose boot, so the default path is unchanged. Errors are clear, and the engine has no `window`.
+   - Note: only the first package that has a content manifest is loaded. Dependency-only packages are mounted for `kpkg://` URLs. Document this in 38.30 item 4 until multi-content loading exists.
+   - Note: there is no Node test for `packBoot` (it is game glue, and the headless boot verified it). A 10-line fake-`fetch` test would be cheap; it is not required.
+5. **CHARGEN-02 kit / recipe / compose**: ARCH CHANGES.
+   1. `validateKit` rejects attachments with `slot:'overlay'` (`SLOTS`/`ATTACH_ORDER` lack it), but `composeCharacter` paints them for elders (CHARGEN-05). The two must agree. Accept `overlay` as a kit-only attachment slot (never a recipe pick, paint order last) and add a test with the elder overlay fixture.
+   2. `validateKit` must validate `partMap` in the canonical array shape: at most 8 parts, every skeleton bone exactly once, parents listed first, and a root bone's parent bone inside the parent part. Clips are a separate topic and can be a follow-up row when the first clips land: `duration % 50 === 0`, keys sorted with `keys[0].t === 0`, known bones only, and `pos` only on Hips. Today `collapseRig` finds these errors only at runtime.
+
+   Notes:
+   - Compose is deterministic: fixed order, sorted growth cells, the lowest source wins, and first-use material order.
+   - The 255-material guard and the bone `Uint8Array` are fine. Engine-only imports; check-deps is clean.
+6. **CHARGEN-03 mesh / clip / collapse**: ARCH CHANGES.
+   1. `meshCharacter` culls faces against *any* filled neighbour, including one of a different bone. This leaves rigid-skinned joints open: when a part rotates (shoulder, hip, neck, jaw in game; every joint in the exported `.glb`/`.fbx`), you see into the hollow mesh. Cull only against neighbours of the **same bone**, so the bone-boundary caps are emitted. Update the "no interior faces across bones" test to "no interior faces within a bone; a cap pair exists at each bone boundary". Expect a small rise in quads, still well within <= 6000.
+   2. `collapseRig(rigged, partMap)` takes `[{name,bones,parent,compose}]`, while the kit JSON and the 38.29 table use `{part:[bones]}`. Make the **array** form canonical (it carries parent and compose). The kit carries it (CHARGEN-01 item 1), and `extras.kestrel.partMap` writes the same shape. Do not accept two shapes.
+
+   Notes:
+   - sampleClip (current pc-b) is at ~0 B/call with a robust measurement, so the "16 B/call" note is closed. It is sign-continuous through the per-clip table and stateless.
+   - `quatToEuler` gimbal branch and the Euler unwrap in `collapseRig` look correct.
+   - Not blocking: with a loop, a first key at `t > 0` extrapolates. The clip validation in CHARGEN-02 item 2 (`keys[0].t === 0`) covers it.
+7. **CHARGEN-01 kit generator + human.charkit.json**: ARCH CHANGES.
+   1. Emit `partMap` in the canonical array form (`HUMANOID_PART_MAP` shape, with `parent` and `compose:2` on body and head), and update `tools/chargen-kit.test.mjs`. Add one test that runs the engine `validateKit` + `composeCharacter` + `meshCharacter` + `collapseRig` on the real kit, so the designer check (`checkKit`) and the engine validator cannot drift. Today the engine path is not run on the shipped JSON in this test.
+
+   Notes:
+   - The data shape otherwise matches kit.js. The extra `kind/schema/name/axes/handTint/defaults` fields are fine; record them in the kit.js header comment.
+   - The generator lives in `tools/` (design/ stays classic scripts). The JSON equals the generator, and the m_avg budget is well met: 1927 quads, 12 materials.
+   - `clips` is `{}`; that is acceptable for v0.
+8. **Designer question: arm bones in `STRETCH_BONES`?** Decision: **yes, for the upper and lower arms only.**
+   - Add `LeftUpperArm`, `RightUpperArm`, `LeftLowerArm`, `RightLowerArm`. `*Hand` and `*Shoulder` stay forbidden.
+   - Reason: a waist row in the arms-down rest pose always crosses the arms. Duplicating it lengthens the arm by one cell, which is anatomically right for a taller body. `heightBase` already remaps every box, joint and anchor generically (`hand_l/r` mounts move with it).
+   - Extra rule (validateKit + the designer `checkKit`): a stretch row that crosses one arm must cross the matching bone of the other arm (symmetry). It must never cross a Hand box.
+   - The engine change is a one-line constant plus the symmetry check and a test (fold it into CHARGEN-02 item 1/2). The designer then adds waist rows to `stretchRows`, so height is spread over shin and waist rather than shins only.
+   - Main session: change "(shin and waist rows only)" in 38.29 item 4 to "(shin and waist rows; waist rows may cross upper/lower arms, symmetric, never hands)".
+
+**Summary:**
+- ARCH OK: KPKG-04 (-> po-review).
+- ARCH CHANGES, all small:
+  - KPKG-01: `:` in paths.
+  - KPKG-02: refuse code entries package-wide.
+  - KPKG-03: pack test < 5 s.
+  - CHARGEN-02: overlay slot, `partMap` validation, arm stretch bones.
+  - CHARGEN-03: bone-boundary caps, one `partMap` shape.
+  - CHARGEN-01: array `partMap` + an engine-path test on the real kit.
+- No security blockers beyond KPKG-01/1 and KPKG-02/1. Determinism holds; check-deps is clean.
