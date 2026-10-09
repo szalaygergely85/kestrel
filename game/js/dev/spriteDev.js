@@ -5,7 +5,7 @@
 // rule 3). Used by game/js/dev/spritesPage.js today; main.js wiring is a
 // 4-line call surface (see docs/backlog.md US-030c programmer notes):
 //
-//   const sprites = createSpriteSystem({ assets, rt, gpuPipeline });     // after the pipeline gate
+//   const sprites = createSpriteSystem({ assets, rt, wgPipeline });   // after the pipeline gate
 //   if (params.get('sprite') === '1') spawnTestSprites(world, playerHandle.data.transform);
 //   sprites.render(fb, engine.world, cam);   // in render(), right after renderWorld(...), before rt.present()
 //   extra += sprites.overlayLine();          // F3 overlay (optional)
@@ -82,9 +82,10 @@ export function placeCompareSprites(pose, pool) {
  * `?spritecompare=1`: sprite parity over the bench poses. `renderCpu`/
  * `renderGpu` come from the page (they know the pipeline/path wiring).
  */
-export function runSpriteCompareMode({ sprites, fb, poses, renderCpu, renderGpu, overlay, rendererString }) {
-  const { rows, ok } = runSpriteCompare({ pool: sprites.pool, fb, poses, placeSprites: placeCompareSprites, light: ambientL, renderCpu, renderGpu });
-  let text = `?spritecompare=1  GpuSpritePass: ${rendererString}  grid: ${fb.rt.cols}x${fb.rt.rows}\n`;
+export async function runSpriteCompareMode({ sprites, fb, poses, renderCpu, renderGpu, overlay, rendererString, frameGate = true }) {
+  const { rows, ok } = await runSpriteCompare({ pool: sprites.pool, fb, poses, placeSprites: placeCompareSprites, light: ambientL, renderCpu, renderGpu, frameGate });
+  const spritesOk = rows.every((r) => r.spritesOk);
+  let text = `?spritecompare=1  WgSpritesPass: ${rendererString}  grid: ${fb.rt.cols}x${fb.rt.rows}\n`;
   for (const r of rows) {
     text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n` +
       `  frame: glyph ${r.glyphMatchPct.toFixed(2)}%  fgOut ${r.fgOutside}  bgOut ${r.bgOutside}  fgMax ${r.fgMax} bgMax ${r.bgMax}  poisonedSurvivors ${r.poisonedSurvivors}\n` +
@@ -92,12 +93,13 @@ export function runSpriteCompareMode({ sprites, fb, poses, renderCpu, renderGpu,
     console.log(`[spritecompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: spriteCells=${r.spriteCells} glyphMismatch=${r.spriteGlyphMismatch} fgOut=${r.spriteFgOutside} frameGlyph=${r.glyphMatchPct.toFixed(2)}% poisoned=${r.poisonedSurvivors}`);
   }
   text += `\n${ok ? 'ALL PASS' : 'FAILURES ABOVE'}`;
+  console.log(`[spritecompare] sprite cells ${spritesOk ? 'ALL PASS' : 'FAILURES'}`);
   console.log(`[spritecompare] ${ok ? 'ALL PASS' : 'FAILURES ABOVE'}`);
   overlay.visible = true;
   overlay.el.style.display = 'block';
   overlay.el.style.font = '13px "Courier New", monospace';
   overlay.el.style.whiteSpace = 'pre';
   overlay.el.textContent = text;
-  window.__spriteCompare = { rows, ok };
+  window.__spriteCompare = { rows, ok, spritesOk };
   return { rows, ok };
 }
