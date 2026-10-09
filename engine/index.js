@@ -154,6 +154,7 @@ export { Entity } from './entities/Entity.js';
 export { Camera } from './entities/Camera.js';
 export { EntityHandle } from './entities/EntityHandle.js';
 export { stepAnimations, animComponent } from './entities/animation.js';
+export { createAnimState, blend as animBlend, BLEND_MS as ANIM_BLEND_MS, PRIORITY as ANIM_PRIORITY } from './entities/animState.js';
 export { tintAt, setTint, sampleTint } from './entities/tintEnvelope.js';
 export { Player } from './entities/Player.js';
 export { createEyeFeel, updateEyeFeel } from './entities/EyeFeel.js';
@@ -211,6 +212,7 @@ export { rayTerrain, pickNearest, selectInRect } from './render/pick.js';
 // ---- RE-08/RE-09 flow-field pathfinding + local avoidance (docs/architecture.md 28.2) --
 export { createFlowField, FlowCache } from './nav/flowField.js';
 export { createSteer } from './nav/steer.js';
+export { perceive, NOISE_SPRINT, NOISE_SWING } from './nav/perceive.js';
 
 // ---- RE-11 fog-of-war visibility grid (docs/architecture.md 28.3) ---------
 export { Visibility } from './world/Visibility.js';
