@@ -4518,14 +4518,6 @@ B2: `waterComposite.wgsl.js`, `waterLook.js` (`packRipples`, `rippleStrength`, r
 
 **Size: ~0.75 d, one step.** The ring, pack, twin, WGSL and tests are one topic. Split into 13a (ring/API + pack) and 13b (composite WGSL + twin) only if the programmer runs over.
 
-### 38.15 S8-B2-17 / S8-B2-18 GPU particles: DROP (architect, 2026-10-09)
-
-**Measured.** `node engine/fx/particles.test.js` (2026-10-09): 2048 live = **0.105 ms/step**, 500 live = 0.025 ms (bars 0.15 / 0.05). One step per frame at the cap is ~1.3 % of the 8 ms JS budget; `particleLayer.js` uploads two small layer textures.
-
-**Why not a GPU sim.** (1) It saves <= 0.1 ms. (2) The oracle is the Float64 CPU sim (`engine/fx/particles.js`, rule 15 determinism, `hashInto` checkpoints); an f32 WGSL integrator with drag, ground bounce and wind cannot meet "1e-5 after 300 steps", so the test would be weakened or the twin forked. (3) Spawning, the emitter table, the RNG stream and wind `sampleInto` stay on the CPU, so state would be split across CPU and GPU (not serialisable; readback needed for any gameplay use). (4) S8-B2-18's GPU splat needs storage textures + depth atomics that `GpuDevice` does not have (38.3), plus a B1 sprites-pass change. (5) The 2048 cap is by design (32.1); raising it is a look question, not a perf one.
-
-**Verdict.** S8-B2-17 and S8-B2-18 **DROP**. Revisit only if a profiled scene shows particle step + layer upload > 0.3 ms on the 4060 (then first: Float32 SoA and fewer branches on the CPU, not a GPU port). No replacement story; the perf bar in `particles.test.js` is the guard.
-
 ### 38.16 S8-B2-20 horizon AO light-pass term (architect, 2026-10-09)
 
 **Decision: decoupled from S8-B2-04.** Vertex AO (B2-04) has no G-buffer channel to land in (kind-9/face-7 cells use GA.w for the packed normal), so it needs its own format note. Horizon AO here is **screen-space only** (DEPTH + GI, both already bound to the light pass), so it ships first; B2-04 later only adds a multiplier. Dependency on B2-04 removed.
