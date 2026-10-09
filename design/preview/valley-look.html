@@ -1,0 +1,1127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - EP-WORLD-VALLEY slice 0: valley layout + biome look sheets (PROPOSAL)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:17px; margin:34px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  h3 { font-size:14px; margin:14px 0 4px; color:#e8c27a; }
+  .note { color:#8a8778; font-size:12px; max-width:1300px; }
+  .fail { color:#ff3b3b; } .warn { color:#ffb04a; } .pass { color:#6fdc7a; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; max-width:100%; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:44px; display:inline-block; }
+  .cap { font:12px Consolas, monospace; color:#a9a390; margin:2px 0 8px; }
+  table { border-collapse:collapse; font:12px Consolas, monospace; margin:4px 0 10px; }
+  td, th { border:1px solid #22252e; padding:3px 8px; text-align:left; vertical-align:top; }
+  th { color:#ffc23c; background:#10121a; }
+  .sw { display:inline-block; width:26px; height:12px; border:1px solid #333; vertical-align:middle; margin-right:4px; }
+  code { color:#e8c27a; }
+  pre.json { background:#0b0c12; border:1px solid #22252e; padding:8px; font:11px/1.35 Consolas, monospace; color:#cfe3c0;
+             max-height:240px; overflow:auto; white-space:pre; }
+  button { background:#1a1d28; color:#d8d2c0; border:1px solid #33384a; border-radius:3px; padding:3px 9px; cursor:pointer; }
+  button.copy { background:#1d3a22; color:#8fe09a; border-color:#2e5a35; }
+  ul { margin:4px 0 8px 20px; padding:0; max-width:1300px; } li { margin:2px 0; }
+  .chk div { font:12px Consolas, monospace; }
+</style>
+</head>
+<body>
+<h1>Kestrel : EP-WORLD-VALLEY slice 0 : the closed valley (layout sheet + biome look sheets)</h1>
+<div class="note">
+  <b>Proposal for the owner, nothing is placed in the world.</b> D-052 / <code>docs/epics/ep-world.md</code>. Part 1 is a top-down
+  layout sheet (120 x 80 cells, 1 cell = 16 m east-west x 24 m north-south, so the sheet covers the 2048 m world square of
+  <code>overworld_far</code>: x = east, y = south, same origin; the big river is the existing recipe river
+  <code>x_r(y)</code>, the tower sits at its real (1496, 1024)). Part 2 is one look sheet per biome, hand-composed
+  coloured-letter mockups at the in-game cell grid (240 x 90 default), painted by this page with palette keys
+  (existing + the proposed list below, not in <code>palette.js</code>). Environment = Quaternius-style meshes + scatter
+  tables (D-052 item 1), so each sheet lists mesh + scatter ingredients, not voxel models. Part 3 = self-check.
+  Opens from file:// (classic scripts). <b>palette.js, levels and engine are unchanged.</b>
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>map view <select id="mapMode"><option value="look" selected>look (glyph + colour)</option><option value="levels">level bands</option><option value="keys">zone keys (raw data)</option></select></label>
+  <label><input type="checkbox" id="labels" checked> zone labels</label>
+  <label>look grid <select id="grid"><option value="160x60">160 x 60</option><option value="240x90" selected>240 x 90</option></select></label>
+  <label>time <select id="tod"><option value="day" selected>afternoon</option><option value="dusk">dusk (fireflies)</option></select></label>
+  <label>sun from <input type="range" id="sunAz" min="-80" max="80" step="1" value="-35"><span class="val" id="sunAzV">-35</span></label>
+  <label>sun elevation <input type="range" id="sunEl" min="8" max="75" step="1" value="40"><span class="val" id="sunElV">40</span></label>
+  <label>wind <input type="range" id="wind" min="0" max="100" step="1" value="45"><span class="val" id="windV">45</span></label>
+  <label><input type="checkbox" id="anim" checked> animate (particles, wind, water)</label>
+  <span class="note" id="perf"></span>
+</div>
+
+<!-- ======================= PART 1: LAYOUT ======================= -->
+<h2>1. Valley layout (top-down, north up)</h2>
+<div class="note">
+  Borders: <b>north + west = mountains</b> (unclimbable above the slope limit, collider-backed), <b>south = sea</b> (shore + surf,
+  no swimming out), <b>east = the Ferrum river then the rock wall</b>. The <b>big river</b> runs north-south from a mountain
+  waterfall to the sea and splits the <b>near side (east, levels 1-5)</b> from the <b>far side (west, levels 5-10)</b>.
+  <b>The river is not a hard wall</b> (owner 2026-10-09): every river cell is wadeable but slow (proposal: 40 % walk speed,
+  no attacks while wading, current pushes south), with two shallow fords (<code>F</code>, 70 % speed); the far side is held by
+  stronger beasts, the gate is gear tier. <b>Bridge A</b> (south, open) leads to the open fields; <b>bridge B</b> (north,
+  broken, repaired by the level-5 quest = manager lean, owner Q1) leads straight to the foothills.
+</div>
+<canvas id="map"></canvas>
+<div class="cap" id="mapCap"></div>
+<h3>Legend (zone key = one char per cell in the copied layout)</h3>
+<div id="legend"></div>
+<h3>Copy layout <button class="copy" id="copyMap">copy layout JSON</button> <span class="note" id="cpMap"></span></h3>
+<pre class="json" id="jsonMap"></pre>
+
+<!-- ======================= PART 2: LOOKS ======================= -->
+<h2>2. Biome look sheets (mesh + scatter ingredients)</h2>
+<div class="note">
+  Each sheet is a mockup at the selected scene grid: sky + haze from the ART-03/04 look records (<code>hazeWarm</code>,
+  <code>skyCyan*</code>; dusk = <code>skyEve*</code> / <code>hazeEvening</code>), meshes drawn as their glyph look (lit side /
+  shade side follow the sun slider), ground = terrain type + scatter. Particles are the ambient ideas (one particle = one cell,
+  style-guide rule). The table under each sheet is the <b>scatter recipe</b> a content story turns into a QUAT-GROUND-01 scatter
+  table: ingredient, mesh family (Quaternius-style names, indicative: the owner sources the pack), density, clusters, scale,
+  tint keys, rule, glyph look near / mid / far.
+</div>
+<div id="looks"></div>
+<h3>Proposed palette keys (NOT added to palette.js)</h3>
+<div id="newKeys"></div>
+<h3>Copy look values <button class="copy" id="copyLooks">copy scatter + keys JSON</button> <span class="note" id="cpLooks"></span></h3>
+<pre class="json" id="jsonLooks"></pre>
+<div class="note"><b>Engine asks (for the PO / architect, not part of this slice):</b> (1) a <b>wade</b> surface flag on river
+  water (speed scale + current push) instead of a collider wall; (2) per-biome <b>ambient particle emitters</b> around the camera
+  (butterflies, pollen, fireflies at dusk, leaf fall, dust, spray) driven by the biome map layer (slice 3); (3) <b>wind waves</b>
+  on tall grass = a world-space phase that brightens + leans blade glyphs (same ask as ART-05 blade sway); (4) <b>light shafts</b>
+  in the forest = an additive screen overlay masked by canopy gaps (optional, can be faked with particles); (5) fireflies are
+  emissive (<code>fireflyGlow</code>, <code>e: true</code>), the only emissive scenery particle besides fire.</div>
+
+<!-- ======================= PART 3: CHECKS ======================= -->
+<h2>3. Self-check</h2>
+<div id="checks" class="chk"></div>
+
+<script src="../palette.js"></script>
+<script>
+(function () {
+'use strict';
+try {
+var PAL = (window.ASSETS && window.ASSETS.palette) || { colors: {} }, C = PAL.colors || {};
+
+// ===========================================================================
+// 0. PROPOSED KEYS  (name: [hex, group, note, from])
+// ===========================================================================
+var NEWKEYS = {
+  // reused from the ART-02 proposal (art-looks.html), still not in palette.js
+  meadowLight: ['#b8ec5c', 'meadow', 'sunlit grass tips', 'ART-02'], meadow: ['#76c83a', 'meadow', 'start meadow green', 'ART-02'],
+  meadowDark: ['#3c8c2c', 'meadow', 'grass in shade', 'ART-02'], fern: ['#4ea83a', 'forest', 'ferns, glade stems', 'ART-02'],
+  petalViolet: ['#8f78e6', 'glade', 'violet flowers (mana blue reserved)', 'ART-02'], petalOrange: ['#ff9a40', 'glade', 'orange flowers, butterflies', 'ART-02'],
+  mossRockLight: ['#bcc5a6', 'rock', 'boulder lit facets', 'ART-02'], mossRock: ['#8f9a86', 'rock', 'boulder body', 'ART-02'],
+  mossRockDark: ['#56625a', 'rock', 'boulder foot', 'ART-02'], mossCap: ['#88be46', 'rock', 'moss on up-facing rock', 'ART-02'],
+  pebbleLight: ['#d6d6ce', 'shore', 'pebbles lit', 'ART-02'], pebble: ['#a4a49e', 'shore', 'pebbles', 'ART-02'],
+  dirtLight: ['#e4b67c', 'path', 'worn path centre', 'ART-02'], dirt: ['#c68c54', 'path', 'dirt path', 'ART-02'], dirtDark: ['#8e5e38', 'path', 'path edges', 'ART-02'],
+  // new for the valley
+  pineLight: ['#6fa86a', 'forest', 'pine needle tips, lit', 'new'], pine: ['#2f6a4a', 'forest', 'pine body (blue-green, apart from oak leaf)', 'new'],
+  pineDark: ['#173a2e', 'forest', 'pine underside', 'new'],
+  needleBedLight: ['#b07a4e', 'forest', 'sun fleck on needles', 'new'], needleBed: ['#8a5a3a', 'forest', 'needle floor', 'new'], needleBedDark: ['#4e3424', 'forest', 'floor in deep shade', 'new'],
+  sandLight: ['#f2e2b0', 'shore', 'dry sand lit', 'new'], sand: ['#d8c088', 'shore', 'dry sand', 'new'], sandWet: ['#9c8a62', 'shore', 'wet sand, river silt', 'new'],
+  seaLight: ['#6ec4e0', 'water', 'sea glint', 'new'], sea: ['#2a78b0', 'water', 'sea body', 'new'], seaDeep: ['#164a7a', 'water', 'deep sea / far sea', 'new'],
+  surf: ['#eaf6f8', 'water', 'surf + spray (not pure white)', 'new'], riverShallow: ['#8cc4d8', 'water', 'fords, wade shallows', 'new'],
+  reedLight: ['#c8d27a', 'shore', 'reed tips lit', 'new'], reed: ['#9cae58', 'shore', 'reeds, dune grass', 'new'], reedDark: ['#5e6e34', 'shore', 'reed base', 'new'],
+  wheatGreen: ['#a8b850', 'fields', 'green-gold tall grass (with straw*)', 'new'],
+  screeLight: ['#b4a894', 'foothills', 'scree lit', 'new'], scree: ['#857a6a', 'foothills', 'scree', 'new'], screeDark: ['#4e463e', 'foothills', 'scree shade', 'new'],
+  snow: ['#eef4f8', 'mountain', 'peaks', 'new'], snowShade: ['#a8b8cc', 'mountain', 'snow in shade', 'new'],
+  mountainHazeLight: ['#a4b4cc', 'mountain', 'far range lit', 'new'], mountainHaze: ['#7d90ae', 'mountain', 'far range body', 'new'], mountainHazeDark: ['#4a5874', 'mountain', 'far range shade', 'new'],
+  pollen: ['#fff2a8', 'ambient', 'pollen specks (not alert yellow)', 'new'], fireflyGlow: ['#d6ff6a', 'ambient', 'fireflies at dusk, EMISSIVE', 'new']
+};
+var OVR = {};
+Object.keys(NEWKEYS).forEach(function (k) { OVR[k] = NEWKEYS[k][0]; });
+var RESERVED = ['danger', 'heroGreen', 'aether', 'aetherCore', 'aetherLight', 'aetherMid', 'aetherDim', 'magic', 'mana', 'manaLight', 'manaCore', 'vital', 'gold', 'alert'];
+
+// ===========================================================================
+// 1. MATH + COLOUR
+// ===========================================================================
+function clamp(x, a, b) { return x < a ? a : x > b ? b : x; }
+function hash2(x, y) {
+  var h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+function n1(x, s) { var i = Math.floor(x), f = x - i, a = hash2(i, s * 77), b = hash2(i + 1, s * 77); f = f * f * (3 - 2 * f); return a + (b - a) * f; }
+function vn(x, y, s) {
+  var ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  var a = hash2(ix + s * 131, iy), b = hash2(ix + 1 + s * 131, iy), c = hash2(ix + s * 131, iy + 1), d = hash2(ix + 1 + s * 131, iy + 1);
+  var sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  return a + (b - a) * sx + (c - a) * sy + (d - b - c + a) * sx * sy;
+}
+function fbm(x, y, s) { return vn(x, y, s) * 0.6 + vn(x * 2.1, y * 2.1, s + 1) * 0.3 + vn(x * 4.3, y * 4.3, s + 2) * 0.1; }
+function mulberry32(a) { return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; var t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function hex2rgb(h) { var n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function css(c) { return 'rgb(' + (clamp(c[0], 0, 255) | 0) + ',' + (clamp(c[1], 0, 255) | 0) + ',' + (clamp(c[2], 0, 255) | 0) + ')'; }
+var MISSING = {}, CC = {};
+function hexOf(k) { var h = C[k] || OVR[k]; if (!h) { MISSING[k] = 1; return '#ff00ff'; } return h; }
+function rgbOf(k) { return CC[k] || (CC[k] = hex2rgb(hexOf(k))); }
+function mix(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+function mul(a, k) { return [a[0] * k, a[1] * k, a[2] * k]; }
+function isAscii(s) { for (var i = 0; i < s.length; i++) { var c = s.charCodeAt(i); if (c < 32 || c > 126) return false; } return true; }
+
+// ===========================================================================
+// 2. LAYOUT  (zone key per cell)
+// ===========================================================================
+var MW = 120, MH = 80, CELLX = 16, CELLY = 24, OX = 64, OY = 64;
+var ZONES = {
+  M: { name: 'mountains (border)', lv: null, border: true, note: 'steep, unclimbable above the slope limit, collider-backed; snow on the high rows' },
+  W: { name: 'rock wall (east border)', lv: null, border: true, note: 'sheer cliff behind the Ferrum river, no top reachable' },
+  S: { name: 'sea (south border)', lv: null, border: true, note: 'deep water past the surf: a soft current turns the player back (no swimming out)' },
+  s: { name: 'surf line', lv: null, border: true, note: 'waves + spray, wadeable to knee depth' },
+  b: { name: 'beach / sea shore', lv: 'side', note: 'sand, pebbles, driftwood, rocks' },
+  R: { name: 'big river', lv: 'side', water: true, note: 'WADEABLE but slow (proposal 40 % speed, current pushes south); not swimmable fast' },
+  F: { name: 'ford (shallows)', lv: 'side', water: true, note: 'knee-deep shallows, 70 % speed: the honest risky crossing' },
+  r: { name: 'Ferrum river (east)', lv: null, border: true, water: true, note: 'fast, cold; wall behind it, nothing to reach' },
+  k: { name: 'river bank', lv: 'side', note: 'reeds, pebbles, wet silt' },
+  A: { name: 'bridge A (open)', lv: 'side', bridge: 'A', note: 'stone + timber bridge, open from the start' },
+  B: { name: 'bridge B (broken)', lv: 'side', bridge: 'B', note: 'middle span collapsed, repaired by the level-5 quest (owner Q1)' },
+  g: { name: 'start meadow', lv: [1, 2], note: 'turf, clover, short grass, pebbles; boar (weak)' },
+  T: { name: 'tower + breach', lv: [1, 1], note: 'the existing tower; the breach looks west over the valley' },
+  w: { name: 'waystone', lv: [1, 1], note: 'the existing waystone by the path' },
+  p: { name: 'path', lv: 'side', note: 'dirt path tower -> bridges, far-side track' },
+  h: { name: 'hillside', lv: [2, 3], note: 'turf + rock patches, dead trees, ruins; boar, wolf pairs' },
+  f: { name: 'pine / oak forest', lv: [3, 5], note: 'pines north, oaks south, mixed in the middle; wolves, boar' },
+  l: { name: 'flower glade', lv: [3, 5], note: 'hand-placed showcase first; none / rare beasts' },
+  n: { name: 'ruins', lv: 'side', note: 'broken walls (mesh)' },
+  o: { name: 'open fields', lv: [5, 7], note: 'tall grass, wheat-like cover, lone trees; stronger pack / bull-type' },
+  t: { name: 'rocky foothills', lv: [7, 10], note: 'scree, big rocks, sparse grass, cave mouths later; strongest beasts' }
+};
+var WATERISH = { R: 1, F: 1, r: 1, S: 1, s: 1, A: 1, B: 1 };
+function rcol(row) { var wy = OY + row * CELLY + 12; return (1120 + 110 * Math.sin(wy / 260) + 45 * Math.sin(wy / 95 + 1.3) - OX) / CELLX; }
+function northM(c) { return 6 + 3 * n1(c * 0.15, 1); }
+function westM(y) { return 6 + 3 * n1(y * 0.17, 2); }
+function seaY(c) { return 70 + 2.2 * n1(c * 0.12, 3); }
+function wallX(y) { return 111 + 2 * n1(y * 0.2, 4); }
+var BRIDGE_A_ROW = 56, BRIDGE_B_ROW = 24, FORD_ROWS = [14, 66];
+var TOWER = { c: 90, r: 40 }, WAYSTONE = { c: 84, r: 45 };
+var GLADES = [{ c: 75, r: 34, rx: 3.2, ry: 2.2 }, { c: 75, r: 58, rx: 3.2, ry: 2.2 }, { c: 70, r: 43, rx: 2.8, ry: 2.0 }];
+var RUINS = [[100, 20], [101, 20], [100, 21], [36, 49], [37, 49], [37, 50], [30, 18], [31, 18]];
+
+function baseZone(c, y) {
+  var rc = rcol(y), d = c - rc, sy = seaY(c), wx = wallX(y);
+  if (y <= 1 || y < northM(c)) return 'M';
+  if (c <= 1 || c < westM(y)) return 'M';
+  if (c >= wx || c === MW - 1) return 'W';
+  if (y >= sy || y === MH - 1) return y < sy + 1 ? 's' : 'S';
+  if (c >= wx - 3) return 'r';
+  if (c >= wx - 4) return 'k';
+  var hw = 1.6 + (y > sy - 6 ? (y - (sy - 6)) * 0.35 : 0);
+  if (Math.abs(d) <= hw) {
+    if (y === BRIDGE_A_ROW) return 'A';
+    if (y === BRIDGE_B_ROW) return 'B';
+    if (FORD_ROWS.indexOf(y) >= 0) return 'F';
+    return 'R';
+  }
+  if (Math.abs(d) <= hw + 1) return (y === BRIDGE_A_ROW) ? 'A' : (y === BRIDGE_B_ROW) ? 'B' : 'k';
+  if (y >= sy - 2) return 'b';
+  if (d > 0) {   // near side
+    if (Math.abs(c - TOWER.c) <= 1 && Math.abs(y - TOWER.r) <= 1) return 'T';
+    if (c === WAYSTONE.c && y === WAYSTONE.r) return 'w';
+    var i;
+    for (i = 0; i < GLADES.length; i++) { var G = GLADES[i], ex = (c - G.c) / G.rx, ey = (y - G.r) / G.ry;
+      if (ex * ex + ey * ey + (n1(c * 0.9 + y, 9) - 0.5) * 0.5 < 1) return 'l'; }
+    var mx = (c - TOWER.c) / 11, my = (y - (TOWER.r + 1)) / 7;
+    if (mx * mx + my * my + (n1(c * 0.3 + y * 0.7, 8) - 0.5) * 0.4 < 1) return 'g';
+    var forestEdge = 85 - 5 * n1(y * 0.13, 7);
+    if (c < forestEdge && y >= 12 + 3 * n1(c * 0.2, 6) && y <= 63 + 2 * n1(c * 0.2, 5)) return 'f';
+    return y < 34 ? 'h' : 'g';
+  }
+  // far side
+  if (y < 30 + 4 * n1(c * 0.1, 5) || c < 20 + 3 * n1(y * 0.1, 6)) return 't';
+  return 'o';
+}
+function line(a, b, fn) { var n = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])), i;
+  for (i = 0; i <= n; i++) fn(Math.round(a[0] + (b[0] - a[0]) * i / n), Math.round(a[1] + (b[1] - a[1]) * i / n)); }
+function buildLayout() {
+  var Z = [], c, y;
+  for (y = 0; y < MH; y++) { Z.push([]); for (c = 0; c < MW; c++) Z[y].push(baseZone(c, y)); }
+  var PATHABLE = { g: 1, h: 1, f: 1, o: 1, t: 1, k: 1, b: 1, l: 0 };
+  function pave(c2, y2) { var z = Z[y2] && Z[y2][c2]; if (z && PATHABLE[z]) Z[y2][c2] = 'p'; }
+  function walk(pts) { for (var i = 0; i < pts.length - 1; i++) line(pts[i], pts[i + 1], pave); }
+  var aE = Math.ceil(rcol(BRIDGE_A_ROW) + 2.7), aW = Math.floor(rcol(BRIDGE_A_ROW) - 2.7);
+  var bE = Math.ceil(rcol(BRIDGE_B_ROW) + 2.7), bW = Math.floor(rcol(BRIDGE_B_ROW) - 2.7);
+  walk([[TOWER.c - 2, TOWER.r], [WAYSTONE.c, WAYSTONE.r - 1], [76, 49], [aE + 3, BRIDGE_A_ROW - 1], [aE, BRIDGE_A_ROW]]);
+  walk([[TOWER.c, TOWER.r - 2], [88, 33], [80, 27], [bE + 3, BRIDGE_B_ROW + 1], [bE, BRIDGE_B_ROW]]);
+  walk([[aW, BRIDGE_A_ROW], [aW - 6, BRIDGE_A_ROW - 2], [42, 50], [28, 44], [20, 38]]);
+  walk([[bW, BRIDGE_B_ROW], [bW - 8, 22], [34, 19]]);
+  RUINS.forEach(function (p) { var z = Z[p[1]][p[0]]; if (z === 'h' || z === 'o' || z === 't' || z === 'p') Z[p[1]][p[0]] = 'n'; });
+  return Z;
+}
+var LAYOUT = buildLayout();
+function sideOf(c, y) { return c > rcol(y) ? 'near' : 'far'; }
+function levelOf(z, c, y) {
+  var L = ZONES[z].lv; if (L === null) return null;
+  if (L === 'side') return sideOf(c, y) === 'near' ? [1, 5] : [5, 10];
+  return L;
+}
+
+// ---- map painting ----------------------------------------------------------
+var MAPG = {
+  M: [['^', 'A', 'M', '^', '/', '\\'], ['stoneMid', 'screeDark', 'stoneDark', 'scree']],
+  W: [['#', '%', 'H', '#'], ['stoneDeep', 'stoneDark', 'stoneCool']],
+  S: [['~', '-', '~', ' '], ['sea', 'seaDeep', 'sea']], s: [['~', '=', '~'], ['surf', 'seaLight']],
+  b: [['.', ':', ',', '.', 'o'], ['sand', 'sandLight', 'sandWet', 'pebble']],
+  R: [['~', '-', '~', '='], ['river', 'riverLight', 'river']], F: [['-', '.', '~'], ['riverShallow', 'riverLight']],
+  r: [['~', '-', '~'], ['river', 'riverLight']], k: [[',', '"', '.', '|', 'o'], ['reed', 'pebble', 'sandWet', 'reedDark']],
+  A: [['='], ['woodLight', 'stoneLight']], B: [['='], ['wood']],
+  g: [['"', ',', "'", '"', '.'], ['meadow', 'meadowLight', 'turf', 'meadowDark']],
+  h: [["'", '`', ',', 'o', '.'], ['turfDark', 'turf', 'mossRock', 'turfLight']],
+  f: [['A', '^', '@', '&'], ['pine', 'pineDark', 'leaf', 'leafDark']],
+  l: [['*', 'o', '@', '"', '*'], ['petalYellow', 'petalWhite', 'petalPink', 'petalViolet', 'petalOrange', 'meadow']],
+  o: [['"', ';', "'", '"', ','], ['straw', 'strawLight', 'wheatGreen', 'meadowLight']],
+  t: [['o', 'O', '%', '.', ','], ['scree', 'screeLight', 'screeDark', 'turfDark']],
+  p: [[':', '.', ':'], ['dirt', 'dirtLight', 'dirtDark']],
+  T: [['#'], ['stoneLight']], w: [['I'], ['wayStoneLight']], n: [['n', '#', 'n'], ['stoneWarm', 'stoneMid']]
+};
+function mapCell(z, c, y) {
+  var h = hash2(c * 7 + 3, y * 13 + 1), h2 = hash2(c * 3 + 9, y * 5 + 7), G = MAPG[z], g = G[0][Math.floor(h * G[0].length)], k = G[1][Math.floor(h2 * G[1].length)];
+  var bgK = 0.22;
+  if (z === 'M') { var top = northM(c), lft = westM(y), depth = Math.min(top - y, lft - c);
+    if (depth > 2.5 || y <= 1 || c <= 1) { k = h2 < 0.6 ? 'snow' : 'snowShade'; } }
+  if (z === 'f') { var oak = n1(y * 0.12, 11) * 0.6 + (y - 12) / 52 * 0.6 > 0.62; g = oak ? (h < 0.5 ? '@' : '&') : (h < 0.6 ? 'A' : '^'); k = oak ? (h2 < 0.25 ? 'leafLight' : h2 < 0.7 ? 'leaf' : 'leafDark') : (h2 < 0.25 ? 'pineLight' : h2 < 0.7 ? 'pine' : 'pineDark'); }
+  if (z === 'g' && h < 0.06) { g = '*'; k = h2 < 0.5 ? 'petalYellow' : 'petalWhite'; }
+  if (z === 'o' && h < 0.02) { g = '@'; k = 'leaf'; }
+  if (z === 'h' && h < 0.03) { g = 'Y'; k = 'woodDark'; }
+  if (z === 'B') { var d = Math.abs(c - rcol(y)); if (d < 1) { g = h < 0.5 ? '/' : '\\'; k = 'woodDark'; } }
+  if (z === 'T') { g = (c === TOWER.c && y === TOWER.r) ? 'T' : (c === TOWER.c - 1 && y === TOWER.r) ? '<' : '#'; k = (g === '<') ? 'lantern' : 'stoneLight'; }
+  if (z === 'S') bgK = 0.5; if (z === 'R' || z === 'r' || z === 'F') bgK = 0.42; if (z === 's') bgK = 0.35;
+  var fg = rgbOf(k), bg = mul(z === 'B' || z === 'A' ? rgbOf('river') : fg, bgK);
+  if (z === 'B' || z === 'A') bg = mul(rgbOf('river'), 0.4);
+  return { g: g, fg: fg, bg: bg, k: k };
+}
+var BAND_BG = { '1-1': '#1d3a22', '1-2': '#1d3a22', '2-3': '#2c3a1a', '3-5': '#3a3518', '1-5': '#24301c', '5-7': '#3e2a16', '7-10': '#3e1c1c', '5-10': '#33221a' };
+function drawMap() {
+  var cv = document.getElementById('map'), CWm = 9, CHm = 13, mode = document.getElementById('mapMode').value;
+  cv.width = MW * CWm; cv.height = MH * CHm;
+  var x = cv.getContext('2d'), c, y;
+  x.font = '12px Consolas, "Courier New", monospace'; x.textBaseline = 'top';
+  for (y = 0; y < MH; y++) for (c = 0; c < MW; c++) {
+    var z = LAYOUT[y][c], m = mapCell(z, c, y), bg = css(m.bg), fg = css(m.fg), g = m.g;
+    if (mode === 'levels') {
+      var L = levelOf(z, c, y);
+      bg = L ? BAND_BG[L[0] + '-' + L[1]] || '#222' : (ZONES[z].water ? '#10203a' : '#15161c');
+      fg = css(mix(m.fg, [255, 255, 255], 0.1));
+    } else if (mode === 'keys') { g = z; bg = '#0b0c12'; }
+    x.fillStyle = bg; x.fillRect(c * CWm, y * CHm, CWm, CHm);
+    if (g !== ' ') { x.fillStyle = fg; x.fillText(g, c * CWm + 1, y * CHm); }
+  }
+  if (document.getElementById('labels').checked) {
+    var LBL = [
+      ['NORTH MOUNTAINS', 52, 2], ['WEST MOUNTAINS', 1, 40, true], ['SEA', 30, 75], ['ROCK WALL', 109, 34, true],
+      ['FERRUM RIVER ->', 96, 66], ['BIG RIVER', 63, 36], ['START MEADOW 1-2', 84, 47], ['TOWER', 92, 39], ['WAYSTONE', 85, 45],
+      ['HILLSIDE 2-3', 92, 20], ['FOREST 3-5', 68, 20], ['GLADE', 73, 31], ['GLADE', 73, 55], ['GLADE', 68, 40],
+      ['BRIDGE A (open)', 63, 58], ['BRIDGE B (broken)', 64, 25], ['FORD', 72, 13], ['FORD', 72, 65],
+      ['OPEN FIELDS 5-7', 32, 56], ['ROCKY FOOTHILLS 7-10', 22, 13], ['NEAR SIDE 1-5', 86, 60], ['FAR SIDE 5-10', 30, 33]
+    ];
+    x.font = 'bold 12px Consolas, monospace';
+    LBL.forEach(function (L) {
+      var px = L[1] * CWm, py = L[2] * CHm;
+      if (L[3]) { x.save(); x.translate(px + 8, py); x.rotate(Math.PI / 2); px = 0; py = 0; }
+      var w = x.measureText(L[0]).width;
+      x.fillStyle = 'rgba(7,8,12,0.78)'; x.fillRect(px - 2, py - 1, w + 4, 15);
+      x.fillStyle = '#ffe6a0'; x.fillText(L[0], px, py);
+      if (L[3]) x.restore();
+    });
+  }
+  // scale bar
+  x.fillStyle = 'rgba(7,8,12,0.8)'; x.fillRect(MW * CWm - 170, MH * CHm - 26, 166, 22);
+  x.fillStyle = '#ffe6a0'; x.font = '11px Consolas, monospace';
+  x.fillRect(MW * CWm - 162, MH * CHm - 10, CWm * 500 / CELLX, 2);
+  x.fillText('500 m (E-W)   N ^', MW * CWm - 162, MH * CHm - 24);
+}
+function layoutJSON() {
+  var legend = {}; Object.keys(ZONES).forEach(function (k) { legend[k] = { name: ZONES[k].name, levels: ZONES[k].lv, note: ZONES[k].note }; });
+  return {
+    id: 'valley_layout', version: 1, status: 'PROPOSAL (owner approval pending, EP-WORLD-VALLEY slice 0)',
+    grid: { w: MW, h: MH, cellM: [CELLX, CELLY], originM: [OX, OY], axes: 'x = east, y = south (overworld_far frame)' },
+    river: { centre: 'x_r(y) = 1120 + 110 sin(y/260) + 45 sin(y/95 + 1.3) (overworld_far recipe)', halfWidthM: 26, bankM: 16,
+             wade: { speedScale: 0.4, fordSpeedScale: 0.7, currentPushMps: 0.6, swim: false } },
+    bridges: [{ id: 'A', row: BRIDGE_A_ROW, worldY: OY + BRIDGE_A_ROW * CELLY + 12, worldX: Math.round(OX + rcol(BRIDGE_A_ROW) * CELLX), state: 'open' },
+              { id: 'B', row: BRIDGE_B_ROW, worldY: OY + BRIDGE_B_ROW * CELLY + 12, worldX: Math.round(OX + rcol(BRIDGE_B_ROW) * CELLX), state: 'broken', repair: 'level-5 quest (owner Q1)' }],
+    fords: FORD_ROWS.map(function (r) { return { row: r, worldY: OY + r * CELLY + 12 }; }),
+    landmarks: { tower: [1496, 1024], waystone: [OX + WAYSTONE.c * CELLX, OY + WAYSTONE.r * CELLY], glades: GLADES.map(function (g) { return [OX + g.c * CELLX, OY + g.r * CELLY]; }) },
+    legend: legend,
+    rows: LAYOUT.map(function (r) { return r.join(''); })
+  };
+}
+
+// ---- legend ----------------------------------------------------------------
+function drawLegend() {
+  var h = '<table><tr><th>key</th><th>look</th><th>zone</th><th>levels</th><th>note</th></tr>';
+  Object.keys(ZONES).forEach(function (k) {
+    var G = MAPG[k], Z = ZONES[k], lv = Z.lv === null ? 'border' : Z.lv === 'side' ? 'near 1-5 / far 5-10' : Z.lv[0] + '-' + Z.lv[1];
+    var sw = G[1].map(function (key) { return '<span class="sw" title="' + key + '" style="background:' + hexOf(key) + '"></span>'; }).join('');
+    h += '<tr><td>' + k + '</td><td>' + G[0].join(' ').replace(/</g, '&lt;') + ' ' + sw + '</td><td>' + Z.name + '</td><td>' + lv + '</td><td>' + Z.note + '</td></tr>';
+  });
+  h += '</table><div class="note">Level bands (D-052 item 3: fixed beast level per zone, no player level, no scaling): '
+     + 'meadow 1-2, hillside 2-3, forest + glades 3-5 | river, banks, bridges, beach take their side (near 1-5 / far 5-10) | '
+     + 'open fields 5-7, rocky foothills 7-10. Bridge B and the north ford open onto level 7-10 foothills: the dangerous shortcut.</div>';
+  document.getElementById('legend').innerHTML = h;
+}
+
+window.VALLEY = { LAYOUT: LAYOUT, ZONES: ZONES, rcol: rcol, levelOf: levelOf, sideOf: sideOf, layoutJSON: layoutJSON,
+  util: { hash2: hash2, n1: n1, vn: vn, fbm: fbm, mulberry32: mulberry32, rgbOf: rgbOf, hexOf: hexOf, mix: mix, mul: mul, css: css, clamp: clamp, isAscii: isAscii },
+  NEWKEYS: NEWKEYS, RESERVED: RESERVED, MISSING: MISSING, MAPG: MAPG, drawMap: drawMap, drawLegend: drawLegend,
+  GLADES: GLADES, TOWER: TOWER, WAYSTONE: WAYSTONE, MW: MW, MH: MH };
+} catch (e) { document.getElementById('fatal').textContent = 'FATAL (layout): ' + e.message + '\n' + e.stack; }
+})();
+</script>
+<script>
+(function () {
+'use strict';
+try {
+var V = window.VALLEY, U = V.util, rgbOf = U.rgbOf, mix = U.mix, mul = U.mul, clamp = U.clamp, hash2 = U.hash2, vn = U.vn, fbm = U.fbm;
+var S = { grid: '240x90', tod: 'day', az: -35, el: 40, wind: 45, anim: true };
+var E = 1.7;   // eye height m
+
+// ---------------------------------------------------------------------------
+// light rig (recomputed on slider change)
+// ---------------------------------------------------------------------------
+var R = {};
+function hue(k) { var c = rgbOf(k), m = Math.max(c[0], c[1], c[2]) || 1; return [c[0] / m, c[1] / m, c[2] / m]; }
+function rig() {
+  var az = S.az * Math.PI / 180, el = S.el * Math.PI / 180, dusk = S.tod === 'dusk';
+  R.L = [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el) * 0.35];
+  R.amb = dusk ? 0.34 : 0.46; R.sun = dusk ? 0.62 : 0.78;
+  R.ambC = dusk ? mix(hue('ambientEvening'), [1, 1, 1], 0.45) : mix(hue('ambientSky'), [1, 1, 1], 0.6);
+  R.sunC = dusk ? hue('sunEvening') : hue('sunAfternoon');
+  R.haze = rgbOf(dusk ? 'hazeEvening' : 'hazeWarm'); R.hazeMax = dusk ? 0.7 : 0.78;
+  R.sky = dusk ? ['skyEveHorizon', 'skyEveMid', 'skyEveTop'] : ['skyCyanHorizon', 'skyCyanMid', 'skyCyanTop'];
+  R.cloud = dusk ? ['cloudEveShade', 'cloudEve'] : ['cloudShade', 'cloudWhite'];
+  R.wind = S.wind / 100;
+}
+function shade(keys, n, sunMul, bri) {
+  var lam = Math.max(0, n[0] * R.L[0] + n[1] * R.L[1] + n[2] * R.L[2]) * (sunMul == null ? 1 : sunMul);
+  var b = (R.amb + R.sun * lam) * (bri || 1), tone = b < 0.55 ? 0 : b < 0.92 ? 1 : 2, base = rgbOf(keys[tone]);
+  var lr = R.ambC[0] * R.amb + R.sunC[0] * R.sun * lam, lg = R.ambC[1] * R.amb + R.sunC[1] * R.sun * lam, lb = R.ambC[2] * R.amb + R.sunC[2] * R.sun * lam;
+  var k = (bri || 1);
+  return { fg: [base[0] * (0.45 + 0.62 * lr) * k, base[1] * (0.45 + 0.62 * lg) * k, base[2] * (0.45 + 0.62 * lb) * k], tone: tone, b: b };
+}
+function pick(str, h) { return str.charAt(Math.floor(h * str.length) % str.length); }
+
+// ---------------------------------------------------------------------------
+// frame buffer
+// ---------------------------------------------------------------------------
+function Frame(W, H, hz) {
+  this.W = W; this.H = H; this.N = W * H; this.hz = hz * H; this.F = H * 0.866;
+  this.Fx = this.F * 10 / 6;   // cells are 6:10 at 240x90 and 9:15 at 160x60 (same aspect)
+  this.g = new Array(this.N); this.fg = new Float32Array(this.N * 3); this.bg = new Float32Array(this.N * 3); this.z = new Float32Array(this.N);
+}
+Frame.prototype.clear = function () { this.z.fill(1e9); };
+Frame.prototype.put = function (cx, cy, d, g, fg, bgK, hazeCap) {
+  cx = Math.floor(cx); cy = Math.floor(cy);
+  if (cx < 0 || cy < 0 || cx >= this.W || cy >= this.H) return false;
+  var i = cy * this.W + cx; if (d >= this.z[i]) return false;
+  this.z[i] = d;
+  var bg = mul(fg, bgK == null ? 0.2 : bgK);
+  if (hazeCap !== 0) {
+    var f = R.hazeMax * clamp(Math.pow(Math.max(0, d - 12) / 650, 0.7), 0, 1);
+    if (hazeCap != null) f = Math.min(f, hazeCap);
+    fg = mix(fg, R.haze, f); bg = mix(bg, mul(R.haze, 0.78), Math.min(1, f * 1.05));
+    if (f > 0.5 && g !== ' ' && '@&%#MWOA8'.indexOf(g) >= 0) g = f > 0.62 ? '.' : ':';
+  }
+  this.g[i] = g; this.fg[i * 3] = fg[0]; this.fg[i * 3 + 1] = fg[1]; this.fg[i * 3 + 2] = fg[2];
+  this.bg[i * 3] = bg[0]; this.bg[i * 3 + 1] = bg[1]; this.bg[i * 3 + 2] = bg[2];
+  return true;
+};
+Frame.prototype.add = function (cx, cy, rgb, kFg, kBg) {
+  if (cx < 0 || cy < 0 || cx >= this.W || cy >= this.H) return;
+  var i = (cy * this.W + cx) * 3, j;
+  for (j = 0; j < 3; j++) { this.fg[i + j] += rgb[j] * kFg; this.bg[i + j] += rgb[j] * (kBg || 0); }
+};
+Frame.prototype.proj = function (wx, d, hM) {   // screen col, row of a point hM above ground at (wx, d)
+  return [this.W / 2 + wx / d * this.Fx, this.hz + (E - hM) * this.F / d];
+};
+
+// ---------------------------------------------------------------------------
+// sky + far ranges
+// ---------------------------------------------------------------------------
+function sky(fr, t, sc) {
+  var cx, cy, s0 = rgbOf(R.sky[0]), s1 = rgbOf(R.sky[1]), s2 = rgbOf(R.sky[2]), cl0 = rgbOf(R.cloud[0]), cl1 = rgbOf(R.cloud[1]);
+  for (cy = 0; cy < Math.ceil(fr.hz); cy++) {
+    var v = 1 - cy / Math.max(1, fr.hz), base = v < 0.45 ? mix(s0, s1, v / 0.45) : mix(s1, s2, (v - 0.45) / 0.55);
+    for (cx = 0; cx < fr.W; cx++) {
+      var u = cx / fr.W, drift = t * 0.02 * (0.3 + R.wind);
+      var c = (vn(u * 7 + drift * 3, v * 5 / Math.max(0.15, v + 0.1), 41) * 0.65 + vn(u * 15 + drift * 6, v * 11, 42) * 0.35) * (v > 0.05 ? 1 : 0) * (1 - v * 0.5);
+      var i = cy * fr.W + cx; fr.z[i] = 5000;
+      if (c > 0.5) {
+        var dn = clamp((c - 0.5) * 3.2, 0, 1), lit = clamp(0.5 + (vn(u * 7 + drift * 3 - 0.03 * R.L[0], v * 5 + 0.05, 41) - vn(u * 7 + drift * 3, v * 5, 41)) * 6, 0, 1);
+        var cc = mix(cl0, cl1, lit);
+        fr.g[i] = " .'-~=+*".charAt(Math.min(7, 1 + Math.floor(dn * 6.9)));
+        var bgc = mix(base, cc, dn * 0.85);
+        fr.fg[i * 3] = cc[0]; fr.fg[i * 3 + 1] = cc[1]; fr.fg[i * 3 + 2] = cc[2];
+        fr.bg[i * 3] = bgc[0]; fr.bg[i * 3 + 1] = bgc[1]; fr.bg[i * 3 + 2] = bgc[2];
+      } else {
+        fr.g[i] = ' '; fr.bg[i * 3] = base[0]; fr.bg[i * 3 + 1] = base[1]; fr.bg[i * 3 + 2] = base[2];
+      }
+    }
+  }
+}
+// ridge: {d, hM (height above eye at peak), seed, f (frequency), keys, snow, glyphs}
+function ridge(fr, r) {
+  var cx, top = [];
+  for (cx = -1; cx <= fr.W; cx++) {
+    var u = cx / fr.W, h = r.hM * (0.3 + 0.7 * (vn(u * r.f + r.seed, 3.3, r.seed) * 0.7 + vn(u * r.f * 3.1 + r.seed, 1.1, r.seed + 1) * 0.3));
+    top.push(fr.hz - h * fr.F / r.d);
+  }
+  for (cx = 0; cx < fr.W; cx++) {
+    var t0 = top[cx + 1], dr = top[cx + 2] - top[cx], peak = t0 < top[cx] && t0 < top[cx + 2], cy;
+    for (cy = Math.max(0, Math.floor(t0)); cy < fr.hz; cy++) {
+      var depth = cy - t0, h = hash2(cx * 7 + r.seed, cy * 3), nx = clamp(dr * 0.5, -0.9, 0.9), n = [nx, 0.55, 0.6];
+      var snowy = r.snow && depth < r.snow * (fr.hz - t0) && (fr.hz - t0) > r.snowMin * fr.H;
+      var keys = snowy ? ['snowShade', 'snowShade', 'snow'] : r.keys, g;
+      if (depth < 1) g = peak ? '^' : dr < -0.25 ? '/' : dr > 0.25 ? '\\' : '-';
+      else g = pick(r.glyphs, h);
+      var s = shade(keys, n, 1, r.bri || 1);
+      fr.put(cx, cy, r.d + depth * 4, g, s.fg, 0.3, r.hazeCap == null ? 0.42 : r.hazeCap);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// shapes (world-anchored; P = projection helper)
+// ---------------------------------------------------------------------------
+var SH = {};
+SH.pine = function (fr, o) {
+  var b = fr.proj(o.wx, o.d, 0), tp = fr.proj(o.wx, o.d, o.h), hw = o.w / 2 / o.d * fr.Fx, rows = b[1] - tp[1];
+  var trunkTop = b[1] - rows * 0.16, tiers = o.tiers || 5, cy, cx;
+  for (cy = Math.floor(tp[1]); cy <= Math.ceil(trunkTop); cy++) {
+    var u = clamp((cy - tp[1]) / (trunkTop - tp[1]), 0, 1), tf = (u * tiers) % 1;
+    var half = hw * (0.1 + 0.9 * u) * (0.6 + 0.4 * tf) + 0.4;
+    for (cx = Math.floor(b[0] - half); cx <= Math.ceil(b[0] + half); cx++) {
+      var s = (cx - b[0]) / half; if (Math.abs(s) > 1) continue;
+      var h = hash2(cx * 13 + o.seed, cy * 7), n = [s * 0.8, 0.55 - tf * 0.5, 0.5];
+      var sm = o.shadow ? o.shadow : 1, sh = shade(o.keys || ['pineDark', 'pine', 'pineLight'], n, sm, 0.95 + 0.1 * h), g;
+      if (cy === Math.floor(tp[1])) g = '^';
+      else if (Math.abs(s) > 0.78) g = s < 0 ? '/' : '\\';
+      else g = pick(['%:;"', 'A^*"', "A^'*"][sh.tone], h);
+      fr.put(cx, cy, o.d, g, sh.fg);
+    }
+  }
+  var tw = Math.max(0.5, hw * 0.12);
+  for (cy = Math.floor(trunkTop); cy <= b[1]; cy++) for (cx = Math.floor(b[0] - tw); cx <= Math.ceil(b[0] + tw - 1); cx++) {
+    var st = shade(['woodDark', 'wood', 'woodLight'], [(cx - b[0]) / (tw + 0.5), 0, 1], 0.7, 0.9);
+    fr.put(cx, cy, o.d, pick('|!|', hash2(cx, cy)), st.fg);
+  }
+};
+SH.oak = function (fr, o) {
+  var b = fr.proj(o.wx, o.d, 0), tp = fr.proj(o.wx, o.d, o.h), hw = o.w / 2 / o.d * fr.Fx, rows = b[1] - tp[1];
+  var cyc = tp[1] + rows * 0.36, ry = rows * 0.36, rnd = U.mulberry32(o.seed), subs = [{ x: b[0], y: cyc, rx: hw * 0.8, ry: ry * 0.8 }], i, cy, cx;
+  for (i = 0; i < 6; i++) { var a = rnd() * 6.283; subs.push({ x: b[0] + Math.cos(a) * hw * 0.5, y: cyc + Math.sin(a) * ry * 0.45, rx: hw * (0.4 + 0.3 * rnd()), ry: ry * (0.45 + 0.3 * rnd()) }); }
+  // trunk + branches first (behind leaves via tiny depth offset)
+  var tw = Math.max(0.5, hw * 0.13);
+  for (cy = Math.floor(cyc); cy <= b[1]; cy++) for (cx = Math.floor(b[0] - tw); cx <= Math.ceil(b[0] + tw - 1); cx++) {
+    var st = shade(['woodDark', 'wood', 'woodLight'], [(cx - b[0]) / (tw + 0.5), 0, 1], 0.6, 0.9);
+    fr.put(cx, cy, o.d + 0.3, cy > b[1] - 1 ? '#' : pick('H||', hash2(cx, cy)), st.fg);
+  }
+  subs.forEach(function (sb, bi) {
+    for (cy = Math.floor(sb.y - sb.ry); cy <= Math.ceil(sb.y + sb.ry); cy++) for (cx = Math.floor(sb.x - sb.rx); cx <= Math.ceil(sb.x + sb.rx); cx++) {
+      var dx = (cx - sb.x) / sb.rx, dy = (cy - sb.y) / sb.ry, q = dx * dx + dy * dy, h = hash2(cx * 3 + o.seed, cy * 5 + bi);
+      if (q > 1 + (h - 0.5) * 0.35) continue;
+      var gx = (cx - b[0]) / hw, gy = (cy - cyc) / ry, n = [dx * 0.4 + gx * 0.5, -dy * 0.4 - gy * 0.5, 0.6];
+      var sh = shade(o.keys || ['leafDark', 'leaf', 'leafLight'], n, o.shadow || 1, 0.92 + 0.16 * h);
+      fr.put(cx, cy, o.d - bi * 0.01, pick(['%&8:', '@&%o', 'o*"@'][sh.tone], h), sh.fg);
+    }
+  });
+};
+SH.rock = function (fr, o) {
+  var b = fr.proj(o.wx, o.d, 0), tp = fr.proj(o.wx, o.d, o.h), hw = o.w / 2 / o.d * fr.Fx, ry = b[1] - tp[1], cy, cx;
+  for (cy = Math.floor(tp[1]); cy <= Math.ceil(b[1]); cy++) for (cx = Math.floor(b[0] - hw); cx <= Math.ceil(b[0] + hw); cx++) {
+    var dx = (cx - b[0]) / hw, dy = (cy - b[1]) / ry, h = hash2(cx * 9 + o.seed, cy * 3);
+    var w = 1 + 0.18 * (vn(Math.atan2(dy, dx) * 2 + o.seed, 1, 3) - 0.5);
+    if (dx * dx + dy * dy > w * w || dy > 0.05) continue;
+    var up = -dy, n = [dx * 0.8, up, 0.45], moss = o.moss && up > 0.72 && h < 0.8;
+    var keys = moss ? ['meadowDark', 'mossCap', 'mossCap'] : (o.keys || ['mossRockDark', 'mossRock', 'mossRockLight']);
+    var sh = shade(keys, n, 1, 0.92 + 0.14 * h);
+    fr.put(cx, cy, o.d, moss ? pick('"\',', h) : pick(['#%:', '%#O=', "o=%'"][sh.tone], h), sh.fg);
+  }
+};
+SH.fern = function (fr, o) {
+  var b = fr.proj(o.wx, o.d, 0), tp = fr.proj(o.wx, o.d, o.h), hw = o.w / 2 / o.d * fr.Fx, rows = b[1] - tp[1], cy, cx;
+  for (cy = Math.floor(tp[1]); cy <= b[1]; cy++) {
+    var u = (cy - tp[1]) / Math.max(1, rows), half = hw * Math.sin(u * 2.6 + 0.3);
+    for (cx = Math.floor(b[0] - half); cx <= Math.ceil(b[0] + half); cx++) {
+      var s = (cx - b[0]) / Math.max(0.5, half), h = hash2(cx * 5 + o.seed, cy);
+      if (h < 0.18) continue;
+      var sh = shade(o.keys || ['meadowDark', 'fern', 'leafLight'], [s * 0.5, 0.7, 0.4], o.shadow || 1, 1);
+      fr.put(cx, cy, o.d, Math.abs(s) < 0.25 ? (u < 0.3 ? "'" : '|') : s < 0 ? (u < 0.5 ? '\\' : '<') : (u < 0.5 ? '/' : '>'), sh.fg);
+    }
+  }
+};
+SH.mushroom = function (fr, o) {
+  var b = fr.proj(o.wx, o.d, 0), tp = fr.proj(o.wx, o.d, o.h), hw = Math.max(0.6, o.w / 2 / o.d * fr.Fx), rows = Math.max(1, b[1] - tp[1]), cy, cx;
+  for (cy = Math.floor(tp[1]); cy <= b[1]; cy++) {
+    var cap = cy - tp[1] < rows * 0.5;
+    for (cx = Math.floor(b[0] - (cap ? hw : hw * 0.3)); cx <= Math.ceil(b[0] + (cap ? hw : hw * 0.3)); cx++) {
+      var s = (cx - b[0]) / hw, sh = shade(cap ? ['mushroomCapDark', 'mushroomCap', 'mushroomCapLight'] : ['linenDark', 'linen', 'linenLight'], [s, cap ? 0.8 : 0, 0.5], o.shadow || 1, 1);
+      fr.put(cx, cy, o.d, cap ? (Math.abs(s) > 0.7 ? (s < 0 ? '(' : ')') : (hash2(cx, cy) < 0.25 ? 'o' : '@')) : '|', sh.fg);
+    }
+  }
+};
+SH.stem = function (fr, o) {   // single flower / tuft / reed
+  var b = fr.proj(o.wx, o.d, 0), tp = fr.proj(o.wx, o.d, o.h), cy, lean = o.lean || 0;
+  for (cy = Math.floor(tp[1]); cy <= b[1]; cy++) {
+    var u = (cy - tp[1]) / Math.max(1, b[1] - tp[1]), cx = Math.round(b[0] + lean * (1 - u) * 2), head = cy === Math.floor(tp[1]);
+    var keys = head && o.head ? [o.head, o.head, o.head] : (o.keys || ['meadowDark', 'meadow', 'meadowLight']);
+    var sh = shade(keys, [lean * 0.3, 0.7, 0.5], o.shadow || 1, head && o.head ? 1.1 : 1);
+    var hg = o.head ? (o.hg || '*') : (lean > 0.3 ? '/' : lean < -0.3 ? '\\' : "'");
+    fr.put(cx, cy, o.d, head ? hg : (lean > 0.3 ? '/' : lean < -0.3 ? '\\' : '|'), sh.fg);
+  }
+};
+SH.log = function (fr, o) {
+  var b = fr.proj(o.wx, o.d, 0), tp = fr.proj(o.wx, o.d, o.h), hw = o.w / 2 / o.d * fr.Fx, cy, cx;
+  for (cy = Math.floor(tp[1]); cy <= b[1]; cy++) for (cx = Math.floor(b[0] - hw); cx <= Math.ceil(b[0] + hw); cx++) {
+    var up = 1 - 2 * (cy - tp[1]) / Math.max(1, b[1] - tp[1]), end = cx >= Math.ceil(b[0] + hw) - 1, h = hash2(cx * 7, cy * 11);
+    var moss = up > 0.5 && h < 0.5 && o.moss;
+    var keys = end ? ['woodCutDark', 'woodCut', 'woodCutLight'] : moss ? ['mossDark', 'moss', 'mossLight'] : (o.keys || ['woodDark', 'wood', 'woodLight']);
+    var sh = shade(keys, [end ? 0.8 : 0, up, 0.5], o.shadow || 1, 1);
+    fr.put(cx, cy, o.d, end ? 'O' : moss ? '"' : pick('==-', h), sh.fg);
+  }
+};
+SH.ruin = function (fr, o) {
+  var b = fr.proj(o.wx, o.d, 0), tp = fr.proj(o.wx, o.d, o.h), hw = o.w / 2 / o.d * fr.Fx, cy, cx;
+  for (cx = Math.floor(b[0] - hw); cx <= Math.ceil(b[0] + hw); cx++) {
+    var u = (cx - (b[0] - hw)) / (2 * hw), topRow = tp[1] + (b[1] - tp[1]) * (0.5 * vn(u * 4 + o.seed, 2, 7) + (u > 0.6 ? 0.35 : 0));
+    for (cy = Math.floor(topRow); cy <= b[1]; cy++) {
+      var row = Math.floor((b[1] - cy) / 1.0), mortar = ((cx + (row % 2) * 2) % 4) === 0, sh = shade(mortar ? ['mortar', 'stoneDark', 'stoneMid'] : ['stoneDark', 'stoneWarm', 'stoneLight'], [0, cy < topRow + 1 ? 0.9 : 0.1, 0.8], 1, 1);
+      fr.put(cx, cy, o.d, cy < topRow + 1 ? (hash2(cx, 3) < 0.5 ? '"' : '_') : mortar ? '|' : '#', cy < topRow + 1 && hash2(cx, 3) < 0.5 ? shade(['mossDark', 'moss', 'mossLight'], [0, 1, 0], 1, 1).fg : sh.fg);
+    }
+  }
+};
+SH.deadtree = function (fr, o) {
+  var b = fr.proj(o.wx, o.d, 0), tp = fr.proj(o.wx, o.d, o.h), rows = b[1] - tp[1], cy;
+  for (cy = Math.floor(tp[1]); cy <= b[1]; cy++) {
+    var u = (cy - tp[1]) / rows, sh = shade(['ashDark', 'ash', 'ashLight'], [-0.3, 0.2, 0.8], 1, 1);
+    fr.put(b[0], cy, o.d, u < 0.15 ? 'Y' : '|', sh.fg);
+    if (u > 0.2 && u < 0.6 && hash2(cy, o.seed) < 0.3) { var side = hash2(cy, 9) < 0.5 ? -1 : 1, k; for (k = 1; k < 1 + rows * 0.12; k++) fr.put(b[0] + side * k, cy - k * 0.5, o.d, side < 0 ? '\\' : '/', sh.fg); }
+  }
+};
+SH.bridge = function (fr, o) {   // spans wx0..wx1 at depth d, deck at hD, rails up to hR
+  var c0 = fr.proj(o.wx0, o.d, 0)[0], c1 = fr.proj(o.wx1, o.d, 0)[0], deck = fr.proj(0, o.d, o.hD)[1], rail = fr.proj(0, o.d, o.hR)[1], water = fr.proj(0, o.d, 0)[1], cx, cy;
+  for (cx = Math.floor(c0); cx <= Math.ceil(c1); cx++) {
+    var post = (cx - Math.floor(c0)) % 6 === 0, broken = o.broken && Math.abs(cx - (c0 + c1) / 2) < (c1 - c0) * 0.14;
+    if (broken) continue;
+    for (cy = Math.floor(rail); cy <= Math.ceil(deck) + 1; cy++) {
+      var isDeck = cy >= Math.floor(deck), isRail = cy === Math.floor(rail), h = hash2(cx, cy);
+      if (!isDeck && !isRail && !post) continue;
+      var sh = shade(isDeck ? ['woodDark', 'wood', 'woodLight'] : ['woodDark', 'woodDark', 'wood'], [0, isDeck ? 0.6 : 0.2, 0.7], 1, 1);
+      fr.put(cx, cy, o.d, isDeck ? (cy > Math.floor(deck) ? '"' : '=') : post ? 'H' : '=', sh.fg);
+    }
+    if (post) for (cy = Math.ceil(deck) + 2; cy <= water; cy++) fr.put(cx, cy, o.d, '|', shade(['stoneDark', 'stoneMid', 'stoneLight'], [0.2, 0, 1], 1, 0.8).fg);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// ground helpers
+// ---------------------------------------------------------------------------
+function wHash(wx, d, s) { return hash2(Math.floor(wx * 3) + s * 1000, Math.floor(d * 3)); }
+var FLOWER = { y: 'petalYellow', w: 'petalWhite', p: 'petalPink', v: 'petalViolet', o: 'petalOrange' };
+function forestFloor(wx, d) {
+  var h = wHash(wx, d, 1), n = fbm(wx * 0.18, d * 0.18, 5), dapple = fbm(wx * 0.11 + 3, d * 0.11, 9);
+  var lit = dapple > 0.56 ? 1 : 0.2;
+  if (h < 0.025 && d < 25) return { g: 'n', k: ['mushroomCapDark', 'mushroomCap', 'mushroomCapLight'], sun: lit };
+  if (h < 0.07) return { g: '"', k: ['meadowDark', 'fern', 'leafLight'], sun: lit };
+  if (n > 0.6) return { g: pick('",\'', h * 7 % 1), k: ['mossDark', 'moss', 'mossLight'], sun: lit };
+  if (h > 0.97) return { g: 'o', k: ['mossRockDark', 'mossRock', 'mossRockLight'], sun: lit };
+  return { g: pick(",.`;'", h * 11 % 1), k: ['needleBedDark', 'needleBed', 'needleBedLight'], sun: lit };
+}
+function groundPass(fr, sc, t) {
+  var cx, cy;
+  for (cy = Math.ceil(fr.hz); cy < fr.H; cy++) {
+    var d = E * fr.F / (cy + 0.5 - fr.hz);
+    for (cx = 0; cx < fr.W; cx++) {
+      var wx = (cx + 0.5 - fr.W / 2) / fr.Fx * d, gc = sc.ground(wx, d, t);
+      if (!gc) continue;
+      var sh;
+      if (gc.em) { sh = { fg: gc.em }; }
+      else sh = shade(gc.k, gc.n || [0, 1, 0.15], gc.sun == null ? 1 : gc.sun, gc.bri || 1);
+      fr.put(cx, cy, d, gc.g, sh.fg, gc.bgK);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// particles (screen space, 1 particle = 1 cell)
+// ---------------------------------------------------------------------------
+function Particles(def, W, H, seed) { this.def = def; this.rnd = U.mulberry32(seed); this.p = []; var i; for (i = 0; i < def.n; i++) this.p.push(def.spawn(this.rnd, W, H, true)); }
+Particles.prototype.step = function (dt, t, W, H) {
+  var self = this; this.p.forEach(function (p, i) { self.def.step(p, dt, t, W, H, self.rnd); if (p.dead) self.p[i] = self.def.spawn(self.rnd, W, H, false); });
+};
+Particles.prototype.draw = function (fr, t) {
+  var def = this.def;
+  this.p.forEach(function (p) {
+    var o = def.look(p, t); if (!o) return;
+    var cx = Math.round(p.x), cy = Math.round(p.y);
+    if (cx < 0 || cy < 0 || cx >= fr.W || cy >= fr.H) return;
+    var i = cy * fr.W + cx, fg = o.em ? rgbOf(o.k) : shade([o.k, o.k, o.k], [0, 0.7, 0.5], 1, o.bri || 1.1).fg;
+    if (o.alpha != null) fg = mix([fr.fg[i * 3], fr.fg[i * 3 + 1], fr.fg[i * 3 + 2]], fg, o.alpha);
+    fr.g[i] = o.g; fr.fg[i * 3] = fg[0]; fr.fg[i * 3 + 1] = fg[1]; fr.fg[i * 3 + 2] = fg[2];
+    if (o.em) { var dx, dy; for (dy = -1; dy <= 1; dy++) for (dx = -1; dx <= 1; dx++) fr.add(cx + dx, cy + dy, fg, 0, (dx || dy) ? 0.12 : 0.25); }
+  });
+};
+var PT = {
+  leaves: { n: 26, spawn: function (r, W, H, init) { return { x: r() * W, y: init ? r() * H * 0.8 : -1, vy: 1.5 + r() * 2.5, ph: r() * 6.28, k: r() < 0.6 ? 'leafLight' : r() < 0.5 ? 'strawLight' : 'pineLight' }; },
+    step: function (p, dt, t, W, H) { p.y += p.vy * dt; p.x += (Math.sin(t * 1.7 + p.ph) * 1.6 + R.wind * 3) * dt; if (p.y > H) p.dead = true; },
+    look: function (p, t) { return { g: ",`'~"[Math.floor(t * 4 + p.ph) & 3], k: p.k }; } },
+  motes: { n: 30, spawn: function (r, W, H) { return { x: r() * W, y: r() * H * 0.75, ph: r() * 6.28, life: 4 + r() * 6 }; },
+    step: function (p, dt, t) { p.x += Math.sin(t * 0.6 + p.ph) * 0.4 * dt; p.y += Math.cos(t * 0.5 + p.ph) * 0.3 * dt; p.life -= dt; if (p.life < 0) p.dead = true; },
+    look: function (p, t) { return S.tod === 'day' && p.shaft ? { g: '.', k: 'sunRay', alpha: 0.8 } : null; } },
+  pollen: { n: 45, spawn: function (r, W, H, init) { return { x: r() * W, y: H * (0.45 + r() * 0.55), vy: -(0.3 + r() * 0.8), ph: r() * 6.28, life: 3 + r() * 5 }; },
+    step: function (p, dt, t) { p.y += p.vy * dt; p.x += (Math.sin(t * 2 + p.ph) * 0.6 + R.wind * 2.5) * dt; p.life -= dt; if (p.life < 0) p.dead = true; },
+    look: function (p, t) { return S.tod === 'day' ? { g: p.life > 1 ? "'" : '.', k: 'pollen', alpha: clamp(p.life, 0, 1) } : null; } },
+  butterflies: { n: 7, spawn: function (r, W, H) { var ks = ['petalOrange', 'petalWhite', 'petalYellow', 'petalViolet']; return { x: r() * W, y: H * (0.45 + r() * 0.4), tx: r() * W, ty: H * (0.45 + r() * 0.4), ph: r() * 6.28, k: ks[Math.floor(r() * 4)] }; },
+    step: function (p, dt, t, W, H, r) { var dx = p.tx - p.x, dy = p.ty - p.y, L = Math.sqrt(dx * dx + dy * dy) || 1; p.x += dx / L * 4 * dt + Math.sin(t * 3 + p.ph) * 2 * dt; p.y += dy / L * 2.5 * dt + Math.sin(t * 7 + p.ph) * 1.5 * dt;
+      if (L < 2) { p.tx = r() * W; p.ty = H * (0.45 + r() * 0.4); } },
+    look: function (p, t) { return S.tod === 'day' ? { g: (Math.floor(t * 8 + p.ph) & 1) ? 'v' : 'w', k: p.k, bri: 1.25 } : null; } },
+  fireflies: { n: 34, spawn: function (r, W, H) { return { x: r() * W, y: H * (0.4 + r() * 0.55), ph: r() * 6.28, f: 0.4 + r() * 0.6 }; },
+    step: function (p, dt, t) { p.x += Math.sin(t * 0.7 * p.f + p.ph) * 1.2 * dt; p.y += Math.cos(t * 0.9 * p.f + p.ph * 2) * 0.8 * dt; },
+    look: function (p, t) { if (S.tod !== 'dusk') return null; var b = Math.sin(t * 2.2 * p.f + p.ph); return b > 0.2 ? { g: b > 0.75 ? '*' : '.', k: 'fireflyGlow', em: true } : null; } },
+  seeds: { n: 30, spawn: function (r, W, H, init) { return { x: init ? r() * W : -1, y: H * (0.3 + r() * 0.6), ph: r() * 6.28, v: 3 + r() * 5 }; },
+    step: function (p, dt, t, W) { p.x += p.v * (0.2 + R.wind * 1.6) * dt; p.y += Math.sin(t * 1.3 + p.ph) * 0.7 * dt; if (p.x > W) p.dead = true; },
+    look: function () { return { g: '.', k: 'strawLight', alpha: 0.9 }; } },
+  birds: { n: 3, spawn: function (r, W, H, init) { return { x: init ? r() * W : -2, y: H * (0.06 + r() * 0.2), v: 3 + r() * 3, ph: r() * 6.28 }; },
+    step: function (p, dt, t, W) { p.x += p.v * dt; p.y += Math.sin(t * 0.8 + p.ph) * 0.3 * dt; if (p.x > W + 2) p.dead = true; },
+    look: function (p, t) { return { g: (Math.floor(t * 3 + p.ph) & 1) ? 'v' : '-', k: 'ashDark', bri: 0.8 }; } },
+  dust: { n: 40, spawn: function (r, W, H, init) { return { x: init ? r() * W : -1 - r() * 10, y: H * (0.5 + r() * 0.5), v: 8 + r() * 10, ph: r() * 6.28 }; },
+    step: function (p, dt, t, W) { p.x += p.v * (0.15 + R.wind) * dt; p.y += Math.sin(t * 2 + p.ph) * 0.5 * dt; if (p.x > W) p.dead = true; },
+    look: function (p) { return R.wind > 0.15 ? { g: p.v > 13 ? ',' : '.', k: 'screeLight', alpha: 0.75 } : null; } },
+  spray: { n: 36, spawn: function (r, W, H) { return { x: r() * W, y: 0, life: 0, wait: r() * 3, ph: r() * 6.28 }; },
+    step: function (p, dt, t, W, H, r) { if (p.wait > 0) { p.wait -= dt; return; } if (!p.life) { p.life = 0.8 + r() * 0.6; p.y = H * (p.sy || 0.5); p.vy = -(2 + r() * 3); } p.y += p.vy * dt; p.vy += 6 * dt; p.x += R.wind * 3 * dt; p.life -= dt; if (p.life <= 0) p.dead = true; },
+    look: function (p) { return p.wait > 0 ? null : { g: p.vy < 0 ? "'" : '.', k: 'surf', alpha: 0.85 }; } },
+  mist: { n: 26, spawn: function (r, W, H) { return { x: r() * W, y: H * (0.5 + r() * 0.25), v: 0.5 + r(), life: 3 + r() * 4 }; },
+    step: function (p, dt) { p.x += p.v * dt; p.life -= dt; if (p.life < 0) p.dead = true; },
+    look: function (p) { return { g: p.life > 2 ? ':' : '.', k: 'riverShallow', alpha: 0.35 }; } }
+};
+
+// ---------------------------------------------------------------------------
+// SCENES (look sheets): ground fn, objects, particles, scatter recipe
+// ---------------------------------------------------------------------------
+function scatterObjs(seed, n, dMin, dMax, make) {
+  var r = U.mulberry32(seed), out = [], i;
+  for (i = 0; i < n; i++) { var d = dMin + Math.pow(r(), 1.6) * (dMax - dMin), span = d * 1.0; var o = make(r, d, (r() * 2 - 1) * span); if (o) out.push(o); }
+  return out;
+}
+var SCENES = [
+  { id: 'forest', title: 'Pine / oak forest (near side, levels 3-5)', hz: 0.40,
+    ridges: [],
+    ground: function (wx, d) { return forestFloor(wx, d); },
+    objects: function () {
+      var o = scatterObjs(11, 46, 7, 140, function (r, d, wx) { var pine = r() < 0.55; return { type: pine ? 'pine' : 'oak', wx: wx, d: d, h: pine ? 15 + r() * 8 : 11 + r() * 5, w: pine ? 5 + r() * 2 : 8 + r() * 4, seed: (r() * 1e6) | 0, shadow: 0.7 }; });
+      o = o.concat(scatterObjs(12, 40, 2.5, 22, function (r, d, wx) { return { type: 'fern', wx: wx, d: d, h: 0.6 + r() * 0.4, w: 0.9 + r() * 0.5, seed: (r() * 1e6) | 0, shadow: 0.6 }; }));
+      o = o.concat(scatterObjs(13, 12, 3, 18, function (r, d, wx) { return { type: 'mushroom', wx: wx, d: d, h: 0.18, w: 0.18, seed: 1 }; }));
+      o.push({ type: 'log', wx: 2.2, d: 6.5, h: 0.55, w: 4.5, moss: true }, { type: 'rock', wx: -3.5, d: 9, h: 1.2, w: 2.4, moss: true, seed: 5 });
+      return o;
+    },
+    shafts: true,
+    particles: ['leaves', 'motes'],
+    scatter: [
+      ['pineTree', 'Pine_1..5 (mesh, ALPHA-01f masked needles)', '1.5 / 100 m2 (north half: 70 % of trees)', '3-7', '0.8-1.3', 'pineDark/pine/pineLight', 'slope < 0.6, >= 4 m from path', 'A ^ / \\ | % A | far canopy ^ :'],
+      ['oakTree', 'CommonTree_1..5 (mesh, ALPHA-01f leafy)', '1.0 / 100 m2 (south half: 70 %)', '1-3', '0.9-1.4', 'leafDark/leaf/leafLight', 'slope < 0.45, not in glades', '@ & % o | @ & | far %'],
+      ['needleBed', 'terrain type forest_floor (ground texture, not mesh)', 'whole biome', '-', '-', 'needleBedDark/needleBed/needleBedLight', 'under pines', ", . ` ; | , . | ."],
+      ['mossPatch', 'terrain paint + Clover / Moss_Patch decal', '25 % cover (fbm > 0.6)', 'patches 3-8 m', '-', 'mossDark/moss/mossLight', 'under oaks, near water', "\" , ' | \" , | ,"],
+      ['fern', 'Fern_1..2', '18 / 100 m2', '4-12', '0.6-1.4', 'meadowDark/fern/leafLight', 'shade (canopy cover > 0.5)', "\\ | / < > ' | \" | ."],
+      ['mushroom', 'Mushroom_Common / Mushroom_Laetiporus', '3 / 100 m2', '2-6 rings', '0.6-1.2', 'mushroomCap*, linen (stem)', 'near logs + stumps, d < 25 m only', '( @ ) | n | -'],
+      ['log', 'WoodLog_Moss / TreeStump_Moss', '0.3 / 100 m2', '1', '0.8-1.2', 'wood*, woodCut* (end), moss*', 'flat ground, collider proxy', '= - O \" | = | -'],
+      ['rockMossy', 'Rock_Medium_1..3 + moss top', '0.5 / 100 m2', '1-3', '0.6-1.8', 'mossRock*, mossCap', 'any', '# % O = o | % # | %'],
+      ['ambient', 'particles: leaf fall, sun motes in shafts', 'leaves 26 / screen, motes 30', '-', '-', 'leafLight, strawLight, pineLight, sunRay', 'day only for motes', ", ` ' ~ | ."]
+    ] },
+  { id: 'glade', title: 'Flower glade inside the forest (near side, 3-5, the showcase shot)', hz: 0.40,
+    ridges: [],
+    ground: function (wx, d, t) {
+      var ex = (wx - 1.5) / 17, ez = (d - 22) / 13, q = ex * ex + ez * ez + (fbm(wx * 0.15, d * 0.15, 3) - 0.5) * 0.35;
+      if (q > 1) return forestFloor(wx, d);
+      var h = wHash(wx, d, 2), drift = fbm(wx * 0.09 + 7, d * 0.09, 4), dens = q > 0.75 ? 0.08 : 0.34;
+      var sway = Math.sin(wx * 0.5 + d * 0.3 - t * (1 + R.wind * 3)) * R.wind;
+      if (h < dens) {   // colour drifts, not confetti: one dominant colour per patch, 20 % mixed in
+        var dom = drift < 0.3 ? 'v' : drift < 0.45 ? 'w' : drift < 0.6 ? 'y' : drift < 0.75 ? 'p' : 'o', k = h < dens * 0.2 ? 'ywpvo'.charAt(Math.floor(h * 97) % 5) : dom;
+        return { g: d < 9 ? pick('*@o*', h * 13 % 1) : d < 30 ? pick('*o.', h * 13 % 1) : '.', k: [FLOWER[k], FLOWER[k], FLOWER[k]], bri: 1.05 };
+      }
+      return { g: d < 12 ? (sway > 0.25 ? '/' : sway < -0.25 ? '\\' : pick('"|,', h)) : pick('",\'', h), k: ['meadowDark', 'meadow', 'meadowLight'], bri: 1 + sway * 0.12 };
+    },
+    objects: function () {
+      var o = [], r = U.mulberry32(21), i;
+      for (i = 0; i < 34; i++) { var a = -1.25 + i / 33 * 2.5 + (r() - 0.5) * 0.08, rad = 1.12 + r() * 0.4, d = 22 + Math.cos(a) * 13 * rad, wx = 1.5 + Math.sin(a) * 17 * rad * 1.6;
+        if (d < 8) continue; var pine = r() < 0.4; o.push({ type: pine ? 'pine' : 'oak', wx: wx, d: d, h: pine ? 14 + r() * 7 : 10 + r() * 5, w: pine ? 5 : 8 + r() * 3, seed: (r() * 1e6) | 0 }); }
+      o = o.concat(scatterObjs(22, 30, 40, 120, function (r2, d, wx) { return { type: r2() < 0.5 ? 'pine' : 'oak', wx: wx, d: d, h: 15, w: 7, seed: (r2() * 1e6) | 0, shadow: 0.8 }; }));
+      o = o.concat(scatterObjs(23, 60, 2.4, 12, function (r2, d, wx) { var ks = ['petalYellow', 'petalWhite', 'petalPink', 'petalViolet', 'petalOrange']; return { type: 'stem', wx: wx * 0.8, d: d, h: 0.35 + r2() * 0.3, head: ks[Math.floor(r2() * 5)], hg: r2() < 0.5 ? '*' : '@', lean: (r2() - 0.5) * 0.6 }; }));
+      o.push({ type: 'rock', wx: 6, d: 15, h: 1.0, w: 2.2, moss: true, seed: 9 }, { type: 'log', wx: -5, d: 12, h: 0.5, w: 3.6, moss: true });
+      return o;
+    },
+    particles: ['pollen', 'butterflies', 'fireflies'],
+    scatter: [
+      ['flowerDrift', 'Flower_3_Group / Flower_4_Group / Petal clusters', '30-35 / 100 m2 in the core, 8 at the rim', 'drifts 4-10 m, ONE dominant colour per drift (+20 % mixed)', '0.7-1.3', 'petalYellow, petalWhite, petalPink, petalViolet (new), petalOrange (new)', 'glade mask core (biome paint), never on path', '* @ o | * o . | . (speck layer, ART-05 ask)'],
+      ['meadowGrass', 'Grass_Common_Short + Grass_Wispy', '60 / 100 m2', 'carpet', '0.8-1.2', 'meadowDark/meadow/meadowLight', 'glade mask', "/ | \\ (wind lean) \" | \" , ' | ,"],
+      ['tallGrassRing', 'Grass_Wispy_Tall', '40 / 100 m2', 'ring 2-4 m at the glade rim', '1.0-1.5', 'meadow*, wheatGreen', 'mask 0.75-1.0', '| / \\ | \" ; | ,'],
+      ['treeRing', 'Pine_* + CommonTree_* (forest set)', 'edge ring, 1 tree / 4-6 m', '-', '0.9-1.4', 'forest keys', 'outside mask, leaves the sky gap open', 'forest glyphs'],
+      ['rock+log', 'Rock_Moss + WoodLog_Moss', '1-2 per glade (hand-placed)', '-', '-', 'mossRock*, mossCap, wood*', 'seat / vantage spots', 'as forest'],
+      ['ambient', 'particles: pollen (day), butterflies 5-8 (day), fireflies 30+ (dusk, EMISSIVE), petal drift', '-', '-', '-', 'pollen, petalOrange/White/Yellow/Violet, fireflyGlow', 'glade biome only', "' . | v w | * ."]
+    ] },
+  { id: 'fields', title: 'Open fields with tall grass (far side, levels 5-7)', hz: 0.44,
+    ridges: [{ d: 1400, hM: 520, seed: 3, f: 3, keys: ['mountainHazeDark', 'mountainHaze', 'mountainHazeLight'], snow: 0.35, snowMin: 0.1, glyphs: ':.;' },
+             { d: 600, hM: 80, seed: 7, f: 5, keys: ['screeDark', 'scree', 'screeLight'], glyphs: ':;,%', bri: 0.9 }],
+    ground: function (wx, d, t) {
+      var h = wHash(wx, d, 3), patch = fbm(wx * 0.05, d * 0.05, 6), wave = Math.sin(wx * 0.12 + d * 0.22 - t * (0.6 + R.wind * 2.4)) * R.wind;
+      var keys = patch > 0.6 ? ['strawDark', 'straw', 'strawLight'] : patch > 0.4 ? ['meadowDark', 'wheatGreen', 'strawLight'] : ['meadowDark', 'meadow', 'meadowLight'];
+      if (h < 0.012 && d < 40) return { g: '*', k: ['petalWhite', 'petalWhite', 'petalWhite'] };
+      if (Math.abs(wx - 4 - Math.sin(d * 0.05) * 6) < 0.9) return { g: pick(':.', h), k: ['dirtDark', 'dirt', 'dirtLight'] };
+      var g = d < 14 ? (wave > 0.2 ? '/' : wave < -0.2 ? '\\' : pick('|"', h)) : d < 60 ? (wave > 0.25 ? '~' : pick('";\'', h)) : pick(",'.", h);
+      return { g: g, k: keys, bri: 1 + wave * 0.25, n: [wave * 0.4, 1, 0.2] };
+    },
+    objects: function () {
+      var o = [{ type: 'oak', wx: -14, d: 45, h: 13, w: 13, seed: 77 }, { type: 'oak', wx: 30, d: 120, h: 12, w: 11, seed: 78 },
+               { type: 'ruin', wx: 22, d: 60, h: 4, w: 10, seed: 4 }, { type: 'rock', wx: 8, d: 18, h: 0.9, w: 2, seed: 3 }];
+      o = o.concat(scatterObjs(31, 70, 2.3, 9, function (r, d, wx) { return { type: 'stem', wx: wx, d: d, h: 0.9 + r() * 0.5, keys: ['strawDark', 'wheatGreen', 'strawLight'], head: r() < 0.6 ? 'strawLight' : null, hg: r() < 0.5 ? "'" : ';', lean: 0.3 + (r() - 0.5) * 0.4 }; }));
+      return o;
+    },
+    windLean: true,
+    particles: ['seeds', 'birds'],
+    scatter: [
+      ['tallGrass', 'Grass_Wispy_Tall + Wheat-like (Grass_Large)', '80 / 100 m2', 'carpet + patches 10-30 m', '1.0-1.6 (to the knee / hip)', 'straw*, wheatGreen (new), meadow*', 'slope < 0.35', '/ | \\ (wind) | " ; \' ~ (wave crest) | , .'],
+      ['patchColour', 'terrain paint (3 tint sets by fbm)', 'straw 40 % / green-gold 20 % / meadow 40 %', '10-30 m', '-', 'see tint', 'world-anchored fbm', '-'],
+      ['loneTree', 'CommonTree_3/4 (big, single)', '1 per 150-250 m', '1', '1.3-1.8', 'leaf*', 'hilltops, field crossings (landmarks)', '@ & % | far %'],
+      ['ruin', 'Ruins pack walls (CC0)', '1 per 300 m', '1-3', '-', 'stone*, moss*', 'near the far-side track', '# | _ "'],
+      ['whiteFlower', 'Flower_1 single', '1 / 100 m2', '1', '-', 'petalWhite', 'd < 40 m', '* | .'],
+      ['track', 'terrain path (dirt)', '-', '-', '-', 'dirt*', 'bridge A -> fields -> foothills', ': .'],
+      ['ambient', 'wind waves (engine ask), seed fluff, birds', 'seeds 30, birds 3', '-', '-', 'strawLight, ashDark', '-', '. v -']
+    ] },
+  { id: 'foothills', title: 'Rocky foothills (far side, levels 7-10)', hz: 0.46,
+    ridges: [{ d: 1300, hM: 700, seed: 11, f: 2.5, keys: ['mountainHazeDark', 'mountainHaze', 'mountainHazeLight'], snow: 0.4, snowMin: 0.08, glyphs: ':.;' },
+             { d: 380, hM: 120, seed: 13, f: 4, keys: ['screeDark', 'scree', 'screeLight'], glyphs: '%#;:o' }],
+    ground: function (wx, d) {
+      var h = wHash(wx, d, 4), n = fbm(wx * 0.12, d * 0.12, 8);
+      if (n > 0.62 && h < 0.5) return { g: pick('#%O', h * 3 % 1), k: ['stoneDark', 'stoneMid', 'stoneLight'], n: [(h - 0.5), 0.8, 0.4] };
+      if (n < 0.35 && h < 0.4) return { g: pick("',\"", h * 5 % 1), k: ['turfDark', 'turf', 'mossLight'], bri: 0.9 };
+      return { g: pick('.,:o;', h * 7 % 1), k: ['screeDark', 'scree', 'screeLight'], n: [(h - 0.5) * 0.6, 0.9, 0.3] };
+    },
+    objects: function () {
+      var o = scatterObjs(41, 26, 6, 160, function (r, d, wx) { var big = r() < 0.4; return { type: 'rock', wx: wx, d: d, h: big ? 3 + r() * 4 : 0.6 + r(), w: big ? 5 + r() * 6 : 1.2 + r() * 1.5, seed: (r() * 1e6) | 0, keys: ['stoneDark', 'stoneCool', 'stoneLight'], moss: r() < 0.3 }; });
+      o.push({ type: 'deadtree', wx: -6, d: 22, h: 6, w: 3, seed: 2 }, { type: 'pine', wx: 18, d: 70, h: 12, w: 4.5, seed: 4 }, { type: 'pine', wx: 22, d: 74, h: 10, w: 4, seed: 6 });
+      o = o.concat(scatterObjs(42, 30, 2.3, 10, function (r, d, wx) { return r() < 0.5 ? { type: 'stem', wx: wx, d: d, h: 0.3 + r() * 0.3, keys: ['turfDark', 'turf', 'mossLight'], lean: (r() - 0.3) * 0.6 } : null; }));
+      return o;
+    },
+    particles: ['dust', 'birds'],
+    scatter: [
+      ['scree', 'terrain type scree (texture) + Pebble_Round / Pebble_Square', '50 / 100 m2 pebbles', 'fans below cliffs', '0.5-2', 'screeDark/scree/screeLight (new)', 'slope 0.3-0.7', '. , : o ; | . : | .'],
+      ['bigRock', 'Rock_Big_1..3 / Cliff_Rock', '0.6 / 100 m2', '1-4 (clusters at the mountain foot)', '1.5-4', 'stoneDark/stoneCool/stoneLight', 'slope > 0.3; proxy colliders', '# % O = | % # | %'],
+      ['rockSmall', 'Rock_Medium_1..3', '2 / 100 m2', '2-5', '0.5-1.2', 'stone*, mossCap on 30 %', 'anywhere', '% o | o | .'],
+      ['sparseGrass', 'Grass_Common_Short (sparse)', '10 / 100 m2', 'tufts in hollows', '0.6-1', 'turfDark/turf/mossLight', 'fbm < 0.35 (hollows)', "' , \" | , | ."],
+      ['deadTree', 'DeadTree_1..3', '0.05 / 100 m2', '1', '-', 'ash*', 'ridges (silhouettes)', 'Y | / \\'],
+      ['lonePine', 'Pine_4/5 (wind-bent)', '0.1 / 100 m2', '1-3', '0.7-1', 'pine*', 'lower foothills only', 'A ^'],
+      ['caveMouth', 'Cliff + dark opening (later)', 'hand-placed', '-', '-', 'stoneDeep, mortar', 'mountain foot', '( ) #'],
+      ['ambient', 'dust gusts, a hawk / birds', 'dust 40, birds 3', '-', '-', 'screeLight, ashDark', 'wind > 15 %', ', . v']
+    ] },
+  { id: 'riverbank', title: 'Big river bank + bridge (both sides; wadeable, slow)', hz: 0.42,
+    ridges: [{ d: 1500, hM: 480, seed: 21, f: 2.8, keys: ['mountainHazeDark', 'mountainHaze', 'mountainHazeLight'], snow: 0.35, snowMin: 0.1, glyphs: ':.;' }],
+    ground: function (wx, d, t) {
+      var c = -2 + Math.sin(d * 0.035) * 5, half = 7 + d * 0.03, a = Math.abs(wx - c), h = wHash(wx, d, 5);
+      if (a < half) {   // water, flowing toward the camera
+        var shallow = a > half - 1.4, ph = Math.sin(d * 1.1 + t * 2.2 + Math.sin(wx * 0.7) * 1.5), glint = ph > 0.86 && h < 0.45 && R.L[1] > 0.12;
+        if (shallow) return { g: pick('-.~', h), k: ['river', 'riverShallow', 'riverLight'], bgK: 0.32 };
+        return { g: glint ? '~' : ph > 0.2 ? '~' : ph < -0.6 ? '=' : '-', k: glint ? ['riverLight', 'riverLight', 'surf'] : ['woadDark', 'river', 'riverLight'], bri: glint ? 1.3 : 0.9 + ph * 0.08, bgK: 0.34, n: [0, 1, 0.6] };
+      }
+      if (a < half + 1.8) return { g: pick('o.,o', h), k: ['sandWet', 'pebble', 'pebbleLight'] };
+      if (a < half + 3.2) return { g: pick('|"i,', h), k: ['reedDark', 'reed', 'reedLight'] };
+      return { g: pick('",\'.', h), k: ['meadowDark', 'meadow', 'meadowLight'] };
+    },
+    objects: function () {
+      var o = [{ type: 'bridge', d: 30, wx0: -12, wx1: 15, hD: 1.6, hR: 2.6 }];
+      o = o.concat(scatterObjs(51, 40, 2.4, 14, function (r, d, wx) { var c = -2 + Math.sin(d * 0.035) * 5, side = r() < 0.5 ? -1 : 1, x = c + side * (7 + d * 0.03 + 1.9 + r() * 1.4); return { type: 'stem', wx: x, d: d, h: 1.1 + r() * 0.6, keys: ['reedDark', 'reed', 'reedLight'], head: r() < 0.4 ? 'woodDark' : null, hg: 'I', lean: (r() - 0.5) * 0.4 }; }));
+      o.push({ type: 'rock', wx: 6.5, d: 9, h: 0.8, w: 1.9, seed: 31 }, { type: 'rock', wx: -1, d: 16, h: 0.5, w: 1.4, seed: 32, keys: ['mossRockDark', 'mossRock', 'mossRockLight'] },
+             { type: 'log', wx: -9, d: 7, h: 0.35, w: 2.8, keys: ['ashDark', 'ash', 'ashLight'] },
+             { type: 'oak', wx: -26, d: 40, h: 12, w: 11, seed: 51 }, { type: 'pine', wx: 22, d: 55, h: 15, w: 5, seed: 52 }, { type: 'oak', wx: 30, d: 90, h: 12, w: 10, seed: 53 });
+      return o;
+    },
+    particles: ['mist', 'birds'],
+    scatter: [
+      ['water', 'placed water surface (river), flow dir N -> S', 'river band 40-60 m wide', '-', '-', 'woadDark/river/riverLight, riverShallow (new) edges', 'WADE flag: speed x0.4, fords x0.7, current push', '~ - = (flow) glint ~ | ~ - | - ~'],
+      ['bankPebbles', 'Pebble_Round_1..5 + terrain silt', '40 / 100 m2', 'strip 1.5-2 m', '0.4-1', 'sandWet, pebble, pebbleLight (ART-02)', '0-2 m from the waterline', 'o . , | o . | .'],
+      ['reeds', 'Reeds / Cattail (Plant_*)', '30 / 100 m2', 'clumps 2-6', '0.9-1.5', 'reedDark/reed/reedLight (new), woodDark heads', '1.5-3.5 m from the waterline, not at bridges', '| i I \" | | , | ,'],
+      ['bridgeA', 'Bridge_Stone / Bridge_Wood (mesh + proxy collider)', '1 (open)', '-', '-', 'wood*, stone*', 'row 56 (layout)', '= H \" |'],
+      ['bridgeB', 'same mesh, broken variant (middle span missing) + repair stages', '1 (broken)', '-', '-', 'wood*, woodDark (splinters)', 'row 24 (layout)', '= H / \\'],
+      ['driftwood', 'WoodLog (bleached)', '0.5 / 100 m2', '1', '-', 'ash*', 'banks + beach', '= - O'],
+      ['ambient', 'water mist (morning), glints, birds', 'mist 26', '-', '-', 'riverShallow, riverLight', '-', ': .']
+    ] },
+  { id: 'shore', title: 'Sea shore (south border, no swimming out)', hz: 0.42,
+    ridges: [{ d: 1600, hM: 160, seed: 31, f: 1.5, keys: ['mountainHazeDark', 'mountainHaze', 'mountainHazeLight'], glyphs: ':.' }],
+    ground: function (wx, d, t) {
+      var shoreD = 16 + 4 * Math.sin(wx * 0.07 + 1), h = wHash(wx, d, 6), run = 2.6 * Math.max(0, Math.sin(t * 0.8 + wx * 0.03)), x = d - shoreD;
+      if (x > 0) {
+        var surfBand = x < 2.2 + Math.sin(t * 0.8 + wx * 0.03) * 1.2;
+        if (surfBand) return { g: pick('~=~-', h), k: ['seaLight', 'surf', 'surf'], bri: 1.15, bgK: 0.4 };
+        var ph = Math.sin(d * 0.7 - t * 1.6 + Math.sin(wx * 0.3)), glint = ph > 0.9 && h < 0.4;
+        return { g: glint ? '~' : ph > 0 ? '~' : '-', k: glint ? ['seaLight', 'seaLight', 'surf'] : d > 120 ? ['seaDeep', 'seaDeep', 'sea'] : ['seaDeep', 'sea', 'seaLight'], bgK: 0.38, n: [0, 1, 0.5], bri: 0.9 + ph * 0.06 };
+      }
+      if (-x < run) return { g: pick('-.', h), k: ['sandWet', 'riverShallow', 'surf'], bgK: 0.3 };
+      if (-x < 4) return { g: pick('.,:', h), k: ['sandWet', 'sandWet', 'sand'] };
+      if (h < 0.03) return { g: 'o', k: ['pebble', 'pebble', 'pebbleLight'] };
+      return { g: pick('.:,.', h), k: ['sand', 'sand', 'sandLight'] };
+    },
+    objects: function () {
+      var o = [{ type: 'rock', wx: -22, d: 24, h: 7, w: 14, seed: 61, keys: ['stoneDark', 'stoneCool', 'stoneLight'] }, { type: 'rock', wx: -14, d: 20, h: 2.5, w: 4, seed: 62, keys: ['stoneDark', 'stoneCool', 'stoneLight'] },
+               { type: 'log', wx: 4, d: 8, h: 0.4, w: 3.4, keys: ['ashDark', 'ash', 'ashLight'] }, { type: 'rock', wx: 12, d: 13, h: 0.7, w: 1.6, seed: 63 }];
+      o = o.concat(scatterObjs(61, 46, 2.3, 9, function (r, d, wx) { return wx > 1 ? { type: 'stem', wx: wx, d: d, h: 0.5 + r() * 0.4, keys: ['reedDark', 'reed', 'reedLight'], lean: 0.2 + (r() - 0.5) * 0.5 } : null; }));
+      return o;
+    },
+    particles: ['spray', 'birds'],
+    sprayY: 0.47,
+    scatter: [
+      ['sea', 'placed water plane (sea) + surf band shader', 'south border', '-', '-', 'seaDeep/sea/seaLight, surf (new)', 'soft current pushes back past the surf (no swimming out)', '~ - | ~ - | -'],
+      ['surf', 'animated band (run-up 0-2.6 m), spray particles', '-', '-', '-', 'surf, seaLight, riverShallow (run-up)', 'shoreline', '~ = - . \''],
+      ['sand', 'terrain types sand / sandWet', 'beach strip 20-50 m', '-', '-', 'sand*, sandWet (new)', 'rows sea-2..sea (layout b)', '. : , | . | .'],
+      ['duneGrass', 'Grass_Wispy (pale tint)', '25 / 100 m2', 'clumps', '0.6-1', 'reed*', 'dry sand > 4 m from water', '/ | \\ | , | .'],
+      ['seaRock', 'Rock_Big / Cliff (headlands)', 'hand-placed', '-', '2-6', 'stoneDark/stoneCool/stoneLight', 'where mountains / wall meet the sea', '# % O'],
+      ['driftwood+shells', 'WoodLog bleached, Pebble_*', '1 / 100 m2', '1-3', '-', 'ash*, pebble*', 'wet / dry sand line', '= O o'],
+      ['ambient', 'spray at the surf, gulls', 'spray 36, birds 3', '-', '-', 'surf, ashDark', '-', '\' . v -']
+    ] }
+];
+
+// ---------------------------------------------------------------------------
+// render + UI
+// ---------------------------------------------------------------------------
+var BUILT = [];
+function build() {
+  var wh = S.grid.split('x'), W = +wh[0], H = +wh[1];
+  BUILT = SCENES.map(function (sc, i) {
+    var fr = new Frame(W, H, sc.hz), objs = sc.objects().sort(function (a, b) { return b.d - a.d; });
+    var ps = (sc.particles || []).map(function (name, j) { var p = new Particles(PT[name], W, H, 100 + i * 10 + j); p.name = name; if (name === 'spray') p.p.forEach(function (q) { q.sy = sc.sprayY; }); return p; });
+    return { sc: sc, fr: fr, objs: objs, ps: ps, cv: document.getElementById('cv_' + sc.id), visible: true };
+  });
+}
+function render(B, t) {
+  var fr = B.fr, sc = B.sc;
+  fr.clear(); sky(fr, t, sc);
+  (sc.ridges || []).forEach(function (r) { ridge(fr, r); });
+  groundPass(fr, sc, t);
+  B.objs.forEach(function (o) {
+    if (o.type === 'stem' && sc.windLean) { o.lean0 = o.lean0 == null ? o.lean : o.lean0; o.lean = o.lean0 * 0.5 + Math.sin(o.wx * 0.12 + o.d * 0.22 - t * (0.6 + R.wind * 2.4)) * R.wind * 0.9; }
+    else if (o.type === 'stem') { o.lean0 = o.lean0 == null ? o.lean : o.lean0; o.lean = o.lean0 + Math.sin(t * 1.5 + o.wx) * R.wind * 0.4; }
+    SH[o.type](fr, o);
+  });
+  if (sc.shafts && S.tod === 'day') {   // light shafts: diagonal bands from the sun side
+    var cx, cy, tn = R.L[0] / Math.max(0.2, R.L[1]), ray = rgbOf('sunRay');
+    for (cy = 0; cy < fr.H; cy++) for (cx = 0; cx < fr.W; cx++) {
+      var u = cx + cy * tn * 0.6, band = Math.sin(u * 0.11) * 0.5 + vn(u * 0.05, 1, 77) - 0.75;
+      if (band > 0.2) fr.add(cx, cy, ray, (band - 0.2) * 0.35, (band - 0.2) * 0.12);
+    }
+    B.ps.forEach(function (p) { if (p.name === 'motes') p.p.forEach(function (q) { var u2 = q.x + q.y * tn * 0.6; q.shaft = Math.sin(u2 * 0.11) * 0.5 + vn(u2 * 0.05, 1, 77) - 0.75 > 0.2; }); });
+  }
+  B.ps.forEach(function (p) { p.draw(fr, t); });
+  blit(B);
+}
+function blit(B) {
+  var fr = B.fr, cv = B.cv, big = fr.W <= 160, CW = big ? 9 : 6, CH = big ? 15 : 10;
+  if (cv.width !== fr.W * CW) { cv.width = fr.W * CW; cv.height = fr.H * CH; }
+  var x = cv.getContext('2d'), i, cx, cy;
+  x.font = (big ? 14 : 10) + 'px Consolas, "Courier New", monospace'; x.textBaseline = 'top';
+  for (cy = 0; cy < fr.H; cy++) for (cx = 0; cx < fr.W; cx++) {
+    i = cy * fr.W + cx;
+    x.fillStyle = U.css([fr.bg[i * 3], fr.bg[i * 3 + 1], fr.bg[i * 3 + 2]]); x.fillRect(cx * CW, cy * CH, CW, CH);
+    var g = fr.g[i]; if (g && g !== ' ') { x.fillStyle = U.css([fr.fg[i * 3], fr.fg[i * 3 + 1], fr.fg[i * 3 + 2]]); x.fillText(g, cx * CW, cy * CH - (big ? 0 : 0)); }
+  }
+}
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+function layoutPage() {
+  var host = document.getElementById('looks'), h = '';
+  SCENES.forEach(function (sc) {
+    h += '<h3>' + esc(sc.title) + '</h3><canvas id="cv_' + sc.id + '"></canvas><div class="cap">mockup at the scene grid; ambient: ' + esc((sc.particles || []).join(', ')) + '</div>';
+    h += '<table><tr><th>ingredient</th><th>mesh family (indicative)</th><th>density</th><th>clusters</th><th>scale</th><th>tint keys</th><th>rule</th><th>glyphs near | mid | far</th></tr>';
+    sc.scatter.forEach(function (r) { h += '<tr>' + r.map(function (c) { return '<td>' + esc(c) + '</td>'; }).join('') + '</tr>'; });
+    h += '</table>';
+  });
+  host.innerHTML = h;
+  var k = '<table><tr><th>key</th><th>hex</th><th>group</th><th>use</th><th>source</th></tr>';
+  Object.keys(V.NEWKEYS).forEach(function (n) { var e = V.NEWKEYS[n]; k += '<tr><td>' + n + '</td><td><span class="sw" style="background:' + e[0] + '"></span>' + e[0] + '</td><td>' + e[1] + '</td><td>' + esc(e[2]) + '</td><td>' + e[3] + '</td></tr>'; });
+  document.getElementById('newKeys').innerHTML = k + '</table>';
+  var J = { status: 'PROPOSAL, owner approval pending', newColors: {}, scatter: {} };
+  Object.keys(V.NEWKEYS).forEach(function (n) { J.newColors[n] = V.NEWKEYS[n][0]; });
+  SCENES.forEach(function (sc) { J.scatter[sc.id] = sc.scatter.map(function (r) { return { id: r[0], mesh: r[1], density: r[2], clusters: r[3], scale: r[4], tint: r[5], rule: r[6], glyphs: r[7] }; }); });
+  document.getElementById('jsonLooks').textContent = JSON.stringify(J, null, 1);
+  window.VALLEY.LOOKS_JSON = J;
+}
+window.VALLEY.SCENES = SCENES; window.VALLEY.PT = PT;
+window.VALLEY.lookRenderOnce = function () { rig(); build(); BUILT.forEach(function (B) { render(B, 0); }); return BUILT; };
+
+// controls
+function bind(id, key, num, fmt) { var el = document.getElementById(id); el.addEventListener('input', function () { S[key] = num ? +el.value : el.value; var v = document.getElementById(id + 'V'); if (v) v.textContent = el.value; rig(); if (key === 'grid') build(); if (!S.anim) drawAll(T); }); }
+bind('sunAz', 'az', true); bind('sunEl', 'el', true); bind('wind', 'wind', true); bind('tod', 'tod'); bind('grid', 'grid');
+document.getElementById('anim').addEventListener('change', function (e) { S.anim = e.target.checked; });
+document.getElementById('mapMode').addEventListener('change', V.drawMap); document.getElementById('labels').addEventListener('change', V.drawMap);
+function copyBtn(btn, pre, note) { document.getElementById(btn).addEventListener('click', function () { var txt = document.getElementById(pre).textContent;
+  (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(function () { document.getElementById(note).textContent = 'copied'; }, function () { document.getElementById(note).textContent = 'clipboard blocked: select the text below'; }); }); }
+copyBtn('copyMap', 'jsonMap', 'cpMap'); copyBtn('copyLooks', 'jsonLooks', 'cpLooks');
+
+V.drawLegend(); V.drawMap();
+var lj = V.layoutJSON(); document.getElementById('jsonMap').textContent = JSON.stringify(lj, null, 1);
+var nNear = 0, nFar = 0; V.LAYOUT.forEach(function (row, y) { row.forEach(function (z, c) { var L = V.levelOf(z, c, y); if (!L || V.ZONES[z].water) return; if (V.sideOf(c, y) === 'near') nNear++; else nFar++; }); });
+document.getElementById('mapCap').textContent = 'land cells: near side ' + nNear + ' / far side ' + nFar + ' (far / near = ' + (nFar / nNear).toFixed(2) + '); 1 cell = 16 x 24 m; tower at (1496, 1024); ' +
+  'bridge A row ' + 56 + ', bridge B row ' + 24 + '. View "zone keys" = the raw data the copy button emits.';
+window.VALLEY.areaRatio = nFar / nNear;
+layoutPage(); rig(); build();
+var T = 0, last = performance.now(), acc = 0;
+function drawAll(t) { var t0 = performance.now(); BUILT.forEach(function (B) { if (B.visible) render(B, t); }); document.getElementById('perf').textContent = 'frame ' + (performance.now() - t0).toFixed(0) + ' ms'; }
+if ('IntersectionObserver' in window) {
+  var io = new IntersectionObserver(function (es) { es.forEach(function (e) { BUILT.forEach(function (B) { if (B.cv === e.target) B.visible = e.isIntersecting; }); }); });
+  BUILT.forEach(function (B) { io.observe(B.cv); });
+}
+BUILT.forEach(function (B) { render(B, 0); });
+function loop(now) {
+  var dt = Math.min(0.2, (now - last) / 1000); last = now;
+  if (S.anim) { T += dt; acc += dt; BUILT.forEach(function (B) { if (B.visible) B.ps.forEach(function (p) { p.step(dt, T, B.fr.W, B.fr.H); }); }); if (acc > 0.11) { acc = 0; drawAll(T); } }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+} catch (e) { document.getElementById('fatal').textContent = 'FATAL (looks): ' + e.message + '\n' + e.stack; }
+})();
+</script>
+<script>
+(function () {
+'use strict';
+var out = document.getElementById('checks'), nPass = 0, nFail = 0;
+function line(ok, msg, info) {
+  var d = document.createElement('div'); d.className = info ? 'info' : ok ? 'pass' : 'fail';
+  d.textContent = (info ? 'INFO ' : ok ? 'PASS ' : 'FAIL ') + msg; out.appendChild(d);
+  if (!info) { if (ok) nPass++; else nFail++; }
+}
+try {
+  var V = window.VALLEY; if (!V) throw new Error('layout script did not load');
+  var Z = V.LAYOUT, W = V.MW, H = V.MH, ZK = Object.keys(V.ZONES), c, y;
+  line(!!(window.ASSETS && window.ASSETS.palette), 'palette.js loaded');
+  // 1. grid
+  var badKey = 0; Z.forEach(function (r) { r.forEach(function (z) { if (ZK.indexOf(z) < 0) badKey++; }); });
+  line(Z.length === H && Z.every(function (r) { return r.length === W; }), 'layout grid is ' + W + ' x ' + H);
+  line(badKey === 0, 'every cell has a legend zone key (' + badKey + ' unknown)');
+  // 2. outer ring borders
+  var top = Z[0].every(function (z) { return z === 'M'; }), left = Z.every(function (r) { return r[0] === 'M'; });
+  var right = Z.every(function (r) { return r[W - 1] === 'W' || r[W - 1] === 'M'; }), bot = Z[H - 1].every(function (z) { return z === 'S' || z === 'M' || z === 'W'; });
+  var botSea = Z[H - 1].filter(function (z) { return z === 'S'; }).length;
+  line(top, 'north edge: every top-row cell is mountain');
+  line(left, 'west edge: every left-column cell is mountain');
+  line(right, 'east edge: every right-column cell is rock wall (or mountain in the NE corner)');
+  line(bot && botSea > W * 0.7, 'south edge: bottom row is sea (' + botSea + '/' + W + ' sea cells, rest = mountain / wall headlands)');
+  // 3. east = river then wall, every land row
+  var eastRows = 0, eastBad = [];
+  for (y = 0; y < H; y++) {
+    if (Z[y][W - 1] !== 'W') continue;
+    var j = W - 1; while (j > 0 && Z[y][j] === 'W') j--;
+    if (Z[y][j] === 'M' || Z[y][j] === 'S' || Z[y][j] === 's') continue;   // mountain / sea rows
+    eastRows++;
+    if (Z[y][j] !== 'r') eastBad.push(y);
+  }
+  line(eastRows > 50 && eastBad.length === 0, 'east border: in all ' + eastRows + ' land rows the Ferrum river runs right in front of the rock wall' + (eastBad.length ? ' (bad rows ' + eastBad.join(',') + ')' : ''));
+  // 4. big river continuous mountain -> sea
+  var RIV = { R: 1, F: 1, A: 1, B: 1 }, rows = [];
+  for (y = 0; y < H; y++) { var has = false; for (c = 20; c < 100; c++) if (RIV[Z[y][c]]) { has = true; break; } if (has) rows.push(y); }
+  var r0 = rows[0], r1 = rows[rows.length - 1], gap = rows.length !== r1 - r0 + 1;
+  var srcC = Math.round(V.rcol(r0)), mouthC = Math.round(V.rcol(r1));
+  var srcOk = Z[r0 - 1] && (Z[r0 - 1][srcC] === 'M' || Z[r0 - 1][srcC - 1] === 'M' || Z[r0 - 1][srcC + 1] === 'M');
+  var mouthOk = Z[r1 + 1] && ['s', 'S'].indexOf(Z[r1 + 1][mouthC]) >= 0;
+  line(!gap && srcOk && mouthOk, 'big river is continuous from the north mountains (row ' + r0 + ') to the sea (row ' + r1 + ')');
+  // splits: every river row has land on both sides
+  // 5. bridges
+  function bridge(id) {
+    var cells = []; for (y = 0; y < H; y++) for (c = 0; c < W; c++) if (Z[y][c] === id) cells.push([c, y]);
+    if (!cells.length) return { ok: false, msg: 'missing' };
+    var ys = cells.map(function (p) { return p[1]; }), row = ys[0], one = ys.every(function (v) { return v === row; });
+    var xs = cells.map(function (p) { return p[0]; }), a = Math.min.apply(null, xs), b = Math.max.apply(null, xs);
+    var landL = V.ZONES[Z[row][a - 1]] && !V.ZONES[Z[row][a - 1]].water && !V.ZONES[Z[row][a - 1]].border;
+    var landR = V.ZONES[Z[row][b + 1]] && !V.ZONES[Z[row][b + 1]].water && !V.ZONES[Z[row][b + 1]].border;
+    var noWaterLeft = true; for (c = a; c <= b; c++) if (Z[row][c] !== id) noWaterLeft = false;
+    var spans = a < V.rcol(row) && b > V.rcol(row);
+    return { ok: one && landL && landR && noWaterLeft && spans, msg: 'row ' + row + ', cols ' + a + '-' + b + ' (' + (b - a + 1) * 16 + ' m), land both ends ' + (landL && landR) + ', spans the river ' + spans, row: row };
+  }
+  var bA = bridge('A'), bB = bridge('B');
+  line(bA.ok, 'bridge A (open) exists and spans the big river: ' + bA.msg);
+  line(bB.ok, 'bridge B (broken, to be repaired) exists and spans the big river: ' + bB.msg);
+  var lj = V.layoutJSON();
+  line(lj.bridges.length === 2 && lj.bridges[0].state === 'open' && lj.bridges[1].state === 'broken', 'exactly two bridges in the data: A open, B broken');
+  line(bA.ok && bB.ok && Math.abs(bA.row - bB.row) >= 20, 'bridges are far apart (' + Math.abs(bA.row - bB.row) * 24 + ' m north-south)');
+  // 6. connectivity
+  function flood(passable) {
+    var seen = new Uint8Array(W * H), st = [[V.TOWER.c, V.TOWER.r]], far = 0;
+    seen[V.TOWER.r * W + V.TOWER.c] = 1;
+    while (st.length) {
+      var p = st.pop(), k;
+      if (V.sideOf(p[0], p[1]) === 'far' && (Z[p[1]][p[0]] === 'o' || Z[p[1]][p[0]] === 't')) far++;
+      var nb = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+      for (k = 0; k < 4; k++) {
+        var x2 = p[0] + nb[k][0], y2 = p[1] + nb[k][1];
+        if (x2 < 0 || y2 < 0 || x2 >= W || y2 >= H || seen[y2 * W + x2]) continue;
+        if (!passable(Z[y2][x2])) continue;
+        seen[y2 * W + x2] = 1; st.push([x2, y2]);
+      }
+    }
+    return { far: far, seen: seen };
+  }
+  function land(z) { var Q = V.ZONES[z]; return !Q.water && !Q.border; }
+  var f0 = flood(land), fA = flood(function (z) { return land(z) || z === 'A'; }), fB = flood(function (z) { return land(z) || z === 'B'; });
+  var fW = flood(function (z) { return land(z) || z === 'R' || z === 'F'; });
+  line(f0.far === 0, 'on dry land (no bridge, no wading) the far side is NOT reachable from the tower: the river splits the valley');
+  line(fA.far > 0, 'bridge A connects the near side to the far side (' + fA.far + ' far-side cells reachable)');
+  line(fB.far > 0, 'bridge B connects the near side to the far side (' + fB.far + ' far-side cells reachable, once repaired)');
+  line(fW.far > 0, 'river is NOT a hard wall: wading (R / F cells) also reaches the far side (owner 2026-10-09)');
+  var leak = 0; for (y = 0; y < H; y++) for (c = 0; c < W; c++) if (fW.seen[y * W + c] && (c === 0 || y === 0 || c === W - 1 || y === H - 1)) leak++;
+  line(leak === 0, 'no walkable / wadeable path reaches the map edge (borders hold)');
+  var pastWall = 0; for (y = 0; y < H; y++) { var seenWall = false; for (c = 0; c < W; c++) { if (Z[y][c] === 'W') seenWall = true; else if (seenWall && Z[y][c] !== 'M') pastWall++; } }
+  line(pastWall === 0, 'nothing but rock wall (or mountain) east of the wall line');
+  // 7. near-side landmarks
+  function find(z) { for (y = 0; y < H; y++) for (c = 0; c < W; c++) if (Z[y][c] === z) return [c, y]; return null; }
+  var tw = find('T'), ws = find('w');
+  line(tw && V.sideOf(tw[0], tw[1]) === 'near', 'tower + breach on the near side');
+  line(ws && V.sideOf(ws[0], ws[1]) === 'near', 'waystone on the near side');
+  var cnt = {}; Z.forEach(function (r, yy) { r.forEach(function (z, cc) { var k = z + ':' + V.sideOf(cc, yy); cnt[k] = (cnt[k] || 0) + 1; }); });
+  line(cnt['g:near'] > 60 && !cnt['g:far'], 'start meadow on the near side only (' + (cnt['g:near'] || 0) + ' cells)');
+  line(cnt['h:near'] > 60 && !cnt['h:far'], 'hillside on the near side only (' + (cnt['h:near'] || 0) + ' cells)');
+  line(cnt['f:near'] > 300 && !cnt['f:far'], 'pine / oak forest on the near side only (' + (cnt['f:near'] || 0) + ' cells)');
+  line(cnt['o:far'] > 300 && !cnt['o:near'], 'open fields on the far side only (' + (cnt['o:far'] || 0) + ' cells)');
+  line(cnt['t:far'] > 300 && !cnt['t:near'], 'rocky foothills on the far side only (' + (cnt['t:far'] || 0) + ' cells)');
+  line((cnt['b:near'] || 0) > 10 && (cnt['b:far'] || 0) > 10, 'sea shore on both sides');
+  // glades
+  var seenL = new Uint8Array(W * H), glades = [];
+  for (y = 0; y < H; y++) for (c = 0; c < W; c++) if (Z[y][c] === 'l' && !seenL[y * W + c]) {
+    var st2 = [[c, y]], n = 0, ring = 0, ringF = 0; seenL[y * W + c] = 1;
+    while (st2.length) { var p = st2.pop(); n++; [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(function (d) { var x2 = p[0] + d[0], y2 = p[1] + d[1], z = Z[y2] && Z[y2][x2];
+      if (z === 'l') { if (!seenL[y2 * W + x2]) { seenL[y2 * W + x2] = 1; st2.push([x2, y2]); } } else if (z) { ring++; if (z === 'f' || z === 'p') ringF++; } }); }
+    glades.push({ n: n, inForest: ringF / Math.max(1, ring) });
+  }
+  line(glades.length >= 2 && glades.length <= 3, glades.length + ' flower glades (wanted 2-3)');
+  line(glades.every(function (g) { return g.inForest >= 0.6; }), 'every glade sits inside the forest (edge = forest: ' + glades.map(function (g) { return Math.round(g.inForest * 100) + '%'; }).join(', ') + ')');
+  // 8. level bands
+  var nearMax = 0, farMin = 99, noLv = 0;
+  Z.forEach(function (r, yy) { r.forEach(function (z, cc) { var L = V.levelOf(z, cc, yy); if (!L) { if (!V.ZONES[z].border) noLv++; return; }
+    if (V.sideOf(cc, yy) === 'near') nearMax = Math.max(nearMax, L[1]); else farMin = Math.min(farMin, L[0]); }); });
+  line(noLv === 0, 'every non-border zone has a level band');
+  line(nearMax <= 5 && farMin >= 5, 'level bands: near side max ' + nearMax + ' (<= 5), far side min ' + farMin + ' (>= 5)');
+  // 9. ASCII + colours
+  var asciiBad = [];
+  Object.keys(V.MAPG).forEach(function (k) { V.MAPG[k][0].forEach(function (g) { if (!V.util.isAscii(g)) asciiBad.push(k); }); });
+  lj.rows.forEach(function (r) { if (!V.util.isAscii(r)) asciiBad.push('row'); });
+  (V.SCENES || []).forEach(function (sc) { sc.scatter.forEach(function (r) { r.forEach(function (s) { if (!V.util.isAscii(s)) asciiBad.push(sc.id + ':' + r[0]); }); }); });
+  line(asciiBad.length === 0, 'all map glyphs, layout rows and scatter glyph strings are printable ASCII 32-126' + (asciiBad.length ? ' (' + asciiBad.slice(0, 6).join(', ') + ')' : ''));
+  if (V.lookRenderOnce) {
+    var built = V.lookRenderOnce(), nonAscii = 0;
+    built.forEach(function (B) { B.fr.g.forEach(function (g) { if (g && !V.util.isAscii(g)) nonAscii++; }); });
+    line(built.length === 6 && nonAscii === 0, built.length + ' look sheets render at ' + built[0].fr.W + ' x ' + built[0].fr.H + ', all cells ASCII');
+  } else line(false, 'look sheets did not load');
+  Object.keys(V.MAPG).forEach(function (k) { V.MAPG[k][1].forEach(function (key) { V.util.hexOf(key); }); });
+  ['snow', 'snowShade', 'lantern', 'woodDark', 'leafLight', 'pineLight', 'pine', 'pineDark', 'leaf', 'leafDark', 'petalYellow', 'petalWhite', 'river'].forEach(function (k) { V.util.hexOf(k); });
+  var miss = Object.keys(V.MISSING);
+  line(miss.length === 0, 'every colour key used resolves to palette.js or the proposed list' + (miss.length ? ' (missing: ' + miss.join(', ') + ')' : ''));
+  var P = (window.ASSETS && window.ASSETS.palette && window.ASSETS.palette.colors) || {};
+  var clash = Object.keys(V.NEWKEYS).filter(function (k) { return P[k]; });
+  line(clash.length === 0, 'proposed keys are new (none already in palette.js)' + (clash.length ? ' (already there: ' + clash.join(', ') + ' - drop from the proposal)' : ''));
+  var usesReserved = []; Object.keys(V.MAPG).forEach(function (k) { V.MAPG[k][1].forEach(function (key) { if (V.RESERVED.indexOf(key) >= 0) usesReserved.push(key); }); });
+  (V.SCENES || []).forEach(function (sc) { sc.scatter.forEach(function (r) { V.RESERVED.forEach(function (rk) { if (new RegExp('\\b' + rk + '\\b').test(r[5])) usesReserved.push(sc.id + ':' + rk); }); }); });
+  line(usesReserved.length === 0, 'no reserved colours (danger, heroGreen, aether, mana, vital, gold, alert) in scenery' + (usesReserved.length ? ' (' + usesReserved.join(', ') + ')' : ''));
+  line(true, 'far / near land area = ' + V.areaRatio.toFixed(2) + ' (manager lean ~1.0, owner Q2)', true);
+} catch (e) { line(false, 'check script crashed: ' + e.message); }
+var s = document.createElement('div'); s.className = nFail ? 'fail' : 'pass'; s.style.fontWeight = 'bold';
+s.textContent = 'SUMMARY: ' + nPass + ' PASS, ' + nFail + ' FAIL'; out.insertBefore(s, out.firstChild);
+window.VALLEY_CHECKS = { pass: nPass, fail: nFail };
+})();
+</script>
+</body>
+</html>
