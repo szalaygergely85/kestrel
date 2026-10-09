@@ -179,10 +179,13 @@ export async function loadEngineMaterialKeys(load = (url) => import(url.href)) {
  */
 export function withCollision(json, { hull = false } = {}) {
   if (json.layout !== 'static') return json;
-  // ALPHA-01e: leafy trees (CommonTree/Pine/TwistedTree_n): the crown ranges are masked cards, so the prism comes from the opaque (bark) ranges only
-  if (!json.colliderParts && /^(CommonTree|Pine|TwistedTree)_\d/.test(String(json.id).split('/').pop()) && json.ranges) {
-    const trunk = json.ranges.filter((r) => !r.mask).map((r) => r.part);
-    if (trunk.length && trunk.length < json.ranges.length) json = { ...json, colliderParts: trunk };
+  // ALPHA-01e nit (ARCH batch 16): data-driven, no name regex - ANY mesh with both masked and opaque
+  // ranges (leafy trees, or anything future) gets colliderParts = its opaque ranges, since the masked
+  // ranges are cutout cards (leaves/flowers), not solid. A mesh that's masked-only (e.g. the bushes,
+  // which have no opaque range at all) or already has colliderParts set is left alone.
+  if (!json.colliderParts && json.ranges) {
+    const opaque = json.ranges.filter((r) => !r.mask).map((r) => r.part);
+    if (opaque.length && opaque.length < json.ranges.length) json = { ...json, colliderParts: opaque };
   }
   const plan = planMeshCollision(json.id, json.pos, { parts: json.colliderParts, ranges: json.ranges, hull: hull && !!json.colliderHull });
   const next = { ...json };

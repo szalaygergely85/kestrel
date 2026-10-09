@@ -13,7 +13,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { importGltfBytes, runCli, parseArgs, countSmoothGroups, loadEngineMaterialKeys, stringifyMeshJSON } from './gltf-import.mjs';
+import { importGltfBytes, runCli, parseArgs, countSmoothGroups, loadEngineMaterialKeys, stringifyMeshJSON, withCollision } from './gltf-import.mjs';
 import { meshFromJSON, validateMesh } from '../engine/index.js';
 import { budgetFor } from './mesh-budgets.mjs';
 
@@ -337,6 +337,49 @@ await testAsync('Ruins import unchanged by ALPHA-01a: no uvMask/mask, render dat
     assert.ok(!('uvMask' in now));
     for (const k of ['pos', 'uv', 'nrm', 'flat', 'aux', 'bbox', 'ranges', 'matKeys', 'triCount']) assert.deepStrictEqual(now[k], was[k], k);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---- ALPHA-01e nit (ARCH batch 16): withCollision's masked/opaque split is data-driven now, no name regex ------------------------------
+/** A 2-range static mesh fixture: range 0 is a thin "trunk" triangle (xy footprint <= 0.1, z 0..1),
+ * range 1 is a wide "crown" triangle (xy footprint +-5, z 2..3), masked or opaque per the caller. */
+function trunkCrownJson(id, { crownMasked }) {
+  const base = id.split('/').pop();
+  return {
+    layout: 'static', id,
+    pos: [
+      0, 0, 0, 0.1, 0, 0, 0, 0.1, 1, // range 0 (trunk): small, z 0..1
+      -5, -5, 2, 5, -5, 2, 0, 5, 3, // range 1 (crown): wide, z 2..3
+    ],
+    ranges: [
+      { start: 0, count: 1, part: `${base}#0` },
+      { start: 1, count: 1, part: `${base}#1`, ...(crownMasked ? { mask: { tex: 'x', cutoff: 0.2 } } : {}) },
+    ],
+  };
+}
+function xExtent(collider) { const xs = collider.filter((_, i) => i % 3 === 0); return Math.max(...xs) - Math.min(...xs); }
+
+test('withCollision: a fixture with masked+opaque ranges gets opaque-only colliderParts regardless of its name', () => {
+  for (const id of ['quaternius/NotATree_7', 'quaternius/Pine_1']) { // one name the old regex never matched, one it always matched - same outcome either way now
+    const j = withCollision(trunkCrownJson(id, { crownMasked: true }));
+    assert.deepStrictEqual(j.colliderParts, [`${id.split('/').pop()}#0`], `${id}: colliderParts = the opaque range only`);
+    assert.ok(xExtent(j.collider) < 1, `${id}: prism footprint is trunk-thin (crown excluded), got ${xExtent(j.collider)}`);
+  }
+});
+
+test('withCollision: an all-opaque mesh keeps today\'s behaviour (no colliderParts, full-mesh prism)', () => {
+  const j = withCollision(trunkCrownJson('quaternius/RockBig_1', { crownMasked: false }));
+  assert.strictEqual(j.colliderParts, undefined, 'no masked range -> nothing to split on, colliderParts stays unset');
+  assert.ok(xExtent(j.collider) > 5, `prism spans the whole mesh (trunk+crown), got ${xExtent(j.collider)}`);
+});
+
+test('withCollision: a "Pine_1"-named mesh with no masked range is not special-cased any more', () => {
+  // The old CommonTree|Pine|TwistedTree_<digit> regex matched this name, but even the old code only
+  // acted when there was ALSO a masked range (trunk.length < ranges.length); with no mask here it was
+  // already a no-op before this nit too. This pins that the name alone never triggers anything now:
+  // same shape, no mask -> same full-mesh prism as any other untitled all-opaque mesh (see above).
+  const j = withCollision(trunkCrownJson('quaternius/Pine_1', { crownMasked: false }));
+  assert.strictEqual(j.colliderParts, undefined, 'Pine_1, no mask: colliderParts unset - the name is irrelevant now');
+  assert.ok(xExtent(j.collider) > 5, `Pine_1, no mask: gets the full-mesh prism (same as RockBig_1 above), got ${xExtent(j.collider)}`);
 });
 
 console.log(`${passed} passed, ${process.exitCode ? 'some failed' : '0 failed'}.`);
