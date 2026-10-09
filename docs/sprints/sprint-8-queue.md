@@ -572,7 +572,7 @@ Feed seam events (`beast:died`, `item:got`, `area:entered`, `flag:set`) into que
 - [ ] questLog (S8-C-12 view, if landed) opens from the seam input event; else leave a `NEEDS B1:` note for the key binding.
 Files: `game/js/quest/wire/quest.js` + test. Owner look. NEEDS B1: gameHooks seam.
 
-### S8-C-HOOK-CHEST chest + item-get card wiring (replaces S8-B1-04 hook) [P1, lane C, ~0.5 d, deps: S8-B1-01 seam, S8-C-06 chest sim, S8-C-07 item-get card, S8-A-06/07 designer assets]
+### S8-C-HOOK-CHEST DROPPED 2026-10-09 (B1 built S8-B1-04 = game/js/chestHook.js; chest content/placement + first-chest reward stay C/owner). Old title: chest + item-get card wiring (replaces S8-B1-04 hook) [P1, lane C, ~0.5 d, deps: S8-B1-01 seam, S8-C-06 chest sim, S8-C-07 item-get card, S8-A-06/07 designer assets]
 On `prop:touched` for a chest: sim open once, item into inventory, item-get card via `drawHud`, chest opened flag saved.
 - [ ] Node test with a fake seam: chest opens once, item added once, a second touch does nothing, state persisted.
 - [ ] Headless capture of the item-get card at 400x150; reload keeps the chest open. Owner look.
