@@ -79,6 +79,7 @@ import { addVoxelInstances, sharedVoxelMeshCache } from '../../mesh/voxelMesh.js
 import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer } from '../projection.js';
 import { frustumPlanes } from '../../mesh/culling.js';
 // ME-15b (27.9a): sun shadow map pass (depth only, before the raster pass).
+import { windShadowKey } from '../../mesh/sway.js';
 import { resolveSunShadowOptions, SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../shadowSun.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../../mesh/shadowList.js';
 import { SHADOW_FRAG_SRC, SHADOW_TERRAIN_FRAG_SRC, SHADOW_DEPTH_COPY_FRAG_SRC } from './glsl/shadow.frag.js';
@@ -2171,6 +2172,7 @@ export class GpuCellPipeline {
     src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null; // CLOTH-1b2
     src.matIdFor = this._table ? this._table.idFor : undefined;
     src.meshCache = this._meshDrawCache; src.meshIdFor = this._strictMatIdFor || undefined; // ME-14c3: meshes cast sun shadows
+    src.maskAtlas = (this._world && this._world.maskAtlas) || null; // ALPHA-01f-fix2
     src.fogFarM = sunShadowFogFar(this._palette, so);
     shadowWorldZ(world, this._levelMeshCache, this._shadowWorldZ);
     const sm = shadowSunMatrix(sun.dir, this._shadowCentre, so, this._shadowWorldZ, this._sunMat);
@@ -2180,7 +2182,7 @@ export class GpuCellPipeline {
 
     // ME-15d dirty-skip (27.9a item 12): the depth map is a pure function of (M, structVersion, caster list); equal
     // hash = the texture still holds the right depth, so skip the whole GL pass (the CPU build above stays, ~0.1 ms).
-    const key = shadowInputHash(list, sm.M, world.structVersion | 0, this._shadowKey);
+    const key = shadowInputHash(list, sm.M, world.structVersion | 0, this._shadowKey, undefined, windShadowKey(world.wind, (this._fb && this._fb.timeSec) || 0));
     this.stats.shadowCpuMs = performance.now() - tCpu0; // ME-15d: matrix + list + key (27.9a item 12: <= 0.15 ms p95)
     const prev = this._shadowKeyPrev;
     if (so.dirtySkip && this._shadowKeyValid && key[0] === prev[0] && key[1] === prev[1]) {

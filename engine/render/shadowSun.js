@@ -95,6 +95,8 @@ const _fwd = [0, 0];
 
 /** `LIGHT.w` layout (27.9a item 6): bits 0 sunlit, 8..15 litCount, 16..18 the quantised PCF tap count `n`. */
 export const SUN_N_SHIFT = 16;
+// S8-B2-12c (38.13): cloud-darkening byte q (0 = no cloud) in LIGHT.w bits 24..31.
+export const CLOUD_Q_SHIFT = 24;
 export const SUN_N_MASK = 7;
 
 /**
@@ -293,12 +295,14 @@ function mixXform(a, o, invA) { // 12 floats: A (9) then t (3)
  * @param {number} structVersion
  * @param {Int32Array} out - 2 lanes (typed so storing them never boxes)
  * @param {number} [tStepM] - pose translation quantum in metres (default 0.02 = ~1/4 texel at the defaults)
+ * @param {number} [windKey] - `windShadowKey(world.wind, timeSec)`: 0 calm, else the quantised wind clock (sway lives in uniforms, not the list)
  */
-export function shadowInputHash(list, M, structVersion, out, tStepM = 0.02) {
+export function shadowInputHash(list, M, structVersion, out, tStepM = 0.02, windKey = 0) {
   _qT = 1 / tStepM;
   _hs[0] = 0x811c9dc5; _hs[1] = 0x1b873593;
   for (let i = 0; i < 16; i++) mixF(M[i]);
   mix(structVersion | 0);
+  mix(windKey | 0);
   mix(list.count);
   for (let i = 0; i < list.count; i++) {
     const it = list.items[i], mesh = it.mesh;

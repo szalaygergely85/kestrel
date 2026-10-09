@@ -206,7 +206,8 @@ export class WgShadePass {
     si[S_GPUSKY] = useScene ? 1 : 0;
     const sh = p._shadowPass, sun = p._light && p._light.sun;
     si[S_SUNMAP] = sh && sh.active && sun && sun.on ? 1 : 0; // WG-3d: GL uSunMapOn = shadowActive && sun.on (light runs sunMode 2)
-    su[S_TIME] = (p._fb && p._fb.timeSec) || 0;
+    const fbT = p._fb; let tSec = 0; if (fbT) { const v = fbT.timeSec; if (v) tSec = v; } // same value as (fb && fb.timeSec) || 0 without a tagged phi (boxes a HeapNumber per frame)
+    su[S_TIME] = tSec;
     su[S_SKY_ELEV] = this.skyElevTop;
     si[S_PROJ] = pitched ? 1 : 0; ei[E_PROJ] = pitched ? 1 : 0;
     if (pitched) {

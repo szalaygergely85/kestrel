@@ -11,7 +11,7 @@ import { WATER_COMPOSITE_FRAG_SRC } from '../glsl/waterComposite.frag.js';
 import { WGSL_MODULES } from './index.js';
 import { compileFn, shims, numericLiterals } from './wgslProbe.js';
 import { diamondAngle, WL_SLOTS, WL_STRIDE, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, RIPPLE_SLOTS, RIPPLE_ACC_MIN, rippleAccAt } from '../../waterLook.js';
-import { CLOUD_SHIFT } from '../../cloudShadow.js'; // S8-B2-12b (38.13)
+import { CLOUD_Q_SHIFT as CLOUD_SHIFT } from '../../shadowSun.js'; // S8-B2-12b (38.13)
 import { RIPPLE_SPEED, RIPPLE_W, RIPPLE_LIFE } from '../../../fx/ripples.js'; // S8-B2-13b (38.14, the note of record)
 
 const BAD = /%|\bround\s*\(|dpdx|dpdy|fwidth|frag_depth|textureSample|texelFetch|gl_FragCoord|gl_FrontFacing|\bmod\s*\(|ivec2|uvec|\bint\(|floatBitsToUint|uintBitsToFloat|\bmix\s*\(/;
@@ -24,7 +24,7 @@ for (const [n, c] of [['water', WATER_WGSL], ['waterComposite', WATER_COMPOSITE_
 // --- water: raster rules + layout ---
 assert.equal((WATER_WGSL.match(/o\.pos\.y = -o\.pos\.y; o\.pos\.z = 0\.5 \* \(o\.pos\.z \+ o\.pos\.w\);/g) || []).length, 2, 'both vertex exits flip y / remap z');
 assert.ok(/fn vs_main\(@location\(0\) aL: vec4f\)/.test(WATER_WGSL) && /@builtin\(front_facing\) front: bool/.test(WATER_WGSL));
-assert.ok(/let vD = 1\.0 \/ v\.pos\.w;/.test(WATER_WGSL) && /if \(!\(vD < sceneD\)\) \{ discard;/.test(WATER_WGSL), 'vD = 1/w and strict occluder test');
+assert.ok(/let vD = select\(1\.0 \/ v\.pos\.w, 0\.05 \+ v\.pos\.z \* \(2000\.0 - 0\.05\), wu\.projMode == 2u\);/.test(WATER_WGSL) && /if \(!\(vD < sceneD\)\) \{ discard;/.test(WATER_WGSL), 'vD = 1/w and strict occluder test');
 assert.ok(/let back = select\(1u, 0u, front\);/.test(WATER_WGSL) && /wu\.slot \| \(back << 4u\) \| select\(0u, 32u, wu\.kind == 2\)/.test(WATER_WGSL), 'slot | back << 4 | sheet << 5');
 assert.ok(/packNormalOct\(vec3f\(0\.0, 0\.0, 1\.0\)\)/.test(WATER_WGSL) && /bitcast<u32>\(v\.vArc\)/.test(WATER_WGSL));
 assert.ok(/@group\(0\) @binding\(0\) var uSceneDepth: texture_2d<u32>/.test(WATER_WGSL) && /@group\(1\) @binding\(0\) var<uniform> wu: WaterU/.test(WATER_WGSL));
@@ -36,7 +36,7 @@ const glslWater = WATER_VERT_SRC.slice(WATER_VERT_SRC.indexOf('void main')) + WA
 const wgslWater = WATER_WGSL.slice(WATER_WGSL.indexOf('@vertex'));
 const litEq = (a, b, what) => assert.deepEqual([...numericLiterals(a)].sort((x, y) => x - y), [...numericLiterals(b)].sort((x, y) => x - y), what);
 // WGSL adds the y/z raster remap (0.5) the GLSL does not have
-const gW = numericLiterals(glslWater), wW = numericLiterals(wgslWater); wW.delete(0.5);
+const gW = numericLiterals(glslWater), wW = numericLiterals(wgslWater); wW.delete(0.5); wW.delete(0.05); wW.delete(2000); // + 38.19 ortho linear-z near/far (WGSL only)
 assert.deepEqual([...gW].sort((x, y) => x - y), [...wW].sort((x, y) => x - y), 'water literals');
 assert.ok(WATER_FRAG_SRC.includes('inside = vL.x >= uShape.x && vL.x < uShape.z && vL.y >= uShape.y && vL.y < uShape.w;'));
 

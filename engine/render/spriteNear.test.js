@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { CellBuffer } from './CellBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
 import { drawSprites, lastSpriteDepth, SPR_STRIDE, SPRITE_NEAR_DEPTH } from './sprites.js';
-import { spritesFragSrc } from './gpu/glsl/sprites.frag.js';
+import { spritesFragSrc } from './gpu/wgsl/spritesFrag.glslref.js';
 
 let checks = 0;
 function ok(condition, message) { checks++; assert.ok(condition, message); }

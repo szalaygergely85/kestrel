@@ -18,49 +18,49 @@ const baseLight = () => ({
   visVersion: new Int32Array(1), vis: new Uint8Array(1),
 });
 
-// light.cloud present: 4 floats + cover land at the cached word indices, f32-rounded.
+// S8-B2-12c: light.cloud -> packCloudUniforms(cloud, timeSec) at cloudA..cloudA+7 (cloudB follows), f32-rounded.
+const CA = W('cloudA');
+assert.equal(W('cloudB'), CA + 4, 'cloudB follows cloudA');
 {
   const light = baseLight();
-  light.cloud = { strength: 0.4, cover: 0.55, invScale: 1 / 48, offU: 1.5, offV: -2.5 };
-  wl._uploadLight(light);
-  assert.equal(wl.lu[W('cloudCover')], Math.fround(0.55), 'cloudCover <- cloud.cover');
-  assert.equal(wl.lu[W('cloud')], Math.fround(0.4), 'cloud.x <- cloud.strength');
-  assert.equal(wl.lu[W('cloud') + 1], Math.fround(1 / 48), 'cloud.y <- cloud.invScale');
-  assert.equal(wl.lu[W('cloud') + 2], Math.fround(1.5), 'cloud.z <- cloud.offU');
-  assert.equal(wl.lu[W('cloud') + 3], Math.fround(-2.5), 'cloud.w <- cloud.offV');
+  light.cloud = { strength: 0.4, scale: 48, cover: 0.55, soft: 0.2, deckH: 60, seed: 7, wind: [1.5, -2.5] };
+  wl._uploadLight(light, 10);
+  const exp = [15, 231, 48, 0.4, 0.55, 0.2, 60, 7]; // (-25 % 256 = -25 in JS) -> see below
+  exp[1] = (-2.5 * 10) % 256;
+  for (let i = 0; i < 8; i++) assert.equal(wl.lu[CA + i], Math.fround(exp[i]), 'cloud word ' + i);
 }
-
-// no light.cloud on a full light set: zeroed (strength 0 = bit-identical to no clouds).
+// no light.cloud on a full light set, bare array and null: zeroed, never stale.
 {
-  const light = baseLight();
-  wl.lu[W('cloudCover')] = 9; wl.lu[W('cloud')] = 9; wl.lu[W('cloud') + 3] = 9;
-  wl._uploadLight(light);
-  assert.equal(wl.lu[W('cloudCover')], 0); assert.equal(wl.lu[W('cloud')], 0); assert.equal(wl.lu[W('cloud') + 3], 0);
-}
-
-// bare ambient-array back-compat path (GpuCellPipeline._uploadLightUniforms twin: `!isSet`): cloud words zeroed too, never stale.
-{
-  wl.lu[W('cloudCover')] = 9; wl.lu[W('cloud')] = 9; wl.lu[W('cloud') + 1] = 9;
+  wl.lu.fill(0, CA, CA + 8); for (let i = 0; i < 8; i++) wl.lu[CA + i] = 9;
+  wl._uploadLight(baseLight(), 5);
+  for (let i = 0; i < 8; i++) assert.equal(wl.lu[CA + i], 0);
+  for (let i = 0; i < 8; i++) wl.lu[CA + i] = 9;
   wl._uploadLight([0.1, 0.1, 0.1]);
-  assert.equal(wl.lu[W('cloudCover')], 0); assert.equal(wl.lu[W('cloud')], 0); assert.equal(wl.lu[W('cloud') + 1], 0);
+  for (let i = 0; i < 8; i++) assert.equal(wl.lu[CA + i], 0);
+  for (let i = 0; i < 8; i++) wl.lu[CA + i] = 9;
   wl._uploadLight(null);
-  assert.equal(wl.lu[W('cloudCover')], 0); assert.equal(wl.lu[W('cloud')], 0);
+  for (let i = 0; i < 8; i++) assert.equal(wl.lu[CA + i], 0);
 }
+// zero alloc: the cloud8 scratch is reused.
+{ const c8 = wl.cloud8; wl._uploadLight(baseLight(), 1); assert.equal(wl.cloud8, c8); }
 
 // S8-B2-20 (38.17) item (1): light.ao present -> aoStrength (word 31) lands at the cached word index, f32-rounded.
 {
   const light = baseLight();
-  light.ao = { strength: 0.75 };
+  light.ao = { strength: 0.75, radiusM: 0.8, bias: 0.15, maxCells: 4 };
   wl._uploadLight(light);
   assert.equal(wl.lu[W('aoStrength')], Math.fround(0.75), 'aoStrength <- ao.strength');
+  const P = W('aoP');
+  assert.deepEqual([...wl.lu.subarray(P, P + 4)], [0.8, 0.15, 4, 0].map(Math.fround), 'aoP <- (radiusM, bias, maxCells, 0)');
 }
 
 // no light.ao on a full light set: zeroed (strength 0 = bit-identical to no AO).
 {
   const light = baseLight();
-  wl.lu[W('aoStrength')] = 9;
+  wl.lu[W('aoStrength')] = 9; wl.lu.fill(7, W('aoP'), W('aoP') + 4);
   wl._uploadLight(light);
   assert.equal(wl.lu[W('aoStrength')], 0);
+  assert.deepEqual([...wl.lu.subarray(W('aoP'), W('aoP') + 4)], [0, 0, 0, 0], 'aoP zeroed');
 }
 
 // bare ambient-array back-compat path (`!isSet`): aoStrength zeroed too, never stale.

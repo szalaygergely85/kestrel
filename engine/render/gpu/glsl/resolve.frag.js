@@ -19,7 +19,8 @@
 // ~0.1 ms per 14.2 item 6 ("resolve/deriv/edge/sprite ~0.1 ms each").
 import { GLSL_VERSION, PRECISION, GBUF_UNPACK } from './common.js';
 
-export const MAX_SUB = 16; // 4x4, the architecture's hard cap (n <= 4)
+import { MAX_SUB } from '../wgsl/resolve.wgsl.js';
+export { MAX_SUB };
 
 export const RESOLVE_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
 layout(location = 0) out uvec4 outGI;

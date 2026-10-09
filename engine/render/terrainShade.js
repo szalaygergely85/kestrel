@@ -362,7 +362,7 @@ function ensureShadeCtx(terrain, palette) {
  * old code always used the c=8 far difference, even inside the near band).
  * `b = ambientI + sunI*max(0,N.sunDir)` stays analytic/shadow-free (D-007:
  * no terrain shadow rays), now also scaled by the per-cell cloud factor `cF`
- * (S8-B2-12b, 38.13: `light.cloud[i]`, 1 at strength 0 - bit-identical);
+ * (S8-B2-12b, 38.13: `light.cloudQ[i]`, 1 at strength 0 - bit-identical);
  * `Lc` is `fb.light`'s already-computed per-cell
  * point-light contribution (`lightSurfaces` runs before this in
  * `compositor.js` and now skips the sun term for kind 7 - lighting.js -
@@ -397,9 +397,9 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
     unpackNormalOct(alias[i], shadeNrm);
     const ndotl = shadeNrm[0] * sun.dirX + shadeNrm[1] * sun.dirY + shadeNrm[2] * sun.dirZ;
     // ME-15c (27.9a item 6, US-070b): with the sun shadow map the analytic sun term is scaled by n/4 (light pass PCF taps).
-    // S8-B2-12b (38.13): cloud-darkening byte (`light.cloud[i]`, the JS-side copy of LIGHT.w bits 24..31, 0 at
+    // S8-B2-12b (38.13): cloud-darkening byte (`light.cloudQ[i]`, the JS-side copy of LIGHT.w bits 24..31, 0 at
     // strength 0 or when the light set carries no per-cell byte at all) scales the whole analytic sun term too.
-    const cF = (light && !light.uniform && light.cloud) ? 1 - light.cloud[i] * (1 / 255) : 1;
+    const cF = (light && !light.uniform && light.cloudQ) ? 1 - light.cloudQ[i] * (1 / 255) : 1;
     const b = sun.ambientI + sun.sunI * Math.max(0, ndotl) * (sunMapOn ? light.sunN[i] * 0.25 : 1) * cF;
     let lr = 0, lg = 0, lb = 0;
     if (light && !light.uniform) {

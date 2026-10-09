@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { RESOLVE_WGSL, RESOLVE_BLOCK, RESOLVE_TEXTURES, RESOLVE_TARGETS } from './resolve.wgsl.js';
 import { WGSL_MODULES } from './index.js';
 import { compileFn, makeTex, textureLoad, shims } from './wgslProbe.js';
-import { MAX_SUB } from '../glsl/resolve.frag.js';
+import { MAX_SUB } from './resolve.wgsl.js';
 
 // string rules (38.5)
 assert.ok(WGSL_MODULES.some((m) => m.name === 'resolve' && m.code === RESOLVE_WGSL), 'registered');

@@ -256,7 +256,7 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
   check('hashCell 0 == explicit 2/8 m path (unchanged)', ok0);
 }
 
-// ---- S8-B2-12b (38.13): shadeTerrainCells scales the terrain analytic sun term by cF = 1 - light.cloud[i]/255 ----
+// ---- S8-B2-12b (38.13): shadeTerrainCells scales the terrain analytic sun term by cF = 1 - light.cloudQ[i]/255 ----
 // A self-contained synthetic recipe/palette (no `design/` import, same pattern as TerrainTextures.test.js's stub)
 // so this exercises the REAL `shadeTerrainCells` cell loop (not the low-level `shadeTerrain` the rest of this file
 // probes), which is where the cloud byte is actually read.
@@ -290,7 +290,7 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
     const fb = {
       rt: new CellBuffer(1, 1), gbuf, palette, matTable: null,
       depth: { depth: Float32Array.of(100) }, // near band (< 150), well clear of heavy fog
-      light: { uniform: false, sunMapOn: false, rgb: new Float32Array(3), cloud: Uint8Array.of(q) }, // lamp term 0: isolates sun+cloud
+      light: { uniform: false, sunMapOn: false, rgb: new Float32Array(3), cloudQ: Uint8Array.of(q) }, // lamp term 0: isolates sun+cloud
     };
     shadeTerrainCells(fb, terrain, world, 0, 0);
     return { glyph: fb.rt.glyphIdx[0], fg: fb.rt.fg.slice(0, 3), bg: fb.rt.bg.slice(0, 3) };
@@ -314,7 +314,7 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
     const gbuf = new GBuffer(1, 1);
     gbuf.kind[0] = KIND_TERRAIN; gbuf.mat[0] = 0; gbuf.u[0] = 4; gbuf.v[0] = 4;
     new Uint32Array(gbuf.aoD.buffer)[0] = packNormalOct(0, 0, 1);
-    const fb = { rt: new CellBuffer(1, 1), gbuf, palette, matTable: null, depth: { depth: Float32Array.of(100) }, light: { uniform: true, sunMapOn: false, rgb: new Float32Array(3), cloud: Uint8Array.of(255) } };
+    const fb = { rt: new CellBuffer(1, 1), gbuf, palette, matTable: null, depth: { depth: Float32Array.of(100) }, light: { uniform: true, sunMapOn: false, rgb: new Float32Array(3), cloudQ: Uint8Array.of(255) } };
     shadeTerrainCells(fb, terrain, world, 0, 0);
     return { glyph: fb.rt.glyphIdx[0], fg: fb.rt.fg.slice(0, 3), bg: fb.rt.bg.slice(0, 3) };
   })();

@@ -24,7 +24,7 @@ import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME, SHADOW_BAND_HYST_M } from '../
 import { WgCullPass } from './passCull.js';
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 import { resolveSunShadowOptions, SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../../shadowSun.js';
-import { windSwayOn, packWindUniforms, SWAY_MAX } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
+import { windSwayOn, windShadowKey, packWindUniforms, SWAY_MAX } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
 // S8-B2-05/06: wind/sway uniforms (RASTER_BLOCK, instanced variant only; same word offsets as passRaster.js).
@@ -59,7 +59,7 @@ export class WgShadowPass {
     if (this.off) { for (let i = 0; i < 16; i++) this.sunMatF32[i] = SUN_OFF_MATRIX[i]; this.sunMat.texelM = 1; }
     this.list = createShadowList(); this.centre = new Float64Array(3); this.worldZ = { min: 0, max: 0 };
     this.key = new Int32Array(3); this.keyPrev = new Int32Array(3); this.keyValid = false;
-    this.src = { centre: { x: 0, y: 0, z: 0 }, eye: { x: 0, y: 0 }, meshLod0M: 25, instCastM: 48, cache: null, terrainSet: null, voxelPool: null, voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: null, cloths: null, matIdFor: undefined, meshCache: null, meshIdFor: undefined, gpu: /** @type {any} */ (null) };
+    this.src = { centre: { x: 0, y: 0, z: 0 }, eye: { x: 0, y: 0 }, meshLod0M: 25, instCastM: 48, cache: null, terrainSet: null, voxelPool: null, voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, instances: null, cloths: null, matIdFor: undefined, meshCache: null, meshIdFor: undefined, maskAtlas: null, gpu: /** @type {any} */ (null) };
     // WG-4b: instanced casters (meshGroup + single-range voxel units, buildShadowList `src.gpu`) cut on the GPU by the shadow kernel (cullShadow.wgsl.js); the rest stays on the CPU list
     this.cull = null; this.gpuGroups = []; this.gpuM0 = []; this.gpuM1 = []; this.gpuR = []; this.gpuL0 = []; this.gpuEntries = []; this.gpuN = 0; this._pair = [null, null];
     this._gpuHook = { accept: (g, m0, m1, R, lod0M) => this._accept(g, m0, m1, R, lod0M) };
@@ -269,13 +269,14 @@ export class WgShadowPass {
     src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null;
     src.matIdFor = p._table ? p._table.idFor : undefined;
     src.meshCache = raster.meshCache; src.meshIdFor = raster.strictMatIdFor || undefined;
+    src.maskAtlas = world.maskAtlas || null; // ALPHA-01f-fix2
     src.fogFarM = sunShadowFogFar(p._palette, so);
     shadowWorldZ(world, raster.levelCache, this.worldZ);
     const sm = shadowSunMatrix(sun.dir, this.centre, so, this.worldZ, this.sunMat);
     const Mf = this.sunMatF32;
     for (let i = 0; i < 16; i++) Mf[i] = sm.M[i];
     buildShadowList(list, raster.list, world, sm.planes, src);
-    const key = shadowInputHash(list, sm.M, world.structVersion | 0, this.key);
+    const key = shadowInputHash(list, sm.M, world.structVersion | 0, this.key, undefined, windShadowKey(world.wind, (p._fb && p._fb.timeSec) || 0));
     key[2] = this.gpuN ? this._gpuHash(cam) : 0;
     st.shadowCpuMs = performance.now() - tCpu0;
     const prev = this.keyPrev;
