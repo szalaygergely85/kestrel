@@ -38,7 +38,7 @@ export async function createRenderer(o) {
         let pipeline = null;
         const tW = bootNow();
         if (o.onCompileProgress) device.onCompileProgress = o.onCompileProgress; // boot card: (done, total) per compiled pipeline
-        if (gpu) pipeline = new WgCellPipeline(rt, { rays: o.rays, terrainEnabled: o.terrainEnabled, shadows: o.shadows, gpuCull: o.gpuCull });
+        if (gpu) pipeline = new WgCellPipeline(rt, { rays: o.rays, terrainEnabled: o.terrainEnabled, shadows: o.shadows, gpuCull: o.gpuCull, occl: o.occl });
         bootSpan('new WgCellPipeline total', tW);
         // S8-B1-09b (38.10b): all pass pipelines were created in one async compile batch; wait for it here (the loading card is up),
         // then log per-pipeline ms (they overlap, so also the wall total) into the boot report.

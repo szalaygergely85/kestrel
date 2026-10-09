@@ -1,6 +1,5 @@
 // OWN-REQ-014: one detached Canvas2D engine, using the real mesh CPU twin.
-import { createEngine, World, HFOV_DEG, createPitchedTerms, pitchedTerms, worldToCell, KIND_MODEL, KIND_MESH } from '../../engine/index.js';
-import { createFrame } from './frame.js';
+import { createEngine, World, HFOV_DEG, createPitchedTerms, pitchedTerms, worldToCell, KIND_MODEL, KIND_MESH, createFrameRenderer } from '../../engine/index.js';
 import { modelBounds, fitIconCamera, iconCacheKey, iconModel, kindBounds } from './iconFit.js';
 import { iconAsset, meshKeyFromIcon } from './meshAssets.js';
 
@@ -40,7 +39,7 @@ export function createIconRenderer(assets) {
   const engine = createEngine({ canvas, assets, cols: 160, gpu: false, force2d: true,
     inputTarget: document.createElement('div') });
   const rt = engine.renderTarget;
-  const frame = createFrame({ engine, assets, rt, gpuParam: false, renderer: 'mesh', cpuMesh: true });
+  const frame = createFrameRenderer({ engine, rt, pipeline: null, assets, idleSkip: true });
   const boundModels = new Map(assets.keys('model').map(key => [key, iconCacheKey(key, assets.model(key))]));
   const output = document.createElement('canvas');
   output.width = output.height = 96;
