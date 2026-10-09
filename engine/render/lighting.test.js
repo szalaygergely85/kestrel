@@ -5,7 +5,7 @@ import {
   LightSet, buildLightSet, setWorldSun, applySunHours, lightAt, lightSurfaces, computeVisGrid, falloff, h01,
   selectCpuLights, CPU_LIGHT_CAP, MAX_LIGHTS, MAX_VIS_DIM, sunVisible, MAX_SUN_STEPS,
   sampleVis, VIS_FLOOR_EPS, makeLightBuffer, syncEntityLights, clampLightToFree, ATTACH_WALL_MARGIN,
-  setHorizonAo, setLook,
+  setLook,
 } from './lighting.js';
 import { attachedLightPos } from '../entities/attach.js';
 import { World } from '../world/World.js';
@@ -905,7 +905,7 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
   function makeAoLights(strength) {
     const ls = new LightSet();
     ls.ambient[0] = 0.2; ls.ambient[1] = 0.25; ls.ambient[2] = 0.3; // distinct per-channel, catches a swapped index
-    if (strength > 0) setHorizonAo(ls, { strength });
+    if (strength > 0) setLook(ls, { hemi: null, clouds: null, ao: { strength, radiusM: 1.5, bias: 0.1, maxCells: 2 } }); // maxCells 2 pins rc=2 (fixture tuned for 2-cell taps)
     ls.update(0, null);
     return ls;
   }
@@ -963,11 +963,60 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
     ok(`terrain x=${x}: strength 1 unchanged vs strength 0`, lbT1.rgb[o] === lbT0.rgb[o] && lbT1.rgb[o + 1] === lbT0.rgb[o + 1] && lbT1.rgb[o + 2] === lbT0.rgb[o + 2]);
   }
 
-  // setHorizonAo validates strength.
-  const throws = (fn) => { try { fn(); return false; } catch { return true; } };
-  ok('setHorizonAo throws on strength 1.5', throws(() => setHorizonAo(new LightSet(), { strength: 1.5 })));
-  ok('setHorizonAo throws on strength -0.1', throws(() => setHorizonAo(new LightSet(), { strength: -0.1 })));
-  ok('setHorizonAo throws on strength NaN', throws(() => setHorizonAo(new LightSet(), { strength: NaN })));
+  // 38.16 shapes (ratio = ambient-lit rgb with AO strength 1 / without). Reuses the corner fixture's depths/cam.
+  function aoRatio(kindA, faceA, depthA, n) {
+    const g = { kind: kindA, face: faceA, aoD: new Float32Array(n), cols: n, rows: 1 };
+    const a = makeAoLights(0), b = makeAoLights(1);
+    const la = makeLightBuffer(n, 1), lb = makeLightBuffer(n, 1);
+    lightSurfaces({ gbuf: g, depth: { depth: depthA }, rt, light: la }, a, cam, null);
+    lightSurfaces({ gbuf: g, depth: { depth: depthA }, rt, light: lb }, b, cam, null);
+    return Array.from({ length: n }, (_, x) => lb.rgb[x * 3] / la.rgb[x * 3]);
+  }
+  const FLOOR = 0.3570456373959812, WALL = 0.303488791786584;
+  {
+    // flat floor: exactly 1.0 everywhere
+    const r = aoRatio(new Uint8Array(11).fill(1), new Uint8Array(11).fill(FACE_U), new Float32Array(11).fill(FLOOR), 11);
+    ok('38.16 flat floor ratio exactly 1.0', r.every((v) => v === 1));
+    // inside corner: floor receiver at x=5 between two raised wall columns (x=3, x=7) -> < 0.85
+    const f = new Uint8Array(11).fill(FACE_U); f[3] = FACE_S; f[7] = FACE_S;
+    const d = new Float32Array(11).fill(FLOOR); d[3] = WALL; d[7] = WALL;
+    const r2 = aoRatio(new Uint8Array(11).fill(1), f, d, 11);
+    ok('38.16 inside corner ratio < 0.85', r2[5] < 0.85, String(r2[5]));
+    // convex edge: raised top face (N up, z=0.3) at x=5 with lower floor neighbours -> exactly 1.0
+    const d3 = new Float32Array(11).fill(FLOOR); d3[5] = WALL;
+    const r3 = aoRatio(new Uint8Array(11).fill(1), new Uint8Array(11).fill(FACE_U), d3, 11);
+    ok('38.16 convex edge ratio exactly 1.0', r3[5] === 1, String(r3[5]));
+    // sky / out-of-grid ignored: the wall column's neighbours are kind 0 -> receivers at 3 and 7 unchanged; wall at grid edge
+    const k4 = new Uint8Array(11).fill(1); k4[5] = 0;
+    const d4 = new Float32Array(11).fill(FLOOR); d4[5] = WALL;
+    const f4 = new Uint8Array(11).fill(FACE_U);
+    const r4 = aoRatio(k4, f4, d4, 11);
+    ok('38.16 sky (kind 0) tap ignored', r4[3] === 1 && r4[7] === 1, `${r4[3]} ${r4[7]}`);
+    const d5 = new Float32Array(11).fill(FLOOR); d5[1] = WALL; // x=1 raised, receiver x=0 taps x=-2 (out of grid) and x=2
+    const r5 = aoRatio(new Uint8Array(11).fill(1), new Uint8Array(11).fill(FACE_U), d5, 11);
+    ok('38.16 out-of-grid tap ignored (x=0 finite, <= 1)', Number.isFinite(r5[0]) && r5[0] <= 1);
+    // 0 alloc over 60k cells (steady state, buffers preallocated)
+    const n = 60000;
+    const k6 = new Uint8Array(n).fill(1), f6 = new Uint8Array(n).fill(FACE_U), d6 = new Float32Array(n).fill(FLOOR);
+    for (let q = 0; q < n; q += 7) { f6[q] = FACE_S; d6[q] = WALL; }
+    const g6 = { kind: k6, face: f6, aoD: new Float32Array(n), cols: n, rows: 1 };
+    const l6 = makeAoLights(1), lb6 = makeLightBuffer(n, 1), fb6 = { gbuf: g6, depth: { depth: d6 }, rt, light: lb6 };
+    lightSurfaces(fb6, l6, cam, null); // warm
+    // Garbage is measured as AO-on minus AO-off (baseline lightSurfaces garbage, JIT boxing noise cancels out).
+    const l6off = makeAoLights(0);
+    const heapDelta = (ls) => { lightSurfaces(fb6, ls, cam, null); const h0 = process.memoryUsage().heapUsed; lightSurfaces(fb6, ls, cam, null); return process.memoryUsage().heapUsed - h0; };
+    const dOff = heapDelta(l6off), dOn = heapDelta(l6);
+    ok('38.16 AO pass adds ~0 garbage over 60k cells (< 256 KB over AO-off)', dOn - dOff < 262144, `on ${dOn} off ${dOff}`);
+  }
+
+  // 38.16: setLook resolves look.ao; absent / strength 0 -> lights.ao null.
+  const lsN = new LightSet();
+  setLook(lsN, { hemi: null, clouds: null, ao: null });
+  ok('setLook: no look.ao -> lights.ao null', lsN.ao === null);
+  setLook(lsN, { hemi: null, clouds: null, ao: { strength: 0, radiusM: 0.8, bias: 0.15, maxCells: 4 } });
+  ok('setLook: ao strength 0 -> lights.ao null', lsN.ao === null);
+  setLook(lsN, { hemi: null, clouds: null, ao: { strength: 0.5, radiusM: 0.8, bias: 0.15, maxCells: 4 } });
+  ok('setLook: ao resolved', lsN.ao && lsN.ao.strength === 0.5 && lsN.ao.radiusM === 0.8 && lsN.ao.bias === 0.15 && lsN.ao.maxCells === 4);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

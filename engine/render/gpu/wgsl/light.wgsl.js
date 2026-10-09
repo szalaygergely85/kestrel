@@ -13,7 +13,7 @@ import { MAX_LIGHTS, MAX_VIS_DIM, MAX_SUN_STEPS } from '../../lighting.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { FACE_PACKED, KIND_TERRAIN } from '../../GBuffer.js';
 import { SUN_N_SHIFT, CLOUD_Q_SHIFT } from '../../shadowSun.js';
-import { AO_TAP_CELLS, AO_MAX } from '../../horizonAo.js';
+import { AO_MAX } from '../../horizonAo.js';
 
 const FACE_N = 1, FACE_E = 2, FACE_S = 3, FACE_W = 4, FACE_U = 5, FACE_D = 6;
 
@@ -43,6 +43,8 @@ export const LIGHT_BLOCK = defineUniformBlock('LightU', [
   // B = (cover, soft, deckH, seed).
   { name: 'cloudA', type: 'vec4' },
   { name: 'cloudB', type: 'vec4' },
+  // S8-B2-20b (38.16): AO params appended at the very END: (radiusM, bias, maxCells, 0). aoStrength stays word 31.
+  { name: 'aoP', type: 'vec4' },
 ]);
 
 /** Texture slot kinds for PipelineDesc.bindings.textures. */
@@ -74,8 +76,7 @@ const VIS_FLOOR_EPS: f32 = 1e-3;
 // S8-B2-12c (38.13): cloud-shadow darkening byte shift, bits 24..31 of LIGHT.w (free - gpucompare's decode only
 // reads bits 0, 8..15, 16..18).
 const CLOUD_Q_SHIFT: u32 = ${CLOUD_Q_SHIFT}u;
-// S8-B2-20 (38.17): horizon AO light-pass term. AO_RADIUS_M/AO_BIAS live inside HORIZON_AO_WGSL itself.
-const AO_TAP_CELLS: i32 = ${AO_TAP_CELLS};
+// S8-B2-20b (38.16): horizon AO radius/bias/maxCells come from u.aoP = (radiusM, bias, maxCells, 0).
 const AO_MAX: f32 = ${AO_MAX};
 
 ${GBUF_UNPACK_WGSL}
@@ -106,7 +107,7 @@ fn aoTapCell(tx: i32, ty: i32, P: vec3f, N: vec3f) -> f32 {
   if (giKind(textureLoad(uGI, t, 0).y) == 0u) { return 0.0; }
   let tDist = bitcast<f32>(textureLoad(uDepth, t, 0).x);
   let Pt = cellPoint(vec2f(f32(tx), f32(ty)), tDist);
-  return aoTapOcc(N, Pt - P);
+  return aoTapOcc(N, Pt - P, u.aoP.x, u.aoP.y);
 }
 
 // --- US-007 sun shadow DDA (JS twin: lighting.js sunVisible/sunCellBlocked) ---
@@ -331,11 +332,12 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
   // S8-B2-20 (38.17): horizon AO, LAST operation on L, after points/sun/cloud. Uniform branch - strength 0 runs
   // none of this (bit-identical), and terrain (kind 7) is excluded (D-007, analytic ambient in shade).
   if (u.aoStrength > 0.0 && kindU != u32(KIND_TERRAIN)) {
+    let rc = aoRc(u.aoP.x, u.planeDistY, dist, u.aoP.z);
     var occSum: f32 = 0.0;
-    occSum += aoTapCell(cell.x - AO_TAP_CELLS, cell.y, P, N);
-    occSum += aoTapCell(cell.x + AO_TAP_CELLS, cell.y, P, N);
-    occSum += aoTapCell(cell.x, cell.y - AO_TAP_CELLS, P, N);
-    occSum += aoTapCell(cell.x, cell.y + AO_TAP_CELLS, P, N);
+    occSum += aoTapCell(cell.x - rc, cell.y, P, N);
+    occSum += aoTapCell(cell.x + rc, cell.y, P, N);
+    occSum += aoTapCell(cell.x, cell.y - rc, P, N);
+    occSum += aoTapCell(cell.x, cell.y + rc, P, N);
     let occ = occSum * 0.25;
     let aoF = 1.0 - u.aoStrength * AO_MAX * occ;
     L -= u.ambient * (1.0 - aoF);

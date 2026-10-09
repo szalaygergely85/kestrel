@@ -1,6 +1,5 @@
 import { STEP } from '../../../core/loop.js';
 import { WIND_K_SIZE } from '../../../world/wind.js';
-import { AO_RADIUS_M, AO_BIAS } from '../../horizonAo.js';
 
 // WG-3a (docs/architecture.md 38.5): WGSL twins of the shared GLSL snippets in glsl/common.js that more than one
 // module needs. Pure strings, no GPU globals. No raw `%` anywhere (38.5 item 1); add fmodGlsl/imod/umod here when a
@@ -207,14 +206,16 @@ fn cloudShadeQ4(P: vec3f, sd: vec3f, A: vec4f, B: vec4f) -> u32 {
 // taps). Pure - N (receiver's unit normal) and v (Pt - P, tap minus receiver) only, no textures/uniforms. The
 // including module (light.wgsl.js) defines `fn cellPoint(...)` and the per-cell tap loop around this.
 export const HORIZON_AO_WGSL = `
-const AO_RADIUS_M: f32 = ${AO_RADIUS_M};
-const AO_BIAS: f32 = ${AO_BIAS};
-fn aoTapOcc(N: vec3f, v: vec3f) -> f32 {
+// rc: tap offset in whole cells (twin of horizonAo.js aoTapCells, same op order); maxCells arrives as f32 (aoP.z).
+fn aoRc(R: f32, planeDistY: f32, dist: f32, maxCells: f32) -> i32 {
+  return i32(clamp(floor(R * planeDistY / dist + 0.5), 1.0, maxCells));
+}
+fn aoTapOcc(N: vec3f, v: vec3f, R: f32, bias: f32) -> f32 {
   let d2 = dot(v, v);
-  if (d2 < 1e-8 || d2 >= AO_RADIUS_M * AO_RADIUS_M) { return 0.0; }
+  if (d2 < 1e-8 || d2 >= R * R) { return 0.0; }
   let d = sqrt(d2);
-  let c = dot(N, v) / d - AO_BIAS;
-  if (c > 0.0) { return c * (1.0 - d / AO_RADIUS_M); }
+  let c = dot(N, v) / d - bias;
+  if (c > 0.0) { return c * (1.0 - d / R); }
   return 0.0;
 }
 `;

@@ -38,7 +38,7 @@ import { sunShadowTaps, sunShadowInfo } from './shadowSun.js';
 import { resolveLook } from './look.js'; // ART-01a (37.18 item 3)
 import { cloudShadeQ } from './cloudShadow.js'; // S8-B2-12c (38.13)
 import { cloudDriftOffset } from './sky.js';
-import { aoTapOcc, aoFactor, AO_TAP_CELLS } from './horizonAo.js'; // S8-B2-20 (38.17)
+import { aoTapOcc, aoFactor, aoTapCells, AO_DEFAULTS } from './horizonAo.js'; // S8-B2-20 (38.17)
 
 // RE-02a: scratch for lightSurfaces' pitched branch (zero allocation per frame).
 const litPitchTerms = createPitchedTerms();
@@ -46,6 +46,7 @@ const litGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 const litP3 = new Float64Array(3);
 // S8-B2-20 (38.17): scratch for lightSurfaces' AO tap block (zero allocation per frame/cell).
 const aoTapP = new Float64Array(3);
+const aoAcc = new Float64Array(1); // tap occlusion accumulator (no boxed-double returns across calls)
 
 export const MAX_LIGHTS = 16;
 /** EMIS-01b: derived-light candidate list size and the replace margin (38.12 (1)). */
@@ -135,8 +136,8 @@ export class LightSet {
     this.roof = null;
     this.cloud = null; // S8-B2-12c: null | {strength, scale, cover, soft, deckH, seed, wind} (setLook from look.clouds.shadow)
     this.cloudOff = new Float32Array(2); // per-frame deck drift, set by lightSurfaces from fb.timeSec
-    // S8-B2-20 (38.17): horizon AO state, allocated once (setHorizonAo only writes `strength`).
-    this.ao = { strength: 0 };
+    // S8-B2-20b (38.16): null | {strength, radiusM, bias, maxCells} (setLook from look.ao); null = AO off.
+    this.ao = null;
 
     this.count = 0; // active (alive) lights, compacted into [0, count)
     this.pos = new Float32Array(4 * MAX_LIGHTS);   // x, y, z (jittered), radius     -> uLightPos
@@ -565,23 +566,15 @@ export function setLook(lights, look) {
   lights.cloud = cs && cs.strength > 0
     ? { strength: cs.strength, scale: cs.scale, cover: cs.cover, soft: cs.soft, deckH: cs.deckH, seed: look.clouds.seed, wind: look.clouds.wind }
     : null;
+  // S8-B2-20b (38.16): look.ao -> lights.ao (null = off). Load/bind time only (allocates the object).
+  const ao = look && look.ao;
+  lights.ao = ao && ao.strength > 0 ? { strength: ao.strength, radiusM: ao.radiusM, bias: ao.bias, maxCells: ao.maxCells } : null;
   if (!hemi) return;
   lights.hemi.sky.set(hemi.sky);
   lights.hemi.ground.set(hemi.ground);
   lights.hemi.tint.set(hemi.tint);
   lights.hemi.tintK = hemi.tintK;
   if (hemi.sunFromLook) lights.sun.col.set(look.sun);
-}
-
-/**
- * S8-B2-20 (38.17): sets the horizon-AO strength on `lights.ao` (allocated once by the constructor). Throws on a
- * non-finite or out-of-range value rather than silently clamping.
- * @param {LightSet} lights
- * @param {{strength:number}} params
- */
-export function setHorizonAo(lights, { strength } = {}) {
-  if (!Number.isFinite(strength) || strength < 0 || strength > 1) throw new Error(`setHorizonAo: strength must be finite in [0,1] (got ${strength})`);
-  lights.ao.strength = strength;
 }
 
 /**
@@ -1103,18 +1096,18 @@ function cellPointInto(pitched, terms, tx, ty, d, cols, camX, camY, camZ, dirX, 
 }
 
 /**
- * S8-B2-20 (38.17): one AO tap at grid cell (tx,ty) - open (0) if outside the grid, kind 0, or (twin only, unlike
+ * S8-B2-20 (38.17): one AO tap at grid cell (tx,ty), ADDED to aoAcc[0] - open (adds 0) if outside the grid, kind 0, or (twin only, unlike
  * the WGSL `aoTapCell`) a non-finite/non-positive depth (synthetic test fixtures can hold garbage depth at a
  * kind != 0 cell; real resolve output never does).
  */
-function aoTapInto(tx, ty, kind, depth, cols, rows, pitched, terms, camX, camY, camZ, dirX, dirY, planeX, planeY, horizonRow, planeDistY, P, nx, ny, nz) {
-  if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) return 0;
+function aoTapInto(tx, ty, kind, depth, cols, rows, pitched, terms, camX, camY, camZ, dirX, dirY, planeX, planeY, horizonRow, planeDistY, P, nx, ny, nz, radiusM, bias) {
+  if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) return;
   const ti = ty * cols + tx;
-  if (kind[ti] === 0) return 0;
+  if (kind[ti] === 0) return;
   const td = depth[ti];
-  if (!(td > 0) || !Number.isFinite(td)) return 0;
+  if (!(td > 0) || !Number.isFinite(td)) return;
   cellPointInto(pitched, terms, tx, ty, td, cols, camX, camY, camZ, dirX, dirY, planeX, planeY, horizonRow, planeDistY, aoTapP);
-  return aoTapOcc(nx, ny, nz, aoTapP[0] - P[0], aoTapP[1] - P[1], aoTapP[2] - P[2]);
+  aoAcc[0] += aoTapOcc(nx, ny, nz, aoTapP[0] - P[0], aoTapP[1] - P[1], aoTapP[2] - P[2], radiusM, bias);
 }
 
 export function lightSurfaces(fb, lights, cam, world) {
@@ -1210,13 +1203,17 @@ export function lightSurfaces(fb, lights, cam, world) {
 
       // S8-B2-20 (38.17): horizon AO, LAST operation on this cell's rgb (after points/sun/cloud). Uniform branch -
       // strength 0 runs none of this (bit-identical). Terrain excluded (D-007, analytic ambient in shade).
-      if (lights.ao.strength > 0 && kind[i] !== KIND_TERRAIN) {
+      if (lights.ao && lights.ao.strength > 0 && kind[i] !== KIND_TERRAIN) {
+        const ao = lights.ao, aoR = ao.radiusM, aoB = ao.bias;
         litP3[0] = px; litP3[1] = py; litP3[2] = pz; // reuse: P is not read again for this cell after this point
-        let occSum = aoTapInto(x - AO_TAP_CELLS, y, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz);
-        occSum += aoTapInto(x + AO_TAP_CELLS, y, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz);
-        occSum += aoTapInto(x, y - AO_TAP_CELLS, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz);
-        occSum += aoTapInto(x, y + AO_TAP_CELLS, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz);
-        const aoF = aoFactor(occSum * 0.25, lights.ao.strength);
+        const rc = aoTapCells(aoR, planeDistY, depth[i], ao.maxCells);
+        // tap order -x, +x, -y, +y (ratified, matches WGSL)
+        aoAcc[0] = 0;
+        aoTapInto(x - rc, y, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz, aoR, aoB);
+        aoTapInto(x + rc, y, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz, aoR, aoB);
+        aoTapInto(x, y - rc, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz, aoR, aoB);
+        aoTapInto(x, y + rc, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz, aoR, aoB);
+        const aoF = aoFactor(aoAcc[0] * 0.25, ao.strength);
         const k = 1 - aoF;
         rgb[o] -= lights.ambient[0] * k; rgb[o + 1] -= lights.ambient[1] * k; rgb[o + 2] -= lights.ambient[2] * k;
       }

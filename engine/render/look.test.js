@@ -140,5 +140,20 @@ function errs(mutate) { return validateLook(withLook(mutate), 'afternoon', () =>
   check('matching haze.far produces no warning', (() => { const w = []; validateLook(P, 'afternoon', (m) => w.push(m)); return w.length === 0; })());
 }
 
+// ---- S8-B2-20b (38.16): look.ao resolve + validate ---------------------------
+{
+  check('no look.ao -> rec.ao null', resolveLook(P, 'morning').ao === null);
+  const P3 = makePalette();
+  P3.timeOfDay.afternoon = { ...P3.timeOfDay.afternoon, ao: { strength: 0.5 } };
+  const a = resolveLook(P3, 'afternoon').ao;
+  check('look.ao defaults (radiusM 0.8, bias 0.15, maxCells 4)', a && a.strength === 0.5 && a.radiusM === 0.8 && a.bias === 0.15 && a.maxCells === 4);
+  check('valid look.ao has no errors', validateLook(P3, 'afternoon').length === 0);
+  for (const [bad, what] of [[{ strength: 1.5 }, 'strength'], [{ radiusM: 0 }, 'radiusM'], [{ radiusM: 9 }, 'radiusM'], [{ bias: 1 }, 'bias'], [{ bias: -1 }, 'bias'], [5, 'ao']]) {
+    const P4 = makePalette();
+    P4.timeOfDay.afternoon = { ...P4.timeOfDay.afternoon, ao: bad };
+    check(`look.ao ${JSON.stringify(bad)} -> error on ${what}`, validateLook(P4, 'afternoon').some((m) => m.includes('.ao')));
+  }
+}
+
 console.log(`look.test.js: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

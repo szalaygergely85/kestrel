@@ -40,7 +40,10 @@ assert.equal(LIGHT_BLOCK.field('aoStrength').word, 31);
 assert.equal(LIGHT_BLOCK.field('pitchA').word, 32);
 assert.equal(LIGHT_BLOCK.field('cloudA').word, 316);
 assert.equal(LIGHT_BLOCK.field('cloudB').word, 320);
-assert.equal(LIGHT_BLOCK.sizeBytes, 1296);
+assert.equal(LIGHT_BLOCK.field('aoP').word, 324);
+assert.equal(LIGHT_BLOCK.sizeBytes, 1312);
+assert.ok(LIGHT_WGSL.includes('aoRc(u.aoP.x, u.planeDistY, dist, u.aoP.z)'), 'rc from aoP');
+assert.ok(!/AO_TAP_CELLS|AO_RADIUS_M|AO_BIAS/.test(LIGHT_WGSL), 'legacy AO consts gone');
 
 
 // --- S8-B2-20 (38.17): horizon AO wired into fs_main, cellPoint/aoTapCell present, never-brighten shape ---
