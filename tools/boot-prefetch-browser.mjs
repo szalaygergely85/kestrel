@@ -20,7 +20,7 @@ if (port < 9500 || port > 9574) throw new Error('PC-B lane B1 range is 9500-9574
 const grid = args.grid || '240x90';
 // No voxelbench/bench/gpucompare/cinematic param: isCaptureOrBench stays false, so lazyMeshes defaults ON -
 // the same boot path a real player gets, not the "stay eager for comparability" capture path.
-const url = `http://127.0.0.1:${port}/game/index.html?grid=${grid}&autoquality=0`;
+const url = `http://127.0.0.1:${port}/game/index.html?grid=${grid}&autoquality=0${args.extra ? "&" + args.extra : ""}`;
 
 const handles = {};
 const consoleErrors = [];
