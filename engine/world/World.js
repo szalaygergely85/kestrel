@@ -1463,6 +1463,14 @@ export class World {
  * @param {number} dtSec
  */
 export function stepSectorAnims(world, dtSec) {
+  _sectorDt[0] = dtSec;
+  stepSectorAnimsBuf(world, _sectorDt);
+}
+
+const _sectorDt = new Float64Array(1);
+/** FRAME-ALLOC-01: `stepSectorAnims` taking dt from `dtSecBuf[0]` (no boxed double across the per-frame call). */
+export function stepSectorAnimsBuf(world, dtSecBuf) {
+  const dtSec = dtSecBuf[0];
   for (const s of world.structures) {
     if (s.kind === 'mesh') continue;
     if (!s.tagMap || s.tagMap.size === 0) continue;
