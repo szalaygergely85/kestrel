@@ -44,8 +44,10 @@ export function measureGlyphs(ctx, fontPx) {
  * @param {number} availPxW - available width in DEVICE pixels
  * @param {number} availPxH - available height in DEVICE pixels
  * @param {number} [maxRowPxH] - optional cap on per-cell device-pixel height
+ * @param {boolean} [fit] - BUG-SQUARES-01: clamp the cell so cols*pxCellW x rows*pxCellH fits the budget 1:1 (live window
+ *   only - a CSS downscale of the glyph image shows moire). Ref-box callers (gpucompare, D-025) pass false = old box.
  */
-export function computeCellBox(measureCtx, cols, rows, availPxW, availPxH, maxRowPxH = Infinity) {
+export function computeCellBox(measureCtx, cols, rows, availPxW, availPxH, maxRowPxH = Infinity, fit = false) {
   const perColPxW = availPxW / cols;
   const perRowPxH = Math.min(availPxH / rows, maxRowPxH);
 
@@ -61,14 +63,20 @@ export function computeCellBox(measureCtx, cols, rows, availPxW, availPxH, maxRo
   // linear estimate before re-measuring for the real box.
   const fontPx = Math.max(1, Math.floor(REF * scale * 0.97));
   const metrics = measureGlyphs(measureCtx, fontPx);
+  // +1px padding guards against sub-pixel rounding in measureText itself.
+  let pxCellW = Math.max(1, Math.ceil(metrics.width));
+  let pxCellH = Math.max(1, Math.ceil(metrics.height) + 1);
+  let glyphAscent = Math.ceil(metrics.ascent) + 1;
+  // BUG-SQUARES-01: the ceil()/+1 rounding pushes the grid past the budget (400x150: 6 px rows = 900 px in 720 px), and
+  // the CSS downscale of that glyph image shows moire. `fit`: clamp the cell to the budget, same font (<= ~1 px of the
+  // padding/descender is lost); the projection follows pxCellW/H, so the scene stays undistorted.
+  if (fit) {
+    pxCellW = Math.max(1, Math.min(pxCellW, Math.floor(availPxW / cols)));
+    pxCellH = Math.max(1, Math.min(pxCellH, Math.floor(perRowPxH)));
+    glyphAscent = Math.min(glyphAscent, pxCellH);
+  }
 
-  return {
-    fontPx,
-    // +1px padding guards against sub-pixel rounding in measureText itself.
-    pxCellW: Math.max(1, Math.ceil(metrics.width)),
-    pxCellH: Math.max(1, Math.ceil(metrics.height) + 1),
-    glyphAscent: Math.ceil(metrics.ascent) + 1,
-  };
+  return { fontPx, pxCellW, pxCellH, glyphAscent };
 }
 
 /**
@@ -78,7 +86,9 @@ export function computeCellBox(measureCtx, cols, rows, availPxW, availPxH, maxRo
  */
 export function fitCssSize(cssW, cssH, availW, availH) {
   const s = Math.min(1, availW / cssW, availH / cssH);
-  return { w: cssW * s, h: cssH * s };
+  // BUG-SQUARES-01: a shrunk canvas must resample smoothly - `image-rendering: pixelated` drops whole pixel
+  // rows/columns on a non-integer downscale (screen-fixed moire blocks). `smooth` -> style.imageRendering = 'auto'.
+  return { w: cssW * s, h: cssH * s, smooth: s < 1 };
 }
 
 export { FONT_STACK };

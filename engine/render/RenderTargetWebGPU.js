@@ -116,9 +116,9 @@ export class RenderTargetWebGPU {
     const availW = refAvailW != null ? refAvailW : window.innerWidth;
     const availH = refAvailH != null ? refAvailH : window.innerHeight;
     if (availW <= 0 || availH <= 0) return;
-    this._refBox = { availW, availH, dpr: refDpr };
+    this._refBox = { availW: refAvailW, availH: refAvailH, dpr: refDpr }; // BUG-SQUARES-01: live window stays live (fit on) after setGrid
     this.dpr = dpr;
-    const box = computeCellBox(this._measureCtx, this.cols, this.rows, availW * dpr, availH * dpr);
+    const box = computeCellBox(this._measureCtx, this.cols, this.rows, availW * dpr, availH * dpr, Infinity, refAvailW == null); // BUG-SQUARES-01: 1:1 fit on the live window
     this.fontSize = box.fontPx;
     this.pxCellW = box.pxCellW;
     this.pxCellH = box.pxCellH;
@@ -128,6 +128,7 @@ export class RenderTargetWebGPU {
     const css = fitCssSize(this.cellW * this.cols, this.cellH * this.rows, availW, availH); // display-only fit
     this.canvas.style.width = css.w + 'px';
     this.canvas.style.height = css.h + 'px';
+    this.canvas.style.imageRendering = css.smooth ? 'auto' : ''; // BUG-SQUARES-01: '' = page CSS (pixelated) at 1:1
     this.canvas.width = this.pxCellW * this.cols; // the configured context follows the canvas size
     this.canvas.height = this.pxCellH * this.rows;
     this._rebuildAtlas();
