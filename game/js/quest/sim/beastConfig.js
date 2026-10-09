@@ -46,6 +46,20 @@ export const BEAST_DEFAULTS = Object.freeze({
   sinkM: 0.3,            // m, how far the corpse sinks (z = deathZ - sinkM * k/30)
 });
 
+/** BEAST-TUNING-01 (M3 'Steel and Hush', D-053): combat-balance TARGETS as data. combatBalance.test.js asserts the
+ * live configs (beastConfig, vitalsConfig, swordConfig) against these; change a target only with the owner.
+ * Dodge/i-frame target: NEEDS DESIGN (no dodge exists yet). */
+export const COMBAT_TARGETS = Object.freeze({
+  hpPerHeart: 5,                 // hurtFx.js default: 6 hearts = 30 hp
+  boarHitsToKillPlayer: [6, 10], // uncontested boar contacts from full hp (inclusive)
+  boarMinHitGapSec: 1.2,         // s, least time between two boar hits (recover + windup)
+  swordHitsToKillBoar: [2, 3],   // best sequence (heavy hits); light-only is longer and is reported, not asserted
+  windupMinSec: 0.4,             // s, readable telegraph floor
+  windupHitStopRatio: 4,         // windup must span >= this many hit-stops (owner hit-stop 70 ms, D-053)
+  hitStopMs: 70,                 // owner 2026-10-09
+  boarCount: 5,                  // quest 'beasts' objective, D-053
+});
+
 /** `toSteps(sec) = Math.round(sec / SIM_STEP)` - the ONE place seconds become an integer step count (architecture.md
  * 29.1). Call once per config value at `createBeastSim` time; never call this inside `step()`. */
 export function toSteps(sec) {
