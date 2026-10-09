@@ -161,7 +161,7 @@ ok('idleSkip: farBaking renders', idleSkip(false, false, true).shouldRender === 
   const garbage = process.memoryUsage().heapUsed - h0;
   global.gc();
   const grew = process.memoryUsage().heapUsed - h0;
-  ok('zero-alloc: < 96 KB garbage over 1000 steps incl. LightSet.update (target 16 KB: ~80 B/step left, outside lighting/animate path: renderWorld/spritePool.project/particles)', garbage < 96 * 1024, `${garbage} B total (${(garbage / 1000).toFixed(1)} B/step)`);
+  ok('zero-alloc: < 16 KB garbage over 1000 steps (FRAME-ALLOC-02: closure context in SpritePool/VoxelPool.collect removed)', garbage < 16 * 1024, `${garbage} B total (${(garbage / 1000).toFixed(1)} B/step)`);
   ok('zero-alloc: no retained growth', grew < 64 * 1024, `${grew} B`);
   ok('zero-alloc: presented every step', fr.presented === 11000);
   void rt;
