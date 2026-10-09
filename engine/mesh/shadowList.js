@@ -13,7 +13,7 @@
 // outside the view still shadow what is on screen; the sun-plane cull is per group.
 import { DrawList, addStructures, addMeshStructures, pushClothItem, DRAW_TERRAIN, DRAW_FLAG_ONE_PART, MAX_DRAW_ITEMS, MAX_MESH_DRAWS } from './DrawList.js';
 import { addVoxelInstances } from './voxelMesh.js';
-import { fillShadowBands, groupRadius } from './instances.js';
+import { fillShadowBands, groupRadius, resolveGroupLod1 } from './instances.js';
 
 /**
  * MESH-SHADOW-02 (37.19 option 1, reworked 38.8a item 25a): budget for placed kind-9 mesh props only (towers, terrain, cloth,
@@ -86,23 +86,30 @@ export function buildShadowList(list, cameraList, world, planes, src) {
     for (let k = 0; k < groups.length; k++) {
       const g = groups[k];
       if (g.count <= 0 || g.castShadow === false) continue;
-      if (g.mesh) { // TREES-LP-b: kind-9 mesh group; one band (<= instCastM), no LOD1
+      if (g.mesh) { // TREES-LP-b: kind-9 mesh group; QUAT-LOD-01 part 2: LOD1 band (27.9a amendment 5 / line 238) when available
         if (g.mesh.lazy) continue; // MESH-LOAD-01: payload not loaded yet
         if (!src.meshCache || !src.meshIdFor) continue;
         const draw = src.meshCache.get(g.mesh, src.meshIdFor);
-        let it = null;
+        const lod1Mesh = src.eye ? resolveGroupLod1(g, ig._meshLookup) : null; // null without an eye: old full-buffer path never bands
+        const draw1 = lod1Mesh ? src.meshCache.get(lod1Mesh, src.meshIdFor) : null;
+        let it = null, it1 = null;
         if (!src.eye) it = list.addInstances(draw, g.parts, g.ib, g.count);
         else {
-          if (!(g._R > 0)) g._R = groupRadius(draw, g.parts);
+          let R = groupRadius(draw, g.parts);
+          if (draw1) { const R1 = groupRadius(draw1, g.parts); if (R1 > R) R = R1; }
+          g._R = R;
           const cast = src.instCastM || 48;
-          if (gpu && gpu.accept(g, draw, null, g._R, cast)) continue;
-          fillShadowBands(g, src.eye.x, src.eye.y, cast, cast, planes, g._R, ig.swayPad); // lod0M == castM: band 1 stays empty
-          if (g.shadowCount[0] > 0) it = list.addInstances(draw, g.parts, g.shadowIb[0], g.shadowCount[0], g._R);
+          if (gpu && gpu.accept(g, draw, draw1, R, draw1 ? (src.meshLod0M || 25) : cast)) continue;
+          if (draw1) fillShadowBands(g, src.eye.x, src.eye.y, src.meshLod0M || 25, cast, planes, R, ig.swayPad);
+          else fillShadowBands(g, src.eye.x, src.eye.y, cast, cast, planes, R, ig.swayPad); // no LOD1 ready: lod0M == castM, band 1 stays empty
+          if (g.shadowCount[0] > 0) it = list.addInstances(draw, g.parts, g.shadowIb[0], g.shadowCount[0], R);
+          if (draw1 && g.shadowCount[1] > 0) it1 = list.addInstances(draw1, g.parts, g.shadowIb[1], g.shadowCount[1], R);
         }
         // ALPHA-01f (c): ONE_PART collapses instancedRanges() to one synthetic whole-mesh range (passShadow.js / rasterJS.js's
         // `onePart` guard then drops per-range masking) - only opaque-only groups get it, so a masked group still casts a
         // leaf-shaped (not range[0]-only, unmasked) shadow once passShadow.js's instanced-masked caster path runs.
         if (it && !g.mesh.maskRanges) it.flags |= DRAW_FLAG_ONE_PART;
+        if (it1 && !lod1Mesh.maskRanges) it1.flags |= DRAW_FLAG_ONE_PART;
         continue;
       }
       if (!ig.pool || !src.voxelMeshCache) continue;
