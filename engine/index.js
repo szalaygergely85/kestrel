@@ -58,7 +58,6 @@ export { packTerrainTextures, TLOOK_WIDTH } from './render/gpu/TerrainTextures.j
 export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
 // ---- US-030c GPU sprite pass + atlas + parity harness ----------------------
 export { buildSpriteAtlas } from './render/gpu/spritesAtlas.js';
-export { GpuSpritePass } from './render/gl/index.js'; // WG-5: remove
 export { drawText } from './render/textDraw.js';
 // US-047: runShadeTest/runDetailShadeTest (shading parity harness) moved to
 // engine/dev.js. Item 6b fix pass (docs/backlog.md): runSpriteCompare's only
@@ -128,7 +127,6 @@ export { resolveLook, validateLook } from './render/look.js';
 export { buildRoofMap, outdoorAt, MAX_ROOF_BOXES } from './render/roofMap.js';
 
 // ---- US-029 GPU cell pipeline (shading + edge pass on the GPU) ------------
-export { GpuCellPipeline, PASS_NAMES, isSoftwareRenderer } from './render/gl/index.js'; // WG-5: remove (WebGL2 barrel; used by game/js/main.js, rtsMain, dev pages)
 export { probeWebGpu, evaluateWebGpuLimits } from './render/gpu/device/webgpuProbe.js'; // WG-1a
 export { createGpuDevice, selfTestDevice } from './render/gpu/device/createGpuDevice.js'; // WG-1b2
 export { createRenderer } from './render/createRenderer.js'; // WG-1c2
@@ -204,7 +202,7 @@ export { registerBehaviour, unregisterBehaviour, registerInteraction, registerTr
 // (projTerms/shearProjection/projectPoint/unprojectCell/windowToCell/
 // PROJ_HFOV_DEG/PROJ_NEAR/PROJ_FAR) stay internal/test-only as before.
 export {
-  createPitchedTerms, pitchedTerms, pitchedProjection, screenRay, unprojectPitched,
+  createPitchedTerms, pitchedTerms, pitchedTermsInto, pitchedProjection, screenRay, unprojectPitched,
   worldToCell, pitchedEyeFromFocus, resolveProjection, fpVfovDeg, PITCH_CLAMP_PITCHED_DEG, PROJ_PITCHED_VFOV_DEG, pitchedFogScale, frameMatrix,
 } from './render/projection.js';
 
@@ -215,6 +213,7 @@ export { rayTerrain, pickNearest, selectInRect } from './render/pick.js';
 export { createFlowField, FlowCache } from './nav/flowField.js';
 export { createSteer } from './nav/steer.js';
 export { perceive, NOISE_SPRINT, NOISE_SWING } from './nav/perceive.js';
+export { leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from './nav/leash.js';
 
 // ---- RE-11 fog-of-war visibility grid (docs/architecture.md 28.3) ---------
 export { Visibility } from './world/Visibility.js';
@@ -237,7 +236,6 @@ export { STEP as SIM_STEP } from './core/loop.js'; // architect RE-EXP review: n
 
 // ---- RE-07 selection overlay (docs/architecture.md 28.9) ----
 export { createOverlay, applyOverlay, OVL_MAX_OPS } from './ui/overlay.js';
-export { GpuOverlayPass } from './render/gl/index.js'; // RE-07b  WG-5: remove
 
 // ---- US-133 fire spread sim (architecture.md 32.3) ----
 export { createFireGrid } from './world/fireGrid.js';

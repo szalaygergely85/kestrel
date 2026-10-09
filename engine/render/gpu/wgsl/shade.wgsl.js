@@ -186,7 +186,24 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
 }
 `;
 
-export const SHADE_WGSL = `
+// US-073b (38.25): the stable-glyph variant adds one r8uint target `lvl` (@location(2)) = the ramp level of the picked glyph (255 = none /
+// passthrough / terrain / line / fog stipple). `L` holds the four text splices; with withLevel=false every splice is '' and the
+// string is byte-identical to the pre-073b shader (asserted by sha in shade.wgsl.test.js).
+function buildShadeWgsl(withLevel) {
+  const L = withLevel
+    ? {
+      field: `
+  @location(2) lvl: u32,`,
+      init: ' o.lvl = 255u;',
+      vars: `
+  var lvOut = 255u;`,
+      set: `
+    lvOut = u32(levelFromThresholds(setIdPick, t0.z, gbAvg, su.cutoff));`,
+      stip: ' lvOut = 255u;',
+      out: ' o.lvl = lvOut;',
+    }
+    : { field: '', init: '', vars: '', set: '', stip: '', out: '' };
+  return `
 ${SHADE_BLOCK.wgsl}
 @group(0) @binding(0) var uGI: texture_2d<u32>;    // resolved: x = planeId, y = kind|face|mask|cov|mat, z = packed normal (terrain)
 @group(0) @binding(1) var uGA: texture_2d<u32>;    // bitcast u, v, z, aoD - resolved (nearest-centre winner sample)
@@ -519,7 +536,7 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
 
 struct FO {
   @location(0) fg: vec4f,
-  @location(1) bg: vec4f,
+  @location(1) bg: vec4f,${L.field}
 };
 
 @fragment
@@ -531,7 +548,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   let jsFg = textureLoad(uFgTex, cell, 0);
   let jsBg = textureLoad(uBgTex, cell, 0);
   let gridSize = vec2i(textureDimensions(uGI));
-  var o: FO;
+  var o: FO;${L.init}
 
   if (kindU == 0u) {
     // US-030a: on the DDA path (gpuSky), fillSky never runs - a masked-over-sky cell (HUD over open sky) still passes through to
@@ -678,7 +695,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
 
   let f = select(select((dist - su.fogStart) / (su.fogFull - su.fogStart), 1.0, dist >= su.fogFull), 0.0, dist <= su.fogStart);
 
-  var glyphCode: i32;
+  var glyphCode: i32;${L.vars}
   if (gbAvg <= 0.0) { glyphCode = 0; }
   else if (lineWins && onJointLineW >= 0) { glyphCode = onJointLineW; }
   else {
@@ -690,7 +707,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
     var classIdx = 0;
     if (oriented != 0) { classIdx = orientClassCode(select(dvdx, dudx, orientAxis == 0), select(dvdy, dudy, orientAxis == 0), su.cellAspect); }
     let code = pickGlyphCodeFast(setIdPick, gbAvg, hAAvg, classIdx, su.cutoff);
-    glyphCode = select(code, 0, code < 0);
+    glyphCode = select(code, 0, code < 0);${L.set}
   }
   if (f > su.fogStipple0 && hBAvg < smoothstepFast(su.fogStipple0, su.fogStipple1, f)) {
     let sparse = f > su.fogSparse;
@@ -698,7 +715,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
     let idx = min(cnt - 1, i32(hAAvg * f32(cnt)));
     let code0 = select(su.fogHazeCode0, su.fogSparseCode0, sparse);
     let code1 = select(su.fogHazeCode1, su.fogSparseCode1, sparse);
-    glyphCode = select(code1, code0, idx == 0);
+    glyphCode = select(code1, code0, idx == 0);${L.stip}
   }
 
   let hcol = select(vec3f(1.0), Lc / Lm, Lm > 1e-6);
@@ -730,7 +747,13 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   }
 
   o.fg = vec4f(toByte01(rgbF.x), toByte01(rgbF.y), toByte01(rgbF.z), toByte01(f32(glyphCode)));
-  o.bg = vec4f(toByte01(rgbBg.x), toByte01(rgbBg.y), toByte01(rgbBg.z), 1.0);
+  o.bg = vec4f(toByte01(rgbBg.x), toByte01(rgbBg.y), toByte01(rgbBg.z), 1.0);${L.out}
   return o;
 }
 `;
+}
+
+export const SHADE_WGSL = buildShadeWgsl(false);
+export const SHADE_LEVEL_WGSL = buildShadeWgsl(true);
+export const SHADE_LEVEL_TARGETS = Object.freeze(['rgba8', 'rgba8', 'r8ui']);
+

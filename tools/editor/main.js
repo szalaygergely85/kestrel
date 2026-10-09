@@ -237,14 +237,6 @@ const { renderTarget: rt, input } = engine;
 const RENDERER = 'mesh'; // ME-19a: the only renderer
 const pipeline = wgPipeline && wgPipeline.ready ? wgPipeline : null;
 const frame = createFrameRenderer({ engine, rt, pipeline, assets, idleSkip: true });
-// No GPU frame owner (webgl2 / ?gpu=0 / failed WebGPU): the CPU caster runs at the CPU grid (same rule as game main.js).
-if (!pipeline && rt.backend === 'gl2') {
-  const { cols: cpuCols, rows: cpuRows } = engine.gridRequest.cpuGrid;
-  if (rt.cols !== cpuCols || rt.rows !== cpuRows) {
-    engine.setGrid(cpuCols, cpuRows, { immediate: true });
-    frame.resize(rt.cols, rt.rows);
-  }
-}
 await frame.ready;
 // createRenderer builds the webgpu target at the CPU grid (38.8a item 14); once the pipeline owns the whole frame apply the requested grid
 // (240x90 default, same as the old GL editor and the game).
@@ -2389,6 +2381,7 @@ function update(dt) {
   const changed = updateCamera(cam, input, dt, { speed, lookDx: rmbDown ? dx : 0, lookDy: rmbDown ? dy : 0, pitchClampDeg });
   if (changed) {
     frame.markDirty();
+    clickGuard.bump(); hoverGuard.bump(); // 38.26: a camera move invalidates any in-flight readSurface pick
     axisGizmo.update();
     savePoseDebounced(cam);
   }

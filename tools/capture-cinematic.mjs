@@ -100,14 +100,14 @@ export async function captureCinematic(opts) {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       const meta = await evaluate(cdp, '({frames:__cine.frames,fps:__cine.fps,cols:__debug.rt.cols,rows:__debug.rt.rows,backend:__debug.rt.backend})');
-      if (meta.backend !== 'gl2' || !await evaluate(cdp, '!!__debug.gpuPipeline')) throw new Error('cinematic capture requires WebGL2 mesh pipeline');
       const count = Math.min(meta.frames, opts.maxFrames), hashes = [], pngHashes = [];
       for (let i = 0; i < count; i++) {
         // Read cells and PNG in the same task as present(), before the browser discards its drawing buffer.
         const result = await cdp.send('Runtime.evaluate', { awaitPromise: true, returnByValue: true, expression: `(async () => {
           await __cine.step(${i});
-          const cells = __debug.gpuPipeline.readback();
-          return {fg:Array.from(cells.fg),bg:Array.from(cells.bg),png:__debug.rt.canvas.toDataURL('image/png')};
+          const png = __debug.rt.canvas.toDataURL('image/png'); // WG-5c: PNG first (same task as present), then the async WebGPU cell readback
+          const cells = await __debug.wgPipeline.readbackCells();
+          return {fg:Array.from(cells.fg),bg:Array.from(cells.bg),png};
         })()` });
         if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
         const frame = result.result.value;

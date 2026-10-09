@@ -1,7 +1,7 @@
 // POINTSHADOW-WIRE-01: point-shadow check next to the tower stairLamp, with vs without ?pointshadows=4. Same CDP approach as tools/verify-chest-hook.mjs, reusing capture-browser.mjs's
 // exported helpers - PC-B port range only (9500-9574). Starts its own server, kills only
 // the processes it spawned, screenshots into docs/test-reports/captures/.
-// Run: node tools/verify-pointshadows.mjs 9500 (webgpu, default) or: node tools/verify-pointshadows.mjs 9500 webgl2
+// Run: node tools/verify-pointshadows.mjs 9500 (webgpu, default)
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -12,7 +12,7 @@ const port = Number(process.argv[2] || 9500);
 validatePort(port);
 if (port < 9500 || port + 1 > 9574) throw new Error('PC-B lane B1 range is 9500-9574 (next port is CDP)');
 const backend = process.argv[3] || 'webgpu';
-assert.ok(['webgpu', 'webgl2'].includes(backend), 'backend must be webgpu or webgl2');
+assert.ok(['webgpu'].includes(backend), 'backend must be webgpu');
 
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-verify-pointshadows-'));
 const out = path.join(ROOT, 'docs/test-reports/captures'); mkdirSync(out, { recursive: true });

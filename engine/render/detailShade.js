@@ -330,7 +330,7 @@ function hashFast(x, y, s) {
 // except at 1-ulp threshold boundaries). Named distinctly from the oracle's
 // own `levelFast` above (different signature: a baked threshold array, not
 // a cutoff/gamma pair).
-function levelFromThresholds(levels, gb, thresholds, cutoff) {
+export function levelFromThresholds(levels, gb, thresholds, cutoff) {
   if (!(gb >= cutoff)) return 0;
   let i = 0;
   for (let k = 1; k < levels; k++) { if (thresholds[k] <= gb) i = k; else break; }

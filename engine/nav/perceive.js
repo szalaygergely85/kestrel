@@ -1,7 +1,7 @@
 // AI-PERCEIVE-01 (US-085 slice): pure sight + hearing + leash. No allocation, no globals;
 // not wired into beastSim yet (lane C BEAST-PERCEIVE-01w). Leaf module: imports nothing.
 //
-// agent  = { x, z, fx, fz (unit facing), halfAngle (rad), range, hearR, homeX, homeZ, homeR }
+// agent  = { x, z, fx, fz (unit facing), halfAngle (rad) OR coneCos (precomputed; trig-free sims pass this), range, hearR, homeX, homeZ, homeR }
 // target = { x, z, noise }   noise = hearing multiplier (1 idle, NOISE_SPRINT, NOISE_SWING)
 // losFn(ax, az, tx, tz) -> boolean (game passes sight.canSee); missing = always clear.
 // out    = { sees, hears, dist, returnHome } (reused, returned). Leash: agent farther than
@@ -22,7 +22,7 @@ export function perceive(agent, target, losFn, out) {
   let sees = false;
   if (d2 <= agent.range * agent.range) {
     if (d2 < 1e-12) sees = true;
-    else sees = (dx * agent.fx + dz * agent.fz) / dist >= Math.cos(agent.halfAngle) - 1e-9;
+    else sees = (dx * agent.fx + dz * agent.fz) / dist >= (agent.coneCos !== undefined ? agent.coneCos : Math.cos(agent.halfAngle)) - 1e-9;
     if (sees && losFn && !losFn(agent.x, agent.z, target.x, target.z)) sees = false;
   }
   out.sees = sees;

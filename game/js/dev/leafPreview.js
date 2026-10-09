@@ -1,6 +1,6 @@
 // LEAF-PREVIEW-01: standalone alphaLeaves fixture, public engine API only.
 import { AssetRegistry, createRenderer, createEngine, GBuffer, bindShading,
-  renderWorld, makeLightBuffer, ambientL, GpuCellPipeline, MaskAtlas,
+  renderWorld, makeLightBuffer, ambientL, MaskAtlas,
   buildMeshFromTris, SpritePool, buildSpriteAtlas } from '../../../engine/index.js';
 
 async function start() {
@@ -18,8 +18,7 @@ async function start() {
   const engine = createEngine({canvas, assets, renderTarget: rt, renderPipeline: built.pipeline,
     cols: 400, rows: 150, physics: {mode: 'mesh'}, shadows: {sun: 'off'}});
   const table = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
-  const pipeline = built.pipeline || (rt.backend === 'gl2' ?
-    new GpuCellPipeline(rt, {rays: 1, terrainEnabled: false, shadows: {sun: 'off'}}) : null);
+  const pipeline = built.pipeline;
   if (!pipeline?.ready) throw new Error('This preview requires a working GPU cell pipeline.');
   pipeline.bind(table, assets.palette);
   if (rt.backend === 'webgpu') {

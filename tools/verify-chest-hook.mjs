@@ -1,7 +1,7 @@
 // S8-B1-04: real-GPU owner-look capture of the chest hook (interact -> open clip -> item granted -> item-get
 // card), via game/js/chestHook.preview.html. Same CDP approach as tools/verify-item-card.mjs (lane C), reusing
 // capture-browser.mjs's exported helpers - PC-B port range only (9500-9574).
-// Run: node tools/verify-chest-hook.mjs 9500 (webgpu, default) or: node tools/verify-chest-hook.mjs 9500 webgl2
+// Run: node tools/verify-chest-hook.mjs 9500 (webgpu, default)
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
@@ -12,7 +12,7 @@ const port = Number(process.argv[2] || 9500);
 validatePort(port);
 if (port < 9500 || port + 1 > 9574) throw new Error('PC-B lane B1 range is 9500-9574 (next port is CDP)');
 const backend = process.argv[3] || 'webgpu';
-assert.ok(['webgpu', 'webgl2'].includes(backend), 'backend must be webgpu or webgl2');
+assert.ok(['webgpu'].includes(backend), 'backend must be webgpu');
 
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-chest-hook-'));
 const out = path.join(ROOT, 'docs/test-reports/captures'); mkdirSync(out, { recursive: true });

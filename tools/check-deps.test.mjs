@@ -248,7 +248,7 @@ ok('rule 17: game/ test file navigator.gpu flagged', /bad17d\.test\.js:1:.*navig
 ok('rule 18: editor GpuCellPipeline import flagged', /bad18\.js:1:.*GL-only/.test(output), output);
 ok('rule 18: editor glsl/ import flagged', /bad18\.js:2:.*GL-only/.test(output), output);
 ok('rule 18: clean editor file NOT flagged', !/good18\.js/.test(output), output);
-ok('rule 18: non-editor tool NOT flagged by rule 18', !/other18\.js:\d+:.*rule 18/.test(output), output);
+ok('rule 18 (WG-5b): engine-wide, non-editor tool flagged too', /other18\.js:1:.*GL-only/.test(output), output);
 
 // Installing a tool's dependencies must not change the project's findings or scan count.
 const installed = fs.mkdtempSync(path.join(os.tmpdir(), 'check-deps-installed-'));

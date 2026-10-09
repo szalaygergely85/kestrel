@@ -292,6 +292,9 @@
       { id: 'stone', text: 'A stone stands below. Go to it.', keys: [],
         when: 'once, on first reaching the near-terrain band, before the waystone (US-026a)',
         on: { type: 'zone', zone: 'hintStone' }, doneOn: 'timeout only' },
+      // COMBAT-HINT-01 (writer: story.md 'Sprint 8 texts' hint.combat.dodge): once per save at the first beast aggro (game/js/quest/combatHint.js).
+      { id: 'combatDodge', text: 'Step aside late. Boars turn slow.', keys: [],
+        when: 'once per save, at the first beast chase/windup/charge', on: { type: 'event', event: 'beast.aggro' }, doneOn: 'timeout only' },
       { id: 'boundsEdge', text: 'The wind turns you back. Not yet.', keys: [],
         when: 'once, on first reaching the walk bound edge (US-026a)',
         on: { type: 'zone', zone: 'boundsEdge' }, doneOn: 'timeout only' }

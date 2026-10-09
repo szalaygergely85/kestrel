@@ -80,9 +80,6 @@ function runBenchmark(rt, overlay) {
 
 export function run(ctx) {
   if (ctx.params.get('bench') === 'present') {
-    // US-001: never feeds the GPU cell pipeline a frame (no fb/cam/world), so
-    // its hook must be off.
-    if (ctx.gpuPipeline) ctx.gpuPipeline.setEnabled(false);
     runBenchmark(ctx.rt, ctx.overlay);
   } else {
     ctx.startBench();

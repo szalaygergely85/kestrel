@@ -18,11 +18,11 @@ try{
  const errors=[];cdp.onEvent((m,p)=>{if(m==='Runtime.exceptionThrown')errors.push(p.exceptionDetails);});
  await cdp.send('Emulation.setDeviceMetricsOverride',{width:1600,height:1000,deviceScaleFactor:1,mobile:false});
  async function shot(name){await pause(350);const s=await cdp.send('Page.captureScreenshot',{format:'png'});writeFileSync(path.join(out,name+'.png'),Buffer.from(s.data,'base64'));}
- for(const backend of ['webgpu','webgl2']){
+ for(const backend of ['webgpu']){
   await cdp.send('Page.navigate',{url:`http://127.0.0.1:${port}/game/js/quest/itemDefs.preview.html?backend=${backend}`});
   let ready=false;for(let i=0;i<100;i++){await pause(300);if(await evaluate(cdp,'!!window.__itemDefsPreview')){ready=true;break;}}assert.ok(ready,JSON.stringify(errors));
   const state=await evaluate(cdp,`(()=>{const p=__itemDefsPreview;return {info:p.info,grid:[p.rt.cols,p.rt.rows],ids:p.ids,gpu:p.rt.gl ? p.rt.gl.getParameter(p.rt.gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL) : p.info.label};})()`);
-  assert.equal(state.info.backend,backend==='webgl2' ? 'gl2' : backend);assert.deepEqual(state.grid,[400,150]);assert.equal(state.ids.length,12);assert.doesNotMatch(state.gpu,/swiftshader|software|llvmpipe/i);console.log(JSON.stringify(state));
+  assert.equal(state.info.backend,backend);assert.deepEqual(state.grid,[400,150]);assert.equal(state.ids.length,12);assert.doesNotMatch(state.gpu,/swiftshader|software|llvmpipe/i);console.log(JSON.stringify(state));
   const cells=await evaluate(cdp,`(()=>{const p=__itemDefsPreview,A=ASSETS;let count=0;const errors=[];
     for(let i=0;i<p.ids.length;i++){const d=A.items.defs[p.ids[i]],bx=3+(i%3)*52,by=7+Math.floor(i/3)*12;
       for(let y=0;y<3;y++)for(let x=0;x<5;x++){const ch=d.icon.glyphs[y].charCodeAt(x);if(ch===32)continue;
