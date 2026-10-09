@@ -78,6 +78,8 @@ export class GpuDeviceWebGPU {
     this._computePipes = [];
     /** @type {Map<any,{gpu:any,bytes:number,busy:boolean}>} OCCL-STATS-01b: readBufferAsync staging per source buffer handle */
     this._readStaging = new Map();
+    /** @type {any[]} readBufferAsync reads whose copy is recorded; mapped after the next submit() */
+    this._pendingMaps = [];
     this._moduleCache = new Map();
     // uniform ring (CPU ArrayBuffer + one GPU buffer; one writeBuffer at submit)
     const slots = opts.ringSlots || DEFAULT_RING_SLOTS;
@@ -567,6 +569,7 @@ export class GpuDeviceWebGPU {
       const timing = this.timer.resolve(this._encoder);
       this.gpu.queue.submit([this._encoder.finish()]); this._encoder = null;
       this.timer.collect(timing);
+      if (this._pendingMaps.length) this._startPendingMaps();
     } else this.timer.resolve(null);
   }
 
@@ -591,11 +594,12 @@ export class GpuDeviceWebGPU {
 
   /**
    * OCCL-STATS-01b: non-blocking buffer readback for stats. Records buf -> a cached MAP_READ staging buffer (one per source
-   * buffer, created once, recreated only if `bytes` grows), SUBMITS the encoder (so the copy is ordered before the map),
-   * then `mapAsync(READ)` and copies into the caller's preallocated `outU32`, then calls `cb(outU32)`. At most one read in
-   * flight per source buffer (returns false when busy or on error, true when started). Per call the only allocations are
+   * buffer, created once, recreated only if `bytes` grows) into the FRAME encoder (no submit here); submit() then starts
+   * `mapAsync(READ)` and copies into the caller's preallocated `outU32`. ONE callback contract: `cb(err, outU32)` - err null on
+   * success, 'busy' (called synchronously, returns false) when a read is already in flight, or the mapAsync rejection.
+   * Returns true when started. At most one read in flight per source buffer. Per call the only allocations are
    * what the WebGPU API returns (the mapAsync Promise, the mapped ArrayBuffer view); staging buffers are released by dispose.
-   * @param {GpuHandle} buf @param {number} bytes multiple of 4, <= buffer size @param {Uint32Array} outU32 @param {(out:Uint32Array)=>void} cb
+   * @param {GpuHandle} buf @param {number} bytes multiple of 4, <= buffer size @param {Uint32Array} outU32 @param {(err:any, out:Uint32Array)=>void} cb
    * @returns {boolean}
    */
   readBufferAsync(buf, bytes, outU32, cb) {
@@ -604,19 +608,28 @@ export class GpuDeviceWebGPU {
     if (!(bytes > 0) || bytes % 4 || bytes > buf.gpu.size) throw new Error('GpuDeviceWebGPU.readBufferAsync: bytes must be a positive multiple of 4 and <= the buffer size');
     if (!(outU32 instanceof Uint32Array) || outU32.length * 4 < bytes) throw new Error('GpuDeviceWebGPU.readBufferAsync: outU32 too small');
     let st = this._readStaging.get(buf);
-    if (st && st.busy) return false;
+    if (st && st.busy) { cb('busy', outU32); return false; }
     if (st && st.bytes < bytes) { st.gpu.destroy(); st = null; }
     if (!st) { st = { gpu: this.gpu.createBuffer({ size: bytes, usage: this._c.buf.MAP_READ | this._c.buf.COPY_DST }), bytes, busy: false }; this._readStaging.set(buf, st); }
     st.busy = true;
     if (!this._encoder) this._encoder = this.gpu.createCommandEncoder();
     this._encoder.copyBufferToBuffer(buf.gpu, 0, st.gpu, 0, bytes);
-    this.submit();
-    st.gpu.mapAsync(this._c.map.READ).then(() => {
-      outU32.set(new Uint32Array(st.gpu.getMappedRange(0, bytes)));
-      st.gpu.unmap(); st.busy = false;
-      cb(outU32);
-    }, () => { st.busy = false; }); // destroyed/lost mid-flight: drop silently
+    this._pendingMaps.push({ st, bytes, outU32, cb }); // mapAsync starts in submit(), after the frame's own queue.submit (no extra mid-frame submit)
     return true;
+  }
+
+  /** Starts the mapAsync of every readBufferAsync copy recorded in the encoder that was just submitted. */
+  _startPendingMaps() {
+    const pm = this._pendingMaps;
+    for (let i = 0; i < pm.length; i++) {
+      const { st, bytes, outU32, cb } = pm[i];
+      st.gpu.mapAsync(this._c.map.READ).then(() => {
+        outU32.set(new Uint32Array(st.gpu.getMappedRange(0, bytes)));
+        st.gpu.unmap(); st.busy = false;
+        cb(null, outU32);
+      }, (err) => { st.busy = false; cb(err || new Error('mapAsync rejected')); }); // destroyed/lost mid-flight: report, never stay busy
+    }
+    pm.length = 0;
   }
 
   /**

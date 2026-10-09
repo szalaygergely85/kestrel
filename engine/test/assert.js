@@ -147,12 +147,13 @@ export function makeMockGpuDevice() {
       if (bytes > Math.max(4, (size + 3) & ~3)) throw new Error('mock readBufferAsync: bytes exceeds the buffer size');
       if (!(outU32 instanceof Uint32Array) || outU32.length * 4 < bytes) throw new Error('mock readBufferAsync: outU32 too small');
       if (buf.desc.usage !== 'storage' && buf.desc.usage !== 'indirect') throw new Error('mock readBufferAsync: buffer needs COPY_SRC (storage/indirect usage)');
-      if (buf._readBusy) return false;
+      if (buf._readBusy) { cb('busy', outU32); return false; }
       buf._readBusy = true; device._readAsync = (device._readAsync || 0) + 1;
       Promise.resolve().then(() => {
+        if (device._failReads) { buf._readBusy = false; cb(new Error('mock mapAsync rejected')); return; } // models a mapAsync rejection
         const w = buf._lastWrite, src = w && w.data && w.dstOffsetBytes === 0 ? new Uint32Array(w.data.buffer, w.data.byteOffset, Math.min(bytes, w.data.byteLength) >> 2) : (buf.desc.data ? new Uint32Array(buf.desc.data.buffer, buf.desc.data.byteOffset, Math.min(bytes, buf.desc.data.byteLength) >> 2) : null);
         outU32.fill(0, 0, bytes >> 2); if (src) outU32.set(src);
-        buf._readBusy = false; cb(outU32);
+        buf._readBusy = false; cb(null, outU32);
       });
       return true;
     },
