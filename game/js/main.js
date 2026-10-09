@@ -1273,7 +1273,7 @@ async function runGame(mode, cinematic = null) {
       wakeFrame(engine.world.state['quest.wakeT'], wakeCfg, wakeOut);
       if (wakeOut.inputLocked) playerHandle.data.components.body.eyeH = wakeOut.eyeH;
       mPressedEdge = input.pressed('KeyM');
-      stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec);
+      stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec, !!(look && look.locked)); // BUG-NOTE-ESC-01
       uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || (vitals && vitals.inputLocked);
     }
     // US-038b: settings panel (S from pause, or its own entry point)
