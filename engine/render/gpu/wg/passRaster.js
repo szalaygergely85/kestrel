@@ -93,7 +93,7 @@ export class WgRasterPass {
     // compacting it on the CPU; MeshGroupSet groups (nearest-64 `chosen` selection is CPU-side) and multi-range voxel units keep the CPU path.
     this.cull = null;
     /** @type {any} S8-B2-10c HZB builder (only with opts.occl) */ this.hzb = null;
-    this._hzbFwd = { x: 0, y: 1, z: 0 }; this._eye = { x: 0, y: 0, z: 0 }; this._phase2 = false; // _eye: world-space camera for the cull kernel's occNear
+    this._hzbFwd = { x: 0, y: 1, z: 0 }; this._eye = { x: 0, y: 0, z: 0 }; this._phase2 = false; this._beginArgs = { planes: null, viewProj: null, rows: 0, eye: null, maxDistM: 0, swayPad: 0, hzb: null }; // _eye: world-space camera for the cull kernel's occNear
     this.gpuGroups = []; this.gpuM0 = []; this.gpuM1 = []; this.gpuEntries = []; this.gpuN = 0; this._pair = [null, null];
     this._gpuHook = { accept: (g, m0, m1) => this._accept(g, m0, m1) };
     // Terrain (ME-06 twin): own uniform block + the near/far type textures (r8ui, 1x1 placeholders until a bake is uploaded).
@@ -150,7 +150,8 @@ export class WgRasterPass {
       if (fl > 1e-9) { const f = this._hzbFwd; f.x = fx / fl; f.y = fy / fl; f.z = fz / fl; hz = hp.descriptor(f); }
     }
     const eye = this._eye, cam = p._cam; if (cam) { eye.x = cam.x; eye.y = cam.y; eye.z = cam.z; }
-    cull.begin({ planes: this.planes, viewProj: this.view, rows: p.rows, eye, maxDistM: 0, swayPad: this.windOn ? SWAY_MAX : 0, hzb: hz });
+    const bf = this._beginArgs; bf.planes = this.planes; bf.viewProj = this.view; bf.rows = p.rows; bf.eye = eye; bf.maxDistM = 0; bf.swayPad = this.windOn ? SWAY_MAX : 0; bf.hzb = hz;
+    cull.begin(bf); // reused arg object: no per-frame literal
     this._phase2 = !!hz;
     for (let i = 0; i < n; i++) { pair[0] = this.gpuM0[i]; pair[1] = this.gpuM1[i]; this.gpuEntries[i] = cull.add(this.gpuGroups[i], pair); }
     cull.run();
