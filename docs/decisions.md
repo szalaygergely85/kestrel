@@ -1036,3 +1036,4 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - No public demo (owner, 2026-10-09: "they can steal our idea"): US-112 itch.io demo build cancelled; lane C DEMO-PAGE-01 dropped; demo size cap moot. DEMO-MODE-01 code stays as a private `?demo=` playtest build only (never published).
 - First quest boar count = 5 (owner, 2026-10-09): unblocks lane C QUEST-CHAIN-02c (`obj.beasts5` text).
 - Combat budget = flat 8 ms GPU p95 on every quality preset (owner, 2026-10-09). Hit-stop = 70 ms. EMIS glow = MEDIUM warm orange-gold (designer pick) OK.
+- Art direction (owner, 2026-10-09): "realistic things, but from squares" - realistic anatomy/proportions from voxels; Burl the bear on all four legs, rounder (designer v2 in progress). No "Esc to close" hint text anywhere in UI. Next designer item: realistic voxel first-person hand + voxel fire around the hand, burning ALL THE TIME; closing the hand (fist) = charge.
