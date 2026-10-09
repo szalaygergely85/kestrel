@@ -1033,3 +1033,4 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - BOAR-SHADER-READ-01 telegraph tint: no GL2 port; WebGPU-only (moot once WG-5 lands).
 - GRID-TEXEL-GLYPH-01 (architecture 38.24): owner approves opting stone, brick and rock_soft into per-cell glyphs (`grid.glyph:'texel'`), reversing the per-block glyph part of the US-028a F1 anti-swim rule (texel stays world-anchored).
 - Settings gets a Quality row (QUALITY-GRID-01); owner prefers ultra on the 4060.
+- No public demo (owner, 2026-10-09: "they can steal our idea"): US-112 itch.io demo build cancelled; lane C DEMO-PAGE-01 dropped; demo size cap moot. DEMO-MODE-01 code stays as a private `?demo=` playtest build only (never published).
