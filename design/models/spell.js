@@ -370,7 +370,18 @@
   fireballBlastCharged.desc = 'SPELL-01b: the charged burst = fireballBlast art at 1.5x world size (radius 3 m blast).';
   fireballBlastCharged.world = { w: 2.4, h: 1.9 };
 
+  // HAND-FIRE-FX-01: the hand fire = the fireball's own core art at a hand-sized world scale (same glyph frames, keys, emissive path)
+  var handFlame = clone(fireballCore);
+  handFlame.name = 'handFlame';
+  handFlame.desc = 'HAND-FIRE-FX-01: fireballCore art at 0.16 m (seen at ~0.72 m, the sprite near cull is 0.6 m), a calm flame over the open hand (always on).';
+  handFlame.world = { w: 0.16, h: 0.16 };
+  var handFlameCharged = clone(fireballCoreCharged);
+  handFlameCharged.name = 'handFlameCharged';
+  handFlameCharged.desc = 'HAND-FIRE-FX-01: fireballCoreCharged art at 0.26 m, the flame gathered round the fist while charging.';
+  handFlameCharged.world = { w: 0.26, h: 0.26 };
+
   A.spellSprites = {
+    handFlame: handFlame, handFlameCharged: handFlameCharged,
     fireballCore: fireballCore, fireballCoreCharged: fireballCoreCharged,
     fireballBlast: fireballBlast, fireballBlastCharged: fireballBlastCharged
   };

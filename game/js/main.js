@@ -92,7 +92,7 @@ import { SWORD_CFG } from './quest/swordConfig.js'; // US-078d (architecture.md 
 import { createSwordSim } from './quest/sim/sword.js';
 import { presentSword } from './quest/swordView.js';
 import { loadSpellHandView, presentSpellHand, SPELL_HAND_ITEM } from './quest/spellHandView.js'; // HANDS-01c (37.8a)
-import { loadHandFireView, presentHandFire, bindHandFx, stepHandFx } from './quest/handFireView.js'; // HAND-WIRE-01: realistic hand + always-on fire
+import { loadHandFireView, presentHandFire, bindHandFx, stepHandFx, setHandFlame, pushHandFlame } from './quest/handFireView.js'; // HAND-WIRE-01: realistic hand + always-on fire
 import { createHands } from './quest/sim/hands.js'; // HANDS-01b (37.8a)
 import { createFireballSim } from './quest/sim/fireball.js'; // SPELL-01a (37.14)
 import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.14 view)
@@ -782,6 +782,7 @@ const swordVmH = swordAssetDef ? (() => {
 // HANDS-01c: second handle (after the sword) = the spell hand's idle view; shown only while the spell item is in a hand.
 // HAND-WIRE-01: when the realistic hand asset is loaded it takes this handle (the glove stays the fallback). `spellVmH.vm/.glow` are shared.
 const handFxOn = !!(handDef && handDef.variants && assets.has('model', handDef.model));
+const handFbExtra = (pool) => { fbView.extra(pool); pushHandFlame(spellVmH, pool); }; // HAND-FIRE-FX-01: one extra callback, created once
 const spellVmH = handFxOn ? loadHandFireView(engine.viewModel, handDef, gameVoxelPool) // idle-fire variants prebuilt; charge/cast variants build lazily on first use (boot budget)
   : (window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.spellHand && spellHandLDef
     ? loadSpellHandView(engine.viewModel, window.ASSETS.viewModels.spellHand, gameVoxelPool) : null);
@@ -1661,7 +1662,8 @@ async function runGame(mode, cinematic = null) {
           _emberEye[0] = (sh === 'left' ? -1 : 1) * FIREBALL_CFG.castOffset.right; _emberEye[1] = -FIREBALL_CFG.castOffset.fwd; _emberEye[2] = -FIREBALL_CFG.castOffset.down;
           spellVmH.vm.eyeToWorld(cam, _emberEye, _emberWorld);
           fbView.presentEmber(true, spellVmH.glow, _emberWorld[0], _emberWorld[1], _emberWorld[2]);
-        } else fbView.presentEmber(false, 1, 0, 0, 0);
+          if (handFxOn) setHandFlame(spellVmH, true, _emberWorld[0], _emberWorld[1], _emberWorld[2], simTime, cam.x, cam.y, cam.z); // HAND-FIRE-FX-01
+        } else { fbView.presentEmber(false, 1, 0, 0, 0); if (handFxOn) setHandFlame(spellVmH, false, 0, 0, 0, simTime, 0, 0, 0); }
       }
       // US-006: carried-light sync (US-012's lantern, `components.light`)
       // then flicker/vis-grid update, once per rendered frame, BEFORE either
@@ -1694,7 +1696,7 @@ async function runGame(mode, cinematic = null) {
       // US-053b/c: particle layer build, before sprites.render per 32.1 (the sprite pass reads the layer's touched
       // cells right after its own sprite loop).
       engine.particleLayer.build(engine.particles, cam, rt, fb.lights, engine.world, assets.palette, renderer);
-      sprites.render(fb, engine.world, cam, fbView ? fbView.extra : undefined); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
+      sprites.render(fb, engine.world, cam, fbView ? (handFxOn ? handFbExtra : fbView.extra) : undefined); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
       // US-017 ARCH CHANGES #1 item 2: CPU-path scene fade, moved here from
       // compositor.js so sprites fade too (oracle parity with the GPU
       // composite pass, which fades every non-mask cell in one pass). Skips
