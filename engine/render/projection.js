@@ -254,14 +254,15 @@ export function createPitchedTerms() {
   return {
     projection: 'pitched',
     near: PROJ_NEAR,
-    cols: 0, rows: 0, aspect: 0,
-    eyeX: 0, eyeY: 0, eyeZ: 0,
-    fX: 0, fY: 0, fZ: 0,
-    rX: 0, rY: 0,
-    uX: 0, uY: 0, uZ: 0,
-    tanHalfX: 0, tanHalfY: 0,
-    yawDeg: 0, pitchDeg: 0, vfovDeg: 0, cosP: 0, sinP: 0,
-    ortho: 0, halfW: 0, halfH: 0,
+    // PITCHED-ALLOC-01: 0.5 (not 0) makes every double field start in Double representation, so later stores mutate in place
+    cols: 0, rows: 0, aspect: 0.5,
+    eyeX: 0.5, eyeY: 0.5, eyeZ: 0.5,
+    fX: 0.5, fY: 0.5, fZ: 0.5,
+    rX: 0.5, rY: 0.5,
+    uX: 0.5, uY: 0.5, uZ: 0.5,
+    tanHalfX: 0.5, tanHalfY: 0.5,
+    yawDeg: 0.5, pitchDeg: 0.5, vfovDeg: 0.5, cosP: 0.5, sinP: 0.5,
+    ortho: 0, halfW: 0.5, halfH: 0.5,
     M: new Float64Array(16),
   };
 }
@@ -276,6 +277,18 @@ export function createPitchedTerms() {
  * @returns {PitchedTerms}
  */
 export function pitchedTerms(cam, grid, out) {
+  return pitchedTermsInto(out, cam, grid);
+}
+
+/**
+ * PITCHED-ALLOC-01: allocation-free core of `pitchedTerms` (same maths, bit-identical results; `pitchedTerms`
+ * is a wrapper). `out` comes from `createPitchedTerms()` created once and reused; field names are the same.
+ * @param {PitchedTerms} out
+ * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number,vfovDeg?:number}} cam
+ * @param {GridSpec} grid
+ * @returns {PitchedTerms} `out`
+ */
+export function pitchedTermsInto(out, cam, grid) {
   const isOrtho = cam.projection === 'ortho';
   const pLim = isOrtho ? 90 : 89;
   if (cam.pitchDeg < -pLim || cam.pitchDeg > pLim) {
@@ -294,8 +307,12 @@ export function pitchedTerms(cam, grid, out) {
   const rX = Math.cos(yawRad), rY = Math.sin(yawRad);
   const uX = -sinP * fx, uY = -sinP * fy, uZ = cosP;
 
-  const aspect = (cols * (grid.pxCellW || 1)) / (rows * (grid.pxCellH || 1));
-  const vfovDeg = cam.vfovDeg || fpVfovDeg(grid);
+  const pw = grid.pxCellW, ph = grid.pxCellH; // no `||` phi on doubles: explicit branches
+  const aspect = (cols * (pw ? pw : 1)) / (rows * (ph ? ph : 1));
+  const cv = cam.vfovDeg;
+  // inlined fpVfovDeg(grid) (same expression, a non-inlined double return would box 8 B/call)
+  const cvn = +cv; // numeric (NaN for undefined) so the ternary below stays an unboxed double
+  const vfovDeg = (cvn !== 0 && cvn === cvn) ? cvn : (2 * Math.atan(Math.tan((PROJ_HFOV_DEG * Math.PI) / 360) / aspect) * 180) / Math.PI;
   const tanHalfY = Math.tan((vfovDeg * Math.PI) / 180 / 2);
   const tanHalfX = tanHalfY * aspect;
 
@@ -304,16 +321,24 @@ export function pitchedTerms(cam, grid, out) {
   out.cols = cols; out.rows = rows; out.aspect = aspect;
   if (isOrtho) {
     // eye = focus - ORTHO_BACK_M*F when the cam carries a focus, else cam.x/y/z is the eye
-    const hasF = cam.focusX !== undefined;
-    out.eyeX = hasF ? cam.focusX - ORTHO_BACK_M * fX : cam.x;
-    out.eyeY = hasF ? cam.focusY - ORTHO_BACK_M * fY : cam.y;
-    out.eyeZ = hasF ? cam.focusZ - ORTHO_BACK_M * fZ : cam.z;
+    // (unary + / if-else keep every double unboxed: no tagged ternary phi)
+    if (cam.focusX !== undefined) {
+      out.eyeX = +cam.focusX - ORTHO_BACK_M * fX;
+      out.eyeY = +cam.focusY - ORTHO_BACK_M * fY;
+      out.eyeZ = +cam.focusZ - ORTHO_BACK_M * fZ;
+    } else {
+      out.eyeX = +cam.x; out.eyeY = +cam.y; out.eyeZ = +cam.z;
+    }
+    out.ortho = 1;
+    const oh = +cam.orthoHalfH;
+    out.halfH = oh;
+    out.halfW = oh * aspect;
   } else {
-    out.eyeX = cam.x; out.eyeY = cam.y; out.eyeZ = cam.z;
+    out.eyeX = +cam.x; out.eyeY = +cam.y; out.eyeZ = +cam.z;
+    out.ortho = 0;
+    out.halfH = 0;
+    out.halfW = 0;
   }
-  out.ortho = isOrtho ? 1 : 0;
-  out.halfH = isOrtho ? cam.orthoHalfH : 0;
-  out.halfW = isOrtho ? cam.orthoHalfH * aspect : 0;
   out.fX = fX; out.fY = fY; out.fZ = fZ;
   out.rX = rX; out.rY = rY;
   out.uX = uX; out.uY = uY; out.uZ = uZ;

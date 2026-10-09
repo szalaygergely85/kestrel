@@ -10,7 +10,7 @@ import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../../mesh/voxelMesh.js';
 import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME } from '../../../mesh/instances.js';
 import { KIND_MODEL, FACE_PACKED } from '../../GBuffer.js';
-import { projTerms, shearProjection, pitchedTerms, createPitchedTerms, resolveProjection, viewProjAtOrigin } from '../../projection.js';
+import { projTerms, shearProjection, pitchedTermsInto, createPitchedTerms, resolveProjection, viewProjAtOrigin } from '../../projection.js';
 import { frustumPlanes } from '../../../mesh/culling.js';
 import { WgCullPass } from './passCull.js';
 import { WgHzbPass } from './passHzb.js'; // S8-B2-10c
@@ -326,7 +326,7 @@ export class WgRasterPass {
     this.pitched = rproj === 'pitched' || rproj === 'ortho'; this.ortho = rproj === 'ortho'; this.projMode = this.ortho ? 2 : this.pitched ? 1 : 0;
     this.bits[P_RASTER] = this.ortho ? 2 : 0;
     const lt = p._light; this.vaoOn = !!(lt && lt.ao && lt.ao.strength > 0); // ME-20c-c
-    if (this.pitched) { pitchedTerms(cam, grid, this.pitch); this.view.set(this.pitch.M); }
+    if (this.pitched) { pitchedTermsInto(this.pitch, cam, grid); this.view.set(this.pitch.M); }
     else { projTerms(cam, grid, this.terms); shearProjection(this.terms, this.view); }
     this.ox = Math.floor(cam.x / 16) * 16; this.oy = Math.floor(cam.y / 16) * 16;
     viewProjAtOrigin(this.view, this.ox, this.oy, this.viewRel);
