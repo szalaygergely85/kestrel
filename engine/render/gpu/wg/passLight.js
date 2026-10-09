@@ -22,7 +22,7 @@ const W_SUN_M = W('sunShadowM'), W_SUN_RES = W('sunShadowRes'), W_SUN_TEXEL = W(
 // S8-B2-12c (38.13): cloudA (+ cloudB at +4) <- packCloudUniforms(light.cloud, timeSec): 8 floats, null -> zeros.
 const W_CLOUD_A = W('cloudA');
 // S8-B2-20 (38.17): `light.ao` (lighting.js LightSet.ao, horizon AO strength) -> aoStrength (word 31), cached word index, zero alloc.
-const W_AO_STRENGTH = W('aoStrength');
+const W_AO_STRENGTH = W('aoStrength'), W_AO_P = W('aoP'); // aoP = (radiusM, bias, maxCells, 0)
 
 const NO_CAM = Object.freeze({ x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 });
 
@@ -120,14 +120,16 @@ export class WgLightPass {
       lu[W_AMBIENT] = a[0] || 0; lu[W_AMBIENT + 1] = a[1] || 0; lu[W_AMBIENT + 2] = a[2] || 0;
       li[W_LIGHT_COUNT] = 0; li[W_SUN_ON] = 0; li[W_SUN_MODE] = 0;
       packCloudUniforms(null, 0, this.cloud8); lu.set(this.cloud8, W_CLOUD_A);
-      lu[W_AO_STRENGTH] = 0;
+      lu[W_AO_STRENGTH] = 0; lu[W_AO_P] = 0; lu[W_AO_P + 1] = 0; lu[W_AO_P + 2] = 0; lu[W_AO_P + 3] = 0;
       return;
     }
     lu[W_AMBIENT] = light.ambient[0]; lu[W_AMBIENT + 1] = light.ambient[1]; lu[W_AMBIENT + 2] = light.ambient[2];
     // S8-B2-12c: pack into the preallocated cloud8 (zero alloc), copy to cloudA/cloudB.
     packCloudUniforms(light.cloud, timeSec, this.cloud8); lu.set(this.cloud8, W_CLOUD_A);
     // S8-B2-20 (38.17): `light.ao` -> aoStrength, next to cloud upload above; zero on the no-ao path.
-    lu[W_AO_STRENGTH] = light.ao ? light.ao.strength : 0;
+    const ao = light.ao;
+    lu[W_AO_STRENGTH] = ao ? ao.strength : 0;
+    lu[W_AO_P] = ao ? ao.radiusM : 0; lu[W_AO_P + 1] = ao ? ao.bias : 0; lu[W_AO_P + 2] = ao ? ao.maxCells : 0; lu[W_AO_P + 3] = 0;
     const sun = light.sun, on = !!(sun && sun.on);
     li[W_SUN_ON] = on ? 1 : 0;
     if (sun) {
