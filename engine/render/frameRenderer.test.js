@@ -9,6 +9,7 @@ import { World } from '../world/World.js';
 import { CellBuffer } from './CellBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
 import { createFrameRenderer, idleSkip } from './frameRenderer.js';
+import voxelPropsMod from '../../design/models/voxel_props.js';
 import '../../design/palette.js';
 import '../../design/detail-pass.js';
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
@@ -128,6 +129,27 @@ ok('idleSkip: farBaking renders', idleSkip(false, false, true).shouldRender === 
   ok('dispose: world:loaded listener removed', fr.lightSet === null && log.length === 0);
   ok('dispose: refs dropped', fr.fb.gbuf === null && engine.instances.pool === null);
   fr.dispose(); // idempotent
+}
+
+// ---- ED-MESH-1e: refreshAssets + resize re-binds the voxelPool ----
+{
+  const { rt, pipeline, fr } = makeRig({ gpu: true });
+  await fr.ready;
+  const vp = fr.voxelPool;
+  let binds = 0; const b0 = vp.bind.bind(vp);
+  vp.bind = (...a) => { binds++; return b0(...a); };
+  const atlasV = vp.atlas.version;
+  const countVox = () => log.filter((s) => s === 'bindVoxels').length;
+  const v0 = countVox();
+  ok('refreshAssets: unchanged assets -> no re-bind', fr.refreshAssets(assets) === false && binds === 0 && vp.atlas.version === atlasV && countVox() === v0);
+  const lantern = (voxelPropsMod.lantern || voxelPropsMod.models?.lantern).voxel;
+  assets.add('model', 'ed_mesh_1e_test', { name: 'ed_mesh_1e_test', voxel: lantern });
+  ok('refreshAssets: new model -> pool re-bound + pipeline.bindVoxels', fr.refreshAssets(assets) === true && binds === 1 && countVox() === v0 + 1 && vp.models.has('ed_mesh_1e_test'));
+  ok('refreshAssets: idempotent afterwards', fr.refreshAssets(assets) === false && binds === 1);
+  const vN = countVox();
+  fr.resize(COLS, ROWS);
+  ok('resize re-binds the voxelPool with the new matTable', binds === 2 && countVox() === vN + 1);
+  void rt; void pipeline;
 }
 
 // ---- fallback: no WebGPU device (pipeline null, CPU rt) ----

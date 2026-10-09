@@ -219,6 +219,7 @@ const MAX_ENDTEXT_LINE = 40;
  * at the first) and counts every check attempted, whether it passed or not.
  * @returns {{ errors: string[], checks: number }}
  */
+const MAX_OBJECTIVE_TEXT = 38, MAX_ITEM_NAME = 14, MAX_ITEM_DESC = 38;
 export function validateContent(ASSETS, opts = {}) {
   const errors = [];
   const warnings = [];
@@ -555,6 +556,9 @@ export function validateContent(ASSETS, opts = {}) {
     check(def?.id === id, `items.defs.${id}.id`, 'must match the item key');
     inlineText(def?.name, `items.defs.${id}.name`);
     inlineText(def?.desc, `items.defs.${id}.desc`);
+    // S8-C-17b: writer-contract length limits (docs/story.md Sprint 8 texts)
+    if (typeof def?.name === 'string') check(def.name.length <= MAX_ITEM_NAME, `items.defs.${id}.name`, `name is ${def.name.length} chars, expected <= ${MAX_ITEM_NAME}`);
+    if (typeof def?.desc === 'string') check(def.desc.length <= MAX_ITEM_DESC, `items.defs.${id}.desc`, `desc is ${def.desc.length} chars, expected <= ${MAX_ITEM_DESC}`);
   }
   for (const [id, table] of Object.entries(ASSETS?.items?.loot || {})) {
     for (const [i, entry] of (table.entries || []).entries()) {
@@ -617,6 +621,7 @@ export function validateContent(ASSETS, opts = {}) {
     for (const objective of def.objectives) {
       const base = `${path}.objectives[${objective.id}]`;
       inlineText(objective.text, `${base}.text`);
+      if (typeof objective.text === 'string') check(objective.text.length <= MAX_OBJECTIVE_TEXT, `${base}.text`, `objective text is ${objective.text.length} chars, expected <= ${MAX_OBJECTIVE_TEXT}`);
       if (objective.when.type === 'area') {
         check(Object.hasOwn(areas, objective.when.id), `${base}.when.id`, `area "${objective.when.id}" not found in ${areaPath}`);
       }

@@ -20,7 +20,7 @@ import { MeshGroupSet, addMeshStructuresBatched } from '../mesh/meshGroups.js';
 import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget, clearRasterDepth } from '../mesh/rasterJS.js';
 import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
-import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer, pitchedFogScale, orthoHashCell, isPitchedFamily } from './projection.js';
+import { projTerms, shearProjection, createPitchedTerms, pitchedTermsInto, resolveProjection, assertProjectionRenderer, pitchedFogScale, orthoHashCell, isPitchedFamily } from './projection.js';
 import { lodCentreX, lodCentreY } from '../core/camFocus.js';
 import { frustumPlanes } from '../mesh/culling.js';
 import { renderWaterJS } from './water.js';
@@ -219,7 +219,7 @@ function renderWorldMesh(fb, world, cam) {
   // GPU `_passDeriv` uses the shear constants for every camera (28.1 A2: deriv unchanged) - same here.
   fb.gbuf.cam.tanHalfHFov = meshTerms.tanHalf; fb.gbuf.cam.cols = cols; fb.gbuf.cam.planeDistY = meshTerms.planeDistY;
   if (meshPitched) {
-    pitchedTerms(cam, meshGrid, meshPitchTerms);
+    pitchedTermsInto(meshPitchTerms, cam, meshGrid);
     meshViewProj.set(meshPitchTerms.M);
     const tr = world.terrain;
     // BUG-FP-002: per-cell mode on every pitched frame; ortho (38.19): positive fixed cell (constant ground m per column)

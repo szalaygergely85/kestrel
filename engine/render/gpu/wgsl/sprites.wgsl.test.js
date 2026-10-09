@@ -5,8 +5,6 @@
 import assert from 'node:assert/strict';
 import { SPRITES_WGSL, SPRITES_BLOCK, SPRITES_TEXTURES, SPRITES_TARGETS } from './sprites.wgsl.js';
 import { OVERLAY_WGSL, OVERLAY_TEXTURES, OVERLAY_TARGETS } from './overlay.wgsl.js';
-import { spritesFragSrc } from './spritesFrag.glslref.js';
-import { overlayFragSrc } from '../overlayPass.js';
 import { WGSL_MODULES } from './index.js';
 import { compileFn, shims, numericLiterals } from './wgslProbe.js';
 import { fadeGlyph } from '../../../ui/fade.js';
@@ -33,11 +31,7 @@ SPRITES_TEXTURES.forEach((k, i) => assert.ok(new RegExp(`@group\\(0\\) @binding\
 assert.deepEqual(SPRITES_TARGETS, ['rgba8', 'rgba8']);
 assert.ok(/@group\(1\) @binding\(0\) var<uniform> su: SpritesU/.test(SPRITES_WGSL));
 assert.ok(SPRITES_WGSL.includes(`const MAX_SPRITES: i32 = ${MAX_SPRITES};`) && SPRITES_WGSL.includes(`const SPRITE_NEAR_DEPTH: f32 = ${SPRITE_NEAR_DEPTH};`), 'constants from sprites.js');
-const glslS = spritesFragSrc({ depthUint: true }); // identical tokens: skip the GL declarations, compare from main()
-const gS = numericLiterals(glslS.slice(glslS.indexOf('void main')));
 const wS = numericLiterals(SPRITES_WGSL.slice(SPRITES_WGSL.indexOf('fn fadeJ')));
-assert.deepEqual([...gS].filter((v) => !wS.has(v)), [], 'GLSL constants missing in sprites WGSL');
-assert.deepEqual([...wS].filter((v) => !gS.has(v)), [], 'sprites WGSL constants not in GLSL');
 assert.ok(numericLiterals(SPRITES_WGSL.slice(SPRITES_WGSL.indexOf('fn fadeJ')).replace('254.0', '253.0')).has(253), 'mutation: literal parity detects a changed constant');
 for (const frag of ['(t.b & 1u) != 0u', 'p.y < SPRITE_NEAR_DEPTH', '!(p.y < cellDepth) || !(p.y < best)', 'pz > 0.0 && pz < cellDepth && pz < best', 'if (giMask(gy) != 0u) { return o; }']) assert.ok(SPRITES_WGSL.includes(frag), frag);
 
@@ -74,11 +68,6 @@ assert.deepEqual(OVERLAY_TEXTURES, ['float', 'float', 'uint']); assert.deepEqual
 OVERLAY_TEXTURES.forEach((k, i) => assert.ok(new RegExp(`@group\\(0\\) @binding\\(${i}\\) var \\w+: ${kinds[k].replace(/[<>]/g, '\\$&')}`).test(OVERLAY_WGSL), 'overlay binding ' + i));
 assert.ok(!/<uniform>/.test(OVERLAY_WGSL), 'overlay has no uniforms');
 assert.ok(OVERLAY_WGSL.includes(`const BIAS_M: f32 = ${OVL_BIAS_M.toFixed(6)};`) && OVERLAY_WGSL.includes(`const BIAS_REL: f32 = ${OVL_BIAS_REL.toFixed(6)};`));
-assert.ok(overlayFragSrc().includes(`const float BIAS_M = ${OVL_BIAS_M.toFixed(6)};`), 'GLSL twin has the same constants');
-const gO = numericLiterals(overlayFragSrc().slice(overlayFragSrc().indexOf('void main')));
-const wO = numericLiterals(OVERLAY_WGSL.slice(OVERLAY_WGSL.indexOf('fn overlayHidden')));
-assert.deepEqual([...gO].filter((v) => !wO.has(v)), [], 'GLSL constants missing in overlay WGSL');
-assert.deepEqual([...wO].filter((v) => !gO.has(v)), [], 'overlay WGSL constants not in GLSL');
 
 function runOverlay(src, trials) {
   // `discard; return o;` -> `return null;` (null = cell not written)

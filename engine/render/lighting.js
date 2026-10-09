@@ -33,7 +33,7 @@ import { sunFromHours } from '../core/sunPath.js';
 import { gridLocal } from '../world/gridLocal.js';
 import { FACE_PACKED, KIND_TERRAIN, KIND_MESH } from './GBuffer.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
-import { createPitchedTerms, pitchedTerms, unprojectPitched, resolveProjection, isPitchedFamily } from './projection.js';
+import { createPitchedTerms, pitchedTermsInto, unprojectPitched, resolveProjection, isPitchedFamily } from './projection.js';
 import { sunShadowTaps, sunShadowInfo } from './shadowSun.js';
 import { pointShadowTaps } from './shadowPoint.js';
 import { resolveLook } from './look.js'; // ART-01a (37.18 item 3)
@@ -1212,7 +1212,7 @@ export function lightSurfaces(fb, lights, cam, world) {
   const pitched = isPitchedFamily(resolveProjection(cam, fb.renderer));
   if (pitched) {
     litGrid.cols = cols; litGrid.rows = rows; litGrid.pxCellW = rt.pxCellW || 1; litGrid.pxCellH = rt.pxCellH || 1;
-    pitchedTerms(cam, litGrid, litPitchTerms);
+    pitchedTermsInto(litPitchTerms, cam, litGrid);
   }
   for (let y = 0; y < rows; y++) {
     const slope = -(y - horizonRow) / planeDistY;

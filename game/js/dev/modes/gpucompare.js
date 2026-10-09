@@ -33,15 +33,15 @@ function noPipelineMsg(ctx) {
 // on screen (the overlay) and in the console. Requires a working GPU
 // pipeline - prints a clear message and does nothing else if one isn't active.
 async function runGpuCompareShadeMode(ctx) {
-  const { gpuPipeline: glPipeline, wgPipeline, rt, assets, matTable, detailPass, depthBuffer, gbuf, overlay, GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR } = ctx;
-  const gpuPipeline = glPipeline || (wgPipeline && wgPipeline.ready ? wgPipeline : null); // WG-3c: the WebGPU pipeline runs this mode too (cells via readbackCells)
+  const { wgPipeline, rt, assets, matTable, detailPass, depthBuffer, gbuf, overlay, GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR } = ctx;
+  const gpuPipeline = wgPipeline && wgPipeline.ready ? wgPipeline : null; // WG-3c: the WebGPU pipeline runs this mode too (cells via readbackCells)
   if (!gpuPipeline) { noPipelineMsg(ctx); return; }
 
   gpuPipeline.setSource('upload'); // 14.2 item 7: force the legacy CPU-fed G-buffer path for this test
 
   const level = loadLevel(assets.level('test_room'));
   bindLevel(matTable, level);
-  if (!glPipeline) gpuPipeline.bind(matTable, assets.palette); // WebGPU: re-pack the shade data textures for the materials bindLevel just added
+  gpuPipeline.bind(matTable, assets.palette); // WebGPU: re-pack the shade data textures for the materials bindLevel just added
   const compareWorld = World.load({ terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
   const fbCompare = {
     rt, depth: depthBuffer, palette: assets.palette, gbuf, matTable, detailPass,
@@ -746,12 +746,12 @@ function applySunOverride(world, lights, sun) {
 
 async function runGpuCompareSceneMode(ctx) {
   const {
-    gpuPipeline: glPipeline, wgPipeline, rt, assets, matTable, detailPass, depthBuffer, gbuf, overlay, sprites, engine,
+    wgPipeline, rt, assets, matTable, detailPass, depthBuffer, gbuf, overlay, sprites, engine,
     compareNoVoxels, renderer, terrainEnabled, rayParam, params, GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR, fadeLut,
   } = ctx;
   // WG-2b: a ready WebGPU WgCellPipeline runs the GEOMETRY rows only (cells/light/shadow/overlay need WG-3); readbacks are awaited.
-  const wg = !glPipeline && wgPipeline && wgPipeline.ready ? wgPipeline : null;
-  const gpuPipeline = glPipeline || wg;
+  const wg = wgPipeline && wgPipeline.ready ? wgPipeline : null;
+  const gpuPipeline = wg;
   if (!gpuPipeline) { noPipelineMsg(ctx); return; }
   if (rt.cols !== 160 || rt.rows !== 60) {
     console.warn(`[gpucompare] expected 160x60 for ?gpucompare=1, got ${rt.cols}x${rt.rows} - the grid-forcing block at the top of main.js may have been bypassed.`);
@@ -875,11 +875,9 @@ async function runGpuCompareSceneMode(ctx) {
     // refs) - `engine.viewModel.stats` is ONE shared object both twins write through, so this must be captured
     // right here, after `present()`, before the JS/mesh twin below overwrites it (BUG-VM-001 item 5).
     const vmItemsGpu = engine.viewModel ? engine.viewModel.stats.items : 0;
-    const rb = wg ? null : await rt.readbackPresent();
-    if (rb) sampledOwnTextures = sampledOwnTextures && rb.sampledOwnTextures;
-    // WG-3c: the WebGPU path still PRESENTS the CPU cells, so its GPU-shaded cells come from the pipeline's own final textures
+        // WG-3c: the WebGPU path still PRESENTS the CPU cells, so its GPU-shaded cells come from the pipeline's own final textures
     const rbw = wg ? await wg.readbackCells() : null;
-    const gpuFg = rb ? rb.fg : rbw ? rbw.fg : null, gpuBg = rb ? rb.bg : rbw ? rbw.bg : null;
+    const gpuFg = rbw ? rbw.fg : null, gpuBg = rbw ? rbw.bg : null;
     const { GI, GA, Depth } = await gpuPipeline.readbackGeometry();
     const lightBuf = await gpuPipeline.readbackLight(); // WG-3b: WebGPU too (null only while the pass is not ported)
     const waterBits = poseName.includes('waterfall') ? await gpuPipeline.readbackWater() : null; // WG-3e: WebGPU too
@@ -915,16 +913,7 @@ async function runGpuCompareSceneMode(ctx) {
     }
     applySceneDim(fbCompare.rt, compareSceneDim);
     rt.gpuActive = wasActive;
-    let ovlRes = null;
     if (overlayOps) engine.overlay.renderCpu(cam, rt.cells, depthBuffer.depth); // JS twin composite (WebGPU: judged by the final cell row)
-    if (overlayOps && !wg) { // per-overlay-cell GPU-vs-twin check (28.9 bar)
-      ovlRes = compareOverlayCells(engine.overlay, rt.cells.fg, gpuFg, depthBuffer.depth);
-      console.log(`[gpucompare] rtsOverlay: cells=${ovlRes.cells} shownTwin=${ovlRes.shownTwin} shownGpu=${ovlRes.shownGpu} hidden=${ovlRes.hidden} mismatch=${ovlRes.mismatch} boundary=${ovlRes.boundary} (${ovlRes.boundaryPct.toFixed(3)}% , <=0.5%)`);
-      // pass timer (async GpuTimer ring): repeat the composite so p50/p95 fill in (NaN if the timer extension is missing)
-      for (let k = 0; k < 140; k++) rt.present();
-      const ps = rt.overlayPassStats; ovlRes.gpuMsP50 = ps ? ps.gpuMsP50 : NaN; ovlRes.gpuMsP95 = ps ? ps.gpuMsP95 : NaN;
-      console.log(`[gpucompare] rtsOverlay pass ms: p50=${ovlRes.gpuMsP50} p95=${ovlRes.gpuMsP95} uploadRows=${ps ? ps.rows : -1}`);
-    }
 
     if (params.get('probe')) { // BUG-WHITE-PIXELS-02 r3 (dev): `&probe=col,row` 3x3 dump, `&probe=scan` sky-islands (a sky cell with >=6/8 solid neighbours) per side
       const pq = params.get('probe'), L = [], gK = (i) => GI[i * 4 + 1] & 0xff, side = (isG, x, y) => (x < 0 || y < 0 || x >= cols || y >= rows) ? 1 : ((isG ? gK(y * cols + x) : gbuf.kind[y * cols + x]) !== 0 ? 1 : 0);
@@ -980,57 +969,6 @@ async function runGpuCompareSceneMode(ctx) {
       rowsOut.push({ ...(waterfallW ? { waterfall: waterfallW } : {}), pose: poseName, cmpGeom, cmpLight: cmpLightW, cmpCells: cmpCellsW, cellsWait, lightWaits, ok: okW, geomOk, wg: true, k8Ok: k8OkW, instOk: instOkW, vmOk: vmOkW, ...(vmAssert ? { vmItemsGpu, vmItemsJs } : {}) });
       continue;
     }
-    const cmpCells = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.005, 64, false, cmpGeom.excludeMask);
-    const cmpLight = compareLight(fbCompare.light, lightBuf, gbuf.kind, cols, rows, cmpGeom.meshTieMask);
-    cmpLight.dLSample = describeCellNormals(gbuf, GI, cmpLight.dLSampleIdx, cols); // diagnostic only (HANDS-01c)
-    if (cmpLight.dLSample) console.log('[gpucompare] dLSample ' + poseName + ' ' + JSON.stringify(cmpLight.dLSample));
-    const isVoxelPose = poseName.includes('voxel');
-    const k8Ok = !(isVoxelPose || needK8) || compareNoVoxels || (cmpGeom.k8Cpu > 0 && cmpGeom.k8Gpu > 0);
-    const geomViol = cmpGeom.depthViol + cmpGeom.uvViol + cmpGeom.aoViol + cmpGeom.zViol + cmpGeom.faceViol + cmpGeom.nrmViol;
-    const cmpCellsMesh = renderer === 'mesh' ? compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.01, 96, true, cmpGeom.excludeMask) : null;
-    const geomBaseOk = cmpGeom.kindMatchPct >= 99.5 && cmpGeom.holes === 0 && cmpGeom.meshTiesOk && cmpGeom.texelTiesOk; // PREC-04: both tie caps gate every fallback
-    const meshColourOk = renderer === 'mesh' && geomBaseOk && cmpGeom.geomViolCells <= 4 && cmpGeom.violNonK8 === 0 && cmpGeom.aoViol === 0 &&
-      cmpCells.glyphMatchPct >= 99.5 && cmpCells.poisonedSurvivors === 0 && cmpCellsMesh.pass;
-    if (renderer === 'mesh') console.log(`[gpucompare] mesh8a ${poseName}: geomViol=${geomViol} geomViolCells=${cmpGeom.geomViolCells} violNonK8=${cmpGeom.violNonK8} k8ColourOutliers=${cmpCellsMesh.k8Outside} fgMaxNonK8=${cmpCellsMesh.fgMaxNonK8}`);
-    // RTS tests both shown/hidden marks; this frontal scrawl must show every letter.
-    const ovlOk = !ovlRes || (ovlRes.mismatch === 0 && ovlRes.boundaryPct <= 0.5 &&
-      (decalAssert ? ovlRes.shownGpu >= decalAssert && ovlRes.shownTwin >= decalAssert : ovlRes.hidden > 0 && ovlRes.shownGpu > 0));
-    // BUG-RTS-001 (architecture.md 28.11, architect 2026-09-30): pitched poses (pitchedHashCell > 0) have a
-    // 0.25 m terrain look-hash; GPU float32 u/v vs the JS double twin flip a few boundary cells, so fgMax is
-    // reported but not gated there: outside <= 0.5 %, glyph >= 99.9 %, bgMax <= 64. Shear/dda poses unchanged.
-    const pitchedHashOk = renderer === 'mesh' && cam && (cam.projection === 'pitched' || cam.projection === 'ortho' || pitchedDefault) && geomBaseOk &&
-      cmpCells.outsideFrac <= 0.005 && cmpCells.glyphMatchPct >= 99.9 && cmpCells.bgMax <= 64 && cmpCells.poisonedSurvivors === 0;
-    // RE-02b b3 anchor: the same pose's shear JS twin vs the pitched GPU output, same mesh bars.
-    let anchorOk = true;
-    if (anchorShear && renderer === 'mesh') {
-      const shearCam = { ...cam, projection: 'shear' };
-      compareVoxelPool.project(shearCam, rt, renderer);
-      rt.gpuActive = false; fbCompare.gpu = false;
-      renderWorld(fbCompare, world, shearCam);
-      drawSprites(fbCompare, sprites.pool);
-      rt.gpuActive = wasActive;
-      const cmpA = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.01, 96, true);
-      anchorOk = cmpA.pass && cmpA.glyphMatchPct >= 99;
-      console.log(`[gpucompare] anchor ${poseName}: pitched GPU vs shear twin pass=${cmpA.pass} glyph=${cmpA.glyphMatchPct.toFixed(2)}% fgMaxNonK8=${cmpA.fgMaxNonK8} k8Outside=${cmpA.k8Outside}`);
-    }
-    let instOk = true, instNote = '';
-    if (instAssert) { // RE-15c: drawn + culled = total, LOD1 bucket used (cull+LOD both exercised)
-      const st = engine.instances.stats;
-      instOk = st.instances + st.instancesCulled === instAssert.total && st.instancesCulled > 0 && st.instancesLod1 > 0 && st.instances > st.instancesLod1;
-      instNote = `[drawn ${st.instances} culled ${st.instancesCulled} lod1 ${st.instancesLod1}]`;
-      console.log(`[gpucompare] instances ${poseName}: drawn=${st.instances} culled=${st.instancesCulled} lod1=${st.instancesLod1} total=${instAssert.total} ${instOk ? 'OK' : 'FAIL'}`);
-    }
-    // BUG-VM-001 (item 5): the real visibility regression test - both twins must have built a non-empty view-model
-    // draw list for this pitched pose (not just "both agree", which is also true when both wrongly draw nothing).
-    let vmOk = true;
-    if (vmAssert) {
-      vmOk = vmItemsGpu > 0 && vmItemsJs > 0;
-      console.log(`[gpucompare] viewModel ${poseName}: itemsGpu=${vmItemsGpu} itemsJs=${vmItemsJs} ${vmOk ? 'OK' : 'FAIL'}`);
-    }
-    const waterfall = waterfallRow(poseName, waterBits, fbCompare.water, n, cols, rows);
-    const ok = maskOk && (cmpCells.pass || meshColourOk || pitchedHashOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok && ovlOk && anchorOk && instOk && vmOk && (!waterfall || waterfall.pass);
-    overallOk = overallOk && ok;
-    rowsOut.push({ ...(waterfall ? { waterfall } : {}), pose: instNote ? `${poseName} ${instNote}` : poseName, cmpCells, cmpGeom, cmpLight, ok, geomOk, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null, ...(vmAssert ? { vmItemsGpu, vmItemsJs, vmOk } : {}) });
   }
   if (restoreSun) { restoreSun(); restoreSun = null; }
   resetInstances();
@@ -1044,7 +982,7 @@ async function runGpuCompareSceneMode(ctx) {
   let infoRows = null;
   // WG-3a: with `?rays=2` the WebGPU pipeline also gets the INFO n=2 geometry rows (resolved cell-res set, kind%/holes vs the JS twin, no cells compare yet).
   if (rayParam === 2) {
-    const base2 = wg || glPipeline; // same terrain/voxel/view-model/instance inputs as the rays-1 pipeline, so GL and WebGPU INFO rows compare like for like
+    const base2 = wg; // same terrain/voxel/view-model/instance inputs as the rays-1 pipeline
     const pipeline2 = new base2.constructor(rt, { rays: 2, terrainEnabled: base2.terrainEnabled, shadows: base2.shadowOpts, gpuCull: base2.gpuCull });
     if (pipeline2.ready) {
       pipeline2.bind(matTable, assets.palette);
@@ -1075,8 +1013,7 @@ async function runGpuCompareSceneMode(ctx) {
         renderWorld(fbCompare, world, cam);
         pipeline2.frame(fbCompare, lights || ambientL, cam, world);
         rt.present();
-        const rb2 = wg ? null : rt.readbackPresent();
-        const { GI: GI2, GA: GA2, Depth: Depth2 } = await pipeline2.readbackGeometry();
+                const { GI: GI2, GA: GA2, Depth: Depth2 } = await pipeline2.readbackGeometry();
 
         const wasActive2 = rt.gpuActive;
         rt.gpuActive = false;
@@ -1085,7 +1022,7 @@ async function runGpuCompareSceneMode(ctx) {
         drawSprites(fbCompare, sprites.pool);
         rt.gpuActive = wasActive2;
 
-        const cmpCells2 = wg ? { glyphMatchPct: NaN } : compareCells(rt.cells.fg, rt.cells.bg, rb2.fg, rb2.bg, gbuf.kind, cols, rows, undefined, undefined, 0.005);
+        const cmpCells2 = { glyphMatchPct: NaN }; // WebGPU: cells are judged by the main rows
         const cmpGeom2 = compareGeometry(gbuf, depthBuffer.depth, GI2, GA2, Depth2, cols, rows);
         infoRows.push({ pose: poseName, cmpCells: cmpCells2, cmpGeom: cmpGeom2, kindOk: cmpGeom2.kindMatchPct >= 99.5 });
         console.log(`[gpucompare] INFO n=2 ${poseName}: kind=${cmpGeom2.kindMatchPct.toFixed(2)}%(>=99.5% required) glyph=${cmpCells2.glyphMatchPct.toFixed(2)}%(reported only) holes=${cmpGeom2.holes}`);
@@ -1107,19 +1044,6 @@ async function runGpuCompareSceneMode(ctx) {
   for (const r of rowsOut) {
     if (r.wg) { text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose} [webgpu geometry]  kind ${r.cmpGeom.kindMatchPct.toFixed(2)}%  holes ${r.cmpGeom.holes}  geomViolCells ${r.cmpGeom.geomViolCells}  depthViol ${r.cmpGeom.depthViol}  uvViol ${r.cmpGeom.uvViol}
 `; continue; }
-    text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n` +
-      `  geometry: kind ${r.cmpGeom.kindMatchPct.toFixed(2)}%  matEq ${r.cmpGeom.matEqual}/${r.cmpGeom.matched}  planeEq ${r.cmpGeom.planeEqual}/${r.cmpGeom.matched}` +
-      `  depthViol ${r.cmpGeom.depthViol}  uvViol ${r.cmpGeom.uvViol}  holes ${r.cmpGeom.holes} (must be 0)` +
-      `  edgeKindMismatch ${r.cmpGeom.edgeKindMismatch}/${r.cmpGeom.edgeCells}\n` +
-      (r.mesh8a ? `  mesh8a: geomViol ${r.mesh8a.geomViol}  geomViolCells ${r.mesh8a.geomViolCells}  violNonK8 ${r.mesh8a.violNonK8}  k8 colour outliers ${r.mesh8a.k8Outside}  fgMaxNonK8 ${r.mesh8a.fgMaxNonK8}
-` : '') +
-      `  k8 cpu ${r.cmpGeom.k8Cpu}  gpu ${r.cmpGeom.k8Gpu}${r.isVoxelPose ? (r.k8Ok ? ' (both > 0, OK)' : ' (must both be > 0 on a voxel pose - FAIL)') : ''}\n` +
-      `  shading: glyph ${r.cmpCells.glyphMatchPct.toFixed(2)}%  fgOut ${r.cmpCells.fgOutside}  bgOut ${r.cmpCells.bgOutside}` +
-      `  outside ${(r.cmpCells.outsideFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpCells.cellsOutside} cells)  fgMax ${r.cmpCells.fgMax}  bgMax ${r.cmpCells.bgMax} (<=64)  poisonedSurvivors ${r.cmpCells.poisonedSurvivors}\n` +
-      `  light: ${r.cmpLight.pass ? 'OK' : 'MISMATCH'}  sunlit ${(r.cmpLight.sunlitMismatchFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpLight.sunlitMismatch}/${r.cmpLight.sunMap ? r.cmpLight.litCells + ' lit' : r.cmpLight.nonSky})  dLMax ${r.cmpLight.dLMax.toFixed(4)}  dLViol ${r.cmpLight.dLViol} (<=1e-3/chan)` +
-      (r.cmpLight.sunMap ? `  [sun map] boundary ${r.cmpLight.boundaryCells} (${(r.cmpLight.boundaryFrac * 100).toFixed(2)}%)  n mismatch ${r.cmpLight.nMismatch} (${(r.cmpLight.nMismatchFrac * 100).toFixed(3)}%, <=1%)` : '') + '\n';
-    if (r.wg) continue;
-    console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: kind=${r.cmpGeom.kindMatchPct.toFixed(2)}% glyph=${r.cmpCells.glyphMatchPct.toFixed(2)}% holes=${r.cmpGeom.holes} meshTies=${r.cmpGeom.meshTies}/${r.cmpGeom.meshTiesMax}(k9=${r.cmpGeom.kind9Cells}${r.cmpGeom.meshTies ? ' cells ' + r.cmpGeom.meshTieCells.join(',') : ''}) edgeKindMismatch=${r.cmpGeom.edgeKindMismatch}/${r.cmpGeom.edgeCells} k8cpu=${r.cmpGeom.k8Cpu} k8gpu=${r.cmpGeom.k8Gpu} kindExclK8=${r.cmpGeom.kindMatchPctExclK8.toFixed(2)}% holesExclK8=${r.cmpGeom.holesExclK8} poisonedSurvivors=${r.cmpCells.poisonedSurvivors} light=${r.cmpLight.pass ? 'OK' : 'MISMATCH'}(sunlit ${r.cmpLight.sunlitMismatch}, dLViol ${r.cmpLight.dLViol}, litFlip ${r.cmpLight.litFlip}${r.cmpLight.sunMap ? `, sunMap lit=${r.cmpLight.litCells} sunlitFrac=${(r.cmpLight.sunlitMismatchFrac * 100).toFixed(3)}% boundary=${r.cmpLight.boundaryCells} nMismatch=${r.cmpLight.nMismatch}(${(r.cmpLight.nMismatchFrac * 100).toFixed(3)}%)` : ''})`);
   }
   for (const r of shadowRows) {
     const d = r.shadowDepth;

@@ -1,6 +1,6 @@
 // OCCL-MAIN-01: loads `?pose=roadSouth&occl=1` and `occl=0` headless, checks both render without page errors and that
 // the F3 overlay line shows `occl on` only when requested; prints pipeline stats (culled counts when exposed).
-// Run: node tools/verify-occl.mjs 9520 [webgpu|webgl2]   (PC-B port range; port+1 = CDP)
+// Run: node tools/verify-occl.mjs 9520 [webgpu]   (PC-B port range; port+1 = CDP)
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
