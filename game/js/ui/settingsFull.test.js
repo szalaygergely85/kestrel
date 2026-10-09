@@ -1,0 +1,52 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import {createUiLayer} from '../../../engine/index.js';
+import {createSettingsView} from './settings.js';
+const context=vm.createContext({});
+for(const file of ['palette.js','models/menu_ui.js'])vm.runInContext(readFileSync(new URL('../../../design/'+file,import.meta.url),'utf8'),context);
+const settings=context.ASSETS.uiStyle.settings;
+const config={style:settings.full,controls:settings.controls,quality:settings.quality,rgb:context.ASSETS.palette.rgb};
+const options={quality:'medium',shadows:'mid',grid:'400x150',volume:0.7,mute:false,textSize:'normal',reduceMotion:false};
+const changes=[];
+const view=createSettingsView(options,{...config,onChange:(id,value)=>changes.push([id,value])});
+options.quality='low';assert.equal(view.snapshot().quality,'medium');
+assert.deepEqual(createSettingsView(view.snapshot(),config).snapshot(),view.snapshot());
+const detached=view.snapshot();detached.volume=0;assert.equal(view.snapshot().volume,0.7);
+const ui=createUiLayer({cols:160});view.draw(ui);
+const p=settings.full.panel;
+const line=y=>Array.from(ui.cells.glyphIdx.slice((p.y+y)*ui.cols+p.x,(p.y+y)*ui.cols+p.x+p.w),v=>String.fromCharCode(v+32)).join('');
+assert.ok(line(0).includes('SETTINGS'));assert.ok(line(3).includes('[Medium]'));assert.ok(line(4).includes('Restart to apply'));
+for(let y=0;y<p.h;y++)for(let x=0;x<p.w;x++) {
+ const i=((p.y+y)*ui.cols+p.x+x)*4;
+ assert.deepEqual([...ui.cells.bg.slice(i,i+3)],y===3&&x>=1&&x<=62?[52,42,16]:[10,11,16]);
+}
+view.handleKey('ArrowRight');assert.equal(view.snapshot().quality,'high');
+view.handleKey('ArrowDown');assert.equal(view.selectedId(),'shadows');
+view.handleKey('ArrowLeft');assert.equal(view.snapshot().shadows,'low');
+view.handleKey('ArrowLeft');view.handleKey('ArrowLeft');assert.equal(view.snapshot().shadows,'off');
+for(let i=0;i<5;i++)view.handleKey('ArrowRight');assert.equal(view.snapshot().shadows,'high');
+view.handleKey('ArrowDown');view.handleKey('ArrowDown');assert.equal(view.selectedId(),'volume');
+view.handleKey('ArrowRight');assert.equal(view.snapshot().volume,0.8);
+for(let i=0;i<20;i++)view.handleKey('ArrowLeft');assert.equal(view.snapshot().volume,0);
+for(let i=0;i<20;i++)view.handleKey('ArrowRight');assert.equal(view.snapshot().volume,1);
+view.handleKey('ArrowDown');view.handleKey('Enter');assert.equal(view.snapshot().mute,true);
+view.handleKey('Space');assert.equal(view.snapshot().mute,false);
+view.handleKey('ArrowDown');view.handleKey('ArrowRight');assert.equal(view.snapshot().textSize,'large');
+view.handleKey('ArrowDown');view.handleKey('Enter');assert.equal(view.snapshot().reduceMotion,true);
+view.handleKey('ArrowDown');view.handleKey('Enter');assert.equal(view.takeAction(),'back');assert.equal(view.takeAction(),null);
+view.handleKey('Escape');assert.equal(view.takeAction(),'back');assert.equal(view.handleKey('KeyQ'),false);
+assert.ok(changes.length>0);assert.equal(changes[0][0],'quality');
+assert.deepEqual(createSettingsView(JSON.parse(JSON.stringify(view.snapshot())),config).snapshot(),view.snapshot());
+const locked=createSettingsView({quality:'high'},{...config,isDisabled:(id,value)=>id==='shadows'||id==='quality'&&value==='ultra'});
+locked.handleKey('ArrowRight');assert.equal(locked.snapshot().quality,'auto');
+locked.handleKey('ArrowDown');assert.equal(locked.selectedId(),'grid');
+locked.handleKey('ArrowUp');assert.equal(locked.selectedId(),'quality');
+for(const invalid of [{volume:NaN},{volume:2},{shadows:'soft'},{mute:1},{quality:'bogus'},{grid:'160x60'}])assert.throws(()=>createSettingsView(invalid,config),TypeError);
+if(global.gc) {
+ const quiet=createSettingsView({},config), quietUi={cols:160,rows:60,setCellRGB(){}};
+ for(let i=0;i<10000;i++)quiet.draw(quietUi);global.gc();const before=process.memoryUsage().heapUsed;
+ for(let i=0;i<100000;i++)quiet.draw(quietUi);global.gc();const delta=process.memoryUsage().heapUsed-before;
+ assert.ok(delta<65536,'warmed draw heap '+delta);
+}
+console.log('Settings full view round-trip, controls, opaque plate and disabled choices PASS');
