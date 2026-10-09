@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Kestrel - telegraph style (TELEGRAPH-STYLE-01)</title>
+<style>
+ body{background:#07080c;color:#d8d2c0;font:14px system-ui;margin:0;padding:16px 24px}
+ .row{display:flex;gap:12px;margin:8px 0}
+ .g{padding:10px;border-radius:4px}
+ .sw{display:flex;gap:6px}
+ .sw span{width:60px;height:40px;display:flex;align-items:center;justify-content:center;font:11px Consolas,monospace;border:1px solid #0006}
+ p{font-size:12px;color:#8a8778;max-width:800px}
+</style></head><body>
+<h1>Boar windup swatches over grass / dirt</h1>
+<p>Drawn at the 240x90 cell scale (one cell = 8x8 px here). Source: game/js/quest/telegraphStyle.js. Ratios are WCAG contrast vs the ground colour (test needs >= 3).</p>
+<div id="out"></div>
+<script type="module">
+import '../palette.js';
+import { WINDUP_STEPS, LANE_STYLE } from '../../game/js/quest/telegraphStyle.js';
+const pal = ASSETS.palette.colors;
+const G = { grass: pal.turf, 'grass (dark)': pal.turfDark, dirt: pal.rubble };
+const rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255), lin=v=>v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4;
+const L=c=>0.2126*lin(c[0])+0.7152*lin(c[1])+0.0722*lin(c[2]);
+const R=(a,b)=>{const x=L(rgb(a)),y=L(rgb(b));return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05)};
+let html='';
+for (const [n,gc] of Object.entries(G)) {
+  html += `<div class="g" style="background:${gc}"><b>${n} ${gc}</b><div class="sw">` +
+    WINDUP_STEPS.map(s=>`<span style="background:${s.color||'transparent'};color:${s.color?'#888':'#000'}">${s.id}${s.color?' '+R(s.color,gc).toFixed(1):''}</span>`).join('') +
+    `<span style="background:color-mix(in srgb,${LANE_STYLE.color} ${LANE_STYLE.alphaMax*100}%,${gc})">lane</span></div></div>`;
+}
+document.getElementById('out').innerHTML = html;
+</script></body></html>

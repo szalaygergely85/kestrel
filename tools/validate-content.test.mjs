@@ -464,6 +464,9 @@ const questCases = [
   ['duplicate objective', (a, q) => { q[0].def.objectives[1].id = 'lamp'; }, ['m1.quest.json', 'duplicate objective']],
   ['empty objective text', (a, q) => { q[0].def.objectives[0].text = ' '; }, ['objectives[lamp].text', 'required']],
   ['non-ASCII objective', (a, q) => { q[0].def.objectives[0].text = '\u2026'; }, ['objectives[lamp].text', 'ASCII']],
+  ['objective text over 38', (a, q) => { q[0].def.objectives[0].text = 'x'.repeat(39); }, ['objectives[lamp].text', '39 chars']],
+  ['item name over 14', (a) => { a.items.defs.sword.name = 'x'.repeat(15); }, ['items.defs.sword.name', '15 chars']],
+  ['item desc over 38', (a) => { a.items.defs.sword.desc = 'x'.repeat(39); }, ['items.defs.sword.desc', '39 chars']],
   ['missing item name', (a) => { delete a.items.defs.sword.name; }, ['items.defs.sword.name', 'required']],
   ['invalid item description', (a) => { a.items.defs.sword.desc = 42; }, ['items.defs.sword.desc', 'required']],
   ['mismatched item id', (a) => { a.items.defs.sword.id = 'lamp'; }, ['items.defs.sword.id', 'match']],
@@ -522,6 +525,21 @@ for (const [name, breakFixture, finding] of areaCases) {
     const brokenAreas = loadQuestFiles(dir);
     ok('scanner diagnoses malformed alias JSON and retains quests', brokenAreas.quests.length === 1 && brokenAreas.areas === null && hasFinding(brokenAreas.errors, ['areas.json', 'JSON parse failed']));
   } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
+// QUEST-LOG-TEXT-CHECK-01: real content regression (first offender path)
+{
+  const { readFileSync } = await import('node:fs');
+  const read = (p) => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8'));
+  const q = read('../content/quests/m1.quest.json');
+  const badObj = q.objectives.find((o) => o.text.length > 38);
+  ok('m1.quest.json objectives <= 38 chars', !badObj, badObj && `content/quests/m1.quest.json.objectives[${badObj.id}].text (${badObj.text.length})`);
+  const { loadDesignAssets } = await import('./validate-content.mjs');
+  const defs = (await loadDesignAssets()).items?.defs || {};
+  const badName = Object.entries(defs).find(([, d]) => d.name.length > 14);
+  ok('item names <= 14 chars', !badName, badName && `items.defs.${badName[0]}.name`);
+  const badDesc = Object.entries(defs).find(([, d]) => d.desc.length > 38);
+  ok('item descs <= 38 chars', !badDesc, badDesc && `items.defs.${badDesc[0]}.desc`);
 }
 
 console.log(`${pass} passed, ${fail} failed`);
