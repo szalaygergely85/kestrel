@@ -373,30 +373,11 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   setWet(1); assert.ok(runCore(mutW, 1500).bad > 15, 'mutation: wet darkening constant'); setWet(0); delete shading.wetness;
 }
 
-// --- 38.23 entity tint: layout appended at the END, branch guarded by etA.x, tintCh probe == entityTint twin ---
-{
-  const { tintChannel } = await import('../../entityTint.js');
-  assert.equal(SHADE_BLOCK.field('etA').word, SHADE_BLOCK.field('faceK').word + 8, 'etA right after faceK (no word moved)');
-  assert.equal(SHADE_BLOCK.field('etId').word, SHADE_BLOCK.field('etA').word + 4);
-  assert.equal(SHADE_BLOCK.field('etC').word, SHADE_BLOCK.field('etId').word + 8);
-  assert.equal(SHADE_BLOCK.field('etC').words, 32);
-  assert.equal(SHADE_BLOCK.sizeBytes, (SHADE_BLOCK.field('etC').word + 32) * 4, 'tint table is the tail of the block');
-  assert.ok(/if \(su\.etA\.x > 0\.0\) \{/.test(SHADE_WGSL), 'branch guarded by count (0 = skipped, bit-identical)');
-  assert.ok(SHADE_WGSL.indexOf('su.etA.x > 0.0') < SHADE_WGSL.indexOf('rgbF += (su.fogFg - rgbF) * f') && SHADE_WGSL.indexOf('su.etA.x > 0.0') > SHADE_WGSL.indexOf('var rgbBg = rgbF * bgKAvg'), 'after lighting, before fog');
-  const tintCh = compileFn(SHADE_WGSL, 'tintCh', shims);
-  for (let i = 0; i < 2000; i++) {
-    const c = rand() * 255, t = rand(), k = i % 7 === 0 ? 0 : i % 11 === 0 ? 1 : rand();
-    const a = Math.fround(tintCh(Math.fround(c), Math.fround(t), Math.fround(k))), b = tintChannel(c, t, k);
-    assert.ok(Math.abs(a - b) <= 1e-3, `tintCh twin ${a} vs ${b}`);
-  }
-  const mutT = SHADE_WGSL.replace('return c + (t * 255.0 - c) * k;', 'return c + (t * 255.0 - c) * (k * 0.9);');
-  assert.notEqual(mutT, SHADE_WGSL);
-  const tm = compileFn(mutT, 'tintCh', shims); let bad = 0;
-  for (let i = 0; i < 200; i++) { const c = rand() * 255, t = rand(), k = 0.5 + rand() * 0.5; if (Math.abs(tm(c, t, k) - tintChannel(c, t, k)) > 1e-3) bad++; }
-  assert.ok(bad > 100, 'mutation: tint formula caught');
-}
 // --- US-073b (38.25): the stable-glyph level target. OFF = byte-identical to the pre-073b shader; ON = one extra r8ui target. ---
 {
+  // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge (35967 chars): the stable-off shader must not move by a single byte.
+  assert.equal(SHADE_WGSL.length, 35967, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '8c6b91cb67f1745e239d12bc6923aa4925bac4cd1fcd186242396d32cefc65b0', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);
@@ -429,6 +410,29 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   const mutL = fns && compileFn(SHADE_WGSL.replace('if (t <= gb) { i = k; }', 'if (t < gb) { i = k; }'), 'levelFromThresholds', core(SHADE_WGSL));
   let badM = 0; for (let setId = 0; setId < table.sets.length; setId++) { const S = table.sets[setId]; if (!S || !S.thresholds) continue; for (let k = 1; k < S.levels; k++) if (mutL(setId, S.levels, S.thresholds[k], su.cutoff) !== jsLevelFromThresholds(S.levels, S.thresholds[k], S.thresholds, su.cutoff)) badM++; }
   assert.ok(badM > 0, 'mutation: threshold compare (<= to <) caught at exact thresholds');
+}
+
+// --- 38.23 entity tint: layout appended at the END, branch guarded by etA.x, tintCh probe == entityTint twin ---
+{
+  const { tintChannel } = await import('../../entityTint.js');
+  assert.equal(SHADE_BLOCK.field('etA').word, SHADE_BLOCK.field('faceK').word + 8, 'etA right after faceK (no word moved)');
+  assert.equal(SHADE_BLOCK.field('etId').word, SHADE_BLOCK.field('etA').word + 4);
+  assert.equal(SHADE_BLOCK.field('etC').word, SHADE_BLOCK.field('etId').word + 8);
+  assert.equal(SHADE_BLOCK.field('etC').words, 32);
+  assert.equal(SHADE_BLOCK.sizeBytes, (SHADE_BLOCK.field('etC').word + 32) * 4, 'tint table is the tail of the block');
+  assert.ok(/if \(su\.etA\.x > 0\.0\) \{/.test(SHADE_WGSL), 'branch guarded by count (0 = skipped, bit-identical)');
+  assert.ok(SHADE_WGSL.indexOf('su.etA.x > 0.0') < SHADE_WGSL.indexOf('rgbF += (su.fogFg - rgbF) * f') && SHADE_WGSL.indexOf('su.etA.x > 0.0') > SHADE_WGSL.indexOf('var rgbBg = rgbF * bgKAvg'), 'after lighting, before fog');
+  const tintCh = compileFn(SHADE_WGSL, 'tintCh', shims);
+  for (let i = 0; i < 2000; i++) {
+    const c = rand() * 255, t = rand(), k = i % 7 === 0 ? 0 : i % 11 === 0 ? 1 : rand();
+    const a = Math.fround(tintCh(Math.fround(c), Math.fround(t), Math.fround(k))), b = tintChannel(c, t, k);
+    assert.ok(Math.abs(a - b) <= 1e-3, `tintCh twin ${a} vs ${b}`);
+  }
+  const mutT = SHADE_WGSL.replace('return c + (t * 255.0 - c) * k;', 'return c + (t * 255.0 - c) * (k * 0.9);');
+  assert.notEqual(mutT, SHADE_WGSL);
+  const tm = compileFn(mutT, 'tintCh', shims); let bad = 0;
+  for (let i = 0; i < 200; i++) { const c = rand() * 255, t = rand(), k = 0.5 + rand() * 0.5; if (Math.abs(tm(c, t, k) - tintChannel(c, t, k)) > 1e-3) bad++; }
+  assert.ok(bad > 100, 'mutation: tint formula caught');
 }
 
 console.log(`shade.wgsl.test.js: string/layout rules + ${probes} JS-evaluated probes (hash, shadeCore, glyph pick, shadeTerrain) vs JS twins passed, mutations caught (hash, 5 shadeCore, 2 terrain).`);

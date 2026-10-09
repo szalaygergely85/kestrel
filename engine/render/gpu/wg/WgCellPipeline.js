@@ -23,6 +23,7 @@ import { WgPointShadowPass } from './passPointShadow.js';
 import { WgWaterPass } from './passWater.js';
 import { WgSpritesPass } from './passSprites.js';
 import { WgOverlayPass } from './passOverlay.js';
+import { WgStablePass } from './passStable.js'; // US-073c (38.25)
 
 // Same list/order as GpuCellPipeline.PASS_NAMES (stats.passMs* line up with it).
 export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge', 'shadow', 'water', 'wcomp']);
@@ -55,6 +56,8 @@ export class WgCellPipeline {
     this.occl = opts.occl === 2 ? 2 : !!opts.occl; this.occlStats = this.occl === 2 || !!opts.occlStats; // occl 2 = occlusion + stats readback (?occl=2), true/1 = occlusion only
     // S8-B2-10c two-phase HZB occlusion (`?occl=1`), default OFF
     this.gpuCull = opts.gpuCull !== false; // WG-4a compute cull of instance batches (`?gpucull=0` = CPU path)
+    // US-073c (38.25): temporal glyph stability, `?stable=1`; absent = no pass, no extra target, frame byte-identical to before
+    this.stableOpt = !!opts.stable; this._stablePass = null; this._stableOn = false; this._stableRan = false; this._stInp = { shadeFg: null, shadeBg: null, water: null };
     this.ready = false;
     /** passes that really execute in this build; `frameComplete` = the pipeline can replace the CPU shading entirely */
     this.portedPasses = [];
@@ -108,7 +111,7 @@ export class WgCellPipeline {
     if (batched) this.device.beginCompileBatch();
     try {
       let tp = bootNow();
-      this._t = allocWgTargets(this.device, this.cols, this.rows, this.rays);
+      this._t = allocWgTargets(this.device, this.cols, this.rows, this.rays, this.stableOpt ? { stable: true } : null);
       bootSpan('WgCellPipeline targets', tp);
       this._pipeDebug = this.device.createPipeline({
         vertex: { src: { wgsl: DEBUG_WGSL } },
@@ -131,9 +134,10 @@ export class WgCellPipeline {
       this._waterPass = new WgWaterPass(this.device);
       this._waterPass.resize(this.cols, this.rows, this.rays);
       bootSpan('pass water (ctor total)', tp); tp = bootNow();
-      this._cellPass = new WgCellPass(this.device, this._shadowPass, this._waterPass);
+      this._cellPass = new WgCellPass(this.device, this._shadowPass, this._waterPass, this.stableOpt ? { stable: true } : null);
       this._cellPass.lightPass.pointPass = this._pointShadowPass;
       bootSpan('pass cell (ctor total)', tp);
+      if (this.stableOpt) { this._stablePass = new WgStablePass(this.device); this._stablePass.resize(this.cols, this.rows); this._stableOn = true; }
       this.shadowOpts = this._shadowPass.shadowOpts; // resolved (GL pipeline exposes the same field)
       this.portedPasses.push('debug', 'raster', 'resolve', 'deriv', 'light', 'shade', 'edge');
       if (this._shadowPass.enabled) this.portedPasses.push('shadow');
@@ -256,7 +260,7 @@ export class WgCellPipeline {
     if (!this.ready) return;
     let t;
     try {
-      t = allocWgTargets(this.device, cols, rows, this.rays);
+      t = allocWgTargets(this.device, cols, rows, this.rays, this.stableOpt ? { stable: true } : null);
     } catch (e) {
       // rt and pipeline grids must never diverge (38.8a 23a/24a): a failed resize disables the pipeline (the CPU path keeps presenting)
       console.warn('[WgCellPipeline] resizeGrid failed at', `${cols}x${rows}`, '- pipeline disabled:', e);
@@ -270,6 +274,7 @@ export class WgCellPipeline {
     if (this._waterPass) this._waterPass.resize(cols, rows, this.rays);
     this._gbufCleared = false; this._cellsShaded = false;
     this._dropOutTarget();
+    if (this._stablePass) { try { this._stablePass.resize(cols, rows); } catch (e) { console.warn('[WgCellPipeline] stable resize failed - stable off:', e); this._stableOn = false; } }
     if (this._spritesPass) {
       try {
         this._spritesPass.resize(cols, rows);
@@ -382,13 +387,18 @@ export class WgCellPipeline {
     outFg = outFg || (this._rbFg = this._rbFg && this._rbFg.length === n ? this._rbFg : new Uint8Array(n));
     outBg = outBg || (this._rbBg = this._rbBg && this._rbBg.length === n ? this._rbBg : new Uint8Array(n));
     const rect = { x: 0, y: 0, w: this.cols, h: this.rows };
-    await this.device.readback(t.texFinalFg, rect, outFg);
-    await this.device.readback(t.texFinalBg, rect, outBg);
+    const sp = this._stableRan ? this._stablePass : null; // US-073c: the stable output replaces the edge output
+    await this.device.readback(sp ? sp.outFg : t.texFinalFg, rect, outFg);
+    await this.device.readback(sp ? sp.outBg : t.texFinalBg, rect, outBg);
     return { fg: outFg, bg: outBg };
   }
   /** WG-3e: the WATER layer (rgba32uint, 4 words/cell); null when no water drew this frame. */
   /** S8-B2-10c: camera cut / teleport - the next frame's cull phase 1 runs with hzbOn 0 (no-op with occl off). */
   invalidateHzb() { if (this._rasterPass) this._rasterPass.invalidateHzb(); }
+  /** US-073c: camera cut / teleport / world load - the next frame's stable pass copies fresh cells instead of blending history. No-op with stable off. */
+  invalidateHistory() { if (this._stablePass) this._stablePass.invalidate(); }
+  /** US-073c: runtime toggle (needs `opts.stable` at construction); enabling starts with invalid history. @param {boolean} on */
+  setStable(on) { if (!this._stablePass) return; this._stableOn = !!on; this._stablePass.invalidate(); if (!on) this._stableRan = false; }
   async readbackWater(out) { return this._waterPass ? this._waterPass.readbackWater(out) : null; }
   /** WG-3d: the sun map depth as float32 bits (res*res Uint32Array); false = no map rendered this frame (gpucompare shadowDepth row). */
   async readbackShadowDepthBits(out) { return this._shadowPass ? this._shadowPass.readbackDepth(out) : false; }
@@ -431,6 +441,7 @@ export class WgCellPipeline {
     try { this._cellPass.run(this, t); }
     catch (e) { this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] resolve/deriv/light/shade/edge disabled:', e); return; }
     this._cellsShaded = this._cellPass.shaded;
+    this._runStable(t);
     this._runSprites(t);
     if (!this.ready) return;
     if (this.debugMode < 0) return;
@@ -450,6 +461,24 @@ export class WgCellPipeline {
     d.endPass();
   }
 
+  /** US-073c (38.25 item 2): after edge, before sprites. History is invalidated on every frame it cannot run (not shaded, debug view, not pitched, error). */
+  _runStable(t) {
+    const sp = this._stablePass; this._stableRan = false;
+    if (!sp || !this._stableOn) return;
+    const rp = this._rasterPass;
+    if (!this._cellsShaded || this.debugMode >= 0 || !rp || !rp.pitched || !this._cam || !t.texLevel) { sp.invalidate(); return; }
+    const wp = this._waterPass, wOn = !!(wp && wp.active), inp = this._stInp;
+    inp.shadeFg = wOn ? wp.edgeFg : t.texShadeFg; inp.shadeBg = wOn ? wp.edgeBg : t.texShadeBg; inp.water = wp ? wp.edgeWaterTexture : null;
+    try {
+      this._begin(WG_PASS_SLOT.stable);
+      try { sp.beginFrame(this._cam, rp.grid, null, rp.pitch); this._stableRan = sp.run(this, t, inp); } finally { this._end(); }
+    } catch (e) {
+      if (this.device._pass) { try { this.device.endPass(); } catch (_) { this.device._pass = null; } }
+      this._stableOn = false; this._stableRan = false;
+      console.warn('[WgCellPipeline] stable pass disabled:', e);
+    }
+  }
+
   /** WG-3f: sprites then overlay right after edge, every frame the cell pass shaded (also with 0 sprites). */
   _runSprites(t) {
     const sp = this._spritesPass;
@@ -458,7 +487,8 @@ export class WgCellPipeline {
     try {
       this._begin(WG_PASS_SLOT.sprites);
       const inp = this._spInp || (this._spInp = { gi: null, depth: null, edgeFg: null, edgeBg: null }); // reused: an object literal here was per-frame garbage
-      inp.gi = t.texGI; inp.depth = t.texDepth; inp.edgeFg = t.texFinalFg; inp.edgeBg = t.texFinalBg;
+      inp.gi = t.texGI; inp.depth = t.texDepth; const sg = this._stableRan ? this._stablePass : null; // US-073c: stable output replaces the edge output as sprites' background
+      inp.edgeFg = sg ? sg.outFg : t.texFinalFg; inp.edgeBg = sg ? sg.outBg : t.texFinalBg;
       try { sp.run(inp); } finally { this._end(); }
       this._begin(WG_PASS_SLOT.overlay);
       try { this._overlayPass.run(t.texDepth); } finally { this._end(); }
@@ -486,6 +516,8 @@ export class WgCellPipeline {
     this._rasterPass = null;
     if (this._cellPass) this._cellPass.dispose();
     this._cellPass = null;
+    if (this._stablePass) this._stablePass.dispose();
+    this._stablePass = null; this._stableRan = false;
     if (this._pointShadowPass) this._pointShadowPass.dispose();
     this._pointShadowPass = null;
     if (this._shadowPass) this._shadowPass.dispose();

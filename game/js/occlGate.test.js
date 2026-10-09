@@ -39,3 +39,10 @@ test('invalidator: no pipeline (gl2 / occl off) is a safe no-op', () => {
   inv.trackPose(0, 0, 0); inv.trackPose(500, 0, 0);
   assert.equal(inv.count, 0);
 });
+
+test('invalidator: also calls invalidateHistory (US-073c stable pass) when the pipeline has it', () => {
+  const calls = [];
+  const inv = createHzbInvalidator(() => ({ invalidateHzb: () => calls.push('hzb'), invalidateHistory: () => calls.push('hist') }));
+  inv.invalidate('teleport');
+  assert.deepEqual(calls, ['hzb', 'hist']);
+});
