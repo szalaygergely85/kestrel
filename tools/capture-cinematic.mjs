@@ -100,7 +100,7 @@ export async function captureCinematic(opts) {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       const meta = await evaluate(cdp, '({frames:__cine.frames,fps:__cine.fps,cols:__debug.rt.cols,rows:__debug.rt.rows,backend:__debug.rt.backend})');
-      if (meta.backend !== 'gl2' || !await evaluate(cdp, '!!__debug.gpuPipeline')) throw new Error('cinematic capture requires WebGL2 mesh pipeline');
+      throw new Error('cinematic capture needs a WebGPU port (WG-5b removed the WebGL2 mesh pipeline it drove)');
       const count = Math.min(meta.frames, opts.maxFrames), hashes = [], pngHashes = [];
       for (let i = 0; i < count; i++) {
         // Read cells and PNG in the same task as present(), before the browser discards its drawing buffer.

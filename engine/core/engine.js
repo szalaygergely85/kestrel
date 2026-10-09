@@ -311,7 +311,7 @@ export function createEngine(opts) {
       // put; a settings menu offering this grid on such a back-end is a
       // product bug upstream of this call, not something to crash over.
       const wgReady = rt.backend === 'webgpu' && !!renderPipeline && renderPipeline.ready;
-      if ((rt.backend !== 'gl2' && !wgReady) || engine.gridRequest.gpu === false) {
+      if (!wgReady || engine.gridRequest.gpu === false) {
         console.warn(`[engine.setGrid] no GPU grid on this back-end (backend=${rt.backend}, gpu=${engine.gridRequest.gpu}) - staying at ${rt.cols}x${rt.rows}`);
         return { cols: rt.cols, rows: rt.rows, clamped: g.clamped, pending: false };
       }

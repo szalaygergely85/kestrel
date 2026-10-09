@@ -32,12 +32,5 @@ for (const pipe of [{ ready: false, resizeGrid() { throw new Error('no'); } }, n
   const res = engine.setGrid(240, 90, { immediate: true });
   ok(res.cols === 160 && rt.calls.length === 0, 'refused without a ready pipeline');
 }
-// gl2 path unchanged: no pipeline call
-{
-  const rt = fakeRt('gl2'), pipe = { ready: true, resizeGrid() { throw new Error('gl2 must not touch it'); } };
-  const engine = createEngine({ canvas: canvas(), assets, renderTarget: rt, renderPipeline: pipe, cols: 160, force2d: true, inputTarget: window });
-  engine.setGrid(240, 90, { immediate: true });
-  ok(rt.cols === 240, 'gl2 resized');
-}
 console.log = log;
 console.log(`setGridWebgpu.test.js: ${checks} checks passed.`);

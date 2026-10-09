@@ -15,13 +15,12 @@ import {
   GBuffer, bindShading, bindLevel,
   DebugOverlay, bootMark, bootSpan, bootNow, freezeBootMarks, bootEntries, bootReport, // BOOT-SPEED-01
   integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations,
-  GpuCellPipeline, GpuOverlayPass, PASS_NAMES, WG_PASS_NAMES,
+  WG_PASS_NAMES,
   VoxelPool, bindDecals, drawDecals,
   PITCH_CLAMP_PITCHED_DEG,
   ambientL, World, repackMaterials,
   updateInteraction, drawCrosshair,
   buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun,
-  isSoftwareRenderer,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim,
   loadContentPack, createRng, prebuildTerrainMesh,
@@ -111,7 +110,6 @@ import { createLoot, setLootApi } from './quest/sim/loot.js'; // US-091a2 (37.16
 import { LOOT_TABLE, LOOT_SEED_SALT } from './quest/sim/lootConfig.js';
 import { createToastView } from './quest/toastView.js';
 import { createInventoryView } from './quest/inventoryView.js'; // US-091b
-import { probeGpuSupport, showWebgl2RequiredScreen, showSoftwareRendererWarning } from './ui/webgl2Gate.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
 import { ensureBenchBoars } from './dev/combatBench.js'; // COMBAT-BENCH-01
@@ -264,24 +262,27 @@ if (lookParam) {
   }
 }
 
-// US-045 (D-017 item 2): no playable CPU fallback any more. `?gpu=0` and
-// `?force2d=1` are dev/debug switches (D-017 item 3/4) and stay unaffected -
-// they intentionally force the JS/Canvas2D reference path even on hardware
-// that *does* have real WebGL2, so the gate below only blocks the DEFAULT
-// (no dev switch) path. `webgl2gate=none|software` is a test-only override
-// (not a documented AC) so the owner/tester can exercise both screens
-// without swapping GPUs - see the story's Programmer notes.
-const gpuDevSwitch = params.get('gpu') === '0' || params.get('force2d') === '1';
-const gateTest = params.get('webgl2gate');
-let gpuProbe = gateTest === 'none' ? { supported: false, isSoftware: false, renderer: '' }
-  : gateTest === 'software' ? { supported: true, isSoftware: true, renderer: '(test override) SwiftShader' }
-  : probeGpuSupport(isSoftwareRenderer);
-const gpuBlocked = !gpuDevSwitch && !gpuProbe.supported;
-if (gpuBlocked) showWebgl2RequiredScreen(canvas, assets);
-else if (!gpuDevSwitch && gpuProbe.isSoftware) showSoftwareRendererWarning(assets, gpuProbe.renderer);
+// WG-5b: WebGPU is the only GPU backend. `?force2d=1` is the dev switch for the CPU Canvas2D reference path (no
+// WebGPU, capped grid). When WebGPU is missing or fails, createRenderer calls `onWebGpuMissing` (below): the canvas is
+// hidden, the "WebGPU required" screen (webgpuRequired.js) is shown and no game loop starts (`gpuBlocked`).
+let gpuBlocked = false;
+function onWebGpuMissing(reason) {
+  gpuBlocked = true;
+  canvas.style.display = 'none';
+  const text = String(reason || '');
+  const code = /navigator\.gpu/.test(text) ? 'no-api' : /no adapter/.test(text) ? 'no-adapter' : 'device-failed';
+  console.warn('[webgpu] missing: ' + text);
+  import('./webgpuRequired.js').then((m) => m.showWebGpuRequired(document.body, { reason: code })).catch(() => {
+    const div = document.createElement('div');
+    div.id = 'webgpu-required';
+    div.textContent = 'WebGPU required to play. Use a current Chrome or Edge with hardware acceleration on, then reload.';
+    div.style.cssText = 'position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:#0a0806;color:#e8d9a8;font:16px monospace;text-align:center;padding:2em';
+    document.body.appendChild(div);
+  });
+}
 
 // BUG-BOOT-001 (Q9 item 3, architect ruling): a plain DOM fatal card (message + stack, no renderer dependency -
-// same "throwaway canvas, no engine state" precedent as webgl2Gate.js above) instead of a silent black screen.
+// same "throwaway canvas, no engine state" precedent as the WebGPU-required screen) instead of a silent black screen.
 // Global `error`/`unhandledrejection` listeners catch anything a per-frame `update`/`render` throws (the
 // architect's ruling: NOT a per-listener try/catch inside engine/core/events.js); `guardLoad` below additionally
 // wraps the two synchronous load/restart call sites so their own throw (e.g. bad content JSON) is reported the
@@ -352,12 +353,12 @@ const fadeLut = createFadeLut(defaultRamp, defaultRamp.length - 1, 0.12);
 // `ASSETS` of its own - see hints.js `setPaletteColors`).
 const sceneDim = createSceneDim();
 if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
-// WG-1c2: `?backend=webgpu|webgl2` (default webgl2); webgpu falls back to webgl2 with a warning (38.8a 16).
+// WG-5b: WebGPU is the only backend (`?backend=` is ignored with a warning).
 const shadowOpts = bootOpts.shadowOpts; // GFX-01w: shadow level from the preset (resolveShadowLevel) + ?shadows= / ?shadowinst / ?shadowres / ?shadowcast overrides (ME-15e/f, D-043: map is the default)
-const occlOpt = parseOccl(params, params.get('backend') || 'webgl2');
+const occlOpt = parseOccl(params, 'webgpu');
 const pointShadowOpt = parsePointShadows(params, resolvedQuality && resolvedQuality.name); // ME-16e: default OFF in every mode unless the URL sets it
 const tCR = bootNow();
-const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
+const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgpu', onWebGpuMissing,
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
   shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.occl, pointShadows: pointShadowOpt.pointShadows, pointShadowLevel: pointShadowOpt.pointShadowLevel, // OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
   onCompileProgress: (done, total) => { bootStages.enter('pipelines'); if (bootCard) bootCard.setStageLines(bootStages.cardText()); if (bootProg) bootProg.count('compile', done, total); } }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
@@ -514,10 +515,10 @@ const useDetail = params.get('detail') !== '0';
 const lightsEnabled = params.get('lights') !== '0';
 // S8-B2-12c: `?cloudshadow=1` (default off, WebGPU only; gl2 frozen GLSL ignores the cloud byte) puts a default cloud-shadow
 // block into `lights.cloud` after every `buildLightSet` below (replaces the old `?clouds=`/setCloudShadow).
-const cloudShadowOn = rt.backend !== 'gl2' && parseCloudShadowFlag(params.get('cloudshadow'));
+const cloudShadowOn = parseCloudShadowFlag(params.get('cloudshadow'));
 // S8-B2-20 NEEDS B1 item (1): `?ao=<0..1>` (default 0). WebGL2 stays 0 (frozen GLSL ignores it, D-044). Applied
 // into `lights.ao` after every `buildLightSet` below, same site as the cloud strength above.
-const aoStrength = rt.backend === 'gl2' ? 0 : parseAoStrength(params.get('ao'));
+const aoStrength = parseAoStrength(params.get('ao'));
 // US-007 (14.3 item 8 fallback/switches): test-only sun disable, same shape
 // as `?lights=0`.
 const sunEnabled = params.get('sun') !== '0';
@@ -563,42 +564,9 @@ console.log(`[RenderTarget] back-end: ${rt.backend}`); // D-005: which back-end 
 // guards) lives in engine/render/gpu/ and engine/render/{detailShade,
 // edgePass,CellBuffer,RenderTargetGL}.js, none of which is compositor.js/
 // world/* (US-025, off-limits this story).
-bootMark('after GBuffer/materials, before GL2 GpuCellPipeline');
+// WG-5b: the WebGL2 GpuCellPipeline is gone; `gpuPipeline` stays null (WebGPU is `wgPipeline`) so the dev tools that still
+// read it print their "no active pipeline" message until they are ported (dead branches are listed in WG-5b-drop-webgl2.md).
 let gpuPipeline = null;
-if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.allV2) {
-  const candidate = new GpuCellPipeline(rt, { rays, terrainEnabled, shadows: engine.shadows });
-  if (candidate.ready) {
-    candidate.bind(matTable, assets.palette);
-    candidate.setWaterLooks(window.ASSETS.waterLooks); // US-055a2c (Q12 item 8)
-    gpuPipeline = candidate;
-  }
-}
-// Architect review 1 item 2 (14.2 items 5/7 fallback matrix gap):
-// `rt.backend === 'gl2'` only means RenderTarget.js's own probe found a
-// real, non-software WebGL2 context - it says nothing about whether the
-// cell pipeline actually compiled/linked (`candidate.ready` above, or
-// `detailPass`/`matTable.allV2` not holding). When the gate above didn't
-// produce a `gpuPipeline`, the CPU caster is about to run every frame
-// (`fb.gpu` stays false, see `runGame`'s render()) - left at the
-// default/`?grid=` grid it would cast at up to 320x120, 4x the CPU budget.
-// Force the same `cpuGrid` RenderTarget.js already uses for `?gpu=0` and
-// the software-renderer case (default 160x60), via `engine.setGrid`, and
-// rebuild the CPU-side state that depends on grid size (`gbuf`; `rt`/
-// `depthBuffer` come straight off `engine`, which `setGrid`
-// already replaced - this is the `grid:changed` event's payload, applied
-// synchronously here since nothing GPU-side has consumed the old sizes yet).
-if (rt.backend === 'gl2' && !gpuPipeline) {
-  const { cols: cpuCols, rows: cpuRows } = engine.gridRequest.cpuGrid;
-  if (rt.cols !== cpuCols || rt.rows !== cpuRows) {
-    console.warn(`[grid] GpuCellPipeline unavailable on a gl2 backend - forcing the CPU fallback grid ${cpuCols}x${cpuRows} (was ${rt.cols}x${rt.rows})`);
-    // D-025 (US-038a): `setGrid` now resizes `rt` IN PLACE (same object) -
-    // `rt` (this `let`) already points at it, no reassignment needed; only
-    // the small CPU-side objects `applyGrid` replaced need re-reading.
-    engine.setGrid(cpuCols, cpuRows, { immediate: true });
-    depthBuffer = engine.depthBuffer;
-    gbuf = new GBuffer(rt.cols, rt.rows);
-  }
-}
 // WG-2a: the WebGPU skeleton pipeline (createRenderer built it) is NOT a gpuPipeline yet (no scene passes: the CPU path keeps
 // rendering); it only draws `?gpudebug=kind|plane|normal|depth` (G-buffer debug view) over the cells.
 if (wgPipeline && wgPipeline.ready && rt.backend === 'webgpu') {
@@ -613,7 +581,7 @@ if (gpuPipeline && gpuDebugParam) {
   // Architect review 1 item 6 deviation: mode 2 is a "was this cell shaded"
   // indicator, not the real edge-rule code (no `ruleTex` MRT this story) -
   // named `shaded` here so nobody reads it as the rule.
-  gpuPipeline.setDebugMode({ kind: 0, plane: 1, shaded: 2 }[gpuDebugParam] ?? -1);
+  gpuPipeline.setDebugMode({ kind: 0, plane: 1, shaded: 2 }[gpuDebugParam] ?? -1); // unreachable since WG-5b
 }
 // Architect review 1 minor item 4c: name the offending material keys when
 // the gate didn't hold, so the content gap is visible without digging.
@@ -623,9 +591,8 @@ const inactiveReason = gpuPipeline
 console.log(`[GpuCellPipeline] ${gpuPipeline ? 'active (' + gpuPipeline.rendererString + ')' : 'inactive' + inactiveReason}`);
 
 // ---- US-030c (ARCH CHANGES item 1): sprite system, after the pipeline gate ----
-bootMark('GL2 GpuCellPipeline built (webgl2 only) / sprite system next');
+bootMark('sprite system next');
 const sprites = createSpriteSystem({ assets, rt, gpuPipeline, wgPipeline });
-if (gpuPipeline && gpuPipeline.ready && rt.backend === 'gl2') new GpuOverlayPass(rt, gpuPipeline, engine.overlay); // RE-07b (28.9)
 // ---- end US-030c ----
 
 // ---- US-053b/US-053c: particle presets + the draw layer (engine.particles.clear() on every 'world:loaded'
@@ -1813,10 +1780,6 @@ async function runGame(mode, cinematic = null) {
         `  grid ${rt.cols}x${rt.rows}${Number.isNaN(engine.stats.lastGridSwitchMs) ? '' : ` (switch ${engine.stats.lastGridSwitchMs.toFixed(1)}ms)`}`;
       if (gpuPipeline) {
         if (engine._detail) extra += `\ndetail fed ${engine._detail.fed}  culled ${engine.instances.stats.instancesCulled}  lod1 ${engine.instances.stats.instancesLod1}`;
-        extra += '\npass ms: ' + PASS_NAMES.map((name, i) => {
-          const v = gpuPipeline.stats.passMsP50[i];
-          return `${name} ${Number.isNaN(v) ? 'n/a' : v.toFixed(2)}`;
-        }).join('  ');
       }
       if (wgActive && wgPipeline.ready) extra += '\nwg pass ms: ' + WG_PASS_NAMES.map((name, i) => { const v = wgPipeline.stats.wgPassMsP50[i]; return name + ' ' + (Number.isNaN(v) ? 'n/a' : v.toFixed(2)); }).join('  '); // S8-B1-07
       if (mode === 'world') {

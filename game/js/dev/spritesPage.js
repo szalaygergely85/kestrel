@@ -7,7 +7,7 @@
 // PlayerLook (US-047 - game/js/dev/** is an allowed engine/dev.js importer).
 import {
   AssetRegistry, createEngine, GBuffer, bindShading, bindLevel, DebugOverlay,
-  integrate, Camera, renderWorld, GpuCellPipeline, ambientL, World, drawSprites,
+  integrate, Camera, renderWorld, ambientL, World, drawSprites,
 } from '../../../engine/index.js';
 import { PlayerLook } from '../../../engine/dev.js';
 import { POSES } from '../../../tools/bench-poses.js';
@@ -30,12 +30,7 @@ const detailPass = params.get('detail') !== '0' ? assets.detailPass : null;
 const gbuf = new GBuffer(rt.cols, rt.rows);
 console.log(`[RenderTarget] back-end: ${rt.backend} ${rt.cols}x${rt.rows}`);
 
-let gpuPipeline = null;
-if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.allV2) {
-  const candidate = new GpuCellPipeline(rt);
-  if (candidate.ready) { candidate.bind(matTable, assets.palette); gpuPipeline = candidate; }
-}
-console.log(`[GpuCellPipeline] ${gpuPipeline ? 'active (' + gpuPipeline.rendererString + ')' : 'inactive - JS shading'}`);
+const gpuPipeline = null; // WG-5b: WebGL2 pipeline removed
 
 const sprites = createSpriteSystem({ assets, rt, gpuPipeline });
 window.__debug = { input, overlay, rt, engine, gpuPipeline, sprites };

@@ -6,9 +6,8 @@
 // Imports only engine/index.js (check-deps rule 3).
 import {
   AssetRegistry, loadContentPack, createEngine, clampGrid, bindShading, bindLevel, repackMaterials, GBuffer,
-  GpuCellPipeline, GpuOverlayPass, VoxelPool, buildLightSet, makeLightBuffer,
+  VoxelPool, buildLightSet, makeLightBuffer,
   createRtsCamera, updateRtsCamera, createPitchedTerms, pitchedTerms, screenRay, pickNearest, selectInRect, worldToCell, rayTerrain,
-  PASS_NAMES,
 } from '../../../engine/index.js';
 import { prebuildTerrainMesh } from '../dev/terrainPrebuild.js'; // load-time terrain mesh build (engine/dev.js stays in game/js/dev)
 import { UNIT_MODEL_KEY, makeUnitModelDef, RTS_TEAM_SPEC } from './unitModel.js';
@@ -52,14 +51,14 @@ const rt = engine.renderTarget;
 // The UI layer starts opaque and is drawn over the scene by rt.present(); the RTS page draws no UI
 // cells (HUD is DOM), so clear it once - otherwise the whole canvas presents black (main.js clears per frame).
 engine.ui.clear();
-if (rt.backend !== 'gl2') fail('RTS spike needs a real WebGL2 GPU (renderer mesh); backend = ' + rt.backend);
+// WG-5b: the RTS spike drove the WebGL2 GpuCellPipeline, which is deleted; it has not been ported to WebGPU yet.
+const PASS_NAMES = [];
+fail('RTS spike is unavailable: its WebGL2 renderer was removed in WG-5b (needs a WebGPU port); backend = ' + rt.backend);
 const P = assets.palette;
 const matTable = bindShading(P, assets.detailPass, rt.pxCellH / rt.pxCellW);
 const gbuf = new GBuffer(rt.cols, rt.rows);
-const gpuPipeline = new GpuCellPipeline(rt, { rays: engine.rays, terrainEnabled: true, shadows: { sun: 'map' } /* ME-19c2: sun DDA retired, shadow map */ });
-if (!gpuPipeline.ready || !matTable.allV2) fail('GpuCellPipeline not ready (missingV2: ' + (matTable.missingV2 || []).join(',') + ')');
+const gpuPipeline = null; // WG-5b: unreachable (fail() above)
 gpuPipeline.bind(matTable, P);
-new GpuOverlayPass(rt, gpuPipeline, engine.overlay);
 const voxelPool = new VoxelPool();
 voxelPool.bind(assets, matTable);
 gpuPipeline.bindVoxels(voxelPool);
