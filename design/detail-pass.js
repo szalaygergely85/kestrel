@@ -221,7 +221,7 @@
   var STONE = {
     albedo: 0.85, bgK: 0.28, seed: 11, detail: 18, jitter: 0.08,
     tones: [['stoneMid', 4], ['stoneMidHi', 3], ['stoneMidLo', 3]],
-    grid: { u: 0.8, v: 0.4, stagger: 0.5, shade: 0.55, tint: 'mortar', amount: 0.5, bgK: 0.16, cross: '|', maxCover: 0.25, tie: true, glyph: 'texel' },
+    grid: { u: 0.8, v: 0.4, stagger: 0.5, shade: 0.55, tint: 'mortar', amount: 0.5, bgK: 0.16, cross: '|', maxCover: 0.25, tie: true },
     face: { set: 'stoneFace', mid: 'stoneMid', far: 'stoneFar',
             bevel: { top: 0.05, topShade: 1.15, bottom: 0.05, bottomShade: 0.80 } },
     speckle: { set: 'chip', chance: 0.05, shade: 0.72 },
@@ -257,7 +257,7 @@
       desc: 'Brick courses 0.3 x 0.1 m (future houses, chimneys). Light mortar, classic |___|___| at mid range.',
       albedo: 0.80, bgK: 0.26, detail: 20, jitter: 0.10,
       tones: [['brick', 4], ['brickDark', 2], ['brickLight', 2]],
-      grid: { u: 0.3, v: 0.1, stagger: 0.5, shade: 0.85, tint: 'ash', amount: 0.55, bgK: 0.16, cross: '|', maxCover: 0.25, tie: true, glyph: 'texel' },
+      grid: { u: 0.3, v: 0.1, stagger: 0.5, shade: 0.85, tint: 'ash', amount: 0.55, bgK: 0.16, cross: '|', maxCover: 0.25, tie: true },
       face: { set: 'brickFace', mid: 'brickMid', far: 'brickFar' },
       lod: { mid: 10, far: 22, dither: 3 }
     },
