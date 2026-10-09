@@ -44,3 +44,6 @@ When a slot has no unblocked item left (deps, `ARCH-NOTE NEEDED`, `ASK ARCHITECT
 - **architect** (`model: opus`): tech note for the next `ARCH-NOTE NEEDED` item (append to the item in `docs/sprints/sprint-8-queue.md` + a short `architecture.md` 38.x subsection), or answer a lane `ASK ARCHITECT`. No `ARCH OK`/`ARCH CHANGES` on PC-B code.
 - **product-owner** (sonnet): new story rows + ACs to refill an empty slot queue (in `docs/pc-b-queue.md`). No `PO OK`.
 Mark its output `(PC-B 5th agent, PC-A to ratify)` and list it in the next handoff.
+
+## Slot floor (owner 2026-10-09, 5-5-5-5)
+Each slot keeps >= 5 open, startable (not blocked) items in `docs/pc-b-queue.md`. Count at every handoff and after every push; top up from its REFILL POOL; pool < 3 -> run the 5th agent (PO sonnet) to write stories and write `NEEDS PC-A: refill pool` in the lane file. PC-A refills the pool at each review batch.
