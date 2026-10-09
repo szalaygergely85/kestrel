@@ -4404,7 +4404,7 @@ Order: 16a + 16b parallel -> 16c + 16d parallel -> 16e -> 16f -> 16g. 16d never 
 - **ED-MESH-1f (B1, tools/editor)** import -> `refreshAssets`; delete the `RENDERER` flash branch/args; live drag through `setMeshPlacement` + collider rebuild on release/undo. Files: `main.js`, `meshDragPreview.js`, `commands.js` + tests. AC: item 5 drag test; headless vox import on webgpu.
 - **ED-MESH-1g (B1, tools/editor)** async mesh selection on WebGPU + parity. Files: `pick.js`, `meshPick.js`, `pickParity.mjs`, new `pick-golden-webgpu.json`. AC: parity check passes vs the GL golden; stale-pick test; selection outline drawn via `engine.ui` `setGlyph` on both `webgpu` and `?gpu=0`.
 
-### 38.24 AI-PERCEIVE-01 + AI-LEASH-01 pure AI helpers (programmer kestrel-3, 2026-10-09) - pending ARCH review
+### 38.27 AI-PERCEIVE-01 + AI-LEASH-01 pure AI helpers (programmer kestrel-3, 2026-10-09) - pending ARCH review
 - `engine/nav/perceive.js` (sight cone + noise-scaled hearing + injected LOS, `returnHome` flag when past `homeR`) and `engine/nav/leash.js` are leaf modules: no imports, no allocation, not wired into beastSim (lane C owns that).
 - `leashState(agent, def, target, dt)` mutates `agent.leashMode` (LEASH_HOME / ENGAGE / RETURN / GIVEUP) and `agent.leashT` (engaged seconds), returns the mode.
 - `def` = `{homeX, homeZ, homeR, leashR, aggroR, loseScale=1.25, returnSpeed, giveUpT}`; keep `homeR < leashR`.
