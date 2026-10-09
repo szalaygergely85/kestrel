@@ -27,9 +27,8 @@ const M_H = RASTER_MASK_BLOCK.field('maskH').word, M_CUT = RASTER_MASK_BLOCK.fie
 // ALPHA-01f (b): same 5 mask fields, RASTER_INSTANCED_MASK_BLOCK's own word offsets (its prefix is byte-identical to RASTER_BLOCK's).
 const IM_X0 = RASTER_INSTANCED_MASK_BLOCK.field('maskX0').word, IM_Y0 = RASTER_INSTANCED_MASK_BLOCK.field('maskY0').word;
 const IM_W = RASTER_INSTANCED_MASK_BLOCK.field('maskW').word, IM_H = RASTER_INSTANCED_MASK_BLOCK.field('maskH').word, IM_CUT = RASTER_INSTANCED_MASK_BLOCK.field('maskCut').word;
-// US-068b2 (38.19): `projMode` (2 = ortho) is the LAST word of every raster block; the word offsets differ per block (BASE's 38 overlaps RASTER's `origin`).
-const P_BASE = RASTER_BASE_BLOCK.field('projMode').word, P_RASTER = RASTER_BLOCK.field('projMode').word, P_MASK = RASTER_MASK_BLOCK.field('projMode').word;
-const P_IMASK = RASTER_INSTANCED_MASK_BLOCK.field('projMode').word, T_PROJ = TERRAIN_BLOCK.field('projMode').word;
+// US-068b2 (38.19): `projMode` (2 = ortho) is in the shared RASTER_FIELDS prefix: one word for all raster blocks, written once in prepare().
+const P_RASTER = RASTER_BLOCK.field('projMode').word, T_PROJ = TERRAIN_BLOCK.field('projMode').word;
 const ORIGIN = RASTER_BLOCK.field('origin').word, T_MODEL_REL = TERRAIN_BLOCK.field('modelRel').word;
 // S8-B2-05/06: wind/sway uniforms (RASTER_BLOCK, instanced variant only; the base/mask blocks end before them).
 const WIND = RASTER_BLOCK.field('wind').word, WIND_T = RASTER_BLOCK.field('windT').word, WIND_K = RASTER_BLOCK.field('windK').word;
@@ -94,7 +93,7 @@ export class WgRasterPass {
     // compacting it on the CPU; MeshGroupSet groups (nearest-64 `chosen` selection is CPU-side) and multi-range voxel units keep the CPU path.
     this.cull = null;
     /** @type {any} S8-B2-10c HZB builder (only with opts.occl) */ this.hzb = null;
-    this._hzbFwd = { x: 0, y: 1, z: 0 }; this._phase2 = false;
+    this._hzbFwd = { x: 0, y: 1, z: 0 }; this._eye = { x: 0, y: 0, z: 0 }; this._phase2 = false; // _eye: world-space camera for the cull kernel's occNear
     this.gpuGroups = []; this.gpuM0 = []; this.gpuM1 = []; this.gpuEntries = []; this.gpuN = 0; this._pair = [null, null];
     this._gpuHook = { accept: (g, m0, m1) => this._accept(g, m0, m1) };
     // Terrain (ME-06 twin): own uniform block + the near/far type textures (r8ui, 1x1 placeholders until a bake is uploaded).
@@ -150,7 +149,8 @@ export class WgRasterPass {
       const v = this.view, fx = v[3], fy = v[7], fz = v[11], fl = Math.hypot(fx, fy, fz); // clip.w row = dot(P - eye, fwd) * k (projection.js)
       if (fl > 1e-9) { const f = this._hzbFwd; f.x = fx / fl; f.y = fy / fl; f.z = fz / fl; hz = hp.descriptor(f); }
     }
-    cull.begin({ planes: this.planes, viewProj: this.view, rows: p.rows, eye: null, maxDistM: 0, swayPad: this.windOn ? SWAY_MAX : 0, hzb: hz });
+    const eye = this._eye, cam = p._cam; if (cam) { eye.x = cam.x; eye.y = cam.y; eye.z = cam.z; }
+    cull.begin({ planes: this.planes, viewProj: this.view, rows: p.rows, eye, maxDistM: 0, swayPad: this.windOn ? SWAY_MAX : 0, hzb: hz });
     this._phase2 = !!hz;
     for (let i = 0; i < n; i++) { pair[0] = this.gpuM0[i]; pair[1] = this.gpuM1[i]; this.gpuEntries[i] = cull.add(this.gpuGroups[i], pair); }
     cull.run();
@@ -168,13 +168,13 @@ export class WgRasterPass {
         for (let r = 0; r < R; r++) {
           const e = entries[lod * R + r];
           if (!e.active) continue;
-          this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0; this.u[ORIGIN] = this.ox;
+          this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0
           this._model(e.parts.m, 0);
           const entry = this.buffers.getVoxel(e.mesh); this.bits[AXIS] = this._axis(e.parts.flags[0], entry);
           const mr = e.mesh.maskRanges;
           if (mr && this.maskReady && entry.uvMaskBuffer && mr[r * 5 + 2] >= 0) {
             this.iu.set(this.u);
-            const ib = this.ibits; ib[P_IMASK] = this.ortho ? 2 : 0;
+            const ib = this.ibits;
             ib[IM_X0] = mr[r * 5]; ib[IM_Y0] = mr[r * 5 + 1]; ib[IM_W] = mr[r * 5 + 2]; ib[IM_H] = mr[r * 5 + 3]; ib[IM_CUT] = mr[r * 5 + 4];
             const bd = this.instanceMaskBind;
             bd.vertexBuffer = entry.vertexBuffer; bd.indexBuffer = null; bd.instanceBuffer = e.instanceBuffer; this.maskTexBind[0].texture = this.maskTex;
@@ -330,7 +330,7 @@ export class WgRasterPass {
     this.ox = Math.floor(cam.x / 16) * 16; this.oy = Math.floor(cam.y / 16) * 16;
     viewProjAtOrigin(this.view, this.ox, this.oy, this.viewRel);
     this.u.set(this.viewRel, VIEW);
-    this.u[ORIGIN] = this.ox; this.u[ORIGIN + 1] = this.oy; // instanced variant only (iRow.w - origin); the other variants' blocks end before it
+    this.u[ORIGIN] = this.ox; this.u[ORIGIN + 1] = this.oy; // instanced variants only (iRow.w - origin), written once
     frustumPlanes(this.view, this.planes);
     const list = this.list;
     list.begin();
@@ -381,8 +381,8 @@ export class WgRasterPass {
     if (ao) {
       if (pipe === this.voxelPipe) pipe = this._aoPipe('voxel'); else if (pipe === this.mirrorPipe) pipe = this._aoPipe('mirror'); else if (pipe === this.instancePipe) pipe = this._aoPipe('instance');
     }
-    if (pipe === this.instancePipe || pipe === this.aoPipes.instance) { this.u[ORIGIN] = this.ox; b.uniforms = this.u; } // BASE `projMode` (word 38) shares RASTER's `origin.x`: restore
-    else { this.bits[P_BASE] = this.ortho ? 2 : 0; b.uniforms = this.baseU; }
+    if (pipe === this.instancePipe || pipe === this.aoPipes.instance) b.uniforms = this.u;
+    else b.uniforms = this.baseU;
     b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer || null; b.instanceBuffer = instanceBuffer;
     if (pipe === this.aoPipes.voxel || pipe === this.aoPipes.mirror || pipe === this.aoPipes.instance) { this.aoExtra[0] = entry.aoBuffer; b.extraBuffers = this.aoExtra; } else b.extraBuffers = null;
     this.device.bind(pipe, b); this.device.draw(count, first, instances);
@@ -402,7 +402,7 @@ export class WgRasterPass {
       const a = Math.max(first, rs[p].start), b = Math.min(last, rs[p].start + rs[p].count);
       if (b <= a) continue;
       if (mr[p * 5 + 2] < 0) { this._draw(pipe, entry, (b - a) * 3, a * 3); draws++; continue; }
-      mu.set(this.baseU); bits[P_MASK] = this.ortho ? 2 : 0;
+      mu.set(this.baseU);
       bits[M_X0] = mr[p * 5]; bits[M_Y0] = mr[p * 5 + 1]; bits[M_W] = mr[p * 5 + 2]; bits[M_H] = mr[p * 5 + 3]; bits[M_CUT] = mr[p * 5 + 4];
       const bd = this.maskBind;
       bd.vertexBuffer = entry.vertexBuffer; bd.indexBuffer = null; bd.instanceBuffer = null; this.maskExtra[0] = entry.uvMaskBuffer;
@@ -418,8 +418,8 @@ export class WgRasterPass {
    * @returns {number} draws issued (always 1)
    */
   _instancedMaskedRange(entry, r, mr, part, buffer, instCount) {
-    this.u[ORIGIN] = this.ox; this.iu.set(this.u); // RASTER_INSTANCED_MASK_BLOCK's prefix = RASTER_BLOCK's (model/viewProj/.../windK), same word offsets
-    const ib = this.ibits; ib[P_IMASK] = this.ortho ? 2 : 0;
+    this.iu.set(this.u); // RASTER_INSTANCED_MASK_BLOCK's prefix = RASTER_BLOCK's (model/viewProj/.../windK), same word offsets
+    const ib = this.ibits;
     ib[IM_X0] = mr[part * 5]; ib[IM_Y0] = mr[part * 5 + 1]; ib[IM_W] = mr[part * 5 + 2]; ib[IM_H] = mr[part * 5 + 3]; ib[IM_CUT] = mr[part * 5 + 4];
     const bd = this.instanceMaskBind;
     bd.vertexBuffer = entry.vertexBuffer; bd.indexBuffer = null; bd.instanceBuffer = buffer;

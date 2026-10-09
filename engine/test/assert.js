@@ -109,7 +109,11 @@ export function makeMockGpuDevice() {
     compiling: false,
     copyTextureToBuffer(tex, buf, w, h, bytesPerRow) { (device._copies || (device._copies = [])).push({ kind: 'tex', tex, buf, w, h, bytesPerRow }); },
     copyBufferToBuffer(src, srcOff, dst, dstOff, bytes) { (device._copies || (device._copies = [])).push({ kind: 'buf', src, srcOff, dst, dstOff, bytes }); },
-    dispatch(pipeline, desc, x, y = 1, z = 1) { device._dispatches = (device._dispatches || 0) + 1; device._lastDispatch = { pipeline, desc, x, y, z }; },
+    dispatch(pipeline, desc, x, y = 1, z = 1) {
+      // WebGPU usage rule: a writable ('rw') storage binding must not alias another binding of the same buffer in one bind group
+      const acc = pipeline && pipeline.desc && pipeline.desc.bindings && pipeline.desc.bindings.buffers, bs = desc && desc.buffers;
+      if (acc && bs) for (const a of bs) if (acc[a.slot] === 'rw') for (const o of bs) if (o !== a && o.buffer === a.buffer) throw new Error(`mock: writable storage binding at slot ${a.slot} aliases slot ${o.slot} (same buffer)`);
+      device._dispatches = (device._dispatches || 0) + 1; device._lastDispatch = { pipeline, desc, x, y, z }; },
     drawIndirect(buffer, offsetBytes) { device._indirectDraws = (device._indirectDraws || 0) + 1; device._lastIndirect = { pipeline: device._activePipeline, buffer, offsetBytes }; },
     dispose(handle) {
       // Two call shapes on purpose: `device.dispose()` (whole-device

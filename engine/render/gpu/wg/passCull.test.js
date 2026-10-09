@@ -292,6 +292,9 @@ const oneRangeMesh = { triCount: 4, bbox: mesh0.bbox, ranges: [{ start: 0, count
   for (let i = OC('vp'); i <= OC('slot3'); i++) assert.equal(rec[0].u[i], 0, `occlusion word ${i} is 0 with occl off`);
   off.begin({ planes: null, hzb: { buffer: off._dummy, w: 8, h: 8, levels: 4, fwd: [0, 1, 0] }, viewProj: new Float64Array(16) }); off.add(g, [mesh0, null]); off.run(); off.runPhase2({ buffer: off._dummy });
   assert.equal(rec.length, 2, 'occl off: no phase-2 dispatch, hzb ignored'); assert.equal(rec[1].u[OC('hzbOn')], 0);
+  // mock rejects a writable storage binding aliasing another binding of the same buffer: a shared dummy must fail
+  const mk2 = makeMockGpuDevice().device, shared = new WgCullPass(mk2); shared._dummy2 = shared._dummy; shared.begin({ planes: null }); shared.add(g, [mesh0, null]);
+  assert.throws(() => shared.run(), /aliases/, 'shared dummy at read slot 5 + rw slot 6 is rejected');
   off.dispose();
   // occlusion on
   rec.length = 0;
