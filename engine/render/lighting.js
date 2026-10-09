@@ -36,6 +36,7 @@ import { unpackNormalOct } from '../voxel/octNormal.js';
 import { createPitchedTerms, pitchedTerms, unprojectPitched, resolveProjection } from './projection.js';
 import { sunShadowTaps, sunShadowInfo } from './shadowSun.js';
 import { resolveLook } from './look.js'; // ART-01a (37.18 item 3)
+import { cloudCov, updateCloudShadow, CLOUD_DARK } from './cloudShadow.js'; // S8-B2-12a (38.13)
 
 // RE-02a: scratch for lightSurfaces' pitched branch (zero allocation per frame).
 const litPitchTerms = createPitchedTerms();
@@ -128,6 +129,9 @@ export class LightSet {
     // the game's per-frame roof bind in ART-01b).
     this.hemi = { on: false, sky: new Float32Array(3), ground: new Float32Array(3), tint: new Float32Array(3), tintK: 0 };
     this.roof = null;
+    // S8-B2-12a (38.13): cloud-shadow state, allocated once. `scaleM`/`speedK` are content knobs (setCloudShadow);
+    // `invScale` (1/scaleM) is kept in sync by setCloudShadow; `offU`/`offV` are the per-frame drift (update()).
+    this.cloud = { strength: 0, cover: 0.55, scaleM: 48, speedK: 1, invScale: 1 / 48, offU: 0, offV: 0 };
 
     this.count = 0; // active (alive) lights, compacted into [0, count)
     this.pos = new Float32Array(4 * MAX_LIGHTS);   // x, y, z (jittered), radius     -> uLightPos
@@ -424,6 +428,8 @@ export class LightSet {
    * latest position. No allocation.
    */
   update(timeSec, world) {
+    // S8-B2-12a (38.13): once per frame, from the BASE wind only (not per light/per cell).
+    updateCloudShadow(this.cloud, world && world.wind ? world.wind.params : null, timeSec);
     for (let i = 0; i < this.count; i++) {
       const seed = this.seed[i];
       const hzMin = this.flickerHzMin[i], hzMax = this.flickerHzMax[i];
@@ -560,6 +566,35 @@ export function setLook(lights, look) {
 }
 
 /**
+ * S8-B2-12a (38.13): sets cloud-shadow params on `lights.cloud` (allocated once by the constructor - this only
+ * writes fields, never reallocates). Every param is optional (only the given keys change); each is validated and
+ * throws on a non-finite or out-of-range value rather than silently clamping. `scaleM`'s `invScale` (1/scaleM) is
+ * kept in sync here, not recomputed per frame.
+ * @param {LightSet} lights
+ * @param {{strength?:number, cover?:number, scaleM?:number, speedK?:number}} [params]
+ */
+export function setCloudShadow(lights, { strength, cover, scaleM, speedK } = {}) {
+  const c = lights.cloud;
+  if (strength !== undefined) {
+    if (!Number.isFinite(strength) || strength < 0 || strength > 1) throw new Error(`setCloudShadow: strength must be finite in [0,1] (got ${strength})`);
+    c.strength = strength;
+  }
+  if (cover !== undefined) {
+    if (!Number.isFinite(cover) || cover < 0 || cover > 1) throw new Error(`setCloudShadow: cover must be finite in [0,1] (got ${cover})`);
+    c.cover = cover;
+  }
+  if (scaleM !== undefined) {
+    if (!Number.isFinite(scaleM) || scaleM <= 0) throw new Error(`setCloudShadow: scaleM must be a finite number > 0 (got ${scaleM})`);
+    c.scaleM = scaleM;
+    c.invScale = 1 / scaleM;
+  }
+  if (speedK !== undefined) {
+    if (!Number.isFinite(speedK) || speedK < 0) throw new Error(`setCloudShadow: speedK must be a finite number >= 0 (got ${speedK})`);
+    c.speedK = speedK;
+  }
+}
+
+/**
  * Adds/updates the carried light for an entity with `components.light`
  * (US-012 `lanternTake` sets it; US-006 AC "carried over from US-012
  * AC3/AC4"). `attachedLightPos` (engine/entities/attach.js) computes the
@@ -680,7 +715,7 @@ function aoU32(gbuf) {
 // ME-15c: `sunN` (0..4, the quantised PCF tap count, LIGHT.w bits 16..18) and `sunBoundary` (parity boundary set,
 // shadowSun.js) are only written when a sun shadow map is passed to `lightAt`; both are 0 otherwise.
 const lightP = new Float64Array(3), lightN = new Float64Array(3); // sunShadowTaps inputs (no alloc)
-export const lightFlags = { sunlit: 0, litCount: 0, sunN: 0, sunBoundary: 0 };
+export const lightFlags = { sunlit: 0, litCount: 0, sunN: 0, sunBoundary: 0, cloudQ: 0 };
 
 /**
  * Shared per-point evaluator (surfaces here, sprites in a later story) -
@@ -746,10 +781,18 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
   lightFlags.litCount = litCount;
   let sunlit = 0;
   const sun = lights.sun;
-  lightFlags.sunN = 0; lightFlags.sunBoundary = 0;
+  lightFlags.sunN = 0; lightFlags.sunBoundary = 0; lightFlags.cloudQ = 0;
+  const cloud = lights.cloud;
   if (sunMap) {
     // ME-15c: shadow-map sun (replaces the DDA); same conditions as the GLSL twin.
     if (sun && sun.on) {
+      // S8-B2-12a (38.13): cov is computed once per cell here (before the ndotsun test below), whenever sunOn -
+      // terrain (skipSun) is included, 12b's shade consumer reads the same byte for its analytic sun term.
+      let cloudQ = 0;
+      if (cloud.strength > 0) {
+        const cov = cloudCov(x, y, cloud);
+        cloudQ = Math.floor(cloud.strength * CLOUD_DARK * cov * 255 + 0.5);
+      }
       const sd = sun.dir;
       const ndotsun = nx * sd[0] + ny * sd[1] + nz * sd[2];
       if (skipSun || ndotsun > 0) {
@@ -758,12 +801,20 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
         lightFlags.sunN = nTap; lightFlags.sunBoundary = sunShadowInfo.boundary;
         sunlit = nTap >= 2 ? 1 : 0;
         if (!skipSun && ndotsun > 0) {
-          const f = ndotsun * nTap * 0.25;
+          const cloudF = 1 - cloudQ * (1 / 255);
+          const f = ndotsun * nTap * 0.25 * cloudF;
           out[0] += sun.col[0] * f; out[1] += sun.col[1] * f; out[2] += sun.col[2] * f;
         }
       }
+      lightFlags.cloudQ = cloudQ;
     } else if (skipSun) lightFlags.sunN = 4;
   } else if (!skipSun && sun && sun.on) {
+    // S8-B2-12a (38.13): same cov rule as the sunMap branch above (this branch already excludes terrain via skipSun).
+    let cloudQ = 0;
+    if (cloud.strength > 0) {
+      const cov = cloudCov(x, y, cloud);
+      cloudQ = Math.floor(cloud.strength * CLOUD_DARK * cov * 255 + 0.5);
+    }
     const sd = sun.dir;
     const ndotsun = nx * sd[0] + ny * sd[1] + nz * sd[2];
     if (ndotsun > 0) {
@@ -773,11 +824,13 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
       // nudge to escape a cell-boundary coin flip, which `N` alone can't give.
       if (sunVisible(world, x + sd[0] * 0.02, y + sd[1] * 0.02, z + sd[2] * 0.02, sd)) {
         sunlit = 1;
-        out[0] += sun.col[0] * ndotsun;
-        out[1] += sun.col[1] * ndotsun;
-        out[2] += sun.col[2] * ndotsun;
+        const cloudF = 1 - cloudQ * (1 / 255);
+        out[0] += sun.col[0] * ndotsun * cloudF;
+        out[1] += sun.col[1] * ndotsun * cloudF;
+        out[2] += sun.col[2] * ndotsun * cloudF;
       }
     }
+    lightFlags.cloudQ = cloudQ;
   }
   lightFlags.sunlit = sunlit;
   return out;
@@ -1139,6 +1192,7 @@ export function lightSurfaces(fb, lights, cam, world) {
       if (lb.sunlit) lb.sunlit[i] = lightFlags.sunlit;
       if (lb.litCount) lb.litCount[i] = lightFlags.litCount;
       if (lb.sunN) { lb.sunN[i] = lightFlags.sunN; lb.sunBoundary[i] = lightFlags.sunBoundary; }
+      if (lb.cloud) lb.cloud[i] = lightFlags.cloudQ; // S8-B2-12a (38.13), copied like sunN
     }
   }
 }
@@ -1155,6 +1209,8 @@ export function makeLightBuffer(cols, rows) {
     // ART-01a (37.18 item 5): per-cell outdoor flag (`LIGHT.w` bit OUTDOOR_SHIFT,
     // JS twin). All zeros until ART-01b writes it - no pixel changes yet.
     outdoor: new Uint8Array(cols * rows),
+    // S8-B2-12a (38.13): per-cell cloud-darkening byte (`LIGHT.w` bits 24..31 JS twin), 0 at strength 0.
+    cloud: new Uint8Array(cols * rows),
   };
 }
 
