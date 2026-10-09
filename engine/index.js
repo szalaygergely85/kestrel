@@ -35,6 +35,7 @@ export { maskToJSON, maskFromJSON, downsampleAlpha, MASK_ID_RE } from './content
 export { prefabFromJSON, placePrefabItems, PREFAB_ITEM_TYPES } from './content/prefabFile.js'; // PREFAB-SEAM (38.11)
 export { loadContentPack, globalId } from './content/loadPack.js';
 export { validatePackageManifest, openPackage, mountPackages, checkDependencies, parseSemver, parseRange, KPKG_FORMAT, KPKG_FORMAT_VERSION, KPKG_SCHEME } from './content/package.js'; // KPKG-02 (38.30)
+export { readZip, writeZip, crc32, checkZipPath, ZIP_LIMITS } from './content/zip.js'; // KPKG-01/03 (38.30)
 
 // ---- world ----------------------------------------------------------------
 export { World, stepSectorAnims, PROP_SCALE_MIN, PROP_SCALE_MAX } from './world/World.js';

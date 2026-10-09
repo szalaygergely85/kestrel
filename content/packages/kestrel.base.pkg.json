@@ -1,0 +1,11 @@
+{
+  "id": "kestrel.base",
+  "name": "Kestrel base content",
+  "version": "1.0.0",
+  "license": { "spdx": "LicenseRef-AllRightsReserved", "attribution": "Kestrel base game content" },
+  "authors": ["Kestrel"],
+  "content": true,
+  "entries": [
+    { "from": "content", "to": "content", "exclude": ["packages/**", "editor/**", "*.js"] }
+  ]
+}

@@ -1512,7 +1512,7 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
 | CHARGEN-18 | Builds slim/heavy (m, f) + elder overlay + piece set 2 | P2 | todo [PC-B designer, 0.75 d] | kit JSON |
 | KPKG-01 | `engine/content/zip.js` reader + writer (stored + deflate via platform streams) | P1 | arch-review [PC-B B2, 0.5 d] -> arch-review | `engine/content/zip.js` + test + fixture zip |
 | KPKG-02 | `engine/content/package.js`: kestrel.json validate, openPackage, mountPackages, deps, duplicate ids | P1 | arch-review [PC-B B2, 0.75 d] -> arch-review | `engine/content/package.js` + test, `engine/index.js` |
-| KPKG-03 | `tools/pack.mjs` / `unpack.mjs` + package specs | P1 | todo [PC-B B1, 0.5 d] | `tools/pack.mjs`, `tools/unpack.mjs`, `content/packages/*.pkg.json` + tests |
+| KPKG-03 | `tools/pack.mjs` / `unpack.mjs` + package specs | P1 | arch-review [PC-B B1, 0.5 d] | `tools/pack.mjs`, `tools/unpack.mjs`, `content/packages/*.pkg.json` + tests |
 | KPKG-04 | Game boot `?pack=` mounts packages | P1 | todo [PC-B B1, 0.5 d] | `game/js/main.js` |
 | KPKG-05 | Editor Import / Export `.kestrel` | P2 | todo [PC-B B1, 0.75 d] | `tools/editor/*` |
 | KPKG-07 | HTTP Range streaming of stored entries for lazy meshes | P3 | todo [PC-B B2, 0.75 d] -> arch-review | `engine/content/package.js`, `engine/mesh/lazyMesh.js` |
@@ -1671,3 +1671,5 @@ Note (dev): package.js + package.test.js (44 checks). mountPackages is async (re
 - [ ] **03:** `node tools/pack.mjs content/packages/kestrel.chargen.human.pkg.json` writes `dist/*.kestrel`; unpack -> pack is a round trip.
 - [ ] **04:** `?pack=dist/kestrel.base.kestrel` boots the same world as the loose files (one capture compare).
 - [ ] **05:** the editor imports a `.kestrel` (assets with thumbnails) and exports selected assets with their dependencies.
+
+Note (KPKG-03 dev): tools/pack.mjs (spec `entries` from/to/exclude globs -> deterministic dist/<id>-<version>.kestrel, re-validated via openPackage; also packs a dir holding kestrel.json) + tools/unpack.mjs + content/packages/kestrel.base.pkg.json (6.5 MB) + tools/pack.test.mjs (12 checks: determinism, unpack->pack byte-identical, errors, base packed bundle deep-equals loose). engine/index.js now also exports readZip/writeZip/crc32/checkZipPath/ZIP_LIMITS. content-smoke ignores content/packages/. Not done: `kestrel.chargen.human.pkg.json` (kit does not exist yet, CHARGEN rows); write its spec when it does. 04/05 still todo.
