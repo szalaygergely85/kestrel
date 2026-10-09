@@ -8,9 +8,10 @@
 // node engine/render/horizonAo.test.js
 import assert from 'node:assert/strict';
 import { HORIZON_AO_WGSL } from './gpu/wgsl/common.wgsl.js';
+import { LIGHT_WGSL } from './gpu/wgsl/light.wgsl.js';
 import { compileFn, shims, numericLiterals } from './gpu/wgsl/wgslProbe.js';
-import { aoTapOcc, aoFactor, aoTapCells, AO_DEFAULTS, AO_RADIUS_M, AO_BIAS, AO_MAX } from './horizonAo.js';
-// RUN B: the WGSL still bakes the legacy AO_RADIUS_M/AO_BIAS consts; the JS oracle now takes (R, bias) args.
+import { aoTapOcc, aoFactor, aoTapCells, AO_DEFAULTS, AO_MAX } from './horizonAo.js';
+const AO_RADIUS_M = 0.8, AO_BIAS = 0.15; // test params (now args, no longer module consts)
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -32,7 +33,7 @@ ok('AO_DEFAULTS (0, 0.8, 0.15, 4)', AO_DEFAULTS.strength === 0 && AO_DEFAULTS.ra
 
 // --- compile aoTapOcc and probe against the JS oracle ---
 const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
-const aoTapOccWgsl = compileFn(HORIZON_AO_WGSL, 'aoTapOcc', { ...shims, dot, AO_RADIUS_M, AO_BIAS });
+const aoTapOccWgsl = compileFn(HORIZON_AO_WGSL, 'aoTapOcc', { ...shims, dot });
 
 let seed = 99173;
 const rand = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 0x100000000; };
@@ -64,7 +65,7 @@ for (let i = 0; i < 5000; i++) {
     vx *= len; vy *= len; vz *= len;
   }
   const oracle = aoTapOcc(nx, ny, nz, vx, vy, vz, AO_RADIUS_M, AO_BIAS);
-  const wgsl = aoTapOccWgsl({ x: nx, y: ny, z: nz }, { x: vx, y: vy, z: vz });
+  const wgsl = aoTapOccWgsl({ x: nx, y: ny, z: nz }, { x: vx, y: vy, z: vz }, AO_RADIUS_M, AO_BIAS);
   maxErr = Math.max(maxErr, Math.abs(oracle - wgsl));
   probes++;
 }
@@ -98,14 +99,32 @@ ok(`aoTapOcc probe (${probes} samples) within 1e-6`, maxErr <= 1e-6, `maxErr=${m
   ok('AO_MAX is 0.6', AO_MAX === 0.6);
 }
 
-// --- Mutation guard: AO_BIAS/AO_RADIUS_M are the only numeric literals baked into HORIZON_AO_WGSL's own text ---
+// --- whole tap loop incl. rc (S8-B2-20b): WGSL aoRc + 4x aoTapOcc vs JS aoTapCells + aoTapOcc, 2000 random cells ---
 {
-  const lits = numericLiterals(HORIZON_AO_WGSL);
-  ok('HORIZON_AO_WGSL literal-set has AO_RADIUS_M', lits.has(AO_RADIUS_M));
-  ok('HORIZON_AO_WGSL literal-set has AO_BIAS', lits.has(AO_BIAS));
-  const mutated = HORIZON_AO_WGSL.replace(`const AO_BIAS: f32 = ${AO_BIAS};`, 'const AO_BIAS: f32 = 0.37;');
-  ok('mutation: a changed AO_BIAS literal is caught', numericLiterals(mutated).has(0.37) && !numericLiterals(mutated).has(AO_BIAS));
+  const aoRcW = compileFn(HORIZON_AO_WGSL, 'aoRc', { ...shims });
+  const f = Math.fround;
+  let rcBad = 0, maxE = 0;
+  for (let i = 0; i < 2000; i++) {
+    const R = f(0.2 + rand() * 2), bias = f(rand() * 0.5), maxCells = 1 + Math.floor(rand() * 6);
+    const pd = f(40 + rand() * 120), dist = f(0.3 + rand() * 60);
+    const rcW = aoRcW(R, pd, dist, maxCells), rcJ = aoTapCells(R, pd, dist, maxCells);
+    // f32 rounding of the product could flip floor at exact .5 boundaries; the JS twin is f64: allow only such ties
+    if (rcW !== rcJ && Math.abs(R * pd / dist + 0.5 - Math.round(R * pd / dist + 0.5)) > 1e-4) rcBad++;
+    const [nx, ny, nz] = randUnit();
+    let sumW = 0, sumJ = 0;
+    for (let t = 0; t < 4; t++) {
+      const [ux, uy, uz] = randUnit(), len = rand() * R * 1.3;
+      sumW += aoTapOccWgsl({ x: nx, y: ny, z: nz }, { x: ux * len, y: uy * len, z: uz * len }, R, bias);
+      sumJ += aoTapOcc(nx, ny, nz, ux * len, uy * len, uz * len, R, bias);
+    }
+    maxE = Math.max(maxE, Math.abs(sumW - sumJ));
+  }
+  ok('WGSL aoRc == JS aoTapCells over 2000 cells (ties aside)', rcBad === 0, 'bad=' + rcBad);
+  ok('4-tap occ sum within 1e-5 over 2000 cells', maxE <= 1e-5, 'maxE=' + maxE);
 }
+// --- strength 0: WGSL AO branch skipped (uniform guard), JS factor is exactly 1 ---
+ok('aoStrength 0 -> factor 1', aoFactor(0.9, 0) === 1);
+ok('light pass guards AO on aoStrength > 0', /u.aoStrength > 0.0/.test(LIGHT_WGSL));
 
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { console.log('FAILED:\n' + failures.map((f) => '  - ' + f).join('\n')); process.exit(1); }

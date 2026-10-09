@@ -5,10 +5,6 @@
 // term never brightens (amb >= 0, (1 - aoF) in [0, 0.6]).
 
 export const AO_MAX = 0.6;
-// RUN B: LEGACY, only imported by gpu/wgsl/common.wgsl.js to bake its consts; delete with the WGSL aoTapOcc(R, bias) rework.
-export const AO_RADIUS_M = 1.5;
-export const AO_BIAS = 0.1;
-export const AO_TAP_CELLS = 2; // RUN B: LEGACY, light.wgsl.js bakes it; the JS twin no longer uses it (rc is metres-derived)
 // S8-B2-20b (38.16): defaults for look.ao (radius/bias/maxCells now come from data, not consts).
 export const AO_DEFAULTS = Object.freeze({ strength: 0, radiusM: 0.8, bias: 0.15, maxCells: 4 });
 
