@@ -82,7 +82,7 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
     let x0 = i32(r.x); let y0 = i32(r.y);
     if (cell.x < x0 || cell.x >= x0 + i32(r.z) || cell.y < y0 || cell.y >= y0 + i32(r.w)) { continue; }
     let p = textureLoad(uSpr, vec2i(1, s), 0);
-    if (p.y < SPRITE_NEAR_DEPTH) { continue; } // BUG-FIRE-001: same cutoff for lit and emissive sprites.
+    if (p.y < SPRITE_NEAR_DEPTH && textureLoad(uSpr, vec2i(3, s), 0).w < 0.5) { continue; } // nearOk (T3.w) = view-model attached sprite // BUG-FIRE-001: same cutoff for lit and emissive sprites.
     if (!(p.y < cellDepth) || !(p.y < best)) { continue; }
     let a = textureLoad(uSpr, vec2i(2, s), 0);
     let sx = i32(floor(f32(cell.x - x0) * p.x));

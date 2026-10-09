@@ -371,17 +371,22 @@
   fireballBlastCharged.world = { w: 2.4, h: 1.9 };
 
   // HAND-FIRE-FX-01: the hand fire = the fireball's own core art at a hand-sized world scale (same glyph frames, keys, emissive path)
-  var handFlame = clone(fireballCore);
-  handFlame.name = 'handFlame';
-  handFlame.desc = 'HAND-FIRE-FX-01: fireballCore art at 0.16 m (seen at ~0.72 m, the sprite near cull is 0.6 m), a calm flame over the open hand (always on).';
-  handFlame.world = { w: 0.16, h: 0.16 };
-  var handFlameCharged = clone(fireballCoreCharged);
-  handFlameCharged.name = 'handFlameCharged';
-  handFlameCharged.desc = 'HAND-FIRE-FX-01: fireballCoreCharged art at 0.26 m, the flame gathered round the fist while charging.';
-  handFlameCharged.world = { w: 0.26, h: 0.26 };
+  // HAND-FIRE-WRAP-01: several small flames wrapped round the hand (view-model attached sprites, seen at ~0.3-0.5 m, near-cull exempt).
+  // Same fireball glyph frames; the aspect is taller than wide so the tongues curl UP; embers are tiny.
+  function handSprite(name, src, w, h, desc) {
+    var m = clone(src);
+    m.name = name; m.desc = 'HAND-FIRE-WRAP-01: ' + desc; m.world = { w: w, h: h };
+    return m;
+  }
+  var handFlame = handSprite('handFlame', fireballCore, 0.075, 0.10, 'fireballCore art as a tongue over the palm / knuckles.');
+  var handFlameSmall = handSprite('handFlameSmall', fireballCore, 0.05, 0.07, 'a small tongue between / at the tips of the fingers.');
+  var handFlameEmber = handSprite('handFlameEmber', fireballCore, 0.03, 0.04, 'an ember curling up off the hand.');
+  var handFlameCharged = handSprite('handFlameCharged', fireballCoreCharged, 0.11, 0.12, 'fireballCoreCharged art, the flame gathered round the fist while charging.');
+  var handFlameChargedSmall = handSprite('handFlameChargedSmall', fireballCoreCharged, 0.07, 0.09, 'a smaller charged tongue.');
 
   A.spellSprites = {
-    handFlame: handFlame, handFlameCharged: handFlameCharged,
+    handFlame: handFlame, handFlameSmall: handFlameSmall, handFlameEmber: handFlameEmber,
+    handFlameCharged: handFlameCharged, handFlameChargedSmall: handFlameChargedSmall,
     fireballCore: fireballCore, fireballCoreCharged: fireballCoreCharged,
     fireballBlast: fireballBlast, fireballBlastCharged: fireballBlastCharged
   };
