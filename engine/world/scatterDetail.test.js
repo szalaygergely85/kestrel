@@ -69,7 +69,7 @@ checks += 2;
 const normalized = validateDetailConfig(cfg, names);
 assert.deepEqual([normalized.tileM, normalized.maxDraw, normalized.refeedM, normalized.maxPlacements,
   normalized.structClearM, normalized.entityClearM, normalized.layers[0].lodCells], [16, 768, 4, 40000, 2, 1.5, 4]); checks++;
-assert.deepEqual(normalized.layers[0].ground.grass[0], { model: 'tuft', weight: 1, sinkM: 0.05, yawStep: 1, shadow: false }); checks++;
+assert.deepEqual(normalized.layers[0].ground.grass[0], { model: 'tuft', weight: 1, sinkM: 0.05, yawStep: 1, shadow: false, sway: false }); checks++;
 const bad = [ ['tileM', 0], ['maxDraw', 0], ['maxPlacements', 65537], ['refeedM', NaN], ['structClearM', -1], ['entityClearM', Infinity], ['exclude', [{}]], ['layers', null] ];
 for (const [key, value] of bad) { assert.throws(() => validateDetailConfig({ ...cfg, [key]: value }), new RegExp(key)); checks++; }
 for (const [key, value] of [['fill', 2], ['cellM', 0], ['clearM', -1], ['maxSlope', NaN], ['seed', 0.5]]) {
