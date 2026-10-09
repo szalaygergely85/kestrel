@@ -36,7 +36,8 @@ import { unpackNormalOct } from '../voxel/octNormal.js';
 import { createPitchedTerms, pitchedTerms, unprojectPitched, resolveProjection } from './projection.js';
 import { sunShadowTaps, sunShadowInfo } from './shadowSun.js';
 import { resolveLook } from './look.js'; // ART-01a (37.18 item 3)
-import { cloudCov, updateCloudShadow, CLOUD_DARK } from './cloudShadow.js'; // S8-B2-12a (38.13)
+import { cloudShadeQ } from './cloudShadow.js'; // S8-B2-12c (38.13)
+import { cloudDriftOffset } from './sky.js';
 import { aoTapOcc, aoFactor, AO_TAP_CELLS } from './horizonAo.js'; // S8-B2-20 (38.17)
 
 // RE-02a: scratch for lightSurfaces' pitched branch (zero allocation per frame).
@@ -132,9 +133,8 @@ export class LightSet {
     // the game's per-frame roof bind in ART-01b).
     this.hemi = { on: false, sky: new Float32Array(3), ground: new Float32Array(3), tint: new Float32Array(3), tintK: 0 };
     this.roof = null;
-    // S8-B2-12a (38.13): cloud-shadow state, allocated once. `scaleM`/`speedK` are content knobs (setCloudShadow);
-    // `invScale` (1/scaleM) is kept in sync by setCloudShadow; `offU`/`offV` are the per-frame drift (update()).
-    this.cloud = { strength: 0, cover: 0.55, scaleM: 48, speedK: 1, invScale: 1 / 48, offU: 0, offV: 0 };
+    this.cloud = null; // S8-B2-12c: null | {strength, scale, cover, soft, deckH, seed, wind} (setLook from look.clouds.shadow)
+    this.cloudOff = new Float32Array(2); // per-frame deck drift, set by lightSurfaces from fb.timeSec
     // S8-B2-20 (38.17): horizon AO state, allocated once (setHorizonAo only writes `strength`).
     this.ao = { strength: 0 };
 
@@ -433,8 +433,6 @@ export class LightSet {
    * latest position. No allocation.
    */
   update(timeSec, world) {
-    // S8-B2-12a (38.13): once per frame, from the BASE wind only (not per light/per cell).
-    updateCloudShadow(this.cloud, world && world.wind ? world.wind.params : null, timeSec);
     for (let i = 0; i < this.count; i++) {
       const seed = this.seed[i];
       const hzMin = this.flickerHzMin[i], hzMax = this.flickerHzMax[i];
@@ -562,6 +560,11 @@ export function buildLightSet(world, palette) {
 export function setLook(lights, look) {
   const hemi = look && look.hemi;
   lights.hemi.on = !!hemi;
+  // S8-B2-12c (38.13): look.clouds.shadow -> lights.cloud (null = off). Load/bind time only (allocates the object).
+  const cs = look && look.clouds && look.clouds.shadow;
+  lights.cloud = cs && cs.strength > 0
+    ? { strength: cs.strength, scale: cs.scale, cover: cs.cover, soft: cs.soft, deckH: cs.deckH, seed: look.clouds.seed, wind: look.clouds.wind }
+    : null;
   if (!hemi) return;
   lights.hemi.sky.set(hemi.sky);
   lights.hemi.ground.set(hemi.ground);
@@ -570,40 +573,9 @@ export function setLook(lights, look) {
   if (hemi.sunFromLook) lights.sun.col.set(look.sun);
 }
 
-const NO_CLOUD = Object.freeze({ strength: 0 }); // S8-B2-12a: lightAt default when a light set has no `cloud`
-
-/**
- * S8-B2-12a (38.13): sets cloud-shadow params on `lights.cloud` (allocated once by the constructor - this only
- * writes fields, never reallocates). Every param is optional (only the given keys change); each is validated and
- * throws on a non-finite or out-of-range value rather than silently clamping. `scaleM`'s `invScale` (1/scaleM) is
- * kept in sync here, not recomputed per frame.
- * @param {LightSet} lights
- * @param {{strength?:number, cover?:number, scaleM?:number, speedK?:number}} [params]
- */
-export function setCloudShadow(lights, { strength, cover, scaleM, speedK } = {}) {
-  const c = lights.cloud;
-  if (strength !== undefined) {
-    if (!Number.isFinite(strength) || strength < 0 || strength > 1) throw new Error(`setCloudShadow: strength must be finite in [0,1] (got ${strength})`);
-    c.strength = strength;
-  }
-  if (cover !== undefined) {
-    if (!Number.isFinite(cover) || cover < 0 || cover > 1) throw new Error(`setCloudShadow: cover must be finite in [0,1] (got ${cover})`);
-    c.cover = cover;
-  }
-  if (scaleM !== undefined) {
-    if (!Number.isFinite(scaleM) || scaleM <= 0) throw new Error(`setCloudShadow: scaleM must be a finite number > 0 (got ${scaleM})`);
-    c.scaleM = scaleM;
-    c.invScale = 1 / scaleM;
-  }
-  if (speedK !== undefined) {
-    if (!Number.isFinite(speedK) || speedK < 0) throw new Error(`setCloudShadow: speedK must be a finite number >= 0 (got ${speedK})`);
-    c.speedK = speedK;
-  }
-}
-
 /**
  * S8-B2-20 (38.17): sets the horizon-AO strength on `lights.ao` (allocated once by the constructor). Throws on a
- * non-finite or out-of-range value rather than silently clamping (same convention as `setCloudShadow`).
+ * non-finite or out-of-range value rather than silently clamping.
  * @param {LightSet} lights
  * @param {{strength:number}} params
  */
@@ -800,18 +772,14 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
   let sunlit = 0;
   const sun = lights.sun;
   lightFlags.sunN = 0; lightFlags.sunBoundary = 0; lightFlags.cloudQ = 0;
-  const cloud = lights.cloud || NO_CLOUD; // hand-built light sets (tests, tools) have no cloud field
+  const cloud = lights.cloud; // null/undefined (default, hand-built light sets) = no cloud shadows, q 0
   if (sunMap) {
     // ME-15c: shadow-map sun (replaces the DDA); same conditions as the GLSL twin.
     if (sun && sun.on) {
       // S8-B2-12a (38.13): cov is computed once per cell here (before the ndotsun test below), whenever sunOn -
       // terrain (skipSun) is included, 12b's shade consumer reads the same byte for its analytic sun term.
-      let cloudQ = 0;
-      if (cloud.strength > 0) {
-        const cov = cloudCov(x, y, cloud);
-        cloudQ = Math.floor(cloud.strength * CLOUD_DARK * cov * 255 + 0.5);
-      }
       const sd = sun.dir;
+      const cloudQ = cloud ? cloudShadeQ(cloud, lights.cloudOff, x, y, z, sd[0], sd[1], sd[2]) : 0;
       const ndotsun = nx * sd[0] + ny * sd[1] + nz * sd[2];
       if (skipSun || ndotsun > 0) {
         lightP[0] = x; lightP[1] = y; lightP[2] = z; lightN[0] = nx; lightN[1] = ny; lightN[2] = nz;
@@ -828,12 +796,8 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
     } else if (skipSun) lightFlags.sunN = 4;
   } else if (!skipSun && sun && sun.on) {
     // S8-B2-12a (38.13): same cov rule as the sunMap branch above (this branch already excludes terrain via skipSun).
-    let cloudQ = 0;
-    if (cloud.strength > 0) {
-      const cov = cloudCov(x, y, cloud);
-      cloudQ = Math.floor(cloud.strength * CLOUD_DARK * cov * 255 + 0.5);
-    }
     const sd = sun.dir;
+    const cloudQ = cloud ? cloudShadeQ(cloud, lights.cloudOff, x, y, z, sd[0], sd[1], sd[2]) : 0;
     const ndotsun = nx * sd[0] + ny * sd[1] + nz * sd[2];
     if (ndotsun > 0) {
       // BUG-LIGHT-001 fix: same "toward the light" nudge as the point-light
@@ -1163,6 +1127,8 @@ export function lightSurfaces(fb, lights, cam, world) {
   // the `?lights=0` regression path - caller already filled rgb[0..2] with ambient.
   if (!lb || !lights) return;
   lb.uniform = false;
+  // S8-B2-12c: deck drift for the cloud-shadow twin, once per frame (same offset the sky uses).
+  if (lights.cloud) cloudDriftOffset(lights.cloud, fb.timeSec || 0, lights.cloudOff);
   // PO REJECT item 1: `fb.cpuLightCap` is set only on the real gameplay
   // frame buffer's CPU-fallback path (game/js/main.js) - never on
   // `?gpucompare=1`'s `fbCompare` objects, so GPU parity keeps the full
@@ -1240,7 +1206,7 @@ export function lightSurfaces(fb, lights, cam, world) {
       if (lb.sunlit) lb.sunlit[i] = lightFlags.sunlit;
       if (lb.litCount) lb.litCount[i] = lightFlags.litCount;
       if (lb.sunN) { lb.sunN[i] = lightFlags.sunN; lb.sunBoundary[i] = lightFlags.sunBoundary; }
-      if (lb.cloud) lb.cloud[i] = lightFlags.cloudQ; // S8-B2-12a (38.13), copied like sunN
+      if (lb.cloudQ) lb.cloudQ[i] = lightFlags.cloudQ; // S8-B2-12c (38.13), copied like sunN
 
       // S8-B2-20 (38.17): horizon AO, LAST operation on this cell's rgb (after points/sun/cloud). Uniform branch -
       // strength 0 runs none of this (bit-identical). Terrain excluded (D-007, analytic ambient in shade).
@@ -1271,7 +1237,7 @@ export function makeLightBuffer(cols, rows) {
     // JS twin). All zeros until ART-01b writes it - no pixel changes yet.
     outdoor: new Uint8Array(cols * rows),
     // S8-B2-12a (38.13): per-cell cloud-darkening byte (`LIGHT.w` bits 24..31 JS twin), 0 at strength 0.
-    cloud: new Uint8Array(cols * rows),
+    cloudQ: new Uint8Array(cols * rows),
   };
 }
 

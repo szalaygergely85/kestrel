@@ -91,9 +91,9 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
       column = Math.max(0, _p[2] - _floorP[2]);
     }
     const tint = isSky ? a : Math.min(column / _table[lb + 38], 1);
-    // S8-B2-12b (38.13): cloud-darkening byte (`light.cloud[i]`, the JS-side copy of the floor cell's LIGHT.w bits
+    // S8-B2-12b (38.13): cloud-darkening byte (`light.cloudQ[i]`, the JS-side copy of the floor cell's LIGHT.w bits
     // 24..31) scales the sun term here too; 0 at strength 0 or with no per-cell byte -> cF 1 -> bit-identical.
-    const cF = (light && !light.uniform && light.cloud) ? 1 - light.cloud[i] * (1 / 255) : 1;
+    const cF = (light && !light.uniform && light.cloudQ) ? 1 - light.cloudQ[i] * (1 / 255) : 1;
     const k = sun.ambientI + sun.sunI * sunZ * (sunMapOn ? light.sunN[i] * 0.25 : 1) * cF;
     let wr = (_table[lb] + (_table[lb + 4] - _table[lb]) * tint) * k;
     let wg = (_table[lb + 1] + (_table[lb + 5] - _table[lb + 1]) * tint) * k;

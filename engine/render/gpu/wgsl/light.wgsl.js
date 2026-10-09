@@ -12,8 +12,7 @@ import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, CELL_RAY_WGSL, CELL_RAY_PITCHED_W
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_SUN_STEPS } from '../../lighting.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { FACE_PACKED, KIND_TERRAIN } from '../../GBuffer.js';
-import { SUN_N_SHIFT } from '../../shadowSun.js';
-import { CLOUD_SHIFT, CLOUD_DARK } from '../../cloudShadow.js';
+import { SUN_N_SHIFT, CLOUD_Q_SHIFT } from '../../shadowSun.js';
 import { AO_TAP_CELLS, AO_MAX } from '../../horizonAo.js';
 
 const FACE_N = 1, FACE_E = 2, FACE_S = 3, FACE_W = 4, FACE_U = 5, FACE_D = 6;
@@ -28,9 +27,8 @@ export const LIGHT_BLOCK = defineUniformBlock('LightU', [
   { name: 'posY', type: 'f32' }, { name: 'eyeH', type: 'f32' }, { name: 'dirX', type: 'f32' }, { name: 'dirY', type: 'f32' },
   { name: 'planeX', type: 'f32' }, { name: 'planeY', type: 'f32' }, { name: 'horizonRow', type: 'f32' }, { name: 'planeDistY', type: 'f32' },
   { name: 'sunShadowBiasM', type: 'f32' }, { name: 'sunShadowNormalOff', type: 'f32' },
-  // S8-B2-12a (38.13): takes the first pad word (30). S8-B2-20 (38.17): aoStrength takes the last pad word
-  // (31); pitchA stays at word 32.
-  { name: 'cloudCover', type: 'f32' },
+  // word 30 = pad. S8-B2-20 (38.17): aoStrength takes the last pad word (31); pitchA stays at word 32.
+  { name: 'pad30', type: 'f32' },
   { name: 'aoStrength', type: 'f32' },
   { name: 'pitchA', type: 'vec4' }, // fX, fY, fZ, tanHalfX
   { name: 'pitchB', type: 'vec4' }, // rX, rY, uX, uY
@@ -41,8 +39,10 @@ export const LIGHT_BLOCK = defineUniformBlock('LightU', [
   { name: 'visBox', type: 'vec4', count: MAX_LIGHTS },   // ox, oy, w, h (world cell units)
   { name: 'structA', type: 'vec4', count: MAX_STRUCTS }, // origin.xyz, w (width)
   { name: 'structB', type: 'vec4', count: MAX_STRUCTS }, // h, yOff, structSeq, maxH
-  // S8-B2-12a (38.13): strength, invScale (1/scaleM), offU, offV - appended at the end (word 316).
-  { name: 'cloud', type: 'vec4' },
+  // S8-B2-12c (38.13): cloud-shadow uniforms appended at the END (packCloudUniforms): A = (offX, offY, scale, strength),
+  // B = (cover, soft, deckH, seed).
+  { name: 'cloudA', type: 'vec4' },
+  { name: 'cloudB', type: 'vec4' },
 ]);
 
 /** Texture slot kinds for PipelineDesc.bindings.textures. */
@@ -71,10 +71,9 @@ const SUN_N_SHIFT: u32 = ${SUN_N_SHIFT}u;
 const KIND_TERRAIN: i32 = ${KIND_TERRAIN};
 // BUG-LIGHT-002: same epsilon as lighting.js VIS_FLOOR_EPS (float32 noise at exact vis-grid boundaries).
 const VIS_FLOOR_EPS: f32 = 1e-3;
-// S8-B2-12a (38.13): cloud-shadow darkening byte shift + strength, bits 24..31 of LIGHT.w (free - gpucompare's
-// decode only reads bits 0, 8..15, 16..18).
-const CLOUD_SHIFT: u32 = ${CLOUD_SHIFT}u;
-const CLOUD_DARK: f32 = ${CLOUD_DARK};
+// S8-B2-12c (38.13): cloud-shadow darkening byte shift, bits 24..31 of LIGHT.w (free - gpucompare's decode only
+// reads bits 0, 8..15, 16..18).
+const CLOUD_Q_SHIFT: u32 = ${CLOUD_Q_SHIFT}u;
 // S8-B2-20 (38.17): horizon AO light-pass term. AO_RADIUS_M/AO_BIAS live inside HORIZON_AO_WGSL itself.
 const AO_TAP_CELLS: i32 = ${AO_TAP_CELLS};
 const AO_MAX: f32 = ${AO_MAX};
@@ -87,6 +86,7 @@ ${OCT_NORMAL_WGSL}
 ${FULLSCREEN_VS_WGSL}
 ${HASH_FAST_WGSL}
 ${CLOUD_SHADOW_WGSL}
+fn cloudShadeQ(P: vec3f, sd: vec3f) -> u32 { return cloudShadeQ4(P, sd, u.cloudA, u.cloudB); }
 ${HORIZON_AO_WGSL}
 
 // S8-B2-20 (38.17): tap point Pt, same projection as P - the existing P code above is NOT refactored to call this
@@ -298,10 +298,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
       // cov is computed once per cell here (before the ndotsun test below) - terrain is included, 12b's shade
       // consumer reads the same byte for its analytic sun term.
       var cloudQ: u32 = 0u;
-      if (u.cloud.x > 0.0) {
-        let cov = cloudCov(P.x, P.y, u.cloud.y, u.cloud.z, u.cloud.w, u.cloudCover);
-        cloudQ = u32(floor(u.cloud.x * CLOUD_DARK * cov * 255.0 + 0.5));
-      }
+      if (u.cloudA.w > 0.0) { cloudQ = cloudShadeQ(P, u.sunDir); }
       let ndotsun = dot(N, u.sunDir);
       if (isT || ndotsun > 0.0) {
         sunN = sunShadowTaps(P, N);
@@ -311,16 +308,13 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
           L += u.sunCol * (ndotsun * f32(sunN) * 0.25 * cloudF);
         }
       }
-      cloudBits = cloudQ << CLOUD_SHIFT;
+      cloudBits = cloudQ << CLOUD_Q_SHIFT;
     } else if (isT) {
       sunN = 4;
     }
   } else if (u.sunOn != 0 && kindU != u32(KIND_TERRAIN)) {
     var cloudQ2: u32 = 0u;
-    if (u.cloud.x > 0.0) {
-      let cov = cloudCov(P.x, P.y, u.cloud.y, u.cloud.z, u.cloud.w, u.cloudCover);
-      cloudQ2 = u32(floor(u.cloud.x * CLOUD_DARK * cov * 255.0 + 0.5));
-    }
+    if (u.cloudA.w > 0.0) { cloudQ2 = cloudShadeQ(P, u.sunDir); }
     let ndotsun = dot(N, u.sunDir);
     if (ndotsun > 0.0) {
       // BUG-LIGHT-001: nudge toward the sun direction, not along N
@@ -331,7 +325,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
         L += u.sunCol * (ndotsun * cloudF);
       }
     }
-    cloudBits = cloudQ2 << CLOUD_SHIFT;
+    cloudBits = cloudQ2 << CLOUD_Q_SHIFT;
   }
 
   // S8-B2-20 (38.17): horizon AO, LAST operation on L, after points/sun/cloud. Uniform branch - strength 0 runs

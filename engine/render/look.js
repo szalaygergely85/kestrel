@@ -152,6 +152,11 @@ export function resolveLook(P, key = P.defaultTime) {
       lit: rgb3(P, c.lit), shade: rgb3(P, c.shade), ramp: P.ramps[c.ramp],
       scale: c.scale, bias: c.bias, cover: c.cover, puffK: c.puffK, wispCover: c.wispCover, wispK: c.wispK,
       wind: Float32Array.from(c.wind), litK: c.litK, litDy: c.litDy, bodyK: c.bodyK, seed: c.seed,
+      // S8-B2-12c (38.13): optional cloud-shadow block, null when absent (strength defaults 0, deckH 300).
+      shadow: c.shadow ? {
+        strength: c.shadow.strength === undefined ? 0 : c.shadow.strength, scale: c.shadow.scale, cover: c.shadow.cover,
+        soft: c.shadow.soft, deckH: c.shadow.deckH === undefined ? 300 : c.shadow.deckH,
+      } : null,
     };
   }
 
@@ -234,6 +239,17 @@ export function validateLook(P, key, onWarn) {
       for (let i = 0; i < ramp.length; i++) {
         const cc = ramp.charCodeAt(i);
         if (cc < 32 || cc > 126) { errors.push(`${path}.clouds.ramp: non-printable-ASCII glyph at index ${i}`); break; }
+      }
+    }
+    if (c.shadow !== undefined && c.shadow !== null) {
+      const s = c.shadow, sp = `${path}.clouds.shadow`;
+      if (typeof s !== 'object') errors.push(`${sp}: must be an object, got ${JSON.stringify(s)}`);
+      else {
+        if (s.strength !== undefined && !(s.strength >= 0 && s.strength <= 1)) errors.push(`${sp}.strength: must be in [0, 1], got ${s.strength}`);
+        if (!(s.scale > 0)) errors.push(`${sp}.scale: must be > 0, got ${s.scale}`);
+        if (!(s.cover >= 0 && s.cover <= 1)) errors.push(`${sp}.cover: must be in [0, 1], got ${s.cover}`);
+        if (!(s.soft > 0)) errors.push(`${sp}.soft: must be > 0, got ${s.soft}`);
+        if (s.deckH !== undefined && !(s.deckH > 0)) errors.push(`${sp}.deckH: must be > 0, got ${s.deckH}`);
       }
     }
   }

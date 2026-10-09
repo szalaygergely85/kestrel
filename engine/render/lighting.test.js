@@ -5,7 +5,7 @@ import {
   LightSet, buildLightSet, setWorldSun, applySunHours, lightAt, lightSurfaces, computeVisGrid, falloff, h01,
   selectCpuLights, CPU_LIGHT_CAP, MAX_LIGHTS, MAX_VIS_DIM, sunVisible, MAX_SUN_STEPS,
   sampleVis, VIS_FLOOR_EPS, makeLightBuffer, syncEntityLights, clampLightToFree, ATTACH_WALL_MARGIN,
-  setCloudShadow, setHorizonAo,
+  setHorizonAo, setLook,
 } from './lighting.js';
 import { attachedLightPos } from '../entities/attach.js';
 import { World } from '../world/World.js';
@@ -848,21 +848,23 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
   lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbRef }, lsRef, cam, null);
   ok('strength 0: rgb byte-identical', lbZero.rgb[0] === lbRef.rgb[0] && lbZero.rgb[1] === lbRef.rgb[1] && lbZero.rgb[2] === lbRef.rgb[2]);
   ok('strength 0: sunlit/litCount/sunN byte-identical', lbZero.sunlit[0] === lbRef.sunlit[0] && lbZero.litCount[0] === lbRef.litCount[0] && lbZero.sunN[0] === lbRef.sunN[0]);
-  ok('strength 0: cloud byte is 0 on both', lbZero.cloud[0] === 0 && lbRef.cloud[0] === 0);
+  ok('strength 0: cloud byte is 0 on both', lbZero.cloudQ[0] === 0 && lbRef.cloudQ[0] === 0);
 
-  // Explicit strength 0 (via setCloudShadow) must also be bit-identical to the untouched default.
+  // look.clouds.shadow with strength 0 resolves to lights.cloud = null: bit-identical to the untouched default.
   const lsExplicitZero = makeSunLights();
-  setCloudShadow(lsExplicitZero, { strength: 0 });
+  setLook(lsExplicitZero, { hemi: null, clouds: { shadow: { strength: 0, scale: 0.02, cover: 0.4, soft: 0.2, deckH: 300 }, seed: 3, wind: new Float32Array([1, 0]) } });
+  ok('strength 0 shadow block -> lights.cloud null', lsExplicitZero.cloud === null);
   const lbExplicitZero = makeLightBuffer(cols, rows);
   lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbExplicitZero }, lsExplicitZero, cam, null);
-  ok('strength 0 (explicit via setCloudShadow): rgb byte-identical', lbExplicitZero.rgb[0] === lbRef.rgb[0] && lbExplicitZero.rgb[1] === lbRef.rgb[1] && lbExplicitZero.rgb[2] === lbRef.rgb[2]);
+  ok('strength 0 (look.clouds.shadow): rgb byte-identical', lbExplicitZero.rgb[0] === lbRef.rgb[0] && lbExplicitZero.rgb[1] === lbRef.rgb[1] && lbExplicitZero.rgb[2] === lbRef.rgb[2]);
 
   // Strength 1: the non-terrain sun-term ratio (lit rgb / the same cell's strength-0 rgb, isolating the sun term
   // from ambient) stays in [0.4, 1] (CLOUD_DARK = 0.6), and cloudQ stays in [0, 153] (floor(1*0.6*1*255+0.5)).
   let minRatio = Infinity, maxRatio = -Infinity, minQ = 256, maxQ = -1;
   for (let trial = 0; trial < 40; trial++) {
     const lsFull = makeSunLights();
-    setCloudShadow(lsFull, { strength: 1, cover: 0.3 + trial * 0.01, scaleM: 20 + trial });
+    setLook(lsFull, { hemi: null, clouds: { shadow: { strength: 1, scale: 0.01 + trial * 0.001, cover: 0.3 + trial * 0.01, soft: 0.25, deckH: 300 }, seed: 3, wind: new Float32Array([1, 0]) } });
+    ok('strength 1 shadow block -> lights.cloud resolved', lsFull.cloud && lsFull.cloud.deckH === 300 && lsFull.cloud.seed === 3);
     const lbFull = makeLightBuffer(cols, rows);
     const camT = { x: trial * 7.3, y: trial * 3.1, z: 0, yawDeg: 0, pitchDeg: 0 };
     lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbFull }, lsFull, camT, null);
@@ -875,7 +877,7 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
       const ratio = sunFull / sunBase;
       minRatio = Math.min(minRatio, ratio); maxRatio = Math.max(maxRatio, ratio);
     }
-    minQ = Math.min(minQ, lbFull.cloud[0]); maxQ = Math.max(maxQ, lbFull.cloud[0]);
+    minQ = Math.min(minQ, lbFull.cloudQ[0]); maxQ = Math.max(maxQ, lbFull.cloudQ[0]);
   }
   ok('strength 1: sun-term ratio >= 0.4', minRatio >= 0.4 - 1e-6, String(minRatio));
   ok('strength 1: sun-term ratio <= 1', maxRatio <= 1 + 1e-6, String(maxRatio));
@@ -961,7 +963,7 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
     ok(`terrain x=${x}: strength 1 unchanged vs strength 0`, lbT1.rgb[o] === lbT0.rgb[o] && lbT1.rgb[o + 1] === lbT0.rgb[o + 1] && lbT1.rgb[o + 2] === lbT0.rgb[o + 2]);
   }
 
-  // setHorizonAo validates strength like setCloudShadow validates its own fields.
+  // setHorizonAo validates strength.
   const throws = (fn) => { try { fn(); return false; } catch { return true; } };
   ok('setHorizonAo throws on strength 1.5', throws(() => setHorizonAo(new LightSet(), { strength: 1.5 })));
   ok('setHorizonAo throws on strength -0.1', throws(() => setHorizonAo(new LightSet(), { strength: -0.1 })));

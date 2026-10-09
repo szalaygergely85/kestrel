@@ -20,17 +20,16 @@ import {
   GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, CELL_RAY_PITCHED_WGSL, OCT_NORMAL_WGSL, FMOD_WGSL, HASH_FAST_WGSL, BYTE_OUT_WGSL,
   SMOOTHSTEP_FAST_WGSL, QFLOOR_WGSL, ORIENT_AND_LINES_WGSL,
 } from './common.wgsl.js';
-import { MAX_SUB } from '../glsl/shade.frag.js';
+export const MAX_SUB = 16; // 4x4, matches resolve.wgsl.js's cap
 import { SKY_LUT_N } from '../glsl/common.js';
 import { MAX_LEVELS } from '../ShadeTextures.js';
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
 import { KIND_TERRAIN, KIND_MODEL, KIND_MESH, FACE_PACKED } from '../../GBuffer.js';
 import { WET_DARK, WET_SPEC } from '../../detailShade.js';
-import { SUN_N_SHIFT, SUN_N_MASK } from '../../shadowSun.js';
-import { CLOUD_SHIFT } from '../../cloudShadow.js'; // S8-B2-12b (38.13)
+import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // CLOUD_Q_SHIFT: S8-B2-12c (38.13)
 import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE } from '../../terrainShade.js';
 
-export { MAX_SUB };
+
 
 export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'fogFg', type: 'vec3' }, { name: 'fogStart', type: 'f32' },
@@ -561,7 +560,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
     if (su.sunMapOn != 0) { sunFT = f32((lightT.w >> ${SUN_N_SHIFT}u) & ${SUN_N_MASK}u) * 0.25; } // ME-15c (US-070b)
     // S8-B2-12b (38.13): cloud-darkening byte (bits 24..31 of LIGHT.w, written by the light pass regardless of
     // strength - q is 0 unless strength > 0) scales the whole analytic sun term; q 0 -> cFt 1.0 -> bit-identical.
-    let cFt = 1.0 - f32((lightT.w >> ${CLOUD_SHIFT}u) & 255u) * (1.0 / 255.0);
+    let cFt = 1.0 - f32((lightT.w >> ${CLOUD_Q_SHIFT}u) & 255u) * (1.0 / 255.0);
     let bSunT = su.ambientI + su.sunI * max(0.0, ndotlT) * sunFT * cFt;
     let LcT = bitcast<vec3f>(lightT.xyz);
     let bT = bSunT + max(LcT.x, max(LcT.y, LcT.z));
