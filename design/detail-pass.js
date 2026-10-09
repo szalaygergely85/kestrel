@@ -1075,6 +1075,43 @@
       grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
       face: { set: 'glint', mid: 'glint', far: 'glint' },
       lod: { mid: 12, far: 25, dither: 3 }, emissive: 0.75
+    },
+    // HAND-FIRE-02 (v1.52, design/models/hand.js; palette.js v1 records of the same key).
+    skin_flush: {
+      v1: 'skin_flush', seed: 918,
+      desc: 'HAND (HAND-FIRE-02). Warmer flushed skin: knuckle rims, fingertip pulp, palm pads.',
+      albedo: 0.88, bgK: 0.15, detail: 32, jitter: 0.04,
+      tones: [['skinFlush', 4], ['skin', 1]],
+      grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    skin_deep: {
+      v1: 'skin_deep', seed: 919,
+      desc: 'HAND (HAND-FIRE-02). Deep creases between fingers and at the joints.',
+      albedo: 0.70, bgK: 0.12, detail: 32, jitter: 0.04,
+      tones: [['skinDeep', 4], ['skinShade', 1]],
+      grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    skin_vein: {
+      v1: 'skin_vein', seed: 920,
+      desc: 'HAND (HAND-FIRE-02). Muted veins, back of the hand and inner wrist.',
+      albedo: 0.84, bgK: 0.14, detail: 32, jitter: 0.04,
+      tones: [['skinVein', 3], ['skin', 1]],
+      grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    flame_mid: {
+      v1: 'flame_mid', seed: 921,
+      desc: 'HAND (HAND-FIRE-02). Yellow flame body: flameMid / flameCore, emissive 0.95.',
+      albedo: 1.00, bgK: 0.32, detail: 40, jitter: 0.05,
+      tones: [['flameMid', 3], ['flameCore', 1]],
+      grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
+      face: { set: 'glint', mid: 'glint', far: 'glint' },
+      lod: { mid: 12, far: 25, dither: 3 }, emissive: 0.95
     }
   };
 
@@ -1117,7 +1154,9 @@
     skin: 'skin', hair_dark: 'hair_dark',
     // HAND-ART-01 / HAND-BURN-01 (design/models/hand.js), same key in both files.
     skin_light: 'skin_light', skin_shade: 'skin_shade', skin_nail: 'skin_nail', skin_glow: 'skin_glow', skin_char: 'skin_char',
-    flame_tip: 'flame_tip'
+    flame_tip: 'flame_tip',
+    // HAND-FIRE-02 (v1.52), same key in both files.
+    skin_flush: 'skin_flush', skin_deep: 'skin_deep', skin_vein: 'skin_vein', flame_mid: 'flame_mid'
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.

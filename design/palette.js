@@ -289,7 +289,12 @@
     skinLight: '#d6a07c',        // knuckles, finger ridges, back-of-hand tendons (lit skin)
     skinNail: '#e8c8b0',         // pale nails
     skinGlow: '#ff9858',         // skin touched by its own fire (emissive 0.35)
-    skinChar: '#3a2620'          // sooty nails / fingertips after the burn
+    skinChar: '#3a2620',         // sooty nails / fingertips after the burn
+    // HAND-FIRE-02 (v1.52, realistic hand): warmer flushed skin (knuckle rims, fingertip pulp, palm pads), deep creases,
+    // muted veins (desaturated, never blue-teal: aether is reserved)
+    skinFlush: '#b8705a',        // muted warm red-brown, not pink
+    skinDeep: '#5a382c',         // deep creases between fingers, palmar joint folds
+    skinVein: '#86686a'          // back-of-hand / inner-wrist veins, faint mauve-grey
   };
 
   // ---------------------------------------------------------------------------
@@ -1317,6 +1322,25 @@
     base: 'flameTip', albedo: 1.00, ramp: 'fire', spec: 0, emissive: 0.75, bg: { mode: 'darken', k: 0.28 }, textureFade: [4, 12],
     texture: { w: 2, h: 2, scale: [50, 50], key: {
       a: { shade: 1.00, glyph: '^' }, m: { shade: 0.95, tint: 'flameOuter', amount: 0.4, glyph: "'" }
+    }, rows: ['am', 'ma'] }
+  };
+  // HAND-FIRE-02 (v1.52, design/models/hand.js): realistic skin variation + the yellow band of the always-on hand fire
+  // (white root ember_core -> flame_mid -> ember_glow -> flame_tip). Appended last so no material id moves; v2 records
+  // in detail-pass.js.
+  materials.skin_flush = fabricMat('HAND (HAND-FIRE-02). Warmer flushed skin: knuckle rims, fingertip pulp, palm pads, soft tone patches.', 'skinFlush', 0.88, 0.15,
+    { a: { shade: 1.00 }, s: { shade: 0.94, tint: 'skin', amount: 0.35 } },
+    ['aaaa', 'aasa', 'aaaa', 'saaa']);
+  materials.skin_deep = fabricMat('HAND (HAND-FIRE-02). Deep creases: where fingers touch, palmar joint folds, the wrist crease.', 'skinDeep', 0.70, 0.12,
+    { a: { shade: 1.00 }, s: { shade: 1.10, tint: 'skinShade', amount: 0.3 } },
+    ['aaaa', 'aaaa', 'asaa', 'aaaa']);
+  materials.skin_vein = fabricMat('HAND (HAND-FIRE-02). Muted veins on the back of the hand and the inner wrist.', 'skinVein', 0.84, 0.14,
+    { a: { shade: 1.00 }, s: { shade: 1.05, tint: 'skin', amount: 0.3 } },
+    ['aaaa', 'asaa', 'aaaa', 'aaas']);
+  materials.flame_mid = {
+    desc: 'HAND (HAND-FIRE-02). The yellow body of the hand\'s flames between the white-hot root and the orange: flameMid, emissive 0.95.',
+    base: 'flameMid', albedo: 1.00, ramp: 'fire', spec: 0, emissive: 0.95, bg: { mode: 'darken', k: 0.32 }, textureFade: [4, 12],
+    texture: { w: 2, h: 2, scale: [50, 50], key: {
+      a: { shade: 1.00, glyph: '*' }, m: { shade: 1.00, tint: 'flameCore', amount: 0.35, glyph: '%' }
     }, rows: ['am', 'ma'] }
   };
 
