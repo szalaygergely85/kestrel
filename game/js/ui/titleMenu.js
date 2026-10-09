@@ -16,7 +16,7 @@ function slotLabel(slot) {
 /**
  * adapter = US-089a createStorageAdapter/createMemoryAdapter; no browser globals here.
  * handlePointer receives UI-grid cells (the host maps its own canvas coordinates).
- * takeAction returns {type:'newGame'|'continue'|'settings', slot?, save?} once.
+ * takeAction returns {type:'newGame'|'continue'|'settings'|'credits', slot?, save?} once.
  * Storage reads, formatting and allocations happen on input/refresh, never in draw.
  */
 export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PLATE, style = null } = {}) {
@@ -48,7 +48,8 @@ export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PL
         {id:'continue',text:'Continue',y:8,enabled:slots.some(slot => slot.ok && slot.meta)},
         ...slots.map(slot => ({id:'slot',slot:slot.slot,text:slot.label,y:12+slot.slot*2,enabled:true})),
         {id:'delete',text:'Delete slot',y:19,enabled:!!slots[selectedSlot]?.meta || slots[selectedSlot]?.ok === false},
-        {id:'settings',text:'Settings',y:21,enabled:true}];
+        {id:'settings',text:'Settings',y:21,enabled:true},
+        {id:'credits',text:'Credits',y:23,enabled:true}];
     }
     // Cache full clipped labels, including disabled hints, away from the frame loop.
     for (const row of rows) row.display = (row.id === 'continue' && !row.enabled ? 'Continue (no save)' : row.text + (row.enabled ? '' : ' (unavailable)')).slice(0,bounds.w-6);
@@ -107,6 +108,7 @@ export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PL
       const slot = slots[selectedSlot].ok && slots[selectedSlot].meta ? selectedSlot : slots.find(slot => slot.ok && slot.meta).slot;
       load(slot);
     } else if (row.id === 'settings') emit('settings');
+    else if (row.id === 'credits') emit('credits');
     else if (row.id === 'delete') ask('delete',selectedSlot);
     else if (row.id === 'slot') {
       selectedSlot = row.slot;

@@ -74,3 +74,14 @@ assert.equal(occupied.snapshot().selected,0,'styled confirmation still defaults 
 occupied.draw(ui); assert.equal(occupied.snapshot().mode,'confirm');
 occupied.handleKey('Escape'); assert.ok(styledAdapter.readSlot(0).save && styledAdapter.readSlot(2).save,'styled cancel retains slots');
 console.log('titleMenu: new/load/settings, keyboard/mouse, cancel/replacement/delete isolation and corrupt/denied storage PASS');
+
+// CREDITS-ROW-01: append the writer label without moving existing rows or hints.
+const creditMenu=createTitleMenu(adapter), creditBounds=creditMenu.draw(ui);
+assert.deepEqual(creditMenu.snapshot().rows.map(row=>[row.id,row.y]),[
+ ['new',6],['continue',8],['slot',12],['slot',14],['slot',16],['delete',19],['settings',21],['credits',23]]);
+assert.equal(creditMenu.snapshot().rows.at(-1).text,'Credits');
+creditMenu.handleKey('ArrowUp');assert.equal(creditMenu.snapshot().selected,7);
+creditMenu.handleKey('Enter');assert.deepEqual(creditMenu.takeAction(),{type:'credits'});assert.equal(creditMenu.takeAction(),null);
+creditMenu.draw(ui);assert.equal(creditMenu.handlePointer(creditBounds.x+5,creditBounds.y+23),true);
+assert.deepEqual(creditMenu.takeAction(),{type:'credits'});
+console.log('Credits row order, writer label, keyboard/click and once-only action PASS');
