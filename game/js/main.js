@@ -183,7 +183,7 @@ function startAutoBench(at, redetect) {
   if (autoBench && autoBench.phase !== 'done') return false;
   autoRunning = at; autoCard = showCard();
   autoBench = new AutoBench({
-    sample: () => (gpuPipeline && gpuPipeline.stats ? gpuPipeline.stats.gpuMsP95 : NaN),
+    sample: () => (gpuPipeline && gpuPipeline.stats ? gpuPipeline.stats.gpuMsP95 : (wgActive && wgPipeline.stats ? wgPipeline.stats.gpuMsP95 : NaN)), // S8-B1-08: WebGPU feeds the WG timer (wgActive is set before the first sample)
     intervalMs: () => lastFrameDt,
     onDone: ({ samples, kind, minSamples, frameSamples }) => {
       if (autoCard) { autoCard.remove(); autoCard = null; }

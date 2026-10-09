@@ -26,6 +26,7 @@ One slot per hot file at a time: `main.js` = kestrel-1 only; an item in another 
 ## Token rules for every agent prompt (owner 2026-10-09)
 - **Hard cap 40 tool calls.** At the cap: stop, write what is left + ASK ARCHITECT in the lane file, reply. Never keep digging.
 - **Node only. No browser, no capture, no gpucompare.** A story that needs a browser check WRITES/extends a `tools/verify-*.mjs` script taking `<port> [backend]` (or `--port`), checks it with `node --check`, and names the exact command line (with `{port}`) in its lane entry. The main session runs it in the batch.
+- **No new dependencies (owner 2026-10-09):** never add or import a package that is not already in package.json (no Playwright, Puppeteer, etc.). Browser scripts use the CDP helpers exported by `tools/capture-browser.mjs`, same shape as `tools/verify-chest-hook.mjs`.
 - **Read narrowly:** only the given line ranges + the files you edit. No grepping/reading whole lane logs, backlog or architecture.md; no full `run-tests.mjs` (only `--filter <your suites>`).
 - **Models:** sonnet programmers; haiku for one-line fixes, doc nits, lane-log archiving; architect notes sonnet unless the note is a real design call (opus).
 - Do it yourself, don't delegate; no commit/stash/reset; append ONE lane entry (<= 6 lines); reply in <= 10 lines.
