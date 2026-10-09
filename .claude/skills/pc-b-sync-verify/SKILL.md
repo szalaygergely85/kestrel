@@ -5,6 +5,8 @@ description: PC-B main-session routine for picking up, verifying, committing and
 
 # PC-B sync / verify / ship
 
+Since 2026-10-09 (5x): agents run in clones `../kestrel-1..4`, up to 4 programmers; skill `pc-b-5x` overrides the agent count, tree and push steps below. The verify gates stay as listed here.
+
 Branch `pc-b`. Queue: `docs/pc-b-queue.md`, plus the newest `PC-A handoff` block at the top of `docs/backlog.md` (on `origin/pc-a` if PC-A has not merged to master yet: `git show origin/pc-a:docs/backlog.md | sed -n 1,10p`).
 
 ## Start an item
