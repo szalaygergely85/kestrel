@@ -53,6 +53,7 @@ import { isPaused, resetSimAccumulator, duckAudio, unduckAudio, installAutoPause
 import { initAudio, setMuted, toggleMute, isMuted } from './audio/synth.js';
 import { resetGameAudio, stepGameAudio } from './audio/sfx.js';
 // ---- end US-020a ----
+import { createSafeBindings, resolveGameKeys } from './gameKeys.js'; // BINDINGS-WIRE-01
 import { loadSettings, saveSettings, getSaveStorage } from './platform/index.js'; // US-060: remembered mute (D-012)
 import { applyLocalOverlay } from './localOverlay.js';
 import { createBootCard } from './bootCard.js'; // boot loading card + ASCII progress bar
@@ -141,6 +142,8 @@ const isGpuCompareMode = isGeometryCompare || params.get('gpucompare') === 'shad
 // Precedence: URL knob > ?quality= > saved > auto (GFX-02) > 'high'. Presets failing to load -> boot exactly as before (no preset).
 // Capture/bench/compare pages stay on today's options unless ?quality= is given (must stay comparable across runs).
 const savedSettings = loadSettings();
+const controlBindings = createSafeBindings(savedSettings.bindings); // BINDINGS-WIRE-01: invalid saved table -> defaults
+const gameKeys = resolveGameKeys(controlBindings); // resolved once; re-run after a rebinding UI changes the table
 const isWaterfallPreview = params.get('waterfallpreview') === '1' && params.get('world') === 'waterfall_test';
 const isCaptureOrBench = !!params.get('bench') || !!params.get('voxelbench') || !!params.get('gpucompare') || !!params.get('cinematic') || isWaterfallPreview;
 // GFX-02: auto-pick runs only on a first launch (nothing saved, no ?quality=), never on capture/bench/compare/cinematic pages or
@@ -1245,7 +1248,7 @@ async function runGame(mode, cinematic = null) {
     // US-020a: `N` = mute toggle, always available (does not conflict with
     // `M`'s map card, US-015) - a single flag in audio/synth.js's module
     // state (later Settings, US-038, can read it the same way).
-    if (input.pressed('KeyN')) { toggleMute(); saveSettings({ muted: isMuted() }); } // US-060: remember across reload
+    if (input.pressed(gameKeys.mute)) { toggleMute(); saveSettings({ muted: isMuted() }); } // US-060: remember across reload
     if (input.pressed('F3')) overlay.toggle();
     // D-025 (US-038a AC "dev switch until US-038b ships"): `?debug=1` only -
     // cycles the 4 player grids; `engine.setGrid` no-ops off a gl2 backend.
@@ -1274,7 +1277,7 @@ async function runGame(mode, cinematic = null) {
       invView.step(dt, input, !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look
         && !(vitals && (vitals.dead || vitals.inputLocked)) && !(questUiActive && wakeOut.inputLocked));
     }
-    if (chestHook && mode === 'world' && playerHandle) chestHook.stepUi(dt, input.pressed('KeyE')); // S8-B1-04: steps while paused too (an open card pauses the sim)
+    if (chestHook && mode === 'world' && playerHandle) chestHook.stepUi(dt, input.pressed(gameKeys.interact)); // S8-B1-04: steps while paused too (an open card pauses the sim)
     const invOpen = !!(invView && invView.isOpen);
     const cardOpen = !!(chestHook && chestHook.card.isOpen); // S8-B1-04: item-get card gates input same as invOpen
     // ---- US-015: wake timeline + map card (world_m1 only, questUiActive) ----
@@ -1284,7 +1287,7 @@ async function runGame(mode, cinematic = null) {
       engine.world.state['quest.wakeT'] += dt;
       wakeFrame(engine.world.state['quest.wakeT'], wakeCfg, wakeOut);
       if (wakeOut.inputLocked) playerHandle.data.components.body.eyeH = wakeOut.eyeH;
-      mPressedEdge = input.pressed('KeyM');
+      mPressedEdge = input.pressed(gameKeys.map);
       stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec, !!(look && look.locked)); // BUG-NOTE-ESC-01
       uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || (vitals && vitals.inputLocked);
     }
@@ -1323,14 +1326,14 @@ async function runGame(mode, cinematic = null) {
       if (ending || uiLocked || (vitals && vitals.inputLocked)) {
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {
-        controls.forward = (input.isDown('KeyW') ? 1 : 0) - (input.isDown('KeyS') ? 1 : 0);
-        controls.strafe = (input.isDown('KeyD') ? 1 : 0) - (input.isDown('KeyA') ? 1 : 0);
-        controls.run = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
+        controls.forward = (input.isDown(gameKeys.forward) ? 1 : 0) - (input.isDown(gameKeys.backward) ? 1 : 0);
+        controls.strafe = (input.isDown(gameKeys.right) ? 1 : 0) - (input.isDown(gameKeys.left) ? 1 : 0);
+        controls.run = input.isDown(gameKeys.run) || input.isDown(gameKeys.run2);
         // US-009: a HELD level, OR'd with the edge (`pressed`) so a Space tap
         // that starts and ends within one frame - between two fixed-step
         // updates - is never lost (integrate() does its own edge detection on
         // top of this, architecture.md section 5 `Controls` typedef).
-        controls.jump = input.isDown('Space') || input.pressed('Space');
+        controls.jump = input.isDown(gameKeys.jump) || input.pressed(gameKeys.jump);
       }
       if (ending) {
         // Arch review 1: `integrate` copies controls.yaw/pitch onto the
@@ -1371,9 +1374,9 @@ async function runGame(mode, cinematic = null) {
       if (hands) {
         // HANDS-01b (37.8a): the router turns LMB/RMB + the gate into one `down` per item; every item sim is stepped
         // every step (down = false when it is in no hand).
-        if (!uiLocked && !paused && !ending && !(vitals && vitals.inputLocked) && input.pressed('KeyH')) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
+        if (!uiLocked && !paused && !ending && !(vitals && vitals.inputLocked) && input.pressed(gameKeys.swapHands)) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
         const gateOpen = look.locked && !uiLocked && !ending && !paused && !(vitals && vitals.inputLocked);
-        hands.step(playerHandle.data, input.isDown('Mouse0') || input.pressed('Mouse0'), input.isDown('Mouse2') || input.pressed('Mouse2'), gateOpen);
+        hands.step(playerHandle.data, input.isDown(gameKeys.useLeft) || input.pressed(gameKeys.useLeft), input.isDown(gameKeys.useRight) || input.pressed(gameKeys.useRight), gateOpen);
         if (fireball) { // SPELL-01a: aim = unit 3D look vector (pitch > 0 = up); trig stays here, outside sim/
           forwardOf(look.yawDeg, swordFwd);
           const pr = look.pitchDeg * DEG2RAD, cp = Math.cos(pr);
@@ -1387,7 +1390,7 @@ async function runGame(mode, cinematic = null) {
       }
       if (practiceTarget) practiceTarget.step();
       if (vitals) {
-        vitals.step(playerHandle.data, input.pressed('KeyE')); // US-080a1 (30.2)
+        vitals.step(playerHandle.data, input.pressed(gameKeys.interact)); // US-080a1 (30.2)
         stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
         // US-080a1 AC5 (`?debug=1` only): F8 toggles invulnerability, F9 deals 5 HP.
         if (params.get('debug') === '1') {
@@ -1413,7 +1416,7 @@ async function runGame(mode, cinematic = null) {
       // step's position, before the event flush - `E` is edge-triggered the
       // same way Space is (US-009's convention). Forced false while ending
       // (input locked - no other interactable may fire mid-ending).
-      updateInteraction(engine.world, engine, Camera.fromEntityInto(playerHandle.data, undefined, interactEye, pitchClampDeg), !ending && !uiLocked && input.pressed('KeyE'));
+      updateInteraction(engine.world, engine, Camera.fromEntityInto(playerHandle.data, undefined, interactEye, pitchClampDeg), !ending && !uiLocked && input.pressed(gameKeys.interact));
       // READ-01: the open note's fade + `[E]`/`[Esc]` close, right after
       // `updateInteraction` (which just fired `note.read` on the E edge). A
       // no-op while no note is open; the close guard (`state === 'open'`)
@@ -1447,7 +1450,7 @@ async function runGame(mode, cinematic = null) {
         hintSignals.pointerUnlocked = !look.locked;
         hintSignals.moveOrLook = moveOrLook;
         hintSignals.run = controls.run && moving;
-        hintSignals.jump = input.pressed('Space');
+        hintSignals.jump = input.pressed(gameKeys.jump);
         hintSignals.pointerLocked = look.locked;
         hintSignals.mPressed = mPressedEdge;
         stepHints(engine.world, assets.uiStyle, dt, hintSignals); // reused object (7.6 item 9: no per-step allocation)
@@ -1459,7 +1462,7 @@ async function runGame(mode, cinematic = null) {
       // S8-B1-04: same gated E edge updateInteraction uses (false while a menu/card/note is up, see gameHooks.js
       // header) plus the ungated edge a handler's own modal needs to dismiss itself, and the look yaw (chest.js's
       // own reach/facing test wants the player's body forward, not the camera eye - see chestHook.js header).
-      const ePressed = input.pressed('KeyE');
+      const ePressed = input.pressed(gameKeys.interact);
       hs.interactPressed = !ending && !uiLocked && ePressed; hs.interactRaw = ePressed; hs.playerYawDeg = look.yawDeg;
       gameHooks.tick(dt);
       lap(SEC.quest);
