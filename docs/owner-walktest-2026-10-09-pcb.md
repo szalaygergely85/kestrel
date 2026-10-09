@@ -18,3 +18,16 @@ Server: `http://localhost:8000`. Your saved quality is Low and the backend defau
 13. Optional ortho check [WEBGPU]: not user-reachable in game yet; skip unless the editor shows an ortho/ISO view artefact (sprites too big or fog wrong).
 
 Report back: which steps fail, with the URL and a screenshot.
+
+## WG-4c owner walk (gate for WG-5 = drop WebGL2) - owner asked 2026-10-09
+
+Goal: confirm WebGPU is good enough to become the only backend. Hard-reload each URL (Ctrl+Shift+R). Press F3 for the stats overlay.
+
+1. WebGPU at the busy road: `http://localhost:8000/game/index.html?backend=webgpu&pose=roadSouth&quality=high` - F3 must say `backend: webgpu`. Note `frame` ms and the `pass ms` line. Bar (MESH-PERF-01, Intel WebGL2 baseline): GPU sum p95 about 8.4 ms; WebGPU should be the same or better and feel smooth (no hitch when turning).
+2. Same pose on WebGL2 for comparison: `...?backend=webgl2&pose=roadSouth&quality=high` - note the same numbers.
+3. Walk the road south about 1 minute, then into the forest and back (WebGPU): look for missing or popping trees/props, holes in walls, shadow flicker, sky/cloud glitches, white cells. Turn quickly a few times (occlusion is off by default, so nothing should vanish).
+4. Wake -> tower -> breach on WebGPU (`?backend=webgpu`, normal New game): any visual difference you dislike versus WebGL2 (lighting, glyphs, colours, the hands/sword, water, fire).
+5. Editor on WebGPU: `http://localhost:8000/tools/editor/index.html` - select a prop (gold box), move it, TOP/FRONT/ISO buttons; picking must hit what you click.
+6. Settings Quality Low/Medium/High on WebGPU: each still looks right and runs smoothly.
+
+Verdict to report: **WG-4c OK** (then PC-B starts WG-5: WebGPU default, WebGL2 code deleted, "WebGPU required" screen for browsers without it) or the list of problems (URL + screenshot). Note: after WG-5, browsers without WebGPU (older Safari/Firefox) get the "WebGPU required" screen.
