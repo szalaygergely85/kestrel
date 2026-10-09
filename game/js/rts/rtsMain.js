@@ -6,10 +6,11 @@
 // Imports only engine/index.js (check-deps rule 3).
 import {
   AssetRegistry, loadContentPack, createEngine, clampGrid, bindShading, bindLevel, repackMaterials, GBuffer,
-  GpuCellPipeline, GpuOverlayPass, VoxelPool, buildLightSet, makeLightBuffer,
+  createRenderer, VoxelPool, buildLightSet, makeLightBuffer,
   createRtsCamera, updateRtsCamera, createPitchedTerms, pitchedTerms, screenRay, pickNearest, selectInRect, worldToCell, rayTerrain,
-  PASS_NAMES,
+  WG_PASS_NAMES,
 } from '../../../engine/index.js';
+import { createSpriteSystem } from '../dev/spriteDev.js'; // atlas + pool the WG sprite/overlay passes bind to (stays empty here)
 import { prebuildTerrainMesh } from '../dev/terrainPrebuild.js'; // load-time terrain mesh build (engine/dev.js stays in game/js/dev)
 import { UNIT_MODEL_KEY, makeUnitModelDef, RTS_TEAM_SPEC } from './unitModel.js';
 import { createUnits, TEAM_OWN, TEAM_ENEMY, UNIT_HEIGHT } from './sim/units.js';
@@ -44,28 +45,38 @@ assets.add('model', UNIT_MODEL_KEY, makeUnitModelDef());
 // ---- engine + GPU mesh pipeline -----------------------------------------------------------------------------
 const gridM = /^(\d+)x(\d+)$/i.exec((params.get('grid') || '400x150').trim());
 const grid = clampGrid(gridM ? Number(gridM[1]) : 400, gridM ? Number(gridM[2]) : 150);
-// WG-1c2 (38.8a 15): the RTS spike needs the GPU mesh renderer, so ?backend=webgpu warns and uses webgl2 until WG-2b.
-if (params.get('backend') === 'webgpu') console.warn('[rts] ?backend=webgpu is not supported until WG-2b - using webgl2');
+// RTS-WG-01: WebGPU only (WebGL2 is gone). createRenderer builds the webgpu target + WgCellPipeline (wgPipeline); on failure
+// it falls back to webgl2, which this page cannot use, so fail loudly.
+const built = await createRenderer({ canvas, cols: grid.cols, rows: grid.rows, backend: 'webgpu', gpu: true, rays: 2, terrainEnabled: true,
+  shadows: { sun: 'map' } /* ME-19c2: sun DDA retired, shadow map */ });
+const rt0 = built.rt, wgPipeline = built.pipeline;
+if (rt0.backend !== 'webgpu' || !wgPipeline || !wgPipeline.ready) fail('RTS page needs WebGPU (WgCellPipeline not ready; ' + built.info.label + ')');
 const engine = createEngine({ canvas, assets, cols: grid.cols, rows: grid.rows, rays: 2, gpu: true,
+  renderTarget: rt0, renderPipeline: wgPipeline,
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 } });
 const rt = engine.renderTarget;
 // The UI layer starts opaque and is drawn over the scene by rt.present(); the RTS page draws no UI
 // cells (HUD is DOM), so clear it once - otherwise the whole canvas presents black (main.js clears per frame).
 engine.ui.clear();
-if (rt.backend !== 'gl2') fail('RTS spike needs a real WebGL2 GPU (renderer mesh); backend = ' + rt.backend);
 const P = assets.palette;
 const matTable = bindShading(P, assets.detailPass, rt.pxCellH / rt.pxCellW);
-const gbuf = new GBuffer(rt.cols, rt.rows);
-const gpuPipeline = new GpuCellPipeline(rt, { rays: engine.rays, terrainEnabled: true, shadows: { sun: 'map' } /* ME-19c2: sun DDA retired, shadow map */ });
-if (!gpuPipeline.ready || !matTable.allV2) fail('GpuCellPipeline not ready (missingV2: ' + (matTable.missingV2 || []).join(',') + ')');
-gpuPipeline.bind(matTable, P);
-new GpuOverlayPass(rt, gpuPipeline, engine.overlay);
+if (!matTable.allV2) fail('material table not V2 (missingV2: ' + (matTable.missingV2 || []).join(',') + ')');
+wgPipeline.bind(matTable, P);
+wgPipeline.setWaterLooks(window.ASSETS.waterLooks);
 const voxelPool = new VoxelPool();
 voxelPool.bind(assets, matTable);
-gpuPipeline.bindVoxels(voxelPool);
+voxelPool.renderer = 'mesh'; engine.overlay.renderer = 'mesh';
+wgPipeline.bindVoxels(voxelPool);
 engine.attachMaterialTable(matTable);
 engine.instances.bindPool(voxelPool);
-gpuPipeline.bindInstances(engine.instances);
+wgPipeline.bindInstances(engine.instances);
+wgPipeline.bindViewModel(engine.viewModel);
+const sprites = createSpriteSystem({ assets, rt, gpuPipeline: null, wgPipeline });
+wgPipeline.bindSprites({ pool: sprites.pool, atlas: sprites.atlas, palette: P, particleLayer: engine.particleLayer, overlay: engine.overlay });
+if (wgPipeline.spritesCompiled) await wgPipeline.spritesCompiled;
+if (!wgPipeline.frameComplete) fail('WgCellPipeline frame not complete (sprites/overlay/water/shadow passes)');
+if (rt.cols !== grid.cols || rt.rows !== grid.rows) { engine.setGrid(grid.cols, grid.rows, { immediate: true }); wgPipeline.bind(matTable, P); } // createRenderer builds at the CPU grid
+const gbuf = new GBuffer(rt.cols, rt.rows);
 engine.setTeamMaterials(RTS_TEAM_SPEC);
 
 // ---- world, nav, sim ------------------------------------------------------------------------------------------
@@ -117,7 +128,7 @@ ov.setGroundFn(groundAt);
 const fb = {
   rt, depth: engine.depthBuffer, palette: P, lights: lightSet,
   light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gbuf, matTable, detailPass: assets.detailPass,
-  voxelPool, instances: engine.instances, gpu: true, renderer: 'mesh', cpuLightCap: false, sceneFade: 1, terrainEnabled: true,
+  voxelPool, instances: engine.instances, viewModel: engine.viewModel, gpu: true, renderer: 'mesh', cpuLightCap: false, sceneFade: 1, terrainEnabled: true,
 };
 
 // ---- HUD / stats ------------------------------------------------------------------------------------------------
@@ -131,7 +142,7 @@ const BENCH = params.get('bench') === '1';
 const BENCH_WARMUP = 90, BENCH_MEASURE = 300;
 let benchFrame = 0;
 const benchGpuRing = BENCH ? createStatRing() : null;
-if (BENCH) gpuPipeline.setPassTiming(true); // force pass timing on even with no HUD (perfBench.js's own precedent)
+if (BENCH) wgPipeline.setPassTiming(true); // force pass timing on even with no HUD (perfBench.js's own precedent)
 let snapReq = null; // dev: one-shot readback request (tools/capture-rts.mjs)
 const lastBox = { k: -1, c0: 0, r0: 0, c1: 0, r1: 0 }; // dev: last resolved box (read by tools/capture-rts.mjs)
 let simAcc = 0, hoverId = -1, onScreen = 0, lastHudMs = 0, simTime = 0, lastFrameT = performance.now(), prevJsMs = 0;
@@ -164,16 +175,16 @@ function issueMove(col, row, n) {
 const f2 = (v) => (Number.isNaN(v) ? 'n/a' : v.toFixed(2));
 function hudText(n) {
   onScreen = countOnScreen(n);
-  const ps = gpuPipeline.stats, st = engine.loop.stats, o = rt.overlayPassStats;
+  const ps = wgPipeline.stats, st = engine.loop.stats;
   let own = 0; for (let i = 0; i < n; i++) if (units.team[i] === TEAM_OWN) own++;
   hud.setF3Text(
     `RTS-01b  grid ${rt.cols}x${rt.rows}  renderer mesh  fps ${engine.loop.fps.toFixed(0)}  zoom ${rts.zoom.toFixed(2)}\n` +
     `units ${n} (own ${own})  on screen ${onScreen}  selected ${sel.count}  moving ${sim.moving}  hover ${hoverId}\n` +
     `instancedDraws ${ps.instancedDraws}  instances ${ps.instances}  voxelDraws ${ps.voxelDraws}\n` +
     `sim ms p50/p95 ${f2(simRing.pct(0.5))}/${f2(simRing.pct(0.95))}  JS ms p50/p95 ${f2(jsRing.pct(0.5))}/${f2(jsRing.pct(0.95))}  over25 ${st.over25}/${st.frames}\n` +
-    `GPU ms p50/p95 ${f2(ps.gpuMsP50)}/${f2(ps.gpuMsP95)}  overlay pass p95 ${o ? f2(o.gpuMsP95) : 'n/a'}\n` +
+    `GPU ms p50/p95 ${f2(ps.gpuMsP50)}/${f2(ps.gpuMsP95)}\n` +
     `overlay ops ${ov.stats.ops} dropped ${ov.stats.dropped} cells ${ov.stats.cells}\n` +
-    'pass ms p50: ' + PASS_NAMES.map((nm, i) => `${nm} ${f2(ps.passMsP50[i])}`).join('  '));
+    'wg pass ms p50: ' + WG_PASS_NAMES.map((nm, i) => `${nm} ${f2(ps.wgPassMsP50[i])}`).join('  '));
 }
 
 engine.run({
@@ -243,38 +254,39 @@ engine.run({
     fb.timeSec = simTime;
     lightSet.update(simTime, world);
     ov.flush(cam);
-    gpuPipeline.frame(fb, lightSet, cam, world);
+    fb.gpu = rt.gpuActive;
+    wgPipeline.frame(fb, lightSet, cam, world);
     rt.present();
-    if (snapReq) { const cb = snapReq; snapReq = null; cb(gpuPipeline.readback()); } // dev: cell readback right after present
+    if (snapReq) { const cb = snapReq; snapReq = null; wgPipeline.readbackCells().then((c) => { if (!c) console.warn('[rts] readbackCells returned null (frame not shaded yet)'); cb(c); }); } // dev: cell readback right after present (async on WebGPU)
 
     // stats
     simRing.push(simAcc); simAcc = 0;
     jsRing.push(prevJsMs); prevJsMs = engine.loop.stats.jsMs;
     const showHud = hud.f3Visible;
-    if (!BENCH) gpuPipeline.setPassTiming(showHud);
+    if (!BENCH) wgPipeline.setPassTiming(showHud);
     if (showHud && now - lastHudMs > 250) { lastHudMs = now; hudText(n); }
 
     if (BENCH) {
       benchFrame++;
       if (benchFrame > BENCH_WARMUP && benchFrame <= BENCH_WARMUP + BENCH_MEASURE) {
-        benchGpuRing.push(gpuPipeline.stats.gpuMsP50);
+        benchGpuRing.push(wgPipeline.stats.gpuMsP50);
       } else if (benchFrame === BENCH_WARMUP + BENCH_MEASURE + 1) {
-        const ps = gpuPipeline.stats;
+        const ps = wgPipeline.stats;
         // Primary metric: total GPU ms/frame (gpuMsP50/P95), ring-averaged over the measured window - this is
         // what's populated every frame. `passMs` is a best-effort final-frame snapshot of the per-pass timers
-        // (PASS_NAMES order) for extra detail only - some entries read null in this scene (that pass's GPU timer
+        // (WG_PASS_NAMES order) for extra detail only - some entries read null in this scene (that pass's GPU timer
         // query did not resolve this particular frame), so RE-15d should treat it as informational, not load the
         // RE-15d raster-delta AC onto a specific pass index without checking it is non-null first.
         const result = {
           frames: BENCH_MEASURE, grid: `${rt.cols}x${rt.rows}`, units: n,
           gpuMsP50: benchGpuRing.pct(0.5), gpuMsP95: benchGpuRing.pct(0.95),
-          passNames: PASS_NAMES, passMs: Array.from(ps.passMsP50),
+          passNames: WG_PASS_NAMES, passMs: Array.from(ps.wgPassMsP50),
           instances: ps.instances, instancesCulled: ps.instancesCulled, instancesLod1: ps.instancesLod1,
         };
         window.__rtsBench = result;
         console.log(`RTS BENCH (${result.frames} frames, ${result.grid}, units ${result.units})\n` +
           `gpu total p50 ${result.gpuMsP50.toFixed(3)} ms  p95 ${result.gpuMsP95.toFixed(3)} ms\n` +
-          `per-pass (final frame, null = no query this frame): ${PASS_NAMES.map((nm, i) => `${nm} ${result.passMs[i] == null ? 'n/a' : result.passMs[i].toFixed(3)}`).join('  ')}\n` +
+          `per-pass (final frame, null = no query this frame): ${WG_PASS_NAMES.map((nm, i) => `${nm} ${result.passMs[i] == null ? 'n/a' : result.passMs[i].toFixed(3)}`).join('  ')}\n` +
           `instances ${result.instances}  culled ${result.instancesCulled}  lod1 ${result.instancesLod1}`);
         engine.loop.stop();
       }
@@ -284,12 +296,12 @@ engine.run({
 
 // dev/test hook (headless checks drive the page through real mouse events; this only reads state)
 window.__rts = {
-  engine, rt, rts, cam, terms, units, sim, view, sel, input, gpuPipeline, hud, nav, world, ov, lastBox,
+  engine, rt, rts, cam, terms, units, sim, view, sel, input, wgPipeline, gpuPipeline: wgPipeline /* capture-rts alias */, hud, nav, world, ov, lastBox,
   /** dev: resolves to a PNG dataURL (per cell 4x4 px: left half bg, right half fg colour) of the next presented frame */
-  snap: () => new Promise((res) => { snapReq = ({ fg, bg }) => {
+  snap: () => new Promise((res) => { snapReq = (cells) => { if (!cells) { res(null); return; } const { fg, bg } = cells;
     const c = document.createElement('canvas'); c.width = rt.cols * 4; c.height = rt.rows * 4;
     const g = c.getContext('2d'); const im = g.createImageData(c.width, c.height);
-    for (let r = 0; r < rt.rows; r++) for (let q = 0; q < rt.cols; q++) { const i = ((rt.rows - 1 - r) * rt.cols + q) * 4;
+    for (let r = 0; r < rt.rows; r++) for (let q = 0; q < rt.cols; q++) { const i = (r * rt.cols + q) * 4; // WebGPU readback is memory-row order (no GL flip)
       for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { const o = ((r * 4 + y) * c.width + q * 4 + x) * 4, src = x < 2 ? bg : fg;
         im.data[o] = src[i]; im.data[o + 1] = src[i + 1]; im.data[o + 2] = src[i + 2]; im.data[o + 3] = 255; } }
     g.putImageData(im, 0, 0); res(c.toDataURL('image/png')); }; }),
@@ -323,4 +335,4 @@ window.__rts = {
   },
   stats: () => ({ moving: sim.moving, onScreen: countOnScreen(units.count), selected: sel.count, hoverId, simP95: simRing.pct(0.95), jsP95: jsRing.pct(0.95) }),
 };
-console.log(`[rts] ${placed} units, grid ${rt.cols}x${rt.rows}, GPU ${gpuPipeline.rendererString}`);
+console.log(`[rts] ${placed} units, grid ${rt.cols}x${rt.rows}, GPU ${wgPipeline.rendererString}`);
