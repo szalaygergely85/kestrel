@@ -55,6 +55,7 @@ import { resetGameAudio, stepGameAudio } from './audio/sfx.js';
 import { loadSettings, saveSettings, getSaveStorage } from './platform/index.js'; // US-060: remembered mute (D-012)
 import { applyLocalOverlay } from './localOverlay.js';
 import { createBootCard } from './bootCard.js'; // boot loading card + ASCII progress bar
+import { createBootStageTimer } from './bootStageTimer.js'; // S8-B1-20: per-stage ms (content/adapter/pipelines/world/meshes)
 import { applyPlaytestOverlay } from './dev/playtest.js'; // US-034: editor play-test handoff (docs/architecture.md 24.11)
 import { computeEndCardState, drawEndCard } from './ui/endCard.js';
 import { initTitleCard, drawTitleCard } from './ui/titleCard.js';
@@ -205,10 +206,12 @@ function redetectQuality() { return startAutoBench(bootOpts.quality ? bootOpts.q
 window.redetectQuality = redetectQuality;
 
 let bootPrinted = false; // BOOT-SPEED-01: true after the first frame (declared before runGame can run)
+let bootStageAtFrame = 0; // S8-B1-20: bootNow() at first frame; F3 shows the stage breakdown for 10 s after this
 bootMark('main.js module start (imports done)');
 // Boot loading card with an ASCII progress bar (not on capture/bench/gpucompare pages; `?bootcard=0` off, `=1` forces it).
 const bootCard = (params.get('bootcard') === '1' || (params.get('bootcard') !== '0' && !isCaptureOrBench && params.get('capture') !== '1')) ? createBootCard() : null;
 const bootProg = bootCard ? bootCard.progress : null, bootPaint = bootCard ? bootCard.paint : async () => {};
+const bootStages = createBootStageTimer(bootNow); // S8-B1-20: starts in 'content' now; see enter() calls below
 const canvas = document.getElementById('screen');
 // US-027b (docs/architecture.md 21.9): tower/test_room/world_m1 are now
 // content/*.json, loaded through the US-027a loader; `window.ASSETS` still
@@ -231,6 +234,8 @@ if (window.ASSETS.spellFx) window.ASSETS.spellFx.attach(); // SPELL-01b: firebal
 bootMark('local overlay applied');
 const assets = AssetRegistry.fromJSON(bundle, window.ASSETS);
 bootMark('AssetRegistry built');
+bootStages.enter('adapter');
+if (bootCard) bootCard.setStageLines(bootStages.cardText());
 if (bootProg) { bootProg.phase('renderer'); await bootPaint(); }
 
 // ART-01a (architecture.md 37.18 item 2): `?look=<key>` selects the active
@@ -340,7 +345,7 @@ const tCR = bootNow();
 const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
   shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0',
-  onCompileProgress: bootProg ? (done, total) => bootProg.count('compile', done, total) : undefined }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
+  onCompileProgress: (done, total) => { bootStages.enter('pipelines'); if (bootCard) bootCard.setStageLines(bootStages.cardText()); if (bootProg) bootProg.count('compile', done, total); } }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
 bootSpan('createRenderer total (' + rendererInfo.label + ')', tCR);
 if (bootProg) { bootProg.phase('engine'); await bootPaint(); }
 const tCE = bootNow();
@@ -807,6 +812,8 @@ if (gpuBlocked) {
     console.error(error);
   });
 } else {
+  bootStages.enter('world');
+  if (bootCard) bootCard.setStageLines(bootStages.cardText());
   if (bootProg) { bootProg.phase('world'); await bootPaint(); } // the world build below is one synchronous block: paint the phase first
   runGame('world'); // default: US-025 World (world_m1, or ?level=<name> for a bare single-level world)
   if (bootProg) bootProg.phase('frame');
@@ -1718,7 +1725,14 @@ async function runGame(mode, cinematic = null) {
 
     const lastRenderMs = performance.now() - renderStart;
     if (bootFirst && bootProg) bootProg.finish();
-    if (bootFirst) { bootPrinted = true; bootMark('first frame rendered'); freezeBootMarks(); console.info('[boot] breakdown (ms since navigation start)\n' + bootReport()); window.__bootReport = bootReport(); }
+    if (bootFirst) {
+      bootPrinted = true; bootMark('first frame rendered'); freezeBootMarks();
+      console.info('[boot] breakdown (ms since navigation start)\n' + bootReport()); window.__bootReport = bootReport();
+      bootStages.enter('meshes'); // in case the mesh prefetch above was a no-op (lazy loading off) and never advanced the timer
+      bootStages.finish();
+      bootStageAtFrame = bootNow(); // S8-B1-20: F3 shows the stage breakdown for 10 s after this point, then drops it
+      console.info(`[boot] stage total: ${bootStages.total().toFixed(0)} ms\n${bootStages.cardText()}`);
+    }
     // US-018: the overlay text is only ever built while it will actually be
     // shown (`shouldRefresh` = visible + <= 4 Hz) - `?bench=1` builds/owns
     // its own overlay text instead (dev/perfBench.js), so it skips this.
@@ -1774,6 +1788,8 @@ async function runGame(mode, cinematic = null) {
   // MESH-LOAD-01: lazy meshes near the (possibly save-restored) spawn point load now, behind the boot card's
   // 'frame' phase - never on the first rendered frame. `playerHandle` is only null after a failed load
   // (guardLoad already reported it via fatalError); skip rather than throw on top of that.
+  bootStages.enter('meshes');
+  if (bootCard) bootCard.setStageLines(bootStages.cardText());
   if (playerHandle) await prefetchLazyMeshesAtBoot(bundle.lazyMeshes, engine.world, playerHandle.data.transform);
 
   if (wantAutoQuality && mode === 'world' && !cinematic && resolvedQuality) startAutoBench(resolvedQuality.name, false); // GFX-02
@@ -1798,11 +1814,14 @@ async function runGame(mode, cinematic = null) {
   }
 }
 
-/** F3: first-frame time + the 6 longest spans (full table: console / window.__bootReport). */
+/** F3: first-frame time + the 6 longest spans (full table: console / window.__bootReport). S8-B1-20: plus the
+ * per-stage ms breakdown (bootStages.cardText()) and the stage total, shown for 10 s after the first frame only. */
 function bootSummary() {
   const e = bootEntries(), last = e.length ? e[e.length - 1].t : 0;
   const top = e.filter((x) => x.ms > 0).sort((a, b) => b.ms - a.ms).slice(0, 6).map((x) => `${x.label.replace(/ \(.*$/, '')} ${x.ms.toFixed(0)}`).join(', ');
-  return `first frame ${last.toFixed(0)} ms; top spans: ${top}`;
+  let s = `first frame ${last.toFixed(0)} ms; top spans: ${top}`;
+  if (bootNow() - bootStageAtFrame < 10000) s += `\nstages (total ${bootStages.total().toFixed(0)} ms): ${bootStages.cardText().replace(/\n/g, ', ')}`;
+  return s;
 }
 
 function round2(n) {
