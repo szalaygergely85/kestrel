@@ -129,8 +129,7 @@ picker is open) cancels it.
 ## Keyboard help overlay
 
 Press `H` to toggle an in-viewport list of every key above (handy full-screen
-or when the side panel is out of view); press `H` again, or just keep
-working, to dismiss it. The side panel also always shows a short version of
+or when the side panel is out of view); press `H` again to dismiss it. The side panel also always shows a short version of
 the same list.
 
 `F3` toggles the debug overlay (fps, frame time, camera pose, current snap,
@@ -145,12 +144,10 @@ hovered cell, pick result, present count).
   Save button is disabled (with the reason shown) whenever the current
   content wouldn't actually load in the game - a broken id reference, a bad
   number, etc.
-- **The editor never writes into `content/` for you.** Every save is either a
-  native "Save As" (you choose where) or a browser download - it can't
-  silently overwrite the checked-in `content/*.json` files the game loads.
-  If you want your edit to ship, save the file, look at the diff, and copy it
-  into `content/` yourself (or open the download in place of the existing
-  file) - that's a deliberate manual step, not an oversight.
+- For world/level edits, choose the corresponding `content/` file in Save As,
+  or copy the downloaded JSON there, then review the diff. Prefab Save asks
+  for the `content/` directory and writes the prefab plus its manifest entry
+  (see Prefabs below); its download fallback needs both files copied into place.
 - **Load** (button): opens a `.json` file you saved earlier (or hand-edited)
   and replaces the matching in-memory document with it, after validating it
   the same way Save does. This clears the undo history.
