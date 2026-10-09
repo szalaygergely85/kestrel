@@ -6,10 +6,13 @@
 //   3. compaction by band into dst0 (band 0) / dst1 (band 1) with atomicAdd on the batch's indirect-args slot (word +1 = instanceCount).
 // Band 2 never mutates anything but `band[i]`. The mesh shadow budget (shadows.meshCastM / meshCastCap, opt-in) is not part of this kernel: it only
 // applies to placed kind-9 props (MeshGroupSet), never to instanced groups, and is off by default. Order of the drawn rows is not stable (atomics).
+// ALPHA-01f (d): same per-range args extension as cull.wgsl.js (`rangeCount0`/`rangeCount1`, contiguous ARGS_WORDS-apart records after
+// slot0/slot1) - needed once masked groups stop collapsing to `DRAW_FLAG_ONE_PART` in the shadow caster loop (38.9/ALPHA-01f (c) NEEDS),
+// so a masked shadow caster's opaque + masked ranges each get their own args record sharing one instanceCount. 0/1 = today's single record.
 // Bindings: @group(0) 0 src (read), 1 band (rw, u32 per instance), 2 dst0, 3 dst1, 4 args (rw atomic); @group(1) @binding(0) CullShadowU. Workgroup 64.
 import { defineUniformBlock } from './uniformBlock.js';
 import { INSTANCE_STRIDE } from '../../../mesh/instances.js';
-import { CULL_AABB_FN, CULL_WORKGROUP } from './cull.wgsl.js';
+import { CULL_AABB_FN, CULL_ARGS_WORDS, CULL_WORKGROUP } from './cull.wgsl.js';
 
 export const CULL_SHADOW_BLOCK = defineUniformBlock('CullShadowU', [
   { name: 'planes', type: 'vec4', count: 6 }, // shadow ortho frustum planes (a, b, c, d; inside iff a x + b y + c z + d >= 0)
@@ -20,6 +23,9 @@ export const CULL_SHADOW_BLOCK = defineUniformBlock('CullShadowU', [
   { name: 'slot1', type: 'u32' },             // first word of the band-1 args slot
   { name: 'pad', type: 'u32' },
   { name: 'swayPad', type: 'f32' },           // S8-B2-06: metres added to R in the sun-box plane test (SWAY_MAX while sway is on, else 0)
+  { name: 'rangeCount0', type: 'u32' },       // ALPHA-01f (d): mesh ranges sharing band-0's compacted instances, same contiguous-block rule as
+                                               // cull.wgsl.js CullU.rangeCount0 (masked shadow casters: opaque + masked range); 0 or 1 = today's single record
+  { name: 'rangeCount1', type: 'u32' },       // same for band 1
 ]);
 
 export const CULL_SHADOW_BUFFERS = Object.freeze(['read', 'rw', 'rw', 'rw', 'rw']);
@@ -32,6 +38,7 @@ export const CULL_SHADOW_WGSL = `${CULL_SHADOW_BLOCK.wgsl}
 @group(0) @binding(4) var<storage, read_write> args: array<atomic<u32>>;
 @group(1) @binding(0) var<uniform> u: CullShadowU;
 const STRIDE: u32 = ${INSTANCE_STRIDE}u;
+const ARGS_WORDS: u32 = ${CULL_ARGS_WORDS}u;
 
 ${CULL_AABB_FN}// instances.js fillShadowBands band update (hysteresis +-h around lod0M / castM)
 fn bandUpdate(d: f32, prev: u32) -> u32 {
@@ -62,9 +69,11 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
   if (aabbOutside(tx, ty, tz)) { return; }
   if (b == 1u) {
     let w1 = atomicAdd(&args[u.slot1 + 1u], 1u) * STRIDE;
+    for (var r = 1u; r < u.rangeCount1; r++) { atomicAdd(&args[u.slot1 + r * ARGS_WORDS + 1u], 1u); } // ALPHA-01f (d): per-range args, same rule as cull.wgsl.js
     for (var c = 0u; c < STRIDE; c++) { dst1[w1 + c] = src[o + c]; }
   } else {
     let w0 = atomicAdd(&args[u.slot0 + 1u], 1u) * STRIDE;
+    for (var r = 1u; r < u.rangeCount0; r++) { atomicAdd(&args[u.slot0 + r * ARGS_WORDS + 1u], 1u); }
     for (var c = 0u; c < STRIDE; c++) { dst0[w0 + c] = src[o + c]; }
   }
 }
