@@ -1485,7 +1485,7 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
 | ID | Title | Pri | Status | Files |
 |---|---|---|---|---|
 | CHARGEN-01 | Human kit v0: 22-bone skeleton, base `m_avg` (head + jaw, underwear), slots, skin/hair/dye ramps + preview | P1 | todo [PC-B designer, 0.75 d] | `content/chargen/human.charkit.json`, `design/chargen/*`, `design/palette.js` (append), `design/preview/chargen_kit.html` |
-| CHARGEN-02 | `engine/chargen`: validateKit, validateRecipe, composeCharacter | P1 | todo [PC-B B2, 0.75 d] -> arch-review | `engine/chargen/*.js` + tests + fixture kit, `engine/index.js` |
+| CHARGEN-02 | `engine/chargen`: validateKit, validateRecipe, composeCharacter | P1 | arch-review [PC-B B2, 0.75 d] | `engine/chargen/*.js` + tests + fixture kit, `engine/index.js` |
 | CHARGEN-03 | `engine/chargen`: meshCharacter (per-bone greedy -> RiggedModel), sampleClip, collapseRig | P1 | todo [PC-B B2, 0.75 d] -> arch-review | `engine/chargen/mesh.js`, `clip.js`, `collapse.js` + tests |
 | CHARGEN-04a | Master clips on 22 bones: idle, walk, run, talk, listen, wave | P1 | todo [PC-B designer, 0.75 d] | kit JSON, preview |
 | CHARGEN-04b | Piece set 1 + base `f_avg` (3 hair, 2 beard, 3 top, 2 legs, 2 feet, 1 hat, 1 hood) | P1 | todo [PC-B designer, 0.75 d] | kit JSON, preview |
@@ -1532,7 +1532,7 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
 - [ ] Every new key is appended to `design/palette.js`.
 - [ ] `design/preview/chargen_kit.html` shows the base in all 5 tones. The owner OKs the realism before CHARGEN-04.
 
-### CHARGEN-02 Compose  [P1] [todo] [PC-B B2]
+### CHARGEN-02 Compose  [P1] [arch-review] [PC-B B2]
 - [ ] `validateKit` reports each of these, with one fixture per rule:
   - an unknown bone;
   - a base voxel outside every bone box;
@@ -1542,6 +1542,8 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
 - [ ] `composeCharacter` follows 38.29 item 4: compose order, `hides`, `thick` growth with bone inheritance.
 - [ ] Two runs give byte-identical output.
 - [ ] `engine/chargen` imports nothing outside `engine/`.
+
+- Note (dev): `engine/chargen/{kit,recipe,compose,index}.js` + `chargen.test.js` (49 checks, fixture kit), exported from `engine/index.js`. Kit JSON shape is in the `kit.js` header (bases.layers = string[z][y]; stretchRows = int z rows; shells t = 0 at box top). Choices to confirm: stretch row is forbidden if its base voxels belong to any bone outside Hips/Spine/Left+RightLowerLeg; >255 materials = worst case (widest ramp per group + fixed keys) in validateKit, hard throw in compose; `hides` skips the hidden slots; thick n also repaints the original surface. Height/age/build/randomRecipe left to CHARGEN-05.
 
 ### CHARGEN-03 Mesh and clips  [P1] [todo] [PC-B B2]
 - [ ] `meshCharacter` output:
