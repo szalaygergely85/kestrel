@@ -139,6 +139,7 @@ export function createFrameRenderer({ engine, rt, pipeline = null, assets, idleS
       }
       fb.gpu = !!pipeline && pipeline.frameComplete && rt.gpuActive;
       voxelPool.collect(world, cam);
+      if (engine.feedVoxels) engine.feedVoxels(voxelPool, cam); // WILD-05: ambient fauna pushes (before project)
       if (!fb.gpu) voxelPool.project(cam, rt, 'mesh');
       if (engine.feedDetail) engine.feedDetail(cam);
       fb.frameNo++;
