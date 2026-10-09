@@ -27,6 +27,7 @@ const W = (n) => CULL_BLOCK.field(n).word;
 const WS = (n) => CULL_SHADOW_BLOCK.field(n).word; // WG-4b shadow mode block
 const PLANES = W('planes'), EYE = W('eye'), LODROW = W('lodRow'), PARAMS = W('params'), COUNT = W('count'), LODON = W('lodOn'), SLOT0 = W('slot0'), SLOT1 = W('slot1');
 const RANGECOUNT0 = W('rangeCount0'), RANGECOUNT1 = W('rangeCount1'); // ALPHA-01f (d): mesh ranges sharing each LOD's compacted instances
+const SWAYPAD = W('swayPad'), SWAYPAD_S = WS('swayPad'); // S8-B2-05/06: metres added to R (SWAY_MAX while foliage sway is on, else 0)
 
 /** @typedef {{group: any, lod: number, mesh: any, instanceBuffer: any, argsBuffer: any, argsOffset: number, maxInstances: number, parts: any, active: boolean}} CullEntry */
 
@@ -81,6 +82,7 @@ export class WgCullPass {
     this._frame++;
     fr.castM = /** @type {any} */ (f).castM || 0; fr.hystM = /** @type {any} */ (f).hystM || 0;
     fr.planes = f.planes || null; fr.viewProj = f.viewProj || null; fr.rows = f.rows || 0; fr.eye = f.eye || null; fr.maxDistM = f.maxDistM || 0;
+    fr.swayPad = /** @type {any} */ (f).swayPad || 0; // S8-B2-05/06
     this.queue.length = 0;
     const s = this.stats; s.batches = 0; s.dispatches = 0; s.instances = 0; s.uploads = 0; s.argsBytes = 0;
     // 38.10a idle sweep: a batch no add() stamped recently (editor/reload churn) is freed, <= maxBatches compares/frame
@@ -234,6 +236,7 @@ export class WgCullPass {
         f[pa] = b.R; f[pa + 1] = fr.hystM; f[pa + 2] = 0; f[pa + 3] = 0;
         u[WS('count')] = cnt; u[WS('slot0')] = b.slot * ARGS_WORDS; u[WS('slot1')] = (b.slot + b.rc) * ARGS_WORDS; u[WS('pad')] = 0;
         u[WS('rangeCount0')] = b.rc; u[WS('rangeCount1')] = b.rc; // ALPHA-01f (d)
+        f[SWAYPAD_S] = fr.swayPad; // S8-B2-05/06
         const bd = this._bind.buffers;
         bd[0].buffer = b.src; bd[1].buffer = b.lodPrev; bd[2].buffer = b.dst[0]; bd[3].buffer = b.dst[1]; bd[4].buffer = this.argsBuffer;
         d.dispatch(this.pipeline, this._bind, Math.ceil(cnt / CULL_WORKGROUP), 1, 1);
@@ -260,6 +263,7 @@ export class WgCullPass {
       f[PARAMS] = R; f[PARAMS + 2] = g.lodCells * 0.9; f[PARAMS + 3] = g.lodCells * 1.1;
       u[COUNT] = cnt; u[LODON] = lodOn ? 1 : 0; u[SLOT0] = b.slot * ARGS_WORDS; u[SLOT1] = (b.slot + b.rc) * ARGS_WORDS;
       u[RANGECOUNT0] = b.rc; u[RANGECOUNT1] = b.rc; // ALPHA-01f (d): b.rc fixed at _create; 1 = today's single record per LOD (bit-identical)
+      f[SWAYPAD] = fr.swayPad; // S8-B2-05/06: metres added to R in the frustum test (cull.wgsl.js aabbOutside)
       const bd = this._bind.buffers;
       bd[0].buffer = b.src; bd[1].buffer = b.lodPrev; bd[2].buffer = b.dst[0]; bd[3].buffer = b.dst[1]; bd[4].buffer = this.argsBuffer;
       d.dispatch(this.pipeline, this._bind, Math.ceil(cnt / CULL_WORKGROUP), 1, 1);

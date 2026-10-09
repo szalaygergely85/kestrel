@@ -10,7 +10,7 @@ import { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFa
 import { dirFromAzEl } from '../../../core/transform.js';
 import { WgShadowPass } from './passShadow.js';
 import { SHADOW_DEPTH_COPY_WGSL, SHADOW_TERRAIN_WGSL, SHADOW_TERRAIN_BLOCK as TERRAIN_BLOCK } from '../wgsl/shadow.wgsl.js';
-import { SHADOW_Z_LINE, RASTER_Z_LINE } from '../wgsl/raster.wgsl.js';
+import { SHADOW_Z_LINE, RASTER_Z_LINE, RASTER_BLOCK } from '../wgsl/raster.wgsl.js';
 
 if (typeof global.gc !== 'function') {
   const res = spawnSync(process.execPath, ['--expose-gc', fileURLToPath(import.meta.url)], { stdio: 'inherit' });
@@ -207,4 +207,37 @@ console.log(`passShadow.test.js: all checks passed (heap +${grew} B / 1000 frame
   assert.deepEqual(dr.map((x) => x.pipe === s6.instancePipe), [true, true], 'maskReady false -> opaque instancePipe for every range');
   s6.dispose(); dev.dispose(tex); dev.dispose(vb); dev.dispose(uvb); assert.equal(m6.liveCount(), 0);
   console.log('passShadow.test.js (ALPHA-01f c): masked instanced caster ok.');
+}
+
+// S8-B2-05/06 host wiring (docs/lanes/pc-b2.md 35/97/109): per-frame wind uniforms (RASTER_BLOCK wind/windT/windK), same as passRaster.js.
+// No wind (calm field, default) -> every word stays 0 (bit-identical to before). Wind on -> words == packWindUniforms's own values.
+{
+  const { createWind } = await import('../../../world/wind.js');
+  const { packWindUniforms, SWAY_MAX } = await import('../../../mesh/sway.js');
+  const m7 = makeMockGpuDevice(), dev7 = m7.device;
+  const s7 = new WgShadowPass(dev7, { shadows: { res: 64 } });
+  const WIND = RASTER_BLOCK.field('wind').word, WIND_T = RASTER_BLOCK.field('windT').word, WIND_K = RASTER_BLOCK.field('windK').word;
+  const cam7 = { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: 0 };
+  const sun7 = { on: true, dir: dirFromAzEl(135, 40, new Float64Array(3)) };
+  const list7 = new DrawList(4); list7.begin();
+  const raster7 = { list: list7, levelCache: new LevelMeshCache(), meshCache: null, strictMatIdFor: null };
+  const calm = { structures: [], wind: createWind(null, 1) };
+  const p7 = { _light: { sun: sun7 }, _cam: cam7, _world: calm, _table: null, _palette: null, _voxelPool: null, _instances: null, terrainEnabled: false, _fb: { timeSec: 9 } };
+  s7.run(p7, raster7);
+  assert.deepEqual([...s7.u.subarray(WIND, WIND + 4)], [0, 0, 0, 0], 'no wind: wind4 words unchanged (zero)');
+  assert.deepEqual([...s7.u.subarray(WIND_T, WIND_T + 4)], [0, 0, 0, 0], 'no wind: windT4 words unchanged (zero)');
+  assert.deepEqual([...s7.u.subarray(WIND_K, WIND_K + 64)], new Array(64).fill(0), 'no wind: windK words unchanged (zero)');
+  assert.equal(s7.windOn, false);
+  const blown = { structures: [], wind: createWind({ dirDeg: 45, speed: 3, gust: { amp: 0.3, periodSec: 2, travel: 8 } }, 7) };
+  const p7b = { ...p7, _world: blown };
+  list7.begin();
+  s7.run(p7b, raster7);
+  const w4 = new Float32Array(4), t4 = new Float32Array(4), k64 = new Float32Array(64);
+  packWindUniforms(blown.wind, 9, w4, t4, k64);
+  assert.deepEqual([...s7.u.subarray(WIND, WIND + 4)], [...w4], 'wind on: wind4 == packWindUniforms twin');
+  assert.deepEqual([...s7.u.subarray(WIND_T, WIND_T + 4)], [...t4], 'wind on: windT4 == packWindUniforms twin');
+  assert.deepEqual([...s7.u.subarray(WIND_K, WIND_K + 64)], [...k64], 'wind on: windK == packWindUniforms twin');
+  assert.equal(s7.windOn, true);
+  s7.dispose();
+  console.log('passShadow.test.js (S8-B2-05/06 wind host wiring): all checks passed.');
 }

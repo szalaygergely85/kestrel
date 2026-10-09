@@ -317,3 +317,33 @@ console.log('passRaster.test.js (WG-4a): all checks passed.');
   assert.equal(m5.createCount, created);
   console.log('passRaster.test.js (PREC-01a): all checks passed.');
 }
+
+// S8-B2-05/06 host wiring (docs/lanes/pc-b2.md 35/97/109): per-frame wind uniforms (RASTER_BLOCK wind/windT/windK) + instance swayPad.
+// No wind (calm field, default) -> every word stays 0 (bit-identical to before this story). Wind on -> words == packWindUniforms's
+// own values and p._instances.swayPad == SWAY_MAX (0 when calm).
+{
+  const { createWind } = await import('../../../world/wind.js');
+  const { packWindUniforms, SWAY_MAX } = await import('../../../mesh/sway.js');
+  const m8 = makeMockGpuDevice(), dev8 = m8.device;
+  const rp2b = new WgRasterPass(dev8, { gpuCull: false });
+  const WIND = RASTER_BLOCK.field('wind').word, WIND_T = RASTER_BLOCK.field('windT').word, WIND_K = RASTER_BLOCK.field('windK').word;
+  const instStub = { swayPad: -1, addToDrawList() {}, stats: { instancesCulled: 0, instancesLod1: 0 } };
+  const mkP8 = (world) => ({ _cam: { x: 0, y: 0, z: 2, yawDeg: 0, pitchDeg: 0 }, _world: world, cols: 160, rows: 60, rt: { pxCellW: 1, pxCellH: 2 }, terrainEnabled: false,
+    _voxelPool: null, _instances: instStub, _viewModel: null, _table: null, stats: {}, _fb: { timeSec: 12.5, frameNo: 0 }, _t: { targetRaster: {}, targetVmDepth: {} } });
+  const calm = { wind: createWind(null, 1) };
+  rp2b.prepare(mkP8(calm));
+  assert.deepEqual([...rp2b.u.subarray(WIND, WIND + 4)], [0, 0, 0, 0], 'no wind: wind4 words unchanged (zero)');
+  assert.deepEqual([...rp2b.u.subarray(WIND_T, WIND_T + 4)], [0, 0, 0, 0], 'no wind: windT4 words unchanged (zero)');
+  assert.deepEqual([...rp2b.u.subarray(WIND_K, WIND_K + 64)], new Array(64).fill(0), 'no wind: windK words unchanged (zero)');
+  assert.equal(rp2b.windOn, false); assert.equal(instStub.swayPad, 0, 'no wind: swayPad 0');
+  const blown = { wind: createWind({ dirDeg: 45, speed: 3, gust: { amp: 0.3, periodSec: 2, travel: 8 } }, 7) };
+  rp2b.prepare(mkP8(blown));
+  const w4 = new Float32Array(4), t4 = new Float32Array(4), k64 = new Float32Array(64);
+  packWindUniforms(blown.wind, 12.5, w4, t4, k64);
+  assert.deepEqual([...rp2b.u.subarray(WIND, WIND + 4)], [...w4], 'wind on: wind4 == packWindUniforms twin');
+  assert.deepEqual([...rp2b.u.subarray(WIND_T, WIND_T + 4)], [...t4], 'wind on: windT4 == packWindUniforms twin');
+  assert.deepEqual([...rp2b.u.subarray(WIND_K, WIND_K + 64)], [...k64], 'wind on: windK == packWindUniforms twin');
+  assert.equal(rp2b.windOn, true); assert.equal(instStub.swayPad, SWAY_MAX, 'wind on: swayPad == SWAY_MAX');
+  rp2b.dispose();
+  console.log('passRaster.test.js (S8-B2-05/06 wind host wiring): all checks passed.');
+}

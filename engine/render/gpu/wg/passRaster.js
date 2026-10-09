@@ -14,6 +14,7 @@ import { projTerms, shearProjection, pitchedTerms, createPitchedTerms, resolvePr
 import { frustumPlanes } from '../../../mesh/culling.js';
 import { WgCullPass } from './passCull.js';
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
+import { windSwayOn, packWindUniforms, SWAY_MAX } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
 const PLANE = RASTER_BLOCK.field('planeIdOr').word, ZBASE = RASTER_BLOCK.field('zBase').word;
@@ -26,6 +27,8 @@ const M_H = RASTER_MASK_BLOCK.field('maskH').word, M_CUT = RASTER_MASK_BLOCK.fie
 const IM_X0 = RASTER_INSTANCED_MASK_BLOCK.field('maskX0').word, IM_Y0 = RASTER_INSTANCED_MASK_BLOCK.field('maskY0').word;
 const IM_W = RASTER_INSTANCED_MASK_BLOCK.field('maskW').word, IM_H = RASTER_INSTANCED_MASK_BLOCK.field('maskH').word, IM_CUT = RASTER_INSTANCED_MASK_BLOCK.field('maskCut').word;
 const ORIGIN = RASTER_BLOCK.field('origin').word, T_MODEL_REL = TERRAIN_BLOCK.field('modelRel').word;
+// S8-B2-05/06: wind/sway uniforms (RASTER_BLOCK, instanced variant only; the base/mask blocks end before them).
+const WIND = RASTER_BLOCK.field('wind').word, WIND_T = RASTER_BLOCK.field('windT').word, WIND_K = RASTER_BLOCK.field('windK').word;
 const T_MODEL = TERRAIN_BLOCK.field('model').word, T_VIEW = TERRAIN_BLOCK.field('viewProj').word;
 const T_NEAR = TERRAIN_BLOCK.field('nearMap').word, T_FAR = TERRAIN_BLOCK.field('farMap').word, T_FOOT = TERRAIN_BLOCK.field('structFoot').word;
 const T_OBJECT = TERRAIN_BLOCK.field('objectId').word, T_READY = TERRAIN_BLOCK.field('nearReady').word, T_COUNT = TERRAIN_BLOCK.field('structCount').word;
@@ -61,6 +64,9 @@ export class WgRasterPass {
     this.viewRel = new Float32Array(16); this.ox = 0; this.oy = 0;
     this.u = new Float32Array(RASTER_BLOCK.sizeWords); this.bits = new Uint32Array(this.u.buffer);
     this.baseU = new Float32Array(this.u.buffer, 0, RASTER_BASE_BLOCK.sizeWords);
+    // S8-B2-05/06: persistent views into `this.u` (construct-once, no per-frame subarray) for packWindUniforms.
+    this.windV = this.u.subarray(WIND, WIND + 4); this.windTV = this.u.subarray(WIND_T, WIND_T + 4); this.windKV = this.u.subarray(WIND_K, WIND_K + 64);
+    this.windOn = false;
     this.bindDesc = { uniforms: this.u, vertexBuffer: null, indexBuffer: null, instanceBuffer: null };
     this.clearOpts = { clear: { color: [[0, 0, 0, 0], [0, 0, 0, 0], [0x7f800000, 0, 0, 0]], depth: 1 } };
     this.vmClearOpts = { clear: { depth: 1 } };
@@ -122,7 +128,7 @@ export class WgRasterPass {
   _cullRun(p) {
     const n = this.gpuN, cull = this.cull, pair = this._pair;
     if (!n) return;
-    cull.begin({ planes: this.planes, viewProj: this.view, rows: p.rows, eye: null, maxDistM: 0 });
+    cull.begin({ planes: this.planes, viewProj: this.view, rows: p.rows, eye: null, maxDistM: 0, swayPad: this.windOn ? SWAY_MAX : 0 });
     for (let i = 0; i < n; i++) { pair[0] = this.gpuM0[i]; pair[1] = this.gpuM1[i]; this.gpuEntries[i] = cull.add(this.gpuGroups[i], pair); }
     cull.run();
   }
@@ -282,7 +288,11 @@ export class WgRasterPass {
     }
     const pool = p._voxelPool;
     if (pool) { pool.project(cam, p.rt, 'mesh'); if (pool.list.length) addVoxelInstances(list, pool, sharedVoxelMeshCache, pool.partNamesFor); }
+    // S8-B2-05/06: per-frame wind uniforms (zero when sway is off: bit-identical to before) + the cull/instance sway padding.
+    this.windOn = windSwayOn(world.wind);
+    packWindUniforms(world.wind, (p._fb && p._fb.timeSec) || 0, this.windV, this.windTV, this.windKV);
     if (p._instances) {
+      p._instances.swayPad = this.windOn ? SWAY_MAX : 0;
       this.meshDrawArg.cache = this.meshCache; this.meshDrawArg.idFor = this.strictMatIdFor || null;
       p._instances.addToDrawList(list, sharedVoxelMeshCache, this.planes, p._fb.frameNo, this.view, p.rows, this.meshDrawArg);
       p.stats.instancesCulled = p._instances.stats.instancesCulled; p.stats.instancesLod1 = p._instances.stats.instancesLod1;
