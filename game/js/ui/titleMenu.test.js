@@ -74,3 +74,19 @@ assert.equal(occupied.snapshot().selected,0,'styled confirmation still defaults 
 occupied.draw(ui); assert.equal(occupied.snapshot().mode,'confirm');
 occupied.handleKey('Escape'); assert.ok(styledAdapter.readSlot(0).save && styledAdapter.readSlot(2).save,'styled cancel retains slots');
 console.log('titleMenu: new/load/settings, keyboard/mouse, cancel/replacement/delete isolation and corrupt/denied storage PASS');
+
+// SAVE-TIME-01: Continue = newest savedAt; none have it -> first valid slot; label shows the date.
+{
+  const { newestSlot, formatSavedAt } = await import('./titleMenu.js');
+  const mk = (savedAt) => { const s = JSON.parse(JSON.stringify(save)); if (savedAt !== undefined) s.meta.savedAt = savedAt; return s; };
+  const a = createMemoryAdapter(); a.writeSlot(0, mk(1000)); a.writeSlot(1, mk(3000)); a.writeSlot(2, mk(2000));
+  const m = createTitleMenu(a); m.draw(createUiLayer({cols:160}));
+  assert.ok(m.snapshot().rows.some(r => /\d{4}-\d\d-\d\d \d\d:\d\d/.test(r.text)), 'label shows saved date');
+  m.handleKey('ArrowDown'); m.handleKey('Enter'); assert.equal(m.takeAction().slot, 1, 'Continue picks newest of 3');
+  const b = createMemoryAdapter(); b.writeSlot(1, mk()); b.writeSlot(2, mk());
+  const m2 = createTitleMenu(b); m2.draw(createUiLayer({cols:160}));
+  m2.handleKey('ArrowDown'); m2.handleKey('Enter'); assert.equal(m2.takeAction().slot, 1, 'no savedAt: first valid slot');
+  assert.equal(newestSlot([{slot:0,ok:true,meta:{}},{slot:1,ok:true,meta:{savedAt:5}}]), 1, 'old save sorts oldest');
+  assert.equal(newestSlot([{slot:0,ok:false,meta:null}]), -1);
+  assert.equal(formatSavedAt(undefined), '');
+}

@@ -50,6 +50,8 @@ events.emit('chest:opened', { id: 'chestA' });
 events.emit('inventory:added', { id: 'boar_meat', n: 1 });
 assert.equal(A.quest.objectiveText(), OBJ.beasts);
 events.emit('beast:died', { id: 'boar2' });
+assert.equal(A.quest.objectiveText(), OBJ.beasts, 'QUEST-CHAIN-02c: 5 boars needed');
+for (const id of ['boar3', 'boar4', 'boar5']) events.emit('beast:died', { id });
 assert.equal(A.quest.objectiveText(), OBJ.waystone);
 A.quest.poll(facts({ endStarted: true }), breach);
 assert.equal(A.quest.done, true, 'scripted sequence completes the demo quest');

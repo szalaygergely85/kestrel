@@ -63,3 +63,14 @@ const overflow = createPlayTime(Number.MAX_VALUE);
 assert.throws(()=>overflow.tick(Number.MAX_VALUE,true),RangeError);
 assert.equal(overflow.seconds,Number.MAX_VALUE);
 console.log('saveState: player components/hands, quest/chests/deaths, byte-stable round trip, CO-5 migration, isolated/error-safe slots and active play time PASS');
+
+// SAVE-TIME-01: savedAt written (ms epoch); old saves without it still load.
+{
+  const t0 = Date.now();
+  const fresh = collectSave(world, {});
+  assert.ok(Number.isFinite(fresh.meta.savedAt) && fresh.meta.savedAt >= t0, 'save writes meta.savedAt');
+  assert.equal(collectSave(world, { savedAt: 42 }).meta.savedAt, 42);
+  const old = structuredClone(fresh); delete old.meta.savedAt;
+  assert.doesNotThrow(() => applySave(parseGameSave(stringifyGameSave(old)), assets, {}), 'old save without savedAt loads');
+  const bad2 = structuredClone(fresh); bad2.meta.savedAt = 'x'; assert.throws(() => stringifyGameSave(bad2));
+}

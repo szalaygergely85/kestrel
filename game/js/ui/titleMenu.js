@@ -5,12 +5,29 @@ const PLATE = '#0a0b10'; // PC-A-authorised placeholder plate [10,11,16].
 const TEXT = '#e8e2d0'; // Existing title/file-notice foreground; final design is pending.
 const ascii = value => String(value).replace(/[^\x20-\x7e]/g, '?');
 
+/** SAVE-TIME-01: "2026-10-09 21:14" (local time) or '' for old saves without meta.savedAt. */
+export function formatSavedAt(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return '';
+  const d = new Date(ms), p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** SAVE-TIME-01: the slot Continue resumes = newest meta.savedAt among readable saves (missing = 0), first valid slot on ties. */
+export function newestSlot(slots) {
+  let best = null;
+  for (const s of slots) {
+    if (!s.ok || !s.meta) continue;
+    if (!best || (s.meta.savedAt || 0) > (best.meta.savedAt || 0)) best = s;
+  }
+  return best ? best.slot : -1;
+}
+
 function slotLabel(slot) {
   if (!slot.ok) return `Slot ${slot.slot + 1}: Unreadable`;
   if (!slot.meta) return `Slot ${slot.slot + 1}: Empty`;
   const minutes = Math.floor(slot.meta.playTimeSec / 60);
   const time = `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`;
-  return `Slot ${slot.slot + 1}: ${ascii(slot.meta.playerName)} - ${ascii(slot.meta.place)} - ${time}`;
+  return `Slot ${slot.slot + 1}: ${ascii(slot.meta.playerName)} - ${ascii(slot.meta.place)} - ${time}${slot.meta.savedAt ? ' - ' + formatSavedAt(slot.meta.savedAt) : ''}`;
 }
 
 /**
@@ -104,8 +121,7 @@ export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PL
     else if (row.id === 'back') root();
     else if (row.id === 'new') { mode = 'new'; selected = slots.findIndex(slot => slot.ok && !slot.meta); if (selected < 0) selected = 0; buildRows(); }
     else if (row.id === 'continue') {
-      const slot = slots[selectedSlot].ok && slots[selectedSlot].meta ? selectedSlot : slots.find(slot => slot.ok && slot.meta).slot;
-      load(slot);
+      load(newestSlot(slots));
     } else if (row.id === 'settings') emit('settings');
     else if (row.id === 'delete') ask('delete',selectedSlot);
     else if (row.id === 'slot') {
