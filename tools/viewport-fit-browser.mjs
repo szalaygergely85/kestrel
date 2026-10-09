@@ -13,7 +13,7 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (
 const port = Number(args.port); validatePort(port);
 const backends = (args.backends || 'webgl2,webgpu').split(',');
 const dprs = (args.dprs || '1,1.25,1.5').split(',').map(Number);
-const VIEWS = [[1280, 720], [1920, 969]];
+const VIEWS = [[1280, 720], [1920, 969], [1024, 768]]; // S8-B1-12: 1024x768 added for the resize/DPR/fullscreen owner-look AC
 const GRIDS = [['240x90', 1], ['240x90', 2], ['400x150', 2], ['480x180', 4]];
 const handles = {};
 function cleanup() {
