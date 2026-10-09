@@ -1,0 +1,34 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Flower_3_Single",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Flower_3_Single.mesh.bin",
+  "triCount": 285,
+  "bbox": [
+    -0.48074,
+    -0.35682,
+    -0.01833,
+    0.42587,
+    0.52072,
+    2.04987
+  ],
+  "ranges": [
+    {"count": 270, "mask": {"cutoff": 0.2, "tex": "quaternius/Leaves"}, "part": "Flower_3_Single#0", "start": 0},
+    {"count": 15, "mask": {"cutoff": 0.2, "tex": "quaternius/Flowers"}, "part": "Flower_3_Single#1", "start": 270}
+  ],
+  "matKeys": [
+    "Leaves",
+    "Flowers"
+  ],
+  "mats": {
+    "Flowers": "petal_white",
+    "Leaves": "leaf"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false,
+  "castShadow": false
+}

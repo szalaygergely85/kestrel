@@ -1,0 +1,32 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Petal_5",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Petal_5.mesh.bin",
+  "triCount": 15,
+  "bbox": [
+    -0.40095,
+    -0.37566,
+    0.00104,
+    0.43302,
+    0.41955,
+    0.28982
+  ],
+  "ranges": [
+    {"count": 15, "mask": {"cutoff": 0.2, "tex": "quaternius/Flowers"}, "part": "Petal_5#0", "start": 0}
+  ],
+  "matKeys": [
+    "Flowers"
+  ],
+  "mats": {
+    "Flowers": "petal_yellow",
+    "Leaves": "leaf"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false,
+  "castShadow": false
+}

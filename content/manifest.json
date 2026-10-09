@@ -77,11 +77,28 @@
     "meshes/quaternius/TwistedTree_2_LOD1.mesh.json",
     "meshes/quaternius/TwistedTree_1.mesh.json",
     "meshes/quaternius/TwistedTree_1_LOD1.mesh.json",
-    "terrain/overworld_far.edits.json"
+    "terrain/overworld_far.edits.json",
+    "meshes/quaternius/Fern_1.mesh.json",
+    "meshes/quaternius/Clover_1.mesh.json",
+    "meshes/quaternius/Clover_2.mesh.json",
+    "meshes/quaternius/Plant_1.mesh.json",
+    "meshes/quaternius/Plant_1_Big.mesh.json",
+    "meshes/quaternius/Plant_7.mesh.json",
+    "meshes/quaternius/Plant_7_Big.mesh.json",
+    "meshes/quaternius/Petal_1.mesh.json",
+    "meshes/quaternius/Petal_2.mesh.json",
+    "meshes/quaternius/Petal_3.mesh.json",
+    "meshes/quaternius/Petal_4.mesh.json",
+    "meshes/quaternius/Petal_5.mesh.json",
+    "meshes/quaternius/Flower_3_Group.mesh.json",
+    "meshes/quaternius/Flower_3_Single.mesh.json",
+    "meshes/quaternius/Flower_4_Group.mesh.json",
+    "meshes/quaternius/Flower_4_Single.mesh.json"
   ],
   "masks": [
     "masks/quaternius/Flowers.mask.json",
     "masks/quaternius/Leaf_Pine_C.mask.json",
+    "masks/quaternius/Leaves.mask.json",
     "masks/quaternius/Leaves_NormalTree_C.mask.json",
     "masks/quaternius/Leaves_TwistedTree_C.mask.json"
   ]
