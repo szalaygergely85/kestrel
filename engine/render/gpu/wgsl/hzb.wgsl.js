@@ -15,6 +15,7 @@ export const HZB_BLOCK = defineUniformBlock('HzbU', [
   { name: 'srcH', type: 'u32' },
   { name: 'dstW', type: 'u32' },
   { name: 'dstH', type: 'u32' },
+  { name: 'srcPitch', type: 'u32' }, // S8-B2-10a: src words per row (0 = srcW); level 0 from a padded texture copy has pitch > srcW
 ]);
 
 /** Buffer access per slot of the compute pipeline (GpuDevice ComputePipelineDesc.bindings.buffers). */
@@ -27,14 +28,15 @@ export const HZB_WGSL = `${HZB_BLOCK.wgsl}
 
 // max depth over the source texels covered by dst texel (x, y); twin: hzb.js hzbTexel
 fn hzbTexel(x: u32, y: u32) -> f32 {
+  let pitch = select(u.srcPitch, u.srcW, u.srcPitch == 0u);
   let x0 = 2u * x;
   let y0 = 2u * y;
   let x1 = select(x0 + 1u, u.srcW - 1u, x + 1u == u.dstW);
   let y1 = select(y0 + 1u, u.srcH - 1u, y + 1u == u.dstH);
-  var m = src[y0 * u.srcW + x0];
+  var m = src[y0 * pitch + x0];
   for (var yy = y0; yy <= y1; yy++) {
     for (var xx = x0; xx <= x1; xx++) {
-      m = max(m, src[yy * u.srcW + xx]);
+      m = max(m, src[yy * pitch + xx]);
     }
   }
   return m;

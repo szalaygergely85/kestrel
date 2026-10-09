@@ -207,3 +207,7 @@ Test: engine/mesh/instancedMaskAtlas.test.js (one cache entry over 3 frames, mas
 ### ALPHA-01f-fix2 ARCH CHANGES (kestrel-4) -> arch re-review
 shadowList.js passes src.maskAtlas at both meshCache.get; src.maskAtlas set in passShadow.js (literal + :271), compositor.js, GpuCellPipeline.js. instancedMaskAtlas.test.js case 1 now runs buildShadowList on the same cache (same copy, 0 warns); fails with change 1 reverted (2 FAIL), passes restored.
 --filter mesh/passShadow/compositor/shadow PASS; check-deps in run-tests PASS.
+
+### S8-B2-10a (kestrel-4) -> arch-review
+`HzbU.srcPitch` appended (block 16 -> 32 B; 0 = srcW; twin `hzbTexel/hzbDownsample(..., pitch)`). New `engine/mesh/occlusion.js` (projectAabbRect, hzbMipPick, nearDepth, aabbOccluded, instanceOccluded, occlusionPass; scratch, 0 alloc) + `occlusion.test.js` (wall culled / peeking kept / +Inf / hzbOn 0 / sway pad, 4800-instance superset vs brute force, fast turn + disocclusion (phase1 U phase2 superset, phase 2 recovers 68/101), invalid HZB, alloc). Test found a real edge bug (rect rows beyond a 1-row top level -> empty loop = "occluded"): kernel 10b must clamp BOTH rect ends to the level (`min(x0>>L, w-1)`).
+Choices: ambiguity -> conservative: rect off-screen or any corner w <= 1e-6 -> visible; viewport mapping sx=(x/w*.5+.5)*W, sy=(.5-y/w*.5)*H; fwd/eye/margin in `frame`. Tests: hzb/occlusion/wgsl suites PASS.
