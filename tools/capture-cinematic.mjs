@@ -65,7 +65,7 @@ export async function captureCinematic(opts) {
   try {
     await waitForHttp(`http://127.0.0.1:${opts.port}/`, 10000);
     profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-cinematic-'));
-    browser = spawn(binary, ['--headless=new', ...buildLaunchFlags(), '--no-sandbox', '--window-size=1280,720',
+    browser = spawn(binary, ['--headless=new', ...buildLaunchFlags({ backend: 'webgpu' }), '--no-sandbox', '--window-size=1280,720',
       `--remote-debugging-port=${opts.port + 1}`, `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore' });
     cdp = await connectCdp(opts.port + 1, 15000);
     await cdp.send('Runtime.enable'); await cdp.send('Page.enable');

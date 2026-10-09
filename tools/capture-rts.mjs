@@ -40,7 +40,7 @@ async function main() {
   handles.server = spawn('python', ['-m', 'http.server', String(port)], { cwd: ROOT, stdio: 'ignore' });
   await waitForHttp(`http://127.0.0.1:${port}/`, 10000);
   handles.profile = path.join(os.tmpdir(), 'kestrel-rts-profile-' + port);
-  handles.browser = spawn(binary, [`--remote-debugging-port=${debugPort}`, '--headless=new', ...buildLaunchFlags({}),
+  handles.browser = spawn(binary, [`--remote-debugging-port=${debugPort}`, '--headless=new', ...buildLaunchFlags({ backend: 'webgpu' }),
     '--no-sandbox', `--window-size=${winW},${winH}`, `--user-data-dir=${handles.profile}`, 'about:blank'], { stdio: 'ignore' });
   const cdp = await connectCdp(debugPort, 15000);
   await cdp.send('Page.enable'); await cdp.send('Runtime.enable');

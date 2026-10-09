@@ -24,7 +24,7 @@ export const GRID = { cols: 240, rows: 90, pxCellW: 1, pxCellH: 1 }; // GRID_DEF
 export const VARIANT_WEIGHTS = {
   CommonTree: [14, 14, 12, 10, 10], Pine: [10, 10, 8, 6, 6], TwistedTree: [1, 1, 1, 1, 1],
 };
-export const SPECIES_FAMILY = [[/oak/i, 'CommonTree'], [/birch/i, 'TwistedTree'], [/pine/i, 'Pine']];
+export const SPECIES_FAMILY = [[/oak|CommonTree/i, 'CommonTree'], [/birch|Twisted/i, 'TwistedTree'], [/pine/i, 'Pine']];
 
 /** Deterministic weighted variant (1-based) for placement index i. */
 export function pickVariant(i, weights) {
@@ -143,6 +143,7 @@ async function main() {
   const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
   const which = opt('--pose', null), lod0Cap = Number(opt('--lod0-cap', 0));
   globalThis.window = globalThis.window || globalThis;
+  if (args.includes('--trees-mesh')) globalThis.__TREES_MESH = true; // QUAT-TREES-01 flag (design/levels/overworld_far.js)
   // design content registers itself on globalThis.ASSETS (same side-effect imports as tools/cine-check.mjs)
   for (const f of ['palette', 'detail-pass', 'levels/overworld_far', 'models/lantern', 'models/lever', 'models/voxel_props', 'models/boulder', 'models/rubble', 'models/wreckage', 'models/relay', 'models/sword', 'models/m3_props', 'models/far_tower', 'models/ferrum_lights']) {
     await import(pathToFileURL(path.join(ROOT, 'design', f + '.js')).href);
@@ -157,7 +158,7 @@ async function main() {
   const lodCells = Number(opt('--lod-cells', cfg.lodCells));
   const family = new Array(sc.count);
   for (let i = 0; i < sc.count; i++) {
-    const model = cfg.species[sc.species[i]].model;
+    const sp = cfg.species[sc.species[i]], model = sp.model !== undefined ? sp.model : sp.mesh;
     const hit = SPECIES_FAMILY.find(([re]) => re.test(model));
     if (!hit) throw new Error(`mesh-tri-budget: no family for species ${model}`);
     family[i] = hit[1];
