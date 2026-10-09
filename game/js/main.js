@@ -99,6 +99,7 @@ import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js
 import { createWaterfallHooks } from './quest/waterfallHooks.js';
 import { createAmbientMotes } from './quest/ambient.js';
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
+import { createHurtFx, hurtFxEnabled } from './fx/hurtFx.js'; // HURT-FX-01 (lane B1)
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
 import { ensureInventory, validateItemDefs, migrateSword } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
@@ -167,6 +168,7 @@ try {
   const savedForBoot = autoParam === '1' && autoProvisional ? undefined : savedSettings.quality;
   resolvedQuality = resolveQuality({ param: params, saved: { quality: savedForBoot, shadowQuality: savedSettings.shadowQuality }, auto: autoProvisional });
 } catch (err) { console.warn(`[quality] presets unavailable (${err.message}) - booting without a preset`); }
+const hurtFx = createHurtFx({ enabled: hurtFxEnabled(params, isCaptureOrBench) }); // HURT-FX-01: off in capture/bench/compare and ?fx=0
 const bootOpts = resolveBootOptions({ params, resolved: resolvedQuality, savedSettings, captureLike: isCaptureOrBench, geometryCompare: isGeometryCompare,
   defaultCols: GRID_DEFAULT_COLS, shadowLevel: resolveShadowLevel });
 const gridParam = bootOpts.gridParam;
@@ -1036,6 +1038,7 @@ async function runGame(mode, cinematic = null) {
       // (`?level=<name>` ad-hoc, test_room) falls back to `rasterRing`'s own pre-existing flat-z branch.
       engine.overlay.setGroundFn(world.terrain ? (x, y) => world.terrain.groundAt(x, y) : null);
       if (vitals) vitals.dispose(); // Q9 item 1a: drop the old world's `combat:hit` listener before a new one is added below
+      hurtFx.reset();
       vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting,
         respawnPose: () => { hzb.invalidate('respawn'); return gameHooks.respawn(); }, // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
         onDied: (t) => gameHooks.emitSimple('player:died', t.x, t.y, t.z),
@@ -1396,6 +1399,7 @@ async function runGame(mode, cinematic = null) {
       if (practiceTarget) practiceTarget.step();
       if (vitals) {
         vitals.step(playerHandle.data, input.pressed(gameKeys.interact)); // US-080a1 (30.2)
+        hurtFx.step(1000 / 60, vitals.hp, !vitals.dead); // HURT-FX-01
         stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
         // US-080a1 AC5 (`?debug=1` only): F8 toggles invulnerability, F9 deals 5 HP.
         if (params.get('debug') === '1') {
@@ -1559,7 +1563,7 @@ async function runGame(mode, cinematic = null) {
       // each placed structure at its own origin internally (7.3).
       const eye = Camera.fromEntityInto(playerHandle.data, vitals ? vitals.eyeH() : undefined, renderEye, pitchClampDeg); // reused (rule 9: no per-frame Camera); US-080a2: eyeH sinks while dead
       cam.x = eye.x; cam.y = eye.y; cam.z = eye.z; cam.yawDeg = eye.yawDeg;
-      cam.pitchDeg = eye.pitchDeg + (vitals ? kickDeg(vitals, simTime) : 0) + (fbView ? fbView.kickDeg() : 0); // US-080a2 (30.2): hurt pitch kick + SPELL-01b blast kick, render eye only - never written into `look`
+      cam.pitchDeg = eye.pitchDeg + (vitals ? kickDeg(vitals, simTime) : 0) + (fbView ? fbView.kickDeg() : 0) + hurtFx.kick(); // US-080a2 (30.2): hurt pitch kick + SPELL-01b blast kick, render eye only - never written into `look`
       if (cinematic) evaluatePath(cinematic, simTime, cam);
       if (cinematicHours) applySunHours(engine.world, lightSet, cam.hour, worldSunPath, sunEnabled);
       fb.timeSec = simTime;
@@ -1705,6 +1709,7 @@ async function runGame(mode, cinematic = null) {
           // not just while dead - the end card is already covered by the `!ending` gate around this whole block.
           drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals);
           drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals);
+          hurtFx.draw(ui); // HURT-FX-01
           presentPickups(engine.world, assets.pickupStyle, fb.timeSec); // US-080b
           if (toasts && !vitals.dead && !wakeOut.inputLocked && !isMapOpen()) toasts.draw(ui, fb.timeSec); // US-091a2 loot toast
         }
