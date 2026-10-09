@@ -12,7 +12,8 @@ import {
   listOutlinerItems, frameFor, itemToWorld, worldToItem, mintId, fileKey,
 } from './doc.js';
 import { createFrame, editorRenderer } from './frame.js';
-import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose } from './camera.js';
+import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, applyViewPreset } from './camera.js';
+import { createAxisGizmo } from './axisGizmo.js';
 import { unprojectCell, rayPoint, projectPoint } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
 import { drawSelectionHighlight, drawMarkers, drawHoverOutline, drawMeshHighlightRect } from './select.js';
@@ -2236,10 +2237,28 @@ canvas.addEventListener('wheel', (e) => {
 let animate = false;
 animateToggle.addEventListener('change', () => { animate = animateToggle.checked; frame.markDirty(); });
 
+// US-068c view presets: orbit around the point VIEW_PIVOT_M ahead of the eye (no selection logic), perspective only.
+const VIEW_PIVOT_M = 10;
+function setViewPreset(name) {
+  const y = cam.yawDeg * Math.PI / 180, p = cam.pitchDeg * Math.PI / 180;
+  const focus = {
+    x: cam.x + Math.sin(y) * Math.cos(p) * VIEW_PIVOT_M,
+    y: cam.y - Math.cos(y) * Math.cos(p) * VIEW_PIVOT_M,
+    z: cam.z + Math.sin(p) * VIEW_PIVOT_M,
+  };
+  applyViewPreset(cam, name, focus, pitchClampDeg);
+  axisGizmo.update();
+  frame.markDirty();
+}
+const axisGizmo = createAxisGizmo(document.getElementById('viewport'), { getView: () => cam, onPreset: setViewPreset });
+
 function update(dt) {
   if (!editorKeysActive()) { input.endFrame(); return; }
   if (input.pressed('F3')) overlay.toggle();
-  if (input.pressed('Home')) { cam = startPose(); frame.markDirty(); }
+  if (input.pressed('Home')) { cam = startPose(); axisGizmo.update(); frame.markDirty(); }
+  if (input.pressed('Numpad7')) setViewPreset('TOP');
+  if (input.pressed('Numpad1')) setViewPreset('FRONT');
+  if (input.pressed('Numpad9')) setViewPreset('ISO');
   if (input.pressed('KeyT')) teleportToSelection();
   if (input.pressed('KeyM')) { markersOn = !markersOn; frame.markDirty(); }
   if (input.pressed('KeyH')) { helpOn = !helpOn; frame.markDirty(); } // US-063 key-help overlay
@@ -2326,6 +2345,7 @@ function update(dt) {
   const changed = updateCamera(cam, input, dt, { speed, lookDx: rmbDown ? dx : 0, lookDy: rmbDown ? dy : 0, pitchClampDeg });
   if (changed) {
     frame.markDirty();
+    axisGizmo.update();
     savePoseDebounced(cam);
   }
   input.endFrame();
