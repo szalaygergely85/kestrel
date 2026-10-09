@@ -82,6 +82,7 @@ import { wireTelegraphs, telegraphsEnabled } from './fx/telegraphWire.js'; // TE
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
+import { createBeastAnim } from './quest/beastAnim.js'; // ANIM-STATE-WIRE-01
 import { questOverlayStyles } from './quest/overlayStyles.js';
 import { createVitals } from './quest/sim/vitals.js'; // US-080a1/a2 (architecture.md 30.2)
 import { createTargeting } from './quest/targeting.js'; // US-128b (architecture.md 29.2)
@@ -102,6 +103,7 @@ import { createWaterfallHooks } from './quest/waterfallHooks.js';
 import { createAmbientMotes } from './quest/ambient.js';
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
 import { createHitStop, hitStopEnabled } from './fx/hitStop.js'; // HITSTOP-01 (lane B1)
+import { createDeathFlow, deathFlowEnabled } from './fx/deathFade.js'; // DEATH-FLOW-01 part 1 (lane B1)
 import { createHurtFx, hurtFxEnabled } from './fx/hurtFx.js'; // HURT-FX-01 (lane B1): low-hearts pulse only (hurt edge + kick = US-080a2)
 import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-SPARK-WIRE (lane B1)
 import { parsePointShadows } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
@@ -113,6 +115,7 @@ import { createLoot, setLootApi } from './quest/sim/loot.js'; // US-091a2 (37.16
 import { LOOT_TABLE, LOOT_SEED_SALT } from './quest/sim/lootConfig.js';
 import { createToastView } from './quest/toastView.js';
 import { createInventoryView } from './quest/inventoryView.js'; // US-091b
+import { webGpuMissingReason, showWebGpuRequired } from './webgpuRequired.js'; // WG-5 prep
 import { probeGpuSupport, showWebgl2RequiredScreen, showSoftwareRendererWarning } from './ui/webgl2Gate.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
@@ -178,6 +181,8 @@ try {
   resolvedQuality = resolveQuality({ param: params, saved: { quality: savedForBoot, shadowQuality: savedSettings.shadowQuality }, auto: autoProvisional });
 } catch (err) { console.warn(`[quality] presets unavailable (${err.message}) - booting without a preset`); }
 const hitStop = createHitStop({ enabled: hitStopEnabled(params, isCaptureOrBench) }); // HITSTOP-01: off in capture/bench(+combat)/compare and ?fx=0
+let deathRespawnDue = false; // DEATH-FLOW-01: fade finished -> next vitals.step gets a virtual [E] (its normal respawn path, pose logic untouched)
+const deathFlow = createDeathFlow({ enabled: deathFlowEnabled(params, isCaptureOrBench), onRespawn: () => { deathRespawnDue = true; } });
 const hurtFx = createHurtFx({ enabled: hurtFxEnabled(params, isCaptureOrBench) }); // HURT-FX-01: off in capture/bench/compare and ?fx=0
 const bootOpts = resolveBootOptions({ params, resolved: resolvedQuality, savedSettings, captureLike: isCaptureOrBench, geometryCompare: isGeometryCompare,
   defaultCols: GRID_DEFAULT_COLS, shadowLevel: resolveShadowLevel });
@@ -359,14 +364,22 @@ const sceneDim = createSceneDim();
 if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
 // WG-1c2: `?backend=webgpu|webgl2` (default webgl2); webgpu falls back to webgl2 with a warning (38.8a 16).
 const shadowOpts = bootOpts.shadowOpts; // GFX-01w: shadow level from the preset (resolveShadowLevel) + ?shadows= / ?shadowinst / ?shadowres / ?shadowcast overrides (ME-15e/f, D-043: map is the default)
-const occlOpt = parseOccl(params, params.get('backend') || 'webgl2');
+// WG-5 prep: `?nogl2=1` = WebGPU is required (no webgl2 fallback unless ?backend=webgl2 is explicit); default behaviour unchanged.
+const noGl2 = params.get('nogl2') === '1' && params.get('backend') !== 'webgl2';
+const backendOpt = params.get('backend') || (noGl2 ? 'webgpu' : 'webgl2');
+const occlOpt = parseOccl(params, backendOpt);
 const pointShadowOpt = parsePointShadows(params, resolvedQuality && resolvedQuality.name); // ME-16e: default OFF in every mode unless the URL sets it
 const tCR = bootNow();
-const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
+const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: backendOpt,
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
   shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.occl, pointShadows: pointShadowOpt.pointShadows, pointShadowLevel: pointShadowOpt.pointShadowLevel, // OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
   onCompileProgress: (done, total) => { bootStages.enter('pipelines'); if (bootCard) bootCard.setStageLines(bootStages.cardText()); if (bootProg) bootProg.count('compile', done, total); } }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
 bootSpan('createRenderer total (' + rendererInfo.label + ')', tCR);
+if (noGl2 && rendererInfo.backend !== 'webgpu') { // WG-5 prep: show the "WebGPU required" screen instead of the silent fallback
+  const wgp = await probeWebGpu(); // game/ probes through the engine (architecture 38.2)
+  showWebGpuRequired(document.body, { reason: webGpuMissingReason(wgp.missing.some((m) => /no navigator/.test(m)) ? {} : { gpu: {} }, { deviceFailed: wgp.available, adapter: wgp.available ? undefined : null }) });
+  throw new Error('WebGPU required (?nogl2=1): ' + rendererInfo.label);
+}
 if (bootProg) { bootProg.phase('engine'); await bootPaint(); }
 const tCE = bootNow();
 const engine = createEngine({
@@ -879,8 +892,10 @@ async function runGame(mode, cinematic = null) {
   let decalBind = null; // DECAL-01: refreshed on load/restart.
   const entityTintTable = createEntityTintTable(); // TELEGRAPH-WIRE-01 part 2: one table, reused
   let telegraphWire = null; // TELEGRAPH-WIRE-01: rebuilt on 'world:loaded'
+  let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
+  const vLocked = () => !!(vitals && vitals.inputLocked) || deathFlow.inputLocked; // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
@@ -1068,7 +1083,7 @@ async function runGame(mode, cinematic = null) {
       hurtFx.reset();
       vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting,
         respawnPose: () => { hzb.invalidate('respawn'); return gameHooks.respawn(); }, // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
-        onDied: (t) => gameHooks.emitSimple('player:died', t.x, t.y, t.z),
+        onDied: (t) => { gameHooks.emitSimple('player:died', t.x, t.y, t.z); deathFlow.died(performance.now()); },
         syncFacing: (t) => {
           if (!look) return;
           look.clearLock();
@@ -1311,7 +1326,7 @@ async function runGame(mode, cinematic = null) {
     // US-091b: the pack screen. Steps while paused too; eats every key edge while open (so M / S / N stay quiet).
     if (invView && mode === 'world' && playerHandle) {
       invView.step(dt, input, !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look
-        && !(vitals && (vitals.dead || vitals.inputLocked)) && !(questUiActive && wakeOut.inputLocked));
+        && !(vitals && (vitals.dead || vLocked())) && !(questUiActive && wakeOut.inputLocked));
     }
     if (chestHook && mode === 'world' && playerHandle) chestHook.stepUi(dt, input.pressed(gameKeys.interact)); // S8-B1-04: steps while paused too (an open card pauses the sim)
     const invOpen = !!(invView && invView.isOpen);
@@ -1325,13 +1340,13 @@ async function runGame(mode, cinematic = null) {
       if (wakeOut.inputLocked) playerHandle.data.components.body.eyeH = wakeOut.eyeH;
       mPressedEdge = input.pressed(gameKeys.map);
       stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec, !!(look && look.locked)); // BUG-NOTE-ESC-01
-      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || (vitals && vitals.inputLocked);
+      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked();
     }
     // US-038b: settings panel (S from pause, or its own entry point)
     // canOpen requires the pause overlay to actually be up (!look.locked) -
     // S is also WASD "move backward", so this must never trigger in play.
     updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !!look && !look.locked && !isMapOpen() && !invOpen });
-    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || !!(vitals && vitals.inputLocked);
+    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked();
     titleMenuActive = !!(menuHost && menuHost.active);
     const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || ((invOpen || cardOpen) && !ending)));
 
@@ -1359,7 +1374,7 @@ async function runGame(mode, cinematic = null) {
       if (paused) { duckAudio(); if (hands) hands.disarm(); } else { unduckAudio(); resetSimAccumulator(engine); } // HANDS-01b: the sim does not step while paused, so disarm at once
     }
     if (mode === 'world' && playerHandle && !paused) {
-      if (ending || uiLocked || (vitals && vitals.inputLocked)) {
+      if (ending || uiLocked || vLocked()) {
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {
         controls.forward = (input.isDown(gameKeys.forward) ? 1 : 0) - (input.isDown(gameKeys.backward) ? 1 : 0);
@@ -1412,8 +1427,8 @@ async function runGame(mode, cinematic = null) {
       if (hands) {
         // HANDS-01b (37.8a): the router turns LMB/RMB + the gate into one `down` per item; every item sim is stepped
         // every step (down = false when it is in no hand).
-        if (!uiLocked && !paused && !ending && !(vitals && vitals.inputLocked) && input.pressed(gameKeys.swapHands)) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
-        const gateOpen = look.locked && !uiLocked && !ending && !paused && !(vitals && vitals.inputLocked);
+        if (!uiLocked && !paused && !ending && !vLocked() && input.pressed(gameKeys.swapHands)) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
+        const gateOpen = look.locked && !uiLocked && !ending && !paused && !vLocked();
         hands.step(playerHandle.data, input.isDown(gameKeys.useLeft) || input.pressed(gameKeys.useLeft), input.isDown(gameKeys.useRight) || input.pressed(gameKeys.useRight), gateOpen);
         if (fireball) { // SPELL-01a: aim = unit 3D look vector (pitch > 0 = up); trig stays here, outside sim/
           forwardOf(look.yawDeg, swordFwd);
@@ -1428,7 +1443,10 @@ async function runGame(mode, cinematic = null) {
       }
       if (practiceTarget) practiceTarget.step();
       if (vitals) {
-        vitals.step(playerHandle.data, input.pressed(gameKeys.interact)); // US-080a1 (30.2)
+        const wasDead = vitals.dead;
+        vitals.step(playerHandle.data, input.pressed(gameKeys.interact) || (deathFlow.active && deathRespawnDue)); // US-080a1 (30.2); DEATH-FLOW-01: fade end = virtual [E]
+        if (wasDead && !vitals.dead) { deathRespawnDue = false; deathFlow.respawned(performance.now()); }
+        deathFlow.step(performance.now());
         hurtFx.step(1000 / 60, vitals.hp, !vitals.dead); // HURT-FX-01
         stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
         // US-080a1 AC5 (`?debug=1` only): F8 toggles invulnerability, F9 deals 5 HP.
@@ -1669,7 +1687,7 @@ async function runGame(mode, cinematic = null) {
       // US-079a (29.1): beast notice markers, recorded fresh every frame, right before the overlay flush below.
       engine.overlay.clear();
       drawDecals(decalBind, engine.overlay, cam, fb.lights, engine.world);
-      if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles);
+      if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles, beastAnimOn ? (beastAnim || (beastAnim = createBeastAnim(16))) : undefined);
       if (targeting && !cinematic) targeting.present(engine.overlay, ovlStyles); // US-128b (29.2)
       // US-078d (30.1): hidden until the sword is actually taken (US-078a review note); no eyeFeel/bobPhase
       // system exists yet in this codebase, so `simTime` stands in as the walk-bob phase (cosmetic only).
@@ -1693,7 +1711,7 @@ async function runGame(mode, cinematic = null) {
       else if (engine.overlay.stats.ops) engine.overlay.renderCpu(cam, fb.rt.cells, fb.depth.depth);
       lap(SEC.world);
       const ending = typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
-      const uiLockedNow = questUiActive && !ending && (wakeOut.inputLocked || isMapOpen() || (vitals && vitals.inputLocked));
+      const uiLockedNow = questUiActive && !ending && (wakeOut.inputLocked || isMapOpen() || vLocked());
       // US-015 (docs/architecture.md 7.6 item 3): map-card / hint scene dim.
       // Reset every frame (so a leftover dim never bleeds into the ending
       // screen or a non-quest world), pushed only while active. CPU path
@@ -1741,6 +1759,7 @@ async function runGame(mode, cinematic = null) {
           drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals);
           drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals);
           hurtFx.draw(ui); // HURT-FX-01
+          deathFlow.draw(ui, ui.cols, ui.rows); // DEATH-FLOW-01
           presentPickups(engine.world, assets.pickupStyle, fb.timeSec); // US-080b
           if (toasts && !vitals.dead && !wakeOut.inputLocked && !isMapOpen()) toasts.draw(ui, fb.timeSec); // US-091a2 loot toast
         }
@@ -1758,7 +1777,7 @@ async function runGame(mode, cinematic = null) {
       if (invView) invView.draw(ui); // US-091b: the pack screen, over HUD + toast
       // US-080a1/a2 (30.2): death fade (CPU path, same gating as the end-card
       // scene fade above) + the death card (typed line + "[E] Wake again").
-      if (vitals && vitals.dead) {
+      if (vitals && vitals.dead && !deathFlow.active) { // DEATH-FLOW-01 part 2: the flow replaces the old fade+card (old path stays when the flow is off)
         if (!fb.gpu) applyDeathFade(fb.rt, vitals, fb.fadeLut);
         const deathCardState = computeDeathCardState(vitals, assets.uiStyle.vitals);
         drawDeathCard(ui, assets.uiStyle.vitals, deathCardState);

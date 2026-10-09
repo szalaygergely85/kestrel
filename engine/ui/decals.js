@@ -1,6 +1,8 @@
 // DECAL-01 (architecture.md 37.6): wall scrawls share the depth-tested overlay.
 import { lightAt } from '../render/lighting.js';
 
+export const DECAL_MUL_FLOOR = 0.95, DECAL_DARK_LM = 0.05, DECAL_LIT_LM = 0.25;
+
 /** Load-only: resolve style keys and text ids; all frame scratch belongs to the binding. */
 export function bindDecals(overlay, decals) {
   const styles = Int32Array.from(decals, d => overlay.styleId(d.style));
@@ -28,6 +30,10 @@ export function drawDecals(binding, overlay, cam, lights, world, drawM = 20) {
       if (bc > 1) gain = Math.min(S.fgMaxGain, gain + (bc - 1) * 0.5);
       const r = (1 + (hr - 1) * S.tint) * gain, g = (1 + (hg - 1) * S.tint) * gain, b = (1 + (hb - 1) * S.tint) * gain;
       mul = Math.max(0, Math.min(1.5, 0.2126 * r + 0.7152 * g + 0.0722 * b));
+      // DECAL-VIS-01: chalk is emissive-ish. Floor ramps in between truly dark (Lm <= 0.05: stays dark,
+      // the lantern reveals it) and ambient (Lm >= 0.25), so the scrawl stays well above the lit wall.
+      const f = DECAL_MUL_FLOOR * Math.min(1, Math.max(0, (Lm - DECAL_DARK_LM) / (DECAL_LIT_LM - DECAL_DARK_LM)));
+      if (mul < f) mul = f;
     }
     overlay.text(binding.texts[i], d.ax + 0.02 * d.nx, d.ay + 0.02 * d.ny,
       d.bx + 0.02 * d.nx, d.by + 0.02 * d.ny, z, mul, binding.styles[i]);
