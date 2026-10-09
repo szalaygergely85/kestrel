@@ -266,18 +266,10 @@ function buildDynCollider(structure, tag, normalBaseMesh, matrix12) {
  */
 export function buildWorldColliders(world) {
   const colliders = [];
-  const meshParts = [];
   for (const s of world.structures) {
     s._dynColliders = new Map();
     // Imported meshes have no grid sectors or dynamic legend tags.
-    if (s.mesh) {
-      const mesh = typeof s.mesh === 'string' ? world.assets.mesh(s.mesh) : s.mesh;
-      const frame = s.frame || makeFrame(s.origin.x, s.origin.y, s.origin.z, 0, s.yawDeg || 0);
-      const matrix12 = placementMatrix12({ frame, scale: s.scale }, new Float64Array(12));
-      const src = proxySource(mesh, s);
-      if (src) meshParts.push({ id: s.id, src, matrix12 });
-      continue;
-    }
+    if (s.mesh) continue; // merged below by buildStaticMeshCollider
     const matrix12 = translationMatrix(s.origin);
     const set = buildLevelMesh(s.level);
 
@@ -293,9 +285,28 @@ export function buildWorldColliders(world) {
       }
     }
   }
-  const merged = buildMergedMeshCollider(meshParts);
+  const merged = buildStaticMeshCollider(world);
   if (merged) colliders.push(merged);
   return colliders;
+}
+
+/**
+ * ED-MESH-01e: the merged `meshes:static` collider of all placed mesh structures (structure order = parts
+ * order, so a rebuild after an edit is bit-identical to a fresh load). `null` when nothing collides.
+ * @param {import('./World.js').World} world
+ * @returns {MeshCollider|null}
+ */
+export function buildStaticMeshCollider(world) {
+  const meshParts = [];
+  for (const s of world.structures) {
+    if (!s.mesh) continue;
+    const mesh = typeof s.mesh === 'string' ? world.assets.mesh(s.mesh) : s.mesh;
+    const frame = s.frame || makeFrame(s.origin.x, s.origin.y, s.origin.z, 0, s.yawDeg || 0);
+    const matrix12 = placementMatrix12({ frame, scale: s.scale }, new Float64Array(12));
+    const src = proxySource(mesh, s);
+    if (src) meshParts.push({ id: s.id, src, matrix12 });
+  }
+  return buildMergedMeshCollider(meshParts);
 }
 
 /** Mesh ids already warned about for colliding with > PROXY_WARN_TRIS render triangles (once per mesh). */
