@@ -1,7 +1,7 @@
 // tools/editor/ray.test.mjs - US-032 S1 (docs/architecture.md 24.13).
 // Plain Node ESM, no framework - run with `node tools/editor/ray.test.mjs`.
 import {
-  unprojectCell, projectPoint, rayPoint, decodePlaneId, rayCylinderHit, rayPickEntities, resolveVoxelSlot,
+  unprojectCell, projectPoint, screenCentreGroundHit, rayPoint, decodePlaneId, rayCylinderHit, rayPickEntities, resolveVoxelSlot,
   KIND_NONE, KIND_WALL,
 } from './ray.js';
 import { KIND_TERRAIN, KIND_MODEL, createPitchedTerms, pitchedTerms, unprojectPitched, worldToCell } from '../../engine/index.js';
@@ -28,6 +28,16 @@ const COLS = 240, ROWS = 90, PX_W = 8, PX_H = 16;
     ok(`round trip col=${col} row=${row} depth=${depth}: row`, approxEqual(proj.row, row, 1e-6), `got ${proj.row}`);
     ok(`round trip col=${col} row=${row} depth=${depth}: depth`, approxEqual(proj.depth, depth, 1e-6), `got ${proj.depth}`);
   }
+}
+
+// ---- US-068d: screen-centre ground hit (flat ground z=0) ----
+{
+  const cam = { x: 5, y: 7, z: 10, yawDeg: 0, pitchDeg: -45 };
+  const h = screenCentreGroundHit(cam, COLS, ROWS, PX_W, PX_H, () => 0);
+  ok('centre hit on z=0 ground', h && approxEqual(h.z, 0, 1e-4) && approxEqual(h.x, 5, 1e-3) && approxEqual(h.y, 7 - 10, 0.5), JSON.stringify(h));
+  const pr = projectPoint(cam, COLS, ROWS, PX_W, PX_H, h);
+  ok('hit projects back to screen centre', approxEqual(pr.col, (COLS - 1) / 2, 1e-3) && approxEqual(pr.row, (ROWS - 1) / 2, 1e-3), JSON.stringify(pr));
+  ok('level camera over flat ground: no hit', screenCentreGroundHit({ ...cam, pitchDeg: 0 }, COLS, ROWS, PX_W, PX_H, () => 0, 100) === null);
 }
 
 // ---- decodePlaneId ---------------------------------------------------------
@@ -128,13 +138,11 @@ const COLS = 240, ROWS = 90, PX_W = 8, PX_H = 16;
       ok('pitched project == engine worldToCell', approxEqual(proj.col, w2c[0]) && approxEqual(proj.row, w2c[1]));
     }
   }
-  // dda default and explicit 'dda' stay identical (shear untouched); mesh differs when pitched.
+  // default (no renderer arg) is the pitched projection
   const cam = { x: 1, y: 2, z: 3, yawDeg: 15, pitchDeg: -20 };
   const a = unprojectCell(cam, COLS, ROWS, PX_W, PX_H, 50, 30);
-  const b = unprojectCell(cam, COLS, ROWS, PX_W, PX_H, 50, 30, 'dda');
   const m = unprojectCell(cam, COLS, ROWS, PX_W, PX_H, 50, 30, 'mesh');
-  ok('dda explicit == default', a.dx === b.dx && a.dy === b.dy && a.dz === b.dz);
-  ok('mesh ray differs from shear ray at pitch', Math.abs(a.dz - m.dz) > 1e-3);
+  ok('default == mesh ray', a.dx === m.dx && a.dy === m.dy && a.dz === m.dz);
 }
 
 // ---- ED-MESH-1c: planeId encodings (DrawList levels / addVoxelInstances) ----

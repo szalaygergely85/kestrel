@@ -10,7 +10,7 @@
 import {
   HFOV_DEG, KIND_TERRAIN, KIND_MODEL, KIND_MESH,
   KIND_NONE, KIND_WALL, KIND_STEP, KIND_UPPER, KIND_FLOOR, KIND_TOP, KIND_CEIL,
-  resolveProjection, createPitchedTerms, pitchedTerms, screenRay, worldToCell,
+  createPitchedTerms, pitchedTerms, screenRay, worldToCell,
 } from '../../engine/index.js';
 
 export { KIND_NONE, KIND_WALL, KIND_STEP, KIND_UPPER, KIND_FLOOR, KIND_TOP, KIND_CEIL };
@@ -46,8 +46,8 @@ export function planeGeometry(cols, rows, pxCellW, pxCellH, pitchDeg) {
 const _terms = createPitchedTerms();
 const _grid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 const _c3 = new Float64Array(3);
-function pitchedFor(cam, cols, rows, pxCellW, pxCellH, renderer) {
-  if (resolveProjection(cam, renderer) === 'shear') return null; // pitched + ortho share the terms path (US-068d)
+// Pitched + ortho share the terms path; the old shear fallback is gone (ME-19a/c2). `renderer` is kept for call-site compat.
+function pitchedFor(cam, cols, rows, pxCellW, pxCellH) {
   _grid.cols = cols; _grid.rows = rows; _grid.pxCellW = pxCellW || 1; _grid.pxCellH = pxCellH || 1;
   return pitchedTerms(cam, _grid, _terms);
 }
@@ -58,14 +58,32 @@ function pitchedFor(cam, cols, rows, pxCellW, pxCellH, renderer) {
  * point that cell projects to.
  * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number}} cam
  */
-export function unprojectCell(cam, cols, rows, pxCellW, pxCellH, col, row, renderer = 'dda') {
-  const terms = pitchedFor(cam, cols, rows, pxCellW, pxCellH, renderer);
-  if (terms) return screenRay(terms, col, row, { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 });
-  const { dirX, dirY, rightX, rightY } = cameraBasis(cam);
-  const { planeDistY, horizonRow } = planeGeometry(cols, rows, pxCellW, pxCellH, cam.pitchDeg);
-  const a = ((2 * (col + 0.5)) / cols - 1) * TAN_HALF_HFOV;
-  const dz = (horizonRow - (row + 0.5)) / planeDistY;
-  return { ox: cam.x, oy: cam.y, oz: cam.z, dx: dirX + rightX * a, dy: dirY + rightY * a, dz };
+export function unprojectCell(cam, cols, rows, pxCellW, pxCellH, col, row, renderer = 'mesh') {
+  return screenRay(pitchedFor(cam, cols, rows, pxCellW, pxCellH), col, row, { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 });
+}
+
+/**
+ * US-068d: first terrain hit of the screen-centre ray (sync, no GPU readback). `heightAt(x,y)` = terrain
+ * heightfield. Marches 0.5 m steps to `maxDist`, then bisects. Returns {x,y,z} or null (sky / no ground).
+ * Structure AABBs are not tested (terrain only; the caller falls back to the point ahead).
+ */
+export function screenCentreGroundHit(cam, cols, rows, pxCellW, pxCellH, heightAt, maxDist = 400) {
+  const r = unprojectCell(cam, cols, rows, pxCellW, pxCellH, (cols - 1) / 2, (rows - 1) / 2);
+  const len = Math.hypot(r.dx, r.dy, r.dz) || 1;
+  const at = (t) => [r.ox + r.dx / len * t, r.oy + r.dy / len * t, r.oz + r.dz / len * t];
+  const above = (t) => { const p = at(t); return p[2] - heightAt(p[0], p[1]); };
+  if (above(0) < 0) return null; // eye below ground
+  let prev = 0;
+  for (let t = 0.5; t <= maxDist; t += 0.5) {
+    if (above(t) < 0) {
+      let lo = prev, hi = t;
+      for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (above(m) < 0) hi = m; else lo = m; }
+      const p = at((lo + hi) / 2);
+      return { x: p[0], y: p[1], z: p[2] };
+    }
+    prev = t;
+  }
+  return null;
 }
 
 /** Point on `ray` at perpendicular depth `d` (along-`dir` distance, per 24.6). */
@@ -78,21 +96,9 @@ export function rayPoint(ray, d) {
  * same equations the engine sprite pass/the casters use). Used by the round-trip test
  * and by `select.js`'s highlight-rect projection.
  */
-export function projectPoint(cam, cols, rows, pxCellW, pxCellH, point, renderer = 'dda') {
-  const terms = pitchedFor(cam, cols, rows, pxCellW, pxCellH, renderer);
-  if (terms) {
-    worldToCell(terms, point.x, point.y, point.z, _c3);
-    return { col: _c3[0], row: _c3[1], depth: _c3[2] }; // depth <= 0: behind the eye, col/row invalid
-  }
-  const { dirX, dirY, rightX, rightY } = cameraBasis(cam);
-  const { planeDistY, horizonRow } = planeGeometry(cols, rows, pxCellW, pxCellH, cam.pitchDeg);
-  const relX = point.x - cam.x;
-  const relY = point.y - cam.y;
-  const depth = relX * dirX + relY * dirY;
-  const lateral = relX * rightX + relY * rightY;
-  const colCenter = (lateral / (depth * TAN_HALF_HFOV) + 1) * (cols / 2);
-  const rowCenter = horizonRow - ((point.z - cam.z) / depth) * planeDistY;
-  return { col: colCenter - 0.5, row: rowCenter - 0.5, depth };
+export function projectPoint(cam, cols, rows, pxCellW, pxCellH, point, renderer = 'mesh') {
+  worldToCell(pitchedFor(cam, cols, rows, pxCellW, pxCellH), point.x, point.y, point.z, _c3);
+  return { col: _c3[0], row: _c3[1], depth: _c3[2] }; // depth <= 0: behind the eye, col/row invalid
 }
 
 /**

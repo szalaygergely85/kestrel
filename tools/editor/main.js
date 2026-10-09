@@ -14,7 +14,7 @@ import {
 import { createOverlayTarget } from './overlayTarget.js';
 import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, applyViewPreset, toggleOrtho, adjustOrthoHalfH, lookAlongAxis } from './camera.js';
 import { createAxisGizmo } from './axisGizmo.js';
-import { unprojectCell, rayPoint, projectPoint } from './ray.js';
+import { unprojectCell, rayPoint, projectPoint, screenCentreGroundHit } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
 import { drawSelectionHighlight, drawMarkers, drawHoverOutline, drawMeshHighlightRect } from './select.js';
 import {
@@ -2267,6 +2267,11 @@ function currentFocus() {
   const sp = selectionPoint();
   if (sp) return { x: sp.x, y: sp.y, z: sp.z };
   if (cam.projection === 'ortho') return { x: cam.x, y: cam.y, z: cam.z };
+  // 38.19 item 3: terrain hit under screen centre (sync CPU march), else the point VIEW_PIVOT_M ahead
+  try {
+    const hit = tb?.terrain && screenCentreGroundHit(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, (x, y) => tb.terrain.heightAt(x, y));
+    if (hit) return hit;
+  } catch (_) { /* fall through */ }
   const y = cam.yawDeg * Math.PI / 180, p = cam.pitchDeg * Math.PI / 180;
   return {
     x: cam.x + Math.sin(y) * Math.cos(p) * VIEW_PIVOT_M,
