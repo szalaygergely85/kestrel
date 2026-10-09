@@ -626,7 +626,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
       // US-041a (15.3 item 3): face 7 (FACE_PACKED) has the octahedral-packed normal in this slot, not a real AO distance -
       // force +Inf (kind 8 and kind 9), literal twin of detailShade.js's shadeDetailFast fix.
       var aoDA = bitcast<f32>(sgaU.w);
-      if ((kindU == ${KIND_MODEL}u || kindU == ${KIND_MESH}u) && face == ${FACE_PACKED}) { aoDA = 1.0e30; }
+      if ((kindU == ${KIND_MODEL}u && face == ${FACE_PACKED}) || kindU == ${KIND_MESH}u) { aoDA = 1.0e30; } // ME-20c: kind-9 GA.w may carry vertex AO, never an aoD
 
       let c = shadeCore(uA, vA, zA, aoDA, dudx, dvdx, dudy, dvdy, dist, face, kindU, matId, Lm);
       bSum += c.b; gbSum += c.gb; crSum += c.cr; cgSum += c.cg; cbSum += c.cb; bgKSum += c.bgK;

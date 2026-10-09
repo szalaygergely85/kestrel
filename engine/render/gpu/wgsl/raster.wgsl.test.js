@@ -217,3 +217,26 @@ console.log(`raster.wgsl.test.js: 2000 oracle probes, ${texelProbes} mask texel 
   assert.ok(mutIgnored.includes('maskDiscard(v.vUVMask'), 'the colour fragment (fs_main) still has its own, unrelated mask discard - only fs_mask_shadow was mutated');
   console.log(`raster.wgsl.test.js (ALPHA-01f c): shadow mutation tests caught cutoff widening (${diffsA}/${zeroCellsSeen} cells) and the mask-ignored regression.`);
 }
+
+// ME-20c (38.18): vertex AO stream + flag word. ao variants only; non-ao text differs from the legacy one by the flag line + '& 1u'.
+{
+  const { rasterWgsl, RASTER_FLAG_VAO } = await import('./raster.wgsl.js');
+  assert.equal(RASTER_FLAG_VAO, 2, 'RASTER_FLAG_VAO === 2');
+  for (const v of ['voxel', 'instanced', 'mask', 'instancedMask']) {
+    const a = rasterWgsl(v, { ao: true }), n = rasterWgsl(v);
+    for (const t of ['@location(11) aAo: f32', '@location(8) vAo: f32', 'o.vAo = a.aAo;', 'bitcast<u32>(v.vAo)']) assert.ok(a.includes(t), v + ': ao variant has ' + t);
+    assert.ok(!n.includes('aAo') && !n.includes('vAo'), v + ': non-ao variant has no AO stream');
+    assert.ok(n.includes('gaW = bitcast<u32>(1.0)'), v + ': non-ao writes 1.0 when the flag is set');
+  }
+  for (const v of ['static', 'cloth']) assert.throws(() => rasterWgsl(v, { ao: true }), /not available/);
+  const flagLine = 'if ((u.axisAligned & RASTER_FLAG_VAO) != 0u) { gaW = bitcast<u32>(';
+  assert.ok(RASTER_WGSL.includes(flagLine) && RASTER_MASK_WGSL.includes(flagLine) && !RASTER_CLOTH_WGSL.includes(flagLine), 'flag test present in the KIND_MESH branch (not cloth)');
+  // the flag line is the LAST statement of the KIND_MESH branch (it overrides gaW after the rounded/packed decision)
+  const iFlag = RASTER_WGSL.indexOf(flagLine), iPacked = RASTER_WGSL.indexOf('else { face = FACE_PACKED; gaW = nrmBits; }');
+  const rest = RASTER_WGSL.slice(iFlag), eol = rest.indexOf(String.fromCharCode(10));
+  assert.ok(iPacked > 0 && iFlag > iPacked && rest.slice(eol + 1, eol + 4) === String.fromCharCode(32, 32, 125), 'flag line is last in the KIND_MESH branch');
+  assert.ok(RASTER_WGSL.includes('(u.axisAligned & 1u));') && !RASTER_WGSL.includes('u.axisAligned);'), 'static/voxel packed.w masks the flag word with & 1u');
+  const attrs = rasterWgsl('instancedMask', { ao: true }).split('@location(').length - 1 - rasterWgsl('instancedMask', { ao: true }).split('struct VertexOut')[1].split('@location(').length + 1;
+  assert.ok(attrs <= 10, 'instancedMask+ao attribute count ' + attrs);
+  console.log('raster.wgsl.test.js (ME-20c): ao variants / flag line / & 1u ok.');
+}
