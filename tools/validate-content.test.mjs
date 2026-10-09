@@ -3,7 +3,8 @@
 //   node tools/validate-content.test.mjs
 //
 // Feeds `validateContent` a hand-built, deliberately broken in-memory ASSETS
-// fixture (NOT the real design/ files - those are exercised for real by
+// fixture (plus the real quest/item copy regression at the end). Other real
+// design/ files are exercised by
 // running `node tools/validate-content.mjs`, see the backlog row 30b note
 // for that result) with exactly one error of each kind the AC lists, plus a
 // clean control case that must report zero errors (guards against the
@@ -12,7 +13,8 @@
 // strict before this fixture existed).
 import { validateContent, loadQuestFiles } from './validate-content.mjs';
 import { makeOk } from '../engine/test/assert.js';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import vm from 'node:vm';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -522,6 +524,26 @@ for (const [name, breakFixture, finding] of areaCases) {
     const brokenAreas = loadQuestFiles(dir);
     ok('scanner diagnoses malformed alias JSON and retains quests', brokenAreas.quests.length === 1 && brokenAreas.areas === null && hasFinding(brokenAreas.errors, ['areas.json', 'JSON parse failed']));
   } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
+// QUEST-LOG-TEXT-CHECK-01: production copy must fit its actual HUD/card slots.
+{
+  const quest = JSON.parse(readFileSync(new URL('../content/quests/m1.quest.json', import.meta.url), 'utf8'));
+  for (const objective of quest.objectives) {
+    const path = `content/quests/m1.quest.json objectives.${objective.id}.text`;
+    ok(`${path} fits 38 chars`, typeof objective.text === 'string' && objective.text.trim().length > 0 && objective.text.length <= 38,
+      `${path}: ${JSON.stringify(objective.text)}`);
+  }
+  const context = vm.createContext({});
+  for (const file of ['palette.js', 'items.js']) vm.runInContext(readFileSync(new URL('../design/' + file, import.meta.url), 'utf8'), context);
+  const assets = context.ASSETS;
+  for (const [id, item] of Object.entries(assets.items.defs)) {
+    for (const [field, limit] of [['name', 14], ['desc', 38]]) {
+      const path = `design/items.js defs.${id}.${field}`;
+      ok(`${path} fits ${limit} chars`, typeof item[field] === 'string' && item[field].trim().length > 0 && item[field].length <= limit,
+        `${path}: ${JSON.stringify(item[field])}`);
+    }
+  }
 }
 
 console.log(`${pass} passed, ${fail} failed`);
