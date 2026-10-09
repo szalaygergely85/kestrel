@@ -1,8 +1,7 @@
 // PARTICLE-UPLOAD-03: verify the cropped particle-layer upload (passSprites.cropColumns) renders the same cells as the
-// row-band upload. Run: node tools/verify-particles.mjs 9740 [webgpu|webgl2]   (PC-B ports 9500-9999; port+1 = CDP)
+// row-band upload. Run: node tools/verify-particles.mjs 9740 [webgpu]   (PC-B ports 9500-9999; port+1 = CDP)
 // webgpu: spark bursts in front of the camera, sim frozen (look.locked=false -> pause) so frames are static, then reads
 // wgPipeline._spritesPass.readbackCells() with cropColumns on / off / on and asserts the particle cells are identical.
-// webgl2: the GL path has no cropColumns toggle -> reports skipped (exit 0); compare webgl2 vs webgpu captures by hand.
 // Prints one JSON line; exit 1 on mismatch.
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -23,7 +22,7 @@ async function main() {
   const port = Number(process.argv[2] || 9740); validatePort(port);
   if (port < 9500 || port + 1 > 9999) throw new Error('PC-B range is 9500-9999 (next port is CDP)');
   const backend = process.argv[3] || 'webgpu';
-  if (!['webgpu', 'webgl2'].includes(backend)) throw new Error('backend must be webgpu or webgl2');
+  if (!['webgpu'].includes(backend)) throw new Error('backend must be webgpu');
   const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-verify-particles-'));
   const server = spawn('python', ['-c', 'import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()', String(port)], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
   const pause = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -38,7 +37,6 @@ async function main() {
     let ready = false;
     for (let i = 0; i < 100; i++) { await pause(300); if (await evaluate(cdp, '!!window.__kestrel')) { ready = true; break; } }
     if (!ready) throw new Error('game did not boot');
-    if (backend === 'webgl2') { console.log(JSON.stringify({ backend, skipped: 'GL path has no cropColumns toggle; compare against a webgpu run' })); return; }
     await evaluate(cdp, 'window.__pin = setInterval(() => { if (window.__debug.look) window.__debug.look.locked = true; }, 30), true');
     await pause(2500);
     const sp = 'window.__debug.wgPipeline._spritesPass';

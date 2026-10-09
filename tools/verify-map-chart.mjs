@@ -1,4 +1,4 @@
-// S8-C-14: real-GPU chart preview. Run: node tools/verify-map-chart.mjs 9890 webgpu (or webgl2)
+// S8-C-14: real-GPU chart preview. Run: node tools/verify-map-chart.mjs 9890 webgpu
 import {spawn} from 'node:child_process';
 import assert from 'node:assert/strict';
 import {writeFileSync,mkdtempSync,rmSync,mkdirSync} from 'node:fs';
@@ -8,7 +8,7 @@ const port=Number(process.argv[2] || 9890), backend=process.argv[3] || 'webgpu';
 const fog=process.argv.includes('--fog');
 validatePort(port);
 if(port<9800 || port>9998)throw new Error('Lane C port must be 9800..9998');
-assert.ok(['webgpu','webgl2'].includes(backend));
+assert.ok(['webgpu'].includes(backend));
 const profile=mkdtempSync(path.join(os.tmpdir(),'kestrel-chart-'));
 const out=path.join(ROOT,'docs/test-reports/captures');mkdirSync(out,{recursive:true});
 const server=spawn('python',['-c','import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()',String(port)],{cwd:ROOT,stdio:'ignore',windowsHide:true});
@@ -23,7 +23,7 @@ try {
  let ready=false;for(let i=0;i<100;i++){await pause(300);if(await evaluate(cdp,'!!window.__mapChartPreview')){ready=true;break;}}assert.ok(ready,JSON.stringify(errors));
  async function key(code,key=code){await cdp.send('Input.dispatchKeyEvent',{type:'keyDown',code,key});await cdp.send('Input.dispatchKeyEvent',{type:'keyUp',code,key});await pause(500);}
  const state=await evaluate(cdp,`(()=>{const p=__mapChartPreview;return {info:p.info,grid:[p.rt.cols,p.rt.rows],gpu:p.rt.gl ? p.rt.gl.getParameter(p.rt.gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL) : p.info.label};})()`);
- assert.equal(state.info.backend,backend==='webgl2' ? 'gl2' : backend);assert.deepEqual(state.grid,[400,150]);assert.doesNotMatch(state.gpu,/swiftshader|software|llvmpipe/i);console.log(JSON.stringify(state));
+ assert.equal(state.info.backend,backend);assert.deepEqual(state.grid,[400,150]);assert.doesNotMatch(state.gpu,/swiftshader|software|llvmpipe/i);console.log(JSON.stringify(state));
  await key('KeyM','m');assert.equal(await evaluate(cdp,'__mapChartPreview.panel.state'),'open');
  assert.equal(await evaluate(cdp,'__mapChartPreview.view.position.code'),94);
  assert.equal(await evaluate(cdp,'(()=>{const p=__mapChartPreview;return p.panel.x0>=0 && p.panel.y0>=0 && p.panel.x0+p.panel.art.w<=p.ui.cols && p.panel.y0+p.panel.art.h<=p.ui.rows;})()'),true);

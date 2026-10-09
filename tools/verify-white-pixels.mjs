@@ -1,5 +1,5 @@
 // BUG-WHITE-PIXELS-02 repro: load the owner pose, let the sim run 3 s, screenshot, and list near-white cells in the wall region.
-// Run: node tools/verify-white-pixels.mjs 9520 [webgl2|webgpu] [--grid 480x180] [--quality low|high]
+// Run: node tools/verify-white-pixels.mjs 9520 [webgpu] [--grid 480x180] [--quality low|high]
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
@@ -13,8 +13,8 @@ const grid = opt('--grid', '480x180'), quality = opt('--quality', 'low');
 const frames = Number(opt('--frames', 120)), motion = opt('--motion', 'idle'), keys = opt('--keys', ''); // --frames N: sample N screenshots; --motion idle|jitter|strafe; --keys 'f,1' pressed once before sampling
 const port = Number(args[0] || 9520); validatePort(port);
 if (port < 9500 || port + 1 > 9574) throw new Error('PC-B lane B1 range is 9500-9574');
-const backend = args[1] || 'webgl2';
-assert.ok(['webgpu', 'webgl2'].includes(backend));
+const backend = args[1] || 'webgpu';
+assert.ok(['webgpu'].includes(backend));
 const [gc, gr] = grid.split('x').map(Number);
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-white-'));
 const out = path.join(ROOT, 'docs/test-reports/captures'); mkdirSync(out, { recursive: true });

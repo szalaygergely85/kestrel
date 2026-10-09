@@ -12,7 +12,7 @@
 // WASD input) - this story's own delta is the per-tick fog feed off the player's live transform, not physics/
 // collision (already covered by tools/route-walk-browser.mjs), so a deterministic straight-line move is enough
 // and avoids depending on 100 m of obstacle-free terrain in a known direction.
-// Run: node tools/verify-map-wire.mjs 9510 (webgpu, default) or: node tools/verify-map-wire.mjs 9510 webgl2
+// Run: node tools/verify-map-wire.mjs 9510 (webgpu, default)
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
@@ -23,7 +23,7 @@ const port = Number(process.argv[2] || 9510);
 validatePort(port);
 if (port < 9500 || port + 1 > 9574) throw new Error('PC-B lane B1 range is 9500-9574 (next port is CDP)');
 const backend = process.argv[3] || 'webgpu';
-assert.ok(['webgpu', 'webgl2'].includes(backend), 'backend must be webgpu or webgl2');
+assert.ok(['webgpu'].includes(backend), 'backend must be webgpu');
 
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-map-wire-'));
 const out = path.join(ROOT, 'docs/test-reports/captures'); mkdirSync(out, { recursive: true });
@@ -49,10 +49,10 @@ try {
   assert.ok(ready, 'world:loaded never fired: ' + JSON.stringify(errors));
   console.log('[1/9] world:loaded fired');
 
-  // webgl2: UNMASKED_RENDERER string must not name a software rasterizer. webgpu: RenderTargetWebGPU.device.adapterInfo
+  // webgpu: RenderTargetWebGPU.device.adapterInfo
   // (engine/render/createRenderer.js's own `fallback` flag, set true only for a software GPUAdapter) must be real.
   const info = await evaluate(cdp, '({backend: window.__debug.rt.backend, gpu: window.__debug.rt.gl ? window.__debug.rt.gl.getParameter(window.__debug.rt.gl.getExtension("WEBGL_debug_renderer_info").UNMASKED_RENDERER_WEBGL) : JSON.stringify(window.__debug.rt.device?.adapterInfo || null)})');
-  assert.equal(info.backend, backend === 'webgl2' ? 'gl2' : backend, JSON.stringify(info));
+  assert.equal(info.backend, backend, JSON.stringify(info));
   assert.doesNotMatch(String(info.gpu || ''), /swiftshader|software|llvmpipe/i, 'real GPU required: ' + JSON.stringify(info));
   if (backend === 'webgpu') assert.doesNotMatch(String(info.gpu || ''), /"fallback":true/, 'webgpu fell back to a software adapter: ' + JSON.stringify(info));
   console.log('[2/9] real GPU backend confirmed: ' + JSON.stringify(info));

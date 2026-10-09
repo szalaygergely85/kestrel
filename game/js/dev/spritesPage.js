@@ -7,11 +7,10 @@
 // PlayerLook (US-047 - game/js/dev/** is an allowed engine/dev.js importer).
 import {
   AssetRegistry, createEngine, GBuffer, bindShading, bindLevel, DebugOverlay,
-  integrate, Camera, renderWorld, ambientL, World, drawSprites,
+  integrate, Camera, renderWorld, World, drawSprites,
 } from '../../../engine/index.js';
 import { PlayerLook } from '../../../engine/dev.js';
-import { POSES } from '../../../tools/bench-poses.js';
-import { createSpriteSystem, spawnTestSprites, runSpriteCompareMode } from './spriteDev.js';
+import { createSpriteSystem, spawnTestSprites } from './spriteDev.js';
 
 const params = new URLSearchParams(window.location.search);
 const canvas = document.getElementById('screen');
@@ -30,19 +29,13 @@ const detailPass = params.get('detail') !== '0' ? assets.detailPass : null;
 const gbuf = new GBuffer(rt.cols, rt.rows);
 console.log(`[RenderTarget] back-end: ${rt.backend} ${rt.cols}x${rt.rows}`);
 
-const gpuPipeline = null; // WG-5b: WebGL2 pipeline removed
-
-const sprites = createSpriteSystem({ assets, rt, gpuPipeline });
-window.__debug = { input, overlay, rt, engine, gpuPipeline, sprites };
+const sprites = createSpriteSystem({ assets, rt });
+window.__debug = { input, overlay, rt, engine, sprites };
 
 const fb = {
   rt, depth: depthBuffer, palette: assets.palette, lights: null, timeSec: 0,
   gbuf, matTable, detailPass, gpu: false, renderer: 'mesh',
 };
-
-// `?source=upload`: US-029 path (CPU cast + G-buffer upload, GPU shade/edge/sprites) - see runWorld/runCompare.
-const upload = params.get('source') === 'upload';
-if (upload && gpuPipeline) gpuPipeline.setSource('upload');
 
 if (isCompare) runCompare(); else runWorld();
 
@@ -87,53 +80,25 @@ function runWorld() {
       const eye = Camera.fromEntity(playerHandle.data);
       cam.x = eye.x; cam.y = eye.y; cam.z = eye.z; cam.yawDeg = eye.yawDeg; cam.pitchDeg = eye.pitchDeg;
       fb.timeSec = simTime;
-      // `?source=upload`: US-029 path (CPU cast + G-buffer upload, GPU shade/edge/sprites).
-      fb.gpu = !!gpuPipeline && !upload;
+      fb.gpu = false;
       renderWorld(fb, world, cam);
       sprites.render(fb, world, cam); // US-030c: after the surfaces, before present()
-      if (gpuPipeline) { if (upload) gpuPipeline.frame(fb, ambientL); else gpuPipeline.frame(fb, ambientL, cam, world); }
       rt.present();
       const t = playerHandle.data.transform;
       overlay.update(engine.loop.fps, engine.loop.frameMs,
         `grid draw: ${(performance.now() - t0).toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}  backend: ${rt.backend}  shade: ${rt.gpuActive ? 'gpu' : 'cpu'}` +
-        (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` : '') +
         `\n${sprites.overlayLine()}\nworld (${t.x.toFixed(2)}, ${t.y.toFixed(2)}, ${t.z.toFixed(2)}) yaw ${look.yawDeg.toFixed(0)} pitch ${look.pitchDeg.toFixed(0)}${look.locked ? '' : ' [unlocked - click to look]'}`);
     },
   });
   window.__debug.world = world; window.__debug.playerHandle = playerHandle;
 }
 
-// `?spritecompare=1`: both paths render test_room as a World from the bench
-// poses; the CPU frame (`fb.gpu = false`) is the oracle, then the GPU
-// frame (`gpu = true` + pipeline.frame + present, sprite pass inside).
+// `?spritecompare=1`: the GPU sprite-pass parity ran on the removed WebGL2 pipeline (WG-5b). The WebGPU sprite pass is judged by
+// `?gpucompare=1`; this page only keeps the CPU world view.
 function runCompare() {
-  if (!gpuPipeline || !sprites.pass) {
-    overlay.visible = true; overlay.el.style.display = 'block';
-    overlay.el.textContent = `[spritecompare] needs an active GpuCellPipeline + GpuSpritePass (pipeline ${gpuPipeline ? 'ok' : 'inactive'}, sprite pass ${sprites.pass ? 'ok' : 'inactive'})`;
-    console.error(overlay.el.textContent);
-    return;
-  }
-  const world = World.load({ terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
-  for (const s of world.structures) bindLevel(matTable, s.level);
-  // `?source=upload`: the US-029 path (CPU cast -> G-buffer upload -> GPU
-  // shade/edge -> sprite pass) - the sprite pass only shares the DEPTH texture
-  // with the caster, so its parity can be measured independently of the
-  // US-030a DDA state. Default: the mesh scene path (`gpu`, pipeline.frame with cam/world).
-  runSpriteCompareMode({
-    sprites, fb, poses: POSES, overlay, rendererString: `${gpuPipeline.rendererString} (source: ${upload ? 'upload' : 'scene'})`,
-    renderCpu(cam) { fb.gpu = false; renderWorld(fb, world, cam); },
-    renderGpu(cam) {
-      if (upload) {
-        gpuPipeline.frame(fb, ambientL); // fb.gbuf/depth still hold the CPU cast of this very pose
-      } else {
-        fb.gpu = true;
-        renderWorld(fb, world, cam); // GPU scene frame: prime ambient light only
-        gpuPipeline.frame(fb, ambientL, cam, world);
-      }
-      rt.present(); // cell pass + sprite pass
-      return gpuPipeline.readback();
-    },
-  });
+  overlay.visible = true; overlay.el.style.display = 'block';
+  overlay.el.textContent = '[spritecompare] removed with WebGL2 (WG-5b); use ?gpucompare=1 for the WebGPU sprite pass';
+  console.error(overlay.el.textContent);
 }
 
 window.addEventListener('resize', () => rt.resize());
