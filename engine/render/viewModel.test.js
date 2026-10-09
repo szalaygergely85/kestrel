@@ -31,7 +31,13 @@ const wallVoxel = {
   version: 1, meshOnly: true, cellM: 0.1, size: [32, 2, 32], anchor: [16, 1, 16], mats: { w: 'stone' }, layers: WALL_LAYERS,
   parts: { wall: { box: [0, 0, 0, 32, 2, 32], pivot: [16, 1, 16] } },
 };
-const MODELS = { swordHeld: { voxel: A.voxelModels.swordHeld.voxel }, wall: { voxel: wallVoxel } };
+// HAND-WIRE-01 variants: same part count, other anchor + mounts (own grid origin); and a 2-part model (bad variant)
+const varVoxel = JSON.parse(JSON.stringify(A.voxelModels.swordHeld.voxel));
+varVoxel.anchor = [4.5, 1.5, 8];
+varVoxel.mounts = { tip: { at: [4.5, 1.5, 20], part: 'blade' }, mid: { at: [4.5, 1.5, 12], part: 'blade' }, guard: { at: [4.5, 1.5, 4], part: 'blade' } };
+const twoPart = JSON.parse(JSON.stringify(A.voxelModels.swordHeld.voxel));
+twoPart.parts = { blade: { box: [0, 0, 0, 9, 3, 16], pivot: [4.5, 1.5, 4.5] }, upper: { box: [0, 0, 16, 9, 3, 32], pivot: [4.5, 1.5, 20] } };
+const MODELS = { swordHeld: { voxel: A.voxelModels.swordHeld.voxel }, swordVar: { voxel: varVoxel }, swordTwo: { voxel: twoPart }, wall: { voxel: wallVoxel } };
 const registry = { keys(kind) { return kind === 'model' ? Object.keys(MODELS) : []; }, model(k) { return MODELS[k]; } };
 const idMap = new Map();
 const table = { idFor(key) { if (!idMap.has(key)) idMap.set(key, idMap.size + 1); return idMap.get(key); } };
@@ -477,6 +483,45 @@ function worldTipFromList(list) {
   const rms = Number(process.hrtime.bigint() - r0) / 1e6 / 200;
   console.log(`  JS twin extra at 240x90: ${rms.toFixed(3)} ms (budget 0.4, warn-only)`);
   if (rms > 0.4) console.warn('  WARN: JS twin view-model raster over 0.4 ms');
+}
+
+// ---- HAND-WIRE-01: variants (setVariant / warmVariants / mountEye of the drawn variant / partCount at load) -----------
+{
+  const vdef = JSON.parse(JSON.stringify(def)); vdef.variants = { alt: 'swordVar' };
+  const v = createViewModelLayer();
+  const hv = v.load('swordV', vdef, pool);
+  const d = v._defs[hv];
+  const baseMesh = d.mesh, basePm = d.pm, baseFwd = d.forward;
+  const vi = v.variantId(hv, 'alt');
+  const cl = v.clipId(hv, 'idle'), mt = v.mountId(hv, 'tip');
+  const a = new Float64Array(3), b = new Float64Array(3);
+  v.show(hv, cl, 0, false);
+  v.mountEye(hv, cl, 0, mt, a); v.mountNowEye(hv, 'tip', b);
+  ok('base: mountEye == mountNowEye', near(a[0], b[0]) && near(a[1], b[1]) && near(a[2], b[2]), `${a} vs ${b}`);
+  v.setVariant(hv, 'alt');
+  ok('setVariant swaps pm/mesh/forward', d.pm !== basePm && d.mesh !== baseMesh && d.forward !== baseFwd && d.vCur === vi);
+  const sw = d.mesh; v.setVariant(hv, vi);
+  ok('same variant is a no-op (mesh kept)', d.mesh === sw);
+  v.mountEye(hv, cl, 0, mt, a); v.mountNowEye(hv, 'tip', b);
+  ok('variant: mountEye == mountNowEye (active variant mounts)', near(a[0], b[0]) && near(a[1], b[1]) && near(a[2], b[2]), `${a} vs ${b}`);
+  v.setVariant(hv, 'alt');
+  ok('cached swap keeps the slot (no rebuild)', d.vSlots[vi].mesh === sw);
+  v.setVariant(hv, -1);
+  ok('setVariant(-1) restores the base model', d.pm === basePm && d.mesh === baseMesh && d.forward === baseFwd && d.vCur === -1);
+  v.mountEye(hv, cl, 0, mt, a);
+  v.mountNowEye(hv, 'tip', b);
+  ok('base again: mountEye == mountNowEye', near(a[0], b[0]) && near(a[1], b[1]) && near(a[2], b[2]));
+  v.warmVariants(hv);
+  ok('warmVariants with no variant set leaves the base drawn', d.vCur === -1 && d.mesh === baseMesh && d.vSlots[vi] !== null);
+  v.setVariant(hv, 'alt'); v.warmVariants(hv, ['alt']);
+  ok('warmVariants keeps the current variant', d.vCur === vi && d.mesh === sw);
+  const bad = JSON.parse(JSON.stringify(def)); bad.variants = { two: 'swordTwo' };
+  let threw = '';
+  try { createViewModelLayer().load('badV', bad, pool); } catch (e) { threw = String(e.message); }
+  ok('load throws on a variant with another part count', /parts/.test(threw), threw);
+  const bad2 = JSON.parse(JSON.stringify(def)); bad2.variants = { x: 'nope' };
+  let threw2 = false; try { createViewModelLayer().load('badV2', bad2, pool); } catch (e) { threw2 = true; }
+  ok('load throws on an unbound variant model', threw2);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

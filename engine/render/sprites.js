@@ -276,8 +276,9 @@ export class SpritePool {
   /**
    * Adds one raw sprite (model key, animation name, frame index, world
    * anchor/feet point). `billboard`: optional `{unlit, fogModel, fogMax,
-   * minCells:{w,h}, detailRows}` (architecture.md 14.4 item 7) - null for an
-   * ordinary lit sprite.
+   * minCells:{w,h}, detailRows, nearOk}` (architecture.md 14.4 item 7) - null for an
+   * ordinary lit sprite. `nearOk` (SPR T3.w, 37.8b): view-model attached only; skips the
+   * near cull but is still depth-tested; never for world sprites.
    */
   /** collect()'s internal entry: same as push() but reads the anchor from the transform (no double args, no `||` phi). */
   _pushEntity(s, t, billboard) {

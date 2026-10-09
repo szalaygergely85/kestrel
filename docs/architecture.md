@@ -4017,6 +4017,12 @@ Undo/redo: unchanged (`invert` + `applyEdit` + `applyAndSync`). Selection item: 
 
 ---
 
+### 37.8b View-model variants and near sprites (HAND-WIRE-01, HAND-FIRE-WRAP-01; architect, 2026-10-10)
+
+- **`def.variants = {name: modelKey}`** (VmDef, `engine/render/viewModel.js`): alternative bake-poses of `def.model`. Each variant model must be bound in the pool and have the same part count as the base (checked in `load()`; a mismatch throws there, not in play). `variantId(h, name)` gives the index; `setVariant(h, i|name)` swaps `pm`/`mesh`/`forward` (a field write; the first use of a variant builds its slot once, which allocates). `setVariant(h, -1)` restores the base model. Same index = no-op. `warmVariants(h, names?)` prebuilds the slots at load time and restores the variant that was current before (base when none was set).
+- **Mounts follow the drawn variant.** A variant has its own grid origin, so `mountEye` and `mountNowEye` both read `d.pm.mounts` of the ACTIVE model (mount ids are indices of the base `mountNames`; variants must carry the same mount names). `mountEye` is the pure clip-time sample without bob, `mountNowEye` the last pose plus bob.
+- **Sprite field T3.w = nearOk** (the SPR row layout of 14.4; T3.w is the free texel `spr[o+15]`, written by `SpritePool` from `billboard.nearOk`): 1 = view-model attached sprite, exempt from the 0.6 m `SPRITE_NEAR_DEPTH` cull in `drawSprites`, `sprites.wgsl` and the GLSL ref. Depth test and `MIN_DEPTH` still apply, so the hand voxels occlude it. Never set it for world sprites. `spriteNear.test.js` asserts the line in the CPU path, the GLSL ref and `SPRITES_WGSL`.
+
 ## 38. EP-WEBGPU: WebGPU backend behind `GpuDevice` (WG-0 note; architect, 2026-10-07; D-044, roadmap EP-WEBGPU)
 
 Normative for WG-1..WG-5. Amends 27.2 (device shape) and 27.11 phase 4 (ME-30..34 are re-cut into the WG steps in 38.8). The JS twin stays the only oracle (D-017); there is never a GLSL/WGSL twin pair.
