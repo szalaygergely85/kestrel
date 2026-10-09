@@ -363,6 +363,8 @@ function buildCompareRuns(ctx) {
   // rasterJS depth-only map). With `&shadows=map` every pose above also runs the map; these pin sun az 135 el 30
   // (shadows fall NW) so the casters are long and obvious. Without `&shadows=map` they are plain mesh poses.
   const SUN_135_30 = { azimuth: 135, elevation: 30 };
+  // SWAY-GC-01: fixed wind field for the `swayWindy` pose only (deterministic: explicit seed, fixed clock via the pose's timeSec).
+  const SWAY_GC_WIND = { dirDeg: 45, speed: 8, seed: 7, gust: { amp: 0.5, periodSec: 6, travel: 12 } };
   const groundZ = (x, y) => (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0);
   // signal tower shadow on terrain: eye 9 m above the grass 28 m NNW of the tower looking SE-down (into the sun), the shadow lies on the grass between
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: towerShadowGrass (ME-15c, signal tower shadow on terrain, sun az 135 el 30)',
@@ -553,6 +555,17 @@ function buildCompareRuns(ctx) {
       cam: { x, y, z: forestWorld.terrain.groundAt(x, y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: 30 },
       real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30,
       before: () => engine.setWorld(forestWorld) });
+
+    // SWAY-GC-01: the ONLY wind-on pose (world_m1 authors speed 0 = calm for every other row). Own world instance with a fixed wind def
+    // (fixed dir/speed/gust/seed, no wall clock) at a fixed fb.timeSec, so the camera view (JS twin vs GPU) uses one clock; the same pose also
+    // yields its `[shadow depth parity]` row (sun map, 10 Hz-quantised wind clock). Same camera as forestWalk -> compare the two for visible sway.
+    const swayWindWorld = loadCompareWorld({ ...assets.world('world_m1'), wind: SWAY_GC_WIND }, { realTrees: true, physics: 'mesh' });
+    swayWindWorld.terrain.bakeFarSync();
+    const swayWindLights = lightsEnabled ? buildLightSet(swayWindWorld, assets.palette) : null;
+    runs.push({ world: swayWindWorld, lights: swayWindLights, name: 'world_m1: swayWindy (SWAY-GC-01, forestWalk pose, wind on, t=7.3 s)',
+      cam: { x, y, z: swayWindWorld.terrain.groundAt(x, y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: 30 },
+      real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, timeSec: 7.3,
+      before: () => engine.setWorld(swayWindWorld) });
   }
 
   // ENV-01a2: existing comparison worlds retain detail off.
