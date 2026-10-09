@@ -79,10 +79,10 @@ sp.run(inp); assert.equal(sp.texPart._texWrites, 1, 'clean particle layer: no up
 layer.part[(3 * COLS + 7) * 4 + 3] = 5; layer.partZ[3 * COLS + 7] = 2; layer.minRow = 3; layer.maxRow = 3;
 sp.run(inp); assert.equal(sp.texPart._texWrites, 2); assert.equal(sp.texPart._lastTexWrite.data, layer.part); assert.equal(sp.texPartZ._lastTexWrite.data, layer.partZ);
 // dirty-row slice with a source offset (no subarray): row 3 only
-assert.deepEqual({ ...sp.texPart._lastTexWrite.rect }, { x: 0, y: 3, w: COLS, h: 1 }); assert.equal(sp.texPart._lastTexWrite.dataOffset, 3 * COLS * 4); assert.equal(sp.texPartZ._lastTexWrite.dataOffset, 3 * COLS);
+assert.deepEqual({ ...sp.texPart._lastTexWrite.rect }, { x: 0, y: 3, w: COLS, h: 1, stride: 0 }); assert.equal(sp.texPart._lastTexWrite.dataOffset, 3 * COLS * 4); assert.equal(sp.texPartZ._lastTexWrite.dataOffset, 3 * COLS);
 // current rows 5..6 + previous rows 2..4 -> union 2..6
 layer.minRow = 5; layer.maxRow = 6; layer.prevMinRow = 2; layer.prevMaxRow = 4; sp.run(inp);
-assert.deepEqual({ ...sp.texPart._lastTexWrite.rect }, { x: 0, y: 2, w: COLS, h: 5 }); assert.equal(sp.texPart._lastTexWrite.dataOffset, 2 * COLS * 4);
+assert.deepEqual({ ...sp.texPart._lastTexWrite.rect }, { x: 0, y: 2, w: COLS, h: 5, stride: 0 }); assert.equal(sp.texPart._lastTexWrite.dataOffset, 2 * COLS * 4);
 layer.prevMinRow = 0; layer.prevMaxRow = -1;
 layer.minRow = 0; layer.maxRow = -1;
 // a grid change of the layer recreates the two particle textures

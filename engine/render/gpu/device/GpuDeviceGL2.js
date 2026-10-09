@@ -160,7 +160,9 @@ export class GpuDeviceGL2 {
     const { format, type } = glUtilFormatFor(gl, glInternalFormat(gl, tex.format));
     const r = rect || { x: 0, y: 0, w: tex.width, h: tex.height };
     gl.bindTexture(gl.TEXTURE_2D, tex.handle);
+    if (r.stride) gl.pixelStorei(gl.UNPACK_ROW_LENGTH, r.stride); // rect.stride (texels): source row pitch of a cropped rect
     gl.texSubImage2D(gl.TEXTURE_2D, 0, r.x, r.y, r.w, r.h, format, type, /** @type {any} */ (data), dataOffset || 0);
+    if (r.stride) gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
   }
 
   /** WG-1b1 (38.3): the canvas back buffer = the default framebuffer (`beginPass` binds `handle: null`; width 0 keeps the viewport). */

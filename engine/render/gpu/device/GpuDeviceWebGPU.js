@@ -176,7 +176,7 @@ export class GpuDeviceWebGPU {
     const x = rect ? rect.x : 0, y = rect ? rect.y : 0, w = rect ? rect.w : tex.width, h = rect ? rect.h : tex.height;
     wt.dst.texture = tex.gpu; wt.dst.origin[0] = x; wt.dst.origin[1] = y;
     wt.layout.offset = dataOffset ? dataOffset * /** @type {any} */ (data).BYTES_PER_ELEMENT : 0;
-    wt.layout.bytesPerRow = w * tex.bpp; wt.layout.rowsPerImage = h;
+    wt.layout.bytesPerRow = (rect && rect.stride ? rect.stride : w) * tex.bpp; // rect.stride (texels): source row pitch of a cropped rect wt.layout.rowsPerImage = h;
     wt.size[0] = w; wt.size[1] = h;
     this.gpu.queue.writeTexture(wt.dst, data, wt.layout, wt.size);
   }
