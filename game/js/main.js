@@ -41,6 +41,7 @@ import {
 // GPU_COMPARE_POSES moved into game/js/dev/modes/gpucompare.js with the rest
 // of the `?gpucompare=` mode code.
 import { GATE_POSES } from '../../content/dev-poses.js';
+import { prefetchLazyMeshesAtBoot } from './bootPrefetchHook.js'; // MESH-LOAD-01: boot prefetchNear call
 import { MODES } from './dev/modes/index.js';
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
@@ -779,7 +780,7 @@ if (gpuBlocked) {
   if (bootProg) bootProg.phase('frame');
 }
 
-function runGame(mode, cinematic = null) {
+async function runGame(mode, cinematic = null) {
   const physics = params.get('physics') === 'grid' ? 'grid' : params.get('physics') === 'mesh' || renderer === 'mesh' ? 'mesh' : 'grid';
   const worldLoadOpts = { physics,
     realTrees: renderer === 'mesh' && physics === 'mesh' && params.get('trees') !== '0',
@@ -1734,6 +1735,11 @@ function runGame(mode, cinematic = null) {
     }
     lap(SEC.overlay);
   }
+
+  // MESH-LOAD-01: lazy meshes near the (possibly save-restored) spawn point load now, behind the boot card's
+  // 'frame' phase - never on the first rendered frame. `playerHandle` is only null after a failed load
+  // (guardLoad already reported it via fatalError); skip rather than throw on top of that.
+  if (playerHandle) await prefetchLazyMeshesAtBoot(bundle.lazyMeshes, engine.world, playerHandle.data.transform);
 
   if (wantAutoQuality && mode === 'world' && !cinematic && resolvedQuality) startAutoBench(resolvedQuality.name, false); // GFX-02
   const loop = engine.run({ update, render });
