@@ -4,7 +4,7 @@
 // shading passes (US-028) and finally the sky - replacing the manual
 // beginFrame/castSectors/.../fillSky sequence main.js used to write out by
 // hand for a single bare level (US-024).
-import { windSwayOn } from '../mesh/sway.js';
+import { windSwayOn, SWAY_SHADOW_HZ } from '../mesh/sway.js';
 import { fillSky, ambientL, primeAmbientLight } from './sky.js';
 import { shadeTerrainCells } from './terrainShade.js';
 import { computeDerivatives, shadeSurfaces } from './detailShade.js';
@@ -76,9 +76,11 @@ const sunOffState = { map: /** @type {any} */ (null), M: SUN_OFF_MATRIX, opts: /
  */
 const _windCtx = { field: /** @type {any} */ (null), t: 0 };
 /** Wind ctx for rasterDrawList (null = calm): world wind field + fb.timeSec, the clock passRaster/passShadow pack into the wind uniforms. */
-export function windCtx(world, fb) {
+export function windCtx(world, fb, quantised = false) {
   if (!windSwayOn(world.wind)) return null;
-  _windCtx.field = world.wind; _windCtx.t = fb.timeSec || 0;
+  const t = fb.timeSec || 0;
+  // quantised (sun map): same 10 Hz step as windShadowKey, so the map is a pure function of its dirty key
+  _windCtx.field = world.wind; _windCtx.t = quantised ? Math.floor(t * SWAY_SHADOW_HZ) / SWAY_SHADOW_HZ : t;
   return _windCtx;
 }
 function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, structCount) {
@@ -111,7 +113,7 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
   ctx.depthBias.factor = so.depthBias[0]; ctx.depthBias.units = so.depthBias[1];
   ctx.structFoot = meshStructFoot; ctx.structCount = structCount;
   ctx.maskAtlas = world.maskAtlas || null; // ALPHA-01b
-  ctx.wind = windCtx(world, fb); // FOLIAGE-SWAY-01: same field + clock as the GPU packWindUniforms
+  ctx.wind = windCtx(world, fb, true); // FOLIAGE-SWAY-01: same field + 10 Hz-quantised clock as the GPU shadow pass
   rasterDrawList(sunShadowList, _sunShadowTarget, ctx);
   sunMapState.map = _sunShadowTarget; sunMapState.opts = so;
   fb.sunMap = sunMapState;

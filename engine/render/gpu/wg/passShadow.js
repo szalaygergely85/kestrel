@@ -24,7 +24,7 @@ import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME, SHADOW_BAND_HYST_M } from '../
 import { WgCullPass } from './passCull.js';
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 import { resolveSunShadowOptions, SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../../shadowSun.js';
-import { windSwayOn, windShadowKey, packWindUniforms, SWAY_MAX } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
+import { windSwayOn, windShadowKey, packWindUniforms, SWAY_MAX, SWAY_SHADOW_HZ } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
 // S8-B2-05/06: wind/sway uniforms (RASTER_BLOCK, instanced variant only; same word offsets as passRaster.js).
@@ -253,7 +253,9 @@ export class WgShadowPass {
     if (!sun || !sun.on || !cam || !world) return false;
     // S8-B2-05/06: per-frame wind uniforms (zero when sway is off: bit-identical to before) + the cull/instance sway padding.
     this.windOn = windSwayOn(world.wind);
-    packWindUniforms(world.wind, (p._fb && p._fb.timeSec) || 0, this.windV, this.windTV, this.windKV);
+    const fbT = p._fb; let tSec = 0; if (fbT) { const v = fbT.timeSec; if (v) tSec = v; } // no tagged phi: avoids a per-frame HeapNumber
+    // pack the 10 Hz-quantised clock (same step as windShadowKey) so the sun map is a pure function of its key; the key itself uses raw tSec
+    packWindUniforms(world.wind, Math.floor(tSec * SWAY_SHADOW_HZ) / SWAY_SHADOW_HZ, this.windV, this.windTV, this.windKV);
     if (p._instances) p._instances.swayPad = this.windOn ? SWAY_MAX : 0;
     const list = this.list, src = this.src, st = this.stats;
     const tCpu0 = performance.now();
@@ -276,7 +278,7 @@ export class WgShadowPass {
     const Mf = this.sunMatF32;
     for (let i = 0; i < 16; i++) Mf[i] = sm.M[i];
     buildShadowList(list, raster.list, world, sm.planes, src);
-    const key = shadowInputHash(list, sm.M, world.structVersion | 0, this.key, undefined, windShadowKey(world.wind, (p._fb && p._fb.timeSec) || 0));
+    const key = shadowInputHash(list, sm.M, world.structVersion | 0, this.key, undefined, windShadowKey(world.wind, tSec));
     key[2] = this.gpuN ? this._gpuHash(cam) : 0;
     st.shadowCpuMs = performance.now() - tCpu0;
     const prev = this.keyPrev;
