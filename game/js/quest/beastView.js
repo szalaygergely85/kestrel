@@ -48,8 +48,9 @@ export function frameTFromElapsed(elapsed, durations, out) {
  * @param {any} overlay engine.overlay (RE-07)
  * @param {{beastNotice: number, beastNoticePop?: number}} styleIds resolved overlay style ids
  *   (overlay.styleId('beastNotice') and overlay.styleId('beastNoticePop'))
+ * @param {ReturnType<import('./beastAnim.js').createBeastAnim>} [anim] ANIM-STATE-WIRE-01 (?beastanim=1): clip state adapter
  */
-export function presentBeasts(sim, world, overlay, styleIds) {
+export function presentBeasts(sim, world, overlay, styleIds, anim) {
   if (!sim) return;
   for (let i = 0; i < sim.count; i++) {
     const e = sim.entities[i];
@@ -69,11 +70,13 @@ export function presentBeasts(sim, world, overlay, styleIds) {
     if (st === STATE_DYING) { clip = 'die'; playing = false; } // death timeline wins over the hurt flash
     else if (st === STATE_CORPSE) clip = 'dead';
     else if (st === STATE_SINK) { clip = 'sink'; playing = false; }
+    else if (anim) clip = anim.update(sim, i, 1000 / 60);
     else if (sim.hurtT[i] < HURT_STEPS) clip = 'hurt';
     else if (st === STATE_FLINCH) clip = 'flinch';
     else clip = STATE_CLIPS[st] || 'idle';
 
     if (clip !== v.anim) { v.anim = clip; v.frame = 0; v.t = 0; v.loop = undefined; }
+    if (anim) { v.blendFrom = anim.prevClip[i]; v.blendW = anim.weight(i); } // cross-fade data; renderer does not consume it yet
 
     if (playing) {
       v.playing = true;

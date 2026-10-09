@@ -82,6 +82,7 @@ import { wireTelegraphs, telegraphsEnabled } from './fx/telegraphWire.js'; // TE
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
+import { createBeastAnim } from './quest/beastAnim.js'; // ANIM-STATE-WIRE-01
 import { questOverlayStyles } from './quest/overlayStyles.js';
 import { createVitals } from './quest/sim/vitals.js'; // US-080a1/a2 (architecture.md 30.2)
 import { createTargeting } from './quest/targeting.js'; // US-128b (architecture.md 29.2)
@@ -891,6 +892,7 @@ async function runGame(mode, cinematic = null) {
   let decalBind = null; // DECAL-01: refreshed on load/restart.
   const entityTintTable = createEntityTintTable(); // TELEGRAPH-WIRE-01 part 2: one table, reused
   let telegraphWire = null; // TELEGRAPH-WIRE-01: rebuilt on 'world:loaded'
+  let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   const vLocked = () => !!(vitals && vitals.inputLocked) || deathFlow.inputLocked; // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
@@ -1685,7 +1687,7 @@ async function runGame(mode, cinematic = null) {
       // US-079a (29.1): beast notice markers, recorded fresh every frame, right before the overlay flush below.
       engine.overlay.clear();
       drawDecals(decalBind, engine.overlay, cam, fb.lights, engine.world);
-      if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles);
+      if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles, beastAnimOn ? (beastAnim || (beastAnim = createBeastAnim(16))) : undefined);
       if (targeting && !cinematic) targeting.present(engine.overlay, ovlStyles); // US-128b (29.2)
       // US-078d (30.1): hidden until the sword is actually taken (US-078a review note); no eyeFeel/bobPhase
       // system exists yet in this codebase, so `simTime` stands in as the walk-bob phase (cosmetic only).
