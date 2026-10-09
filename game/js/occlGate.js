@@ -1,8 +1,10 @@
 // game/js/occlGate.js - OCCL-MAIN-01: `?occl=1` parsing + HZB invalidation on camera cuts (S8-B2-10c NEEDS B1-main).
 // Default OFF everywhere (gpucompare/capture/bench included); only an explicit `?occl=1` on WebGPU turns it on.
 export function parseOccl(params, backend) {
-  const requested = params.get('occl') === '1';
-  return { requested, enabled: requested && backend === 'webgpu' };
+  const v = params.get('occl');
+  const requested = v === '1' || v === '2'; // `?occl=2` = on + occlusion stats (culledOccl etc.)
+  const on = requested && backend === 'webgpu';
+  return { requested, enabled: on, occl: on ? (v === '2' ? 2 : true) : false };
 }
 
 /**

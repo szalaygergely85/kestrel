@@ -4,7 +4,7 @@
 // shading passes (US-028) and finally the sky - replacing the manual
 // beginFrame/castSectors/.../fillSky sequence main.js used to write out by
 // hand for a single bare level (US-024).
-import { windSwayOn, SWAY_SHADOW_HZ } from '../mesh/sway.js';
+import { windSwayOn, sunWindClock } from '../mesh/sway.js';
 import { fillSky, ambientL, primeAmbientLight } from './sky.js';
 import { shadeTerrainCells } from './terrainShade.js';
 import { computeDerivatives, shadeSurfaces } from './detailShade.js';
@@ -81,7 +81,7 @@ export function windCtx(world, fb, quantised = false) {
   if (!windSwayOn(world.wind)) return null;
   const t = fb.timeSec || 0;
   // quantised (sun map): same 10 Hz step as windShadowKey, so the map is a pure function of its dirty key
-  _windCtx.field = world.wind; _windCtx.t = quantised ? Math.floor(t * SWAY_SHADOW_HZ) / SWAY_SHADOW_HZ : t;
+  _windCtx.field = world.wind; _windCtx.t = quantised ? sunWindClock(t) : t;
   return _windCtx;
 }
 function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, structCount) {

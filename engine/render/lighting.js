@@ -35,6 +35,7 @@ import { FACE_PACKED, KIND_TERRAIN, KIND_MESH } from './GBuffer.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 import { createPitchedTerms, pitchedTerms, unprojectPitched, resolveProjection, isPitchedFamily } from './projection.js';
 import { sunShadowTaps, sunShadowInfo } from './shadowSun.js';
+import { pointShadowTaps } from './shadowPoint.js';
 import { resolveLook } from './look.js'; // ART-01a (37.18 item 3)
 import { cloudShadeQP } from './cloudShadow.js'; // S8-B2-12c (38.13)
 import { cloudDriftOffset } from './sky.js';
@@ -46,6 +47,7 @@ const litGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 const litP3 = new Float64Array(3);
 // S8-B2-20 (38.17): scratch for lightSurfaces' AO tap block (zero allocation per frame/cell).
 const aoTapP = new Float64Array(3);
+const _psO = new Float64Array(3), _psP = new Float64Array(3), _psN = new Float64Array(3); // ME-16d scratch
 const aoPar = new Float64Array(14); // per-cell AO tap parameters (cam, dir, plane, horizon, normal, radius, bias)
 const aoAcc = new Float64Array(1); // tap occlusion accumulator (no boxed-double returns across calls)
 
@@ -791,7 +793,15 @@ function lightAtScratch(lights, world, out, idxList, idxCount, skipSun, sunMap) 
     // "boulder mid-roll" repro - a far step top directly above a near wall
     // face on screen), which is what let this bug through the old US-006
     // fix. `dx,dy,d` above are already `(light - P)`/its length; reuse them.
-    const vis = sampleVis(lights, i, x + (dx / d) * 0.02, y + (dy / d) * 0.02);
+    // ME-16d (38.22): shadowed point lights (lights.pointShadow = {depth, res, slot: light -> slot+1, O: stride 4 origin+far, opts}) use the
+    // map taps instead of LVIS; unset (default) runs the old line unchanged.
+    const ps = lights.pointShadow;
+    let vis;
+    if (ps && ps.slot[i] > 0) {
+      const sl = ps.slot[i] - 1, o = sl * 4;
+      _psO[0] = ps.O[o]; _psO[1] = ps.O[o + 1]; _psO[2] = ps.O[o + 2]; _psP[0] = x; _psP[1] = y; _psP[2] = z; _psN[0] = nx; _psN[1] = ny; _psN[2] = nz;
+      vis = pointShadowTaps(ps.depth, ps.res, sl, _psO, ps.O[o + 3], _psP, _psN, ps.opts) * 0.25;
+    } else vis = sampleVis(lights, i, x + (dx / d) * 0.02, y + (dy / d) * 0.02);
     if (vis <= 0) continue;
     const amt = fo * ndotl * vis;
     out[0] += lights.col[o4] * amt;

@@ -243,6 +243,15 @@ console.log(`passShadow.test.js: all checks passed (heap +${grew} B / 1000 frame
   assert.deepEqual(shadowT(9.01), shadowT(9.07), 'same 10 Hz quantum -> identical shadow wind words');
   assert.notDeepEqual(shadowT(9.07), shadowT(9.12), 'next quantum -> different shadow words');
   assert.equal(shadowT(9.07)[0], 9, 'quantised seconds = floor(t*10)/10');
+  // sun-map twin parity: packed GPU windT seconds == the JS twin's wind ctx clock (t=7.3 and exactly on a quantum boundary)
+  { const { sunWindCtx } = await import('../../../mesh/sway.js'); const out = { field: null, t: 0 };
+    for (const t of [7.3, 7.5, 9]) {
+      const ctxT = sunWindCtx(blown.wind, t, out);
+      assert.equal(ctxT.field, blown.wind, 'twin uses the same field object');
+      assert.equal(shadowT(t)[0], Math.fround(ctxT.t), 'GPU windT seconds == twin ctx clock at t=' + t);
+      assert.equal(shadowT(t)[1], blown.wind.params.P); assert.equal(shadowT(t)[2], Math.fround(blown.wind.params.travel));
+    }
+    assert.equal(sunWindCtx({ params: { speed: 0 } }, 7.3, out), null, 'calm -> null'); }
   const cam1 = new Float32Array(4), cam2 = new Float32Array(4);
   packWindUniforms(blown.wind, 9.01, w4, cam1, k64); packWindUniforms(blown.wind, 9.07, w4, cam2, k64);
   assert.notDeepEqual([...cam1], [...cam2], 'camera raster words stay on the live time');

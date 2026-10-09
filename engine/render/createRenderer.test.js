@@ -32,3 +32,12 @@ try {
   }
 }
 console.log('createRenderer.test: WebGPU failure returns WebGL2 target and fallback label PASS');
+// POINTSHADOW-WIRE-01: option forwarding into WgCellPipeline (the gl2 path never calls wgPipelineOpts -> no-op)
+{
+  const { wgPipelineOpts } = await import('./createRenderer.js');
+  assert.equal(wgPipelineOpts({ occl: true, pointShadows: false, pointShadowLevel: 'high' }).pointShadows, false);
+  const on = wgPipelineOpts({ occl: true, pointShadows: { n: 4 }, pointShadowLevel: 'high' });
+  assert.deepEqual(on.pointShadows, { n: 4 }); assert.equal(on.pointShadowLevel, 'high'); assert.equal(on.occl, true);
+  assert.equal(wgPipelineOpts({}).pointShadows, undefined); // pipeline default = off
+}
+console.log('createRenderer.test: pointShadows forwarding PASS');
