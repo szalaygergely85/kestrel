@@ -233,7 +233,7 @@ Tool generates a decimated LOD1 candidate for a mesh and a side-by-side preview 
 Files: `tools/mesh-lod-preview.mjs`, `design/preview/` page.
 
 ### S8-B2-12 Cloud shadows on the sun term [P2, ~0.75 d, deps: S8-B2-05]
-ARCH-NOTE NEEDED (small): `sunlit` is a bit in the LIGHT rgba32uint word (`sunlit | litCount<<8 | sunN<<SUN_N_SHIFT`), not a float - scale the sun contribution to L (and decide sunN), keep the bit; uniform slot. Wind source = existing `engine/world/wind.js`. Scrolling low-frequency noise multiplies `sunlit` in the light module (strength uniform, default 0); wind direction moves it.
+NOTE WRITTEN: architecture.md 38.13 (PC-B 5th agent, PC-A to ratify) - split 12a light pass ~0.6 d / 12b terrain+water consumers ~0.35 d; was: `sunlit` is a bit in the LIGHT rgba32uint word (`sunlit | litCount<<8 | sunN<<SUN_N_SHIFT`), not a float - scale the sun contribution to L (and decide sunN), keep the bit; uniform slot. Wind source = existing `engine/world/wind.js`. Scrolling low-frequency noise multiplies `sunlit` in the light module (strength uniform, default 0); wind direction moves it.
 - [ ] Node twin test: strength 0 bit-identical; strength 1 stays in [0.4, 1].
 - [ ] Owner look: roadSouth at two times. WGSL + twin only.
 Files: `wgsl/light.wgsl.js`, `engine/render/lighting.js`; `NEEDS B1` uniform wiring.
@@ -243,7 +243,7 @@ Files: `wgsl/light.wgsl.js`, `engine/render/lighting.js`; `NEEDS B1` uniform wir
 - [ ] Node probe test: no rings = unchanged; ring expands at fixed speed and fades by 2 s.
 - [ ] `engine` API `water.addRipple(x,z,amp)` with ring buffer; owner look on a splash pose.
 Files: `wgsl/water.wgsl.js`, `wgsl/waterComposite.wgsl.js`, `wg/passWater.js`, `engine/render/waterLayer.js`.
-ARCH-NOTE NEEDED (WaterU layout in `uniformBlock.js`; ring buffer owner: `engine/world/water.js` state vs render). Paths: `engine/render/gpu/waterLayer.js` (not engine/render/), JS twins `engine/render/waterComposite.js` + `rasterWaterTri` in `engine/mesh/rasterJS.js`. Links to US-055b (splash entry ring).
+NOTE WRITTEN: architecture.md 38.14 (PC-B 5th agent, PC-A to ratify) - composite-only (WaterCompositeU, not WaterU), ring on `world.water`, ~0.75 d one step; was: (WaterU layout in `uniformBlock.js`; ring buffer owner: `engine/world/water.js` state vs render). Paths: `engine/render/gpu/waterLayer.js` (not engine/render/), JS twins `engine/render/waterComposite.js` + `rasterWaterTri` in `engine/mesh/rasterJS.js`. Links to US-055b (splash entry ring).
 
 ### S8-B2-14 Wetness (rain darkening) uniform [P2, ~0.5 d, deps: none]
 Global `wetness 0..1` darkens albedo and boosts specular-like gain in shade, default 0.
