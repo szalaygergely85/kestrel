@@ -4517,3 +4517,53 @@ B2: `waterComposite.wgsl.js`, `waterLook.js` (`packRipples`, `rippleStrength`, r
 - (d) Cost: <= 8 x (sqrt + 6 flops) on water cells only, < 0.01 ms.
 
 **Size: ~0.75 d, one step.** The ring, pack, twin, WGSL and tests are one topic. Split into 13a (ring/API + pack) and 13b (composite WGSL + twin) only if the programmer runs over.
+
+### 38.18 ME-20c vertex AO to the light pass (architect, 2026-10-09)
+
+**Facts (pc-a 13a6ee2).**
+- ME-20a `--ao` stores per-triangle-corner visibility (1 = open) in `aux[5..7]`, constant over the 3 vertices of a triangle (MeshData validate enforces flat aux). Vertex `v = 3t + c` of a kind-9 mesh therefore has AO `aux[v*8 + 5 + c]`. `AO_NONE` = 0; lanes 0..4 stay 0 for kind 9.
+- Kind 9 uploads through `buildVoxelVertexData -> buildMeshTriVertexData` (compact 32 B, no aux), which throws on any non-zero aux. The static 64 B layout (`buildStaticVertexData`) copies aux and does not throw; kind 9 has `aoMode` 0 there, so `computeAoD` ignores lanes 5..7.
+- G-buffer for kind 9 today (WGSL raster): `GI.z` = oct normal (always); `GA.w` = `bitcast(1e30)` on rounded faces and the SAME oct normal bits on `FACE_PACKED`. Resolve copies GI.z/GI.w and GA from the same winning sub-sample, so on resolved cells `GA.w == GI.z` for packed kind 9. **For kind 9, GA.w carries nothing the light/shade passes need**: light can take the packed normal from GI.z, and shade's `aoD` for kind 9 is always "none" (1e30 rounded, forced 1e30 packed).
+- Rejected carriers: GI.y has no spare bits (12 mask, 13..15 cov, set by resolve); mesh `planeIdOr` = `0xD<<28` (bit 31 taken); a new colour target breaks the 32 B/sample attachment budget; a "per-cell kind-9 aux" has no slot of its own.
+- CPU twin: `GBuffer.aoD` holds the packed normal bits for `FACE_PACKED` cells (there is no GI.z on the CPU), so the twin needs its own array.
+
+**Decision: kind-9 `GA.w` carries the interpolated vertex AO, gated by a per-draw flag that is set only when `aoStrength > 0`.**
+- Flag: `RasterU.axisAligned` becomes a flag word. Bit 0 = aligned (unchanged), **bit 1 = `RASTER_FLAG_VAO`** (exported from `raster.wgsl.js`, value 2). No uniform layout change. passRaster sets it on every kind-9 draw (static, voxel, instanced, masked) iff `lights.ao.strength > 0` this frame; passShadow never sets it.
+- Raster fs, KIND_MESH branch, LAST line of the branch: `if ((u.axisAligned & RASTER_FLAG_VAO) != 0u) { gaW = bitcast<u32>(vao); }` with `vao = v.vAo` in the `ao` variants and `1.0` otherwise. The static path's `o.packed.w = u.axisAligned` becomes `u.axisAligned & 1u` (identical today; keeps bit 1 out of packed.w). Instanced already ANDs with `iMeta.y & 1`.
+- Light (`light.wgsl.js`): (1) kind 9 + `FACE_PACKED` takes `N` from `GI.z` instead of `GA.w` (identical bits, unconditional). (2) Inside 38.17's `if (u.aoStrength > 0.0)` block, before the `L -= amb * (1 - aoF)` line: `if (kindU == KIND_MESH) { aoF = min(aoF, 1.0 - u.aoStrength * AO_MAX * (1.0 - clamp(bitcast<f32>(ga.w), 0.0, 1.0))); }`. One knob (`aoStrength`, word 31) drives horizon and vertex AO. **`min`, not product**: both estimate the same ambient visibility, so they never double-darken, and the 38.17 bound (`aoF` in [0.4, 1], never brightens) still holds.
+- Shade (`shade.wgsl.js` ~line 630): force `aoDA = 1e30` for ALL KIND_MESH sub-samples (today: only FACE_PACKED). Identical today (rounded kind 9 already writes 1e30); required once GA.w carries AO. CPU `detailShade.js` needs no change: the twin's kind-9 `aoD` is already +Inf / packed bits and vao lives in its own array.
+- Flag off (strength 0, every gpucompare mode, every WebGL2 frame) -> the raster writes the legacy GA.w -> G-buffer, LIGHT and frame are **byte-identical**. D-044: no GLSL; WebGL2 never binds the AO stream and keeps strength 0 (38.17 NEEDS B1 item 2).
+
+**Vertex format: optional separate AO stream (uvMask precedent), not interleaved.**
+- `MeshBuffers.buildMeshTriVertexData(mesh)` keeps the 32 B vertex unchanged. It throws only for non-zero aux in lanes 0..4; lanes 5..7 must be finite in [0, 1] (else throw with mesh.id). If any lane 5..7 is non-zero it also returns `ao: Float32Array(V)` (`ao[v] = vertexAoAt(mesh, v)`), else no `ao` key (byte-identical result for every mesh in the repo). A baked mesh whose AO is all exactly 0 reads as "no AO" (accepted; cannot happen with 32 rays on real geometry).
+- Cache entries get `aoBuffer?` (`createBuffer({usage:'vertex', data: ao})`), disposed on every path that disposes `uvMaskBuffer` (replace, evict, S8-B2-03 LRU). 4 B/vertex, only for `--ao` meshes. `buildVoxelVertexData` (quads) keeps its throw.
+- `export const VAO_LAYOUT = [{ name: 'aAo', location: 11, components: 1, type: 'float', offsetBytes: 0 }]`, `VAO_STRIDE_BYTES = 4` (MeshBuffers.js, next to `MASK_UV_LAYOUT`).
+- `rasterWgsl(variant, { ao = false } = {})`: `ao` adds `@location(11) aAo: f32` and the varying `@location(8) vAo: f32` (default perspective-correct interpolation), only for `voxel`, `instanced`, `mask`, `instancedMask`. Without `ao` the text differs from today only by the flag line and the `& 1u`. Stays inside S8-B2-01 limits (<= 10 attributes, <= 4 vertex buffers).
+- passRaster: pipeline cache keyed `(variant, ao)`. `ao` pipelines are created lazily the first time an entry with `aoBuffer` is drawn WHILE the flag is on. With the flag off, AO meshes draw with the normal pipelines (no stream bound), so strength 0 never builds or binds anything new.
+
+**Shared helper (B2, new, pure; imports only MeshData constants): `engine/mesh/vertexAo.js`.**
+- `meshHasVertexAo(mesh) -> boolean` (static kind-9 mesh with any non-zero lane 5..7) and `vertexAoAt(mesh, v) -> number` (`aux[v*AUX_STRIDE + 5 + v % 3]`). MeshBuffers (B1) and rasterJS (B2) both use it, so both read the same corner rule.
+
+**JS twin.**
+- `GBuffer.vao = new Float32Array(n)` (4 B/cell). Not cleared in `beginFrame`; read only on kind-9 cells, and every kind-9 cell writes it.
+- `rasterJS.js`: vertex lane 14 = AO (`STRIDE` 14 -> 15), from `vertexAoAt` for AO meshes and `1` otherwise. Carried through clipping like `mu/mv` and interpolated perspective-correct exactly like `u/v`; `target.vao` per sub-sample; the cell writeback sets `gbuf.vao[i]` from the winning sub-sample next to `writeSample` for kind 9 (the twin always writes it; there is no flag on the CPU). Same for `rasterInstanced`.
+- `lighting.js lightSurfaces`: inside the 38.17 `lights.ao.strength > 0` block, `if (kind === KIND_MESH) aoF = Math.min(aoF, 1 - s * AO_MAX * (1 - clamp01(gbuf.vao[i])))`, at the same position as the WGSL. Other kinds never read `vao`.
+
+**Cost.** GPU: one f32 varying and one uniform branch in raster fs, a 4 B/vertex fetch on AO meshes only, one GA load per kind-9 cell in light when strength > 0: < 0.01 ms at 400x150. CPU twin (Canvas2D path only): one more lane in vertex transform/clip and one interpolation per kind-9 sample, ~2-3 % of rasterJS mesh time. Memory: 4 B/vertex per AO mesh, 4 B/cell.
+
+**gpucompare (D-039).** Default: 0 metric change on both backends (strength forced 0 -> flag off -> legacy bytes). No threshold change and no new row in this story. When the optional `?gpucompare=ao` row of 38.17 is added, it includes one `--ao` mesh and compares kind-9 GA.w against `gbuf.vao` (not `aoD`); that compare change belongs to that row.
+
+**Owners (skills `parallel-lanes`, `pc-b-5x`).**
+- B2: `engine/mesh/vertexAo.js` (new) + test, `engine/mesh/rasterJS.js`, `engine/render/GBuffer.js` (`vao` only), `engine/render/lighting.js`, `wgsl/raster.wgsl.js`, `wgsl/light.wgsl.js`, `wgsl/shade.wgsl.js` (one line), and their tests.
+- B1: `engine/render/gpu/MeshBuffers.js` (+ test), `wg/passRaster.js` (+ test), the flag from `lights.ao`, the capture-browser + gpucompare gate, the owner look.
+- PC-A / C: which meshes are re-imported with `--ao` is an owner choice from a preview (no silent asset changes). The 38.17 rule "no `--ao` mesh in `content/meshes`" lifts only after 20c-c is merged and gpucompare is green; update the `mesh-import` skill in that commit.
+
+**Steps (each <= 1 d, one topic).**
+- **20c-a (B2, ~0.5 d) twin:** `vertexAo.js`, `GBuffer.vao`, rasterJS lane + writeback, `lightSurfaces` vao term. Deps: S8-B2-20 (38.17) merged.
+  - Tests: `vertexAo.test.js` (corner rule; detection ignores lanes 0..4; no-AO mesh -> false). rasterJS: a no-AO mesh gives byte-identical existing outputs and `vao == 1` on its kind-9 cells; an AO quad with corners (1, 0.5, 0) gives vao within [min, max] of its corners, the corner value at a vertex-adjacent sample within 1e-6, and an analytic perspective-correct value at 3 interior samples. Lighting: strength 0 byte-identical; strength 1 with all `vao = 1` byte-identical to the 38.17 result; `vao = 0.5` darkens only kind-9 cells, never brightens, bounded by `0.6 * ambient`; garbage in `vao` on non-mesh cells changes nothing.
+- **20c-b (B2, ~0.4 d) WGSL:** raster `ao` option + flag line + static `packed.w & 1u`; light kind-9 N from GI.z + vao term; shade kind-9 force. Deps: 20c-a.
+  - Tests (string/probe): `aAo`/`vAo` only in `ao` variants; non-`ao` text differs from HEAD only by the flag line and the `& 1u`; `RASTER_FLAG_VAO === 2`; the light vao term sits inside the strength branch, after the horizon term; the shade force covers all KIND_MESH; S8-B2-01 limits pass. Mutation: a product instead of `min`, or a dropped flag test, fails a test.
+- **20c-c (B1, ~0.5 d) wiring:** MeshBuffers `ao`/`aoBuffer`/dispose + `VAO_LAYOUT`; passRaster flag, `(variant, ao)` pipelines, stream binding. Deps: 20c-b.
+  - Tests: MeshBuffers: every existing fixture returns identical bytes and no `ao`; an AO fixture returns `ao` (length V, corner rule); lanes 0..4 non-zero still throw; an out-of-range lane 5..7 throws; dispose frees `aoBuffer`. passRaster: flag bit set iff strength > 0; `ao` pipeline only for entries with `aoBuffer` and the flag on; extra stream at location 11. Gate: one headless `capture-browser` WebGPU frame; gpucompare 0 metric change on both backends; then a local (uncommitted) `--ao` tree at `?ao=0` vs `?ao=1` for the owner look.
+
+**Size: ~1.4 d over 3 steps (a 0.5, b 0.4, c 0.5).** No manager decision. Owner decisions: (1) the single shared `?ao` knob with `min` combining (a separate knob later = an appended vec4, 6 ring slots, see 38.17 data layout); (2) which meshes get `--ao`, chosen from a preview.

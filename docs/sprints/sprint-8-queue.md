@@ -296,6 +296,12 @@ Vertex AO cannot reach the GPU today: `buildMeshTriVertexData` throws on non-zer
 - [ ] gpucompare unchanged at default; owner look on tower interior. WGSL only; `NEEDS B1` uniform.
 Files: `wgsl/light.wgsl.js`, `engine/render/lighting.js`.
 
+### ME-20c vertex AO to the light pass [P2, ~1.4 d in 3 steps, deps: S8-B2-20]
+ARCH-NOTE: architecture.md 38.18. Kind-9 `GA.w` carries the interpolated vertex AO (optional 4 B/vertex stream at location 11), only while `aoStrength > 0` (flag bit 1 of `RasterU.axisAligned`); light combines it with horizon AO by `min` on the same knob. Strength 0 / gpucompare / WebGL2 = byte-identical. Still no `--ao` mesh in `content/meshes` until 20c-c is merged and gpucompare is green (owner picks meshes from a preview).
+- [ ] 20c-a (B2, ~0.5 d) twin: `engine/mesh/vertexAo.js`, `GBuffer.vao`, rasterJS AO lane, `lightSurfaces` term + Node tests (38.18).
+- [ ] 20c-b (B2, ~0.4 d) WGSL: raster `ao` option + flag line, light kind-9 N from GI.z + vao term, shade kind-9 aoD force + string/mutation tests.
+- [ ] 20c-c (B1, ~0.5 d) wiring: MeshBuffers `ao`/`aoBuffer` (no more throw for lanes 5..7), passRaster flag + `(variant, ao)` pipelines; capture-browser + gpucompare 0 change; owner look `?ao=0/1` on a local `--ao` tree.
+
 ## Lane C
 
 Lane C (Codex): pure sim/data/view modules, Node tests, preview pages, tools. Never `engine/render`, `main.js`, `backlog.md`, `palette.js`. Anything needing main.js is a `NEEDS B1` row, pointing at the S8-B1 wiring story. Status goes to `docs/lanes/pc-c.md`.
