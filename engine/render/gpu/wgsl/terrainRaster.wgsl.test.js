@@ -2,7 +2,7 @@
 // the GLSL twin text, and shader/layout string rules. node engine/render/gpu/wgsl/terrainRaster.wgsl.test.js
 import assert from 'node:assert/strict';
 import { TERRAIN_RASTER_WGSL, TERRAIN_BLOCK, TERRAIN_TEXTURES } from './terrainRaster.wgsl.js';
-import { TERRAIN_RASTER_FRAG_SRC, TERRAIN_VERT_SRC } from '../glsl/terrain.vert.js';
+import { TERRAIN_RASTER_FRAG_SRC, TERRAIN_VERT_SRC } from './terrainVert.glslref.js';
 import { WGSL_MODULES } from './index.js';
 import { KIND_TERRAIN, FACE_PACKED } from '../../GBuffer.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';

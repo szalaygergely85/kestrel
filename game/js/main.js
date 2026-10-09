@@ -25,7 +25,7 @@ import {
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim,
   loadContentPack, createRng, prebuildTerrainMesh,
-  forwardOf, DEG2RAD, hexToRgb, resolveWaterLooks, createEntityEmitters,
+  forwardOf, DEG2RAD, hexToRgb, resolveWaterLooks, createEntityEmitters, AO_DEFAULTS,
 } from '../../engine/index.js';
 // US-047 (architecture.md section 5): pass internals + parity tooling +
 // "may change" glue now live in engine/dev.js - main.js's dev-mode code
@@ -968,7 +968,7 @@ async function runGame(mode, cinematic = null) {
       if (lightsEnabled) {
         lightSet = buildLightSet(world, assets.palette);
         if (lightSet && cloudShadowOn) lightSet.cloud = devCloudShadow(); // S8-B2-12c
-        if (lightSet && aoStrength > 0) lightSet.ao = { strength: aoStrength, radiusM: 0.8, bias: 0.15, maxCells: 4 }; // S8-B2-20 NEEDS B1 item (1)
+        if (lightSet && aoStrength > 0) lightSet.ao = { ...AO_DEFAULTS, strength: aoStrength }; // S8-B2-20 NEEDS B1 item (1)
         if (lightSet) lightSet.emissive = !isGpuCompareMode && !params.get('gpucompare') && !(resolvedQuality && resolvedQuality.name === 'low'); // EMIS-01b (38.12): glowing voxels light the scene; off on Low and every gpucompare mode
         window.__debug.lights = lightSet; // EMIS-01b: test hook (derivedStats)
         // `?sun=0`: keep the sun's direction/color (F6/F7 still readable) but
@@ -1888,7 +1888,7 @@ function runVoxelBenchMode() {
   if (world.terrain) world.terrain.bakeFarSync();
   const lights = lightsEnabled ? buildLightSet(world, assets.palette) : null;
   if (lights && cloudShadowOn) lights.cloud = devCloudShadow(); // S8-B2-12c
-  if (lights && aoStrength > 0) lights.ao = { strength: aoStrength, radiusM: 0.8, bias: 0.15, maxCells: 4 }; // S8-B2-20 NEEDS B1 item (1)
+  if (lights && aoStrength > 0) lights.ao = { ...AO_DEFAULTS, strength: aoStrength }; // S8-B2-20 NEEDS B1 item (1)
   if (lights && !sunEnabled) lights.setSun({ elevation: lights.sun.elevation, azimuth: lights.sun.azimuth, on: false });
   if (lights) lights.update(0, world);
 

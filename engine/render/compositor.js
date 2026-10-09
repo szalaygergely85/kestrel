@@ -4,7 +4,7 @@
 // shading passes (US-028) and finally the sky - replacing the manual
 // beginFrame/castSectors/.../fillSky sequence main.js used to write out by
 // hand for a single bare level (US-024).
-import { windSwayOn } from '../mesh/sway.js';
+import { windSwayOn, SWAY_SHADOW_HZ } from '../mesh/sway.js';
 import { fillSky, ambientL, primeAmbientLight } from './sky.js';
 import { shadeTerrainCells } from './terrainShade.js';
 import { computeDerivatives, shadeSurfaces } from './detailShade.js';
@@ -20,7 +20,8 @@ import { MeshGroupSet, addMeshStructuresBatched } from '../mesh/meshGroups.js';
 import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget, clearRasterDepth } from '../mesh/rasterJS.js';
 import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
-import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer, pitchedFogScale, orthoHashCell } from './projection.js';
+import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer, pitchedFogScale, orthoHashCell, isPitchedFamily } from './projection.js';
+import { lodCentreX, lodCentreY } from '../core/camFocus.js';
 import { frustumPlanes } from '../mesh/culling.js';
 import { renderWaterJS } from './water.js';
 import { waterCompositeJS } from './waterComposite.js';
@@ -76,9 +77,11 @@ const sunOffState = { map: /** @type {any} */ (null), M: SUN_OFF_MATRIX, opts: /
  */
 const _windCtx = { field: /** @type {any} */ (null), t: 0 };
 /** Wind ctx for rasterDrawList (null = calm): world wind field + fb.timeSec, the clock passRaster/passShadow pack into the wind uniforms. */
-export function windCtx(world, fb) {
+export function windCtx(world, fb, quantised = false) {
   if (!windSwayOn(world.wind)) return null;
-  _windCtx.field = world.wind; _windCtx.t = fb.timeSec || 0;
+  const t = fb.timeSec || 0;
+  // quantised (sun map): same 10 Hz step as windShadowKey, so the map is a pure function of its dirty key
+  _windCtx.field = world.wind; _windCtx.t = quantised ? Math.floor(t * SWAY_SHADOW_HZ) / SWAY_SHADOW_HZ : t;
   return _windCtx;
 }
 function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, structCount) {
@@ -97,7 +100,7 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
   const vp = fb.voxelPool;
   if (vp && vp.shadowView) { vp.projectShadow(); src.voxelPool = vp.shadowView; } else src.voxelPool = null;
   src.instances = fb.instances || null;
-  src.eye.x = cam.x; src.eye.y = cam.y; src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM; src.meshCastM = so.meshCastM; src.meshCastCap = so.meshCastCap; // ME-15f / MESH-SHADOW-02
+  src.eye.x = lodCentreX(cam); src.eye.y = lodCentreY(cam); src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM; src.meshCastM = so.meshCastM; src.meshCastCap = so.meshCastCap; // ME-15f / MESH-SHADOW-02
   src.fogFarM = sunShadowFogFar(fb.palette, so);
   src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null; // CLOTH-1b1
   src.matIdFor = fb.matTable ? fb.matTable.idFor : undefined;
@@ -111,7 +114,7 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
   ctx.depthBias.factor = so.depthBias[0]; ctx.depthBias.units = so.depthBias[1];
   ctx.structFoot = meshStructFoot; ctx.structCount = structCount;
   ctx.maskAtlas = world.maskAtlas || null; // ALPHA-01b
-  ctx.wind = windCtx(world, fb); // FOLIAGE-SWAY-01: same field + clock as the GPU packWindUniforms
+  ctx.wind = windCtx(world, fb, true); // FOLIAGE-SWAY-01: same field + 10 Hz-quantised clock as the GPU shadow pass
   rasterDrawList(sunShadowList, _sunShadowTarget, ctx);
   sunMapState.map = _sunShadowTarget; sunMapState.opts = so;
   fb.sunMap = sunMapState;
@@ -171,7 +174,7 @@ function renderWorldMesh(fb, world, cam) {
   meshGrid.cols = cols; meshGrid.rows = rows;
   meshGrid.pxCellW = (fb.rt && fb.rt.pxCellW) || 1;
   meshGrid.pxCellH = (fb.rt && fb.rt.pxCellH) || 1;
-  meshPitched = resolveProjection(cam, fb.renderer || 'mesh') === 'pitched';
+  meshPitched = isPitchedFamily(resolveProjection(cam, fb.renderer || 'mesh'));
   projTerms(cam, meshGrid, meshTerms);
   // The JS deriv fallback reads `gbuf.cam` (castSectors normally sets it; it never runs on mesh), so
   // write it on every mesh frame (RE-02a review: shear frames left it stale / at defaults).

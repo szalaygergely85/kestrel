@@ -192,6 +192,35 @@ await test('--filter typecheck matches the typecheck suite and reports WARN with
   }
 });
 
+await test('--filter accepts comma lists and repeats (OR)', async () => {
+  const root = makeFixtureRoot();
+  try {
+    const a = await runRunner(root, ['--filter', 'tools/good,tools/warn', '--timeout-ms', String(FIXTURE_TIMEOUT_MS)]);
+    assert.ok(a.stdout.includes('good.test.js') && a.stdout.includes('warn.test.js'), a.stdout);
+    assert.ok(!a.stdout.includes('bad.test.js'), a.stdout);
+    assert.ok(a.stdout.includes('2 suite(s)'), a.stdout);
+    const b = await runRunner(root, ['--filter', 'tools/good', '--filter', 'tools/warn', '--timeout-ms', String(FIXTURE_TIMEOUT_MS)]);
+    assert.ok(b.stdout.includes('2 suite(s)'), b.stdout);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+await test('--filter matching 0 suites prints a warning and exits 1', async () => {
+  const root = makeFixtureRoot();
+  try {
+    const r = await runRunner(root, ['--filter', 'nope-zzz', '--timeout-ms', String(FIXTURE_TIMEOUT_MS)]);
+    assert.ok(r.stdout.includes('no suites match "nope-zzz"'), r.stdout);
+    assert.strictEqual(r.code, 1);
+    // one dead term among live ones: warned, but the live suite still runs
+    const m = await runRunner(root, ['--filter', 'tools/good,nope-zzz', '--timeout-ms', String(FIXTURE_TIMEOUT_MS)]);
+    assert.ok(m.stdout.includes('no suites match "nope-zzz"') && m.stdout.includes('1 suite(s)'), m.stdout);
+    assert.strictEqual(m.code, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 await test('--json writes a report with name/status/ms and last-20-lines output on failure', async () => {
   const root = makeFixtureRoot();
   const jsonPath = path.join(root, 'report.json');

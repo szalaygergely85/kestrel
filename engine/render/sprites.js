@@ -41,7 +41,7 @@
 // still +Inf (sky). One shared sprite pass/shader, no separate draw path.
 import { PROJ_HFOV_DEG as HFOV_DEG } from './projection.js';
 import { lightAt } from './lighting.js';
-import { createPitchedTerms, pitchedTerms, worldToCell, resolveProjection } from './projection.js';
+import { createPitchedTerms, pitchedTerms, worldToCell, resolveProjection, isPitchedFamily, ORTHO_BACK_M } from './projection.js';
 
 export const MAX_SPRITES = 64;
 export const SPR_TEXELS = 5;
@@ -70,7 +70,7 @@ export function camBasis(cam, rt, out, renderer) {
   out.tanHalfHFov = tanHalfHFov; out.planeDistY = planeDistY; out.horizonRow = horizonRow;
   out.cols = cols; out.rows = rows; out.yawDeg = cam.yawDeg;
   // RE-02a (28.1 A2 item 2): `out.pt` is the pitched terms object when the cam is pitched, else null.
-  if (resolveProjection(cam, renderer) === 'pitched') {
+  if (isPitchedFamily(resolveProjection(cam, renderer))) {
     const pt = out.pt || (out.pt = createPitchedTerms());
     const g = out.grid || (out.grid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 });
     g.cols = cols; g.rows = rows; g.pxCellW = rt.pxCellW || 1; g.pxCellH = rt.pxCellH || 1;
@@ -130,10 +130,17 @@ export function projectSprite(cb, cam, px, py, pz, worldH, out) {
     const vd = _w3[2];
     if (!(vd > MIN_DEPTH)) return false;
     out.depth = vd;
-    const hd = relX * cb.dirX + relY * cb.dirY;
+    let hd;
+    if (cb.pt.ortho) { // US-068b3b: eye is 500 m back; fog on the focus-plane depth * cosP (constant horizontal fog scale, 38.19)
+      hd = (cam.focusX !== undefined ? vd - ORTHO_BACK_M : vd) * cb.pt.cosP;
+    } else hd = relX * cb.dirX + relY * cb.dirY;
     out.fogDepth = hd > 0 ? hd : 0;
     out.colCenter = _w3[0] + 0.5;
     out.feetRow = _w3[1];
+    if (cb.pt.ortho) { // US-068b3a: parallel view, no 1/vd - size is distance independent (38.19 item 1)
+      out.rowsOnScreen = worldH * cb.pt.rows / (2 * cb.pt.tanHalfY);
+      return true;
+    }
     worldToCell(cb.pt, px, py, pz + worldH, _w3);
     out.rowsOnScreen = _w3[2] > 0 ? out.feetRow - _w3[1] : 0;
     return true;

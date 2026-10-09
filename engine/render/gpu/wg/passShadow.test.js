@@ -238,6 +238,14 @@ console.log(`passShadow.test.js: all checks passed (heap +${grew} B / 1000 frame
   assert.deepEqual([...s7.u.subarray(WIND_T, WIND_T + 4)], [...t4], 'wind on: windT4 == packWindUniforms twin');
   assert.deepEqual([...s7.u.subarray(WIND_K, WIND_K + 64)], [...k64], 'wind on: windK == packWindUniforms twin');
   assert.equal(s7.windOn, true);
+  // B1 nit: the shadow pass packs the 10 Hz-quantised clock (pure function of the dirty key); the camera raster keeps the live time.
+  const shadowT = (t) => { list7.begin(); s7.run({ ...p7b, _fb: { timeSec: t } }, raster7); return [...s7.u.subarray(WIND_T, WIND_T + 4)]; };
+  assert.deepEqual(shadowT(9.01), shadowT(9.07), 'same 10 Hz quantum -> identical shadow wind words');
+  assert.notDeepEqual(shadowT(9.07), shadowT(9.12), 'next quantum -> different shadow words');
+  assert.equal(shadowT(9.07)[0], 9, 'quantised seconds = floor(t*10)/10');
+  const cam1 = new Float32Array(4), cam2 = new Float32Array(4);
+  packWindUniforms(blown.wind, 9.01, w4, cam1, k64); packWindUniforms(blown.wind, 9.07, w4, cam2, k64);
+  assert.notDeepEqual([...cam1], [...cam2], 'camera raster words stay on the live time');
   s7.dispose();
   console.log('passShadow.test.js (S8-B2-05/06 wind host wiring): all checks passed.');
 }
