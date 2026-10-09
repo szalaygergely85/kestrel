@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import '../../design/palette.js';
+import '../../design/detail-pass.js';
+import {World} from '../../engine/index.js';
+import {loadTestAssets} from '../testing/content-node.mjs';
+import {isPatchableRecord,applyMeshTransformPatch} from './livepatch.js';
+import {makeFieldEditRecord,makeInsertRecord,makeDeleteRecord,applyEdit,invert} from './commands.js';
+const {assets}=await loadTestAssets();
+const item={id:'rock',mesh:'quaternius/Rock_Medium_1',origin:{x:20,y:30,z:0.15},yawDeg:37,scale:1.35};
+const def={terrain:null,structures:[item],entities:[]};
+const world=World.load(def,assets,{physics:'mesh'}),placement=world.structures[0],sv=world.structVersion;
+const fileId='world/test',doc={files:new Map([[fileId,{def:structuredClone(def)}]])};
+const move=makeFieldEditRecord('move',fileId,'structures',item,0,{origin:{x:35,y:40,z:1.5},yawDeg:90});
+assert.equal(isPatchableRecord(move),true);assert.equal(isPatchableRecord(invert(move)),true);
+for(const patch of [{mesh:'other'},{id:'renamed'},{scale:2},{castShadow:false},{collide:false},{note:'changed'}])assert.equal(isPatchableRecord(makeFieldEditRecord('edit',fileId,'structures',item,0,patch)),false);
+assert.equal(isPatchableRecord(makeInsertRecord(fileId,'structures',item)),false);
+assert.equal(isPatchableRecord(makeDeleteRecord(fileId,'structures',item,0)),false);
+const removed={...move.after,castShadow:false},without={...removed};delete without.castShadow;
+assert.equal(isPatchableRecord({...move,before:removed,after:without}),false,'removed structural fields force reload');
+assert.equal(isPatchableRecord({batch:[move]}),true);
+assert.equal(isPatchableRecord({batch:[move,makeDeleteRecord(fileId,'structures',item,0)]}),false);
+for(const rec of [move,invert(move),move]) {
+ const previous=world.colliders.find(c=>c.id==='meshes:static');
+ applyEdit(doc,rec);assert.equal(applyMeshTransformPatch(world,rec.after),true);
+ assert.equal(world.colliders.find(c=>c.id==='meshes:static'),previous,'setter defers colliders until commit');
+ world.rebuildMeshColliders();
+ const fresh=World.load(doc.files.get(fileId).def,assets,{physics:'mesh'});
+ assert.equal(world.structures[0],placement,'no World replacement');assert.equal(world.structVersion,sv);
+ assert.deepEqual(placement.origin,fresh.structures[0].origin);assert.deepEqual(placement.frame,fresh.structures[0].frame);assert.deepEqual(placement.bbox,fresh.structures[0].bbox);
+ const a=world.colliders.find(c=>c.id==='meshes:static'),b=fresh.colliders.find(c=>c.id==='meshes:static');
+ assert.deepEqual(a.parts,b.parts);assert.deepEqual(a.pos,b.pos);assert.deepEqual(a.min,b.min);assert.deepEqual(a.max,b.max);
+}
+assert.equal(applyMeshTransformPatch(world,{...item,id:'missing'}),false);
+console.log('Mesh live patch: move/yaw/undo/redo, scaled fresh-load geometry + collider parity, structural refusal PASS');

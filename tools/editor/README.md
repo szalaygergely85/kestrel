@@ -94,7 +94,11 @@ commit, or press Esc to restore its original position. Shadow and collision
 checkboxes save placement flags and support undo/redo. Shadows apply on reload;
 gameplay collision changes await the engine loader's placement-flag support.
 Collision is disabled in the inspector when the mesh asset itself disables
-collision. Mesh scale still awaits engine support; the scale keys apply to props.
+collision. Mesh SCALE accepts 0.25..4 and snaps 0.05; Minus/Equal step it. Move
+and yaw commits/undo update the live placement without a World reload. With
+`?physics=mesh`, committed edits rebuild mesh colliders once; a held drag and
+Escape never rebuild them. Structural changes (add/delete/model/scale/flags) still
+reload the World, preserving the selected physics mode.
 
 Press a number key to arm placement mode, then click a surface:
 

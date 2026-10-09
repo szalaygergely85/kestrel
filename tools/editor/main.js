@@ -21,7 +21,7 @@ import {
   applyEdit, invert, findReferrers,
 } from './commands.js';
 import { createStack } from './undo.js';
-import { isPatchableRecord, applyPropTransformPatch, applyLightPatch, findLightHandle } from './livepatch.js';
+import { isPatchableRecord, applyPropTransformPatch, applyMeshTransformPatch, applyLightPatch, findLightHandle } from './livepatch.js';
 import {
   PLACE_KEYS, isValidId, countLights, harvestBehaviourNames, defaultItemForKind,
   defaultWorldPropItem, kindForSelection, validateItem, renderPropertyPanel,
@@ -292,7 +292,7 @@ function startPose() {
   return s ? startPoseForStructure(s.frame, s.level) : createCameraPose({ z: 8, pitchDeg: -15 });
 }
 
-let world = engine.loadWorld(assets.world(doc.worldId));
+let world = engine.loadWorld(assets.world(doc.worldId), { physics: params.get('physics') === 'mesh' ? 'mesh' : 'grid' });
 const saved = loadSavedPose();
 let cam = saved ? createCameraPose(saved) : startPose();
 frame.markDirty();
@@ -611,11 +611,13 @@ function patchLive(rec) {
     if (!targets) return false;
     for (const target of targets) jobs.push({sub,target});
   }
-  let props=false;
+  let props=false, meshes=false;
   for (const {sub,target} of jobs) {
-    if (target.transform) {applyPropTransformPatch(target.transform,sub.after,target.frame);props=true;}
+    if (target.mesh) {applyMeshTransformPatch(world,sub.after);meshes=true;}
+    else if (target.transform) {applyPropTransformPatch(target.transform,sub.after,target.frame);props=true;}
     else applyLightPatch(target.ls,target.handle,sub.after,target.frame,assets.palette);
   }
+  if (meshes && world.physicsMode === 'mesh') world.rebuildMeshColliders();
   if (props) world.rebuildPropColliders(); // Once per committed batch, never per preview frame.
   world.renderVersion++;
   frame.markDirty();
@@ -624,6 +626,10 @@ function patchLive(rec) {
 
 /** Resolve every placement of shared content before touching any live member. */
 function liveTargets(rec) {
+  if (rec.collection === 'structures' && rec.after?.mesh) {
+    const mesh=world.structures.find(s=>s.kind==='mesh' && s.id===rec.id);
+    return mesh ? [{mesh}] : null;
+  }
   const file=doc.files.get(rec.fileId);
   const structures=file?.kind==='level' ? world.structures.filter(s=>s.level?.name===file.id) : [null];
   if (!structures.length) return null;
@@ -704,7 +710,7 @@ function snapTo(v, snap) { return normZero(Math.round(v / snap) * snap); }
 /** `engine.setWorld(World.load(...))` - the one mutation path's rebuild (24.8). <= 5 ms budget. */
 function rebuild() {
   const t0 = performance.now();
-  const w = World.load(assets.world(doc.worldId), assets, { events: engine.events, terrain: engine.world && engine.world.terrain });
+  const w = World.load(assets.world(doc.worldId), assets, { events: engine.events, terrain: engine.world && engine.world.terrain, physics: world.physicsMode });
   engine.setWorld(w);
   reapplyVisibility(); // US-067: hide/lock survives this rebuild (in-memory overlay, never in `doc`)
   const ms = performance.now() - t0;

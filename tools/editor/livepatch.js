@@ -66,8 +66,11 @@ export function isPatchableRecord(rec) {
   if (!rec) return false;
   if (rec.batch) return rec.batch.length > 0 && rec.batch.every(isPatchableRecord);
   if (rec.before == null || rec.after == null) return false;
-  const changed = Object.keys(rec.after).filter((k) => fieldChanged(rec.before[k], rec.after[k]));
+  const changed = [...new Set([...Object.keys(rec.before), ...Object.keys(rec.after)])].filter((k) => fieldChanged(rec.before[k], rec.after[k]));
   if (!changed.length) return false;
+  if (rec.collection === 'structures' && rec.before.mesh && rec.after.mesh === rec.before.mesh) {
+    return changed.every((k) => k === 'origin' || k === 'yawDeg');
+  }
   if (rec.collection === 'lights') return changed.every((k) => LIGHT_LIVE_FIELDS.has(k));
   if (rec.collection === 'props') return changed.every((k) => PROP_LIVE_FIELDS.has(k));
   // A world-file prop entity (US-033's `defaultWorldPropItem` shape,
@@ -165,4 +168,12 @@ export function applyLightPatch(ls, handle, item, frame, palette, scratch, posit
 export function findLightHandle(ls, key) {
   for (let i = 0; i < ls.count; i++) if (ls.key[i] === key) return i;
   return -1;
+}
+
+/** ED-MESH-01f: public mesh pose patch. Collider rebuild belongs to the committed batch. */
+export function applyMeshTransformPatch(world, item) {
+  return world.setMeshPlacement(item.id, {
+    x: item.origin.x, y: item.origin.y, z: item.origin.z,
+    yawDeg: item.yawDeg ?? 0, scale: item.scale ?? 1,
+  });
 }
