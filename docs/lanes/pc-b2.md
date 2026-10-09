@@ -230,3 +230,7 @@ NEEDS B1 (10c): (1) pipeline now declares 7 buffers: bind hzb (f32, `hzbPitch` r
 
 TEST-FLAKY-AO-01 (kestrel-4): the AO garbage check moved to `engine/render/horizonAo.alloc.test.js` (re-spawns with `--expose-gc --max/min-semi-space-size=64 --no-concurrent-recompilation`, new_space used-size via v8 heap stats, 8 calls x 60k cells, settle round, mutation self-test). Flakiness was REAL: with a 64 MB semi-space the stable AO-on minus AO-off was +1.92 MB/call (32 B/cell: 14 double args to `aoTapInto` boxed as HeapNumbers); the old check passed/failed depending on when a scavenge hit. Fix in `lighting.js`: tap params via `aoPar` Float64Array scratch (bit-identical output, lighting 242/242 + horizonAo.test PASS) -> delta now exactly 0 B; budget kept at 256 KB. 5/5 each. (Baseline lightSurfaces itself still ~48 B/cell = 2.9 MB/call, out of scope.)
 -> arch-review
+
+LIGHT-ALLOC-01 (kestrel-4): JS-twin lightSurfaces AO-off 48 B/cell -> 0.01 B/cell (base + 2 points + sun + cloud). Causes: 6-double-arg lightAt, 3-double sunVisible, 6-double cloudShadeQ + boxed noise/smoothstep/double return. Fix: lightAtScratch/sunVisibleP/cloudShadeQP read P,N from Float64Array scratch (public lightAt/sunVisible/cloudShadeQ unchanged, wrap them); cloud noise inlined scratch-twin in cloudShadow.js.
+New engine/render/lighting.alloc.test.js (budget 256 KB/8x60k calls, pinned pre-refactor output hashes base 0x77841da5 / rich 0xe769901, mutation self-test). lighting/sunmap/cloudShadow/horizonAo/terrain/water/sky suites + check-deps green.
+-> arch-review
