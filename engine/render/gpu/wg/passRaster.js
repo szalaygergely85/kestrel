@@ -274,7 +274,7 @@ export class WgRasterPass {
     else { projTerms(cam, grid, this.terms); shearProjection(this.terms, this.view); }
     this.ox = Math.floor(cam.x / 16) * 16; this.oy = Math.floor(cam.y / 16) * 16;
     viewProjAtOrigin(this.view, this.ox, this.oy, this.viewRel);
-    for (let i = 0; i < 16; i++) this.u[VIEW + i] = this.viewRel[i];
+    this.u.set(this.viewRel, VIEW);
     this.u[ORIGIN] = this.ox; this.u[ORIGIN + 1] = this.oy; // instanced variant only (iRow.w - origin); the other variants' blocks end before it
     frustumPlanes(this.view, this.planes);
     const list = this.list;
@@ -290,10 +290,11 @@ export class WgRasterPass {
     if (pool) { pool.project(cam, p.rt, 'mesh'); if (pool.list.length) addVoxelInstances(list, pool, sharedVoxelMeshCache, pool.partNamesFor); }
     // S8-B2-05/06: per-frame wind uniforms (zero when sway is off: bit-identical to before) + the cull/instance sway padding.
     this.windOn = windSwayOn(world.wind);
-    packWindUniforms(world.wind, (p._fb && p._fb.timeSec) || 0, this.windV, this.windTV, this.windKV);
+    const fbT = p._fb; let tSec = 0; if (fbT) { const v = fbT.timeSec; if (v) tSec = v; } // no tagged phi: avoids a per-frame HeapNumber
+    packWindUniforms(world.wind, tSec, this.windV, this.windTV, this.windKV);
     if (p._instances) {
       p._instances.swayPad = this.windOn ? SWAY_MAX : 0;
-      this.meshDrawArg.cache = this.meshCache; this.meshDrawArg.idFor = this.strictMatIdFor || null;
+      this.meshDrawArg.cache = this.meshCache; this.meshDrawArg.idFor = this.strictMatIdFor || null; this.meshDrawArg.maskAtlas = (world && world.maskAtlas) || null; // ALPHA-01f-fix2: instanced masked groups share the static cache entry
       p._instances.addToDrawList(list, sharedVoxelMeshCache, this.planes, p._fb.frameNo, this.view, p.rows, this.meshDrawArg);
       p.stats.instancesCulled = p._instances.stats.instancesCulled; p.stats.instancesLod1 = p._instances.stats.instancesLod1;
     }

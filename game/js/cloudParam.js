@@ -2,7 +2,7 @@
 // (default 0 - cloud shadows and horizon AO are both off unless asked for). No DOM, no engine import, so it's
 // testable without the page. `parseUnitStrength(raw)`: raw is whatever `params.get(name)` returns (string or
 // null) - missing, empty, non-numeric or out-of-range all fall back to 0 rather than throwing (setCloudShadow/
-// setHorizonAo themselves throw on out-of-range, so main.js must clamp before calling them).
+// lights.ao themselves throw on out-of-range, so main.js must clamp before calling them).
 
 /** @param {string|null} raw @returns {number} finite, clamped to [0,1]; 0 for missing/bad input */
 export function parseUnitStrength(raw) {

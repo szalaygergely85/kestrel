@@ -47,17 +47,20 @@ assert.equal(W('cloudB'), CA + 4, 'cloudB follows cloudA');
 // S8-B2-20 (38.17) item (1): light.ao present -> aoStrength (word 31) lands at the cached word index, f32-rounded.
 {
   const light = baseLight();
-  light.ao = { strength: 0.75 };
+  light.ao = { strength: 0.75, radiusM: 0.8, bias: 0.15, maxCells: 4 };
   wl._uploadLight(light);
   assert.equal(wl.lu[W('aoStrength')], Math.fround(0.75), 'aoStrength <- ao.strength');
+  const P = W('aoP');
+  assert.deepEqual([...wl.lu.subarray(P, P + 4)], [0.8, 0.15, 4, 0].map(Math.fround), 'aoP <- (radiusM, bias, maxCells, 0)');
 }
 
 // no light.ao on a full light set: zeroed (strength 0 = bit-identical to no AO).
 {
   const light = baseLight();
-  wl.lu[W('aoStrength')] = 9;
+  wl.lu[W('aoStrength')] = 9; wl.lu.fill(7, W('aoP'), W('aoP') + 4);
   wl._uploadLight(light);
   assert.equal(wl.lu[W('aoStrength')], 0);
+  assert.deepEqual([...wl.lu.subarray(W('aoP'), W('aoP') + 4)], [0, 0, 0, 0], 'aoP zeroed');
 }
 
 // bare ambient-array back-compat path (`!isSet`): aoStrength zeroed too, never stale.
