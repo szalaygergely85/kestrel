@@ -9,7 +9,8 @@ import { MAX_VOX_INSTANCES, MAX_VOX_INSTANCES_MESH, MAX_VOX_PARTS, PART_STRIDE }
 import { packVoxelModel } from '../voxel/voxelPack.js';
 import { voxelPointWorld } from '../voxel/voxelPose.js';
 import { computeProjection, computeProjectionPitched, instanceRect } from '../voxel/instanceRect.js';
-import { createPitchedTerms, pitchedTerms, resolveProjection } from './projection.js';
+import { createPitchedTerms, pitchedTerms, resolveProjection, isPitchedFamily } from './projection.js';
+import { lodCentreX, lodCentreY, lodCentreZ } from '../core/camFocus.js';
 import { buildVoxelAtlas } from './gpu/VoxelTextures.js';
 
 const _proj = { cols: 0, rows: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, planeDet: 0, horizonRow: 0, planeDistY: 0, eyeX: 0, eyeY: 0, eyeZ: 0,
@@ -198,12 +199,12 @@ export class VoxelPool {
     slot.model = pm;
     slot.modelKey = v.model;
     slot.x = t.x; slot.y = t.y; slot.z = t.z;
-    slot.yawDeg = t.yawDeg || 0;
+    if (t.yawDeg) slot.yawDeg = t.yawDeg; else slot.yawDeg = 0;
     const idx = v.anim && pm.clipIndex && Object.prototype.hasOwnProperty.call(pm.clipIndex, v.anim) ? pm.clipIndex[v.anim] : -1;
     slot.clip = idx;
-    slot.frame = v.frame || 0;
-    slot.tMs = v.t || 0;
-    slot.scale = t.scale > 0 ? t.scale : 1;
+    if (v.frame) slot.frame = v.frame; else slot.frame = 0;
+    if (v.t) slot.tMs = v.t; else slot.tMs = 0;
+    if (t.scale > 0) slot.scale = t.scale; else slot.scale = 1;
     // EMIS-01b: stable identity of the entity (numeric id as-is; string id hashed, no allocation)
     slot.seed = 0;
     if (pm.emissiveLight) slot.seed = (typeof e.id === 'number' ? (e.id | 0) : hashStr(e.id)) || 1;
@@ -226,15 +227,18 @@ export class VoxelPool {
    * takes one of the nearest slots. The flag is read LIVE each frame (not
    * cached by `renderVersion`), since the view toggles it per state.
    */
+  /** Slow path of collect(), split out so collect() holds no closure (an arrow capturing `this` allocates a context on EVERY call; FRAME-ALLOC-02). */
+  _rebuildEnts(world) {
+    this._ents.length = 0;
+    world.forEachEntity((e) => { if (e.components && e.components.voxel) this._ents.push(e); });
+    this._entVersion = world.renderVersion;
+    this._entWorld = world;
+  }
+
   collect(world, cam) {
     this.beginFrame();
     if (!world) return;
-    if (world !== this._entWorld || world.renderVersion !== this._entVersion) {
-      this._ents.length = 0;
-      world.forEachEntity((e) => { if (e.components && e.components.voxel) this._ents.push(e); });
-      this._entVersion = world.renderVersion;
-      this._entWorld = world;
-    }
+    if (world !== this._entWorld || world.renderVersion !== this._entVersion) this._rebuildEnts(world);
     const ents = this._ents;
     const n = ents.length;
     if (n <= this.cap) {
@@ -251,7 +255,7 @@ export class VoxelPool {
       this._collectWarned |= bit;
       warnOnce(this, `VoxelPool.collect: ${n} voxel entities exceed cap (${this.cap}); only the nearest ${this.cap} render`);
     }
-    const cx = cam ? cam.x : 0, cy = cam ? cam.y : 0, cz = cam ? cam.z : 0;
+    const cx = cam ? lodCentreX(cam) : 0, cy = cam ? lodCentreY(cam) : 0, cz = cam ? lodCentreZ(cam) : 0;
     const idx = this._nearIdx, dist = this._nearDist;
     let count = 0;
     for (let i = 0; i < n; i++) {
@@ -326,7 +330,7 @@ export class VoxelPool {
    * `this.list` in queue order (slot = compact index). Zero allocation once
    * `raw`/`list` are warm (reused per-slot objects/typed arrays). */
   project(cam, rt, renderer = this.renderer) {
-    if (resolveProjection(cam, renderer) === 'pitched') {
+    if (isPitchedFamily(resolveProjection(cam, renderer))) {
       // RE-02a (28.1 A2 item 2): pitched screen-rect cull.
       _poolGrid.cols = rt.cols; _poolGrid.rows = rt.rows; _poolGrid.pxCellW = rt.pxCellW || 1; _poolGrid.pxCellH = rt.pxCellH || 1;
       computeProjectionPitched(pitchedTerms(cam, _poolGrid, _poolPitch), _proj);

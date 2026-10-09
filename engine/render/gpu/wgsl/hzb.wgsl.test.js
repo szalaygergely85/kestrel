@@ -14,13 +14,13 @@ assert.deepEqual(HZB_BUFFERS, ['read', 'rw']);
 assert.ok(/@group\(0\) @binding\(0\) var<storage, read> src: array<f32>/.test(HZB_WGSL));
 assert.ok(/@group\(0\) @binding\(1\) var<storage, read_write> dst: array<f32>/.test(HZB_WGSL));
 assert.ok(/@group\(1\) @binding\(0\) var<uniform> u: HzbU/.test(HZB_WGSL));
-assert.equal(HZB_BLOCK.sizeBytes, 16);
+assert.equal(HZB_BLOCK.sizeBytes, 32); // 5 u32 (srcPitch appended, S8-B2-10a) padded to 32 B
 
 let seed = 4242; const rnd = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
 
 // JS execution of the kernel: hzbTexel through wgslProbe with the real src buffer / uniform block, then cs_main's write loop
-function runKernel(src, srcW, srcH) {
-  const u = { srcW, srcH, dstW: hzbNextSize(srcW), dstH: hzbNextSize(srcH) };
+function runKernel(src, srcW, srcH, srcPitch = 0) {
+  const u = { srcW, srcH, dstW: hzbNextSize(srcW), dstH: hzbNextSize(srcH), srcPitch };
   const dst = new Float32Array(u.dstW * u.dstH);
   const texel = compileFn(HZB_WGSL, 'hzbTexel', { src, u, max: Math.max });
   const main = compileFn(HZB_WGSL, 'cs_main', { src, dst, u, hzbTexel: texel });
@@ -55,3 +55,13 @@ for (const [w, h] of sizes) {
   assert.equal(lv[lv.length - 1].data[0], Math.fround(0.9));
 }
 console.log(`hzb.wgsl.test OK (${checked} texels kernel vs twin)`);
+
+// S8-B2-10a: srcPitch (padded rows from the 256 B texture copy); 0 == srcW; kernel == twin(pitch) == unpadded result
+for (const [w, h, pitch] of [[17, 9, 64], [100, 61, 128], [5, 7, 5], [16, 16, 64]]) {
+  const padded = new Float32Array(pitch * h).fill(NaN), tight = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const v = Math.fround(rnd()); padded[y * pitch + x] = v; tight[y * w + x] = v; }
+  const ref = hzbDownsample(tight, w, h);
+  const kern = runKernel(padded, w, h, pitch), twin = hzbDownsample(padded, w, h, undefined, pitch);
+  for (let i = 0; i < ref.length; i++) { assert.equal(kern[i], ref[i], `pitch ${pitch} ${w}x${h} kernel ${i}`); assert.equal(twin[i], ref[i], `pitch twin ${i}`); }
+}
+console.log('hzb srcPitch: padded rows == tight (kernel + twin)');

@@ -28,7 +28,7 @@
 // new ascii code. Colour: `fg *= minGain + (1-minGain)*a`, `bg *= a`,
 // mirroring `applySceneFade` exactly. `uSceneFade >= 1.0` is skipped
 // entirely (identity, matches `fadeGlyph`'s `a >= 1` fast path).
-import { GLSL_VERSION, PRECISION, GBUF_UNPACK, BYTE_OUT } from '../glsl/common.js';
+import { GLSL_VERSION, PRECISION, GBUF_UNPACK, BYTE_OUT } from './glslref.common.js';
 import { MAX_SPRITES, SPRITE_NEAR_DEPTH } from '../../sprites.js';
 
 export function spritesFragSrc({ depthUint = true } = {}) {

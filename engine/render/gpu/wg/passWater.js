@@ -31,7 +31,7 @@ import { sunFromWorld } from '../../lighting.js';
 import { PROJ_HFOV_DEG } from '../../projection.js';
 
 const WF = (n) => WATER_BLOCK.field(n).word;
-const W_MVP = WF('mvp'), W_AABB = WF('aabb'), W_SHAPE = WF('shape'), W_Z = WF('z'), W_KIND = WF('kind'), W_SLOT = WF('slot');
+const W_PROJ = WF('projMode'), W_MVP = WF('mvp'), W_AABB = WF('aabb'), W_SHAPE = WF('shape'), W_Z = WF('z'), W_KIND = WF('kind'), W_SLOT = WF('slot');
 const CF = (n) => WATER_COMPOSITE_BLOCK.field(n).word;
 const C_COLS = CF('gridCols'), C_ROWS = CF('gridRows'), C_SUNMAP = CF('sunMapOn'), C_PROJ = CF('projMode'), C_SUNDIR = CF('sunDir');
 const C_AMB = CF('ambientI'), C_SUNI = CF('sunI'), C_POSX = CF('posX'), C_POSY = CF('posY'), C_EYEH = CF('eyeH'), C_DIRX = CF('dirX'), C_DIRY = CF('dirY');
@@ -59,7 +59,7 @@ export class WgWaterPass {
     this.wu = new Float32Array(WATER_BLOCK.sizeWords); this.wi = new Int32Array(this.wu.buffer); this.wb = new Uint32Array(this.wu.buffer);
     this.cu = new Float32Array(WATER_COMPOSITE_BLOCK.sizeWords); this.ci = new Int32Array(this.cu.buffer);
     this._rip32 = new Float32Array(RIPPLE_SLOTS * 4); // S8-B2-13b (38.14): packInto scratch, allocated once
-    this.view = null; // the raster pass's f64 viewProj (set by prepare)
+    this.projMode = 0; this.view = null; // the raster pass's f64 viewProj (set by prepare)
     this.clearOpts = { clear: { color: [[WATER_CLEAR_X, 0, 0, 0]], depth: 1 } };
     this.waterTex = [{ slot: 0, texture: null }];
     this.waterBind = { uniforms: this.wu, textures: this.waterTex, vertexBuffer: null, indexBuffer: null };
@@ -114,7 +114,7 @@ export class WgWaterPass {
    */
   prepare(p, raster) {
     const world = p._world, sel = this.sel;
-    this.view = raster.view;
+    this.view = raster.view; this.projMode = raster.ortho ? 2 : 0;
     selectWater(world, p._cam, raster.planes, sel);
     this.active = (sel.count + sel.sheetCount) > 0 && !!this.layer.target;
     this.stats.waterSlots = sel.count + sel.sheetCount;
@@ -133,6 +133,7 @@ export class WgWaterPass {
     const d = this.device, sel = this.sel, layer = this.layer, u = sel.u, wu = this.wu, wi = this.wi, wb = this.wb, M = this.view;
     this.waterTex[0].texture = sceneDepth;
     const ox = sel.O[0], oy = sel.O[1];
+    wi[W_PROJ] = this.projMode; // US-068b2: 2 = ortho (linear depth in water.wgsl)
     for (let k = 0; k < 12; k++) wu[W_MVP + k] = M[k];
     for (let k = 0; k < 4; k++) wu[W_MVP + 12 + k] = M[k] * ox + M[4 + k] * oy + M[12 + k]; // viewProj * T(O, 0), f64 -> f32
     const bd = this.waterBind;
@@ -183,7 +184,7 @@ export class WgWaterPass {
     const light = p._light, rp = p._rasterPass, pitched = !!(rp && rp.pitched);
     ci[C_COLS] = p.cols; ci[C_ROWS] = p.rows;
     ci[C_SUNMAP] = inp.shadowActive && light && light.sun && light.sun.on ? 1 : 0;
-    ci[C_PROJ] = pitched ? 1 : 0;
+    ci[C_PROJ] = pitched ? (rp.ortho ? 2 : 1) : 0; // US-068b2
     cu[C_SUNDIR] = sun.dirX; cu[C_SUNDIR + 1] = sun.dirY; cu[C_SUNDIR + 2] = sun.dirZ;
     cu[C_AMB] = sun.ambientI; cu[C_SUNI] = sun.sunI;
     cu[C_POSX] = cb.posX; cu[C_POSY] = cb.posY; cu[C_EYEH] = cb.eyeH; cu[C_DIRX] = cb.dirX; cu[C_DIRY] = cb.dirY;

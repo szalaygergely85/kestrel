@@ -164,6 +164,26 @@ console.log('passRaster.test.js: all checks passed.');
   global.gc(); const grew = process.memoryUsage().heapUsed - h0;
   assert.equal(m2.createCount, created, 'no buffers/pipelines created on warm frames'); assert.equal(on.bindDesc, bd);
   assert.ok(grew < 4e6, 'heap growth over 20000 frames: ' + grew);
+  // S8-B2-10c: occl on = HZB build after raster A, cull phase 2, raster B (load-only); first frame / invalidate / resize -> hzbOn 0 (no phase 2, no pass B)
+  {
+    recOn = true;
+    const oc = make({ occl: true });
+    oc.view[7] = 1; // forward = +y (the clip.w row)
+    const ppo = { _t: { targetRaster: {}, targetVmDepth: {}, texSDepth: {}, subCols: 64, subRows: 32 }, stats: {}, rows: 60 };
+    const passes = []; const obp = dev.beginPass; dev.beginPass = (t, o) => { passes.push(o ? 'A' : 'B'); return obp.call(dev, t, o); };
+    const frame = () => { rec.length = 0; passes.length = 0; dev._dispatches = 0; oc.run(ppo); return { disp: dev._dispatches, passes: passes.join(''), ind: rec.filter((r) => r[0] === 'ind').length }; };
+    const levels = 7; // 64x32 -> 1x1
+    let r = frame();
+    assert.equal(r.disp, 2 + (levels - 1), 'frame 1: phase 1 per batch + the HZB build, no phase 2'); assert.equal(r.passes, 'A'); assert.equal(r.ind, 3);
+    r = frame();
+    assert.equal(r.disp, 2 + (levels - 1) + 2, 'frame 2: + one phase-2 dispatch per batch'); assert.equal(r.passes, 'AB', 'raster B is a load-only pass after A'); assert.equal(r.ind, 6, 'phase-2 entries drawn in B');
+    oc.invalidateHzb(); r = frame();
+    assert.equal(r.disp, 2 + (levels - 1)); assert.equal(r.passes, 'A', 'invalidateHzb: hzbOn 0 frame');
+    r = frame(); assert.equal(r.passes, 'AB', 'valid again after one build');
+    ppo._t.subCols = 48; r = frame(); assert.equal(r.passes, 'A', 'resize invalidates');
+    dev.beginPass = obp; oc.dispose();
+    recOn = false;
+  }
   // gpucull=0: everything on the CPU path, no compute
   recOn = true;
   rec.length = 0; dev._dispatches = 0; dev._indirectDraws = 0;

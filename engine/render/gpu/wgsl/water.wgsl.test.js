@@ -5,9 +5,9 @@
 import assert from 'node:assert/strict';
 import { WATER_WGSL, WATER_BLOCK, WATER_TEXTURES, WATER_TARGETS } from './water.wgsl.js';
 import { WATER_COMPOSITE_WGSL, WATER_COMPOSITE_BLOCK, WATER_COMPOSITE_TEXTURES, WATER_COMPOSITE_TARGETS } from './waterComposite.wgsl.js';
-import { WATER_VERT_SRC } from '../glsl/water.vert.js';
-import { WATER_FRAG_SRC } from '../glsl/water.frag.js';
-import { WATER_COMPOSITE_FRAG_SRC } from '../glsl/waterComposite.frag.js';
+import { WATER_VERT_SRC } from './waterVert.glslref.js';
+import { WATER_FRAG_SRC } from './waterFrag.glslref.js';
+import { WATER_COMPOSITE_FRAG_SRC } from './waterComposite.glslref.js';
 import { WGSL_MODULES } from './index.js';
 import { compileFn, shims, numericLiterals } from './wgslProbe.js';
 import { diamondAngle, WL_SLOTS, WL_STRIDE, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, RIPPLE_SLOTS, RIPPLE_ACC_MIN, rippleAccAt } from '../../waterLook.js';

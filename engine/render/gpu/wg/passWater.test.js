@@ -133,6 +133,20 @@ binds.length = 0; wp.runComposite({ shadeFg, shadeBg, gi, depth, light }, p);
   assert.deepEqual([...u.slice(C('pitchC'), C('pitchC') + 4)], [q.uZ, q.tanHalfY, q.cosP, q.sinP].map(Math.fround));
 }
 raster.pitched = false;
+// US-068b2 (38.19): ortho -> composite projMode 2 + pitch words carry halfW/halfH; water raster block projMode 2 (0 otherwise)
+{
+  const ocam = { ...cam, pitchDeg: -35.264, yawDeg: 45, projection: 'ortho', orthoHalfH: 8, focusX: 2, focusY: -5, focusZ: 0 };
+  raster.pitched = true; raster.ortho = true; pitchedTerms(ocam, grid, raster.pitch);
+  const po = { ...p, _cam: ocam };
+  binds.length = 0; wp.prepare(po, raster); wp.runWater(sceneDepth); wp.runComposite({ shadeFg, shadeBg, gi, depth, light }, po);
+  const q = raster.pitch, C = (n) => WATER_COMPOSITE_BLOCK.field(n).word;
+  const cb = binds.find(x => x.uniforms && x.uniforms.length === WATER_COMPOSITE_BLOCK.sizeWords);
+  assert.equal(new Int32Array(cb.uniforms.buffer)[C('projMode')], 2);
+  assert.equal(cb.uniforms[C('pitchA') + 3], Math.fround(q.halfW)); assert.equal(cb.uniforms[C('pitchC') + 1], 8);
+  assert.equal(wp.wi[WATER_BLOCK.field('projMode').word], 2, 'water raster block projMode 2 in ortho');
+  raster.pitched = false; raster.ortho = false; wp.prepare(p, raster); wp.runWater(sceneDepth);
+  assert.equal(wp.wi[WATER_BLOCK.field('projMode').word], 0, 'water raster block projMode 0 otherwise');
+}
 
 // ---- S8-B2-13b (38.14, the note of record): splash ripples, composite upload ----
 {
