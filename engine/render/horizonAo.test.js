@@ -8,8 +8,10 @@
 // node engine/render/horizonAo.test.js
 import assert from 'node:assert/strict';
 import { HORIZON_AO_WGSL } from './gpu/wgsl/common.wgsl.js';
+import { LIGHT_WGSL } from './gpu/wgsl/light.wgsl.js';
 import { compileFn, shims, numericLiterals } from './gpu/wgsl/wgslProbe.js';
-import { aoTapOcc, aoFactor, AO_RADIUS_M, AO_BIAS, AO_MAX, AO_TAP_CELLS } from './horizonAo.js';
+import { aoTapOcc, aoFactor, aoTapCells, AO_DEFAULTS, AO_MAX } from './horizonAo.js';
+const AO_RADIUS_M = 0.8, AO_BIAS = 0.15; // test params (now args, no longer module consts)
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -20,11 +22,18 @@ function ok(name, cond, detail) {
 // --- WGSL string rules (D-044: no raw %, round, GLSL mod/fract, no trig) ---
 ok('no raw % / round / mod / fract / trig', !/%|\bround\s*\(|\bmod\s*\(|fract|sin\s*\(|cos\s*\(|tan\s*\(/.test(HORIZON_AO_WGSL));
 ok('no ivec/uvec/int( (WGSL-only casts used instead)', !/ivec2|uvec|\bint\(/.test(HORIZON_AO_WGSL));
-ok('AO_TAP_CELLS is an integer (no f32/f64 rounding coin flip)', Number.isInteger(AO_TAP_CELLS));
+ok('aoTapCells integer, clamped to [1, maxCells]', (() => {
+  for (let i = 0; i < 2000; i++) {
+    const rc = aoTapCells(0.8, 50 + i * 0.1, 0.1 + i * 0.01, 4);
+    if (!Number.isInteger(rc) || rc < 1 || rc > 4) return false;
+  }
+  return aoTapCells(0.8, 100, 1000, 4) === 1 && aoTapCells(0.8, 100, 0.01, 4) === 4 && aoTapCells(0.8, 10, 4, 4) === 2;
+})());
+ok('AO_DEFAULTS (0, 0.8, 0.15, 4)', AO_DEFAULTS.strength === 0 && AO_DEFAULTS.radiusM === 0.8 && AO_DEFAULTS.bias === 0.15 && AO_DEFAULTS.maxCells === 4);
 
 // --- compile aoTapOcc and probe against the JS oracle ---
 const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
-const aoTapOccWgsl = compileFn(HORIZON_AO_WGSL, 'aoTapOcc', { ...shims, dot, AO_RADIUS_M, AO_BIAS });
+const aoTapOccWgsl = compileFn(HORIZON_AO_WGSL, 'aoTapOcc', { ...shims, dot });
 
 let seed = 99173;
 const rand = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 0x100000000; };
@@ -55,8 +64,8 @@ for (let i = 0; i < 5000; i++) {
     [vx, vy, vz] = randUnit();
     vx *= len; vy *= len; vz *= len;
   }
-  const oracle = aoTapOcc(nx, ny, nz, vx, vy, vz);
-  const wgsl = aoTapOccWgsl({ x: nx, y: ny, z: nz }, { x: vx, y: vy, z: vz });
+  const oracle = aoTapOcc(nx, ny, nz, vx, vy, vz, AO_RADIUS_M, AO_BIAS);
+  const wgsl = aoTapOccWgsl({ x: nx, y: ny, z: nz }, { x: vx, y: vy, z: vz }, AO_RADIUS_M, AO_BIAS);
   maxErr = Math.max(maxErr, Math.abs(oracle - wgsl));
   probes++;
 }
@@ -66,15 +75,15 @@ ok(`aoTapOcc probe (${probes} samples) within 1e-6`, maxErr <= 1e-6, `maxErr=${m
 {
   const N = [0, 0, 1];
   // in-plane v (perpendicular to N): c = 0/d - AO_BIAS < 0 -> 0.
-  ok('in-plane v gives 0', aoTapOcc(...N, 0.5, 0.3, 0) === 0);
+  ok('in-plane v gives 0', aoTapOcc(...N, 0.5, 0.3, 0, AO_RADIUS_M, AO_BIAS) === 0);
   // v behind the surface (opposite N): c < 0 -> 0.
-  ok('v behind the surface gives 0', aoTapOcc(...N, 0, 0, -0.5) === 0);
+  ok('v behind the surface gives 0', aoTapOcc(...N, 0, 0, -0.5, AO_RADIUS_M, AO_BIAS) === 0);
   // v along N at 0.5 m: well inside AO_RADIUS_M (1.5), c = 1 - AO_BIAS = 0.9 > 0.
-  ok('v along N at 0.5 m gives > 0', aoTapOcc(...N, 0, 0, 0.5) > 0);
+  ok('v along N at 0.5 m gives > 0', aoTapOcc(...N, 0, 0, 0.5, AO_RADIUS_M, AO_BIAS) > 0);
   // coincident (d2 < 1e-8) gives 0.
-  ok('coincident v gives 0', aoTapOcc(...N, 0, 0, 0) === 0);
+  ok('coincident v gives 0', aoTapOcc(...N, 0, 0, 0, AO_RADIUS_M, AO_BIAS) === 0);
   // exactly at the radius gives 0 (d >= AO_RADIUS_M -> the >= branch, not <).
-  ok('v exactly at AO_RADIUS_M gives 0', aoTapOcc(...N, 0, 0, AO_RADIUS_M) === 0);
+  ok('v exactly at AO_RADIUS_M gives 0', aoTapOcc(...N, 0, 0, AO_RADIUS_M, AO_RADIUS_M, AO_BIAS) === 0);
 }
 
 // --- aoFactor stays in [0.4, 1] (AO_MAX = 0.6) for strength/occSum in [0,1] ---
@@ -90,14 +99,32 @@ ok(`aoTapOcc probe (${probes} samples) within 1e-6`, maxErr <= 1e-6, `maxErr=${m
   ok('AO_MAX is 0.6', AO_MAX === 0.6);
 }
 
-// --- Mutation guard: AO_BIAS/AO_RADIUS_M are the only numeric literals baked into HORIZON_AO_WGSL's own text ---
+// --- whole tap loop incl. rc (S8-B2-20b): WGSL aoRc + 4x aoTapOcc vs JS aoTapCells + aoTapOcc, 2000 random cells ---
 {
-  const lits = numericLiterals(HORIZON_AO_WGSL);
-  ok('HORIZON_AO_WGSL literal-set has AO_RADIUS_M', lits.has(AO_RADIUS_M));
-  ok('HORIZON_AO_WGSL literal-set has AO_BIAS', lits.has(AO_BIAS));
-  const mutated = HORIZON_AO_WGSL.replace(`const AO_BIAS: f32 = ${AO_BIAS};`, 'const AO_BIAS: f32 = 0.37;');
-  ok('mutation: a changed AO_BIAS literal is caught', numericLiterals(mutated).has(0.37) && !numericLiterals(mutated).has(AO_BIAS));
+  const aoRcW = compileFn(HORIZON_AO_WGSL, 'aoRc', { ...shims });
+  const f = Math.fround;
+  let rcBad = 0, maxE = 0;
+  for (let i = 0; i < 2000; i++) {
+    const R = f(0.2 + rand() * 2), bias = f(rand() * 0.5), maxCells = 1 + Math.floor(rand() * 6);
+    const pd = f(40 + rand() * 120), dist = f(0.3 + rand() * 60);
+    const rcW = aoRcW(R, pd, dist, maxCells), rcJ = aoTapCells(R, pd, dist, maxCells);
+    // f32 rounding of the product could flip floor at exact .5 boundaries; the JS twin is f64: allow only such ties
+    if (rcW !== rcJ && Math.abs(R * pd / dist + 0.5 - Math.round(R * pd / dist + 0.5)) > 1e-4) rcBad++;
+    const [nx, ny, nz] = randUnit();
+    let sumW = 0, sumJ = 0;
+    for (let t = 0; t < 4; t++) {
+      const [ux, uy, uz] = randUnit(), len = rand() * R * 1.3;
+      sumW += aoTapOccWgsl({ x: nx, y: ny, z: nz }, { x: ux * len, y: uy * len, z: uz * len }, R, bias);
+      sumJ += aoTapOcc(nx, ny, nz, ux * len, uy * len, uz * len, R, bias);
+    }
+    maxE = Math.max(maxE, Math.abs(sumW - sumJ));
+  }
+  ok('WGSL aoRc == JS aoTapCells over 2000 cells (ties aside)', rcBad === 0, 'bad=' + rcBad);
+  ok('4-tap occ sum within 1e-5 over 2000 cells', maxE <= 1e-5, 'maxE=' + maxE);
 }
+// --- strength 0: WGSL AO branch skipped (uniform guard), JS factor is exactly 1 ---
+ok('aoStrength 0 -> factor 1', aoFactor(0.9, 0) === 1);
+ok('light pass guards AO on aoStrength > 0', /u.aoStrength > 0.0/.test(LIGHT_WGSL));
 
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { console.log('FAILED:\n' + failures.map((f) => '  - ' + f).join('\n')); process.exit(1); }

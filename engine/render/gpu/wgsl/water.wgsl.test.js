@@ -11,7 +11,7 @@ import { WATER_COMPOSITE_FRAG_SRC } from '../glsl/waterComposite.frag.js';
 import { WGSL_MODULES } from './index.js';
 import { compileFn, shims, numericLiterals } from './wgslProbe.js';
 import { diamondAngle, WL_SLOTS, WL_STRIDE, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, RIPPLE_SLOTS, RIPPLE_ACC_MIN, rippleAccAt } from '../../waterLook.js';
-import { CLOUD_SHIFT } from '../../cloudShadow.js'; // S8-B2-12b (38.13)
+import { CLOUD_Q_SHIFT as CLOUD_SHIFT } from '../../shadowSun.js'; // S8-B2-12b (38.13)
 import { RIPPLE_SPEED, RIPPLE_W, RIPPLE_LIFE } from '../../../fx/ripples.js'; // S8-B2-13b (38.14, the note of record)
 
 const BAD = /%|\bround\s*\(|dpdx|dpdy|fwidth|frag_depth|textureSample|texelFetch|gl_FragCoord|gl_FrontFacing|\bmod\s*\(|ivec2|uvec|\bint\(|floatBitsToUint|uintBitsToFloat|\bmix\s*\(/;
