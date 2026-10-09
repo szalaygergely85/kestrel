@@ -279,6 +279,17 @@ export class SpritePool {
    * minCells:{w,h}, detailRows}` (architecture.md 14.4 item 7) - null for an
    * ordinary lit sprite.
    */
+  /** collect()'s internal entry: same as push() but reads the anchor from the transform (no double args, no `||` phi). */
+  _pushEntity(s, t, billboard) {
+    const m = this.atlas.models.get(s.model);
+    if (!m) { this._warnOnce(`SpritePool: unknown billboard model "${s.model}"`); return; }
+    if (this.rawCount >= MAX_SPRITES) { this.dropped++; return; }
+    const i = this.rawCount++;
+    this._model[i] = m; this._anim[i] = s.anim; this._frame[i] = s.frame ? s.frame | 0 : 0;
+    this._pos[i * 3] = t.x; this._pos[i * 3 + 1] = t.y; this._pos[i * 3 + 2] = t.z;
+    this._billboard[i] = billboard ? billboard : null;
+  }
+
   push(modelKey, anim, frame, x, y, z, billboard = null) {
     const m = this.atlas.models.get(modelKey);
     if (!m) { this._warnOnce(`SpritePool: unknown billboard model "${modelKey}"`); return; }
@@ -298,17 +309,24 @@ export class SpritePool {
     this.reset();
     if (!world) return;
     if (world !== this._entWorld || world.renderVersion !== this._entVersion) {
+      this._rebuildEnts(world);
+    }
+    const ents = this._ents;
+    for (let i = 0; i < ents.length; i++) {
+      const e = ents[i], s = e.components.sprite, t = e.transform;
+      this._pushEntity(s, t, e.components.billboard); // FRAME-ALLOC-02: no many-double-arg call
+    }
+  }
+
+  /** Slow path of collect(), split out so collect() itself holds no closure (an arrow capturing `this` allocates a 40 B context on EVERY call). */
+  _rebuildEnts(world) {
+    {
       this._ents.length = 0;
       // Public, allocation-free iterator (ARCH CHANGES, US-030c) instead of
       // reading World's private `_entities` map directly.
       world.forEachEntity((e) => { if (e.components && e.components.sprite) this._ents.push(e); });
       this._entVersion = world.renderVersion;
       this._entWorld = world;
-    }
-    const ents = this._ents;
-    for (let i = 0; i < ents.length; i++) {
-      const e = ents[i], s = e.components.sprite, t = e.transform;
-      this.push(s.model, s.anim, s.frame || 0, t.x, t.y, t.z, e.components.billboard || null);
     }
   }
 

@@ -84,6 +84,7 @@ export { packVoxelModel } from './voxel/voxelPack.js';
 export { deriveEmissiveLight, EMISSIVE_LIGHT_MIN } from './voxel/emissiveLight.js';
 export { buildVoxelMesh, MESH_ONLY_MAX_QUADS } from './mesh/voxelMesh.js';
 export { prebuildTerrainMesh } from './mesh/terrainMesh.js'; // ED-MESH-1a
+export { createFrameRenderer } from './render/frameRenderer.js'; // ED-WG-01a (38.21)
 export { loadGltf, buildMeshFromTris, KIND_MESH } from './mesh/gltf.js'; // ME-13a (architecture.md 27.2 Public API)
 export { MaskAtlas, buildMaskAtlas, cutoffByte } from './render/MaskAtlas.js'; // ALPHA-01c: test worlds (gpucompare alphaLeaves) build their own atlas
 // ME-13b: content/meshes/<id>.mesh.json (de)serialization + validation -

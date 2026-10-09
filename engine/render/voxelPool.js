@@ -199,12 +199,12 @@ export class VoxelPool {
     slot.model = pm;
     slot.modelKey = v.model;
     slot.x = t.x; slot.y = t.y; slot.z = t.z;
-    slot.yawDeg = t.yawDeg || 0;
+    if (t.yawDeg) slot.yawDeg = t.yawDeg; else slot.yawDeg = 0;
     const idx = v.anim && pm.clipIndex && Object.prototype.hasOwnProperty.call(pm.clipIndex, v.anim) ? pm.clipIndex[v.anim] : -1;
     slot.clip = idx;
-    slot.frame = v.frame || 0;
-    slot.tMs = v.t || 0;
-    slot.scale = t.scale > 0 ? t.scale : 1;
+    if (v.frame) slot.frame = v.frame; else slot.frame = 0;
+    if (v.t) slot.tMs = v.t; else slot.tMs = 0;
+    if (t.scale > 0) slot.scale = t.scale; else slot.scale = 1;
     // EMIS-01b: stable identity of the entity (numeric id as-is; string id hashed, no allocation)
     slot.seed = 0;
     if (pm.emissiveLight) slot.seed = (typeof e.id === 'number' ? (e.id | 0) : hashStr(e.id)) || 1;
@@ -227,15 +227,18 @@ export class VoxelPool {
    * takes one of the nearest slots. The flag is read LIVE each frame (not
    * cached by `renderVersion`), since the view toggles it per state.
    */
+  /** Slow path of collect(), split out so collect() holds no closure (an arrow capturing `this` allocates a context on EVERY call; FRAME-ALLOC-02). */
+  _rebuildEnts(world) {
+    this._ents.length = 0;
+    world.forEachEntity((e) => { if (e.components && e.components.voxel) this._ents.push(e); });
+    this._entVersion = world.renderVersion;
+    this._entWorld = world;
+  }
+
   collect(world, cam) {
     this.beginFrame();
     if (!world) return;
-    if (world !== this._entWorld || world.renderVersion !== this._entVersion) {
-      this._ents.length = 0;
-      world.forEachEntity((e) => { if (e.components && e.components.voxel) this._ents.push(e); });
-      this._entVersion = world.renderVersion;
-      this._entWorld = world;
-    }
+    if (world !== this._entWorld || world.renderVersion !== this._entVersion) this._rebuildEnts(world);
     const ents = this._ents;
     const n = ents.length;
     if (n <= this.cap) {
