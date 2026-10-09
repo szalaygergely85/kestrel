@@ -118,7 +118,6 @@ export {
   LightSet, buildLightSet, setWorldSun, applySunHours, syncEntityLights, lightAt, lightSurfaces,
   computeVisGrid, sunVisible, falloff as lightFalloff, packLightUniforms,
   makeLightBuffer, MAX_LIGHTS, setLook, OUTDOOR_SHIFT,
-  setHorizonAo, // S8-B2-20 NEEDS B1 item (1)/(3): `?ao=` + gpucompare force-0
 } from './render/lighting.js';
 
 // ---- ART-01a look + roof map (docs/architecture.md 37.18 items 2/3) ----------

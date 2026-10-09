@@ -9,7 +9,8 @@
 import assert from 'node:assert/strict';
 import { HORIZON_AO_WGSL } from './gpu/wgsl/common.wgsl.js';
 import { compileFn, shims, numericLiterals } from './gpu/wgsl/wgslProbe.js';
-import { aoTapOcc, aoFactor, AO_RADIUS_M, AO_BIAS, AO_MAX, AO_TAP_CELLS } from './horizonAo.js';
+import { aoTapOcc, aoFactor, aoTapCells, AO_DEFAULTS, AO_RADIUS_M, AO_BIAS, AO_MAX } from './horizonAo.js';
+// RUN B: the WGSL still bakes the legacy AO_RADIUS_M/AO_BIAS consts; the JS oracle now takes (R, bias) args.
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -20,7 +21,14 @@ function ok(name, cond, detail) {
 // --- WGSL string rules (D-044: no raw %, round, GLSL mod/fract, no trig) ---
 ok('no raw % / round / mod / fract / trig', !/%|\bround\s*\(|\bmod\s*\(|fract|sin\s*\(|cos\s*\(|tan\s*\(/.test(HORIZON_AO_WGSL));
 ok('no ivec/uvec/int( (WGSL-only casts used instead)', !/ivec2|uvec|\bint\(/.test(HORIZON_AO_WGSL));
-ok('AO_TAP_CELLS is an integer (no f32/f64 rounding coin flip)', Number.isInteger(AO_TAP_CELLS));
+ok('aoTapCells integer, clamped to [1, maxCells]', (() => {
+  for (let i = 0; i < 2000; i++) {
+    const rc = aoTapCells(0.8, 50 + i * 0.1, 0.1 + i * 0.01, 4);
+    if (!Number.isInteger(rc) || rc < 1 || rc > 4) return false;
+  }
+  return aoTapCells(0.8, 100, 1000, 4) === 1 && aoTapCells(0.8, 100, 0.01, 4) === 4 && aoTapCells(0.8, 10, 4, 4) === 2;
+})());
+ok('AO_DEFAULTS (0, 0.8, 0.15, 4)', AO_DEFAULTS.strength === 0 && AO_DEFAULTS.radiusM === 0.8 && AO_DEFAULTS.bias === 0.15 && AO_DEFAULTS.maxCells === 4);
 
 // --- compile aoTapOcc and probe against the JS oracle ---
 const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
@@ -55,7 +63,7 @@ for (let i = 0; i < 5000; i++) {
     [vx, vy, vz] = randUnit();
     vx *= len; vy *= len; vz *= len;
   }
-  const oracle = aoTapOcc(nx, ny, nz, vx, vy, vz);
+  const oracle = aoTapOcc(nx, ny, nz, vx, vy, vz, AO_RADIUS_M, AO_BIAS);
   const wgsl = aoTapOccWgsl({ x: nx, y: ny, z: nz }, { x: vx, y: vy, z: vz });
   maxErr = Math.max(maxErr, Math.abs(oracle - wgsl));
   probes++;
@@ -66,15 +74,15 @@ ok(`aoTapOcc probe (${probes} samples) within 1e-6`, maxErr <= 1e-6, `maxErr=${m
 {
   const N = [0, 0, 1];
   // in-plane v (perpendicular to N): c = 0/d - AO_BIAS < 0 -> 0.
-  ok('in-plane v gives 0', aoTapOcc(...N, 0.5, 0.3, 0) === 0);
+  ok('in-plane v gives 0', aoTapOcc(...N, 0.5, 0.3, 0, AO_RADIUS_M, AO_BIAS) === 0);
   // v behind the surface (opposite N): c < 0 -> 0.
-  ok('v behind the surface gives 0', aoTapOcc(...N, 0, 0, -0.5) === 0);
+  ok('v behind the surface gives 0', aoTapOcc(...N, 0, 0, -0.5, AO_RADIUS_M, AO_BIAS) === 0);
   // v along N at 0.5 m: well inside AO_RADIUS_M (1.5), c = 1 - AO_BIAS = 0.9 > 0.
-  ok('v along N at 0.5 m gives > 0', aoTapOcc(...N, 0, 0, 0.5) > 0);
+  ok('v along N at 0.5 m gives > 0', aoTapOcc(...N, 0, 0, 0.5, AO_RADIUS_M, AO_BIAS) > 0);
   // coincident (d2 < 1e-8) gives 0.
-  ok('coincident v gives 0', aoTapOcc(...N, 0, 0, 0) === 0);
+  ok('coincident v gives 0', aoTapOcc(...N, 0, 0, 0, AO_RADIUS_M, AO_BIAS) === 0);
   // exactly at the radius gives 0 (d >= AO_RADIUS_M -> the >= branch, not <).
-  ok('v exactly at AO_RADIUS_M gives 0', aoTapOcc(...N, 0, 0, AO_RADIUS_M) === 0);
+  ok('v exactly at AO_RADIUS_M gives 0', aoTapOcc(...N, 0, 0, AO_RADIUS_M, AO_RADIUS_M, AO_BIAS) === 0);
 }
 
 // --- aoFactor stays in [0.4, 1] (AO_MAX = 0.6) for strength/occSum in [0,1] ---

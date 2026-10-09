@@ -28,6 +28,8 @@
 //                    scale, bias, cover, puffK, wispCover, wispK, wind: F32(2),
 //                    litK, litDy, bodyK, seed },
 //   }
+import { AO_DEFAULTS } from './horizonAo.js'; // S8-B2-20b (pure module, no further imports)
+
 
 /**
  * @typedef {Object} ResolvedHemi
@@ -122,6 +124,7 @@ export function resolveLook(P, key = P.defaultTime) {
     hemi: null,
     haze: null,
     clouds: null,
+    ao: null, // S8-B2-20b (38.16): null | {strength, radiusM, bias, maxCells}
   };
 
   if (td.hemi) {
@@ -157,6 +160,17 @@ export function resolveLook(P, key = P.defaultTime) {
         strength: c.shadow.strength === undefined ? 0 : c.shadow.strength, scale: c.shadow.scale, cover: c.shadow.cover,
         soft: c.shadow.soft, deckH: c.shadow.deckH === undefined ? 300 : c.shadow.deckH,
       } : null,
+    };
+  }
+
+  // S8-B2-20b (38.16): optional look.ao with defaults (strength 0 = off).
+  if (td.ao) {
+    const D = AO_DEFAULTS, a = td.ao;
+    rec.ao = {
+      strength: a.strength === undefined ? D.strength : a.strength,
+      radiusM: a.radiusM === undefined ? D.radiusM : a.radiusM,
+      bias: a.bias === undefined ? D.bias : a.bias,
+      maxCells: D.maxCells,
     };
   }
 
@@ -222,6 +236,15 @@ export function validateLook(P, key, onWarn) {
     if (sky0 && h.far !== sky0) warn(`${path}.haze.far ("${h.far}") !== sky[0].c ("${sky0}") - the horizon colour must equal the far haze (architecture.md 37.18)`);
   }
 
+  if (td.ao !== undefined && td.ao !== null) {
+    const a = td.ao, ap = `${path}.ao`;
+    if (typeof a !== 'object') errors.push(`${ap}: must be an object, got ${JSON.stringify(a)}`);
+    else {
+      if (a.strength !== undefined && !(a.strength >= 0 && a.strength <= 1)) errors.push(`${ap}.strength: must be in [0, 1], got ${a.strength}`);
+      if (a.radiusM !== undefined && !(a.radiusM > 0 && a.radiusM <= 5)) errors.push(`${ap}.radiusM: must be in (0, 5], got ${a.radiusM}`);
+      if (a.bias !== undefined && !(a.bias >= 0 && a.bias < 1)) errors.push(`${ap}.bias: must be in [0, 1), got ${a.bias}`);
+    }
+  }
   if (td.clouds) {
     const c = td.clouds;
     if (!has(c.lit)) errors.push(`${path}.clouds.lit: unknown color key "${c.lit}"`);
