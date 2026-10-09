@@ -1498,8 +1498,8 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
 | CHARGEN-04a | Master clips on 22 bones: idle, walk, run, talk, listen, wave | P1 | todo [PC-B designer, 0.75 d] | kit JSON, preview |
 | CHARGEN-04b | Piece set 1 + base `f_avg` (3 hair, 2 beard, 3 top, 2 legs, 2 feet, 1 hat, 1 hood) | P1 | todo [PC-B designer, 0.75 d] | kit JSON, preview |
 | CHARGEN-05 | Height rows, age, build pick, randomRecipe(seed) | P1 | arch-review [PC-B B2, 0.5 d] | `engine/chargen/*` + tests |
-| CHARGEN-06 | Export base: png palette, check-deps rules (`tools/export/**`, `vendor/three` only in `tools/chargen/**`) | P1 | todo [PC-B B1, 0.25 d] | `tools/export/png.js`, `tools/check-deps.mjs` + tests |
-| CHARGEN-07 | GLB-a: static `.glb` (mesh + palette texture + COLOR_0 + `extras.kestrel`) | P1 | todo [PC-B B1, 0.5 d] | `tools/export/gltfWrite.js`, `tools/chargen/export.mjs` + tests |
+| CHARGEN-06 | Export base: png palette, check-deps rules (`tools/export/**`, `vendor/three` only in `tools/chargen/**`) | P1 | arch-review [PC-B B1, 0.25 d] | `tools/export/png.js`, `tools/check-deps.mjs` + tests |
+| CHARGEN-07 | GLB-a: static `.glb` (mesh + palette texture + COLOR_0 + `extras.kestrel`) | P1 | arch-review [PC-B B1, 0.5 d] (done with skin + baked clips = 08/09 scope in the writer) | `tools/export/gltfWrite.js`, `tools/chargen/export.mjs` + tests |
 | CHARGEN-08 | GLB-b: rigid skin + 22 humanoid joints | P1 | todo [PC-B B1, 0.5 d] | `gltfWrite.js` + tests |
 | CHARGEN-09 | GLB-c: 6 baked animations | P1 | todo [PC-B B1, 0.5 d] | `gltfWrite.js` + tests |
 | CHARGEN-10 | FBX-a: binary FBX 7.4 static mesh + material/texture | P1 | todo [PC-B B1, 0.75 d] | `tools/export/fbxWrite.js` + tests |
@@ -1598,6 +1598,8 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
   - in Unity (glTFast) the clips play.
 - [ ] Golden SHA-256: the same recipe gives the same bytes.
 - [ ] Each step attaches a Blender CLI import log (`tools/chargen/verify-blender.py`) to the row.
+
+- Note (dev, kestrel-2): batch-9 fixes in `engine/chargen` (overlay kit slot, array `partMap` validation, arm STRETCH_BONES + symmetry, same-bone face culling, array-only collapseRig). 06: `tools/export/png.js` (+test, round-trips `png-read`), check-deps rules 19 (tools/export browser-safe) + 20 (vendor/three only in tools/chargen) with fixtures. 07: `tools/export/gltfWrite.js` + `gltfWrite.test.mjs` (42 checks, golden SHA-256 pinned) + `tools/chargen/export.mjs` CLI; sample `docs/test-reports/chargen-sample.glb` (`--demo-clips`: kit v0 has `clips:{}`). Open: (1) Khronos validator NOT run (npx has no local gltf-validator; downloading needs owner OK); (2) COLOR_0 x baseColorTexture double-multiplies in three.js/glTFast: `colorMode:'white'` option exists, default 'rgb' per spec - decide; (3) real kit `partMap` still object form: CLI/tests use a TEMP shim in `loadKit()` (remove when the designer re-emits); (4) mounts stored in extras as authoring-axes metres from the anchor.
 
 ### CHARGEN-10..12 FBX, OBJ, VOX  [P1] [todo] [PC-B B1]
 - [ ] **10 FBX static:**

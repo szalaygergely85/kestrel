@@ -57,6 +57,41 @@ writeFile(tmp, 'game/js/bad17c.js', `export const d = GPUShaderStage.VERTEX;
 writeFile(tmp, 'game/js/bad17d.test.js', `export const e = navigator.gpu;
 `);
 
+// Rules 19/20 (CHARGEN-06): tools/export/** browser-safe imports; vendor/three only under tools/chargen/**.
+writeFile(tmp, 'tools/export/good19.js', `import { meshCharacter } from '../../engine/index.js';
+import { crc32 } from './png.js';
+export const a19 = [meshCharacter, crc32];
+`);
+writeFile(tmp, 'tools/export/png.js', `export const crc32 = 1;
+`);
+writeFile(tmp, 'tools/export/bad19a.js', `import fs from 'node:fs';
+export const b19 = fs;
+`);
+writeFile(tmp, 'tools/export/bad19b.js', `import { readPng } from '../png-read.mjs';
+export const c19 = readPng;
+`);
+writeFile(tmp, 'tools/export/bad19c.js', `import { x } from '../../engine/mesh/gltf.js';
+export const d19 = x;
+`);
+writeFile(tmp, 'tools/export/good19.test.mjs', `import zlib from 'node:zlib';
+import { readPng } from '../png-read.mjs';
+export const e19 = [zlib, readPng];
+`);
+writeFile(tmp, 'tools/png-read.mjs', `export const readPng = 1;
+`);
+writeFile(tmp, 'tools/chargen/good20.js', `import * as THREE from './vendor/three/three.module.js';
+export const t20 = THREE;
+`);
+writeFile(tmp, 'tools/bad20a.js', `import * as THREE from './chargen/vendor/three/three.module.js';
+export const u20 = THREE;
+`);
+writeFile(tmp, 'engine/render/bad20b.js', `import * as THREE from '../../tools/chargen/vendor/three/three.module.js';
+export const v20 = THREE;
+`);
+writeFile(tmp, 'game/js/bad20c.js', `import { GLTFLoader } from '../../tools/chargen/vendor/three/GLTFLoader.js';
+export const w20 = GLTFLoader;
+`);
+
 // Rule 1: engine file with a bare specifier + one that resolves outside engine/.
 writeFile(tmp, 'engine/render/bad1.js', `import fs from 'node:fs';\nimport { x } from '../../game/js/helper.js';\nexport const y = 1;\n`);
 // Rule 2: engine file reading a forbidden global.
@@ -193,6 +228,15 @@ ok('rule 7: dev.js import from tools/** (outside editor) NOT flagged', !/bench-g
 ok('rule 7: dev.js import from game/js/quest/** flagged', /bad7\.js.*engine\/dev\.js.*only game\/js\/dev/.test(output), output);
 ok('rule 7: dev.js import from game/js/ui/** flagged', /bad7b\.js.*engine\/dev\.js.*only game\/js\/dev/.test(output), output);
 ok('rule 7: dev.js import from tools/editor/** flagged', /bad7c\.js.*engine\/dev\.js.*only game\/js\/dev/.test(output), output);
+ok('rule 19: tools/export importing engine/index.js + tools/export NOT flagged', !/good19\.js/.test(output), output);
+ok('rule 19: tools/export test importing node:zlib + png-read NOT flagged', !/good19\.test/.test(output), output);
+ok('rule 19: tools/export node: built-in flagged', /bad19a\.js.*rule 19/.test(output), output);
+ok('rule 19: tools/export importing another tools file flagged', /bad19b\.js.*rule 19/.test(output), output);
+ok('rule 19: tools/export deep engine import flagged', /bad19c\.js.*rule 19/.test(output), output);
+ok('rule 20: vendor/three inside tools/chargen NOT flagged', !/good20\.js/.test(output), output);
+ok('rule 20: vendor/three from tools/ root flagged', /bad20a\.js.*rule 20/.test(output), output);
+ok('rule 20: vendor/three from engine flagged', /bad20b\.js.*rule 20/.test(output), output);
+ok('rule 20: vendor/three from game flagged', /bad20c\.js.*rule 20/.test(output), output);
 ok('rule 8: engine/test/assert.js import from a game .test.js NOT flagged', !/good8\.test\.js/.test(output), output);
 ok('rule 8: engine/test/assert.js import from a tools/editor .test.mjs NOT flagged', !/good8\.test\.mjs/.test(output), output);
 ok('rule 8: engine/test/assert.js import from a non-test file flagged', /bad8\.js.*deep import/.test(output), output);

@@ -82,7 +82,7 @@ for (let z = 0; z < sz; z++) for (let y = 0; y < sy; y++) for (let x = 0; x < sx
   DIRS.forEach((d, di) => {
     const nx = x + d[0], ny = y + d[1], nz = z + d[2];
     const inside = nx >= 0 && ny >= 0 && nz >= 0 && nx < sx && ny < sy && nz < sz;
-    if (inside && grid.mat[at(nx, ny, nz)]) return;
+    if (inside && grid.mat[at(nx, ny, nz)] && grid.bone[at(nx, ny, nz)] === grid.bone[i]) return; // same-bone neighbour hides the face; other bones leave a cap
     expect.set(`${x},${y},${z},${di}`, { bone: grid.bone[i], mat: grid.mat[i] });
   });
 }
@@ -118,9 +118,10 @@ m.ranges.forEach((r, bi) => {
 });
 ok('quads are rectangles in a face plane', notRect === 0, `${notRect}`);
 ok('quad winding is counter-clockwise around the normal', badWind === 0, `${badWind}`);
-ok('every exposed face covered exactly once, none extra (no interior faces)', got.size === expect.size && dup === 0 && [...expect.keys()].every((k) => got.has(k)), `got ${got.size} expect ${expect.size} dup ${dup}`);
+ok('every exposed face covered exactly once, none extra (none hidden except by a same-bone voxel)', got.size === expect.size && dup === 0 && [...expect.keys()].every((k) => got.has(k)), `got ${got.size} expect ${expect.size} dup ${dup}`);
 ok('no quad crosses bones (each face sits in its voxel bone range)', wrongBone === 0, `${wrongBone}`);
 ok('quad material = voxel material', wrongMat === 0, `${wrongMat}`);
+ok('cap pair at a bone boundary (Hips top / Spine bottom both emitted)', [...expect.keys()].some((k) => { const [x, y, z, d] = k.split(',').map(Number); return d === 4 && grid.mat[at(x, y, z + 1)] && grid.bone[at(x, y, z + 1)] !== grid.bone[at(x, y, z)] && got.has(k) && got.has(`${x},${y},${z + 1},5`); }));
 ok('greedy merges faces', m.quads < expect.size, `${m.quads} vs ${expect.size}`);
 ok('joints are metres from the anchor', Math.abs(rig.bones[0].joint[2] - 42 * cm) < 1e-6 && Math.abs(rig.bones[0].joint[0]) < 1e-6);
 ok('meshCharacter deterministic', Buffer.compare(Buffer.from(meshCharacter(grid).mesh.pos.buffer), Buffer.from(m.pos.buffer)) === 0);
