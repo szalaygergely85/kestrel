@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { SPRITES_WGSL, SPRITES_BLOCK, SPRITES_TEXTURES, SPRITES_TARGETS } from './sprites.wgsl.js';
 import { OVERLAY_WGSL, OVERLAY_TEXTURES, OVERLAY_TARGETS } from './overlay.wgsl.js';
-import { spritesFragSrc } from '../glsl/sprites.frag.js';
+import { spritesFragSrc } from './spritesFrag.glslref.js';
 import { overlayFragSrc } from '../overlayPass.js';
 import { WGSL_MODULES } from './index.js';
 import { compileFn, shims, numericLiterals } from './wgslProbe.js';

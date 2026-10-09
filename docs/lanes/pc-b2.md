@@ -158,3 +158,9 @@ NEEDS B1-main (or wherever `bindScatterInstances`/`InstanceGroups` is wired, eng
 Perf: main session re-run `docs/test-reports/MESH-PERF-01.md`'s method (scratch CDP script, `?pose=roadSouth&f3=1&<variant>`, own port 96xx, e.g. 9650) before/after the NEEDS B1-main wiring above, once real LOD1 content lands - no engine/mesh change alone moves the needle (inert by default).
 Not touched: `engine/mesh/meshGroups.js` (`MeshGroupSet`, placed non-scatter props) - MESH-PERF-01 traces the tree cost to scatter `meshGroup` instances above, not placed singles/batches; same LOD pattern could extend there later if a placed-tree use case needs it.
 Tests: `node tools/run-tests.mjs --filter instances|meshGroups|shadowList|mesh` all PASS (51 suites incl. new `engine/mesh/meshInstances.test.js` section 7: selection, hysteresis sticky both ways, cap keeps N nearest + no-op under cap, no-`lods`/`lodCells=0` byte-identical ib, unloaded-LOD1 resolver re-check, 0 alloc/1000 frames with LOD+cap active). `node tools/check-deps.mjs` OK (pre-existing WARNs only).
+
+### PCB-PO-WG5A-01 (WG-5a GL-deletion prep) - done 2026-10-09
+- MAX_SUB now lives in wgsl/resolve.wgsl.js and wgsl/shade.wgsl.js (glsl/resolve.frag.js + shade.frag.js import it back); resolve.wgsl.test.js re-pointed.
+- meshFragSrc / spritesFragSrc moved to test-fixture modules wgsl/meshFrag.glslref.js + wgsl/spritesFrag.glslref.js (glsl/mesh.frag.js + sprites.frag.js are now 1-line re-exports); raster/sprites wgsl tests + spriteNear.test.js re-pointed. No B1 file touched.
+- `node tools/wg5a-plan.mjs`: resolve/shade/mesh/sprites.frag all "clear to delete" (docs/test-reports/WG-5a-plan.md not regenerated). common.js untouched (SKY_LUT_N still used by shade.wgsl.js + wg/passShade.js).
+- Tests: wgsl, glsl, sprite, resolve suites PASS; check-deps OK. -> arch-review
