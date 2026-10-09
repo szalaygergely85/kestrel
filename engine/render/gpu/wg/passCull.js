@@ -44,7 +44,7 @@ export class WgCullPass {
   /** @param {any} device @param {{maxBatches?: number, shadow?: boolean, occl?: boolean}} [opts] shadow = WG-4b sun-shadow caster mode (see `begin`/`add`);
    *  occl = S8-B2-10c two-phase HZB occlusion (default OFF; per batch occl + dst2/dst3 + 2 more args records; `begin({hzb})` + `runPhase2()`) */
   constructor(device, opts = {}) {
-    this.device = device;
+    this.device = device; this._stale = null; this._sweepFn = (b, g) => this._sweepCb(b, g);
     this.shadow = !!opts.shadow;
     this.occl = !this.shadow && !!opts.occl;
     this.occlStats = this.occl && (opts.occl === 2 || !!opts.occlStats); // 38.20: debug-only readback (?occl=2), off by default
@@ -102,22 +102,24 @@ export class WgCullPass {
    * Shadow mode (WG-4b): planes = the sun-box planes, eye = camera eye (xy used), `castM` = band 1 radius (instCastM), `hystM` = band hysteresis;
    * the per-batch band-0 radius and group radius come with `add`.
    */
+  _sweepCb(b, g) { if (this._frame - b.lastFrame > CULL_IDLE_FRAMES) (this._stale || (this._stale = [])).push(g); }
+
   begin(f) {
     const fr = this.frame;
     this._frame++;
-    fr.castM = /** @type {any} */ (f).castM || 0; fr.hystM = /** @type {any} */ (f).hystM || 0;
-    fr.planes = f.planes || null; fr.viewProj = f.viewProj || null; fr.rows = f.rows || 0; fr.eye = f.eye || null; fr.maxDistM = f.maxDistM || 0;
-    fr.swayPad = /** @type {any} */ (f).swayPad || 0; // S8-B2-05/06
+    const fa = /** @type {any} */ (f); // explicit undefined checks instead of `||` (a double phi boxes a HeapNumber per frame)
+    fr.castM = fa.castM === undefined ? 0 : fa.castM; fr.hystM = fa.hystM === undefined ? 0 : fa.hystM;
+    fr.planes = f.planes || null; fr.viewProj = f.viewProj || null; fr.rows = f.rows === undefined ? 0 : f.rows; fr.eye = f.eye || null; fr.maxDistM = f.maxDistM === undefined ? 0 : f.maxDistM;
+    fr.swayPad = fa.swayPad === undefined ? 0 : fa.swayPad; // S8-B2-05/06
     // S8-B2-10c: { buffer, w, h, levels, pitch, fwd: [x,y,z], margin } of a VALID previous-frame HZB; null/undefined = first frame / resize / cut -> hzbOn 0 this frame
     const hz = /** @type {any} */ (f).hzb; fr.hzb = this.occl && hz && hz.buffer && f.viewProj ? hz : null;
-    this.queue.length = 0;
+    const qq = this.queue; while (qq.length > 0) qq.pop(); // pop keeps the backing store (length = 0 frees it -> regrow garbage)
     const s = this.stats; s.batches = 0; s.dispatches = 0; s.instances = 0; s.uploads = 0; s.argsBytes = 0;
     // 38.10a idle sweep: a batch no add() stamped recently (editor/reload churn) is freed, <= maxBatches compares/frame
-    let stale = null;
-    for (const [g, b] of this.batches) {
-      if (this._frame - b.lastFrame > CULL_IDLE_FRAMES) (stale || (stale = [])).push(g);
-    }
-    if (stale) for (const g of stale) this.removeBatch(g);
+    this._stale = null;
+    this.batches.forEach(this._sweepFn); // persistent callback: Map for-of allocates iterator/entry arrays every frame
+    const stale = this._stale;
+    if (stale) { this._stale = null; for (const g of stale) this.removeBatch(g); }
   }
 
   /** Marks a batch as static (rows uploaded once, then only on `invalidate`). @param {any} group @param {boolean} [on] */

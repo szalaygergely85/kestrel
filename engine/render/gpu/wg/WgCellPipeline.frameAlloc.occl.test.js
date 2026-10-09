@@ -23,7 +23,7 @@ if (typeof global.gc !== 'function' || !process.execArgv.includes(FLAGS[1])) pro
 
 const palette = paletteModule.default || paletteModule, detailPass = detailPassModule.default || detailPassModule;
 const { bundle } = await loadTestAssets();
-const FRAMES = 1000, BUDGET = 600 * FRAMES; // 16 KB total NOT reachable with instanced groups: measured 442 B/frame (occl off, same fixture: 364); gate = 600 B/frame regression guard
+const FRAMES = 1000, BUDGET = 200 * FRAMES; // INST-ALLOC-01: occl off 3.9 B/frame, occl on ~82 (boxed Math.hypot in passRaster._cullRun, kept: not bit-identical to sqrt); gate = 200 B/frame
 
 function run(occl) {
   const mock = makeMockGpuDevice(), device = mock.device;
