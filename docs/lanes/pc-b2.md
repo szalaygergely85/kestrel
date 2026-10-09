@@ -270,3 +270,4 @@ PO 2026-10-09 (PC-B batch): MESH-LOD-CELLS-01 -> PARTIAL: engine knob and tests 
 PO 2026-10-09 (PC-B batch): US-068b1 -> PO OK -> testing (engine-internal; see pc-b1.md for host halves).
 [B2 2026-10-09] ME-20c numeric probes: new engine/render/gpu/wgsl/vao.wgsl.test.js (light vao term from real WGSL line vs twin 2000 cases max 2.4e-8; AO interp 500 tris; & 1u masking enumerated). lighting.test.js 'AO adds ~0 garbage' flake left alone (fixed by kestrel-4 7fe7f10, not in pc-b2 yet).
 - RUNTESTS-FILTER-01: run-tests --filter takes comma lists/repeats (OR); 0-match term prints 'no suites match "<f>"', exits 1 if nothing ran (no caller relied on exit 0); tests added.
+- ME-20c regression fix (kestrel-3): viewModel.test.js hashed every raster plane incl. the new vao plane (zero-initialised, so the hash moved); test now skips vao in the legacy hash and asserts vao==1 on all written cells; engine files unchanged, old planes byte-identical.
