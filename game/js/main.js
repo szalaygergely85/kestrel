@@ -68,6 +68,7 @@ import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-05
 import { createTitleMenuHost } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
+import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
@@ -365,6 +366,15 @@ try {
   saveRelay.quest.onPoll = (name, a, b) => gameHooks.emitSimple(name, a, b);
   gameHooks.onSaveRequest(() => { if (saveRelay && gameHooks.ctx.world) saveRelay.save(gameHooks.ctx.world, { ending: gameHooks.ctx.state.ending }); });
 } catch (e) { console.warn('[save] relay unavailable:', e && e.message); }
+// S8-B1-04: chest sim (quest/sim/chest.js) + item-get card (ui/itemGetCard.js), wired through the seam only - see
+// game/js/chestHook.js. `defs: []` (NEEDS C: no content/chests/*.json / placement yet) - harmless no-op today.
+const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
+  ? createChestHook({
+    defs: [], items: window.ASSETS.items, style: assets.uiStyle.itemGetCard, rgb: assets.palette.rgb,
+    openedChestsOf: () => (saveRelay ? saveRelay.openedChests : []),
+  })
+  : null;
+if (chestHook) gameHooks.register(chestHook);
 // US-090w: title menu before play. Off for `?title=0`, capture/bench/compare/cinematic pages, `?capture=1`, `?at=`/`?pose=` dev poses and bare `?level=` rooms.
 const menuWanted = params.get('title') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !params.has('at') && !params.has('pose') && !params.get('level') && !params.get('cinematic');
 // D-025 (US-038a): `renderTarget` now resizes IN PLACE (`engine.setGrid`
@@ -1163,6 +1173,7 @@ function runGame(mode, cinematic = null) {
         && !(vitals && (vitals.dead || vitals.inputLocked)) && !(questUiActive && wakeOut.inputLocked));
     }
     const invOpen = !!(invView && invView.isOpen);
+    const cardOpen = !!(chestHook && chestHook.card.isOpen); // S8-B1-04: item-get card gates input same as invOpen
     // ---- US-015: wake timeline + map card (world_m1 only, questUiActive) ----
     let uiLocked = false;
     let mPressedEdge = false;
@@ -1172,14 +1183,14 @@ function runGame(mode, cinematic = null) {
       if (wakeOut.inputLocked) playerHandle.data.components.body.eyeH = wakeOut.eyeH;
       mPressedEdge = input.pressed('KeyM');
       stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec);
-      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || (vitals && vitals.inputLocked);
+      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || (vitals && vitals.inputLocked);
     }
     // US-038b: settings panel (S from pause, or its own entry point)
     // canOpen requires the pause overlay to actually be up (!look.locked) -
     // S is also WASD "move backward", so this must never trigger in play.
     updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !!look && !look.locked && !isMapOpen() && !invOpen });
-    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || !!(vitals && vitals.inputLocked);
-    const paused = mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || (invOpen && !ending));
+    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || !!(vitals && vitals.inputLocked);
+    const paused = mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || ((invOpen || cardOpen) && !ending));
 
     // US-087 follow-up: drain blocked input without advancing targeting timers.
     // An allowed lock update still precedes look.update so it turns toward the fresh point.
@@ -1340,6 +1351,11 @@ function runGame(mode, cinematic = null) {
       // US-089w/US-096w: world facts -> quest events, play clock, autosave (60 s, waystone). Not while dead/ending/waking.
       const hs = gameHooks.ctx.state; // facts the handlers cannot derive from the world
       hs.wakeDone = questUiActive && !wakeOut.inputLocked; hs.ending = !!ending; hs.canSave = !ending && !wakeOut.inputLocked && !(vitals && vitals.dead);
+      // S8-B1-04: same gated E edge updateInteraction uses (false while a menu/card/note is up, see gameHooks.js
+      // header) plus the ungated edge a handler's own modal needs to dismiss itself, and the look yaw (chest.js's
+      // own reach/facing test wants the player's body forward, not the camera eye - see chestHook.js header).
+      const ePressed = input.pressed('KeyE');
+      hs.interactPressed = !ending && !uiLocked && ePressed; hs.interactRaw = ePressed; hs.playerYawDeg = look.yawDeg;
       gameHooks.tick(dt);
       lap(SEC.quest);
       engine.world.flushEvents();
@@ -1538,6 +1554,7 @@ function runGame(mode, cinematic = null) {
       // `fb.sceneFade` just above.
       resetSceneDim(sceneDim);
       if (invView) invView.pushDim(sceneDim); // US-091b
+      if (chestHook) chestHook.card.pushDim(sceneDim); // S8-B1-04
       pushNoteDim(sceneDim); // READ-01: whole-scene x 0.35 while a note is open (no-op otherwise), before applySceneDim/setSceneDim below
       if (questUiActive && !ending) {
         const mapPanel = getMapPanel();

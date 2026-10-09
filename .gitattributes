@@ -5,3 +5,4 @@
 *.gltf text
 *.fbx binary
 *.mesh.bin binary
+docs/lanes/*.md merge=union
