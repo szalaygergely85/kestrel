@@ -94,6 +94,7 @@ import { START_DEMO, START_FULL } from './quest/startConfig.js';
 import { createPracticeTarget, applyPropTargetables } from './quest/practiceTarget.js';
 import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js'; // US-053c
 import { createWaterfallHooks } from './quest/waterfallHooks.js';
+import { createAmbientMotes } from './quest/ambient.js';
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
@@ -872,6 +873,7 @@ async function runGame(mode, cinematic = null) {
   let menuHost = null; // US-090w: title menu host while it is up (null = no menu / already closed)
   let invWasLocked = false; // pointer lock state when the pack opened (re-lock on close)
   let waterfallHooks = null;
+  let ambientMotes = null;
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
   let worldSunPath = null; // US-122a: fit the load-time sun before static/cinematic hour writes.
   const cinematicHours = cinematic && Number.isFinite(cinematic.keys[0].hour);
@@ -993,6 +995,9 @@ async function runGame(mode, cinematic = null) {
       particleHooks = createParticleHooks(world, engine.events, engine.particles, particlePresets, engine.physics.gravity);
       if (waterfallHooks) waterfallHooks.dispose();
       waterfallHooks = waterfallPreset ? createWaterfallHooks(world, engine.particles, waterfallPreset) : null;
+      if (ambientMotes) ambientMotes.dispose();
+      // S8-B1-18 (closes US-019): ambient dust motes, off with ?ambient=0 and on the Low preset.
+      ambientMotes = createAmbientMotes(world, engine.particles, { enabled: params.get('ambient') !== '0' && !(resolvedQuality && resolvedQuality.name === 'low'), rgb: assets.palette.rgb, palette: assets.palette });
       // US-079a (29.1): rebuilt on every load/restart, same precedent as lightSet above.
       // US-078d: beastSim now owns a `combat:hit` listener (the stagger behaviour) - drop the old world's one
       // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.
@@ -1214,6 +1219,7 @@ async function runGame(mode, cinematic = null) {
       if (world.cloths) world.cloths.tick(clothTick, world.wind, cam.x, cam.y, cam.z);
       stepAnimations(world, dt * 1000);
       if (waterfallHooks) waterfallHooks.step();
+      if (ambientMotes) ambientMotes.step(cam.x, cam.y, cam.z);
       entityEmitters.sync(); engine.particles.step();
       if (waterfallHooks) waterfallHooks.afterStep();
       return;
@@ -1379,6 +1385,7 @@ async function runGame(mode, cinematic = null) {
       // US-053c: after beast/sword/vitals steps, before entityEmitters.sync()/particles.step() per 32.1.
       if (particleHooks) particleHooks.step(playerHandle.data);
       if (waterfallHooks) waterfallHooks.step();
+      if (ambientMotes) ambientMotes.step(playerHandle.data.x, playerHandle.data.y, playerHandle.data.z);
       entityEmitters.sync(); engine.particles.step();
       if (waterfallHooks) waterfallHooks.afterStep();
       lap(SEC.physics);
