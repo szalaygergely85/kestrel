@@ -5,7 +5,7 @@
 // Boar voxel clips (design/models/voxel_beast.js): idle walk windup charge hurt flinch die dead sink. There is no
 // `attack` clip -> attack uses `charge`; chase also uses `charge` (today's gallop, boarFx.clipFor); hurt uses `hurt`
 // for the first HURT_STEPS then `flinch` (nearest: the follow-through); dead/sink states are driven by beastView.
-import { createAnimState, ANIM_PRIORITY as P } from '../../../engine/index.js';
+import { createAnimState, animBlend, ANIM_PRIORITY as P } from '../../../engine/index.js';
 import { STATE_WANDER, STATE_CHASE, STATE_RETURN } from './sim/beastSim.js';
 
 export const HURT_STEPS = 10;
@@ -30,9 +30,10 @@ export function createBeastAnim(maxSlots) {
   const clip = new Array(maxSlots).fill('idle');
   const prevClip = new Array(maxSlots).fill('idle');
   const lastName = new Array(maxSlots).fill('idle');
+  const w = new Float64Array(maxSlots); // cross-fade weights: read api.w[i] (a double returned from a call would be boxed)
   for (let i = 0; i < maxSlots; i++) anims.push(createAnimState(BEAST_ANIM_DEF));
   const api = {
-    anims, clip, prevClip,
+    anims, clip, prevClip, w,
     /** Advance slot i from the sim; returns the clip name to play (alive states). */
     update(sim, i, dtMs) {
       const a = anims[i];
@@ -52,10 +53,11 @@ export function createBeastAnim(maxSlots) {
       if (a.name === 'walk' && st === STATE_CHASE) c = 'charge'; // today's chase gallop
       else if (a.name === 'hurt' && sim.hurtT[i] >= HURT_STEPS) c = 'flinch';
       clip[i] = c;
+      w[i] = animBlend(a.sinceSwitchMs);
       return c;
     },
-    /** Cross-fade weight (0..1) of the current clip over prevClip[i]. */
-    weight(i) { return anims[i].blend(); },
+    /** Cross-fade weight (0..1) of the current clip over prevClip[i]; hot paths read api.w[i] (no boxing). */
+    weight(i) { return w[i]; },
   };
   return api;
 }

@@ -76,7 +76,7 @@ export function presentBeasts(sim, world, overlay, styleIds, anim) {
     else clip = STATE_CLIPS[st] || 'idle';
 
     if (clip !== v.anim) { v.anim = clip; v.frame = 0; v.t = 0; v.loop = undefined; }
-    if (anim) { v.blendFrom = anim.prevClip[i]; v.blendW = anim.weight(i); } // cross-fade data; renderer does not consume it yet
+    if (anim) { v.blendFrom = anim.prevClip[i]; v.blendW = anim.w[i]; } // cross-fade data; renderer does not consume it yet
 
     if (playing) {
       v.playing = true;

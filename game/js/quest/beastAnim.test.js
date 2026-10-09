@@ -46,17 +46,27 @@ ok('dying -> die state, terminal', run(STATE_DYING) === 'die' && run(STATE_WANDE
   ok('dead states stay on the view timeline', voxel.anim === 'dead');
 }
 
-// zero allocation over 1e4 steps cycling states
-{
+// zero allocation: strict bound, measured in a re-spawned child (same flags as the *.alloc.test.js suites)
+if (process.env.BA_ALLOC_CHILD === '1') {
+  const v8 = await import('node:v8');
+  const newUsed = () => { const st = v8.getHeapSpaceStatistics(); for (let i = 0; i < st.length; i++) if (st[i].space_name === 'new_space') return st[i].space_used_size; return 0; };
   const seq = [STATE_WANDER, STATE_NOTICE, STATE_CHASE, STATE_WINDUP, STATE_CHARGE, STATE_RECOVER, STATE_FLINCH];
-  const a3 = createBeastAnim(1);
-  for (let k = 0; k < 2000; k++) { sim.state[0] = seq[k % 7]; sim.hurtT[0] = k % 50; a3.update(sim, 0, DT); a3.weight(0); }
-  if (global.gc) global.gc();
-  const h0 = process.memoryUsage().heapUsed;
-  for (let k = 0; k < 10000; k++) { sim.state[0] = seq[k % 7]; sim.hurtT[0] = k % 50; a3.update(sim, 0, DT); a3.weight(0); }
-  if (global.gc) global.gc();
-  const grew = process.memoryUsage().heapUsed - h0;
-  ok('1e4 steps: no retained growth (gc) or < 100 B/step garbage', grew < (global.gc ? 65536 : 1e6), `grew ${grew} B`);
+  const a3 = createBeastAnim(1), acc = new Float64Array(1);
+  const step = (k) => { sim.state[0] = seq[k % 7]; sim.hurtT[0] = k % 50; a3.update(sim, 0, DT); acc[0] += a3.w[0] + a3.weight(0); };
+  for (let k = 0; k < 5000; k++) step(k);
+  global.gc();
+  const h0 = newUsed(); const N = 100000;
+  for (let k = 0; k < N; k++) step(k);
+  const per = (newUsed() - h0) / N;
+  ok(`${N} steps: < 4 B/step garbage`, per < 4, `${per.toFixed(2)} B/step`);
+  console.log(`beastAnim alloc: ${per.toFixed(2)} B/step`);
+} else {
+  const { spawnSync } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const r = spawnSync(process.execPath, ['--expose-gc', '--max-semi-space-size=64', '--min-semi-space-size=64', '--no-concurrent-recompilation', fileURLToPath(import.meta.url)],
+    { env: { ...process.env, BA_ALLOC_CHILD: '1' }, encoding: 'utf8' });
+  process.stdout.write(r.stdout || '');
+  ok('alloc child run passed', r.status === 0, r.stderr);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
