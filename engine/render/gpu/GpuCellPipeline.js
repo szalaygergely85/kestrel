@@ -1782,6 +1782,7 @@ export class GpuCellPipeline {
     // twin (`compositor.js`'s `renderWorldMesh`) share one counter instead of two independent ones.
     if (this._instances) {
       this._meshDrawArg.cache = this._meshDrawCache; this._meshDrawArg.idFor = this._strictMatIdFor || null; // TREES-LP-b: kind-9 mesh groups
+      this._meshDrawArg.maskAtlas = (this._world && this._world.maskAtlas) || null; // ALPHA-01f-fix2
       this._instances.addToDrawList(list, sharedVoxelMeshCache, this._meshFrustumPlanes, this._fb.frameNo, this._meshViewProj, this.rows, this._meshDrawArg);
       this.stats.instancesCulled = this._instances.stats.instancesCulled;
       this.stats.instancesLod1 = this._instances.stats.instancesLod1;
