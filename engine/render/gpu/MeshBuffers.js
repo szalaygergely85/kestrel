@@ -247,6 +247,7 @@ export class MeshBuffers {
     if (v) {
       this.device.dispose(v.vertexBuffer);
       this.device.dispose(v.indexBuffer);
+      if (v.uvMaskBuffer) this.device.dispose(v.uvMaskBuffer);
       this.voxelCache.delete(mesh.id);
     }
   }
@@ -296,6 +297,7 @@ export class MeshBuffers {
     if (existing) {
       this.device.dispose(existing.vertexBuffer);
       this.device.dispose(existing.indexBuffer);
+      if (existing.uvMaskBuffer) this.device.dispose(existing.uvMaskBuffer);
     }
     const d = buildVoxelVertexData(mesh);
     const vertexBuffer = this.device.createBuffer({ usage: 'vertex', data: new Uint8Array(d.vertex) });
@@ -304,6 +306,9 @@ export class MeshBuffers {
       vertexBuffer, indexBuffer, indexType: /** @type {'u16'|'u32'} */ (d.index instanceof Uint16Array ? 'u16' : 'u32'),
       version: mesh.meshVersion, mesh, vertexCount: d.vertexCount ?? d.quadCount * 4, indexCount: d.indexCount ?? d.quadCount * 6,
     };
+    // ALPHA-01f (b) host: instanced mesh-group entries (TREES-LP-b, static-layout meshes) get the same mask-uv stream as
+    // static entries above (`get()`), reusing MASK_UV_LAYOUT location 10 so passRaster.js's instanced masked draw can bind it.
+    if (mesh.uvMask) entry.uvMaskBuffer = this.device.createBuffer({ usage: 'vertex', data: mesh.uvMask });
     this.voxelCache.set(mesh.id, entry);
     return entry;
   }
@@ -358,6 +363,7 @@ export class MeshBuffers {
     for (const entry of this.voxelCache.values()) {
       this.device.dispose(entry.vertexBuffer);
       this.device.dispose(entry.indexBuffer);
+      if (entry.uvMaskBuffer) this.device.dispose(entry.uvMaskBuffer);
     }
     this.voxelCache.clear();
     for (const entry of this.clothCache.values()) {

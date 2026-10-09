@@ -18,6 +18,8 @@ const W_PITCH_A = W('pitchA'), W_PITCH_B = W('pitchB'), W_PITCH_C = W('pitchC');
 const W_LIGHT_POS = W('lightPos'), W_LIGHT_COL = W('lightCol'), W_VIS_BOX = W('visBox');
 const W_STRUCT_A = W('structA'), W_STRUCT_B = W('structB');
 const W_SUN_M = W('sunShadowM'), W_SUN_RES = W('sunShadowRes'), W_SUN_TEXEL = W('sunShadowTexelM'), W_SUN_BIAS = W('sunShadowBiasM'), W_SUN_NOFF = W('sunShadowNormalOff');
+// ALPHA-01f cloud item (1) / S8-B2-12a (38.13): `light.cloud` (lighting.js LightSet.cloud) -> cloudCover (cover) + cloud.xyzw (strength, invScale, offU, offV).
+const W_CLOUD_COVER = W('cloudCover'), W_CLOUD = W('cloud');
 
 const NO_CAM = Object.freeze({ x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 });
 
@@ -114,9 +116,14 @@ export class WgLightPass {
       const a = light || [0, 0, 0];
       lu[W_AMBIENT] = a[0] || 0; lu[W_AMBIENT + 1] = a[1] || 0; lu[W_AMBIENT + 2] = a[2] || 0;
       li[W_LIGHT_COUNT] = 0; li[W_SUN_ON] = 0; li[W_SUN_MODE] = 0;
+      lu[W_CLOUD_COVER] = 0; lu[W_CLOUD] = 0; lu[W_CLOUD + 1] = 0; lu[W_CLOUD + 2] = 0; lu[W_CLOUD + 3] = 0;
       return;
     }
     lu[W_AMBIENT] = light.ambient[0]; lu[W_AMBIENT + 1] = light.ambient[1]; lu[W_AMBIENT + 2] = light.ambient[2];
+    // ALPHA-01f cloud item (1): copy light.cloud into cloudCover/cloud (4 floats), cached word indices, zero alloc.
+    const cloud = light.cloud;
+    if (cloud) { lu[W_CLOUD_COVER] = cloud.cover; lu[W_CLOUD] = cloud.strength; lu[W_CLOUD + 1] = cloud.invScale; lu[W_CLOUD + 2] = cloud.offU; lu[W_CLOUD + 3] = cloud.offV; }
+    else { lu[W_CLOUD_COVER] = 0; lu[W_CLOUD] = 0; lu[W_CLOUD + 1] = 0; lu[W_CLOUD + 2] = 0; lu[W_CLOUD + 3] = 0; }
     const sun = light.sun, on = !!(sun && sun.on);
     li[W_SUN_ON] = on ? 1 : 0;
     if (sun) {
