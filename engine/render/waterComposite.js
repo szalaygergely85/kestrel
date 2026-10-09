@@ -5,7 +5,8 @@
 //
 // Per hit cell (dW < rawDepth, sky = Infinity):
 //   a    = sky ? 1 : clamp((rawDepth - dW) / opaqueAt, 0, 1)                      (water path length -> opacity)
-//   rgbW = clamp(mix(shallow, deep, column/tintDepth) * (ambientI + sunI * max(0, sunDir.z) * sunF), 0, 255)   (up normal, terrain `b` formula)
+//   rgbW = clamp(mix(shallow, deep, column/tintDepth) * (ambientI + sunI * max(0, sunDir.z) * sunF * cF), 0, 255) (up normal, terrain `b`
+//          formula; S8-B2-12b 38.13: cF = 1 - cloudByte/255, the floor cell's cloud-shadow darkening, 1 at strength 0)
 //   a <  seeThrough: keep the floor glyph outside the shore band, fg = mix(fg, fogged rgbW, a), bg = mix(bg, fogged rgbW * bgK, a)
 //   a >= seeThrough: glyph = ramp[h % n], using the rotated, drifting brick hash (36.1b).
 //                    fg mixes halfway to glint with probability glintP; bg uses the un-glinted rgbW * bgK.
@@ -79,7 +80,10 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
       column = Math.max(0, _p[2] - _floorP[2]);
     }
     const tint = isSky ? a : Math.min(column / _table[lb + 38], 1);
-    const k = sun.ambientI + sun.sunI * sunZ * (sunMapOn ? light.sunN[i] * 0.25 : 1);
+    // S8-B2-12b (38.13): cloud-darkening byte (`light.cloud[i]`, the JS-side copy of the floor cell's LIGHT.w bits
+    // 24..31) scales the sun term here too; 0 at strength 0 or with no per-cell byte -> cF 1 -> bit-identical.
+    const cF = (light && !light.uniform && light.cloud) ? 1 - light.cloud[i] * (1 / 255) : 1;
+    const k = sun.ambientI + sun.sunI * sunZ * (sunMapOn ? light.sunN[i] * 0.25 : 1) * cF;
     let wr = (_table[lb] + (_table[lb + 4] - _table[lb]) * tint) * k;
     let wg = (_table[lb + 1] + (_table[lb + 5] - _table[lb + 1]) * tint) * k;
     let wb = (_table[lb + 2] + (_table[lb + 6] - _table[lb + 2]) * tint) * k;

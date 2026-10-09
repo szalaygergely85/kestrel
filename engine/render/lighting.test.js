@@ -5,6 +5,7 @@ import {
   LightSet, buildLightSet, setWorldSun, applySunHours, lightAt, lightSurfaces, computeVisGrid, falloff, h01,
   selectCpuLights, CPU_LIGHT_CAP, MAX_LIGHTS, MAX_VIS_DIM, sunVisible, MAX_SUN_STEPS,
   sampleVis, VIS_FLOOR_EPS, makeLightBuffer, syncEntityLights, clampLightToFree, ATTACH_WALL_MARGIN,
+  setCloudShadow, setHorizonAo,
 } from './lighting.js';
 import { attachedLightPos } from '../entities/attach.js';
 import { World } from '../world/World.js';
@@ -13,7 +14,7 @@ import paletteMod from '../../design/palette.js';
 // US-027b: test_room moved to content/levels/test_room.level.json.
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 // US-041a (15.3 item 3): face-7 (FACE_PACKED) decode test fixtures.
-import { KIND_MODEL, KIND_TERRAIN, FACE_PACKED } from './GBuffer.js';
+import { KIND_MODEL, KIND_TERRAIN, FACE_PACKED, FACE_U, FACE_S } from './GBuffer.js';
 import { packNormalOct } from '../voxel/octNormal.js';
 import { makeOk } from '../test/assert.js';
 import { SUN_PATH_DEFAULT } from '../core/sunPath.js';
@@ -817,6 +818,154 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
   ok('time without LightSet still reuses world-owned sun', world.sun === owned && world.sun.elevation > 0);
   const fallbackSun = sunFromWorld({ structures: world.structures }, paletteMod, {});
   ok('terrain without world.sun retains level fallback', approx(fallbackSun.dirX, reference.sun.dir[0], 1e-7));
+}
+
+// --- S8-B2-12a (38.13): cloud shadows, strength 0 is bit-identical; strength 1 stays in [0.4, 1] ---
+{
+  const cols = 1, rows = 1;
+  const face = new Uint8Array([FACE_PACKED]);
+  const aoD = new Float32Array(1);
+  new Uint32Array(aoD.buffer)[0] = packNormalOct(0, 0, 1); // straight up, N.sunDir > 0 for an overhead sun
+  const depthArr = new Float32Array([5]);
+  const rt = { pxCellW: 1, pxCellH: 1 };
+  const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
+  const gbuf = { kind: new Uint8Array([1]), face, aoD, cols, rows }; // kind 1 (not terrain): gets the sun term
+
+  function makeSunLights() {
+    const ls = new LightSet();
+    ls.ambient[0] = ls.ambient[1] = ls.ambient[2] = 0.1;
+    ls.setSun({ elevation: 90, azimuth: 0, on: true });
+    ls.sun.col[0] = ls.sun.col[1] = ls.sun.col[2] = 1;
+    ls.update(0, null);
+    return ls;
+  }
+
+  // Strength 0 (default, no setCloudShadow call): byte-identical to a LightSet that never had the field touched.
+  const lsZero = makeSunLights();
+  const lsRef = makeSunLights();
+  const lbZero = makeLightBuffer(cols, rows), lbRef = makeLightBuffer(cols, rows);
+  lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbZero }, lsZero, cam, null);
+  lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbRef }, lsRef, cam, null);
+  ok('strength 0: rgb byte-identical', lbZero.rgb[0] === lbRef.rgb[0] && lbZero.rgb[1] === lbRef.rgb[1] && lbZero.rgb[2] === lbRef.rgb[2]);
+  ok('strength 0: sunlit/litCount/sunN byte-identical', lbZero.sunlit[0] === lbRef.sunlit[0] && lbZero.litCount[0] === lbRef.litCount[0] && lbZero.sunN[0] === lbRef.sunN[0]);
+  ok('strength 0: cloud byte is 0 on both', lbZero.cloud[0] === 0 && lbRef.cloud[0] === 0);
+
+  // Explicit strength 0 (via setCloudShadow) must also be bit-identical to the untouched default.
+  const lsExplicitZero = makeSunLights();
+  setCloudShadow(lsExplicitZero, { strength: 0 });
+  const lbExplicitZero = makeLightBuffer(cols, rows);
+  lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbExplicitZero }, lsExplicitZero, cam, null);
+  ok('strength 0 (explicit via setCloudShadow): rgb byte-identical', lbExplicitZero.rgb[0] === lbRef.rgb[0] && lbExplicitZero.rgb[1] === lbRef.rgb[1] && lbExplicitZero.rgb[2] === lbRef.rgb[2]);
+
+  // Strength 1: the non-terrain sun-term ratio (lit rgb / the same cell's strength-0 rgb, isolating the sun term
+  // from ambient) stays in [0.4, 1] (CLOUD_DARK = 0.6), and cloudQ stays in [0, 153] (floor(1*0.6*1*255+0.5)).
+  let minRatio = Infinity, maxRatio = -Infinity, minQ = 256, maxQ = -1;
+  for (let trial = 0; trial < 40; trial++) {
+    const lsFull = makeSunLights();
+    setCloudShadow(lsFull, { strength: 1, cover: 0.3 + trial * 0.01, scaleM: 20 + trial });
+    const lbFull = makeLightBuffer(cols, rows);
+    const camT = { x: trial * 7.3, y: trial * 3.1, z: 0, yawDeg: 0, pitchDeg: 0 };
+    lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbFull }, lsFull, camT, null);
+    const lsBase = makeSunLights();
+    const lbBase = makeLightBuffer(cols, rows);
+    lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbBase }, lsBase, camT, null);
+    const ambient = lsFull.ambient[0]; // same ambient on both (sun col is [1,1,1], N.sunDir = 1 at elevation 90)
+    const sunBase = lbBase.rgb[0] - ambient, sunFull = lbFull.rgb[0] - ambient;
+    if (sunBase > 1e-9) {
+      const ratio = sunFull / sunBase;
+      minRatio = Math.min(minRatio, ratio); maxRatio = Math.max(maxRatio, ratio);
+    }
+    minQ = Math.min(minQ, lbFull.cloud[0]); maxQ = Math.max(maxQ, lbFull.cloud[0]);
+  }
+  ok('strength 1: sun-term ratio >= 0.4', minRatio >= 0.4 - 1e-6, String(minRatio));
+  ok('strength 1: sun-term ratio <= 1', maxRatio <= 1 + 1e-6, String(maxRatio));
+  ok('strength 1: cloudQ in [0, 153]', minQ >= 0 && maxQ <= 153, `${minQ}..${maxQ}`);
+}
+
+// --- S8-B2-20 (38.17): horizon AO, strength 0 is bit-identical, never brightens, terrain excluded ---
+{
+  // Corner fixture: a single row (rows=1, so the y+-2 taps are always out-of-grid/open) of floor cells
+  // (kind 1, FACE_U, N=(0,0,1)) with one wall column (kind 1, FACE_S) raised above the floor plane, reconstructed
+  // through lightSurfaces' OWN shear-camera math (cam.yawDeg=0, pitchDeg=-80, HFOV 75deg, eyeH=cam.z=2): floor
+  // depth 0.3570456373959812 reconstructs P.z=0 on every floor column, wall depth 0.303488791786584 reconstructs
+  // P.z=0.3 two columns over (within AO_RADIUS_M=1.5 of a floor receiver 2 columns away: |v|~=0.32).
+  const cols = 11, rows = 1;
+  const wallX = 5;
+  const kind = new Uint8Array(cols).fill(1); // KIND_MODEL-ish, never 0, never KIND_TERRAIN
+  const face = new Uint8Array(cols).fill(FACE_U);
+  face[wallX] = FACE_S;
+  const aoD = new Float32Array(cols); // FACE_U/FACE_S both use the fixed-axis lookup, aoD unused
+  const depthArr = new Float32Array(cols).fill(0.3570456373959812);
+  depthArr[wallX] = 0.303488791786584;
+  const rt = { pxCellW: 1, pxCellH: 1 };
+  const cam = { x: 0, y: 0, z: 2, yawDeg: 0, pitchDeg: -80 };
+  const gbuf = { kind, face, aoD, cols, rows };
+  function makeAoLights(strength) {
+    const ls = new LightSet();
+    ls.ambient[0] = 0.2; ls.ambient[1] = 0.25; ls.ambient[2] = 0.3; // distinct per-channel, catches a swapped index
+    if (strength > 0) setHorizonAo(ls, { strength });
+    ls.update(0, null);
+    return ls;
+  }
+
+  const ls0 = makeAoLights(0);
+  const lb0 = makeLightBuffer(cols, rows);
+  lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lb0 }, ls0, cam, null);
+  for (let x = 0; x < cols; x++) {
+    const o = x * 3;
+    ok(`strength 0, x=${x}: rgb == ambient`, approx(lb0.rgb[o], ls0.ambient[0], 1e-12) && approx(lb0.rgb[o + 1], ls0.ambient[1], 1e-12) && approx(lb0.rgb[o + 2], ls0.ambient[2], 1e-12));
+  }
+
+  // (a) Strength 0 is bit-identical to a LightSet that never had `ao` touched at all.
+  const lsUntouched = makeAoLights(0);
+  const lbUntouched = makeLightBuffer(cols, rows);
+  lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbUntouched }, lsUntouched, cam, null);
+  ok('strength 0: byte-identical to an untouched LightSet.ao', lbUntouched.rgb.every((v, i) => v === lb0.rgb[i]));
+
+  const ls1 = makeAoLights(1);
+  const lb1 = makeLightBuffer(cols, rows);
+  lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lb1 }, ls1, cam, null);
+
+  // The receiver 2 columns either side of the wall (x=3, x=7) taps straight into the raised wall column and must
+  // darken; floor columns 4+ cells from the wall (x<=1 or x>=9 keep both +-2 taps on flat floor) stay identical.
+  for (const x of [3, 7]) {
+    const o = x * 3;
+    ok(`strength 1, x=${x} (adjacent to the wall): rgb < strength 0`, lb1.rgb[o] < lb0.rgb[o] && lb1.rgb[o + 1] < lb0.rgb[o + 1] && lb1.rgb[o + 2] < lb0.rgb[o + 2], `${lb1.rgb[o]} vs ${lb0.rgb[o]}`);
+  }
+  for (const x of [0, 1, 9, 10]) {
+    const o = x * 3;
+    ok(`strength 1, x=${x} (4+ cells from the wall): byte-identical to strength 0`, lb1.rgb[o] === lb0.rgb[o] && lb1.rgb[o + 1] === lb0.rgb[o + 1] && lb1.rgb[o + 2] === lb0.rgb[o + 2]);
+  }
+
+  // (c) Never brightens, bounded: rgb(1) <= rgb(0) and rgb(1) >= rgb(0) - 0.6*ambient, per channel, every cell.
+  let neverBrightens = true, bounded = true;
+  for (let x = 0; x < cols; x++) {
+    const o = x * 3;
+    for (let c = 0; c < 3; c++) {
+      if (lb1.rgb[o + c] > lb0.rgb[o + c] + 1e-12) neverBrightens = false;
+      if (lb1.rgb[o + c] < lb0.rgb[o + c] - 0.6 * ls0.ambient[c] - 1e-12) bounded = false;
+    }
+  }
+  ok('strength 1: never brightens (rgb <= strength-0 rgb) on every cell/channel', neverBrightens);
+  ok('strength 1: bounded (rgb >= strength-0 rgb - 0.6*ambient) on every cell/channel', bounded);
+
+  // (d) Terrain cells are unchanged at strength 1 even adjacent to the wall (receivers exclude KIND_TERRAIN).
+  const kindT = kind.slice(); kindT[3] = KIND_TERRAIN; kindT[7] = KIND_TERRAIN;
+  const gbufT = { kind: kindT, face, aoD, cols, rows };
+  const lsT0 = makeAoLights(0), lsT1 = makeAoLights(1);
+  const lbT0 = makeLightBuffer(cols, rows), lbT1 = makeLightBuffer(cols, rows);
+  lightSurfaces({ gbuf: gbufT, depth: { depth: depthArr }, rt, light: lbT0 }, lsT0, cam, null);
+  lightSurfaces({ gbuf: gbufT, depth: { depth: depthArr }, rt, light: lbT1 }, lsT1, cam, null);
+  for (const x of [3, 7]) {
+    const o = x * 3;
+    ok(`terrain x=${x}: strength 1 unchanged vs strength 0`, lbT1.rgb[o] === lbT0.rgb[o] && lbT1.rgb[o + 1] === lbT0.rgb[o + 1] && lbT1.rgb[o + 2] === lbT0.rgb[o + 2]);
+  }
+
+  // setHorizonAo validates strength like setCloudShadow validates its own fields.
+  const throws = (fn) => { try { fn(); return false; } catch { return true; } };
+  ok('setHorizonAo throws on strength 1.5', throws(() => setHorizonAo(new LightSet(), { strength: 1.5 })));
+  ok('setHorizonAo throws on strength -0.1', throws(() => setHorizonAo(new LightSet(), { strength: -0.1 })));
+  ok('setHorizonAo throws on strength NaN', throws(() => setHorizonAo(new LightSet(), { strength: NaN })));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
