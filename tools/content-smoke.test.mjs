@@ -148,6 +148,7 @@ const unaccountedFor = allJsonFiles.filter((rel) => {
   if (rel.startsWith('meshes/') && rel.endsWith('.mesh.json')) return false;
   if (rel.startsWith('editor/')) return false; // ED-FOLDERS-01: editor-only data (asset folder layout), never loaded by the game/loadPack
   if (rel.startsWith('packages/')) return false; // KPKG-03: *.pkg.json pack specs, read only by tools/pack.mjs
+  if (rel.startsWith('chargen/')) return false; // CHARGEN-01: *.charkit.json character kits, read by engine/chargen + tools/chargen-build-kit.mjs (38.29), not a manifest content kind
   if ((manifest.masks || []).includes(rel)) return false; // ALPHA-01e: alpha masks are listed in manifest.masks
   return !manifest.files.includes(rel);
 });

@@ -72,6 +72,9 @@ async function rejectsCE(p, re) {
   ok('open: asset not in zip', await rejectsCE(openPackage(await build(base({ assets: [{ path: 'models/x.glb', type: 'model.static' }] }))), /not in the package/));
   const noLic = await writeZip([{ path: 'kestrel.json', bytes: enc(JSON.stringify(base())) }]);
   ok('open: license file missing', await rejectsCE(openPackage(noLic), /LICENSE\.txt/));
+  for (const bad of ['stray.js', 'x/y.WGSL', 'z.wasm', 'a.html', 'b.mjs', 'c.cjs', 'd.glsl']) {
+    ok('open: unreferenced script entry refused ' + bad, await rejectsCE(openPackage(await build(base(), [{ path: bad, bytes: enc('x') }])), /script/));
+  }
   ok('open: no manifest', await rejectsCE(openPackage(await writeZip([{ path: 'a.txt', bytes: enc('x') }])), /manifest/));
   ok('open: bad json', await rejectsCE(openPackage(await writeZip([{ path: 'kestrel.json', bytes: enc('{') }])), /json/));
 }

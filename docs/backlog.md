@@ -1521,7 +1521,7 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
 | KPKG-01 | `engine/content/zip.js` reader + writer (stored + deflate via platform streams) | P1 | arch-review [PC-B B2, 0.5 d] -> arch-review | `engine/content/zip.js` + test + fixture zip |
 | KPKG-02 | `engine/content/package.js`: kestrel.json validate, openPackage, mountPackages, deps, duplicate ids | P1 | arch-review [PC-B B2, 0.75 d] -> arch-review | `engine/content/package.js` + test, `engine/index.js` |
 | KPKG-03 | `tools/pack.mjs` / `unpack.mjs` + package specs | P1 | arch-review [PC-B B1, 0.5 d] | `tools/pack.mjs`, `tools/unpack.mjs`, `content/packages/*.pkg.json` + tests |
-| KPKG-04 | Game boot `?pack=` mounts packages | P1 | arch-review [PC-B B1] (boots from dist/kestrel.base-1.0.0.kestrel with ?pack=../dist/..., first frame at 3.6 s, same as loose; missing file -> clear boot error; game/js/packBoot.js; dist/ now git-ignored; boot-prefetch-browser.mjs got --extra <query>) | `game/js/main.js` |
+| KPKG-04 | Game boot `?pack=` mounts packages | P1 | po-review [PC-B B1] (ARCH OK after KPKG-01..03 fixes) (boots from dist/kestrel.base-1.0.0.kestrel with ?pack=../dist/..., first frame at 3.6 s, same as loose; missing file -> clear boot error; game/js/packBoot.js; dist/ now git-ignored; boot-prefetch-browser.mjs got --extra <query>) | `game/js/main.js` |
 | KPKG-05 | Editor Import / Export `.kestrel` | P2 | todo [PC-B B1, 0.75 d] | `tools/editor/*` |
 | KPKG-07 | HTTP Range streaming of stored entries for lazy meshes | P3 | todo [PC-B B2, 0.75 d] -> arch-review | `engine/content/package.js`, `engine/mesh/lazyMesh.js` |
 

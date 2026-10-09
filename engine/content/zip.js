@@ -42,7 +42,7 @@ export function checkZipPath(p) {
   if (typeof p !== 'string' || p.length === 0) throw err('path', 'empty entry path');
   if (p.includes('\\')) throw err(p, 'backslash in path');
   if (p.startsWith('/')) throw err(p, 'absolute path');
-  if (/^[A-Za-z]:/.test(p)) throw err(p, 'drive letter in path');
+  if (p.includes(':')) throw err(p, "':' in path (drive letter or NTFS alternate data stream)");
   if (/[\u0000-\u001f]/.test(p)) throw err(p, 'control character in path');
   for (const seg of p.split('/')) if (seg === '..') throw err(p, 'dot-dot segment in path');
 }

@@ -4580,7 +4580,7 @@ Covers DIALOGUE-01a/b, NPC-BEAR-01 and NPC-TALK-ANIM-01. B2 steps end in `arch-r
    randomRecipe(kit, seed) -> CharRecipe             // xorshift32 + kit.random weights
    ```
    - **Compose order:** base, then shells (legs, feet, top, outer), then attachments (hair, beard, hat). The later layer wins. `hides` clears a slot first.
-   - **Height:** duplicate or delete rows from `stretchRows` (shin and waist rows only).
+   - **Height:** duplicate or delete rows from `stretchRows`: shin and waist rows; waist rows may cross Left/RightUpperArm and Left/RightLowerArm symmetrically, never a hand box.
    - **Build:** pick an authored base.
    - **Elder:** an overlay, height -1, clip tempo x1.15.
    - **Determinism and cost:** the same recipe gives the same bytes. A build takes <= 10 ms, at load or on a UI change only, never per frame.
@@ -4735,7 +4735,8 @@ Owner: one package file to distribute and use assets, like `.unitypackage`.
      - Compression: method 0 or 8, using the platform `DecompressionStream` / `CompressionStream('deflate-raw')` (WebGPU browsers, Electron, Node >= 18).
      - Integrity: CRC32 is checked on read. UTF-8 names. No zip64, no encryption.
      - Limits: 10000 entries, 512 MB uncompressed, plus a compression-ratio guard.
-     - Zip-slip guard: reject `..`, a leading `/`, `\` and drive letters in paths.
+     - Zip-slip guard: reject `..`, a leading `/`, `\` and `:` anywhere in a path (drive letters, NTFS alternate data streams such as `a.json:evil`).
+     - `openPackage` refuses any script-type entry (.js/.mjs/.cjs/.wgsl/.glsl/.html/.wasm) anywhere in the zip, referenced or not.
      - Deterministic write: sorted entries, `kestrel.json` first, DOS time 1980-01-01.
      - `.glb`, `.png`, `.bin` and `.vox` entries are stored uncompressed and read with a zero-copy `subarray`.
    - **`package.js`**
@@ -4753,6 +4754,8 @@ Owner: one package file to distribute and use assets, like `.unitypackage`.
      - `kestrel.base`: the game content.
      - `kestrel.chargen.human`: the kit.
      - One package per character or asset set.
+   - Golden hashes are never taken on compressed zip bytes (deflate output is only stable within one runtime): hash entries, or pack with `deflate:false`.
+   - Only the first package with a content manifest is loaded.
    - Boot is loose by default. `?pack=a.kestrel,b.kestrel` (and later the desktop build) mounts packages.
    - Third-party and user assets come only as packages.
 5. **Size and streaming.**

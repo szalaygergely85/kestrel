@@ -3,7 +3,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import assert from 'node:assert';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { packSpec, packDir } from './pack.mjs';
 import { unpackBytes } from './unpack.mjs';
@@ -51,6 +50,11 @@ try {
   const re = await packDir(out);
   ok('unpack -> pack round trip is byte-identical', eq(bytes, re));
 
+  // one small compressed round trip (deflate on by default)
+  const compBytes = await packSpec({ ...spec, entries: [{ from: path.join(src, 'a.json'), to: 'content/a.json' }, spec.entries[2], spec.entries[3]], assets: spec.assets }, REPO);
+  const comp = await openPackage(compBytes);
+  ok('compressed round trip', await comp.readText('content/a.json') === '{"a":1}' && eq(await comp.readBytes('models/m.glb'), [1, 2, 3, 4]));
+
   // errors
   let msg = '';
   try { await packSpec({ ...spec, license: { file: 'LICENSE.txt' } }, REPO); } catch (e) { msg = e.message; }
@@ -64,7 +68,7 @@ try {
 
   // 2. the real kestrel.base spec: mounted package loads == loose content
   const baseSpec = JSON.parse(fs.readFileSync(path.join(REPO, 'content/packages/kestrel.base.pkg.json'), 'utf8'));
-  const baseBytes = await packSpec(baseSpec, REPO);
+  const baseBytes = await packSpec(baseSpec, REPO, { deflate: false }); // stored: fast; compression is covered by the small round trip above
   const base = await openPackage(baseBytes);
   ok('base: content manifest set', base.manifest.content === 'content/manifest.json');
   ok('base: no scripts or packages dir packed', !base.paths.some((p) => /\.js$/.test(p) || p.startsWith('content/packages/') || p.startsWith('content/editor/')));
@@ -75,14 +79,24 @@ try {
     fetchText: (u) => fs.promises.readFile(new URL(u), 'utf8'),
     fetchBytes: async (u) => new Uint8Array(await fs.promises.readFile(new URL(u))),
   });
-  const strip = (b) => {
-    const c = JSON.parse(JSON.stringify(b));
-    for (const k of Object.keys(c.meta || {})) for (const id of Object.keys(c.meta[k])) delete c.meta[k][id].url;
-    return c;
+  // Fast structural compare (assert.deepStrictEqual / JSON.stringify of the ~1700 meshes took ~8 s).
+  // Typed arrays are compared bytewise; meta[*][id].url differs by design and is skipped.
+  let diff = null;
+  const deq = (a, b, p) => {
+    if (diff) return;
+    if (ArrayBuffer.isView(a) || ArrayBuffer.isView(b)) {
+      if (!ArrayBuffer.isView(a) || !ArrayBuffer.isView(b) || a.constructor !== b.constructor || !Buffer.from(a.buffer, a.byteOffset, a.byteLength).equals(Buffer.from(b.buffer, b.byteOffset, b.byteLength))) diff = p;
+      return;
+    }
+    if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') { if (!Object.is(a, b)) diff = p; return; }
+    if (Array.isArray(a) !== Array.isArray(b)) { diff = p; return; }
+    const ka = Object.keys(a).filter((k) => !(k === 'url' && /^\.meta\./.test(p))), kb = Object.keys(b).filter((k) => !(k === 'url' && /^\.meta\./.test(p)));
+    if (ka.length !== kb.length) { diff = p + ' (keys)'; return; }
+    for (const k of ka) { if (!(k in b)) { diff = p + '.' + k; return; } deq(a[k], b[k], p + '.' + k); }
   };
-  let same = true;
-  try { assert.deepStrictEqual(strip(viaPkg), strip(loose)); } catch (e) { same = false; console.log(String(e.message).slice(0, 400)); }
-  ok('base: packed bundle deep-equals loose bundle', same);
+  deq(viaPkg, loose, '');
+  if (diff) console.log('first diff at', diff);
+  ok('base: packed bundle deep-equals loose bundle', !diff);
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

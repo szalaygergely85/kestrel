@@ -110,12 +110,17 @@ export function validatePackageManifest(obj, opts = {}) {
  */
 
 /** Open + validate a `.kestrel` package from its bytes. @returns {Promise<KPackage>} */
+const SCRIPT_EXT = /\.(js|mjs|cjs|wgsl|glsl|html|wasm)$/i;
+
 export async function openPackage(bytes, limits) {
   const zip = readZip(bytes, limits);
   if (!zip.has('kestrel.json')) fail('(package)', 'kestrel.json', 'missing manifest');
   let manifest;
   try { manifest = JSON.parse(new TextDecoder().decode(await zip.read('kestrel.json'))); }
   catch (e) { fail('kestrel.json', 'json', e.message); }
+  // data only (38.30 item 1): no script-type entry anywhere in the zip, referenced or not
+  const script = zip.paths.find((p) => SCRIPT_EXT.test(p));
+  if (script) fail(script, 'paths', 'script-type entries are not allowed in a package (data only)');
   validatePackageManifest(manifest, { paths: new Set(zip.paths) });
   return {
     id: manifest.id,

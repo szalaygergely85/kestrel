@@ -71,12 +71,12 @@ export function buildManifest(spec, paths) {
 }
 
 /** Spec object -> package bytes. */
-export async function packSpec(spec, root = REPO_ROOT) {
+export async function packSpec(spec, root = REPO_ROOT, opts = {}) {
   const entries = collectEntries(spec, root);
   const paths = new Set(entries.map((e) => e.path));
   if (paths.has('kestrel.json')) throw new Error('spec entries must not contain kestrel.json (it is generated)');
   entries.push({ path: 'kestrel.json', bytes: new TextEncoder().encode(buildManifest(spec, paths)) });
-  const bytes = await writeZip(entries);
+  const bytes = await writeZip(entries, { deflate: opts.deflate !== false });
   await openPackage(bytes); // validates the manifest + every referenced path
   return bytes;
 }

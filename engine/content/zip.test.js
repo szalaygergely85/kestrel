@@ -67,7 +67,7 @@ const files = [
   const e1 = await throwsContent(() => readZip(bad).read('a.txt'));
   ok('bad CRC rejected', e1 && /CRC/.test(e1.reason), e1 && e1.reason);
 
-  for (const p of ['../x', 'a/../b', '/abs', 'a\\b', 'C:/x', 'c:x']) {
+  for (const p of ['../x', 'a/../b', '/abs', 'a\\b', 'C:/x', 'c:x', 'a.json:evil', 'dir/a.json:evil:$DATA']) {
     ok('checkZipPath rejects ' + p, (await throwsContent(() => checkZipPath(p))) !== null);
     ok('writeZip rejects ' + p, (await throwsContent(() => writeZip([{ path: p, bytes: enc('x') }]))) !== null);
   }
