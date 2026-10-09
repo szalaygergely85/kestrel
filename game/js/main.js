@@ -627,7 +627,7 @@ if (wgPipeline && wgPipeline.ready && rt.backend === 'webgpu') wgPipeline.bindSp
 bootMark('sprites/overlay bound');
 // GFX-01w/02: createRenderer builds the webgpu target at the CPU grid (38.8a item 14, pre-WG-3f rule). Once the WebGPU pipeline owns
 // the whole frame, the requested (preset/URL) grid applies; otherwise (e.g. ?shadows=dda -> CPU shading) the CPU grid stays.
-if (wgPipeline && wgPipeline.frameComplete && rt.backend === 'webgpu' && (rt.cols !== gridResult.cols || rt.rows !== gridResult.rows)) {
+if (wgPipeline && (wgPipeline.frameComplete || (isGeometryCompare && params.get('refgrid'))) && rt.backend === 'webgpu' && (rt.cols !== gridResult.cols || rt.rows !== gridResult.rows)) {
   engine.setGrid(gridResult.cols, gridResult.rows, { immediate: true });
   depthBuffer = engine.depthBuffer;
   gbuf = new GBuffer(rt.cols, rt.rows);

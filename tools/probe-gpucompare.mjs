@@ -29,7 +29,7 @@ try {
   const errors = []; cdp.onEvent((m, p) => { if (m === 'Runtime.exceptionThrown') errors.push(p.exceptionDetails.text + ' ' + (p.exceptionDetails.exception && p.exceptionDetails.exception.description)); if (m === 'Runtime.consoleAPICalled' && /gpucompare|error/i.test(JSON.stringify(p.args))) errors.push(JSON.stringify(p.args.map((a) => a.value)).slice(0, 300)); });
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?gpucompare=1&renderer=mesh&backend=${backend}&${q}` });
   for (let i = 0; i < 500; i++) { await pause(500); if (await evaluate(cdp, '!!window.__gpuCompare')) break; }
-  console.log(JSON.stringify(errors.slice(0,3)).slice(0,600));
+  console.log(JSON.stringify(errors.filter((e) => /FAIL|violat/i.test(e)).slice(0,6)).slice(0,4500));
   console.log(await evaluate(cdp, 'JSON.stringify({ rows: (window.__gpuCompare||{}).rows && window.__gpuCompare.rows.map(r => [r.pose, r.ok]), probe: window.__gpuProbe })'));
 } finally {
   cdp?.close(); if (browser?.pid) killTree(browser.pid); if (server.pid) killTree(server.pid);
