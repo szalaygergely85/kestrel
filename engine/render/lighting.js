@@ -31,14 +31,14 @@ import { PROJ_HFOV_DEG as HFOV_DEG } from './projection.js';
 import { dirFromAzEl, localToWorld } from '../core/transform.js';
 import { sunFromHours } from '../core/sunPath.js';
 import { gridLocal } from '../world/gridLocal.js';
-import { FACE_PACKED, KIND_TERRAIN } from './GBuffer.js';
+import { FACE_PACKED, KIND_TERRAIN, KIND_MESH } from './GBuffer.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 import { createPitchedTerms, pitchedTerms, unprojectPitched, resolveProjection, isPitchedFamily } from './projection.js';
 import { sunShadowTaps, sunShadowInfo } from './shadowSun.js';
 import { resolveLook } from './look.js'; // ART-01a (37.18 item 3)
 import { cloudShadeQ } from './cloudShadow.js'; // S8-B2-12c (38.13)
 import { cloudDriftOffset } from './sky.js';
-import { aoTapOcc, aoFactor, aoTapCells, AO_DEFAULTS } from './horizonAo.js'; // S8-B2-20 (38.17)
+import { aoTapOcc, aoFactor, aoTapCells, AO_DEFAULTS, AO_MAX } from './horizonAo.js'; // S8-B2-20 (38.17)
 
 // RE-02a: scratch for lightSurfaces' pitched branch (zero allocation per frame).
 const litPitchTerms = createPitchedTerms();
@@ -1213,7 +1213,9 @@ export function lightSurfaces(fb, lights, cam, world) {
         aoTapInto(x + rc, y, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz, aoR, aoB);
         aoTapInto(x, y - rc, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz, aoR, aoB);
         aoTapInto(x, y + rc, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz, aoR, aoB);
-        const aoF = aoFactor(aoAcc[0] * 0.25, ao.strength);
+        let aoF = aoFactor(aoAcc[0] * 0.25, ao.strength);
+        // ME-20c (38.18): baked vertex AO on kind-9 cells. min (not product): both estimate the same ambient visibility, so they never double-darken.
+        if (kind[i] === KIND_MESH) { const va = gbuf.vao[i]; aoF = Math.min(aoF, 1 - ao.strength * AO_MAX * (1 - (va < 0 ? 0 : va > 1 ? 1 : va))); }
         const k = 1 - aoF;
         rgb[o] -= lights.ambient[0] * k; rgb[o + 1] -= lights.ambient[1] * k; rgb[o + 2] -= lights.ambient[2] * k;
       }
