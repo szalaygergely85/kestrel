@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { CellBuffer } from './CellBuffer.js';
 import { DepthBuffer } from './DepthBuffer.js';
 import { drawSprites, lastSpriteDepth, SPR_STRIDE, SPRITE_NEAR_DEPTH } from './sprites.js';
+import { SPRITES_WGSL } from './gpu/wgsl/sprites.wgsl.js';
 import { spritesFragSrc } from './gpu/wgsl/spritesFrag.glslref.js';
 
 let checks = 0;
@@ -52,5 +53,7 @@ for (const depthUint of [false, true]) {
   ok(shader.includes(`const float SPRITE_NEAR_DEPTH = ${SPRITE_NEAR_DEPTH};`), 'GPU uses identical f32 cutoff');
   ok(shader.indexOf('if (p.y < SPRITE_NEAR_DEPTH && texelFetch(uSpr, ivec2(3, s), 0).w < 0.5) continue;') < shader.indexOf('bool emissive ='), 'GPU culls before either texel lighting path');
 }
+ok(SPRITES_WGSL.includes('if (p.y < SPRITE_NEAR_DEPTH && textureLoad(uSpr, vec2i(3, s), 0).w < 0.5) { continue; }'), 'WGSL near cull honours nearOk (T3.w) like the GLSL ref');
+ok(SPRITES_WGSL.indexOf('textureLoad(uSpr, vec2i(3, s), 0).w < 0.5') < SPRITES_WGSL.indexOf('let emissive'), 'WGSL culls before the lighting path');
 
 console.log(`sprite near cutoff: ${checks} checks. ALL PASS`);
