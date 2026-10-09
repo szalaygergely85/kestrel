@@ -257,6 +257,9 @@ console.log('passRaster.test.js (WG-4a): all checks passed.');
     it.partMatrices.set(T, 0); it.partMatrices.set(T, 12); // not DRAW_FLAG_ONE_PART: instancedRanges() returns mesh.ranges, both parts identity
   };
   ps.vmList = null;
+  // ALPHA-01f-fix3: masked leaf cards are two-sided (JS twin), opaque instancing stays back-face culled
+  assert.equal(ps.instanceMaskPipe.desc.cull, 'none'); assert.equal(ps._aoPipe('instanceMask').desc.cull, 'none');
+  assert.equal(ps.instancePipe.desc.cull, 'back'); assert.equal(ps._aoPipe('instance').desc.cull, 'back');
   const pp = { _t: { targetRaster: {}, targetVmDepth: {} }, stats: {} };
   ps.run(pp);
   assert.deepEqual(dr.map((x) => [x.pipe === ps.instanceMaskPipe ? 'mask' : (x.pipe === ps.instancePipe ? 'opaque' : '?'), x.c, x.f, x.i]),

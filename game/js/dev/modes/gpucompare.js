@@ -103,6 +103,7 @@ function buildCompareRuns(ctx) {
   }
   function loadCompareWorld(def, opts = {}) {
     const w = World.load(def, assets, opts);
+    w.maskAtlas = buildMaskAtlas(assets); // TREES-DEFAULT-01: same per-world atlas as engine.loadWorld (mesh trees + the berry bush are masked meshes)
     for (const s of w.structures) {
       if (s.kind === 'mesh') continue; // ME-14c1
       bindLevel(matTable, s.level);

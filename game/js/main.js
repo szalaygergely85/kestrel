@@ -880,6 +880,9 @@ if (gpuBlocked) {
 
 async function runGame(mode, cinematic = null) {
   const physics = params.get('physics') === 'grid' ? 'grid' : params.get('physics') === 'mesh' || renderer === 'mesh' ? 'mesh' : 'grid';
+  // TREES-DEFAULT-01: mesh trees are the default forest; `?trees=voxel` is the dev fallback (design file stays pure data: it carries both species lists)
+  { const ft = window.ASSETS.levels.overworld_far.recipe.forest.trees;
+    if (params.get('trees') === 'voxel' && ft.speciesVoxel) ft.species = ft.speciesVoxel; }
   const worldLoadOpts = { physics,
     realTrees: renderer === 'mesh' && physics === 'mesh' && params.get('trees') !== '0',
     detail: renderer === 'mesh' && physics === 'mesh' && params.get('scatter') !== '0' }; // ENV-01a2: `?scatter=0` (not `?detail=0`, that is the US-028 v1-shading switch)

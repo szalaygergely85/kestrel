@@ -184,6 +184,7 @@ console.log(`passShadow.test.js: all checks passed (heap +${grew} B / 1000 frame
   const m6 = makeMockGpuDevice(), dev = m6.device, dr = [];
   dev.draw = (c, f, i) => dr.push({ pipe: dev._activePipeline, c, f, i, bind: dev._lastBind, u: new Uint32Array(dev._lastBind.uniforms.buffer, dev._lastBind.uniforms.byteOffset, dev._lastBind.uniforms.length).slice() });
   const s6 = new WgShadowPass(dev, { shadows: { res: 256 } });
+  assert.equal(s6.instanceMaskPipe.desc.cull, 'none', 'ALPHA-01f-fix3: two-sided leaf-card casters'); assert.equal(s6.instancePipe.desc.cull, 'back');
   assert.equal(s6.instanceMaskPipe.desc.fragment.src.entry, 'fs_mask_shadow');
   assert.deepEqual(s6.instanceMaskPipe.desc.bindings.textures, ['uint']);
   assert.equal(s6.instanceMaskPipe.desc.vertex.extraLayouts[0].layout[0].location, 10);

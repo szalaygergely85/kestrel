@@ -99,7 +99,7 @@ export class WgShadowPass {
       this.maskPipe = this._pipeline(RASTER_MASK_SHADOW_WGSL, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, 'none', RASTER_MASK_BLOCK, false, [{ layout: MASK_UV_LAYOUT, strideBytes: MASK_UV_STRIDE_BYTES }], 'fs_mask_shadow', ['uint']);
       this.instancePipe = this._pipeline(RASTER_INSTANCED_SHADOW_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', RASTER_BLOCK, true);
       // ALPHA-01f (c): instanced masked shadow caster - same state as instancePipe + the mask-uv extra stream (location 10) + texMask, discard-only fragment.
-      this.instanceMaskPipe = this._pipeline(RASTER_INSTANCED_MASK_SHADOW_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', RASTER_INSTANCED_MASK_BLOCK, true, [{ layout: MASK_UV_LAYOUT, strideBytes: MASK_UV_STRIDE_BYTES }], 'fs_mask_shadow', ['uint']);
+      this.instanceMaskPipe = this._pipeline(RASTER_INSTANCED_MASK_SHADOW_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'none', RASTER_INSTANCED_MASK_BLOCK, true, [{ layout: MASK_UV_LAYOUT, strideBytes: MASK_UV_STRIDE_BYTES }], 'fs_mask_shadow', ['uint']);
       this.clothPipe = this._pipeline(RASTER_CLOTH_SHADOW_WGSL, CLOTH_DYN_LAYOUT, CLOTH_STRIDE_BYTES, 'none', RASTER_BASE_BLOCK, false, [{ layout: CLOTH_UV_LAYOUT, strideBytes: 8 }]);
       this.terrainPipe = this._pipeline(SHADOW_TERRAIN_WGSL, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, 'none', SHADOW_TERRAIN_BLOCK, false, null, 'fs_main');
       if (opts.gpuCull !== false && typeof device.createComputePipeline === 'function') { this.cull = new WgCullPass(device, { shadow: true }); this.src.gpu = this._gpuHook; }
