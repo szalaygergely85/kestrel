@@ -20,3 +20,6 @@ content/local/
 
 # S8-B2-11: generated LOD1 preview data (regenerate: node tools/mesh-lod-preview.mjs)
 design/preview/lod1-trees.data.js
+
+# KPKG-03: built packages
+/dist/
