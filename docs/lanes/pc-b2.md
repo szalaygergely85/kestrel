@@ -238,3 +238,6 @@ New engine/render/lighting.alloc.test.js (budget 256 KB/8x60k calls, pinned pre-
 ## WG-5a-2 (kestrel-4, B2)
 SKY_LUT_N -> wgsl/skyLut.js; GLSL_VERSION/PRECISION/GBUF_UNPACK/BYTE_OUT/CELL_RAY_PITCHED/OCT_NORMAL -> wgsl/glslref.common.js (glsl/common.js re-exports); wg/passShade, wgsl/shade.wgsl, glslref fixtures, pitched.pipeline.test re-pointed. No non-test wg/** or wgsl/** file imports glsl/** (3 wgsl tests still do: terrainRaster/water, WG-5a-3). wg5a-plan: 11 still reachable (unchanged: remaining are tests/GL pipeline).
 -> arch-review
+
+## WG-5a-3 (kestrel-4, B2)
+Moved terrain/water GLSL reference sources to wgsl/{terrainVert,waterVert,waterFrag,waterComposite}.glslref.js + wgsl/glslref.extra.js (HASH_FAST/CELL_RAY/PITCH_UNIFORMS/NEAR|FAR_TYPE_NEAREST); glsl files re-export; wgsl/** and wg/** import nothing from ../glsl/. wgsl/glsl/terrain/water suites PASS. -> arch-review

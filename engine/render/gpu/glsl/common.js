@@ -30,21 +30,9 @@
 import { SKY_LUT_N } from '../wgsl/skyLut.js';
 export { GLSL_VERSION, PRECISION, GBUF_UNPACK, BYTE_OUT, CELL_RAY_PITCHED, OCT_NORMAL } from '../wgsl/glslref.common.js';
 export { SKY_LUT_N };
+export { HASH_FAST, CELL_RAY, PITCH_UNIFORMS } from '../wgsl/glslref.extra.js';
+import { HASH_FAST, CELL_RAY, PITCH_UNIFORMS } from '../wgsl/glslref.extra.js';
 
-export const HASH_FAST = `
-uint hashFastU(int x, int y, int s) {
-  uint h = uint(x) * 0x27d4eb2du ^ uint(y) * 0x165667b1u ^ uint(s) * 0x9e3779b1u;
-  h = (h ^ (h >> 15u)) * 0x85ebca6bu;
-  h = (h ^ (h >> 13u)) * 0xc2b2ae35u;
-  h ^= h >> 16u;
-  return h;
-}
-// The uint->float conversion via >>8 is exact (24 significant bits fit a
-// float32 mantissa) - no driver-dependent rounding (tech notes item 5).
-float hashFast(int x, int y, int s) {
-  return float(hashFastU(x, y, s) >> 8u) * (1.0 / 16777216.0);
-}
-`;
 
 export const SAMPLE_POW_LUT = `
 uniform sampler2D uGain; // R32F, 256x1 - table.gainLUT
@@ -118,17 +106,6 @@ int lineGlyphCodeFast(float cx, float cy, float fr, float cellAspect) {
 // world xyz is ever stored in the G-buffer (14.3 item 1). `falloffFast` is
 // the engine's point-light falloff (design/palette.js `util.falloff`,
 // US-002 rule): smooth to exactly 0 at the radius, no `pow`.
-export const CELL_RAY = `
-vec3 cellRayP(vec2 cell, ivec2 grid, float posX, float posY, float eyeH,
-    float dirX, float dirY, float planeX, float planeY,
-    float horizonRow, float planeDistY, float dist) {
-  float cameraX = (2.0 * (cell.x + 0.5)) / float(grid.x) - 1.0;
-  float rayDirX = dirX + planeX * cameraX;
-  float rayDirY = dirY + planeY * cameraX;
-  float slope = -(cell.y - horizonRow) / planeDistY;
-  return vec3(posX + rayDirX * dist, posY + rayDirY * dist, eyeH + slope * dist);
-}
-`;
 
 // RE-02a (docs/architecture.md 28.1 Amendment 2): the pitched camera's
 // counterpart of `cellRayP`. `cellDirPitched` is the literal twin of
@@ -139,12 +116,6 @@ vec3 cellRayP(vec2 cell, ivec2 grid, float posX, float posY, float eyeH,
 // (A2 item 10). `pitchFogScale` = `pitchedFogScale`: `vd * scale` is the
 // horizontal forward distance the fog curves read (A2 item 3); mode 0
 // returns 1.0 without arithmetic so every shear frame is byte-identical.
-export const PITCH_UNIFORMS = `
-uniform int uProjMode;  // 0 = shear (cellRayP / uHorizonRow), 1 = pitched (cellRayPitched)
-uniform vec4 uPitchA;   // fX, fY, fZ, tanHalfX
-uniform vec4 uPitchB;   // rX, rY, uX, uY
-uniform vec4 uPitchC;   // uZ, tanHalfY, cosP, sinP
-`;
 
 
 // US-041a (15.3 item 3): literal GLSL twin of engine/voxel/octNormal.js's

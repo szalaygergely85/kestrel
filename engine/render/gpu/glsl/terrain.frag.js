@@ -19,6 +19,8 @@
 // hit, and per item 1/10 terrain never draws over a structure cell, so this
 // pass copies those through untouched with no march at all.
 import { GLSL_VERSION, PRECISION, HASH_FAST, OCT_NORMAL } from './common.js';
+import { NEAR_TYPE_NEAREST_GLSL, FAR_TYPE_NEAREST_GLSL } from '../wgsl/glslref.extra.js';
+export { NEAR_TYPE_NEAREST_GLSL, FAR_TYPE_NEAREST_GLSL };
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { KIND_TERRAIN, FACE_PACKED } from '../../GBuffer.js';
 import {
@@ -40,15 +42,6 @@ import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, 
 // `uNearType`/`uNearMap` are declared by whichever shader includes this
 // (NEARH_BILINEAR_GLSL below declares both; terrain.vert.js's fragment
 // declares its own copies).
-export const NEAR_TYPE_NEAREST_GLSL = `
-int nearTypeNearest(float x, float y) {
-  int ix = int(floor((x - uNearMap.x) / uNearMap.z));
-  int iy = int(floor((y - uNearMap.y) / uNearMap.z));
-  int W = int(uNearMap.w);
-  if (ix < 0 || iy < 0 || ix >= W || iy >= W) return 0;
-  return int(texelFetch(uNearType, ivec2(ix, iy), 0).r);
-}
-`;
 
 export const FARH_BILINEAR_GLSL = `
 uniform sampler2D uFarH;   // R32F, mapW x mapH
@@ -170,14 +163,6 @@ vec3 terrainNormalNear(float x, float y, bool isNear, float H0) {
 // are declared by whichever shader includes this (never redeclared here -
 // TERRAIN_FRAG_SRC already owns both; terrain.vert.js's fragment declares
 // its own copies).
-export const FAR_TYPE_NEAREST_GLSL = `
-int farTypeNearest(float x, float y) {
-  int ix = int(floor(x / uFarMap.z)), iy = int(floor(y / uFarMap.z));
-  int W = int(uFarMap.w);
-  if (ix < 0 || iy < 0 || ix >= W || iy >= W) return 0;
-  return int(texelFetch(uFarType, ivec2(ix, iy), 0).r);
-}
-`;
 
 export const TERRAIN_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
 layout(location = 0) out uvec4 outGI;
