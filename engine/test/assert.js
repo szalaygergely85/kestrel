@@ -107,6 +107,8 @@ export function makeMockGpuDevice() {
     endCompileBatch() { device._batchDepth = Math.max(0, (device._batchDepth || 0) - 1); return Promise.resolve([]); },
     createPipelineAsync(desc) { return Promise.resolve(makeHandle('pipeline', desc)); },
     compiling: false,
+    copyTextureToBuffer(tex, buf, w, h, bytesPerRow) { (device._copies || (device._copies = [])).push({ kind: 'tex', tex, buf, w, h, bytesPerRow }); },
+    copyBufferToBuffer(src, srcOff, dst, dstOff, bytes) { (device._copies || (device._copies = [])).push({ kind: 'buf', src, srcOff, dst, dstOff, bytes }); },
     dispatch(pipeline, desc, x, y = 1, z = 1) { device._dispatches = (device._dispatches || 0) + 1; device._lastDispatch = { pipeline, desc, x, y, z }; },
     drawIndirect(buffer, offsetBytes) { device._indirectDraws = (device._indirectDraws || 0) + 1; device._lastIndirect = { pipeline: device._activePipeline, buffer, offsetBytes }; },
     dispose(handle) {

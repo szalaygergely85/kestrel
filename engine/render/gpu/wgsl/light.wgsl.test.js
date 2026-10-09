@@ -199,3 +199,15 @@ console.log(`light.wgsl.test.js: string/layout rules and ${probes} JS-evaluated 
   assert.ok(/if \(sdm <= textureLoad\(uSunShadow, t, 0\)\)/.test(fn) && !/if \(sd <= textureLoad/.test(fn), 'tap compare uses sdm');
   assert.ok(/sd < 0\.0 \|\| sd > 1\.0/.test(fn), 'receiver box test stays on sd');
 }
+
+// ME-20c (38.18): kind-9 packed normal from GI.z; the vertex-AO term sits inside the strength branch, after the horizon term, as a min.
+{
+  const { LIGHT_WGSL: W } = await import('./light.wgsl.js');
+  assert.ok(W.includes('select(textureLoad(uGA, cell, 0).w, textureLoad(uGI, cell, 0).z, kindU == u32(KIND_MESH))'), 'kind 9 packed N from GI.z');
+  const iStr = W.indexOf('if (u.aoStrength > 0.0 && kindU != u32(KIND_TERRAIN)) {'), iHor = W.indexOf('var aoF = 1.0 - u.aoStrength * AO_MAX * occ;');
+  const iVao = W.indexOf('if (kindU == u32(KIND_MESH)) { aoF = min(aoF, 1.0 - u.aoStrength * AO_MAX * (1.0 - clamp(bitcast<f32>(textureLoad(uGA, cell, 0).w), 0.0, 1.0))); }');
+  const iSub = W.indexOf('L -= u.ambient * (1.0 - aoF);');
+  assert.ok(iStr > 0 && iStr < iHor && iHor < iVao && iVao < iSub, 'vao term inside the strength branch, after the horizon term, before the ambient subtraction');
+  assert.ok(!W.includes('aoF *=') && !W.includes('aoF = aoF *'), 'min, not product');
+  console.log('light.wgsl.test.js (ME-20c): vao term placement ok.');
+}

@@ -27,6 +27,9 @@ export function validateScatterConfig(cfg) {
     if (!s || hasModel === hasMesh) bad(`${key}: exactly one of model/mesh`);
     if (hasModel && (typeof s.model !== 'string' || !s.model)) bad(`${key}.model`);
     if (hasMesh && (typeof s.mesh !== 'string' || !s.mesh)) bad(`${key}.mesh`);
+    // MESH-LOD-CELLS-01: optional per-species LOD override (default = cfg.lodCells for voxel species, LOD off for mesh species)
+    if (s.lodCells !== undefined && (!Number.isFinite(s.lodCells) || s.lodCells <= 0)) bad(`${key}.lodCells`);
+    if (s.lod0Cap !== undefined && (!Number.isInteger(s.lod0Cap) || s.lod0Cap < 0)) bad(`${key}.lod0Cap`);
     if (!Number.isFinite(s.weight) || s.weight <= 0) bad(`${key}.weight`);
     if (!Number.isFinite(s.trunkR) || s.trunkR <= 0) bad(`${key}.trunkR`);
     if (!Number.isFinite(s.trunkH) || s.trunkH <= 0) bad(`${key}.trunkH`);

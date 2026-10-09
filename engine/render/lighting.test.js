@@ -995,18 +995,7 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
     const d5 = new Float32Array(11).fill(FLOOR); d5[1] = WALL; // x=1 raised, receiver x=0 taps x=-2 (out of grid) and x=2
     const r5 = aoRatio(new Uint8Array(11).fill(1), new Uint8Array(11).fill(FACE_U), d5, 11);
     ok('38.16 out-of-grid tap ignored (x=0 finite, <= 1)', Number.isFinite(r5[0]) && r5[0] <= 1);
-    // 0 alloc over 60k cells (steady state, buffers preallocated)
-    const n = 60000;
-    const k6 = new Uint8Array(n).fill(1), f6 = new Uint8Array(n).fill(FACE_U), d6 = new Float32Array(n).fill(FLOOR);
-    for (let q = 0; q < n; q += 7) { f6[q] = FACE_S; d6[q] = WALL; }
-    const g6 = { kind: k6, face: f6, aoD: new Float32Array(n), cols: n, rows: 1 };
-    const l6 = makeAoLights(1), lb6 = makeLightBuffer(n, 1), fb6 = { gbuf: g6, depth: { depth: d6 }, rt, light: lb6 };
-    lightSurfaces(fb6, l6, cam, null); // warm
-    // Garbage is measured as AO-on minus AO-off (baseline lightSurfaces garbage, JIT boxing noise cancels out).
-    const l6off = makeAoLights(0);
-    const heapDelta = (ls) => { lightSurfaces(fb6, ls, cam, null); const h0 = process.memoryUsage().heapUsed; lightSurfaces(fb6, ls, cam, null); return process.memoryUsage().heapUsed - h0; };
-    const dOff = heapDelta(l6off), dOn = heapDelta(l6);
-    ok('38.16 AO pass adds ~0 garbage over 60k cells (< 256 KB over AO-off)', dOn - dOff < 262144, `on ${dOn} off ${dOff}`);
+    // AO garbage check moved to engine/render/horizonAo.alloc.test.js (TEST-FLAKY-AO-01: needs a deterministic heap).
   }
 
   // 38.16: setLook resolves look.ao; absent / strength 0 -> lights.ao null.

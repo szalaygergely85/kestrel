@@ -9,7 +9,7 @@ import {
   PROJ_NEAR, createPitchedTerms, pitchedTerms, unprojectPitched, worldToCell, screenRay,
   resolveProjection, assertProjectionRenderer, pitchedFogScale,
 } from './projection.js';
-import { CELL_RAY_PITCHED } from './gpu/glsl/common.js';
+import { CELL_RAY_PITCHED } from './gpu/wgsl/glslref.common.js';
 import { projectSprite } from './sprites.js';
 import { VoxelPool } from './voxelPool.js';
 import { computeProjectionPitched, instanceRect } from '../voxel/instanceRect.js';

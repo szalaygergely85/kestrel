@@ -117,12 +117,17 @@ fn maskDiscard(uvm: vec2f, x0: u32, y0: u32, w: u32, h: u32, cut: u32) -> bool {
 }
 `;
 
+/** ME-20c (38.18): `RasterU.axisAligned` is a flag word. Bit 0 = aligned (unchanged); bit 1 = write the interpolated vertex AO into kind-9 GA.w (set by passRaster iff lights.ao.strength > 0). */
+export const RASTER_FLAG_VAO = 2;
+
 /**
  * @param {'static'|'voxel'|'instanced'|'cloth'|'mask'|'instancedMask'} variant 'mask' = the static layout + per-vertex mask uv
  * (location 10) + texMask discard; 'instancedMask' (ALPHA-01f b) = the instanced layout (sway + LOD dither) with the same
  * mask uv stream + discard added on top, matching rasterJS.js rasterInstanced's per-range mask/two-sided rule exactly.
+ * @param {{ao?: boolean}} [opts] ME-20c: `ao` adds the per-vertex AO stream (`@location(11) aAo: f32` -> varying `@location(8) vAo`); voxel/instanced/mask/instancedMask only.
  */
-export function rasterWgsl(variant = 'static') {
+export function rasterWgsl(variant = 'static', { ao = false } = {}) {
+  if (ao && (variant === 'static' || variant === 'cloth')) throw new Error(`rasterWgsl: ao stream is not available for variant '${variant}'`);
   const cloth = variant === 'cloth';
   const instanced = variant === 'instanced' || variant === 'instancedMask';
   const compact = variant === 'voxel' || instanced;
@@ -138,6 +143,7 @@ struct VertexIn {
 ${cloth ? '' : '  @location(3) aFlat: vec2u,'}
 ${cloth || compact ? '' : '  @location(4) aAux0123: vec4f,\n  @location(5) aAux4567: vec4f,'}
 ${mask ? '  @location(10) aUVMask: vec2f,' : ''}
+${ao ? '  @location(11) aAo: f32,' : ''}
 ${instanced ? '  @location(6) iRow0: vec4f,\n  @location(7) iRow1: vec4f,\n  @location(8) iRow2: vec4f,\n  @location(9) iMeta: vec2u,' : ''}
 };
 struct VertexOut {
@@ -150,6 +156,7 @@ struct VertexOut {
   @location(5) vUV: vec2f,
   @location(6) vWorldZ: f32,
 ${mask ? '  @location(7) vUVMask: vec2f,' : ''}
+${ao ? '  @location(8) vAo: f32,' : ''}
 };
 @vertex fn vs_main(a: VertexIn) -> VertexOut {
   var o: VertexOut;
@@ -175,7 +182,7 @@ ${instanced ? `  let lp = (u.model * vec4f(a.aPos, 1.0)).xyz;
   let nw = normalize(vec3f(dot(a.iRow0.xyz, ln), dot(a.iRow1.xyz, ln), dot(a.iRow2.xyz, ln)));
   o.vNrmW = nw; o.vNrmS = nw;
 ` : `  let worldPos = u.model * vec4f(a.aPos, 1.0);
-  o.packed = vec4u(${cloth ? 'bitcast<u32>(u.flat.x)' : 'a.aFlat.x'} | u.planeIdOr, ${cloth ? 'bitcast<u32>(u.flat.y)' : 'a.aFlat.y'}, u.objectId, ${cloth ? '0u' : 'u.axisAligned'});
+  o.packed = vec4u(${cloth ? 'bitcast<u32>(u.flat.x)' : 'a.aFlat.x'} | u.planeIdOr, ${cloth ? 'bitcast<u32>(u.flat.y)' : 'a.aFlat.y'}, u.objectId, ${cloth ? '0u' : '(u.axisAligned & 1u)'});
   o.aux4567.z = u.zBase;
   o.vNrmW = normalize(modelN * unpackNormalOct(a.aNrmBits));
   o.vNrmS = ${cloth ? 'modelN * unpackNormalOct(a.aNrmBits)' : 'normalize(modelN * unpackNormalOct(a.aNrmBits))'};
@@ -183,12 +190,14 @@ ${instanced ? `  let lp = (u.model * vec4f(a.aPos, 1.0)).xyz;
 ${cloth || compact ? '' : '  o.aux0123 = a.aAux0123; o.aux4567 = vec4f(a.aAux4567.xy, o.aux4567.z, 0.0);'}
   o.vUV = a.aUV; o.vWorldZ = worldPos.z;
 ${mask ? '  o.vUVMask = a.aUVMask;' : ''}
+${ao ? '  o.vAo = a.aAo;' : ''}
   o.pos = u.viewProj * worldPos;
   o.pos.y = -o.pos.y; o.pos.z = 0.5 * (o.pos.z + o.pos.w);
   return o;
 }
 const KIND_MODEL: u32 = ${KIND_MODEL}u;
 const KIND_MESH: u32 = ${KIND_MESH}u;
+const RASTER_FLAG_VAO: u32 = ${RASTER_FLAG_VAO}u;
 const FACE_N: u32 = ${FACE_N}u; const FACE_E: u32 = ${FACE_E}u;
 const FACE_S: u32 = ${FACE_S}u; const FACE_W: u32 = ${FACE_W}u;
 const FACE_U: u32 = ${FACE_U}u; const FACE_D: u32 = ${FACE_D}u;
@@ -240,6 +249,7 @@ ${cloth ? '' : `  if (vKind == KIND_MESH) {
     ${mask ? 'var nm = normalize(v.vNrmS); if (!front) { nm = -nm; }' : 'let nm = normalize(v.vNrmS);'} nrmBits = packNormalOct(nm);
     if (max(abs(nm.x), max(abs(nm.y), abs(nm.z))) >= 0.9) { face = roundedFace(nm); }
     else { face = FACE_PACKED; gaW = nrmBits; }
+    if ((u.axisAligned & RASTER_FLAG_VAO) != 0u) { gaW = bitcast<u32>(${ao ? 'v.vAo' : '1.0'}); } // ME-20c: kind-9 GA.w carries the vertex AO (light reads GI.z for the packed normal)
   }`}
   out.GI = vec4u(v.packed.x, vKind | (face << 8u) | (vMat << 16u), nrmBits, v.packed.z);
   out.GA = vec4u(bitcast<u32>(v.vUV.x), bitcast<u32>(v.vUV.y), bitcast<u32>(z), gaW);

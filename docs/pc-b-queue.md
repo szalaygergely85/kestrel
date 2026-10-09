@@ -129,3 +129,8 @@ All end in `arch-review`. ART-ON (designer colour keys + switch the default + ow
 - **ENV-04** / cinematics - waits for an owner talk.
 - **ED-GROUP-1**, **ED-TERRAIN-1c** - P2, after the boar demo (terrain 1a/1b are PC-A engine steps).
 - **PREC-01a** camera-relative raster - after the visible-world items.
+
+**ED-WG-01 split (PC-B architect, 2026-10-09; spec architecture.md 38.21; ED-MESH-1/1b closed as superseded by ME-19a, 1d check folded into 01c):**
+- kestrel-2: `ED-WG-01a` engine `createFrameRenderer` (engine/render/frameRenderer.js + test, index.js export). Ends: arch-review.
+- kestrel-1: `ED-WG-01c-baseline` first (capture the GL pick golden at ../game_project_test, 38.21 item 3). Then `ED-WG-01b` (after 01a): editor on frameRenderer + WebGPU default + overlay -> engine.ui; delete frame.js/sprites.js. Then `ED-WG-01c`: ray.js projection-helper routing + async pick + parity golden + check-deps rule. Ends: arch-review + owner look. Unblocks WG-5 (editor side) and US-068d.
+- kestrel-1 later/optional: `ED-WG-01d` game main.js on createFrameRenderer (not a WG-5 prerequisite).

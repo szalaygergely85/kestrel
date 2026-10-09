@@ -31,14 +31,14 @@ import { PROJ_HFOV_DEG as HFOV_DEG } from './projection.js';
 import { dirFromAzEl, localToWorld } from '../core/transform.js';
 import { sunFromHours } from '../core/sunPath.js';
 import { gridLocal } from '../world/gridLocal.js';
-import { FACE_PACKED, KIND_TERRAIN } from './GBuffer.js';
+import { FACE_PACKED, KIND_TERRAIN, KIND_MESH } from './GBuffer.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 import { createPitchedTerms, pitchedTerms, unprojectPitched, resolveProjection, isPitchedFamily } from './projection.js';
 import { sunShadowTaps, sunShadowInfo } from './shadowSun.js';
 import { resolveLook } from './look.js'; // ART-01a (37.18 item 3)
-import { cloudShadeQ } from './cloudShadow.js'; // S8-B2-12c (38.13)
+import { cloudShadeQP } from './cloudShadow.js'; // S8-B2-12c (38.13)
 import { cloudDriftOffset } from './sky.js';
-import { aoTapOcc, aoFactor, aoTapCells, AO_DEFAULTS } from './horizonAo.js'; // S8-B2-20 (38.17)
+import { aoTapOcc, aoFactor, aoTapCells, AO_DEFAULTS, AO_MAX } from './horizonAo.js'; // S8-B2-20 (38.17)
 
 // RE-02a: scratch for lightSurfaces' pitched branch (zero allocation per frame).
 const litPitchTerms = createPitchedTerms();
@@ -46,6 +46,7 @@ const litGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 const litP3 = new Float64Array(3);
 // S8-B2-20 (38.17): scratch for lightSurfaces' AO tap block (zero allocation per frame/cell).
 const aoTapP = new Float64Array(3);
+const aoPar = new Float64Array(14); // per-cell AO tap parameters (cam, dir, plane, horizon, normal, radius, bias)
 const aoAcc = new Float64Array(1); // tap occlusion accumulator (no boxed-double returns across calls)
 
 export const MAX_LIGHTS = 16;
@@ -727,6 +728,12 @@ export const lightFlags = { sunlit: 0, litCount: 0, sunN: 0, sunBoundary: 0, clo
  * by `n / 4`); with the sun off terrain reports `n = 4` (no occlusion info = lit, as before ME-15).
  */
 export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCount, skipSun, sunMap) {
+  lightP[0] = x; lightP[1] = y; lightP[2] = z; lightN[0] = nx; lightN[1] = ny; lightN[2] = nz;
+  return lightAtScratch(lights, world, out, idxList, idxCount, skipSun, sunMap);
+}
+/** LIGHT-ALLOC-01: `lightAt` body reading P/N from the lightP/lightN scratch (6 double args would be boxed per call, ~48 B/cell). */
+function lightAtScratch(lights, world, out, idxList, idxCount, skipSun, sunMap) {
+  const x = lightP[0], y = lightP[1], z = lightP[2], nx = lightN[0], ny = lightN[1], nz = lightN[2];
   out[0] = lights.ambient[0]; out[1] = lights.ambient[1]; out[2] = lights.ambient[2];
   let litCount = 0;
   const n = idxList ? idxCount : lights.count;
@@ -772,10 +779,9 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
       // S8-B2-12a (38.13): cov is computed once per cell here (before the ndotsun test below), whenever sunOn -
       // terrain (skipSun) is included, 12b's shade consumer reads the same byte for its analytic sun term.
       const sd = sun.dir;
-      const cloudQ = cloud ? cloudShadeQ(cloud, lights.cloudOff, x, y, z, sd[0], sd[1], sd[2]) : 0;
+      const cloudQ = cloud ? cloudShadeQP(cloud, lights.cloudOff, lightP, sd) : 0;
       const ndotsun = nx * sd[0] + ny * sd[1] + nz * sd[2];
       if (skipSun || ndotsun > 0) {
-        lightP[0] = x; lightP[1] = y; lightP[2] = z; lightN[0] = nx; lightN[1] = ny; lightN[2] = nz;
         const nTap = sunShadowTaps(sunMap.map, sunMap.M, lightP, lightN, sunMap.opts);
         lightFlags.sunN = nTap; lightFlags.sunBoundary = sunShadowInfo.boundary;
         sunlit = nTap >= 2 ? 1 : 0;
@@ -790,14 +796,15 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
   } else if (!skipSun && sun && sun.on) {
     // S8-B2-12a (38.13): same cov rule as the sunMap branch above (this branch already excludes terrain via skipSun).
     const sd = sun.dir;
-    const cloudQ = cloud ? cloudShadeQ(cloud, lights.cloudOff, x, y, z, sd[0], sd[1], sd[2]) : 0;
+    const cloudQ = cloud ? cloudShadeQP(cloud, lights.cloudOff, lightP, sd) : 0;
     const ndotsun = nx * sd[0] + ny * sd[1] + nz * sd[2];
     if (ndotsun > 0) {
       // BUG-LIGHT-001 fix: same "toward the light" nudge as the point-light
       // vis sample above (the sun's "light direction" is `sd`, already unit)
       // instead of along `N` - a floor face (`N = 0,0,1`) needs an x/y
       // nudge to escape a cell-boundary coin flip, which `N` alone can't give.
-      if (sunVisible(world, x + sd[0] * 0.02, y + sd[1] * 0.02, z + sd[2] * 0.02, sd)) {
+      sunP[0] = x + sd[0] * 0.02; sunP[1] = y + sd[1] * 0.02; sunP[2] = z + sd[2] * 0.02;
+      if (sunVisibleP(world, sunP, sd)) {
         sunlit = 1;
         const cloudF = 1 - cloudQ * (1 / 255);
         out[0] += sun.col[0] * ndotsun * cloudF;
@@ -956,7 +963,15 @@ function sunCellBlocked(sec, h0, h1) {
  * instead, since it has no such world-coordinate query).
  */
 export function sunVisible(world, x, y, z, dir) {
+  sunP[0] = x; sunP[1] = y; sunP[2] = z;
+  return sunVisibleP(world, sunP, dir);
+}
+const sunP = new Float64Array(3);
+/** LIGHT-ALLOC-01: `sunVisible` with the start point in a Float64Array(3) (3 double args would be boxed per call). */
+function sunVisibleP(world, P, dir) {
   if (!world) return true;
+  let x = P[0], y = P[1];
+  const z = P[2];
   const dx = dir[0], dy = dir[1], dz = dir[2];
   const horiz = Math.hypot(dx, dy);
   let h0 = z + SUN_Z_EPS;
@@ -1100,14 +1115,15 @@ function cellPointInto(pitched, terms, tx, ty, d, cols, camX, camY, camZ, dirX, 
  * the WGSL `aoTapCell`) a non-finite/non-positive depth (synthetic test fixtures can hold garbage depth at a
  * kind != 0 cell; real resolve output never does).
  */
-function aoTapInto(tx, ty, kind, depth, cols, rows, pitched, terms, camX, camY, camZ, dirX, dirY, planeX, planeY, horizonRow, planeDistY, P, nx, ny, nz, radiusM, bias) {
+function aoTapInto(tx, ty, kind, depth, cols, rows, pitched, terms, P) {
+  // TEST-FLAKY-AO-01: doubles come from the aoPar scratch (not 14 double args, which V8 boxes as HeapNumbers per call).
   if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) return;
   const ti = ty * cols + tx;
   if (kind[ti] === 0) return;
   const td = depth[ti];
   if (!(td > 0) || !Number.isFinite(td)) return;
-  cellPointInto(pitched, terms, tx, ty, td, cols, camX, camY, camZ, dirX, dirY, planeX, planeY, horizonRow, planeDistY, aoTapP);
-  aoAcc[0] += aoTapOcc(nx, ny, nz, aoTapP[0] - P[0], aoTapP[1] - P[1], aoTapP[2] - P[2], radiusM, bias);
+  cellPointInto(pitched, terms, tx, ty, td, cols, aoPar[0], aoPar[1], aoPar[2], aoPar[3], aoPar[4], aoPar[5], aoPar[6], aoPar[7], aoPar[8], aoTapP);
+  aoAcc[0] += aoTapOcc(aoPar[9], aoPar[10], aoPar[11], aoTapP[0] - P[0], aoTapP[1] - P[1], aoTapP[2] - P[2], aoPar[12], aoPar[13]);
 }
 
 export function lightSurfaces(fb, lights, cam, world) {
@@ -1189,7 +1205,8 @@ export function lightSurfaces(fb, lights, cam, world) {
       // US-026a (23.4): terrain (kind 7) skips the sun term here - it's
       // added analytically by the terrain shade pass instead (D-007, no
       // terrain shadow rays).
-      lightAt(lights, world, px, py, pz, nx, ny, nz, evalScratch, idxList, idxCount, kind[i] === KIND_TERRAIN, sunMap);
+      lightP[0] = px; lightP[1] = py; lightP[2] = pz; lightN[0] = nx; lightN[1] = ny; lightN[2] = nz;
+      lightAtScratch(lights, world, evalScratch, idxList, idxCount, kind[i] === KIND_TERRAIN, sunMap);
       const o = i * 3;
       rgb[o] = evalScratch[0]; rgb[o + 1] = evalScratch[1]; rgb[o + 2] = evalScratch[2];
       // US-007 (14.3 item 3, `LIGHT.w = sunlit | litCount << 8`, debug/
@@ -1208,12 +1225,16 @@ export function lightSurfaces(fb, lights, cam, world) {
         litP3[0] = px; litP3[1] = py; litP3[2] = pz; // reuse: P is not read again for this cell after this point
         const rc = aoTapCells(aoR, planeDistY, depth[i], ao.maxCells);
         // tap order -x, +x, -y, +y (ratified, matches WGSL)
+        aoPar[0] = cam.x; aoPar[1] = cam.y; aoPar[2] = cam.z; aoPar[3] = dirX; aoPar[4] = dirY; aoPar[5] = planeX; aoPar[6] = planeY; aoPar[7] = horizonRow; aoPar[8] = planeDistY;
+        aoPar[9] = nx; aoPar[10] = ny; aoPar[11] = nz; aoPar[12] = aoR; aoPar[13] = aoB;
         aoAcc[0] = 0;
-        aoTapInto(x - rc, y, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz, aoR, aoB);
-        aoTapInto(x + rc, y, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz, aoR, aoB);
-        aoTapInto(x, y - rc, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz, aoR, aoB);
-        aoTapInto(x, y + rc, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz, aoR, aoB);
-        const aoF = aoFactor(aoAcc[0] * 0.25, ao.strength);
+        aoTapInto(x - rc, y, kind, depth, cols, rows, pitched, litPitchTerms, litP3);
+        aoTapInto(x + rc, y, kind, depth, cols, rows, pitched, litPitchTerms, litP3);
+        aoTapInto(x, y - rc, kind, depth, cols, rows, pitched, litPitchTerms, litP3);
+        aoTapInto(x, y + rc, kind, depth, cols, rows, pitched, litPitchTerms, litP3);
+        let aoF = aoFactor(aoAcc[0] * 0.25, ao.strength);
+        // ME-20c (38.18): baked vertex AO on kind-9 cells. min (not product): both estimate the same ambient visibility, so they never double-darken.
+        if (kind[i] === KIND_MESH) { const va = gbuf.vao[i]; aoF = Math.min(aoF, 1 - ao.strength * AO_MAX * (1 - (va < 0 ? 0 : va > 1 ? 1 : va))); }
         const k = 1 - aoF;
         rgb[o] -= lights.ambient[0] * k; rgb[o + 1] -= lights.ambient[1] * k; rgb[o + 2] -= lights.ambient[2] * k;
       }

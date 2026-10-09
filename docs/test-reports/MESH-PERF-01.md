@@ -70,3 +70,29 @@ Cheapest fix with expected gain (cost is linear in drawn instance triangles, ~26
 1. **Cut tree LOD0 triangles / use LOD1 sooner**: raise `lodCells` for the `forest*` groups (`design/levels/overworld_far.js` line 49, currently 6) and/or simplify the tree LOD0 mesh to ~4-5k tris. Halving tree tris is measured at -1.0 to -1.5 ms main (3.4-3.9 -> 2.4) plus ~-0.3 ms shadow. Needs a look-check by the owner (no silent asset changes rule).
 2. Not worth doing: shader/varying trimming, fragment cost, extra cull (all measured zero effect).
 3. For WG-4c: budget by **instanced triangles drawn**, ~26 us per 1k tris on this GPU/ANGLE; the WebGPU backend may not share the input-stage penalty, so re-measure this probe there before sizing meshes. Scratch script: `scratchpad/probe.mjs` (not committed; reuse `tools/capture-browser.mjs` exports).
+
+## MESH-QA-01 tri budget (2026-10-09)
+
+Tool: `node tools/mesh-tri-budget.mjs [--json] [--pose P] [--lod-cells C] [--lod0-cap N]` (test: `tools/mesh-tri-budget.test.mjs`). Node only; runs the runtime's own `compactGroup` (frustum cull + RE-15 projected-size LOD, 0.9/1.1 hysteresis) on the world_m1 scatter at the `forestWalk` pose (same densest-30 m-disc selection as gpucompare) and the `roadSouth` pose (`content/dev-poses.js`), grid 240x90, pitched projection. LOD1 tri counts are the real `_LOD1` assets (Pine ~35 %, CommonTree ~25 %); TwistedTree has no content mesh and no LOD1 yet: its LOD0 count (9.1-10.1k tris, from the glTF) is used and flagged.
+
+Caveats: (1) world_m1 still scatters the six voxel species (mesh switch prepared, not active), so placements are mapped Oak->CommonTree, Birch->TwistedTree, Pine->Pine with a deterministic weighted variant hash (an assumption, not the final species mix); (2) mesh groups have no `lodCells` wired at runtime yet, the tool applies the forest recipe's `lodCells` 6; (3) frustum + LOD only, no fog/drawM cull or shadow pass.
+
+| pose | in range / 485 | CommonTree | Pine | TwistedTree (LOD0 only) | total tris, lodCells 6 | all-LOD0 |
+|---|---|---|---|---|---|---|
+| forestWalk | 61 | 16 inst, 76 222 | 14 inst, 49 485 | 31 inst, 294 756 | **420 463** | 420 463 |
+| roadSouth | 21 | 7 inst, 34 635 | 7 inst, 24 294 | 7 inst, 67 678 | **126 607** | 126 607 |
+
+Findings: at the recipe's `lodCells` 6 (and up to 24-48) no tree switches to LOD1, because the group radius R (bbox corners over both LODs, 5-9 m) makes the projected size large; LOD1 only starts to bite at `lodCells` ~48-96 (roadSouth 126 607 -> 87 027 at 48, 84 837 at 96; forestWalk stays 420 463 at 48, 405 788 at 96). So the species switch needs a mesh-specific `lodCells` (tune with this tool) before LOD1 saves anything. TwistedTree is 70 % of the forestWalk budget (about 11 ms at the ~26 us / 1k tris measured above): a TwistedTree LOD1 (15 % pick, ~1.4-1.5k tris) is the biggest lever; without it forestWalk is ~420k tris.
+
+### MESH-LOD-CELLS-01 recommendation (2026-10-09)
+Per-species `lodCells` / `lod0Cap` now honoured (scatter species; default unchanged). Tool sweep (`--lod-cells C`, one value for all families; TwistedTree has no LOD1 so stays LOD0):
+
+| lodCells | forestWalk tris | roadSouth tris |
+|---|---|---|
+| 6 (today, mesh = off) | 420 463 | 126 607 |
+| 24 | 420 463 | 121 850 |
+| 48 | 420 463 | 87 027 |
+| 96 | 405 788 | 84 837 |
+| 150 | 380 032 | 84 837 |
+
+lod0Cap 8 changed nothing (<= 8 LOD0 trees in range). Recommend CommonTree + Pine `lodCells: 150` (near trees stay LOD0: 9/16 and 8/14 in forestWalk). Finding: TwistedTree is 294k of 420k tris and has no LOD1; no lodCells value fixes forestWalk below ~380k. It needs an LOD1 mesh (NEEDS C: TwistedTree `lods` mesh, then `lodCells` 150). 

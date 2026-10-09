@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // US-057: one-command test runner (docs/backlog.md row 30a).
 //
-//   node tools/run-tests.mjs [--filter <substr>] [--json <file>] [--timeout-ms <n>]
+//   node tools/run-tests.mjs [--filter a,b | --filter a --filter b] [--json <file>] [--timeout-ms <n>]
 //
 // Finds every `*.test.js` / `*.test.mjs` under engine/, game/, tools/
 // (skipping node_modules, design/preview and .git), runs each in its own
@@ -36,7 +36,9 @@
 // - a real risk, not a hypothetical one, given how many suites in this repo
 // follow this exact hand-rolled pattern.
 //
-// --filter <substr>: only run suites whose path contains the substring.
+// --filter <substr>[,<substr>...]: only run suites whose path contains ANY of the
+//   substrings (comma list = OR; --filter may be repeated). A filter that
+//   matches 0 suites prints `no suites match "<f>"` and the run exits 1.
 // --json <file>: write a JSON report - for each suite: name, status, ms,
 //   and (on FAIL/TIMEOUT/WARN) the last 20 lines of its combined
 //   stdout+stderr.
@@ -57,10 +59,10 @@ const SKIP_DIRS = new Set(['node_modules', '.git']);
 const SKIP_PATH_FRAGMENTS = ['design/preview'];
 
 function parseArgs(argv) {
-  const opts = { filter: null, json: null, timeoutMs: null };
+  const opts = { filter: [], json: null, timeoutMs: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--filter') opts.filter = argv[++i];
+    if (a === '--filter') opts.filter.push(...String(argv[++i] ?? '').split(',').map((x) => x.trim()).filter(Boolean));
     else if (a === '--json') opts.json = argv[++i];
     else if (a === '--timeout-ms') opts.timeoutMs = Number(argv[++i]);
   }
@@ -114,7 +116,7 @@ function collectSuites(root, filter) {
   // (see WARN_ON_FAIL).
   const typecheck = path.join(root, 'tools', 'typecheck.mjs');
   if (fs.existsSync(typecheck)) files.push(typecheck);
-  if (filter) files = files.filter((f) => toPosix(path.relative(root, f)).includes(filter));
+  if (filter && filter.length) files = files.filter((f) => { const r = toPosix(path.relative(root, f)); return filter.some((x) => r.includes(x)); });
   return files;
 }
 
@@ -180,6 +182,13 @@ async function main() {
   const suites = collectSuites(ROOT, opts.filter);
   const results = [];
   let anyFail = false;
+  if (opts.filter.length) {
+    // a typo'd filter must not pass a gate silently: report each dead term, fail if nothing ran
+    for (const f of opts.filter) {
+      if (!collectSuites(ROOT, [f]).length) console.log(`no suites match "${f}"`);
+    }
+    if (!suites.length) process.exit(1);
+  }
 
   for (const file of suites) {
     const name = toPosix(path.relative(ROOT, file));

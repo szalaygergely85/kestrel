@@ -218,6 +218,7 @@ function worldTipFromList(list) {
 // ---- single-handle output baseline (pre TORCH-01a) ----------------------------------------------------------
 {
   const hash = createHash('sha256');
+  let vaoNeutral = true;
   const target = createRasterTarget(COLS, ROWS, 1, {});
   const pt = createPitchedTerms();
   for (const pitched of [false, true]) for (const tMs of [0, 40, 100, 160]) for (const amount of [0, 0.7]) {
@@ -231,11 +232,15 @@ function worldTipFromList(list) {
     else { projTerms(c, grid, terms); shearProjection(terms, M); }
     target.kind.fill(0); clearRasterDepth(target);
     rasterDrawList(list, target, { M, kind7Mat: null, structFoot: null, structCount: 0, team: null });
+    // ME-20c: the new vao plane is excluded from the legacy hash; asserted neutral (1) on every written cell below
+    for (let i = 0; i < target.kind.length; i++) if (target.kind[i] !== 0 && target.vao[i] !== 1) vaoNeutral = false;
     for (const key of Object.keys(target)) {
+      if (key === 'vao') continue;
       const a = target[key];
       if (ArrayBuffer.isView(a)) hash.update(new Uint8Array(a.buffer, a.byteOffset, a.byteLength));
     }
   }
+  ok('AO-less view-model draws write the neutral vao (1.0) on every written cell', vaoNeutral);
   ok('one-handle matrices and raster remain byte-identical across 16 poses', hash.digest('hex') === 'b16abe27bfe1d16803e12d7d91ef9bf66bdec1982d7e94e733355cb6d0e20d1f');
 }
 

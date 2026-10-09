@@ -548,6 +548,25 @@ export class GpuDeviceWebGPU {
   }
 
   /**
+   * S8-B2-10c production copies (recorded into the frame encoder, outside any pass; no allocation, no readback). `copyTextureToBuffer`: the (0,0,w,h) rect of a
+   * single-sample colour texture (the r32ui depth G-buffer) into a 'storage' buffer, rows padded to `bytesPerRow` (multiple of 256 - see readbackLayout).
+   * @param {GpuHandle} tex @param {GpuHandle} buf @param {number} w @param {number} h @param {number} bytesPerRow
+   */
+  copyTextureToBuffer(tex, buf, w, h, bytesPerRow) {
+    if (this._pass) throw new Error('GpuDeviceWebGPU.copyTextureToBuffer: a pass is still open');
+    if (bytesPerRow % 256) throw new Error('GpuDeviceWebGPU.copyTextureToBuffer: bytesPerRow must be a multiple of 256');
+    if (!this._encoder) this._encoder = this.gpu.createCommandEncoder();
+    this._encoder.copyTextureToBuffer({ texture: tex.gpu }, { buffer: buf.gpu, bytesPerRow, rowsPerImage: h }, [w, h, 1]);
+  }
+
+  /** S8-B2-10c: buffer -> buffer copy (storage buffers carry COPY_SRC|COPY_DST). @param {GpuHandle} src @param {number} srcOff @param {GpuHandle} dst @param {number} dstOff @param {number} bytes */
+  copyBufferToBuffer(src, srcOff, dst, dstOff, bytes) {
+    if (this._pass) throw new Error('GpuDeviceWebGPU.copyBufferToBuffer: a pass is still open');
+    if (!this._encoder) this._encoder = this.gpu.createCommandEncoder();
+    this._encoder.copyBufferToBuffer(src.gpu, srcOff, dst.gpu, dstOff, bytes);
+  }
+
+  /**
    * Test-only, always a Promise (38.6): records `copyTextureToBuffer` (rows padded to 256 B) into the current
    * encoder, submits it (so the result is fixed at call time), maps the staging buffer and de-pads into `out`.
    * @param {GpuHandle} tex @param {{x:number,y:number,w:number,h:number}} rect @param {ArrayBufferView} out

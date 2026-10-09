@@ -75,8 +75,11 @@ export function bindScatterInstances(world, instances, previous = [], owner = nu
     if (!counts[s]) continue;
     const sp = cfg.species[s];
     const group = sp.mesh !== undefined ? instances.meshGroup(world.scatterMeshes[s], counts[s]) : instances.group(sp.model, counts[s]);
-    if (sp.mesh !== undefined) group.castShadow = sp.shadow !== false; // mesh groups: no LOD (37.15 item 6)
-    else group.lodCells = cfg.lodCells / knobs.lodScale; // GFX-03: switch distance x lodScale
+    if (sp.mesh !== undefined) group.castShadow = sp.shadow !== false; // mesh groups: LOD off unless the species sets lodCells
+    else group.lodCells = (sp.lodCells ?? cfg.lodCells) / knobs.lodScale; // GFX-03: switch distance x lodScale
+    // MESH-LOD-CELLS-01: per-species override (validated in scatter.js); mesh groups need a ready LOD1 mesh (`lods`) to use it
+    if (sp.mesh !== undefined && sp.lodCells !== undefined) group.lodCells = sp.lodCells / knobs.lodScale;
+    if (sp.lod0Cap !== undefined) group.lod0Cap = sp.lod0Cap;
     for (let i = 0; i < scatter.count; i++) {
       if (scatter.species[i] !== s || (keep && !keep[i])) continue;
       writeUnitInstance(group.ib, group.count++, scatter.x[i], scatter.y[i], scatter.z[i],
