@@ -3,15 +3,15 @@ import { readFileSync } from 'node:fs';
 import { createQuest, applyQuestEvent, questObjectives, stringifyQuest, questHash, validateQuestDefinition } from './quest.js';
 const def=JSON.parse(readFileSync(new URL('../../../../content/quests/m1.quest.json',import.meta.url)));
 const events=[{type:'flag:set',key:'wake',value:true},{type:'item:got',id:'lantern'},{type:'area:entered',id:'breach'},
- {type:'item:got',id:'sword'},{type:'beast:died',id:'boar1'},{type:'beast:died',id:'boar2'},{type:'area:entered',id:'waystone'}];
+ {type:'item:got',id:'sword'},{type:'beast:died',id:'boar1'},{type:'beast:died',id:'boar2'},{type:'beast:died',id:'boar3'},{type:'beast:died',id:'boar4'},{type:'beast:died',id:'boar5'},{type:'area:entered',id:'waystone'}];
 const state=createQuest(def);
 assert.equal(questObjectives(state,def)[0].status,'active');
-applyQuestEvent(state,events[6],def);assert.deepEqual(state.completed,[],'early facts cannot skip predecessors');
+applyQuestEvent(state,events.at(-1),def);assert.deepEqual(state.completed,[],'early facts cannot skip predecessors');
 for(const e of events.slice(0,5)) applyQuestEvent(state,e,def);
 assert.equal(questObjectives(state,def)[4].progress,1);
 assert.equal(applyQuestEvent(state,events[4],def),false,'same beast cannot count twice');
 applyQuestEvent(state,{type:'beast:died',id:'unrelated'},def);assert.equal(questObjectives(state,def)[4].progress,1);
-applyQuestEvent(state,events[5],def);assert.deepEqual(state.completed,def.objectives.map(o=>o.id));
+for(const e of events.slice(5)) applyQuestEvent(state,e,def);assert.deepEqual(state.completed,def.objectives.map(o=>o.id));
 applyQuestEvent(state,{type:'flag:set',key:'wake',value:false},def);assert.equal(state.completed.length,6,'completed objectives are latched');
 const bytes=stringifyQuest(state,def);
 assert.equal(stringifyQuest(createQuest(def,JSON.parse(bytes)),def),bytes);
@@ -80,9 +80,9 @@ applyQuestEvent(earlySword,events[3],def);assert.equal(active(earlySword),'breac
 earlySword=restore(earlySword);applyQuestEvent(earlySword,events[2],def);
 assert.equal(active(earlySword),'beasts','early sword fact satisfies its beat as soon as breach completes');
 for(const s of [m3,earlySword]) {
- applyQuestEvent(s,events[4],def);assert.equal(active(s),'beasts');
- applyQuestEvent(s,events[5],def);assert.equal(active(s),'waystone');
- applyQuestEvent(s,events[6],def);assert.equal(active(s),undefined);
+ for(let i=4;i<8;i++){applyQuestEvent(s,events[i],def);assert.equal(active(s),'beasts');}
+ applyQuestEvent(s,events[8],def);assert.equal(active(s),'waystone');
+ applyQuestEvent(s,events[9],def);assert.equal(active(s),undefined);
 }
 // The unrelated raw end fact/real pickup flag may be present only in m3; both
 // paths still produce exactly the same completed objective prefix.
