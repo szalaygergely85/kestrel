@@ -15,15 +15,15 @@ import {
   GBuffer, bindShading, bindLevel,
   DebugOverlay, bootMark, bootSpan, bootNow, freezeBootMarks, bootEntries, bootReport, // BOOT-SPEED-01
   integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations,
-  GpuCellPipeline, GpuOverlayPass, PASS_NAMES,
+  GpuCellPipeline, GpuOverlayPass, PASS_NAMES, WG_PASS_NAMES,
   VoxelPool, bindDecals, drawDecals,
   PITCH_CLAMP_PITCHED_DEG,
   ambientL, World, repackMaterials,
   updateInteraction, drawCrosshair,
-  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun,
+  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun, setCloudShadow,
   isSoftwareRenderer,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
-  createSceneDim, resetSceneDim, applySceneDim, drawPanel as drawUiPanel,
+  createSceneDim, resetSceneDim, applySceneDim,
   loadContentPack, createRng, prebuildTerrainMesh,
   forwardOf, DEG2RAD, hexToRgb, resolveWaterLooks, createEntityEmitters,
 } from '../../engine/index.js';
@@ -41,6 +41,8 @@ import {
 // GPU_COMPARE_POSES moved into game/js/dev/modes/gpucompare.js with the rest
 // of the `?gpucompare=` mode code.
 import { GATE_POSES } from '../../content/dev-poses.js';
+import { prefetchLazyMeshesAtBoot } from './bootPrefetchHook.js'; // MESH-LOAD-01: boot prefetchNear call
+import { parseCloudStrength } from './cloudParam.js'; // S8-B2-12a NEEDS B1 item (2): `?clouds=<0..1>` parse/clamp
 import { MODES } from './dev/modes/index.js';
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
@@ -53,6 +55,7 @@ import { resetGameAudio, stepGameAudio } from './audio/sfx.js';
 import { loadSettings, saveSettings, getSaveStorage } from './platform/index.js'; // US-060: remembered mute (D-012)
 import { applyLocalOverlay } from './localOverlay.js';
 import { createBootCard } from './bootCard.js'; // boot loading card + ASCII progress bar
+import { createBootStageTimer } from './bootStageTimer.js'; // S8-B1-20: per-stage ms (content/adapter/pipelines/world/meshes)
 import { applyPlaytestOverlay } from './dev/playtest.js'; // US-034: editor play-test handoff (docs/architecture.md 24.11)
 import { computeEndCardState, drawEndCard } from './ui/endCard.js';
 import { initTitleCard, drawTitleCard } from './ui/titleCard.js';
@@ -62,13 +65,15 @@ import { stepLantern } from './quest/lantern.js'; // OWN-REQ-006: hook-light off
 import { removeSwordIfTaken } from './quest/swordTake.js'; // US-078c
 import { resetNoteRead, stepNoteRead, isNoteOpen, pushNoteDim, drawNotePanel } from './quest/noteRead.js'; // READ-01
 import { wakeFrame, drawEyelid, applyWakeOnLoad } from './quest/wake.js';
-import { initMapCard, stepMapCard, isMapOpen, getMapPanel } from './quest/mapCard.js';
+import { initMapCard, stepMapCard, isMapOpen, getMapPanel, getMapChart, drawMapCard } from './quest/mapCard.js';
 import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
 import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-050: the one seam to game content
 import { createTitleMenuHost } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
+import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
+import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
@@ -201,10 +206,12 @@ function redetectQuality() { return startAutoBench(bootOpts.quality ? bootOpts.q
 window.redetectQuality = redetectQuality;
 
 let bootPrinted = false; // BOOT-SPEED-01: true after the first frame (declared before runGame can run)
+let bootStageAtFrame = 0; // S8-B1-20: bootNow() at first frame; F3 shows the stage breakdown for 10 s after this
 bootMark('main.js module start (imports done)');
 // Boot loading card with an ASCII progress bar (not on capture/bench/gpucompare pages; `?bootcard=0` off, `=1` forces it).
 const bootCard = (params.get('bootcard') === '1' || (params.get('bootcard') !== '0' && !isCaptureOrBench && params.get('capture') !== '1')) ? createBootCard() : null;
 const bootProg = bootCard ? bootCard.progress : null, bootPaint = bootCard ? bootCard.paint : async () => {};
+const bootStages = createBootStageTimer(bootNow); // S8-B1-20: starts in 'content' now; see enter() calls below
 const canvas = document.getElementById('screen');
 // US-027b (docs/architecture.md 21.9): tower/test_room/world_m1 are now
 // content/*.json, loaded through the US-027a loader; `window.ASSETS` still
@@ -227,6 +234,8 @@ if (window.ASSETS.spellFx) window.ASSETS.spellFx.attach(); // SPELL-01b: firebal
 bootMark('local overlay applied');
 const assets = AssetRegistry.fromJSON(bundle, window.ASSETS);
 bootMark('AssetRegistry built');
+bootStages.enter('adapter');
+if (bootCard) bootCard.setStageLines(bootStages.cardText());
 if (bootProg) { bootProg.phase('renderer'); await bootPaint(); }
 
 // ART-01a (architecture.md 37.18 item 2): `?look=<key>` selects the active
@@ -333,10 +342,10 @@ if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
 // WG-1c2: `?backend=webgpu|webgl2` (default webgl2); webgpu falls back to webgl2 with a warning (38.8a 16).
 const shadowOpts = bootOpts.shadowOpts; // GFX-01w: shadow level from the preset (resolveShadowLevel) + ?shadows= / ?shadowinst / ?shadowres / ?shadowcast overrides (ME-15e/f, D-043: map is the default)
 const tCR = bootNow();
-const { rt: builtRt, pipeline: wgPipeline, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
+const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
   shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0',
-  onCompileProgress: bootProg ? (done, total) => bootProg.count('compile', done, total) : undefined }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
+  onCompileProgress: (done, total) => { bootStages.enter('pipelines'); if (bootCard) bootCard.setStageLines(bootStages.cardText()); if (bootProg) bootProg.count('compile', done, total); } }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
 bootSpan('createRenderer total (' + rendererInfo.label + ')', tCR);
 if (bootProg) { bootProg.phase('engine'); await bootPaint(); }
 const tCE = bootNow();
@@ -358,6 +367,7 @@ bootSpan('createEngine', tCE);
 // pages and automated browsers never load or save unless `?save=1` forces it (the headless reload check does).
 const saveEnabled = params.get('save') !== '0' && (params.get('save') === '1' || !(isCaptureOrBench || params.get('capture') === '1' || params.has('at') || navigator.webdriver)); // `?at` = dev pose: never autosave it into slot 0
 let saveRelay = null;
+let deviceLostFrozen = false; // S8-B1-10 (38.10c): set once by watchDeviceLost's `freeze` hook below; gates `paused` in the frame loop
 try {
   const questDef = await (await fetch('../content/quests/m1.quest.json')).json();
   saveRelay = createSaveRelay({ storage: getSaveStorage(), questDef, enabled: saveEnabled });
@@ -366,6 +376,44 @@ try {
   saveRelay.quest.onPoll = (name, a, b) => gameHooks.emitSimple(name, a, b);
   gameHooks.onSaveRequest(() => { if (saveRelay && gameHooks.ctx.world) saveRelay.save(gameHooks.ctx.world, { ending: gameHooks.ctx.state.ending }); });
 } catch (e) { console.warn('[save] relay unavailable:', e && e.message); }
+// S8-B1-10 (docs/architecture.md 38.10c "This story (~0.5 d)"): on device.lost (ignoring our own 'destroyed'
+// dispose unless forced) stop stepping the sim, one synchronous autosave through the existing save relay
+// (gameHooks.ctx.requestSave -> saveRelay.save, registered above), then a reload card. Logic lives in the pure
+// deviceLost.js (Node-testable with a mock device); this is just the DOM/sim/save glue. No-op on webgl2 (device null).
+watchDeviceLost(gpuDevice, {
+  freeze: () => { deviceLostFrozen = true; },
+  autosave: () => { if (saveRelay && gameHooks.ctx.requestSave) gameHooks.ctx.requestSave(); },
+  showCard: () => {
+    const card = document.createElement('div');
+    card.id = 'device-lost-card';
+    card.textContent = 'GPU reset - press R or click to reload';
+    card.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;'
+      + 'background:rgba(0,0,0,0.85);color:#fff;font:20px sans-serif;z-index:99999;cursor:pointer;text-align:center;';
+    const reload = () => location.reload();
+    card.addEventListener('click', reload);
+    window.addEventListener('keydown', (ev) => { if (ev.code === 'KeyR') reload(); });
+    document.body.appendChild(card);
+  },
+});
+// Dev hook (38.10c): `?dev=1` only - window.__kestrel.loseDevice() simulates a loss for headless verification
+// (tools/verify-device-lost.mjs) without a real GPU crash.
+if (params.get('dev') === '1') {
+  window.__kestrel = window.__kestrel || {};
+  window.__kestrel.loseDevice = () => { if (gpuDevice && typeof gpuDevice._forceLost === 'function') gpuDevice._forceLost('dev hook'); };
+}
+// S8-B1-15: MAP-01c baked chart (MAP-01b bake tool, content/chart/world_m1.chart.json) for the map card
+// (quest/mapCard.js). Loaded once, like questDef above; a missing/bad file degrades to the plain (unbaked) card
+// (initMapCard's 4th arg stays null below) rather than breaking world load.
+let chartData = null;
+try {
+  chartData = await (await fetch('../content/chart/world_m1.chart.json')).json();
+} catch (e) { console.warn('[map] chart unavailable:', e && e.message); }
+// S8-B1-16: MAP-01d wiring - feeds the player's position into lane C's coarse visited-cell mask
+// (quest/mapFog.js, S8-C-15) every tick through the seam (game/js/mapFogHook.js); no-op without a
+// loaded chart (nothing for the fog to compose onto). `mapFogHook.fog` is read right below, after
+// `gameHooks.boot(...)` has run `onBoot` for this world, to build the map card's `chartOptions.fog`.
+const mapFogHook = chartData ? createMapFogHook(chartData.bounds) : null;
+if (mapFogHook) gameHooks.register(mapFogHook);
 // S8-B1-04: chest sim (quest/sim/chest.js) + item-get card (ui/itemGetCard.js), wired through the seam only - see
 // game/js/chestHook.js. `defs: []` (NEEDS C: no content/chests/*.json / placement yet) - harmless no-op today.
 const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
@@ -439,6 +487,10 @@ if (isGpuCompareMode) rt.resize(GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPAR
 const useDetail = params.get('detail') !== '0';
 // US-006 AC "?lights=0 keeps the US-028 uniform ambient (regression path)".
 const lightsEnabled = params.get('lights') !== '0';
+// S8-B2-12a NEEDS B1 item (2): `?clouds=<0..1>` (default 0). WebGL2 (`rt.backend === 'gl2'`) stays 0 - the frozen
+// GLSL ignores the cloud byte - only the Canvas2D/CPU path (and WebGPU, once kestrel-2's passLight upload lands)
+// actually draws clouds. Applied via `setCloudShadow` after every `buildLightSet` below.
+const cloudStrength = rt.backend === 'gl2' ? 0 : parseCloudStrength(params.get('clouds'));
 // US-007 (14.3 item 8 fallback/switches): test-only sun disable, same shape
 // as `?lights=0`.
 const sunEnabled = params.get('sun') !== '0';
@@ -760,12 +812,14 @@ if (gpuBlocked) {
     console.error(error);
   });
 } else {
+  bootStages.enter('world');
+  if (bootCard) bootCard.setStageLines(bootStages.cardText());
   if (bootProg) { bootProg.phase('world'); await bootPaint(); } // the world build below is one synchronous block: paint the phase first
   runGame('world'); // default: US-025 World (world_m1, or ?level=<name> for a bare single-level world)
   if (bootProg) bootProg.phase('frame');
 }
 
-function runGame(mode, cinematic = null) {
+async function runGame(mode, cinematic = null) {
   const physics = params.get('physics') === 'grid' ? 'grid' : params.get('physics') === 'mesh' || renderer === 'mesh' ? 'mesh' : 'grid';
   const worldLoadOpts = { physics,
     realTrees: renderer === 'mesh' && physics === 'mesh' && params.get('trees') !== '0',
@@ -894,6 +948,7 @@ function runGame(mode, cinematic = null) {
       // keeps the old uniform-ambient path (fb.lights stays null).
       if (lightsEnabled) {
         lightSet = buildLightSet(world, assets.palette);
+        if (lightSet) setCloudShadow(lightSet, { strength: cloudStrength }); // S8-B2-12a NEEDS B1 item (2)
         if (lightSet) lightSet.emissive = !isGpuCompareMode && !params.get('gpucompare') && !(resolvedQuality && resolvedQuality.name === 'low'); // EMIS-01b (38.12): glowing voxels light the scene; off on Low and every gpucompare mode
         window.__debug.lights = lightSet; // EMIS-01b: test hook (derivedStats)
         // `?sun=0`: keep the sun's direction/color (F6/F7 still readable) but
@@ -1049,7 +1104,29 @@ function runGame(mode, cinematic = null) {
         // centre-scaling - panel.js/titleCard.js's sx/sy become 1), not the
         // scene's - the panel/title now draw into `ui`, not `rt`.
         initTitleCard(assets, ui.cols, ui.rows);
-        initMapCard(assets, ui.cols, ui.rows);
+        // S8-B1-15: resolve the two world-space chart markers from live entities (never literal coordinates,
+        // US-010 tech note 1) - the waystone is a top-level world prop, the relay is tower.level.json's
+        // `beaconBowl` prop, namespaced `${structId}.${propId}` by World.load (engine/world/World.js:544).
+        // `?level=`/adhoc worlds have neither entity and fall back to the plain (unbaked) card below.
+        let chartOptions = null;
+        if (chartData) {
+          const markers = [];
+          const waystone = world.get('endMarker');
+          if (waystone) markers.push({ kind: 'waystone', x: waystone.data.transform.x, y: waystone.data.transform.y });
+          const relay = world.get('tower.beaconBowl');
+          if (relay) markers.push({ kind: 'relay', x: relay.data.transform.x, y: relay.data.transform.y });
+          // S8-B1-16: known landmarks stay visible on the chart regardless of exploration - a visibility-only
+          // reveal (mapFog.js's `reveal`, never touches the pencil route) of each marker's own cell, not the
+          // player-visit feed (mapFogHook.js's per-tick `visit`) that gates the surrounding terrain.
+          if (mapFogHook && mapFogHook.fog) for (const m of markers) mapFogHook.fog.reveal(m.x, m.y);
+          chartOptions = { chart: chartData, markers, fog: mapFogHook ? mapFogHook.fog : null };
+        }
+        try {
+          initMapCard(assets, ui.cols, ui.rows, chartOptions);
+        } catch (e) {
+          console.warn('[map] chart card init failed, falling back to the plain card:', e && e.message);
+          initMapCard(assets, ui.cols, ui.rows);
+        }
         resetHints();
       }
       // US-017 tester fix pass 2 (BUG-2): `window.__debug.world/playerHandle/look`
@@ -1064,6 +1141,7 @@ function runGame(mode, cinematic = null) {
       window.__debug.playerHandle = playerHandle;
       window.__debug.look = look;
       window.__debug.beasts = beasts; window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; // HANDS-01b: test hooks
+      window.__debug.isMapOpen = isMapOpen; window.__debug.getMapPanel = getMapPanel; window.__debug.getMapChart = getMapChart; // S8-B1-15: test hook (tools/verify-map-wire.mjs)
     });
 
     // ME-11c (architecture.md 27.18): `?physics=mesh` opts into the mesh
@@ -1190,7 +1268,7 @@ function runGame(mode, cinematic = null) {
     // S is also WASD "move backward", so this must never trigger in play.
     updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !!look && !look.locked && !isMapOpen() && !invOpen });
     uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || !!(vitals && vitals.inputLocked);
-    const paused = mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || ((invOpen || cardOpen) && !ending));
+    const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || ((invOpen || cardOpen) && !ending)));
 
     // US-087 follow-up: drain blocked input without advancing targeting timers.
     // An allowed lock update still precedes look.update so it turns toward the fresh point.
@@ -1581,8 +1659,10 @@ function runGame(mode, cinematic = null) {
         // output, so CPU scene-cell writes never appear -> draw the lid on the UI layer there (an opaque full-row overlay); else in the scene grid.
         if (!(menuHost && menuHost.active)) drawEyelid(wgActive && wgPipeline.frameComplete ? ui : rt, assets.uiStyle, wakeOut.blinkOpen);
         drawTitleCard(ui, fb.timeSec * 1000, wakeOut.titleA, wakeOut.titleState, fadeLut);
-        const mapPanel = getMapPanel();
-        if (mapPanel) drawUiPanel(ui, mapPanel, fb.timeSec * 1000, fadeLut);
+        // S8-B1-15: the map card's own draw seam (mapCard.js:drawMapCard), not the generic drawUiPanel - it gives
+        // blank (unexplored fog) cells an opaque black backing so they never show the scene through (ARCH note,
+        // docs/lanes/pc-c.md batch 16); the fog itself is fed by mapFogHook.js (S8-B1-16).
+        drawMapCard(ui, fb.timeSec * 1000, fadeLut);
         // US-080a2/080b (30.2): HP+MP HUD + hurt edge - hidden on title/map/end/death cards (visibleRule, uiStyle.vitals).
         if (vitals) {
           // Q9 item 2c: hidden on the title (wakeOut.inputLocked covers the wake/title timeline) and map cards too,
@@ -1641,10 +1721,18 @@ function runGame(mode, cinematic = null) {
     // overlay is hidden and no bench runs" - a plain boolean set, cheap
     // enough to do unconditionally every frame.
     if (gpuPipeline) gpuPipeline.setPassTiming(overlay.visible || benchActive || (autoBench !== null && autoBench.phase !== 'done')); // GFX-02: pass timers = sum of passes, not the vsync-padded whole-frame span
+    if (wgActive) wgPipeline.setPassTiming(overlay.visible || benchActive || (autoBench !== null && autoBench.phase !== 'done')); // S8-B1-07: same gate as the GL pipeline's pass timers, WG side
 
     const lastRenderMs = performance.now() - renderStart;
     if (bootFirst && bootProg) bootProg.finish();
-    if (bootFirst) { bootPrinted = true; bootMark('first frame rendered'); freezeBootMarks(); console.info('[boot] breakdown (ms since navigation start)\n' + bootReport()); window.__bootReport = bootReport(); }
+    if (bootFirst) {
+      bootPrinted = true; bootMark('first frame rendered'); freezeBootMarks();
+      console.info('[boot] breakdown (ms since navigation start)\n' + bootReport()); window.__bootReport = bootReport();
+      bootStages.enter('meshes'); // in case the mesh prefetch above was a no-op (lazy loading off) and never advanced the timer
+      bootStages.finish();
+      bootStageAtFrame = bootNow(); // S8-B1-20: F3 shows the stage breakdown for 10 s after this point, then drops it
+      console.info(`[boot] stage total: ${bootStages.total().toFixed(0)} ms\n${bootStages.cardText()}`);
+    }
     // US-018: the overlay text is only ever built while it will actually be
     // shown (`shouldRefresh` = visible + <= 4 Hz) - `?bench=1` builds/owns
     // its own overlay text instead (dev/perfBench.js), so it skips this.
@@ -1676,6 +1764,7 @@ function runGame(mode, cinematic = null) {
           return `${name} ${Number.isNaN(v) ? 'n/a' : v.toFixed(2)}`;
         }).join('  ');
       }
+      if (wgActive && wgPipeline.ready) extra += '\nwg pass ms: ' + WG_PASS_NAMES.map((name, i) => { const v = wgPipeline.stats.wgPassMsP50[i]; return name + ' ' + (Number.isNaN(v) ? 'n/a' : v.toFixed(2)); }).join('  '); // S8-B1-07
       if (mode === 'world') {
         const t = playerHandle.data.transform;
         const world = engine.world;
@@ -1695,6 +1784,13 @@ function runGame(mode, cinematic = null) {
     }
     lap(SEC.overlay);
   }
+
+  // MESH-LOAD-01: lazy meshes near the (possibly save-restored) spawn point load now, behind the boot card's
+  // 'frame' phase - never on the first rendered frame. `playerHandle` is only null after a failed load
+  // (guardLoad already reported it via fatalError); skip rather than throw on top of that.
+  bootStages.enter('meshes');
+  if (bootCard) bootCard.setStageLines(bootStages.cardText());
+  if (playerHandle) await prefetchLazyMeshesAtBoot(bundle.lazyMeshes, engine.world, playerHandle.data.transform);
 
   if (wantAutoQuality && mode === 'world' && !cinematic && resolvedQuality) startAutoBench(resolvedQuality.name, false); // GFX-02
   const loop = engine.run({ update, render });
@@ -1718,11 +1814,14 @@ function runGame(mode, cinematic = null) {
   }
 }
 
-/** F3: first-frame time + the 6 longest spans (full table: console / window.__bootReport). */
+/** F3: first-frame time + the 6 longest spans (full table: console / window.__bootReport). S8-B1-20: plus the
+ * per-stage ms breakdown (bootStages.cardText()) and the stage total, shown for 10 s after the first frame only. */
 function bootSummary() {
   const e = bootEntries(), last = e.length ? e[e.length - 1].t : 0;
   const top = e.filter((x) => x.ms > 0).sort((a, b) => b.ms - a.ms).slice(0, 6).map((x) => `${x.label.replace(/ \(.*$/, '')} ${x.ms.toFixed(0)}`).join(', ');
-  return `first frame ${last.toFixed(0)} ms; top spans: ${top}`;
+  let s = `first frame ${last.toFixed(0)} ms; top spans: ${top}`;
+  if (bootNow() - bootStageAtFrame < 10000) s += `\nstages (total ${bootStages.total().toFixed(0)} ms): ${bootStages.cardText().replace(/\n/g, ', ')}`;
+  return s;
 }
 
 function round2(n) {
@@ -1757,6 +1856,7 @@ function runVoxelBenchMode() {
   const world = loadBenchWorld(assets.world('world_m1'));
   if (world.terrain) world.terrain.bakeFarSync();
   const lights = lightsEnabled ? buildLightSet(world, assets.palette) : null;
+  if (lights) setCloudShadow(lights, { strength: cloudStrength }); // S8-B2-12a NEEDS B1 item (2)
   if (lights && !sunEnabled) lights.setSun({ elevation: lights.sun.elevation, azimuth: lights.sun.azimuth, on: false });
   if (lights) lights.update(0, world);
 

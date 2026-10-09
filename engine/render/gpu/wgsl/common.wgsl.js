@@ -1,6 +1,7 @@
 import { STEP } from '../../../core/loop.js';
 import { WIND_K_SIZE } from '../../../world/wind.js';
 import { CLOUD_SALT } from '../../cloudShadow.js';
+import { AO_RADIUS_M, AO_BIAS } from '../../horizonAo.js';
 
 // WG-3a (docs/architecture.md 38.5): WGSL twins of the shared GLSL snippets in glsl/common.js that more than one
 // module needs. Pure strings, no GPU globals. No raw `%` anywhere (38.5 item 1); add fmodGlsl/imod/umod here when a
@@ -198,6 +199,22 @@ fn cloudCov(px: f32, py: f32, invS: f32, offU: f32, offV: f32, cover: f32) -> f3
   let n = 0.65 * vnoiseCloud(u, v, CLOUD_SALT) + 0.35 * vnoiseCloud(2.0 * u, 2.0 * v, CLOUD_SALT + 1);
   let t = clamp((n - cover) / 0.25, 0.0, 1.0);
   return t * t * (3.0 - 2.0 * t);
+}
+`;
+
+// S8-B2-20 (docs/architecture.md 38.17): twin of horizonAo.js's `aoTapOcc` (horizon AO light-pass term, 4 depth
+// taps). Pure - N (receiver's unit normal) and v (Pt - P, tap minus receiver) only, no textures/uniforms. The
+// including module (light.wgsl.js) defines `fn cellPoint(...)` and the per-cell tap loop around this.
+export const HORIZON_AO_WGSL = `
+const AO_RADIUS_M: f32 = ${AO_RADIUS_M};
+const AO_BIAS: f32 = ${AO_BIAS};
+fn aoTapOcc(N: vec3f, v: vec3f) -> f32 {
+  let d2 = dot(v, v);
+  if (d2 < 1e-8 || d2 >= AO_RADIUS_M * AO_RADIUS_M) { return 0.0; }
+  let d = sqrt(d2);
+  let c = dot(N, v) / d - AO_BIAS;
+  if (c > 0.0) { return c * (1.0 - d / AO_RADIUS_M); }
+  return 0.0;
 }
 `;
 

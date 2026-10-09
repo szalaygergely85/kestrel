@@ -12,6 +12,7 @@ import {
   GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, CELL_RAY_WGSL, CELL_RAY_PITCHED_WGSL, FMOD_WGSL, HASH_FAST_WGSL, BYTE_OUT_WGSL,
 } from './common.wgsl.js';
 import { SUN_N_SHIFT, SUN_N_MASK } from '../../shadowSun.js';
+import { CLOUD_SHIFT } from '../../cloudShadow.js'; // S8-B2-12b (38.13)
 import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT } from '../../waterLook.js';
 
 export const WATER_COMPOSITE_VECS_PER_SLOT = WL_STRIDE / 4;
@@ -106,7 +107,10 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
   // sun on an up normal, the terrain 'b' formula (the cell's own sun-map bits when the map ran)
   let lightT = textureLoad(uLightTex, cell, 0);
   let sunF = select(1.0, f32((lightT.w >> ${SUN_N_SHIFT}u) & ${SUN_N_MASK}u) * 0.25, wu.sunMapOn != 0);
-  let k = wu.ambientI + wu.sunI * max(wu.sunDir.z, 0.0) * sunF;
+  // S8-B2-12b (38.13): cloud-darkening byte (bits 24..31 of the floor cell's LIGHT.w) scales the sun term here too;
+  // q 0 (strength 0, or a sky cell under the floor with no cloud byte written) -> cF 1.0 -> bit-identical.
+  let cF = 1.0 - f32((lightT.w >> ${CLOUD_SHIFT}u) & 255u) * (1.0 / 255.0);
+  let k = wu.ambientI + wu.sunI * max(wu.sunDir.z, 0.0) * sunF * cF;
   var wc = clamp((r0.rgb + (r1.rgb - r0.rgb) * tint) * k, vec3f(0.0), vec3f(255.0));
 
   var wb = wc * bgK; // background never receives the glint (36.1b)
