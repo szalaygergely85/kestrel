@@ -147,11 +147,12 @@
       return W;
     }
     // in-game 8 parts (38.29 item 1): part rotation = root bone (body / head also compose the second bone), at the root joint
-    var PM = kit.partMap, partOf = {}, PW = {}, p;
-    for (p in PM) PM[p].forEach(function (b) { partOf[b] = p; });
-    for (p in PM) {
-      var bones = PM[p], ri = NAMES.indexOf(bones[0]), R = Rof(bones[0]);
-      if (p === 'body' || p === 'head') R = mul3(R, Rof(bones[1]));
+    var PM = kit.partMap, partOf = {}, PW = {}, p, pi, ci;
+    PM.forEach(function (pt) { pt.bones.forEach(function (b) { partOf[b] = pt.name; }); });
+    for (pi = 0; pi < PM.length; pi++) {
+      p = PM[pi].name;
+      var bones = PM[pi].bones, ri = NAMES.indexOf(bones[0]), R = Rof(bones[0]);
+      for (ci = 1; ci < (PM[pi].compose || 1); ci++) R = mul3(R, Rof(bones[ci]));
       var Lp = local(R, JOINTS[ri]), par = PARENT[ri] < 0 ? null : PW[partOf[NAMES[PARENT[ri]]]];
       PW[p] = par ? compose(par, Lp) : Lp;
       bones.forEach(function (b) { W[NAMES.indexOf(b)] = PW[p]; });
@@ -432,8 +433,8 @@
     return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
   }
   var BONE_RGB = NAMES.map(function (n, i) { return hsl((i * 137.5) % 360, 0.55, 0.55); });
-  var PART_NAMES = Object.keys(kit.partMap), PART_RGB = PART_NAMES.map(function (p, i) { return hsl((i * 45 + 10) % 360, 0.6, 0.55); });
-  var PART_OF_BONE = NAMES.map(function (n) { for (var i = 0; i < PART_NAMES.length; i++) if (kit.partMap[PART_NAMES[i]].indexOf(n) >= 0) return i; return 0; });
+  var PART_NAMES = kit.partMap.map(function (pt) { return pt.name; }), PART_RGB = PART_NAMES.map(function (p, i) { return hsl((i * 45 + 10) % 360, 0.6, 0.55); });
+  var PART_OF_BONE = NAMES.map(function (n) { for (var i = 0; i < kit.partMap.length; i++) if (kit.partMap[i].bones.indexOf(n) >= 0) return i; return 0; });
   function renderRig() {
     var pose = computePose(ctl.rots, ctl.collapsed), mode = $('rigCol').value, tab = charTable(recipe(ctl.tone));
     var col = function (k) { var b = D.bone[k]; return mode === 'bone' ? BONE_RGB[b] : mode === 'part' ? PART_RGB[PART_OF_BONE[b]] : tab[D.ch[k]].rgb; };
@@ -448,7 +449,7 @@
     });
     var st = lastStats;
     $('legend').innerHTML = (mode === 'part' ? PART_NAMES.map(function (p, i) {
-      return '<span class="sw" style="background:rgb(' + PART_RGB[i].map(Math.round).join(',') + ')"></span>' + p + ' (' + kit.partMap[p].join(', ') + ')';
+      return '<span class="sw" style="background:rgb(' + PART_RGB[i].map(Math.round).join(',') + ')"></span>' + p + ' (' + kit.partMap[i].bones.join(', ') + ')';
     }) : NAMES.map(function (n, i) {
       return '<span class="sw" style="background:rgb(' + BONE_RGB[i].map(Math.round).join(',') + ')"></span>' + n + (st ? ' ' + st.perBone[n] : '');
     })).join(' &nbsp; ') + '<br>Test poses only check the boxes and pivots (no clips in v0). Waist / knee seams are rigid by design (one bone per voxel).';

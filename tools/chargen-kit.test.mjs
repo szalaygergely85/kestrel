@@ -1,12 +1,13 @@
 // node tools/chargen-kit.test.mjs - CHARGEN-01 human kit v0 (design/chargen/human_kit.js -> content/chargen/human.charkit.json):
 // 22-bone skeleton, every base voxel inside a bone box, every bone owns voxels, realistic size, arm / thigh gaps,
-// stretch rows only through shin / waist bones, ramps (5 skin tones, 6 hair, 3 eyes, 6 dyes) with palette + detail-pass
+// stretch rows only through shin / waist bones (+ both arms symmetric, never a hand box), ramps (5 skin tones, 6 hair, 3 eyes, 6 dyes) with palette + detail-pass
 // keys, hand tint maps, quad budget, determinism, and the JSON on disk equals the generator.
 import assert from 'node:assert';
 import fs from 'node:fs';
 import '../design/palette.js';
 import '../design/detail-pass.js';
 import '../design/chargen/human_kit.js';
+import { HUMANOID_PART_MAP } from '../engine/chargen/collapse.js';
 
 let passed = 0;
 const test = (name, fn) => { try { fn(); passed++; console.log(`ok - ${name}`); } catch (e) { console.error(`not ok - ${name}\n${e.stack}`); process.exitCode = 1; } };
@@ -20,12 +21,22 @@ test('checkKit: no errors, no warnings', () => {
   assert.deepStrictEqual(res.errors, []);
   assert.deepStrictEqual(res.warnings, []);
 });
-test('skeleton: 22 humanoid bones, parents first, partMap covers every bone once in <= 8 parts', () => {
+test('skeleton: 22 humanoid bones, parents first; partMap = engine array form, every bone once in <= 8 parts', () => {
   assert.strictEqual(kit.skeleton.length, 22);
-  const seen = {};
-  for (const p in kit.partMap) for (const b of kit.partMap[p]) { assert.ok(!seen[b], b + ' twice'); seen[b] = 1; }
+  assert.ok(Array.isArray(kit.partMap), 'partMap must be the collapseRig array');
+  assert.ok(kit.partMap.length <= 8);
+  const seen = {}, parts = {};
+  for (const p of kit.partMap) {
+    assert.ok(p.parent === null || parts[p.parent], p.name + ': parent listed first');
+    for (const b of p.bones) { assert.ok(!seen[b], b + ' twice'); seen[b] = 1; }
+    parts[p.name] = p;
+  }
   assert.strictEqual(Object.keys(seen).length, 22);
-  assert.ok(Object.keys(kit.partMap).length <= 8);
+  assert.strictEqual(parts.body.compose, 2);
+  assert.strictEqual(parts.head.compose, 2);
+});
+test('partMap equals engine/chargen/collapse.js HUMANOID_PART_MAP', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(kit.partMap)), JSON.parse(JSON.stringify(HUMANOID_PART_MAP)));
 });
 test('size: 1.75 m tall, ~70 rows, shoulders + upper arms (slight A) 0.42-0.55 m, grid about 36x20x76', () => {
   const st = res.stats.bases.m_avg;
@@ -50,13 +61,27 @@ test('rest pose gaps: thighs >= 2 cells apart (crotch to knee), arm-torso >= 3 c
     }
   }
 });
-test('stretch rows: integers, only Hips / Spine / LowerLeg voxels (engine STRETCH_BONES), >= 4 rows for height -4..4', () => {
-  assert.ok(B.stretchRows.length >= 4);
-  const ok = ['Hips', 'Spine', 'LeftLowerLeg', 'RightLowerLeg'], S = B.size;
+test('stretch rows: integers, Hips / Spine / LowerLeg + arm bones symmetric across both arms, never a hand box, >= 5 rows, shin + waist', () => {
+  assert.ok(B.stretchRows.length >= 5);
+  const ok = CK.STRETCH_BONES, S = B.size;
+  let waist = 0, shin = 0;
   for (const z of B.stretchRows) {
     assert.ok(Number.isInteger(z));
-    for (let y = 0; y < S[1]; y++) for (let x = 0; x < S[0]; x++) { const k = D.at(x, y, z); if (k >= 0) assert.ok(ok.includes(D.names[D.bone[k]]), 'row ' + z + ' ' + D.names[D.bone[k]]); }
+    const inRow = new Set();
+    for (let y = 0; y < S[1]; y++) for (let x = 0; x < S[0]; x++) { const k = D.at(x, y, z); if (k >= 0) inRow.add(D.names[D.bone[k]]); }
+    for (const n of inRow) {
+      assert.ok(ok.includes(n), 'row ' + z + ' ' + n);
+      if (CK.ARM_STRETCH[n]) assert.ok(inRow.has(CK.ARM_STRETCH[n]), 'row ' + z + ': ' + n + ' without ' + CK.ARM_STRETCH[n]);
+    }
+    for (const n of ['LeftHand', 'RightHand']) { const b = B.bones[n].box; assert.ok(z < b[2] || z > b[5], 'row ' + z + ' cuts the ' + n + ' box'); }
+    if (inRow.has('Hips') || inRow.has('Spine')) waist++;
+    if (inRow.has('LeftLowerLeg')) shin++;
   }
+  assert.ok(waist >= 1 && shin >= 1, 'waist ' + waist + ' shin ' + shin);
+  // checkKit catches a row through a hand box
+  const bad = JSON.parse(JSON.stringify(kit));
+  bad.bases.m_avg.stretchRows = [30];
+  assert.ok(CK.checkKit(bad, P, DP).errors.some((e) => /Hand box/.test(e)), 'hand box row not caught');
 });
 test('bone boxes are inclusive int [x0,y0,z0,x1,y1,z1] inside the grid; anchors are [x,y,z]', () => {
   for (const n in B.bones) {
