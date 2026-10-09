@@ -16,11 +16,11 @@ function slotLabel(slot) {
 /**
  * adapter = US-089a createStorageAdapter/createMemoryAdapter; no browser globals here.
  * handlePointer receives UI-grid cells (the host maps its own canvas coordinates).
- * takeAction returns {type:'newGame'|'continue'|'settings'|'credits', slot?, save?} once.
+ * takeAction returns {type:'newGame'|'continue'|'load'|'settings'|'credits', slot?, save?} once.
  * Storage reads, formatting and allocations happen on input/refresh, never in draw.
  */
 export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PLATE, style = null } = {}) {
-  if (!adapter || ['listSlots','readSlot','deleteSlot'].some(key => typeof adapter[key] !== 'function')) throw new Error('titleMenu: save adapter required');
+  if (!adapter || ['listSlots','readSlot'].some(key => typeof adapter[key] !== 'function')) throw new Error('titleMenu: save adapter required');
   const colour = key => style?.hex[key] || style?.bg[key] || fg;
   if (style) { fg = colour(style.row.normal.fg); bg = style.bg.plate; }
   const heading = ascii(title).slice(0, 66);
@@ -30,8 +30,8 @@ export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PL
     const ch=titleText[i];
     if ('-=[]'.includes(ch)) titleDecor.push({x:i,ch,fg:colour(ch==='-' ? style.title.decorFg[0] : ch==='=' ? style.frame.fg : style.title.bracketFg)});
   }
-  const hints = 'Arrows select  Enter choose  Del delete  Esc back';
-  const hintParts = ['Arrows','Enter','Del','Esc'].map(text => ({text,x:hints.indexOf(text)}));
+  const hints = 'Arrows select  Enter choose  Esc back';
+  const hintParts = ['Arrows','Enter','Esc'].map(text => ({text,x:hints.indexOf(text)}));
   const bounds = {x:0,y:0,w:72,h:28};
   let slots = [], rows = [], selected = 0, selectedSlot = 0, mode = 'main';
   let confirm = null, action = null, message = '', error = null;
@@ -40,19 +40,18 @@ export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PL
   function buildRows() {
     if (mode === 'confirm') {
       rows = [{id:'cancel',text:'Cancel',y:12,enabled:true},{id:'yes',text:'Yes',y:15,enabled:true}];
-    } else if (mode === 'new') {
-      rows = slots.map(slot => ({id:'slot',slot:slot.slot,text:slot.label,y:8+slot.slot*3,enabled:true}));
+    } else if (mode === 'new' || mode === 'load') {
+      rows = slots.map(slot => ({id:'slot',slot:slot.slot,text:slot.label,y:8+slot.slot*3,
+        enabled:mode === 'new' || !!(slot.ok && slot.meta)}));
       rows.push({id:'back',text:'Back',y:20,enabled:true});
     } else {
       rows = [{id:'new',text:'New game',y:6,enabled:true},
-        {id:'continue',text:'Continue',y:8,enabled:slots.some(slot => slot.ok && slot.meta)},
-        ...slots.map(slot => ({id:'slot',slot:slot.slot,text:slot.label,y:12+slot.slot*2,enabled:true})),
-        {id:'delete',text:'Delete slot',y:19,enabled:!!slots[selectedSlot]?.meta || slots[selectedSlot]?.ok === false},
-        {id:'settings',text:'Settings',y:21,enabled:true},
-        {id:'credits',text:'Credits',y:23,enabled:true}];
+        {id:'continue',text:'Continue',y:9,enabled:slots.some(slot => slot.ok && slot.meta)},
+        {id:'load',text:'Load game',y:12,enabled:true},
+        {id:'settings',text:'Settings',y:15,enabled:true},
+        {id:'credits',text:'Credits',y:18,enabled:true}];
     }
-    // Cache full clipped labels, including disabled hints, away from the frame loop.
-    for (const row of rows) row.display = (row.id === 'continue' && !row.enabled ? 'Continue (no save)' : row.text + (row.enabled ? '' : ' (unavailable)')).slice(0,bounds.w-6);
+    for (const row of rows) row.display = (row.id === 'continue' && !row.enabled ? 'Continue (no save)' : row.text).slice(0,bounds.w-6);
     selected = Math.min(selected, rows.length-1);
   }
 
@@ -78,43 +77,39 @@ export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PL
     if (save !== undefined) action.save = save;
     root();
   }
-  function ask(type, slot) {
-    mode = 'confirm'; confirm = {type,slot}; selected = 0;
-    confirmText = `${type === 'delete' ? 'Delete' : 'Overwrite'} slot ${slot+1}?`;
-    message = ''; buildRows(); // Cancel is always selected first.
+  function ask(slot) {
+    mode = 'confirm'; confirm = {type:'replace',slot}; selected = 0;
+    confirmText = `Overwrite slot ${slot+1}?`;
+    message = ''; buildRows();
   }
-  function load(slot) {
+  function load(slot, type = 'continue') {
     try {
       const result = adapter.readSlot(slot);
       if (!result.ok || !result.save) { message = result.ok ? 'This slot is empty.' : 'Could not read slot.'; error = result.error || null; refresh(); return; }
-      emit('continue',slot,result.save);
+      emit(type,slot,type === 'continue' ? result.save : undefined);
     } catch (e) { error = String(e); message = 'Could not read slot.'; refresh(); }
-  }
-  function acceptConfirmation() {
-    if (confirm.type === 'replace') { emit('newGame',confirm.slot); return; }
-    try {
-      const result = adapter.deleteSlot(confirm.slot);
-      if (!result.ok) { message = 'Could not delete.'; error = result.error || null; return; }
-      message = 'Slot deleted.'; root(); refresh();
-    } catch (e) { error = String(e); message = 'Could not delete.'; }
   }
   function activate() {
     if (action || !rows[selected].enabled) return false;
     const row = rows[selected]; message = ''; error = null;
-    if (mode === 'confirm') { if (row.id === 'yes') acceptConfirmation(); else root(); }
+    if (mode === 'confirm') { if (row.id === 'yes') emit('newGame',confirm.slot); else root(); }
     else if (row.id === 'back') root();
-    else if (row.id === 'new') { mode = 'new'; selected = slots.findIndex(slot => slot.ok && !slot.meta); if (selected < 0) selected = 0; buildRows(); }
-    else if (row.id === 'continue') {
-      const slot = slots[selectedSlot].ok && slots[selectedSlot].meta ? selectedSlot : slots.find(slot => slot.ok && slot.meta).slot;
-      load(slot);
+    else if (row.id === 'new' || row.id === 'load') {
+      mode = row.id; selected = slots.findIndex(slot=>mode === 'new' ? slot.ok && !slot.meta : slot.ok && slot.meta);
+      if (selected < 0) selected = mode === 'load' ? slots.length : 0;
+      buildRows();
+    } else if (row.id === 'continue') {
+      // Host adapters may provide savedAt; legacy adapters retain stable first-slot fallback.
+      let latest = null;
+      for (const slot of slots) if (slot.ok && slot.meta && (!latest || (slot.meta.savedAt ?? 0) > (latest.meta.savedAt ?? 0))) latest = slot;
+      load(latest.slot);
     } else if (row.id === 'settings') emit('settings');
     else if (row.id === 'credits') emit('credits');
-    else if (row.id === 'delete') ask('delete',selectedSlot);
     else if (row.id === 'slot') {
       selectedSlot = row.slot;
-      if (mode !== 'new') load(row.slot);
+      if (mode === 'load') load(row.slot,'load');
       else if (slots[row.slot].ok && !slots[row.slot].meta) emit('newGame',row.slot);
-      else ask('replace',row.slot);
+      else ask(row.slot);
     }
     return true;
   }
@@ -122,7 +117,6 @@ export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PL
     if (action) return false;
     if (code === 'Escape') { if (mode !== 'main') { message = ''; root(); return true; } return false; }
     if (code === 'Enter' || code === 'Space') return activate();
-    if (code === 'Delete' && mode === 'main' && (!!slots[selectedSlot].meta || !slots[selectedSlot].ok)) { ask('delete',selectedSlot); return true; }
     const delta = ['ArrowUp','KeyW','ArrowLeft'].includes(code) ? -1 : ['ArrowDown','KeyS','ArrowRight'].includes(code) ? 1 : 0;
     if (!delta) return false;
     for (let step = 1; step <= rows.length; step++) {
@@ -154,12 +148,12 @@ export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PL
         ui.setCell(bounds.x+x,bounds.y+bounds.h-1,frame.rivets.glyph,colour(frame.rivets.fg),bg);
       }
       for (const line of style.separators) {
-        if (line.row===18 && mode!=='main') continue;
+        if (line.row===18 && mode==='main') continue;
         for (let x=line.from;x<=line.to;x++) ui.setCell(bounds.x+x,bounds.y+line.row,line.glyph,colour(line.fg),bg);
       }
       drawText(ui,bounds.x+Math.floor((bounds.w-style.subtitle.text.length)/2),bounds.y+style.subtitle.row,style.subtitle.text,colour(style.subtitle.fg),bg);
       drawText(ui,bounds.x+Math.floor((bounds.w-style.signal.text.length)/2),bounds.y+style.signal.row,style.signal.text,colour(style.signal.fg),bg);
-      if (mode==='main') { const s=style.sectionLabel.saves; drawText(ui,bounds.x+s.col,bounds.y+s.row,s.text,colour(s.fg),bg); }
+      if (mode==='load') { const s=style.sectionLabel.saves; drawText(ui,bounds.x+s.col,bounds.y+s.row,s.text,colour(s.fg),bg); }
     }
     drawText(ui,bounds.x+(style ? Math.floor((bounds.w-titleText.length)/2) : 3),bounds.y+2,titleText,style ? colour(style.title.fg) : fg,bg);
     if(style) for(const part of titleDecor) ui.setCell(bounds.x+Math.floor((bounds.w-titleText.length)/2)+part.x,bounds.y+2,part.ch,part.fg,bg);
@@ -168,7 +162,7 @@ export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PL
     for (let i = 0; i < rows.length; i++) {
       const row=rows[i], focus=i===selected;
       const state=style && (focus ? style.row.focus : row.enabled ? style.row.normal : style.row.disabled);
-      const destructive=style && (row.id==='delete' || row.id==='yes' && confirm?.type==='delete');
+      const destructive=false;
       const ink=style ? colour(destructive && row.enabled ? (focus ? style.row.destructive.focusFg : style.row.destructive.fg) : state.fg) : fg;
       const back=style ? style.bg[state.bg] : bg;
       if (focus && style) for(let x=style.row.bandFrom;x<=style.row.bandTo;x++) ui.setCell(bounds.x+x,bounds.y+row.y,' ',ink,back);
