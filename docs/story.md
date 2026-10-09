@@ -256,6 +256,18 @@ Shown when Wick falls, before he wakes at the last save point (relay or autosave
 
 Writer pass for S8-A-11, S8-A-12 and S8-A-13 (2026-10-08). All strings are ASCII only, and lengths were counted by hand. Programmers and lane C paste these strings into the data files; this section does not edit any code or JSON. Name rule (D-013): "Wick" appears only in save-slot labels. No objective, item, scrawl or prompt says it.
 
+### DEATH-TEXT-01 death and respawn contract
+
+Copied from the writer's selected Death card line above and the Waystone
+lines below. Target: max 38 chars; no new copy. DEATH-FLOW-01 consumes these keys.
+NEEDS WRITER: the selected death line is 39 chars, one above the target.
+
+| Key | Where | Text | len |
+|---|---|---|---|
+| `fade.death` | Death card before waking | `The dark again. The light still blinks.` | 39 |
+| `fade.respawn.waystone` | Wake at the touched waystone | `I wake against the humming stone.` | 33 |
+| `fade.respawn.start` | Wake without a touched waystone | `No stone yet. I wake by the wreck.` | 34 |
+
 ### S8-A-11 Objectives (`content/quests/m1.quest.json`)
 
 The chain is wake -> lantern -> breach -> sword -> beasts -> waystone. Max 38 chars for HUD and done lines, max 40 for hints. Keep the ids. Paste the HUD line into `objectives[id].text`. The quest file has no done/hint fields today. If S8-C-12/S8-C-13 add them, use the key names `done` and `hint` (a proposal, not a schema decision).
