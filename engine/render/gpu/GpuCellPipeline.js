@@ -69,7 +69,7 @@ import { instancedRanges } from '../../mesh/DrawList.js';
 import { DrawList, LevelMeshCache, MeshDrawCache, addMeshStructures, addStructures, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, addCloths, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
 import { MAX_INSTANCES_PER_FRAME, INSTANCE_BYTES } from '../../mesh/instances.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../mesh/voxelMesh.js';
-import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer } from '../projection.js';
+import { projTerms, shearProjection, createPitchedTerms, pitchedTermsInto, resolveProjection, assertProjectionRenderer } from '../projection.js';
 import { frustumPlanes } from '../../mesh/culling.js';
 // ME-15b (27.9a): sun shadow map pass (depth only, before the raster pass).
 import { windShadowKey } from '../../mesh/sway.js';
@@ -1390,7 +1390,7 @@ export class GpuCellPipeline {
       const t = this._pitchTerms || (this._pitchTerms = createPitchedTerms());
       const g = this._meshGrid || (this._meshGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 });
       g.cols = this.cols; g.rows = this.rows; g.pxCellW = this.rt.pxCellW || 1; g.pxCellH = this.rt.pxCellH || 1;
-      pitchedTerms(cam, g, t);
+      pitchedTermsInto(t, cam, g);
       const a = this._pitchA || (this._pitchA = new Float32Array(4));
       const b = this._pitchB || (this._pitchB = new Float32Array(4));
       const c = this._pitchC || (this._pitchC = new Float32Array(4));

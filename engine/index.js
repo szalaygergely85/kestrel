@@ -203,7 +203,7 @@ export { registerBehaviour, unregisterBehaviour, registerInteraction, registerTr
 // (projTerms/shearProjection/projectPoint/unprojectCell/windowToCell/
 // PROJ_HFOV_DEG/PROJ_NEAR/PROJ_FAR) stay internal/test-only as before.
 export {
-  createPitchedTerms, pitchedTerms, pitchedProjection, screenRay, unprojectPitched,
+  createPitchedTerms, pitchedTerms, pitchedTermsInto, pitchedProjection, screenRay, unprojectPitched,
   worldToCell, pitchedEyeFromFocus, resolveProjection, fpVfovDeg, PITCH_CLAMP_PITCHED_DEG, PROJ_PITCHED_VFOV_DEG, pitchedFogScale, frameMatrix,
 } from './render/projection.js';
 
