@@ -20,7 +20,7 @@ import detailPassModule from '../../../../design/detail-pass.js';
 // S8-B1-11 verdict: the per-frame-garbage check reads heapUsed BEFORE any gc, so the semi-space must be big enough that no
 // scavenge runs inside the 1000 frames (otherwise garbage is silently collected); the post-gc check stays as the leak check.
 const SELF = fileURLToPath(import.meta.url);
-const FLAGS = ['--expose-gc', '--max-semi-space-size=64'];
+const FLAGS = ['--expose-gc', '--max-semi-space-size=64', '--no-concurrent-recompilation']; // sync tier-up: deterministic (a late concurrent compile left some runs at 123 vs 395 B/frame)
 const MUTATE = process.env.FRAMEALLOC_MUTATE === '1'; // self-test child: allocates every frame, MUST fail
 if (typeof global.gc !== 'function' || !process.execArgv.includes(FLAGS[1])) {
   const res = spawnSync(process.execPath, [...FLAGS, SELF], { stdio: 'inherit' });
@@ -115,10 +115,9 @@ const h0 = process.memoryUsage().heapUsed;
 const drawBefore = drawCount, writeTexBefore = writeTexCount, writeBufBefore = writeBufCount, bindBefore = bindCount, dispatchBefore = dispatchCount;
 
 const FRAMES = 1000;
-// Verdict target is 16 KB (16 B/frame). MEASURED baseline today is ~350-410 B/frame of real per-frame garbage (sampling heap profile:
-// passRaster.prepare ~300 B/f, projection.pitchedProjection ~120 B/f, passLight._camBasis, passShade.run, passLight.run) so the gate
-// runs on a temporary BUDGET; tighten to 16 * 1024 once those allocations are removed (lane entry S8-B1-11b).
-const GARBAGE_BUDGET = 600 * 1024;
+// Verdict target is 16 KB. S8-B1-11b: measured now ~36 B/frame (was ~400): 32 B of it is the two performance.now() HeapNumbers in
+// passSprites.run (uploadMs stat); the rest ~4 B. Budget 48 KB until the sprites timing is gated; then tighten to 16 * 1024.
+const GARBAGE_BUDGET = 48 * 1024;
 for (let i = 20000; i < 20000 + FRAMES; i++) stepFrame(i);
 
 const h1 = process.memoryUsage().heapUsed; // BEFORE gc: sees per-frame garbage (no scavenge with the 64 MB semi-space)

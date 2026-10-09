@@ -425,7 +425,9 @@ export class WgCellPipeline {
     if (!sp || !this._cellsShaded || this._spritesPending) { this._setPresent(null, null); return; } // pending = pipelines still compiling
     try {
       this._begin(WG_PASS_SLOT.sprites);
-      try { sp.run({ gi: t.texGI, depth: t.texDepth, edgeFg: t.texFinalFg, edgeBg: t.texFinalBg }); } finally { this._end(); }
+      const inp = this._spInp || (this._spInp = { gi: null, depth: null, edgeFg: null, edgeBg: null }); // reused: an object literal here was per-frame garbage
+      inp.gi = t.texGI; inp.depth = t.texDepth; inp.edgeFg = t.texFinalFg; inp.edgeBg = t.texFinalBg;
+      try { sp.run(inp); } finally { this._end(); }
       this._begin(WG_PASS_SLOT.overlay);
       try { this._overlayPass.run(t.texDepth); } finally { this._end(); }
     } catch (e) {
