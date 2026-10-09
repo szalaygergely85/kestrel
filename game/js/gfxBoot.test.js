@@ -44,6 +44,15 @@ o = boot('quality=nope&rays=9&grid=abc&scatter=5'); assert.equal(o.quality.name,
 // legacy non-default saved grid survives while no quality is chosen
 assert.equal(boot('', { saved: { grid: '320x120' } }).reqCols, 320);
 assert.equal(boot('', { saved: { grid: '320x120', quality: 'low' } }).reqCols, 240);
+// QUALITY-GRID-01: a saved legacy grid never beats a saved/chosen quality (incl. 'auto'), only an explicit ?grid= does
+for (const q of ['low', 'medium', 'high', 'ultra']) {
+  o = boot('', { saved: { grid: '480x180', quality: q } });
+  assert.deepEqual([o.reqCols, o.reqRows], [expect[q][0], expect[q][1]], `saved 480x180 + quality ${q}`);
+}
+o = boot('', { saved: { grid: '480x180', quality: 'auto' }, auto: 'low' }); assert.deepEqual([o.reqCols, o.reqRows, o.quality.source], [240, 90, 'auto']);
+o = boot('', { saved: { grid: '480x180' }, auto: 'low' }); assert.deepEqual([o.reqCols, o.quality.source], [240, 'auto']); // auto-picked preset also owns the grid
+o = boot('grid=320x120', { saved: { grid: '480x180', quality: 'low' } }); assert.deepEqual([o.reqCols, o.reqRows, o.sources.grid], [320, 120, 'param']);
+o = boot('quality=ultra', { saved: { grid: '320x120', quality: 'low' } }); assert.equal(o.reqCols, 480);
 // gpucompare forces its grid/rays; capture pages keep today's options unless ?quality=
 o = boot('gpucompare=1', { captureLike: true, geometryCompare: true }); assert.deepEqual([o.reqCols, o.reqRows, o.rays], [160, 60, 1]);
 // GFX-04-pc: ?gpucompare=1&quality=<preset> changes only the preset knobs (shadows/scatter/lodScale); grid + rays stay forced
