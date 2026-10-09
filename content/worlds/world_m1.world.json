@@ -352,9 +352,7 @@
     {"id": "boar1", "components": {"brain": {"home": [1461.01, 1031], "kind": "beast"}, "targetable": {"height": 0.7, "radius": 0.45}, "voxel": {"anim": "idle", "loop": true, "model": "boarPlaceholder"}}, "note": "US-079a: hillside route before the waystone, ~26 m from the breach (1486.5,1025) - clear of the 15 m AC 6 radius", "type": "beast", "x": 1461.01, "y": 1031, "z": "ground"},
     {"id": "boar2", "components": {"brain": {"home": [1444.02, 1035], "kind": "beast"}, "targetable": {"height": 0.7, "radius": 0.45}, "voxel": {"anim": "idle", "loop": true, "model": "boarPlaceholder"}}, "note": "US-079a: hillside route before the waystone, ~43 m from the breach - further along toward the waystone than boar1", "type": "beast", "x": 1444.02, "y": 1035, "z": "ground"}
   ],
-  "horizon": [
-    {"id": "ferrumLights", "angular": {"hDeg": 2.2, "wDeg": 13.2}, "bearingDeg": 87.6, "distanceM": 9000, "drawOver": "sky", "elevDeg": 1, "fog": 0.55, "fogColor": "fogFar", "model": "ferrumLights", "note": "bearing = compass deg of the band centre, elevDeg = its bottom edge above the horizon (eye-independent: at infinity). Cells: az = cam yaw + atan((col + 0.5 - cols/2) / focalCols), el = atan((horizonRow - row - 0.5) / planeDistY); sample the model by angle fraction (nearest), tier by projected rows (hDeg * rows/deg / size.h < 0.75 -> lods.half). M1 only: the band base floats 1.0 deg up, hidden behind the east wall from every M1 viewpoint; M2 (outside) adds a hill row or elevDeg 0", "type": "horizon", "unlit": true}
-  ],
+  "horizon": [],
   "state": {
     "tower.lantern.taken": false,
     "tower.beacon.lit": false,

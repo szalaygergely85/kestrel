@@ -224,11 +224,13 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
 
 // --- US-016 D-011 addendum (architecture.md 14.4 items 13/14): world.horizon[] load/validation ---
 {
-  ok('world_m1 loads its one horizon entry (ferrumLights)', world.horizon.length === 1 && world.horizon[0].id === 'ferrumLights');
-  ok('horizon entry carries bearing/elev/angular/fog/fogColor', world.horizon[0].bearingDeg === 87.6 && world.horizon[0].elevDeg === 1.0 &&
-    world.horizon[0].angular.wDeg === 13.2 && world.horizon[0].angular.hDeg === 2.2 && world.horizon[0].fog === 0.55 && world.horizon[0].fogColor === 'fogFar');
+  ok('world_m1 ships no horizon entry (Ferrum billboard removed, owner 2026-10-09)', world.horizon.length === 0);
+  const fx = { id: 'ferrumLights', model: 'ferrumLights', bearingDeg: 87.6, elevDeg: 1.0, angular: { wDeg: 13.2, hDeg: 2.2 }, fog: 0.55, fogColor: 'fogFar' };
+  const wh = World.load({ ...assets.world('world_m1'), horizon: [fx] }, assets, {});
+  ok('horizon entry carries bearing/elev/angular/fog/fogColor', wh.horizon[0].bearingDeg === 87.6 && wh.horizon[0].elevDeg === 1.0 &&
+    wh.horizon[0].angular.wDeg === 13.2 && wh.horizon[0].angular.hDeg === 2.2 && wh.horizon[0].fog === 0.55 && wh.horizon[0].fogColor === 'fogFar');
   ok('def.horizon is not the SAME array as world.horizon (structuredClone, content not state)',
-    assets.world('world_m1').horizon !== world.horizon);
+    wh.horizon !== [fx] && wh.horizon[0] !== fx);
 
   const base = { terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] };
   ok('no horizon key -> world.horizon = []', World.load(base, assets, {}).horizon.length === 0);
