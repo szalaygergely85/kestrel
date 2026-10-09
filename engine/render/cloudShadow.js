@@ -24,7 +24,7 @@ export function cloudShadeQ(C, off, x, y, z, sdx, sdy, sdz) {
   const qx = (x + sdx * t) * C.scale + off[0];
   const qy = (y + sdy * t) * C.scale + off[1];
   const seed = C.seed;
-  const n = cloudValueNoise(qx, qy, seed) * 0.65 + cloudValueNoise(qx * 2.03 + 17.0, qy * 2.03 + 17.0, seed) * 0.35;
+  const n = cloudValueNoise(qx, qy, seed) * 0.65 + cloudValueNoise(qx * 2.0 + 17.0, qy * 2.0 + 17.0, seed) * 0.35;
   const d = smoothstep(C.cover, C.cover + C.soft, n);
   return Math.floor(C.strength * CLOUD_DARK * d * 255 + 0.5);
 }

@@ -217,6 +217,7 @@ function checkEngineFile(file, src) {
 const RULE3_TOOL_ALLOWLIST = new Set([
   'tools/bench-shadow.mjs',
   'tools/compare-detail-export.mjs',
+  'tools/mesh-tri-budget.mjs', // MESH-QA-01: runs the runtime's own compactGroup/frustum/projection (not in engine/index.js)
 ].map((p) => p.split('/').join(path.sep)));
 
 const EDITOR_DIR = path.join(ROOT, 'tools', 'editor');

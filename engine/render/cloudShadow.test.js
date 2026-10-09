@@ -59,8 +59,7 @@ function sunDir() { // unit, z >= 0.3
 }
 
 // --- period-256 drift wrap: the lattice is 256-periodic, so the 1st octave is continuous across the offset wrap ---
-// KNOWN (ASK ARCHITECT, same as the sky): the 2nd octave samples at q*2.03+17, so an offset jump of 256 moves it by
-// 519.68 (not a multiple of 256) -> a one-off pop of the 2nd octave when cloudDriftOffset wraps (every 256/|wind| s).
+// CLOUD-WRAP-01: 2nd octave samples at q*2.0+17, so a drift jump of 256 moves it by 512 (= 2 periods): seamless.
 {
   let bad = 0;
   for (let i = 0; i < 200; i++) {
@@ -68,6 +67,18 @@ function sunDir() { // unit, z >= 0.3
     if (Math.abs(cloudValueNoise(x, y, sd0) - cloudValueNoise(x + 256, y - 256, sd0)) > 1e-9) bad++;
   }
   ok('cloudValueNoise (1st octave) periodic across the 256 wrap', bad === 0, `${bad} mismatches`);
+  {
+    const Cw = mkC(); const oa = new Float32Array(2), ob = new Float32Array(2); let maxd = 0;
+    for (let i = 0; i < 2000; i++) {
+      const sd = sunDir(), x = (rand() - 0.5) * 800, y = (rand() - 0.5) * 800, z = rand() * 60;
+      oa[0] = Math.floor(rand() * 65536) / 256; oa[1] = Math.floor(rand() * 65536) / 256; ob[0] = oa[0] - 256; ob[1] = oa[1] - 256;
+      const qa = cloudShadeQ(Cw, oa, x, y, z, sd[0], sd[1], sd[2]), qb = cloudShadeQ(Cw, ob, x, y, z, sd[0], sd[1], sd[2]);
+      maxd = Math.max(maxd, Math.abs(qa - qb));
+      const qx = (x * 0.0 + oa[0]) * 2.0 + 17, qx2 = (ob[0]) * 2.0 + 17;
+      maxd = Math.max(maxd, Math.abs(cloudValueNoise(qx, 5, 3) - cloudValueNoise(qx2, 5, 3)));
+    }
+    ok('wrap: shade q at off == at off-256 (2000 pts, both octaves)', maxd <= 1e-6, String(maxd));
+  }
   const C = mkC();
   const w = new Float32Array(2), t = 1e6;
   cloudDriftOffset(C, t, w);

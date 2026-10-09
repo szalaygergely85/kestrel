@@ -11,7 +11,7 @@ import { defineUniformBlock } from './uniformBlock.js';
 import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, CELL_RAY_WGSL, CELL_RAY_PITCHED_WGSL, FALLOFF_FAST_WGSL, OCT_NORMAL_WGSL, HASH_FAST_WGSL, CLOUD_SHADOW_WGSL, HORIZON_AO_WGSL } from './common.wgsl.js';
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_SUN_STEPS } from '../../lighting.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
-import { FACE_PACKED, KIND_TERRAIN } from '../../GBuffer.js';
+import { FACE_PACKED, KIND_TERRAIN, KIND_MESH } from '../../GBuffer.js';
 import { SUN_N_SHIFT, CLOUD_Q_SHIFT } from '../../shadowSun.js';
 import { AO_MAX } from '../../horizonAo.js';
 
@@ -71,6 +71,7 @@ const FACE_PACKED: i32 = ${FACE_PACKED};
 const SUN_N_SHIFT: u32 = ${SUN_N_SHIFT}u;
 // US-026a S5: kind 7 (terrain) is lit by the sun analytically in the terrain shade pass (D-007).
 const KIND_TERRAIN: i32 = ${KIND_TERRAIN};
+const KIND_MESH: i32 = ${KIND_MESH}; // ME-20c
 // BUG-LIGHT-002: same epsilon as lighting.js VIS_FLOOR_EPS (float32 noise at exact vis-grid boundaries).
 const VIS_FLOOR_EPS: f32 = 1e-3;
 // S8-B2-12c (38.13): cloud-shadow darkening byte shift, bits 24..31 of LIGHT.w (free - gpucompare's decode only
@@ -262,7 +263,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
   // US-041a: face 7 (rotated voxel-model part) decodes its normal from GA.w's octahedral bits
   var N: vec3f;
   if (kindU == u32(KIND_TERRAIN)) { N = unpackNormalOct(textureLoad(uGI, cell, 0).z); } // ME-06: terrain's packed normal lives in GI.z
-  else if (faceU == u32(FACE_PACKED)) { N = unpackNormalOct(textureLoad(uGA, cell, 0).w); }
+  else if (faceU == u32(FACE_PACKED)) { N = unpackNormalOct(select(textureLoad(uGA, cell, 0).w, textureLoad(uGI, cell, 0).z, kindU == u32(KIND_MESH))); } // ME-20c: kind 9 GA.w may carry vertex AO; its packed normal is the same bits in GI.z
   else { N = faceNormal(faceU); }
 
   var litCount = 0;
@@ -339,7 +340,9 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
     occSum += aoTapCell(cell.x, cell.y - rc, P, N);
     occSum += aoTapCell(cell.x, cell.y + rc, P, N);
     let occ = occSum * 0.25;
-    let aoF = 1.0 - u.aoStrength * AO_MAX * occ;
+    var aoF = 1.0 - u.aoStrength * AO_MAX * occ;
+    // ME-20c (38.18): baked vertex AO of kind-9 cells (GA.w, written by raster when RASTER_FLAG_VAO). min, not product: both estimate the same ambient visibility.
+    if (kindU == u32(KIND_MESH)) { aoF = min(aoF, 1.0 - u.aoStrength * AO_MAX * (1.0 - clamp(bitcast<f32>(textureLoad(uGA, cell, 0).w), 0.0, 1.0))); }
     L -= u.ambient * (1.0 - aoF);
   }
 
