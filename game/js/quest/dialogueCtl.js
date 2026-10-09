@@ -26,7 +26,7 @@ export function npcTalk(ctx) {
  */
 export function createDialogueCtl(opt) {
   const { world, dialogues } = opt;
-  const view = createDialogueView({ style: opt.style });
+  const view = createDialogueView({ style: opt.style, palette: opt.palette }); // palette: ASSETS.palette (default globalThis.ASSETS.palette)
   const flags = {
     has: (k) => world.state['dlg.' + k] === true,
     set: (k) => {
@@ -41,7 +41,7 @@ export function createDialogueCtl(opt) {
   const jaw = createJawSync({ maxDeg: opt.jawOpenDeg }); // opt.jawOpenDeg = model def's jawOpenDeg, else fallback
   let jawComp = null;     // voxel component of the NPC whose jaw we drive
   const runner = createDialogueRunner({
-    cps: opt.cps,
+    cps: opt.cps || view.cps, // typing speed: explicit opt, else the style's typeOn.cps (28)
     onEvent(name) {
       if (name === 'node') { pendingClip = runner.clip; oneShot = false; lastBase = null; } // a new node cuts the old one-shot
     },
