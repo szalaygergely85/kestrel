@@ -2389,6 +2389,7 @@ function update(dt) {
   const changed = updateCamera(cam, input, dt, { speed, lookDx: rmbDown ? dx : 0, lookDy: rmbDown ? dy : 0, pitchClampDeg });
   if (changed) {
     frame.markDirty();
+    clickGuard.bump(); hoverGuard.bump(); // 38.26: a camera move invalidates any in-flight readSurface pick
     axisGizmo.update();
     savePoseDebounced(cam);
   }

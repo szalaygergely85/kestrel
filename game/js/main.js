@@ -71,6 +71,7 @@ import { initMapCard, stepMapCard, isMapOpen, getMapPanel, getMapChart, drawMapC
 import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
 import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-050: the one seam to game content
 import { createWaystoneTouch } from './waystoneTouch.js'; // WAYSTONE-TOUCH-01
+import { createWaystoneWire } from './quest/wire/waystone.js'; // WAYSTONE-01w
 import { createTitleMenuHost } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
@@ -480,6 +481,7 @@ if (demo.on) blockFKeys(input); // demo: no F3 / F-key dev overlays
 const demoEnd = demo.on ? createEndCard({
   onRestart: () => { const a = createStorageAdapter(saveStorage()); for (let i = 0; i < 3; i++) a.deleteSlot(i); window.location.reload(); },
   onKeep: () => {} }) : null;
+if (saveEnabled) gameHooks.register(createWaystoneWire()); // WAYSTONE-01w: heal + save + toast on touch, respawn at the touched stone (off with ?save=0 / capture / bench)
 gameHooks.register(createWaystoneTouch(gameHooks)); // WAYSTONE-TOUCH-01: prop:touched {waystone} on walk-in / E (lane C's WAYSTONE-01w listens)
 if (demoEnd) gameHooks.register({ onEvent(name, d) { if (name === 'area:entered' && d && d.id === 'waystone') demoEnd.trigger(); } });
 // OWN-REQ-003 (architecture.md 17.1): `engine.ui` is a single UiLayer for
