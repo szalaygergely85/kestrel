@@ -2,9 +2,9 @@
 // The render, camera, UI and the player's own physics never see this: main.js gates ONLY beasts.step / sword.step
 // through `due(dtMs)` (a fixed-step accumulator over scale()). Note: the sword sim keeps its own 'frozen' counter
 // (hitStopHard) for the swing animation; this one is the shared beast+sword freeze.
-// OWNER: window lengths are the PO proposal (US-082: 50-80 ms), owner decision pending. Cap 120 ms.
-export const HEAVY_MS = 70;
-export const LIGHT_MS = 50;
+// OWNER 2026-10-09 (D-053): light hit 70 ms ("punchier, more Zelda-like"); heavy 80 ms (top of US-082 50-80). Cap 120 ms.
+export const HEAVY_MS = 80;
+export const LIGHT_MS = 70;
 export const CAP_MS = 120;
 
 export function hitStopEnabled(params, captureLike) {
