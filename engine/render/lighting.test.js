@@ -5,6 +5,7 @@ import {
   LightSet, buildLightSet, setWorldSun, applySunHours, lightAt, lightSurfaces, computeVisGrid, falloff, h01,
   selectCpuLights, CPU_LIGHT_CAP, MAX_LIGHTS, MAX_VIS_DIM, sunVisible, MAX_SUN_STEPS,
   sampleVis, VIS_FLOOR_EPS, makeLightBuffer, syncEntityLights, clampLightToFree, ATTACH_WALL_MARGIN,
+  setCloudShadow,
 } from './lighting.js';
 import { attachedLightPos } from '../entities/attach.js';
 import { World } from '../world/World.js';
@@ -817,6 +818,68 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
   ok('time without LightSet still reuses world-owned sun', world.sun === owned && world.sun.elevation > 0);
   const fallbackSun = sunFromWorld({ structures: world.structures }, paletteMod, {});
   ok('terrain without world.sun retains level fallback', approx(fallbackSun.dirX, reference.sun.dir[0], 1e-7));
+}
+
+// --- S8-B2-12a (38.13): cloud shadows, strength 0 is bit-identical; strength 1 stays in [0.4, 1] ---
+{
+  const cols = 1, rows = 1;
+  const face = new Uint8Array([FACE_PACKED]);
+  const aoD = new Float32Array(1);
+  new Uint32Array(aoD.buffer)[0] = packNormalOct(0, 0, 1); // straight up, N.sunDir > 0 for an overhead sun
+  const depthArr = new Float32Array([5]);
+  const rt = { pxCellW: 1, pxCellH: 1 };
+  const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
+  const gbuf = { kind: new Uint8Array([1]), face, aoD, cols, rows }; // kind 1 (not terrain): gets the sun term
+
+  function makeSunLights() {
+    const ls = new LightSet();
+    ls.ambient[0] = ls.ambient[1] = ls.ambient[2] = 0.1;
+    ls.setSun({ elevation: 90, azimuth: 0, on: true });
+    ls.sun.col[0] = ls.sun.col[1] = ls.sun.col[2] = 1;
+    ls.update(0, null);
+    return ls;
+  }
+
+  // Strength 0 (default, no setCloudShadow call): byte-identical to a LightSet that never had the field touched.
+  const lsZero = makeSunLights();
+  const lsRef = makeSunLights();
+  const lbZero = makeLightBuffer(cols, rows), lbRef = makeLightBuffer(cols, rows);
+  lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbZero }, lsZero, cam, null);
+  lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbRef }, lsRef, cam, null);
+  ok('strength 0: rgb byte-identical', lbZero.rgb[0] === lbRef.rgb[0] && lbZero.rgb[1] === lbRef.rgb[1] && lbZero.rgb[2] === lbRef.rgb[2]);
+  ok('strength 0: sunlit/litCount/sunN byte-identical', lbZero.sunlit[0] === lbRef.sunlit[0] && lbZero.litCount[0] === lbRef.litCount[0] && lbZero.sunN[0] === lbRef.sunN[0]);
+  ok('strength 0: cloud byte is 0 on both', lbZero.cloud[0] === 0 && lbRef.cloud[0] === 0);
+
+  // Explicit strength 0 (via setCloudShadow) must also be bit-identical to the untouched default.
+  const lsExplicitZero = makeSunLights();
+  setCloudShadow(lsExplicitZero, { strength: 0 });
+  const lbExplicitZero = makeLightBuffer(cols, rows);
+  lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbExplicitZero }, lsExplicitZero, cam, null);
+  ok('strength 0 (explicit via setCloudShadow): rgb byte-identical', lbExplicitZero.rgb[0] === lbRef.rgb[0] && lbExplicitZero.rgb[1] === lbRef.rgb[1] && lbExplicitZero.rgb[2] === lbRef.rgb[2]);
+
+  // Strength 1: the non-terrain sun-term ratio (lit rgb / the same cell's strength-0 rgb, isolating the sun term
+  // from ambient) stays in [0.4, 1] (CLOUD_DARK = 0.6), and cloudQ stays in [0, 153] (floor(1*0.6*1*255+0.5)).
+  let minRatio = Infinity, maxRatio = -Infinity, minQ = 256, maxQ = -1;
+  for (let trial = 0; trial < 40; trial++) {
+    const lsFull = makeSunLights();
+    setCloudShadow(lsFull, { strength: 1, cover: 0.3 + trial * 0.01, scaleM: 20 + trial });
+    const lbFull = makeLightBuffer(cols, rows);
+    const camT = { x: trial * 7.3, y: trial * 3.1, z: 0, yawDeg: 0, pitchDeg: 0 };
+    lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbFull }, lsFull, camT, null);
+    const lsBase = makeSunLights();
+    const lbBase = makeLightBuffer(cols, rows);
+    lightSurfaces({ gbuf, depth: { depth: depthArr }, rt, light: lbBase }, lsBase, camT, null);
+    const ambient = lsFull.ambient[0]; // same ambient on both (sun col is [1,1,1], N.sunDir = 1 at elevation 90)
+    const sunBase = lbBase.rgb[0] - ambient, sunFull = lbFull.rgb[0] - ambient;
+    if (sunBase > 1e-9) {
+      const ratio = sunFull / sunBase;
+      minRatio = Math.min(minRatio, ratio); maxRatio = Math.max(maxRatio, ratio);
+    }
+    minQ = Math.min(minQ, lbFull.cloud[0]); maxQ = Math.max(maxQ, lbFull.cloud[0]);
+  }
+  ok('strength 1: sun-term ratio >= 0.4', minRatio >= 0.4 - 1e-6, String(minRatio));
+  ok('strength 1: sun-term ratio <= 1', maxRatio <= 1 + 1e-6, String(maxRatio));
+  ok('strength 1: cloudQ in [0, 153]', minQ >= 0 && maxQ <= 153, `${minQ}..${maxQ}`);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

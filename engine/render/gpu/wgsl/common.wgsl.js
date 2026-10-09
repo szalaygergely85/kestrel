@@ -1,5 +1,6 @@
 import { STEP } from '../../../core/loop.js';
 import { WIND_K_SIZE } from '../../../world/wind.js';
+import { CLOUD_SALT } from '../../cloudShadow.js';
 
 // WG-3a (docs/architecture.md 38.5): WGSL twins of the shared GLSL snippets in glsl/common.js that more than one
 // module needs. Pure strings, no GPU globals. No raw `%` anywhere (38.5 item 1); add fmodGlsl/imod/umod here when a
@@ -171,6 +172,32 @@ fn lineGlyphCodeFast(cx: f32, cy: f32, fr: f32, cellAspect: f32) -> i32 {
   let k = orientClassCode(cx, cy, cellAspect);
   if (k == 0) { return select(LINE_DASH, LINE_UNDERSCORE, fr >= 0.5); }
   return select(select(LINE_BACKSLASH, LINE_SLASH, k == 2), LINE_PIPE, k == 1);
+}
+`;
+
+// S8-B2-12a (docs/architecture.md 38.13): twin of cloudShadow.js's `cloudCov`/`vnoise` (value noise, 256-periodic
+// integer lattice). Needs `hashFast` (HASH_FAST_WGSL) already in scope - the including module interpolates both,
+// exactly once each, same convention as shade.wgsl.js/waterComposite.wgsl.js interpolating HASH_FAST_WGSL once.
+export const CLOUD_SHADOW_WGSL = `
+const CLOUD_SALT: i32 = ${CLOUD_SALT};
+fn vnoiseCloud(u: f32, v: f32, s: i32) -> f32 {
+  let iu = i32(floor(u)); let iv = i32(floor(v));
+  let fu = u - f32(iu); let fv = v - f32(iv);
+  let su = fu * fu * (3.0 - 2.0 * fu); let sv = fv * fv * (3.0 - 2.0 * fv);
+  let h00 = hashFast(iu & 255, iv & 255, s);
+  let h10 = hashFast((iu + 1) & 255, iv & 255, s);
+  let h01v = hashFast(iu & 255, (iv + 1) & 255, s);
+  let h11 = hashFast((iu + 1) & 255, (iv + 1) & 255, s);
+  let a = h00 + (h10 - h00) * su;
+  let b = h01v + (h11 - h01v) * su;
+  return a + (b - a) * sv;
+}
+
+fn cloudCov(px: f32, py: f32, invS: f32, offU: f32, offV: f32, cover: f32) -> f32 {
+  let u = px * invS + offU; let v = py * invS + offV;
+  let n = 0.65 * vnoiseCloud(u, v, CLOUD_SALT) + 0.35 * vnoiseCloud(2.0 * u, 2.0 * v, CLOUD_SALT + 1);
+  let t = clamp((n - cover) / 0.25, 0.0, 1.0);
+  return t * t * (3.0 - 2.0 * t);
 }
 `;
 
