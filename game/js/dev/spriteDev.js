@@ -5,7 +5,7 @@
 // rule 3). Used by game/js/dev/spritesPage.js today; main.js wiring is a
 // 4-line call surface (see docs/backlog.md US-030c programmer notes):
 //
-//   const sprites = createSpriteSystem({ assets, rt, gpuPipeline });     // after the pipeline gate
+//   const sprites = createSpriteSystem({ assets, rt, wgPipeline });     // after the pipeline gate
 //   if (params.get('sprite') === '1') spawnTestSprites(world, playerHandle.data.transform);
 //   sprites.render(fb, engine.world, cam);   // in render(), right after renderWorld(...), before rt.present()
 //   extra += sprites.overlayLine();          // F3 overlay (optional)
@@ -16,7 +16,7 @@ import {
 // engine/dev.js, not the stable engine/index.js surface.
 import { runSpriteCompare } from '../../../engine/dev.js';
 
-export function createSpriteSystem({ assets, rt, gpuPipeline, wgPipeline = null }) {
+export function createSpriteSystem({ assets, rt, wgPipeline = null }) {
   const atlas = buildSpriteAtlas(assets, assets.palette);
   const pool = new SpritePool(atlas, assets.palette);
   const pass = null; // WG-5b: the WebGL2 GpuSpritePass is gone (WebGPU sprites live in wg/passSprites.js)

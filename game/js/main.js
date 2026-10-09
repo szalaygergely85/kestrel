@@ -204,7 +204,7 @@ function startAutoBench(at, redetect) {
   if (autoBench && autoBench.phase !== 'done') return false;
   autoRunning = at; autoCard = showCard();
   autoBench = new AutoBench({
-    sample: () => (gpuPipeline && gpuPipeline.stats ? gpuPipeline.stats.gpuMsP95 : (wgActive && wgPipeline.stats ? wgPipeline.stats.gpuMsP95 : NaN)), // S8-B1-08: WebGPU feeds the WG timer (wgActive is set before the first sample)
+    sample: () => (wgActive && wgPipeline.stats ? wgPipeline.stats.gpuMsP95 : NaN), // S8-B1-08: WebGPU feeds the WG timer (wgActive is set before the first sample)
     intervalMs: () => lastFrameDt,
     onDone: ({ samples, kind, minSamples, frameSamples }) => {
       if (autoCard) { autoCard.remove(); autoCard = null; }
@@ -577,17 +577,13 @@ console.log(`[RenderTarget] back-end: ${rt.backend}`); // D-005: which back-end 
 // (`matTable.allV2`; `?detail=0` sets `detailPass` to null above, so this
 // condition is false there too, by construction). `isSoftwareRenderer` and
 // shader compile/link failures are both handled INSIDE the constructor
-// (tech notes item 9) - it never throws out here; `gpuPipeline.ready` is
+// (tech notes item 9) - it never throws out here; `wgPipeline.ready` is
 // the one thing this file checks afterwards. Kept to this one `if` + one
 // `new` + one `.bind()` call - everything else (the hook, the CPU no-op
 // guards) lives in engine/render/gpu/ and engine/render/{detailShade,
 // edgePass,CellBuffer,RenderTargetGL}.js, none of which is compositor.js/
 // world/* (US-025, off-limits this story).
-// WG-5b: the WebGL2 GpuCellPipeline is gone; `gpuPipeline` stays null (WebGPU is `wgPipeline`) so the dev tools that still
-// read it print their "no active pipeline" message until they are ported (dead branches are listed in WG-5b-drop-webgl2.md).
-let gpuPipeline = null;
-// WG-2a: the WebGPU skeleton pipeline (createRenderer built it) is NOT a gpuPipeline yet (no scene passes: the CPU path keeps
-// rendering); it only draws `?gpudebug=kind|plane|normal|depth` (G-buffer debug view) over the cells.
+// WG-2a: the WebGPU skeleton pipeline (createRenderer built it) (no scene passes in WG-2a); it draws `?gpudebug=kind|plane|normal|depth` (G-buffer debug view) over the cells.
 if (wgPipeline && wgPipeline.ready && rt.backend === 'webgpu') {
   wgPipeline.bind(matTable, assets.palette);
   wgPipeline.setWaterLooks(window.ASSETS.waterLooks); // WG-3e: same designer table as the GL pipeline (US-055a2c)
@@ -595,23 +591,12 @@ if (wgPipeline && wgPipeline.ready && rt.backend === 'webgpu') {
   if (wgDebug !== undefined) wgPipeline.setDebugMode(wgDebug);
   console.log(`[WgCellPipeline] skeleton active (ported passes: ${wgPipeline.portedPasses.join(',')})${wgDebug !== undefined ? ', debug view ' + params.get('gpudebug') : ''}`);
 }
-const gpuDebugParam = params.get('gpudebug');
-if (gpuPipeline && gpuDebugParam) {
-  // Architect review 1 item 6 deviation: mode 2 is a "was this cell shaded"
-  // indicator, not the real edge-rule code (no `ruleTex` MRT this story) -
-  // named `shaded` here so nobody reads it as the rule.
-  gpuPipeline.setDebugMode({ kind: 0, plane: 1, shaded: 2 }[gpuDebugParam] ?? -1); // unreachable since WG-5b
-}
-// Architect review 1 minor item 4c: name the offending material keys when
-// the gate didn't hold, so the content gap is visible without digging.
-const inactiveReason = gpuPipeline
-  ? ''
-  : ' - JS shading' + (matTable.missingV2 && matTable.missingV2.length ? ` (missingV2: ${matTable.missingV2.join(', ')})` : '');
-console.log(`[GpuCellPipeline] ${gpuPipeline ? 'active (' + gpuPipeline.rendererString + ')' : 'inactive' + inactiveReason}`);
+// Architect review 1 minor item 4c: name the offending material keys when the detail gate didn't hold.
+console.log(`[WgCellPipeline] ${wgPipeline && wgPipeline.ready ? 'active' : 'inactive - JS shading' + (matTable.missingV2 && matTable.missingV2.length ? ` (missingV2: ${matTable.missingV2.join(', ')})` : '')}`);
 
 // ---- US-030c (ARCH CHANGES item 1): sprite system, after the pipeline gate ----
 bootMark('sprite system next');
-const sprites = createSpriteSystem({ assets, rt, gpuPipeline, wgPipeline });
+const sprites = createSpriteSystem({ assets, rt, wgPipeline });
 // ---- end US-030c ----
 
 // ---- US-053b/US-053c: particle presets + the draw layer (engine.particles.clear() on every 'world:loaded'
@@ -648,7 +633,7 @@ const _emberEye = new Float64Array(3), _emberWorld = new Float64Array(3);
 // ---- US-041a (15.3 item 1): the REAL gameplay voxel pool - `collect(world,
 // cam)` fills it from `components.voxel` entities each frame (renderer holds
 // no entity state itself, just this frame's projected instance list); the
-// GPU path's own `gpuPipeline.frame()` calls `.project()` on it internally
+// GPU path's own `wgPipeline.frame()` calls `.project()` on it internally
 // once bound (see GpuCellPipeline.js's `_passVoxel`), so only the CPU/JS
 // oracle path (fb.gpu === false) needs an explicit `.project()` call
 // here too (mirrors compositor.js reading `fb.voxelPool.list` pre-projected,
@@ -710,12 +695,11 @@ const swordStyleIds = {
   sparkClink: engine.overlay.styleId('sparkClink'),
 };
 sprites.pool.renderer = renderer; // review item 1: sprite rects follow the pitched scene
-if (gpuPipeline) { gpuPipeline.bindVoxels(gameVoxelPool); gpuPipeline.bindViewModel(engine.viewModel); } // US-078a (30.1)
 const wgActive = !!(wgPipeline && wgPipeline.ready && rt.backend === 'webgpu'); // WG-2b: geometry-only WebGPU pipeline (CPU still shades)
 engine.events.on('combat:hit', (p) => { if (p && p.source === 'player') hitStop.trigger(p.heavy ? 'heavy' : 'light'); }); // HITSTOP-01
 const hzb = createHzbInvalidator(() => (occlOpt.enabled && wgActive && wgPipeline.ready ? wgPipeline : null)); // OCCL-MAIN-01: cuts invalidate the HZB
 if (wgActive) { wgPipeline.bindVoxels(gameVoxelPool); wgPipeline.bindViewModel(engine.viewModel); }
-engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); if (gpuPipeline) gpuPipeline.bindInstances(engine.instances); // RE-06 (28.6)
+engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); // RE-06 (28.6)
 if (wgActive) wgPipeline.bindInstances(engine.instances);
 // US-078d (30.1): the held sword's view-model handle, resolved once (gameVoxelPool already carries the
 // mesh-only `swordHeld` model registered above). `window.ASSETS.viewModels.sword` is the raw classic-script
@@ -753,13 +737,11 @@ const spellVmH = window.ASSETS && window.ASSETS.viewModels && window.ASSETS.view
 // can change with the grid); an already-loaded world's structures are
 // re-bound against the fresh `matTable`, same as `'world:loaded'` does.
 engine.events.on('grid:changed', ({ cols, rows }) => {
-  if (gpuPipeline) gpuPipeline.resizeGrid(cols, rows);
   if (sprites.pass) sprites.pass.resizeGrid(cols, rows);
   hzb.invalidate('resize');
   gbuf = new GBuffer(cols, rows);
   matTable = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
   engine.attachMaterialTable(matTable); // RE-06: re-applies engine.teamSpec to the new table
-  if (gpuPipeline) gpuPipeline.bind(matTable, assets.palette);
   if (wgActive && wgPipeline.ready) wgPipeline.bind(matTable, assets.palette); // grid resize itself ran inside engine.applyGrid
   if (engine.world) for (const s of engine.world.structures) { if (s.kind === 'mesh') continue; bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
   if (fb) { fb.depth = engine.depthBuffer; fb.gbuf = gbuf; fb.matTable = matTable; fb.light = makeLightBuffer(cols, rows); }
@@ -767,7 +749,7 @@ engine.events.on('grid:changed', ({ cols, rows }) => {
 
 // Internal hook for manual/automated smoke-testing in a console - not part
 // of the game's own UI.
-window.__debug = { input, overlay, rt, engine, gpuPipeline, gbuf, matTable, ambientL, depthBuffer, sprites, wgPipeline, hzb };
+window.__debug = { input, overlay, rt, engine, gbuf, matTable, ambientL, depthBuffer, sprites, wgPipeline, hzb };
 bridgeEngineEvents(engine.events, gameHooks); // beast:died / inventory:added -> seam events
 window.__debug.saveRelay = saveRelay; // US-089w: test hook (headless reload check)
 
@@ -782,7 +764,7 @@ window.__debug.saveRelay = saveRelay; // US-089w: test hook (headless reload che
 // S8-B1-09b: the WebGPU sprite/overlay pipelines compile asynchronously; harness modes (gpucompare, bench) need them wired before pose 1
 if (wgPipeline && wgPipeline.spritesCompiled) await wgPipeline.spritesCompiled;
 const ctx = {
-  params, assets, rt, overlay, gpuPipeline, wgPipeline, matTable, gbuf, depthBuffer, detailPass,
+  params, assets, rt, overlay, wgPipeline, matTable, gbuf, depthBuffer, detailPass,
   engine, sprites, fadeLut,
   lightsEnabled, sunEnabled, terrainEnabled, renderer, rayParam, compareNoVoxels, compareNearStep,
   GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR,
@@ -1523,11 +1505,11 @@ async function runGame(mode, cinematic = null) {
     voxelPool: gameVoxelPool, // US-041a (15.3 item 1)
     instances: engine.instances, // RE-06 (28.6)
     viewModel: engine.viewModel, // US-078a (30.1): the held sword; both mesh twins draw it when shown
-    waterLooks: resolveWaterLooks(window.ASSETS.waterLooks), // US-055a2c (Q12 item 8): JS twin, same table as gpuPipeline.setWaterLooks
+    waterLooks: resolveWaterLooks(window.ASSETS.waterLooks), // US-055a2c (Q12 item 8): JS twin, same table as wgPipeline.setWaterLooks
     ripples, // S8-B2-13b NEEDS B1-main (38.14): duck-typed {packInto} read by waterComposite.js; owned by the module-scope singleton above
     // US-030a: true once a ready GPU pipeline owns casting - `renderWorld`
     // (compositor.js) reads this and skips its whole CPU sequence; kept in
-    // sync with `gpuPipeline`/`rt.gpuActive` right below `mode === 'world'`.
+    // sync with `wgPipeline`/`rt.gpuActive` right below `mode === 'world'`.
     gpu: false, renderer: 'mesh',
     // PO REJECT item 1: this is the ONE real gameplay frame buffer, so
     // `lightSurfaces` (lighting.js) caps to the 4 nearest `on` lights
@@ -1542,7 +1524,7 @@ async function runGame(mode, cinematic = null) {
     sceneFade: 1,
     sceneDim, // WG-3f: the WebGPU sprite pass reads it in wgPipeline.frame (GL gets it through sprites.pass.setSceneDim)
     // ARCH CHANGES item 3: `?terrain=0` dev A/B switch, CPU/JS-oracle side
-    // (compositor.js reads this; the GPU side is `gpuPipeline.terrainEnabled`).
+    // (compositor.js reads this; the GPU side is `wgPipeline.terrainEnabled`).
     terrainEnabled,
   };
 
@@ -1593,7 +1575,7 @@ async function runGame(mode, cinematic = null) {
       }
       // US-006: carried-light sync (US-012's lantern, `components.light`)
       // then flicker/vis-grid update, once per rendered frame, BEFORE either
-      // the CPU (`renderWorld`) or GPU (`gpuPipeline.frame`) path reads
+      // the CPU (`renderWorld`) or GPU (`wgPipeline.frame`) path reads
       // `fb.lights` - the GPU path never calls into compositor.js's own
       // (CPU-only) lighting hook, so this must run here, not there.
       if (fb.lights) {
@@ -1602,16 +1584,8 @@ async function runGame(mode, cinematic = null) {
         fb.lights.update(fb.timeSec, engine.world);
       }
       lap(SEC.lights);
-      // US-030a AC "the CPU caster no longer runs on the gl2 path": with a
-      // ready GPU pipeline, `renderWorld` is a one-line no-op (compositor.js)
-      // and the GLSL DDA (this frame's cam/world, below) does the entire
-      // cast+shade+edge sequence instead.
-      // Architect review 1 item 2: `rt.gpuActive` too, not just `!!gpuPipeline`
-      // - after a failed WebGL2 context restore `gpuActive` goes false but
-      // `gpuPipeline` itself is still the same (now-dead) object, so without
-      // this check `renderWorld` would keep skipping the CPU cast -> black
-      // world instead of falling back to it.
-      fb.gpu = (!!gpuPipeline || (wgActive && wgPipeline.frameComplete)) && rt.gpuActive; // WG-3f: WebGPU owns the frame once shadow+water+sprites+overlay are wired
+      // With a WebGPU pipeline owning the frame, `renderWorld` (compositor.js) is a no-op; `rt.gpuActive` guards a lost device.
+      fb.gpu = wgActive && wgPipeline.frameComplete && rt.gpuActive; // WG-3f: WebGPU owns the frame once shadow+water+sprites+overlay are wired
       // US-041a (15.3 item 1): `collect(world, cam)` every frame (cheap - the
       // entity ref list is cached by `world.renderVersion`, only distance is
       // recomputed); the GPU path projects internally, the CPU/JS oracle
@@ -1769,7 +1743,6 @@ async function runGame(mode, cinematic = null) {
     lap(SEC.ui);
     if (mode === 'world' && cam) hzb.trackPose(cam.x, cam.y, cam.z); // waystone / save-load / unannounced pose jumps
     if (wgActive && wgPipeline.ready) wgPipeline.frame(fb, (mode === 'world' && fb.lights) || ambientL, mode === 'world' ? cam : null, mode === 'world' ? engine.world : null);
-    if (gpuPipeline) gpuPipeline.frame(fb, (mode === 'world' && fb.lights) || ambientL, mode === 'world' ? cam : null, mode === 'world' ? engine.world : null);
     lap(SEC.gpuFrame);
     rt.present();
     lap(SEC.present);
@@ -1777,7 +1750,6 @@ async function runGame(mode, cinematic = null) {
     // US-018 (architecture.md 16): "do not leave pass timing on when the
     // overlay is hidden and no bench runs" - a plain boolean set, cheap
     // enough to do unconditionally every frame.
-    if (gpuPipeline) gpuPipeline.setPassTiming(overlay.visible || benchActive || (autoBench !== null && autoBench.phase !== 'done')); // GFX-02: pass timers = sum of passes, not the vsync-padded whole-frame span
     if (wgActive) wgPipeline.setPassTiming(overlay.visible || benchActive || (autoBench !== null && autoBench.phase !== 'done')); // S8-B1-07: same gate as the GL pipeline's pass timers, WG side
 
     const lastRenderMs = performance.now() - renderStart;
@@ -1798,25 +1770,12 @@ async function runGame(mode, cinematic = null) {
       let extra = `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rendererInfo.label}` +
         `\n${describeQuality(bootOpts, rt.cols, rt.rows, engine.rays)}` + // GFX-01w
         `\npath: ${rt.gpuActive ? 'gpu' : 'cpu'}  grid: ${rt.cols}x${rt.rows}  rays: ${engine.rays}${occlOpt.enabled && wgActive ? '  occl on (' + hzb.count + ' cuts)  occl cull ' + (wgPipeline.stats ? (wgPipeline.stats.culledOccl || 0) : 0) : ''}` +
-        (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` +
-          // ARCH CHANGES item 4: `terrainSubmitMs*` is CPU draw-call submit
-          // time, not a GPU cost - the real terrain GPU cost is the whole-frame
-          // `gpuMs` A/B delta with vs without `?terrain=0` (measured + recorded
-          // in this story's Programmer notes, docs/backlog.md).
-          `  terrain cpu ${Number.isNaN(gpuPipeline.stats.terrainSubmitMsP50) ? 'n/a' : gpuPipeline.stats.terrainSubmitMsP50.toFixed(2) + 'ms'}` : '') +
-        (!gpuPipeline && rt.stats ? `\nGPU present p50 ${Number.isNaN(rt.stats.gpuMsP50) ? 'n/a' : rt.stats.gpuMsP50.toFixed(2) + 'ms'}  p95 ${Number.isNaN(rt.stats.gpuMsP95) ? 'n/a' : rt.stats.gpuMsP95.toFixed(2) + 'ms'}` : '') +
+        (rt.stats ? `\nGPU present p50 ${Number.isNaN(rt.stats.gpuMsP50) ? 'n/a' : rt.stats.gpuMsP50.toFixed(2) + 'ms'}  p95 ${Number.isNaN(rt.stats.gpuMsP95) ? 'n/a' : rt.stats.gpuMsP95.toFixed(2) + 'ms'}` : '') +
         (mode === 'world' ? `\n${sprites.overlayLine()}` : ''); // US-030c (ARCH CHANGES item 1)
-      // US-018: JS split (sim/render/submit) from `loop.stats` + the
-      // pipeline's own upload+draw submit time, and per-pass GPU ms
-      // (`n/a` while `setPassTiming` is off or the extension is missing).
-      const submitMs = gpuPipeline ? gpuPipeline.stats.uploadMs + gpuPipeline.stats.drawMs : NaN;
+      // US-018: JS split (sim/render) from `loop.stats`.
       extra += `\njs sim ${engine.loop.stats.simMs.toFixed(2)}ms  render ${engine.loop.stats.renderMs.toFixed(2)}ms` +
-        `  submit ${Number.isNaN(submitMs) ? 'n/a' : submitMs.toFixed(2) + 'ms'}` +
         // D-025 (US-038a, architecture.md 22.6): last live grid-switch cost (F4).
         `  grid ${rt.cols}x${rt.rows}${Number.isNaN(engine.stats.lastGridSwitchMs) ? '' : ` (switch ${engine.stats.lastGridSwitchMs.toFixed(1)}ms)`}`;
-      if (gpuPipeline) {
-        if (engine._detail) extra += `\ndetail fed ${engine._detail.fed}  culled ${engine.instances.stats.instancesCulled}  lod1 ${engine.instances.stats.instancesLod1}`;
-      }
       if (wgActive && wgPipeline.ready) extra += '\nwg pass ms: ' + WG_PASS_NAMES.map((name, i) => { const v = wgPipeline.stats.wgPassMsP50[i]; return name + ' ' + (Number.isNaN(v) ? 'n/a' : v.toFixed(2)); }).join('  '); // S8-B1-07
       if (mode === 'world') {
         const t = playerHandle.data.transform;
@@ -1863,7 +1822,7 @@ async function runGame(mode, cinematic = null) {
   // right away (`benchActive` set by the `?bench=1` dispatch branch, top of
   // this file).
   if (mode === 'world' && benchActive && params.get('bench') !== 'combat' && params.get('enemies') !== '4') { // COMBAT-BENCH-01: combatBench replaces the view sequence
-    runPerfBench({ engine, playerHandle, overlay, gpuPipeline, input, rt, look, prof });
+    runPerfBench({ engine, playerHandle, overlay, input, rt, look, prof });
   }
 }
 
@@ -1891,8 +1850,9 @@ function round2(n) {
 // does not force the grid itself, unlike `?bench=1`/`?gpucompare=1`, so the
 // URL must ask for it).
 function runVoxelBenchMode() {
+  const gpuPipeline = wgActive && wgPipeline.ready ? wgPipeline : null;
   if (!gpuPipeline) {
-    console.error('[voxelbench] no active GpuCellPipeline (backend=' + rt.backend + ') - nothing to measure.');
+    console.error('[voxelbench] no active wgPipeline (backend=' + rt.backend + ') - nothing to measure.');
     return;
   }
   gpuPipeline.setSource('scene');

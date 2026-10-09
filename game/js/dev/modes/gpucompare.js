@@ -15,13 +15,12 @@ import { placeCompareSprites } from '../spriteDev.js'; // US-030c: the synthetic
 export const name = 'gpucompare';
 
 function noPipelineMsg(ctx) {
-  const { gpuPipeline, rt, detailPass, matTable, overlay } = ctx;
-  const msg = '[gpucompare] no active GpuCellPipeline (backend=' + rt.backend + ', detail=' + (detailPass ? 'on' : 'off') +
+  const { rt, detailPass, matTable, overlay } = ctx;
+  const msg = '[gpucompare] no active wgPipeline (backend=' + rt.backend + ', detail=' + (detailPass ? 'on' : 'off') +
     ', allV2=' + matTable.allV2 + ') - nothing to compare.';
   console.error(msg);
   overlay.visible = true; overlay.el.style.display = 'block';
   overlay.el.textContent = msg;
-  void gpuPipeline;
   return msg;
 }
 
