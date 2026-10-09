@@ -29,7 +29,7 @@ try {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false });
   async function shot(name) { await pause(350); const s = await cdp.send('Page.captureScreenshot', { format: 'png' }); writeFileSync(path.join(out, name + '.png'), Buffer.from(s.data, 'base64')); }
 
-  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/js/main.js?world=forest_test&ambient=1&backend=${backend}` });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&title=0&ambient=1&backend=${backend}` });
   let ready = false;
   for (let i = 0; i < 100; i++) { await pause(300); if (await evaluate(cdp, '!!window.__kestrel')) { ready = true; break; } }
   assert.ok(ready, JSON.stringify(errors));

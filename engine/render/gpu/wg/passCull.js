@@ -29,7 +29,7 @@ const PLANES = W('planes'), EYE = W('eye'), LODROW = W('lodRow'), PARAMS = W('pa
 const RANGECOUNT0 = W('rangeCount0'), RANGECOUNT1 = W('rangeCount1'); // ALPHA-01f (d): mesh ranges sharing each LOD's compacted instances
 const SWAYPAD = W('swayPad'), SWAYPAD_S = WS('swayPad'); // S8-B2-05/06: metres added to R (SWAY_MAX while foliage sway is on, else 0)
 
-/** @typedef {{group: any, lod: number, mesh: any, instanceBuffer: any, argsBuffer: any, argsOffset: number, maxInstances: number, parts: any, active: boolean}} CullEntry */
+/** @typedef {{group: any, lod: number, mesh: any, instanceBuffer: any, argsBuffer: any, argsOffset: number, maxInstances: number, parts: any, active: boolean, range?: number}} CullEntry */
 
 /** @param {any} device @param {boolean} [shadow] WG-4b shadow-caster kernel (cullShadow.wgsl.js) @returns {any} the compute pipeline (create once; `device.createComputePipeline` is WebGPU/mock only) */
 export function createCullPipeline(device, shadow = false) {
@@ -144,7 +144,7 @@ export class WgCullPass {
       for (const m of meshes) { if (m && m.ranges && m.ranges.length > 1) throw new Error('WgCullPass: multi-range meshes need an args slot per range (voxel units: ONE_PART batches only)'); }
     }
     let rc = 1; // ALPHA-01f (d): R = widest range count of either LOD mesh (meshGroups only; fixed for this batch's life)
-    for (const m of meshes) { if (m && m.ranges && m.ranges.length > rc) rc = m.ranges.length; }
+    for (const m of meshes) { if (m && m.maskRanges && m.ranges && m.ranges.length > rc) rc = m.ranges.length; } // unmasked meshGroups stay ONE_PART: one range
     const d = this.device;
     const cap = g.ib.capacity;
     let slot;

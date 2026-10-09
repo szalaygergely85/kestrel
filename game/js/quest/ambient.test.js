@@ -1,6 +1,6 @@
 // Node test for S8-B1-18 ambient dust motes (game/js/quest/ambient.js).
 // Run: node --test game/js/quest/ambient.test.js  (or via the suite filter: ambient)
-import { createParticles } from '../../../engine/fx/particles.js';
+import { createParticles } from '../../../engine/index.js';
 import { createAmbientMotes, MOTES_COUNT } from './ambient.js';
 
 let failed = 0;

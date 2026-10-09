@@ -223,7 +223,7 @@ const oneRangeMesh = { triCount: 4, bbox: mesh0.bbox, ranges: [{ start: 0, count
 {
   const cull = new WgCullPass(d);
   const g = makeGroup(4, 0); g.mesh = {};
-  const rangedMesh = { triCount: 10, bbox: mesh0.bbox, ranges: [{ start: 0, count: 2 }, { start: 2, count: 3 }, { start: 5, count: 4 }] };
+  const rangedMesh = { triCount: 10, bbox: mesh0.bbox, ranges: [{ start: 0, count: 2 }, { start: 2, count: 3 }, { start: 5, count: 4 }], maskRanges: [0, 0, -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0] }; // third range masked
   cull.begin({ planes: null });
   const ents = cull.add(g, [rangedMesh, null]);
   assert.equal(ents.length, 6, 'R=3: 6 entries (3 ranges x 2 LODs)');
