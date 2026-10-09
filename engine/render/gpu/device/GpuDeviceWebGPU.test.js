@@ -352,6 +352,32 @@ await run('webgpu: requestDevice rejects -> fallback', {
   d.dispose();
 }
 
+// 38.10a (S8-B1-06): dispose(buffer) prunes every cached dispatch bind group in p.groups that references it;
+// dispose(computePipeline) drops it from the device's compute-pipeline list. Hot dispatch lookup is unchanged.
+{
+  const g = mockGpu(), groups2 = [];
+  g.createBuffer = () => ({ destroy() {} });
+  g.createComputePipeline = (d) => ({ cp: true });
+  g.createBindGroup = (d) => { groups2.push(d); return { bg: groups2.length }; };
+  const cp2 = { setPipeline() {}, setBindGroup() {}, dispatchWorkgroups() {}, end() {} };
+  g.createCommandEncoder = () => ({ beginComputePass: () => cp2, finish: () => ({}) });
+  const c2 = { buf: { ...consts.buf, STORAGE: 32, INDIRECT: 64, COPY_SRC: 128 }, tex: consts.tex, stage: { ...consts.stage, COMPUTE: 4 }, map: consts.map };
+  const d2 = new GpuDeviceWebGPU(g, { consts: c2, ringSlots: 8 });
+  const p2 = d2.createComputePipeline({ src: { wgsl: 'x' }, bindings: { buffers: ['rw', 'rw', 'rw', 'rw', 'rw'] } });
+  const A = d2.createBuffer({ usage: 'storage', bytes: 16 }), B = d2.createBuffer({ usage: 'storage', bytes: 16 });
+  const C = d2.createBuffer({ usage: 'storage', bytes: 16 }), De = d2.createBuffer({ usage: 'storage', bytes: 16 }), E = d2.createBuffer({ usage: 'storage', bytes: 16 });
+  const bufsAll = { buffers: [{ slot: 0, buffer: A }, { slot: 1, buffer: B }, { slot: 2, buffer: C }, { slot: 3, buffer: De }, { slot: 4, buffer: E }] };
+  d2.dispatch(p2, bufsAll, 1);
+  ok('dispatch with set {A..E} builds exactly one bind group', p2.groups.length === 1);
+  d2.dispose(A);
+  ok('dispose(A) prunes the cached group referencing it', p2.groups.length === 0);
+  d2.dispatch(p2, bufsAll, 1);
+  ok('next dispatch with the same set builds exactly one new group', p2.groups.length === 1);
+  ok('the compute pipeline is tracked', d2._computePipes.indexOf(p2) >= 0);
+  d2.dispose(p2);
+  ok('dispose(computePipeline) drops it from the tracked list', d2._computePipes.indexOf(p2) < 0);
+}
+
 console.log(`\n${pass} passed, ${fail} failed.`);
 if (fail > 0) { console.log('Failures:'); for (const f of failures) console.log(`  - ${f}`); process.exit(1); }
 console.log('ALL PASS');

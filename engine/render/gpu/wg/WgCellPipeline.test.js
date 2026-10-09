@@ -68,6 +68,24 @@ p.bind({}, {}); p.bindVoxels({}); p.bindViewModel({}); p.bindInstances({}); p.se
 { const rl = await p.readbackLight(); assert.strictEqual(rl.length, 4 * p.cols * p.rows, 'readbackLight is cols*rows 4-wide'); }
 assert.strictEqual(await p.readbackWater(), null);
 
+// 38.10a: bindInstances(groups) with a different groups object releases both cull passes' batches (not the idle sweep).
+{
+  const rCull = p._rasterPass && p._rasterPass.cull, sCull = p._shadowPass && p._shadowPass.cull;
+  assert.ok(rCull && sCull, 'cull passes created on the mock device (createComputePipeline present)');
+  let rCalls = 0, sCalls = 0;
+  const origR = rCull.releaseAll.bind(rCull), origS = sCull.releaseAll.bind(sCull);
+  rCull.releaseAll = () => { rCalls++; origR(); };
+  sCull.releaseAll = () => { sCalls++; origS(); };
+  const groupsA = {}, groupsB = {};
+  p.bindInstances(groupsA); // differs from the {} bound just above -> releases
+  assert.strictEqual(rCalls, 1); assert.strictEqual(sCalls, 1);
+  p.bindInstances(groupsA); // same object: no release
+  assert.strictEqual(rCalls, 1); assert.strictEqual(sCalls, 1);
+  p.bindInstances(groupsB); // a different object again: releases
+  assert.strictEqual(rCalls, 2); assert.strictEqual(sCalls, 2);
+  rCull.releaseAll = origR; sCull.releaseAll = origS;
+}
+
 // hook: debug off = raster clear + resolve + deriv (2 draws); with a mode: + one debug pass
 hook(); assert.strictEqual(drawn, 2); assert.deepStrictEqual(passes.map(x => x.t), [p._t.targetRaster, p._t.targetResolve, p._t.targetDeriv]);
 drawn = 0; passes.length = 0;

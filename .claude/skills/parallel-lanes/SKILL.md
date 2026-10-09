@@ -7,12 +7,12 @@ description: The three parallel work lanes (B1 + B2 Claude on PC-B, C = Codex cl
 
 | Lane | Agent / place | Branch | Queue file | Ports |
 |---|---|---|---|---|
-| **B1** spine | Claude, PC-B main tree | `pc-b` | `docs/lanes/pc-b1.md` | 9500-9649 |
-| **B2** shaders | Claude, PC-B git worktree `../game_project_b2` | `pc-b2` | `docs/lanes/pc-b2.md` | 9650-9799 |
+| **B1** spine | Claude, PC-B clones `../kestrel-1` (main.js) + `../kestrel-2` (GPU) | `pc-b` | `docs/lanes/pc-b1.md` | 9500-9649 |
+| **B2** shaders | Claude, PC-B clones `../kestrel-3` + `../kestrel-4` | `pc-b2` | `docs/lanes/pc-b2.md` | 9650-9799 |
 | **C** content/tools | Codex, own clone `../kestrel_c` | `pc-c` | `docs/lanes/pc-c.md` (+ `AGENTS.md`) | 9800-9999 |
 | **A** | Claude, PC-A | `pc-a` | reviews, plans, gates, merges | 9000-9499 |
 
-Setup once: `git worktree add ../game_project_b2 -b pc-b2 origin/pc-a` (B2); `git clone https://github.com/szalaygergely85/kestrel ../kestrel_c && git switch -c pc-c origin/pc-a` (C).
+Setup once: PC-B clones per skill `pc-b-5x` (2026-10-09; the old `../game_project_b2` worktree is retired); `git clone https://github.com/szalaygergely85/kestrel ../kestrel_c && git switch -c pc-c origin/pc-a` (C).
 
 ## Ownership (one writer per file)
 - **B1:** `engine/render/gpu/wg/**`, `GpuDeviceWebGPU.js`, `createRenderer.js`, `RenderTargetWebGPU.js`, `game/js/main.js`, `tools/capture-browser.mjs`, `engine/render/gpu/gpuCompare.js`, WG rows in `docs/backlog.md`.
