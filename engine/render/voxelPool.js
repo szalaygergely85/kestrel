@@ -7,6 +7,7 @@
 
 import { MAX_VOX_INSTANCES, MAX_VOX_INSTANCES_MESH, MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
 import { packVoxelModel } from '../voxel/voxelPack.js';
+import { voxelPointWorld } from '../voxel/voxelPose.js';
 import { computeProjection, computeProjectionPitched, instanceRect } from '../voxel/instanceRect.js';
 import { createPitchedTerms, pitchedTerms, resolveProjection } from './projection.js';
 import { buildVoxelAtlas } from './gpu/VoxelTextures.js';
@@ -14,6 +15,12 @@ import { buildVoxelAtlas } from './gpu/VoxelTextures.js';
 const _proj = { cols: 0, rows: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, planeDet: 0, horizonRow: 0, planeDistY: 0, eyeX: 0, eyeY: 0, eyeZ: 0,
   pitched: false, fX: 0, fY: 0, fZ: 0, rX: 0, rY: 0, uX: 0, uY: 0, uZ: 0, tanHalfX: 0, tanHalfY: 0 };
 const _noCullProj = { cols: 1, rows: 1, planeDet: 0, pitched: false }; // ME-15c: instanceRect with no screen cull (world AABB only)
+const _emisPt = new Float64Array(3); // offerEmissive scratch
+// Stable non-zero int identity for derived-light slots (FNV-1a over a string).
+function hashStr(str, h = 0x811c9dc5) {
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return h | 0;
+}
 const _poolPitch = createPitchedTerms(); // RE-02a
 const _poolGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 
@@ -38,7 +45,7 @@ export class VoxelPool {
     this.models = new Map();
     // This frame's pushInstance() queue - plain objects, reused slot by
     // slot across frames (no per-frame allocation once warm).
-    this.raw = Array.from({ length: MAX_VOX_INSTANCES_MESH }, () => ({ model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1 }));
+    this.raw = Array.from({ length: MAX_VOX_INSTANCES_MESH }, () => ({ model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, seed: 0 }));
     this._rawCount = 0;
     // Projected + culled instances, compact 0..count-1 (list.length ===
     // stats.count after project()); each entry's `slot` index is what the
@@ -103,7 +110,7 @@ export class VoxelPool {
       const def = registry.model(key);
       if (def && def.voxel) {
         this._partNames.set(key, Object.keys(def.voxel.parts));
-        const pm = packVoxelModel(def.voxel, (matKey) => table.idFor(matKey));
+        const pm = packVoxelModel(def.voxel, (matKey) => table.idFor(matKey), lightInfo(registry, def));
         // ME-22 (28.12 item 4): a static per-model flag, set once here (not
         // re-read from JSON per frame) - routes a mesh-only model away from
         // the shared VOX atlas/VoxelTextures (DDA-only, 16-slot/256-row
@@ -156,6 +163,8 @@ export class VoxelPool {
     slot.frame = frame || 0;
     slot.tMs = tMs || 0;
     slot.scale = scale > 0 ? scale : 1; // ED-SCALE-1a (34.2 item 5)
+    // EMIS-01b: harness instances have no entity id -> identity from model + position
+    slot.seed = pm.emissiveLight ? hashStr(modelKey, hashStr(x.toFixed(2) + ',' + y.toFixed(2) + ',' + z.toFixed(2))) || 1 : 0;
     this._rawCount++;
   }
 
@@ -187,6 +196,9 @@ export class VoxelPool {
     slot.frame = v.frame || 0;
     slot.tMs = v.t || 0;
     slot.scale = t.scale > 0 ? t.scale : 1;
+    // EMIS-01b: stable identity of the entity (numeric id as-is; string id hashed, no allocation)
+    slot.seed = 0;
+    if (pm.emissiveLight) slot.seed = (typeof e.id === 'number' ? (e.id | 0) : hashStr(e.id)) || 1;
     this._rawCount++;
   }
 
@@ -257,6 +269,29 @@ export class VoxelPool {
   }
 
   /**
+   * EMIS-01b (38.12 (1)): offers every QUEUED instance whose model has a derived emissive
+   * light to `lights` (LightSet) - not only the drawn ones, so a lamp behind the camera keeps
+   * its slot while you turn. Root pose only (centroid through the root part's current pose,
+   * like `voxelMountWorld`). Call after `collect`/`pushInstance`, once per frame, before
+   * `lights.update`. `cam` = {x,y,z} eye. Zero allocation. Returns the number offered.
+   */
+  offerEmissive(lights, cam) {
+    lights.beginDerived(undefined, cam ? cam.x : 0, cam ? cam.y : 0, cam ? cam.z : 0);
+    let offered = 0;
+    const n = Math.min(this._rawCount, this.cap);
+    for (let i = 0; i < n; i++) {
+      const inst = this.raw[i];
+      const rec = inst.model.emissiveLight;
+      if (!rec) continue;
+      voxelPointWorld(inst.model, inst, 0, rec.x, rec.y, rec.z, _emisPt);
+      lights.offerDerived(_emisPt[0], _emisPt[1], _emisPt[2], rec, inst.seed);
+      offered++;
+    }
+    lights.endDerived();
+    return offered;
+  }
+
+  /**
    * ME-15c: poses every queued instance (same cap as `project`, meshOnly models included - shadows are mesh-only)
    * into `this.shadowList` with no screen cull; `rect` carries the world AABB the shadow-plane cull uses.
    * Zero allocation once warm.
@@ -319,4 +354,32 @@ export class VoxelPool {
     this.stats.count = count;
     this.stats.instancesCulled = culled + Math.max(0, this._rawCount - this.cap);
   }
+}
+
+/**
+ * EMIS-01b: material / preset lookups for `packVoxelModel`'s derived light (bind time).
+ * Palette material: radiance colour = `glowColor` (palette key) else `base`; flicker = a
+ * palette.lights preset name or an object; `hit_flash` (baked into the target / boar layers)
+ * and any `light:false` material never makes a permanent light. `def.light` is the record
+ * override (`false` | {preset}); undefined falls back to `def.voxel.light`.
+ */
+export function lightInfo(registry, def) {
+  const pal = registry && registry.palette;
+  if (!pal || !pal.materials) return undefined;
+  const fixed = (f) => (typeof f === 'string' ? (pal.lights && pal.lights[f] && pal.lights[f].flicker) || null : f || null);
+  return {
+    override: def.light,
+    matInfo(key) {
+      const m = pal.materials[key];
+      if (!m) return null;
+      if (key === 'hit_flash' || m.light === false) return { emissive: 0, rgb: [1, 1, 1], light: false };
+      const ck = m.glowColor || m.base;
+      return { emissive: m.emissive || 0, rgb: (pal.rgb && pal.rgb[ck]) || [255, 255, 255], flicker: fixed(m.flicker) };
+    },
+    presetInfo(name) {
+      const l = pal.lights && pal.lights[name];
+      if (!l) return null;
+      return { hue: (pal.hue && pal.hue[l.color]) || [1, 1, 1], intensity: l.intensity, radius: l.radius, flicker: l.flicker || null };
+    },
+  };
 }

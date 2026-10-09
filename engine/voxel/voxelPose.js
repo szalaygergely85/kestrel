@@ -278,3 +278,18 @@ export function voxelMountWorld(pm, inst, name, out) {
   out[2] = FORWARD[fbase + 6] * at[0] + FORWARD[fbase + 7] * at[1] + FORWARD[fbase + 8] * at[2] + FORWARD[fbase + 11];
   return out;
 }
+
+/**
+ * EMIS-01b: world position of the point `at` (voxel-grid units, the space of
+ * mounts[].at / part boxes / `pm.emissiveLight`) carried by part `partIdx`
+ * (0 = root) for `inst`'s current pose. Same maths and scratch as
+ * `voxelMountWorld`. Writes `out[0..2]`; returns `out`.
+ */
+export function voxelPointWorld(pm, inst, partIdx, ax, ay, az, out) {
+  computeVoxelPose(pm, inst, _mountPoseScratch);
+  const fbase = partIdx * 12;
+  out[0] = FORWARD[fbase] * ax + FORWARD[fbase + 1] * ay + FORWARD[fbase + 2] * az + FORWARD[fbase + 9];
+  out[1] = FORWARD[fbase + 3] * ax + FORWARD[fbase + 4] * ay + FORWARD[fbase + 5] * az + FORWARD[fbase + 10];
+  out[2] = FORWARD[fbase + 6] * ax + FORWARD[fbase + 7] * ay + FORWARD[fbase + 8] * az + FORWARD[fbase + 11];
+  return out;
+}

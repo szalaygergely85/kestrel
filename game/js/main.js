@@ -884,6 +884,8 @@ function runGame(mode, cinematic = null) {
       // keeps the old uniform-ambient path (fb.lights stays null).
       if (lightsEnabled) {
         lightSet = buildLightSet(world, assets.palette);
+        if (lightSet) lightSet.emissive = !isGpuCompareMode && !params.get('gpucompare') && !(resolvedQuality && resolvedQuality.name === 'low'); // EMIS-01b (38.12): glowing voxels light the scene; off on Low and every gpucompare mode
+        window.__debug.lights = lightSet; // EMIS-01b: test hook (derivedStats)
         // `?sun=0`: keep the sun's direction/color (F6/F7 still readable) but
         // force it off - `setSun` is the only writer of `on`.
         if (!sunEnabled) lightSet.setSun({ elevation: lightSet.sun.elevation, azimuth: lightSet.sun.azimuth, on: false });
@@ -1451,6 +1453,7 @@ function runGame(mode, cinematic = null) {
       // (CPU-only) lighting hook, so this must run here, not there.
       if (fb.lights) {
         syncEntityLights(fb.lights, engine.world, assets.palette, attachedLightPos, lightSyncPos);
+        if (fb.lights.emissive) gameVoxelPool.offerEmissive(fb.lights, cam); // EMIS-01b: derived slots from last frame's voxel queue, before update() builds their vis
         fb.lights.update(fb.timeSec, engine.world);
       }
       lap(SEC.lights);
