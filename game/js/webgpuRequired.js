@@ -9,7 +9,7 @@ export function webGpuMissingReason(nav, probe = {}) {
 }
 
 export const REASON_TEXT = {
-  'no-api': 'This browser has no WebGPU (navigator.gpu is missing).',
+  'no-api': 'This browser has no WebGPU (the WebGPU API is missing).',
   'no-adapter': 'WebGPU is present, but no graphics adapter was found (driver blocklisted, or GPU unavailable).',
   'device-failed': 'WebGPU started, but the graphics device failed or was lost.',
 };
