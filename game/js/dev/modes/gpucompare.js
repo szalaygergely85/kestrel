@@ -142,6 +142,8 @@ function buildCompareRuns(ctx) {
       cam: { x: 1500.69, y: 1027.36, z: 3.00 + engine.physics.eyeHeight, yawDeg: 236, pitchDeg: -29 } },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: BUG-WHITE-PIXELS-01 repro (1500.58, 1022.77) yaw 185 pitch -24',
       cam: { x: 1500.58, y: 1022.77, z: 1.80 + engine.physics.eyeHeight, yawDeg: 185, pitchDeg: -24 } },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: BUG-WHITE-PIXELS-02 owner pose (1500.70, 1027.88) yaw 329 pitch -24',
+      cam: { x: 1500.70, y: 1027.88, z: 3.00 + engine.physics.eyeHeight, yawDeg: 329, pitchDeg: -24 } },
     { world: worldM1, lights: worldM1Lights, name: `world_m1: player spawn, sceneFade=0.5`,
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg }, fade: 0.5 },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: player spawn, card open (sceneDim 0.35 + plate 0.18)',
@@ -866,6 +868,20 @@ async function runGpuCompareSceneMode(ctx) {
     const rbw = wg ? await wg.readbackCells() : null;
     const gpuFg = rb ? rb.fg : rbw ? rbw.fg : null, gpuBg = rb ? rb.bg : rbw ? rbw.bg : null;
     const { GI, GA, Depth } = await gpuPipeline.readbackGeometry();
+    if (params.get('probe')) { // BUG-WHITE-PIXELS-02 r3 (dev): `&probe=col,row` 3x3 dump, `&probe=scan` sky-islands (a sky cell with >=6/8 solid neighbours) per side
+      const pq = params.get('probe'), L = [], gK = (i) => GI[i * 4 + 1] & 0xff, side = (isG, x, y) => (x < 0 || y < 0 || x >= cols || y >= rows) ? 1 : ((isG ? gK(y * cols + x) : gbuf.kind[y * cols + x]) !== 0 ? 1 : 0);
+      if (pq === 'scan') {
+        for (let y = 1; y < rows - 1; y++) for (let x = 1; x < cols - 1; x++) for (const g of [true, false]) {
+          if (side(g, x, y)) continue; let solid = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && side(g, x + dx, y + dy)) solid++;
+          if (solid >= 6) { const i = y * cols + x; L.push(`${g ? 'GPUsky' : 'JSsky'}@${x},${y} solid=${solid} other(${g ? 'js' : 'gpu'})kind=${g ? gbuf.kind[i] : gK(i)} jsPlane=${gbuf.planeId[i]} jsZ=${(+gbuf.z[i]).toFixed(2)} gpuDepth=${Depth[i]}`); }
+        }
+      } else {
+        const [pc, pr] = pq.split(',').map(Number);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const i = (pr + dy) * cols + pc + dx; L.push(`(${pc + dx},${pr + dy}) gpuKind=${gK(i)} gpuDepth=${Depth[i]} gpuGI=${[0, 1, 2, 3].map((k) => GI[i * 4 + k]).join('/')} | jsKind=${gbuf.kind[i]} jsPlane=${gbuf.planeId[i]} jsZ=${(+gbuf.z[i]).toFixed(2)}`); }
+      }
+      (window.__gpuProbe = window.__gpuProbe || []).push({ pose: poseName, cols, rows, pq, L });
+      console.log(`[gpucompare] probe ${poseName} (${cols}x${rows}) ${pq}: ` + (L.length ? L.join(' ## ') : 'none'));
+    }
     const lightBuf = await gpuPipeline.readbackLight(); // WG-3b: WebGPU too (null only while the pass is not ported)
     const waterBits = poseName.includes('waterfall') ? await gpuPipeline.readbackWater() : null; // WG-3e: WebGPU too
     if (maskPose && wg && wg._shadowPass && wg._shadowPass.casterList) { // ALPHA-01c: are the cards in the sun caster list, and drawn by the discard pipeline?
