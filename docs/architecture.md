@@ -4452,9 +4452,9 @@ Covers DIALOGUE-01a/b, NPC-BEAR-01 and NPC-TALK-ANIM-01. B2 steps end in `arch-r
 ### 38.27 AI-PERCEIVE-01 + AI-LEASH-01 pure AI helpers (programmer kestrel-3, 2026-10-09) - pending ARCH review
 - `engine/nav/perceive.js` (sight cone + noise-scaled hearing + injected LOS, `returnHome` flag when past `homeR`) and `engine/nav/leash.js` are leaf modules: no imports, no allocation, not wired into beastSim (lane C owns that).
 - `leashState(agent, def, target, dt)` mutates `agent.leashMode` (LEASH_HOME / ENGAGE / RETURN / GIVEUP) and `agent.leashT` (engaged seconds), returns the mode.
-- `def` = `{homeX, homeZ, homeR, leashR, aggroR, loseScale=1.25, returnSpeed, giveUpT}`; keep `homeR < leashR`.
+- `def` = `{homeX, homeY, homeR, leashR, aggroR, loseScale=1.25, returnSpeed, giveUpT}`; keep `homeR < leashR`.
 - Hysteresis: HOME -> ENGAGE needs target within `aggroR` and agent within `homeR`; ENGAGE drops at `aggroR*loseScale` or past `leashR` (-> RETURN), or after `giveUpT` (-> GIVEUP).
 - RETURN and GIVEUP ignore the target until the agent is back within `homeR` (then HOME, timer reset), so there is no flicker at the edges.
-- `returnTarget(def, out)` fills `{x, z, speed}` = home point + `returnSpeed` scale for the steering layer.
+- `returnTarget(def, out)` fills `{x, y, speed}` = home point + `returnSpeed` scale for the steering layer.
 - Test: `engine/nav/leash.test.js` (transitions, hysteresis, give-up, return target, 1e5-step zero-alloc via --expose-gc re-spawn).
 - Open for review: whether GIVEUP should differ from RETURN beyond the cause (e.g. heal-to-full, target cooldown); left to the caller.

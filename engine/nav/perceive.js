@@ -1,9 +1,9 @@
 // AI-PERCEIVE-01 (US-085 slice): pure sight + hearing + leash. No allocation, no globals;
 // not wired into beastSim yet (lane C BEAST-PERCEIVE-01w). Leaf module: imports nothing.
 //
-// agent  = { x, z, fx, fz (unit facing), halfAngle (rad) OR coneCos (precomputed; trig-free sims pass this), range, hearR, homeX, homeZ, homeR }
-// target = { x, z, noise }   noise = hearing multiplier (1 idle, NOISE_SPRINT, NOISE_SWING)
-// losFn(ax, az, tx, tz) -> boolean (game passes sight.canSee); missing = always clear.
+// agent  = { x, y, fx, fy (unit facing), halfAngle (rad) OR coneCos (precomputed; trig-free sims pass this), range, hearR, homeX, homeY, homeR }
+// target = { x, y, noise }   noise = hearing multiplier (1 idle, NOISE_SPRINT, NOISE_SWING)
+// losFn(ax, ay, tx, ty) -> boolean (game passes sight.canSee); missing = always clear.
 // out    = { sees, hears, dist, returnHome } (reused, returned). Leash: agent farther than
 //          homeR from home -> returnHome = true (caller steers home); senses stay honest.
 
@@ -11,8 +11,8 @@ export const NOISE_SPRINT = 2;
 export const NOISE_SWING = 1.5;
 
 export function perceive(agent, target, losFn, out) {
-  const dx = target.x - agent.x, dz = target.z - agent.z;
-  const d2 = dx * dx + dz * dz;
+  const dx = target.x - agent.x, dy = target.y - agent.y;
+  const d2 = dx * dx + dy * dy;
   const dist = Math.sqrt(d2);
   out.dist = dist;
   // hearing: radius scaled by noise, no LOS needed
@@ -22,11 +22,11 @@ export function perceive(agent, target, losFn, out) {
   let sees = false;
   if (d2 <= agent.range * agent.range) {
     if (d2 < 1e-12) sees = true;
-    else sees = (dx * agent.fx + dz * agent.fz) / dist >= (agent.coneCos !== undefined ? agent.coneCos : Math.cos(agent.halfAngle)) - 1e-9;
-    if (sees && losFn && !losFn(agent.x, agent.z, target.x, target.z)) sees = false;
+    else sees = (dx * agent.fx + dy * agent.fy) / dist >= (agent.coneCos !== undefined ? agent.coneCos : Math.cos(agent.halfAngle)) - 1e-9;
+    if (sees && losFn && !losFn(agent.x, agent.y, target.x, target.y)) sees = false;
   }
   out.sees = sees;
-  const hx = agent.x - agent.homeX, hz = agent.z - agent.homeZ;
-  out.returnHome = agent.homeR > 0 && hx * hx + hz * hz > agent.homeR * agent.homeR;
+  const hx = agent.x - agent.homeX, hy = agent.y - agent.homeY;
+  out.returnHome = agent.homeR > 0 && hx * hx + hy * hy > agent.homeR * agent.homeR;
   return out;
 }

@@ -1,21 +1,21 @@
 // AI-LEASH-01 (US-085 slice): pure home area + leash state machine. No allocation, no globals;
 // not wired into beastSim yet (lane C). Leaf module: imports nothing. Pairs with perceive.js.
 //
-// def   = { homeX, homeZ, homeR (calm radius: "at home"), leashR (> homeR: hard leash),
+// def   = { homeX, homeY, homeR (calm radius: "at home"), leashR (> homeR: hard leash),
 //           aggroR (engage distance to target), loseScale (>1, default 1.25: drop target at
 //           aggroR*loseScale), returnSpeed (speed scale while going home), giveUpT (s engaged) }
-// agent = { x, z, leashMode (int, init LEASH_HOME), leashT (s engaged, init 0) }  - mutated.
-// target= { x, z }
+// agent = { x, y, leashMode (int, init LEASH_HOME), leashT (s engaged, init 0) }  - mutated.
+// target= { x, y }
 // Hysteresis: HOME->ENGAGE needs target within aggroR AND agent within homeR; ENGAGE ends at
 // aggroR*loseScale or past leashR; RETURN/GIVEUP ignore the target until back within homeR.
 
 export const LEASH_HOME = 0, LEASH_ENGAGE = 1, LEASH_RETURN = 2, LEASH_GIVEUP = 3;
 
 export function leashState(agent, def, target, dt) {
-  const hx = agent.x - def.homeX, hz = agent.z - def.homeZ;
-  const h2 = hx * hx + hz * hz;
-  const tx = target.x - agent.x, tz = target.z - agent.z;
-  const t2 = tx * tx + tz * tz;
+  const hx = agent.x - def.homeX, hy = agent.y - def.homeY;
+  const h2 = hx * hx + hy * hy;
+  const tx = target.x - agent.x, ty = target.y - agent.y;
+  const t2 = tx * tx + ty * ty;
   let m = agent.leashMode;
   if (m === LEASH_RETURN || m === LEASH_GIVEUP) {
     if (h2 <= def.homeR * def.homeR) { m = LEASH_HOME; agent.leashT = 0; }
@@ -31,8 +31,8 @@ export function leashState(agent, def, target, dt) {
   return m;
 }
 
-// Steering goal for RETURN / GIVEUP: home point + speed scale. Fills and returns `out` {x, z, speed}.
+// Steering goal for RETURN / GIVEUP: home point + speed scale. Fills and returns `out` {x, y, speed}.
 export function returnTarget(def, out) {
-  out.x = def.homeX; out.z = def.homeZ; out.speed = def.returnSpeed;
+  out.x = def.homeX; out.y = def.homeY; out.speed = def.returnSpeed;
   return out;
 }

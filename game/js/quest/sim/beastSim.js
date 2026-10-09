@@ -116,12 +116,12 @@ export function createBeastSim(world, opts) {
     noise: 1, // BEAST-PERCEIVE-01w: hearing multiplier of the player this step (1 walk, NOISE_SPRINT, NOISE_SWING); caller sets it
     // preallocated adapter scratch for engine/nav perceive + leash (zero alloc per step)
     _slot: 0,
-    _pa: { x: 0, z: 0, fx: 0, fz: 0, coneCos: cfg.coneCos, range: cfg.noticeR, hearR: cfg.nearR, homeX: 0, homeZ: 0, homeR: 0 },
-    _pt: { x: 0, z: 0, noise: 1 },
+    _pa: { x: 0, y: 0, fx: 0, fy: 0, coneCos: cfg.coneCos, range: cfg.noticeR, hearR: cfg.nearR, homeX: 0, homeY: 0, homeR: 0 },
+    _pt: { x: 0, y: 0, noise: 1 },
     _po: { sees: false, hears: false, dist: 0, returnHome: false },
-    _lt: { x: 0, z: 0 },
-    _lret: { x: 0, z: 0, speed: 0 },
-    _ldef: { homeX: 0, homeZ: 0, homeR: cfg.homeArriveR, leashR: cfg.leashR, aggroR: cfg.loseR / cfg.loseScale,
+    _lt: { x: 0, y: 0 },
+    _lret: { x: 0, y: 0, speed: 0 },
+    _ldef: { homeX: 0, homeY: 0, homeR: cfg.homeArriveR, leashR: cfg.leashR, aggroR: cfg.loseR / cfg.loseScale,
              loseScale: cfg.loseScale, returnSpeed: cfg.returnSpeed, giveUpT: cfg.giveUpSec },
     _lagents: null,
     _losFn: null,
@@ -177,7 +177,7 @@ export function createBeastSim(world, opts) {
   };
 
   sim._lagents = [];
-  for (let i = 0; i < count; i++) sim._lagents.push({ x: 0, z: 0, leashMode: LEASH_HOME, leashT: 0 });
+  for (let i = 0; i < count; i++) sim._lagents.push({ x: 0, y: 0, leashMode: LEASH_HOME, leashT: 0 });
   sim._losFn = () => sim.seen[sim._slot] === 1; // cached periodic LOS (sampled in perceiveOne), not a fresh ray
 
   for (let i = 0; i < count; i++) {
@@ -301,8 +301,8 @@ function noticedOf(sim, i, px, py) {
   // BEAST-PERCEIVE-01w: engine/nav/perceive through a thin adapter. hearing = the "nearR" any-direction bubble
   // (scaled by the player's noise), sight = noticeR + cone + the cached LOS flag. Same numbers as before at noise 1.
   const steer = sim.steer, a = sim._pa, t = sim._pt;
-  a.x = steer.x[i]; a.z = steer.y[i]; a.fx = sim.fx[i]; a.fz = sim.fy[i];
-  t.x = px; t.z = py; t.noise = sim.noise;
+  a.x = steer.x[i]; a.y = steer.y[i]; a.fx = sim.fx[i]; a.fy = sim.fy[i];
+  t.x = px; t.y = py; t.noise = sim.noise;
   sim._slot = i;
   const o = perceive(a, t, sim._losFn, sim._po);
   return o.hears || o.sees;
@@ -315,9 +315,9 @@ function leashOne(sim, i, px, py) {
   if (st === STATE_RETURN) { if (ag.leashMode !== LEASH_GIVEUP) ag.leashMode = LEASH_RETURN; return; }
   if (ag.leashMode === LEASH_HOME || ag.leashMode === LEASH_RETURN) { ag.leashMode = LEASH_ENGAGE; ag.leashT = 0; }
   if (ag.leashMode === LEASH_GIVEUP) return; // stays given-up until the beast is home (wander resets it)
-  ag.x = sim.steer.x[i]; ag.z = sim.steer.y[i];
-  def.homeX = sim.homeX[i]; def.homeZ = sim.homeY[i];
-  const t = sim._lt; t.x = px; t.z = py;
+  ag.x = sim.steer.x[i]; ag.y = sim.steer.y[i];
+  def.homeX = sim.homeX[i]; def.homeY = sim.homeY[i];
+  const t = sim._lt; t.x = px; t.y = py;
   leashState(ag, def, t, SIM_STEP);
 }
 
@@ -506,9 +506,9 @@ function enterStagger(sim, i, dirX, dirY, knock) {
 
 function enterReturn(sim, i) {
   sim.state[i] = STATE_RETURN;
-  sim._ldef.homeX = sim.homeX[i]; sim._ldef.homeZ = sim.homeY[i];
+  sim._ldef.homeX = sim.homeX[i]; sim._ldef.homeY = sim.homeY[i];
   const rt = returnTarget(sim._ldef, sim._lret);
-  sim.goalX[i] = rt.x; sim.goalY[i] = rt.z;
+  sim.goalX[i] = rt.x; sim.goalY[i] = rt.y;
   sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
   sim.pathReq[i] = 0;
 }
