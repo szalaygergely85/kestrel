@@ -7,9 +7,10 @@
 //
 // Imports only engine/index.js + doc.js (the editor boundary rule).
 import {
-  AssetRegistry, World, ContentError, migrateContent, loadContentPack, stringifyContent,
+  AssetRegistry, World, ContentError, migrateContent, loadContentPack, stringifyContent, prefabFromJSON,
 } from '../../engine/index.js';
 import { fileKey } from './doc.js';
+import { validateItem } from './panel.js';
 import { terrainEditsText } from './terrainBrush.js';
 
 /**
@@ -81,6 +82,11 @@ export async function validateDoc(doc, codeParts, opts = {}) {
     bundle.meshes = { ...(ref.meshes || {}), ...(bundle.meshes || {}) };
     bundle.terrainEdits = { ...(ref.terrainEdits || {}), ...(bundle.terrainEdits || {}) };
     const assets = AssetRegistry.fromJSON(bundle, codeParts);
+    for (const prefab of Object.values(bundle.prefabs)) for (const item of prefab.items) {
+      const errors = validateItem(item.type, {...item, id:item.id || 'prefab_item'}, {assets, palette:assets.palette});
+      if (item.type === 'light' && typeof item.preset !== 'string') errors.push('preset: required');
+      if (errors.length) throw new ContentError(prefab.id, 'items', errors.join('; '));
+    }
     for (const worldId of Object.keys(bundle.worlds)) {
       World.load(assets.world(worldId), assets, {});
     }
@@ -150,9 +156,13 @@ export async function saveFile(file, opts = {}) {
  */
 export async function saveAll(doc) {
   const saved = [];
+  let prefabManifest = null;
   for (const file of doc.files.values()) {
     if (!file.dirty) continue;
-    await saveFile(file, { forceDownload: !!doc.readOnly });
+    if (file.kind === 'prefab' && file.meta.manifestPending) {
+      if (!prefabManifest) prefabManifest = await (await fetch('../../content/manifest.json', {cache:'no-store'})).json();
+      prefabManifest = await savePrefabFile(file, prefabManifest, {forceDownload:!!doc.readOnly});
+    } else await saveFile(file, { forceDownload: !!doc.readOnly });
     saved.push(fileKey(file.kind, file.id));
   }
   return saved;
@@ -250,7 +260,7 @@ export async function pickBinaryFile(opts = {}) {
  * @param {Object} codeParts - passed straight through to `validateDoc`
  * @returns {Promise<string|null>} the loaded file's `fileKey`, or `null` if the user cancelled the picker
  */
-export async function loadFile(doc, assets, codeParts) {
+export async function loadFile(doc, assets, codeParts, opts = {}) {
   const picked = await pickTextFile();
   if (!picked) return null;
 
@@ -267,12 +277,21 @@ export async function loadFile(doc, assets, codeParts) {
 
   const fid = fileKey(migrated.kind, migrated.id);
   const existing = doc.files.get(fid);
+  if (!existing && migrated.kind === 'prefab') {
+    const candidate = {files:new Map(doc.files), worldId:doc.worldId};
+    addPrefabFile(candidate, migrated);
+    const err = await validateDoc(candidate, codeParts, {reference:opts.reference});
+    if (err) throw err;
+    const file = addPrefabFile(doc, migrated);
+    file.handle = picked.handle || null;
+    return fid;
+  }
   if (!existing) {
     throw new ContentError(picked.name, 'id', `no open document matches ${migrated.kind} "${migrated.id}" - the editor only loads back into a level/world it already has open`);
   }
 
   const text = stringifyContent(migrated); // re-canonicalise before validating (buildMemoryPack expects each file's text, not the raw object)
-  const err = await validateDoc(doc, codeParts, { overrideFileId: fid, overrideText: text });
+  const err = await validateDoc(doc, codeParts, { overrideFileId: fid, overrideText: text, reference:opts.reference });
   if (err) throw err;
 
   const { kind: _k, schema, id: _id, nextId, ...defRest } = migrated;
@@ -280,7 +299,8 @@ export async function loadFile(doc, assets, codeParts) {
   // own object in place - every live reference to `existing.def` (the World,
   // other selections, etc.) sees the new content without needing to be
   // re-resolved.
-  assets.replace(existing.kind, existing.id, defRest);
+  if (existing.kind === 'prefab') existing.def = defRest;
+  else assets.replace(existing.kind, existing.id, defRest);
   existing.meta.schema = schema;
   existing.meta.nextId = nextId;
   existing.dirty = false;
@@ -331,4 +351,45 @@ export async function saveTerrainEdits(state, opts = {}) {
     downloadFallback(text, name);
   }
   state.dirty = false;
+}
+
+/** Add a validated editor-owned prefab file; production files are written only by Save. */
+export function addPrefabFile(doc, obj) {
+  prefabFromJSON(obj);
+  const fid = fileKey('prefab', obj.id);
+  if (doc.files.has(fid)) throw new Error(`prefab "${obj.id}" already exists`);
+  const {kind, schema, id, nextId, ...def} = structuredClone(obj);
+  const file = {kind, id, def, meta:{schema, nextId, url:null, manifestPending:true}, dirty:true, handle:null};
+  doc.files.set(fid, file);
+  return file;
+}
+
+export function appendPrefabManifest(manifest, id) {
+  if (manifest?.kind !== 'manifest' || !Array.isArray(manifest.files)) throw new Error('choose the content directory containing manifest.json');
+  const copy = structuredClone(manifest), path = `prefabs/${id}.prefab.json`;
+  if (!copy.files.includes(path)) copy.files.push(path);
+  return copy;
+}
+
+/** Choose content/ once; save the new file before appending its manifest entry. */
+export async function savePrefabFile(file, manifest, opts = {}) {
+  const next = appendPrefabManifest(manifest, file.id);
+  const text = stringifyContent(toFileObject(file));
+  if (typeof window.showDirectoryPicker === 'function' && !opts.forceDownload) {
+    const root = await window.showDirectoryPicker({id:'kestrel-content', mode:'readwrite'});
+    const manifestHandle = await root.getFileHandle('manifest.json');
+    const disk = JSON.parse(await (await manifestHandle.getFile()).text());
+    if (file.meta.manifestPending && disk.files?.includes(`prefabs/${file.id}.prefab.json`)) throw new Error('this content directory already has that prefab; choose a new title');
+    const updated = appendPrefabManifest(disk, file.id);
+    const dir = await root.getDirectoryHandle('prefabs', {create:true});
+    const handle = await dir.getFileHandle(`${file.id}.prefab.json`, {create:true});
+    const write = await handle.createWritable(); await write.write(text); await write.close();
+    const mw = await manifestHandle.createWritable(); await mw.write(stringifyContent(updated)); await mw.close();
+    file.handle = handle; file.dirty = false; file.meta.manifestPending = false;
+    return updated;
+  }
+  downloadFallback(text, `${file.id}.prefab.json`);
+  downloadFallback(stringifyContent(next), 'manifest.json');
+  file.dirty = false; file.meta.manifestPending = false;
+  return next;
 }

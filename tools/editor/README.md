@@ -203,3 +203,19 @@ handler. See `docs/test-reports/S8-C-20a.md` for current results.
 - Hover-picking is intentionally off (an expensive GPU readback per
   mousemove would blow the frame budget); only click-picking works, and the
   hovered cell just gets a plain outline.
+
+### Prefabs (ED-GROUP-1c)
+
+Select plain props/lights, enter a title in Assets, then **Save selection as prefab**.
+Choose the repository's `content/` directory: Save writes `prefabs/<title_slug>.prefab.json`
+and appends that file to `manifest.json`. Existing prefab titles are refused. Cancelled
+saves leave the session asset dirty; Ctrl+S retries. Without directory access, Save downloads
+both JSON files; put the prefab in `content/prefabs/` and the manifest in `content/`.
+Load accepts an exported prefab too; manifested prefabs appear automatically after reload.
+
+Click a prefab row, set **Prefab yaw**, then click the viewport to stamp it. Each stamp
+uses fresh item/group IDs and one undo step. Lights outside structures and invalid members
+are skipped with a message. The remaining items are ordinary editable props/lights; the
+prefab name records provenance and does not create a live link. Saving the edited world/level
+and reloading the game keeps the copies. V1 supports visual voxel props and lights;
+gameplay entity components cannot be saved as prefabs.

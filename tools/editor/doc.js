@@ -65,6 +65,11 @@ export function createDoc(assets, bundle, opts = {}) {
       files.set(fileKey(kind, id), { kind, id, def, meta, dirty: false, handle: null });
     }
   }
+  for (const [id, prefab] of Object.entries(bundle?.prefabs || {})) {
+    const src = bundle.meta.prefab[id];
+    files.set(fileKey('prefab', id), {kind:'prefab', id, def:structuredClone(prefab),
+      meta:{schema:1, nextId:src.nextId, url:src.url}, dirty:false, handle:null});
+  }
   // 24.3 "US-027b not merged yet": no bundle -> read-only, download-only
   // saves (nothing else differs for the viewer story - saving is US-034).
   return { worldId, files, readOnly: !bundle };

@@ -477,6 +477,9 @@
                  design/palette.js materials (tools/voxAutoMap.js) and
                  register it as a new model (AssetRegistry.add) - no CLI, no
                  hand-written map.json. -->
+            <input id="prefab-title" type="text" placeholder="Prefab title" aria-label="Prefab title">
+            <button type="button" id="save-prefab-btn" class="ed-btn">Save selection as prefab</button>
+            <label>Prefab yaw <input id="prefab-yaw" type="number" value="0" step="15" style="width:60px"></label>
             <button type="button" id="assets-import-vox-btn" class="ed-btn" title="Import a MagicaVoxel .vox file as a new model">Import .vox</button>
           </div>
           <!-- ED-FOLDERS-01: create a user folder (the input is shown only while

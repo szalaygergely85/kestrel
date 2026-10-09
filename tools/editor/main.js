@@ -32,7 +32,7 @@ import {
   createUserFolder, renameUserFolder, deleteUserFolder, moveAssetToFolder, groupAssetFolders,
 } from './panel.js';
 import { nextScale, fineScale, clampScale } from './scale.js';
-import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits } from './io.js';
+import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits, addPrefabFile, savePrefabFile } from './io.js';
 import {
   BRUSH_OPS, PAINT_TYPES, effectiveStrength, beginStroke, endStroke, isTerrainRecord, applyTerrainSide, rectToWorld, ringPoints,
 } from './terrainBrush.js';
@@ -60,6 +60,8 @@ import { renderMeshPanel } from './meshPanel.js';
 import { replaceSelection, toggleSelection, renameSelection, selectionContains, canMultiSelect, selectionCandidates, boxSelection } from './multiSelect.js';
 import { beginMeshDragPreview, updateMeshDragPreview, cancelMeshDragPreview } from './meshDragPreview.js';
 import { groupSnapshot, updateGroupTransform, groupTransformRecord, groupFieldRecord, groupedItems, groupDeleteRecord, groupDuplicateRecord } from './groupOps.js';
+
+import { selectionToPrefab, prefabPlacement } from './prefab.js';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('screen');
@@ -503,13 +505,14 @@ function setPlaceMode(k) {
 function armModelPlacement(key) {
   armedModelKey = key;
   setPlaceMode('prop');
+  if (key.startsWith('@prefab/')) { flash(`place prefab: ${key.slice(8)} (click viewport, Esc to cancel)`); return; }
   flash(`place: ${meshKeyFromIcon(key) === null ? 'prop' : 'mesh'} "${meshKeyFromIcon(key) ?? key}" (click viewport to place, Esc to cancel)`);
 }
 
 /** US-067 AC: "the ribbon shows the currently-armed model name". */
 function updateArmedModelChip() {
   if (placeMode === 'prop' && armedModelKey) {
-    armedModelChipEl.textContent = `${meshKeyFromIcon(armedModelKey) === null ? 'model' : 'mesh'}: ${meshKeyFromIcon(armedModelKey) ?? armedModelKey}`;
+    armedModelChipEl.textContent = armedModelKey.startsWith('@prefab/') ? `prefab: ${armedModelKey.slice(8)}` : `${meshKeyFromIcon(armedModelKey) === null ? 'model' : 'mesh'}: ${meshKeyFromIcon(armedModelKey) ?? armedModelKey}`;
     armedModelChipEl.style.display = '';
   } else {
     armedModelChipEl.style.display = 'none';
@@ -1533,7 +1536,16 @@ function renderAssetsList(query) {
   assetsListEl.textContent = '';
   const keys = filterModelKeys(listPlaceableModels(assets), query || '');
   const meshGroups = listMeshAssetGroups(assets, query || '');
-  if (!keys.length && !meshGroups.length) {
+  const prefabs = [...doc.files.values()].filter(f=>f.kind === 'prefab' &&
+    `${f.id} ${f.def.title}`.toLowerCase().includes((query || '').trim().toLowerCase()));
+  for (const file of prefabs) {
+    const row = document.createElement('button'); row.type = 'button'; row.className = 'asset-row';
+    row.dataset.prefabId = file.id; row.textContent = `▦ ${file.def.title}`;
+    if (armedModelKey === `@prefab/${file.id}`) row.classList.add('armed');
+    row.addEventListener('mousedown', e=>{e.preventDefault(); armModelPlacement(`@prefab/${file.id}`); renderAssetsList(assetsSearchInput.value);});
+    assetsListEl.appendChild(row);
+  }
+  if (!keys.length && !meshGroups.length && !prefabs.length) {
     const empty = document.createElement('div');
     empty.className = 'asset-empty';
     empty.textContent = '(no matching assets)';
@@ -1569,6 +1581,26 @@ if (params.get('icontest') === '1') {
   document.body.appendChild(strip);
   leftDockTabsEl.querySelector('[data-dock-tab="assets"]').click();
 }
+
+// ED-GROUP-1c: saving is explicit; a failed/cancelled disk save leaves a dirty session asset.
+let prefabManifest = null;
+async function doSavePrefab() {
+  try {
+    const title = document.getElementById('prefab-title').value.trim();
+    if (!title) throw new Error('enter a prefab title');
+    const obj = selectionToPrefab(doc, world, sel.items, title);
+    const pending = doc.files.get(`prefab/${obj.id}`);
+    if (pending && !pending.meta.manifestPending) throw new Error(`prefab "${obj.id}" already exists; choose another title`);
+    const file = pending || addPrefabFile(doc, obj);
+    renderAssetsList(assetsSearchInput.value); refreshIoStatus();
+    if (!prefabManifest) prefabManifest = await (await fetch('../../content/manifest.json', {cache:'no-store'})).json();
+    prefabManifest = await savePrefabFile(file, prefabManifest, {forceDownload:doc.readOnly});
+    flash(`saved prefab ${file.id}; choose content/ when saving, or put downloads in content/prefabs/ and content/`);
+    refreshIoStatus();
+    return obj.id;
+  } catch (e) { flash(`prefab save: ${e.message}`); return null; }
+}
+document.getElementById('save-prefab-btn').addEventListener('click', doSavePrefab);
 
 // ---- OWN-REQ-011: "Import .vox" (Assets tab) -------------------------------
 //
@@ -1669,7 +1701,7 @@ async function doSave() {
 
 async function doLoad() {
   try {
-    const fid = await loadFile(doc, assets, window.ASSETS);
+    const fid = await loadFile(doc, assets, window.ASSETS, {reference:bundle});
     if (!fid) { flash('load: cancelled'); return; }
     undoStack.clear();
     sel = replaceSelection();
@@ -1727,6 +1759,16 @@ window.addEventListener('beforeunload', (e) => {
  *   interactable placement never passes one).
  */
 function placeAt(kind, pt, modelKeyOverride) {
+  if (modelKeyOverride?.startsWith('@prefab/')) {
+    const file = doc.files.get(`prefab/${modelKeyOverride.slice(8)}`);
+    if (!file) { flash('prefab no longer available'); setPlaceMode(null); return; }
+    const yawDeg = Number(document.getElementById('prefab-yaw').value);
+    const z = world.floorAt(pt.x, pt.y);
+    const result = prefabPlacement(doc, world, assets, {...file.def, id:file.id}, {x:pt.x, y:pt.y, z, yawDeg});
+    if (result.record) { commit(result.record); applySelection(result.selection); }
+    if (result.errors.length) flash(`prefab skipped: ${result.errors.join('; ')}`);
+    setPlaceMode(null); return;
+  }
   const meshKey = modelKeyOverride ? meshKeyFromIcon(modelKeyOverride) : null;
   if (meshKey !== null) {
     const fileId = fileKey('world', doc.worldId), file = doc.files.get(fileId);
@@ -2449,7 +2491,7 @@ window.__editor = {
   pickAt: (col, row) => pickAt(col, row, pickCtx()),
   selectItem, deleteSelected, duplicateSelected, setSelectedGroup, applyNudge, applyYaw, applyScaleStep, dropToFloor, doUndo, doRedo,
   placeAt, classifyPlacement: (pt) => classifyPlacement(world, pt), resolveDropPoint: (pt) => resolveDropPoint(world, pt), commitFieldEdit, renameSelected,
-  doSave, doLoad, doPlaytest, refreshIoStatus, validateDoc: () => validateDoc(doc, window.ASSETS, { reference: bundle }),
+  doSavePrefab, doSave, doLoad, doPlaytest, refreshIoStatus, validateDoc: () => validateDoc(doc, window.ASSETS, { reference: bundle }),
   openModelPicker, closeModelPicker,
   rebuildNow: () => rebuildSched.flushNow(), get rebuildRuns() { return rebuildSched.runs; }, // ED-MESH-1d (headless measure)
   // US-067

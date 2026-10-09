@@ -108,6 +108,7 @@ export async function loadDesignAssets() {
   Object.assign(ASSETS.levels, bundle.levels);
   Object.assign(ASSETS.worlds, bundle.worlds);
   ASSETS.meshes = { ...(ASSETS.meshes || {}), ...bundle.meshes };
+  ASSETS.prefabs = bundle.prefabs;
   ASSETS.masks = { ...(ASSETS.masks || {}), ...bundle.masks }; // ALPHA-01a
   return ASSETS;
 }
@@ -236,6 +237,14 @@ export function validateContent(ASSETS, opts = {}) {
   const v1Materials = voxelMaterials.v1 || {};
   const v2Materials = voxelMaterials.v2 || {};
   const uiStyle = (ASSETS && ASSETS.uiStyle) || null;
+
+  for (const [id, prefab] of Object.entries(ASSETS.prefabs || {})) {
+    for (const [i, item] of prefab.items.entries()) {
+      const path = `prefabs.${id}.items[${i}]`;
+      if (item.type === 'prop') check(!!models[item.model], `${path}.model`, `unknown model "${item.model}"`);
+      if (item.type === 'light') check(typeof item.preset === 'string' && !!paletteLights[item.preset] && !['ambient','sun'].includes(item.preset), `${path}.preset`, `unknown light preset "${item.preset}"`);
+    }
+  }
 
   const { levels } = splitLevels((ASSETS && ASSETS.levels) || {});
   const worlds = (ASSETS && ASSETS.worlds) || {};
