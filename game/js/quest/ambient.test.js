@@ -68,5 +68,29 @@ ok('count never exceeds the particle cap', maxAliveSeen <= 2048);
   motes.dispose();
 }
 
+// 4) entity-data-shaped input (position lives on .transform, as main.js passes it): finite and near the player;
+// a non-finite position (the old playerHandle.data.x bug -> undefined) is skipped, never NaN-parks the emitter.
+{
+  const particles = createParticles({ capacity: 2048, seed: 5 });
+  const motes = createAmbientMotes(null, particles, { rgb: [[255, 244, 214]] });
+  const data = { transform: { x: 40, y: -25, z: 3 } };
+  for (let i = 0; i < 300; i++) {
+    motes.step(data.transform.x, data.transform.y, data.transform.z);
+    motes.step(data.x, data.y, data.z); // undefined -> must be ignored
+    particles.step();
+  }
+  let n = 0, finite = true, near = true;
+  for (let p = 0; p < particles.cap; p++) {
+    if (!particles.alive[p]) continue;
+    n++;
+    if (!Number.isFinite(particles.px[p] + particles.py[p] + particles.pz[p])) finite = false;
+    else if (Math.abs(particles.px[p] - 40) > 15 || Math.abs(particles.py[p] + 25) > 15) near = false;
+  }
+  ok('transform-shaped input spawns motes', n > 0);
+  ok('all mote positions finite', finite);
+  ok('motes stay near the player', near);
+  motes.dispose();
+}
+
 if (failed) { console.error(`${failed} ambient.test.js check(s) failed`); process.exit(1); }
 else console.log('ambient.test.js: all checks passed');

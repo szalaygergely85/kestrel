@@ -20,7 +20,7 @@ import {
   PITCH_CLAMP_PITCHED_DEG,
   ambientL, World, repackMaterials,
   updateInteraction, drawCrosshair,
-  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun, setCloudShadow, setHorizonAo,
+  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun, setHorizonAo,
   isSoftwareRenderer,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim,
@@ -42,7 +42,7 @@ import {
 // of the `?gpucompare=` mode code.
 import { GATE_POSES } from '../../content/dev-poses.js';
 import { prefetchLazyMeshesAtBoot } from './bootPrefetchHook.js'; // MESH-LOAD-01: boot prefetchNear call
-import { parseCloudStrength, parseAoStrength } from './cloudParam.js'; // S8-B2-12a/S8-B2-20 NEEDS B1 item (2)/(1): `?clouds=<0..1>`/`?ao=<0..1>` parse/clamp
+import { parseCloudShadowFlag, devCloudShadow, parseAoStrength } from './cloudParam.js'; // S8-B2-12a/S8-B2-20 NEEDS B1 item (2)/(1): `?cloudshadow=1`/`?ao=<0..1>` parse
 import { MODES } from './dev/modes/index.js';
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
@@ -372,6 +372,7 @@ const ripples = createRipples();
 // pages and automated browsers never load or save unless `?save=1` forces it (the headless reload check does).
 const saveEnabled = params.get('save') !== '0' && (params.get('save') === '1' || !(isCaptureOrBench || params.get('capture') === '1' || params.has('at') || navigator.webdriver)); // `?at` = dev pose: never autosave it into slot 0
 let saveRelay = null;
+let titleMenuActive = true; // S8-B1-10: mirrors menuHost.active each frame (true until the first frame says otherwise); gates the loss autosave
 let deviceLostFrozen = false; // S8-B1-10 (38.10c): set once by watchDeviceLost's `freeze` hook below; gates `paused` in the frame loop
 try {
   const questDef = await (await fetch('../content/quests/m1.quest.json')).json();
@@ -387,6 +388,7 @@ try {
 // deviceLost.js (Node-testable with a mock device); this is just the DOM/sim/save glue. No-op on webgl2 (device null).
 watchDeviceLost(gpuDevice, {
   freeze: () => { deviceLostFrozen = true; },
+  canSave: () => !!gameHooks.ctx.state.canSave && !titleMenuActive, // not on the title menu / wake / death: reload loads the last good save
   autosave: () => { if (saveRelay && gameHooks.ctx.requestSave) gameHooks.ctx.requestSave(); },
   showCard: () => {
     const card = document.createElement('div');
@@ -496,10 +498,9 @@ if (isGpuCompareMode) rt.resize(GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPAR
 const useDetail = params.get('detail') !== '0';
 // US-006 AC "?lights=0 keeps the US-028 uniform ambient (regression path)".
 const lightsEnabled = params.get('lights') !== '0';
-// S8-B2-12a NEEDS B1 item (2): `?clouds=<0..1>` (default 0). WebGL2 (`rt.backend === 'gl2'`) stays 0 - the frozen
-// GLSL ignores the cloud byte - only the Canvas2D/CPU path (and WebGPU, once kestrel-2's passLight upload lands)
-// actually draws clouds. Applied via `setCloudShadow` after every `buildLightSet` below.
-const cloudStrength = rt.backend === 'gl2' ? 0 : parseCloudStrength(params.get('clouds'));
+// S8-B2-12c: `?cloudshadow=1` (default off, WebGPU only; gl2 frozen GLSL ignores the cloud byte) puts a default cloud-shadow
+// block into `lights.cloud` after every `buildLightSet` below (replaces the old `?clouds=`/setCloudShadow).
+const cloudShadowOn = rt.backend !== 'gl2' && parseCloudShadowFlag(params.get('cloudshadow'));
 // S8-B2-20 NEEDS B1 item (1): `?ao=<0..1>` (default 0). WebGL2 stays 0 (frozen GLSL ignores it, D-044). Applied
 // via `setHorizonAo` after every `buildLightSet` below, same site as the cloud strength above.
 const aoStrength = rt.backend === 'gl2' ? 0 : parseAoStrength(params.get('ao'));
@@ -961,7 +962,7 @@ async function runGame(mode, cinematic = null) {
       // keeps the old uniform-ambient path (fb.lights stays null).
       if (lightsEnabled) {
         lightSet = buildLightSet(world, assets.palette);
-        if (lightSet) setCloudShadow(lightSet, { strength: cloudStrength }); // S8-B2-12a NEEDS B1 item (2)
+        if (lightSet && cloudShadowOn) lightSet.cloud = devCloudShadow(); // S8-B2-12c
         if (lightSet) setHorizonAo(lightSet, { strength: aoStrength }); // S8-B2-20 NEEDS B1 item (1)
         if (lightSet) lightSet.emissive = !isGpuCompareMode && !params.get('gpucompare') && !(resolvedQuality && resolvedQuality.name === 'low'); // EMIS-01b (38.12): glowing voxels light the scene; off on Low and every gpucompare mode
         window.__debug.lights = lightSet; // EMIS-01b: test hook (derivedStats)
@@ -1002,7 +1003,7 @@ async function runGame(mode, cinematic = null) {
       waterfallHooks = waterfallPreset ? createWaterfallHooks(world, engine.particles, waterfallPreset) : null;
       if (ambientMotes) ambientMotes.dispose();
       // S8-B1-18 (closes US-019): ambient dust motes, off with ?ambient=0 and on the Low preset.
-      ambientMotes = createAmbientMotes(world, engine.particles, { enabled: params.get('ambient') !== '0' && !(resolvedQuality && resolvedQuality.name === 'low'), rgb: assets.palette.rgb, palette: assets.palette });
+      ambientMotes = createAmbientMotes(world, engine.particles, { enabled: params.get('ambient') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !(resolvedQuality && resolvedQuality.name === 'low'), rgb: assets.palette.rgb, palette: assets.palette });
       // US-079a (29.1): rebuilt on every load/restart, same precedent as lightSet above.
       // US-078d: beastSim now owns a `combat:hit` listener (the stagger behaviour) - drop the old world's one
       // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.
@@ -1268,6 +1269,7 @@ async function runGame(mode, cinematic = null) {
       invView.step(dt, input, !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look
         && !(vitals && (vitals.dead || vitals.inputLocked)) && !(questUiActive && wakeOut.inputLocked));
     }
+    if (chestHook && mode === 'world' && playerHandle) chestHook.stepUi(dt, input.pressed('KeyE')); // S8-B1-04: steps while paused too (an open card pauses the sim)
     const invOpen = !!(invView && invView.isOpen);
     const cardOpen = !!(chestHook && chestHook.card.isOpen); // S8-B1-04: item-get card gates input same as invOpen
     // ---- US-015: wake timeline + map card (world_m1 only, questUiActive) ----
@@ -1286,6 +1288,7 @@ async function runGame(mode, cinematic = null) {
     // S is also WASD "move backward", so this must never trigger in play.
     updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !!look && !look.locked && !isMapOpen() && !invOpen });
     uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || !!(vitals && vitals.inputLocked);
+    titleMenuActive = !!(menuHost && menuHost.active);
     const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || ((invOpen || cardOpen) && !ending)));
 
     // US-087 follow-up: drain blocked input without advancing targeting timers.
@@ -1390,7 +1393,7 @@ async function runGame(mode, cinematic = null) {
       // US-053c: after beast/sword/vitals steps, before entityEmitters.sync()/particles.step() per 32.1.
       if (particleHooks) particleHooks.step(playerHandle.data);
       if (waterfallHooks) waterfallHooks.step();
-      if (ambientMotes) ambientMotes.step(playerHandle.data.x, playerHandle.data.y, playerHandle.data.z);
+      if (ambientMotes) { const pt = playerHandle.data.transform; ambientMotes.step(pt.x, pt.y, pt.z); } // S8-B1-18: position lives on .transform
       entityEmitters.sync(); engine.particles.step();
       if (waterfallHooks) waterfallHooks.afterStep();
       lap(SEC.physics);
@@ -1876,7 +1879,7 @@ function runVoxelBenchMode() {
   const world = loadBenchWorld(assets.world('world_m1'));
   if (world.terrain) world.terrain.bakeFarSync();
   const lights = lightsEnabled ? buildLightSet(world, assets.palette) : null;
-  if (lights) setCloudShadow(lights, { strength: cloudStrength }); // S8-B2-12a NEEDS B1 item (2)
+  if (lights && cloudShadowOn) lights.cloud = devCloudShadow(); // S8-B2-12c
   if (lights) setHorizonAo(lights, { strength: aoStrength }); // S8-B2-20 NEEDS B1 item (1)
   if (lights && !sunEnabled) lights.setSun({ elevation: lights.sun.elevation, azimuth: lights.sun.azimuth, on: false });
   if (lights) lights.update(0, world);

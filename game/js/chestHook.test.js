@@ -32,7 +32,7 @@ function rig(defs = [def], openedChests = []) {
   const events = { emit(name, p) { log.push({ name, ...p }); } };
   const hook = createChestHook({ defs, items: A.items, style: A.uiStyle.itemGetCard, rgb, openedChestsOf: () => openedChests, seed: 7 });
   hook.onBoot({ world, player: playerData, events, inventory: inv, state });
-  return { hook, state, inv, log, chestEntity, tick(dt) { hook.onTick(dt); } };
+  return { hook, state, inv, log, chestEntity, tick(dt) { hook.stepUi(dt, state.interactRaw); if (!hook.card.isOpen) hook.onTick(dt); } }; // main.js shape: stepUi every frame, onTick only while unpaused (an open card pauses)
 }
 
 // Facing the chest (frontY = -1, player at y=-1 facing +y / yaw 180) and pressing E opens it exactly once.
@@ -83,6 +83,18 @@ dismiss.tick(0.3); // past itemGetCard's own keyLockSec (0.25s) guard, still sho
 dismiss.state.interactRaw = true; // ungated: dismisses the card (keyLockSec guard inside itemGetCard itself)
 dismiss.tick(2); // large dt: drains the fade/gap phases fully closed, same precedent as itemGetCard.test.js's `step(2)`
 assert.equal(dismiss.hook.card.isOpen, false, 'interactRaw dismisses the open card');
+
+// Soft-lock regression: with the card open the sim is paused (no onTick); stepUi alone must still dismiss it.
+const lock = rig();
+lock.state.playerYawDeg = 180; lock.state.interactPressed = true; lock.state.interactRaw = true;
+lock.tick(1 / 60);
+lock.state.interactPressed = false; lock.state.interactRaw = false;
+lock.tick(C.openSeconds + 0.01);
+assert.equal(lock.hook.card.isOpen, true);
+lock.hook.stepUi(0.3, false);
+lock.hook.stepUi(2, true); // no onTick at all, as in main.js while paused
+for (let i = 0; i < 10 && lock.hook.card.isOpen; i++) lock.hook.stepUi(2, false);
+assert.equal(lock.hook.card.isOpen, false, 'card dismisses with stepUi alone (no soft-lock while paused)');
 
 // No defs at all (today's real game: no content/chests/*.json yet) - the hook is a harmless no-op.
 const empty = rig([]);
