@@ -122,19 +122,18 @@ export function setRot(rx, ry, rz, out) {
  */
 const _rotOut = new Float64Array(MAX_VOX_PARTS * 3);
 const _posOut = new Float64Array(MAX_VOX_PARTS * 3);
-function sampleClip(pm, inst) {
+function sampleInto(pm, clipIdx, frameIn, tMs, rotOut, posOut) {
   const partCount = pm.partCount;
-  const clipIdx = inst.clip;
   if (clipIdx === undefined || clipIdx < 0 || !pm.clips || clipIdx >= pm.clips.length) {
-    for (let i = 0; i < partCount * 3; i++) { _rotOut[i] = 0; _posOut[i] = 0; }
+    for (let i = 0; i < partCount * 3; i++) { rotOut[i] = 0; posOut[i] = 0; }
     return;
   }
   const clip = pm.clips[clipIdx];
   const n = clip.n;
-  let frame = inst.frame | 0;
+  let frame = frameIn | 0;
   if (frame < 0) frame = 0;
   if (frame >= n) frame = n - 1;
-  const alpha = clip.step ? 0 : Math.max(0, Math.min(1, inst.tMs / clip.durMs[frame]));
+  const alpha = clip.step ? 0 : Math.max(0, Math.min(1, tMs / clip.durMs[frame]));
   const next = (frame + 1 < n) ? (frame + 1) : (clip.loop ? 0 : frame);
   const stride = partCount * 6;
   for (let p = 0; p < partCount; p++) {
@@ -144,7 +143,24 @@ function sampleClip(pm, inst) {
       const v0 = clip.keys[base + c];
       const v1 = clip.keys[baseN + c];
       const v = v0 + (v1 - v0) * alpha;
-      if (c < 3) _rotOut[p * 3 + c] = v; else _posOut[p * 3 + (c - 3)] = v;
+      if (c < 3) rotOut[p * 3 + c] = v; else posOut[p * 3 + (c - 3)] = v;
+    }
+  }
+}
+
+// WILD-01 (38.31 item 8): pose crossfade. `inst.fromClip >= 0 && inst.fromW > 0` lerps component-wise
+// from the old clip pose: v = cur + (from - cur) * fromW. Otherwise the output is byte-identical to before.
+const _fromRot = new Float64Array(MAX_VOX_PARTS * 3);
+const _fromPos = new Float64Array(MAX_VOX_PARTS * 3);
+function sampleClip(pm, inst) {
+  sampleInto(pm, inst.clip, inst.frame, inst.tMs, _rotOut, _posOut);
+  const fw = inst.fromW;
+  if (fw > 0 && inst.fromClip >= 0) {
+    sampleInto(pm, inst.fromClip, inst.fromFrame, inst.fromTMs, _fromRot, _fromPos);
+    const n3 = pm.partCount * 3;
+    for (let i = 0; i < n3; i++) {
+      _rotOut[i] = _rotOut[i] + (_fromRot[i] - _rotOut[i]) * fw;
+      _posOut[i] = _posOut[i] + (_fromPos[i] - _posOut[i]) * fw;
     }
   }
 }
