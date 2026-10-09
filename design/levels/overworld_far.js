@@ -51,12 +51,13 @@
                      // ALPHA-01e SWITCH PREPARED, NOT ACTIVE (blocked: InstanceGroups.meshGroup rejects masked ranges, see docs/lanes/pc-b2.md ALPHA-01e).
                      // Replace the six voxel species with: mesh quaternius/CommonTree_1..5 (weights 14,14,12,10,10; trunkR 0.5,0.5,0.5,0.5,0.45; trunkH 2.3,2.8,2.5,5.0,2.3),
                      // Pine_1..5 (10,10,8,6,6; trunkR 0.45 x4 + 0.35; trunkH 2.1,1.1,3.0,2.4,1.4), DeadTree_1 (3; 0.5; 3.0). trunkR = bark radius at z 0.4..1.4, trunkH = lowest leaf card.
-                     { model: 'forestOakSmall',   weight: 22, trunkR: 0.53, trunkH: 2.55 },   // 7.20 m (raw import, owner 2026-10-04)
-                     { model: 'forestOakLarge',   weight: 18, trunkR: 0.63, trunkH: 3.06 },   // 8.64 m (raw import, owner 2026-10-04)
-                     { model: 'forestBirchSmall', weight: 15, trunkR: 0.39, trunkH: 2.70 },   // 6.00 m (raw import, owner 2026-10-04)
-                     { model: 'forestBirchLarge', weight: 10, trunkR: 0.47, trunkH: 3.24 },   // 7.20 m (raw import, owner 2026-10-04)
-                     { model: 'forestPineSmall',  weight: 20, trunkR: 0.34, trunkH: 1.50 },   // 6.00 m (raw import, owner 2026-10-04)
-                     { model: 'forestPineLarge',  weight: 15, trunkR: 0.41, trunkH: 1.80 }    // 7.20 m (raw import, owner 2026-10-04)
+                     // FOLIAGE-SWAY-01: all six are real trees (foliage) - sway: true. No rocks/stones in this list.
+                     { model: 'forestOakSmall',   weight: 22, trunkR: 0.53, trunkH: 2.55, sway: true },   // 7.20 m (raw import, owner 2026-10-04)
+                     { model: 'forestOakLarge',   weight: 18, trunkR: 0.63, trunkH: 3.06, sway: true },   // 8.64 m (raw import, owner 2026-10-04)
+                     { model: 'forestBirchSmall', weight: 15, trunkR: 0.39, trunkH: 2.70, sway: true },   // 6.00 m (raw import, owner 2026-10-04)
+                     { model: 'forestBirchLarge', weight: 10, trunkR: 0.47, trunkH: 3.24, sway: true },   // 7.20 m (raw import, owner 2026-10-04)
+                     { model: 'forestPineSmall',  weight: 20, trunkR: 0.34, trunkH: 1.50, sway: true },   // 6.00 m (raw import, owner 2026-10-04)
+                     { model: 'forestPineLarge',  weight: 15, trunkR: 0.41, trunkH: 1.80, sway: true }    // 7.20 m (raw import, owner 2026-10-04)
                    ]
                  } },
       rock:    { slope: 0.42, scale: 90, threshold: 0.78, minHomeDist: 60 },

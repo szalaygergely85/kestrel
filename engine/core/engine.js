@@ -3,7 +3,8 @@
 // implementation lives here.
 
 import { RenderTarget } from '../render/RenderTarget.js';
-import { InstanceGroups, MAX_INSTANCE_GROUPS, writeUnitInstance } from '../mesh/instances.js';
+import { InstanceGroups, MAX_INSTANCE_GROUPS, writeUnitInstance, INSTANCE_STRIDE, INST_FLAGS, touchInstances } from '../mesh/instances.js';
+import { INST_FLAG_SWAY } from '../mesh/sway.js';
 import { bindDetailInstances, feedDetail, removeDetailInstances } from '../mesh/scatterFeed.js';
 import { resolveGfxKnobs, keepPlacement } from '../mesh/gfxKnobs.js';
 import { createViewModelLayer } from '../render/viewModel.js';
@@ -80,7 +81,11 @@ export function bindScatterInstances(world, instances, previous = [], owner = nu
       if (scatter.species[i] !== s || (keep && !keep[i])) continue;
       writeUnitInstance(group.ib, group.count++, scatter.x[i], scatter.y[i], scatter.z[i],
         scatter.yawDeg[i], SCATTER_OBJECT_BASE | i, 0);
+      // FOLIAGE-SWAY-01: species.sway (explicit per-species flag, no name matching) ORs INST_FLAG_SWAY into word 13,
+      // keeping the aligned/team bits writeUnitInstance just wrote. sway.js owns the bit and the zero-wind-off behavior.
+      if (sp.sway) group.ib.u32[(group.count - 1) * INSTANCE_STRIDE + INST_FLAGS] |= INST_FLAG_SWAY;
     }
+    if (sp.sway && group.count) touchInstances(group.ib); // raw u32 write above, batched once per group (instances.js convention)
     groups.push(group);
   }
   if (owner && world?.detail) {
