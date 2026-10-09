@@ -113,6 +113,7 @@ import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (
 import { ensureInventory, validateItemDefs, migrateSword } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
 import { presentPickups } from './quest/pickupsView.js';
 import { createLoot, setLootApi } from './quest/sim/loot.js'; // US-091a2 (37.16.3)
+import { createDialogueCtl, setDialogueApi } from './quest/dialogueCtl.js'; // DIALOGUE-01b2 (38.28)
 import { LOOT_TABLE, LOOT_SEED_SALT } from './quest/sim/lootConfig.js';
 import { createToastView } from './quest/toastView.js';
 import { createInventoryView } from './quest/inventoryView.js'; // US-091b
@@ -856,7 +857,8 @@ async function runGame(mode, cinematic = null) {
   let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
-  const vLocked = () => !!(vitals && vitals.inputLocked) || deathFlow.inputLocked; // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
+  let dialogueCtl = null; // DIALOGUE-01b2 (38.28): rebuilt on every 'world:loaded', below
+  const vLocked = () => !!(vitals && vitals.inputLocked) || deathFlow.inputLocked || !!(dialogueCtl && dialogueCtl.locked); // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
@@ -1067,6 +1069,11 @@ async function runGame(mode, cinematic = null) {
         rng: createRng(((worldDef.nav?.seed ?? 1) ^ LOOT_SEED_SALT) >>> 0),
         inventoryOf: () => playerHandle.data.components.inventory || null }) : null;
       setLootApi(loot);
+      // DIALOGUE-01b2 (38.28): box + runner; NPCs with a `dialogue` component get an [E] Talk interactable (none until NPC-BEAR-01 places one).
+      if (dialogueCtl) dialogueCtl.dispose();
+      dialogueCtl = createDialogueCtl({ world, dialogues: bundle.dialogues, events: engine.events, style: window.ASSETS.uiStyle.dialogue,
+        onFlag: (k, v) => gameHooks.emitSimple('flag:set', 'dlg.' + k, v) });
+      setDialogueApi(dialogueCtl);
       if (toasts) toasts.dispose();
       toasts = itemDefs ? createToastView(engine.events, window.ASSETS.items.toast, itemDefs, assets.palette.rgb) : null;
       if (invView && invView.isOpen) invView.close();
@@ -1285,6 +1292,7 @@ async function runGame(mode, cinematic = null) {
       && typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
 
     // US-091b: the pack screen. Steps while paused too; eats every key edge while open (so M / S / N stay quiet).
+    if (dialogueCtl && mode === 'world' && playerHandle && !ending) dialogueCtl.step(dt, input, look ? look.locked : undefined); // DIALOGUE-01b2: early, so the lock covers the closing key press
     if (invView && mode === 'world' && playerHandle) {
       invView.step(dt, input, !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look
         && !(vitals && (vitals.dead || vLocked())) && !(questUiActive && wakeOut.inputLocked));
@@ -1736,6 +1744,7 @@ async function runGame(mode, cinematic = null) {
       // classic-script global, not an AssetRegistry kind, same precedent as
       // `window.ASSETS.particles`/`window.ASSETS.waterLooks` above).
       drawNotePanel(ui, window.ASSETS.notes, assets.uiStyle);
+      if (dialogueCtl) dialogueCtl.draw(ui, fb.timeSec); // DIALOGUE-01b2
       if (invView) invView.draw(ui); // US-091b: the pack screen, over HUD + toast
       // US-080a1/a2 (30.2): death fade (CPU path, same gating as the end-card
       // scene fade above) + the death card (typed line + "[E] Wake again").
