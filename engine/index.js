@@ -154,6 +154,7 @@ export { Entity } from './entities/Entity.js';
 export { Camera } from './entities/Camera.js';
 export { EntityHandle } from './entities/EntityHandle.js';
 export { stepAnimations, animComponent } from './entities/animation.js';
+export { tintAt, setTint, sampleTint } from './entities/tintEnvelope.js';
 export { Player } from './entities/Player.js';
 export { createEyeFeel, updateEyeFeel } from './entities/EyeFeel.js';
 

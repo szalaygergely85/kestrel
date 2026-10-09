@@ -254,7 +254,7 @@ fn pointShadowTapsS(slot: i32, dx: f32, dy: f32, dz: f32, nx: f32, ny: f32, nz: 
     if (vy >= 0.0) { face = 2; a = vz; b = vx; c = vy; } else { face = 3; a = vx; b = vz; c = -vy; }
   } else if (vz < 0.0) { face = 5; a = vy; b = vx; c = -vz; }
   if (c >= far || c <= PSH_NEAR) { return 4; }
-  let rd = 0.5 + 0.5 * ((far + PSH_NEAR) / (far - PSH_NEAR) - 2.0 * far * PSH_NEAR / ((far - PSH_NEAR) * c));
+  let rd = 0.75 + 0.25 * ((far + PSH_NEAR) / (far - PSH_NEAR) - 2.0 * far * PSH_NEAR / ((far - PSH_NEAR) * c)); // sun convention (SHADOW_Z_LINE): stored = 0.75 + 0.25 * ndc
   let fu = (a / c * 0.5 + 0.5) * res - 0.5;
   let fv = (b / c * 0.5 + 0.5) * res - 0.5;
   let x0 = i32(floor(fu)); let y0 = i32(floor(fv));

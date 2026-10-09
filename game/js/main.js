@@ -73,6 +73,7 @@ import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-05
 import { createTitleMenuHost } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
+import { parseOccl, createHzbInvalidator } from './occlGate.js'; // OCCL-MAIN-01
 import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
@@ -98,6 +99,7 @@ import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js
 import { createWaterfallHooks } from './quest/waterfallHooks.js';
 import { createAmbientMotes } from './quest/ambient.js';
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
+import { createHurtFx, hurtFxEnabled } from './fx/hurtFx.js'; // HURT-FX-01 (lane B1)
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
 import { ensureInventory, validateItemDefs, migrateSword } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
@@ -166,6 +168,7 @@ try {
   const savedForBoot = autoParam === '1' && autoProvisional ? undefined : savedSettings.quality;
   resolvedQuality = resolveQuality({ param: params, saved: { quality: savedForBoot, shadowQuality: savedSettings.shadowQuality }, auto: autoProvisional });
 } catch (err) { console.warn(`[quality] presets unavailable (${err.message}) - booting without a preset`); }
+const hurtFx = createHurtFx({ enabled: hurtFxEnabled(params, isCaptureOrBench) }); // HURT-FX-01: off in capture/bench/compare and ?fx=0
 const bootOpts = resolveBootOptions({ params, resolved: resolvedQuality, savedSettings, captureLike: isCaptureOrBench, geometryCompare: isGeometryCompare,
   defaultCols: GRID_DEFAULT_COLS, shadowLevel: resolveShadowLevel });
 const gridParam = bootOpts.gridParam;
@@ -346,10 +349,11 @@ const sceneDim = createSceneDim();
 if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
 // WG-1c2: `?backend=webgpu|webgl2` (default webgl2); webgpu falls back to webgl2 with a warning (38.8a 16).
 const shadowOpts = bootOpts.shadowOpts; // GFX-01w: shadow level from the preset (resolveShadowLevel) + ?shadows= / ?shadowinst / ?shadowres / ?shadowcast overrides (ME-15e/f, D-043: map is the default)
+const occlOpt = parseOccl(params, params.get('backend') || 'webgl2');
 const tCR = bootNow();
 const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
-  shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0',
+  shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.enabled, // OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
   onCompileProgress: (done, total) => { bootStages.enter('pipelines'); if (bootCard) bootCard.setStageLines(bootStages.cardText()); if (bootProg) bootProg.count('compile', done, total); } }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
 bootSpan('createRenderer total (' + rendererInfo.label + ')', tCR);
 if (bootProg) { bootProg.phase('engine'); await bootPaint(); }
@@ -627,7 +631,7 @@ if (wgPipeline && wgPipeline.ready && rt.backend === 'webgpu') wgPipeline.bindSp
 bootMark('sprites/overlay bound');
 // GFX-01w/02: createRenderer builds the webgpu target at the CPU grid (38.8a item 14, pre-WG-3f rule). Once the WebGPU pipeline owns
 // the whole frame, the requested (preset/URL) grid applies; otherwise (e.g. ?shadows=dda -> CPU shading) the CPU grid stays.
-if (wgPipeline && wgPipeline.frameComplete && rt.backend === 'webgpu' && (rt.cols !== gridResult.cols || rt.rows !== gridResult.rows)) {
+if (wgPipeline && (wgPipeline.frameComplete || (isGeometryCompare && params.get('refgrid'))) && rt.backend === 'webgpu' && (rt.cols !== gridResult.cols || rt.rows !== gridResult.rows)) {
   engine.setGrid(gridResult.cols, gridResult.rows, { immediate: true });
   depthBuffer = engine.depthBuffer;
   gbuf = new GBuffer(rt.cols, rt.rows);
@@ -716,6 +720,7 @@ const swordStyleIds = {
 sprites.pool.renderer = renderer; // review item 1: sprite rects follow the pitched scene
 if (gpuPipeline) { gpuPipeline.bindVoxels(gameVoxelPool); gpuPipeline.bindViewModel(engine.viewModel); } // US-078a (30.1)
 const wgActive = !!(wgPipeline && wgPipeline.ready && rt.backend === 'webgpu'); // WG-2b: geometry-only WebGPU pipeline (CPU still shades)
+const hzb = createHzbInvalidator(() => (occlOpt.enabled && wgActive && wgPipeline.ready ? wgPipeline : null)); // OCCL-MAIN-01: cuts invalidate the HZB
 if (wgActive) { wgPipeline.bindVoxels(gameVoxelPool); wgPipeline.bindViewModel(engine.viewModel); }
 engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); if (gpuPipeline) gpuPipeline.bindInstances(engine.instances); // RE-06 (28.6)
 if (wgActive) wgPipeline.bindInstances(engine.instances);
@@ -757,6 +762,7 @@ const spellVmH = window.ASSETS && window.ASSETS.viewModels && window.ASSETS.view
 engine.events.on('grid:changed', ({ cols, rows }) => {
   if (gpuPipeline) gpuPipeline.resizeGrid(cols, rows);
   if (sprites.pass) sprites.pass.resizeGrid(cols, rows);
+  hzb.invalidate('resize');
   gbuf = new GBuffer(cols, rows);
   matTable = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
   engine.attachMaterialTable(matTable); // RE-06: re-applies engine.teamSpec to the new table
@@ -768,7 +774,7 @@ engine.events.on('grid:changed', ({ cols, rows }) => {
 
 // Internal hook for manual/automated smoke-testing in a console - not part
 // of the game's own UI.
-window.__debug = { input, overlay, rt, engine, gpuPipeline, gbuf, matTable, ambientL, depthBuffer, sprites };
+window.__debug = { input, overlay, rt, engine, gpuPipeline, gbuf, matTable, ambientL, depthBuffer, sprites, wgPipeline, hzb };
 bridgeEngineEvents(engine.events, gameHooks); // beast:died / inventory:added -> seam events
 window.__debug.saveRelay = saveRelay; // US-089w: test hook (headless reload check)
 
@@ -1032,8 +1038,9 @@ async function runGame(mode, cinematic = null) {
       // (`?level=<name>` ad-hoc, test_room) falls back to `rasterRing`'s own pre-existing flat-z branch.
       engine.overlay.setGroundFn(world.terrain ? (x, y) => world.terrain.groundAt(x, y) : null);
       if (vitals) vitals.dispose(); // Q9 item 1a: drop the old world's `combat:hit` listener before a new one is added below
+      hurtFx.reset();
       vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting,
-        respawnPose: () => gameHooks.respawn(), // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
+        respawnPose: () => { hzb.invalidate('respawn'); return gameHooks.respawn(); }, // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
         onDied: (t) => gameHooks.emitSimple('player:died', t.x, t.y, t.z),
         syncFacing: (t) => {
           if (!look) return;
@@ -1089,6 +1096,7 @@ async function runGame(mode, cinematic = null) {
         Object.assign(startT, { x: atParts[0], y: atParts[1], z: atParts[2], yawDeg: atParts[3] || 0, pitchDeg: atParts[4] || 0 });
         playerHandle.data.components.body.peakZ = startT.z;
       }
+      hzb.invalidate('world-load'); // new world / restart / title New+Continue / ?at / ?pose: the start pose is a camera cut
       const waterfallView = worldDef.name === 'waterfall_test' && waterfallPreset?.views[params.get('waterfallview')];
       if (waterfallView) {
         Object.assign(startT, waterfallView);
@@ -1391,6 +1399,7 @@ async function runGame(mode, cinematic = null) {
       if (practiceTarget) practiceTarget.step();
       if (vitals) {
         vitals.step(playerHandle.data, input.pressed(gameKeys.interact)); // US-080a1 (30.2)
+        hurtFx.step(1000 / 60, vitals.hp, !vitals.dead); // HURT-FX-01
         stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
         // US-080a1 AC5 (`?debug=1` only): F8 toggles invulnerability, F9 deals 5 HP.
         if (params.get('debug') === '1') {
@@ -1554,7 +1563,7 @@ async function runGame(mode, cinematic = null) {
       // each placed structure at its own origin internally (7.3).
       const eye = Camera.fromEntityInto(playerHandle.data, vitals ? vitals.eyeH() : undefined, renderEye, pitchClampDeg); // reused (rule 9: no per-frame Camera); US-080a2: eyeH sinks while dead
       cam.x = eye.x; cam.y = eye.y; cam.z = eye.z; cam.yawDeg = eye.yawDeg;
-      cam.pitchDeg = eye.pitchDeg + (vitals ? kickDeg(vitals, simTime) : 0) + (fbView ? fbView.kickDeg() : 0); // US-080a2 (30.2): hurt pitch kick + SPELL-01b blast kick, render eye only - never written into `look`
+      cam.pitchDeg = eye.pitchDeg + (vitals ? kickDeg(vitals, simTime) : 0) + (fbView ? fbView.kickDeg() : 0) + hurtFx.kick(); // US-080a2 (30.2): hurt pitch kick + SPELL-01b blast kick, render eye only - never written into `look`
       if (cinematic) evaluatePath(cinematic, simTime, cam);
       if (cinematicHours) applySunHours(engine.world, lightSet, cam.hour, worldSunPath, sunEnabled);
       fb.timeSec = simTime;
@@ -1700,6 +1709,7 @@ async function runGame(mode, cinematic = null) {
           // not just while dead - the end card is already covered by the `!ending` gate around this whole block.
           drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals);
           drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals);
+          hurtFx.draw(ui); // HURT-FX-01
           presentPickups(engine.world, assets.pickupStyle, fb.timeSec); // US-080b
           if (toasts && !vitals.dead && !wakeOut.inputLocked && !isMapOpen()) toasts.draw(ui, fb.timeSec); // US-091a2 loot toast
         }
@@ -1742,6 +1752,7 @@ async function runGame(mode, cinematic = null) {
     // 0 point lights - GpuCellPipeline.js's `_uploadLightUniforms` treats a
     // plain array as back-compat ambient-only input).
     lap(SEC.ui);
+    if (mode === 'world' && cam) hzb.trackPose(cam.x, cam.y, cam.z); // waystone / save-load / unannounced pose jumps
     if (wgActive && wgPipeline.ready) wgPipeline.frame(fb, (mode === 'world' && fb.lights) || ambientL, mode === 'world' ? cam : null, mode === 'world' ? engine.world : null);
     if (gpuPipeline) gpuPipeline.frame(fb, (mode === 'world' && fb.lights) || ambientL, mode === 'world' ? cam : null, mode === 'world' ? engine.world : null);
     lap(SEC.gpuFrame);
@@ -1771,7 +1782,7 @@ async function runGame(mode, cinematic = null) {
       // US-030a (14.2 item 7): "path: gpu|cpu  grid: WxH  rays: n" on the overlay.
       let extra = `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rendererInfo.label}` +
         `\n${describeQuality(bootOpts, rt.cols, rt.rows, engine.rays)}` + // GFX-01w
-        `\npath: ${rt.gpuActive ? 'gpu' : 'cpu'}  grid: ${rt.cols}x${rt.rows}  rays: ${engine.rays}` +
+        `\npath: ${rt.gpuActive ? 'gpu' : 'cpu'}  grid: ${rt.cols}x${rt.rows}  rays: ${engine.rays}${occlOpt.enabled && wgActive ? '  occl on (' + hzb.count + ' cuts)' : ''}` +
         (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` +
           // ARCH CHANGES item 4: `terrainSubmitMs*` is CPU draw-call submit
           // time, not a GPU cost - the real terrain GPU cost is the whole-frame
@@ -1947,7 +1958,7 @@ function runVoxelBenchMode() {
 // `?gpucompare=1` (isGeometryCompare) forced `rt` to the fixed reference box
 // above - keep it fixed even if the real window resizes/re-shows mid-run
 // (see the comment above the `rt.resize(GPU_COMPARE_REF_*)` call).
-const doResize = () => (isGpuCompareMode
+const doResize = () => (hzb.invalidate('resize'), isGpuCompareMode
   ? rt.resize(GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR)
   : rt.resize());
 window.addEventListener('resize', doResize);

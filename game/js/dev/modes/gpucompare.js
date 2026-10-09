@@ -142,6 +142,8 @@ function buildCompareRuns(ctx) {
       cam: { x: 1500.69, y: 1027.36, z: 3.00 + engine.physics.eyeHeight, yawDeg: 236, pitchDeg: -29 } },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: BUG-WHITE-PIXELS-01 repro (1500.58, 1022.77) yaw 185 pitch -24',
       cam: { x: 1500.58, y: 1022.77, z: 1.80 + engine.physics.eyeHeight, yawDeg: 185, pitchDeg: -24 } },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: BUG-WHITE-PIXELS-02 owner pose (1500.70, 1027.88) yaw 329 pitch -24',
+      cam: { x: 1500.70, y: 1027.88, z: 3.00 + engine.physics.eyeHeight, yawDeg: 329, pitchDeg: -24 } },
     { world: worldM1, lights: worldM1Lights, name: `world_m1: player spawn, sceneFade=0.5`,
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg }, fade: 0.5 },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: player spawn, card open (sceneDim 0.35 + plate 0.18)',
@@ -924,6 +926,23 @@ async function runGpuCompareSceneMode(ctx) {
       console.log(`[gpucompare] rtsOverlay pass ms: p50=${ovlRes.gpuMsP50} p95=${ovlRes.gpuMsP95} uploadRows=${ps ? ps.rows : -1}`);
     }
 
+    if (params.get('probe')) { // BUG-WHITE-PIXELS-02 r3 (dev): `&probe=col,row` 3x3 dump, `&probe=scan` sky-islands (a sky cell with >=6/8 solid neighbours) per side
+      const pq = params.get('probe'), L = [], gK = (i) => GI[i * 4 + 1] & 0xff, side = (isG, x, y) => (x < 0 || y < 0 || x >= cols || y >= rows) ? 1 : ((isG ? gK(y * cols + x) : gbuf.kind[y * cols + x]) !== 0 ? 1 : 0);
+      if (pq === 'scan') {
+        for (let y = 1; y < rows - 1; y++) for (let x = 1; x < cols - 1; x++) for (const g of [true, false]) {
+          if (side(g, x, y)) continue; let solid = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && side(g, x + dx, y + dy)) solid++;
+          if (solid >= 6) { const i = y * cols + x; L.push(`${g ? 'GPUsky' : 'JSsky'}@${x},${y} solid=${solid} other(${g ? 'js' : 'gpu'})kind=${g ? gbuf.kind[i] : gK(i)} jsPlane=${gbuf.planeId[i]} jsZ=${(+gbuf.z[i]).toFixed(2)} gpuDepth=${Depth[i]}`); }
+        }
+        let nd = 0, gSkyJsSolid = 0, jsSkyGpuSolid = 0; const ex = [];
+        for (let i = 0; i < cols * rows; i++) { const gk = gK(i), jk = gbuf.kind[i]; if ((gk !== 0) !== (jk !== 0)) { nd++; if (gk === 0) gSkyJsSolid++; else jsSkyGpuSolid++; if (ex.length < 12) ex.push(`${i % cols},${(i / cols) | 0}:g${gk}/j${jk}`); } }
+        L.push(`skyDisagree=${nd} gpuSky/jsSolid=${gSkyJsSolid} jsSky/gpuSolid=${jsSkyGpuSolid} e.g. ${ex.join(' ')}`);
+      } else {
+        const [pc, pr] = pq.split(',').map(Number);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const i = (pr + dy) * cols + pc + dx; L.push(`(${pc + dx},${pr + dy}) gpuKind=${gK(i)} gpuDepth=${Depth[i]} gpuGI=${[0, 1, 2, 3].map((k) => GI[i * 4 + k]).join('/')} | jsKind=${gbuf.kind[i]} jsPlane=${gbuf.planeId[i]} jsZ=${(+gbuf.z[i]).toFixed(2)}`); }
+      }
+      (window.__gpuProbe = window.__gpuProbe || []).push({ pose: poseName, cols, rows, pq, L });
+      console.log(`[gpucompare] probe ${poseName} (${cols}x${rows}) ${pq}: ` + (L.length ? L.join(' ## ') : 'none'));
+    }
     const cmpGeom = compareGeometry(gbuf, depthBuffer.depth, GI, GA, Depth, cols, rows, {
       fogMax: fbCompare.detailPass ? fbCompare.detailPass.edges.fogMax : undefined, suppress: fbCompare.waterMask || null,
       table: matTable, jsLight: fbCompare.light, pitched: !!(cam && (cam.projection === 'pitched' || cam.projection === 'ortho' || pitchedDefault)), maskPose: !!maskPose,
@@ -1126,9 +1145,20 @@ async function runGpuCompareSceneMode(ctx) {
   window.__gpuCompare = { rows: rowsOut.concat(shadowRows), ok: overallOk, infoRows };
 }
 
+/**
+ * ME-16f (38.22 item 4): ?gpucompare=pointshadow - tower interior pose pointShadowTorch (3 torches + carried lamp), compares L + litCount
+ * against the JS twin (engine/mesh/pointShadowJS.js via fb.pointShadowOpts). PENDING until ME-16e lands the GPU host: the row is skipped, never fails.
+ */
+async function runGpuComparePointShadowPending() {
+  const rows = [{ pose: 'world_m1: pointShadowTorch', ok: true, skipped: true, note: 'needs ME-16e' }];
+  console.log('[gpucompare] SKIP pointshadow world_m1: pointShadowTorch (needs ME-16e: GPU point-shadow host not wired yet)');
+  window.__gpuCompare = { rows, ok: true, infoRows: [] };
+}
+
 export function run(ctx) {
   const mode = ctx.params.get('gpucompare');
   if (mode === '1') return runGpuCompareSceneMode(ctx).catch((e) => { console.error('[gpucompare] failed:', e); throw e; });
   else if (mode === 'shade') return runGpuCompareShadeMode(ctx).catch((e) => { console.error('[gpucompare] failed:', e); throw e; });
+  else if (mode === 'pointshadow') return runGpuComparePointShadowPending();
   else throw new Error('gpucompare mode must be 1 (mesh twin) or shade');
 }
