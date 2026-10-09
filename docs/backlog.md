@@ -1511,7 +1511,7 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
 | CHARGEN-17 | New-game creation screen (title-menu skin, in-game-look preview built at runtime) | P1 | todo [PC-B B1, 0.75 d] - deps RIG-02 | `game/js/ui/charCreate.js` + test, `game/js/titleMenuHost.js` |
 | CHARGEN-18 | Builds slim/heavy (m, f) + elder overlay + piece set 2 | P2 | todo [PC-B designer, 0.75 d] | kit JSON |
 | KPKG-01 | `engine/content/zip.js` reader + writer (stored + deflate via platform streams) | P1 | arch-review [PC-B B2, 0.5 d] -> arch-review | `engine/content/zip.js` + test + fixture zip |
-| KPKG-02 | `engine/content/package.js`: kestrel.json validate, openPackage, mountPackages, deps, duplicate ids | P1 | todo [PC-B B2, 0.75 d] -> arch-review | `engine/content/package.js` + test, `engine/index.js` |
+| KPKG-02 | `engine/content/package.js`: kestrel.json validate, openPackage, mountPackages, deps, duplicate ids | P1 | arch-review [PC-B B2, 0.75 d] -> arch-review | `engine/content/package.js` + test, `engine/index.js` |
 | KPKG-03 | `tools/pack.mjs` / `unpack.mjs` + package specs | P1 | todo [PC-B B1, 0.5 d] | `tools/pack.mjs`, `tools/unpack.mjs`, `content/packages/*.pkg.json` + tests |
 | KPKG-04 | Game boot `?pack=` mounts packages | P1 | todo [PC-B B1, 0.5 d] | `game/js/main.js` |
 | KPKG-05 | Editor Import / Export `.kestrel` | P2 | todo [PC-B B1, 0.75 d] | `tools/editor/*` |
@@ -1657,7 +1657,7 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
   - the size and ratio limits.
 - [ ] No imports outside `engine/content`.
 
-### KPKG-02 Package  [P1] [todo] [PC-B B2]
+### KPKG-02 Package  [P1] [arch-review] [PC-B B2]
 - [ ] Rejects:
   - a missing `license.spdx`;
   - a bad `id`;
@@ -1666,6 +1666,7 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
 - [ ] A content pack loaded loose and the same pack loaded through `mountPackages` give deep-equal bundles.
 - [ ] A missing or too-old dependency -> ContentError. The same id in two packages -> ContentError that names both.
 
+Note (dev): package.js + package.test.js (44 checks). mountPackages is async (reads content ids to detect duplicates) and also returns manifestUrl(id). Dup ids = typed asset ids + content-file ids (kind+id) across mounted packages; deps caret/exact, 0.x caret handled. model.rigged/static asset types are validated only (RIG-03 consumes them). Exported from engine/index.js.
 ### KPKG-03 / 04 / 05 Pack tools, boot, editor  [P1/P2] [todo] [PC-B B1]
 - [ ] **03:** `node tools/pack.mjs content/packages/kestrel.chargen.human.pkg.json` writes `dist/*.kestrel`; unpack -> pack is a round trip.
 - [ ] **04:** `?pack=dist/kestrel.base.kestrel` boots the same world as the loose files (one capture compare).
