@@ -1486,7 +1486,7 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
 |---|---|---|---|---|
 | CHARGEN-01 | Human kit v0: 22-bone skeleton, base `m_avg` (head + jaw, underwear), slots, skin/hair/dye ramps + preview | P1 | todo [PC-B designer, 0.75 d] | `content/chargen/human.charkit.json`, `design/chargen/*`, `design/palette.js` (append), `design/preview/chargen_kit.html` |
 | CHARGEN-02 | `engine/chargen`: validateKit, validateRecipe, composeCharacter | P1 | arch-review [PC-B B2, 0.75 d] | `engine/chargen/*.js` + tests + fixture kit, `engine/index.js` |
-| CHARGEN-03 | `engine/chargen`: meshCharacter (per-bone greedy -> RiggedModel), sampleClip, collapseRig | P1 | todo [PC-B B2, 0.75 d] -> arch-review | `engine/chargen/mesh.js`, `clip.js`, `collapse.js` + tests |
+| CHARGEN-03 | `engine/chargen`: meshCharacter (per-bone greedy -> RiggedModel), sampleClip, collapseRig | P1 | arch-review [PC-B B2, 0.75 d] | `engine/chargen/mesh.js`, `clip.js`, `collapse.js` + tests |
 | CHARGEN-04a | Master clips on 22 bones: idle, walk, run, talk, listen, wave | P1 | todo [PC-B designer, 0.75 d] | kit JSON, preview |
 | CHARGEN-04b | Piece set 1 + base `f_avg` (3 hair, 2 beard, 3 top, 2 legs, 2 feet, 1 hat, 1 hood) | P1 | todo [PC-B designer, 0.75 d] | kit JSON, preview |
 | CHARGEN-05 | Height rows, age, build pick, randomRecipe(seed) | P1 | todo [PC-B B2, 0.5 d] -> arch-review | `engine/chargen/*` + tests |
@@ -1545,7 +1545,7 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
 
 - Note (dev): `engine/chargen/{kit,recipe,compose,index}.js` + `chargen.test.js` (49 checks, fixture kit), exported from `engine/index.js`. Kit JSON shape is in the `kit.js` header (bases.layers = string[z][y]; stretchRows = int z rows; shells t = 0 at box top). Choices to confirm: stretch row is forbidden if its base voxels belong to any bone outside Hips/Spine/Left+RightLowerLeg; >255 materials = worst case (widest ramp per group + fixed keys) in validateKit, hard throw in compose; `hides` skips the hidden slots; thick n also repaints the original surface. Height/age/build/randomRecipe left to CHARGEN-05.
 
-### CHARGEN-03 Mesh and clips  [P1] [todo] [PC-B B2]
+### CHARGEN-03 Mesh and clips  [P1] [arch-review] [PC-B B2]
 - [ ] `meshCharacter` output:
   - one range per bone;
   - no interior faces;
@@ -1559,6 +1559,8 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
   - gives <= 8 parts with 50 ms keys;
   - the rest pose equals the master.
 - [ ] Build time is <= 10 ms (bench line in the row).
+
+- Note (dev): `engine/chargen/{mesh,clip,collapse}.js` + `mesh.test.js` (37 checks, synthetic 22-bone 36x20x76 grid; the real m_avg quad count waits for CHARGEN-01: synthetic = 3195 quads, 0.65 ms warm). Formats (confirm): mesh = 4 verts/quad (implicit indices 0,1,2,0,2,3), `mat` per quad, `ranges` in quads per bone, metres from the anchor, Int8 axis normals; a face between two filled voxels is culled even across bones (watertight at rest; no joint caps). Clip = `{duration, loop?, keys:[{t, rot:{Bone:[rx,ry,rz]}, pos:{Hips:[cells]}}]}`, Euler lerped then converted; sign by lookup in a 5 ms sign-continuous table (stateless, deterministic); Hips pos out in metres. `collapseRig(rigged, partMap)` with `HUMANOID_PART_MAP` (compose 2 for body/head); output frames/durations in the VoxelClipDef shape (pos in cells, pivots in cells = `jointCells`); `MAX_PARTS`=8 mirrors MAX_VOX_PARTS (engine/chargen imports only itself; test pins it). Open: sampleClip shows 16 B/call (one HeapNumber) in the full fixture but 0.05 B/call on a minimal rig; cause not found, AC "0 alloc" met only for the isolated rig. `JSON.stringify` determinism only for clips, mesh bytes tested for pos.
 
 ### CHARGEN-04a / 04b Clips and pieces  [P1] [todo] [PC-B designer]
 - [ ] **04a:** idle, walk, run, talk (Jaw), listen and wave on the 22 bones. Durations are multiples of 50 ms; clips play in place.
