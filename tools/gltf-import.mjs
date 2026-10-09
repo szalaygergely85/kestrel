@@ -173,15 +173,18 @@ export async function loadEngineMaterialKeys(load = (url) => import(url.href)) {
 /**
  * MESH-PHYS-01: add `collide: false` (walk-over piece) or the `collider` proxy (prism, <= 28 tris) to a static mesh json.
  * Optional `colliderParts` (material keys, e.g. a tree's trunk keys) restricts the prism to those ranges. Idempotent; the render data is untouched.
+ * S8-B2-16: a mesh json flagged `colliderHull: true` gets a convex-hull proxy (<= 32 tris) instead of the prism, but
+ * ONLY when the caller also opts in with `{ hull: true }` (the tool's `--hull` flag) - the data flag alone never
+ * changes default output, so `gen-mesh-colliders --check` (no `--hull`) stays 0 diffs for every mesh, flagged or not.
  */
-export function withCollision(json) {
+export function withCollision(json, { hull = false } = {}) {
   if (json.layout !== 'static') return json;
   // ALPHA-01e: leafy trees (CommonTree/Pine/TwistedTree_n): the crown ranges are masked cards, so the prism comes from the opaque (bark) ranges only
   if (!json.colliderParts && /^(CommonTree|Pine|TwistedTree)_\d/.test(String(json.id).split('/').pop()) && json.ranges) {
     const trunk = json.ranges.filter((r) => !r.mask).map((r) => r.part);
     if (trunk.length && trunk.length < json.ranges.length) json = { ...json, colliderParts: trunk };
   }
-  const plan = planMeshCollision(json.id, json.pos, { parts: json.colliderParts, ranges: json.ranges });
+  const plan = planMeshCollision(json.id, json.pos, { parts: json.colliderParts, ranges: json.ranges, hull: hull && !!json.colliderHull });
   const next = { ...json };
   delete next.collide; delete next.collider; delete next.castShadow;
   if (!plan.castShadow) next.castShadow = false; // MESH-SHADOW-01: same rule as walk-over

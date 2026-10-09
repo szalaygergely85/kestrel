@@ -92,13 +92,149 @@ export function buildPrismProxy(pos, opts = {}) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// S8-B2-16: hull proxy. An explicitly-flagged alternative to the prism above:
+// a true 3D convex hull of the mesh, capped at <= HULL_MAX_FACES triangles.
+//
+// The cap is enforced BEFORE running quickhull, not by decimating its output
+// afterwards: sample the mesh's extreme ("support") point along each of 18
+// fixed directions (the 6 face + 12 edge normals of a cube - the classic
+// "18-DOP"), dedupe, then build the exact quickhull of just those <= 18
+// points. A vertex of the convex hull of a point set S stays a vertex of the
+// hull of any subset T subseteq S that contains it (an extreme point can't
+// become a non-extreme combination of fewer points), so all <= 18 sampled
+// points survive as hull vertices - none get discarded as "interior" - and
+// for a simplicial (fully triangulated) convex polytope Euler's formula
+// pins the face count exactly: F = 2V - 4, so V <= 18 guarantees F <= 32.
+// Output is plain CCW-outward triangles in the mesh's `collider` array - the
+// same shape buildPrismProxy emits - so the merged `meshes:static` BVH and
+// `engine/physics/meshCollide.js` capsule sweeps need no changes at all: no
+// new convex/GJK primitive, no new MeshCollider `kind`.
+// ---------------------------------------------------------------------------
+
+/** Hard cap (ARCH, S8-B2-16): never emit more than this many hull triangles. */
+export const HULL_MAX_FACES = 32;
+
+// 18-DOP sampling directions: 6 face normals + 12 edge directions of a cube.
+const HULL_DOP_DIRS = [
+  [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1],
+  [1, 1, 0], [1, -1, 0], [-1, 1, 0], [-1, -1, 0],
+  [1, 0, 1], [1, 0, -1], [-1, 0, 1], [-1, 0, -1],
+  [0, 1, 1], [0, 1, -1], [0, -1, 1], [0, -1, -1],
+];
+// Fixed, arbitrary (non-axis-aligned) direction used only to break exact ties
+// deterministically (e.g. a flat cube face: every corner maximises the face
+// normal equally) without depending on vertex iteration order.
+const HULL_TIEBREAK = [0.5753, 0.1987, 0.3331];
+
+const hSub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const hCross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const hDot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const hLen = (a) => Math.hypot(a[0], a[1], a[2]);
+
+/** The 18-DOP support points of `pos` (mesh-local triangle soup), deduped. */
+function hullSupportPoints(pos) {
+  let maxAbs = 1;
+  for (let i = 0; i < pos.length; i++) { const a = Math.abs(pos[i]); if (a > maxAbs) maxAbs = a; }
+  const eps = maxAbs * 1e-7;
+  const picked = [];
+  for (const dir of HULL_DOP_DIRS) {
+    let bi = -1, bd = -Infinity, bt = -Infinity;
+    for (let i = 0; i < pos.length; i += 3) {
+      const x = pos[i], y = pos[i + 1], z = pos[i + 2];
+      const d = x * dir[0] + y * dir[1] + z * dir[2];
+      if (d > bd + eps) { bd = d; bi = i; bt = x * HULL_TIEBREAK[0] + y * HULL_TIEBREAK[1] + z * HULL_TIEBREAK[2]; } else if (d > bd - eps) {
+        const t = x * HULL_TIEBREAK[0] + y * HULL_TIEBREAK[1] + z * HULL_TIEBREAK[2];
+        if (t > bt) { bt = t; bi = i; if (d > bd) bd = d; }
+      }
+    }
+    if (bi >= 0) picked.push([pos[bi], pos[bi + 1], pos[bi + 2]]);
+  }
+  const grid = Math.max(eps, 1e-9), seen = new Set(), out = [];
+  for (const p of picked) {
+    const k = `${Math.round(p[0] / grid)},${Math.round(p[1] / grid)},${Math.round(p[2] / grid)}`;
+    if (!seen.has(k)) { seen.add(k); out.push(p); }
+  }
+  return { pts: out, eps };
+}
+
+/**
+ * Exact convex hull (incremental / "beneath-beyond") of a small point set.
+ * @param {number[][]} pts @param {number} eps
+ * @returns {number[][]|null} faces, each [a,b,c] vertex indices into pts (CCW outward), or null if degenerate
+ */
+function quickHull3(pts, eps) {
+  const n = pts.length;
+  if (n < 4) return null;
+  let i0 = 0;
+  for (let i = 1; i < n; i++) {
+    const a = pts[i], b = pts[i0];
+    if (a[0] < b[0] || (a[0] === b[0] && (a[1] < b[1] || (a[1] === b[1] && a[2] < b[2])))) i0 = i;
+  }
+  let i1 = -1, best = -1;
+  for (let i = 0; i < n; i++) if (i !== i0) { const d = hLen(hSub(pts[i], pts[i0])); if (d > best) { best = d; i1 = i; } }
+  if (i1 < 0 || best < eps) return null;
+  const dir01 = hSub(pts[i1], pts[i0]);
+  let i2 = -1; best = -1;
+  for (let i = 0; i < n; i++) if (i !== i0 && i !== i1) { const d = hLen(hCross(dir01, hSub(pts[i], pts[i0]))); if (d > best) { best = d; i2 = i; } }
+  if (i2 < 0 || best < eps) return null;
+  const n012 = hCross(hSub(pts[i1], pts[i0]), hSub(pts[i2], pts[i0])), n012Len = hLen(n012);
+  if (n012Len < eps) return null;
+  let i3 = -1; best = -1;
+  for (let i = 0; i < n; i++) if (i !== i0 && i !== i1 && i !== i2) { const d = Math.abs(hDot(hSub(pts[i], pts[i0]), n012)) / n012Len; if (d > best) { best = d; i3 = i; } }
+  if (i3 < 0 || best < eps) return null;
+
+  const faceNormal = (f) => hCross(hSub(pts[f[1]], pts[f[0]]), hSub(pts[f[2]], pts[f[0]]));
+  const cen = [0, 1, 2].map((k) => (pts[i0][k] + pts[i1][k] + pts[i2][k] + pts[i3][k]) / 4);
+  let faces = [[i0, i1, i2], [i0, i1, i3], [i0, i2, i3], [i1, i2, i3]].map((f) => {
+    const fn = faceNormal(f);
+    return hDot(fn, hSub(cen, pts[f[0]])) > 0 ? [f[0], f[2], f[1]] : f; // flip so the normal points away from the centroid
+  });
+
+  for (let i = 0; i < n; i++) {
+    if (i === i0 || i === i1 || i === i2 || i === i3) continue;
+    const p = pts[i], visible = [];
+    for (const f of faces) {
+      const fn = faceNormal(f), fl = hLen(fn);
+      if (fl > 1e-15 && hDot(fn, hSub(p, pts[f[0]])) / fl > eps) visible.push(f);
+    }
+    if (!visible.length) continue; // p is inside (or on) the hull built so far
+    const visibleSet = new Set(visible);
+    const edgeMap = new Map();
+    for (const f of faces) { edgeMap.set(`${f[0]},${f[1]}`, f); edgeMap.set(`${f[1]},${f[2]}`, f); edgeMap.set(`${f[2]},${f[0]}`, f); }
+    const horizon = [];
+    for (const f of visible) for (const [u, v] of [[f[0], f[1]], [f[1], f[2]], [f[2], f[0]]]) {
+      const mirror = edgeMap.get(`${v},${u}`);
+      if (!mirror || !visibleSet.has(mirror)) horizon.push([u, v]); // boundary of the hole left by the removed faces
+    }
+    faces = faces.filter((f) => !visibleSet.has(f));
+    for (const [u, v] of horizon) faces.push([u, v, i]);
+  }
+  return faces.length >= 4 ? faces.map((f) => [pts[f[0]], pts[f[1]], pts[f[2]]]) : null;
+}
+
+/**
+ * @param {ArrayLike<number>} pos mesh-local positions, 3/vertex (unrolled triangles)
+ * @returns {number[]|null} proxy triangles (9 numbers each, mesh-local, CCW outward, <= HULL_MAX_FACES), or null if degenerate
+ */
+export function buildHullProxy(pos) {
+  const { pts, eps } = hullSupportPoints(pos);
+  const faces = quickHull3(pts, eps);
+  if (!faces || faces.length > HULL_MAX_FACES) return null; // defensive: guarantee the cap, fall back to the prism instead
+  const r = (v) => Math.round(v * 1000) / 1000;
+  const out = [];
+  for (const [a, b, c] of faces) out.push(r(a[0]), r(a[1]), r(a[2]), r(b[0]), r(b[1]), r(b[2]), r(c[0]), r(c[1]), r(c[2]));
+  return out;
+}
+
 /**
  * The importer/generator decision for one mesh.
  * @param {string} id mesh id (soft-name rule)
  * @param {ArrayLike<number>} pos mesh-local positions
- * @param {{walkOverH?:number, parts?:string[], ranges?:{part:string,start:number,count:number}[]}} [opts]
+ * @param {{walkOverH?:number, parts?:string[], ranges?:{part:string,start:number,count:number}[], hull?:boolean}} [opts]
  *   parts+ranges (mesh json `colliderParts` + `ranges`): the prism footprint/height come only from those material ranges
  *   (trees: the trunk keys, so the crown never makes a fat collider); the walk-over decision still uses the whole mesh.
+ *   hull (S8-B2-16, mesh json `colliderHull` + tool `--hull`, both required): build a convex hull instead of a prism.
  * @returns {{collide:boolean, collider:number[]|null, castShadow:boolean}} collide false => no collider at all
  */
 export function planMeshCollision(id, pos, opts = {}) {
@@ -112,6 +248,6 @@ export function planMeshCollision(id, pos, opts = {}) {
     for (const r of opts.ranges) if (opts.parts.includes(r.part)) for (let i = r.start * 9; i < (r.start + r.count) * 9; i++) tp.push(pos[i]);
     if (tp.length) src = tp;
   }
-  const collider = buildPrismProxy(src);
+  const collider = (opts.hull && buildHullProxy(src)) || buildPrismProxy(src);
   return collider ? { collide: true, collider, castShadow: true } : { collide: false, collider: null, castShadow: false };
 }
