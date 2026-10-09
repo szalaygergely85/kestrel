@@ -20,6 +20,8 @@ const W_STRUCT_A = W('structA'), W_STRUCT_B = W('structB');
 const W_SUN_M = W('sunShadowM'), W_SUN_RES = W('sunShadowRes'), W_SUN_TEXEL = W('sunShadowTexelM'), W_SUN_BIAS = W('sunShadowBiasM'), W_SUN_NOFF = W('sunShadowNormalOff');
 // ALPHA-01f cloud item (1) / S8-B2-12a (38.13): `light.cloud` (lighting.js LightSet.cloud) -> cloudCover (cover) + cloud.xyzw (strength, invScale, offU, offV).
 const W_CLOUD_COVER = W('cloudCover'), W_CLOUD = W('cloud');
+// S8-B2-20 (38.17): `light.ao` (lighting.js LightSet.ao, horizon AO strength) -> aoStrength (word 31), cached word index, zero alloc.
+const W_AO_STRENGTH = W('aoStrength');
 
 const NO_CAM = Object.freeze({ x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 });
 
@@ -117,6 +119,7 @@ export class WgLightPass {
       lu[W_AMBIENT] = a[0] || 0; lu[W_AMBIENT + 1] = a[1] || 0; lu[W_AMBIENT + 2] = a[2] || 0;
       li[W_LIGHT_COUNT] = 0; li[W_SUN_ON] = 0; li[W_SUN_MODE] = 0;
       lu[W_CLOUD_COVER] = 0; lu[W_CLOUD] = 0; lu[W_CLOUD + 1] = 0; lu[W_CLOUD + 2] = 0; lu[W_CLOUD + 3] = 0;
+      lu[W_AO_STRENGTH] = 0;
       return;
     }
     lu[W_AMBIENT] = light.ambient[0]; lu[W_AMBIENT + 1] = light.ambient[1]; lu[W_AMBIENT + 2] = light.ambient[2];
@@ -124,6 +127,8 @@ export class WgLightPass {
     const cloud = light.cloud;
     if (cloud) { lu[W_CLOUD_COVER] = cloud.cover; lu[W_CLOUD] = cloud.strength; lu[W_CLOUD + 1] = cloud.invScale; lu[W_CLOUD + 2] = cloud.offU; lu[W_CLOUD + 3] = cloud.offV; }
     else { lu[W_CLOUD_COVER] = 0; lu[W_CLOUD] = 0; lu[W_CLOUD + 1] = 0; lu[W_CLOUD + 2] = 0; lu[W_CLOUD + 3] = 0; }
+    // S8-B2-20 (38.17): `light.ao` -> aoStrength, next to cloud upload above; zero on the no-ao path.
+    lu[W_AO_STRENGTH] = light.ao ? light.ao.strength : 0;
     const sun = light.sun, on = !!(sun && sun.on);
     li[W_SUN_ON] = on ? 1 : 0;
     if (sun) {
