@@ -68,6 +68,8 @@
 //       stripped first) - deterministic-sim leaves.
 //   17. (WG-1b2, architecture.md 38.2) `navigator.gpu`, GPUBufferUsage, GPUTextureUsage, GPUShaderStage, GPUMapMode
 //       (outside comments) are findings anywhere in engine/** or game/** except engine/render/gpu/device/**.
+//   18. (ED-WG-01c, architecture.md 38.21) tools/editor/**/*.js (tests included) may not import GL-only modules:
+//       GpuCellPipeline, GpuDeviceGL2/WebGL2, GpuSpritePass, overlayPass, glsl/**, RenderTargetGL, editorRenderer.
 //   12. success message as above.
 
 import fs from 'node:fs';
@@ -221,6 +223,7 @@ const RULE3_TOOL_ALLOWLIST = new Set([
 ].map((p) => p.split('/').join(path.sep)));
 
 const EDITOR_DIR = path.join(ROOT, 'tools', 'editor');
+const GL_ONLY_RE = /(GpuCellPipeline|GpuDeviceGL2|GpuDeviceWebGL2|GpuSpritePass|overlayPass|RenderTargetGL|editorRenderer)(\.js)?$|\/glsl\//;
 
 // Rule 7 (US-047): who may import engine/dev.js. game/js/dev/** and
 // game/js/main.js (dev-mode code paths) and tools/** (bench/capture/parity
@@ -264,6 +267,10 @@ function checkConsumerFile(file, src) {
       } else {
         findings.push(`${rel(file)}:${line}: deep import "${spec}" - game/tools must import exactly engine/index.js (or engine/dev.js where allowed)`);
       }
+    }
+    // Rule 18 (ED-WG-01c): no GL-only classes/modules in tools/editor/**.
+    if (isEditorFile && GL_ONLY_RE.test(spec.split('\\').join('/'))) {
+      findings.push(`${rel(file)}:${line}: import "${spec}" is a GL-only module - tools/editor/** must stay backend-neutral (rule 18, architecture.md 38.21)`);
     }
     // Rule 6: tools/editor/** is a second client of engine/index.js only -
     // it must never depend on game/ (architecture.md 24.2).

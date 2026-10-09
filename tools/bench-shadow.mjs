@@ -7,7 +7,37 @@ import { createShadowList, buildShadowList, shadowWorldZ } from '../engine/mesh/
 import { LevelMeshCache } from '../engine/mesh/DrawList.js';
 import { loadTestAssets } from './testing/content-node.mjs';
 import { POSES } from './bench-poses.js';
+import { DrawList, addStructures } from '../engine/mesh/DrawList.js';
+import { makeMockGpuDevice } from '../engine/test/assert.js';
+import { WgShadowPass } from '../engine/render/gpu/wg/passShadow.js';
+import { WgPointShadowPass } from '../engine/render/gpu/wg/passPointShadow.js';
+
 const WARMUP_FRAMES = 120;
+// ME-16: point-shadow CPU row (WgPointShadowPass on the device mock, real World). Lights sit at the first POSES positions (+0.4 m up) and hop 0.5 m
+// every frame so each frame re-renders (worst case, no key skip). Reports faces/frame, casters per face (draws/face), ms per face.
+function runPointShadowBench(world, frames) {
+  let ok = true;
+  const cam = { x: POSES[0].x, y: POSES[0].y, z: POSES[0].z, yawDeg: 0, pitchDeg: 0 };
+  const levelCache = new LevelMeshCache(), camList = new DrawList(64); camList.begin(); addStructures(camList, world, cam, levelCache, 2000);
+  const raster = { list: camList, levelCache, meshCache: null, strictMatIdFor: null };
+  for (const [k, level] of [[2, 'medium'], [4, 'high']]) {
+    const d = makeMockGpuDevice().device; d.beginPass = () => {}; d.draw = () => {};
+    const sun = new WgShadowPass(d, { shadows: { sun: 'off' }, casters: true }), ps = new WgPointShadowPass(d, { level, pointShadows: { n: k }, casters: sun });
+    const L = { count: k, on: new Uint8Array(8).fill(1), pos: new Float32Array(32), col: new Float32Array(32).fill(1), defX: new Float32Array(8), defY: new Float32Array(8), defZ: new Float32Array(8), entity: new Uint8Array(8) };
+    for (let i = 0; i < k; i++) { const q = POSES[i % POSES.length]; L.defX[i] = q.x; L.defY[i] = q.y; L.defZ[i] = q.z + 0.4; L.pos[i * 4 + 3] = 8; L.col[i * 4] = 4 - i * 0.4; }
+    const p = { _light: L, _cam: cam, _world: world, _table: null, _palette: null, _voxelPool: null, _instances: null, terrainEnabled: false };
+    let faces = 0, draws = 0, ms = 0, frameMs = 0, tick = 0;
+    const step = () => { tick++; for (let i = 0; i < k; i++) L.defX[i] += (tick & 1) ? 0.5 : -0.5; ps.run(p, raster); };
+    for (let i = 0; i < WARMUP_FRAMES; i++) step();
+    for (let i = 0; i < frames; i++) { const t0 = performance.now(); step(); frameMs += performance.now() - t0; faces += ps.stats.faces; draws += ps.stats.draws; }
+    ms = frameMs;
+    const f = faces / frames, perFace = faces ? ms / faces : 0;
+    console.log(`  [point shadow cpu] ${k} lights (${level}): faces/frame ${f.toFixed(1)}, casters(draws)/face ${(faces ? draws / faces : 0).toFixed(1)}, ms/face ${perFace.toFixed(4)}, ms/frame ${(ms / frames).toFixed(4)}`);
+    ok = ok && f > 0;
+    ps.dispose(); sun.dispose();
+  }
+  return ok;
+}
 function runShadowCpuBench(world, frames, withGc) {
   const so = { ...SUN_SHADOW_DEFAULTS };
   const sunDir = dirFromAzEl(135, 40, new Float64Array(3));
@@ -41,7 +71,9 @@ function runShadowCpuBench(world, frames, withGc) {
   return ok;
 }
 
-const args = process.argv.slice(2), frameIdx = args.indexOf('--frames');
+const args = process.argv.slice(2);
+if (args.includes('--help')) { console.log('node --expose-gc tools/bench-shadow.mjs [--gc] [--frames N] | rows: sun-shadow CPU list per pose; point-shadow CPU rows (ME-16: faces/frame, casters per face, ms per face for 2 and 4 lights)'); process.exit(0); }
+const frameIdx = args.indexOf('--frames');
 const frames = frameIdx >= 0 ? Number(args[frameIdx + 1]) : 600;
 if (!Number.isInteger(frames) || frames <= 0) throw new Error('--frames must be a positive integer');
 const { bundle } = await loadTestAssets();
@@ -49,6 +81,6 @@ const world = World.load(
   { terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] },
   { level: () => bundle.levels.test_room }, {},
 );
-const ok = runShadowCpuBench(world, frames, args.includes('--gc'));
+const ok = runShadowCpuBench(world, frames, args.includes('--gc')) && runPointShadowBench(world, frames);
 console.log(ok ? '[bench-shadow] ALL CHECKS PASS' : '[bench-shadow] FAILURES ABOVE');
 if (!ok) process.exitCode = 1;

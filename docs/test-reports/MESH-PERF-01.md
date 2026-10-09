@@ -96,3 +96,15 @@ Per-species `lodCells` / `lod0Cap` now honoured (scatter species; default unchan
 | 150 | 380 032 | 84 837 |
 
 lod0Cap 8 changed nothing (<= 8 LOD0 trees in range). Recommend CommonTree + Pine `lodCells: 150` (near trees stay LOD0: 9/16 and 8/14 in forestWalk). Finding: TwistedTree is 294k of 420k tris and has no LOD1; no lodCells value fixes forestWalk below ~380k. It needs an LOD1 mesh (NEEDS C: TwistedTree `lods` mesh, then `lodCells` 150). 
+
+### TWISTED-LOD-01 (2026-10-09): real TwistedTree assets
+TwistedTree_1-5 imported at full detail (`--masks content/masks`, bark `timber_old`, leaves `leaf_light`; trunk-only 28-tri prism collider via colliderParts) LOD0 = 9564/9134/10089/9600/10104 tris (budget 2000 is report-only per 37.19, validate-mesh warns, 0 over global cap); LOD1 at 15 % (render-only, collide:false) = 1435/1369/1512/1440/1516. `tools/mesh-tri-budget.mjs` now reads the content meshes (glTF estimate only as fallback); TwistedTree totals match the old estimate (same source tris), but LOD1 is now a real asset.
+
+| lodCells | forestWalk tris before (estimate, no LOD1) | forestWalk after (real LOD1) | roadSouth after |
+|---|---|---|---|
+| 6 | 420 463 | 420 463 | 126 607 |
+| 96 | 405 788 | 405 788 | - |
+| 150 | 380 032 | 380 032 (Twisted still 31/31 LOD0) | 35 436 |
+| 300 | - | 311 180 (Twisted 24 LOD0 / 7 LOD1, 238 402) | - |
+
+Finding: TwistedTree is 294 756 of 420 463 forestWalk tris and its LOD1 only engages at lodCells ~300 (large group radius). Choosing the TwistedTree lodCells (and lod0Cap) is a QUAT-TREES-01 tuning item; the LOD1 asset itself is no longer the blocker.

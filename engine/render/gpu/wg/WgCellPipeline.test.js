@@ -124,7 +124,8 @@ assert.deepStrictEqual(lastBind.textures.map((entry) => entry.texture), [p._t.te
   passes.length = 0; drawn = 0;
   lp.run(host, t);
   assert.deepStrictEqual(passes.map(x => x.t), [t.targetLight]); assert.strictEqual(drawn, 1);
-  assert.strictEqual(device._lastBind.textures.length, 7);
+  assert.strictEqual(device._lastBind.textures.length, 8);
+  assert.strictEqual(device._lastBind.textures[7].texture, lp.texPshDummy, 'ME-16e: 1x1x6 dummy depth array at binding 7 while point shadows are off');
   assert.strictEqual(device._lastBind.textures[6].texture, lp.texSunDummy, 'dummy depth bound until WG-3d');
   assert.strictEqual(device._lastBind.uniforms[0].toFixed(2), '0.10');
   const made = liveCount();
