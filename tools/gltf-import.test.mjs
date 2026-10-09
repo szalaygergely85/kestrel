@@ -351,3 +351,57 @@ if (!process.exitCode) console.log('ALL PASS');
   assert.deepStrictEqual(parseArgs(['--ao', '64', 'x.glb'])._, ['x.glb'], '64 is not a positional arg');
   console.log('gltf-import parseArgs --ao OK');
 }
+
+// ---- S8-B2-15: --crease <deg> ---------------------------------------------------------------------------------------------------------
+{
+  assert.strictEqual(parseArgs(['--crease', '45']).crease, 45);
+  assert.strictEqual(parseArgs(['--crease', '0']).crease, 0);
+  assert.strictEqual(parseArgs(['--crease', '180']).crease, 180);
+  assert.throws(() => parseArgs(['--crease', '181']), /--crease needs a degree value/);
+  assert.throws(() => parseArgs(['--crease', '-1']), /--crease needs a degree value/);
+  console.log('gltf-import parseArgs --crease OK');
+}
+
+/** Two small (10 cm edge) triangles sharing an edge with a shallow bend between their face
+ * normals - above the hardcoded 5 deg default (stays a hard edge) but below a --crease 45
+ * threshold (should weld/smooth). Edges are kept small so the unrelated "coplanar within 1 cm"
+ * rule (engine/mesh/gltf.js's SMOOTH_COPLANAR_M) never gates the merge - only the angle does. */
+function bendGlb(L = 0.1, bendZ = 0.01) {
+  const positions = [
+    [0, 0, 0], [L, 0, 0], [0, L, 0],
+    [L, 0, 0], [L, L, bendZ], [0, L, 0],
+  ];
+  return buildTriangleGlb(positions, [0, 1, 2, 3, 4, 5]);
+}
+
+await testAsync('runCli: --crease <deg>, default omitted is byte-identical to today (5 deg hardcoded)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kestrel-crease-'));
+  try {
+    const glbPath = path.join(dir, 'bend.glb');
+    fs.writeFileSync(glbPath, bendGlb());
+    const noFlag = path.join(dir, 'no-flag.mesh.json');
+    const explicit5 = path.join(dir, 'explicit-5.mesh.json');
+    await runCli([glbPath, 'test_crease_default', '--out', noFlag]);
+    await runCli([glbPath, 'test_crease_default', '--crease', '5', '--out', explicit5]);
+    assert.deepStrictEqual(readMeshJSON(noFlag), readMeshJSON(explicit5), 'omitting --crease must match the hardcoded 5 deg default exactly');
+    assert.deepStrictEqual(fs.readFileSync(path.join(dir, 'no-flag.mesh.bin')), fs.readFileSync(path.join(dir, 'explicit-5.mesh.bin')));
+    // running the same import twice with the flag absent both times is also byte-identical (determinism).
+    const again = path.join(dir, 'no-flag-again.mesh.json');
+    await runCli([glbPath, 'test_crease_default', '--out', again]);
+    assert.deepStrictEqual(readMeshJSON(noFlag), readMeshJSON(again));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+await testAsync('runCli: --crease 45 welds a ~10 deg bend that the default (5 deg) keeps hard', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kestrel-crease2-'));
+  try {
+    const glbPath = path.join(dir, 'bend.glb');
+    fs.writeFileSync(glbPath, bendGlb());
+    const def = await runCli([glbPath, 'test_crease_bend_default', '--dry-run']);
+    const creased = await runCli([glbPath, 'test_crease_bend_45', '--crease', '45', '--dry-run']);
+    assert.strictEqual(def.report.triCount, 2);
+    assert.strictEqual(creased.report.triCount, 2, 'triangle count unchanged by --crease');
+    assert.strictEqual(def.report.groupCount, 2, 'default (5 deg): the bend stays a hard edge, 2 groups');
+    assert.strictEqual(creased.report.groupCount, 1, '--crease 45: the bend is below the threshold, 1 group');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
