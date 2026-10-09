@@ -1112,6 +1112,79 @@
       grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
       face: { set: 'glint', mid: 'glint', far: 'glint' },
       lod: { mid: 12, far: 25, dither: 3 }, emissive: 0.95
+    },
+    // EP-WILD (v1.53, design/models/voxel_wildlife.js; palette.js v1 records of the same key). Fur: 2.5 cm tone grid.
+    fur_agouti: {
+      v1: 'fur_agouti', seed: 922,
+      desc: 'WILDLIFE (EP-WILD). Wild rabbit back and flanks: ticked grey-brown.',
+      albedo: 0.86, bgK: 0.15, detail: 32, jitter: 0.06,
+      tones: [['furAgouti', 4], ['furAgoutiDark', 1], ['furAgoutiLight', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_agouti_dark: {
+      v1: 'fur_agouti_dark', seed: 923,
+      desc: 'WILDLIFE (EP-WILD). Rabbit dorsal ticking, ear tips, tail top, foot soles.',
+      albedo: 0.72, bgK: 0.13, detail: 32, jitter: 0.05,
+      tones: [['furAgoutiDark', 4], ['furAgouti', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_agouti_light: {
+      v1: 'fur_agouti_light', seed: 924,
+      desc: 'WILDLIFE (EP-WILD). Rabbit lower flanks, cheeks, legs: buff.',
+      albedo: 0.90, bgK: 0.16, detail: 32, jitter: 0.05,
+      tones: [['furAgoutiLight', 4], ['furAgouti', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_cream: {
+      v1: 'fur_cream', seed: 925,
+      desc: 'WILDLIFE (EP-WILD). Bellies, rabbit tail underside, deer rump patch, throat, inner ears.',
+      albedo: 0.94, bgK: 0.18, detail: 32, jitter: 0.04,
+      tones: [['furCream', 4], ['linen', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_roe: {
+      v1: 'fur_roe', seed: 926,
+      desc: 'WILDLIFE (EP-WILD). Deer body: red-brown summer coat.',
+      albedo: 0.86, bgK: 0.15, detail: 32, jitter: 0.06,
+      tones: [['furRoe', 4], ['furRoeDark', 1], ['furRoeLight', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_roe_dark: {
+      v1: 'fur_roe_dark', seed: 927,
+      desc: 'WILDLIFE (EP-WILD). Deer dorsal line, mane, crown, ear rims, tail top.',
+      albedo: 0.72, bgK: 0.13, detail: 32, jitter: 0.05,
+      tones: [['furRoeDark', 4], ['furRoe', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_roe_light: {
+      v1: 'fur_roe_light', seed: 928,
+      desc: 'WILDLIFE (EP-WILD). Deer lower flanks and muzzle; rabbit rufous nape.',
+      albedo: 0.90, bgK: 0.16, detail: 32, jitter: 0.05,
+      tones: [['furRoeLight', 4], ['furRoe', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    antler: {
+      v1: 'antler', seed: 929,
+      desc: 'WILDLIFE (EP-WILD). Roe buck antlers: pale horn, rough pearling.',
+      albedo: 0.90, bgK: 0.16, detail: 32, jitter: 0.05,
+      tones: [['antler', 4], ['woodDark', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
     }
   };
 
@@ -1156,7 +1229,10 @@
     skin_light: 'skin_light', skin_shade: 'skin_shade', skin_nail: 'skin_nail', skin_glow: 'skin_glow', skin_char: 'skin_char',
     flame_tip: 'flame_tip',
     // HAND-FIRE-02 (v1.52), same key in both files.
-    skin_flush: 'skin_flush', skin_deep: 'skin_deep', skin_vein: 'skin_vein', flame_mid: 'flame_mid'
+    skin_flush: 'skin_flush', skin_deep: 'skin_deep', skin_vein: 'skin_vein', flame_mid: 'flame_mid',
+    // EP-WILD (v1.53, design/models/voxel_wildlife.js), same key in both files.
+    fur_agouti: 'fur_agouti', fur_agouti_dark: 'fur_agouti_dark', fur_agouti_light: 'fur_agouti_light', fur_cream: 'fur_cream',
+    fur_roe: 'fur_roe', fur_roe_dark: 'fur_roe_dark', fur_roe_light: 'fur_roe_light', antler: 'antler'
   };
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.

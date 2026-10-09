@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - EP-WILD preview: rabbit + deer (design v1.53)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:17px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  h3 { font-size:14px; margin:14px 0 4px; color:#e0b860; }
+  .note { color:#8a8778; font-size:12px; max-width:1400px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:12px; align-items:center; font-size:13px; }
+  .controls.local { position:static; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:36px; display:inline-block; }
+  button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  button.on { border-color:#ffd24a; color:#ffd24a; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; margin:6px 0 12px; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin-top:2px; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+</style>
+</head>
+<body>
+<h1>Kestrel : EP-WILD step 1 preview - wild rabbit + deer (design v1.53)</h1>
+<div class="note">
+  <code>design/models/voxel_wildlife.js</code>: <b>rabbit</b> (European wild rabbit, 0.42 m, cellM 0.02, 12 x 21 x 16) and <b>deer</b>
+  (red / roe hind, 1.6 m long, 1.0 m at the withers, cellM 0.05, 12 x 32 x 33) + <b>deerBuck</b> (small roe-buck antlers). 8 parts each,
+  meshOnly, ellipse-slice bodies (no flat boxes), natural coat variation. Four-legged in every clip; the rabbit's <code>alert</code> sits up on its
+  haunches (owner-approved natural alert pose). State -> clip map, gait speeds and flee distances: <code>ASSETS.wildlifeFx</code>.
+  Rendering = the engine's <code>packVoxelModel</code> / <code>computeVoxelPose</code>, the preview CPU march (<code>lib/voxelMarch.js</code>), the
+  v1 shader (<code>palette.util.shade</code>) and an approximate edge pass, same as <code>voxel_bear.html</code>. Tri counts from
+  <code>engine/mesh/voxelMesh.js</code>. <b>Needs http</b>: <code>python -m http.server</code> from the repo root, open <code>/design/preview/wildlife.html</code>.
+  Kinematics checks (feet planted, nothing sinks, nose on the grass): <code>node tools/voxel-wildlife.test.mjs</code>.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>light az <input type="range" id="az" min="-180" max="180" step="1" value="-40"><span class="val" id="azV"></span></label>
+  <label>elev <input type="range" id="el" min="-10" max="85" step="1" value="40"><span class="val" id="elV"></span></label>
+  <label>sun <input type="range" id="int" min="0" max="1.5" step="0.01" value="1.0"><span class="val" id="intV"></span></label>
+  <label>ambient x <input type="range" id="amb" min="0" max="3" step="0.05" value="1.2"><span class="val" id="ambV"></span></label>
+  <label>edges <select id="edges"><option value="rim">rules + model rim</option><option value="eng">rules, no rim</option><option value="off">off</option></select></label>
+  <label>speed <select id="speed"><option>0.1</option><option>0.25</option><option>0.5</option><option selected>1</option></select></label>
+  <label><input type="checkbox" id="pauseSheet"> freeze clip sheets (faster)</label>
+  <label>in-game grid <select id="grid"><option value="240">240x90</option><option value="400">400x150</option></select></label>
+  <label>in-game view angle <input type="range" id="vaz" min="-180" max="180" step="5" value="-60"><span class="val" id="vazV"></span></label>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">loading engine modules ...</div></div>
+
+<div id="animals"></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../models/voxel_wildlife.js"></script>
+<script>
+  setTimeout(function () {
+    if (!window.__wildOK) document.getElementById('fatal').textContent =
+      'Engine modules did not load (or the page script threw - see the console). Serve over http: python -m http.server from the repo root.';
+  }, 2500);
+</script>
+<script type="module">
+import { validateVoxelModel, MAX_VOX_PARTS, PART_STRIDE } from '../../engine/voxel/VoxelModel.js';
+import { packVoxelModel } from '../../engine/voxel/voxelPack.js';
+import { computeVoxelPose } from '../../engine/voxel/voxelPose.js';
+import { buildVoxelMesh, buildVoxelMeshLod1 } from '../../engine/mesh/voxelMesh.js';
+import * as VM from './lib/voxelMarch.js';
+import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U } from '../../engine/render/GBuffer.js';
+
+window.__wildOK = true;
+const A = window.ASSETS, P = A.palette, U = P.util, DP = A.detailPass, FX = A.wildlifeFx, D2R = Math.PI / 180;
+const FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+const $ = (id) => document.getElementById(id);
+const T0 = performance.now();
+
+// ------------------------------------------------------------------ pack every model (one shared material table)
+const matKeys = [];
+const matId = (k) => { let i = matKeys.indexOf(k); if (i < 0) { matKeys.push(k); i = matKeys.length - 1; } return i + 1; };
+const MODELS = ['rabbit', 'deer', 'deerBuck'];
+const PMS = {};
+for (const k of MODELS) PMS[k] = packVoxelModel(A.models[k].voxel, matId);
+
+// ------------------------------------------------------------------ animals on the page
+const ANIMALS = [
+  { id: 'rabbit', title: 'Wild rabbit (European rabbit, ~0.4 m)', model: () => 'rabbit', center: [0, 0, 0.17], viewH: 0.66,
+    seqs: { 'demo: graze -> sitUp -> alert -> run -> hop': [['graze', 2600], ['sitUp', 400], ['alert', 2400], ['run', 1500], ['hop', 1600]] } },
+  { id: 'deer', title: 'Deer (red / roe hind, 1.6 m, 1.0 m at the withers) + roe-buck antler variant', model: null, center: [0, 0, 0.82], viewH: 2.1,
+    seqs: { 'demo: graze -> alert -> trot -> gallop -> walk': [['graze', 4250], ['alert', 2000], ['trot', 1200], ['gallop', 2000], ['walk', 2000]] } }
+];
+const state = {};      // per animal: { sel, t0, buck }
+const views = [];
+const ctl = {};
+let ver = 1;
+
+function clipState(PM, name, e) {
+  const ci = PM.clipIndex[name], c = PM.clips[ci];
+  let total = 0; for (let i = 0; i < c.n; i++) total += c.durMs[i];
+  if (c.loop) e = e % total;
+  else { e = e % (total + 600); if (e >= total) return { clip: ci, frame: c.n - 1, tMs: 0 }; }
+  let f = 0; while (f < c.n - 1 && e >= c.durMs[f]) { e -= c.durMs[f]; f++; }
+  return { clip: ci, frame: f, tMs: e };
+}
+function selState(PM, an, sel, e) {
+  const seq = an.seqs[sel];
+  if (!seq) return { name: sel, st: clipState(PM, sel, e) };
+  let total = 0; for (const s of seq) total += s[1];
+  e = e % total;
+  for (const s of seq) { if (e < s[1]) return { name: s[0], st: clipState(PM, s[0], e) }; e -= s[1]; }
+  return { name: seq[0][0], st: clipState(PM, seq[0][0], 0) };
+}
+const modelOf = (an) => an.id === 'rabbit' ? 'rabbit' : (state.deer.buck ? 'deerBuck' : 'deer');
+
+// ------------------------------------------------------------------ controls
+function readCtl() {
+  ctl.az = +$('az').value; ctl.el = +$('el').value; ctl.int = +$('int').value; ctl.amb = +$('amb').value;
+  ctl.edges = $('edges').value; ctl.speed = +$('speed').value; ctl.vaz = +$('vaz').value; ctl.grid = +$('grid').value;
+  ctl.pauseSheet = $('pauseSheet').checked;
+  $('azV').textContent = ctl.az; $('elV').textContent = ctl.el; $('intV').textContent = ctl.int.toFixed(2);
+  $('ambV').textContent = ctl.amb.toFixed(2); $('vazV').textContent = ctl.vaz;
+  ver++;
+}
+document.querySelectorAll('.controls input, .controls select').forEach((el) => el.addEventListener('input', () => {
+  readCtl(); if (el.id === 'grid') buildAllIngame();
+}));
+readCtl();
+
+// ------------------------------------------------------------------ trace + shade (same as voxel_bear.html, per-view PM)
+const HIT = new Float64Array(8), NL = [0, 0, 0], Lacc = [0, 0, 0];
+function faceNormal(face, o) {
+  o[0] = 0; o[1] = 0; o[2] = 0;
+  if (face === FACE_N) o[1] = -1; else if (face === FACE_S) o[1] = 1; else if (face === FACE_E) o[0] = 1;
+  else if (face === FACE_W) o[0] = -1; else if (face === FACE_U) o[2] = 1; else o[2] = -1;
+}
+function trace(sc, ox, oy, oz, dx, dy, dz, res) {
+  let best = Infinity, kind = 0;
+  const PM = sc.PM;
+  for (let k = 0; k < PM.partCount; k++) {
+    if (VM.marchVoxelRay(PM, k, sc.pose, ox, oy, oz, dx, dy, dz, best, HIT)) {
+      best = HIT[0]; kind = 8; res.k = k; res.face = HIT[4]; res.lx = HIT[1]; res.ly = HIT[2]; res.lz = HIT[3]; res.mat = VM.LAST_MAT_LOCAL;
+    }
+  }
+  if (sc.ground && dz < 0) { const t = -oz / dz; if (t > 0 && t < best) { best = t; kind = 1; } }
+  res.kind = kind; res.t = best;
+  return kind;
+}
+function shadeHit(sc, res, ox, oy, oz, dx, dy, dz, dist, fog, out) {
+  const t = res.t, px = ox + dx * t, py = oy + dy * t, PM = sc.PM;
+  let nx, ny, nz, mat, u, v;
+  if (res.kind === 8) {
+    const A9 = sc.pose, b = res.k * PART_STRIDE, cm = PM.cellM;
+    faceNormal(res.face, NL);
+    nx = cm * (A9[b] * NL[0] + A9[b + 3] * NL[1] + A9[b + 6] * NL[2]);
+    ny = cm * (A9[b + 1] * NL[0] + A9[b + 4] * NL[1] + A9[b + 7] * NL[2]);
+    nz = cm * (A9[b + 2] * NL[0] + A9[b + 5] * NL[1] + A9[b + 8] * NL[2]);
+    const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+    mat = P.materials[matKeys[PM.matIds[res.mat] - 1]];
+    if (res.face === FACE_E || res.face === FACE_W) { u = res.ly * cm; v = res.lz * cm; }
+    else if (res.face === FACE_N || res.face === FACE_S) { u = res.lx * cm; v = res.lz * cm; }
+    else { u = res.lx * cm; v = res.ly * cm; }
+  } else { nx = 0; ny = 0; nz = 1; mat = P.materials.grass; u = px; v = py; }
+  Lacc[0] = 0; Lacc[1] = 0; Lacc[2] = 0;
+  U.addLight(Lacc, 'ambient', 0.14 * ctl.amb);
+  const a = ctl.az * D2R, e = ctl.el * D2R;
+  const ndl = nx * Math.sin(a) * Math.cos(e) - ny * Math.cos(a) * Math.cos(e) + nz * Math.sin(e);
+  if (ndl > 0) U.addLight(Lacc, 'sun', ctl.int * ndl);
+  U.shade(mat, Lacc, u, v, dist, out, { fog: fog ? 'far' : null, z: v });
+}
+function makeCanvas(cols, rows, cw, ch) {
+  const cv = document.createElement('canvas'), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(cols * cw * dpr); cv.height = Math.round(rows * ch * dpr);
+  cv.style.width = cols * cw + 'px'; cv.style.height = rows * ch + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = Math.round(ch * 0.9) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  return { cv, ctx, cols, rows, cw, ch };
+}
+const RES = { kind: 0, t: 0, k: 0, face: 0, lx: 0, ly: 0, lz: 0, mat: 0 }, SH = { fg: [0, 0, 0], bg: [0, 0, 0] };
+const Ov = [0, 0, 0], Dv = [0, 0, 0];
+function renderView(view, sc) {
+  const { cols, rows, ctx, cw, ch } = view.grid, n = cols * rows, cam = view.cam;
+  if (!view.buf) view.buf = { kind: new Int8Array(n), depth: new Float64Array(n), glyph: new Array(n), fg: new Float32Array(n * 3), bg: new Float32Array(n * 3) };
+  const B = view.buf;
+  let mr0 = 1e9, mr1 = -1, mc0 = 1e9, mc1 = -1;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c;
+    cam.ray(c, r, Ov, Dv);
+    const kind = trace(sc, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2], RES);
+    B.kind[i] = kind; B.depth[i] = RES.t;
+    if (!kind) { B.glyph[i] = ' '; B.fg.fill(0, i * 3, i * 3 + 3); B.bg[i * 3] = 7; B.bg[i * 3 + 1] = 8; B.bg[i * 3 + 2] = 12; continue; }
+    if (kind === 8) { mr0 = Math.min(mr0, r); mr1 = Math.max(mr1, r); mc0 = Math.min(mc0, c); mc1 = Math.max(mc1, c); }
+    const dist = cam.persp ? RES.t * Math.hypot(Dv[0], Dv[1], Dv[2]) : 3;
+    shadeHit(sc, RES, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2], dist, cam.persp, SH);
+    B.glyph[i] = SH.glyph;
+    for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = SH.fg[k]; B.bg[i * 3 + k] = SH.bg[k]; }
+  }
+  if (ctl.edges !== 'off') {
+    const E = DP.edges, rim = ctl.edges === 'rim' ? (E.modelRim || 0.55) : 1;
+    const far = (i, j) => B.kind[j] === 0 || B.depth[j] > B.depth[i] * E.depthRatio + E.depthAbs;
+    const rule = new Int8Array(n);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      if (B.kind[i] !== 8) continue;
+      if (r > 0 && far(i, i - cols)) rule[i] = 1;
+      else if ((c > 0 && far(i, i - 1)) || (c < cols - 1 && far(i, i + 1))) rule[i] = 2;
+      else if (r < rows - 1 && far(i, i + cols)) rule[i] = 3;
+    }
+    for (let i = 0; i < n; i++) {
+      if (!rule[i]) continue;
+      const R = rule[i] === 1 ? E.rules.cap : rule[i] === 2 ? E.rules.side : E.rules.lip;
+      if (B.glyph[i] !== ' ') B.glyph[i] = R.glyph;
+      for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = Math.min(255, B.fg[i * 3 + k] * R.gain) * rim; B.bg[i * 3 + k] *= rim; }
+    }
+  }
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c, x = c * cw, y = r * ch;
+    ctx.fillStyle = 'rgb(' + (B.bg[i * 3] | 0) + ',' + (B.bg[i * 3 + 1] | 0) + ',' + (B.bg[i * 3 + 2] | 0) + ')';
+    ctx.fillRect(x, y, cw + 0.5, ch + 0.5);
+    const gl = B.glyph[i];
+    if (gl && gl !== ' ') {
+      ctx.fillStyle = 'rgb(' + (B.fg[i * 3] | 0) + ',' + (B.fg[i * 3 + 1] | 0) + ',' + (B.fg[i * 3 + 2] | 0) + ')';
+      ctx.fillText(gl, x + cw / 2, y + ch / 2 + 1);
+    }
+  }
+  if (view.cap) view.cap.textContent = view.label() + (mr1 >= 0 ? ' : ' + (mr1 - mr0 + 1) + ' rows x ' + (mc1 - mc0 + 1) + ' cols' : ' : (not visible)');
+}
+
+// ------------------------------------------------------------------ cameras
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function norm(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+function orthoCam(center, yawDeg, pitchDeg, cols, rows, chM) {
+  const a = yawDeg * D2R, p = pitchDeg * D2R, R = 12;
+  const pos = [center[0] + R * Math.sin(a) * Math.cos(p), center[1] - R * Math.cos(a) * Math.cos(p), center[2] + R * Math.sin(p)];
+  const fwd = norm([center[0] - pos[0], center[1] - pos[1], center[2] - pos[2]]);
+  const right = norm(cross([0, 0, 1], fwd)), up = cross(fwd, right), cwM = chM / 2;
+  return { persp: false, ray(c, r, O, D) {
+    const sx = (c + 0.5 - cols / 2) * cwM, sy = (rows / 2 - (r + 0.5)) * chM;
+    O[0] = pos[0] + right[0] * sx + up[0] * sy; O[1] = pos[1] + right[1] * sx + up[1] * sy; O[2] = pos[2] + right[2] * sx + up[2] * sy;
+    D[0] = fwd[0]; D[1] = fwd[1]; D[2] = fwd[2];
+  } };
+}
+const TAN_HALF = Math.tan(37.5 * D2R);
+function perspCam(gridCols, gridRows, cropCols, cropRows, target, azDeg, dist, eyeZ) {
+  const planeDistY = (gridRows / 2) * (16 / 9) / TAN_HALF, a = azDeg * D2R;
+  const fh = [-Math.sin(a), Math.cos(a), 0], rh = [-Math.cos(a), -Math.sin(a), 0];
+  const eye = [target[0] + Math.sin(a) * dist, target[1] - Math.cos(a) * dist, eyeZ];
+  const pitch = Math.atan((target[2] - eyeZ) / dist), horizonRow = gridRows / 2 + Math.tan(pitch) * planeDistY;
+  const c0 = Math.floor(gridCols / 2 - cropCols / 2), r0 = Math.floor(gridRows / 2 - cropRows / 2);
+  return { persp: true, ray(c, r, O, D) {
+    const camX = 2 * (c0 + c + 0.5) / gridCols - 1;
+    O[0] = eye[0]; O[1] = eye[1]; O[2] = eye[2];
+    D[0] = fh[0] + rh[0] * camX * TAN_HALF; D[1] = fh[1] + rh[1] * camX * TAN_HALF;
+    D[2] = (horizonRow - (r0 + r + 0.5)) / planeDistY;
+  } };
+}
+
+// ------------------------------------------------------------------ page sections per animal
+function addView(host, an, opt) {
+  const g = makeCanvas(opt.cols, opt.rows, opt.cw, opt.ch);
+  const wrap = document.createElement('div'), cap = document.createElement('div'); cap.className = 'cap';
+  wrap.appendChild(g.cv); wrap.appendChild(cap); host.appendChild(wrap);
+  const v = Object.assign({ grid: g, cap, an, pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE), key: '' }, opt);
+  views.push(v);
+  return v;
+}
+const ingameHosts = {};
+function buildIngame(an) {
+  for (let i = views.length - 1; i >= 0; i--) if (views[i].ingame && views[i].an === an) views.splice(i, 1);
+  const host = ingameHosts[an.id]; host.innerHTML = '';
+  const s = ctl.grid === 400 ? { cols: 400, rows: 150, cc: 150, cr: 75, cw: 4.8, ch: 7.2 } : { cols: 240, rows: 90, cc: 90, cr: 45, cw: 8, ch: 12 };
+  for (const dist of [5, 12, 25]) {
+    addView(host, an, { cols: s.cc, rows: s.cr, cw: s.cw * 0.8, ch: s.ch * 0.8, ingame: true, ground: true, s, dist,
+      label: () => s.cols + 'x' + s.rows + ' at ' + dist + ' m (' + selName(an) + ')' });
+  }
+}
+function buildAllIngame() { for (const an of ANIMALS) buildIngame(an); }
+const selName = (an) => state[an.id].sel;
+
+for (const an of ANIMALS) {
+  state[an.id] = { sel: 'idle', t0: performance.now(), buck: false };
+  const sec = document.createElement('div');
+  const h = document.createElement('h2'); h.textContent = an.title; sec.appendChild(h);
+  const bar = document.createElement('div'); bar.className = 'controls local';
+  const clipNames = () => Object.keys(A.models[modelOf(an)].voxel.animations);
+  const btns = [];
+  for (const c of clipNames().concat(Object.keys(an.seqs))) {
+    const b = document.createElement('button'); b.textContent = c; btns.push(b);
+    b.onclick = () => { state[an.id].sel = c; state[an.id].t0 = performance.now(); btns.forEach((x) => x.classList.toggle('on', x === b)); ver++; };
+    if (c === 'idle') b.classList.add('on');
+    bar.appendChild(b);
+  }
+  if (an.id === 'deer') {
+    const lab = document.createElement('label'); lab.innerHTML = '<input type="checkbox"> antlers (deerBuck)';
+    lab.firstChild.oninput = () => { state.deer.buck = lab.firstChild.checked; ver++; };
+    bar.appendChild(lab);
+  }
+  const fxInfo = document.createElement('span'); fxInfo.className = 'cap';
+  const X = FX.animals[an.id];
+  fxInfo.textContent = 'states: ' + FX.states.map((s) => s + '=' + X.clipFor[s]).join(', ') + ' | speeds ' + JSON.stringify(X.speeds) + ' | dist ' + JSON.stringify(X.dist);
+  bar.appendChild(fxInfo);
+  sec.appendChild(bar);
+
+  const h3a = document.createElement('h3'); h3a.textContent = 'Four angles (selected clip; camera yaw 0 = the FRONT)'; sec.appendChild(h3a);
+  const rowA = document.createElement('div'); rowA.className = 'row'; sec.appendChild(rowA);
+  for (const [yaw, lab] of [[0, 'front'], [90, 'right side'], [180, 'back'], [270, 'left side'], [-40, '3/4 front-left, from above']]) {
+    const rows = 36, pitch = yaw === -40 ? 28 : 6;
+    addView(rowA, an, { cols: rows * 2, rows, cw: 5, ch: 10, kind: 'angle', label: () => lab + ' (' + selName(an) + ')',
+      cam: orthoCam(an.center, yaw, pitch, rows * 2, rows, an.viewH / rows) });
+  }
+  const h3b = document.createElement('h3'); h3b.textContent = 'Every clip, playing (right side, slightly from the front)'; sec.appendChild(h3b);
+  const rowB = document.createElement('div'); rowB.className = 'row'; sec.appendChild(rowB);
+  for (const c of clipNames()) {
+    const rows = 28;
+    addView(rowB, an, { cols: rows * 2, rows, cw: 5, ch: 10, kind: 'sheet', clip: c, label: () => c + ' ' + clipMs(an, c) + ' ms',
+      cam: orthoCam(an.center, 70, 8, rows * 2, rows, an.viewH / rows) });
+  }
+  const h3c = document.createElement('h3');
+  h3c.textContent = 'In-game crops (engine projection, 75 deg HFOV, 16:9, eye 1.6 m, grass, far fog): 5, 12 and 25 m'; sec.appendChild(h3c);
+  const rowC = document.createElement('div'); rowC.className = 'row'; sec.appendChild(rowC);
+  ingameHosts[an.id] = rowC;
+  $('animals').appendChild(sec);
+  buildIngame(an);
+}
+function clipMs(an, c) { const cl = A.models[modelOf(an)].voxel.animations[c]; return cl.durations.reduce((a, b) => a + b, 0); }
+
+// ------------------------------------------------------------------ frame loop
+function frame() {
+  const now = performance.now();
+  for (const v of views) {
+    const an = v.an, mk = modelOf(an), PM = PMS[mk];
+    if (v.kind === 'sheet' && ctl.pauseSheet && v.key) continue;
+    let S;
+    if (v.kind === 'sheet') S = { name: v.clip, st: clipState(PM, v.clip, (now - T0) * ctl.speed) };
+    else S = selState(PM, an, state[an.id].sel, (now - state[an.id].t0) * ctl.speed);
+    computeVoxelPose(PM, { x: 0, y: 0, z: 0, yawDeg: 0, scale: 1, clip: S.st.clip, frame: S.st.frame, tMs: S.st.tMs }, v.pose);
+    if (v.ingame) v.cam = perspCam(v.s.cols, v.s.rows, v.s.cc, v.s.cr, an.center, ctl.vaz, v.dist, 1.6);
+    const key = mk + '|' + S.name + '|' + S.st.clip + '|' + S.st.frame + '|' + Math.round(S.st.tMs) + '|' + ver;
+    if (v.key === key) continue;
+    renderView(v, { PM, pose: v.pose, ground: !!v.ground });
+    v.key = key;
+  }
+  setTimeout(() => requestAnimationFrame(frame), 40);
+}
+
+// ------------------------------------------------------------------ checks
+function runChecks() {
+  const out = [];
+  const ok = (c, m) => out.push([c ? 'pass' : 'fail', (c ? 'PASS ' : 'FAIL ') + m]);
+  const info = (m) => out.push(['info', 'INFO ' + m]);
+  const both = Object.keys(P.materials).filter((k) => DP.materials[k]);
+  for (const k of MODELS) {
+    const DEF = A.models[k].voxel, PM = PMS[k], PARTS = Object.keys(DEF.parts);
+    const vr = validateVoxelModel(DEF, { materialKeys: both });
+    ok(vr.errors.length === 0 && vr.warnings.length === 0, k + ': validateVoxelModel: ' + (vr.errors.concat(vr.warnings).slice(0, 6).join(' ; ') || 'no errors, no warnings'));
+    ok(PARTS.length <= MAX_VOX_PARTS && PARTS.every((n, i) => !DEF.parts[n].parent || PARTS.indexOf(DEF.parts[n].parent) < i), k + ': ' + PARTS.length + ' parts, parents earlier: ' + PARTS.join(', '));
+    const sums = PARTS.map((n) => { const b = DEF.parts[n].box; return (b[3] - b[0]) + (b[4] - b[1]) + (b[5] - b[2]); });
+    ok(sums.every((s) => s <= 48), k + ': style 5.14 part box sx+sy+sz <= 48: ' + sums.join(' / '));
+    const lod0 = buildVoxelMesh(PM, { id: k, partNames: PARTS }).triCount, lod1 = buildVoxelMeshLod1(PM, { id: k + '1', partNames: PARTS }).triCount;
+    let vox = 0; DEF.layers.forEach((l) => l.forEach((r) => { for (const c of r) if (c !== '.') vox++; }));
+    ok(lod0 <= 2000, k + ': ' + vox + ' voxels, engine mesher LOD0 ' + lod0 + ' tris (budget 2000), LOD1 ' + lod1);
+    let top = -1, y0 = 99, y1 = -1;
+    DEF.layers.forEach((l, z) => l.forEach((r, y) => { if (/[^. ]/.test(r)) { top = z; y0 = Math.max(0, Math.min(y0, y)); y1 = Math.max(y1, y); } }));
+    info(k + ': ' + DEF.size.join(' x ') + ' @ ' + DEF.cellM + ' m, nose to tail ' + ((y1 + 1 - y0) * DEF.cellM).toFixed(2) + ' m, top ' + ((top + 1) * DEF.cellM).toFixed(2) +
+         ' m; clips: ' + Object.keys(DEF.animations).map((c) => c + ' ' + DEF.animations[c].durations.reduce((a, b) => a + b, 0) + ' ms').join(', '));
+  }
+  for (const a of Object.keys(FX.animals)) {
+    const X = FX.animals[a];
+    const miss = [];
+    for (const m of X.models) for (const s of FX.states) if (!A.models[m].voxel.animations[X.clipFor[s]]) miss.push(m + '.' + s);
+    ok(!miss.length, 'wildlifeFx.' + a + ': every state maps to a clip' + (miss.length ? ' (missing ' + miss.join(', ') + ')' : '') +
+       '; gaits ' + X.gaits.map((g) => g.clip + ' ' + g.tunedMps + ' m/s').join(', '));
+  }
+  const host = $('checks'); host.innerHTML = '';
+  for (const [c, m] of out) { const d = document.createElement('div'); d.className = c; d.textContent = m; host.appendChild(d); }
+}
+try { runChecks(); } catch (err) { $('checks').innerHTML = '<div class="fail">checks threw: ' + err.message + '</div>'; console.error(err); }
+frame();
+</script>
+</body>
+</html>
