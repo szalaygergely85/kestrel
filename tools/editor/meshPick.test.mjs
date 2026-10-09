@@ -41,8 +41,8 @@ const world={structures:[{id:'tower',kind:'level'},front],forEachEntity(){}};
 const cam={x:0,y:0,z:1,yawDeg:180,pitchDeg:0};
 const ctx={cam,cols:16,rows:6,pxCellW:8,pxCellH:16,world,assets:{},renderer:'mesh',gpuActive:false,
  fb:{gbuf:{kind:Array(96).fill(KIND_MESH),face:Array(96).fill(0),mat:Array(96).fill(0),planeId:Array(96).fill(0xA0000000)},depth:{depth:Array(96).fill(5)}}};
-const picked=pickAt(8,3,ctx);
+const picked=await pickAt(8,3,ctx);
 assert.equal(picked.kind,'meshStructure');assert.equal(picked.structureId,'front');
 ctx.fb.gbuf.planeId[56]=0xD0000000;
-assert.equal(pickAt(8,3,ctx).structureId,null,'cloth is never decoded as the tower');
+assert.equal((await pickAt(8,3,ctx)).structureId,null,'cloth is never decoded as the tower');
 console.log('meshPick: overlapping triangles, bbox fallback, kind-9/cloth routing and bounded plated highlights PASS');

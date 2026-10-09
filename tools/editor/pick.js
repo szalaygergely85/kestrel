@@ -13,39 +13,21 @@ import {
   KIND_WALL, KIND_STEP, KIND_UPPER,
 } from './ray.js';
 
-// Shared scratch for the uint32<->float32 bit-cast the Depth readback needs
-// (same trick as engine/render/gpu/gpuCompare.js's `u32ToF32`) - no per-call allocation.
-const _bitBuf = new ArrayBuffer(4);
-const _f32 = new Float32Array(_bitBuf);
-const _u32 = new Uint32Array(_bitBuf);
-function u32ToF32(u) { _u32[0] = u >>> 0; return _f32[0]; }
-
 // Reused every call (rule 9) - `collectEntities` below.
 const _entityScratch = [];
 
 /**
- * Reads one cell's surface sample: GPU `readbackGeometry()` (24.6, the
- * documented click-only exemption) or the CPU `fb.gbuf`/`fb.depth` on
- * `?gpu=0`.
+ * Reads one cell's surface sample (24.6, the documented click-only exemption): `ctx.readSurface` (the engine frame renderer's
+ * async G-buffer/geometry readback, ED-WG-01b) or, without it, the CPU `fb.gbuf`/`fb.depth`.
  * @param {number} col @param {number} row
- * @param {{cols:number, gpuActive:boolean, gpuPipeline:Object|null, fb:Object}} ctx
+ * @param {{cols:number, fb:Object, readSurface?:Function}} ctx
+ * @returns {Promise<{kind:number,face:number,mat:number,planeId:number,depth:number}>}
  */
-export function readSurface(col, row, ctx) {
-  const { cols, gpuActive, gpuPipeline, fb } = ctx;
-  const i = row * cols + col;
-  if (gpuActive && gpuPipeline) {
-    const { GI, Depth } = gpuPipeline.readbackGeometry();
-    const gi1 = GI[i * 4 + 1];
-    return {
-      kind: gi1 & 0xff,
-      face: (gi1 >>> 8) & 0xf,
-      mat: gi1 >>> 16,
-      planeId: GI[i * 4] | 0,
-      depth: u32ToF32(Depth[i * 4]),
-    };
-  }
-  const gbuf = fb.gbuf;
-  return { kind: gbuf.kind[i], face: gbuf.face[i], mat: gbuf.mat[i], planeId: gbuf.planeId[i], depth: fb.depth.depth[i] };
+export async function readSurface(col, row, ctx) {
+  if (ctx.readSurface) return ctx.readSurface(col, row);
+  const i = row * ctx.cols + col;
+  const { gbuf } = ctx.fb;
+  return { kind: gbuf.kind[i], face: gbuf.face[i], mat: gbuf.mat[i], planeId: gbuf.planeId[i], depth: ctx.fb.depth.depth[i] };
 }
 
 /** Every live entity with `components.sprite`/`components.voxel` (ray-cylinder candidates, 24.6). */
@@ -83,12 +65,12 @@ function findEntityForVoxelInstance(world, inst) {
 
 /**
  * Click-only pick (24.6). `ctx`: `{ cam, cols, rows, pxCellW, pxCellH, world,
- * assets, fb, gpuPipeline, gpuActive, voxelPool }`.
- * @returns {PickResult}
+ * assets, fb, readSurface, voxelPool }`.
+ * @returns {Promise<PickResult>}
  */
-export function pickAt(col, row, ctx) {
+export async function pickAt(col, row, ctx) {
   const { cam, cols, rows, pxCellW, pxCellH, world, assets, voxelPool, renderer } = ctx;
-  const surf = readSurface(col, row, ctx);
+  const surf = await readSurface(col, row, ctx);
   const decoded = decodePlaneId(surf.kind, surf.planeId);
   const ray = unprojectCell(cam, cols, rows, pxCellW, pxCellH, col, row, renderer);
 
@@ -157,9 +139,9 @@ export function pickAt(col, row, ctx) {
  * triggers with cells".
  * @returns {{fileId:string, collection:string, id:string, structId:string}|null}
  */
-export function pickMarkers(col, row, ctx) {
+export async function pickMarkers(col, row, ctx) {
   const { cam, cols, rows, pxCellW, pxCellH, world, renderer } = ctx;
-  const surf = readSurface(col, row, ctx);
+  const surf = await readSurface(col, row, ctx);
   let best = null;
   const consider = (fileId, collection, id, structId, x, y, z) => {
     const proj = projectPoint(cam, cols, rows, pxCellW, pxCellH, { x, y, z }, renderer);
