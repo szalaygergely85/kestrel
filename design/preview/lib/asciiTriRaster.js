@@ -4,7 +4,7 @@
   /**
    * @param {Float32Array} pos world xyz per vertex (3 floats)
    * @param {ArrayLike<number>} idx triangle vertex indices
-   * @param {{cols:number, rows:number, dist:number, yaw:number, center:number[], fov?:number}} v view: object turned by `yaw` rad around Y,
+   * @param {{cols:number, rows:number, dist:number, yaw:number, center:number[], fov?:number, cellAspect?:number}} v view: object turned by `yaw` rad around Y,
    *   camera `dist` m in front of `center` looking at it; the grid covers `fov` deg vertically; cells are twice as tall as wide.
    * @returns {{tri:Int32Array, shade:Float32Array, cols:number, rows:number, covered:number}} per cell: triangle index (-1 = empty) and 0..1 light
    */
@@ -12,7 +12,7 @@
     const { cols, rows, dist, yaw, center } = v;
     const fov = v.fov || 45;
     const fy = rows / (2 * Math.tan((fov * Math.PI) / 360)); // cells per unit of (y / depth)
-    const fx = fy * 2;
+    const fx = fy * (v.cellAspect || 2); // cell height/width (2 = text cells; 1 = square pixels)
     const cs = Math.cos(yaw), sn = Math.sin(yaw);
     const nv = pos.length / 3;
     const vx = new Float32Array(nv), vy = new Float32Array(nv), vz = new Float32Array(nv);

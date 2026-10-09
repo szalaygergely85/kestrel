@@ -1,6 +1,10 @@
 // US-016 Node tests for `shadeTerrain` (docs/architecture.md 14.4 item 5,
 // near-detail extension 23.4).
-import { shadeTerrain, hashFast01, perCellHashSize } from './terrainShade.js';
+import { shadeTerrain, hashFast01, perCellHashSize, shadeTerrainCells } from './terrainShade.js';
+import { Terrain } from '../world/Terrain.js';
+import { GBuffer, KIND_TERRAIN } from './GBuffer.js';
+import { CellBuffer } from './CellBuffer.js';
+import { packNormalOct } from '../voxel/octNormal.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) { if (cond) pass++; else { fail++; console.error('FAIL:', name); } }
@@ -250,6 +254,71 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
   }
   check('hashCell -k == fixed cell of perCellHashSize', okNeg);
   check('hashCell 0 == explicit 2/8 m path (unchanged)', ok0);
+}
+
+// ---- S8-B2-12b (38.13): shadeTerrainCells scales the terrain analytic sun term by cF = 1 - light.cloud[i]/255 ----
+// A self-contained synthetic recipe/palette (no `design/` import, same pattern as TerrainTextures.test.js's stub)
+// so this exercises the REAL `shadeTerrainCells` cell loop (not the low-level `shadeTerrain` the rest of this file
+// probes), which is where the cloud byte is actually read.
+{
+  const w = 8, h = 8, cell = 8;
+  const recipe = {
+    seed: 1, map: { w, h, cell }, bands: { near: 150, mid: 600 },
+    terrain: { grass: { id: 0, colors: ['grassDark', 'grass', 'grassLight'], glyphs: { near: '",', mid: ',.', far: '.' }, albedo: 0.85 } },
+    recipe: {},
+    util: {
+      heightAt: (x, y) => (x + y) * 0.01,
+      typeAt: () => 0,
+      generate() { const n = w * h; return { height: new Float32Array(n), type: new Uint8Array(n), w, h, cell }; },
+      bake(x0, y0, cell2, bw, bh) { const n = bw * bh; return { x0, y0, w: bw, h: bh, cell: cell2, height: new Float32Array(n), type: new Uint8Array(n) }; },
+      gridHeight() { return 0; },
+    },
+  };
+  const palette = {
+    rgb: { grassDark: [10, 40, 10], grass: [20, 80, 20], grassLight: [40, 120, 40] },
+    fog: { far: { start: 50, full: 1500, curve: 0.7, color: 'grassDark', colorFar: 'grassLight' } },
+    shading: { fgMin: 0.15, fgGamma: 0.6, fgMaxGain: 1.6 },
+    timeOfDay: { day: { sunElev: 60, ambientI: 0.2, sunI: 0.9 } }, defaultTime: 'day',
+  };
+  const terrain = new Terrain(recipe);
+  terrain.bakeFarSync();
+  const world = { sun: { azimuth: 90, elevation: 60 } }; // sun truthy -> sunFromWorld never touches world.structures
+  function sampleTerrain(q) {
+    const gbuf = new GBuffer(1, 1);
+    gbuf.kind[0] = KIND_TERRAIN; gbuf.mat[0] = 0; gbuf.u[0] = 4; gbuf.v[0] = 4;
+    new Uint32Array(gbuf.aoD.buffer)[0] = packNormalOct(0, 0, 1); // straight-up normal, full N.sunDir exposure
+    const fb = {
+      rt: new CellBuffer(1, 1), gbuf, palette, matTable: null,
+      depth: { depth: Float32Array.of(100) }, // near band (< 150), well clear of heavy fog
+      light: { uniform: false, sunMapOn: false, rgb: new Float32Array(3), cloud: Uint8Array.of(q) }, // lamp term 0: isolates sun+cloud
+    };
+    shadeTerrainCells(fb, terrain, world, 0, 0);
+    return { glyph: fb.rt.glyphIdx[0], fg: fb.rt.fg.slice(0, 3), bg: fb.rt.bg.slice(0, 3) };
+  }
+  const t0 = sampleTerrain(0), t153 = sampleTerrain(153), t255 = sampleTerrain(255);
+  const tNull = (() => {
+    const gbuf = new GBuffer(1, 1);
+    gbuf.kind[0] = KIND_TERRAIN; gbuf.mat[0] = 0; gbuf.u[0] = 4; gbuf.v[0] = 4;
+    new Uint32Array(gbuf.aoD.buffer)[0] = packNormalOct(0, 0, 1);
+    const fb = { rt: new CellBuffer(1, 1), gbuf, palette, matTable: null, depth: { depth: Float32Array.of(100) }, light: null };
+    shadeTerrainCells(fb, terrain, world, 0, 0);
+    return { glyph: fb.rt.glyphIdx[0], fg: fb.rt.fg.slice(0, 3), bg: fb.rt.bg.slice(0, 3) };
+  })();
+  check('q=0 (explicit cloud byte) is byte-identical to light: null (bit-identical AC)', t0.glyph === tNull.glyph && t0.fg.every((v, i) => v === tNull.fg[i]) && t0.bg.every((v, i) => v === tNull.bg[i]));
+  check('same band/glyph across cloud bytes (only brightness changes)', t0.glyph === t153.glyph && t0.glyph === t255.glyph);
+  const sum = (a) => a[0] + a[1] + a[2];
+  check('q=153 (cF=0.4) darkens the terrain cell vs q=0', sum(t153.fg) < sum(t0.fg));
+  check('q=255 (cF~0) darkens further than q=153 - monotonic in q', sum(t255.fg) <= sum(t153.fg));
+  // mutation sanity: a light.uniform object (no per-cell byte meaning) must behave like cF=1 even with a non-zero cloud array
+  const tUniform = (() => {
+    const gbuf = new GBuffer(1, 1);
+    gbuf.kind[0] = KIND_TERRAIN; gbuf.mat[0] = 0; gbuf.u[0] = 4; gbuf.v[0] = 4;
+    new Uint32Array(gbuf.aoD.buffer)[0] = packNormalOct(0, 0, 1);
+    const fb = { rt: new CellBuffer(1, 1), gbuf, palette, matTable: null, depth: { depth: Float32Array.of(100) }, light: { uniform: true, sunMapOn: false, rgb: new Float32Array(3), cloud: Uint8Array.of(255) } };
+    shadeTerrainCells(fb, terrain, world, 0, 0);
+    return { glyph: fb.rt.glyphIdx[0], fg: fb.rt.fg.slice(0, 3), bg: fb.rt.bg.slice(0, 3) };
+  })();
+  check('light.uniform ignores the cloud byte (cF stays 1)', tUniform.fg.every((v, i) => v === t0.fg[i]));
 }
 
 console.log(`terrainShade.test.js: ${pass} passed, ${fail} failed`);

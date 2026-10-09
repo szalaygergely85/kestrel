@@ -339,7 +339,7 @@ export class InstanceGroups {
    */
   meshGroup(mesh, capacity) {
     if (!mesh || mesh.layout !== 'static' || !mesh.ranges || mesh.ranges.length < 1) throw new Error('InstanceGroups.meshGroup: needs a static kind-9 mesh');
-    for (let i = 0; i < mesh.ranges.length; i++) if (mesh.ranges[i].mask !== undefined) throw new Error('InstanceGroups.meshGroup: masked ranges are not supported');
+    // ALPHA-01f (b) host: masked ranges are now supported (MeshBuffers.getVoxel's uvMaskBuffer + passRaster.js's instanced-masked draw path).
     if (this.groups.length >= MAX_INSTANCE_GROUPS) throw new Error(`InstanceGroups: over ${MAX_INSTANCE_GROUPS} groups`);
     const g = makeInstanceGroup(mesh.id || 'mesh', capacity);
     g.mesh = mesh;
@@ -403,7 +403,10 @@ export class InstanceGroups {
           this.stats.instances += kept;
           this.stats.instancesCulled += g.count - kept;
         }
-        if (g.drawCount[0] > 0) { const it = list.addInstances(draw, g.parts, g.drawIb[0], g.drawCount[0], g._R); if (it) it.flags |= DRAW_FLAG_ONE_PART; }
+        // ALPHA-01f (b): ONE_PART collapses instancedRanges() to one synthetic whole-mesh range (rasterJS.js rasterInstanced's
+        // `onePart` guard then drops per-range masking) - only opaque-only groups get it; a masked group keeps its real
+        // mesh.ranges so passRaster.js's instanced-masked draw sees each range's mask rect (JS-twin parity, ALPHA-01f a).
+        if (g.drawCount[0] > 0) { const it = list.addInstances(draw, g.parts, g.drawIb[0], g.drawCount[0], g._R); if (it && !g.mesh.maskRanges) it.flags |= DRAW_FLAG_ONE_PART; }
         continue;
       }
       if (!pool) continue;

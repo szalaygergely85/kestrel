@@ -26,8 +26,10 @@ const ARGS_BYTES = ARGS_WORDS * 4;
 const W = (n) => CULL_BLOCK.field(n).word;
 const WS = (n) => CULL_SHADOW_BLOCK.field(n).word; // WG-4b shadow mode block
 const PLANES = W('planes'), EYE = W('eye'), LODROW = W('lodRow'), PARAMS = W('params'), COUNT = W('count'), LODON = W('lodOn'), SLOT0 = W('slot0'), SLOT1 = W('slot1');
+const RANGECOUNT0 = W('rangeCount0'), RANGECOUNT1 = W('rangeCount1'); // ALPHA-01f (d): mesh ranges sharing each LOD's compacted instances
+const SWAYPAD = W('swayPad'), SWAYPAD_S = WS('swayPad'); // S8-B2-05/06: metres added to R (SWAY_MAX while foliage sway is on, else 0)
 
-/** @typedef {{group: any, lod: number, mesh: any, instanceBuffer: any, argsBuffer: any, argsOffset: number, maxInstances: number, parts: any, active: boolean}} CullEntry */
+/** @typedef {{group: any, lod: number, mesh: any, instanceBuffer: any, argsBuffer: any, argsOffset: number, maxInstances: number, parts: any, active: boolean, range?: number}} CullEntry */
 
 /** @param {any} device @param {boolean} [shadow] WG-4b shadow-caster kernel (cullShadow.wgsl.js) @returns {any} the compute pipeline (create once; `device.createComputePipeline` is WebGPU/mock only) */
 export function createCullPipeline(device, shadow = false) {
@@ -51,9 +53,12 @@ export class WgCullPass {
     this._argsView = this.argsCpu.subarray(0, 0);
     /** @type {Set<any>} groups marked static before their first add() */
     this._pendingStatic = new Set();
-    /** @type {Int32Array} LIFO free list of freed slot bases (38.10a; deterministic, 0 alloc) */
+    /** @type {Int32Array} LIFO free list of freed 2-slot (R=1) bases (38.10a; deterministic, 0 alloc) */
     this._free = new Int32Array(this.maxBatches);
     this._freeTop = 0;
+    /** @type {Map<number, number[]>} ALPHA-01f (d): LIFO free lists for R>1 slot BLOCKS (masked multi-range batches), keyed by block size
+     *  (2*R); a freed block is only reused by a batch needing the SAME R (a 2-slot pair and a 2R-slot block are never aliased). Rare path. */
+    this._freeBig = new Map();
     /** @type {number} bumped once per begin(); drives the idle sweep */
     this._frame = 0;
     const block = this.shadow ? CULL_SHADOW_BLOCK : CULL_BLOCK;
@@ -77,6 +82,7 @@ export class WgCullPass {
     this._frame++;
     fr.castM = /** @type {any} */ (f).castM || 0; fr.hystM = /** @type {any} */ (f).hystM || 0;
     fr.planes = f.planes || null; fr.viewProj = f.viewProj || null; fr.rows = f.rows || 0; fr.eye = f.eye || null; fr.maxDistM = f.maxDistM || 0;
+    fr.swayPad = /** @type {any} */ (f).swayPad || 0; // S8-B2-05/06
     this.queue.length = 0;
     const s = this.stats; s.batches = 0; s.dispatches = 0; s.instances = 0; s.uploads = 0; s.argsBytes = 0;
     // 38.10a idle sweep: a batch no add() stamped recently (editor/reload churn) is freed, <= maxBatches compares/frame
@@ -134,17 +140,24 @@ export class WgCullPass {
   /** @param {any} g @param {[any, any|null]} meshes */
   _create(g, meshes) {
     if (this.batches.size >= this.maxBatches) throw new Error(`WgCullPass: over ${this.maxBatches} batches`);
-    for (const m of meshes) {
-      if (!m) continue;
-      if (!this.shadow && m.ranges && m.ranges.length > 1 && !(m.layout === 'static' && g.mesh)) throw new Error('WgCullPass: multi-range meshes need an args slot per range (ONE_PART batches only)');
+    if (!g.mesh) { // voxel units stay ONE_PART (supports() already enforces this; _create re-checks since add() can be called directly)
+      for (const m of meshes) { if (m && m.ranges && m.ranges.length > 1) throw new Error('WgCullPass: multi-range meshes need an args slot per range (voxel units: ONE_PART batches only)'); }
     }
+    let rc = 1; // ALPHA-01f (d): R = widest range count of either LOD mesh (meshGroups only; fixed for this batch's life)
+    for (const m of meshes) { if (m && m.maskRanges && m.ranges && m.ranges.length > rc) rc = m.ranges.length; } // unmasked meshGroups stay ONE_PART: one range
     const d = this.device;
     const cap = g.ib.capacity;
     let slot;
-    if (this._freeTop > 0) slot = this._free[--this._freeTop]; // 38.10a: reuse a freed slot pair (LIFO)
-    else { slot = this._nextSlot; this._nextSlot += 2; this._argsView = this.argsCpu.subarray(0, this._nextSlot * ARGS_WORDS); }
+    if (rc === 1) {
+      if (this._freeTop > 0) slot = this._free[--this._freeTop]; // 38.10a: reuse a freed 2-slot pair (LIFO)
+      else slot = this._allocSlots(2);
+    } else {
+      const key = 2 * rc, big = this._freeBig.get(key);
+      if (big && big.length) slot = big.pop(); // reuse a freed block of the SAME size only (never aliased across R)
+      else slot = this._allocSlots(key);
+    }
     const b = {
-      g, cap, slot, static: this._pendingStatic.delete(g), uploaded: -1, view: /** @type {any} */ (null), viewCount: -1, lastFrame: this._frame,
+      g, cap, slot, rc, static: this._pendingStatic.delete(g), uploaded: -1, view: /** @type {any} */ (null), viewCount: -1, lastFrame: this._frame,
       src: d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES }),
       lodPrev: d.createBuffer({ usage: 'storage', data: new Uint32Array(cap) }),
       dst: [d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES }), d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES })],
@@ -152,29 +165,50 @@ export class WgCullPass {
       entries: /** @type {CullEntry[]} */ ([]),
     };
     for (let lod = 0; lod < 2; lod++) {
-      b.entries.push({ group: g, lod, mesh: null, instanceBuffer: b.dst[lod], argsBuffer: this.argsBuffer, argsOffset: (b.slot + lod) * ARGS_BYTES, maxInstances: cap, parts: g.parts, active: false });
+      for (let r = 0; r < rc; r++) {
+        b.entries.push({ group: g, lod, range: r, mesh: null, instanceBuffer: b.dst[lod], argsBuffer: this.argsBuffer, argsOffset: (b.slot + lod * rc + r) * ARGS_BYTES, maxInstances: cap, parts: g.parts, active: false });
+      }
     }
     this.batches.set(g, b);
     return b;
   }
 
-  /** args words that never change per frame (indexCount, firstIndex, baseVertex, firstInstance) + the entry mesh/active flags. */
+  /** Bumps `_nextSlot` by `n` ARGS_WORDS-sized slots, bound by `argsCpu`'s total capacity; rebuilds `_argsView`. @param {number} n @returns {number} the base slot */
+  _allocSlots(n) {
+    const slot = this._nextSlot, total = slot + n, cap = this.argsCpu.length / ARGS_WORDS;
+    if (total > cap) throw new Error(`WgCullPass: args slot capacity exceeded (${total} > ${cap})`);
+    this._nextSlot = total;
+    this._argsView = this.argsCpu.subarray(0, total * ARGS_WORDS);
+    return slot;
+  }
+
+  /** args words that never change per frame (indexCount, firstIndex, baseVertex, firstInstance) + the entry mesh/active flags.
+   *  ALPHA-01f (d): `b.rc` > 1 (masked meshGroup) writes one record per `mesh.ranges[r]`; `b.rc` === 1 keeps today's single
+   *  whole-mesh record (ONE_PART / voxel-one-range shapes), bit-identical. */
   _fillEntries(b) {
+    const rc = b.rc;
     for (let lod = 0; lod < 2; lod++) {
       const mesh = lod === 0 ? b.meshes0 : b.meshes1;
-      const e = b.entries[lod];
-      e.mesh = mesh; e.active = !!mesh; e.parts = b.g.parts;
-      const o = (b.slot + lod) * ARGS_WORDS;
-      let first = 0;
-      if (this.shadow && b.g.mesh) { // meshGroup = DRAW_FLAG_ONE_PART: the whole mesh as one range (instancedRanges, 38.9)
-        this.argsCpu[o] = mesh ? mesh.triCount * 3 : 0;
-        e.active = e.active && this.argsCpu[o] > 0;
-      } else if (this.shadow) { // voxel unit: ONE range (supports()); the shadow caster loop draws it with the identity part
-        const r0 = mesh && mesh.ranges && mesh.ranges[0];
-        this.argsCpu[o] = r0 && r0.count > 0 ? r0.count * 3 : 0; first = r0 ? (r0.start || 0) * 3 : 0;
-        e.active = e.active && this.argsCpu[o] > 0;
-      } else this.argsCpu[o] = mesh ? mesh.triCount * 3 : 0; // ONE_PART: the whole mesh as one range (rasterJS _oneRange)
-      this.argsCpu[o + 1] = 0; this.argsCpu[o + 2] = first; this.argsCpu[o + 3] = 0; this.argsCpu[o + 4] = 0;
+      const base = b.slot + lod * rc;
+      for (let r = 0; r < rc; r++) {
+        const e = b.entries[lod * rc + r];
+        e.mesh = mesh; e.active = !!mesh; e.parts = b.g.parts;
+        const o = (base + r) * ARGS_WORDS;
+        let first = 0;
+        if (rc > 1) { // ALPHA-01f (d): masked meshGroup, one record per mesh.ranges[r]
+          const rg = mesh && mesh.ranges && mesh.ranges[r];
+          this.argsCpu[o] = rg && rg.count > 0 ? rg.count * 3 : 0; first = rg ? (rg.start || 0) * 3 : 0;
+          e.active = e.active && this.argsCpu[o] > 0;
+        } else if (this.shadow && b.g.mesh) { // meshGroup = DRAW_FLAG_ONE_PART: the whole mesh as one range (instancedRanges, 38.9)
+          this.argsCpu[o] = mesh ? mesh.triCount * 3 : 0;
+          e.active = e.active && this.argsCpu[o] > 0;
+        } else if (this.shadow) { // voxel unit: ONE range (supports()); the shadow caster loop draws it with the identity part
+          const r0 = mesh && mesh.ranges && mesh.ranges[0];
+          this.argsCpu[o] = r0 && r0.count > 0 ? r0.count * 3 : 0; first = r0 ? (r0.start || 0) * 3 : 0;
+          e.active = e.active && this.argsCpu[o] > 0;
+        } else this.argsCpu[o] = mesh ? mesh.triCount * 3 : 0; // ONE_PART: the whole mesh as one range (rasterJS _oneRange)
+        this.argsCpu[o + 1] = 0; this.argsCpu[o + 2] = first; this.argsCpu[o + 3] = 0; this.argsCpu[o + 4] = 0;
+      }
     }
   }
 
@@ -200,7 +234,9 @@ export class WgCullPass {
         const e = WS('eye'), pa = WS('params');
         f[e] = eye ? eye.x : 0; f[e + 1] = eye ? eye.y : 0; f[e + 2] = b.lod0M; f[e + 3] = fr.castM;
         f[pa] = b.R; f[pa + 1] = fr.hystM; f[pa + 2] = 0; f[pa + 3] = 0;
-        u[WS('count')] = cnt; u[WS('slot0')] = b.slot * ARGS_WORDS; u[WS('slot1')] = (b.slot + 1) * ARGS_WORDS; u[WS('pad')] = 0;
+        u[WS('count')] = cnt; u[WS('slot0')] = b.slot * ARGS_WORDS; u[WS('slot1')] = (b.slot + b.rc) * ARGS_WORDS; u[WS('pad')] = 0;
+        u[WS('rangeCount0')] = b.rc; u[WS('rangeCount1')] = b.rc; // ALPHA-01f (d)
+        f[SWAYPAD_S] = fr.swayPad; // S8-B2-05/06
         const bd = this._bind.buffers;
         bd[0].buffer = b.src; bd[1].buffer = b.lodPrev; bd[2].buffer = b.dst[0]; bd[3].buffer = b.dst[1]; bd[4].buffer = this.argsBuffer;
         d.dispatch(this.pipeline, this._bind, Math.ceil(cnt / CULL_WORKGROUP), 1, 1);
@@ -225,7 +261,9 @@ export class WgCullPass {
         f[PARAMS + 1] = R * Math.sqrt(vp[1] * vp[1] + vp[5] * vp[5] + vp[9] * vp[9]) * fr.rows;
       } else { f[LODROW] = 0; f[LODROW + 1] = 0; f[LODROW + 2] = 0; f[LODROW + 3] = 0; f[PARAMS + 1] = 0; }
       f[PARAMS] = R; f[PARAMS + 2] = g.lodCells * 0.9; f[PARAMS + 3] = g.lodCells * 1.1;
-      u[COUNT] = cnt; u[LODON] = lodOn ? 1 : 0; u[SLOT0] = b.slot * ARGS_WORDS; u[SLOT1] = (b.slot + 1) * ARGS_WORDS;
+      u[COUNT] = cnt; u[LODON] = lodOn ? 1 : 0; u[SLOT0] = b.slot * ARGS_WORDS; u[SLOT1] = (b.slot + b.rc) * ARGS_WORDS;
+      u[RANGECOUNT0] = b.rc; u[RANGECOUNT1] = b.rc; // ALPHA-01f (d): b.rc fixed at _create; 1 = today's single record per LOD (bit-identical)
+      f[SWAYPAD] = fr.swayPad; // S8-B2-05/06: metres added to R in the frustum test (cull.wgsl.js aabbOutside)
       const bd = this._bind.buffers;
       bd[0].buffer = b.src; bd[1].buffer = b.lodPrev; bd[2].buffer = b.dst[0]; bd[3].buffer = b.dst[1]; bd[4].buffer = this.argsBuffer;
       d.dispatch(this.pipeline, this._bind, Math.ceil(cnt / CULL_WORKGROUP), 1, 1);
@@ -241,9 +279,14 @@ export class WgCullPass {
     const b = this.batches.get(group);
     if (!b) return;
     this.device.dispose(b.src); this.device.dispose(b.lodPrev); this.device.dispose(b.dst[0]); this.device.dispose(b.dst[1]);
-    const o = b.slot * ARGS_WORDS;
-    for (let i = 0; i < 2 * ARGS_WORDS; i++) this.argsCpu[o + i] = 0;
-    this._free[this._freeTop++] = b.slot;
+    const rc = b.rc, o = b.slot * ARGS_WORDS, n = 2 * rc * ARGS_WORDS;
+    for (let i = 0; i < n; i++) this.argsCpu[o + i] = 0;
+    if (rc === 1) this._free[this._freeTop++] = b.slot; // 38.10a fast path, unchanged
+    else { // ALPHA-01f (d): return the block to the free list of its OWN size only
+      const key = 2 * rc; let big = this._freeBig.get(key);
+      if (!big) { big = []; this._freeBig.set(key, big); }
+      big.push(b.slot);
+    }
     this.batches.delete(group);
     this._pendingStatic.delete(group);
   }

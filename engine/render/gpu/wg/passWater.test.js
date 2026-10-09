@@ -9,7 +9,8 @@ import { projTerms, shearProjection, createPitchedTerms, pitchedTerms } from '..
 import { frustumPlanes } from '../../../mesh/culling.js';
 import { selectWater, createWaterSelection, RUNS_STRIDE } from '../../water.js';
 import { WATER_U_STRIDE, U_KIND, U_Z, U_AABB, U_SHAPE } from '../../../mesh/waterMesh.js';
-import { WL_STRIDE, WL_SLOTS, WFOG_LEN, defaultWaterLooks, fillWaterSlotTable, waterFogParams } from '../../waterLook.js';
+import { WL_STRIDE, WL_SLOTS, WFOG_LEN, defaultWaterLooks, fillWaterSlotTable, waterFogParams, packRipples } from '../../waterLook.js';
+import { RIPPLE_MAX } from '../../../world/water.js';
 import { sunFromWorld } from '../../lighting.js';
 import { WATER_BLOCK, WATER_TEXTURES } from '../wgsl/water.wgsl.js';
 import { WATER_COMPOSITE_BLOCK, WATER_COMPOSITE_TEXTURES } from '../wgsl/waterComposite.wgsl.js';
@@ -131,6 +132,30 @@ binds.length = 0; wp.runComposite({ shadeFg, shadeBg, gi, depth, light }, p);
   assert.deepEqual([...u.slice(C('pitchC'), C('pitchC') + 4)], [q.uZ, q.tanHalfY, q.cosP, q.sinP].map(Math.fround));
 }
 raster.pitched = false;
+
+// ---- S8-B2-13 (38.14): splash ripples, composite upload ----
+{
+  const C = (n) => WATER_COMPOSITE_BLOCK.field(n).word;
+  // 0 rings (fresh world, nothing added yet): rippleCount 0, `ripple` words left untouched (never read past count).
+  binds.length = 0;
+  wp.cu[C('ripple')] = 9; wp.cu[C('ripple') + 5] = 7;
+  wp.runComposite({ shadeFg, shadeBg, gi, depth, light, shadowActive: true }, p);
+  const u = binds[0].uniforms, ui = new Int32Array(u.buffer);
+  assert.equal(ui[C('rippleCount')], 0, '0 rings -> rippleCount 0');
+  assert.equal(u[C('ripple')], 9, '0 rings -> ripple words unchanged vs before');
+  assert.equal(u[C('ripple') + 5], 7, '0 rings -> ripple words unchanged vs before');
+
+  // 2 rings: rippleCount 2, packed values match packRipples(world.water, ...).
+  world.water.addRipple(1, 2, 0.5); world.water.addRipple(-3, 4, 0.8);
+  const expRip = new Float32Array(RIPPLE_MAX * 4);
+  const expN = packRipples(world.water, expRip);
+  binds.length = 0;
+  wp.runComposite({ shadeFg, shadeBg, gi, depth, light, shadowActive: true }, p);
+  const u2 = binds[0].uniforms, ui2 = new Int32Array(u2.buffer);
+  assert.equal(expN, 2, 'fixture adds 2 live rings');
+  assert.equal(ui2[C('rippleCount')], 2, '2 rings -> rippleCount 2');
+  assert.deepEqual([...u2.slice(C('ripple'), C('ripple') + RIPPLE_MAX * 4)], [...expRip], '2 rings -> packed values match packRipples');
+}
 
 // ---- readback shape ----
 let rbCall = null; d.readback = (tex, rect, out) => { rbCall = { tex, rect, out }; out.fill(9); return Promise.resolve(); };

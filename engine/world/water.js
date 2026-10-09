@@ -6,6 +6,16 @@ import { localToWorld, localDirToWorld } from '../core/transform.js';
 import { buildWaveTables, createWaveClock } from './waves.js';
 
 export const WATER_MAX = 32;
+// S8-B2-13 (38.14): splash ripples, a composite-only presentation ring buffer owned by the water sim clock below.
+// No geometry displacement (water.wgsl.js / waterLayer.js / rasterWaterTri / waterMesh.js are untouched). Never in
+// saveState()/hashInto() (cosmetic; World.load always starts with 0 live rings, see the ripT0 sentinel below).
+export const RIPPLE_MAX = 8;
+export const RIPPLE_LIFE = 2; // seconds
+export const RIPPLE_SPEED = 1.5; // m/s
+export const RIPPLE_R0 = 0.2; // m
+export const RIPPLE_HALF_W = 0.25; // m
+/** Sentinel `ripT0` (tick) for a never-used ring slot: age is huge and positive forever, so a fresh table has 0 live rings. */
+const RIPPLE_SENTINEL_TICK = -1000000000;
 /** Max flow speed (m/s) of a region's `flow` / `flowRadial` (US-141a, architecture.md 35.1). */
 export const FLOW_MAX = 6;
 /** US-143a (architecture.md 35.1): `waves` region key + world `seaState` default. */
@@ -113,6 +123,23 @@ export function createWater(defs, seaState = 'calm') {
     x0: new Float64Array(n), y0: new Float64Array(n), x1: new Float64Array(n), y1: new Float64Array(n),
     cx: new Float64Array(n), cy: new Float64Array(n), r2: new Float64Array(n), z: new Float64Array(n),
     flow: new Float64Array(n * 2), flowR: new Float64Array(n), kind: new Uint8Array(n), look: new Uint8Array(n),
+    // S8-B2-13 (38.14): ripple ring buffer (presentation only, never saved). ripHead is the next slot to write;
+    // the 9th addRipple overwrites the oldest (index 0 again, after wrapping through 0..7).
+    ripX: new Float64Array(RIPPLE_MAX), ripY: new Float64Array(RIPPLE_MAX),
+    ripT0: new Int32Array(RIPPLE_MAX).fill(RIPPLE_SENTINEL_TICK), ripAmp: new Float32Array(RIPPLE_MAX), ripHead: 0,
+    /**
+     * Adds a splash ripple at ground point (x east, y south), amp clamped to [0,1]. Non-finite x/y/amp: returns
+     * false and writes nothing. Deterministic: timed off `this.tick` (the water sim clock), never wall time.
+     * @param {number} x @param {number} y @param {number} amp @returns {boolean}
+     */
+    addRipple(x, y, amp) {
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(amp)) return false;
+      const a = amp < 0 ? 0 : amp > 1 ? 1 : amp;
+      const i = this.ripHead;
+      this.ripX[i] = x; this.ripY[i] = y; this.ripT0[i] = this.tick; this.ripAmp[i] = a;
+      this.ripHead = (i + 1) % RIPPLE_MAX;
+      return true;
+    },
     /** Highest-z region containing (x, y), or -1 (ties: lower index). Pure, zero allocation. */
     /**
      * US-141a: region `i`'s flow at (x, y) into out[0..1] = `flow` + `flowRadial * unit(p - c)` (circle; 0 at the centre). Zero allocation.

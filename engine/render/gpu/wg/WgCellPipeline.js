@@ -14,6 +14,7 @@
 // result is observable through readbackCells() (`?gpucompare=1` / `=shade` cell rows).
 import { bootNow, span as bootSpan } from '../../../core/bootMarks.js'; // BOOT-SPEED-01
 import { allocWgTargets, freeWgTargets } from './targets.js';
+import { WG_PASS_NAMES, WG_PASS_SLOT } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 import { DEBUG_BLOCK, DEBUG_WGSL, DEBUG_TEXTURES } from '../wgsl/debug.wgsl.js';
 import { WgRasterPass } from './passRaster.js';
 import { WgCellPass } from './passCell.js';
@@ -24,6 +25,15 @@ import { WgOverlayPass } from './passOverlay.js';
 
 // Same list/order as GpuCellPipeline.PASS_NAMES (stats.passMs* line up with it).
 export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge', 'shadow', 'water', 'wcomp']);
+// S8-B1-07: the REAL per-pass GPU timer (WG_PASS_NAMES/WG_PASS_SLOT, WebGpuTimer.js) - re-exported so main.js's F3 line can
+// import them from here like it already does PASS_NAMES/GpuCellPipeline. stats.wgPassMsP50/P95 line up with WG_PASS_NAMES.
+export { WG_PASS_NAMES, WG_PASS_SLOT };
+
+function sumFinite(arr) {
+  let s = 0;
+  for (let i = 0; i < arr.length; i++) if (!Number.isNaN(arr[i])) s += arr[i];
+  return s;
+}
 
 const DEPTH_FADE_K = 0.05; // debug depth view: 1 / (1 + d * K)
 const DEBUG_MODE_WORD = DEBUG_BLOCK.field('mode').word;
@@ -58,6 +68,10 @@ export class WgCellPipeline {
       waterSlots: 0, waterDraws: 0, shadowItems: 0, shadowDraws: 0, shadowCpuMs: 0, instancesCulled: 0, instancesLod1: 0,
       passMsP50: new Float32Array(PASS_NAMES.length).fill(NaN),
       passMsP95: new Float32Array(PASS_NAMES.length).fill(NaN),
+      // S8-B1-07: real WG per-pass GPU ms (WG_PASS_NAMES order), p50/p95 over the same 120-frame history as gpuMsP50/P95;
+      // NaN while off or timestamp-query is unsupported. gpuMs/gpuMsP50/gpuMsP95 become their sum while this is on (GL2 precedent).
+      wgPassMsP50: new Float32Array(WG_PASS_NAMES.length).fill(NaN),
+      wgPassMsP95: new Float32Array(WG_PASS_NAMES.length).fill(NaN),
     };
     this._passTimingOn = false;
     this.debugMode = -1;
@@ -204,6 +218,14 @@ export class WgCellPipeline {
 
   setPassTiming(on) { this._passTimingOn = !!on; }
 
+  /**
+   * S8-B1-07 seam: passRaster/passShadow/passCell/passShade (which receive `this` as `p`) and `_runSprites` below call these
+   * around each real WG pass's GPU work (one WG_PASS_SLOT each). A no-op when off; `device.timer.begin/end` are themselves a
+   * no-op when timestamp-query is unsupported, so this never has to check availability itself.
+   */
+  _begin(slot) { if (this._passTimingOn) this.device.timer.begin(slot); }
+  _end() { if (this._passTimingOn) this.device.timer.end(); }
+
   /** 0 kind, 1 planeId, 2 normal, 3 depth (wgsl/debug.wgsl.js); < 0 = off. */
   setDebugMode(mode) {
     this.debugMode = mode;
@@ -280,6 +302,20 @@ export class WgCellPipeline {
     if (this._waterPass && this._world) this._waterPass.bindWorld(this._world);
     this.stats.waterSlots = this._waterPass ? this._waterPass.stats.waterSlots : 0; this.stats.waterDraws = this._waterPass ? this._waterPass.stats.waterDraws : 0;
     if (this.device.timer.writeStats) this.device.timer.writeStats(this.stats);
+    // S8-B1-07: per-pass ms (same async-resolved-last-frame timing as writeStats above); while this is what's being shown,
+    // gpuMs/gpuMsP50/gpuMsP95 become the sum of the passes (GpuCellPipeline PASS_* precedent) instead of the now-unwritten
+    // FRAME_TIMER_SLOT (the pipeline ends that span early in `_hook` so the passes below can each open their own - never both).
+    if (this.stats.wgPassMsP50) { // a minimal stub `stats` (WebGpuTimer.test.js) has neither field nor `_passTimingOn`: skip
+      if (this._passTimingOn && this.device.timer.writePassStats) {
+        this.device.timer.writePassStats(this.stats.wgPassMsP50, this.stats.wgPassMsP95);
+        this.stats.gpuMsP50 = sumFinite(this.stats.wgPassMsP50);
+        this.stats.gpuMsP95 = sumFinite(this.stats.wgPassMsP95);
+        this.stats.gpuMs = this.stats.gpuMsP50;
+      } else {
+        this.stats.wgPassMsP50.fill(NaN);
+        this.stats.wgPassMsP95.fill(NaN);
+      }
+    }
   }
 
   // ---- readbacks (test-only, never the frame loop): Promises, always `await` (38.6) ----
@@ -342,6 +378,10 @@ export class WgCellPipeline {
   _hook() {
     if (!this.ready || !this._t) return;
     const d = this.device, t = this._t, rt = this.rt;
+    // S8-B1-07: RenderTargetWebGPU.present() already opened FRAME_TIMER_SLOT's span around this whole hook, but it has not
+    // attached to any pass yet (only writeTexture ran) - ending it now is a no-op for that slot's data (nothing written) and
+    // frees the single "active span" so each WG pass below can open its own (WebGpuTimer spans never nest - see passRaster.run).
+    if (this._passTimingOn) d.timer.end();
     if (this._cam && this._world) {
       try { this._rasterPass.run(this); }
       catch (e) { this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] raster disabled:', e); return; }
@@ -384,8 +424,10 @@ export class WgCellPipeline {
     this._spritesRan = false;
     if (!sp || !this._cellsShaded || this._spritesPending) { this._setPresent(null, null); return; } // pending = pipelines still compiling
     try {
-      sp.run({ gi: t.texGI, depth: t.texDepth, edgeFg: t.texFinalFg, edgeBg: t.texFinalBg });
-      this._overlayPass.run(t.texDepth);
+      this._begin(WG_PASS_SLOT.sprites);
+      try { sp.run({ gi: t.texGI, depth: t.texDepth, edgeFg: t.texFinalFg, edgeBg: t.texFinalBg }); } finally { this._end(); }
+      this._begin(WG_PASS_SLOT.overlay);
+      try { this._overlayPass.run(t.texDepth); } finally { this._end(); }
     } catch (e) {
       this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] sprites/overlay disabled:', e); return;
     }

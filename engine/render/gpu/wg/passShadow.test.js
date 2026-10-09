@@ -10,7 +10,7 @@ import { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFa
 import { dirFromAzEl } from '../../../core/transform.js';
 import { WgShadowPass } from './passShadow.js';
 import { SHADOW_DEPTH_COPY_WGSL, SHADOW_TERRAIN_WGSL, SHADOW_TERRAIN_BLOCK as TERRAIN_BLOCK } from '../wgsl/shadow.wgsl.js';
-import { SHADOW_Z_LINE, RASTER_Z_LINE } from '../wgsl/raster.wgsl.js';
+import { SHADOW_Z_LINE, RASTER_Z_LINE, RASTER_BLOCK } from '../wgsl/raster.wgsl.js';
 
 if (typeof global.gc !== 'function') {
   const res = spawnSync(process.execPath, ['--expose-gc', fileURLToPath(import.meta.url)], { stdio: 'inherit' });
@@ -172,4 +172,72 @@ console.log(`passShadow.test.js: all checks passed (heap +${grew} B / 1000 frame
     assert.deepEqual(inst, flags ? [[36, 0, 3]] : [[3, 0, 3], [33, 3, 3]], flags ? 'ONE_PART: one draw, whole mesh' : 'no flag: per range');
   }
   console.log('passShadow.test.js (ONEPART-b): one-part instanced shadow caster ok.');
+}
+
+// ALPHA-01f (c): masked instanced caster (meshGroup, NOT DRAW_FLAG_ONE_PART per shadowList.js's lift) - opaque range through
+// instancePipe unchanged, masked range through instanceMaskPipe (fs_mask_shadow discard, mask uniforms, uv extra stream),
+// instanceCount = N on both. This is the ONE_PART-lift the shadowList.js NEEDS line asked for: a masked group no longer
+// collapses to an unmasked, range[0]-only shadow.
+{
+  const { RASTER_INSTANCED_MASK_BLOCK } = await import('../wgsl/raster.wgsl.js');
+  const { DRAW_INSTANCED } = await import('../../../mesh/DrawList.js');
+  const m6 = makeMockGpuDevice(), dev = m6.device, dr = [];
+  dev.draw = (c, f, i) => dr.push({ pipe: dev._activePipeline, c, f, i, bind: dev._lastBind, u: new Uint32Array(dev._lastBind.uniforms.buffer, dev._lastBind.uniforms.byteOffset, dev._lastBind.uniforms.length).slice() });
+  const s6 = new WgShadowPass(dev, { shadows: { res: 256 } });
+  assert.equal(s6.instanceMaskPipe.desc.fragment.src.entry, 'fs_mask_shadow');
+  assert.deepEqual(s6.instanceMaskPipe.desc.bindings.textures, ['uint']);
+  assert.equal(s6.instanceMaskPipe.desc.vertex.extraLayouts[0].layout[0].location, 10);
+  const tex = dev.createTexture({ format: 'r8ui', width: 2, height: 2 });
+  const vb = dev.createBuffer({ usage: 'vertex', bytes: 64 }), uvb = dev.createBuffer({ usage: 'vertex', bytes: 64 });
+  s6._raster = { maskReady: true, maskTex: tex };
+  s6.buffers.getVoxel = () => ({ vertexBuffer: vb, uvMaskBuffer: uvb });
+  const mm = { ranges: [{ start: 0, count: 2 }, { start: 2, count: 3 }], maskRanges: new Int32Array([0, 0, -1, 0, 0, /**/ 5, 2, 4, 4, 200]) };
+  const il = createShadowList();
+  il.begin();
+  const it = il.push(); it.type = DRAW_INSTANCED; it.mesh = mm; it.flags = 0; it.instCount = 4; it.instBuf = { f32: new Float32Array(48) };
+  it.partMatrices.fill(0); it.partMatrices.set([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], 0); it.partMatrices.set([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], 12);
+  s6._render(il, world, s6.sunMatF32);
+  assert.deepEqual(dr.map((x) => [x.pipe === s6.instanceMaskPipe ? 'mask' : (x.pipe === s6.instancePipe ? 'opaque' : '?'), x.c, x.f, x.i]),
+    [['opaque', 6, 0, 4], ['mask', 9, 6, 4]], 'opaque range -> instancePipe, masked range -> instanceMaskPipe, instanceCount = N on both');
+  const md = dr[1], W2 = (n) => md.u[RASTER_INSTANCED_MASK_BLOCK.field(n).word];
+  assert.deepEqual([W2('maskX0'), W2('maskY0'), W2('maskW'), W2('maskH'), W2('maskCut')], [5, 2, 4, 4, 200]);
+  assert.equal(md.bind.extraBuffers[0], uvb); assert.equal(md.bind.textures[0].texture, tex);
+  // no mask atlas ready: both ranges fall back to instancePipe (same as the opaque-only path)
+  dr.length = 0; s6._raster.maskReady = false; s6._render(il, world, s6.sunMatF32);
+  assert.deepEqual(dr.map((x) => x.pipe === s6.instancePipe), [true, true], 'maskReady false -> opaque instancePipe for every range');
+  s6.dispose(); dev.dispose(tex); dev.dispose(vb); dev.dispose(uvb); assert.equal(m6.liveCount(), 0);
+  console.log('passShadow.test.js (ALPHA-01f c): masked instanced caster ok.');
+}
+
+// S8-B2-05/06 host wiring (docs/lanes/pc-b2.md 35/97/109): per-frame wind uniforms (RASTER_BLOCK wind/windT/windK), same as passRaster.js.
+// No wind (calm field, default) -> every word stays 0 (bit-identical to before). Wind on -> words == packWindUniforms's own values.
+{
+  const { createWind } = await import('../../../world/wind.js');
+  const { packWindUniforms, SWAY_MAX } = await import('../../../mesh/sway.js');
+  const m7 = makeMockGpuDevice(), dev7 = m7.device;
+  const s7 = new WgShadowPass(dev7, { shadows: { res: 64 } });
+  const WIND = RASTER_BLOCK.field('wind').word, WIND_T = RASTER_BLOCK.field('windT').word, WIND_K = RASTER_BLOCK.field('windK').word;
+  const cam7 = { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: 0 };
+  const sun7 = { on: true, dir: dirFromAzEl(135, 40, new Float64Array(3)) };
+  const list7 = new DrawList(4); list7.begin();
+  const raster7 = { list: list7, levelCache: new LevelMeshCache(), meshCache: null, strictMatIdFor: null };
+  const calm = { structures: [], wind: createWind(null, 1) };
+  const p7 = { _light: { sun: sun7 }, _cam: cam7, _world: calm, _table: null, _palette: null, _voxelPool: null, _instances: null, terrainEnabled: false, _fb: { timeSec: 9 } };
+  s7.run(p7, raster7);
+  assert.deepEqual([...s7.u.subarray(WIND, WIND + 4)], [0, 0, 0, 0], 'no wind: wind4 words unchanged (zero)');
+  assert.deepEqual([...s7.u.subarray(WIND_T, WIND_T + 4)], [0, 0, 0, 0], 'no wind: windT4 words unchanged (zero)');
+  assert.deepEqual([...s7.u.subarray(WIND_K, WIND_K + 64)], new Array(64).fill(0), 'no wind: windK words unchanged (zero)');
+  assert.equal(s7.windOn, false);
+  const blown = { structures: [], wind: createWind({ dirDeg: 45, speed: 3, gust: { amp: 0.3, periodSec: 2, travel: 8 } }, 7) };
+  const p7b = { ...p7, _world: blown };
+  list7.begin();
+  s7.run(p7b, raster7);
+  const w4 = new Float32Array(4), t4 = new Float32Array(4), k64 = new Float32Array(64);
+  packWindUniforms(blown.wind, 9, w4, t4, k64);
+  assert.deepEqual([...s7.u.subarray(WIND, WIND + 4)], [...w4], 'wind on: wind4 == packWindUniforms twin');
+  assert.deepEqual([...s7.u.subarray(WIND_T, WIND_T + 4)], [...t4], 'wind on: windT4 == packWindUniforms twin');
+  assert.deepEqual([...s7.u.subarray(WIND_K, WIND_K + 64)], [...k64], 'wind on: windK == packWindUniforms twin');
+  assert.equal(s7.windOn, true);
+  s7.dispose();
+  console.log('passShadow.test.js (S8-B2-05/06 wind host wiring): all checks passed.');
 }

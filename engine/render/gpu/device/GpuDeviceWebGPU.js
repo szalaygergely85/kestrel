@@ -60,8 +60,13 @@ export class GpuDeviceWebGPU {
       });
     }
     this._lostInfo = null;
+    // S8-B1-10 (38.10c): a forced-loss deferred, raced alongside the real `gpuDevice.lost` so the dev hook
+    // (`_forceLost`, exposed only behind `?dev=1` as `window.__kestrel.loseDevice()`) can simulate a loss in Node/headless.
+    /** @type {(info: any) => void} */ let resolveForced = () => {};
+    const forced = new Promise((resolve) => { resolveForced = resolve; });
+    this._resolveForcedLost = resolveForced;
     /** @type {Promise<any>} resolves when the GPUDevice is lost (no restore: reload, 38.3) */
-    this.lost = gpuDevice.lost ? gpuDevice.lost.then((/** @type {any} */ info) => { this._lostInfo = info; return info; }) : new Promise(() => {});
+    this.lost = Promise.race([gpuDevice.lost ? gpuDevice.lost : new Promise(() => {}), forced]).then((/** @type {any} */ info) => { this._lostInfo = info; return info; });
     const info = (opts.adapter && (opts.adapter.info || {})) || {};
     this._software = !!(opts.adapter && (opts.adapter.isFallbackAdapter || info.isFallbackAdapter))
       || /swiftshader/i.test(String(info.description || info.device || info.vendor || ''));
@@ -388,7 +393,11 @@ export class GpuDeviceWebGPU {
       p.groups.push({ bufs: cur, group: grp });
     }
     if (!this._encoder) this._encoder = this.gpu.createCommandEncoder();
-    const cp = this._encoder.beginComputePass();
+    // S8-B1-07: one reused descriptor (mutated per call, read synchronously by beginComputePass - never held across
+    // a frame boundary) so a compute dispatch (WG-4a/4b cull) can be timed the same way a render pass is (`attach`).
+    const cpd = this._computePassDesc || (this._computePassDesc = {});
+    this.timer.attach(cpd);
+    const cp = this._encoder.beginComputePass(cpd);
     cp.setPipeline(p.gpu);
     cp.setBindGroup(0, grp);
     if (p.uniformGroup) {
@@ -585,6 +594,17 @@ export class GpuDeviceWebGPU {
     try { if (this.gpu.queue?.onSubmittedWorkDone) await this.gpu.queue.onSubmittedWorkDone(); }
     catch (_) { /* surfaced by device loss / uncapturederror */ }
     while (this._pendingScopes.length) await Promise.all(this._pendingScopes.splice(0));
+  }
+
+  /**
+   * S8-B1-10 (38.10c) dev hook: simulate a device loss without a real GPU crash. Resolves `this.lost` with
+   * `{reason: 'unknown', message: msg}` (never 'destroyed', so main.js's own-dispose filter does not ignore it),
+   * then destroys the underlying GPUDevice. Exposed only behind `?dev=1` as `window.__kestrel.loseDevice()`.
+   * @param {string} [msg]
+   */
+  _forceLost(msg) {
+    this._resolveForcedLost({ reason: 'unknown', message: msg || 'forced (dev hook)' });
+    if (this.gpu && typeof this.gpu.destroy === 'function') { try { this.gpu.destroy(); } catch (_) { /* best effort */ } }
   }
 
   /** @param {GpuHandle} [handle] */

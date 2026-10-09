@@ -116,7 +116,8 @@ export { packLevel, repackMaterials } from './world/packed.js';
 export {
   LightSet, buildLightSet, setWorldSun, applySunHours, syncEntityLights, lightAt, lightSurfaces,
   computeVisGrid, sunVisible, falloff as lightFalloff, packLightUniforms,
-  makeLightBuffer, MAX_LIGHTS, setLook, OUTDOOR_SHIFT,
+  makeLightBuffer, MAX_LIGHTS, setLook, OUTDOOR_SHIFT, setCloudShadow, // S8-B2-12a NEEDS B1 item (2)/(3): `?clouds=` + gpucompare force-0
+  setHorizonAo, // S8-B2-20 NEEDS B1 item (1)/(3): `?ao=` + gpucompare force-0
 } from './render/lighting.js';
 
 // ---- ART-01a look + roof map (docs/architecture.md 37.18 items 2/3) ----------
@@ -129,6 +130,7 @@ export { isSoftwareRenderer } from './render/gpu/glUtil.js';
 export { probeWebGpu, evaluateWebGpuLimits } from './render/gpu/device/webgpuProbe.js'; // WG-1a
 export { createGpuDevice, selfTestDevice } from './render/gpu/device/createGpuDevice.js'; // WG-1b2
 export { createRenderer } from './render/createRenderer.js'; // WG-1c2
+export { WG_PASS_NAMES } from './render/gpu/wg/WgCellPipeline.js'; // S8-B1-07: WgCellPipeline's real per-pass GPU timer names
 export { RenderTargetWebGPU } from './render/RenderTargetWebGPU.js'; // WG-1c1
 export { CellBuffer } from './render/CellBuffer.js'; // WG-1c1 (present test page)
 export { WGSL_MODULES, summarizeCompilation } from './render/gpu/wgsl/index.js'; // WG-1c1

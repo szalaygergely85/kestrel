@@ -99,7 +99,10 @@ export function buildShadowList(list, cameraList, world, planes, src) {
           fillShadowBands(g, src.eye.x, src.eye.y, cast, cast, planes, g._R, ig.swayPad); // lod0M == castM: band 1 stays empty
           if (g.shadowCount[0] > 0) it = list.addInstances(draw, g.parts, g.shadowIb[0], g.shadowCount[0], g._R);
         }
-        if (it) it.flags |= DRAW_FLAG_ONE_PART;
+        // ALPHA-01f (c): ONE_PART collapses instancedRanges() to one synthetic whole-mesh range (passShadow.js / rasterJS.js's
+        // `onePart` guard then drops per-range masking) - only opaque-only groups get it, so a masked group still casts a
+        // leaf-shaped (not range[0]-only, unmasked) shadow once passShadow.js's instanced-masked caster path runs.
+        if (it && !g.mesh.maskRanges) it.flags |= DRAW_FLAG_ONE_PART;
         continue;
       }
       if (!ig.pool || !src.voxelMeshCache) continue;

@@ -60,6 +60,23 @@ t('opts.at = measured preset (redetect)', () => {
   assert.equal(pickQuality(RTX4060, rep(5), { at: 'medium' }).name, 'medium');
 });
 
+// S8-B1-08: WebGPU per-pass timer feeds AutoBench kind 'gpu' samples (sum of WgCellPipeline stats.wgPassMsP50/P95,
+// exposed as stats.gpuMsP95 - see WgCellPipeline.js sumFinite). AC: high -> ultra when p95 < 7, stays 7-14, steps down > 14.
+t('S8-B1-08 ultra step-up: high -> ultra < 7 ms, stays high 7-14 ms, steps down > 14 ms (webgpu gpu-timer samples)', () => {
+  assert.equal(pickQuality(RTX4060, rep(4), { kind: 'gpu', at: 'high' }).name, 'ultra');
+  assert.equal(pickQuality(RTX4060, rep(10), { kind: 'gpu', at: 'high' }).name, 'high');
+  assert.equal(pickQuality(RTX4060, rep(20), { kind: 'gpu', at: 'high' }).name, 'medium');
+});
+t('S8-B1-08: ultra is tried once only - never a two-step jump from medium/low, and holds steady once reached', () => {
+  // only a single step up, straight from 'high'; medium/low candidates never land on ultra even with very fast samples
+  assert.equal(pickQuality(ARC_IGPU, rep(1), { kind: 'gpu', at: 'medium' }).name, 'medium');
+  assert.equal(pickQuality({ fallback: true }, rep(1), { kind: 'gpu', at: 'low' }).name, 'low');
+  // once at ultra (redetect with at: 'ultra'), fast samples hold it there (no re-promotion attempt, nothing above it)
+  assert.equal(pickQuality(RTX4060, rep(4), { kind: 'gpu', at: 'ultra' }).name, 'ultra');
+  // once at ultra, a slow redetect steps back down to high only (one step, not past it)
+  assert.equal(pickQuality(RTX4060, rep(20), { kind: 'gpu', at: 'ultra' }).name, 'high');
+});
+
 t('tiers from the WebGL label alone (no WebGPU adapter info, arch 2026-10-08)', () => {
   // ANGLE zero-pads the device id: Intel Arc iGPUs (0x7Dxx / 0x64xx) must still be 'medium', not 'low'
   assert.equal(tierFromAdapter({ label: 'ANGLE (Intel, Intel(R) Graphics (0x00007D45) Direct3D11 vs_5_0 ps_5_0, D3D11)' }).tier, 'medium');

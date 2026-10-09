@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 // tools/route-walk-browser.mjs (ME-12 phase-2 gate, AC 1, 6, 7). Headless Chrome over CDP, own server on --port.
-//   node tools/route-walk-browser.mjs --port 9510 [--grid 400x150] [--physics mesh|grid] [--shadows map] [--out file.json]
+//   node tools/route-walk-browser.mjs --port 9510 [--grid 400x150] [--physics mesh|grid] [--shadows map] [--out file.json] [--preset default]
 // Loads game/index.html?voxelbench=0&... (any truthy voxelbench/bench param = isCaptureOrBench = no pause overlay, so no
 // pointer lock is needed; =0 does not start the voxel bench), waits for the player, then F3 (GPU pass timing) and walks the whole M1 route by
 // writing the game's own Input (KeyW/ShiftLeft/Space/KeyE) and look.yawDeg each frame. Per frame it samples
 // engine.loop.stats (sim/js/interval) and gpuPipeline.stats, and per leg records completed / stuck / fell / end pos.
 // Prints one JSON object. Same legs as tools/route-walk.mjs (the Node twin). Cleans up only its own server/browser.
+// S8-B1-14: also tags each per-frame sample with its leg and (with --out) writes a fixed-schema
+// frame-time trace - p50/p95/p99/max per leg + a worst-frame list (tools/frameTrace.mjs, pure/Node-tested)
+// - plus a per-frame CSV, both named "<out base>.<backend>-<preset>.json"/".frametrace.csv" so the backend
+// and --preset are visible in the file name (no formal preset system here; --preset is just a label for AC2's
+// High/Ultra runs - pass e.g. --preset high --extra "shadowres=1536" to match the quality knobs used).
 import { spawn } from 'node:child_process';
 import { writeFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -13,12 +18,14 @@ import os from 'node:os';
 import {
   ROOT, findBrowserBinary, waitForHttp, killTree, connectCdp, evaluate, buildLaunchFlags, validatePort,
 } from './capture-browser.mjs';
+import { buildFrameTrace, toCSV } from './frameTrace.mjs'; // S8-B1-14: per-frame p50/p95/p99/max per leg + worst-frame list
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
 const port = Number(args.port);
 validatePort(port);
 if (args.renderer !== undefined) throw new Error('--renderer was removed; the geometry path is mesh');
 const grid = args.grid || '400x150', physics = args.physics;
+const preset = args.preset || 'default'; // S8-B1-14: carried into the default --out file name alongside the backend
 const noSkip = args.noskip === '1'; // ME-15d: --noskip 1 forces the shadow map to re-render every frame (worst case row)
 const shadows = args.shadows; // ME-15c: `--shadows map` appends &shadows=map (sun shadow map instead of the sun DDA)
 const query = `voxelbench=0&grid=${grid}${physics ? `&physics=${physics}` : ''}${shadows ? `&shadows=${shadows}` : ''}${args.extra ? `&${args.extra}` : ''}`; // --extra "shadowres=1536" (ME-15e)
@@ -42,7 +49,11 @@ const DRIVER = `(async () => {
   const sim = [], js = [], gpu = [], ivl = [], shp = [], shc = [];
   const gp0 = D.gpuPipeline; if (NOSKIP && gp0 && gp0.shadowOpts) gp0.shadowOpts.dirtySkip = false;
   let sampling = false;
-  function sample() { if (!sampling) return; const s = loop.stats; sim.push(s.simMs); js.push(s.jsMs); ivl.push(s.intervalMs); const g = D.gpuPipeline && D.gpuPipeline.stats ? D.gpuPipeline.stats.gpuMsP50 : NaN; gpu.push(g); const gp = D.gpuPipeline; if (gp && gp.stats && gp.stats.passMsP50) { shp.push(gp.stats.passMsP50[7]); shc.push(gp.stats.shadowCpuMs); } }
+  let curLeg = '1 wake (timeline)'; // S8-B1-14: leg tag for the frame-time trace, updated by leg()/idle()
+  const frameRecords = [];
+  function sample() { if (!sampling) return; const s = loop.stats; sim.push(s.simMs); js.push(s.jsMs); ivl.push(s.intervalMs); const g = D.gpuPipeline && D.gpuPipeline.stats ? D.gpuPipeline.stats.gpuMsP50 : NaN; gpu.push(g); const gp = D.gpuPipeline; if (gp && gp.stats && gp.stats.passMsP50) { shp.push(gp.stats.passMsP50[7]); shc.push(gp.stats.shadowCpuMs); }
+    frameRecords.push({ leg: curLeg, frame: frameRecords.length, simMs: s.simMs, jsMs: s.jsMs, gpuMs: g, intervalMs: s.intervalMs,
+      draws: gp && gp.stats ? gp.stats.instancedDraws : NaN, shadowDraws: gp && gp.stats ? gp.stats.shadowDraws : NaN }); }
   input._pressedThisFrame.add('F3'); await sleepF(); await sleepF(); // overlay on -> GPU pass timing on (as the owner's F3)
   for (let i = 0; i < 120; i++) await sleepF(); // let boot / terrain streaming settle (real wake timeline then runs from wakeT)
   out.info.startPose = { x: T().x - O.x, y: T().y - O.y, z: T().z, eyeH: B().eyeH, wakeT: world().state['quest.wakeT'] };
@@ -55,6 +66,7 @@ const DRIVER = `(async () => {
   let wf = 0; while (B().eyeH < 1.5 && wf < 4000) { await sleepF(); sample(); wf++; }
   out.legs.push({ name: '1 wake (timeline)', completed: B().eyeH >= 1.5, frames: wf, end: { x: T().x - O.x, y: T().y - O.y, z: T().z }, eyeH: B().eyeH, wakeT: world().state['quest.wakeT'] });
   async function leg(name, wps, opts = {}) {
+    curLeg = name; // S8-B1-14: frame-trace records from here on tag this leg
     const rec = { name, completed: true, frames: 0, fell: false, stuck: null, minGap: 1e9 };
     let jumpLeft = 0;
     for (let i = 0; i < wps.length; i++) {
@@ -112,6 +124,7 @@ const DRIVER = `(async () => {
   out.perf = { frames: sim.length, simP50: pct(sim, 0.5), simP95: pct(sim, 0.95), simMax: pct(sim, 1), jsP95: pct(js, 0.95), jsMax: pct(js, 1), gpuP95: pct(gpu, 0.95), gpuP50: pct(gpu, 0.5),
     shadowCpuP50: pct(shc, 0.5), shadowCpuP95: pct(shc, 0.95), shadowPassP50: pct(shp, 0.5), shadowPassP95: pct(shp, 0.95), intervalP95: pct(ivl, 0.95), over25: loop.stats.over25, worstIntervalMs: loop.stats.worstIntervalMs };
   const gpF = D.gpuPipeline; out.shadow = gpF ? { renders: gpF.shadowRenders, skips: gpF.shadowSkips, dirtySkip: !!(gpF.shadowOpts && gpF.shadowOpts.dirtySkip), items: gpF.stats.shadowItems, draws: gpF.stats.shadowDraws } : null;
+  out.frameRecords = frameRecords; // S8-B1-14: raw per-frame, leg-tagged - frameTrace.mjs turns this into p50/p95/p99/max + worst-frame list (Node side, below)
   return out;
 })()`;
 
@@ -139,7 +152,15 @@ try {
   if (r.exceptionDetails) throw new Error('driver threw: ' + JSON.stringify(r.exceptionDetails).slice(0, 800));
   const res = { query, ...r.result.value };
   if (res.physicsMode !== (physics === 'grid' ? 'grid' : 'mesh')) throw new Error('mesh physics default/override mismatch: ' + res.physicsMode);
-  if (args.out) writeFileSync(args.out, JSON.stringify(res, null, 1));
+  // S8-B1-14: fixed-schema frame-time trace (p50/p95/p99/max per leg + worst-frame list),
+  // built Node-side from the raw per-frame records the driver collected above.
+  res.frameTrace = buildFrameTrace(res.frameRecords || [], { legs: res.legs.map((l) => l.name) });
+  if (args.out) {
+    // file name carries backend + preset (ARCH note on S8-B1-14): <out base>.json / .frametrace.csv
+    const base = args.out.replace(/\.json$/i, '') + `.${res.backend}-${preset}`;
+    writeFileSync(`${base}.json`, JSON.stringify(res, null, 1));
+    writeFileSync(`${base}.frametrace.csv`, toCSV(res.frameRecords || []));
+  }
   console.log(JSON.stringify(res));
   cdp.close();
 } finally { cleanup(); }

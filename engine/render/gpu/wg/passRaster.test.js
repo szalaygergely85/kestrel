@@ -216,6 +216,46 @@ console.log('passRaster.test.js (WG-4a): all checks passed.');
   console.log('passRaster.test.js (ALPHA-01c): all checks passed.');
 }
 
+// ALPHA-01f (b): masked instanced mesh group (TREES-LP-b, not DRAW_FLAG_ONE_PART) = one draw per mesh range, opaque ranges
+// through instancePipe (unchanged shape), masked ranges through instanceMaskPipe (mask uniforms + uv extra stream +
+// atlas texture), instanceCount = N on every draw. An opaque-only instanced group (no maskRanges) is byte-identical to before.
+{
+  const { RASTER_INSTANCED_MASK_BLOCK } = await import('../wgsl/raster.wgsl.js');
+  const { MaskAtlas } = await import('../../MaskAtlas.js');
+  const m4 = makeMockGpuDevice(), dev = m4.device, dr = [];
+  dev.draw = (c, f, i) => dr.push({ pipe: dev._activePipeline, c, f, i, bind: dev._lastBind, u: new Uint32Array(dev._lastBind.uniforms.buffer, dev._lastBind.uniforms.byteOffset, dev._lastBind.uniforms.length).slice() });
+  const ps = new WgRasterPass(dev, { gpuCull: false });
+  const atlas = new MaskAtlas(); atlas.add('t/a', 2, 2, new Uint8Array([9, 9, 9, 9]));
+  const world = { maskAtlas: atlas };
+  const vb = dev.createBuffer({ usage: 'vertex', bytes: 64 }), uvb = dev.createBuffer({ usage: 'vertex', bytes: 64 });
+  ps.buffers.getVoxel = () => ({ vertexBuffer: vb, uvMaskBuffer: uvb });
+  const mm = { ranges: [{ start: 0, count: 2 }, { start: 2, count: 3 }], maskRanges: new Int32Array([0, 0, -1, 0, 0, /**/ 2, 0, 4, 4, 128]) };
+  const T = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
+  ps.prepare = () => {
+    ps._maskTexture(world); ps.list.begin();
+    const it = ps.list.push(); it.type = DRAW_INSTANCED; it.mesh = mm; it.instBuf = { f32: new Float32Array(32) }; it.instCount = 5;
+    it.partMatrices.set(T, 0); it.partMatrices.set(T, 12); // not DRAW_FLAG_ONE_PART: instancedRanges() returns mesh.ranges, both parts identity
+  };
+  ps.vmList = null;
+  const pp = { _t: { targetRaster: {}, targetVmDepth: {} }, stats: {} };
+  ps.run(pp);
+  assert.deepEqual(dr.map((x) => [x.pipe === ps.instanceMaskPipe ? 'mask' : (x.pipe === ps.instancePipe ? 'opaque' : '?'), x.c, x.f, x.i]),
+    [['opaque', 6, 0, 5], ['mask', 9, 6, 5]], 'opaque range -> instancePipe, masked range -> instanceMaskPipe, instanceCount = N on both');
+  const md = dr[1], MU = (n) => md.u[RASTER_INSTANCED_MASK_BLOCK.field(n).word];
+  assert.deepEqual([MU('maskX0'), MU('maskY0'), MU('maskW'), MU('maskH'), MU('maskCut')], [2, 0, 4, 4, 128], 'atlas rect + cutoff byte in the instanced-mask uniform block');
+  assert.equal(md.bind.extraBuffers[0], uvb); assert.equal(md.bind.textures[0].texture, ps.maskTex); assert.equal(md.bind.instanceBuffer, dr[0].bind.instanceBuffer, 'same instance buffer on both draws');
+  assert.equal(md.pipe.desc.vertex.extraLayouts[0].layout[0].location, 10); assert.deepEqual(md.pipe.desc.bindings.textures, ['uint']);
+  assert.equal(pp.stats.instancedDraws, 2);
+  // opaque-only instanced group (no maskRanges): unchanged - both ranges through instancePipe, no mask bind touched
+  dr.length = 0;
+  const mm2 = { ranges: [{ start: 0, count: 2 }, { start: 2, count: 3 }] };
+  ps.prepare = () => { ps._maskTexture(world); ps.list.begin(); const it = ps.list.push(); it.type = DRAW_INSTANCED; it.mesh = mm2; it.instBuf = { f32: new Float32Array(32) }; it.instCount = 4; it.partMatrices.set(T, 0); it.partMatrices.set(T, 12); };
+  ps.run(pp);
+  assert.deepEqual(dr.map((x) => [x.pipe === ps.instancePipe, x.c, x.f, x.i]), [[true, 6, 0, 4], [true, 9, 6, 4]], 'opaque-only group: both ranges through instancePipe unchanged');
+  ps.dispose(); dev.dispose(vb); dev.dispose(uvb); assert.equal(m4.liveCount(), 0, 'mask texture + pipelines disposed');
+  console.log('passRaster.test.js (ALPHA-01f b): all checks passed.');
+}
+
 // PREC-01a (37.9, WebGPU twin): camera-relative raster. view/planes stay absolute f64; every camera raster uniform carries view * T(O) and model - O.
 {
   const { frameMatrix } = await import('../../projection.js');
@@ -276,4 +316,34 @@ console.log('passRaster.test.js (WG-4a): all checks passed.');
   assert.ok(process.memoryUsage().heapUsed - h0 < 4e6, 'prepare allocates nothing per frame, < 40 B/frame over 100k (origin + viewRel are reused)');
   assert.equal(m5.createCount, created);
   console.log('passRaster.test.js (PREC-01a): all checks passed.');
+}
+
+// S8-B2-05/06 host wiring (docs/lanes/pc-b2.md 35/97/109): per-frame wind uniforms (RASTER_BLOCK wind/windT/windK) + instance swayPad.
+// No wind (calm field, default) -> every word stays 0 (bit-identical to before this story). Wind on -> words == packWindUniforms's
+// own values and p._instances.swayPad == SWAY_MAX (0 when calm).
+{
+  const { createWind } = await import('../../../world/wind.js');
+  const { packWindUniforms, SWAY_MAX } = await import('../../../mesh/sway.js');
+  const m8 = makeMockGpuDevice(), dev8 = m8.device;
+  const rp2b = new WgRasterPass(dev8, { gpuCull: false });
+  const WIND = RASTER_BLOCK.field('wind').word, WIND_T = RASTER_BLOCK.field('windT').word, WIND_K = RASTER_BLOCK.field('windK').word;
+  const instStub = { swayPad: -1, addToDrawList() {}, stats: { instancesCulled: 0, instancesLod1: 0 } };
+  const mkP8 = (world) => ({ _cam: { x: 0, y: 0, z: 2, yawDeg: 0, pitchDeg: 0 }, _world: world, cols: 160, rows: 60, rt: { pxCellW: 1, pxCellH: 2 }, terrainEnabled: false,
+    _voxelPool: null, _instances: instStub, _viewModel: null, _table: null, stats: {}, _fb: { timeSec: 12.5, frameNo: 0 }, _t: { targetRaster: {}, targetVmDepth: {} } });
+  const calm = { wind: createWind(null, 1) };
+  rp2b.prepare(mkP8(calm));
+  assert.deepEqual([...rp2b.u.subarray(WIND, WIND + 4)], [0, 0, 0, 0], 'no wind: wind4 words unchanged (zero)');
+  assert.deepEqual([...rp2b.u.subarray(WIND_T, WIND_T + 4)], [0, 0, 0, 0], 'no wind: windT4 words unchanged (zero)');
+  assert.deepEqual([...rp2b.u.subarray(WIND_K, WIND_K + 64)], new Array(64).fill(0), 'no wind: windK words unchanged (zero)');
+  assert.equal(rp2b.windOn, false); assert.equal(instStub.swayPad, 0, 'no wind: swayPad 0');
+  const blown = { wind: createWind({ dirDeg: 45, speed: 3, gust: { amp: 0.3, periodSec: 2, travel: 8 } }, 7) };
+  rp2b.prepare(mkP8(blown));
+  const w4 = new Float32Array(4), t4 = new Float32Array(4), k64 = new Float32Array(64);
+  packWindUniforms(blown.wind, 12.5, w4, t4, k64);
+  assert.deepEqual([...rp2b.u.subarray(WIND, WIND + 4)], [...w4], 'wind on: wind4 == packWindUniforms twin');
+  assert.deepEqual([...rp2b.u.subarray(WIND_T, WIND_T + 4)], [...t4], 'wind on: windT4 == packWindUniforms twin');
+  assert.deepEqual([...rp2b.u.subarray(WIND_K, WIND_K + 64)], [...k64], 'wind on: windK == packWindUniforms twin');
+  assert.equal(rp2b.windOn, true); assert.equal(instStub.swayPad, SWAY_MAX, 'wind on: swayPad == SWAY_MAX');
+  rp2b.dispose();
+  console.log('passRaster.test.js (S8-B2-05/06 wind host wiring): all checks passed.');
 }

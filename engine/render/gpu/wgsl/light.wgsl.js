@@ -8,11 +8,13 @@
 // (rgba32float, textureLoad only), 5 WORLD_FLAGS (rg8uint), 6 SUN_SHADOW (depth32float, textureLoad = NEAREST, no compare);
 // @group(1) @binding(0) = LightU. Target 0 = LIGHT rgba32uint. Cell coords from @builtin(position).xy (no flip).
 import { defineUniformBlock } from './uniformBlock.js';
-import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, CELL_RAY_WGSL, CELL_RAY_PITCHED_WGSL, FALLOFF_FAST_WGSL, OCT_NORMAL_WGSL } from './common.wgsl.js';
+import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, CELL_RAY_WGSL, CELL_RAY_PITCHED_WGSL, FALLOFF_FAST_WGSL, OCT_NORMAL_WGSL, HASH_FAST_WGSL, CLOUD_SHADOW_WGSL, HORIZON_AO_WGSL } from './common.wgsl.js';
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_SUN_STEPS } from '../../lighting.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { FACE_PACKED, KIND_TERRAIN } from '../../GBuffer.js';
 import { SUN_N_SHIFT } from '../../shadowSun.js';
+import { CLOUD_SHIFT, CLOUD_DARK } from '../../cloudShadow.js';
+import { AO_TAP_CELLS, AO_MAX } from '../../horizonAo.js';
 
 const FACE_N = 1, FACE_E = 2, FACE_S = 3, FACE_W = 4, FACE_U = 5, FACE_D = 6;
 
@@ -26,6 +28,10 @@ export const LIGHT_BLOCK = defineUniformBlock('LightU', [
   { name: 'posY', type: 'f32' }, { name: 'eyeH', type: 'f32' }, { name: 'dirX', type: 'f32' }, { name: 'dirY', type: 'f32' },
   { name: 'planeX', type: 'f32' }, { name: 'planeY', type: 'f32' }, { name: 'horizonRow', type: 'f32' }, { name: 'planeDistY', type: 'f32' },
   { name: 'sunShadowBiasM', type: 'f32' }, { name: 'sunShadowNormalOff', type: 'f32' },
+  // S8-B2-12a (38.13): takes the first pad word (30). S8-B2-20 (38.17): aoStrength takes the last pad word
+  // (31); pitchA stays at word 32.
+  { name: 'cloudCover', type: 'f32' },
+  { name: 'aoStrength', type: 'f32' },
   { name: 'pitchA', type: 'vec4' }, // fX, fY, fZ, tanHalfX
   { name: 'pitchB', type: 'vec4' }, // rX, rY, uX, uY
   { name: 'pitchC', type: 'vec4' }, // uZ, tanHalfY, cosP, sinP
@@ -35,6 +41,8 @@ export const LIGHT_BLOCK = defineUniformBlock('LightU', [
   { name: 'visBox', type: 'vec4', count: MAX_LIGHTS },   // ox, oy, w, h (world cell units)
   { name: 'structA', type: 'vec4', count: MAX_STRUCTS }, // origin.xyz, w (width)
   { name: 'structB', type: 'vec4', count: MAX_STRUCTS }, // h, yOff, structSeq, maxH
+  // S8-B2-12a (38.13): strength, invScale (1/scaleM), offU, offV - appended at the end (word 316).
+  { name: 'cloud', type: 'vec4' },
 ]);
 
 /** Texture slot kinds for PipelineDesc.bindings.textures. */
@@ -63,6 +71,13 @@ const SUN_N_SHIFT: u32 = ${SUN_N_SHIFT}u;
 const KIND_TERRAIN: i32 = ${KIND_TERRAIN};
 // BUG-LIGHT-002: same epsilon as lighting.js VIS_FLOOR_EPS (float32 noise at exact vis-grid boundaries).
 const VIS_FLOOR_EPS: f32 = 1e-3;
+// S8-B2-12a (38.13): cloud-shadow darkening byte shift + strength, bits 24..31 of LIGHT.w (free - gpucompare's
+// decode only reads bits 0, 8..15, 16..18).
+const CLOUD_SHIFT: u32 = ${CLOUD_SHIFT}u;
+const CLOUD_DARK: f32 = ${CLOUD_DARK};
+// S8-B2-20 (38.17): horizon AO light-pass term. AO_RADIUS_M/AO_BIAS live inside HORIZON_AO_WGSL itself.
+const AO_TAP_CELLS: i32 = ${AO_TAP_CELLS};
+const AO_MAX: f32 = ${AO_MAX};
 
 ${GBUF_UNPACK_WGSL}
 ${CELL_RAY_WGSL}
@@ -70,6 +85,29 @@ ${CELL_RAY_PITCHED_WGSL}
 ${FALLOFF_FAST_WGSL}
 ${OCT_NORMAL_WGSL}
 ${FULLSCREEN_VS_WGSL}
+${HASH_FAST_WGSL}
+${CLOUD_SHADOW_WGSL}
+${HORIZON_AO_WGSL}
+
+// S8-B2-20 (38.17): tap point Pt, same projection as P - the existing P code above is NOT refactored to call this
+// (default output stays bit-identical byte for byte). Used ONLY by the AO tap block below.
+fn cellPoint(cell: vec2f, dist: f32) -> vec3f {
+  if (u.projMode == 0) {
+    return cellRayP(cell, vec2i(u.gridCols, u.gridRows), u.posX, u.posY, u.eyeH, u.dirX, u.dirY, u.planeX, u.planeY, u.horizonRow, u.planeDistY, dist);
+  }
+  return cellRayPitched(cell, vec2i(u.gridCols, u.gridRows), vec3f(u.posX, u.posY, u.eyeH), u.pitchA.xyz, u.pitchB.xy, vec3f(u.pitchB.zw, u.pitchC.x), vec2f(u.pitchA.w, u.pitchC.y), dist);
+}
+
+// One AO tap at grid cell (tx, ty): open (0) if outside the grid or kind 0 (no finite-depth check here - unlike
+// the JS twin, resolve guarantees a valid depth at every kind != 0 cell on the GPU).
+fn aoTapCell(tx: i32, ty: i32, P: vec3f, N: vec3f) -> f32 {
+  if (tx < 0 || ty < 0 || tx >= u.gridCols || ty >= u.gridRows) { return 0.0; }
+  let t = vec2i(tx, ty);
+  if (giKind(textureLoad(uGI, t, 0).y) == 0u) { return 0.0; }
+  let tDist = bitcast<f32>(textureLoad(uDepth, t, 0).x);
+  let Pt = cellPoint(vec2f(f32(tx), f32(ty)), tDist);
+  return aoTapOcc(N, Pt - P);
+}
 
 // --- US-007 sun shadow DDA (JS twin: lighting.js sunVisible/sunCellBlocked) ---
 
@@ -250,31 +288,65 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
   // US-007: skip when sunOn == 0 or N.sunDir <= 0; terrain (kind 7) gets its sun term analytically in the shade pass.
   var sunlit = 0;
   var sunN = 0;
+  // S8-B2-12a (38.13): cloud-darkening byte, bits 24..31 of LIGHT.w. Stays 0 (bit-identical) unless strength > 0
+  // (u.cloud.x) AND sunOn - a uniform branch, so strength 0 runs today's code literally.
+  var cloudBits: u32 = 0u;
   if (u.sunMode == 2) {
     // ME-15c: shadow-map sun. Terrain only gets n (shade scales its analytic sun term by n/4); sun off -> terrain n = 4.
     let isT = kindU == u32(KIND_TERRAIN);
     if (u.sunOn != 0) {
+      // cov is computed once per cell here (before the ndotsun test below) - terrain is included, 12b's shade
+      // consumer reads the same byte for its analytic sun term.
+      var cloudQ: u32 = 0u;
+      if (u.cloud.x > 0.0) {
+        let cov = cloudCov(P.x, P.y, u.cloud.y, u.cloud.z, u.cloud.w, u.cloudCover);
+        cloudQ = u32(floor(u.cloud.x * CLOUD_DARK * cov * 255.0 + 0.5));
+      }
       let ndotsun = dot(N, u.sunDir);
       if (isT || ndotsun > 0.0) {
         sunN = sunShadowTaps(P, N);
         sunlit = select(0, 1, sunN >= 2);
-        if (!isT && ndotsun > 0.0) { L += u.sunCol * (ndotsun * f32(sunN) * 0.25); }
+        if (!isT && ndotsun > 0.0) {
+          let cloudF = 1.0 - f32(cloudQ) * (1.0 / 255.0);
+          L += u.sunCol * (ndotsun * f32(sunN) * 0.25 * cloudF);
+        }
       }
+      cloudBits = cloudQ << CLOUD_SHIFT;
     } else if (isT) {
       sunN = 4;
     }
   } else if (u.sunOn != 0 && kindU != u32(KIND_TERRAIN)) {
+    var cloudQ2: u32 = 0u;
+    if (u.cloud.x > 0.0) {
+      let cov = cloudCov(P.x, P.y, u.cloud.y, u.cloud.z, u.cloud.w, u.cloudCover);
+      cloudQ2 = u32(floor(u.cloud.x * CLOUD_DARK * cov * 255.0 + 0.5));
+    }
     let ndotsun = dot(N, u.sunDir);
     if (ndotsun > 0.0) {
       // BUG-LIGHT-001: nudge toward the sun direction, not along N
       let S = P + u.sunDir * 0.02;
       if (sunVisible(S, u.sunDir)) {
         sunlit = 1;
-        L += u.sunCol * ndotsun;
+        let cloudF = 1.0 - f32(cloudQ2) * (1.0 / 255.0);
+        L += u.sunCol * (ndotsun * cloudF);
       }
     }
+    cloudBits = cloudQ2 << CLOUD_SHIFT;
   }
 
-  return vec4u(bitcast<vec3u>(L), u32(sunlit) | (u32(litCount) << 8u) | (u32(sunN) << SUN_N_SHIFT));
+  // S8-B2-20 (38.17): horizon AO, LAST operation on L, after points/sun/cloud. Uniform branch - strength 0 runs
+  // none of this (bit-identical), and terrain (kind 7) is excluded (D-007, analytic ambient in shade).
+  if (u.aoStrength > 0.0 && kindU != u32(KIND_TERRAIN)) {
+    var occSum: f32 = 0.0;
+    occSum += aoTapCell(cell.x - AO_TAP_CELLS, cell.y, P, N);
+    occSum += aoTapCell(cell.x + AO_TAP_CELLS, cell.y, P, N);
+    occSum += aoTapCell(cell.x, cell.y - AO_TAP_CELLS, P, N);
+    occSum += aoTapCell(cell.x, cell.y + AO_TAP_CELLS, P, N);
+    let occ = occSum * 0.25;
+    let aoF = 1.0 - u.aoStrength * AO_MAX * occ;
+    L -= u.ambient * (1.0 - aoF);
+  }
+
+  return vec4u(bitcast<vec3u>(L), u32(sunlit) | (u32(litCount) << 8u) | (u32(sunN) << SUN_N_SHIFT) | cloudBits);
 }
 `;

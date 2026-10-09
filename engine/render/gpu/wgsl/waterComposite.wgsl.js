@@ -12,7 +12,9 @@ import {
   GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, CELL_RAY_WGSL, CELL_RAY_PITCHED_WGSL, FMOD_WGSL, HASH_FAST_WGSL, BYTE_OUT_WGSL,
 } from './common.wgsl.js';
 import { SUN_N_SHIFT, SUN_N_MASK } from '../../shadowSun.js';
-import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT } from '../../waterLook.js';
+import { CLOUD_SHIFT } from '../../cloudShadow.js'; // S8-B2-12b (38.13)
+import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, RIPPLE_MIN } from '../../waterLook.js';
+import { RIPPLE_MAX, RIPPLE_HALF_W } from '../../../world/water.js'; // S8-B2-13 (38.14)
 
 export const WATER_COMPOSITE_VECS_PER_SLOT = WL_STRIDE / 4;
 
@@ -21,12 +23,14 @@ export const WATER_COMPOSITE_BLOCK = defineUniformBlock('WaterCompositeU', [
   { name: 'sunDir', type: 'vec3' }, { name: 'ambientI', type: 'f32' },
   { name: 'sunI', type: 'f32' }, { name: 'posX', type: 'f32' }, { name: 'posY', type: 'f32' }, { name: 'eyeH', type: 'f32' },
   { name: 'dirX', type: 'f32' }, { name: 'dirY', type: 'f32' }, { name: 'planeX', type: 'f32' }, { name: 'planeY', type: 'f32' },
-  { name: 'horizonRow', type: 'f32' }, { name: 'planeDistY', type: 'f32' }, { name: 'timeSec', type: 'f32' }, { name: 'pad0', type: 'f32' },
+  { name: 'horizonRow', type: 'f32' }, { name: 'planeDistY', type: 'f32' }, { name: 'timeSec', type: 'f32' },
+  { name: 'rippleCount', type: 'i32' }, // S8-B2-13 (38.14): was `pad0`, same word 19 - every later offset is unchanged
   { name: 'pitchA', type: 'vec4' }, // fX, fY, fZ, tanHalfX
   { name: 'pitchB', type: 'vec4' }, // rX, rY, uX, uY
   { name: 'pitchC', type: 'vec4' }, // uZ, tanHalfY, cosP, sinP
   { name: 'wl', type: 'vec4', count: WL_SLOTS * (WL_STRIDE / 4) }, // packed look rows, WL_STRIDE/4 vec4 per slot (waterLook.js)
   { name: 'wfog', type: 'vec4', count: 5 }, // start/full/curve/bgScale, fgNear, fgFar, bgNear, bgFar
+  { name: 'ripple', type: 'vec4', count: RIPPLE_MAX }, // S8-B2-13 (38.14): x, y, r, s per live ring, densely packed
 ]);
 export const WATER_COMPOSITE_TEXTURES = Object.freeze(['float', 'float', 'uint', 'uint', 'uint', 'uint']);
 export const WATER_COMPOSITE_TARGETS = Object.freeze(['rgba8', 'rgba8']);
@@ -106,7 +110,10 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
   // sun on an up normal, the terrain 'b' formula (the cell's own sun-map bits when the map ran)
   let lightT = textureLoad(uLightTex, cell, 0);
   let sunF = select(1.0, f32((lightT.w >> ${SUN_N_SHIFT}u) & ${SUN_N_MASK}u) * 0.25, wu.sunMapOn != 0);
-  let k = wu.ambientI + wu.sunI * max(wu.sunDir.z, 0.0) * sunF;
+  // S8-B2-12b (38.13): cloud-darkening byte (bits 24..31 of the floor cell's LIGHT.w) scales the sun term here too;
+  // q 0 (strength 0, or a sky cell under the floor with no cloud byte written) -> cF 1.0 -> bit-identical.
+  let cF = 1.0 - f32((lightT.w >> ${CLOUD_SHIFT}u) & 255u) * (1.0 / 255.0);
+  let k = wu.ambientI + wu.sunI * max(wu.sunDir.z, 0.0) * sunF * cF;
   var wc = clamp((r0.rgb + (r1.rgb - r0.rgb) * tint) * k, vec3f(0.0), vec3f(255.0));
 
   var wb = wc * bgK; // background never receives the glint (36.1b)
@@ -141,6 +148,26 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
       if (f32(fh >> 8u) * (1.0 / 16777216.0) > r6.w) { glyph = r6.x; }
     }
     if (f32(h >> 8u) * (1.0 / 16777216.0) > 1.0 - r3.w) { wc += (r2.rgb - wc) * 0.5; }
+  }
+
+  // S8-B2-13 (38.14): splash ripples, !sheet only (incl. see-through: replaces the floor glyph); fixed 8 with an
+  // early break (uniform control flow) so rippleCount never varies the loop trip count across invocations.
+  if (!sheet) {
+    var rs: f32 = 0.0;
+    for (var ri: i32 = 0; ri < ${RIPPLE_MAX}; ri = ri + 1) {
+      if (ri >= wu.rippleCount) { break; }
+      let rp = wu.ripple[ri];
+      let dx = P.x - rp.x;
+      let dy = P.y - rp.y;
+      let d = sqrt(dx * dx + dy * dy);
+      let term = rp.w * (1.0 - abs(d - rp.z) / ${RIPPLE_HALF_W});
+      rs = max(rs, term);
+    }
+    if (rs > ${RIPPLE_MIN}) {
+      let r13 = wu.wl[lb + 13];
+      glyph = r13.z;
+      wc += (r2.rgb - wc) * (r13.w * rs);
+    }
   }
 
   if (sheet) {

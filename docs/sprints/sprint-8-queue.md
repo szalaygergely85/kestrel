@@ -270,10 +270,10 @@ ARCH: 0.75 d is honest only if the hull is emitted as triangles into the existin
 - [ ] Node oracle: same positions within 1e-5 after 300 steps from the same seed.
 - [ ] Deterministic hash RNG, no `Math.random`. Registered, 0 compile errors.
 Files: `wgsl/particles.wgsl.js` (new), `engine/entities` twin (new file); NEEDS PC-A: architect note (32.x seam).
-ARCH-NOTE: architecture.md 38.15 -> **DROP** (CPU sim 2048 live = 0.105 ms/step; GPU f32 sim cannot match the f64 oracle, splits state). Earlier note: wrong seam: the oracle is the existing CPU sim `engine/fx/particles.js` (`PARTICLE_CAP` 2048, rule 16), not a new `engine/entities` file. Note must first decide whether a GPU sim is worth it at this cap (P2).
+DROP (PC-B 5th agent, PC-A RATIFIED 2026-10-09): architecture.md 38.15. At the 2048 cap the CPU sim costs 0.08 ms and `particleLayer.build` 0.35 ms (Node, all slots live, 400x150). A GPU sim would need a GPU splat (18) or a readback, would cost ~1.5 d, and would lose the f64 `hashInto` determinism. Revisit 17+18 together when `PARTICLE_CAP` >= 8192 or `step + build` > 1 ms measured. Wrong seam noted: the oracle is the existing CPU sim `engine/fx/particles.js` (rule 16), not a new `engine/entities` file.
 
-### S8-B2-18 DROP (architecture.md 38.15, with S8-B2-17). Particle splat output module [P2, ~0.75 d, deps: S8-B2-17]
-Was: (PART rgba8 / PART_Z r32float are CPU-uploaded by `particleLayer.js` today; GPU nearest-wins needs storage writes + depth atomics; consumer `WgSpritesPass` is B1). Writes live particles into the PART / PART_Z layer textures so the existing sprites pass shows them.
+### S8-B2-18 Particle splat output module [P2, ~0.75 d, deps: S8-B2-17]
+DROP (PC-B 5th agent, PC-A RATIFIED 2026-10-09): architecture.md 38.16. It depends on 17, which is dropped. No texture atomics exist, so it would need a packed-key `atomicMin` buffer plus a resolve pass. That loses the exact "fround depth, lower slot wins" parity, and saves at most 0.35 ms at the cap. Same revisit trigger as 17. (Facts: PART rgba8 / PART_Z r32float are CPU-uploaded by `particleLayer.js` today; consumer `WgSpritesPass` is B1.) Writes live particles into the PART / PART_Z layer textures so the existing sprites pass shows them.
 - [ ] Probe test: depth-ordered nearest wins, out-of-grid skipped.
 - [ ] B1 wiring row written (`NEEDS B1`); CPU particles unchanged by default.
 Files: `wgsl/particleSplat.wgsl.js` (new), `wgsl/index.js` (append).
@@ -284,8 +284,14 @@ Cloth (cape/banner) collides with 2 capsules (torso + leg) and a ground plane.
 - [ ] 0 alloc per step; capsule data passed in (no import of game). Owner look on the hero cape.
 Files: engine cloth module (path to confirm in the story), tests.
 
-### S8-B2-20 ME-20b horizon AO light-pass term [P2, ~0.75 d, deps: S8-B2-12 (same files), no longer S8-B2-04]
-ARCH-NOTE: architecture.md 38.16 (screen-space only: 4 taps on DEPTH + GI already bound in light, scales ambient only, LightU appends `ao`; vertex AO from B2-04 is a later multiplier). Optional AO term in the light module from vertex AO plus a depth horizon sample (4 taps), strength default 0.
+### S8-B2-20 ME-20b horizon AO light-pass term [P2, ~1 d, deps: S8-B2-04]
+NOTE WRITTEN: architecture.md 38.17 (PC-B 5th agent, PC-A RATIFIED 2026-10-09). Re-scoped to horizon AO only, ~0.6 d, one step:
+- 4 taps on the existing `uDepth` binding.
+- `LIGHT_BLOCK` word 31 `aoStrength`; the size stays 1280 B.
+- It multiplies only the ambient share, as the last line, after 12a.
+- Deps are now 12a (48ffaac), not B2-04.
+
+Vertex AO cannot reach the GPU today: `buildMeshTriVertexData` throws on non-zero aux, so do not commit `--ao` meshes. It moves to the new ME-20c (needs a note). NEEDS B1: passLight word 31 upload, `?ao=` in main.js, gpucompare forces 0. Original text: Optional AO term in the light module from vertex AO plus a depth horizon sample (4 taps), strength default 0.
 - [ ] Node probe: strength 0 bit-identical; 1 darkens concave corners, never brightens.
 - [ ] gpucompare unchanged at default; owner look on tower interior. WGSL only; `NEEDS B1` uniform.
 Files: `wgsl/light.wgsl.js`, `engine/render/lighting.js`.
