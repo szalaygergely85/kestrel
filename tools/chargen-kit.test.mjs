@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import '../design/palette.js';
 import '../design/detail-pass.js';
 import '../design/chargen/human_kit.js';
-import { HUMANOID_PART_MAP } from '../engine/chargen/collapse.js';
+import { HUMANOID_PART_MAP } from '../engine/index.js';
 
 let passed = 0;
 const test = (name, fn) => { try { fn(); passed++; console.log(`ok - ${name}`); } catch (e) { console.error(`not ok - ${name}\n${e.stack}`); process.exitCode = 1; } };
@@ -35,7 +35,7 @@ test('skeleton: 22 humanoid bones, parents first; partMap = engine array form, e
   assert.strictEqual(parts.body.compose, 2);
   assert.strictEqual(parts.head.compose, 2);
 });
-test('partMap equals engine/chargen/collapse.js HUMANOID_PART_MAP', () => {
+test('partMap equals engine HUMANOID_PART_MAP', () => {
   assert.deepStrictEqual(JSON.parse(JSON.stringify(kit.partMap)), JSON.parse(JSON.stringify(HUMANOID_PART_MAP)));
 });
 test('size: 1.75 m tall, ~70 rows, shoulders + upper arms (slight A) 0.42-0.55 m, grid about 36x20x76', () => {

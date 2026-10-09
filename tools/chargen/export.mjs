@@ -8,17 +8,15 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import '../../design/palette.js';
 import '../../design/detail-pass.js';
-import { composeCharacter, meshCharacter, randomRecipe, validateKit, validateRecipe, HUMANOID_PART_MAP } from '../../engine/index.js';
+import { composeCharacter, meshCharacter, randomRecipe, validateKit, validateRecipe } from '../../engine/index.js';
 import { exportGlb } from '../export/gltfWrite.js';
+import { exportFbx } from '../export/fbxWrite.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const KIT_PATH = path.join(ROOT, 'content', 'chargen', 'human.charkit.json');
 
 export function loadKit() {
-  const kit = JSON.parse(fs.readFileSync(KIT_PATH, 'utf8'));
-  // TEMP shim until the designer re-emits the kit with the array partMap (batch 9, CHARGEN-01): remove then.
-  if (!Array.isArray(kit.partMap)) kit.partMap = HUMANOID_PART_MAP;
-  return kit;
+  return JSON.parse(fs.readFileSync(KIT_PATH, 'utf8'));
 }
 
 /** matKey -> [r,g,b] from the master palette (material base colour). */
@@ -57,7 +55,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
   const arg = (n) => { const i = args.indexOf(n); return i < 0 ? null : args[i + 1]; };
   const out = arg('--out');
-  if (!out) { console.error('usage: node tools/chargen/export.mjs --out file.glb [--seed N] [--demo-clips]'); process.exit(2); }
+  if (!out) { console.error('usage: node tools/chargen/export.mjs --out file.glb [--seed N] [--demo-clips] [--fbx file.fbx]'); process.exit(2); }
   const kit = loadKit();
   const P = globalThis.ASSETS.palette;
   const kv = validateKit(kit, P.materials);
@@ -70,4 +68,12 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
   fs.writeFileSync(out, glb);
   console.log(`wrote ${out} (${glb.length} bytes)`);
+  const fbxOut = arg('--fbx'); // CHARGEN-10: also a static .fbx + palette.png next to it
+  if (fbxOut) {
+    const { fbx, png } = exportFbx(buildGlb(kit, recipe).rigged, { rgbOf: paletteRgbOf() });
+    const dir = path.dirname(path.resolve(fbxOut));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(fbxOut, fbx); fs.writeFileSync(path.join(dir, 'palette.png'), png);
+    console.log(`wrote ${fbxOut} (${fbx.length} bytes) + palette.png`);
+  }
 }

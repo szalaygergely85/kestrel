@@ -89,12 +89,11 @@ for (let q = 0; q < nq; q++) {
     const i = 4 * q + k;
     const tx = Math.floor(uv[2 * i] * 16), ty = Math.floor(uv[2 * i + 1] * 16);
     for (let ch = 0; ch < 3; ch++) if (png.data[4 * (ty * 16 + tx) + ch] !== Math.round(c[ch])) texOk = false;
-    const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
-    for (let ch = 0; ch < 3; ch++) if (Math.abs(col[3 * i + ch] - lin(c[ch])) > 1e-6) colOk = false;
+    for (let ch = 0; ch < 3; ch++) if (col[3 * i + ch] !== 1) colOk = false;
   }
 }
 ok('every quad UV hits the texel of its material colour', texOk);
-ok('COLOR_0 = linear palette colour', colOk);
+ok('COLOR_0 = white by default (colour comes from the palette texture)', colOk);
 ok('sampler is NEAREST + clamp, material unlit-free PBR metal 0 / rough 1', json.samplers[0].magFilter === 9728 && json.samplers[0].minFilter === 9728 && json.materials[0].pbrMetallicRoughness.metallicFactor === 0 && json.materials[0].pbrMetallicRoughness.roughnessFactor === 1);
 
 // ---- skin: 22 humanoid joints, rigid weights, inverse bind matrices
@@ -194,8 +193,9 @@ ok('recipe key order does not change the bytes', sha(buildGlb(kit, shuffled, { c
 const other = buildGlb(kit, { ...recipe, height: 2, skin: 'dark' }).glb;
 ok('another recipe gives other bytes', sha(other) !== sha(glb));
 ok('no-clip export has no animations key', !JSON.parse(new TextDecoder().decode(other.subarray(20, 20 + new DataView(other.buffer, other.byteOffset).getUint32(12, true)))).animations);
-const white = exportGlb(rigged, { rgbOf, recipe, colorMode: 'white' });
-ok('colorMode white gives other bytes', sha(white) !== sha(glb));
+ok('colorMode white is the default', sha(exportGlb(rigged, { rgbOf, recipe, partMap: kit.partMap, colorMode: 'white' })) === sha(glb));
+const rgbGlb = exportGlb(rigged, { rgbOf, recipe, partMap: kit.partMap, colorMode: 'rgb' });
+ok('colorMode rgb gives other bytes, linear palette COLOR_0', sha(rgbGlb) !== sha(glb));
 let threw = 0;
 try { exportGlb(rigged, {}); } catch { threw++; }
 try { exportGlb(rigged, { rgbOf, partMap: { body: ['Hips'] } }); } catch { threw++; }
@@ -203,9 +203,9 @@ try { exportGlb(rigged, { rgbOf: () => null }); } catch { threw++; }
 ok('missing rgbOf / object partMap / missing colour throw', threw === 3);
 
 // golden: pinned hash of the default recipe, demo clips (changes only when the format intentionally changes)
-const GOLDEN = '9daf4473a148cb84ef8c1cdfccd81856dfdb68b2cd2c990c42619556f8bc3a9a'; // update on an intended kit/format change
+const GOLDEN = '66daffb327e6aee5812ee46fcab179b4468b3f8736d541d21a31970d0254e41c'; // 2026-10-10: default colorMode 'white' (was 9daf4473...); update on an intended kit/format change
 if (sha(glb) !== GOLDEN) console.log('golden sha256 now:', sha(glb));
-ok('kit validates apart from the pending partMap shape', validateKit(JSON.parse(JSON.stringify({ ...kit, partMap: undefined })), globalThis.ASSETS.palette.materials).errors.length === 0);
+ok('real kit validates (array partMap)', validateKit(JSON.parse(JSON.stringify(kit)), globalThis.ASSETS.palette.materials).errors.length === 0);
 ok('golden SHA-256 of the default recipe (demo clips)', sha(glb) === GOLDEN);
 
 console.log(`gltfWrite test: ${pass} passed, ${fail} failed`);

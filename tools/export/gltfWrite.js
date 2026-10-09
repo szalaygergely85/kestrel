@@ -6,9 +6,9 @@
 //     model   = engine meshCharacter() output (RiggedModel: bones[{name,parent,joint}], mesh, matKeys, clips, mounts, tempo)
 //     rgbOf   = (matKey) -> [r,g,b] 0..255 (sRGB); texel i of the 16x16 palette PNG = matKeys[i]; mesh.mat is 1-based
 //     recipe  = the CharRecipe, stored in extras.kestrel.recipe     partMap = array form, default HUMANOID_PART_MAP
-//     colorMode 'rgb' (default): COLOR_0 = the palette colour as linear float (glTF COLOR_0 is linear);
-//               'white': COLOR_0 = 1,1,1. NOTE glTF MULTIPLIES COLOR_0 with the base colour texture, so 'rgb' plus the
-//               palette texture shows ~rgb^2 in viewers that apply vertex colours (three.js, glTFast); Blender ignores it.
+//     colorMode 'white' (default, owner decision 2026-10-10): COLOR_0 = 1,1,1, the colour comes from the palette texture only, so
+//               three.js / glTFast / Unity / Blender look the same (glTF MULTIPLIES COLOR_0 with the base colour texture).
+//               'rgb': COLOR_0 = the palette colour as linear float; viewers that apply vertex colours then show ~rgb^2.
 //
 // Layout: scene nodes = [Body mesh node (skinned), Hips joint node]; node 1..22 = the 22 humanoid bones in skeleton
 // order (parents first, translation-only rest pose, identity rotation); skin.joints = those 22 nodes, rigid weights
@@ -70,7 +70,7 @@ const minMax = (arr, n) => {
 };
 
 export function exportGlb(model, opts = {}) {
-  const { rgbOf, recipe = null, partMap = HUMANOID_PART_MAP, colorMode = 'rgb' } = opts;
+  const { rgbOf, recipe = null, partMap = HUMANOID_PART_MAP, colorMode = 'white' } = opts;
   if (typeof rgbOf !== 'function') throw new Error('exportGlb: opts.rgbOf(matKey) -> [r,g,b] is required');
   if (colorMode !== 'rgb' && colorMode !== 'white') throw new Error(`exportGlb: colorMode must be 'rgb' or 'white', got ${colorMode}`);
   if (!Array.isArray(partMap)) throw new Error('exportGlb: partMap must be the array form');
