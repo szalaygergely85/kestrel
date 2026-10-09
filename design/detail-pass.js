@@ -220,7 +220,7 @@
   // ---------------------------------------------------------------------------
   var STONE = {
     albedo: 0.85, bgK: 0.28, seed: 11, detail: 18, jitter: 0.08,
-    tones: [['stoneMid', 4], ['stoneCool', 3], ['stoneWarm', 2], ['stoneDeep', 1]],
+    tones: [['stoneMid', 4], ['stoneMidHi', 3], ['stoneMidLo', 3]],
     grid: { u: 0.8, v: 0.4, stagger: 0.5, shade: 0.55, tint: 'mortar', amount: 0.5, bgK: 0.16, cross: '|', maxCover: 0.25, tie: true },
     face: { set: 'stoneFace', mid: 'stoneMid', far: 'stoneFar',
             bevel: { top: 0.05, topShade: 1.15, bottom: 0.05, bottomShade: 0.80 } },
@@ -238,7 +238,7 @@
     stone: ext(STONE, {
       v1: 'stone',
       desc: 'Tower wall: coursed ashlar 0.8 x 0.4 m, half bond. Mortar = 1-cell lines ( _ | ) at every distance up to ~12 m, ' +
-            'every block its own tone (4 greys: mid, cool, warm, deep), rough face : ; , + x, rare chips.'
+            'every block its own tone (3 greys of one hue: mid, mid-hi, mid-lo (MESH-TONE-AMP-01)), rough face : ; , + x, rare chips.'
     }),
     stone_moss: ext(STONE, {
       v1: 'stone_moss', seed: 12,
@@ -303,7 +303,7 @@
       v1: 'rubble', seed: 61,
       desc: 'Fallen blocks and gravel: irregular stones ~0.3 m with dark gaps ( , ; ) instead of lines, round o O pebbles.',
       albedo: 0.80, bgK: 0.26, detail: 18, jitter: 0.14,
-      tones: [['rubble', 3], ['stoneDeep', 2], ['stoneCool', 2], ['stoneLight', 1]],
+      tones: [['rubble', 3], ['rubbleHi', 2], ['rubbleLo', 2]],
       grid: { u: 0.3, v: 0.22, stagger: 0.5, kind: 'gap', set: 'gap', shade: 0.40, bgK: 0.10, maxCover: 0.6 },
       face: { set: 'rubbleFace', mid: 'rubbleMid', far: 'rubbleFar' },
       lod: { mid: 12, far: 25, dither: 3 }
@@ -362,7 +362,7 @@
       desc: 'Natural hill rock (outcrop, spur, path walls): no mortar grid. Irregular facets 1.1 x 0.7 m (tones only, ' +
             'offset 0.37 so no bond reads) in 4 greys, rough : ; % # & glyphs, moss on some facets.',
       albedo: 0.80, bgK: 0.20, detail: 16, jitter: 0.14,
-      tones: [['rock', 4], ['stoneCool', 2], ['stoneDeep', 2], ['stoneLight', 1]],
+      tones: [['rock', 4], ['rockHi', 2], ['rockLo', 3]],
       grid: { u: 1.1, v: 0.7, stagger: 0.37, lines: false },
       face: { set: 'rockFace', mid: 'rockMid', far: 'rockFar' },
       overlay: { set: 'moss', tints: ['mossDark', 'moss'], amount: 0.55, shade: 0.95, joint: 0.0, face: 0.12 },
@@ -373,7 +373,7 @@
       desc: 'Stylized boulder stone for imported Quaternius meshes: soft 2.6 x 1.9 m tone patches, few greys, light moss. Irregular facets 1.1 x 0.7 m (tones only, ' +
             'offset 0.37 so no bond reads) in 4 greys, rough : ; % # & glyphs, moss on some facets.',
       albedo: 0.80, bgK: 0.20, detail: 16, jitter: 0.14,
-      tones: [['rock', 5], ['stoneCool', 3], ['stoneLight', 1]],
+      tones: [['rock', 5], ['rockHi', 2], ['rockLo', 2]],
       grid: { u: 2.6, v: 1.9, stagger: 0.5, lines: false },
       face: { set: 'rockFace', mid: 'rockMid', far: 'rockFar' },
       overlay: { set: 'moss', tints: ['mossDark', 'moss'], amount: 0.25, shade: 0.97, joint: 0.0, face: 0.08 },
@@ -392,7 +392,7 @@
       desc: 'Cap stones on wall tops / ledges (floor-sampled, face U): slabs 0.75 x 0.5 m, grout full of moss, cushions ' +
             '" , ; on 45 % of the slabs, the odd tuft. Reads green from above, stone from the side.',
       albedo: 0.76, bgK: 0.26, detail: 14, jitter: 0.10,
-      tones: [['flagstone', 3], ['stoneDeep', 2], ['flagCool', 2]],
+      tones: [['flagstone', 3], ['flagHi', 2], ['flagLo', 2]],
       grid: { u: 0.75, v: 0.5, stagger: 0.5, shade: 0.55, tint: 'mossDark', amount: 0.70, bgK: 0.14, cross: '+', maxCover: 0.25 },
       face: { set: 'floorFace', mid: 'floorMid', far: 'floorFar' },
       overlay: { set: 'mossTop', tints: ['moss', 'mossDark', 'mossLight', 'ivy'], amount: 0.85, shade: 0.95, joint: 0.85, face: 0.45 },
