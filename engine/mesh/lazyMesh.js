@@ -140,6 +140,7 @@ export class LazyMeshStore {
       ...(meta.castShadow === false ? { castShadow: false } : {}),
       ...(meta.collide === false ? { collide: false } : {}),
       ...(meta.colliderB64 ? { collider: base64ToF32(meta.colliderB64) } : {}),
+      ...(meta.lods ? { lods: meta.lods } : {}), // QUAT-LOD-01: LOD1 pointer(s), meta-only (not used for drawing yet)
       lazy: rec,
     };
     Object.defineProperty(shell, 'lazyOrigin', { value: rec, enumerable: false, configurable: true, writable: true });

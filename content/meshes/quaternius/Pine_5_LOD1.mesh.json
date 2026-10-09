@@ -1,0 +1,33 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Pine_5_LOD1",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Pine_5_LOD1.mesh.bin",
+  "triCount": 575,
+  "bbox": [
+    -2.98771,
+    -2.4436,
+    -0.23509,
+    3.43243,
+    3.7784,
+    8.45541
+  ],
+  "ranges": [
+    {"count": 171, "part": "Pine_5#0", "start": 0},
+    {"count": 404, "part": "Pine_5#1", "start": 171}
+  ],
+  "matKeys": [
+    "Bark_NormalTree",
+    "Leaves_Pine"
+  ],
+  "mats": {
+    "Bark_NormalTree": "timber_old",
+    "Leaves_Pine": "leaf_dark"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false
+}
