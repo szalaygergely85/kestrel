@@ -12,6 +12,7 @@ import { MAX_STRUCTS } from '../WorldTextures.js';
 import { packNormalOct, unpackNormalOct } from '../../../voxel/octNormal.js';
 import { unprojectPitched } from '../../projection.js';
 import { CLOUD_DARK, CLOUD_SHIFT } from '../../cloudShadow.js';
+import { AO_MAX } from '../../horizonAo.js';
 
 // --- string rules (38.5) ---
 assert.ok(WGSL_MODULES.some((m) => m.name === 'light' && m.code === LIGHT_WGSL), 'registered');
@@ -35,21 +36,41 @@ assert.equal(LIGHT_BLOCK.field('structB').words, MAX_STRUCTS * 4);
 // S8-B2-12a (38.13): cloudCover takes the first pad word (30, right after sunShadowNormalOff at 29) so pitchA
 // stays at word 32; `cloud` (strength, invScale, offU, offV) is appended at the very end, word 316; new size 1280 B.
 assert.equal(LIGHT_BLOCK.field('cloudCover').word, 30);
+// S8-B2-20 (38.17): aoStrength takes the last pad word (31); pitchA stays at word 32, cloud at 316, size unchanged.
+assert.equal(LIGHT_BLOCK.field('aoStrength').word, 31);
+assert.equal(LIGHT_BLOCK.field('pitchA').word, 32);
 assert.equal(LIGHT_BLOCK.field('cloud').word, 316);
 assert.equal(LIGHT_BLOCK.sizeBytes, 1280);
+
+// --- S8-B2-20 (38.17): horizon AO wired into fs_main, cellPoint/aoTapCell present, never-brighten shape ---
+assert.ok(/fn cellPoint\(/.test(LIGHT_WGSL), 'cellPoint fn present (taps only - P itself is not refactored)');
+assert.ok(/fn aoTapCell\(/.test(LIGHT_WGSL), 'aoTapCell fn present');
+assert.ok(/fn aoTapOcc\(/.test(LIGHT_WGSL), 'aoTapOcc fn present (common.wgsl.js HORIZON_AO_WGSL interpolated)');
+assert.ok(/u\.aoStrength > 0\.0/.test(LIGHT_WGSL), 'AO block guarded by a uniform branch on aoStrength');
+assert.ok(/L -= u\.ambient \* \(1\.0 - aoF\)/.test(LIGHT_WGSL), 'AO subtracts from L (never adds - cannot brighten)');
 
 // --- S8-B2-12a (38.13): cloud-shadow byte wired into fs_main, CLOUD_DARK interpolated, CLOUD_SHIFT = 24 ---
 assert.ok(new RegExp(`const CLOUD_SHIFT: u32 = ${CLOUD_SHIFT}u;`).test(LIGHT_WGSL), 'CLOUD_SHIFT interpolated');
 assert.ok(new RegExp(`const CLOUD_DARK: f32 = ${CLOUD_DARK};`).test(LIGHT_WGSL), 'CLOUD_DARK interpolated');
 assert.ok(/fn cloudCov\(/.test(LIGHT_WGSL), 'cloudCov fn present (common.wgsl.js CLOUD_SHADOW_WGSL interpolated)');
 assert.ok(/\| cloudBits\)/.test(LIGHT_WGSL), 'LIGHT.w carries the cloud byte');
-// Mutation: a changed CLOUD_DARK literal must show up in a numericLiterals check of LIGHT_WGSL (D-039 style guard -
-// this is the only place CLOUD_DARK's own value is baked into the WGSL text, cloudCov itself only has the octave weights).
+// Mutation: a changed CLOUD_DARK literal must show up in a numericLiterals check of LIGHT_WGSL (D-039 style guard).
+// S8-B2-20 (38.17) also bakes 0.6 into the text as AO_MAX, so the literal-SET-difference form of this check (any
+// other check in this file wanting to assert "CLOUD_DARK's value is gone") would false-negative on that
+// coincidence - this check instead targets the CLOUD_DARK declaration text directly, which stays precise.
 {
   const lits = numericLiterals(LIGHT_WGSL);
   assert.ok(lits.has(CLOUD_DARK), 'LIGHT_WGSL literal-set has CLOUD_DARK');
   const mutated = LIGHT_WGSL.replace(`const CLOUD_DARK: f32 = ${CLOUD_DARK};`, 'const CLOUD_DARK: f32 = 0.37;');
-  assert.ok(numericLiterals(mutated).has(0.37) && !numericLiterals(mutated).has(CLOUD_DARK), 'mutation: a changed CLOUD_DARK literal is caught');
+  assert.ok(numericLiterals(mutated).has(0.37) && !new RegExp(`const CLOUD_DARK: f32 = ${CLOUD_DARK};`).test(mutated), 'mutation: a changed CLOUD_DARK literal is caught');
+}
+// Same mutation guard for AO_MAX (also 0.6 - the two consts' declarations are checked independently, never by a
+// whole-text literal-set difference, for exactly the coincidence noted above).
+{
+  const lits = numericLiterals(LIGHT_WGSL);
+  assert.ok(lits.has(AO_MAX), 'LIGHT_WGSL literal-set has AO_MAX');
+  const mutated = LIGHT_WGSL.replace(`const AO_MAX: f32 = ${AO_MAX};`, 'const AO_MAX: f32 = 0.42;');
+  assert.ok(numericLiterals(mutated).has(0.42) && !new RegExp(`const AO_MAX: f32 = ${AO_MAX};`).test(mutated), 'mutation: a changed AO_MAX literal is caught');
 }
 
 let seed = 7;

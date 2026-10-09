@@ -37,11 +37,14 @@ import { createPitchedTerms, pitchedTerms, unprojectPitched, resolveProjection }
 import { sunShadowTaps, sunShadowInfo } from './shadowSun.js';
 import { resolveLook } from './look.js'; // ART-01a (37.18 item 3)
 import { cloudCov, updateCloudShadow, CLOUD_DARK } from './cloudShadow.js'; // S8-B2-12a (38.13)
+import { aoTapOcc, aoFactor, AO_TAP_CELLS } from './horizonAo.js'; // S8-B2-20 (38.17)
 
 // RE-02a: scratch for lightSurfaces' pitched branch (zero allocation per frame).
 const litPitchTerms = createPitchedTerms();
 const litGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 const litP3 = new Float64Array(3);
+// S8-B2-20 (38.17): scratch for lightSurfaces' AO tap block (zero allocation per frame/cell).
+const aoTapP = new Float64Array(3);
 
 export const MAX_LIGHTS = 16;
 // ART-01a (37.18 item 3/8): `LIGHT.w` bit written once the hemi/haze light pass
@@ -129,6 +132,8 @@ export class LightSet {
     // S8-B2-12a (38.13): cloud-shadow state, allocated once. `scaleM`/`speedK` are content knobs (setCloudShadow);
     // `invScale` (1/scaleM) is kept in sync by setCloudShadow; `offU`/`offV` are the per-frame drift (update()).
     this.cloud = { strength: 0, cover: 0.55, scaleM: 48, speedK: 1, invScale: 1 / 48, offU: 0, offV: 0 };
+    // S8-B2-20 (38.17): horizon AO state, allocated once (setHorizonAo only writes `strength`).
+    this.ao = { strength: 0 };
 
     this.count = 0; // active (alive) lights, compacted into [0, count)
     this.pos = new Float32Array(4 * MAX_LIGHTS);   // x, y, z (jittered), radius     -> uLightPos
@@ -481,6 +486,17 @@ export function setCloudShadow(lights, { strength, cover, scaleM, speedK } = {})
     if (!Number.isFinite(speedK) || speedK < 0) throw new Error(`setCloudShadow: speedK must be a finite number >= 0 (got ${speedK})`);
     c.speedK = speedK;
   }
+}
+
+/**
+ * S8-B2-20 (38.17): sets the horizon-AO strength on `lights.ao` (allocated once by the constructor). Throws on a
+ * non-finite or out-of-range value rather than silently clamping (same convention as `setCloudShadow`).
+ * @param {LightSet} lights
+ * @param {{strength:number}} params
+ */
+export function setHorizonAo(lights, { strength } = {}) {
+  if (!Number.isFinite(strength) || strength < 0 || strength > 1) throw new Error(`setHorizonAo: strength must be finite in [0,1] (got ${strength})`);
+  lights.ao.strength = strength;
 }
 
 /**
@@ -994,6 +1010,36 @@ export function selectCpuLights(lights, cx, cy, cz) {
  * already be `false` and `fb.light.rgb` sized `cols*rows*3` (see
  * `makeLightBuffer`) - this never allocates or resizes.
  */
+/**
+ * S8-B2-20 (38.17): tap point Pt at tap cell (tx,ty)'s own depth `d`, same projection as the per-pixel P computed
+ * inline in `lightSurfaces` above (RE-02a pitched branch or the shear-camera formula). The existing P computation
+ * is NOT refactored to call this - used ONLY by the AO tap block, so default output stays bit-identical.
+ * Zero allocation: writes into `out` (3-length). Literal twin of light.wgsl.js's `cellPoint`.
+ */
+function cellPointInto(pitched, terms, tx, ty, d, cols, camX, camY, camZ, dirX, dirY, planeX, planeY, horizonRow, planeDistY, out) {
+  if (pitched) { unprojectPitched(terms, tx, ty, d, out); return out; }
+  const cameraX = (2 * (tx + 0.5)) / cols - 1;
+  const rdx = dirX + planeX * cameraX, rdy = dirY + planeY * cameraX;
+  const slope = -(ty - horizonRow) / planeDistY;
+  out[0] = camX + rdx * d; out[1] = camY + rdy * d; out[2] = camZ + slope * d;
+  return out;
+}
+
+/**
+ * S8-B2-20 (38.17): one AO tap at grid cell (tx,ty) - open (0) if outside the grid, kind 0, or (twin only, unlike
+ * the WGSL `aoTapCell`) a non-finite/non-positive depth (synthetic test fixtures can hold garbage depth at a
+ * kind != 0 cell; real resolve output never does).
+ */
+function aoTapInto(tx, ty, kind, depth, cols, rows, pitched, terms, camX, camY, camZ, dirX, dirY, planeX, planeY, horizonRow, planeDistY, P, nx, ny, nz) {
+  if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) return 0;
+  const ti = ty * cols + tx;
+  if (kind[ti] === 0) return 0;
+  const td = depth[ti];
+  if (!(td > 0) || !Number.isFinite(td)) return 0;
+  cellPointInto(pitched, terms, tx, ty, td, cols, camX, camY, camZ, dirX, dirY, planeX, planeY, horizonRow, planeDistY, aoTapP);
+  return aoTapOcc(nx, ny, nz, aoTapP[0] - P[0], aoTapP[1] - P[1], aoTapP[2] - P[2]);
+}
+
 export function lightSurfaces(fb, lights, cam, world) {
   const lb = fb.light;
   // Architect review 1 item 3: `lightSurfaces` sets `uniform = false` ITSELF
@@ -1082,6 +1128,19 @@ export function lightSurfaces(fb, lights, cam, world) {
       if (lb.litCount) lb.litCount[i] = lightFlags.litCount;
       if (lb.sunN) { lb.sunN[i] = lightFlags.sunN; lb.sunBoundary[i] = lightFlags.sunBoundary; }
       if (lb.cloud) lb.cloud[i] = lightFlags.cloudQ; // S8-B2-12a (38.13), copied like sunN
+
+      // S8-B2-20 (38.17): horizon AO, LAST operation on this cell's rgb (after points/sun/cloud). Uniform branch -
+      // strength 0 runs none of this (bit-identical). Terrain excluded (D-007, analytic ambient in shade).
+      if (lights.ao.strength > 0 && kind[i] !== KIND_TERRAIN) {
+        litP3[0] = px; litP3[1] = py; litP3[2] = pz; // reuse: P is not read again for this cell after this point
+        let occSum = aoTapInto(x - AO_TAP_CELLS, y, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz);
+        occSum += aoTapInto(x + AO_TAP_CELLS, y, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz);
+        occSum += aoTapInto(x, y - AO_TAP_CELLS, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz);
+        occSum += aoTapInto(x, y + AO_TAP_CELLS, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz);
+        const aoF = aoFactor(occSum * 0.25, lights.ao.strength);
+        const k = 1 - aoF;
+        rgb[o] -= lights.ambient[0] * k; rgb[o + 1] -= lights.ambient[1] * k; rgb[o + 2] -= lights.ambient[2] * k;
+      }
     }
   }
 }
