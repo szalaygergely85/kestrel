@@ -53,6 +53,8 @@ export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'pitchB', type: 'vec4' }, // rX, rY, uX, uY
   { name: 'pitchC', type: 'vec4' }, // uZ, tanHalfY, cosP, sinP
   { name: 'faceK', type: 'vec4', count: 2 }, // float[7] (index = face 1..6), contiguous
+  // 38.23 entity tint table, APPENDED (no earlier word moves): etA.x = count (0 = branch skipped), etId = 8 u32 ids (written through a Uint32Array view), etC = rgb 0..1 + k
+  { name: 'etA', type: 'vec4' }, { name: 'etId', type: 'vec4', count: 2 }, { name: 'etC', type: 'vec4', count: 8 },
 ]);
 
 export const SHADE_TEXTURES = Object.freeze([
@@ -236,6 +238,17 @@ const MAX_SUB: i32 = ${MAX_SUB};
 const MAX_LEVELS: i32 = ${MAX_LEVELS};
 var<private> POW2: array<f32, 6> = array<f32, 6>(0.125, 0.25, 0.5, 1.0, 2.0, 4.0);
 
+// 38.23: one channel of the entity tint, literal twin of entityTint.js tintChannel (c on the 0..255 scale, t = rgb 0..1).
+fn tintCh(c: f32, t: f32, k: f32) -> f32 { return c + (t * 255.0 - c) * k; }
+// First table entry matching objectId, or -1 (twin: entityTintAt).
+fn tintIndex(oid: u32, count: i32) -> i32 {
+  for (var i = 0; i < 8; i++) {
+    if (i >= count) { break; }
+    if (bitcast<u32>(su.etId[i >> 2][i & 3]) == oid) { return i; }
+  }
+  return -1;
+}
+
 fn samplePowLUT(x: f32) -> f32 {
   let xc = clamp(x, 0.0, 1.0);
   let idx = i32(xc * 255.0 + 0.5);
@@ -329,6 +342,7 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
   let hasBevel = (flags & 128) != 0; let hasBand = (flags & 256) != 0; let bandIsU = (flags & 512) != 0;
   let bandTone = (flags & 1024) != 0; let bandBgK = (flags & 2048) != 0;
   let hasOverlay = (flags & 4096) != 0; let ovBand = (flags & 8192) != 0; let hasSpeckle = (flags & 16384) != 0; let hasLod = (flags & 32768) != 0;
+  let gridTexel = (flags & 131072) != 0; // GRID-TEXEL-GLYPH-01 (F_GRID_TEXEL)
 
   let detail = mf0.z; let jitter = mf0.w;
   let albedo = mf0.x;
@@ -356,14 +370,16 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
   let ds = detail * POW2[oct + 3];
 
   let btx = i32(floor(u * detail)); let bty = i32(floor(v * detail));
-  var hA: f32; var hC: f32;
-  if (hasGrid) {
+  var hA: f32; var hC: f32; var hJ: f32;
+  if (hasGrid && !gridTexel) {
     hA = hashFast(bix, courseI, seed);
     hC = hashFast(bix, courseI, seed + 13);
+    hJ = hA;
   } else {
     let cx = i32(floor(u * ds * 0.5)); let cy = i32(floor(v * ds * 0.5));
     hA = hashFast(cx, cy, seed);
     hC = hashFast(cx, cy, seed + 13);
+    hJ = select(hA, hashFast(bix, courseI, seed), hasGrid);
   }
   let hB = hashFast(btx, bty, seed + 7);
   let hBlock = hashFast(bix, courseI, seed + 3);
@@ -505,7 +521,7 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
   if (kind != ${KIND_MODEL}u && face >= 1 && face <= 6) { fk = faceK(face); }
   var aok = 1.0;
   if (aoD < su.aoR) { aok = su.aoK + (1.0 - su.aoK) * smoothstepFast(0.0, su.aoR, aoD); }
-  let jit = 1.0 + jitter * (hA * 2.0 - 1.0);
+  let jit = 1.0 + jitter * (hJ * 2.0 - 1.0);
   let b = Lm * albedo * shadeK * fk * aok * jit * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness) + mf1.x;
   var gb = 0.0;
   if (!(b < su.cutoff)) { gb = su.lift + (1.0 - su.lift) * min(b, 1.0); }
@@ -716,6 +732,15 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   // Item 4: dim a firing line by sub-sample agreement (2-of-4 tie fades to half strength, 4-of-4 stays full).
   if (lineWins) { rgbF *= 0.5 + 0.5 * f32(jointN) / f32(count); }
   var rgbBg = rgbF * bgKAvg;
+  // 38.23 entity tint: display override after lighting, before fog; count 0 skips the whole branch (bit-identical).
+  if (su.etA.x > 0.0) {
+    let ti = tintIndex(textureLoad(uGI, cell, 0).w, i32(su.etA.x));
+    if (ti >= 0) {
+      let tc = su.etC[ti];
+      rgbF = vec3f(tintCh(rgbF.x, tc.x, tc.w), tintCh(rgbF.y, tc.y, tc.w), tintCh(rgbF.z, tc.z, tc.w));
+      rgbBg = vec3f(tintCh(rgbBg.x, tc.x, tc.w), tintCh(rgbBg.y, tc.y, tc.w), tintCh(rgbBg.z, tc.z, tc.w));
+    }
+  }
   if (f > 0.0) {
     rgbF += (su.fogFg - rgbF) * f;
     rgbBg += (su.fogBg - rgbBg) * f;

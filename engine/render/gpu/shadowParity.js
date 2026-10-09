@@ -3,6 +3,7 @@
 // copy) and compares it with the JS twin - rasterJS depth-only over the SAME shadow caster list, matrix and
 // polygon offset the GPU pass used - with `compareShadowDepth` (16 ULP of 24-bit depth).
 import { createRasterTarget, clearRasterTarget, rasterDrawList } from '../../mesh/rasterJS.js';
+import { sunWindCtx } from '../../mesh/sway.js';
 import { compareShadowDepth } from './gpuCompare.js';
 
 /**
@@ -20,9 +21,11 @@ export function halfRangeDepthBitsToUnit(bits) {
 export function createShadowParityRunner(res) {
   const bits = new Uint32Array(res * res);
   const target = createRasterTarget(res, res, 1, { depthOnly: true });
-  const ctx = { M: null, depthBias: { factor: 0, units: 0 }, structFoot: null, structCount: 0 };
+  const windOut = { field: null, t: 0 };
+  const ctx = { M: null, wind: null, depthBias: { factor: 0, units: 0 }, structFoot: null, structCount: 0 };
   // shared JS-twin half: raster the same caster list / matrix / bias / carve footprints and compare with the GPU bits
-  const compare = (list, M, so, foot, count, atlas) => {
+  const compare = (list, M, so, foot, count, atlas, world, fb) => {
+    ctx.wind = sunWindCtx(world && world.wind, fb && fb.timeSec, windOut); // same field + quantised clock the GPU shadow pass packs
     ctx.M = M; ctx.maskAtlas = atlas || null; // ALPHA-01c: the depth-only twin skips the same masked fragments as the GPU pass
     ctx.depthBias.factor = so.depthBias[0]; ctx.depthBias.units = so.depthBias[1];
     ctx.structFoot = foot; ctx.structCount = count;
@@ -38,7 +41,7 @@ export function createShadowParityRunner(res) {
       if (!sh || !(await sh.readbackDepth(bits))) return null;
       if (pipeline.shadowDepthHalfRange) halfRangeDepthBitsToUnit(bits);
       const fp = sh.footprints();
-      return compare(sh.casterList ? sh.casterList() : sh.list, sh.sunMat.M, sh.shadowOpts, fp ? fp.foot : null, fp ? fp.count : 0, pipeline._world && pipeline._world.maskAtlas);
+      return compare(sh.casterList ? sh.casterList() : sh.list, sh.sunMat.M, sh.shadowOpts, fp ? fp.foot : null, fp ? fp.count : 0, pipeline._world && pipeline._world.maskAtlas, pipeline._world, pipeline._fb);
     },
     /** @param {import('./GpuCellPipeline.js').GpuCellPipeline} pipeline @returns {object|null} null when no sun pass ran this frame */
     run(pipeline) {
@@ -50,6 +53,6 @@ export function createShadowParityRunner(res) {
   };
   function finish(pipeline) {
     if (pipeline.shadowDepthHalfRange) halfRangeDepthBitsToUnit(bits);
-    return compare(pipeline._shadowList, pipeline._sunMat.M, pipeline.shadowOpts, pipeline._meshStructFoot, pipeline._structCount, pipeline._world && pipeline._world.maskAtlas);
+    return compare(pipeline._shadowList, pipeline._sunMat.M, pipeline.shadowOpts, pipeline._meshStructFoot, pipeline._structCount, pipeline._world && pipeline._world.maskAtlas, pipeline._world, pipeline._fb);
   }
 }

@@ -1,12 +1,14 @@
 // game/js/occlGate.js - OCCL-MAIN-01: `?occl=1` parsing + HZB invalidation on camera cuts (S8-B2-10c NEEDS B1-main).
 // Default OFF everywhere (gpucompare/capture/bench included); only an explicit `?occl=1` on WebGPU turns it on.
 export function parseOccl(params, backend) {
-  const requested = params.get('occl') === '1';
-  return { requested, enabled: requested && backend === 'webgpu' };
+  const v = params.get('occl');
+  const requested = v === '1' || v === '2'; // `?occl=2` = on + occlusion stats (culledOccl etc.)
+  const on = requested && backend === 'webgpu';
+  return { requested, enabled: on, occl: on ? (v === '2' ? 2 : true) : false };
 }
 
 /**
- * Calls `pipeline.invalidateHzb()` on every cut. `getPipeline()` may return null (gl2 / occl off / not ready) = no-op.
+ * Calls `pipeline.invalidateHzb()` (+ `invalidateHistory()` for the US-073c stable pass) on every cut. `getPipeline()` may return null (gl2 / occl off / not ready) = no-op.
  * `trackPose` catches any pose jump nobody announced (waystone, save load, dev pose) when the eye moves > jumpM in one frame.
  */
 export function createHzbInvalidator(getPipeline, { jumpM = 6 } = {}) {
@@ -14,7 +16,8 @@ export function createHzbInvalidator(getPipeline, { jumpM = 6 } = {}) {
   function invalidate(reason) {
     const p = getPipeline();
     if (!p || typeof p.invalidateHzb !== 'function') return false;
-    p.invalidateHzb(); count++; lastReason = reason || '';
+    p.invalidateHzb(); if (typeof p.invalidateHistory === 'function') p.invalidateHistory(); // US-073c: the stable pass drops its glyph history on the same cuts
+    count++; lastReason = reason || '';
     px = NaN; // forget the pose so the next trackPose does not double-fire
     return true;
   }

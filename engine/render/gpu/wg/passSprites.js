@@ -19,7 +19,7 @@
 //   Stats: sp.stats.{sprites, uploadMs}. Readback (gpucompare): `await sp.readbackCells(outFg?, outBg?)` -> {fg, bg} Uint8Array(cols*rows*4) or null.
 //   dispose() frees everything.
 //
-// Deviations from the GL pass (flagged): (1) [fixed] ATLAS is 'rgba8ui' (uploaded as is, no widening); the WGSL reads .r/.g/.b/.a as u32 either way. (2) [fixed] the particle layer uploads only the dirty-row slice via writeTexture's dataOffset. (3) Sprite rows upload `pool.spr` with rect h = count (no subarray).
+// Deviations from the GL pass (flagged): (1) [fixed] ATLAS is 'rgba8ui' (uploaded as is, no widening); the WGSL reads .r/.g/.b/.a as u32 either way. (2) [fixed] the particle layer uploads only the dirty rect (rows + columns, rect.stride = layer width) via writeTexture's dataOffset. (3) Sprite rows upload `pool.spr` with rect h = count (no subarray).
 import { SPRITES_BLOCK, SPRITES_WGSL, SPRITES_TEXTURES } from '../wgsl/sprites.wgsl.js';
 import { MAX_SPRITES, SPR_TEXELS } from '../../sprites.js';
 
@@ -40,9 +40,10 @@ export class WgSpritesPass {
     this.cols = 0; this.rows = 0;
     // timeUploads (default false): the two performance.now() calls allocate ~32 B/frame; when off, stats.uploadMs stays 0.
     this.timeUploads = !!opts.timeUploads;
-    this.stats = { sprites: 0, uploadMs: 0 };
+    this.stats = { sprites: 0, uploadMs: 0, partBytes: 0 }; // partBytes: cumulative particle-layer upload bytes (both textures)
+    this.cropColumns = true; // PARTICLE-UPLOAD-02 (false = row band only, for the equivalence test)
     this.ran = false;
-    this._rowRect = { x: 0, y: 0, w: 0, h: 0 }; // reused dirty-row rect for writeTexture (no per-frame allocation)
+    this._rowRect = { x: 0, y: 0, w: 0, h: 0, stride: 0 }; // reused dirty-row rect for writeTexture (no per-frame allocation)
     this.sceneFade = 1; this.fadeMinGain = 0; this.fadeRampLen = 1;
     this.dimAll = 1; this.dimCount = 0;
     this.dimRect = new Float32Array(16); this.dimMul = new Float32Array(4);
@@ -146,12 +147,22 @@ export class WgSpritesPass {
     let r0 = this._partRows, r1 = -1;
     if (hasNow) { r0 = l.minRow; r1 = l.maxRow; }
     if (hadPrev) { if (l.prevMinRow < r0) r0 = l.prevMinRow; if (l.prevMaxRow > r1) r1 = l.prevMaxRow; }
-    if (this._partDirty) { r0 = 0; r1 = this._partRows - 1; this._partDirty = false; }
+    const fullRect = this._partDirty;
+    if (fullRect) { r0 = 0; r1 = this._partRows - 1; this._partDirty = false; }
     if (r0 < 0) r0 = 0; if (r1 > this._partRows - 1) r1 = this._partRows - 1;
     if (r1 < r0) return;
-    const rect = this._rowRect; rect.y = r0; rect.w = this._partCols; rect.h = r1 - r0 + 1;
-    d.writeTexture(this.texPart, l.part, rect, r0 * this._partCols * 4);
-    d.writeTexture(this.texPartZ, l.partZ, rect, r0 * this._partCols);
+    // PARTICLE-UPLOAD-02: crop columns too (touched span now + last frame's footprint); full width when it covers > 75% or is degenerate
+    const C = this._partCols;
+    let c0 = C, c1 = -1;
+    if (hasNow) { c0 = l.minCol; c1 = l.maxCol; }
+    if (hadPrev) { if (l.prevMinCol < c0) c0 = l.prevMinCol; if (l.prevMaxCol > c1) c1 = l.prevMaxCol; }
+    const full = fullRect || !this.cropColumns || c0 < 0 || c1 >= C || c1 < c0 || (c1 - c0 + 1) * 4 > C * 3;
+    if (full) { c0 = 0; c1 = C - 1; }
+    const rect = this._rowRect; rect.x = c0; rect.y = r0; rect.w = c1 - c0 + 1; rect.h = r1 - r0 + 1; rect.stride = full ? 0 : C;
+    const off = r0 * C + c0;
+    d.writeTexture(this.texPart, l.part, rect, off * 4);
+    d.writeTexture(this.texPartZ, l.partZ, rect, off);
+    this.stats.partBytes += rect.w * rect.h * 8; // rgba8 (4 B) + r32f (4 B) per texel
   }
 
   /**

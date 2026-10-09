@@ -5,7 +5,7 @@ import {
 } from '../../../../engine/index.js';
 import {
   runGpuCompare, compareCells, compareGeometry, compareLight, describeCellNormals, poisonAllCells, unpackReadback,
-  terrainMeshSetFor,
+  terrainMeshSetFor, runStableRow,
   computeDerivatives, shadeSurfaces, edgePass, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG, createShadowParityRunner,
 } from '../../../../engine/dev.js';
 import { POSES as GPU_COMPARE_POSES } from '../../../../content/dev-poses.js';
@@ -758,6 +758,7 @@ async function runGpuCompareSceneMode(ctx) {
   }
 
   gpuPipeline.setSource('scene');
+  if (wg && wg.setStable) wg.setStable(false); // US-073c: every normal row sees the unstabilised edge output; the `stable` row below switches it on for its two frames
 
   // TREES-LP-b: the unplaced Kenney stub (test-only content) for the `lowpolyTrees` pose; missing file = pose skipped.
   try { const u = new URL('../../../../content/meshes/kenney/tree_oak.mesh.json', import.meta.url), meta = await (await fetch(u)).json(); ctx.lowpolyTreeMesh = typeof meta.bin === 'string' ? meshFromBin(meta, await (await fetch(new URL(meta.bin, u))).arrayBuffer()) : meshFromJSON(meta); /* MESH-BIN-01 */ } catch (e) { ctx.lowpolyTreeMesh = null; }
@@ -807,6 +808,8 @@ async function runGpuCompareSceneMode(ctx) {
   let sampledOwnTextures = true;
   // ME-15b (27.9a item 10): sun shadow depth parity rows (GPU map vs rasterJS depth-only twin), mesh renderer only.
   const shadowRows = [];
+  const stableRows = []; // US-073c (38.25 item 6): one `stable` row (2-frame pan), first suitable pitched pose
+  let stableDone = false;
   const shadowRunner = renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map'
     ? createShadowParityRunner(gpuPipeline.shadowOpts.res) : null;
   let restoreSun = null; // ME-15c: per-pose sun override (see applySunOverride)
@@ -899,6 +902,17 @@ async function runGpuCompareSceneMode(ctx) {
       } else {
         console.log(`[gpucompare] shadowDepth SKIP ${poseName} (no sun pass this pose)`);
       }
+    }
+
+    if (wg && wg._stablePass && !stableDone && cam && (cam.projection === 'pitched' || pitchedDefault) && cam.focusX === undefined && !/water|pond|river|fall/i.test(poseName)) {
+      // pan 1 cm sideways + 0.05 deg (a sub-cell move: the stable pass only reuses history within 0.5/detail of the same surface point)
+      stableDone = true;
+      const yr = (cam.yawDeg * Math.PI) / 180, camA = { ...cam }, camB = { ...cam, x: cam.x + 0.01 * Math.cos(yr), y: cam.y + 0.01 * Math.sin(yr), yawDeg: cam.yawDeg + 0.05 };
+      const gpuFrame = (c) => () => { fbCompare.gpu = true; renderWorld(fbCompare, world, c); wg.frame(fbCompare, lights || ambientL, c, world); engine.overlay.flush(c); rt.present(); };
+      const sr = await runStableRow(wg, camA, camB, gpuFrame(camA), gpuFrame(camB));
+      stableRows.push({ pose: `stable pan (${poseName}) [webgpu stable]`, ok: !!sr.ok, stable: sr });
+      overallOk = overallOk && !!sr.ok;
+      console.log(`[gpucompare] ${sr.ok ? 'PASS' : 'FAIL'} stable pan (${poseName}): ` + (sr.skipped ? `SKIPPED ${sr.reason}` : `histValid=${sr.histValid} used=${sr.usedPct.toFixed(1)}% mismatches=${sr.mismatches} (must be 0) tieMismatches=${sr.tieMismatches} ties=${sr.tiePct.toFixed(3)}% (<=0.5) vacuous=${sr.vacuous}${sr.bad && sr.bad.length ? ' e.g. ' + JSON.stringify(sr.bad[0]) : ''}`));
     }
 
     const wasActive = rt.gpuActive;
@@ -1125,6 +1139,7 @@ async function runGpuCompareSceneMode(ctx) {
     const d = r.shadowDepth;
     text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n  items ${d.items}  co-covered ${d.both}  within 16 ULP+0.05 texel ${d.withinPct.toFixed(4)}% (>=99.9%)  flat 16 ULP ${d.within16Pct.toFixed(3)}%  maxUlp ${d.maxUlp}  coverage mismatch ${d.covMismatchPct.toFixed(4)}% (<=0.3%)\n`;
   }
+  for (const r of stableRows) text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n  ` + (r.stable.skipped ? `skipped: ${r.stable.reason}` : `history cells ${r.stable.usedPct.toFixed(1)}%  mismatches ${r.stable.mismatches} (must be 0)  tie mismatches ${r.stable.tieMismatches}  ties ${r.stable.tiePct.toFixed(3)}% (<=0.5%)`) + '\n';
   text += `\n${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`;
   console.log(`[gpucompare] ${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`);
 
@@ -1142,7 +1157,7 @@ async function runGpuCompareSceneMode(ctx) {
   overlay.el.style.font = '13px "Courier New", monospace';
   overlay.el.style.whiteSpace = 'pre';
   overlay.el.textContent = text;
-  window.__gpuCompare = { rows: rowsOut.concat(shadowRows), ok: overallOk, infoRows };
+  window.__gpuCompare = { rows: rowsOut.concat(shadowRows, stableRows), ok: overallOk, infoRows };
 }
 
 /**

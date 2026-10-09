@@ -28,7 +28,17 @@ const S_HASHCELL = S('hashCell'), S_CLOSEBAND = S('closeBand'), S_HANDOVER = S('
 const S_N = S('n'), S_GPUSKY = S('gpuSky'), S_PROJ = S('projMode'), S_SUNMAP = S('sunMapOn'), S_NEARDETAIL = S('nearDetailOn');
 const S_SPARSE_ALT = S('fogSparseAlt'), S_HAZE_ALT = S('fogHazeAlt');
 const S_SPARSE_C0 = S('fogSparseCode0'), S_SPARSE_C1 = S('fogSparseCode1'), S_HAZE_C0 = S('fogHazeCode0'), S_HAZE_C1 = S('fogHazeCode1');
+const S_ETA = S('etA'), S_ETID = S('etId'), S_ETC = S('etC'); // 38.23 tint words
 const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK');
+/** 38.23: copy the tint table (fb.entityTints) into the ShadeU words: etA.x = count, etId (u32 view), etC rgb+k. Zero alloc; count 0 and cleared tail when absent. */
+export function writeEntityTints(su, su32, tints) {
+  const n = tints && tints.count > 0 ? (tints.count > 8 ? 8 : tints.count) : 0;
+  su[S_ETA] = n;
+  for (let i = 0; i < 8; i++) {
+    su32[S_ETID + i] = i < n ? tints.ids[i] : 0;
+    for (let k = 0; k < 4; k++) su[S_ETC + i * 4 + k] = i < n ? tints.rgbk[i * 4 + k] : 0;
+  }
+}
 const E_COLS = E('gridCols'), E_ROWS = E('gridRows'), E_FOGMAX = E('fogMax'), E_RIM = E('modelRim'), E_WATER_ON = E('waterOn'), E_WOS = E('wos'), E_PROJ = E('projMode');
 const E_FOG_START = E('fogStart'), E_FOG_FULL = E('fogFull'), E_TFOG_START = E('terrainFogStart'), E_TFOG_FULL = E('terrainFogFull'), E_TFOG_CURVE = E('terrainFogCurve');
 const E_PITCH_C = E('pitchC'), E_GLYPH = E('edgeGlyph'), E_GAIN = E('edgeGain'), E_SOFTGAIN = E('softGain');
@@ -52,7 +62,7 @@ export class WgShadePass {
       bindings: { uniformBytes: EDGE_BLOCK.sizeBytes, textures: EDGE_TEXTURES.slice() },
       targetFormats: ['rgba8', 'rgba8'],
     });
-    this.su = new Float32Array(SHADE_BLOCK.sizeWords); this.si = new Int32Array(this.su.buffer);
+    this.su = new Float32Array(SHADE_BLOCK.sizeWords); this.si = new Int32Array(this.su.buffer); this.su32 = new Uint32Array(this.su.buffer);
     this.eu = new Float32Array(EDGE_BLOCK.sizeWords); this.ei = new Int32Array(this.eu.buffer);
     this.shTex = SHADE_TEXTURES.map((_, slot) => ({ slot, texture: null }));
     this.edTex = EDGE_TEXTURES.map((_, slot) => ({ slot, texture: null }));
@@ -212,6 +222,7 @@ export class WgShadePass {
     si[S_SUNMAP] = sh && sh.active && sun && sun.on ? 1 : 0; // WG-3d: GL uSunMapOn = shadowActive && sun.on (light runs sunMode 2)
     const fbT = p._fb; let tSec = 0; if (fbT) { const v = fbT.timeSec; if (v) tSec = v; } // same value as (fb && fb.timeSec) || 0 without a tagged phi (boxes a HeapNumber per frame)
     su[S_TIME] = tSec;
+    writeEntityTints(su, this.su32, fbT && fbT.entityTints);
     su[S_SKY_ELEV] = this.skyElevTop;
     const pm = pitched ? (rp.ortho ? 2 : 1) : 0; // US-068b2: 2 = ortho
     si[S_PROJ] = pm; ei[E_PROJ] = pm;

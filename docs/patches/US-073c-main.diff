@@ -1,0 +1,8 @@
+# US-073c main.js lines NOT applied here (kestrel-1 owns main.js). The `stable:` option line in the createRenderer call IS already in the tree.
+# Effect: teleport / respawn / world load / title / pose-jump cuts (the existing OCCL-MAIN-01 hzb invalidator, game/js/occlGate.js now also calls
+# pipeline.invalidateHistory()) reach the WebGPU pipeline when ?stable=1 even if ?occl is off. Without it the stable pass still self-cuts on |dEye| > 2 m / yaw or pitch > 3 deg.
+--- a/game/js/main.js
++++ b/game/js/main.js
+@@
+-const hzb = createHzbInvalidator(() => (occlOpt.enabled && wgActive && wgPipeline.ready ? wgPipeline : null)); // OCCL-MAIN-01: cuts invalidate the HZB
++const hzb = createHzbInvalidator(() => ((occlOpt.enabled || params.get('stable') === '1') && wgActive && wgPipeline.ready ? wgPipeline : null)); // OCCL-MAIN-01 (+ US-073c): cuts invalidate the HZB and the stable-pass history

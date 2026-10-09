@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import { formatGpuLine, evalGpuBudget } from './benchGpuLine.js';
+const e = (p50, p95) => ({ p50, p95, last: p50 });
+const st = { available: true, frames: 120, passes: { raster: e(1, 2), shadow: e(0.5, 1), light: e(0.25, 0.5), shade: e(2, 3.5) } };
+assert.equal(formatGpuLine({ available: false }), 'gpu n/a');
+assert.equal(formatGpuLine(undefined), 'gpu n/a');
+assert.equal(formatGpuLine(st), 'gpu p50 3.75 p95 7.00 (passes: raster 1.00, shadow 0.50, light 0.25, shade 2.00)');
+const part = { available: true, passes: { raster: e(1, 2), shadow: e(NaN, NaN) } };
+assert.match(formatGpuLine(part), /p50 1\.00 p95 2\.00 \(passes: raster 1\.00, shadow n\/a, light n\/a, shade n\/a\)/);
+assert.equal(evalGpuBudget(st, { p95Max: 8 }).pass, true);
+assert.equal(evalGpuBudget(st, { p95Max: 6 }).pass, false);
+assert.equal(evalGpuBudget(st).pass, null);
+assert.equal(evalGpuBudget({ available: false }, { p95Max: 8 }).pass, null);
+console.log('benchGpuLine ok');

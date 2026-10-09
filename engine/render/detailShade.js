@@ -22,6 +22,7 @@
 // v1-only material (iron, grate, ash, rock) and the `?detail=0` A/B switch.
 
 import { fastShade, samplePowLUT } from './fastShade.js';
+import { entityTintAt, tintChannel } from './entityTint.js';
 import { KIND_MODEL, KIND_MESH, FACE_PACKED } from './GBuffer.js';
 import { clamp01, clampByte } from '../core/math.js';
 
@@ -161,14 +162,23 @@ export function shadeV2(DP, rgb, m, s, L, out) {
   // per block instead of one per fine texel - else on the texel one octave
   // coarser (`floor(u*ds*0.5)`), so both stop rerolling on sub-cell motion.
   // hB (LOD tier dither + fog stipple) stays on the base texel, unchanged.
-  let hA, hC;
-  if (g) {
+  // GRID-TEXEL-GLYPH-01a: `grid.glyph: 'texel'` keys hA/hC on the octave
+  // texel (like non-grid); `jit` keeps the per-block die hJ (== old grid hA).
+  let hA, hC, hJ;
+  if (g && g.glyph !== 'texel') {
     hA = hash(bix, course, m.seed);
     hC = hash(bix, course, m.seed + 13);
+    hJ = hA;
+  } else if (g) {
+    const cx = Math.floor(u * ds * 0.5), cy = Math.floor(v * ds * 0.5);
+    hA = hash(cx, cy, m.seed);
+    hC = hash(cx, cy, m.seed + 13);
+    hJ = hash(bix, course, m.seed);
   } else {
     const cx = Math.floor(u * ds * 0.5), cy = Math.floor(v * ds * 0.5);
     hA = hash(cx, cy, m.seed);
     hC = hash(cx, cy, m.seed + 13);
+    hJ = hA;
   }
   const hB = hash(btx, bty, m.seed + 7);
   const hBlock = hash(bix, course, m.seed + 3);
@@ -246,7 +256,7 @@ export function shadeV2(DP, rgb, m, s, L, out) {
   const fk = faceShade[s.normal] || 1;
   let aok = 1;
   if (s.aoD != null && s.aoD < ao.r) aok = ao.k + (1 - ao.k) * smoothstepFast(0, ao.r, s.aoD);
-  const jit = 1 + (m.jitter || 0) * (hA * 2 - 1);
+  const jit = 1 + (m.jitter || 0) * (hJ * 2 - 1);
   const b = Lm * m.albedo * shadeK * fk * aok * jit + (m.emissive || 0);
   const lift = shading.lift;
   let gb = b < cutoff ? 0 : lift + (1 - lift) * Math.min(b, 1);
@@ -433,14 +443,16 @@ export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist
   else oct = 2;
   const ds = rec.detail * POW2[oct + 3];
   const btx = Math.floor(u * rec.detail), bty = Math.floor(v * rec.detail);
-  let hA, hC;
-  if (g) {
+  let hA, hC, hJ;
+  if (g && !g.texel) {
     hA = hashFast(bix, course, rec.seed);
     hC = hashFast(bix, course, rec.seed + 13);
+    hJ = hA;
   } else {
     const cx = Math.floor(u * ds * 0.5), cy = Math.floor(v * ds * 0.5);
     hA = hashFast(cx, cy, rec.seed);
     hC = hashFast(cx, cy, rec.seed + 13);
+    hJ = g ? hashFast(bix, course, rec.seed) : hA;
   }
   const hB = hashFast(btx, bty, rec.seed + 7);
   const hBlock = hashFast(bix, course, rec.seed + 3);
@@ -549,7 +561,7 @@ export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist
   const fk = kind === KIND_MODEL ? 1 : (table.faceK[face] || 1);
   let aok = 1;
   if (aoD < table.ao.r) aok = table.ao.k + (1 - table.ao.k) * smoothstepFast(0, table.ao.r, aoD);
-  const jit = 1 + rec.jitter * (hA * 2 - 1);
+  const jit = 1 + rec.jitter * (hJ * 2 - 1);
   const b = Lm * rec.albedo * shadeK * fk * aok * jit * (1 - WET_DARK * (shading.wetness || 0)) + rec.emissive;
   const lift = shading.lift;
   const gb = b < cutoff ? 0 : lift + (1 - lift) * Math.min(b, 1);
@@ -704,6 +716,7 @@ const fastOut = { fg: [0, 0, 0], bg: [0, 0, 0], glyphIdx: 0 };
 // US-006: this cell's selected [r,g,b] light (uniform or per-cell - see
 // `shadeSurfaces`), handed to `shadeDetailFast` unchanged.
 const cellLight = [0, 0, 0];
+const tintScratch = new Float32Array(4), tintFg = [0, 0, 0], tintBg = [0, 0, 0]; // 38.23
 
 // v1 interior fog (US-004b's own fast fog, duplicated here in numbers only -
 // no `P.util.fogFactor` call per cell; matches `fastShade.js`'s
@@ -761,6 +774,7 @@ export function shadeSurfaces(fb, gbuf, table, DP, lightBuf) {
     }
   }
 
+  const tints = fb.entityTints || null; // 38.23 table or null (off)
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
@@ -785,6 +799,13 @@ export function shadeSurfaces(fb, gbuf, table, DP, lightBuf) {
         onJoint = false;
       }
 
+      if (tints !== null && tints.count > 0 && gbuf.objectId && entityTintAt(tints, gbuf.objectId[i], tintScratch)) {
+        // 38.23: display override after lighting, before fog (fogF below); no light emitted.
+        const tk = tintScratch[3];
+        tintFg[0] = tintChannel(fg[0], tintScratch[0], tk); tintFg[1] = tintChannel(fg[1], tintScratch[1], tk); tintFg[2] = tintChannel(fg[2], tintScratch[2], tk);
+        tintBg[0] = tintChannel(bg[0], tintScratch[0], tk); tintBg[1] = tintChannel(bg[1], tintScratch[1], tk); tintBg[2] = tintChannel(bg[2], tintScratch[2], tk);
+        fg = tintFg; bg = tintBg;
+      }
       rt.setCellRGB(x, y, glyphIdx,
         clampByte(fg[0]), clampByte(fg[1]), clampByte(fg[2]),
         clampByte(bg[0]), clampByte(bg[1]), clampByte(bg[2]));

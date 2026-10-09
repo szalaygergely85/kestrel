@@ -153,7 +153,10 @@ export { Entity } from './entities/Entity.js';
 export { Camera } from './entities/Camera.js';
 export { EntityHandle } from './entities/EntityHandle.js';
 export { stepAnimations, animComponent } from './entities/animation.js';
+export { createAnimState, blend as animBlend, BLEND_MS as ANIM_BLEND_MS, PRIORITY as ANIM_PRIORITY } from './entities/animState.js';
+export { bindClips, applyAnimState, modelClipNames } from './entities/animClips.js';
 export { tintAt, setTint, sampleTint } from './entities/tintEnvelope.js';
+export { createEntityTintTable, clearEntityTints, pushEntityTint, pushEntityTintSample, fillEntityTints, entityTintAt, tintChannel, ENTITY_TINT_MAX } from './render/entityTint.js';
 export { Player } from './entities/Player.js';
 export { createEyeFeel, updateEyeFeel } from './entities/EyeFeel.js';
 
@@ -210,6 +213,7 @@ export { rayTerrain, pickNearest, selectInRect } from './render/pick.js';
 // ---- RE-08/RE-09 flow-field pathfinding + local avoidance (docs/architecture.md 28.2) --
 export { createFlowField, FlowCache } from './nav/flowField.js';
 export { createSteer } from './nav/steer.js';
+export { perceive, NOISE_SPRINT, NOISE_SWING } from './nav/perceive.js';
 
 // ---- RE-11 fog-of-war visibility grid (docs/architecture.md 28.3) ---------
 export { Visibility } from './world/Visibility.js';
@@ -244,6 +248,7 @@ export { createEntityEmitters } from './world/entityEmitters.js';
 // ---- S8-B2-13b splash ripples (docs/architecture.md 38.14, the note of record) ----
 export { createRipples, RIPPLE_LIFE, RIPPLE_SPEED, RIPPLE_W } from './fx/ripples.js';
 export { defineHitSparks, hitSparks, HIT_SPARK_HUES } from './fx/hitSparks.js';
+export { laneCells, laneAlpha, LANE_CELL_M, LANE_ALPHA_MAX } from './fx/chargeLane.js';
 
 // ---- US-055a1 water regions + query (architecture.md 32.2; the query is `World#waterAt`) ----
 export { createWater, collectWaterDefs, WATER_MAX } from './world/water.js';

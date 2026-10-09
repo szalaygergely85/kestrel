@@ -21,6 +21,15 @@ export function windSwayOn(field) { return !!(field && field.params && field.par
 export const SWAY_SHADOW_HZ = 10;
 export function windShadowKey(field, seconds) { return windSwayOn(field) ? (Math.floor(seconds * SWAY_SHADOW_HZ) + 1) | 0 : 0; }
 
+/** The 10 Hz-quantised wind clock of the sun map (GPU passShadow packs it, JS twins raster with it). */
+export function sunWindClock(seconds) { return Math.floor(seconds * SWAY_SHADOW_HZ) / SWAY_SHADOW_HZ; }
+/** Wind ctx `{field, t}` for rasterDrawList (null = calm) with the quantised sun-map clock; writes into `out`. */
+export function sunWindCtx(field, seconds, out) {
+  if (!windSwayOn(field)) return null;
+  out.field = field; out.t = sunWindClock(seconds || 0);
+  return out;
+}
+
 const _w = [0, 0];
 /**
  * Sway displacement of one vertex (the JS twin of the instanced vertex stage; the shader runs it in f32).

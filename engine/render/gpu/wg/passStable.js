@@ -52,7 +52,7 @@ export class WgStablePass {
     this.set = [null, null];
     this.tex = STABLE_TEXTURES.map((_, slot) => ({ slot, texture: null }));
     this.bindDesc = [{ uniforms: this.u, textures: this.tex }, { uniforms: this.u, textures: this.tex }];
-    this._invalid = true;
+    this._invalid = true; this._bf = { invalidate: false };
   }
 
   /** (Re)allocates the ping-pong pair; history is invalid afterwards. */
@@ -70,10 +70,11 @@ export class WgStablePass {
 
   invalidate() { this._invalid = true; }
 
-  /** Camera terms + histValid for this frame. @returns {boolean} histValid */
-  beginFrame(cam, grid, flags) {
+  /** Camera terms + histValid for this frame. `terms` = this frame's raster-pass pitchedTerms (skips the recompute, 0 alloc). @returns {boolean} histValid */
+  beginFrame(cam, grid, flags, terms) {
     const inv = this._invalid || !!(flags && flags.invalidate);
-    const valid = beginFrame(this.st, cam, grid, { invalidate: inv });
+    const fl = this._bf; fl.invalidate = inv; // reused flags object: 0 B/frame
+    const valid = beginFrame(this.st, cam, grid, fl, terms || null);
     this._invalid = false;
     packStableUniforms(this.st, this.cols, this.rows, this.u, this.ui);
     return valid;
@@ -82,6 +83,7 @@ export class WgStablePass {
   // after a run `_k` already points at the NEXT write set, so this frame's output is set[_k ^ 1]
   get outFg() { return this.ran ? this.set[this._k ^ 1].outFg : null; }
   get outBg() { return this.ran ? this.set[this._k ^ 1].outBg : null; }
+  get outHist() { return this.ran ? this.set[this._k ^ 1].hist : null; } // gpucompare `stable` row read-back
 
   run(p, t, inputs = null) {
     if (!this.set[0] || !t || !t.texLevel) return false;

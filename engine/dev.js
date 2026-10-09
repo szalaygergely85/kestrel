@@ -33,6 +33,7 @@ export {
 } from './render/gpu/gpuCompare.js';
 // ME-15b (27.9a item 10): GPU sun shadow depth vs the rasterJS depth-only twin.
 export { createShadowParityRunner } from './render/gpu/shadowParity.js';
+export { runStableRow, compareStableRow } from './render/gpu/wg/stableCompare.js'; // US-073c: gpucompare `stable` row
 // ME-06 (27.15.5a item 6): compare harnesses settle the shared terrain mesh set before each pose.
 export { terrainMeshSetFor } from './mesh/terrainMesh.js';
 

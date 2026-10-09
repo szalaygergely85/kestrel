@@ -16,6 +16,11 @@ import { WgCellPipeline } from './gpu/wg/WgCellPipeline.js';
  *   gpu?: boolean, warn?: (m: string) => void}} o
  * @returns {Promise<{rt: any, device: any, info: {requested: string, backend: string, fallback: boolean, label: string}}>}
  */
+// POINTSHADOW-WIRE-01: options forwarded to WgCellPipeline (WebGL2 path never reads them). pointShadows undefined -> pipeline default (off).
+export function wgPipelineOpts(o) {
+  return { rays: o.rays, terrainEnabled: o.terrainEnabled, shadows: o.shadows, gpuCull: o.gpuCull, occl: o.occl, pointShadows: o.pointShadows, pointShadowLevel: o.pointShadowLevel, stable: o.stable }; // US-073c: `?stable=1`
+}
+
 export async function createRenderer(o) {
   const { canvas, cols = 320, rows = 120, force2d = false, gpu = true } = o;
   const cpuGrid = o.cpuGrid || { cols: 160, rows: 60 };
@@ -38,7 +43,7 @@ export async function createRenderer(o) {
         let pipeline = null;
         const tW = bootNow();
         if (o.onCompileProgress) device.onCompileProgress = o.onCompileProgress; // boot card: (done, total) per compiled pipeline
-        if (gpu) pipeline = new WgCellPipeline(rt, { rays: o.rays, terrainEnabled: o.terrainEnabled, shadows: o.shadows, gpuCull: o.gpuCull, occl: o.occl });
+        if (gpu) pipeline = new WgCellPipeline(rt, wgPipelineOpts(o));
         bootSpan('new WgCellPipeline total', tW);
         // S8-B1-09b (38.10b): all pass pipelines were created in one async compile batch; wait for it here (the loading card is up),
         // then log per-pipeline ms (they overlap, so also the wall total) into the boot report.

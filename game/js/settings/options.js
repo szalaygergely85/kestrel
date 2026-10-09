@@ -20,6 +20,8 @@ export const ULTRA_GRID_VALUES = ['480x180'];
 
 export const OPTIONS = [
   { id: 'grid', type: 'choice', label: 'Grid', values: GRID_VALUES, default: '240x90' },
+  // QUALITY-GRID-01: the quality preset owns the grid (settings.js applies knobsFor(q).grid live and saves both).
+  { id: 'quality', type: 'choice', label: 'Quality', values: ['low', 'medium', 'high', 'ultra', 'auto'], default: 'auto' },
   { id: 'fullscreen', type: 'toggle', label: 'Fullscreen', values: [false, true], default: false },
   // GDD 4 / US-038 AC: 0.05-0.40 deg/px, step 0.025, default 0.15.
   { id: 'mouseSensitivity', type: 'range', label: 'Mouse sensitivity', min: 0.05, max: 0.40, step: 0.025, default: 0.15 },

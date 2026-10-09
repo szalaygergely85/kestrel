@@ -5,12 +5,12 @@
 import { createTitleMenu } from './ui/titleMenu.js';
 
 const CREDITS_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Enter', 'Home', 'End', 'Escape'];
-export const MENU_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyS', 'Enter', 'Space', 'Delete', 'Escape'];
+export const MENU_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyS', 'Enter', 'Space', 'Escape']; // TITLE-MENU-02: no Delete (no delete UI any more)
 
 /**
- * @param {{adapter:any, style?:any, onNewGame:(slot:number)=>void, onContinue:(slot:number, save:any)=>void, onSettings:()=>void, createCredits?:()=>any}} o
+ * @param {{adapter:any, style?:any, onNewGame:(slot:number)=>void, onContinue:(slot:number, save:any)=>void, onLoad?:(slot:number, save:any)=>void, onSettings:()=>void, createCredits?:()=>any}} o
  */
-export function createTitleMenuHost({ adapter, style = null, onNewGame, onContinue, onSettings, createCredits = null }) {
+export function createTitleMenuHost({ adapter, style = null, onNewGame, onContinue, onLoad = null, onSettings, createCredits = null }) {
   const menu = createTitleMenu(adapter, { style });
   menu.refresh();
   let active = true;
@@ -43,9 +43,10 @@ export function createTitleMenuHost({ adapter, style = null, onNewGame, onContin
       if (!a) return;
       if (a.type === 'credits') { host.openCredits(); return; }
       if (a.type === 'settings') { onSettings(); return; } // stays active; the menu card returns when Settings closes
-      active = false;
-      if (a.type === 'newGame') onNewGame(a.slot);
-      else if (a.type === 'continue') onContinue(a.slot, a.save);
+      if (a.type === 'newGame') { active = false; onNewGame(a.slot); }
+      else if (a.type === 'continue') { active = false; onContinue(a.slot, a.save); }
+      else if (a.type === 'load' && Number.isInteger(a.slot)) { active = false; (onLoad || onContinue)(a.slot, a.save); } // explicit slot, same resume boot as Continue
+      // any other action (e.g. legacy 'delete') is ignored; the menu stays up
     },
     get creditsOpen() { return !!credits; },
     openCredits() {

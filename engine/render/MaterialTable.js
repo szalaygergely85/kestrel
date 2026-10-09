@@ -112,6 +112,7 @@ function buildDetailMaterialRec(m, setIdByName, P, lodGates) {
       maxCover: g.maxCover == null ? 0.5 : g.maxCover,
       tie: !!g.tie,
       lines: g.lines !== false,
+      texel: g.glyph === 'texel', // GRID-TEXEL-GLYPH-01: hA/hC on the octave texel, not the block
       isGap: g.kind === 'gap',
       gapSetId: g.kind === 'gap' ? setIdByName(g.set) : -1,
     };
