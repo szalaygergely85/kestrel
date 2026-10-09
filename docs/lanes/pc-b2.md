@@ -250,3 +250,12 @@ TEST-FLAKY-AO-01 (kestrel-4): the AO garbage check moved to `engine/render/horiz
 LIGHT-ALLOC-01 (kestrel-4): JS-twin lightSurfaces AO-off 48 B/cell -> 0.01 B/cell (base + 2 points + sun + cloud). Causes: 6-double-arg lightAt, 3-double sunVisible, 6-double cloudShadeQ + boxed noise/smoothstep/double return. Fix: lightAtScratch/sunVisibleP/cloudShadeQP read P,N from Float64Array scratch (public lightAt/sunVisible/cloudShadeQ unchanged, wrap them); cloud noise inlined scratch-twin in cloudShadow.js.
 New engine/render/lighting.alloc.test.js (budget 256 KB/8x60k calls, pinned pre-refactor output hashes base 0x77841da5 / rich 0xe769901, mutation self-test). lighting/sunmap/cloudShadow/horizonAo/terrain/water/sky suites + check-deps green.
 -> arch-review
+
+## WG-5a-2 (kestrel-4, B2)
+SKY_LUT_N -> wgsl/skyLut.js; GLSL_VERSION/PRECISION/GBUF_UNPACK/BYTE_OUT/CELL_RAY_PITCHED/OCT_NORMAL -> wgsl/glslref.common.js (glsl/common.js re-exports); wg/passShade, wgsl/shade.wgsl, glslref fixtures, pitched.pipeline.test re-pointed. No non-test wg/** or wgsl/** file imports glsl/** (3 wgsl tests still do: terrainRaster/water, WG-5a-3). wg5a-plan: 11 still reachable (unchanged: remaining are tests/GL pipeline).
+-> arch-review
+
+## WG-5a-3 (kestrel-4, B2)
+Moved terrain/water GLSL reference sources to wgsl/{terrainVert,waterVert,waterFrag,waterComposite}.glslref.js + wgsl/glslref.extra.js (HASH_FAST/CELL_RAY/PITCH_UNIFORMS/NEAR|FAR_TYPE_NEAREST); glsl files re-export; wgsl/** and wg/** import nothing from ../glsl/. wgsl/glsl/terrain/water suites PASS. -> arch-review
+## LIGHT-ALLOC-01 ARCH CHANGES (kestrel-4, B2)
+cloudShadow.js cnQ octave 2.03 -> 2.0 (CLOUD-WRAP-01; sky.js here still 2.03 until the main-session merge), comment now points at new cloudShadow.parity.test.js (noise bit-exact 5000 + wrap, cloudShadeQ vs reference 5000); test hook cloudNoiseScratch exported.

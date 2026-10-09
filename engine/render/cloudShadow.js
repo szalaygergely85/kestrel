@@ -45,7 +45,7 @@ export function cloudShadeQP(C, off, P, sd) {
   const d = tt * tt * (3 - 2 * tt);
   return Math.floor(C.strength * CLOUD_DARK * d * 255 + 0.5) | 0; // int (byte 0..153): no boxed double return
 }
-// Scratch-in/scratch-out twin of sky.js `cloudValueNoise` (same op order, bit-identical; asserted in lighting.alloc.test.js):
+// Scratch-in/scratch-out twin of sky.js `cloudValueNoise` (same op order, bit-identical; asserted in cloudShadow.parity.test.js):
 // reads (x,y) = cnQ[k], cnQ[k+1], writes cnQ[4 + k/2]. No double args/returns, so V8 never boxes per call.
 const cnQ = new Float64Array(6);
 function noiseS(seed, k) {
@@ -59,6 +59,9 @@ function noiseS(seed, k) {
   const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
   cnQ[4 + (k >> 1)] = v00 + (v10 - v00) * sx + (v01 - v00) * sy + (v11 - v10 - v01 + v00) * sx * sy;
 }
+
+/** Test hook: the scratch noise path as a plain function (see cloudShadow.parity.test.js). */
+export function cloudNoiseScratch(x, y, seed) { cnQ[0] = x; cnQ[1] = y; noiseS(seed, 0); return cnQ[4]; }
 
 /** Sun multiplier for a cloud byte; q = 0 -> exactly 1. */
 export function cloudMul(q) {
