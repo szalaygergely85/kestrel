@@ -35,6 +35,15 @@ try {
   assert.ok(ready, JSON.stringify(errors));
   // Let the motes emitter warm up to its steady ~60-particle state before capture.
   await pause(3000);
+  // Positions, not just counts: every live mote must be finite and within the emission box (3.5, 3.5, 2 + drift) of the player.
+  const motes = await evaluate(cdp, `(() => { const d = window.__debug, p = d.engine.particles, t = d.playerHandle.data.transform; let n = 0, bad = 0, maxD = 0;
+    for (let i = 0; i < p.cap; i++) { if (!p.alive[i]) continue; n++; const dx = p.px[i] - t.x, dy = p.py[i] - t.y, dz = p.pz[i] - t.z;
+      if (!isFinite(dx + dy + dz)) bad++; else maxD = Math.max(maxD, Math.abs(dx), Math.abs(dy)); }
+    return { n, bad, maxD, player: [t.x, t.y, t.z] }; })()`);
+  console.log(JSON.stringify({ motes }));
+  assert.ok(motes.n > 0, 'motes are alive');
+  assert.equal(motes.bad, 0, 'no NaN mote positions');
+  assert.ok(motes.maxD < 40, 'motes stay near the player (emitter follows playerHandle.data.transform)');
   await shot('ambient-motes-sunbeam-' + backend);
   console.log(JSON.stringify({ backend, errors }));
   assert.deepEqual(errors, []);

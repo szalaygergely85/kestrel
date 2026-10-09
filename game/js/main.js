@@ -372,6 +372,7 @@ const ripples = createRipples();
 // pages and automated browsers never load or save unless `?save=1` forces it (the headless reload check does).
 const saveEnabled = params.get('save') !== '0' && (params.get('save') === '1' || !(isCaptureOrBench || params.get('capture') === '1' || params.has('at') || navigator.webdriver)); // `?at` = dev pose: never autosave it into slot 0
 let saveRelay = null;
+let titleMenuActive = true; // S8-B1-10: mirrors menuHost.active each frame (true until the first frame says otherwise); gates the loss autosave
 let deviceLostFrozen = false; // S8-B1-10 (38.10c): set once by watchDeviceLost's `freeze` hook below; gates `paused` in the frame loop
 try {
   const questDef = await (await fetch('../content/quests/m1.quest.json')).json();
@@ -387,6 +388,7 @@ try {
 // deviceLost.js (Node-testable with a mock device); this is just the DOM/sim/save glue. No-op on webgl2 (device null).
 watchDeviceLost(gpuDevice, {
   freeze: () => { deviceLostFrozen = true; },
+  canSave: () => !!gameHooks.ctx.state.canSave && !titleMenuActive, // not on the title menu / wake / death: reload loads the last good save
   autosave: () => { if (saveRelay && gameHooks.ctx.requestSave) gameHooks.ctx.requestSave(); },
   showCard: () => {
     const card = document.createElement('div');
@@ -1002,7 +1004,7 @@ async function runGame(mode, cinematic = null) {
       waterfallHooks = waterfallPreset ? createWaterfallHooks(world, engine.particles, waterfallPreset) : null;
       if (ambientMotes) ambientMotes.dispose();
       // S8-B1-18 (closes US-019): ambient dust motes, off with ?ambient=0 and on the Low preset.
-      ambientMotes = createAmbientMotes(world, engine.particles, { enabled: params.get('ambient') !== '0' && !(resolvedQuality && resolvedQuality.name === 'low'), rgb: assets.palette.rgb, palette: assets.palette });
+      ambientMotes = createAmbientMotes(world, engine.particles, { enabled: params.get('ambient') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !(resolvedQuality && resolvedQuality.name === 'low'), rgb: assets.palette.rgb, palette: assets.palette });
       // US-079a (29.1): rebuilt on every load/restart, same precedent as lightSet above.
       // US-078d: beastSim now owns a `combat:hit` listener (the stagger behaviour) - drop the old world's one
       // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.
@@ -1268,6 +1270,7 @@ async function runGame(mode, cinematic = null) {
       invView.step(dt, input, !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look
         && !(vitals && (vitals.dead || vitals.inputLocked)) && !(questUiActive && wakeOut.inputLocked));
     }
+    if (chestHook && mode === 'world' && playerHandle) chestHook.stepUi(dt, input.pressed('KeyE')); // S8-B1-04: steps while paused too (an open card pauses the sim)
     const invOpen = !!(invView && invView.isOpen);
     const cardOpen = !!(chestHook && chestHook.card.isOpen); // S8-B1-04: item-get card gates input same as invOpen
     // ---- US-015: wake timeline + map card (world_m1 only, questUiActive) ----
@@ -1286,6 +1289,7 @@ async function runGame(mode, cinematic = null) {
     // S is also WASD "move backward", so this must never trigger in play.
     updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !!look && !look.locked && !isMapOpen() && !invOpen });
     uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || !!(vitals && vitals.inputLocked);
+    titleMenuActive = !!(menuHost && menuHost.active);
     const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || ((invOpen || cardOpen) && !ending)));
 
     // US-087 follow-up: drain blocked input without advancing targeting timers.
@@ -1390,7 +1394,7 @@ async function runGame(mode, cinematic = null) {
       // US-053c: after beast/sword/vitals steps, before entityEmitters.sync()/particles.step() per 32.1.
       if (particleHooks) particleHooks.step(playerHandle.data);
       if (waterfallHooks) waterfallHooks.step();
-      if (ambientMotes) ambientMotes.step(playerHandle.data.x, playerHandle.data.y, playerHandle.data.z);
+      if (ambientMotes) { const pt = playerHandle.data.transform; ambientMotes.step(pt.x, pt.y, pt.z); } // S8-B1-18: position lives on .transform
       entityEmitters.sync(); engine.particles.step();
       if (waterfallHooks) waterfallHooks.afterStep();
       lap(SEC.physics);

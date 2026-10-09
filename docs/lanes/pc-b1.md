@@ -149,3 +149,10 @@ B1 2026-10-09 (S8-B2-13b NEEDS B1 passWater) -> arch-review:
 - Deleted compat shims: `RIPPLE_MAX` (engine/world/water.js), `packRipples` stub (engine/render/waterLook.js); grepped repo, nothing else imports either.
 - passWater.test.js: replaced `world.water.addRipple` with a real `createRipples()` on the fake fb; checks 0 rings -> count 0 + untouched ripple words + default glyph/gain, 2 rings -> count 2 + words match packInto directly, glyph/gain override via fb fields, then clears before the existing 1000-frame zero-alloc loop.
 - Suites: --filter passWater/water/ripple/wgsl all PASS; check-deps OK (642 files, pre-existing warnings only, no new ones).
+
+B1 2026-10-09 (batch 19/20 ARCH CHANGES: S8-B1-10, S8-B1-18, S8-B1-04) -> arch-review:
+- S8-B1-10: watchDeviceLost takes `canSave()`; main.js gate = `ctx.state.canSave && !titleMenuActive` (module `let`, mirrors menuHost.active each frame); else no save, card still once. Node case added.
+- S8-B1-18: main.js passes `playerHandle.data.transform` x/y/z; ambient step() skips non-finite input; motes also off for isCaptureOrBench / ?capture=1. ambient.test.js case (transform-shaped, finite + near player, undefined ignored).
+- S8-B1-04: new `chestHook.stepUi(dt, ePressed)` called every frame next to invView.step in main.js (outside !paused); card.step dropped from onTick. chestHook.test.js rig now main.js-shaped (no onTick while card open) + soft-lock test; preview updated.
+- Suites: deviceLost/ambient/chestHook PASS; node --check main.js + verify-motes.mjs OK.
+- verify-motes now asserts alive>0, no NaN, positions near playerHandle.data.transform. Cmd: node tools/verify-motes.mjs {port} [webgpu|webgl2] (not run; Node-only rule).
