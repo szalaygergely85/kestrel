@@ -253,4 +253,28 @@ const oneRangeMesh = { triCount: 4, bbox: mesh0.bbox, ranges: [{ start: 0, count
   cull.removeBatch(g4);
   cull.dispose();
 }
+
+// ---- S8-B2-05/06 host wiring: swayPad flows from begin({swayPad}) into CullU.swayPad / CullShadowU.swayPad every dispatch ----
+{
+  const { SWAY_MAX } = await import('../../../mesh/sway.js');
+  const cull = new WgCullPass(d);
+  const g = makeGroup(4, 0);
+  cull.begin({ planes: null }); cull.add(g, [mesh0, null]); cull.run();
+  assert.equal(cull._uv.f32[CULL_BLOCK.field('swayPad').word], 0, 'no sway: swayPad 0 (normal kernel)');
+  cull.begin({ planes: null, swayPad: SWAY_MAX }); cull.add(g, [mesh0, null]); cull.run();
+  assert.equal(cull._uv.f32[CULL_BLOCK.field('swayPad').word], SWAY_MAX, 'wind on: swayPad == SWAY_MAX (normal kernel)');
+  cull.dispose();
+}
+{
+  const { CULL_SHADOW_BLOCK } = await import('../wgsl/cullShadow.wgsl.js');
+  const { SWAY_MAX } = await import('../../../mesh/sway.js');
+  const m9 = makeMockGpuDevice(), dev9 = m9.device;
+  const cull = new WgCullPass(dev9, { shadow: true });
+  const g = makeGroup(4, 0);
+  cull.begin({ planes: null, eye: { x: 0, y: 0 }, castM: 10, hystM: 1 }); cull.add(g, [mesh0, null], 5, 3); cull.run();
+  assert.equal(cull._uv.f32[CULL_SHADOW_BLOCK.field('swayPad').word], 0, 'no sway: swayPad 0 (shadow kernel)');
+  cull.begin({ planes: null, eye: { x: 0, y: 0 }, castM: 10, hystM: 1, swayPad: SWAY_MAX }); cull.add(g, [mesh0, null], 5, 3); cull.run();
+  assert.equal(cull._uv.f32[CULL_SHADOW_BLOCK.field('swayPad').word], SWAY_MAX, 'wind on: swayPad == SWAY_MAX (shadow kernel)');
+  cull.dispose();
+}
 console.log('passCull.test OK');

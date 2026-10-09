@@ -24,8 +24,11 @@ import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME, SHADOW_BAND_HYST_M } from '../
 import { WgCullPass } from './passCull.js';
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 import { resolveSunShadowOptions, SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../../shadowSun.js';
+import { windSwayOn, packWindUniforms, SWAY_MAX } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
+// S8-B2-05/06: wind/sway uniforms (RASTER_BLOCK, instanced variant only; same word offsets as passRaster.js).
+const WIND = RASTER_BLOCK.field('wind').word, WIND_T = RASTER_BLOCK.field('windT').word, WIND_K = RASTER_BLOCK.field('windK').word;
 const M_X0 = RASTER_MASK_BLOCK.field('maskX0').word, M_Y0 = RASTER_MASK_BLOCK.field('maskY0').word, M_W = RASTER_MASK_BLOCK.field('maskW').word;
 const M_H = RASTER_MASK_BLOCK.field('maskH').word, M_CUT = RASTER_MASK_BLOCK.field('maskCut').word;
 // ALPHA-01f (c): same 5 mask fields, RASTER_INSTANCED_MASK_BLOCK's own word offsets (its prefix is byte-identical to RASTER_BLOCK's).
@@ -62,6 +65,9 @@ export class WgShadowPass {
     this._gpuHook = { accept: (g, m0, m1, R, lod0M) => this._accept(g, m0, m1, R, lod0M) };
     this.u = new Float32Array(RASTER_BLOCK.sizeWords);
     this.baseU = new Float32Array(this.u.buffer, 0, RASTER_BASE_BLOCK.sizeWords);
+    // S8-B2-05/06: persistent views into `this.u` (construct-once, no per-frame subarray) for packWindUniforms.
+    this.windV = this.u.subarray(WIND, WIND + 4); this.windTV = this.u.subarray(WIND_T, WIND_T + 4); this.windKV = this.u.subarray(WIND_K, WIND_K + 64);
+    this.windOn = false;
     this.tu = new Float32Array(SHADOW_TERRAIN_BLOCK.sizeWords); this.tbits = new Uint32Array(this.tu.buffer);
     this.bindDesc = { uniforms: this.baseU, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: null };
     this.clothStreams = [null];
@@ -136,7 +142,7 @@ export class WgShadowPass {
   _cullRun(planes, cam, so) {
     const n = this.gpuN, cull = this.cull, pair = this._pair;
     if (!n) return;
-    cull.begin({ planes, eye: cam, castM: so.instCastM, hystM: SHADOW_BAND_HYST_M });
+    cull.begin({ planes, eye: cam, castM: so.instCastM, hystM: SHADOW_BAND_HYST_M, swayPad: this.windOn ? SWAY_MAX : 0 });
     for (let i = 0; i < n; i++) { pair[0] = this.gpuM0[i]; pair[1] = this.gpuM1[i]; this.gpuEntries[i] = cull.add(this.gpuGroups[i], pair, this.gpuL0[i], this.gpuR[i]); }
     cull.run();
   }
@@ -245,6 +251,10 @@ export class WgShadowPass {
     this._world = p._world; this._raster = raster;
     const so = this.shadowOpts, light = p._light, cam = p._cam, world = p._world, sun = light && light.sun;
     if (!sun || !sun.on || !cam || !world) return false;
+    // S8-B2-05/06: per-frame wind uniforms (zero when sway is off: bit-identical to before) + the cull/instance sway padding.
+    this.windOn = windSwayOn(world.wind);
+    packWindUniforms(world.wind, (p._fb && p._fb.timeSec) || 0, this.windV, this.windTV, this.windKV);
+    if (p._instances) p._instances.swayPad = this.windOn ? SWAY_MAX : 0;
     const list = this.list, src = this.src, st = this.stats;
     const tCpu0 = performance.now();
     sunShadowCentre(cam, so, this.centre);
