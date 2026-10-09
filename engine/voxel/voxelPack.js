@@ -140,10 +140,16 @@ export function packVoxelModel(def, matIdFor, lightInfo) {
     mounts[name] = { at: new Float64Array(m.at), partIdx: m.part !== undefined ? partNames.indexOf(m.part) : 0 };
   }
 
+  // TALK-E1 (38.28 item 7): part name -> index, frozen, so a per-step `partRot` lookup is done once by the caller.
+  const partIndex = {};
+  for (let i = 0; i < partCount; i++) partIndex[partNames[i]] = i;
+  Object.freeze(partIndex);
+
   return {
     sx, sy, sz,
     cellM: def.cellM,
     partCount,
+    partIndex,
     // 15.1: "version++ on every repack" (the GPU re-upload key, US-040) -
     // that increment is the LIVE model's responsibility across repacks of
     // the same model; a fresh pack always starts at 1.

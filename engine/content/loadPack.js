@@ -9,11 +9,12 @@ import { migrateContent, MIGRATIONS } from './migrate.js';
 import { editLayerFromJSON } from '../world/terrainEdits.js';
 import { maskFromJSON } from './maskFile.js';
 import { prefabFromJSON } from './prefabFile.js';
+import { compileDialogue, validateDialogue } from '../ui/dialogue.js';
 import { LATEST_SCHEMA, ID_COLLECTIONS, REF_FIELDS } from './schema.js';
 
 const FILE_ID_RE = /^[a-z][a-z0-9_]*$/;
 const LOCAL_ID_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
-const KNOWN_KINDS = ['level', 'world', 'mesh', 'terrainEdits', 'mask', 'prefab'];
+const KNOWN_KINDS = ['level', 'world', 'mesh', 'terrainEdits', 'mask', 'prefab', 'dialogue'];
 
 /** `globalId('tower', 'lamp_hook') -> 'tower/lamp_hook'` (21.3). Only used
  * where a field already says which collection it points into. */
@@ -126,7 +127,9 @@ export async function loadContentPack(manifestUrl, opts = {}) {
     terrainEdits: {},
     masks: {},
     prefabs: {}, // PREFAB-SEAM (38.11): validated + frozen {id,title,items}; the game ignores them
-    meta: { level: {}, world: {}, mesh: {}, terrainEdits: {}, mask: {}, prefab: {}, manifest: { [manifest.id]: { url: manifestHref, schema: manifest.schema, nextId: null } } },
+    dialogues: {}, // DIALOGUE-01a1 (38.28): compiled (frozen, int node indices) dialogue definitions
+    warnings: [], // non-fatal content notes (e.g. unreachable dialogue nodes), strings
+    meta: { level: {}, world: {}, mesh: {}, terrainEdits: {}, mask: {}, prefab: {}, dialogue: {}, manifest: { [manifest.id]: { url: manifestHref, schema: manifest.schema, nextId: null } } },
   };
 
   const errors = [];
@@ -204,6 +207,15 @@ export async function loadContentPack(manifestUrl, opts = {}) {
     if (kind === 'mask') {
       try { bundle.masks[migrated.id] = maskFromJSON(migrated); } catch (e) { errors.push(asContentError(e, href, 'mask')); continue; }
       bundle.meta.mask[migrated.id] = { url: href, schema: migrated.schema, nextId: null };
+      continue;
+    }
+    if (kind === 'dialogue') {
+      // DIALOGUE-01a1: no nextId/id collections; errors refuse the file, unreachable nodes only warn.
+      const chk = validateDialogue(migrated);
+      if (chk.errors.length) { for (const m of chk.errors) errors.push(new ContentError(href, 'dialogue', m)); continue; }
+      for (const w of chk.warnings) bundle.warnings.push(`${href}: ${w}`);
+      bundle.dialogues[migrated.id] = compileDialogue(migrated);
+      bundle.meta.dialogue[migrated.id] = { url: href, schema: migrated.schema, nextId: null };
       continue;
     }
     if (kind === 'terrainEdits') {

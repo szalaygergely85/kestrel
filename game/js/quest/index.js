@@ -17,6 +17,7 @@ import { questEnd } from './end.js';
 import { request as requestHint } from './hints.js';
 import { noteRead } from './noteRead.js';
 import { beastLoot } from './sim/loot.js';
+import { npcTalk } from './dialogueCtl.js';
 
 /** name -> the story that gives it a real body */
 export const QUEST_BEHAVIOURS = {
@@ -27,6 +28,7 @@ export const QUEST_BEHAVIOURS = {
   'sword.take': 'US-078c',
   'note.read': 'READ-01',
   'beast.loot': 'US-091a2',
+  'npc.talk': 'DIALOGUE-01b2',
 };
 
 const logged = new Set();
@@ -65,6 +67,7 @@ const REAL_BEHAVIOURS = {
   'sword.take': swordTake,
   'note.read': noteRead,
   'beast.loot': beastLoot,
+  'npc.talk': npcTalk,
 };
 
 /** (Re)registers every quest behaviour. Idempotent; the tests call it to restore a removed registration. */

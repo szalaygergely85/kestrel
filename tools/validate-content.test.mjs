@@ -10,9 +10,9 @@
 // checks themselves being too strict - see validate-content.mjs's "3. Voxel
 // models" comment for a real example of a check that started out too
 // strict before this fixture existed).
-import { validateContent, loadQuestFiles } from './validate-content.mjs';
+import { validateContent, loadQuestFiles, validateDialogueFiles } from './validate-content.mjs';
 import { makeOk } from '../engine/test/assert.js';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -524,6 +524,28 @@ for (const [name, breakFixture, finding] of areaCases) {
     writeFileSync(join(dir, 'areas.json'), '{');
     const brokenAreas = loadQuestFiles(dir);
     ok('scanner diagnoses malformed alias JSON and retains quests', brokenAreas.quests.length === 1 && brokenAreas.areas === null && hasFinding(brokenAreas.errors, ['areas.json', 'JSON parse failed']));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
+// DIALOGUE-01a2: dialogue clip cross-check against the NPC model (fixture model, the real bear model is separate).
+{
+  const dir = mkdtempSync(join(tmpdir(), 'vc-dialogue-'));
+  try {
+    const bear = JSON.parse(readFileSync(new URL('../content/dialogue/bear.dialogue.json', import.meta.url), 'utf8'));
+    const mk = (animNames) => ({ bear: { voxel: { animations: Object.fromEntries(animNames.map((n) => [n, {}])) } } });
+    const all = ['idle', 'talk', 'listen', 'wave', 'laugh'];
+    writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(bear));
+    const good = validateDialogueFiles(dir, mk(all));
+    ok('dialogue clip check: bear file passes against a model with all clips', good.errors.length === 0 && good.warnings.length === 0 && good.checks > 3, good.errors.join('|'));
+    const noLaugh = validateDialogueFiles(dir, mk(all.filter((n) => n !== 'laugh')));
+    ok('dialogue clip check: missing node clip "laugh" is an error', hasFinding(noLaugh.errors, ['clip "laugh"', 'model "bear"']));
+    const noTalk = validateDialogueFiles(dir, mk(['idle', 'wave', 'laugh']));
+    ok('dialogue clip check: missing runtime clips talk/listen are errors', hasFinding(noTalk.errors, ['clip "talk"']) && hasFinding(noTalk.errors, ['clip "listen"']));
+    const unreg = validateDialogueFiles(dir, {});
+    ok('dialogue clip check: unregistered model warns, no error', unreg.errors.length === 0 && unreg.warnings.some((w) => w.includes('not registered')));
+    const broken = { ...bear, nodes: { ...bear.nodes, 'bear.repeat': { ...bear.nodes['bear.repeat'], lines: ['x'.repeat(60)] } } };
+    writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(broken));
+    ok('dialogue file check: engine rules (line > 56) are reported', hasFinding(validateDialogueFiles(dir, mk(all)).errors, ['60 chars']));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
