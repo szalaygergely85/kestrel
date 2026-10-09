@@ -131,9 +131,9 @@ export function cloudAt(dx, dy, dz, elevDeg, C, off, out) {
   // q = cloud-deck projection, drifted once per frame (off).
   const qx = (dx / (dz + C.bias)) * C.scale + off[0];
   const qy = (dy / (dz + C.bias)) * C.scale + off[1];
-  const puff = cloudValueNoise(qx, qy, seed) * 0.65 + cloudValueNoise(qx * 2.03 + 17.0, qy * 2.03 + 17.0, seed) * 0.35;
+  const puff = cloudValueNoise(qx, qy, seed) * 0.65 + cloudValueNoise(qx * 2.0 + 17.0, qy * 2.0 + 17.0, seed) * 0.35;
   // wisp: stretched 3x along x (the wind axis).
-  const wisp = cloudValueNoise(qx * 0.33 * 1.7 + 41.0, qy * 1.7 + 41.0, seed);
+  const wisp = cloudValueNoise((qx - off[0]) * 0.33 * 1.7 + off[0] + 41.0, (qy - off[1]) * 1.7 + off[1] * 2.0 + 41.0, seed); // CLOUD-WRAP-01: drift term has integer factors (1, 2) so a 256 wrap is seamless
   const cb = out.band;
   const band = smoothstep01(0, cb[0], elevDeg) * (1 - smoothstep01(cb[1], cb[2], elevDeg));
   const dn = clamp01(Math.max((puff - C.cover) * C.puffK, (wisp - C.wispCover) * C.wispK * 0.55) * band);
