@@ -1,7 +1,7 @@
 // WG-2b: scalar WGSL helpers evaluated against their shipped JS/GLSL oracles before browser checks.
 import assert from 'node:assert/strict';
 import { packNormalOct, unpackNormalOct } from '../../../voxel/octNormal.js';
-import { meshFragSrc } from '../glsl/mesh.frag.js';
+import { meshFragSrc } from './meshFrag.glslref.js';
 import { RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL, RASTER_MASK_WGSL, RASTER_MASK_SHADOW_WGSL, MASK_TEXEL_WGSL, RASTER_BASE_BLOCK, RASTER_BLOCK, RASTER_MASK_BLOCK, RASTER_INSTANCED_MASK_WGSL, RASTER_INSTANCED_MASK_BLOCK, RASTER_INSTANCED_MASK_SHADOW_WGSL } from './raster.wgsl.js';
 import { MaskAtlas } from '../../MaskAtlas.js';
 import { compileFn, makeTex, textureLoad } from './wgslProbe.js';

@@ -319,6 +319,24 @@ function cameraPlanes() {
   ok('buildShadowList + matrix: no heap growth over 20k frames', grew < 64 * 1024, `grew ${grew} bytes (sink=${sink})`);
 }
 
+// ---- PCB-PO-SHADOWLIST-01 / ALPHA-01f-fix: buildShadowList emits flags=0 (no ONE_PART) for a masked-range group, ONE_PART for opaque ----
+{
+  const mk = (id, masked) => ({ id, layout: 'static', triCount: 4, bbox: new Float64Array([-1, -1, 0, 1, 1, 2]),
+    ranges: [{ part: 'a', triStart: 0, triCount: 2 }, masked ? { part: 'b', triStart: 2, triCount: 2, mask: { tex: 't', cutoff: 0.5 } } : { part: 'b', triStart: 2, triCount: 2 }] });
+  const run = (mesh) => {
+    const groups = new InstanceGroups();
+    const g = groups.meshGroup(mesh, 2);
+    g.count = 2; writeUnitInstance(g.ib, 0, 0, 0, 0, 0, 0x40000, 0); writeUnitInstance(g.ib, 1, 3, 0, 0, 0, 0x40001, 0);
+    const src = { centre: { x: 0, y: 0, z: 0 }, cache: new LevelMeshCache(), instances: groups, meshCache: { get: () => mesh }, meshIdFor: () => 1 };
+    const sl = createShadowList();
+    buildShadowList(sl, null, { structures: [], structVersion: 1, terrain: null }, new Float64Array(24), src);
+    return { sl, g };
+  };
+  const m = run(mk('mk-masked', true)), o = run(mk('mk-opaque', false));
+  ok('masked meshGroup shadow item: flags 0 (no DRAW_FLAG_ONE_PART), parts.count = 2', m.sl.count === 1 && m.sl.items[0].flags === 0 && m.g.parts.count === 2, `count=${m.sl.count} flags=${m.sl.items[0] && m.sl.items[0].flags}`);
+  ok('opaque meshGroup shadow item: DRAW_FLAG_ONE_PART kept', o.sl.count === 1 && (o.sl.items[0].flags & 2) === 2, `flags=${o.sl.items[0] && o.sl.items[0].flags}`);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

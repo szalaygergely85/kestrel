@@ -20,7 +20,7 @@ import {
   GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, CELL_RAY_PITCHED_WGSL, OCT_NORMAL_WGSL, FMOD_WGSL, HASH_FAST_WGSL, BYTE_OUT_WGSL,
   SMOOTHSTEP_FAST_WGSL, QFLOOR_WGSL, ORIENT_AND_LINES_WGSL,
 } from './common.wgsl.js';
-import { MAX_SUB } from '../glsl/shade.frag.js';
+export const MAX_SUB = 16; // 4x4, matches resolve.wgsl.js's cap
 import { SKY_LUT_N } from '../glsl/common.js';
 import { MAX_LEVELS } from '../ShadeTextures.js';
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
@@ -30,7 +30,7 @@ import { SUN_N_SHIFT, SUN_N_MASK } from '../../shadowSun.js';
 import { CLOUD_SHIFT } from '../../cloudShadow.js'; // S8-B2-12b (38.13)
 import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE } from '../../terrainShade.js';
 
-export { MAX_SUB };
+
 
 export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'fogFg', type: 'vec3' }, { name: 'fogStart', type: 'f32' },
