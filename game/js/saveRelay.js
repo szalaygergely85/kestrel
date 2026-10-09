@@ -12,7 +12,8 @@ const STATE_GONE = 12; // beastSim.STATE_GONE (hidden, skipped everywhere) - sam
 /**
  * @param {{storage:any, questDef:any, slot?:number, enabled?:boolean, autosaveSec?:number, playerName?:string, place?:string}} o
  */
-export function createSaveRelay({ storage, questDef, slot = 0, enabled = true, autosaveSec = AUTOSAVE_SEC, playerName = 'Wick', place = 'Kestrel' }) {
+export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = true, autosaveSec = AUTOSAVE_SEC, playerName = 'Wick', place = 'Kestrel' }) {
+  let slot = slot0; // US-090w: the title menu picks the slot (setSlot)
   const adapter = storage ? createStorageAdapter(storage) : null;
   const quest = createQuestRelay(questDef);
   const chests = new Set(), dead = new Set();
@@ -22,7 +23,10 @@ export function createSaveRelay({ storage, questDef, slot = 0, enabled = true, a
   let playSec = 0, sinceSave = 0, pending = null, lastResult = null;
 
   const relay = {
-    enabled, quest, adapter, slot,
+    enabled, quest, adapter,
+    get slot() { return slot; },
+    /** US-090w: target slot for load/save (title menu choice). */
+    setSlot(n) { if (Number.isInteger(n) && n >= 0) slot = n; },
     get openedChests() { return [...chests]; },
     get deadBeasts() { return [...dead]; },
     get playTimeSec() { return playSec; },
@@ -52,9 +56,9 @@ export function createSaveRelay({ storage, questDef, slot = 0, enabled = true, a
       };
     },
 
-    /** Reads the slot; when a save exists returns the restored World (caller swaps it in) and arms the pending restore. */
-    load(assets, worldOpts = {}) {
-      if (!enabled || !adapter) return null;
+    /** Reads the slot (`force` = explicit menu Continue, even where autosave is off); when a save exists returns the restored World (caller swaps it in) and arms the pending restore. */
+    load(assets, worldOpts = {}, force = false) {
+      if ((!enabled && !force) || !adapter) return null;
       const r = adapter.readSlot(slot);
       if (!r.ok) { lastResult = { op: 'load', ok: false, error: r.error }; return null; }
       if (!r.save) return null;

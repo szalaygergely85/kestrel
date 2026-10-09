@@ -44,7 +44,7 @@ import { GATE_POSES } from '../../content/dev-poses.js';
 import { MODES } from './dev/modes/index.js';
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
-import { updateSettings, drawSettingsPanel, isSettingsOpen } from './ui/settings.js'; // US-038b
+import { updateSettings, drawSettingsPanel, isSettingsOpen, openSettings } from './ui/settings.js'; // US-038b
 import { isPaused, resetSimAccumulator, duckAudio, unduckAudio, installAutoPause } from './ui/pause.js'; // US-062
 // ---- US-020a: minimal procedural sound slice (game/js/audio/*, D-004) ----
 import { initAudio, setMuted, toggleMute, isMuted } from './audio/synth.js';
@@ -65,6 +65,8 @@ import { wakeFrame, drawEyelid, applyWakeOnLoad } from './quest/wake.js';
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel } from './quest/mapCard.js';
 import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
 import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-050: the one seam to game content
+import { createTitleMenuHost } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
+import { createStorageAdapter } from './quest/save/saveState.js';
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { buildBeastNav } from './quest/sim/beastNav.js';
@@ -363,6 +365,8 @@ try {
   saveRelay.quest.onPoll = (name, a, b) => gameHooks.emitSimple(name, a, b);
   gameHooks.onSaveRequest(() => { if (saveRelay && gameHooks.ctx.world) saveRelay.save(gameHooks.ctx.world, { ending: gameHooks.ctx.state.ending }); });
 } catch (e) { console.warn('[save] relay unavailable:', e && e.message); }
+// US-090w: title menu before play. Off for `?title=0`, capture/bench/compare/cinematic pages, `?capture=1`, `?at=`/`?pose=` dev poses and bare `?level=` rooms.
+const menuWanted = params.get('title') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !params.has('at') && !params.has('pose') && !params.get('level') && !params.get('cinematic');
 // D-025 (US-038a): `renderTarget` now resizes IN PLACE (`engine.setGrid`
 // never replaces the object), so `rt` itself could be `const` - kept `let`
 // only because `depthBuffer`/`gbuf` are still replaced with new
@@ -781,12 +785,21 @@ function runGame(mode, cinematic = null) {
     invView.setPointer(Math.floor((e.clientX - r.left) / r.width * ui.cols), Math.floor((e.clientY - r.top) / r.height * ui.rows));
   });
   window.addEventListener('click', (e) => { if (invView && invView.isOpen) e.stopPropagation(); }, true);
+  // US-090w: title menu pointer - hover selects, click activates; the click never reaches PlayerLook's pointer-lock handler.
+  const menuCell = (e) => { const r = canvas.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / r.width * ui.cols), Math.floor((e.clientY - r.top) / r.height * ui.rows)]; };
+  canvas.addEventListener('mousemove', (e) => { if (menuHost && menuHost.active && !isSettingsOpen()) { const c = menuCell(e); menuHost.pointer(c[0], c[1], false); } });
+  window.addEventListener('click', (e) => {
+    if (!menuHost || !menuHost.active) return;
+    e.stopPropagation();
+    if (!isSettingsOpen()) { const c = menuCell(e); menuHost.pointer(c[0], c[1], true); }
+  }, true);
   blockContextMenu(canvas); // RMB must not open the browser menu over the game canvas (never the window)
   let practiceTarget = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let particleHooks = null; // US-053c: rebuilt on every 'world:loaded', below
   let loot = null; // US-091a2 (37.16.3): rebuilt on every 'world:loaded', after beasts + the pack
   let toasts = null; // US-091a2: the loot toast view, rebuilt with loot
   let invView = null; // US-091b: the pack screen (`I`), rebuilt with the pack
+  let menuHost = null; // US-090w: title menu host while it is up (null = no menu / already closed)
   let invWasLocked = false; // pointer lock state when the pack opened (re-lock on close)
   let waterfallHooks = null;
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
@@ -1060,12 +1073,34 @@ function runGame(mode, cinematic = null) {
     // reproduce.
     initialState = serialize(engine.world);
     // US-089w: a saved slot replaces the fresh world (same swap the `R` restart uses); a bad save falls back to the fresh start.
-    const savedWorld = saveRelay ? saveRelay.load(assets, worldLoadOpts) : null;
+    // US-090w: with the menu up, Continue loads the chosen slot later (below); no implicit slot-0 load.
+    const savedWorld = saveRelay && !menuWanted ? saveRelay.load(assets, worldLoadOpts) : null;
     if (savedWorld) {
       try { engine.setWorld(savedWorld); } catch (err) {
         console.warn('[save] restore failed, starting fresh:', err && err.message);
         guardLoad(() => engine.setWorld(deserialize(initialState, assets, worldLoadOpts)));
       }
+    }
+    // US-090w: the title menu. The world is already built behind it; New game just closes it (the world is fresh),
+    // Continue swaps in the chosen slot (same swap as the boot load / `R`), Settings opens the normal panel on top.
+    if (menuWanted && !cinematic) {
+      menuHost = createTitleMenuHost({
+        adapter: createStorageAdapter(getSaveStorage()),
+        style: window.ASSETS && window.ASSETS.uiStyle ? window.ASSETS.uiStyle.menu : null,
+        onNewGame: (slot) => { if (saveRelay) saveRelay.setSlot(slot); },
+        onContinue: (slot, save) => {
+          if (!saveRelay) return;
+          saveRelay.setSlot(slot);
+          const w = saveRelay.load(assets, worldLoadOpts, true);
+          if (!w) { console.warn('[save] continue failed, starting fresh:', saveRelay.lastResult && saveRelay.lastResult.error); return; }
+          try { engine.setWorld(w); } catch (err) {
+            console.warn('[save] restore failed, starting fresh:', err && err.message);
+            guardLoad(() => engine.setWorld(deserialize(initialState, assets, worldLoadOpts)));
+          }
+        },
+        onSettings: () => openSettings({ assets, engine, look }),
+      });
+      window.__debug.menuHost = menuHost;
     }
   }
 
@@ -1084,6 +1119,13 @@ function runGame(mode, cinematic = null) {
       if (waterfallHooks) waterfallHooks.step();
       entityEmitters.sync(); engine.particles.step();
       if (waterfallHooks) waterfallHooks.afterStep();
+      return;
+    }
+    // US-090w: title menu up -> the sim stays frozen (wake timeline, autosave and quest poll start after it closes).
+    if (menuHost && menuHost.active) {
+      if (isSettingsOpen()) updateSettings(dt, input, { assets, engine, look, canOpen: false });
+      else menuHost.step((c) => input.pressed(c));
+      input.consumePressed(); input.consumeMouseDelta();
       return;
     }
     // US-020a: `N` = mute toggle, always available (does not conflict with
@@ -1517,7 +1559,7 @@ function runGame(mode, cinematic = null) {
         drawHints(ui, assets.uiStyle, fadeLut);
         // 17.4: an eyelid over the 3D view, not UI text. BUG-WEBGPU-EYELID-01: once the WebGPU frame is complete its presenter shows the sprite-pass
         // output, so CPU scene-cell writes never appear -> draw the lid on the UI layer there (an opaque full-row overlay); else in the scene grid.
-        drawEyelid(wgActive && wgPipeline.frameComplete ? ui : rt, assets.uiStyle, wakeOut.blinkOpen);
+        if (!(menuHost && menuHost.active)) drawEyelid(wgActive && wgPipeline.frameComplete ? ui : rt, assets.uiStyle, wakeOut.blinkOpen);
         drawTitleCard(ui, fb.timeSec * 1000, wakeOut.titleA, wakeOut.titleState, fadeLut);
         const mapPanel = getMapPanel();
         if (mapPanel) drawUiPanel(ui, mapPanel, fb.timeSec * 1000, fadeLut);
@@ -1555,9 +1597,10 @@ function runGame(mode, cinematic = null) {
     }
     // US-015 tester BUG-1: the map card owns the screen while open (its own
     // click/key dismiss), so the pause text must not overprint it (160x60).
-    if (mode === 'world' && !look.locked && !isMapOpen() && !(invView && invView.isOpen) && !cinematic && !isWaterfallPreview) drawPauseOverlay(ui, rt, assets);
+    if (menuHost && menuHost.active && !isSettingsOpen()) menuHost.draw(ui); // US-090w: the card owns the screen (no pause text under it)
+    if (mode === 'world' && !look.locked && !isMapOpen() && !(invView && invView.isOpen) && !cinematic && !isWaterfallPreview && !(menuHost && menuHost.active)) drawPauseOverlay(ui, rt, assets);
     // US-038b: settings panel, drawn over the pause overlay when open
-    if (!cinematic && !isWaterfallPreview) drawSettingsPanel(ui, rt, assets, { showEntry: mode === 'world' && !look.locked && !isMapOpen() && !(invView && invView.isOpen) });
+    if (!cinematic && !isWaterfallPreview) drawSettingsPanel(ui, rt, assets, { showEntry: mode === 'world' && !(menuHost && menuHost.active) && !look.locked && !isMapOpen() && !(invView && invView.isOpen) });
     // US-029/US-030a: the real GPU work happens inside `rt.present()`'s
     // hook, right below - `cam`/`engine.world` are only meaningful in
     // 'world' mode (fb.gpu is false otherwise, so the pipeline falls
