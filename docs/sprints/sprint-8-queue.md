@@ -232,8 +232,8 @@ Tool generates a decimated LOD1 candidate for a mesh and a side-by-side preview 
 - [ ] Owner picks; only then QUAT-LOD-01 imports it. NEEDS PC-A: owner decision.
 Files: `tools/mesh-lod-preview.mjs`, `design/preview/` page.
 
-### S8-B2-12 Cloud shadows on the sun term [P2, ~0.75 d, deps: S8-B2-05]
-NOTE WRITTEN: architecture.md 38.13 (PC-B 5th agent, PC-A RATIFIED 2026-10-09) - split 12a light pass ~0.6 d / 12b terrain+water consumers ~0.35 d; was: `sunlit` is a bit in the LIGHT rgba32uint word (`sunlit | litCount<<8 | sunN<<SUN_N_SHIFT`), not a float - scale the sun contribution to L (and decide sunN), keep the bit; uniform slot. Wind source = existing `engine/world/wind.js`. Scrolling low-frequency noise multiplies `sunlit` in the light module (strength uniform, default 0); wind direction moves it.
+### S8-B2-12 Cloud shadows on the sun term [P2, ~0.75 d, deps: none (was S8-B2-05; drift now from look.clouds)]
+ARCH-NOTE: architecture.md 38.13 (cloudQ byte in LIGHT.w bits 24..31, sunlit/sunN unchanged; drift from `look.clouds`, not wind.js; LightU appends cloudA/cloudB; B1 passLight wiring). Old marker text: `sunlit` is a bit in the LIGHT rgba32uint word (`sunlit | litCount<<8 | sunN<<SUN_N_SHIFT`), not a float - scale the sun contribution to L (and decide sunN), keep the bit; uniform slot. Wind source = existing `engine/world/wind.js`. Scrolling low-frequency noise multiplies `sunlit` in the light module (strength uniform, default 0); wind direction moves it.
 - [ ] Node twin test: strength 0 bit-identical; strength 1 stays in [0.4, 1].
 - [ ] Owner look: roadSouth at two times. WGSL + twin only.
 Files: `wgsl/light.wgsl.js`, `engine/render/lighting.js`; `NEEDS B1` uniform wiring.
@@ -243,7 +243,7 @@ Files: `wgsl/light.wgsl.js`, `engine/render/lighting.js`; `NEEDS B1` uniform wir
 - [ ] Node probe test: no rings = unchanged; ring expands at fixed speed and fades by 2 s.
 - [ ] `engine` API `water.addRipple(x,z,amp)` with ring buffer; owner look on a splash pose.
 Files: `wgsl/water.wgsl.js`, `wgsl/waterComposite.wgsl.js`, `wg/passWater.js`, `engine/render/waterLayer.js`.
-NOTE WRITTEN: architecture.md 38.14 (PC-B 5th agent, PC-A RATIFIED 2026-10-09) - composite-only (WaterCompositeU, not WaterU), ring on `world.water`, ~0.75 d one step; was: (WaterU layout in `uniformBlock.js`; ring buffer owner: `engine/world/water.js` state vs render). Paths: `engine/render/gpu/waterLayer.js` (not engine/render/), JS twins `engine/render/waterComposite.js` + `rasterWaterTri` in `engine/mesh/rasterJS.js`. Links to US-055b (splash entry ring).
+ARCH-NOTE: architecture.md 38.14 (owner = new `engine/fx/ripples.js`, not world/water.js nor render; rings go into WaterCompositeU, WaterU unchanged; coords x/y). Old question: WaterU layout; ring buffer owner. Paths: `engine/render/gpu/waterLayer.js` (not engine/render/), JS twins `engine/render/waterComposite.js` + `rasterWaterTri` in `engine/mesh/rasterJS.js`. Links to US-055b (splash entry ring).
 
 ### S8-B2-14 Wetness (rain darkening) uniform [P2, ~0.5 d, deps: none]
 Global `wetness 0..1` darkens albedo and boosts specular-like gain in shade, default 0.
@@ -270,10 +270,10 @@ ARCH: 0.75 d is honest only if the hull is emitted as triangles into the existin
 - [ ] Node oracle: same positions within 1e-5 after 300 steps from the same seed.
 - [ ] Deterministic hash RNG, no `Math.random`. Registered, 0 compile errors.
 Files: `wgsl/particles.wgsl.js` (new), `engine/entities` twin (new file); NEEDS PC-A: architect note (32.x seam).
-DROP (PC-B 5th agent, PC-A RATIFIED 2026-10-09): architecture.md 38.15. At the 2048 cap the CPU sim costs 0.08 ms and `particleLayer.build` 0.35 ms (Node, all slots live, 400x150). A GPU sim would need a GPU splat (18) or a readback, would cost ~1.5 d, and would lose the f64 `hashInto` determinism. Revisit 17+18 together when `PARTICLE_CAP` >= 8192 or `step + build` > 1 ms measured. Wrong seam noted: the oracle is the existing CPU sim `engine/fx/particles.js` (rule 16), not a new `engine/entities` file.
+ARCH-NOTE: architecture.md 38.15 -> **DROP** (CPU sim 2048 live = 0.105 ms/step; GPU f32 sim cannot match the f64 oracle, splits state). Earlier note: wrong seam: the oracle is the existing CPU sim `engine/fx/particles.js` (`PARTICLE_CAP` 2048, rule 16), not a new `engine/entities` file. Note must first decide whether a GPU sim is worth it at this cap (P2).
 
-### S8-B2-18 Particle splat output module [P2, ~0.75 d, deps: S8-B2-17]
-DROP (PC-B 5th agent, PC-A RATIFIED 2026-10-09): architecture.md 38.16. It depends on 17, which is dropped. No texture atomics exist, so it would need a packed-key `atomicMin` buffer plus a resolve pass. That loses the exact "fround depth, lower slot wins" parity, and saves at most 0.35 ms at the cap. Same revisit trigger as 17. (Facts: PART rgba8 / PART_Z r32float are CPU-uploaded by `particleLayer.js` today; consumer `WgSpritesPass` is B1.) Writes live particles into the PART / PART_Z layer textures so the existing sprites pass shows them.
+### S8-B2-18 DROP (architecture.md 38.15, with S8-B2-17). Particle splat output module [P2, ~0.75 d, deps: S8-B2-17]
+Was: (PART rgba8 / PART_Z r32float are CPU-uploaded by `particleLayer.js` today; GPU nearest-wins needs storage writes + depth atomics; consumer `WgSpritesPass` is B1). Writes live particles into the PART / PART_Z layer textures so the existing sprites pass shows them.
 - [ ] Probe test: depth-ordered nearest wins, out-of-grid skipped.
 - [ ] B1 wiring row written (`NEEDS B1`); CPU particles unchanged by default.
 Files: `wgsl/particleSplat.wgsl.js` (new), `wgsl/index.js` (append).
@@ -284,17 +284,17 @@ Cloth (cape/banner) collides with 2 capsules (torso + leg) and a ground plane.
 - [ ] 0 alloc per step; capsule data passed in (no import of game). Owner look on the hero cape.
 Files: engine cloth module (path to confirm in the story), tests.
 
-### S8-B2-20 ME-20b horizon AO light-pass term [P2, ~1 d, deps: S8-B2-04]
-NOTE WRITTEN: architecture.md 38.17 (PC-B 5th agent, PC-A RATIFIED 2026-10-09). Re-scoped to horizon AO only, ~0.6 d, one step:
-- 4 taps on the existing `uDepth` binding.
-- `LIGHT_BLOCK` word 31 `aoStrength`; the size stays 1280 B.
-- It multiplies only the ambient share, as the last line, after 12a.
-- Deps are now 12a (48ffaac), not B2-04.
-
-Vertex AO cannot reach the GPU today: `buildMeshTriVertexData` throws on non-zero aux, so do not commit `--ao` meshes. It moves to the new ME-20c (needs a note). NEEDS B1: passLight word 31 upload, `?ao=` in main.js, gpucompare forces 0. Original text: Optional AO term in the light module from vertex AO plus a depth horizon sample (4 taps), strength default 0.
+### S8-B2-20 ME-20b horizon AO light-pass term [P2, ~0.75 d, deps: S8-B2-12 (same files), no longer S8-B2-04]
+ARCH-NOTE: architecture.md 38.16 (screen-space only: 4 taps on DEPTH + GI already bound in light, scales ambient only, LightU appends `ao`; vertex AO from B2-04 is a later multiplier). Optional AO term in the light module from vertex AO plus a depth horizon sample (4 taps), strength default 0.
 - [ ] Node probe: strength 0 bit-identical; 1 darkens concave corners, never brightens.
 - [ ] gpucompare unchanged at default; owner look on tower interior. WGSL only; `NEEDS B1` uniform.
 Files: `wgsl/light.wgsl.js`, `engine/render/lighting.js`.
+REWORK (main session PC-B 2026-10-09): 12a/12b, 13 and 20 were first built from the dropped PC-B notes; rework stories S8-B2-12c / S8-B2-13b / S8-B2-20b align them with 38.13 / 38.14 / 38.16 (see architecture.md 38.16a, docs/pc-b-queue.md kestrel-4 item 4).
+
+## Lane C
+
+Lane C (Codex): pure sim/data/view modules, Node tests, preview pages, tools. Never `engine/render`, `main.js`, `backlog.md`, `palette.js`. Anything needing main.js is a `NEEDS B1` row, pointing at the S8-B1 wiring story. Status goes to `docs/lanes/pc-c.md`.
+
 
 ### ME-20c vertex AO to the light pass [P2, ~1.4 d in 3 steps, deps: S8-B2-20]
 ARCH-NOTE: architecture.md 38.18. Kind-9 `GA.w` carries the interpolated vertex AO (optional 4 B/vertex stream at location 11), only while `aoStrength > 0` (flag bit 1 of `RasterU.axisAligned`); light combines it with horizon AO by `min` on the same knob. Strength 0 / gpucompare / WebGL2 = byte-identical. Still no `--ao` mesh in `content/meshes` until 20c-c is merged and gpucompare is green (owner picks meshes from a preview).
@@ -578,7 +578,7 @@ Feed seam events (`beast:died`, `item:got`, `area:entered`, `flag:set`) into que
 - [ ] questLog (S8-C-12 view, if landed) opens from the seam input event; else leave a `NEEDS B1:` note for the key binding.
 Files: `game/js/quest/wire/quest.js` + test. Owner look. NEEDS B1: gameHooks seam.
 
-### S8-C-HOOK-CHEST DROPPED 2026-10-09 (B1 built S8-B1-04 = game/js/chestHook.js; chest content/placement + first-chest reward stay C/owner). Old title: chest + item-get card wiring (replaces S8-B1-04 hook) [P1, lane C, ~0.5 d, deps: S8-B1-01 seam, S8-C-06 chest sim, S8-C-07 item-get card, S8-A-06/07 designer assets]
+### S8-C-HOOK-CHEST chest + item-get card wiring (replaces S8-B1-04 hook) [P1, lane C, ~0.5 d, deps: S8-B1-01 seam, S8-C-06 chest sim, S8-C-07 item-get card, S8-A-06/07 designer assets]
 On `prop:touched` for a chest: sim open once, item into inventory, item-get card via `drawHud`, chest opened flag saved.
 - [ ] Node test with a fake seam: chest opens once, item added once, a second touch does nothing, state persisted.
 - [ ] Headless capture of the item-get card at 400x150; reload keeps the chest open. Owner look.
@@ -637,91 +637,3 @@ WebGPU boot takes ~3 s before the first frame: expected cause = synchronous pipe
 5. Title menu + item card + credits + quest log previews (WebGPU and Arc webgl2); confirm-screen frame loss LOOK RISK.
 6. RECIPES-01 quantities (torch/shield/bow); data only. PC-A decisions owed: settings shadows, boar roster/chest/spawn anchors, breach trigger = marker proximity via AREAS-01 (PO proposal, B1 hook).
 7. Not walkable yet: waystone, quest markers, chests/card, bindings, crafting, map keys (wiring by B1 after gameHooks ARCH OK); boot time + lazy mesh unmeasured. pc-b/pc-b2 merge waits on D-039/D-051 known-FAIL records.
-
-## PC-B fill 2026-10-09 (PO)
-Verified before writing: seam `game/js/gameHooks.js` exists (drawHud/onRespawn/player:died called in main.js); `sim/waystone.js`, `chest.js`, `questMarkers.js`, `quest.js` sims exist, but `game/js/quest/wire/` is EMPTY (no WAYSTONE-01w, S8-C-HOOK-QUEST/CHEST, QUEST-MARK-01w yet) -> waystone heal/respawn, objective line, chest wiring are lane C wire work (`NEEDS C`), not B1. Slice-1 content (river widen, bridge placement, valley layout) waits on owner approval of `design/levels/valley_layout.md`; only the engine-side rules are queued here. All stories <= ~0.75 d, each ends in `arch-review` (engine) or `po-review` (UI), Node tests first.
-
-### Slot kestrel-1 (main.js hooks)
-**PBF-K1-01 Wire registry in main.js [P0, ~0.25 d, deps: seam]** Lane C wire modules (`game/js/quest/wire/*.js`) need a registration point so C never touches main.js.
-- [ ] `game/js/quest/wire/index.js` manifest (array of `{id, src}`) + main.js loads it and calls `gameHooks.register` per module, in order; a missing/throwing module logs once and boot continues.
-- [ ] Node test (`gameHooks.test.js` or `wireRegistry.test.js`): 3 fake modules register in order; one that throws in `onBoot` is skipped and the other two still get `onTick`.
-- [ ] `?wire=0` skips all wire modules (for gpucompare/capture). Empty manifest = today's behaviour byte-identical.
-Files: `game/js/main.js` (one block), `game/js/quest/wire/index.js`, test. Unblocks WAYSTONE-01w, S8-C-HOOK-QUEST/CHEST, QUEST-MARK-01w (all lane C; waystone sim already on master). NEEDS C: those wire modules.
-
-**PBF-K1-02 BUG-WEBGPU-EYELID-01 fix [P1, ~0.5 d, deps: none; spec = the BUG row above]** Eyelid invisible under WebGPU because `drawEyelid` writes `rt.cells` (wake.js:79, main.js ~1396).
-- [ ] Eyelid drawn through the presented path (ui/overlay layer) on both backends; WebGL2 result identical (cell-for-cell Node test of the eyelid cells on the ui layer at t=0.0/0.3/0.6 s).
-- [ ] Headless `capture-browser` at t=0.3 s on `?backend=webgpu` shows the lid rows (screenshot path in the lane file). Engine part (overlay API) = kestrel-2 PBF-K2-02; K1 does the main.js call.
-Files: `game/js/quest/wake.js`, `game/js/main.js`. Ends in po-review (owner look). Order: after PBF-K2-02 lands the overlay hook, else take the ui-layer route if it already exists (check `engine/ui`).
-
-**PBF-K1-03 Beast level badge HUD [P1, ~0.5 d, deps: D-052 item 3, seam drawHud]** Fixed beast levels per zone, shown near the beast health bar.
-- [ ] `beastConfig.js`: `level` per beast def (boar = 2, data only, default 1); `hudBadge.js` (pure): `badgeText(level)` -> `Lv N` and a tier colour key (<=2 plain, 3-5 yellow, 6-10 red; colours from existing palette keys, no new palette entries).
-- [ ] Badge drawn beside the target health bar via `gameHooks.drawHud` or the existing bar draw; hidden when no target; no per-frame allocation (Node test with a counter).
-- [ ] Node test: badge text/colour for levels 1, 2, 5, 6, 10, missing level.
-Files: `game/js/quest/hudBadge.js` + test, `beastConfig.js`, one call in main.js/seam. Owner look (po-review, opus PO). Not blocked on any owner decision (badge chosen over tier-colour-only; colour tiers are a data table the owner can retune).
-
-**PBF-K1-04 Desktop/Electron boot fixes [P1, ~0.5 d, deps: none; sprint-7 look risk 6]** Electron boot shows the browser "file" notice and starts at 160x60.
-- [ ] Notice shown only when `location.protocol === 'file:'` in a non-Electron UA; Electron (detect `process.versions.electron` or UA `Electron/`) never shows it. Pure `bootEnv.js` + Node test over 4 UA/protocol combos.
-- [ ] Start grid = the saved/auto preset (same rule as the browser: GFX preset from settings or the detected tier), never a hard 160x60; Node test of the pick function.
-- [ ] Headless check in a plain browser unchanged (screenshot at 400x150).
-Files: `game/js/bootEnv.js` + test, `game/js/main.js` (one call), Electron wrapper file only if it sets the size (find via grep `160`). No owner decision needed.
-
-**PBF-K1-05 PICK-UP / touch events for the seam [P1, ~0.25 d, deps: PBF-K1-01]** C's quest/chest wires need `item:got` and `flag:set` emitted at the real call sites.
-- [ ] Audit: list in the lane file where main.js picks up items, sets flags, kills beasts; emit `item:got {id,count}`, `flag:set {key,value}`, `beast:died {id,kind}` at each (only those missing).
-- [ ] `gameHooks.test.js` line per event with a fake handler; no behaviour change when no handler is registered.
-
-**Blocked on owner (do not start):** breach trigger by marker proximity (AREAS-01), bridge B repair rule (D-052 owner Q1), spell tier/upgrade design.
-
-### Slot kestrel-2 (GPU spine, no main.js)
-**PBF-K2-01 BUG-FLICKER-BRANCH-01 measurement tool [P1, ~0.5 d, deps: S8-B1-14 optional]** Make the flicker measurable instead of eyeballed.
-- [ ] `tools/capture-browser.mjs --mode flicker --at <pose> --frames 120`: captures N consecutive presented frames, writes per-frame hash plus count of cells that change frame-to-frame with the camera and sun static (json under `docs/test-reports/captures/`).
-- [ ] Pure `tools/flickerStat.mjs` + Node test: synthetic frame sequences (static = 0 changed cells, 1 cell toggling = reported at its position, whole-frame noise = flagged).
-- [ ] Runs on `?backend=webgpu` and `webgl2`; one pose from the owner report on the branch (ask the lane file for the pose; if none, use the tower road pose from gpucompare rows). Report only; no render change.
-
-**PBF-K2-02 Overlay path for CPU-drawn UI under WebGPU [P1, ~0.75 d, deps: none, ARCH-NOTE NEEDED (small)]** Root cause of BUG-WEBGPU-EYELID-01 and the ED help overlay: CPU writes to `rt.cells` are not shown when `frameComplete`.
-- [ ] Design question for the architect: ui layer composited after the sprite pass (`rt.setPresentCells` path) vs a tiny overlay pass; pick the cheaper (<0.1 ms).
-- [ ] Implementation: `engine/ui` overlay cells reach the WebGPU presenter; Node test with the mock presenter (overlay cell present in the final buffer, absent overlay = identical buffer, zero alloc).
-- [ ] gpucompare rows unchanged (overlay empty in all modes). Lets PBF-K1-02 and the editor help overlay (lane C LOOK RISK) work.
-
-### Slot kestrel-3 (B2 engine/mesh: valley engine side + diagnosis)
-**PBF-K3-01 Walkable slope limit + border no-fall-out tests [P0, ~0.5 d, deps: none; EP-WORLD-VALLEY slice 1 engine side]** `engine/physics` already has slope handling (integrate/config/terrainWalk); make the border rule explicit and tested.
-- [ ] One config value `walkSlopeMaxDeg` (default today's behaviour) documented in architecture.md; terrain above it = slide/blocked, never climbable.
-- [ ] Node test on a synthetic heightfield: 20/35/50/70 degree ramps (limit 45) - player cannot climb the steep ones, no tunnelling at 3x gravity jump speeds, no fall-out at the map edge square (clamp or wall; test all 4 edges).
-- [ ] `engine/physics` stays stand-alone (check-deps OK). Route-walk border legs are PC-A/designer later.
-
-**PBF-K3-02 Bridge deck mesh collider test [P1, ~0.5 d, deps: mesh-import skill, no real bridge asset yet]** Bridges are placed meshes with colliders (D-052).
-- [ ] Synthetic bridge (deck + rails as a `buildMeshFromTris` fixture) through the collider build: deck walkable (player steps on at both ends, 0.3 m step), rails block, walking under the arch passes.
-- [ ] Node test at walking and sprint speed: crossing 20 m deck end to end without falling; jump onto the rail is blocked or ledge-stable (document which).
-- [ ] mesh-import skill gets a 3-line "bridge/deck collider" note. Real bridge asset: designer later, not this story.
-
-**PBF-K3-03 Wade surface flag on water [P1, ~0.75 d, ARCH-NOTE NEEDED, deps: none]** Owner 2026-10-09: the big river is wadeable, not a collider wall (layout sheet "Engine ask").
-- [ ] Architect note: `world.water` region/cell attribute `wade {speedMul, currentX, currentZ}`; where physics reads it (engine/physics must stay stand-alone: pass as a callback/sampler, not an import).
-- [ ] Node test: speedMul 0.4 applied in water <= knee depth, current pushes 0.6 m/s south, deep water (> chest) unchanged (existing swim/sink rule), deterministic.
-- [ ] Values are data defaults from the layout PROPOSAL (x0.4, ford x0.7, 0.6 m/s); owner may retune, so keep them in config, not code.
-
-**PBF-K3-04 Biome map layer read by scatter [P1, ~0.75 d, ARCH-NOTE NEEDED, deps: none; EP-WORLD-VALLEY slice 3 engine side]** Editor-paintable biome layer (lane C paints later) drives scatter.
-- [ ] Architect note first: layer format (1 byte per 16 x 24 m cell or per terrain cell, in world data beside `terrainEdits`), save/load, `biomeAt(x,z)` sampler.
-- [ ] `engine/world/scatter.js` takes an optional `biomeAt` and a per-recipe `biomes: [ids]` mask; no layer = byte-identical scatter (existing scatter tests unchanged).
-- [ ] Node test: recipe restricted to biome 2 spawns only inside biome-2 cells; boundary cell deterministic; zero alloc in the hot sampler.
-
-**PBF-K3-05 BUG-WHITE-PIXELS-01 diagnosis [P1, ~0.5 d, deps: PBF-K2 pose row]** Pose `?at=1500.58,1022.77,1.80,185,-24`.
-- [ ] Node-first: reproduce with the JS twin if possible; add a `holes` counter (white/blank cells inside the mesh silhouette) to gpucompare output for that pose on both backends.
-- [ ] Written diagnosis in the lane file: cause (alpha-mask discard, depth, LOD pop, cull) with one evidence line each; propose a fix as a new story, do not fix in this one.
-
-### Slot kestrel-4 (B2 modules + importer)
-**PBF-K4-01 Forest triangle budget report [P1, ~0.5 d, deps: none]** Owner LOD1 pick needs a tri budget on forestWalk (D-051).
-- [ ] `tools/validate-mesh.mjs --budget forestWalk`: per-species tri count x placed instances in the pose view, near/mid/far split with the current LOD ranges; json + 10-line text table.
-- [ ] Node test on a fixture scatter (known counts); report numbers for both LOD1 candidates in `design/preview/lod1-trees.html`.
-- [ ] Result pasted in the lane file for PC-A and the owner pick; no asset changes.
-
-**PBF-K4-02 Asset pack licence gate [P2, ~0.5 d, deps: none]** D-052: every new pack needs a licence entry.
-- [ ] `tools/check-licences.mjs`: every directory under `design/meshes/*` that is tracked (or imported into `content/`) must have a matching section in `THIRD_PARTY_NOTICES.md` (name, source URL, licence); exits 1 listing the missing ones; git-ignored source dirs are skipped.
-- [ ] Node test with a fixture tree (ok / missing entry / ignored dir); added to `tools/run-tests.mjs` automatically via `*.test.mjs`.
-- [ ] StickyBizcuit easter-egg note (memory: public repo) is reported as a warning, not failure.
-
-## New Quaternius packs (owner 2026-10-09; sources extracted, git-ignored; CC0, notices written)
-Packs in `design/meshes/source/`: **quaternius_ultimate_stylized_nature** (BirchTree_1-5, MapleTree_1-5, DeadTree_1-10, Bush*, Flower_*/clumps, Grass_Small/Large; glTF), **quaternius_textured_stylized_trees** (Birch_1-10, DeadBirch_1-10, Pine_1-5, Tree_1-10, DeadTree_1-10; FBX/OBJ only, no glTF: needs a Collada/OBJ/FBX path or Blender export, check first), **quaternius_fantasy_props_megakit** (94 glTF props: Chest_Wood, Key_Gold/Metal, Torch_Metal, Lantern_Wall, Barrel, Crate_*, Bench, Table_*, Chair, Sword_Bronze, Shield_Wooden, Axe/Pickaxe, Anvil, Cauldron, Banner, Scroll, Potion, Coin_Pile, books, shelves, stalls...).
-- **NEWPACK-01 (lane C, content, ~1 d, `mesh-import` skill):** import a FIRST slice from Ultimate Stylized Nature for the valley forest/meadow: 2 birch + 2 maple + 2 dead trees, Bush + Bush_Flowers, Flower_1/2 clumps, Grass_Small. Budgets per MESH-SIMP-01/37.19 (no silent decimation of owner-visible art: preview options page first, e.g. `tools/mesh-lod-preview.mjs`), masks for leaf cards, trunk-only colliderParts, manifest + notices. Owner picks the look from a preview page BEFORE the game uses them (they compete with CommonTree/Pine; forest species switch is still blocked on ALPHA-01f d + owner LOD1 pick).
-- **NEWPACK-02 (lane C, ~1 d):** Fantasy Props first slice for M4 / chest / village dressing: Chest_Wood (chest model for S8-B1-04 / S8-C chest defs), Key_Gold, Key_Metal, Torch_Metal, Lantern_Wall, Barrel, Crate_Wooden, Bench, Sword_Bronze. Same import rules; chest + keys feed the chest defs and the M4 key/door epic.
-- **NEWPACK-03 (PC-B kestrel-4, ~0.5 d, ARCH check first):** can the importer read `.fbx`/`.obj` (Textured Stylized Trees has no glTF)? Report only: either extend `tools/gltf-import.mjs` input handling or note a Blender/assimp step; no code before PC-A answers.
-- Rules: every import updates `THIRD_PARTY_NOTICES.md` + `docs/licences.md`; sources stay git-ignored; no owner-art reshaping.
-

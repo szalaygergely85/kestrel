@@ -40,7 +40,7 @@ One slot per hot file at a time: `main.js` = kestrel-1 only; an item in another 
 6. Next item from `docs/pc-b-queue.md` for that slot. Fresh main session after ~3 batches (handoff first): a long main session re-sends its whole context every turn.
 
 ## 5th agent (only when blocked or empty)
-When a slot has no unblocked item left (deps, `ARCH-NOTE NEEDED`, `ASK ARCHITECT` waiting on PC-A), run ONE extra agent, never two:
+When a slot has no unblocked item left (deps, `ARCH-NOTE NEEDED`, `ASK ARCHITECT` waiting on PC-A), run ONE extra agent, never two. **First** `git fetch origin` and check `origin/master` for the note/story: PC-A may already have written it (2026-10-09: a PC-B architect duplicated PC-A's 38.13-38.16 eleven minutes after they landed on master). Use PC-A's if it exists.
 - **architect** (`model: opus`): tech note for the next `ARCH-NOTE NEEDED` item (append to the item in `docs/sprints/sprint-8-queue.md` + a short `architecture.md` 38.x subsection), or answer a lane `ASK ARCHITECT`. No `ARCH OK`/`ARCH CHANGES` on PC-B code.
 - **product-owner** (sonnet): new story rows + ACs to refill an empty slot queue (in `docs/pc-b-queue.md`). No `PO OK`.
 Mark its output `(PC-B 5th agent, PC-A to ratify)` and list it in the next handoff.
