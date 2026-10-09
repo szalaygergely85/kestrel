@@ -1,4 +1,5 @@
 // @ts-check
+import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // OCCL-STATS-01 timer slots
 // engine/render/gpu/wg/passCull.js - WG-4a (docs/architecture.md 38.3/38.8). Standalone half: B1 wires it into passRaster / WgCellPipeline.
 // GPU instance cull per MESH-INST-01 batch (an InstanceGroup: MeshGroupSet group, InstanceGroups meshGroup/voxel group): the game's instance rows
 // (16 words) are the kernel input, frustum + distance cull + LOD pick compact the survivors into one instance buffer per LOD and bump one
@@ -80,7 +81,13 @@ export class WgCullPass {
     /** @type {any[]} batches queued this frame */
     this.queue = [];
     this.frame = { hzb: /** @type {any} */ (null), swayPad: 0, planes: /** @type {Float64Array|null} */ (null), viewProj: /** @type {Float64Array|null} */ (null), rows: 0, eye: /** @type {any} */ (null), maxDistM: 0, castM: 0, hystM: 0 };
-    this.stats = { batches: 0, dispatches: 0, instances: 0, uploads: 0, argsBytes: 0 };
+    this.stats = { batches: 0, dispatches: 0, instances: 0, uploads: 0, argsBytes: 0, culledOccl: 0 };
+    // OCCL-STATS-01: async 1-frame-late count of instances still parked after phase 2 (= culled by occlusion). One read in flight; callback bound once.
+    this._rbBusy = false; this._rbLeft = 0; this._rbSum = 0;
+    this._rbDone = (err, out, cnt) => {
+      if (!err && out) { let n = 0; for (let i = 0; i < cnt; i++) n += out[i] & 1; this._rbSum += n; }
+      if (--this._rbLeft <= 0) { this.stats.culledOccl = this._rbSum; this._rbBusy = false; }
+    };
   }
 
   /**
@@ -170,11 +177,12 @@ export class WgCullPass {
       meshes0: null, meshes1: null,
       entries: /** @type {CullEntry[]} */ ([]),
       // S8-B2-10c (occl only): pending flags, phase-2 survivor buffers + their own args block
-      slot2: -1, occlBuf: /** @type {any} */ (null), dst2: /** @type {any} */ (null), entries2: /** @type {CullEntry[]} */ ([]),
+      slot2: -1, occlBuf: /** @type {any} */ (null), occlOut: /** @type {Uint32Array|null} */ (null), dst2: /** @type {any} */ (null), entries2: /** @type {CullEntry[]} */ ([]),
     };
     if (this.occl) {
       b.slot2 = this._takeBlock(rc);
       b.occlBuf = d.createBuffer({ usage: 'storage', data: new Uint32Array(cap) });
+      b.occlOut = new Uint32Array(cap);
       b.dst2 = [d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES }), d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES })];
     }
     for (let lod = 0; lod < 2; lod++) {
@@ -339,20 +347,44 @@ export class WgCullPass {
    * and appends survivors to dst2/dst3 (own args records). Same thread count and bind group as phase 1 except 2/3 = dst2/dst3. No-op without occl or when phase 1 ran with
    * hzbOn 0 (nothing is pending). Call after the HZB build, before raster pass B; draw `phase2Entries(group)` there. @param {any} hzb fresh HZB descriptor (same shape as begin's)
    */
-  runPhase2(hzb) {
+  runPhase2(hzb, p = null) {
     const fr = this.frame;
-    if (!this.occl || !hzb || fr.hzb === null) return;
+    if (!this.occl) return;
+    if (!hzb || fr.hzb === null) { this.stats.culledOccl = 0; return; }
     const d = this.device, s = this.stats;
+    wgSpanBegin(p, WG_PASS_SLOT.cull2); // OCCL-STATS-01: timer slot (no-op unless pass timing is on)
+    try {
+      for (let q = 0; q < this.queue.length; q++) {
+        const b = this.queue[q], g = b.g, n = g.count;
+        if (n <= 0 || !b.occlBuf) continue;
+        const cnt = n > b.cap ? b.cap : n;
+        this._fillCommon(b, cnt); // the uniform block holds the LAST phase-1 batch: rebuild this batch's words
+        this._writeOcc(hzb, true, 2, b);
+        const bd = this._bind.buffers;
+        bd[0].buffer = b.src; bd[1].buffer = b.lodPrev; bd[2].buffer = b.dst2[0]; bd[3].buffer = b.dst2[1]; bd[4].buffer = this.argsBuffer; bd[5].buffer = hzb.buffer; bd[6].buffer = b.occlBuf;
+        d.dispatch(this.pipeline, this._bind, Math.ceil(cnt / CULL_WORKGROUP), 1, 1);
+        s.dispatches++;
+      }
+    } finally { wgSpanEnd(p); }
+    this._occlReadback();
+  }
+
+  /**
+   * OCCL-STATS-01: stats.culledOccl = instances whose occl word still has bit 0 set after phase 2. Needs `device.readBufferAsync(buffer, bytes, outU32, cb)`
+   * (cb(err, out, words), submitted after this frame's work, mapped async) AND the kernel clearing `occl[i]` on a phase-2 rescue; without a device
+   * hook it stays 0. One read in flight (a busy frame is skipped), preallocated outputs, no per-frame allocation here.
+   */
+  _occlReadback() {
+    const d = this.device;
+    if (this._rbBusy || typeof d.readBufferAsync !== 'function') return;
+    let k = 0;
+    for (let q = 0; q < this.queue.length; q++) { const b = this.queue[q]; if (b.occlBuf && b.g.count > 0) k++; }
+    if (k === 0) { this.stats.culledOccl = 0; return; }
+    this._rbBusy = true; this._rbLeft = k; this._rbSum = 0;
     for (let q = 0; q < this.queue.length; q++) {
-      const b = this.queue[q], g = b.g, n = g.count;
-      if (n <= 0 || !b.occlBuf) continue;
-      const cnt = n > b.cap ? b.cap : n;
-      this._fillCommon(b, cnt); // the uniform block holds the LAST phase-1 batch: rebuild this batch's words
-      this._writeOcc(hzb, true, 2, b);
-      const bd = this._bind.buffers;
-      bd[0].buffer = b.src; bd[1].buffer = b.lodPrev; bd[2].buffer = b.dst2[0]; bd[3].buffer = b.dst2[1]; bd[4].buffer = this.argsBuffer; bd[5].buffer = hzb.buffer; bd[6].buffer = b.occlBuf;
-      d.dispatch(this.pipeline, this._bind, Math.ceil(cnt / CULL_WORKGROUP), 1, 1);
-      s.dispatches++;
+      const b = this.queue[q];
+      if (!b.occlBuf || b.g.count <= 0) continue;
+      d.readBufferAsync(b.occlBuf, (b.g.count > b.cap ? b.cap : b.g.count) * 4, b.occlOut, this._rbDone);
     }
   }
 

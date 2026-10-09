@@ -505,14 +505,17 @@ export class WgRasterPass {
         p.stats.clothDraws = this._cloths(list);
         p.stats.terrainDraws = this._terrain(list);
       } finally { d.endPass(); }
-      if (this.hzb) this._occlPhase2(p); // S8-B2-10c: HZB build -> cull phase 2 -> raster B (before the viewmodel pass: it clears depth)
-      if (this.vmList) {
+    } finally { wgSpanEnd(p); } // OCCL-STATS-01: spans never nest - raster A closes before the phase-2 spans (hzb, cull2, raster2)
+    if (this.hzb) this._occlPhase2(p); // S8-B2-10c: HZB build -> cull phase 2 -> raster B (before the viewmodel pass: it clears depth)
+    if (this.vmList) {
+      wgSpanBegin(p, WG_PASS_SLOT.raster); // viewmodel pass accumulates into the raster slot
+      try {
         // A depth-only target clears the same depth attachment, preserving all colour G-buffer values.
         d.beginPass(p._t.targetVmDepth, this.vmClearOpts); d.endPass();
         d.beginPass(p._t.targetRaster);
         try { p.stats.vmDraws = this._voxels(this.vmList); } finally { d.endPass(); }
-      } else p.stats.vmDraws = 0;
-    } finally { wgSpanEnd(p); }
+      } finally { wgSpanEnd(p); }
+    } else p.stats.vmDraws = 0;
     p.stats.meshDraws = staticDraws; p.stats.maskDraws = this.maskDraws; p.stats.maskUploads = this.maskUploads; p.stats.instancedDraws = instancedDraws; p.stats.instances = instances;
     p.stats.voxelDraws += instancedDraws;
   }
@@ -529,12 +532,15 @@ export class WgRasterPass {
     const hp = this.hzb;
     if (!this.gpuN) { hp.invalidate(); return; } // no batches this frame: the pyramid would go stale -> never reuse it
     const d = this.device;
-    hp.build(p._t.texSDepth);
+    hp.build(p._t.texSDepth, p);
     if (!this._phase2) return;
     const fresh = hp.fresh(this._hzbFwd);
-    this.cull.runPhase2(fresh);
-    d.beginPass(p._t.targetRaster); // load-only: keeps colour G-buffers and depth24 of pass A
-    try { p.stats.gpuCullDraws2 = this._cullDraw(true); } finally { d.endPass(); }
+    this.cull.runPhase2(fresh, p);
+    wgSpanBegin(p, WG_PASS_SLOT.raster2);
+    try {
+      d.beginPass(p._t.targetRaster); // load-only: keeps colour G-buffers and depth24 of pass A
+      try { p.stats.gpuCullDraws2 = this._cullDraw(true); } finally { d.endPass(); }
+    } finally { wgSpanEnd(p); }
   }
 
   dispose() {

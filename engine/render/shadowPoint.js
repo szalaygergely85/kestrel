@@ -199,6 +199,13 @@ export function selectShadowLights(lights, cam, n, state, hysteresis = 1.25) {
  * (pass 0 unless the list holds a swaying group: sway quantum). Flicker jitter / colour / intensity never change it.
  */
 export function pointShadowKey(out2, ox, oy, oz, radius, casterH0, casterH1, structVersion, windKey, q = 64) {
+  _o4[0] = ox; _o4[1] = oy; _o4[2] = oz; _o4[3] = radius;
+  return pointShadowKeyO(out2, _o4, casterH0, casterH1, structVersion, windKey, q);
+}
+const _o4 = new Float64Array(4);
+/** Same key, origin + radius read from `o4` (xyz, radius): no boxed-double call arguments, so the per-frame key is allocation-free. */
+export function pointShadowKeyO(out2, o4, casterH0, casterH1, structVersion, windKey, q = 64) {
+  const ox = o4[0], oy = o4[1], oz = o4[2], radius = o4[3];
   let h0 = 0x811c9dc5 | 0, h1 = 0x1b873593 | 0;
   const w0 = Math.floor(ox * q + 0.5) | 0, w1 = Math.floor(oy * q + 0.5) | 0, w2 = Math.floor(oz * q + 0.5) | 0, w3 = Math.floor(radius * 16 + 0.5) | 0;
   h0 = Math.imul(h0 ^ w0, 0x01000193); h1 = Math.imul(h1 ^ w0, 0x85ebca6b);
