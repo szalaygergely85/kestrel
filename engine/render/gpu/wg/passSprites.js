@@ -38,6 +38,8 @@ export class WgSpritesPass {
     this.pool = opts.pool;
     this.palette = opts.palette || null;
     this.cols = 0; this.rows = 0;
+    // timeUploads (default false): the two performance.now() calls allocate ~32 B/frame; when off, stats.uploadMs stays 0.
+    this.timeUploads = !!opts.timeUploads;
     this.stats = { sprites: 0, uploadMs: 0 };
     this.ran = false;
     this._rowRect = { x: 0, y: 0, w: 0, h: 0 }; // reused dirty-row rect for writeTexture (no per-frame allocation)
@@ -158,7 +160,7 @@ export class WgSpritesPass {
   run(inp) {
     this.ran = false;
     if (!this.target || !this.texAtlas) return;
-    const d = this.device, pool = this.pool, t0 = now();
+    const d = this.device, pool = this.pool, t0 = this.timeUploads ? now() : 0;
     const count = Math.min(pool.count, MAX_SPRITES);
     if (count > 0) d.writeTexture(this.texSpr, pool.spr, { x: 0, y: 0, w: SPR_TEXELS, h: count });
     this._syncParticles();
@@ -170,7 +172,7 @@ export class WgSpritesPass {
     tx[0].texture = inp.gi; tx[1].texture = inp.depth; tx[2].texture = inp.edgeFg; tx[3].texture = inp.edgeBg;
     tx[4].texture = this.texSpr; tx[5].texture = this.texAtlas; tx[6].texture = this.texPal;
     tx[7].texture = this.texFadeLut; tx[8].texture = this.texFadeRamp; tx[9].texture = this.texPart; tx[10].texture = this.texPartZ;
-    this.stats.uploadMs = now() - t0;
+    if (this.timeUploads) this.stats.uploadMs = now() - t0;
     d.beginPass(this.target);
     d.bind(this.pipe, this.bindDesc);
     d.draw(3, 0, 1);

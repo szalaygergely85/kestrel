@@ -177,3 +177,6 @@ passLight.js: cloudA/cloudB <- packCloudUniforms(light.cloud, fb.timeSec, this.c
 
 B1 2026-10-09 (S8-B2-20b B1 side) -> arch-review: passLight.js `W('aoP')` = (ao.radiusM, ao.bias, ao.maxCells, 0) each frame next to aoStrength (word 31), zeros on null ao and on the bare-ambient path, no alloc; passLight.test.js covers both. main.js: setHorizonAo import gone; `?ao=<0..1>` (>0, non-gl2) sets `lights.ao = {strength, radiusM 0.8, bias 0.15, maxCells 4}` after both buildLightSet sites. gpucompare.js both sites `lights.ao = null`; gpucompare.cloudForce.test.js updated (+ cloudParam.js comment).
 Tests PASS: lighting, passLight, horizonAo, wgsl, cloud, gpucompare, projection; node --check main.js; check-deps OK (pre-existing WARNs). Node only, no browser.
+B1 kestrel-2 2026-10-09 (S8-B1-11c) -> arch-review:
+- passSprites.js: `timeUploads` option (default false) gates the two performance.now() calls; off -> `stats.uploadMs` stays 0. No reader of the WG sprites pass uploadMs exists (F3/dev pages read WgCellPipeline.stats.uploadMs or the GL pass), so nothing needed enabling; set `sp.timeUploads = true` to measure.
+- passSprites.test.js: performance.now spy (off: 0 calls, uploadMs 0; on: 2 calls). frameAlloc GARBAGE_BUDGET 48 KB -> 16 KB, passed 3/3 runs; suites passSprites + WgCellPipeline (3) + check-deps OK.
