@@ -99,6 +99,7 @@ import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js
 import { createWaterfallHooks } from './quest/waterfallHooks.js';
 import { createAmbientMotes } from './quest/ambient.js';
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
+import { createHitStop, hitStopEnabled } from './fx/hitStop.js'; // HITSTOP-01 (lane B1)
 import { createHurtFx, hurtFxEnabled } from './fx/hurtFx.js'; // HURT-FX-01 (lane B1): low-hearts pulse only (hurt edge + kick = US-080a2)
 import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-SPARK-WIRE (lane B1)
 import { parsePointShadows } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
@@ -171,6 +172,7 @@ try {
   const savedForBoot = autoParam === '1' && autoProvisional ? undefined : savedSettings.quality;
   resolvedQuality = resolveQuality({ param: params, saved: { quality: savedForBoot, shadowQuality: savedSettings.shadowQuality }, auto: autoProvisional });
 } catch (err) { console.warn(`[quality] presets unavailable (${err.message}) - booting without a preset`); }
+const hitStop = createHitStop({ enabled: hitStopEnabled(params, isCaptureOrBench) }); // HITSTOP-01: off in capture/bench(+combat)/compare and ?fx=0
 const hurtFx = createHurtFx({ enabled: hurtFxEnabled(params, isCaptureOrBench) }); // HURT-FX-01: off in capture/bench/compare and ?fx=0
 const bootOpts = resolveBootOptions({ params, resolved: resolvedQuality, savedSettings, captureLike: isCaptureOrBench, geometryCompare: isGeometryCompare,
   defaultCols: GRID_DEFAULT_COLS, shadowLevel: resolveShadowLevel });
@@ -357,7 +359,7 @@ const pointShadowOpt = parsePointShadows(params, resolvedQuality && resolvedQual
 const tCR = bootNow();
 const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
-  shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.enabled, pointShadows: pointShadowOpt.pointShadows, pointShadowLevel: pointShadowOpt.pointShadowLevel, // OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
+  shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.occl, pointShadows: pointShadowOpt.pointShadows, pointShadowLevel: pointShadowOpt.pointShadowLevel, // OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
   onCompileProgress: (done, total) => { bootStages.enter('pipelines'); if (bootCard) bootCard.setStageLines(bootStages.cardText()); if (bootProg) bootProg.count('compile', done, total); } }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
 bootSpan('createRenderer total (' + rendererInfo.label + ')', tCR);
 if (bootProg) { bootProg.phase('engine'); await bootPaint(); }
@@ -724,6 +726,7 @@ const swordStyleIds = {
 sprites.pool.renderer = renderer; // review item 1: sprite rects follow the pitched scene
 if (gpuPipeline) { gpuPipeline.bindVoxels(gameVoxelPool); gpuPipeline.bindViewModel(engine.viewModel); } // US-078a (30.1)
 const wgActive = !!(wgPipeline && wgPipeline.ready && rt.backend === 'webgpu'); // WG-2b: geometry-only WebGPU pipeline (CPU still shades)
+engine.events.on('combat:hit', (p) => { if (p && p.source === 'player') hitStop.trigger(p.heavy ? 'heavy' : 'light'); }); // HITSTOP-01
 const hzb = createHzbInvalidator(() => (occlOpt.enabled && wgActive && wgPipeline.ready ? wgPipeline : null)); // OCCL-MAIN-01: cuts invalidate the HZB
 if (wgActive) { wgPipeline.bindVoxels(gameVoxelPool); wgPipeline.bindViewModel(engine.viewModel); }
 engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); if (gpuPipeline) gpuPipeline.bindInstances(engine.instances); // RE-06 (28.6)
@@ -1384,7 +1387,8 @@ async function runGame(mode, cinematic = null) {
       // timed clips like the burner flame / lantern glint / relay sparkle).
       stepAnimations(engine.world, dt * 1000);
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
-      if (beasts) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); } // US-079a (29.1)
+      const simDue = hitStop.due(1000 / 60); // HITSTOP-01: only beasts + sword freeze
+      if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); } // US-079a (29.1)
       // US-078d (30.1 + D-034 amendment): the sword steps after beasts.step, so a heavy-hit stagger acts from the
       // beast's NEXT step (deterministic, synchronous emit). `attackDown` is the amendment's exact gate expression.
       if (hands) {
@@ -1400,7 +1404,7 @@ async function runGame(mode, cinematic = null) {
           if (fbView) fbView.stepFx(); // SPELL-01b: trail emitters + burst particles (sim side, hashed)
         }
       }
-      if (sword) {
+      if (sword && simDue) {
         forwardOf(look.yawDeg, swordFwd);
         sword.step(playerHandle.data, swordFwd[0], swordFwd[1], hands ? hands.downOf('sword') : false);
       }
