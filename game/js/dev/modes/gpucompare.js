@@ -1,6 +1,6 @@
 import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
-  meshFromJSON, meshFromBin, buildMeshFromTris, MaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun, setCloudShadow, setHorizonAo,
+  meshFromJSON, meshFromBin, buildMeshFromTris, MaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun, setHorizonAo,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
 } from '../../../../engine/index.js';
 import {
@@ -818,7 +818,7 @@ async function runGpuCompareSceneMode(ctx) {
     fbCompare.timeSec = poseTime || 0; // US-141a: frozen per-pose clock (flow streaks); 0 for every other pose
     fbCompare.lights = lights;
     if (lights) lights.update(0, world);
-    if (lights) setCloudShadow(lights, { strength: 0 }); // S8-B2-12a NEEDS B1 item (3): every gpucompare mode forces clouds off
+    if (lights) lights.cloud = null; // S8-B2-12c: every gpucompare mode forces clouds off
     if (lights) setHorizonAo(lights, { strength: 0 }); // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
     fbCompare.sceneFade = typeof fade === 'number' ? fade : 1;
     if (sprites.pass) {
@@ -1022,7 +1022,7 @@ async function runGpuCompareSceneMode(ctx) {
         compareVoxelPool.project(cam, rt);
         fbCompare.lights = lights;
         if (lights) lights.update(0, world);
-        if (lights) setCloudShadow(lights, { strength: 0 }); // S8-B2-12a NEEDS B1 item (3): every gpucompare mode forces clouds off
+        if (lights) lights.cloud = null; // S8-B2-12c: every gpucompare mode forces clouds off
         if (lights) setHorizonAo(lights, { strength: 0 }); // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
         if (real) sprites.pool.collect(world);
         else { sprites.pool.reset(); placeCompareSprites(cam, sprites.pool); }

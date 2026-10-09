@@ -40,13 +40,13 @@ for (let i = 0; i < 1000; i++) {
 }
 for (const src of [RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL]) {
   assert.ok(src.includes('o.pos.y = -o.pos.y; o.pos.z = 0.5 * (o.pos.z + o.pos.w);'));
-  assert.ok(src.includes('let dist = 1.0 / v.pos.w;'));
+  assert.ok(src.includes('let dist = select(1.0 / v.pos.w, 0.05 + v.pos.z * (2000.0 - 0.05), u.projMode == 2u);'));
   assert.ok(src.includes('bitcast<u32>(v.vUV.x)'));
   assert.ok(!/\bround\s*\(|dpdx|dpdy|fwidth|frag_depth|textureSample|%/.test(src));
 }
 assert.ok(!RASTER_VOXEL_WGSL.includes('@location(4) aAux'), 'compact voxel vertices have no generic attributes in WebGPU');
 assert.ok(RASTER_CLOTH_WGSL.includes('if (!front) { nrmW = -nrmW; }'));
-assert.equal(RASTER_BASE_BLOCK.sizeBytes, 160); assert.equal(RASTER_BLOCK.sizeBytes, 592);
+assert.equal(RASTER_BASE_BLOCK.sizeBytes, 160); assert.equal(RASTER_BLOCK.sizeBytes, 608);
 assert.equal(RASTER_BLOCK.field('teamMat').word, 44, 'uniform vec4 team rows preserve GL team*4+slot addressing');
 // ALPHA-01c: the mask texel rule (maskTexel / maskDiscard) vs MaskAtlas.texel / MaskAtlas.sample (the rasterJS oracle) on a 4x4 checker.
 // The WGSL text is checked literally; its f32 evaluation is emulated with Math.fround at every WGSL op (u - floor(u) is exact in f32 except
@@ -117,7 +117,7 @@ console.log(`raster.wgsl.test.js: 2000 oracle probes, ${texelProbes} mask texel 
   assert.ok(src.includes(RASTER_INSTANCED_MASK_BLOCK.wgsl), 'uses its own combined uniform block literally');
   assert.ok(!src.includes(RASTER_BLOCK.wgsl), 'not the plain instanced block (it has no maskX0..maskCut)');
   assert.ok(!src.includes(RASTER_MASK_BLOCK.wgsl), 'not the static mask block (it has no origin/team/wind)');
-  assert.ok(RASTER_INSTANCED_MASK_BLOCK.field('origin').word > 0 && RASTER_INSTANCED_MASK_BLOCK.field('maskX0').word === RASTER_BLOCK.sizeBytes / 4, 'mask fields appended right after the full instanced field set');
+  assert.ok(RASTER_INSTANCED_MASK_BLOCK.field('origin').word > 0 && RASTER_INSTANCED_MASK_BLOCK.field('maskX0').word === RASTER_BLOCK.field('projMode').word, 'mask fields appended right after the full instanced field set');
   assert.equal(RASTER_INSTANCED_MASK_BLOCK.sizeBytes, 624);
   // regression: the plain 'instanced' and static 'mask' variants must stay exactly as before this change (no accidental cross-talk)
   assert.ok(!/texMask|aUVMask|maskDiscard/.test(RASTER_INSTANCED_WGSL), 'plain instanced stays unaffected');

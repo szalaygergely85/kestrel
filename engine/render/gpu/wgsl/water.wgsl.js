@@ -8,7 +8,7 @@
 // Bindings: @group(0) @binding(0) uSceneDepth r32uint (textureLoad); @group(1) @binding(0) WaterU (dynamic offset).
 // Vertex buffer: 1 attribute @location(0) vec4f aL = WATER_VERTEX_LAYOUT. Target 0 = WATER rgba32uint.
 import { defineUniformBlock } from './uniformBlock.js';
-import { OCT_NORMAL_WGSL } from './common.wgsl.js';
+import { OCT_NORMAL_WGSL, ORTHO_NEAR_WGSL, ORTHO_FAR_WGSL } from './common.wgsl.js';
 
 export const WATER_BLOCK = defineUniformBlock('WaterU', [
   { name: 'mvp', type: 'mat4' },   // world -> clip, origin O folded in (f64 on the CPU)
@@ -17,6 +17,7 @@ export const WATER_BLOCK = defineUniformBlock('WaterU', [
   { name: 'z', type: 'f32' },      // region z (world)
   { name: 'kind', type: 'i32' },   // 0 rect, 1 circle, 2 sheet
   { name: 'slot', type: 'u32' },
+  { name: 'projMode', type: 'u32' }, // US-068b1 (38.19): 2 = ortho (appended)
 ]);
 /** Slot kinds of PipelineDesc.bindings.textures: 0 = uSceneDepth (r32uint). */
 export const WATER_TEXTURES = Object.freeze(['uint']);
@@ -64,7 +65,7 @@ fn waterInside(kind: i32, shape: vec4f, vL: vec2f) -> bool {
   var outWater = vec4u(0u);
   let inside = waterInside(wu.kind, wu.shape, v.vL);
   if (!inside) { discard; return outWater; }
-  let vD = 1.0 / v.pos.w;
+  let vD = select(1.0 / v.pos.w, ${ORTHO_NEAR_WGSL} + v.pos.z * (${ORTHO_FAR_WGSL} - ${ORTHO_NEAR_WGSL}), wu.projMode == 2u); // 38.19 ortho: w = 1
   let sceneD = bitcast<f32>(textureLoad(uSceneDepth, vec2i(v.pos.xy), 0).x);
   if (!(vD < sceneD)) { discard; return outWater; }
   let back = select(1u, 0u, front);

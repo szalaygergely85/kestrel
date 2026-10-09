@@ -29,12 +29,24 @@ try {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false });
   async function shot(name) { await pause(350); const s = await cdp.send('Page.captureScreenshot', { format: 'png' }); writeFileSync(path.join(out, name + '.png'), Buffer.from(s.data, 'base64')); }
 
-  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&title=0&ambient=1&backend=${backend}` });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&title=0&ambient=1&pose=${process.env.POSE || 'roadSouth'}&backend=${backend}` });
   let ready = false;
   for (let i = 0; i < 100; i++) { await pause(300); if (await evaluate(cdp, '!!window.__kestrel')) { ready = true; break; } }
   assert.ok(ready, JSON.stringify(errors));
+  // Headless Chrome never gets pointer lock and an unlocked look pauses the sim (pause.js isPaused).
+  await evaluate(cdp, 'setInterval(() => { if (window.__debug.look) window.__debug.look.locked = true; }, 30), true');
   // Let the motes emitter warm up to its steady ~60-particle state before capture.
   await pause(3000);
+  // Positions, not just counts: every live mote must be finite and within the emission box (3.5, 3.5, 2 + drift) of the player.
+  const motes = await evaluate(cdp, `(() => { const d = window.__debug, p = d.engine.particles, t = d.playerHandle.data.transform; let n = 0, bad = 0, maxD = 0;
+    for (let i = 0; i < p.cap; i++) { if (!p.alive[i]) continue; n++; const dx = p.px[i] - t.x, dy = p.py[i] - t.y, dz = p.pz[i] - t.z;
+      if (!isFinite(dx + dy + dz)) bad++; else maxD = Math.max(maxD, Math.abs(dx), Math.abs(dy)); }
+    return { n, bad, maxD, player: [t.x, t.y, t.z] }; })()`);
+  console.log(JSON.stringify({ motes }));
+  if (!motes.n) console.log('particles.stats', JSON.stringify(await evaluate(cdp, 'JSON.stringify(window.__debug.engine.particles.stats)')));
+  assert.ok(motes.n > 0, 'motes are alive');
+  assert.equal(motes.bad, 0, 'no NaN mote positions');
+  assert.ok(motes.maxD < 40, 'motes stay near the player (emitter follows playerHandle.data.transform)');
   await shot('ambient-motes-sunbeam-' + backend);
   console.log(JSON.stringify({ backend, errors }));
   assert.deepEqual(errors, []);

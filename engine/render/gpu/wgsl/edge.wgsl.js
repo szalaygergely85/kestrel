@@ -51,7 +51,7 @@ fn isVert(kind: u32, face: u32) -> bool {
 fn isUp(kind: u32, face: u32) -> bool { return kind == 4u || kind == 5u || ((kind == ${KIND_MODEL}u || kind == ${KIND_MESH}u) && face == ${FACE_U}u); }
 
 fn fogScaleCell(row: i32, rows: i32) -> f32 {
-  return select(pitchFogScale(row, rows, u.pitchC.y, u.pitchC.z, u.pitchC.w), 1.0, u.projMode == 0);
+  return select(pitchFogScale(row, rows, u.pitchC.y, u.pitchC.z, u.pitchC.w, u.projMode == 2), 1.0, u.projMode == 0);
 }
 
 // BUG-GPU-005: terrain cells (kind 7) gate on the TERRAIN fog (terrainShade.js terrainFogF), not the interior fog.

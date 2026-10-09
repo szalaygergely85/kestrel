@@ -149,3 +149,23 @@ B1 2026-10-09 (S8-B2-13b NEEDS B1 passWater) -> arch-review:
 - Deleted compat shims: `RIPPLE_MAX` (engine/world/water.js), `packRipples` stub (engine/render/waterLook.js); grepped repo, nothing else imports either.
 - passWater.test.js: replaced `world.water.addRipple` with a real `createRipples()` on the fake fb; checks 0 rings -> count 0 + untouched ripple words + default glyph/gain, 2 rings -> count 2 + words match packInto directly, glyph/gain override via fb fields, then clears before the existing 1000-frame zero-alloc loop.
 - Suites: --filter passWater/water/ripple/wgsl all PASS; check-deps OK (642 files, pre-existing warnings only, no new ones).
+
+B1 2026-10-09 (batch 19/20 ARCH CHANGES: S8-B1-10, S8-B1-18, S8-B1-04) -> arch-review:
+- S8-B1-10: watchDeviceLost takes `canSave()`; main.js gate = `ctx.state.canSave && !titleMenuActive` (module `let`, mirrors menuHost.active each frame); else no save, card still once. Node case added.
+- S8-B1-18: main.js passes `playerHandle.data.transform` x/y/z; ambient step() skips non-finite input; motes also off for isCaptureOrBench / ?capture=1. ambient.test.js case (transform-shaped, finite + near player, undefined ignored).
+- S8-B1-04: new `chestHook.stepUi(dt, ePressed)` called every frame next to invView.step in main.js (outside !paused); card.step dropped from onTick. chestHook.test.js rig now main.js-shaped (no onTick while card open) + soft-lock test; preview updated.
+- Suites: deviceLost/ambient/chestHook PASS; node --check main.js + verify-motes.mjs OK.
+- verify-motes now asserts alive>0, no NaN, positions near playerHandle.data.transform. Cmd: node tools/verify-motes.mjs {port} [webgpu|webgl2] (not run; Node-only rule).
+
+- US-068c (kestrel-1): tools/editor/axisGizmo.js (+test), camera.js applyViewPreset/VIEW_PRESETS (+tests in axisGizmo.test.mjs; unknown preset throws; TOP clamped -70), main.js keys Numpad7/1/9 (inside editorKeysActive guard) + corner buttons (bottom-left gizmo overlay). Orbits around a point 10 m ahead of the eye. No index.html change needed (overlay built in JS). -> po-review (owner editor look): open tools/editor/index.html, press Numpad7/1/9 or the TOP/FRONT/ISO buttons bottom-left; gizmo axes follow RMB look.
+
+### S8-B1-18 follow-up (verify-motes)
+- tools/verify-motes.mjs: `look.locked` is reset by the game (pointerlock handlers), so a one-shot assignment did not stick; now a 30 ms setInterval in the page pins it true (sim runs). Pose `?pose=roadSouth` (env POSE overrides); prints particles.stats on failure.
+- Result (webgpu): n=55 live motes, bad=0, maxD 32.8, no errors -> PASS. ambient.js sunlit gate NOT changed: sunFromWorld dir = toward sun (dirZ=sin elev), same convention as lighting.js:843 use of sunVisible; no gate bug found.
+
+## S8-B2-12c run 2 (B1 importers) -> arch-review
+passLight.js: cloudA/cloudB <- packCloudUniforms(light.cloud, fb.timeSec, this.cloud8) (preallocated Float32Array(8), null/bare-array -> zeros); _uploadLight(light, timeSec); test updated. gpucompare.js both sites: `lights.cloud = null`. main.js: setCloudShadow gone, `?cloudshadow=1` (not gl2) sets lights.cloud = devCloudShadow() (cloudParam.js default block) after buildLightSet; `?clouds=` void. cloudParam/cloudForce tests updated. Node suites lighting/passLight/cloud/gpucompare + check-deps pass; no browser. Note: main.js never calls setLook, so the dev block carries its own seed/wind (not the look's).
+
+- US-068a ortho camera mode in projection.js (JS only) -> arch-review. `cam.projection='ortho'` + `orthoHalfH` (throws if <= 0), optional `focusX/Y/Z` (eye = focus - ORTHO_BACK_M(500)*F, else cam.x/y/z); pitch +-90 in ortho. New `orthoProjection`, `PitchedTerms.ortho/halfW/halfH` (tanHalf slots carry halfW/halfH in ortho); branches in `screenRay`, `unprojectPitched`, `worldToCell`, `pitchedFogScale` (=cosP), `resolveProjection`, `assertProjectionRenderer`, `frameMatrix`.
+  Test: `engine/render/projection.ortho.test.js` (1000 round trips <= 4e-12, parallel rays, linear halfH, NDC z, persp bit-identical x1000). projection/culling/WgCellPipeline suites + check-deps green.
+  Note: consumers (`=== 'pitched'` in compositor/lighting/sky/sprites/voxelPool/passRaster/ray.js) treat ortho as non-pitched until 068b; projection stays 'pitched' for perspective (not renamed).

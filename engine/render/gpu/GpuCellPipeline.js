@@ -2171,6 +2171,7 @@ export class GpuCellPipeline {
     src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null; // CLOTH-1b2
     src.matIdFor = this._table ? this._table.idFor : undefined;
     src.meshCache = this._meshDrawCache; src.meshIdFor = this._strictMatIdFor || undefined; // ME-14c3: meshes cast sun shadows
+    src.maskAtlas = (this._world && this._world.maskAtlas) || null; // ALPHA-01f-fix2
     src.fogFarM = sunShadowFogFar(this._palette, so);
     shadowWorldZ(world, this._levelMeshCache, this._shadowWorldZ);
     const sm = shadowSunMatrix(sun.dir, this._shadowCentre, so, this._shadowWorldZ, this._sunMat);

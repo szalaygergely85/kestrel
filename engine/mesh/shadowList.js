@@ -89,9 +89,9 @@ export function buildShadowList(list, cameraList, world, planes, src) {
       if (g.mesh) { // TREES-LP-b: kind-9 mesh group; QUAT-LOD-01 part 2: LOD1 band (27.9a amendment 5 / line 238) when available
         if (g.mesh.lazy) continue; // MESH-LOAD-01: payload not loaded yet
         if (!src.meshCache || !src.meshIdFor) continue;
-        const draw = src.meshCache.get(g.mesh, src.meshIdFor);
+        const draw = src.meshCache.get(g.mesh, src.meshIdFor, src.maskAtlas || undefined); // ALPHA-01f-fix2: same atlas as the raster, one cache entry
         const lod1Mesh = src.eye ? resolveGroupLod1(g, ig._meshLookup) : null; // null without an eye: old full-buffer path never bands
-        const draw1 = lod1Mesh ? src.meshCache.get(lod1Mesh, src.meshIdFor) : null;
+        const draw1 = lod1Mesh ? src.meshCache.get(lod1Mesh, src.meshIdFor, src.maskAtlas || undefined) : null;
         let it = null, it1 = null;
         if (!src.eye) it = list.addInstances(draw, g.parts, g.ib, g.count);
         else {

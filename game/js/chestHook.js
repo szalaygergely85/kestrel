@@ -67,10 +67,13 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
         openedChests: openedChestsOf ? openedChestsOf() : [], seed,
       }) : null;
     },
+    // The card's own step. main.js calls this EVERY frame outside the `!paused` block (like invView.step): an open card
+    // makes `paused` true, so gameHooks.tick (-> onTick) stops running and a step in onTick could never dismiss it.
+    // `ePressed` = ungated E edge (the card dismisses itself even though interactPressed is false while it's open).
+    stepUi(dt, ePressed) { card.step(dt, !!ePressed); },
     onTick(dt) {
       if (!ctx) return;
       const st = ctx.state;
-      card.step(dt, !!st.interactRaw); // ungated E: the card dismisses itself even though interactPressed is false while it's open
       if (!sim) return;
       sim.step(dt, true);
       if (st.interactPressed && !card.isOpen) {

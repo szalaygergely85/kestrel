@@ -38,6 +38,10 @@ fn cellRayP(cell: vec2f, grid: vec2i, posX: f32, posY: f32, eyeH: f32,
 }
 `;
 
+// US-068b1 (38.19): the clip near/far of PROJ_NEAR/PROJ_FAR (projection.js) as WGSL float literals, for ortho linear-z depth in the raster passes.
+export const ORTHO_NEAR_WGSL = '0.05';
+export const ORTHO_FAR_WGSL = '2000.0';
+
 // twin of glsl/common.js CELL_RAY_PITCHED's pure functions (the uniform-driven wrappers pitchedCellDir/fogScaleCell
 // need the module's own uniform block and are written per module).
 export const CELL_RAY_PITCHED_WGSL = `
@@ -47,14 +51,17 @@ fn cellDirPitched(cell: vec2f, grid: vec2i, F: vec3f, R: vec2f, U: vec3f, tanHal
   return vec3f(F.x + a * R.x + b * U.x, F.y + a * R.y + b * U.y, F.z + b * U.z);
 }
 
-fn cellRayPitched(cell: vec2f, grid: vec2i, eye: vec3f, F: vec3f, R: vec2f, U: vec3f, tanHalf: vec2f, vd: f32) -> vec3f {
+fn cellRayPitched(cell: vec2f, grid: vec2i, eye: vec3f, F: vec3f, R: vec2f, U: vec3f, tanHalf: vec2f, vd: f32, ortho: bool) -> vec3f {
   let dir = cellDirPitched(cell, grid, F, R, U, tanHalf);
-  return vec3f(eye.x + dir.x * vd, eye.y + dir.y * vd, eye.z + dir.z * vd);
+  // US-068b1 (38.19): ortho = parallel rays, P = eye + vd*F + (a*R + b*U) (tanHalf slots carry halfW/halfH, so a/b are metres)
+  let pp = vec3f(eye.x + dir.x * vd, eye.y + dir.y * vd, eye.z + dir.z * vd);
+  let po = vec3f(eye.x + F.x * vd + (dir.x - F.x), eye.y + F.y * vd + (dir.y - F.y), eye.z + F.z * vd + (dir.z - F.z));
+  return select(pp, po, ortho);
 }
 
-fn pitchFogScale(row: i32, rows: i32, tanHalfY: f32, cosP: f32, sinP: f32) -> f32 {
+fn pitchFogScale(row: i32, rows: i32, tanHalfY: f32, cosP: f32, sinP: f32, ortho: bool) -> f32 {
   let b = (1.0 - (2.0 * f32(row)) / f32(rows)) * tanHalfY;
-  return max(0.0, cosP - b * sinP);
+  return select(max(0.0, cosP - b * sinP), cosP, ortho); // ortho: constant (parallel rays)
 }
 `;
 
