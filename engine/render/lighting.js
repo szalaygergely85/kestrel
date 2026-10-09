@@ -459,6 +459,8 @@ export function setLook(lights, look) {
   if (hemi.sunFromLook) lights.sun.col.set(look.sun);
 }
 
+const NO_CLOUD = Object.freeze({ strength: 0 }); // S8-B2-12a: lightAt default when a light set has no `cloud`
+
 /**
  * S8-B2-12a (38.13): sets cloud-shadow params on `lights.cloud` (allocated once by the constructor - this only
  * writes fields, never reallocates). Every param is optional (only the given keys change); each is validated and
@@ -687,7 +689,7 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
   let sunlit = 0;
   const sun = lights.sun;
   lightFlags.sunN = 0; lightFlags.sunBoundary = 0; lightFlags.cloudQ = 0;
-  const cloud = lights.cloud;
+  const cloud = lights.cloud || NO_CLOUD; // hand-built light sets (tests, tools) have no cloud field
   if (sunMap) {
     // ME-15c: shadow-map sun (replaces the DDA); same conditions as the GLSL twin.
     if (sun && sun.on) {

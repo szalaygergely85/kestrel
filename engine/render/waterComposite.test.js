@@ -311,10 +311,10 @@ function expectedHash(px, py, L, time = 0) {
   const world = World.load(roomDef([POOL]), assets, {});
   renderWorld(makeFb(world), world, CAM); // selects slot 0 through the actual water layer
   const looks = resolveWaterLooks({ water: { ramp: '~', glintP: 0, foamDepth: 0.05 } });
-  function sample(x, y, column, sky = false, slope = -0.2, dW = 4) {
+  function sample(x, y, column, sky = false, slope = -0.2, dW = 4, light = null) {
     const fb = { rt: new CellBuffer(1, 1), depth: new DepthBuffer(1, 1), gbuf: new GBuffer(1, 1),
       water: { kind: Uint8Array.of(1), depth: Float32Array.of(dW), objectId: Uint32Array.of(0) },
-      palette: assets.palette, matTable: null, light: null, waterLooks: looks, timeSec: 0 };
+      palette: assets.palette, matTable: null, light, waterLooks: looks, timeSec: 0 };
     fb.gbuf.kind[0] = sky ? 0 : KIND_MODEL;
     fb.depth.depth[0] = dW + column / -slope;
     const terms = { cols: 1, dirX: 0, dirY: 1, planeX: 0, planeY: 0,
@@ -337,6 +337,18 @@ function expectedHash(px, py, L, time = 0) {
   fillWaterSlotTable({ count: 1, region: Int32Array.of(0) }, circle, looks, table);
   ok('circle: packed radius gives exact zero edge distance at r', table[51] === 1 && table[42] === 3 && waterEdgeDistance(table, 0, 8, 5) === 0);
   ok('circle: centre distance is r, diagonal boundary also has zero distance', waterEdgeDistance(table, 0, 5, 5) === 3 && Math.abs(waterEdgeDistance(table, 0, 5 + 3 / Math.sqrt(2), 5 + 3 / Math.sqrt(2))) < 1e-12);
+
+  // ---- S8-B2-12b (38.13): the cloud-darkening byte (light.cloud[i], LIGHT.w bits 24..31 on the GPU) scales k ----
+  const cloudLight = (q) => ({ uniform: false, sunMapOn: false, cloud: Uint8Array.of(q) });
+  const cq0 = sample(5.5, 5.5, 0.2, false, -0.2, 4, cloudLight(0));
+  ok('q=0 (explicit cloud byte) is byte-identical to light: null', cq0.bg.every((v, i) => v === centre.bg[i]) && cq0.glyph.every((v, i) => v === centre.glyph[i]));
+  const cq153 = sample(5.5, 5.5, 0.2, false, -0.2, 4, cloudLight(153));
+  const cq255 = sample(5.5, 5.5, 0.2, false, -0.2, 4, cloudLight(255));
+  ok('q=153 (cF=0.4) darkens the sun-lit background vs q=0', cq153.bg[2] < cq0.bg[2]);
+  ok('q=255 (cF~0) darkens further than q=153 - monotonic in q', cq255.bg[2] <= cq153.bg[2]);
+  // a `uniform` light (no per-cell cloud byte) always behaves as cF=1, even if it happens to carry a `cloud` array
+  const cUniform = sample(5.5, 5.5, 0.2, false, -0.2, 4, { uniform: true, sunMapOn: false, cloud: Uint8Array.of(255) });
+  ok('light.uniform ignores the cloud byte (cF stays 1)', cUniform.bg.every((v, i) => v === centre.bg[i]));
 }
 
 // ---- 8. zero allocation after warm ----
