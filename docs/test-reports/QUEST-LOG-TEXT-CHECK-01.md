@@ -12,9 +12,14 @@ Focused validation suite: 113 passed, zero failed. No copy was edited, no
 fixtures or existing linter rules changed, no runtime/UI/model/world edits.
 No new owner-visible rendering change; no screenshot required.
 
-check-deps OK (683 files), 1,270 existing warnings. Full gate NOT RUN: other lanes occupy the machine-wide gate. Published as WIP on wip/pc-b-text-length-guard; story remains unfinished.
-The preceding required pc-b merge is also awaiting a full gate. Do not infer
-renderer/integration acceptance from this focused text test.
+check-deps OK (683 files), 1,270 existing warnings. Full gate: 396 entries,
+395 PASS, zero FAIL/TIMEOUT, one WARN in tools/typecheck.mjs. The runner
+exits 0 and explicitly classifies this optional type check as WARN. Its
+18 diagnostics are in untouched engine files: terrainMesh, MeshBuffers,
+passCull, projection and colliders. NEEDS B1/PC-A: resolve these JSDoc
+types in the owning lane. No threshold or runtime code was changed.
+The required pc-b integration passes executable suites; renderer/look
+acceptance remains PC-A work. Text regression complete on pc-c.
 
 Queue audit: WAYSTONE-01w still needs approved respawn anchors and touch/save
 ownership. QUEST-MARK-01w needs production take-step bindings and a quest-state
