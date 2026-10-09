@@ -177,7 +177,7 @@ const _zCache = new WeakMap();
 
 /**
  * World z extent of terrain + placed structures for the depth range. The
- * structure part is cached on `world.structVersion`; the terrain part is read
+ * structure part is cached on `world.structVersion` + `renderVersion` (ED-MESH-01e: a lifted mesh); the terrain part is read
  * each call (a few numbers). Returns `out` (`{min, max}`).
  * @param {import('../world/World.js').World} world
  * @param {import('./DrawList.js').LevelMeshCache} cache
@@ -185,7 +185,7 @@ const _zCache = new WeakMap();
  */
 export function shadowWorldZ(world, cache, out) {
   let e = _zCache.get(world);
-  if (!e || e.version !== world.structVersion) {
+  if (!e || e.version !== world.structVersion || e.rv !== world.renderVersion) {
     let lo = Infinity, hi = -Infinity;
     const structs = world.structures || [];
     for (let i = 0; i < structs.length; i++) {
@@ -196,7 +196,7 @@ export function shadowWorldZ(world, cache, out) {
       lo = Math.min(lo, oz + b[2]);
       hi = Math.max(hi, oz + b[5]);
     }
-    e = { version: world.structVersion, lo, hi };
+    e = { version: world.structVersion, rv: world.renderVersion, lo, hi };
     _zCache.set(world, e);
   }
   let lo = e.lo, hi = e.hi;
