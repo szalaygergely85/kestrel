@@ -143,7 +143,6 @@ async function main() {
   const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
   const which = opt('--pose', null), lod0Cap = Number(opt('--lod0-cap', 0));
   globalThis.window = globalThis.window || globalThis;
-  if (args.includes('--trees-mesh')) globalThis.__TREES_MESH = true; // QUAT-TREES-01 flag (design/levels/overworld_far.js)
   // design content registers itself on globalThis.ASSETS (same side-effect imports as tools/cine-check.mjs)
   for (const f of ['palette', 'detail-pass', 'levels/overworld_far', 'models/lantern', 'models/lever', 'models/voxel_props', 'models/boulder', 'models/rubble', 'models/wreckage', 'models/relay', 'models/sword', 'models/m3_props', 'models/far_tower', 'models/ferrum_lights']) {
     await import(pathToFileURL(path.join(ROOT, 'design', f + '.js')).href);

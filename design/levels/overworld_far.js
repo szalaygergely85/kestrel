@@ -18,12 +18,10 @@
   var A = root.ASSETS = root.ASSETS || {};
   A.levels = A.levels || {};
 
-  // QUAT-TREES-01 (owner look pending): `?trees=mesh` (or window.__TREES_MESH = true in Node probes) swaps the six voxel forest
-  // species for the Quaternius mesh trees (CommonTree_1-5 + Pine_1-5; weights/trunkR/trunkH from the ALPHA-01e prepared list:
-  // trunkR = bark radius at z 0.4..1.4, trunkH = lowest leaf card). Default OFF = the voxel species, unchanged.
-  // TREE-LODCELLS-01: lodCells 150 per mesh species (LOD1 beyond 150 cells, MESH-PERF-01 sweep); voxel species keep cfg.lodCells.
-  var TREES_MESH = root.__TREES_MESH === true ||
-    (typeof root.location !== 'undefined' && /[?&]trees=mesh(&|$)/.test(root.location.search || ''));
+  // TREES-DEFAULT-01 (owner 2026-10-09): the Quaternius mesh trees (CommonTree_1-5 + Pine_1-5; weights/trunkR/trunkH from the
+  // ALPHA-01e prepared list: trunkR = bark radius at z 0.4..1.4, trunkH = lowest leaf card) are the DEFAULT forest species.
+  // The six voxel species stay as data in `trees.speciesVoxel`; game/js/main.js swaps them in for `?trees=voxel` (dev fallback).
+  // This file reads no URL flag (pure data). TREE-LODCELLS-01: lodCells 150 per mesh species; voxel species keep cfg.lodCells.
   var TREE_SPECIES_VOXEL = [
     // FOLIAGE-SWAY-01: all six are real trees (foliage) - sway: true. No rocks/stones in this list.
     { model: 'forestOakSmall',   weight: 22, trunkR: 0.53, trunkH: 2.55, sway: true },   // 7.20 m (raw import, owner 2026-10-04)
@@ -43,7 +41,6 @@
   });
   return out;
   })();
-  var TREE_SPECIES = TREES_MESH ? TREE_SPECIES_MESH : TREE_SPECIES_VOXEL;
 
 
   var DEF = {
@@ -75,7 +72,7 @@
                  // cellM 6.5 (not 6): the large oak's chunky voxel trunk needs trunkR 0.95.
                  trees: {
                    seed: 7349, cellM: 6.5, jitter: 1.5, fill: 0.72, maxTrees: 1500, lodCells: 6,
-                   species: TREE_SPECIES
+                   species: TREE_SPECIES_MESH, speciesVoxel: TREE_SPECIES_VOXEL
                  } },
       rock:    { slope: 0.42, scale: 90, threshold: 0.78, minHomeDist: 60 },
       // ENV-01 (architecture.md 37.4 item 2): ground detail scatter in the near band (detail: renderer=mesh + physics=mesh,

@@ -1,6 +1,6 @@
 import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
-  meshFromJSON, meshFromBin, buildMeshFromTris, MaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
+  meshFromJSON, meshFromBin, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
 } from '../../../../engine/index.js';
 import {
@@ -103,6 +103,7 @@ function buildCompareRuns(ctx) {
   }
   function loadCompareWorld(def, opts = {}) {
     const w = World.load(def, assets, opts);
+    w.maskAtlas = buildMaskAtlas(assets); // TREES-DEFAULT-01: same per-world atlas as engine.loadWorld (mesh trees + the berry bush are masked meshes)
     for (const s of w.structures) {
       if (s.kind === 'mesh') continue; // ME-14c1
       bindLevel(matTable, s.level);
@@ -638,7 +639,7 @@ function buildCompareRuns(ctx) {
   if (ctx.renderer === 'mesh') {
     const aw = loadCompareWorld(assets.world('world_m1'), { physics: 'mesh' });
     aw.terrain.bakeFarSync();
-    const atlas = new MaskAtlas();
+    const atlas = buildMaskAtlas(assets); // real masks (placed bush) + the test checker below
     const chk = new Uint8Array(64);
     for (let j = 0; j < 8; j++) for (let i = 0; i < 8; i++) chk[j * 8 + i] = (i + j) % 2 === 0 ? 255 : 0;
     atlas.add('test/checker8', 8, 8, chk);
