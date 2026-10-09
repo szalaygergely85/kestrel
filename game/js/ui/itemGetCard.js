@@ -1,6 +1,7 @@
 // S8-C-07: cached item-get card. Host owns input routing/pause and calls step even while gameplay is paused.
 // Formatting happens at create/push; draw/step reuse the queue, layout, colours and payload-free state.
 export function createItemGetCard(adapter, {style:S, items, rgb, reduceMotion=false, dev=false}) {
+  const reduced=()=>typeof reduceMotion==='function'?!!reduceMotion():!!reduceMotion; // bool or live getter
   const T=S.timing, P=S.panel, F=S.frame, B=S.iconBox, info=Object.create(null), queue=[];
   if (![T.holdSec,T.fadeIn,T.fadeOut,T.gapSec].every(n=>Number.isFinite(n)&&n>0)
     || !Number.isFinite(T.keyLockSec) || T.keyLockSec<0 || T.keyLockSec>T.holdSec) throw new Error('item card: invalid timing');
@@ -89,11 +90,11 @@ export function createItemGetCard(adapter, {style:S, items, rgb, reduceMotion=fa
       text(tx,title.row,title.decor[0],colours[title.decorFg],colours[title.bg]);
       text(tx+title.decor[0].length+inf.def.name.length,title.row,title.decor[1],colours[title.decorFg],colours[title.bg]);
       for(let x=S.separator.from;x<=S.separator.to;x++)put(x,S.separator.row,S.separator.glyph.charCodeAt(0),colours[S.separator.fg],plate);
-      const pulse=!reduceMotion && Math.sin(age*6.283185307179586/B.pulse.periodSec)>0.5 ? 1 : 0;
+      const pulse=!reduced() && Math.sin(age*6.283185307179586/B.pulse.periodSec)>0.5 ? 1 : 0;
       const iconBg=colours[B.pulse.innerBg[pulse]];
       box(B.x,B.y,B.w,B.h,B.border.corner.charCodeAt(0),B.border.h.charCodeAt(0),B.border.v.charCodeAt(0),colours[B.pulse.fg[pulse]],iconBg,colours[B.cornerFg]);
       for(let i=0;i<inf.cells.length;i++){const c=inf.cells[i];put(B.x+B.icon.x+c.x,B.y+B.icon.y+c.y,c.ch,c.fg,iconBg);}
-      if(!reduceMotion)for(let i=0;i<S.sparkles.cells.length;i++) {
+      if(!reduced())for(let i=0;i<S.sparkles.cells.length;i++) {
         const frame=(Math.floor(age/S.sparkles.stepSec)+3*i)%S.sparkles.frames.length, ch=S.sparkles.frames[frame];
         if(ch!==' ')put(S.sparkles.cells[i][0],S.sparkles.cells[i][1],ch.charCodeAt(0),colours[S.sparkles.fg[frame]],plate);
       }

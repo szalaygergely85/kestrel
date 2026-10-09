@@ -38,6 +38,7 @@ import { OPTIONS, findOption, getDefaultValues, stepOptionValue } from '../setti
 import { loadSettings, saveSettings } from '../platform/index.js';
 import { setMuted, isMuted, setVolume } from '../audio/synth.js';
 import { knobsFor, saveQuality } from './gfxPresets.js';
+import { setReduceMotion } from './comfort.js'; // SETTINGS-APPLY-01
 
 let panel = null;          // createPanel()'s fade/open-close state machine (fake `{w,h}` art - see header)
 let values = { ...getDefaultValues(), ...toOptionValues(loadSettings()) };
@@ -518,7 +519,7 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
       const token = value ? controls.toggle.on : controls.toggle.off;
       labels[id] = token.box + ' ' + token.text;
     } else labels[id] = '< ' + (id === 'shadows' && value === 'mid' ? 'Mid' : style.valueText[id]?.[value] || value) + ' >';
-    notes[id] = id === 'quality' || id === 'shadows' ? 'Restart to apply' : id === 'reduceMotion' ? 'Less head bob and camera kick' : (style.notes[id]?.[value] || style.notes[id]?.default || '');
+    notes[id] = id === 'quality' || id === 'shadows' ? 'Restart to apply' : id === 'reduceMotion' ? 'Less head bob and camera kick' : id === 'textSize' ? 'Restart to apply' : (style.notes[id]?.[value] || style.notes[id]?.default || '');
   }
   for (const opt of optionDefs) refresh(opt.id);
   function disabled(id, value) { return !!isDisabled && !!isDisabled(id, value); }
@@ -643,8 +644,8 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
 //   lodScale -> saved; boot reads it via resolveQuality (restart to apply)
 //   grid     -> engine.setGrid live (a refusal disables that choice) + saved
 //   volume / mute -> audio/synth setVolume / setMuted live + saved; boot re-applies
-//   textSize / reduceMotion -> saved only (settings blob); NO system reads them yet (itemGetCard takes a reduceMotion
-//   option but main.js does not pass it); a later story wires text size + head bob / camera kick.
+//   reduceMotion -> comfort.js flag, live: head bob, hurt/blast camera kick, hurt-edge + low-hp pulse, itemGetCard (SETTINGS-APPLY-01)
+//   textSize -> saved; main.js maps it to the UI grid cols at boot (comfort.textSizeCols; restart to apply)
 let fullView = null, fullCtx = null, fullRebuild = false;
 const FULL_KEYS = ['Escape', 'KeyW', 'ArrowUp', 'KeyS', 'ArrowDown', 'KeyA', 'ArrowLeft', 'KeyD', 'ArrowRight', 'Enter', 'Space'];
 const FULL_GRIDS = [240, 320, 400, 480];
@@ -696,7 +697,7 @@ function onFullChange(id, v) {
     else applyValue('grid', r.cols + 'x' + r.rows, ctx);
   } else if (id === 'volume') { setVolume(v); saveSettings({ volume: v }); }
   else if (id === 'mute') { values.mute = v; setMuted(v); saveSettings({ muted: v }); }
-  else if (id === 'textSize' || id === 'reduceMotion') saveSettings({ [id]: v });
+  else if (id === 'textSize' || id === 'reduceMotion') { if (id === 'reduceMotion') setReduceMotion(v); saveSettings({ [id]: v }); } // SETTINGS-APPLY-01
 }
 function stepFullView(input) {
   for (let i = 0; i < FULL_KEYS.length; i++) {

@@ -38,8 +38,8 @@ export const CLIP_FOR = { closed: 'closed', opening: 'open', open: 'opened' }; /
  * @returns {{card: any, onBoot: Function, onTick: Function, drawHud: Function}} a gameHooks handler set, plus
  *   `card` (test/dev access to the mounted item-get card view).
  */
-export function createChestHook({ defs, items, style, rgb, openedChestsOf = null, seed = 1 }) {
-  const card = createItemGetCard(null, { style, items, rgb });
+export function createChestHook({ defs, items, style, rgb, openedChestsOf = null, seed = 1, reduceMotion = false }) {
+  const card = createItemGetCard(null, { style, items, rgb, reduceMotion });
   const itemDefs = items.defs;
   const fwdScratch = [0, 0], pose = { x: 0, y: 0, z: 0, forwardX: 0, forwardY: 0 }; // reused (rule 9)
   let sim = null, ctx = null, lastAnim = null;

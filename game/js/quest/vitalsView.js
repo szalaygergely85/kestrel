@@ -228,15 +228,16 @@ function drawRaggedCell(ui, x, y, code, fg, bg, coverage) {
  *   with `drawVitals`; see the Q9 item 2a note below)
  * @param {Object} style - `ASSETS.uiStyle.vitals`
  */
-export function drawHurtEdge(ui, vitals, simTime, style) {
+export function drawHurtEdge(ui, vitals, simTime, style, reduceMotion = false) {
   const cfg = style && style.hurtEdge;
   if (!cfg || !vitals || !vitals.hurtTick) return;
   // Q9 item 2a: aged against `vitals.tick` (the sim's own step count, reset to 0 on every `createVitals`), not
   // `simTime` (seconds since page boot, never reset) - comparing a per-load step count to a boot-time clock made
   // this never show again after a restart, once `simTime` had run past a few seconds.
   const elapsedMs = ((vitals.tick - vitals.hurtTick) / 60) * 1000;
-  const stage = hurtEdgeStage(elapsedMs, cfg);
+  let stage = hurtEdgeStage(elapsedMs, cfg);
   if (!stage) return;
+  if (reduceMotion) { stage = cfg.stages[0]; } // SETTINGS-APPLY-01: no fade/glyph animation, a steady tint for the same window
 
   const cols = ui.cols, rows = ui.rows;
   const { rows: thickRows, cols: thickCols } = cfg.thickness;

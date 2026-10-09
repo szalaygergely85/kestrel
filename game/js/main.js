@@ -108,6 +108,8 @@ import { createDeathFlow, deathFlowEnabled } from './fx/deathFade.js'; // DEATH-
 import { createHurtFx, hurtFxEnabled } from './fx/hurtFx.js'; // HURT-FX-01 (lane B1): low-hearts pulse only (hurt edge + kick = US-080a2)
 import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-SPARK-WIRE (lane B1)
 import { parsePointShadows } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
+import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
+import { PHYSICS } from '../../engine/index.js';
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
 import { ensureInventory, validateItemDefs, migrateSword } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
@@ -182,7 +184,8 @@ try {
 const hitStop = createHitStop({ enabled: hitStopEnabled(params, isCaptureOrBench) }); // HITSTOP-01: off in capture/bench(+combat)/compare and ?fx=0
 let deathRespawnDue = false; // DEATH-FLOW-01: fade finished -> next vitals.step gets a virtual [E] (its normal respawn path, pose logic untouched)
 const deathFlow = createDeathFlow({ enabled: deathFlowEnabled(params, isCaptureOrBench), onRespawn: () => { deathRespawnDue = true; } });
-const hurtFx = createHurtFx({ enabled: hurtFxEnabled(params, isCaptureOrBench) }); // HURT-FX-01: off in capture/bench/compare and ?fx=0
+setReduceMotion(savedSettings.reduceMotion); // SETTINGS-APPLY-01: read at boot, the Settings panel updates it live
+const hurtFx = createHurtFx({ enabled: hurtFxEnabled(params, isCaptureOrBench), reduceMotion: isReduceMotion }); // HURT-FX-01: off in capture/bench/compare and ?fx=0
 const bootOpts = resolveBootOptions({ params, resolved: resolvedQuality, savedSettings, captureLike: isCaptureOrBench, geometryCompare: isGeometryCompare,
   defaultCols: GRID_DEFAULT_COLS, shadowLevel: resolveShadowLevel });
 const gridParam = bootOpts.gridParam;
@@ -376,6 +379,7 @@ const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo
 bootSpan('createRenderer total (' + rendererInfo.label + ')', tCR);
 if (bootProg) { bootProg.phase('engine'); await bootPaint(); }
 const tCE = bootNow();
+const textSizeUiGrid = (g, size) => ({ ...g, cols: textSizeCols(g.cols, size), rows: undefined }); // rows follow cols (UI_GRID_ASPECT)
 const engine = createEngine({
   canvas, assets, cols: gridResult.cols, rows: gridResult.rows, rays,
   renderTarget: builtRt,
@@ -384,7 +388,7 @@ const engine = createEngine({
   gpu: params.get('gpu') !== '0',
   // OWN-REQ-003 (architecture.md 17.1): the fixed UI glyph layer's grid -
   // `assets.uiStyle.uiGrid` (design/models/title.js), default 160x60.
-  uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
+  uiGrid: textSizeUiGrid((assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 }, savedSettings.textSize), // SETTINGS-APPLY-01: Text size -> UI grid density (next load)
   // ME-19c2: the sun shadow MAP is the only sun shadow path (the sun DDA is gone from the GPU shaders); `?shadows=` only picks level/res.
   shadows: shadowOpts, // ME-15c/e/f (27.9a, D-043): see shadowOpts above
   gfx: bootOpts.gfx, // GFX-03/GFX-01w: scatter density + LOD scale from the preset (undefined = engine defaults)
@@ -456,7 +460,7 @@ if (mapFogHook) gameHooks.register(mapFogHook);
 const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
   ? createChestHook({
     defs: [], items: window.ASSETS.items, style: assets.uiStyle.itemGetCard, rgb: assets.palette.rgb,
-    openedChestsOf: () => (saveRelay ? saveRelay.openedChests : []),
+    openedChestsOf: () => (saveRelay ? saveRelay.openedChests : []), reduceMotion: isReduceMotion,
   })
   : null;
 if (chestHook) gameHooks.register(chestHook);
@@ -1555,8 +1559,8 @@ async function runGame(mode, cinematic = null) {
       // translation needed at the call site any more, `renderWorld` casts
       // each placed structure at its own origin internally (7.3).
       const eye = Camera.fromEntityInto(playerHandle.data, vitals ? vitals.eyeH() : undefined, renderEye, pitchClampDeg); // reused (rule 9: no per-frame Camera); US-080a2: eyeH sinks while dead
-      cam.x = eye.x; cam.y = eye.y; cam.z = eye.z; cam.yawDeg = eye.yawDeg;
-      cam.pitchDeg = eye.pitchDeg + (vitals ? kickDeg(vitals, simTime) : 0) + (fbView ? fbView.kickDeg() : 0); // US-080a2 (30.2): hurt pitch kick + SPELL-01b blast kick, render eye only - never written into `look`
+      cam.x = eye.x; cam.y = eye.y; cam.z = eyeZ(eye.z, playerHandle.data.components.body, PHYSICS); cam.yawDeg = eye.yawDeg; // SETTINGS-APPLY-01: reduce motion drops head bob
+      cam.pitchDeg = eye.pitchDeg + gateKick((vitals ? kickDeg(vitals, simTime) : 0) + (fbView ? fbView.kickDeg() : 0)); // US-080a2 (30.2): hurt pitch kick + SPELL-01b blast kick, render eye only - never written into `look`
       if (cinematic) evaluatePath(cinematic, simTime, cam);
       if (cinematicHours) applySunHours(engine.world, lightSet, cam.hour, worldSunPath, sunEnabled);
       fb.timeSec = simTime;
@@ -1694,7 +1698,7 @@ async function runGame(mode, cinematic = null) {
           // Q9 item 2c: hidden on the title (wakeOut.inputLocked covers the wake/title timeline) and map cards too,
           // not just while dead - the end card is already covered by the `!ending` gate around this whole block.
           drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals);
-          drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals);
+          drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals, isReduceMotion());
           hurtFx.draw(ui); // HURT-FX-01
           deathFlow.draw(ui, ui.cols, ui.rows); // DEATH-FLOW-01
           presentPickups(engine.world, assets.pickupStyle, fb.timeSec); // US-080b

@@ -8,6 +8,7 @@ export const HURT_FX = Object.freeze({ pulseHz: 1.2, pulseAlpha: 0.28, lowHearts
 export function createHurtFx(opts = {}) {
   const hpPerHeart = opts.hpPerHeart || 5;
   const enabled = opts.enabled !== false;
+  const reduced = typeof opts.reduceMotion === 'function' ? opts.reduceMotion : () => false; // SETTINGS-APPLY-01: static tint
   let pulseT = 0, lowHp = false;
   const C = HURT_FX;
 
@@ -20,7 +21,7 @@ export function createHurtFx(opts = {}) {
     },
     reset() { pulseT = 0; lowHp = false; },
     /** 0..pulseAlpha: slow cosine pulse while at <= 1 heart, else 0. */
-    pulse() { return lowHp ? C.pulseAlpha * (0.5 - 0.5 * Math.cos(2 * Math.PI * C.pulseHz * pulseT / 1000)) : 0; },
+    pulse() { return lowHp && reduced() ? C.pulseAlpha * 0.5 : lowHp ? C.pulseAlpha * (0.5 - 0.5 * Math.cos(2 * Math.PI * C.pulseHz * pulseT / 1000)) : 0; },
     /** Outer `vignetteCells` ring of the ui layer: ragged red cells, density follows the pulse. */
     draw(ui) {
       const a = fx.pulse();
