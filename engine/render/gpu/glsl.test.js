@@ -127,7 +127,7 @@ ok('shade.frag.js contains MAX_FEATURES_PER_TYPE', SHADE_FRAG_SRC.includes('MAX_
 // US-026a S5 (23.4 "Lighting"): light.frag.js skips the sun term for terrain
 // (kind 7) - analytic/shadow-free, D-007.
 ok('light.frag.js contains KIND_TERRAIN', LIGHT_FRAG_SRC.includes('KIND_TERRAIN'));
-ok('light.frag.js skips the sun for terrain (kindU != uint(KIND_TERRAIN))', LIGHT_FRAG_SRC.includes('kindU != uint(KIND_TERRAIN)'));
+ok('light.frag.js adds no direct sun term for terrain (isT: only the n/4 tap count; ME-19c2)', LIGHT_FRAG_SRC.includes('!isT && ndotsun > 0.0'));
 
 // US-040 (15.2 item 8): voxel.frag.js - the JS-injected constants, the
 // verbatim axis-choice rule, the +Inf aoD bit pattern, and the numeric ban

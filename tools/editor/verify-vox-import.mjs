@@ -44,6 +44,16 @@ try {
   const placed=await evaluate(cdp,`(()=>{const e=__editor,s=e.selection;window.__voxAfter=JSON.stringify(e.doc.files.get('world/world_m1').def);return {selection:s,undo:e.undoStack.size,item:e.doc.files.get(s.fileId).def[s.collection].find(it=>it.id===s.id)};})()`);
   assert.equal(placed.selection.collection,'entities');assert.equal(placed.item.components.voxel.model,imported.key);assert.equal(placed.undo,imported.undo+1);
   assert.equal(await evaluateAsync(cdp,'__editor.validateDoc()'),null,'imported placement validates');
+  // ED-WG-01c move step: nudge the placed vox (same path as the field/drag edit), assert it moved, undo restores it.
+  const pos=`(()=>{const e=__editor,s=e.selection,it=e.doc.files.get(s.fileId).def[s.collection].find(i=>i.id===s.id);return it.x+','+it.y+','+it.z;})()`;
+  const posBefore=await evaluate(cdp,pos);
+  await evaluate(cdp,"__editor.applyNudge('x',1)");await pause(500);
+  const posMoved=await evaluate(cdp,pos);
+  assert.notEqual(posMoved,posBefore,'nudge moved the placed vox');
+  assert.equal(await evaluate(cdp,"JSON.stringify(__editor.doc.files.get('world/world_m1').def)===__voxAfter"),false,'move changed the doc');
+  await evaluate(cdp,'__editor.doUndo()');await pause(500);
+  assert.equal(await evaluate(cdp,pos),posBefore,'undo restores the pre-move position');
+  assert.equal(await evaluate(cdp,"JSON.stringify(__editor.doc.files.get('world/world_m1').def)===__voxAfter"),true,'undo of move restores placed doc');
   await evaluate(cdp,'__editor.doUndo()');await pause(500);
   assert.equal(await evaluate(cdp,"JSON.stringify(__editor.doc.files.get('world/world_m1').def)===__voxBefore"),true,'undo restores authored world');
   await evaluate(cdp,'__editor.doRedo()');await pause(500);

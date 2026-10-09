@@ -2,7 +2,6 @@
 import assert from 'node:assert';
 import { makeMockGpuDevice } from '../../../test/assert.js';
 import { WgCellPipeline, PASS_NAMES } from './WgCellPipeline.js';
-import { GpuCellPipeline, PASS_NAMES as GL_PASS_NAMES } from '../GpuCellPipeline.js';
 import { allocWgTargets, freeWgTargets } from './targets.js';
 import { DEBUG_BLOCK } from '../wgsl/debug.wgsl.js';
 import { SHADE_BLOCK } from '../wgsl/shade.wgsl.js';
@@ -56,9 +55,7 @@ assert.strictEqual(p.ready, true);
 const SURFACE = ['frame', 'bind', 'bindVoxels', 'bindViewModel', 'bindInstances', 'resizeGrid', 'setEnabled', 'setPassTiming', 'setDebugMode', 'readbackGeometry', 'readbackLight', 'readbackWater', 'readbackShadowDepthBits', 'readback', 'dispose'];
 for (const m of SURFACE) {
   assert.strictEqual(typeof p[m], 'function', m);
-  assert.strictEqual(typeof GpuCellPipeline.prototype[m], 'function', 'GL surface ' + m);
 }
-assert.deepStrictEqual([...PASS_NAMES], [...GL_PASS_NAMES]);
 assert.strictEqual(p.stats.passMsP50.length, PASS_NAMES.length);
 assert.deepStrictEqual(p.portedPasses, ['debug', 'raster', 'resolve', 'deriv', 'light', 'shade', 'edge', 'shadow', 'water']); // WG-3d/3e: default sun mode = map
 assert.strictEqual(p.frameComplete, false, 'honest: no scene yet');
@@ -364,3 +361,12 @@ p.dispose(); // idempotent
   assert.strictEqual(q.ready, false);
 }
 console.log('WgCellPipeline.test.js: all checks passed.');
+
+// OCCL-STATS-01: occl 2 is kept (stats readback), true/1 = occlusion without stats
+{
+  const mk = (o) => new WgCellPipeline(rt, { rays: 2, ...o });
+  const a = mk({ occl: 2 }), b = mk({ occl: true }), c = mk({ occl: 1 }), d0 = mk({}), e = mk({ occl: true, occlStats: true });
+  assert.deepEqual([a.occl, a.occlStats], [2, true]);
+  assert.deepEqual([b.occl, b.occlStats, c.occl, c.occlStats], [true, false, true, false]);
+  assert.deepEqual([d0.occl, d0.occlStats, e.occlStats], [false, false, true]);
+}

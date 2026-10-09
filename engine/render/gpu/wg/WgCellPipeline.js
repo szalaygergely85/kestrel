@@ -52,7 +52,8 @@ export class WgCellPipeline {
     this.terrainEnabled = opts.terrainEnabled !== false;
     this.renderer = 'mesh';
     this.shadowOpts = opts.shadows || null;
-    this.occl = !!opts.occl; // S8-B2-10c two-phase HZB occlusion (`?occl=1`), default OFF
+    this.occl = opts.occl === 2 ? 2 : !!opts.occl; this.occlStats = this.occl === 2 || !!opts.occlStats; // occl 2 = occlusion + stats readback (?occl=2), true/1 = occlusion only
+    // S8-B2-10c two-phase HZB occlusion (`?occl=1`), default OFF
     this.gpuCull = opts.gpuCull !== false; // WG-4a compute cull of instance batches (`?gpucull=0` = CPU path)
     this.ready = false;
     /** passes that really execute in this build; `frameComplete` = the pipeline can replace the CPU shading entirely */
@@ -89,6 +90,7 @@ export class WgCellPipeline {
     this._cellPass = null;
     this._shadowPass = null;
     this._pointShadowPass = null; // ME-16e (38.22)
+    this._pshFails = 0;           // consecutive point-shadow run failures (2 = disabled for the session)
     this.pointShadows = opts.pointShadows === undefined ? false : opts.pointShadows; // ME-16e: default OFF until the ME-16g gate + owner look (main session 2026-10-09); true / {n,res,faceCap,...} = on (`?pointshadows=N`), false / {n:0} = off
     this.pointShadowLevel = opts.pointShadowLevel;
     this._waterPass = null;
@@ -115,7 +117,7 @@ export class WgCellPipeline {
         targetFormats: ['rgba8', 'rgba8'],
       });
       tp = bootNow();
-      this._rasterPass = new WgRasterPass(this.device, { gpuCull: this.gpuCull, occl: this.occl });
+      this._rasterPass = new WgRasterPass(this.device, { gpuCull: this.gpuCull, occl: this.occl, occlStats: this.occlStats });
       bootSpan('pass raster (ctor total)', tp); tp = bootNow();
       this._meshDrawList = this._rasterPass.list;
       this._shadowPass = new WgShadowPass(this.device, { shadows: this.shadowOpts, renderer: this.renderer, buffers: this._rasterPass.buffers, gpuCull: this.gpuCull });
@@ -229,6 +231,8 @@ export class WgCellPipeline {
     return true;
   }
 
+  // PERF-PASSP95-01: per-pass {available, frames, passes:{name:{p50,p95,last}}}; read via window.__debug.wgPipeline.passStats().
+  passStats(out) { const t = this.device && this.device.timer; return t && t.passStats ? t.passStats(out) : { available: false }; }
   setPassTiming(on) { this._passTimingOn = !!on; }
 
   /**
@@ -414,8 +418,14 @@ export class WgCellPipeline {
     const psp = this._pointShadowPass; // ME-16e: AFTER the sun pass (shares its wind uniforms + caster pipelines), BEFORE the light pass
     if (psp) {
       if (this._cam && this._world) {
-        try { psp.run(this, this._rasterPass); }
-        catch (e) { psp.active = false; console.warn('[WgCellPipeline] point shadow maps failed this frame (LVIS fallback):', e); }
+        try { psp.run(this, this._rasterPass); this._pshFails = 0; }
+        catch (e) {
+          psp.active = false;
+          if (d._pass) { try { d.endPass(); } catch (_) { d._pass = null; } } // never leave a shadow pass open: the next beginPass would throw and black-screen the frame
+          // a repeated failure turns point shadows off for the session (logged once); a single one only skips this frame
+          if (++this._pshFails >= 2) { psp.enabled = false; psp.ready.fill(0); console.warn('[WgCellPipeline] point shadows disabled after repeated failures (LVIS fallback):', e); }
+          else console.warn('[WgCellPipeline] point shadow maps failed this frame (LVIS fallback):', e);
+        }
       } else psp.active = false;
     }
     try { this._cellPass.run(this, t); }

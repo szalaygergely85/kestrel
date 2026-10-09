@@ -122,7 +122,7 @@ export class WgRasterPass {
       this.clothPipe = this._pipeline(RASTER_CLOTH_WGSL, CLOTH_DYN_LAYOUT, CLOTH_STRIDE_BYTES, 'none', 'cw', false, [{ layout: CLOTH_UV_LAYOUT, strideBytes: 8 }]);
       if (opts.gpuCull !== false && typeof device.createComputePipeline === 'function') {
         // S8-B2-10c: `opts.occl` (default OFF, `?occl=1`) = two-phase HZB occlusion; this.hzb is created lazily with the pass (same device)
-        this.cull = new WgCullPass(device, { occl: !!opts.occl });
+        this.cull = new WgCullPass(device, { occl: opts.occl === 2 ? 2 : !!opts.occl, occlStats: !!opts.occlStats });
         if (opts.occl) this.hzb = new WgHzbPass(device);
       }
     } catch (e) { this.dispose(); throw e; }

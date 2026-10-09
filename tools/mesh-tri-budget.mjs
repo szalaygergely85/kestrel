@@ -103,13 +103,15 @@ export async function loadMeshTable() {
     const meta = JSON.parse(fs.readFileSync(j, 'utf8'));
     return meshFromBin(meta, fs.readFileSync(path.join(qdir, meta.bin)));
   };
-  for (const fam of ['CommonTree', 'Pine']) {
+  for (const fam of ['CommonTree', 'Pine', 'TwistedTree']) {
     for (let v = 1; v <= 5; v++) {
       const m0 = read(`${fam}_${v}`), m1 = read(`${fam}_${v}_LOD1`);
+      if (!m0) continue; // TwistedTree before TWISTED-LOD-01: glTF estimate below
       out[`${fam}_${v}`] = { family: fam, tri0: m0.triCount, tri1: m1 ? m1.triCount : null, bbox0: Array.from(m0.bbox), bbox1: m1 ? Array.from(m1.bbox) : null };
     }
   }
   for (let v = 1; v <= 5; v++) {
+    if (out[`TwistedTree_${v}`]) continue; // real content mesh present
     const g = JSON.parse(fs.readFileSync(path.join(ROOT, `design/meshes/quaternius/glTF/TwistedTree_${v}.gltf`), 'utf8'));
     let tris = 0;
     const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
@@ -171,7 +173,7 @@ async function main() {
   const reports = {};
   for (const [name, cam] of Object.entries(poses)) if (!which || which === name) reports[name] = computeBudget({ placements, meshes, variantOf, cam, lodCells, lod0Cap });
   const notes = ['voxel scatter mapped to mesh families (Oak->CommonTree, Birch->TwistedTree, Pine->Pine), variants by weighted hash',
-    'TwistedTree has no LOD1 asset: counted as LOD0', 'frustum + RE-15 LOD only (no drawM/fog cull, no shadows)'];
+    'frustum + RE-15 LOD only (no drawM/fog cull, no shadows)'];
   if (args.includes('--json')) process.stdout.write(JSON.stringify({ notes, reports }, null, 2) + '\n');
   else process.stdout.write(formatTable(reports) + '\n' + notes.map((n) => 'note: ' + n).join('\n') + '\n');
 }

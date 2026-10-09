@@ -203,6 +203,12 @@ console.log(`light.wgsl.test.js: string/layout rules and ${probes} JS-evaluated 
   assert.ok(/sd < 0\.0 \|\| sd > 1\.0/.test(fn), 'receiver box test stays on sd');
 }
 
+// ME-16d ARCH: the point sampler uses the sun-map depth convention (0.75 + 0.25 * ndc), same literals as shadowPoint.js shadowDepthStore
+{
+  const fn = LIGHT_WGSL.slice(LIGHT_WGSL.indexOf('fn pointShadowTapsS'), LIGHT_WGSL.indexOf('fn pointShadowTapsS') + 2500);
+  assert.ok(/let rd = 0\.75 \+ 0\.25 \* \(/.test(fn), 'rd = 0.75 + 0.25 * ndc');
+}
+
 // ME-20c (38.18): kind-9 packed normal from GI.z; the vertex-AO term sits inside the strength branch, after the horizon term, as a min.
 {
   const { LIGHT_WGSL: W } = await import('./light.wgsl.js');

@@ -12,9 +12,10 @@ import {
   listOutlinerItems, frameFor, itemToWorld, worldToItem, mintId, fileKey,
 } from './doc.js';
 import { createOverlayTarget } from './overlayTarget.js';
-import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, applyViewPreset } from './camera.js';
+import { makePickGuard } from './pickGuard.js';
+import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, applyViewPreset, toggleOrtho, adjustOrthoHalfH, lookAlongAxis } from './camera.js';
 import { createAxisGizmo } from './axisGizmo.js';
-import { unprojectCell, rayPoint, projectPoint } from './ray.js';
+import { unprojectCell, rayPoint, projectPoint, screenCentreGroundHit } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
 import { drawSelectionHighlight, drawMarkers, drawHoverOutline, drawMeshHighlightRect } from './select.js';
 import {
@@ -222,12 +223,12 @@ for (const name of validateBehaviours(World.load(assets.world(doc.worldId), asse
 // WebGPU start run the CPU path at the CPU grid). The editor never builds a GL cell pipeline.
 const g = clampGrid(gridFromParam(params, GRID_DEFAULT_COLS));
 window.__editorBoot?.stage('renderer init', 'Starting renderer');
-const { rt: builtRt, pipeline: wgPipeline, info: rendererInfo } = await createRenderer({ canvas, cols: g.cols, rows: g.rows, backend: params.get('backend') || 'webgpu', gpu: params.get('gpu') !== '0', shadows: { sun: params.get('shadows') === 'map' ? 'map' : 'dda' } });
+const { rt: builtRt, pipeline: wgPipeline, info: rendererInfo } = await createRenderer({ canvas, cols: g.cols, rows: g.rows, backend: params.get('backend') || 'webgpu', gpu: params.get('gpu') !== '0', shadows: { sun: params.get('shadows') === 'off' ? 'off' : 'map' } });
 window.__editorBoot?.stage('scene init', 'Preparing scene');
 const engine = createEngine({
   canvas, assets, cols: g.cols, rows: g.rows, rays: 1, renderTarget: builtRt, renderPipeline: wgPipeline,
   gpu: params.get('gpu') !== '0', inputTarget: canvas,
-  shadows: { sun: params.get('shadows') === 'map' ? 'map' : 'dda' }, // 31.6 passthrough
+  shadows: { sun: params.get('shadows') === 'off' ? 'off' : 'map' }, // 31.6 passthrough
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
 });
 const { renderTarget: rt, input } = engine;
@@ -1014,9 +1015,9 @@ function deleteSelected() {
   renderProperties();
 }
 
-function teleportToSelection() {
+function selectionPoint() {
   const selection = primarySelection();
-  if (!selection) return;
+  if (!selection) return null;
   let point = null;
   const entId = selectionEntityId(world, selection);
   if (entId) {
@@ -1032,6 +1033,11 @@ function teleportToSelection() {
       point = itemToWorld(sFrame, item.x, item.y, z);
     }
   }
+  return point;
+}
+function teleportToSelection() {
+  if (!primarySelection()) return;
+  const point = selectionPoint();
   if (!point) { flash('teleport: no position for this item'); return; }
   cam.x = point.x;
   cam.y = point.y + 2; // 2 m south (+y), looking north at it (24.5)
@@ -1867,17 +1873,17 @@ function beginSelectionBox(e, col, row) {
     rect:{minCol:col,maxCol:col,minRow:row,maxRow:row} };
 }
 
-let pickSeq = 0, moveSeq = 0;
+const clickGuard = makePickGuard(() => world), hoverGuard = makePickGuard(() => world); // one guard per pick channel (click vs hover)
 canvas.addEventListener('mousedown', async (e) => {
   if (e.button !== 0 || !editorKeysActive()) return;
   if (modelPickerEl.style.display !== 'none') return; // US-063: the model picker modal owns clicks while open
   const { col, row } = computeMouseCell(e);
-  const seq = ++pickSeq, stamp = world;
+  const tok = clickGuard.begin();
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
 
   if (toolMode === 'terrain') { // ED-TERRAIN-1c: the brush owns the left button
     const hit = await pickAt(col, row, pickCtx());
-    if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+    if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
     if (hit.kind === 'terrain' && hit.world) { tb.hover = { x: hit.world.x, y: hit.world.y }; terrainStrokeStart(tb.hover); }
     else flash('terrain: click on the terrain');
     return;
@@ -1885,7 +1891,7 @@ canvas.addEventListener('mousedown', async (e) => {
 
   if (placeMode) {
     const result = await pickAt(col, row, pickCtx());
-    if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+    if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
     const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, RENDERER);
     // 24.9: "at a picked point or cursor ray" - a surface/terrain/entity hit
     // gives a real point; looking at open sky falls back to a point 8 m out
@@ -1909,7 +1915,7 @@ canvas.addEventListener('mousedown', async (e) => {
   }
 
   const result = await pickAt(col, row, pickCtx());
-  if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+  if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
   lastPickText = formatPickResult(result);
 
   if (result.kind === 'meshStructure' && result.structureId) {
@@ -1932,7 +1938,7 @@ canvas.addEventListener('mousedown', async (e) => {
     const item = pickSelectionOrNull(visState, rawItem);
     if (!item) {
       const marker = await pickMarkers(col, row, pickCtx());
-      if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+      if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
       if (marker) { selectMarker(e,col,row,marker); return; }
       beginSelectionBox(e,col,row);
       return;
@@ -1984,14 +1990,14 @@ canvas.addEventListener('mousedown', async (e) => {
     return;
   }
   const marker = await pickMarkers(col, row, pickCtx());
-  if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+  if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
   if (marker) { selectMarker(e,col,row,marker); return; }
   beginSelectionBox(e,col,row);
 });
 
 window.addEventListener('mousemove', async (e) => {
   const { col, row } = computeMouseCell(e);
-  const seq = ++moveSeq, stamp = world;
+  const tok = hoverGuard.begin();
   if (col >= 0 && col < rt.cols && row >= 0 && row < rt.rows) { hoverCol = col; hoverRow = row; frame.markDirty(); }
   if (boxDrag) {
     const dx=e.clientX-boxDrag.startX,dy=e.clientY-boxDrag.startY;
@@ -2053,7 +2059,7 @@ window.addEventListener('mousemove', async (e) => {
       assetDrag.lastCol = col;
       assetDrag.lastRow = row;
       const result = await pickAt(col, row, pickCtx());
-      if (seq !== moveSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+      if (hoverGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
       const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, RENDERER);
       const point = result.world || rayPoint(ray, 8);
       assetDrag.rawPoint = point;
@@ -2208,10 +2214,10 @@ window.addEventListener('mouseup', (e) => {
 canvas.addEventListener('mousemove', async (e) => {
   if (toolMode !== 'terrain') return;
   const { col, row } = computeMouseCell(e);
-  const seq = ++moveSeq, stamp = world;
+  const tok = hoverGuard.begin();
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
   const hit = await pickAt(col, row, pickCtx());
-  if (seq !== moveSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+  if (hoverGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
   if (hit.kind === 'terrain' && hit.world) {
     tb.hover = { x: hit.world.x, y: hit.world.y };
     if (tb.stroke) terrainStrokeMove(tb.hover);
@@ -2246,6 +2252,7 @@ speedInput.addEventListener('change', () => {
 });
 canvas.addEventListener('wheel', (e) => {
   if (!editorKeysActive()) return;
+  if (cam.projection === 'ortho') { cam.orthoHalfH = adjustOrthoHalfH(cam.orthoHalfH, e.deltaY); frame.markDirty(); e.preventDefault(); return; }
   speed = adjustSpeed(speed, e.deltaY);
   speedInput.value = speed.toFixed(2);
   e.preventDefault();
@@ -2256,6 +2263,24 @@ animateToggle.addEventListener('change', () => { animate = animateToggle.checked
 
 // US-068c view presets: orbit around the point VIEW_PIVOT_M ahead of the eye (no selection logic), perspective only.
 const VIEW_PIVOT_M = 10;
+// US-068d: focus = selection centre, else the pivot ahead of the eye
+function currentFocus() {
+  const sp = selectionPoint();
+  if (sp) return { x: sp.x, y: sp.y, z: sp.z };
+  if (cam.projection === 'ortho') return { x: cam.x, y: cam.y, z: cam.z };
+  // 38.19 item 3: terrain hit under screen centre (sync CPU march), else the point VIEW_PIVOT_M ahead
+  try {
+    const hit = tb?.terrain && screenCentreGroundHit(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, (x, y) => tb.terrain.heightAt(x, y));
+    if (hit) return hit;
+  } catch (_) { /* fall through */ }
+  const y = cam.yawDeg * Math.PI / 180, p = cam.pitchDeg * Math.PI / 180;
+  return {
+    x: cam.x + Math.sin(y) * Math.cos(p) * VIEW_PIVOT_M,
+    y: cam.y - Math.cos(y) * Math.cos(p) * VIEW_PIVOT_M,
+    z: cam.z + Math.sin(p) * VIEW_PIVOT_M,
+  };
+}
+function toggleOrthoView() { toggleOrtho(cam, currentFocus()); axisGizmo.update(); frame.markDirty(); }
 function setViewPreset(name) {
   const y = cam.yawDeg * Math.PI / 180, p = cam.pitchDeg * Math.PI / 180;
   const focus = {
@@ -2267,12 +2292,14 @@ function setViewPreset(name) {
   axisGizmo.update();
   frame.markDirty();
 }
-const axisGizmo = createAxisGizmo(document.getElementById('viewport'), { getView: () => cam, onPreset: setViewPreset });
+const axisGizmo = createAxisGizmo(document.getElementById('viewport'), { getView: () => cam, onPreset: setViewPreset,
+  onAxis: (k) => { lookAlongAxis(cam, k, currentFocus()); axisGizmo.update(); frame.markDirty(); } });
 
 function update(dt) {
   if (!editorKeysActive()) { input.endFrame(); return; }
   if (input.pressed('F3')) overlay.toggle();
   if (input.pressed('Home')) { cam = startPose(); axisGizmo.update(); frame.markDirty(); }
+  if (input.pressed('Numpad5')) toggleOrthoView();
   if (input.pressed('Numpad7')) setViewPreset('TOP');
   if (input.pressed('Numpad1')) setViewPreset('FRONT');
   if (input.pressed('Numpad9')) setViewPreset('ISO');

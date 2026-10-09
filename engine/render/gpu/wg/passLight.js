@@ -198,7 +198,7 @@ export class WgLightPass {
       for (let k = 0; k < MAX_LIGHTS; k++) lu[W_PSH_SLOT + k] = 0;
       for (let s = 0; s < ns; s++) {
         const q = s * 4, h = pp.slotLight[s];
-        lu[W_PSH_O + q] = pp.origins[q]; lu[W_PSH_O + q + 1] = pp.origins[q + 1]; lu[W_PSH_O + q + 2] = pp.origins[q + 2]; lu[W_PSH_O + q + 3] = pp.origins[q + 3];
+        lu[W_PSH_O + q] = pp.renderedOrigins[q]; lu[W_PSH_O + q + 1] = pp.renderedOrigins[q + 1]; lu[W_PSH_O + q + 2] = pp.renderedOrigins[q + 2]; lu[W_PSH_O + q + 3] = pp.renderedOrigins[q + 3];
         if (h >= 0 && h < MAX_LIGHTS && pp.ready[s]) lu[W_PSH_SLOT + h] = s + 1;
       }
       pshTex = pp.depthTex;
