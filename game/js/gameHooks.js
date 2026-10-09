@@ -24,10 +24,16 @@ const payloads = {
   'flag:set': { key: '', value: null },
 };
 
+const EMPTY_TARGETS = Object.freeze([]);
+
 export function createGameHooks() {
   /** @type {{h:any, warned:Set<string>}[]} */
   let list = [];
   const ctx = { world: null, player: null, events: null, vitals: null, inventory: null, requestSave: null, state: { wakeDone: false, canSave: false, ending: false, interactPressed: false, interactRaw: false, playerYawDeg: 0 } };
+  // QUEST-MARK-01w: read-only active-objective getter. main.js (or a wire) sets ONE source fn(out); questObjective() refills
+  // and returns the SAME reused object { id, done, targets }, targets = the frozen marker-target id array (never mutate).
+  const questOut = { id: '', done: true, targets: EMPTY_TARGETS };
+  let questSource = null;
   ctx.requestSave = () => { for (let i = 0; i < saveListeners.length; i++) saveListeners[i](); };
   const saveListeners = [];
 
@@ -89,6 +95,14 @@ export function createGameHooks() {
         try { const r = e.h.onRespawn(); if (r) return r; } catch (x) { fail(e, 'onRespawn', x); }
       }
       return null;
+    },
+    /** Points questObjective() at the quest (fn(out) fills out.id/done/targets). Returns an unset fn. */
+    setQuestSource(fn) { questSource = fn; return () => { if (questSource === fn) questSource = null; }; },
+    /** Active objective { id, done, targets } (reused object, zero alloc). No source / throwing source -> done, no targets. */
+    questObjective() {
+      questOut.id = ''; questOut.done = true; questOut.targets = EMPTY_TARGETS;
+      if (questSource) { try { questSource(questOut); } catch (e) { questSource = null; } }
+      return questOut;
     },
     get count() { return list.length; },
   };
