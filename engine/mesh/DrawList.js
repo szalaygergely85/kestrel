@@ -40,6 +40,18 @@ export const DRAW_FLAG_DEPTH_BIAS = 1;
 /** MESH-INST-01: DRAW_INSTANCED item whose mesh is ONE identity part: both twins draw `mesh.triCount` triangles as one range (one GL draw per group, the single-draw triangle order) instead of one per `mesh.ranges` entry. */
 export const DRAW_FLAG_ONE_PART = 2;
 
+const _onePartRange = [{ start: 0, count: 0 }]; // shared scratch: callers iterate synchronously (zero alloc)
+/**
+ * 38.9: the ranges a DRAW_INSTANCED item is drawn with in EVERY pass (camera, shadow, kernel).
+ * ONE_PART items draw `[0, mesh.triCount)` as one range (part 0); otherwise `mesh.ranges`.
+ * The returned array is a shared scratch for ONE_PART: do not keep it across calls.
+ * @param {{mesh: {ranges: any[], triCount: number}, flags: number}} item
+ */
+export function instancedRanges(item) {
+  if (item.flags & DRAW_FLAG_ONE_PART) { _onePartRange[0].count = item.mesh.triCount; return _onePartRange; }
+  return item.mesh.ranges;
+}
+
 /** Preallocated `DrawList` capacity (27.8: <= 60 draws expected in phase 1). */
 export const MAX_DRAW_ITEMS = 256;
 

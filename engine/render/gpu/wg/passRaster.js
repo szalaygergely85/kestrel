@@ -5,7 +5,7 @@ import { TERRAIN_BLOCK, TERRAIN_RASTER_WGSL, TERRAIN_TEXTURES } from '../wgsl/te
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, MAX_DRAW_ITEMS } from '../../../mesh/DrawList.js';
 import { MeshGroupSet, addMeshStructuresBatched } from '../../../mesh/meshGroups.js';
-import { DRAW_FLAG_ONE_PART } from '../../../mesh/DrawList.js';
+import { instancedRanges } from '../../../mesh/DrawList.js';
 import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../../mesh/voxelMesh.js';
 import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME } from '../../../mesh/instances.js';
@@ -48,7 +48,6 @@ export class WgRasterPass {
     this.list = new DrawList(MAX_DRAW_ITEMS);
     this.levelCache = null; this.meshCache = new MeshDrawCache(); this.strictMatIdFor = null;
     this.meshGroups = new MeshGroupSet(); this.meshDrawArg = { cache: null, idFor: null }; // MESH-INST-01 / TREES-LP-b: same feed as GpuCellPipeline
-    this._oneRange = [{ start: 0, count: 0 }];
     this.grid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
     this.terms = {}; this.pitch = createPitchedTerms();
     // PREC-01a (37.9, WebGPU twin of the GLSL plan): camera-relative raster. `view`/`planes` stay absolute f64 (culling, WG-4 cull kernels);
@@ -374,8 +373,7 @@ export class WgRasterPass {
         else d.writeBuffer(buffer, item.instBuf.f32, 0);
         this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0;
         const entry = this.buffers.getVoxel(item.mesh);
-        let ranges = item.mesh.ranges;
-        if (item.flags & DRAW_FLAG_ONE_PART) { this._oneRange[0].count = item.mesh.triCount; ranges = this._oneRange; }
+        const ranges = instancedRanges(item);
         for (let part = 0; part < ranges.length; part++) {
           const r = ranges[part]; if (r.count <= 0) continue;
           this._model(item.partMatrices, part * 12); this.bits[AXIS] = item.partFlags[part] & 1;

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import { World } from '../world/World.js';
 import { meshFromJSON } from './MeshData.js';
-import { DrawList, DRAW_INSTANCED, DRAW_FLAG_ONE_PART, MeshDrawCache, LevelMeshCache, addMeshStructures } from './DrawList.js';
+import { DrawList, DRAW_INSTANCED, DRAW_FLAG_ONE_PART, instancedRanges, MeshDrawCache, LevelMeshCache, addMeshStructures } from './DrawList.js';
 import { InstanceGroups, writeUnitInstance } from './instances.js';
 import { rasterDrawList, createRasterTarget } from './rasterJS.js';
 import { frustumPlanes } from './culling.js';
@@ -149,6 +149,23 @@ shadowSunMatrix(dirFromAzEl(135, 40, new Float64Array(3)), new Float64Array(3), 
   const l2 = new DrawList(); l2.begin();
   ig.addToDrawList(l2, null, planes, 11, M, ROWS, { cache: new MeshDrawCache(), idFor, gpu: { accept: () => false } });
   ok('gpu hook refusing: CPU path as before', l2.count === 1 && g.drawCount[0] > 0);
+}
+
+// 38.9 ONEPART-a: instancedRanges helper + every caller uses it
+{
+  const mesh = { ranges: [{ start: 0, count: 1 }, { start: 1, count: 11 }], triCount: 12 };
+  const r1 = instancedRanges({ mesh, flags: DRAW_FLAG_ONE_PART });
+  ok('instancedRanges ONE_PART: one range {0, triCount}', r1.length === 1 && r1[0].start === 0 && r1[0].count === 12);
+  ok('instancedRanges without the flag: mesh.ranges', instancedRanges({ mesh, flags: 0 }) === mesh.ranges);
+  global.gc(); const h0 = process.memoryUsage().heapUsed; let sink = 0;
+  for (let i = 0; i < 1000; i++) sink += instancedRanges({ mesh, flags: DRAW_FLAG_ONE_PART }).length;
+  ok('instancedRanges: no per-call allocation', process.memoryUsage().heapUsed - h0 < 100000 && sink === 1000);
+  const src = (f) => fs.readFileSync(new URL(f, import.meta.url), 'utf8');
+  const files = ['./rasterJS.js', '../render/gpu/GpuCellPipeline.js', '../render/gpu/wg/passRaster.js'];
+  for (const f of files) ok(`${f} calls instancedRanges, no _oneRange copy`, /instancedRanges\(item\)/.test(src(f)) && !/_oneRange\s*[=\[]/.test(src(f)));
+  const gl = src('../render/gpu/GpuCellPipeline.js');
+  const sh = gl.slice(gl.indexOf('  _passShadow() {'));
+  ok('GL _passShadow instanced loop uses instancedRanges', /instancedRanges\(item\)/.test(sh));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
