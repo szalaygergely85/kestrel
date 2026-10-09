@@ -292,6 +292,7 @@ export function meshBinMeta(mesh, binName) {
     ...(mesh.castShadow === false ? { castShadow: false } : {}),
     ...(mesh.collide === false ? { collide: false } : {}),
     ...(mesh.collider ? { colliderB64: f32ToBase64(mesh.collider) } : {}), // MESH-LOAD-01: the proxy is tiny and must exist before the bin does (colliders stay eager)
+    ...(mesh.lods ? { lods: mesh.lods } : {}), // QUAT-LOD-01: LOD1 pointer(s), meta-only (not used for drawing yet)
   };
 }
 
@@ -348,5 +349,6 @@ export function meshFromBin(meta, bytes) {
     ...(meta.castShadow === false ? { castShadow: false } : {}),
     ...(meta.collide === false ? { collide: false } : {}),
     ...(meta.colliderB64 ? { collider: base64ToF32(meta.colliderB64) } : d.collider ? { collider: d.collider } : {}),
+    ...(meta.lods ? { lods: meta.lods } : {}), // QUAT-LOD-01: LOD1 pointer(s), meta-only (not used for drawing yet)
   };
 }

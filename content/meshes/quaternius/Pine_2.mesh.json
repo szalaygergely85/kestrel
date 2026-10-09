@@ -32,5 +32,8 @@
   "colliderB64": "nMRgvy2yrT/Xo3C+9P0Uv65H4b3Xo3C+9P0Uv65H4b2BldtAnMRgvy2yrT/Xo3C+9P0Uv65H4b2BldtAnMRgvy2yrT+BldtA9P0Uv65H4b3Xo3C+z/dTPn0/tb/Xo3C+z/dTPn0/tb+BldtA9P0Uv65H4b3Xo3C+z/dTPn0/tb+BldtA9P0Uv65H4b2BldtAz/dTPn0/tb/Xo3C+cT2KPlyPsr/Xo3C+cT2KPlyPsr+BldtAz/dTPn0/tb/Xo3C+cT2KPlyPsr+BldtAz/dTPn0/tb+BldtAcT2KPlyPsr/Xo3C+309NP8P1qD7Xo3C+309NP8P1qD6BldtAcT2KPlyPsr/Xo3C+309NP8P1qD6BldtAcT2KPlyPsr+BldtA309NP8P1qD7Xo3C+g8BKPiUG8T/Xo3C+g8BKPiUG8T+BldtA309NP8P1qD7Xo3C+g8BKPiUG8T+BldtA309NP8P1qD6BldtAg8BKPiUG8T/Xo3C+BFYOPlg59D/Xo3C+BFYOPlg59D+BldtAg8BKPiUG8T/Xo3C+BFYOPlg59D+BldtAg8BKPiUG8T+BldtABFYOPlg59D/Xo3C+mplZvylcvz/Xo3C+mplZvylcvz+BldtABFYOPlg59D/Xo3C+mplZvylcvz+BldtABFYOPlg59D+BldtAmplZvylcvz/Xo3C+nMRgvy2yrT/Xo3C+nMRgvy2yrT+BldtAmplZvylcvz/Xo3C+nMRgvy2yrT+BldtAmplZvylcvz+BldtAnMRgvy2yrT+BldtA9P0Uv65H4b2BldtAz/dTPn0/tb+BldtAnMRgvy2yrT/Xo3C+z/dTPn0/tb/Xo3C+9P0Uv65H4b3Xo3C+nMRgvy2yrT+BldtAz/dTPn0/tb+BldtAcT2KPlyPsr+BldtAnMRgvy2yrT/Xo3C+cT2KPlyPsr/Xo3C+z/dTPn0/tb/Xo3C+nMRgvy2yrT+BldtAcT2KPlyPsr+BldtA309NP8P1qD6BldtAnMRgvy2yrT/Xo3C+309NP8P1qD7Xo3C+cT2KPlyPsr/Xo3C+nMRgvy2yrT+BldtA309NP8P1qD6BldtAg8BKPiUG8T+BldtAnMRgvy2yrT/Xo3C+g8BKPiUG8T/Xo3C+309NP8P1qD7Xo3C+nMRgvy2yrT+BldtAg8BKPiUG8T+BldtABFYOPlg59D+BldtAnMRgvy2yrT/Xo3C+BFYOPlg59D/Xo3C+g8BKPiUG8T/Xo3C+nMRgvy2yrT+BldtABFYOPlg59D+BldtAmplZvylcvz+BldtAnMRgvy2yrT/Xo3C+mplZvylcvz/Xo3C+BFYOPlg59D/Xo3C+",
   "colliderParts": [
     "Pine_2#0"
+  ],
+  "lods": [
+    {"mesh": "quaternius/Pine_2_LOD1", "ratio": 0.35, "tris": 1277}
   ]
 }

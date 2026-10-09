@@ -4,7 +4,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { bindDetailInstances, feedDetail, removeDetailInstances, DETAIL_OBJECT_BASE } from './scatterFeed.js';
 import { InstanceGroups, createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE,
-  INST_OBJECT_ID, MAX_INSTANCE_GROUPS, MAX_INSTANCES_PER_FRAME } from './instances.js';
+  INST_OBJECT_ID, INST_FLAGS, MAX_INSTANCE_GROUPS, MAX_INSTANCES_PER_FRAME } from './instances.js';
+import { INST_FLAG_SWAY } from './sway.js';
 import { World } from '../world/World.js';
 import '../../design/palette.js';
 import '../../design/detail-pass.js';
@@ -42,7 +43,7 @@ for (let y = 0; y < tilesY; y++) {
 }
 const detail = { count: points.length, tileM, tx0, ty0, tilesX, tilesY,
   tileStart: Uint32Array.from(tileStart), speciesDefs: [
-    { model: 'tuft', shadow: false, lodCells: 4 }, { model: 'rock', shadow: true, lodCells: 6 },
+    { model: 'tuft', shadow: false, lodCells: 4, sway: true }, { model: 'rock', shadow: true, lodCells: 6 },
     { model: 'unused', shadow: false, lodCells: 4 }],
   x: Float64Array.from(points, p => p.x), y: Float64Array.from(points, p => p.y),
   z: Float64Array.from(points, p => p.z), yawDeg: Int16Array.from(points, p => p.yawDeg),
@@ -61,9 +62,18 @@ ok(binding.groupOf instanceof Uint8Array && binding.groupOf[2] === 255);
 const one = createInstanceBuffer(1);
 for (let i = 0; i < detail.count; i++) {
   writeUnitInstance(one, 0, detail.x[i], detail.y[i], detail.z[i], detail.yawDeg[i], DETAIL_OBJECT_BASE | i, 0);
+  if (detail.speciesDefs[detail.species[i]].sway) one.u32[INST_FLAGS] |= INST_FLAG_SWAY; // FOLIAGE-SWAY-01 part 2
   for (let w = 0; w < INSTANCE_STRIDE; w++) assert.equal(binding.master.u32[i * INSTANCE_STRIDE + w], one.u32[w]);
 }
 checks++;
+
+// FOLIAGE-SWAY-01 part 2: flagged species ('tuft', 0) carries INST_FLAG_SWAY on every instance; rock (1) never does.
+// (The full-word loop above already proves every other INST_FLAGS bit, e.g. aligned, is unchanged by the OR.)
+for (let i = 0; i < detail.count; i++) {
+  const bits = binding.master.u32[i * INSTANCE_STRIDE + INST_FLAGS];
+  if (detail.species[i] === 0) ok((bits & INST_FLAG_SWAY) !== 0);
+  else ok((bits & INST_FLAG_SWAY) === 0);
+}
 
 // Independent oracle sorts the whole band's tiles, then scans placements.
 function brute(x, y, cap) {
@@ -99,6 +109,12 @@ for (let p = 0; p < 20; p++) {
   }
   checks++;
 }
+// FOLIAGE-SWAY-01 part 2: the per-frame raw-word re-feed (feedDetail) carries INST_FLAG_SWAY along for every fed
+// 'tuft' (species 0) instance and never sets it on 'rock' (species 1, group index 1).
+ok(binding.groups[0].count > 0 && Array.from({ length: binding.groups[0].count },
+  (_, j) => binding.groups[0].ib.u32[j * INSTANCE_STRIDE + INST_FLAGS]).every(bits => (bits & INST_FLAG_SWAY) !== 0));
+ok(binding.groups[1].count === 0 || Array.from({ length: binding.groups[1].count },
+  (_, j) => binding.groups[1].ib.u32[j * INSTANCE_STRIDE + INST_FLAGS]).every(bits => (bits & INST_FLAG_SWAY) === 0));
 feedDetail(binding, 0, 0, true);
 ok(binding.fed === cfg.maxDraw);
 // Sentinels prove the early return makes no writes, rather than rewriting identical words.
