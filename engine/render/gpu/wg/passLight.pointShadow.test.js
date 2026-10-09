@@ -19,7 +19,7 @@ const PA = W('pshA'), PO = W('pshO'), PS = W('pshSlot');
 const fakePass = (d, ready) => ({
   enabled: true, active: true, n: 2, opts: { res: 128, biasM: 0.04, normalOffTexels: 1.5 },
   depthTex: d.createTexture({ format: 'depth24', width: 128, height: 128, sampled: true, layers: 12 }),
-  slotLight: new Int32Array([3, 5]), ready: new Uint8Array(ready), origins: new Float32Array([1, 2, 3, 6, 4, 5, 6, 8]),
+  slotLight: new Int32Array([3, 5]), ready: new Uint8Array(ready), renderedOrigins: new Float32Array([1, 2, 3, 6, 4, 5, 6, 8]),
 });
 
 // off: dummy at 7, pshA.x = 0, no slot words; every word before pshA identical to the on-path (psh words are the only difference)

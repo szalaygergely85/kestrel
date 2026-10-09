@@ -81,9 +81,11 @@ export function makeMockGpuDevice() {
     return h;
   }
   const device = {
-    createBuffer(desc) { return makeHandle('buffer', desc); },
+    createBuffer(desc) { const h = makeHandle('buffer', desc); if (device.modelHazard && desc.data) h._queued = desc.data.slice(); return h; },
     // CLOTH-1b2: counts writes (tests assert "1 write per changed version, 0 when asleep"); keeps the last payload.
-    writeBuffer(handle, data, dstOffsetBytes = 0) { handle._writes = (handle._writes || 0) + 1; handle._lastWrite = { data, dstOffsetBytes }; state.writeCount++; },
+    // ME-16c: `device.modelHazard = true` models the real queue: writeBuffer copies at call time and lands at once, draws execute at submit, so
+    // every draw sees the LAST written contents of its instance buffer; `device.hazardDraws()` returns [{buffer, seen}] resolved that way.
+    writeBuffer(handle, data, dstOffsetBytes = 0) { handle._writes = (handle._writes || 0) + 1; handle._lastWrite = { data, dstOffsetBytes }; state.writeCount++; if (device.modelHazard) handle._queued = data.slice(); },
     createTexture(desc) {
       // ME-16b (38.22): 2d-array textures mirror GpuDeviceWebGPU's validation (depth24 + sampled only, integer layers >= 1)
       if (desc.layers !== undefined && (desc.format !== 'depth24' || !desc.sampled || !(desc.layers >= 1) || (desc.layers | 0) !== desc.layers)) {
@@ -122,7 +124,9 @@ export function makeMockGpuDevice() {
     draw(count, first = 0, instances = 1) {
       device._drawCalls = (device._drawCalls || 0) + 1;
       device._lastDraw = { count, first, instances };
+      if (device.modelHazard && device._lastBind && device._lastBind.instanceBuffer) (device._hazardLog || (device._hazardLog = [])).push(device._lastBind.instanceBuffer);
     },
+    hazardDraws() { return (device._hazardLog || []).map((buffer) => ({ buffer, seen: buffer._queued })); },
     endPass() { device._activeTarget = null; },
     readback(tex, rect, out) { if (out && out.fill) out.fill(0); },
     // WG-1b1 (38.3): the mock records, never computes.

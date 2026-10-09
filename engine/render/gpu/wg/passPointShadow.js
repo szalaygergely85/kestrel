@@ -34,7 +34,8 @@ export class WgPointShadowPass {
     this.state = createShadowLightState(m);
     this.slotLight = new Int32Array(m).fill(-1);      // light handle per slot this frame (-1 = free)
     this.ready = new Uint8Array(m);                   // the slot's 6 layers hold a valid map for its current holder
-    this.origins = new Float32Array(m * 4);           // light-pass uniforms: quantised origin xyz + far (radius)
+    this.origins = new Float32Array(m * 4);           // build origin xyz + far per slot (what the faces are being rendered with)
+    this.renderedOrigins = new Float32Array(m * 4);   // light-pass uniforms: origin of the layers that are actually complete (written only when all 6 faces are in)
     this.keys = new Int32Array(m * 2); this.pendKey = new Int32Array(m * 2);
     this.keyValid = new Uint8Array(m); this.keyHolder = new Int32Array(m).fill(-1);
     this.dirty = new Uint8Array(m); this.moving = new Uint8Array(m); this.hasInst = new Uint8Array(m);
@@ -108,7 +109,7 @@ export class WgPointShadowPass {
       let k = 0;
       for (let i = 0; i < list.count; i++) { const a = items[i].aabb; if (classifyAABB(pl, a[0], a[1], a[2], a[3], a[4], a[5]) !== CULL_OUT) idx[k++] = i; }
       if (ring && Math.max(k + (k >> 1) + 4, this.lastFaceDraws) > ring.slots - ring.usedSlots - RING_RESERVE) { this.ringSkips++; break; } // masked ranges can split an item into several draws
-      cs.renderCasters(this.targets[s * 6 + f], M, list, world, idx, k, false);
+      cs.renderCasters(this.targets[s * 6 + f], M, list, world, idx, k, false, s + 1); // consumer s+1: its own GPU instance copy (sun = 0)
       this.stats.draws += cs.draws; this.lastFaceDraws = cs.draws; this.faceMask[s] |= 1 << f; done++;
     }
     this.facesRendered += done; this.stats.faces += done;
@@ -160,6 +161,7 @@ export class WgPointShadowPass {
             if (this.faceMask[s] !== 63) break; // ring ran short: resume next frame
             this.faceMask[s] = 0;
             this.keys[s * 2] = this.pendKey[s * 2]; this.keys[s * 2 + 1] = this.pendKey[s * 2 + 1];
+            const o4 = s * 4; for (let q = 0; q < 4; q++) this.renderedOrigins[o4 + q] = this.origins[o4 + q]; // commit the origin with the keys: all 6 faces are in
             this.keyValid[s] = 1; this.keyHolder[s] = state.slots[s]; this.ready[s] = 1; this.dirty[s] = 0; this.renders++;
             if (ph === 1) this.rr = (s + 1) % n;
           }

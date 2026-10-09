@@ -305,7 +305,7 @@ export class WgShadowPass {
    * kernel entries (sun only). Resets and counts `this.draws`. Zero allocation.
    * @param {any} target @param {Float32Array|Float64Array} Mf @param {any} list @param {any} world @param {Uint16Array|null} idx @param {number} idxN @param {boolean} gpuCulled
    */
-  renderCasters(target, Mf, list, world, idx, idxN, gpuCulled) {
+  renderCasters(target, Mf, list, world, idx, idxN, gpuCulled, consumer = 0) {
     const d = this.device, u = this.u, tu = this.tu;
     for (let i = 0; i < 16; i++) { u[VIEW + i] = Mf[i]; tu[T_VIEW + i] = Mf[i]; }
     this.draws = 0;
@@ -335,8 +335,11 @@ export class WgShadowPass {
         const n = item.instCount;
         if (instTotal + n > MAX_INSTANCES_PER_FRAME) break;
         instTotal += n;
-        let buffer = this.instanceBuffers.get(item.instBuf);
-        if (!buffer) { buffer = d.createBuffer({ usage: 'vertex', data: item.instBuf.f32, dynamic: true }); this.instanceBuffers.set(item.instBuf, buffer); }
+        // one GPU copy per consumer (sun 0, point slot s = s+1): writeBuffer lands at once but draws run at submit, so a shared copy would show the last write to all
+        let copies = this.instanceBuffers.get(item.instBuf);
+        if (!copies) { copies = []; this.instanceBuffers.set(item.instBuf, copies); }
+        let buffer = copies[consumer];
+        if (!buffer) { buffer = d.createBuffer({ usage: 'vertex', data: item.instBuf.f32, dynamic: true }); copies[consumer] = buffer; }
         else d.writeBuffer(buffer, item.instBuf.f32, 0);
         const entry = this.buffers.getVoxel(item.mesh), ranges = instancedRanges(item); // ONE_PART -> one whole-mesh range (38.9)
         const mr = item.mesh.maskRanges; // ALPHA-01f (c): per-range mask lookup, same shape as _staticCaster's
@@ -433,7 +436,7 @@ export class WgShadowPass {
     for (const h of [this.copyPipe, this.copyTarget, this.copyTex, this.target, this.depthTex]) if (h) d.dispose(h);
     this.copyPipe = this.copyTarget = this.copyTex = this.target = this.depthTex = null;
     if (this.cull) { this.cull.dispose(); this.cull = null; this.src.gpu = null; }
-    for (const buffer of this.instanceBuffers.values()) d.dispose(buffer);
+    for (const copies of this.instanceBuffers.values()) for (const buffer of copies) if (buffer) d.dispose(buffer);
     this.instanceBuffers.clear();
     if (this.ownBuffers) this.buffers.dispose();
     this.active = false;

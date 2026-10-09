@@ -146,6 +146,45 @@ const frame = (lights) => ({ _light: lights, _cam: cam, _world: world, _table: n
   assert.ok(g1 < 64 * 1024, `steady-state heap growth ${g1} B`);
 }
 
+// ---- ME-16c ARCH CHANGES 5.1: one GPU instance copy per consumer. The queue model (mock modelHazard): writeBuffer lands at once, draws run at submit ----
+{
+  const { DRAW_INSTANCED } = await import('../../../mesh/DrawList.js');
+  const { createShadowList } = await import('../../../mesh/shadowList.js');
+  const mk2 = makeMockGpuDevice(), dev = mk2.device; dev.modelHazard = true;
+  const sun = new WgShadowPass(dev, { shadows: { sun: 'off' }, casters: true });
+  const vb = dev.createBuffer({ usage: 'vertex', bytes: 64 }), ib = dev.createBuffer({ usage: 'index', bytes: 64 });
+  sun.buffers.getVoxel = () => ({ vertexBuffer: vb, indexBuffer: ib });
+  const mesh = { layout: 'static', triCount: 12, ranges: [{ start: 0, count: 12 }] };
+  const f32 = new Float32Array(16);
+  const il = createShadowList(); il.begin(); const it = il.push(); it.type = DRAW_INSTANCED; it.mesh = mesh; it.instCount = 2; it.instBuf = { f32 };
+  it.partMatrices.fill(0); it.partMatrices.set([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]);
+  const M = new Float32Array(16), tgt = dev.createTarget({}), idx = new Uint16Array([0]);
+  f32.fill(1); sun.renderCasters(tgt, M, il, world, null, 0, false); // sun draws its banding (all 1)
+  f32.fill(2); sun.renderCasters(tgt, M, il, world, idx, 1, false, 1); // torch slot 0 re-bands the same array (all 2)
+  f32.fill(3); sun.renderCasters(tgt, M, il, world, idx, 1, false, 2); // torch slot 1
+  const hz = dev.hazardDraws();
+  assert.equal(hz.length, 3);
+  assert.deepEqual(hz.map((h) => h.seen[0]), [1, 2, 3], 'each consumer draws with ITS contents (old shared buffer: [3, 3, 3])');
+  assert.equal(new Set(hz.map((h) => h.buffer)).size, 3, 'three GPU copies, one per consumer');
+  const live = mk2.liveCount(); sun.renderCasters(tgt, M, il, world, null, 0, false); assert.equal(mk2.liveCount(), live, 'no allocation on later frames');
+  sun.dispose(); assert.ok(hz.every((h) => h.buffer._disposed), 'copies disposed with the group');
+}
+
+// ---- ME-16c ARCH CHANGES 5.3: a slot skipped by faceCap keeps its previous origin in the light words (renderedOrigins) ----
+{
+  const { ps } = mk({ level: 'medium', pointShadows: { n: 2 } }); // cap 6: one light per frame
+  const lights = makeLights(2), p = frame(lights);
+  ps.run(p, raster); ps.run(p, raster); assert.deepEqual([ps.ready[0], ps.ready[1]], [1, 1]);
+  const o1 = [...ps.renderedOrigins.slice(4, 8)]; assert.equal(o1[0], 0.5);
+  lights.defX[0] += 1; lights.defX[1] += 1; lights.entity[0] = 1; // both dirty; the carried slot 0 goes first, slot 1 starves this frame
+  const o0 = [...ps.renderedOrigins.slice(0, 4)];
+  ps.run(p, raster);
+  assert.equal(ps.origins[4], 1.5, 'build origin moved');
+  assert.deepEqual([...ps.renderedOrigins.slice(4, 8)], o1, 'skipped slot keeps the origin its layers were rendered with');
+  assert.equal(ps.renderedOrigins[0], 1.5); assert.notEqual(ps.renderedOrigins[0], o0[0]);
+  ps.run(p, raster); assert.equal(ps.renderedOrigins[4], 1.5, 'committed once its 6 faces are in');
+}
+
 // ---- zero allocation once warm (moving light renders every frame) ----
 {
   const { d, ps } = mk({ level: 'medium' });
