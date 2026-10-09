@@ -138,8 +138,15 @@ const mutC = (a, b) => { assert.ok(SHADE_WGSL.includes(a), 'anchor ' + a); retur
 assert.ok(runCore(mutC('if (kind != 8u && face >= 1 && face <= 6)', 'if (kind != 9u && face >= 1 && face <= 6)'), 1500).bad > 15, 'mutation: kind 8 fk rule');
 assert.ok(runCore(mutC('shadeK = mf3.x;', 'shadeK = mf3.y;'), 3000).bad > 5, 'mutation: grid joint shade');
 assert.ok(runCore(mutC('+ mf1.x;', '+ mf1.y;'), 1500).bad > 15, 'mutation: emissive slot');
-assert.ok(runCore(mutC('let jit = 1.0 + jitter * (hA * 2.0 - 1.0);', 'let jit = 1.0 + jitter * (hB * 2.0 - 1.0);'), 1500).bad > 15, 'mutation: jitter hash');
+assert.ok(runCore(mutC('let jit = 1.0 + jitter * (hJ * 2.0 - 1.0);', 'let jit = 1.0 + jitter * (hB * 2.0 - 1.0);'), 1500).bad > 15, 'mutation: jitter hash');
 assert.ok(runCore(mutC('uo = u - select(0.0, gstagger * gu, fmodGlsl(course, 2.0) != 0.0);', 'uo = u;'), 3000).bad > 5, 'mutation: brick stagger');
+
+// GRID-TEXEL-GLYPH-01b: F_GRID_TEXEL literal + hJ (block die) present; texel materials are in the fixture and covered above.
+assert.ok(SHADE_WGSL.includes('(flags & 131072) != 0'), 'F_GRID_TEXEL literal');
+assert.ok(SHADE_WGSL.includes('hasGrid && !gridTexel'), 'gridTexel branch');
+assert.ok(SHADE_WGSL.includes('hJ = select(hA, hashFast(bix, courseI, seed), hasGrid)'), 'hJ block die');
+assert.ok(runCore(mutC('hasGrid && !gridTexel', 'hasGrid'), 3000).bad > 5, 'mutation: gridTexel ignored');
+assert.ok(runCore(mutC('hJ = select(hA, hashFast(bix, courseI, seed), hasGrid);', 'hJ = hA;'), 3000).bad > 5, 'mutation: hJ == hA on texel grid');
 
 const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
 // --- glyph pick vs shadeDetailFast (n = 1: lineWins == onJoint, count == 1), no fog stipple (dist < fog.start) ---
@@ -362,6 +369,29 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   const mutW = SHADE_WGSL.replace(`jit * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness)`, 'jit * (1.0 - 0.1000 * su.wetness)');
   assert.notEqual(mutW, SHADE_WGSL, 'mutation anchor wet dark');
   setWet(1); assert.ok(runCore(mutW, 1500).bad > 15, 'mutation: wet darkening constant'); setWet(0); delete shading.wetness;
+}
+
+// --- 38.23 entity tint: layout appended at the END, branch guarded by etA.x, tintCh probe == entityTint twin ---
+{
+  const { tintChannel } = await import('../../entityTint.js');
+  assert.equal(SHADE_BLOCK.field('etA').word, SHADE_BLOCK.field('faceK').word + 8, 'etA right after faceK (no word moved)');
+  assert.equal(SHADE_BLOCK.field('etId').word, SHADE_BLOCK.field('etA').word + 4);
+  assert.equal(SHADE_BLOCK.field('etC').word, SHADE_BLOCK.field('etId').word + 8);
+  assert.equal(SHADE_BLOCK.field('etC').words, 32);
+  assert.equal(SHADE_BLOCK.sizeBytes, (SHADE_BLOCK.field('etC').word + 32) * 4, 'tint table is the tail of the block');
+  assert.ok(/if \(su\.etA\.x > 0\.0\) \{/.test(SHADE_WGSL), 'branch guarded by count (0 = skipped, bit-identical)');
+  assert.ok(SHADE_WGSL.indexOf('su.etA.x > 0.0') < SHADE_WGSL.indexOf('rgbF += (su.fogFg - rgbF) * f') && SHADE_WGSL.indexOf('su.etA.x > 0.0') > SHADE_WGSL.indexOf('var rgbBg = rgbF * bgKAvg'), 'after lighting, before fog');
+  const tintCh = compileFn(SHADE_WGSL, 'tintCh', shims);
+  for (let i = 0; i < 2000; i++) {
+    const c = rand() * 255, t = rand(), k = i % 7 === 0 ? 0 : i % 11 === 0 ? 1 : rand();
+    const a = Math.fround(tintCh(Math.fround(c), Math.fround(t), Math.fround(k))), b = tintChannel(c, t, k);
+    assert.ok(Math.abs(a - b) <= 1e-3, `tintCh twin ${a} vs ${b}`);
+  }
+  const mutT = SHADE_WGSL.replace('return c + (t * 255.0 - c) * k;', 'return c + (t * 255.0 - c) * (k * 0.9);');
+  assert.notEqual(mutT, SHADE_WGSL);
+  const tm = compileFn(mutT, 'tintCh', shims); let bad = 0;
+  for (let i = 0; i < 200; i++) { const c = rand() * 255, t = rand(), k = 0.5 + rand() * 0.5; if (Math.abs(tm(c, t, k) - tintChannel(c, t, k)) > 1e-3) bad++; }
+  assert.ok(bad > 100, 'mutation: tint formula caught');
 }
 
 console.log(`shade.wgsl.test.js: string/layout rules + ${probes} JS-evaluated probes (hash, shadeCore, glyph pick, shadeTerrain) vs JS twins passed, mutations caught (hash, 5 shadeCore, 2 terrain).`);

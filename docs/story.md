@@ -422,3 +422,56 @@ Touching the stone saves, heals and sets the respawn point (GDD 11: rest = save 
 | `lore.waystone` | Optional echo (first touch, or the item-card line) | `Old road stone. The signal hums in it.` | 38 |
 
 The quest `done` line `The stone hums. The signal answers.` stays on the objective. `lore.waystone` is a separate line and does not replace it.
+
+## Sprint 8 texts - M3 additions (PC-B writer, 2026-10-09)
+
+ASCII only, lengths counted by hand. No line names Wick (D-013). The notes are unsigned and say nothing about who sends the SOS (M4 reason stays open).
+
+| Key | Where | Text | len |
+|---|---|---|---|
+| `demo.endcard` | Demo end card at the waystone (above Restart / Keep exploring) | `End of the demo. Not of the line.` | 33 |
+| `demo.endcard.sub` | Second line, optional | `The signal still blinks, further on.` | 36 |
+| `demo.titleTag` | Small tag on the title menu | `Demo build` | 10 |
+| `death.line` (DEATH-FLOW-01) | Centred line in the death fade | `Dark again. The light still blinks.` | 35 |
+| `quest.note1` (QUEST-TEXT-02) | Torn note, hillside | `Boars on this slope. They charge straight and turn slow.` | 56 |
+| `quest.note2` (QUEST-TEXT-02) | Second note, further down | `Thin them out before dark. The stone down the line hums.` | 56 |
+| `obj.beasts5` | Objective HUD, 5-boar variant | `Bring down the five wild boars` | 30 |
+| `obj.beasts2` | Objective HUD, 2-boar variant (same as `beasts` above) | `Bring down the two wild boars` | 29 |
+| `hint.combat.block` (COMBAT-HINT-01) | Combat hint | `Shield up as it comes. Then cut.` | 32 |
+| `hint.combat.dodge` (COMBAT-HINT-01) | Combat hint | `Step aside late. Boars turn slow.` | 33 |
+
+Notes:
+- `death.line` is the picked death card (`The dark again. The light still blinks.`, 39) shortened to fit 38.
+- No `place.waystone.toast` key: the waystone already has `toast.waystone.saved` and `toast.waystone.healed` (WAYSTONE-01w above, title `place.waystone`). Use those.
+- The notes give no boar count, so they work with either the 2- or the 5-boar objective.
+
+## EP-TALK: the bear (BEAR-LINES-01, PC-B writer, 2026-10-09)
+
+**Name:** `Burl` (`bear.name`, label `BURL`). A burl is the round knot on an old tree: slow-grown, hard to shift, and good wood.
+
+**Personality:** Burl is an old, unhurried bear who talks like a grandmother by a hearth: dry, kind, and not at all surprised by you. She wants a quiet afternoon, a full berry bush and someone to share the bush with, as long as they don't take the blue ones. She calls Ferrum "the loud hill" and its people "cubs", and she sees it as a nest of noisy children who never come out to play.
+
+**From the section 8 sample:** kept the ideas "check my ears for brass", "my grandmother was a cub", "sky-cub" and "the loud hill". Everything else is replaced. Section 8 stays as the old sample. The sample line "It asked for help then, too" is dropped because it gets too close to explaining the SOS.
+
+Rules: ASCII 32-126, each line <= 56 chars, each reply <= 40 chars, lengths counted by hand (text only; the speaker label is the frame's name tag). Burl never says "Wick" or explains the light. The player disbelieves, and the magic is just a bear talking.
+
+Flow: l1 -> l2 -> l3 -> choice (a | b | c) -> one Burl line per branch -> `bear.d1.close` (rejoin, sets the talked flag). Per path: 6 lines. Total: 10.
+
+| Key | Speaker | Text | len | Clip |
+|---|---|---|---|---|
+| `bear.name` | - | `Burl` | 4 | |
+| `bear.d1.l1` | BURL | `Well. A cub from the loud hill, fallen out of the sky.` | 54 | `wave` |
+| `bear.d1.l2` | YOU | `...Bears don't talk.` | 20 | |
+| `bear.d1.l3` | BURL | `And cubs don't fly. Yet here we both are.` | 41 | |
+| `bear.d1.choice.a` | YOU | `It's a trick. A speaking-tube.` | 30 | |
+| `bear.d1.a.l1` | BURL | `Check my ears for brass, then. Gently.` | 38 | |
+| `bear.d1.choice.b` | YOU | `Can I have a berry?` | 19 | |
+| `bear.d1.b.l1` | BURL | `One. The blue ones are mine. They are all blue.` | 47 | `laugh` |
+| `bear.d1.choice.c` | YOU | `Have you seen the blinking light?` | 33 | |
+| `bear.d1.c.l1` | BURL | `Since my grandmother was a cub. It never tires.` | 47 | |
+| `bear.d1.close` | BURL | `Go on, sky-cub. Walk soft. The wild is listening.` | 49 | |
+| `bear.repeat` | BURL | `Back again? The berries are still mine. Mostly.` | 47 | |
+
+Notes:
+- `wave` is on the greeting (`l1`). `bear.d1.close` would also work as a farewell wave if the clip team wants a second one.
+- Branch c only shows that the light is old (canon: it has been sending for years). It does not say who sends it or why.

@@ -1,18 +1,24 @@
 // WG-1b3 (38.7): timestamp spans, resolved asynchronously through a three-frame ring.
 // Pass descriptors and recording metadata are preallocated; full rings drop timing, never wait.
-export const FRAME_TIMER_SLOT = 10;
+export const FRAME_TIMER_SLOT = 15; // OCCL-STATS-01: moved from 10 (pass slots 0..14, SLOT_COUNT 16); ME-16e pshadow = 13
 // S8-B1-07: one slot per real WG pass (WgCellPipeline + passRaster/passShadow/passCell/passShade/passSprites/passOverlay),
-// slots 0-9 so FRAME_TIMER_SLOT (10) never collides - `writePassStats` reads slot === array index directly. 'resolve' covers
+// slots 0-13 so FRAME_TIMER_SLOT (15) never collides - `writePassStats` reads slot === array index directly. 'resolve' covers
 // both the resolve and deriv draw calls (GpuCellPipeline.PASS_RESOLVE precedent: one query spans both). Mutually exclusive
 // with FRAME_TIMER_SLOT per frame (spans never nest - see WgCellPipeline._hook): when per-pass timing is on, the pipeline
 // ends the whole-frame span early (still unwritten at that point) so each pass below can open its own.
-export const WG_PASS_NAMES = Object.freeze(['cull', 'raster', 'shadow', 'resolve', 'water', 'light', 'shade', 'edge', 'sprites', 'overlay']);
-export const WG_PASS_SLOT = Object.freeze({ cull: 0, raster: 1, shadow: 2, resolve: 3, water: 4, light: 5, shade: 6, edge: 7, sprites: 8, overlay: 9 });
+export const WG_PASS_NAMES = Object.freeze(['cull', 'raster', 'shadow', 'resolve', 'water', 'light', 'shade', 'edge', 'sprites', 'overlay', 'hzb', 'cull2', 'raster2', 'pshadow']);
+export const WG_PASS_SLOT = Object.freeze({ cull: 0, raster: 1, shadow: 2, resolve: 3, water: 4, light: 5, shade: 6, edge: 7, sprites: 8, overlay: 9, hzb: 10, cull2: 11, raster2: 12, pshadow: 13 });
 // Defensive helpers for the WG pass files (passRaster/passShadow/passCell/passShade): `p` is normally the WgCellPipeline
 // (`_passTimingOn` + `device`), but several Node tests call a pass's `run()` directly with a minimal stand-in object that
 // has neither - these just no-op then, same as timing being off.
 export function wgSpanBegin(p, slot) { if (p && p._passTimingOn && p.device && p.device.timer) p.device.timer.begin(slot); }
 export function wgSpanEnd(p) { if (p && p._passTimingOn && p.device && p.device.timer) p.device.timer.end(); }
+const NO_STATS = Object.freeze({ available: false });
+function makePassOut() {
+  const passes = {};
+  for (const n of WG_PASS_NAMES) passes[n] = { p50: NaN, p95: NaN, last: NaN };
+  return { available: false, frames: 0, passes };
+}
 const SLOT_COUNT = 16;
 const MAX_SPANS = 128;
 const HISTORY = 120;
@@ -37,6 +43,7 @@ export class WebGpuTimer {
     this._dirty = new Uint8Array(SLOT_COUNT);
     this._scratch = new Float64Array(HISTORY);
     this._rings = [];
+    this._passOut = this.available ? makePassOut() : null;
     if (!this.available) return;
     try {
       for (let i = 0; i < 3; i++) {
@@ -142,8 +149,10 @@ export class WebGpuTimer {
       while (j > 0 && scratch[j - 1] > v) { scratch[j] = scratch[j - 1]; j--; }
       scratch[j] = v;
     }
-    this._p50[slot] = scratch[Math.floor(n * 0.5)];
-    this._p95[slot] = scratch[Math.min(n - 1, Math.floor(n * 0.95))];
+    if (!n) { this._p50[slot] = NaN; this._p95[slot] = NaN; return; }
+    // Nearest-rank percentile: sorted[ceil(p * n) - 1] (no interpolation).
+    this._p50[slot] = scratch[Math.ceil(n * 0.5) - 1];
+    this._p95[slot] = scratch[Math.ceil(n * 0.95) - 1];
   }
 
   writeStats(out, slot = FRAME_TIMER_SLOT) {
@@ -156,6 +165,24 @@ export class WebGpuTimer {
       this._stats(slot);
       outP50[slot] = this._p50[slot]; outP95[slot] = this._p95[slot];
     }
+  }
+
+  // PERF-PASSP95-01: per-pass {p50, p95, last} over the last 120 samples (nearest-rank). Fills a reused object (zero alloc after
+  // construction); a pass with no samples reports NaN for all three ("n/a"). timestamp-query unavailable -> {available:false}.
+  // `out` is optional: pass your own object (needs .passes) to avoid sharing the internal one. Read results before the next call.
+  passStats(out) {
+    if (!this.available) return NO_STATS;
+    if (!out) out = this._passOut || (this._passOut = makePassOut());
+    let frames = 0;
+    for (let i = 0; i < WG_PASS_NAMES.length; i++) {
+      const slot = WG_PASS_SLOT[WG_PASS_NAMES[i]];
+      this._stats(slot);
+      const e = out.passes[WG_PASS_NAMES[i]] || (out.passes[WG_PASS_NAMES[i]] = { p50: NaN, p95: NaN, last: NaN });
+      e.p50 = this._p50[slot]; e.p95 = this._p95[slot]; e.last = this._length[slot] ? this._latest[slot] : NaN;
+      if (this._length[slot] > frames) frames = this._length[slot];
+    }
+    out.available = true; out.frames = frames;
+    return out;
   }
 
   dispose() {

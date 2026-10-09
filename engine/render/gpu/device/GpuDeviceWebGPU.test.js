@@ -45,7 +45,7 @@ function mockGpu() {
     draw() { calls.push('draw'); }, drawIndexed() { calls.push('drawIndexed'); }, end() { calls.push('end'); },
   });
   const rec = (n) => () => { calls.push(n); return obj(n); };
-  const queue = { writeBuffer() { calls.push('writeBuffer'); }, writeTexture(dst, data, layout, size) { calls.push('writeTexture'); this.lastWrite = { ox: dst.origin[0], oy: dst.origin[1], bpr: layout.bytesPerRow, w: size[0], h: size[1] }; this.objs = [dst, layout, size]; }, submit() { calls.push('submit'); } };
+  const queue = { writeBuffer() { calls.push('writeBuffer'); }, writeTexture(dst, data, layout, size) { calls.push('writeTexture'); this.lastWrite = { ox: dst.origin[0], oy: dst.origin[1], bpr: layout.bytesPerRow, rpi: layout.rowsPerImage, w: size[0], h: size[1] }; this.objs = [dst, layout, size]; }, submit() { calls.push('submit'); } };
   return {
     calls, sets, layouts, queue, limits: { maxColorAttachments: 8 }, lost: new Promise(() => {}),
     createBuffer: rec('createBuffer'), createTexture: rec('createTexture'), createSampler: rec('createSampler'),
@@ -223,6 +223,9 @@ await run('webgpu: requestDevice rejects -> fallback', {
   d.writeTexture(t, new Uint8Array(2 * 2 * 4), { x: 3, y: 1, w: 2, h: 2 });
   const w2 = g.queue.lastWrite;
   ok('writeTexture sub rect values', w2.ox === 3 && w2.oy === 1 && w2.bpr === 8 && w2.w === 2 && w2.h === 2);
+  ok('writeTexture sets rowsPerImage = h (full + sub rect; regression for 105ea67)', w1.rpi === 4 && w2.rpi === 2);
+  d.writeTexture(t, new Uint8Array(8 * 4 * 4), { x: 1, y: 0, w: 3, h: 2, stride: 8 });
+  ok('writeTexture stride: bytesPerRow = stride*bpp, rowsPerImage = h', g.queue.lastWrite.bpr === 32 && g.queue.lastWrite.rpi === 2);
   d.writeTexture(t, new Uint8Array(8 * 4 * 4));
   const third = g.queue.objs;
   ok('writeTexture reuses dst/layout/size objects per texture', third[0] === first[0] && third[1] === first[1] && third[2] === first[2]);

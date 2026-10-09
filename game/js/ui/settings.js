@@ -37,6 +37,7 @@ import { createPanel } from '../../../engine/index.js';
 import { OPTIONS, findOption, getDefaultValues, stepOptionValue } from '../settings/options.js';
 import { loadSettings, saveSettings } from '../platform/index.js';
 import { setMuted, isMuted } from '../audio/synth.js';
+import { knobsFor, saveQuality } from './gfxPresets.js';
 
 let panel = null;          // createPanel()'s fade/open-close state machine (fake `{w,h}` art - see header)
 let values = { ...getDefaultValues(), ...toOptionValues(loadSettings()) };
@@ -47,7 +48,7 @@ const gridFailed = new Set(); // grid values `engine.setGrid` refused this sessi
 /** Maps the platform's flat settings blob onto options.js ids (`muted` -> `mute`). */
 function toOptionValues(saved) {
   return {
-    grid: saved.grid, fullscreen: saved.fullscreen,
+    grid: saved.grid, quality: saved.quality || 'auto', fullscreen: saved.fullscreen,
     mouseSensitivity: saved.mouseSensitivity, invertY: saved.invertY,
     mute: saved.muted,
   };
@@ -74,6 +75,7 @@ function openPanel(ctx) {
   // toggled via the `N` key (or fullscreen toggled by the browser/Esc) while
   // the panel was closed would show stale on reopen - refresh both live here.
   values.mute = isMuted();
+  values.quality = loadSettings().quality || 'auto'; // the auto-bench may have saved a pick since boot
   if (typeof document !== 'undefined') values.fullscreen = !!document.fullscreenElement;
   selected = 0;
   panel.open();
@@ -125,11 +127,31 @@ function applyValue(id, value, ctx) {
   saveSettings(id === 'mute' ? { muted: value } : { [id]: value });
 }
 
+/**
+ * QUALITY-GRID-01: choosing a quality saves it AND moves the grid to the preset's grid live (the preset owns the grid).
+ * 'auto' only saves the choice (the next boot benchmarks). A manual Grid row pick afterwards is a session/legacy tweak:
+ * boot ignores a saved grid whenever a quality is saved (gfxBoot.js).
+ */
+function applyQuality(name, ctx) {
+  if (name === values.quality) return;
+  const r = saveQuality(name, { save: saveSettings, load: loadSettings });
+  if (!r.saved) return; // storage refused: keep the old row value, nothing half-applied
+  values.quality = name;
+  if (name === 'auto') return;
+  let grid;
+  try { grid = knobsFor(name).grid; } catch { return; } // presets not loaded (embed/test): quality saved, grid untouched
+  const m = /^(\d+)x(\d+)$/.exec(grid);
+  if (!m || !ctx.engine || typeof ctx.engine.setGrid !== 'function') return;
+  const result = ctx.engine.setGrid(Number(m[1]), Number(m[2]));
+  if (result && !result.error) applyValue('grid', `${result.cols}x${result.rows}`, ctx);
+}
+
 function applyStep(dir, ctx) {
   const id = visibleRows[selected];
   if (id === 'back') return;
   const opt = findOption(id);
   if (!opt) return;
+  if (id === 'quality') { applyQuality(stepOptionValue(opt, values.quality, dir), ctx); return; }
   const isDisabled = id === 'grid' ? (v) => gridFailed.has(v) : () => false;
   const next = stepOptionValue(opt, values[id], dir, isDisabled);
   if (next === values[id]) return;

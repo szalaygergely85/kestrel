@@ -70,6 +70,7 @@ import { wakeFrame, drawEyelid, applyWakeOnLoad } from './quest/wake.js';
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel, getMapChart, drawMapCard } from './quest/mapCard.js';
 import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
 import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-050: the one seam to game content
+import { createWaystoneTouch } from './waystoneTouch.js'; // WAYSTONE-TOUCH-01
 import { createTitleMenuHost } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
@@ -77,9 +78,11 @@ import { parseOccl, createHzbInvalidator } from './occlGate.js'; // OCCL-MAIN-01
 import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
+import { wireTelegraphs, telegraphsEnabled } from './fx/telegraphWire.js'; // TELEGRAPH-WIRE-01 (lane B1)
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
+import { createBeastAnim } from './quest/beastAnim.js'; // ANIM-STATE-WIRE-01
 import { questOverlayStyles } from './quest/overlayStyles.js';
 import { createVitals } from './quest/sim/vitals.js'; // US-080a1/a2 (architecture.md 30.2)
 import { createTargeting } from './quest/targeting.js'; // US-128b (architecture.md 29.2)
@@ -99,6 +102,11 @@ import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js
 import { createWaterfallHooks } from './quest/waterfallHooks.js';
 import { createAmbientMotes } from './quest/ambient.js';
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
+import { createHitStop, hitStopEnabled } from './fx/hitStop.js'; // HITSTOP-01 (lane B1)
+import { createDeathFlow, deathFlowEnabled } from './fx/deathFade.js'; // DEATH-FLOW-01 part 1 (lane B1)
+import { createHurtFx, hurtFxEnabled } from './fx/hurtFx.js'; // HURT-FX-01 (lane B1): low-hearts pulse only (hurt edge + kick = US-080a2)
+import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-SPARK-WIRE (lane B1)
+import { parsePointShadows } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
 import { ensureInventory, validateItemDefs, migrateSword } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
@@ -107,19 +115,24 @@ import { createLoot, setLootApi } from './quest/sim/loot.js'; // US-091a2 (37.16
 import { LOOT_TABLE, LOOT_SEED_SALT } from './quest/sim/lootConfig.js';
 import { createToastView } from './quest/toastView.js';
 import { createInventoryView } from './quest/inventoryView.js'; // US-091b
+import { webGpuMissingReason, showWebGpuRequired } from './webgpuRequired.js'; // WG-5 prep
 import { probeGpuSupport, showWebgl2RequiredScreen, showSoftwareRendererWarning } from './ui/webgl2Gate.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
+import { ensureBenchBoars } from './dev/combatBench.js'; // COMBAT-BENCH-01
 import { runPerfBench } from './dev/perfBench.js'; // US-018 (architecture.md 16) `?bench=1`
 // ---- US-030c (ARCH CHANGES): sprite system wiring, kept to this one import ----
 import { createSpriteSystem, spawnTestSprites } from './dev/spriteDev.js';
 // ---- end US-030c ----
 // ---- US-010: quest behaviours (registered by name before any World loads) ----
-import { validateBehaviours, createRipples } from '../../engine/index.js';
+import { validateBehaviours, createRipples, createEntityTintTable, fillEntityTints } from '../../engine/index.js';
 import './quest/index.js';
+import { parseDemo, filterDemoParams, demoStorage, blockFKeys, createEndCard, drawDemoBuildLine } from './demoMode.js';
 // ---- end US-010 ----
 
-const params = new URLSearchParams(window.location.search);
+const demo = parseDemo(window.location.search); // DEMO-MODE-01: `?demo=1` public build; off = everything below is unchanged
+const params = filterDemoParams(new URLSearchParams(window.location.search), demo); // demo: only quality/res/fx survive
+const saveStorage = () => (demo.on ? demoStorage(getSaveStorage()) : getSaveStorage()); // demo: own save namespace, slots 1-3 untouched
 
 // US-030a (docs/architecture.md 14.2 item 5), range widened by D-025
 // (US-038a, architecture.md 22.2): `?grid=WxH` clamped to 160x60..480x180
@@ -167,6 +180,10 @@ try {
   const savedForBoot = autoParam === '1' && autoProvisional ? undefined : savedSettings.quality;
   resolvedQuality = resolveQuality({ param: params, saved: { quality: savedForBoot, shadowQuality: savedSettings.shadowQuality }, auto: autoProvisional });
 } catch (err) { console.warn(`[quality] presets unavailable (${err.message}) - booting without a preset`); }
+const hitStop = createHitStop({ enabled: hitStopEnabled(params, isCaptureOrBench) }); // HITSTOP-01: off in capture/bench(+combat)/compare and ?fx=0
+let deathRespawnDue = false; // DEATH-FLOW-01: fade finished -> next vitals.step gets a virtual [E] (its normal respawn path, pose logic untouched)
+const deathFlow = createDeathFlow({ enabled: deathFlowEnabled(params, isCaptureOrBench), onRespawn: () => { deathRespawnDue = true; } });
+const hurtFx = createHurtFx({ enabled: hurtFxEnabled(params, isCaptureOrBench) }); // HURT-FX-01: off in capture/bench/compare and ?fx=0
 const bootOpts = resolveBootOptions({ params, resolved: resolvedQuality, savedSettings, captureLike: isCaptureOrBench, geometryCompare: isGeometryCompare,
   defaultCols: GRID_DEFAULT_COLS, shadowLevel: resolveShadowLevel });
 const gridParam = bootOpts.gridParam;
@@ -347,13 +364,22 @@ const sceneDim = createSceneDim();
 if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
 // WG-1c2: `?backend=webgpu|webgl2` (default webgl2); webgpu falls back to webgl2 with a warning (38.8a 16).
 const shadowOpts = bootOpts.shadowOpts; // GFX-01w: shadow level from the preset (resolveShadowLevel) + ?shadows= / ?shadowinst / ?shadowres / ?shadowcast overrides (ME-15e/f, D-043: map is the default)
-const occlOpt = parseOccl(params, params.get('backend') || 'webgl2');
+// WG-5 prep: `?nogl2=1` = WebGPU is required (no webgl2 fallback unless ?backend=webgl2 is explicit); default behaviour unchanged.
+const noGl2 = params.get('nogl2') === '1' && params.get('backend') !== 'webgl2';
+const backendOpt = params.get('backend') || (noGl2 ? 'webgpu' : 'webgl2');
+const occlOpt = parseOccl(params, backendOpt);
+const pointShadowOpt = parsePointShadows(params, resolvedQuality && resolvedQuality.name); // ME-16e: default OFF in every mode unless the URL sets it
 const tCR = bootNow();
-const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
+const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: backendOpt,
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
-  shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.enabled, // OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
+  shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.occl, pointShadows: pointShadowOpt.pointShadows, pointShadowLevel: pointShadowOpt.pointShadowLevel, // OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
   onCompileProgress: (done, total) => { bootStages.enter('pipelines'); if (bootCard) bootCard.setStageLines(bootStages.cardText()); if (bootProg) bootProg.count('compile', done, total); } }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
 bootSpan('createRenderer total (' + rendererInfo.label + ')', tCR);
+if (noGl2 && rendererInfo.backend !== 'webgpu') { // WG-5 prep: show the "WebGPU required" screen instead of the silent fallback
+  const wgp = await probeWebGpu(); // game/ probes through the engine (architecture 38.2)
+  showWebGpuRequired(document.body, { reason: webGpuMissingReason(wgp.missing.some((m) => /no navigator/.test(m)) ? {} : { gpu: {} }, { deviceFailed: wgp.available, adapter: wgp.available ? undefined : null }) });
+  throw new Error('WebGPU required (?nogl2=1): ' + rendererInfo.label);
+}
 if (bootProg) { bootProg.phase('engine'); await bootPaint(); }
 const tCE = bootNow();
 const engine = createEngine({
@@ -365,7 +391,7 @@ const engine = createEngine({
   // OWN-REQ-003 (architecture.md 17.1): the fixed UI glyph layer's grid -
   // `assets.uiStyle.uiGrid` (design/models/title.js), default 160x60.
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
-  // ME-15c/e/f (27.9a, D-043): the sun shadow MAP is the default; `?shadows=dda` keeps the old sun DDA until ME-19c.
+  // ME-19c2: the sun shadow MAP is the only sun shadow path (the sun DDA is gone from the GPU shaders); `?shadows=` only picks level/res.
   shadows: shadowOpts, // ME-15c/e/f (27.9a, D-043): see shadowOpts above
   gfx: bootOpts.gfx, // GFX-03/GFX-01w: scatter density + LOD scale from the preset (undefined = engine defaults)
 });
@@ -382,7 +408,7 @@ let titleMenuActive = true; // S8-B1-10: mirrors menuHost.active each frame (tru
 let deviceLostFrozen = false; // S8-B1-10 (38.10c): set once by watchDeviceLost's `freeze` hook below; gates `paused` in the frame loop
 try {
   const questDef = await (await fetch('../content/quests/m1.quest.json')).json();
-  saveRelay = createSaveRelay({ storage: getSaveStorage(), questDef, enabled: saveEnabled });
+  saveRelay = createSaveRelay({ storage: saveStorage(), questDef, enabled: saveEnabled });
   saveRelay.bindEvents(engine.events);
   gameHooks.register(saveRelay.handlers());
   saveRelay.quest.onPoll = (name, a, b) => gameHooks.emitSimple(name, a, b);
@@ -449,6 +475,13 @@ const menuWanted = params.get('title') !== '0' && !isCaptureOrBench && params.ge
 // item 2) and by any later live grid change (the `grid:changed` handler).
 let { renderTarget: rt, depthBuffer } = engine;
 const { input } = engine;
+if (demo.on) blockFKeys(input); // demo: no F3 / F-key dev overlays
+// DEMO-MODE-01: end card once per run on the waystone done event; Restart wipes the demo save and reloads.
+const demoEnd = demo.on ? createEndCard({
+  onRestart: () => { const a = createStorageAdapter(saveStorage()); for (let i = 0; i < 3; i++) a.deleteSlot(i); window.location.reload(); },
+  onKeep: () => {} }) : null;
+gameHooks.register(createWaystoneTouch(gameHooks)); // WAYSTONE-TOUCH-01: prop:touched {waystone} on walk-in / E (lane C's WAYSTONE-01w listens)
+if (demoEnd) gameHooks.register({ onEvent(name, d) { if (name === 'area:entered' && d && d.id === 'waystone') demoEnd.trigger(); } });
 // OWN-REQ-003 (architecture.md 17.1): `engine.ui` is a single UiLayer for
 // the whole run - `engine.setGrid` re-binds it in place (never replaces it),
 // so capturing it once here (unlike `depthBuffer`) stays valid
@@ -718,6 +751,7 @@ const swordStyleIds = {
 sprites.pool.renderer = renderer; // review item 1: sprite rects follow the pitched scene
 if (gpuPipeline) { gpuPipeline.bindVoxels(gameVoxelPool); gpuPipeline.bindViewModel(engine.viewModel); } // US-078a (30.1)
 const wgActive = !!(wgPipeline && wgPipeline.ready && rt.backend === 'webgpu'); // WG-2b: geometry-only WebGPU pipeline (CPU still shades)
+engine.events.on('combat:hit', (p) => { if (p && p.source === 'player') hitStop.trigger(p.heavy ? 'heavy' : 'light'); }); // HITSTOP-01
 const hzb = createHzbInvalidator(() => (occlOpt.enabled && wgActive && wgPipeline.ready ? wgPipeline : null)); // OCCL-MAIN-01: cuts invalidate the HZB
 if (wgActive) { wgPipeline.bindVoxels(gameVoxelPool); wgPipeline.bindViewModel(engine.viewModel); }
 engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); if (gpuPipeline) gpuPipeline.bindInstances(engine.instances); // RE-06 (28.6)
@@ -812,7 +846,7 @@ if (gpuBlocked) {
   // fallback did, harmlessly, on the hidden canvas) but none of the
   // branches below - every one of which ends in a `runGame`/dev-mode rAF
   // loop - may start.
-} else if (params.get('bench') === 'present' || params.get('bench') === '1') {
+} else if (params.get('bench') === 'present' || params.get('bench') === '1' || params.get('bench') === 'combat') {
   modeByName.get('bench').run(ctx);
 } else if (params.get('shadetest') === '1') {
   modeByName.get('shadetest').run(ctx);
@@ -824,7 +858,7 @@ if (gpuBlocked) {
   runVoxelBenchMode();
 } else if (params.get('glyphs') === '1') {
   modeByName.get('glyphs').run(ctx);
-} else if (params.get('demo') === '1') {
+} else if (new URLSearchParams(window.location.search).get('demo') === 'scene') { // DEMO-MODE-01: the old US-048 dev scene moved from ?demo=1 to ?demo=scene
   modeByName.get('demo').run(ctx);
 } else if (params.has('cinematic')) {
   loadCinematic(params.get('cinematic')).then((path) => runGame('world', path)).catch((error) => {
@@ -856,8 +890,12 @@ async function runGame(mode, cinematic = null) {
   let look = null;
   let playerHandle = null;
   let decalBind = null; // DECAL-01: refreshed on load/restart.
+  const entityTintTable = createEntityTintTable(); // TELEGRAPH-WIRE-01 part 2: one table, reused
+  let telegraphWire = null; // TELEGRAPH-WIRE-01: rebuilt on 'world:loaded'
+  let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
+  const vLocked = () => !!(vitals && vitals.inputLocked) || deathFlow.inputLocked; // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
@@ -880,6 +918,7 @@ async function runGame(mode, cinematic = null) {
   }, true);
   blockContextMenu(canvas); // RMB must not open the browser menu over the game canvas (never the window)
   let practiceTarget = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
+  let hitSparkWire = null; // HIT-SPARK-WIRE: rebuilt on every 'world:loaded'
   let particleHooks = null; // US-053c: rebuilt on every 'world:loaded', below
   let loot = null; // US-091a2 (37.16.3): rebuilt on every 'world:loaded', after beasts + the pack
   let toasts = null; // US-091a2: the loot toast view, rebuilt with loot
@@ -1007,6 +1046,8 @@ async function runGame(mode, cinematic = null) {
       applyPropTargetables(world);
       applyPropEmitters(world); // US-053c: content `emitters` -> components.emitters, same timing rule as applyPropTargetables above
       if (particleHooks) particleHooks.dispose();
+      if (hitSparkWire) hitSparkWire.dispose();
+      hitSparkWire = wireHitSparks(engine.events, engine.particles, () => (playerHandle && playerHandle.transform), hitSparksEnabled(params, isCaptureOrBench)); // HIT-SPARK-WIRE
       particleHooks = createParticleHooks(world, engine.events, engine.particles, particlePresets, engine.physics.gravity);
       if (waterfallHooks) waterfallHooks.dispose();
       waterfallHooks = waterfallPreset ? createWaterfallHooks(world, engine.particles, waterfallPreset) : null;
@@ -1017,7 +1058,10 @@ async function runGame(mode, cinematic = null) {
       // US-078d: beastSim now owns a `combat:hit` listener (the stagger behaviour) - drop the old world's one
       // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.
       if (beasts) beasts.dispose();
+      if (params.get('bench') === 'combat' || (benchActive && params.get('enemies') === '4')) ensureBenchBoars(world); // COMBAT-BENCH-01
       beasts = createBeastSim(world, { nav: worldDef.nav && buildBeastNav(world, worldDef.nav), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events });
+      if (telegraphWire) telegraphWire.dispose(); // TELEGRAPH-WIRE-01 part 1
+      telegraphWire = wireTelegraphs(engine.events, world, beasts, telegraphsEnabled(params, isCaptureOrBench));
       if (saveRelay) saveRelay.applyDeadToBeasts(beasts); // US-089w: restored dead beasts stay gone (create reset them alive)
       if (sword) sword.dispose();
       sword = createSwordSim(world, engine.events, SWORD_CFG, { spendMana: (n) => vitals && vitals.spendMana(n) }); // US-078d (30.1)
@@ -1036,9 +1080,10 @@ async function runGame(mode, cinematic = null) {
       // (`?level=<name>` ad-hoc, test_room) falls back to `rasterRing`'s own pre-existing flat-z branch.
       engine.overlay.setGroundFn(world.terrain ? (x, y) => world.terrain.groundAt(x, y) : null);
       if (vitals) vitals.dispose(); // Q9 item 1a: drop the old world's `combat:hit` listener before a new one is added below
+      hurtFx.reset();
       vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting,
         respawnPose: () => { hzb.invalidate('respawn'); return gameHooks.respawn(); }, // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
-        onDied: (t) => gameHooks.emitSimple('player:died', t.x, t.y, t.z),
+        onDied: (t) => { gameHooks.emitSimple('player:died', t.x, t.y, t.z); deathFlow.died(performance.now()); },
         syncFacing: (t) => {
           if (!look) return;
           look.clearLock();
@@ -1203,7 +1248,7 @@ async function runGame(mode, cinematic = null) {
     // Continue swaps in the chosen slot (same swap as the boot load / `R`), Settings opens the normal panel on top.
     if (menuWanted && !cinematic) {
       menuHost = createTitleMenuHost({
-        adapter: createStorageAdapter(getSaveStorage()),
+        adapter: createStorageAdapter(saveStorage()),
         style: window.ASSETS && window.ASSETS.uiStyle ? window.ASSETS.uiStyle.menu : null,
         onNewGame: (slot) => { if (saveRelay) saveRelay.setSlot(slot); },
         onContinue: (slot, save) => {
@@ -1253,6 +1298,7 @@ async function runGame(mode, cinematic = null) {
     // US-020a: `N` = mute toggle, always available (does not conflict with
     // `M`'s map card, US-015) - a single flag in audio/synth.js's module
     // state (later Settings, US-038, can read it the same way).
+    if (demoEnd) demoEnd.step((c) => input.pressed(c));
     if (input.pressed(gameKeys.mute)) { toggleMute(); saveSettings({ muted: isMuted() }); } // US-060: remember across reload
     if (input.pressed('F3')) overlay.toggle();
     // D-025 (US-038a AC "dev switch until US-038b ships"): `?debug=1` only -
@@ -1280,7 +1326,7 @@ async function runGame(mode, cinematic = null) {
     // US-091b: the pack screen. Steps while paused too; eats every key edge while open (so M / S / N stay quiet).
     if (invView && mode === 'world' && playerHandle) {
       invView.step(dt, input, !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look
-        && !(vitals && (vitals.dead || vitals.inputLocked)) && !(questUiActive && wakeOut.inputLocked));
+        && !(vitals && (vitals.dead || vLocked())) && !(questUiActive && wakeOut.inputLocked));
     }
     if (chestHook && mode === 'world' && playerHandle) chestHook.stepUi(dt, input.pressed(gameKeys.interact)); // S8-B1-04: steps while paused too (an open card pauses the sim)
     const invOpen = !!(invView && invView.isOpen);
@@ -1294,13 +1340,13 @@ async function runGame(mode, cinematic = null) {
       if (wakeOut.inputLocked) playerHandle.data.components.body.eyeH = wakeOut.eyeH;
       mPressedEdge = input.pressed(gameKeys.map);
       stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec, !!(look && look.locked)); // BUG-NOTE-ESC-01
-      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || (vitals && vitals.inputLocked);
+      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked();
     }
     // US-038b: settings panel (S from pause, or its own entry point)
     // canOpen requires the pause overlay to actually be up (!look.locked) -
     // S is also WASD "move backward", so this must never trigger in play.
     updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !!look && !look.locked && !isMapOpen() && !invOpen });
-    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || !!(vitals && vitals.inputLocked);
+    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked();
     titleMenuActive = !!(menuHost && menuHost.active);
     const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || ((invOpen || cardOpen) && !ending)));
 
@@ -1328,7 +1374,7 @@ async function runGame(mode, cinematic = null) {
       if (paused) { duckAudio(); if (hands) hands.disarm(); } else { unduckAudio(); resetSimAccumulator(engine); } // HANDS-01b: the sim does not step while paused, so disarm at once
     }
     if (mode === 'world' && playerHandle && !paused) {
-      if (ending || uiLocked || (vitals && vitals.inputLocked)) {
+      if (ending || uiLocked || vLocked()) {
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {
         controls.forward = (input.isDown(gameKeys.forward) ? 1 : 0) - (input.isDown(gameKeys.backward) ? 1 : 0);
@@ -1373,14 +1419,16 @@ async function runGame(mode, cinematic = null) {
       // timed clips like the burner flame / lantern glint / relay sparkle).
       stepAnimations(engine.world, dt * 1000);
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
-      if (beasts) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); } // US-079a (29.1)
+      const simDue = hitStop.due(1000 / 60); // HITSTOP-01: the window gates beasts.step only; the sword freezes by its own hitStopHard counter
+      if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); } // US-079a (29.1)
+      if (telegraphWire) telegraphWire.step(performance.now());
       // US-078d (30.1 + D-034 amendment): the sword steps after beasts.step, so a heavy-hit stagger acts from the
       // beast's NEXT step (deterministic, synchronous emit). `attackDown` is the amendment's exact gate expression.
       if (hands) {
         // HANDS-01b (37.8a): the router turns LMB/RMB + the gate into one `down` per item; every item sim is stepped
         // every step (down = false when it is in no hand).
-        if (!uiLocked && !paused && !ending && !(vitals && vitals.inputLocked) && input.pressed(gameKeys.swapHands)) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
-        const gateOpen = look.locked && !uiLocked && !ending && !paused && !(vitals && vitals.inputLocked);
+        if (!uiLocked && !paused && !ending && !vLocked() && input.pressed(gameKeys.swapHands)) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
+        const gateOpen = look.locked && !uiLocked && !ending && !paused && !vLocked();
         hands.step(playerHandle.data, input.isDown(gameKeys.useLeft) || input.pressed(gameKeys.useLeft), input.isDown(gameKeys.useRight) || input.pressed(gameKeys.useRight), gateOpen);
         if (fireball) { // SPELL-01a: aim = unit 3D look vector (pitch > 0 = up); trig stays here, outside sim/
           forwardOf(look.yawDeg, swordFwd);
@@ -1389,13 +1437,17 @@ async function runGame(mode, cinematic = null) {
           if (fbView) fbView.stepFx(); // SPELL-01b: trail emitters + burst particles (sim side, hashed)
         }
       }
-      if (sword) {
+      if (sword) { // runs every step: inputs inside the hit-stop window are not lost
         forwardOf(look.yawDeg, swordFwd);
         sword.step(playerHandle.data, swordFwd[0], swordFwd[1], hands ? hands.downOf('sword') : false);
       }
       if (practiceTarget) practiceTarget.step();
       if (vitals) {
-        vitals.step(playerHandle.data, input.pressed(gameKeys.interact)); // US-080a1 (30.2)
+        const wasDead = vitals.dead;
+        vitals.step(playerHandle.data, input.pressed(gameKeys.interact) || (deathFlow.active && deathRespawnDue)); // US-080a1 (30.2); DEATH-FLOW-01: fade end = virtual [E]
+        if (wasDead && !vitals.dead) { deathRespawnDue = false; deathFlow.respawned(performance.now()); }
+        deathFlow.step(performance.now());
+        hurtFx.step(1000 / 60, vitals.hp, !vitals.dead); // HURT-FX-01
         stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
         // US-080a1 AC5 (`?debug=1` only): F8 toggles invulnerability, F9 deals 5 HP.
         if (params.get('debug') === '1') {
@@ -1603,6 +1655,7 @@ async function runGame(mode, cinematic = null) {
       // needs its own explicit `.project()` before `renderWorld` reads
       // `fb.voxelPool.list` (compositor.js).
       gameVoxelPool.collect(engine.world, cam);
+      if (telegraphWire && beasts) { fillEntityTints(entityTintTable, beasts.entities, gameVoxelPool, performance.now()); fb.entityTints = entityTintTable; } else if (fb.entityTints) fb.entityTints = undefined; // TELEGRAPH-WIRE-01 part 2
       if (!fb.gpu) gameVoxelPool.project(cam, rt, renderer); // ME-19a: CPU reference uses the same mesh camera.
       lap(SEC.voxel);
       // US-017 (7.4 "Fade"): 1 = off outside the end sequence. CPU path
@@ -1634,7 +1687,7 @@ async function runGame(mode, cinematic = null) {
       // US-079a (29.1): beast notice markers, recorded fresh every frame, right before the overlay flush below.
       engine.overlay.clear();
       drawDecals(decalBind, engine.overlay, cam, fb.lights, engine.world);
-      if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles);
+      if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles, beastAnimOn ? (beastAnim || (beastAnim = createBeastAnim(16))) : undefined);
       if (targeting && !cinematic) targeting.present(engine.overlay, ovlStyles); // US-128b (29.2)
       // US-078d (30.1): hidden until the sword is actually taken (US-078a review note); no eyeFeel/bobPhase
       // system exists yet in this codebase, so `simTime` stands in as the walk-bob phase (cosmetic only).
@@ -1658,7 +1711,7 @@ async function runGame(mode, cinematic = null) {
       else if (engine.overlay.stats.ops) engine.overlay.renderCpu(cam, fb.rt.cells, fb.depth.depth);
       lap(SEC.world);
       const ending = typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
-      const uiLockedNow = questUiActive && !ending && (wakeOut.inputLocked || isMapOpen() || (vitals && vitals.inputLocked));
+      const uiLockedNow = questUiActive && !ending && (wakeOut.inputLocked || isMapOpen() || vLocked());
       // US-015 (docs/architecture.md 7.6 item 3): map-card / hint scene dim.
       // Reset every frame (so a leftover dim never bleeds into the ending
       // screen or a non-quest world), pushed only while active. CPU path
@@ -1705,6 +1758,8 @@ async function runGame(mode, cinematic = null) {
           // not just while dead - the end card is already covered by the `!ending` gate around this whole block.
           drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals);
           drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals);
+          hurtFx.draw(ui); // HURT-FX-01
+          deathFlow.draw(ui, ui.cols, ui.rows); // DEATH-FLOW-01
           presentPickups(engine.world, assets.pickupStyle, fb.timeSec); // US-080b
           if (toasts && !vitals.dead && !wakeOut.inputLocked && !isMapOpen()) toasts.draw(ui, fb.timeSec); // US-091a2 loot toast
         }
@@ -1722,7 +1777,7 @@ async function runGame(mode, cinematic = null) {
       if (invView) invView.draw(ui); // US-091b: the pack screen, over HUD + toast
       // US-080a1/a2 (30.2): death fade (CPU path, same gating as the end-card
       // scene fade above) + the death card (typed line + "[E] Wake again").
-      if (vitals && vitals.dead) {
+      if (vitals && vitals.dead && !deathFlow.active) { // DEATH-FLOW-01 part 2: the flow replaces the old fade+card (old path stays when the flow is off)
         if (!fb.gpu) applyDeathFade(fb.rt, vitals, fb.fadeLut);
         const deathCardState = computeDeathCardState(vitals, assets.uiStyle.vitals);
         drawDeathCard(ui, assets.uiStyle.vitals, deathCardState);
@@ -1734,6 +1789,8 @@ async function runGame(mode, cinematic = null) {
     // US-015 tester BUG-1: the map card owns the screen while open (its own
     // click/key dismiss), so the pause text must not overprint it (160x60).
     if (menuHost && menuHost.active && !isSettingsOpen()) menuHost.draw(ui); // US-090w: the card owns the screen (no pause text under it)
+    if (demo.on && menuHost && menuHost.active && !isSettingsOpen()) drawDemoBuildLine(ui);
+    if (demoEnd) demoEnd.draw(ui);
     if (mode === 'world' && !look.locked && !isMapOpen() && !(invView && invView.isOpen) && !cinematic && !isWaterfallPreview && !(menuHost && menuHost.active)) drawPauseOverlay(ui, rt, assets);
     // US-038b: settings panel, drawn over the pause overlay when open
     if (!cinematic && !isWaterfallPreview) drawSettingsPanel(ui, rt, assets, { showEntry: mode === 'world' && !(menuHost && menuHost.active) && !look.locked && !isMapOpen() && !(invView && invView.isOpen) });
@@ -1777,7 +1834,7 @@ async function runGame(mode, cinematic = null) {
       // US-030a (14.2 item 7): "path: gpu|cpu  grid: WxH  rays: n" on the overlay.
       let extra = `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rendererInfo.label}` +
         `\n${describeQuality(bootOpts, rt.cols, rt.rows, engine.rays)}` + // GFX-01w
-        `\npath: ${rt.gpuActive ? 'gpu' : 'cpu'}  grid: ${rt.cols}x${rt.rows}  rays: ${engine.rays}${occlOpt.enabled && wgActive ? '  occl on (' + hzb.count + ' cuts)' : ''}` +
+        `\npath: ${rt.gpuActive ? 'gpu' : 'cpu'}  grid: ${rt.cols}x${rt.rows}  rays: ${engine.rays}${occlOpt.enabled && wgActive ? '  occl on (' + hzb.count + ' cuts)  occl cull ' + (wgPipeline.stats ? (wgPipeline.stats.culledOccl || 0) : 0) : ''}` +
         (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` +
           // ARCH CHANGES item 4: `terrainSubmitMs*` is CPU draw-call submit
           // time, not a GPU cost - the real terrain GPU cost is the whole-frame
@@ -1846,7 +1903,7 @@ async function runGame(mode, cinematic = null) {
   // running, so the bench's own rAF-driven view/walk sequence can start
   // right away (`benchActive` set by the `?bench=1` dispatch branch, top of
   // this file).
-  if (mode === 'world' && benchActive) {
+  if (mode === 'world' && benchActive && params.get('bench') !== 'combat' && params.get('enemies') !== '4') { // COMBAT-BENCH-01: combatBench replaces the view sequence
     runPerfBench({ engine, playerHandle, overlay, gpuPipeline, input, rt, look, prof });
   }
 }

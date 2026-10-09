@@ -30,6 +30,17 @@ function writeFile(root, rel, content) {
 }
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'check-deps-fixture-'));
+// Rule 18 (ED-WG-01c): tools/editor must not import GL-only modules.
+writeFile(tmp, 'tools/editor/bad18.js', `import { GpuCellPipeline } from '../../engine/render/gpu/GpuCellPipeline.js';
+import s from '../../engine/render/gpu/glsl/cast.js';
+export const g = [GpuCellPipeline, s];
+`);
+writeFile(tmp, 'tools/editor/good18.js', `import { createRenderer } from '../../engine/index.js';
+export const r = createRenderer;
+`);
+writeFile(tmp, 'tools/other18.js', `import { GpuCellPipeline } from '../../engine/render/gpu/GpuCellPipeline.js';
+export const g = GpuCellPipeline;
+`);
 // Rule 17 (WG-1b2): WebGPU globals only under engine/render/gpu/device/.
 writeFile(tmp, 'engine/render/gpu/device/good17.js', `export const a = navigator.gpu; export const b = GPUBufferUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUShaderStage.FRAGMENT | GPUMapMode.READ;
 `);
@@ -233,6 +244,11 @@ ok('rule 17: engine/render GPUMapMode flagged (line 2)', /bad17b\.js:2:.*GPUMapM
 ok('rule 17: comment mention NOT flagged', !/comment17\.js/.test(output), output);
 ok('rule 17: game/ GPUShaderStage flagged', /game\/js\/bad17c\.js:1:.*GPUShaderStage/.test(output), output);
 ok('rule 17: game/ test file navigator.gpu flagged', /bad17d\.test\.js:1:.*navigator\.gpu/.test(output), output);
+
+ok('rule 18: editor GpuCellPipeline import flagged', /bad18\.js:1:.*GL-only/.test(output), output);
+ok('rule 18: editor glsl/ import flagged', /bad18\.js:2:.*GL-only/.test(output), output);
+ok('rule 18: clean editor file NOT flagged', !/good18\.js/.test(output), output);
+ok('rule 18: non-editor tool NOT flagged by rule 18', !/other18\.js:\d+:.*rule 18/.test(output), output);
 
 // Installing a tool's dependencies must not change the project's findings or scan count.
 const installed = fs.mkdtempSync(path.join(os.tmpdir(), 'check-deps-installed-'));

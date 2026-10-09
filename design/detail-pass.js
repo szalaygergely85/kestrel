@@ -220,8 +220,8 @@
   // ---------------------------------------------------------------------------
   var STONE = {
     albedo: 0.85, bgK: 0.28, seed: 11, detail: 18, jitter: 0.08,
-    tones: [['stoneMid', 4], ['stoneCool', 3], ['stoneWarm', 2], ['stoneDeep', 1]],
-    grid: { u: 0.8, v: 0.4, stagger: 0.5, shade: 0.55, tint: 'mortar', amount: 0.5, bgK: 0.16, cross: '|', maxCover: 0.25, tie: true },
+    tones: [['stoneMid', 4], ['stoneMidHi', 3], ['stoneMidLo', 3]],
+    grid: { u: 0.8, v: 0.4, stagger: 0.5, shade: 0.55, tint: 'mortar', amount: 0.5, bgK: 0.16, cross: '|', maxCover: 0.25, tie: true, glyph: 'texel' },
     face: { set: 'stoneFace', mid: 'stoneMid', far: 'stoneFar',
             bevel: { top: 0.05, topShade: 1.15, bottom: 0.05, bottomShade: 0.80 } },
     speckle: { set: 'chip', chance: 0.05, shade: 0.72 },
@@ -238,7 +238,7 @@
     stone: ext(STONE, {
       v1: 'stone',
       desc: 'Tower wall: coursed ashlar 0.8 x 0.4 m, half bond. Mortar = 1-cell lines ( _ | ) at every distance up to ~12 m, ' +
-            'every block its own tone (4 greys: mid, cool, warm, deep), rough face : ; , + x, rare chips.'
+            'every block its own tone (3 greys of one hue: mid, mid-hi, mid-lo (MESH-TONE-AMP-01)), rough face : ; , + x, rare chips.'
     }),
     stone_moss: ext(STONE, {
       v1: 'stone_moss', seed: 12,
@@ -257,7 +257,7 @@
       desc: 'Brick courses 0.3 x 0.1 m (future houses, chimneys). Light mortar, classic |___|___| at mid range.',
       albedo: 0.80, bgK: 0.26, detail: 20, jitter: 0.10,
       tones: [['brick', 4], ['brickDark', 2], ['brickLight', 2]],
-      grid: { u: 0.3, v: 0.1, stagger: 0.5, shade: 0.85, tint: 'ash', amount: 0.55, bgK: 0.16, cross: '|', maxCover: 0.25, tie: true },
+      grid: { u: 0.3, v: 0.1, stagger: 0.5, shade: 0.85, tint: 'ash', amount: 0.55, bgK: 0.16, cross: '|', maxCover: 0.25, tie: true, glyph: 'texel' },
       face: { set: 'brickFace', mid: 'brickMid', far: 'brickFar' },
       lod: { mid: 10, far: 22, dither: 3 }
     },
@@ -303,7 +303,7 @@
       v1: 'rubble', seed: 61,
       desc: 'Fallen blocks and gravel: irregular stones ~0.3 m with dark gaps ( , ; ) instead of lines, round o O pebbles.',
       albedo: 0.80, bgK: 0.26, detail: 18, jitter: 0.14,
-      tones: [['rubble', 3], ['stoneDeep', 2], ['stoneCool', 2], ['stoneLight', 1]],
+      tones: [['rubble', 3], ['rubbleHi', 2], ['rubbleLo', 2]],
       grid: { u: 0.3, v: 0.22, stagger: 0.5, kind: 'gap', set: 'gap', shade: 0.40, bgK: 0.10, maxCover: 0.6 },
       face: { set: 'rubbleFace', mid: 'rubbleMid', far: 'rubbleFar' },
       lod: { mid: 12, far: 25, dither: 3 }
@@ -362,7 +362,7 @@
       desc: 'Natural hill rock (outcrop, spur, path walls): no mortar grid. Irregular facets 1.1 x 0.7 m (tones only, ' +
             'offset 0.37 so no bond reads) in 4 greys, rough : ; % # & glyphs, moss on some facets.',
       albedo: 0.80, bgK: 0.20, detail: 16, jitter: 0.14,
-      tones: [['rock', 4], ['stoneCool', 2], ['stoneDeep', 2], ['stoneLight', 1]],
+      tones: [['rock', 4], ['rockHi', 2], ['rockLo', 3]],
       grid: { u: 1.1, v: 0.7, stagger: 0.37, lines: false },
       face: { set: 'rockFace', mid: 'rockMid', far: 'rockFar' },
       overlay: { set: 'moss', tints: ['mossDark', 'moss'], amount: 0.55, shade: 0.95, joint: 0.0, face: 0.12 },
@@ -373,8 +373,8 @@
       desc: 'Stylized boulder stone for imported Quaternius meshes: soft 2.6 x 1.9 m tone patches, few greys, light moss. Irregular facets 1.1 x 0.7 m (tones only, ' +
             'offset 0.37 so no bond reads) in 4 greys, rough : ; % # & glyphs, moss on some facets.',
       albedo: 0.80, bgK: 0.20, detail: 16, jitter: 0.14,
-      tones: [['rock', 5], ['stoneCool', 3], ['stoneLight', 1]],
-      grid: { u: 2.6, v: 1.9, stagger: 0.5, lines: false },
+      tones: [['rock', 5], ['rockHi', 2], ['rockLo', 2]],
+      grid: { u: 2.6, v: 1.9, stagger: 0.5, lines: false, glyph: 'texel' },
       face: { set: 'rockFace', mid: 'rockMid', far: 'rockFar' },
       overlay: { set: 'moss', tints: ['mossDark', 'moss'], amount: 0.25, shade: 0.97, joint: 0.0, face: 0.08 },
       lod: { mid: 12, far: 25, dither: 3 }
@@ -392,7 +392,7 @@
       desc: 'Cap stones on wall tops / ledges (floor-sampled, face U): slabs 0.75 x 0.5 m, grout full of moss, cushions ' +
             '" , ; on 45 % of the slabs, the odd tuft. Reads green from above, stone from the side.',
       albedo: 0.76, bgK: 0.26, detail: 14, jitter: 0.10,
-      tones: [['flagstone', 3], ['stoneDeep', 2], ['flagCool', 2]],
+      tones: [['flagstone', 3], ['flagHi', 2], ['flagLo', 2]],
       grid: { u: 0.75, v: 0.5, stagger: 0.5, shade: 0.55, tint: 'mossDark', amount: 0.70, bgK: 0.14, cross: '+', maxCover: 0.25 },
       face: { set: 'floorFace', mid: 'floorMid', far: 'floorFar' },
       overlay: { set: 'mossTop', tints: ['moss', 'mossDark', 'mossLight', 'ivy'], amount: 0.85, shade: 0.95, joint: 0.85, face: 0.45 },
@@ -1273,10 +1273,13 @@
     var oct = tpc >= 4 ? -3 : tpc >= 2 ? -2 : tpc >= 1 ? -1 : tpc >= 0.5 ? 0 : tpc >= 0.25 ? 1 : 2;
     var ds = base * OCT_POW2[oct + 3];
     var ax, ay;
-    if (g) { ax = bix; ay = course; }
+    // GRID-TEXEL-GLYPH-01: grid.glyph 'texel' keys hA/hC on the octave texel; jit keeps the block die hJ
+    var gTexel = g && g.glyph === 'texel';
+    if (g && !gTexel) { ax = bix; ay = course; }
     else { ax = Math.floor(u * ds * 0.5); ay = Math.floor(v * ds * 0.5); }
     var btx = Math.floor(u * base), bty = Math.floor(v * base);
     var hA = hash(ax, ay, m.seed), hB = hash(btx, bty, m.seed + 7), hC = hash(ax, ay, m.seed + 13);
+    var hJ = gTexel ? hash(bix, course, m.seed) : hA;
     var hBlock = hash(bix, course, m.seed + 3);
 
     // --- tone (per block) ---
@@ -1362,7 +1365,7 @@
     var fk = F.faces ? (faceShade[s.normal] || 1) : 1;
     var aok = 1;
     if (F.ao && s.aoD != null && s.aoD < ao.r) aok = ao.k + (1 - ao.k) * smoothstep(0, ao.r, s.aoD);
-    var jit = F.tones ? 1 + (m.jitter || 0) * (hA * 2 - 1) : 1;
+    var jit = F.tones ? 1 + (m.jitter || 0) * (hJ * 2 - 1) : 1;
     var b = Lm * m.albedo * shadeK * fk * aok * jit + (m.emissive || 0);
     var lift = F.lift ? shading.lift : 0;
     var gb = b < shading.cutoff ? 0 : lift + (1 - lift) * Math.min(b, 1);

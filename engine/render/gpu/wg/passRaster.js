@@ -93,7 +93,7 @@ export class WgRasterPass {
     // compacting it on the CPU; MeshGroupSet groups (nearest-64 `chosen` selection is CPU-side) and multi-range voxel units keep the CPU path.
     this.cull = null;
     /** @type {any} S8-B2-10c HZB builder (only with opts.occl) */ this.hzb = null;
-    this._hzbFwd = { x: 0, y: 1, z: 0 }; this._eye = { x: 0, y: 0, z: 0 }; this._phase2 = false; // _eye: world-space camera for the cull kernel's occNear
+    this._hzbFwd = { x: 0, y: 1, z: 0 }; this._eye = { x: 0, y: 0, z: 0 }; this._phase2 = false; this._beginArgs = { planes: null, viewProj: null, rows: 0, eye: null, maxDistM: 0, swayPad: 0, hzb: null }; // _eye: world-space camera for the cull kernel's occNear
     this.gpuGroups = []; this.gpuM0 = []; this.gpuM1 = []; this.gpuEntries = []; this.gpuN = 0; this._pair = [null, null];
     this._gpuHook = { accept: (g, m0, m1) => this._accept(g, m0, m1) };
     // Terrain (ME-06 twin): own uniform block + the near/far type textures (r8ui, 1x1 placeholders until a bake is uploaded).
@@ -122,7 +122,7 @@ export class WgRasterPass {
       this.clothPipe = this._pipeline(RASTER_CLOTH_WGSL, CLOTH_DYN_LAYOUT, CLOTH_STRIDE_BYTES, 'none', 'cw', false, [{ layout: CLOTH_UV_LAYOUT, strideBytes: 8 }]);
       if (opts.gpuCull !== false && typeof device.createComputePipeline === 'function') {
         // S8-B2-10c: `opts.occl` (default OFF, `?occl=1`) = two-phase HZB occlusion; this.hzb is created lazily with the pass (same device)
-        this.cull = new WgCullPass(device, { occl: !!opts.occl });
+        this.cull = new WgCullPass(device, { occl: opts.occl === 2 ? 2 : !!opts.occl, occlStats: !!opts.occlStats });
         if (opts.occl) this.hzb = new WgHzbPass(device);
       }
     } catch (e) { this.dispose(); throw e; }
@@ -150,7 +150,8 @@ export class WgRasterPass {
       if (fl > 1e-9) { const f = this._hzbFwd; f.x = fx / fl; f.y = fy / fl; f.z = fz / fl; hz = hp.descriptor(f); }
     }
     const eye = this._eye, cam = p._cam; if (cam) { eye.x = cam.x; eye.y = cam.y; eye.z = cam.z; }
-    cull.begin({ planes: this.planes, viewProj: this.view, rows: p.rows, eye, maxDistM: 0, swayPad: this.windOn ? SWAY_MAX : 0, hzb: hz });
+    const bf = this._beginArgs; bf.planes = this.planes; bf.viewProj = this.view; bf.rows = p.rows; bf.eye = eye; bf.maxDistM = 0; bf.swayPad = this.windOn ? SWAY_MAX : 0; bf.hzb = hz;
+    cull.begin(bf); // reused arg object: no per-frame literal
     this._phase2 = !!hz;
     for (let i = 0; i < n; i++) { pair[0] = this.gpuM0[i]; pair[1] = this.gpuM1[i]; this.gpuEntries[i] = cull.add(this.gpuGroups[i], pair); }
     cull.run();
@@ -505,14 +506,17 @@ export class WgRasterPass {
         p.stats.clothDraws = this._cloths(list);
         p.stats.terrainDraws = this._terrain(list);
       } finally { d.endPass(); }
-      if (this.hzb) this._occlPhase2(p); // S8-B2-10c: HZB build -> cull phase 2 -> raster B (before the viewmodel pass: it clears depth)
-      if (this.vmList) {
+    } finally { wgSpanEnd(p); } // OCCL-STATS-01: spans never nest - raster A closes before the phase-2 spans (hzb, cull2, raster2)
+    if (this.hzb) this._occlPhase2(p); // S8-B2-10c: HZB build -> cull phase 2 -> raster B (before the viewmodel pass: it clears depth)
+    if (this.vmList) {
+      wgSpanBegin(p, WG_PASS_SLOT.raster); // viewmodel pass accumulates into the raster slot
+      try {
         // A depth-only target clears the same depth attachment, preserving all colour G-buffer values.
         d.beginPass(p._t.targetVmDepth, this.vmClearOpts); d.endPass();
         d.beginPass(p._t.targetRaster);
         try { p.stats.vmDraws = this._voxels(this.vmList); } finally { d.endPass(); }
-      } else p.stats.vmDraws = 0;
-    } finally { wgSpanEnd(p); }
+      } finally { wgSpanEnd(p); }
+    } else p.stats.vmDraws = 0;
     p.stats.meshDraws = staticDraws; p.stats.maskDraws = this.maskDraws; p.stats.maskUploads = this.maskUploads; p.stats.instancedDraws = instancedDraws; p.stats.instances = instances;
     p.stats.voxelDraws += instancedDraws;
   }
@@ -529,12 +533,15 @@ export class WgRasterPass {
     const hp = this.hzb;
     if (!this.gpuN) { hp.invalidate(); return; } // no batches this frame: the pyramid would go stale -> never reuse it
     const d = this.device;
-    hp.build(p._t.texSDepth);
+    hp.build(p._t.texSDepth, p);
     if (!this._phase2) return;
     const fresh = hp.fresh(this._hzbFwd);
-    this.cull.runPhase2(fresh);
-    d.beginPass(p._t.targetRaster); // load-only: keeps colour G-buffers and depth24 of pass A
-    try { p.stats.gpuCullDraws2 = this._cullDraw(true); } finally { d.endPass(); }
+    this.cull.runPhase2(fresh, p);
+    wgSpanBegin(p, WG_PASS_SLOT.raster2);
+    try {
+      d.beginPass(p._t.targetRaster); // load-only: keeps colour G-buffers and depth24 of pass A
+      try { p.stats.gpuCullDraws2 = this._cullDraw(true); } finally { d.endPass(); }
+    } finally { wgSpanEnd(p); }
   }
 
   dispose() {

@@ -75,7 +75,8 @@ export function resolveBootOptions({ params, resolved, savedSettings = {}, captu
   } else {
     Object.assign(shadowOpts, { sun: 'map', instCastM: LEGACY_INST_CAST_M });
   }
-  if (shadowParam === 'dda' || shadowParam === 'off' || shadowParam === 'map') shadowOpts.sun = shadowParam;
+  if (shadowParam === 'dda') { warn('[gfx] ?shadows=dda is retired (ME-19c2): using the shadow map'); shadowOpts.sun = 'map'; } // DDA sun retired
+  else if (shadowParam === 'off' || shadowParam === 'map') shadowOpts.sun = shadowParam;
   else if (!preset) shadowOpts.sun = 'map';
   const inst = numParam(params, 'shadowinst'); if (inst !== undefined) shadowOpts.instCastM = inst;
   if (params.get('shadowres')) shadowOpts.res = Number(params.get('shadowres'));

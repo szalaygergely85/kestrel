@@ -6,6 +6,7 @@ import { World } from '../world/World.js';
 import { serialize, deserialize } from '../world/serialize.js';
 import { createOverlay, applyOverlay, OVL_MAX_TEXTS } from './overlay.js';
 import { bindDecals, drawDecals } from '../index.js';
+import { DECAL_MUL_FLOOR } from './decals.js';
 import { CellBuffer } from '../render/CellBuffer.js';
 
 let checks = 0;
@@ -50,7 +51,7 @@ for (let i = 0; i < 4; i++) for (const turn of [0, 1]) {
 }
 const invalid = [
   { facing: 45 }, { facing: undefined }, { facing: 90 },
-  { model: 'decal:' }, { model: 'decal:A'.padEnd(71, 'A') }, { model: 'decal:ä' }, { model: 'decal:A\nB' },
+  { model: 'decal:' }, { model: 'decal:A'.padEnd(71, 'A') }, { model: 'decal:ï¿½' }, { model: 'decal:A\nB' },
   { wall: { x0: 2, x1: 1, y: 2, z0: 0, z1: 1 } },
   { wall: { x0: 1, x1: 2, y: 2, z0: 1, z1: 1 } },
   { wall: { x0: NaN, x1: 2, y: 2, z0: 0, z1: 1 } },
@@ -135,8 +136,15 @@ const letters = ov => cells(ov).map(i => String.fromCharCode(ov.ovl[i * 4 + 3] +
   const coloured = { ambient: [1, 0.5, 0.2], count: 0, sun: { on: false } };
   ov.clear(); drawDecals(binding, ov, cam, coloured, world); ov.flush(cam);
   // Independent scalar luminance of the shadeSprite rgb multiplier.
-  const expectedMul = 0.2126 + 0.7152 * 0.75 + 0.0722 * 0.6;
-  eq(ov.ovl[ov.touched[0] * 4], Math.round(100 * expectedMul));
+  const expectedMul = 0.2126 + 0.7152 * 0.75 + 0.0722 * 0.6; // 0.8 < floor, so the floor wins at Lm = 1
+  eq(ov.ovl[ov.touched[0] * 4], Math.round(100 * Math.max(expectedMul, DECAL_MUL_FLOOR)));
+  // DECAL-VIS-01: at ambient (Lm 0.3, shadeSprite gain ~0.58) the chalk fg stays at the floor, >= 1.4x the wall's gain.
+  const wallGain = SHADING.fgMin + (1 - SHADING.fgMin) * Math.pow(0.3, SHADING.fgGamma);
+  ok(DECAL_MUL_FLOOR >= 1.4 * wallGain, 'floor >= 1.4x lit wall fg gain at ambient');
+  ov.clear(); drawDecals(binding, ov, cam, lights(0.3), world); ov.flush(cam);
+  eq(ov.ovl[ov.touched[0] * 4], Math.round(100 * DECAL_MUL_FLOOR));
+  ov.clear(); drawDecals(binding, ov, cam, lights(0.04), world); ov.flush(cam);
+  ok(ov.ovl[ov.touched[0] * 4] < 100 * wallGain, 'truly dark scene: no floor, stays dark');
 }
 {
   const ov = overlay(), binding = bindDecals(ov, Array.from({ length: 32 }, (_, i) => ({ ...decal, z0: 0.5 + i * 0.01, z1: 1.5 + i * 0.01 })));

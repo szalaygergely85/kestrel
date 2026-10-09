@@ -30,6 +30,11 @@ One slot per hot file at a time: `main.js` = kestrel-1 only; an item in another 
 - **Read narrowly:** only the given line ranges + the files you edit. No grepping/reading whole lane logs, backlog or architecture.md; no full `run-tests.mjs` (only `--filter a,b` (comma list or repeated; 0 matches exits 1)).
 - **Models:** sonnet programmers; haiku for one-line fixes, doc nits, lane-log archiving; architect notes sonnet unless the note is a real design call (opus).
 - Do it yourself, don't delegate; no commit/stash/reset; append ONE lane entry (<= 6 lines); reply in <= 10 lines.
+- **Keep all 4 slots busy (owner 2026-10-09):** on a hand-back, commit and start that slot's next item in the same turn.
+- Programmer agents are Node-only by default; the main session runs browser gates ONE at a time. An agent may get "one browser run at the end" only when no other GPU job runs.
+- Check editor/game ES-module files with `node --experimental-default-type=module --check <file>` (plain `node --check` parses them as CommonJS and missed a syntax error that broke the editor boot).
+- A stopped/finished agent can leave background test/browser processes: stop the agent (TaskStop) and kill only its headless Chrome by `--user-data-dir`/port, never the owner's Chrome or the port-8000 server.
+- Never use fable on PC-B (owner 2026-10-09): architect = opus.
 
 ## Ship (main session, ONE gate at a time per machine)
 1. Read `git -C ../kestrel-N diff --stat` and the diff; no logs/captures.
@@ -37,7 +42,8 @@ One slot per hot file at a time: `main.js` = kestrel-1 only; an item in another 
 3. Gate in batches, not per item: fetch the clones' committed branches into `../kestrel` (B1) or the B2 integration tree (`../kestrel-base`, branch `b2int`), merge, then ONE `node tools/run-tests.mjs` + `check-deps` + `validate-content`, then ONE background browser batch: `node tools/browser-batch.mjs ["<each item's verify command with {port}>" ...]` (always runs gpucompare webgpu vs `docs/test-reports/gpucompare-baseline-webgpu-intel.json` + the browser route walk; one PASS/FAIL line per check, logs in %TEMP%/kestrel-browser-batch). On a FAIL, resume only that item's agent with the failure lines.
 4. Known load flakes on this laptop: `engine/world/terrainStroke.test.js` (150 ms budget) and `tools/run-tests.test.mjs` - re-run alone; terrainStroke also fails on the pre-change commit under load (checked 2026-10-09).
 5. Push `pc-b` / `pc-b2` (`git push`, retry on the flaky SSH `kex_exchange_identification` error; check the exit code, not `tail`). After a B2 push, merge `origin/pc-b2` into `pc-b` in `../kestrel`, gate, push.
-6. Next item from `docs/pc-b-queue.md` for that slot. Fresh main session after ~3 batches (handoff first): a long main session re-sends its whole context every turn.
+6. Lane C reads its queue from `origin/pc-a`: push lane C queue additions to `pc-a` via a temp worktree (docs-only commit), never to `origin/pc-c`.
+7. Next item from `docs/pc-b-queue.md` for that slot. Fresh main session after ~3 batches (handoff first): a long main session re-sends its whole context every turn.
 
 ## 5th agent (only when blocked or empty)
 When a slot has no unblocked item left (deps, `ARCH-NOTE NEEDED`, `ASK ARCHITECT` waiting on PC-A), run ONE extra agent, never two. **First** `git fetch origin` and check `origin/master` for the note/story: PC-A may already have written it (2026-10-09: a PC-B architect duplicated PC-A's 38.13-38.16 eleven minutes after they landed on master). Use PC-A's if it exists.
@@ -47,3 +53,4 @@ Mark its output `(PC-B 5th agent, PC-A to ratify)` and list it in the next hando
 
 ## Slot floor (owner 2026-10-09, 5-5-5-5)
 Each slot keeps >= 5 open, startable (not blocked) items in `docs/pc-b-queue.md`. Count at every handoff and after every push; top up from its REFILL POOL; pool < 3 -> run the 5th agent (PO sonnet) to write stories and write `NEEDS PC-A: refill pool` in the lane file. PC-A refills the pool at each review batch.
+While PC-A is offline, PC-B may also run architect/PO/writer agents (owner 2026-10-09); mark their outputs "owner-authorised while PC-A offline".

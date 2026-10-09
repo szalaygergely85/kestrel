@@ -76,6 +76,10 @@ export class GpuDeviceWebGPU {
     this._live = /** @type {{destroy: () => void}[]} */ ([]);
     /** @type {any[]} every computePipeline handle (38.10a: dispose(buffer) prunes their dispatch bind-group caches) */
     this._computePipes = [];
+    /** @type {Map<any,{gpu:any,bytes:number,busy:boolean}>} OCCL-STATS-01b: readBufferAsync staging per source buffer handle */
+    this._readStaging = new Map();
+    /** @type {any[]} readBufferAsync reads whose copy is recorded; mapped after the next submit() */
+    this._pendingMaps = [];
     this._moduleCache = new Map();
     // uniform ring (CPU ArrayBuffer + one GPU buffer; one writeBuffer at submit)
     const slots = opts.ringSlots || DEFAULT_RING_SLOTS;
@@ -172,7 +176,8 @@ export class GpuDeviceWebGPU {
     const x = rect ? rect.x : 0, y = rect ? rect.y : 0, w = rect ? rect.w : tex.width, h = rect ? rect.h : tex.height;
     wt.dst.texture = tex.gpu; wt.dst.origin[0] = x; wt.dst.origin[1] = y;
     wt.layout.offset = dataOffset ? dataOffset * /** @type {any} */ (data).BYTES_PER_ELEMENT : 0;
-    wt.layout.bytesPerRow = w * tex.bpp; wt.layout.rowsPerImage = h;
+    wt.layout.bytesPerRow = (rect && rect.stride ? rect.stride : w) * tex.bpp; // rect.stride (texels): source row pitch of a cropped rect
+    wt.layout.rowsPerImage = h;
     wt.size[0] = w; wt.size[1] = h;
     this.gpu.queue.writeTexture(wt.dst, data, wt.layout, wt.size);
   }
@@ -565,6 +570,7 @@ export class GpuDeviceWebGPU {
       const timing = this.timer.resolve(this._encoder);
       this.gpu.queue.submit([this._encoder.finish()]); this._encoder = null;
       this.timer.collect(timing);
+      if (this._pendingMaps.length) this._startPendingMaps();
     } else this.timer.resolve(null);
   }
 
@@ -585,6 +591,46 @@ export class GpuDeviceWebGPU {
     if (this._pass) throw new Error('GpuDeviceWebGPU.copyBufferToBuffer: a pass is still open');
     if (!this._encoder) this._encoder = this.gpu.createCommandEncoder();
     this._encoder.copyBufferToBuffer(src.gpu, srcOff, dst.gpu, dstOff, bytes);
+  }
+
+  /**
+   * OCCL-STATS-01b: non-blocking buffer readback for stats. Records buf -> a cached MAP_READ staging buffer (one per source
+   * buffer, created once, recreated only if `bytes` grows) into the FRAME encoder (no submit here); submit() then starts
+   * `mapAsync(READ)` and copies into the caller's preallocated `outU32`. ONE callback contract: `cb(err, outU32)` - err null on
+   * success, 'busy' (called synchronously, returns false) when a read is already in flight, or the mapAsync rejection.
+   * Returns true when started. At most one read in flight per source buffer. Per call the only allocations are
+   * what the WebGPU API returns (the mapAsync Promise, the mapped ArrayBuffer view); staging buffers are released by dispose.
+   * @param {GpuHandle} buf @param {number} bytes multiple of 4, <= buffer size @param {Uint32Array} outU32 @param {(err:any, out:Uint32Array)=>void} cb
+   * @returns {boolean}
+   */
+  readBufferAsync(buf, bytes, outU32, cb) {
+    if (this._pass) throw new Error('GpuDeviceWebGPU.readBufferAsync: a pass is still open');
+    if (!buf || buf.kind !== 'buffer') throw new Error('GpuDeviceWebGPU.readBufferAsync: buf must be a buffer handle');
+    if (!(bytes > 0) || bytes % 4 || bytes > buf.gpu.size) throw new Error('GpuDeviceWebGPU.readBufferAsync: bytes must be a positive multiple of 4 and <= the buffer size');
+    if (!(outU32 instanceof Uint32Array) || outU32.length * 4 < bytes) throw new Error('GpuDeviceWebGPU.readBufferAsync: outU32 too small');
+    let st = this._readStaging.get(buf);
+    if (st && st.busy) { cb('busy', outU32); return false; }
+    if (st && st.bytes < bytes) { st.gpu.destroy(); st = null; }
+    if (!st) { st = { gpu: this.gpu.createBuffer({ size: bytes, usage: this._c.buf.MAP_READ | this._c.buf.COPY_DST }), bytes, busy: false }; this._readStaging.set(buf, st); }
+    st.busy = true;
+    if (!this._encoder) this._encoder = this.gpu.createCommandEncoder();
+    this._encoder.copyBufferToBuffer(buf.gpu, 0, st.gpu, 0, bytes);
+    this._pendingMaps.push({ st, bytes, outU32, cb }); // mapAsync starts in submit(), after the frame's own queue.submit (no extra mid-frame submit)
+    return true;
+  }
+
+  /** Starts the mapAsync of every readBufferAsync copy recorded in the encoder that was just submitted. */
+  _startPendingMaps() {
+    const pm = this._pendingMaps;
+    for (let i = 0; i < pm.length; i++) {
+      const { st, bytes, outU32, cb } = pm[i];
+      st.gpu.mapAsync(this._c.map.READ).then(() => {
+        outU32.set(new Uint32Array(st.gpu.getMappedRange(0, bytes)));
+        st.gpu.unmap(); st.busy = false;
+        cb(null, outU32);
+      }, (err) => { st.busy = false; cb(err || new Error('mapAsync rejected')); }); // destroyed/lost mid-flight: report, never stay busy
+    }
+    pm.length = 0;
   }
 
   /**
@@ -661,6 +707,8 @@ export class GpuDeviceWebGPU {
         const pi = this._computePipes.indexOf(handle);
         if (pi >= 0) this._computePipes.splice(pi, 1);
       }
+      const rs = this._readStaging.get(handle);
+      if (rs) { this._readStaging.delete(handle); rs.gpu.destroy(); }
       const o = handle.gpu;
       const i = this._live.indexOf(o);
       if (i >= 0) { this._live.splice(i, 1); o.destroy(); }
@@ -671,6 +719,8 @@ export class GpuDeviceWebGPU {
     this._live.length = 0;
     for (const pool of this._staging.values()) for (const b of pool) b.destroy();
     this._staging.clear();
+    for (const rs of this._readStaging.values()) rs.gpu.destroy();
+    this._readStaging.clear();
     this._computePipes.length = 0;
   }
 }

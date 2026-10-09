@@ -23,6 +23,8 @@ const W_SUN_M = W('sunShadowM'), W_SUN_RES = W('sunShadowRes'), W_SUN_TEXEL = W(
 const W_CLOUD_A = W('cloudA');
 // S8-B2-20 (38.17): `light.ao` (lighting.js LightSet.ao, horizon AO strength) -> aoStrength (word 31), cached word index, zero alloc.
 const W_AO_STRENGTH = W('aoStrength'), W_AO_P = W('aoP'); // aoP = (radiusM, bias, maxCells, 0)
+// ME-16e (38.22): point shadow words; pshA = (n, res, biasM, normalOffTexels), pshO[slot] = (origin xyz, far), pshSlot[light] = slot + 1
+const W_PSH_A = W('pshA'), W_PSH_O = W('pshO'), W_PSH_SLOT = W('pshSlot');
 
 const NO_CAM = Object.freeze({ x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 });
 
@@ -41,10 +43,14 @@ export class WgLightPass {
     this.texSunDummy = device.createTexture({ format: 'depth24', sampled: true, width: 1, height: 1 });
     this.texGeom = device.createTexture({ format: 'rgba32f', width: 1, height: 1 });
     this.texFlags = device.createTexture({ format: 'rg8ui', width: 1, height: 1 });
+    // ME-16e: binding 7 always needs a depth array; this 1x1x6 dummy is bound while point shadows are off (pshA.x = 0: never sampled)
+    this.texPshDummy = device.createTexture({ format: 'depth24', sampled: true, width: 1, height: 1, layers: 6 });
+    this.pshOpt = new Float32Array(3); this.pshOptFor = null;
+    this.pointPass = null; // WgPointShadowPass (set by WgCellPipeline), null = off
     this.geomW = 1; this.geomH = 1;
     this.lvisUploaded = new Int32Array(MAX_LIGHTS).fill(-1);
     this.atlas = null; this.atlasWorld = null; this.plan = null;
-    this.tex = [0, 1, 2, 3, 4, 5, 6].map(slot => ({ slot, texture: null }));
+    this.tex = [0, 1, 2, 3, 4, 5, 6, 7].map(slot => ({ slot, texture: null }));
     this.bindDesc = { uniforms: this.lu, textures: this.tex };
     this.visBox = new Float32Array(4 * MAX_LIGHTS);
     this.timeBuf = new Float64Array(1);
@@ -181,6 +187,24 @@ export class WgLightPass {
       lu[W_SUN_RES] = lp.res; lu[W_SUN_TEXEL] = lp.texelM; lu[W_SUN_BIAS] = lp.biasM; lu[W_SUN_NOFF] = lp.normalOffsetTexels;
       sunTex = lp.texture || this.texSunDummy; // GFX-03 'off': no map, the dummy is never sampled
     }
+    // ME-16e: point shadow words + binding 7. Off (no pass / no ready slot): pshA.x = 0 and the dummy, so the shader output is unchanged.
+    const pp = this.pointPass;
+    let pshTex = this.texPshDummy;
+    lu[W_PSH_A] = 0; lu[W_PSH_A + 1] = 1; lu[W_PSH_A + 2] = 0.04; lu[W_PSH_A + 3] = 1.5;
+    if (pp && pp.enabled && pp.active && pp.depthTex) {
+      const ns = pp.n, pa = this.pshOpt;
+      if (this.pshOptFor !== pp) { const o = pp.opts; pa[0] = o.res; pa[1] = o.biasM; pa[2] = o.normalOffTexels; this.pshOptFor = pp; } // typed-array copy: no boxed doubles per frame
+      lu[W_PSH_A] = ns; lu[W_PSH_A + 1] = pa[0]; lu[W_PSH_A + 2] = pa[1]; lu[W_PSH_A + 3] = pa[2];
+      for (let k = 0; k < MAX_LIGHTS; k++) lu[W_PSH_SLOT + k] = 0;
+      for (let s = 0; s < ns; s++) {
+        const q = s * 4, h = pp.slotLight[s];
+        lu[W_PSH_O + q] = pp.renderedOrigins[q]; lu[W_PSH_O + q + 1] = pp.renderedOrigins[q + 1]; lu[W_PSH_O + q + 2] = pp.renderedOrigins[q + 2]; lu[W_PSH_O + q + 3] = pp.renderedOrigins[q + 3];
+        if (h >= 0 && h < MAX_LIGHTS && pp.ready[s]) lu[W_PSH_SLOT + h] = s + 1;
+      }
+      pshTex = pp.depthTex;
+    } else {
+      for (let k = 0; k < MAX_LIGHTS; k++) lu[W_PSH_SLOT + k] = 0;
+    }
     const rp = p._rasterPass, pitched = !!(rp && rp.pitched);
     li[W_PROJ_MODE] = pitched ? (rp.ortho ? 2 : 1) : 0; // US-068b2: 2 = ortho (pitch words carry halfW/halfH in the tanHalf slots)
     if (pitched) {
@@ -191,7 +215,7 @@ export class WgLightPass {
     }
     const tx = this.tex;
     tx[0].texture = t.texGI; tx[1].texture = t.texGA; tx[2].texture = t.texDepth; tx[3].texture = this.texLVis;
-    tx[4].texture = this.texGeom; tx[5].texture = this.texFlags; tx[6].texture = sunTex;
+    tx[4].texture = this.texGeom; tx[5].texture = this.texFlags; tx[6].texture = sunTex; tx[7].texture = pshTex;
     d.beginPass(t.targetLight);
     d.bind(this.pipe, this.bindDesc);
     d.draw(3);
@@ -200,7 +224,7 @@ export class WgLightPass {
 
   dispose() {
     const d = this.device;
-    for (const k of ['pipe', 'texLVis', 'texSunDummy', 'texGeom', 'texFlags']) {
+    for (const k of ['pipe', 'texLVis', 'texSunDummy', 'texPshDummy', 'texGeom', 'texFlags']) {
       if (this[k]) { try { d.dispose(this[k]); } catch (_) { /* best effort */ } this[k] = null; }
     }
   }

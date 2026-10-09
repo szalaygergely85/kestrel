@@ -25,7 +25,7 @@ import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME, SHADOW_BAND_HYST_M } from '../
 import { WgCullPass } from './passCull.js';
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 import { resolveSunShadowOptions, SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../../shadowSun.js';
-import { windSwayOn, windShadowKey, packWindUniforms, SWAY_MAX, SWAY_SHADOW_HZ } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
+import { windSwayOn, windShadowKey, packWindUniforms, SWAY_MAX, sunWindClock } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
 // S8-B2-05/06: wind/sway uniforms (RASTER_BLOCK, instanced variant only; same word offsets as passRaster.js).
@@ -45,7 +45,7 @@ const INSTANCE_LAYOUT = [
 ];
 
 export class WgShadowPass {
-  /** @param {any} device @param {{shadows?: any, buffers?: MeshBuffers, renderer?: string, gpuCull?: boolean}} [opts] gpuCull (default true, `?gpucull=0` = off): WG-4b compute cull of instanced casters */
+  /** @param {any} device @param {{shadows?: any, buffers?: MeshBuffers, renderer?: string, gpuCull?: boolean, casters?: boolean}} [opts] casters (ME-16c): build the caster pipelines even when the sun map is off (point-shadow caster renderer); gpuCull (default true, `?gpucull=0` = off): WG-4b compute cull of instanced casters */
   constructor(device, opts = {}) {
     this.device = device;
     const so = this.shadowOpts = resolveSunShadowOptions(opts.shadows, opts.renderer || 'mesh');
@@ -85,11 +85,13 @@ export class WgShadowPass {
     this.passOpts = { clear: true };
     this.copyTex = null; this.copyTarget = null; this.copyPipe = null; this.copyBind = null;
     this.draws = 0; this._lp = null;
-    if (!this.enabled) return;
+    if (!this.enabled && !opts.casters) return;
     try {
       const res = so.res;
-      this.depthTex = device.createTexture({ format: 'depth24', width: res, height: res, sampled: true });
-      this.target = device.createTarget({ color: [], depth: this.depthTex });
+      if (this.enabled) { // ME-16c: `casters: true` builds the caster pipelines only (WgPointShadowPass owns no sun map)
+        this.depthTex = device.createTexture({ format: 'depth24', width: res, height: res, sampled: true });
+        this.target = device.createTarget({ color: [], depth: this.depthTex });
+      }
       // GL polygonOffset(factor, units): factor = slope scale, units = constant (WebGPU: integer).
       this.depthBias = { factor: so.depthBias[0], units: Math.round(so.depthBias[1]) };
       this.staticPipe = this._pipeline(RASTER_SHADOW_WGSL, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, 'none', RASTER_BASE_BLOCK);
@@ -256,7 +258,7 @@ export class WgShadowPass {
     this.windOn = windSwayOn(world.wind);
     const fbT = p._fb; let tSec = 0; if (fbT) { const v = fbT.timeSec; if (v) tSec = v; } // no tagged phi: avoids a per-frame HeapNumber
     // pack the 10 Hz-quantised clock (same step as windShadowKey) so the sun map is a pure function of its key; the key itself uses raw tSec
-    packWindUniforms(world.wind, Math.floor(tSec * SWAY_SHADOW_HZ) / SWAY_SHADOW_HZ, this.windV, this.windTV, this.windKV);
+    packWindUniforms(world.wind, sunWindClock(tSec), this.windV, this.windTV, this.windKV);
     if (p._instances) p._instances.swayPad = this.windOn ? SWAY_MAX : 0;
     const list = this.list, src = this.src, st = this.stats;
     const tCpu0 = performance.now();
@@ -295,20 +297,29 @@ export class WgShadowPass {
     return true;
   }
 
-  _render(list, world, Mf) {
+  _render(list, world, Mf) { this.renderCasters(this.target, Mf, list, world, null, 0, true); }
+
+  /**
+   * ME-16c: draw one caster list into `target` (depth only, cleared to 1) with view-projection `Mf` (column-major 16). Shared by the sun map and
+   * WgPointShadowPass. `idx`/`idxN`: draw only list.items[idx[0..idxN)] in that order (null = the whole list); `gpuCulled`: also draw the WG-4b
+   * kernel entries (sun only). Resets and counts `this.draws`. Zero allocation.
+   * @param {any} target @param {Float32Array|Float64Array} Mf @param {any} list @param {any} world @param {Uint16Array|null} idx @param {number} idxN @param {boolean} gpuCulled
+   */
+  renderCasters(target, Mf, list, world, idx, idxN, gpuCulled, consumer = 0) {
     const d = this.device, u = this.u, tu = this.tu;
     for (let i = 0; i < 16; i++) { u[VIEW + i] = Mf[i]; tu[T_VIEW + i] = Mf[i]; }
     this.draws = 0;
-    d.beginPass(this.target, this.passOpts); // clears depth to 1
+    const n = idx ? idxN : list.count;
+    d.beginPass(target, this.passOpts); // clears depth to 1
     try {
-      for (let i = 0; i < list.count; i++) { // static level quads
-        const item = list.items[i];
+      for (let k = 0; k < n; k++) { // static level quads
+        const item = list.items[idx ? idx[k] : k];
         if (item.type !== DRAW_STATIC || !item.mesh || item.rangeCount <= 0) continue;
         this._model(item.matrix);
         this._staticCaster(item, this.buffers.get(item.mesh));
       }
-      for (let i = 0; i < list.count; i++) { // voxel props: one draw per part
-        const item = list.items[i];
+      for (let k = 0; k < n; k++) { // voxel props: one draw per part
+        const item = list.items[idx ? idx[k] : k];
         if (item.type !== DRAW_VOXEL || !item.mesh) continue;
         const entry = this.buffers.getVoxel(item.mesh), ranges = item.mesh.ranges;
         for (let part = 0; part < ranges.length; part++) {
@@ -318,14 +329,17 @@ export class WgShadowPass {
         }
       }
       let instTotal = 0; // instanced casters; overflow past the per-frame cap drops the rest (never throw for a shadow)
-      for (let i = 0; i < list.count; i++) {
-        const item = list.items[i];
+      for (let k = 0; k < n; k++) {
+        const item = list.items[idx ? idx[k] : k];
         if (item.type !== DRAW_INSTANCED || !item.mesh || !item.instBuf) continue;
         const n = item.instCount;
         if (instTotal + n > MAX_INSTANCES_PER_FRAME) break;
         instTotal += n;
-        let buffer = this.instanceBuffers.get(item.instBuf);
-        if (!buffer) { buffer = d.createBuffer({ usage: 'vertex', data: item.instBuf.f32, dynamic: true }); this.instanceBuffers.set(item.instBuf, buffer); }
+        // one GPU copy per consumer (sun 0, point slot s = s+1): writeBuffer lands at once but draws run at submit, so a shared copy would show the last write to all
+        let copies = this.instanceBuffers.get(item.instBuf);
+        if (!copies) { copies = []; this.instanceBuffers.set(item.instBuf, copies); }
+        let buffer = copies[consumer];
+        if (!buffer) { buffer = d.createBuffer({ usage: 'vertex', data: item.instBuf.f32, dynamic: true }); copies[consumer] = buffer; }
         else d.writeBuffer(buffer, item.instBuf.f32, 0);
         const entry = this.buffers.getVoxel(item.mesh), ranges = instancedRanges(item); // ONE_PART -> one whole-mesh range (38.9)
         const mr = item.mesh.maskRanges; // ALPHA-01f (c): per-range mask lookup, same shape as _staticCaster's
@@ -344,7 +358,7 @@ export class WgShadowPass {
       // loop). entries are laid out `[band*R + r]` (R = entries.length/2, fixed per batch); R = 1 is the same [e0, e1] pair as before.
       // A masked range (mr[r*5+2] >= 0) draws through instanceMaskPipe (mask uniforms + uv extra stream + atlas texture), same as
       // _instancedMaskedCaster's CPU path; an opaque range draws through instancePipe, unchanged.
-      for (let i = 0; i < this.gpuN; i++) {
+      for (let i = 0, gn = gpuCulled ? this.gpuN : 0; i < gn; i++) {
         const entries = this.gpuEntries[i], R = entries.length >> 1;
         for (let band = 0; band < 2; band++) {
           for (let r = 0; r < R; r++) {
@@ -369,8 +383,8 @@ export class WgShadowPass {
         }
       }
       const b = this.bindDesc;
-      for (let i = 0; i < list.count; i++) { // cloth: two-sided, position + uv stream like the raster pass
-        const item = list.items[i];
+      for (let k = 0; k < n; k++) { // cloth: two-sided, position + uv stream like the raster pass
+        const item = list.items[idx ? idx[k] : k];
         if (item.type !== DRAW_CLOTH || !item.mesh || item.rangeCount <= 0) continue;
         const entry = this.buffers.getCloth(item.mesh);
         this._model(item.matrix);
@@ -379,8 +393,8 @@ export class WgShadowPass {
         d.bind(this.clothPipe, b); d.draw(item.rangeCount * 3, item.rangeFirst * 3, 1); this.draws++;
       }
       let footDone = false; // terrain: footprint carve in the fragment stage
-      for (let i = 0; i < list.count; i++) {
-        const item = list.items[i];
+      for (let k = 0; k < n; k++) {
+        const item = list.items[idx ? idx[k] : k];
         if (item.type !== DRAW_TERRAIN || !item.mesh || item.rangeCount <= 0) continue;
         if (!footDone) { this._fillFoot(world); footDone = true; }
         const entry = this.buffers.get(item.mesh), mm = item.matrix, n = T_MODEL;
@@ -422,7 +436,7 @@ export class WgShadowPass {
     for (const h of [this.copyPipe, this.copyTarget, this.copyTex, this.target, this.depthTex]) if (h) d.dispose(h);
     this.copyPipe = this.copyTarget = this.copyTex = this.target = this.depthTex = null;
     if (this.cull) { this.cull.dispose(); this.cull = null; this.src.gpu = null; }
-    for (const buffer of this.instanceBuffers.values()) d.dispose(buffer);
+    for (const copies of this.instanceBuffers.values()) for (const buffer of copies) if (buffer) d.dispose(buffer);
     this.instanceBuffers.clear();
     if (this.ownBuffers) this.buffers.dispose();
     this.active = false;

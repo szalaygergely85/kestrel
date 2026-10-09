@@ -8,6 +8,7 @@
 import { createHasher } from '../../../../engine/index.js';
 import swordMod from '../../../../design/models/sword.js';
 import { makeOk } from '../../../../engine/test/assert.js';
+import { createHitStop } from '../../fx/hitStop.js';
 import { SWORD_CFG } from '../swordConfig.js';
 import { createSwordSim, ST_IDLE, ST_HOLD, ST_CHARGE, ST_LIGHT, ST_HARD, ST_REST, SPARK_CLINK, SPARK_HIT_HEAVY } from './sword.js';
 
@@ -495,6 +496,16 @@ for (const hard of [false, true]) {
   ok('hard entity hit applies a body impulse', tgt.components.body.vy > 0, `vy=${tgt.components.body.vy}`);
   ok('hard entity hit freezes 4 steps (hitStopHard)', sim.frozen === SWORD_CFG.hitStopHard, `frozen=${sim.frozen}`);
   ok('hits=1', hits.length === 1);
+  { // HITSTOP-01 fix: main.js steps the sword every step; the global window gates beasts only, the sword's own counter is the only sword freeze
+    const hs = createHitStop(); hs.trigger('heavy');
+    let beastFrozen = 0; while (!hs.due(1000 / 60)) beastFrozen++;
+    ok('heavy global window freezes beasts ~70 ms (4-5 steps)', beastFrozen >= 4 && beastFrozen <= 5, );
+    const f0 = sim.frozen; let n = 0; const hold0 = sim.holdSteps;
+    sim.step(p, ...FWD, true); // a fresh button press inside the freeze: registered by the edge/hold tracking
+    ok('input inside the freeze is registered (holdSteps reset by the press edge)', sim.frozen === f0 - 1 && sim.holdSteps === 0 && hold0 !== undefined);
+    while (sim.frozen > 0) { sim.step(p, ...FWD, true); n++; }
+    ok('sword frozen exactly by its own counter (4 steps total)', n + 1 === SWORD_CFG.hitStopHard, );
+  }
 }
 {
   // A small wall sitting exactly on the forward axis, between the player and a target that would otherwise be

@@ -58,7 +58,7 @@ export { packTerrainTextures, TLOOK_WIDTH } from './render/gpu/TerrainTextures.j
 export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
 // ---- US-030c GPU sprite pass + atlas + parity harness ----------------------
 export { buildSpriteAtlas } from './render/gpu/spritesAtlas.js';
-export { GpuSpritePass } from './render/gpu/spritesPass.js';
+export { GpuSpritePass } from './render/gl/index.js'; // WG-5: remove
 export { drawText } from './render/textDraw.js';
 // US-047: runShadeTest/runDetailShadeTest (shading parity harness) moved to
 // engine/dev.js. Item 6b fix pass (docs/backlog.md): runSpriteCompare's only
@@ -128,8 +128,7 @@ export { resolveLook, validateLook } from './render/look.js';
 export { buildRoofMap, outdoorAt, MAX_ROOF_BOXES } from './render/roofMap.js';
 
 // ---- US-029 GPU cell pipeline (shading + edge pass on the GPU) ------------
-export { GpuCellPipeline, PASS_NAMES } from './render/gpu/GpuCellPipeline.js';
-export { isSoftwareRenderer } from './render/gpu/glUtil.js';
+export { GpuCellPipeline, PASS_NAMES, isSoftwareRenderer } from './render/gl/index.js'; // WG-5: remove (WebGL2 barrel; used by game/js/main.js, rtsMain, dev pages)
 export { probeWebGpu, evaluateWebGpuLimits } from './render/gpu/device/webgpuProbe.js'; // WG-1a
 export { createGpuDevice, selfTestDevice } from './render/gpu/device/createGpuDevice.js'; // WG-1b2
 export { createRenderer } from './render/createRenderer.js'; // WG-1c2
@@ -154,6 +153,10 @@ export { Entity } from './entities/Entity.js';
 export { Camera } from './entities/Camera.js';
 export { EntityHandle } from './entities/EntityHandle.js';
 export { stepAnimations, animComponent } from './entities/animation.js';
+export { createAnimState, blend as animBlend, BLEND_MS as ANIM_BLEND_MS, PRIORITY as ANIM_PRIORITY } from './entities/animState.js';
+export { bindClips, applyAnimState, modelClipNames } from './entities/animClips.js';
+export { tintAt, setTint, sampleTint } from './entities/tintEnvelope.js';
+export { createEntityTintTable, clearEntityTints, pushEntityTint, pushEntityTintSample, fillEntityTints, entityTintAt, tintChannel, ENTITY_TINT_MAX } from './render/entityTint.js';
 export { Player } from './entities/Player.js';
 export { createEyeFeel, updateEyeFeel } from './entities/EyeFeel.js';
 
@@ -210,6 +213,7 @@ export { rayTerrain, pickNearest, selectInRect } from './render/pick.js';
 // ---- RE-08/RE-09 flow-field pathfinding + local avoidance (docs/architecture.md 28.2) --
 export { createFlowField, FlowCache } from './nav/flowField.js';
 export { createSteer } from './nav/steer.js';
+export { perceive, NOISE_SPRINT, NOISE_SWING } from './nav/perceive.js';
 
 // ---- RE-11 fog-of-war visibility grid (docs/architecture.md 28.3) ---------
 export { Visibility } from './world/Visibility.js';
@@ -232,7 +236,7 @@ export { STEP as SIM_STEP } from './core/loop.js'; // architect RE-EXP review: n
 
 // ---- RE-07 selection overlay (docs/architecture.md 28.9) ----
 export { createOverlay, applyOverlay, OVL_MAX_OPS } from './ui/overlay.js';
-export { GpuOverlayPass } from './render/gpu/overlayPass.js'; // RE-07b
+export { GpuOverlayPass } from './render/gl/index.js'; // RE-07b  WG-5: remove
 
 // ---- US-133 fire spread sim (architecture.md 32.3) ----
 export { createFireGrid } from './world/fireGrid.js';
@@ -244,6 +248,7 @@ export { createEntityEmitters } from './world/entityEmitters.js';
 // ---- S8-B2-13b splash ripples (docs/architecture.md 38.14, the note of record) ----
 export { createRipples, RIPPLE_LIFE, RIPPLE_SPEED, RIPPLE_W } from './fx/ripples.js';
 export { defineHitSparks, hitSparks, HIT_SPARK_HUES } from './fx/hitSparks.js';
+export { laneCells, laneAlpha, LANE_CELL_M, LANE_ALPHA_MAX } from './fx/chargeLane.js';
 
 // ---- US-055a1 water regions + query (architecture.md 32.2; the query is `World#waterAt`) ----
 export { createWater, collectWaterDefs, WATER_MAX } from './world/water.js';

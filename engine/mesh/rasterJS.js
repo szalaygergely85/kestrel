@@ -884,6 +884,7 @@ export function copyToGBuffer(target, gbuf, depthArr) {
     const aoD = face === FACE_PACKED ? 0 : target.aoD[i];
     gbuf.writeSample(i, kind, target.mat[i], face, target.planeId[i], target.u[i], target.v[i], target.z[i], aoD);
     gbuf.vao[i] = target.vao[i]; // ME-20c (38.18)
+    gbuf.objectId[i] = target.objectId[i]; // 38.23 entity tint key
     if (face === FACE_PACKED) {
       if (!alias) alias = getAoAlias(gbuf);
       alias[i] = target.nrm[i];

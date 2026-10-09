@@ -346,7 +346,7 @@
       plate: { pad: 1, bgMul: 0.18, note: 'scene cells under the panel (+1) x 0.18, same as the map card: a dark sheet' },
       sceneDim: { bgMul: 0.35, note: 'rest of the scene x 0.35 while open (the simulation is paused behind it)' },
       fadeIn: 0.15, fadeOut: 0.10,                     // ramp-step fade rule (uiStyle.fade); quick, it is a menu
-      rowOrder: ['grid', 'mute', 'back'],              // options.js ids, top -> bottom; ids missing from options.js are skipped
+      rowOrder: ['quality', 'grid', 'mute', 'back'],            // options.js ids, top -> bottom; ids missing from options.js are skipped
       stepRule: { keys: 'A/D (Left/Right) step one value and stop at the ends (no wrap), skipping disabled values',
                   select: 'W/S (Up/Down) wrap top <-> bottom', enter: 'Enter / Space on Back = Esc (return to the pause overlay)' },
       rows: { first: 2, gap: 2, markerCol: 2, labelCol: 4, valueCol: 17, valueW: 21, noteOffset: 1,

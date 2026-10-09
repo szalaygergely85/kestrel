@@ -4,7 +4,7 @@
 // shading passes (US-028) and finally the sky - replacing the manual
 // beginFrame/castSectors/.../fillSky sequence main.js used to write out by
 // hand for a single bare level (US-024).
-import { windSwayOn, SWAY_SHADOW_HZ } from '../mesh/sway.js';
+import { windSwayOn, sunWindClock } from '../mesh/sway.js';
 import { fillSky, ambientL, primeAmbientLight } from './sky.js';
 import { shadeTerrainCells } from './terrainShade.js';
 import { computeDerivatives, shadeSurfaces } from './detailShade.js';
@@ -28,6 +28,8 @@ import { waterCompositeJS } from './waterComposite.js';
 // ME-15c (27.9a): JS twin of the GPU sun shadow pass (same list builder, matrix, polygon offset, depth-only raster).
 import { SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar } from './shadowSun.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../mesh/shadowList.js';
+import { createPointShadowTwin, updatePointShadowTwin } from '../mesh/pointShadowJS.js'; // ME-16f
+import { pointCasterOpts } from './shadowPoint.js'; // ME-16d/f: one caster-option helper shared with the GPU point pass
 
 const MAX_STRUCTS = 8; // structSeq is a 3-bit field (arch 7.2) - never exceeded, never wrapped.
 // ---------------------------------------------------------------------------
@@ -81,7 +83,7 @@ export function windCtx(world, fb, quantised = false) {
   if (!windSwayOn(world.wind)) return null;
   const t = fb.timeSec || 0;
   // quantised (sun map): same 10 Hz step as windShadowKey, so the map is a pure function of its dirty key
-  _windCtx.field = world.wind; _windCtx.t = quantised ? Math.floor(t * SWAY_SHADOW_HZ) / SWAY_SHADOW_HZ : t;
+  _windCtx.field = world.wind; _windCtx.t = quantised ? sunWindClock(t) : t;
   return _windCtx;
 }
 function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, structCount) {
@@ -118,6 +120,42 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
   rasterDrawList(sunShadowList, _sunShadowTarget, ctx);
   sunMapState.map = _sunShadowTarget; sunMapState.opts = so;
   fb.sunMap = sunMapState;
+}
+
+/**
+ * ME-16f (38.22): JS twin of the GPU point-light shadow pass. Opt-in: fb.pointShadowOpts = resolvePointShadowOptions(...) with n > 0.
+ * Publishes fb.lights.pointShadow ({depth,res,slot,O,opts}, read by lightAt); off (default) never touches the lights = byte-identical.
+ */
+const pointTwin = createPointShadowTwin();
+const pointSrc = { centre: { x: 0, y: 0, z: 0 }, cache: /** @type {any} */ (null), terrainSet: /** @type {any} */ (null), voxelPool: /** @type {any} */ (null), voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, eye: { x: 0, y: 0 }, meshLod0M: 25, instCastM: 48, instances: /** @type {any} */ (null), cloths: /** @type {any} */ (null), matIdFor: /** @type {any} */ (undefined), gpu: null };
+const pointRasterExtras = { depthBias: /** @type {any} */ (null), structFoot: /** @type {any} */ (null), structCount: 0, wind: /** @type {any} */ (null), maskAtlas: /** @type {any} */ (null) };
+let _pointWorld = null, _pointCameraList = null, _pointShadowOpts = null;
+function buildPointCasters(list, O, radius, planes) {
+  const src = pointSrc, c = src.centre;
+  c.x = O[0]; c.y = O[1]; c.z = O[2]; src.eye.x = O[0]; src.eye.y = O[1];
+  pointCasterOpts(src, radius, _pointShadowOpts); // shared with the GPU pass (NEEDS B1: passPointShadow._build uses it too)
+  buildShadowList(list, _pointCameraList, _pointWorld, planes, src);
+}
+function renderPointShadowsJS(fb, world, cam, cameraList, cache, terrainMeshSet, structCount) {
+  const lights = fb.lights, po = fb.pointShadowOpts;
+  if (!lights) return;
+  if (!po || !(po.n > 0)) { if (lights.pointShadow) lights.pointShadow = null; return; }
+  const src = pointSrc, vp = fb.voxelPool;
+  src.cache = cache; src.terrainSet = terrainMeshSet;
+  if (vp && vp.shadowView) { vp.projectShadow(); src.voxelPool = vp.shadowView; } else src.voxelPool = null;
+  src.instances = fb.instances || null;
+  src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null;
+  src.matIdFor = fb.matTable ? fb.matTable.idFor : undefined;
+  src.meshCache = sharedMeshDrawCache;
+  src.meshIdFor = fb.matTable ? strictMatIdFor(fb.matTable) : undefined;
+  src.maskAtlas = world.maskAtlas || null;
+  pointRasterExtras.structFoot = meshStructFoot; pointRasterExtras.structCount = structCount;
+  pointRasterExtras.maskAtlas = world.maskAtlas || null;
+  pointRasterExtras.wind = windCtx(world, fb, true);
+  _pointWorld = world; _pointCameraList = cameraList; _pointShadowOpts = fb.shadowOpts || null;
+  pointRasterExtras.depthBias = _pointShadowOpts ? _pointShadowOpts.depthBias : null;
+  lights.pointShadow = updatePointShadowTwin(pointTwin, lights, cam, po, buildPointCasters, pointRasterExtras);
+  _pointWorld = _pointCameraList = _pointShadowOpts = null;
 }
 
 /** Resolved-materials draw copies of placed glTF meshes (ME-14c2); per mesh, rebuilt when the matTable's idFor changes. */
@@ -270,6 +308,7 @@ function renderWorldMesh(fb, world, cam) {
   if ((world.water && world.water.count > 0) || (world.waterfalls && world.waterfalls.length > 0)) renderWaterJS(fb, world, cam, meshViewProj, meshFrustumPlanes);
   else if (fb.water) fb.water = null;
   renderSunShadowJS(fb, world, cam, list, cache, terrainMeshSet, meshCtx.structCount);
+  renderPointShadowsJS(fb, world, cam, list, cache, terrainMeshSet, meshCtx.structCount);
 }
 
 /** Swaps `depth` to horizontal forward distance (`toShade`) and back from the saved raw copy. Zero alloc once warm. */

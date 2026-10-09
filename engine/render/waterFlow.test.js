@@ -12,7 +12,6 @@ import { hashFastU } from './terrainShade.js';
 import {
   WL_STRIDE, WATER_FLOW_SALT, FLOW_MIN, packWaterLook, resolveWaterLooks, fillWaterSlotTable, flowStreakHit, diamondAngle,
 } from './waterLook.js';
-import { WATER_COMPOSITE_FRAG_SRC } from './gpu/glsl/waterComposite.frag.js';
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
 import '../../design/water-looks.js';
@@ -100,10 +99,6 @@ const worldOf = (list) => World.load(roomDef(list), assets, {});
 
 // ---- 4. JS expression == GLSL expression (f32 emulation of the shader text) ----
 {
-  const S = WATER_COMPOSITE_FRAG_SRC;
-  ok('glsl: the streak block repeats the 35.4 expressions in the JS order',
-    S.includes(`hashFastU(ia & 1023, int(fib) & 1023, ${WATER_FLOW_SALT})`) && S.includes('fa = P.x * r7.x + P.y * r7.y;') && S.includes('fib = floor((-P.x * r7.y + P.y * r7.x) / r6.z);') &&
-    S.includes('int ia = int(floor((fa - r7.w) / r6.y));') && S.includes('> r6.w) glyph = r6.x;') && S.includes('float diamondAngle(') && S.includes('diamondAngle(ddx, ddy) * 0.25 * r8.w'));
   const f32 = Math.fround;
   // transcription of the GLSL (every operation rounded to f32) - the table row is the same Float32Array on both sides
   const glsl = (t, px, py) => {
