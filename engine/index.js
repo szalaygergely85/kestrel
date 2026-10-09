@@ -32,6 +32,7 @@ export { ContentError } from './content/ContentError.js';
 export { migrateContent, MIGRATIONS } from './content/migrate.js';
 export { stringifyContent } from './content/stringify.js';
 export { maskToJSON, maskFromJSON, downsampleAlpha, MASK_ID_RE } from './content/maskFile.js'; // ALPHA-01a
+export { prefabFromJSON, placePrefabItems, PREFAB_ITEM_TYPES } from './content/prefabFile.js'; // PREFAB-SEAM (38.11)
 export { loadContentPack, globalId } from './content/loadPack.js';
 
 // ---- world ----------------------------------------------------------------

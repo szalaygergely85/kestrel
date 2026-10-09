@@ -3,7 +3,7 @@
 // module reads these instead of hard-coding shapes twice.
 
 /** Highest schema version this engine understands, per file kind. */
-export const LATEST_SCHEMA = { manifest: 1, level: 1, world: 1, mesh: 1, terrainEdits: 1, mask: 1 };
+export const LATEST_SCHEMA = { manifest: 1, level: 1, world: 1, mesh: 1, terrainEdits: 1, mask: 1, prefab: 1 };
 
 /** Envelope keys every content file carries (21.2), first in `KEY_ORDER`. */
 export const ENVELOPE_KEYS = ['kind', 'schema', 'id', 'nextId'];
@@ -17,6 +17,7 @@ export const ENVELOPE_KEYS = ['kind', 'schema', 'id', 'nextId'];
 export const ID_COLLECTIONS = {
   mesh: [],
   terrainEdits: [],
+  prefab: ['items'], // PREFAB-SEAM (38.11)
   level: ['props', 'lights', 'interactables', 'triggers'],
   // US-026a (architecture.md 23.2/23.7 S2): world-level triggers (circle/
   // terrain/bounds shapes, `structId: null`) are their own id collection,
@@ -66,6 +67,8 @@ export const KEY_ORDER = {
   // (not left to the alphabetical "rest" fallback) so its position stays a
   // deliberate choice rather than an accident of where "visibility" sorts.
   // ED-TERRAIN-1a (arch 37.12): no nextId/collections (a sparse grid, not an id-bearing file).
+  // PREFAB-SEAM (38.11)
+  prefab: [...ENVELOPE_KEYS, 'title', 'items'],
   terrainEdits: ['kind', 'schema', 'id', 'cell', 'chunkSize', 'chunks'],
   save: ['kind', 'version', 'world', 'contentVersion', 'terrain', 'structures', 'entities', 'state', 'nextId', 'time', 'removed', 'horizon', 'bounds', 'triggers', 'visibility'],
 };
