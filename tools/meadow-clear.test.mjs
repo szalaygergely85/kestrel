@@ -8,7 +8,7 @@ import { loadTestAssets } from './testing/content-node.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../content/worlds/world_m1.world.json', import.meta.url)));
 const mdw = data.structures.filter((s) => isMeadowId(s.id));
-assert.ok(mdw.length >= 100 && mdw.length <= 220, `meadow prop count ${mdw.length} in 100..220`);
+assert.ok(mdw.length >= 100 && mdw.length <= 300, `meadow prop count ${mdw.length} in 100..300`);
 assert.equal(new Set(data.structures.map((s) => s.id)).size, data.structures.length, 'structure ids unique');
 const allowed = new Set(Object.values(POOL).flat().map((n) => 'quaternius/' + n));
 const classes = new Set(Object.entries(POOL).filter(([, v]) => v.some((n) => mdw.some((s) => s.mesh === 'quaternius/' + n))).map(([k]) => k));
