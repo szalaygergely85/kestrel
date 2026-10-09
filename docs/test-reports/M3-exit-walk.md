@@ -4,9 +4,8 @@ Use a fresh save slot. Ask someone unfamiliar with the route to play without
 coaching. Record the browser, GPU, resolution, quality preset and build commit.
 Leave each box unchecked until observed. This is a script, not a PASS report.
 
-The current production quest has two boars. D-053 approves five, but
-QUEST-CHAIN-02c has not landed in this clone. Recheck the beasts row after that
-content change. The waystone beat currently uses the end trigger; touching,
+This QUEST-CHAIN-02c branch uses the D-053 five-boar objective and adds homes
+for boar3..5. The waystone beat currently uses the end trigger; touching,
 healing and respawning at a stone belong to the pending WAYSTONE-01w wire.
 
 | Observed | Step and exact HUD cue | Real objective condition | What to record |
@@ -15,7 +14,7 @@ healing and respawning at a stone belong to the pending WAYSTONE-01w wire.
 | [ ] | Tower lamp: `Take the Kestrel's lamp` | `lantern`: item `lantern` | Player finds and takes the lamp. Relay reads `tower.lantern.taken`. |
 | [ ] | Tower summit: `Climb to the breach at the top` | `breach`: area `breach` | Reach the placed tower's breach marker; relay checks <=3 m XY and <=2.5 m vertical distance. |
 | [ ] | Sword: `Take up the ruin steel` | `sword`: item `sword` | Take the sword, then verify the beasts objective. Relay reads `tower.sword.taken`. |
-| [ ] | Hillside: `Bring down the two wild boars` | `beasts`: `boar1`, `boar2`, count 2 | Fight both. Record whether a stranger understands windup, charge and recovery. |
+| [ ] | Hillside: `Bring down the five wild boars` | `beasts`: `boar1`..`boar5`, count 5 | Fight all five. Record whether a stranger understands windup, charge and recovery. |
 | [ ] | Waystone route: `Walk the pencil line to the waystone` | `waystone`: area `waystone`, mapped to world `world_m1` trigger `end` | Follow the chart route to the end trigger. Relay observes `quest.endT >= 0`; the beat is not currently proof of a stone touch. |
 
 All six HUD strings and objective ids above match

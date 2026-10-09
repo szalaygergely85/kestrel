@@ -50,6 +50,8 @@ events.emit('chest:opened', { id: 'chestA' });
 events.emit('inventory:added', { id: 'boar_meat', n: 1 });
 assert.equal(A.quest.objectiveText(), OBJ.beasts);
 events.emit('beast:died', { id: 'boar2' });
+assert.equal(A.quest.objectiveText(), OBJ.beasts, 'two deaths leave the five-boar objective active');
+for (const id of ['boar3', 'boar4', 'boar5']) events.emit('beast:died', { id });
 assert.equal(A.quest.objectiveText(), OBJ.waystone);
 A.quest.poll(facts({ endStarted: true }), breach);
 assert.equal(A.quest.done, true, 'scripted sequence completes the demo quest');
@@ -84,7 +86,7 @@ assert.equal(p2.components.health.hp, 3); assert.equal(p2.components.mana.mp, 7)
 assert.equal(p2.components.inventory.right, 'sword');
 assert.equal(w2.state['tower.lantern.taken'], true);
 assert.equal(B.quest.done, true, 'quest state survives reload');
-assert.deepEqual(B.deadBeasts.sort(), ['boar1', 'boar2']); assert.deepEqual(B.openedChests, ['chestA']);
+assert.deepEqual(B.deadBeasts.sort(), ['boar1', 'boar2', 'boar3', 'boar4', 'boar5']); assert.deepEqual(B.openedChests, ['chestA']);
 assert.equal(B.playTimeSec, 65);
 assert.equal(B.save(w2), true);
 assert.equal(mem.get([...mem.keys()][0]), text1, 'relay round trip is byte-stable');
