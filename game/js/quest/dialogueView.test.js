@@ -69,7 +69,7 @@ const X0 = 32, Y8 = 60 - 3 - 8, Y12 = 60 - 3 - 12; // 96 wide centred on 160; bo
 {
   const g = grid(160, 60); view.draw(g, run({ state: 'waiting' }), 0);
   const hr = g.row(Y8 + 6);
-  assert.ok(hr.includes('E: next   Esc: leave'), hr); assert.ok(!hr.includes('W/S'));
+  assert.ok(hr.includes('E: next') && !hr.includes('Esc'), hr); assert.ok(!hr.includes('W/S'));
   assert.equal(g.at(X0 + 96 - 4, Y8 + 6), 'v');
   assert.deepEqual(g.fgAt(X0 + 92, Y8 + 6), hex('gold'));
   const e = hr.indexOf('E: next'); assert.deepEqual(g.fgAt(e, Y8 + 6), hex('gold'), 'key gold'); assert.deepEqual(g.fgAt(e + 3, Y8 + 6), hex('uiDim'));
@@ -92,7 +92,7 @@ const X0 = 32, Y8 = 60 - 3 - 8, Y12 = 60 - 3 - 12; // 96 wide centred on 160; bo
   assert.deepEqual(g.fgAt(X0 + 6, Y12 + 8), hex('gold'), 'focus text gold');
   assert.deepEqual(g.fgAt(X0 + 3, Y12 + 8), hex('brassLight'), 'focus number');
   assert.deepEqual(g.fgAt(X0 + 6, Y12 + 7), hex('uiText')); assert.deepEqual(g.fgAt(X0 + 3, Y12 + 7), hex('uiDim'));
-  assert.ok(g.row(Y12 + 10).includes('E: next   W/S: choose   Esc: leave'));
+  assert.ok(g.row(Y12 + 10).includes('E: next   W/S: choose') && !g.row(Y12 + 10).includes('Esc'));
   assert.notEqual(g.at(X0 + 92, Y12 + 10), 'v', 'no more-marker with choices');
 }
 // optional seen / locked choices

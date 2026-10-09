@@ -19,7 +19,7 @@ const DEF = {
   choices: { firstRow: 7, max: 3, markerCol: 1, numberCol: 3, textCol: 6, bandFrom: 1, bandTo: 94,
     number: { fg: 'uiDim', focusFg: 'brassLight' }, normal: { fg: 'uiText' },
     focus: { fg: 'gold', marker: '>', markerFg: 'gold' }, seen: { fg: 'uiHint' }, disabled: { fg: 'uiDim', suffix: ' (locked)' } },
-  keyHints: { fg: 'uiDim', keyFg: 'gold', text: 'E: next   W/S: choose   Esc: leave' },
+  keyHints: { fg: 'uiDim', keyFg: 'gold', text: 'E: next   W/S: choose' },
 };
 // Last-resort colours when neither the palette nor the key resolves.
 const FB = { brass: [201, 160, 74], brassLight: [240, 210, 122], brassHot: [255, 240, 180], heroGreen: [79, 214, 106], uiText: [232, 226, 208],

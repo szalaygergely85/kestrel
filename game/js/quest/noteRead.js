@@ -44,7 +44,7 @@ let sceneMul = 0.35;      // uiStyle.note.sceneDim.bgMul (whole scene while open
 // changes (or after a reset).
 let noteRender = null; // { id, rows, h, panelX, panelY, titleLine, footerLine, textLines, titleX, footerStartX }
 
-const FOOTER_TEXT = '[E] / [Esc] close';
+const FOOTER_TEXT = ''; // owner 2026-10-09: no 'Esc to close' hint text (E / Esc still close)
 const PANEL_W = 64;
 
 /** ASCII 32-126 only (uiStyle.note.text.wrapRule): any other char -> "?". */
