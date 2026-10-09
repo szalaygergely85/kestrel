@@ -12,6 +12,7 @@ import {
   listOutlinerItems, frameFor, itemToWorld, worldToItem, mintId, fileKey,
 } from './doc.js';
 import { createOverlayTarget } from './overlayTarget.js';
+import { makePickGuard } from './pickGuard.js';
 import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, applyViewPreset, toggleOrtho, adjustOrthoHalfH, lookAlongAxis } from './camera.js';
 import { createAxisGizmo } from './axisGizmo.js';
 import { unprojectCell, rayPoint, projectPoint, screenCentreGroundHit } from './ray.js';
@@ -1872,17 +1873,17 @@ function beginSelectionBox(e, col, row) {
     rect:{minCol:col,maxCol:col,minRow:row,maxRow:row} };
 }
 
-let pickSeq = 0, moveSeq = 0;
+const clickGuard = makePickGuard(() => world), hoverGuard = makePickGuard(() => world); // one guard per pick channel (click vs hover)
 canvas.addEventListener('mousedown', async (e) => {
   if (e.button !== 0 || !editorKeysActive()) return;
   if (modelPickerEl.style.display !== 'none') return; // US-063: the model picker modal owns clicks while open
   const { col, row } = computeMouseCell(e);
-  const seq = ++pickSeq, stamp = world;
+  const tok = clickGuard.begin();
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
 
   if (toolMode === 'terrain') { // ED-TERRAIN-1c: the brush owns the left button
     const hit = await pickAt(col, row, pickCtx());
-    if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+    if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
     if (hit.kind === 'terrain' && hit.world) { tb.hover = { x: hit.world.x, y: hit.world.y }; terrainStrokeStart(tb.hover); }
     else flash('terrain: click on the terrain');
     return;
@@ -1890,7 +1891,7 @@ canvas.addEventListener('mousedown', async (e) => {
 
   if (placeMode) {
     const result = await pickAt(col, row, pickCtx());
-    if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+    if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
     const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, RENDERER);
     // 24.9: "at a picked point or cursor ray" - a surface/terrain/entity hit
     // gives a real point; looking at open sky falls back to a point 8 m out
@@ -1914,7 +1915,7 @@ canvas.addEventListener('mousedown', async (e) => {
   }
 
   const result = await pickAt(col, row, pickCtx());
-  if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+  if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
   lastPickText = formatPickResult(result);
 
   if (result.kind === 'meshStructure' && result.structureId) {
@@ -1937,7 +1938,7 @@ canvas.addEventListener('mousedown', async (e) => {
     const item = pickSelectionOrNull(visState, rawItem);
     if (!item) {
       const marker = await pickMarkers(col, row, pickCtx());
-      if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+      if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
       if (marker) { selectMarker(e,col,row,marker); return; }
       beginSelectionBox(e,col,row);
       return;
@@ -1989,14 +1990,14 @@ canvas.addEventListener('mousedown', async (e) => {
     return;
   }
   const marker = await pickMarkers(col, row, pickCtx());
-  if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+  if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
   if (marker) { selectMarker(e,col,row,marker); return; }
   beginSelectionBox(e,col,row);
 });
 
 window.addEventListener('mousemove', async (e) => {
   const { col, row } = computeMouseCell(e);
-  const seq = ++moveSeq, stamp = world;
+  const tok = hoverGuard.begin();
   if (col >= 0 && col < rt.cols && row >= 0 && row < rt.rows) { hoverCol = col; hoverRow = row; frame.markDirty(); }
   if (boxDrag) {
     const dx=e.clientX-boxDrag.startX,dy=e.clientY-boxDrag.startY;
@@ -2058,7 +2059,7 @@ window.addEventListener('mousemove', async (e) => {
       assetDrag.lastCol = col;
       assetDrag.lastRow = row;
       const result = await pickAt(col, row, pickCtx());
-      if (seq !== moveSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+      if (hoverGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
       const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, RENDERER);
       const point = result.world || rayPoint(ray, 8);
       assetDrag.rawPoint = point;
@@ -2213,10 +2214,10 @@ window.addEventListener('mouseup', (e) => {
 canvas.addEventListener('mousemove', async (e) => {
   if (toolMode !== 'terrain') return;
   const { col, row } = computeMouseCell(e);
-  const seq = ++moveSeq, stamp = world;
+  const tok = hoverGuard.begin();
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
   const hit = await pickAt(col, row, pickCtx());
-  if (seq !== moveSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+  if (hoverGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
   if (hit.kind === 'terrain' && hit.world) {
     tb.hover = { x: hit.world.x, y: hit.world.y };
     if (tb.stroke) terrainStrokeMove(tb.hover);
