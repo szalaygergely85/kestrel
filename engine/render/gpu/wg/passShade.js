@@ -12,6 +12,7 @@ import { packMaterialTable } from '../ShadeTextures.js';
 import { packTerrainTextures } from '../TerrainTextures.js';
 import { SKY_LUT_N } from '../glsl/common.js';
 import { sunFromWorld } from '../../lighting.js';
+import { orthoHashCell } from '../../projection.js'; // US-068b2
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 
 const S = (n) => SHADE_BLOCK.field(n).word;
@@ -209,14 +210,15 @@ export class WgShadePass {
     const fbT = p._fb; let tSec = 0; if (fbT) { const v = fbT.timeSec; if (v) tSec = v; } // same value as (fb && fb.timeSec) || 0 without a tagged phi (boxes a HeapNumber per frame)
     su[S_TIME] = tSec;
     su[S_SKY_ELEV] = this.skyElevTop;
-    si[S_PROJ] = pitched ? 1 : 0; ei[E_PROJ] = pitched ? 1 : 0;
+    const pm = pitched ? (rp.ortho ? 2 : 1) : 0; // US-068b2: 2 = ortho
+    si[S_PROJ] = pm; ei[E_PROJ] = pm;
     if (pitched) {
       const q = rp.pitch;
       su[S_PITCH_A] = q.fX; su[S_PITCH_A + 1] = q.fY; su[S_PITCH_A + 2] = q.fZ; su[S_PITCH_A + 3] = q.tanHalfX;
       su[S_PITCH_B] = q.rX; su[S_PITCH_B + 1] = q.rY; su[S_PITCH_B + 2] = q.uX; su[S_PITCH_B + 3] = q.uY;
       su[S_PITCH_C] = q.uZ; su[S_PITCH_C + 1] = q.tanHalfY; su[S_PITCH_C + 2] = q.cosP; su[S_PITCH_C + 3] = q.sinP;
       eu[E_PITCH_C] = q.uZ; eu[E_PITCH_C + 1] = q.tanHalfY; eu[E_PITCH_C + 2] = q.cosP; eu[E_PITCH_C + 3] = q.sinP;
-      su[S_HASHCELL] = -(2 * q.tanHalfX / p.cols); // BUG-FP-002: per-cell mode on every pitched frame
+      su[S_HASHCELL] = rp.ortho ? orthoHashCell(q, p.cols) : -(2 * q.tanHalfX / p.cols); // BUG-FP-002: per-cell mode on every pitched frame
     } else su[S_HASHCELL] = 0;
     if (useScene && lightCam) { su[S_HORIZON] = lightCam.horizonRow; su[S_PLANEDY] = lightCam.planeDistY; }
     if (useScene && p._world.terrain && this.palette) { // US-026a S5: the sun for the terrain look, per frame (a few trig calls)

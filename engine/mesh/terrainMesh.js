@@ -779,12 +779,14 @@ export class TerrainMeshSet {
     if (this.stitch.triCount > 0) pushTerrainItem(list, this.stitch, 0, 0, 0, 0x7000 | 9);
 
     const tiles = this._farTiles, order = this._farOrder, dist = this._farDist;
+    // US-068b2 (38.19 risk d): ortho keys ring/fade distance on the FOCUS (the ortho eye sits 500 m behind it); perspective unchanged
+    const ortho = cam.projection === 'ortho' && cam.focusX !== undefined, rcx = ortho ? cam.focusX : cam.x, rcy = ortho ? cam.focusY : cam.y;
     let count = 0;
     for (let k = 0; k < tiles.length; k++) {
       const mesh = this.far[k];
       if (!mesh) continue;
       const r = tiles[k].worldRect;
-      const d = distToRectXY(cam.x, cam.y, r.x0, r.y0, r.x1, r.y1);
+      const d = distToRectXY(rcx, rcy, r.x0, r.y0, r.x1, r.y1);
       if (d > this.fogFullM) continue;
       order[count] = k; dist[count] = d; count++;
     }

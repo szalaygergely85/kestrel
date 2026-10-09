@@ -177,7 +177,7 @@ export class WgLightPass {
       sunTex = lp.texture || this.texSunDummy; // GFX-03 'off': no map, the dummy is never sampled
     }
     const rp = p._rasterPass, pitched = !!(rp && rp.pitched);
-    li[W_PROJ_MODE] = pitched ? 1 : 0;
+    li[W_PROJ_MODE] = pitched ? (rp.ortho ? 2 : 1) : 0; // US-068b2: 2 = ortho (pitch words carry halfW/halfH in the tanHalf slots)
     if (pitched) {
       const q = rp.pitch;
       lu[W_PITCH_A] = q.fX; lu[W_PITCH_A + 1] = q.fY; lu[W_PITCH_A + 2] = q.fZ; lu[W_PITCH_A + 3] = q.tanHalfX;
