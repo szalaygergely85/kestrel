@@ -1704,7 +1704,7 @@ Note (KPKG-03 dev): tools/pack.mjs (spec `entries` from/to/exclude globs -> dete
 | WILD-01 | Voxel pose crossfade: `pushInstance` returns the slot, `blendInstance`, from-clip lerp in `sampleClip` | P1 | arch-review [PC-B B2, 0.5 d] | `engine/voxel/voxelPose.js`, `engine/render/voxelPool.js` + tests |
 | WILD-02 | `engine/entities/clipPlayer.js` (rate, phase, fade, once->next) + `gait.js` (pickGait, gaitRate) | P1 | arch-review [PC-B B2, 0.5 d] | `engine/entities/clipPlayer.js`, `engine/entities/gait.js` + tests, `engine/index.js` |
 | WILD-03 | `engine/fauna` def + spawner: compileFaunaDef, 64 m cell ring, habitat roll, caps, view-cone spawn rule, despawn + cooldown, check-deps rule 15 | P1 | arch-review [PC-B B1, 0.75 d] | `engine/fauna/faunaDef.js`, `engine/fauna/spawner.js` + tests, `tools/check-deps.mjs` (+ fixture test) |
-| WILD-04 | `engine/fauna` ground brain: idle/graze/move/alert/flee/return via perceive + leash, feelers, group alarm, gait rate | P1 | todo [PC-B B1, 0.75 d] - deps WILD-02, 03 -> arch-review | `engine/fauna/groundBrain.js`, `engine/fauna/fauna.js` + tests |
+| WILD-04 | `engine/fauna` ground brain: idle/graze/move/alert/flee/return via perceive + leash, feelers, group alarm, gait rate | P1 | arch-review [PC-B B1] (impl done; see note) | `engine/fauna/groundBrain.js`, `engine/fauna/fauna.js` + tests |
 | WILD-05 | Fauna feed + `engine.feedVoxels` hook + bench | P1 | todo [PC-B B2, 0.5 d] - deps WILD-01, 04 -> arch-review | `engine/fauna/feed.js`, `engine/render/frameRenderer.js` (one line), `tools/bench-fauna.mjs` |
 | WILD-06 | Game wiring: FaunaEnv (habitat from terrain.typeAt, trunk grid, blocked, moveCircle), rabbit + deer in, reset on load, replay-hash test, owner walk | P1 | todo [PC-B B1, 0.75 d] - deps WILD-05 | `game/js/wild/wildEnv.js` + test, `game/js/main.js` (small), `game/index.html` (script tag) |
 | WILD-07 | `engine/fauna` flyer brain: perch, takeoff, Bezier flight, land, flock | P2 | todo [PC-B B1, 0.75 d] - deps WILD-D3, 06 -> arch-review | `engine/fauna/flyerBrain.js` + test, `game/js/wild/wildEnv.js` (perchNear) |
@@ -1749,7 +1749,8 @@ Note (programmer): all ACs below done and tested (faunaDef 17 checks, spawner 27
 - [ ] The 7 x 7 ring re-centres without allocation. No `Math.random`.
 - [ ] check-deps rule 15 (engine/fauna imports) + a fixture case.
 
-### WILD-04 Ground brain  [P1] [todo] [PC-B B1]
+### WILD-04 Ground brain  [P1] [arch-review] [PC-B B1]
+Note: groundBrain.js + fauna.js (createFauna: spawner + brains, onSpawn/onDespawn wired) + groundBrain.test.js (11 cases incl. 1e5 steps x 40 animals, heap growth <3 MB). Species lookup via slot.species; spawner yaw is degrees, converted in initGroundAnimal. despawnReq slot flag: fauna.js despawns it once out of view. Group alarm is by slot.group within 15 m. Deviations: flee min 2 s so far alarm victims are not leashed back at once; homeR default min(25, maxDistM*0.4).
 - [ ] Fake-env tests:
   - notice -> alert -> flee as the player approaches;
   - `fleeIfRunning` when sprinting;
