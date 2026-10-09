@@ -1,6 +1,7 @@
 // Entity tint table (architecture.md 38.23, TELEGRAPH-TINT-01 / BOAR-SHADER-READ-01a).
 // `objectId -> (rgb, k)`: a display override applied in the shade pass AFTER lighting.
 // It emits no light and casts nothing. Fixed size (8), zero allocation per frame.
+import { sampleTint } from '../entities/tintEnvelope.js';
 export const ENTITY_TINT_MAX = 8;
 const f = Math.fround;
 
@@ -42,4 +43,23 @@ export function tintChannel(c, rgb01, k) {
 /** Feed the table from a tintEnvelope sample: push (rgb,k) for `objectId` (k<=0 ignored). */
 export function pushEntityTintSample(t, objectId, sample) {
   return pushEntityTint(t, objectId, sample.r, sample.g, sample.b, sample.k);
+}
+
+const _ts = { r: 0, g: 0, b: 0, k: 0 };
+/**
+ * Per-frame fill (call after voxelPool.collect, before the shade pass): clears `table`, then pushes
+ * (objectIdFor(entity), rgb, k) for every entity whose tint sample has k > 0 and that owns a pool slot.
+ * Capped at ENTITY_TINT_MAX; zero allocation.
+ */
+export function fillEntityTints(table, entities, voxelPool, nowMs) {
+  table.count = 0;
+  for (let i = 0; i < entities.length && table.count < ENTITY_TINT_MAX; i++) {
+    const e = entities[i];
+    sampleTint(e, nowMs, _ts);
+    if (!(_ts.k > 0)) continue;
+    const id = voxelPool.objectIdFor(e);
+    if (id < 0) continue;
+    pushEntityTint(table, id, _ts.r, _ts.g, _ts.b, _ts.k);
+  }
+  return table.count;
 }
