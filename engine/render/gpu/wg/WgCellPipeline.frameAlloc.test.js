@@ -117,7 +117,7 @@ const drawBefore = drawCount, writeTexBefore = writeTexCount, writeBufBefore = w
 const FRAMES = 1000;
 // Verdict target is 16 KB. S8-B1-11b: measured now ~36 B/frame (was ~400): 32 B of it is the two performance.now() HeapNumbers in
 // passSprites.run (uploadMs stat); the rest ~4 B. Sprites uploadMs timing is gated off (S8-B1-11c); budget 16 KB.
-const GARBAGE_BUDGET = 24 * 1024; // S8-B1-11e: ~16 B/frame (one boxed double) inside WgLightPass.run since S8-B2-12c/20b, only when _uploadLight + _camBasis both run; back to 16 KB once found
+const GARBAGE_BUDGET = 16 * 1024;
 for (let i = 20000; i < 20000 + FRAMES; i++) stepFrame(i);
 
 const h1 = process.memoryUsage().heapUsed; // BEFORE gc: sees per-frame garbage (no scavenge with the 64 MB semi-space)

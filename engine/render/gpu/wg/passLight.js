@@ -47,6 +47,7 @@ export class WgLightPass {
     this.tex = [0, 1, 2, 3, 4, 5, 6].map(slot => ({ slot, texture: null }));
     this.bindDesc = { uniforms: this.lu, textures: this.tex };
     this.visBox = new Float32Array(4 * MAX_LIGHTS);
+    this.timeBuf = new Float64Array(1);
     this.cam = { posX: 0, posY: 0, eyeH: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, horizonRow: 0, planeDistY: 0 };
   }
 
@@ -112,7 +113,9 @@ export class WgLightPass {
   }
 
   // _uploadLightUniforms twin; sunMode is 1 (DDA) whenever the sun is on; run() upgrades it to 2 when the shadow map is valid.
-  _uploadLight(light, timeSec = 0) {
+  _uploadLight(light, timeSec = 0) { this.timeBuf[0] = timeSec; this._uploadLightT(light); }
+  // S8-B1-11e: time travels through a Float64Array so no double is passed as an argument (a boxed HeapNumber per frame)
+  _uploadLightT(light) {
     const lu = this.lu, li = this.li;
     const isSet = light && typeof light === 'object' && light.pos && light.col && typeof light.count === 'number';
     if (!isSet) {
@@ -125,7 +128,7 @@ export class WgLightPass {
     }
     lu[W_AMBIENT] = light.ambient[0]; lu[W_AMBIENT + 1] = light.ambient[1]; lu[W_AMBIENT + 2] = light.ambient[2];
     // S8-B2-12c: pack into the preallocated cloud8 (zero alloc), copy to cloudA/cloudB.
-    packCloudUniforms(light.cloud, timeSec, this.cloud8); lu.set(this.cloud8, W_CLOUD_A);
+    packCloudUniforms(light.cloud, this.timeBuf[0], this.cloud8); lu.set(this.cloud8, W_CLOUD_A);
     // S8-B2-20 (38.17): `light.ao` -> aoStrength, next to cloud upload above; zero on the no-ao path.
     const ao = light.ao;
     lu[W_AO_STRENGTH] = ao ? ao.strength : 0;
@@ -160,7 +163,9 @@ export class WgLightPass {
   run(p, t) {
     const d = this.device, lu = this.lu, li = this.li;
     if (p._world) this._ensureWorld(p._world); else this.li[W_STRUCT_COUNT] = 0; // no world (`?gpucompare=shade` upload source): the 1x1 dummy atlases stay bound
-    this._uploadLight(p._light, p._fb && p._fb.timeSec || 0);
+    const fb = p._fb;
+    this.timeBuf[0] = fb ? fb.timeSec : 0; if (this.timeBuf[0] !== this.timeBuf[0]) this.timeBuf[0] = 0; // no `||` phi on the double (it boxes a HeapNumber)
+    this._uploadLightT(p._light);
     const cb = this._camBasis(p._cam || NO_CAM, p.cols, p.rows, p.rt);
     li[W_GRID_COLS] = p.cols; li[W_GRID_ROWS] = p.rows;
     lu[W_POSX] = cb.posX; lu[W_POSY] = cb.posY; lu[W_EYEH] = cb.eyeH;
