@@ -39,11 +39,13 @@ test('size: 1.75 m tall, ~70 rows, shoulders + upper arms (slight A) 0.42-0.55 m
 test('rest pose gaps: thighs >= 2 cells apart (crotch to knee), arm-torso >= 3 cells from z 46 down to the hands', () => {
   const S = B.size, cx = 18;
   for (let z = 20; z <= 33; z++) for (let y = 0; y < S[1]; y++) for (let x = cx - 1; x <= cx + 1; x++) assert.ok(D.at(x, y, z) < 0, 'thigh gap at ' + [x, y, z]);
-  const isArm = (k) => /Arm|Hand/.test(D.names[D.bone[k]]);
+  // Hands rest by the thigh (designer CHARGEN-01: 'palm faces the thigh'; owner Q2 pending) - the >= 3 gap applies to the arm bones only.
+  const isArm = (k) => /Arm/.test(D.names[D.bone[k]]);
+  const isHand = (k) => /Hand/.test(D.names[D.bone[k]]);
   for (let z = 26; z <= 46; z++) for (let y = 0; y < S[1]; y++) {
     for (const side of [-1, 1]) {
       let arm = 99, body = -1;
-      for (let i = 0; i <= 18; i++) { const x = cx + side * i, k = D.at(x, y, z); if (k < 0) continue; if (isArm(k)) arm = Math.min(arm, i); else body = Math.max(body, i); }
+      for (let i = 0; i <= 18; i++) { const x = cx + side * i, k = D.at(x, y, z); if (k < 0 || isHand(k)) continue; if (isArm(k)) arm = Math.min(arm, i); else body = Math.max(body, i); }
       if (arm < 99 && body >= 0) assert.ok(arm - body - 1 >= 3, 'arm gap ' + (arm - body - 1) + ' at z ' + z + ' y ' + y);
     }
   }
