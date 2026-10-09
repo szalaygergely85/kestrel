@@ -90,7 +90,7 @@ export function createInstanceParts() {
   return { m: new Float64Array(MAX_VOX_PARTS * 12), flags: new Uint8Array(MAX_VOX_PARTS), count: 0 };
 }
 
-const _idInst = { x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1 };
+const _idInst = { x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, addPart: -1 };
 const _poseScratch = new Float64Array(MAX_VOX_PARTS * PART_STRIDE);
 
 /**

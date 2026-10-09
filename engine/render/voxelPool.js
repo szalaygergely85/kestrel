@@ -38,7 +38,7 @@ function warnOnce(pool, msg) {
 }
 
 function projectedSlot() {
-  return { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, slot: 0, entity: null,
+  return { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, slot: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0,
     pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE),
     rect: { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, minCol: 0, maxCol: 0, minRow: 0, maxRow: 0, empty: false } };
 }
@@ -51,7 +51,7 @@ export class VoxelPool {
     this.models = new Map();
     // This frame's pushInstance() queue - plain objects, reused slot by
     // slot across frames (no per-frame allocation once warm).
-    this.raw = Array.from({ length: MAX_VOX_INSTANCES_MESH }, () => ({ model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, seed: 0, entity: null }));
+    this.raw = Array.from({ length: MAX_VOX_INSTANCES_MESH }, () => ({ model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, seed: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0 }));
     this._rawCount = 0;
     // Projected + culled instances, compact 0..count-1 (list.length ===
     // stats.count after project()); each entry's `slot` index is what the
@@ -175,6 +175,7 @@ export class VoxelPool {
       ? (hashInt(hashInt(hashInt(hashStr(modelKey), Math.round(x * 100)), Math.round(y * 100)), Math.round(z * 100)) || 1)
       : 0;
     slot.entity = null;
+    slot.addPart = -1;
     this._rawCount++;
   }
 
@@ -215,6 +216,11 @@ export class VoxelPool {
     if (t.scale > 0) slot.scale = t.scale; else slot.scale = 1;
     // EMIS-01b: stable identity of the entity (numeric id as-is; string id hashed, no allocation)
     slot.entity = e; // 38.23: objectIdFor(entity)
+    // TALK-E1 (38.28 item 7): optional `components.voxel.partRot = {part, rx, ry, rz}`, added to the clip rotation.
+    const pr = v.partRot;
+    const ap = pr && pm.partIndex && pm.partIndex[pr.part] !== undefined ? pm.partIndex[pr.part] : -1;
+    slot.addPart = ap;
+    if (ap >= 0) { slot.addRx = pr.rx || 0; slot.addRy = pr.ry || 0; slot.addRz = pr.rz || 0; }
     slot.seed = 0;
     if (pm.emissiveLight) slot.seed = (typeof e.id === 'number' ? (e.id | 0) : hashStr(e.id)) || 1;
     this._rawCount++;
@@ -327,6 +333,7 @@ export class VoxelPool {
       out.model = inst.model; out.modelKey = inst.modelKey;
       out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;
       out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.scale = inst.scale;
+      out.addPart = inst.addPart; out.addRx = inst.addRx; out.addRy = inst.addRy; out.addRz = inst.addRz;
       out.slot = i;
     }
     this.shadowList.length = n;
@@ -368,6 +375,7 @@ export class VoxelPool {
       out.model = inst.model; out.modelKey = inst.modelKey;
       out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;
       out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.scale = inst.scale;
+      out.addPart = inst.addPart; out.addRx = inst.addRx; out.addRy = inst.addRy; out.addRz = inst.addRz;
       out.slot = count;
       out.entity = inst.entity;
       count++;
