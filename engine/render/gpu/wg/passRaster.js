@@ -13,6 +13,7 @@ import { KIND_MODEL, FACE_PACKED } from '../../GBuffer.js';
 import { projTerms, shearProjection, pitchedTerms, createPitchedTerms, resolveProjection, viewProjAtOrigin } from '../../projection.js';
 import { frustumPlanes } from '../../../mesh/culling.js';
 import { WgCullPass } from './passCull.js';
+import { WgHzbPass } from './passHzb.js'; // S8-B2-10c
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 import { windSwayOn, packWindUniforms, SWAY_MAX } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
 
@@ -88,6 +89,9 @@ export class WgRasterPass {
     // WG-4a: GPU cull of InstanceGroups batches (meshGroup + single-range voxel units). instances.js hands each supported group to `accept` instead of
     // compacting it on the CPU; MeshGroupSet groups (nearest-64 `chosen` selection is CPU-side) and multi-range voxel units keep the CPU path.
     this.cull = null;
+    /** @type {any} S8-B2-10c HZB builder (only with opts.occl) */ this.hzb = null; this._hzbFwd = { x: 0, y: 1, z: 0 }; this._phase2 = false;
+    /** @type {any} S8-B2-10c HZB builder (only with opts.occl) */ this.hzb = null;
+    this._hzbFwd = { x: 0, y: 1, z: 0 }; this._phase2 = false;
     this.gpuGroups = []; this.gpuM0 = []; this.gpuM1 = []; this.gpuEntries = []; this.gpuN = 0; this._pair = [null, null];
     this._gpuHook = { accept: (g, m0, m1) => this._accept(g, m0, m1) };
     // Terrain (ME-06 twin): own uniform block + the near/far type textures (r8ui, 1x1 placeholders until a bake is uploaded).
@@ -114,7 +118,11 @@ export class WgRasterPass {
       this.instanceMaskPipe = this._pipeline(RASTER_INSTANCED_MASK_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true, [{ layout: MASK_UV_LAYOUT, strideBytes: MASK_UV_STRIDE_BYTES }], RASTER_INSTANCED_MASK_BLOCK, ['uint']);
       // Cloth: dynamic pos+oct normal (slot 0) + static uv (extra stream), two-sided (GL: CULL_FACE off, CCW = 'cw' after the clip-y flip).
       this.clothPipe = this._pipeline(RASTER_CLOTH_WGSL, CLOTH_DYN_LAYOUT, CLOTH_STRIDE_BYTES, 'none', 'cw', false, [{ layout: CLOTH_UV_LAYOUT, strideBytes: 8 }]);
-      if (opts.gpuCull !== false && typeof device.createComputePipeline === 'function') this.cull = new WgCullPass(device);
+      if (opts.gpuCull !== false && typeof device.createComputePipeline === 'function') {
+        // S8-B2-10c: `opts.occl` (default OFF, `?occl=1`) = two-phase HZB occlusion; this.hzb is created lazily with the pass (same device)
+        this.cull = new WgCullPass(device, { occl: !!opts.occl });
+        if (opts.occl) this.hzb = new WgHzbPass(device);
+      }
     } catch (e) { this.dispose(); throw e; }
   }
 
@@ -131,7 +139,16 @@ export class WgRasterPass {
   _cullRun(p) {
     const n = this.gpuN, cull = this.cull, pair = this._pair;
     if (!n) return;
-    cull.begin({ planes: this.planes, viewProj: this.view, rows: p.rows, eye: null, maxDistM: 0, swayPad: this.windOn ? SWAY_MAX : 0 });
+    // S8-B2-10c: the previous frame's HZB, or null (first frame / resize / invalidateHzb / ortho = no usable forward) -> cull phase 1 runs with hzbOn 0
+    let hz = null; this._phase2 = false;
+    const hp = this.hzb;
+    if (hp) {
+      hp.resize(p._t.subCols, p._t.subRows); // no-op when unchanged; a new size invalidates
+      const v = this.view, fx = v[3], fy = v[7], fz = v[11], fl = Math.hypot(fx, fy, fz); // clip.w row = dot(P - eye, fwd) * k (projection.js)
+      if (fl > 1e-9) { const f = this._hzbFwd; f.x = fx / fl; f.y = fy / fl; f.z = fz / fl; hz = hp.descriptor(f); }
+    }
+    cull.begin({ planes: this.planes, viewProj: this.view, rows: p.rows, eye: null, maxDistM: 0, swayPad: this.windOn ? SWAY_MAX : 0, hzb: hz });
+    this._phase2 = !!hz;
     for (let i = 0; i < n; i++) { pair[0] = this.gpuM0[i]; pair[1] = this.gpuM1[i]; this.gpuEntries[i] = cull.add(this.gpuGroups[i], pair); }
     cull.run();
   }
@@ -139,11 +156,11 @@ export class WgRasterPass {
   // ALPHA-01f (d): entries are laid out `[lod*R + r]` (R = entries.length/2, fixed per batch); R = 1 (today's ONE_PART shape) is
   // the same [e0, e1] pair as before. A masked meshGroup range (mr[r*5+2] >= 0) draws through instanceMaskPipe (mask uniforms +
   // uv extra stream + atlas texture, same as _instancedMaskedRange's CPU path); an opaque range draws through instancePipe, unchanged.
-  _cullDraw() {
+  _cullDraw(phase2 = false) {
     let draws = 0;
     const b = this.bindDesc;
     for (let i = 0; i < this.gpuN; i++) {
-      const entries = this.gpuEntries[i], R = entries.length >> 1;
+      const entries = phase2 ? this.cull.phase2Entries(this.gpuGroups[i]) : this.gpuEntries[i], R = entries.length >> 1;
       for (let lod = 0; lod < 2; lod++) {
         for (let r = 0; r < R; r++) {
           const e = entries[lod * R + r];
@@ -451,6 +468,7 @@ export class WgRasterPass {
         p.stats.clothDraws = this._cloths(list);
         p.stats.terrainDraws = this._terrain(list);
       } finally { d.endPass(); }
+      if (this.hzb) this._occlPhase2(p); // S8-B2-10c: HZB build -> cull phase 2 -> raster B (before the viewmodel pass: it clears depth)
       if (this.vmList) {
         // A depth-only target clears the same depth attachment, preserving all colour G-buffer values.
         d.beginPass(p._t.targetVmDepth, this.vmClearOpts); d.endPass();
@@ -462,7 +480,28 @@ export class WgRasterPass {
     p.stats.voxelDraws += instancedDraws;
   }
 
+  /** Camera cut / teleport (main.js): the next frame's cull phase 1 runs with hzbOn 0. */
+  invalidateHzb() { if (this.hzb) this.hzb.invalidate(); }
+
+  /**
+   * S8-B2-10c, after raster pass A (outside any pass): copy the depth G-buffer (texSDepth, f32 bits of linear depth) -> ONE HZB build (it is phase 1's input NEXT frame),
+   * then cull phase 2 (re-test the pending set against the fresh HZB, survivors -> dst2/dst3) and raster pass B (load, no clear; instanced mesh entries only).
+   * Phase 1 and 2 of a frame without a valid previous HZB skip the re-test (nothing was occluded) but the HZB is still built.
+   */
+  _occlPhase2(p) {
+    const hp = this.hzb;
+    if (!this.gpuN) { hp.invalidate(); return; } // no batches this frame: the pyramid would go stale -> never reuse it
+    const d = this.device;
+    hp.build(p._t.texSDepth);
+    if (!this._phase2) return;
+    const fresh = hp.fresh(this._hzbFwd);
+    this.cull.runPhase2(fresh);
+    d.beginPass(p._t.targetRaster); // load-only: keeps colour G-buffers and depth24 of pass A
+    try { p.stats.gpuCullDraws2 = this._cullDraw(true); } finally { d.endPass(); }
+  }
+
   dispose() {
+    if (this.hzb) { this.hzb.dispose(); this.hzb = null; }
     this.buffers.dispose();
     for (const pipe of this.pipes) this.device.dispose(pipe);
     this.pipes.length = 0;
