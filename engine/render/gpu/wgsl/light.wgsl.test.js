@@ -11,7 +11,7 @@ import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS, MAX_SUN_STEPS, falloff, sampleV
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { packNormalOct, unpackNormalOct } from '../../../voxel/octNormal.js';
 import { unprojectPitched } from '../../projection.js';
-import { CLOUD_DARK, CLOUD_SHIFT } from '../../cloudShadow.js';
+import { CLOUD_Q_SHIFT } from '../../shadowSun.js';
 import { AO_MAX } from '../../horizonAo.js';
 
 // --- string rules (38.5) ---
@@ -33,14 +33,18 @@ assert.deepEqual(['ambient', 'posX', 'sunDir', 'sunShadowRes', 'sunCol', 'sunSha
 assert.equal(LIGHT_BLOCK.field('sunShadowM').offset % 16, 0);
 assert.equal(LIGHT_BLOCK.field('lightPos').words, MAX_LIGHTS * 4);
 assert.equal(LIGHT_BLOCK.field('structB').words, MAX_STRUCTS * 4);
-// S8-B2-12a (38.13): cloudCover takes the first pad word (30, right after sunShadowNormalOff at 29) so pitchA
-// stays at word 32; `cloud` (strength, invScale, offU, offV) is appended at the very end, word 316; new size 1280 B.
-assert.equal(LIGHT_BLOCK.field('cloudCover').word, 30);
-// S8-B2-20 (38.17): aoStrength takes the last pad word (31); pitchA stays at word 32, cloud at 316, size unchanged.
+// S8-B2-12c (38.13): word 30 is a pad again (cloudCover gone); cloudA/cloudB vec4 are appended at the very END (316, 320).
+assert.equal(LIGHT_BLOCK.field('pad30').word, 30);
+// S8-B2-20 (38.17): aoStrength takes the last pad word (31); pitchA stays at word 32.
 assert.equal(LIGHT_BLOCK.field('aoStrength').word, 31);
 assert.equal(LIGHT_BLOCK.field('pitchA').word, 32);
-assert.equal(LIGHT_BLOCK.field('cloud').word, 316);
-assert.equal(LIGHT_BLOCK.sizeBytes, 1280);
+assert.equal(LIGHT_BLOCK.field('cloudA').word, 316);
+assert.equal(LIGHT_BLOCK.field('cloudB').word, 320);
+assert.equal(LIGHT_BLOCK.field('aoP').word, 324);
+assert.equal(LIGHT_BLOCK.sizeBytes, 1312);
+assert.ok(LIGHT_WGSL.includes('aoRc(u.aoP.x, u.planeDistY, dist, u.aoP.z)'), 'rc from aoP');
+assert.ok(!/AO_TAP_CELLS|AO_RADIUS_M|AO_BIAS/.test(LIGHT_WGSL), 'legacy AO consts gone');
+
 
 // --- S8-B2-20 (38.17): horizon AO wired into fs_main, cellPoint/aoTapCell present, never-brighten shape ---
 assert.ok(/fn cellPoint\(/.test(LIGHT_WGSL), 'cellPoint fn present (taps only - P itself is not refactored)');
@@ -49,21 +53,12 @@ assert.ok(/fn aoTapOcc\(/.test(LIGHT_WGSL), 'aoTapOcc fn present (common.wgsl.js
 assert.ok(/u\.aoStrength > 0\.0/.test(LIGHT_WGSL), 'AO block guarded by a uniform branch on aoStrength');
 assert.ok(/L -= u\.ambient \* \(1\.0 - aoF\)/.test(LIGHT_WGSL), 'AO subtracts from L (never adds - cannot brighten)');
 
-// --- S8-B2-12a (38.13): cloud-shadow byte wired into fs_main, CLOUD_DARK interpolated, CLOUD_SHIFT = 24 ---
-assert.ok(new RegExp(`const CLOUD_SHIFT: u32 = ${CLOUD_SHIFT}u;`).test(LIGHT_WGSL), 'CLOUD_SHIFT interpolated');
-assert.ok(new RegExp(`const CLOUD_DARK: f32 = ${CLOUD_DARK};`).test(LIGHT_WGSL), 'CLOUD_DARK interpolated');
-assert.ok(/fn cloudCov\(/.test(LIGHT_WGSL), 'cloudCov fn present (common.wgsl.js CLOUD_SHADOW_WGSL interpolated)');
-assert.ok(/\| cloudBits\)/.test(LIGHT_WGSL), 'LIGHT.w carries the cloud byte');
-// Mutation: a changed CLOUD_DARK literal must show up in a numericLiterals check of LIGHT_WGSL (D-039 style guard).
-// S8-B2-20 (38.17) also bakes 0.6 into the text as AO_MAX, so the literal-SET-difference form of this check (any
-// other check in this file wanting to assert "CLOUD_DARK's value is gone") would false-negative on that
-// coincidence - this check instead targets the CLOUD_DARK declaration text directly, which stays precise.
-{
-  const lits = numericLiterals(LIGHT_WGSL);
-  assert.ok(lits.has(CLOUD_DARK), 'LIGHT_WGSL literal-set has CLOUD_DARK');
-  const mutated = LIGHT_WGSL.replace(`const CLOUD_DARK: f32 = ${CLOUD_DARK};`, 'const CLOUD_DARK: f32 = 0.37;');
-  assert.ok(numericLiterals(mutated).has(0.37) && !new RegExp(`const CLOUD_DARK: f32 = ${CLOUD_DARK};`).test(mutated), 'mutation: a changed CLOUD_DARK literal is caught');
-}
+// --- S8-B2-12c (38.13): cloud-shadow byte wired into fs_main, CLOUD_Q_SHIFT = 24, no raw % / round ---
+assert.ok(new RegExp(`const CLOUD_Q_SHIFT: u32 = ${CLOUD_Q_SHIFT}u;`).test(LIGHT_WGSL), 'CLOUD_Q_SHIFT interpolated');
+assert.ok(LIGHT_WGSL.includes('fn cloudShadeQ(P: vec3f, sd: vec3f) -> u32'), 'cloudShadeQ(P, sd) -> u32 present');
+assert.ok(LIGHT_WGSL.includes('u.cloudA.w > 0.0'), 'cloud branch guarded by a uniform branch on cloudA.w (strength)');
+assert.ok(LIGHT_WGSL.includes('| cloudBits)'), 'LIGHT.w carries the cloud byte');
+assert.ok(!/cloudCov|CLOUD_DARK|CLOUD_SHIFT/.test(LIGHT_WGSL), 'old 12a names are gone');
 // Same mutation guard for AO_MAX (also 0.6 - the two consts' declarations are checked independently, never by a
 // whole-text literal-set difference, for exactly the coincidence noted above).
 {
@@ -203,4 +198,16 @@ console.log(`light.wgsl.test.js: string/layout rules and ${probes} JS-evaluated 
   assert.ok(/let sdm = 0\.5 \+ 0\.5 \* sd;/.test(fn), 'sdm = 0.5 + 0.5 * sd');
   assert.ok(/if \(sdm <= textureLoad\(uSunShadow, t, 0\)\)/.test(fn) && !/if \(sd <= textureLoad/.test(fn), 'tap compare uses sdm');
   assert.ok(/sd < 0\.0 \|\| sd > 1\.0/.test(fn), 'receiver box test stays on sd');
+}
+
+// ME-20c (38.18): kind-9 packed normal from GI.z; the vertex-AO term sits inside the strength branch, after the horizon term, as a min.
+{
+  const { LIGHT_WGSL: W } = await import('./light.wgsl.js');
+  assert.ok(W.includes('select(textureLoad(uGA, cell, 0).w, textureLoad(uGI, cell, 0).z, kindU == u32(KIND_MESH))'), 'kind 9 packed N from GI.z');
+  const iStr = W.indexOf('if (u.aoStrength > 0.0 && kindU != u32(KIND_TERRAIN)) {'), iHor = W.indexOf('var aoF = 1.0 - u.aoStrength * AO_MAX * occ;');
+  const iVao = W.indexOf('if (kindU == u32(KIND_MESH)) { aoF = min(aoF, 1.0 - u.aoStrength * AO_MAX * (1.0 - clamp(bitcast<f32>(textureLoad(uGA, cell, 0).w), 0.0, 1.0))); }');
+  const iSub = W.indexOf('L -= u.ambient * (1.0 - aoF);');
+  assert.ok(iStr > 0 && iStr < iHor && iHor < iVao && iVao < iSub, 'vao term inside the strength branch, after the horizon term, before the ambient subtraction');
+  assert.ok(!W.includes('aoF *=') && !W.includes('aoF = aoF *'), 'min, not product');
+  console.log('light.wgsl.test.js (ME-20c): vao term placement ok.');
 }

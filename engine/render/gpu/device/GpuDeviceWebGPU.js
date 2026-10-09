@@ -136,11 +136,22 @@ export class GpuDeviceWebGPU {
   createTexture(desc) {
     const t = this._c.tex;
     const f = textureFormatFor(desc.format, !!desc.sampled);
+    // ME-16b (38.22): `layers` = a 2d-array texture, `depth24`+`sampled` only (depth32float array, one view per layer, cached)
+    const layers = desc.layers;
+    if (layers !== undefined && (desc.format !== 'depth24' || !desc.sampled || !(layers >= 1) || (layers | 0) !== layers)) {
+      throw new Error('GpuDeviceWebGPU.createTexture: `layers` needs format depth24 + sampled and an integer >= 1');
+    }
     const tex = this.gpu.createTexture({
-      size: [desc.width, desc.height, 1], format: f.gpu, dimension: '2d',
+      size: [desc.width, desc.height, layers || 1], format: f.gpu, dimension: '2d',
       usage: t.TEXTURE_BINDING | t.RENDER_ATTACHMENT | t.COPY_SRC | t.COPY_DST,
     });
     this._live.push(tex);
+    if (layers !== undefined) {
+      return {
+        kind: 'texture', gpu: tex, view: tex.createView({ dimension: '2d-array', baseArrayLayer: 0, arrayLayerCount: layers }), sampler: null,
+        width: desc.width, height: desc.height, layers, layerViews: new Array(layers).fill(null), format: desc.format, gpuFormat: f.gpu, bpp: f.bpp, isDepth: true,
+      };
+    }
     const linear = desc.filter === 'linear' && desc.format === 'rgba8';
     const sampler = desc.format === 'rgba8'
       ? this.gpu.createSampler({ magFilter: linear ? 'linear' : 'nearest', minFilter: linear ? 'linear' : 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' })
@@ -173,7 +184,16 @@ export class GpuDeviceWebGPU {
     const colorAttachments = desc.color.map((t) => ({ view: t.view, loadOp: 'load', storeOp: 'store', clearValue: ZERO4 }));
     /** @type {any} */
     const pass = { colorAttachments };
-    if (desc.depth) pass.depthStencilAttachment = { view: desc.depth.view, depthLoadOp: 'load', depthStoreOp: 'store', depthClearValue: 1 };
+    if (desc.depth) {
+      const d = desc.depth;
+      let view = d.view;
+      if (d.layers !== undefined) { // ME-16b: array texture -> attach one layer (view cached per layer, reused by every target of it)
+        const L = desc.layer;
+        if (!(L >= 0 && L < d.layers) || (L | 0) !== L) throw new Error(`GpuDeviceWebGPU.createTarget: layer ${L} out of range 0..${d.layers - 1}`);
+        view = d.layerViews[L] || (d.layerViews[L] = d.gpu.createView({ dimension: '2d', baseArrayLayer: L, arrayLayerCount: 1 }));
+      } else if (desc.layer !== undefined) throw new Error('GpuDeviceWebGPU.createTarget: `layer` on a texture without layers');
+      pass.depthStencilAttachment = { view, depthLoadOp: 'load', depthStoreOp: 'store', depthClearValue: 1 };
+    }
     return { kind: 'target', isCanvas: false, passDesc: pass, colorCount: desc.color.length, hasDepth: !!desc.depth, width: first ? first.width : 0, height: first ? first.height : 0 };
   }
 
@@ -224,6 +244,7 @@ export class GpuDeviceWebGPU {
       if (k === 'uint') e0.push({ binding: i, visibility: vis, texture: { sampleType: 'uint' } });
       else if (k === 'sint') e0.push({ binding: i, visibility: vis, texture: { sampleType: 'sint' } });
       else if (k === 'depth') e0.push({ binding: i, visibility: vis, texture: { sampleType: 'depth' } });
+      else if (k === 'depthArray') e0.push({ binding: i, visibility: vis, texture: { sampleType: 'depth', viewDimension: '2d-array' } }); // ME-16b
       else if (k === 'filtered') e0.push({ binding: i, visibility: vis, texture: { sampleType: 'float' } });
       else e0.push({ binding: i, visibility: vis, texture: { sampleType: 'unfilterable-float' } }); // 'float': textureLoad only
     });
@@ -545,6 +566,25 @@ export class GpuDeviceWebGPU {
       this.gpu.queue.submit([this._encoder.finish()]); this._encoder = null;
       this.timer.collect(timing);
     } else this.timer.resolve(null);
+  }
+
+  /**
+   * S8-B2-10c production copies (recorded into the frame encoder, outside any pass; no allocation, no readback). `copyTextureToBuffer`: the (0,0,w,h) rect of a
+   * single-sample colour texture (the r32ui depth G-buffer) into a 'storage' buffer, rows padded to `bytesPerRow` (multiple of 256 - see readbackLayout).
+   * @param {GpuHandle} tex @param {GpuHandle} buf @param {number} w @param {number} h @param {number} bytesPerRow
+   */
+  copyTextureToBuffer(tex, buf, w, h, bytesPerRow) {
+    if (this._pass) throw new Error('GpuDeviceWebGPU.copyTextureToBuffer: a pass is still open');
+    if (bytesPerRow % 256) throw new Error('GpuDeviceWebGPU.copyTextureToBuffer: bytesPerRow must be a multiple of 256');
+    if (!this._encoder) this._encoder = this.gpu.createCommandEncoder();
+    this._encoder.copyTextureToBuffer({ texture: tex.gpu }, { buffer: buf.gpu, bytesPerRow, rowsPerImage: h }, [w, h, 1]);
+  }
+
+  /** S8-B2-10c: buffer -> buffer copy (storage buffers carry COPY_SRC|COPY_DST). @param {GpuHandle} src @param {number} srcOff @param {GpuHandle} dst @param {number} dstOff @param {number} bytes */
+  copyBufferToBuffer(src, srcOff, dst, dstOff, bytes) {
+    if (this._pass) throw new Error('GpuDeviceWebGPU.copyBufferToBuffer: a pass is still open');
+    if (!this._encoder) this._encoder = this.gpu.createCommandEncoder();
+    this._encoder.copyBufferToBuffer(src.gpu, srcOff, dst.gpu, dstOff, bytes);
   }
 
   /**

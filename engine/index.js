@@ -51,6 +51,7 @@ export { PROJ_HFOV_DEG as HFOV_DEG } from './render/projection.js';
 export { sunFromWorld } from './render/lighting.js';
 export { shadeTerrainCells } from './render/terrainShade.js';
 export { sunFromHours, sunPathFrom, SUN_PATH_DEFAULT } from './core/sunPath.js';
+export { AO_DEFAULTS } from './render/horizonAo.js'; // host `?ao=` reads the engine defaults (B1 nit)
 export { swayOffset, packWindUniforms, windSwayOn, INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from './mesh/sway.js'; // S8-B2-06
 export { shadeTerrain, makeTerrainShadeCtx } from './render/terrainShade.js';
 export { packTerrainTextures, TLOOK_WIDTH } from './render/gpu/TerrainTextures.js';
@@ -83,6 +84,7 @@ export { packVoxelModel } from './voxel/voxelPack.js';
 export { deriveEmissiveLight, EMISSIVE_LIGHT_MIN } from './voxel/emissiveLight.js';
 export { buildVoxelMesh, MESH_ONLY_MAX_QUADS } from './mesh/voxelMesh.js';
 export { prebuildTerrainMesh } from './mesh/terrainMesh.js'; // ED-MESH-1a
+export { createFrameRenderer } from './render/frameRenderer.js'; // ED-WG-01a (38.21)
 export { loadGltf, buildMeshFromTris, KIND_MESH } from './mesh/gltf.js'; // ME-13a (architecture.md 27.2 Public API)
 export { MaskAtlas, buildMaskAtlas, cutoffByte } from './render/MaskAtlas.js'; // ALPHA-01c: test worlds (gpucompare alphaLeaves) build their own atlas
 // ME-13b: content/meshes/<id>.mesh.json (de)serialization + validation -
@@ -102,7 +104,9 @@ export { createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE, UNIT_OBJECT_B
 export { bindDetailInstances, feedDetail, removeDetailInstances, DETAIL_OBJECT_BASE } from './mesh/scatterFeed.js';
 // GFX-03: quality knobs (scatter density, LOD scale, tuft draw scale) and the sun shadow levels / 'off'.
 export { GFX_DEFAULTS, GFX_RANGES, resolveGfxKnobs } from './mesh/gfxKnobs.js';
-export { resolveShadowLevel, SHADOW_LEVELS, resolveSunShadowOptions, SUN_SHADOW_DEFAULTS } from './render/shadowSun.js';
+export { CLOUD_Q_SHIFT, resolveShadowLevel, SHADOW_LEVELS, resolveSunShadowOptions, SUN_SHADOW_DEFAULTS } from './render/shadowSun.js';
+export { PSH_NEAR, POINT_SHADOW_DEFAULTS, resolvePointShadowOptions, FACE_TABLE, pointFaceOf, pointFaceMatrix, pointFacePlanes, pointFaceBounds, pointSphereBounds, pointDepthEncode, pointDepthDecode, pointShadowTaps, pointShadowInfo, pointShadowKey, quantiseOrigin, createShadowLightState, selectShadowLights } from './render/shadowPoint.js';
+export { cloudShadeQ, cloudMul, packCloudUniforms } from './render/cloudShadow.js'; // S8-B2-12c (38.13)
 export { buildTeamRemap, TEAM_SLOTS, MAX_TEAMS } from './render/teamRemap.js';
 // US-047: computeDerivatives/shadeSurfaces/shadeV2 (detailShade.js) and
 // edgePass moved to engine/dev.js - pass internals + parity tooling only,
@@ -116,8 +120,7 @@ export { packLevel, repackMaterials } from './world/packed.js';
 export {
   LightSet, buildLightSet, setWorldSun, applySunHours, syncEntityLights, lightAt, lightSurfaces,
   computeVisGrid, sunVisible, falloff as lightFalloff, packLightUniforms,
-  makeLightBuffer, MAX_LIGHTS, setLook, OUTDOOR_SHIFT, setCloudShadow, // S8-B2-12a NEEDS B1 item (2)/(3): `?clouds=` + gpucompare force-0
-  setHorizonAo, // S8-B2-20 NEEDS B1 item (1)/(3): `?ao=` + gpucompare force-0
+  makeLightBuffer, MAX_LIGHTS, setLook, OUTDOOR_SHIFT,
 } from './render/lighting.js';
 
 // ---- ART-01a look + roof map (docs/architecture.md 37.18 items 2/3) ----------
@@ -237,6 +240,10 @@ export { createFireGrid } from './world/fireGrid.js';
 // ---- US-053a particle sim (docs/architecture.md 32.1) ----
 export { createParticles, PARTICLE_CAP, MAX_EMITTERS as PARTICLE_MAX_EMITTERS } from './fx/particles.js';
 export { createEntityEmitters } from './world/entityEmitters.js';
+
+// ---- S8-B2-13b splash ripples (docs/architecture.md 38.14, the note of record) ----
+export { createRipples, RIPPLE_LIFE, RIPPLE_SPEED, RIPPLE_W } from './fx/ripples.js';
+export { defineHitSparks, hitSparks, HIT_SPARK_HUES } from './fx/hitSparks.js';
 
 // ---- US-055a1 water regions + query (architecture.md 32.2; the query is `World#waterAt`) ----
 export { createWater, collectWaterDefs, WATER_MAX } from './world/water.js';

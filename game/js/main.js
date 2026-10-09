@@ -20,12 +20,12 @@ import {
   PITCH_CLAMP_PITCHED_DEG,
   ambientL, World, repackMaterials,
   updateInteraction, drawCrosshair,
-  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun, setCloudShadow, setHorizonAo,
+  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun,
   isSoftwareRenderer,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim,
   loadContentPack, createRng, prebuildTerrainMesh,
-  forwardOf, DEG2RAD, hexToRgb, resolveWaterLooks, createEntityEmitters,
+  forwardOf, DEG2RAD, hexToRgb, resolveWaterLooks, createEntityEmitters, AO_DEFAULTS,
 } from '../../engine/index.js';
 // US-047 (architecture.md section 5): pass internals + parity tooling +
 // "may change" glue now live in engine/dev.js - main.js's dev-mode code
@@ -42,16 +42,18 @@ import {
 // of the `?gpucompare=` mode code.
 import { GATE_POSES } from '../../content/dev-poses.js';
 import { prefetchLazyMeshesAtBoot } from './bootPrefetchHook.js'; // MESH-LOAD-01: boot prefetchNear call
-import { parseCloudStrength, parseAoStrength } from './cloudParam.js'; // S8-B2-12a/S8-B2-20 NEEDS B1 item (2)/(1): `?clouds=<0..1>`/`?ao=<0..1>` parse/clamp
+import { parseCloudShadowFlag, devCloudShadow, parseAoStrength } from './cloudParam.js'; // S8-B2-12a/S8-B2-20 NEEDS B1 item (2)/(1): `?cloudshadow=1`/`?ao=<0..1>` parse
 import { MODES } from './dev/modes/index.js';
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
+import { createCreditsView } from './ui/creditsView.js'; // CREDITS-MOUNT-01
 import { updateSettings, drawSettingsPanel, isSettingsOpen, openSettings } from './ui/settings.js'; // US-038b
 import { isPaused, resetSimAccumulator, duckAudio, unduckAudio, installAutoPause } from './ui/pause.js'; // US-062
 // ---- US-020a: minimal procedural sound slice (game/js/audio/*, D-004) ----
 import { initAudio, setMuted, toggleMute, isMuted } from './audio/synth.js';
 import { resetGameAudio, stepGameAudio } from './audio/sfx.js';
 // ---- end US-020a ----
+import { createSafeBindings, resolveGameKeys } from './gameKeys.js'; // BINDINGS-WIRE-01
 import { loadSettings, saveSettings, getSaveStorage } from './platform/index.js'; // US-060: remembered mute (D-012)
 import { applyLocalOverlay } from './localOverlay.js';
 import { createBootCard } from './bootCard.js'; // boot loading card + ASCII progress bar
@@ -71,6 +73,7 @@ import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-05
 import { createTitleMenuHost } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
+import { parseOccl, createHzbInvalidator } from './occlGate.js'; // OCCL-MAIN-01
 import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
@@ -112,7 +115,7 @@ import { runPerfBench } from './dev/perfBench.js'; // US-018 (architecture.md 16
 import { createSpriteSystem, spawnTestSprites } from './dev/spriteDev.js';
 // ---- end US-030c ----
 // ---- US-010: quest behaviours (registered by name before any World loads) ----
-import { validateBehaviours } from '../../engine/index.js';
+import { validateBehaviours, createRipples } from '../../engine/index.js';
 import './quest/index.js';
 // ---- end US-010 ----
 
@@ -140,6 +143,8 @@ const isGpuCompareMode = isGeometryCompare || params.get('gpucompare') === 'shad
 // Precedence: URL knob > ?quality= > saved > auto (GFX-02) > 'high'. Presets failing to load -> boot exactly as before (no preset).
 // Capture/bench/compare pages stay on today's options unless ?quality= is given (must stay comparable across runs).
 const savedSettings = loadSettings();
+const controlBindings = createSafeBindings(savedSettings.bindings); // BINDINGS-WIRE-01: invalid saved table -> defaults
+const gameKeys = resolveGameKeys(controlBindings); // resolved once; re-run after a rebinding UI changes the table
 const isWaterfallPreview = params.get('waterfallpreview') === '1' && params.get('world') === 'waterfall_test';
 const isCaptureOrBench = !!params.get('bench') || !!params.get('voxelbench') || !!params.get('gpucompare') || !!params.get('cinematic') || isWaterfallPreview;
 // GFX-02: auto-pick runs only on a first launch (nothing saved, no ?quality=), never on capture/bench/compare/cinematic pages or
@@ -342,10 +347,11 @@ const sceneDim = createSceneDim();
 if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
 // WG-1c2: `?backend=webgpu|webgl2` (default webgl2); webgpu falls back to webgl2 with a warning (38.8a 16).
 const shadowOpts = bootOpts.shadowOpts; // GFX-01w: shadow level from the preset (resolveShadowLevel) + ?shadows= / ?shadowinst / ?shadowres / ?shadowcast overrides (ME-15e/f, D-043: map is the default)
+const occlOpt = parseOccl(params, params.get('backend') || 'webgl2');
 const tCR = bootNow();
 const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
-  shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0',
+  shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.enabled, // OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
   onCompileProgress: (done, total) => { bootStages.enter('pipelines'); if (bootCard) bootCard.setStageLines(bootStages.cardText()); if (bootProg) bootProg.count('compile', done, total); } }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
 bootSpan('createRenderer total (' + rendererInfo.label + ')', tCR);
 if (bootProg) { bootProg.phase('engine'); await bootPaint(); }
@@ -364,10 +370,15 @@ const engine = createEngine({
   gfx: bootOpts.gfx, // GFX-03/GFX-01w: scatter density + LOD scale from the preset (undefined = engine defaults)
 });
 bootSpan('createEngine', tCE);
+// S8-B2-13b NEEDS B1-main (38.14 "Owners"): one ripples ring buffer for the whole session, presentation-only
+// (not saved, not hashed). `fb.ripples = ripples` below hands it to the renderer (duck-typed `{packInto}`,
+// waterComposite.js twin/WGSL); the dev hook and the splash-entry call (US-055b) both call `ripples.add`.
+const ripples = createRipples();
 // US-089w/US-096w: save relay (autosave 60 s + waystone, load at boot) and quest hook. `?save=0` off; capture/bench/compare/cinematic
 // pages and automated browsers never load or save unless `?save=1` forces it (the headless reload check does).
 const saveEnabled = params.get('save') !== '0' && (params.get('save') === '1' || !(isCaptureOrBench || params.get('capture') === '1' || params.has('at') || navigator.webdriver)); // `?at` = dev pose: never autosave it into slot 0
 let saveRelay = null;
+let titleMenuActive = true; // S8-B1-10: mirrors menuHost.active each frame (true until the first frame says otherwise); gates the loss autosave
 let deviceLostFrozen = false; // S8-B1-10 (38.10c): set once by watchDeviceLost's `freeze` hook below; gates `paused` in the frame loop
 try {
   const questDef = await (await fetch('../content/quests/m1.quest.json')).json();
@@ -383,6 +394,7 @@ try {
 // deviceLost.js (Node-testable with a mock device); this is just the DOM/sim/save glue. No-op on webgl2 (device null).
 watchDeviceLost(gpuDevice, {
   freeze: () => { deviceLostFrozen = true; },
+  canSave: () => !!gameHooks.ctx.state.canSave && !titleMenuActive, // not on the title menu / wake / death: reload loads the last good save
   autosave: () => { if (saveRelay && gameHooks.ctx.requestSave) gameHooks.ctx.requestSave(); },
   showCard: () => {
     const card = document.createElement('div');
@@ -401,9 +413,10 @@ watchDeviceLost(gpuDevice, {
 if (params.get('dev') === '1') {
   window.__kestrel = window.__kestrel || {};
   window.__kestrel.loseDevice = () => { if (gpuDevice && typeof gpuDevice._forceLost === 'function') gpuDevice._forceLost('dev hook'); };
-  // S8-B2-13 NEEDS B1 item (2) (from 38.14): window.__kestrel.ripple(x, y, amp) for the owner look - the
-  // passWater composite upload that actually draws the rings is another slot's item.
-  window.__kestrel.ripple = (x, y, amp) => { if (engine.world && engine.world.water) engine.world.water.addRipple(x, y, amp); };
+  // S8-B2-13b NEEDS B1-main item (2) (from 38.14): window.__kestrel.ripple(x, y, amp) for the owner look - the
+  // passWater composite upload that actually draws the rings is another slot's item. Ripples live in the
+  // module-scope `ripples` ring buffer (engine/fx/ripples.js), not `world.water` (that field was removed).
+  window.__kestrel.ripple = (x, y, amp) => { ripples.add(x, y, amp, fb ? fb.timeSec : 0); };
 }
 // S8-B1-15: MAP-01c baked chart (MAP-01b bake tool, content/chart/world_m1.chart.json) for the map card
 // (quest/mapCard.js). Loaded once, like questDef above; a missing/bad file degrades to the plain (unbaked) card
@@ -491,12 +504,11 @@ if (isGpuCompareMode) rt.resize(GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPAR
 const useDetail = params.get('detail') !== '0';
 // US-006 AC "?lights=0 keeps the US-028 uniform ambient (regression path)".
 const lightsEnabled = params.get('lights') !== '0';
-// S8-B2-12a NEEDS B1 item (2): `?clouds=<0..1>` (default 0). WebGL2 (`rt.backend === 'gl2'`) stays 0 - the frozen
-// GLSL ignores the cloud byte - only the Canvas2D/CPU path (and WebGPU, once kestrel-2's passLight upload lands)
-// actually draws clouds. Applied via `setCloudShadow` after every `buildLightSet` below.
-const cloudStrength = rt.backend === 'gl2' ? 0 : parseCloudStrength(params.get('clouds'));
+// S8-B2-12c: `?cloudshadow=1` (default off, WebGPU only; gl2 frozen GLSL ignores the cloud byte) puts a default cloud-shadow
+// block into `lights.cloud` after every `buildLightSet` below (replaces the old `?clouds=`/setCloudShadow).
+const cloudShadowOn = rt.backend !== 'gl2' && parseCloudShadowFlag(params.get('cloudshadow'));
 // S8-B2-20 NEEDS B1 item (1): `?ao=<0..1>` (default 0). WebGL2 stays 0 (frozen GLSL ignores it, D-044). Applied
-// via `setHorizonAo` after every `buildLightSet` below, same site as the cloud strength above.
+// into `lights.ao` after every `buildLightSet` below, same site as the cloud strength above.
 const aoStrength = rt.backend === 'gl2' ? 0 : parseAoStrength(params.get('ao'));
 // US-007 (14.3 item 8 fallback/switches): test-only sun disable, same shape
 // as `?lights=0`.
@@ -617,7 +629,7 @@ if (wgPipeline && wgPipeline.ready && rt.backend === 'webgpu') wgPipeline.bindSp
 bootMark('sprites/overlay bound');
 // GFX-01w/02: createRenderer builds the webgpu target at the CPU grid (38.8a item 14, pre-WG-3f rule). Once the WebGPU pipeline owns
 // the whole frame, the requested (preset/URL) grid applies; otherwise (e.g. ?shadows=dda -> CPU shading) the CPU grid stays.
-if (wgPipeline && wgPipeline.frameComplete && rt.backend === 'webgpu' && (rt.cols !== gridResult.cols || rt.rows !== gridResult.rows)) {
+if (wgPipeline && (wgPipeline.frameComplete || (isGeometryCompare && params.get('refgrid'))) && rt.backend === 'webgpu' && (rt.cols !== gridResult.cols || rt.rows !== gridResult.rows)) {
   engine.setGrid(gridResult.cols, gridResult.rows, { immediate: true });
   depthBuffer = engine.depthBuffer;
   gbuf = new GBuffer(rt.cols, rt.rows);
@@ -706,6 +718,7 @@ const swordStyleIds = {
 sprites.pool.renderer = renderer; // review item 1: sprite rects follow the pitched scene
 if (gpuPipeline) { gpuPipeline.bindVoxels(gameVoxelPool); gpuPipeline.bindViewModel(engine.viewModel); } // US-078a (30.1)
 const wgActive = !!(wgPipeline && wgPipeline.ready && rt.backend === 'webgpu'); // WG-2b: geometry-only WebGPU pipeline (CPU still shades)
+const hzb = createHzbInvalidator(() => (occlOpt.enabled && wgActive && wgPipeline.ready ? wgPipeline : null)); // OCCL-MAIN-01: cuts invalidate the HZB
 if (wgActive) { wgPipeline.bindVoxels(gameVoxelPool); wgPipeline.bindViewModel(engine.viewModel); }
 engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); if (gpuPipeline) gpuPipeline.bindInstances(engine.instances); // RE-06 (28.6)
 if (wgActive) wgPipeline.bindInstances(engine.instances);
@@ -747,6 +760,7 @@ const spellVmH = window.ASSETS && window.ASSETS.viewModels && window.ASSETS.view
 engine.events.on('grid:changed', ({ cols, rows }) => {
   if (gpuPipeline) gpuPipeline.resizeGrid(cols, rows);
   if (sprites.pass) sprites.pass.resizeGrid(cols, rows);
+  hzb.invalidate('resize');
   gbuf = new GBuffer(cols, rows);
   matTable = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
   engine.attachMaterialTable(matTable); // RE-06: re-applies engine.teamSpec to the new table
@@ -758,7 +772,7 @@ engine.events.on('grid:changed', ({ cols, rows }) => {
 
 // Internal hook for manual/automated smoke-testing in a console - not part
 // of the game's own UI.
-window.__debug = { input, overlay, rt, engine, gpuPipeline, gbuf, matTable, ambientL, depthBuffer, sprites };
+window.__debug = { input, overlay, rt, engine, gpuPipeline, gbuf, matTable, ambientL, depthBuffer, sprites, wgPipeline, hzb };
 bridgeEngineEvents(engine.events, gameHooks); // beast:died / inventory:added -> seam events
 window.__debug.saveRelay = saveRelay; // US-089w: test hook (headless reload check)
 
@@ -870,6 +884,7 @@ async function runGame(mode, cinematic = null) {
   let loot = null; // US-091a2 (37.16.3): rebuilt on every 'world:loaded', after beasts + the pack
   let toasts = null; // US-091a2: the loot toast view, rebuilt with loot
   let invView = null; // US-091b: the pack screen (`I`), rebuilt with the pack
+  let creditsInv = null; // CREDITS-MOUNT-01
   let menuHost = null; // US-090w: title menu host while it is up (null = no menu / already closed)
   let invWasLocked = false; // pointer lock state when the pack opened (re-lock on close)
   let waterfallHooks = null;
@@ -956,8 +971,8 @@ async function runGame(mode, cinematic = null) {
       // keeps the old uniform-ambient path (fb.lights stays null).
       if (lightsEnabled) {
         lightSet = buildLightSet(world, assets.palette);
-        if (lightSet) setCloudShadow(lightSet, { strength: cloudStrength }); // S8-B2-12a NEEDS B1 item (2)
-        if (lightSet) setHorizonAo(lightSet, { strength: aoStrength }); // S8-B2-20 NEEDS B1 item (1)
+        if (lightSet && cloudShadowOn) lightSet.cloud = devCloudShadow(); // S8-B2-12c
+        if (lightSet && aoStrength > 0) lightSet.ao = { ...AO_DEFAULTS, strength: aoStrength }; // S8-B2-20 NEEDS B1 item (1)
         if (lightSet) lightSet.emissive = !isGpuCompareMode && !params.get('gpucompare') && !(resolvedQuality && resolvedQuality.name === 'low'); // EMIS-01b (38.12): glowing voxels light the scene; off on Low and every gpucompare mode
         window.__debug.lights = lightSet; // EMIS-01b: test hook (derivedStats)
         // `?sun=0`: keep the sun's direction/color (F6/F7 still readable) but
@@ -997,7 +1012,7 @@ async function runGame(mode, cinematic = null) {
       waterfallHooks = waterfallPreset ? createWaterfallHooks(world, engine.particles, waterfallPreset) : null;
       if (ambientMotes) ambientMotes.dispose();
       // S8-B1-18 (closes US-019): ambient dust motes, off with ?ambient=0 and on the Low preset.
-      ambientMotes = createAmbientMotes(world, engine.particles, { enabled: params.get('ambient') !== '0' && !(resolvedQuality && resolvedQuality.name === 'low'), rgb: assets.palette.rgb, palette: assets.palette });
+      ambientMotes = createAmbientMotes(world, engine.particles, { enabled: params.get('ambient') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !(resolvedQuality && resolvedQuality.name === 'low'), rgb: assets.palette.rgb, palette: assets.palette });
       // US-079a (29.1): rebuilt on every load/restart, same precedent as lightSet above.
       // US-078d: beastSim now owns a `combat:hit` listener (the stagger behaviour) - drop the old world's one
       // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.
@@ -1022,7 +1037,7 @@ async function runGame(mode, cinematic = null) {
       engine.overlay.setGroundFn(world.terrain ? (x, y) => world.terrain.groundAt(x, y) : null);
       if (vitals) vitals.dispose(); // Q9 item 1a: drop the old world's `combat:hit` listener before a new one is added below
       vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting,
-        respawnPose: () => gameHooks.respawn(), // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
+        respawnPose: () => { hzb.invalidate('respawn'); return gameHooks.respawn(); }, // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
         onDied: (t) => gameHooks.emitSimple('player:died', t.x, t.y, t.z),
         syncFacing: (t) => {
           if (!look) return;
@@ -1078,6 +1093,7 @@ async function runGame(mode, cinematic = null) {
         Object.assign(startT, { x: atParts[0], y: atParts[1], z: atParts[2], yawDeg: atParts[3] || 0, pitchDeg: atParts[4] || 0 });
         playerHandle.data.components.body.peakZ = startT.z;
       }
+      hzb.invalidate('world-load'); // new world / restart / title New+Continue / ?at / ?pose: the start pose is a camera cut
       const waterfallView = worldDef.name === 'waterfall_test' && waterfallPreset?.views[params.get('waterfallview')];
       if (waterfallView) {
         Object.assign(startT, waterfallView);
@@ -1201,7 +1217,10 @@ async function runGame(mode, cinematic = null) {
           }
         },
         onSettings: () => openSettings({ assets, engine, look }),
+        // CREDITS-MOUNT-01: licence inventory is fetched lazily on first open (menu only, never in capture/bench paths)
+        createCredits: () => creditsInv && window.ASSETS?.uiStyle?.menu ? createCreditsView(creditsInv, { style: window.ASSETS.uiStyle.menu }) : null,
       });
+      fetch('../docs/licence-inventory.json').then((r) => r.json()).then((j) => { creditsInv = j; }).catch(() => {});
       window.__debug.menuHost = menuHost;
     }
   }
@@ -1234,7 +1253,7 @@ async function runGame(mode, cinematic = null) {
     // US-020a: `N` = mute toggle, always available (does not conflict with
     // `M`'s map card, US-015) - a single flag in audio/synth.js's module
     // state (later Settings, US-038, can read it the same way).
-    if (input.pressed('KeyN')) { toggleMute(); saveSettings({ muted: isMuted() }); } // US-060: remember across reload
+    if (input.pressed(gameKeys.mute)) { toggleMute(); saveSettings({ muted: isMuted() }); } // US-060: remember across reload
     if (input.pressed('F3')) overlay.toggle();
     // D-025 (US-038a AC "dev switch until US-038b ships"): `?debug=1` only -
     // cycles the 4 player grids; `engine.setGrid` no-ops off a gl2 backend.
@@ -1263,6 +1282,7 @@ async function runGame(mode, cinematic = null) {
       invView.step(dt, input, !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look
         && !(vitals && (vitals.dead || vitals.inputLocked)) && !(questUiActive && wakeOut.inputLocked));
     }
+    if (chestHook && mode === 'world' && playerHandle) chestHook.stepUi(dt, input.pressed(gameKeys.interact)); // S8-B1-04: steps while paused too (an open card pauses the sim)
     const invOpen = !!(invView && invView.isOpen);
     const cardOpen = !!(chestHook && chestHook.card.isOpen); // S8-B1-04: item-get card gates input same as invOpen
     // ---- US-015: wake timeline + map card (world_m1 only, questUiActive) ----
@@ -1272,8 +1292,8 @@ async function runGame(mode, cinematic = null) {
       engine.world.state['quest.wakeT'] += dt;
       wakeFrame(engine.world.state['quest.wakeT'], wakeCfg, wakeOut);
       if (wakeOut.inputLocked) playerHandle.data.components.body.eyeH = wakeOut.eyeH;
-      mPressedEdge = input.pressed('KeyM');
-      stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec);
+      mPressedEdge = input.pressed(gameKeys.map);
+      stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec, !!(look && look.locked)); // BUG-NOTE-ESC-01
       uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || (vitals && vitals.inputLocked);
     }
     // US-038b: settings panel (S from pause, or its own entry point)
@@ -1281,6 +1301,7 @@ async function runGame(mode, cinematic = null) {
     // S is also WASD "move backward", so this must never trigger in play.
     updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !!look && !look.locked && !isMapOpen() && !invOpen });
     uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || !!(vitals && vitals.inputLocked);
+    titleMenuActive = !!(menuHost && menuHost.active);
     const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || ((invOpen || cardOpen) && !ending)));
 
     // US-087 follow-up: drain blocked input without advancing targeting timers.
@@ -1310,14 +1331,14 @@ async function runGame(mode, cinematic = null) {
       if (ending || uiLocked || (vitals && vitals.inputLocked)) {
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {
-        controls.forward = (input.isDown('KeyW') ? 1 : 0) - (input.isDown('KeyS') ? 1 : 0);
-        controls.strafe = (input.isDown('KeyD') ? 1 : 0) - (input.isDown('KeyA') ? 1 : 0);
-        controls.run = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
+        controls.forward = (input.isDown(gameKeys.forward) ? 1 : 0) - (input.isDown(gameKeys.backward) ? 1 : 0);
+        controls.strafe = (input.isDown(gameKeys.right) ? 1 : 0) - (input.isDown(gameKeys.left) ? 1 : 0);
+        controls.run = input.isDown(gameKeys.run) || input.isDown(gameKeys.run2);
         // US-009: a HELD level, OR'd with the edge (`pressed`) so a Space tap
         // that starts and ends within one frame - between two fixed-step
         // updates - is never lost (integrate() does its own edge detection on
         // top of this, architecture.md section 5 `Controls` typedef).
-        controls.jump = input.isDown('Space') || input.pressed('Space');
+        controls.jump = input.isDown(gameKeys.jump) || input.pressed(gameKeys.jump);
       }
       if (ending) {
         // Arch review 1: `integrate` copies controls.yaw/pitch onto the
@@ -1358,9 +1379,9 @@ async function runGame(mode, cinematic = null) {
       if (hands) {
         // HANDS-01b (37.8a): the router turns LMB/RMB + the gate into one `down` per item; every item sim is stepped
         // every step (down = false when it is in no hand).
-        if (!uiLocked && !paused && !ending && !(vitals && vitals.inputLocked) && input.pressed('KeyH')) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
+        if (!uiLocked && !paused && !ending && !(vitals && vitals.inputLocked) && input.pressed(gameKeys.swapHands)) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
         const gateOpen = look.locked && !uiLocked && !ending && !paused && !(vitals && vitals.inputLocked);
-        hands.step(playerHandle.data, input.isDown('Mouse0') || input.pressed('Mouse0'), input.isDown('Mouse2') || input.pressed('Mouse2'), gateOpen);
+        hands.step(playerHandle.data, input.isDown(gameKeys.useLeft) || input.pressed(gameKeys.useLeft), input.isDown(gameKeys.useRight) || input.pressed(gameKeys.useRight), gateOpen);
         if (fireball) { // SPELL-01a: aim = unit 3D look vector (pitch > 0 = up); trig stays here, outside sim/
           forwardOf(look.yawDeg, swordFwd);
           const pr = look.pitchDeg * DEG2RAD, cp = Math.cos(pr);
@@ -1374,7 +1395,7 @@ async function runGame(mode, cinematic = null) {
       }
       if (practiceTarget) practiceTarget.step();
       if (vitals) {
-        vitals.step(playerHandle.data, input.pressed('KeyE')); // US-080a1 (30.2)
+        vitals.step(playerHandle.data, input.pressed(gameKeys.interact)); // US-080a1 (30.2)
         stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
         // US-080a1 AC5 (`?debug=1` only): F8 toggles invulnerability, F9 deals 5 HP.
         if (params.get('debug') === '1') {
@@ -1385,7 +1406,7 @@ async function runGame(mode, cinematic = null) {
       // US-053c: after beast/sword/vitals steps, before entityEmitters.sync()/particles.step() per 32.1.
       if (particleHooks) particleHooks.step(playerHandle.data);
       if (waterfallHooks) waterfallHooks.step();
-      if (ambientMotes) ambientMotes.step(playerHandle.data.x, playerHandle.data.y, playerHandle.data.z);
+      if (ambientMotes) { const pt = playerHandle.data.transform; ambientMotes.step(pt.x, pt.y, pt.z); } // S8-B1-18: position lives on .transform
       entityEmitters.sync(); engine.particles.step();
       if (waterfallHooks) waterfallHooks.afterStep();
       lap(SEC.physics);
@@ -1400,7 +1421,7 @@ async function runGame(mode, cinematic = null) {
       // step's position, before the event flush - `E` is edge-triggered the
       // same way Space is (US-009's convention). Forced false while ending
       // (input locked - no other interactable may fire mid-ending).
-      updateInteraction(engine.world, engine, Camera.fromEntityInto(playerHandle.data, undefined, interactEye, pitchClampDeg), !ending && !uiLocked && input.pressed('KeyE'));
+      updateInteraction(engine.world, engine, Camera.fromEntityInto(playerHandle.data, undefined, interactEye, pitchClampDeg), !ending && !uiLocked && input.pressed(gameKeys.interact));
       // READ-01: the open note's fade + `[E]`/`[Esc]` close, right after
       // `updateInteraction` (which just fired `note.read` on the E edge). A
       // no-op while no note is open; the close guard (`state === 'open'`)
@@ -1434,7 +1455,7 @@ async function runGame(mode, cinematic = null) {
         hintSignals.pointerUnlocked = !look.locked;
         hintSignals.moveOrLook = moveOrLook;
         hintSignals.run = controls.run && moving;
-        hintSignals.jump = input.pressed('Space');
+        hintSignals.jump = input.pressed(gameKeys.jump);
         hintSignals.pointerLocked = look.locked;
         hintSignals.mPressed = mPressedEdge;
         stepHints(engine.world, assets.uiStyle, dt, hintSignals); // reused object (7.6 item 9: no per-step allocation)
@@ -1446,7 +1467,7 @@ async function runGame(mode, cinematic = null) {
       // S8-B1-04: same gated E edge updateInteraction uses (false while a menu/card/note is up, see gameHooks.js
       // header) plus the ungated edge a handler's own modal needs to dismiss itself, and the look yaw (chest.js's
       // own reach/facing test wants the player's body forward, not the camera eye - see chestHook.js header).
-      const ePressed = input.pressed('KeyE');
+      const ePressed = input.pressed(gameKeys.interact);
       hs.interactPressed = !ending && !uiLocked && ePressed; hs.interactRaw = ePressed; hs.playerYawDeg = look.yawDeg;
       gameHooks.tick(dt);
       lap(SEC.quest);
@@ -1488,6 +1509,7 @@ async function runGame(mode, cinematic = null) {
     instances: engine.instances, // RE-06 (28.6)
     viewModel: engine.viewModel, // US-078a (30.1): the held sword; both mesh twins draw it when shown
     waterLooks: resolveWaterLooks(window.ASSETS.waterLooks), // US-055a2c (Q12 item 8): JS twin, same table as gpuPipeline.setWaterLooks
+    ripples, // S8-B2-13b NEEDS B1-main (38.14): duck-typed {packInto} read by waterComposite.js; owned by the module-scope singleton above
     // US-030a: true once a ready GPU pipeline owns casting - `renderWorld`
     // (compositor.js) reads this and skips its whole CPU sequence; kept in
     // sync with `gpuPipeline`/`rt.gpuActive` right below `mode === 'world'`.
@@ -1725,6 +1747,7 @@ async function runGame(mode, cinematic = null) {
     // 0 point lights - GpuCellPipeline.js's `_uploadLightUniforms` treats a
     // plain array as back-compat ambient-only input).
     lap(SEC.ui);
+    if (mode === 'world' && cam) hzb.trackPose(cam.x, cam.y, cam.z); // waystone / save-load / unannounced pose jumps
     if (wgActive && wgPipeline.ready) wgPipeline.frame(fb, (mode === 'world' && fb.lights) || ambientL, mode === 'world' ? cam : null, mode === 'world' ? engine.world : null);
     if (gpuPipeline) gpuPipeline.frame(fb, (mode === 'world' && fb.lights) || ambientL, mode === 'world' ? cam : null, mode === 'world' ? engine.world : null);
     lap(SEC.gpuFrame);
@@ -1754,7 +1777,7 @@ async function runGame(mode, cinematic = null) {
       // US-030a (14.2 item 7): "path: gpu|cpu  grid: WxH  rays: n" on the overlay.
       let extra = `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rendererInfo.label}` +
         `\n${describeQuality(bootOpts, rt.cols, rt.rows, engine.rays)}` + // GFX-01w
-        `\npath: ${rt.gpuActive ? 'gpu' : 'cpu'}  grid: ${rt.cols}x${rt.rows}  rays: ${engine.rays}` +
+        `\npath: ${rt.gpuActive ? 'gpu' : 'cpu'}  grid: ${rt.cols}x${rt.rows}  rays: ${engine.rays}${occlOpt.enabled && wgActive ? '  occl on (' + hzb.count + ' cuts)' : ''}` +
         (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` +
           // ARCH CHANGES item 4: `terrainSubmitMs*` is CPU draw-call submit
           // time, not a GPU cost - the real terrain GPU cost is the whole-frame
@@ -1870,8 +1893,8 @@ function runVoxelBenchMode() {
   const world = loadBenchWorld(assets.world('world_m1'));
   if (world.terrain) world.terrain.bakeFarSync();
   const lights = lightsEnabled ? buildLightSet(world, assets.palette) : null;
-  if (lights) setCloudShadow(lights, { strength: cloudStrength }); // S8-B2-12a NEEDS B1 item (2)
-  if (lights) setHorizonAo(lights, { strength: aoStrength }); // S8-B2-20 NEEDS B1 item (1)
+  if (lights && cloudShadowOn) lights.cloud = devCloudShadow(); // S8-B2-12c
+  if (lights && aoStrength > 0) lights.ao = { ...AO_DEFAULTS, strength: aoStrength }; // S8-B2-20 NEEDS B1 item (1)
   if (lights && !sunEnabled) lights.setSun({ elevation: lights.sun.elevation, azimuth: lights.sun.azimuth, on: false });
   if (lights) lights.update(0, world);
 
@@ -1897,6 +1920,7 @@ function runVoxelBenchMode() {
   const fb = {
     rt, depth: depthBuffer, palette: assets.palette, gbuf, matTable, detailPass,
     lights, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gpu: true, renderer: 'mesh', voxelPool: pool,
+    ripples, // S8-B2-13b NEEDS B1-main (38.14): absent would be fine too (duck-typed), set for consistency with the gameplay fb
   };
 
   const FRAMES = 300;
@@ -1929,7 +1953,7 @@ function runVoxelBenchMode() {
 // `?gpucompare=1` (isGeometryCompare) forced `rt` to the fixed reference box
 // above - keep it fixed even if the real window resizes/re-shows mid-run
 // (see the comment above the `rt.resize(GPU_COMPARE_REF_*)` call).
-const doResize = () => (isGpuCompareMode
+const doResize = () => (hzb.invalidate('resize'), isGpuCompareMode
   ? rt.resize(GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR)
   : rt.resize());
 window.addEventListener('resize', doResize);

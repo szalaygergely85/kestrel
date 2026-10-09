@@ -5,14 +5,15 @@
 import {
   AssetRegistry, createEngine, createRenderer, GRID_DEFAULT_COLS, clampGrid, MAX_LIGHTS,
   loadContentPack, ContentError, World, validateBehaviours, registerBehaviour,
-  DebugOverlay, drawText, validateVoxelModel, PITCH_CLAMP_PITCHED_DEG, createEditLayer,
+  DebugOverlay, drawText, validateVoxelModel, PITCH_CLAMP_PITCHED_DEG, createEditLayer, createFrameRenderer,
 } from '../../engine/index.js';
 import {
   createDoc, selectionFromEntityId, selectionEntityId, selectionItemData, selectionItemIndex,
   listOutlinerItems, frameFor, itemToWorld, worldToItem, mintId, fileKey,
 } from './doc.js';
-import { createFrame, editorRenderer } from './frame.js';
-import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose } from './camera.js';
+import { createOverlayTarget } from './overlayTarget.js';
+import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, applyViewPreset } from './camera.js';
+import { createAxisGizmo } from './axisGizmo.js';
 import { unprojectCell, rayPoint, projectPoint } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
 import { drawSelectionHighlight, drawMarkers, drawHoverOutline, drawMeshHighlightRect } from './select.js';
@@ -219,25 +220,39 @@ for (const name of validateBehaviours(World.load(assets.world(doc.worldId), asse
   registerBehaviour(name, () => {});
 }
 
-// WG-1c2: `?backend=webgpu` presents through WebGPU on the CPU path (the editor's GPU gate below stays WebGL2-only until WG-2).
+// ED-WG-01b (38.21 item 2): WebGPU is the default backend (same fallback rule as the game: ?backend=webgl2, ?gpu=0 or a failed
+// WebGPU start run the CPU path at the CPU grid). The editor never builds a GL cell pipeline.
 const g = clampGrid(gridFromParam(params, GRID_DEFAULT_COLS));
 window.__editorBoot?.stage('renderer init', 'Starting renderer');
-const { rt: builtRt } = await createRenderer({ canvas, cols: g.cols, rows: g.rows, backend: params.get('backend') || 'webgl2', gpu: params.get('gpu') !== '0' });
+const { rt: builtRt, pipeline: wgPipeline, info: rendererInfo } = await createRenderer({ canvas, cols: g.cols, rows: g.rows, backend: params.get('backend') || 'webgpu', gpu: params.get('gpu') !== '0', shadows: { sun: params.get('shadows') === 'map' ? 'map' : 'dda' } });
 window.__editorBoot?.stage('scene init', 'Preparing scene');
 const engine = createEngine({
-  canvas, assets, cols: g.cols, rows: g.rows, rays: 1, renderTarget: builtRt,
+  canvas, assets, cols: g.cols, rows: g.rows, rays: 1, renderTarget: builtRt, renderPipeline: wgPipeline,
   gpu: params.get('gpu') !== '0', inputTarget: canvas,
   shadows: { sun: params.get('shadows') === 'map' ? 'map' : 'dda' }, // 31.6 passthrough
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
 });
 const { renderTarget: rt, input } = engine;
 
-// ---- GPU gate (24.3): a real WebGL2 pipeline is required unless ?gpu=0 ----
-const gpuDevSwitch = params.get('gpu') === '0';
-// BUG-EDITOR-001 fix: `?gpu=0` keeps `rt.backend === 'gl2'` (RenderTarget.js
-// only shrinks the grid for it) - createFrame needs the raw param too, so it
-// can skip constructing GpuCellPipeline the same way main.js does.
-const frame = createFrame({ engine, assets, rt, gpuParam: !gpuDevSwitch, renderer: editorRenderer(params) });
+// ---- frame renderer (38.21): the engine owns matTable/GBuffer/voxel pool/sprites/lights + the WebGPU binds ----
+const RENDERER = 'mesh'; // ME-19a: the only renderer
+const pipeline = wgPipeline && wgPipeline.ready ? wgPipeline : null;
+const frame = createFrameRenderer({ engine, rt, pipeline, assets, idleSkip: true });
+// No GPU frame owner (webgl2 / ?gpu=0 / failed WebGPU): the CPU caster runs at the CPU grid (same rule as game main.js).
+if (!pipeline && rt.backend === 'gl2') {
+  const { cols: cpuCols, rows: cpuRows } = engine.gridRequest.cpuGrid;
+  if (rt.cols !== cpuCols || rt.rows !== cpuRows) {
+    engine.setGrid(cpuCols, cpuRows, { immediate: true });
+    frame.resize(rt.cols, rt.rows);
+  }
+}
+await frame.ready;
+// createRenderer builds the webgpu target at the CPU grid (38.8a item 14); once the pipeline owns the whole frame apply the requested grid
+// (240x90 default, same as the old GL editor and the game).
+if (pipeline && rt.backend === 'webgpu' && (rt.cols !== g.cols || rt.rows !== g.rows)) {
+  engine.setGrid(g.cols, g.rows, { immediate: true });
+  frame.resize(rt.cols, rt.rows);
+}
 // The render target defaults to the full window. Fit the editor's centre pane
 // so its canvas and UI aren't cropped behind the docks/toolbars.
 const viewport = canvas.parentElement;
@@ -253,16 +268,8 @@ function fitEditorViewport() {
 }
 fitEditorViewport();
 new ResizeObserver(fitEditorViewport).observe(viewport);
-const pitchClampDeg = frame.renderer === 'mesh' ? PITCH_CLAMP_PITCHED_DEG : 35; // 31.4: per effective renderer
-const gpuReady = rt.backend === 'gl2' && frame.gpuPipeline && frame.gpuPipeline.ready;
-const gpuBlocked = !gpuDevSwitch && !gpuReady;
-if (gpuBlocked) {
-  gateEl.style.display = 'flex';
-  gateEl.textContent = 'editor needs WebGL2 (use ?gpu=0 for the slow CPU path)';
-  canvas.style.display = 'none';
-}
-
-console.log(`[editor] RenderTarget backend: ${rt.backend}${frame.gpuPipeline ? ` GpuCellPipeline: ${frame.gpuPipeline.ready ? 'active' : 'inactive'}` : ''}`);
+const pitchClampDeg = PITCH_CLAMP_PITCHED_DEG;
+console.log(`[editor] RenderTarget backend: ${rt.backend}  renderer: ${rendererInfo ? rendererInfo.label : rt.backend}  frameComplete: ${!!(pipeline && pipeline.frameComplete)}`);
 
 // ---- camera pose: explicit CameraPose data (24.5), restored from localStorage if present ----
 const POSE_KEY = 'kestrel.editor.cam';
@@ -453,10 +460,10 @@ function drawTerrainCursor() {
   const radius = tb.stroke ? tb.stroke.radius : tb.radius;
   const hex = tb.stroke ? '#ffd24a' : '#7CFC7C';
   for (const [x, y] of ringPoints(tb.hover.x, tb.hover.y, radius)) {
-    const p = projectPoint(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, { x, y, z: tb.terrain.heightAt(x, y) + 0.15 }, frame.renderer);
+    const p = projectPoint(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, { x, y, z: tb.terrain.heightAt(x, y) + 0.15 }, RENDERER);
     if (!(p.depth > 0)) continue;
     const c = Math.round(p.col), r = Math.round(p.row);
-    if (c >= 0 && c < rt.cols && r >= 0 && r < rt.rows) rt.setCell(c, r, 'o', hex, EDITOR_PLATE_BG);
+    if (c >= 0 && c < rt.cols && r >= 0 && r < rt.rows) overlayPlate.setCell(c, r, 'o', hex, EDITOR_PLATE_BG);
   }
 }
 
@@ -589,7 +596,7 @@ function toggleItemLocked(item) {
  * `world`/`frame.lightSet` (US-067 AC: "survives a rebuild - add/delete/undo
  * elsewhere - within the same editor session"). Called right after
  * `engine.setWorld(w)` in `rebuild()`, where `frame.lightSet` is already
- * live (built synchronously off the `world:loaded` event, see frame.js).
+ * live (built synchronously off the `world:loaded` event, see frame renderer).
  */
 function reapplyVisibility() {
   for (const item of visState.hidden.values()) applyHiddenForItem(item, true);
@@ -681,7 +688,7 @@ function beginGroupDrag(e,col,row) {
         jobs.push({member,target,original});
       }
     }
-    const ray=unprojectCell(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,col,row,frame.renderer);
+    const ray=unprojectCell(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,col,row,RENDERER);
     const primary=snapshot.members[sel.primary], planeZ=primary.point.z;
     if (toolMode==='move' && (Math.abs(ray.dz)<1e-4 || (planeZ-cam.z)/ray.dz<=0)) return;
     const start=toolMode==='move' ? rayPoint(ray,(planeZ-cam.z)/ray.dz) : primary.point;
@@ -1654,7 +1661,7 @@ async function doImportVox() {
     requestIcon(name, true);
     renderAssetsList(assetsSearchInput.value);
     armModelPlacement(name);
-    flash(def.meshOnly && frame.renderer !== 'mesh'
+    flash(def.meshOnly && RENDERER !== 'mesh'
       ? `imported: ${name} (too large for the editor view: mesh-only model, placed but NOT drawn here - only on ?renderer=mesh; max 32 per axis to see it)`
       : `imported: ${name} (click viewport to place)`);
   } catch (e) {
@@ -1891,8 +1898,8 @@ function computeMouseCell(e) {
 function pickCtx() {
   return {
     cam, cols: rt.cols, rows: rt.rows, pxCellW: rt.pxCellW, pxCellH: rt.pxCellH,
-    world, assets, fb: frame.fb, gpuPipeline: frame.gpuPipeline, gpuActive: rt.gpuActive,
-    voxelPool: frame.voxelPool, renderer: frame.renderer,
+    world, assets, fb: frame.fb, readSurface: frame.readSurface,
+    voxelPool: frame.voxelPool, renderer: RENDERER,
   };
 }
 
@@ -1908,22 +1915,26 @@ function beginSelectionBox(e, col, row) {
     rect:{minCol:col,maxCol:col,minRow:row,maxRow:row} };
 }
 
-canvas.addEventListener('mousedown', (e) => {
+let pickSeq = 0, moveSeq = 0;
+canvas.addEventListener('mousedown', async (e) => {
   if (e.button !== 0 || !editorKeysActive()) return;
   if (modelPickerEl.style.display !== 'none') return; // US-063: the model picker modal owns clicks while open
   const { col, row } = computeMouseCell(e);
+  const seq = ++pickSeq, stamp = world;
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
 
   if (toolMode === 'terrain') { // ED-TERRAIN-1c: the brush owns the left button
-    const hit = pickAt(col, row, pickCtx());
+    const hit = await pickAt(col, row, pickCtx());
+    if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
     if (hit.kind === 'terrain' && hit.world) { tb.hover = { x: hit.world.x, y: hit.world.y }; terrainStrokeStart(tb.hover); }
     else flash('terrain: click on the terrain');
     return;
   }
 
   if (placeMode) {
-    const result = pickAt(col, row, pickCtx());
-    const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, frame.renderer);
+    const result = await pickAt(col, row, pickCtx());
+    if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+    const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, RENDERER);
     // 24.9: "at a picked point or cursor ray" - a surface/terrain/entity hit
     // gives a real point; looking at open sky falls back to a point 8 m out
     // along the click ray, so placing never silently no-ops.
@@ -1945,7 +1956,8 @@ canvas.addEventListener('mousedown', (e) => {
     return;
   }
 
-  const result = pickAt(col, row, pickCtx());
+  const result = await pickAt(col, row, pickCtx());
+  if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
   lastPickText = formatPickResult(result);
 
   if (result.kind === 'meshStructure' && result.structureId) {
@@ -1967,7 +1979,8 @@ canvas.addEventListener('mousedown', (e) => {
     // It stays selectable from the scene tree (that path never calls this).
     const item = pickSelectionOrNull(visState, rawItem);
     if (!item) {
-      const marker = pickMarkers(col, row, pickCtx());
+      const marker = await pickMarkers(col, row, pickCtx());
+      if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
       if (marker) { selectMarker(e,col,row,marker); return; }
       beginSelectionBox(e,col,row);
       return;
@@ -2018,13 +2031,15 @@ canvas.addEventListener('mousedown', (e) => {
     }
     return;
   }
-  const marker = pickMarkers(col, row, pickCtx());
+  const marker = await pickMarkers(col, row, pickCtx());
+  if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
   if (marker) { selectMarker(e,col,row,marker); return; }
   beginSelectionBox(e,col,row);
 });
 
-window.addEventListener('mousemove', (e) => {
+window.addEventListener('mousemove', async (e) => {
   const { col, row } = computeMouseCell(e);
+  const seq = ++moveSeq, stamp = world;
   if (col >= 0 && col < rt.cols && row >= 0 && row < rt.rows) { hoverCol = col; hoverRow = row; frame.markDirty(); }
   if (boxDrag) {
     const dx=e.clientX-boxDrag.startX,dy=e.clientY-boxDrag.startY;
@@ -2038,7 +2053,7 @@ window.addEventListener('mousemove', (e) => {
     frame.markDirty();return;
   }
   if (meshDrag) {
-    const ray=unprojectCell(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,col,row,frame.renderer);
+    const ray=unprojectCell(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,col,row,RENDERER);
     if(Math.abs(ray.dz)<1e-4)return;
     const distance=(meshDrag.point.z-cam.z)/ray.dz;
     if(distance<=0)return;
@@ -2085,8 +2100,9 @@ window.addEventListener('mousemove', (e) => {
       assetDrag.overView = true;
       assetDrag.lastCol = col;
       assetDrag.lastRow = row;
-      const result = pickAt(col, row, pickCtx());
-      const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, frame.renderer);
+      const result = await pickAt(col, row, pickCtx());
+      if (seq !== moveSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+      const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, RENDERER);
       const point = result.world || rayPoint(ray, 8);
       assetDrag.rawPoint = point;
       const meshKey = meshKeyFromIcon(assetDrag.modelKey);
@@ -2124,7 +2140,7 @@ window.addEventListener('mousemove', (e) => {
     const d=groupDrag;
     if (d.mode==='yaw') updateGroupTransform(d.snapshot,0,0,0,(e.clientX-d.startClientX)*0.5);
     else {
-      const ray=unprojectCell(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,col,row,frame.renderer);
+      const ray=unprojectCell(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,col,row,RENDERER);
       if (Math.abs(ray.dz)<1e-4 || (d.planeZ-cam.z)/ray.dz<=0) return;
       const point=rayPoint(ray,(d.planeZ-cam.z)/ray.dz), snap=SNAP_OPTIONS[snapIdx];
       updateGroupTransform(d.snapshot,snapTo(point.x-d.start.x,snap),snapTo(point.y-d.start.y,snap));
@@ -2136,7 +2152,7 @@ window.addEventListener('mousemove', (e) => {
     world.renderVersion++;frame.markDirty();return;
   }
   if (!drag) return;
-  const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, frame.renderer);
+  const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, RENDERER);
   if (Math.abs(ray.dz) < 1e-4) return;
   const d = (drag.startTransform.z - cam.z) / ray.dz;
   if (d <= 0) return;
@@ -2237,11 +2253,13 @@ window.addEventListener('mouseup', (e) => {
 });
 
 // ED-TERRAIN-1c: cursor ring + stroke dabs follow the pointer over the terrain.
-canvas.addEventListener('mousemove', (e) => {
+canvas.addEventListener('mousemove', async (e) => {
   if (toolMode !== 'terrain') return;
   const { col, row } = computeMouseCell(e);
+  const seq = ++moveSeq, stamp = world;
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
-  const hit = pickAt(col, row, pickCtx());
+  const hit = await pickAt(col, row, pickCtx());
+  if (seq !== moveSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
   if (hit.kind === 'terrain' && hit.world) {
     tb.hover = { x: hit.world.x, y: hit.world.y };
     if (tb.stroke) terrainStrokeMove(tb.hover);
@@ -2284,10 +2302,28 @@ canvas.addEventListener('wheel', (e) => {
 let animate = false;
 animateToggle.addEventListener('change', () => { animate = animateToggle.checked; frame.markDirty(); });
 
+// US-068c view presets: orbit around the point VIEW_PIVOT_M ahead of the eye (no selection logic), perspective only.
+const VIEW_PIVOT_M = 10;
+function setViewPreset(name) {
+  const y = cam.yawDeg * Math.PI / 180, p = cam.pitchDeg * Math.PI / 180;
+  const focus = {
+    x: cam.x + Math.sin(y) * Math.cos(p) * VIEW_PIVOT_M,
+    y: cam.y - Math.cos(y) * Math.cos(p) * VIEW_PIVOT_M,
+    z: cam.z + Math.sin(p) * VIEW_PIVOT_M,
+  };
+  applyViewPreset(cam, name, focus, pitchClampDeg);
+  axisGizmo.update();
+  frame.markDirty();
+}
+const axisGizmo = createAxisGizmo(document.getElementById('viewport'), { getView: () => cam, onPreset: setViewPreset });
+
 function update(dt) {
   if (!editorKeysActive()) { input.endFrame(); return; }
   if (input.pressed('F3')) overlay.toggle();
-  if (input.pressed('Home')) { cam = startPose(); frame.markDirty(); }
+  if (input.pressed('Home')) { cam = startPose(); axisGizmo.update(); frame.markDirty(); }
+  if (input.pressed('Numpad7')) setViewPreset('TOP');
+  if (input.pressed('Numpad1')) setViewPreset('FRONT');
+  if (input.pressed('Numpad9')) setViewPreset('ISO');
   if (input.pressed('KeyT')) teleportToSelection();
   if (input.pressed('KeyM')) { markersOn = !markersOn; frame.markDirty(); }
   if (input.pressed('KeyH')) { helpOn = !helpOn; frame.markDirty(); } // US-063 key-help overlay
@@ -2374,6 +2410,7 @@ function update(dt) {
   const changed = updateCamera(cam, input, dt, { speed, lookDx: rmbDown ? dx : 0, lookDy: rmbDown ? dy : 0, pitchClampDeg });
   if (changed) {
     frame.markDirty();
+    axisGizmo.update();
     savePoseDebounced(cam);
   }
   input.endFrame();
@@ -2422,23 +2459,25 @@ function drawHelpOverlay() {
 function drawAssetGhost() {
   if (!assetDrag || !assetDrag.moved || !assetDrag.overView || !assetDrag.ghostPoint) return;
   const p = assetDrag.ghostPoint;
-  const proj = projectPoint(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, p, frame.renderer);
+  const proj = projectPoint(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, p, RENDERER);
   if (!(proj.depth > 0)) return;
   const c = Math.round(proj.col), r = Math.round(proj.row);
   if (c < 0 || c >= rt.cols || r < 0 || r >= rt.rows) return;
   const goldHex = (assets.palette.colors && assets.palette.colors.gold) || '#ffd24a';
   const dimHex = (assets.palette.colors && assets.palette.colors.uiDim) || '#8b949e';
   const bgHex = '#0c120c'; // matches drawHelpOverlay's panel background
-  rt.setCell(c, r, '+', goldHex, bgHex);
-  drawText(rt, c + 1, r, ` ${meshKeyFromIcon(assetDrag.modelKey) ?? assetDrag.modelKey}`, dimHex, bgHex);
+  overlayPlate.setCell(c, r, '+', goldHex, bgHex);
+  drawText(overlayPlate, c + 1, r, ` ${meshKeyFromIcon(assetDrag.modelKey) ?? assetDrag.modelKey}`, dimHex, bgHex);
 }
 
+const overlayPlate = createOverlayTarget(engine.ui, rt);
+const overlayGlyph = createOverlayTarget(engine.ui, rt, { glyphOnly: true });
 function drawOverlay(fb) {
   const selection = primarySelection();
-  if (markersOn) drawMarkers(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, frame.renderer, groupDrag?.previewItems);
-  for (const item of sel.items) drawSelectionHighlight(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, item, '#ffd24a', frame.renderer, groupDrag?.previewItems);
-  if (boxDrag?.moved) drawMeshHighlightRect(rt,boxDrag.rect,'#ffd24a');
-  drawHoverOutline(rt, hoverCol, hoverRow, '#7CFC7C');
+  if (markersOn) drawMarkers(overlayPlate, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, RENDERER, groupDrag?.previewItems);
+  for (const item of sel.items) drawSelectionHighlight(overlayPlate, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, item, '#ffd24a', RENDERER, groupDrag?.previewItems);
+  if (boxDrag?.moved) drawMeshHighlightRect(overlayPlate,boxDrag.rect,'#ffd24a');
+  drawHoverOutline(overlayGlyph, hoverCol, hoverRow, '#7CFC7C');
   drawAssetGhost();
   drawTerrainCursor();
   if (helpOn) drawHelpOverlay();
@@ -2461,7 +2500,7 @@ function refreshViewportPlates(nowMs) {
 function render() {
   const selection = primarySelection();
   rebuildSched.flush(); // ED-MESH-1d: one coalesced rebuild per frame (31.3)
-  const rendered = frame.step(world, cam, { animate, dt: 1 / 60, drawOverlay });
+  const rendered = frame.step(world, cam, { animate, dt: 1 / 60, beforePresent: drawOverlay });
   if (rendered) lastPresented++;
   refreshViewportPlates(performance.now());
   if (overlay.shouldRefresh(performance.now())) {
@@ -2472,7 +2511,7 @@ function render() {
       + `speed: ${speed.toFixed(1)} m/s  animate: ${animate}  snap: ${SNAP_OPTIONS[snapIdx]} m  cell: (${hoverCol ?? '-'},${hoverRow ?? '-'})\n`
       + `selected: ${sel.items.length} · ${selText}${placeMode ? `  place: ${placeMode}` : ''}\n`
       + `${lastPickText}\n`
-      + `presented: ${lastPresented}  backend: ${rt.backend}${frame.gpuPipeline ? ' gpu' : ' js'}`);
+      + `presented: ${lastPresented}  backend: ${rt.backend}${frame.gpuOwnsFrame ? ' gpu' : ' js'}`);
   }
   statusEl.textContent = (doc.readOnly ? 'content: design/*.js (read-only source)\n' : '') + lastPickText;
 }
@@ -2503,4 +2542,4 @@ window.__editor = {
   doImportVox,
 };
 
-if (!gpuBlocked) engine.run({ update, render });
+engine.run({ update, render });

@@ -30,7 +30,7 @@ assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
 const wgslTypes = { uint: 'texture_2d<u32>', sint: 'texture_2d<i32>', float: 'texture_2d<f32>' };
 SHADE_TEXTURES.forEach((k, i) => assert.ok(new RegExp(`@group\\(0\\) @binding\\(${i}\\) var \\w+: ${wgslTypes[k].replace(/[<>]/g, '\\$&')}`).test(SHADE_WGSL), `binding ${i} ${k}`));
 assert.ok(/@group\(1\) @binding\(0\) var<uniform> su: ShadeU/.test(SHADE_WGSL));
-assert.ok(new RegExp(`kindU == ${KIND_MODEL}u \\|\\| kindU == ${KIND_MESH}u\\) && face == ${FACE_PACKED}`).test(SHADE_WGSL), 'kind 8/9 face-7 aoD force (A6)');
+assert.ok(SHADE_WGSL.includes(`(kindU == ${KIND_MODEL}u && face == ${FACE_PACKED}) || kindU == ${KIND_MESH}u) { aoDA = 1.0e30; }`), 'kind 8 face-7 + ALL kind 9 aoD force (A6, ME-20c)');
 assert.ok(new RegExp(`const MAX_LEVELS: i32 = ${MAX_LEVELS};`).test(SHADE_WGSL) && new RegExp(`const MAX_FEATURES_PER_TYPE: i32 = ${MAX_FEATURES_PER_TYPE};`).test(TERRAIN_SHADE_WGSL), 'constants interpolated');
 assert.ok(/\(u32\(x\) \* 0x27d4eb2du\) \^ \(u32\(y\) \* 0x165667b1u\) \^ \(u32\(s\) \* 0x9e3779b1u\)/.test(SHADE_WGSL), 'hash constants');
 assert.ok(/floor\(clamp\(v255, 0\.0, 255\.0\) \+ 0\.5\) \/ 255\.0/.test(SHADE_WGSL), 'byte quantise floor(v+0.5)');

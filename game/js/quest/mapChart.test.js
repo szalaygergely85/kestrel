@@ -55,6 +55,12 @@ stepMapCard(world,assets,1,input,100,0);assert.equal(getMapChart().position.code
 player=null;stepMapCard(world,assets,1/60,input,100,0);assert.equal(getMapChart().position.code,0);
 key='Escape';stepMapCard(world,assets,1/60,input,100,0);stepMapCard(world,assets,1,input,100,0);
 assert.equal(isMapOpen(),false);
+// BUG-NOTE-ESC-01: under pointer lock Chrome eats Esc (releases the lock, no keydown reaches the page) -
+// a lock-lost edge while the card is open closes it, same pattern as noteRead.js's stepNoteRead.
+key='KeyM';stepMapCard(world,assets,1/60,input,100,0,true);assert.equal(isMapOpen(),true);
+key='';stepMapCard(world,assets,1/60,input,100,0,true);assert.equal(isMapOpen(),true); // still locked, no key -> stays open
+stepMapCard(world,assets,1/60,input,100,0,false);stepMapCard(world,assets,1,input,100,0,false); // lock-lost edge, no key needed
+assert.equal(isMapOpen(),false);
 world.state['quest.endT']=0;key='KeyM';stepMapCard(world,assets,1,input,100,0);assert.equal(isMapOpen(),false);
 initMapCard(assets,400,150);assert.equal(getMapChart(),null);
 assert.equal(getMapPanel().art.w,globalThis.ASSETS.models.mapCard.size.w);

@@ -221,7 +221,7 @@ Standalone `wgsl/hzb.wgsl.js` (max-depth downsample chain, compute) + JS twin + 
 Files: `wgsl/hzb.wgsl.js` (new), `wgsl/index.js` (append).
 
 ### S8-B2-10 Occlusion test in the cull kernel [P1, ~0.75 d, deps: S8-B2-09, B1 passCull wiring]
-ARCH-NOTE NEEDED (fable, core render): previous-frame HZB alone cannot guarantee "never wrongly culled" (disocclusion, fast turns); needs a 2-phase test (re-test culled set against this frame's HZB) or a stated lag rule. Second-pass AABB test against the previous-frame HZB with a conservative margin; instances never wrongly culled.
+NOTE: architecture.md 38.20 (PC-B architect 2026-10-09). Two-phase, frame-exact (phase 1 vs last frame's HZB, ONE HZB build after raster A, phase 2 re-tests the pending set, raster B load-only); conservative margins + superset tests; default OFF (`?occl=1`). Split: S8-B2-10a [B2, 0.5 d] `HzbU.srcPitch` + `engine/mesh/occlusion.js` twin + tests; S8-B2-10b [B2, 0.75 d, deps 10a] `cull.wgsl.js` words 44+ / bindings 5-6 / phase paths + probes; S8-B2-10c [B1 kestrel-2, 1 d, deps 10b] `wg/passHzb.js` + passCull phase 2 + WgCellPipeline order + depth copy + flag; S8-B2-10d [main session, 0.25 d] gpucompare `occl=1` identity gate + timer numbers on 4060 / Intel iGPU -> default decision.
 - [ ] Node twin test: no visible instance culled (set superset of brute force visible) on bench poses.
 - [ ] Reports culled-by-occlusion count at roadSouth. NEEDS B1 to wire the HZB texture; writes `NEEDS B1` row.
 Files: `wgsl/cull.wgsl.js`, JS twin in `wg/passCull.js` oracle helpers (read-only to B1 file; ask first).

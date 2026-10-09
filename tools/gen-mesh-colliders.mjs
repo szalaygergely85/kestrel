@@ -25,13 +25,22 @@ if (process.argv[1] && process.argv[1].endsWith('gen-mesh-colliders.mjs')) {
   const files = [];
   for (const r of roots.length ? roots : ['content/meshes/quaternius']) walk(r, files);
   let changed = 0, tris = 0;
+  // QUAT-LOD-01: a mesh named in another mesh's `lods` is render-only (collision always comes from LOD0) -> collide:false.
+  const lodIds = new Set();
+  for (const f of files) for (const l of JSON.parse(fs.readFileSync(f, 'utf8')).lods || []) lodIds.add(l.mesh);
+  const isLod = (f) => lodIds.has(path.relative('content/meshes', f).replace(/\\/g, '/').replace(/\.mesh\.json$/, ''));
+  const collision = (m, f) => {
+    if (!isLod(f)) return withCollision(m, { hull });
+    m.collide = false; delete m.collider; delete m.colliderParts; delete m.colliderHull;
+    return m;
+  };
   for (const f of files) {
     const before = fs.readFileSync(f, 'utf8');
     const binary = typeof JSON.parse(before).bin === 'string';
     let out, j, binChanged = false;
     const t0 = performance.now();
     if (binary) {
-      j = withCollision(readMeshJSON(f), { hull });
+      j = collision(readMeshJSON(f), f);
       const r = renderMeshFiles(f, j);
       out = r.metaText;
       const binFile = path.join(path.dirname(f), r.binName);
@@ -39,7 +48,7 @@ if (process.argv[1] && process.argv[1].endsWith('gen-mesh-colliders.mjs')) {
       if (!check && (binChanged || out !== before)) fs.writeFileSync(binFile, r.bin);
     } else {
       const exploded = /"pos": \[\r?\n/.test(before); // one number per line = canonical (registered) form
-      out = (exploded ? stringifyContent : stringifyMeshJSON)(withCollision(JSON.parse(before), { hull }));
+      out = (exploded ? stringifyContent : stringifyMeshJSON)(collision(JSON.parse(before), f));
       j = JSON.parse(out);
     }
     const buildMs = performance.now() - t0;

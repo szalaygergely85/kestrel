@@ -27,6 +27,9 @@ export function validateScatterConfig(cfg) {
     if (!s || hasModel === hasMesh) bad(`${key}: exactly one of model/mesh`);
     if (hasModel && (typeof s.model !== 'string' || !s.model)) bad(`${key}.model`);
     if (hasMesh && (typeof s.mesh !== 'string' || !s.mesh)) bad(`${key}.mesh`);
+    // MESH-LOD-CELLS-01: optional per-species LOD override (default = cfg.lodCells for voxel species, LOD off for mesh species)
+    if (s.lodCells !== undefined && (!Number.isFinite(s.lodCells) || s.lodCells <= 0)) bad(`${key}.lodCells`);
+    if (s.lod0Cap !== undefined && (!Number.isInteger(s.lod0Cap) || s.lod0Cap < 0)) bad(`${key}.lod0Cap`);
     if (!Number.isFinite(s.weight) || s.weight <= 0) bad(`${key}.weight`);
     if (!Number.isFinite(s.trunkR) || s.trunkR <= 0) bad(`${key}.trunkR`);
     if (!Number.isFinite(s.trunkH) || s.trunkH <= 0) bad(`${key}.trunkH`);
@@ -92,7 +95,7 @@ export function scatterTrees(terrain, structures = [], cfg = terrain.recipe.reci
 /** @typedef {{prism?: {r:number,h:number}, box?: {hx:number,hy:number,h:number}}} DetailCollider */
 /** @typedef {{count:number, x:Float64Array, y:Float64Array, z:Float64Array,
  * yawDeg:Int16Array, species:Uint16Array, r2:Float32Array,
- * speciesDefs:Array<{model?:string,mesh?:string,layer:number,shadow:boolean,lodCells:number,collider?:DetailCollider}>,
+ * speciesDefs:Array<{model?:string,mesh?:string,layer:number,shadow:boolean,sway:boolean,lodCells:number,collider?:DetailCollider}>,
  * tileM:number,tx0:number,ty0:number,tilesX:number,tilesY:number,tileStart:Uint32Array}} DetailSet */
 const DETAIL_TYPES = ['grass', 'forest', 'water', 'rock', 'path'];
 const detailNormal = { x: 0, y: 0, z: 1 };
@@ -146,7 +149,7 @@ export function validateDetailConfig(cfg, typeNames = DETAIL_TYPES) {
       l.ground[type] = list.map((s, j) => {
         const skey = `${gkey}[${j}]`;
         if (!s || typeof s !== 'object') bad(skey);
-        const species = { sinkM: 0.05, yawStep: 1, shadow: false, ...s };
+        const species = { sinkM: 0.05, yawStep: 1, shadow: false, sway: false, ...s };
         // TREES-LP-c: exactly one of `model` (voxel) / `mesh` (kind-9 registry mesh id)
         const hasModel = species.model !== undefined, hasMesh = species.mesh !== undefined;
         if (hasModel === hasMesh) bad(`${skey}: exactly one of model/mesh`);
@@ -156,6 +159,7 @@ export function validateDetailConfig(cfg, typeNames = DETAIL_TYPES) {
         if (!Number.isFinite(species.sinkM)) bad(`${skey}.sinkM`);
         integer(species.yawStep, `${skey}.yawStep`, 1, 360);
         if (typeof species.shadow !== 'boolean') bad(`${skey}.shadow`);
+        if (typeof species.sway !== 'boolean') bad(`${skey}.sway`); // FOLIAGE-SWAY-01 part 2: explicit per-species flag, no name regex
         if (species.collider !== undefined) {
           const c = species.collider;
           if (!c || typeof c !== 'object' || Object.keys(c).length !== 1 || !(c.prism || c.box)) bad(`${skey}.collider`);
@@ -212,7 +216,7 @@ export function scatterDetail(terrain, structures = [], keepOut = [], cfg = terr
     for (const [type, list] of Object.entries(l.ground)) {
       speciesByType[type] = list.map(s => {
         const index = speciesDefs.length;
-        speciesDefs.push({ model: s.model, mesh: s.mesh, layer, shadow: s.shadow, lodCells: l.lodCells, collider: s.collider });
+        speciesDefs.push({ model: s.model, mesh: s.mesh, layer, shadow: s.shadow, sway: s.sway, lodCells: l.lodCells, collider: s.collider });
         return index;
       });
     }

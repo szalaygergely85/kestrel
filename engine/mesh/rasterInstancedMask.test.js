@@ -8,7 +8,7 @@
 import { createRasterTarget, rasterDrawList } from './rasterJS.js';
 import { DrawList, DRAW_STATIC, MeshDrawCache } from './DrawList.js';
 import { buildMeshFromTris } from './gltf.js';
-import { createInstanceBuffer, createInstanceParts, writeUnitInstance } from './instances.js';
+import { createInstanceBuffer, createInstanceParts, writeUnitInstance, InstanceGroups } from './instances.js';
 import { projTerms, shearProjection } from '../render/projection.js';
 import { MaskAtlas, cutoffByte } from '../render/MaskAtlas.js';
 import { KIND_MESH } from '../render/GBuffer.js';
@@ -161,6 +161,30 @@ const statOpaque = renderStatic(opaqueUnit);
   let mism = 0, solid = 0;
   for (let i = 0; i < a.kind.length; i++) { if (a.kind[i] !== b.kind[i] || a.depth[i] !== b.depth[i]) mism++; if (a.kind[i] === KIND_MESH) solid++; }
   ok('opaque-only instanced mesh (no maskRanges) still matches its static oracle exactly', mism === 0 && solid > 300, `mism=${mism} solid=${solid}`);
+}
+
+
+// --- ALPHA-01f-fix: the production path. InstanceGroups.meshGroup(masked mesh) must fill identity parts 0..R-1, so the CPU
+// per-range loop (no DRAW_FLAG_ONE_PART) draws EVERY range at the instance origin: byte-identical to the static oracle. ---
+{
+  const { M } = setup();
+  const groups = new InstanceGroups();
+  const g = groups.meshGroup(unitMesh, N);
+  g.count = N;
+  for (let i = 0; i < N; i++) writeUnitInstance(g.ib, i, i * DX, 0, 0, 0, i, 0);
+  ok('meshGroup(masked, 2 ranges): identity parts 0 and 1, count 2', g.parts.count === 2 && g.parts.m[0] === 1 && g.parts.m[12] === 1 && g.parts.m[16] === 1 && g.parts.m[20] === 1 && g.parts.flags[1] === 1);
+  const list = new DrawList(4);
+  list.begin();
+  groups.addToDrawList(list, null, null, undefined, null, 0, { cache: { get: (m) => cache.get(m, idFor, atlas) }, idFor });
+  ok('masked meshGroup item has no DRAW_FLAG_ONE_PART', list.count === 1 && (list.items[0].flags & 2) === 0);
+  const target = createRasterTarget(COLS, ROWS, 1, {});
+  rasterDrawList(list, target, { M, maskAtlas: atlas });
+  let mism = 0, solid = 0;
+  for (let i = 0; i < target.kind.length; i++) { if (target.kind[i] !== stat.kind[i] || target.depth[i] !== stat.depth[i]) mism++; if (target.kind[i] === KIND_MESH) solid++; }
+  ok('masked meshGroup (range 1 leaf included) == N DRAW_STATIC draws', mism === 0 && solid > 1000, `mism=${mism} solid=${solid}`);
+  const big = { ...unitMesh, ranges: Array.from({ length: 9 }, (_, i) => ({ ...unitMesh.ranges[0], part: 'r' + i })), maskRanges: unitMesh.maskRanges || [0] };
+  let threw = false; try { new InstanceGroups().meshGroup(big, 1); } catch (e) { threw = true; }
+  ok('masked meshGroup with > MAX_VOX_PARTS ranges throws', threw);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

@@ -2,7 +2,7 @@
 // the GLSL twin text, and shader/layout string rules. node engine/render/gpu/wgsl/terrainRaster.wgsl.test.js
 import assert from 'node:assert/strict';
 import { TERRAIN_RASTER_WGSL, TERRAIN_BLOCK, TERRAIN_TEXTURES } from './terrainRaster.wgsl.js';
-import { TERRAIN_RASTER_FRAG_SRC, TERRAIN_VERT_SRC } from '../glsl/terrain.vert.js';
+import { TERRAIN_RASTER_FRAG_SRC, TERRAIN_VERT_SRC } from './terrainVert.glslref.js';
 import { WGSL_MODULES } from './index.js';
 import { KIND_TERRAIN, FACE_PACKED } from '../../GBuffer.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
@@ -55,7 +55,7 @@ for (let i = 0; i < 1000; i++) { const x = rand() * 160 - 16, y = rand() * 160 -
 // Same-op-order string checks against the GLSL twin.
 const src = TERRAIN_RASTER_WGSL;
 assert.ok(src.includes('o.pos.y = -o.pos.y; o.pos.z = 0.5 * (o.pos.z + o.pos.w);'));
-assert.ok(src.includes('let dist = 1.0 / v.pos.w;'));
+assert.ok(src.includes('let dist = select(1.0 / v.pos.w, 0.05 + v.pos.z * (2000.0 - 0.05), u.projMode == 2u);'));
 assert.ok(src.includes('const PLANEID_TERRAIN: u32 = 0xFFFFFFFFu;')); // GL uint(-1)
 assert.ok(src.includes(`const KIND_TERRAIN: u32 = ${KIND_TERRAIN}u;`) && src.includes(`const FACE_PACKED: u32 = ${FACE_PACKED}u;`));
 assert.ok(src.includes('KIND_TERRAIN | (FACE_PACKED << 8u) | (u32(terrType) << 16u)'));

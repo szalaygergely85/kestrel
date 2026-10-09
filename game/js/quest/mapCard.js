@@ -10,6 +10,7 @@ import { request as requestHint } from './hints.js';
 let art = null;   // PanelArt, built once (palette/model are load-time constants)
 let panel = null; // runtime Panel, rebuilt every 'world:loaded' (7.6 item 6)
 let chartView = null;
+let prevLocked = false; // pointer-lock state of the previous step (BUG-NOTE-ESC-01, same pattern as noteRead.js)
 
 // MAP-01a pending: one replaceable semantic table, using existing chart colours.
 export const CHART_GLYPHS = Object.freeze({
@@ -178,9 +179,16 @@ export function drawMapCard(ui,timeMs,lut=null) {
  * @param {import('../../../engine/index.js').Input} input
  * @param {number} wakeT
  * @param {number} titleDoneAtSec
+ * @param {boolean} [locked] pointer-lock state this step (BUG-NOTE-ESC-01: Chrome eats Esc under pointer
+ * lock - releases the lock, no keydown reaches the page - so a lock-lost edge while the card is open closes
+ * it, same pattern as noteRead.js's stepNoteRead). `locked` undefined (old callers) = never auto-closes.
  */
-export function stepMapCard(world, assets, dt, input, wakeT, titleDoneAtSec) {
+export function stepMapCard(world, assets, dt, input, wakeT, titleDoneAtSec, locked) {
   if (!panel) return;
+  if (typeof locked === 'boolean') {
+    if (prevLocked && !locked && panel.state !== 'closed') panel.close();
+    prevLocked = locked;
+  }
   panel.step(dt);
   if (chartView && panel.state !== 'closed') {
     const player = world.get('player');

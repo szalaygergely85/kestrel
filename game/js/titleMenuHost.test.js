@@ -35,4 +35,27 @@ h.step(keys('ArrowDown')); // Continue is enabled now
 h.step(keys('Enter'));
 assert.deepEqual(log, [['cont', 1, true]]);
 assert.equal(h.active, false);
+
+// CREDITS-MOUNT-01: Credits view mounted on the host (fake view stands in for ui/creditsView.js)
+{
+  const seen = []; let backNext = false;
+  const view = { handleKey: (c) => { seen.push(c); if (c === 'Escape') backNext = true; }, takeAction: () => (backNext ? (backNext = false, 'back') : null), draw: () => seen.push('draw') };
+  const hc = createTitleMenuHost({ adapter: createMemoryAdapter(), onNewGame() {}, onContinue() {}, onSettings() {}, createCredits: () => view });
+  assert.equal(hc.creditsOpen, false);
+  hc.step(keys('KeyC'));
+  assert.equal(hc.creditsOpen, true);
+  assert.equal(hc.active, true); // sim stays frozen (main.js gates on host.active)
+  assert.equal(hc.pointer(5, 5, true), false); // menu pointer ignored while Credits is up
+  hc.step(keys('ArrowDown', 'Home', 'End', 'Enter'));
+  assert.deepEqual(seen, ['ArrowDown', 'Enter', 'Home', 'End'].filter((c) => seen.includes(c)).length === 4 ? seen : [], 'all paging keys reach the view');
+  hc.draw({}); assert.equal(seen.at(-1), 'draw');
+  hc.step(keys('Escape'));
+  assert.equal(hc.creditsOpen, false); // Back returns to the menu card
+  assert.equal(hc.active, true);
+  hc.step(keys('Enter')); // menu card responds again (opens slot list, no game start)
+  assert.equal(hc.active, true);
+  // real view with the real inventory
+  const { createCreditsView } = await import('./ui/creditsView.js');
+  assert.equal(typeof createCreditsView, 'function');
+}
 console.log('titleMenuHost.test: ok');

@@ -56,6 +56,8 @@ export class GBuffer {
     this.dvdy = new Float32Array(n);
     this.z = new Float32Array(n);
     this.aoD = new Float32Array(n);
+    // ME-20c (38.18): interpolated baked vertex AO (1 = open) of kind-9 cells; not cleared per frame (every kind-9 cell writes it, only kind 9 reads it)
+    this.vao = new Float32Array(n);
     this.fogF = new Float32Array(n);
     this.rule = new Uint8Array(n);
     // US-028 rework (PO ruling, 2026-09-23): whether the v2 shader classified

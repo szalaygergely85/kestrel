@@ -7,6 +7,8 @@ import { allocWgTargets, freeWgTargets } from './targets.js';
 import { DEBUG_BLOCK } from '../wgsl/debug.wgsl.js';
 import { SHADE_BLOCK } from '../wgsl/shade.wgsl.js';
 import { EDGE_BLOCK } from '../wgsl/edge.wgsl.js';
+import { LIGHT_BLOCK } from '../wgsl/light.wgsl.js';
+import { createPitchedTerms, pitchedTerms } from '../../projection.js';
 import { bindShading, bindLevel } from '../../MaterialTable.js';
 import { MAT_F_WIDTH, SET_I_WIDTH } from '../ShadeTextures.js';
 import { loadLevel } from '../../../world/Level.js';
@@ -136,6 +138,20 @@ assert.deepStrictEqual(lastBind.textures.map((entry) => entry.texture), [p._t.te
   assert.strictEqual(lp.texLVis._texWrites, 1, 'dirty LVIS slot uploaded once');
   lp.run(host, t); assert.strictEqual(lp.texLVis._texWrites, 1, 'unchanged LVIS slot not re-uploaded');
   assert.strictEqual(liveCount(), made, 'warm light pass creates no resources');
+  // US-068b2 (38.19): ortho -> projMode 2 + halfW/halfH in the pitch tanHalf slots; pitched 1 with the perspective tanHalf; shear 0
+  {
+    const oc = { ...cam, pitchDeg: -35.264, yawDeg: 45, projection: 'ortho', orthoHalfH: 8, focusX: 1, focusY: 2, focusZ: 0 };
+    const terms = createPitchedTerms(), W = (n) => LIGHT_BLOCK.field(n).word;
+    for (const [mode, c] of [[2, oc], [1, { ...cam, pitchDeg: -20, projection: 'pitched' }], [0, cam]]) {
+      if (mode) pitchedTerms(c, { cols: p.cols, rows: p.rows, pxCellW: 1, pxCellH: 2 }, terms);
+      host._rasterPass = mode ? { pitched: true, ortho: mode === 2, pitch: terms } : null;
+      lp.run(host, t);
+      assert.strictEqual(lp.li[W('projMode')], mode);
+      if (mode === 2) { assert.strictEqual(lp.lu[W('pitchA') + 3], Math.fround(terms.halfW)); assert.strictEqual(lp.lu[W('pitchC') + 1], 8); }
+      if (mode === 1) assert.strictEqual(lp.lu[W('pitchA') + 3], Math.fround(terms.tanHalfX));
+    }
+    host._rasterPass = null;
+  }
 }
 
 
@@ -173,6 +189,20 @@ assert.deepStrictEqual(lastBind.textures.map((entry) => entry.texture), [p._t.te
   host._fb.timeSec = 3; sp.run(host, t, null); sp.run(host, t, null);
   assert.strictEqual(sp.stats.tableUploads, 1); assert.strictEqual(sp.stats.skyBakes, 1); assert.strictEqual(sp.texMatF._texWrites, w0);
   assert.strictEqual(liveCount(), made, 'warm shade pass creates no resources');
+  // US-068b2 (38.19): ortho -> shade/edge projMode 2, fixed positive hashCell, halfH in the pitchC tanHalfY slot; pitched keeps -k
+  {
+    const terms = createPitchedTerms(), g = { cols: p.cols, rows: p.rows, pxCellW: 1, pxCellH: 2 };
+    const base = { x: 1, y: 2, z: 1.5, yawDeg: 45, pitchDeg: -35.264 };
+    const h = { ...host, _cam: base, _world: { structures: [], structVersion: 1 } };
+    for (const [mode, c] of [[2, { ...base, projection: 'ortho', orthoHalfH: 8, focusX: 1, focusY: 2, focusZ: 0 }], [1, { ...base, projection: 'pitched' }]]) {
+      pitchedTerms(c, g, terms);
+      h._rasterPass = { pitched: true, ortho: mode === 2, pitch: terms };
+      sp.run(h, t, null);
+      assert.strictEqual(sp.si[SHADE_BLOCK.field('projMode').word], mode); assert.strictEqual(sp.ei[EDGE_BLOCK.field('projMode').word], mode);
+      const hc = sp.su[SHADE_BLOCK.field('hashCell').word];
+      if (mode === 2) { assert.ok(hc > 0); assert.strictEqual(sp.eu[EDGE_BLOCK.field('pitchC').word + 1], 8); } else assert.ok(hc < 0);
+    }
+  }
   // palette time-of-day change re-bakes the sky only; a new table re-uploads
   const t0 = palette.defaultTime, other = Object.keys(palette.timeOfDay).find(k => k !== t0);
   if (other) { palette.defaultTime = other; sp.run(host, t, null); palette.defaultTime = t0; assert.strictEqual(sp.stats.skyBakes, 2); assert.strictEqual(sp.stats.tableUploads, 1); }

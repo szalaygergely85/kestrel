@@ -47,7 +47,7 @@
 // in the real pass; this module just requires it to be supplied per-cell.
 
 import { KIND_NONE, KIND_MODEL } from './GBuffer.js';
-import { projTerms, unprojectCell, resolveProjection } from './projection.js';
+import { projTerms, unprojectCell, resolveProjection, isPitchedFamily } from './projection.js';
 
 /** Global kill-switch: yaw delta beyond this turns history off for the whole frame (25.6). */
 export const YAW_DISABLE_DEG = 3;
@@ -186,7 +186,7 @@ function blendPacked(prevPacked, curPacked) {
  * @returns {StableOut}
  */
 export function stabilizeCells(prev, cur, prevCam, cam, out, renderer = 'dda') {
-  if (resolveProjection(cam, renderer) === 'pitched' || resolveProjection(prevCam, renderer) === 'pitched') {
+  if (isPitchedFamily(resolveProjection(cam, renderer)) || isPitchedFamily(resolveProjection(prevCam, renderer))) {
     throw new Error("stable.js: cam.projection 'pitched' is not supported (28.1 A2 item 2)");
   }
   const cols = cur.cols, rows = cur.rows;

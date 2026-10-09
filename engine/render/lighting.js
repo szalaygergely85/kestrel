@@ -31,13 +31,14 @@ import { PROJ_HFOV_DEG as HFOV_DEG } from './projection.js';
 import { dirFromAzEl, localToWorld } from '../core/transform.js';
 import { sunFromHours } from '../core/sunPath.js';
 import { gridLocal } from '../world/gridLocal.js';
-import { FACE_PACKED, KIND_TERRAIN } from './GBuffer.js';
+import { FACE_PACKED, KIND_TERRAIN, KIND_MESH } from './GBuffer.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
-import { createPitchedTerms, pitchedTerms, unprojectPitched, resolveProjection } from './projection.js';
+import { createPitchedTerms, pitchedTerms, unprojectPitched, resolveProjection, isPitchedFamily } from './projection.js';
 import { sunShadowTaps, sunShadowInfo } from './shadowSun.js';
 import { resolveLook } from './look.js'; // ART-01a (37.18 item 3)
-import { cloudCov, updateCloudShadow, CLOUD_DARK } from './cloudShadow.js'; // S8-B2-12a (38.13)
-import { aoTapOcc, aoFactor, AO_TAP_CELLS } from './horizonAo.js'; // S8-B2-20 (38.17)
+import { cloudShadeQP } from './cloudShadow.js'; // S8-B2-12c (38.13)
+import { cloudDriftOffset } from './sky.js';
+import { aoTapOcc, aoFactor, aoTapCells, AO_DEFAULTS, AO_MAX } from './horizonAo.js'; // S8-B2-20 (38.17)
 
 // RE-02a: scratch for lightSurfaces' pitched branch (zero allocation per frame).
 const litPitchTerms = createPitchedTerms();
@@ -45,6 +46,8 @@ const litGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 const litP3 = new Float64Array(3);
 // S8-B2-20 (38.17): scratch for lightSurfaces' AO tap block (zero allocation per frame/cell).
 const aoTapP = new Float64Array(3);
+const aoPar = new Float64Array(14); // per-cell AO tap parameters (cam, dir, plane, horizon, normal, radius, bias)
+const aoAcc = new Float64Array(1); // tap occlusion accumulator (no boxed-double returns across calls)
 
 export const MAX_LIGHTS = 16;
 /** EMIS-01b: derived-light candidate list size and the replace margin (38.12 (1)). */
@@ -109,6 +112,16 @@ export function h01(a, b = 0, c = 0) {
   return (h >>> 0) / 4294967296;
 }
 
+// FRAME-ALLOC-01: scratch-writing twin of h01 (same bits) so LightSet.update keeps its doubles unboxed.
+const _hs = new Float64Array(8);
+function h01s(slot, a, b, c) {
+  let h = (Math.imul(a | 0, 0x27d4eb2d) ^ Math.imul(b | 0, 0x165667b1) ^ Math.imul(c | 0, 0x9e3779b1)) | 0;
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  h ^= h >>> 16;
+  _hs[slot] = (h >>> 0) / 4294967296;
+}
+
 function smoothstep01(t) {
   if (t < 0) t = 0; else if (t > 1) t = 1;
   return t * t * (3 - 2 * t);
@@ -130,13 +143,13 @@ export class LightSet {
     // look state (off until `setLook` turns it on); `roof` = the roof map the
     // light pass samples for indoor/outdoor (null until a look needs it, set by
     // the game's per-frame roof bind in ART-01b).
+    this.timeBuf = new Float64Array(1); // FRAME-ALLOC-01: unboxed time hand-off for updateBuffered
     this.hemi = { on: false, sky: new Float32Array(3), ground: new Float32Array(3), tint: new Float32Array(3), tintK: 0 };
     this.roof = null;
-    // S8-B2-12a (38.13): cloud-shadow state, allocated once. `scaleM`/`speedK` are content knobs (setCloudShadow);
-    // `invScale` (1/scaleM) is kept in sync by setCloudShadow; `offU`/`offV` are the per-frame drift (update()).
-    this.cloud = { strength: 0, cover: 0.55, scaleM: 48, speedK: 1, invScale: 1 / 48, offU: 0, offV: 0 };
-    // S8-B2-20 (38.17): horizon AO state, allocated once (setHorizonAo only writes `strength`).
-    this.ao = { strength: 0 };
+    this.cloud = null; // S8-B2-12c: null | {strength, scale, cover, soft, deckH, seed, wind} (setLook from look.clouds.shadow)
+    this.cloudOff = new Float32Array(2); // per-frame deck drift, set by lightSurfaces from fb.timeSec
+    // S8-B2-20b (38.16): null | {strength, radiusM, bias, maxCells} (setLook from look.ao); null = AO off.
+    this.ao = null;
 
     this.count = 0; // active (alive) lights, compacted into [0, count)
     this.pos = new Float32Array(4 * MAX_LIGHTS);   // x, y, z (jittered), radius     -> uLightPos
@@ -433,24 +446,35 @@ export class LightSet {
    * latest position. No allocation.
    */
   update(timeSec, world) {
-    // S8-B2-12a (38.13): once per frame, from the BASE wind only (not per light/per cell).
-    updateCloudShadow(this.cloud, world && world.wind ? world.wind.params : null, timeSec);
+    this.timeBuf[0] = timeSec;
+    this.updateBuffered(world);
+  }
+
+  /**
+   * FRAME-ALLOC-01: `update` with the time read from `timeBuf[0]` - the per-frame caller writes `timeBuf[0] = fb.timeSec`
+   * so no boxed double is passed across the call. Identical result to `update(timeBuf[0], world)`.
+   */
+  updateBuffered(world) {
+    const timeSec = this.timeBuf[0];
     for (let i = 0; i < this.count; i++) {
       const seed = this.seed[i];
       const hzMin = this.flickerHzMin[i], hzMax = this.flickerHzMax[i];
       const amount = this.flickerAmount[i], jitter = this.flickerJitter[i];
-      let v0 = 0, v1 = 0, v2 = 0;
+      _hs[5] = 0; _hs[6] = 0; _hs[7] = 0; // v0, v1, v2
       if (amount > 0 || jitter > 0) {
-        const f = hzMin + (hzMax - hzMin) * h01(seed);
-        const u = timeSec * f + 7.31 * h01(seed + 1);
+        h01s(0, seed, 0, 0);
+        const f = hzMin + (hzMax - hzMin) * _hs[0];
+        h01s(0, seed + 1, 0, 0);
+        const u = timeSec * f + 7.31 * _hs[0];
         const k = Math.floor(u);
         const s = smoothstep01(u - k);
-        v0 = (h01(k, seed, 0) + (h01(k + 1, seed, 0) - h01(k, seed, 0)) * s) * 2 - 1;
-        v1 = (h01(k, seed, 1) + (h01(k + 1, seed, 1) - h01(k, seed, 1)) * s) * 2 - 1;
-        v2 = (h01(k, seed, 2) + (h01(k + 1, seed, 2) - h01(k, seed, 2)) * s) * 2 - 1;
+        for (let c = 0; c < 3; c++) {
+          h01s(1, k, seed, c); h01s(2, k + 1, seed, c);
+          _hs[5 + c] = (_hs[1] + (_hs[2] - _hs[1]) * s) * 2 - 1;
+        }
       }
-      const intensity = this.baseIntensity[i] * (1 + amount * v0);
-      const x = this.defX[i] + jitter * v1, y = this.defY[i] + jitter * v2, z = this.defZ[i];
+      const intensity = this.baseIntensity[i] * (1 + amount * _hs[5]);
+      const x = this.defX[i] + jitter * _hs[6], y = this.defY[i] + jitter * _hs[7], z = this.defZ[i];
       const o4 = i * 4;
       this.pos[o4] = x; this.pos[o4 + 1] = y; this.pos[o4 + 2] = z; this.pos[o4 + 3] = this.radius[i];
       this.col[o4] = this.baseHue[i * 3] * intensity;
@@ -562,54 +586,20 @@ export function buildLightSet(world, palette) {
 export function setLook(lights, look) {
   const hemi = look && look.hemi;
   lights.hemi.on = !!hemi;
+  // S8-B2-12c (38.13): look.clouds.shadow -> lights.cloud (null = off). Load/bind time only (allocates the object).
+  const cs = look && look.clouds && look.clouds.shadow;
+  lights.cloud = cs && cs.strength > 0
+    ? { strength: cs.strength, scale: cs.scale, cover: cs.cover, soft: cs.soft, deckH: cs.deckH, seed: look.clouds.seed, wind: look.clouds.wind }
+    : null;
+  // S8-B2-20b (38.16): look.ao -> lights.ao (null = off). Load/bind time only (allocates the object).
+  const ao = look && look.ao;
+  lights.ao = ao && ao.strength > 0 ? { strength: ao.strength, radiusM: ao.radiusM, bias: ao.bias, maxCells: ao.maxCells } : null;
   if (!hemi) return;
   lights.hemi.sky.set(hemi.sky);
   lights.hemi.ground.set(hemi.ground);
   lights.hemi.tint.set(hemi.tint);
   lights.hemi.tintK = hemi.tintK;
   if (hemi.sunFromLook) lights.sun.col.set(look.sun);
-}
-
-const NO_CLOUD = Object.freeze({ strength: 0 }); // S8-B2-12a: lightAt default when a light set has no `cloud`
-
-/**
- * S8-B2-12a (38.13): sets cloud-shadow params on `lights.cloud` (allocated once by the constructor - this only
- * writes fields, never reallocates). Every param is optional (only the given keys change); each is validated and
- * throws on a non-finite or out-of-range value rather than silently clamping. `scaleM`'s `invScale` (1/scaleM) is
- * kept in sync here, not recomputed per frame.
- * @param {LightSet} lights
- * @param {{strength?:number, cover?:number, scaleM?:number, speedK?:number}} [params]
- */
-export function setCloudShadow(lights, { strength, cover, scaleM, speedK } = {}) {
-  const c = lights.cloud;
-  if (strength !== undefined) {
-    if (!Number.isFinite(strength) || strength < 0 || strength > 1) throw new Error(`setCloudShadow: strength must be finite in [0,1] (got ${strength})`);
-    c.strength = strength;
-  }
-  if (cover !== undefined) {
-    if (!Number.isFinite(cover) || cover < 0 || cover > 1) throw new Error(`setCloudShadow: cover must be finite in [0,1] (got ${cover})`);
-    c.cover = cover;
-  }
-  if (scaleM !== undefined) {
-    if (!Number.isFinite(scaleM) || scaleM <= 0) throw new Error(`setCloudShadow: scaleM must be a finite number > 0 (got ${scaleM})`);
-    c.scaleM = scaleM;
-    c.invScale = 1 / scaleM;
-  }
-  if (speedK !== undefined) {
-    if (!Number.isFinite(speedK) || speedK < 0) throw new Error(`setCloudShadow: speedK must be a finite number >= 0 (got ${speedK})`);
-    c.speedK = speedK;
-  }
-}
-
-/**
- * S8-B2-20 (38.17): sets the horizon-AO strength on `lights.ao` (allocated once by the constructor). Throws on a
- * non-finite or out-of-range value rather than silently clamping (same convention as `setCloudShadow`).
- * @param {LightSet} lights
- * @param {{strength:number}} params
- */
-export function setHorizonAo(lights, { strength } = {}) {
-  if (!Number.isFinite(strength) || strength < 0 || strength > 1) throw new Error(`setHorizonAo: strength must be finite in [0,1] (got ${strength})`);
-  lights.ao.strength = strength;
 }
 
 /**
@@ -623,8 +613,10 @@ export function setHorizonAo(lights, { strength } = {}) {
  * `palette` resolves `light.preset` -> `{hue, intensity, radius, flicker}`
  * (same `P.lights[preset]`/`P.hue[color]` rule as `buildLightSet`).
  */
-export function syncEntityLights(lights, world, palette, attachedLightPos, out) {
-  world.forEachEntity((e) => {
+// FRAME-ALLOC-01: module-level callback + context (no per-frame closure).
+const _syncCtx = { lights: null, world: null, palette: null, attachedLightPos: null, out: null };
+function syncOneEntityLight(e) {
+    const { lights, world, palette, attachedLightPos, out } = _syncCtx;
     const light = e.components && e.components.light;
     if (!light) {
       const h = lights.entityHandle.get(e.id);
@@ -654,7 +646,12 @@ export function syncEntityLights(lights, world, palette, attachedLightPos, out) 
       lights.move(h, out[0], out[1], out[2]);
       lights.setOn(h, light.on !== false);
     }
-  });
+}
+
+export function syncEntityLights(lights, world, palette, attachedLightPos, out) {
+  _syncCtx.lights = lights; _syncCtx.world = world; _syncCtx.palette = palette;
+  _syncCtx.attachedLightPos = attachedLightPos; _syncCtx.out = out;
+  world.forEachEntity(syncOneEntityLight);
 }
 
 // BUG-OWN-007: distance (m) an attached light is kept in front of the first
@@ -762,6 +759,12 @@ export const lightFlags = { sunlit: 0, litCount: 0, sunN: 0, sunBoundary: 0, clo
  * by `n / 4`); with the sun off terrain reports `n = 4` (no occlusion info = lit, as before ME-15).
  */
 export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCount, skipSun, sunMap) {
+  lightP[0] = x; lightP[1] = y; lightP[2] = z; lightN[0] = nx; lightN[1] = ny; lightN[2] = nz;
+  return lightAtScratch(lights, world, out, idxList, idxCount, skipSun, sunMap);
+}
+/** LIGHT-ALLOC-01: `lightAt` body reading P/N from the lightP/lightN scratch (6 double args would be boxed per call, ~48 B/cell). */
+function lightAtScratch(lights, world, out, idxList, idxCount, skipSun, sunMap) {
+  const x = lightP[0], y = lightP[1], z = lightP[2], nx = lightN[0], ny = lightN[1], nz = lightN[2];
   out[0] = lights.ambient[0]; out[1] = lights.ambient[1]; out[2] = lights.ambient[2];
   let litCount = 0;
   const n = idxList ? idxCount : lights.count;
@@ -800,21 +803,16 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
   let sunlit = 0;
   const sun = lights.sun;
   lightFlags.sunN = 0; lightFlags.sunBoundary = 0; lightFlags.cloudQ = 0;
-  const cloud = lights.cloud || NO_CLOUD; // hand-built light sets (tests, tools) have no cloud field
+  const cloud = lights.cloud; // null/undefined (default, hand-built light sets) = no cloud shadows, q 0
   if (sunMap) {
     // ME-15c: shadow-map sun (replaces the DDA); same conditions as the GLSL twin.
     if (sun && sun.on) {
       // S8-B2-12a (38.13): cov is computed once per cell here (before the ndotsun test below), whenever sunOn -
       // terrain (skipSun) is included, 12b's shade consumer reads the same byte for its analytic sun term.
-      let cloudQ = 0;
-      if (cloud.strength > 0) {
-        const cov = cloudCov(x, y, cloud);
-        cloudQ = Math.floor(cloud.strength * CLOUD_DARK * cov * 255 + 0.5);
-      }
       const sd = sun.dir;
+      const cloudQ = cloud ? cloudShadeQP(cloud, lights.cloudOff, lightP, sd) : 0;
       const ndotsun = nx * sd[0] + ny * sd[1] + nz * sd[2];
       if (skipSun || ndotsun > 0) {
-        lightP[0] = x; lightP[1] = y; lightP[2] = z; lightN[0] = nx; lightN[1] = ny; lightN[2] = nz;
         const nTap = sunShadowTaps(sunMap.map, sunMap.M, lightP, lightN, sunMap.opts);
         lightFlags.sunN = nTap; lightFlags.sunBoundary = sunShadowInfo.boundary;
         sunlit = nTap >= 2 ? 1 : 0;
@@ -828,19 +826,16 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
     } else if (skipSun) lightFlags.sunN = 4;
   } else if (!skipSun && sun && sun.on) {
     // S8-B2-12a (38.13): same cov rule as the sunMap branch above (this branch already excludes terrain via skipSun).
-    let cloudQ = 0;
-    if (cloud.strength > 0) {
-      const cov = cloudCov(x, y, cloud);
-      cloudQ = Math.floor(cloud.strength * CLOUD_DARK * cov * 255 + 0.5);
-    }
     const sd = sun.dir;
+    const cloudQ = cloud ? cloudShadeQP(cloud, lights.cloudOff, lightP, sd) : 0;
     const ndotsun = nx * sd[0] + ny * sd[1] + nz * sd[2];
     if (ndotsun > 0) {
       // BUG-LIGHT-001 fix: same "toward the light" nudge as the point-light
       // vis sample above (the sun's "light direction" is `sd`, already unit)
       // instead of along `N` - a floor face (`N = 0,0,1`) needs an x/y
       // nudge to escape a cell-boundary coin flip, which `N` alone can't give.
-      if (sunVisible(world, x + sd[0] * 0.02, y + sd[1] * 0.02, z + sd[2] * 0.02, sd)) {
+      sunP[0] = x + sd[0] * 0.02; sunP[1] = y + sd[1] * 0.02; sunP[2] = z + sd[2] * 0.02;
+      if (sunVisibleP(world, sunP, sd)) {
         sunlit = 1;
         const cloudF = 1 - cloudQ * (1 / 255);
         out[0] += sun.col[0] * ndotsun * cloudF;
@@ -999,7 +994,15 @@ function sunCellBlocked(sec, h0, h1) {
  * instead, since it has no such world-coordinate query).
  */
 export function sunVisible(world, x, y, z, dir) {
+  sunP[0] = x; sunP[1] = y; sunP[2] = z;
+  return sunVisibleP(world, sunP, dir);
+}
+const sunP = new Float64Array(3);
+/** LIGHT-ALLOC-01: `sunVisible` with the start point in a Float64Array(3) (3 double args would be boxed per call). */
+function sunVisibleP(world, P, dir) {
   if (!world) return true;
+  let x = P[0], y = P[1];
+  const z = P[2];
   const dx = dir[0], dy = dir[1], dz = dir[2];
   const horiz = Math.hypot(dx, dy);
   let h0 = z + SUN_Z_EPS;
@@ -1139,18 +1142,19 @@ function cellPointInto(pitched, terms, tx, ty, d, cols, camX, camY, camZ, dirX, 
 }
 
 /**
- * S8-B2-20 (38.17): one AO tap at grid cell (tx,ty) - open (0) if outside the grid, kind 0, or (twin only, unlike
+ * S8-B2-20 (38.17): one AO tap at grid cell (tx,ty), ADDED to aoAcc[0] - open (adds 0) if outside the grid, kind 0, or (twin only, unlike
  * the WGSL `aoTapCell`) a non-finite/non-positive depth (synthetic test fixtures can hold garbage depth at a
  * kind != 0 cell; real resolve output never does).
  */
-function aoTapInto(tx, ty, kind, depth, cols, rows, pitched, terms, camX, camY, camZ, dirX, dirY, planeX, planeY, horizonRow, planeDistY, P, nx, ny, nz) {
-  if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) return 0;
+function aoTapInto(tx, ty, kind, depth, cols, rows, pitched, terms, P) {
+  // TEST-FLAKY-AO-01: doubles come from the aoPar scratch (not 14 double args, which V8 boxes as HeapNumbers per call).
+  if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) return;
   const ti = ty * cols + tx;
-  if (kind[ti] === 0) return 0;
+  if (kind[ti] === 0) return;
   const td = depth[ti];
-  if (!(td > 0) || !Number.isFinite(td)) return 0;
-  cellPointInto(pitched, terms, tx, ty, td, cols, camX, camY, camZ, dirX, dirY, planeX, planeY, horizonRow, planeDistY, aoTapP);
-  return aoTapOcc(nx, ny, nz, aoTapP[0] - P[0], aoTapP[1] - P[1], aoTapP[2] - P[2]);
+  if (!(td > 0) || !Number.isFinite(td)) return;
+  cellPointInto(pitched, terms, tx, ty, td, cols, aoPar[0], aoPar[1], aoPar[2], aoPar[3], aoPar[4], aoPar[5], aoPar[6], aoPar[7], aoPar[8], aoTapP);
+  aoAcc[0] += aoTapOcc(aoPar[9], aoPar[10], aoPar[11], aoTapP[0] - P[0], aoTapP[1] - P[1], aoTapP[2] - P[2], aoPar[12], aoPar[13]);
 }
 
 export function lightSurfaces(fb, lights, cam, world) {
@@ -1163,6 +1167,8 @@ export function lightSurfaces(fb, lights, cam, world) {
   // the `?lights=0` regression path - caller already filled rgb[0..2] with ambient.
   if (!lb || !lights) return;
   lb.uniform = false;
+  // S8-B2-12c: deck drift for the cloud-shadow twin, once per frame (same offset the sky uses).
+  if (lights.cloud) cloudDriftOffset(lights.cloud, fb.timeSec || 0, lights.cloudOff);
   // PO REJECT item 1: `fb.cpuLightCap` is set only on the real gameplay
   // frame buffer's CPU-fallback path (game/js/main.js) - never on
   // `?gpucompare=1`'s `fbCompare` objects, so GPU parity keeps the full
@@ -1193,7 +1199,7 @@ export function lightSurfaces(fb, lights, cam, world) {
   const sunMap = fb.sunMap || null;
   lb.sunMapOn = !!sunMap;
   // RE-02a (28.1 A2 item 2): pitched twin of `cellRayPitched` - P = `unprojectPitched(d = vd)`.
-  const pitched = resolveProjection(cam, fb.renderer) === 'pitched';
+  const pitched = isPitchedFamily(resolveProjection(cam, fb.renderer));
   if (pitched) {
     litGrid.cols = cols; litGrid.rows = rows; litGrid.pxCellW = rt.pxCellW || 1; litGrid.pxCellH = rt.pxCellH || 1;
     pitchedTerms(cam, litGrid, litPitchTerms);
@@ -1230,7 +1236,8 @@ export function lightSurfaces(fb, lights, cam, world) {
       // US-026a (23.4): terrain (kind 7) skips the sun term here - it's
       // added analytically by the terrain shade pass instead (D-007, no
       // terrain shadow rays).
-      lightAt(lights, world, px, py, pz, nx, ny, nz, evalScratch, idxList, idxCount, kind[i] === KIND_TERRAIN, sunMap);
+      lightP[0] = px; lightP[1] = py; lightP[2] = pz; lightN[0] = nx; lightN[1] = ny; lightN[2] = nz;
+      lightAtScratch(lights, world, evalScratch, idxList, idxCount, kind[i] === KIND_TERRAIN, sunMap);
       const o = i * 3;
       rgb[o] = evalScratch[0]; rgb[o + 1] = evalScratch[1]; rgb[o + 2] = evalScratch[2];
       // US-007 (14.3 item 3, `LIGHT.w = sunlit | litCount << 8`, debug/
@@ -1240,17 +1247,25 @@ export function lightSurfaces(fb, lights, cam, world) {
       if (lb.sunlit) lb.sunlit[i] = lightFlags.sunlit;
       if (lb.litCount) lb.litCount[i] = lightFlags.litCount;
       if (lb.sunN) { lb.sunN[i] = lightFlags.sunN; lb.sunBoundary[i] = lightFlags.sunBoundary; }
-      if (lb.cloud) lb.cloud[i] = lightFlags.cloudQ; // S8-B2-12a (38.13), copied like sunN
+      if (lb.cloudQ) lb.cloudQ[i] = lightFlags.cloudQ; // S8-B2-12c (38.13), copied like sunN
 
       // S8-B2-20 (38.17): horizon AO, LAST operation on this cell's rgb (after points/sun/cloud). Uniform branch -
       // strength 0 runs none of this (bit-identical). Terrain excluded (D-007, analytic ambient in shade).
-      if (lights.ao.strength > 0 && kind[i] !== KIND_TERRAIN) {
+      if (lights.ao && lights.ao.strength > 0 && kind[i] !== KIND_TERRAIN) {
+        const ao = lights.ao, aoR = ao.radiusM, aoB = ao.bias;
         litP3[0] = px; litP3[1] = py; litP3[2] = pz; // reuse: P is not read again for this cell after this point
-        let occSum = aoTapInto(x - AO_TAP_CELLS, y, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz);
-        occSum += aoTapInto(x + AO_TAP_CELLS, y, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz);
-        occSum += aoTapInto(x, y - AO_TAP_CELLS, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz);
-        occSum += aoTapInto(x, y + AO_TAP_CELLS, kind, depth, cols, rows, pitched, litPitchTerms, cam.x, cam.y, cam.z, dirX, dirY, planeX, planeY, horizonRow, planeDistY, litP3, nx, ny, nz);
-        const aoF = aoFactor(occSum * 0.25, lights.ao.strength);
+        const rc = aoTapCells(aoR, planeDistY, depth[i], ao.maxCells);
+        // tap order -x, +x, -y, +y (ratified, matches WGSL)
+        aoPar[0] = cam.x; aoPar[1] = cam.y; aoPar[2] = cam.z; aoPar[3] = dirX; aoPar[4] = dirY; aoPar[5] = planeX; aoPar[6] = planeY; aoPar[7] = horizonRow; aoPar[8] = planeDistY;
+        aoPar[9] = nx; aoPar[10] = ny; aoPar[11] = nz; aoPar[12] = aoR; aoPar[13] = aoB;
+        aoAcc[0] = 0;
+        aoTapInto(x - rc, y, kind, depth, cols, rows, pitched, litPitchTerms, litP3);
+        aoTapInto(x + rc, y, kind, depth, cols, rows, pitched, litPitchTerms, litP3);
+        aoTapInto(x, y - rc, kind, depth, cols, rows, pitched, litPitchTerms, litP3);
+        aoTapInto(x, y + rc, kind, depth, cols, rows, pitched, litPitchTerms, litP3);
+        let aoF = aoFactor(aoAcc[0] * 0.25, ao.strength);
+        // ME-20c (38.18): baked vertex AO on kind-9 cells. min (not product): both estimate the same ambient visibility, so they never double-darken.
+        if (kind[i] === KIND_MESH) { const va = gbuf.vao[i]; aoF = Math.min(aoF, 1 - ao.strength * AO_MAX * (1 - (va < 0 ? 0 : va > 1 ? 1 : va))); }
         const k = 1 - aoF;
         rgb[o] -= lights.ambient[0] * k; rgb[o + 1] -= lights.ambient[1] * k; rgb[o + 2] -= lights.ambient[2] * k;
       }
@@ -1271,7 +1286,7 @@ export function makeLightBuffer(cols, rows) {
     // JS twin). All zeros until ART-01b writes it - no pixel changes yet.
     outdoor: new Uint8Array(cols * rows),
     // S8-B2-12a (38.13): per-cell cloud-darkening byte (`LIGHT.w` bits 24..31 JS twin), 0 at strength 0.
-    cloud: new Uint8Array(cols * rows),
+    cloudQ: new Uint8Array(cols * rows),
   };
 }
 

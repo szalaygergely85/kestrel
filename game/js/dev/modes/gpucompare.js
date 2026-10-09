@@ -1,6 +1,6 @@
 import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
-  meshFromJSON, meshFromBin, buildMeshFromTris, MaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun, setCloudShadow, setHorizonAo,
+  meshFromJSON, meshFromBin, buildMeshFromTris, MaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
 } from '../../../../engine/index.js';
 import {
@@ -140,6 +140,10 @@ function buildCompareRuns(ctx) {
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg } },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: BUG-OWN-001 owner repro (1500.69, 1027.36) yaw 236 pitch -29',
       cam: { x: 1500.69, y: 1027.36, z: 3.00 + engine.physics.eyeHeight, yawDeg: 236, pitchDeg: -29 } },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: BUG-WHITE-PIXELS-01 repro (1500.58, 1022.77) yaw 185 pitch -24',
+      cam: { x: 1500.58, y: 1022.77, z: 1.80 + engine.physics.eyeHeight, yawDeg: 185, pitchDeg: -24 } },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: BUG-WHITE-PIXELS-02 owner pose (1500.70, 1027.88) yaw 329 pitch -24',
+      cam: { x: 1500.70, y: 1027.88, z: 3.00 + engine.physics.eyeHeight, yawDeg: 329, pitchDeg: -24 } },
     { world: worldM1, lights: worldM1Lights, name: `world_m1: player spawn, sceneFade=0.5`,
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg }, fade: 0.5 },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: player spawn, card open (sceneDim 0.35 + plate 0.18)',
@@ -253,6 +257,16 @@ function buildCompareRuns(ctx) {
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: rtsHillSky15 (RE-02a pitched, sky + fog scale)',
     cam: rtsHillPose(-15), real: true, meshOnly: true });
 
+  // US-068b3b (38.19 item 2): ortho ISO pose over the roadSouth area (look-at 20 m along the roadSouth view, yaw 240).
+  // Eye = focus - 500 m*F (ORTHO_BACK_M), halfH 20 m. NEW row: JS twin (meshPitched path) vs WG under the pitched gate rules.
+  const orthoIsoPose = () => {
+    const fx = 1448.7, fy = 1025.0, fz = worldM1.terrain ? worldM1.terrain.groundAt(fx, fy) : 0;
+    const e = pitchedEyeFromFocus(fx, fy, fz, 45, -35.264, 500, [0, 0, 0]);
+    return { x: e[0], y: e[1], z: e[2], yawDeg: 45, pitchDeg: -35.264, projection: 'ortho', orthoHalfH: 20, focusX: fx, focusY: fy, focusZ: fz };
+  };
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: orthoIso (US-068b3b ortho yaw 45 pitch -35.264, halfH 20, roadSouth area)',
+    cam: orthoIsoPose(), real: true, meshOnly: true });
+
   // RE-07b (28.9 "Tests"): mesh-only overlay pose. Same pitched -58 RTS view as rtsHill58 but focused on the
   // signal tower so rings behind it fail the depth test: 30 rings (6x5 lattice, r 1 m), 30 bars, 1 screen rect.
   // The JS twin = rtsHill58-style CPU render + `overlay.renderCpu`; the GPU result is the GpuOverlayPass.
@@ -349,6 +363,8 @@ function buildCompareRuns(ctx) {
   // rasterJS depth-only map). With `&shadows=map` every pose above also runs the map; these pin sun az 135 el 30
   // (shadows fall NW) so the casters are long and obvious. Without `&shadows=map` they are plain mesh poses.
   const SUN_135_30 = { azimuth: 135, elevation: 30 };
+  // SWAY-GC-01: fixed wind field for the `swayWindy` pose only (deterministic: explicit seed, fixed clock via the pose's timeSec).
+  const SWAY_GC_WIND = { dirDeg: 45, speed: 8, seed: 7, gust: { amp: 0.5, periodSec: 6, travel: 12 } };
   const groundZ = (x, y) => (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0);
   // signal tower shadow on terrain: eye 9 m above the grass 28 m NNW of the tower looking SE-down (into the sun), the shadow lies on the grass between
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: towerShadowGrass (ME-15c, signal tower shadow on terrain, sun az 135 el 30)',
@@ -539,6 +555,17 @@ function buildCompareRuns(ctx) {
       cam: { x, y, z: forestWorld.terrain.groundAt(x, y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: 30 },
       real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30,
       before: () => engine.setWorld(forestWorld) });
+
+    // SWAY-GC-01: the ONLY wind-on pose (world_m1 authors speed 0 = calm for every other row). Own world instance with a fixed wind def
+    // (fixed dir/speed/gust/seed, no wall clock) at a fixed fb.timeSec, so the camera view (JS twin vs GPU) uses one clock; the same pose also
+    // yields its `[shadow depth parity]` row (sun map, 10 Hz-quantised wind clock). Same camera as forestWalk -> compare the two for visible sway.
+    const swayWindWorld = loadCompareWorld({ ...assets.world('world_m1'), wind: SWAY_GC_WIND }, { realTrees: true, physics: 'mesh' });
+    swayWindWorld.terrain.bakeFarSync();
+    const swayWindLights = lightsEnabled ? buildLightSet(swayWindWorld, assets.palette) : null;
+    runs.push({ world: swayWindWorld, lights: swayWindLights, name: 'world_m1: swayWindy (SWAY-GC-01, forestWalk pose, wind on, t=7.3 s)',
+      cam: { x, y, z: swayWindWorld.terrain.groundAt(x, y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: 30 },
+      real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, timeSec: 7.3,
+      before: () => engine.setWorld(swayWindWorld) });
   }
 
   // ENV-01a2: existing comparison worlds retain detail off.
@@ -639,7 +666,7 @@ function buildCompareRuns(ctx) {
     const mask = { tex: 'test/checker8', cutoff: 0.5 };
     const alphaMesh = buildMeshFromTris(tris, [{ part: 'post', triStart: 0, triCount: nOpaque }, { part: 'leaf', triStart: nOpaque, triCount: nLeaf, mask },
       { part: 'leaf_dark', triStart: nOpaque + nLeaf, triCount: tris.length - nOpaque - nLeaf, mask }], 'test/alphaCards');
-    alphaMesh.mats = { post: 'timber_old', leaf: 'leaf_softtest', leaf_dark: 'leaf_dark_softtest' }; // ALPHA-01d: test-only edge:'soft' clones of leaf / leaf_dark
+    alphaMesh.mats = { post: 'timber_old', leaf: 'leaf', leaf_dark: 'leaf_dark' }; // EMIS-01b/kestrel-2#0: repointed to leaf/leaf_dark directly (already edge:'soft', ALPHA-01e); *_softtest clones removed
     const cx = 1456, cy = 1046, gz = aw.terrain.groundAt(cx, cy);
     aw.placeMesh(alphaMesh, { x: cx, y: cy, z: gz }, 'test.alphaCards');
     const alphaLights = lightsEnabled ? buildLightSet(aw, assets.palette) : null;
@@ -816,8 +843,8 @@ async function runGpuCompareSceneMode(ctx) {
     fbCompare.timeSec = poseTime || 0; // US-141a: frozen per-pose clock (flow streaks); 0 for every other pose
     fbCompare.lights = lights;
     if (lights) lights.update(0, world);
-    if (lights) setCloudShadow(lights, { strength: 0 }); // S8-B2-12a NEEDS B1 item (3): every gpucompare mode forces clouds off
-    if (lights) setHorizonAo(lights, { strength: 0 }); // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
+    if (lights) lights.cloud = null; // S8-B2-12c: every gpucompare mode forces clouds off
+    if (lights) lights.ao = null; // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
     fbCompare.sceneFade = typeof fade === 'number' ? fade : 1;
     if (sprites.pass) {
       sprites.pass.sceneFade = fbCompare.sceneFade;
@@ -899,9 +926,26 @@ async function runGpuCompareSceneMode(ctx) {
       console.log(`[gpucompare] rtsOverlay pass ms: p50=${ovlRes.gpuMsP50} p95=${ovlRes.gpuMsP95} uploadRows=${ps ? ps.rows : -1}`);
     }
 
+    if (params.get('probe')) { // BUG-WHITE-PIXELS-02 r3 (dev): `&probe=col,row` 3x3 dump, `&probe=scan` sky-islands (a sky cell with >=6/8 solid neighbours) per side
+      const pq = params.get('probe'), L = [], gK = (i) => GI[i * 4 + 1] & 0xff, side = (isG, x, y) => (x < 0 || y < 0 || x >= cols || y >= rows) ? 1 : ((isG ? gK(y * cols + x) : gbuf.kind[y * cols + x]) !== 0 ? 1 : 0);
+      if (pq === 'scan') {
+        for (let y = 1; y < rows - 1; y++) for (let x = 1; x < cols - 1; x++) for (const g of [true, false]) {
+          if (side(g, x, y)) continue; let solid = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && side(g, x + dx, y + dy)) solid++;
+          if (solid >= 6) { const i = y * cols + x; L.push(`${g ? 'GPUsky' : 'JSsky'}@${x},${y} solid=${solid} other(${g ? 'js' : 'gpu'})kind=${g ? gbuf.kind[i] : gK(i)} jsPlane=${gbuf.planeId[i]} jsZ=${(+gbuf.z[i]).toFixed(2)} gpuDepth=${Depth[i]}`); }
+        }
+        let nd = 0, gSkyJsSolid = 0, jsSkyGpuSolid = 0; const ex = [];
+        for (let i = 0; i < cols * rows; i++) { const gk = gK(i), jk = gbuf.kind[i]; if ((gk !== 0) !== (jk !== 0)) { nd++; if (gk === 0) gSkyJsSolid++; else jsSkyGpuSolid++; if (ex.length < 12) ex.push(`${i % cols},${(i / cols) | 0}:g${gk}/j${jk}`); } }
+        L.push(`skyDisagree=${nd} gpuSky/jsSolid=${gSkyJsSolid} jsSky/gpuSolid=${jsSkyGpuSolid} e.g. ${ex.join(' ')}`);
+      } else {
+        const [pc, pr] = pq.split(',').map(Number);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const i = (pr + dy) * cols + pc + dx; L.push(`(${pc + dx},${pr + dy}) gpuKind=${gK(i)} gpuDepth=${Depth[i]} gpuGI=${[0, 1, 2, 3].map((k) => GI[i * 4 + k]).join('/')} | jsKind=${gbuf.kind[i]} jsPlane=${gbuf.planeId[i]} jsZ=${(+gbuf.z[i]).toFixed(2)}`); }
+      }
+      (window.__gpuProbe = window.__gpuProbe || []).push({ pose: poseName, cols, rows, pq, L });
+      console.log(`[gpucompare] probe ${poseName} (${cols}x${rows}) ${pq}: ` + (L.length ? L.join(' ## ') : 'none'));
+    }
     const cmpGeom = compareGeometry(gbuf, depthBuffer.depth, GI, GA, Depth, cols, rows, {
       fogMax: fbCompare.detailPass ? fbCompare.detailPass.edges.fogMax : undefined, suppress: fbCompare.waterMask || null,
-      table: matTable, jsLight: fbCompare.light, pitched: !!(cam && (cam.projection === 'pitched' || pitchedDefault)), maskPose: !!maskPose,
+      table: matTable, jsLight: fbCompare.light, pitched: !!(cam && (cam.projection === 'pitched' || cam.projection === 'ortho' || pitchedDefault)), maskPose: !!maskPose,
     }); // PREC-04b2: oracle ties before cmpCells (exclude mask)
     const maskOk = !maskPose || cmpGeom.kind9Cells > 0; // ALPHA-01c: the fixture must be in view on the JS twin (else a pass would be vacuous)
     if (maskPose) console.log(`[gpucompare] maskTies ${poseName}: ${cmpGeom.maskTies}/${cmpGeom.maskTiesMax} k9=${cmpGeom.kind9Cells} holes=${cmpGeom.holes}${cmpGeom.holes ? ' cells ' + cmpGeom.holeCells.join(',') : ''}${maskOk ? '' : ' FIXTURE NOT IN VIEW'}`);
@@ -925,7 +969,7 @@ async function runGpuCompareSceneMode(ctx) {
         const geomBaseOkW = cmpGeom.kindMatchPct >= 99.5 && cmpGeom.holes === 0 && cmpGeom.meshTiesOk && cmpGeom.texelTiesOk;
         const meshColourOkW = renderer === 'mesh' && geomBaseOkW && cmpGeom.geomViolCells <= 4 && cmpGeom.violNonK8 === 0 && cmpGeom.aoViol === 0 &&
           cmpCellsW.glyphMatchPct >= 99.5 && cmpCellsW.poisonedSurvivors === 0 && cmpCellsMeshW.pass;
-        const pitchedHashOkW = renderer === 'mesh' && cam && (cam.projection === 'pitched' || pitchedDefault) && geomBaseOkW &&
+        const pitchedHashOkW = renderer === 'mesh' && cam && (cam.projection === 'pitched' || cam.projection === 'ortho' || pitchedDefault) && geomBaseOkW &&
           cmpCellsW.outsideFrac <= 0.005 && cmpCellsW.glyphMatchPct >= 99.9 && cmpCellsW.bgMax <= 64 && cmpCellsW.poisonedSurvivors === 0;
         cellsOkW = !!(cmpCellsW.pass || meshColourOkW || pitchedHashOkW);
       }
@@ -954,7 +998,7 @@ async function runGpuCompareSceneMode(ctx) {
     // BUG-RTS-001 (architecture.md 28.11, architect 2026-09-30): pitched poses (pitchedHashCell > 0) have a
     // 0.25 m terrain look-hash; GPU float32 u/v vs the JS double twin flip a few boundary cells, so fgMax is
     // reported but not gated there: outside <= 0.5 %, glyph >= 99.9 %, bgMax <= 64. Shear/dda poses unchanged.
-    const pitchedHashOk = renderer === 'mesh' && cam && (cam.projection === 'pitched' || pitchedDefault) && geomBaseOk &&
+    const pitchedHashOk = renderer === 'mesh' && cam && (cam.projection === 'pitched' || cam.projection === 'ortho' || pitchedDefault) && geomBaseOk &&
       cmpCells.outsideFrac <= 0.005 && cmpCells.glyphMatchPct >= 99.9 && cmpCells.bgMax <= 64 && cmpCells.poisonedSurvivors === 0;
     // RE-02b b3 anchor: the same pose's shear JS twin vs the pitched GPU output, same mesh bars.
     let anchorOk = true;
@@ -1020,8 +1064,8 @@ async function runGpuCompareSceneMode(ctx) {
         compareVoxelPool.project(cam, rt);
         fbCompare.lights = lights;
         if (lights) lights.update(0, world);
-        if (lights) setCloudShadow(lights, { strength: 0 }); // S8-B2-12a NEEDS B1 item (3): every gpucompare mode forces clouds off
-        if (lights) setHorizonAo(lights, { strength: 0 }); // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
+        if (lights) lights.cloud = null; // S8-B2-12c: every gpucompare mode forces clouds off
+        if (lights) lights.ao = null; // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
         if (real) sprites.pool.collect(world);
         else { sprites.pool.reset(); placeCompareSprites(cam, sprites.pool); }
         sprites.pool.project(cam, rt, lights || ambientL, world);

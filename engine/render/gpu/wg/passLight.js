@@ -6,6 +6,7 @@
 import { LIGHT_BLOCK, LIGHT_WGSL, LIGHT_TEXTURES } from '../wgsl/light.wgsl.js';
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS } from '../../lighting.js';
 import { MAX_STRUCTS, buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan } from '../WorldTextures.js';
+import { packCloudUniforms } from '../../cloudShadow.js';
 import { PROJ_HFOV_DEG } from '../../projection.js';
 
 const W = (n) => LIGHT_BLOCK.field(n).word;
@@ -18,10 +19,10 @@ const W_PITCH_A = W('pitchA'), W_PITCH_B = W('pitchB'), W_PITCH_C = W('pitchC');
 const W_LIGHT_POS = W('lightPos'), W_LIGHT_COL = W('lightCol'), W_VIS_BOX = W('visBox');
 const W_STRUCT_A = W('structA'), W_STRUCT_B = W('structB');
 const W_SUN_M = W('sunShadowM'), W_SUN_RES = W('sunShadowRes'), W_SUN_TEXEL = W('sunShadowTexelM'), W_SUN_BIAS = W('sunShadowBiasM'), W_SUN_NOFF = W('sunShadowNormalOff');
-// ALPHA-01f cloud item (1) / S8-B2-12a (38.13): `light.cloud` (lighting.js LightSet.cloud) -> cloudCover (cover) + cloud.xyzw (strength, invScale, offU, offV).
-const W_CLOUD_COVER = W('cloudCover'), W_CLOUD = W('cloud');
+// S8-B2-12c (38.13): cloudA (+ cloudB at +4) <- packCloudUniforms(light.cloud, timeSec): 8 floats, null -> zeros.
+const W_CLOUD_A = W('cloudA');
 // S8-B2-20 (38.17): `light.ao` (lighting.js LightSet.ao, horizon AO strength) -> aoStrength (word 31), cached word index, zero alloc.
-const W_AO_STRENGTH = W('aoStrength');
+const W_AO_STRENGTH = W('aoStrength'), W_AO_P = W('aoP'); // aoP = (radiusM, bias, maxCells, 0)
 
 const NO_CAM = Object.freeze({ x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 });
 
@@ -35,7 +36,7 @@ export class WgLightPass {
       bindings: { uniformBytes: LIGHT_BLOCK.sizeBytes, textures: LIGHT_TEXTURES.slice() },
       targetFormats: ['rgba32ui'],
     });
-    this.lu = new Float32Array(LIGHT_BLOCK.sizeWords); this.li = new Int32Array(this.lu.buffer);
+    this.lu = new Float32Array(LIGHT_BLOCK.sizeWords); this.cloud8 = new Float32Array(8); this.li = new Int32Array(this.lu.buffer);
     this.texLVis = device.createTexture({ format: 'r8ui', width: MAX_VIS_DIM, height: MAX_LIGHTS * MAX_VIS_DIM });
     this.texSunDummy = device.createTexture({ format: 'depth24', sampled: true, width: 1, height: 1 });
     this.texGeom = device.createTexture({ format: 'rgba32f', width: 1, height: 1 });
@@ -46,6 +47,7 @@ export class WgLightPass {
     this.tex = [0, 1, 2, 3, 4, 5, 6].map(slot => ({ slot, texture: null }));
     this.bindDesc = { uniforms: this.lu, textures: this.tex };
     this.visBox = new Float32Array(4 * MAX_LIGHTS);
+    this.timeBuf = new Float64Array(1);
     this.cam = { posX: 0, posY: 0, eyeH: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, horizonRow: 0, planeDistY: 0 };
   }
 
@@ -111,24 +113,26 @@ export class WgLightPass {
   }
 
   // _uploadLightUniforms twin; sunMode is 1 (DDA) whenever the sun is on; run() upgrades it to 2 when the shadow map is valid.
-  _uploadLight(light) {
+  _uploadLight(light, timeSec = 0) { this.timeBuf[0] = timeSec; this._uploadLightT(light); }
+  // S8-B1-11e: time travels through a Float64Array so no double is passed as an argument (a boxed HeapNumber per frame)
+  _uploadLightT(light) {
     const lu = this.lu, li = this.li;
     const isSet = light && typeof light === 'object' && light.pos && light.col && typeof light.count === 'number';
     if (!isSet) {
       const a = light || [0, 0, 0];
       lu[W_AMBIENT] = a[0] || 0; lu[W_AMBIENT + 1] = a[1] || 0; lu[W_AMBIENT + 2] = a[2] || 0;
       li[W_LIGHT_COUNT] = 0; li[W_SUN_ON] = 0; li[W_SUN_MODE] = 0;
-      lu[W_CLOUD_COVER] = 0; lu[W_CLOUD] = 0; lu[W_CLOUD + 1] = 0; lu[W_CLOUD + 2] = 0; lu[W_CLOUD + 3] = 0;
-      lu[W_AO_STRENGTH] = 0;
+      packCloudUniforms(null, 0, this.cloud8); lu.set(this.cloud8, W_CLOUD_A);
+      lu[W_AO_STRENGTH] = 0; lu[W_AO_P] = 0; lu[W_AO_P + 1] = 0; lu[W_AO_P + 2] = 0; lu[W_AO_P + 3] = 0;
       return;
     }
     lu[W_AMBIENT] = light.ambient[0]; lu[W_AMBIENT + 1] = light.ambient[1]; lu[W_AMBIENT + 2] = light.ambient[2];
-    // ALPHA-01f cloud item (1): copy light.cloud into cloudCover/cloud (4 floats), cached word indices, zero alloc.
-    const cloud = light.cloud;
-    if (cloud) { lu[W_CLOUD_COVER] = cloud.cover; lu[W_CLOUD] = cloud.strength; lu[W_CLOUD + 1] = cloud.invScale; lu[W_CLOUD + 2] = cloud.offU; lu[W_CLOUD + 3] = cloud.offV; }
-    else { lu[W_CLOUD_COVER] = 0; lu[W_CLOUD] = 0; lu[W_CLOUD + 1] = 0; lu[W_CLOUD + 2] = 0; lu[W_CLOUD + 3] = 0; }
+    // S8-B2-12c: pack into the preallocated cloud8 (zero alloc), copy to cloudA/cloudB.
+    packCloudUniforms(light.cloud, this.timeBuf[0], this.cloud8); lu.set(this.cloud8, W_CLOUD_A);
     // S8-B2-20 (38.17): `light.ao` -> aoStrength, next to cloud upload above; zero on the no-ao path.
-    lu[W_AO_STRENGTH] = light.ao ? light.ao.strength : 0;
+    const ao = light.ao;
+    lu[W_AO_STRENGTH] = ao ? ao.strength : 0;
+    lu[W_AO_P] = ao ? ao.radiusM : 0; lu[W_AO_P + 1] = ao ? ao.bias : 0; lu[W_AO_P + 2] = ao ? ao.maxCells : 0; lu[W_AO_P + 3] = 0;
     const sun = light.sun, on = !!(sun && sun.on);
     li[W_SUN_ON] = on ? 1 : 0;
     if (sun) {
@@ -159,7 +163,9 @@ export class WgLightPass {
   run(p, t) {
     const d = this.device, lu = this.lu, li = this.li;
     if (p._world) this._ensureWorld(p._world); else this.li[W_STRUCT_COUNT] = 0; // no world (`?gpucompare=shade` upload source): the 1x1 dummy atlases stay bound
-    this._uploadLight(p._light);
+    const fb = p._fb;
+    this.timeBuf[0] = fb ? fb.timeSec : 0; if (this.timeBuf[0] !== this.timeBuf[0]) this.timeBuf[0] = 0; // no `||` phi on the double (it boxes a HeapNumber)
+    this._uploadLightT(p._light);
     const cb = this._camBasis(p._cam || NO_CAM, p.cols, p.rows, p.rt);
     li[W_GRID_COLS] = p.cols; li[W_GRID_ROWS] = p.rows;
     lu[W_POSX] = cb.posX; lu[W_POSY] = cb.posY; lu[W_EYEH] = cb.eyeH;
@@ -176,7 +182,7 @@ export class WgLightPass {
       sunTex = lp.texture || this.texSunDummy; // GFX-03 'off': no map, the dummy is never sampled
     }
     const rp = p._rasterPass, pitched = !!(rp && rp.pitched);
-    li[W_PROJ_MODE] = pitched ? 1 : 0;
+    li[W_PROJ_MODE] = pitched ? (rp.ortho ? 2 : 1) : 0; // US-068b2: 2 = ortho (pitch words carry halfW/halfH in the tanHalf slots)
     if (pitched) {
       const q = rp.pitch;
       lu[W_PITCH_A] = q.fX; lu[W_PITCH_A + 1] = q.fY; lu[W_PITCH_A + 2] = q.fZ; lu[W_PITCH_A + 3] = q.tanHalfX;

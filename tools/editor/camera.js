@@ -94,3 +94,34 @@ export function adjustSpeed(speed, wheelDeltaY) {
   const factor = wheelDeltaY > 0 ? 1 / 1.25 : 1.25;
   return Math.max(0.5, Math.min(200, speed * factor));
 }
+
+/** US-068c view presets (docs/architecture.md 38.19): compass yaw 0 = N clockwise, pitch + = up. */
+export const VIEW_PRESETS = Object.freeze({
+  TOP: Object.freeze({ yawDeg: 0, pitchDeg: -90 }),
+  FRONT: Object.freeze({ yawDeg: 0, pitchDeg: 0 }),
+  ISO: Object.freeze({ yawDeg: 45, pitchDeg: -Math.atan(1 / Math.SQRT2) / DEG2RAD }), // -35.264
+});
+
+/**
+ * Set yaw/pitch to a named preset ('TOP' | 'FRONT' | 'ISO'). Perspective has
+ * no ortho yet (US-068d), so pitch is clamped to +-`pitchClampDeg` (default
+ * 70 = PITCH_CLAMP_PITCHED_DEG): TOP shows -70. If `focus` ({x,y,z}) is given
+ * the eye is re-placed at the current distance from it along the new view
+ * direction; otherwise only yaw/pitch change. Unknown name THROWS (a typo is
+ * a bug, not a silent no-op). Mutates `pose`; returns it.
+ */
+export function applyViewPreset(pose, name, focus = null, pitchClampDeg = 70) {
+  const p = Object.prototype.hasOwnProperty.call(VIEW_PRESETS, name) ? VIEW_PRESETS[name] : null;
+  if (!p) throw new Error(`applyViewPreset: unknown preset '${name}'`);
+  let dist = 0;
+  if (focus) dist = Math.hypot(pose.x - focus.x, pose.y - focus.y, pose.z - focus.z);
+  pose.yawDeg = p.yawDeg;
+  pose.pitchDeg = Math.max(-pitchClampDeg, Math.min(pitchClampDeg, p.pitchDeg));
+  if (focus) {
+    const y = pose.yawDeg * DEG2RAD, pt = pose.pitchDeg * DEG2RAD;
+    pose.x = focus.x - Math.sin(y) * Math.cos(pt) * dist;
+    pose.y = focus.y + Math.cos(y) * Math.cos(pt) * dist;
+    pose.z = focus.z - Math.sin(pt) * dist;
+  }
+  return pose;
+}

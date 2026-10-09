@@ -16,7 +16,7 @@
  * @returns {{triggered: boolean}} a live status object (`triggered` flips to true once the card hooks have run)
  */
 export function watchDeviceLost(device, hooks = {}) {
-  const { freeze, autosave, showCard } = hooks;
+  const { freeze, autosave, showCard, canSave } = hooks;
   const status = { triggered: false };
   if (!device || !device.lost || typeof device.lost.then !== 'function') return status;
   let handled = false;
@@ -28,7 +28,8 @@ export function watchDeviceLost(device, hooks = {}) {
     handled = true;
     status.triggered = true;
     if (typeof freeze === 'function') freeze(); // stop stepping the sim BEFORE the (synchronous) autosave
-    if (typeof autosave === 'function') autosave(); // exactly one synchronous save, no await before it
+    // Save only when the game says it is safe (not on the title menu / wake / death): else the reload loads the last good save.
+    if (typeof autosave === 'function' && (typeof canSave !== 'function' || canSave())) autosave(); // one synchronous save
     if (typeof showCard === 'function') showCard();
   });
   return status;

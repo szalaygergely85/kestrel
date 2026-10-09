@@ -1,7 +1,8 @@
 // ENV-01a2 (37.4). Load-time master words; camera-local, allocation-free feed.
-import { createInstanceBuffer, writeUnitInstance, touchInstances, INSTANCE_STRIDE,
+import { createInstanceBuffer, writeUnitInstance, touchInstances, INSTANCE_STRIDE, INST_FLAGS,
   MAX_INSTANCE_GROUPS, MAX_INSTANCES_PER_FRAME } from './instances.js';
 import { resolveGfxKnobs, keepPlacement } from './gfxKnobs.js';
+import { INST_FLAG_SWAY } from './sway.js';
 
 export const DETAIL_OBJECT_BASE = 0x40000;
 
@@ -63,7 +64,11 @@ export function bindDetailInstances(detail, instances, cfg, treeInstances = 0, g
   for (let i = 0; i < detail.count; i++) {
     if (keep && !keep[i]) continue;
     writeUnitInstance(master, i, detail.x[i], detail.y[i], detail.z[i], detail.yawDeg[i], DETAIL_OBJECT_BASE | i, 0);
+    // FOLIAGE-SWAY-01 part 2: per-species sway bit, OR'd in after writeUnitInstance (keeps aligned/team bits already written).
+    // feedDetail copies every word (incl. INST_FLAGS) verbatim per frame, so the bit survives the per-frame re-feed for free.
+    if (detail.speciesDefs[detail.species[i]].sway) master.u32[i * INSTANCE_STRIDE + INST_FLAGS] |= INST_FLAG_SWAY;
   }
+  touchInstances(master); // one bump for the whole batch of raw-word ORs above (writeUnitInstance already bumped per changed row)
   return { detail, groups, groupOf, master, offsetX, offsetY, maxDraw, keep, drawR2Scale: drawScale * drawScale,
     maxDrawR2: maxDrawM * maxDrawM, refeedR2: refeedM * refeedM, lastX: NaN, lastY: NaN, fed: 0 };
 }

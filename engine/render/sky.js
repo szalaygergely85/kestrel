@@ -1,7 +1,7 @@
 // ME-19b: sky/ambient moved verbatim from sectorCaster; shear stays until ME-19d.
 import { fastShadeSky, primeFastShadeFrame } from './fastShade.js';
 import { clampByte } from '../core/math.js';
-import { PROJ_HFOV_DEG as HFOV_DEG, createPitchedTerms, pitchedTerms, screenRay, resolveProjection } from './projection.js';
+import { PROJ_HFOV_DEG as HFOV_DEG, createPitchedTerms, pitchedTerms, screenRay, resolveProjection, isPitchedFamily } from './projection.js';
 // ART-04a (docs/architecture.md 37.18 item 5): the cloud deck reuses the bit-exact
 // `hashFast01` value-noise twin (period 256, seed-keyed) so the JS path and the
 // future GLSL kind-0 branch can never drift; `resolveLook` supplies the resolved
@@ -131,9 +131,9 @@ export function cloudAt(dx, dy, dz, elevDeg, C, off, out) {
   // q = cloud-deck projection, drifted once per frame (off).
   const qx = (dx / (dz + C.bias)) * C.scale + off[0];
   const qy = (dy / (dz + C.bias)) * C.scale + off[1];
-  const puff = cloudValueNoise(qx, qy, seed) * 0.65 + cloudValueNoise(qx * 2.03 + 17.0, qy * 2.03 + 17.0, seed) * 0.35;
+  const puff = cloudValueNoise(qx, qy, seed) * 0.65 + cloudValueNoise(qx * 2.0 + 17.0, qy * 2.0 + 17.0, seed) * 0.35;
   // wisp: stretched 3x along x (the wind axis).
-  const wisp = cloudValueNoise(qx * 0.33 * 1.7 + 41.0, qy * 1.7 + 41.0, seed);
+  const wisp = cloudValueNoise((qx - off[0]) * 0.33 * 1.7 + off[0] + 41.0, (qy - off[1]) * 1.7 + off[1] * 2.0 + 41.0, seed); // CLOUD-WRAP-01: drift term has integer factors (1, 2) so a 256 wrap is seamless
   const cb = out.band;
   const band = smoothstep01(0, cb[0], elevDeg) * (1 - smoothstep01(cb[1], cb[2], elevDeg));
   const dn = clamp01(Math.max((puff - C.cover) * C.puffK, (wisp - C.wispCover) * C.wispK * 0.55) * band);
@@ -216,7 +216,7 @@ export function fillSky(fb, cam) {
 
   // RE-02a (28.1 A2 item 2): the pitched sky twin - per cell the `screenRay` direction gives
   // azimuth and elevation (GLSL: `pitchedCellDir` in shade.frag.js's sky branch).
-  const pitched = resolveProjection(cam, fb.renderer) === 'pitched';
+  const pitched = isPitchedFamily(resolveProjection(cam, fb.renderer)); // US-068b3b: ortho sky = pitched sky for the same F
   if (pitched) {
     skyGrid.cols = cols; skyGrid.rows = rows; skyGrid.pxCellW = rt.pxCellW || 1; skyGrid.pxCellH = rt.pxCellH || 1;
     pitchedTerms(cam, skyGrid, skyTerms);

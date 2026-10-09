@@ -75,7 +75,7 @@ export function rayPoint(ray, d) {
 
 /**
  * World point -> screen cell + depth (the exact inverse of `unprojectCell`,
- * same equations `sprites.js`/the casters use). Used by the round-trip test
+ * same equations the engine sprite pass/the casters use). Used by the round-trip test
  * and by `select.js`'s highlight-rect projection.
  */
 export function projectPoint(cam, cols, rows, pxCellW, pxCellH, point, renderer = 'dda') {

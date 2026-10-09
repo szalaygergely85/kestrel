@@ -13,7 +13,8 @@
 //   shore (36.1c): foam glyph and rim foreground from column depth / edge distance; background unchanged.
 //   fog (own distance dW, x pitched fog scale): see waterLook.js `waterFogParams`.
 //   flow (US-141a, 35.4): a flowing slot replaces the ramp glyph by `look.streak` where the advected streak hash (waterLook.js `flowStreakHit`) says so.
-//   ripples (S8-B2-13, 38.14): !sheet cells only, composite-only (no geometry change); `waterLook.js packRipples`/`rippleStrength` on `world.water`'s ring buffer.
+//   ripples (S8-B2-13b, 38.14, the note of record): !sheet cells only, composite-only (no geometry change); reads `fb.ripples`
+//   (duck-typed `{packInto}`, owned by `engine/fx/ripples.js`) via `waterLook.js rippleAccAt`; absent `fb.ripples` = 0 rings.
 // Edge suppression: an opaque (a >= seeThrough) surface cell sets `fb.waterMask[i] = 1`; `edgePass` skips masked cells so a
 // submerged silhouette never draws through opaque water.
 //
@@ -22,11 +23,14 @@
 import { sunFromWorld } from './lighting.js';
 import { unprojectCell, unprojectPitched, pitchedFogScale } from './projection.js';
 import { lastWaterSelection } from './water.js';
-import { WL_STRIDE, WL_SLOTS, WFOG_LEN, RIPPLE_MIN, fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit, waterSurfaceHash, waterEdgeDistance, waterfallHash, packRipples, rippleStrength } from './waterLook.js';
+import {
+  WL_STRIDE, WL_SLOTS, WFOG_LEN, RIPPLE_SLOTS, RIPPLE_ACC_MIN, DEFAULT_RIPPLE_GLYPH, DEFAULT_RIPPLE_GAIN,
+  fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit, waterSurfaceHash, waterEdgeDistance, waterfallHash, rippleAccAt,
+} from './waterLook.js';
 
 const _table = new Float32Array(WL_SLOTS * WL_STRIDE);
 const _fog = new Float32Array(WFOG_LEN);
-const _rip = new Float32Array(32); // S8-B2-13 (38.14): 8 rings x (x, y, r, s)
+const _rip = new Float32Array(RIPPLE_SLOTS * 4); // S8-B2-13b (38.14): 8 rings x (x, y, age, amp)
 const _p = new Float64Array(3);
 const _floorP = new Float64Array(3);
 const _sun = { dirX: 0, dirY: 0, dirZ: 1, ambientI: 0, sunI: 0 };
@@ -54,7 +58,11 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
   const sel = lastWaterSelection();
   fillWaterSlotTable(sel, world, fb.waterLooks || defaultWaterLooks(), _table, fb.timeSec || 0);
   waterFogParams(fb.matTable, fb.palette, !!world.terrain, _fog);
-  const ripCount = packRipples(world.water, _rip); // S8-B2-13 (38.14): deterministic off the water sim clock
+  // S8-B2-13b (38.14): fb.ripples is duck-typed {packInto} (engine/fx/ripples.js); absent (NEEDS B1-main not wired
+  // yet, or no splashes this scene) = 0 rings, bit-identical to the pre-ripple render.
+  const ripCount = (fb.ripples && typeof fb.ripples.packInto === 'function') ? fb.ripples.packInto(fb.timeSec || 0, _rip) : 0;
+  const rippleGlyph = fb.rippleGlyph != null ? fb.rippleGlyph : DEFAULT_RIPPLE_GLYPH;
+  const rippleGain = fb.rippleGain != null ? fb.rippleGain : DEFAULT_RIPPLE_GAIN;
   const sun = sunFromWorld(world, fb.palette, _sun);
   const light = fb.light;
   const sunMapOn = !!(light && !light.uniform && light.sunMapOn);
@@ -83,9 +91,9 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
       column = Math.max(0, _p[2] - _floorP[2]);
     }
     const tint = isSky ? a : Math.min(column / _table[lb + 38], 1);
-    // S8-B2-12b (38.13): cloud-darkening byte (`light.cloud[i]`, the JS-side copy of the floor cell's LIGHT.w bits
+    // S8-B2-12b (38.13): cloud-darkening byte (`light.cloudQ[i]`, the JS-side copy of the floor cell's LIGHT.w bits
     // 24..31) scales the sun term here too; 0 at strength 0 or with no per-cell byte -> cF 1 -> bit-identical.
-    const cF = (light && !light.uniform && light.cloud) ? 1 - light.cloud[i] * (1 / 255) : 1;
+    const cF = (light && !light.uniform && light.cloudQ) ? 1 - light.cloudQ[i] * (1 / 255) : 1;
     const k = sun.ambientI + sun.sunI * sunZ * (sunMapOn ? light.sunN[i] * 0.25 : 1) * cF;
     let wr = (_table[lb] + (_table[lb + 4] - _table[lb]) * tint) * k;
     let wg = (_table[lb + 1] + (_table[lb + 5] - _table[lb + 1]) * tint) * k;
@@ -104,13 +112,14 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
         wr += (_table[lb + 8] - wr) * 0.5; wg += (_table[lb + 9] - wg) * 0.5; wb += (_table[lb + 10] - wb) * 0.5;
       }
     }
-    // S8-B2-13 (38.14): splash ripples, !sheet only (incl. see-through: replaces the floor glyph), before the sheet/shore blocks.
+    // S8-B2-13b (38.14, the note of record): splash ripples, !sheet only (incl. see-through: replaces the floor
+    // glyph), before the sheet/shore blocks. acc/glyph/gain are a single global uniform now, not a per-slot look field.
     if (!sheet) {
-      const rs = rippleStrength(_rip, ripCount, _p[0], _p[1]);
-      if (rs > RIPPLE_MIN) {
-        glyph = _table[lb + 54];
-        const m = _table[lb + 55] * rs;
-        wr += (_table[lb + 8] - wr) * m; wg += (_table[lb + 9] - wg) * m; wb += (_table[lb + 10] - wb) * m;
+      const acc = rippleAccAt(_rip, ripCount, _p[0], _p[1]);
+      if (acc >= RIPPLE_ACC_MIN) {
+        glyph = rippleGlyph;
+        const m = acc * rippleGain;
+        wr += (255 - wr) * m; wg += (255 - wg) * m; wb += (255 - wb) * m;
       }
     }
     if (sheet) {

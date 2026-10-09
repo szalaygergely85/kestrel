@@ -34,7 +34,7 @@ window.__chestHookPreview = { rt, info, ui, hook, world, chestEntity, inv, get c
 function frame(now) {
   const dt = previous === null ? 0 : Math.max(0, Math.min(0.1, (now - previous) / 1000)); previous = now;
   state.interactPressed = edge; state.interactRaw = edge; edge = false;
-  hook.onTick(dt);
+  hook.stepUi(dt, state.interactRaw); if (!hook.card.isOpen) hook.onTick(dt); // main.js shape: card steps always, sim only while unpaused
   rt.clear(); ui.clear(); hook.drawHud(ui); rt.present();
   document.querySelector('#status').textContent = `${backend}; chest=${window.__chestHookPreview.world.get('chestEntity1').anim}; card=${hook.card.isOpen}; count=${window.__chestHookPreview.count}; preview only`;
   requestAnimationFrame(frame);

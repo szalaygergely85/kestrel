@@ -277,4 +277,51 @@ const oneRangeMesh = { triCount: 4, bbox: mesh0.bbox, ranges: [{ start: 0, count
   assert.equal(cull._uv.f32[CULL_SHADOW_BLOCK.field('swayPad').word], SWAY_MAX, 'wind on: swayPad == SWAY_MAX (shadow kernel)');
   cull.dispose();
 }
+
+// ---- S8-B2-10c host wiring: 7 binds always (dummy at 5/6 when occlusion is off), two-phase when on ----
+{
+  const m = makeMockGpuDevice(), dv = m.device, rec = [];
+  dv.dispatch = (pipeline, desc, x) => rec.push({ slots: desc.buffers.map((b) => b.slot), bufs: desc.buffers.map((b) => b.buffer), u: Uint32Array.from(new Uint32Array(desc.uniforms.buffer, desc.uniforms.byteOffset, desc.uniforms.length)), x });
+  const OC = (n) => CULL_BLOCK.field(n).word;
+  const g = makeGroup(40, 0);
+  // occlusion off (default): 7 entries, a 16 B dummy each at 5 and 6, all occlusion words 0 -> today's behaviour
+  const off = new WgCullPass(dv);
+  off.begin({ planes: null }); off.add(g, [mesh0, null]); off.run();
+  assert.deepEqual(rec[0].slots, [0, 1, 2, 3, 4, 5, 6], 'bind group has 7 entries');
+  assert.ok(rec[0].bufs[5] === off._dummy && rec[0].bufs[6] === off._dummy2 && off._dummy !== off._dummy2, 'distinct dummies at 5 and 6 (same buffer read+rw = WebGPU usage conflict)');
+  for (let i = OC('vp'); i <= OC('slot3'); i++) assert.equal(rec[0].u[i], 0, `occlusion word ${i} is 0 with occl off`);
+  off.begin({ planes: null, hzb: { buffer: off._dummy, w: 8, h: 8, levels: 4, fwd: [0, 1, 0] }, viewProj: new Float64Array(16) }); off.add(g, [mesh0, null]); off.run(); off.runPhase2({ buffer: off._dummy });
+  assert.equal(rec.length, 2, 'occl off: no phase-2 dispatch, hzb ignored'); assert.equal(rec[1].u[OC('hzbOn')], 0);
+  // mock rejects a writable storage binding aliasing another binding of the same buffer: a shared dummy must fail
+  const mk2 = makeMockGpuDevice().device, shared = new WgCullPass(mk2); shared._dummy2 = shared._dummy; shared.begin({ planes: null }); shared.add(g, [mesh0, null]);
+  assert.throws(() => shared.run(), /aliases/, 'shared dummy at read slot 5 + rw slot 6 is rejected');
+  off.dispose();
+  // occlusion on
+  rec.length = 0;
+  const on = new WgCullPass(dv, { occl: true }), vp = new Float64Array(16).map((_, i) => i + 1);
+  const hz = { buffer: dv.createBuffer({ usage: 'storage', bytes: 1024 }), w: 8, h: 8, levels: 4, pitch: 64, fwd: [0, 1, 0] };
+  on.begin({ planes: null, viewProj: vp, rows: 60 }); const e1 = on.add(g, [mesh0, null]); on.run(); on.runPhase2(hz);
+  assert.equal(rec.length, 1, 'first frame (no HZB): phase 1 only, hzbOn 0, no phase 2');
+  assert.equal(rec[0].u[OC('hzbOn')], 0); assert.ok(rec[0].bufs[5] === on._dummy && rec[0].bufs[6] === on._dummy2);
+  const b = on.batches.get(g), e2 = on.phase2Entries(g);
+  assert.ok(e2.length === e1.length && e2[0].instanceBuffer === b.dst2[0] && e2[0].argsOffset === b.slot2 * 20 && b.slot2 !== b.slot, 'own dst2 + args records');
+  rec.length = 0;
+  on.begin({ planes: null, viewProj: vp, rows: 60, hzb: hz }); on.add(g, [mesh0, null]); on.run(); on.runPhase2(hz);
+  assert.equal(rec.length, 2, 'phase 1 then phase 2');
+  const p1 = rec[0], p2 = rec[1], W5 = 5;
+  assert.equal(p1.u[OC('hzbOn')], 1); assert.equal(p1.u[OC('phase')], 0); assert.equal(p1.u[OC('hzbW')], 8); assert.equal(p1.u[OC('hzbPitch')], 64);
+  assert.ok(p1.bufs[5] === hz.buffer && p1.bufs[6] === b.occlBuf && p1.bufs[2] === b.dst[0] && p1.bufs[3] === b.dst[1]);
+  assert.equal(p2.u[OC('phase')], 2); assert.equal(p2.u[OC('hzbOn')], 1); assert.equal(p2.x, p1.x, 'same thread count');
+  assert.ok(p2.bufs[2] === b.dst2[0] && p2.bufs[3] === b.dst2[1] && p2.bufs[5] === hz.buffer && p2.bufs[6] === b.occlBuf && p2.bufs[4] === p1.bufs[4]);
+  assert.equal(p2.u[OC('slot2')], b.slot2 * W5); assert.equal(p2.u[OC('slot3')], (b.slot2 + 1) * W5);
+  assert.equal(p2.u[OC('count')], p1.u[OC('count')]);
+  // resize / camera cut: the host passes no hzb -> hzbOn 0 that frame (and no phase 2)
+  rec.length = 0;
+  on.begin({ planes: null, viewProj: vp, rows: 60, hzb: null }); on.add(g, [mesh0, null]); on.run(); on.runPhase2(hz);
+  assert.equal(rec.length, 1); assert.equal(rec[0].u[OC('hzbOn')], 0);
+  // removal frees both blocks (no leak): re-adding a batch reuses the same slots
+  const used = on._nextSlot; on.removeBatch(g); on.begin({ planes: null }); on.add(makeGroup(4, 0), [mesh0, null]);
+  assert.equal(on._nextSlot, used, 'freed slot blocks reused');
+  on.dispose();
+}
 console.log('passCull.test OK');

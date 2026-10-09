@@ -33,12 +33,10 @@ import { CELL_VERT_SRC } from './glsl/cell.vert.js';
 import { SHADE_FRAG_SRC } from './glsl/shade.frag.js';
 import { EDGE_FRAG_SRC } from './glsl/edge.frag.js';
 import { DEBUG_FRAG_SRC } from './glsl/debug.frag.js';
-import { DDA_FRAG_SRC } from './glsl/dda.frag.js';
 import { RESOLVE_FRAG_SRC } from './glsl/resolve.frag.js';
 import { DERIV_FRAG_SRC } from './glsl/deriv.frag.js';
 import { LIGHT_FRAG_SRC } from './glsl/light.frag.js';
 // US-016 (14.4 GPU build order steps 2/3): pass A2 program + the shared sun helper.
-import { TERRAIN_FRAG_SRC } from './glsl/terrain.frag.js';
 // US-026a S5 (23.4): the shared near-band gate/bounds helpers, plus the
 // dither salt (uniform, never a hand-copied literal) - the JS oracle
 // (terrainCaster.js) and this pipeline's uniform upload use the SAME
@@ -46,11 +44,6 @@ import { TERRAIN_FRAG_SRC } from './glsl/terrain.frag.js';
 // combined bound.
 import { sunFromWorld } from '../lighting.js';
 import { terrainHBounds, activeNearLOD } from '../../world/Terrain.js';
-// US-040 (15.2 items 3/4, build order step 3): pass A3 `voxel` - VOX/VOXINST
-// texture layout + the GLSL march itself.
-import { VOXEL_FRAG_SRC } from './glsl/voxel.frag.js';
-import { VOX_ATLAS_WIDTH, VOXINST_WIDTH, VOXINST_ROWS_PER_INSTANCE, writeInstanceRows } from './VoxelTextures.js';
-import { MAX_VOX_INSTANCES } from '../../voxel/VoxelModel.js';
 import { GpuTimer, GpuPassTimer } from './GpuTimer.js';
 import { buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan, MAX_STRUCTS } from './WorldTextures.js';
 import { PROJ_HFOV_DEG as HFOV_DEG } from '../projection.js';
@@ -79,6 +72,7 @@ import { addVoxelInstances, sharedVoxelMeshCache } from '../../mesh/voxelMesh.js
 import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer } from '../projection.js';
 import { frustumPlanes } from '../../mesh/culling.js';
 // ME-15b (27.9a): sun shadow map pass (depth only, before the raster pass).
+import { windShadowKey } from '../../mesh/sway.js';
 import { resolveSunShadowOptions, SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../shadowSun.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../../mesh/shadowList.js';
 import { SHADOW_FRAG_SRC, SHADOW_TERRAIN_FRAG_SRC, SHADOW_DEPTH_COPY_FRAG_SRC } from './glsl/shadow.frag.js';
@@ -101,7 +95,6 @@ const EMPTY3 = [0, 0, 0]; // fallback ambient when `frame()` was handed neither 
 // resolve and deriv draw calls (one query spans both, per the tech notes).
 export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge', 'shadow', 'water', 'wcomp']);
 const PASS_CAST = 0, PASS_TERRAIN = 1, PASS_VOXEL = 2, PASS_RESOLVE = 3, PASS_LIGHT = 4, PASS_SHADE = 5, PASS_EDGE = 6, PASS_SHADOW = 7, PASS_WATER = 8, PASS_WCOMP = 9;
-const PASS_STATS_EVERY = 30; // matches GpuTimer's own STATS_EVERY - see _pollTerrainTs/_pollVoxelTs
 
 function sumFinite(arr) {
   let s = 0;
@@ -142,7 +135,7 @@ export class GpuCellPipeline {
       // without `?terrain=0` - see main.js and this story's Programmer notes.
       terrainSubmitMs: NaN, terrainSubmitMsP50: NaN, terrainSubmitMsP95: NaN,
       // US-040 (15.2 item 6): same CPU submit-time bracket, around pass A3.
-      voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0, voxelDraws: 0, instancedDraws: 0, instances: 0, /* RE-06 */ // voxelDraws (ME-08c): mesh path draw calls for voxel parts last frame (ME-17 baseline)
+      voxelMs: 0, voxelMsP50: 0, voxelMsP95: 0, /* no separate voxel pass on the GL mesh path */ voxelInstances: 0, voxelDraws: 0, instancedDraws: 0, instances: 0, /* RE-06 */ // voxelDraws (ME-08c): mesh path draw calls for voxel parts last frame (ME-17 baseline)
       waterSlots: 0, waterDraws: 0, // US-055a2a: water regions selected / clipmap draw calls last frame
       shadowItems: 0, shadowDraws: 0, shadowCpuMs: 0, // ME-15b: sun shadow pass caster items / draw calls last frame
       instancesCulled: 0, instancesLod1: 0, // RE-15a (28.13 point 8): F3 `inst <drawn>/<total> lod1 <n> cull <culled>`
@@ -209,18 +202,12 @@ export class GpuCellPipeline {
     // US-030a: the two new passes (14.2 item 1/3) - cast (GLSL DDA, MRT
     // GI/GA/DEPTH) and deriv (GD, from GI/GA/DEPTH). Both all-uint targets
     // (`floatBitsToUint`), so neither needs `EXT_color_buffer_float`.
-    this.progCast = linkProgram(gl, CELL_VERT_SRC, DDA_FRAG_SRC);
     // US-030b (14.2 item 3, pass B): votes the sub-sample G-buffer down to
     // the per-cell one below.
     this.progResolve = linkProgram(gl, CELL_VERT_SRC, RESOLVE_FRAG_SRC);
     this.progDeriv = linkProgram(gl, CELL_VERT_SRC, DERIV_FRAG_SRC);
     // US-006 (14.3 item 3): the light pass - cast/resolve/deriv -> light -> shade -> edge.
     this.progLight = linkProgram(gl, CELL_VERT_SRC, LIGHT_FRAG_SRC);
-    // US-016 (14.4 item 2, GPU build order step 2): pass A2, between cast and resolve.
-    this.progTerrain = linkProgram(gl, CELL_VERT_SRC, TERRAIN_FRAG_SRC);
-    // US-040 (15.2 item 4, GPU build order step 3): pass A3, ping-ponging
-    // between the SAME two sub-sample sets A1/A2 already own (no third set).
-    this.progVoxel = linkProgram(gl, CELL_VERT_SRC, VOXEL_FRAG_SRC);
     // ME-04: the raster pass' own program (real geometry, not the
     // fullscreen-triangle CELL_VERT_SRC every other pass above uses) - only
     // compiled/allocated when this instance is the 'mesh' renderer, so the
@@ -403,19 +390,6 @@ export class GpuCellPipeline {
     this.texNearType = createTexture2D(gl, gl.R8UI, 1, 1);
     this._terrainNearVersion = -1;
 
-    // --- US-040 (15.2 items 2/3) voxel textures - VOX (the shared atlas,
-    // 1x1 placeholder until bindVoxels() uploads a real one on atlas.version
-    // change) and VOXINST (fixed size: MAX_VOX_INSTANCES*9 rows, width 8 -
-    // never resized, only texSubImage2D'd per frame with the live count). ---
-    this.texVOX = createTexture2D(gl, gl.R16UI, 1, 1);
-    this.texVOXINST = createTexture2D(gl, gl.RGBA32F, VOXINST_WIDTH, VOXINST_ROWS_PER_INSTANCE * MAX_VOX_INSTANCES);
-    this._voxAtlasVersion = -1;
-    this._voxInstF = new Float32Array(VOXINST_WIDTH * 4 * VOXINST_ROWS_PER_INSTANCE * MAX_VOX_INSTANCES);
-    this._voxRectF = new Float32Array(4 * MAX_VOX_INSTANCES);
-    this._voxelSubmitMsHistory = new Float32Array(16);
-    this._voxelSubmitMsHistoryLen = 0;
-    this._voxelSubmitMsHistoryPos = 0;
-
     // --- staging arrays (allocated once, architecture.md 9: no per-frame
     // allocation). US-030a: GA/GD/DEPTH are now uint textures
     // (`floatBitsToUint`) - `_GAf`/`_GDf`/`_DepthF` are Float32Array VIEWS
@@ -451,12 +425,9 @@ export class GpuCellPipeline {
     this._locsShade = this._uniformLocs(this.progShade, SHADE_UNIFORMS);
     this._locsEdge = this._uniformLocs(this.progEdge, EDGE_UNIFORMS);
     this._locsDebug = this._uniformLocs(this.progDebug, DEBUG_UNIFORMS);
-    this._locsCast = this._uniformLocs(this.progCast, CAST_UNIFORMS);
     this._locsResolve = this._uniformLocs(this.progResolve, RESOLVE_UNIFORMS);
     this._locsDeriv = this._uniformLocs(this.progDeriv, DERIV_UNIFORMS);
     this._locsLight = this._uniformLocs(this.progLight, LIGHT_UNIFORMS);
-    this._locsTerrain = this._uniformLocs(this.progTerrain, TERRAIN_UNIFORMS);
-    this._locsVoxel = this._uniformLocs(this.progVoxel, VOXEL_UNIFORMS);
     this._locsMesh = this.progMesh ? this._uniformLocs(this.progMesh, MESH_UNIFORMS) : null;
     this._locsWater = this.progWater ? this._uniformLocs(this.progWater, WATER_UNIFORMS) : null;
     this._locsWaterComp = this.progWaterComp ? this._uniformLocs(this.progWaterComp, WATER_COMP_UNIFORMS) : null;
@@ -489,27 +460,8 @@ export class GpuCellPipeline {
     // construct; the disjoint-timer query ring is the only GL cost and
     // `GpuPassTimer` starts empty/idle until `begin()` is actually called).
     this.passTimer = new GpuPassTimer(gl, PASS_NAMES.length);
-    // US-016 step 6 (14.4 item 4 budget "<= 1.0 ms p95 of the 4 ms"): the
-    // terrain pass runs INSIDE `this.timer`'s own begin()/end() span (the
-    // whole `_hook()`), and `EXT_disjoint_timer_query_webgl2` allows only
-    // ONE active TIME_ELAPSED_EXT query per context at a time - a second,
-    // nested `beginQuery` would be a no-op (INVALID_OPERATION), so a second
-    // `GpuTimer` here can never report anything but n/a. Tried
-    // `TIMESTAMP_EXT` query-counters (not an "active" span, so they can
-    // coexist with an active TIME_ELAPSED_EXT query) bracketing
-    // `_passTerrain()` first, but ANGLE/D3D11 (the owner's real GPU) reports
-    // `queryCounterEXT` present yet always returns the SAME clock value for
-    // both queries (delta always exactly 0) - a known driver gap, not a
-    // logic bug here. Falls back to a CPU `performance.now()` submit-time
-    // bracket around just the terrain draw call, same honest-labelling as
-    // this file's existing `uploadMs`/`drawMs` (also CPU submit time, not a
-    // GPU query) - good enough to check the pass against its budget even
-    // though it can't separate GPU-side overlap from CPU dispatch cost.
     // ARCH CHANGES item 5: reused every frame by `sunFromWorld`'s `out` param.
     this._sunScratch = { dirX: 0, dirY: 0, dirZ: 0, ambientI: 0, sunI: 0 };
-    this._terrainSubmitMsHistory = new Float32Array(16);
-    this._terrainSubmitMsHistoryLen = 0;
-    this._terrainSubmitMsHistoryPos = 0;
 
     // Readback FBO (test-only, gpuCompare.js) - 2 x cols*rows*4 bytes, allocated once.
     this._readbackFg = new Uint8Array(4 * n);
@@ -608,10 +560,6 @@ export class GpuCellPipeline {
     // US-030a/US-030b: cast (DDA, sub-sample), resolve (vote) and deriv
     // passes' own bind tables. Cast no longer reads the mask (moved to
     // resolve - 14.2 item 3).
-    this._castBinds = this._buildBindTable(this._locsCast, [
-      ['uWorldGeom', this.texWorldGeom], ['uWorldMats', this.texWorldMats],
-      ['uWorldFlags', this.texWorldFlags],
-    ]);
     // US-016 (14.4 item 2): resolve reads set 2 (the terrain pass's output)
     // when terrain is active this frame, set 1 (the cast pass's raw output)
     // otherwise - a bind-time choice between two prebuilt tables (no
@@ -622,15 +570,6 @@ export class GpuCellPipeline {
     this._resolveBindsSet2 = this._buildBindTable(this._locsResolve, [
       ['uSGI', this.texSGI2], ['uSGA', this.texSGA2], ['uSDepth', this.texSDepth2], ['uMask', this.texMask],
     ]);
-    // US-016 (14.4 item 2): pass A2 reads set 1 (cast pass output) plus the
-    // far-terrain textures (step 1).
-    this._terrainBinds = this._buildBindTable(this._locsTerrain, [
-      ['uSGI', this.texSGI], ['uSGA', this.texSGA], ['uSDepth', this.texSDepth],
-      ['uFarH', this.texFarH], ['uFarType', this.texFarType],
-      // US-026a S5 (23.4): near-band textures - inert (uNearReady == 0)
-      // until a world with `terrain.nearReady && activeNearLOD` is bound.
-      ['uNearH', this.texNearH], ['uNearType', this.texNearType],
-    ]);
     // ME-06: the raster pass' own terrain program only needs the type
     // (mat) lookup textures - no height sampling (real triangles supply
     // z), no sub-sample input (it draws real geometry, not a fullscreen
@@ -638,19 +577,6 @@ export class GpuCellPipeline {
     this._meshTerrainBinds = this.progMeshTerrain ? this._buildBindTable(this._locsMeshTerrain, [
       ['uFarType', this.texFarType], ['uNearType', this.texNearType],
     ]) : null;
-    // US-040 (15.2 item 4): pass A3 ping-pongs between set 1 (fboCastSub's
-    // textures) and set 2 (fboTerrainSub's) - two bind tables sharing the
-    // same sampler->unit mapping (both built from `_locsVoxel`), one per
-    // "which set is the input this frame" (GpuCellPipeline picks by
-    // `_subSetCur`, see `_passVoxel`/`_hook`).
-    this._voxelBindsSet1In = this._buildBindTable(this._locsVoxel, [
-      ['uSGI', this.texSGI], ['uSGA', this.texSGA], ['uSDepth', this.texSDepth],
-      ['uVOX', this.texVOX], ['uVOXINST', this.texVOXINST],
-    ]);
-    this._voxelBindsSet2In = this._buildBindTable(this._locsVoxel, [
-      ['uSGI', this.texSGI2], ['uSGA', this.texSGA2], ['uSDepth', this.texSDepth2],
-      ['uVOX', this.texVOX], ['uVOXINST', this.texVOXINST],
-    ]);
     this._derivBinds = this._buildBindTable(this._locsDeriv, [
       ['uGI', this.texGI], ['uGA', this.texGA], ['uDepth', this.texDepth],
     ]);
@@ -670,7 +596,6 @@ export class GpuCellPipeline {
     this._setSamplerUniforms(this.progEdge, this._edgeBinds);
     if (this.progWaterComp) this._setSamplerUniforms(this.progWaterComp, this._waterCompBinds);
     this._setSamplerUniforms(this.progDebug, this._debugBinds);
-    this._setSamplerUniforms(this.progCast, this._castBinds);
     // US-016: both resolve source tables share the same sampler->unit
     // mapping (built from the same `_locsResolve`), so setting it once
     // against either table covers both - `_bindTextures` only ever changes
@@ -678,11 +603,7 @@ export class GpuCellPipeline {
     this._setSamplerUniforms(this.progResolve, this._resolveBindsSet1);
     this._setSamplerUniforms(this.progDeriv, this._derivBinds);
     this._setSamplerUniforms(this.progLight, this._lightBinds);
-    this._setSamplerUniforms(this.progTerrain, this._terrainBinds);
     if (this.progMeshTerrain) this._setSamplerUniforms(this.progMeshTerrain, this._meshTerrainBinds);
-    // US-040: both voxel bind tables share the same sampler->unit mapping
-    // (same reasoning as the terrain resolve tables above).
-    this._setSamplerUniforms(this.progVoxel, this._voxelBindsSet1In);
   }
 
   // Builds a flat [loc, tex, unit] tuple list once (init/rebind time only -
@@ -801,11 +722,10 @@ export class GpuCellPipeline {
     for (const tex of [this.texMatF, this.texMatI, this.texSetI, this.texSetF, this.texGain, this.texSky,
       this.texWorldGeom, this.texWorldMats, this.texWorldFlags,
       this.texLVis, this.texFarH, this.texFarType, this.texTlook,
-      this.texNearH, this.texNearType,
-      this.texVOX, this.texVOXINST]) {
+      this.texNearH, this.texNearType]) {
       if (tex) gl.deleteTexture(tex);
     }
-    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progCast, this.progResolve, this.progDeriv, this.progLight, this.progTerrain, this.progVoxel, this.progMesh, this.progMeshInst, this.progMeshTerrain, this.progShadow, this.progShadowTerrain, this.progShadowInst, this.progMeshCloth, this.progShadowCloth, this.progWater, this.progWaterComp]) if (p) gl.deleteProgram(p);
+    for (const p of [this.progShade, this.progEdge, this.progDebug, this.progResolve, this.progDeriv, this.progLight, this.progMesh, this.progMeshInst, this.progMeshTerrain, this.progShadow, this.progShadowTerrain, this.progShadowInst, this.progMeshCloth, this.progShadowCloth, this.progWater, this.progWaterComp]) if (p) gl.deleteProgram(p);
     if (this.vao) gl.deleteVertexArray(this.vao);
     // ME-04: the raster pass' own VAO + MeshBuffers cache (device.dispose()
     // frees every vertex buffer MeshBuffers uploaded, mirroring how every
@@ -833,7 +753,6 @@ export class GpuCellPipeline {
     // US-026a S5: same for the near-terrain textures.
     this._terrainNearVersion = -1;
     // US-040: force a full VOX re-upload on the next bindVoxels() call.
-    this._voxAtlasVersion = -1;
   }
 
   /**
@@ -1180,9 +1099,6 @@ export class GpuCellPipeline {
     // entity binding yet); this only consumes what is already queued.
     this._voxelActiveThisFrame = false;
     if (useScene && this._voxelPool) {
-      // ME-08a (27.16 item 6): the mesh path draws voxels as triangles in
-      // `_passRaster`, so the DDA voxel atlas (VRAM + upload) is skipped.
-      if (this.renderer !== 'mesh') this._ensureVoxelAtlas(this._voxelPool);
       this._voxelPool.project(this._cam, this.rt, this.renderer);
       this._voxelActiveThisFrame = this._voxelPool.list.length > 0;
     }
@@ -1215,33 +1131,6 @@ export class GpuCellPipeline {
         this._passWater();
         if (passTimingOn) this.passTimer.end();
       }
-    } else if (useScene) {
-      if (passTimingOn) this.passTimer.begin(PASS_CAST);
-      this._passCast();
-      if (passTimingOn) this.passTimer.end();
-      this._subSetCur = 1; // cast always writes set 1 (fboCastSub's textures)
-      if (this._terrainActiveThisFrame) {
-        this._terrainTsBegin();
-        if (passTimingOn) this.passTimer.begin(PASS_TERRAIN);
-        this._passTerrain();
-        if (passTimingOn) this.passTimer.end();
-        this._terrainTsEnd();
-        this._subSetCur = 2;
-      }
-      if (this._voxelActiveThisFrame) {
-        this._voxelTsBegin();
-        if (passTimingOn) this.passTimer.begin(PASS_VOXEL);
-        this._passVoxel();
-        if (passTimingOn) this.passTimer.end();
-        this._voxelTsEnd();
-        this._subSetCur = this._subSetCur === 1 ? 2 : 1;
-      }
-      // One query spans both resolve + deriv (tech notes: "resolve (resolve
-      // + deriv)") - they are two draw calls of the same logical pass.
-      if (passTimingOn) this.passTimer.begin(PASS_RESOLVE);
-      this._passResolve();
-      this._passDeriv();
-      if (passTimingOn) this.passTimer.end();
     }
     // US-006 (14.3 item 3): light pass runs unconditionally (also over the
     // legacy 'upload' source's mirrored GI/Depth - see `_repackAndUpload`),
@@ -1278,77 +1167,6 @@ export class GpuCellPipeline {
       this.stats.passMsP95.fill(NaN);
       this.timer.writeStats(this.stats); // writes gpuMs/gpuMsP50/gpuMsP95 in place - no allocation (architect review 1 item 3)
     }
-    this._pollTerrainTs();
-    this._pollVoxelTs();
-  }
-
-  // US-016 step 6: CPU `performance.now()` bracket around just the terrain
-  // draw call (see the constructor comment for why a true GPU query can't
-  // be nested inside `this.timer`'s whole-frame span, and why the
-  // TIMESTAMP_EXT alternative measured 0 on the owner's real GPU).
-  _terrainTsBegin() { this._terrainT0 = performance.now(); }
-
-  _terrainTsEnd() {
-    const ms = performance.now() - this._terrainT0;
-    this._terrainSubmitMsHistory[this._terrainSubmitMsHistoryPos] = ms;
-    this._terrainSubmitMsHistoryPos = (this._terrainSubmitMsHistoryPos + 1) % this._terrainSubmitMsHistory.length;
-    if (this._terrainSubmitMsHistoryLen < this._terrainSubmitMsHistory.length) this._terrainSubmitMsHistoryLen++;
-  }
-
-  _pollTerrainTs() {
-    const s = this.stats;
-    if (this._terrainSubmitMsHistoryLen === 0) { s.terrainSubmitMs = NaN; s.terrainSubmitMsP50 = NaN; s.terrainSubmitMsP95 = NaN; return; }
-    // `terrainSubmitMs` itself is just the latest raw sample - cheap, no
-    // sort needed. Architect review (16, "fix the per-frame subarray"): the
-    // sort behind the p50/p95 percentiles only actually reruns every
-    // `PASS_STATS_EVERY` calls (same caching GpuTimer/GpuPassTimer use
-    // above), not every single frame - `_terrainTsScratch` is allocated
-    // once, lazily, and reused.
-    const lastPos = (this._terrainSubmitMsHistoryPos - 1 + this._terrainSubmitMsHistory.length) % this._terrainSubmitMsHistory.length;
-    s.terrainSubmitMs = this._terrainSubmitMsHistory[lastPos];
-    this._terrainTsCalls = (this._terrainTsCalls || 0) + 1;
-    if (this._terrainTsCachedP50 === undefined || Number.isNaN(this._terrainTsCachedP50) || this._terrainTsCalls % PASS_STATS_EVERY === 0) {
-      if (!this._terrainTsScratch) this._terrainTsScratch = new Float32Array(this._terrainSubmitMsHistory.length);
-      const n = this._terrainSubmitMsHistoryLen, scratch = this._terrainTsScratch;
-      for (let i = 0; i < n; i++) scratch[i] = this._terrainSubmitMsHistory[i];
-      const view = scratch.subarray(0, n);
-      view.sort();
-      this._terrainTsCachedP50 = view[Math.floor(n * 0.5)];
-      this._terrainTsCachedP95 = view[Math.min(n - 1, Math.floor(n * 0.95))];
-    }
-    s.terrainSubmitMsP50 = this._terrainTsCachedP50;
-    s.terrainSubmitMsP95 = this._terrainTsCachedP95;
-  }
-
-  // US-040 (15.2 item 6): same CPU submit-time bracket as _terrainTsBegin/
-  // End (see the constructor comment on why a real GPU query can't nest
-  // inside `this.timer`'s span) - around just the voxel pass draw call.
-  _voxelTsBegin() { this._voxelT0 = performance.now(); }
-
-  _voxelTsEnd() {
-    const ms = performance.now() - this._voxelT0;
-    this._voxelSubmitMsHistory[this._voxelSubmitMsHistoryPos] = ms;
-    this._voxelSubmitMsHistoryPos = (this._voxelSubmitMsHistoryPos + 1) % this._voxelSubmitMsHistory.length;
-    if (this._voxelSubmitMsHistoryLen < this._voxelSubmitMsHistory.length) this._voxelSubmitMsHistoryLen++;
-  }
-
-  _pollVoxelTs() {
-    const s = this.stats;
-    if (this._voxelSubmitMsHistoryLen === 0) { s.voxelMs = NaN; s.voxelMsP50 = NaN; s.voxelMsP95 = NaN; return; }
-    const lastPos = (this._voxelSubmitMsHistoryPos - 1 + this._voxelSubmitMsHistory.length) % this._voxelSubmitMsHistory.length;
-    s.voxelMs = this._voxelSubmitMsHistory[lastPos];
-    this._voxelTsCalls = (this._voxelTsCalls || 0) + 1;
-    if (this._voxelTsCachedP50 === undefined || Number.isNaN(this._voxelTsCachedP50) || this._voxelTsCalls % PASS_STATS_EVERY === 0) {
-      if (!this._voxelTsScratch) this._voxelTsScratch = new Float32Array(this._voxelSubmitMsHistory.length);
-      const n = this._voxelSubmitMsHistoryLen, scratch = this._voxelTsScratch;
-      for (let i = 0; i < n; i++) scratch[i] = this._voxelSubmitMsHistory[i];
-      const view = scratch.subarray(0, n);
-      view.sort();
-      this._voxelTsCachedP50 = view[Math.floor(n * 0.5)];
-      this._voxelTsCachedP95 = view[Math.min(n - 1, Math.floor(n * 0.95))];
-    }
-    s.voxelMsP50 = this._voxelTsCachedP50;
-    s.voxelMsP95 = this._voxelTsCachedP95;
   }
 
   // US-030a: per-frame UI mask upload (14.2 item 3) - the cast pass reads
@@ -1477,21 +1295,6 @@ export class GpuCellPipeline {
     const farMap = [grid.x0, grid.y0, terrain.mapCell, terrain.mapW];
     const hb = terrainHBounds(terrain); // US-026a S5: combines near.maxH/minH when active - single source of truth (23.4).
     const nl = activeNearLOD(terrain); // US-026a S5: the march pass's OWN (strict) gate - terrain.nearReady && handover && step.
-    gl.useProgram(this.progTerrain);
-    gl.uniform4fv(this._locsTerrain.uFarMap, farMap);
-    gl.uniform1f(this._locsTerrain.uTerrainMaxH, hb.maxH);
-    gl.uniform1f(this._locsTerrain.uFarMinH, terrain.farMinH);
-    gl.uniform1i(this._locsTerrain.uNearReady, nl ? 1 : 0);
-    if (terrain.nearReady && terrain.near) {
-      const ng = terrain.near;
-      gl.uniform4f(this._locsTerrain.uNearMap, ng.x0, ng.y0, ng.cell, ng.w);
-      gl.uniform1f(this._locsTerrain.uNearMinH, ng.minH);
-    }
-    if (nl) {
-      gl.uniform2f(this._locsTerrain.uHandover, nl.handover[0], nl.handover[1]);
-      gl.uniform2f(this._locsTerrain.uNearStep, nl.step.min, nl.step.k);
-    }
-
     const recipe = terrain.recipe;
     const fogRec = palette && palette.fog && palette.fog.far;
     const locS = this._locsShade;
@@ -1529,67 +1332,6 @@ export class GpuCellPipeline {
     }
   }
 
-  // US-040 (15.2 item 2): re-uploads the VOX atlas only when `pool.atlas.
-  // version` changed (bind()/re-bind, never per frame - 15.2 "do not"
-  // list's "upload VOX per frame"). Full texImage2D (the atlas can grow
-  // taller as models are added) rather than texSubImage2D.
-  _ensureVoxelAtlas(pool) {
-    if (!pool.atlas || pool.atlas.version === this._voxAtlasVersion) return;
-    const gl = this.gl, atlas = pool.atlas;
-    gl.bindTexture(gl.TEXTURE_2D, this.texVOX);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16UI, atlas.w, atlas.h, 0, gl.RED_INTEGER, gl.UNSIGNED_SHORT, atlas.vox);
-    this._voxAtlasVersion = atlas.version;
-  }
-
-  // US-040 (15.2 item 3): packs this frame's projected instances' VOXINST
-  // rows + uVoxRect (screen rect in cells, half-open) into the once-
-  // allocated scratch arrays, then one texSubImage2D of `count*
-  // VOXINST_ROWS_PER_INSTANCE` rows (<= 18 KB per 15.2 item 3's budget).
-  _uploadVoxelInstances(pool) {
-    const gl = this.gl;
-    const count = pool.list.length;
-    if (count > MAX_VOX_INSTANCES) throw new Error(`Voxel instance upload exceeds DDA cap (${MAX_VOX_INSTANCES}): ${count}`);
-    const rectF = this._voxRectF;
-    for (let i = 0; i < count; i++) {
-      writeInstanceRows(pool, i, this._voxInstF);
-      const inst = pool.list[i];
-      const o = i * 4;
-      rectF[o] = inst.rect.minCol; rectF[o + 1] = inst.rect.minRow;
-      rectF[o + 2] = inst.rect.maxCol + 1; rectF[o + 3] = inst.rect.maxRow + 1; // half-open
-    }
-    if (count > 0) {
-      gl.bindTexture(gl.TEXTURE_2D, this.texVOXINST);
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, VOXINST_WIDTH, count * VOXINST_ROWS_PER_INSTANCE, gl.RGBA, gl.FLOAT, this._voxInstF);
-    }
-    this.stats.voxelInstances = count;
-  }
-
-  // US-040 (15.2 item 4): pass A3 - reads whichever sub-sample set was
-  // written last (`_subSetCur`, set by `_hook`) and writes the OTHER one;
-  // `_hook` flips `_subSetCur` again right after calling this.
-  _passVoxel() {
-    const gl = this.gl, loc = this._locsVoxel, cb = this._camBasis;
-    const pool = this._voxelPool;
-    this._uploadVoxelInstances(pool);
-    const readSet1 = this._subSetCur === 1;
-    const outFbo = readSet1 ? this.fboTerrainSub : this.fboCastSub;
-    const binds = readSet1 ? this._voxelBindsSet1In : this._voxelBindsSet2In;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, outFbo);
-    gl.viewport(0, 0, this.subCols, this.subRows);
-    gl.useProgram(this.progVoxel);
-    gl.bindVertexArray(this.vao);
-    this._bindTextures(binds);
-    gl.uniform2i(loc.uGrid, this.cols, this.rows);
-    gl.uniform1i(loc.uN, this.rays);
-    gl.uniform1f(loc.uPosX, cb.posX); gl.uniform1f(loc.uPosY, cb.posY); gl.uniform1f(loc.uEyeH, cb.eyeH);
-    gl.uniform1f(loc.uDirX, cb.dirX); gl.uniform1f(loc.uDirY, cb.dirY);
-    gl.uniform1f(loc.uPlaneX, cb.planeX); gl.uniform1f(loc.uPlaneY, cb.planeY);
-    gl.uniform1f(loc.uHorizonRow, cb.horizonRow); gl.uniform1f(loc.uPlaneDistY, cb.planeDistY);
-    gl.uniform1i(loc.uVoxCount, pool.list.length);
-    gl.uniform4fv(loc.uVoxRect, this._voxRectF);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-  }
-
   // US-007: the light pass now also needs `uStructA/B/Count` (its own sun
   // DDA's `findStruct`, light.frag.js) - uploaded to BOTH programs here
   // (each has its own uniform locations; the packed `structA`/`structB`
@@ -1615,20 +1357,11 @@ export class GpuCellPipeline {
       structB[o4] = a.uStruct[o8 + 4]; structB[o4 + 1] = a.uStruct[o8 + 5];
       structB[o4 + 2] = a.uStruct[o8 + 6]; structB[o4 + 3] = a.uStruct[o8 + 7];
     }
-    gl.useProgram(this.progCast);
-    gl.uniform4fv(this._locsCast.uStructA, structA);
-    gl.uniform4fv(this._locsCast.uStructB, structB);
-    gl.uniform1i(this._locsCast.uStructCount, a.structCount);
     gl.useProgram(this.progLight);
     gl.uniform4fv(this._locsLight.uStructA, structA);
     gl.uniform4fv(this._locsLight.uStructB, structB);
     gl.uniform1i(this._locsLight.uStructCount, a.structCount);
     gl.uniform1f(this._locsLight.uWorldMaxH, worldMaxH);
-    // US-016 (14.4 item 4): the terrain march's own skip-interval structure list.
-    gl.useProgram(this.progTerrain);
-    gl.uniform4fv(this._locsTerrain.uStructA, structA);
-    gl.uniform4fv(this._locsTerrain.uStructB, structB);
-    gl.uniform1i(this._locsTerrain.uStructCount, a.structCount);
   }
 
   // Camera basis (engine/render/sectorCaster.js's castScene, same formulas -
@@ -1687,26 +1420,6 @@ export class GpuCellPipeline {
     return this._camBasis || (this._camBasis = {
       posX: 0, posY: 0, eyeH: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, horizonRow: 0, planeDistY: 0, tanHalfHFov: 0,
     });
-  }
-
-  _passCast() {
-    const gl = this.gl, loc = this._locsCast, cb = this._camBasis;
-    // US-030b (14.2 item 3, pass A): renders at SUB-sample resolution
-    // (cols*rays x rows*rays) into fboCastSub (SGI/SGA/SDepth) - `uGrid`
-    // stays the BASE grid (cameraX/slope normalise by cols/rows, not the
-    // sub-grid; see dda.frag.js's per-fragment decode).
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboCastSub);
-    gl.viewport(0, 0, this.subCols, this.subRows);
-    gl.useProgram(this.progCast);
-    gl.bindVertexArray(this.vao);
-    this._bindTextures(this._castBinds);
-    gl.uniform2i(loc.uGrid, this.cols, this.rows);
-    gl.uniform1i(loc.uN, this.rays);
-    gl.uniform1f(loc.uPosX, cb.posX); gl.uniform1f(loc.uPosY, cb.posY); gl.uniform1f(loc.uEyeH, cb.eyeH);
-    gl.uniform1f(loc.uDirX, cb.dirX); gl.uniform1f(loc.uDirY, cb.dirY);
-    gl.uniform1f(loc.uPlaneX, cb.planeX); gl.uniform1f(loc.uPlaneY, cb.planeY);
-    gl.uniform1f(loc.uHorizonRow, cb.horizonRow); gl.uniform1f(loc.uPlaneDistY, cb.planeDistY);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
   /**
@@ -1781,6 +1494,7 @@ export class GpuCellPipeline {
     // twin (`compositor.js`'s `renderWorldMesh`) share one counter instead of two independent ones.
     if (this._instances) {
       this._meshDrawArg.cache = this._meshDrawCache; this._meshDrawArg.idFor = this._strictMatIdFor || null; // TREES-LP-b: kind-9 mesh groups
+      this._meshDrawArg.maskAtlas = (this._world && this._world.maskAtlas) || null; // ALPHA-01f-fix2
       this._instances.addToDrawList(list, sharedVoxelMeshCache, this._meshFrustumPlanes, this._fb.frameNo, this._meshViewProj, this.rows, this._meshDrawArg);
       this.stats.instancesCulled = this._instances.stats.instancesCulled;
       this.stats.instancesLod1 = this._instances.stats.instancesLod1;
@@ -2170,6 +1884,7 @@ export class GpuCellPipeline {
     src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null; // CLOTH-1b2
     src.matIdFor = this._table ? this._table.idFor : undefined;
     src.meshCache = this._meshDrawCache; src.meshIdFor = this._strictMatIdFor || undefined; // ME-14c3: meshes cast sun shadows
+    src.maskAtlas = (this._world && this._world.maskAtlas) || null; // ALPHA-01f-fix2
     src.fogFarM = sunShadowFogFar(this._palette, so);
     shadowWorldZ(world, this._levelMeshCache, this._shadowWorldZ);
     const sm = shadowSunMatrix(sun.dir, this._shadowCentre, so, this._shadowWorldZ, this._sunMat);
@@ -2179,7 +1894,7 @@ export class GpuCellPipeline {
 
     // ME-15d dirty-skip (27.9a item 12): the depth map is a pure function of (M, structVersion, caster list); equal
     // hash = the texture still holds the right depth, so skip the whole GL pass (the CPU build above stays, ~0.1 ms).
-    const key = shadowInputHash(list, sm.M, world.structVersion | 0, this._shadowKey);
+    const key = shadowInputHash(list, sm.M, world.structVersion | 0, this._shadowKey, undefined, windShadowKey(world.wind, (this._fb && this._fb.timeSec) || 0));
     this.stats.shadowCpuMs = performance.now() - tCpu0; // ME-15d: matrix + list + key (27.9a item 12: <= 0.15 ms p95)
     const prev = this._shadowKeyPrev;
     if (so.dirtySkip && this._shadowKeyValid && key[0] === prev[0] && key[1] === prev[1]) {
@@ -2482,22 +2197,6 @@ export class GpuCellPipeline {
     gl.readPixels(0, 0, this.cols, this.rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, this._readbackWater);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     return this._readbackWater;
-  }
-
-  _passTerrain() {
-    const gl = this.gl, loc = this._locsTerrain, cb = this._camBasis;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboTerrainSub);
-    gl.viewport(0, 0, this.subCols, this.subRows);
-    gl.useProgram(this.progTerrain);
-    gl.bindVertexArray(this.vao);
-    this._bindTextures(this._terrainBinds);
-    gl.uniform2i(loc.uGrid, this.cols, this.rows);
-    gl.uniform1i(loc.uN, this.rays);
-    gl.uniform1f(loc.uPosX, cb.posX); gl.uniform1f(loc.uPosY, cb.posY); gl.uniform1f(loc.uEyeH, cb.eyeH);
-    gl.uniform1f(loc.uDirX, cb.dirX); gl.uniform1f(loc.uDirY, cb.dirY);
-    gl.uniform1f(loc.uPlaneX, cb.planeX); gl.uniform1f(loc.uPlaneY, cb.planeY);
-    gl.uniform1f(loc.uHorizonRow, cb.horizonRow); gl.uniform1f(loc.uPlaneDistY, cb.planeDistY);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
   // US-030b (14.2 item 3, pass B): votes the sub-sample G-buffer down to the
@@ -2805,11 +2504,7 @@ const SHADE_UNIFORMS = [
 ];
 const EDGE_UNIFORMS = ['uGI', 'uDepth', 'uShadeFg', 'uShadeBg', 'uGrid', 'uFogMax', 'uEdgeGlyph', 'uEdgeGain', 'uModelRim', 'uFogStart', 'uFogFull', 'uTerrainFogStart', 'uTerrainFogFull', 'uTerrainFogCurve', 'uProjMode', 'uPitchA', 'uPitchB', 'uPitchC', 'uWater', 'uWaterOn', 'uWOS'];
 const DEBUG_UNIFORMS = ['uGI', 'uShadeFg', 'uMode'];
-// US-030a/US-030b: cast (DDA, sub-sample) / resolve (vote) / deriv pass uniforms.
-const CAST_UNIFORMS = [
-  'uWorldGeom', 'uWorldMats', 'uWorldFlags', 'uStructA', 'uStructB', 'uStructCount',
-  'uGrid', 'uN', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY', 'uHorizonRow', 'uPlaneDistY',
-];
+// US-030b: resolve (vote) / deriv pass uniforms.
 const RESOLVE_UNIFORMS = ['uSGI', 'uSGA', 'uSDepth', 'uMask', 'uN'];
 const WATER_COMP_UNIFORMS = [
   'uShadeFg', 'uShadeBg', 'uGI', 'uDepth', 'uWater', 'uLightTex', 'uGrid', 'uTimeSec', 'uSunMapOn', 'uSunDir', 'uAmbientI', 'uSunI',
@@ -2839,20 +2534,4 @@ const LIGHT_UNIFORMS = [
   'uSunDir', 'uSunCol', 'uSunOn', 'uWorldGeom', 'uWorldFlags', 'uStructA', 'uStructB', 'uStructCount', 'uWorldMaxH',
   'uProjMode', 'uPitchA', 'uPitchB', 'uPitchC', // RE-02a
   'uSunMode', 'uSunShadowM', 'uSunShadowRes', 'uSunShadowTexelM', 'uSunShadowBiasM', 'uSunShadowNormalOff', 'uSunShadow', // ME-15c
-];
-// US-016 (14.4 items 2-4, GPU build order step 2): pass A2 terrain march.
-const TERRAIN_UNIFORMS = [
-  'uSGI', 'uSGA', 'uSDepth', 'uFarH', 'uFarType', 'uFarMap',
-  'uStructA', 'uStructB', 'uStructCount',
-  'uGrid', 'uN', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY',
-  'uHorizonRow', 'uPlaneDistY', 'uTerrainMaxH',
-  // US-026a S5 (23.4): near-band march - uSunDir/uAmbientI/uSunI moved OUT
-  // of this program (the shade pass computes `b` now, see SHADE_UNIFORMS).
-  'uNearH', 'uNearType', 'uNearMap', 'uNearReady', 'uFarMinH', 'uNearMinH', 'uHandover', 'uNearStep',
-];
-// US-040 (15.2 items 3/4, GPU build order step 3): pass A3 voxel march.
-const VOXEL_UNIFORMS = [
-  'uSGI', 'uSGA', 'uSDepth', 'uVOX', 'uVOXINST', 'uVoxCount', 'uVoxRect',
-  'uGrid', 'uN', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY',
-  'uHorizonRow', 'uPlaneDistY',
 ];

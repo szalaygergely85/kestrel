@@ -11,10 +11,9 @@ import { defineUniformBlock } from './uniformBlock.js';
 import {
   GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, CELL_RAY_WGSL, CELL_RAY_PITCHED_WGSL, FMOD_WGSL, HASH_FAST_WGSL, BYTE_OUT_WGSL,
 } from './common.wgsl.js';
-import { SUN_N_SHIFT, SUN_N_MASK } from '../../shadowSun.js';
-import { CLOUD_SHIFT } from '../../cloudShadow.js'; // S8-B2-12b (38.13)
-import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, RIPPLE_MIN } from '../../waterLook.js';
-import { RIPPLE_MAX, RIPPLE_HALF_W } from '../../../world/water.js'; // S8-B2-13 (38.14)
+import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // CLOUD_Q_SHIFT: S8-B2-12c (38.13)
+import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, RIPPLE_SLOTS, RIPPLE_ACC_MIN } from '../../waterLook.js';
+import { RIPPLE_SPEED, RIPPLE_W, RIPPLE_LIFE } from '../../../fx/ripples.js'; // S8-B2-13b (38.14, the note of record)
 
 export const WATER_COMPOSITE_VECS_PER_SLOT = WL_STRIDE / 4;
 
@@ -24,13 +23,16 @@ export const WATER_COMPOSITE_BLOCK = defineUniformBlock('WaterCompositeU', [
   { name: 'sunI', type: 'f32' }, { name: 'posX', type: 'f32' }, { name: 'posY', type: 'f32' }, { name: 'eyeH', type: 'f32' },
   { name: 'dirX', type: 'f32' }, { name: 'dirY', type: 'f32' }, { name: 'planeX', type: 'f32' }, { name: 'planeY', type: 'f32' },
   { name: 'horizonRow', type: 'f32' }, { name: 'planeDistY', type: 'f32' }, { name: 'timeSec', type: 'f32' },
-  { name: 'rippleCount', type: 'i32' }, // S8-B2-13 (38.14): was `pad0`, same word 19 - every later offset is unchanged
+  { name: 'rippleCount', type: 'i32' }, // S8-B2-13b (38.14): was `pad0`, same word 19 - every later offset is unchanged
   { name: 'pitchA', type: 'vec4' }, // fX, fY, fZ, tanHalfX
   { name: 'pitchB', type: 'vec4' }, // rX, rY, uX, uY
   { name: 'pitchC', type: 'vec4' }, // uZ, tanHalfY, cosP, sinP
   { name: 'wl', type: 'vec4', count: WL_SLOTS * (WL_STRIDE / 4) }, // packed look rows, WL_STRIDE/4 vec4 per slot (waterLook.js)
   { name: 'wfog', type: 'vec4', count: 5 }, // start/full/curve/bgScale, fgNear, fgFar, bgNear, bgFar
-  { name: 'ripple', type: 'vec4', count: RIPPLE_MAX }, // S8-B2-13 (38.14): x, y, r, s per live ring, densely packed
+  // S8-B2-13b (38.14): appended at the END - rippleGlyph/rippleGain (the global ripple look, lane C via `setLook`,
+  // defaults in waterLook.js) + 2 pad words (align the `ripple` array to 16 B, already aligned, kept explicit).
+  { name: 'rippleGlyph', type: 'u32' }, { name: 'rippleGain', type: 'f32' }, { name: 'ripplePad0', type: 'f32' }, { name: 'ripplePad1', type: 'f32' },
+  { name: 'ripple', type: 'vec4', count: RIPPLE_SLOTS }, // x, y, age, amp per live ring, densely packed
 ]);
 export const WATER_COMPOSITE_TEXTURES = Object.freeze(['float', 'float', 'uint', 'uint', 'uint', 'uint']);
 export const WATER_COMPOSITE_TARGETS = Object.freeze(['rgba8', 'rgba8']);
@@ -53,7 +55,7 @@ ${CELL_RAY_PITCHED_WGSL}
 ${FULLSCREEN_VS_WGSL}
 
 fn fogScaleCell(row: i32, rows: i32) -> f32 {
-  return select(pitchFogScale(row, rows, wu.pitchC.y, wu.pitchC.z, wu.pitchC.w), 1.0, wu.projMode == 0);
+  return select(pitchFogScale(row, rows, wu.pitchC.y, wu.pitchC.z, wu.pitchC.w, wu.projMode == 2), 1.0, wu.projMode == 0);
 }
 
 // diamond angle in [0, 4), no atan; twin of waterLook.js diamondAngle
@@ -95,13 +97,13 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
 
   var P: vec3f;
   if (wu.projMode == 0) { P = cellRayP(vec2f(cell), grid, wu.posX, wu.posY, wu.eyeH, wu.dirX, wu.dirY, wu.planeX, wu.planeY, wu.horizonRow, wu.planeDistY, dW); }
-  else { P = cellRayPitched(vec2f(cell), grid, vec3f(wu.posX, wu.posY, wu.eyeH), wu.pitchA.xyz, wu.pitchB.xy, vec3f(wu.pitchB.zw, wu.pitchC.x), vec2f(wu.pitchA.w, wu.pitchC.y), dW); }
+  else { P = cellRayPitched(vec2f(cell), grid, vec3f(wu.posX, wu.posY, wu.eyeH), wu.pitchA.xyz, wu.pitchB.xy, vec3f(wu.pitchB.zw, wu.pitchC.x), vec2f(wu.pitchA.w, wu.pitchC.y), dW, wu.projMode == 2); }
 
   var column = 1.0e30;
   if (!isSky) {
     var floorP: vec3f;
     if (wu.projMode == 0) { floorP = cellRayP(vec2f(cell), grid, wu.posX, wu.posY, wu.eyeH, wu.dirX, wu.dirY, wu.planeX, wu.planeY, wu.horizonRow, wu.planeDistY, raw); }
-    else { floorP = cellRayPitched(vec2f(cell), grid, vec3f(wu.posX, wu.posY, wu.eyeH), wu.pitchA.xyz, wu.pitchB.xy, vec3f(wu.pitchB.zw, wu.pitchC.x), vec2f(wu.pitchA.w, wu.pitchC.y), raw); }
+    else { floorP = cellRayPitched(vec2f(cell), grid, vec3f(wu.posX, wu.posY, wu.eyeH), wu.pitchA.xyz, wu.pitchB.xy, vec3f(wu.pitchB.zw, wu.pitchC.x), vec2f(wu.pitchA.w, wu.pitchC.y), raw, wu.projMode == 2); }
     column = max(0.0, P.z - floorP.z);
   }
   var tint = a;
@@ -112,7 +114,7 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
   let sunF = select(1.0, f32((lightT.w >> ${SUN_N_SHIFT}u) & ${SUN_N_MASK}u) * 0.25, wu.sunMapOn != 0);
   // S8-B2-12b (38.13): cloud-darkening byte (bits 24..31 of the floor cell's LIGHT.w) scales the sun term here too;
   // q 0 (strength 0, or a sky cell under the floor with no cloud byte written) -> cF 1.0 -> bit-identical.
-  let cF = 1.0 - f32((lightT.w >> ${CLOUD_SHIFT}u) & 255u) * (1.0 / 255.0);
+  let cF = 1.0 - f32((lightT.w >> ${CLOUD_Q_SHIFT}u) & 255u) * (1.0 / 255.0);
   let k = wu.ambientI + wu.sunI * max(wu.sunDir.z, 0.0) * sunF * cF;
   var wc = clamp((r0.rgb + (r1.rgb - r0.rgb) * tint) * k, vec3f(0.0), vec3f(255.0));
 
@@ -150,23 +152,29 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
     if (f32(h >> 8u) * (1.0 / 16777216.0) > 1.0 - r3.w) { wc += (r2.rgb - wc) * 0.5; }
   }
 
-  // S8-B2-13 (38.14): splash ripples, !sheet only (incl. see-through: replaces the floor glyph); fixed 8 with an
-  // early break (uniform control flow) so rippleCount never varies the loop trip count across invocations.
+  // S8-B2-13b (38.14, the note of record): splash ripples, !sheet only (incl. see-through: replaces the floor
+  // glyph); fixed 8 with an early break (uniform control flow) so rippleCount never varies the loop trip count
+  // across invocations. glyph/gain are a single global uniform now, not a per-slot look field.
   if (!sheet) {
-    var rs: f32 = 0.0;
-    for (var ri: i32 = 0; ri < ${RIPPLE_MAX}; ri = ri + 1) {
+    var acc: f32 = 0.0;
+    for (var ri: i32 = 0; ri < ${RIPPLE_SLOTS}; ri = ri + 1) {
       if (ri >= wu.rippleCount) { break; }
       let rp = wu.ripple[ri];
+      let age = rp.z;
+      let amp = rp.w;
+      let r = ${RIPPLE_SPEED} * age;
       let dx = P.x - rp.x;
       let dy = P.y - rp.y;
       let d = sqrt(dx * dx + dy * dy);
-      let term = rp.w * (1.0 - abs(d - rp.z) / ${RIPPLE_HALF_W});
-      rs = max(rs, term);
+      let band = 1.0 - abs(d - r) / ${RIPPLE_W};
+      if (band > 0.0) {
+        let term = amp * band * (1.0 - age / ${RIPPLE_LIFE});
+        acc = max(acc, term);
+      }
     }
-    if (rs > ${RIPPLE_MIN}) {
-      let r13 = wu.wl[lb + 13];
-      glyph = r13.z;
-      wc += (r2.rgb - wc) * (r13.w * rs);
+    if (acc >= ${RIPPLE_ACC_MIN}) {
+      glyph = f32(wu.rippleGlyph);
+      wc = wc + (vec3f(255.0) - wc) * (acc * wu.rippleGain);
     }
   }
 

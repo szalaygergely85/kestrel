@@ -5,14 +5,14 @@
 import assert from 'node:assert/strict';
 import { WATER_WGSL, WATER_BLOCK, WATER_TEXTURES, WATER_TARGETS } from './water.wgsl.js';
 import { WATER_COMPOSITE_WGSL, WATER_COMPOSITE_BLOCK, WATER_COMPOSITE_TEXTURES, WATER_COMPOSITE_TARGETS } from './waterComposite.wgsl.js';
-import { WATER_VERT_SRC } from '../glsl/water.vert.js';
-import { WATER_FRAG_SRC } from '../glsl/water.frag.js';
-import { WATER_COMPOSITE_FRAG_SRC } from '../glsl/waterComposite.frag.js';
+import { WATER_VERT_SRC } from './waterVert.glslref.js';
+import { WATER_FRAG_SRC } from './waterFrag.glslref.js';
+import { WATER_COMPOSITE_FRAG_SRC } from './waterComposite.glslref.js';
 import { WGSL_MODULES } from './index.js';
 import { compileFn, shims, numericLiterals } from './wgslProbe.js';
-import { diamondAngle, WL_SLOTS, WL_STRIDE, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, RIPPLE_MIN, rippleStrength } from '../../waterLook.js';
-import { CLOUD_SHIFT } from '../../cloudShadow.js'; // S8-B2-12b (38.13)
-import { RIPPLE_MAX, RIPPLE_HALF_W } from '../../../world/water.js'; // S8-B2-13 (38.14)
+import { diamondAngle, WL_SLOTS, WL_STRIDE, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, RIPPLE_SLOTS, RIPPLE_ACC_MIN, rippleAccAt } from '../../waterLook.js';
+import { CLOUD_Q_SHIFT as CLOUD_SHIFT } from '../../shadowSun.js'; // S8-B2-12b (38.13)
+import { RIPPLE_SPEED, RIPPLE_W, RIPPLE_LIFE } from '../../../fx/ripples.js'; // S8-B2-13b (38.14, the note of record)
 
 const BAD = /%|\bround\s*\(|dpdx|dpdy|fwidth|frag_depth|textureSample|texelFetch|gl_FragCoord|gl_FrontFacing|\bmod\s*\(|ivec2|uvec|\bint\(|floatBitsToUint|uintBitsToFloat|\bmix\s*\(/;
 for (const [n, c] of [['water', WATER_WGSL], ['waterComposite', WATER_COMPOSITE_WGSL]]) {
@@ -24,7 +24,7 @@ for (const [n, c] of [['water', WATER_WGSL], ['waterComposite', WATER_COMPOSITE_
 // --- water: raster rules + layout ---
 assert.equal((WATER_WGSL.match(/o\.pos\.y = -o\.pos\.y; o\.pos\.z = 0\.5 \* \(o\.pos\.z \+ o\.pos\.w\);/g) || []).length, 2, 'both vertex exits flip y / remap z');
 assert.ok(/fn vs_main\(@location\(0\) aL: vec4f\)/.test(WATER_WGSL) && /@builtin\(front_facing\) front: bool/.test(WATER_WGSL));
-assert.ok(/let vD = 1\.0 \/ v\.pos\.w;/.test(WATER_WGSL) && /if \(!\(vD < sceneD\)\) \{ discard;/.test(WATER_WGSL), 'vD = 1/w and strict occluder test');
+assert.ok(/let vD = select\(1\.0 \/ v\.pos\.w, 0\.05 \+ v\.pos\.z \* \(2000\.0 - 0\.05\), wu\.projMode == 2u\);/.test(WATER_WGSL) && /if \(!\(vD < sceneD\)\) \{ discard;/.test(WATER_WGSL), 'vD = 1/w and strict occluder test');
 assert.ok(/let back = select\(1u, 0u, front\);/.test(WATER_WGSL) && /wu\.slot \| \(back << 4u\) \| select\(0u, 32u, wu\.kind == 2\)/.test(WATER_WGSL), 'slot | back << 4 | sheet << 5');
 assert.ok(/packNormalOct\(vec3f\(0\.0, 0\.0, 1\.0\)\)/.test(WATER_WGSL) && /bitcast<u32>\(v\.vArc\)/.test(WATER_WGSL));
 assert.ok(/@group\(0\) @binding\(0\) var uSceneDepth: texture_2d<u32>/.test(WATER_WGSL) && /@group\(1\) @binding\(0\) var<uniform> wu: WaterU/.test(WATER_WGSL));
@@ -36,7 +36,7 @@ const glslWater = WATER_VERT_SRC.slice(WATER_VERT_SRC.indexOf('void main')) + WA
 const wgslWater = WATER_WGSL.slice(WATER_WGSL.indexOf('@vertex'));
 const litEq = (a, b, what) => assert.deepEqual([...numericLiterals(a)].sort((x, y) => x - y), [...numericLiterals(b)].sort((x, y) => x - y), what);
 // WGSL adds the y/z raster remap (0.5) the GLSL does not have
-const gW = numericLiterals(glslWater), wW = numericLiterals(wgslWater); wW.delete(0.5);
+const gW = numericLiterals(glslWater), wW = numericLiterals(wgslWater); wW.delete(0.5); wW.delete(0.05); wW.delete(2000); // + 38.19 ortho linear-z near/far (WGSL only)
 assert.deepEqual([...gW].sort((x, y) => x - y), [...wW].sort((x, y) => x - y), 'water literals');
 assert.ok(WATER_FRAG_SRC.includes('inside = vL.x >= uShape.x && vL.x < uShape.z && vL.y >= uShape.y && vL.y < uShape.w;'));
 
@@ -72,12 +72,12 @@ assert.ok(runInside(mutW('if (kind == 2) { inside = true; }', 'if (kind == 2) { 
 
 // --- waterComposite: layout, bindings, constants ---
 const C = WATER_COMPOSITE_BLOCK;
-assert.deepEqual(['gridCols', 'sunMapOn', 'projMode', 'sunDir', 'ambientI', 'sunI', 'posX', 'dirX', 'horizonRow', 'timeSec', 'rippleCount', 'pitchA', 'pitchB', 'pitchC', 'wl', 'wfog', 'ripple'].map((n) => C.field(n).offset),
-  [0, 8, 12, 16, 28, 32, 36, 48, 64, 72, 76, 80, 96, 112, 128, 128 + WL_SLOTS * WL_STRIDE * 4, 128 + (WL_SLOTS * WL_STRIDE + 5 * 4) * 4]);
+assert.deepEqual(['gridCols', 'sunMapOn', 'projMode', 'sunDir', 'ambientI', 'sunI', 'posX', 'dirX', 'horizonRow', 'timeSec', 'rippleCount', 'pitchA', 'pitchB', 'pitchC', 'wl', 'wfog', 'rippleGlyph', 'rippleGain', 'ripple'].map((n) => C.field(n).offset),
+  [0, 8, 12, 16, 28, 32, 36, 48, 64, 72, 76, 80, 96, 112, 128, 128 + WL_SLOTS * WL_STRIDE * 4, 128 + (WL_SLOTS * WL_STRIDE + 5 * 4) * 4, 128 + (WL_SLOTS * WL_STRIDE + 5 * 4) * 4 + 4, 128 + (WL_SLOTS * WL_STRIDE + 5 * 4) * 4 + 16]);
 assert.equal(C.field('wl').count, WL_SLOTS * (WL_STRIDE / 4)); assert.equal(C.field('wfog').count, 5);
-assert.equal(C.field('ripple').count, RIPPLE_MAX); // S8-B2-13 (38.14): 8 vec4 rings, word 724 = byte 2896
-assert.equal(C.field('ripple').offset, 2896);
-assert.equal(C.sizeBytes, 128 + (WL_SLOTS * (WL_STRIDE / 4) + 5) * 16 + RIPPLE_MAX * 16); // 3024 B (was 2896)
+assert.equal(C.field('ripple').count, RIPPLE_SLOTS); // S8-B2-13b (38.14): 8 vec4 rings, appended after rippleGlyph/rippleGain + 2 pad words
+assert.equal(C.field('ripple').offset, 2912);
+assert.equal(C.sizeBytes, 128 + (WL_SLOTS * (WL_STRIDE / 4) + 5) * 16 + 16 + RIPPLE_SLOTS * 16); // 3040 B (was 3024)
 assert.deepEqual(WATER_COMPOSITE_TEXTURES, ['float', 'float', 'uint', 'uint', 'uint', 'uint']);
 assert.deepEqual(WATER_COMPOSITE_TARGETS, ['rgba8', 'rgba8']);
 const kinds = { float: 'texture_2d<f32>', uint: 'texture_2d<u32>' };
@@ -92,45 +92,45 @@ const glslC = WATER_COMPOSITE_FRAG_SRC.slice(WATER_COMPOSITE_FRAG_SRC.indexOf('/
 const wgslC = WATER_COMPOSITE_WGSL.slice(WATER_COMPOSITE_WGSL.indexOf('// diamond angle'));
 const gC = numericLiterals(glslC), wC = numericLiterals(wgslC);
 wC.delete(24); // S8-B2-12b (38.13): CLOUD_SHIFT, the cloud-darkening byte's bit shift - no GLSL equivalent (GLSL frozen, D-044)
-wC.delete(0.15); // S8-B2-13 (38.14): RIPPLE_MIN, the ripple-strength threshold - no GLSL equivalent (GLSL frozen, D-044)
+for (const v of [RIPPLE_SPEED, RIPPLE_W]) wC.delete(v); // S8-B2-13b (38.14): ripple-only constants (2, 0.2, 255 are already required by unrelated GLSL text), no GLSL equivalent (GLSL frozen, D-044)
 assert.deepEqual([...gC].filter((v) => !wC.has(v)), [], 'GLSL constants missing in WGSL');
 assert.deepEqual([...wC].filter((v) => !gC.has(v)), [], 'WGSL constants not in GLSL');
 
 assert.ok(numericLiterals(wgslC.replaceAll('0.4794', '0.4795')).has(0.4795) && !numericLiterals(wgslC.replaceAll('0.4794', '0.4795')).has(0.4794), 'mutation: literal parity detects a changed constant');
 
-// --- ripples (S8-B2-13, 38.14): WGSL ring-loop twin probe vs waterLook.rippleStrength + mutation ---
+// --- ripples (S8-B2-13b, 38.14, the note of record): WGSL ring-loop twin probe vs waterLook.rippleAccAt + mutation ---
 {
-  const rStart = WATER_COMPOSITE_WGSL.indexOf('var rs: f32 = 0.0;');
-  const rEnd = WATER_COMPOSITE_WGSL.indexOf('if (rs > ', rStart);
+  const rStart = WATER_COMPOSITE_WGSL.indexOf('var acc: f32 = 0.0;');
+  const rEnd = WATER_COMPOSITE_WGSL.indexOf('if (acc >= ', rStart);
   assert.ok(rStart > 0 && rEnd > rStart, 'ripple ring loop text found');
   const build = (transform) => {
     let loopText = WATER_COMPOSITE_WGSL.slice(rStart, rEnd).replace('wu.rippleCount', 'cnt').replace('wu.ripple[ri]', 'rip[ri]');
     if (transform) loopText = transform(loopText);
-    const probeSrc = `alias Ring8 = array<vec4f, ${RIPPLE_MAX}>;\nfn rippleProbe(cnt: i32, rip: Ring8, P: vec3f) -> f32 {\n${loopText}\nreturn rs;\n}`;
+    const probeSrc = `alias Ring8 = array<vec4f, ${RIPPLE_SLOTS}>;\nfn rippleProbe(cnt: i32, rip: Ring8, P: vec3f) -> f32 {\n${loopText}\nreturn acc;\n}`;
     return compileFn(probeSrc, 'rippleProbe', shims);
   };
   const f = build();
   let bad = 0;
-  const N = 300;
+  const N = 2000;
   for (let t = 0; t < N; t++) {
-    const count = Math.floor(rand() * (RIPPLE_MAX + 1));
-    const rip = [], packed = new Float32Array(RIPPLE_MAX * 4);
-    for (let i = 0; i < RIPPLE_MAX; i++) {
-      const x = (rand() - 0.5) * 20, y = (rand() - 0.5) * 20, r = rand() * 2, s = rand();
-      rip.push({ x, y, z: r, w: s });
-      if (i < count) { packed[i * 4] = x; packed[i * 4 + 1] = y; packed[i * 4 + 2] = r; packed[i * 4 + 3] = s; }
+    const count = Math.floor(rand() * (RIPPLE_SLOTS + 1));
+    const rip = [], packed = new Float32Array(RIPPLE_SLOTS * 4);
+    for (let i = 0; i < RIPPLE_SLOTS; i++) {
+      const x = (rand() - 0.5) * 20, y = (rand() - 0.5) * 20, age = rand() * RIPPLE_LIFE * 1.5, amp = rand();
+      rip.push({ x, y, z: age, w: amp });
+      if (i < count) { packed[i * 4] = x; packed[i * 4 + 1] = y; packed[i * 4 + 2] = age; packed[i * 4 + 3] = amp; }
     }
-    const px = (rand() - 0.5) * 10000, py = (rand() - 0.5) * 10000; // x up to 5000
-    const want = rippleStrength(packed, count, px, py);
+    const px = (rand() - 0.5) * 20, py = (rand() - 0.5) * 20;
+    const want = rippleAccAt(packed, count, px, py);
     const got = f(count, rip, { x: px, y: py, z: 0 });
     if (Math.abs(got - want) > 1e-6) bad++;
   }
   assert.equal(bad, 0, `ripple ring loop mismatches ${bad}/${N}`);
-  const mutF = build((t) => { assert.ok(t.includes('/ ' + RIPPLE_HALF_W), 'anchor RIPPLE_HALF_W'); return t.replace('/ ' + RIPPLE_HALF_W, '/ 0.5'); });
-  const packed1 = Float32Array.of(0, 0, 1, 1);
-  const want1 = rippleStrength(packed1, 1, 1.2, 0); // |d(1.2) - r(1)| = 0.2, inside the real 0.25 half-width
-  const got1 = mutF(1, [{ x: 0, y: 0, z: 1, w: 1 }], { x: 1.2, y: 0, z: 0 });
-  assert.ok(Math.abs(got1 - want1) > 1e-6, 'mutation: a wrong RIPPLE_HALF_W is caught');
+  const mutF = build((t) => { assert.ok(t.includes('/ ' + RIPPLE_W), 'anchor RIPPLE_W'); return t.replace('/ ' + RIPPLE_W, '/ 0.5'); });
+  const packed1 = Float32Array.of(0, 0, 1, 1); // x=0, y=0, age=1 (r = RIPPLE_SPEED*1 = 1.2), amp=1
+  const want1 = rippleAccAt(packed1, 1, 1.3, 0); // off the ring by 0.1 m: band = 1 - 0.1/RIPPLE_W, denominator matters
+  const got1 = mutF(1, [{ x: 0, y: 0, z: 1, w: 1 }], { x: 1.3, y: 0, z: 0 });
+  assert.ok(Math.abs(got1 - want1) > 1e-6, 'mutation: a wrong RIPPLE_W is caught');
 }
 
 // --- cF (S8-B2-12b, 38.13): the cloud-darkening byte (LIGHT.w bits 24..31 of the floor cell) scales the sun term `k`.

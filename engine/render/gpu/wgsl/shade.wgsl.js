@@ -20,17 +20,16 @@ import {
   GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, CELL_RAY_PITCHED_WGSL, OCT_NORMAL_WGSL, FMOD_WGSL, HASH_FAST_WGSL, BYTE_OUT_WGSL,
   SMOOTHSTEP_FAST_WGSL, QFLOOR_WGSL, ORIENT_AND_LINES_WGSL,
 } from './common.wgsl.js';
-import { MAX_SUB } from '../glsl/shade.frag.js';
-import { SKY_LUT_N } from '../glsl/common.js';
+export const MAX_SUB = 16; // 4x4, matches resolve.wgsl.js's cap
+import { SKY_LUT_N } from './skyLut.js';
 import { MAX_LEVELS } from '../ShadeTextures.js';
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
 import { KIND_TERRAIN, KIND_MODEL, KIND_MESH, FACE_PACKED } from '../../GBuffer.js';
 import { WET_DARK, WET_SPEC } from '../../detailShade.js';
-import { SUN_N_SHIFT, SUN_N_MASK } from '../../shadowSun.js';
-import { CLOUD_SHIFT } from '../../cloudShadow.js'; // S8-B2-12b (38.13)
+import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // CLOUD_Q_SHIFT: S8-B2-12c (38.13)
 import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE } from '../../terrainShade.js';
 
-export { MAX_SUB };
+
 
 export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'fogFg', type: 'vec3' }, { name: 'fogStart', type: 'f32' },
@@ -246,7 +245,7 @@ fn pitchedCellDir(cell: vec2f, grid: vec2i) -> vec3f {
   return cellDirPitched(cell, grid, su.pitchA.xyz, su.pitchB.xy, vec3f(su.pitchB.z, su.pitchB.w, su.pitchC.x), vec2f(su.pitchA.w, su.pitchC.y));
 }
 fn fogScaleCell(row: i32, rows: i32) -> f32 {
-  return select(pitchFogScale(row, rows, su.pitchC.y, su.pitchC.z, su.pitchC.w), 1.0, su.projMode == 0);
+  return select(pitchFogScale(row, rows, su.pitchC.y, su.pitchC.z, su.pitchC.w, su.projMode == 2), 1.0, su.projMode == 0);
 }
 fn faceK(face: i32) -> f32 { return su.faceK[u32(face) >> 2u][u32(face) & 3u]; }
 
@@ -527,7 +526,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
         elevDeg = degrees(atan2(su.horizonRow - f32(cell.y), su.planeDistY));
       } else {
         // RE-02a (28.1 A2 item 2): per-cell elevation of the screenRay direction.
-        let sd = pitchedCellDir(vec2f(cell), gridSize);
+        let sd = select(pitchedCellDir(vec2f(cell), gridSize), su.pitchA.xyz, su.projMode == 2); // 38.19: ortho dir = F
         elevDeg = degrees(atan2(sd.z, length(sd.xy)));
       }
       let t = clamp(elevDeg / su.skyElevTop, 0.0, 1.0);
@@ -561,7 +560,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
     if (su.sunMapOn != 0) { sunFT = f32((lightT.w >> ${SUN_N_SHIFT}u) & ${SUN_N_MASK}u) * 0.25; } // ME-15c (US-070b)
     // S8-B2-12b (38.13): cloud-darkening byte (bits 24..31 of LIGHT.w, written by the light pass regardless of
     // strength - q is 0 unless strength > 0) scales the whole analytic sun term; q 0 -> cFt 1.0 -> bit-identical.
-    let cFt = 1.0 - f32((lightT.w >> ${CLOUD_SHIFT}u) & 255u) * (1.0 / 255.0);
+    let cFt = 1.0 - f32((lightT.w >> ${CLOUD_Q_SHIFT}u) & 255u) * (1.0 / 255.0);
     let bSunT = su.ambientI + su.sunI * max(0.0, ndotlT) * sunFT * cFt;
     let LcT = bitcast<vec3f>(lightT.xyz);
     let bT = bSunT + max(LcT.x, max(LcT.y, LcT.z));
@@ -627,7 +626,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
       // US-041a (15.3 item 3): face 7 (FACE_PACKED) has the octahedral-packed normal in this slot, not a real AO distance -
       // force +Inf (kind 8 and kind 9), literal twin of detailShade.js's shadeDetailFast fix.
       var aoDA = bitcast<f32>(sgaU.w);
-      if ((kindU == ${KIND_MODEL}u || kindU == ${KIND_MESH}u) && face == ${FACE_PACKED}) { aoDA = 1.0e30; }
+      if ((kindU == ${KIND_MODEL}u && face == ${FACE_PACKED}) || kindU == ${KIND_MESH}u) { aoDA = 1.0e30; } // ME-20c: kind-9 GA.w may carry vertex AO, never an aoD
 
       let c = shadeCore(uA, vA, zA, aoDA, dudx, dvdx, dudy, dvdy, dist, face, kindU, matId, Lm);
       bSum += c.b; gbSum += c.gb; crSum += c.cr; cgSum += c.cg; cbSum += c.cb; bgKSum += c.bgK;

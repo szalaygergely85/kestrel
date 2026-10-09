@@ -16,7 +16,7 @@
 // Zero allocation per frame (27.15.0 "hard gate"): every scratch buffer
 // below is module-level and reused; no closures, array literals or
 // destructuring inside the hot per-triangle/per-pixel path.
-import { PROJ_NEAR } from '../render/projection.js';
+import { PROJ_NEAR, PROJ_FAR } from '../render/projection.js';
 import {
   KIND_TERRAIN, KIND_MODEL, KIND_MESH, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED, PLANEID_TERRAIN,
 } from '../render/GBuffer.js';
@@ -28,6 +28,7 @@ import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS, DRAW_FLAG
 import { MaskAtlas } from '../render/MaskAtlas.js';
 import { INST_FLAG_SWAY, swayOffset, windSwayOn } from './sway.js';
 import { ditherKeep } from './lodDither.js';
+import { meshHasVertexAo, vertexAoAt } from './vertexAo.js';
 import { getClipmap, WATER_U_STRIDE, U_KIND, U_Z, U_AABB, U_SHAPE, U_SLOT } from './waterMesh.js';
 
 /** Sub-pixel bits (1/256 px vertex snap, 27.7 item 1). */
@@ -105,6 +106,7 @@ export function createRasterTarget(cols, rows, n, opts) {
     z: new Float32Array(a),
     aoD: new Float32Array(a),
     nrm: new Uint32Array(a),
+    vao: new Float32Array(a), // ME-20c (38.18): interpolated vertex AO per sample (1 = open); read by the light twin on kind-9 cells only
     objectId: new Uint32Array(a),
     writes: opts && opts.countWrites ? new Uint32Array(size) : null,
   };
@@ -134,6 +136,7 @@ export function clearRasterTarget(t) {
   t.z.fill(0);
   t.aoD.fill(Infinity);
   t.nrm.fill(0);
+  t.vao.fill(1);
   t.objectId.fill(0);
   if (t.writes) t.writes.fill(0);
 }
@@ -141,7 +144,7 @@ export function clearRasterTarget(t) {
 // ---------------------------------------------------------------------------
 // Module scratch (zero allocation - 27.15.0)
 // ---------------------------------------------------------------------------
-const STRIDE = 14; // [xClip,yClip,zClip,wClip, wx,wy,wz, u,v, nx,ny,nz, mu,mv] (mu,mv = ALPHA-01b uvMask lanes)
+const STRIDE = 15; // [xClip,yClip,zClip,wClip, wx,wy,wz, u,v, nx,ny,nz, mu,mv, ao] (mu,mv = ALPHA-01b uvMask lanes; ao = ME-20c vertex AO, 1 = open)
 const CLIP_MAX = 16; // 3 input verts + <=5 planes -> <=8, generous margin
 const _bufA = new Float64Array(CLIP_MAX * STRIDE);
 const _bufB = new Float64Array(CLIP_MAX * STRIDE);
@@ -225,6 +228,7 @@ function computeAoD(aoMode, u, v, zRef, a2, a3, a4, a5) {
  * Vertex stage: local pos/normal -> world (item matrix) -> clip (M). Writes
  * `outBuf[off .. off+STRIDE)`. Zero allocation (`_nrmScratch` reused).
  */
+let _vaoOn = false; // set per triangle (clipAndRasterTri): this mesh carries baked vertex AO
 function transformVertex(mesh, matArr, vIdx, M, outBuf, off) {
   const px = mesh.pos[vIdx * 3], py = mesh.pos[vIdx * 3 + 1], pz = mesh.pos[vIdx * 3 + 2];
   const a00 = matArr[0], a01 = matArr[1], a02 = matArr[2];
@@ -261,6 +265,7 @@ function transformVertex(mesh, matArr, vIdx, M, outBuf, off) {
   outBuf[off + 7] = u; outBuf[off + 8] = v;
   outBuf[off + 9] = nx; outBuf[off + 10] = ny; outBuf[off + 11] = nz;
   outBuf[off + 12] = mu; outBuf[off + 13] = mv;
+  outBuf[off + 14] = _vaoOn ? vertexAoAt(mesh, vIdx) : 1;
 }
 
 /** Plane 0 = near (w - PROJ_NEAR >= 0); 1..4 = guard band (27.15.4). */
@@ -325,15 +330,16 @@ function clipAgainstPlane(inBuf, inCount, outBuf, planeType) {
  * data (kind/face/mat/planeId/aoMode/aux/zRef/zBase/objectId/...).
  */
 function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
+  const ortho = ctx.ortho === true || ctx.ortho === 1;
   const w0 = buf[o0 + 3], w1 = buf[o1 + 3], w2 = buf[o2 + 3];
   const W = target.W, H = target.H;
   const X0 = (W / 2) * (buf[o0] / w0) + W / 2, Y0 = (H / 2) * (buf[o0 + 1] / w0) + H / 2, zn0 = buf[o0 + 2] / w0, iw0 = 1 / w0;
   let X1 = (W / 2) * (buf[o1] / w1) + W / 2, Y1 = (H / 2) * (buf[o1 + 1] / w1) + H / 2, zn1 = buf[o1 + 2] / w1, iw1 = 1 / w1;
   let X2 = (W / 2) * (buf[o2] / w2) + W / 2, Y2 = (H / 2) * (buf[o2 + 1] / w2) + H / 2, zn2 = buf[o2 + 2] / w2, iw2 = 1 / w2;
 
-  let wx0 = buf[o0 + 4], wy0 = buf[o0 + 5], wz0 = buf[o0 + 6], u0a = buf[o0 + 7], v0a = buf[o0 + 8], nx0 = buf[o0 + 9], ny0 = buf[o0 + 10], nz0 = buf[o0 + 11], mu0 = buf[o0 + 12], mv0 = buf[o0 + 13];
-  let wx1 = buf[o1 + 4], wy1 = buf[o1 + 5], wz1 = buf[o1 + 6], u1a = buf[o1 + 7], v1a = buf[o1 + 8], nx1 = buf[o1 + 9], ny1 = buf[o1 + 10], nz1 = buf[o1 + 11], mu1 = buf[o1 + 12], mv1 = buf[o1 + 13];
-  let wx2 = buf[o2 + 4], wy2 = buf[o2 + 5], wz2 = buf[o2 + 6], u2a = buf[o2 + 7], v2a = buf[o2 + 8], nx2 = buf[o2 + 9], ny2 = buf[o2 + 10], nz2 = buf[o2 + 11], mu2 = buf[o2 + 12], mv2 = buf[o2 + 13];
+  let wx0 = buf[o0 + 4], wy0 = buf[o0 + 5], wz0 = buf[o0 + 6], u0a = buf[o0 + 7], v0a = buf[o0 + 8], nx0 = buf[o0 + 9], ny0 = buf[o0 + 10], nz0 = buf[o0 + 11], mu0 = buf[o0 + 12], mv0 = buf[o0 + 13], ao0 = buf[o0 + 14];
+  let wx1 = buf[o1 + 4], wy1 = buf[o1 + 5], wz1 = buf[o1 + 6], u1a = buf[o1 + 7], v1a = buf[o1 + 8], nx1 = buf[o1 + 9], ny1 = buf[o1 + 10], nz1 = buf[o1 + 11], mu1 = buf[o1 + 12], mv1 = buf[o1 + 13], ao1 = buf[o1 + 14];
+  let wx2 = buf[o2 + 4], wy2 = buf[o2 + 5], wz2 = buf[o2 + 6], u2a = buf[o2 + 7], v2a = buf[o2 + 8], nx2 = buf[o2 + 9], ny2 = buf[o2 + 10], nz2 = buf[o2 + 11], mu2 = buf[o2 + 12], mv2 = buf[o2 + 13], ao2 = buf[o2 + 14];
 
   let Xs0, Ys0, Xs1, Ys1, Xs2, Ys2;
   if (ctx.snap === false) {
@@ -361,7 +367,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
     t = wx1; wx1 = wx2; wx2 = t; t = wy1; wy1 = wy2; wy2 = t; t = wz1; wz1 = wz2; wz2 = t;
     t = u1a; u1a = u2a; u2a = t; t = v1a; v1a = v2a; v2a = t;
     t = nx1; nx1 = nx2; nx2 = t; t = ny1; ny1 = ny2; ny2 = t; t = nz1; nz1 = nz2; nz2 = t;
-    t = mu1; mu1 = mu2; mu2 = t; t = mv1; mv1 = mv2; mv2 = t;
+    t = mu1; mu1 = mu2; mu2 = t; t = mv1; mv1 = mv2; mv2 = t; t = ao1; ao1 = ao2; ao2 = t;
     A2 = -A2;
   }
 
@@ -402,6 +408,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
 
       const l0 = e12 / A2, l1 = e20 / A2, l2 = e01 / A2;
       let zn = l0 * zn0 + l1 * zn1 + l2 * zn2;
+      const znRaw = zn; // fragment position.z has no rasterizer bias (ortho depth below)
       if (info.biasFlag) zn += biasAdd;
       if (zn > 1) continue;
       if (info.dither !== 0 && !ditherKeep(info.dither, px, py)) continue; // S8-B2-07: the GPU discards before the depth test, so does this
@@ -469,8 +476,10 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
         target.z[idx] = wz - info.zBase - info.zRef;
         target.aoD[idx] = aoD;
         target.nrm[idx] = packNormalOct(wnx, wny, wnz);
+        target.vao[idx] = (l0 * ao0 * iw0 + l1 * ao1 * iw1 + l2 * ao2 * iw2) * invq; // ME-20c, perspective-correct like u/v
         target.objectId[idx] = info.objectId;
-        target.depth[idx] = invq;
+        // US-068b1 (38.19): ortho has w = 1, so 1/w is a trap: depth = linear z = near + z01 * (far - near) (GPU twin: select(1/pos.w, ..., projMode == 2u))
+        target.depth[idx] = ortho ? PROJ_NEAR + (0.5 * (znRaw + 1)) * (PROJ_FAR - PROJ_NEAR) : invq;
         target.zbuf[idx] = zn;
         if (target.writes) target.writes[idx]++;
       }
@@ -480,6 +489,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
 
 /** Transforms + clips one mesh triangle, then fans the clipped polygon into `rasterFanTri` calls. */
 function clipAndRasterTri(mesh, v0, v1, v2, target, ctx, info) {
+  _vaoOn = meshHasVertexAo(mesh);
   transformVertex(mesh, _matScratch, v0, ctx.M, _bufA, 0);
   transformVertex(mesh, _matScratch, v1, ctx.M, _bufA, STRIDE);
   transformVertex(mesh, _matScratch, v2, ctx.M, _bufA, STRIDE * 2);
@@ -757,6 +767,7 @@ function rasterWaterSlot(sel, slot, target, ctx) {
  * `target.writes` (if present) counts COVERAGE (before any discard / depth test): the "every pixel exactly once" fixture.
  */
 function rasterWaterTri(buf, o0, o1, o2, target, ctx, sel, ub) {
+  const ortho = ctx.ortho === true || ctx.ortho === 1;
   const w0 = buf[o0 + 3], w1 = buf[o1 + 3], w2 = buf[o2 + 3];
   const W = target.W, H = target.H;
   const X0 = (W / 2) * (buf[o0] / w0) + W / 2, Y0 = (H / 2) * (buf[o0 + 1] / w0) + H / 2, zn0 = buf[o0 + 2] / w0, iw0 = 1 / w0;
@@ -818,16 +829,18 @@ function rasterWaterTri(buf, o0, o1, o2, target, ctx, sel, ub) {
       const zn = l0 * zn0 + l1 * zn1 + l2 * zn2;
       if (zn > 1 || !(zn < target.zbuf[idx])) continue;
       const q = l0 * iw0 + l1 * iw1 + l2 * iw2;
-      const invq = 1 / q; // = vD, the perpendicular camera distance (GPU: 1 / gl_FragCoord.w)
+      const invq = 1 / q; // attribute normaliser (= 1 in ortho)
+      // vD = the perpendicular camera distance (GPU: 1 / gl_FragCoord.w); ortho (w = 1): linear z (38.19)
+      const vD = ortho ? PROJ_NEAR + (0.5 * (zn + 1)) * (PROJ_FAR - PROJ_NEAR) : invq;
       const lx = (l0 * lx0 * iw0 + l1 * lx1 * iw1 + l2 * lx2 * iw2) * invq;
       const ly = (l0 * ly0 * iw0 + l1 * ly1 * iw1 + l2 * ly2 * iw2) * invq;
       if (sheet) { /* finite sheet mesh supplies the boundary */ } else if (isCircle) { // = waterInsideJS (waterMesh.js), inlined
         const dx = lx - sA, dy = ly - sB;
         if (dx * dx + dy * dy > sC) continue;
       } else if (!(lx >= sA && lx < sC && ly >= sB && ly < sD)) continue;
-      if (sceneDepth && !(invq < sceneDepth[idx])) continue; // occluder: the scene is nearer (or equal)
+      if (sceneDepth && !(vD < sceneDepth[idx])) continue; // occluder: the scene is nearer (or equal)
       target.kind[idx] = 1;
-      target.depth[idx] = invq;
+      target.depth[idx] = vD;
       target.nrm[idx] = WATER_NRM_UP;
       target.z[idx] = sheet ? ly : 0;
       target.objectId[idx] = tagBase;
@@ -870,6 +883,7 @@ export function copyToGBuffer(target, gbuf, depthArr) {
     const face = target.face[i];
     const aoD = face === FACE_PACKED ? 0 : target.aoD[i];
     gbuf.writeSample(i, kind, target.mat[i], face, target.planeId[i], target.u[i], target.v[i], target.z[i], aoD);
+    gbuf.vao[i] = target.vao[i]; // ME-20c (38.18)
     if (face === FACE_PACKED) {
       if (!alias) alias = getAoAlias(gbuf);
       alias[i] = target.nrm[i];

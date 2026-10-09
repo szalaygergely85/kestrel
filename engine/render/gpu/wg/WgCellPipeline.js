@@ -51,6 +51,7 @@ export class WgCellPipeline {
     this.terrainEnabled = opts.terrainEnabled !== false;
     this.renderer = 'mesh';
     this.shadowOpts = opts.shadows || null;
+    this.occl = !!opts.occl; // S8-B2-10c two-phase HZB occlusion (`?occl=1`), default OFF
     this.gpuCull = opts.gpuCull !== false; // WG-4a compute cull of instance batches (`?gpucull=0` = CPU path)
     this.ready = false;
     /** passes that really execute in this build; `frameComplete` = the pipeline can replace the CPU shading entirely */
@@ -109,7 +110,7 @@ export class WgCellPipeline {
         targetFormats: ['rgba8', 'rgba8'],
       });
       tp = bootNow();
-      this._rasterPass = new WgRasterPass(this.device, { gpuCull: this.gpuCull });
+      this._rasterPass = new WgRasterPass(this.device, { gpuCull: this.gpuCull, occl: this.occl });
       bootSpan('pass raster (ctor total)', tp); tp = bootNow();
       this._meshDrawList = this._rasterPass.list;
       this._shadowPass = new WgShadowPass(this.device, { shadows: this.shadowOpts, renderer: this.renderer, buffers: this._rasterPass.buffers, gpuCull: this.gpuCull });
@@ -370,6 +371,8 @@ export class WgCellPipeline {
     return { fg: outFg, bg: outBg };
   }
   /** WG-3e: the WATER layer (rgba32uint, 4 words/cell); null when no water drew this frame. */
+  /** S8-B2-10c: camera cut / teleport - the next frame's cull phase 1 runs with hzbOn 0 (no-op with occl off). */
+  invalidateHzb() { if (this._rasterPass) this._rasterPass.invalidateHzb(); }
   async readbackWater(out) { return this._waterPass ? this._waterPass.readbackWater(out) : null; }
   /** WG-3d: the sun map depth as float32 bits (res*res Uint32Array); false = no map rendered this frame (gpucompare shadowDepth row). */
   async readbackShadowDepthBits(out) { return this._shadowPass ? this._shadowPass.readbackDepth(out) : false; }
@@ -425,7 +428,9 @@ export class WgCellPipeline {
     if (!sp || !this._cellsShaded || this._spritesPending) { this._setPresent(null, null); return; } // pending = pipelines still compiling
     try {
       this._begin(WG_PASS_SLOT.sprites);
-      try { sp.run({ gi: t.texGI, depth: t.texDepth, edgeFg: t.texFinalFg, edgeBg: t.texFinalBg }); } finally { this._end(); }
+      const inp = this._spInp || (this._spInp = { gi: null, depth: null, edgeFg: null, edgeBg: null }); // reused: an object literal here was per-frame garbage
+      inp.gi = t.texGI; inp.depth = t.texDepth; inp.edgeFg = t.texFinalFg; inp.edgeBg = t.texFinalBg;
+      try { sp.run(inp); } finally { this._end(); }
       this._begin(WG_PASS_SLOT.overlay);
       try { this._overlayPass.run(t.texDepth); } finally { this._end(); }
     } catch (e) {

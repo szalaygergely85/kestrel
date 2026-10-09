@@ -51,12 +51,13 @@
                      // ALPHA-01e SWITCH PREPARED, NOT ACTIVE (blocked: InstanceGroups.meshGroup rejects masked ranges, see docs/lanes/pc-b2.md ALPHA-01e).
                      // Replace the six voxel species with: mesh quaternius/CommonTree_1..5 (weights 14,14,12,10,10; trunkR 0.5,0.5,0.5,0.5,0.45; trunkH 2.3,2.8,2.5,5.0,2.3),
                      // Pine_1..5 (10,10,8,6,6; trunkR 0.45 x4 + 0.35; trunkH 2.1,1.1,3.0,2.4,1.4), DeadTree_1 (3; 0.5; 3.0). trunkR = bark radius at z 0.4..1.4, trunkH = lowest leaf card.
-                     { model: 'forestOakSmall',   weight: 22, trunkR: 0.53, trunkH: 2.55 },   // 7.20 m (raw import, owner 2026-10-04)
-                     { model: 'forestOakLarge',   weight: 18, trunkR: 0.63, trunkH: 3.06 },   // 8.64 m (raw import, owner 2026-10-04)
-                     { model: 'forestBirchSmall', weight: 15, trunkR: 0.39, trunkH: 2.70 },   // 6.00 m (raw import, owner 2026-10-04)
-                     { model: 'forestBirchLarge', weight: 10, trunkR: 0.47, trunkH: 3.24 },   // 7.20 m (raw import, owner 2026-10-04)
-                     { model: 'forestPineSmall',  weight: 20, trunkR: 0.34, trunkH: 1.50 },   // 6.00 m (raw import, owner 2026-10-04)
-                     { model: 'forestPineLarge',  weight: 15, trunkR: 0.41, trunkH: 1.80 }    // 7.20 m (raw import, owner 2026-10-04)
+                     // FOLIAGE-SWAY-01: all six are real trees (foliage) - sway: true. No rocks/stones in this list.
+                     { model: 'forestOakSmall',   weight: 22, trunkR: 0.53, trunkH: 2.55, sway: true },   // 7.20 m (raw import, owner 2026-10-04)
+                     { model: 'forestOakLarge',   weight: 18, trunkR: 0.63, trunkH: 3.06, sway: true },   // 8.64 m (raw import, owner 2026-10-04)
+                     { model: 'forestBirchSmall', weight: 15, trunkR: 0.39, trunkH: 2.70, sway: true },   // 6.00 m (raw import, owner 2026-10-04)
+                     { model: 'forestBirchLarge', weight: 10, trunkR: 0.47, trunkH: 3.24, sway: true },   // 7.20 m (raw import, owner 2026-10-04)
+                     { model: 'forestPineSmall',  weight: 20, trunkR: 0.34, trunkH: 1.50, sway: true },   // 6.00 m (raw import, owner 2026-10-04)
+                     { model: 'forestPineLarge',  weight: 15, trunkR: 0.41, trunkH: 1.80, sway: true }    // 7.20 m (raw import, owner 2026-10-04)
                    ]
                  } },
       rock:    { slope: 0.42, scale: 90, threshold: 0.78, minHomeDist: 60 },
@@ -98,24 +99,24 @@
         layers: [
           { name: 'tufts', seed: 38101, cellM: 2.5, jitter: 1.0, fill: 0.6, maxSlope: 0.7, clearM: 0.8, drawM: 28, lodCells: 4,
             ground: {
-              grass:  [ { model: 'tuftMeadow', weight: 35, sinkM: 0.02 }, { model: 'tuftLush', weight: 30, sinkM: 0.02 },
-                        { model: 'tuftShort', weight: 35, sinkM: 0.02 } ],
-              forest: [ { model: 'tuftLush', weight: 50, sinkM: 0.02 }, { model: 'tuftShort', weight: 30, sinkM: 0.02 },
+              grass:  [ { model: 'tuftMeadow', weight: 35, sinkM: 0.02, sway: true }, { model: 'tuftLush', weight: 30, sinkM: 0.02, sway: true },
+                        { model: 'tuftShort', weight: 35, sinkM: 0.02, sway: true } ],
+              forest: [ { model: 'tuftLush', weight: 50, sinkM: 0.02, sway: true }, { model: 'tuftShort', weight: 30, sinkM: 0.02, sway: true },
                         { model: 'pebbles', weight: 20, sinkM: 0.03 } ],
-              rock:   [ { model: 'pebbles', weight: 50, sinkM: 0.03 }, { model: 'tuftShort', weight: 30, sinkM: 0.02 },
+              rock:   [ { model: 'pebbles', weight: 50, sinkM: 0.03 }, { model: 'tuftShort', weight: 30, sinkM: 0.02, sway: true },
                         { model: 'rockSmallB', weight: 20, sinkM: 0.03 } ]
             } },
           { name: 'shrubs', seed: 38203, cellM: 5, jitter: 1.8, fill: 0.5, maxSlope: 0.55, clearM: 1.2, drawM: 45, lodCells: 4,
             ground: {
-              grass:  [ { model: 'flowersYellow', weight: 20, sinkM: 0.02 }, { model: 'flowersWhite', weight: 16, sinkM: 0.02 },
-                        { model: 'flowersPink', weight: 12, sinkM: 0.02 }, { model: 'bushRound', weight: 18, sinkM: 0.04, shadow: true },
+              grass:  [ { model: 'flowersYellow', weight: 20, sinkM: 0.02, sway: true }, { model: 'flowersWhite', weight: 16, sinkM: 0.02, sway: true },
+                        { model: 'flowersPink', weight: 12, sinkM: 0.02, sway: true }, { model: 'bushRound', weight: 18, sinkM: 0.04, shadow: true, sway: true },
                         { model: 'rockSmallA', weight: 12, sinkM: 0.03 }, { model: 'rockSmallB', weight: 10, sinkM: 0.03 },
                         { model: 'pebbles', weight: 12, sinkM: 0.03 } ],
-              forest: [ { model: 'fern', weight: 40, sinkM: 0.02 }, { model: 'mushrooms', weight: 16, sinkM: 0.01 },
-                        { model: 'bushRound', weight: 20, sinkM: 0.04, shadow: true }, { model: 'flowersWhite', weight: 8, sinkM: 0.02 },
+              forest: [ { model: 'fern', weight: 40, sinkM: 0.02, sway: true }, { model: 'mushrooms', weight: 16, sinkM: 0.01 },
+                        { model: 'bushRound', weight: 20, sinkM: 0.04, shadow: true, sway: true }, { model: 'flowersWhite', weight: 8, sinkM: 0.02, sway: true },
                         { model: 'rockSmallA', weight: 8, sinkM: 0.03 }, { model: 'pebbles', weight: 8, sinkM: 0.03 } ],
               rock:   [ { model: 'rockSmallA', weight: 35, sinkM: 0.03 }, { model: 'rockSmallB', weight: 35, sinkM: 0.03 },
-                        { model: 'pebbles', weight: 20, sinkM: 0.03 }, { model: 'tuftShort', weight: 10, sinkM: 0.02 } ]
+                        { model: 'pebbles', weight: 20, sinkM: 0.03 }, { model: 'tuftShort', weight: 10, sinkM: 0.02, sway: true } ]
             } },
           // rocks: maxSlope 0.35 + large sinkM 0.20 (half the 0.32-0.40 m foot layer): props are not tilted to the slope
           // (37.4: yaw only), so a 2.8 m flat-bottomed boulder must not show a gap on the downhill side.

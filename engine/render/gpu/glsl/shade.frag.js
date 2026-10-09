@@ -53,7 +53,8 @@ import { TERRAIN_SHADE_GLSL } from './terrain.frag.js';
 import { KIND_TERRAIN, KIND_MODEL, KIND_MESH, FACE_PACKED } from '../../GBuffer.js';
 import { SUN_N_SHIFT, SUN_N_MASK } from '../../shadowSun.js';
 
-export const MAX_SUB = 16; // 4x4, matches resolve.frag.js's cap
+import { MAX_SUB } from '../wgsl/shade.wgsl.js';
+export { MAX_SUB };
 
 export const SHADE_FRAG_SRC = `${GLSL_VERSION}${PRECISION}
 layout(location = 0) out vec4 shadeFg;

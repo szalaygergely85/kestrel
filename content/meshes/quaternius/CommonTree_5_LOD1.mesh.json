@@ -1,0 +1,33 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/CommonTree_5_LOD1",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "CommonTree_5_LOD1.mesh.bin",
+  "triCount": 796,
+  "bbox": [
+    -1.91235,
+    -1.91167,
+    -0.24277,
+    1.67972,
+    2.16245,
+    6.53909
+  ],
+  "ranges": [
+    {"count": 471, "part": "CommonTree_5#0", "start": 0},
+    {"count": 325, "part": "CommonTree_5#1", "start": 471}
+  ],
+  "matKeys": [
+    "Bark_NormalTree",
+    "Leaves_NormalTree"
+  ],
+  "mats": {
+    "Bark_NormalTree": "timber_old",
+    "Leaves_NormalTree": "leaf"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false
+}
