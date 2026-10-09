@@ -245,7 +245,7 @@ function formatValue(opt, raw) {
  * header note, and lets this module draw last, right where the pause
  * overlay already does, with no extra `render()` hook).
  */
-function dimSceneRect(rt, ui, ux0, uy0, uw, uh, mul) {
+export function dimSceneRect(rt, ui, ux0, uy0, uw, uh, mul) {
   const sx = ui.sx, sy = ui.sy;
   const r0 = Math.max(0, Math.floor(uy0 * sy));
   const r1 = Math.min(rt.rows - 1, Math.ceil((uy0 + uh) * sy) - 1);

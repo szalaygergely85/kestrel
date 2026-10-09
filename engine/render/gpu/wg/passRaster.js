@@ -117,7 +117,7 @@ export class WgRasterPass {
       this.mirrorPipe = this._pipeline(RASTER_VOXEL_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'ccw');
       this.instancePipe = this._pipeline(RASTER_INSTANCED_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true);
       // ALPHA-01f (b): instanced mesh-group masked draw - same state as instancePipe + the mask-uv extra stream (location 10) + texMask at slot 0
-      this.instanceMaskPipe = this._pipeline(RASTER_INSTANCED_MASK_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true, [{ layout: MASK_UV_LAYOUT, strideBytes: MASK_UV_STRIDE_BYTES }], RASTER_INSTANCED_MASK_BLOCK, ['uint']);
+      this.instanceMaskPipe = this._pipeline(RASTER_INSTANCED_MASK_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'none', 'cw', true, [{ layout: MASK_UV_LAYOUT, strideBytes: MASK_UV_STRIDE_BYTES }], RASTER_INSTANCED_MASK_BLOCK, ['uint']);
       // Cloth: dynamic pos+oct normal (slot 0) + static uv (extra stream), two-sided (GL: CULL_FACE off, CCW = 'cw' after the clip-y flip).
       this.clothPipe = this._pipeline(RASTER_CLOTH_WGSL, CLOTH_DYN_LAYOUT, CLOTH_STRIDE_BYTES, 'none', 'cw', false, [{ layout: CLOTH_UV_LAYOUT, strideBytes: 8 }]);
       if (opts.gpuCull !== false && typeof device.createComputePipeline === 'function') {
@@ -200,7 +200,7 @@ export class WgRasterPass {
     if (k === 'voxel') pp = this._pipeline(rasterWgsl('voxel', opt), VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', false, ao);
     else if (k === 'mirror') pp = this._pipeline(rasterWgsl('voxel', opt), VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'ccw', false, ao);
     else if (k === 'instance') pp = this._pipeline(rasterWgsl('instanced', opt), VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true, ao);
-    else pp = this._pipeline(rasterWgsl('instancedMask', opt), VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true,
+    else pp = this._pipeline(rasterWgsl('instancedMask', opt), VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'none', 'cw', true, // two-sided leaf cards (JS twin draws masked ranges two-sided)
       [{ layout: MASK_UV_LAYOUT, strideBytes: MASK_UV_STRIDE_BYTES }, ao[0]], RASTER_INSTANCED_MASK_BLOCK, ['uint']);
     return (this.aoPipes[k] = pp);
   }

@@ -1404,6 +1404,7 @@ Probe: Quaternius leaf materials are `MASK@0.2` (textures 70-75 % alpha 0); `Bar
 | ALPHA-01e | Content + LOD1: Quaternius trees / bushes / rocks / pebbles / paths / mushrooms imported with mats + masks, `meshGroup` `meshFar` / `lodCells` (RE-15c bucket), shadow LOD distance, species switch, forestWalk re-baseline, THIRD_PARTY_NOTICES (37.17 step e; replaces TREES-LP-c's species switch) | P1 | todo [PC-B -> arch-review] ~0.75 d - deps: c, TREES-LP-d (LOD1 meshes) | **AC:** leafy Quaternius trees in the forest read as leafy crowns at 400x150 near and far, no solid rectangles; LOD0 -> LOD1 swap has no visible pop at 10 / 30 / 60 m; mesh-content test covers every imported file; forestWalk re-baselined (old/new recorded); THIRD_PARTY_NOTICES has the Quaternius CC0 line; the owner OKs the preview. |
 | ALPHA-01f | Masked meshes in instanced groups (WebGPU only): (a) JS twin, (b) WGSL + uvMask stream, (c) shadow variant, (d) GPU cull / indirect draws per range; WebGL2 keeps voxel species (D-051) | P1 | todo [B2, ARCH-approved 2026-10-09]; before species switch: owner LOD1 pick + forestWalk triangle budget |
 | ALPHA-01f | Arc bench forestWalk trees on/off x shadows, lodCells sweep; absorbs TREES-LP-e (37.17 step f) | P1 | todo [PC-A] ~0.25 d - deps: e; owner walk-test "stylized forest" | **AC:** Arc forestWalk numbers (trees on/off x shadows map/off, `lodCells` x0.5 / x2) are within the architecture.md 37.2 bars, or tuned in the order raise `lodCells` -> lower `fill` -> drop the Pine LOD0 range, and recorded in the row; owner walk-test "stylized forest" OK. |
+| MESH-LOD1-ACCEPT-01 | Mesh trees never LOD on the default WebGPU path: `engine/mesh/instances.js` `addToDrawList` calls `gpu.accept(g, draw, null)` before LOD1 is resolved | P2 | todo [PC-A] ~0.25 d - from Batch 8 (ALPHA-01f-fix3) | **AC:** resolve `lod1Mesh`/`draw1` first and pass `draw1` to `accept` (the shadow list already does); check whether `lods[0]` of lazy mesh groups is ever requested; gpucompare forestWalk stays PASS. |
 | US-089w | Save relay + autosave + load hook (S8-B1-01) | P0 | po-review [lane B1] | `game/js/saveRelay.js` (+test), `platform/web.js getSaveStorage`, main.js hooks. Autosave 60 s + waystone touch, load at boot (`engine.setWorld` swap), `?save=0` off, capture/bench/gpucompare/cinematic/webdriver pages never load/save (`?save=1` forces). Report `docs/test-reports/S8-B1-01-02.md`. |
 | US-096w | Quest event hook + objective HUD (S8-B1-02) | P0 | po-review [lane B1] | `game/js/questRelay.js`, events beast:died / inventory:added / world facts (wake, lantern, sword, breach, waystone) -> quest sim; objective line top-left (placeholder text); quest in the S8-B1-01 save. NEEDS PC-A: writer texts; owner look at the HUD line. |
 
@@ -1468,3 +1469,208 @@ Acceptance criteria:
 - [ ] Node test (jawSync.test.js): for "Boys don't fly." at 30 chars/s the target sequence is exactly half,open,half,half,closed,half,open,half,closed,half,closed,half,half,half,closed; angle stays within [0, max]; 0 heap growth over 10k steps; deterministic.
 - [ ] **Owner walk (closes EP-TALK):** start game, walk out of the breach to the bear; it turns to look at you within 4 m; `[E] Talk`; the full first conversation with one choice, the jaw visibly moves with the text, `talk`/`listen`/`laugh`/`wave` play; Esc and a second talk show the repeat line; you cannot move or swing while talking. Owner OK recorded in this row.
 Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_bear.js`.
+
+## EP-CHARGEN + KPKG (PC-B architect, 2026-10-10; architecture.md 38.29 / 38.30; D-053 + owner decisions 2026-10-10: voxel-built rigid rigs as real meshes, three.js preview, Tauri shell, game loads .glb/.kestrel)
+**Order:**
+1. Kit and core: CHARGEN-01, 02, 03, 04a/04b, 05.
+2. Packages, in parallel with step 1: KPKG-01, 02, 03.
+3. Exports: CHARGEN-06..12.
+4. App: 13a, 13, 14, then the shell (19, 20).
+5. In-game path: RIG-00 (PC-A note), RIG-01..03, then CHARGEN-15..17.
+6. CHARGEN-18.
+
+**Every row:**
+- ends with `node tools/run-tests.mjs` + check-deps green;
+- engine rows end in `arch-review` (PC-A).
+
+| ID | Title | Pri | Status | Files |
+|---|---|---|---|---|
+| CHARGEN-01 | Human kit v0: 22-bone skeleton, base `m_avg` (head + jaw, underwear), slots, skin/hair/dye ramps + preview | P1 | todo [PC-B designer, 0.75 d] | `content/chargen/human.charkit.json`, `design/chargen/*`, `design/palette.js` (append), `design/preview/chargen_kit.html` |
+| CHARGEN-02 | `engine/chargen`: validateKit, validateRecipe, composeCharacter | P1 | todo [PC-B B2, 0.75 d] -> arch-review | `engine/chargen/*.js` + tests + fixture kit, `engine/index.js` |
+| CHARGEN-03 | `engine/chargen`: meshCharacter (per-bone greedy -> RiggedModel), sampleClip, collapseRig | P1 | todo [PC-B B2, 0.75 d] -> arch-review | `engine/chargen/mesh.js`, `clip.js`, `collapse.js` + tests |
+| CHARGEN-04a | Master clips on 22 bones: idle, walk, run, talk, listen, wave | P1 | todo [PC-B designer, 0.75 d] | kit JSON, preview |
+| CHARGEN-04b | Piece set 1 + base `f_avg` (3 hair, 2 beard, 3 top, 2 legs, 2 feet, 1 hat, 1 hood) | P1 | todo [PC-B designer, 0.75 d] | kit JSON, preview |
+| CHARGEN-05 | Height rows, age, build pick, randomRecipe(seed) | P1 | todo [PC-B B2, 0.5 d] -> arch-review | `engine/chargen/*` + tests |
+| CHARGEN-06 | Export base: png palette, check-deps rules (`tools/export/**`, `vendor/three` only in `tools/chargen/**`) | P1 | todo [PC-B B1, 0.25 d] | `tools/export/png.js`, `tools/check-deps.mjs` + tests |
+| CHARGEN-07 | GLB-a: static `.glb` (mesh + palette texture + COLOR_0 + `extras.kestrel`) | P1 | todo [PC-B B1, 0.5 d] | `tools/export/gltfWrite.js`, `tools/chargen/export.mjs` + tests |
+| CHARGEN-08 | GLB-b: rigid skin + 22 humanoid joints | P1 | todo [PC-B B1, 0.5 d] | `gltfWrite.js` + tests |
+| CHARGEN-09 | GLB-c: 6 baked animations | P1 | todo [PC-B B1, 0.5 d] | `gltfWrite.js` + tests |
+| CHARGEN-10 | FBX-a: binary FBX 7.4 static mesh + material/texture | P1 | todo [PC-B B1, 0.75 d] | `tools/export/fbxWrite.js` + tests |
+| CHARGEN-11 | FBX-b: skeleton + skin clusters + bind pose (Unity Humanoid) | P1 | todo [PC-B B1, 0.75 d] | `fbxWrite.js` + tests |
+| CHARGEN-12 | FBX-c anim stacks + OBJ/MTL + `.vox` (voxWrite split) | P1 | todo [PC-B B1, 0.75 d] | `fbxWrite.js`, `objWrite.js`, `voxWrite.js`, `tools/vox-export.mjs` + tests |
+| CHARGEN-13a | UI-independent facade `createChargen` + CLI | P1 | todo [PC-B B1, 0.5 d] | `tools/chargen/core.js`, `tools/chargen/export.mjs` + test |
+| CHARGEN-13 | App UI + three.js viewer (vendored, MIT): preview = parsed export `.glb`, orbit, clips, Random/seed, export buttons | P1 | todo [PC-B B1, 0.75 d] | `tools/chargen/index.html`, `ui.js`, `viewer.js`, `vendor/three/*` |
+| CHARGEN-14 | App Save/Open `.kestrel` + "All formats (.zip)" + `platform.js` adapter (browser fallback) | P1 | todo [PC-B B1, 0.5 d] - deps KPKG-02 | `tools/chargen/ui.js`, `platform.js`, `core.js` |
+| CHARGEN-19 | Tauri shell + stage + unsigned Windows installer | P1 | todo [PC-B B1, 0.75 d] - deps 13, 14 | `tools/chargen-desktop/*` |
+| CHARGEN-20 | Signed release builds (Windows, macOS notarized, Linux AppImage) | P2 | todo [PC-B B1, 0.5 d] - needs owner certificates (ESCALATE 38.29 item 8) | `tools/chargen-desktop/*` |
+| RIG-00 | ARCH-NOTE NEEDED: rigged-model seam in VoxelPool/instances (prebuilt mesh + parts + clips) | P1 | todo [PC-A architect, fable] | `docs/architecture.md` |
+| RIG-01 | `engine/mesh/gltf.js`: rigid-skin + animation reader `readRiggedGlb` | P1 | todo [PC-B B2, 0.75 d] -> arch-review (PC-A) | `engine/mesh/gltf.js` + tests |
+| RIG-02 | Rigged model in the registry/pool: collapseRig output drawn on the mesh path, play/partRot/mounts/shadows | P1 | todo [B2 or PC-A, 0.75 d] - deps RIG-00 | per RIG-00 |
+| RIG-03 | loadPack/KPKG asset types `model.rigged` / `model.static` -> `bundle.models`; main.js registers `char.<id>` | P1 | todo [PC-B B2, 0.5 d] -> arch-review | `engine/content/loadPack.js`, `package.js`, `game/js/main.js` |
+| CHARGEN-15 | First villager from a `.kestrel` (`.glb`) + dialogue, like Burl | P1 | todo [PC-B B1, 0.5 d] - deps RIG-03 | package, `content/worlds/world_m1.world.json`, `game/js/main.js` |
+| CHARGEN-16 | Player look: `player.look` in the save + `hand@look` retint + owner walk (picks option A/B) | P1 | todo [PC-B B1, 0.5 d] | `game/js/quest/save/saveState.js`, `game/js/main.js` |
+| CHARGEN-17 | New-game creation screen (title-menu skin, in-game-look preview built at runtime) | P1 | todo [PC-B B1, 0.75 d] - deps RIG-02 | `game/js/ui/charCreate.js` + test, `game/js/titleMenuHost.js` |
+| CHARGEN-18 | Builds slim/heavy (m, f) + elder overlay + piece set 2 | P2 | todo [PC-B designer, 0.75 d] | kit JSON |
+| KPKG-01 | `engine/content/zip.js` reader + writer (stored + deflate via platform streams) | P1 | arch-review [PC-B B2, 0.5 d] -> arch-review | `engine/content/zip.js` + test + fixture zip |
+| KPKG-02 | `engine/content/package.js`: kestrel.json validate, openPackage, mountPackages, deps, duplicate ids | P1 | arch-review [PC-B B2, 0.75 d] -> arch-review | `engine/content/package.js` + test, `engine/index.js` |
+| KPKG-03 | `tools/pack.mjs` / `unpack.mjs` + package specs | P1 | arch-review [PC-B B1, 0.5 d] | `tools/pack.mjs`, `tools/unpack.mjs`, `content/packages/*.pkg.json` + tests |
+| KPKG-04 | Game boot `?pack=` mounts packages | P1 | todo [PC-B B1, 0.5 d] | `game/js/main.js` |
+| KPKG-05 | Editor Import / Export `.kestrel` | P2 | todo [PC-B B1, 0.75 d] | `tools/editor/*` |
+| KPKG-07 | HTTP Range streaming of stored entries for lazy meshes | P3 | todo [PC-B B2, 0.75 d] -> arch-review | `engine/content/package.js`, `engine/mesh/lazyMesh.js` |
+
+### CHARGEN-01 Human kit v0  [P1] [todo] [PC-B designer]
+- [ ] `human.charkit.json` (schema 1) holds:
+  - the 22-bone `skeleton`;
+  - base `m_avg` per 38.29 items 2-3: realistic (style-guide 0), voxel-built, with underwear;
+  - a joint and a box for every bone;
+  - a separate jaw;
+  - `stretchRows`: shin and waist rows only.
+- [ ] Ramps:
+  - 5 skin tones, each with 4 shades plus the 8 hand skin keys;
+  - 6 hair colours;
+  - 3 eye colours;
+  - 6 natural dyes.
+- [ ] Every new key is appended to `design/palette.js`.
+- [ ] `design/preview/chargen_kit.html` shows the base in all 5 tones. The owner OKs the realism before CHARGEN-04.
+
+### CHARGEN-02 Compose  [P1] [todo] [PC-B B2]
+- [ ] `validateKit` reports each of these, with one fixture per rule:
+  - an unknown bone;
+  - a base voxel outside every bone box;
+  - an unknown material key;
+  - more than 255 materials;
+  - a stretch row through a forbidden bone.
+- [ ] `composeCharacter` follows 38.29 item 4: compose order, `hides`, `thick` growth with bone inheritance.
+- [ ] Two runs give byte-identical output.
+- [ ] `engine/chargen` imports nothing outside `engine/`.
+
+### CHARGEN-03 Mesh and clips  [P1] [todo] [PC-B B2]
+- [ ] `meshCharacter` output:
+  - one range per bone;
+  - no interior faces;
+  - no quad crosses bones.
+- [ ] Record the quad count for `m_avg`; it must be <= 8000.
+- [ ] `sampleClip`:
+  - the quaternion equals Euler `Rz*Ry*Rx` within 1e-6;
+  - no sign flips;
+  - writes into caller arrays (0 alloc over 10k calls).
+- [ ] `collapseRig` with the humanoid `partMap`:
+  - gives <= 8 parts with 50 ms keys;
+  - the rest pose equals the master.
+- [ ] Build time is <= 10 ms (bench line in the row).
+
+### CHARGEN-04a / 04b Clips and pieces  [P1] [todo] [PC-B designer]
+- [ ] **04a:** idle, walk, run, talk (Jaw), listen and wave on the 22 bones. Durations are multiples of 50 ms; clips play in place.
+- [ ] **04b:** the pieces fit `m_avg` and `f_avg`, and `validateKit` passes.
+- [ ] A preview page shows each clip on the 22-bone rig and on the collapsed 8-part rig side by side. The owner gives an OK.
+
+### CHARGEN-05 Sliders and random  [P1] [todo] [PC-B B2]
+- [ ] Height -4..4 rows shifts the joints, boxes and anchors.
+- [ ] `elder` = overlay, height -1 and tempo x1.15.
+- [ ] `randomRecipe`: the same seed gives the same recipe, and all of 1000 seeds validate.
+
+### CHARGEN-06..09 png and glTF `.glb`  [P1] [todo] [PC-B B1]
+- [ ] **06:**
+  - the PNG decodes with `tools/png-read.mjs`;
+  - the check-deps rules have fixtures.
+- [ ] **07:**
+  - the Khronos glTF Validator (web) reports 0 errors;
+  - Blender 4.x imports a 1.75 m character with palette colours;
+  - Godot 4 imports it.
+- [ ] **08:**
+  - Blender shows an armature with the 22 Unity names, and the mesh follows the bones;
+  - the Godot bone map auto-fills with `SkeletonProfileHumanoid`.
+- [ ] **09:**
+  - 6 actions play in Blender and in Godot;
+  - in Unity (glTFast) the clips play.
+- [ ] Golden SHA-256: the same recipe gives the same bytes.
+- [ ] Each step attaches a Blender CLI import log (`tools/chargen/verify-blender.py`) to the row.
+
+### CHARGEN-10..12 FBX, OBJ, VOX  [P1] [todo] [PC-B B1]
+- [ ] **10 FBX static:**
+  - Blender imports the binary FBX 7.4 at 1.75 m with the texture;
+  - Unity imports it at the right scale.
+- [ ] **11 FBX skeleton:**
+  - **Unity: Rig = Humanoid -> Configure maps every required bone (green)** after "Enforce T-Pose";
+  - Blender shows a 22-bone armature.
+  - If this fails after one attempt -> ESCALATE (Blender-CLI fallback).
+- [ ] **12 FBX animation:** the 6 stacks play on the Unity Humanoid avatar and in Blender.
+- [ ] **12 OBJ:** OBJ + MTL + PNG import with colours in Blender and Unity.
+- [ ] **12 VOX:**
+  - the `.vox` opens in MagicaVoxel with one named object per bone;
+  - it round-trips through `voxParse`;
+  - a palette over 255 entries or an axis over 256 gives a clear error.
+- [ ] Golden SHA-256 for every format.
+
+### CHARGEN-13a / 13 / 14 Facade and app  [P1] [todo] [PC-B B1]
+- [ ] **13a facade:**
+  - `createChargen` matches 38.29 item 7;
+  - no DOM, `fs`, Tauri or three references (a test greps for them);
+  - a Node test runs recipe -> every format -> `.kestrel` -> reopen.
+- [ ] **13 viewer:**
+  - three.js is vendored with its LICENSE and a pinned version;
+  - the viewer renders the parsed export `.glb`: lit, with a shadow, OrbitControls, clip play/scrub and turntable;
+  - every UI change re-previews within 150 ms debounce + build;
+  - no ASCII renderer and no Esc hint text (`no-esc-hint.test.mjs`).
+- [ ] **13 buttons:** every export button gives the same bytes as the CLI.
+- [ ] **14:** Save writes a `.kestrel` (38.30) that reopens to the identical recipe.
+- [ ] **14:** "All formats (.zip)" holds glb, fbx + png, vox, and obj + mtl + png.
+- [ ] **14:** the browser fallback works without Tauri.
+
+### CHARGEN-19 / 20 Tauri desktop app  [P1/P2] [todo] [PC-B B1]
+- [ ] **19 build:** `tools/chargen-desktop` builds with the Tauri CLI into a native window with no dev server.
+- [ ] **19 files:** Open and Save use native dialogs (dialog + fs plugins, user-picked paths only). Saved files are byte-identical to the CLI.
+- [ ] **19 security:**
+  - CSP `default-src 'self'`;
+  - no shell plugin;
+  - the staged app contains no `game/` file.
+- [ ] **19 installer:** the MSI/NSIS installer installs and runs on a clean Windows 11. Licence notices for three.js and Tauri are bundled.
+- [ ] **20:** a signed Windows installer (no "unknown publisher"), a notarized macOS dmg and a Linux AppImage. Each opens, builds a random character and exports a `.glb` that opens in Blender.
+
+### RIG-01..03 In-game rigged meshes  [P1] [todo] [PC-B B2 / PC-A]
+- [ ] **01 reader:**
+  - `readRiggedGlb` reads our exported `.glb` into a RiggedModel equal to `meshCharacter` output (positions within 1e-5, same ranges and clips);
+  - non-rigid weights, more than 1 skin, or morph targets -> a clear error;
+  - the static path is unchanged (existing gltf tests stay green).
+- [ ] **02 draw:** per RIG-00. A `char.<id>` entity plays clips, takes the jaw `partRot`, has mounts and casts a shadow. 0 alloc over 10k steps. One `?gpucompare=1` run with 0 PASS->FAIL.
+- [ ] **03 load:** a `.kestrel` with `models/<id>.glb` loads through `mountPackages` + loadPack and registers `char.<id>`. A missing `extras.kestrel.matKeys` gives a ContentError that points to `gltf-import --map`.
+
+### CHARGEN-15 / 16 / 17 Game  [P1] [todo] [PC-B B1]
+- [ ] **15:** one villager in `world_m1` loads from a `.kestrel` (`.glb`, no `.js` model). It idles, talks through a dialogue file, plays talk/listen and syncs the jaw (38.28). One browser pass.
+- [ ] **16:**
+  - `player.look` saves and loads; old saves get the default look;
+  - the first-person hands (every variant) take the skin tone; the fire colours are unchanged;
+  - the sleeve takes the top dye.
+  - **Owner walk:** hands in 3 tones and a walking villager; the owner picks option A or B (38.29 item 1).
+- [ ] **17:**
+  - New game -> slot -> creation screen in the title-menu skin, with the 38.29 item 5 rows and a rotating in-game preview (runtime compose -> RiggedModel);
+  - Random and Done work, with keyboard and mouse;
+  - no Esc hint text;
+  - a Node flow test and one capture.
+
+### KPKG-01 Zip  [P1] [arch-review] [PC-B B2]
+- [ ] Reads a Python `zipfile` fixture with stored and deflate entries.
+- [ ] Write -> read round trip. Stored-only output is byte-deterministic.
+- [ ] Errors for:
+  - a bad CRC;
+  - `..`, absolute or backslash paths;
+  - more than 10000 entries;
+  - the size and ratio limits.
+- [ ] No imports outside `engine/content`.
+
+### KPKG-02 Package  [P1] [arch-review] [PC-B B2]
+- [ ] Rejects:
+  - a missing `license.spdx`;
+  - a bad `id`;
+  - a newer `formatVersion`;
+  - an asset path that is not in the zip.
+- [ ] A content pack loaded loose and the same pack loaded through `mountPackages` give deep-equal bundles.
+- [ ] A missing or too-old dependency -> ContentError. The same id in two packages -> ContentError that names both.
+
+Note (dev): package.js + package.test.js (44 checks). mountPackages is async (reads content ids to detect duplicates) and also returns manifestUrl(id). Dup ids = typed asset ids + content-file ids (kind+id) across mounted packages; deps caret/exact, 0.x caret handled. model.rigged/static asset types are validated only (RIG-03 consumes them). Exported from engine/index.js.
+### KPKG-03 / 04 / 05 Pack tools, boot, editor  [P1/P2] [todo] [PC-B B1]
+- [ ] **03:** `node tools/pack.mjs content/packages/kestrel.chargen.human.pkg.json` writes `dist/*.kestrel`; unpack -> pack is a round trip.
+- [ ] **04:** `?pack=dist/kestrel.base.kestrel` boots the same world as the loose files (one capture compare).
+- [ ] **05:** the editor imports a `.kestrel` (assets with thumbnails) and exports selected assets with their dependencies.
+
+Note (KPKG-03 dev): tools/pack.mjs (spec `entries` from/to/exclude globs -> deterministic dist/<id>-<version>.kestrel, re-validated via openPackage; also packs a dir holding kestrel.json) + tools/unpack.mjs + content/packages/kestrel.base.pkg.json (6.5 MB) + tools/pack.test.mjs (12 checks: determinism, unpack->pack byte-identical, errors, base packed bundle deep-equals loose). engine/index.js now also exports readZip/writeZip/crc32/checkZipPath/ZIP_LIMITS. content-smoke ignores content/packages/. Not done: `kestrel.chargen.human.pkg.json` (kit does not exist yet, CHARGEN rows); write its spec when it does. 04/05 still todo.

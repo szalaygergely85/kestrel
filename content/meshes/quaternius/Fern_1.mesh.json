@@ -1,0 +1,32 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Fern_1",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Fern_1.mesh.bin",
+  "triCount": 288,
+  "bbox": [
+    -1.38124,
+    -1.37378,
+    -0.07733,
+    1.44569,
+    1.27854,
+    0.76291
+  ],
+  "ranges": [
+    {"count": 288, "mask": {"cutoff": 0.2, "tex": "quaternius/Leaves"}, "part": "Fern_1#0", "start": 0}
+  ],
+  "matKeys": [
+    "Leaves"
+  ],
+  "mats": {
+    "Flowers": "petal_yellow",
+    "Leaves": "leaf"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false,
+  "castShadow": false
+}

@@ -276,8 +276,9 @@ export class SpritePool {
   /**
    * Adds one raw sprite (model key, animation name, frame index, world
    * anchor/feet point). `billboard`: optional `{unlit, fogModel, fogMax,
-   * minCells:{w,h}, detailRows}` (architecture.md 14.4 item 7) - null for an
-   * ordinary lit sprite.
+   * minCells:{w,h}, detailRows, nearOk}` (architecture.md 14.4 item 7) - null for an
+   * ordinary lit sprite. `nearOk` (SPR T3.w, 37.8b): view-model attached only; skips the
+   * near cull but is still depth-tested; never for world sprites.
    */
   /** collect()'s internal entry: same as push() but reads the anchor from the transform (no double args, no `||` phi). */
   _pushEntity(s, t, billboard) {
@@ -400,6 +401,7 @@ export class SpritePool {
       if (x0 >= cb.cols || y0 >= cb.rows || x0 + w <= 0 || y0 + h <= 0) continue;
 
       let mulR = uMulR, mulG = uMulG, mulB = uMulB, b = uB;
+      const nearOk = bb && bb.nearOk ? 1 : 0; // HAND-FIRE-WRAP-01: view-model attached sprite (T3.w): exempt from the near cull
       // US-016 (architecture.md 14.4 item 7): `unlit` - light = 1, no N.L
       // (skips `lightAt` even on the per-sprite `LightSet` path). Still
       // shaded through the ordinary gain curve at b = 1 (not a flat
@@ -442,7 +444,7 @@ export class SpritePool {
       spr[o] = x0; spr[o + 1] = y0; spr[o + 2] = w; spr[o + 3] = h;
       spr[o + 4] = 1 / scale; spr[o + 5] = depth; spr[o + 6] = f; spr[o + 7] = visible;
       spr[o + 8] = fr.x; spr[o + 9] = fr.y; spr[o + 10] = fr.w; spr[o + 11] = fr.h;
-      spr[o + 12] = mulR; spr[o + 13] = mulG; spr[o + 14] = mulB; spr[o + 15] = 0;
+      spr[o + 12] = mulR; spr[o + 13] = mulG; spr[o + 14] = mulB; spr[o + 15] = nearOk;
       spr[o + 16] = fogR; spr[o + 17] = fogG; spr[o + 18] = fogB; spr[o + 19] = 0;
       this.frameOf[n] = anim.base;
       n++;
@@ -531,7 +533,7 @@ export function drawSprites(fb, pool, layer) {
     const o = s * SPR_STRIDE;
     const x0 = spr[o], y0 = spr[o + 1], w = spr[o + 2], h = spr[o + 3];
     const invScale = spr[o + 4], sDepth = spr[o + 5], fogF = spr[o + 6], visible = spr[o + 7] !== 0;
-    if (sDepth < SPRITE_NEAR_DEPTH) continue; // Cull even emissive texels when the eye enters a sprite.
+    if (sDepth < SPRITE_NEAR_DEPTH && spr[o + 15] === 0) continue; // nearOk (view-model attached, depth-tested against the hand voxels) skips it; // Cull even emissive texels when the eye enters a sprite.
     const ax = spr[o + 8], ay = spr[o + 9], srcW = spr[o + 10], srcH = spr[o + 11];
     const mulR = spr[o + 12], mulG = spr[o + 13], mulB = spr[o + 14];
     // US-016 (architecture.md 14.4 item 14): per-sprite fog colour (T4), not

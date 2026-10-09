@@ -43,6 +43,9 @@
 export function createParticleHooks(world, events, particles, cfg, gravity = 20) {
   const sparksDefId = particles.defIdOf('sparks');
   const dustDefId = particles.defIdOf('dust');
+  const bloodDefId = particles.defIdOf('blood');         // HIT-BLEED-01: beasts bleed (no white flash, no sparks)
+  const bloodDropsDefId = particles.defIdOf('bloodDrops');
+  const chipsDefId = particles.defIdOf('chips');         // HIT-BLEED-01: the straw/wood practice pell throws chips
   const corpseDustDefId = particles.defIdOf('corpseDust'); // US-079b (design/models/voxel_beast.js boarFx.attach)
   const scrapeDustDefId = particles.defIdOf('scrapeDust'); // US-079c (boarFx.scrape.preset)
   const sparksN = (cfg.mounts && cfg.mounts.sparks && cfg.mounts.sparks.n) || 10;
@@ -56,10 +59,28 @@ export function createParticleHooks(world, events, particles, cfg, gravity = 20)
   const corpseDustN = 14;
   const scrapeN = 4; // US-079c (boarFx.scrape.n): clods per windup kick
 
+  const bloodN = (cfg.mounts && cfg.mounts.blood && cfg.mounts.blood.n) || 14;
+  const dropsN = (cfg.mounts && cfg.mounts.blood && cfg.mounts.blood.nDrops) || 4;
+  const chipsN = (cfg.mounts && cfg.mounts.chips && cfg.mounts.chips.n) || 10;
   function onHit(p) {
-    if (!p || p.source !== 'player' || sparksDefId < 0) return;
-    const n = p.heavy ? sparksNHeavy : sparksN;
-    particles.burstAt(sparksDefId, p.px, p.py, p.pz, n, p.dirX || 0, p.dirY || 0, 0);
+    if (!p || p.source !== 'player') return;
+    const dx = p.dirX || 0, dy = p.dirY || 0;
+    if (typeof p.target === 'string' && p.target.endsWith('.practiceTarget')) { // straw + wood: chips, never blood
+      if (chipsDefId >= 0) particles.burstAt(chipsDefId, p.px, p.py, p.pz, chipsN, dx, dy, 0.3);
+      return;
+    }
+    const h = bloodDefId >= 0 && world && world.get && typeof p.target === 'string' ? world.get(p.target) : null;
+    const comps = h && h.data && h.data.components;
+    if (comps && comps.brain && comps.brain.kind === 'beast') { // a struck beast bleeds: droplets along the blow + a few drops on its feet
+      particles.burstAt(bloodDefId, p.px, p.py, p.pz, p.heavy ? bloodN + 6 : bloodN, dx, dy, 0.3);
+      if (bloodDropsDefId >= 0) {
+        const gz = h.data.transform ? h.data.transform.z : p.pz - 0.4;
+        particles.burstAt(bloodDropsDefId, p.px, p.py, gz + 0.03, dropsN, 0, 0, 1);
+      }
+      return;
+    }
+    if (sparksDefId < 0) return; // fallback (no blood preset defined): the old sparks
+    particles.burstAt(sparksDefId, p.px, p.py, p.pz, p.heavy ? sparksNHeavy : sparksN, dx, dy, 0);
   }
   const off = events.on('combat:hit', onHit);
 

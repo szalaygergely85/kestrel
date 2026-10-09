@@ -4017,6 +4017,12 @@ Undo/redo: unchanged (`invert` + `applyEdit` + `applyAndSync`). Selection item: 
 
 ---
 
+### 37.8b View-model variants and near sprites (HAND-WIRE-01, HAND-FIRE-WRAP-01; architect, 2026-10-10)
+
+- **`def.variants = {name: modelKey}`** (VmDef, `engine/render/viewModel.js`): alternative bake-poses of `def.model`. Each variant model must be bound in the pool and have the same part count as the base (checked in `load()`; a mismatch throws there, not in play). `variantId(h, name)` gives the index; `setVariant(h, i|name)` swaps `pm`/`mesh`/`forward` (a field write; the first use of a variant builds its slot once, which allocates). `setVariant(h, -1)` restores the base model. Same index = no-op. `warmVariants(h, names?)` prebuilds the slots at load time and restores the variant that was current before (base when none was set).
+- **Mounts follow the drawn variant.** A variant has its own grid origin, so `mountEye` and `mountNowEye` both read `d.pm.mounts` of the ACTIVE model (mount ids are indices of the base `mountNames`; variants must carry the same mount names). `mountEye` is the pure clip-time sample without bob, `mountNowEye` the last pose plus bob.
+- **Sprite field T3.w = nearOk** (the SPR row layout of 14.4; T3.w is the free texel `spr[o+15]`, written by `SpritePool` from `billboard.nearOk`): 1 = view-model attached sprite, exempt from the 0.6 m `SPRITE_NEAR_DEPTH` cull in `drawSprites`, `sprites.wgsl` and the GLSL ref. Depth test and `MIN_DEPTH` still apply, so the hand voxels occlude it. Never set it for world sprites. `spriteNear.test.js` asserts the line in the CPU path, the GLSL ref and `SPRITES_WGSL`.
+
 ## 38. EP-WEBGPU: WebGPU backend behind `GpuDevice` (WG-0 note; architect, 2026-10-07; D-044, roadmap EP-WEBGPU)
 
 Normative for WG-1..WG-5. Amends 27.2 (device shape) and 27.11 phase 4 (ME-30..34 are re-cut into the WG steps in 38.8). The JS twin stays the only oracle (D-017); there is never a GLSL/WGSL twin pair.
@@ -4475,3 +4481,289 @@ Covers DIALOGUE-01a/b, NPC-BEAR-01 and NPC-TALK-ANIM-01. B2 steps end in `arch-r
 - `returnTarget(def, out)` fills `{x, y, speed}` = home point + `returnSpeed` scale for the steering layer.
 - Test: `engine/nav/leash.test.js` (transitions, hysteresis, give-up, return target, 1e5-step zero-alloc via --expose-gc re-spawn).
 - Open for review: whether GIVEUP should differ from RETURN beyond the cause (e.g. heal-to-full, target cooldown); left to the caller.
+
+### 38.29 EP-CHARGEN: voxel-styled character generator: real rigged meshes, standard exports, desktop app (PC-B architect, 2026-10-10; owner-authorised while PC-A is offline; D-053)
+**Owner direction (2026-10-10).**
+- Product: realistic humans (style-guide 0), for villagers and the player's look. It is meant to be sold.
+- Output is **real rigged meshes**. The geometry is cube-built and greedy-meshed, but it is a normal mesh. ASCII is only how our game happens to draw it.
+- Formats: glTF 2.0 `.glb` is the master. FBX, `.vox` and OBJ are also exported. A `.kestrel` package (38.30) is the distribution unit.
+- No `design/models/*.js` output.
+- The app is a desktop app: the shell is Tauri, and the preview is a lit three.js (MIT) mesh preview, not the ASCII renderer.
+- No new or separate engine. Smooth, non-voxel humans are out of scope.
+- The game loads the exported `.glb` from a `.kestrel` through the mesh import path.
+
+1. **Skeleton.**
+   - **The product rig: 22 humanoid bones**, named for Unity Humanoid and Godot `SkeletonProfileHumanoid`. Parent of each bone:
+
+     | Bone | Parent |
+     |---|---|
+     | `Hips` | (root) |
+     | `Spine` | Hips |
+     | `Chest` | Spine |
+     | `Neck` | Chest |
+     | `Head` | Neck |
+     | `Jaw` | Head |
+     | `Left/RightShoulder` | Chest |
+     | `Left/RightUpperArm` | Shoulder |
+     | `Left/RightLowerArm` | UpperArm |
+     | `Left/RightHand` | LowerArm |
+     | `Left/RightUpperLeg` | Hips |
+     | `Left/RightLowerLeg` | UpperLeg |
+     | `Left/RightFoot` | LowerLeg |
+     | `Left/RightToes` | Foot |
+
+     - No finger bones: fingers are sculpted voxels.
+     - A Mixamo rename map (`mixamorig:Hips`, `LeftArm`, `LeftForeArm`, `LeftUpLeg`, `LeftLeg`, ...) is an export option only.
+     - Skinning is **rigid**: each vertex belongs to exactly one bone with weight 1. This is the standard for voxel characters, and it keeps the in-game path simple (item 5).
+   - **In-game**, the engine poses at most `MAX_VOX_PARTS` = 8 parts. The import collapses the 22 bones through a data `partMap`. The humanoid default:
+
+     | Part | Bones |
+     |---|---|
+     | `body` | Hips, Spine |
+     | `chest` | Chest, Shoulders |
+     | `head` | Neck, Head |
+     | `jaw` | Jaw |
+     | `armL` / `armR` | UpperArm, LowerArm, Hand |
+     | `legL` / `legR` | UpperLeg, LowerLeg, Foot, Toes |
+
+     - Part pivot = the group's root joint.
+     - Part rotation = the root bone's rotation (body and head also compose the second bone), resampled to 50 ms keys in our Euler order `Rz*Ry*Rx`.
+     - Result: in-game limbs swing straight, with no elbows or knees. `jaw` keeps the 38.28 `partRot` seam.
+   - **ESCALATE TO MANAGER:** should the game show elbows and knees?
+     - A = keep 8 parts (v1).
+     - B = raise `MAX_VOX_PARTS` to 24, so the rig needs no collapse. This is a PC-A engine item: instance rows per instance go 9 -> 25, the pose scratch grows, and gpucompare must pass.
+     - **Recommendation: A now, decide B at the CHARGEN-16 owner walk.**
+2. **Grid and rest pose.**
+   - Cell size `0.025` m. An adult is ~70 rows tall. Grid about 36x20x76, about 4-6k quads per character.
+   - Authoring axes as in 15.1: the character faces north (-y), z is up, the anchor sits between the feet.
+   - Rest pose: standing, arms down. Keep a gap of >= 3 cells between arm and torso and >= 2 cells between the thighs.
+   - Bones have identity rest rotation and translation-only joints. Unity: Configure -> "Enforce T-Pose".
+3. **Kit = data** (`charkit` JSON, `content/chargen/human.charkit.json`, shipped in the package `kestrel.chargen.human`).
+   - The designer may generate it with a script under `design/chargen/`, but the JSON is the only source.
+   - **`skeleton`**: 22 bones, each `{name, parent}`.
+   - **`bases`**: `m_avg` and `f_avg` first; `*_slim` / `*_heavy` later. Each base is `{size, anchor, layers (slot chars), bones:{name:{joint, box}}, anchors, stretchRows}`.
+     - A voxel's bone = the first bone box (in skeleton order) that contains it.
+     - A voxel outside every box is a kit error.
+   - **`slots`**: char -> `{group, shade}`. Groups: skin, hair, eyes, lips, and the dyes top, legs, feet, outer and hat. `fixed` chars map straight to a material.
+   - **`ramps`**: per group, `id -> {shade -> material key}`.
+     - Material keys are our palette keys, so the game keeps its glyph shading.
+     - Each key also has an export colour (RGB) from the palette.
+     - The designer appends new ramps to `design/palette.js`.
+     - At most 255 materials per character.
+   - **`shells`** (clothing that fits every base): `{id, slot, regions:[{bone, t0, t1}], thick:0|1|2, paint}`.
+     - `t0`/`t1` = fraction along the bone.
+     - `thick 0` repaints the body surface. `thick n` grows n 6-neighbour layers outward.
+     - Grown voxels inherit the bone they grew from.
+   - **`attachments`** (hair, beard, hat, hood, belt, collar, elder overlay): `{id, slot, bone, anchor, offset, box, layers, paintOnly?, hides?}`.
+   - **`clips`** (master, on the 22 bones): idle, walk, run, talk (Jaw), listen, wave.
+     - Durations are multiples of 50 ms.
+     - `rot` is per bone, in degrees.
+     - `pos` exists only on Hips.
+     - Clips play in place (no root motion).
+4. **Core = `engine/chargen/`.**
+   - Pure, deterministic and UI-independent. Exported via `engine/index.js`. It imports only `engine/` math and mesh types, never design, game or tools.
+   - Kits, the palette RGB table (`rgbOf`) and the known material keys are passed in.
+   - Used by: the app, the Node CLI, the editor, and the game's New-game creation screen.
+   ```js
+   /** @typedef {{v:1, kit:string, base:string, height:number, age:'young'|'adult'|'elder', skin:string, eyes:string,
+    *   hair:Pick|null, beard:Pick|null, top:Pick|null, legs:Pick|null, feet:Pick|null, outer:Pick|null, hat:Pick|null,
+    *   seed?:number}} CharRecipe                 // Pick = {id, ramp}; height int -4..4 rows
+    *  @typedef {{cellM, size, anchor, mat:Uint8Array, bone:Uint8Array, matKeys:string[], bones, mounts, clips}} CharGrid
+    *  @typedef {{bones:{name,parent,joint:number[]}[], mesh:{pos:Float32Array, nrm:Int8Array, mat:Uint8Array,
+    *   ranges:{start,count}[] (one per bone)}, matKeys:string[], clips:Object, mounts:Object}} RiggedModel */
+   validateKit(kit, knownMats) -> {errors, warnings}
+   validateRecipe(kit, recipe) -> {errors}
+   composeCharacter(kit, recipe) -> CharGrid        // base -> shells -> attachments -> height rows
+   meshCharacter(grid) -> RiggedModel                // per-bone culled + greedy quads, never across bones
+   sampleClip(rigged, clip, tMs, outQuat, outHips)   // our Euler -> quaternions, sign-continuous
+   collapseRig(rigged, partMap) -> PartRig           // <= MAX_VOX_PARTS parts + 50 ms clips (item 1)
+   randomRecipe(kit, seed) -> CharRecipe             // xorshift32 + kit.random weights
+   ```
+   - **Compose order:** base, then shells (legs, feet, top, outer), then attachments (hair, beard, hat). The later layer wins. `hides` clears a slot first.
+   - **Height:** duplicate or delete rows from `stretchRows` (shin and waist rows only).
+   - **Build:** pick an authored base.
+   - **Elder:** an overlay, height -1, clip tempo x1.15.
+   - **Determinism and cost:** the same recipe gives the same bytes. A build takes <= 10 ms, at load or on a UI change only, never per frame.
+5. **Game consumes the `.glb` (decision, per owner).**
+   - **Content.** The package (38.30) holds:
+     - `models/<id>.glb` (rigid-skinned, animated);
+     - the re-edit recipe `content/characters/<id>.character.json` = `{kind:'character', schema:1, id, recipe, model:'models/<id>.glb'}`.
+     - The game loads the `.glb`. The recipe is only for re-editing.
+   - **Material mapping.** Every `.glb` we write carries `extras.kestrel = {format:1, matKeys:[...], partMap, mounts, recipe}`. Palette texel i maps to `matKeys[i]` exactly.
+     - A third-party `.glb` without this extra must go through `tools/gltf-import.mjs --map` (nearest palette key, `voxAutoMap`) at authoring time.
+   - **Engine work (PC-A first review; core render):**
+     - **RIG-01:** extend `engine/mesh/gltf.js`. Add a rigid-skin + animation reader `readRiggedGlb(bytes) -> RiggedModel`.
+       - It accepts JOINTS_0/WEIGHTS_0 only when each vertex has a single weight of 1 (within 1e-3).
+       - It accepts rotation/translation channels (LINEAR/STEP).
+       - The existing static path is unchanged; everything else is still rejected with a clear error.
+       - Axes: convert back from glTF to ours (item 6).
+     - **RIG-02:** a "rigged model" in the model registry. `collapseRig(...)` gives parts (pivot, parent), a prebuilt MeshData with one range per part, clips and mounts. This is the same shape the voxel mesh path already draws: one draw per (instance, part), with part matrices from `samplePose`.
+       - `VoxelPool` / `instances.js` must accept a model whose mesh is prebuilt instead of built from `pm.vox`.
+       - **ARCH-NOTE NEEDED (PC-A, fable): the exact seam.**
+       - Then `EntityHandle.play`, `partRot` (jaw), mounts and shadows work unchanged.
+     - **RIG-03:** loadPack / KPKG asset type `model.rigged` (`.glb`) -> `bundle.models[id]`. main.js registers `char.<id>`.
+   - **Villagers** = a world entity with `model:'char.<id>'` plus a dialogue, like Burl (38.28).
+   - **Player look**
+     - Saved as `player.look = CharRecipe` (saveState.js; old saves get the kit default).
+     - **Today only the first-person hands are visible.** On New game and on load, every `design/models/hand.js` variant is re-tinted:
+       - skin keys -> the chosen tone (all 8 hand skin keys per tone; the fire keys stay);
+       - sleeve and wrap linen -> the top dye ramp.
+     - The re-tinted hands are registered as `hand@look`; viewModel loads that key.
+     - Later: third person, mirror and the player shadow use `char.player`, built at runtime with `composeCharacter -> meshCharacter -> collapseRig`. This is the same RiggedModel the `.glb` import gives. Test: importing an exported `.glb` gives a RiggedModel equal to the direct one (positions within 1e-5).
+   - **New-game creation screen** `game/js/ui/charCreate.js`, in the title-menu skin.
+     - Flow: `onNewGame(slot)` -> charCreate -> start.
+     - Rows: Body, Height, Age, Skin, Eyes, Hair, Beard, Top, Legs, Feet (+ colours), Random, Done.
+     - Preview: a studio scene on the game renderer (the in-game look).
+     - No Esc hint.
+6. **Exporters live in `tools/export/`.**
+   - UI-independent and browser-safe (no `fs`). They import only `engine/index.js` and `tools/export/*`; add a new check-deps rule for this.
+   - Determinism: the same recipe gives the same bytes in every format (golden SHA-256 test). No timestamps.
+   - Shared:
+     - `png.js`: the palette as a 16x16 RGBA PNG, zlib stored blocks.
+     - Mesh data: UV = the texel centre; COLOR_0 = the RGB.
+   - **`gltfWrite.js` -> `.glb`**
+     - Axes (X,Y,Z)_gltf = (-x, z, -y), in metres; the character faces +Z.
+     - 1 skinned mesh; 22 joint nodes; `inverseBindMatrices = translate(-joint)`.
+     - Material: `pbrMetallicRoughness`, palette `baseColorTexture` (NEAREST sampler), metallic 0, roughness 1.
+     - 6 animations: quaternion LINEAR at 30 fps + Hips translation.
+     - `extras.kestrel` (item 5).
+   - **`fbxWrite.js` -> binary FBX 7.4 (7400), our own writer**
+     - Binary, not ASCII: Blender rejects ASCII FBX.
+     - Uncompressed arrays; header and footer as in Blender's `encode_bin`.
+     - Y-up, centimetres.
+     - Geometry with UV and vertex colour; 1 material; the PNG as an external file.
+     - LimbNodes, Skin, 1 Cluster per bone, BindPose.
+     - 1 AnimationStack per clip (Euler XYZ).
+     - Contingency: if the Unity Humanoid AC fails after one attempt -> ESCALATE. Fallback: a Blender-CLI glb->fbx script (needs Blender installed).
+   - **`objWrite.js` -> OBJ + MTL**: rest pose, `g <bone>` per bone, `map_Kd` = the PNG.
+   - **`voxWrite.js` -> `.vox`** (split out of `tools/vox-export.mjs`, the same way `voxParse.js` was):
+     - one shape per bone, named `nTRN`, v200 scene graph;
+     - palette <= 255; every axis <= 256 (exceeding it is an error, never clipped);
+     - round-trip test with `voxParse`.
+7. **App** = `tools/chargen/`. Owner decision, 2026-10-10: the preview uses three.js (MIT). The main session records this in decisions.md, since it is an exception to the no-external-library rule that applies only to `tools/chargen/`.
+   - **Vendoring:** three.js is vendored as ES modules in `tools/chargen/vendor/three/` with its `LICENSE`:
+     - pinned release;
+     - only `three.module.js`, `GLTFLoader`, `OrbitControls`;
+     - no CDN, no npm at runtime.
+   - **check-deps rule:** only `tools/chargen/**` may import `vendor/three`; `engine/`, `game/` and `tools/editor/` never do.
+   - **Preview = the export (WYSIWYG).**
+     - A UI change runs `core.build()` -> `exportGlb()` -> `GLTFLoader.parse(bytes)` -> `SkinnedMesh` + `AnimationMixer`.
+     - The viewer therefore shows exactly the `.glb` that is shipped. The rebuild is debounced to 150 ms.
+   - **Rendering:**
+     - `MeshStandardMaterial`, palette texture with `NearestFilter`;
+     - a hemisphere light + a key directional light with a shadow onto a ground disc;
+     - `OrbitControls`;
+     - a clip dropdown with play/pause/scrub;
+     - a turntable toggle.
+   - **The ASCII renderer is never used in the app.** The in-game look appears only in the game's own creation screen.
+   - **Facade** `tools/chargen/core.js` (no DOM, no `fs`, no Tauri, no three):
+     ```js
+     createChargen({kit, rgbOf}) -> { recipe, setRecipe(r), random(seed), build() -> RiggedModel,
+       exportGlb(opts) -> Uint8Array, exportFbx() -> {fbx, png}, exportVox() -> Uint8Array,
+       exportObj() -> {obj, mtl, png}, exportAllZip() -> Promise<Uint8Array>,
+       savePackage(meta) -> Promise<Uint8Array>, openPackage(bytes) -> Promise<CharRecipe> }
+     ```
+     - Only these call it: the UI (`index.html` + `ui.js` + `viewer.js`), the CLI `tools/chargen/export.mjs`, the Tauri shell and, later, the editor.
+   - **UI:**
+     - recipe controls;
+     - Seed field and Random;
+     - export buttons: `.glb` (primary), `.fbx` (+ png), `.vox`, `.obj` (zip), "All formats (.zip)";
+     - Save / Open `.kestrel`;
+     - no Esc hint text.
+8. **Desktop shell: Tauri** (owner decision, 2026-10-10; Tauri is MIT/Apache-2.0). It is `tools/chargen-desktop/`:
+   - **Project:** `src-tauri/` (`tauri.conf.json`, `Cargo.toml`, a minimal `main.rs` with no custom commands). The frontend dist is the staged copy of `tools/chargen/`.
+   - **Plugins:** `tauri-plugin-dialog` + `tauri-plugin-fs`, scoped to user-picked paths only.
+   - **Platform adapter:** `tools/chargen/platform.js` tries `window.__TAURI__` (Tauri open/save dialog + fs `writeFile`) and otherwise falls back to the browser (`<input type=file>` + a download link). The core never sees it.
+   - **Security:**
+     - a strict CSP: `default-src 'self'`, no remote origins;
+     - `withGlobalTauri` limited to the dialog + fs plugins;
+     - no shell plugin.
+   - **Staging:** `stage.mjs` copies:
+     - `engine/` (only what `engine/index.js` reaches for chargen + content zip/package);
+     - `tools/export/`, `tools/chargen/`, the kit package;
+     - `palette.rgb.json`, baked from `design/palette.js`;
+     - never `game/`.
+   - **Builds:**
+     - Windows MSI/NSIS on WebView2: the primary target, Chromium-based, so it matches dev.
+     - macOS dmg on WKWebView.
+     - Linux AppImage on WebKitGTK.
+     - three.js on WebGL2 runs on all three. Test each OS once, because WebKit differs.
+   - **Toolchain:** Rust stable + the Tauri CLI, needed at build time only, not by programmers working on the core.
+   - **Signing:** Windows Authenticode or Azure Trusted Signing; Apple Developer ID + notarization; Tauri updater keys are optional, later.
+   - **ESCALATE TO MANAGER:** the remaining money and decision items:
+     - who buys the certificates (Apple ~99 USD/yr + a Windows cert);
+     - the store (itch.io / Steam Software / own site);
+     - the default licence for exported characters;
+     - item 1 option A/B (8 vs 24 parts in-game).
+9. **Do not:**
+   - Import three.js or Tauri anywhere outside `tools/chargen*`.
+   - Use the ASCII renderer in the app.
+   - Put chargen logic in UI files.
+   - Ship `.js` model files for characters.
+   - Use smooth/non-voxel humans (out of scope).
+   - Merge quads across bones, or use non-rigid weights.
+   - Allocate per frame in the game (`sampleClip` writes into caller arrays).
+   - Let `engine/` import design, game or tools.
+   - Put timestamps in exports.
+
+### 38.30 KPKG: the `.kestrel` package (PC-B architect, 2026-10-10; owner-authorised while PC-A is offline)
+Owner: one package file to distribute and use assets, like `.unitypackage`.
+1. **Container.** A ZIP named `*.kestrel`. Root layout:
+   - `kestrel.json`: the manifest.
+   - `content/`: a normal content tree (`content/manifest.json`, kind files such as prefab/NPC/dialogue/world JSON, `.mesh.bin`).
+   - `models/`: runtime `.glb` files (rigged characters, static meshes).
+   - `exports/`: `.fbx`, `.vox`, `.obj` for other tools. The runtime never loads these.
+   - `thumbs/<assetId>.png`: 256x256 thumbnails.
+   - `LICENSE.txt`.
+   - **Data only:** never JS or WGSL that we run.
+2. **`kestrel.json`:**
+   ```json
+   {"format":"kestrel-package","formatVersion":1,"id":"kestrel.chars.mara","name":"Mara","version":"1.0.0",
+    "license":{"spdx":"CC-BY-4.0","file":"LICENSE.txt","attribution":"..."},"authors":["..."],
+    "dependencies":[{"id":"kestrel.chargen.human","version":"^1.0.0"}],
+    "contentSchema":{"character":1},"content":"content/manifest.json","thumbnail":"thumbs/mara.png",
+    "assets":[{"path":"models/mara.glb","type":"model.rigged","id":"mara","thumb":"thumbs/mara.png"},
+              {"path":"content/characters/mara.character.json","type":"character","id":"mara"},
+              {"path":"exports/mara.fbx","type":"export.fbx"},{"path":"exports/mara.vox","type":"export.vox"}]}
+   ```
+   - `id` must match `/^[a-z][a-z0-9_.-]{2,63}$/`.
+   - `license.spdx` is required (`LicenseRef-*` allowed). The app default is `LicenseRef-AllRightsReserved`.
+   - No timestamps.
+3. **Engine** (`engine/content/`): no design or game imports, no new runtime dependency.
+   - **`zip.js`**
+     - API: `readZip(bytes) -> {paths, has, read(p) -> Promise<Uint8Array>}`; `writeZip([{path, bytes, store?}], {deflate}) -> Promise<Uint8Array>`.
+     - Compression: method 0 or 8, using the platform `DecompressionStream` / `CompressionStream('deflate-raw')` (WebGPU browsers, Electron, Node >= 18).
+     - Integrity: CRC32 is checked on read. UTF-8 names. No zip64, no encryption.
+     - Limits: 10000 entries, 512 MB uncompressed, plus a compression-ratio guard.
+     - Zip-slip guard: reject `..`, a leading `/`, `\` and drive letters in paths.
+     - Deterministic write: sorted entries, `kestrel.json` first, DOS time 1980-01-01.
+     - `.glb`, `.png`, `.bin` and `.vox` entries are stored uncompressed and read with a zero-copy `subarray`.
+   - **`package.js`**
+     - `validatePackageManifest(obj)`.
+     - `openPackage(bytes) -> KPackage`.
+     - `mountPackages(pkgs, fallback) -> {fetchText, fetchBytes}`: serves `kpkg://<id>/<path>` and passes any other URL to `fallback`. It plugs into the existing seam: `loadContentPack('kpkg://<id>/content/manifest.json', mountPackages(...))`, since loadPack already takes injected fetchers. Add a test that relative URLs resolve.
+     - Asset types: `model.rigged` and `model.static` (`.glb`) go through RIG-03 (38.29 item 5).
+     - Dependencies: caret or exact semver only. A missing dependency -> ContentError.
+     - The same content id in two packages -> ContentError that names both.
+     - A newer `formatVersion` -> refused. Older ones are accepted and their kinds go through `migrateContent`.
+4. **Repo vs ship.**
+   - Dev: loose files in `content/`, git-diffable.
+   - Ship: `tools/pack.mjs` builds `dist/*.kestrel` from `content/packages/<id>.pkg.json`. `tools/unpack.mjs` is the reverse.
+   - Planned packages:
+     - `kestrel.base`: the game content.
+     - `kestrel.chargen.human`: the kit.
+     - One package per character or asset set.
+   - Boot is loose by default. `?pack=a.kestrel,b.kestrel` (and later the desktop build) mounts packages.
+   - Third-party and user assets come only as packages.
+5. **Size and streaming.**
+   - v1 fetches the whole package (today's content is ~9 MB). Keep each package <= 64 MB; split worlds by region.
+   - Later, KPKG-07: HTTP Range reads (EOCD -> central directory -> stored entries for `LazyMeshStore`). `python -m http.server` has no Range support, so fall back to a whole fetch.
+6. **Editor and generator.**
+   - Editor **Import .kestrel**: validate, mount, load, `AssetRegistry.add`, then list the assets with thumbnails.
+   - Editor **Export .kestrel**: the selected assets + the files they reference + dependencies + thumbnails.
+   - Generator **Save** = `.kestrel` (`models/<id>.glb` + recipe + `exports/` + thumbnail). The standalone `.glb`, `.fbx`, `.vox` and `.obj` exports stay as separate buttons.
+7. **Do not:**
+   - Execute package content.
+   - Use DOM or `window` in `engine/content`.
+   - Vendor a zip library.
+   - Put absolute paths or timestamps into a package.

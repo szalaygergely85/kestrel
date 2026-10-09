@@ -414,6 +414,9 @@
   //    (teardrop: widest a quarter up, white-hot root -> yellow -> orange -> red tip, hotter inside; they curl in over
   //    the hand / into the fist as they rise), a teardrop core flame over the palm, the fist core (charge), embers.
   // ===================================================================================================================
+  // HAND-FIRE-FX-01 (owner 2026-10-09): the hand fire is NOT voxel flame blocks any more (read cartoonish); it is fireball-style
+  // emissive glyph particles (handFlame, same family as fireTrail) driven by the game. Set true to bring the voxel flames back.
+  var FIRE_VOXELS = false;
   var TUNE = { shell: 1.0, tongues: 26, length: 1.0, coreR: 2.4, wristTo: -7.5 };
 
   function addFire(H, opt, T, UP, FC) {
@@ -692,7 +695,7 @@
       var spec = VARIANT_SPECS[key];
       var hb = handCache[spec.pose] || (handCache[spec.pose] = buildHand(spec.pose));
       var H = hb.H, F = null, up = rollPt(UP, -(spec.roll || 0));   // screen-up in the un-rolled build frame
-      if (spec.fire) { F = addFire(H, spec.fire, T, up, hb.fc); H = glowPass(H, F, spec.fire, hb.tip); }
+      if (spec.fire && FIRE_VOXELS) { F = addFire(H, spec.fire, T, up, hb.fc); H = glowPass(H, F, spec.fire, hb.tip); }
       var rec = pack(key, spec, H, F, hb.tipPoint);
       A.voxelModels[rec.name] = rec;
       out[key] = rec.name;
@@ -898,10 +901,10 @@
       fireBreathe: { mul: 0.8 },
       fireRaise:   { keys: [[0, 0.5], [300, 0.8]] },
       fireLower:   { keys: [[0, 0.8], [250, 0.5]] },
-      charge:      { keys: [[0, 0.8], [90, 1.3], [300, 1.9], [400, 1.9]] },
-      chargeHold:  { mul: 1.9, pulse: { amp: 0.18, hz: 6 } },
-      chargeOut:   { keys: [[0, 1.9], [140, 0.8], [300, 0.8]] },
-      fireCast:    { keys: [[0, 0.8], [90, 1.3], [300, 2.1], [383, 2.6], [470, 0.6], [700, 0.8]] }
+      charge:      { keys: [[0, 0.8], [90, 1.1], [300, 1.5], [400, 1.5]] },
+      chargeHold:  { mul: 1.5, pulse: { amp: 0.1, hz: 5 } },
+      chargeOut:   { keys: [[0, 1.5], [140, 0.8], [300, 0.8]] },
+      fireCast:    { keys: [[0, 0.8], [90, 1.1], [300, 1.5], [383, 1.4], [470, 0.7], [700, 0.8]] }
     },
     glowCap: 2.6,
     bob: { note: 'engine-side walk bob, same rule as the spell glove (authored LEFT, the engine mirror flips x / roll)',
@@ -919,12 +922,16 @@
       burnStart:   [{ preset: 'handIgnite', atMs: 60, n: 10 }, { preset: 'handEmbers', everySteps: 6, n: 1, fromMs: 140 }],
       burnCast:    [{ preset: 'handEmbers', everySteps: 3, n: 1, toMs: 300 }, { preset: 'handIgnite', atMs: 383, n: 12, dir: 'aim' }],
       burnOut:     [{ preset: 'handEmbers', atMs: 60, n: 3 }, { preset: 'handSmoke', atMs: 140, n: 5 }],
-      fireIdle:    [{ preset: 'handEmbers', everySteps: 9, n: 1 }],
-      fireBreathe: [{ preset: 'handEmbers', everySteps: 9, n: 1 }],
-      charge:      [{ preset: 'handChargeSparks', everySteps: 3, n: 1, fromMs: 90 }],
-      chargeHold:  [{ preset: 'handChargeSparks', everySteps: 2, n: 1 }, { preset: 'handEmbers', everySteps: 7, n: 1 }],
-      chargeOut:   [{ preset: 'handEmbers', atMs: 60, n: 3 }],
-      fireCast:    [{ preset: 'handChargeSparks', everySteps: 2, n: 1, fromMs: 90, toMs: 300 }, { preset: 'handIgnite', atMs: 383, n: 12, dir: 'aim' }]
+      // HAND-FIRE-FX-01: one calm fireball-style flame always, a modest fireball-like gathering on charge; release hands off to the real fireball
+      fireIdle:    [{ preset: 'handFlame', everySteps: 1, n: 1 }, { preset: 'handEmbers', everySteps: 12, n: 1 }],
+      fireBreathe: [{ preset: 'handFlame', everySteps: 1, n: 1 }, { preset: 'handEmbers', everySteps: 12, n: 1 }],
+      fireRaise:   [{ preset: 'handFlame', everySteps: 1, n: 1 }],
+      fireLower:   [{ preset: 'handFlame', everySteps: 1, n: 1 }],
+      // charge = the fireball's own gathering look, modest: the flame doubles (n 2) and a few sparks crackle in
+      charge:      [{ preset: 'handFlame', everySteps: 1, n: 1, toMs: 40 }, { preset: 'handFlame', everySteps: 1, n: 2, fromMs: 40 }, { preset: 'handChargeSparks', everySteps: 5, n: 1, fromMs: 90 }],
+      chargeHold:  [{ preset: 'handFlame', everySteps: 1, n: 2 }, { preset: 'handChargeSparks', everySteps: 4, n: 1 }],
+      chargeOut:   [{ preset: 'handFlame', everySteps: 1, n: 1 }],
+      fireCast:    [{ preset: 'handFlame', everySteps: 1, n: 1, toMs: 40 }, { preset: 'handFlame', everySteps: 1, n: 2, fromMs: 40, toMs: 300 }, { preset: 'handChargeSparks', everySteps: 5, n: 1, fromMs: 90, toMs: 300 }, { preset: 'handIgnite', atMs: 383, n: 12, dir: 'aim' }]
     }
   };
 
@@ -932,6 +939,18 @@
   // 7. PARTICLES (README 8 EmitterDef, colours = palette keys)
   // ===================================================================================================================
   var PRESETS = {
+    // HAND-FIRE-FX-01: the hand flame, same family as the fireball's fireTrail (emissive glyphs # * + : ' . cooling white-yellow
+    // -> red), but rising slowly off the palm: short-lived small tongues that overlap into a soft, flickering flame.
+    handFlame: {
+      rate: 0, burst: 1,
+      life: [0.3, 0.6], speed: [0.1, 0.3],
+      dir: [0, 0, 1], spreadDeg: 28, box: [0.07, 0.07, 0.03],
+      accelZ: 0.55, drag: 1.6, wind: 0.15,
+      maxLive: 96, killBelow: null,
+      glyphs:  "#**++:'.",
+      colors: ['flameCore', 'flameMid', 'flameMid', 'flameOuter', 'flameOuter', 'flameTip', 'ember', 'emberDark'],
+      emissive: true, emissiveFog: 0.15, sizeM: 0.07
+    },
     // embers lifting off the burning hand: slow, drifting, 0.5-1.1 s, white-yellow -> red -> dark
     handEmbers: {
       rate: 0, burst: 1,

@@ -44,9 +44,9 @@ import { prefetchLazyMeshesAtBoot } from './bootPrefetchHook.js'; // MESH-LOAD-0
 import { parseCloudShadowFlag, devCloudShadow, parseAoStrength } from './cloudParam.js'; // S8-B2-12a/S8-B2-20 NEEDS B1 item (2)/(1): `?cloudshadow=1`/`?ao=<0..1>` parse
 import { MODES } from './dev/modes/index.js';
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
-import { drawPauseOverlay } from './ui/pauseOverlay.js';
+import { createPauseMenu, PAUSE_KEYS } from './ui/pauseMenu.js'; // PAUSE-MENU-01 (D-053): replaces the old 'Click to resume' overlay
 import { createCreditsView } from './ui/creditsView.js'; // CREDITS-MOUNT-01
-import { updateSettings, drawSettingsPanel, isSettingsOpen, openSettings } from './ui/settings.js'; // US-038b
+import { updateSettings, drawSettingsPanel, isSettingsOpen, openSettings, dimSceneRect } from './ui/settings.js'; // US-038b
 import { isPaused, resetSimAccumulator, duckAudio, unduckAudio, installAutoPause } from './ui/pause.js'; // US-062
 // ---- US-020a: minimal procedural sound slice (game/js/audio/*, D-004) ----
 import { initAudio, setMuted, setVolume, toggleMute, isMuted } from './audio/synth.js';
@@ -92,7 +92,7 @@ import { SWORD_CFG } from './quest/swordConfig.js'; // US-078d (architecture.md 
 import { createSwordSim } from './quest/sim/sword.js';
 import { presentSword } from './quest/swordView.js';
 import { loadSpellHandView, presentSpellHand, SPELL_HAND_ITEM } from './quest/spellHandView.js'; // HANDS-01c (37.8a)
-import { loadHandFireView, presentHandFire, bindHandFx, stepHandFx } from './quest/handFireView.js'; // HAND-WIRE-01: realistic hand + always-on fire
+import { loadHandFireView, presentHandFire, bindHandFx, stepHandFx, setHandFlame, pushHandFlame } from './quest/handFireView.js'; // HAND-WIRE-01: realistic hand + always-on fire
 import { createHands } from './quest/sim/hands.js'; // HANDS-01b (37.8a)
 import { createFireballSim } from './quest/sim/fireball.js'; // SPELL-01a (37.14)
 import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.14 view)
@@ -782,6 +782,7 @@ const swordVmH = swordAssetDef ? (() => {
 // HANDS-01c: second handle (after the sword) = the spell hand's idle view; shown only while the spell item is in a hand.
 // HAND-WIRE-01: when the realistic hand asset is loaded it takes this handle (the glove stays the fallback). `spellVmH.vm/.glow` are shared.
 const handFxOn = !!(handDef && handDef.variants && assets.has('model', handDef.model));
+const handFbExtra = (pool) => { fbView.extra(pool); pushHandFlame(spellVmH, pool); }; // HAND-FIRE-FX-01: one extra callback, created once
 const spellVmH = handFxOn ? loadHandFireView(engine.viewModel, handDef, gameVoxelPool) // idle-fire variants prebuilt; charge/cast variants build lazily on first use (boot budget)
   : (window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.spellHand && spellHandLDef
     ? loadSpellHandView(engine.viewModel, window.ASSETS.viewModels.spellHand, gameVoxelPool) : null);
@@ -917,8 +918,14 @@ async function runGame(mode, cinematic = null) {
   window.addEventListener('click', (e) => { if (invView && invView.isOpen) e.stopPropagation(); }, true);
   // US-090w: title menu pointer - hover selects, click activates; the click never reaches PlayerLook's pointer-lock handler.
   const menuCell = (e) => { const r = canvas.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / r.width * ui.cols), Math.floor((e.clientY - r.top) / r.height * ui.rows)]; };
-  canvas.addEventListener('mousemove', (e) => { if (menuHost && menuHost.active && !isSettingsOpen()) { const c = menuCell(e); menuHost.pointer(c[0], c[1], false); } });
+  canvas.addEventListener('mousemove', (e) => {
+    if (menuHost && menuHost.active && !isSettingsOpen()) { const c = menuCell(e); menuHost.pointer(c[0], c[1], false); }
+    else if (pauseMenu && pauseUp()) { const c = menuCell(e); pauseMenu.handlePointer(c[0], c[1], false); }
+  });
   window.addEventListener('click', (e) => {
+    if ((!menuHost || !menuHost.active) && pauseMenu && pauseUp()) { // PAUSE-MENU-01: a click never re-locks by itself; only the Resume row does
+      e.stopPropagation(); const c = menuCell(e); pauseMenu.handlePointer(c[0], c[1], true); return;
+    }
     if (!menuHost || !menuHost.active) return;
     e.stopPropagation();
     if (!isSettingsOpen()) { const c = menuCell(e); menuHost.pointer(c[0], c[1], true); }
@@ -933,6 +940,13 @@ async function runGame(mode, cinematic = null) {
   let craftView = null, craftWasLocked = false; // MAIN-WIRE-01: crafting list (`C`), rebuilt with the pack
   let creditsInv = null; // CREDITS-MOUNT-01
   let menuHost = null; // US-090w: title menu host while it is up (null = no menu / already closed)
+  let pauseMenu = null; // PAUSE-MENU-01: built once with the world, shown while the pointer is unlocked in play
+  let pauseWas = false;
+  // True while the pause menu is the thing on screen (same gate the old overlay used, minus Settings which owns the screen).
+  function pauseUp() {
+    return mode === 'world' && !!look && !look.locked && !isMapOpen() && !(invView && invView.isOpen) && !(craftView && craftView.isOpen)
+      && !cinematic && !isWaterfallPreview && !(menuHost && menuHost.active) && !isSettingsOpen();
+  }
   let invWasLocked = false; // pointer lock state when the pack opened (re-lock on close)
   let waterfallHooks = null;
   let ambientMotes = null;
@@ -1271,8 +1285,7 @@ async function runGame(mode, cinematic = null) {
     }
     // US-090w: the title menu. The world is already built behind it; New game just closes it (the world is fresh),
     // Continue swaps in the chosen slot (same swap as the boot load / `R`), Settings opens the normal panel on top.
-    if (menuWanted && !cinematic) {
-      menuHost = createTitleMenuHost({
+    const makeMenuHost = () => createTitleMenuHost({
         adapter: createStorageAdapter(saveStorage()),
         style: window.ASSETS && window.ASSETS.uiStyle ? window.ASSETS.uiStyle.menu : null,
         onNewGame: (slot) => { if (saveRelay) saveRelay.setSlot(slot); },
@@ -1290,6 +1303,31 @@ async function runGame(mode, cinematic = null) {
         // CREDITS-MOUNT-01: licence inventory is fetched lazily on first open (menu only, never in capture/bench paths)
         createCredits: () => creditsInv && window.ASSETS?.uiStyle?.menu ? createCreditsView(creditsInv, { style: window.ASSETS.uiStyle.menu }) : null,
       });
+    // PAUSE-MENU-01 (D-053): Resume / Settings / Save / Load / Back to main menu, in the title menu's skin.
+    const relockPointer = () => { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* arrow-key fallback */ } };
+    if (!cinematic && mode === 'world') pauseMenu = createPauseMenu({
+      adapter: (saveRelay && saveRelay.adapter) || { listSlots: () => [], readSlot: () => ({ ok: true, save: null }) },
+      style: window.ASSETS && window.ASSETS.uiStyle ? window.ASSETS.uiStyle.menu : null,
+      onResume: relockPointer,
+      onSettings: () => openSettings({ assets, engine, look }),
+      onSave: () => !!(saveRelay && saveRelay.enabled && gameHooks.ctx.world && (gameHooks.ctx.requestSave(), saveRelay.lastResult && saveRelay.lastResult.op === 'save' && saveRelay.lastResult.ok)), // same path as the waystone save
+      onLoad: (slot) => {
+        if (!saveRelay) return;
+        saveRelay.setSlot(slot);
+        const w = saveRelay.load(assets, worldLoadOpts, true);
+        if (!w) { console.warn('[save] load failed:', saveRelay.lastResult && saveRelay.lastResult.error); return; }
+        try { engine.setWorld(w); } catch (err) { console.warn('[save] restore failed:', err && err.message); guardLoad(() => engine.setWorld(deserialize(initialState, assets, worldLoadOpts))); return; }
+        pauseMenu.reset(); relockPointer();
+      },
+      onMainMenu: () => { // fresh world behind the title menu, same as a first boot
+        guardLoad(() => engine.setWorld(deserialize(initialState, assets, worldLoadOpts)));
+        if (menuWanted) { menuHost = makeMenuHost(); window.__debug.menuHost = menuHost; }
+        pauseMenu.reset();
+      },
+      isDirty: () => !!(saveRelay && saveRelay.enabled && saveRelay.dirty),
+    });
+    if (menuWanted && !cinematic) {
+      menuHost = makeMenuHost();
       fetch('../docs/licence-inventory.json').then((r) => r.json()).then((j) => { creditsInv = j; }).catch(() => {});
       window.__debug.menuHost = menuHost;
     }
@@ -1377,7 +1415,14 @@ async function runGame(mode, cinematic = null) {
     // US-038b: settings panel (S from pause, or its own entry point)
     // canOpen requires the pause overlay to actually be up (!look.locked) -
     // S is also WASD "move backward", so this must never trigger in play.
-    updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !!look && !look.locked && !isMapOpen() && !invOpen });
+    // PAUSE-MENU-01: the pause menu owns W/S/Enter while it is up (S no longer opens Settings; the Settings row does).
+    if (pauseMenu) {
+      const up = pauseUp();
+      if (up && !pauseWas) pauseMenu.reset();
+      pauseWas = up;
+      if (up) { for (const code of PAUSE_KEYS) if (input.pressed(code) && pauseMenu.handleKey(code)) { input.consumePressed(); break; } }
+    }
+    updateSettings(dt, input, { assets, engine, look, canOpen: false });
     uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked();
     titleMenuActive = !!(menuHost && menuHost.active);
     const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || ((invOpen || cardOpen) && !ending)));
@@ -1453,7 +1498,7 @@ async function runGame(mode, cinematic = null) {
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
       const simDue = hitStop.due(1000 / 60); // HITSTOP-01: the window gates beasts.step only; the sword freezes by its own hitStopHard counter
       if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); }
-      if (bearTurn) { const pt = playerHandle.data.transform; bearTurn.step(dt, pt.x, pt.y); } // NPC-BEAR-01 // US-079a (29.1)
+      if (bearTurn) { const pt = playerHandle.data.transform; bearTurn.step(dt, pt.x, pt.y, !!(dialogueCtl && dialogueCtl.open)); } // NPC-BEAR-01 // US-079a (29.1)
       if (beasts && assets.uiStyle) stepCombatHint(engine.world, assets.uiStyle, beasts); // COMBAT-HINT-01: once-per-save first-fight hint (taken from lane C)
       if (telegraphWire) telegraphWire.step(performance.now());
       // US-078d (30.1 + D-034 amendment): the sword steps after beasts.step, so a heavy-hit stagger acts from the
@@ -1664,7 +1709,8 @@ async function runGame(mode, cinematic = null) {
           _emberEye[0] = (sh === 'left' ? -1 : 1) * FIREBALL_CFG.castOffset.right; _emberEye[1] = -FIREBALL_CFG.castOffset.fwd; _emberEye[2] = -FIREBALL_CFG.castOffset.down;
           spellVmH.vm.eyeToWorld(cam, _emberEye, _emberWorld);
           fbView.presentEmber(true, spellVmH.glow, _emberWorld[0], _emberWorld[1], _emberWorld[2]);
-        } else fbView.presentEmber(false, 1, 0, 0, 0);
+          if (handFxOn) setHandFlame(spellVmH, true, cam, simTime); // HAND-FIRE-WRAP-01: flames wrapped round the drawn hand's mounts
+        } else { fbView.presentEmber(false, 1, 0, 0, 0); if (handFxOn) setHandFlame(spellVmH, false, cam, simTime); }
       }
       // US-006: carried-light sync (US-012's lantern, `components.light`)
       // then flicker/vis-grid update, once per rendered frame, BEFORE either
@@ -1697,7 +1743,7 @@ async function runGame(mode, cinematic = null) {
       // US-053b/c: particle layer build, before sprites.render per 32.1 (the sprite pass reads the layer's touched
       // cells right after its own sprite loop).
       engine.particleLayer.build(engine.particles, cam, rt, fb.lights, engine.world, assets.palette, renderer);
-      sprites.render(fb, engine.world, cam, fbView ? fbView.extra : undefined); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
+      sprites.render(fb, engine.world, cam, fbView ? (handFxOn ? handFbExtra : fbView.extra) : undefined); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
       // US-017 ARCH CHANGES #1 item 2: CPU-path scene fade, moved here from
       // compositor.js so sprites fade too (oracle parity with the GPU
       // composite pass, which fades every non-mask cell in one pass). Skips
@@ -1824,9 +1870,12 @@ async function runGame(mode, cinematic = null) {
     if (menuHost && menuHost.active && !isSettingsOpen()) menuHost.draw(ui); // US-090w: the card owns the screen (no pause text under it)
     if (demo.on && menuHost && menuHost.active && !isSettingsOpen()) drawDemoBuildLine(ui);
     if (demoEnd) demoEnd.draw(ui);
-    if (mode === 'world' && !look.locked && !isMapOpen() && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !cinematic && !isWaterfallPreview && !(menuHost && menuHost.active)) drawPauseOverlay(ui, rt, assets);
+    if (pauseMenu && pauseUp()) { // PAUSE-MENU-01: dim the scene like the Settings view, then the card (title menu skin)
+      const sm = assets.uiStyle.menu; if (sm) dimSceneRect(rt, ui, 0, 0, ui.cols, ui.rows, sm.sceneDim.bgMul);
+      pauseMenu.draw(ui);
+    }
     // US-038b: settings panel, drawn over the pause overlay when open
-    if (!cinematic && !isWaterfallPreview) drawSettingsPanel(ui, rt, assets, { showEntry: mode === 'world' && !(menuHost && menuHost.active) && !look.locked && !isMapOpen() && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) });
+    if (!cinematic && !isWaterfallPreview) drawSettingsPanel(ui, rt, assets, { showEntry: false });
     // US-029/US-030a: the real GPU work happens inside `rt.present()`'s
     // hook, right below - `cam`/`engine.world` are only meaningful in
     // 'world' mode (fb.gpu is false otherwise, so the pipeline falls

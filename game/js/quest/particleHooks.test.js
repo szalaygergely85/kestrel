@@ -226,6 +226,29 @@ function defineAllPresets(p) {
   ok('dispose() drops the beast:scrape listener - a scrape after dispose spawns nothing new', particles.stats.spawned === 4);
 }
 
+// HIT-BLEED-01: beasts bleed (dark red, no sparks), the pell throws chips, particle count bounded, no alloc per hit.
+{
+  const beast = { data: { transform: { z: 0.5 }, components: { brain: { kind: 'beast' } } } };
+  const pell = { data: { transform: { z: 0 }, components: {} } };
+  const world = { get: (id) => (id === 'm.boar' ? beast : id === 'x.practiceTarget' ? pell : null) };
+  const events = makeEvents(), particles = createParticles();
+  defineAllPresets(particles);
+  const hooks = createParticleHooks(world, events, particles, PS, 20);
+  const hit = (target, heavy) => events.emit('combat:hit', { source: 'player', target, damage: 1, heavy, dirX: 1, dirY: 0, px: 3, py: 3, pz: 0.8 });
+  hit('m.boar', 0); particles.step();
+  ok('a boar hit bleeds: 14 blood + 4 ground drops = 18, no sparks', particles.stats.spawned === 18, particles.stats.spawned);
+  hit('x.practiceTarget', 0); particles.step();
+  ok('the pell throws 10 chips, no blood', particles.stats.spawned === 28, particles.stats.spawned);
+  for (const k of ['blood', 'bloodDrops']) for (const c of PS.presets[k].colors) {
+    const r = assets.palette.rgb[c];
+    ok('blood colour ' + c + ' is dark red (r>g*2, max<=140)', r[0] > r[1] * 2 && Math.max(r[0], r[1], r[2]) <= 140);
+  }
+  ok('blood is not emissive (never a white/bright flash)', !PS.presets.blood.emissive && !PS.presets.bloodDrops.emissive && !PS.presets.chips.emissive);
+  for (let i = 0; i < 60; i++) { hit('m.boar', 1); particles.step(); }
+  ok('particle count stays bounded under a 60-hit/s storm (emitter pool caps it; each burst <= maxLive)', particles.stats.live <= 64 * 20 && particles.stats.live < 600, particles.stats.live);
+  hooks.dispose();
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

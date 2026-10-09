@@ -657,9 +657,11 @@ export function isSoftwareRendererLine(text) {
   return /\[(webgl2Gate|webgpu)\] software (renderer|adapter) detected/.test(text);
 }
 
-async function waitForGlobal(cdp, globalName, timeoutMs, { failFast, getSoftwareRendererLine, expectBackend = 'webgpu' } = {}) {
+async function waitForGlobal(cdp, globalName, timeoutMs, { failFast, getSoftwareRendererLine, getPageFailure, expectBackend = 'webgpu' } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    const pf = getPageFailure && getPageFailure();
+    if (pf) throw new Error(`capture-browser: the page reported a failure, window.${globalName} will never appear: ${pf}`);
     if (failFast) {
       const line = getSoftwareRendererLine && getSoftwareRendererLine();
       if (line) {
@@ -738,11 +740,13 @@ export async function runLiveCapture(opts) {
     // here means gpucompare/voxelbench abort in seconds instead of the full
     // timeout when there's no real GPU to measure.
     let softwareRendererLine = null;
+    let pageFailure = null; // '[gpucompare] failed: <error>' - the mode threw, so the result global will never appear: abort now, not after the timeout
     cdp.onEvent((method, params) => {
       if (process.env.CAP_LOG && method === 'Runtime.exceptionThrown') console.error('[page exception]', JSON.stringify(params.exceptionDetails).slice(0, 600));
       if (process.env.CAP_LOG && method === 'Runtime.consoleAPICalled') console.error('[page]', (params.args || []).map((a) => (a.value !== undefined ? String(a.value) : a.description || '')).join(' ').slice(0, 300));
       if (method !== 'Runtime.consoleAPICalled') return;
-      const text = (params.args || []).map((a) => (a.value !== undefined ? String(a.value) : '')).join(' ');
+      const text = (params.args || []).map((a) => (a.value !== undefined ? String(a.value) : (a.description || ''))).join(' ');
+      if (/^\[(gpucompare|voxelbench|bench|flicker)\] failed:/.test(text) && !pageFailure) pageFailure = text.slice(0, 800);
       if (isSoftwareRendererLine(text)) softwareRendererLine = text;
     });
 
@@ -793,7 +797,7 @@ export async function runLiveCapture(opts) {
     const globalName = opts.global || resultGlobalFor(opts.mode);
     const failFast = opts.mode === 'gpucompare' || opts.mode === 'voxelbench';
     const raw = await waitForGlobal(cdp, globalName, opts.timeoutMs, {
-      failFast, getSoftwareRendererLine: () => softwareRendererLine, expectBackend: 'webgpu',
+      failFast, getSoftwareRendererLine: () => softwareRendererLine, getPageFailure: () => pageFailure, expectBackend: 'webgpu',
     });
 
     const ua = await evaluate(cdp, 'navigator.userAgent');

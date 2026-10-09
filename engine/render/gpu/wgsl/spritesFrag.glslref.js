@@ -104,7 +104,7 @@ void main() {
     int x0 = int(r.x), y0 = int(r.y);
     if (cell.x < x0 || cell.x >= x0 + int(r.z) || cell.y < y0 || cell.y >= y0 + int(r.w)) continue;
     vec4 p = texelFetch(uSpr, ivec2(1, s), 0);
-    if (p.y < SPRITE_NEAR_DEPTH) continue; // BUG-FIRE-001: same cutoff for lit and emissive sprites.
+    if (p.y < SPRITE_NEAR_DEPTH && texelFetch(uSpr, ivec2(3, s), 0).w < 0.5) continue; // BUG-FIRE-001: same cutoff for lit and emissive sprites.
     if (!(p.y < cellDepth) || !(p.y < best)) continue;
     vec4 a = texelFetch(uSpr, ivec2(2, s), 0);
     int sx = int(floor(float(cell.x - x0) * p.x));

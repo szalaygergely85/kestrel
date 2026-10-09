@@ -39,9 +39,10 @@ const KEY_STRIDE = 7; // t, px, py, pz, rx, ry, rz
  * @property {(h:number)=>void} capture   snapshot of the last shown pose = the blend source
  * @property {(phase:number, amount:number, h?:number)=>void} setBob   def.bob numbers; shared phase = eyeFeel bobPhase, amount 0..1; omitted handle sets every item
  * @property {(h:number, clip:number, tMs:number, mount:number, out3:Float64Array)=>Float64Array} mountEye   pure: eye-space mount at a clip time (no bob)
+ * @property {(h:number, name:string, out3:Float64Array)=>boolean} mountNowEye   HAND-FIRE-WRAP-01: eye-space mount of the drawn variant on the pose buildList draws next (last pose + bob); false when hidden / unknown
  * @property {(cam:Object, pe:ArrayLike<number>, out3:Float64Array)=>Float64Array} eyeToWorld
  * @property {(h:number, name:string)=>number} variantId   HAND-WIRE-01: index of def.variants[name]
- * @property {(h:number, v:number|string)=>void} setVariant   HAND-WIRE-01: swap the drawn model to a variant (same anchor/parts); lazy build on first use
+ * @property {(h:number, v:number|string)=>void} setVariant   HAND-WIRE-01: v = -1 restores the base model; swap the drawn model to a variant (same anchor/parts); lazy build on first use
  * @property {(h:number, names?:string[])=>void} warmVariants   load-time prebuild of variants
  * @property {(h:number, hand:'left'|'right')=>void} setHand   HANDS-01a (37.8a): which hand holds handle h; differing from the authored hand mirrors the whole eye-space object (x -> -x, det<0, DrawItem.mirror = 1); a flag write, no allocation
  * @property {(h:number)=>('left'|'right')} handOf   the hand set by setHand (default = the authored hand, def.hand or the sign of rest.pos[0])
@@ -79,6 +80,12 @@ function assertVec3(v, what) {
  * @property {Float64Array} last  last shown pose (no bob): pos3, rot3
  * @property {Float64Array} cap  captured pose = this handle's blend source
  * @property {number} bobAmount
+ * @property {string[]|null} vNames  HAND-WIRE-01 variant names (def.variants keys), null when none
+ * @property {string[]|null} vKeys  variant model keys
+ * @property {(null|{pm:any, mesh:any, forward:Float64Array})[]|null} vSlots  lazily built per-variant slots
+ * @property {number} vCur  drawn variant index, -1 = base
+ * @property {any} pool
+ * @property {{pm:any, mesh:any, forward:Float64Array}} base  base slot (setVariant(h, -1))
  * @property {number} bobZ @property {number} bobX @property {number} bobRoll
  */
 
@@ -172,10 +179,12 @@ class ViewModelLayerImpl {
       vNames = Object.keys(def.variants); vKeys = vNames.map((n) => def.variants[n]); vSlots = vNames.map(() => null);
       for (let i = 0; i < vNames.length; i++) {
         if (typeof vKeys[i] !== 'string' || !(pool.models && pool.models.get(vKeys[i]))) throw new Error(`viewModel.load('${key}'): variant '${vNames[i]}': model '${vKeys[i]}' is not a bound voxel model`);
+        const vpm = pool.models.get(vKeys[i]);
+        if (vpm.partCount !== partCount) throw new Error(`viewModel.load('${key}'): variant '${vNames[i]}' has ${vpm.partCount} parts, base has ${partCount}`);
       }
     }
     this._defs.push({
-      vNames, vKeys, vSlots, vCur: -1, pool,
+      vNames, vKeys, vSlots, vCur: -1, pool, base: { pm, mesh, forward },
       authored, hand: authored, mirror: 0, visible: false, last: new Float64Array(6), cap: new Float64Array(6), bobAmount: 0,
       key, pm, mesh, partCount, forward, keys, clipOff, clipN, clipLoop, clipEnd, clipNames, mountNames, mountAt, mountPart, rest,
       bobZ: Number.isFinite(bob.z) ? bob.z : 0, bobX: Number.isFinite(bob.x) ? bob.x : 0, bobRoll: Number.isFinite(bob.rollDeg) ? bob.rollDeg : 0,
@@ -261,10 +270,9 @@ class ViewModelLayerImpl {
     const d = this._defs[h];
     const i = typeof v === 'number' ? v : this.variantId(h, v);
     if (i === d.vCur) return;
-    let s = d.vSlots[i];
+    let s = i < 0 ? d.base : d.vSlots[i];
     if (!s) {
-      const pm = d.pool.models.get(d.vKeys[i]);
-      if (pm.partCount !== d.partCount) throw new Error(`viewModel.setVariant: variant '${d.vNames[i]}' has ${pm.partCount} parts, base has ${d.partCount}`);
+      const pm = d.pool.models.get(d.vKeys[i]); // part count already checked in load()
       s = d.vSlots[i] = { pm, mesh: sharedVoxelMeshCache.get(pm, d.vKeys[i], d.pool.partNamesFor(d.vKeys[i])), forward: forwardOf(pm) };
     }
     d.pm = s.pm; d.mesh = s.mesh; d.forward = s.forward; d.vCur = i;
@@ -273,9 +281,9 @@ class ViewModelLayerImpl {
   /** Pre-builds the named variants (or all) so no first-use hitch happens in play. Load time. */
   warmVariants(h, names) {
     const d = this._defs[h], keep = d.vCur;
-    const list = names || d.vNames;
+    const list = names || d.vNames || [];
     for (let i = 0; i < list.length; i++) this.setVariant(h, list[i]);
-    if (keep >= 0) this.setVariant(h, keep);
+    this.setVariant(h, keep); // -1 = back to the base model, never leave the last warmed variant drawn
   }
 
   capture(h) { const d = this._defs[h]; d.cap.set(d.last); }
@@ -292,8 +300,10 @@ class ViewModelLayerImpl {
     const d = this._defs[h];
     const p = this._pose;
     this._sample(d, clip, tMs, false, p);
-    const at = mount * 3, fo = d.mountPart[mount] * 12;
-    const ax = d.mountAt[at], ay = d.mountAt[at + 1], az = d.mountAt[at + 2];
+    // HAND-WIRE-01: mounts of the ACTIVE variant (own grid origin), like mountNowEye; mount id = index in mountNames
+    const m = d.pm.mounts[d.mountNames[mount]];
+    const fo = m.partIdx * 12;
+    const ax = m.at[0], ay = m.at[1], az = m.at[2];
     const F = d.forward;
     const mx = F[fo] * ax + F[fo + 1] * ay + F[fo + 2] * az + F[fo + 9];
     const my = F[fo + 3] * ax + F[fo + 4] * ay + F[fo + 5] * az + F[fo + 10];
@@ -305,6 +315,39 @@ class ViewModelLayerImpl {
     out3[2] = R[6] * mx + R[7] * my + R[8] * mz + p[2];
     if (d.mirror) out3[0] = -out3[0]; // HANDS-01a: S = diag(-1,1,1) is the last step
     return out3;
+  }
+
+  /**
+   * HAND-FIRE-WRAP-01: eye-space point of mount `name` of the model variant CURRENTLY drawn, on the pose the next buildList()
+   * draws (last shown pose + walk bob, blend included). Variants have their own grid origin, so the mount comes from the
+   * active model (`d.pm`), not the base. Returns false (out3 untouched) when the handle is hidden or has no such mount.
+   * Same maths as buildList's part matrix, so a flame anchored here sits on the drawn voxels. 0 alloc.
+   */
+  mountNowEye(h, name, out3) {
+    const d = this._defs[h];
+    if (!d.visible) return false;
+    const m = d.pm.mounts && d.pm.mounts[name];
+    if (!m) return false;
+    const p = this._pose;
+    p.set(d.last);
+    const amt = d.bobAmount;
+    if (amt > 0) {
+      p[2] += d.bobZ * Math.sin(this._bobPhase) * amt;
+      const h2 = Math.sin(this._bobPhase * 0.5) * amt;
+      p[0] += d.bobX * h2;
+      p[4] += d.bobRoll * h2;
+    }
+    const fo = m.partIdx * 12, F = d.forward, ax = m.at[0], ay = m.at[1], az = m.at[2];
+    const mx = F[fo] * ax + F[fo + 1] * ay + F[fo + 2] * az + F[fo + 9];
+    const my = F[fo + 3] * ax + F[fo + 4] * ay + F[fo + 5] * az + F[fo + 10];
+    const mz = F[fo + 6] * ax + F[fo + 7] * ay + F[fo + 8] * az + F[fo + 11];
+    const R = this._R;
+    setRot(p[3], p[4], p[5], R);
+    out3[0] = R[0] * mx + R[1] * my + R[2] * mz + p[0];
+    out3[1] = R[3] * mx + R[4] * my + R[5] * mz + p[1];
+    out3[2] = R[6] * mx + R[7] * my + R[8] * mz + p[2];
+    if (d.mirror) out3[0] = -out3[0];
+    return true;
   }
 
   /**

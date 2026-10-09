@@ -75,6 +75,10 @@
     flameOuter:     '#ff8a24',
     flameTip:       '#e8401c',
     ember:          '#ff5a1f',
+    bloodWet:       '#7a1212',   // HIT-BLEED-01: fresh blood, dark and dull (not cartoon red)
+    blood:          '#5a0d0d',
+    bloodDark:      '#3a0808',
+    bloodDried:     '#22080a',
     emberDark:      '#8a2a10',
     // --- far overworld (US-016) ---
     grassLight:     '#a6d060',
@@ -294,7 +298,18 @@
     // muted veins (desaturated, never blue-teal: aether is reserved)
     skinFlush: '#b8705a',        // muted warm red-brown, not pink
     skinDeep: '#5a382c',         // deep creases between fingers, palmar joint folds
-    skinVein: '#86686a'          // back-of-hand / inner-wrist veins, faint mauve-grey
+    skinVein: '#86686a',         // back-of-hand / inner-wrist veins, faint mauve-grey
+    // EP-WILD (v1.53, design/models/voxel_wildlife.js): natural animal coats. Agouti = the ticked grey-brown of a wild
+    // rabbit; roe = the red-brown summer coat of a deer; cream = bellies, the rabbit's tail underside, the deer's rump
+    // patch, throat and inner ears; antler = pale horn.
+    furAgouti: '#7d6e5a',        // rabbit back and flanks (grey-brown, ticked)
+    furAgoutiDark: '#4a4034',    // dorsal ticking, ear rims / tips, tail top, hind-foot soles
+    furAgoutiLight: '#a8977a',   // lower flanks, cheeks, legs (buff); deer lower legs reuse it greyed by fog
+    furCream: '#e6dfcf',         // bellies, tail underside, rump patch, throat, inner ears (warm off-white, below linenLight)
+    furRoe: '#9a5a32',           // deer body (summer red-brown)
+    furRoeDark: '#5e3a24',       // deer dorsal line, mane, crown, ear rims, tail top
+    furRoeLight: '#bd8550',      // deer lower flanks and muzzle; the rabbit's rufous nape patch
+    antler: '#b4a184'            // pale horn (roe buck antlers), tips use linen_light
   };
 
   // ---------------------------------------------------------------------------
@@ -1343,6 +1358,32 @@
       a: { shade: 1.00, glyph: '*' }, m: { shade: 1.00, tint: 'flameCore', amount: 0.35, glyph: '%' }
     }, rows: ['am', 'ma'] }
   };
+  // EP-WILD (v1.53, design/models/voxel_wildlife.js): animal coats (rabbit, deer). Appended last so no material id moves;
+  // v2 records in detail-pass.js. Soft `fabric` ramp like the bear; a few hair ticks `'` / `"` per 4x4 tile.
+  materials.fur_agouti = fabricMat('WILDLIFE (EP-WILD). Wild rabbit back and flanks: ticked grey-brown, darker hair tips.', 'furAgouti', 0.86, 0.15,
+    { a: { shade: 1.00 }, t: { shade: 0.86, tint: 'furAgoutiDark', amount: 0.35, glyph: "'" }, l: { shade: 1.06, tint: 'furAgoutiLight', amount: 0.3 } },
+    ['atal', 'aaaa', 'laat', 'aaaa']);
+  materials.fur_agouti_dark = fabricMat('WILDLIFE (EP-WILD). Rabbit dorsal ticking, ear rims and tips, tail top, foot soles.', 'furAgoutiDark', 0.72, 0.13,
+    { a: { shade: 1.00 }, h: { shade: 1.10, tint: 'furAgouti', amount: 0.3, glyph: "'" } },
+    ['ahaa', 'aaaa', 'aaah', 'aaaa']);
+  materials.fur_agouti_light = fabricMat('WILDLIFE (EP-WILD). Rabbit lower flanks, cheeks and legs: buff.', 'furAgoutiLight', 0.90, 0.16,
+    { a: { shade: 1.00 }, s: { shade: 0.92, tint: 'furAgouti', amount: 0.3 } },
+    ['aaaa', 'asaa', 'aaaa', 'aaas']);
+  materials.fur_cream = fabricMat('WILDLIFE (EP-WILD). Bellies, the rabbit tail underside, the deer rump patch, throat, inner ears.', 'furCream', 0.94, 0.18,
+    { a: { shade: 1.00 }, s: { shade: 0.93, tint: 'linen', amount: 0.3, glyph: '"' } },
+    ['aaaa', 'aasa', 'aaaa', 'saaa']);
+  materials.fur_roe = fabricMat('WILDLIFE (EP-WILD). Deer body: red-brown summer coat, a few darker hair ticks.', 'furRoe', 0.86, 0.15,
+    { a: { shade: 1.00 }, t: { shade: 0.88, tint: 'furRoeDark', amount: 0.3, glyph: "'" }, l: { shade: 1.06, tint: 'furRoeLight', amount: 0.3 } },
+    ['aata', 'laaa', 'aaaa', 'ataa']);
+  materials.fur_roe_dark = fabricMat('WILDLIFE (EP-WILD). Deer dorsal line, mane, crown, ear rims, tail top.', 'furRoeDark', 0.72, 0.13,
+    { a: { shade: 1.00 }, h: { shade: 1.10, tint: 'furRoe', amount: 0.3, glyph: "'" } },
+    ['aaha', 'aaaa', 'haaa', 'aaaa']);
+  materials.fur_roe_light = fabricMat('WILDLIFE (EP-WILD). Deer lower flanks and muzzle; the rabbit rufous nape.', 'furRoeLight', 0.90, 0.16,
+    { a: { shade: 1.00 }, s: { shade: 0.92, tint: 'furRoe', amount: 0.3 } },
+    ['aaaa', 'aasa', 'aaaa', 'saaa']);
+  materials.antler = fabricMat('WILDLIFE (EP-WILD). Roe buck antlers: pale horn with rough darker pearling.', 'antler', 0.90, 0.16,
+    { a: { shade: 1.00 }, p: { shade: 0.80, tint: 'woodDark', amount: 0.3, glyph: ':' } },
+    ['apaa', 'aaap', 'paaa', 'aapa']);
 
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)
