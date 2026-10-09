@@ -13,7 +13,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { importGltfBytes, runCli, parseArgs, countSmoothGroups, loadEngineMaterialKeys, stringifyMeshJSON } from './gltf-import.mjs';
+import { importGltfBytes, runCli, parseArgs, countSmoothGroups, loadEngineMaterialKeys, stringifyMeshJSON, withCollision } from './gltf-import.mjs';
 import { meshFromJSON, validateMesh } from '../engine/index.js';
 import { budgetFor } from './mesh-budgets.mjs';
 
@@ -339,6 +339,49 @@ await testAsync('Ruins import unchanged by ALPHA-01a: no uvMask/mask, render dat
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// ---- ALPHA-01e nit (ARCH batch 16): withCollision's masked/opaque split is data-driven now, no name regex ------------------------------
+/** A 2-range static mesh fixture: range 0 is a thin "trunk" triangle (xy footprint <= 0.1, z 0..1),
+ * range 1 is a wide "crown" triangle (xy footprint +-5, z 2..3), masked or opaque per the caller. */
+function trunkCrownJson(id, { crownMasked }) {
+  const base = id.split('/').pop();
+  return {
+    layout: 'static', id,
+    pos: [
+      0, 0, 0, 0.1, 0, 0, 0, 0.1, 1, // range 0 (trunk): small, z 0..1
+      -5, -5, 2, 5, -5, 2, 0, 5, 3, // range 1 (crown): wide, z 2..3
+    ],
+    ranges: [
+      { start: 0, count: 1, part: `${base}#0` },
+      { start: 1, count: 1, part: `${base}#1`, ...(crownMasked ? { mask: { tex: 'x', cutoff: 0.2 } } : {}) },
+    ],
+  };
+}
+function xExtent(collider) { const xs = collider.filter((_, i) => i % 3 === 0); return Math.max(...xs) - Math.min(...xs); }
+
+test('withCollision: a fixture with masked+opaque ranges gets opaque-only colliderParts regardless of its name', () => {
+  for (const id of ['quaternius/NotATree_7', 'quaternius/Pine_1']) { // one name the old regex never matched, one it always matched - same outcome either way now
+    const j = withCollision(trunkCrownJson(id, { crownMasked: true }));
+    assert.deepStrictEqual(j.colliderParts, [`${id.split('/').pop()}#0`], `${id}: colliderParts = the opaque range only`);
+    assert.ok(xExtent(j.collider) < 1, `${id}: prism footprint is trunk-thin (crown excluded), got ${xExtent(j.collider)}`);
+  }
+});
+
+test('withCollision: an all-opaque mesh keeps today\'s behaviour (no colliderParts, full-mesh prism)', () => {
+  const j = withCollision(trunkCrownJson('quaternius/RockBig_1', { crownMasked: false }));
+  assert.strictEqual(j.colliderParts, undefined, 'no masked range -> nothing to split on, colliderParts stays unset');
+  assert.ok(xExtent(j.collider) > 5, `prism spans the whole mesh (trunk+crown), got ${xExtent(j.collider)}`);
+});
+
+test('withCollision: a "Pine_1"-named mesh with no masked range is not special-cased any more', () => {
+  // The old CommonTree|Pine|TwistedTree_<digit> regex matched this name, but even the old code only
+  // acted when there was ALSO a masked range (trunk.length < ranges.length); with no mask here it was
+  // already a no-op before this nit too. This pins that the name alone never triggers anything now:
+  // same shape, no mask -> same full-mesh prism as any other untitled all-opaque mesh (see above).
+  const j = withCollision(trunkCrownJson('quaternius/Pine_1', { crownMasked: false }));
+  assert.strictEqual(j.colliderParts, undefined, 'Pine_1, no mask: colliderParts unset - the name is irrelevant now');
+  assert.ok(xExtent(j.collider) > 5, `Pine_1, no mask: gets the full-mesh prism (same as RockBig_1 above), got ${xExtent(j.collider)}`);
+});
+
 console.log(`${passed} passed, ${process.exitCode ? 'some failed' : '0 failed'}.`);
 if (!process.exitCode) console.log('ALL PASS');
 
@@ -351,3 +394,57 @@ if (!process.exitCode) console.log('ALL PASS');
   assert.deepStrictEqual(parseArgs(['--ao', '64', 'x.glb'])._, ['x.glb'], '64 is not a positional arg');
   console.log('gltf-import parseArgs --ao OK');
 }
+
+// ---- S8-B2-15: --crease <deg> ---------------------------------------------------------------------------------------------------------
+{
+  assert.strictEqual(parseArgs(['--crease', '45']).crease, 45);
+  assert.strictEqual(parseArgs(['--crease', '0']).crease, 0);
+  assert.strictEqual(parseArgs(['--crease', '180']).crease, 180);
+  assert.throws(() => parseArgs(['--crease', '181']), /--crease needs a degree value/);
+  assert.throws(() => parseArgs(['--crease', '-1']), /--crease needs a degree value/);
+  console.log('gltf-import parseArgs --crease OK');
+}
+
+/** Two small (10 cm edge) triangles sharing an edge with a shallow bend between their face
+ * normals - above the hardcoded 5 deg default (stays a hard edge) but below a --crease 45
+ * threshold (should weld/smooth). Edges are kept small so the unrelated "coplanar within 1 cm"
+ * rule (engine/mesh/gltf.js's SMOOTH_COPLANAR_M) never gates the merge - only the angle does. */
+function bendGlb(L = 0.1, bendZ = 0.01) {
+  const positions = [
+    [0, 0, 0], [L, 0, 0], [0, L, 0],
+    [L, 0, 0], [L, L, bendZ], [0, L, 0],
+  ];
+  return buildTriangleGlb(positions, [0, 1, 2, 3, 4, 5]);
+}
+
+await testAsync('runCli: --crease <deg>, default omitted is byte-identical to today (5 deg hardcoded)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kestrel-crease-'));
+  try {
+    const glbPath = path.join(dir, 'bend.glb');
+    fs.writeFileSync(glbPath, bendGlb());
+    const noFlag = path.join(dir, 'no-flag.mesh.json');
+    const explicit5 = path.join(dir, 'explicit-5.mesh.json');
+    await runCli([glbPath, 'test_crease_default', '--out', noFlag]);
+    await runCli([glbPath, 'test_crease_default', '--crease', '5', '--out', explicit5]);
+    assert.deepStrictEqual(readMeshJSON(noFlag), readMeshJSON(explicit5), 'omitting --crease must match the hardcoded 5 deg default exactly');
+    assert.deepStrictEqual(fs.readFileSync(path.join(dir, 'no-flag.mesh.bin')), fs.readFileSync(path.join(dir, 'explicit-5.mesh.bin')));
+    // running the same import twice with the flag absent both times is also byte-identical (determinism).
+    const again = path.join(dir, 'no-flag-again.mesh.json');
+    await runCli([glbPath, 'test_crease_default', '--out', again]);
+    assert.deepStrictEqual(readMeshJSON(noFlag), readMeshJSON(again));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+await testAsync('runCli: --crease 45 welds a ~10 deg bend that the default (5 deg) keeps hard', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kestrel-crease2-'));
+  try {
+    const glbPath = path.join(dir, 'bend.glb');
+    fs.writeFileSync(glbPath, bendGlb());
+    const def = await runCli([glbPath, 'test_crease_bend_default', '--dry-run']);
+    const creased = await runCli([glbPath, 'test_crease_bend_45', '--crease', '45', '--dry-run']);
+    assert.strictEqual(def.report.triCount, 2);
+    assert.strictEqual(creased.report.triCount, 2, 'triangle count unchanged by --crease');
+    assert.strictEqual(def.report.groupCount, 2, 'default (5 deg): the bend stays a hard edge, 2 groups');
+    assert.strictEqual(creased.report.groupCount, 1, '--crease 45: the bend is below the threshold, 1 group');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

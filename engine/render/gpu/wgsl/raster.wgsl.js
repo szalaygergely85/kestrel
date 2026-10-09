@@ -15,6 +15,15 @@ export const RASTER_BASE_BLOCK = defineUniformBlock('RasterU', RASTER_FIELDS);
 export const RASTER_MASK_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS,
   { name: 'maskX0', type: 'u32' }, { name: 'maskY0', type: 'u32' }, { name: 'maskW', type: 'u32' }, { name: 'maskH', type: 'u32' }, { name: 'maskCut', type: 'u32' },
 ]);
+// ALPHA-01f (b): instanced mesh with a per-range mask (one draw per masked range, instanceCount = N): same field list as RASTER_BLOCK
+// below (origin/team/wind, instanced-only) with the same 5 mask fields of RASTER_MASK_BLOCK appended last. Kept as its own block
+// (not derived from RASTER_BLOCK) so RASTER_BLOCK's own fields/offsets are untouched.
+export const RASTER_INSTANCED_MASK_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS,
+  { name: 'origin', type: 'vec2' },
+  { name: 'teamSlot', type: 'vec4' }, { name: 'teamMat', type: 'vec4', count: 8 },
+  { name: 'wind', type: 'vec4' }, { name: 'windT', type: 'vec4' }, { name: 'windK', type: 'vec4', count: 16 },
+  { name: 'maskX0', type: 'u32' }, { name: 'maskY0', type: 'u32' }, { name: 'maskW', type: 'u32' }, { name: 'maskH', type: 'u32' }, { name: 'maskCut', type: 'u32' },
+]);
 // PREC-01a: instanced variant only: `origin` (xy render origin O of the camera-relative raster, 37.9 step 4) sits in the 8-byte hole after `flat`
 // (RASTER_BASE_BLOCK stays a prefix, size unchanged). Shadow passes leave it 0 (absolute, step 5).
 export const RASTER_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS, { name: 'origin', type: 'vec2' },
@@ -104,10 +113,17 @@ fn maskDiscard(uvm: vec2f, x0: u32, y0: u32, w: u32, h: u32, cut: u32) -> bool {
 }
 `;
 
-/** @param {'static'|'voxel'|'instanced'|'cloth'|'mask'} variant 'mask' = the static layout + per-vertex mask uv (location 10) + texMask discard */
+/**
+ * @param {'static'|'voxel'|'instanced'|'cloth'|'mask'|'instancedMask'} variant 'mask' = the static layout + per-vertex mask uv
+ * (location 10) + texMask discard; 'instancedMask' (ALPHA-01f b) = the instanced layout (sway + LOD dither) with the same
+ * mask uv stream + discard added on top, matching rasterJS.js rasterInstanced's per-range mask/two-sided rule exactly.
+ */
 export function rasterWgsl(variant = 'static') {
-  const cloth = variant === 'cloth', instanced = variant === 'instanced', compact = variant === 'voxel' || instanced, mask = variant === 'mask';
-  return `${(instanced ? RASTER_BLOCK : mask ? RASTER_MASK_BLOCK : RASTER_BASE_BLOCK).wgsl}
+  const cloth = variant === 'cloth';
+  const instanced = variant === 'instanced' || variant === 'instancedMask';
+  const compact = variant === 'voxel' || instanced;
+  const mask = variant === 'mask' || variant === 'instancedMask';
+  return `${(instanced ? (mask ? RASTER_INSTANCED_MASK_BLOCK : RASTER_BLOCK) : (mask ? RASTER_MASK_BLOCK : RASTER_BASE_BLOCK)).wgsl}
 @group(1) @binding(0) var<uniform> u: RasterU;
 ${mask ? '@group(0) @binding(0) var texMask: texture_2d<u32>;' : ''}
 ${OCT_NORMAL}${instanced ? SWAY_WGSL + LOD_DITHER_WGSL : ''}${mask ? MASK_TEXEL_WGSL : ''}
@@ -251,6 +267,7 @@ export const RASTER_VOXEL_WGSL = rasterWgsl('voxel');
 export const RASTER_INSTANCED_WGSL = rasterWgsl('instanced');
 export const RASTER_CLOTH_WGSL = rasterWgsl('cloth');
 export const RASTER_MASK_WGSL = rasterWgsl('mask'); // ALPHA-01c
+export const RASTER_INSTANCED_MASK_WGSL = rasterWgsl('instancedMask'); // ALPHA-01f (b): instanced raster + per-range mask discard; shadow variant is step (c), not built here
 
 // Sun shadow VERTEX variants (WgShadowPass): same stages, depth mapped to [0.5, 1]. Terrain: SHADOW_TERRAIN_WGSL (shadow.wgsl.js) owns its vs_main.
 export const RASTER_SHADOW_WGSL = toShadowVertexWgsl(RASTER_WGSL);
@@ -258,3 +275,7 @@ export const RASTER_VOXEL_SHADOW_WGSL = toShadowVertexWgsl(RASTER_VOXEL_WGSL);
 export const RASTER_INSTANCED_SHADOW_WGSL = toShadowVertexWgsl(RASTER_INSTANCED_WGSL);
 export const RASTER_CLOTH_SHADOW_WGSL = toShadowVertexWgsl(RASTER_CLOTH_WGSL);
 export const RASTER_MASK_SHADOW_WGSL = toShadowVertexWgsl(RASTER_MASK_WGSL); // ALPHA-01c: fragment entry fs_mask_shadow (discard only)
+// ALPHA-01f (c): instanced masked shadow caster - same swap (depth -> [0.5,1]) applied to RASTER_INSTANCED_MASK_WGSL, which
+// already carries fs_mask_shadow (rasterWgsl's `mask` branch covers both 'mask' and 'instancedMask'), so the discard-only
+// fragment is reused verbatim (same maskDiscard call, same texMask binding) - leaf holes let the sun through for instanced groups.
+export const RASTER_INSTANCED_MASK_SHADOW_WGSL = toShadowVertexWgsl(RASTER_INSTANCED_MASK_WGSL);

@@ -87,10 +87,14 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
   let hA = hashFast(cx, cy, typeId);
   let hB = hashFast(cx, cy, 7);
 
+  // S8-B2-14b wetness: darkens the lit term entering the tier/gain pick, same WET_DARK as detailShade.js/shadeCore
+  // (terrain has no emissive term to keep separate - the whole incoming b is the "lit term" here).
+  let bWet = b * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness);
+
   // 23.4 near-detail: close (< closeBand) gets a +-0.08 brightness jitter (own hash salt 10, per-cell).
   let close = su.nearDetailOn != 0 && t < su.closeBand;
-  var bEff = b;
-  if (close) { bEff = b + (hashFast(cx, cy, 10) * 2.0 - 1.0) * 0.08; }
+  var bEff = bWet;
+  if (close) { bEff = bWet + (hashFast(cx, cy, 10) * 2.0 - 1.0) * 0.08; }
 
   var tier = 2;
   if (bEff < 0.45) { tier = 0; } else if (bEff < 0.8) { tier = 1; }
@@ -105,6 +109,7 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
   let bcc = max(bEff, 0.0);
   var gain = su.fgMin + (1.0 - su.fgMin) * samplePowLUT(min(bcc, 1.0));
   if (bcc > 1.0) { gain = min(su.fgMaxGain, gain + (bcc - 1.0) * 0.5); }
+  gain = wetGain(gain, bEff);
   fr *= gain; fgc *= gain; fbc *= gain;
   var br = fr * 0.3; var bgc = fgc * 0.3; var bbc = fbc * 0.3;
 
