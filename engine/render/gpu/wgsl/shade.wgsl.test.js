@@ -138,8 +138,15 @@ const mutC = (a, b) => { assert.ok(SHADE_WGSL.includes(a), 'anchor ' + a); retur
 assert.ok(runCore(mutC('if (kind != 8u && face >= 1 && face <= 6)', 'if (kind != 9u && face >= 1 && face <= 6)'), 1500).bad > 15, 'mutation: kind 8 fk rule');
 assert.ok(runCore(mutC('shadeK = mf3.x;', 'shadeK = mf3.y;'), 3000).bad > 5, 'mutation: grid joint shade');
 assert.ok(runCore(mutC('+ mf1.x;', '+ mf1.y;'), 1500).bad > 15, 'mutation: emissive slot');
-assert.ok(runCore(mutC('let jit = 1.0 + jitter * (hA * 2.0 - 1.0);', 'let jit = 1.0 + jitter * (hB * 2.0 - 1.0);'), 1500).bad > 15, 'mutation: jitter hash');
+assert.ok(runCore(mutC('let jit = 1.0 + jitter * (hJ * 2.0 - 1.0);', 'let jit = 1.0 + jitter * (hB * 2.0 - 1.0);'), 1500).bad > 15, 'mutation: jitter hash');
 assert.ok(runCore(mutC('uo = u - select(0.0, gstagger * gu, fmodGlsl(course, 2.0) != 0.0);', 'uo = u;'), 3000).bad > 5, 'mutation: brick stagger');
+
+// GRID-TEXEL-GLYPH-01b: F_GRID_TEXEL literal + hJ (block die) present; texel materials are in the fixture and covered above.
+assert.ok(SHADE_WGSL.includes('(flags & 131072) != 0'), 'F_GRID_TEXEL literal');
+assert.ok(SHADE_WGSL.includes('hasGrid && !gridTexel'), 'gridTexel branch');
+assert.ok(SHADE_WGSL.includes('hJ = select(hA, hashFast(bix, courseI, seed), hasGrid)'), 'hJ block die');
+assert.ok(runCore(mutC('hasGrid && !gridTexel', 'hasGrid'), 3000).bad > 5, 'mutation: gridTexel ignored');
+assert.ok(runCore(mutC('hJ = select(hA, hashFast(bix, courseI, seed), hasGrid);', 'hJ = hA;'), 3000).bad > 5, 'mutation: hJ == hA on texel grid');
 
 const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
 // --- glyph pick vs shadeDetailFast (n = 1: lineWins == onJoint, count == 1), no fog stipple (dist < fog.start) ---
