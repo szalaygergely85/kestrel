@@ -1,3 +1,4 @@
+import { PROJ_NEAR, PROJ_FAR } from '../../projection.js';
 import { STEP } from '../../../core/loop.js';
 import { WIND_K_SIZE } from '../../../world/wind.js';
 
@@ -38,9 +39,11 @@ fn cellRayP(cell: vec2f, grid: vec2i, posX: f32, posY: f32, eyeH: f32,
 }
 `;
 
+/** f32 literal text: always has a '.' (WGSL abstract-float), integers get '.0'. */
+const wgslF32 = (v) => { const t = String(v); return /[.e]/.test(t) ? t : t + '.0'; };
 // US-068b1 (38.19): the clip near/far of PROJ_NEAR/PROJ_FAR (projection.js) as WGSL float literals, for ortho linear-z depth in the raster passes.
-export const ORTHO_NEAR_WGSL = '0.05';
-export const ORTHO_FAR_WGSL = '2000.0';
+export const ORTHO_NEAR_WGSL = wgslF32(PROJ_NEAR);
+export const ORTHO_FAR_WGSL = wgslF32(PROJ_FAR);
 
 // twin of glsl/common.js CELL_RAY_PITCHED's pure functions (the uniform-driven wrappers pitchedCellDir/fogScaleCell
 // need the module's own uniform block and are written per module).

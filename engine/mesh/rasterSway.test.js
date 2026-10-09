@@ -61,7 +61,7 @@ const WD = { dirDeg: 30, speed: 5, gust: { amp: 0.6, periodSec: 3, travel: 6 } }
 assert.ok(RASTER_INSTANCED_WGSL.includes('swayDisp(a.iRow0.w, a.iRow1.w, wp.z - a.iRow2.w'));
 assert.ok(RASTER_INSTANCED_SHADOW_WGSL.includes('swayDisp('));
 assert.ok(!RASTER_WGSL.includes('swayDisp') && !RASTER_WGSL.includes('windAt'));
-assert.equal(RASTER_BLOCK.field('wind').word, 76); assert.equal(RASTER_BLOCK.field('windT').word, 80); assert.equal(RASTER_BLOCK.field('windK').word, 84); assert.equal(RASTER_BLOCK.sizeBytes, 608);
+assert.equal(RASTER_BLOCK.field('wind').word, 80); assert.equal(RASTER_BLOCK.field('windT').word, 84); assert.equal(RASTER_BLOCK.field('windK').word, 88); assert.equal(RASTER_BLOCK.sizeBytes, 608);
 assert.ok(!/%|\bround\s*\(|\bmod\s*\(|fract/.test(RASTER_INSTANCED_WGSL));
 
 // 4. raster twin on a real mesh group
