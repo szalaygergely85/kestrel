@@ -14,6 +14,7 @@
 import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, MASK_UV_LAYOUT, MASK_UV_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from '../MeshBuffers.js';
 import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_MASK_BLOCK, RASTER_MASK_SHADOW_WGSL, RASTER_SHADOW_WGSL, RASTER_VOXEL_SHADOW_WGSL, RASTER_INSTANCED_SHADOW_WGSL, RASTER_CLOTH_SHADOW_WGSL, RASTER_INSTANCED_MASK_BLOCK, RASTER_INSTANCED_MASK_SHADOW_WGSL } from '../wgsl/raster.wgsl.js';
 import { SHADOW_TERRAIN_BLOCK, SHADOW_TERRAIN_WGSL, SHADOW_DEPTH_COPY_WGSL, SHADOW_DEPTH_COPY_TEXTURES } from '../wgsl/shadow.wgsl.js';
+import { lodCentreX, lodCentreY } from '../../../core/camFocus.js';
 import { NO_STRUCTURES } from './passRaster.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../../../mesh/shadowList.js';
@@ -267,7 +268,7 @@ export class WgShadowPass {
     if (vp && vp.shadowView) { vp.projectShadow(); src.voxelPool = vp.shadowView; } else src.voxelPool = null;
     src.instances = p._instances || null;
     this.gpuN = 0;
-    src.eye.x = cam.x; src.eye.y = cam.y; src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM; src.meshCastM = so.meshCastM; src.meshCastCap = so.meshCastCap;
+    src.eye.x = lodCentreX(cam); src.eye.y = lodCentreY(cam); src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM; src.meshCastM = so.meshCastM; src.meshCastCap = so.meshCastCap;
     src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null;
     src.matIdFor = p._table ? p._table.idFor : undefined;
     src.meshCache = raster.meshCache; src.meshIdFor = raster.strictMatIdFor || undefined;

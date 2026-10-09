@@ -249,3 +249,13 @@ console.log(`passShadow.test.js: all checks passed (heap +${grew} B / 1000 frame
   s7.dispose();
   console.log('passShadow.test.js (S8-B2-05/06 wind host wiring): all checks passed.');
 }
+
+// 068b3b gpucompare orthoIso: the caster LOD eye is the focus point in ortho (the real eye sits ORTHO_BACK_M behind it); perspective keeps cam.x/y
+{
+  const sho = new WgShadowPass(d, { shadows });
+  const co = { x: 100, y: -400, z: 500, yawDeg: 0, pitchDeg: -35, projection: 'ortho', orthoHalfH: 8, focusX: 10, focusY: 20, focusZ: 0 };
+  sho.run({ ...p, _cam: co }, raster);
+  assert.deepEqual([sho.src.eye.x, sho.src.eye.y], [10, 20], 'ortho: shadow LOD eye = focus');
+  sho.run({ ...p, _cam: { ...co, projection: 'pitched' } }, raster);
+  assert.deepEqual([sho.src.eye.x, sho.src.eye.y], [100, -400], 'pitched: eye unchanged');
+}

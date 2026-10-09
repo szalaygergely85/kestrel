@@ -8,14 +8,13 @@ const RASTER_FIELDS = [
   { name: 'model', type: 'mat4' }, { name: 'viewProj', type: 'mat4' },
   { name: 'planeIdOr', type: 'u32' }, { name: 'zBase', type: 'f32' },
   { name: 'objectId', type: 'u32' }, { name: 'axisAligned', type: 'u32' },
-  { name: 'flat', type: 'vec2' },
+  // US-068b1/b2 (38.19): `projMode` (2 = ortho) sits in the shared prefix, so every raster block has it at the same word; the host writes it once per frame; fragment dist = linear z when 2.
+  { name: 'projMode', type: 'u32' }, { name: 'flat', type: 'vec2' },
 ];
-// US-068b1 (38.19): `projMode` u32 (2 = ortho) is the LAST word of every raster block; fragment dist = linear z when 2.
-const PROJ_MODE = { name: 'projMode', type: 'u32' };
-export const RASTER_BASE_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS, PROJ_MODE]);
+export const RASTER_BASE_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS]);
 // ALPHA-01c: static mesh with a mask range (one draw per masked range): the base block + the atlas rect (x0,y0,w,h) and the cutoff byte
 export const RASTER_MASK_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS,
-  { name: 'maskX0', type: 'u32' }, { name: 'maskY0', type: 'u32' }, { name: 'maskW', type: 'u32' }, { name: 'maskH', type: 'u32' }, { name: 'maskCut', type: 'u32' }, PROJ_MODE,
+  { name: 'maskX0', type: 'u32' }, { name: 'maskY0', type: 'u32' }, { name: 'maskW', type: 'u32' }, { name: 'maskH', type: 'u32' }, { name: 'maskCut', type: 'u32' },
 ]);
 // ALPHA-01f (b): instanced mesh with a per-range mask (one draw per masked range, instanceCount = N): same field list as RASTER_BLOCK
 // below (origin/team/wind, instanced-only) with the same 5 mask fields of RASTER_MASK_BLOCK appended last. Kept as its own block
@@ -25,7 +24,6 @@ export const RASTER_INSTANCED_MASK_BLOCK = defineUniformBlock('RasterU', [...RAS
   { name: 'teamSlot', type: 'vec4' }, { name: 'teamMat', type: 'vec4', count: 8 },
   { name: 'wind', type: 'vec4' }, { name: 'windT', type: 'vec4' }, { name: 'windK', type: 'vec4', count: 16 },
   { name: 'maskX0', type: 'u32' }, { name: 'maskY0', type: 'u32' }, { name: 'maskW', type: 'u32' }, { name: 'maskH', type: 'u32' }, { name: 'maskCut', type: 'u32' },
-  PROJ_MODE,
 ]);
 // PREC-01a: instanced variant only: `origin` (xy render origin O of the camera-relative raster, 37.9 step 4) sits in the 8-byte hole after `flat`
 // (RASTER_BASE_BLOCK stays a prefix, size unchanged). Shadow passes leave it 0 (absolute, step 5).
@@ -34,7 +32,6 @@ export const RASTER_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS, { n
   // S8-B2-06 foliage sway (appended: earlier words keep their offsets). World wind (engine/world/wind.js field.params, packWindUniforms):
   // wind = (dirX, dirY, speed, amp); windT = (seconds, period ticks, travel, 0); windK = the 64-knot gust table. All 0 = no sway.
   { name: 'wind', type: 'vec4' }, { name: 'windT', type: 'vec4' }, { name: 'windK', type: 'vec4', count: 16 },
-  PROJ_MODE,
 ]);
 
 /** S8-B2-06: world wind + the horizontal sway displacement of one vertex (twin of engine/mesh/sway.js swayOffset); instanced variant only. */
