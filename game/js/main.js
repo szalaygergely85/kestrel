@@ -113,6 +113,7 @@ import { createInventoryView } from './quest/inventoryView.js'; // US-091b
 import { probeGpuSupport, showWebgl2RequiredScreen, showSoftwareRendererWarning } from './ui/webgl2Gate.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
+import { ensureBenchBoars } from './dev/combatBench.js'; // COMBAT-BENCH-01
 import { runPerfBench } from './dev/perfBench.js'; // US-018 (architecture.md 16) `?bench=1`
 // ---- US-030c (ARCH CHANGES): sprite system wiring, kept to this one import ----
 import { createSpriteSystem, spawnTestSprites } from './dev/spriteDev.js';
@@ -817,7 +818,7 @@ if (gpuBlocked) {
   // fallback did, harmlessly, on the hidden canvas) but none of the
   // branches below - every one of which ends in a `runGame`/dev-mode rAF
   // loop - may start.
-} else if (params.get('bench') === 'present' || params.get('bench') === '1') {
+} else if (params.get('bench') === 'present' || params.get('bench') === '1' || params.get('bench') === 'combat') {
   modeByName.get('bench').run(ctx);
 } else if (params.get('shadetest') === '1') {
   modeByName.get('shadetest').run(ctx);
@@ -1025,6 +1026,7 @@ async function runGame(mode, cinematic = null) {
       // US-078d: beastSim now owns a `combat:hit` listener (the stagger behaviour) - drop the old world's one
       // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.
       if (beasts) beasts.dispose();
+      if (params.get('bench') === 'combat' || (benchActive && params.get('enemies') === '4')) ensureBenchBoars(world); // COMBAT-BENCH-01
       beasts = createBeastSim(world, { nav: worldDef.nav && buildBeastNav(world, worldDef.nav), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events });
       if (saveRelay) saveRelay.applyDeadToBeasts(beasts); // US-089w: restored dead beasts stay gone (create reset them alive)
       if (sword) sword.dispose();
@@ -1857,7 +1859,7 @@ async function runGame(mode, cinematic = null) {
   // running, so the bench's own rAF-driven view/walk sequence can start
   // right away (`benchActive` set by the `?bench=1` dispatch branch, top of
   // this file).
-  if (mode === 'world' && benchActive) {
+  if (mode === 'world' && benchActive && params.get('bench') !== 'combat' && params.get('enemies') !== '4') { // COMBAT-BENCH-01: combatBench replaces the view sequence
     runPerfBench({ engine, playerHandle, overlay, gpuPipeline, input, rt, look, prof });
   }
 }

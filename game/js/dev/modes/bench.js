@@ -13,6 +13,7 @@
 // two module-scope flags `runGame` itself reads (`benchActive`, `prof`) via
 // `ctx.startBench()`, a one-line hook main.js exposes for exactly this.
 import { fillWorstCase } from '../benchScene.js';
+import { runCombatBench } from '../combatBench.js'; // COMBAT-BENCH-01
 
 export const name = 'bench';
 
@@ -85,5 +86,7 @@ export function run(ctx) {
     runBenchmark(ctx.rt, ctx.overlay);
   } else {
     ctx.startBench();
+    // COMBAT-BENCH-01: `?bench=combat` / `?bench=1&enemies=4` (main.js then skips runPerfBench's view sequence).
+    if (ctx.params.get('bench') === 'combat' || ctx.params.get('enemies') === '4') runCombatBench(ctx);
   }
 }
