@@ -37,3 +37,9 @@ Rules: every new mesh pack -> `docs/licences.md` + `THIRD_PARTY_NOTICES.md` entr
 2. **Far-side depth:** how big is the far side vs the near side (manager lean: about equal area, ~10-15 min walk across the valley)?
 3. **How are spells upgraded?** (scrolls in chests / shrines-altars / boss drops / NPC) - owner leaning towards shrines.
 4. Can the river be swum or waded anywhere, or only crossed at bridges? **ANSWERED (owner 2026-10-09): no hard wall. The far side is reachable, it is just guarded by stronger beasts; only a quest sends you there once your item level is enough. Gear tier is the gate, not a lock.**
+
+## Owner approvals 2026-10-09
+- `design/levels/valley_layout.md` APPROVED (river widening, bridge placement) - slice 1 may start (PBF-K3-01/02, then content by lane C).
+- Wade defaults APPROVED as config defaults (speed x0.4, ford x0.7, 0.6 m/s south current; retune after owner tries it) - PBF-K3-03.
+- Beast level badge "Lv N" with tier colours APPROVED - PBF-K1-03.
+Still open: bridge B rule, spell upgrades, AREAS-01 breach trigger.
