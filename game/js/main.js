@@ -92,6 +92,7 @@ import { SWORD_CFG } from './quest/swordConfig.js'; // US-078d (architecture.md 
 import { createSwordSim } from './quest/sim/sword.js';
 import { presentSword } from './quest/swordView.js';
 import { loadSpellHandView, presentSpellHand, SPELL_HAND_ITEM } from './quest/spellHandView.js'; // HANDS-01c (37.8a)
+import { loadHandFireView, presentHandFire } from './quest/handFireView.js'; // HAND-WIRE-01: realistic hand + always-on fire
 import { createHands } from './quest/sim/hands.js'; // HANDS-01b (37.8a)
 import { createFireballSim } from './quest/sim/fireball.js'; // SPELL-01a (37.14)
 import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.14 view)
@@ -691,6 +692,15 @@ const spellHandLDef = window.ASSETS && window.ASSETS.voxelModels && window.ASSET
 if (spellHandLDef && !assets.has('model', 'spellHandL')) {
   assets.add('model', 'spellHandL', { ...spellHandLDef, voxel: { ...spellHandLDef.voxel, meshOnly: true } });
 }
+// HAND-WIRE-01: the realistic burning hand (`viewModels.hand`): every variant model (authored left) registered mesh-only.
+const handDef = window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.hand;
+if (handDef && handDef.variants) {
+  if (window.ASSETS.handFx) window.ASSETS.handFx.attach();
+  for (const mk of Object.values(handDef.variants)) {
+    const hd = window.ASSETS.voxelModels[mk];
+    if (hd && !assets.has('model', mk)) assets.add('model', mk, { ...hd, voxel: { ...hd.voxel, meshOnly: true } });
+  }
+}
 const gameVoxelPool = new VoxelPool();
 gameVoxelPool.bind(assets, matTable);
 // RE-02b F1 + review: 'mesh' only when the mesh GpuCellPipeline is really active (CPU fallback renders shear).
@@ -766,8 +776,12 @@ const swordVmH = swordAssetDef ? (() => {
 })() : null;
 
 // HANDS-01c: second handle (after the sword) = the spell hand's idle view; shown only while the spell item is in a hand.
-const spellVmH = window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.spellHand && spellHandLDef
-  ? loadSpellHandView(engine.viewModel, window.ASSETS.viewModels.spellHand, gameVoxelPool) : null;
+// HAND-WIRE-01: when the realistic hand asset is loaded it takes this handle (the glove stays the fallback). `spellVmH.vm/.glow` are shared.
+const handFxOn = !!(handDef && handDef.variants && assets.has('model', handDef.model));
+const spellVmH = handFxOn ? loadHandFireView(engine.viewModel, handDef, gameVoxelPool) // idle-fire variants prebuilt; charge/cast variants build lazily on first use (boot budget)
+  : (window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.spellHand && spellHandLDef
+    ? loadSpellHandView(engine.viewModel, window.ASSETS.viewModels.spellHand, gameVoxelPool) : null);
+if (handFxOn) engine.viewModel.warmVariants(spellVmH.h, [...handDef.cycles.flame.variants, ...handDef.cycles.flameRelax.variants]);
 
 // D-025 (US-038a, architecture.md 22.3/22.7): the ONE `grid:changed`
 // listener that rebuilds every game-owned, grid-sized object - the render
@@ -1708,7 +1722,7 @@ async function runGame(mode, cinematic = null) {
       if (spellVmH) {
         const sbody = playerHandle.data.components.body;
         const spellMoving = !!sbody && sbody.grounded && (controls.forward !== 0 || controls.strafe !== 0);
-        presentSpellHand(spellVmH, hands && !cinematic ? hands.handOf(SPELL_HAND_ITEM) : null, simTime, simTime, spellMoving, fireball);
+        (handFxOn ? presentHandFire : presentSpellHand)(spellVmH, hands && !cinematic ? hands.handOf(SPELL_HAND_ITEM) : null, simTime, simTime, spellMoving, fireball);
       }
       // RE-07a (28.9): CPU overlay composite after the fade (no-op without recorded ops; GPU twin = RE-07b).
       if (fb.gpu) engine.overlay.flush(cam); // RE-07b: GPU path rasterises here, GpuOverlayPass composites in present()

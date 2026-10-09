@@ -40,6 +40,9 @@ const KEY_STRIDE = 7; // t, px, py, pz, rx, ry, rz
  * @property {(phase:number, amount:number, h?:number)=>void} setBob   def.bob numbers; shared phase = eyeFeel bobPhase, amount 0..1; omitted handle sets every item
  * @property {(h:number, clip:number, tMs:number, mount:number, out3:Float64Array)=>Float64Array} mountEye   pure: eye-space mount at a clip time (no bob)
  * @property {(cam:Object, pe:ArrayLike<number>, out3:Float64Array)=>Float64Array} eyeToWorld
+ * @property {(h:number, name:string)=>number} variantId   HAND-WIRE-01: index of def.variants[name]
+ * @property {(h:number, v:number|string)=>void} setVariant   HAND-WIRE-01: swap the drawn model to a variant (same anchor/parts); lazy build on first use
+ * @property {(h:number, names?:string[])=>void} warmVariants   load-time prebuild of variants
  * @property {(h:number, hand:'left'|'right')=>void} setHand   HANDS-01a (37.8a): which hand holds handle h; differing from the authored hand mirrors the whole eye-space object (x -> -x, det<0, DrawItem.mirror = 1); a flag write, no allocation
  * @property {(h:number)=>('left'|'right')} handOf   the hand set by setHand (default = the authored hand, def.hand or the sign of rest.pos[0])
  * @property {(cam:Object, pitched:boolean)=>(DrawList|null)} buildList   the list both twins draw; null only when no handle is visible (hidden - e.g. before the sword is taken); draws under a pitched camera too since RE-02b/D-029 (BUG-VM-001)
@@ -78,6 +81,16 @@ function assertVec3(v, what) {
  * @property {number} bobAmount
  * @property {number} bobZ @property {number} bobX @property {number} bobRoll
  */
+
+/** FORWARD per part (model voxel -> metres around the anchor) from the shared pose code: identity placement, the model's own 'held' clip if it has one. */
+function forwardOf(pm) {
+  const scratch = new Float64Array(MAX_VOX_PARTS * PART_STRIDE);
+  const heldClip = pm.clipIndex && pm.clipIndex.held !== undefined ? pm.clipIndex.held : -1;
+  computeVoxelPose(pm, { x: 0, y: 0, z: 0, yawDeg: 0, clip: heldClip, frame: 0, tMs: 0 }, scratch);
+  const forward = new Float64Array(pm.partCount * 12);
+  for (let i = 0; i < pm.partCount * 12; i++) forward[i] = FORWARD[i];
+  return forward;
+}
 
 class ViewModelLayerImpl {
   constructor() {
@@ -137,11 +150,7 @@ class ViewModelLayerImpl {
     }
     // FORWARD per part from the shared pose code (identity placement, the model's own 'held' clip if it has one).
     const partCount = pm.partCount;
-    const scratch = new Float64Array(MAX_VOX_PARTS * PART_STRIDE);
-    const heldClip = pm.clipIndex && pm.clipIndex.held !== undefined ? pm.clipIndex.held : -1;
-    computeVoxelPose(pm, { x: 0, y: 0, z: 0, yawDeg: 0, clip: heldClip, frame: 0, tMs: 0 }, scratch);
-    const forward = new Float64Array(partCount * 12);
-    for (let i = 0; i < partCount * 12; i++) forward[i] = FORWARD[i];
+    const forward = forwardOf(pm);
     const mountNames = Object.keys(pm.mounts || {});
     const mountAt = new Float64Array(mountNames.length * 3), mountPart = new Int32Array(mountNames.length);
     for (let i = 0; i < mountNames.length; i++) {
@@ -156,7 +165,17 @@ class ViewModelLayerImpl {
     for (let a = 0; a < 3; a++) { rest[a] = def.rest.pos[a]; rest[3 + a] = def.rest.rot[a]; }
     if (def.hand !== undefined && def.hand !== 'left' && def.hand !== 'right') throw new Error(`viewModel.load('${key}'): def.hand must be 'left' or 'right'`);
     const authored = def.hand || (def.rest.pos[0] < 0 ? 'left' : 'right');
+    // HAND-WIRE-01: def.variants = {name: modelKey} - alternative bake-poses of the same model (same anchor, part count and
+    // mounts as def.model); `setVariant` swaps mesh + forward (a field write). Built lazily on first use (load-time cost).
+    let vNames = null, vKeys = null, vSlots = null;
+    if (def.variants) {
+      vNames = Object.keys(def.variants); vKeys = vNames.map((n) => def.variants[n]); vSlots = vNames.map(() => null);
+      for (let i = 0; i < vNames.length; i++) {
+        if (typeof vKeys[i] !== 'string' || !(pool.models && pool.models.get(vKeys[i]))) throw new Error(`viewModel.load('${key}'): variant '${vNames[i]}': model '${vKeys[i]}' is not a bound voxel model`);
+      }
+    }
     this._defs.push({
+      vNames, vKeys, vSlots, vCur: -1, pool,
       authored, hand: authored, mirror: 0, visible: false, last: new Float64Array(6), cap: new Float64Array(6), bobAmount: 0,
       key, pm, mesh, partCount, forward, keys, clipOff, clipN, clipLoop, clipEnd, clipNames, mountNames, mountAt, mountPart, rest,
       bobZ: Number.isFinite(bob.z) ? bob.z : 0, bobX: Number.isFinite(bob.x) ? bob.x : 0, bobRoll: Number.isFinite(bob.rollDeg) ? bob.rollDeg : 0,
@@ -228,6 +247,36 @@ class ViewModelLayerImpl {
   }
 
   handOf(h) { return this._defs[h].hand; }
+
+  /** HAND-WIRE-01: index of variant `name` of handle h (load-time lookup; throws when unknown). */
+  variantId(h, name) {
+    const d = this._defs[h], i = d.vNames ? d.vNames.indexOf(name) : -1;
+    if (i < 0) throw new Error(`viewModel.variantId: unknown variant '${name}'`);
+    return i;
+  }
+
+  /** HAND-WIRE-01: show variant `v` (index from variantId, or a name) of handle h. Same variant = no-op; the first use of a
+   * variant builds its mesh/forward once (allocates), afterwards a field swap. */
+  setVariant(h, v) {
+    const d = this._defs[h];
+    const i = typeof v === 'number' ? v : this.variantId(h, v);
+    if (i === d.vCur) return;
+    let s = d.vSlots[i];
+    if (!s) {
+      const pm = d.pool.models.get(d.vKeys[i]);
+      if (pm.partCount !== d.partCount) throw new Error(`viewModel.setVariant: variant '${d.vNames[i]}' has ${pm.partCount} parts, base has ${d.partCount}`);
+      s = d.vSlots[i] = { pm, mesh: sharedVoxelMeshCache.get(pm, d.vKeys[i], d.pool.partNamesFor(d.vKeys[i])), forward: forwardOf(pm) };
+    }
+    d.pm = s.pm; d.mesh = s.mesh; d.forward = s.forward; d.vCur = i;
+  }
+
+  /** Pre-builds the named variants (or all) so no first-use hitch happens in play. Load time. */
+  warmVariants(h, names) {
+    const d = this._defs[h], keep = d.vCur;
+    const list = names || d.vNames;
+    for (let i = 0; i < list.length; i++) this.setVariant(h, list[i]);
+    if (keep >= 0) this.setVariant(h, keep);
+  }
 
   capture(h) { const d = this._defs[h]; d.cap.set(d.last); }
 
