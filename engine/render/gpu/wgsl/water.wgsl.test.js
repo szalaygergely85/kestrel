@@ -10,8 +10,9 @@ import { WATER_FRAG_SRC } from '../glsl/water.frag.js';
 import { WATER_COMPOSITE_FRAG_SRC } from '../glsl/waterComposite.frag.js';
 import { WGSL_MODULES } from './index.js';
 import { compileFn, shims, numericLiterals } from './wgslProbe.js';
-import { diamondAngle, WL_SLOTS, WL_STRIDE, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT } from '../../waterLook.js';
+import { diamondAngle, WL_SLOTS, WL_STRIDE, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, RIPPLE_MIN, rippleStrength } from '../../waterLook.js';
 import { CLOUD_SHIFT } from '../../cloudShadow.js'; // S8-B2-12b (38.13)
+import { RIPPLE_MAX, RIPPLE_HALF_W } from '../../../world/water.js'; // S8-B2-13 (38.14)
 
 const BAD = /%|\bround\s*\(|dpdx|dpdy|fwidth|frag_depth|textureSample|texelFetch|gl_FragCoord|gl_FrontFacing|\bmod\s*\(|ivec2|uvec|\bint\(|floatBitsToUint|uintBitsToFloat|\bmix\s*\(/;
 for (const [n, c] of [['water', WATER_WGSL], ['waterComposite', WATER_COMPOSITE_WGSL]]) {
@@ -71,10 +72,12 @@ assert.ok(runInside(mutW('if (kind == 2) { inside = true; }', 'if (kind == 2) { 
 
 // --- waterComposite: layout, bindings, constants ---
 const C = WATER_COMPOSITE_BLOCK;
-assert.deepEqual(['gridCols', 'sunMapOn', 'projMode', 'sunDir', 'ambientI', 'sunI', 'posX', 'dirX', 'horizonRow', 'timeSec', 'pitchA', 'pitchB', 'pitchC', 'wl', 'wfog'].map((n) => C.field(n).offset),
-  [0, 8, 12, 16, 28, 32, 36, 48, 64, 72, 80, 96, 112, 128, 128 + WL_SLOTS * WL_STRIDE * 4]);
+assert.deepEqual(['gridCols', 'sunMapOn', 'projMode', 'sunDir', 'ambientI', 'sunI', 'posX', 'dirX', 'horizonRow', 'timeSec', 'rippleCount', 'pitchA', 'pitchB', 'pitchC', 'wl', 'wfog', 'ripple'].map((n) => C.field(n).offset),
+  [0, 8, 12, 16, 28, 32, 36, 48, 64, 72, 76, 80, 96, 112, 128, 128 + WL_SLOTS * WL_STRIDE * 4, 128 + (WL_SLOTS * WL_STRIDE + 5 * 4) * 4]);
 assert.equal(C.field('wl').count, WL_SLOTS * (WL_STRIDE / 4)); assert.equal(C.field('wfog').count, 5);
-assert.equal(C.sizeBytes, 128 + (WL_SLOTS * (WL_STRIDE / 4) + 5) * 16);
+assert.equal(C.field('ripple').count, RIPPLE_MAX); // S8-B2-13 (38.14): 8 vec4 rings, word 724 = byte 2896
+assert.equal(C.field('ripple').offset, 2896);
+assert.equal(C.sizeBytes, 128 + (WL_SLOTS * (WL_STRIDE / 4) + 5) * 16 + RIPPLE_MAX * 16); // 3024 B (was 2896)
 assert.deepEqual(WATER_COMPOSITE_TEXTURES, ['float', 'float', 'uint', 'uint', 'uint', 'uint']);
 assert.deepEqual(WATER_COMPOSITE_TARGETS, ['rgba8', 'rgba8']);
 const kinds = { float: 'texture_2d<f32>', uint: 'texture_2d<u32>' };
@@ -89,10 +92,46 @@ const glslC = WATER_COMPOSITE_FRAG_SRC.slice(WATER_COMPOSITE_FRAG_SRC.indexOf('/
 const wgslC = WATER_COMPOSITE_WGSL.slice(WATER_COMPOSITE_WGSL.indexOf('// diamond angle'));
 const gC = numericLiterals(glslC), wC = numericLiterals(wgslC);
 wC.delete(24); // S8-B2-12b (38.13): CLOUD_SHIFT, the cloud-darkening byte's bit shift - no GLSL equivalent (GLSL frozen, D-044)
+wC.delete(0.15); // S8-B2-13 (38.14): RIPPLE_MIN, the ripple-strength threshold - no GLSL equivalent (GLSL frozen, D-044)
 assert.deepEqual([...gC].filter((v) => !wC.has(v)), [], 'GLSL constants missing in WGSL');
 assert.deepEqual([...wC].filter((v) => !gC.has(v)), [], 'WGSL constants not in GLSL');
 
 assert.ok(numericLiterals(wgslC.replaceAll('0.4794', '0.4795')).has(0.4795) && !numericLiterals(wgslC.replaceAll('0.4794', '0.4795')).has(0.4794), 'mutation: literal parity detects a changed constant');
+
+// --- ripples (S8-B2-13, 38.14): WGSL ring-loop twin probe vs waterLook.rippleStrength + mutation ---
+{
+  const rStart = WATER_COMPOSITE_WGSL.indexOf('var rs: f32 = 0.0;');
+  const rEnd = WATER_COMPOSITE_WGSL.indexOf('if (rs > ', rStart);
+  assert.ok(rStart > 0 && rEnd > rStart, 'ripple ring loop text found');
+  const build = (transform) => {
+    let loopText = WATER_COMPOSITE_WGSL.slice(rStart, rEnd).replace('wu.rippleCount', 'cnt').replace('wu.ripple[ri]', 'rip[ri]');
+    if (transform) loopText = transform(loopText);
+    const probeSrc = `alias Ring8 = array<vec4f, ${RIPPLE_MAX}>;\nfn rippleProbe(cnt: i32, rip: Ring8, P: vec3f) -> f32 {\n${loopText}\nreturn rs;\n}`;
+    return compileFn(probeSrc, 'rippleProbe', shims);
+  };
+  const f = build();
+  let bad = 0;
+  const N = 300;
+  for (let t = 0; t < N; t++) {
+    const count = Math.floor(rand() * (RIPPLE_MAX + 1));
+    const rip = [], packed = new Float32Array(RIPPLE_MAX * 4);
+    for (let i = 0; i < RIPPLE_MAX; i++) {
+      const x = (rand() - 0.5) * 20, y = (rand() - 0.5) * 20, r = rand() * 2, s = rand();
+      rip.push({ x, y, z: r, w: s });
+      if (i < count) { packed[i * 4] = x; packed[i * 4 + 1] = y; packed[i * 4 + 2] = r; packed[i * 4 + 3] = s; }
+    }
+    const px = (rand() - 0.5) * 10000, py = (rand() - 0.5) * 10000; // x up to 5000
+    const want = rippleStrength(packed, count, px, py);
+    const got = f(count, rip, { x: px, y: py, z: 0 });
+    if (Math.abs(got - want) > 1e-6) bad++;
+  }
+  assert.equal(bad, 0, `ripple ring loop mismatches ${bad}/${N}`);
+  const mutF = build((t) => { assert.ok(t.includes('/ ' + RIPPLE_HALF_W), 'anchor RIPPLE_HALF_W'); return t.replace('/ ' + RIPPLE_HALF_W, '/ 0.5'); });
+  const packed1 = Float32Array.of(0, 0, 1, 1);
+  const want1 = rippleStrength(packed1, 1, 1.2, 0); // |d(1.2) - r(1)| = 0.2, inside the real 0.25 half-width
+  const got1 = mutF(1, [{ x: 0, y: 0, z: 1, w: 1 }], { x: 1.2, y: 0, z: 0 });
+  assert.ok(Math.abs(got1 - want1) > 1e-6, 'mutation: a wrong RIPPLE_HALF_W is caught');
+}
 
 // --- cF (S8-B2-12b, 38.13): the cloud-darkening byte (LIGHT.w bits 24..31 of the floor cell) scales the sun term `k`.
 // fs_main itself is not probed (no vec3/vec4 shim), so the real `let cF = ...;` expression is extracted from the
