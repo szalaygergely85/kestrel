@@ -44,7 +44,7 @@
  *   r21  |   Settings                                                             |
  *   r23  |  ------------------------------------------------------------------    |
  *   r24  |   (message line)                                                       |
- *   r26  |     Arrows: select   Enter: choose   Del: delete   Esc: back           |
+ *   r26  |       Arrows: select   Enter: choose   Del: delete                     |
  *   r27  +==o================================================================o==+
  */
 (function (root) {
@@ -148,8 +148,8 @@
     },
     message: { row: 24, col: 4, info: 'uiHint', error: 'softEmber', prefix: '> ', prefixFg: 'uiDim' },
     keyHints: { row: 26, align: 'center', fg: 'uiDim', keyFg: 'gold',
-                text: 'Arrows: select   Enter: choose   Del: delete   Esc: back',
-                keys: ['Arrows', 'Enter', 'Del', 'Esc'] },
+                text: 'Arrows: select   Enter: choose   Del: delete',
+                keys: ['Arrows', 'Enter', 'Del'] },
     version: { row: 27, colEnd: 67, fg: 'brassShadow', optional: true, note: 'build tag in the bottom frame, right; e.g. " v0.8 "' },
 
     adopt: [
@@ -288,7 +288,7 @@
     note: { color: 'uiDim', col: 6, show: 'focus', note: 'the note line under the focused row only' },
     separator: { row: 21, glyph: '-', color: 'brassShadow', inset: 3 },
     keyHints: { row: 23, align: 'center', color: 'uiDim', key: 'gold',
-                text: 'W/S select   A/D change   Enter toggle   Esc back', keys: ['W/S', 'A/D', 'Enter', 'Esc'] },
+                text: 'W/S select   A/D change   Enter toggle', keys: ['W/S', 'A/D', 'Enter'] },
     stepRule: 'as uiStyle.settings.stepRule; Enter / Space on a toggle flips it, on Back = Esc',
     mock: {
       note: 'preview stand-in values; options.js is the source of truth in the game',

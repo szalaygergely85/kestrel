@@ -217,7 +217,7 @@ export function drawNotePanel(ui, notes, uiStyle) {
     const panelY = (ui.rows - h) >> 1;
     const title = note && typeof note.title === 'string' ? sanitizeLine(note.title) : '';
     const titleLine = compileRichLine(title, RGB.inkTitle, RGB.inkTitle, []);
-    const footerLine = compileRichLine(FOOTER_TEXT, RGB.inkFaded, RGB.inkKey, ['[Esc]', '[E]']);
+    const footerLine = compileRichLine(FOOTER_TEXT, RGB.inkFaded, RGB.inkKey, []);
     const textLines = rows.map((r) => compileRichLine(r, RGB.ink, RGB.ink, []));
     noteRender = {
       id: noteId, rows, h, panelX, panelY, titleLine, footerLine, textLines,

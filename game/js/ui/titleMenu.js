@@ -47,8 +47,8 @@ export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PL
     const ch=titleText[i];
     if ('-=[]'.includes(ch)) titleDecor.push({x:i,ch,fg:colour(ch==='-' ? style.title.decorFg[0] : ch==='=' ? style.frame.fg : style.title.bracketFg)});
   }
-  const hints = 'Arrows select  Enter choose  Del delete  Esc back';
-  const hintParts = ['Arrows','Enter','Del','Esc'].map(text => ({text,x:hints.indexOf(text)}));
+  const hints = 'Arrows select  Enter choose  Del delete';
+  const hintParts = ['Arrows','Enter','Del'].map(text => ({text,x:hints.indexOf(text)}));
   const bounds = {x:0,y:0,w:72,h:28};
   let slots = [], rows = [], selected = 0, selectedSlot = 0, mode = 'main';
   let confirm = null, action = null, message = '', error = null;

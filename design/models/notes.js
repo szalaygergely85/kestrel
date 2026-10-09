@@ -135,9 +135,7 @@
     },
     footer: {
       row: 'h - 2', alignRight: 59,
-      parts: [{ text: '[E]', fg: RGB.inkKey }, { text: ' / ', fg: RGB.inkFaded }, { text: '[Esc]', fg: RGB.inkKey },
-              { text: ' close', fg: RGB.inkFaded }],
-      note: '"[E] / [Esc] close" (17 cols) ends on col 59'
+      parts: [], note: 'owner 2026-10-09: no close hint is printed'
     },
     sound: { open: 'optional: a short paper rustle (audio may reuse any cloth / UI tick); none required for READ-01' },
     mock: { noteId: 'keeperLog', note: 'the preview / test fixture' }
