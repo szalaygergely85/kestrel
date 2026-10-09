@@ -66,6 +66,16 @@
     "meshes/quaternius/CommonTree_2_LOD1.mesh.json",
     "meshes/quaternius/CommonTree_1.mesh.json",
     "meshes/quaternius/CommonTree_1_LOD1.mesh.json",
+    "meshes/quaternius/TwistedTree_5.mesh.json",
+    "meshes/quaternius/TwistedTree_5_LOD1.mesh.json",
+    "meshes/quaternius/TwistedTree_4.mesh.json",
+    "meshes/quaternius/TwistedTree_4_LOD1.mesh.json",
+    "meshes/quaternius/TwistedTree_3.mesh.json",
+    "meshes/quaternius/TwistedTree_3_LOD1.mesh.json",
+    "meshes/quaternius/TwistedTree_2.mesh.json",
+    "meshes/quaternius/TwistedTree_2_LOD1.mesh.json",
+    "meshes/quaternius/TwistedTree_1.mesh.json",
+    "meshes/quaternius/TwistedTree_1_LOD1.mesh.json",
     "terrain/overworld_far.edits.json"
   ],
   "masks": [

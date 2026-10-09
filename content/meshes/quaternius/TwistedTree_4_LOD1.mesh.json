@@ -1,0 +1,33 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/TwistedTree_4_LOD1",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "TwistedTree_4_LOD1.mesh.bin",
+  "triCount": 1440,
+  "bbox": [
+    -4.10463,
+    -3.95129,
+    -0.20147,
+    5.22427,
+    6.36403,
+    17.65908
+  ],
+  "ranges": [
+    {"count": 1035, "part": "TwistedTree_4#0", "start": 0},
+    {"count": 405, "part": "TwistedTree_4#1", "start": 1035}
+  ],
+  "matKeys": [
+    "Bark_TwistedTree",
+    "Leaves_TwistedTree"
+  ],
+  "mats": {
+    "Bark_TwistedTree": "timber_old",
+    "Leaves_TwistedTree": "leaf_light"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false
+}

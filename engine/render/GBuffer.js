@@ -58,6 +58,8 @@ export class GBuffer {
     this.aoD = new Float32Array(n);
     // ME-20c (38.18): interpolated baked vertex AO (1 = open) of kind-9 cells; not cleared per frame (every kind-9 cell writes it, only kind 9 reads it)
     this.vao = new Float32Array(n);
+    // 38.23: entity objectId (0 = none), copied from the raster target; read by the entity tint in shadeSurfaces
+    this.objectId = new Uint32Array(n);
     this.fogF = new Float32Array(n);
     this.rule = new Uint8Array(n);
     // US-028 rework (PO ruling, 2026-09-23): whether the v2 shader classified
@@ -75,6 +77,7 @@ export class GBuffer {
 
   beginFrame() {
     this.kind.fill(0);
+    this.objectId.fill(0);
     // `rule` is NOT filled here (US-028 rework, minor item): `edgePass.js`
     // fills it itself, right before it writes into it, every frame - a
     // second fill here was pure waste (confirmed: nothing reads `rule`
@@ -125,6 +128,7 @@ export class GBuffer {
     this.v[i] = v;
     this.z[i] = z;
     this.aoD[i] = aoD;
+    this.objectId[i] = 0; // entity draws set it after (copyToGBuffer)
     this.writeCount++;
   }
 }

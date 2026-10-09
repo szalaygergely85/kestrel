@@ -53,6 +53,8 @@ export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'pitchB', type: 'vec4' }, // rX, rY, uX, uY
   { name: 'pitchC', type: 'vec4' }, // uZ, tanHalfY, cosP, sinP
   { name: 'faceK', type: 'vec4', count: 2 }, // float[7] (index = face 1..6), contiguous
+  // 38.23 entity tint table, APPENDED (no earlier word moves): etA.x = count (0 = branch skipped), etId = 8 u32 ids (written through a Uint32Array view), etC = rgb 0..1 + k
+  { name: 'etA', type: 'vec4' }, { name: 'etId', type: 'vec4', count: 2 }, { name: 'etC', type: 'vec4', count: 8 },
 ]);
 
 export const SHADE_TEXTURES = Object.freeze([
@@ -218,6 +220,17 @@ ${FULLSCREEN_VS_WGSL}
 const MAX_SUB: i32 = ${MAX_SUB};
 const MAX_LEVELS: i32 = ${MAX_LEVELS};
 var<private> POW2: array<f32, 6> = array<f32, 6>(0.125, 0.25, 0.5, 1.0, 2.0, 4.0);
+
+// 38.23: one channel of the entity tint, literal twin of entityTint.js tintChannel (c on the 0..255 scale, t = rgb 0..1).
+fn tintCh(c: f32, t: f32, k: f32) -> f32 { return c + (t * 255.0 - c) * k; }
+// First table entry matching objectId, or -1 (twin: entityTintAt).
+fn tintIndex(oid: u32, count: i32) -> i32 {
+  for (var i = 0; i < 8; i++) {
+    if (i >= count) { break; }
+    if (bitcast<u32>(su.etId[i >> 2][i & 3]) == oid) { return i; }
+  }
+  return -1;
+}
 
 fn samplePowLUT(x: f32) -> f32 {
   let xc = clamp(x, 0.0, 1.0);
@@ -699,6 +712,15 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   // Item 4: dim a firing line by sub-sample agreement (2-of-4 tie fades to half strength, 4-of-4 stays full).
   if (lineWins) { rgbF *= 0.5 + 0.5 * f32(jointN) / f32(count); }
   var rgbBg = rgbF * bgKAvg;
+  // 38.23 entity tint: display override after lighting, before fog; count 0 skips the whole branch (bit-identical).
+  if (su.etA.x > 0.0) {
+    let ti = tintIndex(textureLoad(uGI, cell, 0).w, i32(su.etA.x));
+    if (ti >= 0) {
+      let tc = su.etC[ti];
+      rgbF = vec3f(tintCh(rgbF.x, tc.x, tc.w), tintCh(rgbF.y, tc.y, tc.w), tintCh(rgbF.z, tc.z, tc.w));
+      rgbBg = vec3f(tintCh(rgbBg.x, tc.x, tc.w), tintCh(rgbBg.y, tc.y, tc.w), tintCh(rgbBg.z, tc.z, tc.w));
+    }
+  }
   if (f > 0.0) {
     rgbF += (su.fogFg - rgbF) * f;
     rgbBg += (su.fogBg - rgbBg) * f;
