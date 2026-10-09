@@ -16,6 +16,7 @@ import { packTerrainTextures } from './gpu/TerrainTextures.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 import { clampByte } from '../core/math.js';
 import { sunFromWorld } from './lighting.js';
+import { WET_DARK, wetGain } from './detailShade.js';
 
 // US-026a (23.4): exported so terrainCaster.js's near-sampling dither uses
 // the SAME avalanche mix (never a second, drifting copy) - the dither must
@@ -113,11 +114,18 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0) 
   const hA = hashFast01(cx, cy, type);
   const hB = hashFast01(cx, cy, 7);
 
+  // S8-B2-14b wetness (follow-up to S8-B2-14): `ctx.shading.wetness` 0..1
+  // (absent = 0) darkens the lit term entering the tier/gain pick - same
+  // WET_DARK constant detailShade.js uses (terrain has no emissive term to
+  // keep separate, so the whole incoming `b` is the "lit term" here).
+  const wet = ctx.shading.wetness || 0;
+  const bWet = b * (1 - WET_DARK * wet);
+
   // 23.4 near-detail: close < ctx.closeBand wins over the near/mid/far tier
   // picked below (TLOOK texel 7, fixed) and gets a +-0.08 brightness jitter
   // (own hash salt 10, per-2 m-cell - "shading only, heightAt stays smooth").
   const close = ctx.closeBand != null && t < ctx.closeBand;
-  const bEff = close ? b + (hashFast01(cx, cy, 10) * 2 - 1) * 0.08 : b;
+  const bEff = close ? bWet + (hashFast01(cx, cy, 10) * 2 - 1) * 0.08 : bWet;
 
   const tier = bEff < 0.45 ? 0 : bEff < 0.8 ? 1 : 2;
   let i = tier + (Math.floor(hA * 3) - 1);
@@ -127,7 +135,8 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0) 
   const colOff = base + i * 4;
   // TLOOK colours are linear 0..1 (GPU texel layout); bytes are 0..255 (BUG-OWN-004).
   let fr = TL[colOff] * 255, fg = TL[colOff + 1] * 255, fb = TL[colOff + 2] * 255;
-  const gain = gainOf(bEff, ctx.shading);
+  let gain = gainOf(bEff, ctx.shading);
+  gain = wetGain(gain, bEff, wet, ctx.shading.fgMaxGain);
   fr *= gain; fg *= gain; fb *= gain;
   let br = fr * 0.3, bg = fg * 0.3, bb = fb * 0.3;
 
@@ -321,8 +330,13 @@ function terrainShadingFor(matTable, ctx) {
   const ms = matTable && matTable.shading;
   if (!ms || !matTable.gainLUT) return ctx._paletteShading;
   if (!ctx._mtShading || ctx._mtShadingSrc !== matTable) {
-    ctx._mtShading = { fgMin: ms.fgMin, fgMaxGain: ms.fgMaxGain, fgGamma: ctx._paletteShading.fgGamma, gainLUT: matTable.gainLUT };
+    ctx._mtShading = { fgMin: ms.fgMin, fgMaxGain: ms.fgMaxGain, fgGamma: ctx._paletteShading.fgGamma, gainLUT: matTable.gainLUT, wetness: ms.wetness };
     ctx._mtShadingSrc = matTable;
+  } else {
+    // S8-B2-14b: wetness is a per-frame value (rain), same `table.shading.wetness`
+    // slot detailShade.js reads every frame - refresh it even when the cached
+    // object (built once per MaterialTable instance) is reused.
+    ctx._mtShading.wetness = ms.wetness;
   }
   return ctx._mtShading;
 }

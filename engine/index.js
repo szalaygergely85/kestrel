@@ -90,7 +90,7 @@ export { MaskAtlas, buildMaskAtlas, cutoffByte } from './render/MaskAtlas.js'; /
 export { meshToJSON, meshFromJSON, validateMesh } from './mesh/MeshData.js';
 export { encodeMeshBin, decodeMeshBin, meshFromBin, meshBinMeta, MESH_BIN_VERSION } from './mesh/meshBin.js'; // MESH-BIN-01
 export { simplifyTriangles } from './mesh/simplify.js'; // TREES-LP-a: tools/dae-import.mjs
-export { buildPrismProxy, planMeshCollision, PROXY_BAND_H, WALK_OVER_H } from './mesh/colliderProxy.js';
+export { buildPrismProxy, buildHullProxy, HULL_MAX_FACES, planMeshCollision, PROXY_BAND_H, WALK_OVER_H } from './mesh/colliderProxy.js';
 export { VoxelPool } from './render/voxelPool.js';
 export { bindShading, bindLevel } from './render/MaterialTable.js';
 // RE-06 (28.6): instanced voxel units - per-instance buffer helpers + team colour remap.

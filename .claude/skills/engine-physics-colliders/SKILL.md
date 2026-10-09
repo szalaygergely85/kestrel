@@ -15,9 +15,10 @@ Rules: `engine/physics/` imports only from itself; engine never imports `game/`/
   - `props:static` (`buildPropCollider`), `scatter:trunks`, `scatter:detail`.
 - `engine/mesh/colliderProxy.js` - `buildPrismProxy` (closed vertical prism, convex hull of the bottom `PROXY_BAND_H` = 2 m, <= 8 sides, 28 tris) and `planMeshCollision` (walk-over if top <= `WALK_OVER_H` 0.3 m or name matches `SOFT_NAME_RE` Pebble/Grass/Mushroom). Step-up max is 0.45 m.
 - New/changed mesh json: `node tools/gen-mesh-colliders.mjs [paths]` writes `collider`/`collide:false` (idempotent, keeps the file's format; `--check` for CI). `tools/gltf-import.mjs` applies the same (`withCollision`) on import.
+- `--hull` (S8-B2-16): meshes flagged `colliderHull: true` get a convex hull (quickhull on an 18-DOP-sampled point set, <= 32 tris, `engine/mesh/colliderProxy.js` `buildHullProxy`) instead of the prism, emitted as the same `collider` triangle array - no new primitive. Needs BOTH the data flag AND `--hull` on the CLI; default runs (no `--hull`) are unaffected, so `--check` stays 0 diffs. Per-mesh build time is always logged.
 
 ## Test / measure
-- Unit: `node engine/world/meshProxy.test.js`, `engine/world/meshColliders.test.js`, `engine/world/colliders.test.js`, `engine/physics/meshCollide.test.js` (+ `.parity`), `physics.test.js`, `jump.test.js`.
+- Unit: `node engine/world/meshProxy.test.js`, `engine/world/meshColliders.test.js`, `engine/world/colliders.test.js`, `engine/physics/meshCollide.test.js` (+ `.parity`), `physics.test.js`, `jump.test.js`, `engine/mesh/hullProxy.test.js` (S8-B2-16: hull generator + `--hull`/`colliderHull` flag + a capsule sweep against the hull).
 - Tunnelling pattern (BUG-GONDOLA-FALL style): drop a capsule from 4-5 m at -14..-18 m/s onto the collider at many x/y offsets and yaws; assert grounded, never inside the shape, never below floor z.
 - Bench: `node tools/bench-mesh-collide.mjs` (29 road meshes; target collideCircle <= 1.5 us/call; was 3.5 -> 0.5).
 - Step cost: `node tools/bench-physics.mjs [--steps N] [--hash]` (one fixed sim step per part, p50/p95 us; `--hash` = bit-exact player-trace fingerprint per scenario, compare before/after a physics change; MESH-PHYS-02).
