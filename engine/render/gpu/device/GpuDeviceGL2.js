@@ -118,6 +118,7 @@ export class GpuDeviceGL2 {
   /** @param {TextureDesc} desc */
   createTexture(desc) {
     const gl = this.gl;
+    if (desc.layers !== undefined) throw new Error('GpuDeviceGL2.createTexture: `layers` (2d-array textures) is WebGPU only (ME-16b)');
     if (desc.format === 'depth24' && desc.sampled) {
       // ME-15b (27.9a item 7): a sampled depth texture (the sun shadow map). NEAREST + compare mode NONE
       // (createTexture2D sets NEAREST/CLAMP); read with texelFetch on a plain sampler2D (.r) - never a

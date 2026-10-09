@@ -84,6 +84,7 @@ export { packVoxelModel } from './voxel/voxelPack.js';
 export { deriveEmissiveLight, EMISSIVE_LIGHT_MIN } from './voxel/emissiveLight.js';
 export { buildVoxelMesh, MESH_ONLY_MAX_QUADS } from './mesh/voxelMesh.js';
 export { prebuildTerrainMesh } from './mesh/terrainMesh.js'; // ED-MESH-1a
+export { createFrameRenderer } from './render/frameRenderer.js'; // ED-WG-01a (38.21)
 export { loadGltf, buildMeshFromTris, KIND_MESH } from './mesh/gltf.js'; // ME-13a (architecture.md 27.2 Public API)
 export { MaskAtlas, buildMaskAtlas, cutoffByte } from './render/MaskAtlas.js'; // ALPHA-01c: test worlds (gpucompare alphaLeaves) build their own atlas
 // ME-13b: content/meshes/<id>.mesh.json (de)serialization + validation -
@@ -104,6 +105,7 @@ export { bindDetailInstances, feedDetail, removeDetailInstances, DETAIL_OBJECT_B
 // GFX-03: quality knobs (scatter density, LOD scale, tuft draw scale) and the sun shadow levels / 'off'.
 export { GFX_DEFAULTS, GFX_RANGES, resolveGfxKnobs } from './mesh/gfxKnobs.js';
 export { CLOUD_Q_SHIFT, resolveShadowLevel, SHADOW_LEVELS, resolveSunShadowOptions, SUN_SHADOW_DEFAULTS } from './render/shadowSun.js';
+export { PSH_NEAR, POINT_SHADOW_DEFAULTS, resolvePointShadowOptions, FACE_TABLE, pointFaceOf, pointFaceMatrix, pointFacePlanes, pointFaceBounds, pointSphereBounds, pointDepthEncode, pointDepthDecode, pointShadowTaps, pointShadowInfo, pointShadowKey, quantiseOrigin, createShadowLightState, selectShadowLights } from './render/shadowPoint.js';
 export { cloudShadeQ, cloudMul, packCloudUniforms } from './render/cloudShadow.js'; // S8-B2-12c (38.13)
 export { buildTeamRemap, TEAM_SLOTS, MAX_TEAMS } from './render/teamRemap.js';
 // US-047: computeDerivatives/shadeSurfaces/shadeV2 (detailShade.js) and
@@ -241,6 +243,7 @@ export { createEntityEmitters } from './world/entityEmitters.js';
 
 // ---- S8-B2-13b splash ripples (docs/architecture.md 38.14, the note of record) ----
 export { createRipples, RIPPLE_LIFE, RIPPLE_SPEED, RIPPLE_W } from './fx/ripples.js';
+export { defineHitSparks, hitSparks, HIT_SPARK_HUES } from './fx/hitSparks.js';
 
 // ---- US-055a1 water regions + query (architecture.md 32.2; the query is `World#waterAt`) ----
 export { createWater, collectWaterDefs, WATER_MAX } from './world/water.js';

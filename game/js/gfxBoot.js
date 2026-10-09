@@ -49,7 +49,11 @@ export function resolveBootOptions({ params, resolved, savedSettings = {}, captu
     const gm = gridStr && GRID_RE.exec(gridStr);
     if (gm) { reqCols = Number(gm[1]); reqRows = Number(gm[2]); }
   }
-  if (geometryCompare) { reqCols = 160; reqRows = 60; }
+  if (geometryCompare) {
+    reqCols = 160; reqRows = 60;
+    const rg = GRID_RE.exec((params.get('refgrid') || '').trim()); // dev only (BUG-WHITE-PIXELS-02): &refgrid=480x180 runs gpucompare at the owner grid; default unchanged
+    if (rg) { reqCols = Number(rg[1]); reqRows = Number(rg[2]); }
+  }
   sources.grid = gridSource;
 
   // ---- rays ----

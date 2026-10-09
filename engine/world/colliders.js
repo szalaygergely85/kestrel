@@ -296,7 +296,7 @@ export function buildWorldColliders(world) {
  * @param {import('./World.js').World} world
  * @returns {MeshCollider|null}
  */
-export function buildStaticMeshCollider(world) {
+export function buildStaticMeshCollider(world, prev) {
   const meshParts = [];
   for (const s of world.structures) {
     if (!s.mesh) continue;
@@ -306,7 +306,43 @@ export function buildStaticMeshCollider(world) {
     const src = proxySource(mesh, s);
     if (src) meshParts.push({ id: s.id, src, matrix12 });
   }
+  if (prev && refitMergedMeshCollider(prev, meshParts)) return prev;
   return buildMergedMeshCollider(meshParts);
+}
+
+/** Refit budget: after this many refits, or when the root volume exceeds 2x the last full build, rebuild. */
+export const MESH_REFIT_MAX = 64;
+const rootVol = (b) => (b.nodeMax[0] - b.nodeMin[0]) * (b.nodeMax[1] - b.nodeMin[1]) * (b.nodeMax[2] - b.nodeMin[2]);
+
+/**
+ * Placements only MOVED (same parts, order, tri counts): rewrite the baked world positions and refit the
+ * existing BVH bottom-up (no re-sort). Returns false when a full rebuild is needed.
+ */
+function refitMergedMeshCollider(c, parts) {
+  const ranges = c.parts, pos = c._pos;
+  if (!ranges || !pos || c._refits >= MESH_REFIT_MAX || ranges.length !== parts.length) return false;
+  for (let i = 0; i < parts.length; i++) {
+    if (ranges[i].id !== parts[i].id || ranges[i].count !== parts[i].src.triCount) return false;
+  }
+  bakeParts(parts, pos);
+  refit(c.bvh, pos, null, null);
+  c._refits++;
+  const b = c.bvh;
+  for (let k = 0; k < 3; k++) { c.min[k] = b.nodeMin[k]; c.max[k] = b.nodeMax[k]; }
+  if (rootVol(b) > 2 * c._vol0) return false; // grew too much: caller rebuilds fresh
+  return true;
+}
+
+function bakeParts(parts, pos) {
+  let o = 0;
+  for (const { src, matrix12: m } of parts) {
+    for (let v = 0; v < src.triCount * 3; v++, o += 3) {
+      const x = src.pos[v * 3], y = src.pos[v * 3 + 1], z = src.pos[v * 3 + 2];
+      pos[o] = m[0] * x + m[1] * y + m[2] * z + m[9];
+      pos[o + 1] = m[3] * x + m[4] * y + m[5] * z + m[10];
+      pos[o + 2] = m[6] * x + m[7] * y + m[8] * z + m[11];
+    }
+  }
 }
 
 /** Mesh ids already warned about for colliding with > PROXY_WARN_TRIS render triangles (once per mesh). */
@@ -343,17 +379,9 @@ function buildMergedMeshCollider(parts) {
   if (!tris) return null;
   const pos = new Float64Array(tris * 9);
   const ranges = [];
-  let o = 0, tri = 0;
-  for (const { id, src, matrix12: m } of parts) {
-    for (let v = 0; v < src.triCount * 3; v++, o += 3) {
-      const x = src.pos[v * 3], y = src.pos[v * 3 + 1], z = src.pos[v * 3 + 2];
-      pos[o] = m[0] * x + m[1] * y + m[2] * z + m[9];
-      pos[o + 1] = m[3] * x + m[4] * y + m[5] * z + m[10];
-      pos[o + 2] = m[6] * x + m[7] * y + m[8] * z + m[11];
-    }
-    ranges.push({ id, start: tri, count: src.triCount });
-    tri += src.triCount;
-  }
+  let tri = 0;
+  for (const { id, src } of parts) { ranges.push({ id, start: tri, count: src.triCount }); tri += src.triCount; }
+  bakeParts(parts, pos);
   const bvh = buildBvh(pos, null, null);
   return {
     id: 'meshes:static', kind: /** @type {'trimesh'} */ ('trimesh'), bvh,
@@ -361,6 +389,7 @@ function buildMergedMeshCollider(parts) {
     max: Float64Array.from(bvh.nodeMax.subarray(0, 3)),
     enabled: true,
     parts: ranges,
+    _pos: pos, _refits: 0, _vol0: rootVol(bvh),
   };
 }
 

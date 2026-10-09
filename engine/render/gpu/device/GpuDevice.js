@@ -32,7 +32,7 @@
  * @property {'rgba32ui'|'r32ui'|'rgba8'|'depth24'|'r8ui'|'rgba32f'|'rg8ui'|'rgba32i'|'r32f'} format
  * @property {number} width
  * @property {number} height
- * @property {number} [layers] - reserved (cube/array textures, phase 3); omit for a plain 2D texture
+ * @property {number} [layers] - ME-16b (38.22): 2d-array texture, `depth24`+`sampled` only, WebGPU only (GL2 throws); bind whole as pipeline texture kind 'depthArray' (texture_depth_2d_array), attach one layer via `createTarget({color: [], depth, layer})`; omit for a plain 2D texture
  * @property {boolean} [sampled] - `depth24` only (ME-15b, 27.9a item 7): a real texture (NEAREST, compare mode NONE, `texelFetch` on a `sampler2D`) instead of the default write-only renderbuffer
  * @property {'nearest'|'linear'} [filter] - WG-1b1 (38.3): `rgba8` only (glyph atlas); default 'nearest'. Integer/depth textures are never filtered
  */
@@ -41,6 +41,7 @@
  * @typedef {Object} TargetDesc
  * @property {GpuHandle[]} color - texture handles (createTexture results), draw-buffer order; `[]` = depth-only target (ME-15b: draw buffers NONE)
  * @property {GpuHandle} [depth] - a `depth24` texture handle, or omitted for no depth attachment
+ * @property {number} [layer] - ME-16b: required when `depth` has `layers` (attaches that layer; per-layer views are cached on the texture, so re-creating a target allocates no view); throws if out of range
  */
 
 /**
@@ -62,7 +63,7 @@
  * @property {string} [label] - S8-B1-09: name in the [boot] pipeline list (default: the shader entry point)
  * @property {'cw'|'ccw'} [frontFace] - WG-2b: baked raster winding, default cw after the clip-y flip; mirrored items use ccw
  * @property {{factor: number, units: number}} [depthBias] - ME-15b (27.9a item 7): polygon offset (GL2: `POLYGON_OFFSET_FILL` enabled on bind, disabled again by `endPass`); no hardware depth compare is ever used
- * @property {{uniformBytes: number, textures: ('uint'|'sint'|'float'|'depth'|'filtered')[]}} [bindings] - WG-1b1 (38.3/38.4): explicit WebGPU bind layout (`@group(0)` textures in slot order, `@group(1)` one dynamic-offset uniform block of `uniformBytes`); GL2 ignores it
+ * @property {{uniformBytes: number, textures: ('uint'|'sint'|'float'|'depth'|'depthArray'|'filtered')[]}} [bindings] - WG-1b1 (38.3/38.4): explicit WebGPU bind layout (`@group(0)` textures in slot order, `@group(1)` one dynamic-offset uniform block of `uniformBytes`); GL2 ignores it
  * @property {string[]} [targetFormats] - WG-1b1: colour attachment formats (TextureDesc names, or 'canvas'); GL2 ignores it
  * @property {'depth24'|'depth32f'} [depthFormat] - WG-1b1: depth attachment format; GL2 ignores it
  */
