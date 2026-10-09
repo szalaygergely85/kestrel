@@ -11,6 +11,7 @@ import { WATER_COMPOSITE_FRAG_SRC } from '../glsl/waterComposite.frag.js';
 import { WGSL_MODULES } from './index.js';
 import { compileFn, shims, numericLiterals } from './wgslProbe.js';
 import { diamondAngle, WL_SLOTS, WL_STRIDE, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT } from '../../waterLook.js';
+import { CLOUD_SHIFT } from '../../cloudShadow.js'; // S8-B2-12b (38.13)
 
 const BAD = /%|\bround\s*\(|dpdx|dpdy|fwidth|frag_depth|textureSample|texelFetch|gl_FragCoord|gl_FrontFacing|\bmod\s*\(|ivec2|uvec|\bint\(|floatBitsToUint|uintBitsToFloat|\bmix\s*\(/;
 for (const [n, c] of [['water', WATER_WGSL], ['waterComposite', WATER_COMPOSITE_WGSL]]) {
@@ -87,10 +88,33 @@ assert.ok(/if \(w\.x == 0x7f800000u\) \{ return o; \}/.test(WATER_COMPOSITE_WGSL
 const glslC = WATER_COMPOSITE_FRAG_SRC.slice(WATER_COMPOSITE_FRAG_SRC.indexOf('// US-141a'));
 const wgslC = WATER_COMPOSITE_WGSL.slice(WATER_COMPOSITE_WGSL.indexOf('// diamond angle'));
 const gC = numericLiterals(glslC), wC = numericLiterals(wgslC);
+wC.delete(24); // S8-B2-12b (38.13): CLOUD_SHIFT, the cloud-darkening byte's bit shift - no GLSL equivalent (GLSL frozen, D-044)
 assert.deepEqual([...gC].filter((v) => !wC.has(v)), [], 'GLSL constants missing in WGSL');
 assert.deepEqual([...wC].filter((v) => !gC.has(v)), [], 'WGSL constants not in GLSL');
 
 assert.ok(numericLiterals(wgslC.replaceAll('0.4794', '0.4795')).has(0.4795) && !numericLiterals(wgslC.replaceAll('0.4794', '0.4795')).has(0.4794), 'mutation: literal parity detects a changed constant');
+
+// --- cF (S8-B2-12b, 38.13): the cloud-darkening byte (LIGHT.w bits 24..31 of the floor cell) scales the sun term `k`.
+// fs_main itself is not probed (no vec3/vec4 shim), so the real `let cF = ...;` expression is extracted from the
+// compiled module text and wrapped in a tiny probeable fn - a wrong shift/mask/divisor in the real text fails here. ---
+{
+  const m = WATER_COMPOSITE_WGSL.match(/let cF = (1\.0 - f32\(\(lightT\.w >> \d+u\) & \d+u\) \* \(1\.0 \/ 255\.0\));/);
+  assert.ok(m, 'cF decode line present in waterComposite.wgsl.js');
+  assert.ok(m[1].includes(`>> ${CLOUD_SHIFT}u`), `cF shifts by CLOUD_SHIFT (${CLOUD_SHIFT})`);
+  assert.ok(/let k = wu\.ambientI \+ wu\.sunI \* max\(wu\.sunDir\.z, 0\.0\) \* sunF \* cF;/.test(WATER_COMPOSITE_WGSL), 'cF scales the sun term k');
+  const probeSrc = `fn cloudFactorProbe(lightT: vec4u) -> f32 { let cF = ${m[1]}; return cF; }`;
+  const f = compileFn(probeSrc, 'cloudFactorProbe', shims);
+  for (const q of [0, 1, 64, 127, 153, 200, 255]) {
+    const got = f({ x: 0, y: 0, z: 0, w: q << CLOUD_SHIFT });
+    const want = 1 - q * (1 / 255);
+    assert.ok(Math.abs(got - want) < 1e-9, `cF at q=${q}: ${got} vs ${want}`);
+  }
+  assert.equal(f({ x: 0, y: 0, z: 0, w: 0 }), 1, 'q=0 -> cF exactly 1.0 (bit-identical AC)');
+  // mutation: a wrong divisor (254 instead of 255) must change the probed value away from the JS formula.
+  const mutSrc = probeSrc.replace('/ 255.0)', '/ 254.0)');
+  const fMut = compileFn(mutSrc, 'cloudFactorProbe', shims);
+  assert.ok(Math.abs(fMut({ x: 0, y: 0, z: 0, w: 153 << CLOUD_SHIFT }) - (1 - 153 * (1 / 255))) > 1e-6, 'mutation: wrong divisor caught');
+}
 
 // --- diamondAngle vs waterLook.diamondAngle ---
 function runDiamond(src, trials) {

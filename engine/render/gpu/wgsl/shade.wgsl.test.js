@@ -289,6 +289,29 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   }
 }
 
+// --- S8-B2-12b (38.13): cloud-darkening byte (LIGHT.w bits 24..31) scales the terrain analytic sun term `bSunT`.
+// `cFt` sits in fs_main's kindU==KIND_TERRAIN block, not inside the probed `shadeTerrain` fn, so the real `let cFt =
+// ...;` expression is extracted from the compiled module text and wrapped in a tiny probeable fn (same technique as
+// water.wgsl.test.js) - a wrong shift/mask/divisor in the real text fails here. ---
+{
+  const m = SHADE_WGSL.match(/let cFt = (1\.0 - f32\(\(lightT\.w >> \d+u\) & \d+u\) \* \(1\.0 \/ 255\.0\));/);
+  assert.ok(m, 'cFt decode line present in shade.wgsl.js terrain branch');
+  assert.ok(m[1].includes('>> 24u'), 'cFt shifts by CLOUD_SHIFT (24)');
+  assert.ok(/let bSunT = su\.ambientI \+ su\.sunI \* max\(0\.0, ndotlT\) \* sunFT \* cFt;/.test(SHADE_WGSL), 'cFt scales the analytic sun term bSunT');
+  const probeSrc = `fn cloudFactorProbe(lightT: vec4u) -> f32 { let cFt = ${m[1]}; return cFt; }`;
+  const f = compileFn(probeSrc, 'cloudFactorProbe', shims);
+  for (const q of [0, 1, 64, 127, 153, 200, 255]) {
+    const got = f({ x: 0, y: 0, z: 0, w: q << 24 });
+    const want = 1 - q * (1 / 255);
+    assert.ok(Math.abs(got - want) < 1e-9, `cFt at q=${q}: ${got} vs ${want}`);
+  }
+  assert.equal(f({ x: 0, y: 0, z: 0, w: 0 }), 1, 'q=0 -> cFt exactly 1.0 (bit-identical AC)');
+  // mutation: a wrong divisor (254 instead of 255) must change the probed value away from the JS formula.
+  const mutSrc = probeSrc.replace('/ 255.0)', '/ 254.0)');
+  const fMut = compileFn(mutSrc, 'cloudFactorProbe', shims);
+  assert.ok(Math.abs(fMut({ x: 0, y: 0, z: 0, w: 153 << 24 }) - (1 - 153 * (1 / 255))) > 1e-6, 'mutation: wrong divisor caught');
+}
+
 // --- S8-B2-14 wetness: uniform slot replaces pad0 (layout unchanged), JS twin == WGSL, 0 = untouched, 1 darkens 10-25 % ---
 {
   assert.equal(w('wetness'), 43, 'wetness takes the old pad0 word (closeBand 42 + 1)');
