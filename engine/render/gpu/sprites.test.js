@@ -423,7 +423,9 @@ for (const depthUint of [true, false]) {
   // 'torch', on) should be brighter than the SAME model far from every
   // light (structTable / ambient-only), same T3 slot (12..14).
   const m1def = assets2.world('world_m1'); // assets2 (globals) has no meshes: drop the road-side mesh structures
-  const world2 = World.load({ ...m1def, structures: m1def.structures.filter((q) => !q.mesh) }, assets2, {});
+  // world_m1 no longer ships the Ferrum horizon billboard (owner 2026-10-09): fixture entry keeps the horizon projection covered.
+  const ferrumFixture = { id: 'ferrumLights', model: 'ferrumLights', bearingDeg: 87.6, elevDeg: 1.0, angular: { wDeg: 13.2, hDeg: 2.2 }, fog: 0.55, fogColor: 'fogFar' };
+  const world2 = World.load({ ...m1def, horizon: [ferrumFixture], structures: m1def.structures.filter((q) => !q.mesh) }, assets2, {});
   const lights2 = buildLightSet(world2, assets2.palette);
   lights2.sun.on = false; // isolate the torch's own falloff from daylight (both points stay indoors, same tower)
   lights2.update(0, world2);

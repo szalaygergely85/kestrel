@@ -55,7 +55,7 @@ export function createGameHooks() {
       if (name === 'flag:set') { p.key = a; p.value = b; }
       else if (name === 'item:got') { p.id = a; p.n = b === undefined ? 1 : b; }
       else if (name === 'player:died') { p.x = a; p.y = b; p.z = c; }
-      else if (name === 'prop:touched') { p.id = a; p.kind = b; p.x = c.x; p.y = c.y; p.z = c.z; } // c = {x,y,z}
+      else if (name === 'prop:touched') { p.id = a; p.kind = b; p.x = (c && c.x) || 0; p.y = (c && c.y) || 0; p.z = (c && c.z) || 0; } // c = {x,y,z}; missing/partial c -> 0,0,0
       else p.id = a;
       api.emit(name, p);
     },
@@ -100,6 +100,8 @@ export function bridgeEngineEvents(events, hooks) {
   const offs = [
     events.on('beast:died', (p) => { if (p && typeof p.id === 'string') hooks.emitSimple('beast:died', p.id); }),
     events.on('inventory:added', (p) => { if (p && typeof p.id === 'string') hooks.emitSimple('item:got', p.id, p.n || 1); }),
+    // interaction:fired {key, name} carries no position (interaction.js:191) -> no 4th arg, coords default to 0,0,0.
+    events.on('interaction:fired', (p) => { if (p && typeof p.key === 'string') hooks.emitSimple('prop:touched', p.key, p.name); }),
   ];
   return () => { for (const off of offs) off(); };
 }
