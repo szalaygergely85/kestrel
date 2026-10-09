@@ -4767,3 +4767,233 @@ Owner: one package file to distribute and use assets, like `.unitypackage`.
    - Use DOM or `window` in `engine/content`.
    - Vendor a zip library.
    - Put absolute paths or timestamps into a package.
+
+### 38.31 EP-WILD: ambient wildlife (fauna) system (PC-B architect, 2026-10-10; owner-authorised while PC-A is offline; D-053 "Living forest")
+Rabbits, deer, foxes, squirrels and birds live around the player. They are scenery: not combat, not saved, not hashed. The data is `ASSETS.wildlifeFx` (design/models/voxel_wildlife.js); the game passes it in, because the engine never reads `window.ASSETS`. Rows: WILD-01..08 + WILD-D1..D4 (docs/backlog.md, EP-WILD).
+
+**1. Layout and dependency rule**
+- New leaf folder `engine/fauna/`:
+  - `faunaDef.js` (validate + compile the def);
+  - `spawner.js`;
+  - `groundBrain.js`;
+  - `flyerBrain.js`;
+  - `fauna.js` (`createFauna`, the one public object);
+  - `feed.js` (draw selection).
+- `engine/fauna/**` may import only `engine/fauna/**`, `engine/nav/**` (perceive, leash), `engine/core/**` (rng, math) and `engine/entities/clipPlayer.js` + `gait.js`. It never imports world, render, mesh, physics, ui, game or design. Add this as check-deps rule 15, the same shape as rule 14.
+- Render and world never import `engine/fauna`. The frame renderer only calls an injected hook (item 9).
+- The world is reached only through an injected `env`. All its methods are allocation-free; the game builds it once:
+```js
+/** @typedef {Object} FaunaEnv
+ * @property {(x:number,y:number)=>number} groundAt      terrain z (Terrain.groundAt; animals never walk on structures)
+ * @property {(x:number,y:number)=>number} slopeZ        ground normal z (1 = flat)
+ * @property {(x:number,y:number)=>number} habitatAt     bitmask: 1 meadow, 2 edge, 4 forest, 0 = never (water, road, structure)
+ * @property {(x:number,y:number,r:number)=>boolean} blocked   structure footprint, tree trunk, water, placed-mesh collider
+ * @property {(x:number,y:number,dx:number,dy:number,r:number,out:{x:number,y:number})=>void} moveCircle  slide vs colliders (near animals only)
+ * @property {(x:number,y:number,minR:number,maxR:number,out:{x:number,y:number,z:number,tree:number})=>boolean} perchNear  a perch point on a tree in the ring; false if none
+ */
+```
+
+**2. Data (`compileFaunaDef(wildlifeFx, pool)`, compiled once)**
+- Per species:
+  - clip names -> clip indices (`pm.clipIndex`; a missing clip is a def error at load, never at runtime);
+  - gaits, speeds, `dist`, `times`, `flee`, `blendMs`, `groupSize`.
+- New `spawn` block per species (designer + PO data, WILD-D4). Defaults in brackets:
+  - `habitats` (['meadow','edge']);
+  - `cellChance` (0.35);
+  - `spawnMinM` (35);
+  - `spawnMaxM` (rabbit 60, deer 120, bird 70);
+  - `despawnM` (spawnMaxM * 1.25);
+  - `drawM` (rabbit 35, squirrel 25, bird 30, fox 60, deer 90): about the distance where the body is 2 cells high;
+  - `cap` (rabbit 10, deer 8, fox 2, squirrel 6, bird 16);
+  - `kind` ('ground' | 'climber' | 'flyer').
+- Unknown keys warn once.
+- Numbers are validated: `dist.flee < dist.alert < dist.notice < dist.safe`, and gait ranges must overlap or touch.
+
+**3. Spawning (spawner.js)**
+- **Cells:** the world is cut into 64 m fauna cells. The active set is a fixed 7 x 7 ring table around the player (Int32 cell keys, ring-buffer slots, no Map). It is rebuilt only when the player crosses a cell edge.
+- **Cell content:** fixed by `hash2(ix, iy, seed + speciesK)`.
+  - For each species, roll `cellChance`.
+  - Then try 4 hash-chosen spawn points in the cell. Keep the first one where `habitatAt & speciesMask` is set and the point is not `blocked`.
+  - So the same meadow always holds the same rabbits, and nothing is stored.
+- **When a cell spawns:** only when its spawn point is between `spawnMinM` and `spawnMaxM` from the player, AND it is either:
+  - outside the view cone (dot with the camera forward < cos(hfov/2 + 15 deg)), or
+  - farther than `drawM`.
+  This means no pop-in in view.
+- **Caps:** global `FAUNA_MAX = 40` slots (preallocated), plus the per-species `cap`. A full cap skips the spawn; it never steals a slot.
+- **Despawn:** past `despawnM`, or after a flee with `hideOrDespawn` once out of view.
+  - The cell then gets a 60-120 s cooldown (rng).
+  - The cooldown is kept only in the ring table, so it is lost when the cell leaves the ring. That is fine.
+- **Groups:** `groupSize` members around the spawn point, 1-4 m apart, with one shared home (the group anchor). Deer: `buckChance` picks `deerBuck` for one member.
+- **Seeded RNG:** `createRng(worldSeed ^ 0x57494C44)`, owned by the fauna object. It never touches the combat/sim RNG.
+
+**4. Ground behaviour (groundBrain.js; states = wildlifeFx.states + RETURN)**
+- **Slots** are plain preallocated objects carrying:
+  - the perceive fields: `x, y, fx, fy, coneCos, range, hearR, homeX, homeY, homeR`;
+  - the leash fields: `leashMode, leashT`;
+  - `state, stateT, speed, yaw, gait, groupId` and a clip player.
+- **Ticks:** a decision tick at 10 Hz, staggered (`slot % 6 === tick % 6`). Animals beyond `drawM` think at 2 Hz. Motion integrates every 60 Hz step.
+- **Sense:** `perceive(slot, player, null, out)`.
+  - Prey see almost all round: `coneCos = -0.5`, `range = dist.notice`, `hearR = dist.notice * 0.6`.
+  - Player `noise = NOISE_SPRINT` when sprinting, else 1.
+  - No LOS in v1: it costs time, and grass would block it anyway.
+  - React only when `sees || hears`.
+- **Rules,** checked in order:
+  1. `d < (running ? dist.fleeIfRunning : dist.flee)` -> FLEE.
+  2. `d < dist.alert` -> ALERT (the `enter` clip plays once, e.g. sitUp, then the state clip).
+  3. `d < dist.notice` -> stop grazing, idle, turn towards the player (turn rate limited).
+  4. Else IDLE / GRAZE / MOVE on the `times` timers.
+- **Leash:**
+  - `def = {homeX, homeY, homeR: wander radius (rabbit 12, deer 25), leashR: flee.maxDistM, aggroR: dist.flee, loseScale: dist.safe / dist.flee, returnSpeed: speeds.wander, giveUpT: 8}`.
+  - `leashState` runs on the decision tick. ENGAGE = fleeing.
+  - RETURN / GIVEUP = walk home via `returnTarget`, or despawn if `hideOrDespawn` and out of view.
+  - A threat inside `fleeR` always forces `leashMode = LEASH_ENGAGE`. In 38.27, RETURN ignores the target by design; prey must not.
+- **Flee:**
+  - heading away from the player, turn rate `flee.turnDegPerS`;
+  - rabbit zigzag (`zigzagDeg` every `zigzagEveryS`);
+  - deer trot for the first 1 s, then gallop;
+  - burst speed for the first 1 s.
+- **Group alarm:** a fleeing member makes group members within 15 m flee after 0.2-0.5 s (rng).
+- **Gait and clip:**
+  - `pickGait(gaits, speed, cur)` with a 0.15 m/s hysteresis;
+  - `rate = clamp(speed / tunedMps, rate[0], rate[1])`;
+  - a state switch crossfades with the species `blendMs`.
+
+**5. Navigation (cheap, no NavGrid)**
+- **Walkable(x, y)** = `habitatAt != 0 && slopeZ >= 0.8 (deer 0.75) && !blocked(x, y, bodyR)`.
+- **Wander target:** a point in the home disc at `times.wanderM`. If it is not walkable, retry up to 4 times per decision tick, then idle.
+- **Feeler:** on each decision tick while moving, probe `lookM = max(1, speed * 0.5)` ahead. If blocked, try the fixed offsets +-30, +-60, +-90 and 180 deg (precomputed cos/sin table) and take the first free one.
+- **Motion:**
+  - Within 40 m of the player, use `env.moveCircle` (slides on trunks, rocks and walls).
+  - Beyond 40 m, plain integration; collisions there are invisible.
+  - `z = groundAt(x, y)` each step. No body pitch in v1.
+- **Stuck:** moved < 25 % of the expected distance over 1 s -> new heading or target.
+- **Player contact:** animals do not push the player and are not colliders for the player (v1).
+- **Tree trunks:**
+  - The game builds a static bucket grid once at load: 16 m cells, Int32 index arrays, from `world.scatter` + species `trunkR`.
+  - `blocked` checks this grid first, then `world.structureAt`, then the collider probe.
+
+**6. Birds (flyerBrain.js, kind 'flyer')**
+- **States:** PERCH, HOP (ground forage on meadow, optional per species), TAKEOFF, FLY, LAND.
+- **Perches:**
+  - `env.perchNear` returns a point on a tree from the trunk grid: the tree base + a ring offset `r` at a height `z`.
+  - `r` and `z` per tree model come from data (`perchByModel` in the bird def). In WILD-D3 the designer measures them on the forest tree meshes.
+- **Flying away:**
+  - Trigger: the player is within `dist.flee` (or `fleeIfRunning`).
+  - Pick a new perch 30-70 m away, at least 15 m farther from the player than now.
+  - The flock shares the target tree. Each bird gets its own offset and a 0-0.4 s start delay.
+- **Path:**
+  - No collision.
+  - Climb to `cruiseZ` (canopy top at 3 samples along the path + 3-6 m), glide, then descend.
+  - Each leg is a quadratic Bezier, sampled by an arc-length parameter (cheap closed form, no allocation).
+  - Speed 6-9 m/s.
+- **Clips:** takeoff (once) -> flap while climbing, glide while level or descending -> land (once, the last 1.5 m) -> perch idle.
+- **No perch** within 70 m: fly out of view and despawn.
+
+**7. Squirrel (kind 'climber', WILD-08)**
+- Ground behaviour as in item 4.
+- **Flee** = run to the nearest trunk (trunk grid), then climb:
+  - x/y stay at the trunk surface: tree pos + trunkR, on the far side from the player;
+  - z rises at the climb speed to a random 2-5 m;
+  - then a peek idle.
+- The `climb` clip has the body pitched 90 deg inside the clip, because instances only have yaw. The instance yaw faces the trunk.
+
+**8. Engine features (WILD-01, WILD-02)**
+- **Crossfade (pose):**
+  - `VoxelPool.pushInstance(...)` now returns the raw slot index, or -1 when dropped (backward compatible).
+  - New `pool.blendInstance(i, fromClip, fromFrame, fromTMs, fromW)` sets a second clip on that slot. `fromW` is the weight of the old pose (1 -> 0).
+  - `voxelPose.sampleClip` samples the from-clip into a second module scratch, then lerps rot and pos component-wise: `v = cur + (from - cur) * fromW`.
+  - `fromW <= 0` or `fromClip < 0` must give byte-identical output to today (test).
+  - The projected and shadow slots copy the 4 fields.
+  - Lerping Euler degrees component-wise is accepted, so clips in a crossfade pair must not cross +-180 on any part. `faunaDef` warns when two clips of one species differ by more than 180 deg on any key.
+  - Entity `components.voxel` crossfade is NOT in scope (it would touch the serializer); a later row can add it.
+- **Clip player (`engine/entities/clipPlayer.js`):** a plain struct `{clip, frame, tMs, loop, rate, next, fromClip, fromFrame, fromTMs, fadeMs, fadeT}`.
+  - `clipPlay(p, pm, clipIdx, loop, fadeMs, next = -1)`: the current clip becomes the from-clip.
+  - `clipStep(p, pm, dtMs)`: advances both clips by `dtMs * rate`. A finished non-loop clip goes to `next` (the `once` map: sitUp -> alert), or holds its last frame.
+  - `clipSetPhase(p, pm, phase01)`: the random start phase (frame, tMs from a 0..1 fraction of the clip length).
+  - `clipFromW(p)`: `1 - smoothstep(fadeT / fadeMs)`.
+  - Same clip semantics as `stepAnimations` (durMs per frame, `MAX_STEPS_PER_CALL` guard). No events in v1.
+- **Gait (`engine/entities/gait.js`):** `pickGait(gaits, speed, cur) -> index` with hysteresis, and `gaitRate(gait, speed) -> rate`. Pure, no allocation.
+- **Entities:** entities already have a per-instance `components.voxel.speed` (stepAnimations). The random phase for entities is the `clipSetPhase` math applied to the spawn frame/t; no change needed.
+
+**9. Render: voxel pool, LOD, budgets (feed.js, WILD-05)**
+- Animals are NOT World entities: no `renderVersion` churn on spawn/despawn, no serialization, no `world.forEachEntity` cost.
+- **Hook:** `frameRenderer` gets one optional hook after `voxelPool.collect(world, cam)`: `if (engine.feedVoxels) engine.feedVoxels(voxelPool, cam)` (same pattern as `engine.feedDetail`). The game sets it to `fauna.feed`.
+- **`feed(pool, cam)`:**
+  - Candidates are alive animals with `d < drawM` that are either in the view cone (+ 10 deg margin) or at `d < 6 m`.
+  - Select the nearest with the fixed-array insertion select (as in `VoxelPool.collect`), up to `min(WILD_DRAW_MAX = 20, pool.cap - pool._rawCount - 4)`. The 4 spare slots stay free for later gameplay pushes; the mesh cap is 48.
+  - Per drawn animal: `pushInstance`, plus `blendInstance` while a fade runs.
+- **LOD:**
+  - (a) `drawM` per species;
+  - (b) animals that are not drawn are still simulated, deciding at 2 Hz beyond `drawM`;
+  - (c) shadows come from the queued instances (`projectShadow`), so the cap also bounds the shadow cost.
+- **Budgets:**
+  - JS fauna step (40 alive): <= 0.15 ms p95;
+  - feed: <= 0.05 ms;
+  - pose: the existing per-instance `computeVoxelPose` (8 parts) x <= 20;
+  - GPU: <= 2.5k quads per ground model and <= 0.4k per bird, so <= 30k wildlife quads drawn;
+  - all within the D-053 flat 8 ms GPU p95 combat budget.
+  `tools/bench-fauna.mjs` (WILD-05) measures the JS numbers at 40 alive / 20 drawn.
+
+**10. Determinism, save, zero allocation**
+- **Ambient only:**
+  - Fauna is not part of `beastSim.hashInto`, the replay or the combat RNG.
+  - It may read the player position and the camera. Nothing reads fauna state except the render feed.
+  - Gameplay never depends on it, so frame-rate or order differences are harmless.
+  - It is still seeded and reproducible for tests: the same seed + the same player path give the same positions.
+- **Save:** nothing is saved. `fauna.reset()` on load, new game or waystone teleport clears the slots and the ring; cells repopulate by hash.
+- **Zero allocation** per step and per frame after `createFauna`:
+  - preallocated slots, typed arrays, module-level scratch;
+  - no closures in the step, no string building (the warn-once Set grows only on bad data);
+  - every row has a `--expose-gc` heap test (1e4 steps, as in leash.test.js).
+
+**11. Public API (`engine/index.js`)**
+```js
+createFauna(def /* compiled by compileFaunaDef */, env /* FaunaEnv */, { seed, maxAlive = 40, drawMax = 20 }) -> fauna
+fauna.step(dtSec, playerX, playerY, playerRunning, camX, camY, camFx, camFy, hfovRad)  // once per fixed step, after the player
+fauna.feed(pool, cam)    // the feedVoxels hook
+fauna.reset()
+fauna.stats              // { alive, drawn, bySpecies: Int32Array } for the debug overlay
+compileFaunaDef(wildlifeFx, pool) -> def   // throws messages naming the species and key
+createClipPlayer(), clipPlay, clipStep, clipSetPhase, clipFromW, pickGait, gaitRate
+```
+
+**12. Tests (Node first)**
+- **clipPlayer:**
+  - rate x2 = half the wall time per lap;
+  - phase 0.5 lands mid-clip;
+  - once -> next;
+  - the fade weight is monotone 1 -> 0 over fadeMs;
+  - zero alloc.
+- **voxelPose crossfade:** `fromW = 0` is byte-identical; `fromW = 1` equals the from-clip pose; 0.5 is the mid lerp.
+- **spawner:**
+  - the same seed and path give the same spawns;
+  - no spawn inside the view cone within `drawM`;
+  - caps hold;
+  - cooldown after despawn;
+  - the ring re-centres without allocation.
+- **groundBrain** (fake env: flat ground, one blocked disc, a water strip):
+  - an approaching player gives notice -> alert -> flee;
+  - running doubles the reaction distance (`fleeIfRunning`);
+  - the flee path never enters a blocked cell;
+  - safe -> return home;
+  - the group alarm reaches members within 15 m;
+  - the gait rate stays inside `rate[]`.
+- **flyerBrain:**
+  - takeoff when the player is near;
+  - the new perch is farther from the player;
+  - a landing ends at the perch point (< 0.05 m);
+  - no perch -> despawn.
+- **Integration (WILD-06):** the beastSim replay hash is identical with fauna on and off (600 steps).
+- **Bench:** `tools/bench-fauna.mjs`, plus one headless `tools/capture-browser.mjs` frame with rabbits + deer in view.
+
+**13. arch-review needs**
+- Engine rows (01-05, 07, 08) end in `arch-review` for PC-A. WILD-06 (game wiring) goes to po-review with an owner walk.
+- The reviewer checks:
+  - the rule-15 imports;
+  - zero-allocation tests present and green;
+  - the `fromW = 0` byte-identity test;
+  - no fauna state in `hashInto` or the save;
+  - the feed respects the pool cap with boars + NPCs present;
+  - bench numbers against item 9;
+  - no `Math.random`.
+- Open for the PO, not in v1: hunting or hitting animals, time-of-day activity (deer at dusk), sounds (an EP-SOUND hook later via a `fauna.events` ring).

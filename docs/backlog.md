@@ -1687,3 +1687,103 @@ Note (dev): package.js + package.test.js (44 checks). mountPackages is async (re
 - [ ] **05:** the editor imports a `.kestrel` (assets with thumbnails) and exports selected assets with their dependencies.
 
 Note (KPKG-03 dev): tools/pack.mjs (spec `entries` from/to/exclude globs -> deterministic dist/<id>-<version>.kestrel, re-validated via openPackage; also packs a dir holding kestrel.json) + tools/unpack.mjs + content/packages/kestrel.base.pkg.json (6.5 MB) + tools/pack.test.mjs (12 checks: determinism, unpack->pack byte-identical, errors, base packed bundle deep-equals loose). engine/index.js now also exports readZip/writeZip/crc32/checkZipPath/ZIP_LIMITS. content-smoke ignores content/packages/. Not done: `kestrel.chargen.human.pkg.json` (kit does not exist yet, CHARGEN rows); write its spec when it does. 04/05 still todo.
+
+## EP-WILD Living forest: ambient wildlife (D-053; architecture 38.31; PC-B architect 2026-10-10)
+**Order:**
+1. WILD-01 and WILD-02 (B2) run in parallel with WILD-03 and WILD-04 (B1).
+2. Then WILD-05 (B2) and WILD-06 (B1).
+3. After the owner OKs the rabbit + deer preview: WILD-D1..D4, then WILD-07 and WILD-08.
+
+**Every row:**
+- ends with `node tools/run-tests.mjs` + check-deps green;
+- engine rows end in `arch-review` (PC-A).
+
+| ID | Title | Pri | Status | Files |
+|---|---|---|---|---|
+| WILD-01 | Voxel pose crossfade: `pushInstance` returns the slot, `blendInstance`, from-clip lerp in `sampleClip` | P1 | todo [PC-B B2, 0.5 d] -> arch-review | `engine/voxel/voxelPose.js`, `engine/render/voxelPool.js` + tests |
+| WILD-02 | `engine/entities/clipPlayer.js` (rate, phase, fade, once->next) + `gait.js` (pickGait, gaitRate) | P1 | todo [PC-B B2, 0.5 d] -> arch-review | `engine/entities/clipPlayer.js`, `engine/entities/gait.js` + tests, `engine/index.js` |
+| WILD-03 | `engine/fauna` def + spawner: compileFaunaDef, 64 m cell ring, habitat roll, caps, view-cone spawn rule, despawn + cooldown, check-deps rule 15 | P1 | todo [PC-B B1, 0.75 d] -> arch-review | `engine/fauna/faunaDef.js`, `engine/fauna/spawner.js` + tests, `tools/check-deps.mjs` (+ fixture test) |
+| WILD-04 | `engine/fauna` ground brain: idle/graze/move/alert/flee/return via perceive + leash, feelers, group alarm, gait rate | P1 | todo [PC-B B1, 0.75 d] - deps WILD-02, 03 -> arch-review | `engine/fauna/groundBrain.js`, `engine/fauna/fauna.js` + tests |
+| WILD-05 | Fauna feed + `engine.feedVoxels` hook + bench | P1 | todo [PC-B B2, 0.5 d] - deps WILD-01, 04 -> arch-review | `engine/fauna/feed.js`, `engine/render/frameRenderer.js` (one line), `tools/bench-fauna.mjs` |
+| WILD-06 | Game wiring: FaunaEnv (habitat from terrain.typeAt, trunk grid, blocked, moveCircle), rabbit + deer in, reset on load, replay-hash test, owner walk | P1 | todo [PC-B B1, 0.75 d] - deps WILD-05 | `game/js/wild/wildEnv.js` + test, `game/js/main.js` (small), `game/index.html` (script tag) |
+| WILD-07 | `engine/fauna` flyer brain: perch, takeoff, Bezier flight, land, flock | P2 | todo [PC-B B1, 0.75 d] - deps WILD-D3, 06 -> arch-review | `engine/fauna/flyerBrain.js` + test, `game/js/wild/wildEnv.js` (perchNear) |
+| WILD-08 | Climber (squirrel: flee to trunk, climb, peek) + fox def wiring | P2 | todo [PC-B B1, 0.5 d] - deps WILD-D1, D2, 06 -> arch-review | `engine/fauna/groundBrain.js` + test |
+| WILD-D1 | Squirrel voxel model + clips (idle, forage, hop, run, climb with the body pitched 90 deg in the clip, peek) | P2 | todo [PC-B designer, 0.75 d] - after the owner OKs the rabbit + deer preview | `design/models/voxel_wildlife.js`, `design/preview/wildlife.html` |
+| WILD-D2 | Fox voxel model + clips (idle, sniff, walk, trot, run, alert, pounce) | P2 | todo [PC-B designer, 0.75 d] - after the owner OK | same |
+| WILD-D3 | Songbird voxel model + clips (perch idle, hop, peck, takeoff, flap, glide, land) + `perchByModel` for the 6 forest tree models | P2 | todo [PC-B designer, 0.75 d] - after the owner OK | same + `wildlifeFx.bird` |
+| WILD-D4 | `spawn` blocks for all species in `wildlifeFx` (habitats, cellChance, spawn/despawn/draw distances, caps, kind) | P1 | todo [PC-B designer + PO, 0.25 d] | `design/models/voxel_wildlife.js` |
+
+### WILD-01 Voxel pose crossfade  [P1] [todo] [PC-B B2]
+- [ ] `pushInstance` returns the raw index (-1 when dropped). `blendInstance(i, fromClip, fromFrame, fromTMs, fromW)` sets the from-clip on that slot.
+- [ ] The projected and shadow slots carry the from-clip fields (38.31 item 8).
+- [ ] Byte-identical pose when `fromW = 0` or `fromClip = -1`.
+- [ ] `fromW = 1` equals the from-clip pose. `fromW = 0.5` is the mid lerp.
+- [ ] No allocation (`--expose-gc` test). Existing voxel / gpucompare tests stay green.
+
+### WILD-02 Clip player + gait  [P1] [todo] [PC-B B2]
+- [ ] `clipPlay`, `clipStep`, `clipSetPhase` and `clipFromW` work as in 38.31 item 8:
+  - rate x2 = half the lap time;
+  - phase 0.5 lands mid-clip;
+  - once -> next (sitUp -> alert);
+  - the smoothstep fade goes 1 -> 0.
+- [ ] `pickGait` with 0.15 m/s hysteresis (no flip-flop at 1.5 m/s with the rabbit gaits). `gaitRate` is clamped to `rate[]`.
+- [ ] Exported from `engine/index.js`. Zero allocation.
+
+### WILD-03 Fauna def + spawner  [P1] [todo] [PC-B B1]
+- [ ] `compileFaunaDef` resolves clip indices; a missing clip throws a message that names the species and the clip.
+- [ ] `compileFaunaDef` validates the `dist` order and `spawn` defaults (38.31 item 2).
+- [ ] Spawner:
+  - same seed + same player path = same spawns;
+  - no spawn inside the view cone within `drawM`;
+  - global and per-species caps hold;
+  - despawn past `despawnM`;
+  - cell cooldown.
+- [ ] The 7 x 7 ring re-centres without allocation. No `Math.random`.
+- [ ] check-deps rule 15 (engine/fauna imports) + a fixture case.
+
+### WILD-04 Ground brain  [P1] [todo] [PC-B B1]
+- [ ] Fake-env tests:
+  - notice -> alert -> flee as the player approaches;
+  - `fleeIfRunning` when sprinting;
+  - the flee path never enters the blocked disc or the water strip;
+  - safe -> return home (leash);
+  - a threat during RETURN still forces a flee;
+  - the group alarm reaches members within 15 m;
+  - the gait rate stays in `rate[]`;
+  - the stuck rule turns the animal.
+- [ ] Decision tick staggered at 10 Hz (2 Hz beyond `drawM`). Zero allocation over 1e4 steps with 40 animals.
+
+### WILD-05 Feed + hook + bench  [P1] [todo] [PC-B B2]
+- [ ] `engine.feedVoxels(pool, cam)` is called once after `voxelPool.collect`. No hook = byte-identical frame.
+- [ ] Feed:
+  - nearest-first;
+  - in view (+10 deg) or < 6 m;
+  - <= `drawMax`;
+  - leaves 4 pool slots free.
+- [ ] `tools/bench-fauna.mjs`: 40 alive / 20 drawn. Step <= 0.15 ms p95, feed <= 0.05 ms. Numbers in the row note.
+
+### WILD-06 Game wiring  [P1] [todo] [PC-B B1]
+- [ ] `wildEnv.js` implements FaunaEnv:
+  - habitat bitmask from `terrain.typeAt` (centre + 4 ring samples at 12 m for the edge);
+  - trunk bucket grid from `world.scatter`;
+  - `blocked` / `moveCircle` via `structureAt`, the trunk grid, `waterAt` and `collideCircle`;
+  - allocation-free.
+- [ ] Rabbit + deer models are bound in the registry. Fauna steps after the player. `fauna.reset()` on load, new game and teleport.
+- [ ] beastSim replay hash identical with fauna on and off (600 steps).
+- [ ] One `capture-browser` frame with rabbits and deer. Then the owner walk: rabbits on the meadow, deer at the forest edge, both flee, no foot sliding, no snapping.
+
+### WILD-07 Birds  [P2] [todo] [PC-B B1]
+- [ ] Perch on trees (`perchNear`). Takeoff when the player is within `dist.flee`.
+- [ ] The new perch is 30-70 m away and farther from the player. Flock shares the target, with a start delay.
+- [ ] Landing error < 0.05 m. No perch -> fly out of view and despawn. Zero allocation.
+
+### WILD-08 Squirrel + fox  [P2] [todo] [PC-B B1]
+- [ ] Squirrel flees to the nearest trunk, climbs to 2-5 m on the far side from the player, then peeks.
+- [ ] Fox runs as a ground species from data only (no new code paths beyond the `kind` switch). Tests with a fake trunk.
+
+### WILD-D1..D4 Designer  [P2/P1] [todo] [PC-B designer]
+- [ ] Start only after the owner OKs `design/preview/wildlife.html` (rabbit + deer).
+- [ ] Realistic voxels (style-guide 0), four-legged animals on all fours; same file + preview.
+- [ ] Ground models <= 2.5k quads, bird <= 0.4k (38.31 item 9).
+- [ ] Gait clips tuned with `tunedMps` + `rate[]`.
+- [ ] D3 includes `perchByModel` measured on the forest tree meshes. D4 sets the `spawn` blocks with the PO.
