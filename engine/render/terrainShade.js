@@ -295,7 +295,7 @@ export function makeTerrainShadeCtx(recipe, tlookPacked, palette) {
 }
 
 // ME-19b: deferred terrain-cell shading moved without changing expression order.
-const shadeOut = { glyph: 32, fg: new Uint8Array(3), bg: new Uint8Array(3) };
+const shadeOut = { glyph: 32, level: 255, fg: new Uint8Array(3), bg: new Uint8Array(3) };
 const shadeNrm = new Float64Array(3);
 const _terrainAoAliasCache = new WeakMap();
 function terrainAoAlias(gbuf) {

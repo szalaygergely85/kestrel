@@ -54,7 +54,7 @@ function uniformObject(words, ints) {
   const v4 = (n) => { const a = w(n); return { x: words[a], y: words[a + 1], z: words[a + 2], w: words[a + 3] }; };
   return {
     curA: v4('curA'), curB: v4('curB'), curC: v4('curC'), prevA: v4('prevA'), prevB: v4('prevB'), prevC: v4('prevC'), dEye: v4('dEye'),
-    gridCols: ints[w('gridCols')], gridRows: ints[w('gridRows')], histValid: ints[w('histValid')], ortho: ints[w('ortho')], snap: ints[w('snap')], pad0: ints[w('pad0')], detailDefault: words[w('detailDefault')],
+    gridCols: ints[w('gridCols')], gridRows: ints[w('gridRows')], histValid: ints[w('histValid')], ortho: ints[w('ortho')], snap: ints[w('snap')], waterOn: ints[w('waterOn')], detailDefault: words[w('detailDefault')],
   };
 }
 
@@ -161,7 +161,7 @@ function scene(src, cam0, cam1, plane, tweak) {
   const words = new Float32Array(STABLE_BLOCK.sizeWords), ints = new Int32Array(words.buffer);
   packStableUniforms(st, COLS, ROWS, words, ints);
   words[w('detailDefault')] = DETAIL;
-  ints[w('pad0')] = 1; // waterOn (the probe binds a real water layer)
+  ints[w('waterOn')] = 1; // waterOn (the probe binds a real water layer)
   const u = uniformObject(words, ints);
   const fn = compileStable(src, { ...toTextures(fb, hist), u });
   return { st, fb, out, hist, fn, used: cell, u };
@@ -237,7 +237,7 @@ const mutations = [
   ['edge: fg.r ignored', 'if (fgC.x != sf.x || ', 'if ('],
   ['edge: glyph ignored', 'fgC.w != sf.w || ', ''],
   ['edge: bg.b ignored', ' || bgC.z != sb.z) { return o; }', ') { return o; }'],
-  ['water cells take history', 'if (u.pad0 != 0 && wl.x != 0x7f800000u && (wl.w & 32u) == 0u) { return o; }', ''],
+  ['water cells take history', 'if (u.waterOn != 0 && wl.x != 0x7f800000u && (wl.w & 32u) == 0u) { return o; }', ''],
   ['level 254 cur not rejected', ' || lvC == LEVEL_ANIM) { return o; }', ') { return o; }'],
   ['hist level 254 not rejected', 'if (lvP == LEVEL_ANIM) { return o; }', ''],
   ['mixed 255/ramp not rejected', 'if (c255 != (lvP == LEVEL_NONE)) { return o; }', ''],
@@ -253,7 +253,7 @@ const mutations = [
   ['ortho branch swapped in prev projection', 'cf = (vx / u.prevA.w + 1.0)', 'cf = (vx / vdP / u.prevA.w + 1.0)'],
   ['perspective divide dropped in rows', 'rf = (1.0 - vy / vdP / u.prevC.y)', 'rf = (1.0 - vy / u.prevC.y)'],
 ];
-assert.ok(STABLE_WGSL.includes('u.pad0 != 0 && wl.x'), 'water test is gated by waterOn (pad0): the 1x1 dummy reads 0 = water out of bounds');
+assert.ok(STABLE_WGSL.includes('u.waterOn != 0 && wl.x'), 'water test is gated by waterOn (waterOn): the 1x1 dummy reads 0 = water out of bounds');
 for (const [name, from, to] of mutations) {
   assert.ok(STABLE_WGSL.includes(from), `mutation anchor missing: ${name}`);
   const src = STABLE_WGSL.replace(from, to);

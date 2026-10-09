@@ -231,7 +231,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
       for (let t = 0; t < trials; t++) {
         const type = Math.floor(rand() * rows), tt = rand() < 0.5 ? rand() * 60 : rand() * 1700;
         const b = rand() * 1.3, u = rand() * 900 - 100, v = rand() * 900 - 100, time = rand() * 20, faceMode = Math.floor(rand() * 3);
-        const o = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) };
+        const o = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3), level: 255 };
         shadeTerrain(tt, type, b, u, v, time, ctx, o, faceMode);
         const g = st(tt, type, b, u, v, time, faceMode);
         const q = (x) => Math.floor(Math.min(255, Math.max(0, x)) + 0.5);
@@ -263,7 +263,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
     for (let t = 0; t < 300; t++) {
       const type = Math.floor(rand() * rows), tt = rand() < 0.5 ? rand() * 60 : rand() * 1700;
       const b = rand() * 1.3, u = rand() * 900 - 100, v = rand() * 900 - 100, time = rand() * 20, faceMode = Math.floor(rand() * 3);
-      const oA = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) }, oB = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) };
+      const oA = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3), level: 255 }, oB = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3), level: 255 };
       shadeTerrain(tt, type, b, u, v, time, ctxAbsent, oA, faceMode);
       shadeTerrain(tt, type, b, u, v, time, ctxZero, oB, faceMode);
       assert.deepEqual(oA, oB, 'terrain wetness 0 == absent');
@@ -277,7 +277,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
       let sum = 0, n = 0;
       for (let t = 0; t < 3000; t++) {
         const type = t % rows, tt = 100 + (t * 1.7) % 500, b = 0.3 + (t * 0.013) % 1.0, u = (t * 7.31) % 900, v = (t * 3.17) % 900;
-        const o = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) };
+        const o = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3), level: 255 };
         shadeTerrain(tt, type, b, u, v, 0, ctx, o, 0);
         if (o.glyph !== 0) { sum += lum(o.fg); n++; }
       }

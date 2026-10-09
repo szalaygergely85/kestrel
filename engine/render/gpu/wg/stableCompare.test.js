@@ -38,7 +38,9 @@ function build(camBUse) {
   const st = createStableState();
   beginFrame(st, camA, grid, { invalidate: true });
   const a = wallArrays(st, 100, 60);
-  const inA = { cols: COLS, rows: ROWS, kind: new Uint8Array(N).fill(KIND_WALL), planeId: new Int32Array(N).fill(1), u: new Float32Array(N), v: new Float32Array(N), vd: new Float32Array(N), level: new Uint8Array(N).fill(5), glyph: new Uint16Array(N).fill(60), fg: new Uint32Array(N), bg: new Uint32Array(N).fill(0x101010) };
+  const L255 = (i) => (i % COLS) >= COLS / 2; // right half: level-255 (non-ramp) cells, held by the amendment-C rule
+  for (let i = 0; i < N; i++) if (L255(i)) a.level[i] = 255;
+  const inA = { cols: COLS, rows: ROWS, kind: new Uint8Array(N).fill(KIND_WALL), planeId: new Int32Array(N).fill(1), u: new Float32Array(N), v: new Float32Array(N), vd: new Float32Array(N), level: a.level.slice(), glyph: new Uint16Array(N).fill(60), fg: new Uint32Array(N), bg: new Uint32Array(N).fill(0x101010) };
   for (let i = 0; i < N; i++) { u32[0] = a.GA[i * 4]; inA.u[i] = f32[0]; u32[0] = a.GA[i * 4 + 1]; inA.v[i] = f32[0]; u32[0] = a.depth[i]; inA.vd[i] = f32[0]; inA.fg[i] = (a.finalFg[i * 4] << 16) | (100 << 8) | 100; }
   const outA = createStableBuffers(COLS, ROWS); stabilize(inA, createStableBuffers(COLS, ROWS), outA, st);
   const A = { outFg: new Uint8Array(N * 4), outBg: new Uint8Array(N * 4), hist: new Uint32Array(N * 4) };
@@ -46,7 +48,8 @@ function build(camBUse) {
   for (let i = 0; i < N; i++) { A.hist[i * 4] = 1; A.hist[i * 4 + 1] = fb(outA.u[i]); A.hist[i * 4 + 2] = fb(outA.v[i]); A.hist[i * 4 + 3] = outA.level[i] | (outA.kind[i] << 8); }
   beginFrame(st, camBUse, grid, { invalidate: false });
   const b = wallArrays(st, 104, 61); // slightly different colours/glyph: blend + hold are exercised
-  const inB = { ...inA, u: new Float32Array(N), v: new Float32Array(N), vd: new Float32Array(N), glyph: new Uint16Array(N).fill(61), fg: new Uint32Array(N) };
+  for (let i = 0; i < N; i++) if (L255(i)) b.level[i] = 255;
+  const inB = { ...inA, level: b.level.slice(), u: new Float32Array(N), v: new Float32Array(N), vd: new Float32Array(N), glyph: new Uint16Array(N).fill(61), fg: new Uint32Array(N) };
   for (let i = 0; i < N; i++) { u32[0] = b.GA[i * 4]; inB.u[i] = f32[0]; u32[0] = b.GA[i * 4 + 1]; inB.v[i] = f32[0]; u32[0] = b.depth[i]; inB.vd[i] = f32[0]; inB.fg[i] = (b.finalFg[i * 4] << 16) | (104 << 8) | 104; }
   const outB = createStableBuffers(COLS, ROWS); const used = stabilize(inB, outA, outB, st);
   const B = { ...b, water: null, outFg: new Uint8Array(N * 4), outBg: new Uint8Array(N * 4) };
@@ -62,12 +65,18 @@ function build(camBUse) {
   assert.ok(r.ok && r.histValid && r.usedPct > 50, JSON.stringify(r));
   // STABLE-GATE-TEST-01: liveness floor + held counts
   assert.ok(r.liveOk && r.livePct >= 20 && r.nonSky === N, `liveness ${r.livePct}`);
-  assert.ok(r.heldOk && r.heldTwin > N * 0.3 && r.heldGpu === r.heldTwin, `held twin ${r.heldTwin} gpu ${r.heldGpu}`);
+  assert.ok(r.heldOk && r.heldTwin > N * 0.3 && r.held255 > 0 && r.held255Gpu === r.held255 && r.heldGpu === r.heldTwin, `held twin ${r.heldTwin} gpu ${r.heldGpu}`);
   // a reject-everything GPU (every cell shows this frame's final glyph) fails: mismatches AND held counts differ
   const allFresh = { ...B, outFg: B.finalFg.slice(), outBg: B.finalBg.slice() };
   const dead = compareStableRow({ cols: COLS, rows: ROWS, camA, camB, grid, A, B: allFresh });
   assert.ok(!dead.ok && dead.heldGpu === 0 && dead.heldTwin > 0 && !dead.heldOk, 'reject-everything GPU is caught by the held count');
   // a reject-everything TWIN (all cells model kind -> fresh): liveness floor fails even if the GPU agrees
+  // amendment C: a GPU that drops the 255 hold (fresh glyph on those cells only) fails the row
+  const d255 = { ...B, outFg: B.outFg.slice() };
+  for (let i = 0; i < N; i++) if (B.level[i] === 255) d255.outFg[i * 4 + 3] = B.finalFg[i * 4 + 3];
+  const no255 = compareStableRow({ cols: COLS, rows: ROWS, camA, camB, grid, A, B: d255 });
+  assert.ok(!no255.ok && no255.held255 > 0 && no255.held255Gpu === 0, 'GPU dropping the level-255 hold FAILs');
+
   const sky = { ...B, GI: B.GI.slice(), outFg: B.finalFg.slice(), outBg: B.finalBg.slice() };
   for (let i = 0; i < N; i++) sky.GI[i * 4 + 1] = 8; // KIND_MODEL: never takes history
   const lowLive = compareStableRow({ cols: COLS, rows: ROWS, camA, camB, grid, A, B: sky });

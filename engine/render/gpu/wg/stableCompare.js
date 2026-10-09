@@ -41,7 +41,7 @@ export function compareStableRow(a) {
   inp.edge = edgeMaskFromShade(inp.fg, inp.bg, inp.glyph, shFg, shBg, shGl, new Uint8Array(n));
   inp.water = waterMaskFromLayer(wx, ww, new Uint8Array(n));
   const used = stabilize(inp, hist, out, st);
-  let ties = 0, mism = 0, tieMism = 0, nonSky = 0, heldTwin = 0, heldGpu = 0, held255 = 0; const bad = [];
+  let ties = 0, mism = 0, tieMism = 0, nonSky = 0, heldTwin = 0, heldGpu = 0, held255 = 0, held255Gpu = 0; const bad = [];
   for (let i = 0; i < n; i++) {
     if (inp.kind[i] !== 0) nonSky++;
     const tie = out.tie[i] === 1; if (tie) ties++;
@@ -49,7 +49,10 @@ export function compareStableRow(a) {
       const hg = hist.glyph[out.hsrc[i]], fg0 = inp.glyph[i];
       if (hg !== fg0) { if (out.glyph[i] === hg) heldTwin++; if (B.outFg[i * 4 + 3] === hg) heldGpu++; }
     }
-    if (out.held255[i] === 1 && !tie) held255++;
+    if (out.held255[i] === 1 && !tie) { // amendment C: the GPU must hold the history glyph on the twin's held-255 cells too
+      held255++;
+      if (out.hsrc[i] >= 0 && B.outFg[i * 4 + 3] === hist.glyph[out.hsrc[i]]) held255Gpu++;
+    }
     const same = out.fg[i] === rgb(B.outFg, i) && out.bg[i] === rgb(B.outBg, i) && out.glyph[i] === B.outFg[i * 4 + 3];
     if (same) continue;
     if (tie) { tieMism++; continue; }
@@ -58,7 +61,7 @@ export function compareStableRow(a) {
   const tieFrac = ties / n;
   const vacuous = !histValid || used < n * 0.02; // the sequence must really exercise history
   const liveFrac = nonSky > 0 ? used / nonSky : 0, liveOk = liveFrac >= STABLE_LIVE_MIN_FRAC, heldOk = heldTwin === heldGpu;
-  return { ok: !vacuous && mism === 0 && tieFrac <= STABLE_TIE_MAX_FRAC && liveOk && heldOk, histValid, used, usedPct: 100 * used / n, nonSky, livePct: 100 * liveFrac, liveOk, heldTwin, heldGpu, heldOk, held255, ties, tiePct: 100 * tieFrac, mismatches: mism, tieMismatches: tieMism, vacuous, bad };
+  return { ok: !vacuous && mism === 0 && tieFrac <= STABLE_TIE_MAX_FRAC && liveOk && heldOk && held255 > 0 && held255Gpu === held255, histValid, used, usedPct: 100 * used / n, nonSky, livePct: 100 * liveFrac, liveOk, heldTwin, heldGpu, heldOk, held255, held255Gpu, ties, tiePct: 100 * tieFrac, mismatches: mism, tieMismatches: tieMism, vacuous, bad };
 }
 
 /**

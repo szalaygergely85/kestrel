@@ -27,7 +27,7 @@ export const STABLE_BLOCK = defineUniformBlock('StableU', [
   { name: 'prevC', type: 'vec4' },
   { name: 'dEye', type: 'vec4' },   // eyeCur - eyePrev (f64 on the host), w unused
   { name: 'gridCols', type: 'i32' }, { name: 'gridRows', type: 'i32' }, { name: 'histValid', type: 'i32' }, { name: 'ortho', type: 'i32' },
-  { name: 'snap', type: 'i32' }, { name: 'detailDefault', type: 'f32' }, { name: 'pad0', type: 'i32' }, { name: 'pad1', type: 'i32' },
+  { name: 'snap', type: 'i32' }, { name: 'detailDefault', type: 'f32' }, { name: 'waterOn', type: 'i32' }, { name: 'pad1', type: 'i32' },
 ]);
 
 export const STABLE_TEXTURES = Object.freeze(['uint', 'uint', 'uint', 'float', 'float', 'float', 'float', 'uint', 'uint', 'float', 'float', 'uint']);
@@ -134,7 +134,7 @@ fn stableCell(cell: vec2i) -> SCell {
   if (fgC.x != sf.x || fgC.y != sf.y || fgC.z != sf.z || fgC.w != sf.w || bgC.x != sb.x || bgC.y != sb.y || bgC.z != sb.z) { return o; }
   // water-layer cell (ripples must not freeze): the layer word holds a finite vD
   let wl = textureLoad(uWater, cell, 0);
-  if (u.pad0 != 0 && wl.x != 0x7f800000u && (wl.w & 32u) == 0u) { return o; } // pad0 = waterOn: the 1x1 dummy reads 0 (= 'water') out of bounds
+  if (u.waterOn != 0 && wl.x != 0x7f800000u && (wl.w & 32u) == 0u) { return o; } // waterOn: the 1x1 dummy reads 0 (= 'water') out of bounds
   let vd = bitcast<f32>(textureLoad(uDepth, cell, 0).x);
   if (!(vd > 0.0) || vd > 1.0e38) { return o; }
 

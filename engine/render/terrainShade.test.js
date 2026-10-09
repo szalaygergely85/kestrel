@@ -45,7 +45,7 @@ const ctx = {
   shading: { fgMin: 0.15, fgGamma: 0.6, fgMaxGain: 1.6 },
 };
 
-function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) }; }
+function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3), level: 255 }; }
 
 // Band selection by t.
 {
