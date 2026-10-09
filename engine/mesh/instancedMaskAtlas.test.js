@@ -3,6 +3,7 @@
 // Run: node engine/mesh/instancedMaskAtlas.test.js
 import { DrawList, MeshDrawCache } from './DrawList.js';
 import { buildMeshFromTris } from './gltf.js';
+import { createShadowList, buildShadowList } from './shadowList.js';
 import { InstanceGroups, writeUnitInstance } from './instances.js';
 import { MaskAtlas } from '../render/MaskAtlas.js';
 import { frustumPlanes } from './culling.js';
@@ -45,8 +46,14 @@ const origWarn = console.warn; let warns = 0; console.warn = () => { warns++; };
     const s = cache.get(mesh, idFor, atlas); // static path
     const l = new DrawList(); l.begin(); ig.addToDrawList(l, null, planes, f, M, ROWS, md);
     const d = cache.get(mesh, idFor, atlas);
-    if (!first) first = s; if (s !== first || d !== first) stable = false;
+    // sun-shadow path on the same cache (shadowList.js must pass src.maskAtlas, else it rebuilds + draws opaque)
+    const sl = createShadowList();
+    buildShadowList(sl, null, { structures: [], cloths: null }, planes, { centre: { x: 0, y: 0, z: 0 }, cache: null, meshCache: cache, meshIdFor: idFor, maskAtlas: atlas, instances: ig, fogFarM: 2000 });
+    const sd = sl.count > 0 ? sl.items[0].mesh : null; // the shadow draw copy
+    if (!first) first = s;
+    if (s !== first || d !== first || sd !== first) stable = false;
   }
+  ok('masked: shadow path shares the one cache entry (same copy, no rebuild/warn)', stable && warns === 0);
   ok('masked: one cache entry reused for 3 frames (no rebuild ping-pong)', stable);
   ok('masked: instanced draw copy has maskRanges', !!first.maskRanges && first.maskRanges[2] === -1 && first.maskRanges[7] === 4);
 }

@@ -16,7 +16,7 @@
 // Zero allocation per frame (27.15.0 "hard gate"): every scratch buffer
 // below is module-level and reused; no closures, array literals or
 // destructuring inside the hot per-triangle/per-pixel path.
-import { PROJ_NEAR } from '../render/projection.js';
+import { PROJ_NEAR, PROJ_FAR } from '../render/projection.js';
 import {
   KIND_TERRAIN, KIND_MODEL, KIND_MESH, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED, PLANEID_TERRAIN,
 } from '../render/GBuffer.js';
@@ -325,6 +325,7 @@ function clipAgainstPlane(inBuf, inCount, outBuf, planeType) {
  * data (kind/face/mat/planeId/aoMode/aux/zRef/zBase/objectId/...).
  */
 function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
+  const ortho = ctx.ortho === true || ctx.ortho === 1;
   const w0 = buf[o0 + 3], w1 = buf[o1 + 3], w2 = buf[o2 + 3];
   const W = target.W, H = target.H;
   const X0 = (W / 2) * (buf[o0] / w0) + W / 2, Y0 = (H / 2) * (buf[o0 + 1] / w0) + H / 2, zn0 = buf[o0 + 2] / w0, iw0 = 1 / w0;
@@ -402,6 +403,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
 
       const l0 = e12 / A2, l1 = e20 / A2, l2 = e01 / A2;
       let zn = l0 * zn0 + l1 * zn1 + l2 * zn2;
+      const znRaw = zn; // fragment position.z has no rasterizer bias (ortho depth below)
       if (info.biasFlag) zn += biasAdd;
       if (zn > 1) continue;
       if (info.dither !== 0 && !ditherKeep(info.dither, px, py)) continue; // S8-B2-07: the GPU discards before the depth test, so does this
@@ -470,7 +472,8 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
         target.aoD[idx] = aoD;
         target.nrm[idx] = packNormalOct(wnx, wny, wnz);
         target.objectId[idx] = info.objectId;
-        target.depth[idx] = invq;
+        // US-068b1 (38.19): ortho has w = 1, so 1/w is a trap: depth = linear z = near + z01 * (far - near) (GPU twin: select(1/pos.w, ..., projMode == 2u))
+        target.depth[idx] = ortho ? PROJ_NEAR + (0.5 * (znRaw + 1)) * (PROJ_FAR - PROJ_NEAR) : invq;
         target.zbuf[idx] = zn;
         if (target.writes) target.writes[idx]++;
       }
@@ -757,6 +760,7 @@ function rasterWaterSlot(sel, slot, target, ctx) {
  * `target.writes` (if present) counts COVERAGE (before any discard / depth test): the "every pixel exactly once" fixture.
  */
 function rasterWaterTri(buf, o0, o1, o2, target, ctx, sel, ub) {
+  const ortho = ctx.ortho === true || ctx.ortho === 1;
   const w0 = buf[o0 + 3], w1 = buf[o1 + 3], w2 = buf[o2 + 3];
   const W = target.W, H = target.H;
   const X0 = (W / 2) * (buf[o0] / w0) + W / 2, Y0 = (H / 2) * (buf[o0 + 1] / w0) + H / 2, zn0 = buf[o0 + 2] / w0, iw0 = 1 / w0;
@@ -818,16 +822,18 @@ function rasterWaterTri(buf, o0, o1, o2, target, ctx, sel, ub) {
       const zn = l0 * zn0 + l1 * zn1 + l2 * zn2;
       if (zn > 1 || !(zn < target.zbuf[idx])) continue;
       const q = l0 * iw0 + l1 * iw1 + l2 * iw2;
-      const invq = 1 / q; // = vD, the perpendicular camera distance (GPU: 1 / gl_FragCoord.w)
+      const invq = 1 / q; // attribute normaliser (= 1 in ortho)
+      // vD = the perpendicular camera distance (GPU: 1 / gl_FragCoord.w); ortho (w = 1): linear z (38.19)
+      const vD = ortho ? PROJ_NEAR + (0.5 * (zn + 1)) * (PROJ_FAR - PROJ_NEAR) : invq;
       const lx = (l0 * lx0 * iw0 + l1 * lx1 * iw1 + l2 * lx2 * iw2) * invq;
       const ly = (l0 * ly0 * iw0 + l1 * ly1 * iw1 + l2 * ly2 * iw2) * invq;
       if (sheet) { /* finite sheet mesh supplies the boundary */ } else if (isCircle) { // = waterInsideJS (waterMesh.js), inlined
         const dx = lx - sA, dy = ly - sB;
         if (dx * dx + dy * dy > sC) continue;
       } else if (!(lx >= sA && lx < sC && ly >= sB && ly < sD)) continue;
-      if (sceneDepth && !(invq < sceneDepth[idx])) continue; // occluder: the scene is nearer (or equal)
+      if (sceneDepth && !(vD < sceneDepth[idx])) continue; // occluder: the scene is nearer (or equal)
       target.kind[idx] = 1;
-      target.depth[idx] = invq;
+      target.depth[idx] = vD;
       target.nrm[idx] = WATER_NRM_UP;
       target.z[idx] = sheet ? ly : 0;
       target.objectId[idx] = tagBase;

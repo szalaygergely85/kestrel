@@ -1,7 +1,7 @@
 // WG-2b: literal port of mesh.vert/frag.js. Static, compact voxel, instanced and cloth input layouts.
 import { defineUniformBlock } from './uniformBlock.js';
-import { WIND_AT_WGSL } from './common.wgsl.js';
 import { INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from '../../../mesh/sway.js';
+import { WIND_AT_WGSL, ORTHO_NEAR_WGSL, ORTHO_FAR_WGSL } from './common.wgsl.js';
 import { KIND_MODEL, KIND_MESH, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED } from '../../GBuffer.js';
 
 const RASTER_FIELDS = [
@@ -10,10 +10,12 @@ const RASTER_FIELDS = [
   { name: 'objectId', type: 'u32' }, { name: 'axisAligned', type: 'u32' },
   { name: 'flat', type: 'vec2' },
 ];
-export const RASTER_BASE_BLOCK = defineUniformBlock('RasterU', RASTER_FIELDS);
+// US-068b1 (38.19): `projMode` u32 (2 = ortho) is the LAST word of every raster block; fragment dist = linear z when 2.
+const PROJ_MODE = { name: 'projMode', type: 'u32' };
+export const RASTER_BASE_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS, PROJ_MODE]);
 // ALPHA-01c: static mesh with a mask range (one draw per masked range): the base block + the atlas rect (x0,y0,w,h) and the cutoff byte
 export const RASTER_MASK_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS,
-  { name: 'maskX0', type: 'u32' }, { name: 'maskY0', type: 'u32' }, { name: 'maskW', type: 'u32' }, { name: 'maskH', type: 'u32' }, { name: 'maskCut', type: 'u32' },
+  { name: 'maskX0', type: 'u32' }, { name: 'maskY0', type: 'u32' }, { name: 'maskW', type: 'u32' }, { name: 'maskH', type: 'u32' }, { name: 'maskCut', type: 'u32' }, PROJ_MODE,
 ]);
 // ALPHA-01f (b): instanced mesh with a per-range mask (one draw per masked range, instanceCount = N): same field list as RASTER_BLOCK
 // below (origin/team/wind, instanced-only) with the same 5 mask fields of RASTER_MASK_BLOCK appended last. Kept as its own block
@@ -23,6 +25,7 @@ export const RASTER_INSTANCED_MASK_BLOCK = defineUniformBlock('RasterU', [...RAS
   { name: 'teamSlot', type: 'vec4' }, { name: 'teamMat', type: 'vec4', count: 8 },
   { name: 'wind', type: 'vec4' }, { name: 'windT', type: 'vec4' }, { name: 'windK', type: 'vec4', count: 16 },
   { name: 'maskX0', type: 'u32' }, { name: 'maskY0', type: 'u32' }, { name: 'maskW', type: 'u32' }, { name: 'maskH', type: 'u32' }, { name: 'maskCut', type: 'u32' },
+  PROJ_MODE,
 ]);
 // PREC-01a: instanced variant only: `origin` (xy render origin O of the camera-relative raster, 37.9 step 4) sits in the 8-byte hole after `flat`
 // (RASTER_BASE_BLOCK stays a prefix, size unchanged). Shadow passes leave it 0 (absolute, step 5).
@@ -31,6 +34,7 @@ export const RASTER_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS, { n
   // S8-B2-06 foliage sway (appended: earlier words keep their offsets). World wind (engine/world/wind.js field.params, packWindUniforms):
   // wind = (dirX, dirY, speed, amp); windT = (seconds, period ticks, travel, 0); windK = the 64-knot gust table. All 0 = no sway.
   { name: 'wind', type: 'vec4' }, { name: 'windT', type: 'vec4' }, { name: 'windK', type: 'vec4', count: 16 },
+  PROJ_MODE,
 ]);
 
 /** S8-B2-06: world wind + the horizontal sway displacement of one vertex (twin of engine/mesh/sway.js swayOffset); instanced variant only. */
@@ -225,7 +229,7 @@ ${instanced ? '  if (!ditherKeep(v.packed.w >> 1u, u32(v.pos.x), u32(v.pos.y))) 
   let vKind = v.packed.y & 0xffu; let vFace = (v.packed.y >> 8u) & 0xfu; let vMat = (v.packed.y >> 16u) & 0xffffu;
   let aoD = computeAoD(v.aux0123.y, v.vUV.x, v.vUV.y, v.aux0123.x, v.aux0123.z, v.aux0123.w, v.aux4567.x, v.aux4567.y);
   let z = v.vWorldZ - v.aux4567.z - v.aux0123.x;
-  let dist = 1.0 / v.pos.w;
+  let dist = select(1.0 / v.pos.w, ${ORTHO_NEAR_WGSL} + v.pos.z * (${ORTHO_FAR_WGSL} - ${ORTHO_NEAR_WGSL}), u.projMode == 2u); // 38.19: w = 1 in ortho, depth = linear z
   var face = vFace; var nrmBits = 0u; var gaW = bitcast<u32>(aoD);
 ${cloth ? '  var nrmW = normalize(v.vNrmS); if (!front) { nrmW = -nrmW; }' : '  let nrmW = v.vNrmW;'}
   if (vKind == KIND_MODEL) {

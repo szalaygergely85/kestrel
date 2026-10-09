@@ -20,7 +20,7 @@ import { MeshGroupSet, addMeshStructuresBatched } from '../mesh/meshGroups.js';
 import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget, clearRasterDepth } from '../mesh/rasterJS.js';
 import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
-import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer, pitchedFogScale } from './projection.js';
+import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer, pitchedFogScale, orthoHashCell } from './projection.js';
 import { frustumPlanes } from '../mesh/culling.js';
 import { renderWaterJS } from './water.js';
 import { waterCompositeJS } from './waterComposite.js';
@@ -103,6 +103,7 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
   src.matIdFor = fb.matTable ? fb.matTable.idFor : undefined;
   src.meshCache = sharedMeshDrawCache; // ME-14c2 (37.1 item 6)
   src.meshIdFor = fb.matTable ? strictMatIdFor(fb.matTable) : undefined;
+  src.maskAtlas = world.maskAtlas || null; // ALPHA-01f-fix2
   shadowWorldZ(world, cache, sunShadowWorldZ);
   const sm = shadowSunMatrix(sun.dir, sunShadowCentreV, so, sunShadowWorldZ, sunShadowMat);
   buildShadowList(sunShadowList, cameraList, world, sm.planes, src);
@@ -180,9 +181,12 @@ function renderWorldMesh(fb, world, cam) {
     pitchedTerms(cam, meshGrid, meshPitchTerms);
     meshViewProj.set(meshPitchTerms.M);
     const tr = world.terrain;
-    meshHashCell = -(2 * meshPitchTerms.tanHalfX / cols); // BUG-FP-002: per-cell mode on every pitched frame
+    // BUG-FP-002: per-cell mode on every pitched frame; ortho (38.19): positive fixed cell (constant ground m per column)
+    meshHashCell = meshPitchTerms.ortho ? orthoHashCell(meshPitchTerms, cols) : -(2 * meshPitchTerms.tanHalfX / cols);
+    meshCtx.ortho = meshPitchTerms.ortho === 1;
   } else {
     shearProjection(meshTerms, meshViewProj);
+    meshCtx.ortho = false;
   }
   frustumPlanes(meshViewProj, meshFrustumPlanes);
 

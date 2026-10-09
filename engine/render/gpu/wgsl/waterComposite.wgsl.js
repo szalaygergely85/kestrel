@@ -55,7 +55,7 @@ ${CELL_RAY_PITCHED_WGSL}
 ${FULLSCREEN_VS_WGSL}
 
 fn fogScaleCell(row: i32, rows: i32) -> f32 {
-  return select(pitchFogScale(row, rows, wu.pitchC.y, wu.pitchC.z, wu.pitchC.w), 1.0, wu.projMode == 0);
+  return select(pitchFogScale(row, rows, wu.pitchC.y, wu.pitchC.z, wu.pitchC.w, wu.projMode == 2), 1.0, wu.projMode == 0);
 }
 
 // diamond angle in [0, 4), no atan; twin of waterLook.js diamondAngle
@@ -97,13 +97,13 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
 
   var P: vec3f;
   if (wu.projMode == 0) { P = cellRayP(vec2f(cell), grid, wu.posX, wu.posY, wu.eyeH, wu.dirX, wu.dirY, wu.planeX, wu.planeY, wu.horizonRow, wu.planeDistY, dW); }
-  else { P = cellRayPitched(vec2f(cell), grid, vec3f(wu.posX, wu.posY, wu.eyeH), wu.pitchA.xyz, wu.pitchB.xy, vec3f(wu.pitchB.zw, wu.pitchC.x), vec2f(wu.pitchA.w, wu.pitchC.y), dW); }
+  else { P = cellRayPitched(vec2f(cell), grid, vec3f(wu.posX, wu.posY, wu.eyeH), wu.pitchA.xyz, wu.pitchB.xy, vec3f(wu.pitchB.zw, wu.pitchC.x), vec2f(wu.pitchA.w, wu.pitchC.y), dW, wu.projMode == 2); }
 
   var column = 1.0e30;
   if (!isSky) {
     var floorP: vec3f;
     if (wu.projMode == 0) { floorP = cellRayP(vec2f(cell), grid, wu.posX, wu.posY, wu.eyeH, wu.dirX, wu.dirY, wu.planeX, wu.planeY, wu.horizonRow, wu.planeDistY, raw); }
-    else { floorP = cellRayPitched(vec2f(cell), grid, vec3f(wu.posX, wu.posY, wu.eyeH), wu.pitchA.xyz, wu.pitchB.xy, vec3f(wu.pitchB.zw, wu.pitchC.x), vec2f(wu.pitchA.w, wu.pitchC.y), raw); }
+    else { floorP = cellRayPitched(vec2f(cell), grid, vec3f(wu.posX, wu.posY, wu.eyeH), wu.pitchA.xyz, wu.pitchB.xy, vec3f(wu.pitchB.zw, wu.pitchC.x), vec2f(wu.pitchA.w, wu.pitchC.y), raw, wu.projMode == 2); }
     column = max(0.0, P.z - floorP.z);
   }
   var tint = a;
