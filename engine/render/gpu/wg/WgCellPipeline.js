@@ -255,7 +255,15 @@ export class WgCellPipeline {
   }
   bindVoxels(pool) { this._voxelPool = pool; }
   bindViewModel(vm) { this._viewModel = vm; }
-  bindInstances(groups) { this._instances = groups; }
+  bindInstances(groups) {
+    // 38.10a: a different groups object (new world/reload) means every batch the cull passes hold keys off the old
+    // InstanceGroup objects and would otherwise leak until the idle sweep - release them now, not 10 s from now.
+    if (groups !== this._instances) {
+      if (this._rasterPass && this._rasterPass.cull) this._rasterPass.cull.releaseAll();
+      if (this._shadowPass && this._shadowPass.cull) this._shadowPass.cull.releaseAll();
+    }
+    this._instances = groups;
+  }
   setWaterLooks(looks) { if (this._waterPass) this._waterPass.setLooks(looks); }
   /** Test-only (14.2 item 7): 'upload' feeds the CPU fb.gbuf into the cell-res textures (`?gpucompare=shade`); 'scene' = raster path. */
   setSource(mode) { this._source = mode === 'upload' ? 'upload' : 'scene'; }

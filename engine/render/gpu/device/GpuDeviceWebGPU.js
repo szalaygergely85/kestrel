@@ -69,6 +69,8 @@ export class GpuDeviceWebGPU {
     this.adapterInfo = { vendor: String(info.vendor || ''), architecture: String(info.architecture || ''), description: String(info.description || ''), fallback: this._software };
     this.timer = new WebGpuTimer(gpuDevice, this._c);
     this._live = /** @type {{destroy: () => void}[]} */ ([]);
+    /** @type {any[]} every computePipeline handle (38.10a: dispose(buffer) prunes their dispatch bind-group caches) */
+    this._computePipes = [];
     this._moduleCache = new Map();
     // uniform ring (CPU ArrayBuffer + one GPU buffer; one writeBuffer at submit)
     const slots = opts.ringSlots || DEFAULT_RING_SLOTS;
@@ -356,6 +358,7 @@ export class GpuDeviceWebGPU {
       : null;
     const handle = { kind: 'computePipeline', gpu: null, failed: false, label: bootLabel(desc, 'cs_main'), bgl0, uniformGroup, uniformBytes: uBytes, nbuf: kinds.length, groups: /** @type {{bufs: any[], group: any}[]} */ ([]) };
     this._makePipe('createComputePipeline', { layout, compute: { module: this._module(desc.src), entryPoint: desc.src.entry || 'cs_main' } }, handle);
+    this._computePipes.push(handle);
     return handle;
   }
 
@@ -587,6 +590,17 @@ export class GpuDeviceWebGPU {
   /** @param {GpuHandle} [handle] */
   dispose(handle) {
     if (handle) {
+      // 38.10a: a disposed buffer may be pinned by a cached dispatch bind group (GpuDeviceWebGPU.dispatch's `p.groups`) -
+      // prune every group referencing it so the batch's 5 destroyed buffers (src/lodPrev/dst0/dst1/args) do not leak.
+      if (handle.kind === 'buffer') {
+        for (let i = 0; i < this._computePipes.length; i++) {
+          const p = this._computePipes[i];
+          if (p.groups.length) p.groups = p.groups.filter((gr) => gr.bufs.indexOf(handle) < 0);
+        }
+      } else if (handle.kind === 'computePipeline') {
+        const pi = this._computePipes.indexOf(handle);
+        if (pi >= 0) this._computePipes.splice(pi, 1);
+      }
       const o = handle.gpu;
       const i = this._live.indexOf(o);
       if (i >= 0) { this._live.splice(i, 1); o.destroy(); }
@@ -597,5 +611,6 @@ export class GpuDeviceWebGPU {
     this._live.length = 0;
     for (const pool of this._staging.values()) for (const b of pool) b.destroy();
     this._staging.clear();
+    this._computePipes.length = 0;
   }
 }

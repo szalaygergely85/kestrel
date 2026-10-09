@@ -17,6 +17,8 @@ Owner: Manager. Updated: 2026-09-23 (D-010: M1.5 Editor Preview; model editor in
 ## NOW (owner 2026-10-04, D-038): alive world -> combat -> demo + videos
 1. **Alive world:** forest in the game (ME-06c3), ground/environment detail scatter, the tower dressed as the first scene "The Awakening", stairwell flag walkable. 2. **Combat:** left-hand sword, knockback, the boar. 3. **Then** the D-036 demo + videos (first clip: the Awakening). Cinematic paths paused until reworked with the owner.
 
+**EP-WORLD-VALLEY (owner 2026-10-09, D-052):** closed valley = the whole alpha (river split, two bridges, sea/mountain/rock-wall borders); environment = meshes, items/characters = voxels; 5 slices + owner questions in `docs/epics/ep-world.md`.
+
 ## EP-WEBGPU - full WebGPU, WebGL2 retires at parity (owner 2026-10-07, D-044) - status: WG-0 next
 Runs in parallel with the D-038 game work (which must not add GLSL). Cheapest-first; each step ends with `?gpucompare=1` on the WebGPU backend (JS twin = oracle) and a PC-A arch-review. Implementation on PC-B (cross-track), notes/reviews/gates on PC-A.
 - **Now, on WebGL2 (backend-neutral or gate-blocking):** MESH-GPUCMP-01 GLSL fix (unblocks master), MESH-FULL-01 (verify + merge `wip/mesh-full-parked`), MESH-PERF-01 baseline, shadow caster budget, MESH-INST-01 draw-list batching, MESH-BIN-01.

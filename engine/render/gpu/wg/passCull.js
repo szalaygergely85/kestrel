@@ -20,6 +20,7 @@ import { CULL_BLOCK, CULL_BUFFERS, CULL_WGSL, CULL_WORKGROUP } from '../wgsl/cul
 import { CULL_SHADOW_BLOCK, CULL_SHADOW_BUFFERS, CULL_SHADOW_WGSL } from '../wgsl/cullShadow.wgsl.js';
 
 export const MAX_CULL_BATCHES = 64;
+export const CULL_IDLE_FRAMES = 600; // 38.10a: a batch untouched by add() for this many begin() calls (~10 s at 60 Hz) is swept
 const ARGS_WORDS = 5; // indexCount, instanceCount, firstIndex, baseVertex, firstInstance
 const ARGS_BYTES = ARGS_WORDS * 4;
 const W = (n) => CULL_BLOCK.field(n).word;
@@ -50,6 +51,11 @@ export class WgCullPass {
     this._argsView = this.argsCpu.subarray(0, 0);
     /** @type {Set<any>} groups marked static before their first add() */
     this._pendingStatic = new Set();
+    /** @type {Int32Array} LIFO free list of freed slot bases (38.10a; deterministic, 0 alloc) */
+    this._free = new Int32Array(this.maxBatches);
+    this._freeTop = 0;
+    /** @type {number} bumped once per begin(); drives the idle sweep */
+    this._frame = 0;
     const block = this.shadow ? CULL_SHADOW_BLOCK : CULL_BLOCK;
     this._ub = new ArrayBuffer(block.sizeBytes);
     this._uv = block.createViews(this._ub);
@@ -68,10 +74,17 @@ export class WgCullPass {
    */
   begin(f) {
     const fr = this.frame;
+    this._frame++;
     fr.castM = /** @type {any} */ (f).castM || 0; fr.hystM = /** @type {any} */ (f).hystM || 0;
     fr.planes = f.planes || null; fr.viewProj = f.viewProj || null; fr.rows = f.rows || 0; fr.eye = f.eye || null; fr.maxDistM = f.maxDistM || 0;
     this.queue.length = 0;
     const s = this.stats; s.batches = 0; s.dispatches = 0; s.instances = 0; s.uploads = 0; s.argsBytes = 0;
+    // 38.10a idle sweep: a batch no add() stamped recently (editor/reload churn) is freed, <= maxBatches compares/frame
+    let stale = null;
+    for (const [g, b] of this.batches) {
+      if (this._frame - b.lastFrame > CULL_IDLE_FRAMES) (stale || (stale = [])).push(g);
+    }
+    if (stale) for (const g of stale) this.removeBatch(g);
   }
 
   /** Marks a batch as static (rows uploaded once, then only on `invalidate`). @param {any} group @param {boolean} [on] */
@@ -89,6 +102,7 @@ export class WgCullPass {
   add(group, meshes, lod0M = 0, R = 0) {
     let b = this.batches.get(group);
     if (!b) b = this._create(group, meshes);
+    b.lastFrame = this._frame; // 38.10a: stamps the batch as used this frame (idle-sweep input)
     b.meshes0 = meshes[0]; b.meshes1 = meshes[1] || null; b.lod0M = lod0M; b.R = R; // lod0M / R: shadow mode only
     this._fillEntries(b);
     this.queue.push(b);
@@ -101,7 +115,7 @@ export class WgCullPass {
    * @param {any} g @param {[any, any|null]|any[]} meshes
    */
   supports(g, meshes) {
-    if (!this.batches.has(g) && this._nextSlot + 2 > this.maxBatches * 2) return false;
+    if (!this.batches.has(g) && this.batches.size >= this.maxBatches) return false;
     for (let i = 0; i < 2; i++) {
       const m = meshes[i];
       if (!m) continue;
@@ -119,23 +133,24 @@ export class WgCullPass {
 
   /** @param {any} g @param {[any, any|null]} meshes */
   _create(g, meshes) {
-    if (this._nextSlot + 2 > this.maxBatches * 2) throw new Error(`WgCullPass: over ${this.maxBatches} batches`);
+    if (this.batches.size >= this.maxBatches) throw new Error(`WgCullPass: over ${this.maxBatches} batches`);
     for (const m of meshes) {
       if (!m) continue;
       if (!this.shadow && m.ranges && m.ranges.length > 1 && !(m.layout === 'static' && g.mesh)) throw new Error('WgCullPass: multi-range meshes need an args slot per range (ONE_PART batches only)');
     }
     const d = this.device;
     const cap = g.ib.capacity;
+    let slot;
+    if (this._freeTop > 0) slot = this._free[--this._freeTop]; // 38.10a: reuse a freed slot pair (LIFO)
+    else { slot = this._nextSlot; this._nextSlot += 2; this._argsView = this.argsCpu.subarray(0, this._nextSlot * ARGS_WORDS); }
     const b = {
-      g, cap, slot: this._nextSlot, static: this._pendingStatic.delete(g), uploaded: -1, view: /** @type {any} */ (null), viewCount: -1,
+      g, cap, slot, static: this._pendingStatic.delete(g), uploaded: -1, view: /** @type {any} */ (null), viewCount: -1, lastFrame: this._frame,
       src: d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES }),
       lodPrev: d.createBuffer({ usage: 'storage', data: new Uint32Array(cap) }),
       dst: [d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES }), d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES })],
       meshes0: null, meshes1: null,
       entries: /** @type {CullEntry[]} */ ([]),
     };
-    this._nextSlot += 2;
-    this._argsView = this.argsCpu.subarray(0, this._nextSlot * ARGS_WORDS);
     for (let lod = 0; lod < 2; lod++) {
       b.entries.push({ group: g, lod, mesh: null, instanceBuffer: b.dst[lod], argsBuffer: this.argsBuffer, argsOffset: (b.slot + lod) * ARGS_BYTES, maxInstances: cap, parts: g.parts, active: false });
     }
@@ -219,16 +234,27 @@ export class WgCullPass {
     s.batches = this.queue.length;
   }
 
-  /** Frees the batch of `group` (its buffers; the args slot is not reused). @param {any} group */
+  /** Frees the batch of `group`: disposes its 4 buffers, zeroes its args words (so a stale slot never draws), pushes the
+   * slot pair onto the free list for reuse, and drops it from `batches`/`_pendingStatic`. Only between frames (never
+   * between `add` and `run`). @param {any} group */
   removeBatch(group) {
     const b = this.batches.get(group);
     if (!b) return;
     this.device.dispose(b.src); this.device.dispose(b.lodPrev); this.device.dispose(b.dst[0]); this.device.dispose(b.dst[1]);
+    const o = b.slot * ARGS_WORDS;
+    for (let i = 0; i < 2 * ARGS_WORDS; i++) this.argsCpu[o + i] = 0;
+    this._free[this._freeTop++] = b.slot;
     this.batches.delete(group);
+    this._pendingStatic.delete(group);
+  }
+
+  /** Removes every batch (38.10a): called by `WgCellPipeline.bindInstances` when the bound groups object changes. */
+  releaseAll() {
+    for (const g of [...this.batches.keys()]) this.removeBatch(g);
   }
 
   dispose() {
-    for (const g of [...this.batches.keys()]) this.removeBatch(g);
+    this.releaseAll();
     this.device.dispose(this.argsBuffer);
     this.device.dispose(this.pipeline);
     this.queue.length = 0;

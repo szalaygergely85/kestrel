@@ -194,17 +194,18 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   const bands = { near: 150, mid: 600 };
   const fog = { start: 50, full: 1500, curve: 0.7, nearRGB: [143, 168, 196], farRGB: [196, 220, 239] };
   const uTl = toTex(tlook, TLOOK_WIDTH, rows), uGain = f1Tex(gainLUT, 256, 1);
-  const makeSu = (hashCell) => ({
+  const makeSu = (hashCell, wet = 0) => ({
     hashCell, nearDetailOn: 1, handover: { x: 40, y: 90 }, closeBand: 40, fgMin: shadingT.fgMin, fgMaxGain: shadingT.fgMaxGain, bandNear: bands.near, bandMid: bands.mid,
     terrainFogStart: fog.start, terrainFogFull: fog.full, terrainFogCurve: fog.curve,
     terrainFogNearRGB: { x: fog.nearRGB[0], y: fog.nearRGB[1], z: fog.nearRGB[2] }, terrainFogFarRGB: { x: fog.farRGB[0], y: fog.farRGB[1], z: fog.farRGB[2] },
+    wetness: wet, // S8-B2-14b
   });
   const MAX_F = MAX_FEATURES_PER_TYPE;
-  function runTerrain(src, trials) {
+  function runTerrain(src, trials, wet = 0) {
     let bad = 0, n = 0, faces = 0, closeN = 0;
     const h = mkHash(src);
     for (const hashCell of [0, 3, -0.05]) {
-      const suT = makeSu(hashCell);
+      const suT = makeSu(hashCell, wet);
       const base = { ...shims, textureLoad, su: suT, uTlook: uTl, uGain, imul, ...h, MAX_FEATURES_PER_TYPE: MAX_F, FOREST_FACE_NZ,
         exp2: (x) => Math.pow(2, x), ceil: Math.ceil, log2: Math.log2, pow: Math.pow };
       base.samplePowLUT = compileFn(SHADE_WGSL, 'samplePowLUT', base);
@@ -212,8 +213,12 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
       assert.ok(SHADE_WGSL.includes('fn imod(a: i32, b: i32) -> i32 { return a - b * (a / b); }'));
       base.imod = compileFn(SHADE_WGSL.replace('fn imod(a: i32, b: i32) -> i32 { return a - b * (a / b); }', 'fn imod(a: i32, b: i32) -> i32 { return a - b * Math.trunc(a / b); }'), 'imod', { ...base, Math });
       base.pickCodeFromPacked = compileFn(src, 'pickCodeFromPacked', base);
+      // S8-B2-14b: shadeTerrain now calls wetGain (which calls smoothstepFast) - compile both from SHADE_WGSL (unaffected
+      // by a shadeTerrain-only mutation) before shadeTerrain itself, same pattern as samplePowLUT/imod above.
+      base.smoothstepFast = compileFn(SHADE_WGSL, 'smoothstepFast', base);
+      base.wetGain = compileFn(SHADE_WGSL, 'wetGain', base);
       const st = compileFn(src, 'shadeTerrain', base);
-      const ctx = { tlook, tlookWidth: TLOOK_WIDTH, bands, fog, shading: shadingT, closeBand: 40, handover: [40, 90], features: null, hashCell };
+      const ctx = { tlook, tlookWidth: TLOOK_WIDTH, bands, fog, shading: { ...shadingT, wetness: wet }, closeBand: 40, handover: [40, 90], features: null, hashCell };
       for (let t = 0; t < trials; t++) {
         const type = Math.floor(rand() * rows), tt = rand() < 0.5 ? rand() * 60 : rand() * 1700;
         const b = rand() * 1.3, u = rand() * 900 - 100, v = rand() * 900 - 100, time = rand() * 20, faceMode = Math.floor(rand() * 3);
@@ -234,6 +239,54 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   const mutT = (a, b) => { assert.ok(SHADE_WGSL.includes(a), 'anchor ' + a); return SHADE_WGSL.replace(a, b); };
   assert.ok(runTerrain(mutT('if (f > 0.85) { code = 0; }', 'if (f > 0.9) { code = 0; }'), 600).bad > 3, 'mutation: fog glyph cut');
   assert.ok(runTerrain(mutT('var br = fr * 0.3;', 'var br = fr * 0.35;'), 300).bad > 20, 'mutation: bg factor');
+
+  // --- S8-B2-14b terrain wetness (follow-up): same WET_DARK/wetGain as detailShade, JS twin == WGSL at w 0/0.5/1 ---
+  for (const wet of [0, 0.5, 1]) {
+    const r = runTerrain(SHADE_WGSL, 800, wet);
+    assert.ok(r.bad <= r.n * 0.001, `shadeTerrain wet ${wet} vs JS: ${r.bad}/${r.n} differ`);
+    probes += r.n;
+  }
+  // wetness 0 == absent (ctx.shading.wetness undefined), bit-identical, explicit (not via the shared runTerrain path above)
+  {
+    const shadingAbsent = { ...shadingT }; delete shadingAbsent.wetness;
+    const ctxAbsent = { tlook, tlookWidth: TLOOK_WIDTH, bands, fog, shading: shadingAbsent, closeBand: 40, handover: [40, 90], features: null, hashCell: 0 };
+    const ctxZero = { ...ctxAbsent, shading: { ...shadingT, wetness: 0 } };
+    for (let t = 0; t < 300; t++) {
+      const type = Math.floor(rand() * rows), tt = rand() < 0.5 ? rand() * 60 : rand() * 1700;
+      const b = rand() * 1.3, u = rand() * 900 - 100, v = rand() * 900 - 100, time = rand() * 20, faceMode = Math.floor(rand() * 3);
+      const oA = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) }, oB = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) };
+      shadeTerrain(tt, type, b, u, v, time, ctxAbsent, oA, faceMode);
+      shadeTerrain(tt, type, b, u, v, time, ctxZero, oB, faceMode);
+      assert.deepEqual(oA, oB, 'terrain wetness 0 == absent');
+    }
+  }
+  // mean fg luminance drop 10-25 % at wetness 1 (JS oracle, same AC family as the detailShade check below)
+  {
+    const lum = (fg) => 0.2126 * fg[0] + 0.7152 * fg[1] + 0.0722 * fg[2];
+    const meanLum = (wet) => {
+      const ctx = { tlook, tlookWidth: TLOOK_WIDTH, bands, fog, shading: { ...shadingT, wetness: wet }, closeBand: 40, handover: [40, 90], features: null, hashCell: 0 };
+      let sum = 0, n = 0;
+      for (let t = 0; t < 3000; t++) {
+        const type = t % rows, tt = 100 + (t * 1.7) % 500, b = 0.3 + (t * 0.013) % 1.0, u = (t * 7.31) % 900, v = (t * 3.17) % 900;
+        const o = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) };
+        shadeTerrain(tt, type, b, u, v, 0, ctx, o, 0);
+        if (o.glyph !== 0) { sum += lum(o.fg); n++; }
+      }
+      return sum / n;
+    };
+    const l0 = meanLum(0), l1 = meanLum(1), lHalf = meanLum(0.5);
+    const drop = 1 - l1 / l0;
+    console.log(`terrain wetness: mean fg luminance ${l0.toFixed(1)} -> ${lHalf.toFixed(1)} (0.5) -> ${l1.toFixed(1)} (1.0), drop ${(drop * 100).toFixed(1)} %`);
+    assert.ok(drop >= 0.10 && drop <= 0.25, `terrain wetness 1 lowers luminance 10-25 %: ${(drop * 100).toFixed(1)} %`);
+    assert.ok(l0 > lHalf && lHalf > l1, 'monotonic in terrain wetness');
+  }
+  // mutation: terrain wet-darkening constant must be caught
+  {
+    const anchor = `let bWet = b * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness);`;
+    assert.ok(SHADE_WGSL.includes(anchor), 'anchor terrain wet dark');
+    const mutT2 = SHADE_WGSL.replace(anchor, 'let bWet = b * (1.0 - 0.1000 * su.wetness);');
+    assert.ok(runTerrain(mutT2, 600, 1).bad > 15, 'mutation: terrain wet darkening constant caught');
+  }
 }
 
 // --- S8-B2-14 wetness: uniform slot replaces pad0 (layout unchanged), JS twin == WGSL, 0 = untouched, 1 darkens 10-25 % ---

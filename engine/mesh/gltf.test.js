@@ -600,6 +600,89 @@ expectThrow('rejects an external (non-data-URI) buffer with no opts.buffers over
   ok('alpha: masked primitives are never simplified (source UVs kept)', ms.ranges[1].count === 2 && !!ms.uvMask);
 }
 
+// ---------------------------------------------------------------------------
+// 13. S8-B2-15: `--crease <deg>` (opts.crease) changes the smoothing-group
+// angle threshold used by computeSmoothGroups (today hardcoded at 5 deg).
+// weldKey position-welding and the 1 cm coplanar rule are untouched - only
+// which already-connected triangles union into the same group.
+// ---------------------------------------------------------------------------
+function countGroups(mesh) {
+  const s = new Set();
+  for (let v = 0; v < mesh.flat.length / 2; v++) s.add(mesh.flat[v * 2]);
+  return s.size;
+}
+
+/** Axis-aligned unit cube as raw triangle soup (positions only, no indices -
+ * weldKey matches triangles by position, so a shared-position soup welds
+ * exactly like an indexed mesh would). Each face: 2 coplanar triangles. */
+function cubeTris(size = 1) {
+  const s = size;
+  const V = {
+    '000': [0, 0, 0], '100': [s, 0, 0], '110': [s, s, 0], '010': [0, s, 0],
+    '001': [0, 0, s], '101': [s, 0, s], '111': [s, s, s], '011': [0, s, s],
+  };
+  const quad = (a, b, c, d) => [a, b, c, a, c, d];
+  return [
+    ...quad(V['000'], V['100'], V['110'], V['010']),
+    ...quad(V['001'], V['011'], V['111'], V['101']),
+    ...quad(V['000'], V['010'], V['011'], V['001']),
+    ...quad(V['100'], V['101'], V['111'], V['110']),
+    ...quad(V['000'], V['001'], V['101'], V['100']),
+    ...quad(V['010'], V['110'], V['111'], V['011']),
+  ];
+}
+
+/** UV-sphere as raw triangle soup (positions only). Small radius keeps the
+ * per-edge "coplanar within 1 cm" plane-offset well under the limit so the
+ * only thing gating a merge at this tessellation is the angle test. */
+function sphereTris(radius, lonSegs, latSegs) {
+  const pt = (lon, lat) => {
+    const theta = (lat * Math.PI) / latSegs, phi = (lon * 2 * Math.PI) / lonSegs;
+    const y = radius * Math.cos(theta), r = radius * Math.sin(theta);
+    return [r * Math.cos(phi), y, r * Math.sin(phi)];
+  };
+  const tris = [];
+  for (let la = 0; la < latSegs; la++) {
+    for (let lo = 0; lo < lonSegs; lo++) {
+      const p00 = pt(lo, la), p10 = pt(lo + 1, la), p01 = pt(lo, la + 1), p11 = pt(lo + 1, la + 1);
+      if (la !== 0) tris.push(p00, p10, p11); // skip degenerate triangles at the poles
+      if (la !== latSegs - 1) tris.push(p00, p11, p01);
+    }
+  }
+  return tris;
+}
+
+{
+  const cubeGlb = simpleGlb({ positions: cubeTris(1) });
+  const meshDefault = loadGltf(cubeGlb, 'test:crease-cube-default');
+  const mesh45 = loadGltf(simpleGlb({ positions: cubeTris(1) }), 'test:crease-cube-45', { crease: 45 });
+  ok('crease: cube tri count unchanged (12)', meshDefault.triCount === 12 && mesh45.triCount === 12);
+  ok('crease: cube stays hard at 45 deg (6 groups, one per face, same as default)',
+    countGroups(meshDefault) === 6 && countGroups(mesh45) === 6, `default=${countGroups(meshDefault)} crease45=${countGroups(mesh45)}`);
+}
+
+{
+  const lon = 16, lat = 8, radius = 0.1;
+  const sphereGlb = () => simpleGlb({ positions: sphereTris(radius, lon, lat) });
+  const meshDefault = loadGltf(sphereGlb(), 'test:crease-sphere-default');
+  const mesh45 = loadGltf(sphereGlb(), 'test:crease-sphere-45', { crease: 45 });
+  const expectedTris = lon * (2 * lat - 2); // 2 tris/quad, minus 1 degenerate tri per pole ring
+  ok('crease: sphere tri count unchanged by --crease', meshDefault.triCount === mesh45.triCount && meshDefault.triCount === expectedTris, `triCount=${meshDefault.triCount}`);
+  ok('crease: sphere is faceted by default (5 deg threshold, many smoothing groups)', countGroups(meshDefault) > 50, `groups=${countGroups(meshDefault)}`);
+  ok('crease: sphere becomes smooth at 45 deg (single smoothing group)', countGroups(mesh45) === 1, `groups=${countGroups(mesh45)}`);
+}
+
+{
+  // Default (opts.crease omitted) must stay byte-identical to passing the exact value the code has
+  // always hardcoded (5 deg) - a future refactor that drifts the "no flag" default off 5 deg would
+  // break this, guarding the story's "no existing mesh changes unless re-imported" requirement.
+  const glb = simpleGlb({ positions: sphereTris(0.1, 16, 8) });
+  const meshNoFlag = loadGltf(glb, 'test:crease-default-equiv');
+  const meshExplicit5 = loadGltf(glb, 'test:crease-default-equiv', { crease: 5 });
+  ok('crease: omitting opts.crease == explicit crease:5 (today\'s hardcoded default), byte-identical nrm/flat',
+    meshNoFlag.nrm.every((v, i) => v === meshExplicit5.nrm[i]) && meshNoFlag.flat.every((v, i) => v === meshExplicit5.flat[i]));
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

@@ -355,7 +355,8 @@ function collectMeshNodes(json, id) {
 // triangles); groupId offsets across primitives are applied by the caller.
 // ---------------------------------------------------------------------------
 
-const SMOOTH_ANGLE_COS = Math.cos(5 * DEG2RAD);
+const SMOOTH_ANGLE_DEG = 5;
+const SMOOTH_ANGLE_COS = Math.cos(SMOOTH_ANGLE_DEG * DEG2RAD);
 const SMOOTH_COPLANAR_M = 0.01; // 1 cm
 
 /** 1 mm position bucket key - identifies "the same vertex" across triangles (connectivity), not the 1 cm smoothing tolerance. */
@@ -365,9 +366,14 @@ function weldKey(x, y, z) {
 
 /**
  * @param {{p0:number[], p1:number[], p2:number[], normal:number[]}[]} tris - already world+axis-converted
+ * @param {number} [angleCos] - cos(crease angle); two triangles sharing an edge union into the
+ *   same smoothing group only when their face-normal angle is BELOW this (same coplanar-within-1cm
+ *   rule either way). Defaults to `SMOOTH_ANGLE_COS` (today's hardcoded 5 deg) - S8-B2-15's `--crease
+ *   <deg>` is the only caller that overrides it; omitting it (or passing the default 5 deg) must stay
+ *   byte-identical to the pre-S8-B2-15 output (ARCH: "--crease only changes how groups split by angle").
  * @returns {Uint32Array} groupId per triangle (0-based, first-occurrence order)
  */
-function computeSmoothGroups(tris) {
+function computeSmoothGroups(tris, angleCos = SMOOTH_ANGLE_COS) {
   const n = tris.length;
   const parent = new Int32Array(n);
   for (let i = 0; i < n; i++) parent[i] = i;
@@ -403,7 +409,7 @@ function computeSmoothGroups(tris) {
     const [a, b] = key.split(',').map(Number);
     const na = tris[a].normal, nb = tris[b].normal;
     const cosAngle = na[0] * nb[0] + na[1] * nb[1] + na[2] * nb[2];
-    if (cosAngle < SMOOTH_ANGLE_COS) continue;
+    if (cosAngle < angleCos) continue;
     // Plane offset: signed distance from b's centroid to a's plane.
     const cbx = (tris[b].p0[0] + tris[b].p1[0] + tris[b].p2[0]) / 3;
     const cby = (tris[b].p0[1] + tris[b].p1[1] + tris[b].p2[1]) / 3;
@@ -499,7 +505,11 @@ function planarUv(face, x, y, z) {
  * engine materials is a sidecar step (ME-13b), not this function's job.
  * @param {ArrayBuffer|Uint8Array|string} buffer
  * @param {string} id - MeshData id, e.g. `gltf:<file>/<localId>`
- * @param {{alpha?: boolean, textures?: Record<string,{tex:string,w:number,h:number,alpha:Uint8Array}>, opaque?: string[], warnings?: string[], buffers?: Uint8Array[], uv?: 'planar'|'source', simplifyRatio?: number, triMat?: (uv0:number[],uv1:number[],uv2:number[],matName:string)=>string}} [opts] - `triMat`: per-triangle material name from the source UVs (MESH-UVMAP-01); `uv`: 'planar' (default, world-metre planar UVs, 27.4; glTF TEXCOORD_0 are colour-atlas values, not metres) or 'source' (keep TEXCOORD_0). `buffers[i]`: bytes for
+ * @param {{alpha?: boolean, textures?: Record<string,{tex:string,w:number,h:number,alpha:Uint8Array}>, opaque?: string[], warnings?: string[], buffers?: Uint8Array[], uv?: 'planar'|'source', simplifyRatio?: number, crease?: number, triMat?: (uv0:number[],uv1:number[],uv2:number[],matName:string)=>string}} [opts] - `triMat`: per-triangle material name from the source UVs (MESH-UVMAP-01); `uv`: 'planar' (default, world-metre planar UVs, 27.4; glTF TEXCOORD_0 are colour-atlas values, not metres) or 'source' (keep TEXCOORD_0). `crease`: S8-B2-15 `--crease <deg>`
+ *   (default off/`undefined` = today's hardcoded 5 deg smoothing-group angle, byte-identical); when
+ *   given, triangles sharing an edge weld into one smoothing group (averaged normals) whenever their
+ *   face-normal angle is below this, instead of 5 deg - triangle count and vertex welding (`weldKey`)
+ *   are unchanged, only which groups the already-welded vertices fall into. `buffers[i]`: bytes for
  *   `json.buffers[i]` when its `uri` is an external file (not a data: URI
  *   and not GLB-embedded) - this module never reads a file itself.
  * ALPHA-01a (37.17): `opts.alpha = true` turns every `alphaMode: 'MASK'` material into a masked range (`mask: {tex, cutoff}`, cutoff = alphaCutoff
@@ -727,16 +737,19 @@ function texelsAllOpaque(t, b, cutByte) {
  *   world-space, axis-converted, winding already fixed, `normal` = unit flat face normal
  * @param {{part: string, triStart: number, triCount: number, mask?: {tex: string, cutoff: number}}[]} primRanges
  * @param {string} id
- * @param {{uv?: 'planar'|'source'}} [opts]
+ * @param {{uv?: 'planar'|'source', crease?: number}} [opts] - `crease`: S8-B2-15 `--crease <deg>`
+ *   (default off = `undefined`, keeps today's hardcoded 5 deg threshold byte-identical); when set,
+ *   overrides the smoothing-group angle test (coplanar-within-1cm rule unchanged either way).
  * @returns {MeshData}
  */
 export function buildMeshFromTris(allTris, primRanges, id, opts = {}) {
+  const angleCos = typeof opts.crease === 'number' ? Math.cos(opts.crease * DEG2RAD) : SMOOTH_ANGLE_COS;
   // --- Pass 2: smoothing groups (per primitive, then offset to a mesh-global id) --
   const groupIdAll = new Uint32Array(allTris.length);
   let groupOffset = 0;
   for (const range of primRanges) {
     const slice = allTris.slice(range.triStart, range.triStart + range.triCount);
-    const g = computeSmoothGroups(slice);
+    const g = computeSmoothGroups(slice, angleCos);
     let maxG = -1;
     for (let i = 0; i < g.length; i++) {
       groupIdAll[range.triStart + i] = g[i] + groupOffset;
