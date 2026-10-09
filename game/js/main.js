@@ -20,7 +20,7 @@ import {
   PITCH_CLAMP_PITCHED_DEG,
   ambientL, World, repackMaterials,
   updateInteraction, drawCrosshair,
-  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun, setCloudShadow,
+  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun, setCloudShadow, setHorizonAo,
   isSoftwareRenderer,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim,
@@ -42,7 +42,7 @@ import {
 // of the `?gpucompare=` mode code.
 import { GATE_POSES } from '../../content/dev-poses.js';
 import { prefetchLazyMeshesAtBoot } from './bootPrefetchHook.js'; // MESH-LOAD-01: boot prefetchNear call
-import { parseCloudStrength } from './cloudParam.js'; // S8-B2-12a NEEDS B1 item (2): `?clouds=<0..1>` parse/clamp
+import { parseCloudStrength, parseAoStrength } from './cloudParam.js'; // S8-B2-12a/S8-B2-20 NEEDS B1 item (2)/(1): `?clouds=<0..1>`/`?ao=<0..1>` parse/clamp
 import { MODES } from './dev/modes/index.js';
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
@@ -94,6 +94,7 @@ import { START_DEMO, START_FULL } from './quest/startConfig.js';
 import { createPracticeTarget, applyPropTargetables } from './quest/practiceTarget.js';
 import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js'; // US-053c
 import { createWaterfallHooks } from './quest/waterfallHooks.js';
+import { createAmbientMotes } from './quest/ambient.js';
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
@@ -400,6 +401,9 @@ watchDeviceLost(gpuDevice, {
 if (params.get('dev') === '1') {
   window.__kestrel = window.__kestrel || {};
   window.__kestrel.loseDevice = () => { if (gpuDevice && typeof gpuDevice._forceLost === 'function') gpuDevice._forceLost('dev hook'); };
+  // S8-B2-13 NEEDS B1 item (2) (from 38.14): window.__kestrel.ripple(x, y, amp) for the owner look - the
+  // passWater composite upload that actually draws the rings is another slot's item.
+  window.__kestrel.ripple = (x, y, amp) => { if (engine.world && engine.world.water) engine.world.water.addRipple(x, y, amp); };
 }
 // S8-B1-15: MAP-01c baked chart (MAP-01b bake tool, content/chart/world_m1.chart.json) for the map card
 // (quest/mapCard.js). Loaded once, like questDef above; a missing/bad file degrades to the plain (unbaked) card
@@ -491,6 +495,9 @@ const lightsEnabled = params.get('lights') !== '0';
 // GLSL ignores the cloud byte - only the Canvas2D/CPU path (and WebGPU, once kestrel-2's passLight upload lands)
 // actually draws clouds. Applied via `setCloudShadow` after every `buildLightSet` below.
 const cloudStrength = rt.backend === 'gl2' ? 0 : parseCloudStrength(params.get('clouds'));
+// S8-B2-20 NEEDS B1 item (1): `?ao=<0..1>` (default 0). WebGL2 stays 0 (frozen GLSL ignores it, D-044). Applied
+// via `setHorizonAo` after every `buildLightSet` below, same site as the cloud strength above.
+const aoStrength = rt.backend === 'gl2' ? 0 : parseAoStrength(params.get('ao'));
 // US-007 (14.3 item 8 fallback/switches): test-only sun disable, same shape
 // as `?lights=0`.
 const sunEnabled = params.get('sun') !== '0';
@@ -866,6 +873,7 @@ async function runGame(mode, cinematic = null) {
   let menuHost = null; // US-090w: title menu host while it is up (null = no menu / already closed)
   let invWasLocked = false; // pointer lock state when the pack opened (re-lock on close)
   let waterfallHooks = null;
+  let ambientMotes = null;
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
   let worldSunPath = null; // US-122a: fit the load-time sun before static/cinematic hour writes.
   const cinematicHours = cinematic && Number.isFinite(cinematic.keys[0].hour);
@@ -949,6 +957,7 @@ async function runGame(mode, cinematic = null) {
       if (lightsEnabled) {
         lightSet = buildLightSet(world, assets.palette);
         if (lightSet) setCloudShadow(lightSet, { strength: cloudStrength }); // S8-B2-12a NEEDS B1 item (2)
+        if (lightSet) setHorizonAo(lightSet, { strength: aoStrength }); // S8-B2-20 NEEDS B1 item (1)
         if (lightSet) lightSet.emissive = !isGpuCompareMode && !params.get('gpucompare') && !(resolvedQuality && resolvedQuality.name === 'low'); // EMIS-01b (38.12): glowing voxels light the scene; off on Low and every gpucompare mode
         window.__debug.lights = lightSet; // EMIS-01b: test hook (derivedStats)
         // `?sun=0`: keep the sun's direction/color (F6/F7 still readable) but
@@ -986,6 +995,9 @@ async function runGame(mode, cinematic = null) {
       particleHooks = createParticleHooks(world, engine.events, engine.particles, particlePresets, engine.physics.gravity);
       if (waterfallHooks) waterfallHooks.dispose();
       waterfallHooks = waterfallPreset ? createWaterfallHooks(world, engine.particles, waterfallPreset) : null;
+      if (ambientMotes) ambientMotes.dispose();
+      // S8-B1-18 (closes US-019): ambient dust motes, off with ?ambient=0 and on the Low preset.
+      ambientMotes = createAmbientMotes(world, engine.particles, { enabled: params.get('ambient') !== '0' && !(resolvedQuality && resolvedQuality.name === 'low'), rgb: assets.palette.rgb, palette: assets.palette });
       // US-079a (29.1): rebuilt on every load/restart, same precedent as lightSet above.
       // US-078d: beastSim now owns a `combat:hit` listener (the stagger behaviour) - drop the old world's one
       // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.
@@ -1207,6 +1219,7 @@ async function runGame(mode, cinematic = null) {
       if (world.cloths) world.cloths.tick(clothTick, world.wind, cam.x, cam.y, cam.z);
       stepAnimations(world, dt * 1000);
       if (waterfallHooks) waterfallHooks.step();
+      if (ambientMotes) ambientMotes.step(cam.x, cam.y, cam.z);
       entityEmitters.sync(); engine.particles.step();
       if (waterfallHooks) waterfallHooks.afterStep();
       return;
@@ -1372,6 +1385,7 @@ async function runGame(mode, cinematic = null) {
       // US-053c: after beast/sword/vitals steps, before entityEmitters.sync()/particles.step() per 32.1.
       if (particleHooks) particleHooks.step(playerHandle.data);
       if (waterfallHooks) waterfallHooks.step();
+      if (ambientMotes) ambientMotes.step(playerHandle.data.x, playerHandle.data.y, playerHandle.data.z);
       entityEmitters.sync(); engine.particles.step();
       if (waterfallHooks) waterfallHooks.afterStep();
       lap(SEC.physics);
@@ -1857,6 +1871,7 @@ function runVoxelBenchMode() {
   if (world.terrain) world.terrain.bakeFarSync();
   const lights = lightsEnabled ? buildLightSet(world, assets.palette) : null;
   if (lights) setCloudShadow(lights, { strength: cloudStrength }); // S8-B2-12a NEEDS B1 item (2)
+  if (lights) setHorizonAo(lights, { strength: aoStrength }); // S8-B2-20 NEEDS B1 item (1)
   if (lights && !sunEnabled) lights.setSun({ elevation: lights.sun.elevation, azimuth: lights.sun.azimuth, on: false });
   if (lights) lights.update(0, world);
 
