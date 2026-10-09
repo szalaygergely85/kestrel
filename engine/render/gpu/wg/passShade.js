@@ -10,7 +10,7 @@ import { SHADE_BLOCK, SHADE_WGSL, SHADE_TEXTURES } from '../wgsl/shade.wgsl.js';
 import { EDGE_BLOCK, EDGE_WGSL, EDGE_TEXTURES } from '../wgsl/edge.wgsl.js';
 import { packMaterialTable } from '../ShadeTextures.js';
 import { packTerrainTextures } from '../TerrainTextures.js';
-import { SKY_LUT_N } from '../glsl/common.js';
+import { SKY_LUT_N } from '../wgsl/skyLut.js';
 import { sunFromWorld } from '../../lighting.js';
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 
