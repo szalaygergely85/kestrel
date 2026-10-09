@@ -6,11 +6,12 @@ import assert from 'node:assert/strict';
 import { LIGHT_WGSL, LIGHT_BLOCK, LIGHT_TEXTURES, LIGHT_TARGETS } from './light.wgsl.js';
 import { CELL_RAY_WGSL, CELL_RAY_PITCHED_WGSL, FALLOFF_FAST_WGSL, OCT_NORMAL_WGSL } from './common.wgsl.js';
 import { WGSL_MODULES } from './index.js';
-import { compileFn, makeTex, textureLoad, shims } from './wgslProbe.js';
+import { compileFn, makeTex, textureLoad, shims, numericLiterals } from './wgslProbe.js';
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS, MAX_SUN_STEPS, falloff, sampleVis, sunVisible } from '../../lighting.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { packNormalOct, unpackNormalOct } from '../../../voxel/octNormal.js';
 import { unprojectPitched } from '../../projection.js';
+import { CLOUD_DARK, CLOUD_SHIFT } from '../../cloudShadow.js';
 
 // --- string rules (38.5) ---
 assert.ok(WGSL_MODULES.some((m) => m.name === 'light' && m.code === LIGHT_WGSL), 'registered');
@@ -31,7 +32,25 @@ assert.deepEqual(['ambient', 'posX', 'sunDir', 'sunShadowRes', 'sunCol', 'sunSha
 assert.equal(LIGHT_BLOCK.field('sunShadowM').offset % 16, 0);
 assert.equal(LIGHT_BLOCK.field('lightPos').words, MAX_LIGHTS * 4);
 assert.equal(LIGHT_BLOCK.field('structB').words, MAX_STRUCTS * 4);
-assert.equal(LIGHT_BLOCK.sizeBytes, 1264);
+// S8-B2-12a (38.13): cloudCover takes the first pad word (30, right after sunShadowNormalOff at 29) so pitchA
+// stays at word 32; `cloud` (strength, invScale, offU, offV) is appended at the very end, word 316; new size 1280 B.
+assert.equal(LIGHT_BLOCK.field('cloudCover').word, 30);
+assert.equal(LIGHT_BLOCK.field('cloud').word, 316);
+assert.equal(LIGHT_BLOCK.sizeBytes, 1280);
+
+// --- S8-B2-12a (38.13): cloud-shadow byte wired into fs_main, CLOUD_DARK interpolated, CLOUD_SHIFT = 24 ---
+assert.ok(new RegExp(`const CLOUD_SHIFT: u32 = ${CLOUD_SHIFT}u;`).test(LIGHT_WGSL), 'CLOUD_SHIFT interpolated');
+assert.ok(new RegExp(`const CLOUD_DARK: f32 = ${CLOUD_DARK};`).test(LIGHT_WGSL), 'CLOUD_DARK interpolated');
+assert.ok(/fn cloudCov\(/.test(LIGHT_WGSL), 'cloudCov fn present (common.wgsl.js CLOUD_SHADOW_WGSL interpolated)');
+assert.ok(/\| cloudBits\)/.test(LIGHT_WGSL), 'LIGHT.w carries the cloud byte');
+// Mutation: a changed CLOUD_DARK literal must show up in a numericLiterals check of LIGHT_WGSL (D-039 style guard -
+// this is the only place CLOUD_DARK's own value is baked into the WGSL text, cloudCov itself only has the octave weights).
+{
+  const lits = numericLiterals(LIGHT_WGSL);
+  assert.ok(lits.has(CLOUD_DARK), 'LIGHT_WGSL literal-set has CLOUD_DARK');
+  const mutated = LIGHT_WGSL.replace(`const CLOUD_DARK: f32 = ${CLOUD_DARK};`, 'const CLOUD_DARK: f32 = 0.37;');
+  assert.ok(numericLiterals(mutated).has(0.37) && !numericLiterals(mutated).has(CLOUD_DARK), 'mutation: a changed CLOUD_DARK literal is caught');
+}
 
 let seed = 7;
 const rand = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 0x100000000; };
