@@ -96,10 +96,9 @@ function cellsDiffer(Ca, offa, Cb, offb) {
   return false;
 }
 
-// CLOUD-WRAP-01: with the wisp term off (its 0.561/1.7 scales are not 256-multiples, see lane note) the puff octaves
-// are seamless across a 256 drift wrap: cloudAt at off == at off-256 over 2000 random directions.
+// CLOUD-WRAP-01: puff AND wisp octaves are seamless across a 256 drift wrap: cloudAt at off == at off-256 over 2000 random directions.
 {
-  const Cp = Object.assign({}, C, { wispK: 0 });
+  const Cp = Object.assign({}, C);
   let seed = 12345; const r = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
   const oa = new Float32Array(2), ob = new Float32Array(2); let bad = 0;
   for (let i = 0; i < 2000; i++) {
@@ -107,7 +106,7 @@ function cellsDiffer(Ca, offa, Cb, offb) {
     oa[0] = Math.floor(r() * 65536) / 256; oa[1] = Math.floor(r() * 65536) / 256; ob[0] = oa[0] - 256; ob[1] = oa[1] - 256;
     const a = makeCloudOut(), b = makeCloudOut();
     cloudAt(d.dx, d.dy, d.dz, el, Cp, oa, a); cloudAt(d.dx, d.dy, d.dz, el, Cp, ob, b);
-    if (a.glyph !== b.glyph || Math.abs(a.fg[0] - b.fg[0]) > 1e-3 || Math.abs(a.bg[0] - b.bg[0]) > 1e-3) bad++;
+    if (a.glyph !== b.glyph || Math.abs(a.fg[0] - b.fg[0]) > 1e-6 || Math.abs(a.bg[0] - b.bg[0]) > 1e-6) bad++;
   }
   console.log(bad === 0 ? 'ok   cloudAt seamless across 256 drift wrap (puff octaves)' : 'FAIL cloudAt wrap mismatches: ' + bad);
   if (bad) process.exitCode = 1;
