@@ -216,6 +216,46 @@ console.log('passRaster.test.js (WG-4a): all checks passed.');
   console.log('passRaster.test.js (ALPHA-01c): all checks passed.');
 }
 
+// ALPHA-01f (b): masked instanced mesh group (TREES-LP-b, not DRAW_FLAG_ONE_PART) = one draw per mesh range, opaque ranges
+// through instancePipe (unchanged shape), masked ranges through instanceMaskPipe (mask uniforms + uv extra stream +
+// atlas texture), instanceCount = N on every draw. An opaque-only instanced group (no maskRanges) is byte-identical to before.
+{
+  const { RASTER_INSTANCED_MASK_BLOCK } = await import('../wgsl/raster.wgsl.js');
+  const { MaskAtlas } = await import('../../MaskAtlas.js');
+  const m4 = makeMockGpuDevice(), dev = m4.device, dr = [];
+  dev.draw = (c, f, i) => dr.push({ pipe: dev._activePipeline, c, f, i, bind: dev._lastBind, u: new Uint32Array(dev._lastBind.uniforms.buffer, dev._lastBind.uniforms.byteOffset, dev._lastBind.uniforms.length).slice() });
+  const ps = new WgRasterPass(dev, { gpuCull: false });
+  const atlas = new MaskAtlas(); atlas.add('t/a', 2, 2, new Uint8Array([9, 9, 9, 9]));
+  const world = { maskAtlas: atlas };
+  const vb = dev.createBuffer({ usage: 'vertex', bytes: 64 }), uvb = dev.createBuffer({ usage: 'vertex', bytes: 64 });
+  ps.buffers.getVoxel = () => ({ vertexBuffer: vb, uvMaskBuffer: uvb });
+  const mm = { ranges: [{ start: 0, count: 2 }, { start: 2, count: 3 }], maskRanges: new Int32Array([0, 0, -1, 0, 0, /**/ 2, 0, 4, 4, 128]) };
+  const T = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
+  ps.prepare = () => {
+    ps._maskTexture(world); ps.list.begin();
+    const it = ps.list.push(); it.type = DRAW_INSTANCED; it.mesh = mm; it.instBuf = { f32: new Float32Array(32) }; it.instCount = 5;
+    it.partMatrices.set(T, 0); it.partMatrices.set(T, 12); // not DRAW_FLAG_ONE_PART: instancedRanges() returns mesh.ranges, both parts identity
+  };
+  ps.vmList = null;
+  const pp = { _t: { targetRaster: {}, targetVmDepth: {} }, stats: {} };
+  ps.run(pp);
+  assert.deepEqual(dr.map((x) => [x.pipe === ps.instanceMaskPipe ? 'mask' : (x.pipe === ps.instancePipe ? 'opaque' : '?'), x.c, x.f, x.i]),
+    [['opaque', 6, 0, 5], ['mask', 9, 6, 5]], 'opaque range -> instancePipe, masked range -> instanceMaskPipe, instanceCount = N on both');
+  const md = dr[1], MU = (n) => md.u[RASTER_INSTANCED_MASK_BLOCK.field(n).word];
+  assert.deepEqual([MU('maskX0'), MU('maskY0'), MU('maskW'), MU('maskH'), MU('maskCut')], [2, 0, 4, 4, 128], 'atlas rect + cutoff byte in the instanced-mask uniform block');
+  assert.equal(md.bind.extraBuffers[0], uvb); assert.equal(md.bind.textures[0].texture, ps.maskTex); assert.equal(md.bind.instanceBuffer, dr[0].bind.instanceBuffer, 'same instance buffer on both draws');
+  assert.equal(md.pipe.desc.vertex.extraLayouts[0].layout[0].location, 10); assert.deepEqual(md.pipe.desc.bindings.textures, ['uint']);
+  assert.equal(pp.stats.instancedDraws, 2);
+  // opaque-only instanced group (no maskRanges): unchanged - both ranges through instancePipe, no mask bind touched
+  dr.length = 0;
+  const mm2 = { ranges: [{ start: 0, count: 2 }, { start: 2, count: 3 }] };
+  ps.prepare = () => { ps._maskTexture(world); ps.list.begin(); const it = ps.list.push(); it.type = DRAW_INSTANCED; it.mesh = mm2; it.instBuf = { f32: new Float32Array(32) }; it.instCount = 4; it.partMatrices.set(T, 0); it.partMatrices.set(T, 12); };
+  ps.run(pp);
+  assert.deepEqual(dr.map((x) => [x.pipe === ps.instancePipe, x.c, x.f, x.i]), [[true, 6, 0, 4], [true, 9, 6, 4]], 'opaque-only group: both ranges through instancePipe unchanged');
+  ps.dispose(); dev.dispose(vb); dev.dispose(uvb); assert.equal(m4.liveCount(), 0, 'mask texture + pipelines disposed');
+  console.log('passRaster.test.js (ALPHA-01f b): all checks passed.');
+}
+
 // PREC-01a (37.9, WebGPU twin): camera-relative raster. view/planes stay absolute f64; every camera raster uniform carries view * T(O) and model - O.
 {
   const { frameMatrix } = await import('../../projection.js');

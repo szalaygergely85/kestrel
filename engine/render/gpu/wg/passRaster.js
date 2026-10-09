@@ -1,6 +1,6 @@
 // WG-2b/2c: device-only mesh + terrain raster (kind 7, ME-06 twin); cell shading stays on the CPU until WG-3c.
 import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, MASK_UV_LAYOUT, MASK_UV_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from '../MeshBuffers.js';
-import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_MASK_BLOCK, RASTER_MASK_WGSL, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL } from '../wgsl/raster.wgsl.js';
+import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_MASK_BLOCK, RASTER_MASK_WGSL, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL, RASTER_INSTANCED_MASK_BLOCK, RASTER_INSTANCED_MASK_WGSL } from '../wgsl/raster.wgsl.js';
 import { TERRAIN_BLOCK, TERRAIN_RASTER_WGSL, TERRAIN_TEXTURES } from '../wgsl/terrainRaster.wgsl.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, MAX_DRAW_ITEMS } from '../../../mesh/DrawList.js';
@@ -22,6 +22,9 @@ const FLAT = RASTER_BLOCK.field('flat').word;
 const TEAM_SLOT = RASTER_BLOCK.field('teamSlot').word, TEAM_MAT = RASTER_BLOCK.field('teamMat').word;
 const M_X0 = RASTER_MASK_BLOCK.field('maskX0').word, M_Y0 = RASTER_MASK_BLOCK.field('maskY0').word, M_W = RASTER_MASK_BLOCK.field('maskW').word;
 const M_H = RASTER_MASK_BLOCK.field('maskH').word, M_CUT = RASTER_MASK_BLOCK.field('maskCut').word;
+// ALPHA-01f (b): same 5 mask fields, RASTER_INSTANCED_MASK_BLOCK's own word offsets (its prefix is byte-identical to RASTER_BLOCK's).
+const IM_X0 = RASTER_INSTANCED_MASK_BLOCK.field('maskX0').word, IM_Y0 = RASTER_INSTANCED_MASK_BLOCK.field('maskY0').word;
+const IM_W = RASTER_INSTANCED_MASK_BLOCK.field('maskW').word, IM_H = RASTER_INSTANCED_MASK_BLOCK.field('maskH').word, IM_CUT = RASTER_INSTANCED_MASK_BLOCK.field('maskCut').word;
 const ORIGIN = RASTER_BLOCK.field('origin').word, T_MODEL_REL = TERRAIN_BLOCK.field('modelRel').word;
 const T_MODEL = TERRAIN_BLOCK.field('model').word, T_VIEW = TERRAIN_BLOCK.field('viewProj').word;
 const T_NEAR = TERRAIN_BLOCK.field('nearMap').word, T_FAR = TERRAIN_BLOCK.field('farMap').word, T_FOOT = TERRAIN_BLOCK.field('structFoot').word;
@@ -67,6 +70,10 @@ export class WgRasterPass {
     this.maskDraws = 0; this.maskTex = null; this.maskDims = [1, 1]; this.maskAtlas = null; this.maskVersion = -1; this.maskUploads = 0; this.maskReady = false;
     this.maskTexBind = [{ slot: 0, texture: null }]; this.maskExtra = [null];
     this.maskBind = { uniforms: this.mu, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: this.maskExtra, textures: this.maskTexBind };
+    // ALPHA-01f (b): instanced masked draw - own uniform copy (RASTER_INSTANCED_MASK_BLOCK's prefix = RASTER_BLOCK's, so `this.iu.set(this.u)` is exact), same mask texture.
+    this.iu = new Float32Array(RASTER_INSTANCED_MASK_BLOCK.sizeWords); this.ibits = new Uint32Array(this.iu.buffer);
+    this.maskExtraInst = [null];
+    this.instanceMaskBind = { uniforms: this.iu, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: this.maskExtraInst, textures: this.maskTexBind };
     this.pipes = [];
     this.clothStreams = [null];
     // WG-4a: GPU cull of InstanceGroups batches (meshGroup + single-range voxel units). instances.js hands each supported group to `accept` instead of
@@ -94,6 +101,8 @@ export class WgRasterPass {
       this.voxelPipe = this._pipeline(RASTER_VOXEL_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back');
       this.mirrorPipe = this._pipeline(RASTER_VOXEL_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'ccw');
       this.instancePipe = this._pipeline(RASTER_INSTANCED_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true);
+      // ALPHA-01f (b): instanced mesh-group masked draw - same state as instancePipe + the mask-uv extra stream (location 10) + texMask at slot 0
+      this.instanceMaskPipe = this._pipeline(RASTER_INSTANCED_MASK_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true, [{ layout: MASK_UV_LAYOUT, strideBytes: MASK_UV_STRIDE_BYTES }], RASTER_INSTANCED_MASK_BLOCK, ['uint']);
       // Cloth: dynamic pos+oct normal (slot 0) + static uv (extra stream), two-sided (GL: CULL_FACE off, CCW = 'cw' after the clip-y flip).
       this.clothPipe = this._pipeline(RASTER_CLOTH_WGSL, CLOTH_DYN_LAYOUT, CLOTH_STRIDE_BYTES, 'none', 'cw', false, [{ layout: CLOTH_UV_LAYOUT, strideBytes: 8 }]);
       if (opts.gpuCull !== false && typeof device.createComputePipeline === 'function') this.cull = new WgCullPass(device);
@@ -316,6 +325,21 @@ export class WgRasterPass {
     return draws;
   }
 
+  /**
+   * ALPHA-01f (b): one masked range of an instanced mesh group (TREES-LP-b kind-9 group with `maskRanges`), matching
+   * `rasterJS.js` `rasterInstanced`'s per-range loop and `_staticMesh`'s "one draw per range" shape, instanceCount = N.
+   * @returns {number} draws issued (always 1)
+   */
+  _instancedMaskedRange(entry, r, mr, part, buffer, instCount) {
+    this.iu.set(this.u); // RASTER_INSTANCED_MASK_BLOCK's prefix = RASTER_BLOCK's (model/viewProj/.../windK), same word offsets
+    const ib = this.ibits;
+    ib[IM_X0] = mr[part * 5]; ib[IM_Y0] = mr[part * 5 + 1]; ib[IM_W] = mr[part * 5 + 2]; ib[IM_H] = mr[part * 5 + 3]; ib[IM_CUT] = mr[part * 5 + 4];
+    const bd = this.instanceMaskBind;
+    bd.vertexBuffer = entry.vertexBuffer; bd.indexBuffer = null; bd.instanceBuffer = buffer; this.maskExtraInst[0] = entry.uvMaskBuffer;
+    this.device.bind(this.instanceMaskPipe, bd); this.device.draw(r.count * 3, r.start * 3, instCount);
+    return 1;
+  }
+
   _cloths(list) {
     let draws = 0;
     const b = this.bindDesc;
@@ -379,10 +403,15 @@ export class WgRasterPass {
           this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0;
           const entry = this.buffers.getVoxel(item.mesh);
           const ranges = instancedRanges(item);
+          const mr = item.mesh.maskRanges; // ALPHA-01f (b): per-range mask lookup, same shape as _staticMesh's
           for (let part = 0; part < ranges.length; part++) {
             const r = ranges[part]; if (r.count <= 0) continue;
             this._model(item.partMatrices, part * 12); this.bits[AXIS] = item.partFlags[part] & 1;
-            this._draw(this.instancePipe, entry, r.count * 3, r.start * 3, buffer, item.instCount); instancedDraws++;
+            if (mr && this.maskReady && entry.uvMaskBuffer && mr[part * 5 + 2] >= 0) {
+              this._instancedMaskedRange(entry, r, mr, part, buffer, item.instCount); instancedDraws++;
+            } else {
+              this._draw(this.instancePipe, entry, r.count * 3, r.start * 3, buffer, item.instCount); instancedDraws++;
+            }
           }
         }
         if (this.gpuN) { const gd = this._cullDraw(); instancedDraws += gd; p.stats.gpuCullDraws = gd; } else p.stats.gpuCullDraws = 0;
