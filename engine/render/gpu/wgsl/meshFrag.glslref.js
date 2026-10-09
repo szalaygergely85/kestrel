@@ -35,7 +35,7 @@
 // `d = max(0, h-zRef); zc = ceilZ-h; if (zc<d) d=max(0,zc); fr=u-u0;
 // if (h<nbrALo) d=min(d,fr); if (h<nbrBLo) d=min(d,1-fr)`; AO_PLANE(2)
 // `fx=u-cellX0, fy=v-cellY0; W/E/N/S bits narrow a=min(a,...)`.
-import { GLSL_VERSION, PRECISION, OCT_NORMAL } from '../glsl/common.js';
+import { GLSL_VERSION, PRECISION, OCT_NORMAL } from './glslref.common.js';
 import { KIND_MODEL, KIND_MESH, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED } from '../../GBuffer.js';
 
 const AO_NONE = 0, AO_WALL = 1, AO_PLANE = 2;

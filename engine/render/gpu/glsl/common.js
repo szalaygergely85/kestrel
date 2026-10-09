@@ -9,19 +9,11 @@
 // output is `floor(v + 0.5) / 255.0`; LUT sampling is
 // `int(clamp(x,0,1) * float(size-1) + 0.5)`.
 
-export const GLSL_VERSION = '#version 300 es\n';
 
 // US-030a (14.2 item 3): baked sky gradient LUT sample count - shared
 // between GpuCellPipeline.js's `_bakeSkyLUT` (JS) and shade.frag.js's sky
 // branch (GLSL), single source of truth (14.1 section 1 pattern).
-export const SKY_LUT_N = 32;
 
-export const PRECISION = `
-precision highp float;
-precision highp int;
-precision highp usampler2D;
-precision highp isampler2D;
-`;
 
 // GBuffer field layout (architecture.md 14.1 section 2, amended 14.2 item 3):
 // GI.y bit packing. US-030b adds `cov` (3-bit resolve-vote coverage,
@@ -31,33 +23,16 @@ precision highp isampler2D;
 // the cast pass before the resolve vote) reuses this exact layout with
 // mask/cov always 0 (meaningless before resolve) - `giKind`/`giFace`/`giMat`
 // are shared between both textures unchanged.
-export const GBUF_UNPACK = `
-// GI.x = planeId (uint bit-cast, compared for equality only).
-// GI.y = kind | face<<8 | mask<<12 | cov<<13 | mat<<16
-uint giKind(uint y) { return y & 0xffu; }
-uint giFace(uint y) { return (y >> 8u) & 0xfu; }
-uint giMask(uint y) { return (y >> 12u) & 0x1u; }
-uint giCov(uint y)  { return (y >> 13u) & 0x7u; }
-uint giMat(uint y)  { return (y >> 16u) & 0xffffu; }
-`;
 
 // hashFast: bit-exact `uint` port of engine/render/detailShade.js's
 // `hashFast` (tech notes item 5). `uint(int)` for signed inputs equals
 // JS `x|0` reinterpreted as the uint bit pattern.
-export const HASH_FAST = `
-uint hashFastU(int x, int y, int s) {
-  uint h = uint(x) * 0x27d4eb2du ^ uint(y) * 0x165667b1u ^ uint(s) * 0x9e3779b1u;
-  h = (h ^ (h >> 15u)) * 0x85ebca6bu;
-  h = (h ^ (h >> 13u)) * 0xc2b2ae35u;
-  h ^= h >> 16u;
-  return h;
-}
-// The uint->float conversion via >>8 is exact (24 significant bits fit a
-// float32 mantissa) - no driver-dependent rounding (tech notes item 5).
-float hashFast(int x, int y, int s) {
-  return float(hashFastU(x, y, s) >> 8u) * (1.0 / 16777216.0);
-}
-`;
+import { SKY_LUT_N } from '../wgsl/skyLut.js';
+export { GLSL_VERSION, PRECISION, GBUF_UNPACK, BYTE_OUT, CELL_RAY_PITCHED, OCT_NORMAL } from '../wgsl/glslref.common.js';
+export { SKY_LUT_N };
+export { HASH_FAST, CELL_RAY, PITCH_UNIFORMS } from '../wgsl/glslref.extra.js';
+import { HASH_FAST, CELL_RAY, PITCH_UNIFORMS } from '../wgsl/glslref.extra.js';
+
 
 export const SAMPLE_POW_LUT = `
 uniform sampler2D uGain; // R32F, 256x1 - table.gainLUT
@@ -68,11 +43,6 @@ float samplePowLUT(float x) {
 }
 `;
 
-export const BYTE_OUT = `
-// Byte output: floor(v+0.5)/255 (matches Math.round for non-negatives);
-// never rely on the GL unorm write path or GLSL round().
-float toByte01(float v255) { return floor(clamp(v255, 0.0, 255.0) + 0.5) / 255.0; }
-`;
 
 export const SMOOTHSTEP_FAST = `
 float smoothstepFast(float a, float b, float x) {
@@ -136,17 +106,6 @@ int lineGlyphCodeFast(float cx, float cy, float fr, float cellAspect) {
 // world xyz is ever stored in the G-buffer (14.3 item 1). `falloffFast` is
 // the engine's point-light falloff (design/palette.js `util.falloff`,
 // US-002 rule): smooth to exactly 0 at the radius, no `pow`.
-export const CELL_RAY = `
-vec3 cellRayP(vec2 cell, ivec2 grid, float posX, float posY, float eyeH,
-    float dirX, float dirY, float planeX, float planeY,
-    float horizonRow, float planeDistY, float dist) {
-  float cameraX = (2.0 * (cell.x + 0.5)) / float(grid.x) - 1.0;
-  float rayDirX = dirX + planeX * cameraX;
-  float rayDirY = dirY + planeY * cameraX;
-  float slope = -(cell.y - horizonRow) / planeDistY;
-  return vec3(posX + rayDirX * dist, posY + rayDirY * dist, eyeH + slope * dist);
-}
-`;
 
 // RE-02a (docs/architecture.md 28.1 Amendment 2): the pitched camera's
 // counterpart of `cellRayP`. `cellDirPitched` is the literal twin of
@@ -157,38 +116,7 @@ vec3 cellRayP(vec2 cell, ivec2 grid, float posX, float posY, float eyeH,
 // (A2 item 10). `pitchFogScale` = `pitchedFogScale`: `vd * scale` is the
 // horizontal forward distance the fog curves read (A2 item 3); mode 0
 // returns 1.0 without arithmetic so every shear frame is byte-identical.
-export const PITCH_UNIFORMS = `
-uniform int uProjMode;  // 0 = shear (cellRayP / uHorizonRow), 1 = pitched (cellRayPitched)
-uniform vec4 uPitchA;   // fX, fY, fZ, tanHalfX
-uniform vec4 uPitchB;   // rX, rY, uX, uY
-uniform vec4 uPitchC;   // uZ, tanHalfY, cosP, sinP
-`;
 
-export const CELL_RAY_PITCHED = `
-vec3 cellDirPitched(vec2 cell, ivec2 grid, vec3 F, vec2 R, vec3 U, vec2 tanHalf) {
-  float a = ((2.0 * (cell.x + 0.5)) / float(grid.x) - 1.0) * tanHalf.x;
-  float b = (1.0 - (2.0 * cell.y) / float(grid.y)) * tanHalf.y;
-  return vec3(F.x + a * R.x + b * U.x, F.y + a * R.y + b * U.y, F.z + b * U.z);
-}
-
-vec3 cellRayPitched(vec2 cell, ivec2 grid, vec3 eye, vec3 F, vec2 R, vec3 U, vec2 tanHalf, float vd) {
-  vec3 dir = cellDirPitched(cell, grid, F, R, U, tanHalf);
-  return vec3(eye.x + dir.x * vd, eye.y + dir.y * vd, eye.z + dir.z * vd);
-}
-
-float pitchFogScale(int row, int rows, float tanHalfY, float cosP, float sinP) {
-  float b = (1.0 - (2.0 * float(row)) / float(rows)) * tanHalfY;
-  return max(0.0, cosP - b * sinP);
-}
-
-// Uniform-driven wrappers (need PITCH_UNIFORMS declared before this chunk).
-vec3 pitchedCellDir(vec2 cell, ivec2 grid) {
-  return cellDirPitched(cell, grid, uPitchA.xyz, uPitchB.xy, vec3(uPitchB.zw, uPitchC.x), vec2(uPitchA.w, uPitchC.y));
-}
-float fogScaleCell(int row, int rows) {
-  return uProjMode == 0 ? 1.0 : pitchFogScale(row, rows, uPitchC.y, uPitchC.z, uPitchC.w);
-}
-`;
 
 // US-041a (15.3 item 3): literal GLSL twin of engine/voxel/octNormal.js's
 // `packNormalOct`/`unpackNormalOct` - the octahedral normal packing used for
@@ -197,36 +125,6 @@ float fogScaleCell(int row, int rows) {
 // light-pass change, 15.3 item 3). Both take/return the SAME bit layout as
 // the JS reference (qx | qy<<16, each 16 bits) so the two paths can never
 // disagree on a normal's bits.
-export const OCT_NORMAL = `
-uint packNormalOct(vec3 n) {
-  float s = abs(n.x) + abs(n.y) + abs(n.z);
-  float x = n.x / s, y = n.y / s, z = n.z / s;
-  if (z < 0.0) {
-    float ax = abs(x), ay = abs(y);
-    float sx = x >= 0.0 ? 1.0 : -1.0, sy = y >= 0.0 ? 1.0 : -1.0;
-    float nxp = (1.0 - ay) * sx, nyp = (1.0 - ax) * sy;
-    x = nxp; y = nyp;
-  }
-  uint qx = uint(clamp(floor((x * 0.5 + 0.5) * 65535.0 + 0.5), 0.0, 65535.0));
-  uint qy = uint(clamp(floor((y * 0.5 + 0.5) * 65535.0 + 0.5), 0.0, 65535.0));
-  return qx | (qy << 16u);
-}
-
-vec3 unpackNormalOct(uint bits) {
-  uint qx = bits & 0xFFFFu;
-  uint qy = (bits >> 16u) & 0xFFFFu;
-  float x = (float(qx) / 65535.0) * 2.0 - 1.0;
-  float y = (float(qy) / 65535.0) * 2.0 - 1.0;
-  float z = 1.0 - abs(x) - abs(y);
-  if (z < 0.0) {
-    float ax = abs(x), ay = abs(y);
-    float sx = x >= 0.0 ? 1.0 : -1.0, sy = y >= 0.0 ? 1.0 : -1.0;
-    float ox = (1.0 - ay) * sx, oy = (1.0 - ax) * sy;
-    x = ox; y = oy;
-  }
-  return normalize(vec3(x, y, z));
-}
-`;
 
 export const FALLOFF_FAST = `
 float falloffFast(float d, float r) {

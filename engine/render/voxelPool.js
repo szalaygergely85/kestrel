@@ -9,7 +9,8 @@ import { MAX_VOX_INSTANCES, MAX_VOX_INSTANCES_MESH, MAX_VOX_PARTS, PART_STRIDE }
 import { packVoxelModel } from '../voxel/voxelPack.js';
 import { voxelPointWorld } from '../voxel/voxelPose.js';
 import { computeProjection, computeProjectionPitched, instanceRect } from '../voxel/instanceRect.js';
-import { createPitchedTerms, pitchedTerms, resolveProjection } from './projection.js';
+import { createPitchedTerms, pitchedTerms, resolveProjection, isPitchedFamily } from './projection.js';
+import { lodCentreX, lodCentreY, lodCentreZ } from '../core/camFocus.js';
 import { buildVoxelAtlas } from './gpu/VoxelTextures.js';
 
 const _proj = { cols: 0, rows: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, planeDet: 0, horizonRow: 0, planeDistY: 0, eyeX: 0, eyeY: 0, eyeZ: 0,
@@ -251,7 +252,7 @@ export class VoxelPool {
       this._collectWarned |= bit;
       warnOnce(this, `VoxelPool.collect: ${n} voxel entities exceed cap (${this.cap}); only the nearest ${this.cap} render`);
     }
-    const cx = cam ? cam.x : 0, cy = cam ? cam.y : 0, cz = cam ? cam.z : 0;
+    const cx = cam ? lodCentreX(cam) : 0, cy = cam ? lodCentreY(cam) : 0, cz = cam ? lodCentreZ(cam) : 0;
     const idx = this._nearIdx, dist = this._nearDist;
     let count = 0;
     for (let i = 0; i < n; i++) {
@@ -326,7 +327,7 @@ export class VoxelPool {
    * `this.list` in queue order (slot = compact index). Zero allocation once
    * `raw`/`list` are warm (reused per-slot objects/typed arrays). */
   project(cam, rt, renderer = this.renderer) {
-    if (resolveProjection(cam, renderer) === 'pitched') {
+    if (isPitchedFamily(resolveProjection(cam, renderer))) {
       // RE-02a (28.1 A2 item 2): pitched screen-rect cull.
       _poolGrid.cols = rt.cols; _poolGrid.rows = rt.rows; _poolGrid.pxCellW = rt.pxCellW || 1; _poolGrid.pxCellH = rt.pxCellH || 1;
       computeProjectionPitched(pitchedTerms(cam, _poolGrid, _poolPitch), _proj);

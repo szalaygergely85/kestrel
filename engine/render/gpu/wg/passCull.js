@@ -19,6 +19,7 @@ import { createInstanceBuffer, groupRadius, INSTANCE_BYTES, INSTANCE_STRIDE } fr
 import { CULL_BLOCK, CULL_BUFFERS, CULL_WGSL, CULL_WORKGROUP } from '../wgsl/cull.wgsl.js';
 import { CULL_SHADOW_BLOCK, CULL_SHADOW_BUFFERS, CULL_SHADOW_WGSL } from '../wgsl/cullShadow.wgsl.js';
 
+const EMPTY = Object.freeze([]);
 export const MAX_CULL_BATCHES = 64;
 export const CULL_IDLE_FRAMES = 600; // 38.10a: a batch untouched by add() for this many begin() calls (~10 s at 60 Hz) is swept
 const ARGS_WORDS = 5; // indexCount, instanceCount, firstIndex, baseVertex, firstInstance
@@ -27,6 +28,7 @@ const W = (n) => CULL_BLOCK.field(n).word;
 const WS = (n) => CULL_SHADOW_BLOCK.field(n).word; // WG-4b shadow mode block
 const PLANES = W('planes'), EYE = W('eye'), LODROW = W('lodRow'), PARAMS = W('params'), COUNT = W('count'), LODON = W('lodOn'), SLOT0 = W('slot0'), SLOT1 = W('slot1');
 const RANGECOUNT0 = W('rangeCount0'), RANGECOUNT1 = W('rangeCount1'); // ALPHA-01f (d): mesh ranges sharing each LOD's compacted instances
+const OCC_VP = W('vp'), OCC_FWD = W('fwd'), OCC_ON = W('hzbOn'), OCC_W = W('hzbW'), OCC_H = W('hzbH'), OCC_LEVELS = W('hzbLevels'), OCC_PITCH = W('hzbPitch'), OCC_PHASE = W('phase'), OCC_SLOT2 = W('slot2'), OCC_SLOT3 = W('slot3'); // S8-B2-10c
 const SWAYPAD = W('swayPad'), SWAYPAD_S = WS('swayPad'); // S8-B2-05/06: metres added to R (SWAY_MAX while foliage sway is on, else 0)
 
 /** @typedef {{group: any, lod: number, mesh: any, instanceBuffer: any, argsBuffer: any, argsOffset: number, maxInstances: number, parts: any, active: boolean, range?: number}} CullEntry */
@@ -38,10 +40,12 @@ export function createCullPipeline(device, shadow = false) {
 }
 
 export class WgCullPass {
-  /** @param {any} device @param {{maxBatches?: number, shadow?: boolean}} [opts] shadow = WG-4b sun-shadow caster mode (see `begin`/`add`) */
+  /** @param {any} device @param {{maxBatches?: number, shadow?: boolean, occl?: boolean}} [opts] shadow = WG-4b sun-shadow caster mode (see `begin`/`add`);
+   *  occl = S8-B2-10c two-phase HZB occlusion (default OFF; per batch occl + dst2/dst3 + 2 more args records; `begin({hzb})` + `runPhase2()`) */
   constructor(device, opts = {}) {
     this.device = device;
     this.shadow = !!opts.shadow;
+    this.occl = !this.shadow && !!opts.occl;
     this.maxBatches = opts.maxBatches || MAX_CULL_BATCHES;
     this.pipeline = createCullPipeline(device, this.shadow);
     this.argsCpu = new Uint32Array(this.maxBatches * 2 * ARGS_WORDS);
@@ -65,9 +69,17 @@ export class WgCullPass {
     this._ub = new ArrayBuffer(block.sizeBytes);
     this._uv = block.createViews(this._ub);
     this._bind = { buffers: [{ slot: 0, buffer: null }, { slot: 1, buffer: null }, { slot: 2, buffer: null }, { slot: 3, buffer: null }, { slot: 4, buffer: null }], uniforms: this._uv.f32 };
+    /** S8-B2-10c: the cull pipeline declares 7 buffers (5 hzb f32 read, 6 occl u32 rw); occlusion off / no valid HZB binds this 16 B dummy at both (created once). */
+    // TWO distinct dummies: one buffer bound as read (5) AND read_write (6) in one dispatch is a WebGPU usage-conflict validation error (killed all culled draws).
+    this._dummy = null; this._dummy2 = null;
+    if (!this.shadow) {
+      this._dummy = device.createBuffer({ usage: 'storage', bytes: 16 });
+      this._dummy2 = device.createBuffer({ usage: 'storage', bytes: 16 });
+      this._bind.buffers.push({ slot: 5, buffer: this._dummy }, { slot: 6, buffer: this._dummy2 });
+    }
     /** @type {any[]} batches queued this frame */
     this.queue = [];
-    this.frame = { planes: /** @type {Float64Array|null} */ (null), viewProj: /** @type {Float64Array|null} */ (null), rows: 0, eye: /** @type {any} */ (null), maxDistM: 0, castM: 0, hystM: 0 };
+    this.frame = { hzb: /** @type {any} */ (null), swayPad: 0, planes: /** @type {Float64Array|null} */ (null), viewProj: /** @type {Float64Array|null} */ (null), rows: 0, eye: /** @type {any} */ (null), maxDistM: 0, castM: 0, hystM: 0 };
     this.stats = { batches: 0, dispatches: 0, instances: 0, uploads: 0, argsBytes: 0 };
   }
 
@@ -83,6 +95,8 @@ export class WgCullPass {
     fr.castM = /** @type {any} */ (f).castM || 0; fr.hystM = /** @type {any} */ (f).hystM || 0;
     fr.planes = f.planes || null; fr.viewProj = f.viewProj || null; fr.rows = f.rows || 0; fr.eye = f.eye || null; fr.maxDistM = f.maxDistM || 0;
     fr.swayPad = /** @type {any} */ (f).swayPad || 0; // S8-B2-05/06
+    // S8-B2-10c: { buffer, w, h, levels, pitch, fwd: [x,y,z], margin } of a VALID previous-frame HZB; null/undefined = first frame / resize / cut -> hzbOn 0 this frame
+    const hz = /** @type {any} */ (f).hzb; fr.hzb = this.occl && hz && hz.buffer && f.viewProj ? hz : null;
     this.queue.length = 0;
     const s = this.stats; s.batches = 0; s.dispatches = 0; s.instances = 0; s.uploads = 0; s.argsBytes = 0;
     // 38.10a idle sweep: a batch no add() stamped recently (editor/reload churn) is freed, <= maxBatches compares/frame
@@ -147,15 +161,7 @@ export class WgCullPass {
     for (const m of meshes) { if (m && m.maskRanges && m.ranges && m.ranges.length > rc) rc = m.ranges.length; } // unmasked meshGroups stay ONE_PART: one range
     const d = this.device;
     const cap = g.ib.capacity;
-    let slot;
-    if (rc === 1) {
-      if (this._freeTop > 0) slot = this._free[--this._freeTop]; // 38.10a: reuse a freed 2-slot pair (LIFO)
-      else slot = this._allocSlots(2);
-    } else {
-      const key = 2 * rc, big = this._freeBig.get(key);
-      if (big && big.length) slot = big.pop(); // reuse a freed block of the SAME size only (never aliased across R)
-      else slot = this._allocSlots(key);
-    }
+    const slot = this._takeBlock(rc);
     const b = {
       g, cap, slot, rc, static: this._pendingStatic.delete(g), uploaded: -1, view: /** @type {any} */ (null), viewCount: -1, lastFrame: this._frame,
       src: d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES }),
@@ -163,15 +169,51 @@ export class WgCullPass {
       dst: [d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES }), d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES })],
       meshes0: null, meshes1: null,
       entries: /** @type {CullEntry[]} */ ([]),
+      // S8-B2-10c (occl only): pending flags, phase-2 survivor buffers + their own args block
+      slot2: -1, occlBuf: /** @type {any} */ (null), dst2: /** @type {any} */ (null), entries2: /** @type {CullEntry[]} */ ([]),
     };
+    if (this.occl) {
+      b.slot2 = this._takeBlock(rc);
+      b.occlBuf = d.createBuffer({ usage: 'storage', data: new Uint32Array(cap) });
+      b.dst2 = [d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES }), d.createBuffer({ usage: 'storage', bytes: cap * INSTANCE_BYTES })];
+    }
     for (let lod = 0; lod < 2; lod++) {
       for (let r = 0; r < rc; r++) {
         b.entries.push({ group: g, lod, range: r, mesh: null, instanceBuffer: b.dst[lod], argsBuffer: this.argsBuffer, argsOffset: (b.slot + lod * rc + r) * ARGS_BYTES, maxInstances: cap, parts: g.parts, active: false });
       }
     }
+    if (this.occl) {
+      for (let lod = 0; lod < 2; lod++) {
+        for (let r = 0; r < rc; r++) {
+          b.entries2.push({ group: g, lod, range: r, mesh: null, instanceBuffer: b.dst2[lod], argsBuffer: this.argsBuffer, argsOffset: (b.slot2 + lod * rc + r) * ARGS_BYTES, maxInstances: cap, parts: g.parts, active: false });
+        }
+      }
+    }
     this.batches.set(g, b);
     return b;
   }
+
+  /** Takes a 2*rc args-slot block: LIFO free pair for rc 1 (38.10a), same-size-only free list for rc > 1 (ALPHA-01f d), else a fresh allocation. @param {number} rc */
+  _takeBlock(rc) {
+    if (rc === 1) return this._freeTop > 0 ? this._free[--this._freeTop] : this._allocSlots(2);
+    const key = 2 * rc, big = this._freeBig.get(key);
+    return big && big.length ? /** @type {number} */ (big.pop()) : this._allocSlots(key);
+  }
+
+  /** Zeroes and returns a 2*rc block to its free list. @param {number} slot @param {number} rc */
+  _freeBlock(slot, rc) {
+    const o = slot * ARGS_WORDS, n = 2 * rc * ARGS_WORDS;
+    for (let i = 0; i < n; i++) this.argsCpu[o + i] = 0;
+    if (rc === 1) this._free[this._freeTop++] = slot;
+    else {
+      const key = 2 * rc; let big = this._freeBig.get(key);
+      if (!big) { big = []; this._freeBig.set(key, big); }
+      big.push(slot);
+    }
+  }
+
+  /** S8-B2-10c: the phase-2 draw entries of `group` (survivors of the re-test; same shape as `add`'s, instanceBuffer = dst2/dst3, own args records). Empty without `occl`. @param {any} group @returns {CullEntry[]} */
+  phase2Entries(group) { const b = this.batches.get(group); return b ? b.entries2 : EMPTY; }
 
   /** Bumps `_nextSlot` by `n` ARGS_WORDS-sized slots, bound by `argsCpu`'s total capacity; rebuilds `_argsView`. @param {number} n @returns {number} the base slot */
   _allocSlots(n) {
@@ -208,6 +250,11 @@ export class WgCullPass {
           e.active = e.active && this.argsCpu[o] > 0;
         } else this.argsCpu[o] = mesh ? mesh.triCount * 3 : 0; // ONE_PART: the whole mesh as one range (rasterJS _oneRange)
         this.argsCpu[o + 1] = 0; this.argsCpu[o + 2] = first; this.argsCpu[o + 3] = 0; this.argsCpu[o + 4] = 0;
+        if (b.slot2 >= 0) { // S8-B2-10c: phase-2 record mirrors the phase-1 one (instanceCount 0, firstInstance 0)
+          const e2 = b.entries2[lod * rc + r], o2 = (b.slot2 + lod * rc + r) * ARGS_WORDS;
+          e2.mesh = mesh; e2.active = e.active; e2.parts = b.g.parts;
+          this.argsCpu[o2] = this.argsCpu[o]; this.argsCpu[o2 + 1] = 0; this.argsCpu[o2 + 2] = first; this.argsCpu[o2 + 3] = 0; this.argsCpu[o2 + 4] = 0;
+        }
       }
     }
   }
@@ -264,12 +311,69 @@ export class WgCullPass {
       u[COUNT] = cnt; u[LODON] = lodOn ? 1 : 0; u[SLOT0] = b.slot * ARGS_WORDS; u[SLOT1] = (b.slot + b.rc) * ARGS_WORDS;
       u[RANGECOUNT0] = b.rc; u[RANGECOUNT1] = b.rc; // ALPHA-01f (d): b.rc fixed at _create; 1 = today's single record per LOD (bit-identical)
       f[SWAYPAD] = fr.swayPad; // S8-B2-05/06: metres added to R in the frustum test (cull.wgsl.js aabbOutside)
+      const hz = fr.hzb, on = !!hz && !!b.occlBuf;
+      this._writeOcc(hz, on, 0, b); // 10c: all-zero words (hzbOn 0) when occlusion is off, no valid HZB (first frame / resize / cut) or no occl buffers
       const bd = this._bind.buffers;
       bd[0].buffer = b.src; bd[1].buffer = b.lodPrev; bd[2].buffer = b.dst[0]; bd[3].buffer = b.dst[1]; bd[4].buffer = this.argsBuffer;
+      bd[5].buffer = on ? hz.buffer : this._dummy; bd[6].buffer = on ? b.occlBuf : this._dummy2;
       d.dispatch(this.pipeline, this._bind, Math.ceil(cnt / CULL_WORKGROUP), 1, 1);
       s.dispatches++; s.instances += cnt;
     }
     s.batches = this.queue.length;
+  }
+
+  /** CullU words 44..71 (S8-B2-10b layout). `on` false writes zeros (kernel = today's path); phase 2 also sets slot2/slot3. */
+  _writeOcc(hz, on, phase, b) {
+    const f = this._uv.f32, u = this._uv.u32, fr = this.frame;
+    if (!on) { for (let i = OCC_VP; i <= OCC_SLOT3; i++) u[i] = 0; return; }
+    const vp = /** @type {Float64Array} */ (fr.viewProj);
+    for (let i = 0; i < 16; i++) f[OCC_VP + i] = vp[i];
+    const fw = hz.fwd;
+    f[OCC_FWD] = fw[0]; f[OCC_FWD + 1] = fw[1]; f[OCC_FWD + 2] = fw[2]; f[OCC_FWD + 3] = hz.margin !== undefined ? hz.margin : 0.05;
+    u[OCC_ON] = 1; u[OCC_W] = hz.w; u[OCC_H] = hz.h; u[OCC_LEVELS] = hz.levels; u[OCC_PITCH] = hz.pitch || 0; u[OCC_PHASE] = phase;
+    u[OCC_SLOT2] = phase === 2 ? b.slot2 * ARGS_WORDS : 0; u[OCC_SLOT3] = phase === 2 ? (b.slot2 + b.rc) * ARGS_WORDS : 0;
+  }
+
+  /**
+   * S8-B2-10c phase 2: re-tests the pending (occluded in phase 1) instances against the FRESH HZB (`hzb` = descriptor of the HZB rebuilt from raster A's depth by passHzb)
+   * and appends survivors to dst2/dst3 (own args records). Same thread count and bind group as phase 1 except 2/3 = dst2/dst3. No-op without occl or when phase 1 ran with
+   * hzbOn 0 (nothing is pending). Call after the HZB build, before raster pass B; draw `phase2Entries(group)` there. @param {any} hzb fresh HZB descriptor (same shape as begin's)
+   */
+  runPhase2(hzb) {
+    const fr = this.frame;
+    if (!this.occl || !hzb || fr.hzb === null) return;
+    const d = this.device, s = this.stats;
+    for (let q = 0; q < this.queue.length; q++) {
+      const b = this.queue[q], g = b.g, n = g.count;
+      if (n <= 0 || !b.occlBuf) continue;
+      const cnt = n > b.cap ? b.cap : n;
+      this._fillCommon(b, cnt); // the uniform block holds the LAST phase-1 batch: rebuild this batch's words
+      this._writeOcc(hzb, true, 2, b);
+      const bd = this._bind.buffers;
+      bd[0].buffer = b.src; bd[1].buffer = b.lodPrev; bd[2].buffer = b.dst2[0]; bd[3].buffer = b.dst2[1]; bd[4].buffer = this.argsBuffer; bd[5].buffer = hzb.buffer; bd[6].buffer = b.occlBuf;
+      d.dispatch(this.pipeline, this._bind, Math.ceil(cnt / CULL_WORKGROUP), 1, 1);
+      s.dispatches++;
+    }
+  }
+
+  /** Rewrites a batch's CullU words 0..43 exactly as phase 1 did (planes, eye, lod terms, count, slots, ranges, swayPad). */
+  _fillCommon(b, cnt) {
+    const fr = this.frame, f = this._uv.f32, u = this._uv.u32, g = b.g, planes = fr.planes;
+    const R = g._R;
+    if (planes) { for (let i = 0; i < 24; i++) f[PLANES + i] = planes[i]; }
+    else { for (let i = 0; i < 6; i++) { const o = PLANES + i * 4; f[o] = 0; f[o + 1] = 0; f[o + 2] = 0; f[o + 3] = 1; } }
+    const eye = fr.eye, md = fr.maxDistM;
+    f[EYE] = eye ? eye.x : 0; f[EYE + 1] = eye ? eye.y : 0; f[EYE + 2] = eye ? eye.z : 0; f[EYE + 3] = eye && md > 0 ? md * md : 0;
+    const vp = fr.viewProj;
+    const lodOn = g.lodCells > 0 && !!vp && !!b.meshes1;
+    if (lodOn && vp) {
+      f[LODROW] = vp[3]; f[LODROW + 1] = vp[7]; f[LODROW + 2] = vp[11]; f[LODROW + 3] = vp[15];
+      f[PARAMS + 1] = R * Math.sqrt(vp[1] * vp[1] + vp[5] * vp[5] + vp[9] * vp[9]) * fr.rows;
+    } else { f[LODROW] = 0; f[LODROW + 1] = 0; f[LODROW + 2] = 0; f[LODROW + 3] = 0; f[PARAMS + 1] = 0; }
+    f[PARAMS] = R; f[PARAMS + 2] = g.lodCells * 0.9; f[PARAMS + 3] = g.lodCells * 1.1;
+    u[COUNT] = cnt; u[LODON] = lodOn ? 1 : 0; u[SLOT0] = b.slot * ARGS_WORDS; u[SLOT1] = (b.slot + b.rc) * ARGS_WORDS;
+    u[RANGECOUNT0] = b.rc; u[RANGECOUNT1] = b.rc;
+    f[SWAYPAD] = fr.swayPad;
   }
 
   /** Frees the batch of `group`: disposes its 4 buffers, zeroes its args words (so a stale slot never draws), pushes the
@@ -279,14 +383,11 @@ export class WgCullPass {
     const b = this.batches.get(group);
     if (!b) return;
     this.device.dispose(b.src); this.device.dispose(b.lodPrev); this.device.dispose(b.dst[0]); this.device.dispose(b.dst[1]);
-    const rc = b.rc, o = b.slot * ARGS_WORDS, n = 2 * rc * ARGS_WORDS;
-    for (let i = 0; i < n; i++) this.argsCpu[o + i] = 0;
-    if (rc === 1) this._free[this._freeTop++] = b.slot; // 38.10a fast path, unchanged
-    else { // ALPHA-01f (d): return the block to the free list of its OWN size only
-      const key = 2 * rc; let big = this._freeBig.get(key);
-      if (!big) { big = []; this._freeBig.set(key, big); }
-      big.push(b.slot);
+    if (b.occlBuf) { // S8-B2-10c
+      this.device.dispose(b.occlBuf); this.device.dispose(b.dst2[0]); this.device.dispose(b.dst2[1]);
+      this._freeBlock(b.slot2, b.rc);
     }
+    this._freeBlock(b.slot, b.rc); // 38.10a fast path / ALPHA-01f (d) own-size list, same behaviour as before
     this.batches.delete(group);
     this._pendingStatic.delete(group);
   }
@@ -299,6 +400,8 @@ export class WgCullPass {
   dispose() {
     this.releaseAll();
     this.device.dispose(this.argsBuffer);
+    if (this._dummy) this.device.dispose(this._dummy);
+    if (this._dummy2) this.device.dispose(this._dummy2);
     this.device.dispose(this.pipeline);
     this.queue.length = 0;
   }

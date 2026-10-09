@@ -15,6 +15,7 @@
 // every `DrawItem`'s typed arrays at construction; `begin`/`push`/`cull`
 // never allocate. `addStructures`'s near-to-far sort scratch is module-level
 // (literal copy of `compositor.js`'s `renderWorld` insertion sort).
+import { lodCentreX, lodCentreY } from '../core/camFocus.js';
 import { buildLevelMesh, rebuildLevelMeshDyn } from './levelMesh.js';
 import { resolveMats } from './MeshData.js';
 import { cutoffByte } from '../render/MaskAtlas.js';
@@ -255,9 +256,10 @@ const _order = new Int32Array(MAX_STRUCTS);
 const _distScratch = new Float64Array(MAX_STRUCTS);
 
 function bboxDist(cam, bbox) {
-  const cx = Math.min(Math.max(cam.x, bbox.x0), bbox.x1);
-  const cy = Math.min(Math.max(cam.y, bbox.y0), bbox.y1);
-  const dx = cam.x - cx, dy = cam.y - cy;
+  const camX = lodCentreX(cam), camY = lodCentreY(cam); // ortho: focus, not the far-back eye (US-068b3a)
+  const cx = Math.min(Math.max(camX, bbox.x0), bbox.x1);
+  const cy = Math.min(Math.max(camY, bbox.y0), bbox.y1);
+  const dx = camX - cx, dy = camY - cy;
   return Math.hypot(dx, dy);
 }
 
@@ -438,7 +440,7 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
   const bEye = shadowOnly && budget ? budget.eye : null, bCut = bEye ? budget.cutM : 0;
   const maxKeep = bEye ? Math.min(MAX_MESH_DRAWS, budget.cap) : MAX_MESH_DRAWS;
   if (groups) groups.chosen.fill(0);
-  if (!shadowOnly) { setLazyView(cam.x, cam.y, fogFarM); pumpLazyMeshes(); } // MESH-LOAD-01: decode queued payloads (<= 2 / 4 ms), remember the eye for scatter groups
+  if (!shadowOnly) { setLazyView(lodCentreX(cam), lodCentreY(cam), fogFarM); pumpLazyMeshes(); } // MESH-LOAD-01: decode queued payloads (<= 2 / 4 ms), remember the eye for scatter groups
   let count = 0;
   for (let i = 0; i < structs.length; i++) {
     if (structs[i].kind !== 'mesh') continue;

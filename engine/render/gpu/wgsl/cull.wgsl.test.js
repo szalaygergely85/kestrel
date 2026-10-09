@@ -15,12 +15,12 @@ assert.ok(/@compute @workgroup_size\(64\)\s*\nfn cs_main\(@builtin\(global_invoc
 assert.equal(CULL_WORKGROUP, 64);
 assert.equal(INSTANCE_STRIDE, 16);
 assert.ok(/const STRIDE: u32 = 16u;/.test(CULL_WGSL), 'stride interpolated from instances.js');
-assert.deepEqual(CULL_BUFFERS, ['read', 'rw', 'rw', 'rw', 'rw']);
+assert.deepEqual(CULL_BUFFERS, ['read', 'rw', 'rw', 'rw', 'rw', 'read', 'rw']);
 assert.ok(/@group\(0\) @binding\(0\) var<storage, read> src: array<u32>/.test(CULL_WGSL));
 for (let i = 1; i <= 3; i++) assert.ok(CULL_WGSL.includes('@group(0) @binding(' + i + ') var<storage, read_write> '), 'binding ' + i);
 assert.ok(/@group\(0\) @binding\(4\) var<storage, read_write> args: array<atomic<u32>>/.test(CULL_WGSL));
 assert.ok(/@group\(1\) @binding\(0\) var<uniform> u: CullU/.test(CULL_WGSL));
-assert.ok(/atomicAdd\(&args\[u\.slot[01] \+ 1u\], 1u\)/.test(CULL_WGSL), 'instanceCount is word +1 of the indirect args slot');
+assert.ok(/atomicAdd\(&args\[s[01] \+ 1u\], 1u\)/.test(CULL_WGSL), 'instanceCount is word +1 of the indirect args slot');
 assert.equal(CULL_BLOCK.field('planes').word, 0);
 assert.equal(CULL_BLOCK.field('eye').word, 24);
 assert.equal(CULL_BLOCK.field('count').word, 36);
@@ -79,8 +79,8 @@ u.eye.w = 0; assert.equal(distOut(1e6, 0, 0), false, 'w <= 0 = no distance cull'
 // compaction index. rangeCount 0/1 is a 0-iteration loop: bit-identical to the pre-ALPHA-01f(d) single-record kernel.
 assert.equal(CULL_ARGS_WORDS, 5);
 assert.ok(/const ARGS_WORDS: u32 = 5u;/.test(CULL_WGSL));
-const RC0_LOOP = /for \(var r = 1u; r < u\.rangeCount0; r\+\+\) \{ atomicAdd\(&args\[u\.slot0 \+ r \* ARGS_WORDS \+ 1u\], 1u\); \}/g;
-const RC1_LOOP = /for \(var r = 1u; r < u\.rangeCount1; r\+\+\) \{ atomicAdd\(&args\[u\.slot1 \+ r \* ARGS_WORDS \+ 1u\], 1u\); \}/g;
+const RC0_LOOP = /for \(var r = 1u; r < u\.rangeCount0; r\+\+\) \{ atomicAdd\(&args\[s0 \+ r \* ARGS_WORDS \+ 1u\], 1u\); \}/g;
+const RC1_LOOP = /for \(var r = 1u; r < u\.rangeCount1; r\+\+\) \{ atomicAdd\(&args\[s1 \+ r \* ARGS_WORDS \+ 1u\], 1u\); \}/g;
 assert.equal((CULL_WGSL.match(RC0_LOOP) || []).length, 2, 'rangeCount0 bump loop at both LOD0 append sites (dither band + plain)');
 assert.equal((CULL_WGSL.match(RC1_LOOP) || []).length, 2, 'rangeCount1 bump loop at both LOD1 append sites (dither band + plain)');
 assert.equal(CULL_BLOCK.field('rangeCount0').word, CULL_BLOCK.field('swayPad').word + 1, 'appended after swayPad: earlier word offsets unchanged');
@@ -210,6 +210,170 @@ function makeU2(R, lodCells, pose, grid, eye, maxDistM, slot0, slot1, rangeCount
     for (let r = 1; r < RC0; r++) assert.equal(argsC[slot0 + r * CULL_ARGS_WORDS + 1], 0, `pre-fix bug reproduced: LOD0 range ${r} stuck at 0 instances`);
     for (let r = 1; r < RC1; r++) assert.equal(argsC[slot1 + r * CULL_ARGS_WORDS + 1], 0, `pre-fix bug reproduced: LOD1 range ${r} stuck at 0 instances`);
     assert.ok(wantN0 > 0 && wantN1 > 0, 'the bug is only visible because the fixture actually draws something');
+  }
+}
+// ======================= S8-B2-10b: HZB occlusion in the cull kernel (architecture.md 38.20) =======================
+import { buildHzb } from '../../../mesh/hzb.js';
+import { instanceOccluded } from '../../../mesh/occlusion.js';
+{
+  // ---- layout / bindings: new CullU words appended after rangeCount1, earlier words unchanged ----
+  const F = (n) => CULL_BLOCK.field(n).word;
+  assert.equal(F('rangeCount1'), 43);
+  const want = { vp: 44, fwd: 60, hzbOn: 64, hzbW: 65, hzbH: 66, hzbLevels: 67, hzbPitch: 68, phase: 69, slot2: 70, slot3: 71 };
+  for (const k of Object.keys(want)) assert.equal(F(k), want[k], 'CullU.' + k);
+  assert.equal(CULL_BLOCK.sizeBytes, 72 * 4, 'CullU = 72 words (288 B), 16 B aligned');
+  assert.ok(/@group\(0\) @binding\(5\) var<storage, read> hzb: array<f32>;/.test(CULL_WGSL));
+  assert.ok(/@group\(0\) @binding\(6\) var<storage, read_write> occl: array<u32>;/.test(CULL_WGSL));
+  assert.ok(/occl\[i\] = 1u \| \(lod << 1u\)/.test(CULL_WGSL) && /if \(occOn\) \{ occl\[i\] = 0u; \}/.test(CULL_WGSL), 'pending word + clear only when hzbOn');
+  assert.equal(1 - 1e-3, 0.999, 'WGSL literal 0.999 == twin DEPTH_REL');
+
+  // ---- fixtures ----
+  let sd = 424242; const rr = () => (sd = (sd * 1664525 + 1013904223) >>> 0) / 4294967296;
+  const GRID = { cols: 160, rows: 60, pxCellW: 1, pxCellH: 2 }, cam = { x: 2, y: -40, z: 2, yawDeg: 90, pitchDeg: -4 };
+  const pose = makePose(cam, GRID);
+  const R = 4, lodCells = 5, maxDistM = 260, N = 3000;
+  const buf = new ArrayBuffer(N * INSTANCE_STRIDE * 4), srcF = new Float32Array(buf), srcU = new Uint32Array(buf);
+  for (let i = 0; i < N; i++) {
+    const o = i * INSTANCE_STRIDE;
+    srcF.set([1, 0, 0, Math.fround((rr() - 0.5) * 400), 0, 1, 0, Math.fround((rr() - 0.5) * 400), 0, 0, 1, Math.fround(rr() * 3)], o);
+    srcU[o + 12] = 1000 + i; srcU[o + 13] = 0;
+  }
+  const depthBlocks = (w, h, seedv, infFrac) => { // 24x24 plateaus: nearer blocks occlude, +Inf = sky
+    let s = seedv; const r = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+    const bw = Math.ceil(w / 24), bh = Math.ceil(h / 24), vals = new Float32Array(bw * bh);
+    for (let i = 0; i < vals.length; i++) vals[i] = r() < infFrac ? Infinity : Math.fround(10 + r() * 120);
+    const d = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) d[y * w + x] = vals[(y / 24 | 0) * bw + (x / 24 | 0)];
+    return d;
+  };
+  const flatHzb = (levels, pitch) => { // one f32 buffer: level 0 padded to `pitch` (poison in the padding), levels >= 1 dense
+    let n = pitch * levels[0].h; for (let k = 1; k < levels.length; k++) n += levels[k].w * levels[k].h;
+    const out = new Float32Array(n).fill(-7);
+    for (let y = 0; y < levels[0].h; y++) out.set(levels[0].data.subarray(y * levels[0].w, (y + 1) * levels[0].w), y * pitch);
+    let off = pitch * levels[0].h;
+    for (let k = 1; k < levels.length; k++) { out.set(levels[k].data, off); off += levels[k].w * levels[k].h; }
+    return out;
+  };
+  const withOcc = (base, w, h, levels, pitch, fwd, hzbOn) => ({
+    ...base, vp: [0, 1, 2, 3].map((c) => ({ x: pose.view[4 * c], y: pose.view[4 * c + 1], z: pose.view[4 * c + 2], w: pose.view[4 * c + 3] })),
+    fwd: { x: fwd[0], y: fwd[1], z: fwd[2], w: 0.05 }, hzbOn, hzbW: w, hzbH: h, hzbLevels: levels.length, hzbPitch: pitch, phase: 0, slot2: 0, slot3: 0,
+  });
+  const twinFrame = (w, h, fwd) => ({ vp: pose.view, eye: [cam.x, cam.y, cam.z], fwd, margin: 0.05, hzbOn: 1, hzbW: w, hzbH: h });
+  const baseU = makeU2(R, lodCells, pose, GRID, cam, maxDistM, 0, 0, 1, 1);
+  // view forward: the axis direction most kept instances lie in front of (the twin only needs a unit vector consistent with the pose)
+  let fwd = [0, 1, 0];
+  {
+    const out = compileFn(CULL_WGSL, 'aabbOutside', { u: baseU }); let best = -1;
+    for (const d of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]]) {
+      let c = 0; for (let i = 0; i < N; i++) { const o = i * INSTANCE_STRIDE; if (!out(srcF[o + 3], srcF[o + 7], srcF[o + 11]) && (srcF[o + 3] - cam.x) * d[0] + (srcF[o + 7] - cam.y) * d[1] > 10) c++; }
+      if (c > best) { best = c; fwd = d; }
+    }
+    assert.ok(best > 200, 'fixture has instances in front of the camera: ' + best);
+  }
+
+  // ---- (1) WGSL helpers == occlusion.js twin (instanceOccluded) on random boxes; several HZB shapes incl. 1-row top levels (10a edge fix) and a padded level 0 ----
+  const rect = { x: 0, y: 0, z: 0, w: 0 };
+  const compileAll = (code0, ctx) => {
+    const code = code0.replace(/atomicAdd\(&args\[([^\]]+)\], 1u\)/g, 'atomicAdd(args, $1, 1u)'); // pointer-to-element -> (array, index) shim
+    const base = { ...ctx, rect, STRIDE: INSTANCE_STRIDE, ARGS_WORDS: CULL_ARGS_WORDS, ceil: Math.ceil, atomicAdd: (a, i, v) => { const o = a[i]; a[i] = o + v; return o; } };
+    const fns = {};
+    for (const n of ['aabbOutside', 'pickLod', 'bandFrac', 'ditherBits', 'distOut', 'occProject', 'occNear', 'occTest', 'instOccluded', 'emit']) fns[n] = compileFn(code, n, { ...base, ...fns });
+    return { fns, cs: compileFn(code, 'cs_main', { ...base, ...fns }) };
+  };
+  for (const [w, h, pitch, pad] of [[157, 61, 192, 0], [157, 61, 157, 1.5], [9, 3, 12, 0], [5, 1, 5, 0], [64, 1, 64, 0], [1, 1, 1, 0]]) {
+    const levels = buildHzb(depthBlocks(w, h, w * 7 + h, 0.25), w, h), hz = flatHzb(levels, pitch);
+    const uu = withOcc({ ...baseU, swayPad: pad }, w, h, levels, pitch, fwd, 1);
+    const { fns } = compileAll(CULL_WGSL, { u: uu, hzb: hz });
+    const fr = twinFrame(w, h, fwd);
+    let occ = 0, vis = 0;
+    for (let i = 0; i < N; i++) {
+      const o = i * INSTANCE_STRIDE, x = srcF[o + 3], y = srcF[o + 7], z = srcF[o + 11];
+      const got = fns.instOccluded(x, y, z), exp = instanceOccluded(fr, levels, x, y, z, R, pad);
+      assert.equal(got, exp, `${w}x${h} kernel == twin at ${x},${y},${z}`);
+      if (exp) occ++; else vis++;
+    }
+    assert.ok(occ > 10 && vis > 10 || w <= 1, `${w}x${h}: fixture mixes occluded and visible (${occ}/${vis})`);
+  }
+
+  // ---- (2) whole-kernel executions (cs_main evaluated in JS with atomics shimmed) ----
+  const RC0 = 3, RC1 = 2, S0 = 0, S1 = RC0 * CULL_ARGS_WORDS, S2 = S1 + RC1 * CULL_ARGS_WORDS, S3 = S2 + RC0 * CULL_ARGS_WORDS;
+  const mkBufs = () => ({ lodPrev: new Uint32Array(N), dst0: new Uint32Array(N * INSTANCE_STRIDE), dst1: new Uint32Array(N * INSTANCE_STRIDE), args: new Uint32Array(S3 + RC1 * CULL_ARGS_WORDS) });
+  const run = (uu, b, hz, occl, count = N) => { const k = compileAll(CULL_WGSL, { u: uu, src: srcU, lodPrev: b.lodPrev, dst0: b.dst0, dst1: b.dst1, args: b.args, hzb: hz, occl }).cs; for (let i = 0; i < count; i++) k({ x: i }); };
+  const rowKey = (a, i) => Array.from(a.subarray(i * INSTANCE_STRIDE, (i + 1) * INSTANCE_STRIDE)).join(',');
+  const rowsOf = (a, n) => { const s = []; for (let i = 0; i < n; i++) s.push(rowKey(a, i)); return s.sort(); };
+  const idOf = (key) => Number(key.split(',')[12]);
+
+  // hzbOn 0 == the pre-10b kernel (runCull transcription above), byte for byte, and hzb/occl are never touched
+  {
+    const touched = { hzb: 0, occl: 0 };
+    const guard = (a, name) => new Proxy(a, { get(t, k) { if (typeof k === 'string' && /^\d+$/.test(k)) touched[name]++; return t[k]; }, set(t, k, v) { touched[name]++; t[k] = v; return true; } });
+    const uu = withOcc({ ...makeU2(R, lodCells, pose, GRID, cam, maxDistM, S0, S1, RC0, RC1), lodDither: 0 }, 157, 61, [1, 1, 1, 1, 1, 1, 1, 1], 192, fwd, 0);
+    const b = mkBufs(), old = mkBufs();
+    run(uu, b, guard(new Float32Array(16), 'hzb'), guard(new Uint32Array(N), 'occl'));
+    runCull(uu, srcF, srcU, N, old.lodPrev, old.dst0, old.dst1, old.args, true);
+    assert.deepEqual(Array.from(b.args), Array.from(old.args), 'hzbOn 0: args identical');
+    assert.deepEqual(Array.from(b.dst0), Array.from(old.dst0), 'hzbOn 0: dst0 identical (same order)');
+    assert.deepEqual(Array.from(b.dst1), Array.from(old.dst1), 'hzbOn 0: dst1 identical');
+    assert.deepEqual(Array.from(b.lodPrev), Array.from(old.lodPrev), 'hzbOn 0: lodPrev identical');
+    assert.deepEqual(touched, { hzb: 0, occl: 0 }, 'hzbOn 0: no reads/writes of the HZB or occl buffers');
+    // phase 2 with hzbOn 0 does nothing
+    uu.phase = 2; uu.slot0 = uu.slot2 = S2; uu.slot1 = uu.slot3 = S3;
+    const b2 = mkBufs(); run(uu, b2, new Float32Array(16), new Uint32Array(N));
+    assert.ok(b2.args.every((v) => v === 0), 'phase 2 with hzbOn 0 emits nothing');
+  }
+
+  // dither band on; baseline (hzbOn 0) vs an all-sky HZB (nothing can be occluded): identical output, occl all clear
+  const ditherBase = { ...makeU2(R, lodCells, pose, GRID, cam, maxDistM, S0, S1, RC0, RC1), lodDither: 1 };
+  const base0 = mkBufs();
+  run(withOcc(ditherBase, 157, 61, [1, 1, 1, 1, 1, 1, 1, 1], 192, fwd, 0), base0, new Float32Array(16), new Uint32Array(N));
+  const n0 = base0.args[S0 + 1], n1 = base0.args[S1 + 1];
+  const baseRows = [rowsOf(base0.dst0, n0), rowsOf(base0.dst1, n1)];
+  let bandN = 0; for (const key of baseRows[0]) if ((Number(key.split(',')[13]) & 0x4000000) !== 0) bandN++;
+  assert.ok(n0 > 50 && n1 > 50 && bandN > 5, `dither fixture: LOD0 ${n0}, LOD1 ${n1}, band ${bandN}`);
+  {
+    const lv = buildHzb(new Float32Array(157 * 61).fill(Infinity), 157, 61), occl = new Uint32Array(N).fill(7);
+    const b = mkBufs(); run(withOcc(ditherBase, 157, 61, lv, 192, fwd, 1), b, flatHzb(lv, 192), occl);
+    assert.deepEqual(Array.from(b.args.subarray(0, S2)), Array.from(base0.args.subarray(0, S2)), 'all-sky HZB: args identical to hzbOn 0');
+    assert.deepEqual(Array.from(b.dst0), Array.from(base0.dst0)); assert.deepEqual(Array.from(b.dst1), Array.from(base0.dst1));
+    assert.deepEqual(Array.from(b.lodPrev), Array.from(base0.lodPrev), 'lodPrev identical');
+    assert.ok(occl.every((v) => v === 0), 'every row cleared (no stale pending bits)');
+  }
+
+  // two-phase: phase 1 vs the previous HZB, phase 2 vs the fresh HZB == occlusion.js twin sets
+  {
+    const W = 157, H = 61, P = 192;
+    const prev = buildHzb(depthBlocks(W, H, 11, 0.2), W, H), fresh = buildHzb(depthBlocks(W, H, 77, 0.2), W, H);
+    const fr = twinFrame(W, H, fwd), occl = new Uint32Array(N).fill(0xffffffff); // stale garbage must be overwritten
+    const b = mkBufs(), uu = withOcc(ditherBase, W, H, prev, P, fwd, 1);
+    run(uu, b, flatHzb(prev, P), occl);
+    const keptIds = new Set([...baseRows[0], ...baseRows[1]].map(idOf)), pend = new Set(), freshOcc = new Set();
+    for (let i = 0; i < N; i++) {
+      const o = i * INSTANCE_STRIDE, id = 1000 + i, x = srcF[o + 3], y = srcF[o + 7], z = srcF[o + 11];
+      const isPend = keptIds.has(id) && instanceOccluded(fr, prev, x, y, z, R, 0);
+      assert.equal(occl[i] & 1, isPend ? 1 : 0, 'pending bit of ' + id);
+      if (isPend) { pend.add(id); if (instanceOccluded(fr, fresh, x, y, z, R, 0)) freshOcc.add(id); }
+    }
+    assert.ok(pend.size > 30 && freshOcc.size > 5 && freshOcc.size < pend.size - 5, `pending ${pend.size}, still occluded in phase 2 ${freshOcc.size}`);
+    for (let l = 0; l < 2; l++) {
+      const got = rowsOf(l ? b.dst1 : b.dst0, b.args[(l ? S1 : S0) + 1]), exp = baseRows[l].filter((k) => !pend.has(idOf(k)));
+      assert.deepEqual(got, exp, `phase 1 LOD${l} rows == baseline minus pending`);
+    }
+    // phase 2: dst2/dst3 bound at 2/3, args slots 2/3, stored lod; lodPrev must not change
+    const lpBefore = Array.from(b.lodPrev), p2 = { lodPrev: b.lodPrev, dst0: new Uint32Array(N * INSTANCE_STRIDE), dst1: new Uint32Array(N * INSTANCE_STRIDE), args: b.args };
+    const u2p = withOcc({ ...ditherBase }, W, H, fresh, P, fwd, 1); u2p.phase = 2; u2p.slot2 = S2; u2p.slot3 = S3;
+    run(u2p, p2, flatHzb(fresh, P), occl);
+    assert.deepEqual(Array.from(b.lodPrev), lpBefore, 'phase 2 never touches lodPrev');
+    for (let l = 0; l < 2; l++) {
+      const slot = l ? S3 : S2, rc = l ? RC1 : RC0, got = rowsOf(l ? p2.dst1 : p2.dst0, b.args[slot + 1]);
+      const exp = baseRows[l].filter((k) => pend.has(idOf(k)) && !freshOcc.has(idOf(k)));
+      assert.deepEqual(got, exp, `phase 2 LOD${l} rows == pending minus still-occluded (stored lod, band copies, dither bits)`);
+      for (let r = 0; r < rc; r++) assert.equal(b.args[slot + r * CULL_ARGS_WORDS + 1], got.length, `phase 2 LOD${l} range ${r} instanceCount`);
+    }
+    // union of both phases = baseline minus still-occluded: nothing wrongly culled
+    for (let l = 0; l < 2; l++) {
+      const un = [...rowsOf(l ? b.dst1 : b.dst0, b.args[(l ? S1 : S0) + 1]), ...rowsOf(l ? p2.dst1 : p2.dst0, b.args[(l ? S3 : S2) + 1])].sort();
+      assert.deepEqual(un, baseRows[l].filter((k) => !freshOcc.has(idOf(k))), `phase 1 + phase 2 LOD${l} == baseline minus occluded`);
+    }
   }
 }
 console.log('cull.wgsl.test OK');
