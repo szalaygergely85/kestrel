@@ -60,6 +60,7 @@ export function createDeathFlow({ onRespawn, enabled = true } = {}) {
     },
     get phase() { return phase; },
     get active() { return enabled; },
+    get inputLocked() { return res.inputLocked; },
   };
   return flow;
 }

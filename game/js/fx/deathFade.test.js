@@ -18,4 +18,6 @@ fl.respawned(1400); ok('fade in unlocked', !fl.step(1500).inputLocked && fl.step
 fl.step(1900); ok('idle again', fl.phase === 'idle' && fl.step(2000).alpha === 0);
 fl.died(3000); ok('new death works', fl.step(3001).inputLocked);
 const off = createDeathFlow({ enabled: false }); off.died(0); ok('disabled', !off.step(10).inputLocked);
+ok('getter locked during out', (()=>{const f=createDeathFlow({onRespawn(){}});f.died(0);f.step(100);return f.inputLocked===true;})());
+ok('getter unlocked idle/disabled', createDeathFlow().inputLocked===false && createDeathFlow({enabled:false}).active===false);
 console.log(bad ? 'FAILED ' + bad : 'deathFade ok'); process.exit(bad ? 1 : 0);

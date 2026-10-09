@@ -893,6 +893,7 @@ async function runGame(mode, cinematic = null) {
   let telegraphWire = null; // TELEGRAPH-WIRE-01: rebuilt on 'world:loaded'
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
+  const vLocked = () => !!(vitals && vitals.inputLocked) || deathFlow.inputLocked; // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
@@ -1323,7 +1324,7 @@ async function runGame(mode, cinematic = null) {
     // US-091b: the pack screen. Steps while paused too; eats every key edge while open (so M / S / N stay quiet).
     if (invView && mode === 'world' && playerHandle) {
       invView.step(dt, input, !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look
-        && !(vitals && (vitals.dead || vitals.inputLocked)) && !(questUiActive && wakeOut.inputLocked));
+        && !(vitals && (vitals.dead || vLocked())) && !(questUiActive && wakeOut.inputLocked));
     }
     if (chestHook && mode === 'world' && playerHandle) chestHook.stepUi(dt, input.pressed(gameKeys.interact)); // S8-B1-04: steps while paused too (an open card pauses the sim)
     const invOpen = !!(invView && invView.isOpen);
@@ -1337,13 +1338,13 @@ async function runGame(mode, cinematic = null) {
       if (wakeOut.inputLocked) playerHandle.data.components.body.eyeH = wakeOut.eyeH;
       mPressedEdge = input.pressed(gameKeys.map);
       stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec, !!(look && look.locked)); // BUG-NOTE-ESC-01
-      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || (vitals && vitals.inputLocked);
+      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked();
     }
     // US-038b: settings panel (S from pause, or its own entry point)
     // canOpen requires the pause overlay to actually be up (!look.locked) -
     // S is also WASD "move backward", so this must never trigger in play.
     updateSettings(dt, input, { assets, engine, look, canOpen: mode === 'world' && !ending && !!look && !look.locked && !isMapOpen() && !invOpen });
-    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || !!(vitals && vitals.inputLocked);
+    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked();
     titleMenuActive = !!(menuHost && menuHost.active);
     const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || ((invOpen || cardOpen) && !ending)));
 
@@ -1371,7 +1372,7 @@ async function runGame(mode, cinematic = null) {
       if (paused) { duckAudio(); if (hands) hands.disarm(); } else { unduckAudio(); resetSimAccumulator(engine); } // HANDS-01b: the sim does not step while paused, so disarm at once
     }
     if (mode === 'world' && playerHandle && !paused) {
-      if (ending || uiLocked || (vitals && vitals.inputLocked)) {
+      if (ending || uiLocked || vLocked()) {
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {
         controls.forward = (input.isDown(gameKeys.forward) ? 1 : 0) - (input.isDown(gameKeys.backward) ? 1 : 0);
@@ -1424,8 +1425,8 @@ async function runGame(mode, cinematic = null) {
       if (hands) {
         // HANDS-01b (37.8a): the router turns LMB/RMB + the gate into one `down` per item; every item sim is stepped
         // every step (down = false when it is in no hand).
-        if (!uiLocked && !paused && !ending && !(vitals && vitals.inputLocked) && input.pressed(gameKeys.swapHands)) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
-        const gateOpen = look.locked && !uiLocked && !ending && !paused && !(vitals && vitals.inputLocked);
+        if (!uiLocked && !paused && !ending && !vLocked() && input.pressed(gameKeys.swapHands)) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
+        const gateOpen = look.locked && !uiLocked && !ending && !paused && !vLocked();
         hands.step(playerHandle.data, input.isDown(gameKeys.useLeft) || input.pressed(gameKeys.useLeft), input.isDown(gameKeys.useRight) || input.pressed(gameKeys.useRight), gateOpen);
         if (fireball) { // SPELL-01a: aim = unit 3D look vector (pitch > 0 = up); trig stays here, outside sim/
           forwardOf(look.yawDeg, swordFwd);
@@ -1708,7 +1709,7 @@ async function runGame(mode, cinematic = null) {
       else if (engine.overlay.stats.ops) engine.overlay.renderCpu(cam, fb.rt.cells, fb.depth.depth);
       lap(SEC.world);
       const ending = typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
-      const uiLockedNow = questUiActive && !ending && (wakeOut.inputLocked || isMapOpen() || (vitals && vitals.inputLocked));
+      const uiLockedNow = questUiActive && !ending && (wakeOut.inputLocked || isMapOpen() || vLocked());
       // US-015 (docs/architecture.md 7.6 item 3): map-card / hint scene dim.
       // Reset every frame (so a leftover dim never bleeds into the ending
       // screen or a non-quest world), pushed only while active. CPU path
@@ -1774,7 +1775,7 @@ async function runGame(mode, cinematic = null) {
       if (invView) invView.draw(ui); // US-091b: the pack screen, over HUD + toast
       // US-080a1/a2 (30.2): death fade (CPU path, same gating as the end-card
       // scene fade above) + the death card (typed line + "[E] Wake again").
-      if (vitals && vitals.dead) {
+      if (vitals && vitals.dead && !deathFlow.active) { // DEATH-FLOW-01 part 2: the flow replaces the old fade+card (old path stays when the flow is off)
         if (!fb.gpu) applyDeathFade(fb.rt, vitals, fb.fadeLut);
         const deathCardState = computeDeathCardState(vitals, assets.uiStyle.vitals);
         drawDeathCard(ui, assets.uiStyle.vitals, deathCardState);
