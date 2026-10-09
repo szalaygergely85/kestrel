@@ -23,9 +23,8 @@
 // happen BEFORE `cols`/`rows` reach either back-end constructor (they size
 // every per-cell buffer once, at construction).
 
-import { RenderTargetGL } from './RenderTargetGL.js';
+import { RenderTargetGL, isSoftwareRenderer } from './gl/index.js'; // WG-5: the only GL import (sync factory, so static)
 import { RenderTargetCanvas2D } from './RenderTargetCanvas2D.js';
-import { isSoftwareRenderer } from './gpu/glUtil.js';
 
 /**
  * @param {HTMLCanvasElement} canvas

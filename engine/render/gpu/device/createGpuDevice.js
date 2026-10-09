@@ -6,7 +6,6 @@
 // the adapter/device/self-test succeeded, so a failed request leaves it free for a WebGL2 context.
 
 import { bootNow, span as bootSpan } from '../../../core/bootMarks.js'; // BOOT-SPEED-01
-import { GpuDeviceGL2 } from './GpuDeviceGL2.js';
 import { GpuDeviceWebGPU } from './GpuDeviceWebGPU.js';
 import { REQUIRED_LIMITS, evaluateWebGpuLimits } from './webgpuProbe.js';
 import { defineUniformBlock } from '../wgsl/uniformBlock.js';
@@ -50,9 +49,10 @@ async function createWebGpuDevice(opts) {
 }
 
 /** @param {CreateGpuDeviceOptions} opts */
-function createWebGl2Device(opts) {
+async function createWebGl2Device(opts) {
   const gl = opts.gl || (opts.canvas && opts.canvas.getContext('webgl2'));
   if (!gl) throw new Error('WebGL2 unavailable');
+  const { GpuDeviceGL2 } = await import('../../gl/index.js'); // WG-5: lazy, WebGPU path never loads GL
   return new GpuDeviceGL2(gl);
 }
 
