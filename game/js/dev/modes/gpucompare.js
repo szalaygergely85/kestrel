@@ -1,6 +1,6 @@
 import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
-  meshFromJSON, meshFromBin, buildMeshFromTris, MaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
+  meshFromJSON, meshFromBin, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
 } from '../../../../engine/index.js';
 import {
@@ -638,7 +638,7 @@ function buildCompareRuns(ctx) {
   if (ctx.renderer === 'mesh') {
     const aw = loadCompareWorld(assets.world('world_m1'), { physics: 'mesh' });
     aw.terrain.bakeFarSync();
-    const atlas = new MaskAtlas();
+    const atlas = buildMaskAtlas(assets); // real masks too: world_m1 meshes (MESH-PLACE-01 flower bushes) reference Leaves_NormalTree_C; a checker-only atlas made the raster throw
     const chk = new Uint8Array(64);
     for (let j = 0; j < 8; j++) for (let i = 0; i < 8; i++) chk[j * 8 + i] = (i + j) % 2 === 0 ? 255 : 0;
     atlas.add('test/checker8', 8, 8, chk);
