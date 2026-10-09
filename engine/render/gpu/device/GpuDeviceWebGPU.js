@@ -50,6 +50,7 @@ export class GpuDeviceWebGPU {
     /** Captured creation errors plus uncaptured asynchronous GPU errors; self-test and tests read this. @type {string[]} */
     this.gpuErrors = [];
     this._pendingScopes = [];
+    /** @type {((done: number, total: number) => void) | null} boot card: called per resolved pipeline */ this.onCompileProgress = null;
     this._checkingScopes = null;
     if (typeof gpuDevice.addEventListener === 'function') {
       gpuDevice.addEventListener('uncapturederror', (/** @type {any} */ ev) => {
@@ -59,8 +60,13 @@ export class GpuDeviceWebGPU {
       });
     }
     this._lostInfo = null;
+    // S8-B1-10 (38.10c): a forced-loss deferred, raced alongside the real `gpuDevice.lost` so the dev hook
+    // (`_forceLost`, exposed only behind `?dev=1` as `window.__kestrel.loseDevice()`) can simulate a loss in Node/headless.
+    /** @type {(info: any) => void} */ let resolveForced = () => {};
+    const forced = new Promise((resolve) => { resolveForced = resolve; });
+    this._resolveForcedLost = resolveForced;
     /** @type {Promise<any>} resolves when the GPUDevice is lost (no restore: reload, 38.3) */
-    this.lost = gpuDevice.lost ? gpuDevice.lost.then((/** @type {any} */ info) => { this._lostInfo = info; return info; }) : new Promise(() => {});
+    this.lost = Promise.race([gpuDevice.lost ? gpuDevice.lost : new Promise(() => {}), forced]).then((/** @type {any} */ info) => { this._lostInfo = info; return info; });
     const info = (opts.adapter && (opts.adapter.info || {})) || {};
     this._software = !!(opts.adapter && (opts.adapter.isFallbackAdapter || info.isFallbackAdapter))
       || /swiftshader/i.test(String(info.description || info.device || info.vendor || ''));
@@ -68,6 +74,8 @@ export class GpuDeviceWebGPU {
     this.adapterInfo = { vendor: String(info.vendor || ''), architecture: String(info.architecture || ''), description: String(info.description || ''), fallback: this._software };
     this.timer = new WebGpuTimer(gpuDevice, this._c);
     this._live = /** @type {{destroy: () => void}[]} */ ([]);
+    /** @type {any[]} every computePipeline handle (38.10a: dispose(buffer) prunes their dispatch bind-group caches) */
+    this._computePipes = [];
     this._moduleCache = new Map();
     // uniform ring (CPU ArrayBuffer + one GPU buffer; one writeBuffer at submit)
     const slots = opts.ringSlots || DEFAULT_RING_SLOTS;
@@ -267,13 +275,73 @@ export class GpuDeviceWebGPU {
       pd.depthStencil = { format: depthFormatFor(desc.depthFormat), depthWriteEnabled: !!d.write, depthCompare: d.test ? 'less' : 'always' };
       if (desc.depthBias) { pd.depthStencil.depthBias = desc.depthBias.units; pd.depthStencil.depthBiasSlopeScale = desc.depthBias.factor; }
     }
-    const tP = bootNow();
-    const gpu = this._validatedCreate('createRenderPipeline', pd);
-    bootSpan('pipeline ' + bootLabel(desc, 'render'), tP);
-    return {
-      kind: 'pipeline', gpu, extraBase, bgl0, uniformGroup, uniformBytes: uBytes, texKinds, samplerBinding,
+    const handle = {
+      kind: 'pipeline', gpu: null, failed: false, label: bootLabel(desc, 'render'), extraBase, bgl0, uniformGroup, uniformBytes: uBytes, texKinds, samplerBinding,
       texCur: new Array(texKinds.length).fill(null), texGroup: null, texDirty: texKinds.length > 0, indexed: false,
     };
+    this._makePipe('createRenderPipeline', pd, handle);
+    return handle;
+  }
+
+  /**
+   * S8-B1-09a (38.10b): inside a compile batch the pipeline is created with the *Async API (handle.gpu stays null until it
+   * resolves; endCompileBatch awaits all). Outside a batch (or without the async API, e.g. fake GPUs) it stays synchronous.
+   * @param {string} method 'createRenderPipeline'|'createComputePipeline' @param {any} pd @param {any} handle
+   */
+  _makePipe(method, pd, handle) {
+    const g = this.gpu, asyncName = method + 'Async';
+    const label = (method === 'createRenderPipeline' ? 'pipeline ' : 'compute ') + handle.label;
+    const t0 = bootNow();
+    if (!this._batch || typeof g[asyncName] !== 'function') {
+      if (!this._batch && typeof g[asyncName] === 'function' && !this._warnedLate) { this._warnedLate = true; console.info('[GpuDeviceWebGPU] late sync pipeline ' + handle.label); }
+      handle.gpu = this._validatedCreate(method, pd);
+      bootSpan(label, t0);
+      return;
+    }
+    const entry = { label: handle.label, ms: 0, ok: true, promise: /** @type {any} */ (null) };
+    const batch = this._batch;
+    const tick = () => { if (this.onCompileProgress) { this._compileDone = (this._compileDone || 0) + 1; this.onCompileProgress(this._compileDone, this._compileTotal); } };
+    this._compileTotal = (this._compileTotal || 0) + 1;
+    entry.promise = g[asyncName](pd).then((/** @type {any} */ p) => { handle.gpu = p; entry.ms = bootNow() - t0; tick(); }, (/** @type {any} */ err) => {
+      entry.ok = false; entry.ms = bootNow() - t0; handle.failed = true; tick();
+      if (this.gpuErrors.length < 20) this.gpuErrors.push(`${handle.label}: ${String(err && err.message || err)}`);
+    });
+    batch.push(entry);
+  }
+
+  /** S8-B1-09a: start collecting pipeline creations (nestable; the outermost endCompileBatch resolves them). */
+  beginCompileBatch() {
+    this._batchDepth = (this._batchDepth || 0) + 1;
+    if (!this._batch) this._batch = [];
+  }
+
+  /** True while an async pipeline compile is still outstanding. */
+  get compiling() { return !!(this._batch && this._batch.length) || this._compilingN > 0; }
+
+  /**
+   * S8-B1-09a: resolves when every pipeline created since the matching beginCompileBatch has compiled.
+   * @returns {Promise<{label: string, ms: number, ok: boolean}[]>} creation order; ms = start -> resolve (they overlap)
+   */
+  endCompileBatch() {
+    this._batchDepth = Math.max(0, (this._batchDepth || 0) - 1);
+    if (this._batchDepth > 0) return Promise.resolve([]);
+    const list = this._batch || [];
+    this._batch = null;
+    this._compilingN = (this._compilingN || 0) + 1;
+    return Promise.all(list.map((e) => e.promise)).then(() => {
+      this._compilingN--;
+      return list.map((e) => ({ label: e.label, ms: e.ms, ok: e.ok }));
+    });
+  }
+
+  /** @param {import('./GpuDevice.js').PipelineDesc} desc @returns {Promise<GpuHandle>} */
+  async createPipelineAsync(desc) {
+    this.beginCompileBatch(); const h = this.createPipeline(desc); await this.endCompileBatch(); return h;
+  }
+
+  /** @param {import('./GpuDevice.js').ComputePipelineDesc} desc @returns {Promise<GpuHandle>} */
+  async createComputePipelineAsync(desc) {
+    this.beginCompileBatch(); const h = this.createComputePipeline(desc); await this.endCompileBatch(); return h;
   }
 
   /**
@@ -293,10 +361,10 @@ export class GpuDeviceWebGPU {
     const uniformGroup = uBytes > 0
       ? this._validatedCreate('createBindGroup', { layout: bgl1, entries: [{ binding: 0, resource: { buffer: this._ringBuf, offset: 0, size: uBytes } }] })
       : null;
-    const tP = bootNow();
-    const gpu = this._validatedCreate('createComputePipeline', { layout, compute: { module: this._module(desc.src), entryPoint: desc.src.entry || 'cs_main' } });
-    bootSpan('compute ' + bootLabel(desc, 'cs_main'), tP);
-    return { kind: 'computePipeline', gpu, bgl0, uniformGroup, uniformBytes: uBytes, nbuf: kinds.length, groups: /** @type {{bufs: any[], group: any}[]} */ ([]) };
+    const handle = { kind: 'computePipeline', gpu: null, failed: false, label: bootLabel(desc, 'cs_main'), bgl0, uniformGroup, uniformBytes: uBytes, nbuf: kinds.length, groups: /** @type {{bufs: any[], group: any}[]} */ ([]) };
+    this._makePipe('createComputePipeline', { layout, compute: { module: this._module(desc.src), entryPoint: desc.src.entry || 'cs_main' } }, handle);
+    this._computePipes.push(handle);
+    return handle;
   }
 
   /**
@@ -307,6 +375,7 @@ export class GpuDeviceWebGPU {
   dispatch(pipeline, desc, x, y = 1, z = 1) {
     if (this._pass) throw new Error('GpuDeviceWebGPU.dispatch: a render pass is open');
     const p = pipeline;
+    if (p.gpu === null) throw new Error('pipeline still compiling: ' + p.label);
     const bufs = desc.buffers;
     if (bufs.length !== p.nbuf) throw new Error(`GpuDeviceWebGPU.dispatch: ${bufs.length} buffers bound, pipeline has ${p.nbuf}`);
     let grp = null;
@@ -324,7 +393,11 @@ export class GpuDeviceWebGPU {
       p.groups.push({ bufs: cur, group: grp });
     }
     if (!this._encoder) this._encoder = this.gpu.createCommandEncoder();
-    const cp = this._encoder.beginComputePass();
+    // S8-B1-07: one reused descriptor (mutated per call, read synchronously by beginComputePass - never held across
+    // a frame boundary) so a compute dispatch (WG-4a/4b cull) can be timed the same way a render pass is (`attach`).
+    const cpd = this._computePassDesc || (this._computePassDesc = {});
+    this.timer.attach(cpd);
+    const cp = this._encoder.beginComputePass(cpd);
     cp.setPipeline(p.gpu);
     cp.setBindGroup(0, grp);
     if (p.uniformGroup) {
@@ -388,6 +461,7 @@ export class GpuDeviceWebGPU {
     const pass = this._pass;
     if (!pass) throw new Error('GpuDeviceWebGPU.bind: no open pass');
     const p = pipeline;
+    if (p.gpu === null) throw new Error('pipeline still compiling: ' + p.label);
     if (p !== this._curPipeline) {
       pass.setPipeline(p.gpu); this._curPipeline = p;
       if (p.texKinds.length === 0) pass.setBindGroup(0, this._emptyGroup()); // group 0 is in the layout: always set
@@ -522,9 +596,31 @@ export class GpuDeviceWebGPU {
     while (this._pendingScopes.length) await Promise.all(this._pendingScopes.splice(0));
   }
 
+  /**
+   * S8-B1-10 (38.10c) dev hook: simulate a device loss without a real GPU crash. Resolves `this.lost` with
+   * `{reason: 'unknown', message: msg}` (never 'destroyed', so main.js's own-dispose filter does not ignore it),
+   * then destroys the underlying GPUDevice. Exposed only behind `?dev=1` as `window.__kestrel.loseDevice()`.
+   * @param {string} [msg]
+   */
+  _forceLost(msg) {
+    this._resolveForcedLost({ reason: 'unknown', message: msg || 'forced (dev hook)' });
+    if (this.gpu && typeof this.gpu.destroy === 'function') { try { this.gpu.destroy(); } catch (_) { /* best effort */ } }
+  }
+
   /** @param {GpuHandle} [handle] */
   dispose(handle) {
     if (handle) {
+      // 38.10a: a disposed buffer may be pinned by a cached dispatch bind group (GpuDeviceWebGPU.dispatch's `p.groups`) -
+      // prune every group referencing it so the batch's 5 destroyed buffers (src/lodPrev/dst0/dst1/args) do not leak.
+      if (handle.kind === 'buffer') {
+        for (let i = 0; i < this._computePipes.length; i++) {
+          const p = this._computePipes[i];
+          if (p.groups.length) p.groups = p.groups.filter((gr) => gr.bufs.indexOf(handle) < 0);
+        }
+      } else if (handle.kind === 'computePipeline') {
+        const pi = this._computePipes.indexOf(handle);
+        if (pi >= 0) this._computePipes.splice(pi, 1);
+      }
       const o = handle.gpu;
       const i = this._live.indexOf(o);
       if (i >= 0) { this._live.splice(i, 1); o.destroy(); }
@@ -535,5 +631,6 @@ export class GpuDeviceWebGPU {
     this._live.length = 0;
     for (const pool of this._staging.values()) for (const b of pool) b.destroy();
     this._staging.clear();
+    this._computePipes.length = 0;
   }
 }

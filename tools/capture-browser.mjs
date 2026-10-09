@@ -52,6 +52,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { makeBaseline, diffBaseline, formatBaselineDiff, baselineMismatch } from './gpucompare-baseline.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -98,6 +99,7 @@ export function parseArgs(argv) {
       if (n && !n.startsWith('--')) { opts.import = next(); }
       else opts.import = true;
     } else if (a === '--diff') opts.diff = next();
+    else if (a === '--baseline') opts.baseline = next(); // S8-B1-13: gpucompare per-backend/adapter verdict baseline
     else if (a === '--timeout-ms') opts.timeoutMs = Number(next());
     else throw new Error(`unknown argument: ${a}`);
   }
@@ -820,6 +822,7 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
 
   let mode = opts.mode;
+  let adapter = null;
   let normalized;
   let headless;
   let grid = opts.grid;
@@ -838,6 +841,7 @@ async function main() {
     if (opts.port == null) throw new Error('--port <95xx> is required for a live capture');
     const live = await runLiveCapture(opts);
     const { ua, gpuRenderer } = live;
+    adapter = gpuRenderer;
     const date = todayStr();
     const sha = shortShaSync();
     const filePath = captureFilePath({ date, sha, mode, grid: opts.grid || live.raw.grid || null, variant: opts.variant, backend: opts.backend });
@@ -869,6 +873,26 @@ async function main() {
 
   console.log(formatSummary(mode, { ...normalized, headless }));
   process.exitCode = captureExitCode(mode, normalized);
+
+  if (opts.baseline && mode === 'gpucompare') {
+    const run = { backend: opts.backend || 'webgl2', adapter: adapter || 'unknown' };
+    if (!existsSync(opts.baseline)) {
+      mkdirSync(path.dirname(path.resolve(opts.baseline)), { recursive: true });
+      const bl = makeBaseline(normalized.rows, { ...run, sha: shortShaSync(), date: todayStr(), grid });
+      writeFileSync(opts.baseline, JSON.stringify(bl, null, 2) + '\n');
+      console.log(`\nbaseline written: ${opts.baseline} (${run.backend}, ${run.adapter}: ${bl.pass} PASS / ${bl.fail} FAIL)`);
+    } else {
+      const bl = JSON.parse(readFileSync(opts.baseline, 'utf8'));
+      const mm = baselineMismatch(bl, run);
+      console.log(`\n--- baseline ${opts.baseline} ---`);
+      if (mm) { console.log('BASELINE MISMATCH: ' + mm); process.exitCode = 1; }
+      else {
+        const d = diffBaseline(bl, normalized.rows);
+        console.log(formatBaselineDiff(d));
+        if (!d.ok) process.exitCode = 1;
+      }
+    }
+  }
 
   if (opts.diff) {
     const oldPayload = JSON.parse(readFileSync(opts.diff, 'utf8'));

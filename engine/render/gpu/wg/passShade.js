@@ -12,6 +12,7 @@ import { packMaterialTable } from '../ShadeTextures.js';
 import { packTerrainTextures } from '../TerrainTextures.js';
 import { SKY_LUT_N } from '../glsl/common.js';
 import { sunFromWorld } from '../../lighting.js';
+import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 
 const S = (n) => SHADE_BLOCK.field(n).word;
 const E = (n) => EDGE_BLOCK.field(n).word;
@@ -228,12 +229,13 @@ export class WgShadePass {
     tx[SH.SKY].texture = this.texSky; tx[SH.MATF].texture = this.texMatF; tx[SH.MATI].texture = this.texMatI;
     tx[SH.SETI].texture = this.texSetI; tx[SH.SETF].texture = this.texSetF; tx[SH.GAIN].texture = this.texGain;
     tx[SH.LIGHT].texture = t.texLight; tx[SH.TLOOK].texture = this.texTlook;
-    d.beginPass(t.targetShade);
-    d.bind(this.pipeShade, this.shBind);
-    d.draw(3);
-    d.endPass();
+    wgSpanBegin(p, WG_PASS_SLOT.shade);
+    try { d.beginPass(t.targetShade); d.bind(this.pipeShade, this.shBind); d.draw(3); d.endPass(); } finally { wgSpanEnd(p); }
     // WG-3e: water composite between shade and edge (GL order); a no-op when the layer is inactive
-    if (water && water.active) water.runComposite({ shadeFg: t.texShadeFg, shadeBg: t.texShadeBg, gi: t.texGI, depth: t.texDepth, light: t.texLight, shadowActive: !!(sh && sh.active) }, p);
+    if (water && water.active) {
+      wgSpanBegin(p, WG_PASS_SLOT.water);
+      try { water.runComposite({ shadeFg: t.texShadeFg, shadeBg: t.texShadeBg, gi: t.texGI, depth: t.texDepth, light: t.texLight, shadowActive: !!(sh && sh.active) }, p); } finally { wgSpanEnd(p); }
+    }
 
     const wOn = !!(water && water.active); // WG-3e: composite output replaces the shade fg/bg; WATER texture + per-slot opaqueAt/seeThrough
     ei[E_COLS] = p.cols; ei[E_ROWS] = p.rows; ei[E_WATER_ON] = wOn ? 1 : 0;
@@ -243,10 +245,8 @@ export class WgShadePass {
     et[2].texture = wOn ? water.edgeFg : t.texShadeFg; et[3].texture = wOn ? water.edgeBg : t.texShadeBg;
     et[4].texture = wOn ? water.edgeWaterTexture : this.texWaterDummy;
     et[5].texture = this.texMatI; // ALPHA-01d: F_SOFT_EDGE flag per material
-    d.beginPass(t.targetFinal);
-    d.bind(this.pipeEdge, this.edBind);
-    d.draw(3);
-    d.endPass();
+    wgSpanBegin(p, WG_PASS_SLOT.edge);
+    try { d.beginPass(t.targetFinal); d.bind(this.pipeEdge, this.edBind); d.draw(3); d.endPass(); } finally { wgSpanEnd(p); }
     return true;
   }
 

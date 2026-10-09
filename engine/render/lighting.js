@@ -47,6 +47,9 @@ const litP3 = new Float64Array(3);
 const aoTapP = new Float64Array(3);
 
 export const MAX_LIGHTS = 16;
+/** EMIS-01b: derived-light candidate list size and the replace margin (38.12 (1)). */
+export const DERIVED_MAX_CAND = 64;
+export const DERIVED_HYSTERESIS = 1.25;
 // ART-01a (37.18 item 3/8): `LIGHT.w` bit written once the hemi/haze light pass
 // lands (ART-01b). Exported now so the pixel code can land without touching this file's API.
 export const OUTDOOR_SHIFT = 19;
@@ -182,6 +185,20 @@ export class LightSet {
     // after a world reload. Allocated once; per-frame `get`/`set` only.
     this.entityHandle = new Map();
 
+    // EMIS-01b (38.12 (1)): derived (emissive-voxel) lights live in the TAIL of the slot range,
+    // [baseCount, count); placed/entity lights stay in [0, baseCount) so their handles are never
+    // disturbed by derived churn. `dKey[h]` = the candidate identity (seed) of a derived slot, 0 = none.
+    this.emissive = true; // engine on/off (game forces false under ?gpucompare=, Low preset)
+    this.baseCount = 0;
+    this.dKey = new Int32Array(MAX_LIGHTS);
+    this._dReserve = 0; this._dN = 0; this._dCx = 0; this._dCy = 0; this._dCz = 0;
+    this._dRec = new Array(DERIVED_MAX_CAND).fill(null);
+    this._dX = new Float32Array(DERIVED_MAX_CAND); this._dY = new Float32Array(DERIVED_MAX_CAND); this._dZ = new Float32Array(DERIVED_MAX_CAND);
+    this._dSeed = new Int32Array(DERIVED_MAX_CAND);
+    this._dScore = new Float32Array(DERIVED_MAX_CAND);
+    this._dHas = new Uint8Array(MAX_LIGHTS); // scratch: derived slot still wanted this frame
+    this.derivedStats = { swaps: 0, count: 0 }; // swaps = slot assignments changed (bench / EMIS-02)
+
     // PO REJECT item 1 (CPU fallback light cap): preallocated 4-nearest
     // scratch, filled by `selectCpuLights` - CPU (`?gpu=0`) path only, never
     // touched by the GPU/GLSL path or `?gpucompare=1` (both keep the full
@@ -197,11 +214,29 @@ export class LightSet {
    * handle (0..MAX_LIGHTS-1), or -1 if the set is full (warns once).
    */
   add(def) {
+    const nd = this.count - this.baseCount; // derived lights in the tail
+    if (this.count >= MAX_LIGHTS && nd > 0) this.count--; // a derived light yields its slot to a placed one
     if (this.count >= MAX_LIGHTS) {
       console.warn('[LightSet] MAX_LIGHTS reached, dropping light', def.key || '');
       return -1;
     }
+    if (this.count - this.baseCount > 0) {
+      // keep derived lights in the tail: move the first derived slot to the end, new light takes its place
+      this._copySlot(this.count, this.baseCount);
+      const h = this.baseCount++;
+      this.count++;
+      this._write(h, def);
+      this.dKey[h] = 0;
+      return h;
+    }
     const h = this.count++;
+    this.baseCount = this.count;
+    this._write(h, def);
+    this.dKey[h] = 0;
+    return h;
+  }
+
+  _write(h, def) {
     this.on[h] = def.on === false ? 0 : 1;
     this.defX[h] = def.x; this.defY[h] = def.y; this.defZ[h] = def.z;
     this.radius[h] = def.radius;
@@ -221,7 +256,22 @@ export class LightSet {
     this.pos[h * 4] = def.x; this.pos[h * 4 + 1] = def.y; this.pos[h * 4 + 2] = def.z; this.pos[h * 4 + 3] = def.radius;
     this.col[h * 4] = hue[0] * this.baseIntensity[h]; this.col[h * 4 + 1] = hue[1] * this.baseIntensity[h];
     this.col[h * 4 + 2] = hue[2] * this.baseIntensity[h]; this.col[h * 4 + 3] = h;
-    return h;
+  }
+
+  /** Copies all per-slot light state from `src` to `dst` (vis cache invalidated, like `remove`). */
+  _copySlot(dst, src) {
+    this.on[dst] = this.on[src];
+    this.defX[dst] = this.defX[src]; this.defY[dst] = this.defY[src]; this.defZ[dst] = this.defZ[src];
+    this.radius[dst] = this.radius[src];
+    this.baseHue[dst * 3] = this.baseHue[src * 3]; this.baseHue[dst * 3 + 1] = this.baseHue[src * 3 + 1]; this.baseHue[dst * 3 + 2] = this.baseHue[src * 3 + 2];
+    this.baseIntensity[dst] = this.baseIntensity[src];
+    this.flickerHzMin[dst] = this.flickerHzMin[src]; this.flickerHzMax[dst] = this.flickerHzMax[src];
+    this.flickerAmount[dst] = this.flickerAmount[src]; this.flickerJitter[dst] = this.flickerJitter[src];
+    this.seed[dst] = this.seed[src];
+    this.key[dst] = this.key[src];
+    this.dKey[dst] = this.dKey[src];
+    this.visVersion[dst] = this.visVersion[src];
+    this._visKeyX[dst] = 0x7fffffff; this._visKeyY[dst] = 0x7fffffff; this._visStructVersion[dst] = -1; this._visPackedVersion[dst] = -2;
   }
 
   /** Moves a light's UNJITTERED (`def`) position - called every frame for an attached/carried light, before `update()`. */
@@ -285,20 +335,81 @@ export class LightSet {
   remove(handle) {
     if (handle < 0 || handle >= this.count) return;
     const last = this.count - 1;
-    if (handle !== last) {
-      this.on[handle] = this.on[last];
-      this.defX[handle] = this.defX[last]; this.defY[handle] = this.defY[last]; this.defZ[handle] = this.defZ[last];
-      this.radius[handle] = this.radius[last];
-      this.baseHue[handle * 3] = this.baseHue[last * 3]; this.baseHue[handle * 3 + 1] = this.baseHue[last * 3 + 1]; this.baseHue[handle * 3 + 2] = this.baseHue[last * 3 + 2];
-      this.baseIntensity[handle] = this.baseIntensity[last];
-      this.flickerHzMin[handle] = this.flickerHzMin[last]; this.flickerHzMax[handle] = this.flickerHzMax[last];
-      this.flickerAmount[handle] = this.flickerAmount[last]; this.flickerJitter[handle] = this.flickerJitter[last];
-      this.seed[handle] = this.seed[last];
-      this.key[handle] = this.key[last];
-      this.visVersion[handle] = this.visVersion[last];
-      this._visKeyX[handle] = 0x7fffffff; this._visKeyY[handle] = 0x7fffffff; this._visStructVersion[handle] = -1; this._visPackedVersion[handle] = -2;
+    if (handle < this.baseCount) {
+      // placed/entity light: swap the last placed light in, then close the hole with the last derived one
+      const lastBase = this.baseCount - 1;
+      if (handle !== lastBase) this._copySlot(handle, lastBase);
+      if (last !== lastBase) this._copySlot(lastBase, last);
+      this.baseCount = lastBase;
+    } else if (handle !== last) {
+      this._copySlot(handle, last);
     }
     this.count = last;
+  }
+
+  // ---- EMIS-01b (38.12 (1)): derived emissive lights ---------------------------------------------
+  // Per frame: beginDerived(reserve, camX, camY, camZ); offerDerived(x, y, z, rec, seed) per candidate;
+  // endDerived(). `rec` = pm.emissiveLight ({hue, intensity, radius, flicker}); `seed` = stable int
+  // identity of the instance (non-zero). Zero allocation: preallocated candidate arrays, insertion sort.
+
+  /** @param {number} [reserve] extra cap on derived slots (default: every slot not used by placed lights) */
+  beginDerived(reserve, camX = 0, camY = 0, camZ = 0) {
+    const free = MAX_LIGHTS - this.baseCount;
+    this._dReserve = !this.emissive ? 0 : (reserve === undefined || reserve > free ? free : (reserve < 0 ? 0 : reserve));
+    this._dN = 0;
+    this._dCx = camX; this._dCy = camY; this._dCz = camZ;
+  }
+
+  offerDerived(x, y, z, rec, seed) {
+    if (this._dReserve <= 0 || !rec) return;
+    const dx = x - this._dCx, dy = y - this._dCy, dz = z - this._dCz;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    let score = rec.intensity / (dist > 1 ? dist : 1);
+    seed = seed | 0 || 1;
+    // the current holder of a slot gets the hysteresis bonus
+    for (let h = this.baseCount; h < this.count; h++) if (this.dKey[h] === seed) { score *= DERIVED_HYSTERESIS; break; }
+    const sc = this._dScore;
+    let n = this._dN;
+    if (n === DERIVED_MAX_CAND) { if (score <= sc[n - 1]) return; n--; }
+    let j = n - 1;
+    while (j >= 0 && sc[j] < score) {
+      sc[j + 1] = sc[j]; this._dX[j + 1] = this._dX[j]; this._dY[j + 1] = this._dY[j]; this._dZ[j + 1] = this._dZ[j];
+      this._dSeed[j + 1] = this._dSeed[j]; this._dRec[j + 1] = this._dRec[j];
+      j--;
+    }
+    sc[j + 1] = score; this._dX[j + 1] = x; this._dY[j + 1] = y; this._dZ[j + 1] = z;
+    this._dSeed[j + 1] = seed; this._dRec[j + 1] = rec;
+    this._dN = n + 1;
+  }
+
+  endDerived() {
+    const cap = this._dReserve;
+    const keep = Math.min(cap, this._dN);
+    const bc = this.baseCount;
+    // 1) drop derived slots that did not make the top `keep` (walk down: remove swaps the last in)
+    for (let h = this.count - 1; h >= bc; h--) {
+      let wanted = false;
+      for (let k = 0; k < keep; k++) if (this._dSeed[k] === this.dKey[h]) { wanted = true; break; }
+      if (!wanted) { if (h !== this.count - 1) this._copySlot(h, this.count - 1); this.count--; this.derivedStats.swaps++; }
+    }
+    // 2) update holders, add newcomers
+    for (let k = 0; k < keep; k++) {
+      const seed = this._dSeed[k], rec = this._dRec[k];
+      let h = -1;
+      for (let i = bc; i < this.count; i++) if (this.dKey[i] === seed) { h = i; break; }
+      if (h < 0) {
+        if (this.count >= MAX_LIGHTS) continue;
+        h = this.count++;
+        this._write(h, { x: this._dX[k], y: this._dY[k], z: this._dZ[k], hue: rec.hue, intensity: rec.intensity,
+          radius: rec.radius, flicker: rec.flicker, seed, key: null });
+        this.dKey[h] = seed;
+        this.derivedStats.swaps++;
+      } else {
+        this.defX[h] = this._dX[k]; this.defY[h] = this._dY[k]; this.defZ[h] = this._dZ[k];
+      }
+    }
+    this.derivedStats.count = this.count - bc;
+    this._dN = 0;
   }
 
   /**

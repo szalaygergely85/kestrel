@@ -14,6 +14,7 @@
 // result is observable through readbackCells() (`?gpucompare=1` / `=shade` cell rows).
 import { bootNow, span as bootSpan } from '../../../core/bootMarks.js'; // BOOT-SPEED-01
 import { allocWgTargets, freeWgTargets } from './targets.js';
+import { WG_PASS_NAMES, WG_PASS_SLOT } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 import { DEBUG_BLOCK, DEBUG_WGSL, DEBUG_TEXTURES } from '../wgsl/debug.wgsl.js';
 import { WgRasterPass } from './passRaster.js';
 import { WgCellPass } from './passCell.js';
@@ -24,6 +25,15 @@ import { WgOverlayPass } from './passOverlay.js';
 
 // Same list/order as GpuCellPipeline.PASS_NAMES (stats.passMs* line up with it).
 export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge', 'shadow', 'water', 'wcomp']);
+// S8-B1-07: the REAL per-pass GPU timer (WG_PASS_NAMES/WG_PASS_SLOT, WebGpuTimer.js) - re-exported so main.js's F3 line can
+// import them from here like it already does PASS_NAMES/GpuCellPipeline. stats.wgPassMsP50/P95 line up with WG_PASS_NAMES.
+export { WG_PASS_NAMES, WG_PASS_SLOT };
+
+function sumFinite(arr) {
+  let s = 0;
+  for (let i = 0; i < arr.length; i++) if (!Number.isNaN(arr[i])) s += arr[i];
+  return s;
+}
 
 const DEPTH_FADE_K = 0.05; // debug depth view: 1 / (1 + d * K)
 const DEBUG_MODE_WORD = DEBUG_BLOCK.field('mode').word;
@@ -58,6 +68,10 @@ export class WgCellPipeline {
       waterSlots: 0, waterDraws: 0, shadowItems: 0, shadowDraws: 0, shadowCpuMs: 0, instancesCulled: 0, instancesLod1: 0,
       passMsP50: new Float32Array(PASS_NAMES.length).fill(NaN),
       passMsP95: new Float32Array(PASS_NAMES.length).fill(NaN),
+      // S8-B1-07: real WG per-pass GPU ms (WG_PASS_NAMES order), p50/p95 over the same 120-frame history as gpuMsP50/P95;
+      // NaN while off or timestamp-query is unsupported. gpuMs/gpuMsP50/gpuMsP95 become their sum while this is on (GL2 precedent).
+      wgPassMsP50: new Float32Array(WG_PASS_NAMES.length).fill(NaN),
+      wgPassMsP95: new Float32Array(WG_PASS_NAMES.length).fill(NaN),
     };
     this._passTimingOn = false;
     this.debugMode = -1;
@@ -79,6 +93,11 @@ export class WgCellPipeline {
     this._debugU = new Float32Array(DEBUG_BLOCK.sizeWords);
     this._debugTex = [{ slot: 0, texture: null }, { slot: 1, texture: null }, { slot: 2, texture: null }];
     this._debugBind = { uniforms: this._debugU, textures: this._debugTex };
+    // S8-B1-09b (38.10b): every pass pipeline is created inside ONE compile batch; `compiled` resolves to the per-pipeline list
+    // (an `ok:false` entry or a creation throw disables the pipeline). createRenderer awaits it behind the loading card.
+    /** @type {Promise<{label: string, ms: number, ok: boolean}[]>} */ this.compiled = Promise.resolve([]);
+    const batched = typeof this.device.beginCompileBatch === 'function' && typeof this.device.endCompileBatch === 'function';
+    if (batched) this.device.beginCompileBatch();
     try {
       let tp = bootNow();
       this._t = allocWgTargets(this.device, this.cols, this.rows, this.rays);
@@ -104,15 +123,26 @@ export class WgCellPipeline {
       this.portedPasses.push('debug', 'raster', 'resolve', 'deriv', 'light', 'shade', 'edge');
       if (this._shadowPass.enabled) this.portedPasses.push('shadow');
       this.portedPasses.push('water');
+      if (batched) this.compiled = this._watchCompile(this.device.endCompileBatch());
       this.ready = true;
       this.setEnabled(true);
       if (this.device.lost && typeof this.device.lost.then === 'function') {
         this.device.lost.then((info) => { if (!(info && info.reason === 'destroyed')) this._onLost(); });
       }
     } catch (e) {
+      if (batched) { try { this.device.endCompileBatch().catch(() => {}); } catch (_) { /* best effort */ } }
       console.warn('[WgCellPipeline] init failed:', e);
       this.dispose();
     }
+  }
+
+  /** Turns a failed compile (any `ok:false`) into `ready=false` + warn; the list itself is passed through. @param {Promise<any[]>} p */
+  _watchCompile(p) {
+    return p.then((list) => {
+      const bad = list.filter((x) => !x.ok);
+      if (bad.length) { console.warn('[WgCellPipeline] pipeline compile failed:', bad.map((x) => x.label).join(', ')); this.ready = false; this.setEnabled(false); }
+      return list;
+    }, (e) => { console.warn('[WgCellPipeline] pipeline compile failed:', e); this.ready = false; this.setEnabled(false); return []; });
   }
 
   _onLost() {
@@ -153,6 +183,7 @@ export class WgCellPipeline {
       if (this._overlayPass) this._overlayPass.dispose();
       this._spritesPass = null; this._overlayPass = null;
       const tp = bootNow();
+      if (this.device.beginCompileBatch) this.device.beginCompileBatch();
       this._spritesPass = new WgSpritesPass(this.device, { pool, atlas, palette });
       this._spritesPass.resize(this.cols, this.rows);
       if (particleLayer) this._spritesPass.bindParticleLayer(particleLayer);
@@ -160,7 +191,19 @@ export class WgCellPipeline {
       this._overlayPass.resize(this.cols, this.rows);
       this._overlayPass.setTarget(this._spritesPass.outFg);
       bootSpan('bindSprites (sprites + overlay passes)', tp);
+      if (this.device.endCompileBatch) {
+        const pending = this.device.endCompileBatch();
+        // asynchronous devices: the passes only count as wired once their pipelines exist (draw before that would throw)
+        if (this.device.compiling) {
+          this._spritesBound = false; this._spritesPending = true;
+          this.spritesCompiled = this._watchCompile(pending).then((list) => { this._spritesPending = false; if (this.ready) { this._spritesBound = true; this._syncActive(); } return list; });
+          if (!this.portedPasses.includes('sprites')) this.portedPasses.push('sprites', 'overlay');
+          this._syncActive();
+          return true;
+        }
+      }
     } catch (e) {
+      if (this.device.endCompileBatch) { try { this.device.endCompileBatch().catch(() => {}); } catch (_) { /* best effort */ } }
       console.warn('[WgCellPipeline] sprites/overlay init failed (CPU compositor keeps drawing them):', e);
       for (const k of ['_spritesPass', '_overlayPass']) { if (this[k]) { try { this[k].dispose(); } catch (_) { /* best effort */ } this[k] = null; } }
       this._spritesBound = false;
@@ -174,6 +217,14 @@ export class WgCellPipeline {
   }
 
   setPassTiming(on) { this._passTimingOn = !!on; }
+
+  /**
+   * S8-B1-07 seam: passRaster/passShadow/passCell/passShade (which receive `this` as `p`) and `_runSprites` below call these
+   * around each real WG pass's GPU work (one WG_PASS_SLOT each). A no-op when off; `device.timer.begin/end` are themselves a
+   * no-op when timestamp-query is unsupported, so this never has to check availability itself.
+   */
+  _begin(slot) { if (this._passTimingOn) this.device.timer.begin(slot); }
+  _end() { if (this._passTimingOn) this.device.timer.end(); }
 
   /** 0 kind, 1 planeId, 2 normal, 3 depth (wgsl/debug.wgsl.js); < 0 = off. */
   setDebugMode(mode) {
@@ -226,7 +277,15 @@ export class WgCellPipeline {
   }
   bindVoxels(pool) { this._voxelPool = pool; }
   bindViewModel(vm) { this._viewModel = vm; }
-  bindInstances(groups) { this._instances = groups; }
+  bindInstances(groups) {
+    // 38.10a: a different groups object (new world/reload) means every batch the cull passes hold keys off the old
+    // InstanceGroup objects and would otherwise leak until the idle sweep - release them now, not 10 s from now.
+    if (groups !== this._instances) {
+      if (this._rasterPass && this._rasterPass.cull) this._rasterPass.cull.releaseAll();
+      if (this._shadowPass && this._shadowPass.cull) this._shadowPass.cull.releaseAll();
+    }
+    this._instances = groups;
+  }
   setWaterLooks(looks) { if (this._waterPass) this._waterPass.setLooks(looks); }
   /** Test-only (14.2 item 7): 'upload' feeds the CPU fb.gbuf into the cell-res textures (`?gpucompare=shade`); 'scene' = raster path. */
   setSource(mode) { this._source = mode === 'upload' ? 'upload' : 'scene'; }
@@ -243,6 +302,20 @@ export class WgCellPipeline {
     if (this._waterPass && this._world) this._waterPass.bindWorld(this._world);
     this.stats.waterSlots = this._waterPass ? this._waterPass.stats.waterSlots : 0; this.stats.waterDraws = this._waterPass ? this._waterPass.stats.waterDraws : 0;
     if (this.device.timer.writeStats) this.device.timer.writeStats(this.stats);
+    // S8-B1-07: per-pass ms (same async-resolved-last-frame timing as writeStats above); while this is what's being shown,
+    // gpuMs/gpuMsP50/gpuMsP95 become the sum of the passes (GpuCellPipeline PASS_* precedent) instead of the now-unwritten
+    // FRAME_TIMER_SLOT (the pipeline ends that span early in `_hook` so the passes below can each open their own - never both).
+    if (this.stats.wgPassMsP50) { // a minimal stub `stats` (WebGpuTimer.test.js) has neither field nor `_passTimingOn`: skip
+      if (this._passTimingOn && this.device.timer.writePassStats) {
+        this.device.timer.writePassStats(this.stats.wgPassMsP50, this.stats.wgPassMsP95);
+        this.stats.gpuMsP50 = sumFinite(this.stats.wgPassMsP50);
+        this.stats.gpuMsP95 = sumFinite(this.stats.wgPassMsP95);
+        this.stats.gpuMs = this.stats.gpuMsP50;
+      } else {
+        this.stats.wgPassMsP50.fill(NaN);
+        this.stats.wgPassMsP95.fill(NaN);
+      }
+    }
   }
 
   // ---- readbacks (test-only, never the frame loop): Promises, always `await` (38.6) ----
@@ -305,6 +378,10 @@ export class WgCellPipeline {
   _hook() {
     if (!this.ready || !this._t) return;
     const d = this.device, t = this._t, rt = this.rt;
+    // S8-B1-07: RenderTargetWebGPU.present() already opened FRAME_TIMER_SLOT's span around this whole hook, but it has not
+    // attached to any pass yet (only writeTexture ran) - ending it now is a no-op for that slot's data (nothing written) and
+    // frees the single "active span" so each WG pass below can open its own (WebGpuTimer spans never nest - see passRaster.run).
+    if (this._passTimingOn) d.timer.end();
     if (this._cam && this._world) {
       try { this._rasterPass.run(this); }
       catch (e) { this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] raster disabled:', e); return; }
@@ -345,10 +422,12 @@ export class WgCellPipeline {
   _runSprites(t) {
     const sp = this._spritesPass;
     this._spritesRan = false;
-    if (!sp || !this._cellsShaded) { this._setPresent(null, null); return; }
+    if (!sp || !this._cellsShaded || this._spritesPending) { this._setPresent(null, null); return; } // pending = pipelines still compiling
     try {
-      sp.run({ gi: t.texGI, depth: t.texDepth, edgeFg: t.texFinalFg, edgeBg: t.texFinalBg });
-      this._overlayPass.run(t.texDepth);
+      this._begin(WG_PASS_SLOT.sprites);
+      try { sp.run({ gi: t.texGI, depth: t.texDepth, edgeFg: t.texFinalFg, edgeBg: t.texFinalBg }); } finally { this._end(); }
+      this._begin(WG_PASS_SLOT.overlay);
+      try { this._overlayPass.run(t.texDepth); } finally { this._end(); }
     } catch (e) {
       this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] sprites/overlay disabled:', e); return;
     }

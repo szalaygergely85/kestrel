@@ -37,8 +37,19 @@ export async function createRenderer(o) {
         // WG-2a: the skeleton cell pipeline (debug view only; the CPU path still renders the scene). `gpu:false` (?gpu=0) = none.
         let pipeline = null;
         const tW = bootNow();
+        if (o.onCompileProgress) device.onCompileProgress = o.onCompileProgress; // boot card: (done, total) per compiled pipeline
         if (gpu) pipeline = new WgCellPipeline(rt, { rays: o.rays, terrainEnabled: o.terrainEnabled, shadows: o.shadows, gpuCull: o.gpuCull });
         bootSpan('new WgCellPipeline total', tW);
+        // S8-B1-09b (38.10b): all pass pipelines were created in one async compile batch; wait for it here (the loading card is up),
+        // then log per-pipeline ms (they overlap, so also the wall total) into the boot report.
+        if (pipeline && pipeline.compiled) {
+          const tC = bootNow();
+          const list = await pipeline.compiled;
+          const wall = bootNow() - tC;
+          for (const x of list) bootSpan('  pipeline ' + x.label + (x.ok ? '' : ' FAILED'), bootNow() - x.ms);
+          bootSpan(`pipelines compiled (${list.length}, wall wait)`, tC);
+          if (list.length && typeof console !== 'undefined') console.info(`[boot] pipelines: ${list.length} in ${wall.toFixed(0)} ms wait; slowest ` + list.slice().sort((a, b) => b.ms - a.ms).slice(0, 5).map((x) => `${x.label} ${x.ms.toFixed(0)}`).join(', '));
+        }
         // 38.8a item 18: async validation errors (WGSL, pipeline layouts) never throw; any error = failure -> fallback
         if (typeof device.checkErrors === 'function') {
           const tE = bootNow();

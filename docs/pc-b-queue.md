@@ -1,5 +1,51 @@
 # PC-B queue
 
+## 5x queue (PC-B main session, 2026-10-09) - START HERE
+Rules: skill `pc-b-5x` (4 slots = clones kestrel-1..4, reviews stay on PC-A, 5th agent only when blocked/empty). Specs: `docs/sprints/sprint-8-queue.md` `### <ID>` + the architecture sections named there. Work each slot top-down; skip a blocked item and note why in the lane file. Every engine item ends in `arch-review`, UI/content in `po-review` (owner look).
+
+**kestrel-1 - B1 game hooks (`main.js` owner)**
+1. S8-B1-04 chest interaction hook (~0.5 d; C deps done: S8-C-06 chest sim, S8-C-07 item-get card).
+2. S8-B1-15 MAP-01c `M` toggles the chart (~0.5 d; C S8-C-14 done).
+3. S8-B1-16 MAP-01d Visibility feed + saved fog mask (~0.5 d; C S8-C-15 done).
+4. MESH-LOAD-01 boot `prefetchNear` call (NEEDS B1 from B2 batch 15, small).
+5. S8-B1-10 device-lost card (re-scoped, 38.10c, ~0.5 d).
+6. S8-B1-20 boot stage timing + loading card progress (~0.5 d).
+7. `main.js` lines that other slots raise as `NEEDS B1-main:` (S8-B1-07 F3 lines, S8-B1-12 resize hook) - take them between items.
+
+**kestrel-2 - B1 GPU spine (no `main.js`)**
+1. S8-B1-06 cull batch release (38.10a) - IN PROGRESS in `../kestrel` (started before the switch; ships from there).
+2. S8-B1-12 resize / DPR / fullscreen on WebGPU (~0.5 d; `main.js` part -> `NEEDS B1-main:`).
+3. S8-B1-11 zero per-frame allocation in the WG loop (~0.5 d).
+4. S8-B1-07 per-pass GPU timer slots (~0.5 d; F3 lines -> `NEEDS B1-main:`), then S8-B1-08 ultra step-up (~0.5 d).
+5. B2 host wiring: wind/sway uniforms in raster + shadow (NEEDS B1 from S8-B2-05/06, batch 15).
+6. ALPHA-01f (b) host side: `MeshBuffers` uvMask stream + pass wiring, after kestrel-3 ships the WGSL module.
+7. gpucompare pose pair (owner eyes, BUG-MESH-MISSING-01): two rows `?at=1446.63,1024.64,2.02,227,1` and `?at=1448.31,1026.52,2.08,229,3`.
+8. S8-B1-14 capture-browser `--route` frame-time trace (~0.75 d), then S8-B1-19 WG-5a deletion plan (~0.5 d).
+
+**kestrel-3 - B2 masked instanced meshes (ALPHA-01f, WebGPU only, D-051)**
+1. ALPHA-01f (a) JS twin - IN PROGRESS in the retired `../game_project_b2` worktree; the main session moves the diff to kestrel-3 and ships it.
+2. ALPHA-01f (b) WGSL instanced mask variant (module + twin test; host side = kestrel-2 item 6).
+3. ALPHA-01f (c) shadow variant. 4. ALPHA-01f (d) GPU cull / indirect args per range.
+5. ALPHA-01e nit: `withCollision` name regex -> generic rule "masked + opaque ranges -> colliderParts = opaque ranges".
+Species switch stays blocked on the owner LOD1 pick + forestWalk tri budget (PC-A).
+
+**kestrel-4 - B2 modules + importer**
+1. S8-B2-14 follow-up: terrain twin reads wetness (`terrainShade.js` / `TERRAIN_SHADE_WGSL`).
+2. S8-B2-15 importer crease angle + vertex weld (~0.5 d).
+3. S8-B2-16 convex-hull collider option for rocks (~0.75 d; `engine/physics` stays stand-alone).
+4. REWORK to PC-A notes 38.13/38.14/38.16 (main session 2026-10-09; first versions were built from the dropped PC-B notes, see architecture.md 38.16a; all default-off, bit-identical): (a) **S8-B2-13b** ripples: move ring state off `world.water` into `engine/fx/ripples.js` (`createRipples`, cap 8, packed ages), WaterCompositeU layout per 38.14 (`rippleCount` in pad0, appended `rippleGlyph/rippleGain/ripple[8]`), twin + WGSL + tests; then `NEEDS B1` passWater + `NEEDS B1-main` splash hook. (b) **S8-B2-12c** cloud shadows: drift from `look.clouds` (`cloudDriftOffset`), `look.clouds.shadow` data via `setLook`, `cloudShadeQ` along the sun ray to `deckH`, `LIGHT_BLOCK` appends `cloudA/cloudB` (drop word 30 + word-316 `cloud`), render reads no `engine/world`; `NEEDS B1` passLight `packCloudUniforms`, `?clouds=` -> dev `?cloudshadow=1`. (c) **S8-B2-20b** horizon AO: tap radius in metres -> cells (`rc` from `radiusM*planeDistY/dist`, clamp 1..maxCells), `ao` vec4 appended after 38.13 fields (drop word 31), `look.ao` via `setLook`; strictly after (b), same files. (a) and (b) both touch `waterComposite.*`: never in two slots at once. S8-B2-17 + S8-B2-18 GPU particles: **DROPPED** (38.15). Still ARCH-NOTE NEEDED elsewhere: S8-B2-03/04/06/07/10.
+5. EMIS-03b / EMIS-04 only after the owner picks the glow strength (EMIS-00 mockup).
+
+**PC-A additions 2026-10-09 (after arch batch 18; put at the TOP of the named slot, they are small):**
+- **kestrel-1 #0 (do first, ~0.1 d):** gameHooks batch-17 ARCH CHANGES: bridge engine `interaction:fired {key,name}` -> `prop:touched {id:key, kind:name, x,y,z}` in `bridgeEngineEvents` + a `gameHooks.test.js` line; `emitSimple('prop:touched', id, kind)` with no 4th arg must not throw (missing `c` = 0,0,0). S8-B1-04/15/16 need it. Also BUG-NOTE-ESC-01 (P2): Esc under pointer lock closes nothing - treat `pointerlockchange` to unlocked as close for note/settings/inventory/map or show only [E] (`game/js/quest/noteRead.js:46`).
+- **kestrel-2 #0 (~0.1 d):** EMIS-01b ARCH CHANGES: `VoxelPool#pushInstance` builds the light seed with strings (`x.toFixed(2)+','...`) every push; hash `Math.round(x*100)`, y, z with `Math.imul` instead, no strings (derivedLights.test.js must stay green). Also in the gpucompare pose-pair item: add the BUG-WHITE-PIXELS-01 pose `?at=1500.58,1022.77,1.80,185,-24` (holes counter, both backends), and after that repoint the `alphaLeaves` fixture to `leaf`/`leaf_dark` and delete the `*_softtest` clones (palette.js, detail-pass.js, ShadeTextures.test.js).
+- **kestrel-3 #0 (~0.1 d):** stale comments `engine/mesh/DrawList.js:420` and `meshGroups.js:98` still say "nearest-64".
+- Review state: EMIS-01b wiring (d5bdf6d) and S8-B1-13 (59d1db8) ARCH OK; baseline files are 4060-only (PC-A creates the Arc ones). D-051 known-FAIL rows (WebGL2 waystoneLookBack, lowpolyTrees, 4 alphaLeaves) stay in the baseline as known-FAIL; do not touch thresholds.
+
+**Held / owner:** D-050 hold: PC-A reviews no NEW S8-B2 story until batch-12 items 4/5 + batch-13 B are re-reviewed. B2 keeps building (ALPHA-01f is ARCH-approved); unreviewed commits stay off master. Owner: LOD1 pick (`design/preview/lod1-trees.html`), glow strength, title-menu + glow-light + squares looks (PC-B handoff 2026-10-09).
+
+---
+
 Updated 2026-10-06 by the PC-A main session. **Read this first, then `AGENTS.md` / `CLAUDE.md`** (DeepSeek trial agents: also `DEEPSEEK.md`, which limits you to 4 trial items). It replaces the long QUEUE blocks at the top of `docs/backlog.md`; story details stay in the backlog rows and `docs/architecture.md`.
 
 ## Current PC-A handover (2026-10-07 evening; owner: WG first, parallel lanes)

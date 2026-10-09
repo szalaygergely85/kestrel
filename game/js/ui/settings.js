@@ -79,6 +79,11 @@ function openPanel(ctx) {
   panel.open();
 }
 
+/** US-090w: the title menu's Settings entry opens the same panel S opens from pause. */
+export function openSettings(ctx) {
+  if (!isSettingsOpen() && ctx.assets && ctx.assets.uiStyle && ctx.assets.uiStyle.settings) openPanel(ctx);
+}
+
 function closePanel() {
   if (panel) panel.close();
 }

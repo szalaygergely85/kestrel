@@ -24,7 +24,7 @@ import { packNormalOct, unpackNormalOct } from '../voxel/octNormal.js';
 import {
   flatKind, flatFace, flatMat, AO_NONE, AO_WALL, AO_PLANE, AUX_STRIDE, FLAT_STRIDE,
 } from './MeshData.js';
-import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS, DRAW_FLAG_ONE_PART } from './DrawList.js';
+import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS, DRAW_FLAG_ONE_PART, instancedRanges } from './DrawList.js';
 import { MaskAtlas } from '../render/MaskAtlas.js';
 import { INST_FLAG_SWAY, swayOffset, windSwayOn } from './sway.js';
 import { ditherKeep } from './lodDither.js';
@@ -589,7 +589,6 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
   }
 }
 
-const _oneRange = [{ start: 0, count: 0 }]; // MESH-INST-01: DRAW_FLAG_ONE_PART scratch (no per-call allocation)
 /**
  * RE-06 (28.6): part-major, then instance order - the GPU primitive order
  * (one instanced draw per part). Composes I_i * P_p in float64 per
@@ -597,9 +596,8 @@ const _oneRange = [{ start: 0, count: 0 }]; // MESH-INST-01: DRAW_FLAG_ONE_PART 
  * come from the instance words. Zero allocation.
  */
 function rasterInstanced(mesh, item, target, ctx) {
-  let ranges = mesh.ranges;
-  const onePart = !!(item.flags & DRAW_FLAG_ONE_PART);
-  if (onePart) { _oneRange[0].count = mesh.triCount; ranges = _oneRange; } // one identity part: whole mesh, single-draw triangle order
+  const ranges = instancedRanges(item); // 38.9: ONE_PART = whole mesh as one range
+  const onePart = !!(item.flags & DRAW_FLAG_ONE_PART); // ALPHA-01f (a): the synthetic single range has no per-range mask
   const ib = item.instBuf;
   if (!ib) return;
   const f = ib.f32, u = ib.u32, pm = item.partMatrices, n = item.instCount;
@@ -608,7 +606,7 @@ function rasterInstanced(mesh, item, target, ctx) {
   // ALPHA-01f(a): per-range alpha mask for the instanced meshGroup path, same `mesh.maskRanges` layout and discard/
   // two-sided rule as the static masked path (rasterDrawList's `mesh.maskRanges && _atlas` branch) - `ranges` here IS
   // `mesh.ranges` (range index p lines up 1:1 with `maskRanges[p*5..]`) unless DRAW_FLAG_ONE_PART collapsed it to the
-  // single synthetic `_oneRange` (today only meshGroup()'s opaque-only groups use that flag; guarded here too so a
+  // single synthetic range from `instancedRanges` (today only meshGroup()'s opaque-only groups use that flag; guarded here too so a
   // mesh with both ONE_PART and maskRanges - which nothing currently produces - never applies one range's mask atlas
   // rect to the whole mesh).
   const mr = (!onePart && mesh.maskRanges && _atlas) ? mesh.maskRanges : null;

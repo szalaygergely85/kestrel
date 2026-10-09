@@ -1,11 +1,11 @@
 // WG-2b/2c: device-only mesh + terrain raster (kind 7, ME-06 twin); cell shading stays on the CPU until WG-3c.
 import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, MASK_UV_LAYOUT, MASK_UV_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from '../MeshBuffers.js';
-import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_MASK_BLOCK, RASTER_MASK_WGSL, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL } from '../wgsl/raster.wgsl.js';
+import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_MASK_BLOCK, RASTER_MASK_WGSL, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL, RASTER_INSTANCED_MASK_BLOCK, RASTER_INSTANCED_MASK_WGSL } from '../wgsl/raster.wgsl.js';
 import { TERRAIN_BLOCK, TERRAIN_RASTER_WGSL, TERRAIN_TEXTURES } from '../wgsl/terrainRaster.wgsl.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, MAX_DRAW_ITEMS } from '../../../mesh/DrawList.js';
 import { MeshGroupSet, addMeshStructuresBatched } from '../../../mesh/meshGroups.js';
-import { DRAW_FLAG_ONE_PART } from '../../../mesh/DrawList.js';
+import { instancedRanges } from '../../../mesh/DrawList.js';
 import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../../mesh/voxelMesh.js';
 import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME } from '../../../mesh/instances.js';
@@ -13,6 +13,8 @@ import { KIND_MODEL, FACE_PACKED } from '../../GBuffer.js';
 import { projTerms, shearProjection, pitchedTerms, createPitchedTerms, resolveProjection, viewProjAtOrigin } from '../../projection.js';
 import { frustumPlanes } from '../../../mesh/culling.js';
 import { WgCullPass } from './passCull.js';
+import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
+import { windSwayOn, packWindUniforms, SWAY_MAX } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
 const PLANE = RASTER_BLOCK.field('planeIdOr').word, ZBASE = RASTER_BLOCK.field('zBase').word;
@@ -21,7 +23,12 @@ const FLAT = RASTER_BLOCK.field('flat').word;
 const TEAM_SLOT = RASTER_BLOCK.field('teamSlot').word, TEAM_MAT = RASTER_BLOCK.field('teamMat').word;
 const M_X0 = RASTER_MASK_BLOCK.field('maskX0').word, M_Y0 = RASTER_MASK_BLOCK.field('maskY0').word, M_W = RASTER_MASK_BLOCK.field('maskW').word;
 const M_H = RASTER_MASK_BLOCK.field('maskH').word, M_CUT = RASTER_MASK_BLOCK.field('maskCut').word;
+// ALPHA-01f (b): same 5 mask fields, RASTER_INSTANCED_MASK_BLOCK's own word offsets (its prefix is byte-identical to RASTER_BLOCK's).
+const IM_X0 = RASTER_INSTANCED_MASK_BLOCK.field('maskX0').word, IM_Y0 = RASTER_INSTANCED_MASK_BLOCK.field('maskY0').word;
+const IM_W = RASTER_INSTANCED_MASK_BLOCK.field('maskW').word, IM_H = RASTER_INSTANCED_MASK_BLOCK.field('maskH').word, IM_CUT = RASTER_INSTANCED_MASK_BLOCK.field('maskCut').word;
 const ORIGIN = RASTER_BLOCK.field('origin').word, T_MODEL_REL = TERRAIN_BLOCK.field('modelRel').word;
+// S8-B2-05/06: wind/sway uniforms (RASTER_BLOCK, instanced variant only; the base/mask blocks end before them).
+const WIND = RASTER_BLOCK.field('wind').word, WIND_T = RASTER_BLOCK.field('windT').word, WIND_K = RASTER_BLOCK.field('windK').word;
 const T_MODEL = TERRAIN_BLOCK.field('model').word, T_VIEW = TERRAIN_BLOCK.field('viewProj').word;
 const T_NEAR = TERRAIN_BLOCK.field('nearMap').word, T_FAR = TERRAIN_BLOCK.field('farMap').word, T_FOOT = TERRAIN_BLOCK.field('structFoot').word;
 const T_OBJECT = TERRAIN_BLOCK.field('objectId').word, T_READY = TERRAIN_BLOCK.field('nearReady').word, T_COUNT = TERRAIN_BLOCK.field('structCount').word;
@@ -48,7 +55,6 @@ export class WgRasterPass {
     this.list = new DrawList(MAX_DRAW_ITEMS);
     this.levelCache = null; this.meshCache = new MeshDrawCache(); this.strictMatIdFor = null;
     this.meshGroups = new MeshGroupSet(); this.meshDrawArg = { cache: null, idFor: null }; // MESH-INST-01 / TREES-LP-b: same feed as GpuCellPipeline
-    this._oneRange = [{ start: 0, count: 0 }];
     this.grid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
     this.terms = {}; this.pitch = createPitchedTerms();
     // PREC-01a (37.9, WebGPU twin of the GLSL plan): camera-relative raster. `view`/`planes` stay absolute f64 (culling, WG-4 cull kernels);
@@ -58,6 +64,9 @@ export class WgRasterPass {
     this.viewRel = new Float32Array(16); this.ox = 0; this.oy = 0;
     this.u = new Float32Array(RASTER_BLOCK.sizeWords); this.bits = new Uint32Array(this.u.buffer);
     this.baseU = new Float32Array(this.u.buffer, 0, RASTER_BASE_BLOCK.sizeWords);
+    // S8-B2-05/06: persistent views into `this.u` (construct-once, no per-frame subarray) for packWindUniforms.
+    this.windV = this.u.subarray(WIND, WIND + 4); this.windTV = this.u.subarray(WIND_T, WIND_T + 4); this.windKV = this.u.subarray(WIND_K, WIND_K + 64);
+    this.windOn = false;
     this.bindDesc = { uniforms: this.u, vertexBuffer: null, indexBuffer: null, instanceBuffer: null };
     this.clearOpts = { clear: { color: [[0, 0, 0, 0], [0, 0, 0, 0], [0x7f800000, 0, 0, 0]], depth: 1 } };
     this.vmClearOpts = { clear: { depth: 1 } };
@@ -67,6 +76,10 @@ export class WgRasterPass {
     this.maskDraws = 0; this.maskTex = null; this.maskDims = [1, 1]; this.maskAtlas = null; this.maskVersion = -1; this.maskUploads = 0; this.maskReady = false;
     this.maskTexBind = [{ slot: 0, texture: null }]; this.maskExtra = [null];
     this.maskBind = { uniforms: this.mu, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: this.maskExtra, textures: this.maskTexBind };
+    // ALPHA-01f (b): instanced masked draw - own uniform copy (RASTER_INSTANCED_MASK_BLOCK's prefix = RASTER_BLOCK's, so `this.iu.set(this.u)` is exact), same mask texture.
+    this.iu = new Float32Array(RASTER_INSTANCED_MASK_BLOCK.sizeWords); this.ibits = new Uint32Array(this.iu.buffer);
+    this.maskExtraInst = [null];
+    this.instanceMaskBind = { uniforms: this.iu, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: this.maskExtraInst, textures: this.maskTexBind };
     this.pipes = [];
     this.clothStreams = [null];
     // WG-4a: GPU cull of InstanceGroups batches (meshGroup + single-range voxel units). instances.js hands each supported group to `accept` instead of
@@ -94,6 +107,8 @@ export class WgRasterPass {
       this.voxelPipe = this._pipeline(RASTER_VOXEL_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back');
       this.mirrorPipe = this._pipeline(RASTER_VOXEL_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'ccw');
       this.instancePipe = this._pipeline(RASTER_INSTANCED_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true);
+      // ALPHA-01f (b): instanced mesh-group masked draw - same state as instancePipe + the mask-uv extra stream (location 10) + texMask at slot 0
+      this.instanceMaskPipe = this._pipeline(RASTER_INSTANCED_MASK_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true, [{ layout: MASK_UV_LAYOUT, strideBytes: MASK_UV_STRIDE_BYTES }], RASTER_INSTANCED_MASK_BLOCK, ['uint']);
       // Cloth: dynamic pos+oct normal (slot 0) + static uv (extra stream), two-sided (GL: CULL_FACE off, CCW = 'cw' after the clip-y flip).
       this.clothPipe = this._pipeline(RASTER_CLOTH_WGSL, CLOTH_DYN_LAYOUT, CLOTH_STRIDE_BYTES, 'none', 'cw', false, [{ layout: CLOTH_UV_LAYOUT, strideBytes: 8 }]);
       if (opts.gpuCull !== false && typeof device.createComputePipeline === 'function') this.cull = new WgCullPass(device);
@@ -113,25 +128,40 @@ export class WgRasterPass {
   _cullRun(p) {
     const n = this.gpuN, cull = this.cull, pair = this._pair;
     if (!n) return;
-    cull.begin({ planes: this.planes, viewProj: this.view, rows: p.rows, eye: null, maxDistM: 0 });
+    cull.begin({ planes: this.planes, viewProj: this.view, rows: p.rows, eye: null, maxDistM: 0, swayPad: this.windOn ? SWAY_MAX : 0 });
     for (let i = 0; i < n; i++) { pair[0] = this.gpuM0[i]; pair[1] = this.gpuM1[i]; this.gpuEntries[i] = cull.add(this.gpuGroups[i], pair); }
     cull.run();
   }
 
+  // ALPHA-01f (d): entries are laid out `[lod*R + r]` (R = entries.length/2, fixed per batch); R = 1 (today's ONE_PART shape) is
+  // the same [e0, e1] pair as before. A masked meshGroup range (mr[r*5+2] >= 0) draws through instanceMaskPipe (mask uniforms +
+  // uv extra stream + atlas texture, same as _instancedMaskedRange's CPU path); an opaque range draws through instancePipe, unchanged.
   _cullDraw() {
     let draws = 0;
     const b = this.bindDesc;
     for (let i = 0; i < this.gpuN; i++) {
-      const entries = this.gpuEntries[i];
+      const entries = this.gpuEntries[i], R = entries.length >> 1;
       for (let lod = 0; lod < 2; lod++) {
-        const e = entries[lod];
-        if (!e.active) continue;
-        this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0;
-        this._model(e.parts.m, 0); this.bits[AXIS] = e.parts.flags[0] & 1;
-        const entry = this.buffers.getVoxel(e.mesh);
-        b.uniforms = this.u; b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer || null; b.instanceBuffer = e.instanceBuffer; b.extraBuffers = null;
-        this.device.bind(this.instancePipe, b); this.device.drawIndirect(e.argsBuffer, e.argsOffset);
-        draws++;
+        for (let r = 0; r < R; r++) {
+          const e = entries[lod * R + r];
+          if (!e.active) continue;
+          this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0;
+          this._model(e.parts.m, 0); this.bits[AXIS] = e.parts.flags[0] & 1;
+          const entry = this.buffers.getVoxel(e.mesh);
+          const mr = e.mesh.maskRanges;
+          if (mr && this.maskReady && entry.uvMaskBuffer && mr[r * 5 + 2] >= 0) {
+            this.iu.set(this.u);
+            const ib = this.ibits;
+            ib[IM_X0] = mr[r * 5]; ib[IM_Y0] = mr[r * 5 + 1]; ib[IM_W] = mr[r * 5 + 2]; ib[IM_H] = mr[r * 5 + 3]; ib[IM_CUT] = mr[r * 5 + 4];
+            const bd = this.instanceMaskBind;
+            bd.vertexBuffer = entry.vertexBuffer; bd.indexBuffer = null; bd.instanceBuffer = e.instanceBuffer; this.maskExtraInst[0] = entry.uvMaskBuffer; this.maskTexBind[0].texture = this.maskTex;
+            this.device.bind(this.instanceMaskPipe, bd); this.device.drawIndirect(e.argsBuffer, e.argsOffset);
+          } else {
+            b.uniforms = this.u; b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer || null; b.instanceBuffer = e.instanceBuffer; b.extraBuffers = null;
+            this.device.bind(this.instancePipe, b); this.device.drawIndirect(e.argsBuffer, e.argsOffset);
+          }
+          draws++;
+        }
       }
     }
     return draws;
@@ -258,7 +288,11 @@ export class WgRasterPass {
     }
     const pool = p._voxelPool;
     if (pool) { pool.project(cam, p.rt, 'mesh'); if (pool.list.length) addVoxelInstances(list, pool, sharedVoxelMeshCache, pool.partNamesFor); }
+    // S8-B2-05/06: per-frame wind uniforms (zero when sway is off: bit-identical to before) + the cull/instance sway padding.
+    this.windOn = windSwayOn(world.wind);
+    packWindUniforms(world.wind, (p._fb && p._fb.timeSec) || 0, this.windV, this.windTV, this.windKV);
     if (p._instances) {
+      p._instances.swayPad = this.windOn ? SWAY_MAX : 0;
       this.meshDrawArg.cache = this.meshCache; this.meshDrawArg.idFor = this.strictMatIdFor || null;
       p._instances.addToDrawList(list, sharedVoxelMeshCache, this.planes, p._fb.frameNo, this.view, p.rows, this.meshDrawArg);
       p.stats.instancesCulled = p._instances.stats.instancesCulled; p.stats.instancesLod1 = p._instances.stats.instancesLod1;
@@ -316,6 +350,21 @@ export class WgRasterPass {
     return draws;
   }
 
+  /**
+   * ALPHA-01f (b): one masked range of an instanced mesh group (TREES-LP-b kind-9 group with `maskRanges`), matching
+   * `rasterJS.js` `rasterInstanced`'s per-range loop and `_staticMesh`'s "one draw per range" shape, instanceCount = N.
+   * @returns {number} draws issued (always 1)
+   */
+  _instancedMaskedRange(entry, r, mr, part, buffer, instCount) {
+    this.iu.set(this.u); // RASTER_INSTANCED_MASK_BLOCK's prefix = RASTER_BLOCK's (model/viewProj/.../windK), same word offsets
+    const ib = this.ibits;
+    ib[IM_X0] = mr[part * 5]; ib[IM_Y0] = mr[part * 5 + 1]; ib[IM_W] = mr[part * 5 + 2]; ib[IM_H] = mr[part * 5 + 3]; ib[IM_CUT] = mr[part * 5 + 4];
+    const bd = this.instanceMaskBind;
+    bd.vertexBuffer = entry.vertexBuffer; bd.indexBuffer = null; bd.instanceBuffer = buffer; this.maskExtraInst[0] = entry.uvMaskBuffer;
+    this.device.bind(this.instanceMaskPipe, bd); this.device.draw(r.count * 3, r.start * 3, instCount);
+    return 1;
+  }
+
   _cloths(list) {
     let draws = 0;
     const b = this.bindDesc;
@@ -352,46 +401,55 @@ export class WgRasterPass {
   run(p) {
     this.prepare(p);
     const list = this.list, d = this.device;
-    this._cullRun(p);
-    d.beginPass(p._t.targetRaster, this.clearOpts);
+    // S8-B1-07: cull (compute) and raster (render) are separate timer slots - one span each, never nested.
+    wgSpanBegin(p, WG_PASS_SLOT.cull);
+    try { this._cullRun(p); } finally { wgSpanEnd(p); }
     let staticDraws = 0, instancedDraws = 0, instances = 0;
     this.maskDraws = 0;
+    wgSpanBegin(p, WG_PASS_SLOT.raster);
     try {
-      for (let i = 0; i < list.count; i++) {
-        const item = list.items[i];
-        if (item.type !== DRAW_STATIC || !item.mesh || item.rangeCount <= 0) continue;
-        this._item(item); this._model(item.matrix, 0, this.ox, this.oy);
-        this._staticMesh(item, this.staticPipe, this.maskPipe, this.mu, this.mbits, this.buffers.get(item.mesh)); staticDraws++;
-      }
-      p.stats.voxelDraws = this._voxels(list);
-      for (let i = 0; i < list.count; i++) {
-        const item = list.items[i];
-        if (item.type !== DRAW_INSTANCED || !item.mesh || !item.instBuf) continue;
-        instances += item.instCount;
-        if (instances > MAX_INSTANCES_PER_FRAME) throw new Error(`instanced units over ${MAX_INSTANCES_PER_FRAME} per frame`);
-        let buffer = this.instanceBuffers.get(item.instBuf);
-        if (!buffer) { buffer = d.createBuffer({ usage: 'vertex', data: item.instBuf.f32, dynamic: true }); this.instanceBuffers.set(item.instBuf, buffer); }
-        else d.writeBuffer(buffer, item.instBuf.f32, 0);
-        this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0;
-        const entry = this.buffers.getVoxel(item.mesh);
-        let ranges = item.mesh.ranges;
-        if (item.flags & DRAW_FLAG_ONE_PART) { this._oneRange[0].count = item.mesh.triCount; ranges = this._oneRange; }
-        for (let part = 0; part < ranges.length; part++) {
-          const r = ranges[part]; if (r.count <= 0) continue;
-          this._model(item.partMatrices, part * 12); this.bits[AXIS] = item.partFlags[part] & 1;
-          this._draw(this.instancePipe, entry, r.count * 3, r.start * 3, buffer, item.instCount); instancedDraws++;
+      d.beginPass(p._t.targetRaster, this.clearOpts);
+      try {
+        for (let i = 0; i < list.count; i++) {
+          const item = list.items[i];
+          if (item.type !== DRAW_STATIC || !item.mesh || item.rangeCount <= 0) continue;
+          this._item(item); this._model(item.matrix, 0, this.ox, this.oy);
+          this._staticMesh(item, this.staticPipe, this.maskPipe, this.mu, this.mbits, this.buffers.get(item.mesh)); staticDraws++;
         }
-      }
-      if (this.gpuN) { const gd = this._cullDraw(); instancedDraws += gd; p.stats.gpuCullDraws = gd; } else p.stats.gpuCullDraws = 0;
-      p.stats.clothDraws = this._cloths(list);
-      p.stats.terrainDraws = this._terrain(list);
-    } finally { d.endPass(); }
-    if (this.vmList) {
-      // A depth-only target clears the same depth attachment, preserving all colour G-buffer values.
-      d.beginPass(p._t.targetVmDepth, this.vmClearOpts); d.endPass();
-      d.beginPass(p._t.targetRaster);
-      try { p.stats.vmDraws = this._voxels(this.vmList); } finally { d.endPass(); }
-    } else p.stats.vmDraws = 0;
+        p.stats.voxelDraws = this._voxels(list);
+        for (let i = 0; i < list.count; i++) {
+          const item = list.items[i];
+          if (item.type !== DRAW_INSTANCED || !item.mesh || !item.instBuf) continue;
+          instances += item.instCount;
+          if (instances > MAX_INSTANCES_PER_FRAME) throw new Error(`instanced units over ${MAX_INSTANCES_PER_FRAME} per frame`);
+          let buffer = this.instanceBuffers.get(item.instBuf);
+          if (!buffer) { buffer = d.createBuffer({ usage: 'vertex', data: item.instBuf.f32, dynamic: true }); this.instanceBuffers.set(item.instBuf, buffer); }
+          else d.writeBuffer(buffer, item.instBuf.f32, 0);
+          this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0;
+          const entry = this.buffers.getVoxel(item.mesh);
+          const ranges = instancedRanges(item);
+          const mr = item.mesh.maskRanges; // ALPHA-01f (b): per-range mask lookup, same shape as _staticMesh's
+          for (let part = 0; part < ranges.length; part++) {
+            const r = ranges[part]; if (r.count <= 0) continue;
+            this._model(item.partMatrices, part * 12); this.bits[AXIS] = item.partFlags[part] & 1;
+            if (mr && this.maskReady && entry.uvMaskBuffer && mr[part * 5 + 2] >= 0) {
+              this._instancedMaskedRange(entry, r, mr, part, buffer, item.instCount); instancedDraws++;
+            } else {
+              this._draw(this.instancePipe, entry, r.count * 3, r.start * 3, buffer, item.instCount); instancedDraws++;
+            }
+          }
+        }
+        if (this.gpuN) { const gd = this._cullDraw(); instancedDraws += gd; p.stats.gpuCullDraws = gd; } else p.stats.gpuCullDraws = 0;
+        p.stats.clothDraws = this._cloths(list);
+        p.stats.terrainDraws = this._terrain(list);
+      } finally { d.endPass(); }
+      if (this.vmList) {
+        // A depth-only target clears the same depth attachment, preserving all colour G-buffer values.
+        d.beginPass(p._t.targetVmDepth, this.vmClearOpts); d.endPass();
+        d.beginPass(p._t.targetRaster);
+        try { p.stats.vmDraws = this._voxels(this.vmList); } finally { d.endPass(); }
+      } else p.stats.vmDraws = 0;
+    } finally { wgSpanEnd(p); }
     p.stats.meshDraws = staticDraws; p.stats.maskDraws = this.maskDraws; p.stats.maskUploads = this.maskUploads; p.stats.instancedDraws = instancedDraws; p.stats.instances = instances;
     p.stats.voxelDraws += instancedDraws;
   }

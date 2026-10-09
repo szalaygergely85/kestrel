@@ -275,9 +275,9 @@ export class RenderTargetGL {
     // grid change, without the caller (main.js) passing it again. A plain
     // window resize keeps calling `resize()` with no args, which keeps
     // updating this to the live window size, exactly as before.
-    this._refBox = { availW, availH, dpr: refDpr };
+    this._refBox = { availW: refAvailW, availH: refAvailH, dpr: refDpr }; // BUG-SQUARES-01: live window stays live (fit on) after setGrid
     this.dpr = dpr;
-    const box = computeCellBox(this._measureCtx, this.cols, this.rows, availW * dpr, availH * dpr);
+    const box = computeCellBox(this._measureCtx, this.cols, this.rows, availW * dpr, availH * dpr, Infinity, refAvailW == null); // BUG-SQUARES-01: 1:1 fit on the live window
     this.fontSize = box.fontPx;
     this.pxCellW = box.pxCellW;
     this.pxCellH = box.pxCellH;
@@ -288,6 +288,7 @@ export class RenderTargetGL {
     const css = fitCssSize(this.cellW * this.cols, this.cellH * this.rows, availW, availH); // display-only fit
     this.canvas.style.width = css.w + 'px';
     this.canvas.style.height = css.h + 'px';
+    this.canvas.style.imageRendering = css.smooth ? 'auto' : ''; // BUG-SQUARES-01: '' = page CSS (pixelated) at 1:1
     this.canvas.width = this.pxCellW * this.cols;
     this.canvas.height = this.pxCellH * this.rows;
 

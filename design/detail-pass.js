@@ -1471,10 +1471,6 @@
     return remap[v1key] || null;
   }
 
-  // ALPHA-01d TEST-ONLY twins of leaf / leaf_dark (gpucompare alphaLeaves fixture), edge:'soft'; palette.js has the v1 records of the same key.
-  materials.leaf_softtest = Object.assign({}, materials.leaf, { v1: 'leaf_softtest', seed: 691, edge: 'soft' });
-  materials.leaf_dark_softtest = Object.assign({}, materials.leaf_dark, { v1: 'leaf_dark_softtest', seed: 692, edge: 'soft' });
-
   function validate() {
     var errs = [], k, m, i, j;
     function col(key, where) { if (!P.colors[key]) errs.push(where + ': unknown color "' + key + '"'); }

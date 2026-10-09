@@ -7,6 +7,7 @@ import { WgLightPass } from './passLight.js';
 import { WgShadePass } from './passShade.js';
 import { WgUploadSource } from './passUpload.js';
 import { PROJ_HFOV_DEG } from '../../projection.js';
+import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 
 const R_N = RESOLVE_BLOCK.field('n').word;
 const D_COLS = DERIV_BLOCK.field('cols').word, D_ROWS = DERIV_BLOCK.field('rows').word;
@@ -57,7 +58,8 @@ export class WgCellPass {
     this.shaded = false;
     if (p._source === 'upload') { // ?gpucompare=shade: CPU G-buffer straight into the cell-res set (no raster/resolve/deriv)
       if (!this.upload.run(p, t)) return;
-      this.lightPass.run(p, t);
+      wgSpanBegin(p, WG_PASS_SLOT.light);
+      try { this.lightPass.run(p, t); } finally { wgSpanEnd(p); }
       this.shaded = this.shadePass.run(p, t, this.lightPass.cam);
       return;
     }
@@ -67,23 +69,31 @@ export class WgCellPass {
     const rTex = this.rTex;
     rTex[0].texture = t.texSGI; rTex[1].texture = t.texSGA; rTex[2].texture = t.texSDepth; rTex[3].texture = t.texMask;
     this.ri[R_N] = p.rays;
-    d.beginPass(t.targetResolve);
-    d.bind(this.pipeResolve, this.rBind);
-    d.draw(3);
-    d.endPass();
-    const dTex = this.dTex;
-    dTex[0].texture = t.texGI; dTex[1].texture = t.texGA; dTex[2].texture = t.texDepth;
-    derivTerms(p.cols, p.rows, rt.pxCellW, rt.pxCellH, this.terms);
-    this.di[D_COLS] = p.cols; this.di[D_ROWS] = p.rows;
-    this.du[D_TAN] = this.terms.tanHalfHFov; this.du[D_PDY] = this.terms.planeDistY;
-    d.beginPass(t.targetDeriv);
-    d.bind(this.pipeDeriv, this.dBind);
-    d.draw(3);
-    d.endPass();
-    if (wp && wp.active) wp.runWater(t.texDepth); // WG-3e: water layer after deriv, before light
+    // S8-B1-07: resolve + deriv share one 'resolve' timer slot (GpuCellPipeline.PASS_RESOLVE precedent: one query spans both).
+    wgSpanBegin(p, WG_PASS_SLOT.resolve);
+    try {
+      d.beginPass(t.targetResolve);
+      d.bind(this.pipeResolve, this.rBind);
+      d.draw(3);
+      d.endPass();
+      const dTex = this.dTex;
+      dTex[0].texture = t.texGI; dTex[1].texture = t.texGA; dTex[2].texture = t.texDepth;
+      derivTerms(p.cols, p.rows, rt.pxCellW, rt.pxCellH, this.terms);
+      this.di[D_COLS] = p.cols; this.di[D_ROWS] = p.rows;
+      this.du[D_TAN] = this.terms.tanHalfHFov; this.du[D_PDY] = this.terms.planeDistY;
+      d.beginPass(t.targetDeriv);
+      d.bind(this.pipeDeriv, this.dBind);
+      d.draw(3);
+      d.endPass();
+    } finally { wgSpanEnd(p); }
+    if (wp && wp.active) { // WG-3e: water layer after deriv, before light
+      wgSpanBegin(p, WG_PASS_SLOT.water);
+      try { wp.runWater(t.texDepth); } finally { wgSpanEnd(p); }
+    }
     // WG-3b: light (needs the camera + world; without them the frame has no lit content)
     if (sceneOk) {
-      this.lightPass.run(p, t);
+      wgSpanBegin(p, WG_PASS_SLOT.light);
+      try { this.lightPass.run(p, t); } finally { wgSpanEnd(p); }
       this.shaded = this.shadePass.run(p, t, this.lightPass.cam, wp); // WG-3c (+ water composite WG-3e)
     }
   }

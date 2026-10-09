@@ -4,14 +4,17 @@
 // are, per the tech notes' "do not allocate" list).
 
 import { assertVoxelModel, PART_STRIDE } from './VoxelModel.js';
+import { deriveEmissiveLight } from './emissiveLight.js';
 
 /**
  * Packs a validated VoxelModelDef into a PackedVoxelModel (architecture.md
  * 15.1). Throws (via assertVoxelModel) if `def` fails validation.
  * `matIdFor(materialKey) -> number` resolves a `mats` value to a
- * MaterialTable id.
+ * MaterialTable id. Optional `lightInfo = {matInfo, presetInfo, override}`
+ * (EMIS-01a, see emissiveLight.js) fills `pm.emissiveLight` (record or null);
+ * without it `pm.emissiveLight` is null.
  */
-export function packVoxelModel(def, matIdFor) {
+export function packVoxelModel(def, matIdFor, lightInfo) {
   assertVoxelModel(def);
 
   const [sx, sy, sz] = def.size;
@@ -152,5 +155,6 @@ export function packVoxelModel(def, matIdFor) {
     clips,
     clipIndex,
     mounts,
+    emissiveLight: lightInfo ? deriveEmissiveLight(def, lightInfo.matInfo, lightInfo.presetInfo, lightInfo.override) : null,
   };
 }

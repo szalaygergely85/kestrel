@@ -7,7 +7,7 @@
 // mesh data and building one BVH per mesh exactly like the old colliders.js did.
 import fs from 'node:fs';
 import { readMeshJSON } from './mesh-file.mjs';
-import { meshFromJSON, makeFrame, PHYSICS } from '../engine/index.js';
+import { meshFromJSON, makeFrame, PHYSICS, World } from '../engine/index.js';
 import { buildWorldColliders, moveCircleMesh, probeSupport, buildBvhFromMesh, frameMatrix12 } from '../engine/dev.js';
 
 const world = JSON.parse(fs.readFileSync('content/worlds/world_m1.world.json', 'utf8'));
@@ -69,3 +69,16 @@ const before = bench('before (render tris, 1 BVH/mesh)', setup(true));
 const after = bench('after (proxy + collide:false + merged)', setup(false));
 console.log(`speed-up x${(before / after).toFixed(1)}  target <= 1.5 us/call: ${after <= 1.5 ? 'OK' : 'MISS'}`);
 if (process.argv.includes('--assert') && after > 1.5) process.exit(1);
+
+// ED-MESH-01e: World.rebuildMeshColliders() cost on the same placements (budget <= 3 ms, architecture 37.20).
+{
+  const w = Object.create(World.prototype);
+  Object.assign(w, { structures: [], renderVersion: 0, structVersion: 0, events: null, physicsMode: 'mesh', colliders: [], assets: { mesh: (id) => meshes.get(id) } });
+  for (const s of placed) w.placeMesh(meshes.get(s.mesh), s.origin, s.id, s.yawDeg || 0);
+  w.colliders = buildWorldColliders(w);
+  for (let i = 0; i < 3; i++) w.rebuildMeshColliders(); // warm-up
+  const ts = [];
+  for (let i = 0; i < 15; i++) { w.setMeshPlacement(placed[0].id, { x: placed[0].origin.x + i * 0.1, y: placed[0].origin.y, z: placed[0].origin.z, yaw: i * 7 }); const t = performance.now(); w.rebuildMeshColliders(); ts.push(performance.now() - t); }
+  ts.sort((a, b) => a - b);
+  console.log(`rebuildMeshColliders (${placed.length} placements) median ${ts[7].toFixed(2)} ms  max ${ts[14].toFixed(2)} ms  budget <= 3 ms: ${ts[7] <= 3 ? 'OK' : 'MISS'}`);
+}

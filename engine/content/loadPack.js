@@ -8,11 +8,12 @@ import { ContentError } from './ContentError.js';
 import { migrateContent, MIGRATIONS } from './migrate.js';
 import { editLayerFromJSON } from '../world/terrainEdits.js';
 import { maskFromJSON } from './maskFile.js';
+import { prefabFromJSON } from './prefabFile.js';
 import { LATEST_SCHEMA, ID_COLLECTIONS, REF_FIELDS } from './schema.js';
 
 const FILE_ID_RE = /^[a-z][a-z0-9_]*$/;
 const LOCAL_ID_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
-const KNOWN_KINDS = ['level', 'world', 'mesh', 'terrainEdits', 'mask'];
+const KNOWN_KINDS = ['level', 'world', 'mesh', 'terrainEdits', 'mask', 'prefab'];
 
 /** `globalId('tower', 'lamp_hook') -> 'tower/lamp_hook'` (21.3). Only used
  * where a field already says which collection it points into. */
@@ -124,7 +125,8 @@ export async function loadContentPack(manifestUrl, opts = {}) {
     lazyMeshes: lazyStore, // MESH-LOAD-01: the LazyMeshStore (null = every mesh payload is loaded)
     terrainEdits: {},
     masks: {},
-    meta: { level: {}, world: {}, mesh: {}, terrainEdits: {}, mask: {}, manifest: { [manifest.id]: { url: manifestHref, schema: manifest.schema, nextId: null } } },
+    prefabs: {}, // PREFAB-SEAM (38.11): validated + frozen {id,title,items}; the game ignores them
+    meta: { level: {}, world: {}, mesh: {}, terrainEdits: {}, mask: {}, prefab: {}, manifest: { [manifest.id]: { url: manifestHref, schema: manifest.schema, nextId: null } } },
   };
 
   const errors = [];
@@ -246,6 +248,11 @@ export async function loadContentPack(manifestUrl, opts = {}) {
         errors.push(asContentError(e, href, 'mesh'));
         continue;
       }
+    }
+    if (kind === 'prefab') {
+      try { bundle.prefabs[migrated.id] = prefabFromJSON(migrated); } catch (e) { errors.push(asContentError(e, href, 'prefab')); continue; }
+      bundle.meta.prefab[migrated.id] = { url: href, schema: migrated.schema, nextId: migrated.nextId };
+      continue;
     }
     bundle.meta[kind][migrated.id] = { url: href, schema: migrated.schema, nextId: migrated.nextId };
     const { kind: _k, schema: _s, id: _id, nextId: _n, ...rest } = migrated;

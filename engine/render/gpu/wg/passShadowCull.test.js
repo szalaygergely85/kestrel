@@ -125,8 +125,8 @@ const mkP = (cam, ig) => ({ _light: { sun }, _cam: cam, _world: world, _table: n
     assert.deepEqual(setOf(t0.instanceBuffer._gpu.u32, cnt(t0)), itemSet(refList, treeDraw), 'tree casters == CPU set');
     assert.deepEqual(setOf(x0.instanceBuffer._gpu.u32, cnt(x0)), itemSet(refList, v0), 'voxel band 0 == CPU set');
     assert.deepEqual(setOf(x1.instanceBuffer._gpu.u32, cnt(x1)), itemSet(refList, v1), 'voxel band 1 == CPU set');
-    // args: indexCount from ranges[0] (the CPU caster loop draws range 0 of a meshGroup with the identity part), firstIndex = start * 3
-    assert.deepEqual(Array.from(args.subarray(t0.argsOffset / 4, t0.argsOffset / 4 + 5)), [18, cnt(t0), 0, 0, 0]);
+    // args: a meshGroup is ONE_PART -> indexCount = triCount*3 (30, not ranges[0]*3 = 18), first 0 (38.9); voxel unit: ranges[0]
+    assert.deepEqual(Array.from(args.subarray(t0.argsOffset / 4, t0.argsOffset / 4 + 5)), [30, cnt(t0), 0, 0, 0]);
     assert.deepEqual(Array.from(args.subarray(x1.argsOffset / 4, x1.argsOffset / 4 + 5)), [9, cnt(x1), 0, 0, 0]);
     assert.equal(sh.gpuEntries[0][1].active, false, 'meshGroup has no band 1');
     // parity oracle list (shadowParity.js): the full CPU list incl. the GPU-owned groups, rebuilt with the hook off; the frame list is untouched

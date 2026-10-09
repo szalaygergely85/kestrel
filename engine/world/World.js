@@ -14,7 +14,7 @@ import { buildTriggers } from './triggers.js';
 import { clamp01 } from '../core/math.js';
 import { makeFrame, localToWorld, localDirToWorld, QUARTER_COS, QUARTER_SIN, frameBBox } from '../core/transform.js';
 import { gridLocal } from './gridLocal.js';
-import { buildWorldColliders, buildTrunkCollider, buildDetailCollider, buildPropCollider, refitDynCollider } from './colliders.js';
+import { buildWorldColliders, buildStaticMeshCollider, buildTrunkCollider, buildDetailCollider, buildPropCollider, refitDynCollider } from './colliders.js';
 import { cosSinDeg } from '../voxel/voxelPose.js';
 import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastColliders, FLOOR_NONE } from '../physics/meshCollide.js';
 import { pointBlocked } from './interaction.js';
@@ -104,6 +104,18 @@ function makeRingHAt(placed) {
     const s = level.sectorAt(cx, cy);
     return s ? s.floorH + g.z : g.z;
   };
+}
+
+/** Fill `bbox` with the world AABB of `mesh`'s local bbox under `frame` and uniform scale `k`. */
+function fillMeshBbox(bbox, mesh, frame, k) {
+  bbox.x0 = bbox.y0 = bbox.z0 = Infinity; bbox.x1 = bbox.y1 = bbox.z1 = -Infinity;
+  const b = mesh.bbox;
+  for (let i = 0; i < 8; i++) {
+    localToWorld(frame, k * b[i & 1 ? 3 : 0], k * b[i & 2 ? 4 : 1], k * b[i & 4 ? 5 : 2], tmpW);
+    bbox.x0 = Math.min(bbox.x0, tmpW.x); bbox.x1 = Math.max(bbox.x1, tmpW.x);
+    bbox.y0 = Math.min(bbox.y0, tmpW.y); bbox.y1 = Math.max(bbox.y1, tmpW.y);
+    bbox.z0 = Math.min(bbox.z0, tmpW.z); bbox.z1 = Math.max(bbox.z1, tmpW.z);
+  }
 }
 
 // ED-MESH-1d: cheap key of everything the near-band bake reads from the placed structures
@@ -418,7 +430,10 @@ export class World {
     // (`?level=`-only ephemeral worlds).
     if (w.terrain && w.structures.length) {
       let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
-      for (const s of w.structures) {
+      // ED-MESH-01e: centre from non-mesh structures only (a mesh placed far away must not move the
+      // centre chunk -> re-bake); fallback to all when there are none (same rule as nearBandKey).
+      const centreSrc = w.structures.some((p) => p.kind !== 'mesh') ? w.structures.filter((p) => p.kind !== 'mesh') : w.structures;
+      for (const s of centreSrc) {
         if (s.bbox.x0 < bx0) bx0 = s.bbox.x0;
         if (s.bbox.y0 < by0) by0 = s.bbox.y0;
         if (s.bbox.x1 > bx1) bx1 = s.bbox.x1;
@@ -775,13 +790,7 @@ export class World {
     const frame = makeFrame(origin.x, origin.y, origin.z ?? 0, 0, yawDeg);
     const k = scale > 0 ? scale : 1; // MESH-SCALE-01: uniform placement scale about the placement origin
     const bbox = { x0: Infinity, y0: Infinity, z0: Infinity, x1: -Infinity, y1: -Infinity, z1: -Infinity };
-    const b = mesh.bbox;
-    for (let i = 0; i < 8; i++) {
-      localToWorld(frame, k * b[i & 1 ? 3 : 0], k * b[i & 2 ? 4 : 1], k * b[i & 4 ? 5 : 2], tmpW);
-      bbox.x0 = Math.min(bbox.x0, tmpW.x); bbox.x1 = Math.max(bbox.x1, tmpW.x);
-      bbox.y0 = Math.min(bbox.y0, tmpW.y); bbox.y1 = Math.max(bbox.y1, tmpW.y);
-      bbox.z0 = Math.min(bbox.z0, tmpW.z); bbox.z1 = Math.max(bbox.z1, tmpW.z);
-    }
+    fillMeshBbox(bbox, mesh, frame, k);
     const placed = { id: id || `struct_${this.structures.length}`, kind: 'mesh', mesh,
       origin: { x: frame.x, y: frame.y, z: frame.z }, frame, bbox,
       castShadow: typeof castShadow === 'boolean' ? castShadow : mesh.castShadow !== false }; // MESH-SHADOW-01: placement overrides the mesh flag
@@ -791,6 +800,46 @@ export class World {
     this.structVersion++;
     if (this.events) this.events.emit('world:structurePlaced', { id: placed.id, origin: placed.origin });
     return placed;
+  }
+
+  /**
+   * ED-MESH-01e: move/yaw (and optionally rescale) a placed mesh through the same frame/bbox maths as
+   * `placeMesh`. Bumps `renderVersion` only; colliders are NOT rebuilt (call `rebuildMeshColliders`
+   * on commit/undo). `yaw` is degrees. Returns false if `id` is not a mesh placement.
+   * @param {string} id
+   * @param {{x:number,y:number,z:number,yaw?:number,yawDeg?:number,scale?:number}} p
+   */
+  setMeshPlacement(id, p) {
+    let s = null;
+    for (let i = 0; i < this.structures.length; i++) {
+      const t = this.structures[i];
+      if (t.id === id && t.kind === 'mesh') { s = t; break; }
+    }
+    if (!s) return false;
+    const yaw = p.yawDeg ?? p.yaw ?? 0;
+    const k = p.scale === undefined ? (s.scale ?? 1) : (p.scale > 0 ? p.scale : 1);
+    const f = makeFrame(p.x, p.y, p.z ?? 0, 0, yaw);
+    s.frame = f;
+    s.origin.x = f.x; s.origin.y = f.y; s.origin.z = f.z;
+    fillMeshBbox(s.bbox, s.mesh, f, k);
+    if (k !== 1) s.scale = k; else delete s.scale;
+    this._meshCollidersDirty = true;
+    this.renderVersion++;
+    return true;
+  }
+
+  /**
+   * ED-MESH-01e: replace the `meshes:static` collider in place with a fresh merged build (bit-identical
+   * to a fresh load). No-op unless `physicsMode === 'mesh'`. Commit/undo only, never per drag frame.
+   */
+  rebuildMeshColliders() {
+    this._meshCollidersDirty = false;
+    if (this.physicsMode !== 'mesh') return;
+    const c = buildStaticMeshCollider(this);
+    const i = this.colliders.findIndex((x) => x.id === 'meshes:static');
+    if (i >= 0) {
+      if (c) this.colliders[i] = c; else this.colliders.splice(i, 1);
+    } else if (c) this.colliders.push(c);
   }
 
   /** Authored `Frame` of a placed structure by id (`null` if unknown). */

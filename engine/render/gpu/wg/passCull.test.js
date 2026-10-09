@@ -152,4 +152,129 @@ for (const [lodCells, maxDistM] of [[0, 0], [14, 0], [14, 120]]) {
   assert.equal(cull._argsView.length, 6 * cull.argsCpu.length / (cull.maxBatches * 2), 'view covers the 6 used slots');
   cull.dispose();
 }
+// ---- 38.10a S8-B1-06: slot free list + idle sweep ----
+// A one-range mesh whose range.count matches triCount exactly (supports() compares count to triCount directly; mesh0/mesh1
+// above use count = triCount*3, the kernel args unit, so they are not a fit for the supports() ONE_PART shape check here).
+const oneRangeMesh = { triCount: 4, bbox: mesh0.bbox, ranges: [{ start: 0, count: 4 }] };
+// 500 add/remove cycles with a rolling window of live batches (well under the 64 cap): batches.size and _nextSlot
+// stay bounded, supports() never flips to false, and no buffer leaks (constant live count once the window fills).
+{
+  const cull = new WgCullPass(d);
+  const base = mock.liveCount();
+  let maxSize = 0, maxNextSlot = 0, allSupport = true;
+  const active = [];
+  for (let i = 0; i < 500; i++) {
+    const g = makeGroup(4, 0);
+    cull.begin({ planes: null });
+    cull.add(g, [oneRangeMesh, null]);
+    active.push(g);
+    if (!cull.supports(makeGroup(1, 0), [oneRangeMesh, null])) allSupport = false;
+    maxSize = Math.max(maxSize, cull.batches.size);
+    maxNextSlot = Math.max(maxNextSlot, cull._nextSlot);
+    if (active.length > 32) cull.removeBatch(active.shift()); // reload/edit churn: a rolling window exercises slot reuse
+  }
+  while (active.length) cull.removeBatch(active.shift());
+  assert.ok(maxSize <= 64, `batches.size stayed <= 64 across 500 add/remove cycles (max ${maxSize})`);
+  assert.ok(allSupport, 'supports() stayed true for every new group across 500 cycles');
+  assert.ok(maxNextSlot <= 128, `_nextSlot stayed <= 128 (max ${maxNextSlot})`);
+  assert.equal(mock.liveCount(), base, 'constant live device-buffer count after warm-up: no leak across 500 cycles');
+  cull.dispose();
+}
+// A freed slot is reused by the next _create (LIFO): the new batch's args offset equals the freed one's.
+{
+  const cull = new WgCullPass(d);
+  const gA = makeGroup(4, 0);
+  cull.begin({ planes: null });
+  const offsetA = cull.add(gA, [mesh0, null])[0].argsOffset;
+  cull.removeBatch(gA);
+  const gB = makeGroup(4, 0);
+  cull.begin({ planes: null });
+  const offsetB = cull.add(gB, [mesh0, null])[0].argsOffset;
+  assert.equal(offsetB, offsetA, 'a reused slot gives the same argsOffset');
+  cull.removeBatch(gB);
+  cull.dispose();
+}
+// Idle sweep: begin() removes a batch only once it has gone > CULL_IDLE_FRAMES (600) begin() calls without an add().
+{
+  const cull = new WgCullPass(d);
+  const g = makeGroup(4, 0);
+  cull.begin({ planes: null });
+  cull.add(g, [mesh0, null]);
+  for (let i = 0; i < 600; i++) cull.begin({ planes: null }); // diff reaches exactly 600: kept
+  assert.equal(cull.batches.has(g), true, 'idle sweep keeps a batch at exactly 600 idle frames');
+  cull.begin({ planes: null }); // diff 601 > 600: swept
+  assert.equal(cull.batches.has(g), false, 'idle sweep removes a batch after 601 idle frames');
+  cull.dispose();
+}
+// releaseAll(): every batch is removed, slots are returned to the free list, no live buffer leaked.
+{
+  const cull = new WgCullPass(d);
+  const base = mock.liveCount();
+  const ga = makeGroup(4, 0), gb = makeGroup(5, 0);
+  cull.begin({ planes: null }); cull.add(ga, [mesh0, null]); cull.add(gb, [mesh0, null]);
+  assert.equal(cull.batches.size, 2);
+  cull.releaseAll();
+  assert.equal(cull.batches.size, 0, 'releaseAll empties batches');
+  assert.equal(mock.liveCount(), base, 'releaseAll frees every batch buffer');
+  cull.dispose();
+}
+
+// ---- ALPHA-01f (d): masked meshGroup with R=3 ranges -> one args record per range, rangeCount0/1 = R, free/reuse by block size only ----
+{
+  const cull = new WgCullPass(d);
+  const g = makeGroup(4, 0); g.mesh = {};
+  const rangedMesh = { triCount: 10, bbox: mesh0.bbox, ranges: [{ start: 0, count: 2 }, { start: 2, count: 3 }, { start: 5, count: 4 }], maskRanges: [0, 0, -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0] }; // third range masked
+  cull.begin({ planes: null });
+  const ents = cull.add(g, [rangedMesh, null]);
+  assert.equal(ents.length, 6, 'R=3: 6 entries (3 ranges x 2 LODs)');
+  assert.deepEqual(ents.map((e) => e.active), [true, true, true, false, false, false], 'LOD1 has no mesh: all 3 range-entries inactive');
+  let slot = cull.batches.get(g).slot;
+  assert.deepEqual(Array.from(cull.argsCpu.subarray(slot * 5, slot * 5 + 15)),
+    [6, 0, 0, 0, 0, 9, 0, 6, 0, 0, 12, 0, 15, 0, 0], 'LOD0: 3 contiguous args records, static words from mesh.ranges[r] (*3)');
+  cull.begin({ planes: null }); cull.add(g, [rangedMesh, null]); cull.run();
+  const uu = cull._uv.u32, UW = (n) => CULL_BLOCK.field(n).word;
+  assert.equal(uu[UW('rangeCount0')], 3, 'rangeCount0 = R'); assert.equal(uu[UW('rangeCount1')], 3, 'rangeCount1 = R');
+  assert.equal(uu[UW('slot1')], (slot + 3) * 5, 'slot1 = slot + R records');
+  const offsetBefore = ents[0].argsOffset;
+  cull.removeBatch(g);
+  const g2 = makeGroup(4, 0); g2.mesh = {};
+  cull.begin({ planes: null });
+  const ents2 = cull.add(g2, [rangedMesh, null]);
+  assert.equal(ents2[0].argsOffset, offsetBefore, 'a freed 6-slot block is reused by the next R=3 batch');
+  const g3 = makeGroup(4, 0); g3.mesh = {};
+  cull.begin({ planes: null });
+  const ents3 = cull.add(g3, [oneRangeMesh, null]); // R=1 (ONE_PART mesh, one range matching triCount)
+  assert.notEqual(ents3[0].argsOffset, ents2[0].argsOffset, 'R=1 and R=3 batches never share a slot block');
+  cull.removeBatch(g2); cull.removeBatch(g3);
+  const g4 = makeGroup(4, 0); g4.mesh = {};
+  cull.begin({ planes: null });
+  const ents4 = cull.add(g4, [rangedMesh, null]);
+  assert.equal(ents4[0].argsOffset, offsetBefore, 'R=3 free list is reused by the next R=3 batch, not an R=1 freed slot (never aliased)');
+  cull.removeBatch(g4);
+  cull.dispose();
+}
+
+// ---- S8-B2-05/06 host wiring: swayPad flows from begin({swayPad}) into CullU.swayPad / CullShadowU.swayPad every dispatch ----
+{
+  const { SWAY_MAX } = await import('../../../mesh/sway.js');
+  const cull = new WgCullPass(d);
+  const g = makeGroup(4, 0);
+  cull.begin({ planes: null }); cull.add(g, [mesh0, null]); cull.run();
+  assert.equal(cull._uv.f32[CULL_BLOCK.field('swayPad').word], 0, 'no sway: swayPad 0 (normal kernel)');
+  cull.begin({ planes: null, swayPad: SWAY_MAX }); cull.add(g, [mesh0, null]); cull.run();
+  assert.equal(cull._uv.f32[CULL_BLOCK.field('swayPad').word], SWAY_MAX, 'wind on: swayPad == SWAY_MAX (normal kernel)');
+  cull.dispose();
+}
+{
+  const { CULL_SHADOW_BLOCK } = await import('../wgsl/cullShadow.wgsl.js');
+  const { SWAY_MAX } = await import('../../../mesh/sway.js');
+  const m9 = makeMockGpuDevice(), dev9 = m9.device;
+  const cull = new WgCullPass(dev9, { shadow: true });
+  const g = makeGroup(4, 0);
+  cull.begin({ planes: null, eye: { x: 0, y: 0 }, castM: 10, hystM: 1 }); cull.add(g, [mesh0, null], 5, 3); cull.run();
+  assert.equal(cull._uv.f32[CULL_SHADOW_BLOCK.field('swayPad').word], 0, 'no sway: swayPad 0 (shadow kernel)');
+  cull.begin({ planes: null, eye: { x: 0, y: 0 }, castM: 10, hystM: 1, swayPad: SWAY_MAX }); cull.add(g, [mesh0, null], 5, 3); cull.run();
+  assert.equal(cull._uv.f32[CULL_SHADOW_BLOCK.field('swayPad').word], SWAY_MAX, 'wind on: swayPad == SWAY_MAX (shadow kernel)');
+  cull.dispose();
+}
 console.log('passCull.test OK');

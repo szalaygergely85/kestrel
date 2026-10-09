@@ -1,6 +1,6 @@
 import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
-  meshFromJSON, meshFromBin, buildMeshFromTris, MaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
+  meshFromJSON, meshFromBin, buildMeshFromTris, MaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun, setCloudShadow, setHorizonAo,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
 } from '../../../../engine/index.js';
 import {
@@ -140,6 +140,8 @@ function buildCompareRuns(ctx) {
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg } },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: BUG-OWN-001 owner repro (1500.69, 1027.36) yaw 236 pitch -29',
       cam: { x: 1500.69, y: 1027.36, z: 3.00 + engine.physics.eyeHeight, yawDeg: 236, pitchDeg: -29 } },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: BUG-WHITE-PIXELS-01 repro (1500.58, 1022.77) yaw 185 pitch -24',
+      cam: { x: 1500.58, y: 1022.77, z: 1.80 + engine.physics.eyeHeight, yawDeg: 185, pitchDeg: -24 } },
     { world: worldM1, lights: worldM1Lights, name: `world_m1: player spawn, sceneFade=0.5`,
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg }, fade: 0.5 },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: player spawn, card open (sceneDim 0.35 + plate 0.18)',
@@ -180,6 +182,11 @@ function buildCompareRuns(ctx) {
       cam: { x: 1401.80, y: 1038.32, z: -0.78, yawDeg: 83, pitchDeg: 14 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: forestEdge (ME-06b background canopy face)',
       cam: { x: 1401.80, y: 1038.32, z: -0.78, yawDeg: 240, pitchDeg: 10 }, real: true },
+    // BUG-MESH-MISSING-01: owner eyes (F3 feet z + eye height); trees/props missing without the B2 cap fix.
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: ownerTreesA (1446.63, 1024.64) yaw 227 pitch 1',
+      cam: { x: 1446.63, y: 1024.64, z: 2.02 + engine.physics.eyeHeight, yawDeg: 227, pitchDeg: 1 }, real: true },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: ownerTreesB (1448.31, 1026.52) yaw 229 pitch 3',
+      cam: { x: 1448.31, y: 1026.52, z: 2.08 + engine.physics.eyeHeight, yawDeg: 229, pitchDeg: 3 }, real: true },
   ];
 
   // US-078a: the view model's held sword (`voxelModels.swordHeld`) is not in ASSETS.models yet (game wiring = US-078d);
@@ -634,7 +641,7 @@ function buildCompareRuns(ctx) {
     const mask = { tex: 'test/checker8', cutoff: 0.5 };
     const alphaMesh = buildMeshFromTris(tris, [{ part: 'post', triStart: 0, triCount: nOpaque }, { part: 'leaf', triStart: nOpaque, triCount: nLeaf, mask },
       { part: 'leaf_dark', triStart: nOpaque + nLeaf, triCount: tris.length - nOpaque - nLeaf, mask }], 'test/alphaCards');
-    alphaMesh.mats = { post: 'timber_old', leaf: 'leaf_softtest', leaf_dark: 'leaf_dark_softtest' }; // ALPHA-01d: test-only edge:'soft' clones of leaf / leaf_dark
+    alphaMesh.mats = { post: 'timber_old', leaf: 'leaf', leaf_dark: 'leaf_dark' }; // EMIS-01b/kestrel-2#0: repointed to leaf/leaf_dark directly (already edge:'soft', ALPHA-01e); *_softtest clones removed
     const cx = 1456, cy = 1046, gz = aw.terrain.groundAt(cx, cy);
     aw.placeMesh(alphaMesh, { x: cx, y: cy, z: gz }, 'test.alphaCards');
     const alphaLights = lightsEnabled ? buildLightSet(aw, assets.palette) : null;
@@ -811,6 +818,8 @@ async function runGpuCompareSceneMode(ctx) {
     fbCompare.timeSec = poseTime || 0; // US-141a: frozen per-pose clock (flow streaks); 0 for every other pose
     fbCompare.lights = lights;
     if (lights) lights.update(0, world);
+    if (lights) setCloudShadow(lights, { strength: 0 }); // S8-B2-12a NEEDS B1 item (3): every gpucompare mode forces clouds off
+    if (lights) setHorizonAo(lights, { strength: 0 }); // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
     fbCompare.sceneFade = typeof fade === 'number' ? fade : 1;
     if (sprites.pass) {
       sprites.pass.sceneFade = fbCompare.sceneFade;
@@ -1013,6 +1022,8 @@ async function runGpuCompareSceneMode(ctx) {
         compareVoxelPool.project(cam, rt);
         fbCompare.lights = lights;
         if (lights) lights.update(0, world);
+        if (lights) setCloudShadow(lights, { strength: 0 }); // S8-B2-12a NEEDS B1 item (3): every gpucompare mode forces clouds off
+        if (lights) setHorizonAo(lights, { strength: 0 }); // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
         if (real) sprites.pool.collect(world);
         else { sprites.pool.reset(); placeCompareSprites(cam, sprites.pool); }
         sprites.pool.project(cam, rt, lights || ambientL, world);

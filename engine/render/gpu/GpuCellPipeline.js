@@ -72,7 +72,7 @@ import { TERRAIN_VERT_SRC, TERRAIN_RASTER_FRAG_SRC } from './glsl/terrain.vert.j
 import { terrainMeshSetFor } from '../../mesh/terrainMesh.js';
 import { KIND_TERRAIN, KIND_MODEL, FACE_PACKED } from '../GBuffer.js';
 import { MeshGroupSet, addMeshStructuresBatched } from '../../mesh/meshGroups.js';
-import { DRAW_FLAG_ONE_PART } from '../../mesh/DrawList.js';
+import { instancedRanges } from '../../mesh/DrawList.js';
 import { DrawList, LevelMeshCache, MeshDrawCache, addMeshStructures, addStructures, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, addCloths, MAX_DRAW_ITEMS } from '../../mesh/DrawList.js';
 import { MAX_INSTANCES_PER_FRAME, INSTANCE_BYTES } from '../../mesh/instances.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../mesh/voxelMesh.js';
@@ -109,8 +109,6 @@ function sumFinite(arr) {
   return s;
 }
 
-/** MESH-INST-01: scratch range for DRAW_FLAG_ONE_PART items (module-level: no per-frame allocation). */
-const _oneRange = [{ start: 0, count: 0 }];
 
 export class GpuCellPipeline {
   constructor(rt, opts = {}) {
@@ -1912,8 +1910,7 @@ export class GpuCellPipeline {
           }
           const idxEnum = entry.indexType === 'u16' ? GL_IDX_U16 : GL_IDX_U32;
           const idxBytes = entry.indexType === 'u16' ? 2 : 4;
-          let ranges = mesh.ranges;
-          if (item.flags & DRAW_FLAG_ONE_PART) { _oneRange[0].count = mesh.triCount; ranges = _oneRange; } // MESH-INST-01: one identity part = one draw per group
+          const ranges = instancedRanges(item); // MESH-INST-01 / 38.9: one identity part = one draw per group
           const pm = item.partMatrices;
           for (let p = 0; p < ranges.length; p++) {
             const range = ranges[p];
@@ -2288,7 +2285,7 @@ export class GpuCellPipeline {
           }
           const idxEnum = entry.indexType === 'u16' ? GL_IDX_U16 : GL_IDX_U32;
           const idxBytes = entry.indexType === 'u16' ? 2 : 4;
-          const ranges = mesh.ranges, pm = item.partMatrices;
+          const ranges = instancedRanges(item), pm = item.partMatrices; // 38.9: shadow honours ONE_PART like the camera pass
           for (let p = 0; p < ranges.length; p++) {
             const range = ranges[p];
             if (range.count <= 0) continue;

@@ -1,6 +1,18 @@
 // WG-1b3 (38.7): timestamp spans, resolved asynchronously through a three-frame ring.
 // Pass descriptors and recording metadata are preallocated; full rings drop timing, never wait.
 export const FRAME_TIMER_SLOT = 10;
+// S8-B1-07: one slot per real WG pass (WgCellPipeline + passRaster/passShadow/passCell/passShade/passSprites/passOverlay),
+// slots 0-9 so FRAME_TIMER_SLOT (10) never collides - `writePassStats` reads slot === array index directly. 'resolve' covers
+// both the resolve and deriv draw calls (GpuCellPipeline.PASS_RESOLVE precedent: one query spans both). Mutually exclusive
+// with FRAME_TIMER_SLOT per frame (spans never nest - see WgCellPipeline._hook): when per-pass timing is on, the pipeline
+// ends the whole-frame span early (still unwritten at that point) so each pass below can open its own.
+export const WG_PASS_NAMES = Object.freeze(['cull', 'raster', 'shadow', 'resolve', 'water', 'light', 'shade', 'edge', 'sprites', 'overlay']);
+export const WG_PASS_SLOT = Object.freeze({ cull: 0, raster: 1, shadow: 2, resolve: 3, water: 4, light: 5, shade: 6, edge: 7, sprites: 8, overlay: 9 });
+// Defensive helpers for the WG pass files (passRaster/passShadow/passCell/passShade): `p` is normally the WgCellPipeline
+// (`_passTimingOn` + `device`), but several Node tests call a pass's `run()` directly with a minimal stand-in object that
+// has neither - these just no-op then, same as timing being off.
+export function wgSpanBegin(p, slot) { if (p && p._passTimingOn && p.device && p.device.timer) p.device.timer.begin(slot); }
+export function wgSpanEnd(p) { if (p && p._passTimingOn && p.device && p.device.timer) p.device.timer.end(); }
 const SLOT_COUNT = 16;
 const MAX_SPANS = 128;
 const HISTORY = 120;

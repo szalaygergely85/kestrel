@@ -101,6 +101,12 @@ export function makeMockGpuDevice() {
     submit() { state.submitCount++; },
     // WG-4a (38.3): the mock records, never computes.
     createComputePipeline(desc) { return makeHandle('computePipeline', desc); },
+    // S8-B1-09a: the mock links synchronously; async variants resolve at once
+    createComputePipelineAsync(desc) { return Promise.resolve(makeHandle('computePipeline', desc)); },
+    beginCompileBatch() { device._batchDepth = (device._batchDepth || 0) + 1; },
+    endCompileBatch() { device._batchDepth = Math.max(0, (device._batchDepth || 0) - 1); return Promise.resolve([]); },
+    createPipelineAsync(desc) { return Promise.resolve(makeHandle('pipeline', desc)); },
+    compiling: false,
     dispatch(pipeline, desc, x, y = 1, z = 1) { device._dispatches = (device._dispatches || 0) + 1; device._lastDispatch = { pipeline, desc, x, y, z }; },
     drawIndirect(buffer, offsetBytes) { device._indirectDraws = (device._indirectDraws || 0) + 1; device._lastIndirect = { pipeline: device._activePipeline, buffer, offsetBytes }; },
     dispose(handle) {
