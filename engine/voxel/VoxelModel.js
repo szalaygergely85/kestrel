@@ -39,6 +39,7 @@ const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,15}$/;
  * @property {string[][]} layers                   layers[z][y] = row string of sx chars
  * @property {Object<string,VoxelPartDef>} parts    insertion order = part index 0..7
  * @property {Object<string,VoxelClipDef>} [animations]
+ * @property {false|{preset:string}} [light]       EMIS-01a: derived emissive light override (false = none)
  * @property {Object<string,VoxelMountDef>} [mounts]  US-041a (15.3 item 5): light anchors / E-prompt points,
  *                                                     helper-only in M1 (no billboard attach) - `voxelMountWorld`.
  *
@@ -385,6 +386,14 @@ export function validateVoxelModel(def, opts) {
           }
         }
       }
+    }
+  }
+
+  // ---- light override (EMIS-01a, 38.12 (1)): false | { preset: string } ---------
+  if (def.light !== undefined && def.light !== false) {
+    if (def.light === null || typeof def.light !== 'object' || Array.isArray(def.light) ||
+        typeof def.light.preset !== 'string' || def.light.preset === '') {
+      errors.push('voxel.light: expected false or { preset: string }');
     }
   }
 
