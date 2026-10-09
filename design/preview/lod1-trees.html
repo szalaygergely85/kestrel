@@ -21,6 +21,7 @@ Colours are preview-only (bark = wood, leaves = leaf*); leaves are opaque cards 
   <label>Distances (x tree height) <input id="dists" value="1.6,4,9" size="10"></label>
   <label>Yaw <input id="yaw" type="range" min="0" max="360" value="25"> <span id="yawv">25</span>&deg;</label>
   <label><input id="all" type="checkbox"> show all trees (slow)</label>
+  <label><input id="solid" type="checkbox" checked> solid colour on black</label>
 </div>
 <div id="out"></div>
 <h1 style="margin-top:18px">Your picks</h1>
@@ -41,7 +42,24 @@ function mesh(tree, ci) {
   if (!cache.has(key)) { const c = tree.cands[ci]; const d = AsciiTriRaster.decode(c, b64); cache.set(key, d); }
   return cache.get(key);
 }
+const SP = 2, SCOLS = COLS * CW / SP, SROWS = ROWS * CH / SP; // solid mode: square 2 px cells, same canvas size
+function drawSolid(canvas, tree, ci, dist, yaw) {
+  const c = tree.cands[ci], m = mesh(tree, ci), bb = c.bbox;
+  const center = [(bb[0] + bb[3]) / 2, (bb[1] + bb[4]) / 2, (bb[2] + bb[5]) / 2];
+  const r = AsciiTriRaster.rasterize(m.pos, m.idx, { cols: SCOLS, rows: SROWS, dist, yaw: yaw * Math.PI / 180, center, fov: 45, cellAspect: 1 });
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, canvas.width, canvas.height);
+  const cols = c.ranges.map((x) => hex(x.color));
+  for (let y = 0; y < SROWS; y++) for (let x = 0; x < SCOLS; x++) {
+    const t = r.tri[y * SCOLS + x]; if (t < 0) continue;
+    let ri = c.ranges.findIndex((q) => t >= q.start && t < q.start + q.count); if (ri < 0) ri = 0;
+    const k = 0.45 + 0.75 * r.shade[y * SCOLS + x], col = cols[ri];
+    g.fillStyle = `rgb(${Math.min(255, col[0] * k) | 0},${Math.min(255, col[1] * k) | 0},${Math.min(255, col[2] * k) | 0})`;
+    g.fillRect(x * SP, y * SP, SP, SP);
+  }
+}
 function draw(canvas, tree, ci, dist, yaw) {
+  if (document.getElementById('solid').checked) return drawSolid(canvas, tree, ci, dist, yaw);
   const c = tree.cands[ci], m = mesh(tree, ci), bb = c.bbox;
   const center = [(bb[0] + bb[3]) / 2, (bb[1] + bb[4]) / 2, (bb[2] + bb[5]) / 2];
   const r = AsciiTriRaster.rasterize(m.pos, m.idx, { cols: COLS, rows: ROWS, dist, yaw: yaw * Math.PI / 180, center, fov: 45 });
@@ -83,6 +101,6 @@ function showPicks() {
   const lines = Object.entries(picks).map(([n, ci]) => { const t = trees.find((x) => x.name === n), c = t.cands[ci]; return `${n}: ${ci === 0 ? 'no LOD1 (keep LOD0)' : `${c.label} = ${c.tris} tris (target ${Math.round(c.ratio * 100)}%)`}`; });
   document.getElementById('picks').textContent = lines.length ? lines.join('\n') : '(none)';
 }
-for (const id of ['tree', 'dists', 'yaw', 'all']) document.getElementById(id).addEventListener(id === 'yaw' ? 'input' : 'change', render);
+for (const id of ['tree', 'dists', 'yaw', 'all', 'solid']) document.getElementById(id).addEventListener(id === 'yaw' ? 'input' : 'change', render);
 render();
 </script></body></html>
