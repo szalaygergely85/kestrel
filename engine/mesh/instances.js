@@ -462,7 +462,7 @@ export class InstanceGroups {
    *   `undefined`-frameNo calls in a row see "unchanged" and wrongly reuse a stale memo).
    * @param {Float64Array|null} [viewProj] - RE-15c: column-major viewProj (same as `planes`'); with `rows` enables LOD where `g.lodCells > 0`
    * @param {number} [rows] - RE-15c: grid rows
-   * @param {{cache: import('./DrawList.js').MeshDrawCache, idFor: ((key: string) => number)|null, gpu?: {accept: (g: any, mesh0: any, mesh1: any) => boolean}|null}|null} [meshDraw] - TREES-LP-b: resolves mesh groups' draw copies; null/omitted = mesh groups skipped
+   * @param {{cache: import('./DrawList.js').MeshDrawCache, idFor: ((key: string) => number)|null, maskAtlas?: any, gpu?: {accept: (g: any, mesh0: any, mesh1: any) => boolean}|null}|null} [meshDraw] - TREES-LP-b: resolves mesh groups' draw copies; null/omitted = mesh groups skipped
    */
   addToDrawList(list, cache, planes, frameNo, viewProj, rows, meshDraw) {
     const pool = this.pool;
@@ -482,11 +482,11 @@ export class InstanceGroups {
         if (!meshDraw || !meshDraw.idFor) continue;
         if (g.mesh.lazy) { requestMeshForGroup(g.mesh, g); continue; }
         if (g.mesh.lazyOrigin) requestMeshForGroup(g.mesh, g); // S8-B2-03: throttled LRU keep-alive (touch) for a ready lazy mesh // MESH-LOAD-01: payload not loaded = group draws nothing yet
-        const draw = meshDraw.cache.get(g.mesh, meshDraw.idFor);
+        const draw = meshDraw.cache.get(g.mesh, meshDraw.idFor, meshDraw.maskAtlas || undefined);
         if (gpu && gpu.accept(g, draw, null)) continue;
         // LOD1: resolved once (cached on g._mesh1); null when not loaded yet (MESH-LOAD-01) -> LOD0 only, no pop to nothing.
         const lod1Mesh = (g.lodCells > 0 && viewProj) ? resolveGroupLod1(g, this._meshLookup) : null;
-        const draw1 = lod1Mesh ? meshDraw.cache.get(lod1Mesh, meshDraw.idFor) : null;
+        const draw1 = lod1Mesh ? meshDraw.cache.get(lod1Mesh, meshDraw.idFor, meshDraw.maskAtlas || undefined) : null;
         if (!memo || g._memoFrameNo !== frameNo) {
           let R = groupRadius(draw, g.parts);
           if (draw1) { const R1 = groupRadius(draw1, g.parts); if (R1 > R) R = R1; }
