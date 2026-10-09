@@ -9,8 +9,8 @@ import { projTerms, shearProjection, createPitchedTerms, pitchedTerms } from '..
 import { frustumPlanes } from '../../../mesh/culling.js';
 import { selectWater, createWaterSelection, RUNS_STRIDE } from '../../water.js';
 import { WATER_U_STRIDE, U_KIND, U_Z, U_AABB, U_SHAPE } from '../../../mesh/waterMesh.js';
-import { WL_STRIDE, WL_SLOTS, WFOG_LEN, defaultWaterLooks, fillWaterSlotTable, waterFogParams, packRipples } from '../../waterLook.js';
-import { RIPPLE_MAX } from '../../../world/water.js';
+import { WL_STRIDE, WL_SLOTS, WFOG_LEN, RIPPLE_SLOTS, DEFAULT_RIPPLE_GLYPH, DEFAULT_RIPPLE_GAIN, defaultWaterLooks, fillWaterSlotTable, waterFogParams } from '../../waterLook.js';
+import { createRipples } from '../../../fx/ripples.js';
 import { sunFromWorld } from '../../lighting.js';
 import { WATER_BLOCK, WATER_TEXTURES } from '../wgsl/water.wgsl.js';
 import { WATER_COMPOSITE_BLOCK, WATER_COMPOSITE_TEXTURES } from '../wgsl/waterComposite.wgsl.js';
@@ -32,7 +32,8 @@ const cam = { x: 2, y: -5, z: 1.6, yawDeg: 160, pitchDeg: -5 };
 const terms = {}, view = new Float64Array(16), planes = new Float64Array(24);
 projTerms(cam, grid, terms); shearProjection(terms, view); frustumPlanes(view, planes);
 const raster = { view, planes, pitched: false, pitch: createPitchedTerms() };
-const p = { _world: world, _cam: cam, _table: null, _palette: palette, _light: { sun: { on: true } }, _fb: { timeSec: 3.5 }, cols: COLS, rows: ROWS, rt: { pxCellW: 1, pxCellH: 2 }, _rasterPass: raster };
+const fb = { timeSec: 3.5, ripples: createRipples() };
+const p = { _world: world, _cam: cam, _table: null, _palette: palette, _light: { sun: { on: true } }, _fb: fb, cols: COLS, rows: ROWS, rt: { pxCellW: 1, pxCellH: 2 }, _rasterPass: raster };
 
 const mock = makeMockGpuDevice(), d = mock.device;
 const binds = [], draws = [], passes = [];
@@ -133,10 +134,10 @@ binds.length = 0; wp.runComposite({ shadeFg, shadeBg, gi, depth, light }, p);
 }
 raster.pitched = false;
 
-// ---- S8-B2-13 (38.14): splash ripples, composite upload ----
+// ---- S8-B2-13b (38.14, the note of record): splash ripples, composite upload ----
 {
   const C = (n) => WATER_COMPOSITE_BLOCK.field(n).word;
-  // 0 rings (fresh world, nothing added yet): rippleCount 0, `ripple` words left untouched (never read past count).
+  // 0 rings (fresh fb.ripples, nothing added yet): rippleCount 0, `ripple` words left untouched (never read past count).
   binds.length = 0;
   wp.cu[C('ripple')] = 9; wp.cu[C('ripple') + 5] = 7;
   wp.runComposite({ shadeFg, shadeBg, gi, depth, light, shadowActive: true }, p);
@@ -144,17 +145,29 @@ raster.pitched = false;
   assert.equal(ui[C('rippleCount')], 0, '0 rings -> rippleCount 0');
   assert.equal(u[C('ripple')], 9, '0 rings -> ripple words unchanged vs before');
   assert.equal(u[C('ripple') + 5], 7, '0 rings -> ripple words unchanged vs before');
+  assert.equal(ui[C('rippleGlyph')], DEFAULT_RIPPLE_GLYPH, '0 rings -> default glyph');
+  assert.equal(u[C('rippleGain')], Math.fround(DEFAULT_RIPPLE_GAIN), '0 rings -> default gain');
 
-  // 2 rings: rippleCount 2, packed values match packRipples(world.water, ...).
-  world.water.addRipple(1, 2, 0.5); world.water.addRipple(-3, 4, 0.8);
-  const expRip = new Float32Array(RIPPLE_MAX * 4);
-  const expN = packRipples(world.water, expRip);
+  // 2 rings: rippleCount 2, packed values match fb.ripples.packInto(...) directly.
+  fb.ripples.add(1, 2, 0.5, fb.timeSec); fb.ripples.add(-3, 4, 0.8, fb.timeSec);
+  const expRip = new Float32Array(RIPPLE_SLOTS * 4);
+  const expN = fb.ripples.packInto(fb.timeSec, expRip);
   binds.length = 0;
   wp.runComposite({ shadeFg, shadeBg, gi, depth, light, shadowActive: true }, p);
   const u2 = binds[0].uniforms, ui2 = new Int32Array(u2.buffer);
   assert.equal(expN, 2, 'fixture adds 2 live rings');
   assert.equal(ui2[C('rippleCount')], 2, '2 rings -> rippleCount 2');
-  assert.deepEqual([...u2.slice(C('ripple'), C('ripple') + RIPPLE_MAX * 4)], [...expRip], '2 rings -> packed values match packRipples');
+  assert.deepEqual([...u2.slice(C('ripple'), C('ripple') + RIPPLE_SLOTS * 4)], [...expRip], '2 rings -> packed values match packInto');
+
+  // glyph/gain overrides via fb fields.
+  fb.rippleGlyph = 42; fb.rippleGain = 0.25;
+  binds.length = 0;
+  wp.runComposite({ shadeFg, shadeBg, gi, depth, light, shadowActive: true }, p);
+  const u3 = binds[0].uniforms, ui3 = new Int32Array(u3.buffer);
+  assert.equal(ui3[C('rippleGlyph')], 42, 'rippleGlyph override written');
+  assert.equal(u3[C('rippleGain')], Math.fround(0.25), 'rippleGain override written');
+  delete fb.rippleGlyph; delete fb.rippleGain;
+  fb.ripples.clear();
 }
 
 // ---- readback shape ----

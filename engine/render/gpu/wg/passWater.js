@@ -23,8 +23,10 @@ import { WATER_COMPOSITE_BLOCK, WATER_COMPOSITE_WGSL, WATER_COMPOSITE_TEXTURES }
 import { WaterLayer, WATER_VERTEX_LAYOUT, WATER_VERTEX_STRIDE_BYTES, WATER_CLEAR_X } from '../waterLayer.js';
 import { selectWater, createWaterSelection, RUNS_STRIDE } from '../../water.js';
 import { WATER_U_STRIDE, U_KIND, U_Z, U_AABB, U_SHAPE, U_SLOT } from '../../../mesh/waterMesh.js';
-import { WL_STRIDE, WL_SLOTS, WFOG_LEN, defaultWaterLooks, resolveWaterLooks, fillWaterSlotTable, waterFogParams, packRipples } from '../../waterLook.js';
-import { RIPPLE_MAX } from '../../../world/water.js'; // S8-B2-13 (38.14)
+import {
+  WL_STRIDE, WL_SLOTS, WFOG_LEN, RIPPLE_SLOTS, DEFAULT_RIPPLE_GLYPH, DEFAULT_RIPPLE_GAIN,
+  defaultWaterLooks, resolveWaterLooks, fillWaterSlotTable, waterFogParams,
+} from '../../waterLook.js';
 import { sunFromWorld } from '../../lighting.js';
 import { PROJ_HFOV_DEG } from '../../projection.js';
 
@@ -35,8 +37,9 @@ const C_COLS = CF('gridCols'), C_ROWS = CF('gridRows'), C_SUNMAP = CF('sunMapOn'
 const C_AMB = CF('ambientI'), C_SUNI = CF('sunI'), C_POSX = CF('posX'), C_POSY = CF('posY'), C_EYEH = CF('eyeH'), C_DIRX = CF('dirX'), C_DIRY = CF('dirY');
 const C_PLANEX = CF('planeX'), C_PLANEY = CF('planeY'), C_HORIZON = CF('horizonRow'), C_PLANEDY = CF('planeDistY'), C_TIME = CF('timeSec');
 const C_PA = CF('pitchA'), C_PB = CF('pitchB'), C_PC = CF('pitchC'), C_WL = CF('wl'), C_WFOG = CF('wfog');
-// S8-B2-13 (38.14): splash ripples. `rippleCount` (i32) + `ripple` (8 x vec4: x, y, r, s per live ring).
-const C_RIPPLE_COUNT = CF('rippleCount'), C_RIPPLE = CF('ripple');
+// S8-B2-13b (38.14, the note of record): splash ripples. `rippleCount` (i32), the global `rippleGlyph`/`rippleGain`
+// uniform (fb overrides, else waterLook.js defaults), and `ripple` (8 x vec4: x, y, age, amp per live ring).
+const C_RIPPLE_COUNT = CF('rippleCount'), C_RIPPLE_GLYPH = CF('rippleGlyph'), C_RIPPLE_GAIN = CF('rippleGain'), C_RIPPLE = CF('ripple');
 
 export class WgWaterPass {
   /** @param {any} device */
@@ -55,7 +58,7 @@ export class WgWaterPass {
     this.cam = { posX: 0, posY: 0, eyeH: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, horizonRow: 0, planeDistY: 0 };
     this.wu = new Float32Array(WATER_BLOCK.sizeWords); this.wi = new Int32Array(this.wu.buffer); this.wb = new Uint32Array(this.wu.buffer);
     this.cu = new Float32Array(WATER_COMPOSITE_BLOCK.sizeWords); this.ci = new Int32Array(this.cu.buffer);
-    this._rip32 = new Float32Array(RIPPLE_MAX * 4); // S8-B2-13 (38.14): packRipples scratch, allocated once
+    this._rip32 = new Float32Array(RIPPLE_SLOTS * 4); // S8-B2-13b (38.14): packInto scratch, allocated once
     this.view = null; // the raster pass's f64 viewProj (set by prepare)
     this.clearOpts = { clear: { color: [[WATER_CLEAR_X, 0, 0, 0]], depth: 1 } };
     this.waterTex = [{ slot: 0, texture: null }];
@@ -185,7 +188,8 @@ export class WgWaterPass {
     cu[C_AMB] = sun.ambientI; cu[C_SUNI] = sun.sunI;
     cu[C_POSX] = cb.posX; cu[C_POSY] = cb.posY; cu[C_EYEH] = cb.eyeH; cu[C_DIRX] = cb.dirX; cu[C_DIRY] = cb.dirY;
     cu[C_PLANEX] = cb.planeX; cu[C_PLANEY] = cb.planeY; cu[C_HORIZON] = cb.horizonRow; cu[C_PLANEDY] = cb.planeDistY;
-    cu[C_TIME] = (p._fb && p._fb.timeSec) || 0;
+    const fb = p._fb, timeSec = (fb && fb.timeSec) || 0;
+    cu[C_TIME] = timeSec;
     if (pitched) {
       const q = rp.pitch;
       cu[C_PA] = q.fX; cu[C_PA + 1] = q.fY; cu[C_PA + 2] = q.fZ; cu[C_PA + 3] = q.tanHalfX;
@@ -193,12 +197,14 @@ export class WgWaterPass {
       cu[C_PC] = q.uZ; cu[C_PC + 1] = q.tanHalfY; cu[C_PC + 2] = q.cosP; cu[C_PC + 3] = q.sinP;
     }
     cu.set(this.wlTable, C_WL); cu.set(this.wfog, C_WFOG);
-    // S8-B2-13 (38.14): splash ripples, zero-alloc (this._rip32 preallocated on construct). 0 rings: only rippleCount
+    // S8-B2-13b (38.14, the note of record): splash ripples, zero-alloc (this._rip32 preallocated on construct).
+    // fb.ripples is duck-typed {packInto} (engine/fx/ripples.js); absent = 0 rings. 0 rings: only rippleCount
     // changes - the `ripple` words are never read past rippleCount (shader's early break), so leave them untouched.
-    const water = p._world && p._world.water;
-    const ripN = water ? packRipples(water, this._rip32) : 0;
+    const ripN = fb && fb.ripples ? fb.ripples.packInto(timeSec, this._rip32) : 0;
     ci[C_RIPPLE_COUNT] = ripN;
     if (ripN > 0) cu.set(this._rip32, C_RIPPLE);
+    ci[C_RIPPLE_GLYPH] = (fb && fb.rippleGlyph != null) ? fb.rippleGlyph : DEFAULT_RIPPLE_GLYPH;
+    cu[C_RIPPLE_GAIN] = (fb && fb.rippleGain != null) ? fb.rippleGain : DEFAULT_RIPPLE_GAIN;
     const tx = this.compTex;
     tx[0].texture = inp.shadeFg; tx[1].texture = inp.shadeBg; tx[2].texture = inp.gi; tx[3].texture = inp.depth;
     tx[4].texture = this.layer.texture; tx[5].texture = inp.light;
