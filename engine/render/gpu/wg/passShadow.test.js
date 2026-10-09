@@ -154,3 +154,22 @@ console.log(`passShadow.test.js: all checks passed (heap +${grew} B / 1000 frame
   s4.dispose(); dev.dispose(tex); dev.dispose(vb); dev.dispose(uvb); assert.equal(m4.liveCount(), 0);
   console.log('passShadow.test.js (ALPHA-01c): masked casters ok.');
 }
+
+// ONEPART-b (38.9): a DRAW_FLAG_ONE_PART instanced caster (meshGroup) on an uneven 2-range mesh draws ONE whole-mesh range; without the flag it keeps per range
+{
+  const { DRAW_INSTANCED, DRAW_FLAG_ONE_PART } = await import('../../../mesh/DrawList.js');
+  const m5 = makeMockGpuDevice(), dev = m5.device, dr = [];
+  dev.draw = (c, f, i) => dr.push({ pipe: dev._activePipeline, c, f, i });
+  const s5 = new WgShadowPass(dev, { shadows: { res: 256 } });
+  const vb = dev.createBuffer({ usage: 'vertex', bytes: 64 }), ib = dev.createBuffer({ usage: 'index', bytes: 64 });
+  const imesh = { layout: 'static', triCount: 12, ranges: [{ start: 0, count: 1 }, { start: 1, count: 11 }] };
+  s5.buffers.getVoxel = () => ({ vertexBuffer: vb, indexBuffer: ib });
+  const il = createShadowList();
+  for (const flags of [DRAW_FLAG_ONE_PART, 0]) {
+    il.begin(); const it = il.push(); it.type = DRAW_INSTANCED; it.mesh = imesh; it.flags = flags; it.instCount = 3; it.instBuf = { f32: new Float32Array(48) }; it.partMatrices.fill(0); it.partMatrices.set([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]);
+    dr.length = 0; s5._render(il, world, s5.sunMatF32);
+    const inst = dr.filter((x) => x.pipe === s5.instancePipe).map((x) => [x.c, x.f, x.i]);
+    assert.deepEqual(inst, flags ? [[36, 0, 3]] : [[3, 0, 3], [33, 3, 3]], flags ? 'ONE_PART: one draw, whole mesh' : 'no flag: per range');
+  }
+  console.log('passShadow.test.js (ONEPART-b): one-part instanced shadow caster ok.');
+}

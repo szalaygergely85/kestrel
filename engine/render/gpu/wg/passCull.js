@@ -105,7 +105,7 @@ export class WgCullPass {
     for (let i = 0; i < 2; i++) {
       const m = meshes[i];
       if (!m) continue;
-      if (this.shadow) { // shadow: the CPU caster loop draws ranges[0] only for a meshGroup (parts 1.. are zero matrices); a voxel unit needs ONE range
+      if (this.shadow) { // shadow: a meshGroup is ONE_PART (whole mesh as one range, 38.9); a voxel unit needs ONE range
         const r = m.ranges;
         if (!r || r.length < 1 || (!g.mesh && r.length !== 1)) return false;
         continue;
@@ -151,7 +151,10 @@ export class WgCullPass {
       e.mesh = mesh; e.active = !!mesh; e.parts = b.g.parts;
       const o = (b.slot + lod) * ARGS_WORDS;
       let first = 0;
-      if (this.shadow) { // WG-4b: the shadow caster loop draws ranges[0] (r.start * 3, r.count * 3) with the identity part
+      if (this.shadow && b.g.mesh) { // meshGroup = DRAW_FLAG_ONE_PART: the whole mesh as one range (instancedRanges, 38.9)
+        this.argsCpu[o] = mesh ? mesh.triCount * 3 : 0;
+        e.active = e.active && this.argsCpu[o] > 0;
+      } else if (this.shadow) { // voxel unit: ONE range (supports()); the shadow caster loop draws it with the identity part
         const r0 = mesh && mesh.ranges && mesh.ranges[0];
         this.argsCpu[o] = r0 && r0.count > 0 ? r0.count * 3 : 0; first = r0 ? (r0.start || 0) * 3 : 0;
         e.active = e.active && this.argsCpu[o] > 0;

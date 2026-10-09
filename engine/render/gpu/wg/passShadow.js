@@ -17,7 +17,7 @@ import { SHADOW_TERRAIN_BLOCK, SHADOW_TERRAIN_WGSL, SHADOW_DEPTH_COPY_WGSL, SHAD
 import { NO_STRUCTURES } from './passRaster.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../../../mesh/shadowList.js';
-import { DRAW_STATIC, DRAW_VOXEL, DRAW_TERRAIN, DRAW_INSTANCED, DRAW_CLOTH } from '../../../mesh/DrawList.js';
+import { DRAW_STATIC, DRAW_VOXEL, DRAW_TERRAIN, DRAW_INSTANCED, DRAW_CLOTH, instancedRanges } from '../../../mesh/DrawList.js';
 import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
 import { sharedVoxelMeshCache } from '../../../mesh/voxelMesh.js';
 import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME, SHADOW_BAND_HYST_M } from '../../../mesh/instances.js';
@@ -290,7 +290,7 @@ export class WgShadowPass {
         let buffer = this.instanceBuffers.get(item.instBuf);
         if (!buffer) { buffer = d.createBuffer({ usage: 'vertex', data: item.instBuf.f32, dynamic: true }); this.instanceBuffers.set(item.instBuf, buffer); }
         else d.writeBuffer(buffer, item.instBuf.f32, 0);
-        const entry = this.buffers.getVoxel(item.mesh), ranges = item.mesh.ranges;
+        const entry = this.buffers.getVoxel(item.mesh), ranges = instancedRanges(item); // ONE_PART -> one whole-mesh range (38.9)
         for (let part = 0; part < ranges.length; part++) {
           const r = ranges[part]; if (r.count <= 0) continue;
           this._model(item.partMatrices, part * 12);
