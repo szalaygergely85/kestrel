@@ -61,11 +61,11 @@ export function validateSave(save) {
 }
 
 /** Player transform, hearts/mana, pack and hands have one source: WorldState entity components. */
-export function collectSave(world, { quest = null, questDef = null, openedChests = [], deadBeasts = [], playerName = 'Wick', place = '', playTimeSec = 0, savedAt = Date.now() } = {}) {
+export function collectSave(world, { quest = null, questDef = null, openedChests = [], deadBeasts = [], playerName = 'Wick', place = '', playTimeSec = 0, savedAt } = {}) {
   if (quest && !questDef) throw new Error('save: quest definition required');
   const save = { saveVersion:SAVE_VERSION, world:serialize(world),
     game:{quest:quest ? createQuest(questDef,quest) : null,openedChests:ids(openedChests),deadBeasts:ids(deadBeasts)},
-    meta:{playerName,place,playTimeSec,savedAt} }; // SAVE-TIME-01: ms epoch; optional on read (old saves sort oldest)
+    meta: savedAt === undefined ? {playerName,place,playTimeSec} : {playerName,place,playTimeSec,savedAt} }; // SAVE-TIME-01: ms epoch; optional on read (old saves sort oldest)
   validateSave(save);
   return canonical(save);
 }

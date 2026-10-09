@@ -66,9 +66,9 @@ console.log('saveState: player components/hands, quest/chests/deaths, byte-stabl
 
 // SAVE-TIME-01: savedAt written (ms epoch); old saves without it still load.
 {
-  const t0 = Date.now();
-  const fresh = collectSave(world, {});
-  assert.ok(Number.isFinite(fresh.meta.savedAt) && fresh.meta.savedAt >= t0, 'save writes meta.savedAt');
+  assert.equal(collectSave(world, {}).meta.savedAt, undefined, 'pure collect stays deterministic (saveRelay stamps savedAt)');
+  const t0 = Date.now(), fresh = collectSave(world, { savedAt: Date.now() });
+  assert.ok(Number.isFinite(fresh.meta.savedAt) && fresh.meta.savedAt >= t0, 'save writes meta.savedAt when passed');
   assert.equal(collectSave(world, { savedAt: 42 }).meta.savedAt, 42);
   const old = structuredClone(fresh); delete old.meta.savedAt;
   assert.doesNotThrow(() => applySave(parseGameSave(stringifyGameSave(old)), assets, {}), 'old save without savedAt loads');

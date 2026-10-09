@@ -86,10 +86,12 @@ assert.equal(p2.components.health.hp, 3); assert.equal(p2.components.mana.mp, 7)
 assert.equal(p2.components.inventory.right, 'sword');
 assert.equal(w2.state['tower.lantern.taken'], true);
 assert.equal(B.quest.done, true, 'quest state survives reload');
-assert.deepEqual(B.deadBeasts.sort(), ['boar1', 'boar2']); assert.deepEqual(B.openedChests, ['chestA']);
+assert.deepEqual(B.deadBeasts.sort(), ['boar1', 'boar2', 'boar3', 'boar4', 'boar5']); assert.deepEqual(B.openedChests, ['chestA']);
 assert.equal(B.playTimeSec, 65);
 assert.equal(B.save(w2), true);
-assert.equal(mem.get([...mem.keys()][0]), text1, 'relay round trip is byte-stable');
+const text2 = mem.get([...mem.keys()][0]);
+const stripT = (t) => { const o = JSON.parse(t); assert.ok(Number.isFinite(o.meta.savedAt) && o.meta.savedAt > 0, 'written save carries finite savedAt (SAVE-TIME-01)'); delete o.meta.savedAt; return JSON.stringify(o); };
+assert.equal(stripT(text2), stripT(text1), 'relay round trip is byte-stable (apart from savedAt)');
 
 // ---- restart without a pending restore resets game data ----
 B.onWorldLoaded();
