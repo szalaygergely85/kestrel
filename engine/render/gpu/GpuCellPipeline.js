@@ -44,8 +44,6 @@ import { LIGHT_FRAG_SRC } from './glsl/light.frag.js';
 // combined bound.
 import { sunFromWorld } from '../lighting.js';
 import { terrainHBounds, activeNearLOD } from '../../world/Terrain.js';
-// US-040 (15.2 items 3/4, build order step 3): pass A3 `voxel` - VOX/VOXINST
-// texture layout + the GLSL march itself.
 import { GpuTimer, GpuPassTimer } from './GpuTimer.js';
 import { buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan, MAX_STRUCTS } from './WorldTextures.js';
 import { PROJ_HFOV_DEG as HFOV_DEG } from '../projection.js';
@@ -97,7 +95,6 @@ const EMPTY3 = [0, 0, 0]; // fallback ambient when `frame()` was handed neither 
 // resolve and deriv draw calls (one query spans both, per the tech notes).
 export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge', 'shadow', 'water', 'wcomp']);
 const PASS_CAST = 0, PASS_TERRAIN = 1, PASS_VOXEL = 2, PASS_RESOLVE = 3, PASS_LIGHT = 4, PASS_SHADE = 5, PASS_EDGE = 6, PASS_SHADOW = 7, PASS_WATER = 8, PASS_WCOMP = 9;
-const PASS_STATS_EVERY = 30; // matches GpuTimer's own STATS_EVERY - see _pollTerrainTs/_pollVoxelTs
 
 function sumFinite(arr) {
   let s = 0;
@@ -138,7 +135,7 @@ export class GpuCellPipeline {
       // without `?terrain=0` - see main.js and this story's Programmer notes.
       terrainSubmitMs: NaN, terrainSubmitMsP50: NaN, terrainSubmitMsP95: NaN,
       // US-040 (15.2 item 6): same CPU submit-time bracket, around pass A3.
-      voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0, voxelDraws: 0, instancedDraws: 0, instances: 0, /* RE-06 */ // voxelDraws (ME-08c): mesh path draw calls for voxel parts last frame (ME-17 baseline)
+      voxelMs: 0, voxelMsP50: 0, voxelMsP95: 0, /* no separate voxel pass on the GL mesh path */ voxelInstances: 0, voxelDraws: 0, instancedDraws: 0, instances: 0, /* RE-06 */ // voxelDraws (ME-08c): mesh path draw calls for voxel parts last frame (ME-17 baseline)
       waterSlots: 0, waterDraws: 0, // US-055a2a: water regions selected / clipmap draw calls last frame
       shadowItems: 0, shadowDraws: 0, shadowCpuMs: 0, // ME-15b: sun shadow pass caster items / draw calls last frame
       instancesCulled: 0, instancesLod1: 0, // RE-15a (28.13 point 8): F3 `inst <drawn>/<total> lod1 <n> cull <culled>`
@@ -393,10 +390,6 @@ export class GpuCellPipeline {
     this.texNearType = createTexture2D(gl, gl.R8UI, 1, 1);
     this._terrainNearVersion = -1;
 
-    this._voxelSubmitMsHistory = new Float32Array(16);
-    this._voxelSubmitMsHistoryLen = 0;
-    this._voxelSubmitMsHistoryPos = 0;
-
     // --- staging arrays (allocated once, architecture.md 9: no per-frame
     // allocation). US-030a: GA/GD/DEPTH are now uint textures
     // (`floatBitsToUint`) - `_GAf`/`_GDf`/`_DepthF` are Float32Array VIEWS
@@ -467,27 +460,8 @@ export class GpuCellPipeline {
     // construct; the disjoint-timer query ring is the only GL cost and
     // `GpuPassTimer` starts empty/idle until `begin()` is actually called).
     this.passTimer = new GpuPassTimer(gl, PASS_NAMES.length);
-    // US-016 step 6 (14.4 item 4 budget "<= 1.0 ms p95 of the 4 ms"): the
-    // terrain pass runs INSIDE `this.timer`'s own begin()/end() span (the
-    // whole `_hook()`), and `EXT_disjoint_timer_query_webgl2` allows only
-    // ONE active TIME_ELAPSED_EXT query per context at a time - a second,
-    // nested `beginQuery` would be a no-op (INVALID_OPERATION), so a second
-    // `GpuTimer` here can never report anything but n/a. Tried
-    // `TIMESTAMP_EXT` query-counters (not an "active" span, so they can
-    // coexist with an active TIME_ELAPSED_EXT query) bracketing
-    // `_passTerrain()` first, but ANGLE/D3D11 (the owner's real GPU) reports
-    // `queryCounterEXT` present yet always returns the SAME clock value for
-    // both queries (delta always exactly 0) - a known driver gap, not a
-    // logic bug here. Falls back to a CPU `performance.now()` submit-time
-    // bracket around just the terrain draw call, same honest-labelling as
-    // this file's existing `uploadMs`/`drawMs` (also CPU submit time, not a
-    // GPU query) - good enough to check the pass against its budget even
-    // though it can't separate GPU-side overlap from CPU dispatch cost.
     // ARCH CHANGES item 5: reused every frame by `sunFromWorld`'s `out` param.
     this._sunScratch = { dirX: 0, dirY: 0, dirZ: 0, ambientI: 0, sunI: 0 };
-    this._terrainSubmitMsHistory = new Float32Array(16);
-    this._terrainSubmitMsHistoryLen = 0;
-    this._terrainSubmitMsHistoryPos = 0;
 
     // Readback FBO (test-only, gpuCompare.js) - 2 x cols*rows*4 bytes, allocated once.
     this._readbackFg = new Uint8Array(4 * n);
@@ -1193,77 +1167,6 @@ export class GpuCellPipeline {
       this.stats.passMsP95.fill(NaN);
       this.timer.writeStats(this.stats); // writes gpuMs/gpuMsP50/gpuMsP95 in place - no allocation (architect review 1 item 3)
     }
-    this._pollTerrainTs();
-    this._pollVoxelTs();
-  }
-
-  // US-016 step 6: CPU `performance.now()` bracket around just the terrain
-  // draw call (see the constructor comment for why a true GPU query can't
-  // be nested inside `this.timer`'s whole-frame span, and why the
-  // TIMESTAMP_EXT alternative measured 0 on the owner's real GPU).
-  _terrainTsBegin() { this._terrainT0 = performance.now(); }
-
-  _terrainTsEnd() {
-    const ms = performance.now() - this._terrainT0;
-    this._terrainSubmitMsHistory[this._terrainSubmitMsHistoryPos] = ms;
-    this._terrainSubmitMsHistoryPos = (this._terrainSubmitMsHistoryPos + 1) % this._terrainSubmitMsHistory.length;
-    if (this._terrainSubmitMsHistoryLen < this._terrainSubmitMsHistory.length) this._terrainSubmitMsHistoryLen++;
-  }
-
-  _pollTerrainTs() {
-    const s = this.stats;
-    if (this._terrainSubmitMsHistoryLen === 0) { s.terrainSubmitMs = NaN; s.terrainSubmitMsP50 = NaN; s.terrainSubmitMsP95 = NaN; return; }
-    // `terrainSubmitMs` itself is just the latest raw sample - cheap, no
-    // sort needed. Architect review (16, "fix the per-frame subarray"): the
-    // sort behind the p50/p95 percentiles only actually reruns every
-    // `PASS_STATS_EVERY` calls (same caching GpuTimer/GpuPassTimer use
-    // above), not every single frame - `_terrainTsScratch` is allocated
-    // once, lazily, and reused.
-    const lastPos = (this._terrainSubmitMsHistoryPos - 1 + this._terrainSubmitMsHistory.length) % this._terrainSubmitMsHistory.length;
-    s.terrainSubmitMs = this._terrainSubmitMsHistory[lastPos];
-    this._terrainTsCalls = (this._terrainTsCalls || 0) + 1;
-    if (this._terrainTsCachedP50 === undefined || Number.isNaN(this._terrainTsCachedP50) || this._terrainTsCalls % PASS_STATS_EVERY === 0) {
-      if (!this._terrainTsScratch) this._terrainTsScratch = new Float32Array(this._terrainSubmitMsHistory.length);
-      const n = this._terrainSubmitMsHistoryLen, scratch = this._terrainTsScratch;
-      for (let i = 0; i < n; i++) scratch[i] = this._terrainSubmitMsHistory[i];
-      const view = scratch.subarray(0, n);
-      view.sort();
-      this._terrainTsCachedP50 = view[Math.floor(n * 0.5)];
-      this._terrainTsCachedP95 = view[Math.min(n - 1, Math.floor(n * 0.95))];
-    }
-    s.terrainSubmitMsP50 = this._terrainTsCachedP50;
-    s.terrainSubmitMsP95 = this._terrainTsCachedP95;
-  }
-
-  // US-040 (15.2 item 6): same CPU submit-time bracket as _terrainTsBegin/
-  // End (see the constructor comment on why a real GPU query can't nest
-  // inside `this.timer`'s span) - around just the voxel pass draw call.
-  _voxelTsBegin() { this._voxelT0 = performance.now(); }
-
-  _voxelTsEnd() {
-    const ms = performance.now() - this._voxelT0;
-    this._voxelSubmitMsHistory[this._voxelSubmitMsHistoryPos] = ms;
-    this._voxelSubmitMsHistoryPos = (this._voxelSubmitMsHistoryPos + 1) % this._voxelSubmitMsHistory.length;
-    if (this._voxelSubmitMsHistoryLen < this._voxelSubmitMsHistory.length) this._voxelSubmitMsHistoryLen++;
-  }
-
-  _pollVoxelTs() {
-    const s = this.stats;
-    if (this._voxelSubmitMsHistoryLen === 0) { s.voxelMs = NaN; s.voxelMsP50 = NaN; s.voxelMsP95 = NaN; return; }
-    const lastPos = (this._voxelSubmitMsHistoryPos - 1 + this._voxelSubmitMsHistory.length) % this._voxelSubmitMsHistory.length;
-    s.voxelMs = this._voxelSubmitMsHistory[lastPos];
-    this._voxelTsCalls = (this._voxelTsCalls || 0) + 1;
-    if (this._voxelTsCachedP50 === undefined || Number.isNaN(this._voxelTsCachedP50) || this._voxelTsCalls % PASS_STATS_EVERY === 0) {
-      if (!this._voxelTsScratch) this._voxelTsScratch = new Float32Array(this._voxelSubmitMsHistory.length);
-      const n = this._voxelSubmitMsHistoryLen, scratch = this._voxelTsScratch;
-      for (let i = 0; i < n; i++) scratch[i] = this._voxelSubmitMsHistory[i];
-      const view = scratch.subarray(0, n);
-      view.sort();
-      this._voxelTsCachedP50 = view[Math.floor(n * 0.5)];
-      this._voxelTsCachedP95 = view[Math.min(n - 1, Math.floor(n * 0.95))];
-    }
-    s.voxelMsP50 = this._voxelTsCachedP50;
-    s.voxelMsP95 = this._voxelTsCachedP95;
   }
 
   // US-030a: per-frame UI mask upload (14.2 item 3) - the cast pass reads

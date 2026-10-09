@@ -72,6 +72,7 @@ export class WgCellPipeline {
       passMsP95: new Float32Array(PASS_NAMES.length).fill(NaN),
       // S8-B1-07: real WG per-pass GPU ms (WG_PASS_NAMES order), p50/p95 over the same 120-frame history as gpuMsP50/P95;
       // NaN while off or timestamp-query is unsupported. gpuMs/gpuMsP50/gpuMsP95 become their sum while this is on (GL2 precedent).
+      culledOccl: 0, // OCCL-STATS-01: instances culled by occlusion (async, 1 frame late; 0 with occl off / no device readBufferAsync)
       wgPassMsP50: new Float32Array(WG_PASS_NAMES.length).fill(NaN),
       wgPassMsP95: new Float32Array(WG_PASS_NAMES.length).fill(NaN),
     };
@@ -397,7 +398,7 @@ export class WgCellPipeline {
     // frees the single "active span" so each WG pass below can open its own (WebGpuTimer spans never nest - see passRaster.run).
     if (this._passTimingOn) d.timer.end();
     if (this._cam && this._world) {
-      try { this._rasterPass.run(this); }
+      try { this._rasterPass.run(this); const rc = this._rasterPass.cull; this.stats.culledOccl = this.occl && rc ? rc.stats.culledOccl : 0; }
       catch (e) { this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] raster disabled:', e); return; }
     } else {
       d.beginPass(t.targetRaster, this._clearOpts);

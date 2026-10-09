@@ -139,6 +139,23 @@ export function makeMockGpuDevice() {
     compiling: false,
     copyTextureToBuffer(tex, buf, w, h, bytesPerRow) { (device._copies || (device._copies = [])).push({ kind: 'tex', tex, buf, w, h, bytesPerRow }); },
     copyBufferToBuffer(src, srcOff, dst, dstOff, bytes) { (device._copies || (device._copies = [])).push({ kind: 'buf', src, srcOff, dst, dstOff, bytes }); },
+    // OCCL-STATS-01b: mirrors GpuDeviceWebGPU.readBufferAsync validation; resolves next tick with the buffer's last written data (or zeros)
+    readBufferAsync(buf, bytes, outU32, cb) {
+      if (!buf || buf.kind !== 'buffer' || buf._disposed) throw new Error('mock readBufferAsync: needs a live buffer handle');
+      if (!(bytes > 0) || bytes % 4) throw new Error('mock readBufferAsync: bytes must be a positive multiple of 4');
+      const size = buf.desc && (buf.desc.data ? buf.desc.data.byteLength : buf.desc.bytes || 0);
+      if (bytes > Math.max(4, (size + 3) & ~3)) throw new Error('mock readBufferAsync: bytes exceeds the buffer size');
+      if (!(outU32 instanceof Uint32Array) || outU32.length * 4 < bytes) throw new Error('mock readBufferAsync: outU32 too small');
+      if (buf.desc.usage !== 'storage' && buf.desc.usage !== 'indirect') throw new Error('mock readBufferAsync: buffer needs COPY_SRC (storage/indirect usage)');
+      if (buf._readBusy) return false;
+      buf._readBusy = true; device._readAsync = (device._readAsync || 0) + 1;
+      Promise.resolve().then(() => {
+        const w = buf._lastWrite, src = w && w.data && w.dstOffsetBytes === 0 ? new Uint32Array(w.data.buffer, w.data.byteOffset, Math.min(bytes, w.data.byteLength) >> 2) : (buf.desc.data ? new Uint32Array(buf.desc.data.buffer, buf.desc.data.byteOffset, Math.min(bytes, buf.desc.data.byteLength) >> 2) : null);
+        outU32.fill(0, 0, bytes >> 2); if (src) outU32.set(src);
+        buf._readBusy = false; cb(outU32);
+      });
+      return true;
+    },
     dispatch(pipeline, desc, x, y = 1, z = 1) {
       // WebGPU usage rule: a writable ('rw') storage binding must not alias another binding of the same buffer in one bind group
       const acc = pipeline && pipeline.desc && pipeline.desc.bindings && pipeline.desc.bindings.buffers, bs = desc && desc.buffers;

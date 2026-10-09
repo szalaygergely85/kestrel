@@ -76,6 +76,8 @@ export class GpuDeviceWebGPU {
     this._live = /** @type {{destroy: () => void}[]} */ ([]);
     /** @type {any[]} every computePipeline handle (38.10a: dispose(buffer) prunes their dispatch bind-group caches) */
     this._computePipes = [];
+    /** @type {Map<any,{gpu:any,bytes:number,busy:boolean}>} OCCL-STATS-01b: readBufferAsync staging per source buffer handle */
+    this._readStaging = new Map();
     this._moduleCache = new Map();
     // uniform ring (CPU ArrayBuffer + one GPU buffer; one writeBuffer at submit)
     const slots = opts.ringSlots || DEFAULT_RING_SLOTS;
@@ -588,6 +590,36 @@ export class GpuDeviceWebGPU {
   }
 
   /**
+   * OCCL-STATS-01b: non-blocking buffer readback for stats. Records buf -> a cached MAP_READ staging buffer (one per source
+   * buffer, created once, recreated only if `bytes` grows), SUBMITS the encoder (so the copy is ordered before the map),
+   * then `mapAsync(READ)` and copies into the caller's preallocated `outU32`, then calls `cb(outU32)`. At most one read in
+   * flight per source buffer (returns false when busy or on error, true when started). Per call the only allocations are
+   * what the WebGPU API returns (the mapAsync Promise, the mapped ArrayBuffer view); staging buffers are released by dispose.
+   * @param {GpuHandle} buf @param {number} bytes multiple of 4, <= buffer size @param {Uint32Array} outU32 @param {(out:Uint32Array)=>void} cb
+   * @returns {boolean}
+   */
+  readBufferAsync(buf, bytes, outU32, cb) {
+    if (this._pass) throw new Error('GpuDeviceWebGPU.readBufferAsync: a pass is still open');
+    if (!buf || buf.kind !== 'buffer') throw new Error('GpuDeviceWebGPU.readBufferAsync: buf must be a buffer handle');
+    if (!(bytes > 0) || bytes % 4 || bytes > buf.gpu.size) throw new Error('GpuDeviceWebGPU.readBufferAsync: bytes must be a positive multiple of 4 and <= the buffer size');
+    if (!(outU32 instanceof Uint32Array) || outU32.length * 4 < bytes) throw new Error('GpuDeviceWebGPU.readBufferAsync: outU32 too small');
+    let st = this._readStaging.get(buf);
+    if (st && st.busy) return false;
+    if (st && st.bytes < bytes) { st.gpu.destroy(); st = null; }
+    if (!st) { st = { gpu: this.gpu.createBuffer({ size: bytes, usage: this._c.buf.MAP_READ | this._c.buf.COPY_DST }), bytes, busy: false }; this._readStaging.set(buf, st); }
+    st.busy = true;
+    if (!this._encoder) this._encoder = this.gpu.createCommandEncoder();
+    this._encoder.copyBufferToBuffer(buf.gpu, 0, st.gpu, 0, bytes);
+    this.submit();
+    st.gpu.mapAsync(this._c.map.READ).then(() => {
+      outU32.set(new Uint32Array(st.gpu.getMappedRange(0, bytes)));
+      st.gpu.unmap(); st.busy = false;
+      cb(outU32);
+    }, () => { st.busy = false; }); // destroyed/lost mid-flight: drop silently
+    return true;
+  }
+
+  /**
    * Test-only, always a Promise (38.6): records `copyTextureToBuffer` (rows padded to 256 B) into the current
    * encoder, submits it (so the result is fixed at call time), maps the staging buffer and de-pads into `out`.
    * @param {GpuHandle} tex @param {{x:number,y:number,w:number,h:number}} rect @param {ArrayBufferView} out
@@ -661,6 +693,8 @@ export class GpuDeviceWebGPU {
         const pi = this._computePipes.indexOf(handle);
         if (pi >= 0) this._computePipes.splice(pi, 1);
       }
+      const rs = this._readStaging.get(handle);
+      if (rs) { this._readStaging.delete(handle); rs.gpu.destroy(); }
       const o = handle.gpu;
       const i = this._live.indexOf(o);
       if (i >= 0) { this._live.splice(i, 1); o.destroy(); }
@@ -671,6 +705,8 @@ export class GpuDeviceWebGPU {
     this._live.length = 0;
     for (const pool of this._staging.values()) for (const b of pool) b.destroy();
     this._staging.clear();
+    for (const rs of this._readStaging.values()) rs.gpu.destroy();
+    this._readStaging.clear();
     this._computePipes.length = 0;
   }
 }
