@@ -26,6 +26,9 @@ const M_H = RASTER_MASK_BLOCK.field('maskH').word, M_CUT = RASTER_MASK_BLOCK.fie
 // ALPHA-01f (b): same 5 mask fields, RASTER_INSTANCED_MASK_BLOCK's own word offsets (its prefix is byte-identical to RASTER_BLOCK's).
 const IM_X0 = RASTER_INSTANCED_MASK_BLOCK.field('maskX0').word, IM_Y0 = RASTER_INSTANCED_MASK_BLOCK.field('maskY0').word;
 const IM_W = RASTER_INSTANCED_MASK_BLOCK.field('maskW').word, IM_H = RASTER_INSTANCED_MASK_BLOCK.field('maskH').word, IM_CUT = RASTER_INSTANCED_MASK_BLOCK.field('maskCut').word;
+// US-068b2 (38.19): `projMode` (2 = ortho) is the LAST word of every raster block; the word offsets differ per block (BASE's 38 overlaps RASTER's `origin`).
+const P_BASE = RASTER_BASE_BLOCK.field('projMode').word, P_RASTER = RASTER_BLOCK.field('projMode').word, P_MASK = RASTER_MASK_BLOCK.field('projMode').word;
+const P_IMASK = RASTER_INSTANCED_MASK_BLOCK.field('projMode').word, T_PROJ = TERRAIN_BLOCK.field('projMode').word;
 const ORIGIN = RASTER_BLOCK.field('origin').word, T_MODEL_REL = TERRAIN_BLOCK.field('modelRel').word;
 // S8-B2-05/06: wind/sway uniforms (RASTER_BLOCK, instanced variant only; the base/mask blocks end before them).
 const WIND = RASTER_BLOCK.field('wind').word, WIND_T = RASTER_BLOCK.field('windT').word, WIND_K = RASTER_BLOCK.field('windK').word;
@@ -145,13 +148,13 @@ export class WgRasterPass {
         for (let r = 0; r < R; r++) {
           const e = entries[lod * R + r];
           if (!e.active) continue;
-          this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0;
+          this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0; this.u[ORIGIN] = this.ox;
           this._model(e.parts.m, 0); this.bits[AXIS] = e.parts.flags[0] & 1;
           const entry = this.buffers.getVoxel(e.mesh);
           const mr = e.mesh.maskRanges;
           if (mr && this.maskReady && entry.uvMaskBuffer && mr[r * 5 + 2] >= 0) {
             this.iu.set(this.u);
-            const ib = this.ibits;
+            const ib = this.ibits; ib[P_IMASK] = this.ortho ? 2 : 0;
             ib[IM_X0] = mr[r * 5]; ib[IM_Y0] = mr[r * 5 + 1]; ib[IM_W] = mr[r * 5 + 2]; ib[IM_H] = mr[r * 5 + 3]; ib[IM_CUT] = mr[r * 5 + 4];
             const bd = this.instanceMaskBind;
             bd.vertexBuffer = entry.vertexBuffer; bd.indexBuffer = null; bd.instanceBuffer = e.instanceBuffer; this.maskExtraInst[0] = entry.uvMaskBuffer; this.maskTexBind[0].texture = this.maskTex;
@@ -231,6 +234,7 @@ export class WgRasterPass {
       const o = T_FOOT + n * 4; tu[o] = b.x0; tu[o + 1] = b.y0; tu[o + 2] = b.x1; tu[o + 3] = b.y1; n++;
     }
     this.tbits[T_COUNT] = n;
+    this.tbits[T_PROJ] = this.ortho ? 2 : 0; // US-068b2
   }
 
   _terrain(list) {
@@ -269,7 +273,9 @@ export class WgRasterPass {
     const cam = p._cam, world = p._world, grid = this.grid;
     grid.cols = p.cols; grid.rows = p.rows; grid.pxCellW = p.rt.pxCellW || 1; grid.pxCellH = p.rt.pxCellH || 1;
     this._maskTexture(world);
-    this.pitched = resolveProjection(cam, 'mesh') === 'pitched';
+    const rproj = resolveProjection(cam, 'mesh'); // US-068b2: 'ortho' is pitched-family (pitchedTerms builds its terms); projMode: 0 shear, 1 pitched, 2 ortho
+    this.pitched = rproj === 'pitched' || rproj === 'ortho'; this.ortho = rproj === 'ortho'; this.projMode = this.ortho ? 2 : this.pitched ? 1 : 0;
+    this.bits[P_RASTER] = this.ortho ? 2 : 0;
     if (this.pitched) { pitchedTerms(cam, grid, this.pitch); this.view.set(this.pitch.M); }
     else { projTerms(cam, grid, this.terms); shearProjection(this.terms, this.view); }
     this.ox = Math.floor(cam.x / 16) * 16; this.oy = Math.floor(cam.y / 16) * 16;
@@ -322,7 +328,8 @@ export class WgRasterPass {
 
   _draw(pipe, entry, count, first, instanceBuffer = null, instances = 1) {
     const b = this.bindDesc;
-    b.uniforms = pipe === this.instancePipe ? this.u : this.baseU;
+    if (pipe === this.instancePipe) { this.u[ORIGIN] = this.ox; b.uniforms = this.u; } // BASE `projMode` (word 38) shares RASTER's `origin.x`: restore
+    else { this.bits[P_BASE] = this.ortho ? 2 : 0; b.uniforms = this.baseU; }
     b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer || null; b.instanceBuffer = instanceBuffer; b.extraBuffers = null;
     this.device.bind(pipe, b); this.device.draw(count, first, instances);
   }
@@ -341,7 +348,7 @@ export class WgRasterPass {
       const a = Math.max(first, rs[p].start), b = Math.min(last, rs[p].start + rs[p].count);
       if (b <= a) continue;
       if (mr[p * 5 + 2] < 0) { this._draw(pipe, entry, (b - a) * 3, a * 3); draws++; continue; }
-      mu.set(this.baseU);
+      mu.set(this.baseU); bits[P_MASK] = this.ortho ? 2 : 0;
       bits[M_X0] = mr[p * 5]; bits[M_Y0] = mr[p * 5 + 1]; bits[M_W] = mr[p * 5 + 2]; bits[M_H] = mr[p * 5 + 3]; bits[M_CUT] = mr[p * 5 + 4];
       const bd = this.maskBind;
       bd.vertexBuffer = entry.vertexBuffer; bd.indexBuffer = null; bd.instanceBuffer = null; this.maskExtra[0] = entry.uvMaskBuffer;
@@ -357,8 +364,8 @@ export class WgRasterPass {
    * @returns {number} draws issued (always 1)
    */
   _instancedMaskedRange(entry, r, mr, part, buffer, instCount) {
-    this.iu.set(this.u); // RASTER_INSTANCED_MASK_BLOCK's prefix = RASTER_BLOCK's (model/viewProj/.../windK), same word offsets
-    const ib = this.ibits;
+    this.u[ORIGIN] = this.ox; this.iu.set(this.u); // RASTER_INSTANCED_MASK_BLOCK's prefix = RASTER_BLOCK's (model/viewProj/.../windK), same word offsets
+    const ib = this.ibits; ib[P_IMASK] = this.ortho ? 2 : 0;
     ib[IM_X0] = mr[part * 5]; ib[IM_Y0] = mr[part * 5 + 1]; ib[IM_W] = mr[part * 5 + 2]; ib[IM_H] = mr[part * 5 + 3]; ib[IM_CUT] = mr[part * 5 + 4];
     const bd = this.instanceMaskBind;
     bd.vertexBuffer = entry.vertexBuffer; bd.indexBuffer = null; bd.instanceBuffer = buffer; this.maskExtraInst[0] = entry.uvMaskBuffer;
