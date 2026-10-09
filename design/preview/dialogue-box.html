@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - dialogue box style (uiStyle.dialogue, design v1.51)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 40px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  .note { color:#8a8778; font-size:12px; max-width:1300px; }
+  .controls { background:#0d0f16; border:1px solid #22252e; border-radius:4px; padding:8px 12px; margin:10px 0;
+              display:flex; flex-wrap:wrap; gap:12px; align-items:center; font-size:13px; }
+  button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; }
+  canvas { display:block; }
+  #fatal { color:#ff3b3b; }
+</style>
+</head>
+<body>
+<h1>Kestrel : dialogue box (<code>ASSETS.uiStyle.dialogue</code>, design/models/title.js)</h1>
+<div class="note">Drawn on the fixed 160x60 UI grid (8 x 12 px cells here = 1280 x 720) over a dimmed mock scene. Keys: E / Enter / click =
+  complete the line, then next; W/S or arrows = move the choice cursor; 1-3 = pick. Text and speaker timing come from
+  <code>ASSETS.bearFx</code> (placeholder text; the writer owns the lines). Works from file://.</div>
+<div id="fatal"></div>
+<div class="controls">
+  <button id="restart">restart</button>
+  <label><input type="checkbox" id="choicesOn" checked> show choices after line 2</label>
+  <span id="state" style="font-family:Consolas,monospace;color:#ffd27a"></span>
+</div>
+<canvas id="cv" tabindex="0"></canvas>
+
+<script src="../palette.js"></script>
+<script src="../models/title.js"></script>
+<script src="../models/voxel_bear.js"></script>
+<script>
+(function () {
+  var A = window.ASSETS, P = A.palette, D = A.uiStyle && A.uiStyle.dialogue, FX = A.bearFx;
+  if (!D) { document.getElementById('fatal').textContent = 'uiStyle.dialogue missing'; return; }
+  var COLS = 160, ROWS = 60, CW = 8, CH = 12;
+  var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  cv.width = COLS * CW; cv.height = ROWS * CH;
+  ctx.font = '11px "Cascadia Mono", Consolas, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  function rgb(k) { var c = P.rgb[k]; return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; }
+  function lit(c, m) { return 'rgb(' + (c[0] * (m || 1) | 0) + ',' + (c[1] * (m || 1) | 0) + ',' + (c[2] * (m || 1) | 0) + ')'; }
+
+  var LINES = [
+    { name: FX.sampleLine.name, who: 'npc', text: FX.sampleLine.text },
+    { name: FX.sampleLine.name, who: 'npc', text: 'You have the look of someone who heard the *signal*. Most folk only feel it in their teeth.' },
+    { name: 'Wick', who: 'player', text: 'I followed it up from the wreck.' }
+  ];
+  var CHOICES = [{ text: 'Tell me a story.' }, { text: 'What is this place?', seen: true }, { text: 'Goodbye.' }];
+  var li = 0, t0 = performance.now(), focus = 0, done = false;
+
+  function wrap(text, w) {
+    var words = text.split(' '), out = [], cur = '';
+    words.forEach(function (wd) { var t = cur ? cur + ' ' + wd : wd; if (t.replace(/\*/g, '').length > w) { out.push(cur); cur = wd; } else cur = t; });
+    if (cur) out.push(cur);
+    return out;
+  }
+  function typedCount(text, e) {   // chars shown after e ms with the bearFx pause rule
+    var t = 0, cps = D.text.typeOn.cps, pm = FX.talk.pauseMs;
+    for (var i = 0; i < text.length; i++) { t += 1000 / cps; if (t > e) return i; if (pm[text[i]]) t += pm[text[i]]; }
+    return text.length;
+  }
+  function scene() {   // mock dim scene: sky band, ground band, a bear-ish block, dimmed by sceneDim
+    var m = D.sceneDim.bgMul;
+    for (var r = 0; r < ROWS; r++) for (var c = 0; c < COLS; c++) {
+      var sky = r < 26, g = sky ? [60 + r * 3, 120 + r * 2, 170] : [70, 110 - (r - 26), 50];
+      ctx.fillStyle = lit(g, m * 0.6); ctx.fillRect(c * CW, r * CH, CW, CH);
+      if (!sky && (c * 7 + r * 3) % 5 === 0) { ctx.fillStyle = lit([120, 160, 80], m); ctx.fillText("'", c * CW + CW / 2, r * CH + CH / 2); }
+    }
+    for (var rr = 14; rr < 38; rr++) for (var cc = 72; cc < 88; cc++) {
+      var head = rr < 21; if (head && (cc < 75 || cc > 84)) continue;
+      ctx.fillStyle = lit(P.rgb[head && rr > 16 ? 'skin' : 'skinShade'], m * 0.8); ctx.fillRect(cc * CW, rr * CH, CW, CH);
+    }
+  }
+  function cell(c, r, g, fg, bg) {
+    if (bg) { ctx.fillStyle = bg; ctx.fillRect(c * CW, r * CH, CW, CH); }
+    if (g && g !== ' ') { ctx.fillStyle = fg; ctx.fillText(g, c * CW + CW / 2, r * CH + CH / 2 + 1); }
+  }
+  function text(c, r, s, fg, bg) { for (var i = 0; i < s.length; i++) cell(c + i, r, s[i], fg, bg); }
+
+  function draw() {
+    var now = performance.now(), L = LINES[li], showChoices = document.getElementById('choicesOn').checked && li === 1;
+    var n = typedCount(L.text, now - t0), complete = n >= L.text.length;
+    scene();
+    var h = (showChoices && complete) ? D.panel.h : 8, w = D.panel.w;
+    var x0 = Math.floor((COLS - w) / 2), y0 = ROWS - D.panel.bottomMargin - h, plate = lit(D.bgRgb.plate), band = lit(D.bgRgb.band);
+    for (var r = 0; r < h; r++) for (var c = 0; c < w; c++) cell(x0 + c, y0 + r, ' ', '', plate);
+    // frame
+    for (c = 0; c < w; c++) { var g = (c === 0 || c === w - 1) ? D.frame.corner : D.frame.h, f = rgb(c === 0 || c === w - 1 ? D.frame.cornerFg : D.frame.fg);
+      cell(x0 + c, y0, g, f); cell(x0 + c, y0 + h - 1, g, f); }
+    for (r = 1; r < h - 1; r++) { cell(x0, y0 + r, D.frame.v, rgb(D.frame.fg)); cell(x0 + w - 1, y0 + r, D.frame.v, rgb(D.frame.fg)); }
+    D.frame.rivets.cols.forEach(function (rc) { cell(x0 + rc, y0, 'o', rgb(D.frame.rivets.fg)); cell(x0 + rc, y0 + h - 1, 'o', rgb(D.frame.rivets.fg)); });
+    // name tag
+    var tag = '[ ' + L.name + ' ]';
+    text(x0 + D.nameTag.col, y0, tag, rgb(D.nameTag.bracketFg), plate);
+    text(x0 + D.nameTag.col + 2, y0, L.name, rgb(D.nameTag.fg[L.who]));
+    // text with *emphasis*
+    var lines = wrap(L.text, D.text.w), shown = 0, emph = false;
+    for (var i = 0; i < lines.length && i < D.text.maxLines; i++) {
+      var col = 0;
+      for (var k = 0; k < lines[i].length; k++) {
+        var ch = lines[i][k];
+        if (shown >= n) break;
+        shown++;
+        if (ch === '*') { emph = !emph; continue; }
+        cell(x0 + D.text.col + col, y0 + D.text.row + i, ch, rgb(emph ? D.text.emphasis.fg : D.text.fg));
+        col++;
+      }
+      shown++;   // the space eaten by the wrap
+    }
+    // choices or more marker
+    if (showChoices && complete) {
+      for (c = D.separator.inset; c < w - D.separator.inset; c++) cell(x0 + c, y0 + D.separator.row, D.separator.glyph, rgb(D.separator.fg));
+      CHOICES.forEach(function (ch, j) {
+        var row = y0 + D.choices.firstRow + j, isF = j === focus, C = D.choices;
+        if (isF) for (var b = C.bandFrom; b <= C.bandTo; b++) cell(x0 + b, row, ' ', '', band);
+        if (isF) cell(x0 + C.markerCol, row, C.focus.marker, rgb(C.focus.markerFg));
+        text(x0 + C.numberCol, row, (j + 1) + '.', rgb(isF ? C.number.focusFg : C.number.fg));
+        text(x0 + C.textCol, row, ch.text, rgb(isF ? C.focus.fg : ch.seen ? C.seen.fg : C.normal.fg));
+      });
+    } else if (complete && Math.floor(now / 1000 / D.more.blink.periodSec * 1) % 1 === 0 && ((now / 1000) % D.more.blink.periodSec) < D.more.blink.periodSec * D.more.blink.duty) {
+      cell(x0 + w - 4, y0 + h - 2, D.more.glyph, rgb(D.more.fg));
+    }
+    // key hints (right aligned before the more marker)
+    var hint = showChoices && complete ? D.keyHints.text : 'E: next   Esc: leave';
+    var hx = x0 + w - 6 - hint.length;
+    for (i = 0; i < hint.length; i++) {
+      var isKey = /[A-Z\/]/.test(hint[i]) && (i === 0 || hint[i - 1] === ' ' || /[A-Z\/]/.test(hint[i - 1])) && hint[i + 1] !== undefined && /[A-Z\/:]/.test(hint[i + 1]);
+      cell(hx + i, y0 + h - 2, hint[i], rgb(isKey ? D.keyHints.keyFg : D.keyHints.fg));
+    }
+    document.getElementById('state').textContent = 'line ' + (li + 1) + '/' + LINES.length + (complete ? ' complete' : ' typing') + (showChoices && complete ? ', choice ' + (focus + 1) : '') + (done ? ' (ended)' : '');
+    requestAnimationFrame(draw);
+  }
+  function advance() {
+    var L = LINES[li], n = typedCount(L.text, performance.now() - t0);
+    if (n < L.text.length) { t0 = -1e9; return; }      // complete the line
+    li = (li + 1) % LINES.length; t0 = performance.now(); done = li === 0;
+  }
+  cv.addEventListener('click', advance);
+  cv.addEventListener('keydown', function (e) {
+    if (e.key === 'e' || e.key === 'E' || e.key === 'Enter') advance();
+    else if (e.key === 'w' || e.key === 'ArrowUp') focus = (focus + CHOICES.length - 1) % CHOICES.length;
+    else if (e.key === 's' || e.key === 'ArrowDown') focus = (focus + 1) % CHOICES.length;
+    else if (/^[1-3]$/.test(e.key)) { focus = +e.key - 1; advance(); }
+    e.preventDefault();
+  });
+  document.getElementById('restart').onclick = function () { li = 0; t0 = performance.now(); focus = 0; done = false; cv.focus(); };
+  cv.focus();
+  draw();
+})();
+</script>
+</body>
+</html>
