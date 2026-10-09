@@ -22,6 +22,7 @@
 // v1-only material (iron, grate, ash, rock) and the `?detail=0` A/B switch.
 
 import { fastShade, samplePowLUT } from './fastShade.js';
+import { entityTintAt, tintChannel } from './entityTint.js';
 import { KIND_MODEL, KIND_MESH, FACE_PACKED } from './GBuffer.js';
 import { clamp01, clampByte } from '../core/math.js';
 
@@ -704,6 +705,7 @@ const fastOut = { fg: [0, 0, 0], bg: [0, 0, 0], glyphIdx: 0 };
 // US-006: this cell's selected [r,g,b] light (uniform or per-cell - see
 // `shadeSurfaces`), handed to `shadeDetailFast` unchanged.
 const cellLight = [0, 0, 0];
+const tintScratch = new Float32Array(4), tintFg = [0, 0, 0], tintBg = [0, 0, 0]; // 38.23
 
 // v1 interior fog (US-004b's own fast fog, duplicated here in numbers only -
 // no `P.util.fogFactor` call per cell; matches `fastShade.js`'s
@@ -761,6 +763,7 @@ export function shadeSurfaces(fb, gbuf, table, DP, lightBuf) {
     }
   }
 
+  const tints = fb.entityTints || null; // 38.23 table or null (off)
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
@@ -785,6 +788,13 @@ export function shadeSurfaces(fb, gbuf, table, DP, lightBuf) {
         onJoint = false;
       }
 
+      if (tints !== null && tints.count > 0 && gbuf.objectId && entityTintAt(tints, gbuf.objectId[i], tintScratch)) {
+        // 38.23: display override after lighting, before fog (fogF below); no light emitted.
+        const tk = tintScratch[3];
+        tintFg[0] = tintChannel(fg[0], tintScratch[0], tk); tintFg[1] = tintChannel(fg[1], tintScratch[1], tk); tintFg[2] = tintChannel(fg[2], tintScratch[2], tk);
+        tintBg[0] = tintChannel(bg[0], tintScratch[0], tk); tintBg[1] = tintChannel(bg[1], tintScratch[1], tk); tintBg[2] = tintChannel(bg[2], tintScratch[2], tk);
+        fg = tintFg; bg = tintBg;
+      }
       rt.setCellRGB(x, y, glyphIdx,
         clampByte(fg[0]), clampByte(fg[1]), clampByte(fg[2]),
         clampByte(bg[0]), clampByte(bg[1]), clampByte(bg[2]));
