@@ -21,7 +21,7 @@ import paletteModule from '../../../../design/palette.js';
 import detailPassModule from '../../../../design/detail-pass.js';
 import '../../../../design/models/voxel_beast.js';
 
-const BUDGET_BYTES = 64 * 1024, SETTLE = 10, FRAMES = 300;
+const BUDGET_BYTES = 55680, /* measured max 37120 x 1.5 */ SETTLE = 10, FRAMES = 300;
 let pass = 0, fail = 0; const failures = [];
 const ok = (n, c, d) => { if (c) pass++; else { fail++; failures.push(n + (d ? ' - ' + d : '')); } };
 
@@ -33,7 +33,13 @@ const bytes = new Map(); let frameBytes = 0, draws = 0, instancedDraws = 0, writ
 const lbl = (h, kind) => kind + ':' + ((h.desc && (h.desc.label || (h.desc.format ? h.desc.format + ' ' + h.desc.width + 'x' + h.desc.height : 'size ' + (h.desc.size || h.desc.sizeBytes || '?')))) || '?');
 const add = (key, n) => { frameBytes += n; writes++; bytes.set(key, (bytes.get(key) || 0) + n); };
 device.writeBuffer = (h, data) => { add(lbl(h, 'buf'), data.byteLength); };
-device.writeTexture = (t, data, rect, dataOffset) => { add(lbl(t, 'tex'), data.byteLength - (dataOffset ? dataOffset * (data.BYTES_PER_ELEMENT || 1) : 0)); };
+// Bytes the device really uploads: the rect (w*h*texel size) when given, else the whole array from dataOffset (earlier versions of this
+// counter used data.byteLength - dataOffset even with a rect, which over-counted the dirty-row band uploads ~25x).
+const TEXEL = { rgba8: 4, rgba8ui: 4, r32f: 4, r32ui: 4, r8ui: 1, rg8ui: 2, rgba32f: 16, rgba32i: 16, rgba32ui: 16 };
+device.writeTexture = (t, data, rect, dataOffset) => {
+  const f = t.desc && t.desc.format, tb = TEXEL[f];
+  add(lbl(t, 'tex'), rect && tb ? rect.w * rect.h * tb : data.byteLength - (dataOffset ? dataOffset * (data.BYTES_PER_ELEMENT || 1) : 0));
+};
 device.draw = (count, first, inst = 1) => { draws++; if (inst > 1) instancedDraws++; };
 const origCreateBuffer = device.createBuffer.bind(device);
 let bufCreates = 0; device.createBuffer = (d) => { bufCreates++; return origCreateBuffer(d); };
@@ -99,7 +105,7 @@ assert.ok(draws > 0, 'passes drew');
 const steady = perFrame.slice(SETTLE + 1);
 const avg = steady.reduce((a, b) => a + b, 0) / steady.length, max = Math.max(...steady), first = perFrame.slice(0, SETTLE + 1);
 const sparkCount = ps.stats.live;
-ok('upload <= 64 KB/frame (max over steady frames)', max <= BUDGET_BYTES, 'max ' + max + ' avg ' + avg.toFixed(0));
+ok('upload <= 55680 B/frame (max over steady frames)', max <= BUDGET_BYTES, 'max ' + max + ' avg ' + avg.toFixed(0));
 ok('no buffer creation after frame 10', lateCreates === 0, lateCreates + ' createBuffer calls');
 ok('no device resource creation after frame 10 (createCount flat)', createHist[FRAMES - 1] === createHist[SETTLE + 1], 'createCount ' + createHist[SETTLE + 1] + ' -> ' + createHist[FRAMES - 1]);
 ok('sprite pool does not grow after frame 10', pool.spr.length === MAX_SPRITES * SPR_STRIDE && pool.count === 0, 'count ' + pool.count);
