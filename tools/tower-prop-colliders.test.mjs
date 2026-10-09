@@ -35,7 +35,7 @@ ok(c && w.colliders.filter(c => c.id === 'props:static').length === 1, 'one stat
 ok(c.bvh.triCount === 176 + 5 * 32, 'NPC-BEAR-01 bear prism (components.collider) + 11 piece boxes, gondola box, practice-post prism, 3 wall-lamp prisms (BUG-LAMP-COLLIDE) + the pick-up lamp (BUG-LAMP-COLLIDE-02)');
 const hashes = {
   gondola: 'bd66286192399a8c8ebf35ae625edd1f526e3c22d96fa8ce111468ff54134ce3', // owner 2026-10-06: basket back to its original wood/brass mats (cloth meant the balloon fabric),
-  practiceTarget: 'be119136a64f6a554ed0297179999144e32cd758f1f23f6a97b2b5b351327a83',
+  practiceTarget: '6a3445c8d7e10cc909dbded9c59d4a44df2e105d72d60643497810a7ce782bda', // HIT-BLEED-01 (owner): flash pose no longer a white shell (only change; old hash reproduces from m3_props.js before 89b67be8)
   awakeningCrates: '7eea5da1f03198c64defd00e024e923c1803dd50afd700a430cb7eb66ea9cb1b',
   awakeningKeeper: 'b11f68628facfc4aa2026e561462920a42c10662d4914e3bb461f8ebacb501e1',
 };
