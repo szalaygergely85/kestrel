@@ -22,7 +22,7 @@ export function newestSlot(slots) {
   return best ? best.slot : -1;
 }
 
-function slotLabel(slot) {
+export function slotLabel(slot) {
   if (!slot.ok) return `Slot ${slot.slot + 1}: Unreadable`;
   if (!slot.meta) return `Slot ${slot.slot + 1}: Empty`;
   const minutes = Math.floor(slot.meta.playTimeSec / 60);
