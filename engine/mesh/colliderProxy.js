@@ -161,7 +161,7 @@ function hullSupportPoints(pos) {
 /**
  * Exact convex hull (incremental / "beneath-beyond") of a small point set.
  * @param {number[][]} pts @param {number} eps
- * @returns {number[][]|null} faces, each [a,b,c] vertex indices into pts (CCW outward), or null if degenerate
+ * @returns {number[][][]|null} faces, each [pa,pb,pc] = the three points from pts (CCW outward), or null if degenerate
  */
 function quickHull3(pts, eps) {
   const n = pts.length;
