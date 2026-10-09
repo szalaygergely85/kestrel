@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // tools/viewport-fit-browser.mjs (BUG-HUD-OFFSCREEN-01 headless check). Own server + headless Chrome over CDP on --port (95xx).
-//   node tools/viewport-fit-browser.mjs --port 9535 [--backends webgl2,webgpu] [--dprs 1,1.25,1.5]
+//   node tools/viewport-fit-browser.mjs --port 9535 [--backends webgpu] [--dprs 1,1.25,1.5]
 // For viewports 1280x720 / 1920x969 x grids 240x90 (rays 1+2) / 400x150 / 480x180 x DPR: the canvas bounding rect must lie inside
 // the window (so the bottom HUD and the top-left objective line are visible). Exit 1 on any overflow.
 import { spawn } from 'node:child_process';
@@ -11,7 +11,7 @@ import { ROOT, findBrowserBinary, waitForHttp, killTree, connectCdp, buildLaunch
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
 const port = Number(args.port); validatePort(port);
-const backends = (args.backends || 'webgl2,webgpu').split(',');
+const backends = (args.backends || 'webgpu').split(',');
 const dprs = (args.dprs || '1,1.25,1.5').split(',').map(Number);
 const VIEWS = [[1280, 720], [1920, 969], [1024, 768]]; // S8-B1-12: 1024x768 added for the resize/DPR/fullscreen owner-look AC
 const GRIDS = [['240x90', 1], ['240x90', 2], ['400x150', 2], ['480x180', 4]];
@@ -52,7 +52,7 @@ try {
     const r = await evalIn(cdp, PROBE);
     const eps = 0.01;
     const fit = r.left >= -eps && r.top >= -eps && r.right <= r.iw + eps && r.bottom <= r.ih + eps;
-    if (r.error || !fit || r.backend !== (backend === 'webgpu' ? 'webgpu' : 'gl2')) bad++;
+    if (r.error || !fit || r.backend !== ('webgpu')) bad++;
     rows.push(`${fit ? 'ok  ' : 'FAIL'} ${backend} ${w}x${h} dpr${dpr} ${grid} r${rays} -> backend=${r.backend} cell ${r.pxW}x${r.pxH}px canvas ${r.left.toFixed(1)},${r.top.toFixed(1)}..${r.right.toFixed(1)},${r.bottom.toFixed(1)} of ${r.iw}x${r.ih}`);
   }
   cdp.close();

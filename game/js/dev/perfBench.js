@@ -52,7 +52,6 @@ function p95(arr, n) {
  * @param {object} ctx.engine - the running `createEngine()` instance (`engine.loop` must already be started)
  * @param {object} ctx.playerHandle - `world.get('player')`
  * @param {object} ctx.overlay - `DebugOverlay`
- * @param {object|null} ctx.gpuPipeline - `GpuCellPipeline` or null (CPU fallback: GPU numbers report "n/a")
  * @param {object} ctx.input - `Input`
  * @param {object} ctx.rt - the active `RenderTarget`
  * @param {object} ctx.look - `PlayerLook` (US-005) - the mouse-look state main.js
@@ -66,13 +65,12 @@ function p95(arr, n) {
  *   pinned to the intended facing for the whole view.
  */
 export function runPerfBench(ctx) {
-  const { engine, playerHandle, overlay, gpuPipeline, input, rt, look } = ctx;
+  const { engine, playerHandle, overlay, input, rt, look } = ctx;
   // US-018 spike hunt: `FrameProfiler` on `engine.loop.profiler` (main.js,
   // `?bench=1` only) - reset at the start of each measured window, its
   // worst-frame section breakdown is printed per view/walk.
   const prof = ctx.prof || null;
   const loop = engine.loop;
-  if (gpuPipeline) gpuPipeline.setPassTiming(true);
   overlay.visible = true;
   overlay.el.style.display = 'block';
   overlay.el.style.font = '13px "Courier New", monospace';
@@ -115,7 +113,7 @@ export function runPerfBench(ctx) {
         if (n === 0 && prof) prof.reset();
         jsHist[n] = loop.stats.jsMs;
         intervalHist[n] = loop.stats.intervalMs;
-        gpuHist[n] = gpuPipeline ? gpuPipeline.stats.gpuMsP50 : NaN;
+        gpuHist[n] = NaN; // WG-5c: no GL pass timer; WebGPU timing is reported by the main HUD
         n++;
         requestAnimationFrame(tick);
         return;
@@ -133,7 +131,7 @@ export function runPerfBench(ctx) {
       avgFps,
       jsAvg: avg(jsArr, n), jsP95: p95(jsArr, n), jsMax: max(jsArr, n),
       gpuP50: avg(gpuArr, n), gpuP95: p95(gpuArr, n),
-      passP50: gpuPipeline ? Array.from(gpuPipeline.stats.passMsP50) : null,
+      passP50: null,
       worstIntervalMs: walkExtra ? walkExtra.worstIntervalMs : undefined,
       over25: walkExtra ? walkExtra.over25 : undefined,
       worstFrame: prof ? prof.format() : undefined,
@@ -179,7 +177,7 @@ export function runPerfBench(ctx) {
     if (walkN < MAX_SAMPLES) {
       jsHist[walkN] = loop.stats.jsMs;
       intervalHist[walkN] = loop.stats.intervalMs;
-      gpuHist[walkN] = gpuPipeline ? gpuPipeline.stats.gpuMsP50 : NaN;
+      gpuHist[walkN] = NaN; // WG-5c: no GL pass timer; WebGPU timing is reported by the main HUD
       walkN++;
     }
     if (overlay.shouldRefresh(now)) {
@@ -198,7 +196,7 @@ export function runPerfBench(ctx) {
       // (never above the binding 8 ms max), GPU <= 4 ms, over25 == 0 (walk only).
       const passFps = r.avgFps >= 58;
       const passJs = r.jsAvg <= 2 && r.jsMax <= 8;
-      const passGpu = !gpuPipeline || Number.isNaN(r.gpuP50) || r.gpuP50 <= 4;
+      const passGpu = Number.isNaN(r.gpuP50) || r.gpuP50 <= 4;
       const passWalk = r.over25 === undefined || r.over25 === 0;
       const verdict = (passFps && passJs && passGpu && passWalk) ? 'PASS' : 'CHECK';
       lines.push(`-- ${r.name} [${verdict}] --`);

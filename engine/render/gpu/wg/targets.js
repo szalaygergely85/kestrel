@@ -3,14 +3,15 @@
 // like the GL sub-sample set. `resizeGrid` = free + alloc (the pipeline commits the new set only after a successful alloc).
 // Pure device calls: Node-testable with makeMockGpuDevice.
 
-export const WG_TEXTURE_FIELDS = Object.freeze(['texSGI', 'texSGA', 'texSDepth', 'texRasterDepth', 'texGI', 'texGA', 'texGD', 'texDepth', 'texMask', 'texLight', 'texShadeFg', 'texShadeBg', 'texFinalFg', 'texFinalBg']);
+export const WG_TEXTURE_FIELDS = Object.freeze(['texLevel', 'texSGI', 'texSGA', 'texSDepth', 'texRasterDepth', 'texGI', 'texGA', 'texGD', 'texDepth', 'texMask', 'texLight', 'texShadeFg', 'texShadeBg', 'texFinalFg', 'texFinalBg']);
 
 /**
  * @param {any} device a GpuDevice (mock or WebGPU)
  * @param {number} cols @param {number} rows @param {number} rays sub-samples per cell axis (>= 1)
+ * @param {{stable?: boolean}} [opts] stable (US-073b): also create `texLevel` (r8ui, shade's 3rd target) + `targetShadeLevel`; absent = identical to before
  * @returns {{texSGI: any, texSGA: any, texSDepth: any, texRasterDepth: any, targetRaster: any, subCols: number, subRows: number, cols: number, rows: number, rays: number}}
  */
-export function allocWgTargets(device, cols, rows, rays = 1) {
+export function allocWgTargets(device, cols, rows, rays = 1, opts = null) {
   const subCols = cols * rays, subRows = rows * rays;
   /** @type {any} */ const t = { cols, rows, rays, subCols, subRows };
   try {
@@ -38,6 +39,10 @@ export function allocWgTargets(device, cols, rows, rays = 1) {
     t.texFinalBg = device.createTexture({ format: 'rgba8', width: cols, height: rows });
     t.targetShade = device.createTarget({ color: [t.texShadeFg, t.texShadeBg] });
     t.targetFinal = device.createTarget({ color: [t.texFinalFg, t.texFinalBg] });
+    if (opts && opts.stable) { // US-073b (38.25 item 3): shade's extra ramp-level byte, only when the stable pass exists
+      t.texLevel = device.createTexture({ format: 'r8ui', width: cols, height: rows });
+      t.targetShadeLevel = device.createTarget({ color: [t.texShadeFg, t.texShadeBg, t.texLevel] });
+    }
   } catch (e) {
     freeWgTargets(device, t);
     throw e;
@@ -48,7 +53,7 @@ export function allocWgTargets(device, cols, rows, rays = 1) {
 /** @param {any} device @param {any} t result of allocWgTargets (partial is fine) */
 export function freeWgTargets(device, t) {
   if (!t) return;
-  for (const f of ['targetRaster', 'targetVmDepth', 'targetResolve', 'targetDeriv', 'targetLight', 'targetShade', 'targetFinal', ...WG_TEXTURE_FIELDS]) {
+  for (const f of ['targetRaster', 'targetVmDepth', 'targetResolve', 'targetDeriv', 'targetLight', 'targetShade', 'targetShadeLevel', 'targetFinal', ...WG_TEXTURE_FIELDS]) {
     if (t[f]) { try { device.dispose(t[f]); } catch (_) { /* best effort */ } t[f] = null; }
   }
 }

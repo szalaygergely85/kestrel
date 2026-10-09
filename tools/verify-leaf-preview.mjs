@@ -19,12 +19,12 @@ try{
  await cdp.send('Emulation.setDeviceMetricsOverride',{width:1600,height:1000,deviceScaleFactor:1,mobile:false});
  async function shot(name){await pause(350);const s=await cdp.send('Page.captureScreenshot',{format:'png'});writeFileSync(path.join(out,name+'.png'),Buffer.from(s.data,'base64'));}
  const requested=process.argv[3] || 'webgpu';
- assert.ok(['webgpu','webgl2'].includes(requested),'backend must be webgpu or webgl2');
- for(const backend of ['webgpu','webgl2']){
+ assert.ok(['webgpu'].includes(requested),'backend must be webgpu');
+ for(const backend of ['webgpu']){
   await cdp.send('Page.navigate',{url:`http://127.0.0.1:${port}/game/leaf-preview.html?backend=${backend}`});
   let ready=false;for(let i=0;i<100;i++){await pause(300);if(await evaluate(cdp,'!!window.__leafPreview')){ready=true;break;}}assert.ok(ready,JSON.stringify(errors));
   const state=await evaluate(cdp,`(()=>{const p=__leafPreview;return {info:p.info,grid:[p.rt.cols,p.rt.rows],ready:p.pipeline.ready,complete:p.pipeline.frameComplete,gpu:p.rt.gl ? p.rt.gl.getParameter(p.rt.gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL) : p.info.label};})()`);
-  assert.equal(state.info.backend,backend==='webgl2' ? 'gl2' : backend);assert.deepEqual(state.grid,[400,150]);assert.doesNotMatch(state.gpu,/swiftshader|software|llvmpipe/i);console.log(JSON.stringify({backend,...state}));
+  assert.equal(state.info.backend,backend);assert.deepEqual(state.grid,[400,150]);assert.doesNotMatch(state.gpu,/swiftshader|software|llvmpipe/i);console.log(JSON.stringify({backend,...state}));
   await shot('leaf-'+backend+'-soft');
   const geometry=await evaluateAsync(cdp,'(async()=>{const g=await __leafPreview.pipeline.readbackGeometry();return Array.from(g.GI).filter(v=>v!==0).length;})()');
   assert.ok(geometry>0,'fixture must draw geometry');

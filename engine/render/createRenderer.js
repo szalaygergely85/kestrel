@@ -1,10 +1,10 @@
 // WG-1c2 (docs/architecture.md 38.7, 38.8a items 14-16): async render-target factory with the runtime backend switch.
 //   `createRenderer({ canvas, cols, rows, backend, force2d, cpuGrid, gpu })` -> `{ rt, pipeline, device, info }`
-// backend 'webgl2' (default): exactly the old `RenderTarget()` path (device = null).
-// backend 'webgpu': createGpuDevice (adapter, limits, self-test; canvas attached only after it passed) + RenderTargetWebGPU
-// at `cpuGrid` (no WebGPU cell pipeline until WG-2, so never the 320x120 GPU grid). On any failure: warn and build the
-// webgl2 target on the SAME canvas (the failed request leaves it free). This file and the F3 line are the only places that
-// read `device.backend` (check-deps / 38.2).
+// WG-5b: WebGPU is the only GPU backend. createGpuDevice (adapter, limits, self-test; canvas attached only after it
+// passed) + RenderTargetWebGPU + WgCellPipeline. When WebGPU is missing/fails (or `force2d`), `o.onWebGpuMissing(reason)`
+// is called (not for force2d) and a CPU Canvas2D target (capped `cpuGrid`, no device, no pipeline) is returned so
+// tests/capture and the engine stay constructible; the game shows the "WebGPU required" screen instead of starting.
+// This file and the F3 line are the only places that read `device.backend` (check-deps / 38.2).
 import { bootNow, span as bootSpan } from '../core/bootMarks.js'; // BOOT-SPEED-01
 import { RenderTarget } from './RenderTarget.js';
 import { RenderTargetWebGPU } from './RenderTargetWebGPU.js';
@@ -13,10 +13,10 @@ import { WgCellPipeline } from './gpu/wg/WgCellPipeline.js';
 
 /**
  * @param {{canvas: any, cols?: number, rows?: number, backend?: string, force2d?: boolean, cpuGrid?: {cols:number, rows:number},
- *   gpu?: boolean, warn?: (m: string) => void}} o
+ *   gpu?: boolean, warn?: (m: string) => void, onWebGpuMissing?: (reason: string) => void}} o
  * @returns {Promise<{rt: any, device: any, info: {requested: string, backend: string, fallback: boolean, label: string}}>}
  */
-// POINTSHADOW-WIRE-01: options forwarded to WgCellPipeline (WebGL2 path never reads them). pointShadows undefined -> pipeline default (off).
+// POINTSHADOW-WIRE-01: options forwarded to WgCellPipeline . pointShadows undefined -> pipeline default (off).
 export function wgPipelineOpts(o) {
   return { rays: o.rays, terrainEnabled: o.terrainEnabled, shadows: o.shadows, gpuCull: o.gpuCull, occl: o.occl, pointShadows: o.pointShadows, pointShadowLevel: o.pointShadowLevel };
 }
@@ -25,15 +25,16 @@ export async function createRenderer(o) {
   const { canvas, cols = 320, rows = 120, force2d = false, gpu = true } = o;
   const cpuGrid = o.cpuGrid || { cols: 160, rows: 60 };
   const warn = o.warn || ((m) => console.warn(m));
-  const requested = o.backend === 'webgpu' ? 'webgpu' : 'webgl2';
-  if (o.backend && o.backend !== 'webgpu' && o.backend !== 'webgl2') warn(`[createRenderer] unknown ?backend=${o.backend} - using webgl2`);
+  const requested = 'webgpu';
+  if (o.backend && o.backend !== 'webgpu') warn(`[createRenderer] ?backend=${o.backend} is gone (WG-5b: WebGPU is the only GPU backend)`);
   let failed = '';
-  if (requested === 'webgpu') {
+  if (force2d) failed = 'force2d (CPU Canvas2D requested)';
+  else {
     let device = null;
     try {
-      // fallback:false -> we do the webgl2 fallback ourselves (createGpuDevice's own fallback would touch the canvas)
+      // createGpuDevice throws on any failure; the CPU target is built below
       const tG = bootNow();
-      device = await createGpuDevice({ backend: 'webgpu', canvas, fallback: false, warn });
+      device = await createGpuDevice({ backend: 'webgpu', canvas, warn });
       bootSpan('createGpuDevice total (adapter, device, self-test)', tG);
       if (device.backend === 'webgpu') {
         const tR = bootNow();
@@ -68,14 +69,13 @@ export async function createRenderer(o) {
         return { rt, pipeline, device, info: { requested, backend: 'webgpu', fallback: false, label } };
       }
     } catch (e) {
-      // If RenderTargetWebGPU threw after the device attached the canvas, free the device. The webgl2 build below then
-      // gets a cloned-node Canvas2D (a canvas already holding a webgpu context cannot give a gl2 context) - expected in this narrow case.
+      // If RenderTargetWebGPU threw after the device attached the canvas, free the device.
       if (device && typeof device.dispose === 'function') { try { device.dispose(); } catch (_) { /* best effort */ } }
       failed = String(e && e.message || e);
-      warn(`[createRenderer] webgpu failed (${failed}); falling back to webgl2`);
+      warn(`[createRenderer] webgpu failed (${failed}); no GPU backend`);
     }
   }
+  if (!force2d && typeof o.onWebGpuMissing === 'function') { try { o.onWebGpuMissing(failed || 'unknown'); } catch (_) { /* UI hook must not break boot */ } }
   const rt = RenderTarget(canvas, cols, rows, { force2d, cpuGrid, gpu });
-  const fallback = requested === 'webgpu';
-  return { rt, pipeline: null, device: null, info: { requested, backend: rt.backend, fallback, label: `${rt.backend}${fallback ? ' (fallback from webgpu)' : ''}` } };
+  return { rt, pipeline: null, device: null, info: { requested, backend: rt.backend, fallback: !force2d, webgpuMissing: !force2d, label: `${rt.backend}${force2d ? '' : ' (WebGPU missing)'}` } };
 }

@@ -1,5 +1,5 @@
 // S8-B1-20: real-GPU check of the boot loading card's per-stage ms lines + the F3 boot summary's 10 s window.
-// Run: node tools/verify-boot-card.mjs <port> [webgpu|webgl2]   (owner machine only - not run by this change)
+// Run: node tools/verify-boot-card.mjs <port> [webgpu]   (owner machine only - not run by this change)
 import {spawn} from 'node:child_process';
 import assert from 'node:assert/strict';
 import {mkdtempSync} from 'node:fs';
@@ -8,7 +8,7 @@ import {ROOT,validatePort,findBrowserBinary,buildLaunchFlags,waitForHttp,connect
 const port=Number(process.argv[2] || 9887);
 validatePort(port);
 const backend=process.argv[3] || 'webgpu';
-assert.ok(['webgpu','webgl2'].includes(backend),'backend must be webgpu or webgl2');
+assert.ok(['webgpu'].includes(backend),'backend must be webgpu');
 const profile=mkdtempSync(path.join(os.tmpdir(),'kestrel-boot-card-'));
 const server=spawn('python',['-c','import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()',String(port)],{cwd:ROOT,stdio:'ignore',windowsHide:true});
 const pause=ms=>new Promise(r=>setTimeout(r,ms));

@@ -14,7 +14,9 @@ import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 import paletteModule from '../../../../design/palette.js';
 import detailPassModule from '../../../../design/detail-pass.js';
 import { loadLevel } from '../../../world/Level.js';
-import { shadeCore, shadeDetailFast, wetGain, WET_DARK } from '../../detailShade.js';
+import { shadeCore, shadeDetailFast, wetGain, WET_DARK, levelFromThresholds as jsLevelFromThresholds } from '../../detailShade.js';
+import { SHADE_LEVEL_WGSL, SHADE_LEVEL_TARGETS } from './shade.wgsl.js';
+import { createHash } from 'node:crypto';
 import { shadeTerrain, hashFastU, hashFast01 } from '../../terrainShade.js';
 import { packMaterialTable, MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH, SET_F_WIDTH, MAX_LEVELS } from '../ShadeTextures.js';
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
@@ -392,6 +394,41 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   const tm = compileFn(mutT, 'tintCh', shims); let bad = 0;
   for (let i = 0; i < 200; i++) { const c = rand() * 255, t = rand(), k = 0.5 + rand() * 0.5; if (Math.abs(tm(c, t, k) - tintChannel(c, t, k)) > 1e-3) bad++; }
   assert.ok(bad > 100, 'mutation: tint formula caught');
+}
+// --- US-073b (38.25): the stable-glyph level target. OFF = byte-identical to the pre-073b shader; ON = one extra r8ui target. ---
+{
+  assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
+  assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
+  assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);
+  assert.ok(WGSL_MODULES.some((m) => m.name === 'shadeLevel' && m.code === SHADE_LEVEL_WGSL), 'level variant registered');
+  assert.ok(/@location\(2\) lvl: u32,/.test(SHADE_LEVEL_WGSL), 'level target @location(2)');
+  assert.ok(SHADE_LEVEL_WGSL.includes('var o: FO; o.lvl = 255u;'), 'every early return defaults to level 255 (none / passthrough / terrain / sky)');
+  assert.ok(SHADE_LEVEL_WGSL.includes('lvOut = u32(levelFromThresholds(setIdPick, t0.z, gbAvg, su.cutoff));'), 'ramp pick sets the level');
+  assert.ok(SHADE_LEVEL_WGSL.includes('glyphCode = select(code1, code0, idx == 0); lvOut = 255u;'), 'fog stipple glyph resets to 255');
+  assert.ok(SHADE_LEVEL_WGSL.includes('o.lvl = lvOut;'));
+  // the variant minus its splices is exactly the stable-off shader
+  const stripped = SHADE_LEVEL_WGSL
+    .replace('\n  @location(2) lvl: u32,', '').replace(' o.lvl = 255u;', '').replace('\n  var lvOut = 255u;', '')
+    .replace('\n    lvOut = u32(levelFromThresholds(setIdPick, t0.z, gbAvg, su.cutoff));', '').replace(' lvOut = 255u;', '').replace(' o.lvl = lvOut;', '');
+  assert.equal(stripped, SHADE_WGSL, 'level variant == off shader + the 6 splices');
+  // level value: WGSL levelFromThresholds (1 + index, 0 under the cutoff) == the JS twin over the real ramps
+  const fns = core(SHADE_WGSL);
+  let n = 0, nz = 0, bad = 0;
+  for (let setId = 0; setId < table.sets.length; setId++) {
+    const S = table.sets[setId];
+    if (!S || !S.thresholds) continue;
+    for (let t = 0; t < 40; t++) {
+      const gb = rand() * 1.3;
+      const want = jsLevelFromThresholds(S.levels, gb, S.thresholds, su.cutoff), got = fns.levelFromThresholds(setId, S.levels, gb, su.cutoff);
+      n++; if (want > 0) nz++; if (got !== want) bad++;
+    }
+  }
+  assert.ok(n > 100 && nz > n * 0.3, `level coverage ${nz}/${n}`);
+  assert.equal(bad, 0, `level byte vs JS twin: ${bad}/${n}`);
+  probes += n;
+  const mutL = fns && compileFn(SHADE_WGSL.replace('if (t <= gb) { i = k; }', 'if (t < gb) { i = k; }'), 'levelFromThresholds', core(SHADE_WGSL));
+  let badM = 0; for (let setId = 0; setId < table.sets.length; setId++) { const S = table.sets[setId]; if (!S || !S.thresholds) continue; for (let k = 1; k < S.levels; k++) if (mutL(setId, S.levels, S.thresholds[k], su.cutoff) !== jsLevelFromThresholds(S.levels, S.thresholds[k], S.thresholds, su.cutoff)) badM++; }
+  assert.ok(badM > 0, 'mutation: threshold compare (<= to <) caught at exact thresholds');
 }
 
 console.log(`shade.wgsl.test.js: string/layout rules + ${probes} JS-evaluated probes (hash, shadeCore, glyph pick, shadeTerrain) vs JS twins passed, mutations caught (hash, 5 shadeCore, 2 terrain).`);

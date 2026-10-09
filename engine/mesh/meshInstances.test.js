@@ -161,11 +161,8 @@ shadowSunMatrix(dirFromAzEl(135, 40, new Float64Array(3)), new Float64Array(3), 
   for (let i = 0; i < 1000; i++) sink += instancedRanges({ mesh, flags: DRAW_FLAG_ONE_PART }).length;
   ok('instancedRanges: no per-call allocation', process.memoryUsage().heapUsed - h0 < 100000 && sink === 1000);
   const src = (f) => fs.readFileSync(new URL(f, import.meta.url), 'utf8');
-  const files = ['./rasterJS.js', '../render/gpu/GpuCellPipeline.js', '../render/gpu/wg/passRaster.js'];
+  const files = ['./rasterJS.js', '../render/gpu/wg/passRaster.js']; // WG-5b: GL pipeline deleted
   for (const f of files) ok(`${f} calls instancedRanges, no _oneRange copy`, /instancedRanges\(item\)/.test(src(f)) && !/_oneRange\s*[=\[]/.test(src(f)));
-  const gl = src('../render/gpu/GpuCellPipeline.js');
-  const sh = gl.slice(gl.indexOf('  _passShadow() {'));
-  ok('GL _passShadow instanced loop uses instancedRanges', /instancedRanges\(item\)/.test(sh));
 }
 
 // ---- 7. QUAT-LOD-01 part 2: LOD1 mesh group (resolveGroupLod1 + compactGroup cap/hysteresis) --------------------------

@@ -1406,3 +1406,64 @@ Probe: Quaternius leaf materials are `MASK@0.2` (textures 70-75 % alpha 0); `Bar
 | ALPHA-01f | Arc bench forestWalk trees on/off x shadows, lodCells sweep; absorbs TREES-LP-e (37.17 step f) | P1 | todo [PC-A] ~0.25 d - deps: e; owner walk-test "stylized forest" | **AC:** Arc forestWalk numbers (trees on/off x shadows map/off, `lodCells` x0.5 / x2) are within the architecture.md 37.2 bars, or tuned in the order raise `lodCells` -> lower `fill` -> drop the Pine LOD0 range, and recorded in the row; owner walk-test "stylized forest" OK. |
 | US-089w | Save relay + autosave + load hook (S8-B1-01) | P0 | po-review [lane B1] | `game/js/saveRelay.js` (+test), `platform/web.js getSaveStorage`, main.js hooks. Autosave 60 s + waystone touch, load at boot (`engine.setWorld` swap), `?save=0` off, capture/bench/gpucompare/cinematic/webdriver pages never load/save (`?save=1` forces). Report `docs/test-reports/S8-B1-01-02.md`. |
 | US-096w | Quest event hook + objective HUD (S8-B1-02) | P0 | po-review [lane B1] | `game/js/questRelay.js`, events beast:died / inventory:added / world facts (wake, lantern, sword, breach, waystone) -> quest sim; objective line top-left (placeholder text); quest in the S8-B1-01 save. NEEDS PC-A: writer texts; owner look at the HUD line. |
+
+### EP-TALK "The bear can talk" (PO 2026-10-09, owner request "the nicest voxel bear, must be perfect, able to talk"; PC-B 5th agent, owner-authorised while PC-A is offline)
+Implements the M2 part of US-042 (US-042 stays the umbrella; its 8-direction billboard AC is superseded by the voxel bear). Model: `design/models/voxel_bear.js` (designer, in progress: clips idle/talk/listen/wave/laugh/walk + `jaw` part). Order: BEAR-LINES-01 and NPC-BEAR-01 in parallel -> DIALOGUE-01a -> DIALOGUE-01b -> NPC-TALK-ANIM-01 (closes with the one owner walk).
+| ID | Title | Priority | Status | [PC] main files |
+|---|---|---|---|---|
+| BEAR-LINES-01 | Writer: bear's name, personality, first conversation (6-10 lines, one 2-3-way choice branch) + a short repeat line | P1 | todo [PC-B writer, ~0.25 d; no deps] | `docs/story.md` (new section "EP-TALK: the bear"; builds on section 8 sample) |
+| NPC-BEAR-01 | Bear NPC entity in the world: voxel model, idle, turn to the player within 4 m, collider, `[E] Talk` interactable | P1 | todo [PC-B game, ~0.5 d] - deps: designer `voxel_bear.js` done | `game/js/quest/npcBear.js` (new) + test, `content/worlds/world_m1.world.json` (placement), `game/index.html` (load voxel_bear.js), `game/js/main.js` (attach) |
+| DIALOGUE-01a | Dialogue runner + content JSON + validate-content rules (Node only, no view) | P1 | todo [PC-B, ~0.75 d] - **ARCH-NOTE NEEDED** (engine/ui vs game split, content kind) | runner in `engine/ui/dialogue.js` or `game/js/quest/dialogue.js` (architect decides), `content/dialogue/bear.dialogue.json`, `content/manifest.json`, `tools/validate-content.mjs`, tests |
+| DIALOGUE-01b | Dialogue box view (menu_ui skin), typewriter, [E]/Enter advance, W/S + Enter choices, input lock, NPC `talk`/`listen` clip hooks | P1 | todo [PC-B game/UI, ~1 d] - deps: 01a, NPC-BEAR-01, BEAR-LINES-01; designer `uiStyle.dialogue` | `game/js/quest/dialogueView.js` (new) + test, `design/models/menu_ui.js` (designer adds `dialogue`), `game/js/quest/npcBear.js`, `game/js/main.js` |
+| NPC-TALK-ANIM-01 | Jaw lip-sync to the typed text (vowel open, space/punctuation closed) + epic owner walk | P1 | todo [PC-B game, ~0.5 d] - deps: DIALOGUE-01b; small ARCH-NOTE only if the voxel pose has no per-part override seam | `game/js/quest/jawSync.js` (new) + test, `game/js/quest/npcBear.js` |
+
+### BEAR-LINES-01 The bear's name and first conversation  [Priority: P1] [Status: todo]  [PC-B writer]
+As a player, I want the bear to have a name and a voice of its own, so that meeting it is the moment I believe magic is real out here.
+Acceptance criteria:
+- [ ] Name (1-2 words, ASCII) + 3-sentence personality note (voice, what it wants, how it sees Ferrum) in a new `docs/story.md` section "EP-TALK: the bear". Start from the section 8 sample; reuse or replace its lines, say which.
+- [ ] First conversation: 6-10 lines in total, one choice point with 2-3 replies (each reply <= 40 chars), each reply gets 1-2 bear lines, then the branches rejoin at one closing line.
+- [ ] One repeat line for talking to the bear again after the first conversation.
+- [ ] Canon (GDD section 3): the bear never says "Wick" (D-013); it does not explain the SOS or why it sends (deferred to M4); magic is shown, not explained; Wick disbelieves at first. Tone: warm, dry, a little funny.
+- [ ] Each line <= 56 chars, ASCII 32-126 only, speaker label = the bear's name in caps / `YOU`. One line or reply is marked as a good `laugh` beat and one as a good `wave` (greeting or farewell) for the clips.
+Design needed: no. Writer only, text only.
+
+### NPC-BEAR-01 The voxel bear in the world  [Priority: P1] [Status: todo]  [PC-B game]
+As a player, I want to find a big friendly bear by the path that turns its head to look at me as I walk up, so that it feels alive before it even speaks.
+Acceptance criteria:
+- [ ] **Placement (PO proposal, owner confirms in the walk):** on the path just outside the tower breach, 12-20 m from the breach towards the teal signal, sitting beside a berry bush, visible from the breach exit. Outside the tower keeps GDD "no dialogue in M1". The programmer writes the final x/y/z + yaw into the row; ground snap within 0.05 m of the terrain height.
+- [ ] Entity uses `ASSETS.models.voxel_bear` (no copy of model data in game code), plays `idle` looping by default.
+- [ ] Turn to player: when the player is within 4.0 m (horizontal), the bear's yaw eases toward the player at max 120 deg/s (no snap, no overshoot); beyond 6.0 m (hysteresis) it eases back to its home yaw after 2 s. Node test: yaw sequence at 60 Hz for a player stepping in/out, monotonic approach, final error < 2 deg.
+- [ ] Solid: cylinder collider r 0.7 m, h 1.6 m (or the designer's size if stated in the model); the player cannot walk through it (Node test with the physics step).
+- [ ] Interactable via `World.addInteractable` (US-079b0): prompt `[E] Talk`, radius 2.2, fires `npc:talk { id: 'bear' }`. Until DIALOGUE-01b lands, E shows a one-line placeholder toast (no text in code other than via content).
+- [ ] No save state needed beyond the home pose; reload puts it back at home. 0 heap growth over 10k steps; `node tools/run-tests.mjs` + check-deps green.
+Design needed: yes (designer, already in progress) - `voxel_bear.js` with clips and a `jaw` part; designer states collider size and a `talk` mount (head) in the model.
+
+### DIALOGUE-01a Dialogue runner + content data  [Priority: P1] [Status: todo - ARCH-NOTE NEEDED]  [PC-B]
+As a designer/writer, I want conversations to live in content JSON with a small tested runner, so that new NPCs need only data, not code.
+Acceptance criteria:
+- [ ] **ASK ARCHITECT (before dev):** runner in `engine/ui/` (generic, reusable, D-006) vs `game/js/quest/`; new content kind `dialogue` in manifest/loadPack; how flags reach the quest/save state (US-089w save relay). The architect writes a short note; this row follows it.
+- [ ] Format `content/dialogue/<id>.dialogue.json`: `{ id, speakers: { <key>: { label } }, entry: [ { requires?, node } ], nodes: { <id>: { speaker, lines: [..], next? | choices?: [ { text, next, setFlag? } ], setFlag?, clip? , end? } } }`. `entry` picks the first node whose `requires` flag is set (this gives the repeat line). Bear data from BEAR-LINES-01 (placeholder lines allowed until it lands).
+- [ ] Runner is a pure state machine: `open(dialogue, flags)`, `tick(dt)`, `press()` (complete line if typing, else advance), `move(+1/-1)` and `choose()` for choices, `close()`; exposes speaker, current line, `visibleChars`, state `typing | waiting | choosing | ended`, selected choice. Typewriter 30 chars/s, +0.12 s hold after `. , ! ?`. Events: `dialogue:open`, `dialogue:typing`, `dialogue:waiting`, `dialogue:choice`, `dialogue:end`, `dialogue:flag`.
+- [ ] `tools/validate-content.mjs` reports: missing start/entry node, a `next` to a missing node, > 3 choices, a line > 56 chars or a choice > 40 chars, non-ASCII (outside 32-126), unknown speaker, unreachable node (warning). A fixture with each error fails; the bear file passes.
+- [ ] Node tests: full walk through both branches gives the expected line order; `setFlag` applied once; second open with the flag set starts at the repeat node; 0 heap growth over 10k ticks; deterministic (no Date/Math.random).
+Design needed: no. Notes: no text in code; flags save via the existing save relay.
+
+### DIALOGUE-01b Dialogue box, input lock, talk/listen clips  [Priority: P1] [Status: todo]  [PC-B game/UI]
+As a player, I want to press E at the bear and read its words in a box that types out like a voice, and answer it, so that it feels like a real conversation.
+Acceptance criteria:
+- [ ] [E] at the bear's prompt opens the box: skin = designer `uiStyle.dialogue` in `menu_ui.js` (same frame glyphs/colours as title/settings), docked to the bottom third, speaker name tag on the frame, max 3 text lines of 56 chars, continue marker `v` blinking (0.5 s) when waiting. Readable at 240x90 and 400x150.
+- [ ] Text types at the runner speed; [E] or Enter while typing completes the line, while waiting advances; Esc closes the conversation at any point (flags of unreached nodes not set).
+- [ ] Choices: up to 3 rows, cursor `>` + highlight colour, W/S and Up/Down move (wrap), Enter or E picks. Picking does not also advance the next line on the same key press (key-edge test).
+- [ ] Input lock while open: no move, jump, look, hands/sword/fireball, inventory `I`; hands gate closed like US-091b; the world keeps running. Lock released on the frame the box closes; the closing key press does not also swing/jump. Taking damage closes the dialogue.
+- [ ] NPC clips: the speaking NPC plays `talk` while its line types, `listen` while waiting / choosing / while `YOU` lines type; back to `idle` (with turn-to-player) on close. Node clips from the data (`clip: 'laugh' | 'wave'`) play once, then return to talk/listen.
+- [ ] Node tests (dialogueView.test.js): key sequences -> expected runner states, lock flag on/off, clip per state, 0-alloc draw; run-tests + check-deps green. One headless capture of the box at 400x150 attached to the row.
+Design needed: yes (designer) - `uiStyle.dialogue`: frame, name tag, text/choice/highlight colours, `v` marker, a small preview in `design/preview/`.
+
+### NPC-TALK-ANIM-01 Jaw sync: the bear "talks"  [Priority: P1] [Status: todo]  [PC-B game]
+As a player, I want the bear's mouth to move with the words as they appear, so that it really looks like it is speaking.
+Acceptance criteria:
+- [ ] Per typed character: vowel (a e i o u, any case) -> jaw target open (designer's max open angle, default 18 deg); other letters/digits -> half open (9 deg); space, punctuation, end of line -> closed (0 deg). Jaw eases to the target with a 40 ms time constant (no snapping at 30 chars/s). Closed within 0.15 s of the line finishing typing or the player skipping it.
+- [ ] The jaw override layers on top of the `talk` clip (the clip keeps head/body motion; only the `jaw` part is driven). No jaw motion while `YOU` lines type or during `listen`/`idle`. If the voxel pose has no per-part override seam -> ASK ARCHITECT (small opus note), do not patch the engine ad hoc.
+- [ ] Node test (jawSync.test.js): for "Boys don't fly." at 30 chars/s the target sequence is exactly half,open,half,half,closed,half,open,half,closed,half,closed,half,half,half,closed; angle stays within [0, max]; 0 heap growth over 10k steps; deterministic.
+- [ ] **Owner walk (closes EP-TALK):** start game, walk out of the breach to the bear; it turns to look at you within 4 m; `[E] Talk`; the full first conversation with one choice, the jaw visibly moves with the text, `talk`/`listen`/`laugh`/`wave` play; Esc and a second talk show the repeat line; you cannot move or swing while talking. Owner OK recorded in this row.
+Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_bear.js`.

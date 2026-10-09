@@ -90,7 +90,8 @@ export function parseArgs(argv) {
     else if (a === '--swiftshader') opts.swiftshader = true;
     else if (a === '--backend') {
       opts.backend = next();
-      if (opts.backend !== 'webgl2' && opts.backend !== 'webgpu') throw new Error(`--backend must be webgl2|webgpu, got '${opts.backend}'`);
+      if (opts.backend === 'webgl2') throw new Error("--backend webgl2 was removed (WG-5b): WebGPU is the only GPU backend; use --backend webgpu (or omit it)");
+      if (opts.backend !== 'webgpu') throw new Error(`--backend must be webgpu, got '${opts.backend}'`);
     }
     else if (a === '--import') {
       // `--import` alone (no path following, or followed by another flag)
@@ -175,7 +176,7 @@ export function buildQuery(mode, { grid, variant, rays, shadows, backend } = {})
     parts.push(`rays=${rays || 2}`);
   } else if (mode === 'presentdiff') {
     // WG-1c2 (38.8a 12): the CPU path is the oracle; `&pose=<slug>` is appended per pose by runLiveCapture
-    parts.push('backend=webgl2', 'gpu=0');
+    parts.push('force2d=1'); // WG-5b: the CPU Canvas2D path is the oracle
   } else if (mode === 'flicker') {
     parts.push('flicker=1'); // ME-08c: `window.__flicker` (jsRow/gpuRow changed-glyph share)
   } else {
@@ -651,10 +652,10 @@ export async function evaluate(cdp, expression) {
 // fail fast instead of burning the full timeout waiting for a global that
 // will never appear.
 export function isSoftwareRendererLine(text) {
-  return /\[webgl2Gate\] software renderer detected/.test(text);
+  return /\[(webgl2Gate|webgpu)\] software (renderer|adapter) detected/.test(text);
 }
 
-async function waitForGlobal(cdp, globalName, timeoutMs, { failFast, getSoftwareRendererLine, expectBackend = 'gl2' } = {}) {
+async function waitForGlobal(cdp, globalName, timeoutMs, { failFast, getSoftwareRendererLine, expectBackend = 'webgpu' } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (failFast) {
@@ -731,7 +732,7 @@ export async function runLiveCapture(opts) {
     await cdp.send('Runtime.enable');
 
     // Fail-fast watch (fix 2): the game itself console.warns once when it
-    // detects a software renderer (game/js/ui/webgl2Gate.js). Catching that
+    // detects a software renderer (WebGPU adapter info). Catching that
     // here means gpucompare/voxelbench abort in seconds instead of the full
     // timeout when there's no real GPU to measure.
     let softwareRendererLine = null;
@@ -790,7 +791,7 @@ export async function runLiveCapture(opts) {
     const globalName = opts.global || resultGlobalFor(opts.mode);
     const failFast = opts.mode === 'gpucompare' || opts.mode === 'voxelbench';
     const raw = await waitForGlobal(cdp, globalName, opts.timeoutMs, {
-      failFast, getSoftwareRendererLine: () => softwareRendererLine, expectBackend: opts.backend === 'webgpu' ? 'webgpu' : 'gl2',
+      failFast, getSoftwareRendererLine: () => softwareRendererLine, expectBackend: 'webgpu',
     });
 
     const ua = await evaluate(cdp, 'navigator.userAgent');
@@ -875,7 +876,7 @@ async function main() {
   process.exitCode = captureExitCode(mode, normalized);
 
   if (opts.baseline && mode === 'gpucompare') {
-    const run = { backend: opts.backend || 'webgl2', adapter: adapter || 'unknown' };
+    const run = { backend: opts.backend || 'webgpu', adapter: adapter || 'unknown' };
     if (!existsSync(opts.baseline)) {
       mkdirSync(path.dirname(path.resolve(opts.baseline)), { recursive: true });
       const bl = makeBaseline(normalized.rows, { ...run, sha: shortShaSync(), date: todayStr(), grid });

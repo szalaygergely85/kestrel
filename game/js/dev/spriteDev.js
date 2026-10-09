@@ -10,7 +10,7 @@
 //   sprites.render(fb, engine.world, cam);   // in render(), right after renderWorld(...), before rt.present()
 //   extra += sprites.overlayLine();          // F3 overlay (optional)
 import {
-  buildSpriteAtlas, SpritePool, GpuSpritePass, drawSprites, ambientL,
+  buildSpriteAtlas, SpritePool, drawSprites, ambientL,
 } from '../../../engine/index.js';
 // runSpriteCompare is a dev-only parity harness (US-047 two-tier split) -
 // engine/dev.js, not the stable engine/index.js surface.
@@ -19,12 +19,8 @@ import { runSpriteCompare } from '../../../engine/dev.js';
 export function createSpriteSystem({ assets, rt, gpuPipeline, wgPipeline = null }) {
   const atlas = buildSpriteAtlas(assets, assets.palette);
   const pool = new SpritePool(atlas, assets.palette);
-  let pass = null;
-  if (gpuPipeline && gpuPipeline.ready && rt.backend === 'gl2') {
-    const candidate = new GpuSpritePass(rt, gpuPipeline, pool, atlas, assets.palette, { depthUint: true });
-    if (candidate.ready) pass = candidate;
-  }
-  console.log(`[GpuSpritePass] ${pass ? 'active' : 'inactive - drawSprites (JS)'}  atlas ${atlas.width}x${atlas.height}, ${atlas.frames.length} frames, ${atlas.models.size} models`);
+  const pass = null; // WG-5b: the WebGL2 GpuSpritePass is gone (WebGPU sprites live in wg/passSprites.js)
+  console.log(`[sprites] JS drawSprites  atlas ${atlas.width}x${atlas.height}, ${atlas.frames.length} frames, ${atlas.models.size} models`);
 
   return {
     atlas, pool, pass,

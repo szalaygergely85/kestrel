@@ -11,6 +11,7 @@
 import { createAStar, findPath, smoothPath, createSteer, PHYSICS, SIM_STEP } from '../../../../engine/index.js';
 import { BEAST_DEFAULTS, toSteps } from './beastConfig.js';
 import { canSee } from './sight.js';
+import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from '../../../../engine/index.js';
 
 export const MAX_BEASTS = 16;
 const PATH_SLOTS = 64; // waypoints kept per beast path (truncated, final = the exact goal - see `storePath`)
@@ -112,6 +113,18 @@ export function createBeastSim(world, opts) {
       sink: toSteps(cfg.sinkSec),
     },
     count,
+    noise: 1, // BEAST-PERCEIVE-01w: hearing multiplier of the player this step (1 walk, NOISE_SPRINT, NOISE_SWING); caller sets it
+    // preallocated adapter scratch for engine/nav perceive + leash (zero alloc per step)
+    _slot: 0,
+    _pa: { x: 0, z: 0, fx: 0, fz: 0, coneCos: cfg.coneCos, range: cfg.noticeR, hearR: cfg.nearR, homeX: 0, homeZ: 0, homeR: 0 },
+    _pt: { x: 0, z: 0, noise: 1 },
+    _po: { sees: false, hears: false, dist: 0, returnHome: false },
+    _lt: { x: 0, z: 0 },
+    _lret: { x: 0, z: 0, speed: 0 },
+    _ldef: { homeX: 0, homeZ: 0, homeR: cfg.homeArriveR, leashR: cfg.leashR, aggroR: cfg.loseR / cfg.loseScale,
+             loseScale: cfg.loseScale, returnSpeed: cfg.returnSpeed, giveUpT: cfg.giveUpSec },
+    _lagents: null,
+    _losFn: null,
     entities: beastEntities.slice(0, count),
     ids: beastEntities.slice(0, count).map((e) => e.id),
 
@@ -162,6 +175,10 @@ export function createBeastSim(world, opts) {
     // US-079c: preallocated windup scrape emit payload (forefeet position + backward kick direction).
     _scrapePayload: beastEntities.slice(0, count).map((e) => ({ id: e.id, x: 0, y: 0, z: 0, dirX: 0, dirY: 0, dirZ: 0 })),
   };
+
+  sim._lagents = [];
+  for (let i = 0; i < count; i++) sim._lagents.push({ x: 0, z: 0, leashMode: LEASH_HOME, leashT: 0 });
+  sim._losFn = () => sim.seen[sim._slot] === 1; // cached periodic LOS (sampled in perceiveOne), not a fresh ray
 
   for (let i = 0; i < count; i++) {
     const e = sim.entities[i];
@@ -245,7 +262,7 @@ function stepSim(sim, px, py, pz) {
     if (sim.hurtT[i] < 9999) sim.hurtT[i]++;
     if (sim.state[i] >= FIRST_DEAD_STATE) stepDead(sim, i);
   }
-  for (let i = 0; i < n; i++) if (sim.state[i] < FIRST_DEAD_STATE) perceiveOne(sim, i, px, py, pz);
+  for (let i = 0; i < n; i++) if (sim.state[i] < FIRST_DEAD_STATE) { perceiveOne(sim, i, px, py, pz); leashOne(sim, i, px, py); }
   for (let i = 0; i < n; i++) if (sim.state[i] < FIRST_DEAD_STATE) transitionOne(sim, i, px, py);
   updatePathRequests(sim, px, py);
   servePathRequest(sim, px, py);
@@ -281,16 +298,27 @@ function zOf(sim, i) {
 }
 
 function noticedOf(sim, i, px, py) {
-  const steer = sim.steer, cfg = sim.cfg;
-  const dx = px - steer.x[i], dy = py - steer.y[i];
-  const d2 = dx * dx + dy * dy;
-  if (d2 <= cfg.nearR * cfg.nearR) return true;
-  if (d2 > cfg.noticeR * cfg.noticeR) return false;
-  if (!sim.seen[i]) return false;
-  const d = Math.sqrt(d2);
-  if (d < 1e-9) return true;
-  const dot = (dx / d) * sim.fx[i] + (dy / d) * sim.fy[i];
-  return dot >= cfg.coneCos;
+  // BEAST-PERCEIVE-01w: engine/nav/perceive through a thin adapter. hearing = the "nearR" any-direction bubble
+  // (scaled by the player's noise), sight = noticeR + cone + the cached LOS flag. Same numbers as before at noise 1.
+  const steer = sim.steer, a = sim._pa, t = sim._pt;
+  a.x = steer.x[i]; a.z = steer.y[i]; a.fx = sim.fx[i]; a.fz = sim.fy[i];
+  t.x = px; t.z = py; t.noise = sim.noise;
+  sim._slot = i;
+  const o = perceive(a, t, sim._losFn, sim._po);
+  return o.hears || o.sees;
+}
+
+/** BEAST-PERCEIVE-01w: keep the engine leash mode in step with the brain state, then advance it (engaged states only). */
+function leashOne(sim, i, px, py) {
+  const ag = sim._lagents[i], def = sim._ldef, st = sim.state[i];
+  if (st === STATE_WANDER) { ag.leashMode = LEASH_HOME; ag.leashT = 0; return; }
+  if (st === STATE_RETURN) { if (ag.leashMode !== LEASH_GIVEUP) ag.leashMode = LEASH_RETURN; return; }
+  if (ag.leashMode === LEASH_HOME || ag.leashMode === LEASH_RETURN) { ag.leashMode = LEASH_ENGAGE; ag.leashT = 0; }
+  if (ag.leashMode === LEASH_GIVEUP) return; // stays given-up until the beast is home (wander resets it)
+  ag.x = sim.steer.x[i]; ag.z = sim.steer.y[i];
+  def.homeX = sim.homeX[i]; def.homeZ = sim.homeY[i];
+  const t = sim._lt; t.x = px; t.z = py;
+  leashState(ag, def, t, SIM_STEP);
 }
 
 function transitionOne(sim, i, px, py) {
@@ -356,6 +384,8 @@ function checkChaseExit(sim, i, px, py) {
   const cfg = sim.cfg, steer = sim.steer;
   const dx = px - steer.x[i], dy = py - steer.y[i];
   const d2 = dx * dx + dy * dy;
+  const lm = sim._lagents[i].leashMode; // leash/give-up wins over everything (even a boar in windup range)
+  if (lm === LEASH_RETURN || lm === LEASH_GIVEUP) { sim.waiting[i] = 0; enterReturn(sim, i); return; }
   if (d2 <= cfg.windupR * cfg.windupR && sim.seen[i]) {
     // US-079c: only one boar winds up/charges at a time - the first eligible (lowest slot) wins; the rest hold.
     if (hasActiveCharger(sim)) sim.waiting[i] = 1;
@@ -409,7 +439,7 @@ function recoverStep(sim, i, px, py) {
 }
 
 function returnStep(sim, i, px, py) {
-  if (noticedOf(sim, i, px, py)) { enterNotice(sim, i); return; }
+  if (sim._lagents[i].leashMode !== LEASH_GIVEUP && noticedOf(sim, i, px, py)) { enterNotice(sim, i); return; }
   const dx = sim.homeX[i] - sim.steer.x[i], dy = sim.homeY[i] - sim.steer.y[i];
   if (dx * dx + dy * dy <= sim.cfg.homeArriveR * sim.cfg.homeArriveR) enterWander(sim, i);
 }
@@ -476,7 +506,9 @@ function enterStagger(sim, i, dirX, dirY, knock) {
 
 function enterReturn(sim, i) {
   sim.state[i] = STATE_RETURN;
-  sim.goalX[i] = sim.homeX[i]; sim.goalY[i] = sim.homeY[i];
+  sim._ldef.homeX = sim.homeX[i]; sim._ldef.homeZ = sim.homeY[i];
+  const rt = returnTarget(sim._ldef, sim._lret);
+  sim.goalX[i] = rt.x; sim.goalY[i] = rt.z;
   sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
   sim.pathReq[i] = 0;
 }
@@ -898,6 +930,16 @@ function loadSim(sim, obj) {
     sim.entities[i].transform.y = sim.steer.y[i];
   }
   sim.path.set(obj.path);
+  resyncLeash(sim);
+}
+
+/** Leash mode/timer are derived from the brain state (not saved/hashed): engaged states resume ENGAGE with a fresh timer. */
+function resyncLeash(sim) {
+  for (let i = 0; i < sim.count; i++) {
+    const st = sim.state[i], ag = sim._lagents[i];
+    ag.leashT = 0;
+    ag.leashMode = st === STATE_WANDER || st >= FIRST_DEAD_STATE ? LEASH_HOME : (st === STATE_RETURN ? LEASH_RETURN : LEASH_ENGAGE);
+  }
 }
 
 function resetAllSim(sim) {
@@ -924,5 +966,6 @@ function resetAllSim(sim) {
     sim.entities[i].transform.y = sim.homeY[i];
     sim.entities[i].transform.z = sim.homeZ[i]; // US-079b ARCH: a sunk corpse respawns at the authored z, not 0.3 m low
   }
+  resyncLeash(sim);
   sim.events.emit('beasts:reset'); // US-079b: loot clears its corpse state on this
 }
