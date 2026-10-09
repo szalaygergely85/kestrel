@@ -222,12 +222,12 @@ for (const name of validateBehaviours(World.load(assets.world(doc.worldId), asse
 // WebGPU start run the CPU path at the CPU grid). The editor never builds a GL cell pipeline.
 const g = clampGrid(gridFromParam(params, GRID_DEFAULT_COLS));
 window.__editorBoot?.stage('renderer init', 'Starting renderer');
-const { rt: builtRt, pipeline: wgPipeline, info: rendererInfo } = await createRenderer({ canvas, cols: g.cols, rows: g.rows, backend: params.get('backend') || 'webgpu', gpu: params.get('gpu') !== '0', shadows: { sun: params.get('shadows') === 'map' ? 'map' : 'dda' } });
+const { rt: builtRt, pipeline: wgPipeline, info: rendererInfo } = await createRenderer({ canvas, cols: g.cols, rows: g.rows, backend: params.get('backend') || 'webgpu', gpu: params.get('gpu') !== '0', shadows: { sun: params.get('shadows') === 'off' ? 'off' : 'map' } });
 window.__editorBoot?.stage('scene init', 'Preparing scene');
 const engine = createEngine({
   canvas, assets, cols: g.cols, rows: g.rows, rays: 1, renderTarget: builtRt, renderPipeline: wgPipeline,
   gpu: params.get('gpu') !== '0', inputTarget: canvas,
-  shadows: { sun: params.get('shadows') === 'map' ? 'map' : 'dda' }, // 31.6 passthrough
+  shadows: { sun: params.get('shadows') === 'off' ? 'off' : 'map' }, // 31.6 passthrough
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
 });
 const { renderTarget: rt, input } = engine;
