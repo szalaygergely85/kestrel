@@ -115,6 +115,14 @@ function errs(mutate) { return validateLook(withLook(mutate), 'afternoon', () =>
   check('haze edgeMax > 1 -> error', errs((r) => { r.haze.edgeMax = 1.5; }).length > 0);
   check('clouds.lit colour missing -> error', errs((r) => { r.clouds.lit = 'nope'; }).length > 0);
   check('clouds.shade colour missing -> error', errs((r) => { r.clouds.shade = 'nope'; }).length > 0);
+  // S8-B2-12c (38.13): clouds.shadow {strength, scale, cover, soft, deckH} validation
+  const SH = { strength: 0.5, scale: 0.02, cover: 0.4, soft: 0.2, deckH: 300 };
+  check('clouds.shadow valid -> no error', errs((r) => { r.clouds.shadow = { ...SH }; }).length === 0);
+  check('clouds.shadow.strength > 1 -> error', errs((r) => { r.clouds.shadow = { ...SH, strength: 1.5 }; }).length > 0);
+  check('clouds.shadow.scale <= 0 -> error', errs((r) => { r.clouds.shadow = { ...SH, scale: 0 }; }).length > 0);
+  check('clouds.shadow.cover out of [0,1] -> error', errs((r) => { r.clouds.shadow = { ...SH, cover: 2 }; }).length > 0);
+  check('clouds.shadow.soft <= 0 -> error', errs((r) => { r.clouds.shadow = { ...SH, soft: 0 }; }).length > 0);
+  check('clouds.shadow.deckH <= 0 -> error', errs((r) => { r.clouds.shadow = { ...SH, deckH: 0 }; }).length > 0);
   check('clouds.scale <= 0 -> error', errs((r) => { r.clouds.scale = 0; }).length > 0);
   check('clouds.bias <= 0 -> error', errs((r) => { r.clouds.bias = -1; }).length > 0);
   check('clouds.cover out of [0,1] -> error', errs((r) => { r.clouds.cover = 1.5; }).length > 0);

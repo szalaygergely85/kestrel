@@ -340,8 +340,8 @@ function expectedHash(px, py, L, time = 0) {
   ok('circle: packed radius gives exact zero edge distance at r', table[51] === 1 && table[42] === 3 && waterEdgeDistance(table, 0, 8, 5) === 0);
   ok('circle: centre distance is r, diagonal boundary also has zero distance', waterEdgeDistance(table, 0, 5, 5) === 3 && Math.abs(waterEdgeDistance(table, 0, 5 + 3 / Math.sqrt(2), 5 + 3 / Math.sqrt(2))) < 1e-12);
 
-  // ---- S8-B2-12b (38.13): the cloud-darkening byte (light.cloud[i], LIGHT.w bits 24..31 on the GPU) scales k ----
-  const cloudLight = (q) => ({ uniform: false, sunMapOn: false, cloud: Uint8Array.of(q) });
+  // ---- S8-B2-12b (38.13): the cloud-darkening byte (light.cloudQ[i], LIGHT.w bits 24..31 on the GPU) scales k ----
+  const cloudLight = (q) => ({ uniform: false, sunMapOn: false, cloudQ: Uint8Array.of(q) });
   const cq0 = sample(5.5, 5.5, 0.2, false, -0.2, 4, cloudLight(0));
   ok('q=0 (explicit cloud byte) is byte-identical to light: null', cq0.bg.every((v, i) => v === centre.bg[i]) && cq0.glyph.every((v, i) => v === centre.glyph[i]));
   const cq153 = sample(5.5, 5.5, 0.2, false, -0.2, 4, cloudLight(153));
@@ -349,7 +349,7 @@ function expectedHash(px, py, L, time = 0) {
   ok('q=153 (cF=0.4) darkens the sun-lit background vs q=0', cq153.bg[2] < cq0.bg[2]);
   ok('q=255 (cF~0) darkens further than q=153 - monotonic in q', cq255.bg[2] <= cq153.bg[2]);
   // a `uniform` light (no per-cell cloud byte) always behaves as cF=1, even if it happens to carry a `cloud` array
-  const cUniform = sample(5.5, 5.5, 0.2, false, -0.2, 4, { uniform: true, sunMapOn: false, cloud: Uint8Array.of(255) });
+  const cUniform = sample(5.5, 5.5, 0.2, false, -0.2, 4, { uniform: true, sunMapOn: false, cloudQ: Uint8Array.of(255) });
   ok('light.uniform ignores the cloud byte (cF stays 1)', cUniform.bg.every((v, i) => v === centre.bg[i]));
 
   // ---- S8-B2-13b (38.14, the note of record): splash ripples, !sheet only, composite-only (no geometry change) ----
