@@ -122,7 +122,7 @@
       cell(x0 + w - 4, y0 + h - 2, D.more.glyph, rgb(D.more.fg));
     }
     // key hints (right aligned before the more marker)
-    var hint = showChoices && complete ? D.keyHints.text : 'E: next   Esc: leave';
+    var hint = showChoices && complete ? D.keyHints.text : 'E: next';
     var hx = x0 + w - 6 - hint.length;
     for (i = 0; i < hint.length; i++) {
       var isKey = /[A-Z\/]/.test(hint[i]) && (i === 0 || hint[i - 1] === ' ' || /[A-Z\/]/.test(hint[i - 1])) && hint[i + 1] !== undefined && /[A-Z\/:]/.test(hint[i + 1]);

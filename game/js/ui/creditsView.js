@@ -67,7 +67,6 @@ export function createCreditsView(inventory,{style}={}) {
     for(let i=0;i<pages[page].length;i++)drawText(ui,x+4,y+7+i,pages[page][i],fg,bg);
     drawText(ui,x+4,y+h-4,'Thanks for flying.',hint,bg);
     drawText(ui,x+w-4-counts[page].length,y+h-4,counts[page],hint,bg);
-    drawText(ui,x+4,y+h-2,'Esc back',style.hex.gold,bg);
     return bounds;
   }
   return {draw,handleKey,takeAction(){const result=action;action=null;return result;},

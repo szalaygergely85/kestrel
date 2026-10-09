@@ -376,7 +376,7 @@
       note: { color: 'uiDim', col: 6, show: 'selected', note: 'a row\'s note line is drawn only while that row is selected' },
       separator: { row: 8, glyph: '-', color: 'brassShadow', inset: 2 },
       keyHints: { row: 9, align: 'center', color: 'uiDim', key: 'gold',
-                  text: 'W/S select  A/D change  Esc back', keys: ['W/S', 'A/D', 'Esc'],
+                  text: 'W/S select  A/D change', keys: ['W/S', 'A/D'],
                   note: 'arrow keys work too (the AC); the hint names only WASD to stay short' },
       pauseEntry: { text: '[S] Settings', row: 32, align: 'center', color: 'uiHint', keys: ['[S]'],
                     note: 'the pause overlay line under "Click to resume" (row 30), inside its plate (pad 2); S or a click on it opens ' +
@@ -408,7 +408,7 @@
   //   r7   |>  1. Tell me a story.                                                                |  (focus band, gold)
   //   r8   |   2. What is this place?                                                             |
   //   r9   |   3. Goodbye.                                                                        |
-  //   r10  |                                                  E: next   W/S: choose   Esc: leave  |
+  //   r10  |                                                  E: next   W/S: choose           |
   //   r11  +==o===================================================================================o==+
   A.uiStyle.dialogue = {
     story: 'owner 2026-10-09 (talking bear); for the dialogue system (content/dialogue/*.dialogue.json)',

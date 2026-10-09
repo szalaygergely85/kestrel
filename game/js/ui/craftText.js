@@ -3,7 +3,7 @@
 // Writer contract: each line <= 38 chars, printable ASCII. Item names come from the item defs (<= 14 chars).
 export const CRAFT_TEXT = Object.freeze({
   title: 'Workbench',                          // WRITER: placeholder
-  hint: 'W/S pick   Enter make   Esc close',   // WRITER: placeholder
+  hint: 'W/S pick   Enter make',   // WRITER: placeholder
   empty: 'Nothing to make yet.',               // WRITER: placeholder
   made: 'Made {name}.',                        // WRITER: placeholder ({name} = item name)
   missing: 'Missing something.',               // WRITER: placeholder
