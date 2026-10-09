@@ -158,3 +158,7 @@ B1 2026-10-09 (batch 19/20 ARCH CHANGES: S8-B1-10, S8-B1-18, S8-B1-04) -> arch-r
 - verify-motes now asserts alive>0, no NaN, positions near playerHandle.data.transform. Cmd: node tools/verify-motes.mjs {port} [webgpu|webgl2] (not run; Node-only rule).
 
 - US-068c (kestrel-1): tools/editor/axisGizmo.js (+test), camera.js applyViewPreset/VIEW_PRESETS (+tests in axisGizmo.test.mjs; unknown preset throws; TOP clamped -70), main.js keys Numpad7/1/9 (inside editorKeysActive guard) + corner buttons (bottom-left gizmo overlay). Orbits around a point 10 m ahead of the eye. No index.html change needed (overlay built in JS). -> po-review (owner editor look): open tools/editor/index.html, press Numpad7/1/9 or the TOP/FRONT/ISO buttons bottom-left; gizmo axes follow RMB look.
+
+### S8-B1-18 follow-up (verify-motes)
+- tools/verify-motes.mjs: `look.locked` is reset by the game (pointerlock handlers), so a one-shot assignment did not stick; now a 30 ms setInterval in the page pins it true (sim runs). Pose `?pose=roadSouth` (env POSE overrides); prints particles.stats on failure.
+- Result (webgpu): n=55 live motes, bad=0, maxD 32.8, no errors -> PASS. ambient.js sunlit gate NOT changed: sunFromWorld dir = toward sun (dirZ=sin elev), same convention as lighting.js:843 use of sunVisible; no gate bug found.
