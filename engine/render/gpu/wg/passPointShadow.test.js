@@ -170,6 +170,18 @@ const frame = (lights) => ({ _light: lights, _cam: cam, _world: world, _table: n
   sun.dispose(); assert.ok(hz.every((h) => h.buffer._disposed), 'copies disposed with the group');
 }
 
+// ---- ME-16d/f: point faces use the SAME caster settings as the twin (pointCasterOpts) and inherit the sun depthBias [2,4] via the shared caster pipelines ----
+{
+  const { ps, sun } = mk({ level: 'medium' });
+  const so = sun.shadowOpts, r = 8, lights = makeLights(1);
+  ps.run(frame(lights), { list: new DrawList(8), levelCache: new LevelMeshCache(), meshCache: null, strictMatIdFor: null });
+  const s = ps.src;
+  assert.deepEqual([s.instCastM, s.fogFarM, s.meshLod0M, s.meshCastM, s.meshCastCap], [r, r + 128, so.meshLod0M, so.meshCastM, so.meshCastCap]);
+  assert.deepEqual(sun.depthBias, { factor: 2, units: 4 }, 'sun bias [2,4]');
+  assert.ok(ps.casters === sun && sun.pipes.length > 0);
+  for (const pipe of sun.pipes) if (pipe.desc) assert.deepEqual(pipe.desc.depthBias, { factor: 2, units: 4 }, 'every caster pipeline the point faces draw with carries the sun bias');
+}
+
 // ---- ME-16c ARCH CHANGES 5.3: a slot skipped by faceCap keeps its previous origin in the light words (renderedOrigins) ----
 {
   const { ps } = mk({ level: 'medium', pointShadows: { n: 2 } }); // cap 6: one light per frame

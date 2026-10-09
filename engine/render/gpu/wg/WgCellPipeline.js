@@ -52,7 +52,8 @@ export class WgCellPipeline {
     this.terrainEnabled = opts.terrainEnabled !== false;
     this.renderer = 'mesh';
     this.shadowOpts = opts.shadows || null;
-    this.occl = !!opts.occl; // S8-B2-10c two-phase HZB occlusion (`?occl=1`), default OFF
+    this.occl = opts.occl === 2 ? 2 : !!opts.occl; this.occlStats = this.occl === 2 || !!opts.occlStats; // occl 2 = occlusion + stats readback (?occl=2), true/1 = occlusion only
+    // S8-B2-10c two-phase HZB occlusion (`?occl=1`), default OFF
     this.gpuCull = opts.gpuCull !== false; // WG-4a compute cull of instance batches (`?gpucull=0` = CPU path)
     this.ready = false;
     /** passes that really execute in this build; `frameComplete` = the pipeline can replace the CPU shading entirely */
@@ -116,7 +117,7 @@ export class WgCellPipeline {
         targetFormats: ['rgba8', 'rgba8'],
       });
       tp = bootNow();
-      this._rasterPass = new WgRasterPass(this.device, { gpuCull: this.gpuCull, occl: this.occl });
+      this._rasterPass = new WgRasterPass(this.device, { gpuCull: this.gpuCull, occl: this.occl, occlStats: this.occlStats });
       bootSpan('pass raster (ctor total)', tp); tp = bootNow();
       this._meshDrawList = this._rasterPass.list;
       this._shadowPass = new WgShadowPass(this.device, { shadows: this.shadowOpts, renderer: this.renderer, buffers: this._rasterPass.buffers, gpuCull: this.gpuCull });

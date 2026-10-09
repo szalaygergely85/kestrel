@@ -15,7 +15,7 @@ import { classifyAABB, CULL_OUT } from '../../../mesh/culling.js';
 import { DRAW_INSTANCED } from '../../../mesh/DrawList.js';
 import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
 import { windShadowKey } from '../../../mesh/sway.js';
-import { resolvePointShadowOptions, createShadowLightState, selectShadowLights, pointFaceMatrix, pointFacePlanes, pointShadowKeyO, quantiseOrigin } from '../../shadowPoint.js';
+import { resolvePointShadowOptions, createShadowLightState, selectShadowLights, pointFaceMatrix, pointFacePlanes, pointShadowKeyO, quantiseOrigin, pointCasterOpts } from '../../shadowPoint.js';
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js';
 
 const RING_RESERVE = 160; // uniform-ring slots left for the passes after the point shadows (resolve/light/shade/edge/sprites/overlays)
@@ -69,12 +69,11 @@ export class WgPointShadowPass {
 
   /** Per-frame source fields shared by every slot (same inputs as the sun pass). */
   _fillSrc(p, raster, world) {
-    const src = this.src, so = this.casters.shadowOpts;
+    const src = this.src;
     src.cache = raster.levelCache;
     src.terrainSet = p.terrainEnabled && world.terrain ? terrainMeshSetFor(world.terrain) : null;
     const vp = p._voxelPool; src.voxelPool = vp && vp.shadowView ? vp.shadowView : null;
     src.instances = p._instances || null;
-    src.meshLod0M = so.meshLod0M; src.meshCastM = so.meshCastM; src.meshCastCap = so.meshCastCap;
     src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null;
     src.matIdFor = p._table ? p._table.idFor : undefined;
     src.meshCache = raster.meshCache; src.meshIdFor = raster.strictMatIdFor || undefined;
@@ -86,7 +85,8 @@ export class WgPointShadowPass {
     const h = this.state.slots[s], src = this.src, O = this.O, q = this.opts.originQ, list = this.lists[s];
     const ox = quantiseOrigin(lights.defX[h], q), oy = quantiseOrigin(lights.defY[h], q), oz = quantiseOrigin(lights.defZ[h], q), r = lights.pos[h * 4 + 3];
     O[0] = ox; O[1] = oy; O[2] = oz; O[3] = r;
-    const c = src.centre; c.x = ox; c.y = oy; c.z = oz; src.eye.x = ox; src.eye.y = oy; src.instCastM = r; src.fogFarM = r + 128;
+    const c = src.centre; c.x = ox; c.y = oy; c.z = oz; src.eye.x = ox; src.eye.y = oy;
+    pointCasterOpts(src, r, this.casters.shadowOpts); // same caster settings as the compositor twin
     buildShadowList(list, raster.list, world, this._boxPlanes(ox, oy, oz, r), src);
     this._lastBuilt = s;
     let inst = 0; for (let i = 0; i < list.count; i++) if (list.items[i].type === DRAW_INSTANCED) { inst = 1; break; }

@@ -361,3 +361,12 @@ p.dispose(); // idempotent
   assert.strictEqual(q.ready, false);
 }
 console.log('WgCellPipeline.test.js: all checks passed.');
+
+// OCCL-STATS-01: occl 2 is kept (stats readback), true/1 = occlusion without stats
+{
+  const mk = (o) => new WgCellPipeline(rt, { rays: 2, ...o });
+  const a = mk({ occl: 2 }), b = mk({ occl: true }), c = mk({ occl: 1 }), d0 = mk({}), e = mk({ occl: true, occlStats: true });
+  assert.deepEqual([a.occl, a.occlStats], [2, true]);
+  assert.deepEqual([b.occl, b.occlStats, c.occl, c.occlStats], [true, false, true, false]);
+  assert.deepEqual([d0.occl, d0.occlStats, e.occlStats], [false, false, true]);
+}
