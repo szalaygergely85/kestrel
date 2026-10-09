@@ -114,6 +114,7 @@ import { createLoot, setLootApi } from './quest/sim/loot.js'; // US-091a2 (37.16
 import { LOOT_TABLE, LOOT_SEED_SALT } from './quest/sim/lootConfig.js';
 import { createToastView } from './quest/toastView.js';
 import { createInventoryView } from './quest/inventoryView.js'; // US-091b
+import { webGpuMissingReason, showWebGpuRequired } from './webgpuRequired.js'; // WG-5 prep
 import { probeGpuSupport, showWebgl2RequiredScreen, showSoftwareRendererWarning } from './ui/webgl2Gate.js';
 import { drawDemoScene } from './dev/demoScene.js';
 import { drawGlyphsScreen } from './dev/glyphsScene.js';
@@ -362,14 +363,22 @@ const sceneDim = createSceneDim();
 if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
 // WG-1c2: `?backend=webgpu|webgl2` (default webgl2); webgpu falls back to webgl2 with a warning (38.8a 16).
 const shadowOpts = bootOpts.shadowOpts; // GFX-01w: shadow level from the preset (resolveShadowLevel) + ?shadows= / ?shadowinst / ?shadowres / ?shadowcast overrides (ME-15e/f, D-043: map is the default)
-const occlOpt = parseOccl(params, params.get('backend') || 'webgl2');
+// WG-5 prep: `?nogl2=1` = WebGPU is required (no webgl2 fallback unless ?backend=webgl2 is explicit); default behaviour unchanged.
+const noGl2 = params.get('nogl2') === '1' && params.get('backend') !== 'webgl2';
+const backendOpt = params.get('backend') || (noGl2 ? 'webgpu' : 'webgl2');
+const occlOpt = parseOccl(params, backendOpt);
 const pointShadowOpt = parsePointShadows(params, resolvedQuality && resolvedQuality.name); // ME-16e: default OFF in every mode unless the URL sets it
 const tCR = bootNow();
-const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
+const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: backendOpt,
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
   shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.occl, pointShadows: pointShadowOpt.pointShadows, pointShadowLevel: pointShadowOpt.pointShadowLevel, // OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
   onCompileProgress: (done, total) => { bootStages.enter('pipelines'); if (bootCard) bootCard.setStageLines(bootStages.cardText()); if (bootProg) bootProg.count('compile', done, total); } }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
 bootSpan('createRenderer total (' + rendererInfo.label + ')', tCR);
+if (noGl2 && rendererInfo.backend !== 'webgpu') { // WG-5 prep: show the "WebGPU required" screen instead of the silent fallback
+  const wgp = await probeWebGpu(); // game/ probes through the engine (architecture 38.2)
+  showWebGpuRequired(document.body, { reason: webGpuMissingReason(wgp.missing.some((m) => /no navigator/.test(m)) ? {} : { gpu: {} }, { deviceFailed: wgp.available, adapter: wgp.available ? undefined : null }) });
+  throw new Error('WebGPU required (?nogl2=1): ' + rendererInfo.label);
+}
 if (bootProg) { bootProg.phase('engine'); await bootPaint(); }
 const tCE = bootNow();
 const engine = createEngine({

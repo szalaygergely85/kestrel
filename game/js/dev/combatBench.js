@@ -3,6 +3,7 @@
 // browser runner: it moves 4 of the world's real boars (through the real beastSim) into a ring around the
 // player, plays the script as combat:hit events (sparks + hurt FX run) and times 600 frames.
 
+import { formatGpuLine, evalGpuBudget } from './benchGpuLine.js'; // COMBAT-BENCH-02
 // OWNER: budget pending (PO proposal: 16.7/12/8/8 low/med/high/ultra)
 export const BUDGET_MS = 8; // flat default; `?budget=<ms>` overrides
 export const FRAMES = 600;
@@ -63,6 +64,7 @@ export function runCombatBench(ctx) {
   const budget = Number(params.get('budget')) > 0 ? Number(params.get('budget')) : BUDGET_MS;
   const scene = buildCombatScene(Number(params.get('seed')) || 1);
   const dbg = window.__debug;
+  if (ctx.wgPipeline && ctx.wgPipeline.setPassTiming) ctx.wgPipeline.setPassTiming(true); // COMBAT-BENCH-02
   let frame = 0, started = false, t0 = 0, scriptI = 0, centre = null;
   const samples = [];
   const hit = { source: 'player', target: '', damage: 0.5, heavy: false, x: 0, y: 0, z: 0, dirX: 0, dirY: 1, dirZ: 0 };
@@ -103,11 +105,13 @@ export function runCombatBench(ctx) {
     if (++frame <= FRAMES) { requestAnimationFrame(tick); return; }
     const res = evalBudget(samples, { p95Max: budget, avgMax: budget });
     const line = formatLine(res, budget);
-    const gp = ctx.wgPipeline && ctx.wgPipeline.stats && ctx.wgPipeline.stats.passMsP50;
-    const table = gp ? ` | wg passMsP50 ${Array.from(gp, (v) => v.toFixed(2)).join(' ')}` : '';
-    window.__combatBench = { ...res, budget, line };
-    console.log(line + table);
-    ctx.overlay.visible = true; ctx.overlay.el.style.display = 'block'; ctx.overlay.el.textContent = line + table;
+    const gs = ctx.wgPipeline && ctx.wgPipeline.passStats ? ctx.wgPipeline.passStats() : { available: false };
+    const gpuLine = formatGpuLine(gs);
+    const gpuRes = evalGpuBudget(gs, { p95Max: Number(params.get('gpubudget')) || undefined }); // budget OWNER-pending: numbers only
+    const text = `${line} | ${gpuLine}`;
+    window.__combatBench = { ...res, budget, line, gpuLine, gpu: gpuRes };
+    console.log(text);
+    ctx.overlay.visible = true; ctx.overlay.el.style.display = 'block'; ctx.overlay.el.textContent = text;
   }
   requestAnimationFrame(tick);
 }
