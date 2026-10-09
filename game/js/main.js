@@ -69,6 +69,7 @@ import { createTitleMenuHost } from './titleMenuHost.js'; // US-090w: title menu
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
+import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
@@ -373,6 +374,12 @@ let chartData = null;
 try {
   chartData = await (await fetch('../content/chart/world_m1.chart.json')).json();
 } catch (e) { console.warn('[map] chart unavailable:', e && e.message); }
+// S8-B1-16: MAP-01d wiring - feeds the player's position into lane C's coarse visited-cell mask
+// (quest/mapFog.js, S8-C-15) every tick through the seam (game/js/mapFogHook.js); no-op without a
+// loaded chart (nothing for the fog to compose onto). `mapFogHook.fog` is read right below, after
+// `gameHooks.boot(...)` has run `onBoot` for this world, to build the map card's `chartOptions.fog`.
+const mapFogHook = chartData ? createMapFogHook(chartData.bounds) : null;
+if (mapFogHook) gameHooks.register(mapFogHook);
 // S8-B1-04: chest sim (quest/sim/chest.js) + item-get card (ui/itemGetCard.js), wired through the seam only - see
 // game/js/chestHook.js. `defs: []` (NEEDS C: no content/chests/*.json / placement yet) - harmless no-op today.
 const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
@@ -1067,7 +1074,11 @@ function runGame(mode, cinematic = null) {
           if (waystone) markers.push({ kind: 'waystone', x: waystone.data.transform.x, y: waystone.data.transform.y });
           const relay = world.get('tower.beaconBowl');
           if (relay) markers.push({ kind: 'relay', x: relay.data.transform.x, y: relay.data.transform.y });
-          chartOptions = { chart: chartData, markers };
+          // S8-B1-16: known landmarks stay visible on the chart regardless of exploration - a visibility-only
+          // reveal (mapFog.js's `reveal`, never touches the pencil route) of each marker's own cell, not the
+          // player-visit feed (mapFogHook.js's per-tick `visit`) that gates the surrounding terrain.
+          if (mapFogHook && mapFogHook.fog) for (const m of markers) mapFogHook.fog.reveal(m.x, m.y);
+          chartOptions = { chart: chartData, markers, fog: mapFogHook ? mapFogHook.fog : null };
         }
         try {
           initMapCard(assets, ui.cols, ui.rows, chartOptions);
@@ -1609,7 +1620,7 @@ function runGame(mode, cinematic = null) {
         drawTitleCard(ui, fb.timeSec * 1000, wakeOut.titleA, wakeOut.titleState, fadeLut);
         // S8-B1-15: the map card's own draw seam (mapCard.js:drawMapCard), not the generic drawUiPanel - it gives
         // blank (unexplored fog) cells an opaque black backing so they never show the scene through (ARCH note,
-        // docs/lanes/pc-c.md batch 16); a no-op difference today since fog isn't fed yet (S8-B1-16).
+        // docs/lanes/pc-c.md batch 16); the fog itself is fed by mapFogHook.js (S8-B1-16).
         drawMapCard(ui, fb.timeSec * 1000, fadeLut);
         // US-080a2/080b (30.2): HP+MP HUD + hurt edge - hidden on title/map/end/death cards (visibleRule, uiStyle.vitals).
         if (vitals) {
