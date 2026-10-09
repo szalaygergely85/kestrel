@@ -99,7 +99,9 @@ import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js
 import { createWaterfallHooks } from './quest/waterfallHooks.js';
 import { createAmbientMotes } from './quest/ambient.js';
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
-import { createHurtFx, hurtFxEnabled } from './fx/hurtFx.js'; // HURT-FX-01 (lane B1)
+import { createHurtFx, hurtFxEnabled } from './fx/hurtFx.js'; // HURT-FX-01 (lane B1): low-hearts pulse only (hurt edge + kick = US-080a2)
+import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-SPARK-WIRE (lane B1)
+import { parsePointShadows } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
 import { ensureInventory, validateItemDefs, migrateSword } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
@@ -350,10 +352,11 @@ if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
 // WG-1c2: `?backend=webgpu|webgl2` (default webgl2); webgpu falls back to webgl2 with a warning (38.8a 16).
 const shadowOpts = bootOpts.shadowOpts; // GFX-01w: shadow level from the preset (resolveShadowLevel) + ?shadows= / ?shadowinst / ?shadowres / ?shadowcast overrides (ME-15e/f, D-043: map is the default)
 const occlOpt = parseOccl(params, params.get('backend') || 'webgl2');
+const pointShadowOpt = parsePointShadows(params, resolvedQuality && resolvedQuality.name); // ME-16e: default OFF in every mode unless the URL sets it
 const tCR = bootNow();
 const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgl2',
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
-  shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.enabled, // OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
+  shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.enabled, pointShadows: pointShadowOpt.pointShadows, pointShadowLevel: pointShadowOpt.pointShadowLevel, // OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
   onCompileProgress: (done, total) => { bootStages.enter('pipelines'); if (bootCard) bootCard.setStageLines(bootStages.cardText()); if (bootProg) bootProg.count('compile', done, total); } }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
 bootSpan('createRenderer total (' + rendererInfo.label + ')', tCR);
 if (bootProg) { bootProg.phase('engine'); await bootPaint(); }
@@ -367,7 +370,7 @@ const engine = createEngine({
   // OWN-REQ-003 (architecture.md 17.1): the fixed UI glyph layer's grid -
   // `assets.uiStyle.uiGrid` (design/models/title.js), default 160x60.
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
-  // ME-15c/e/f (27.9a, D-043): the sun shadow MAP is the default; `?shadows=dda` keeps the old sun DDA until ME-19c.
+  // ME-19c2: the sun shadow MAP is the only sun shadow path (the sun DDA is gone from the GPU shaders); `?shadows=` only picks level/res.
   shadows: shadowOpts, // ME-15c/e/f (27.9a, D-043): see shadowOpts above
   gfx: bootOpts.gfx, // GFX-03/GFX-01w: scatter density + LOD scale from the preset (undefined = engine defaults)
 });
@@ -882,6 +885,7 @@ async function runGame(mode, cinematic = null) {
   }, true);
   blockContextMenu(canvas); // RMB must not open the browser menu over the game canvas (never the window)
   let practiceTarget = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
+  let hitSparkWire = null; // HIT-SPARK-WIRE: rebuilt on every 'world:loaded'
   let particleHooks = null; // US-053c: rebuilt on every 'world:loaded', below
   let loot = null; // US-091a2 (37.16.3): rebuilt on every 'world:loaded', after beasts + the pack
   let toasts = null; // US-091a2: the loot toast view, rebuilt with loot
@@ -1009,6 +1013,8 @@ async function runGame(mode, cinematic = null) {
       applyPropTargetables(world);
       applyPropEmitters(world); // US-053c: content `emitters` -> components.emitters, same timing rule as applyPropTargetables above
       if (particleHooks) particleHooks.dispose();
+      if (hitSparkWire) hitSparkWire.dispose();
+      hitSparkWire = wireHitSparks(engine.events, engine.particles, () => (playerHandle && playerHandle.transform), hitSparksEnabled(params, isCaptureOrBench)); // HIT-SPARK-WIRE
       particleHooks = createParticleHooks(world, engine.events, engine.particles, particlePresets, engine.physics.gravity);
       if (waterfallHooks) waterfallHooks.dispose();
       waterfallHooks = waterfallPreset ? createWaterfallHooks(world, engine.particles, waterfallPreset) : null;
@@ -1563,7 +1569,7 @@ async function runGame(mode, cinematic = null) {
       // each placed structure at its own origin internally (7.3).
       const eye = Camera.fromEntityInto(playerHandle.data, vitals ? vitals.eyeH() : undefined, renderEye, pitchClampDeg); // reused (rule 9: no per-frame Camera); US-080a2: eyeH sinks while dead
       cam.x = eye.x; cam.y = eye.y; cam.z = eye.z; cam.yawDeg = eye.yawDeg;
-      cam.pitchDeg = eye.pitchDeg + (vitals ? kickDeg(vitals, simTime) : 0) + (fbView ? fbView.kickDeg() : 0) + hurtFx.kick(); // US-080a2 (30.2): hurt pitch kick + SPELL-01b blast kick, render eye only - never written into `look`
+      cam.pitchDeg = eye.pitchDeg + (vitals ? kickDeg(vitals, simTime) : 0) + (fbView ? fbView.kickDeg() : 0); // US-080a2 (30.2): hurt pitch kick + SPELL-01b blast kick, render eye only - never written into `look`
       if (cinematic) evaluatePath(cinematic, simTime, cam);
       if (cinematicHours) applySunHours(engine.world, lightSet, cam.hour, worldSunPath, sunEnabled);
       fb.timeSec = simTime;
@@ -1782,7 +1788,7 @@ async function runGame(mode, cinematic = null) {
       // US-030a (14.2 item 7): "path: gpu|cpu  grid: WxH  rays: n" on the overlay.
       let extra = `grid draw: ${lastRenderMs.toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}\nbackend: ${rendererInfo.label}` +
         `\n${describeQuality(bootOpts, rt.cols, rt.rows, engine.rays)}` + // GFX-01w
-        `\npath: ${rt.gpuActive ? 'gpu' : 'cpu'}  grid: ${rt.cols}x${rt.rows}  rays: ${engine.rays}${occlOpt.enabled && wgActive ? '  occl on (' + hzb.count + ' cuts)' : ''}` +
+        `\npath: ${rt.gpuActive ? 'gpu' : 'cpu'}  grid: ${rt.cols}x${rt.rows}  rays: ${engine.rays}${occlOpt.enabled && wgActive ? '  occl on (' + hzb.count + ' cuts)  occl cull ' + (wgPipeline.stats ? (wgPipeline.stats.culledOccl || 0) : 0) : ''}` +
         (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` +
           // ARCH CHANGES item 4: `terrainSubmitMs*` is CPU draw-call submit
           // time, not a GPU cost - the real terrain GPU cost is the whole-frame
