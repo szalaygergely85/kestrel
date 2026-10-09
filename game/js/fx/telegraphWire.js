@@ -1,10 +1,11 @@
 // TELEGRAPH-WIRE-01 part 1 (lane B1): beastSim state -> per-entity tint component (engine setTint).
 // beastSim emits no windup/hurt events, so `step(nowMs)` polls state[]/hurtT[] once per frame and detects transitions
-// (zero alloc: preallocated prev arrays). windup start -> 'windup', charge ending (contact/wall) -> 'hit', damage
+// 'hit' on charge end dropped (fired on wall ends too, unreadable): tint only windup + boar-hurt-by-sword.
+// (zero alloc: preallocated prev arrays). windup start -> 'windup', damage
 // taken (hurtT reset to 0) -> 'hurt'. Part 2 (kestrel-3) reads the tint component via fillEntityTints.
 import { setTint } from '../../../engine/index.js';
 
-const STATE_WINDUP = 3, STATE_CHARGE = 4, STATE_RECOVER = 5; // = beastSim STATE_* (kept local: sim is lane C, read only)
+const STATE_WINDUP = 3; // = beastSim STATE_* (kept local: sim is lane C, read only)
 const MAX = 64;
 
 export function telegraphsEnabled(params, captureLike) {
@@ -23,7 +24,6 @@ export function wireTelegraphs(events, world, beastSim, enabled = true) {
         const s = st[i], ps = prevState[i], h = hu[i];
         if (h < prevHurt[i]) setTint(ents[i], 'hurt', nowMs);                               // damage landed on the boar
         else if (s === STATE_WINDUP && ps !== STATE_WINDUP) setTint(ents[i], 'windup', nowMs, beastSim.cfgSteps ? beastSim.cfgSteps.windup / 60 : 0);
-        else if (ps === STATE_CHARGE && s === STATE_RECOVER) setTint(ents[i], 'hit', nowMs); // charge connected / ended
         prevState[i] = s; prevHurt[i] = h;
       }
     },

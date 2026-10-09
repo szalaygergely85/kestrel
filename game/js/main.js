@@ -121,7 +121,7 @@ import { runPerfBench } from './dev/perfBench.js'; // US-018 (architecture.md 16
 import { createSpriteSystem, spawnTestSprites } from './dev/spriteDev.js';
 // ---- end US-030c ----
 // ---- US-010: quest behaviours (registered by name before any World loads) ----
-import { validateBehaviours, createRipples } from '../../engine/index.js';
+import { validateBehaviours, createRipples, createEntityTintTable, fillEntityTints } from '../../engine/index.js';
 import './quest/index.js';
 import { parseDemo, filterDemoParams, demoStorage, blockFKeys, createEndCard, drawDemoBuildLine } from './demoMode.js';
 // ---- end US-010 ----
@@ -875,6 +875,7 @@ async function runGame(mode, cinematic = null) {
   let look = null;
   let playerHandle = null;
   let decalBind = null; // DECAL-01: refreshed on load/restart.
+  const entityTintTable = createEntityTintTable(); // TELEGRAPH-WIRE-01 part 2: one table, reused
   let telegraphWire = null; // TELEGRAPH-WIRE-01: rebuilt on 'world:loaded'
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
@@ -1404,7 +1405,6 @@ async function runGame(mode, cinematic = null) {
       const simDue = hitStop.due(1000 / 60); // HITSTOP-01: only beasts + sword freeze
       if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); } // US-079a (29.1)
       if (telegraphWire) telegraphWire.step(performance.now());
-      // TELEGRAPH-WIRE-01 part 2: kestrel-3 fillEntityTints(table, entities, voxelPool, nowMs)
       // US-078d (30.1 + D-034 amendment): the sword steps after beasts.step, so a heavy-hit stagger acts from the
       // beast's NEXT step (deterministic, synchronous emit). `attackDown` is the amendment's exact gate expression.
       if (hands) {
@@ -1635,6 +1635,7 @@ async function runGame(mode, cinematic = null) {
       // needs its own explicit `.project()` before `renderWorld` reads
       // `fb.voxelPool.list` (compositor.js).
       gameVoxelPool.collect(engine.world, cam);
+      if (telegraphWire && beasts) { fillEntityTints(entityTintTable, beasts.entities, gameVoxelPool, performance.now()); fb.entityTints = entityTintTable; } else if (fb.entityTints) fb.entityTints = undefined; // TELEGRAPH-WIRE-01 part 2
       if (!fb.gpu) gameVoxelPool.project(cam, rt, renderer); // ME-19a: CPU reference uses the same mesh camera.
       lap(SEC.voxel);
       // US-017 (7.4 "Fade"): 1 = off outside the end sequence. CPU path
