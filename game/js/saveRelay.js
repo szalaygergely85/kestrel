@@ -30,6 +30,8 @@ export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = 
     get openedChests() { return [...chests]; },
     get deadBeasts() { return [...dead]; },
     get playTimeSec() { return playSec; },
+    /** PAUSE-MENU-01: true when play time has passed since the last save/load (asks "Save first?"). */
+    get dirty() { return sinceSave > 0; },
     get lastResult() { return lastResult; },
 
     /** Subscribes to engine events the seam has no name for (chest:opened); beast:died / item:got arrive via handlers().
