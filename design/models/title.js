@@ -397,6 +397,57 @@
              note: 'curve = [time s, open fraction]; rows with |row - centre| > open*centre are black; the row just inside the lid gets edgeGlyph in edgeColor at 50%' }
   };
 
+  // ---- DIALOGUE box (design v1.51, owner 2026-10-09 talking bear; preview design/preview/dialogue-box.html) ----
+  // Same skin as the title / settings cards: brass frame on the cool night plate, gold focus language. Fixed 160x60 UI grid
+  // (panel-relative cols / rows below). fg = palette keys; bg = literal RGB (same convention as uiStyle.menu.bgRgb).
+  //
+  //   r0   +==o==[ Bear ]==================================================================o==+
+  //   r2   |  Hrrm. Easy, little one - I only bite honeycomb. Sit a while; the hill is quiet,     |
+  //   r3   |  and I have stories.                                                                 |
+  //   r6   |  ------------------------------------------------------------------------------      |
+  //   r7   |>  1. Tell me a story.                                                                |  (focus band, gold)
+  //   r8   |   2. What is this place?                                                             |
+  //   r9   |   3. Goodbye.                                                                        |
+  //   r10  |                                                  E: next   W/S: choose   Esc: leave  |
+  //   r11  +==o===================================================================================o==+
+  A.uiStyle.dialogue = {
+    story: 'owner 2026-10-09 (talking bear); for the dialogue system (content/dialogue/*.dialogue.json)',
+    panel: { w: 96, h: 12, align: 'bottom-center', bottomMargin: 3,
+             note: 'x = (160 - 96) / 2 = 32, y = 60 - 12 - 3 = 45: under the speaker, clear of the crosshair (row 30) and the ' +
+                   'vitals HUD; <= 100 cells (style-guide 5.13). Without choices the panel is 8 tall (rows 0..7, hints on row 6)' },
+    bgRgb: { plate: [10, 11, 16], band: [52, 42, 16] },  // = uiStyle.menu.bgRgb plate / band
+    plate: { pad: 1, bgMul: 0.18, note: 'scene cells under the panel (+1) x 0.18, the card cells are opaque bgRgb.plate' },
+    sceneDim: { bgMul: 0.7, note: 'the rest of the scene x 0.7 while talking (a conversation, not a menu: the speaker stays readable)' },
+    fadeIn: 0.15, fadeOut: 0.12,
+    frame: { corner: '+', h: '=', v: '|', fg: 'brass', cornerFg: 'brassLight',
+             rivets: { glyph: 'o', cols: [3, 92], rows: 'top and bottom', fg: 'brassLight' } },
+    nameTag: { row: 0, col: 6, format: '[ {name} ]', bracketFg: 'brassLight', fg: { npc: 'brassHot', player: 'heroGreen' },
+               note: 'written over the top frame; the speaker name from the dialogue line (player lines = heroGreen, the ' +
+                     'friendly / hero colour)' },
+    text: { row: 2, col: 3, w: 88, maxLines: 4, lineGap: 0, fg: 'uiText', wrap: 'word',
+            emphasis: { mark: '*', fg: 'gold', note: '*word* in the line text is drawn gold without the stars' },
+            typeOn: { cps: 28, pauseMs: 'ASSETS.bearFx.talk.pauseMs (per speaker fx; default , 180 / . 380)',
+                      skip: 'first E / Enter / click completes the line, the next one advances' } },
+    more: { glyph: 'v', row: 'h-2', col: 'w-4', fg: 'gold', blink: { periodSec: 0.8, duty: 0.6 },
+            note: 'shown when the line is complete and no choices follow (= the speaker switches to `listen`)' },
+    separator: { row: 6, glyph: '-', fg: 'brassShadow', inset: 3, show: 'choices' },
+    choices: {
+      firstRow: 7, max: 3, markerCol: 1, numberCol: 3, textCol: 6, bandFrom: 1, bandTo: 94,
+      number: { format: '{n}.', fg: 'uiDim', focusFg: 'brassLight' },
+      normal: { fg: 'uiText' },
+      focus: { fg: 'gold', bg: 'band', marker: '>', markerFg: 'gold', note: 'same focus language as the title menu' },
+      seen: { fg: 'uiHint', note: 'a choice already picked in this conversation' },
+      disabled: { fg: 'uiDim', suffix: ' (locked)', focusable: false },
+      keys: '1-3 pick directly; W/S or arrows move; E / Enter choose; mouse hover = focus, click = choose'
+    },
+    keyHints: { row: 'h-2', align: 'right', colEnd: 'w-4', fg: 'uiDim', keyFg: 'gold',
+                text: 'E: next   W/S: choose   Esc: leave', keys: ['E', 'W/S', 'Esc'],
+                note: 'drawn left of the `more` marker; "W/S: choose" only while choices are shown' },
+    prompt: { text: '[E] Talk', note: 'world prompt = uiStyle.prompt (gold [E]); aim = the speaker mount `interact`' },
+    speechMark: { glyph: '...', fg: 'uiHint', mount: 'speech',
+                  note: 'OPTIONAL overlay over the speaker (model mount `speech`) while the box is open on another speaker' }
+  };
+
   // ---- US-128 Z-targeting overlay styles (architecture.md 28.9 decision 7 / 29.2) ----
   // Passed as-is to engine.overlay.setStyles (shape: {glyph | glyphs 4 chars by slope "horiz vert down-right up-right", fg [r,g,b]};
   // extra keys like `note` are ignored). fg is literal RGB (the overlay takes no palette keys); the palette key it is based on is
