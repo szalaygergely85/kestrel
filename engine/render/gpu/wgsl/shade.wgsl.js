@@ -325,6 +325,7 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
   let hasBevel = (flags & 128) != 0; let hasBand = (flags & 256) != 0; let bandIsU = (flags & 512) != 0;
   let bandTone = (flags & 1024) != 0; let bandBgK = (flags & 2048) != 0;
   let hasOverlay = (flags & 4096) != 0; let ovBand = (flags & 8192) != 0; let hasSpeckle = (flags & 16384) != 0; let hasLod = (flags & 32768) != 0;
+  let gridTexel = (flags & 131072) != 0; // GRID-TEXEL-GLYPH-01 (F_GRID_TEXEL)
 
   let detail = mf0.z; let jitter = mf0.w;
   let albedo = mf0.x;
@@ -352,14 +353,16 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
   let ds = detail * POW2[oct + 3];
 
   let btx = i32(floor(u * detail)); let bty = i32(floor(v * detail));
-  var hA: f32; var hC: f32;
-  if (hasGrid) {
+  var hA: f32; var hC: f32; var hJ: f32;
+  if (hasGrid && !gridTexel) {
     hA = hashFast(bix, courseI, seed);
     hC = hashFast(bix, courseI, seed + 13);
+    hJ = hA;
   } else {
     let cx = i32(floor(u * ds * 0.5)); let cy = i32(floor(v * ds * 0.5));
     hA = hashFast(cx, cy, seed);
     hC = hashFast(cx, cy, seed + 13);
+    hJ = select(hA, hashFast(bix, courseI, seed), hasGrid);
   }
   let hB = hashFast(btx, bty, seed + 7);
   let hBlock = hashFast(bix, courseI, seed + 3);
@@ -501,7 +504,7 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
   if (kind != ${KIND_MODEL}u && face >= 1 && face <= 6) { fk = faceK(face); }
   var aok = 1.0;
   if (aoD < su.aoR) { aok = su.aoK + (1.0 - su.aoK) * smoothstepFast(0.0, su.aoR, aoD); }
-  let jit = 1.0 + jitter * (hA * 2.0 - 1.0);
+  let jit = 1.0 + jitter * (hJ * 2.0 - 1.0);
   let b = Lm * albedo * shadeK * fk * aok * jit * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness) + mf1.x;
   var gb = 0.0;
   if (!(b < su.cutoff)) { gb = su.lift + (1.0 - su.lift) * min(b, 1.0); }
