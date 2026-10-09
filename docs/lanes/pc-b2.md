@@ -203,3 +203,7 @@ NEEDS B1: game/js/cloudParam.js (+ cloudParam.test.js, gpucompare.cloudForce.tes
 Instanced mesh-group path now passes the mask atlas: instances.js addToDrawList reads `meshDraw.maskAtlas` (null fallback) for LOD0+LOD1; meshGroups.js `_build` gets `world.maskAtlas`; compositor.js + GpuCellPipeline.js set `meshDrawArg.maskAtlas`.
 NEEDS B1: engine/render/gpu/wg/passRaster.js:296 add `this.meshDrawArg.maskAtlas = (world && world.maskAtlas) || null` (wg path still unmasked until then; no crash).
 Test: engine/mesh/instancedMaskAtlas.test.js (one cache entry over 3 frames, maskRanges, no-atlas opaque, unmasked unchanged). `--filter mesh`: 52/52 PASS.
+
+### ALPHA-01f-fix2 ARCH CHANGES (kestrel-4) -> arch re-review
+shadowList.js passes src.maskAtlas at both meshCache.get; src.maskAtlas set in passShadow.js (literal + :271), compositor.js, GpuCellPipeline.js. instancedMaskAtlas.test.js case 1 now runs buildShadowList on the same cache (same copy, 0 warns); fails with change 1 reverted (2 FAIL), passes restored.
+--filter mesh/passShadow/compositor/shadow PASS; check-deps in run-tests PASS.
