@@ -13,6 +13,12 @@ export const WG_PASS_SLOT = Object.freeze({ cull: 0, raster: 1, shadow: 2, resol
 // has neither - these just no-op then, same as timing being off.
 export function wgSpanBegin(p, slot) { if (p && p._passTimingOn && p.device && p.device.timer) p.device.timer.begin(slot); }
 export function wgSpanEnd(p) { if (p && p._passTimingOn && p.device && p.device.timer) p.device.timer.end(); }
+const NO_STATS = Object.freeze({ available: false });
+function makePassOut() {
+  const passes = {};
+  for (const n of WG_PASS_NAMES) passes[n] = { p50: NaN, p95: NaN, last: NaN };
+  return { available: false, frames: 0, passes };
+}
 const SLOT_COUNT = 16;
 const MAX_SPANS = 128;
 const HISTORY = 120;
@@ -37,6 +43,7 @@ export class WebGpuTimer {
     this._dirty = new Uint8Array(SLOT_COUNT);
     this._scratch = new Float64Array(HISTORY);
     this._rings = [];
+    this._passOut = this.available ? makePassOut() : null;
     if (!this.available) return;
     try {
       for (let i = 0; i < 3; i++) {
@@ -142,8 +149,10 @@ export class WebGpuTimer {
       while (j > 0 && scratch[j - 1] > v) { scratch[j] = scratch[j - 1]; j--; }
       scratch[j] = v;
     }
-    this._p50[slot] = scratch[Math.floor(n * 0.5)];
-    this._p95[slot] = scratch[Math.min(n - 1, Math.floor(n * 0.95))];
+    if (!n) { this._p50[slot] = NaN; this._p95[slot] = NaN; return; }
+    // Nearest-rank percentile: sorted[ceil(p * n) - 1] (no interpolation).
+    this._p50[slot] = scratch[Math.ceil(n * 0.5) - 1];
+    this._p95[slot] = scratch[Math.ceil(n * 0.95) - 1];
   }
 
   writeStats(out, slot = FRAME_TIMER_SLOT) {
@@ -156,6 +165,24 @@ export class WebGpuTimer {
       this._stats(slot);
       outP50[slot] = this._p50[slot]; outP95[slot] = this._p95[slot];
     }
+  }
+
+  // PERF-PASSP95-01: per-pass {p50, p95, last} over the last 120 samples (nearest-rank). Fills a reused object (zero alloc after
+  // construction); a pass with no samples reports NaN for all three ("n/a"). timestamp-query unavailable -> {available:false}.
+  // `out` is optional: pass your own object (needs .passes) to avoid sharing the internal one. Read results before the next call.
+  passStats(out) {
+    if (!this.available) return NO_STATS;
+    if (!out) out = this._passOut || (this._passOut = makePassOut());
+    let frames = 0;
+    for (let i = 0; i < WG_PASS_NAMES.length; i++) {
+      const slot = WG_PASS_SLOT[WG_PASS_NAMES[i]];
+      this._stats(slot);
+      const e = out.passes[WG_PASS_NAMES[i]] || (out.passes[WG_PASS_NAMES[i]] = { p50: NaN, p95: NaN, last: NaN });
+      e.p50 = this._p50[slot]; e.p95 = this._p95[slot]; e.last = this._length[slot] ? this._latest[slot] : NaN;
+      if (this._length[slot] > frames) frames = this._length[slot];
+    }
+    out.available = true; out.frames = frames;
+    return out;
   }
 
   dispose() {

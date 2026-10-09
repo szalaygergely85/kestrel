@@ -230,6 +230,8 @@ export class WgCellPipeline {
     return true;
   }
 
+  // PERF-PASSP95-01: per-pass {available, frames, passes:{name:{p50,p95,last}}}; read via window.__debug.wgPipeline.passStats().
+  passStats(out) { const t = this.device && this.device.timer; return t && t.passStats ? t.passStats(out) : { available: false }; }
   setPassTiming(on) { this._passTimingOn = !!on; }
 
   /**
