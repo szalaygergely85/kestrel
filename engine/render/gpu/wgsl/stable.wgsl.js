@@ -16,7 +16,7 @@
 import { defineUniformBlock } from './uniformBlock.js';
 import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL } from './common.wgsl.js';
 import { KIND_NONE, KIND_MODEL } from '../../GBuffer.js';
-import { LEVEL_NONE } from '../../temporalStable.js';
+import { LEVEL_NONE, LEVEL_ANIM, UV_LIM_TEXELS } from '../../temporalStable.js';
 
 export const STABLE_BLOCK = defineUniformBlock('StableU', [
   { name: 'curA', type: 'vec4' },   // current terms: fX, fY, fZ, tanHalfX (halfW when ortho)
@@ -53,6 +53,7 @@ ${GBUF_UNPACK_WGSL}
 ${FULLSCREEN_VS_WGSL}
 
 const LEVEL_NONE: u32 = ${LEVEL_NONE}u;
+const LEVEL_ANIM: u32 = ${LEVEL_ANIM}u;
 
 // unorm8 -> byte, exactly like the shade/edge quantise (floor(v * 255 + 0.5)).
 fn byteOf(v: f32) -> u32 { return u32(floor(v * 255.0 + 0.5)); }
@@ -126,14 +127,14 @@ fn stableCell(cell: vec2i) -> SCell {
   o.glyph = byteOf(fgC.w);
   o.level = lvC; o.kind = kind; o.plane = gi.x; o.ub = ga.x; o.vb = ga.y; o.fresh = 1u;
   if (u.histValid == 0) { return o; }
-  if (kind == ${KIND_NONE}u || kind == ${KIND_MODEL}u || lvC == LEVEL_NONE) { return o; }
+  if (kind == ${KIND_NONE}u || kind == ${KIND_MODEL}u || lvC == LEVEL_ANIM) { return o; }
   // edge cell: final != shade (rgb of fg and bg, glyph in fg.a) -> pass through
   let sf = textureLoad(uShadeFg, cell, 0);
   let sb = textureLoad(uShadeBg, cell, 0);
   if (fgC.x != sf.x || fgC.y != sf.y || fgC.z != sf.z || fgC.w != sf.w || bgC.x != sb.x || bgC.y != sb.y || bgC.z != sb.z) { return o; }
   // water-layer cell (ripples must not freeze): the layer word holds a finite vD
   let wl = textureLoad(uWater, cell, 0);
-  if (wl.x != 0x7f800000u && (wl.w & 32u) == 0u) { return o; }
+  if (u.pad0 != 0 && wl.x != 0x7f800000u && (wl.w & 32u) == 0u) { return o; } // pad0 = waterOn: the 1x1 dummy reads 0 (= 'water') out of bounds
   let vd = bitcast<f32>(textureLoad(uDepth, cell, 0).x);
   if (!(vd > 0.0) || vd > 1.0e38) { return o; }
 
@@ -149,17 +150,28 @@ fn stableCell(cell: vec2i) -> SCell {
   let hk = (hh.w >> 8u) & 255u;
   if (hk != kind || hh.x != gi.x) { return o; }
   let lvP = hh.w & 255u;
-  if (lvP == LEVEL_NONE) { return o; }
+  if (lvP == LEVEL_ANIM) { return o; }
+  let c255 = lvC == LEVEL_NONE;
+  if (c255 != (lvP == LEVEL_NONE)) { return o; } // mixed ramp/non-ramp: a real pattern edge, always fresh
   let du = bitcast<f32>(ga.x) - bitcast<f32>(hh.y);
   let dv = bitcast<f32>(ga.y) - bitcast<f32>(hh.z);
   let dUV = sqrt(du * du + dv * dv);
-  if (dUV >= 0.5 / u.detailDefault) { return o; }
+  if (dUV >= ${UV_LIM_TEXELS.toFixed(1)} / u.detailDefault) { return o; }
 
   o.fresh = 0u;
   let hf = textureLoad(uHistFg, hcell, 0);
   let hb = textureLoad(uHistBg, hcell, 0);
+  let fgCur = o.fg;
   o.fg = blendPacked(packRgb(hf.x, hf.y, hf.z), o.fg);
   o.bg = blendPacked(packRgb(hb.x, hb.y, hb.z), o.bg);
+  if (c255) {
+    // both sides non-ramp (38.25 C.3): hold the texture glyph unless the fg snapped; a hold keeps the HISTORY's anchor u/v (C.4)
+    let sa = packRgb(hf.x, hf.y, hf.z);
+    let snapped = abs(i32((fgCur >> 16u) & 255u) - i32((sa >> 16u) & 255u)) > u.snap || abs(i32((fgCur >> 8u) & 255u) - i32((sa >> 8u) & 255u)) > u.snap
+      || abs(i32(fgCur & 255u) - i32(sa & 255u)) > u.snap;
+    if (!snapped) { o.glyph = byteOf(hf.w); o.ub = hh.y; o.vb = hh.z; }
+    return o;
+  }
   if (abs(i32(lvC) - i32(lvP)) <= 1) { o.glyph = byteOf(hf.w); o.level = lvP; }
   return o;
 }

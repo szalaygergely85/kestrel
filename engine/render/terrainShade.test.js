@@ -57,6 +57,18 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
   check('far band glyph is the far set code', o3.glyph === 3);
 }
 
+// 38.25 amendment C.1: stable-pass level byte - 254 (animated, never hold) for the glint/shimmer branch whatever the roll, 255 otherwise.
+{
+  let l254 = 0, l255 = 0, allWater = true, allGrass = true;
+  for (let k = 0; k < 40; k++) {
+    const w = shadeTerrain(200, 1, 0.7, k * 3.1, k * 1.7, k * 0.37, ctx, out()), g = shadeTerrain(200, 0, 0.7, k * 3.1, k * 1.7, k * 0.37, ctx, out());
+    if (w.level !== 254) allWater = false; if (g.level !== 255) allGrass = false;
+    if (w.level === 254) l254++; if (g.level === 255) l255++;
+  }
+  check('shimmer terrain type: level 254 for every roll', allWater && l254 === 40);
+  check('non-shimmer terrain: level 255', allGrass && l255 === 40);
+}
+
 // Deterministic: same inputs -> same glyph/colour (world-keyed hash).
 {
   const a = shadeTerrain(200, 0, 0.5, 123.4, 567.8, 10, ctx, out());

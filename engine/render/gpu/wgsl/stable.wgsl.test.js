@@ -9,7 +9,7 @@ import { STABLE_WGSL, STABLE_BLOCK, STABLE_TEXTURES, STABLE_TARGETS } from './st
 import { WGSL_MODULES } from './index.js';
 import { compileFn, shims } from './wgslProbe.js';
 import {
-  beginFrame, stabilize, createStableState, createStableBuffers, edgeMaskFromShade, waterMaskFromLayer, CHANNEL_SNAP, DEFAULT_DETAIL, LEVEL_NONE,
+  beginFrame, stabilize, createStableState, createStableBuffers, edgeMaskFromShade, waterMaskFromLayer, CHANNEL_SNAP, DEFAULT_DETAIL, LEVEL_NONE, LEVEL_ANIM, UV_LIM_TEXELS,
 } from '../../temporalStable.js';
 import { packStableUniforms, WgStablePass } from '../wg/passStable.js';
 import { allocWgTargets } from '../wg/targets.js';
@@ -28,6 +28,8 @@ assert.ok(4 + 4 + 16 <= 32, 'attachment bytes within the 32 B per-sample limit')
 const wgslTypes = { uint: 'texture_2d<u32>', sint: 'texture_2d<i32>', float: 'texture_2d<f32>' };
 STABLE_TEXTURES.forEach((k, i) => assert.ok(new RegExp(`@group\\(0\\) @binding\\(${i}\\) var \\w+: ${wgslTypes[k].replace(/[<>]/g, '\\$&')}`).test(STABLE_WGSL), `binding ${i} ${k}`));
 assert.ok(/@group\(1\) @binding\(0\) var<uniform> u: StableU/.test(STABLE_WGSL));
+assert.ok(STABLE_WGSL.includes(`const LEVEL_ANIM: u32 = ${LEVEL_ANIM}u;`) && LEVEL_ANIM === 254, 'LEVEL_ANIM interpolated from the twin');
+assert.ok(STABLE_WGSL.includes('dUV >= 1.0 / u.detailDefault') && UV_LIM_TEXELS === 1, 'UV drift limit 1.0/detail (38.25 B)');
 assert.ok(STABLE_WGSL.includes(`const LEVEL_NONE: u32 = ${LEVEL_NONE}u;`) && LEVEL_NONE === 255, 'LEVEL_NONE interpolated from the twin');
 assert.ok(STABLE_WGSL.includes('floor(pc.x + 0.5)') && STABLE_WGSL.includes('floor(pc.y + 0.5)'), 'history cell = floor(x + 0.5)');
 assert.ok(STABLE_WGSL.includes('floor(v * 255.0 + 0.5)'), 'byte quantise floor(v+0.5)');
@@ -52,12 +54,12 @@ function uniformObject(words, ints) {
   const v4 = (n) => { const a = w(n); return { x: words[a], y: words[a + 1], z: words[a + 2], w: words[a + 3] }; };
   return {
     curA: v4('curA'), curB: v4('curB'), curC: v4('curC'), prevA: v4('prevA'), prevB: v4('prevB'), prevC: v4('prevC'), dEye: v4('dEye'),
-    gridCols: ints[w('gridCols')], gridRows: ints[w('gridRows')], histValid: ints[w('histValid')], ortho: ints[w('ortho')], snap: ints[w('snap')], detailDefault: words[w('detailDefault')],
+    gridCols: ints[w('gridCols')], gridRows: ints[w('gridRows')], histValid: ints[w('histValid')], ortho: ints[w('ortho')], snap: ints[w('snap')], pad0: ints[w('pad0')], detailDefault: words[w('detailDefault')],
   };
 }
 
 function compileStable(src, ctx) {
-  const base = { ...shims, textureLoad: tl, LEVEL_NONE, ...ctx, giKind: (y) => y & 0xff, vec3f: (x, y, z) => ({ x, y, z }) };
+  const base = { ...shims, textureLoad: tl, LEVEL_NONE, LEVEL_ANIM, ...ctx, giKind: (y) => y & 0xff, vec3f: (x, y, z) => ({ x, y, z }) };
   for (const n of ['byteOf', 'packRgb', 'blendCh', 'blendPacked', 'reproject']) base[n] = compileFn(src, n, base);
   return compileFn(src, 'stableCell', base);
 }
@@ -95,7 +97,7 @@ function makeFrame(st, cols, rows, plane, opts) {
     const hit = geo.hit[i] === 1;
     f.kind[i] = !hit ? KIND_NONE : (rand() < 0.03 ? [KIND_MODEL, KIND_MESH, KIND_NONE][Math.floor(rand() * 3)] : baseKind);
     f.planeId[i] = 1 + (Math.floor((i % cols) / 12) + (opts.planeShift || 0) * 0) ;
-    f.level[i] = rand() < 0.04 ? LEVEL_NONE : 3 + Math.floor(rand() * 4);
+    { const lr = rand(); f.level[i] = lr < 0.12 ? LEVEL_NONE : lr < 0.16 ? LEVEL_ANIM : 3 + Math.floor(rand() * 4); } // 38.25 C: 255 common (texel glyphs), 254 = animated terrain
     f.glyph[i] = 40 + Math.floor(rand() * 50); f.shadeGlyph[i] = f.glyph[i];
     const sg = 90 + Math.floor(rand() * 20);
     f.shadeFg[i] = (sg << 16) | ((sg + 5) << 8) | (sg + 10); f.shadeBg[i] = 0x101418;
@@ -146,7 +148,7 @@ function scene(src, cam0, cam1, plane, tweak) {
   // make frame B resemble A where the geometry coincides: same colours/levels/glyph pattern so the blend/hold rules run
   for (let i = 0; i < N; i++) {
     const j = i;
-    fb.planeId[i] = fa.planeId[j]; fb.level[i] = rand() < 0.1 ? (fa.level[j] === LEVEL_NONE ? 4 : Math.min(8, Math.max(0, fa.level[j] + (rand() < 0.5 ? 1 : 2) * (rand() < 0.5 ? -1 : 1)))) : fa.level[j];
+    fb.planeId[i] = fa.planeId[j]; fb.level[i] = rand() < 0.1 ? (fa.level[j] >= LEVEL_ANIM ? 4 : Math.min(8, Math.max(0, fa.level[j] + (rand() < 0.5 ? 1 : 2) * (rand() < 0.5 ? -1 : 1)))) : fa.level[j];
     const jump = rand() < 0.15 ? (rand() < 0.5 ? 48 : 49) : (rand() < 0.5 ? 47 : Math.floor(rand() * 20));
     const base = (fa.shadeFg[j] >> 16) & 255, nv = Math.min(255, Math.max(0, base + (rand() < 0.5 ? jump : -jump)));
     if (fb.finalFg[i] === fb.shadeFg[i]) { fb.shadeFg[i] = (nv << 16) | (fb.shadeFg[i] & 0xffff); fb.finalFg[i] = fb.shadeFg[i]; }
@@ -159,6 +161,7 @@ function scene(src, cam0, cam1, plane, tweak) {
   const words = new Float32Array(STABLE_BLOCK.sizeWords), ints = new Int32Array(words.buffer);
   packStableUniforms(st, COLS, ROWS, words, ints);
   words[w('detailDefault')] = DETAIL;
+  ints[w('pad0')] = 1; // waterOn (the probe binds a real water layer)
   const u = uniformObject(words, ints);
   const fn = compileStable(src, { ...toTextures(fb, hist), u });
   return { st, fb, out, hist, fn, used: cell, u };
@@ -175,18 +178,20 @@ function twinInput(f) {
 }
 
 function compare(s) {
-  let mism = 0, ties = 0, used = 0, tieUsed = 0;
+  let mism = 0, ties = 0, used = 0, tieUsed = 0, held255 = 0, gpuHeld255 = 0;
   const bad = [];
   for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
     const i = r * COLS + c, o = s.fn({ x: c, y: r });
     const want = s.out;
     if (want.tie[i]) { ties++; continue; }
     if (!want.fresh[i]) used++;
+    if (want.held255[i]) held255++;
+    if (o.level === LEVEL_NONE && o.fresh === 0 && o.glyph !== s.fb.glyph[i]) gpuHeld255++; // GPU side: a both-255 hold changed the glyph
     const same = o.fg === want.fg[i] && o.bg === want.bg[i] && o.glyph === want.glyph[i] && o.level === want.level[i] && o.kind === want.kind[i]
       && (o.plane | 0) === want.planeId[i] && o.ub === f2u(want.u[i]) && o.vb === f2u(want.v[i]) && o.fresh === want.fresh[i];
     if (!same) { mism++; if (bad.length < 3) bad.push({ c, r, got: o, want: { fg: want.fg[i], bg: want.bg[i], glyph: want.glyph[i], level: want.level[i], fresh: want.fresh[i] } }); }
   }
-  return { mism, ties, used, bad };
+  return { mism, ties, used, bad, held255, gpuHeld255 };
 }
 
 const cases = [
@@ -195,7 +200,7 @@ const cases = [
   ['ortho floor pan', { x: 0, y: 12, z: 12, yawDeg: 180, pitchDeg: -45, projection: 'ortho', orthoHalfH: 4 }, (k) => ({ x: 0.083 * k, y: 12 + 0.037 * k, z: 12, yawDeg: 180, pitchDeg: -45, projection: 'ortho', orthoHalfH: 4 }), FLOOR],
 ];
 
-let probes = 0, totalUsed = 0;
+let probes = 0, totalUsed = 0, totalHeld255 = 0;
 const runCase = (src, name, cam0, camK, plane, k, tweak) => {
   DETAIL = plane === WALL ? 3 : (cam0.projection === 'ortho' ? 1 : 0.7);
   const s = scene(src, cam0, camK(k), plane, tweak);
@@ -209,9 +214,10 @@ for (const [name, cam0, camK, plane] of cases) {
     assert.equal(r.mism, 0, `${name} k=${k}: ${r.mism} non-tie mismatches vs the twin ${JSON.stringify(r.bad)}`);
     assert.ok(r.tieShare <= 0.05, `${name} k=${k}: tie share ${r.tieShare}`);
     assert.ok(r.used > 40, `${name} k=${k}: only ${r.used} cells took history`);
-    totalUsed += r.used; probes += N;
+    totalUsed += r.used; totalHeld255 += r.held255; probes += N;
   }
 }
+assert.ok(totalHeld255 > 30, `both-255 holds exercised (${totalHeld255})`);
 // invalid history: copy through, fresh everywhere (both sides)
 {
   const cam = cases[0][1];
@@ -231,16 +237,23 @@ const mutations = [
   ['edge: fg.r ignored', 'if (fgC.x != sf.x || ', 'if ('],
   ['edge: glyph ignored', 'fgC.w != sf.w || ', ''],
   ['edge: bg.b ignored', ' || bgC.z != sb.z) { return o; }', ') { return o; }'],
-  ['water cells take history', 'if (wl.x != 0x7f800000u && (wl.w & 32u) == 0u) { return o; }', ''],
-  ['level 255 not rejected', ' || lvC == LEVEL_NONE) { return o; }', ') { return o; }'],
-  ['hist level 255 not rejected', 'if (lvP == LEVEL_NONE) { return o; }', ''],
+  ['water cells take history', 'if (u.pad0 != 0 && wl.x != 0x7f800000u && (wl.w & 32u) == 0u) { return o; }', ''],
+  ['level 254 cur not rejected', ' || lvC == LEVEL_ANIM) { return o; }', ') { return o; }'],
+  ['hist level 254 not rejected', 'if (lvP == LEVEL_ANIM) { return o; }', ''],
+  ['mixed 255/ramp not rejected', 'if (c255 != (lvP == LEVEL_NONE)) { return o; }', ''],
+  ['255 hold ignores the fg snap', 'if (!snapped) {', 'if (true) {'],
+  ['255 hold keeps the CURRENT u/v (no anchor)', 'o.ub = hh.y; o.vb = hh.z;', ''],
+  ['255 snap test ignores red', 'let snapped = abs(i32((fgCur >> 16u) & 255u) - i32((sa >> 16u) & 255u)) > u.snap', 'let snapped = false'],
+  ['255 cells take the ramp hold rule', 'if (c255) {', 'if (false) {'],
   ['sky/model not rejected', 'if (kind == 0u || kind == 8u || lvC', 'if (lvC'],
   ['kind/plane match dropped', 'if (hk != kind || hh.x != gi.x) { return o; }', ''],
-  ['UV drift window x2', '0.5 / u.detailDefault', '1.0 / u.detailDefault'],
+  ['UV drift window x2', 'dUV >= 1.0 / u.detailDefault', 'dUV >= 2.0 / u.detailDefault'],
+  ['UV drift window back to 0.5', 'dUV >= 1.0 / u.detailDefault', 'dUV >= 0.5 / u.detailDefault'],
   ['dEye.z dropped', 'let wz = pz + u.dEye.z;', 'let wz = pz;'],
   ['ortho branch swapped in prev projection', 'cf = (vx / u.prevA.w + 1.0)', 'cf = (vx / vdP / u.prevA.w + 1.0)'],
   ['perspective divide dropped in rows', 'rf = (1.0 - vy / vdP / u.prevC.y)', 'rf = (1.0 - vy / u.prevC.y)'],
 ];
+assert.ok(STABLE_WGSL.includes('u.pad0 != 0 && wl.x'), 'water test is gated by waterOn (pad0): the 1x1 dummy reads 0 = water out of bounds');
 for (const [name, from, to] of mutations) {
   assert.ok(STABLE_WGSL.includes(from), `mutation anchor missing: ${name}`);
   const src = STABLE_WGSL.replace(from, to);
