@@ -388,7 +388,11 @@ export class GpuDeviceWebGPU {
       p.groups.push({ bufs: cur, group: grp });
     }
     if (!this._encoder) this._encoder = this.gpu.createCommandEncoder();
-    const cp = this._encoder.beginComputePass();
+    // S8-B1-07: one reused descriptor (mutated per call, read synchronously by beginComputePass - never held across
+    // a frame boundary) so a compute dispatch (WG-4a/4b cull) can be timed the same way a render pass is (`attach`).
+    const cpd = this._computePassDesc || (this._computePassDesc = {});
+    this.timer.attach(cpd);
+    const cp = this._encoder.beginComputePass(cpd);
     cp.setPipeline(p.gpu);
     cp.setBindGroup(0, grp);
     if (p.uniformGroup) {
