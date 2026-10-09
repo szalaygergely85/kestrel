@@ -160,7 +160,19 @@ export class GpuDeviceGL2 {
     const { format, type } = glUtilFormatFor(gl, glInternalFormat(gl, tex.format));
     const r = rect || { x: 0, y: 0, w: tex.width, h: tex.height };
     gl.bindTexture(gl.TEXTURE_2D, tex.handle);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, r.x, r.y, r.w, r.h, format, type, /** @type {any} */ (data), dataOffset || 0);
+    // rect.stride (texels): source row pitch of a cropped rect. UNPACK_ALIGNMENT stays at the GL default 4:
+    // every format used (rgba8, r32f) is 4 bytes/texel so row pitch is always 4-byte aligned. ROW_LENGTH is
+    // global GL state, so it is always reset (try/finally) and only touched when a stride is given.
+    if (!r.stride) {
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, r.x, r.y, r.w, r.h, format, type, /** @type {any} */ (data), dataOffset || 0);
+      return;
+    }
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, r.stride);
+    try {
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, r.x, r.y, r.w, r.h, format, type, /** @type {any} */ (data), dataOffset || 0);
+    } finally {
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+    }
   }
 
   /** WG-1b1 (38.3): the canvas back buffer = the default framebuffer (`beginPass` binds `handle: null`; width 0 keeps the viewport). */

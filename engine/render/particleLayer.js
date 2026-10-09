@@ -79,6 +79,7 @@ export function createParticleLayer() {
     part: partEmpty8(), partZ: partEmptyF(),
     touched: partEmptyI(), // first `stats.cells` entries are valid (RE-07 precedent)
     minRow: 0, maxRow: -1, prevMinRow: 0, prevMaxRow: -1,
+    minCol: 0, maxCol: -1, prevMinCol: 0, prevMaxCol: -1, // PARTICLE-UPLOAD-02: touched column span (upload rect)
     stats: { cells: 0 },
 
     /** (Re)allocates the layer for a scene grid (engine grid:changed), like overlay.bind. */
@@ -91,6 +92,7 @@ export function createParticleLayer() {
       // the grid itself (never more than cols*rows distinct touched cells).
       layer.touched = new Int32Array(c * r);
       layer.minRow = 0; layer.maxRow = -1; layer.prevMinRow = 0; layer.prevMaxRow = -1;
+      layer.minCol = 0; layer.maxCol = -1; layer.prevMinCol = 0; layer.prevMaxCol = -1;
       layer.stats.cells = 0;
     },
 
@@ -106,7 +108,7 @@ export function createParticleLayer() {
     build(ps, cam, rt, lights, world, palette, renderer = layer.renderer) {
       const part = layer.part, partZ = layer.partZ, touched = layer.touched;
       // 1. Clear the cells touched LAST frame (track which rows that wiped).
-      let pMin = rows, pMax = -1;
+      let pMin = rows, pMax = -1, cMin = cols, cMax = -1;
       const prevCount = layer.stats.cells;
       for (let t = 0; t < prevCount; t++) {
         const i = touched[t];
@@ -114,8 +116,11 @@ export function createParticleLayer() {
         const row = (i / cols) | 0;
         if (row < pMin) pMin = row;
         if (row > pMax) pMax = row;
+        const col = i - row * cols;
+        if (col < cMin) cMin = col;
+        if (col > cMax) cMax = col;
       }
-      layer.prevMinRow = pMin; layer.prevMaxRow = pMax;
+      layer.prevMinRow = pMin; layer.prevMaxRow = pMax; layer.prevMinCol = cMin; layer.prevMaxCol = cMax;
 
       // 2. Camera basis once.
       camBasis(cam, rt, cb, renderer);
@@ -133,7 +138,7 @@ export function createParticleLayer() {
 
       // 4. Per live slot, in slot order.
       let nTouched = 0;
-      let minRow = rows, maxRow = -1;
+      let minRow = rows, maxRow = -1, minCol = cols, maxCol = -1;
       const P = palette;
       const px = ps.px, py = ps.py, pz = ps.pz, age = ps.age, life = ps.life, defOf = ps.def, emOf = ps.em, alive = ps.alive;
       const defRec = ps.defRec, defGlyphs = ps.defGlyphs, defColors = ps.defColors;
@@ -202,10 +207,12 @@ export function createParticleLayer() {
             partZ[idx] = depth;
             if (yy < minRow) minRow = yy;
             if (yy > maxRow) maxRow = yy;
+            if (xx < minCol) minCol = xx;
+            if (xx > maxCol) maxCol = xx;
           }
         }
       }
-      layer.minRow = minRow; layer.maxRow = maxRow;
+      layer.minRow = minRow; layer.maxRow = maxRow; layer.minCol = minCol; layer.maxCol = maxCol;
       layer.stats.cells = nTouched;
     },
   };
