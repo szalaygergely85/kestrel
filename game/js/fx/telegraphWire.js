@@ -23,7 +23,7 @@ export function wireTelegraphs(events, world, beastSim, enabled = true) {
       for (let i = 0; i < n; i++) {
         const s = st[i], ps = prevState[i], h = hu[i];
         if (h < prevHurt[i]) setTint(ents[i], 'hurt', nowMs);                               // damage landed on the boar
-        else if (s === STATE_WINDUP && ps !== STATE_WINDUP) setTint(ents[i], 'windup', nowMs, beastSim.cfgSteps ? beastSim.cfgSteps.windup / 60 : 0);
+        // OWNER 2026-10-09: no charge/windup tint (it painted the whole boar a flat orange blob up close); the windup CLIP is the telegraph.
         prevState[i] = s; prevHurt[i] = h;
       }
     },
