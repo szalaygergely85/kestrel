@@ -84,11 +84,41 @@ export function makeMockGpuDevice() {
     createBuffer(desc) { return makeHandle('buffer', desc); },
     // CLOTH-1b2: counts writes (tests assert "1 write per changed version, 0 when asleep"); keeps the last payload.
     writeBuffer(handle, data, dstOffsetBytes = 0) { handle._writes = (handle._writes || 0) + 1; handle._lastWrite = { data, dstOffsetBytes }; state.writeCount++; },
-    createTexture(desc) { return makeHandle('texture', desc); },
-    createTarget(desc) { return makeHandle('target', desc); },
+    createTexture(desc) {
+      // ME-16b (38.22): 2d-array textures mirror GpuDeviceWebGPU's validation (depth24 + sampled only, integer layers >= 1)
+      if (desc.layers !== undefined && (desc.format !== 'depth24' || !desc.sampled || !(desc.layers >= 1) || (desc.layers | 0) !== desc.layers)) {
+        throw new Error('mock createTexture: `layers` needs format depth24 + sampled and an integer >= 1');
+      }
+      const h = makeHandle('texture', desc);
+      if (desc.layers !== undefined) { h.layers = desc.layers; h.layerViews = new Array(desc.layers).fill(null); }
+      return h;
+    },
+    createTarget(desc) {
+      const h = makeHandle('target', desc);
+      const d = desc.depth;
+      if (d && d.layers !== undefined) {
+        if (d._disposed) throw new Error('mock createTarget: depth texture is destroyed');
+        const L = desc.layer;
+        if (!(L >= 0 && L < d.layers) || (L | 0) !== L) throw new Error(`mock createTarget: layer ${L} out of range 0..${d.layers - 1}`);
+        h.layerView = d.layerViews[L] || (d.layerViews[L] = { kind: 'layerView', texture: d, layer: L }); // cached: same object per layer
+      } else if (desc.layer !== undefined) throw new Error('mock createTarget: `layer` on a texture without layers');
+      return h;
+    },
     createPipeline(desc) { return makeHandle('pipeline', desc); },
-    beginPass(target, opts) { device._activeTarget = target; },
-    bind(pipeline, desc) { device._activePipeline = pipeline; device._lastBind = desc; },
+    beginPass(target, opts) {
+      if (target.layerView && target.layerView.texture._disposed) throw new Error('mock beginPass: layer view of a destroyed texture');
+      if (opts && opts.clear) target._clears = (target._clears || 0) + 1; // per-layer clear = clear on that layer's target
+      device._activeTarget = target;
+    },
+    bind(pipeline, desc) {
+      if (desc && desc.textures) for (const t of desc.textures) {
+        if (t.texture && t.texture.layers !== undefined) {
+          if (t.texture._disposed) throw new Error('mock bind: array texture is destroyed');
+          if (pipeline.desc && pipeline.desc.bindings && pipeline.desc.bindings.textures && pipeline.desc.bindings.textures[t.slot] !== 'depthArray') throw new Error(`mock bind: slot ${t.slot} must be kind 'depthArray' for an array texture`);
+        }
+      }
+      device._activePipeline = pipeline; device._lastBind = desc;
+    },
     draw(count, first = 0, instances = 1) {
       device._drawCalls = (device._drawCalls || 0) + 1;
       device._lastDraw = { count, first, instances };
