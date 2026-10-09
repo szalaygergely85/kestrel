@@ -33,3 +33,9 @@ export function validateRecipe(kit, recipe) {
   }
   return { errors };
 }
+
+export const ELDER_TEMPO = 1.15;
+/** Height rows actually applied: elder is one row shorter (clamped to the range). */
+export const effectiveHeight = (recipe) => (recipe.age === 'elder' ? Math.max(HEIGHT_MIN, recipe.height - 1) : recipe.height);
+/** Clip speed factor: elder x1.15. */
+export const ageTempo = (recipe) => (recipe.age === 'elder' ? ELDER_TEMPO : 1);

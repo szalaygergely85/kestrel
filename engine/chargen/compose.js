@@ -14,14 +14,15 @@
 // n 6-neighbour layers outward into empty cells; a grown voxel takes the bone of the voxel it grew from
 // (the lowest source index wins a contested cell).
 import { SHELL_ORDER, ATTACH_ORDER, MAX_MATERIALS, dyeGroupOf, isEmptyChar } from './kit.js';
-import { validateRecipe, slotItems } from './recipe.js';
+import { validateRecipe, slotItems, effectiveHeight, ageTempo } from './recipe.js';
+import { heightBase } from './height.js';
 
 const NB = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
 
 export function composeCharacter(kit, recipe) {
   const { errors } = validateRecipe(kit, recipe);
   if (errors.length) throw new Error('composeCharacter: invalid recipe: ' + errors.join('; '));
-  const base = kit.bases[recipe.base];
+  const base = heightBase(kit.bases[recipe.base], effectiveHeight(recipe));
   const [sx, sy, sz] = base.size;
   const n = sx * sy * sz;
   const at = (x, y, z) => x + sx * (y + sy * z);
@@ -127,25 +128,28 @@ export function composeCharacter(kit, recipe) {
     }
   }
 
-  // ---- attachments
-  for (const slot of ATTACH_ORDER) {
-    const pick = recipe[slot];
-    if (!pick || hidden.has(slot)) continue;
-    const a = slotItems(kit, slot).find((i) => i.id === pick.id);
+  // ---- attachments (+ the elder overlay: every kit item of slot 'overlay', painted last)
+  const place = (a, slot, pick) => {
     const anc = base.anchors[a.anchor];
     const ox = anc[0] + a.offset[0], oy = anc[1] + a.offset[1], oz = anc[2] + a.offset[2];
     const bi = boneIndex.get(a.bone);
     for (let z = 0; z < a.box[2]; z++) for (let y = 0; y < a.box[1]; y++) for (let x = 0; x < a.box[0]; x++) {
       const ch = a.layers[z][y][x];
       if (isEmptyChar(ch)) continue;
-      const gx = ox + x, gy = oy + y, gz = oz + z;
+      const gx = Math.round(ox + x), gy = Math.round(oy + y), gz = Math.round(oz + z);
       if (!inGrid(gx, gy, gz)) continue;
       const i = at(gx, gy, gz);
       if (a.paintOnly && !mat[i]) continue; // paintOnly never adds voxels
       mat[i] = resolve(ch, slot, pick);
       if (!a.paintOnly) bone[i] = bi;
     }
+  };
+  for (const slot of ATTACH_ORDER) {
+    const pick = recipe[slot];
+    if (!pick || hidden.has(slot)) continue;
+    place(slotItems(kit, slot).find((i) => i.id === pick.id), slot, pick);
   }
+  if (recipe.age === 'elder') for (const a of slotItems(kit, 'overlay')) place(a, 'overlay', null);
 
   return {
     cellM: kit.cellM ?? 0.025,
@@ -155,5 +159,6 @@ export function composeCharacter(kit, recipe) {
     bones: kit.skeleton.map((b) => ({ name: b.name, parent: b.parent ?? null, joint: base.bones[b.name] ? base.bones[b.name].joint.slice() : null })),
     mounts: JSON.parse(JSON.stringify(base.mounts || base.anchors || {})),
     clips: JSON.parse(JSON.stringify(kit.clips || {})),
+    tempo: ageTempo(recipe), // clip speed factor (elder 1.15); the caller multiplies the clip time
   };
 }

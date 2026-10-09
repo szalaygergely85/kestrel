@@ -109,6 +109,7 @@ export function meshCharacter(grid) {
     mesh: { quads: nq, pos: pos.slice(0, 12 * nq), nrm: nrm.slice(0, 12 * nq), mat: qmat.slice(0, nq), ranges },
     matKeys: grid.matKeys.slice(),
     clips: grid.clips,
+    tempo: grid.tempo ?? 1,
     mounts: grid.mounts,
   };
 }

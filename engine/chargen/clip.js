@@ -4,11 +4,18 @@
 // (voxelPose.js), linear between keys, converted to a quaternion. Hips pos is returned in metres (cells * cellM).
 const TABLE_MS = 5;
 const D2R = Math.PI / 360; // degrees -> half-angle radians
-let _ka = null, _kb = null; const _f = new Float64Array(2); // [blend factor, clip time]: doubles passed via memory, never boxed // rawPose results (module scratch: no per-call object)
+let _ka = null, _kb = null; const _f = new Float64Array(2), _e = new Float64Array(3); // [blend factor, clip time]: doubles passed via memory, never boxed // rawPose results (module scratch: no per-call object)
 const tables = new WeakMap(); // clip -> {n, q}: sign reference table, one sample per TABLE_MS
 
 /** Euler degrees (our Rz*Ry*Rx) -> quaternion x,y,z,w written at out[o..o+3]. */
 export function eulerToQuat(rx, ry, rz, out, o) {
+  _e[0] = rx; _e[1] = ry; _e[2] = rz;
+  eulerBufToQuat(out, o);
+}
+// Same, reading the angles from the _e scratch: calls with double arguments box a HeapNumber each when V8 does not
+// inline them (16 B/call on the 22-bone rig), so the hot path passes doubles through memory instead.
+function eulerBufToQuat(out, o) {
+  const rx = _e[0], ry = _e[1], rz = _e[2];
   const sx = Math.sin(rx * D2R), cx = Math.cos(rx * D2R);
   const sy = Math.sin(ry * D2R), cy = Math.cos(ry * D2R);
   const sz = Math.sin(rz * D2R), cz = Math.cos(rz * D2R);
@@ -56,11 +63,10 @@ function rawPose(rigged, clip, out) {
     const ra = ka.rot && ka.rot[name];
     const rb = kb.rot && kb.rot[name];
     if (!ra && !rb) { out[4 * i] = 0; out[4 * i + 1] = 0; out[4 * i + 2] = 0; out[4 * i + 3] = 1; continue; }
-    eulerToQuat(
-      (ra ? ra[0] : 0) * (1 - f) + (rb ? rb[0] : 0) * f,
-      (ra ? ra[1] : 0) * (1 - f) + (rb ? rb[1] : 0) * f,
-      (ra ? ra[2] : 0) * (1 - f) + (rb ? rb[2] : 0) * f,
-      out, 4 * i);
+    _e[0] = (ra ? ra[0] : 0) * (1 - f) + (rb ? rb[0] : 0) * f;
+    _e[1] = (ra ? ra[1] : 0) * (1 - f) + (rb ? rb[1] : 0) * f;
+    _e[2] = (ra ? ra[2] : 0) * (1 - f) + (rb ? rb[2] : 0) * f;
+    eulerBufToQuat(out, 4 * i);
   }
   _ka = ka; _kb = kb; _f[0] = f;
 }

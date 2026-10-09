@@ -176,22 +176,22 @@ function matFromQuat(x, y, z, w) {
   ok('loop wraps time', out.every((v, i) => Math.abs(v - wrapped[i]) < 1e-9));
   ok('bones without keys are identity', out[0] === 0 && out[3] === 1);
 
-  // allocation: a fresh minimal rig must be ~0 B/call; the full fixture rig shows one unexplained 16 B HeapNumber per call (< 32 B/call asserted)
+  // allocation: a fresh minimal rig must be ~0 B/call; steady state after 100k warm-up calls
   const bytesPerCall = (rg, clip, nOut) => {
     const o2 = new Float64Array(nOut), hp = [0, 0, 0];
     const run = (n) => { for (let i = 0; i < n; i++) sampleClip(rg, clip, (i * 7) % 1000, o2, hp); };
-    run(30000);
-    globalThis.gc?.();
-    const h0 = process.memoryUsage().heapUsed;
-    run(100000);
-    return (process.memoryUsage().heapUsed - h0) / 100000;
+    run(130000); // warm-up (tiering)
+    // after a gc the first ~50k calls still show a one-off 1.6 MB (re-tiering); steady state is 0 B/call. Median of 7 windows.
+    const w = [];
+    for (let k = 0; k < 7; k++) { globalThis.gc?.(); run(50000); const h0 = process.memoryUsage().heapUsed; run(100000); w.push((process.memoryUsage().heapUsed - h0) / 100000); }
+    return w.sort((a, b) => a - b)[3];
   };
   const mini = { cellM: 0.025, bones: [{ name: 'Hips' }, { name: 'Head' }] };
   const miniClip = { duration: 1000, loop: true, keys: [{ t: 0, rot: { Head: [0, 0, -15] }, pos: { Hips: [0, 0, 0] } }, { t: 500, rot: { Head: [0, 0, 15] }, pos: { Hips: [0, 0, 2] } }] };
   const bMini = bytesPerCall(mini, miniClip, 8), bFull = bytesPerCall(rig, swing, 88);
   console.log(`sampleClip allocation: mini rig ${bMini.toFixed(2)} B/call, 22-bone fixture ${bFull.toFixed(2)} B/call`);
   ok('sampleClip allocates ~0 B/call (isolated rig, 100k calls)', bMini < 2, `${bMini}`);
-  ok('sampleClip allocates < 32 B/call on the 22-bone fixture', bFull < 32, `${bFull}`);
+  ok('sampleClip allocates ~0 B/call on the 22-bone fixture (steady state)', bFull < 2, `${bFull}`);
 
   let flips = 0;
   for (const name of ['spin', 'swing']) {
