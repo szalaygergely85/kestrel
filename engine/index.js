@@ -261,3 +261,7 @@ export { createWaterfalls, collectWaterfallDefs } from './world/waterfalls.js';
 export { bindDecals, drawDecals } from './ui/decals.js';
 export { LazyMeshStore, ensureMesh, requestMesh, meshReady } from './mesh/lazyMesh.js'; // MESH-LOAD-01
 export * from './chargen/index.js'; // CHARGEN-02..05 (38.29)
+
+// ---- fauna (WILD-03, architecture.md 38.31) -----------------------------------
+export { compileFaunaDef } from './fauna/faunaDef.js';
+export { createSpawner, FAUNA_MAX, CELL_M as FAUNA_CELL_M } from './fauna/spawner.js';
