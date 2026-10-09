@@ -232,8 +232,8 @@ Tool generates a decimated LOD1 candidate for a mesh and a side-by-side preview 
 - [ ] Owner picks; only then QUAT-LOD-01 imports it. NEEDS PC-A: owner decision.
 Files: `tools/mesh-lod-preview.mjs`, `design/preview/` page.
 
-### S8-B2-12 Cloud shadows on the sun term [P2, ~0.75 d, deps: S8-B2-05]
-ARCH-NOTE NEEDED (small): `sunlit` is a bit in the LIGHT rgba32uint word (`sunlit | litCount<<8 | sunN<<SUN_N_SHIFT`), not a float - scale the sun contribution to L (and decide sunN), keep the bit; uniform slot. Wind source = existing `engine/world/wind.js`. Scrolling low-frequency noise multiplies `sunlit` in the light module (strength uniform, default 0); wind direction moves it.
+### S8-B2-12 Cloud shadows on the sun term [P2, ~0.75 d, deps: none (was S8-B2-05; drift now from look.clouds)]
+ARCH-NOTE: architecture.md 38.13 (cloudQ byte in LIGHT.w bits 24..31, sunlit/sunN unchanged; drift from `look.clouds`, not wind.js; LightU appends cloudA/cloudB; B1 passLight wiring). Old marker text: `sunlit` is a bit in the LIGHT rgba32uint word (`sunlit | litCount<<8 | sunN<<SUN_N_SHIFT`), not a float - scale the sun contribution to L (and decide sunN), keep the bit; uniform slot. Wind source = existing `engine/world/wind.js`. Scrolling low-frequency noise multiplies `sunlit` in the light module (strength uniform, default 0); wind direction moves it.
 - [ ] Node twin test: strength 0 bit-identical; strength 1 stays in [0.4, 1].
 - [ ] Owner look: roadSouth at two times. WGSL + twin only.
 Files: `wgsl/light.wgsl.js`, `engine/render/lighting.js`; `NEEDS B1` uniform wiring.
@@ -243,7 +243,7 @@ Files: `wgsl/light.wgsl.js`, `engine/render/lighting.js`; `NEEDS B1` uniform wir
 - [ ] Node probe test: no rings = unchanged; ring expands at fixed speed and fades by 2 s.
 - [ ] `engine` API `water.addRipple(x,z,amp)` with ring buffer; owner look on a splash pose.
 Files: `wgsl/water.wgsl.js`, `wgsl/waterComposite.wgsl.js`, `wg/passWater.js`, `engine/render/waterLayer.js`.
-ARCH-NOTE NEEDED (WaterU layout in `uniformBlock.js`; ring buffer owner: `engine/world/water.js` state vs render). Paths: `engine/render/gpu/waterLayer.js` (not engine/render/), JS twins `engine/render/waterComposite.js` + `rasterWaterTri` in `engine/mesh/rasterJS.js`. Links to US-055b (splash entry ring).
+ARCH-NOTE: architecture.md 38.14 (owner = new `engine/fx/ripples.js`, not world/water.js nor render; rings go into WaterCompositeU, WaterU unchanged; coords x/y). Old question: WaterU layout; ring buffer owner. Paths: `engine/render/gpu/waterLayer.js` (not engine/render/), JS twins `engine/render/waterComposite.js` + `rasterWaterTri` in `engine/mesh/rasterJS.js`. Links to US-055b (splash entry ring).
 
 ### S8-B2-14 Wetness (rain darkening) uniform [P2, ~0.5 d, deps: none]
 Global `wetness 0..1` darkens albedo and boosts specular-like gain in shade, default 0.
@@ -270,10 +270,10 @@ ARCH: 0.75 d is honest only if the hull is emitted as triangles into the existin
 - [ ] Node oracle: same positions within 1e-5 after 300 steps from the same seed.
 - [ ] Deterministic hash RNG, no `Math.random`. Registered, 0 compile errors.
 Files: `wgsl/particles.wgsl.js` (new), `engine/entities` twin (new file); NEEDS PC-A: architect note (32.x seam).
-ARCH-NOTE NEEDED. Wrong seam: the oracle is the existing CPU sim `engine/fx/particles.js` (`PARTICLE_CAP` 2048, rule 16), not a new `engine/entities` file. Note must first decide whether a GPU sim is worth it at this cap (P2).
+ARCH-NOTE: architecture.md 38.15 -> **DROP** (CPU sim 2048 live = 0.105 ms/step; GPU f32 sim cannot match the f64 oracle, splits state). Earlier note: wrong seam: the oracle is the existing CPU sim `engine/fx/particles.js` (`PARTICLE_CAP` 2048, rule 16), not a new `engine/entities` file. Note must first decide whether a GPU sim is worth it at this cap (P2).
 
-### S8-B2-18 Particle splat output module [P2, ~0.75 d, deps: S8-B2-17]
-ARCH-NOTE NEEDED (PART rgba8 / PART_Z r32float are CPU-uploaded by `particleLayer.js` today; GPU nearest-wins needs storage writes + depth atomics; consumer `WgSpritesPass` is B1). Writes live particles into the PART / PART_Z layer textures so the existing sprites pass shows them.
+### S8-B2-18 DROP (architecture.md 38.15, with S8-B2-17). Particle splat output module [P2, ~0.75 d, deps: S8-B2-17]
+Was: (PART rgba8 / PART_Z r32float are CPU-uploaded by `particleLayer.js` today; GPU nearest-wins needs storage writes + depth atomics; consumer `WgSpritesPass` is B1). Writes live particles into the PART / PART_Z layer textures so the existing sprites pass shows them.
 - [ ] Probe test: depth-ordered nearest wins, out-of-grid skipped.
 - [ ] B1 wiring row written (`NEEDS B1`); CPU particles unchanged by default.
 Files: `wgsl/particleSplat.wgsl.js` (new), `wgsl/index.js` (append).
@@ -284,8 +284,8 @@ Cloth (cape/banner) collides with 2 capsules (torso + leg) and a ground plane.
 - [ ] 0 alloc per step; capsule data passed in (no import of game). Owner look on the hero cape.
 Files: engine cloth module (path to confirm in the story), tests.
 
-### S8-B2-20 ME-20b horizon AO light-pass term [P2, ~1 d, deps: S8-B2-04]
-ARCH-NOTE NEEDED (horizon taps on the deriv depth, uniform slot; after the B2-04 note). Optional AO term in the light module from vertex AO plus a depth horizon sample (4 taps), strength default 0.
+### S8-B2-20 ME-20b horizon AO light-pass term [P2, ~0.75 d, deps: S8-B2-12 (same files), no longer S8-B2-04]
+ARCH-NOTE: architecture.md 38.16 (screen-space only: 4 taps on DEPTH + GI already bound in light, scales ambient only, LightU appends `ao`; vertex AO from B2-04 is a later multiplier). Optional AO term in the light module from vertex AO plus a depth horizon sample (4 taps), strength default 0.
 - [ ] Node probe: strength 0 bit-identical; 1 darkens concave corners, never brightens.
 - [ ] gpucompare unchanged at default; owner look on tower interior. WGSL only; `NEEDS B1` uniform.
 Files: `wgsl/light.wgsl.js`, `engine/render/lighting.js`.

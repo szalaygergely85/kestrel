@@ -33,7 +33,7 @@ Species switch stays blocked on the owner LOD1 pick + forestWalk tri budget (PC-
 1. S8-B2-14 follow-up: terrain twin reads wetness (`terrainShade.js` / `TERRAIN_SHADE_WGSL`).
 2. S8-B2-15 importer crease angle + vertex weld (~0.5 d).
 3. S8-B2-16 convex-hull collider option for rocks (~0.75 d; `engine/physics` stays stand-alone).
-4. ARCH-NOTE NEEDED items, each only after its note exists: S8-B2-12 cloud shadows, S8-B2-13 water ripples, S8-B2-17 GPU particles -> S8-B2-18 splat, S8-B2-20 horizon AO. When kestrel-4 reaches these with no note, run the 5th agent (architect, opus) for the next note.
+4. Notes written 2026-10-09 (architecture.md 38.13-38.16), now UNBLOCKED in this order: (a) S8-B2-13 water ripples (38.14; new `engine/fx/ripples.js` + waterComposite twin/WGSL; then `NEEDS B1` passWater + `NEEDS B1-main` splash hook), (b) S8-B2-12 cloud shadows (38.13; light/shade/waterComposite WGSL + lighting.js twin; `NEEDS B1` passLight), (c) S8-B2-20 horizon AO (38.16; same files as (b), so strictly after it; `NEEDS B1` passLight). (a) and (b) both touch `waterComposite.*`: never in two slots at once. S8-B2-17 + S8-B2-18 GPU particles: **DROPPED** (38.15). Still ARCH-NOTE NEEDED elsewhere: S8-B2-03/04/06/07/10.
 5. EMIS-03b / EMIS-04 only after the owner picks the glow strength (EMIS-00 mockup).
 
 **PC-A additions 2026-10-09 (after arch batch 18; put at the TOP of the named slot, they are small):**

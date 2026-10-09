@@ -4211,3 +4211,76 @@ Implements 37.11 (stamped plain items, no live link, the game never reads prefab
 **Risks.** (a) 16-slot pressure: tower + entity lights already use ~12; derived lights get the remainder, so in lamp-dense rooms only the 4 best glow -> hysteresis hides swaps, EMIS-02 measures how often a slot changes per minute on the m1 route. (b) LVIS rebuilds for moving emissive entities (carried lamp, ember hand): same cost as today's attached lights; only root-pose centroids, so a swinging part never thrashes the key. (c) Screen-space bleed is 2.5D: a lamp seen through a doorway spills onto the door frame (depth gate limits it); accepted for ASCII. (d) Sun map: bleed is added after the sun term; by day it is drowned, no shadow interaction. (e) Perf on Ultra with 4 rays (`n`): bleed runs at cell res, independent of `n`.
 
 **Stories** (each <= 1 d; order = owner sees derived lights first, bleed/halo after the strength pick): **EMIS-00** designer (0.5 d) 3 strength mockups (`design/preview/emissive.html`: night, '!' at 3 m / 12 m, lamp, embers; weak/medium/strong `bleedGain`/`haloBg`/`glyphRamps.halo`), owner picks. **EMIS-01a** B1 (0.75 d) `emissiveLight.js` derive + pack storage + def override + Node tests. **EMIS-01b** B1 (0.75 d) `LightSet` derived pool (begin/offer/end, ranking, hysteresis), voxel-pool feed, gfx knob + gpucompare off, tests + bench row. **EMIS-02** PC-A (0.25 d) gate run (rows unchanged), perf table derived on/off (Arc 400x150 High), slot-swap count on the m1 route, night owner shot. **EMIS-03a** B1 (0.5 d) MatF `GLOW` column, `rt.emissive` flags + presets, `PASS_NAMES`/timer slot, JS twin `bleedCell` + tests. **EMIS-03b** B2 (1 d) `bleed.wgsl.js` + `passBleed.js`, shade binding 16, WGSL string tests. **EMIS-04** B2 (0.5 d) halo in edge + `edgePass.js` twin + ramp. **EMIS-05** PC-A (0.25 d) `?gpucompare=emissive` rows, perf table High/Ultra, Low 240x90 readability check.
+
+### 38.13 S8-B2-12 cloud shadows on the sun term (architect, 2026-10-09; D-044, D-039)
+
+**Decisions.** (a) Source = the look's cloud deck, not `engine/world/wind.js`: drift = `cloudDriftOffset(look.clouds, timeSec)` (sky.js), so ground shadows move with the visible clouds; the dependency on S8-B2-05 is dropped (render reads no world wind). No `look.clouds` block -> no cloud shadows. (b) `sunlit` and `sunN` keep their meaning (geometric occlusion); the cloud term is a separate byte `cloudQ` in LIGHT.w bits 24..31 (`CLOUD_Q_SHIFT = 24`, exported next to `SUN_N_SHIFT` in `shadowSun.js`; bits 24..31 are unused today). `cloudQ = 0` = no cloud, so the default writes exactly today's word. (c) WebGPU + JS twin only; GLSL frozen (WebGL2 shows no cloud shadows; accepted, WG-5 deletes it).
+
+**Data.** `look.clouds.shadow` (optional, validated in `engine/render/look.js`): `{strength 0..1 (default 0), scale (noise units/m, > 0), cover 0..1, soft > 0, deckH m (> 0, default 300)}`; resolved into `lights.cloud = null | {strength, scale, cover, soft, deckH, seed, wind}` by `setLook(lights, look)` (`seed`/`wind` from `look.clouds`). Designer (lane C) sets values in the look data; engine default strength 0.
+
+**Pure function (new `engine/render/cloudShadow.js`, imports `sky.js` `cloudValueNoise` only).**
+```
+cloudShadeQ(C, off, x, y, z, sdx, sdy, sdz) -> int 0..153   // same op order as WGSL
+  t = (C.deckH - z) / max(sdz, 0.2); qx = (x + sdx*t)*C.scale + off[0]; qy = (y + sdy*t)*C.scale + off[1]
+  n = vn(qx,qy,seed)*0.65 + vn(qx*2.03+17, qy*2.03+17, seed)*0.35
+  d = smoothstep01(C.cover, C.cover + C.soft, n);  return floor(C.strength*0.6*d*255 + 0.5)
+cloudMul(q) = 1 - q/255            // strength 1 -> mul in [0.4, 1]
+packCloudUniforms(C, timeSec, out: Float32Array(8)) -> out   // [offX, offY, scale, strength | cover, soft, deckH, seed]; C null -> all 0
+```
+WGSL twin `CLOUD_SHADOW_WGSL` appended to `common.wgsl.js` (`cloudVN` = twin of `cloudValueNoise` on `hashFast`, `& 255` lattice, no raw `%`, no `round`), function `cloudShadeQ(P: vec3f, sd: vec3f) -> u32` reading the LightU fields.
+
+**Light pass (`light.wgsl.js`, B2).** `LIGHT_BLOCK` appends `cloudA: vec4` (offX, offY, scale, strength) and `cloudB: vec4` (cover, soft, deckH, seed) at the END (no existing word moves). In `fs_main`, only `if (u.sunOn != 0 && u.cloudA.w > 0.0)`: `q = cloudShadeQ(P, u.sunDir)`; the non-terrain sun adds (sunMode 2 and the DDA branch) are multiplied by `(1.0 - f32(q) / 255.0)` **only when q != 0** (strength-0 output stays bit-identical); terrain only gets `q` in the word. Return word `| (q << CLOUD_Q_SHIFT)`. **Shade (`shade.wgsl.js` terrain branch, B2):** `sunFT *= 1.0 - f32((lightT.w >> 24u) & 255u) / 255.0` when that byte != 0 (independent of `sunMapOn`). **Water composite** (`waterComposite.wgsl.js`, B2): same factor on its sun term. No new texture, no new binding.
+
+**JS twin (B2).** `lightAt(..)` reads `lights.cloud` + `lights.cloudOff` (Float32Array(2), set by `lightSurfaces` from `fb.timeSec` via `cloudDriftOffset`) and applies the same rule; `lightFlags.cloudQ`; `makeLightBuffer` += `cloudQ: Uint8Array`; the terrain shade twin (`detailShade.js`/`fastShade.js` terrain path) and `waterComposite.js` multiply by `cloudMul(lb.cloudQ[i])`.
+
+**Wiring (B1).** kestrel-2: `wg/passLight.js` writes `packCloudUniforms(p._light && p._light.cloud, p._fb.timeSec, this.cloud8)` into `cloudA/cloudB` each frame (8 floats, no alloc). kestrel-1: nothing (setLook already runs on look change). gpucompare: every mode forces `lights.cloud = null`, so all rows stay byte-identical (D-039); owner look = `?cloudshadow=1` dev override, WebGPU only.
+
+**Tests (Node).** `engine/render/cloudShadow.test.js`: strength 0 -> q 0 everywhere; strength 1 -> `cloudMul` in [0.4, 1] over 10k samples; deterministic; period-256 drift wrap continuous. `cloudShadow.wgsl.test.js` (`compileFn` probe, wind.wgsl.test.js pattern): WGSL `cloudShadeQ` == JS over 5000 samples (integer q; at most 1 off-by-one per 1000 at rounding boundaries, count reported). `light.wgsl.test.js`: fields appended last, no `%`/`round`. Lighting test: `lights.cloud = null` -> `lightSurfaces` buffers byte-identical to before. Perf: 2 vn x 4 hashes per sun-facing cell, est. <= 0.05 ms at 400x150. Size ~0.75 d B2 + 0.1 d B1. Do NOT: change `sunlit`/`sunN`, add a texture, or read `engine/world`.
+
+### 38.14 S8-B2-13 water ripples (architect, 2026-10-09)
+
+**Ownership decision.** `addRipple` lives in a new pure **`engine/fx/ripples.js`** (cosmetic fx, same family as `engine/fx/particles.js`): not `engine/world/water.js` (immutable region CONTENT built by `World.load`) and not render (render never holds gameplay-fed state; it reads a packed view per frame). Ripples are presentation-only: not saved, not hashed, no effect on the sim.
+```
+createRipples({cap = 8} = {}) -> {
+  add(x, y, amp, timeSec): void        // world metres (x east, y south); amp clamped 0..1; ring buffer overwrites the oldest
+  packInto(timeSec, out: Float32Array(cap*4)) -> count   // per live ring: x, y, age (= timeSec - t0, f64 on the CPU), amp; skips age >= RIPPLE_LIFE
+  clear(): void, cap }
+export const RIPPLE_LIFE = 2.0, RIPPLE_SPEED = 1.2 /* m/s */, RIPPLE_W = 0.35 /* m band */
+```
+Zero alloc after create; `timeSec` = the clock the renderer gets (`fb.timeSec`). Exported from `engine/index.js`. Coordinates are x/y (the story's "x,z" does not apply: z is up).
+
+**Uniform layout.** `WaterU` (per-region raster draw, `water.wgsl.js`) is NOT changed: it only writes depth/normal, and `rasterWaterTri` stays as is. Ripples go into **`WaterCompositeU`** (`waterComposite.wgsl.js`, the fullscreen pass that already rebuilds the world point P from the water depth): `pad0: f32` becomes `rippleCount: i32` (same word), and appended at the END: `rippleGlyph: u32`, `rippleGain: f32`, 2 pad words, `ripple: array<vec4f, 8>` (x, y, age, amp). Packing ages (small) instead of t0 keeps f32 precision over hours of play.
+
+**Composite rule (WGSL + twin, same op order).** For a water cell that is not a sheet (`(w.w & 32u) == 0u`), after P is known: `acc = 0; for k < 8 (break at rippleCount): r = RIPPLE_SPEED*age; d = length(P.xy - c); b = 1 - abs(d - r)/RIPPLE_W; if (b > 0) acc = max(acc, amp*b*(1 - age/RIPPLE_LIFE))`. If `acc >= 0.2`: glyph = `rippleGlyph`, fg = `fg + (255 - fg) * acc * rippleGain` (then the usual byte quantise). rippleCount 0 -> loop skipped -> output bit-identical. Designer values: glyph (default `'o'`), gain (default 0.5) in the water look data (lane C), defaults in `waterLook.js`.
+
+**Owners.** B2 kestrel-4: `engine/fx/ripples.js` + test, `waterComposite.wgsl.js` patch, `engine/render/waterComposite.js` twin (reads `fb.ripples`, duck-typed `{packInto}`), `waterLook.js` defaults. B1 kestrel-2: `wg/passWater.js` calls `p._fb.ripples.packInto(timeSec, this.rip32)` and writes the words. B1 kestrel-1 (`NEEDS B1-main`): one `createRipples()` at boot, `fb.ripples = it`, `add` on the US-055b splash-entry event. gpucompare adds no ripples -> rows unchanged.
+
+**Tests (Node).** `ripples.test.js`: no add -> count 0; 9 adds into cap 8 -> oldest dropped; age >= 2 s dropped; 0 alloc over 10k add/pack. `waterComposite.test.js`: count 0 -> byte-identical to today; one ring amp 1: at age 1 s a cell 1.2 m from the centre gets the ripple glyph, a cell at 0.4 m does not; at age 1.99 s acc < 0.2 everywhere. WGSL: `compileFn` probe of the ring loop vs the twin over 2000 random rings/points; string checks (fields appended, no `%`). Cost: <= 8 sqrt per water cell, est. < 0.02 ms. Size ~0.75 d B2 + 0.1 d B1 + the main.js hook.
+
+### 38.15 S8-B2-17 / S8-B2-18 GPU particles: DROP (architect, 2026-10-09)
+
+**Measured.** `node engine/fx/particles.test.js` (2026-10-09): 2048 live = **0.105 ms/step**, 500 live = 0.025 ms (bars 0.15 / 0.05). One step per frame at the cap is ~1.3 % of the 8 ms JS budget; `particleLayer.js` uploads two small layer textures.
+
+**Why not a GPU sim.** (1) It saves <= 0.1 ms. (2) The oracle is the Float64 CPU sim (`engine/fx/particles.js`, rule 15 determinism, `hashInto` checkpoints); an f32 WGSL integrator with drag, ground bounce and wind cannot meet "1e-5 after 300 steps", so the test would be weakened or the twin forked. (3) Spawning, the emitter table, the RNG stream and wind `sampleInto` stay on the CPU, so state would be split across CPU and GPU (not serialisable; readback needed for any gameplay use). (4) S8-B2-18's GPU splat needs storage textures + depth atomics that `GpuDevice` does not have (38.3), plus a B1 sprites-pass change. (5) The 2048 cap is by design (32.1); raising it is a look question, not a perf one.
+
+**Verdict.** S8-B2-17 and S8-B2-18 **DROP**. Revisit only if a profiled scene shows particle step + layer upload > 0.3 ms on the 4060 (then first: Float32 SoA and fewer branches on the CPU, not a GPU port). No replacement story; the perf bar in `particles.test.js` is the guard.
+
+### 38.16 S8-B2-20 horizon AO light-pass term (architect, 2026-10-09)
+
+**Decision: decoupled from S8-B2-04.** Vertex AO (B2-04) has no G-buffer channel to land in (kind-9/face-7 cells use GA.w for the packed normal), so it needs its own format note. Horizon AO here is **screen-space only** (DEPTH + GI, both already bound to the light pass), so it ships first; B2-04 later only adds a multiplier. Dependency on B2-04 removed.
+
+**Term (light pass; non-terrain, non-sky cells; terrain keeps its analytic look in v1).** Uses P, N, `dist` already computed in `fs_main`. Uniform `ao: vec4` appended at the END of `LIGHT_BLOCK` (after 38.13's fields): `(strength 0..1, radiusM, bias, maxCells)`, defaults `(0, 0.8, 0.15, 4)`.
+```
+if (u.ao.x > 0.0 && kind != terrain):
+  rc = clamp(floor(u.ao.y * u.planeDistY / dist + 0.5), 1, u.ao.w)      // metres -> cells, integer
+  occ = 0; taps (+rc,0), (-rc,0), (0,+rc), (0,-rc) in this order:
+     skip out-of-grid and kind 0; Pk = cellRayP(tap, depth[tap]) (pitched: cellRayPitched)
+     v = Pk - P; l = length(v); if (l > 1e-4 && l < u.ao.y) { c = dot(N, v)/l - u.ao.z; if (c > 0) occ += c * (1 - l/u.ao.y) }
+  aoMul = 1 - u.ao.x * min(occ * 0.25, 1) * 0.6          // in [0.4, 1]: never brightens
+  L = u.ambient * aoMul                                    // replaces `var L = u.ambient`; strength 0 -> branch skipped -> bit-identical
+```
+Only the ambient term is scaled (point lights and sun are direct; AO on them would double-darken against LVIS and the shadow map). No new texture, LIGHT word unchanged. JS twin: new `engine/render/horizonAO.js` `horizonAO(fb, cx, cy, P, N, dist, params, cam) -> aoMul` (zero alloc, reuses lighting.js's cell-ray helpers); `lightAt` gains a trailing optional `ambientMul = 1` (`out[k] = ambient[k] * ambientMul`; x*1 is exact, current callers unchanged); `lightSurfaces` computes it per non-terrain cell when `lights.ao && lights.ao.strength > 0`.
+
+**Owners.** B2 kestrel-4: `light.wgsl.js` patch, `horizonAO.js` + `lighting.js` twin + tests. B1 kestrel-2: `wg/passLight.js` writes `ao` from `p._light.ao` (set by `setLook` from an optional `look.ao = {strength, radiusM, bias}`; designer values, lane C). gpucompare forces strength 0 in every mode (rows unchanged, D-039); owner look on the tower interior via `?ao=1`, WebGPU only (GLSL frozen).
+
+**Tests (Node).** `horizonAO.test.js` on synthetic depth/G-buffer grids: flat floor -> exactly 1.0; inside corner (floor + 2 walls) < 0.85; convex edge -> 1.0; sky/out-of-grid taps ignored; 0 alloc over 60k cells. Probe: WGSL tap loop vs JS within 1e-5 on 2000 random cells (`compileFn`). `lighting.test.js`: strength 0 -> light buffers byte-identical. Cost: 4 depth + 4 GI loads + 4 cell rays per lit cell, est. 0.05-0.1 ms at 400x150 (WebGpuTimer slot `light`, report before/after). Size ~0.75 d B2 + 0.1 d B1. Order: after 38.13 (both patch `light.wgsl.js` + `lighting.js`; never in parallel).
