@@ -155,6 +155,18 @@ global.gc(); const grew = process.memoryUsage().heapUsed - h0;
 assert.equal(mock.createCount, created, 'warm frames create no resources'); assert.equal(sp.u, u0);
 assert.ok(grew < 64 * 1024, `heap growth over 1000 frames ${grew} B`);
 
+// ---- uploadMs timing gated (default off): no performance.now() in run, stat stays 0; on -> measured ----
+{
+  const realNow = performance.now.bind(performance); let calls = 0;
+  performance.now = () => { calls++; return realNow(); };
+  try {
+    assert.equal(sp.timeUploads, false); sp.run(inp);
+    assert.equal(calls, 0, 'timeUploads off: no performance.now calls'); assert.equal(sp.stats.uploadMs, 0);
+    sp.timeUploads = true; sp.run(inp);
+    assert.equal(calls, 2, 'timeUploads on: 2 calls'); assert.ok(sp.stats.uploadMs >= 0);
+  } finally { performance.now = realNow; sp.timeUploads = false; }
+}
+
 sp.dispose(); ovp.dispose();
 for (const t of [gi, depth, edgeFg, edgeBg]) d.dispose(t);
 assert.equal(mock.liveCount(), 0, 'dispose frees everything');
