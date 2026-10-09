@@ -240,6 +240,7 @@ export { createEntityEmitters } from './world/entityEmitters.js';
 
 // ---- S8-B2-13b splash ripples (docs/architecture.md 38.14, the note of record) ----
 export { createRipples, RIPPLE_LIFE, RIPPLE_SPEED, RIPPLE_W } from './fx/ripples.js';
+export { defineHitSparks, hitSparks, HIT_SPARK_HUES } from './fx/hitSparks.js';
 
 // ---- US-055a1 water regions + query (architecture.md 32.2; the query is `World#waterAt`) ----
 export { createWater, collectWaterDefs, WATER_MAX } from './world/water.js';
