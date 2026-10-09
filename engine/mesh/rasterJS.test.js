@@ -378,6 +378,27 @@ function checkVoxelFace(name, deg, axisAligned, expectFace, expectedNormal) {
 checkVoxelFace('axis-aligned 90deg', 90, true, FACE_E, null);
 checkVoxelFace('non-axis-aligned 30deg', 30, false, FACE_PACKED, [Math.sin((30 * Math.PI) / 180), -Math.cos((30 * Math.PI) / 180), 0]);
 
+// 5b. 38.23 objectId round trip: a voxel draw's item.objectId (= VoxelPool.objectIdFor, 0x8000|slot) lands in gbuf.objectId.
+{
+  const cols = 32, rows = 24;
+  const { M, terms } = camTerms({ x: 0, y: 3, z: 2, yawDeg: 180, pitchDeg: 0 }, { cols, rows });
+  const target = createRasterTarget(cols, rows, 1, {});
+  const list = new DrawList(4);
+  list.begin();
+  const item = list.push(makeVoxelQuadMesh('vox_oid'), DRAW_VOXEL);
+  item.partMatrices.set(rotZDeg(0), 0); item.partMatrices.set([0, 6, 1.5], 9); item.partFlags[0] = 1;
+  item.aabb.set([-10, -10, -10, 10, 10, 10]);
+  item.objectId = 0x8000 | 5;
+  rasterDrawList(list, target, { M, terms, snap: true });
+  const gbuf = new GBuffer(cols, rows); gbuf.beginFrame();
+  copyToGBuffer(target, gbuf, new Float32Array(cols * rows));
+  let n8 = 0, bad = 0, stray = 0;
+  for (let i = 0; i < cols * rows; i++) {
+    if (gbuf.kind[i] === 8) { n8++; if (gbuf.objectId[i] !== (0x8000 | 5)) bad++; } else if (gbuf.objectId[i] !== 0) stray++;
+  }
+  ok('objectId round trip: voxel cells carry objectId into gbuf.objectId', n8 > 0 && bad === 0 && stray === 0, `n8=${n8} bad=${bad} stray=${stray}`);
+}
+
 // ---------------------------------------------------------------------------
 // 6. copyToGBuffer: kind-0 pixels untouched; face 7 -> aoD bits = nrm.
 // ---------------------------------------------------------------------------

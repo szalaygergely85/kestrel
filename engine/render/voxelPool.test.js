@@ -75,6 +75,19 @@ pool.pushInstance('bear', 3, 0, 2, 0);
 pool.project(cam, rt);
 ok('pool keeps the instance castModels draws (no cull disagreement)', pool.list.length === 1);
 
+// ---- 38.23 objectIdFor(entity): 0x8000 | compact slot, -1 when no slot ----
+{
+  const entA = { id: 1, transform: { x: 3, y: 0, z: 2, yawDeg: 0 }, components: { voxel: { model: 'bear' } } };
+  const entB = { id: 2, transform: { x: 3, y: -500, z: 2, yawDeg: 0 }, components: { voxel: { model: 'bear' } } };
+  const entC = { id: 3, transform: { x: 3, y: 1, z: 2, yawDeg: 0 }, components: { voxel: { model: 'bear' } } };
+  pool.beginFrame();
+  pool._queueEntity(entA); pool._queueEntity(entB); pool._queueEntity(entC);
+  pool.project(cam, rt);
+  ok('objectIdFor: slot = queue/compact index', pool.objectIdFor(entA) === (0x8000 | 0) && pool.objectIdFor(entB) === (0x8000 | 1) && pool.objectIdFor(entC) === (0x8000 | 2) && pool.objectIdFor({}) === -1);
+  pool.beginFrame(); pool.pushInstance('bear', 3, 0, 2, 0); pool.project(cam, rt);
+  ok('objectIdFor: harness instance has no entity; stale entity -> -1', pool.objectIdFor(entA) === -1);
+}
+
 // ---- zero allocation on repeated pushInstance/project once warm -----------
 pool.beginFrame();
 for (let i = 0; i < 5; i++) pool.pushInstance('bear', 3, i, 2, 0);

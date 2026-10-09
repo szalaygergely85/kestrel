@@ -70,6 +70,7 @@ import { wakeFrame, drawEyelid, applyWakeOnLoad } from './quest/wake.js';
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel, getMapChart, drawMapCard } from './quest/mapCard.js';
 import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
 import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-050: the one seam to game content
+import { createWaystoneTouch } from './waystoneTouch.js'; // WAYSTONE-TOUCH-01
 import { createTitleMenuHost } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
@@ -77,6 +78,7 @@ import { parseOccl, createHzbInvalidator } from './occlGate.js'; // OCCL-MAIN-01
 import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
+import { wireTelegraphs, telegraphsEnabled } from './fx/telegraphWire.js'; // TELEGRAPH-WIRE-01 (lane B1)
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
@@ -120,11 +122,14 @@ import { runPerfBench } from './dev/perfBench.js'; // US-018 (architecture.md 16
 import { createSpriteSystem, spawnTestSprites } from './dev/spriteDev.js';
 // ---- end US-030c ----
 // ---- US-010: quest behaviours (registered by name before any World loads) ----
-import { validateBehaviours, createRipples } from '../../engine/index.js';
+import { validateBehaviours, createRipples, createEntityTintTable, fillEntityTints } from '../../engine/index.js';
 import './quest/index.js';
+import { parseDemo, filterDemoParams, demoStorage, blockFKeys, createEndCard, drawDemoBuildLine } from './demoMode.js';
 // ---- end US-010 ----
 
-const params = new URLSearchParams(window.location.search);
+const demo = parseDemo(window.location.search); // DEMO-MODE-01: `?demo=1` public build; off = everything below is unchanged
+const params = filterDemoParams(new URLSearchParams(window.location.search), demo); // demo: only quality/res/fx survive
+const saveStorage = () => (demo.on ? demoStorage(getSaveStorage()) : getSaveStorage()); // demo: own save namespace, slots 1-3 untouched
 
 // US-030a (docs/architecture.md 14.2 item 5), range widened by D-025
 // (US-038a, architecture.md 22.2): `?grid=WxH` clamped to 160x60..480x180
@@ -390,7 +395,7 @@ let titleMenuActive = true; // S8-B1-10: mirrors menuHost.active each frame (tru
 let deviceLostFrozen = false; // S8-B1-10 (38.10c): set once by watchDeviceLost's `freeze` hook below; gates `paused` in the frame loop
 try {
   const questDef = await (await fetch('../content/quests/m1.quest.json')).json();
-  saveRelay = createSaveRelay({ storage: getSaveStorage(), questDef, enabled: saveEnabled });
+  saveRelay = createSaveRelay({ storage: saveStorage(), questDef, enabled: saveEnabled });
   saveRelay.bindEvents(engine.events);
   gameHooks.register(saveRelay.handlers());
   saveRelay.quest.onPoll = (name, a, b) => gameHooks.emitSimple(name, a, b);
@@ -457,6 +462,13 @@ const menuWanted = params.get('title') !== '0' && !isCaptureOrBench && params.ge
 // item 2) and by any later live grid change (the `grid:changed` handler).
 let { renderTarget: rt, depthBuffer } = engine;
 const { input } = engine;
+if (demo.on) blockFKeys(input); // demo: no F3 / F-key dev overlays
+// DEMO-MODE-01: end card once per run on the waystone done event; Restart wipes the demo save and reloads.
+const demoEnd = demo.on ? createEndCard({
+  onRestart: () => { const a = createStorageAdapter(saveStorage()); for (let i = 0; i < 3; i++) a.deleteSlot(i); window.location.reload(); },
+  onKeep: () => {} }) : null;
+gameHooks.register(createWaystoneTouch(gameHooks)); // WAYSTONE-TOUCH-01: prop:touched {waystone} on walk-in / E (lane C's WAYSTONE-01w listens)
+if (demoEnd) gameHooks.register({ onEvent(name, d) { if (name === 'area:entered' && d && d.id === 'waystone') demoEnd.trigger(); } });
 // OWN-REQ-003 (architecture.md 17.1): `engine.ui` is a single UiLayer for
 // the whole run - `engine.setGrid` re-binds it in place (never replaces it),
 // so capturing it once here (unlike `depthBuffer`) stays valid
@@ -833,7 +845,7 @@ if (gpuBlocked) {
   runVoxelBenchMode();
 } else if (params.get('glyphs') === '1') {
   modeByName.get('glyphs').run(ctx);
-} else if (params.get('demo') === '1') {
+} else if (new URLSearchParams(window.location.search).get('demo') === 'scene') { // DEMO-MODE-01: the old US-048 dev scene moved from ?demo=1 to ?demo=scene
   modeByName.get('demo').run(ctx);
 } else if (params.has('cinematic')) {
   loadCinematic(params.get('cinematic')).then((path) => runGame('world', path)).catch((error) => {
@@ -865,6 +877,8 @@ async function runGame(mode, cinematic = null) {
   let look = null;
   let playerHandle = null;
   let decalBind = null; // DECAL-01: refreshed on load/restart.
+  const entityTintTable = createEntityTintTable(); // TELEGRAPH-WIRE-01 part 2: one table, reused
+  let telegraphWire = null; // TELEGRAPH-WIRE-01: rebuilt on 'world:loaded'
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
@@ -1031,6 +1045,8 @@ async function runGame(mode, cinematic = null) {
       if (beasts) beasts.dispose();
       if (params.get('bench') === 'combat' || (benchActive && params.get('enemies') === '4')) ensureBenchBoars(world); // COMBAT-BENCH-01
       beasts = createBeastSim(world, { nav: worldDef.nav && buildBeastNav(world, worldDef.nav), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events });
+      if (telegraphWire) telegraphWire.dispose(); // TELEGRAPH-WIRE-01 part 1
+      telegraphWire = wireTelegraphs(engine.events, world, beasts, telegraphsEnabled(params, isCaptureOrBench));
       if (saveRelay) saveRelay.applyDeadToBeasts(beasts); // US-089w: restored dead beasts stay gone (create reset them alive)
       if (sword) sword.dispose();
       sword = createSwordSim(world, engine.events, SWORD_CFG, { spendMana: (n) => vitals && vitals.spendMana(n) }); // US-078d (30.1)
@@ -1217,7 +1233,7 @@ async function runGame(mode, cinematic = null) {
     // Continue swaps in the chosen slot (same swap as the boot load / `R`), Settings opens the normal panel on top.
     if (menuWanted && !cinematic) {
       menuHost = createTitleMenuHost({
-        adapter: createStorageAdapter(getSaveStorage()),
+        adapter: createStorageAdapter(saveStorage()),
         style: window.ASSETS && window.ASSETS.uiStyle ? window.ASSETS.uiStyle.menu : null,
         onNewGame: (slot) => { if (saveRelay) saveRelay.setSlot(slot); },
         onContinue: (slot, save) => {
@@ -1267,6 +1283,7 @@ async function runGame(mode, cinematic = null) {
     // US-020a: `N` = mute toggle, always available (does not conflict with
     // `M`'s map card, US-015) - a single flag in audio/synth.js's module
     // state (later Settings, US-038, can read it the same way).
+    if (demoEnd) demoEnd.step((c) => input.pressed(c));
     if (input.pressed(gameKeys.mute)) { toggleMute(); saveSettings({ muted: isMuted() }); } // US-060: remember across reload
     if (input.pressed('F3')) overlay.toggle();
     // D-025 (US-038a AC "dev switch until US-038b ships"): `?debug=1` only -
@@ -1387,8 +1404,9 @@ async function runGame(mode, cinematic = null) {
       // timed clips like the burner flame / lantern glint / relay sparkle).
       stepAnimations(engine.world, dt * 1000);
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
-      const simDue = hitStop.due(1000 / 60); // HITSTOP-01: only beasts + sword freeze
+      const simDue = hitStop.due(1000 / 60); // HITSTOP-01: the window gates beasts.step only; the sword freezes by its own hitStopHard counter
       if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); } // US-079a (29.1)
+      if (telegraphWire) telegraphWire.step(performance.now());
       // US-078d (30.1 + D-034 amendment): the sword steps after beasts.step, so a heavy-hit stagger acts from the
       // beast's NEXT step (deterministic, synchronous emit). `attackDown` is the amendment's exact gate expression.
       if (hands) {
@@ -1404,7 +1422,7 @@ async function runGame(mode, cinematic = null) {
           if (fbView) fbView.stepFx(); // SPELL-01b: trail emitters + burst particles (sim side, hashed)
         }
       }
-      if (sword && simDue) {
+      if (sword) { // runs every step: inputs inside the hit-stop window are not lost
         forwardOf(look.yawDeg, swordFwd);
         sword.step(playerHandle.data, swordFwd[0], swordFwd[1], hands ? hands.downOf('sword') : false);
       }
@@ -1619,6 +1637,7 @@ async function runGame(mode, cinematic = null) {
       // needs its own explicit `.project()` before `renderWorld` reads
       // `fb.voxelPool.list` (compositor.js).
       gameVoxelPool.collect(engine.world, cam);
+      if (telegraphWire && beasts) { fillEntityTints(entityTintTable, beasts.entities, gameVoxelPool, performance.now()); fb.entityTints = entityTintTable; } else if (fb.entityTints) fb.entityTints = undefined; // TELEGRAPH-WIRE-01 part 2
       if (!fb.gpu) gameVoxelPool.project(cam, rt, renderer); // ME-19a: CPU reference uses the same mesh camera.
       lap(SEC.voxel);
       // US-017 (7.4 "Fade"): 1 = off outside the end sequence. CPU path
@@ -1751,6 +1770,8 @@ async function runGame(mode, cinematic = null) {
     // US-015 tester BUG-1: the map card owns the screen while open (its own
     // click/key dismiss), so the pause text must not overprint it (160x60).
     if (menuHost && menuHost.active && !isSettingsOpen()) menuHost.draw(ui); // US-090w: the card owns the screen (no pause text under it)
+    if (demo.on && menuHost && menuHost.active && !isSettingsOpen()) drawDemoBuildLine(ui);
+    if (demoEnd) demoEnd.draw(ui);
     if (mode === 'world' && !look.locked && !isMapOpen() && !(invView && invView.isOpen) && !cinematic && !isWaterfallPreview && !(menuHost && menuHost.active)) drawPauseOverlay(ui, rt, assets);
     // US-038b: settings panel, drawn over the pause overlay when open
     if (!cinematic && !isWaterfallPreview) drawSettingsPanel(ui, rt, assets, { showEntry: mode === 'world' && !(menuHost && menuHost.active) && !look.locked && !isMapOpen() && !(invView && invView.isOpen) });
