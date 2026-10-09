@@ -8,8 +8,6 @@ import { buildWaveTables, createWaveClock } from './waves.js';
 export const WATER_MAX = 32;
 // S8-B2-13b (38.14, the note of record): splash ripples live in the pure `engine/fx/ripples.js` ring buffer, not
 // here - this table is immutable region CONTENT built by World.load, and render never holds gameplay-fed state.
-/** @deprecated NEEDS B1: compatibility-only, `wg/passWater.js` still imports this; delete once it packs from `fb.ripples` instead. */
-export const RIPPLE_MAX = 8;
 /** Max flow speed (m/s) of a region's `flow` / `flowRadial` (US-141a, architecture.md 35.1). */
 export const FLOW_MAX = 6;
 /** US-143a (architecture.md 35.1): `waves` region key + world `seaState` default. */

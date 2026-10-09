@@ -237,14 +237,6 @@ export function waterFogParams(table, palette, hasTerrain, out) {
 // rule, read by both the JS twin (waterComposite.js) and probed against the WGSL ring loop (water.wgsl.test.js).
 
 /**
- * @deprecated NEEDS B1: compatibility-only stub, `wg/passWater.js` still imports this; delete once it calls
- * `p._fb.ripples.packInto(timeSec, this.rip32)` directly. `world.water` carries no ring data any more, so this
- * always reports 0 live rings (the same "no crash, count 0" default the JS twin falls back to with no `fb.ripples`).
- * @param {any} _wt @param {Float32Array} _out @returns {number}
- */
-export function packRipples(_wt, _out) { return 0; }
-
-/**
  * Accumulated ripple strength at ground point (px, py) over the first `count` packed rings (x, y, age, amp per
  * ring), same op order as the WGSL ring loop in waterComposite.wgsl.js: `r = RIPPLE_SPEED*age; d = |P-c|;
  * b = 1 - |d-r|/RIPPLE_W; if (b>0) acc = max(acc, amp*b*(1-age/RIPPLE_LIFE))`. Zero allocation.
