@@ -4517,23 +4517,3 @@ B2: `waterComposite.wgsl.js`, `waterLook.js` (`packRipples`, `rippleStrength`, r
 - (d) Cost: <= 8 x (sqrt + 6 flops) on water cells only, < 0.01 ms.
 
 **Size: ~0.75 d, one step.** The ring, pack, twin, WGSL and tests are one topic. Split into 13a (ring/API + pack) and 13b (composite WGSL + twin) only if the programmer runs over.
-
-### 38.16 S8-B2-20 horizon AO light-pass term (architect, 2026-10-09)
-
-**Decision: decoupled from S8-B2-04.** Vertex AO (B2-04) has no G-buffer channel to land in (kind-9/face-7 cells use GA.w for the packed normal), so it needs its own format note. Horizon AO here is **screen-space only** (DEPTH + GI, both already bound to the light pass), so it ships first; B2-04 later only adds a multiplier. Dependency on B2-04 removed.
-
-**Term (light pass; non-terrain, non-sky cells; terrain keeps its analytic look in v1).** Uses P, N, `dist` already computed in `fs_main`. Uniform `ao: vec4` appended at the END of `LIGHT_BLOCK` (after the 38.13 `cloud` vec4 at word 316): `(strength 0..1, radiusM, bias, maxCells)`, defaults `(0, 0.8, 0.15, 4)`.
-```
-if (u.ao.x > 0.0 && kind != terrain):
-  rc = clamp(floor(u.ao.y * u.planeDistY / dist + 0.5), 1, u.ao.w)      // metres -> cells, integer
-  occ = 0; taps (+rc,0), (-rc,0), (0,+rc), (0,-rc) in this order:
-     skip out-of-grid and kind 0; Pk = cellRayP(tap, depth[tap]) (pitched: cellRayPitched)
-     v = Pk - P; l = length(v); if (l > 1e-4 && l < u.ao.y) { c = dot(N, v)/l - u.ao.z; if (c > 0) occ += c * (1 - l/u.ao.y) }
-  aoMul = 1 - u.ao.x * min(occ * 0.25, 1) * 0.6          // in [0.4, 1]: never brightens
-  L = u.ambient * aoMul                                    // replaces `var L = u.ambient`; strength 0 -> branch skipped -> bit-identical
-```
-Only the ambient term is scaled (point lights and sun are direct; AO on them would double-darken against LVIS and the shadow map). No new texture, LIGHT word unchanged. JS twin: new `engine/render/horizonAO.js` `horizonAO(fb, cx, cy, P, N, dist, params, cam) -> aoMul` (zero alloc, reuses lighting.js's cell-ray helpers); `lightAt` gains a trailing optional `ambientMul = 1` (`out[k] = ambient[k] * ambientMul`; x*1 is exact, current callers unchanged); `lightSurfaces` computes it per non-terrain cell when `lights.ao && lights.ao.strength > 0`.
-
-**Owners.** B2 kestrel-4: `light.wgsl.js` patch, `horizonAO.js` + `lighting.js` twin + tests. B1 kestrel-2: `wg/passLight.js` writes `ao` from `p._light.ao` (set by `setLook` from an optional `look.ao = {strength, radiusM, bias}`; designer values, lane C). gpucompare forces strength 0 in every mode (rows unchanged, D-039); owner look on the tower interior via `?ao=1`, WebGPU only (GLSL frozen).
-
-**Tests (Node).** `horizonAO.test.js` on synthetic depth/G-buffer grids: flat floor -> exactly 1.0; inside corner (floor + 2 walls) < 0.85; convex edge -> 1.0; sky/out-of-grid taps ignored; 0 alloc over 60k cells. Probe: WGSL tap loop vs JS within 1e-5 on 2000 random cells (`compileFn`). `lighting.test.js`: strength 0 -> light buffers byte-identical. Cost: 4 depth + 4 GI loads + 4 cell rays per lit cell, est. 0.05-0.1 ms at 400x150 (WebGpuTimer slot `light`, report before/after). Size ~0.75 d B2 + 0.1 d B1. Order: after 38.13 (both patch `light.wgsl.js` + `lighting.js`; never in parallel).
