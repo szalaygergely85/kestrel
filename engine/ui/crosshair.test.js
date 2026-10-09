@@ -12,7 +12,6 @@ import { createUiLayer, GLYPH_BG_ALPHA } from './uiLayer.js';
 import { drawCrosshair } from './crosshair.js';
 import { CellBuffer } from '../render/CellBuffer.js';
 import { RenderTargetCanvas2D } from '../render/RenderTargetCanvas2D.js';
-import { FRAGMENT_SRC } from '../render/RenderTargetGL.js';
 import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
@@ -118,18 +117,6 @@ const style = {
   const oi = 5 * ui.cols + 5, ofi = oi * 4;
   ok('canvas2d: opaque cell replaces the bg',
     rt.cells.bg[ofi] === 0x11 && rt.cells.bg[ofi + 1] === 0x22 && rt.cells.bg[ofi + 2] === 0x33 && rt.cells.bg[ofi + 3] === 255);
-}
-
-// ---- GL present path (source-string, glsl.test.js's technique) ----
-{
-  const alpha128 = 128 / 255, alpha255 = 255 / 255;
-  ok('GL: 128/255 (bg alpha) falls in the glyph-only band [0.5, 0.75)', alpha128 >= 0.5 && alpha128 < 0.75);
-  ok('GL: 255/255 (bg alpha) stays in the opaque band (>= 0.75)', alpha255 >= 0.75);
-  ok('GL: transparent cells (bg.a < 0.5) still discard', FRAGMENT_SRC.includes('if (uLayer == 1 && bg.a < 0.5) discard;'));
-  ok('GL: glyph-only branch gates on bg.a < 0.75', FRAGMENT_SRC.includes('if (uLayer == 1 && bg.a < 0.75)'));
-  ok('GL: glyph-only discards where glyph coverage < 0.5 (scene shows through)', FRAGMENT_SRC.includes('if (a < 0.5) discard;'));
-  ok('GL: glyph-only outputs only fg over the scene (no bg box)', FRAGMENT_SRC.includes('fragColor = vec4(fg.rgb, 1.0);'));
-  ok('GL: opaque cells still mix bg<->fg by coverage', FRAGMENT_SRC.includes('fragColor = vec4(mix(bg.rgb, fg.rgb, a), 1.0);'));
 }
 
 console.log(`crosshair.test.js: ${pass} passed, ${fail} failed`);

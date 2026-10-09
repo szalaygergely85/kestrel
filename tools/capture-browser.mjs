@@ -85,7 +85,7 @@ export function parseArgs(argv) {
     else if (a === '--variant') opts.variant = next();
     else if (a === '--rays') opts.rays = Number(next());
     else if (a === '--query') opts.query = next();
-    else if (a === '--shadows') opts.shadows = next(); // ME-15e: appends &shadows=<map|dda> to the mode's own query
+    else if (a === '--shadows') opts.shadows = next(); // ME-15e: appends &shadows=<map|off; dda maps to map> to the mode's own query
     else if (a === '--global') opts.global = next();
     else if (a === '--swiftshader') opts.swiftshader = true;
     else if (a === '--backend') {

@@ -45,7 +45,7 @@ import { LIGHT_FRAG_SRC } from './glsl/light.frag.js';
 import { sunFromWorld } from '../lighting.js';
 import { terrainHBounds, activeNearLOD } from '../../world/Terrain.js';
 import { GpuTimer, GpuPassTimer } from './GpuTimer.js';
-import { buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan, MAX_STRUCTS } from './WorldTextures.js';
+import { MAX_STRUCTS } from './WorldTextures.js';
 import { PROJ_HFOV_DEG as HFOV_DEG } from '../projection.js';
 import { SKY_LUT_N } from './glsl/common.js';
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS } from '../lighting.js';
@@ -124,6 +124,7 @@ export class GpuCellPipeline {
     // ME-15b (27.9a item 1): `createEngine({ shadows })` (main.js passes `engine.shadows`) merged over
     // SUN_SHADOW_DEFAULTS once; `sun` defaults to 'map' on the mesh renderer, 'dda' otherwise.
     this.shadowOpts = resolveSunShadowOptions(opts.shadows, this.renderer);
+    if (this.shadowOpts.sun !== 'off') this.shadowOpts.sun = 'map'; // ME-19c2: the GL sun DDA is gone; 'dda'/false mean the shadow map
     this.ready = false;
     this.stats = {
       uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN,
@@ -362,13 +363,7 @@ export class GpuCellPipeline {
     // baked once per bind()/palette change, not per frame.
     this.texSky = createTexture2D(gl, gl.RGBA32F, SKY_LUT_N, 1);
 
-    // --- world atlas textures (US-030a, WorldTextures.js; sized on first
-    // use in _ensureWorldTextures - 1x1 placeholders until a world is bound
-    // so `?gpucompare=shade`'s legacy 'upload' source never touches them) ---
-    this.texWorldGeom = createTexture2D(gl, gl.RGBA32F, 1, 1);
-    this.texWorldMats = createTexture2D(gl, gl.RGBA16UI, 1, 1);
-    this.texWorldFlags = createTexture2D(gl, gl.RG8UI, 1, 1);
-    this._worldAtlas = null;
+    // ME-19c2: the GL world atlas (geom/mats/flags) is gone - only the removed light-pass sun DDA read it.
 
     // --- US-016 (14.4 item 3/build-order step 1) far-terrain textures - 1x1
     // placeholders until a world with `terrain.farReady` is bound, same
@@ -586,8 +581,7 @@ export class GpuCellPipeline {
     // again here on light's own sampler units (a different program).
     this._lightBinds = this._buildBindTable(this._locsLight, [
       ['uGI', this.texGI], ['uGA', this.texGA], ['uDepth', this.texDepth], ['uLVis', this.texLVis],
-      ['uWorldGeom', this.texWorldGeom], ['uWorldFlags', this.texWorldFlags],
-      ['uSunShadow', this._shadowDepthTex ? this._shadowDepthTex.handle : null], // ME-15c (null = DDA sun: sampler unused)
+      ['uSunShadow', this._shadowDepthTex ? this._shadowDepthTex.handle : null], // ME-15c (null = sun 'off': sampler unused)
     ]);
     // `_shadeBindsSet1`/`Set2` list every entry in the same order (only the
     // uSGI/uSGA texture object differs), so their unit assignment is
@@ -720,7 +714,6 @@ export class GpuCellPipeline {
     freeGridTargets(gl, this._t);
     this._t = null;
     for (const tex of [this.texMatF, this.texMatI, this.texSetI, this.texSetF, this.texGain, this.texSky,
-      this.texWorldGeom, this.texWorldMats, this.texWorldFlags,
       this.texLVis, this.texFarH, this.texFarType, this.texTlook,
       this.texNearH, this.texNearType]) {
       if (tex) gl.deleteTexture(tex);
@@ -743,9 +736,6 @@ export class GpuCellPipeline {
     if (this._water) this._water.dispose();
     if (this._meshDevice) this._meshDevice.dispose();
     if (this.timer) this.timer.dispose();
-    // US-030a: the world atlas textures are gone too - force a full
-    // re-upload on the next frame after a context restore.
-    this._worldAtlas = null;
     // US-016: same for the far-terrain textures.
     this._terrainVersion = -1;
     this._terrainWorld = null;
@@ -1081,7 +1071,6 @@ export class GpuCellPipeline {
     this._useSceneThisFrame = useScene;
     if (useScene) {
       this._uploadMask();
-      this._ensureWorldTextures(this._world);
       this._ensureTerrainTextures(this._world);
       this._computeCamBasis(this._cam);
     } else {
@@ -1181,60 +1170,11 @@ export class GpuCellPipeline {
     mask.fill(0);
   }
 
-  // US-030a (WorldTextures.js): full rebuild on a `structVersion` bump
-  // (structure placed/removed - texImage2D, resizes storage), else only the
-  // dirty rows a `packed.version` bump touched (texSubImage2D) - "not per
-  // frame" per 14.2 item 2's `world.structVersion` note.
-  _ensureWorldTextures(world) {
-    const gl = this.gl;
-    // A different `World` object (runtime world switch, or `?gpucompare=1`'s
-    // test_room -> world_m1) is always a full rebuild: `structVersion` is
-    // per-world and two fresh worlds with one structure each both sit at 1,
-    // so `planFrameUpdate` alone would happily keep casting the OLD atlas.
-    if (!this._worldAtlas || this._worldAtlasWorld !== world) {
-      this._worldAtlas = buildWorldTextures(world);
-      this._worldAtlasWorld = world;
-      this._uploadWorldAtlasFull();
-      return;
-    }
-    // Architect review 1 item 3: `_frameUpdatePlan` is allocated once and
-    // reused every frame (planFrameUpdate writes into it in place).
-    const plan = planFrameUpdate(world, this._worldAtlas, this._frameUpdatePlan || (this._frameUpdatePlan = makeFrameUpdatePlan()));
-    if (plan.rebuildNeeded) {
-      this._worldAtlas = buildWorldTextures(world);
-      this._uploadWorldAtlasFull();
-      return;
-    }
-    const a = this._worldAtlas;
-    for (let k = 0; k < plan.count; k++) {
-      const y0 = plan.ranges[k * 2], y1 = plan.ranges[k * 2 + 1];
-      const rows = y1 - y0 + 1;
-      gl.bindTexture(gl.TEXTURE_2D, this.texWorldGeom);
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y0, a.width, rows, gl.RGBA, gl.FLOAT, a.GEOM, y0 * a.width * 4);
-      gl.bindTexture(gl.TEXTURE_2D, this.texWorldMats);
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y0, a.width, rows, gl.RGBA_INTEGER, gl.UNSIGNED_SHORT, a.MATS, y0 * a.width * 4);
-      gl.bindTexture(gl.TEXTURE_2D, this.texWorldFlags);
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y0, a.width, rows, gl.RG_INTEGER, gl.UNSIGNED_BYTE, a.FLAGS, y0 * a.width * 2);
-    }
-    if (plan.count || plan.uStructDirty) this._uploadUStruct();
-  }
-
-  _uploadWorldAtlasFull() {
-    const gl = this.gl, a = this._worldAtlas;
-    gl.bindTexture(gl.TEXTURE_2D, this.texWorldGeom);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, a.width, a.height, 0, gl.RGBA, gl.FLOAT, a.GEOM);
-    gl.bindTexture(gl.TEXTURE_2D, this.texWorldMats);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16UI, a.width, a.height, 0, gl.RGBA_INTEGER, gl.UNSIGNED_SHORT, a.MATS);
-    gl.bindTexture(gl.TEXTURE_2D, this.texWorldFlags);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG8UI, a.width, a.height, 0, gl.RG_INTEGER, gl.UNSIGNED_BYTE, a.FLAGS);
-    this._uploadUStruct();
-  }
-
   // US-016 (14.4 item 3, build order step 1): uploads `FARH`/`FARTYPE`/
   // `TLOOK` once when `terrain.farReady` first flips, and again only when
   // `terrain.farVersion` changes - never per frame (item 3's "do not"
   // list). A different `world` object (world switch / `?gpucompare=1`) is
-  // always a re-upload for the same reason `_ensureWorldTextures` treats it
+  // always a re-upload for the same reason the old atlas upload treated it
   // that way. No-op (and `_terrainPacked` left stale) while the world has no
   // terrain or the bake hasn't finished - the caller checks `_terrainPacked`
   // before using it (step 2+; nothing reads it yet).
@@ -1330,38 +1270,6 @@ export class GpuCellPipeline {
       gl.uniform2f(locS.uHandover, nearLOD.handover[0], nearLOD.handover[1]);
       gl.uniform1f(locS.uCloseBand, nearLOD.bands.close);
     }
-  }
-
-  // US-007: the light pass now also needs `uStructA/B/Count` (its own sun
-  // DDA's `findStruct`, light.frag.js) - uploaded to BOTH programs here
-  // (each has its own uniform locations; the packed `structA`/`structB`
-  // arrays are shared, built once per call).
-  _uploadUStruct() {
-    const gl = this.gl, a = this._worldAtlas;
-    const structA = this._uStructA || (this._uStructA = new Float32Array(MAX_STRUCTS * 4));
-    const structB = this._uStructB || (this._uStructB = new Float32Array(MAX_STRUCTS * 4));
-    // US-007 (14.3 item 4 amendment iv, JS twin: lighting.js's sunVisible):
-    // max over every placed structure of origin.z + maxH (world space) -
-    // the sun DDA's global escape height once the ray has left every
-    // footprint but must still clear the tallest structure anywhere.
-    let worldMaxH = 0;
-    for (let i = 0; i < a.structCount; i++) {
-      const o8 = i * 8;
-      const m = a.uStruct[o8 + 2] + a.uStruct[o8 + 7];
-      if (m > worldMaxH) worldMaxH = m;
-    }
-    for (let i = 0; i < MAX_STRUCTS; i++) {
-      const o8 = i * 8, o4 = i * 4;
-      structA[o4] = a.uStruct[o8]; structA[o4 + 1] = a.uStruct[o8 + 1];
-      structA[o4 + 2] = a.uStruct[o8 + 2]; structA[o4 + 3] = a.uStruct[o8 + 3];
-      structB[o4] = a.uStruct[o8 + 4]; structB[o4 + 1] = a.uStruct[o8 + 5];
-      structB[o4 + 2] = a.uStruct[o8 + 6]; structB[o4 + 3] = a.uStruct[o8 + 7];
-    }
-    gl.useProgram(this.progLight);
-    gl.uniform4fv(this._locsLight.uStructA, structA);
-    gl.uniform4fv(this._locsLight.uStructB, structB);
-    gl.uniform1i(this._locsLight.uStructCount, a.structCount);
-    gl.uniform1f(this._locsLight.uWorldMaxH, worldMaxH);
   }
 
   // Camera basis (engine/render/sectorCaster.js's castScene, same formulas -
@@ -2284,7 +2192,7 @@ export class GpuCellPipeline {
     }
     // ME-15c: sun mode 2 (shadow map: the sun DDA is skipped) only when this frame's shadow pass actually ran.
     const mapOn = this.shadowActive && !!sun && sun.on;
-    gl.uniform1i(loc.uSunMode, mapOn ? 2 : (sun && sun.on ? 1 : 0));
+    gl.uniform1i(loc.uSunMode, mapOn ? 2 : 0);
     if (mapOn) {
       const so = this.shadowOpts;
       gl.uniformMatrix4fv(loc.uSunShadowM, false, this._sunMatF32);
@@ -2531,7 +2439,7 @@ const DERIV_UNIFORMS = ['uGI', 'uGA', 'uDepth', 'uGrid', 'uTanHalfHFov', 'uPlane
 const LIGHT_UNIFORMS = [
   'uGI', 'uGA', 'uDepth', 'uLVis', 'uGrid', 'uPosX', 'uPosY', 'uEyeH', 'uDirX', 'uDirY', 'uPlaneX', 'uPlaneY',
   'uHorizonRow', 'uPlaneDistY', 'uAmbient', 'uLightCount', 'uLightPos', 'uLightCol', 'uVisBox',
-  'uSunDir', 'uSunCol', 'uSunOn', 'uWorldGeom', 'uWorldFlags', 'uStructA', 'uStructB', 'uStructCount', 'uWorldMaxH',
+  'uSunDir', 'uSunCol', 'uSunOn',
   'uProjMode', 'uPitchA', 'uPitchB', 'uPitchC', // RE-02a
   'uSunMode', 'uSunShadowM', 'uSunShadowRes', 'uSunShadowTexelM', 'uSunShadowBiasM', 'uSunShadowNormalOff', 'uSunShadow', // ME-15c
 ];

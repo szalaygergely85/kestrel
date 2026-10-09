@@ -47,6 +47,7 @@ export class WgCullPass {
     this.device = device;
     this.shadow = !!opts.shadow;
     this.occl = !this.shadow && !!opts.occl;
+    this.occlStats = this.occl && (opts.occl === 2 || !!opts.occlStats); // 38.20: debug-only readback (?occl=2), off by default
     this.maxBatches = opts.maxBatches || MAX_CULL_BATCHES;
     this.pipeline = createCullPipeline(device, this.shadow);
     this.argsCpu = new Uint32Array(this.maxBatches * 2 * ARGS_WORDS);
@@ -84,10 +85,15 @@ export class WgCullPass {
     this.stats = { batches: 0, dispatches: 0, instances: 0, uploads: 0, argsBytes: 0, culledOccl: 0 };
     // OCCL-STATS-01: async 1-frame-late count of instances still parked after phase 2 (= culled by occlusion). One read in flight; callback bound once.
     this._rbBusy = false; this._rbLeft = 0; this._rbSum = 0;
-    this._rbDone = (err, out, cnt) => {
-      if (!err && out) { let n = 0; for (let i = 0; i < cnt; i++) n += out[i] & 1; this._rbSum += n; }
-      if (--this._rbLeft <= 0) { this.stats.culledOccl = this._rbSum; this._rbBusy = false; }
-    };
+    // Device contract: cb(err, outU32) - err null on success, 'busy' or an Error otherwise (always called, so the reader never sticks).
+    this._rbErr = false; this._rbBusyHit = false;
+    /** per-batch callback, created once per batch (no per-frame closure) */
+    this._rbCb = (b) => b.rbCb || (b.rbCb = (err, out) => {
+      if (!err && out) { const cnt = b.rbCnt; let n = 0; for (let i = 0; i < cnt; i++) n += out[i] & 1; this._rbSum += n; }
+      else if (err === 'busy') this._rbBusyHit = true;
+      else this._rbErr = true;
+      if (--this._rbLeft <= 0) { if (this._rbErr) this.stats.culledOccl = 0; else if (!this._rbBusyHit) this.stats.culledOccl = this._rbSum; this._rbBusy = false; }
+    });
   }
 
   /**
@@ -366,12 +372,13 @@ export class WgCullPass {
         s.dispatches++;
       }
     } finally { wgSpanEnd(p); }
-    this._occlReadback();
+    if (this.occlStats) this._occlReadback();
   }
 
   /**
-   * OCCL-STATS-01: stats.culledOccl = instances whose occl word still has bit 0 set after phase 2. Needs `device.readBufferAsync(buffer, bytes, outU32, cb)`
-   * (cb(err, out, words), submitted after this frame's work, mapped async) AND the kernel clearing `occl[i]` on a phase-2 rescue; without a device
+   * OCCL-STATS-01: stats.culledOccl = instances whose occl word still has bit 0 set after phase 2. Debug-only (`occl: 2` / `occlStats: true`, 38.20), default off.
+   * Needs `device.readBufferAsync(buffer, bytes, outU32, cb)`: the copy is recorded in the frame encoder here, the map starts after the frame's final submit,
+   * `cb(err, outU32)` (err null | 'busy' | Error) arrives async = 1 frame late. Also needs the kernel clearing `occl[i]` on a phase-2 rescue; without a device
    * hook it stays 0. One read in flight (a busy frame is skipped), preallocated outputs, no per-frame allocation here.
    */
   _occlReadback() {
@@ -380,11 +387,13 @@ export class WgCullPass {
     let k = 0;
     for (let q = 0; q < this.queue.length; q++) { const b = this.queue[q]; if (b.occlBuf && b.g.count > 0) k++; }
     if (k === 0) { this.stats.culledOccl = 0; return; }
-    this._rbBusy = true; this._rbLeft = k; this._rbSum = 0;
+    this._rbBusy = true; this._rbLeft = k; this._rbSum = 0; this._rbErr = false; this._rbBusyHit = false;
     for (let q = 0; q < this.queue.length; q++) {
       const b = this.queue[q];
       if (!b.occlBuf || b.g.count <= 0) continue;
-      d.readBufferAsync(b.occlBuf, (b.g.count > b.cap ? b.cap : b.g.count) * 4, b.occlOut, this._rbDone);
+      b.rbCnt = b.g.count > b.cap ? b.cap : b.g.count;
+      try { d.readBufferAsync(b.occlBuf, b.rbCnt * 4, b.occlOut, this._rbCb(b)); }
+      catch (e) { this._rbCb(b)(e, null); } // a throwing device must not leave the reader busy
     }
   }
 

@@ -31,8 +31,8 @@ for (const [name, [c, r, rays, res, sc, lod]] of Object.entries(expect)) {
 assert.equal(boot('', { saved: { quality: 'low' }, auto: 'ultra' }).quality.name, 'low');
 assert.equal(boot('', { auto: 'ultra' }).quality.name, 'ultra');
 assert.equal(boot('quality=medium', { saved: { quality: 'low' } }).quality.name, 'medium');
-o = boot('quality=low&grid=320x120&rays=4&scatter=0.25&lodScale=2&shadows=dda');
-assert.deepEqual([o.reqCols, o.reqRows, o.rays, o.gfx.scatterDensity, o.gfx.lodScale, o.shadowOpts.sun], [320, 120, 4, 0.25, 2, 'dda']);
+o = boot('quality=low&grid=320x120&rays=4&scatter=0.25&lodScale=2&shadows=dda'); // dda -> map (ME-19c2)
+assert.deepEqual([o.reqCols, o.reqRows, o.rays, o.gfx.scatterDensity, o.gfx.lodScale, o.shadowOpts.sun], [320, 120, 4, 0.25, 2, 'map']);
 assert.equal(boot('quality=high&shadows=off').shadowOpts.sun, 'off');
 assert.equal(boot('quality=high&shadowQuality=off').shadowOpts.sun, 'off');
 assert.equal(boot('quality=low&shadowinst=10').shadowOpts.meshLod0M, 10);
@@ -61,7 +61,7 @@ assert.equal(boot('bench=1&quality=low', { captureLike: true }).rays, 1);
 // presets missing = today's boot options
 o = boot('', { noPresets: true }); assert.deepEqual([o.reqCols, o.rays, o.quality, o.gfx, o.shadowOpts], [240, 2, null, undefined, { sun: 'map', instCastM: 32 }]);
 o = boot('', { noPresets: true, saved: { grid: '400x150' } }); assert.equal(o.reqCols, 400);
-o = boot('shadows=dda&rays=4', { noPresets: true }); assert.deepEqual([o.shadowOpts.sun, o.rays], ['dda', 4]);
+o = boot('shadows=dda&rays=4', { noPresets: true }); assert.deepEqual([o.shadowOpts.sun, o.rays], ['map', 4]);
 // F3 line
 assert.match(describeQuality(boot('quality=low'), 240, 90, 1), /^quality: low \(param\)  grid 240x90  rays 1  shadows low  scatter 0.5  lodScale 0.6$/);
 console.log('gfxBoot.test.js ok');

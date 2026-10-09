@@ -66,6 +66,13 @@ export const CANDIDATES = [
   ['engine/render/gpu/overlayPass.js', 'mixed', 'GL overlay; public engine/index.js:223 (GpuOverlayPass); WebGPU twin wg/passOverlay.js'],
   ['engine/render/gpu/spritesPass.js', 'mixed', 'GL sprites; public engine/index.js:56 (GpuSpritePass); WebGPU twin wg/passSprites.js'],
   ['engine/render/gpu/GpuTimer.js', 'mixed', 'GL GpuPassTimer/GpuTimer go; WebGPU twin device/WebGpuTimer.js'],
+  // WG-5a-4: the single GL barrel + GL-only test siblings (all deleted together)
+  ['engine/render/gl/index.js', 'delete', 'WebGL2 barrel; engine/index.js re-exports are marked // WG-5: remove'],
+  ['engine/ui/crosshair.gl.test.js', 'delete', ''],
+  ['engine/render/water.gl.test.js', 'delete', ''],
+  ['engine/render/waterComposite.gl.test.js', 'delete', ''],
+  ['engine/render/waterFlow.gl.test.js', 'delete', ''],
+  ['engine/render/gpu/wg/WgCellPipeline.gl.test.js', 'delete', ''],
   // tests
   ['engine/render/gpu/device/GpuDeviceGL2.test.js', 'delete', ''],
   ['engine/render/gpu/gridTargets.test.js', 'delete', ''],
