@@ -24,7 +24,7 @@ import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME, SHADOW_BAND_HYST_M } from '../
 import { WgCullPass } from './passCull.js';
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 import { resolveSunShadowOptions, SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar, shadowInputHash } from '../../shadowSun.js';
-import { windSwayOn, packWindUniforms, SWAY_MAX } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
+import { windSwayOn, windShadowKey, packWindUniforms, SWAY_MAX } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
 // S8-B2-05/06: wind/sway uniforms (RASTER_BLOCK, instanced variant only; same word offsets as passRaster.js).
@@ -276,7 +276,7 @@ export class WgShadowPass {
     const Mf = this.sunMatF32;
     for (let i = 0; i < 16; i++) Mf[i] = sm.M[i];
     buildShadowList(list, raster.list, world, sm.planes, src);
-    const key = shadowInputHash(list, sm.M, world.structVersion | 0, this.key);
+    const key = shadowInputHash(list, sm.M, world.structVersion | 0, this.key, undefined, windShadowKey(world.wind, (p._fb && p._fb.timeSec) || 0));
     key[2] = this.gpuN ? this._gpuHash(cam) : 0;
     st.shadowCpuMs = performance.now() - tCpu0;
     const prev = this.keyPrev;

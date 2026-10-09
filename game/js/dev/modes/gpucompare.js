@@ -1,6 +1,6 @@
 import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
-  meshFromJSON, meshFromBin, buildMeshFromTris, MaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun, setHorizonAo,
+  meshFromJSON, meshFromBin, buildMeshFromTris, MaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
 } from '../../../../engine/index.js';
 import {
@@ -819,7 +819,7 @@ async function runGpuCompareSceneMode(ctx) {
     fbCompare.lights = lights;
     if (lights) lights.update(0, world);
     if (lights) lights.cloud = null; // S8-B2-12c: every gpucompare mode forces clouds off
-    if (lights) setHorizonAo(lights, { strength: 0 }); // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
+    if (lights) lights.ao = null; // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
     fbCompare.sceneFade = typeof fade === 'number' ? fade : 1;
     if (sprites.pass) {
       sprites.pass.sceneFade = fbCompare.sceneFade;
@@ -1023,7 +1023,7 @@ async function runGpuCompareSceneMode(ctx) {
         fbCompare.lights = lights;
         if (lights) lights.update(0, world);
         if (lights) lights.cloud = null; // S8-B2-12c: every gpucompare mode forces clouds off
-        if (lights) setHorizonAo(lights, { strength: 0 }); // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
+        if (lights) lights.ao = null; // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
         if (real) sprites.pool.collect(world);
         else { sprites.pool.reset(); placeCompareSprites(cam, sprites.pool); }
         sprites.pool.project(cam, rt, lights || ambientL, world);

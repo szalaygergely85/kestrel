@@ -17,6 +17,10 @@ export const SWAY_MAX = 1.0;
 /** True when the field blows (base speed > 0): sway is active and the cull bounds need `SWAY_MAX` of padding. @param {SwayWind|null|undefined} field */
 export function windSwayOn(field) { return !!(field && field.params && field.params.speed > 0); }
 
+/** Sun-shadow dirty key lane for sway: 0 while calm, else the wind clock quantised to SWAY_SHADOW_HZ (the map re-renders on change). */
+export const SWAY_SHADOW_HZ = 10;
+export function windShadowKey(field, seconds) { return windSwayOn(field) ? (Math.floor(seconds * SWAY_SHADOW_HZ) + 1) | 0 : 0; }
+
 const _w = [0, 0];
 /**
  * Sway displacement of one vertex (the JS twin of the instanced vertex stage; the shader runs it in f32).
