@@ -38,7 +38,7 @@ function warnOnce(pool, msg) {
 }
 
 function projectedSlot() {
-  return { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, slot: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0,
+  return { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, fromClip: -1, fromFrame: 0, fromTMs: 0, fromW: 0, scale: 1, slot: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0,
     pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE),
     rect: { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, minCol: 0, maxCol: 0, minRow: 0, maxRow: 0, empty: false } };
 }
@@ -51,7 +51,7 @@ export class VoxelPool {
     this.models = new Map();
     // This frame's pushInstance() queue - plain objects, reused slot by
     // slot across frames (no per-frame allocation once warm).
-    this.raw = Array.from({ length: MAX_VOX_INSTANCES_MESH }, () => ({ model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, seed: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0 }));
+    this.raw = Array.from({ length: MAX_VOX_INSTANCES_MESH }, () => ({ model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, fromClip: -1, fromFrame: 0, fromTMs: 0, fromW: 0, scale: 1, seed: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0 }));
     this._rawCount = 0;
     // Projected + culled instances, compact 0..count-1 (list.length ===
     // stats.count after project()); each entry's `slot` index is what the
@@ -148,17 +148,17 @@ export class VoxelPool {
    * queues one instance of `modelKey` (must be bound, i.e. have `.voxel`) at
    * world feet position (x,y,z), yaw `yawDeg`, playing `clip`/`frame`/`tMs`
    * (clip -1 or omitted = rest pose, matching voxelPose.js's samplePose).
-   * Past the active renderer cap, extra pushes are dropped (warn once). */
+   * Past the active renderer cap, extra pushes are dropped (warn once). Returns the raw slot index, -1 when dropped. */
   pushInstance(modelKey, x, y, z, yawDeg, clip, frame, tMs, scale = 1) {
     const pm = this.models.get(modelKey);
-    if (!pm) { warnOnce(this, `VoxelPool.pushInstance: unknown or non-voxel model '${modelKey}'`); return; }
+    if (!pm) { warnOnce(this, `VoxelPool.pushInstance: unknown or non-voxel model '${modelKey}'`); return -1; }
     if (this._rawCount >= this.cap) {
       const bit = this.cap === MAX_VOX_INSTANCES_MESH ? 2 : 1;
       if (!(this._pushWarned & bit)) {
         this._pushWarned |= bit;
         warnOnce(this, `VoxelPool.pushInstance: cap (${this.cap}) exceeded, extra instances dropped`);
       }
-      return;
+      return -1;
     }
     const slot = this._rawSlot(this._rawCount);
     slot.model = pm;
@@ -168,6 +168,7 @@ export class VoxelPool {
     slot.clip = clip === undefined ? -1 : clip;
     slot.frame = frame || 0;
     slot.tMs = tMs || 0;
+    slot.fromClip = -1; slot.fromW = 0;
     slot.scale = scale > 0 ? scale : 1; // ED-SCALE-1a (34.2 item 5)
     // EMIS-01b: harness instances have no entity id -> identity from model + position.
     // Integer hash (Math.round to 1cm buckets, Math.imul mixing) instead of string concat - no strings/allocation per push.
@@ -176,7 +177,14 @@ export class VoxelPool {
       : 0;
     slot.entity = null;
     slot.addPart = -1;
-    this._rawCount++;
+    return this._rawCount++;
+  }
+
+  /** WILD-01 (38.31 item 8): sets the from-clip of raw slot `i` (a `pushInstance` return). `fromW` = weight of the old pose (1 -> 0). */
+  blendInstance(i, fromClip, fromFrame, fromTMs, fromW) {
+    if (i < 0 || i >= this._rawCount) return;
+    const slot = this.raw[i];
+    slot.fromClip = fromClip; slot.fromFrame = fromFrame || 0; slot.fromTMs = fromTMs || 0; slot.fromW = fromW;
   }
 
   /** 38.23: the G-buffer objectId (0x8000 | slot, same as voxelMesh's draw item) of `entity` in the last project(); -1 when it has no slot. */
@@ -213,6 +221,7 @@ export class VoxelPool {
     slot.clip = idx;
     if (v.frame) slot.frame = v.frame; else slot.frame = 0;
     if (v.t) slot.tMs = v.t; else slot.tMs = 0;
+    slot.fromClip = -1; slot.fromW = 0;
     if (t.scale > 0) slot.scale = t.scale; else slot.scale = 1;
     // EMIS-01b: stable identity of the entity (numeric id as-is; string id hashed, no allocation)
     slot.entity = e; // 38.23: objectIdFor(entity)
@@ -332,7 +341,7 @@ export class VoxelPool {
       instanceRect(_noCullProj, inst.model, inst, out.pose, null, out.rect);
       out.model = inst.model; out.modelKey = inst.modelKey;
       out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;
-      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.scale = inst.scale;
+      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.fromClip = inst.fromClip; out.fromFrame = inst.fromFrame; out.fromTMs = inst.fromTMs; out.fromW = inst.fromW; out.scale = inst.scale;
       out.addPart = inst.addPart; out.addRx = inst.addRx; out.addRy = inst.addRy; out.addRz = inst.addRz;
       out.slot = i;
     }
@@ -374,7 +383,7 @@ export class VoxelPool {
       if (out.rect.empty) { culled++; continue; }
       out.model = inst.model; out.modelKey = inst.modelKey;
       out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;
-      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.scale = inst.scale;
+      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.fromClip = inst.fromClip; out.fromFrame = inst.fromFrame; out.fromTMs = inst.fromTMs; out.fromW = inst.fromW; out.scale = inst.scale;
       out.addPart = inst.addPart; out.addRx = inst.addRx; out.addRy = inst.addRy; out.addRz = inst.addRz;
       out.slot = count;
       out.entity = inst.entity;

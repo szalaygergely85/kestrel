@@ -1700,8 +1700,8 @@ Note (KPKG-03 dev): tools/pack.mjs (spec `entries` from/to/exclude globs -> dete
 
 | ID | Title | Pri | Status | Files |
 |---|---|---|---|---|
-| WILD-01 | Voxel pose crossfade: `pushInstance` returns the slot, `blendInstance`, from-clip lerp in `sampleClip` | P1 | todo [PC-B B2, 0.5 d] -> arch-review | `engine/voxel/voxelPose.js`, `engine/render/voxelPool.js` + tests |
-| WILD-02 | `engine/entities/clipPlayer.js` (rate, phase, fade, once->next) + `gait.js` (pickGait, gaitRate) | P1 | todo [PC-B B2, 0.5 d] -> arch-review | `engine/entities/clipPlayer.js`, `engine/entities/gait.js` + tests, `engine/index.js` |
+| WILD-01 | Voxel pose crossfade: `pushInstance` returns the slot, `blendInstance`, from-clip lerp in `sampleClip` | P1 | arch-review [PC-B B2, 0.5 d] | `engine/voxel/voxelPose.js`, `engine/render/voxelPool.js` + tests |
+| WILD-02 | `engine/entities/clipPlayer.js` (rate, phase, fade, once->next) + `gait.js` (pickGait, gaitRate) | P1 | arch-review [PC-B B2, 0.5 d] | `engine/entities/clipPlayer.js`, `engine/entities/gait.js` + tests, `engine/index.js` |
 | WILD-03 | `engine/fauna` def + spawner: compileFaunaDef, 64 m cell ring, habitat roll, caps, view-cone spawn rule, despawn + cooldown, check-deps rule 15 | P1 | todo [PC-B B1, 0.75 d] -> arch-review | `engine/fauna/faunaDef.js`, `engine/fauna/spawner.js` + tests, `tools/check-deps.mjs` (+ fixture test) |
 | WILD-04 | `engine/fauna` ground brain: idle/graze/move/alert/flee/return via perceive + leash, feelers, group alarm, gait rate | P1 | todo [PC-B B1, 0.75 d] - deps WILD-02, 03 -> arch-review | `engine/fauna/groundBrain.js`, `engine/fauna/fauna.js` + tests |
 | WILD-05 | Fauna feed + `engine.feedVoxels` hook + bench | P1 | todo [PC-B B2, 0.5 d] - deps WILD-01, 04 -> arch-review | `engine/fauna/feed.js`, `engine/render/frameRenderer.js` (one line), `tools/bench-fauna.mjs` |
@@ -1713,14 +1713,16 @@ Note (KPKG-03 dev): tools/pack.mjs (spec `entries` from/to/exclude globs -> dete
 | WILD-D3 | Songbird voxel model + clips (perch idle, hop, peck, takeoff, flap, glide, land) + `perchByModel` for the 6 forest tree models | P2 | todo [PC-B designer, 0.75 d] - after the owner OK | same + `wildlifeFx.bird` |
 | WILD-D4 | `spawn` blocks for all species in `wildlifeFx` (habitats, cellChance, spawn/despawn/draw distances, caps, kind) | P1 | todo [PC-B designer + PO, 0.25 d] | `design/models/voxel_wildlife.js` |
 
-### WILD-01 Voxel pose crossfade  [P1] [todo] [PC-B B2]
+### WILD-01 Voxel pose crossfade  [P1] [arch-review] [PC-B B2]
+- Note (kestrel-3): `sampleClip` -> `sampleInto` x2 in `voxelPose.js`; `pushInstance` returns slot, `blendInstance`, from-fields on raw/projected/shadow slots in `voxelPool.js`. fromW<=0 byte-identical: 288 poses (boar, bear, quadruped12, all clips/frames) vs HEAD voxelPose, 0 mismatches. fromW=1 equals from-pose to 1e-9 (not bit-exact: cur+(from-cur)*1).
 - [ ] `pushInstance` returns the raw index (-1 when dropped). `blendInstance(i, fromClip, fromFrame, fromTMs, fromW)` sets the from-clip on that slot.
 - [ ] The projected and shadow slots carry the from-clip fields (38.31 item 8).
 - [ ] Byte-identical pose when `fromW = 0` or `fromClip = -1`.
 - [ ] `fromW = 1` equals the from-clip pose. `fromW = 0.5` is the mid lerp.
 - [ ] No allocation (`--expose-gc` test). Existing voxel / gpucompare tests stay green.
 
-### WILD-02 Clip player + gait  [P1] [todo] [PC-B B2]
+### WILD-02 Clip player + gait  [P1] [arch-review] [PC-B B2]
+- Note (kestrel-3): done in `engine/entities/clipPlayer.js` + `gait.js`, exported from `engine/index.js`; tests in `engine/voxel/crossfade.test.js` (30 checks incl. 100k-step heap test).
 - [ ] `clipPlay`, `clipStep`, `clipSetPhase` and `clipFromW` work as in 38.31 item 8:
   - rate x2 = half the lap time;
   - phase 0.5 lands mid-clip;
