@@ -808,7 +808,7 @@ async function runGpuCompareSceneMode(ctx) {
   // ME-15b (27.9a item 10): sun shadow depth parity rows (GPU map vs rasterJS depth-only twin), mesh renderer only.
   const shadowRows = [];
   const stableRows = []; // US-073c (38.25 item 6): one `stable` row (2-frame pan), first suitable pitched pose
-  let stableDone = false;
+  let stableDone = false, stableWaterDone = false;
   const shadowRunner = renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map'
     ? createShadowParityRunner(gpuPipeline.shadowOpts.res) : null;
   let restoreSun = null; // ME-15c: per-pose sun override (see applySunOverride)
@@ -901,15 +901,27 @@ async function runGpuCompareSceneMode(ctx) {
       }
     }
 
-    if (wg && wg._stablePass && !stableDone && cam && (cam.projection === 'pitched' || pitchedDefault) && cam.focusX === undefined && !/water|pond|river|fall/i.test(poseName)) {
-      // pan 1 cm sideways + 0.05 deg (a sub-cell move: the stable pass only reuses history within 0.5/detail of the same surface point)
-      stableDone = true;
+    // STABLE-GATE-TEST-01 (38.25 amendment A): two sub-cases on the same 2-frame pan. (i) water drawn (first suitable pitched pose that really draws
+    // water), (ii) water inactive (waterOn = 0, forced by switching the water pass off on the first other pitched pose). Each: 0 non-tie mismatches,
+    // ties <= 0.5 %, liveness floor (twin used >= 20 % of non-sky, GPU held count == twin held count).
+    const isWaterPose = /water|pond|river|fall/i.test(poseName);
+    if (wg && wg._stablePass && cam && (cam.projection === 'pitched' || pitchedDefault) && cam.focusX === undefined
+      && ((!stableDone && !isWaterPose) || (!stableWaterDone && isWaterPose))) {
+      // pan 1 cm sideways + 0.05 deg (a sub-cell move: the stable pass only reuses history within 1.0/detail of the same surface point)
       const yr = (cam.yawDeg * Math.PI) / 180, camA = { ...cam }, camB = { ...cam, x: cam.x + 0.01 * Math.cos(yr), y: cam.y + 0.01 * Math.sin(yr), yawDeg: cam.yawDeg + 0.05 };
       const gpuFrame = (c) => () => { fbCompare.gpu = true; renderWorld(fbCompare, world, c); wg.frame(fbCompare, lights || ambientL, c, world); engine.overlay.flush(c); rt.present(); };
-      const sr = await runStableRow(wg, camA, camB, gpuFrame(camA), gpuFrame(camB));
-      stableRows.push({ pose: `stable pan (${poseName}) [webgpu stable]`, ok: !!sr.ok, stable: sr });
-      overallOk = overallOk && !!sr.ok;
-      console.log(`[gpucompare] ${sr.ok ? 'PASS' : 'FAIL'} stable pan (${poseName}): ` + (sr.skipped ? `SKIPPED ${sr.reason}` : `histValid=${sr.histValid} used=${sr.usedPct.toFixed(1)}% mismatches=${sr.mismatches} (must be 0) tieMismatches=${sr.tieMismatches} ties=${sr.tiePct.toFixed(3)}% (<=0.5) vacuous=${sr.vacuous}${sr.bad && sr.bad.length ? ' e.g. ' + JSON.stringify(sr.bad[0]) : ''}`));
+      const subs = isWaterPose ? [['water drawn', false]] : [['water inactive', true]];
+      if (!isWaterPose) stableDone = true; // water poses keep trying until one really draws water
+      for (const [label, waterOff] of subs) {
+        const sr = await runStableRow(wg, camA, camB, gpuFrame(camA), gpuFrame(camB), { waterOff });
+        // sub-case (i) is only meaningful when water really drew (waterOn): else it is an informational skip, never a silent pass
+        const noWater = !waterOff && !sr.skipped && !sr.waterOn;
+        if (!waterOff && sr.waterOn) stableWaterDone = true;
+        const ok = noWater ? true : !!sr.ok;
+        if (!noWater) stableRows.push({ pose: `stable pan (${poseName}) [webgpu stable, ${label}]`, ok, stable: sr });
+        overallOk = overallOk && ok;
+        console.log(`[gpucompare] ${noWater ? 'SKIP' : ok ? 'PASS' : 'FAIL'} stable pan (${poseName}, ${label}): ` + (sr.skipped ? `SKIPPED ${sr.reason}` : `waterOn=${sr.waterOn} histValid=${sr.histValid} used=${sr.usedPct.toFixed(1)}% live=${sr.livePct.toFixed(1)}% of non-sky (>=20) mismatches=${sr.mismatches} (must be 0) tieMismatches=${sr.tieMismatches} ties=${sr.tiePct.toFixed(3)}% (<=0.5) held twin/gpu=${sr.heldTwin}/${sr.heldGpu} held255=${sr.held255} vacuous=${sr.vacuous}${noWater ? ' (no water in view: sub-case not exercised)' : ''}${sr.bad && sr.bad.length ? ' e.g. ' + JSON.stringify(sr.bad[0]) : ''}`));
+      }
     }
 
     const wasActive = rt.gpuActive;
@@ -1062,7 +1074,7 @@ async function runGpuCompareSceneMode(ctx) {
     const d = r.shadowDepth;
     text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n  items ${d.items}  co-covered ${d.both}  within 16 ULP+0.05 texel ${d.withinPct.toFixed(4)}% (>=99.9%)  flat 16 ULP ${d.within16Pct.toFixed(3)}%  maxUlp ${d.maxUlp}  coverage mismatch ${d.covMismatchPct.toFixed(4)}% (<=0.3%)\n`;
   }
-  for (const r of stableRows) text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n  ` + (r.stable.skipped ? `skipped: ${r.stable.reason}` : `history cells ${r.stable.usedPct.toFixed(1)}%  mismatches ${r.stable.mismatches} (must be 0)  tie mismatches ${r.stable.tieMismatches}  ties ${r.stable.tiePct.toFixed(3)}% (<=0.5%)`) + '\n';
+  for (const r of stableRows) text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n  ` + (r.stable.skipped ? `skipped: ${r.stable.reason}` : `history cells ${r.stable.usedPct.toFixed(1)}% (live ${r.stable.livePct.toFixed(1)}% of non-sky, >=20)  mismatches ${r.stable.mismatches} (must be 0)  tie mismatches ${r.stable.tieMismatches}  ties ${r.stable.tiePct.toFixed(3)}% (<=0.5%)  held twin/gpu ${r.stable.heldTwin}/${r.stable.heldGpu}  waterOn ${r.stable.waterOn}`) + '\n';
   text += `\n${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`;
   console.log(`[gpucompare] ${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`);
 

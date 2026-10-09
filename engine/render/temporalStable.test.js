@@ -5,7 +5,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import v8 from 'node:v8';
-import { beginFrame, stabilize, createStableState, createStableBuffers, CHANNEL_SNAP } from './temporalStable.js';
+import { beginFrame, stabilize, createStableState, createStableBuffers, CHANNEL_SNAP, LEVEL_ANIM, LEVEL_NONE, UV_LIM_TEXELS, DEFAULT_DETAIL } from './temporalStable.js';
 import { KIND_NONE, KIND_WALL, KIND_MODEL } from './GBuffer.js';
 import { makeOk } from '../test/assert.js';
 
@@ -158,6 +158,77 @@ function run(st, cam, inpFn, hist, flags) {
   ok('snap diff 49: cur byte', ((out.fg[at(4, 4)] >> 16) & 255) === 149);
   ok('glyph held within one level', out.glyph[at(4, 5)] === h.glyph[at(4, 5)] && out.level[at(4, 5)] === 5);
   ok('glyph fresh at two levels', out.glyph[at(4, 6)] === inp.glyph[at(4, 6)] && out.level[at(4, 6)] === 7 && out.fresh[at(4, 6)] === 0);
+}
+
+// 38.25 amendment: UV limit 1.0/detail (boundary 0.99 / 1.01), level 254 'animated', mixed/both-255 rules, fg-snap re-roll, anchor u/v
+{
+  const LIM = UV_LIM_TEXELS / DEFAULT_DETAIL, at = (r, c) => r * COLS + c;
+  ok('UV limit constant is 1.0/detail', UV_LIM_TEXELS === 1 && LIM === 0.0625);
+  // setup: static camera, history = frame A exactly; `mut(inp, hist)` edits cells, then one stabilize
+  const once = (mut, flags) => {
+    const st = createStableState();
+    beginFrame(st, cam0, GRID);
+    const h = colHist(wallInput(st));
+    beginFrame(st, cam0, GRID, flags);
+    const inp = wallInput(st);
+    mut(inp, h);
+    const out = createStableBuffers(COLS, ROWS);
+    const used = stabilize(inp, h, out, st);
+    return { inp, h, out, used, st };
+  };
+  const r = once((inp, h) => {
+    inp.u[at(5, 5)] = h.u[at(5, 5)] + 0.99 * LIM; // inside: takes history
+    inp.u[at(5, 6)] = h.u[at(5, 6)] + 1.01 * LIM; // outside: fresh
+    inp.u[at(5, 7)] = h.u[at(5, 7)] + 0.7 * LIM; // old limit was 0.5*LIM: now still history
+  });
+  ok('uv 0.99 x lim takes history', r.out.fresh[at(5, 5)] === 0);
+  ok('uv 1.01 x lim fresh', r.out.fresh[at(5, 6)] === 1);
+  ok('uv 0.7 x lim takes history (was fresh at 0.5/detail)', r.out.fresh[at(5, 7)] === 0);
+
+  const r2 = once((inp, h) => {
+    // both-255 hold: row 2
+    for (const c of [3, 4, 5, 6, 7, 8]) { inp.level[at(2, c)] = LEVEL_NONE; h.level[at(2, c)] = LEVEL_NONE; inp.u[at(2, c)] = h.u[at(2, c)] + 0.3 * LIM; }
+    // (2,4) fg snaps (diff 49 on one channel): glyph fresh
+    inp.fg[at(2, 4)] = ((100 + CHANNEL_SNAP + 1) << 16) | (100 << 8) | 100;
+    // (2,5) fg diff exactly snap (48): still held
+    inp.fg[at(2, 5)] = ((100 + CHANNEL_SNAP) << 16) | (100 << 8) | 100;
+    // (2,6) animated 254 on cur, (2,7) 254 in history, (2,8) mixed: cur 255 hist ramp
+    inp.level[at(2, 6)] = LEVEL_ANIM; h.level[at(2, 7)] = LEVEL_ANIM; h.level[at(2, 8)] = 5;
+    // ramp hold with drift: row 3
+    inp.u[at(3, 3)] = h.u[at(3, 3)] + 0.3 * LIM;
+  });
+  const o = r2.out, H = r2.h, I = r2.inp;
+  ok('both-255 static-ish: glyph held, used', o.fresh[at(2, 3)] === 0 && o.glyph[at(2, 3)] === H.glyph[at(2, 3)] && o.level[at(2, 3)] === LEVEL_NONE && o.held255[at(2, 3)] === 1);
+  ok('both-255 hold writes the HISTORY anchor u/v', o.u[at(2, 3)] === H.u[at(2, 3)] && o.v[at(2, 3)] === H.v[at(2, 3)] && o.u[at(2, 3)] !== I.u[at(2, 3)]);
+  ok('ramp hold writes the CURRENT u/v', o.glyph[at(3, 3)] === H.glyph[at(3, 3)] && o.u[at(3, 3)] === I.u[at(3, 3)] && o.held255[at(3, 3)] === 0);
+  ok('both-255 fg snap: glyph fresh, colours snapped to cur, history still used', o.fresh[at(2, 4)] === 0 && o.glyph[at(2, 4)] === I.glyph[at(2, 4)]
+    && ((o.fg[at(2, 4)] >> 16) & 255) === 149 && o.u[at(2, 4)] === I.u[at(2, 4)] && o.held255[at(2, 4)] === 0);
+  ok('both-255 fg diff == snap: still held (blend)', o.glyph[at(2, 5)] === H.glyph[at(2, 5)] && ((o.fg[at(2, 5)] >> 16) & 255) === 124);
+  ok('level 254 on cur: fresh', o.fresh[at(2, 6)] === 1 && o.glyph[at(2, 6)] === I.glyph[at(2, 6)] && o.level[at(2, 6)] === LEVEL_ANIM);
+  ok('level 254 in history: fresh', o.fresh[at(2, 7)] === 1 && o.glyph[at(2, 7)] === I.glyph[at(2, 7)]);
+  ok('mixed 255 cur / ramp hist: fresh', o.fresh[at(2, 8)] === 1 && o.glyph[at(2, 8)] === I.glyph[at(2, 8)]);
+  ok('reject order: 254 never marks a tie', o.tie[at(2, 6)] === 0);
+  ok('hsrc = history cell on a reached lookup, -1 before', o.hsrc[at(2, 3)] === at(2, 3) && r2.out.hsrc[at(2, 6)] === -1);
+
+  // slow-moving surface: u advances 0.3*lim per frame; the anchor stays on the first u, so the hold ends after 3 frames
+  const st = createStableState();
+  beginFrame(st, cam0, GRID);
+  const a0 = wallInput(st);
+  a0.level.fill(LEVEL_NONE);
+  let hist = colHist(a0), out = createStableBuffers(COLS, ROWS);
+  const u0 = a0.u[at(10, 10)];
+  const seq = [];
+  for (let k = 1; k <= 5; k++) {
+    beginFrame(st, cam0, GRID);
+    const inp = wallInput(st); inp.level.fill(LEVEL_NONE);
+    for (let i = 0; i < COLS * ROWS; i++) inp.u[i] = a0.u[i] + k * 0.3 * LIM;
+    stabilize(inp, hist, out, st);
+    seq.push(out.glyph[at(10, 10)] === hist.glyph[at(10, 10)] ? 'hold' : 'fresh');
+    if (k === 4) ok('anchor kept across frames', out.u[at(10, 10)] === u0 || seq[3] === 'fresh');
+    const t = hist; hist = out; out = t.glyph ? t : createStableBuffers(COLS, ROWS);
+    if (seq[seq.length - 1] === 'fresh') break;
+  }
+  ok('slow drift: held 3 frames, refreshed once cumulative drift >= lim', seq.join() === 'hold,hold,hold,fresh', seq.join());
 }
 
 // 5. ortho pose: static identity, 1-cell pan

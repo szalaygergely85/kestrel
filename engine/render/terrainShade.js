@@ -17,6 +17,7 @@ import { unpackNormalOct } from '../voxel/octNormal.js';
 import { clampByte } from '../core/math.js';
 import { sunFromWorld } from './lighting.js';
 import { WET_DARK, wetGain } from './detailShade.js';
+import { LEVEL_NONE, LEVEL_ANIM } from './temporalStable.js';
 
 // US-026a (23.4): exported so terrainCaster.js's near-sampling dither uses
 // the SAME avalanche mix (never a second, drifting copy) - the dither must
@@ -213,6 +214,8 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0) 
   if (f > 0.85) code = 0; // space (glyphIdx 0)
 
   out.glyph = code;
+  // 38.25 amendment C.1: stable-pass level byte of a terrain cell (twin of shade.wgsl's terrain splice): 254 = the shimmer branch (glyph can change next tick), else 255
+  out.level = glintFlag ? LEVEL_ANIM : LEVEL_NONE;
   out.fg[0] = toByte(fr); out.fg[1] = toByte(fg); out.fg[2] = toByte(fb);
   out.bg[0] = toByte(br); out.bg[1] = toByte(bg); out.bg[2] = toByte(bb);
   return out;
@@ -292,7 +295,7 @@ export function makeTerrainShadeCtx(recipe, tlookPacked, palette) {
 }
 
 // ME-19b: deferred terrain-cell shading moved without changing expression order.
-const shadeOut = { glyph: 32, fg: new Uint8Array(3), bg: new Uint8Array(3) };
+const shadeOut = { glyph: 32, level: 255, fg: new Uint8Array(3), bg: new Uint8Array(3) };
 const shadeNrm = new Float64Array(3);
 const _terrainAoAliasCache = new WeakMap();
 function terrainAoAlias(gbuf) {

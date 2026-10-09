@@ -68,6 +68,7 @@ export function createDialogueCtl(opt) {
       const comp = did && dialogues[did];
       if (!comp) return false;
       npcId = id; pendingClip = null; oneShot = false; lastBase = null;
+      jawComp = null; // re-pick the jaw component for THIS npc (_jaw reacquires it on the next step)
       runner.open(comp, flags);
       ctl.locked = true; ctl._closing = false;
       if (opt.onTalk) opt.onTalk(id);
@@ -108,7 +109,7 @@ export function createDialogueCtl(opt) {
     step(dt, input, lookLocked) {
       if (ctl._closing) { ctl._closing = false; ctl.locked = false; } // the closing step is over
       ctl._jaw(dt);
-      if (!ctl.open) { if (runner.state === 'ended') runner.state = 'idle'; return; }
+      if (!ctl.open) return; // runner.state is read-only here ('ended' already counts as closed)
       if (lookLocked === false) { ctl.close(); return; }
       if (input.pressed('Escape')) { ctl.close(); return; }
       if (runner.state === 'choosing') {

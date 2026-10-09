@@ -47,6 +47,7 @@ export class WgWaterPass {
     this.device = device;
     this.cols = 0; this.rows = 0;
     this.active = false;
+    this.forceOff = false; // test-only (gpucompare `stable` sub-case: water inactive); default false = unchanged
     this.stats = { waterSlots: 0, waterDraws: 0 };
     this.layer = new WaterLayer(device);
     this.sel = createWaterSelection();
@@ -116,7 +117,7 @@ export class WgWaterPass {
     const world = p._world, sel = this.sel;
     this.view = raster.view; this.projMode = raster.ortho ? 2 : 0;
     selectWater(world, p._cam, raster.planes, sel);
-    this.active = (sel.count + sel.sheetCount) > 0 && !!this.layer.target;
+    this.active = (sel.count + sel.sheetCount) > 0 && !!this.layer.target && !this.forceOff;
     this.stats.waterSlots = sel.count + sel.sheetCount;
     if (this.active) {
       const t = this.wlTable, os = this.waterOS;

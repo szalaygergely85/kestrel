@@ -17,6 +17,7 @@ import { createStableState, beginFrame, CHANNEL_SNAP, DEFAULT_DETAIL } from '../
 
 const W = (n) => STABLE_BLOCK.field(n).word;
 const W_CUR_A = W('curA'), W_CUR_B = W('curB'), W_CUR_C = W('curC'), W_PREV_A = W('prevA'), W_PREV_B = W('prevB'), W_PREV_C = W('prevC');
+const W_WATER_ON = W('waterOn'); // StableU.waterOn (1 = bind a real WATER layer)
 const W_DEYE = W('dEye'), W_COLS = W('gridCols'), W_ROWS = W('gridRows'), W_VALID = W('histValid'), W_ORTHO = W('ortho'), W_SNAP = W('snap'), W_DETAIL = W('detailDefault');
 /** STABLE_TEXTURES slot order (stable.wgsl.js header). */
 const ST = { GI: 0, GA: 1, DEPTH: 2, SHADE_FG: 3, SHADE_BG: 4, FINAL_FG: 5, FINAL_BG: 6, LEVEL: 7, WATER: 8, HIST_FG: 9, HIST_BG: 10, HIST: 11 };
@@ -87,6 +88,7 @@ export class WgStablePass {
 
   run(p, t, inputs = null) {
     if (!this.set[0] || !t || !t.texLevel) return false;
+    this.ui[W_WATER_ON] = inputs && inputs.waterOn ? 1 : 0; // dummy water texture: never test it (out-of-bounds loads return 0 = 'water')
     const d = this.device, k = this._k, out = this.set[k], hist = this.set[k ^ 1], tx = this.tex;
     const sFg = (inputs && inputs.shadeFg) || t.texShadeFg, sBg = (inputs && inputs.shadeBg) || t.texShadeBg;
     tx[ST.GI].texture = t.texGI; tx[ST.GA].texture = t.texGA; tx[ST.DEPTH].texture = t.texDepth;

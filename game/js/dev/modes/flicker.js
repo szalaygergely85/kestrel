@@ -12,6 +12,7 @@ import {
   loadLevel, bindLevel, World, repackMaterials, renderWorld, ambientL, buildLightSet, makeLightBuffer,
 } from '../../../../engine/index.js';
 import { runRow } from './flickerMeasure.js';
+import { decodeBundle, createDiag, addPair } from './stableDiag.js'; // STABLE-DIAG-01
 
 export const name = 'flicker';
 
@@ -70,6 +71,23 @@ export async function run(ctx) {
     return { GI, fg: rt.cells.fg.slice() };
   }
 
+  // STABLE-DIAG-01 (`&stablediag=1`, needs &stable=1): classify the N vs N-1 flips of the stable-on run by reject reason (stableDiag.js)
+  const diagOn = params.get('stablediag') === '1' && wantStable;
+  const diag = createDiag(); let diagPrev = null;
+  async function diagFrame() {
+    const d = gpuPipeline.device, sp = gpuPipeline._stablePass, t = gpuPipeline._t, inp = gpuPipeline._stInp, rect = { x: 0, y: 0, w: rt.cols, h: rt.rows };
+    const r8 = async (tex, w) => { const o = new Uint8Array(n * w); await d.readback(tex, rect, o); return o; };
+    const r32 = async (tex, w) => { const o = new Uint32Array(n * w); await d.readback(tex, rect, o); return o; };
+    const raw = { GI: await r32(t.texGI, 4), GA: await r32(t.texGA, 4), depth: await r32(t.texDepth, 1), level: await r8(t.texLevel, 1),
+      shadeFg: await r8(inp.shadeFg, 4), shadeBg: await r8(inp.shadeBg, 4), finalFg: await r8(t.texFinalFg, 4), finalBg: await r8(t.texFinalBg, 4),
+      outFg: await r8(sp.outFg, 4), hist: await r32(sp.outHist, 4) };
+    const cur = decodeBundle(n, raw);
+    diag.frames++;
+    if (diag.frames === 40) diag.uniforms = { f: Array.from(sp.u.slice(0, 40)), i: Array.from(sp.ui.slice(0, 40)), valid: sp.st.histValid };
+    if (diagPrev && sp.st.histValid) addPair(diag, diagPrev, cur, sp.st, rt.cols, rt.rows, null);
+    diagPrev = cur;
+  }
+
   // --- GPU (WebGPU, n = gpuPipeline.rays) path: frame + present + async readbacks. ---
   const fbGpu = { ...fbCompare, lights, fadeLut, sceneFade: 1, frameNo: 0, gpu: true };
   async function castGpuFrame(cam) {
@@ -81,6 +99,8 @@ export async function run(ctx) {
     const cells = await gpuPipeline.readbackCells();
     const fg = cells.fg.slice();
     const { GI } = await gpuPipeline.readbackGeometry();
+    if (diagOn && gpuPipeline._stableRan) await diagFrame();
+    else diagPrev = null;
     return { GI: GI.slice(), fg };
   }
 
@@ -99,7 +119,7 @@ export async function run(ctx) {
   const stableActive = wantStable && !!gpuPipeline._stablePass;
   const jsRow = await runRow(castJsFrame, base, motions, STEPS, rt.cols, rt.rows, { collect: jsFwdSteps });
   const gpuRow = await runRow(castGpuFrame, base, motions, STEPS, rt.cols, rt.rows,
-    { collect: gpuFwdSteps, onStart: () => gpuPipeline.invalidateHistory && gpuPipeline.invalidateHistory() });
+    { collect: gpuFwdSteps, onStart: () => { diagPrev = null; if (gpuPipeline.invalidateHistory) gpuPipeline.invalidateHistory(); } });
   const improvementPct = jsRow.avg > 0 ? 100 * (1 - gpuRow.avg / jsRow.avg) : 0;
   const interiorOkVsN1 = gpuRow.avgInterior <= jsRow.avgInterior || gpuPipeline.rays === 1;
 
@@ -136,5 +156,5 @@ export async function run(ctx) {
   }
   const stDiag0 = { diffN, histV };
   const stDiag = gpuPipeline._stablePass ? { ...stDiag0, ran: !!gpuPipeline._stableRan, on: !!gpuPipeline._stableOn, passRan: !!gpuPipeline._stablePass.ran, pitched: !!(gpuPipeline._rasterPass && gpuPipeline._rasterPass.pitched), spritesRan: !!gpuPipeline._spritesRan } : null;
-  window.__flicker = { jsRow, gpuRow, improvementPct, stDiag, stable: stableActive, lit, gpuShare: gpuRow.avg, jsShare: jsRow.avg };
+  window.__flicker = { diag: diagOn ? diag : null, jsRow, gpuRow, improvementPct, stDiag, stable: stableActive, lit, gpuShare: gpuRow.avg, jsShare: jsRow.avg };
 }

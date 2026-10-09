@@ -231,7 +231,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
       for (let t = 0; t < trials; t++) {
         const type = Math.floor(rand() * rows), tt = rand() < 0.5 ? rand() * 60 : rand() * 1700;
         const b = rand() * 1.3, u = rand() * 900 - 100, v = rand() * 900 - 100, time = rand() * 20, faceMode = Math.floor(rand() * 3);
-        const o = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) };
+        const o = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3), level: 255 };
         shadeTerrain(tt, type, b, u, v, time, ctx, o, faceMode);
         const g = st(tt, type, b, u, v, time, faceMode);
         const q = (x) => Math.floor(Math.min(255, Math.max(0, x)) + 0.5);
@@ -263,7 +263,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
     for (let t = 0; t < 300; t++) {
       const type = Math.floor(rand() * rows), tt = rand() < 0.5 ? rand() * 60 : rand() * 1700;
       const b = rand() * 1.3, u = rand() * 900 - 100, v = rand() * 900 - 100, time = rand() * 20, faceMode = Math.floor(rand() * 3);
-      const oA = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) }, oB = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) };
+      const oA = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3), level: 255 }, oB = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3), level: 255 };
       shadeTerrain(tt, type, b, u, v, time, ctxAbsent, oA, faceMode);
       shadeTerrain(tt, type, b, u, v, time, ctxZero, oB, faceMode);
       assert.deepEqual(oA, oB, 'terrain wetness 0 == absent');
@@ -277,7 +277,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
       let sum = 0, n = 0;
       for (let t = 0; t < 3000; t++) {
         const type = t % rows, tt = 100 + (t * 1.7) % 500, b = 0.3 + (t * 0.013) % 1.0, u = (t * 7.31) % 900, v = (t * 3.17) % 900;
-        const o = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) };
+        const o = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3), level: 255 };
         shadeTerrain(tt, type, b, u, v, 0, ctx, o, 0);
         if (o.glyph !== 0) { sum += lum(o.fg); n++; }
       }
@@ -390,8 +390,10 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   // the variant minus its splices is exactly the stable-off shader
   const stripped = SHADE_LEVEL_WGSL
     .replace('\n  @location(2) lvl: u32,', '').replace(' o.lvl = 255u;', '').replace('\n  var lvOut = 255u;', '')
-    .replace('\n    lvOut = u32(levelFromThresholds(setIdPick, t0.z, gbAvg, su.cutoff));', '').replace(' lvOut = 255u;', '').replace(' o.lvl = lvOut;', '');
-  assert.equal(stripped, SHADE_WGSL, 'level variant == off shader + the 6 splices');
+    .replace('\n    lvOut = u32(levelFromThresholds(setIdPick, t0.z, gbAvg, su.cutoff));', '').replace(' lvOut = 255u;', '').replace(' o.lvl = lvOut;', '')
+    .replace(' o.lvl = select(255u, 254u, textureLoad(uTlook, vec2i(3, typeId), 0).y > 0.5);', '');
+  assert.equal(stripped, SHADE_WGSL, 'level variant == off shader + the 7 splices');
+  assert.ok(SHADE_LEVEL_WGSL.includes('o.lvl = select(255u, 254u, textureLoad(uTlook, vec2i(3, typeId), 0).y > 0.5);\n    return o;'), '38.25 C.1: terrain shimmer branch writes level 254');
   // level value: WGSL levelFromThresholds (1 + index, 0 under the cutoff) == the JS twin over the real ramps
   const fns = core(SHADE_WGSL);
   let n = 0, nz = 0, bad = 0;
@@ -401,7 +403,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
     for (let t = 0; t < 40; t++) {
       const gb = rand() * 1.3;
       const want = jsLevelFromThresholds(S.levels, gb, S.thresholds, su.cutoff), got = fns.levelFromThresholds(setId, S.levels, gb, su.cutoff);
-      n++; if (want > 0) nz++; if (got !== want) bad++;
+      n++; if (want > 0) nz++; if (got !== want || got >= 254) bad++; // 254/255 are reserved level bytes (38.25 C.1)
     }
   }
   assert.ok(n > 100 && nz > n * 0.3, `level coverage ${nz}/${n}`);

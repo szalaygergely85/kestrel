@@ -24,11 +24,12 @@ const TOLERANCE = 4;
  * @param {Array} o.poses - tools/bench-poses.js shape ({ name, x, y, z, yawDeg, pitchDeg })
  * @param {(pose, pool, cam) => void} o.placeSprites - fills the pool's raw list for this pose
  * @param {number[]} o.light - [r, g, b] (ambientL)
+ * @param {boolean} [o.frameGate=true] - false: the whole-frame glyph/fg match % become informational (scene shading is gpucompare's job, D-039); PASS still needs the sprite cells exact AND `poisonedSurvivors === 0` (unwritten cells)
  * @param {(cam) => void} o.renderCpu
- * @param {(cam) => {fg: Uint8Array, bg: Uint8Array}} o.renderGpu
+ * @param {(cam) => {fg: Uint8Array, bg: Uint8Array} | Promise<{fg: Uint8Array, bg: Uint8Array}>} o.renderGpu (WebGPU readbacks are async)
  */
-export function runSpriteCompare(o) {
-  const { pool, fb, poses, placeSprites, light, renderCpu, renderGpu } = o;
+export async function runSpriteCompare(o) {
+  const { pool, fb, poses, placeSprites, light, renderCpu, renderGpu, frameGate = true } = o;
   const rt = fb.rt, cells = rt.cells, gbuf = fb.gbuf;
   const cols = cells.cols, rows = cells.rows, n = cols * rows;
   const jsFg = new Uint8Array(n * 4), jsBg = new Uint8Array(n * 4);
@@ -57,7 +58,7 @@ export function runSpriteCompare(o) {
     for (let i = 0; i < n; i++) { isSprite[i] = sd && sd[i] !== Infinity ? 1 : 0; spriteCells += isSprite[i]; }
 
     poisonNonSky(cells, gbuf.kind, n);
-    const { fg: gpuFg, bg: gpuBg } = renderGpu(cam);
+    const { fg: gpuFg, bg: gpuBg } = await renderGpu(cam);
 
     const cmp = compareCells(jsFg, jsBg, gpuFg, gpuBg, cpuKind, cols, rows);
     let spriteGlyphMismatch = 0, spriteFgOutside = 0, spriteFgMax = 0, spriteCellsOverSky = 0;
@@ -73,7 +74,7 @@ export function runSpriteCompare(o) {
       }
     }
     const spritesOk = spriteGlyphMismatch === 0 && spriteFgOutside === 0;
-    const ok = cmp.pass && spritesOk;
+    const ok = (frameGate ? cmp.pass : cmp.poisonedSurvivors === 0) && spritesOk;
     overallOk = overallOk && ok;
     out.push({
       pose: pose.name || '(pose)', ...cmp, ok,
