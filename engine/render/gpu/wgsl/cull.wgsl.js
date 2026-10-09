@@ -239,7 +239,8 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
     if (!occOn) { return; }
     let ow = occl[i];
     if ((ow & 1u) == 0u) { return; }
-    if (instOccluded(tx, ty, tz)) { return; }
+    if (instOccluded(tx, ty, tz)) { return; } // still occluded: word keeps bit 0 (OCCL-STATS-01b: count = phase-1 parked minus phase-2 rescues)
+    occl[i] = 0u;
     let cwp = u.lodRow.x * tx + u.lodRow.y * ty + u.lodRow.z * tz + u.lodRow.w;
     emit(o, (ow >> 1u) & 1u, bandFrac(cwp), u.slot2, u.slot3);
     return;
