@@ -19,7 +19,7 @@ import { resolvePointShadowOptions, createShadowLightState, selectShadowLights, 
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js';
 
 const RING_RESERVE = 160; // uniform-ring slots left for the passes after the point shadows (resolve/light/shade/edge/sprites/overlays)
-const IDENT =new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+const IDENT = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
 export class WgPointShadowPass {
   /** @param {any} device @param {{pointShadows?: any, level?: string, casters?: WgShadowPass, buffers?: any}} [opts] */
@@ -137,7 +137,7 @@ export class WgPointShadowPass {
       const key = this._build(s, raster, world, lights, tSec); st.slots++;
       const o = s * 4; this.origins[o] = this.O[0]; this.origins[o + 1] = this.O[1]; this.origins[o + 2] = this.O[2]; this.origins[o + 3] = lights.pos[h * 4 + 3];
       const sameHolder = this.keyValid[s] === 1 && this.keyHolder[s] === h;
-      if (sameHolder && this.keys[s * 2] === key[0] && this.keys[s * 2 + 1] === key[1]) { this.skips++; continue; }
+      if (sameHolder && this.faceMask[s] === 0 && this.keys[s * 2] === key[0] && this.keys[s * 2 + 1] === key[1]) { this.skips++; continue; } // faceMask != 0: a partial re-render is in flight (mixed layers), finish/redo it
       if (!sameHolder) this.ready[s] = 0; // new holder: the old layers show another light
       if (this.faceMask[s] !== 0 && (this.partHolder[s] !== h || this.partKey[s * 2] !== key[0] || this.partKey[s * 2 + 1] !== key[1])) this.faceMask[s] = 0; // inputs changed mid-way: start over
       this.partKey[s * 2] = key[0]; this.partKey[s * 2 + 1] = key[1]; this.partHolder[s] = h;
@@ -158,7 +158,7 @@ export class WgPointShadowPass {
             if (this._lastBuilt !== s && this.hasInst[s]) this._build(s, raster, world, lights, tSec); // restores this slot's g.shadowIb banding
             else { this.O[0] = this.origins[s * 4]; this.O[1] = this.origins[s * 4 + 1]; this.O[2] = this.origins[s * 4 + 2]; }
             const nf = this._renderSlot(s, world); spent += nf;
-            if (this.faceMask[s] !== 63) break; // ring ran short: resume next frame
+            if (this.faceMask[s] !== 63) { if (nf === 0) continue; break; } // no face fit at all: skip this slot for the frame so the others progress; else ring ran short: resume next frame
             this.faceMask[s] = 0;
             this.keys[s * 2] = this.pendKey[s * 2]; this.keys[s * 2 + 1] = this.pendKey[s * 2 + 1];
             const o4 = s * 4; for (let q = 0; q < 4; q++) this.renderedOrigins[o4 + q] = this.origins[o4 + q]; // commit the origin with the keys: all 6 faces are in

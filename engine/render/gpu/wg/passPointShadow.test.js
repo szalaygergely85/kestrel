@@ -197,6 +197,31 @@ const frame = (lights) => ({ _light: lights, _cam: cam, _world: world, _table: n
   ps.run(p, raster); assert.equal(ps.renderedOrigins[4], 1.5, 'committed once its 6 faces are in');
 }
 
+// ---- ME-16c re-review nits: (1) key flips back mid-way, (2) a never-fitting slot must not starve the others ----
+{
+  const { d, ps } = mk({ level: 'high' });
+  const ring = createUniformRing(832, 256); d.uniformRing = ring;
+  d.beginPass = () => {}; d.draw = () => {}; d.bind = () => {};
+  const cs = ps.casters, lights = makeLights(1), p = frame(lights);
+  let calls = 0, fillAfter = -1;
+  cs.renderCasters = () => { cs.draws = 2; calls++; if (calls === fillAfter) ring.alloc(256 * 800); };
+  const go = () => { ring.reset(); calls = 0; ps.run(p, raster); };
+  go(); assert.equal(ps.ready[0], 1); assert.equal(ps.faceMask[0], 0);
+  lights.defX[0] += 1; fillAfter = 2; go(); // partial: 2 faces, ring now full
+  assert.ok(ps.faceMask[0] !== 0 && ps.faceMask[0] !== 63, 'partial render in flight');
+  lights.defX[0] -= 1; fillAfter = -1; go(); // key is back at the committed one
+  assert.equal(calls, 6, 'no skip while faces are mixed: all 6 re-rendered');
+  assert.equal(ps.faceMask[0], 0); assert.equal(ps.ready[0], 1);
+  go(); assert.equal(calls, 0, 'then the skip works again');
+  // (2) slot 0 never fits (renders 0 faces); the two normal slots behind it complete
+  const e = mk({ level: 'high' }); e.d.uniformRing = createUniformRing(832, 256); e.d.beginPass = () => {}; e.d.draw = () => {}; e.d.bind = () => {};
+  const ps2 = e.ps; ps2.opts.faceCap = 36; ps2.casters.renderCasters = () => { ps2.casters.draws = 2; };
+  const orig = ps2._renderSlot.bind(ps2); ps2._renderSlot = (s, w) => (s === 0 ? 0 : orig(s, w));
+  const l3 = makeLights(3), p3 = frame(l3);
+  for (let i = 0; i < 4; i++) { e.d.uniformRing.reset(); ps2.run(p3, raster); }
+  assert.equal(ps2.ready[1] + ps2.ready[2], 2, 'normal slots complete behind the oversized one'); assert.equal(ps2.ready[0], 0);
+}
+
 // ---- zero allocation once warm (moving light renders every frame) ----
 {
   const { d, ps } = mk({ level: 'medium' });
