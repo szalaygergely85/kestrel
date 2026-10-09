@@ -1702,7 +1702,7 @@ Note (KPKG-03 dev): tools/pack.mjs (spec `entries` from/to/exclude globs -> dete
 |---|---|---|---|---|
 | WILD-01 | Voxel pose crossfade: `pushInstance` returns the slot, `blendInstance`, from-clip lerp in `sampleClip` | P1 | arch-review [PC-B B2, 0.5 d] | `engine/voxel/voxelPose.js`, `engine/render/voxelPool.js` + tests |
 | WILD-02 | `engine/entities/clipPlayer.js` (rate, phase, fade, once->next) + `gait.js` (pickGait, gaitRate) | P1 | arch-review [PC-B B2, 0.5 d] | `engine/entities/clipPlayer.js`, `engine/entities/gait.js` + tests, `engine/index.js` |
-| WILD-03 | `engine/fauna` def + spawner: compileFaunaDef, 64 m cell ring, habitat roll, caps, view-cone spawn rule, despawn + cooldown, check-deps rule 15 | P1 | todo [PC-B B1, 0.75 d] -> arch-review | `engine/fauna/faunaDef.js`, `engine/fauna/spawner.js` + tests, `tools/check-deps.mjs` (+ fixture test) |
+| WILD-03 | `engine/fauna` def + spawner: compileFaunaDef, 64 m cell ring, habitat roll, caps, view-cone spawn rule, despawn + cooldown, check-deps rule 15 | P1 | arch-review [PC-B B1, 0.75 d] | `engine/fauna/faunaDef.js`, `engine/fauna/spawner.js` + tests, `tools/check-deps.mjs` (+ fixture test) |
 | WILD-04 | `engine/fauna` ground brain: idle/graze/move/alert/flee/return via perceive + leash, feelers, group alarm, gait rate | P1 | todo [PC-B B1, 0.75 d] - deps WILD-02, 03 -> arch-review | `engine/fauna/groundBrain.js`, `engine/fauna/fauna.js` + tests |
 | WILD-05 | Fauna feed + `engine.feedVoxels` hook + bench | P1 | todo [PC-B B2, 0.5 d] - deps WILD-01, 04 -> arch-review | `engine/fauna/feed.js`, `engine/render/frameRenderer.js` (one line), `tools/bench-fauna.mjs` |
 | WILD-06 | Game wiring: FaunaEnv (habitat from terrain.typeAt, trunk grid, blocked, moveCircle), rabbit + deer in, reset on load, replay-hash test, owner walk | P1 | todo [PC-B B1, 0.75 d] - deps WILD-05 | `game/js/wild/wildEnv.js` + test, `game/js/main.js` (small), `game/index.html` (script tag) |
@@ -1731,7 +1731,12 @@ Note (KPKG-03 dev): tools/pack.mjs (spec `entries` from/to/exclude globs -> dete
 - [ ] `pickGait` with 0.15 m/s hysteresis (no flip-flop at 1.5 m/s with the rabbit gaits). `gaitRate` is clamped to `rate[]`.
 - [ ] Exported from `engine/index.js`. Zero allocation.
 
-### WILD-03 Fauna def + spawner  [P1] [todo] [PC-B B1]
+### WILD-03 Fauna def + spawner  [P1] [arch-review] [PC-B B1]
+Note (programmer): all ACs below done and tested (faunaDef 17 checks, spawner 27 checks incl. 1e4-step heap test < 20 KB, check-deps fixture 77 pass).
+- `compileFaunaDef(wildlifeFx, models, {warn})`: 2nd arg is a name -> pm resolver (function or object), not the pool. Clip indices must match across a species' models.
+- check-deps rule is numbered **19**, not 15 (15 = determinism WARN, 16 = fx leaf are taken). Allowed set as in 38.31 item 1.
+- Spawner API: `createSpawner(def, env, {seed, maxAlive})` -> `{slots, stats, update(dt,px,py,camX,camY,camFx,camFy,hfov), despawn(slot, cooldown), reset(), onSpawn, onDespawn}`. Spawn/despawn pass every 0.2 s. WILD-04's `createFauna` wraps it. Slots already carry the brain fields.
+- Fixture copy of the rabbit/deer data: `engine/fauna/wildlifeFx.fixture.js`. Exported from engine/index.js: compileFaunaDef, createSpawner, FAUNA_MAX, FAUNA_CELL_M.
 - [ ] `compileFaunaDef` resolves clip indices; a missing clip throws a message that names the species and the clip.
 - [ ] `compileFaunaDef` validates the `dist` order and `spawn` defaults (38.31 item 2).
 - [ ] Spawner:

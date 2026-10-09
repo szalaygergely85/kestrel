@@ -146,6 +146,44 @@ writeFile(tmp, 'engine/fx/particles.js', `export function f() { return Math.rand
 writeFile(tmp, 'engine/fx/emitterDef.js', `export function f() { return Math.tan(1); }
 `); // load-time compile: NOT in rule 15
 
+// Rule 19 (WILD-03): engine/fauna/** is a leaf (fauna, nav, core, entities/clipPlayer+gait; tests + engine/test).
+writeFile(tmp, 'engine/fauna/good19a.js', `import { IndexHeap } from '../nav/heap.js';
+import { createRng } from '../core/rng.js';
+import { clipPlay } from '../entities/clipPlayer.js';
+import { pickGait } from '../entities/gait.js';
+import { g } from './sibling19.js';
+export const q1 = [IndexHeap, createRng, clipPlay, pickGait, g];
+`);
+writeFile(tmp, 'engine/fauna/sibling19.js', `export const g = 1;
+`);
+writeFile(tmp, 'engine/entities/clipPlayer.js', `export function clipPlay() {}
+`);
+writeFile(tmp, 'engine/entities/gait.js', `export function pickGait() {}
+`);
+writeFile(tmp, 'engine/entities/Entity.js', `export class Entity {}
+`);
+writeFile(tmp, 'engine/core/rng.js', `export function createRng() {}
+`);
+writeFile(tmp, 'engine/fauna/bad19a.js', `import { Terrain } from '../world/Terrain.js';
+export const q2 = Terrain;
+`);
+writeFile(tmp, 'engine/fauna/bad19b.js', `import { Entity } from '../entities/Entity.js';
+export const q3 = Entity;
+`);
+writeFile(tmp, 'engine/fauna/good19b.test.js', `import { makeOk } from '../test/assert.js';
+import { g } from './sibling19.js';
+export const q4 = [makeOk, g];
+`);
+writeFile(tmp, 'engine/fauna/bad19c.test.js', `import { drawSprites } from '../render/sprites.js';
+export const q5 = drawSprites;
+`);
+writeFile(tmp, 'engine/render/bad19d.js', `import { g } from '../fauna/sibling19.js';
+export const q6 = g;
+`);
+writeFile(tmp, 'engine/world/bad19e.js', `import { g } from '../fauna/sibling19.js';
+export const q7 = g;
+`);
+
 // Rule 15 (RE-14): deterministic-sim leaves WARN on Math.random/Date.now/
 // performance.now/trig - engine/nav/**, engine/core/{commands,rng,hash,
 // replay}.js, engine/world/Visibility.js, game/js/rts/sim/**.
@@ -212,6 +250,13 @@ ok('rule 14: mesh importing nav/ flagged', /bad14d\.js.*must not import engine\/
 ok('rule 14: ui importing nav/ flagged', /bad14e\.js.*must not import engine\/nav/.test(output), output);
 ok('rule 14: world importing nav/ flagged', /bad14f\.js.*must not import engine\/nav/.test(output), output);
 ok('rule 14: unrelated render file NOT flagged', !/[^d]good14\.js/.test(output), output);
+ok('rule 19: fauna importing nav+core+clipPlayer+gait+fauna NOT flagged', !/good19a\.js/.test(output), output);
+ok('rule 19: fauna importing world/ flagged', /fauna\/bad19a\.js.*engine\/fauna.*rule 19/.test(output), output);
+ok('rule 19: fauna importing other entities files flagged', /fauna\/bad19b\.js.*rule 19/.test(output), output);
+ok('rule 19: fauna test importing fauna+test NOT flagged', !/good19b\.test\.js/.test(output), output);
+ok('rule 19: fauna test importing render/ flagged', /bad19c\.test\.js.*rule 19/.test(output), output);
+ok('rule 19: render importing fauna/ flagged', /render\/bad19d\.js.*must not import engine\/fauna/.test(output), output);
+ok('rule 19: world importing fauna/ flagged', /world\/bad19e\.js.*must not import engine\/fauna/.test(output), output);
 ok('rule 16: fx non-test importing world/ flagged', /fx\/bad16a\.js.*non-test.*may only import engine\/fx.*engine\/core/.test(output), output);
 ok('rule 16: fx non-test importing render/ flagged', /fx\/bad16b\.js.*non-test/.test(output), output);
 ok('rule 16: fx importing fx+core NOT flagged', !/good16a\.js/.test(output), output);
