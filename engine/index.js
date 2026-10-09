@@ -214,6 +214,7 @@ export { rayTerrain, pickNearest, selectInRect } from './render/pick.js';
 export { createFlowField, FlowCache } from './nav/flowField.js';
 export { createSteer } from './nav/steer.js';
 export { perceive, NOISE_SPRINT, NOISE_SWING } from './nav/perceive.js';
+export { leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from './nav/leash.js';
 
 // ---- RE-11 fog-of-war visibility grid (docs/architecture.md 28.3) ---------
 export { Visibility } from './world/Visibility.js';
