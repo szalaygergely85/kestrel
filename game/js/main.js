@@ -15,12 +15,12 @@ import {
   GBuffer, bindShading, bindLevel,
   DebugOverlay, bootMark, bootSpan, bootNow, freezeBootMarks, bootEntries, bootReport, // BOOT-SPEED-01
   integrate, stepRollers, resolveBodyContacts, Camera, renderWorld, stepSectorAnims, stepAnimations,
-  GpuCellPipeline, GpuOverlayPass, PASS_NAMES,
+  GpuCellPipeline, GpuOverlayPass, PASS_NAMES, WG_PASS_NAMES,
   VoxelPool, bindDecals, drawDecals,
   PITCH_CLAMP_PITCHED_DEG,
   ambientL, World, repackMaterials,
   updateInteraction, drawCrosshair,
-  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun,
+  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun, setCloudShadow,
   isSoftwareRenderer,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim,
@@ -42,6 +42,7 @@ import {
 // of the `?gpucompare=` mode code.
 import { GATE_POSES } from '../../content/dev-poses.js';
 import { prefetchLazyMeshesAtBoot } from './bootPrefetchHook.js'; // MESH-LOAD-01: boot prefetchNear call
+import { parseCloudStrength } from './cloudParam.js'; // S8-B2-12a NEEDS B1 item (2): `?clouds=<0..1>` parse/clamp
 import { MODES } from './dev/modes/index.js';
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { drawPauseOverlay } from './ui/pauseOverlay.js';
@@ -454,6 +455,10 @@ if (isGpuCompareMode) rt.resize(GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPAR
 const useDetail = params.get('detail') !== '0';
 // US-006 AC "?lights=0 keeps the US-028 uniform ambient (regression path)".
 const lightsEnabled = params.get('lights') !== '0';
+// S8-B2-12a NEEDS B1 item (2): `?clouds=<0..1>` (default 0). WebGL2 (`rt.backend === 'gl2'`) stays 0 - the frozen
+// GLSL ignores the cloud byte - only the Canvas2D/CPU path (and WebGPU, once kestrel-2's passLight upload lands)
+// actually draws clouds. Applied via `setCloudShadow` after every `buildLightSet` below.
+const cloudStrength = rt.backend === 'gl2' ? 0 : parseCloudStrength(params.get('clouds'));
 // US-007 (14.3 item 8 fallback/switches): test-only sun disable, same shape
 // as `?lights=0`.
 const sunEnabled = params.get('sun') !== '0';
@@ -909,6 +914,7 @@ async function runGame(mode, cinematic = null) {
       // keeps the old uniform-ambient path (fb.lights stays null).
       if (lightsEnabled) {
         lightSet = buildLightSet(world, assets.palette);
+        if (lightSet) setCloudShadow(lightSet, { strength: cloudStrength }); // S8-B2-12a NEEDS B1 item (2)
         if (lightSet) lightSet.emissive = !isGpuCompareMode && !params.get('gpucompare') && !(resolvedQuality && resolvedQuality.name === 'low'); // EMIS-01b (38.12): glowing voxels light the scene; off on Low and every gpucompare mode
         window.__debug.lights = lightSet; // EMIS-01b: test hook (derivedStats)
         // `?sun=0`: keep the sun's direction/color (F6/F7 still readable) but
@@ -1681,6 +1687,7 @@ async function runGame(mode, cinematic = null) {
     // overlay is hidden and no bench runs" - a plain boolean set, cheap
     // enough to do unconditionally every frame.
     if (gpuPipeline) gpuPipeline.setPassTiming(overlay.visible || benchActive || (autoBench !== null && autoBench.phase !== 'done')); // GFX-02: pass timers = sum of passes, not the vsync-padded whole-frame span
+    if (wgActive) wgPipeline.setPassTiming(overlay.visible || benchActive || (autoBench !== null && autoBench.phase !== 'done')); // S8-B1-07: same gate as the GL pipeline's pass timers, WG side
 
     const lastRenderMs = performance.now() - renderStart;
     if (bootFirst && bootProg) bootProg.finish();
@@ -1716,6 +1723,7 @@ async function runGame(mode, cinematic = null) {
           return `${name} ${Number.isNaN(v) ? 'n/a' : v.toFixed(2)}`;
         }).join('  ');
       }
+      if (wgActive && wgPipeline.ready) extra += '\nwg pass ms: ' + WG_PASS_NAMES.map((name, i) => { const v = wgPipeline.stats.wgPassMsP50[i]; return name + ' ' + (Number.isNaN(v) ? 'n/a' : v.toFixed(2)); }).join('  '); // S8-B1-07
       if (mode === 'world') {
         const t = playerHandle.data.transform;
         const world = engine.world;
@@ -1802,6 +1810,7 @@ function runVoxelBenchMode() {
   const world = loadBenchWorld(assets.world('world_m1'));
   if (world.terrain) world.terrain.bakeFarSync();
   const lights = lightsEnabled ? buildLightSet(world, assets.palette) : null;
+  if (lights) setCloudShadow(lights, { strength: cloudStrength }); // S8-B2-12a NEEDS B1 item (2)
   if (lights && !sunEnabled) lights.setSun({ elevation: lights.sun.elevation, azimuth: lights.sun.azimuth, on: false });
   if (lights) lights.update(0, world);
 
