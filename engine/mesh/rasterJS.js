@@ -598,15 +598,24 @@ const _oneRange = [{ start: 0, count: 0 }]; // MESH-INST-01: DRAW_FLAG_ONE_PART 
  */
 function rasterInstanced(mesh, item, target, ctx) {
   let ranges = mesh.ranges;
-  if (item.flags & DRAW_FLAG_ONE_PART) { _oneRange[0].count = mesh.triCount; ranges = _oneRange; } // one identity part: whole mesh, single-draw triangle order
+  const onePart = !!(item.flags & DRAW_FLAG_ONE_PART);
+  if (onePart) { _oneRange[0].count = mesh.triCount; ranges = _oneRange; } // one identity part: whole mesh, single-draw triangle order
   const ib = item.instBuf;
   if (!ib) return;
   const f = ib.f32, u = ib.u32, pm = item.partMatrices, n = item.instCount;
   const M = _matScratch;
   const wind = ctx.wind, windOn = !!(wind && windSwayOn(wind.field));
+  // ALPHA-01f(a): per-range alpha mask for the instanced meshGroup path, same `mesh.maskRanges` layout and discard/
+  // two-sided rule as the static masked path (rasterDrawList's `mesh.maskRanges && _atlas` branch) - `ranges` here IS
+  // `mesh.ranges` (range index p lines up 1:1 with `maskRanges[p*5..]`) unless DRAW_FLAG_ONE_PART collapsed it to the
+  // single synthetic `_oneRange` (today only meshGroup()'s opaque-only groups use that flag; guarded here too so a
+  // mesh with both ONE_PART and maskRanges - which nothing currently produces - never applies one range's mask atlas
+  // rect to the whole mesh).
+  const mr = (!onePart && mesh.maskRanges && _atlas) ? mesh.maskRanges : null;
   for (let p = 0; p < ranges.length; p++) {
     const range = ranges[p];
     if (range.count <= 0) continue;
+    if (mr) { const mo = p * 5; _mW = mr[mo + 2]; _mX0 = mr[mo]; _mY0 = mr[mo + 1]; _mH = mr[mo + 3]; _mCut = mr[mo + 4]; } else { _mW = -1; }
     const o = p * 12;
     const a00 = pm[o], a01 = pm[o + 1], a02 = pm[o + 2];
     const a10 = pm[o + 3], a11 = pm[o + 4], a12 = pm[o + 5];
@@ -636,6 +645,7 @@ function rasterInstanced(mesh, item, target, ctx) {
       rasterRange(mesh, _instItem, target, ctx, range.start, range.count, p, false, partAligned && (meta & 1) !== 0);
     }
   }
+  _mW = -1; // ALPHA-01f(a): leave the module mask state clean for whatever draws next (mirrors rasterDrawList's static-masked reset)
   _team = 0; _swayOn = false; _dither = 0;
 }
 
