@@ -61,3 +61,4 @@ test('off under fx=0, capture, bench, bench=combat, compare', () => {
   assert.equal(hitStopEnabled(P(''), true), false);
   const off = createHitStop({ enabled: false }); off.trigger('heavy'); assert.equal(off.due(16), true);
 });
+
