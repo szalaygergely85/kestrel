@@ -94,6 +94,8 @@ function isFiniteNumber(v) { return typeof v === 'number' && Number.isFinite(v);
  * storage that throws on `getItem` all fall back to `DEFAULT_SETTINGS`
  * field by field (a bad `volume` does not also lose a good `muted`).
  */
+function isPlainObject(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+
 export function loadSettings() {
   const out = { ...DEFAULT_SETTINGS };
   const storage = getStorage();
@@ -128,6 +130,8 @@ export function loadSettings() {
   // GFX-01w: optional quality choice + shadow level (absent = never chosen; unknown values dropped)
   if (QUALITY_CHOICES.includes(parsed.quality)) out.quality = parsed.quality;
   if (SHADOW_CHOICES.includes(parsed.shadowQuality)) out.shadowQuality = parsed.shadowQuality;
+  // BINDINGS-WIRE-01: optional saved control bindings (plain object; the bindings module validates the contents)
+  if (isPlainObject(parsed.bindings)) out.bindings = parsed.bindings;
   // settingsVersion is informational only for now (single version exists);
   // kept as the constant so a future migration has a stable field to read.
 
@@ -159,6 +163,8 @@ export function saveSettings(partial) {
   if (quality !== undefined) next.quality = quality;
   const shadowQuality = SHADOW_CHOICES.includes(p.shadowQuality) ? p.shadowQuality : current.shadowQuality;
   if (shadowQuality !== undefined) next.shadowQuality = shadowQuality;
+  const bindings = isPlainObject(p.bindings) ? p.bindings : current.bindings;
+  if (bindings !== undefined) next.bindings = bindings;
   if (!storage) return next; // no persistence available, but callers still get a valid object back
 
   try {
