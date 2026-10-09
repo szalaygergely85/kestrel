@@ -21,9 +21,12 @@ const FALLBACK_STYLE = {
   textRows: 3, maxChoices: 3,
 };
 
-function rgbOf(hex) {
+// Colours are [r,g,b] arrays or '#rrggbb'. Anything else (the designer's uiStyle.dialogue uses palette keys and nested
+// objects under the same names, e.g. `plate: {pad,..}`, `text: {row,..}`) is ignored -> the view's own fallback colour.
+function rgbOf(hex, fb) {
   if (Array.isArray(hex)) return hex;
-  return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+  if (typeof hex === 'string' && hex.length === 7 && hex[0] === '#') return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+  return fb === undefined ? [255, 255, 255] : rgbOf(fb);
 }
 
 /**
@@ -34,11 +37,12 @@ export function createDialogueView(opt = {}) {
   const fr = Object.assign({}, FALLBACK_STYLE.frame, s.frame || {});
   const mk = Object.assign({}, FALLBACK_STYLE.marker, s.marker || {});
   const hn = Object.assign({}, FALLBACK_STYLE.hint, s.hint || {});
+  const F = FALLBACK_STYLE;
   const C = {
-    frame: rgbOf(fr.color), corner: rgbOf(fr.cornerColor), plate: rgbOf(s.plate), band: rgbOf(s.band),
-    name: rgbOf(s.name), namePlayer: rgbOf(s.namePlayer), nameDecor: rgbOf(s.nameDecor),
-    text: rgbOf(s.text), choice: rgbOf(s.choice), choiceSel: rgbOf(s.choiceSel), cursor: rgbOf(s.cursor),
-    marker: rgbOf(mk.color), hint: rgbOf(hn.color),
+    frame: rgbOf(fr.color, F.frame.color), corner: rgbOf(fr.cornerColor, F.frame.cornerColor), plate: rgbOf(s.plate, F.plate), band: rgbOf(s.band, F.band),
+    name: rgbOf(s.name, F.name), namePlayer: rgbOf(s.namePlayer, F.namePlayer), nameDecor: rgbOf(s.nameDecor, F.nameDecor),
+    text: rgbOf(s.text, F.text), choice: rgbOf(s.choice, F.choice), choiceSel: rgbOf(s.choiceSel, F.choiceSel), cursor: rgbOf(s.cursor, F.cursor),
+    marker: rgbOf(mk.color, F.marker.color), hint: rgbOf(hn.color, F.hint.color),
   };
   const cH = fr.corner.charCodeAt(0), hH = fr.h.charCodeAt(0), vH = fr.v.charCodeAt(0);
   const markCode = mk.glyph.charCodeAt(0);

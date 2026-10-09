@@ -984,6 +984,15 @@ export class World {
         }
       }
     }
+    // NPC-BEAR-01: a world-level entity may carry `components.collider = {r, h}` (metres): one static upright prism
+    // at its transform (feet on transform.z). Re-run on ground snaps, so it follows the terrain re-bake.
+    for (const [id, e] of this._entities) {
+      const cc = e.components && e.components.collider;
+      if (!cc || e.type === 'prop') continue;
+      if (!Number.isFinite(cc.r) || cc.r <= 0 || !Number.isFinite(cc.h) || cc.h <= 0) throw new Error(`World.load: entity "${id}" invalid collider {r,h}`);
+      const t = e.transform;
+      shapes.push({ kind: 1, x: t.x, y: t.y, zc: t.z + cc.h / 2, hx: 0, hy: 0, hz: 0, r: cc.r, h: cc.h, yawRad: 0 });
+    }
     const collider = buildPropCollider(shapes, shapes.length);
     const index = this.colliders.findIndex(c => c.id === 'props:static');
     if (index >= 0) {

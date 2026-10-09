@@ -56,6 +56,8 @@ export const GATE_POSES = [
   { slug: 'breach', name: 'breach (looking out)', cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 270, pitchDeg: 0 } },
   // ME-15c: signal tower seen from the NNW looking SE (towards the sun), its sun shadow (az 135) lies on the grass between, for the sun shadow map captures (`?pose=towerShadow&shadows=map`, sun az 135 el 30 set by the capture script)
   { slug: 'towerShadow', name: 'signal tower + its NW shadow, seen from the NNW (ME-15c)', cam: { x: 1474, y: 1006, z: 9.0, yawDeg: 137, pitchDeg: -17, groundEye: true } },
+  // NPC-BEAR-01: Burl the bear at (1471, 1029.1), seen from 3.2 m east on the path (he faces east, towards the breach).
+  { slug: 'burl', name: 'Burl the bear on the walk-out path (NPC-BEAR-01)', cam: { x: 1474.2, y: 1029.4, z: 1.7, yawDeg: 270, pitchDeg: 4, groundEye: true } },
   { slug: 'roadSouth', name: 'walk-out road, looking west-south-west at the cleaned south verge + placed meshes (ME-14c3)', cam: { x: 1466, y: 1035, z: 1.7, yawDeg: 240, pitchDeg: 6, groundEye: true } },
   { slug: 'roadLeft', name: 'walk-out road, looking south-west across the left (south) verge scatter roadL### (tools/gen-roadside-meshes.mjs)', cam: { x: 1440, y: 1030, z: 1.7, yawDeg: 215, pitchDeg: 4, groundEye: true } },
   { slug: 'hillside', name: 'hillside outside (owner pose A)', cam: { x: 1464.33, y: 1045.50, z: 3.92, yawDeg: 54, pitchDeg: 19 } },

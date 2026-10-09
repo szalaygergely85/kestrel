@@ -343,14 +343,16 @@
     {"id": "roadL296", "mesh": "quaternius/DeadTree_3", "origin": {"x": 1259.25, "y": 1051.45, "z": -31.92}, "yawDeg": 51},
     {"id": "roadL297", "mesh": "quaternius/DeadTree_3", "origin": {"x": 1287, "y": 1052.73, "z": -24.2}, "yawDeg": 270},
     {"id": "roadL298", "mesh": "quaternius/DeadTree_4", "origin": {"x": 1356.01, "y": 1070.87, "z": -9.81}, "yawDeg": 138},
-    {"id": "roadL299", "mesh": "quaternius/DeadTree_1", "origin": {"x": 1459.89, "y": 1041.42, "z": 2.51}, "yawDeg": 97}
+    {"id": "roadL299", "mesh": "quaternius/DeadTree_1", "origin": {"x": 1459.89, "y": 1041.42, "z": 2.51}, "yawDeg": 97},
+    {"id": "burlBush", "mesh": "quaternius/Bush_Common_Flowers", "note": "NPC-BEAR-01: the berry bush beside Burl (no berry mesh yet: flowering bush stand-in)", "origin": {"x": 1470.6, "y": 1030.9, "z": 2.4}, "yawDeg": 20}
   ],
   "entities": [
     {"id": "player", "note": "pose = tower.start (x 17.0, y 9.5, facingDeg 330, pitchDeg 30, eyeH 0.3, lying) + origin -> world (1497.0, 1027.5)", "spawn": {"from": "start", "structure": "tower"}, "type": "player"},
     {"id": "farTower", "detailRows": 12, "fogMax": 0.4, "fogModel": "far", "minCells": {"h": 4, "w": 3}, "model": "farTower", "note": "the signal tower; matches overworld_far.farTower (azimuth 255 from the breach, 15 deg left of centre, top ~1.9 deg above the horizon)", "sizeM": {"h": 42, "w": 14}, "type": "billboard", "unlit": true, "x": 713.8, "y": 1232.1, "z": -8},
     {"id": "endMarker", "components": {"voxel": {"anim": "idle", "loop": true, "model": "waystone"}}, "note": "US-026a waystone: copied verbatim from design/models/voxel_world.js ASSETS.worldPatch.world_m1.entities.append", "type": "prop", "x": 1428, "y": 1040, "yawDeg": 75, "z": "ground"},
     {"id": "boar1", "components": {"brain": {"home": [1461.01, 1031], "kind": "beast"}, "targetable": {"height": 0.7, "radius": 0.45}, "voxel": {"anim": "idle", "loop": true, "model": "boarPlaceholder"}}, "note": "US-079a: hillside route before the waystone, ~26 m from the breach (1486.5,1025) - clear of the 15 m AC 6 radius", "type": "beast", "x": 1461.01, "y": 1031, "z": "ground"},
-    {"id": "boar2", "components": {"brain": {"home": [1444.02, 1035], "kind": "beast"}, "targetable": {"height": 0.7, "radius": 0.45}, "voxel": {"anim": "idle", "loop": true, "model": "boarPlaceholder"}}, "note": "US-079a: hillside route before the waystone, ~43 m from the breach - further along toward the waystone than boar1", "type": "beast", "x": 1444.02, "y": 1035, "z": "ground"}
+    {"id": "boar2", "components": {"brain": {"home": [1444.02, 1035], "kind": "beast"}, "targetable": {"height": 0.7, "radius": 0.45}, "voxel": {"anim": "idle", "loop": true, "model": "boarPlaceholder"}}, "note": "US-079a: hillside route before the waystone, ~43 m from the breach - further along toward the waystone than boar1", "type": "beast", "x": 1444.02, "y": 1035, "z": "ground"},
+    {"id": "bear", "components": {"collider": {"h": 1.6, "r": 0.7}, "dialogue": "bear", "voxel": {"anim": "idle", "loop": true, "model": "bear"}}, "note": "NPC-BEAR-01 Burl: on the path 16 m from the breach (1486.5,1025) toward the teal signal, home facing the breach; ground-snapped", "type": "npc", "x": 1471, "y": 1029.1, "yawDeg": 75.2, "z": "ground"}
   ],
   "horizon": [],
   "state": {

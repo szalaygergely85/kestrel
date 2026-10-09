@@ -114,6 +114,7 @@ import { ensureInventory, validateItemDefs, migrateSword } from './quest/sim/inv
 import { presentPickups } from './quest/pickupsView.js';
 import { createLoot, setLootApi } from './quest/sim/loot.js'; // US-091a2 (37.16.3)
 import { createDialogueCtl, setDialogueApi } from './quest/dialogueCtl.js'; // DIALOGUE-01b2 (38.28)
+import { createNpcTurn } from './quest/npcBear.js'; // NPC-BEAR-01 (38.28): turn-to-player
 import { LOOT_TABLE, LOOT_SEED_SALT } from './quest/sim/lootConfig.js';
 import { createToastView } from './quest/toastView.js';
 import { createInventoryView } from './quest/inventoryView.js'; // US-091b
@@ -858,6 +859,7 @@ async function runGame(mode, cinematic = null) {
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   let dialogueCtl = null; // DIALOGUE-01b2 (38.28): rebuilt on every 'world:loaded', below
+  let bearTurn = null; // NPC-BEAR-01: Burl's turn-to-player, rebuilt on every 'world:loaded'
   const vLocked = () => !!(vitals && vitals.inputLocked) || deathFlow.inputLocked || !!(dialogueCtl && dialogueCtl.locked); // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
@@ -1072,8 +1074,11 @@ async function runGame(mode, cinematic = null) {
       // DIALOGUE-01b2 (38.28): box + runner; NPCs with a `dialogue` component get an [E] Talk interactable (none until NPC-BEAR-01 places one).
       if (dialogueCtl) dialogueCtl.dispose();
       dialogueCtl = createDialogueCtl({ world, dialogues: bundle.dialogues, events: engine.events, style: window.ASSETS.uiStyle.dialogue,
+        jawOpenDeg: window.ASSETS.bearFx && window.ASSETS.bearFx.talk ? window.ASSETS.bearFx.talk.jawMaxDeg : undefined, // jaw hinge: rx opens, 0..jawMaxDeg (voxel_bear.js header)
         onFlag: (k, v) => gameHooks.emitSimple('flag:set', 'dlg.' + k, v) });
       setDialogueApi(dialogueCtl);
+      bearTurn = createNpcTurn(world, 'bear'); // NPC-BEAR-01: null when the world has no bear
+      if (bearTurn) dialogueCtl.addNpc('bear');
       if (toasts) toasts.dispose();
       toasts = itemDefs ? createToastView(engine.events, window.ASSETS.items.toast, itemDefs, assets.palette.rgb) : null;
       if (invView && invView.isOpen) invView.close();
@@ -1389,7 +1394,8 @@ async function runGame(mode, cinematic = null) {
       stepAnimations(engine.world, dt * 1000);
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
       const simDue = hitStop.due(1000 / 60); // HITSTOP-01: the window gates beasts.step only; the sword freezes by its own hitStopHard counter
-      if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); } // US-079a (29.1)
+      if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); }
+      if (bearTurn) { const pt = playerHandle.data.transform; bearTurn.step(dt, pt.x, pt.y); } // NPC-BEAR-01 // US-079a (29.1)
       if (beasts && assets.uiStyle) stepCombatHint(engine.world, assets.uiStyle, beasts); // COMBAT-HINT-01: once-per-save first-fight hint (taken from lane C)
       if (telegraphWire) telegraphWire.step(performance.now());
       // US-078d (30.1 + D-034 amendment): the sword steps after beasts.step, so a heavy-hit stagger acts from the
