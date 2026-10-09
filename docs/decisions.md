@@ -1035,3 +1035,4 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - Settings gets a Quality row (QUALITY-GRID-01); owner prefers ultra on the 4060.
 - No public demo (owner, 2026-10-09: "they can steal our idea"): US-112 itch.io demo build cancelled; lane C DEMO-PAGE-01 dropped; demo size cap moot. DEMO-MODE-01 code stays as a private `?demo=` playtest build only (never published).
 - First quest boar count = 5 (owner, 2026-10-09): unblocks lane C QUEST-CHAIN-02c (`obj.beasts5` text).
+- Combat budget = flat 8 ms GPU p95 on every quality preset (owner, 2026-10-09). Hit-stop = 70 ms. EMIS glow = MEDIUM warm orange-gold (designer pick) OK.
