@@ -90,6 +90,21 @@ export function createFrameRenderer({ engine, rt, pipeline = null, assets, idleS
     dirty = true;
   });
 
+  // ED-MESH-1e: model defs seen by the last voxelPool.bind (key -> def) so refreshAssets can tell "unchanged" from "new/replaced".
+  const boundModels = new Map();
+  function snapshotModels() {
+    boundModels.clear();
+    const keys = assets.keys('model');
+    for (let i = 0; i < keys.length; i++) boundModels.set(keys[i], assets.model(keys[i]));
+  }
+  function modelsChanged() {
+    const keys = assets.keys('model');
+    if (keys.length !== boundModels.size) return true;
+    for (let i = 0; i < keys.length; i++) if (boundModels.get(keys[i]) !== assets.model(keys[i])) return true;
+    return false;
+  }
+  snapshotModels();
+
   const dtBuf = new Float64Array(1);
   const api = {
     fb, voxelPool, sprites, ready,
@@ -146,11 +161,29 @@ export function createFrameRenderer({ engine, rt, pipeline = null, assets, idleS
       fb.gbuf = new GBuffer(cols, rows);
       fb.light = makeLightBuffer(cols, rows);
       fb.depth = engine.depthBuffer;
+      voxelPool.bind(assets, matTable); // 38.21 nit: the new matTable has new ids, so the packed models must follow
+      snapshotModels();
       if (pipeline) {
         if (pipeline.resizeGrid && (pipeline.cols !== cols || pipeline.rows !== rows)) pipeline.resizeGrid(cols, rows);
         pipeline.bind(matTable, palette);
+        if (wg) pipeline.bindVoxels(voxelPool);
       }
       dirty = true;
+    },
+
+    /**
+     * ED-MESH-1e (38.26): after a runtime import into the AssetRegistry, re-pack the voxel/mesh models and re-bind them to the
+     * pipeline without a reload. No-op (nothing re-created, atlas version unchanged) when no model was added or replaced.
+     * Click/import-only; may allocate. Returns whether a re-bind happened.
+     */
+    refreshAssets(newAssets) {
+      if (newAssets && newAssets !== assets) assets = newAssets;
+      if (!modelsChanged()) return false;
+      voxelPool.bind(assets, matTable);
+      snapshotModels();
+      if (wg) pipeline.bindVoxels(voxelPool);
+      dirty = true;
+      return true;
     },
 
     /**
