@@ -19,7 +19,7 @@ for(let i=0;i<100;i++){view.drawLog(ui);view.drawHud(ui,1,1);}
 assert.deepEqual(state,original,'drawing never changes quest state');
 const snapshot=view.snapshot(); snapshot[0].status='locked'; assert.equal(view.snapshot()[0].status,'complete');
 for(const event of [{type:'area:entered',id:'breach'},{type:'item:got',id:'sword'},
-  {type:'beast:died',id:'boar1'},{type:'beast:died',id:'boar2'},{type:'area:entered',id:'waystone'}]) {
+  {type:'beast:died',id:'boar1'},{type:'beast:died',id:'boar2'},{type:'beast:died',id:'boar3'},{type:'beast:died',id:'boar4'},{type:'beast:died',id:'boar5'},{type:'area:entered',id:'waystone'}]) {
   applyQuestEvent(state,event,def); view.update(state);
 }
 assert.equal(view.getObjectiveLine(),''); assert.ok(view.snapshot().every(row=>row.status==='complete'));
