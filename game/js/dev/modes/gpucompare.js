@@ -1113,9 +1113,20 @@ async function runGpuCompareSceneMode(ctx) {
   window.__gpuCompare = { rows: rowsOut.concat(shadowRows), ok: overallOk, infoRows };
 }
 
+/**
+ * ME-16f (38.22 item 4): ?gpucompare=pointshadow - tower interior pose pointShadowTorch (3 torches + carried lamp), compares L + litCount
+ * against the JS twin (engine/mesh/pointShadowJS.js via fb.pointShadowOpts). PENDING until ME-16e lands the GPU host: the row is skipped, never fails.
+ */
+async function runGpuComparePointShadowPending() {
+  const rows = [{ pose: 'world_m1: pointShadowTorch', ok: true, skipped: true, note: 'needs ME-16e' }];
+  console.log('[gpucompare] SKIP pointshadow world_m1: pointShadowTorch (needs ME-16e: GPU point-shadow host not wired yet)');
+  window.__gpuCompare = { rows, ok: true, infoRows: [] };
+}
+
 export function run(ctx) {
   const mode = ctx.params.get('gpucompare');
   if (mode === '1') return runGpuCompareSceneMode(ctx).catch((e) => { console.error('[gpucompare] failed:', e); throw e; });
   else if (mode === 'shade') return runGpuCompareShadeMode(ctx).catch((e) => { console.error('[gpucompare] failed:', e); throw e; });
+  else if (mode === 'pointshadow') return runGpuComparePointShadowPending();
   else throw new Error('gpucompare mode must be 1 (mesh twin) or shade');
 }
