@@ -578,6 +578,19 @@ export function pitchedHashCell(terms, cols, zRef) {
   return c < 0.125 ? 0.125 : c > 2 ? 2 : c;
 }
 
+/**
+ * US-068b1 (38.19): ortho look-hash cell (m): positive fixed size `clamp(2^ceil(log2(2*halfW/cols)), 0.125, 2)` (ground m per
+ * column is constant in ortho). 0 when not ortho. Host sends it as `hashCell` (> 0 = fixed cell, 28.11 path) instead of `-k`.
+ * @param {PitchedTerms} terms
+ * @param {number} cols
+ * @returns {number}
+ */
+export function orthoHashCell(terms, cols) {
+  if (!terms || !terms.ortho || !(cols > 0) || !(terms.halfW > 0)) return 0;
+  const c = Math.pow(2, Math.ceil(Math.log2((2 * terms.halfW) / cols)));
+  return c < 0.125 ? 0.125 : c > 2 ? 2 : c;
+}
+
 // ---------------------------------------------------------------------------
 // RE-07a (28.9 item 3): the frame's world -> clip matrix for ANY camera, so UI
 // overlays project with exactly the matrix the mesh raster uses.

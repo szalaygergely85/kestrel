@@ -96,7 +96,7 @@ fn cellPoint(cell: vec2f, dist: f32) -> vec3f {
   if (u.projMode == 0) {
     return cellRayP(cell, vec2i(u.gridCols, u.gridRows), u.posX, u.posY, u.eyeH, u.dirX, u.dirY, u.planeX, u.planeY, u.horizonRow, u.planeDistY, dist);
   }
-  return cellRayPitched(cell, vec2i(u.gridCols, u.gridRows), vec3f(u.posX, u.posY, u.eyeH), u.pitchA.xyz, u.pitchB.xy, vec3f(u.pitchB.zw, u.pitchC.x), vec2f(u.pitchA.w, u.pitchC.y), dist);
+  return cellRayPitched(cell, vec2i(u.gridCols, u.gridRows), vec3f(u.posX, u.posY, u.eyeH), u.pitchA.xyz, u.pitchB.xy, vec3f(u.pitchB.zw, u.pitchC.x), vec2f(u.pitchA.w, u.pitchC.y), dist, u.projMode == 2);
 }
 
 // One AO tap at grid cell (tx, ty): open (0) if outside the grid or kind 0 (no finite-depth check here - unlike
@@ -256,7 +256,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
     P = cellRayP(vec2f(cell), vec2i(u.gridCols, u.gridRows), u.posX, u.posY, u.eyeH, u.dirX, u.dirY, u.planeX, u.planeY, u.horizonRow, u.planeDistY, dist);
   } else {
     // RE-02a: pitched camera (28.1 A2); dist is the view depth vd.
-    P = cellRayPitched(vec2f(cell), vec2i(u.gridCols, u.gridRows), vec3f(u.posX, u.posY, u.eyeH), u.pitchA.xyz, u.pitchB.xy, vec3f(u.pitchB.zw, u.pitchC.x), vec2f(u.pitchA.w, u.pitchC.y), dist);
+    P = cellRayPitched(vec2f(cell), vec2i(u.gridCols, u.gridRows), vec3f(u.posX, u.posY, u.eyeH), u.pitchA.xyz, u.pitchB.xy, vec3f(u.pitchB.zw, u.pitchC.x), vec2f(u.pitchA.w, u.pitchC.y), dist, u.projMode == 2);
   }
   let faceU = giFace(gi.y);
   // US-041a: face 7 (rotated voxel-model part) decodes its normal from GA.w's octahedral bits

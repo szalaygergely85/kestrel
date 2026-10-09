@@ -245,7 +245,7 @@ fn pitchedCellDir(cell: vec2f, grid: vec2i) -> vec3f {
   return cellDirPitched(cell, grid, su.pitchA.xyz, su.pitchB.xy, vec3f(su.pitchB.z, su.pitchB.w, su.pitchC.x), vec2f(su.pitchA.w, su.pitchC.y));
 }
 fn fogScaleCell(row: i32, rows: i32) -> f32 {
-  return select(pitchFogScale(row, rows, su.pitchC.y, su.pitchC.z, su.pitchC.w), 1.0, su.projMode == 0);
+  return select(pitchFogScale(row, rows, su.pitchC.y, su.pitchC.z, su.pitchC.w, su.projMode == 2), 1.0, su.projMode == 0);
 }
 fn faceK(face: i32) -> f32 { return su.faceK[u32(face) >> 2u][u32(face) & 3u]; }
 
@@ -526,7 +526,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
         elevDeg = degrees(atan2(su.horizonRow - f32(cell.y), su.planeDistY));
       } else {
         // RE-02a (28.1 A2 item 2): per-cell elevation of the screenRay direction.
-        let sd = pitchedCellDir(vec2f(cell), gridSize);
+        let sd = select(pitchedCellDir(vec2f(cell), gridSize), su.pitchA.xyz, su.projMode == 2); // 38.19: ortho dir = F
         elevDeg = degrees(atan2(sd.z, length(sd.xy)));
       }
       let t = clamp(elevDeg / su.skyElevTop, 0.0, 1.0);

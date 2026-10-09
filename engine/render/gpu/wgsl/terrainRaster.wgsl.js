@@ -2,6 +2,7 @@
 // become one uniform block, uNearType/uFarType are r8ui textures read with textureLoad (texelFetch twin).
 import { defineUniformBlock } from './uniformBlock.js';
 import { OCT_NORMAL } from './raster.wgsl.js';
+import { ORTHO_NEAR_WGSL, ORTHO_FAR_WGSL } from './common.wgsl.js';
 import { KIND_TERRAIN, FACE_PACKED } from '../../GBuffer.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 
@@ -10,6 +11,7 @@ export const TERRAIN_BLOCK = defineUniformBlock('TerrainU', [
   { name: 'nearMap', type: 'vec4' }, { name: 'farMap', type: 'vec4' },
   { name: 'structFoot', type: 'vec4', count: MAX_STRUCTS },
   { name: 'objectId', type: 'u32' }, { name: 'nearReady', type: 'u32' }, { name: 'structCount', type: 'u32' },
+  { name: 'projMode', type: 'u32' }, // US-068b1 (38.19): 2 = ortho (appended; earlier offsets unchanged)
 ]);
 /** Slot order of PipelineDesc.bindings.textures: 0 = uNearType, 1 = uFarType (both r8ui). */
 export const TERRAIN_TEXTURES = Object.freeze(['uint', 'uint']);
@@ -65,7 +67,7 @@ struct FragmentOut { @location(0) GI: vec4u, @location(1) GA: vec4u, @location(2
   }
   let N = normalize(v.vNormal);
   let terrType = terrainTypeAt(v.vWorldPos.x, v.vWorldPos.y);
-  let dist = 1.0 / v.pos.w;
+  let dist = select(1.0 / v.pos.w, ${ORTHO_NEAR_WGSL} + v.pos.z * (${ORTHO_FAR_WGSL} - ${ORTHO_NEAR_WGSL}), u.projMode == 2u); // 38.19 ortho: w = 1, depth = linear z
   out.GI = vec4u(PLANEID_TERRAIN, KIND_TERRAIN | (FACE_PACKED << 8u) | (u32(terrType) << 16u), packNormalOct(N), u.objectId);
   out.GA = vec4u(bitcast<u32>(v.vWorldPos.x), bitcast<u32>(v.vWorldPos.y), bitcast<u32>(v.vWorldPos.z), bitcast<u32>(1.0e30f));
   out.Depth = bitcast<u32>(dist);
