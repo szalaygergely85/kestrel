@@ -35,6 +35,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const DRIVER = `(async () => {
   const NOSKIP = ${noSkip};
   for (let i = 0; i < 3000 && !(window.__debug && window.__debug.engine); i++) await new Promise((r) => setTimeout(r, 50));
+  if (!(window.__debug && window.__debug.engine)) throw new Error('route-walk: window.__debug.engine not ready after 150 s - the game never finished booting (check [boot] console / the Loading overlay; boot normally takes ~4 s)');
   const D = window.__debug, eng = D.engine, input = D.input, loop = eng.loop;
   const sleepF = () => new Promise((r) => requestAnimationFrame(r));
   const O = { x: 1480, y: 1018 };
@@ -44,6 +45,7 @@ const DRIVER = `(async () => {
   const pH = () => window.__debug.playerHandle, T = () => pH().data.transform, B = () => pH().data.components.body;
   const world = () => window.__debug.world || eng.world;
   for (let i = 0; i < 4000 && !(window.__debug.playerHandle); i++) await sleepF();
+  if (!window.__debug.playerHandle) throw new Error('route-walk: window.__debug.playerHandle not ready after 200 s (engine up, player never spawned)');
   const out = { grid: D.rt.cols + 'x' + D.rt.rows, backend: D.rt.backend, physicsMode: world().physicsMode, legs: [], info: {} };
   out.info.initialGeometry = { trees: world().scatter ? world().scatter.count : 0, detail: world().detail ? world().detail.count : 0, colliders: world().colliders.map(c => c.id) };
   const sim = [], js = [], gpu = [], ivl = [], shp = [], shc = [];
