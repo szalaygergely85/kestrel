@@ -15,7 +15,7 @@ import { classifyAABB, CULL_OUT } from '../../../mesh/culling.js';
 import { DRAW_INSTANCED } from '../../../mesh/DrawList.js';
 import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
 import { windShadowKey } from '../../../mesh/sway.js';
-import { resolvePointShadowOptions, createShadowLightState, selectShadowLights, pointFaceMatrix, pointFacePlanes, pointShadowKey, quantiseOrigin } from '../../shadowPoint.js';
+import { resolvePointShadowOptions, createShadowLightState, selectShadowLights, pointFaceMatrix, pointFacePlanes, pointShadowKeyO, quantiseOrigin } from '../../shadowPoint.js';
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js';
 
 const IDENT = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -39,7 +39,7 @@ export class WgPointShadowPass {
     this.dirty = new Uint8Array(m); this.moving = new Uint8Array(m); this.hasInst = new Uint8Array(m);
     this.rr = 0; this._lastBuilt = -1;
     this.lists = []; this.key2 = new Int32Array(2); this.hash3 = new Int32Array(3);
-    this.O = new Float64Array(3); this.M = new Float64Array(16); this.planes = new Float64Array(24); this.box = new Float64Array(24);
+    this.O = new Float64Array(4); this.M = new Float64Array(16); this.planes = new Float64Array(24); this.box = new Float64Array(24); // O = xyz + radius (pointShadowKeyO reads it: no boxed-double args)
     this.idx = null; this.cam = { x: 0, y: 0, z: 0, planes: null };
     this.src = { centre: { x: 0, y: 0, z: 0 }, eye: { x: 0, y: 0 }, meshLod0M: 25, instCastM: 6, cache: null, terrainSet: null, voxelPool: null, voxelMeshCache: undefined, fogFarM: 2000, instances: null, cloths: null, matIdFor: undefined, meshCache: null, meshIdFor: undefined, maskAtlas: null, gpu: /** @type {any} */ (null) };
     if (!this.enabled) return;
@@ -82,14 +82,14 @@ export class WgPointShadowPass {
   _build(s, raster, world, lights, tSec) {
     const h = this.state.slots[s], src = this.src, O = this.O, q = this.opts.originQ, list = this.lists[s];
     const ox = quantiseOrigin(lights.defX[h], q), oy = quantiseOrigin(lights.defY[h], q), oz = quantiseOrigin(lights.defZ[h], q), r = lights.pos[h * 4 + 3];
-    O[0] = ox; O[1] = oy; O[2] = oz;
+    O[0] = ox; O[1] = oy; O[2] = oz; O[3] = r;
     const c = src.centre; c.x = ox; c.y = oy; c.z = oz; src.eye.x = ox; src.eye.y = oy; src.instCastM = r; src.fogFarM = r + 128;
     buildShadowList(list, raster.list, world, this._boxPlanes(ox, oy, oz, r), src);
     this._lastBuilt = s;
     let inst = 0; for (let i = 0; i < list.count; i++) if (list.items[i].type === DRAW_INSTANCED) { inst = 1; break; }
     this.hasInst[s] = inst;
     const hs = shadowInputHash(list, IDENT, 0, this.hash3, undefined, 0);
-    return pointShadowKey(this.key2, ox, oy, oz, r, hs[0], hs[1], world.structVersion | 0, inst ? windShadowKey(world.wind, tSec) : 0, q);
+    return pointShadowKeyO(this.key2, O, hs[0], hs[1], world.structVersion | 0, inst ? windShadowKey(world.wind, tSec) : 0, q);
   }
 
   /** Render all 6 faces of slot s (its list and this.O are current). */
@@ -112,7 +112,7 @@ export class WgPointShadowPass {
     if (!this.enabled) return false;
     const lights = p._light, world = p._world, cam = p._cam;
     if (!lights || !lights.defX || !world || !cam || !raster) return false;
-    const t0 = performance.now(), n = this.n, state = this.state, cs = this.casters, c = this.cam;
+    const timing = p._passTimingOn === true, t0 = timing ? performance.now() : 0, n = this.n, state = this.state, cs = this.casters, c = this.cam;
     c.x = cam.x; c.y = cam.y; c.z = cam.z;
     selectShadowLights(lights, c, n, state, this.opts.hysteresis);
     cs._world = world; cs._raster = raster;
@@ -153,7 +153,7 @@ export class WgPointShadowPass {
       } finally { wgSpanEnd(p); }
     }
     for (let s = 0; s < n; s++) if (this.ready[s]) this.active = true;
-    st.cpuMs = performance.now() - t0;
+    st.cpuMs = timing ? performance.now() - t0 : 0; // boxed doubles: only while pass timing is on
     return this.active;
   }
 
