@@ -236,7 +236,13 @@ export const PROJ_PITCHED_VFOV_DEG = 36;
  * @property {number} cosP - cos(pitch), RE-02a: the horizontal fog-distance factor (28.1 A2 item 3)
  * @property {number} sinP - sin(pitch)
  * @property {Float64Array} M - world -> clip, refreshed by pitchedTerms
+ * @property {0|1} ortho - US-068a (38.19): 1 = parallel rays (`cam.projection = 'ortho'`); then `projection` is 'ortho'
+ * @property {number} halfW - ortho half view width, m (0 in perspective)
+ * @property {number} halfH - ortho half view height, m (0 in perspective)
  */
+
+/** US-068a: the ortho eye sits this far behind the focus along -F (38.19). */
+export const ORTHO_BACK_M = 500;
 
 /**
  * Allocates a `PitchedTerms` object (with its `M` Float64Array(16)). The
@@ -255,6 +261,7 @@ export function createPitchedTerms() {
     uX: 0, uY: 0, uZ: 0,
     tanHalfX: 0, tanHalfY: 0,
     yawDeg: 0, pitchDeg: 0, vfovDeg: 0, cosP: 0, sinP: 0,
+    ortho: 0, halfW: 0, halfH: 0,
     M: new Float64Array(16),
   };
 }
@@ -269,8 +276,13 @@ export function createPitchedTerms() {
  * @returns {PitchedTerms}
  */
 export function pitchedTerms(cam, grid, out) {
-  if (cam.pitchDeg < -89 || cam.pitchDeg > 89) {
-    throw new Error(`pitchedTerms: pitchDeg ${cam.pitchDeg} out of range [-89, 89]`);
+  const isOrtho = cam.projection === 'ortho';
+  const pLim = isOrtho ? 90 : 89;
+  if (cam.pitchDeg < -pLim || cam.pitchDeg > pLim) {
+    throw new Error(`pitchedTerms: pitchDeg ${cam.pitchDeg} out of range [-${pLim}, ${pLim}]`);
+  }
+  if (isOrtho && !(cam.orthoHalfH > 0)) {
+    throw new Error(`pitchedTerms: ortho needs orthoHalfH > 0 (got ${cam.orthoHalfH})`);
   }
   const cols = grid.cols, rows = grid.rows;
   const yawRad = (cam.yawDeg * Math.PI) / 180;
@@ -287,18 +299,30 @@ export function pitchedTerms(cam, grid, out) {
   const tanHalfY = Math.tan((vfovDeg * Math.PI) / 180 / 2);
   const tanHalfX = tanHalfY * aspect;
 
-  out.projection = 'pitched';
+  out.projection = isOrtho ? 'ortho' : 'pitched';
   out.near = PROJ_NEAR;
   out.cols = cols; out.rows = rows; out.aspect = aspect;
-  out.eyeX = cam.x; out.eyeY = cam.y; out.eyeZ = cam.z;
+  if (isOrtho) {
+    // eye = focus - ORTHO_BACK_M*F when the cam carries a focus, else cam.x/y/z is the eye
+    const hasF = cam.focusX !== undefined;
+    out.eyeX = hasF ? cam.focusX - ORTHO_BACK_M * fX : cam.x;
+    out.eyeY = hasF ? cam.focusY - ORTHO_BACK_M * fY : cam.y;
+    out.eyeZ = hasF ? cam.focusZ - ORTHO_BACK_M * fZ : cam.z;
+  } else {
+    out.eyeX = cam.x; out.eyeY = cam.y; out.eyeZ = cam.z;
+  }
+  out.ortho = isOrtho ? 1 : 0;
+  out.halfH = isOrtho ? cam.orthoHalfH : 0;
+  out.halfW = isOrtho ? cam.orthoHalfH * aspect : 0;
   out.fX = fX; out.fY = fY; out.fZ = fZ;
   out.rX = rX; out.rY = rY;
   out.uX = uX; out.uY = uY; out.uZ = uZ;
-  out.tanHalfX = tanHalfX; out.tanHalfY = tanHalfY;
+  // ortho: the tanHalf slots carry halfW/halfH (38.19), so a/b below are already metres
+  out.tanHalfX = isOrtho ? out.halfW : tanHalfX; out.tanHalfY = isOrtho ? out.halfH : tanHalfY;
   out.yawDeg = cam.yawDeg; out.pitchDeg = cam.pitchDeg; out.vfovDeg = vfovDeg;
   out.cosP = cosP; out.sinP = sinP;
 
-  pitchedProjection(out, out.M);
+  if (isOrtho) orthoProjection(out, out.M); else pitchedProjection(out, out.M);
   return out;
 }
 
@@ -346,6 +370,28 @@ export function pitchedProjection(terms, out16) {
 }
 
 /**
+ * US-068a (38.19): ortho `M` (column-major, same layout/NDC as pitchedProjection). row_x = (R,-R.eye)/halfW,
+ * row_y = -(U,-U.eye)/halfH + (0,0,0,1/rows), row_z = linear vd [near,far] -> [-1,1], row_w = (0,0,0,1).
+ * @param {PitchedTerms} terms
+ * @param {Float64Array} out16
+ * @returns {Float64Array}
+ */
+export function orthoProjection(terms, out16) {
+  const { fX, fY, fZ, rX, rY, uX, uY, uZ, eyeX, eyeY, eyeZ, rows } = terms;
+  const xS = 1 / terms.halfW, yS = 1 / terms.halfH;
+  const dotR = rX * eyeX + rY * eyeY;
+  const dotU = uX * eyeX + uY * eyeY + uZ * eyeZ;
+  const dotF = fX * eyeX + fY * eyeY + fZ * eyeZ;
+  const zS = 2 / (PROJ_FAR - PROJ_NEAR);
+  const zD = -(2 * dotF + PROJ_FAR + PROJ_NEAR) / (PROJ_FAR - PROJ_NEAR);
+  out16[0] = xS * rX; out16[1] = -yS * uX; out16[2] = zS * fX; out16[3] = 0;
+  out16[4] = xS * rY; out16[5] = -yS * uY; out16[6] = zS * fY; out16[7] = 0;
+  out16[8] = 0; out16[9] = -yS * uZ; out16[10] = zS * fZ; out16[11] = 0;
+  out16[12] = -xS * dotR; out16[13] = yS * dotU + 1 / rows; out16[14] = zD; out16[15] = 1;
+  return out16;
+}
+
+/**
  * Cell ray for the pitched camera (28.1 "cell convention"): origin = eye,
  * direction `F + a*R + b*U` (not normalised - the forward component is 1,
  * so the distance along `dir` is the view depth `vd`). `col`/`row` may be
@@ -359,6 +405,13 @@ export function pitchedProjection(terms, out16) {
 export function screenRay(terms, col, row, out) {
   const a = ((2 * (col + 0.5)) / terms.cols - 1) * terms.tanHalfX;
   const b = (1 - (2 * row) / terms.rows) * terms.tanHalfY;
+  if (terms.ortho) { // parallel rays: origin moves, dir = F (a/b already in metres)
+    out.ox = terms.eyeX + a * terms.rX + b * terms.uX;
+    out.oy = terms.eyeY + a * terms.rY + b * terms.uY;
+    out.oz = terms.eyeZ + b * terms.uZ;
+    out.dx = terms.fX; out.dy = terms.fY; out.dz = terms.fZ;
+    return out;
+  }
   out.ox = terms.eyeX; out.oy = terms.eyeY; out.oz = terms.eyeZ;
   out.dx = terms.fX + a * terms.rX + b * terms.uX;
   out.dy = terms.fY + a * terms.rY + b * terms.uY;
@@ -378,6 +431,12 @@ export function screenRay(terms, col, row, out) {
 export function unprojectPitched(terms, col, row, vd, out3) {
   const a = ((2 * (col + 0.5)) / terms.cols - 1) * terms.tanHalfX;
   const b = (1 - (2 * row) / terms.rows) * terms.tanHalfY;
+  if (terms.ortho) {
+    out3[0] = terms.eyeX + a * terms.rX + b * terms.uX + vd * terms.fX;
+    out3[1] = terms.eyeY + a * terms.rY + b * terms.uY + vd * terms.fY;
+    out3[2] = terms.eyeZ + b * terms.uZ + vd * terms.fZ;
+    return out3;
+  }
   const dx = terms.fX + a * terms.rX + b * terms.uX;
   const dy = terms.fY + a * terms.rY + b * terms.uY;
   const dz = terms.fZ + b * terms.uZ;
@@ -402,9 +461,14 @@ export function worldToCell(terms, x, y, z, out3) {
   const dx = x - terms.eyeX, dy = y - terms.eyeY, dz = z - terms.eyeZ;
   const vd = dx * terms.fX + dy * terms.fY + dz * terms.fZ;
   out3[2] = vd;
-  if (vd <= 0) return out3;
   const vx = dx * terms.rX + dy * terms.rY; // rZ = 0
   const vy = dx * terms.uX + dy * terms.uY + dz * terms.uZ;
+  if (terms.ortho) { // no perspective divide; vd may be <= 0 (behind the far-back eye)
+    out3[0] = (vx / terms.tanHalfX + 1) * (terms.cols / 2) - 0.5;
+    out3[1] = (1 - vy / terms.tanHalfY) * (terms.rows / 2);
+    return out3;
+  }
+  if (vd <= 0) return out3;
   out3[0] = (vx / vd / terms.tanHalfX + 1) * (terms.cols / 2) - 0.5;
   out3[1] = (1 - vy / vd / terms.tanHalfY) * (terms.rows / 2);
   return out3;
@@ -445,10 +509,11 @@ export function pitchedEyeFromFocus(fx, fy, fz, yawDeg, pitchDeg, dist, out3) {
  * requested explicitly (`cam.projection = 'pitched'`).
  * @param {{projection?: 'shear'|'pitched'}} cam
  * @param {string} [renderer] - 'dda' | 'mesh' - an unset projection resolves to pitched on 'mesh', shear on 'dda' (RE-02b)
- * @returns {'shear'|'pitched'}
+ * @returns {'shear'|'pitched'|'ortho'}
  */
 export function resolveProjection(cam, renderer) {
   if (cam.projection === 'pitched') return 'pitched';
+  if (cam.projection === 'ortho') return 'ortho';
   if (cam.projection === 'shear') return 'shear';
   return renderer === 'mesh' ? 'pitched' : 'shear';
 }
@@ -469,7 +534,8 @@ export const PITCH_CLAMP_PITCHED_DEG = 70;
 
 /** The 28.1 throw: DDA, voxel march and the CPU caster only know the shear camera. */
 export function assertProjectionRenderer(cam, renderer) {
-  if (resolveProjection(cam, renderer) === 'pitched' && renderer !== 'mesh') {
+  const rp = resolveProjection(cam, renderer);
+  if ((rp === 'pitched' || rp === 'ortho') && renderer !== 'mesh') {
     throw new Error("cam.projection 'pitched' requires renderer 'mesh'");
   }
 }
@@ -485,6 +551,7 @@ export function assertProjectionRenderer(cam, renderer) {
  * @returns {number}
  */
 export function pitchedFogScale(terms, row) {
+  if (terms.ortho) return terms.cosP; // parallel rays: constant (38.19)
   const b = (1 - (2 * row) / terms.rows) * terms.tanHalfY;
   const k = terms.cosP - b * terms.sinP;
   return k > 0 ? k : 0;
@@ -528,7 +595,8 @@ const _framePitched = createPitchedTerms();
  * @returns {Float64Array}
  */
 export function frameMatrix(cam, grid, out16, renderer = 'mesh') {
-  if (resolveProjection(cam, renderer) === 'pitched') {
+  const rp = resolveProjection(cam, renderer);
+  if (rp === 'pitched' || rp === 'ortho') {
     pitchedTerms(cam, grid, _framePitched);
     out16.set(_framePitched.M);
   } else {
