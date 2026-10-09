@@ -835,8 +835,8 @@ export class World {
   rebuildMeshColliders() {
     this._meshCollidersDirty = false;
     if (this.physicsMode !== 'mesh') return;
-    const c = buildStaticMeshCollider(this);
     const i = this.colliders.findIndex((x) => x.id === 'meshes:static');
+    const c = buildStaticMeshCollider(this, i >= 0 ? this.colliders[i] : null); // same object back = refitted in place
     if (i >= 0) {
       if (c) this.colliders[i] = c; else this.colliders.splice(i, 1);
     } else if (c) this.colliders.push(c);
