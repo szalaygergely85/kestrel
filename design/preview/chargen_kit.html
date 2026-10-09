@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - CHARGEN-01 preview: human kit v0, base m_avg (design v1.54)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:17px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  h3 { font-size:14px; margin:14px 0 4px; color:#e0b860; }
+  .note { color:#8a8778; font-size:12px; max-width:1400px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .info { color:#8fb4e0; } .warn { color:#e0b040; }
+  canvas { display:block; background:#0b0d12; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:12px; align-items:center; font-size:13px; }
+  .controls.local { position:static; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:36px; display:inline-block; }
+  button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  button.on { border-color:#ffd24a; color:#ffd24a; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; margin:6px 0 12px; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin-top:2px; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+  .sw { display:inline-block; width:22px; height:16px; border:1px solid #000; vertical-align:middle; margin-right:2px; }
+  table.r { border-collapse:collapse; font-size:12px; margin:4px 0 10px; }
+  table.r td { padding:2px 8px 2px 0; vertical-align:middle; font-family:Consolas, monospace; }
+</style>
+</head>
+<body>
+<h1>Kestrel : CHARGEN-01 preview - human kit v0, base <code>m_avg</code> (design v1.54) - owner: please OK the realism before CHARGEN-04</h1>
+<div class="note">
+  Kit = <code>content/chargen/human.charkit.json</code> (the only source), written by <code>node design/chargen/build_human_kit.mjs</code> from
+  <code>design/chargen/human_kit.js</code>. A realistic 1.75 m man built from 2.5 cm voxels (37 x 20 x 70), 22 humanoid bones (rigid, one bone per
+  voxel), folding to 8 parts in-game. Bald on purpose: hair, beards and clothes are CHARGEN-04b pieces; the base wears undyed linen braies.
+  Section 1-2 = the lit mesh look (flat cubes, palette colours, key light + sky light + shadows: roughly what the exported <code>.glb</code> shows in
+  the app's three.js viewer). Section 3 = the in-game ASCII look (palette v1 shader + edge rules). Section 4 = the rig with test poses (not clips;
+  clips are CHARGEN-04a). Needs http for the JSON check: <code>python -m http.server</code> from the repo root, open <code>/design/preview/chargen_kit.html</code>.
+  Tests: <code>node tools/chargen-kit.test.mjs</code>.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>light az <input type="range" id="az" min="-180" max="180" step="1" value="-35"><span class="val" id="azV"></span></label>
+  <label>elev <input type="range" id="el" min="0" max="85" step="1" value="40"><span class="val" id="elV"></span></label>
+  <label>sun <input type="range" id="int" min="0" max="1.5" step="0.01" value="1.0"><span class="val" id="intV"></span></label>
+  <label>ambient x <input type="range" id="amb" min="0" max="3" step="0.05" value="1.0"><span class="val" id="ambV"></span></label>
+  <label>view turn <input type="range" id="yaw" min="-180" max="180" step="5" value="-25"><span class="val" id="yawV"></span></label>
+  <label>view pitch <input type="range" id="pitch" min="-10" max="60" step="1" value="8"><span class="val" id="pitchV"></span></label>
+  <label><input type="checkbox" id="spin"> turntable</label>
+  <label>eyes <select id="eyes"></select></label>
+  <label>brows (hair colour) <select id="brows"></select></label>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">building ...</div></div>
+
+<h2>1. The base in all 5 skin tones (lit mesh look)</h2>
+<div class="row" id="tones"></div>
+
+<h2>2. One tone: four angles and the face</h2>
+<div class="controls local" id="toneBar"></div>
+<div class="row" id="angles"></div>
+<div class="row" id="face"></div>
+
+<h2>3. In-game look (ASCII; palette v1 shader + edge rules): near, mid, far</h2>
+<div class="row" id="ascii"></div>
+
+<h2>4. Rig: 22 bones (colours), joints (white dots), test poses</h2>
+<div class="controls local" id="poseBar"></div>
+<div class="row" id="rig"></div>
+<div id="legend" class="note"></div>
+
+<h2>5. Ramps (palette.chargen, appended to design/palette.js)</h2>
+<div id="ramps"></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../chargen/human_kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  var A = window.ASSETS, P = A && A.palette, U = P && P.util, DP = A && A.detailPass, CK = A && A.chargenKit, D2R = Math.PI / 180;
+  var $ = function (id) { return document.getElementById(id); };
+  if (!P || !CK) { $('fatal').textContent = 'palette.js or chargen/human_kit.js did not load (see the console).'; return; }
+  var FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+
+  // ------------------------------------------------------------------ kit (generator now; the JSON replaces it if present)
+  var kit = CK.buildHumanKit(P), genText = CK.stringifyKit(kit), jsonLine = ['info', 'INFO content/chargen/human.charkit.json: loading ...'];
+  var D, S, NB, NAMES, BAABB, JOINTS, PARENT, FULLBOX, TONES;
+  function setup() {
+    D = CK.decodeBase(kit, 'm_avg'); S = D.size; NAMES = D.names; NB = NAMES.length; FULLBOX = [0, 0, 0, S[0], S[1], S[2]];
+    BAABB = NAMES.map(function () { return [1e9, 1e9, 1e9, -1e9, -1e9, -1e9]; });
+    for (var z = 0; z < S[2]; z++) for (var y = 0; y < S[1]; y++) for (var x = 0; x < S[0]; x++) {
+      var k = D.at(x, y, z); if (k < 0 || D.bone[k] < 0) continue;
+      var b = BAABB[D.bone[k]];
+      b[0] = Math.min(b[0], x); b[1] = Math.min(b[1], y); b[2] = Math.min(b[2], z);
+      b[3] = Math.max(b[3], x + 1); b[4] = Math.max(b[4], y + 1); b[5] = Math.max(b[5], z + 1);
+    }
+    JOINTS = NAMES.map(function (n) { return kit.bases.m_avg.bones[n].joint; });
+    PARENT = kit.skeleton.map(function (b) { return b.parent === null ? -1 : NAMES.indexOf(b.parent); });
+    TONES = Object.keys(kit.ramps.skin);
+  }
+  setup();
+
+  // ------------------------------------------------------------------ controls
+  var ctl = { tone: 'medium', pose: 'rest', collapsed: false, rots: {} };
+  Object.keys(kit.ramps.eyes).forEach(function (e) { var o = document.createElement('option'); o.textContent = e; $('eyes').appendChild(o); });
+  Object.keys(kit.ramps.hair).forEach(function (e) { var o = document.createElement('option'); o.textContent = e; $('brows').appendChild(o); });
+  function readCtl() {
+    ['az', 'el', 'int', 'amb', 'yaw', 'pitch'].forEach(function (k) { ctl[k] = +$(k).value; $(k + 'V').textContent = ctl[k]; });
+    ctl.eyes = $('eyes').value; ctl.brows = $('brows').value; ctl.spin = $('spin').checked;
+  }
+  readCtl();
+  function recipe(tone) { return { skin: tone, eyes: ctl.eyes, hair: { id: 'preview', ramp: ctl.brows }, beard: null }; }
+  function lightVec() { var a = ctl.az * D2R, e = ctl.el * D2R; return [Math.sin(a) * Math.cos(e), -Math.cos(a) * Math.cos(e), Math.sin(e)]; }
+  function charTable(rc) {   // slot char -> { key, mat, rgb }
+    var t = {};
+    for (var c in kit.slots) {
+      var key = CK.resolveMat(kit, rc, c), m = key && P.materials[key];
+      t[c] = { key: key, mat: m, rgb: m ? P.rgb[m.base] : [255, 0, 255] };
+    }
+    return t;
+  }
+
+  // ------------------------------------------------------------------ maths
+  function mul3(a, b) { var o = new Array(9); for (var i = 0; i < 3; i++) for (var j = 0; j < 3; j++) o[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j]; return o; }
+  function app3(m, v) { return [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]]; }
+  function rotM(rx, ry, rz) {   // R = Rz * Ry * Rx (engine Euler order)
+    var cx = Math.cos(rx * D2R), sx = Math.sin(rx * D2R), cy = Math.cos(ry * D2R), sy = Math.sin(ry * D2R), cz = Math.cos(rz * D2R), sz = Math.sin(rz * D2R);
+    return mul3(mul3([cz, -sz, 0, sz, cz, 0, 0, 0, 1], [cy, 0, sy, 0, 1, 0, -sy, 0, cy]), [1, 0, 0, 0, cx, -sx, 0, sx, cx]);
+  }
+  var I3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+  function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+  function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+
+  // pose: per bone { R, t } (rest cells -> world cells). Joints are translation-only, rest rotation identity.
+  function computePose(rots, collapsed) {
+    var W = new Array(NB);
+    function local(R, j) { var rj = app3(R, j); return { R: R, t: [j[0] - rj[0], j[1] - rj[1], j[2] - rj[2]] }; }
+    function compose(Pa, L) { var tt = app3(Pa.R, L.t); return { R: mul3(Pa.R, L.R), t: [tt[0] + Pa.t[0], tt[1] + Pa.t[1], tt[2] + Pa.t[2]] }; }
+    function Rof(n) { var r = rots[n]; return r ? rotM(r[0], r[1], r[2]) : I3; }
+    var i;
+    if (!collapsed) {
+      for (i = 0; i < NB; i++) { var L = local(Rof(NAMES[i]), JOINTS[i]); W[i] = PARENT[i] < 0 ? L : compose(W[PARENT[i]], L); }
+      return W;
+    }
+    // in-game 8 parts (38.29 item 1): part rotation = root bone (body / head also compose the second bone), at the root joint
+    var PM = kit.partMap, partOf = {}, PW = {}, p;
+    for (p in PM) PM[p].forEach(function (b) { partOf[b] = p; });
+    for (p in PM) {
+      var bones = PM[p], ri = NAMES.indexOf(bones[0]), R = Rof(bones[0]);
+      if (p === 'body' || p === 'head') R = mul3(R, Rof(bones[1]));
+      var Lp = local(R, JOINTS[ri]), par = PARENT[ri] < 0 ? null : PW[partOf[NAMES[PARENT[ri]]]];
+      PW[p] = par ? compose(par, Lp) : Lp;
+      bones.forEach(function (b) { W[NAMES.indexOf(b)] = PW[p]; });
+    }
+    return W;
+  }
+
+  // ------------------------------------------------------------------ voxel ray cast (DDA; per bone when posed)
+  var DO = [0, 0, 0], DDv = [0, 0, 0], IX = [0, 0, 0], ST = [0, 0, 0], TM = [0, 0, 0], TDl = [0, 0, 0];
+  var TMP = { t: 0, k: -1, face: -1, fs: 0, px: 0, py: 0, pz: 0 };
+  function dda(ox, oy, oz, dx, dy, dz, box, bf, tBest, out) {
+    if (box[0] >= box[3]) return false;
+    DO[0] = ox; DO[1] = oy; DO[2] = oz; DDv[0] = dx; DDv[1] = dy; DDv[2] = dz;
+    var t0 = 0, t1 = tBest, ea = -1, a;
+    for (a = 0; a < 3; a++) {
+      var lo = box[a], hi = box[a + 3], o = DO[a], d = DDv[a];
+      if (Math.abs(d) < 1e-12) { if (o < lo || o > hi) return false; continue; }
+      var ta = (lo - o) / d, tb = (hi - o) / d;
+      if (ta > tb) { var sw = ta; ta = tb; tb = sw; }
+      if (ta > t0) { t0 = ta; ea = a; }
+      if (tb < t1) t1 = tb;
+      if (t0 > t1) return false;
+    }
+    for (a = 0; a < 3; a++) {
+      var dd = DDv[a], c = Math.floor(DO[a] + dd * t0);
+      if (c < box[a]) c = box[a]; if (c > box[a + 3] - 1) c = box[a + 3] - 1;
+      IX[a] = c;
+      if (dd > 0) { ST[a] = 1; TM[a] = (c + 1 - DO[a]) / dd; TDl[a] = 1 / dd; }
+      else if (dd < 0) { ST[a] = -1; TM[a] = (c - DO[a]) / dd; TDl[a] = -1 / dd; }
+      else { ST[a] = 0; TM[a] = Infinity; TDl[a] = Infinity; }
+    }
+    var t = t0, face = ea;
+    for (var it = 0; it < 400; it++) {
+      var k = D.at(IX[0], IX[1], IX[2]);
+      if (k >= 0 && (bf < 0 || D.bone[k] === bf)) {
+        out.t = t; out.k = k; out.face = face; out.fs = face >= 0 ? -ST[face] : 0;
+        out.px = ox + dx * t; out.py = oy + dy * t; out.pz = oz + dz * t;
+        return true;
+      }
+      a = TM[0] < TM[1] ? (TM[0] < TM[2] ? 0 : 2) : (TM[1] < TM[2] ? 1 : 2);
+      t = TM[a]; if (t > t1) return false;
+      IX[a] += ST[a]; TM[a] += TDl[a]; face = a;
+      if (IX[a] < box[a] || IX[a] >= box[a + 3]) return false;
+    }
+    return false;
+  }
+  var HIT = { t: 0, k: -1, nx: 0, ny: 0, nz: 0, px: 0, py: 0, pz: 0, face: -1 };
+  function fill(out, h, R) {
+    out.t = h.t; out.k = h.k; out.face = h.face; out.px = h.px; out.py = h.py; out.pz = h.pz;
+    var n = [0, 0, 0]; if (h.face >= 0) n[h.face] = h.fs;
+    if (R) n = app3(R, n);
+    out.nx = n[0]; out.ny = n[1]; out.nz = n[2];
+  }
+  function castRay(ox, oy, oz, dx, dy, dz, pose, out, anyHit) {
+    var best = 1e9, hit = false;
+    if (!pose) {
+      if (dda(ox, oy, oz, dx, dy, dz, FULLBOX, -1, best, TMP)) { fill(out, TMP, null); hit = true; }
+      return hit;
+    }
+    for (var b = 0; b < NB; b++) {
+      var T = pose[b], R = T.R, qx = ox - T.t[0], qy = oy - T.t[1], qz = oz - T.t[2];
+      var lox = R[0] * qx + R[3] * qy + R[6] * qz, loy = R[1] * qx + R[4] * qy + R[7] * qz, loz = R[2] * qx + R[5] * qy + R[8] * qz;
+      var ldx = R[0] * dx + R[3] * dy + R[6] * dz, ldy = R[1] * dx + R[4] * dy + R[7] * dz, ldz = R[2] * dx + R[5] * dy + R[8] * dz;
+      if (dda(lox, loy, loz, ldx, ldy, ldz, BAABB[b], b, best, TMP)) {
+        best = TMP.t; fill(out, TMP, R); hit = true;
+        if (anyHit) return true;
+      }
+    }
+    return hit;
+  }
+
+  // ------------------------------------------------------------------ cameras (cells; character faces -y, so yaw 0 = the FRONT)
+  function orthoCam(center, yawDeg, pitchDeg, W, H, viewH, aspect) {
+    var a = yawDeg * D2R, p = pitchDeg * D2R, R = 300;
+    var pos = [center[0] + R * Math.sin(a) * Math.cos(p), center[1] - R * Math.cos(a) * Math.cos(p), center[2] + R * Math.sin(p)];
+    var fwd = norm([center[0] - pos[0], center[1] - pos[1], center[2] - pos[2]]);
+    var right = norm(cross([0, 0, 1], fwd)), up = cross(fwd, right), ph = viewH / H, pw = ph / (aspect || 1);
+    return {
+      W: W, H: H, fwd: fwd, ph: ph, pw: pw,
+      ray: function (px, py, O) {
+        var sx = (px + 0.5 - W / 2) * pw, sy = (H / 2 - (py + 0.5)) * ph;
+        O[0] = pos[0] + right[0] * sx + up[0] * sy; O[1] = pos[1] + right[1] * sx + up[1] * sy; O[2] = pos[2] + right[2] * sx + up[2] * sy;
+      },
+      project: function (Pt) { var q = [Pt[0] - pos[0], Pt[1] - pos[1], Pt[2] - pos[2]]; return [dot(q, right) / pw + W / 2, H / 2 - dot(q, up) / ph]; }
+    };
+  }
+  var BODY_C = [18.5, 10.5, 35.5];
+
+  // ------------------------------------------------------------------ trace once, shade per colour table
+  function traceView(cam, pose) {
+    var n = cam.W * cam.H, L = lightVec(), O = [0, 0, 0], d = cam.fwd;
+    var B = { cam: cam, kind: new Uint8Array(n), k: new Int32Array(n), nz: new Float32Array(n), lit: new Float32Array(n),
+              depth: new Float32Array(n), u: new Float32Array(n), v: new Float32Array(n) };
+    var SH = { t: 0 };
+    for (var py = 0; py < cam.H; py++) for (var px = 0; px < cam.W; px++) {
+      var i = py * cam.W + px;
+      cam.ray(px, py, O);
+      var hv = castRay(O[0], O[1], O[2], d[0], d[1], d[2], pose, HIT, false);
+      var tg = d[2] < 0 ? -O[2] / d[2] : Infinity;
+      if (hv && HIT.t < tg) {
+        var wx = O[0] + d[0] * HIT.t, wy = O[1] + d[1] * HIT.t, wz = O[2] + d[2] * HIT.t;
+        var ndl = HIT.nx * L[0] + HIT.ny * L[1] + HIT.nz * L[2], lit = 0;
+        if (ndl > 0) {
+          var sx = wx + HIT.nx * 0.02, sy = wy + HIT.ny * 0.02, sz = wz + HIT.nz * 0.02;
+          var hk = HIT.k, hnz = HIT.nz, hf = HIT.face, hpx = HIT.px, hpy = HIT.py, hpz = HIT.pz;
+          lit = castRay(sx, sy, sz, L[0], L[1], L[2], pose, SH, true) ? 0 : ndl;
+          HIT.k = hk; HIT.nz = hnz; HIT.face = hf; HIT.px = hpx; HIT.py = hpy; HIT.pz = hpz;
+        }
+        B.kind[i] = 2; B.k[i] = HIT.k; B.nz[i] = HIT.nz; B.lit[i] = lit; B.depth[i] = HIT.t;
+        // texture coords (m) in rest space, per face axis (ASCII shader)
+        var cm = kit.cellM;
+        if (HIT.face === 0) { B.u[i] = HIT.py * cm; B.v[i] = HIT.pz * cm; }
+        else if (HIT.face === 1) { B.u[i] = HIT.px * cm; B.v[i] = HIT.pz * cm; }
+        else { B.u[i] = HIT.px * cm; B.v[i] = HIT.py * cm; }
+      } else if (tg < Infinity) {
+        var gx = O[0] + d[0] * tg, gy = O[1] + d[1] * tg;
+        if (Math.hypot(gx - 18.5, gy - 10.5) < 30) {
+          B.kind[i] = 1; B.depth[i] = tg; B.u[i] = gx * 0.025; B.v[i] = gy * 0.025;
+          B.lit[i] = castRay(gx, gy, 0.01, L[0], L[1], L[2], pose, SH, true) ? 0 : Math.max(0, L[2]);
+        }
+      }
+    }
+    return B;
+  }
+  var SKY = [0.60, 0.66, 0.80], BOUNCE = [0.45, 0.38, 0.30];
+  function paintMesh(ctx, B, colorOfK) {
+    var cam = B.cam, img = ctx.createImageData(cam.W, cam.H), px = img.data, n = cam.W * cam.H;
+    for (var i = 0; i < n; i++) {
+      var r = 11, g = 13, b = 18, kd = B.kind[i];
+      if (kd === 2) {
+        var c = colorOfK(B.k[i]), h = 0.5 + 0.5 * B.nz[i], s = ctl.int * 0.72 * B.lit[i], a = 0.40 * ctl.amb;
+        r = c[0] * ((SKY[0] * h + BOUNCE[0] * (1 - h)) * a + s);
+        g = c[1] * ((SKY[1] * h + BOUNCE[1] * (1 - h)) * a + s * 0.97);
+        b = c[2] * ((SKY[2] * h + BOUNCE[2] * (1 - h)) * a + s * 0.9);
+      } else if (kd === 1) {
+        var gl = 0.45 * ctl.amb * 0.6 + 0.55 * ctl.int * B.lit[i];
+        r = 58 * gl + 10; g = 62 * gl + 12; b = 52 * gl + 14;
+      }
+      px[i * 4] = Math.min(255, r); px[i * 4 + 1] = Math.min(255, g); px[i * 4 + 2] = Math.min(255, b); px[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+  function makeCanvas(host, W, H, cap) {
+    var wrap = document.createElement('div'), cv = document.createElement('canvas'), c = document.createElement('div');
+    cv.width = W; cv.height = H; c.className = 'cap'; c.textContent = cap || '';
+    wrap.appendChild(cv); wrap.appendChild(c); host.appendChild(wrap);
+    return { cv: cv, ctx: cv.getContext('2d'), cap: c };
+  }
+
+  // ------------------------------------------------------------------ section 1: five tones
+  var toneViews = TONES.map(function (t) { return makeCanvas($('tones'), 130, 272, t); });
+  function renderTones() {
+    var cam = orthoCam(BODY_C, ctl.yaw, ctl.pitch, 130, 272, 76), B = traceView(cam, null);
+    TONES.forEach(function (t, j) {
+      var tab = charTable(recipe(t));
+      paintMesh(toneViews[j].ctx, B, function (k) { return tab[D.ch[k]].rgb; });
+      toneViews[j].cap.textContent = t + ' (skin ' + kit.ramps.skin[t].base + ')';
+    });
+  }
+
+  // ------------------------------------------------------------------ section 2: angles + face
+  TONES.forEach(function (t) {
+    var b = document.createElement('button'); b.textContent = t; if (t === ctl.tone) b.classList.add('on');
+    b.onclick = function () { ctl.tone = t; Array.prototype.forEach.call($('toneBar').children, function (x) { x.classList.toggle('on', x === b); }); renderAll(); };
+    $('toneBar').appendChild(b);
+  });
+  var ANG = [[0, 'front'], [90, 'right side (his left)'], [180, 'back'], [-90, 'left side (his right)'], [-35, '3/4 front']];
+  var angleViews = ANG.map(function (a) { return makeCanvas($('angles'), 170, 352, a[1]); });
+  var faceViews = [[0, 'face front'], [-35, 'face 3/4'], [-90, 'face profile']].map(function (a) { return { yaw: a[0], v: makeCanvas($('face'), 240, 240, a[1]) }; });
+  function renderAngles() {
+    var tab = charTable(recipe(ctl.tone)), col = function (k) { return tab[D.ch[k]].rgb; };
+    ANG.forEach(function (a, j) { paintMesh(angleViews[j].ctx, traceView(orthoCam(BODY_C, a[0] + (ctl.spin ? ctl.yaw : 0), ctl.pitch, 170, 352, 74), null), col); });
+    faceViews.forEach(function (f) { paintMesh(f.v.ctx, traceView(orthoCam([18.5, 9.5, 64.5], f.yaw, 4, 240, 240, 13), null), col); });
+  }
+
+  // ------------------------------------------------------------------ section 3: ASCII
+  var asciiDefs = [{ rows: 84, cw: 6, ch: 12, label: 'near (~2.5 m)', dist: 2.5 }, { rows: 42, cw: 6, ch: 12, label: 'mid (~6 m)', dist: 6 },
+                   { rows: 21, cw: 6, ch: 12, label: 'far (~12 m)', dist: 12 }];
+  var asciiViews = asciiDefs.map(function (d) {
+    var cols = Math.round(d.rows * 1.0), v = makeCanvas($('ascii'), cols * d.cw, d.rows * d.ch, d.label);
+    v.ctx.font = Math.round(d.ch * 0.92) + 'px ' + FONT; v.ctx.textAlign = 'center'; v.ctx.textBaseline = 'middle';
+    v.cols = cols; v.d = d; return v;
+  });
+  function renderAscii() {
+    var tab = charTable(recipe(ctl.tone)), SHO = { fg: [0, 0, 0], bg: [0, 0, 0] }, Lacc = [0, 0, 0], E = DP && DP.edges;
+    asciiViews.forEach(function (v) {
+      var d = v.d, cols = v.cols, rows = d.rows;
+      // a text cell is twice as tall as wide: aspect 2
+      var cam = orthoCam(BODY_C, ctl.yaw, ctl.pitch, cols, rows, 76, 2), B = traceView(cam, null), n = cols * rows;
+      var gl = new Array(n), fg = new Float32Array(n * 3), bg = new Float32Array(n * 3), i, k;
+      for (i = 0; i < n; i++) {
+        if (!B.kind[i]) { gl[i] = ' '; bg[i * 3] = 7; bg[i * 3 + 1] = 8; bg[i * 3 + 2] = 12; continue; }
+        var mat = B.kind[i] === 2 ? tab[D.ch[B.k[i]]].mat : P.materials.grass;
+        Lacc[0] = 0; Lacc[1] = 0; Lacc[2] = 0;
+        U.addLight(Lacc, 'ambient', 0.14 * ctl.amb);
+        if (B.lit[i] > 0) U.addLight(Lacc, 'sun', ctl.int * B.lit[i]);
+        U.shade(mat, Lacc, B.u[i], B.v[i], d.dist, SHO, { fog: null, z: B.v[i] });
+        gl[i] = SHO.glyph;
+        for (k = 0; k < 3; k++) { fg[i * 3 + k] = SHO.fg[k]; bg[i * 3 + k] = SHO.bg[k]; }
+      }
+      if (E) {   // edge rules: cap (top), side, lip (bottom) where depth jumps, as voxel_bear / wildlife previews
+        var far = function (a, b) { return B.kind[b] === 0 || B.depth[b] > B.depth[a] * E.depthRatio + E.depthAbs; }, rule = new Int8Array(n), r, c;
+        for (r = 0; r < rows; r++) for (c = 0; c < cols; c++) {
+          i = r * cols + c; if (B.kind[i] !== 2) continue;
+          if (r > 0 && far(i, i - cols)) rule[i] = 1;
+          else if ((c > 0 && far(i, i - 1)) || (c < cols - 1 && far(i, i + 1))) rule[i] = 2;
+          else if (r < rows - 1 && far(i, i + cols)) rule[i] = 3;
+        }
+        var rim = E.modelRim || 0.55;
+        for (i = 0; i < n; i++) {
+          if (!rule[i]) continue;
+          var R = rule[i] === 1 ? E.rules.cap : rule[i] === 2 ? E.rules.side : E.rules.lip;
+          if (gl[i] !== ' ') gl[i] = R.glyph;
+          for (k = 0; k < 3; k++) { fg[i * 3 + k] = Math.min(255, fg[i * 3 + k] * R.gain) * rim; bg[i * 3 + k] *= rim; }
+        }
+      }
+      var ctx = v.ctx;
+      for (r = 0; r < rows; r++) for (c = 0; c < cols; c++) {
+        i = r * cols + c;
+        ctx.fillStyle = 'rgb(' + (bg[i * 3] | 0) + ',' + (bg[i * 3 + 1] | 0) + ',' + (bg[i * 3 + 2] | 0) + ')';
+        ctx.fillRect(c * d.cw, r * d.ch, d.cw + 0.5, d.ch + 0.5);
+        if (gl[i] && gl[i] !== ' ') {
+          ctx.fillStyle = 'rgb(' + (fg[i * 3] | 0) + ',' + (fg[i * 3 + 1] | 0) + ',' + (fg[i * 3 + 2] | 0) + ')';
+          ctx.fillText(gl[i], c * d.cw + d.cw / 2, r * d.ch + d.ch / 2 + 1);
+        }
+      }
+      v.cap.textContent = d.label + ': character ' + Math.round(rows * 70 / 76) + ' text rows tall';
+    });
+  }
+
+  // ------------------------------------------------------------------ section 4: rig + poses
+  var POSES = {
+    rest: {},
+    'wave (right arm up)': { RightShoulder: [0, -10, 0], RightUpperArm: [0, -125, 0], RightLowerArm: [0, -45, 0], Head: [0, 0, 12] },
+    'walk stride': { LeftUpperLeg: [-28, 0, 0], LeftLowerLeg: [12, 0, 0], RightUpperLeg: [22, 0, 0], RightLowerLeg: [35, 0, 0], RightFoot: [-10, 0, 0],
+                     LeftUpperArm: [22, 0, 0], RightUpperArm: [-25, 0, 0], RightLowerArm: [-20, 0, 0], LeftLowerArm: [-8, 0, 0], Spine: [0, 0, 6], Chest: [0, 0, -10] },
+    'talk (jaw open)': { Jaw: [16, 0, 0], Head: [-6, 0, 0] },
+    'look + nod': { Neck: [8, 0, 18], Head: [10, 0, 20] },
+    'reach forward': { RightUpperArm: [-80, 0, 0], RightLowerArm: [-20, 0, 0], LeftUpperArm: [-35, 0, 0], LeftLowerArm: [-60, 0, 0], Chest: [-6, 0, 0] }
+  };
+  Object.keys(POSES).forEach(function (pn) {
+    var b = document.createElement('button'); b.textContent = pn; if (pn === 'rest') b.classList.add('on');
+    b.onclick = function () {
+      ctl.pose = pn; ctl.rots = JSON.parse(JSON.stringify(POSES[pn]));
+      Array.prototype.forEach.call($('poseBar').querySelectorAll('button'), function (x) { x.classList.toggle('on', x === b); });
+      syncSliders(); renderRig();
+    };
+    $('poseBar').appendChild(b);
+  });
+  var colLab = document.createElement('label'); colLab.innerHTML = '<input type="checkbox" id="collapsed"> in-game 8 parts (no elbows / knees, 38.29 option A)';
+  $('poseBar').appendChild(colLab);
+  var colorBy = document.createElement('label'); colorBy.innerHTML = 'colour <select id="rigCol"><option value="bone">22 bones</option><option value="part">8 parts</option><option value="skin">skin (selected tone)</option></select>';
+  $('poseBar').appendChild(colorBy);
+  var boneSel = document.createElement('label'); boneSel.innerHTML = 'bone <select id="boneSel"></select>';
+  $('poseBar').appendChild(boneSel);
+  NAMES.forEach(function (n) { var o = document.createElement('option'); o.textContent = n; $('boneSel').appendChild(o); });
+  ['rx', 'ry', 'rz'].forEach(function (ax, ai) {
+    var l = document.createElement('label');
+    l.innerHTML = ax + ' <input type="range" id="s_' + ax + '" min="-180" max="180" step="1" value="0"><span class="val" id="s_' + ax + 'V">0</span>';
+    $('poseBar').appendChild(l);
+    l.querySelector('input').oninput = function (e) {
+      var bn = $('boneSel').value, r = ctl.rots[bn] || [0, 0, 0];
+      r[ai] = +e.target.value; ctl.rots[bn] = r; $('s_' + ax + 'V').textContent = r[ai]; renderRig();
+    };
+  });
+  function syncSliders() {
+    var r = ctl.rots[$('boneSel').value] || [0, 0, 0];
+    ['rx', 'ry', 'rz'].forEach(function (ax, ai) { $('s_' + ax).value = r[ai]; $('s_' + ax + 'V').textContent = r[ai]; });
+  }
+  $('boneSel').onchange = syncSliders;
+  $('collapsed').onchange = function () { ctl.collapsed = $('collapsed').checked; renderRig(); };
+  $('rigCol').onchange = function () { renderRig(); };
+  var rigViews = [[-30, 'rig 3/4 front'], [90, 'rig side'], [150, 'rig back 3/4']].map(function (a) { return { yaw: a[0], v: makeCanvas($('rig'), 200, 372, a[1]) }; });
+  function hsl(h, s, l) {
+    var c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2, r, g, b;
+    if (h < 60) { r = c; g = x; b = 0; } else if (h < 120) { r = x; g = c; b = 0; } else if (h < 180) { r = 0; g = c; b = x; }
+    else if (h < 240) { r = 0; g = x; b = c; } else if (h < 300) { r = x; g = 0; b = c; } else { r = c; g = 0; b = x; }
+    return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+  }
+  var BONE_RGB = NAMES.map(function (n, i) { return hsl((i * 137.5) % 360, 0.55, 0.55); });
+  var PART_NAMES = Object.keys(kit.partMap), PART_RGB = PART_NAMES.map(function (p, i) { return hsl((i * 45 + 10) % 360, 0.6, 0.55); });
+  var PART_OF_BONE = NAMES.map(function (n) { for (var i = 0; i < PART_NAMES.length; i++) if (kit.partMap[PART_NAMES[i]].indexOf(n) >= 0) return i; return 0; });
+  function renderRig() {
+    var pose = computePose(ctl.rots, ctl.collapsed), mode = $('rigCol').value, tab = charTable(recipe(ctl.tone));
+    var col = function (k) { var b = D.bone[k]; return mode === 'bone' ? BONE_RGB[b] : mode === 'part' ? PART_RGB[PART_OF_BONE[b]] : tab[D.ch[k]].rgb; };
+    rigViews.forEach(function (rv) {
+      var cam = orthoCam([18.5, 10.5, 36], rv.yaw, 10, 200, 372, 80), B = traceView(cam, pose);
+      paintMesh(rv.v.ctx, B, col);
+      var ctx = rv.v.ctx;
+      for (var i = 0; i < NB; i++) {
+        var T = pose[i], j = JOINTS[i], wj = app3(T.R, j), s = cam.project([wj[0] + T.t[0], wj[1] + T.t[1], wj[2] + T.t[2]]);
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(s[0] - 1.5, s[1] - 1.5, 3, 3);
+      }
+    });
+    var st = lastStats;
+    $('legend').innerHTML = (mode === 'part' ? PART_NAMES.map(function (p, i) {
+      return '<span class="sw" style="background:rgb(' + PART_RGB[i].map(Math.round).join(',') + ')"></span>' + p + ' (' + kit.partMap[p].join(', ') + ')';
+    }) : NAMES.map(function (n, i) {
+      return '<span class="sw" style="background:rgb(' + BONE_RGB[i].map(Math.round).join(',') + ')"></span>' + n + (st ? ' ' + st.perBone[n] : '');
+    })).join(' &nbsp; ') + '<br>Test poses only check the boxes and pivots (no clips in v0). Waist / knee seams are rigid by design (one bone per voxel).';
+  }
+
+  // ------------------------------------------------------------------ section 5: ramps
+  function sw(key) {
+    var m = P.materials[key], c = m ? P.colors[m.base] : '#ff00ff';
+    return '<span class="sw" title="' + key + ' ' + c + '" style="background:' + c + '"></span>';
+  }
+  function renderRamps() {
+    var h = '', id, s;
+    var groups = ['skin', 'hair', 'eyes', 'top'];
+    var titles = { skin: 'Skin tones (light, base, shade, deep, flush, nail, vein)', hair: 'Hair (light, base, dark, brow)', eyes: 'Eyes (iris)', top: 'Natural dyes (light, base, dark): top / legs / feet / outer / hat share them' };
+    groups.forEach(function (gr) {
+      h += '<h3>' + titles[gr] + '</h3><table class="r">';
+      for (id in kit.ramps[gr]) { h += '<tr><td>' + id + '</td><td>'; for (s in kit.ramps[gr][id]) h += sw(kit.ramps[gr][id][s]); h += '</td><td class="cap">' + Object.keys(kit.ramps[gr][id]).map(function (k) { return kit.ramps[gr][id][k]; }).join(' ') + '</td></tr>'; }
+      h += '</table>';
+    });
+    h += '<h3>Hand tint (CHARGEN-16: the 8 first-person hand skin keys per tone; skin_char and the fire keys stay)</h3><table class="r">';
+    for (id in kit.handTint) { h += '<tr><td>' + id + '</td><td>'; for (s in kit.handTint[id]) h += sw(kit.handTint[id][s]); h += '</td><td class="cap">' + Object.keys(kit.handTint[id]).join(' ') + '</td></tr>'; }
+    $('ramps').innerHTML = h + '</table>';
+  }
+
+  // ------------------------------------------------------------------ checks
+  var lastStats = null;
+  function runChecks() {
+    var out = [], res = CK.checkKit(kit, P, DP), st = res.stats.bases.m_avg;
+    lastStats = st;
+    out.push(jsonLine);
+    out.push([res.errors.length ? 'fail' : 'pass', (res.errors.length ? 'FAIL ' : 'PASS ') + 'checkKit: ' + (res.errors.slice(0, 8).join(' ; ') || 'no errors')]);
+    if (res.warnings.length) out.push(['warn', 'WARN ' + res.warnings.join(' ; ')]);
+    out.push(['info', 'INFO m_avg: ' + st.voxels + ' voxels, ' + st.quads + ' quads (per-bone greedy; 38.29 target 4-6k), ' +
+              st.heightM + ' m tall, ' + st.widthM + ' m wide (arms in), ' + st.depthM + ' m deep; ' + res.stats.materialKeys + ' material keys in the kit (<= 255 per character)']);
+    out.push(['info', 'INFO bones: ' + NAMES.map(function (n) { return n + ' ' + st.perBone[n]; }).join(', ')]);
+    var newK = P.chargen.newMaterials.length, missV2 = P.chargen.newMaterials.filter(function (r) { return !DP || !DP.materials[r.key]; }).length;
+    out.push([missV2 ? 'fail' : 'pass', (missV2 ? 'FAIL ' : 'PASS ') + 'palette.chargen: ' + newK + ' appended keys (colour + v1 material + v2 detail-pass record), missing v2: ' + missV2]);
+    var pv = U.validate().filter(function (e) { return P.chargen.newMaterials.some(function (r) { return e.indexOf(r.key) === 0; }); });
+    out.push([pv.length ? 'fail' : 'pass', (pv.length ? 'FAIL ' : 'PASS ') + 'palette.validate on the new keys' + (pv.length ? ': ' + pv.slice(0, 4).join(' ; ') : '')]);
+    var host = $('checks'); host.innerHTML = '';
+    out.forEach(function (o) { var d = document.createElement('div'); d.className = o[0]; d.textContent = o[1]; host.appendChild(d); });
+  }
+
+  // ------------------------------------------------------------------ main
+  function renderAll() {
+    try { renderTones(); renderAngles(); renderAscii(); renderRig(); }
+    catch (e) { $('fatal').textContent = 'render threw: ' + e.message; console.error(e); }
+  }
+  var pend = 0;
+  document.querySelectorAll('.controls input, .controls select').forEach(function (el) {
+    if (el.closest('#poseBar')) return;
+    el.addEventListener('input', function () { readCtl(); clearTimeout(pend); pend = setTimeout(renderAll, 30); });
+  });
+  function spin() {
+    if (ctl.spin) {
+      var y = +$('yaw').value + 10; if (y > 180) y -= 360; $('yaw').value = y; readCtl();
+      try { renderTones(); renderAngles(); } catch (e) { console.error(e); }
+    }
+    setTimeout(spin, 160);
+  }
+  try { runChecks(); renderRamps(); } catch (e) { $('checks').innerHTML = '<div class="fail">checks threw: ' + e.message + '</div>'; console.error(e); }
+  renderAll();
+  spin();
+
+  fetch('../../content/chargen/human.charkit.json', { cache: 'no-store' }).then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.text();
+  }).then(function (text) {
+    if (text === genText) {
+      jsonLine = ['pass', 'PASS content/chargen/human.charkit.json equals the generator (showing the JSON)'];
+      kit = JSON.parse(text); setup();
+    } else jsonLine = ['fail', 'FAIL content/chargen/human.charkit.json is stale: re-run node design/chargen/build_human_kit.mjs (showing the generator)'];
+    runChecks(); renderAll();
+  }).catch(function (e) {
+    jsonLine = ['warn', 'WARN content/chargen/human.charkit.json not readable (' + e.message + '): run node design/chargen/build_human_kit.mjs and serve over http (showing the generator)'];
+    runChecks();
+  });
+})();
+</script>
+</body>
+</html>
