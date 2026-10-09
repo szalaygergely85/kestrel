@@ -16,9 +16,12 @@
 //                  28..29 fhat (unit flow dir), 30 |f| (m/s; radial: |s|), 31 o = (signed speed * t) mod (1024 L)   (per slot, f64 -> f32)
 //                  32 mode (0 still, 1 linear, 2 radial), 33..34 circle centre, 35 nAng (radial angular streak count)
 //   36.1: 36 ou (packed drift until fill), 37 wavePhase, 38 tintDepth, 39 shoreW; 40..43 shape (rect bounds or circle centre/radius)
-//         44..46 foam codes, 47 foamN, 48..50 rim.rgb, 51 shapeKind (0 rect, 1 circle), 52 foamDepth, 53 foamFar, 54..55 reserved for surfaces; sheets: fallSpeed, sheetAlpha
+//         44..46 foam codes, 47 foamN, 48..50 rim.rgb, 51 shapeKind (0 rect, 1 circle), 52 foamDepth, 53 foamFar;
+//         54..55 surfaces: ripple glyph code, rippleK; sheets: fallSpeed, sheetAlpha   (S8-B2-13, 38.14)
 
 import { hashFastU } from './terrainShade.js';
+import { RIPPLE_MAX, RIPPLE_LIFE, RIPPLE_SPEED, RIPPLE_R0, RIPPLE_HALF_W } from '../world/water.js';
+import { STEP } from '../core/loop.js';
 
 export const WL_STRIDE = 56;
 export const WL_RAMP_MAX = 8;
@@ -31,6 +34,8 @@ export const WATER_FALL_SALT = 61;
 export const FLOW_MIN = 0.05;
 /** Waterfall sheets later take slots 8..11 (35.3). */
 export const WL_SLOTS = 12;
+/** Splash-ripple strength threshold (S8-B2-13, 38.14): below this, a ring is invisible (both twins). */
+export const RIPPLE_MIN = 0.15;
 
 /** The engine default look (the designer's `assets.waterLooks.water` overrides it by name). */
 export const DEFAULT_WATER_LOOK = Object.freeze({
@@ -40,6 +45,7 @@ export const DEFAULT_WATER_LOOK = Object.freeze({
   foamRamp: '*o.', foamDepth: 0.3, foamFar: 40,
   fallRamp: "|:'", fallSpeed: 8, highlight: [235, 245, 255], sheetAlpha: 0.75,
   streak: '-', streakLen: 1.0, streakW: 0.35, streakK: 0.7, // US-141a (35.4)
+  ripple: 'o', rippleK: 0.6, // S8-B2-13 (38.14): row 54/55, surfaces only
 });
 
 function bad(name, msg) { throw new Error(`waterLook "${name}": ${msg}`); }
@@ -80,6 +86,8 @@ export function packWaterLook(name, look, sheet = false) {
   if (!Number.isFinite(L.fallSpeed) || L.fallSpeed < 8) bad(name, 'fallSpeed must be finite and >= 8');
   if (!(L.sheetAlpha >= 0 && L.sheetAlpha <= 1)) bad(name, 'sheetAlpha must be 0..1');
   rgb3(name, 'highlight', L.highlight);
+  if (typeof L.ripple !== 'string' || L.ripple.length !== 1 || L.ripple.charCodeAt(0) < 33 || L.ripple.charCodeAt(0) > 126) bad(name, '"ripple" must be one printable ASCII glyph (no space)');
+  if (!(L.rippleK >= 0 && L.rippleK <= 1)) bad(name, '"rippleK" must be 0..1');
   const r = new Float32Array(WL_STRIDE);
   r[24] = L.streak.charCodeAt(0) - 32; r[25] = L.streakLen; r[26] = L.streakW; r[27] = L.streakK;
   r[0] = L.shallow[0]; r[1] = L.shallow[1]; r[2] = L.shallow[2]; r[3] = L.opaqueAt;
@@ -97,6 +105,8 @@ export function packWaterLook(name, look, sheet = false) {
     for (let i = 0; i < WL_RAMP_MAX; i++) r[16 + i] = i < L.fallRamp.length ? L.fallRamp.charCodeAt(i) - 32 : 0;
     r[8] = L.highlight[0]; r[9] = L.highlight[1]; r[10] = L.highlight[2];
     r[54] = L.fallSpeed; r[55] = L.sheetAlpha;
+  } else {
+    r[54] = L.ripple.charCodeAt(0) - 32; r[55] = L.rippleK;
   }
   return r;
 }
@@ -220,6 +230,48 @@ export function waterFogParams(table, palette, hasTerrain, out) {
   out[0] = fog.start; out[1] = fog.full; out[2] = 1; out[3] = 1;
   for (let k = 0; k < 3; k++) { out[4 + k] = out[8 + k] = fog.fgRGB[k]; out[12 + k] = out[16 + k] = fog.bgRGB[k]; }
   return out;
+}
+
+// ---- S8-B2-13 splash ripples (38.14): packed densely, 4 floats/ring (x, y, r, s); shared by both composite twins ----
+
+/**
+ * Packs the live rings of `wt` (`world.water`, its sim clock + ring buffer) into `out` (Float32Array(32), 8 rings x
+ * 4 floats), densely in slot order. age = (wt.tick - t0) * STEP; a ring with age outside [0, RIPPLE_LIFE) (incl. a
+ * clock reset, age < 0) is skipped. Zero allocation; the GPU never sees time, only the packed radius/strength.
+ * @param {{tick:number, ripX:Float64Array, ripY:Float64Array, ripT0:Int32Array, ripAmp:Float32Array}} wt
+ * @param {Float32Array} out @returns {number} live ring count
+ */
+export function packRipples(wt, out) {
+  let n = 0;
+  for (let i = 0; i < RIPPLE_MAX; i++) {
+    const age = (wt.tick - wt.ripT0[i]) * STEP;
+    if (age < 0 || age >= RIPPLE_LIFE) continue;
+    const b = n * 4;
+    out[b] = wt.ripX[i]; out[b + 1] = wt.ripY[i];
+    out[b + 2] = RIPPLE_R0 + RIPPLE_SPEED * age;
+    out[b + 3] = wt.ripAmp[i] * (1 - age / RIPPLE_LIFE);
+    n++;
+  }
+  return n;
+}
+
+/**
+ * Max ripple strength at ground point (px, py) over the first `count` packed rings (twin of the WGSL ring loop in
+ * waterComposite.wgsl.js; same f32 (Math.fround) chain as `flowStreakHit`). Negative per-ring terms (outside the
+ * ring's band) never pull the result below 0.
+ * @param {Float32Array} rip @param {number} count @param {number} px @param {number} py
+ */
+export function rippleStrength(rip, count, px, py) {
+  const f = Math.fround, x = f(px), y = f(py);
+  let s = 0;
+  for (let i = 0; i < count; i++) {
+    const b = i * 4;
+    const dx = f(x - rip[b]), dy = f(y - rip[b + 1]);
+    const d = f(Math.sqrt(f(f(dx * dx) + f(dy * dy))));
+    const term = f(rip[b + 3] * f(1 - f(f(Math.abs(f(d - rip[b + 2]))) / RIPPLE_HALF_W)));
+    if (term > s) s = term;
+  }
+  return s;
 }
 
 // ---- US-141a flow streaks (35.4): the JS half; glsl/waterComposite.frag.js repeats these expressions in the same order ----
