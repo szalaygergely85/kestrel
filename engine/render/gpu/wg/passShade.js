@@ -6,7 +6,7 @@
 // (matTable bind, palette/time of day, terrain far-bake version); per frame only uniform words change.
 // The water layer is WG-3e: edge gets waterOn = 0 and a 1x1 dummy WATER texture. ALPHA-01d soft edges are WGSL-only (edge.wgsl.js header, D-044), not in the shipped GLSL
 // (twin: edgePass.js).
-import { SHADE_BLOCK, SHADE_WGSL, SHADE_TEXTURES } from '../wgsl/shade.wgsl.js';
+import { SHADE_BLOCK, SHADE_WGSL, SHADE_LEVEL_WGSL, SHADE_TEXTURES } from '../wgsl/shade.wgsl.js';
 import { EDGE_BLOCK, EDGE_WGSL, EDGE_TEXTURES } from '../wgsl/edge.wgsl.js';
 import { packMaterialTable } from '../ShadeTextures.js';
 import { packTerrainTextures } from '../TerrainTextures.js';
@@ -37,12 +37,15 @@ const E_PITCH_C = E('pitchC'), E_GLYPH = E('edgeGlyph'), E_GAIN = E('edgeGain'),
 const SH = { GI: 0, GA: 1, GD: 2, DEPTH: 3, SGI: 4, SGA: 5, FG: 6, BG: 7, SKY: 8, MATF: 9, MATI: 10, SETI: 11, SETF: 12, GAIN: 13, LIGHT: 14, TLOOK: 15 };
 
 export class WgShadePass {
-  constructor(device) {
+  /** @param {any} device @param {{stable?: boolean}} [opts] stable (US-073b): shade writes a 3rd r8ui level target; absent = the unchanged 2-target pipeline */
+  constructor(device, opts = null) {
     this.device = device;
+    this.stable = !!(opts && opts.stable);
+    const lvl = this.stable ? SHADE_LEVEL_WGSL : SHADE_WGSL;
     this.pipeShade = device.createPipeline({
-      vertex: { src: { wgsl: SHADE_WGSL } }, fragment: { src: { wgsl: SHADE_WGSL }, targets: 2 },
+      vertex: { src: { wgsl: lvl } }, fragment: { src: { wgsl: lvl }, targets: this.stable ? 3 : 2 },
       bindings: { uniformBytes: SHADE_BLOCK.sizeBytes, textures: SHADE_TEXTURES.slice() },
-      targetFormats: ['rgba8', 'rgba8'],
+      targetFormats: this.stable ? ['rgba8', 'rgba8', 'r8ui'] : ['rgba8', 'rgba8'],
     });
     this.pipeEdge = device.createPipeline({
       vertex: { src: { wgsl: EDGE_WGSL } }, fragment: { src: { wgsl: EDGE_WGSL }, targets: 2 },
@@ -233,7 +236,7 @@ export class WgShadePass {
     tx[SH.SETI].texture = this.texSetI; tx[SH.SETF].texture = this.texSetF; tx[SH.GAIN].texture = this.texGain;
     tx[SH.LIGHT].texture = t.texLight; tx[SH.TLOOK].texture = this.texTlook;
     wgSpanBegin(p, WG_PASS_SLOT.shade);
-    try { d.beginPass(t.targetShade); d.bind(this.pipeShade, this.shBind); d.draw(3); d.endPass(); } finally { wgSpanEnd(p); }
+    try { d.beginPass(this.stable ? t.targetShadeLevel : t.targetShade); d.bind(this.pipeShade, this.shBind); d.draw(3); d.endPass(); } finally { wgSpanEnd(p); }
     // WG-3e: water composite between shade and edge (GL order); a no-op when the layer is inactive
     if (water && water.active) {
       wgSpanBegin(p, WG_PASS_SLOT.water);

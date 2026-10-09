@@ -169,6 +169,10 @@ export function stabilize(inp, hist, out, st) {
       worldToCell(relPrev, w[0], w[1], w[2], pc);
       if (!ortho && pc[2] <= 0) continue;
       const colF = pc[0], rowF = pc[1];
+      // tie mask (US-073b): set as soon as the cell reaches the history lookup, so a later reject made on a history cell that f32 may
+      // pick differently (half-cell case) is still marked; the UV-drift tie is added below
+      const fc = colF - Math.floor(colF), fr = rowF - Math.floor(rowF);
+      if (Math.abs(fc - 0.5) < TIE_EPS_CELL || Math.abs(fr - 0.5) < TIE_EPS_CELL) out.tie[i] = 1;
       const hc = Math.floor(colF + 0.5), hr = Math.floor(rowF + 0.5);
       if (!(hc >= 0 && hc < cols && hr >= 0 && hr < rows)) continue;
       const h = hr * cols + hc;
@@ -180,10 +184,8 @@ export function stabilize(inp, hist, out, st) {
       const du = inp.u[i] - hist.u[h], dv = inp.v[i] - hist.v[h];
       const dUV = Math.sqrt(du * du + dv * dv);
       const lim = 0.5 / detail;
+      if (Math.abs(dUV - lim) < TIE_EPS_UV) out.tie[i] = 1;
       if (dUV >= lim) continue;
-
-      const fc = colF - Math.floor(colF), fr = rowF - Math.floor(rowF);
-      if (Math.abs(fc - 0.5) < TIE_EPS_CELL || Math.abs(fr - 0.5) < TIE_EPS_CELL || Math.abs(dUV - lim) < TIE_EPS_UV) out.tie[i] = 1;
 
       out.fresh[i] = 0; used++;
       out.fg[i] = blend(hist.fg[h], inp.fg[i]);
@@ -193,4 +195,26 @@ export function stabilize(inp, hist, out, st) {
     }
   }
   return used;
+}
+
+// --- US-073b: adapters from what the GPU actually has to the twin's per-cell input shapes (38.25 item 3) ---
+
+/**
+ * Edge mask as the WGSL pass sees it: a cell is an edge cell when the edge pass changed it, i.e. final != shade
+ * (any of fg r/g/b, bg r/g/b, or the glyph). Inputs are packed 0xRRGGBB + glyph byte of both layers.
+ * @param {Uint32Array} finalFg @param {Uint32Array} finalBg @param {ArrayLike<number>} finalGlyph
+ * @param {Uint32Array} shadeFg @param {Uint32Array} shadeBg @param {ArrayLike<number>} shadeGlyph
+ * @param {Uint8Array} out
+ */
+export function edgeMaskFromShade(finalFg, finalBg, finalGlyph, shadeFg, shadeBg, shadeGlyph, out) {
+  for (let i = 0; i < out.length; i++) {
+    out[i] = (finalFg[i] !== shadeFg[i] || finalBg[i] !== shadeBg[i] || finalGlyph[i] !== shadeGlyph[i]) ? 1 : 0;
+  }
+  return out;
+}
+
+/** Water mask as the WGSL pass sees it: the layer word holds a finite vD (x bits != +Inf) and is not flagged (bit 5 of w). */
+export function waterMaskFromLayer(layerX, layerW, out) {
+  for (let i = 0; i < out.length; i++) out[i] = (layerX[i] !== 0x7f800000 && (layerW[i] & 32) === 0) ? 1 : 0;
+  return out;
 }
