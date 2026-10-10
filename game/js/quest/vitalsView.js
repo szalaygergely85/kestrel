@@ -174,7 +174,7 @@ function drawBar(ui, key, value, max, style, def, row, simTime, flashAgeMs = Inf
  * @param {boolean} visible - false on title/map/end/death cards (caller's call)
  * @param {{tick:number, manaFlashTick?: number}} [vitals] - US-080b: the sim object, for the mana-short flash timing only
  */
-export function drawVitals(ui, world, style, simTime, visible, vitals) {
+export function drawVitals(ui, world, style, simTime, visible, vitals, showMp = true) {
   if (!visible || !style) return;
   const handle = world.get('player');
   const data = handle && handle.data;
@@ -182,7 +182,7 @@ export function drawVitals(ui, world, style, simTime, visible, vitals) {
   const mana = data && data.components && data.components.mana;
   if (!health) return;
   drawBar(ui, 'hp', health.hp, health.max, style, style.hp, style.layout.hpRow, simTime);
-  if (mana && style.mp) {
+  if (showMp && mana && style.mp) { // showMp=false while the fireball is off (D-065): hearts/HP only
     // BUG-MANA-001: both ticks share the vitals clock, which pauses and resets independently of simTime.
     const flashAgeMs = vitals && vitals.manaFlashTick > 0
       ? ((vitals.tick - vitals.manaFlashTick) / 60) * 1000 : Infinity;

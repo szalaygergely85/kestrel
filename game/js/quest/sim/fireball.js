@@ -15,7 +15,7 @@ const MAXC = MAX_TARGETABLES + 1; // targets + the player
  * @param {{emit:Function}} events
  * @param {typeof import('../spellConfig.js').FIREBALL_CFG} cfg
  * @param {ReturnType<typeof import('./targetables.js').createTargetables>} targets
- * @param {{spendMana?: (n:number)=>boolean}} [hooks]
+ * @param {{spendMana?: (n:number)=>boolean, enabled?: boolean}} [hooks] `enabled:false` = casting disabled (D-065)
  */
 export function createFireballSim(world, events, cfg, targets, hooks) {
   const spendMana = (n) => (hooks && typeof hooks.spendMana === 'function' ? hooks.spendMana(n) : true);
@@ -144,6 +144,7 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
   }
 
   function cast(player, charged, fx, fy, ax, ay, az) {
+    if (hooks && hooks.enabled === false) return; // D-065 flag off: no projectile, burst, damage or mana (hand visual keeps its state)
     if (aliveCount >= cfg.maxAlive) return; // refused at the cap, no mana
     let C = cfg.tap;
     if (charged) {
