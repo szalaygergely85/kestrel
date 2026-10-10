@@ -47,7 +47,7 @@
     // ES modules (js/main.js) refuse to load over file:// (CORS). Catch that
     // case early with a friendly one-line message instead of a silent blank
     // canvas + a console error nobody sees.
-    if (location.protocol === 'file:') {
+    if (location.protocol === 'file:' && !window.__kestrelDesktop) { // desktop shell (tools/desktop/preload.cjs) serves from disk on purpose
       document.write(
         '<div id="file-protocol-notice">Run a static server, e.g. <code>python -m http.server 8000</code>' +
         ' from the project root, then open <code>http://localhost:8000/game/index.html</code></div>'
