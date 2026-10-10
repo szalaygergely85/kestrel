@@ -1830,21 +1830,21 @@ No engine change (38.35). Order: QG-W1 + QG-D1 in parallel with QG-01/02 -> QG-0
 
 | ID | Slot | Size | Files | Deps |
 |---|---|---|---|---|
-| QG-01 | kestrel-3 (pure game sim, no main.js) | 0.5 d | `game/js/quest/sim/questBook.js` + test | - |
-| QG-02 | kestrel-3 | 0.5 d | `questBook.js` (`migrateQuestSave`), `game/js/quest/save/saveState.js`, `questSave.test.js` | QG-01 |
+| QG-01 | kestrel-3 (pure game sim, no main.js) | 0.5 d | `game/js/quest/sim/questBook.js` + test | - | arch-review
+| QG-02 | kestrel-3 | 0.5 d | `questBook.js` (`migrateQuestSave`), `game/js/quest/save/saveState.js`, `questSave.test.js` | QG-01 | arch-review
 | QG-03 | kestrel-1 | 0.75 d | `game/js/questRelay.js`, `game/js/saveRelay.js`, `game/js/quest/dialogueCtl.js`, `game/js/main.js`, `content/quests/m1.quest.json`, `content/quests/burl.boars.quest.json` (new) + wherever m1 is loaded, `content/dialogue/bear.dialogue.json`, `tools/validate-content.mjs` | QG-01, QG-02, QG-D1 (coin def; until then reward an existing item) |
 | QG-04 | kestrel-1 | 0.5 d | `game/js/quest/wire/questMarks.js`, `game/js/quest/mapCard.js`, main.js marker wiring | QG-03, QG-D1 |
 | QG-05 | kestrel-1 | 0.5 d | `game/js/ui/questLog.js` (+ preview), `game/js/quest/input/bindings.js`, `game/js/gameKeys.js`, main.js | QG-03 |
 | QG-W1 | writer | 0.25 d | `docs/story.md` (Burl quest texts) - NEEDS WRITER | - |
 | QG-D1 | designer | 0.25 d | `?` marker model (`questMarkReady`), `coin` glyph/icon | - |
 
-### QG-01 questBook sim  [P1] [todo] [PC-B kestrel-3]
+### QG-01 questBook sim  [P1] [arch-review] [PC-B kestrel-3]
 - [ ] `createQuestBook(mainDef, giverDefs, saved?)` + `validateGiverQuest` per 38.35 items 1, 2, 4; `quest.js` unchanged.
 - [ ] Status ints unavailable/available/active/ready/done; `accept`, `handIn` (null unless ready; second call null), `quest.<id>.done` flag fed to every quest on hand-in.
 - [ ] `hasKey`/`actKey` over a `Map` built at create; unknown key -> false, no throw. `giverMarks(outA, outR)`, `tracked()`, `version`, `onChange`, `toSave`, `hashInto`.
 - [ ] Tests (38.35 item 11, questBook part) incl. facts before accept, accept-when-complete -> ready, 10k-step heap check.
 
-### QG-02 Quest save field + migration  [P1] [todo] [PC-B kestrel-3]
+### QG-02 Quest save field + migration  [P1] [arch-review] [PC-B kestrel-3]
 - [ ] `save.game.quests` optional (38.35 item 9); `validateSave`/`collectSave`/`applySave` accept and round-trip it; old saves without it still load byte-identically.
 - [ ] `migrateQuestSave`: three fixtures (prefix incl. `beasts` -> done, no reward; prefix ends at `sword` -> accepted with old dead boars, ready if 5/5; earlier -> nothing).
 - [ ] `SAVE_VERSION` stays 1. `node tools/run-tests.mjs` + check-deps green.

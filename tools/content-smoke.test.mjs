@@ -141,6 +141,7 @@ const unaccountedFor = allJsonFiles.filter((rel) => {
   // GFX-01: boot settings are validated/fetched by gfxPresets, not a content-pack kind.
   if (rel === 'settings/gfx-presets.json') return false;
   if (rel === 'quests/m1.quest.json') return false; // US-096a standalone sim definition, validated by quest.test.js
+  if (rel === 'quests/burl.boars.quest.json') return false; // QG-01 giver quest, validated by questBook.test.js + validate-content
   if (rel === 'quests/areas.json') return false; // AREAS-01 standalone alias table, checked by validate-content.mjs
   if (rel === 'items/recipes.json') return false; // RECIPES-01 data only, schema/refs checked by validate-content.mjs
   if (rel === 'chart/world_m1.chart.json') return false; // MAP-01b baked data, validated/freshness-checked by bake-chart.test.mjs

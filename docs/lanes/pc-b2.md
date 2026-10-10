@@ -388,3 +388,10 @@ B2 2026-10-09 (TWISTED-LOD-01) -> arch-review (importer data only): TwistedTree_
 - core.js savePackage: clampRes(effectiveRes) -> GAME_SAFE_RES + warning (`meta.onWarning`, `api.lastWarnings`); package recipe.json/glb use the clamped res; warns if quads > cap.
 - charRegister.js: rigged glb over CHAR_GAME_MAX_QUADS -> ContentError naming the id (optional 4th arg maxQuads for tests). Test: tools/chargen/res22c.test.mjs.
 - Open: chargen-build-kit per-level stats (row text) not done; ui.js not touched (Save-for-game warning display is UI's job, reads savePackage lastWarnings).
+
+## QG-01 (kestrel-3, 2026-10-10) -> arch-review
+- game/js/quest/sim/questBook.js (createQuestBook, validateGiverQuest, status ints, accept/handIn/hasKey/actKey/giverMarks/tracked/version/onChange/toSave/hashInto; quest.js unchanged) + questBook.test.js (incl. 10k-step heap check; run with --expose-gc for the strict check). content/quests/burl.boars.quest.json: NO reward (owner pick); m1.quest.json NOT touched (QG-03 repoints `beasts`; test builds that variant).
+- Notes: handIn returns frozen `{items:[]}` when no reward (null = not ready), also kept in `book.lastReward` for the dialogue adapter. saved shape = `{quest, quests}`. Restore keeps accept order = array order. tools/content-smoke.test.mjs lists the new file as standalone (like m1).
+
+## QG-02 (kestrel-3, 2026-10-10) -> arch-review
+- saveState.js: optional `game.quests` (validateSave structural check; collectSave `quests`+`giverDefs` opts, re-validated via createQuest; applySave returns `quests`, and with `giverDefs` runs `migrateQuestSave` for old saves). SAVE_VERSION 1; old saves keep byte shape (no `quests` key). Migration in questBook.js (LEGACY table burl.boars: beasts done -> handedIn, ends at sword -> accepted + dead boars union). questSave.test.js. Suites quest/questBook/saveState/saveRelay/content PASS.
