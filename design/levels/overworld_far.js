@@ -119,26 +119,14 @@
         layers: [
           // PLANT-VOXEL-OFF-01 / STONES-VOXEL-OFF-01 (owner 2026-10-10): the voxel plant scatter and the small voxel stones/pebbles layer are gone;
           // placed Quaternius meshes (world_m1 mdw/roadL rows) are the plants and stones now.
-          // rocks: maxSlope 0.35 + large sinkM 0.20 (half the 0.32-0.40 m foot layer): props are not tilted to the slope
-          // (37.4: yaw only), so a 2.8 m flat-bottomed boulder must not show a gap on the downhill side.
+          // ROCKS-VOXEL-OFF-01 (owner 2026-10-10): voxel rockMed*/rockLarge* and the `rock` ground list removed; layer keeps wooden logs/stumps only.
           { name: 'rocks', seed: 38307, cellM: 11, jitter: 3.0, fill: 0.5, maxSlope: 0.35, clearM: 1.6, drawM: 70, lodCells: 4,
             ground: {
-              grass:  [ { model: 'rockMedA',   weight: 28, sinkM: 0.06, shadow: true, collider: { prism: { r: 0.44, h: 0.76 } } },
-                        { model: 'rockMedB',   weight: 22, sinkM: 0.06, shadow: true, collider: { prism: { r: 0.55, h: 0.75 } } },
-                        { model: 'rockLargeA', weight: 10, sinkM: 0.20, shadow: true, collider: { prism: { r: 0.88, h: 1.52 } } },
-                        { model: 'rockLargeB', weight: 6,  sinkM: 0.20, shadow: true, collider: { prism: { r: 1.10, h: 1.50 } } },
-                        { model: 'logShort',   weight: 10, sinkM: 0.08, shadow: true, collider: { box: { hx: 0.96, hy: 0.24, h: 0.52 } } },
+              grass:  [ { model: 'logShort',   weight: 10, sinkM: 0.08, shadow: true, collider: { box: { hx: 0.96, hy: 0.24, h: 0.52 } } },
                         { model: 'stumpCut',   weight: 12, sinkM: 0.04, shadow: true, collider: { prism: { r: 0.33, h: 0.55 } } } ],
               forest: [ { model: 'logShort',   weight: 20, sinkM: 0.08, shadow: true, collider: { box: { hx: 0.96, hy: 0.24, h: 0.52 } } },
                         { model: 'logLong',    weight: 16, sinkM: 0.10, shadow: true, collider: { box: { hx: 1.43, hy: 0.33, h: 0.72 } } },
-                        { model: 'stumpCut',   weight: 22, sinkM: 0.04, shadow: true, collider: { prism: { r: 0.33, h: 0.55 } } },
-                        { model: 'rockMedB',   weight: 18, sinkM: 0.06, shadow: true, collider: { prism: { r: 0.55, h: 0.75 } } },
-                        { model: 'rockMedA',   weight: 10, sinkM: 0.06, shadow: true, collider: { prism: { r: 0.44, h: 0.76 } } },
-                        { model: 'rockLargeB', weight: 8,  sinkM: 0.20, shadow: true, collider: { prism: { r: 1.10, h: 1.50 } } } ],
-              rock:   [ { model: 'rockLargeA', weight: 30, sinkM: 0.20, shadow: true, collider: { prism: { r: 0.88, h: 1.52 } } },
-                        { model: 'rockLargeB', weight: 22, sinkM: 0.20, shadow: true, collider: { prism: { r: 1.10, h: 1.50 } } },
-                        { model: 'rockMedA',   weight: 26, sinkM: 0.06, shadow: true, collider: { prism: { r: 0.44, h: 0.76 } } },
-                        { model: 'rockMedB',   weight: 22, sinkM: 0.06, shadow: true, collider: { prism: { r: 0.55, h: 0.75 } } } ]
+                        { model: 'stumpCut',   weight: 22, sinkM: 0.04, shadow: true, collider: { prism: { r: 0.33, h: 0.55 } } } ]
             } }
         ]
       },
