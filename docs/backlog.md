@@ -1901,7 +1901,7 @@ PC-B architect opus, 2026-10-10 (owner-authorised while PC-A is offline; PC-A to
 | WS1-06b | kestrel-1 | 0.75 d | `game/js/quest/relayWake.js` (new) + test, `game/js/quest/index.js` (behaviour `relay.wake`), `game/js/main.js` (step + interactable on world:loaded) | WS1-06a, WS1-W1 (placeholder text ok) | po-review [PC-B] |
 | WS1-07a | kestrel-1 | 0.5 d | `game/js/quest/mapCard.js` (`setMarker`, digits, travel line, digit keys) + `mapCard.test.js`, preview | WS1-06a | po-review [PC-B] |
 | WS1-07b | kestrel-1 | 0.75 d | `game/js/quest/travel.js` (new) + test, `game/js/quest/sim/vitals.js` (`clearSafe`), `game/js/main.js` (wiring, fade draw, hzb invalidate) | WS1-07a | po-review [PC-B] |
-| WS1-08 | kestrel-4 | 0.5 d | `tools/route-walk.mjs` (leg 8 + bound probe), bench/perf pose `roadBend`, gpucompare row | WS1-03, WS1-04, WS1-05 | todo [PC-B] |
+| WS1-08 | kestrel-4 | 0.5 d | `tools/route-walk.mjs` (leg 8 + bound probe), bench/perf pose `roadBend`, gpucompare row | WS1-03, WS1-04, WS1-05 | tooling done + gates PASS (route walk leg 8 1.8 m from relay, bound 1200.3, gpucompare roadBend NEW PASS 2026-10-10); perf re-measure on a quiet machine open [PC-B] |
 | WS1-09 | kestrel-4 | 0.25 d | `content/quests/m1.quest.json` (objective `relay1`), quest test | WS1-06b, WS1-W1; only if trivial (38.36 item 5) | won't-do: superseded by CH1-01 (38.37) [PC-B] |
 | WS1-W1 | writer | 0.25 d | `docs/story.md` | - | todo NEEDS WRITER |
 
@@ -1956,7 +1956,7 @@ Note (kestrel-2, 2026-10-10): done; sim API `points` (entity data), `touch(id,po
 - [ ] At black: anchor pose, zero velocity, re-ground, `hzb.invalidate('travel')`, `beasts.resetAll`, `targeting.clear`, `syncFacing`, `vitals.clearSafe()`, target becomes the respawn point (touch = heal + save).
 - [ ] Tests: timings, gates, pose inside `bounds`, invalidate/reset calls, 0 alloc. Main session: one browser pass meadow -> relay -> meadow, fauna re-spawns, no frame of the old view after the fade.
 
-### WS1-08 Gates: route walk, perf, gpucompare  [P1] [todo] [PC-B kestrel-4]
+### WS1-08 Gates: route walk, perf, gpucompare  [P1] [partly done: perf open] [PC-B kestrel-4]
 - [ ] `route-walk.mjs` leg 8 waystone -> relay ((1420,1032) -> (1350,1050) -> (1270,1042)), grid + mesh, completes, no fall, ends <= 3 m from the relay; bound probe west of x 1200 stops at the bound.
 - [ ] Perf pose `roadBend` (1268, 1040, yaw 270) + tower pose: JS <= 8 ms, GPU p95 <= 8 ms ultra, heap flat; load-time delta vs before WS1-02 printed. If GPU fails: report, fallback `cw: 4` (38.36 item 1).
 - [ ] gpucompare row at `roadBend`; existing rows within tolerance.
@@ -1991,7 +1991,7 @@ Order: writer rows + CH1-D1a + CH1-E1/E2 + CH1-01 in parallel -> CH1-02, CH1-03,
 | CH1-10 | kestrel-4 | 1 d | `tools/route-walk.mjs` (new tower legs + probes, Burl/Fen path clearance), `game/js/quest/ch1Walkthrough.test.js` (new), perf poses (tower exterior), gpucompare tower re-baseline | CH1-D1a/b, CH1-07, CH1-08b | todo [PC-B] |
 | CH1-D1a | designer | 1 d | `content/levels/tower.level.json` (sword + note 1 to the top, `noteLeave`, parapet over the breach, way down, south-west door + steps, `doorBar` + `door.unbar`, `lantern.take` removed), `design/models/notes.js` (note texts), tower preview/capture | CH1-W1 (placeholder text ok) | todo [PC-B] |
 | CH1-D1b | designer | 1 d | `content/levels/tower.level.json` (wall heights, rounded outer ring), `design/models/voxel_tower_crown.js` (new `towerCrown` + snagged envelope), world entity, `design/levels/overworld_far.js` if the footprint changes | OWNER QUESTION (height), CH1-D1a | todo [PC-B] owner look |
-| CH1-D2 | designer | 0.5 d | `design/models/voxel_world.js` (waystone `dead`/`wake`/`awake` clips, brass crystal bowl, light preset), `design/items.js` (`aetherCrystal` glyph + icon), previews | - | todo [PC-B] |
+| CH1-D2 | designer | 0.5 d | `design/models/voxel_world.js` (waystone `dead`/`wake`/`awake` clips, brass crystal bowl, light preset), `design/items.js` (`aetherCrystal` glyph + icon), previews | - | po-review [PC-B] (owner look: design/preview/voxel-props.html, item-icons.html) |
 | CH1-D3 | designer | 0.5 d | chargen recipe Fen (male wanderer, patched clothes, worn boots, travelling staff; D-059 style) -> `villager.fen` package | CHARGEN D-059 base, owner look | todo [PC-B] owner look |
 | CH1-W1 | writer | 0.25 d | `docs/story.md`: tower texts | - | todo NEEDS WRITER |
 | CH1-W2 | writer | 0.5 d | `docs/story.md`: Burl lines + barks | - | todo NEEDS WRITER |
@@ -2079,7 +2079,7 @@ Order: writer rows + CH1-D1a + CH1-E1/E2 + CH1-01 in parallel -> CH1-02, CH1-03,
 - [ ] Wall cell `floorH` raised to the owner's target (rec. 12-14 m, jagged tops, west side lowest), outer ring chamfered to read round; captures of the wake pose + sun shaft before/after (keep the east wall height if the shaft is lost).
 - [ ] `towerCrown` voxel model (round broken crown + the Kestrel's torn envelope snagged on it, ropes hanging), <= 8k surface voxels, placed at the tower origin; preview page; exterior capture from the meadow.
 
-### CH1-D2 Waystone states + crystal item  [P1] [todo] [designer]
+### CH1-D2 Waystone states + crystal item  [P1] [po-review] [designer]
 - [ ] Waystone `dead`/`wake`/`awake` clips (aether mark dark -> teal), small brass crystal bowl on top, light preset; `idle` kept as an alias of `awake`.
 - [ ] `aetherCrystal` item def (glyph, icon, name/desc from CH1-W3). Previews updated.
 
