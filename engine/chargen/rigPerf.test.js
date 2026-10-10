@@ -44,7 +44,7 @@ ok('LOD1 get returns the LOD0 mesh for a rig pm', cache.get(pm, 'char.0', names,
 const cam = { x: 0, y: 40, z: 20, yawDeg: 0, pitchDeg: -20 }, rt = { cols: 160, rows: 80, pxCellW: 1, pxCellH: 2 };
 const frame = (stage, step) => {
   pool.beginFrame();
-  for (let i = 0; i < 48; i++) pool.pushInstance(keys[i % 3], (i % 8) - 4, (i >> 3) * 1.2, 0, (i * 37) % 360, i & 1, 0, (step * 17 + i * 90) % 1000);
+  for (let i = 0, n = (step % 3 === 2) ? 4 : 48; i < n; i++) pool.pushInstance(keys[i % 3], (i % 8) - 4, (i >> 3) * 1.2, 0, (i * 37) % 360, i & 1, 0, (step * 17 + i * 90) % 1000);
   if (stage >= 1) pool.project(cam, rt);
   if (stage >= 2) pool.projectShadow();
 };
@@ -64,9 +64,9 @@ if (global.gc) {
   };
   const push = measure(0), proj = measure(2);
   ok('rig pushInstance: 0 bytes per frame', push < 8, String(push));
-  // OPEN (RIG-04 note): project/projectShadow allocate ~1.4-2 kB/frame for rig char. models while a 1-part voxel model
-  // allocates 1.3 B. Printed, not asserted, until the architect names the source.
-  console.log(`  rig push+project+projectShadow (48 inst): ${proj.toFixed(1)} B/frame (target 0, OPEN)`);
+  // RIG-04b: was ~1.4-2 kB/frame (setRot's boxed double args per posed part); now setRotFromPose reads the angles from scratch.
+  ok('rig push+project+projectShadow (48 inst): <= 64 B/frame', proj <= 64, String(proj));
+  console.log(`  rig push+project+projectShadow (48 inst): ${proj.toFixed(1)} B/frame`);
 } else console.log('SKIP zero-alloc (run with --expose-gc)');
 
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

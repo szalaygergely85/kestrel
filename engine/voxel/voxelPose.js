@@ -122,6 +122,18 @@ export function setRot(rx, ry, rz, out) {
  */
 const _rotOut = new Float64Array(MAX_VOX_PARTS * 3);
 const _posOut = new Float64Array(MAX_VOX_PARTS * 3);
+// RIG-04b: same as setRot, but the three angles are read from `_rotOut[base..base+2]` instead of being passed: double
+// arguments to the non-inlined setRot are boxed (a HeapNumber per call, ~16 B per posed part with a non-zero rotation).
+function setRotFromPose(base, out) {
+  cosSinDeg(_rotOut[base + 2], _cs);
+  _Rz[0] = _cs[0]; _Rz[1] = -_cs[1]; _Rz[2] = 0; _Rz[3] = _cs[1]; _Rz[4] = _cs[0]; _Rz[5] = 0; _Rz[6] = 0; _Rz[7] = 0; _Rz[8] = 1;
+  cosSinDeg(_rotOut[base + 1], _cs);
+  _Ry[0] = _cs[0]; _Ry[1] = 0; _Ry[2] = _cs[1]; _Ry[3] = 0; _Ry[4] = 1; _Ry[5] = 0; _Ry[6] = -_cs[1]; _Ry[7] = 0; _Ry[8] = _cs[0];
+  cosSinDeg(_rotOut[base], _cs);
+  _Rx[0] = 1; _Rx[1] = 0; _Rx[2] = 0; _Rx[3] = 0; _Rx[4] = _cs[0]; _Rx[5] = -_cs[1]; _Rx[6] = 0; _Rx[7] = _cs[1]; _Rx[8] = _cs[0];
+  matMul3(_Ry, _Rx, _RyRx);
+  matMul3(_Rz, _RyRx, out);
+}
 function sampleInto(pm, clipIdx, frameIn, tMs, rotOut, posOut) {
   const partCount = pm.partCount;
   if (clipIdx === undefined || clipIdx < 0 || !pm.clips || clipIdx >= pm.clips.length) {
@@ -210,7 +222,7 @@ export function computeVoxelPose(pm, inst, out) {
     const rx = _rotOut[p * 3], ry = _rotOut[p * 3 + 1], rz = _rotOut[p * 3 + 2];
     const posX = _posOut[p * 3], posY = _posOut[p * 3 + 1], posZ = _posOut[p * 3 + 2];
 
-    setRot(rx, ry, rz, _Rrot);
+    setRotFromPose(p * 3, _Rrot);
     const rotZero = rx === 0 && ry === 0 && rz === 0;
 
     const abase = p * 9, bbase = p * 3;
