@@ -2,6 +2,7 @@
 // docs/architecture.md section 7 (World/WorldQuery), 7.2 (structTable) and
 // 10/10.1 (entities/handles). See the tech notes in docs/backlog.md US-025
 // for the build order this follows.
+import { makeGrid, zoneAt, zoneId, best as bandBest, pick as bandPick, marginX as bandMarginX, marginY as bandMarginY } from './bandGrid.js';
 import { loadLevel, isTerrainFloor } from './Level.js';
 import { Terrain } from './Terrain.js';
 import { scatterTrees, scatterDetail, TreeScatterJob, DetailScatterJob } from './scatter.js';
@@ -275,6 +276,7 @@ export class World {
     // state; set once by `World.load` from `def.bounds`.
     this.bounds = null;
     this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.lastSwapMs = 0; this.bandId = null; // WS2-01/02
+    this.terrainGrid = null; this._gridPick = { i: 0, j: 0 }; // MAP-10 (38.43): generated zone grid; terrainBands = 2 reusable slot zones
     this.terrainBand = null; // WS1-02: authored near-band chunk rect or null (auto 3x3)
     // US-016 D-011 addendum (architecture.md 14.4 item 13): horizon
     // billboards - plain data, content not state (never mutated at
@@ -425,6 +427,13 @@ export class World {
     }
     w.bounds = validateBounds(def.bounds);
     w.terrainBand = validateTerrainBand(def.terrainBand); // WS1-02 (null = auto 3x3)
+    if (def.terrainGrid != null) { // MAP-10 (38.43): generated grid; exclusive with terrainBand/terrainBands
+      if (def.terrainBand != null || def.terrainBands != null) throw new Error('World.load: terrainGrid is mutually exclusive with terrainBand/terrainBands');
+      const tg = w.terrainGrid = makeGrid(def.terrainGrid); w._terrainGridDef = JSON.parse(JSON.stringify(def.terrainGrid));
+      const sl = () => ({ id: '', i: 0, j: 0, cx0: 0, cy0: 0, cw: tg.cw, ch: tg.ch });
+      w.terrainBands = [sl(), sl()]; // slot k = current / pending zone, filled by _gridFill
+      w.bandSwitch = { prefetchM: tg.switch.prefetchX, switchM: tg.switch.switchX };
+    } else
     { // WS2-01 (38.38): authored zone list; mutually exclusive with terrainBand
       const tbs = validateTerrainBands(def.terrainBands, def.bandSwitch, def.terrainBand);
       if (tbs) { w.terrainBands = tbs.zones; w.bandSwitch = { prefetchM: tbs.prefetchM, switchM: tbs.switchM }; w._bandSwitchDef = tbs.bandSwitch; }
@@ -518,7 +527,11 @@ export class World {
       let tb = w.terrainBand;
       if (w.terrainBands) { // WS2-01: start in the best zone for the spawn pose (opts.spawn) or zone 0
         const sp = opts.spawn;
-        w._bandCur = sp && Number.isFinite(sp.x) && Number.isFinite(sp.y) ? w._bestBand(sp.x, sp.y, w.terrain.chunkSize) : 0;
+        if (w.terrainGrid) { // MAP-10: initial zone = best for the spawn pose (or (0,0)) in slot 0
+          const gp = w._gridPick; gp.i = 0; gp.j = 0;
+          if (sp && Number.isFinite(sp.x) && Number.isFinite(sp.y)) bandBest(w.terrainGrid, null, sp.x, sp.y, gp);
+          w._gridFill(0, gp.i, gp.j); w._bandCur = 0;
+        } else w._bandCur = sp && Number.isFinite(sp.x) && Number.isFinite(sp.y) ? w._bestBand(sp.x, sp.y, w.terrain.chunkSize) : 0;
         tb = w.terrainBands[w._bandCur]; w.bandId = tb.id;
       }
       const bcx0 = tb ? tb.cx0 : cx - 1, bcy0 = tb ? tb.cy0 : cy - 1, bcw = tb ? tb.cw : 3, bch = tb ? tb.ch : 3;
@@ -1127,6 +1140,9 @@ export class World {
     return best;
   }
 
+  /** MAP-10: fills slot `k` with grid zone (i, j) (the id string allocates; prefetch/swap only). */
+  _gridFill(k, i, j) { const z = this.terrainBands[k]; zoneAt(this.terrainGrid, i, j, z); z.id = zoneId(z.i, z.j); return z; }
+
   /** Drops a pending bake and its scatter job. */
   _cancelBand() { if (this._bandPend >= 0) { this.terrain.cancelNearBand(); this._bandPend = -1; } this._bandJob = null; }
 
@@ -1202,6 +1218,7 @@ export class World {
   streamBand(px, py, msBudget) {
     const zs = this.terrainBands, terrain = this.terrain;
     if (!zs || zs.length < 2 || !terrain || this._bandCur < 0) return 0;
+    if (this.terrainGrid) return this._streamGrid(px, py, msBudget);
     const cs = terrain.chunkSize;
     const mc = this._bandMargin(zs[this._bandCur], px, py, cs);
     if (mc >= this.bandSwitch.prefetchM) { // far from every edge: idle (drops a stale pending bake if the player walked back)
@@ -1230,12 +1247,47 @@ export class World {
     return ready ? 0 : 1;
   }
 
+  /** MAP-10 (38.43): grid variant of streamBand: bandGrid.pick (2D margins + hysteresis), max 2 bands live. */
+  _streamGrid(px, py, msBudget) {
+    const g = this.terrainGrid, terrain = this.terrain, zs = this.terrainBands, cur = zs[this._bandCur], sw = g.switch;
+    const gp = this._gridPick, r = bandPick(g, cur, px, py, gp);
+    if (r === 0) { if (this._bandPend >= 0) this._cancelBand(); return 0; }
+    if (this._bandPend >= 0 && (zs[this._bandPend].i !== gp.i || zs[this._bandPend].j !== gp.j)) this._cancelBand(); // no longer the target: dropped
+    if (this._bandPend < 0) {
+      const k = 1 - this._bandCur, z = this._gridFill(k, gp.i, gp.j);
+      terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch);
+      this._bandPend = k;
+    }
+    const to = this._bandPend;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    let ready = terrain.nearBandStep(msBudget);
+    if (ready && !(this._bandJob && this._bandJob.phase >= 4)) {
+      const left = msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
+      ready = this._bandJobStep(left > 0 ? left : 0);
+    }
+    const mX = bandMarginX(g, cur.i, px), mY = bandMarginY(g, cur.j, py);
+    if ((mX < 32 || mY < 32) && !ready) { terrain.nearBandStep(Infinity); this._publishBand(to, true); return 2; }
+    if (ready && (mX < sw.switchX || mY < sw.switchY)) { this._publishBand(to, false); return 2; }
+    return ready ? 0 : 1;
+  }
+
   /** Synchronous band pick for load / travel / respawn: bakes + swaps the best zone for (x, y) if it is not current. Returns true when it swapped.
    * AUD2-06: pass `keepM` (e.g. `bandSwitch.switchM`, as streamBand uses) for callers that poll with a moving camera (editor 4 Hz):
    * the current zone is kept while its margin >= keepM, so sitting on the overlap midline does not re-bake. Omitted = exact pick. */
   ensureBandFor(x, y, keepM) {
     const zs = this.terrainBands, terrain = this.terrain;
     if (!zs || !terrain || this._bandCur < 0) return false;
+    if (this.terrainGrid) { // MAP-10: exact best zone for the pose (keepM: keep while both margins >= the switch distances)
+      const g = this.terrainGrid, cur = zs[this._bandCur], gp = this._gridPick;
+      if (keepM !== undefined && bandMarginX(g, cur.i, x) >= g.switch.switchX && bandMarginY(g, cur.j, y) >= g.switch.switchY) { if (this._bandPend >= 0) this._cancelBand(); return false; }
+      bandBest(g, cur, x, y, gp);
+      if (this._bandPend >= 0) this._cancelBand();
+      if (gp.i === cur.i && gp.j === cur.j) return false;
+      const k = 1 - this._bandCur, z = this._gridFill(k, gp.i, gp.j);
+      terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch); terrain.nearBandStep(Infinity);
+      this._publishBand(k, false);
+      return true;
+    }
     if (keepM !== undefined && this._bandMargin(zs[this._bandCur], x, y, terrain.chunkSize) >= keepM) { if (this._bandPend >= 0) this._cancelBand(); return false; }
     const best = this._bestBand(x, y, terrain.chunkSize);
     if (best === this._bandCur) { if (this._bandPend >= 0) this._cancelBand(); return false; }
