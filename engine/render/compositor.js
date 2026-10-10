@@ -5,11 +5,13 @@
 // beginFrame/castSectors/.../fillSky sequence main.js used to write out by
 // hand for a single bare level (US-024).
 import { windSwayOn, sunWindClock } from '../mesh/sway.js';
+import { fogShapeCtx } from './fogShape.js';
 import { fillSky, ambientL, primeAmbientLight } from './sky.js';
 import { shadeTerrainCells } from './terrainShade.js';
 import { computeDerivatives, shadeSurfaces } from './detailShade.js';
 import { edgePass } from './edgePass.js';
-import { lightSurfaces } from './lighting.js';
+import { lightSurfaces, sunFromWorld } from './lighting.js';
+const skySunScratch = { dirX: 0, dirY: 0, dirZ: 0, ambientI: 0, sunI: 0 };
 // ME-06 (27.15.5a item 6): the JS-twin oracle for `fb.renderer === 'mesh'` -
 // same `DrawList`/`rasterJS` path the GPU raster pass (`GpuCellPipeline.
 // _passRaster`) draws, so `?gpucompare=1&renderer=mesh` compares the GPU
@@ -393,7 +395,16 @@ export function renderWorld(fb, world, cam) {
     // forward distance `vd * pitchedFogScale(row)`; light/edge/sky/sprites keep the raw view depth.
     // GLSL twin: `dist *= fogScaleCell(...)` in shade.frag.js / edge.frag.js.
     if (meshPitched) scaleDepthForShade(fb.depth.depth, fb.gbuf.cols, fb.gbuf.rows, true);
+    // AUD-45: height fog + sun in-scatter context for the CPU shade twin (same gate as the GPU: terrain world + time-of-day palette).
+    const fsc = fogShapeCtx;
+    fsc.on = !!(world.terrain && fb.palette && fb.palette.timeOfDay);
+    if (fsc.on) {
+      const fsun = sunFromWorld(world, fb.palette, skySunScratch);
+      fsc.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fsc.terms = meshPitched ? meshPitchTerms : meshTerms; fsc.camZ = cam.z;
+      fsc.sunX = fsun.dirX; fsc.sunY = fsun.dirY; fsc.sunZ = fsun.dirZ; fsc.sunI = fsun.sunI;
+    }
     shadeSurfaces(fb, fb.gbuf, fb.matTable, fb.detailPass, fb.light);
+    fsc.on = false;
     shadeTerrainCells(fb, world.terrain, world, fb.timeSec || 0, meshHashCell);
     if (meshPitched) scaleDepthForShade(fb.depth.depth, fb.gbuf.cols, fb.gbuf.rows, false);
     // US-055a2b (35.3): water composite on the surface cells (raw depth), then the edge pass skips opaque-water cells.
@@ -402,7 +413,7 @@ export function renderWorld(fb, world, cam) {
     if (fb.detailPass) edgePass(fb.gbuf, fb.depth.depth, fb.rt, fb.detailPass.edges, fb.waterMask || null, fb.matTable ? fb.matTable.soft : null);
   }
 
-  fillSky(fb, cam);
+  fillSky(fb, cam, world && world.terrain && fb.palette && fb.palette.timeOfDay ? sunFromWorld(world, fb.palette, skySunScratch) : null); // AUD-40
   if (meshWater && fb.gbuf) waterCompositeJS(fb, world, meshTerms, meshPitchTerms, meshPitched, true); // sky cells (water to the horizon)
 
   // (US-017 ARCH CHANGES #1 item 2, 7.4 "Fade") CPU scene fade moved OUT of

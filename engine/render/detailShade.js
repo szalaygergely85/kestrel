@@ -25,6 +25,7 @@ import { fastShade, samplePowLUT } from './fastShade.js';
 import { entityTintAt, tintChannel } from './entityTint.js';
 import { KIND_MODEL, KIND_MESH, FACE_PACKED } from './GBuffer.js';
 import { clamp01, clampByte } from '../core/math.js';
+import { fogShapeCtx, fogShapeF, fogScatterW, fogScatterColor, fogCellDirJS } from './fogShape.js';
 
 // --- fast level()/orientClass() (tech notes item 6) -------------------------
 const TAN22 = Math.tan(22 * Math.PI / 180);
@@ -585,9 +586,19 @@ export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist
  * the averaged `b`/`gb`/`cr`/`cg`/`cb`/`bgK`/`hA`/`hB`. `face` is only
  * needed for `orientClassCode`'s du/dv axis pick.
  */
-function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out) {
+const _fogFgS = [0, 0, 0], _fogBgS = [0, 0, 0];
+function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out, cellIdx) {
   const fog = table.fog;
-  const f = dist <= fog.start ? 0 : dist >= fog.full ? 1 : (dist - fog.start) / (fog.full - fog.start);
+  let f = dist <= fog.start ? 0 : dist >= fog.full ? 1 : (dist - fog.start) / (fog.full - fog.start);
+  let fogFgC = fog.fgRGB, fogBgC = fog.bgRGB;
+  if (fogShapeCtx.on && f > 0) { // AUD-45 (twin of the WGSL block in fs_main): height fog + sun in-scatter
+    const sc = fogShapeCtx, cols = sc.terms.cols;
+    const row = Math.floor(cellIdx / cols), col = cellIdx - row * cols;
+    const d = fogCellDirJS(col, row);
+    f = fogShapeF(f, dist, sc.camZ, d[2] / Math.sqrt(Math.max(d[0] * d[0] + d[1] * d[1], 1e-12)));
+    const sw = fogScatterW(d[0] * sc.sunX + d[1] * sc.sunY + d[2] * sc.sunZ, sc.sunZ, sc.sunI);
+    fogFgC = fogScatterColor(_fogFgS, fog.fgRGB, sw); fogBgC = fogScatterColor(_fogBgS, fog.bgRGB, sw);
+  }
 
   let glyphCode;
   if (core.gb <= 0) glyphCode = 0;
@@ -619,7 +630,7 @@ function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff
   if (r > 255) r = 255; if (gg > 255) gg = 255; if (bl > 255) bl = 255;
   let xr = r * core.bgK, xg = gg * core.bgK, xb = bl * core.bgK;
   if (f > 0) {
-    const fogFg = fog.fgRGB, fogBg = fog.bgRGB;
+    const fogFg = fogFgC, fogBg = fogBgC;
     r += (fogFg[0] - r) * f; gg += (fogFg[1] - gg) * f; bl += (fogFg[2] - bl) * f;
     xr += (fogBg[0] - xr) * f; xg += (fogBg[1] - xg) * f; xb += (fogBg[2] - xb) * f;
   }
@@ -666,7 +677,7 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
   const aoD = ((kind === KIND_MODEL || kind === KIND_MESH) && face === FACE_PACKED) ? Infinity : gbuf.aoD[i];
   const dudx = gbuf.dudx[i], dvdx = gbuf.dvdx[i], dudy = gbuf.dudy[i], dvdy = gbuf.dvdy[i];
   const core = shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist, face, kind, light, coreScratch);
-  return shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out);
+  return shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out, i);
 }
 
 /**
