@@ -1892,7 +1892,7 @@ PC-B architect opus, 2026-10-10 (owner-authorised while PC-A is offline; PC-A to
 | WS1-05 | kestrel-4 | 0.75 d | `tools/gen-roadside-meshes.mjs` (flags + `scale` fix), `content/worlds/world_m1.world.json` (`roadW###`, `roadN###`), `design/levels/overworld_far.js` (printed capsules) | - (runs before WS1-04 lands: keep-out disc is in the tool) | po-review [PC-B] |
 | WS1-06a | kestrel-1 | 0.5 d | `game/js/quest/sim/waystone.js` + test, `game/js/quest/wire/waystone.js` + test, `game/js/waystoneTouch.js` | WS1-04 (data; tests use fixtures) | todo [PC-B] |
 | WS1-06b | kestrel-1 | 0.75 d | `game/js/quest/relayWake.js` (new) + test, `game/js/quest/index.js` (behaviour `relay.wake`), `game/js/main.js` (step + interactable on world:loaded) | WS1-06a, WS1-W1 (placeholder text ok) | todo [PC-B] |
-| WS1-07a | kestrel-1 | 0.5 d | `game/js/quest/mapCard.js` (`setMarker`, digits, travel line, digit keys) + `mapCard.test.js`, preview | WS1-06a | todo [PC-B] |
+| WS1-07a | kestrel-1 | 0.5 d | `game/js/quest/mapCard.js` (`setMarker`, digits, travel line, digit keys) + `mapCard.test.js`, preview | WS1-06a | po-review [PC-B] |
 | WS1-07b | kestrel-1 | 0.75 d | `game/js/quest/travel.js` (new) + test, `game/js/quest/sim/vitals.js` (`clearSafe`), `game/js/main.js` (wiring, fade draw, hzb invalidate) | WS1-07a | todo [PC-B] |
 | WS1-08 | kestrel-4 | 0.5 d | `tools/route-walk.mjs` (leg 8 + bound probe), bench/perf pose `roadBend`, gpucompare row | WS1-03, WS1-04, WS1-05 | todo [PC-B] |
 | WS1-09 | kestrel-4 | 0.25 d | `content/quests/m1.quest.json` (objective `relay1`), quest test | WS1-06b, WS1-W1; only if trivial (38.36 item 5) | todo [PC-B] |
@@ -1938,10 +1938,10 @@ PC-B architect opus, 2026-10-10 (owner-authorised while PC-A is offline; PC-A to
 - [ ] Reload/restart: woken relays come back `awake` + light on, no hum; dead ones `dead`. Tower beacon keys untouched (tower.test.js green).
 - [ ] Tests: wake once, timer/clip/light order, reload awake, 0 alloc per step. One headless capture of dead + awake.
 
-### WS1-07a Map card: travel markers + pick  [P1] [todo] [PC-B kestrel-1]
-- [ ] `createChartCard` `setMarker(x, y, kind|digit)` (one-cell update); untouched relay = `o`, touched points show their digit while the card is open; travel line at the bottom (WRITER labels).
-- [ ] Digit key on the open card with a touched target -> `onTravel(id)` callback; other keys keep today's close rule; quest kinds (QG-04) intact.
-- [ ] mapCard tests: digits per touched set, setMarker, digit vs close key, no alloc in draw. Preview updated.
+### WS1-07a Map card: travel markers + pick  [P1] [po-review] [PC-B kestrel-1]
+- [x] `createChartCard` `setMarker(x, y, kind|digit)` (one-cell update); untouched relay = `o`, touched points show their digit while the card is open; travel line at the bottom (WRITER labels).
+- [x] Digit key on the open card with a touched target -> `onTravel(id)` callback; other keys keep today's close rule; quest kinds (QG-04) intact.
+- [x] mapCard tests: digits per touched set, setMarker, digit vs close key, no alloc in draw. Preview updated.
 
 ### WS1-07b Travel: fade, teleport, reset  [P1] [todo] [PC-B kestrel-1]
 - [ ] `travel.js` state machine per 38.36 item 4 (0.35 s out / in, input locked, gates: alive, no dialogue/inventory/log, wake done, > 6 m from target).
