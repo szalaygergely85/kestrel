@@ -556,3 +556,8 @@ Tests: new quest/ch1Mount.test.js; filter suites 72 PASS; main.js syntax OK (.mj
 - Fixed burlEscort: stone-talk flag is `dlg.bear.stone.told` (plain dialogue flags get the `dlg.` prefix).
 - Tests: fenEntrance.test, stoneWake.test (new) + all filtered suites green. NOT run in a browser: `node tools/verify-ch1-mount.mjs {port}` (9500-9574, needs ?save=1).
 - Open: stone first-wake shows the wire's "saved/healed" toast over the notice (wire shows toast for kind waystone; silence it like relays if it looks bad); walk polylines still first-guess (CH1-10 route walk).
+
+### CH1-10 C + WS1-08 perf AC (tooling) - kestrel-2, perf-poses
+- content/dev-poses.js GATE_POSES (shared table, re-exported by tools/bench-poses.js): added `towerInterior` (brazier cam) and `towerExterior` (1468,1025.5 yaw 90 pitch +14, towerCrown at 1497,1025 z12-14 in view; pitch is a first guess, check with one capture); `roadBend` already existed.
+- tools/perf-pose.mjs: `--poses` = GATE_POSES slugs (default roadBend,towerInterior,towerExterior), new columns heap delta MB (gc before/after window) + load ms, PASS/FAIL lines for ultra (JS p95 <= 8, GPU p95 <= 8, heap <= 2 MB). Exit 1 on FAIL. Node-checked only, not run in a browser. perf-gate.test unchanged (table shape unchanged).
+- Run: `node tools/perf-pose.mjs --port {port} --configs "ultra:480x180" --trees default --out perf-ws1-08.json` (port, port+1 used)
