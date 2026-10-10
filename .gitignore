@@ -23,3 +23,6 @@ design/preview/lod1-trees.data.js
 
 # KPKG-03: built packages
 /dist/
+
+# DESKTOP-ZIP-01: portable Windows build output
+/tools/desktop/dist/
