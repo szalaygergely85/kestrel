@@ -381,9 +381,9 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
 
 // --- US-073b (38.25): the stable-glyph level target. OFF = byte-identical to the pre-073b shader; ON = one extra r8ui target. ---
 {
-  // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain (39531 chars, + skyGlowOn gate): the stable-off shader must not move by a single byte.
-  assert.equal(SHADE_WGSL.length, 39531, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'ded592612b2fa35317051f7b820de097000ddebef08987e99ba195a4069dc8b1', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01 (39780 chars, + skyGlowOn gate): the stable-off shader must not move by a single byte.
+  assert.equal(SHADE_WGSL.length, 39780, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '15e5d16bf3426229d5d720c0a045d5772d54e6764701313166eae9b7e5288c83', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);

@@ -597,7 +597,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
         skyDir = normalize(select(pitchedCellDir(vec2f(cell), gridSize), su.pitchA.xyz, su.projMode == 2));
       }
       var col255 = textureLoad(uSky, vec2i(idx, 0), 0).rgb;
-      if (su.skyGlowOn.x > 0.5) { col255 = skyGlow(col255, skyDir, elevDeg, su.sunDir, su.sunI); } // gated like compositor.js (sun === null skips glow+haze)
+      if (su.skyGlowOn.x > 0.5) { col255 = skyGlow(col255, skyDir, elevDeg, su.sunDir, su.sunI, u32(cell.x), u32(cell.y)); } // gated like compositor.js (sun === null skips glow+haze)
       o.fg = vec4f(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 0.0);
       o.bg = vec4f(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 1.0);
     } else {

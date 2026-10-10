@@ -484,3 +484,9 @@ Test terrainMesh.test.js section 11 (6 checks): beginNearBand/nearBandStep/swapN
 
 ### DN-01 (kestrel-3) arch-review
 `blendLook(P,hour,schedule,out)` in engine/render/look.js (exported from engine/index.js): lerps schedule neighbours into one reusable record, colours as synthetic keys `$live.*` in P.rgb/P.hue, sets `P.liveLook` + `P.liveLookVersion`, clamps ambientI to `P.nightFloor`, `out.floorLum`. Readers switched: fastShade (when timeKey is unset/defaultTime), waterReflect, sunFromWorld, waterComposite LUT cache (+version). `applySunHours(..., moon=false)` moon switch at -6 deg (MOON_SWITCH_DEG). Data: `daySchedule`, `nightFloor{ambientI .06, lum .18}` in design/palette.js. Test: engine/render/blendLook.test.js; look/sky/lighting/water suites + check-deps green. Open for DN-02: GPU must read `floorLum` (luminance floor not applied in any shader yet; only ambientI floor). passShade `_bakeSky` is untouched.
+
+### SKY-GLOW-SOFT-01 (kestrel-3) arch-review
+skyGlow.js: posterise removed (continuous g) + Bayer 4x4 dither (ditherAmp, cell x/y passed to applySkyGlow / WGSL skyGlow, identical); halo haloK 6->90 gain .30->.14, core coreK 220->1800 gain .5; haze unchanged. skyGlow.test oracle updated (3 elevations); SHADE_WGSL re-pinned 39780 / sha 15e5d16b. sky/shade/fog suites + check-deps green.
+
+### SHADOW-SUN-MOVE-01 (kestrel-3) po-review
+worldClock.js: STEP_HOURS 1/240 -> 1/480 (0.125 deg per step, 0.25 s real) and default day 24 -> 48 min (DN-Q1 proposal, ?daylen= kept): sun shadow shift per step ~4x smaller (sub-cell), shadow re-render ~4/s (~0.4-0.8 ms each, not measured here). No cross-fade (not needed). Frozen/capture path untouched. Not browser-verified.
