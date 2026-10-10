@@ -1,7 +1,8 @@
 // QUEST-MARK-01w: quest '!' marker wire. Reads hooks.questObjective() (targets = ids from sim/questMarkers.js), keeps ONE
 // marker per target id, and drives pop -> active -> fade through a host-supplied entity factory. Owner rule: the '!' fades
 // the moment the quest is TAKEN (the target leaves the list); it never comes back because targets derive from quest state.
-// host = { fx (ASSETS.questMarkFx), resolve(id, out)->bool (fills out.x,y,z = marker base), create()->handle, enabled?:bool }
+// host = { fx (ASSETS.questMarkFx), resolve(id, out)->bool (fills out.x,y,z = marker base), create()->handle, enabled?:bool,
+//   source?(out) (QG-04: fills out.done + out.targets; default = hooks.questObjective()) }
 // handle = { hidden:boolean, scale:number, anim:string, setPos(x,y,z) }. Zero allocation per tick after a target's first sight.
 const ST_HIDDEN = 0, ST_POP = 1, ST_ACTIVE = 2, ST_FADE = 3;
 
@@ -14,7 +15,8 @@ function curve(c, t, floor) { // piecewise-linear [ms, v] curve, no allocation
 }
 
 export function createQuestMarks(hooks, host) {
-  const fx = host.fx, rec = new Map(), pos = { x: 0, y: 0, z: 0 };
+  const fx = host.fx, rec = new Map(), pos = { x: 0, y: 0, z: 0 }, src = { done: false, id: '', targets: null };
+  const read = host.source ? () => { src.done = false; src.targets = null; host.source(src); return src; } : () => hooks.questObjective();
   const range2 = fx.visibleRangeM * fx.visibleRangeM;
   let tickNo = 0, ctxRef = null;
 
@@ -39,7 +41,7 @@ export function createQuestMarks(hooks, host) {
       for (const r of rec.values()) { r.st = ST_HIDDEN; if (r.h) r.h.hidden = true; }
     },
     onTick(dt) {
-      const q = hooks.questObjective(), tg = q.done ? null : q.targets, ms = dt * 1000;
+      const q = read(), tg = q.done ? null : q.targets, ms = dt * 1000;
       tickNo++;
       if (tg) for (let i = 0; i < tg.length; i++) {
         const r = record(tg[i]); r.seen = tickNo;

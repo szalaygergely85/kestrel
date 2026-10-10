@@ -19,6 +19,7 @@ export const CHART_GLYPHS = Object.freeze({
   road: { glyph: '-', color: 'uiText' }, structure: { glyph: '#', color: 'ferrum' },
   steep: { glyph: '/', color: 'chartInk' },
   relay: { glyph: 'o', color: 'aetherDim' }, waystone: { glyph: 'O', color: 'aether' },
+  quest: { glyph: '!', color: 'gold' }, questReady: { glyph: '?', color: 'gold' }, // QG-04: giver markers (dynamic, setQuestMarkers)
   player: { glyph: '^', color: 'gold' }, edge: { glyph: '+', color: 'chartEdge' },
   route: { glyph: '*', color: 'pencil' }, print: { glyph: 'N', color: 'chartInk' },
 });
@@ -39,7 +40,7 @@ export function createChartCard(chart, palette, { markers = [], glyphs = CHART_G
     || !Number.isInteger(width) || width < 16 || width > 128 || !Number.isInteger(rows) || rows < 8 || rows > 52)
     throw new Error('chart: invalid planes, bounds or card size');
   const colors = {}, codes = {};
-  for (const key of [...chart.categories, 'relay', 'waystone', 'player', 'edge', 'route', 'print']) {
+  for (const key of [...chart.categories, 'relay', 'waystone', 'quest', 'questReady', 'player', 'edge', 'route', 'print']) {
     const token = glyphs[key];
     if (!token || typeof token.glyph !== 'string' || !/^[!-~]$/.test(token.glyph)
       || !/^#[0-9a-f]{6}$/i.test(palette.colors[token.color] || '')) throw new Error('chart: invalid glyph/colour');
@@ -83,7 +84,9 @@ export function createChartCard(chart, palette, { markers = [], glyphs = CHART_G
     markerCells[i]=1;
   }
   const baseCodes = chartArt.codes.slice(), baseRgb = chartArt.rgb.slice();
+  const plainCodes = baseCodes.slice(), plainRgb = baseRgb.slice(); // static markers only (QG-04 restores cells from here)
   const fullCodes = fog ? baseCodes.slice() : null, fullRgb = fog ? baseRgb.slice() : null;
+  const qCells = []; // cells currently holding a quest marker
   let fogRevision = -1;
   let previous = -1;
   function revealed(i){
@@ -117,10 +120,25 @@ export function createChartCard(chart, palette, { markers = [], glyphs = CHART_G
     previous=-1;fogRevision=fog.revision;
   }
   refreshFog();
+  /** QG-04: replace the dynamic quest markers; list = [{kind:'quest'|'questReady', x, y}]. Off-map entries are skipped. */
+  function setQuestMarkers(list) {
+    const tc = fog ? fullCodes : baseCodes, tr = fog ? fullRgb : baseRgb;
+    for (const i of qCells) { tc[i] = plainCodes[i]; tr[i*3] = plainRgb[i*3]; tr[i*3+1] = plainRgb[i*3+1]; tr[i*3+2] = plainRgb[i*3+2]; markerCells[i] = 0; }
+    qCells.length = 0;
+    for (const m of list) {
+      if (m.kind !== 'quest' && m.kind !== 'questReady') throw new Error('chart: invalid quest marker');
+      const i = index(m.x, m.y); if (i < 0 || markerCells[i]) continue;
+      tc[i] = codes[m.kind]; tr[i*3] = colors[m.kind][0]; tr[i*3+1] = colors[m.kind][1]; tr[i*3+2] = colors[m.kind][2];
+      markerCells[i] = 1; qCells.push(i);
+    }
+    if (fog) fogRevision = -1; else { chartArt.codes.set(baseCodes); chartArt.rgb.set(baseRgb); }
+    previous = -1;
+    refreshFog();
+  }
   const arrows = [94,62,118,60]; // yaw 0 north (-y), 90 east, 180 south, 270 west
   const position = { x: -1, y: -1, code: 0 };
   return {
-    art: chartArt, position, fog,
+    art: chartArt, position, fog, setQuestMarkers,
     updatePose(x,y,yawDeg) {
       refreshFog();
       if (previous >= 0) {
