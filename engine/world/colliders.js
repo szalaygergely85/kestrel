@@ -34,6 +34,7 @@
 import { makeFrame } from '../core/transform.js';
 import { placementMatrix12 } from '../mesh/DrawList.js';
 import { buildLevelMesh } from '../mesh/levelMesh.js';
+import { buildPrismProxy } from '../mesh/colliderProxy.js';
 
 /** GS-01f: terrainFloor cells draw no floor quad but keep a collision-only one (walkable, mesh physics). */
 const COLLIDER_MESH_OPTS = { collisionFloors: true };
@@ -309,6 +310,7 @@ export function buildStaticMeshCollider(world, prev) {
     const src = proxySource(mesh, s);
     if (src) meshParts.push({ id: s.id, src, matrix12 });
   }
+  for (const p of waterBlockParts(world)) meshParts.push(p);
   if (prev && refitMergedMeshCollider(prev, meshParts)) return prev;
   return buildMergedMeshCollider(meshParts);
 }
@@ -358,6 +360,7 @@ const PROXY_WARN_TRIS = 64;
  * @returns {{pos: ArrayLike<number>, triCount: number}|null}
  */
 function proxySource(mesh, placement) {
+  if (mesh && mesh.collide === false && placement.collide === true && mesh.pos) return forcedPrismSource(mesh); // WS2-07b: walk-over mesh made solid by THIS placement (stepping stone)
   if (!mesh || mesh.collide === false || placement.collide === false) return null;
   if (mesh.collider && mesh.collider.length >= 9) return { pos: mesh.collider, triCount: mesh.collider.length / 9 };
   if (!mesh.triCount) return null;
@@ -366,6 +369,47 @@ function proxySource(mesh, placement) {
     console.warn(`engine/world/colliders.js: mesh "${mesh.id}" collides with its ${mesh.triCount} render triangles - run tools/gen-mesh-colliders.mjs to add a proxy.`);
   }
   return { pos: mesh.pos, triCount: mesh.triCount };
+}
+
+const _forcedPrism = new Map();
+/** Prism proxy (flat top at the mesh's highest vertex) for a placement that opts a walk-over mesh into collision (`collide: true`). */
+function forcedPrismSource(mesh) {
+  let src = _forcedPrism.get(mesh.id);
+  if (src === undefined) {
+    const tris = buildPrismProxy(mesh.pos);
+    src = tris ? { pos: Float64Array.from(tris), triCount: tris.length / 9 } : null;
+    _forcedPrism.set(mesh.id, src);
+  }
+  return src;
+}
+
+/** Closed axis-aligned box, 12 CCW-outward triangles (9 floats each). */
+function boxTris(x0, y0, z0, x1, y1, z1) {
+  const c = (i) => [i & 1 ? x1 : x0, i & 2 ? y1 : y0, i & 4 ? z1 : z0];
+  const quads = [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [2, 6, 7, 3], [0, 2, 3, 1], [4, 5, 7, 6]]; // -x +x -y +y -z +z
+  const out = [];
+  for (const q of quads) for (const t of [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]) for (const i of t) out.push(...c(i));
+  return out;
+}
+
+/**
+ * WS2-07b (D-064): water region `block: {rect:[x0,y0,x1,y1], lane:[ya,yb], z0, z1}` = no wading. Two solid walls fill
+ * `rect` except the lane y in [ya,yb] (where the stepping stones are), so the water can only be crossed on the stones.
+ * Merged into `meshes:static` (same BVH, no extra collider). z0..z1 must reach well above the banks (step-up 0.45).
+ */
+function waterBlockParts(world) {
+  const parts = [];
+  for (const r of world.waterDef || []) {
+    const b = r && r.block;
+    if (!b) continue;
+    const [x0, y0, x1, y1] = b.rect, [ya, yb] = b.lane;
+    const mk = (suffix, ay, by) => {
+      const pos = Float64Array.from(boxTris(x0, ay, b.z0, x1, by, b.z1));
+      parts.push({ id: `${r.id}:block${suffix}`, src: { pos, triCount: pos.length / 9 }, matrix12: translationMatrix({ x: 0, y: 0, z: 0 }) });
+    };
+    mk('N', y0, ya); mk('S', yb, y1);
+  }
+  return parts;
 }
 
 /**

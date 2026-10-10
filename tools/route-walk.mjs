@@ -61,7 +61,7 @@ function makePlayer(x, y, z) {
 function setup(physics) {
   const world = World.load(assets.world('world_m1'), assets, { physics, events: new Events() });
   const player = makePlayer(O.x + 17, O.y + 9.5, 0);
-  const sim = { world, player, controls: { forward: 0, strafe: 0, run: true, jump: false, yawDeg: 0 }, ms: [], step: 0 };
+  const sim = { physics, world, player, controls: { forward: 0, strafe: 0, run: true, jump: false, yawDeg: 0 }, ms: [], step: 0 };
   return sim;
 }
 
@@ -236,9 +236,9 @@ function routeRun(physics, { reload = false } = {}) {
   sim.world.events.on('band:late', () => { late++; });
   sim.stream = true;
   const RELAY2 = { x: 992, y: 1079 };
-  const dataStones = JSON.parse(readFileSync(new URL('../content/worlds/world_m1.world.json', import.meta.url), 'utf8')).structures.filter((s) => /^fordS[0-9]+$/.test(s.id)).map((s) => ({ x: s.origin.x, y: s.origin.y }));
+  const dataStones = JSON.parse(readFileSync(new URL('../content/worlds/world_m1.world.json', import.meta.url), 'utf8')).structures.filter((s) => /^fordS[0-9]+$/.test(s.id)).map((s) => ({ x: s.origin.x, y: s.origin.y, z: s.origin.z }));
   const E2W = dataStones.slice().sort((p, q) => q.x - p.x), W2E = dataStones.slice().sort((p, q) => p.x - q.x);
-  const to = [{ x: 1180, y: 1062 }, { x: 1090, y: 1070 }, { x: 1046, y: 1069 }, ...E2W, { x: 1010, y: 1070 }, { x: 998, y: 1075 }, { x: 993, y: 1077 }];
+  const to = [{ x: 1180, y: 1062 }, { x: 1090, y: 1070 }, { x: 1046, y: 1069 }, ...E2W, { x: 1010, y: 1069 }, { x: 998, y: 1075 }, { x: 993, y: 1077 }];
   const l9 = runLeg(sim, '9 bend -> ford -> stones -> relay 2', to, { maxWpSteps: 1500 });
   const r2 = Math.hypot(sim.player.transform.x - RELAY2.x, sim.player.transform.y - RELAY2.y);
   info.relay2Dist = r2; l9.completed = l9.completed && r2 <= 3 && !l9.fell && dataStones.length >= 5;
@@ -248,9 +248,16 @@ function routeRun(physics, { reload = false } = {}) {
   let minX = Infinity; for (let i = 0; i < bp.trace.length; i += 3) minX = Math.min(minX, bp.trace[i]);
   info.boundMinX = minX; bp.completed = bp.completed && minX >= 955;
   legs.push(bp);
-  const back = runLeg(sim, '9c ford -> back over the stones -> bend', [{ x: 1008, y: 1070 }, ...W2E, { x: 1046, y: 1069 }, { x: 1090, y: 1070 }, { x: 1180, y: 1062 }, { x: 1260, y: 1045 }, { x: 1310, y: 1048 }], { maxWpSteps: 1500 });
+  // WS2-07b (D-064) wade probe: from the west bank walk straight east THROUGH the water beside the stones (y 1076, 7 m off the lane): the water block must stop us (mesh; the grid has no mesh colliders so it is not blocked there).
+  const wade = runLeg(sim, '9d wade probe (water beside the stones)', [{ x: 1008, y: 1076 }, { x: 1046, y: 1076 }], { expectBlocked: true, maxWpSteps: 1500 });
+  let maxWx = -Infinity; for (let i = 0; i < wade.trace.length; i += 3) maxWx = Math.max(maxWx, wade.trace[i]);
+  info.wadeMaxX = maxWx; info.wadeBlocked = wade.completed && maxWx < 1017 && maxWx > 1005; wade.completed = sim.physics === 'mesh' ? info.wadeBlocked : true;
+  legs.push(wade);
+  const back = runLeg(sim, '9c ford -> back over the stones -> bend', [{ x: 1008, y: 1069 }, ...W2E, { x: 1046, y: 1069 }, { x: 1090, y: 1070 }, { x: 1180, y: 1062 }, { x: 1260, y: 1045 }, { x: 1310, y: 1048 }], { maxWpSteps: 1500 });
   back.completed = back.completed && !back.fell;
   legs.push(back);
+  // WS2-07b: the player stands ON the slab tops (mesh): z at the sample nearest each stone centre is >= slab base + 0.09 m.
+  info.stoneLift = []; for (const st of dataStones) { let bd = 1e9, bz = 0; for (let i = 0; i < l9.trace.length; i += 3) { const d = Math.hypot(l9.trace[i] - st.x, l9.trace[i + 1] - st.y); if (d < bd) { bd = d; bz = l9.trace[i + 2]; } } info.stoneLift.push(+(bz - st.z).toFixed(2)); }
   info.bands = bandEv.join(','); info.bandLate = late; info.maxSwapMs = +sim.world.lastSwapMs.toFixed(2);
   l9.completed = l9.completed && bandEv.length === 2 && bandEv[0] === 'east>west' && bandEv[1] === 'west>east' && late === 0;
   sim.stream = false;
@@ -390,8 +397,10 @@ else {
   for (const [i, nm] of ['grid', 'mesh'].entries()) console.log(`probe grass ring walkable (${nm}, ${RP[i].cells} cells, ${RP[i].pts} points): ${RP[i].cells > 0 && RP[i].bad.length === 0 ? 'PASS' : 'FAIL'} minDz ${f(RP[i].minDz)}${RP[i].bad.length ? NL + RP[i].bad.slice(0, 8).join(NL) : ''}`);
   console.log(`probe door closed blocks / open lets through (mesh; grid has no prop colliders): ${DC[1].ok ? 'PASS' : 'FAIL'} ${JSON.stringify(DC[1])}`);
   console.log(`max fall distance (7c down->door->outside) grid/mesh: ${f(G.legs.find((l) => l.name.startsWith('7c')).maxFall)}/${f(M.legs.find((l) => l.name.startsWith('7c')).maxFall)} (limit 3.5)`);
-  { const L = (R) => R.legs.filter((l) => /^9/.test(l.name)); const ok = [G, M].every((R) => L(R).length === 3 && L(R).every((l) => l.completed && !l.fell) && R.info.bandLate === 0 && R.info.bands === 'east>west,west>east');
-    console.log(`leg 9 ford (grid+mesh): ${ok ? 'PASS' : 'FAIL'} swaps ${M.info.bands} band:late ${M.info.bandLate} max swap ${M.info.maxSwapMs} ms, relay2 ${f(M.info.relay2Dist)} m, west bound minX ${f(M.info.boundMinX)}`); }
+  { const stones = M.info.stoneLift.every((d) => d >= 0.09), wadeOk = M.info.wadeBlocked; const L = (R) => R.legs.filter((l) => /^9/.test(l.name)); const ok = [G, M].every((R) => L(R).length === 4 && L(R).every((l) => l.completed && !l.fell) && R.info.bandLate === 0 && R.info.bands === 'east>west,west>east');
+    console.log(`leg 9 ford (grid+mesh): ${ok && stones ? 'PASS' : 'FAIL'} swaps ${M.info.bands} band:late ${M.info.bandLate} max swap ${M.info.maxSwapMs} ms, relay2 ${f(M.info.relay2Dist)} m, west bound minX ${f(M.info.boundMinX)}`);
+    console.log(`probe ford stones walk-on (mesh): ${stones ? 'PASS' : 'FAIL'} lift over slab base ${JSON.stringify(M.info.stoneLift)}`);
+    console.log(`probe ford water blocks wading (grid n/a: no mesh colliders / mesh): ${wadeOk ? 'PASS' : 'FAIL'} east-most x ${f(M.info.wadeMaxX)} (wall at 1016)`); }
   for (const c of CL) console.log(`clearance ${c.name} (${c.samples} samples, 0.8 m collider, slope<0.6${c.name === 'follow' ? ', inside nav' : ''}): ${c.bad.length ? 'FAIL' : 'PASS'}${c.bad.length ? NL + c.bad.join(NL) : ''}`);
   console.log('jump grid:', JSON.stringify(JG));
   console.log('jump mesh:', JSON.stringify(JM));

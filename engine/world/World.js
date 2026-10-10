@@ -450,7 +450,7 @@ export class World {
 
     for (const s of def.structures || []) {
       const placed = s.mesh
-        ? w.placeMesh(assets.mesh(s.mesh), s.origin, s.id, s.yawDeg ?? 0, s.castShadow, s.scale === undefined ? 1 : readScale(s.scale, `mesh placement "${s.id}"`))
+        ? w.placeMesh(assets.mesh(s.mesh), s.origin, s.id, s.yawDeg ?? 0, s.castShadow, s.scale === undefined ? 1 : readScale(s.scale, `mesh placement "${s.id}"`), s.collide)
         : w.placeStructure(assets.level(s.level), s.origin, s.id, s.yawSteps || 0);
       if (placed.kind !== 'mesh' && s.dynamics) {
         for (const tag of Object.keys(s.dynamics)) {
@@ -868,7 +868,7 @@ export class World {
   }
 
   /** Place content MeshData; grid sectors and dynamic tags remain level-only. */
-  placeMesh(mesh, origin, id, yawDeg = 0, castShadow = undefined, scale = 1) {
+  placeMesh(mesh, origin, id, yawDeg = 0, castShadow = undefined, scale = 1, collide = undefined) {
     const frame = makeFrame(origin.x, origin.y, origin.z ?? 0, 0, yawDeg);
     const k = scale > 0 ? scale : 1; // MESH-SCALE-01: uniform placement scale about the placement origin
     const bbox = { x0: Infinity, y0: Infinity, z0: Infinity, x1: -Infinity, y1: -Infinity, z1: -Infinity };
@@ -876,6 +876,7 @@ export class World {
     const placed = { id: id || `struct_${this.structures.length}`, kind: 'mesh', mesh,
       origin: { x: frame.x, y: frame.y, z: frame.z }, frame, bbox,
       castShadow: typeof castShadow === 'boolean' ? castShadow : mesh.castShadow !== false }; // MESH-SHADOW-01: placement overrides the mesh flag
+    if (typeof collide === 'boolean') placed.collide = collide; // WS2-07b: per-placement collision override (true = solid prism even for a walk-over mesh, false = walk-through)
     if (k !== 1) placed.scale = k; // absent = unscaled (old saves / world files stay identical)
     this.structures.push(placed);
     this.renderVersion++;

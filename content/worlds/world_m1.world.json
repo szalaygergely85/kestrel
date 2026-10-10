@@ -896,13 +896,13 @@
     {"id": "mdw247", "castShadow": false, "mesh": "quaternius/Grass_Common_Tall", "origin": {"x": 1448.47, "y": 1018.62, "z": 2.08}, "scale": 0.33, "yawDeg": 274},
     {"id": "burlBush", "collide": false, "mesh": "quaternius/Bush_Common", "note": "NPC-BEAR-01: the bush beside Burl (MESH-PLACE-01: leafy Bush_Common; no berry mesh exists in content/meshes)", "origin": {"x": 1470.6, "y": 1030.9, "z": 2.4}, "scale": 0.78, "yawDeg": 20},
     {"id": "relayBendBase", "mesh": "quaternius/RockPath_Square_Wide", "note": "WS1-04: plinth under the Bend Relay (flat slab, 2 m x 0.17 m, sunk 0.1 m into the high side)", "origin": {"x": 1262, "y": 1033, "z": -31.76}, "yawDeg": 0},
-    {"id": "fordS1", "castShadow": false, "mesh": "quaternius/RockPath_Square_Wide", "note": "WS2-07 (D-064): stepping stones across the river at the road ford, existing RockPath slabs on the lowest ground", "origin": {"x": 1021, "y": 1068.1, "z": -90.11}, "yawDeg": 0},
-    {"id": "fordS2", "castShadow": false, "mesh": "quaternius/RockPath_Round_Wide", "origin": {"x": 1023.5, "y": 1067.75, "z": -90.15}, "yawDeg": 35},
-    {"id": "fordS3", "castShadow": false, "mesh": "quaternius/RockPath_Square_Wide", "origin": {"x": 1026, "y": 1068.2, "z": -90.15}, "yawDeg": 80},
-    {"id": "fordS4", "castShadow": false, "mesh": "quaternius/RockPath_Round_Wide", "origin": {"x": 1028.5, "y": 1067.9, "z": -90.15}, "yawDeg": 15},
-    {"id": "fordS5", "castShadow": false, "mesh": "quaternius/RockPath_Square_Wide", "origin": {"x": 1031, "y": 1068.25, "z": -90.12}, "yawDeg": 60},
-    {"id": "fordS6", "castShadow": false, "mesh": "quaternius/RockPath_Round_Wide", "origin": {"x": 1033.5, "y": 1067.8, "z": -90.08}, "yawDeg": 100},
-    {"id": "fordS7", "castShadow": false, "mesh": "quaternius/RockPath_Square_Wide", "origin": {"x": 1036, "y": 1068.1, "z": -89.98}, "yawDeg": 25},
+    {"id": "fordS1", "castShadow": false, "collide": true, "mesh": "quaternius/RockPath_Square_Wide", "note": "WS2-07 (D-064): stepping stones across the river at the road ford, existing RockPath slabs on the lowest ground", "origin": {"x": 1021, "y": 1068.1, "z": -90.11}, "yawDeg": 0},
+    {"id": "fordS2", "castShadow": false, "collide": true, "mesh": "quaternius/RockPath_Round_Wide", "origin": {"x": 1023.5, "y": 1067.75, "z": -90.15}, "yawDeg": 35},
+    {"id": "fordS3", "castShadow": false, "collide": true, "mesh": "quaternius/RockPath_Square_Wide", "origin": {"x": 1026, "y": 1068.2, "z": -90.15}, "yawDeg": 80},
+    {"id": "fordS4", "castShadow": false, "collide": true, "mesh": "quaternius/RockPath_Round_Wide", "origin": {"x": 1028.5, "y": 1067.9, "z": -90.15}, "yawDeg": 15},
+    {"id": "fordS5", "castShadow": false, "collide": true, "mesh": "quaternius/RockPath_Square_Wide", "origin": {"x": 1031, "y": 1068.25, "z": -90.12}, "yawDeg": 60},
+    {"id": "fordS6", "castShadow": false, "collide": true, "mesh": "quaternius/RockPath_Round_Wide", "origin": {"x": 1033.5, "y": 1067.8, "z": -90.08}, "yawDeg": 100},
+    {"id": "fordS7", "castShadow": false, "collide": true, "mesh": "quaternius/RockPath_Square_Wide", "origin": {"x": 1036, "y": 1068.1, "z": -89.98}, "yawDeg": 25},
     {"id": "relayFordBase", "mesh": "quaternius/RockPath_Square_Wide", "note": "WS2-07: plinth under the Ford Relay (flat slab on the lowest ground, sunk 0.1 m)", "origin": {"x": 992, "y": 1079, "z": -87.09}, "yawDeg": 0}
   ],
   "entities": [
@@ -962,7 +962,7 @@
   "water": [
     {"id": "quietPond", "c": [1500, 1010], "look": "pond", "r": 4, "shape": "circle", "z": 2.5},
     {"id": "floodedCellar", "look": "murky", "rect": [1485, 995, 1495, 1005], "shape": "rect", "z": 2.45},
-    {"id": "ford", "look": "water", "note": "WS2-07: river surface at the stepping-stone ford (flat region; no swimming: D-064)", "rect": [1012, 1058, 1046, 1080], "shape": "rect", "z": -90.05}
+    {"id": "ford", "block": {"lane": [1066.6, 1069.6], "rect": [1016, 1025, 1042, 1115], "z0": -92, "z1": -84.5}, "look": "water", "note": "WS2-07: river surface at the stepping-stone ford (flat region; no swimming: D-064)", "rect": [1012, 1058, 1046, 1080], "shape": "rect", "z": -90.05}
   ],
   "wind": {
     "zones": [{"id": "stairwell.draft", "dirDeg": 0, "edge": 0.5, "mode": "add", "push": false, "rect": [1495.8, 1020.5, 1499.2, 1023.5], "shape": "rect", "speed": 0.6}]
