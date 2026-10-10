@@ -14,7 +14,7 @@ import { buildTriggers } from './triggers.js';
 import { clamp01 } from '../core/math.js';
 import { makeFrame, localToWorld, localDirToWorld, QUARTER_COS, QUARTER_SIN, frameBBox } from '../core/transform.js';
 import { gridLocal } from './gridLocal.js';
-import { buildWorldColliders, buildStaticMeshCollider, buildTrunkCollider, buildDetailCollider, buildPropCollider, refitDynCollider } from './colliders.js';
+import { buildWorldColliders, buildStaticMeshCollider, buildTrunkCollider, buildDetailCollider, buildPropCollider, buildKinematicCollider, moveKinematicPrism, refitDynCollider } from './colliders.js';
 import { cosSinDeg } from '../voxel/voxelPose.js';
 import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastColliders, FLOOR_NONE } from '../physics/meshCollide.js';
 import { pointBlocked } from './interaction.js';
@@ -219,6 +219,7 @@ export class World {
     this.decals = []; // DECAL-01: derived wall text, never serialized.
     this.detailMeshes = null; // TREES-LP-c: {meshId: MeshData} for ground-cover species with `mesh`
     this.detail = null; // ENV-01a1: derived ground detail, never serialized.
+    this._kinSlot = new Map(); // CH1-E2: kinematic entity id -> prism slot in 'npcs:kinematic'
     this._groundSnap = []; // ED-TERRAIN-1b: [{id, x, y}] of `z: 'ground'` props/entities, re-snapped after a terrain stroke.
     this._detailCtx = null; // ED-TERRAIN-1b: {cfg, keepOut} the detail scatter was built with.
     // ME-11a (docs/architecture.md 27.18): 'grid' (default, unchanged
@@ -975,7 +976,8 @@ export class World {
   /** PROP-COLLIDE-01: load/committed edit only; one BVH, never per drag frame. */
   rebuildPropColliders() {
     if (this.physicsMode !== 'mesh') return;
-    const shapes = [], cs = new Float64Array(2);
+    const shapes = [], kin = [], cs = new Float64Array(2);
+    this._kinSlot = new Map();
     for (const s of this.structures) {
       if (s.kind === 'mesh') continue;
       for (const p of s.level.def.props || []) {
@@ -1023,14 +1025,34 @@ export class World {
       if (!cc || e.type === 'prop') continue;
       if (!Number.isFinite(cc.r) || cc.r <= 0 || !Number.isFinite(cc.h) || cc.h <= 0) throw new Error(`World.load: entity "${id}" invalid collider {r,h}`);
       const t = e.transform;
-      shapes.push({ kind: 1, x: t.x, y: t.y, zc: t.z + cc.h / 2, hx: 0, hy: 0, hz: 0, r: cc.r, h: cc.h, yawRad: 0 });
+      const shape = { kind: 1, x: t.x, y: t.y, zc: t.z + cc.h / 2, hx: 0, hy: 0, hz: 0, r: cc.r, h: cc.h, yawRad: 0 };
+      if (cc.kinematic === true) { kin.push(shape); this._kinSlot.set(id, kin.length - 1); } // CH1-E2
+      else shapes.push(shape);
     }
-    const collider = buildPropCollider(shapes, shapes.length);
-    const index = this.colliders.findIndex(c => c.id === 'props:static');
-    if (index >= 0) {
-      if (collider) this.colliders[index] = collider;
-      else this.colliders.splice(index, 1);
-    } else if (collider) this.colliders.push(collider);
+    if (kin.length > 8) throw new Error('World.load: at most 8 kinematic entity colliders');
+    const put = (cid, collider) => {
+      const index = this.colliders.findIndex(c => c.id === cid);
+      if (index >= 0) {
+        if (collider) this.colliders[index] = collider;
+        else this.colliders.splice(index, 1);
+      } else if (collider) this.colliders.push(collider);
+    };
+    put('props:static', buildPropCollider(shapes, shapes.length));
+    put('npcs:kinematic', buildKinematicCollider(kin));
+  }
+
+  /**
+   * CH1-E2 (38.37): moves a `collider.kinematic` entity's prism to feet (x, y, z) in place (no alloc, O(1)).
+   * Does not touch the entity transform (the caller moves that). Mesh physics only.
+   * @returns {boolean} false when the entity has no kinematic collider
+   */
+  setEntityCollider(id, x, y, z) {
+    const slot = this._kinSlot.get(id);
+    if (slot === undefined) return false;
+    const c = this.colliders.find(k => k.id === 'npcs:kinematic');
+    if (!c) return false;
+    moveKinematicPrism(c, slot, x, y, z + this._entities.get(id).components.collider.h / 2);
+    return true;
   }
 
   /**

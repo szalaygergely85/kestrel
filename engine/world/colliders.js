@@ -546,6 +546,41 @@ export function buildPropCollider(shapes, count) {
 }
 
 /**
+ * CH1-E2 (38.37): movable NPC prisms, one upright prism per slot (<= 8). Same geometry as
+ * `buildPropCollider` prisms; `moveKinematicPrism` shifts a slot in place and refits (0 alloc).
+ * @param {Array<{x:number,y:number,zc:number,r:number,h:number}>} shapes
+ * @returns {MeshCollider|null}
+ */
+export function buildKinematicCollider(shapes) {
+  const n = shapes.length;
+  if (!n) return null;
+  const pos = new Float64Array(n * 32 * 9);
+  const cx = new Float64Array(n), cy = new Float64Array(n), cz = new Float64Array(n);
+  let o = 0;
+  for (let i = 0; i < n; i++) {
+    const s = shapes[i];
+    cx[i] = s.x; cy[i] = s.y; cz[i] = s.zc;
+    o = emitColliderFaces(pos, o, colliderRing(s.x, s.y, 0, true, s.r, 0, 0), s.x, s.y, s.zc - s.h / 2, s.zc + s.h / 2, true, true);
+  }
+  const bvh = buildBvh(pos, null, null);
+  return { id: 'npcs:kinematic', kind: 'trimesh', bvh,
+    min: Float64Array.from(bvh.nodeMin.subarray(0, 3)),
+    max: Float64Array.from(bvh.nodeMax.subarray(0, 3)), enabled: true,
+    _pos: pos, _cx: cx, _cy: cy, _cz: cz };
+}
+
+/** Moves prism `slot` so its centre is (x, y, zc); rewrites its 32 triangles' vertices and refits. */
+export function moveKinematicPrism(collider, slot, x, y, zc) {
+  const dx = x - collider._cx[slot], dy = y - collider._cy[slot], dz = zc - collider._cz[slot];
+  if (dx === 0 && dy === 0 && dz === 0) return;
+  const pos = collider._pos, a = slot * 32 * 9, b = a + 32 * 9;
+  for (let i = a; i < b; i += 3) { pos[i] += dx; pos[i + 1] += dy; pos[i + 2] += dz; }
+  collider._cx[slot] = x; collider._cy[slot] = y; collider._cz[slot] = zc;
+  refit(collider.bvh, pos, null, null);
+  refreshAabb(collider);
+}
+
+/**
  * Refits (or, on the rare sentinel-mismatch fallback path, fully rebuilds)
  * `${structure.id}:${tag}`'s collider to the tag's CURRENT `ceilH`. No-op if
  * that tag never got a collider (e.g. it had 0 triangles at load). Zero

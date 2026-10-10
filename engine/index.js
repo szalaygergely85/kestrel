@@ -216,6 +216,7 @@ export { rayTerrain, pickNearest, selectInRect } from './render/pick.js';
 // ---- RE-08/RE-09 flow-field pathfinding + local avoidance (docs/architecture.md 28.2) --
 export { createFlowField, FlowCache } from './nav/flowField.js';
 export { createSteer } from './nav/steer.js';
+export { createPathFollower } from './nav/pathFollow.js';
 export { perceive, NOISE_SPRINT, NOISE_SWING } from './nav/perceive.js';
 export { leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from './nav/leash.js';
 
