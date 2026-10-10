@@ -38,7 +38,7 @@ try {
   // Marker entities: questMark_N voxel props; count visible ones per model after ticking the seam for 2 s.
   const markers = async () => { await ev('(()=>{const h=window.__debug.gameHooks; for(let i=0;i<120;i++) h.tick(1/60);})()'); return JSON.parse(await ev(`JSON.stringify((()=>{const w=window.__debug.world, o={questMark:0,questMarkReady:0}; for(let i=0;i<12;i++){const e=w.get('questMark_'+i); const v=e&&e.data&&e.data.components.voxel; if(v&&!v.hidden&&o[v.model]!==undefined) o[v.model]++;} return o;})())`)); };
   const feed = (e) => ev(`window.__debug.questBook().feed(${JSON.stringify(e)})`);
-  for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'item:got', id: 'lantern' }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }]) await feed(e);
+  for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }, { type: 'area:entered', id: 'towerDoor' }] ) await feed(e); // CH1-02 chain: wake, breach, sword, leave -> m1 waits on the boars (no m1 marker), only Burl's '!'
   await ev('(()=>{const l=window.__debug.look; if(l) l.locked=true;})()');
   let m = await markers(); assert.deepEqual(m, { questMark: 1, questMarkReady: 0 }, 'available -> one "!" ' + JSON.stringify(m));
   console.log('[2/5] available: "!" over Burl');

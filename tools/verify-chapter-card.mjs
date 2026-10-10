@@ -1,6 +1,6 @@
 // CH1-09: headless real-browser check of the chapter card state machine (dim 50 %, typed lines, journal hand-off, flags,
 // input lock, once) via game/js/quest/chapterCard.preview.html. CDP helpers from capture-browser.mjs, shape of
-// verify-chest-hook.mjs. Run: node tools/verify-chapter-card.mjs {port} [webgpu]   (PC-B B1 range 9575-9649; port+1 = CDP)
+// verify-chest-hook.mjs. Run: node tools/verify-chapter-card.mjs {port} [webgpu]   (port+1 = CDP)
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
@@ -9,7 +9,6 @@ import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, c
 
 const port = Number(process.argv[2] || 9575);
 validatePort(port);
-if (port < 9575 || port + 1 > 9649) throw new Error('range is 9575-9649 (next port is CDP)');
 const backend = process.argv[3] || 'webgpu';
 assert.ok(['webgpu'].includes(backend), 'backend must be webgpu');
 
