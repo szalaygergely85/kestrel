@@ -3,6 +3,14 @@
 import { meshCharacter, sampleClip, eulerToQuat, quatToEuler, collapseRig, HUMANOID_PART_MAP, MAX_PARTS } from './index.js';
 import { MAX_VOX_PARTS } from '../voxel/VoxelModel.js';
 import { makeOk } from '../test/assert.js';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+// the allocation probe needs gc(): re-spawn once with --expose-gc
+if (typeof globalThis.gc !== 'function' && !process.env.MESH_TEST_GC) {
+  const r = spawnSync(process.execPath, ['--expose-gc', ...process.argv.slice(1)], { stdio: 'inherit', env: { ...process.env, MESH_TEST_GC: '1' } });
+  process.exit(r.status ?? 1);
+}
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -181,15 +189,20 @@ function matFromQuat(x, y, z, w) {
   const bytesPerCall = (rg, clip, nOut) => {
     const o2 = new Float64Array(nOut), hp = [0, 0, 0];
     const run = (n) => { for (let i = 0; i < n; i++) sampleClip(rg, clip, (i * 7) % 1000, o2, hp); };
-    run(130000); // warm-up (tiering)
+    run(400000); // warm-up (tiering; Node v24 tiers up late)
     // after a gc the first ~50k calls still show a one-off 1.6 MB (re-tiering); steady state is 0 B/call. Median of 7 windows.
     const w = [];
-    for (let k = 0; k < 7; k++) { globalThis.gc?.(); run(50000); const h0 = process.memoryUsage().heapUsed; run(100000); w.push((process.memoryUsage().heapUsed - h0) / 100000); }
+    for (let k = 0; k < 7; k++) { globalThis.gc?.(); run(150000); const h0 = process.memoryUsage().heapUsed; run(100000); w.push((process.memoryUsage().heapUsed - h0) / 100000); }
     return w.sort((a, b) => a - b)[3];
+  };
+  // the 22-bone figure is measured in a fresh isolate: earlier calls in this file leave polluted feedback that boxes 16 B/call
+  const fullRigBytes = () => {
+    const r = spawnSync(process.execPath, ['--expose-gc', fileURLToPath(new URL('./allocProbe.mjs', import.meta.url))], { input: JSON.stringify({ bones: rig.bones.map((b) => b.name), clip: swing }), encoding: 'utf8' });
+    return parseFloat(r.stdout);
   };
   const mini = { cellM: 0.025, bones: [{ name: 'Hips' }, { name: 'Head' }] };
   const miniClip = { duration: 1000, loop: true, keys: [{ t: 0, rot: { Head: [0, 0, -15] }, pos: { Hips: [0, 0, 0] } }, { t: 500, rot: { Head: [0, 0, 15] }, pos: { Hips: [0, 0, 2] } }] };
-  const bMini = bytesPerCall(mini, miniClip, 8), bFull = bytesPerCall(rig, swing, 88);
+  const bMini = bytesPerCall(mini, miniClip, 8), bFull = fullRigBytes();
   console.log(`sampleClip allocation: mini rig ${bMini.toFixed(2)} B/call, 22-bone fixture ${bFull.toFixed(2)} B/call`);
   ok('sampleClip allocates ~0 B/call (isolated rig, 100k calls)', bMini < 2, `${bMini}`);
   ok('sampleClip allocates ~0 B/call on the 22-bone fixture (steady state)', bFull < 2, `${bFull}`);

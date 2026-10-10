@@ -395,3 +395,6 @@ B2 2026-10-09 (TWISTED-LOD-01) -> arch-review (importer data only): TwistedTree_
 
 ## QG-02 (kestrel-3, 2026-10-10) -> arch-review
 - saveState.js: optional `game.quests` (validateSave structural check; collectSave `quests`+`giverDefs` opts, re-validated via createQuest; applySave returns `quests`, and with `giverDefs` runs `migrateQuestSave` for old saves). SAVE_VERSION 1; old saves keep byte shape (no `quests` key). Migration in questBook.js (LEGACY table burl.boars: beasts done -> handedIn, ends at sword -> accepted + dead boars union). questSave.test.js. Suites quest/questBook/saveState/saveRelay/content PASS.
+
+## CHARGEN-22e (kestrel-4, 2026-10-10) -> po-review
+- Default stays res 1/1 (owner); kit/goldens/tests untouched. Only mesh.test alloc fix: the 16 B/call on the 22-bone fixture was polluted feedback from earlier calls in the file; now measured in child engine/chargen/allocProbe.mjs (--expose-gc, 400k warm-up), test also re-spawns with --expose-gc. Threshold unchanged; 3x green.
