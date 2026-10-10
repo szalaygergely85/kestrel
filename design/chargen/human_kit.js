@@ -30,6 +30,13 @@
  *     combed strands + side parting; beard strands, lit moustache, forked chin tuft; hands with
  *     four fingers (ridged backs, grooves), knuckles, nails, a separate thumb; a waistband buckle bump; knight decal:
  *     mail hems, red neckline trim, skirt folds, glove cuffs + knuckles, gold buckle. Proportions / rig unchanged.
+ *   - CHARGEN-26c second detail pass (owner "the details... you can still add more"; same grid, rig, height, slots):
+ *     face: lit forehead, thinning brow tails, outer lash flicks, ruddy cheeks, nose-wing shade, nasolabial folds,
+ *     jaw-line shade, lit ear rim; hair cut into waving 3-cell locks of alternating tone with dark tips; beard wavy
+ *     strands, lit cheek strands, split moustache. Relief (outer / front / back only, the gaps stay): knuckle bumps,
+ *     a rolled shirt cuff, a boot lacing ridge, a sole welt. Decals: knight armhole trim, dotted side + back seams,
+ *     glove knuckles on the bumps; Fen criss-cross laces, upper band, iron buckle, collar band + neck slit, sleeve
+ *     hems, shoulder seams, knee creases. buildHumanKit(P, { legacy26b: true }) = the 26b look (preview compare).
  *   - CH1-D3 Fen (kit.looks.fen, a wanderer): `tunic` (top, long sleeves + a short skirt over the trousers), `mended`
  *     (beard slot, paintOnly decal: stubble + sewn cloth patches + a shoulder-bag strap + ragged hem + worn boot scuffs),
  *     `staff` (hat slot, held: bone RightHand, anchor hand_r, the fingers wrap round it). All random weight 0; the
@@ -159,7 +166,29 @@
   // glabella crease s between them, temple shadow s), a dark upper eyelid row (z 64) over 2-row eyes (z 63 / 62),
   // under-eye line s on the cheekbone (z 61), philtrum dip (z 59), mouth line with shaded corners (z 58), lower lip
   // with corners (z 57), shadow under the lower lip (z 56), chin dimple (z 54).
-  var FACE = {
+  // CHARGEN-26c second detail pass (owner "my issue with the model is the details... you can still add more"):
+  // lit forehead bosses (z 67), brow tails thinning out to lighter hair g (z 66), dark outer lash flicks at the eye
+  // corners (z 63), ruddy cheeks f + lit cheek tops l + shaded nose wings s (z 60), nasolabial folds s from the nose
+  // wings down past the mouth corners (z 59 / 58), a shaded jaw line on the outer columns (z 55). FACE_26B = the
+  // first pass, kept for the preview's before / after compare (buildHumanKit(P, { legacy26b: true })).
+  var FACE_26C = {
+    67: '.aallaaaaallaa.',
+    66: '.gbbbbaaabbbbg.',
+    65: '.sabbbbsbbbbas.',
+    64: '.sddddaaadddds.',
+    63: '.dciPcaaaciPcd.',
+    62: '.acePcaaacePca.',
+    61: '.assssaaassssa.',
+    60: '.alfasaaasafla.',
+    59: '.aaasasdsasaaa.',
+    58: '.aaassdddssaaa.',
+    57: '.aaaaspppsaaaa.',
+    56: '.aaaasssssaaaa.',
+    55: '.saaaaaaaaaaas.',
+    54: '.aaaaaasaaaaaa.'
+  };
+  var LEGACY = false;   // true only while buildHumanKit(P, { legacy26b: true }) runs (preview compare)
+  var FACE_26B = {
     66: '.bbbbbaaabbbbb.',
     65: '.sabbbbsbbbbas.',
     64: '.sddddaaadddds.',
@@ -172,6 +201,7 @@
     56: '.aaaasssssaaaa.',
     54: '.aaaaaasaaaaaa.'
   };
+  var FACE = FACE_26C;
   // half width of the head per row: skull z 58-67 (15 wide), z 68 (13), top z 69 (11), jaw z 54-57 (13), chin z 53 (9)
   function headHalf(z) {
     if (z >= 58 && z <= 67) return 7;
@@ -228,7 +258,10 @@
     var ax = Math.abs(X), c, f;
     var n = NOSE[X + ',' + Y + ',' + z];
     if (n) return n;
-    if (ax === 8) return EAR[Y + ',' + z] || null;   // ears, set back
+    if (ax === 8) {                                   // ears, set back
+      if (!LEGACY && Y === 2 && z === 61) return 'l';  // 26c: a lit helix rim all the way down the back edge
+      return EAR[Y + ',' + z] || null;
+    }
     f = headFront(X, z);
     if (f === null || Y < f || Y > headBack(X, z)) return null;
     if (Y === -6 && (z === 57 || z === 58) && ax <= 1) return 'd';    // mouth interior behind the lips (Jaw opens)
@@ -253,7 +286,29 @@
     return headChar(X + 1, Y, z) !== null || headChar(X - 1, Y, z) !== null || headChar(X, Y + 1, z) !== null ||
            headChar(X, Y - 1, z) !== null || headChar(X, Y, z + 1) !== null || headChar(X, Y, z - 1) !== null;
   }
+  // 26c locks: instead of even stripes, the hair is cut into 3-cell locks (a dark K gap + two cells of the lock), the
+  // locks alternate lit / base tone and wave (shift one cell every 4 rows on the sides / back, every 2 rows front to
+  // back on top), the crown keeps a lit patch broken by base strands, and low on the sides / back every other lock
+  // ends in a dark tip (depth where the hair tucks in).
+  function hairChar26c(X, Y, Z) {
+    var ax = Math.abs(X), u, m, lit;
+    if (Z < 69 && !isHair(X, Y, Z - 1)) return 'K';                       // hairline / lower rim
+    if (X === -3 && Y <= 1 && Z >= 70) return 'K';                         // side parting
+    if (Z === 70) {
+      if (ax <= 3 && Y >= -3 && Y <= 1) return ((X + Y + 21) % 3 === 0) ? 'g' : 'G';   // lit crown, base strands
+      u = X + 21 + (((Y + 12) >> 1) & 1);
+      m = u % 3;
+      return m === 0 ? 'K' : (Math.floor(u / 3) % 2 ? 'G' : 'g');
+    }
+    u = (ax >= 7 && Y < 5 ? Y : X) + 21 + ((Z >> 2) & 1);                   // downward locks, waving
+    m = u % 3; lit = Math.floor(u / 3) % 2 === 0;
+    if (m === 0) return 'K';
+    if (Z >= 66) return lit ? 'G' : 'g';
+    if (Z >= 62) return lit && m === 1 ? 'G' : 'g';
+    return !lit && m === 2 ? 'K' : 'g';
+  }
   function hairChar(X, Y, Z) {
+    if (!LEGACY) return hairChar26c(X, Y, Z);
     var ax = Math.abs(X), t;
     if (Z < 69 && !isHair(X, Y, Z - 1)) return 'K';                       // hairline / lower rim
     if (X === -3 && Y <= 1 && Z >= 70) return 'K';                         // side parting
@@ -302,7 +357,20 @@
   }
   // 26b strands: vertical dark K strands every 3rd column, lit g strands in the shadowed lower beard, a lit moustache
   // top (z 59, |X| <= 2) with dark droop tips (z 58)
+  // 26c: wavy mirror-symmetric strands (shift one column every 2 rows), lit G strands high on the cheeks (z 56-57),
+  // lit sideburn tops, a moustache split at the philtrum (X 0 base g, |X| 1-2 lit G) with base-tone sides and dark droop
+  // tips, and a lower beard / forked tuft of dark K with base g strands
+  function beardChar26c(X, Y, Z) {
+    var ax = Math.abs(X), u = ax + ((Z >> 1) & 1), m = u % 3;
+    if (Z <= 52) return m === 1 ? 'g' : 'K';
+    if (Z === 59) return ax === 0 ? 'g' : ax <= 2 ? 'G' : 'g';
+    if (Z === 58) return 'K';
+    if (Z >= 60) return m === 0 ? 'K' : (Z === 61 && m === 1 ? 'G' : 'g');
+    if (m === 0) return 'K';
+    return (Z >= 56 && m === 2) ? 'G' : 'g';
+  }
   function beardChar(X, Y, Z) {
+    if (!LEGACY) return beardChar26c(X, Y, Z);
     var ax = Math.abs(X), t = ax % 3;   // mirror-symmetric strands
     if (Z <= 52) return t === 1 ? 'g' : 'K';
     if (Z === 59) return ax <= 2 ? 'G' : 'g';
@@ -430,6 +498,23 @@
     for (z = 25; z <= 27; z++) { pp(13, -1, z, 's'); pp(13, 1, z, 's'); }
     pp(13, -2, 25, 'n'); pp(13, -1, 24, 'n'); pp(13, 0, 24, 'n'); pp(13, 1, 25, 'n'); pp(12, -3, 26, 'n');
     pp(13, -3, 29, 's'); pp(14, -1, 30, 'v');
+    if (!LEGACY) {
+      // 26c relief (shells repaint it in one cloth colour, so these read through the light / shadow, and the decals
+      // colour them): every cell sits on the OUTER / front / back side, so the arm gap (>= 3), the thigh gap and the
+      // silhouette widths the tests pin stay unchanged.
+      // knuckles: the index + ring knuckles bump out on the back of the hand (X 15, z 28), lit
+      pair(15, 15, -2, -2, 28, 28, false); pair(15, 15, 0, 0, 28, 28, false);
+      pp(15, -2, 28, 'l'); pp(15, 0, 28, 'l');
+      // rolled shirt cuff: a one-cell roll round the forearm at z 38 (outer side + front + back; never the inner side)
+      pair(16, 16, -1, 1, 38, 38, false); pair(12, 14, -3, -3, 38, 38, false); pair(12, 14, 3, 3, 38, 38, false);
+      // boot lacing ridge (tongue) down the shin front, z 3-7 (LowerLeg; the boots grow over it)
+      pair(4, 4, -3, -3, 3, 7, false);
+      // sole welt: the sole sticks out one cell at z 0 (outer side, toe, heel; never the inner side, so the two boots
+      // never touch); barefoot it reads as the shaded sole edge
+      pair(7, 7, -5, 1, 0, 0, false); pair(3, 5, -7, -7, 0, 0, false); pair(3, 5, 3, 3, 0, 0, false);
+      pp(7, -5, 0, 's'); pp(7, -4, 0, 's'); pp(7, -3, 0, 's'); pp(7, -2, 0, 's'); pp(7, -1, 0, 's'); pp(7, 0, 0, 's'); pp(7, 1, 0, 's');
+      for (X = 3; X <= 5; X++) { pp(X, -7, 0, 's'); pp(X, 3, 0, 's'); }
+    }
     // belt-buckle / drawstring knot: a 3 x 2 bump on the front of the waistband (z 33-34) - the belt / tabard grow
     // over it, so the buckle stands out on every outfit (26b)
     block(-1, 1, -5, -5, 33, 34, false);
@@ -605,7 +690,13 @@
       else if (c === 'k' && (z >= 50 || z === 34 || z === 35 || z === 18 || (z >= 18 && z <= 27 && aX <= 1))) paint[k] = 'R';
       else if (c === 'k' && z >= 19 && z <= 27 && aX === 4) paint[k] = 'u';   // skirt folds (26b)
       else if (c === '9' && z >= 29 && z <= 31 && aX >= 9) paint[k] = '8';    // glove cuffs (26b)
-      else if (c === '9' && z === 28 && aX === 15) paint[k] = '7';            // glove knuckles (26b)
+      else if (c === '9' && z === 28 && aX === (LEGACY ? 15 : 16)) paint[k] = '7';   // glove knuckles (26b; 26c: on the knuckle bumps)
+      else if (LEGACY) continue;
+      // 26c (all z >= 8, so the decal stays valid at every height): red armhole trim, stitched side seams (dotted u),
+      // a dotted back centre seam
+      else if (c === 'k' && z >= 46 && z <= 49 && aX >= 7) paint[k] = 'R';
+      else if (c === 'k' && z >= 35 && z <= 45 && aX === 7 && (z & 1)) paint[k] = 'u';
+      else if (c === 'k' && z >= 19 && z <= 49 && X === 0 && y - CY >= 3 && (z & 1) && C.ch[k + S[0]] === '.') paint[k] = 'u';
     }
     // gold belt buckle on the sash over the waistband bump (26b), front-most tabard cells, X -1..1, z 35 / 34 / 33
     var BUCKLE = { 35: 'yyy', 34: 'yRy', 33: 'yyy' };
@@ -785,6 +876,37 @@
       else if (c === '9' && z === 4 && Y < 0 && (x & 1)) paint[k] = '8';                // ankle crease
       else if (c === '9' && z >= 1 && z <= 2 && Y <= -5 && (x + z) % 3 === 0) paint[k] = '7';   // scuffed toe caps
     }
+    if (!LEGACY) {
+      // 26c: criss-cross boot laces (lit 7 zig-zag over the lacing ridge, z 3-7), a dark sole welt (9) under a base
+      // upper band (8, z 1), an iron belt buckle (q frame round the dark belt), a dark tunic collar band + neck slit,
+      // a dark cuff hem on the sleeve ends, dotted shoulder seams, a dark knee crease on the trousers
+      for (z = 3; z <= 7; z++) for (u = -5; u <= 5; u++) {
+        if (Math.abs(u) < 3) continue;
+        k = proj('front', u, z);
+        if (k >= 0 && C.ch[k] === '9') paint[k] = ((z + Math.abs(u)) & 1) ? '7' : '9';
+      }
+      for (y = 0; y < S[1]; y++) for (x = 0; x < S[0]; x++) {
+        k = key(x, y, 1); if (C.ch[k] === '9' && !paint[k]) paint[k] = '8';
+      }
+      var BUCKLE = { 34: 'qqq', 33: 'qmq' };
+      for (z = 33; z <= 34; z++) for (u = -1; u <= 1; u++) {
+        k = proj('front', u, z);
+        if (k >= 0 && C.ch[k] === 'm') paint[k] = BUCKLE[z].charAt(u + 1);
+      }
+      for (y = 0; y < S[1]; y++) for (x = 0; x < S[0]; x++) {
+        X = x - CX;
+        k = key(x, y, 50); if (C.ch[k] === '2' && Math.abs(X) <= 3 && !paint[k]) paint[k] = '3';          // collar band
+        k = key(x, y, 33); if (C.ch[k] === '2' && Math.abs(X) >= 10 && !paint[k]) paint[k] = '3';         // sleeve hems
+        for (z = 46; z <= 50; z++) {                                                                      // shoulder seams
+          k = key(x, y, z); if (C.ch[k] === '2' && Math.abs(X) === 8 && ((y + z) & 1) && !paint[k]) paint[k] = '3';
+        }
+      }
+      for (z = 47; z <= 49; z++) { k = proj('front', 0, z); if (k >= 0 && C.ch[k] === '2' && !paint[k]) paint[k] = '3'; }   // neck slit
+      for (u = -6; u <= 6; u++) {                                                                         // knee creases
+        if (Math.abs(u) < 2) continue;
+        k = proj('front', u, 15); if (k >= 0 && C.ch[k] === '5' && !paint[k] && (u & 1)) paint[k] = '6';
+      }
+    }
     var z0 = SZ, z1 = -1, keyS;
     for (keyS in paint) { z = Math.floor(+keyS / (S[0] * S[1])); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
     var layers = [];
@@ -802,7 +924,13 @@
              box: [S[0], S[1], z1 - z0 + 1], paintOnly: true, layers: layers };
   }
 
-  function buildHumanKit(P) {
+  // opts.legacy26b = build the CHARGEN-26b detail level (preview before / after compare only; never written to disk)
+  function buildHumanKit(P, opts) {
+    LEGACY = !!(opts && opts.legacy26b);
+    FACE = LEGACY ? FACE_26B : FACE_26C;
+    try { return buildHumanKitInner(P); } finally { LEGACY = false; FACE = FACE_26C; }
+  }
+  function buildHumanKitInner(P) {
     var CG = P.chargen;
     if (!CG) throw new Error('human_kit: palette.chargen missing (load design/palette.js v1.54+)');
     var bones = boneTable(), layers = buildBase();
