@@ -1,6 +1,13 @@
 // engine/physics/bounds.test.js (WS1-01). Run: node engine/physics/bounds.test.js
 import { projectBounds, boundsOvershoot } from './bounds.js';
 import { makeOk } from '../test/assert.js';
+import { spawnSync } from 'node:child_process';
+
+// AUD-09: the heap-growth gate needs a quiet, gc-able heap: re-spawn once with --expose-gc (as chargen/mesh.test.js)
+if (typeof globalThis.gc !== 'function' && !process.env.BOUNDS_TEST_GC) {
+  const r = spawnSync(process.execPath, ['--expose-gc', ...process.argv.slice(1)], { stdio: 'inherit', env: { ...process.env, BOUNDS_TEST_GC: '1' } });
+  process.exit(r.status ?? 1);
+}
 let pass = 0, fail = 0;
 const ok = makeOk(() => pass++, () => fail++, (m) => console.log('FAIL', m));
 
@@ -57,10 +64,14 @@ let vx = 3, vy = -4; const vn = vx * out.nx + vy * out.ny; if (vn > 0) { vx -= v
 ok('velocity clipped: no outward component, tangent kept', Math.abs(vx * out.nx + vy * out.ny) < 1e-9 && Math.abs(vx) > 2.9);
 
 // 0 alloc over 10k steps
+// The loop lives in a function that is warmed up first: unoptimised top-level code boxes every double temp
+// (that was the old ~360 KB 'growth', constant for 10k and 100k calls; bounds.js itself allocates nothing).
+function run(k) { let hits = 0; for (let i = 0; i < k; i++) if (projectBounds(union, 1100 + (i % 600), 1000 + (i % 80), R, out)) hits++; return hits; }
+for (let w = 0; w < 5; w++) run(10000);
 globalThis.gc && globalThis.gc();
 const h0 = process.memoryUsage().heapUsed;
-let n = 0;
-for (let i = 0; i < 10000; i++) if (projectBounds(union, 1100 + (i % 600), 1000 + (i % 80), R, out)) n++;
+const n = run(10000);
+globalThis.gc && globalThis.gc();   // retained growth (a leak) survives gc; JIT/young-gen noise does not
 const dh = process.memoryUsage().heapUsed - h0;
 ok('10k steps: heap growth < 64 KB', dh < 65536, `${dh} B, hits ${n}`);
 
