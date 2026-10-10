@@ -1058,3 +1058,8 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 ## D-056 - M3 "Steel and Hush" closed (owner, 2026-10-10; recorded by the PC-B main session)
 - Owner: "m3 done". M3 exit accepted by the owner walk on PC-B (laptop). Open M3 rows that are not bugs move to M4 or stay parked (BEAST-TUNING-01 dodge = design question).
 - Owner note: "waystones restarts" - the waystone still carries the M1/M2 demo end trigger (`quest.end`: scripted walk + end card, then the game starts over). What happens instead is an owner decision (asked 2026-10-10).
+
+## D-057 - Waystones are travel points (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner: "waystone also teleport location". Travel is picked **from the map (M)**; only waystones the player has **touched** (saved) can be travelled to.
+- Placement: **one more along the road west**, then waystones spread "around the map: crossroads, villages, etc." - the **designer proposes** spots on the chart, the owner picks before anything is built.
+- Order: designer proposal -> owner pick -> PO story rows (travel from the map, touched list in the save, fade + invalidate on arrival) -> programmer.
