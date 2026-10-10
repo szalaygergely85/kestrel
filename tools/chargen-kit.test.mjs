@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import '../design/palette.js';
 import '../design/detail-pass.js';
 import '../design/chargen/human_kit.js';
-import { HUMANOID_PART_MAP } from '../engine/index.js';
+import { HUMANOID_PART_MAP, composeCharacter } from '../engine/index.js';
 
 let passed = 0;
 const test = (name, fn) => { try { fn(); passed++; console.log(`ok - ${name}`); } catch (e) { console.error(`not ok - ${name}\n${e.stack}`); process.exitCode = 1; } };
@@ -113,6 +113,19 @@ test('every appended palette key has a color, a v1 material and a v2 record (+ r
 test('materials per character <= 255; quads within the 38.29 budget (<= 6000)', () => {
   assert.ok(res.stats.materialKeys <= 255);
   assert.ok(res.stats.bases.m_avg.quads <= 6000, 'quads ' + res.stats.bases.m_avg.quads);
+});
+test('CHARGEN-25: kit.defaults wears the outfit (hair, shirt, trousers, boots) - never bald + underwear', () => {
+  for (const s of ['hair', 'top', 'legs', 'feet']) assert.ok(kit.defaults[s] && kit.defaults[s].id, 'defaults.' + s);
+});
+test('preview composePreview = engine composeCharacter for kit.defaults (same material in every cell)', () => {
+  const g = composeCharacter(kit, kit.defaults), C = CK.composePreview(kit, 'm_avg', kit.defaults);
+  assert.deepStrictEqual(Array.from(g.size), Array.from(C.size));
+  let diff = 0, first = '';
+  for (let i = 0; i < g.mat.length; i++) {
+    const a = g.mat[i] ? g.matKeys[g.mat[i] - 1] : null, b = C.ch[i] === '.' ? null : CK.resolveMat(kit, kit.defaults, C.ch[i]);
+    if (a !== b && !diff++) first = 'cell ' + i + ': engine ' + a + ' / preview ' + b;
+  }
+  assert.strictEqual(diff, 0, diff + ' cells differ, first ' + first);
 });
 test('deterministic: two builds give identical text', () => {
   assert.strictEqual(CK.stringifyKit(CK.buildHumanKit(P)), CK.stringifyKit(kit));
