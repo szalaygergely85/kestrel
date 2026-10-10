@@ -413,3 +413,11 @@ B2 2026-10-09 (TWISTED-LOD-01) -> arch-review (importer data only): TwistedTree_
 - Test `engine/world/terrainBand.test.js` (26 checks): 5x3 == stitched bakeChunk, groundAt continuous at x 1280, trees 545 (<=1500), detail 2361 (3x3: 1466; <=40000), 3x5 tall band + 3x3->5x3 mesh re-layout. Suites terrain/scatter/world/mesh/gpu/editor (159) + check-deps green.
 - Perf (loaded machine, 4 agents): bake 3x3 313 ms vs 5x3 384 ms (1.2-1.5x; absolute is above the 80 ms quoted, WS1-08 must re-measure quiet); band data 0.32 -> 0.53 MB; World.load +heap ~0.8 MB.
 - WS1-03 must: `terrainRaster.wgsl.js terrainTypeAt` use H separately (`textureDimensions(uNearType)` or one more word; `ix<W && iy<H`); passRaster.js:274 only writes `nearMap.w = ng.w` (add h); GLSL terrain.frag twin if still compiled. TerrainTextures/_uploadType already pass w,h.
+
+## CH1-E1 (kestrel-3, 2026-10-10) -> arch-review (NEEDS PC-A)
+- `engine/nav/pathFollow.js` `createPathFollower(points, {speed, arriveR, turnRate, waitFar, resumeNear, onArrive})`; `step(dt, speedScale, px, py)`; fields x,y,yawDeg,seg (last reached wp),s,done,waiting; `reset(seg)`. Corners round inside arriveR, last point exact; long dt cannot skip waypoints. Exported from engine/index.js. Only import: core/transform.js yawFromDelta.
+- `pathFollow.test.js` 18 checks (arrival, events, yaw/turn rate, reset, speedScale 0, wait hysteresis, determinism, 10k-step heap flat). check-deps OK.
+
+## CH1-E2 (kestrel-3, 2026-10-10) -> arch-review (NEEDS PC-A)
+- `components.collider.kinematic: true` -> `npcs:kinematic` collider (colliders.js `buildKinematicCollider`, 32 tris/prism, max 8 else throws); `World.setEntityCollider(id,x,y,z)` (feet z) shifts the slot's verts + `bvh.refit` in place, returns false if not kinematic. Does not move the entity transform. Without the flag `props:static` path is unchanged. Flag survives serialize (components cloned).
+- `kinematicCollider.test.js` 17 checks (blocked new / free old, moved == fresh build, serialize, 10k moves heap +<200 KB). Suites world/nav/physics/propColliders green; terrainStroke/terrainBand failed once under machine load, pass solo.

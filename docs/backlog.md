@@ -1982,8 +1982,8 @@ Order: writer rows + CH1-D1a + CH1-E1/E2 + CH1-01 in parallel -> CH1-02, CH1-03,
 | CH1-04b | kestrel-1 | 0.75 d | `game/js/quest/relayWake.js` (`kind:'stone'`), `game/js/waystoneTouch.js` (dormant), `game/js/quest/index.js` (`stone.wake`), world data `endMarker` (`dormant`, `notice`) | WS1-06b, CH1-03, CH1-04a, CH1-D2 | todo [PC-B] |
 | CH1-05 | kestrel-4 | 0.5 d | `content/dialogue/bear.dialogue.json` (full graph 38.37 item 6), `content/dialogue/bear.barks.json` (new), `tools/validate-content.mjs` (`s.` keys, `barks` kind), `game/js/quest/bearDialogue.test.js` | CH1-W2 (placeholder text ok), CH1-06 | todo [PC-B] |
 | CH1-06 | kestrel-1 | 0.5 d | `game/js/quest/dialogueCtl.js` (`s.` route) + test, `game/js/quest/barks.js` (new) + test, main.js mount | CH1-02 | todo [PC-B] |
-| CH1-E1 | kestrel-3 | 0.5 d | `engine/nav/pathFollow.js` (new) + test, `engine/index.js` export | - | todo [PC-B] (engine) |
-| CH1-E2 | kestrel-3 | 0.75 d | `engine/world/World.js` (`kinematic` entity colliders, `setEntityCollider`), `engine/world/colliders.js` if needed, `engine/world/world.test.js` | - | todo [PC-B] (engine) |
+| CH1-E1 | kestrel-3 | 0.5 d | `engine/nav/pathFollow.js` (new) + test, `engine/index.js` export | - | arch-review [PC-B] (engine) |
+| CH1-E2 | kestrel-3 | 0.75 d | `engine/world/World.js` (`kinematic` entity colliders, `setEntityCollider`), `engine/world/colliders.js` if needed, `engine/world/world.test.js` | - | arch-review [PC-B] (engine) |
 | CH1-07 | kestrel-1 | 1 d | `game/js/quest/npcWalk.js` (new) + test, `game/js/quest/npcBear.js` (pause turning while walking), main.js (Burl phases, auto-open stone talk, depart + hide, load rules), world data `bear` (`walks.follow`/`depart`, `collider.kinematic`) | CH1-E1, CH1-E2, CH1-05, CH1-06 | todo [PC-B] |
 | CH1-08a | kestrel-4 | 0.5 d | `content/worlds/world_m1.world.json` (`fen` entity, `walks.emerge`), `content/dialogue/fen.dialogue.json` (new), `content/packages/index.json` + `villager.fen-*.kestrel`, `game/js/quest/fenDialogue.test.js` | CH1-D3, CH1-W4, WS1-04 | todo [PC-B] |
 | CH1-08b | kestrel-1 | 0.5 d | main.js (Fen hidden until the relay wakes, emerge walk, auto-open, `fen.met`), uses `npcWalk.js` | CH1-07, CH1-08a, WS1-06b | todo [PC-B] |
@@ -2035,14 +2035,14 @@ Order: writer rows + CH1-D1a + CH1-E1/E2 + CH1-01 in parallel -> CH1-02, CH1-03,
 - [ ] `barks.js`: loads a `barks` file, `play(barkId, speakerEntity)` once per id (flag `bark.<id>`), non-modal, typed, 1.6 s per line, cancelled when a dialogue opens; draws in the dialogue box style.
 - [ ] Tests: adapter table, bark once, cancel on dialogue, 0-alloc draw.
 
-### CH1-E1 Path follower (engine)  [P1] [todo] [PC-B kestrel-3]
-- [ ] `engine/nav/pathFollow.js` per 38.37 item 5 (API, look-ahead corners, yaw, `reset(seg)`), exported from `engine/index.js`.
-- [ ] Tests: arrival, seg count, resume, speedScale 0, 10k-step heap flat, determinism (two runs equal). check-deps green. -> `arch-review`.
+### CH1-E1 Path follower (engine)  [P1] [arch-review] [PC-B kestrel-3]
+- [x] `engine/nav/pathFollow.js` per 38.37 item 5 (API, look-ahead corners, yaw, `reset(seg)`), exported from `engine/index.js`.
+- [x] Tests: arrival, seg count, resume, speedScale 0, 10k-step heap flat, determinism (two runs equal). check-deps green. -> `arch-review`.
 
-### CH1-E2 Kinematic entity colliders (engine)  [P1] [todo] [PC-B kestrel-3]
-- [ ] `components.collider.kinematic: true` -> the `npcs:kinematic` collider (<= 8 prisms); `World.setEntityCollider(id, x, y, z)` updates in place + refits bounds, 0 alloc.
-- [ ] Without the flag, `props:static` is byte-identical (existing tests unchanged). Serialize keeps the flag.
-- [ ] Tests: capsule blocked at the new spot, free at the old one, 0 alloc over 10k moves. If an in-place update is impossible, ASK ARCHITECT. -> `arch-review`.
+### CH1-E2 Kinematic entity colliders (engine)  [P1] [arch-review] [PC-B kestrel-3]
+- [x] `components.collider.kinematic: true` -> the `npcs:kinematic` collider (<= 8 prisms); `World.setEntityCollider(id, x, y, z)` updates in place + refits bounds, 0 alloc.
+- [x] Without the flag, `props:static` is byte-identical (existing tests unchanged). Serialize keeps the flag.
+- [x] Tests: capsule blocked at the new spot, free at the old one, 0 alloc over 10k moves. If an in-place update is impossible, ASK ARCHITECT. -> `arch-review`.
 
 ### CH1-07 Burl escort + departure  [P1] [todo] [PC-B kestrel-1]
 - [ ] `npcWalk.js` per 38.37 item 5 (lead mode: wait > 10 m, resume < 6 m; barks at waypoints; `hideAtEnd`; walk/idle clips; ground z; collider follows).
