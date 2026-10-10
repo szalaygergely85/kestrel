@@ -31,7 +31,7 @@ try {
   const AT = process.env.AT || '16,3.4,0,90,0'; // next to props.stairLamp (14.28, 3.4, 1.52); override with AT=x,y,z,yaw,pitch
   const res = {};
   for (const mode of ['off', 'on']) {
-    const ps = mode === 'on' ? '&pointshadows=4&quality=high' : '&quality=high';
+    const ps = mode === 'on' ? '&pointshadows=4&quality=high' : '&quality=high&pointshadows=0';
     await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&title=0&backend=${backend}&at=${AT}${ps}` });
     let ready = false;
     for (let i = 0; i < 100; i++) { await pause(300); if (await evaluate(cdp, '!!window.__kestrel && !!window.__debug')) { ready = true; break; } }

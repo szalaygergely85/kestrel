@@ -125,7 +125,7 @@ export class RenderTargetWebGPU {
     this.glyphAscent = box.glyphAscent;
     this.cellW = this.pxCellW / dpr;
     this.cellH = this.pxCellH / dpr;
-    const css = fitCssSize(this.cellW * this.cols, this.cellH * this.rows, availW, availH); // display-only fit
+    const css = fitCssSize(this.cellW * this.cols, this.cellH * this.rows, availW, availH, refAvailW == null ? 2 : 1); // display-only fit (live window may upscale <= 2x so Ultra is never a smaller picture)
     this.canvas.style.width = css.w + 'px';
     this.canvas.style.height = css.h + 'px';
     this.canvas.style.imageRendering = css.smooth ? 'auto' : ''; // BUG-SQUARES-01: '' = page CSS (pixelated) at 1:1

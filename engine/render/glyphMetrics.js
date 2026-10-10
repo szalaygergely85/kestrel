@@ -84,11 +84,13 @@ export function computeCellBox(measureCtx, cols, rows, availPxW, availPxH, maxRo
  * window. Display-only: pxCellW/H, the backing buffer and everything the cast reads stay untouched (aspect preserved).
  * @returns {{w:number,h:number}} CSS pixels
  */
-export function fitCssSize(cssW, cssH, availW, availH) {
-  const s = Math.min(1, availW / cssW, availH / cssH);
+export function fitCssSize(cssW, cssH, availW, availH, maxUp = 1) {
+  // QUALITY-BOOT-01: integer cell px lose area on finer grids (1717x790: 400x150 -> 1600x750, 480x180 -> 1440x720, a SMALLER picture).
+  // `maxUp` > 1 lets the live window upscale the canvas (smooth sampling) so every preset fills the same screen box.
+  const s = Math.min(maxUp, availW / cssW, availH / cssH);
   // BUG-SQUARES-01: a shrunk canvas must resample smoothly - `image-rendering: pixelated` drops whole pixel
   // rows/columns on a non-integer downscale (screen-fixed moire blocks). `smooth` -> style.imageRendering = 'auto'.
-  return { w: cssW * s, h: cssH * s, smooth: s < 1 };
+  return { w: cssW * s, h: cssH * s, smooth: s !== 1 };
 }
 
 export { FONT_STACK };
