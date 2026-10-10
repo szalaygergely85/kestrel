@@ -141,15 +141,15 @@ function routeRun(physics, { reload = false } = {}) {
   info.stairBaseClear = !anyRoller(sim.world);
   r.end = { ...sim.player.transform }; legs.push(r);
   // 3 stairs: base -> top of the lower flight and the step before the gap.
-  const stairs = [[16, 3], [17, 3], [18, 3], [19, 3], [19, 4], [20, 4], [20, 5], [20, 6], [20, 7]].map(W);
+  const stairs = [[16, 3], [17, 3], [18, 3], [19, 3], [19, 4], [20, 4], [20, 5], [20, 6], [20, 7], [20, 8]].map(W);
   legs.push(runLeg(sim, '3 stairs (to step 9)', stairs));
-  // 4 gap jump to the mid ledge.
-  legs.push(runLeg(sim, '4 gap jump + ledge', [{ ...W([20, 9]), jump: true }, W([19, 9])]));
+  // 4 ledge (CH1-D1a: no jump here any more; the gap moved to the SW corner, leg 5b).
+  legs.push(runLeg(sim, '4 ledge', [W([20, 9]), W([19, 9])]));
   // TOWER-LEVER-01: pass the landing and upper flight without an interaction.
   info.upperStairOpen = upperStairOpen(sim);
   info.leverAbsent = !sim.world.get('tower.lever') && !sim.world.interactables.some(r => r.id === 'lever');
   legs.push(runLeg(sim, '5a open landing', [W([19, 10]), W([18, 10])]));
-  legs.push(runLeg(sim, '5b upper steps', [W([17, 10]), W([16, 10]), W([15, 10]), W([14, 10]), W([14, 9]), W([13, 9]), W([13, 8]), W([13, 7]), W([12, 7])]));
+  legs.push(runLeg(sim, '5b upper steps + gap jump (SW)', [W([17, 10]), W([16, 10]), { ...W([14, 10]), jump: true }, W([14, 9]), W([13, 9]), W([13, 8]), W([13, 7]), W([12, 7])]));
   if (reload) {
     // AC 4: save mid-route (upper stair open), reload on the same physics mode, probes bit-equal, walk continues.
     const w1 = sim.world, w2 = deserialize(serialize(w1), assets, { physics });
@@ -172,7 +172,25 @@ function routeRun(physics, { reload = false } = {}) {
   }
   // 6 doorway + summit walkway to the breach.
   legs.push(runLeg(sim, '6 doorway + summit', [W([11, 7]), W([10, 7]), W([10, 8]), W([9, 8]), W([8, 8]), W([7, 8]), W([7, 7])]));
-  legs.push(runLeg(sim, '7a breach + outcrop', [W([6, 7]), W([5, 7])]));
+  legs.push(runLeg(sim, '7a breach (parapet overlook)', [W([6, 7])]));
+  // 7c CH1-D1a walk-down: take the sword (state), pry the bar through the real `door.unbar` interactable, then walk
+  // the summit -> upper steps -> gap-alcove drop -> ground-floor SW door -> outside stair to the outer ring (8,12).
+  sim.world.state['tower.sword.taken'] = true;
+  const doorRec = sim.world.interactables.find((r) => r.id === 'door');
+  const barProbe = () => { // mesh: a capsule pushed +y into the doorway (15.5, 11.1) is blocked while the bar collider exists
+    if (physics !== 'mesh') return null;
+    const o = {}, op = { height: 1.7, stepUpMax: 0.45, walkCos: Math.cos(50 * Math.PI / 180) };
+    const q = sim.world.collideCircle(O.x + 15.5, O.y + 10.9, 0, 0.3, 0.3, 0, true, op, o);
+    return !!q.blockedY;
+  };
+  info.doorBarBlocksBefore = barProbe();
+  sim.world.fireInteraction(doorRec.name, { engine: {}, def: doorRec.def, entity: sim.world.get(doorRec.propId), actor: sim.player });
+  info.doorBarBlocksAfter = barProbe();
+  info.doorOpen = sim.world.state['tower.door.open'] === true && sim.world.get(doorRec.propId).getComponent('voxel').variant === 'open';
+  const down = [[7, 7], [7, 8], [8, 8], [9, 8], [10, 8], [10, 7], [11, 7], [12, 7], [13, 7], [13, 8], [13, 9], [14, 9], [14, 10], [16, 10, true], [17, 10], [18, 10], [19, 10], [19, 9],
+    [20, 9], [20, 8], [20, 7], [20, 6], [20, 5], [20, 4], [19, 4], [19, 3], [18, 3], [17, 3], [16, 3], [15, 3], [15, 5], [16, 5], [16, 6], [17, 7], [17, 8], [17, 9], [16, 9], [15, 9],
+    [15, 10], [15, 11], [15, 12], [14, 12], [13, 12], [12, 12], [11, 12], [10, 12], [9, 12], [8, 12]].map(([x, y, jump]) => (jump ? { ...W([x, y]), jump: true } : W([x, y])));
+  legs.push(runLeg(sim, '7c walk down -> SW door -> out', down));
   // 7b hillside + waystone (fires the real world `end` trigger zone).
   const endRec = sim.world.triggers.find((t) => t.id === 'end' && t.structId === null); // area-only zone (WAYSTONE-NORMAL-01): reached, but fires no end sequence
   let sawEnd = false;

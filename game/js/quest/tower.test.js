@@ -107,14 +107,15 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   const ids = (d.interactables || []).map((i) => i.id).sort();
   // US-078c: + the "sword" interactable (content/levels/tower.level.json, copied in from design/models/sword.js's levelPatch.towerSword).
   // READ-01: + the 4 "note*" interactables (hand-copied from design/models/notes.js's levelPatch.towerNotes.appendInteractables).
-  ok('interactables ids = beacon, lantern, note* x4, sword', JSON.stringify(ids) === JSON.stringify(['beacon', 'lantern', 'noteKeepLight', 'noteKeeperLog', 'noteMason', 'noteSteelHush', 'sword']), ids.join(','));
+  // CH1-D1a: - lantern (no lamp pickup), + door (door.unbar, ground-floor SW door), + noteLeave (summit doorway note).
+  ok('interactables ids = beacon, door, note* x5, sword', JSON.stringify(ids) === JSON.stringify(['beacon', 'door', 'noteKeepLight', 'noteKeeperLog', 'noteLeave', 'noteMason', 'noteSteelHush', 'sword']), ids.join(','));
   ok('every interactable has an interact name', (d.interactables || []).every((i) => typeof i.interact === 'string' && i.interact.length));
   // US-026a-content: the tower's own 'end' trigger is gone - the ending
   // moved to a world-level trigger at the waystone (worlds.world_m1.triggers,
   // checked in section 2b below); this only asserts it is really gone here.
   ok('trigger end: no longer present on the tower level (moved world-level, US-026a)', !(d.triggers || []).find((t) => t.id === 'end'));
   const hint = (d.triggers || []).find((t) => t.id === 'hintJump');
-  ok('trigger hintJump: type hint, zMin 2.0', hint && hint.type === 'hint' && hint.zMin === 2.0 && hint.trigger === 'hint.show');
+  ok('trigger hintJump: type hint, zMin 3.0 (CH1-D1a, gap in the SW corner)', hint && hint.type === 'hint' && hint.zMin === 3.0 && hint.trigger === 'hint.show');
   ok('markers.gapEdge present', d.markers && d.markers.gapEdge && typeof d.markers.gapEdge.x === 'number');
   ok('the tower reaches through structures[0]', worldFull.structures[0].level.def === d);
 }
@@ -155,6 +156,7 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
     ...(towerDef.interactables || []).map((i) => i.interact),
     ...(towerDef.triggers || []).map((t) => t.trigger),
     ...(worldM1.triggers || []).map((t) => t.trigger).filter(Boolean),
+    'lantern.take', // kept registered (lantern.js, lantern.test/quest.test legacy fixtures) though CH1-D1a removed the tower interactable
     'quest.end', // kept registered (end.js, end.test.js, restart.test.js) though world_m1 no longer references it (WAYSTONE-NORMAL-01)
     'npc.talk', // NPC-BEAR-01: runtime-only (dialogueCtl.addNpc -> World.addInteractable), no content reference
     'beast.loot', // US-091a2: runtime-only (sim/loot.js World.addInteractable per boar), no content reference
@@ -162,8 +164,8 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   ]);
   ok('quest/index.js registers exactly the names the tower + world_m1 data references',
     names.length === referenced.size && names.every((n) => referenced.has(n)), `${names} vs ${[...referenced]}`);
-  unregisterBehaviour('lantern.take');
-  ok('one registration removed -> exactly that name is listed', JSON.stringify(validateBehaviours(worldFull)) === '["lantern.take"]');
+  unregisterBehaviour('door.unbar');
+  ok('one registration removed -> exactly that name is listed', JSON.stringify(validateBehaviours(worldFull)) === '["door.unbar"]');
   // World.load warns (once, one line) with the same list. `terrain: null`
   // also makes the prop spawn warn once for `envelopeHeap`'s `z: 'ground'`
   // (7.5 item 1: no terrain -> warn + 0) - filter to the behaviour line so
@@ -173,7 +175,7 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   World.load({ name: 'w', terrain: null, structures: [{ id: 'tower', level: 'tower', origin: placement.origin }], entities: [], state: {} }, assets, {});
   console.warn = origWarn;
   const behaviourWarns = warns.filter((w) => w.includes('behaviour(s) referenced'));
-  ok('World.load warns once naming the missing behaviour', behaviourWarns.length === 1 && /lantern\.take/.test(behaviourWarns[0]), warns.join(' | '));
+  ok('World.load warns once naming the missing behaviour', behaviourWarns.length === 1 && /door.unbar/.test(behaviourWarns[0]), warns.join(' | '));
   registerQuestBehaviours();
   ok('re-registration restores an empty list', validateBehaviours(worldFull).length === 0);
   // Every name QUEST_BEHAVIOURS lists now has a real body (US-012/US-014/
@@ -191,72 +193,31 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
 }
 
 // ---------------------------------------------------------------------------
-// 3b. US-012: `lantern.take` behaviour body on the real tower data. As with
-//    the lever (section 8 below), `entity`/`actor` are stub handle-shaped
-//    objects here - real prop entities come from US-011 (tech note 5).
+// 3b. CH1-D1a: the lamp pickup is gone; `door.unbar` (ground-floor SW door) replaces it as the tower's
+//    one prop-variant interactable. Runs the real behaviour on the real tower data.
 // ---------------------------------------------------------------------------
 {
-  const lanternDef = towerDef.interactables.find((i) => i.id === 'lantern');
-  // CH1-02: the lamp is no longer a quest step; the prompt text is not asserted (the level rework may drop or rename it)
-  ok('lantern interactable data: once, interact lantern.take', lanternDef.once === true && lanternDef.interact === 'lantern.take');
-
-  let actorLight = null;
-  const fakeActor = { setComponent: (name, value) => { if (name === 'light') actorLight = value; } };
-
-  const lanternWorld = World.load({
-    name: 'tower_lantern_test', terrain: null,
+  ok('3b: no lantern interactable any more (lamp pickup removed)', !towerDef.interactables.some((i) => i.id === 'lantern' || i.interact === 'lantern.take'));
+  const doorDef = towerDef.interactables.find((i) => i.id === 'door');
+  ok('3b: door interactable data: once, door.unbar, prop doorBar, requires tower.sword.taken',
+    !!doorDef && doorDef.once === true && doorDef.interact === 'door.unbar' && doorDef.prop === 'doorBar' && doorDef.requires === 'tower.sword.taken');
+  const doorProp = towerDef.props.find((p) => p.id === 'doorBar');
+  ok('3b: doorBar prop starts barred and drops its collider in variant open', doorProp.variant === 'barred' && doorProp.colliderOffVariant === 'open' && doorProp.colliders.length === 1);
+  const doorWorld = World.load({
+    name: 'tower_door_test', terrain: null,
     structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
     entities: [], state: {},
-  }, assets, {});
-
-  // US-011 (7.5 item 1/tech note 5): `World.load` auto-spawns the real
-  // lantern prop entity now - use it instead of a hand-rolled fake.
-  // OWN-REQ-006: default anim is now 'lit' (was 'unlit') - the lamp hangs lit by default.
-  const lanternProp = lanternWorld.get('tower.lantern');
-  ok('World.load auto-spawns the real lantern prop entity', !!lanternProp && lanternProp.getComponent('sprite').model === 'lantern' && lanternProp.getComponent('sprite').anim === 'lit');
-
-  // OWN-REQ-006: the flame prop and the hook light both start present/on.
-  const flameProp = lanternWorld.get('tower.lampFlame');
-  ok('World.load auto-spawns the lampFlame prop (OWN-REQ-006)', !!flameProp && flameProp.getComponent('sprite').model === 'lampFlame');
-  const hookLightDef = towerDef.lights.find((l) => l.id === 'lanternHook');
-  ok('the lanternHook light starts on in level data (OWN-REQ-006)', hookLightDef && hookLightDef.on === true && hookLightDef.preset === 'lanternHook');
-  ok('lantern interactable data: light "lanternHook", flameProp "lampFlame" (OWN-REQ-006)',
-    lanternDef.light === 'lanternHook' && lanternDef.flameProp === 'lampFlame');
-
-  const r = lanternWorld.fireInteraction('lantern.take', { def: lanternDef, entity: lanternProp, actor: fakeActor });
-  ok('lantern.take returns true (consumes the once-flag path)', r === true);
-  ok('lantern.take attaches an eye light preset "lantern" to the actor', actorLight && actorLight.preset === 'lantern' && actorLight.on === true && actorLight.attach === 'eye');
-  const propSprite = lanternProp.getComponent('sprite');
-  // US-011 (7.5 item 2): `lantern.take` -> `entity.play('empty')` - assert
-  // `sprite.anim`, the field the engine actually renders (not `variant`,
-  // which is still written alongside it for readability).
-  ok('lantern.take plays the empty-bracket animation, keeping model', propSprite.anim === 'empty' && propSprite.model === 'lantern');
-  ok('lantern.take sets tower.lantern.taken', lanternWorld.state['tower.lantern.taken'] === true);
-
-  // OWN-REQ-006: the flame prop is removed immediately (same call, no gap frame) and the
-  // hook-light-off key is queued for `stepLantern` (the runtime LightSet is out of this ctx's reach).
-  ok('lantern.take removes the lampFlame prop entity', lanternWorld.get('tower.lampFlame') === null);
-  ok('lantern.take queues the hook light key for stepLantern', lanternWorld.state['tower.lantern.hookLightOff'] === 'tower.lanternHook');
-
-  const fakeLanternLights = {
-    key: ['tower.lanternHook'], count: 1, on: new Uint8Array([1]),
-    setOn(h, on) { this.on[h] = on ? 1 : 0; },
-  };
-  stepLantern(lanternWorld, fakeLanternLights);
-  ok('stepLantern switches the hook light off', fakeLanternLights.on[0] === 0);
-  ok('stepLantern clears its own state key once done', lanternWorld.state['tower.lantern.hookLightOff'] == null);
-
-  // A repeat call (e.g. a stray extra fixed step) is a cheap no-op, never throws, never re-toggles.
-  fakeLanternLights.on[0] = 1;
-  stepLantern(lanternWorld, fakeLanternLights);
-  ok('stepLantern is a no-op once its key is cleared', fakeLanternLights.on[0] === 1);
-
-  // A second E on the same interactable: `updateInteraction` (not exercised
-  // here directly - `interaction.test.js` covers the generic `once` gate)
-  // finds no target once `world.interactables`' matching `usedKey` is set;
-  // this checks the World-built table carries that key at all.
-  const rec = lanternWorld.interactables.find((it) => it.id === 'lantern' && it.structId === 'tower');
-  ok('World.load built an interactables entry for the lantern with a usedKey (once: true)', !!rec && rec.usedKey === 'used.tower.lantern');
+  }, assets, { physics: 'mesh' });
+  const bar = doorWorld.get('tower.doorBar');
+  ok('3b: World.load spawns the doorBar prop barred', !!bar && bar.getComponent('voxel').anim === 'barred' && bar.getComponent('voxel').variant !== 'open');
+  const tris = () => doorWorld.colliders.find((c) => c.id === 'props:static').bvh.triCount;
+  const before = tris();
+  const r = doorWorld.fireInteraction('door.unbar', { def: doorDef, entity: bar, actor: null });
+  ok('3b: door.unbar returns true', r === true);
+  ok('3b: door.unbar sets the open variant + tower.door.open', bar.getComponent('voxel').variant === 'open' && doorWorld.state['tower.door.open'] === true);
+  ok('3b: door.unbar drops the 12-triangle bar box from props:static', tris() === before - 12, before + ' -> ' + tris());
+  const rec = doorWorld.interactables.find((it) => it.id === 'door' && it.structId === 'tower');
+  ok('3b: interactables entry for the door carries a usedKey (once: true)', !!rec && rec.usedKey === 'used.tower.door');
 }
 
 // ---------------------------------------------------------------------------
