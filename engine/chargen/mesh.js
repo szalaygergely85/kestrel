@@ -1,6 +1,6 @@
 // engine/chargen/mesh.js (CHARGEN-03, docs/architecture.md 38.29 item 4): meshCharacter(grid) -> RiggedModel.
-// Per-bone culled + greedy quads; a quad never crosses bones and a face between two filled voxels is never emitted
-// (even across a bone boundary), so the rest pose is watertight with no interior faces.
+// Per-bone culled + greedy quads; a quad never crosses bones. A face is hidden only by a filled voxel of the SAME bone,
+// so each bone is a closed shell and the cap pair at every bone boundary stays (rotating joints show no holes).
 //
 // RiggedModel.mesh: quads, 4 vertices per quad (implicit indices 0,1,2, 0,2,3; counter-clockwise seen from outside).
 //   pos Float32Array(12*quads) metres relative to the anchor (authoring axes: x right, y south, z up)
@@ -71,7 +71,7 @@ export function meshCharacter(grid) {
             let m = 0;
             if (mat[idx] && bone[idx] === b) {
               const t = s + sign;
-              m = (t >= 0 && t < dw && mat[idx + sign * sw]) ? 0 : mat[idx];
+              m = (t >= 0 && t < dw && mat[idx + sign * sw] && bone[idx + sign * sw] === b) ? 0 : mat[idx];
             }
             mask[(i - u0) + mw * (j - v0)] = m;
             if (m) any = true;

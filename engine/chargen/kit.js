@@ -13,10 +13,14 @@
 export const SHELL_ORDER = ['legs', 'feet', 'top', 'outer'];
 export const ATTACH_ORDER = ['hair', 'beard', 'hat'];
 export const SLOTS = [...SHELL_ORDER, ...ATTACH_ORDER];
+/** Attachment slots a kit may define: 'overlay' (elder overlay) is kit-only, never a recipe pick, painted last. */
+export const KIT_ATTACH_SLOTS = [...ATTACH_ORDER, 'overlay'];
 /** Ramp group a recipe slot dyes (beard shares the hair group). */
 export const dyeGroupOf = (slot) => (slot === 'beard' ? 'hair' : slot);
 /** Bones whose rows may be duplicated/deleted for height (waist and shin only). */
-export const STRETCH_BONES = ['Hips', 'Spine', 'LeftLowerLeg', 'RightLowerLeg'];
+export const STRETCH_BONES = ['Hips', 'Spine', 'LeftLowerLeg', 'RightLowerLeg', 'LeftUpperArm', 'RightUpperArm', 'LeftLowerArm', 'RightLowerArm'];
+/** A stretch row crossing one of these must cross its mirror too (hands and shoulders stay forbidden). */
+const ARM_MIRROR = { LeftUpperArm: 'RightUpperArm', RightUpperArm: 'LeftUpperArm', LeftLowerArm: 'RightLowerArm', RightLowerArm: 'LeftLowerArm' };
 export const MAX_MATERIALS = 255;
 
 export const isEmptyChar = (c) => c === '.' || c === ' ';
@@ -43,6 +47,36 @@ function checkLayers(layers, size, where, err) {
     }
   }
   return chars;
+}
+
+const MAX_PARTS_KIT = 8; // = MAX_VOX_PARTS (collapse.js pins it with a test)
+function checkPartMap(pm, bones, err) {
+  if (!Array.isArray(pm)) { err('partMap: must be an array [{name,bones,parent,compose?}] (the object form is not accepted)'); return; }
+  if (!pm.length || pm.length > MAX_PARTS_KIT) err(`partMap: ${pm.length} parts, need 1..${MAX_PARTS_KIT}`);
+  const partOfBone = new Map();
+  const partIdx = new Map();
+  pm.forEach((p, i) => {
+    const W = `partMap[${i}]`;
+    if (!p || typeof p.name !== 'string' || !Array.isArray(p.bones) || !p.bones.length) { err(`${W}: needs name and a non-empty bones array`); return; }
+    if (partIdx.has(p.name)) err(`${W}: duplicate part "${p.name}"`);
+    partIdx.set(p.name, i);
+    if (p.compose !== undefined && !(Number.isInteger(p.compose) && p.compose >= 1 && p.compose <= p.bones.length)) err(`${W}: compose must be an int 1..${p.bones.length}`);
+    for (const bn of p.bones) {
+      if (!bones.has(bn)) err(`${W}: unknown bone "${bn}"`);
+      else if (partOfBone.has(bn)) err(`${W}: bone "${bn}" is already in part "${pm[partOfBone.get(bn)].name}"`);
+      else partOfBone.set(bn, i);
+    }
+  });
+  for (const bn of bones.keys()) if (!partOfBone.has(bn)) err(`partMap: bone "${bn}" is in no part`);
+  pm.forEach((p, i) => {
+    if (!p || !Array.isArray(p.bones) || !p.bones.length || !bones.has(p.bones[0])) return;
+    const W = `partMap[${i}]`;
+    if (p.parent != null && !(partIdx.has(p.parent) && partIdx.get(p.parent) < i)) err(`${W}: parent "${p.parent}" is unknown or listed after it`);
+    const rootParent = bones.get(p.bones[0]).parent;
+    const parentPart = p.parent == null ? -1 : partIdx.get(p.parent);
+    const actual = rootParent == null ? -1 : (partOfBone.has(rootParent) ? partOfBone.get(rootParent) : -2);
+    if (actual !== parentPart && actual !== -2) err(`${W}: first bone "${p.bones[0]}" has its parent bone in part ${actual < 0 ? 'none' : `"${pm[actual].name}"`}, not in parent "${p.parent ?? 'none'}"`);
+  });
 }
 
 /** @returns {{errors:string[], warnings:string[]}} */
@@ -131,9 +165,16 @@ export function validateKit(kit, knownMats) {
     // a stretch row may only contain voxels of the waist/shin bones
     for (const z of base.stretchRows || []) {
       if (!isInt(z) || z < 0 || z >= sz) { err(`${W}.stretchRows: ${z} is not a row 0..${sz - 1}`); continue; }
-      for (const n of rowBones.get(z) || []) if (!STRETCH_BONES.includes(n)) err(`${W}.stretchRows: row ${z} runs through forbidden bone "${n}"`);
+      const crossed = rowBones.get(z) || new Set();
+      for (const n of crossed) {
+        if (!STRETCH_BONES.includes(n)) err(`${W}.stretchRows: row ${z} runs through forbidden bone "${n}"`);
+        else if (ARM_MIRROR[n] && !crossed.has(ARM_MIRROR[n])) err(`${W}.stretchRows: row ${z} crosses "${n}" but not "${ARM_MIRROR[n]}" (arms must stay symmetric)`);
+      }
     }
   }
+
+  // partMap (canonical array form, collapseRig + extras.kestrel): [{name, bones:[...], parent:name|null, compose?}]
+  if (kit.partMap !== undefined) checkPartMap(kit.partMap, bones, err);
 
   // shells + attachments
   const checkSlot = (where, slot) => { if (!SLOTS.includes(slot)) err(`${where}: unknown slot "${slot}"`); };
@@ -153,8 +194,8 @@ export function validateKit(kit, knownMats) {
   }
   for (const [i, a] of (kit.attachments || []).entries()) {
     const W = `attachments[${i}]`;
-    checkSlot(W, a.slot); dupe('attachment', a.id, a.slot);
-    if (!ATTACH_ORDER.includes(a.slot)) err(`${W}: slot "${a.slot}" is not an attachment slot`);
+    dupe('attachment', a.id, a.slot);
+    if (!KIT_ATTACH_SLOTS.includes(a.slot)) err(`${W}: slot "${a.slot}" is not an attachment slot`);
     if (!bones.has(a.bone)) err(`${W}: unknown bone "${a.bone}"`);
     if (!isVec(a.offset, 3)) err(`${W}: offset must be [x,y,z]`);
     if (!isVec(a.box, 3) || !a.box.every((n) => isInt(n) && n > 0)) { err(`${W}: box must be 3 positive ints`); continue; }

@@ -95,46 +95,80 @@
       "parent": "RightFoot"
     }
   ],
-  "partMap": {
-    "body": [
-      "Hips",
-      "Spine"
-    ],
-    "chest": [
-      "Chest",
-      "LeftShoulder",
-      "RightShoulder"
-    ],
-    "head": [
-      "Neck",
-      "Head"
-    ],
-    "jaw": [
-      "Jaw"
-    ],
-    "armL": [
-      "LeftUpperArm",
-      "LeftLowerArm",
-      "LeftHand"
-    ],
-    "armR": [
-      "RightUpperArm",
-      "RightLowerArm",
-      "RightHand"
-    ],
-    "legL": [
-      "LeftUpperLeg",
-      "LeftLowerLeg",
-      "LeftFoot",
-      "LeftToes"
-    ],
-    "legR": [
-      "RightUpperLeg",
-      "RightLowerLeg",
-      "RightFoot",
-      "RightToes"
-    ]
-  },
+  "partMap": [
+    {
+      "name": "body",
+      "bones": [
+        "Hips",
+        "Spine"
+      ],
+      "parent": null,
+      "compose": 2
+    },
+    {
+      "name": "chest",
+      "bones": [
+        "Chest",
+        "LeftShoulder",
+        "RightShoulder"
+      ],
+      "parent": "body"
+    },
+    {
+      "name": "head",
+      "bones": [
+        "Neck",
+        "Head"
+      ],
+      "parent": "chest",
+      "compose": 2
+    },
+    {
+      "name": "jaw",
+      "bones": [
+        "Jaw"
+      ],
+      "parent": "head"
+    },
+    {
+      "name": "armL",
+      "bones": [
+        "LeftUpperArm",
+        "LeftLowerArm",
+        "LeftHand"
+      ],
+      "parent": "chest"
+    },
+    {
+      "name": "armR",
+      "bones": [
+        "RightUpperArm",
+        "RightLowerArm",
+        "RightHand"
+      ],
+      "parent": "chest"
+    },
+    {
+      "name": "legL",
+      "bones": [
+        "LeftUpperLeg",
+        "LeftLowerLeg",
+        "LeftFoot",
+        "LeftToes"
+      ],
+      "parent": "body"
+    },
+    {
+      "name": "legR",
+      "bones": [
+        "RightUpperLeg",
+        "RightLowerLeg",
+        "RightFoot",
+        "RightToes"
+      ],
+      "parent": "body"
+    }
+  ],
   "slots": {
     "1": {
       "group": "top",
@@ -715,7 +749,7 @@
         "back": [18.5, 15, 51],
         "belt": [18.5, 6.5, 40.5]
       },
-      "stretchRows": [12, 9, 15, 7, 13, 10],
+      "stretchRows": [7, 9, 10, 12, 13, 15, 37, 45],
       "layers": [
         [
           ".....................................",

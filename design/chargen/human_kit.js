@@ -48,17 +48,20 @@
     return s.map(function (b) { return { name: b[0], parent: b[1] }; });
   })();
 
-  // in-game collapse (38.29 item 1), humanoid default: part -> bones (the first bone is the part root / pivot)
-  var PART_MAP = {
-    body: ['Hips', 'Spine'],
-    chest: ['Chest', 'LeftShoulder', 'RightShoulder'],
-    head: ['Neck', 'Head'],
-    jaw: ['Jaw'],
-    armL: ['LeftUpperArm', 'LeftLowerArm', 'LeftHand'],
-    armR: ['RightUpperArm', 'RightLowerArm', 'RightHand'],
-    legL: ['LeftUpperLeg', 'LeftLowerLeg', 'LeftFoot', 'LeftToes'],
-    legR: ['RightUpperLeg', 'RightLowerLeg', 'RightFoot', 'RightToes']
-  };
+  // in-game collapse (38.29 item 1): the engine's array form (engine/chargen/collapse.js HUMANOID_PART_MAP), <= 8 parts,
+  // parents listed first, every bone exactly once; bones[0] = the part root / pivot; compose n = the part rotation
+  // composes the first n bones (body = Hips + Spine, head = Neck + Head)
+  var PART_MAP = [
+    { name: 'body', bones: ['Hips', 'Spine'], parent: null, compose: 2 },
+    { name: 'chest', bones: ['Chest', 'LeftShoulder', 'RightShoulder'], parent: 'body' },
+    { name: 'head', bones: ['Neck', 'Head'], parent: 'chest', compose: 2 },
+    { name: 'jaw', bones: ['Jaw'], parent: 'head' },
+    { name: 'armL', bones: ['LeftUpperArm', 'LeftLowerArm', 'LeftHand'], parent: 'chest' },
+    { name: 'armR', bones: ['RightUpperArm', 'RightLowerArm', 'RightHand'], parent: 'chest' },
+    { name: 'legL', bones: ['LeftUpperLeg', 'LeftLowerLeg', 'LeftFoot', 'LeftToes'], parent: 'body' },
+    { name: 'legR', bones: ['RightUpperLeg', 'RightLowerLeg', 'RightFoot', 'RightToes'], parent: 'body' }
+  ];
+  var MAX_PARTS = 8;   // engine/chargen/collapse.js MAX_PARTS
 
   // ===================================================================================================================
   // 2. SLOTS (layer char -> group + shade, or a fixed material) and GROUPS (which recipe field picks the ramp id)
@@ -105,8 +108,11 @@
     });
     return r;
   }
-  // the engine's stretch rule (engine/chargen/kit.js STRETCH_BONES)
-  var STRETCH_BONES = ['Hips', 'Spine', 'LeftLowerLeg', 'RightLowerLeg'];
+  // the engine's stretch rule (engine/chargen/kit.js STRETCH_BONES, extended by arch Batch 9): waist + shin bones, and
+  // the arm bones beside the waist (upper + lower arm) - but only symmetric (a row through one arm bone must also run
+  // through its mirror) and never through a hand box. ARM_STRETCH maps each arm bone to its mirror.
+  var STRETCH_BONES = ['Hips', 'Spine', 'LeftLowerLeg', 'RightLowerLeg', 'LeftUpperArm', 'RightUpperArm', 'LeftLowerArm', 'RightLowerArm'];
+  var ARM_STRETCH = { LeftUpperArm: 'RightUpperArm', RightUpperArm: 'LeftUpperArm', LeftLowerArm: 'RightLowerArm', RightLowerArm: 'LeftLowerArm' };
 
   // ===================================================================================================================
   // 3. MATHS + GRID (centred coords: X = x - 18 (+ = the character's RIGHT = east), Y = y - 10 (- = front/north))
@@ -411,10 +417,12 @@
             back: mount(0, 4.5, 51.0),
             belt: mount(0, -4.0, 40.5)
           },
-          // height (-4..4): CHARGEN-05 duplicates / deletes the first |height| rows of this list. Shin rows only:
-          // every waist row (z 34-47) also crosses the forearms / upper arms, which the engine's STRETCH_BONES
-          // (Hips, Spine, LeftLowerLeg, RightLowerLeg) forbid. Spread over the shin so no single section stretches.
-          stretchRows: [12, 9, 15, 7, 13, 10],
+          // height (-4..4): CHARGEN-05 (engine/chargen/height.js) duplicates / deletes |height| rows picked evenly
+          // over this sorted list. 6 shin rows + 2 waist rows (arch Batch 9): z 37 (hips / braies beside both
+          // forearms) and z 45 (belly beside both upper arms) - clear of the wrists (34), waistband (40), navel /
+          // elbows (42-43), the linea-alba cues (44, 46) and every hand box. So a tall man grows in legs AND
+          // torso (+4 = 3 shin rows + 1 waist row), and the arms grow with the torso, the fingertips staying at mid-thigh.
+          stretchRows: [7, 9, 10, 12, 13, 15, 37, 45],
           layers: buildBase()
         }
       },
@@ -517,6 +525,25 @@
       if (b.parent !== null && names.indexOf(b.parent) < 0) errors.push('bone ' + b.name + ': unknown parent ' + b.parent);
       if (b.parent !== null && names.indexOf(b.parent) > i) errors.push('bone ' + b.name + ': parent listed later');
     });
+    // partMap: engine array form [{name, bones, parent, compose?}], <= MAX_PARTS, parents first, every bone once
+    var PM = kit.partMap;
+    if (!Array.isArray(PM)) errors.push('partMap is not an array (engine collapseRig form)');
+    else {
+      if (PM.length > MAX_PARTS) errors.push('partMap has ' + PM.length + ' parts, max ' + MAX_PARTS);
+      var pSeen = {}, bSeen = {};
+      PM.forEach(function (p, pi) {
+        if (!p || typeof p.name !== 'string' || !Array.isArray(p.bones) || !p.bones.length) { errors.push('partMap[' + pi + ']: needs name + bones'); return; }
+        if (pSeen[p.name]) errors.push('partMap: part ' + p.name + ' twice');
+        if (p.parent !== null && !pSeen[p.parent]) errors.push('partMap: part ' + p.name + ': parent ' + p.parent + ' not listed before it');
+        if (p.compose !== undefined && !(p.compose === Math.floor(p.compose) && p.compose >= 1 && p.compose <= p.bones.length)) errors.push('partMap: part ' + p.name + ': bad compose ' + p.compose);
+        p.bones.forEach(function (bn) {
+          if (names.indexOf(bn) < 0) errors.push('partMap: part ' + p.name + ': unknown bone ' + bn);
+          if (bSeen[bn]) errors.push('partMap: bone ' + bn + ' in ' + bSeen[bn] + ' and ' + p.name); else bSeen[bn] = p.name;
+        });
+        pSeen[p.name] = 1;
+      });
+      names.forEach(function (bn) { if (!bSeen[bn]) errors.push('partMap: bone ' + bn + ' in no part'); });
+    }
     var keys = {}, mk;
     for (var grp in kit.ramps) for (var id in kit.ramps[grp]) for (var sh in kit.ramps[grp][id]) keys[kit.ramps[grp][id][sh]] = 1;
     for (var c in kit.slots) if (kit.slots[c].fixed) keys[kit.slots[c].fixed] = 1;
@@ -547,9 +574,18 @@
       names.forEach(function (n) { if (!cnt[n]) warnings.push(bid + ': bone ' + n + ' owns no voxel'); });
       var stretchBad = [];
       (B.stretchRows || []).forEach(function (z) {
-        for (var q2 = z * B.size[0] * B.size[1]; q2 < (z + 1) * B.size[0] * B.size[1]; q2++) {
-          if (D.bone[q2] >= 0 && STRETCH_BONES.indexOf(names[D.bone[q2]]) < 0) { stretchBad.push(z + ':' + names[D.bone[q2]]); break; }
+        if (!(z === Math.floor(z) && z >= 0 && z < B.size[2])) { stretchBad.push(z + ':not a row'); return; }
+        var inRow = {};
+        for (var q2 = z * B.size[0] * B.size[1]; q2 < (z + 1) * B.size[0] * B.size[1]; q2++) if (D.bone[q2] >= 0) inRow[names[D.bone[q2]]] = 1;
+        for (var bn in inRow) {
+          if (STRETCH_BONES.indexOf(bn) < 0) stretchBad.push(z + ':' + bn);
+          else if (ARM_STRETCH[bn] && !inRow[ARM_STRETCH[bn]]) stretchBad.push(z + ':' + bn + ' without ' + ARM_STRETCH[bn]);
         }
+        // never a hand box: the row may not cut any Hand box (even where the hand owns no voxel in that row)
+        names.forEach(function (bn2) {
+          var hb = B.bones[bn2] && B.bones[bn2].box;
+          if (/Hand$/.test(bn2) && hb && z >= hb[2] && z <= hb[5]) stretchBad.push(z + ':' + bn2 + ' box');
+        });
       });
       if (stretchBad.length) errors.push(bid + ': stretch rows through other bones: ' + stretchBad.join(', '));
       for (var an in B.anchors) {
@@ -571,7 +607,8 @@
   }
 
   var api = {
-    version: 1, KIT_ID: KIT_ID, CELL: CELL, SKELETON: SKELETON, PART_MAP: PART_MAP,
+    version: 1, KIT_ID: KIT_ID, CELL: CELL, SKELETON: SKELETON, PART_MAP: PART_MAP, MAX_PARTS: MAX_PARTS,
+    STRETCH_BONES: STRETCH_BONES, ARM_STRETCH: ARM_STRETCH,
     buildHumanKit: buildHumanKit, stringifyKit: stringifyKit, decodeBase: decodeBase, resolveMat: resolveMat,
     countQuads: countQuads, checkKit: checkKit
   };
