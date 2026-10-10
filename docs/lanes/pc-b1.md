@@ -556,3 +556,8 @@ Tests: new quest/ch1Mount.test.js; filter suites 72 PASS; main.js syntax OK (.mj
 - Fixed burlEscort: stone-talk flag is `dlg.bear.stone.told` (plain dialogue flags get the `dlg.` prefix).
 - Tests: fenEntrance.test, stoneWake.test (new) + all filtered suites green. NOT run in a browser: `node tools/verify-ch1-mount.mjs {port}` (9500-9574, needs ?save=1).
 - Open: stone first-wake shows the wire's "saved/healed" toast over the notice (wire shows toast for kind waystone; silence it like relays if it looks bad); walk polylines still first-guess (CH1-10 route walk).
+### kestrel-4: CH1-10 part A route walk (Node only, po-review)
+- tools/route-walk.mjs: tower legs now wake -> top (leg 6 end must be <= 1.8 m from the sword) -> 7a2 breach no-exit probe (W/NW/SW, stays blocked, z >= 5) -> 7c down -> door (real door.unbar) -> outside (max fall 1.9 m, no fall-through). Existing grid + mesh legs reused.
+- New probes: door closed before sword (mesh walk into the barred doorway, stops at y 10.73); clearance of Burl follow/depart and Fen emerge (data read from world_m1; 0.8 m via moveCircleMesh vs static colliders, slope < 0.6, follow inside nav): follow PASS, depart PASS, emerge FAIL.
+- OPEN (content, not edited): Fen `emerge` point (1250.7, 1027.0) is within 0.8 m of a collider (push 0.25 m) -> shift that segment ((1248,1024)->(1252,1028.5)).
+- Run: `node tools/route-walk.mjs`. Nothing needs a browser.
