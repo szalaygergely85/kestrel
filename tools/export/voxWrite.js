@@ -93,10 +93,37 @@ export function writeVoxMulti({ parts, palette }) {
   return voxFile(200, mainChunk(cat([...models, rgbaChunk(palette), ...scene])));
 }
 
-/** Chargen grid -> .vox with one shape per bone (empty bones are skipped). Needs grid.{size, mat, bone, bones, matKeys}. */
+/**
+ * CHARGEN-22c (38.34): one dense grid at the finest chosen level F = max block k (1 without blocks). The main grid is
+ * upsampled by F; a block of level k fills (F/k)^3 fine cells per block cell. No blocks -> the grid itself (same bytes as before).
+ * Returns {size, mat, bone, F}.
+ */
+export function flattenGrid(grid) {
+  const blocks = grid.blocks || [];
+  const F = blocks.reduce((m, b) => Math.max(m, b.k), 1);
+  if (F === 1) return { size: grid.size, mat: grid.mat, bone: grid.bone, F };
+  const [sx, sy, sz] = grid.size, fx = sx * F, fy = sy * F, fz = sz * F;
+  const mat = new Uint8Array(fx * fy * fz), bone = new Uint8Array(fx * fy * fz);
+  const stamp = (x0, y0, z0, n, m, b) => {
+    for (let z = 0; z < n; z++) for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      const i = (x0 + x) + fx * ((y0 + y) + fy * (z0 + z)); mat[i] = m; bone[i] = b;
+    }
+  };
+  for (let z = 0, i = 0; z < sz; z++) for (let y = 0; y < sy; y++) for (let x = 0; x < sx; x++, i++) if (grid.mat[i]) stamp(x * F, y * F, z * F, F, grid.mat[i], grid.bone[i]);
+  for (const bl of blocks) {
+    const [bx, by, bz] = bl.size, n = F / bl.k;
+    for (let z = 0, i = 0; z < bz; z++) for (let y = 0; y < by; y++) for (let x = 0; x < bx; x++, i++) {
+      if (bl.mat[i]) stamp(bl.origin[0] * F + x * n, bl.origin[1] * F + y * n, bl.origin[2] * F + z * n, n, bl.mat[i], bl.bone[i]);
+    }
+  }
+  return { size: [fx, fy, fz], mat, bone, F };
+}
+
+/** Chargen grid -> .vox with one shape per bone (empty bones are skipped; blocks are flattened to the finest level). Needs grid.{size, mat, bone, bones, matKeys}. */
 export function exportVoxGrid(grid, { rgbOf }) {
   if (typeof rgbOf !== 'function') throw new Error('exportVoxGrid: opts.rgbOf(matKey) -> [r,g,b] is required');
-  const { size, mat, bone, bones, matKeys } = grid;
+  const { bones, matKeys } = grid;
+  const { size, mat, bone } = flattenGrid(grid);
   const [sx, sy, sz] = size, nb = bones.length;
   const palette = matKeys.map((k) => {
     const c = rgbOf(k);
