@@ -5,6 +5,6 @@
     "medium": { "grid": "240x90", "rays": 2, "shadowQuality": "mid", "scatter": 0.75, "lodScale": 0.8, "pointShadows": false },
     "high": { "grid": "400x150", "rays": 2, "shadowQuality": "high", "scatter": 1, "lodScale": 1, "pointShadows": true },
     "ultra": { "grid": "480x180", "rays": 4, "shadowQuality": "high", "scatter": 1, "lodScale": 1.25, "pointShadows": true },
-    "extreme": { "grid": "640x240", "rays": 4, "shadowQuality": "high", "scatter": 1, "lodScale": 1.25, "pointShadows": true }
+    "extreme": { "grid": "560x210", "rays": 4, "shadowQuality": "high", "scatter": 1, "lodScale": 1.25, "pointShadows": true }
   }
 }

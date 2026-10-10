@@ -1175,7 +1175,10 @@
     {"id": "end", "note": "WAYSTONE-NORMAL-01 (D-056): area-only zone for the quest area \"waystone\" (no behaviour: the demo end sequence is gone)", "r": 2.5, "shape": "circle", "x": 1428, "y": 1040},
     {"id": "towerDoor", "note": "CH1-01 area-only zone (38.37 item 1). CH1-D1a (owner: ground-floor SW door): on the outer ring at the top of the door trench (tower level (8.0, 13.0); trench exit (8,12); door cell Q (15,11) = world 1495-1496 x 1029-1030, floor 0); r 3 only covers the ring + trench steps outside the bar, >= 3 m from any interior cell", "r": 3, "shape": "circle", "x": 1488, "y": 1031},
     {"id": "roadWest", "note": "CH1-01 area-only zone (38.37 item 1): on the road", "r": 10, "shape": "circle", "x": 1340, "y": 1048},
-    {"id": "bendRelay", "note": "CH1-01 area-only zone (38.37 item 1): at the dead relay relayBend", "r": 12, "shape": "circle", "x": 1262, "y": 1033}
+    {"id": "bendRelay", "note": "CH1-01 area-only zone (38.37 item 1): at the dead relay relayBend", "r": 12, "shape": "circle", "x": 1262, "y": 1033},
+    {"id": "riverBank", "note": "QL-14 area-only zone: on the river road at the bank (Ch2)", "r": 12, "shape": "circle", "x": 1045, "y": 1066},
+    {"id": "fordWest", "note": "QL-14 area-only zone: west end of the stepping stones, across the ford (Ch2)", "r": 8, "shape": "circle", "x": 1010, "y": 1072},
+    {"id": "northLook", "note": "QL-14 area-only zone: north lookout toward the smoke (Ch2, stage 3 boundary)", "r": 10, "shape": "circle", "x": 955, "y": 1005}
   ],
   "nav": {
     "area": {"h": 192, "w": 192, "x0": 1400, "y0": 928},

@@ -47,7 +47,7 @@ int nearTypeNearest(float x, float y) {
 
 export const FAR_TYPE_NEAREST_GLSL = `
 int farTypeNearest(float x, float y) {
-  int ix = int(floor(x / uFarMap.z)), iy = int(floor(y / uFarMap.z));
+  int ix = int(floor((x - uFarMap.x) / uFarMap.z)), iy = int(floor((y - uFarMap.y) / uFarMap.z));  // MAP-01b: far grid offset
   int W = int(uFarMap.w);
   if (ix < 0 || iy < 0 || ix >= W || iy >= W) return 0;
   return int(texelFetch(uFarType, ivec2(ix, iy), 0).r);

@@ -1,6 +1,6 @@
 // TREES-PERF-02: repeatable render-cost probe. For each (quality/grid x pose x trees) config it loads the game headless on a real GPU,
 // unthrottled (no vsync / frame cap), F3 overlay on (turns the pass timers on), engine.setGrid(W,H) after boot, spins the camera so every
-// frame is a fresh render, then reports GPU = sum of passStats raster+shadow+light+shade+glow (benchGpuLine definition), CPU = loop.stats.jsMs,
+// frame is a fresh render, then reports GPU = sum of passStats raster+shadow+light+shade (benchGpuLine definition), CPU = loop.stats.jsMs,
 // frame = loop.stats.intervalMs. Usage: node tools/perf-pose.mjs --port 9700 [--out file.json] [--settle 5500] [--frames 3000]
 //   [--configs "high:400x150,ultra:480x180"] [--poses "roadSouth,forest"] [--trees "default,voxel"]
 import { spawn } from 'node:child_process';
@@ -30,7 +30,7 @@ const SAMPLER = (n) => `new Promise((resolve) => {
   const d = window.__debug, st = d.loop.stats, cpu = [], itv = [];
   const heap = () => { try { if (window.gc) window.gc(); return performance.memory ? performance.memory.usedJSHeapSize : null; } catch (e) { return null; } };
   const heap0 = heap();
-  const sum = (s, k) => ['raster','shadow','light','shade','glow'].reduce((a, p) => a + (s.passes && s.passes[p] && Number.isFinite(s.passes[p][k]) ? s.passes[p][k] : 0), 0);
+  const sum = (s, k) => ['raster','shadow','light','shade'].reduce((a, p) => a + (s.passes && s.passes[p] && Number.isFinite(s.passes[p][k]) ? s.passes[p][k] : 0), 0);
   let last = -1;
   const tick = () => {
     d.look.yawDeg = (d.look.yawDeg + 0.4) % 360;
@@ -71,7 +71,7 @@ try {
     let r = await evaluateAsync(cdp, SAMPLER(frames));
     for (let k = 0; !r.gpu && k < 3; k++) { await sleep(2000); r = await evaluateAsync(cdp, SAMPLER(frames)); } // pass timers need a few frames after the overlay turns them on
     const row = { quality: c.q, grid: `${c.w}x${c.h}`, pose, trees: t, frames: r.cpu.length, loadMs, heapDeltaMb: r.heap0 != null && r.heap1 != null ? (r.heap1 - r.heap0) / 1048576 : null,
-      glowP50: r.gpu && r.gpu.passes.glow && r.gpu.passes.glow.p50, gpuP50: r.gpu && r.gpu.p50, gpuP95: r.gpu && r.gpu.p95, cpuP50: pct(r.cpu, 0.5), cpuP95: pct(r.cpu, 0.95),
+      gpuP50: r.gpu && r.gpu.p50, gpuP95: r.gpu && r.gpu.p95, cpuP50: pct(r.cpu, 0.5), cpuP95: pct(r.cpu, 0.95),
       frameP50: pct(r.itv, 0.5), frameP95: pct(r.itv, 0.95), fps: 1000 / (r.itv.reduce((a, b) => a + b, 0) / r.itv.length) };
     if (process.env.CAP_LOG) console.error('[passStats]', JSON.stringify(r.gpu), r.rawAvail);
     rows.push(row);
@@ -81,7 +81,6 @@ try {
 } finally { cleanup(); }
 if (args.out) writeFileSync(args.out, JSON.stringify(rows, null, 1));
 console.log('| quality / grid | pose | trees | GPU p50 | GPU p95 | CPU p50 | CPU p95 | frame p50 | frame p95 | fps |\n|---|---|---|---|---|---|---|---|---|---|');
-for (const r of rows) console.error(`[glow] ${r.pose} p50 ${r.glowP50 == null ? 'n/a' : r.glowP50.toFixed(3)} ms`);
 for (const r of rows) console.log(`| ${r.quality} ${r.grid} | ${r.pose} | ${r.trees} | ${r.gpuP50?.toFixed(2)} | ${r.gpuP95?.toFixed(2)} | ${r.cpuP50.toFixed(2)} | ${r.cpuP95.toFixed(2)} | ${r.frameP50.toFixed(2)} | ${r.frameP95.toFixed(2)} | ${r.fps.toFixed(0)} | ${r.heapDeltaMb == null ? 'n/a' : r.heapDeltaMb.toFixed(2)} | ${r.loadMs} |`);
 
 // Pass/fail (WS1-08 / 38.37 item 9): ultra rows only. JS = CPU p95 <= 8 ms, GPU p95 <= 8 ms, heap delta over the window <= HEAP_FLAT_MB.

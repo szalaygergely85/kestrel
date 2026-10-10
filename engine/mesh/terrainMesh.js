@@ -152,7 +152,7 @@ function fillFarLevel(terrain, level, cell, pos, nrm, idx, vertBase, idxMainOff,
     for (let cp = 0; cp < nc; cp++) {
       const i = cols[cp];
       const vi = vertBase + cp + rp * nc;
-      const x = (i + 0.5) * cell, y = (j + 0.5) * cell;
+      const x = terrain.mapX0 + (i + 0.5) * cell, y = terrain.mapY0 + (j + 0.5) * cell;
       const z = terrain.farHDraw[i + j * terrain.mapW];
       pos[vi * 3] = x; pos[vi * 3 + 1] = y; pos[vi * 3 + 2] = z;
       farNormalAt(terrain, x, y, scratchN);
@@ -174,7 +174,7 @@ function fillFarLevel(terrain, level, cell, pos, nrm, idx, vertBase, idxMainOff,
   for (let k = 0; k < perim.length; k++) {
     const cp = perim[k][0], rp = perim[k][1];
     const i = cols[cp], j = rows[rp];
-    const x = (i + 0.5) * cell, y = (j + 0.5) * cell;
+    const x = terrain.mapX0 + (i + 0.5) * cell, y = terrain.mapY0 + (j + 0.5) * cell;
     const topI = vertBase + cp + rp * nc;
     const bi = bottomBase + k;
     pos[bi * 3] = x; pos[bi * 3 + 1] = y; pos[bi * 3 + 2] = skirtZ;
@@ -281,9 +281,9 @@ function setFarSkirt0(mesh, k, real) {
 }
 
 /** True iff far quad `(i, j)` (world rect `[8i+4, 8i+12] x [8j+4, 8j+12]`) intersects the near band's OPEN surface rectangle. */
-function farQuadUnderBand(cell, i, j, bandRect) {
-  const qx0 = cell * i + cell / 2, qx1 = cell * (i + 1) + cell / 2;
-  const qy0 = cell * j + cell / 2, qy1 = cell * (j + 1) + cell / 2;
+function farQuadUnderBand(cell, i, j, bandRect, ox = 0, oy = 0) { // ox/oy = far grid origin (MAP-01b)
+  const qx0 = ox + cell * i + cell / 2, qx1 = ox + cell * (i + 1) + cell / 2;
+  const qy0 = oy + cell * j + cell / 2, qy1 = oy + cell * (j + 1) + cell / 2;
   return qx0 < bandRect.x1 && qx1 > bandRect.x0 && qy0 < bandRect.y1 && qy1 > bandRect.y0;
 }
 
@@ -295,7 +295,7 @@ function applyFarExclusion(terrain, mesh, bandRect) {
   for (let qy = 0; qy < nr0 - 1; qy++) {
     for (let qx = 0; qx < nc0 - 1; qx++) {
       const i = lod0.cols[qx], j = lod0.rows[qy];
-      const under = bandRect && farQuadUnderBand(cell, i, j, bandRect);
+      const under = bandRect && farQuadUnderBand(cell, i, j, bandRect, terrain.mapX0, terrain.mapY0);
       setFarMainQuad0(mesh, qx, qy, !under);
     }
   }
@@ -307,7 +307,7 @@ function applyFarExclusion(terrain, mesh, bandRect) {
   for (let k = 0; k < perimLen; k++) {
     const p0 = perim[k], p1 = perim[(k + 1) % perimLen];
     const qx = Math.min(p0[0], p1[0], nc0 - 2), qy = Math.min(p0[1], p1[1], nr0 - 2);
-    const under = bandRect && farQuadUnderBand(cell, lod0.cols[qx], lod0.rows[qy], bandRect);
+    const under = bandRect && farQuadUnderBand(cell, lod0.cols[qx], lod0.rows[qy], bandRect, terrain.mapX0, terrain.mapY0);
     setFarSkirt0(mesh, k, !under);
   }
   mesh.meshVersion++;
@@ -466,7 +466,7 @@ export class TerrainMeshSet {
           tx, ty, colStart, colEnd, colCount: colEnd - colStart + 1,
           rowStart, rowEnd, rowCount: rowEnd - rowStart + 1,
           tileIndex: ty * tilesX + tx,
-          worldRect: { x0: colStart * cell, y0: rowStart * cell, x1: (colEnd + 1) * cell, y1: (rowEnd + 1) * cell },
+          worldRect: { x0: terrain.mapX0 + colStart * cell, y0: terrain.mapY0 + rowStart * cell, x1: terrain.mapX0 + (colEnd + 1) * cell, y1: terrain.mapY0 + (rowEnd + 1) * cell },
         });
       }
     }
@@ -602,12 +602,12 @@ export class TerrainMeshSet {
 
     const bandRect = this._bandRectFor(g);
     const cell = terrain.mapCell;
-    const iLo = Math.max(0, Math.floor(bandRect.x0 / cell) - 2), iHi = Math.min(terrain.mapW - 2, Math.ceil(bandRect.x1 / cell) + 2);
-    const jLo = Math.max(0, Math.floor(bandRect.y0 / cell) - 2), jHi = Math.min(terrain.mapH - 2, Math.ceil(bandRect.y1 / cell) + 2);
+    const iLo = Math.max(0, Math.floor((bandRect.x0 - terrain.mapX0) / cell) - 2), iHi = Math.min(terrain.mapW - 2, Math.ceil((bandRect.x1 - terrain.mapX0) / cell) + 2);
+    const jLo = Math.max(0, Math.floor((bandRect.y0 - terrain.mapY0) / cell) - 2), jHi = Math.min(terrain.mapH - 2, Math.ceil((bandRect.y1 - terrain.mapY0) / cell) + 2);
     let iMin = Infinity, iMax = -Infinity, jMin = Infinity, jMax = -Infinity;
     for (let j = jLo; j <= jHi; j++) {
       for (let i = iLo; i <= iHi; i++) {
-        if (farQuadUnderBand(cell, i, j, bandRect)) {
+        if (farQuadUnderBand(cell, i, j, bandRect, terrain.mapX0, terrain.mapY0)) {
           if (i < iMin) iMin = i; if (i > iMax) iMax = i;
           if (j < jMin) jMin = j; if (j > jMax) jMax = j;
         }
@@ -626,7 +626,7 @@ export class TerrainMeshSet {
     const sN = this._scratchN;
     for (let k = 0; k < farIJ.length; k++) {
       const i = farIJ[k][0], j = farIJ[k][1];
-      const x = (i + 0.5) * cell, y = (j + 0.5) * cell;
+      const x = terrain.mapX0 + (i + 0.5) * cell, y = terrain.mapY0 + (j + 0.5) * cell;
       farNormalAt(terrain, x, y, sN);
       farVerts[k] = { x, y, z: terrain.farHDraw[i + j * terrain.mapW], nx: sN.x, ny: sN.y, nz: sN.z };
     }
@@ -836,7 +836,7 @@ export class TerrainMeshSet {
       const t = terrain._nearGridType(x, y);
       if (t !== null) return t;
     }
-    const ix = Math.floor(x / terrain.mapCell), iy = Math.floor(y / terrain.mapCell);
+    const ix = Math.floor((x - terrain.mapX0) / terrain.mapCell), iy = Math.floor((y - terrain.mapY0) / terrain.mapCell);
     if (ix < 0 || iy < 0 || ix >= terrain.mapW || iy >= terrain.mapH) return 0;
     return terrain.farType[iy * terrain.mapW + ix];
   }

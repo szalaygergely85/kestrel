@@ -314,7 +314,7 @@ export class WgCellPipeline {
     this._gbufCleared = false; this._cellsShaded = false;
     this._dropOutTarget();
     if (this._stablePass) { try { this._stablePass.resize(cols, rows); } catch (e) { console.warn('[WgCellPipeline] stable resize failed - stable off:', e); this._stableOn = false; } }
-    if (this._glowPass) { try { this._glowPass.resize(cols, rows); } catch (e) { console.warn('[WgCellPipeline] glow resize failed - glow off:', e); this._glowPass.configure(null); } }
+    if (this._glowPass) { try { this._glowPass.resize(cols, rows); } catch (e) { console.warn('[WgCellPipeline] glow resize failed - retried next frame:', e); this._glowPass._free(); this._glowPass.cols = 0; } }
     if (this._spritesPass) {
       try {
         this._spritesPass.resize(cols, rows);
@@ -454,7 +454,7 @@ export class WgCellPipeline {
     if (this._passTimingOn) d.timer.end();
     if (this._cam && this._world) {
       try { this._rasterPass.run(this); const rc = this._rasterPass.cull; this.stats.culledOccl = this.occl && rc ? rc.stats.culledOccl : 0; }
-      catch (e) { this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] raster disabled:', e); return; }
+      catch (e) { this._abortOpenPass('raster'); this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] raster disabled:', e); return; }
     } else {
       d.beginPass(t.targetRaster, this._clearOpts);
       d.endPass();
@@ -463,7 +463,7 @@ export class WgCellPipeline {
     const sh = this._shadowPass;
     if (sh && (sh.enabled || sh.off)) {
       try { sh.run(this, this._rasterPass); }
-      catch (e) { sh.active = false; console.warn('[WgCellPipeline] sun shadow map failed this frame (DDA sun):', e); }
+      catch (e) { this._abortOpenPass('sun shadow'); sh.active = false; console.warn('[WgCellPipeline] sun shadow map failed this frame (DDA sun):', e); }
       this.stats.shadowItems = sh.stats.shadowItems; this.stats.shadowDraws = sh.stats.shadowDraws; this.stats.shadowCpuMs = sh.stats.shadowCpuMs;
     }
     const psp = this._pointShadowPass; // ME-16e: AFTER the sun pass (shares its wind uniforms + caster pipelines), BEFORE the light pass
@@ -472,7 +472,7 @@ export class WgCellPipeline {
         try { psp.run(this, this._rasterPass); this._pshFails = 0; }
         catch (e) {
           psp.active = false;
-          if (d._pass) { try { d.endPass(); } catch (_) { d._pass = null; } } // never leave a shadow pass open: the next beginPass would throw and black-screen the frame
+          this._abortOpenPass('point shadow'); // never leave a shadow pass open: the next beginPass would throw and black-screen the frame
           // a repeated failure turns point shadows off for the session (logged once); a single one only skips this frame
           if (++this._pshFails >= 2) { psp.enabled = false; psp.ready.fill(0); console.warn('[WgCellPipeline] point shadows disabled after repeated failures (LVIS fallback):', e); }
           else console.warn('[WgCellPipeline] point shadow maps failed this frame (LVIS fallback):', e);
@@ -480,7 +480,7 @@ export class WgCellPipeline {
       } else psp.active = false;
     }
     try { this._cellPass.run(this, t); }
-    catch (e) { this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] resolve/deriv/light/shade/edge disabled:', e); return; }
+    catch (e) { this._abortOpenPass('cell'); this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] resolve/deriv/light/shade/edge disabled:', e); return; }
     this._cellsShaded = this._cellPass.shaded;
     this._runStable(t);
     this._runGlow(t);
@@ -498,9 +498,15 @@ export class WgCellPipeline {
     u[DEBUG_DEPTH_WORD] = DEPTH_FADE_K;
     this._debugTex[0].texture = t.texSGI; this._debugTex[1].texture = t.texSGA; this._debugTex[2].texture = t.texSDepth;
     d.beginPass(this._outTarget);
-    d.bind(this._pipeDebug, this._debugBind);
-    d.draw(3);
-    d.endPass();
+    try { d.bind(this._pipeDebug, this._debugBind); d.draw(3); } finally { d.endPass(); }
+  }
+
+  /** FIX-PASS: a catch that swallows an error thrown inside a pass must end that pass (else the present pass throws "previous pass not ended"). */
+  _abortOpenPass(tag) {
+    const d = this.device;
+    if (!d._pass) return;
+    if (typeof d.abortPass === 'function') d.abortPass('WgCellPipeline ' + tag + ' threw inside a pass');
+    else { try { d.endPass(); } catch (_) { d._pass = null; } }
   }
 
   /** US-073c (38.25 item 2): after edge, before sprites. History is invalidated on every frame it cannot run (not shaded, debug view, not pitched, error). */
@@ -515,7 +521,7 @@ export class WgCellPipeline {
       this._begin(WG_PASS_SLOT.stable);
       try { sp.beginFrame(this._cam, rp.grid, null, rp.pitch); this._stableRan = sp.run(this, t, inp); } finally { this._end(); }
     } catch (e) {
-      if (this.device._pass) { try { this.device.endPass(); } catch (_) { this.device._pass = null; } }
+      this._abortOpenPass('stable');
       this._stableOn = false; this._stableRan = false;
       console.warn('[WgCellPipeline] stable pass disabled:', e);
     }
@@ -527,12 +533,14 @@ export class WgCellPipeline {
     const gp = this._glowPass; this._glowRan = false;
     if (!gp || !gp.enabled || !this._cellsShaded || this.debugMode >= 0) return;
     const sg = this._stableRan ? this._stablePass : null, sh = this._cellPass && this._cellPass.shadePass;
+    if (gp.pipe && gp.pipe.gpu === null) return; // FIX-PASS: pipeline still compiling (async boot batch) - skip, never bind it inside a pass
     try {
-      this._begin(WG_PASS_SLOT.glow); // AUD2-07: glow GPU time in passStats / F3
-      try { this._glowRan = gp.run(t, sg ? sg.outFg : t.texFinalFg, sg ? sg.outBg : t.texFinalBg, sh ? sh.texMatF : null); } finally { this._end(); }
+      if (!gp.target) gp.resize(this.cols, this.rows); // a failed resize retries here instead of turning glow off
+      this._glowRan = gp.run(t, sg ? sg.outFg : t.texFinalFg, sg ? sg.outBg : t.texFinalBg, sh ? sh.texMatF : null);
     } catch (e) {
-      if (this.device._pass) { try { this.device.endPass(); } catch (_) { this.device._pass = null; } }
-      gp.configure(null); this._glowRan = false; console.warn('[WgCellPipeline] glow pass disabled:', e);
+      // FIX-PASS (owner: "fix, not disable"): end the pass, skip glow THIS frame only; logged for the first few failures
+      this._abortOpenPass('glow'); this._glowRan = false;
+      if ((this._glowFails = (this._glowFails || 0) + 1) <= 3) console.warn('[WgCellPipeline] glow pass failed this frame (stays on):', e);
     }
   }
 
@@ -550,7 +558,7 @@ export class WgCellPipeline {
       this._begin(WG_PASS_SLOT.overlay);
       try { this._overlayPass.run(t.texDepth); } finally { this._end(); }
     } catch (e) {
-      this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] sprites/overlay disabled:', e); return;
+      this._abortOpenPass('sprites/overlay'); this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] sprites/overlay disabled:', e); return;
     }
     this._spritesRan = sp.ran;
     this.stats.sprites = sp.stats.sprites;

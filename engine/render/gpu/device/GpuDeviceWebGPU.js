@@ -21,7 +21,8 @@ import { bootNow, span as bootSpan } from '../../../core/bootMarks.js'; // BOOT-
 /** @typedef {import('./GpuDevice.js').GpuHandle} GpuHandle */
 
 /** Ring size (38.4): MAX_DRAW_ITEMS * 3 + 64 slots of 256 B. */
-export const DEFAULT_RING_SLOTS = MAX_DRAW_ITEMS * 3 + 64;
+// FIX-RING (owner crash 2026-10-11): 832 slots overflowed in the sun-shadow caster loop on the dressed world; 1 MB ring.
+export const DEFAULT_RING_SLOTS = MAX_DRAW_ITEMS * 16 + 64;
 const ZERO4 = [0, 0, 0, 0];
 
 /** The GPU* constant tables, read lazily so this module imports in Node. @returns {{buf: any, tex: any, stage: any, map: any}} */
@@ -89,6 +90,8 @@ export class GpuDeviceWebGPU {
     // frame state
     /** @type {any} */ this._encoder = null;
     /** @type {any} */ this._pass = null;
+    /** FIX-PASS: capture an owner stack at every beginPass (off: allocation-free; abortPass turns it on). */ this.tracePasses = false;
+    /** @type {string|null} */ this._passStack = null;
     /** @type {any} */ this._curPipeline = null;
     this._dyn = [0];
     /** @type {Map<number, any[]>} */ this._staging = new Map();
@@ -481,6 +484,29 @@ export class GpuDeviceWebGPU {
     this._pass = this._encoder.beginRenderPass(pd);
     this._curPipeline = null;
     this._boundTarget = target;
+    this._passStack = this.tracePasses ? new Error('pass opened here').stack : null; // FIX-PASS: owner stack, only once a stale pass was seen
+  }
+
+  /** FIX-PASS: true while a render pass is open (between beginPass and endPass/abortPass). */
+  get passOpen() { return !!this._pass; }
+
+  /**
+   * FIX-PASS: ends the open pass (if any) without throwing - for catch blocks that swallow an error thrown inside a pass, and for
+   * present()'s stale-pass recovery. Returns null when no pass was open, else a short description of the pass owner (target size +
+   * attachments, plus the opening stack once `tracePasses` is on - it turns itself on here, so a repeat is fully attributed).
+   * @param {string} [reason] @returns {string|null}
+   */
+  abortPass(reason) {
+    if (!this._pass) return null;
+    const t = this._boundTarget;
+    let owner = t ? (t.isCanvas ? 'canvas' : `target ${t.width}x${t.height} colour=${t.colorCount} depth=${t.hasDepth}`) : 'unknown target';
+    if (this._passStack) owner += ' | opened at: ' + this._passStack;
+    try { this._pass.end(); } catch (_) { /* an encoder already invalid: dropping the pass is all we can do */ }
+    this._pass = null; this._curPipeline = null; this._boundTarget = null; this._passStack = null;
+    this.tracePasses = true;
+    this.abortedPasses = (this.abortedPasses || 0) + 1;
+    if (reason) console.warn(`[GpuDeviceWebGPU] aborted open pass (${reason}): ${owner}`);
+    return owner;
   }
 
   /** @param {GpuHandle} pipeline @param {import('./GpuDevice.js').BindDesc} desc */
@@ -558,7 +584,7 @@ export class GpuDeviceWebGPU {
   endPass() {
     if (!this._pass) throw new Error('GpuDeviceWebGPU.endPass: no open pass');
     this._pass.end();
-    this._pass = null; this._curPipeline = null; this._boundTarget = null;
+    this._pass = null; this._curPipeline = null; this._boundTarget = null; this._passStack = null;
   }
 
   /** End of frame: one ring `writeBuffer` of the used range, then `queue.submit` (38.4). */

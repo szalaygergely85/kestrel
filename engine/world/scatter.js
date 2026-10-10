@@ -41,6 +41,51 @@ export function validateScatterConfig(cfg) {
   return cfg;
 }
 
+
+/**
+ * MAP-01c (arch 38.42): optional biome hook. The recipe may offer `util.biomeAt(x, y) -> u8` and `geo.biomes[id]`
+ * ({forest?: {fill?, species?: {meshOrModelId: weight}}, detail?: {layerName: densityMult}}). Biome 0 (and any id without
+ * an entry) keeps the plain config, so a recipe without the hook, or any point inside the keep rect, is byte-identical.
+ * Returns null when there is no hook. The engine knows only ids and numbers, never geography names.
+ */
+export function compileBiomes(recipe, species) {
+  const biomeAt = recipe && recipe.util && recipe.util.biomeAt, table = recipe && recipe.geo && recipe.geo.biomes;
+  if (typeof biomeAt !== 'function' || !table || typeof table !== 'object') return null;
+  const bad = (id, key) => { throw new Error(`geo.biomes[${id}].${key}: invalid biome config`); };
+  const keys = species ? species.map(s => s.mesh !== undefined ? s.mesh : s.model) : [];
+  const trees = [], detail = [];
+  for (const [id, b] of Object.entries(table)) {
+    const n = Number(id);
+    if (!Number.isInteger(n) || n < 1 || n > 255) bad(id, 'id (1..255; 0 = default)');
+    if (b.forest && species) {
+      const f = b.forest;
+      if (f.fill !== undefined && !(Number.isFinite(f.fill) && f.fill >= 0 && f.fill <= 1)) bad(id, 'forest.fill');
+      let weights = null, total = 0, last = -1;
+      if (f.species !== undefined) {
+        weights = new Float64Array(keys.length);
+        for (const [k, w] of Object.entries(f.species)) {
+          const i = keys.indexOf(k);
+          if (i < 0) bad(id, `forest.species.${k} (not in forest.trees.species)`);
+          if (!Number.isFinite(w) || w < 0) bad(id, `forest.species.${k}`);
+          weights[i] = w;
+        }
+        for (let i = 0; i < weights.length; i++) { total += weights[i]; if (weights[i] > 0) last = i; }
+        if (!(total > 0) && f.fill !== 0) bad(id, 'forest.species (all weights 0)');
+      }
+      trees[n] = { fill: f.fill, weights, total, last };
+    }
+    if (b.detail) {
+      for (const [name, m] of Object.entries(b.detail)) if (!Number.isFinite(m) || m < 0) bad(id, `detail.${name}`);
+      detail[n] = b.detail;
+    }
+    for (const [k, r] of [['scale', b.scale], ['hueJitter', b.hueJitter]]) {   // data only for now (placement has no scale/tint channel yet)
+      if (r === undefined) continue;
+      if (k === 'scale' ? !(Array.isArray(r) && r.length === 2 && r[0] > 0 && r[1] >= r[0]) : !(Number.isFinite(r) && r >= 0 && r <= 1)) bad(id, k);
+    }
+  }
+  return { biomeAt, trees, detail };
+}
+
 const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 /**
@@ -64,6 +109,7 @@ export class TreeScatterJob {
     this.iy1 = Math.ceil((g.y0 + g.h * g.cell) / cfg.cellM);
     this.ix0 = Math.floor(g.x0 / cfg.cellM);
     this.ix1 = Math.ceil((g.x0 + g.w * g.cell) / cfg.cellM);
+    this.bio = compileBiomes(terrain.recipe, cfg.species);
     this.result = null;
   }
   step(msBudget) {
@@ -77,12 +123,17 @@ export class TreeScatterJob {
     return this.result !== null;
   }
   _row(iy) {
-    const { terrain, structures, cfg, forest, g, points, normal, forestId, weight } = this;
+    const { terrain, structures, cfg, forest, g, points, normal, forestId, weight, bio } = this;
     const u = (ix, iy2, k) => hash2(ix, iy2, cfg.seed + k) / 4294967296;
     for (let ix = this.ix0; ix < this.ix1; ix++) {
-      if (u(ix, iy, 0) >= cfg.fill) continue;
       const x = (ix + 0.5) * cfg.cellM + (u(ix, iy, 1) * 2 - 1) * cfg.jitter;
       const y = (iy + 0.5) * cfg.cellM + (u(ix, iy, 2) * 2 - 1) * cfg.jitter;
+      let fill = cfg.fill, bt = null;
+      if (bio !== null) {   // MAP-01c: biome of the placed point (keep rect -> 0 -> unchanged)
+        bt = bio.trees[bio.biomeAt(x, y)];
+        if (bt !== undefined && bt.fill !== undefined) fill = bt.fill;
+      }
+      if (u(ix, iy, 0) >= fill) continue;
       const gx = Math.floor((x - g.x0) / g.cell), gy = Math.floor((y - g.y0) / g.cell);
       if (gx < 0 || gy < 0 || gx + 1 >= g.w || gy + 1 >= g.h) continue;
       const j = gx + gy * g.w;
@@ -96,9 +147,10 @@ export class TreeScatterJob {
         if (x >= b.x0 - 2 && x <= b.x1 + 2 && y >= b.y0 - 2 && y <= b.y1 + 2) { excluded = true; break; }
       }
       if (excluded) continue;
-      let pick = u(ix, iy, 3) * weight, species = cfg.species.length - 1;
+      const bw = bt !== undefined && bt !== null && bt.weights !== null ? bt : null;
+      let pick = u(ix, iy, 3) * (bw ? bw.total : weight), species = bw ? bw.last : cfg.species.length - 1;
       for (let i = 0; i < cfg.species.length; i++) {
-        pick -= cfg.species[i].weight;
+        pick -= bw ? bw.weights[i] : cfg.species[i].weight;
         if (pick < 0) { species = i; break; }
       }
       points.push({ x, y, z: terrain.groundAt(x, y) - 0.1, yawDeg: Math.floor(u(ix, iy, 4) * 360), species, ix, iy });
@@ -134,7 +186,8 @@ export function scatterTrees(terrain, structures = [], cfg = terrain.recipe.reci
  * yawDeg:Int16Array, species:Uint16Array, r2:Float32Array,
  * speciesDefs:Array<{model?:string,mesh?:string,layer:number,shadow:boolean,sway:boolean,lodCells:number,collider?:DetailCollider}>,
  * tileM:number,tx0:number,ty0:number,tilesX:number,tilesY:number,tileStart:Uint32Array}} DetailSet */
-const DETAIL_TYPES = ['grass', 'forest', 'water', 'rock', 'path'];
+// MAP-01b (arch 38.42): ids 0-4 fixed, 5-10 appended (sand, snow, reeds, fen, flowers, alpine); 'mud' = fen. Same order as the recipe `terrain` ids.
+const DETAIL_TYPES = ['grass', 'forest', 'water', 'rock', 'path', 'sand', 'snow', 'reeds', 'fen', 'flowers', 'alpine'];
 const detailNormal = { x: 0, y: 0, z: 1 };
 
 export function validateDetailConfig(cfg, typeNames = DETAIL_TYPES) {
@@ -278,7 +331,8 @@ export class DetailScatterJob {
       }
       layers.push({ l, speciesByType });
     }
-    Object.assign(this, { terrain, cfg, g, x1, y1, tx0, ty0, tilesX, tilesY, structureTiles, speciesDefs, layers,
+    const bio = compileBiomes(terrain.recipe, null);
+    Object.assign(this, { bio, terrain, cfg, g, x1, y1, tx0, ty0, tilesX, tilesY, structureTiles, speciesDefs, layers,
       points: [], exclusions: cfg.exclude.concat(keepOut), layer: 0, iy: 0, rowInit: false, result: null });
   }
   step(msBudget) {
@@ -295,13 +349,18 @@ export class DetailScatterJob {
     return this.result !== null;
   }
   _row(layer, iy) {
-    const { terrain, cfg, g, x1, y1, tx0, ty0, tilesX, structureTiles, points, exclusions } = this;
+    const { terrain, cfg, g, x1, y1, tx0, ty0, tilesX, structureTiles, points, exclusions, bio } = this;
     const { l, speciesByType } = this.layers[layer];
     const u = (ix, iy2, k) => hash2(ix, iy2, l.seed + k) / 4294967296;
     for (let ix = Math.floor(g.x0 / l.cellM); ix < Math.ceil(x1 / l.cellM); ix++) {
-      if (u(ix, iy, 0) >= l.fill) continue;
       const x = (ix + 0.5) * l.cellM + (u(ix, iy, 1) * 2 - 1) * l.jitter;
       const y = (iy + 0.5) * l.cellM + (u(ix, iy, 2) * 2 - 1) * l.jitter;
+      let fill = l.fill;
+      if (bio !== null) {   // MAP-01c: per-biome density multiplier (capped at 1; biome 0 / keep = unchanged)
+        const d = bio.detail[bio.biomeAt(x, y)];
+        if (d !== undefined && d[l.name] !== undefined) fill = Math.min(1, l.fill * d[l.name]);
+      }
+      if (u(ix, iy, 0) >= fill) continue;
       if (x < g.x0 || y < g.y0 || x >= x1 || y >= y1) continue;
       const t = terrain.groundTypeAt(x, y), type = terrain.typeName(t), list = l.ground[type];
       if (!list || !list.length) continue;

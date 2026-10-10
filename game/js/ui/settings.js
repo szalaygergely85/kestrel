@@ -439,7 +439,7 @@ function drawMenuSettingsPanel(ui, assets) {
 const FULL_OPTIONS = [
   { id: 'quality', values: ['low', 'medium', 'high', 'ultra', 'extreme', 'auto'], default: 'high' },
   { id: 'shadows', values: ['off', 'low', 'mid', 'high'], default: 'high' },
-  { id: 'grid', values: ['240x90', '320x120', '400x150', '480x180', '560x210', '640x240', '720x270', '800x300'], default: '400x150' },
+  { id: 'grid', values: ['240x90', '320x120', '400x150', '480x180', '560x210'], default: '400x150' },
   { id: 'volume', type: 'range', min: 0, max: 1, step: 0.1, default: 1 },
   { id: 'mute', values: [false, true], default: false },
   { id: 'textSize', values: ['small', 'normal', 'large'], default: 'normal' },

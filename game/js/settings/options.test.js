@@ -24,7 +24,7 @@ const ids = OPTIONS.map((o) => o.id);
 ok('has grid/fullscreen/mouseSensitivity/invertY/mute', ['grid', 'fullscreen', 'mouseSensitivity', 'invertY', 'mute'].every((id) => ids.includes(id)));
 
 // ---- grid: 240x90/320x120/400x150/480x180, default 240x90 (D-025) ----
-ok('GRID_VALUES matches D-025 list + GRID-MAX-01 steps', JSON.stringify(GRID_VALUES) === JSON.stringify(['240x90', '320x120', '400x150', '480x180', '560x210', '640x240', '720x270', '800x300']));
+ok('GRID_VALUES matches D-025 list + GRID-MAX-01 steps', JSON.stringify(GRID_VALUES) === JSON.stringify(['240x90', '320x120', '400x150', '480x180', '560x210']));
 ok('grid default is 240x90', findOption('grid').default === '240x90');
 // Per the actual US-038a bench result + uiStyle.settings v1.16 (design), only
 // 480x180 is 'ultra' - 400x150 benched as "normal" (see options.js header).
@@ -51,7 +51,7 @@ ok('findOption known', findOption('mute').id === 'mute');
   const grid = findOption('grid');
   ok('grid step +1 from 240x90 -> 320x120', stepOptionValue(grid, '240x90', 1) === '320x120');
   ok('grid step -1 from 240x90 stays at 240x90 (no wrap)', stepOptionValue(grid, '240x90', -1) === '240x90');
-  ok('grid step +1 from 800x300 stays at 800x300 (no wrap)', stepOptionValue(grid, '800x300', 1) === '800x300');
+  ok('grid step +1 from 560x210 stays at 560x210 (no wrap)', stepOptionValue(grid, '560x210', 1) === '560x210');
   ok('grid step -1 from 480x180 -> 400x150', stepOptionValue(grid, '480x180', -1) === '400x150');
   ok('grid step from an unknown current value falls back to default first', stepOptionValue(grid, 'bogus', 1) === '320x120');
 }
