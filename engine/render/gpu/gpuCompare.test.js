@@ -448,3 +448,22 @@ const geom = (f, opts) => compareGeometry(f.gbuf, f.depth, f.giBuf, f.gaBuf, f.d
 
 console.log(`\n[gpuCompare.test.js] ${pass} passed, ${fail} failed`);
 if (fail) { for (const f of failures) console.error('  FAIL: ' + f); process.exit(1); }
+
+// EMIS-03/04: compareGlow - twin vs a "GPU" output equal to the twin passes; a flipped byte beyond tol 1 fails; vacuous (no emissive) fails.
+{
+  const { compareGlow: cg } = await import('./gpuCompare.js');
+  const { glowFrame: gf, GLOW_LEVELS: GL } = await import('../glow.js');
+  const cols = 8, rows = 5, n = cols * rows, kind = new Uint8Array(n).fill(1), mat = new Uint16Array(n), depth = new Float32Array(n).fill(5);
+  mat[2 * cols + 3] = 1;
+  const emis = new Float32Array([0, 1]);
+  const fgIn = new Uint8Array(n * 4).fill(100), bgIn = new Uint8Array(n * 4).fill(20);
+  for (let i = 0; i < n; i++) { fgIn[i * 4 + 3] = 40; bgIn[i * 4 + 3] = 255; }
+  const P = GL.high, oF = new Uint8Array(n * 4), oB = new Uint8Array(n * 4);
+  gf({ kind, mat, depth }, cols, rows, emis, fgIn, bgIn, oF, oB, P);
+  const ok1 = cg({ kind, mat, depth }, cols, rows, emis, fgIn, bgIn, oF, oB, P);
+  if (!ok1.ok) throw new Error('compareGlow: identical output must pass ' + JSON.stringify(ok1));
+  const bad = new Uint8Array(oF); bad[(2 * cols + 4) * 4] += 5;
+  if (cg({ kind, mat, depth }, cols, rows, emis, fgIn, bgIn, bad, oB, P).fg.ok) throw new Error('compareGlow: +5 byte must fail');
+  if (cg({ kind, mat, depth }, cols, rows, new Float32Array([0, 0]), fgIn, bgIn, fgIn, bgIn, P).ok) throw new Error('compareGlow: vacuous pose must fail');
+  console.log('compareGlow checks OK');
+}

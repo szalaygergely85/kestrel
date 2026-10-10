@@ -5,10 +5,10 @@ import {
 } from '../../../../engine/index.js';
 import {
   runGpuCompare, compareCells, compareGeometry, compareLight, describeCellNormals, poisonAllCells, unpackReadback,
-  terrainMeshSetFor, runStableRow,
+  terrainMeshSetFor, runStableRow, compareGlow, emisFromPacked,
   computeDerivatives, shadeSurfaces, edgePass, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG, createShadowParityRunner,
 } from '../../../../engine/dev.js';
-import { POSES as GPU_COMPARE_POSES } from '../../../../content/dev-poses.js';
+import { POSES as GPU_COMPARE_POSES, GATE_POSES } from '../../../../content/dev-poses.js';
 import { fillUnitGrid, placeholderTeamSpec } from '../unitsHarness.js'; // RE-06: instanced-units pose helpers
 import { placeCompareSprites } from '../spriteDev.js'; // US-030c: the synthetic 3-prop set for non-`real` compare poses
 
@@ -134,6 +134,8 @@ function buildCompareRuns(ctx) {
     const x = 1428 - 2 * Math.sin(yr), y = 1040 + 2 * Math.cos(yr);
     return { x, y, z: (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0.53) + 1.6, yawDeg: yawDeg + yawNudge, pitchDeg };
   };
+  // EMIS-03/04: `?gpucompare=emissive` runs ONLY this pose (brazier inside the tower; glow gate is material-only, so time of day does not matter for parity).
+  const emisPose = (GATE_POSES.find((g) => g.slug === 'brazier') || {}).cam;
   const runs = [
     ...GPU_COMPARE_POSES.map((pose) => ({ world: testRoom, lights: testRoomLights, name: `test_room: ${pose.name || '(pose)'}`, cam: { x: pose.x, y: pose.y, z: pose.z, yawDeg: pose.yawDeg, pitchDeg: pose.pitchDeg } })),
     { world: worldM1, lights: worldM1Lights, name: `world_m1: player spawn (${m1Eye.x.toFixed(1)}, ${m1Eye.y.toFixed(1)}) yaw ${m1Eye.yawDeg} pitch ${m1Eye.pitchDeg}`,
@@ -703,6 +705,10 @@ function buildCompareRuns(ctx) {
     }
   }
 
+  if (ctx.params.get('gpucompare') === 'emissive' && emisPose) {
+    runs.length = 0; // emissive mode: only the brazier pose (rows emissive-glow-fg/bg)
+    runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: brazier (EMIS glow)', cam: { ...emisPose }, real: true });
+  }
   return { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances };
 }
 
@@ -883,11 +889,11 @@ async function runGpuCompareSceneMode(ctx) {
     if (real) sprites.pool.collect(world);
     else { sprites.pool.reset(); placeCompareSprites(cam, sprites.pool); }
     if (spritesExtra) spritesExtra(sprites.pool); // SPELL-01b: view-only billboards (fireball core / blast)
-    if (params.get('sprites') === '0') sprites.pool.reset(); // diagnostic (WG-3c): isolate shade/edge from the sprite layer WebGPU has not ported
+    if (params.get('sprites') === '0' || params.get('gpucompare') === 'emissive') sprites.pool.reset(); // emissive: glow rows compare the pre-sprite stage // diagnostic (WG-3c): isolate shade/edge from the sprite layer WebGPU has not ported
     sprites.pool.project(cam, rt, lights || ambientL, world, renderer);
     // US-053b (32.1): particle layer, built once per pose from the current (just-cleared-
     // or-just-populated) engine.particles state - both twins below read the SAME layer.
-    if (engine.particleLayer && params.get('sprites') === '0') engine.particleLayer.bind(cols, rows); // diagnostic: no particle cells either
+    if (engine.particleLayer && (params.get('sprites') === '0' || params.get('gpucompare') === 'emissive')) engine.particleLayer.bind(cols, rows); // diagnostic: no particle cells either
     else if (engine.particleLayer) engine.particleLayer.build(engine.particles, cam, rt, lights || ambientL, world, assets.palette, renderer);
 
     engine.overlay.clear(); // RE-07b: per-pose ops (none for the old poses -> pass skipped)
@@ -906,6 +912,20 @@ async function runGpuCompareSceneMode(ctx) {
     const vmItemsGpu = engine.viewModel ? engine.viewModel.stats.items : 0;
         // WG-3c: the WebGPU path still PRESENTS the CPU cells, so its GPU-shaded cells come from the pipeline's own final textures
     const rbw = wg ? await wg.readbackCells() : null;
+    if (rbw && params.get('gpucompare') === 'emissive') { // EMIS-03/04: glow-off pass for the twin's input, then the real (glow) output stays in rbw
+      if (!wg._glowRan) { overallOk = false; console.log('[gpucompare] FAIL emissive-glow: glow pass did not run (opts.glow missing or pass disabled)'); }
+      else {
+        const outFg = new Uint8Array(rbw.fg), outBg = new Uint8Array(rbw.bg), P = wg.glowOpt;
+        wg.runtimeGlow(null);
+        fbCompare.gpu = true; renderWorld(fbCompare, world, cam); wg.frame(fbCompare, lights || ambientL, cam, world); engine.overlay.flush(cam); rt.present();
+        const rin = await wg.readbackCells(), gi = await gpuPipeline.readbackGeometry();
+        wg.runtimeGlow(P);
+        const up = unpackReadback(gi.GI, gi.GA, gi.Depth, cols, rows);
+        const cg = compareGlow(up, cols, rows, emisFromPacked(matTable), new Uint8Array(rin.fg), new Uint8Array(rin.bg), outFg, outBg, P);
+        for (const r of [cg.fg, cg.bg]) { rowsOut.push({ pose: r.pose, ok: r.ok, glow: r }); console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: max=${r.max} bad=${r.bad} live=${r.live} (tol 1, live>0)`); }
+        overallOk = overallOk && cg.ok;
+      }
+    }
     const gpuFg = rbw ? rbw.fg : null, gpuBg = rbw ? rbw.bg : null;
     const { GI, GA, Depth } = await gpuPipeline.readbackGeometry();
     const lightBuf = await gpuPipeline.readbackLight(); // WG-3b: WebGPU too (null only while the pass is not ported)
@@ -1134,8 +1154,8 @@ async function runGpuComparePointShadowPending() {
 
 export function run(ctx) {
   const mode = ctx.params.get('gpucompare');
-  if (mode === '1') return runGpuCompareSceneMode(ctx).catch((e) => { console.error('[gpucompare] failed:', e); throw e; });
+  if (mode === '1' || mode === 'emissive') return runGpuCompareSceneMode(ctx).catch((e) => { console.error('[gpucompare] failed:', e); throw e; });
   else if (mode === 'shade') return runGpuCompareShadeMode(ctx).catch((e) => { console.error('[gpucompare] failed:', e); throw e; });
   else if (mode === 'pointshadow') return runGpuComparePointShadowPending();
-  else throw new Error('gpucompare mode must be 1 (mesh twin) or shade');
+  else throw new Error('gpucompare mode must be 1 (mesh twin), shade or emissive');
 }
