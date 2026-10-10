@@ -1,0 +1,38 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Prop_Support",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Prop_Support.mesh.bin",
+  "triCount": 16,
+  "bbox": [
+    -0.0993,
+    -1.91815,
+    1.21139,
+    0.0993,
+    0.11812,
+    2.92003
+  ],
+  "ranges": [
+    {"count": 16, "part": "Prop_Support#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_WoodTrim"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "g8DKvQaB9b8MAps/g8DKPQaB9b8MAps/g8DKPQaB9b9I4TpAg8DKvQaB9b8MAps/g8DKPQaB9b9I4TpAg8DKvQaB9b9I4TpAg8DKPQaB9b8MAps/g8DKPfyp8T0MAps/g8DKPfyp8T1I4TpAg8DKPQaB9b8MAps/g8DKPfyp8T1I4TpAg8DKPQaB9b9I4TpAg8DKPfyp8T0MAps/g8DKvfyp8T0MAps/g8DKvfyp8T1I4TpAg8DKPfyp8T0MAps/g8DKvfyp8T1I4TpAg8DKPfyp8T1I4TpAg8DKvfyp8T0MAps/g8DKvQaB9b8MAps/g8DKvQaB9b9I4TpAg8DKvfyp8T0MAps/g8DKvQaB9b9I4TpAg8DKvfyp8T1I4TpAg8DKvQaB9b9I4TpAg8DKPQaB9b9I4TpAg8DKPfyp8T1I4TpAg8DKvQaB9b8MAps/g8DKPfyp8T0MAps/g8DKPQaB9b8MAps/g8DKvQaB9b9I4TpAg8DKPfyp8T1I4TpAg8DKvfyp8T1I4TpAg8DKvQaB9b8MAps/g8DKvfyp8T0MAps/g8DKPfyp8T0MAps/"
+}

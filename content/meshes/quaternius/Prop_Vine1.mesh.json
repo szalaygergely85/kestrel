@@ -1,0 +1,38 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Prop_Vine1",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Prop_Vine1.mesh.bin",
+  "triCount": 82,
+  "bbox": [
+    -0.78314,
+    -0.17426,
+    -2.12052,
+    0.75262,
+    0.04471,
+    0.48203
+  ],
+  "ranges": [
+    {"count": 82, "part": "Prop_Vine1#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_Vine"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "leaf_light",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "1XhJvwIrB713vgfA5dACv2Q73713vgfA5dACv2Q73720yPY+1XhJvwIrB713vgfA5dACv2Q73720yPY+1XhJvwIrB720yPY+5dACv2Q73713vgfARrZzvsP1KL53vgfARrZzvsP1KL60yPY+5dACv2Q73713vgfARrZzvsP1KL60yPY+5dACv2Q73720yPY+RrZzvsP1KL53vgfAppvEPVYOLb53vgfAppvEPVYOLb60yPY+RrZzvsP1KL53vgfAppvEPVYOLb60yPY+RrZzvsP1KL60yPY+ppvEPVYOLb53vgfAokUWP3WTGL53vgfAokUWP3WTGL60yPY+ppvEPVYOLb53vgfAokUWP3WTGL60yPY+ppvEPVYOLb60yPY+okUWP3WTGL53vgfABFYuP3sUrr13vgfABFYuP3sUrr20yPY+okUWP3WTGL53vgfABFYuP3sUrr20yPY+okUWP3WTGL60yPY+BFYuP3sUrr13vgfAN4lBP28SAz13vgfAN4lBP28SAz20yPY+BFYuP3sUrr13vgfAN4lBP28SAz20yPY+BFYuP3sUrr20yPY+N4lBP28SAz13vgfAqMYrv+xROD13vgfAqMYrv+xROD20yPY+N4lBP28SAz13vgfAqMYrv+xROD20yPY+N4lBP28SAz20yPY+qMYrv+xROD13vgfA1XhJvwIrB713vgfA1XhJvwIrB720yPY+qMYrv+xROD13vgfA1XhJvwIrB720yPY+qMYrv+xROD20yPY+1XhJvwIrB720yPY+5dACv2Q73720yPY+RrZzvsP1KL60yPY+1XhJvwIrB713vgfARrZzvsP1KL53vgfA5dACv2Q73713vgfA1XhJvwIrB720yPY+RrZzvsP1KL60yPY+ppvEPVYOLb60yPY+1XhJvwIrB713vgfAppvEPVYOLb53vgfARrZzvsP1KL53vgfA1XhJvwIrB720yPY+ppvEPVYOLb60yPY+okUWP3WTGL60yPY+1XhJvwIrB713vgfAokUWP3WTGL53vgfAppvEPVYOLb53vgfA1XhJvwIrB720yPY+okUWP3WTGL60yPY+BFYuP3sUrr20yPY+1XhJvwIrB713vgfABFYuP3sUrr13vgfAokUWP3WTGL53vgfA1XhJvwIrB720yPY+BFYuP3sUrr20yPY+N4lBP28SAz20yPY+1XhJvwIrB713vgfAN4lBP28SAz13vgfABFYuP3sUrr13vgfA1XhJvwIrB720yPY+N4lBP28SAz20yPY+qMYrv+xROD20yPY+1XhJvwIrB713vgfAqMYrv+xROD13vgfAN4lBP28SAz13vgfA"
+}

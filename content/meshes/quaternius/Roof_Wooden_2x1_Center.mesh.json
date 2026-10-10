@@ -1,0 +1,40 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Roof_Wooden_2x1_Center",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Roof_Wooden_2x1_Center.mesh.bin",
+  "triCount": 52,
+  "bbox": [
+    -1,
+    -1.49899,
+    -0.14531,
+    1,
+    0,
+    1.06224
+  ],
+  "ranges": [
+    {"count": 18, "part": "Roof_Wooden_2x1_Center#0", "start": 0},
+    {"count": 34, "part": "Roof_Wooden_2x1_Center#1", "start": 18}
+  ],
+  "matKeys": [
+    "MI_WoodTrim",
+    "MI_WoodTrim_Wear"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "AACAvzvfv7/hehS+mpkZvzvfv7/hehS+mpkZvzvfv7+e74c/AACAvzvfv7/hehS+mpkZvzvfv7+e74c/AACAvzvfv7+e74c/mpkZvzvfv7/hehS+zcxMPjvfv7/hehS+zcxMPjvfv7+e74c/mpkZvzvfv7/hehS+zcxMPjvfv7+e74c/mpkZvzvfv7+e74c/zcxMPjvfv7/hehS+AACAP3e+v7/hehS+AACAP3e+v7+e74c/zcxMPjvfv7/hehS+AACAP3e+v7+e74c/zcxMPjvfv7+e74c/AACAP3e+v7/hehS+AACAPwAAAADhehS+AACAPwAAAACe74c/AACAP3e+v7/hehS+AACAPwAAAACe74c/AACAP3e+v7+e74c/AACAPwAAAADhehS+AACAvwAAAADhehS+AACAvwAAAACe74c/AACAPwAAAADhehS+AACAvwAAAACe74c/AACAPwAAAACe74c/AACAvwAAAADhehS+AACAvzvfv7/hehS+AACAvzvfv7+e74c/AACAvwAAAADhehS+AACAvzvfv7+e74c/AACAvwAAAACe74c/AACAvzvfv7+e74c/mpkZvzvfv7+e74c/zcxMPjvfv7+e74c/AACAvzvfv7/hehS+zcxMPjvfv7/hehS+mpkZvzvfv7/hehS+AACAvzvfv7+e74c/zcxMPjvfv7+e74c/AACAP3e+v7+e74c/AACAvzvfv7/hehS+AACAP3e+v7/hehS+zcxMPjvfv7/hehS+AACAvzvfv7+e74c/AACAP3e+v7+e74c/AACAPwAAAACe74c/AACAvzvfv7/hehS+AACAPwAAAADhehS+AACAP3e+v7/hehS+AACAvzvfv7+e74c/AACAPwAAAACe74c/AACAvwAAAACe74c/AACAvzvfv7/hehS+AACAvwAAAADhehS+AACAPwAAAADhehS+"
+}

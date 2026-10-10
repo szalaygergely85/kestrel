@@ -1,0 +1,38 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Prop_MetalFence_Simple",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Prop_MetalFence_Simple.mesh.bin",
+  "triCount": 600,
+  "bbox": [
+    -0.97011,
+    -0.07803,
+    0,
+    0.979,
+    0.07803,
+    2.86835
+  ],
+  "ranges": [
+    {"count": 600, "part": "Prop_MetalFence_Simple#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_MetalOrnaments"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "16Nwv+OlG70AAAAAF9luP+OlG70AAAAAF9luP+OlG71QjTdA16Nwv+OlG70AAAAAF9luP+OlG71QjTdA16Nwv+OlG71QjTdAF9luP+OlG70AAAAAF9luP+OlGz0AAAAAF9luP+OlGz1QjTdAF9luP+OlG70AAAAAF9luP+OlGz1QjTdAF9luP+OlG71QjTdAF9luP+OlGz0AAAAA16Nwv+OlGz0AAAAA16Nwv+OlGz1QjTdAF9luP+OlGz0AAAAA16Nwv+OlGz1QjTdAF9luP+OlGz1QjTdA16Nwv+OlGz0AAAAA16Nwv+OlG70AAAAA16Nwv+OlG71QjTdA16Nwv+OlGz0AAAAA16Nwv+OlG71QjTdA16Nwv+OlGz1QjTdA16Nwv+OlG71QjTdAF9luP+OlG71QjTdAF9luP+OlGz1QjTdA16Nwv+OlG70AAAAAF9luP+OlGz0AAAAAF9luP+OlG70AAAAA16Nwv+OlG71QjTdAF9luP+OlGz1QjTdA16Nwv+OlGz1QjTdA16Nwv+OlG70AAAAA16Nwv+OlGz0AAAAAF9luP+OlGz0AAAAA"
+}
