@@ -46,7 +46,10 @@ export function readControl(recipe, ctl) {
 }
 
 /** Trailing debounce; `timers` is injectable for tests. cancel() drops a pending call. */
-export function debounce(fn, ms, timers = { setTimeout, clearTimeout }) {
+// Default timers are wrapped: a bare { setTimeout } object calls window.setTimeout with the wrong `this`
+// ("Illegal invocation" in browsers, fine in Node), which silently stopped every rebuild.
+const WIN_TIMERS = { setTimeout: (f, ms) => setTimeout(f, ms), clearTimeout: (h) => clearTimeout(h) };
+export function debounce(fn, ms, timers = WIN_TIMERS) {
   let h = null;
   const d = (...a) => { if (h !== null) timers.clearTimeout(h); h = timers.setTimeout(() => { h = null; fn(...a); }, ms); };
   d.cancel = () => { if (h !== null) { timers.clearTimeout(h); h = null; } };
