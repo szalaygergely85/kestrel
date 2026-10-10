@@ -220,10 +220,10 @@
   // ---------------------------------------------------------------------------
   var STONE = {
     albedo: 0.85, bgK: 0.28, seed: 11, detail: 18, jitter: 0.08,
-    tones: [['stoneMid', 4], ['stoneMidHi', 3], ['stoneMidLo', 3]],
-    grid: { u: 0.8, v: 0.4, stagger: 0.5, shade: 0.55, tint: 'mortar', amount: 0.5, bgK: 0.16, cross: '|', maxCover: 0.5, tie: true },
+    tones: [['stoneMid', 3], ['stoneMidHi', 2], ['stoneMidLo', 2], ['stoneDeep', 2]],  // WALL-BRICK-02: 4 tones (GPU MAX_TONES)
+    grid: { u: 0.4, v: 0.25, stagger: 0.5, shade: 0.42, tint: 'mortar', amount: 0.65, bgK: 0.12, cross: '|', maxCover: 0.5, tie: true },
     face: { set: 'stoneFace', mid: 'stoneMid', far: 'stoneFar',
-            bevel: { top: 0.05, topShade: 1.15, bottom: 0.05, bottomShade: 0.80 } },
+            bevel: { top: 0.03, topShade: 1.15, bottom: 0.03, bottomShade: 0.78 } },
     speckle: { set: 'chip', chance: 0.05, shade: 0.72 },
     lod: { mid: 12, far: 25, dither: 3 }
   };
@@ -237,7 +237,7 @@
   var materials = {
     stone: ext(STONE, {
       v1: 'stone',
-      desc: 'Tower wall: coursed ashlar 0.8 x 0.4 m, half bond. Mortar = 1-cell lines ( _ | ) at every distance up to ~12 m, ' +
+      desc: 'Tower wall: coursed ashlar 0.4 x 0.25 m (WALL-BRICK-02), half bond. Mortar = 1-cell lines ( _ | ) at every distance up to ~12 m, ' +
             'every block its own tone (3 greys of one hue: mid, mid-hi, mid-lo (MESH-TONE-AMP-01)), rough face : ; , + x, rare chips.'
     }),
     stone_moss: ext(STONE, {
