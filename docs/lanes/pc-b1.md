@@ -378,3 +378,12 @@ B1 2026-10-09 (kestrel-1) SETTINGS-MOUNT-01 -> po-review: full createSettingsVie
 - wildEnv.blocked() now also hits colliding placed meshes: 2 m occupancy grid from world.structures AABBs (mesh.collide!==false, has collider/triCount; big > 12 m = ring only). Plants (collide:false) skipped. Tests 21/21, 1e5 queries ~0 alloc.
 - main.js: read-only `window.__debug.wild` {alive, drawn} (wild.drawn() = feeder.stats.drawn).
 - tools/verify-wild.mjs (NOT run, no browser): `node tools/verify-wild.mjs {port}` (port 9500-9574). Limit: AABB, not triangle-exact.
+
+### RIG-03w (kestrel-1) - arch-review
+- New game/js/quest/charRegister.js `registerRiggedChars(registry, bundle.models, onError)`: rigged entries -> `registry.add('model','char.<id>', riggedModelDef(collapseRig(riggedFromGlb(model), extras.partMap||HUMANOID_PART_MAP)))`; static skipped; bad glb -> ContentError(`model:<id>`) via onError, rest still registered.
+- main.js: import + one call before `gameVoxelPool.bind`. packBoot.js: `bundle.models = await mount.loadModels()` (it was never filled in the game).
+- Test: game/js/quest/charRegister.test.mjs (real chargen glb + fake registry) PASS. Not run: browser/capture.
+
+### CHARGEN-15 (kestrel-1) - NOT STARTED, ASK ARCHITECT
+- Unclear package mount path: default boot mounts no .kestrel (only `?pack=`), and loadBundleFromPackages needs a package with a content manifest (a glb-only villager package gives "none carries a content manifest"). Also world_m1 entity needs model `char.<id>` + dialogue file wiring.
+- Need decision: (a) default boot auto-mounts content/packages/*.kestrel (models only, merge with the normal content pack), or (b) villager package carries a full content manifest. Then CHARGEN-15 is ~0.5 d.

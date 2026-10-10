@@ -7,6 +7,7 @@
 // engine/index.js like everything else (check-deps rule 3).
 
 import { loadPresets, resolveQuality, saveQuality, knobsFor } from './ui/gfxPresets.js';
+import { registerRiggedChars } from './quest/charRegister.js';
 import { resolveBootOptions, describeQuality } from './gfxBoot.js';
 import { pickQuality, tierFromAdapter, p95 } from './gfxAuto.js'; // GFX-02
 import { gatherAdapterInfo, showCard, AutoBench } from './gfxAutoRun.js';
@@ -734,6 +735,7 @@ if (handDef && handDef.variants && handLookDef) {
     if (hd && !assets.has('model', mk)) assets.add('model', mk, { ...hd, voxel: { ...hd.voxel, meshOnly: true } });
   }
 }
+registerRiggedChars(assets, bundle.models); // RIG-03w: char.<id> from package .glb, before bind
 const gameVoxelPool = new VoxelPool();
 gameVoxelPool.bind(assets, matTable);
 // RE-02b F1 + review: 'mesh' only when the mesh GpuCellPipeline is really active (CPU fallback renders shear).

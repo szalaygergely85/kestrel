@@ -21,5 +21,7 @@ export async function loadBundleFromPackages(params, opts = {}, log = () => {}) 
   const withContent = pkgs.filter((p) => mount.manifestUrl(p.id));
   if (!withContent.length) throw new Error('?pack=: none of the packages carries a content manifest');
   log(`packages mounted: ${pkgs.map((p) => p.id + '@' + p.manifest.version).join(', ')}`);
-  return loadContentPack(mount.manifestUrl(withContent[0].id), { ...opts, fetchText: mount.fetchText, fetchBytes: mount.fetchBytes });
+  const bundle = await loadContentPack(mount.manifestUrl(withContent[0].id), { ...opts, fetchText: mount.fetchText, fetchBytes: mount.fetchBytes });
+  bundle.models = await mount.loadModels(); // RIG-03w: model.rigged / model.static assets -> registerRiggedChars
+  return bundle;
 }
