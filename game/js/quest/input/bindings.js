@@ -6,7 +6,7 @@ export const DEFAULT_BINDINGS = Object.freeze({
     run: Object.freeze(['ShiftLeft', 'ShiftRight']), jump: Object.freeze(['Space']),
     interact: Object.freeze(['KeyE']), useLeft: Object.freeze(['Mouse0']),
     useRight: Object.freeze(['Mouse2']), swapHands: Object.freeze(['KeyH']),
-    lockTarget: Object.freeze(['KeyQ']), cycleTarget: Object.freeze(['Tab']),
+    lockTarget: Object.freeze(['KeyR']), swapSet: Object.freeze(['KeyQ']), cycleTarget: Object.freeze(['Tab']),
     inventory: Object.freeze(['KeyI']), map: Object.freeze(['KeyM']), mute: Object.freeze(['KeyN']),
     questLog: Object.freeze(['KeyJ']), // QG-05
   }),
@@ -14,7 +14,7 @@ export const DEFAULT_BINDINGS = Object.freeze({
   // Button0..31 / Axis0..15+ or - can be supplied independently by a future host.
   gamepad: Object.freeze(Object.fromEntries([
     'forward', 'backward', 'left', 'right', 'run', 'jump', 'interact', 'useLeft',
-    'useRight', 'swapHands', 'lockTarget', 'cycleTarget', 'inventory', 'map', 'mute', 'questLog',
+    'useRight', 'swapHands', 'lockTarget', 'swapSet', 'cycleTarget', 'inventory', 'map', 'mute', 'questLog',
   ].map(action => [action, Object.freeze([])]))),
 });
 

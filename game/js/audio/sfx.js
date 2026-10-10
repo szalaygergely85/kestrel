@@ -291,3 +291,13 @@ export function resetGameAudio(world) {
 export function __test_setFootWorld(world) { footWorld = world; }
 export function __test_floorMatAt(x, y) { return floorMatAt(x, y); }
 export function __test_footstepDesignFor(mat) { return FOOTSTEP_TIMBRES[surfaceTimbre(mat)]; }
+
+// EQ-07/EQ-09: shield clank (iron on plank) and bow shot (string snap). Built from the same synth bursts; not in GAIN_DESIGNS (one-shots).
+export function playShieldClank() {
+  playToneBurst({ type: 'triangle', freq: 420, freqEnd: 260, duration: 0.05, attack: 0.001, release: 0.12, peak: 0.12 });
+  playNoiseBurst({ duration: 0.03, attack: 0.001, release: 0.06, peak: 0.1, filterType: 'bandpass', filterFreq: 2400, filterQ: 1.2 });
+}
+export function playBowShot() {
+  playToneBurst({ type: 'triangle', freq: 180, freqEnd: 90, duration: 0.03, attack: 0.001, release: 0.08, peak: 0.1 });
+  playNoiseBurst({ duration: 0.02, attack: 0.001, release: 0.05, peak: 0.06, filterType: 'highpass', filterFreq: 3000 });
+}
