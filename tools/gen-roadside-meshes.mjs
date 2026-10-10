@@ -34,13 +34,14 @@ const argv = process.argv.slice(2);
 const argN = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? Number(argv[i + 1]) : d; };
 const argS = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
 const PREFIX = argS('--prefix', 'roadL');
-const PRESETS = { roadL: { side: 'left', u0: 14, u1: 250, v0: 6, v1: 22, count: 300, tree: 0.35 }, roadW: { side: 'left', u0: 250, u1: 300, v0: 6, v1: 22, count: 60, tree: 0.35 }, roadN: { side: 'right', u0: 110, u1: 300, v0: 8, v1: 26, count: 140, tree: 0.25 } };
+const PRESETS = { roadL: { side: 'left', u0: 14, u1: 250, v0: 6, v1: 22, count: 300, tree: 0.35 }, roadW: { side: 'left', u0: 250, u1: 300, v0: 6, v1: 22, count: 60, tree: 0.35 }, roadN: { side: 'right', u0: 110, u1: 300, v0: 8, v1: 26, count: 140, tree: 0.25 },
+  roadF: { side: 'left', u0: 305, u1: 470, v0: 6, v1: 20, count: 70, tree: 0.3 }, roadG: { side: 'right', u0: 305, u1: 470, v0: 8, v1: 24, count: 80, tree: 0.25 } };   // WS2-07: ford stretch (band west)
 const PRE = PRESETS[PREFIX] || PRESETS.roadL;
 const SIDE = argS('--side', PRE.side) === 'right' ? -1 : 1;   // +1 left (south), -1 right (north)
 const SEED = argN('--seed', 20261007), COUNT = argN('--count', PRE.count), dry = argv.includes('--dry-run');
 const TREE_Q = argN('--tree-quota', PRE.tree);
 const FILE = 'content/worlds/world_m1.world.json';
-const PATH = [[1480, 1025], [1420, 1032], [1350, 1050], [1260, 1045], [1180, 1062]];
+const PATH = [[1480, 1025], [1420, 1032], [1350, 1050], [1260, 1045], [1180, 1062], [1090, 1070], [1000, 1066]];
 const U0 = argN('--u0', PRE.u0), U1 = argN('--u1', PRE.u1);                // arc length range along the path (m): x ~1468 .. ~1250
 const V0 = argN('--v0', PRE.v0), V1 = argN('--v1', PRE.v1);                  // lateral distance from the centre line, left side (road halfWidth 3 + verge)
 const EXCL_V = (V0 + V1) / 2, EXCL_R = (V1 - V0) / 2 + 1.5;   // detail.exclude capsules: centre line + EXCL_V south, radius EXCL_R
@@ -70,6 +71,7 @@ const idRe = new RegExp('^' + PREFIX + '\\d+$');
 data.structures = data.structures.filter((s) => !idRe.test(s.id));
 const world = World.load(data, assets, { physics: 'mesh' });
 const T = world.terrain;
+world.ensureBandFor(1040, 1068);   // WS2-07: the ford stretch (x < 1180) lives in the west band; groundAt/groundTypeAt read the current near
 
 // mesh classes
 const names = fs.readdirSync('content/meshes/quaternius').filter((f) => f.endsWith('.mesh.json')).map((f) => f.replace('.mesh.json', ''));
@@ -98,9 +100,11 @@ for (const s of data.structures) if (s.mesh) circles.push({ x: s.origin.x, y: s.
 circles.push({ x: 1428, y: 1040, r: 6 });              // waystone + end trigger
 circles.push({ x: 1478, y: 1025, r: 6 });              // breach landing
 circles.push({ x: 1494, y: 1048, r: 10 });             // groveSouth (forest paint)
-circles.push({ x: 1262, y: 1033, r: 8 });              // WS1-05 relay ws_roadBend (relay + base + travel anchor + wake approach)
+circles.push({ x: 1262, y: 1033, r: 8 });
+circles.push({ x: 992, y: 1079, r: 8 });               // WS2-07 relay ws_ford (relay + base + wake approach)
+circles.push({ x: 1028, y: 1068, r: 15 });             // WS2-07 stepping stones fordS1..7 + both banks              // WS1-05 relay ws_roadBend (relay + base + travel anchor + wake approach)
 // walk route (tools/route-walk.mjs legs 7a/7b: breach -> terrain-near -> waystone): keep every placement >= 2 m clear of it (ME-14c4 rule)
-const ROUTES = [[[1485.5, 1025.5], [1470, 1029], [1428, 1040]], [[1420, 1032], [1350, 1050], [1270, 1042]]], ROUTE_CLEAR = 2;   // 2nd = WS1-08 leg 8 (waystone -> road bend relay)
+const ROUTES = [[[1485.5, 1025.5], [1470, 1029], [1428, 1040]], [[1420, 1032], [1350, 1050], [1270, 1042]], [[1260, 1045], [1180, 1062], [1090, 1070], [1046, 1069], [1010, 1070], [993, 1077]]], ROUTE_CLEAR = 2;   // 2nd = WS1-08 leg 8 (waystone -> road bend relay)
 const routeDist = (x, y) => { let m = Infinity; for (const ROUTE of ROUTES) for (let i = 0; i < ROUTE.length - 1; i++) { const [ax, ay] = ROUTE[i], dx = ROUTE[i + 1][0] - ax, dy = ROUTE[i + 1][1] - ay, t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy))); m = Math.min(m, Math.hypot(x - ax - dx * t, y - ay - dy * t)); } return m; };
 const ok = (x, y, r) => {
   if (routeDist(x, y) < r + ROUTE_CLEAR) return false;
