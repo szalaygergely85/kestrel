@@ -80,4 +80,11 @@ const follow = (c) => () => c.ent.transform.x - 3;
   for (let i = 0; i < 120; i++) c.e.step(DT, 5, 0, true); assert.deepEqual(c.played, [], 'no bark while held');
   run(c, 1, 5); assert.ok(c.played.length >= 1, 'bark resumes when released');
 }
+// PO-CH1-08: stone woken -> Burl's goodbye talk opens by itself (after the notice), once per approach
+{ let busy = true; const c = mk({ 'burl.phase': 2, 'dlg.bear.stone.told': true, 'waystone.waystone.woken': true }, { noticeBusy: () => busy }); c.e.load();
+  for (let i = 0; i < 30; i++) c.e.step(DT, 29, 0, false); assert.deepEqual(c.opened, [], 'not while the notice is up');
+  busy = false; for (let i = 0; i < 30; i++) c.e.step(DT, 29, 0, false); assert.deepEqual(c.opened, ['bear'], 'auto-opens once the notice is gone');
+  for (let i = 0; i < 30; i++) c.e.step(DT, 29, 0, false); assert.equal(c.opened.length, 1, 'latched'); }
+{ const c = mk({ 'burl.phase': 2, 'dlg.bear.stone.told': true, 'waystone.waystone.woken': true, 'burl.depart': true }); c.e.load();
+  for (let i = 0; i < 30; i++) c.e.step(DT, 29, 0, false); assert.deepEqual(c.opened, [], 'no re-open once the departure is set'); }
 console.log('burlEscort ALL PASS');

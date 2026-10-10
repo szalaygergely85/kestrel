@@ -88,7 +88,7 @@ export function createRelayWake(o) {
       const r = find(wsId);
       if (!r || r.phase === WAKING) return false;
       if (r.phase === AWAKE) { touch(r); return true; }
-      if (!world.state[FLAG_ATTUNED] || (r.stone && !world.state[FLAG_STONE_TOLD])) { hint.left = TOAST_SEC; return false; } // gate: the crystal wakes stones
+      if (!world.state[FLAG_ATTUNED] || (r.stone && !world.state[FLAG_STONE_TOLD]) || (!r.stone && !world.state[woken('waystone')])) { hint.left = TOAST_SEC; return false; } // gate: the crystal wakes stones
       const h = world.get(r.entId);
       if (h) h.play('wake');
       hum();

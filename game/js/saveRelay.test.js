@@ -47,10 +47,10 @@ A.quest.poll(facts({ wakeDone: true, x: 101, y: 51, z: 6.2 }), breach);
 assert.equal(A.quest.objectiveText(), OBJ.sword);
 assert.deepEqual(toasts, [], 'no section toast mid-section');
 A.quest.poll(facts({ swordTaken: true }), breach);
-assert.deepEqual(toasts, ['A Blade in the Ashes'], 'q01 closes with the sword');
+assert.deepEqual(toasts, [], 'q01 is silent (the giver quest owns the toast)');
 assert.equal(A.quest.objectiveText(), OBJ.leave);
 A.quest.feed({ type: 'area:entered', id: 'towerDoor' });
-assert.deepEqual(toasts, ['A Blade in the Ashes', 'Leave the Tower']);
+assert.deepEqual(toasts, []);
 assert.equal(A.quest.objectiveText(), OBJ.beasts);
 events.emit('beast:died', { id: 'boar1' });
 events.emit('beast:died', { id: 'boar1' }); // duplicate counts once
@@ -68,7 +68,7 @@ assert.equal(A.quest.book.accept('burl.boars'), true); assert.equal(A.quest.book
 assert.equal(A.quest.objectiveText(), burl.returnText);
 assert.deepEqual(A.quest.book.handIn('burl.boars'), { items: [] }); assert.equal(A.quest.state.completed.includes('beasts'), true, 'hand-in completes m1 beasts');
 A.quest.checkSections(); // main.js: stepGame does this each step
-assert.equal(toasts.at(-1), 'Boars in the Woods');
+assert.deepEqual(toasts, [], 'q03 silent');
 assert.equal(A.quest.objectiveText(), OBJ.follow);
 assert.equal(A.quest.questFlag('burl.arrived'), true); assert.equal(world.state['burl.arrived'], true, 'questFlag writes world.state');
 assert.equal(A.quest.objectiveText(), OBJ.waystone);
@@ -78,7 +78,7 @@ A.quest.feed({ type: 'area:entered', id: 'roadWest' }); A.quest.feed({ type: 'ar
 assert.equal(A.quest.objectiveText(), OBJ.relay1);
 A.quest.questFlag('waystone.ws_roadBend.woken');
 assert.equal(A.quest.done, true, 'scripted sequence completes the chain at the relay (FEN-OFF-01)');
-assert.equal(toasts.length, 6, 'one toast per section'); assert.equal(toasts.at(-1), 'The Next Light');
+assert.equal(toasts.length, 3, 'one toast per non-silent section (q04-q06)'); assert.equal(toasts.at(-1), 'The Next Light');
 A.quest.objectiveText();
 assert.equal(A.quest.objectiveText(), DONE_TEXT);
 assert.equal(DONE_TEXT, 'The pencil line runs on.');

@@ -2,9 +2,9 @@
   "version": 1,
   "id": "m1",
   "sections": [
-    { "id": "q01", "title": "A Blade in the Ashes" },
-    { "id": "q02", "title": "Leave the Tower" },
-    { "id": "q03", "title": "Boars in the Woods" },
+    { "id": "q01", "title": "A Blade in the Ashes", "silent": true },
+    { "id": "q02", "title": "Leave the Tower", "silent": true },
+    { "id": "q03", "title": "Boars in the Woods", "silent": true },
     { "id": "q04", "title": "Follow the Bear" },
     { "id": "q05", "title": "Awaken the Stone" },
     { "id": "q06", "title": "The Next Light" }

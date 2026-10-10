@@ -8,12 +8,12 @@ export const CALL_NEAR_M = 14, TALK_NEAR_M = 4, TALK_REARM_M = 7;
 /**
  * @param {{world:{state:object}, walk:object (npcWalk), questFlag:(k:string)=>void,
  *   barks?:{play:(id:string,who?:any)=>boolean}, dialogueOpen?:()=>boolean, afterLeave?:()=>boolean,
- *   requestOpen?:(id:string)=>void, id?:string, x?:()=>number, y?:()=>number}} o
+ *   requestOpen?:(id:string)=>void, noticeBusy?:()=>boolean, id?:string, x?:()=>number, y?:()=>number}} o
  *   x/y: Burl position getters (for the proximity checks)
  */
 export function createBurlEscort(o) {
   const { world, walk, questFlag } = o, st = world.state, id = o.id || 'bear';
-  let talkLatch = false;
+  let talkLatch = false, wokenLatch = false;
   const phase = () => st['burl.phase'] | 0;
   const setPhase = (p) => { st['burl.phase'] = p; };
   const follow = () => walk.start('follow', { lead: true, fromWp: st['burl.wp'] | 0, onArrive: arrived });
@@ -49,6 +49,12 @@ export function createBurlEscort(o) {
           setPhase(PHASE_DEPART); questFlag('burl.departing');
           walk.start('depart', { lead: false, hideAtEnd: true, onArrive: gone });
           return;
+        }
+        // PO-CH1-08: the stone is awake -> Burl's goodbye opens by itself once the notice is gone and the player is near (no un-prompted re-talk)
+        if (st['waystone.waystone.woken'] && !st['burl.depart'] && o.requestOpen && !(o.noticeBusy && o.noticeBusy())) {
+          const dx = px - o.x(), dy = py - o.y(), d2 = dx * dx + dy * dy;
+          if (!wokenLatch && !open && d2 <= TALK_NEAR_M * TALK_NEAR_M) { wokenLatch = true; o.requestOpen(id); }
+          else if (wokenLatch && d2 > TALK_REARM_M * TALK_REARM_M) wokenLatch = false;
         }
         // auto-open the stone talk once per approach until it has been told
         if (!st['dlg.bear.stone.told'] && !st['bear.stone.told'] && o.requestOpen) {

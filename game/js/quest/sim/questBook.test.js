@@ -155,4 +155,14 @@ if (global.gc) {
   mg = hist(mk(['sword'], ['breach', 'towerDoor'], ['wake', 'breach', 'sword', 'leave'], { 'burl.boars': { quest: JSON.parse(JSON.stringify(bk.toSave().quests['burl.boars'].quest)), accepted: true, handedIn: false } }));
   assert.deepEqual([mg['tower.blade'].accepted, mg['tower.blade'].handedIn, mg['burl.boars'].accepted], [true, true, true], 'boars already active: blade counts as done');
 }
+// PO-CH1-09: old save with the sword, past m1 'leave', but the area list lacks towerDoor -> blade READY (hand-in at Burl)
+{
+  const bd = rd('tower.blade.quest.json'), br = rd('burl.boars.quest.json'), m1d = rd('m1.quest.json');
+  const sv = { quest: { questVersion: 1, questId: 'm1', flags: {}, items: ['sword'], deadBeasts: [], areas: ['breach'], completed: ['wake', 'breach', 'sword', 'leave'] } };
+  const mg = migrateQuestSave(sv, { main: m1d, givers: [bd, br] });
+  assert.equal(createQuestBook(m1d, [bd, br], { quest: sv.quest, quests: mg }).statusOf('tower.blade'), READY);
+  const sv2 = { quest: { ...sv.quest, completed: ['wake', 'breach'] } };
+  const mg2 = migrateQuestSave(sv2, { main: m1d, givers: [bd, br] });
+  assert.equal(createQuestBook(m1d, [bd, br], { quest: sv2.quest, quests: mg2 }).statusOf('tower.blade'), ACTIVE, 'still inside: stays active');
+}
 console.log('questBook.test OK');

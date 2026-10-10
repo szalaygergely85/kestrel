@@ -15,7 +15,7 @@ const BLADE = 'tower.blade'; // chain quest given by the wake-spot note, turned 
 /** tower.blade entry for an old save: facts (items/areas) copied from m1; accepted once the sword was taken; handed in once the boar quest was begun. */
 function bladeFromMain(def, main, boars) {
   if (!def || !Array.isArray(main?.items) || !main.items.includes('sword')) return null;
-  const q = createQuest(def, { questVersion: 1, questId: def.id, flags: {}, items: [...main.items], deadBeasts: [], areas: [...(main.areas || [])], completed: [] });
+  const q = createQuest(def, { questVersion: 1, questId: def.id, flags: {}, items: [...main.items], deadBeasts: [], areas: [...new Set([...(main.areas || []), ...(Array.isArray(main.completed) && main.completed.some(c => c === 'leave' || c === 'beasts') ? ['towerDoor'] : [])])], completed: [] }); // PO-CH1-09: a save past m1 'leave' has left the tower even if its area list lacks the door
   return { quest: JSON.parse(stringifyQuest(q, def)), accepted: true, handedIn: !!(boars && (boars.accepted || boars.handedIn)) };
 }
 

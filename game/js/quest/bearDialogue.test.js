@@ -92,14 +92,16 @@ const R = 'q.tower.blade.ready';
   ok('9 Esc halfway through the meet: nothing set', h.s.size === 1 && !h.s.has('q.tower.blade.handin'));
 }
 // 9b before the blade is done: one pre-quest line, no flags, nothing offered
-{ for (const have of [[], ['q.tower.blade.available'], ['q.tower.blade.active']]) { const f = mk(...have); const w = walk(f, 0);
+{ for (const have of [[], ['q.tower.blade.available']]) { const f = mk(...have); const w = walk(f, 0);
   ok('9b early (' + have + '): early lines, no new flags', ids(w.said) === ids([burl('Out of the tower already, sky-cub? Empty-pawed?'), burl('Climb back up. The top holds more than a view.')]) && f.s.size === have.length, w.said.join('|')); } }
+// 9c PO-CH1-01: blade accepted but not ready -> its own placeholder node (NEEDS WRITER), not 'Empty-pawed?'
+{ const f = mk('q.tower.blade.active'); const w = walk(f, 0); ok('9c blade active: bear.blade.wait placeholder, no flags', w.said.length === 1 && w.said[0].includes('NEEDS WRITER') && f.s.size === 1, w.said.join('|')); }
 // graph-wide
 {
   const reach = new Set(), st = comp.entry.map((e) => e.node);
   while (st.length) { const i = st.pop(); if (reach.has(i)) continue; reach.add(i); const n = comp.nodes[i]; if (n.next != null && n.next >= 0) st.push(n.next); for (const c of n.choices) st.push(c.next); }
   ok(`every node reachable (${reach.size}/${comp.nodes.length})`, reach.size === comp.nodes.length);
-  ok('11 entries, last is unconditional', comp.entry.length === 11 && comp.entry[10].requires === null);
+  ok('12 entries, last is unconditional', comp.entry.length === 12 && comp.entry[11].requires === null);
   const long = comp.nodes.flatMap((n) => n.lines).filter((l) => l.length > 56);
   ok('every line <= 56 chars', long.length === 0, long.join('|'));
   ok('D-013: no player name in the lines', !comp.nodes.flatMap((n) => n.lines).some((l) => /\bWick\b/.test(l)));
