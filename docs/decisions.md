@@ -1106,3 +1106,5 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - **Tower door (TOWER-DOOR-OPEN-01):** the south-west door is open from the start (no bar, no sword gate); the note sends the player up.
 - **Waystone:** no brass bowl / crystal on top (WAYSTONE-NOBOWL); state shows on the carved mark only.
 - **Meadow:** no voxel stones; bushes ~1.3-1.4 m; every plant/bush randomised in size (+-20/25 %).
+- **Never lock the player during the game (owner, 2026-10-10):** no movement/camera lock from dialogues, notes, notices, the chapter card, escorts or wake effects; only real menus (title, pause, settings, and screens that pause the game) stop the player. Dialogues advance with E and close when the player walks away.
+- **Marks (owner, 2026-10-10):** '!' and '?' appear only over quest givers / hand-in targets (someone or something you talk to or read). Objective steps get no world mark; the compass points to them.
