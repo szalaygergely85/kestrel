@@ -33,6 +33,15 @@ export const POOL = {
   rock: ['Rock_Medium_1', 'Rock_Medium_2', 'Rock_Medium_3'],
   pebble: ['Pebble_Round_1', 'Pebble_Round_2', 'Pebble_Round_3', 'Pebble_Square_1', 'Pebble_Square_2', 'Pebble_Square_5'],
 };
+// FLOWER-SCALE-01: per-mesh placement scale so real heights land in realistic ranges (source bbox height in comment); +-15 % random variation per placement.
+export const SCALE = {
+  Flower_3_Single: 0.30, Flower_3_Group: 0.31, Flower_4_Single: 0.48,      // 2.05 / 2.02 / 2.39 m -> ~0.55 / 0.6 / 1.15 m
+  Plant_1: 0.40, Plant_1_Big: 0.31, Plant_7: 0.70, Plant_7_Big: 0.80,      // 0.98 / 2.31 / 0.33 / 0.30 m
+  Clover_1: 0.27, Clover_2: 0.26, Fern_1: 0.80,                            // 1.13 / 1.26 / 0.76 m
+  Bush_Common: 0.75, Bush_Common_Flowers: 0.75,                            // 1.35 m -> ~1.0 m
+  Grass_Common_Short: 0.35, Grass_Common_Tall: 0.40, Grass_Wispy_Short: 0.50, Grass_Wispy_Tall: 0.35,   // 1.31 / 1.84 / 0.99 / 1.64 m
+};
+export const SCALE_JITTER = 0.15;
 const LIFT = { fern: 0, flower: 0, clover: 0, plant: 0, bush: 0, flowerBush: 0, grass: 0, mushroom: 0, rock: 0.15, pebble: -0.01 };
 const SHADOW = { fern: false, flower: false, clover: false, plant: false, bush: false, flowerBush: false, grass: false, mushroom: false, rock: true, pebble: false };
 
@@ -57,6 +66,7 @@ async function main() {
   const argv = process.argv.slice(2), dry = argv.includes('--dry-run');
   const SEED = argv.includes('--seed') ? Number(argv[argv.indexOf('--seed') + 1]) : 20261009;
   const R = rng(SEED);
+  const RS = rng((SEED ^ 0x5bd1e995) >>> 0);   // separate stream: scale jitter must not shift the placement layout
   const gauss = () => Math.sqrt(-2 * Math.log(1 - R())) * Math.cos(2 * Math.PI * R());
   const pick = (arr) => arr[Math.floor(R() * arr.length)];
   const FILE = 'content/worlds/world_m1.world.json';
@@ -64,6 +74,7 @@ async function main() {
   data.structures = data.structures.filter((s) => !isMeadowId(s.id));
   const burlBush = data.structures.find((s) => s.id === 'burlBush');
   burlBush.mesh = 'quaternius/Bush_Common';
+  burlBush.scale = SCALE.Bush_Common;
   burlBush.note = 'NPC-BEAR-01: the bush beside Burl (MESH-PLACE-01: leafy Bush_Common; no berry mesh exists in content/meshes)';
   const { assets } = await loadTestAssets();
   const world = World.load(data, assets, { physics: 'mesh' });
@@ -94,11 +105,14 @@ async function main() {
   const out = [];
   const add = (cls, x, y) => {
     const name = pick(POOL[cls]), inf = info[name];
-    if (!ok(x, y, inf.r)) return false;
-    const e = inf.ext * 0.5;
+    const k = SCALE[name] === undefined ? 1 : Math.max(0.25, SCALE[name] * (1 + (RS() * 2 - 1) * SCALE_JITTER));   // validator floor 0.25 (MESH-SCALE-01)
+    const rr = inf.r * k;
+    if (!ok(x, y, rr)) return false;
+    const e = inf.ext * k * 0.5;
     const z = Math.max(T.groundAt(x, y), T.groundAt(x + e, y), T.groundAt(x - e, y), T.groundAt(x, y + e), T.groundAt(x, y - e)) + LIFT[cls];
-    circles.push({ x, y, r: inf.r });
+    circles.push({ x, y, r: rr });
     const st = { id: 'mdw' + String(out.length).padStart(3, '0'), mesh: 'quaternius/' + name, origin: { x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2) }, yawDeg: Math.floor(R() * 360) };
+    if (k !== 1) st.scale = +k.toFixed(3);
     if (!SHADOW[cls]) st.castShadow = false;
     out.push(st); return true;
   };
