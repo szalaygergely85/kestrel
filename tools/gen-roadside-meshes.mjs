@@ -9,7 +9,7 @@
 // Mesh structures have no scale field (World.placeMesh), so only yaw varies. lift = per-class z offset measured from the roadS* rows.
 globalThis.window = globalThis.window || globalThis;
 import fs from 'node:fs';
-import { PLANT_SCALE, plantScaleFor } from './plant-scale.mjs';
+import { PLANT_SCALE, plantScaleFor, pickTree, treeScaleFor } from './plant-scale.mjs';
 import paletteMod from '../design/palette.js';
 import detailPassMod from '../design/detail-pass.js';
 import terrainDef from '../design/levels/overworld_far.js';
@@ -34,7 +34,8 @@ const argv = process.argv.slice(2);
 const argN = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? Number(argv[i + 1]) : d; };
 const argS = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
 const PREFIX = argS('--prefix', 'roadL');
-const PRESETS = { roadL: { side: 'left', u0: 14, u1: 250, v0: 6, v1: 22, count: 300, tree: 0.35 }, roadW: { side: 'left', u0: 250, u1: 300, v0: 6, v1: 22, count: 60, tree: 0.35 }, roadN: { side: 'right', u0: 110, u1: 300, v0: 8, v1: 26, count: 140, tree: 0.25 } };
+// DRESS-01: counts +15 % for the new bush/fern/flower classes (trees now mostly LOD1, so triangles stay below the old DeadTree-heavy mix)
+const PRESETS = { roadL: { side: 'left', u0: 14, u1: 250, v0: 6, v1: 22, count: 345, tree: 0.30 }, roadW: { side: 'left', u0: 250, u1: 300, v0: 6, v1: 22, count: 70, tree: 0.30 }, roadN: { side: 'right', u0: 110, u1: 300, v0: 8, v1: 26, count: 160, tree: 0.22 } };
 const PRE = PRESETS[PREFIX] || PRESETS.roadL;
 const SIDE = argS('--side', PRE.side) === 'right' ? -1 : 1;   // +1 left (south), -1 right (north)
 const SEED = argN('--seed', 20261007), COUNT = argN('--count', PRE.count), dry = argv.includes('--dry-run');
@@ -74,8 +75,11 @@ const T = world.terrain;
 // mesh classes
 const names = fs.readdirSync('content/meshes/quaternius').filter((f) => f.endsWith('.mesh.json')).map((f) => f.replace('.mesh.json', ''));
 const pool = {}, info = {};
+// DRESS-01: plant classes the editor's meshClass calls 'other' (walk-through, no shadow, lift 0 - as in gen-meadow-meshes.mjs)
+const PLANT_CLS = (n) => /^Pine_[1-5]/.test(n) ? 'tree' : /^Bush_Common/.test(n) ? 'bush' : /^(Fern_1|Plant_(1|7)(_Big)?)$/.test(n) ? 'fern' : /^(Flower_[34]_(Single|Group)|Clover_[12])$/.test(n) ? 'flower' : null;
+const LIFTX = { ...LIFT, bush: 0, fern: 0, flower: 0 }, SHADOWX = { ...SHADOW, bush: false, fern: false, flower: false };
 for (const n of names) {
-  const c = meshClass(n); if (c === 'other') continue;
+  const c = PLANT_CLS(n) || meshClass(n); if (c === 'other') continue;
   const b = assets.mesh('quaternius/' + n).bbox;   // [x0, y0, z0, x1, y1, z1]
   const ext = 0.5 * Math.max(b[3] - b[0], b[4] - b[1]);
   info[n] = { cls: c, r: (c === "tree" ? 0.45 : 0.65) * ext, ext };   // trees: trunk + inner crown only
@@ -83,13 +87,15 @@ for (const n of names) {
 }
 const pick = (arr) => arr[Math.floor(R() * arr.length)];
 const pickWeighted = (w) => { let t = 0; for (const k in w) t += w[k]; let r = R() * t; for (const k in w) { if ((r -= w[k]) < 0) return k; } return Object.keys(w)[0]; };
-const KINDS = {   // cluster recipes: class weights
-  grove: { tree: 55, rock: 12, grass: 20, mushroom: 13 },
-  rocks: { rock: 55, pebble: 25, rockpath: 8, grass: 8, mushroom: 4 },
-  meadow: { grass: 40, pebble: 20, mushroom: 15, rock: 15, tree: 10 }
+const KINDS = {   // cluster recipes: class weights (DRESS-01: bush clumps at the grove edge / around rocks / on the verge, ferns under trees)
+  grove: { tree: 48, rock: 8, grass: 12, mushroom: 8, bush: 12, fern: 12 },
+  rocks: { rock: 50, pebble: 22, rockpath: 6, grass: 8, mushroom: 3, bush: 11 },
+  meadow: { grass: 30, pebble: 10, mushroom: 6, rock: 10, tree: 8, flower: 22, fern: 6, bush: 8 },
+  verge: { bush: 40, grass: 20, fern: 15, flower: 20, mushroom: 5 }
 };
-const KIND_W = { grove: 40, rocks: 35, meadow: 25 };
-const QUOTA = { tree: TREE_Q, rock: 0.30, pebble: 0.12, grass: 0.10, mushroom: 0.10, rockpath: 0.03 };   // share of COUNT: mostly trees + rocks
+const KIND_W = { grove: 36, rocks: 28, meadow: 21, verge: 15 };
+const QUOTA = { tree: TREE_Q, rock: 0.22, pebble: 0.09, grass: 0.10, mushroom: 0.06, rockpath: 0.02, bush: 0.14, fern: 0.08, flower: 0.07 };   // share of COUNT
+const BUSH_POOL = ['Bush_Common', 'Bush_Common', 'Bush_Common_Flowers'];
 const quota = {}; for (const k in QUOTA) quota[k] = Math.round(QUOTA[k] * COUNT);
 
 // occupied circles: existing mesh structures + keep-outs
@@ -99,6 +105,7 @@ circles.push({ x: 1428, y: 1040, r: 6 });              // waystone + end trigger
 circles.push({ x: 1478, y: 1025, r: 6 });              // breach landing
 circles.push({ x: 1494, y: 1048, r: 10 });             // groveSouth (forest paint)
 circles.push({ x: 1262, y: 1033, r: 8 });              // WS1-05 relay ws_roadBend (relay + base + travel anchor + wake approach)
+for (const e of data.entities) if (e.type === 'beast' || e.id === 'bear') circles.push({ x: e.x, y: e.y, r: 3 });   // DRESS-01: boar homes + Burl
 // walk route (tools/route-walk.mjs legs 7a/7b: breach -> terrain-near -> waystone): keep every placement >= 2 m clear of it (ME-14c4 rule)
 const ROUTES = [[[1485.5, 1025.5], [1470, 1029], [1428, 1040]], [[1420, 1032], [1350, 1050], [1270, 1042]]], ROUTE_CLEAR = 2;   // 2nd = WS1-08 leg 8 (waystone -> road bend relay)
 const routeDist = (x, y) => { let m = Infinity; for (const ROUTE of ROUTES) for (let i = 0; i < ROUTE.length - 1; i++) { const [ax, ay] = ROUTE[i], dx = ROUTE[i + 1][0] - ax, dy = ROUTE[i + 1][1] - ay, t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy))); m = Math.min(m, Math.hypot(x - ax - dx * t, y - ay - dy * t)); } return m; };
@@ -114,22 +121,38 @@ const ok = (x, y, r) => {
 const out = [], counts = {};
 let guard = 0;
 while (out.length < COUNT && guard++ < 200000) {
-  const kind = pickWeighted(KIND_W), u = U0 + R() * (U1 - U0), v = V0 + 2 + R() * (V1 - V0 - 4);
+  const kind = pickWeighted(KIND_W), u = U0 + R() * (U1 - U0), v = kind === 'verge' ? V0 + R() * 3 : V0 + 2 + R() * (V1 - V0 - 4);   // verge clumps hug the road edge
   const n = 5 + Math.floor(R() * 10);
   for (let k = 0; k < n && out.length < COUNT; k++) {
     const w = {}; for (const k in KINDS[kind]) if ((counts[k] || 0) < quota[k]) w[k] = KINDS[kind][k];
     if (!Object.keys(w).length) continue;
-    const c = pickWeighted(w), name = pick(pool[c]), inf = info[name];
-    const [x, y] = at(u + gauss() * 4.5, SIDE * (v + gauss() * 3.2));
-    if (!ok(x, y, inf.r)) continue;
+    const c = pickWeighted(w);
+    let [x, y] = at(u + gauss() * 4.5, SIDE * (v + gauss() * 3.2));
+    let name;
+    if (c === 'tree') {   // DRESS-01: species by ground - pines on slopes / rocky ground, broadleaf beside the road, a few dead trees
+      const e = 2, sl = Math.hypot(T.groundAt(x + e, y) - T.groundAt(x - e, y), T.groundAt(x, y + e) - T.groundAt(x, y - e)) / (2 * e);
+      const rocky = [[5, 0], [-5, 0], [0, 5], [0, -5]].some(([dx, dy]) => T.groundTypeAt(x + dx, y + dy) === 3);
+      name = pickTree(R, sl > 0.2 || rocky ? 'slope' : nearest(x, y).d < 15 ? 'near' : 'wild');
+    } else name = c === 'bush' ? pick(BUSH_POOL) : pick(pool[c]);
+    const inf = info[name];
+    if (!inf || !ok(x, y, inf.r)) continue;
     const e = inf.ext * 0.5;   // footprint: highest ground under centre + 4 points, so slopes do not leave the piece floating
     const zs = [T.groundAt(x, y), T.groundAt(x + e, y), T.groundAt(x - e, y), T.groundAt(x, y + e), T.groundAt(x, y - e)];
-    const z = (/^(rock|pebble|rockpath)$/.test(c) ? Math.min(...zs) : Math.max(...zs)) + LIFT[c]; // ROCK-SNAP-01: rocks sit on the LOWEST ground (no floating downhill side)
+    const z = (/^(rock|pebble|rockpath)$/.test(c) ? Math.min(...zs) : Math.max(...zs)) + LIFTX[c]; // ROCK-SNAP-01: rocks sit on the LOWEST ground (no floating downhill side)
     circles.push({ x, y, r: inf.r });
     const st = { id: PREFIX + String(out.length).padStart(3, '0'), mesh: 'quaternius/' + name, origin: { x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2) }, yawDeg: Math.floor(R() * 360) };
     if (PLANT_SCALE[name]) st.scale = plantScaleFor(name, st.id);   // PLANT-SCALE-01 + PLANT-SIZE-RANDOM-01
-    if (!SHADOW[c]) st.castShadow = false;
+    else if (c === 'tree') st.scale = treeScaleFor(st.id);            // DRESS-01: trees 0.85..1.2
+    if (!SHADOWX[c]) st.castShadow = false;
     out.push(st); counts[c] = (counts[c] || 0) + 1;
+    if (c === 'bush') for (let b = 0, nb = 1 + Math.floor(R() * 4); b < nb && out.length < COUNT; b++) {   // DRESS-01: bushes grow in clumps of 2-5
+      const bn = pick(BUSH_POOL), bi = info[bn], bx = x + gauss() * 1.6, by = y + gauss() * 1.6;
+      if (!ok(bx, by, bi.r)) continue;
+      const bz = Math.max(T.groundAt(bx, by), T.groundAt(bx + bi.ext * 0.5, by), T.groundAt(bx - bi.ext * 0.5, by), T.groundAt(bx, by + bi.ext * 0.5), T.groundAt(bx, by - bi.ext * 0.5));
+      circles.push({ x: bx, y: by, r: bi.r });
+      const bs = { id: PREFIX + String(out.length).padStart(3, '0'), mesh: 'quaternius/' + bn, origin: { x: +bx.toFixed(2), y: +by.toFixed(2), z: +bz.toFixed(2) }, yawDeg: Math.floor(R() * 360), castShadow: false };
+      bs.scale = plantScaleFor(bn, bs.id); out.push(bs); counts.bush++;
+    }
   }
 }
 const perMesh = {}; for (const s of out) { const n = s.mesh.split('/')[1]; perMesh[n] = (perMesh[n] || 0) + 1; }

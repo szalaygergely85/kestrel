@@ -8,7 +8,7 @@ import { loadTestAssets } from './testing/content-node.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../content/worlds/world_m1.world.json', import.meta.url)));
 const mdw = data.structures.filter((s) => isMeadowId(s.id));
-assert.ok(mdw.length >= 100 && mdw.length <= 300, `meadow prop count ${mdw.length} in 100..300`);
+assert.ok(mdw.length >= 100 && mdw.length <= 340, `meadow prop count ${mdw.length} in 100..340`);   // DRESS-01: denser meadow
 assert.equal(new Set(data.structures.map((s) => s.id)).size, data.structures.length, 'structure ids unique');
 const allowed = new Set(Object.values(POOL).flat().map((n) => 'quaternius/' + n));
 const classes = new Set(Object.entries(POOL).filter(([, v]) => v.some((n) => mdw.some((s) => s.mesh === 'quaternius/' + n))).map(([k]) => k));
@@ -16,7 +16,8 @@ for (const s of mdw) assert.ok(allowed.has(s.mesh), `${s.id} uses an existing co
 for (const c of ['bush', 'flowerBush', 'grass', 'mushroom', 'rock', 'pebble']) assert.ok(classes.has(c), `meadow has ${c}`);
 
 const fixed = anchors(data);
-assert.equal(fixed.length, 7, 'Burl + waystone + 5 boar homes');
+assert.equal(fixed.length, 2 + data.entities.filter((e) => e.type === 'beast').length, 'Burl + waystone + every boar home (5 quest + DRESS-01 ambient)');
+assert.ok(fixed.length >= 7, 'at least the 5 quest boars');
 const globalThisWindow = globalThis; globalThisWindow.window = globalThisWindow;
 await import('../design/palette.js'); await import('../design/detail-pass.js'); await import('../design/levels/overworld_far.js');
 for (const m of ['lantern', 'lever', 'voxel_props', 'voxel_tower', 'voxel_world', 'boulder', 'rubble', 'wreckage', 'relay', 'sword', 'voxel_beast', 'm3_props', 'far_tower', 'ferrum_lights', 'title', 'menu_ui', 'notes', 'brazier']) await import(`../design/models/${m}.js`);

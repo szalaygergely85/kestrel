@@ -19,8 +19,17 @@ assert.equal(obj.when.count, 5, 'objective count is 5');
 assert.deepEqual(obj.when.ids, ['boar1', 'boar2', 'boar3', 'boar4', 'boar5']);
 assert.equal(obj.text, 'Bring down the five wild boars', 'writer text obj.beasts5');
 
-const boars = worldJson.entities.filter((e) => e.type === 'beast');
+const allBoars = worldJson.entities.filter((e) => e.type === 'beast');
+const boars = allBoars.filter((e) => obj.when.ids.includes(e.id));
 assert.deepEqual(boars.map((b) => b.id), obj.when.ids, 'one beast entity per objective id');
+// DRESS-01: ambient boar groups (ids boarN*/boarW*/boarS*) are extra beasts, never quest ids; total stays modest
+const ambient = allBoars.filter((e) => !obj.when.ids.includes(e.id));
+assert.ok(allBoars.length <= 14, `total boars ${allBoars.length} <= 14`);
+for (const a of ambient) {
+  assert.match(a.id, /^boar[NWS]\d$/, `${a.id} ambient id`);
+  assert.ok(Math.hypot(a.x - 1471, a.y - 1029.1) >= 20, `${a.id} >= 20 m from Burl`);
+  assert.ok(Math.hypot(a.x - 1488, a.y - 1031) >= 25, `${a.id} >= 25 m from the tower door`);
+}
 const byId = Object.fromEntries(boars.map((b) => [b.id, b]));
 assert.deepEqual([byId.boar1.x, byId.boar1.y, byId.boar2.x, byId.boar2.y], [1461.01, 1031, 1444.02, 1035], 'boar1/boar2 unchanged');
 for (const b of boars) assert.deepEqual(b.components.brain.home, [b.x, b.y], `${b.id} home = spawn`);
@@ -40,7 +49,7 @@ const world = World.load(wd, assets, {});
 console.warn = origWarn;
 const g = buildBeastNav(world, wd.nav).grid;
 const h = (x, y) => world.terrain.heightAt(x, y);
-for (const b of boars) {
+for (const b of allBoars) {
   const e = 1.5;
   const slopeDeg = Math.atan(Math.hypot((h(b.x + e, b.y) - h(b.x - e, b.y)) / 3, (h(b.x, b.y + e) - h(b.x, b.y - e)) / 3)) * 180 / Math.PI;
   assert.ok(slopeDeg < 30, `${b.id} slope ${slopeDeg.toFixed(1)} < 30`);
@@ -50,5 +59,5 @@ for (const b of boars) {
   }
 }
 // not on a placed road prop / mesh structure (>= 2 m from every mesh origin)
-for (const b of [b3, b4, b5]) for (const s of worldJson.structures) if (s.mesh && s.origin) assert.ok(Math.hypot(s.origin.x - b.x, s.origin.y - b.y) >= 2, `${b.id} clear of ${s.id}`);
-console.log('boarPlacement: 5 boars, objective count 5, spacing >= 18 m, walkable ground PASS');
+for (const b of [b3, b4, b5, ...ambient]) for (const s of worldJson.structures) if (s.mesh && s.origin) assert.ok(Math.hypot(s.origin.x - b.x, s.origin.y - b.y) >= 2, `${b.id} clear of ${s.id}`);
+console.log(`boarPlacement: 5 quest boars + ${ambient.length} ambient,`); console.log('boarPlacement: objective count 5, spacing >= 18 m, walkable ground PASS');
