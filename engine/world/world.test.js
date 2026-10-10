@@ -328,7 +328,8 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
     fired.length = 0;
     actor.transform.x = 1428; actor.transform.y = 1040;
     updateTriggers(w2, {}, actor);
-    ok('circle "end" fires standing at the waystone', fired.includes(endDef));
+    // WAYSTONE-NORMAL-01: "end" is an area-only zone now - it tracks `inside` but fires no behaviour.
+    ok('circle "end" is area-only: inside=1 at the waystone, fires nothing', !fired.includes(endDef) && w2.triggers.find((t) => t.id === 'end').inside === 1);
 
     // 'bounds' shape: well inside the circle -> no fire; at/past the edge -> fires.
     fired.length = 0;

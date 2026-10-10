@@ -244,7 +244,7 @@ ok('upper stair landing is open without animation', world.structures.find(s => s
 const waypoints = buildWaypoints(world);
 const player = makePlayer(TOWER_ORIGIN.x + startPose.x, TOWER_ORIGIN.y + startPose.y, 1);
 
-const endTriggerRec = world.triggers.find((t) => t.name === 'quest.end');
+const endTriggerRec = world.triggers.find((t) => t.id === 'end' && t.structId === null) // area-only zone since WAYSTONE-NORMAL-01;
 const boundsTriggerRec = world.triggers.find((t) => t.def && t.def.hint === 'boundsEdge');
 let sawEndTrigger = false, sawBoundsTrigger = false, sawOutsideStructure = false, sawInsideStructure = false;
 
@@ -280,7 +280,7 @@ ok('route visited the tower structure at some point', sawInsideStructure);
 // actually proves the route reached both real triggers is each TriggerRec's
 // own runtime `inside` flag (rebuilt every step by `updateTriggers`),
 // latched into `sawEndTrigger`/`sawBoundsTrigger` above the instant it read 1.
-ok('route actually entered the waystone `end` trigger circle', !!endTriggerRec && sawEndTrigger, `found=${!!endTriggerRec} entered=${sawEndTrigger}`);
+ok('route actually entered the waystone `end` zone circle', !!endTriggerRec && sawEndTrigger, `found=${!!endTriggerRec} entered=${sawEndTrigger}`);
 ok('route actually entered the `boundsEdge` bounds trigger', !!boundsTriggerRec && sawBoundsTrigger, `found=${!!boundsTriggerRec} entered=${sawBoundsTrigger}`);
 
 // =============================================================================

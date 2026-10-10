@@ -173,12 +173,13 @@ function routeRun(physics, { reload = false } = {}) {
   legs.push(runLeg(sim, '6 doorway + summit', [W([11, 7]), W([10, 7]), W([10, 8]), W([9, 8]), W([8, 8]), W([7, 8]), W([7, 7])]));
   legs.push(runLeg(sim, '7a breach + outcrop', [W([6, 7]), W([5, 7])]));
   // 7b hillside + waystone (fires the real world `end` trigger zone).
-  const endRec = sim.world.triggers.find((t) => t.name === 'quest.end');
+  const endRec = sim.world.triggers.find((t) => t.id === 'end' && t.structId === null); // area-only zone (WAYSTONE-NORMAL-01): reached, but fires no end sequence
   let sawEnd = false;
   const origStep = sim.step;
   const hill = runLeg(sim, '7b hillside -> waystone', [TERRAIN_NEAR, WAYSTONE], { detour: true });
   sawEnd = !!endRec && endRec.inside === 1;
   info.endTrigger = sawEnd; hill.sawEnd = sawEnd;
+  info.endStarted = sim.world.state['quest.endT'] >= 0; // must stay false: no end sequence (WAYSTONE-NORMAL-01)
   legs.push(hill);
   return { legs, info, ms: sim.ms, sim };
 }

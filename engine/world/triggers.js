@@ -220,6 +220,7 @@ export function updateTriggers(world, engine, actor) {
     const entered = rec.inside === 0 && cur === 1;
     rec.inside = cur;
     if (!entered) continue;
+    if (typeof rec.name !== 'string') continue; // area-only zone (no behaviour), e.g. world_m1 'end' (WAYSTONE-NORMAL-01)
     if (rec.usedKey && world.state[rec.usedKey]) continue;
 
     const result = world.fireTrigger(rec.name, { engine, def: rec.def, entity: actor, structId: rec.structId });

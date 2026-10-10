@@ -55,6 +55,7 @@ export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = 
         onEvent(name, d) {
           if (name === 'beast:died') { dead.add(d.id); quest.feed({ type: name, id: d.id }); }
           else if (name === 'item:got' || name === 'area:entered') quest.feed({ type: name, id: d.id });
+          else if (name === 'prop:touched' && d.id === 'waystone') quest.feed({ type: 'area:entered', id: 'waystone' }); // WAYSTONE-NORMAL-01: touching the stone completes the last objective (no end sequence any more)
           else if (name === 'flag:set') quest.feed({ type: name, key: d.key, value: d.value });
         },
         drawHud(ui) { relay.quest.draw(ui); },

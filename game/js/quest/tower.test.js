@@ -130,8 +130,8 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
 {
   ok('worlds.world_m1.bounds is a circle with r > 0', worldM1.bounds && worldM1.bounds.shape === 'circle' && worldM1.bounds.r > 0);
   const wEnd = (worldM1.triggers || []).find((t) => t.id === 'end');
-  ok('worlds.world_m1.triggers has the moved end trigger: circle, quest.end, walkTo, lookAt, pitchTo',
-    wEnd && wEnd.shape === 'circle' && wEnd.trigger === 'quest.end' && wEnd.walkTo && typeof wEnd.pitchTo === 'number' && typeof wEnd.lookAt === 'string');
+  ok('worlds.world_m1.triggers has the "end" zone: circle at the waystone, NO behaviour/walkTo (WAYSTONE-NORMAL-01, D-056; quest area "waystone" still points at it)',
+    wEnd && wEnd.shape === 'circle' && wEnd.trigger === undefined && wEnd.walkTo === undefined && wEnd.x === 1428 && wEnd.y === 1040);
   const wHintStone = (worldM1.triggers || []).find((t) => t.id === 'hintStone');
   const wBoundsEdge = (worldM1.triggers || []).find((t) => t.id === 'boundsEdge');
   ok('worlds.world_m1.triggers has hintStone (shape terrain, hint.show)', wHintStone && wHintStone.shape === 'terrain' && wHintStone.trigger === 'hint.show' && wHintStone.hint === 'stone');
@@ -154,7 +154,8 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   const referenced = new Set([
     ...(towerDef.interactables || []).map((i) => i.interact),
     ...(towerDef.triggers || []).map((t) => t.trigger),
-    ...(worldM1.triggers || []).map((t) => t.trigger),
+    ...(worldM1.triggers || []).map((t) => t.trigger).filter(Boolean),
+    'quest.end', // kept registered (end.js, end.test.js, restart.test.js) though world_m1 no longer references it (WAYSTONE-NORMAL-01)
     'npc.talk', // NPC-BEAR-01: runtime-only (dialogueCtl.addNpc -> World.addInteractable), no content reference
     'beast.loot', // US-091a2: runtime-only (sim/loot.js World.addInteractable per boar), no content reference
   ]);
