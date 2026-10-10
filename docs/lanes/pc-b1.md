@@ -424,3 +424,8 @@ B1 2026-10-09 (kestrel-1) SETTINGS-MOUNT-01 -> po-review: full createSettingsVie
 - `game/js/ui/compassHud.js`: `createCompassHud({style})` -> `target(book, world)`, `step(x,y,yaw)`, `draw(ui,cols,rows)`, `setHidden(b)`; `FALLBACK_COMPASS_STYLE` exported (shape documented in header; adapt to designer's `ASSETS.uiStyle.compass` when it lands). Test 28 checks, 0-alloc 1e5.
 - Priority ready `?` > tracked/main active step > available `!`. World resolver: `world.resolve(kind,id,out)` kinds giver|area|item|beast|flag (host maps flag `quest.burl.boars.done` -> bear entity, areas.json -> centres).
 - NEEDS B1-main: `const compass=createCompassHud({style:ASSETS.uiStyle?.compass}); const cw={resolve(kind,id,out){...}}`; on book.version change + ~2 Hz `compass.target(questBook,cw)`; each frame `compass.step(px,py,yaw); compass.setHidden(paused||dialog||menu||capture); compass.draw(ui,cols,rows)`.
+
+### WS1-01 (kestrel-2, 2026-10-10) - arch-review (NEEDS PC-A)
+- New `engine/physics/bounds.js` (`projectBounds`, `boundsOvershoot`; circle + union of 1..8 circle/capsule parts, 0 alloc, no imports). integrate 4b and triggers `'bounds'` call it; `World.validateBounds` accepts union (error names `parts[i]`), `serialize` deep-copies parts.
+- Tests: new `engine/physics/bounds.test.js` (14 checks: circle bit-identical to old projection on 1k points, parts/seams, outside->inside, velocity clip, 10k-step heap) + 4 union checks in world.test.js. Green: bounds, world.test, physics, jump, terrainWalk; check-deps OK. Not run: route-walk, full suite.
+- Note: trigger `'bounds'` on a union fires at min-part overshoot >= -0.05 (nearest edge of the part you are deepest in only near that part's rim; interior seams do not fire). Circle worlds unchanged.

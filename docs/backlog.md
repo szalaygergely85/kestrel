@@ -1884,7 +1884,7 @@ PC-B architect opus, 2026-10-10 (owner-authorised while PC-A is offline; PC-A to
 
 | ID | Slot | Size | Files | Deps | Status |
 |---|---|---|---|---|---|
-| WS1-01 | kestrel-3 | 0.75 d | `engine/physics/bounds.js` (new) + test, `engine/physics/integrate.js` 4b, `engine/world/triggers.js`, `engine/world/World.js` (validateBounds), `engine/world/serialize.js`, `engine/world/world.test.js` | - | todo [PC-B] |
+| WS1-01 | kestrel-3 | 0.75 d | `engine/physics/bounds.js` (new) + test, `engine/physics/integrate.js` 4b, `engine/world/triggers.js`, `engine/world/World.js` (validateBounds), `engine/world/serialize.js`, `engine/world/world.test.js` | - | arch-review [PC-B] |
 | WS1-02 | kestrel-3 | 1 d | `engine/world/World.js` (band rect, nearBandKey), `engine/world/Terrain.js` (`bakeNearBand(cx0,cy0,cw,ch)`), JS `near.w/h` consumers (scatter, terrainShade, detailShade), `engine/world/terrainBand.test.js` (new) | - | todo [PC-B] |
 | WS1-03 | kestrel-2 | 0.5 d | `engine/render/gpu/wgsl/terrainRaster.wgsl.js`, `engine/render/gpu/wg/passRaster.js`, `TerrainTextures.js`, `ShadeTextures.js`, `passShade.js` (audit) | WS1-02 | todo [PC-B] |
 | WS1-04 | kestrel-4 | 0.5 d | `content/worlds/world_m1.world.json` (bounds union, terrainBand, `relayBend` + base mesh, `waystone` components), `design/levels/overworld_far.js` (relay exclude disc) | WS1-01, WS1-02 | todo [PC-B] |
@@ -1897,7 +1897,7 @@ PC-B architect opus, 2026-10-10 (owner-authorised while PC-A is offline; PC-A to
 | WS1-09 | kestrel-4 | 0.25 d | `content/quests/m1.quest.json` (objective `relay1`), quest test | WS1-06b, WS1-W1; only if trivial (38.36 item 5) | todo [PC-B] |
 | WS1-W1 | writer | 0.25 d | `docs/story.md` | - | todo NEEDS WRITER |
 
-### WS1-01 Walk bound: union of circle/capsule parts  [P1] [todo] [PC-B kestrel-3] (engine)
+### WS1-01 Walk bound: union of circle/capsule parts  [P1] [arch-review] [PC-B kestrel-3] (engine)
 - [ ] `engine/physics/bounds.js`: `projectBounds(bounds, x, y, radius, out)` + `boundsOvershoot(bounds, x, y, radius)` for `circle` and `union` of `circle`/`capsule` parts (1..8), per 38.36 item 1; imports nothing outside `engine/physics/`.
 - [ ] integrate 4b and triggers `'bounds'` call the helper; `boundsHit` semantics unchanged; `shape:'circle'` worlds behave bit-identically (test compares old vs new projection on 1k random points).
 - [ ] `validateBounds` accepts `union` (throws with the part index on bad data), returns a deep copy; `serialize.js` deep-copies parts.
