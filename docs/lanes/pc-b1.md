@@ -473,3 +473,9 @@ B1 2026-10-09 (kestrel-1) SETTINGS-MOUNT-01 -> po-review: full createSettingsVie
 - relayWake.js contract: `ASSETS.models.waystone.wakeLightFrame = 2` (light starts its grow there), `clipFor {dormant:'dead', waking:'wake', woken:'awake'}`, `light {preset:'relay', mount:'light' (voxel [6,4,25] = 2.875 m), offsetM [-0.125,-0.125,2.875], on {dead:false, wake:'wakeLightFrame', awake/idle:true}}`; new mounts `bowl`, `light`; `top` moved to the bowl crystal top.
 - `design/items.js` `aetherCrystal` (Teal Crystal / CH1-W3 desc, kind key, stackMax 1, glyph `*` aether, teal icon, appended to order); keyItem:false (inventory has no no-drop tag). Previews: voxel-props.html (waystone clips + CH1-D2 checks), item-icons.html (crystal check).
 - NEEDS MAIN: palette lights.waystone {color aether, 0.6, point, r 6, smooth, flicker 0.4-0.9 Hz 0.10, grow 0.75 s} (spec in `waystone.light.wantPreset`; then set preset 'waystone'). Main session: run `node tools/run-tests.mjs --filter voxel_world,items,waystone,tower,validate-content`, `node tools/validate-content.mjs`, open both previews.
+
+### CH1-04a notice view (kestrel-2, 2026-10-10) - module done, Node tests pass (`node tools/run-tests.mjs --filter noticeView`, `node --expose-gc game/js/ui/noticeView.test.js`)
+- New: game/js/ui/noticeView.js (createNoticeView: push(key | title,lines), update(dt, hidden), draw(ui, hidden), alpha/active/pendingCount), noticeText.js (NOTICE_TEXT waystone/relay, q05/q06), noticeView.test.js, noticeView.preview.html, tools/verify-notice.mjs.
+- Fades 0.3/3.5/0.5 s; queue 2 pending (oldest pending dropped); hidden pauses timer + draws nothing; draw 0-alloc (gc test).
+- NEEDS B1-main: mount noticeView in main.js (update(dt, menuOrDialogueOpen) + draw(ui, menuOrDialogueOpen)) + relayWake.showWakeNotice -> notice.push('relay') (stone: 'waystone'; later `waystone.notice` key).
+- Headless capture NOT run (verify script only `node --check`ed): `node tools/verify-notice.mjs 9575`.
