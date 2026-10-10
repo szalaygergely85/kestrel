@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "tiers": { "worn": 0.7, "sturdy": 0.25, "fine": 0.05 },
+  "slots": ["head", "body", "cloak", "hands", "belt", "legs", "feet"],
+  "sources": {
+    "boar": {
+      "rolls": [
+        { "chance": 0.04, "pick": { "gear": true } },
+        { "chance": 0.2, "give": { "item": "arrow", "min": 3, "max": 5 } }
+      ],
+      "fixed": [{ "item": "boar.meat", "n": 1 }]
+    },
+    "container": {
+      "rolls": [
+        { "chance": 0.03, "pick": { "gear": true } },
+        { "chance": 0.2, "give": { "item": "arrow", "min": 3, "max": 5 } },
+        { "chance": 0.02, "give": { "item": "potion.hp", "min": 1, "max": 1 } }
+      ],
+      "fixed": []
+    },
+    "chest": {
+      "rolls": [
+        { "chance": 0.08, "pick": { "gear": true } },
+        { "chance": 0.2, "give": { "item": "arrow", "min": 3, "max": 5 } },
+        { "chance": 0.05, "give": { "item": "potion.hp", "min": 1, "max": 1 } }
+      ],
+      "fixed": []
+    }
+  }
+}
