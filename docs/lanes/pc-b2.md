@@ -455,3 +455,7 @@ AUD-04/34/35 (k3, aud-04): AUD-04 removed dead 3x3 ring (Terrain chunk/setCenter
 Engine: Terrain.beginNearBand/nearBandStep/swapNearBand/cancelNearBand (+nearBandPending); World.terrainBands+bandSwitch validate (1..4 same-size, both-fields error, serialized as content), streamBand/ensureBandFor/bandId, load opts.spawn picks the start zone. Events world:band, band:late.
 Test engine/world/terrainBands.test.js 35 checks (sliced+overlap copy == bakeNearBand bytes, hysteresis, late, idle 0 alloc). Step ~2.3 ms (budget 2 + one 0.4 ms row). Margin includes the y edges (zone y 896..1280 => walk the row at y ~1088).
 WS2-02 hook: World._publishBand calls refreshTerrainScatter synchronously on swap (stepped split + terrainMesh far-exclusion fix + main.js hzb.invalidate on world:band are NOT done here).
+
+### WS2-03 (kestrel-4, ws2-03) - arch-review (NEEDS PC-A)
+engine/mesh/terrainMesh.js: the far exclusion already moved only at `_publishNear`/`_updateFarExclusion(_bandRect)`; the one early mover was the far re-bake carve in `step()` (used pending `terrain.near`). Now uses the published `_bandRect` once a near mesh exists (first load unchanged). Added `_exclRect` (carve rect, debug/test).
+Test terrainMesh.test.js section 11 (6 checks): beginNearBand/nearBandStep/swapNearBand, 52 frames, far carve == drawn near rect every frame (no hole/overlap), old near kept until publish, far re-bake mid-swap; fails (bad=25) with the fix reverted. 38/38 pass, terrain suites + check-deps OK.

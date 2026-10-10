@@ -433,6 +433,42 @@ function stepUntilDone(set, maxCalls = 500) {
   ok('steady-state step()+addToDrawList: no significant heap growth over 2000 frames', grew < 64 * 1024, `grew ${grew} bytes (sink=${sink})`);
 }
 
+// ---------------------------------------------------------------------------
+// 11. WS2-03: band swap keeps old near + old far carve until _publishNear (no hole, no overlap).
+// ---------------------------------------------------------------------------
+{
+  const { terrain } = makeTerrain();
+  const set = new TerrainMeshSet(terrain);
+  stepUntilDone(set);
+  const rectEq = (a, b) => a.x0 === b.x0 && a.x1 === b.x1 && a.y0 === b.y0 && a.y1 === b.y1;
+  const oldBand = terrain.near, oldRect = { ...set._bandRect };
+  ok('first load: far carve == published band', rectEq(set._exclRect, set._bandRect));
+  const oldNearFront = set.near, oldOx = oldNearFront[0]._origin.x;
+  const nChunks = oldBand.w / (terrain.chunkSize / terrain.nearCell);
+  terrain.beginNearBand(oldBand.x0 / terrain.chunkSize - 1, oldBand.y0 / terrain.chunkSize, nChunks, oldBand.h / (terrain.chunkSize / terrain.nearCell));
+  let frames = 0, bad = 0, swapped = false, farBumped = false, swapFrame = -1, published = -1;
+  for (let f = 0; f < 3000 && published < 0; f++) {
+    if (!swapped) {
+      if (terrain.nearBandStep(1)) { terrain.swapNearBand(); swapped = true; swapFrame = f; }
+    }
+    if (swapped && !farBumped && f === swapFrame + 1) { terrain.farVersion++; farBumped = true; } // far re-bake while the new mesh is pending
+    set.step(0.2);
+    frames++;
+    const front = set.near;
+    const isNew = set._builtFor === terrain.near && swapped;
+    const expect = isNew ? set._bandRectFor(terrain.near) : oldRect;
+    // coverage/overlap invariant: far carve == rect of the near mesh actually drawn
+    if (!rectEq(set._exclRect, expect)) bad++;
+    if (!isNew && (front !== oldNearFront || front[0]._origin.x !== oldOx)) bad++;
+    if (isNew) published = f;
+  }
+  ok('swap: published', published > swapFrame && swapped, `swapFrame=${swapFrame} published=${published}`);
+  ok('swap: build spanned several frames (old mesh kept)', published - swapFrame >= 2, `${published - swapFrame}`);
+  ok('swap: far carve never ahead of / behind drawn near (no hole, no overlap) over ' + frames + ' frames', bad === 0, `bad=${bad}`);
+  ok('swap: near mesh moved to new origin', set.near[0]._origin.x !== oldOx);
+  ok('swap: far re-bake during pending swap kept old carve', farBumped);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
