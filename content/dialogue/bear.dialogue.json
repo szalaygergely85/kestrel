@@ -7,60 +7,191 @@
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
-    {"node": "bear.q.ready", "requires": "q.burl.boars.ready"},
+    {"node": "bear.departing", "requires": "s.burl.departing"},
+    {"node": "bear.woken.1", "requires": "s.waystone.waystone.woken"},
+    {"node": "bear.stone.1", "requires": "s.burl.arrived"},
+    {"node": "bear.following", "requires": "s.burl.follow"},
+    {"node": "bear.follow.1", "requires": "q.burl.boars.done"},
+    {"node": "bear.q.ready.1", "requires": "q.burl.boars.ready"},
     {"node": "bear.q.active", "requires": "q.burl.boars.active"},
-    {"node": "bear.q.offer", "requires": "q.burl.boars.available"},
-    {"node": "bear.q.done", "requires": "q.burl.boars.done"},
+    {"node": "bear.q.offer.1", "requires": "q.burl.boars.available"},
     {"node": "bear.repeat", "requires": "bear.talked"},
-    {"node": "bear.d1.l1"}
+    {"node": "bear.meet.1"}
   ],
   "nodes": {
-    "bear.d1.l1": {"clip": "wave", "lines": [
-      "Well. A cub from the loud hill, fallen out of the sky."
-    ], "next": "bear.d1.l2", "speaker": "burl"},
-    "bear.d1.l2": {"lines": [
-      "...Bears don't talk."
-    ], "next": "bear.d1.l3", "speaker": "you"},
-    "bear.d1.l3": {"choices": [{"next": "bear.d1.a.l1", "text": "It's a trick. A speaking-tube."}, {"next": "bear.d1.b.l1", "text": "Can I have a berry?"}, {"next": "bear.d1.c.l1", "text": "Have you seen the blinking light?"}], "lines": [
-      "And cubs don't fly. Yet here we both are."
+    "bear.meet.1": {"clip": "wave", "lines": [
+      "Quite a fall you took, sky-cub."
+    ], "next": "bear.meet.2", "speaker": "burl"},
+    "bear.meet.2": {"lines": [
+      "...You just spoke."
+    ], "next": "bear.meet.3", "speaker": "you"},
+    "bear.meet.3": {"lines": [
+      "I did."
+    ], "next": "bear.meet.4", "speaker": "burl"},
+    "bear.meet.4": {"lines": [
+      "Bears don't talk."
+    ], "next": "bear.meet.5", "speaker": "you"},
+    "bear.meet.5": {"lines": [
+      "And people don't fall from the sky.",
+      "Yet here you are."
+    ], "next": "bear.meet.6", "speaker": "burl"},
+    "bear.meet.6": {"lines": [
+      "This isn't possible."
+    ], "next": "bear.meet.7", "speaker": "you"},
+    "bear.meet.7": {"choices": [{"next": "bear.crash.1", "text": "You saw me fall?"}, {"next": "bear.q.offer.1", "text": "I'm going west."}], "lines": [
+      "You folk from the loud hill are odd.",
+      "You believe a balloon can fly,",
+      "but a bear with words troubles you?"
     ], "speaker": "burl"},
-    "bear.d1.a.l1": {"lines": [
-      "Check my ears for brass, then. Gently."
-    ], "next": "bear.d1.close", "speaker": "burl"},
-    "bear.d1.b.l1": {"clip": "laugh", "lines": [
-      "One. The blue ones are mine. They are all blue."
-    ], "next": "bear.d1.close", "speaker": "burl"},
-    "bear.d1.c.l1": {"lines": [
-      "Since my grandmother was a cub. It never tires."
-    ], "next": "bear.d1.close", "speaker": "burl"},
-    "bear.d1.close": {"end": true, "lines": [
-      "Go on, sky-cub. Walk soft. The wild is listening."
-    ], "setFlag": "bear.talked", "speaker": "burl"},
-    "bear.repeat": {"end": true, "lines": [
-      "Back again? The berries are still mine. Mostly."
-    ], "speaker": "burl"},
-    "bear.q.offer": {"choices": [{"next": "bear.q.accepted", "setFlag": "q.burl.boars.accept", "text": "I'll thin them out."}, {"next": "bear.q.later", "text": "Not yet."}], "lines": [
-      "Five boars have found my berry slope.",
-      "They root up the bushes, and they do not share.",
-      "I am too old to chase. You have steel, sky-cub."
+    "bear.crash.1": {"lines": [
+      "Hard to miss a burning sky-boat.",
+      "Thought the whole hill would catch fire."
+    ], "next": "bear.crash.2", "speaker": "burl"},
+    "bear.crash.2": {"lines": [
+      "It's called an airship."
+    ], "next": "bear.crash.3", "speaker": "you"},
+    "bear.crash.3": {"lines": [
+      "Not much of one now."
+    ], "next": "bear.q.offer.1", "speaker": "burl"},
+    "bear.q.offer.1": {"lines": [
+      "If you're heading west, mind the woods.",
+      "Boars have taken over my berry slope.",
+      "Mean things. No respect for blueberries."
+    ], "next": "bear.q.offer.2", "setFlag": "bear.talked", "speaker": "burl"},
+    "bear.q.offer.2": {"lines": [
+      "I'm looking for something."
+    ], "next": "bear.q.offer.3", "speaker": "you"},
+    "bear.q.offer.3": {"lines": [
+      "Aren't we all?"
+    ], "next": "bear.q.offer.4", "speaker": "burl"},
+    "bear.q.offer.4": {"lines": [
+      "A light. It blinks in the distance."
+    ], "next": "bear.q.offer.5", "speaker": "you"},
+    "bear.q.offer.5": {"choices": [{"next": "bear.q.accepted", "setFlag": "q.burl.boars.accept", "text": "I'll clear the path."}, {"next": "bear.q.later", "text": "Not yet."}], "lines": [
+      "Ah. The far light.",
+      "There is an old Waystone past the trees.",
+      "Might help you find your way.",
+      "But first, those boars need moving."
     ], "speaker": "burl"},
     "bear.q.accepted": {"end": true, "lines": [
-      "Good. Mind the tusks. They charge straight, turn slow."
+      "Five ought to convince the others.",
+      "Mind their tusks, sky-cub."
     ], "speaker": "burl"},
     "bear.q.later": {"clip": "laugh", "end": true, "lines": [
       "Then sit a while. The boars will still be rude."
     ], "speaker": "burl"},
     "bear.q.active": {"end": true, "lines": [
-      "Still snorting down there. I can hear them chewing."
+      "Still hearing those greedy snouts.",
+      "Five boars. No need to chase the whole herd."
     ], "speaker": "burl"},
-    "bear.q.ready": {"lines": [
-      "Quiet. Listen. Only bees now, and the wind."
-    ], "next": "bear.q.thanks", "speaker": "burl"},
-    "bear.q.thanks": {"clip": "wave", "end": true, "lines": [
-      "Thank you, sky-cub. The slope can breathe again."
-    ], "setFlag": "q.burl.boars.handin", "speaker": "burl"},
-    "bear.q.done": {"end": true, "lines": [
-      "Quiet slope, full bushes. Still not the blue ones."
+    "bear.q.ready.1": {"lines": [
+      "Ah! I can smell the berries again!"
+    ], "next": "bear.q.ready.2", "speaker": "burl"},
+    "bear.q.ready.2": {"lines": [
+      "The path is clear."
+    ], "next": "bear.q.ready.3", "speaker": "you"},
+    "bear.q.ready.3": {"lines": [
+      "And my breakfast is saved.",
+      "What's that in your paw? It glows."
+    ], "next": "bear.q.ready.4", "speaker": "burl"},
+    "bear.q.ready.4": {"lines": [
+      "It was under the last boar."
+    ], "next": "bear.q.ready.5", "speaker": "you"},
+    "bear.q.ready.5": {"lines": [
+      "So that's what they were rooting for.",
+      "Keep it close. Old stones like that light."
+    ], "next": "bear.q.ready.6", "speaker": "burl"},
+    "bear.q.ready.6": {"clip": "wave", "lines": [
+      "You've done an old bear a kindness."
+    ], "next": "bear.follow.1", "setFlag": "q.burl.boars.handin", "speaker": "burl"},
+    "bear.follow.1": {"lines": [
+      "Come along, sky-cub.",
+      "I'll show you that old stone."
+    ], "next": "bear.follow.2", "speaker": "burl"},
+    "bear.follow.2": {"lines": [
+      "You're coming with me?"
+    ], "next": "bear.follow.3", "speaker": "you"},
+    "bear.follow.3": {"end": true, "lines": [
+      "Wouldn't want you getting lost.",
+      "You already fell out of the sky once."
+    ], "setFlag": "s.burl.follow", "speaker": "burl"},
+    "bear.stone.1": {"lines": [
+      "There we are.",
+      "The Waystone."
+    ], "next": "bear.stone.2", "speaker": "burl"},
+    "bear.stone.2": {"lines": [
+      "It's an old machine."
+    ], "next": "bear.stone.3", "speaker": "you"},
+    "bear.stone.3": {"lines": [
+      "Not quite."
+    ], "next": "bear.stone.4", "speaker": "burl"},
+    "bear.stone.4": {"lines": [
+      "Looks like one."
+    ], "next": "bear.stone.5", "speaker": "you"},
+    "bear.stone.5": {"lines": [
+      "That's because you look with your eyes."
+    ], "next": "bear.stone.6", "speaker": "burl"},
+    "bear.stone.6": {"lines": [
+      "What else should I look with?"
+    ], "next": "bear.stone.7", "speaker": "you"},
+    "bear.stone.7": {"lines": [
+      "Your head, for a start.",
+      "These stones remember those who wake them.",
+      "If you fall, their light calls you home.",
+      "They remember your journey too.",
+      "And when you wake another stone,",
+      "you can travel between them."
+    ], "next": "bear.stone.8", "speaker": "burl"},
+    "bear.stone.8": {"lines": [
+      "Without walking?"
+    ], "next": "bear.stone.9", "speaker": "you"},
+    "bear.stone.9": {"lines": [
+      "That's the idea."
+    ], "next": "bear.stone.10", "speaker": "burl"},
+    "bear.stone.10": {"lines": [
+      "That's impossible."
+    ], "next": "bear.stone.11", "speaker": "you"},
+    "bear.stone.11": {"end": true, "lines": [
+      "You've said that before.",
+      "Try holding that crystal to the bowl."
+    ], "setFlag": "bear.stone.told", "speaker": "burl"},
+    "bear.woken.1": {"lines": [
+      "What is that?"
+    ], "next": "bear.woken.2", "speaker": "you"},
+    "bear.woken.2": {"lines": [
+      "An old kind of light."
+    ], "next": "bear.woken.3", "speaker": "burl"},
+    "bear.woken.3": {"lines": [
+      "No gears. No steam."
+    ], "next": "bear.woken.4", "speaker": "you"},
+    "bear.woken.4": {"lines": [
+      "Not everything needs them.",
+      "Well done, sky-cub.",
+      "The next stone lies west, by the road bend.",
+      "Follow the old road and your little chart."
+    ], "next": "bear.woken.5", "speaker": "burl"},
+    "bear.woken.5": {"lines": [
+      "You're not coming?"
+    ], "next": "bear.woken.6", "speaker": "you"},
+    "bear.woken.6": {"lines": [
+      "These paws have walked far enough today.",
+      "And my berries won't eat themselves."
+    ], "next": "bear.woken.7", "speaker": "burl"},
+    "bear.woken.7": {"lines": [
+      "Thank you, Burl."
+    ], "next": "bear.woken.8", "speaker": "you"},
+    "bear.woken.8": {"end": true, "lines": [
+      "Take care out there.",
+      "The world is wider than your Wall."
+    ], "setFlag": "s.burl.depart", "speaker": "burl"},
+    "bear.departing": {"end": true, "lines": [
+      "Go on, sky-cub. The road is west."
+    ], "speaker": "burl"},
+    "bear.following": {"end": true, "lines": [
+      "NEEDS WRITER: bear while following"
+    ], "speaker": "burl"},
+    "bear.repeat": {"end": true, "lines": [
+      "Back again? The berries are still mine. Mostly."
     ], "speaker": "burl"}
   },
   "model": "bear"

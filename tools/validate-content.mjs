@@ -761,6 +761,8 @@ export function validateContent(ASSETS, opts = {}) {
 // cross-file check: every node `clip` (and the runtime `talk`/`listen` clips) exists on the NPC model named by
 // the file's optional top-level `model`. A model that is not registered (yet) is a warning, not an error.
 const DIALOGUE_RUNTIME_CLIPS = ['talk', 'listen'];
+const BARK_LINE_MAX = 56; // = engine DIALOGUE_LINE_MAX (not exported)
+const S_KEY_RE = /^[A-Za-z][A-Za-z0-9_.-]*$/; // same shape as a quest id
 const Q_OPS = ['available', 'active', 'ready', 'done', 'accept', 'handin'];
 // QG-03 (38.35 item 5): `q.<questId>.<op>` flag keys (requires / setFlag) must name a giver quest (giverIds, null = not checked) and a known op.
 function checkQuestKeys(def, giverIds, file, errors) {
@@ -772,7 +774,13 @@ function checkQuestKeys(def, giverIds, file, errors) {
   }
   let checks = 0;
   for (const k of keys) {
+    if (k.startsWith('s.')) { // CH1-05: `s.<key>` = world.state flag; the rest must look like a quest id / state key
+      checks++;
+      if (!S_KEY_RE.test(k.slice(2))) errors.push(`${file}: flag "${k}" has a bad state key "${k.slice(2)}"`);
+      continue;
+    }
     if (!k.startsWith('q.')) continue;
+    if (!giverIds) continue;
     checks++;
     const dot = k.lastIndexOf('.'), id = k.slice(2, dot), op = k.slice(dot + 1);
     if (!giverIds.includes(id)) errors.push(`${file}: flag "${k}" names no giver quest "${id}"`);
@@ -780,19 +788,55 @@ function checkQuestKeys(def, giverIds, file, errors) {
   }
   return checks;
 }
+/** CH1-05: {kind:'barks', speakers:{k:{label,player?}}, barks:{id:[{who,text}]}}; text <= 56 ASCII chars. */
+export function validateBarks(def) {
+  const errors = []; let checks = 0;
+  const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
+  if (!isObj(def) || def.kind !== 'barks') return { errors: ['kind: expected "barks"'], checks };
+  const sp = isObj(def.speakers) ? def.speakers : null;
+  if (!sp) errors.push('speakers: expected an object');
+  else for (const [k, s] of Object.entries(sp)) if (!isObj(s) || typeof s.label !== 'string' || !s.label) errors.push(`speakers.${k}: needs a non-empty label`);
+  if (!isObj(def.barks) || !Object.keys(def.barks).length) { errors.push('barks: expected a non-empty object'); return { errors, checks }; }
+  for (const [id, lines] of Object.entries(def.barks)) {
+    checks++;
+    if (!S_KEY_RE.test(id)) errors.push(`barks.${id}: bad bark id`);
+    if (!Array.isArray(lines) || !lines.length) { errors.push(`barks.${id}: expected a non-empty array`); continue; }
+    lines.forEach((l, i) => {
+      const p = `barks.${id}[${i}]`;
+      if (!isObj(l)) { errors.push(`${p}: expected {who, text}`); return; }
+      if (!sp || typeof l.who !== 'string' || !Object.prototype.hasOwnProperty.call(sp, l.who)) errors.push(`${p}.who: unknown speaker ${JSON.stringify(l.who)}`);
+      if (typeof l.text !== 'string' || !l.text) errors.push(`${p}.text: expected a non-empty string`);
+      else {
+        if (l.text.length > BARK_LINE_MAX) errors.push(`${p}.text: ${l.text.length} chars, max ${BARK_LINE_MAX}`);
+        if (!/^[ -~]*$/.test(l.text)) errors.push(`${p}.text: char outside ASCII 32-126`);
+      }
+    });
+  }
+  return { errors, checks };
+}
 export function validateDialogueFiles(dir, models = {}, giverIds = null) {
   const errors = [], warnings = [];
   let checks = 0;
-  const files = [];
+  const files = [], barkFiles = [];
   const walk = (d) => {
     let entries;
     try { entries = readdirSync(d, { withFileTypes: true }); } catch (e) { if (e && e.code === 'ENOENT') return; throw e; }
     for (const entry of entries) {
       const full = `${d}/${entry.name}`;
-      if (entry.isDirectory()) walk(full); else if (entry.name.endsWith('.dialogue.json')) files.push(full);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.dialogue.json')) files.push(full);
+      else if (entry.name.endsWith('.barks.json')) barkFiles.push(full);
     }
   };
   walk(dir);
+  for (const full of barkFiles) { // CH1-05: `barks` content kind (read by game/js/quest/barks.js, not in the manifest)
+    checks++;
+    let def;
+    try { def = JSON.parse(readFileSync(full, 'utf8')); } catch (e) { errors.push(`${full}: JSON parse failed: ${e.message}`); continue; }
+    const r = validateBarks(def);
+    for (const m of r.errors) errors.push(`${full}: ${m}`);
+    checks += r.checks;
+  }
   for (const full of files) {
     checks++;
     let def;
@@ -800,7 +844,7 @@ export function validateDialogueFiles(dir, models = {}, giverIds = null) {
     const r = validateDialogue(def);
     for (const m of r.errors) errors.push(`${full}: ${m}`);
     for (const m of r.warnings) warnings.push(`${full}: ${m}`);
-    if (giverIds) checks += checkQuestKeys(def, giverIds, full, errors);
+    checks += checkQuestKeys(def, giverIds, full, errors);
     if (def.model === undefined) continue;
     checks++;
     const model = typeof def.model === 'string' ? models[def.model] : null;

@@ -34,7 +34,7 @@ function lightDelay(model) {
 }
 
 /**
- * @param {{world:Object, palette?:Object, emit:(id:string,kind:string,pos:Object)=>void, hum?:()=>void}} o
+ * @param {{notice?:{push:(key:string)=>boolean}, world:Object, palette?:Object, emit:(id:string,kind:string,pos:Object)=>void, hum?:()=>void}} o
  *   emit = gameHooks.emitSimple('prop:touched', ...) in main.js; hum defaults to playRelayHum.
  */
 export function createRelayWake(o) {
@@ -75,7 +75,7 @@ export function createRelayWake(o) {
     emit(r.wsId, 'relay', pos);
   }
   /** One function so CH1-04a can swap the toast for the notice view. */
-  function showWakeNotice() { toast.left = TOAST_SEC; }
+  function showWakeNotice() { if (o.notice && o.notice.push('relay')) return; toast.left = TOAST_SEC; } // CH1-04a: notice view when injected, toast fallback (tests)
 
   return {
     relays,
@@ -134,11 +134,11 @@ export function createRelayWake(o) {
   };
 }
 
-function plate(ui, s, y) {
-  const put = (x, code) => { if (x >= 0 && x < ui.cols) ui.setCellRGB(x, y, code - 32, FG[0], FG[1], FG[2], BG[0], BG[1], BG[2]); };
-  for (let j = -1; j <= s.length; j++) put(2 + j, 32);
-  for (let j = 0; j < s.length; j++) put(2 + j, s.charCodeAt(j));
+function plate(ui, s, y) { // no closure per draw
+  for (let j = -1; j <= s.length; j++) plateCell(ui, 2 + j, y, 32);
+  for (let j = 0; j < s.length; j++) plateCell(ui, 2 + j, y, s.charCodeAt(j));
 }
+function plateCell(ui, x, y, code) { if (x >= 0 && x < ui.cols) ui.setCellRGB(x, y, code - 32, FG[0], FG[1], FG[2], BG[0], BG[1], BG[2]); }
 
 let api = null;
 /** main.js: point the `relay.wake` behaviour at this load's relays (or null). */

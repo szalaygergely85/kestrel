@@ -5,6 +5,7 @@
 import { localToWorld } from '../../engine/index.js';
 import { collectSave, applySave, createStorageAdapter } from './quest/save/saveState.js';
 import { createQuestRelay } from './questRelay.js';
+import { migrateM1Ch1 } from './quest/sim/questBook.js';
 
 export const AUTOSAVE_SEC = 60;
 const STATE_GONE = 12; // beastSim.STATE_GONE (hidden, skipped everywhere) - same literal beastSim exports
@@ -17,7 +18,7 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
   const adapter = storage ? createStorageAdapter(storage) : null;
   const quest = createQuestRelay(questDef, null, giverDefs);
   const chests = new Set(), dead = new Set();
-  const facts = { wakeDone: false, lanternTaken: false, swordTaken: false, endStarted: false, x: 0, y: 0, z: 0 };
+  const facts = { wakeDone: false, swordTaken: false, endStarted: false, x: 0, y: 0, z: 0 };
   const tmp = { x: 0, y: 0, z: 0 };
   let breach = null, breachFor = null;
   let playSec = 0, sinceSave = 0, pending = null, lastResult = null;
@@ -50,7 +51,7 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
     handlers() {
       let ctx = null;
       return {
-        onBoot(c) { ctx = c; },
+        onBoot(c) { ctx = c; quest.world = c && c.world || null; },
         onTick(dt) { if (ctx && ctx.world && ctx.player) relay.stepGame(dt, ctx.world, ctx.player.transform, ctx.state); },
         onEvent(name, d) {
           if (name === 'beast:died') { dead.add(d.id); quest.feed({ type: name, id: d.id }); }
@@ -69,7 +70,14 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
       if (!r.ok) { lastResult = { op: 'load', ok: false, error: r.error }; return null; }
       if (!r.save) return null;
       try {
-        const a = applySave(r.save, assets, { questDef, giverDefs, worldOptions: worldOpts, defaultLook });
+        // CH1-02: old m1 chain (with `lantern`) -> new 11-step chain BEFORE the book is built (38.37 item 8)
+        // The migration's world flags (6/6 saves) go to the WorldState at save.world.state, not save.game.
+        let save = r.save;
+        if (save.game && save.game.quest) {
+          const m = migrateM1Ch1({ quest: save.game.quest, world: save.world }, questDef.objectives.map(o => o.id));
+          if (m.quest !== save.game.quest) save = { ...save, game: { ...save.game, quest: m.quest }, world: m.world || save.world };
+        }
+        const a = applySave(save, assets, { questDef, giverDefs, worldOptions: worldOpts, defaultLook });
         pending = a;
         lastResult = { op: 'load', ok: true };
         return a.world;
@@ -125,8 +133,9 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
      */
     stepGame(dt, world, pos, o) {
       if (breachFor !== world) { breachFor = world; breach = resolveBreach(world, tmp); }
+      quest.world = world; quest.checkSections();
       const ws = world.state, wasWay = quest.state.areas.includes('waystone');
-      facts.wakeDone = o.wakeDone; facts.lanternTaken = ws['tower.lantern.taken'] === true; facts.swordTaken = ws['tower.sword.taken'] === true;
+      facts.wakeDone = o.wakeDone; facts.swordTaken = ws['tower.sword.taken'] === true;
       facts.endStarted = typeof ws['quest.endT'] === 'number' && ws['quest.endT'] >= 0;
       facts.x = pos.x; facts.y = pos.y; facts.z = pos.z;
       quest.poll(facts, breach);

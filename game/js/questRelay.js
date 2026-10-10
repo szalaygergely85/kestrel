@@ -17,11 +17,11 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
   let book = createQuestBook(def, giverDefs, { quest: saved, quests: savedQuests });
   let state = book.main;
   let rows = questObjectives(state, def, []);
-  const fired = { wake: false, lantern: false, sword: false, waystone: false, breach: false }; // edge guards (cheap polling)
+  const fired = { wake: false, sword: false, waystone: false, breach: false }; // edge guards (cheap polling)
   let dirty = false, lineFor = '', line = '';
 
   function syncFired() {
-    fired.wake = state.flags.wake === true; fired.lantern = state.items.includes('lantern');
+    fired.wake = state.flags.wake === true;
     fired.sword = state.items.includes('sword'); fired.waystone = state.areas.includes('waystone'); fired.breach = state.areas.includes('breach');
   }
   syncFired();
@@ -31,11 +31,37 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
     let changed = false;
     try { changed = book.feed(event); } catch (e) { return false; }
     if (changed) { questObjectives(state, def, rows); dirty = true; }
+    relay.checkSections();
     return changed;
+  }
+
+  /** CH1-02: "Quest complete" callback(title) for every section whose last step completed in objectives [from, to). */
+  let seen = state.completed.length; // steps already accounted for (restore sets it, so a restore never toasts)
+  function sectionToasts(from, to) {
+    const objs = def.objectives, titles = new Map((def.sections || []).map(x => [x.id, x.title]));
+    for (let i = from; i < to; i++) {
+      const sec = objs[i].section;
+      if (sec && (i + 1 >= objs.length || objs[i + 1].section !== sec) && titles.has(sec)) relay.onSection(titles.get(sec));
+    }
   }
 
   const relay = {
     def,
+    /** Optional (title) callback: a section's last step completed live (main.js shows "Quest complete: <title>"). */
+    onSection: null,
+    /** Fires onSection for steps completed since the last call (feed() calls it; saveRelay.stepGame too, for giver hand-ins that bypass feed). */
+    checkSections() {
+      const n = state.completed.length;
+      if (n > seen && relay.onSection) sectionToasts(seen, n);
+      seen = n;
+    },
+    /** World the quest flags are written to (set by saveRelay each step / on boot). */
+    world: null,
+    /** CH1-02 (38.37 item 1): the one way game code sets a quest flag: world.state[key] = value AND book.feed. */
+    questFlag(key, value = true) {
+      if (relay.world) relay.world.state[key] = value;
+      return feed({ type: 'flag:set', key, value });
+    },
     /** QG-03: the quest book (m1 + giver quests); replaced on reset(), so read it through the relay each time. */
     get book() { return book; },
     /** Optional (name, a, b) callback for every event poll() fires (main.js points it at the gameHooks seam). */
@@ -54,16 +80,15 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
     /** Replace the quest (restore from a save, or a fresh run when `saved` is null). */
     reset(savedState = null, savedQuests = null) {
       const onChange = book.onChange;
-      book = createQuestBook(def, giverDefs, { quest: savedState, quests: savedQuests }); book.onChange = onChange; state = book.main; rows = questObjectives(state, def, []); syncFired(); dirty = false;
+      book = createQuestBook(def, giverDefs, { quest: savedState, quests: savedQuests }); book.onChange = onChange; state = book.main; rows = questObjectives(state, def, []); syncFired(); dirty = false; seen = state.completed.length;
     },
     /**
      * Per-fixed-step facts -> events. Every flag fires once (guards); cost is a few comparisons.
-     * @param {{wakeDone:boolean, lanternTaken:boolean, swordTaken:boolean, endStarted:boolean, x:number, y:number, z:number}} f
+     * @param {{wakeDone:boolean, swordTaken:boolean, endStarted:boolean, x:number, y:number, z:number}} f
      * @param {{x:number,y:number,z:number}|null} breach world-space breach marker
      */
     poll(f, breach) {
       if (f.wakeDone && !fired.wake) { fired.wake = true; feed({ type: 'flag:set', key: 'wake', value: true }); if (relay.onPoll) relay.onPoll('flag:set', 'wake', true); }
-      if (f.lanternTaken && !fired.lantern) { fired.lantern = true; feed({ type: 'item:got', id: 'lantern' }); if (relay.onPoll) relay.onPoll('item:got', 'lantern', 1); }
       if (f.swordTaken && !fired.sword) { fired.sword = true; feed({ type: 'item:got', id: 'sword' }); if (relay.onPoll) relay.onPoll('item:got', 'sword', 1); }
       if (breach && !fired.breach) {
         const dx = f.x - breach.x, dy = f.y - breach.y;

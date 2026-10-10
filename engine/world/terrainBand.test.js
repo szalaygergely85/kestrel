@@ -118,6 +118,13 @@ ok('serialize round-trips terrainBand', JSON.stringify(ser.terrainBand) === JSON
   const fset = new TerrainMeshSet(flip); guard = 0; while (fset.step(50) && guard++ < 1000);
   flip.bakeNearBand(8, 7, 5, 3); guard = 0; while (fset.step(50) && guard++ < 1000);
   ok('mesh set re-lays out when the band changes 3x3 -> 5x3', fset.near.length === 15 && fset.near.every((m) => m.triCount > 0));
+  // every band-vertex normal must be filled (build loops to near.h, not near.w)
+  const nrmOk = (s) => { const a = s._bandNrm; for (let i = 0; i < a.length; i += 3) if (!(a[i] * a[i] + a[i + 1] * a[i + 1] + a[i + 2] * a[i + 2] > 0)) return false; return true; };
+  ok('3x5 tall band: every _bandNrm normal non-zero (first build)', nrmOk(tset));
+  const flip2 = new Terrain(T.recipe); flip2.bakeFarSync(); flip2.bakeNearBand(11, 8);
+  const fset2 = new TerrainMeshSet(flip2); guard = 0; while (fset2.step(50) && guard++ < 1000);
+  flip2.bakeNearBand(10, 6, 3, 5); guard = 0; while (fset2.step(50) && guard++ < 1000);
+  ok('3x3 -> 3x5 re-layout: every _bandNrm normal non-zero', fset2.near.length === 15 && nrmOk(fset2));
 }
 
 // --- perf: bake time + memory 5x3 vs 3x3 -------------------------------------

@@ -1091,6 +1091,7 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - **The breach climb stays required** (owner) - Leave the Tower comes after the climb.
 - Fen supersedes the D-058 removal: the owner's own script brings him back as a man.
 - Owner addition (2026-10-10): the tower must read as a TALL tower from outside (interior is good - keep it), the **sword lies at the top**; order = wake -> climb to the top (breach, required) -> sword + note -> come back down -> leave through an **entrance at the bottom** -> meadow.
+- Owner answer (2026-10-10, CH1-D1a): the tower exit is a **real ground-floor south-west door at 0 m**. The stair may be re-routed to make room, but the climb (stairs, gap jump, upper steps, summit) stays. The designer had proposed a 3.6 m door cut off the upper stair; the owner rejected it.
 
 ## D-063 - Character style = the bearded-knight reference (owner, 2026-10-10; recorded by the PC-B main session)
 - Owner sent a stylised voxel knight (Screenshot 2026-10-10 123203.png in the owner's Pictures/Screenshots, not committed) "make look like this please" -> applies to **the whole character style** (all characters), **no wings / halo**.

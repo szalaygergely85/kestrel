@@ -50,9 +50,11 @@ const READY = 3, DONE = 4, LIST_TOP = 6, LIST_ROWS = 14;
 
 /**
  * @param {any} book createQuestBook() result
- * @param {{style?:any, text?:Partial<typeof QUEST_LOG_TEXT>, width?:number}} o
+ * @param {{style?:any, text?:Partial<typeof QUEST_LOG_TEXT>, width?:number, doneTitle?:string, onJournal?:(questIndex:number)=>void}} o
+ * CH1-09: a DONE main quest (index 0) is listed as `doneTitle` ("Beyond the Wall"); Enter on it closes the log and calls
+ * `onJournal(0)` (main.js re-opens the chapter journal). Without `onJournal`, Enter just closes like before.
  */
-export function createQuestLogScreen(book, { style = null, text = {}, width = 72 } = {}) {
+export function createQuestLogScreen(book, { style = null, text = {}, width = 72, doneTitle = 'Beyond the Wall', onJournal = null } = {}) {
   const T = { ...QUEST_LOG_TEXT, ...text }, W = width - 8;
   const colour = key => (style && (style.hex[key] || style.bg[key])) || '#e8e2d0';
   const fg = style ? colour(style.row.normal.fg) : '#e8e2d0', bg = style ? style.bg.plate : '#0a0b10';
@@ -78,7 +80,7 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
       if (head !== lastHeader) { lines.push({ kind: 'head', text: head }); lastHeader = head; }
       const def = book.def(i), s = book.status(i);
       if (k === sel) selLine = lines.length;
-      lines.push({ kind: 'quest', k, text: ascii(def.title || def.id) + (i === 0 ? ' ' + T.main : ''), done: isDone });
+      lines.push({ kind: 'quest', k, text: ascii((isDone && i === 0 && doneTitle) || def.title || def.id) + (i === 0 ? ' ' + T.main : ''), done: isDone });
       if (k !== sel) continue;
       if (s === READY && def.returnText) lines.push({ kind: 'return', text: '  > ' + clipped(ascii(def.returnText), W - 8) });
       const rows = book.objectives(i, scratch);
@@ -96,6 +98,7 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
   /** Returns true when the key was consumed. Enter/J/Esc close; W/S move (wraps). */
   function handleKey(code) {
     if (!open) return false;
+    if (code === 'Enter' && onJournal && quests[sel] === 0 && book.status(0) === DONE) { close(); onJournal(0); return true; }
     if (code === 'Enter' || code === 'KeyJ' || code === 'Escape') { close(); return true; }
     const d = code === 'ArrowUp' || code === 'KeyW' ? -1 : code === 'ArrowDown' || code === 'KeyS' ? 1 : 0;
     if (!d) return false;

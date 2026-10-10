@@ -1,5 +1,7 @@
 {
   "format": "kestrel-addons",
   "formatVersion": 1,
-  "packages": []
+  "packages": [
+    "villager.fen-1.0.0.kestrel"
+  ]
 }

@@ -1892,16 +1892,16 @@ PC-B architect opus, 2026-10-10 (owner-authorised while PC-A is offline; PC-A to
 
 | ID | Slot | Size | Files | Deps | Status |
 |---|---|---|---|---|---|
-| WS1-01 | kestrel-3 | 0.75 d | `engine/physics/bounds.js` (new) + test, `engine/physics/integrate.js` 4b, `engine/world/triggers.js`, `engine/world/World.js` (validateBounds), `engine/world/serialize.js`, `engine/world/world.test.js` | - | arch-review [PC-B] |
-| WS1-02 | kestrel-3 | 1 d | `engine/world/World.js` (band rect, nearBandKey), `engine/world/Terrain.js` (`bakeNearBand(cx0,cy0,cw,ch)`), JS `near.w/h` consumers (scatter, terrainShade, detailShade), `engine/world/terrainBand.test.js` (new) | - | arch-review [PC-B] (NEEDS PC-A) |
-| WS1-03 | kestrel-2 | 0.5 d | `engine/render/gpu/wgsl/terrainRaster.wgsl.js`, `engine/render/gpu/wg/passRaster.js`, `TerrainTextures.js`, `ShadeTextures.js`, `passShade.js` (audit) | WS1-02 | arch-review [PC-B] |
+| WS1-01 | kestrel-3 | 0.75 d | `engine/physics/bounds.js` (new) + test, `engine/physics/integrate.js` 4b, `engine/world/triggers.js`, `engine/world/World.js` (validateBounds), `engine/world/serialize.js`, `engine/world/world.test.js` | - | ARCH OK -> po-review [PC-B] |
+| WS1-02 | kestrel-3 | 1 d | `engine/world/World.js` (band rect, nearBandKey), `engine/world/Terrain.js` (`bakeNearBand(cx0,cy0,cw,ch)`), JS `near.w/h` consumers (scatter, terrainShade, detailShade), `engine/world/terrainBand.test.js` (new) | - | ARCH CHANGES (build loop uses near.w for rows: tall bands get zero normals; see arch batch 2026-10-10) [PC-B] |
+| WS1-03 | kestrel-2 | 0.5 d | `engine/render/gpu/wgsl/terrainRaster.wgsl.js`, `engine/render/gpu/wg/passRaster.js`, `TerrainTextures.js`, `ShadeTextures.js`, `passShade.js` (audit) | WS1-02 | ARCH OK -> po-review (gpucompare gate: main session) [PC-B] |
 | WS1-04 | kestrel-4 | 0.5 d | `content/worlds/world_m1.world.json` (bounds union, terrainBand, `relayBend` + base mesh, `waystone` components), `design/levels/overworld_far.js` (relay exclude disc) | WS1-01, WS1-02 | po-review [PC-B] |
 | WS1-05 | kestrel-4 | 0.75 d | `tools/gen-roadside-meshes.mjs` (flags + `scale` fix), `content/worlds/world_m1.world.json` (`roadW###`, `roadN###`), `design/levels/overworld_far.js` (printed capsules) | - (runs before WS1-04 lands: keep-out disc is in the tool) | po-review [PC-B] |
 | WS1-06a | kestrel-1 | 0.5 d | `game/js/quest/sim/waystone.js` + test, `game/js/quest/wire/waystone.js` + test, `game/js/waystoneTouch.js` | WS1-04 (data; tests use fixtures) | po-review [PC-B] |
-| WS1-06b | kestrel-1 | 0.75 d | `game/js/quest/relayWake.js` (new) + test, `game/js/quest/index.js` (behaviour `relay.wake`), `game/js/main.js` (step + interactable on world:loaded) | WS1-06a, WS1-W1 (placeholder text ok) | po-review [PC-B] |
+| WS1-06b | kestrel-1 | 0.75 d | `game/js/quest/relayWake.js` (new) + test, `game/js/quest/index.js` (behaviour `relay.wake`), `game/js/main.js` (step + interactable on world:loaded) | WS1-06a, WS1-W1 (placeholder text ok) | ARCH OK; PO OK (PC-B batch, PC-A to ratify) -> testing; follow-up: relay touch still shows the stone "remember" toast (per-kind text, WS1-W1) [PC-B] |
 | WS1-07a | kestrel-1 | 0.5 d | `game/js/quest/mapCard.js` (`setMarker`, digits, travel line, digit keys) + `mapCard.test.js`, preview | WS1-06a | po-review [PC-B] |
 | WS1-07b | kestrel-1 | 0.75 d | `game/js/quest/travel.js` (new) + test, `game/js/quest/sim/vitals.js` (`clearSafe`), `game/js/main.js` (wiring, fade draw, hzb invalidate) | WS1-07a | po-review [PC-B] |
-| WS1-08 | kestrel-4 | 0.5 d | `tools/route-walk.mjs` (leg 8 + bound probe), bench/perf pose `roadBend`, gpucompare row | WS1-03, WS1-04, WS1-05 | todo [PC-B] |
+| WS1-08 | kestrel-4 | 0.5 d | `tools/route-walk.mjs` (leg 8 + bound probe), bench/perf pose `roadBend`, gpucompare row | WS1-03, WS1-04, WS1-05 | ARCH OK; tooling done + gates PASS (route walk leg 8 1.8 m from relay, bound 1200.3, gpucompare roadBend NEW PASS 2026-10-10); PO OK (leg 8 + bound probe + gpucompare ACs); open: perf AC (roadBend + tower JS/GPU p95 <= 8 ms, heap flat, load delta) on a quiet machine [PC-B] |
 | WS1-09 | kestrel-4 | 0.25 d | `content/quests/m1.quest.json` (objective `relay1`), quest test | WS1-06b, WS1-W1; only if trivial (38.36 item 5) | won't-do: superseded by CH1-01 (38.37) [PC-B] |
 | WS1-W1 | writer | 0.25 d | `docs/story.md` | - | todo NEEDS WRITER |
 
@@ -1956,7 +1956,7 @@ Note (kestrel-2, 2026-10-10): done; sim API `points` (entity data), `touch(id,po
 - [ ] At black: anchor pose, zero velocity, re-ground, `hzb.invalidate('travel')`, `beasts.resetAll`, `targeting.clear`, `syncFacing`, `vitals.clearSafe()`, target becomes the respawn point (touch = heal + save).
 - [ ] Tests: timings, gates, pose inside `bounds`, invalidate/reset calls, 0 alloc. Main session: one browser pass meadow -> relay -> meadow, fauna re-spawns, no frame of the old view after the fade.
 
-### WS1-08 Gates: route walk, perf, gpucompare  [P1] [todo] [PC-B kestrel-4]
+### WS1-08 Gates: route walk, perf, gpucompare  [P1] [partly done: perf open] [PC-B kestrel-4]
 - [ ] `route-walk.mjs` leg 8 waystone -> relay ((1420,1032) -> (1350,1050) -> (1270,1042)), grid + mesh, completes, no fall, ends <= 3 m from the relay; bound probe west of x 1200 stops at the bound.
 - [ ] Perf pose `roadBend` (1268, 1040, yaw 270) + tower pose: JS <= 8 ms, GPU p95 <= 8 ms ultra, heap flat; load-time delta vs before WS1-02 printed. If GPU fails: report, fallback `cw: 4` (38.36 item 1).
 - [ ] gpucompare row at `roadBend`; existing rows within tolerance.
@@ -1975,24 +1975,25 @@ Order: writer rows + CH1-D1a + CH1-E1/E2 + CH1-01 in parallel -> CH1-02, CH1-03,
 
 | ID | Slot | Size | Files | Deps | Status |
 |---|---|---|---|---|---|
-| CH1-01 | kestrel-4 | 0.75 d | `content/quests/m1.quest.json` (11 steps + sections), `content/quests/burl.boars.quest.json` (title), `content/quests/areas.json`, `content/worlds/world_m1.world.json` (area triggers `towerDoor`/`roadWest`/`bendRelay`), `game/js/quest/sim/questBook.js` (`validateSections`, `migrateM1Ch1`) + tests | - | po-review [PC-B] |
-| CH1-02 | kestrel-1 | 0.75 d | `game/js/questRelay.js` (`questFlag`, lantern feed out), `game/js/saveRelay.js` (run the migration), `game/js/main.js` (section toasts, marker bindings), `game/js/quest/hints.js` | CH1-01 | todo [PC-B] |
-| CH1-03 | kestrel-1 | 0.5 d | `game/js/quest/crystal.js` (new) + test, main.js (hook on `quest:ready` + `world:loaded`) | CH1-02, CH1-D2 (item def; a placeholder is fine) | todo [PC-B] |
-| CH1-04a | kestrel-1 | 0.5 d | `game/js/ui/noticeView.js` (new) + test, main.js mount, game text table | - | todo [PC-B] |
+| CH1-01 | kestrel-4 | 0.75 d | `content/quests/m1.quest.json` (11 steps + sections), `content/quests/burl.boars.quest.json` (title), `content/quests/areas.json`, `content/worlds/world_m1.world.json` (area triggers `towerDoor`/`roadWest`/`bendRelay`), `game/js/quest/sim/questBook.js` (`validateSections`, `migrateM1Ch1`) + tests | - | ARCH OK; PO OK -> testing (towerDoor placeholder until CH1-D1a) [PC-B] |
+| CH1-02 | kestrel-1 | 0.75 d | `game/js/questRelay.js` (`questFlag`, lantern feed out), `game/js/saveRelay.js` (run the migration), `game/js/main.js` (section toasts, marker bindings), `game/js/quest/hints.js` | CH1-01 | ARCH OK; PO OK -> testing (markers/compass for towerDoor/roadWest not browser-checked: owner/tester) [PC-B] |
+| CH1-03 | kestrel-1 | 0.5 d | `game/js/quest/crystal.js` (new) + test, main.js (hook on `quest:ready` + `world:loaded`) | CH1-02, CH1-D2 (item def; a placeholder is fine) | ARCH OK; PO OK (module) - open: main.js mount (check on quest:ready + world:loaded, noteBoar on beast:died, teal burst, toast text, addItem) [PC-B] |
+| CH1-04a | kestrel-1 | 0.5 d | `game/js/ui/noticeView.js` (new) + test, main.js mount, game text table | - | ARCH OK; PO OK (module) - open: main.js mount (hidden in menus/dialogue), relayWake showWakeNotice -> push('relay'), headless capture (verify-notice) [PC-B] |
 | CH1-04b | kestrel-1 | 0.75 d | `game/js/quest/relayWake.js` (`kind:'stone'`), `game/js/waystoneTouch.js` (dormant), `game/js/quest/index.js` (`stone.wake`), world data `endMarker` (`dormant`, `notice`) | WS1-06b, CH1-03, CH1-04a, CH1-D2 | todo [PC-B] |
-| CH1-05 | kestrel-4 | 0.5 d | `content/dialogue/bear.dialogue.json` (full graph 38.37 item 6), `content/dialogue/bear.barks.json` (new), `tools/validate-content.mjs` (`s.` keys, `barks` kind), `game/js/quest/bearDialogue.test.js` | CH1-W2 (placeholder text ok), CH1-06 | todo [PC-B] |
-| CH1-06 | kestrel-1 | 0.5 d | `game/js/quest/dialogueCtl.js` (`s.` route) + test, `game/js/quest/barks.js` (new) + test, main.js mount | CH1-02 | todo [PC-B] |
-| CH1-E1 | kestrel-3 | 0.5 d | `engine/nav/pathFollow.js` (new) + test, `engine/index.js` export | - | arch-review [PC-B] (engine) |
-| CH1-E2 | kestrel-3 | 0.75 d | `engine/world/World.js` (`kinematic` entity colliders, `setEntityCollider`), `engine/world/colliders.js` if needed, `engine/world/world.test.js` | - | arch-review [PC-B] (engine) |
+| CH1-05 | kestrel-4 | 0.5 d | `content/dialogue/bear.dialogue.json` (full graph 38.37 item 6), `content/dialogue/bear.barks.json` (new), `tools/validate-content.mjs` (`s.` keys, `barks` kind), `game/js/quest/bearDialogue.test.js` | CH1-W2 (placeholder text ok), CH1-06 | ARCH OK; PO OK (content) -> testing after the CH1-06 mount (s. keys need questFlag in the ctl); known gap -> CH1-07 AC: a "following" entry (no follow-offer replay) [PC-B] |
+| CH1-06 | kestrel-1 | 0.5 d | `game/js/quest/dialogueCtl.js` (`s.` route) + test, `game/js/quest/barks.js` (new) + test, main.js mount | CH1-02 | ARCH OK; PO OK (module) - open: main.js mount (questFlag into createDialogueCtl + createBarks, load bear.barks.json, step early, draw after dialogue) [PC-B] |
+| CH1-E1 | kestrel-3 | 0.5 d | `engine/nav/pathFollow.js` (new) + test, `engine/index.js` export | - | ARCH OK -> po-review [PC-B] (engine) |
+| CH1-E2 | kestrel-3 | 0.75 d | `engine/world/World.js` (`kinematic` entity colliders, `setEntityCollider`), `engine/world/colliders.js` if needed, `engine/world/world.test.js` | - | ARCH OK -> po-review [PC-B] (engine) |
 | CH1-07 | kestrel-1 | 1 d | `game/js/quest/npcWalk.js` (new) + test, `game/js/quest/npcBear.js` (pause turning while walking), main.js (Burl phases, auto-open stone talk, depart + hide, load rules), world data `bear` (`walks.follow`/`depart`, `collider.kinematic`) | CH1-E1, CH1-E2, CH1-05, CH1-06 | todo [PC-B] |
 | CH1-08a | kestrel-4 | 0.5 d | `content/worlds/world_m1.world.json` (`fen` entity, `walks.emerge`), `content/dialogue/fen.dialogue.json` (new), `content/packages/index.json` + `villager.fen-*.kestrel`, `game/js/quest/fenDialogue.test.js` | CH1-D3, CH1-W4, WS1-04 | todo [PC-B] |
 | CH1-08b | kestrel-1 | 0.5 d | main.js (Fen hidden until the relay wakes, emerge walk, auto-open, `fen.met`), uses `npcWalk.js` | CH1-07, CH1-08a, WS1-06b | todo [PC-B] |
-| CH1-09 | kestrel-1 | 0.75 d | `game/js/quest/chapterCard.js` (new) + test, `game/js/ui/questLog.js` (Done row opens the journal), main.js, `design/models/notes.js` (`journalCh1` from CH1-W5) | CH1-02, CH1-W5 | todo [PC-B] |
+| CH1-09 | kestrel-1 | 0.75 d | `game/js/quest/chapterCard.js` (new) + test, `game/js/ui/questLog.js` (Done row opens the journal), main.js, `design/models/notes.js` (`journalCh1` from CH1-W5) | CH1-02, CH1-W5 | ARCH OK; PO OK (module) - open: main.js mount (trigger on last m1 section, isLocked -> uiLocked, pushDim, draw, questLog onJournal -> journalCh1), headless capture [PC-B] |
 | CH1-10 | kestrel-4 | 1 d | `tools/route-walk.mjs` (new tower legs + probes, Burl/Fen path clearance), `game/js/quest/ch1Walkthrough.test.js` (new), perf poses (tower exterior), gpucompare tower re-baseline | CH1-D1a/b, CH1-07, CH1-08b | todo [PC-B] |
 | CH1-D1a | designer | 1 d | `content/levels/tower.level.json` (sword + note 1 to the top, `noteLeave`, parapet over the breach, way down, south-west door + steps, `doorBar` + `door.unbar`, `lantern.take` removed), `design/models/notes.js` (note texts), tower preview/capture | CH1-W1 (placeholder text ok) | todo [PC-B] |
 | CH1-D1b | designer | 1 d | `content/levels/tower.level.json` (wall heights, rounded outer ring), `design/models/voxel_tower_crown.js` (new `towerCrown` + snagged envelope), world entity, `design/levels/overworld_far.js` if the footprint changes | OWNER QUESTION (height), CH1-D1a | todo [PC-B] owner look |
-| CH1-D2 | designer | 0.5 d | `design/models/voxel_world.js` (waystone `dead`/`wake`/`awake` clips, brass crystal bowl, light preset), `design/items.js` (`aetherCrystal` glyph + icon), previews | - | todo [PC-B] |
-| CH1-D3 | designer | 0.5 d | chargen recipe Fen (male wanderer, patched clothes, worn boots, travelling staff; D-059 style) -> `villager.fen` package | CHARGEN D-059 base, owner look | todo [PC-B] owner look |
+| CH1-D2 | designer | 0.5 d | `design/models/voxel_world.js` (waystone `dead`/`wake`/`awake` clips, brass crystal bowl, light preset), `design/items.js` (`aetherCrystal` glyph + icon), previews | - | PO OK (design, claims) - open: owner look (design/preview/voxel-props.html, item-icons.html); confirm suites voxel_world/items/validate-content green [PC-B] |
+| CH1-D3 | designer | 0.5 d | chargen recipe Fen (male wanderer, patched clothes, worn boots, travelling staff; D-059 style) -> `villager.fen` package | CHARGEN D-059 base, owner look | PO OK (recipe, 000cb1c8; D-063 style supersedes D-059) - open: owner look (chargen_kit.html outfit Fen), `villager.fen` package moves to CH1-08a [PC-B] |
+| CHARGEN-26b | designer | 0.5 d | `design/chargen/human_kit.js` detail pass (face, ears, hair, beard, hands, knight trim), kit rebuilt 1650 quads, export goldens | CHARGEN-26 | PO OK (design) - owner look (crown hair layer dropped to stay <= 1.78 m); civilian seams need engine per-shell paint (owner to decide) [PC-B] |
 | CH1-W1 | writer | 0.25 d | `docs/story.md`: tower texts | - | todo NEEDS WRITER |
 | CH1-W2 | writer | 0.5 d | `docs/story.md`: Burl lines + barks | - | todo NEEDS WRITER |
 | CH1-W3 | writer | 0.25 d | `docs/story.md`: wake, crystal, notices | - | todo NEEDS WRITER |
@@ -2005,7 +2006,7 @@ Order: writer rows + CH1-D1a + CH1-E1/E2 + CH1-01 in parallel -> CH1-02, CH1-03,
 - [ ] `validateSections` (every `section` names a declared section; the sections are contiguous runs).
 - [ ] `migrateM1Ch1` per item 8 with fixtures: `[wake, lantern]` -> `[wake]`; `[wake, lantern, breach, sword]` -> `[wake, breach, sword]`; `+beasts` -> `[.., leave, beasts]`; 6/6 -> `[.., follow, waystone]` + flags `waystone.waystone.woken`, `burl.phase 4`, `aether.attuned`; already-new saves untouched; round trip. `node tools/run-tests.mjs` green.
 
-### CH1-02 Wire the chain: quest flags, section toasts, markers, lamp out  [P1] [todo] [PC-B kestrel-1]
+### CH1-02 Wire the chain: quest flags, section toasts, markers, lamp out  [P1] [po-review] [PC-B kestrel-1]
 - [ ] `questFlag(key, value)` in questRelay (sets world.state + feeds the book); the lantern feed is removed; saveRelay runs `migrateM1Ch1` before the book is built.
 - [ ] "Quest complete: <section title>" toast when a section's last step completes live; no toast on restore (test).
 - [ ] main.js marker bindings per 38.37 item 1 (compass points at each step's target).
@@ -2079,7 +2080,7 @@ Order: writer rows + CH1-D1a + CH1-E1/E2 + CH1-01 in parallel -> CH1-02, CH1-03,
 - [ ] Wall cell `floorH` raised to the owner's target (rec. 12-14 m, jagged tops, west side lowest), outer ring chamfered to read round; captures of the wake pose + sun shaft before/after (keep the east wall height if the shaft is lost).
 - [ ] `towerCrown` voxel model (round broken crown + the Kestrel's torn envelope snagged on it, ropes hanging), <= 8k surface voxels, placed at the tower origin; preview page; exterior capture from the meadow.
 
-### CH1-D2 Waystone states + crystal item  [P1] [todo] [designer]
+### CH1-D2 Waystone states + crystal item  [P1] [po-review] [designer]
 - [ ] Waystone `dead`/`wake`/`awake` clips (aether mark dark -> teal), small brass crystal bowl on top, light preset; `idle` kept as an alias of `awake`.
 - [ ] `aetherCrystal` item def (glyph, icon, name/desc from CH1-W3). Previews updated.
 

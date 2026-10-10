@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Kestrel notice preview</title>
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+<canvas id="c" width="800" height="320"></canvas>
+<script type="module">
+import { createNoticeView } from './noticeView.js';
+const cv = document.getElementById('c'), g = cv.getContext('2d'), CW = 8, CH = 16, cols = 100, rows = 20;
+g.font = '14px monospace'; g.textBaseline = 'top';
+const ui = { cols, rows, setCellRGB(x, y, glyph, r, gr, b, br, bg, bb) {
+  g.fillStyle = `rgb(${br},${bg},${bb})`; g.fillRect(x * CW, y * CH, CW, CH);
+  if (glyph > 0) { g.fillStyle = `rgb(${r},${gr},${b})`; g.fillText(String.fromCharCode(glyph + 32), x * CW, y * CH); } } };
+const v = createNoticeView(); let last = performance.now();
+window.__noticePreview = { view: v, hidden: false, push: (k) => v.push(k) };
+function frame(now) { const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  g.fillStyle = '#223'; g.fillRect(0, 0, cv.width, cv.height);
+  v.update(dt, window.__noticePreview.hidden); v.draw(ui, window.__noticePreview.hidden); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+</script></html>

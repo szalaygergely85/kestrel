@@ -197,7 +197,7 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
 // ---------------------------------------------------------------------------
 {
   const lanternDef = towerDef.interactables.find((i) => i.id === 'lantern');
-  ok('lantern interactable prompt is "[E] Take lamp" (D-011 reskin)', lanternDef.prompt === '[E] Take lamp', lanternDef.prompt);
+  // CH1-02: the lamp is no longer a quest step; the prompt text is not asserted (the level rework may drop or rename it)
   ok('lantern interactable data: once, interact lantern.take', lanternDef.once === true && lanternDef.interact === 'lantern.take');
 
   let actorLight = null;
@@ -571,7 +571,7 @@ function hintUiStyleFixture() {
       text: 'uiHint', key: 'gold', plate: { pad: 1, bgMul: 0.35 }, fadeIn: 0.3, fadeOut: 0.5, timeout: 8.0 },
     hints: [],
     storyHints: [
-      { id: 'exit', text: 'Out there. Step through the breach.', keys: [], on: { type: 'zone', zone: 'hintExit' } },
+      { id: 'exit', text: 'The top. Look west through the breach.', keys: [], on: { type: 'zone', zone: 'hintExit' } },
     ],
   };
   setPaletteColors(s, { uiDim: '#6a6a78', uiHint: '#a9a390', gold: '#ffd24a' });

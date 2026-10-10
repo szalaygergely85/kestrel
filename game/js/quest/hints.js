@@ -126,7 +126,7 @@ export function stepHints(world, uiStyle, dt, signals) {
   if (signals.run) markDone(world, 'run');
   if (signals.jump) markDone(world, 'jump');
   if (signals.pointerLocked) markDone(world, 'capture');
-  if (world.state['tower.lantern.taken']) markDone(world, 'burner');
+  if (world.state['tower.sword.taken']) markDone(world, 'burner'); // CH1-02: the lamp is gone, the sword ends the burner hint
   if (signals.mPressed) markDone(world, 'chart');
 
   const hintStyle = uiStyle.hint;

@@ -265,9 +265,9 @@
     // story.md 5 narrative hints (writer), same hint style. `when` = the US-015 programmer AC wording; `on` = the same rule as data.
     // Zones: levelPatch.towerHints below (append to tower.js triggers[]). `skipIfState`: never shown if that world.state key is true.
     storyHints: [
-      { id: 'burner', text: 'The burner still glows. Take what light you can.', keys: [],
-        when: 'once, on entering hintBurner while the lamp is not taken',
-        on: { type: 'zone', zone: 'hintBurner', skipIfState: 'tower.lantern.taken' }, doneOn: 'lantern.take (lamp taken)' },
+      { id: 'burner', text: 'The burner ticks. The Kestrel is done.', keys: [],
+        when: 'once, on entering hintBurner while the sword is not taken (CH1-02)',
+        on: { type: 'zone', zone: 'hintBurner', skipIfState: 'tower.sword.taken' }, doneOn: 'sword taken' },
       { id: 'climb', text: 'Climb. You cannot see the signal from down here.', keys: [],
         when: 'once, on entering hintClimb',
         on: { type: 'zone', zone: 'hintClimb' }, doneOn: 'timeout only' },
@@ -281,7 +281,7 @@
       // tells the player the way out ends the chapter, before they reach the breach (tower.js hintExit zone).
       { id: 'grate', text: 'Something rattles above.', keys: [],
         when: 'once, right when the lever is pulled', on: { type: 'event', event: 'lever.pull' }, doneOn: 'timeout only' },
-      { id: 'exit', text: 'Out there. Step through the breach.', keys: [],
+      { id: 'exit', text: 'The top. Look west through the breach.', keys: [],
         when: 'once, on first entering the summit (z >= 6.0), before the breach',
         on: { type: 'zone', zone: 'hintExit' }, doneOn: 'timeout only' },
       // US-026a-content (PC-B, placeholder strings - writer may reword): the two new

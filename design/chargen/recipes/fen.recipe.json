@@ -1,0 +1,37 @@
+{
+  "v": 1,
+  "kit": "kestrel.chargen.human",
+  "base": "m_avg",
+  "height": 0,
+  "age": "adult",
+  "skin": "warm",
+  "eyes": "grey",
+  "hair": {
+    "id": "short",
+    "ramp": "brown"
+  },
+  "beard": {
+    "id": "mended",
+    "ramp": "brown"
+  },
+  "top": {
+    "id": "tunic",
+    "ramp": "lincoln"
+  },
+  "legs": {
+    "id": "trousers",
+    "ramp": "gall"
+  },
+  "feet": {
+    "id": "boots",
+    "ramp": "walnut"
+  },
+  "outer": {
+    "id": "belt",
+    "ramp": "walnut"
+  },
+  "hat": {
+    "id": "staff",
+    "ramp": "walnut"
+  }
+}
