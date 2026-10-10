@@ -5555,3 +5555,58 @@ This section builds the owner script `docs/chapters/chapter-1-beyond-the-wall.md
   - Replay section toasts or the chapter card on load.
   - Add back any lamp step.
   - Leave the breach usable as an exit.
+
+### 38.38 World stage 2: river ford + near-band streaming (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; PC-A to ratify)
+
+Scope: D-060 stage 2 (relay #2 `ws_fordWest` (992, 1079), road end on the west bank; the road crosses the river at x ~1027). Starts after the owner walks stage 1 (D-060). Only the band/engine plan is decided here; the ford look, bounds and dressing are owner/content (queue `## World stage 2 (38.38)`). Rows: WS2-*.
+
+**Decision: authored band zones + double-buffered background bake + atomic swap. No wider static rect, no revival of the US-026b 3x3 chunk ring.**
+- A static rect cannot do it: tower east margin (x 1664) to a ford west margin (x <= 896) = 6+ chunks wide, > 1.2x the 5x3 bake that already measures ~200 ms on the laptop (gate 160 ms), and the cw <= 6 cap.
+- The US-026b ring (`setCenter`/`bakeChunkStep`, `_chunks[9]`) feeds nobody: every consumer (groundAt, scatter, terrainMesh, TerrainTextures, wg passRaster, terrainShade/detailShade) reads the contiguous `terrain.near`. It stays dormant; do not wire it up.
+- A continuous sliding window would change the band at the tower/bend poses (gpucompare and bench churn). Authored zones keep stage-1 rect A byte-identical.
+
+**Data (world json, engine-validated):** `terrainBands: [{id, cx0, cy0, cw, ch}, ...]` (1..4 zones, each cw/ch 1..6, all the same w x h in v1 so textures/mesh grids never realloc) + optional `bandSwitch: {prefetchM: 176, switchM: 112}`. `terrainBand` (WS1-02) = a one-zone list, and having both is an error. Stage 2: A `{id:'east', cx0:8, cy0:7, cw:5, ch:3}` (x 1024..1664, today) and B `{id:'west', cx0:6, cy0:7, cw:5, ch:3}` (x 768..1408). The overlap x 1024..1408 is 384 m. Margin(zone, x, y) = the distance from the pose to the nearest zone edge.
+
+**Selection (engine, deterministic, hysteresis):** keep the current zone while its margin >= `switchM`. When margin < `prefetchM`, start baking the zone with the largest margin at the pose, if it differs. Swap when margin < `switchM` AND the pending bake is ready. If margin < 32 m and the bake is still pending, finish it synchronously and log `band:late` (a hitch; the route walk fails on it). Walking west, the prefetch starts at x ~1200 and the swap happens at x ~1136. Back east, B's margin hits 176/112 at x ~1232/1296.
+
+**API.**
+- `Terrain.beginNearBand(cx0, cy0, cw, ch)` allocates fresh back arrays (rare event, no pooling: a reused `near` object would break terrainMesh's identity check) and copies the cells that overlap the current `near`. This is valid because the bake is per-cell pure (the WS1-02 "rect == stitched chunks" test; a new test pins the byte equality).
+- `Terrain.nearBandStep(msBudget) -> boolean ready` bakes the missing cells in row slices via `util.bake(x0, y0+r, cell, wCols, rows)` (per-slice alloc <= 16 KB is the one documented exception; do not change the recipe API in stage 2).
+- `Terrain.swapNearBand()` makes the back object `terrain.near` (new identity, `version+1`), recomputes min/max, and `nearReady` stays true.
+- `World.streamBand(px, py, msBudget) -> 0 idle | 1 baking | 2 swapped`: zone pick + bake steps + scatter steps (below). On swap it emits `world:band {from, to}` and then `world:scatter`.
+- `World.ensureBandFor(x, y)` is the synchronous path for load, travel and respawn: pick the zone, bake, scatter, swap.
+- `World.bandId` (read-only).
+
+**Data flow on swap (all pointer flips in one frame):** `terrain.near`, `world.scatter`, `world.detail`, and the `scatter:trunks`/`scatter:detail` colliders, all prepared during the steps (the stepped twin of `refreshTerrainScatter`, which reads a given near object, not `terrain.near`). Consumers react by identity/version, as they do today:
+- terrainMesh rebuilds rows under its own budget. **Fix needed:** on a swap (not the first load) the far exclusion moves at `_publishNear`, not when the build starts. The old near mesh stays drawn until then, so there is no hole and no far/near z-fight.
+- TerrainTextures and passRaster re-upload on `near.version` (same dims, no realloc). The band origin uniforms follow.
+- groundAt/physics read the new arrays atomically. The player is always >= 112 m from the changing cells.
+- main.js on `world:band` calls `hzb.invalidate('band')` (this also drops the stable history), and the instance bindings refresh on `world:scatter`.
+
+**What pops (accepted, >= 112 m away):** the near/far seam jumps 256 m. Trees and ground detail inside the dropped strip switch to the far look (forest canopy from the far grid), and the gained strip gains them. Nothing near the player changes: overlap cells, trees and detail are byte-identical (test). Fauna are not affected (they live in the meadow; no beasts west of the nav area, same rule as 38.36).
+
+**Save/load/travel:** the band is derived and never serialised. Load calls `ensureBandFor(spawn or saved pose)` instead of the fixed rect. A load at the ford bakes B (same size as A, so no change to the load budget). Travel and respawn call `ensureBandFor(target)` at the fade-black, and the fade-in waits for it (the 0.35 s black hides the ~80-200 ms). The `nearBandKey` cache keys on the zone rect, as WS1-02 does.
+
+**Perf plan (gate):**
+- Load: unchanged from stage 1 (one 5x3 bake). The laptop's ~200 ms vs the 160 ms gate is a stage-1 finding, and stage 2 adds nothing. PC-A to ratify the reference machine, or move the load bake under the title screen.
+- Streaming: `streamBand` <= 2 ms JS per frame inside the 8 ms frame (D-007), with 0 alloc when idle.
+- Swap frame: <= 16 ms JS (at most one dropped frame). If the measured scatter+collider flip exceeds that, split the collider build further; never do it on one frame.
+- B costs ~6 new chunks to bake (overlap copied), ~80 ms laptop, so ~40 frames at 2 ms. The prefetch-to-swap walk is 64 m (>= 8 s at a sprint).
+- Memory: 2 bands x 320x192 x 9 B ~ 1.1 MB, plus the scatter twins.
+
+**Tests and gates:**
+- Node: zone pick + hysteresis table; sliced bake == `bakeNearBand` bytes; overlap copy == re-bake; swap atomicity (groundAt continuous at the player); idle 0 alloc over 10k calls; scatter/detail in the overlap identical across zones; `terrainBand` worlds byte-identical; validate errors.
+- Route walk leg 9: bend -> ford -> back. Assert one swap each way, no `band:late`, no fall, and the max frame / swap frame times printed.
+- gpucompare: all rows unchanged (zone A), plus a new `ford` row (pose ~(1000, 1072), yaw 270, zone B via `ensureBandFor`).
+- Bench: a `ford` pose. JS <= 8 ms, GPU p95 <= 8 ms ultra.
+
+**Do not:**
+- Wire the US-026b ring or `setCenter`/`bakeChunkStep` into anything.
+- Pool or reuse `near` objects across swaps.
+- Move the far exclusion before the new near mesh is published.
+- Stream on a timer or by camera pose; it is player pose only.
+- Serialise band state.
+- Bake on the swap frame.
+- Allow zones of different sizes in v1.
+- Put zone choice in game code; the game only passes the pose and the budget.
+- Add river/water physics or a bridge here (content, owner questions).
