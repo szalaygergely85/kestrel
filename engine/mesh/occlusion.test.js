@@ -2,6 +2,8 @@
 import assert from 'node:assert/strict';
 import { buildHzb } from './hzb.js';
 import { projectAabbRect, hzbMipPick, aabbOccluded, nearDepth, instanceOccluded, occlusionPass, createRect } from './occlusion.js';
+import { ensureGcChild } from '../test/allocGate.js';
+ensureGcChild(); // AUD2-40: heap gate needs a fresh --expose-gc child
 
 let seed = 77; const rnd = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
 const W = 96, H = 54;
@@ -136,8 +138,8 @@ const test = (c, levels, t, R, sway = 0) => instanceOccluded(c, levels, t[0], t[
 {
   const c = cam([0, 0, 0], 0), lv = buildHzb(depthOf(c, [{ z: -10, x0: -5, x1: 5, y0: -5, y1: 5 }]), W, H), rect = createRect();
   const run = () => { let k = 0; for (let i = 0; i < 20000; i++) { if (instanceOccluded(c, lv, i % 7, 0, -30, 1, 0.5)) k++; projectAabbRect(c.vp, W, H, 1, 2, -20, 1, rect); aabbOccluded(lv, W, H, rect, nearDepth(c, 1, 2, -20, 1)); } return k; };
-  run(); if (globalThis.gc) globalThis.gc();
-  const h0 = process.memoryUsage().heapUsed; run(); run();
+  run(); run(); globalThis.gc(); globalThis.gc();
+  const h0 = process.memoryUsage().heapUsed; run(); run(); globalThis.gc(); globalThis.gc();
   const grew = process.memoryUsage().heapUsed - h0;
   assert.ok(grew < 200 * 1024, `no per-call allocation (heap grew ${grew} B over 120k calls)`);
 }

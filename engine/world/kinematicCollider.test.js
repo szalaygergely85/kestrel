@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { World } from './World.js';
 import { serialize, deserialize } from './serialize.js';
 import { PHYSICS_DEFAULTS as P } from '../physics/config.js';
+import { ensureGcChild } from '../test/allocGate.js';
+ensureGcChild(); // AUD2-40: heap gate needs a fresh --expose-gc child
 
 let checks = 0;
 const ok = (v, m) => { assert.ok(v, m); checks++; };
@@ -52,10 +54,10 @@ const ids = w => w.colliders.map(c => c.id).join();
   ok(s.entities.find(e => e.id === 'a').components.collider.kinematic === true, 'serialize keeps flag');
   ok(ids(re).includes('npcs:kinematic'), 'restored has kinematic collider');
   // 0 alloc over 10k moves
-  global.gc && global.gc();
+  global.gc();
   const h0 = process.memoryUsage().heapUsed;
   for (let i = 0; i < 10000; i++) world.setEntityCollider('a', 14 + Math.sin(i * 0.01), 22 + Math.cos(i * 0.013), 3);
-  global.gc && global.gc();
+  global.gc();
   const grow = process.memoryUsage().heapUsed - h0;
   ok(grow < 200000, '10k moves heap growth ' + grow);
 }

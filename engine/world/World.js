@@ -1230,10 +1230,13 @@ export class World {
     return ready ? 0 : 1;
   }
 
-  /** Synchronous band pick for load / travel / respawn: bakes + swaps the best zone for (x, y) if it is not current. Returns true when it swapped. */
-  ensureBandFor(x, y) {
+  /** Synchronous band pick for load / travel / respawn: bakes + swaps the best zone for (x, y) if it is not current. Returns true when it swapped.
+   * AUD2-06: pass `keepM` (e.g. `bandSwitch.switchM`, as streamBand uses) for callers that poll with a moving camera (editor 4 Hz):
+   * the current zone is kept while its margin >= keepM, so sitting on the overlap midline does not re-bake. Omitted = exact pick. */
+  ensureBandFor(x, y, keepM) {
     const zs = this.terrainBands, terrain = this.terrain;
     if (!zs || !terrain || this._bandCur < 0) return false;
+    if (keepM !== undefined && this._bandMargin(zs[this._bandCur], x, y, terrain.chunkSize) >= keepM) { if (this._bandPend >= 0) this._cancelBand(); return false; }
     const best = this._bestBand(x, y, terrain.chunkSize);
     if (best === this._bandCur) { if (this._bandPend >= 0) this._cancelBand(); return false; }
     if (this._bandPend >= 0) this._cancelBand();
