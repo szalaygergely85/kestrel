@@ -1197,7 +1197,9 @@
   "water": [
     {"id": "quietPond", "c": [1500, 1010], "look": "pond", "r": 4, "shape": "circle", "z": 2.5},
     {"id": "floodedCellar", "look": "murky", "rect": [1485, 995, 1495, 1005], "shape": "rect", "z": 2.45},
-    {"id": "ford", "block": {"lane": [1066.6, 1069.6], "rect": [1016, 1025, 1042, 1115], "z0": -92, "z1": -84.5}, "look": "water", "note": "WS2-07: river surface at the stepping-stone ford (flat region; no swimming: D-064)", "rect": [1012, 1058, 1046, 1080], "shape": "rect", "z": -90.05}
+    {"id": "ford", "block": {"lane": [1066.6, 1069.6], "rect": [1016, 1025, 1042, 1115], "z0": -92, "z1": -84.5}, "look": "water", "note": "WS2-07: river surface at the stepping-stone ford (flat region; no swimming: D-064)", "rect": [1012, 1058, 1046, 1080], "shape": "rect", "z": -90.05},
+    {"id": "sea", "look": "water", "note": "MAP-02: south sea at G.seaLevel (world_geo.js); flat, no swimming (walk bound = MAP-11)", "rect": [0, 1420, 2112, 2112], "shape": "rect", "waves": "sea", "z": -96},
+    {"id": "glasswater", "look": "water", "note": "MAP-05: Glasswater lake surface (world_geo.js lake.surface); rect inside the bowl ellipse", "rect": [1145, 470, 1325, 540], "shape": "rect", "z": -58}
   ],
   "wind": {
     "zones": [{"id": "stairwell.draft", "dirDeg": 0, "edge": 0.5, "mode": "add", "push": false, "rect": [1495.8, 1020.5, 1499.2, 1023.5], "shape": "rect", "speed": 0.6}]

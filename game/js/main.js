@@ -289,6 +289,7 @@ if (bundle.lazyMeshes) window.__lazyMeshStore = bundle.lazyMeshes; // MESH-LOAD-
 // the registry is built, so the rest of boot is unaware anything special
 // happened - same content shape either way.
 bootMark('content pack loaded (manifest + JSON + meshes)');
+if (window.ASSETS.levels.world_geo && params.get('geo') !== '0') window.ASSETS.levels.world_geo.util.installGeo(window.ASSETS.levels.overworld_far.util); // MAP-02/03/05 (38.42): geography layers + biomes; keep rect byte-identical; ?geo=0 off
 if (bootProg) { bootProg.phase('registry'); await bootPaint(); }
 applyPlaytestOverlay(bundle);
 await applyLocalOverlay(bundle, params, undefined, { lazyMeshes }); // git-ignored content/local/ (licence-restricted assets, this PC only)

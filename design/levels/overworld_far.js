@@ -517,11 +517,14 @@
     if (hxp === undefined) { hx = (heightAt(x + e, y) - heightAt(x - e, y)) / (2 * e); hy = (heightAt(x, y + e) - heightAt(x, y - e)) / (2 * e); }
     else { hx = (hxp - hxm) / (2 * e); hy = (hyp - hym) / (2 * e); }
     var slope = Math.sqrt(hx * hx + hy * hy), dh = Math.hypot(x - T.x, y - T.y), F = R.forest, K = R.rock;
-    if (slope > K.slope || (dh > K.minHomeDist && fbm(x / K.scale, y / K.scale, s + 29, 2, 0.5, 2) > K.threshold)) return 3;
+    var rockHit = slope > K.slope || (dh > K.minHomeDist && fbm(x / K.scale, y / K.scale, s + 29, 2, 0.5, 2) > K.threshold);
+    var geoOn = GEO_N !== 0 && !inKeep(x, y);
+    if (rockHit && !geoOn) return 3;
+    if (rockHit) return geoType(3, x, y, heightAt(x, y), slope);   // MAP-02/03: sea/snow layers may override rock noise
     var base = 0;
     if (fbm(x / F.scale + 17, y / F.scale - 9, s + 13, F.octaves, 0.5, 2) > F.threshold && slope < F.maxSlope &&
         dr > F.riverClear && pathDist(x, y) > F.pathClear && dh > F.homeClear) base = 1;
-    if (GEO_N !== 0 && !inKeep(x, y)) return geoType(base, x, y, heightAt(x, y), slope);
+    if (geoOn) return geoType(base, x, y, heightAt(x, y), slope);
     return base;
   }
 
