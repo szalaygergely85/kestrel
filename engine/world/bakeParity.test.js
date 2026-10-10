@@ -35,7 +35,15 @@ ok('far-cell bake unchanged', same(bf, legacy(0, 0, 8, 40, 40)) === -1);
 if (process.env.BAKE_BENCH) {
   const med = (f) => { const t = []; for (let k = 0; k < 5; k++) { const s = performance.now(); f(); t.push(performance.now() - s); } return t.sort((a, b) => a - b)[2]; };
   const x0 = 9 * cs, y0 = 7 * cs, w = 5 * n, h = 3 * n;
-  console.log('bake ms new', med(() => util.bake(x0, y0, nc, w, h)).toFixed(1), 'legacy', med(() => legacy(x0, y0, nc, w, h)).toFixed(1));
+  { // AUD-31: swapNearBand no longer runs a full minH/maxH pass; 'old pass' = that removed loop, timed on the same band
+  const { Terrain } = await import('./Terrain.js');
+  const T = new Terrain(recipe); T.bakeNearBand(9, 7, 5, 1 + 2);
+  const fid = T._forestTypeId, can = T._canopyM, H = T.near.height, Ty = T.near.type;
+  const old = med(() => { let a = Infinity, b = -Infinity; for (let i = 0; i < H.length; i++) { const v = H[i] + (Ty[i] === fid ? can : 0); if (v < a) a = v; if (v > b) b = v; } return a + b; });
+  const swap = med(() => { T.beginNearBand(8, 7, 5, 3); T.nearBandStep(Infinity); const s = performance.now(); T.swapNearBand(); T._sw = performance.now() - s; });
+  console.log('swap step: full minmax pass (removed)', old.toFixed(2), 'ms; swapNearBand now', T._sw.toFixed(3), 'ms; step+begin total', swap.toFixed(1));
+}
+console.log('bake ms new', med(() => util.bake(x0, y0, nc, w, h)).toFixed(1), 'legacy', med(() => legacy(x0, y0, nc, w, h)).toFixed(1));
 }
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) process.exit(1);

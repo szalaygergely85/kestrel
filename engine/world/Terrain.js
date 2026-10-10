@@ -221,6 +221,9 @@ export class Terrain {
     const b = { x0, y0, w, h, cell: this.nearCell, height: new HC(w * h), type: new TC(w * h), hDraw: new DC(w * h), minH: 0, maxH: 0, version: 0 };
     // overlap in new-band cell coords [ox0,ox1) x [oy0,oy1)
     let ox0 = 0, ox1 = 0, oy0 = 0, oy1 = 0;
+    // AUD-31: minH/maxH accumulated while copying/baking (same formula swapNearBand used in its own full pass)
+    const can = this.realTrees ? 0 : this._canopyM, fid = this._forestTypeId;
+    let mn = Infinity, mx = -Infinity;
     if (cur && cur.cell === b.cell) {
       const dx = Math.round((cur.x0 - x0) / b.cell), dy = Math.round((cur.y0 - y0) / b.cell); // cur origin in new coords
       ox0 = Math.max(0, dx); ox1 = Math.min(w, dx + cur.w); oy0 = Math.max(0, dy); oy1 = Math.min(h, dy + cur.h);
@@ -230,10 +233,11 @@ export class Terrain {
           b.height.set(cur.height.subarray(s0, s0 + len), d0);
           b.type.set(cur.type.subarray(s0, s0 + len), d0);
           b.hDraw.set(cur.hDraw.subarray(s0, s0 + len), d0);
+          for (let i = d0, e = d0 + len; i < e; i++) { const v = b.height[i] + (b.type[i] === fid ? can : 0); if (v < mn) mn = v; if (v > mx) mx = v; }
         }
       } else { ox0 = ox1 = oy0 = oy1 = 0; }
     }
-    this._bb = { b, ox0, ox1, oy0, oy1, row: 0, side: 0, ready: false, cx0, cy0, cw, ch };
+    this._bb = { b, ox0, ox1, oy0, oy1, row: 0, side: 0, ready: false, mn, mx, canopy: can, fid, cx0, cy0, cw, ch };
     return b;
   }
 
@@ -269,6 +273,8 @@ export class Terrain {
           const hv = G.height[i];
           b.height[o + i] = hv; b.type[o + i] = G.type[i];
           b.hDraw[o + i] = hv + (G.type[i] === forestId ? canopy : 0);
+          const v = b.height[o + i] + (b.type[o + i] === st.fid ? st.canopy : 0);
+          if (v < st.mn) st.mn = v; if (v > st.mx) st.mx = v;
         }
       }
       if ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 >= msBudget) break;
@@ -282,10 +288,7 @@ export class Terrain {
     const st = this._bb;
     if (!st || !st.ready) throw new Error('swapNearBand: no finished back band');
     const b = st.b;
-    const canopy = this.realTrees ? 0 : this._canopyM, forestId = this._forestTypeId;
-    let minH = Infinity, maxH = -Infinity;
-    for (let i = 0; i < b.height.length; i++) { const v = b.height[i] + (b.type[i] === forestId ? canopy : 0); if (v < minH) minH = v; if (v > maxH) maxH = v; }
-    b.minH = minH; b.maxH = maxH;
+    b.minH = st.mn; b.maxH = st.mx; // AUD-31: accumulated in beginNearBand/nearBandStep (no full pass here)
     b.version = (this.near ? this.near.version : 0) + 1;
     this.near = b; this.nearReady = true; this._bb = null;
     return b;
