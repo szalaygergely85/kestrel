@@ -1109,3 +1109,8 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - **Never lock the player during the game (owner, 2026-10-10):** no movement/camera lock from dialogues, notes, notices, the chapter card, escorts or wake effects; only real menus (title, pause, settings, and screens that pause the game) stop the player. Dialogues advance with E and close when the player walks away.
 - **Marks (owner, 2026-10-10):** '!' and '?' appear only over quest givers / hand-in targets (someone or something you talk to or read). Objective steps get no world mark; the compass points to them.
 - **Intro wake-up lock stays (owner, 2026-10-10):** the short lying-down wake cut-scene at the start may lock input; it is the only in-game lock besides real menus, the death screen and the travel fade.
+
+## D-065 - Combat: shield + block and bow + arrows instead of magic; no dungeon now; simple errand quests (owner, 2026-10-10; recorded by the PC-B main session)
+- **No magic for now:** the player fights with the sword, a **shield (block)** and a **bow with arrows**. Magic (D-021 spells, the M5 gauntlet/Spark) is off the plan until the owner reopens it. What happens to the existing fire hand / MP bar: OWNER QUESTION (asked 2026-10-10).
+- **No dungeon now:** the M4 dungeon (US-094) is parked; the quest line stays in the open world.
+- **Quest line:** a proper main quest along the relays + simple side errands (pick up, deliver, fetch, reward items) with the giver '!' / '?' flow. Writer draft: docs/questline-2026-10-10.md (in progress).
