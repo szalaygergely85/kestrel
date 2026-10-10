@@ -81,6 +81,7 @@ import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
 import { wireTelegraphs, telegraphsEnabled } from './fx/telegraphWire.js'; // TELEGRAPH-WIRE-01 (lane B1)
 import { stepCombatHint } from './quest/combatHint.js'; // COMBAT-HINT-01
+import { createWildFauna } from './wild/wildFauna.js'; // WILD-06 (38.31): ?fauna=1, default OFF until the owner approves the animal previews
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
@@ -901,6 +902,8 @@ async function runGame(mode, cinematic = null) {
   const entityTintTable = createEntityTintTable(); // TELEGRAPH-WIRE-01 part 2: one table, reused
   let telegraphWire = null; // TELEGRAPH-WIRE-01: rebuilt on 'world:loaded'
   let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
+  let wildFauna = null; // WILD-06: ambient rabbits + deer, rebuilt on 'world:loaded', only with ?fauna=1
+  const faunaOn = params.get('fauna') === '1';
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   let dialogueCtl = null; // DIALOGUE-01b2 (38.28): rebuilt on every 'world:loaded', below
@@ -1084,6 +1087,12 @@ async function runGame(mode, cinematic = null) {
       if (beasts) beasts.dispose();
       if (params.get('bench') === 'combat' || (benchActive && params.get('enemies') === '4')) ensureBenchBoars(world); // COMBAT-BENCH-01
       beasts = createBeastSim(world, { nav: worldDef.nav && buildBeastNav(world, worldDef.nav), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events });
+      // WILD-06: fresh fauna per load (= reset on load / new game / restart). Not combat, not saved, not in the beastSim hash.
+      wildFauna = null; engine.feedVoxels = null;
+      if (faunaOn && window.ASSETS.wildlifeFx) {
+        try { wildFauna = createWildFauna(world, window.ASSETS.wildlifeFx, gameVoxelPool, { seed: worldDef.nav?.seed ?? 1 }); engine.feedVoxels = wildFauna.feed; window.__wildFauna = { wf: wildFauna, env: wildFauna.env, player: () => playerHandle.data.transform, look: () => look }; } // __wildFauna: dev/capture handle
+        catch (err) { console.warn('[fauna] disabled:', err.message); }
+      }
       if (telegraphWire) telegraphWire.dispose(); // TELEGRAPH-WIRE-01 part 1
       telegraphWire = wireTelegraphs(engine.events, world, beasts, telegraphsEnabled(params, isCaptureOrBench));
       if (saveRelay) saveRelay.applyDeadToBeasts(beasts); // US-089w: restored dead beasts stay gone (create reset them alive)
@@ -1500,6 +1509,7 @@ async function runGame(mode, cinematic = null) {
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
       const simDue = hitStop.due(1000 / 60); // HITSTOP-01: the window gates beasts.step only; the sword freezes by its own hitStopHard counter
       if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); }
+      if (wildFauna) { const pt = playerHandle.data.transform; wildFauna.step(dt, pt.x, pt.y, controls.run, look ? look.yawDeg : 0); } // WILD-06: after the player, outside the combat hash; a >30 m jump (waystone/respawn) resets it
       if (bearTurn) { const pt = playerHandle.data.transform; bearTurn.step(dt, pt.x, pt.y, !!(dialogueCtl && dialogueCtl.open)); } // NPC-BEAR-01 // US-079a (29.1)
       if (beasts && assets.uiStyle) stepCombatHint(engine.world, assets.uiStyle, beasts); // COMBAT-HINT-01: once-per-save first-fight hint (taken from lane C)
       if (telegraphWire) telegraphWire.step(performance.now());
@@ -1733,6 +1743,7 @@ async function runGame(mode, cinematic = null) {
       // needs its own explicit `.project()` before `renderWorld` reads
       // `fb.voxelPool.list` (compositor.js).
       gameVoxelPool.collect(engine.world, cam);
+      if (engine.feedVoxels) engine.feedVoxels(gameVoxelPool, cam); // WILD-06: ambient fauna pushes (same hook as frameRenderer.js)
       if (telegraphWire && beasts) { fillEntityTints(entityTintTable, beasts.entities, gameVoxelPool, performance.now()); fb.entityTints = entityTintTable; } else if (fb.entityTints) fb.entityTints = undefined; // TELEGRAPH-WIRE-01 part 2
       if (!fb.gpu) gameVoxelPool.project(cam, rt, renderer); // ME-19a: CPU reference uses the same mesh camera.
       lap(SEC.voxel);
