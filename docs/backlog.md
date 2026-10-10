@@ -1834,7 +1834,7 @@ No engine change (38.35). Order: QG-W1 + QG-D1 in parallel with QG-01/02 -> QG-0
 | QG-02 | kestrel-3 | 0.5 d | `questBook.js` (`migrateQuestSave`), `game/js/quest/save/saveState.js`, `questSave.test.js` | QG-01 | arch-review
 | QG-03 | kestrel-1 | 0.75 d | `game/js/questRelay.js`, `game/js/saveRelay.js`, `game/js/quest/dialogueCtl.js`, `game/js/main.js`, `content/quests/m1.quest.json`, `content/quests/burl.boars.quest.json` (new) + wherever m1 is loaded, `content/dialogue/bear.dialogue.json`, `tools/validate-content.mjs` | QG-01, QG-02, QG-D1 (coin def; until then reward an existing item) |
 | QG-04 | kestrel-1 | 0.5 d | `game/js/quest/wire/questMarks.js`, `game/js/quest/mapCard.js`, main.js marker wiring | QG-03, QG-D1 |
-| QG-05 | kestrel-1 | 0.5 d | `game/js/ui/questLog.js` (+ preview), `game/js/quest/input/bindings.js`, `game/js/gameKeys.js`, main.js | QG-03 |
+| QG-05 | kestrel-1 (VIEW DONE kestrel-2, mount = NEEDS B1-main) | 0.5 d | `game/js/ui/questLog.js` (+ preview), `game/js/quest/input/bindings.js`, `game/js/gameKeys.js`, main.js | QG-03 |
 | QG-W1 | writer | 0.25 d | `docs/story.md` (Burl quest texts) - NEEDS WRITER | - |
 | QG-D1 | designer | 0.25 d | `?` marker model (`questMarkReady`), `coin` glyph/icon | - |
 
