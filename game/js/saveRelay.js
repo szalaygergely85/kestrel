@@ -12,7 +12,7 @@ const STATE_GONE = 12; // beastSim.STATE_GONE (hidden, skipped everywhere) - sam
 /**
  * @param {{storage:any, questDef:any, slot?:number, enabled?:boolean, autosaveSec?:number, playerName?:string, place?:string}} o
  */
-export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = true, autosaveSec = AUTOSAVE_SEC, playerName = 'Wick', place = 'Kestrel' }) {
+export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = true, autosaveSec = AUTOSAVE_SEC, playerName = 'Wick', place = 'Kestrel', defaultLook = null }) {
   let slot = slot0; // US-090w: the title menu picks the slot (setSlot)
   const adapter = storage ? createStorageAdapter(storage) : null;
   const quest = createQuestRelay(questDef);
@@ -21,6 +21,7 @@ export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = 
   const tmp = { x: 0, y: 0, z: 0 };
   let breach = null, breachFor = null;
   let playSec = 0, sinceSave = 0, pending = null, lastResult = null;
+  let look = defaultLook; // CHARGEN-16: player.look (CharRecipe); new game = kit default, restored from the save on load
 
   const relay = {
     enabled, quest, adapter,
@@ -33,6 +34,8 @@ export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = 
     /** PAUSE-MENU-01: true when play time has passed since the last save/load (asks "Save first?"). */
     get dirty() { return sinceSave > 0; },
     get lastResult() { return lastResult; },
+    get look() { return look; },
+    set look(v) { look = v; },
 
     /** Subscribes to engine events the seam has no name for (chest:opened); beast:died / item:got arrive via handlers().
      *  Returns an unsubscribe function. */
@@ -65,7 +68,7 @@ export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = 
       if (!r.ok) { lastResult = { op: 'load', ok: false, error: r.error }; return null; }
       if (!r.save) return null;
       try {
-        const a = applySave(r.save, assets, { questDef, worldOptions: worldOpts });
+        const a = applySave(r.save, assets, { questDef, worldOptions: worldOpts, defaultLook });
         pending = a;
         lastResult = { op: 'load', ok: true };
         return a.world;
@@ -80,8 +83,9 @@ export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = 
         for (const id of pending.openedChests) chests.add(id);
         for (const id of pending.deadBeasts) dead.add(id);
         playSec = pending.meta.playTimeSec;
+        look = pending.look || defaultLook;
         pending = null;
-      } else { quest.reset(null); playSec = 0; }
+      } else { quest.reset(null); playSec = 0; look = defaultLook; }
     },
 
     /** After createBeastSim: restored dead beasts stay gone (the sim made them alive again). */
@@ -102,7 +106,7 @@ export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = 
       if (!enabled || !adapter || !world) return false;
       let save;
       try {
-        save = collectSave(world, { quest: quest.state, questDef, openedChests: [...chests], deadBeasts: [...dead], playerName, place, playTimeSec: playSec, savedAt: Date.now() }); // SAVE-TIME-01: only the real writer stamps time (pure collect stays deterministic)
+        save = collectSave(world, { quest: quest.state, questDef, openedChests: [...chests], deadBeasts: [...dead], playerName, place, playTimeSec: playSec, savedAt: Date.now(), look }); // SAVE-TIME-01: only the real writer stamps time (pure collect stays deterministic)
         if (ending && save.world.state) save.world.state['quest.endT'] = -1;
       } catch (e) { lastResult = { op: 'save', ok: false, error: String(e) }; return false; }
       const r = adapter.writeSlot(slot, save);
