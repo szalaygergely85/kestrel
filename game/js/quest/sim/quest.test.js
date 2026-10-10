@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createQuest, applyQuestEvent, questObjectives, stringifyQuest, questHash, validateQuestDefinition } from './quest.js';
 import {makeFrame,localToWorld} from '../../../../engine/index.js';
 import {createSaveRelay} from '../../saveRelay.js';
-const def=JSON.parse(readFileSync(new URL('../../../../content/quests/m1.quest.json',import.meta.url)));
+const def=JSON.parse(readFileSync(new URL('./fixtures/m1.legacy.quest.json',import.meta.url)));
 def.objectives[4].when={type:'beasts',ids:['boar1','boar2','boar3','boar4','boar5'],count:5}; // legacy m1 shape (QG-03 moved the boar fight to burl.boars); quest.js semantics are what is tested here
 const events=[{type:'flag:set',key:'wake',value:true},{type:'item:got',id:'lantern'},{type:'area:entered',id:'breach'},
  {type:'item:got',id:'sword'},{type:'beast:died',id:'boar1'},{type:'beast:died',id:'boar2'},{type:'beast:died',id:'boar3'},{type:'beast:died',id:'boar4'},{type:'beast:died',id:'boar5'},{type:'area:entered',id:'waystone'}];

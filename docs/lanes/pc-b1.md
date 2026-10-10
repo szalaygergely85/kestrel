@@ -456,3 +456,8 @@ B1 2026-10-09 (kestrel-1) SETTINGS-MOUNT-01 -> po-review: full createSettingsVie
 - CRYSTAL GATE `aether.attuned`: without it E = hint toast only. NEEDS WRITER: relay without crystal (placeholder 'The relay stays dark.', key hint.relay.nocrystal.PLACEHOLDER). Wake toast = story.md q06 notice lines behind `showWakeNotice` (swap in CH1-04a). Prompt = "[E] Hold up the crystal".
 - Open: wire/waystone.js still shows the STONE toast ("The stone will remember") on a relay touch (needs per-kind text, WS1-W1 toast.relay.saved); light grow only visible with a LightSet.
 - Not browser-run: `node tools/verify-relay-wake.mjs {port}` (port 9500-9574, optional backend arg; node --check ok; shots relay-dead/awake in docs/test-reports/captures). Tests: filter relayWake,tower,waystone,quest 66/66, check-deps OK.
+
+## CH1-01 m1 chain data + migration (kestrel-3, 2026-10-10) - po-review
+- m1.quest.json = 11 steps + 7 sections (lantern removed); burl.boars title "Boars in the Woods"; areas.json + world_m1 triggers towerDoor (PLACEHOLDER at (1486.5,1025), TODO CH1-D1a), roadWest, bendRelay.
+- questBook.js: `validateSections(def)`, `migrateM1Ch1(game, newIds?)` (pure; game={quest, world?:{state}}; returns same object if untouched; 6/6 sets world.state flags). NOT wired: CH1-02 must call it before createQuest/migrateQuestSave (note: migrateQuestSave still expects the OLD m1 shape, run it first or with old def).
+- Old-chain tests now use game/js/quest/sim/fixtures/m1.legacy.quest.json (quest, questLog, questBook, questSave, questGiverFlow); questLogScreen/questGiverFlow event lists updated to the new chain. Suites quest/questBook/tower/validate-content green (66/66).

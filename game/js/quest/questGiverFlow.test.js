@@ -39,7 +39,7 @@ function setup(relay) {
   return { ctl, state, flagsOut, talk };
 }
 const mkRelay = (saved, sq) => createQuestRelay(m1, saved, [burl], sq);
-const toSword = (r) => { for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'item:got', id: 'lantern' }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }]) r.feed(e); };
+const toSword = (r) => { for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }, { type: 'area:entered', id: 'towerDoor' }]) r.feed(e); };
 const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died', id: BOARS[i] }); };
 
 // ---- accept -> kill 5 -> ready -> hand in -> done -> m1 beasts completes ----
@@ -95,21 +95,21 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
 }
 // ---- old save (no game.quests, pre-QG-03 m1 shape) migrates through applySave ----
 {
-  const oldM1 = structuredClone(m1); oldM1.objectives[4].when = { type: 'beasts', ids: BOARS, count: 5 };
+  const oldM1 = JSON.parse(readFileSync(new URL('./sim/fixtures/m1.legacy.quest.json', import.meta.url))); oldM1.objectives[4].when = { type: 'beasts', ids: BOARS, count: 5 };
   const rOld = createQuestRelay(oldM1, null, []);
-  toSword(rOld); for (let i = 0; i < 3; i++) rOld.feed({ type: 'beast:died', id: BOARS[i] });
+  for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'item:got', id: 'lantern' }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }]) rOld.feed(e); for (let i = 0; i < 3; i++) rOld.feed({ type: 'beast:died', id: BOARS[i] });
   const migrate = () => {
     const save = collectSave(world0, { quest: rOld.state, questDef: oldM1, deadBeasts: BOARS.slice(0, rOld.state.deadBeasts.length) });
-    return applySave(save, assets, { questDef: m1, giverDefs: [burl] });
+    return applySave(save, assets, { questDef: oldM1, giverDefs: [burl] });
   };
   const mid = migrate();
   assert.equal(mid.quests['burl.boars'].accepted, true, 'mid-fight old save -> accepted');
-  const r3 = mkRelay(rOld.state && mid.quest, mid.quests);
+  const r3 = createQuestRelay(oldM1, rOld.state && mid.quest, [burl], mid.quests);
   assert.equal(r3.book.statusOf('burl.boars'), 2); assert.equal(r3.book.questState(1).deadBeasts.length, 3);
   for (let i = 3; i < 5; i++) rOld.feed({ type: 'beast:died', id: BOARS[i] });
   const fin = migrate();
   assert.deepEqual([fin.quests['burl.boars'].accepted, fin.quests['burl.boars'].handedIn], [true, true]);
-  const r4 = mkRelay(fin.quest, fin.quests);
+  const r4 = createQuestRelay(oldM1, fin.quest, [burl], fin.quests);
   assert.equal(r4.book.statusOf('burl.boars'), 4);
   assert.equal(r4.book.handIn('burl.boars'), null, 'no retroactive reward');
 }

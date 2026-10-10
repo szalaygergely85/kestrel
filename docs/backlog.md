@@ -1975,7 +1975,7 @@ Order: writer rows + CH1-D1a + CH1-E1/E2 + CH1-01 in parallel -> CH1-02, CH1-03,
 
 | ID | Slot | Size | Files | Deps | Status |
 |---|---|---|---|---|---|
-| CH1-01 | kestrel-4 | 0.75 d | `content/quests/m1.quest.json` (11 steps + sections), `content/quests/burl.boars.quest.json` (title), `content/quests/areas.json`, `content/worlds/world_m1.world.json` (area triggers `towerDoor`/`roadWest`/`bendRelay`), `game/js/quest/sim/questBook.js` (`validateSections`, `migrateM1Ch1`) + tests | - | todo [PC-B] |
+| CH1-01 | kestrel-4 | 0.75 d | `content/quests/m1.quest.json` (11 steps + sections), `content/quests/burl.boars.quest.json` (title), `content/quests/areas.json`, `content/worlds/world_m1.world.json` (area triggers `towerDoor`/`roadWest`/`bendRelay`), `game/js/quest/sim/questBook.js` (`validateSections`, `migrateM1Ch1`) + tests | - | po-review [PC-B] |
 | CH1-02 | kestrel-1 | 0.75 d | `game/js/questRelay.js` (`questFlag`, lantern feed out), `game/js/saveRelay.js` (run the migration), `game/js/main.js` (section toasts, marker bindings), `game/js/quest/hints.js` | CH1-01 | todo [PC-B] |
 | CH1-03 | kestrel-1 | 0.5 d | `game/js/quest/crystal.js` (new) + test, main.js (hook on `quest:ready` + `world:loaded`) | CH1-02, CH1-D2 (item def; a placeholder is fine) | todo [PC-B] |
 | CH1-04a | kestrel-1 | 0.5 d | `game/js/ui/noticeView.js` (new) + test, main.js mount, game text table | - | todo [PC-B] |
@@ -1999,7 +1999,7 @@ Order: writer rows + CH1-D1a + CH1-E1/E2 + CH1-01 in parallel -> CH1-02, CH1-03,
 | CH1-W4 | writer | 0.5 d | `docs/story.md`: Fen graph | - | todo NEEDS WRITER |
 | CH1-W5 | writer | 0.25 d | `docs/story.md`: chapter card + journal | - | todo NEEDS WRITER |
 
-### CH1-01 m1 chain data + migration  [P1] [todo] [PC-B kestrel-4]
+### CH1-01 m1 chain data + migration  [P1] [po-review] [PC-B kestrel-4]
 - [ ] `m1.quest.json` = the 11 steps of 38.37 item 1 (ids, order, `when`, `section`), `sections` with the 7 script titles; `lantern` removed. `burl.boars` title "Boars in the Woods".
 - [ ] `areas.json` + world area-only triggers `towerDoor`, `roadWest`, `bendRelay` (`towerDoor` coordinates from CH1-D1a; until then a placeholder at the old breach outcrop, marked TODO).
 - [ ] `validateSections` (every `section` names a declared section; the sections are contiguous runs).

@@ -2,6 +2,9 @@
   "version": 1,
   "areas": {
     "breach": { "world": "world_m1", "structure": "tower", "marker": "breach" },
-    "waystone": { "world": "world_m1", "trigger": "end" }
+    "waystone": { "world": "world_m1", "trigger": "end" },
+    "towerDoor": { "world": "world_m1", "trigger": "towerDoor" },
+    "roadWest": { "world": "world_m1", "trigger": "roadWest" },
+    "bendRelay": { "world": "world_m1", "trigger": "bendRelay" }
   }
 }
