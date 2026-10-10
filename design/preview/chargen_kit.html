@@ -29,7 +29,7 @@
 </style>
 </head>
 <body>
-<h1>Kestrel : CHARGEN-26 preview - base <code>m_avg</code> v3, bearded-knight style (D-063) - default + knight outfits (design v1.58)</h1>
+<h1>Kestrel : CHARGEN-26c preview - base <code>m_avg</code> v3, bearded-knight style (D-063) - second detail pass, before / after in section 0</h1>
 <div class="note">
   Kit = <code>content/chargen/human.charkit.json</code> (the only source), written by <code>node tools/chargen-build-kit.mjs</code> from
   <code>design/chargen/human_kit.js</code>. D-063: the owner's bearded-knight reference for ALL characters (no wings, no halo), plus "look the
@@ -60,6 +60,18 @@
 
 <h2>Checks</h2>
 <div id="checks"><div class="info">building ...</div></div>
+
+<h2>0. Detail compare: CHARGEN-26b (before) vs CHARGEN-26c (after) - default, knight, Fen (skin tone = section 2 buttons, light = sliders)</h2>
+<div class="note">
+  26c (owner "my issue with the model is the details... you can still add more"): face - lit forehead, brow tails thinning out, dark
+  outer lash flicks, ruddy cheeks + lit cheek tops, shaded nose wings, nasolabial folds, jaw-line shade, lit ear rim; hair cut into
+  waving 3-cell locks of alternating light / base tone with dark gaps and dark tips low down; beard in wavy strands with lit cheek strands
+  and a moustache split at the philtrum; relief - knuckle bumps, a rolled shirt cuff, a boot lacing ridge, a sole welt; knight decal -
+  red armhole trim, dotted side + back seams, glove knuckles; Fen decal - criss-cross laces, upper band over a dark sole, iron belt
+  buckle, collar band + neck slit, sleeve hems, shoulder seams, knee creases. Same grid (37 x 20 x 72), rig, height and slots.
+  The default outfit's shells paint ONE colour each, so its seams / buckle read only as relief (engine ask in design/README.md 25).
+</div>
+<div id="compare"></div>
 
 <h2>1. All 5 skin tones: default outfit front / 3/4 / profile, knight outfit front / 3/4 / profile, knight face front / 3/4 / profile</h2>
 <div id="sheet"></div>
@@ -567,11 +579,50 @@
     out.forEach(function (o) { var d = document.createElement('div'); d.className = o[0]; d.textContent = o[1]; host.appendChild(d); });
   }
 
+  // ------------------------------------------------------------------ section 0: 26b vs 26c compare (same recipes, both kits)
+  var kitB = CK.buildHumanKit(P, { legacy26b: true }), cmpKit = null, CMP = null, cmpRows = null;
+  var CMP_VIEWS = [{ face: 1, yaw: 0, cap: 'face front' }, { face: 1, yaw: -35, cap: 'face 3/4' }, { face: 1, yaw: -90, cap: 'face profile' },
+                   { face: 1, yaw: 180, cap: 'head back' }, { yaw: 0, cap: 'front' }, { yaw: -35, cap: '3/4' }, { yaw: 180, cap: 'back' }];
+  function renderCompare() {
+    if (cmpKit !== kit) {
+      cmpKit = kit;
+      CMP = ['default', 'knight', 'fen'].map(function (o) {
+        var look = lookOf(o);
+        return { o: o, before: CK.composePreview(kitB, 'm_avg', look), after: CK.composePreview(kit, 'm_avg', look) };
+      });
+    }
+    if (!cmpRows) {
+      cmpRows = CMP.map(function (c) {
+        var r = {};
+        ['before', 'after'].forEach(function (w) {
+          var row = document.createElement('div'); row.className = 'row'; $('compare').appendChild(row);
+          var lab = document.createElement('div'); lab.className = 'tlabel'; lab.textContent = c.o + ' ' + (w === 'before' ? '26b' : '26c'); row.appendChild(lab);
+          r[w] = CMP_VIEWS.map(function (a) { return a.face ? makeCanvas(row, 170, 170, c.o + ' ' + w + ' ' + a.cap) : makeCanvas(row, 120, 250, c.o + ' ' + w + ' ' + a.cap); });
+        });
+        return r;
+      });
+    }
+    var keep = D;
+    try {
+      CMP.forEach(function (c, i) {
+        var col = colOf(charTable(recipe(ctl.tone, c.o)));
+        ['before', 'after'].forEach(function (w) {
+          D = c[w];
+          cmpRows[i][w].forEach(function (v, j) {
+            var a = CMP_VIEWS[j];
+            var cam = a.face ? orthoCam(FACE_C, a.yaw, 4, 170, 170, FACE_VIEW) : orthoCam(BODY_C, a.yaw, ctl.pitch, 120, 250, 76);
+            paintMesh(v.ctx, traceView(cam, null), col);
+          });
+        });
+      });
+    } finally { D = keep; }
+  }
+
   // ------------------------------------------------------------------ main
   function renderAll() {
     try {
       if (ctl.outfit !== builtOutfit) setup();
-      renderSheet(); renderTones(); renderAngles(); renderAscii(); renderRig();
+      renderCompare(); renderSheet(); renderTones(); renderAngles(); renderAscii(); renderRig();
     } catch (e) { $('fatal').textContent = 'render threw: ' + e.message; console.error(e); }
   }
   var pend = 0;
