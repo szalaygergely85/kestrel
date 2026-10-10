@@ -359,12 +359,11 @@
     },
     rock: {
       v1: 'rock', seed: 111,
-      desc: 'Natural hill rock (outcrop, spur, path walls): WALL-BRICK-01 facets 0.6 x 0.4 m (was 1.1 x 0.7 tones only, read as flat ' +
-            'blue-grey slabs even close up) with dark crack lines between them (offset 0.37 so no regular bond reads) in 3 greys, ' +
-            'rough : ; % # & glyphs, moss on some facets.',
+      desc: 'Natural hill rock (outcrop, spur, path walls): no mortar grid. Irregular facets 1.1 x 0.7 m (tones only, ' +
+            'offset 0.37 so no bond reads) in 4 greys, rough : ; % # & glyphs, moss on some facets.',
       albedo: 0.80, bgK: 0.20, detail: 16, jitter: 0.14,
       tones: [['rock', 4], ['rockHi', 2], ['rockLo', 3]],
-      grid: { u: 0.6, v: 0.4, stagger: 0.37, shade: 0.58, tint: 'mortar', amount: 0.35, bgK: 0.14, cross: '+', maxCover: 0.5, tie: true },
+      grid: { u: 1.1, v: 0.7, stagger: 0.37, lines: false },   // ROCK-NATURAL-01 (owner: rocks looked built from bricks): back to natural facets, no mortar
       face: { set: 'rockFace', mid: 'rockMid', far: 'rockFar' },
       overlay: { set: 'moss', tints: ['mossDark', 'moss'], amount: 0.55, shade: 0.95, joint: 0.0, face: 0.12 },
       lod: { mid: 12, far: 25, dither: 3 }
