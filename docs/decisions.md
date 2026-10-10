@@ -1090,3 +1090,4 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - **No lamp** (owner: "i dont want lamp. we talked about it will be a torch. no lamp"): no lamp pickup step and no lamp in the waking; the torch stays the later M4 tool. **Waking uses an aether crystal**: killing the boars gives Wick a crystal ("maybe find boar gives you a crystal for killing the boar which activates") that wakes the Waystone; script lines that mention the lamp are rewritten to the crystal.
 - **The breach climb stays required** (owner) - Leave the Tower comes after the climb.
 - Fen supersedes the D-058 removal: the owner's own script brings him back as a man.
+- Owner addition (2026-10-10): the tower must read as a TALL tower from outside (interior is good - keep it), the **sword lies at the top**; order = wake -> climb to the top (breach, required) -> sword + note -> come back down -> leave through an **entrance at the bottom** -> meadow.
