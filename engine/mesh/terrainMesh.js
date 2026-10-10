@@ -659,6 +659,7 @@ export class TerrainMeshSet {
     for (const k of this._excludedTileSet) if (!nextExcluded.has(k)) applyFarExclusion(this.terrain, this.far[k], null);
     for (const k of nextExcluded) applyFarExclusion(this.terrain, this.far[k], bandRect);
     this._excludedTileSet = nextExcluded;
+    this._exclRect = bandRect; // the rect the far grid is currently carved for (test/debug: must equal the published near rect)
   }
 
   // -- live terrain edits (ED-TERRAIN-1b, arch 37.12) ------------------------
@@ -754,7 +755,9 @@ export class TerrainMeshSet {
       // grid (+ canopy) then pokes through the tower floor for those frames
       // (spawn pose kind 4 %). The hole is the lesser evil and matches the
       // DDA's own "no terrain until baked" transient.
-      if (terrain.near) this._updateFarExclusion(this._bandRectFor(terrain.near));
+      // WS2-03 (arch 38.38): on a band SWAP (a near mesh is already published) a far re-bake must carve for the
+      // PUBLISHED band, not the pending `terrain.near` - the exclusion moves only at `_publishNear`.
+      if (terrain.near) this._updateFarExclusion(this._builtFor ? this._bandRect : this._bandRectFor(terrain.near));
     }
 
     if (terrain.near && terrain.near !== this._builtFor) {
