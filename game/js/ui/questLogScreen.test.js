@@ -21,7 +21,7 @@ empty.open(); assert.equal(empty.snapshot().lines.length, 0); empty.draw(ui);
 for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'item:got', id: 'lantern' }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }]) book.feed(e);
 assert.equal(book.accept('burl.boars'), true);
 log.draw(ui); s = log.snapshot();
-assert.ok(s.lines.some(l => l.includes("Burl's boars")));
+assert.ok(s.lines.some(l => l.includes("Boars in the Berries")));
 assert.ok(log.handleKey('KeyS') && log.snapshot().sel === 1);
 s = log.snapshot(); assert.ok(s.lines.some(l => l.includes('[>] Bring down the five wild boars 0/5')));
 for (const id of ['boar1', 'boar2']) book.feed({ type: 'beast:died', id });
@@ -29,7 +29,7 @@ log.draw(ui); assert.ok(log.snapshot().lines.some(l => l.endsWith('2/5')), 'rebu
 // ready
 for (const id of ['boar3', 'boar4', 'boar5']) book.feed({ type: 'beast:died', id });
 log.draw(ui); s = log.snapshot();
-assert.ok(s.lines.some(l => l.includes('> The boars are down')), 'returnText when ready');
+assert.ok(s.lines.some(l => l.includes('> Tell Burl the slope is quiet')), 'returnText when ready');
 assert.ok(s.lines.some(l => l.includes('[x] Bring down')));
 // done
 assert.ok(book.handIn('burl.boars')); log.draw(ui); s = log.snapshot();
