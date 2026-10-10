@@ -20,7 +20,7 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
   const chests = new Set(), dead = new Set();
   const facts = { wakeDone: false, swordTaken: false, endStarted: false, x: 0, y: 0, z: 0 };
   const tmp = { x: 0, y: 0, z: 0 };
-  let breach = null, breachFor = null;
+  let breach = null, breachFor = null, zones = [];
   let playSec = 0, sinceSave = 0, pending = null, lastResult = null;
   let look = defaultLook; // CHARGEN-16: player.look (CharRecipe); new game = kit default, restored from the save on load
 
@@ -132,13 +132,14 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
      * @param {{wakeDone:boolean, canSave:boolean}} o
      */
     stepGame(dt, world, pos, o) {
-      if (breachFor !== world) { breachFor = world; breach = resolveBreach(world, tmp); }
+      if (breachFor !== world) { breachFor = world; breach = resolveBreach(world, tmp); zones = resolveZones(world); }
       quest.world = world; quest.checkSections();
       const ws = world.state, wasWay = quest.state.areas.includes('waystone');
       facts.wakeDone = o.wakeDone; facts.swordTaken = ws['tower.sword.taken'] === true;
       facts.endStarted = typeof ws['quest.endT'] === 'number' && ws['quest.endT'] >= 0;
       facts.x = pos.x; facts.y = pos.y; facts.z = pos.z;
       quest.poll(facts, breach);
+      quest.pollAreas(pos.x, pos.y, pos.z, zones);
       if (!wasWay && quest.state.areas.includes('waystone')) { relay.save(world, { ending: true }); playSec += dt; return; }
       relay.tick(dt, world, o.canSave && !facts.endStarted);
     },
@@ -164,4 +165,15 @@ function resolveBreach(world, out) {
     return { x: out.x, y: out.y, z: out.z };
   }
   return null;
+}
+
+/** QUEST-CHAIN-Q-01: the area-only world circle zones the quests wait on (content/quests/areas.json 'trigger' areas except the waystone). */
+const ZONE_IDS = ['towerDoor', 'roadWest', 'bendRelay'];
+function resolveZones(world) {
+  const out = [];
+  for (const id of ZONE_IDS) {
+    const t = (world.triggers || []).find((q) => q.key === 'world.' + id);
+    if (t && t.shape === 'circle') out.push({ id, x: t.x, y: t.y, r: t.r, zMin: t.zMin });
+  }
+  return out;
 }
