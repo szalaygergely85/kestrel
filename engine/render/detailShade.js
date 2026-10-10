@@ -594,6 +594,7 @@ function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff
   const fog = table.fog;
   let f = dist <= fog.start ? 0 : dist >= fog.full ? 1 : (dist - fog.start) / (fog.full - fog.start);
   let fogFgC = fog.fgRGB, fogBgC = fog.bgRGB;
+  const fLin = f; // edge-pass gate (gbuf.fogF): the LINEAR factor - edge.wgsl fogF(dist) recomputes it without the AUD-45 boost
   if (fogShapeCtx.on && f > 0) { // AUD-45 (twin of the WGSL block in fs_main): height fog + sun in-scatter
     const sc = fogShapeCtx, cols = sc.terms.cols;
     const row = Math.floor(cellIdx / cols), col = cellIdx - row * cols;
@@ -645,7 +646,7 @@ function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff
   out.glyphIdx = glyphCode;
   out.fg[0] = r; out.fg[1] = gg; out.fg[2] = bl;
   out.bg[0] = xr; out.bg[1] = xg; out.bg[2] = xb;
-  out.f = f;
+  out.f = fLin; // NOT the height-boosted f: GPU edge gate parity (fix of AUD-45 edge divergence)
   out.onJoint = core.onJoint;
   return out;
 }
