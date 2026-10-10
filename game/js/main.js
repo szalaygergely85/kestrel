@@ -56,7 +56,7 @@ import { resetGameAudio, stepGameAudio } from './audio/sfx.js';
 // ---- end US-020a ----
 import { createSafeBindings, resolveGameKeys } from './gameKeys.js'; // BINDINGS-WIRE-01
 import { loadSettings, saveSettings, getSaveStorage } from './platform/index.js'; // US-060: remembered mute (D-012)
-import { loadBundleFromPackages } from './packBoot.js';
+import { loadBootBundle } from './packBoot.js';
 import { applyLocalOverlay } from './localOverlay.js';
 import { createBootCard } from './bootCard.js'; // boot loading card + ASCII progress bar
 import { createBootStageTimer } from './bootStageTimer.js'; // S8-B1-20: per-stage ms (content/adapter/pipelines/world/meshes)
@@ -257,8 +257,7 @@ const canvas = document.getElementById('screen');
 // `codeParts` so `fromJSON` can overlay the JSON levels/worlds on top.
 // MESH-LOAD-01: lazy mesh payloads in the game (colliders stay eager); capture/bench/compare pages stay eager so their results stay comparable. ?lazymesh=0 = eager.
 const lazyMeshes = !isCaptureOrBench && params.get('lazymesh') !== '0';
-const bundle = (await loadBundleFromPackages(params, { lazyMeshes }, (m) => console.log('[pack] ' + m))) // KPKG-04: ?pack=<a.kestrel,...> boots from packages
-  || await loadContentPack('../content/manifest.json', { lazyMeshes });
+const bundle = await loadBootBundle(params, { lazyMeshes }, (m) => console.log('[pack] ' + m)); // KPKG-04 + CHARGEN-15 (38.33): ?pack= packages + content/packages/index.json add-ons (?addons=0 skips) over the loose base
 if (bundle.lazyMeshes) window.__lazyMeshStore = bundle.lazyMeshes; // MESH-LOAD-01: dev handle (tools/lazymesh-trace.mjs, F3 debugging); the engine no longer sets it
 // US-034 (24.11): `?playtest=1` overlays the editor's in-memory (possibly
 // unsaved) level/world edits from `kestrel.playtest` onto `bundle` BEFORE

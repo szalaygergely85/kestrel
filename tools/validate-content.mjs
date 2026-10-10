@@ -1,6 +1,17 @@
 #!/usr/bin/env node
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
+// CHARGEN-15 (38.33): `char.<id>` models come from the add-on packages in content/packages/index.json (registered at boot, not in ASSETS.models).
+const addonChars = new Set();
+try {
+  const { openPackage } = await import('../engine/index.js');
+  const dir = resolvePath('content/packages');
+  const idx = JSON.parse(readFileSync(resolvePath(dir, 'index.json'), 'utf8'));
+  for (const rel of idx.packages || []) {
+    const pkg = await openPackage(new Uint8Array(readFileSync(resolvePath(dir, rel))));
+    for (const a of pkg.manifest.assets || []) if (/^model\.(rigged|static)$/.test(a.type) && a.id) addonChars.add('char.' + a.id);
+  }
+} catch { /* no index = no add-ons */ }
 // tools/validate-content.mjs (US-058, docs/backlog.md row 30b).
 //
 // Cross-reference checker for the designer's design/ content pack: catches
@@ -409,7 +420,7 @@ export function validateContent(ASSETS, opts = {}) {
         check(!!resolveModel(models, e.model, undefined), `${base}.entities[${e.id}].model`, `model "${e.model}" not found in ASSETS.models`);
       }
       if (typeof voxelModel === 'string') {
-        check(!!resolveModel(models, voxelModel, undefined), `${base}.entities[${e.id}].components.voxel.model`, `model "${voxelModel}" not found in ASSETS.models`);
+        check(!!resolveModel(models, voxelModel, undefined) || addonChars.has(voxelModel), `${base}.entities[${e.id}].components.voxel.model`, `model "${voxelModel}" not found in ASSETS.models`);
       }
       // ED-SCALE-1 (34.1): `scale` inline shorthand or `transform.scale`.
       const rawScale = e.scale !== undefined ? e.scale : (e.transform && e.transform.scale);

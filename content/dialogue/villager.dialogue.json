@@ -1,0 +1,19 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "villager",
+  "speakers": {
+    "villager": {"label": "VILLAGER"}
+  },
+  "entry": [
+    {"node": "villager.d1.l1"}
+  ],
+  "nodes": {
+    "villager.d1.l1": {"lines": [
+      "WRITER: villager greeting line."
+    ], "next": "villager.d1.close", "speaker": "villager"},
+    "villager.d1.close": {"end": true, "lines": [
+      "WRITER: villager farewell line."
+    ], "speaker": "villager"}
+  }
+}
