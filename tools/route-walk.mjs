@@ -43,6 +43,7 @@ const DT = P.fixedDt;
 const O = { x: 1480, y: 1018 }; // tower origin (world_m1)
 const W = ([x, y]) => ({ x: O.x + x + 0.5, y: O.y + y + 0.5 }); // route entries are CELL indices: aim at cell centres
 const WAYSTONE = { x: 1428, y: 1040 };
+const RELAY = { x: 1262, y: 1033 }; // ws_roadBend (38.36)
 const TERRAIN_NEAR = { x: 1470, y: 1029 };
 const MAX_WP_STEPS = 600; // 4 s per waypoint before it counts as stuck
 
@@ -78,7 +79,7 @@ function stepOnce(sim) {
 const yawTo = (fx, fy, tx, ty) => Math.atan2(tx - fx, -(ty - fy)) * 180 / Math.PI;
 
 /** Walks through waypoints [{x,y,jump?}]; returns the leg record. `trace` collects x,y,z per step. */
-function runLeg(sim, name, wps, { expectBlocked = false, detour = false } = {}) {
+function runLeg(sim, name, wps, { expectBlocked = false, detour = false, maxWpSteps = MAX_WP_STEPS } = {}) {
   const { world, player, controls } = sim;
   const tr = player.transform;
   const rec = { name, steps: 0, completed: true, stuckAt: null, fell: false, minGap: Infinity, trace: [] };
@@ -89,7 +90,7 @@ function runLeg(sim, name, wps, { expectBlocked = false, detour = false } = {}) 
     for (;; n++) {
       const dx = wp.x - tr.x, dy = wp.y - tr.y, dist = Math.hypot(dx, dy);
       if (dist < 0.4) break;
-      if (n >= MAX_WP_STEPS) { rec.completed = false; rec.stuckAt = { wp: i, x: tr.x, y: tr.y, z: tr.z }; break; }
+      if (n >= maxWpSteps) { rec.completed = false; rec.stuckAt = { wp: i, x: tr.x, y: tr.y, z: tr.z }; break; }
       // `detour` (hillside only): after 60 steps without progress steer +-50/100 deg off the line for 45 steps (slope slide-offs).
       if (detour) {
         if (dist < best - 0.3) { best = dist; bestAt = n; }
@@ -181,6 +182,16 @@ function routeRun(physics, { reload = false } = {}) {
   info.endTrigger = sawEnd; hill.sawEnd = sawEnd;
   info.endStarted = sim.world.state['quest.endT'] >= 0; // must stay false: no end sequence (WAYSTONE-NORMAL-01)
   legs.push(hill);
+  // WS1-08 / 38.36: leg 8 waystone -> road-bend relay (1420,1032) -> (1350,1050) -> (1270,1042); must end <= 3 m from the relay (1262,1033).
+  const l8 = runLeg(sim, '8 waystone -> relay', [{ x: 1420, y: 1032 }, { x: 1350, y: 1050 }, { x: 1270, y: 1042 }, { x: 1263, y: 1034 }], { maxWpSteps: 1500 }); // 80+ m legs at 6 m/s need > 600 steps
+  const relayD = Math.hypot(sim.player.transform.x - RELAY.x, sim.player.transform.y - RELAY.y);
+  info.relayDist = relayD; l8.completed = l8.completed && relayD <= 3 && !l8.fell;
+  legs.push(l8);
+  // Bound probe: keep walking west past x 1200; the walk bound must stop us (pass = leg blocked, min x stays >= ~1198).
+  const bp = runLeg(sim, '8b bound probe (west of 1200)', [{ x: 1180, y: 1047 }], { expectBlocked: true, maxWpSteps: 3000 });
+  let minX = Infinity; for (let i = 0; i < bp.trace.length; i += 3) minX = Math.min(minX, bp.trace[i]);
+  info.boundMinX = minX; bp.completed = bp.completed && minX >= 1198;
+  legs.push(bp);
   return { legs, info, ms: sim.ms, sim };
 }
 
