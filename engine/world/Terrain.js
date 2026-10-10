@@ -254,7 +254,6 @@ export class Terrain {
     this._bindEdits();
     const b = st.b, w = b.w, h = b.h, cell = b.cell;
     const canopy = this.realTrees ? 0 : this._canopyM, forestId = this._forestTypeId;
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now;
     const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
     while (st.row < h) {
       const r = st.row;

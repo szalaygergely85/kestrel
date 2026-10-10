@@ -287,5 +287,23 @@ const EYE_NORTH = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
     hasLineOfSight(w, 0, 0, 1, 8, 0, 1));
 }
 
+// DOOR-CLOSE-01: near-range cone widening (nearDist/nearConeDeg), defaults 0.9 m / 70 deg.
+{
+  const w = makeWorld();
+  const out = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
+  w.interactables = [recAtAngle('n', 50, 0.5)];
+  findInteractTarget(w, EYE_NORTH, null, out);
+  ok('near 0.5 m / 50 deg off-axis: picked', out.targetKey === 's.n', JSON.stringify(out));
+  w.interactables = [recAtAngle('f', 50, 1.0)];
+  findInteractTarget(w, EYE_NORTH, null, out);
+  ok('1.0 m / 50 deg off-axis: not picked', out.targetKey === null);
+  w.interactables = [recAtAngle('n', 50, 0.5)];
+  findInteractTarget(w, EYE_NORTH, { nearConeDeg: 40 }, out);
+  ok('custom nearConeDeg 40: 50 deg missed', out.targetKey === null);
+  w.interactables = [recAtAngle('c', 50, 1.0)];
+  findInteractTarget(w, EYE_NORTH, { nearDist: 1.5 }, out);
+  ok('custom nearDist 1.5: 1.0 m / 50 deg picked', out.targetKey === 's.c');
+}
+
 console.log(`interaction.test.js: ${pass} passed, ${fail} failed`);
 if (fail) { console.log('FAILURES:\n' + failures.join('\n')); process.exit(1); }

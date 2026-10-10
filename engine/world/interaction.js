@@ -31,6 +31,8 @@ import { gridLocal } from './gridLocal.js';
 
 const DEFAULT_REACH = 1.8;
 const DEFAULT_CONE_DEG = 20;
+export const DEFAULT_NEAR_DIST = 0.9; // DOOR-CLOSE-01: inside this range the cone widens
+export const DEFAULT_NEAR_CONE_DEG = 70;
 const LOS_STEP = 0.1;
 const LOS_MAX_SAMPLES = 20;
 const losGrid = { x: 0, y: 0, z: 0 }; // gridLocal scratch (rule 9)
@@ -99,13 +101,15 @@ export function hasLineOfSight(world, ax, ay, az, bx, by, bz) {
  * LIVE (a runtime rec may be moved by its owner after add, US-079b0).
  * @param {import('./World.js').World} world
  * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number}} eye
- * @param {{reach?:number, coneDeg?:number}} [cfg]
+ * @param {{reach?:number, coneDeg?:number, nearDist?:number, nearConeDeg?:number}} [cfg]
  * @param {InteractionState} out
  * @returns {InteractionState}
  */
 export function findInteractTarget(world, eye, cfg, out) {
   const reach = (cfg && typeof cfg.reach === 'number') ? cfg.reach : DEFAULT_REACH;
   const coneDeg = (cfg && typeof cfg.coneDeg === 'number') ? cfg.coneDeg : DEFAULT_CONE_DEG;
+  const nearDist = (cfg && typeof cfg.nearDist === 'number') ? cfg.nearDist : DEFAULT_NEAR_DIST;
+  const nearConeDeg = (cfg && typeof cfg.nearConeDeg === 'number') ? cfg.nearConeDeg : DEFAULT_NEAR_CONE_DEG;
 
   const yawRad = eye.yawDeg * Math.PI / 180;
   const pitchRad = eye.pitchDeg * Math.PI / 180;
@@ -131,8 +135,8 @@ export function findInteractTarget(world, eye, cfg, out) {
     if (cosAngle > 1) cosAngle = 1; else if (cosAngle < -1) cosAngle = -1;
     const angleDeg = Math.acos(cosAngle) * 180 / Math.PI;
     // DOOR-CLOSE-01 (owner: too close to the door -> cannot open): within arm's length the aim point sits steeply off the
-    // view ray (looking down / sideways at a big object), so the cone widens to 70 deg below 0.9 m.
-    if (angleDeg > (dist < 0.9 && coneDeg < 70 ? 70 : coneDeg)) continue;
+    // view ray (looking down / sideways at a big object), so the cone widens to 70 deg below nearDist.
+    if (angleDeg > (dist < nearDist && coneDeg < nearConeDeg ? nearConeDeg : coneDeg)) continue;
 
     if (!hasLineOfSight(world, eye.x, eye.y, eye.z, rec.x, rec.y, rec.z)) continue;
 
@@ -158,7 +162,7 @@ export function findInteractTarget(world, eye, cfg, out) {
   return out;
 }
 
-const INTERACT_CFG = { reach: DEFAULT_REACH, coneDeg: DEFAULT_CONE_DEG }; // reused (rule 9)
+const INTERACT_CFG = { reach: DEFAULT_REACH, coneDeg: DEFAULT_CONE_DEG, nearDist: DEFAULT_NEAR_DIST, nearConeDeg: DEFAULT_NEAR_CONE_DEG }; // reused (rule 9)
 
 function findRecByKey(world, key) {
   const list = world.interactables;
