@@ -146,6 +146,8 @@ export function createBeastSim(world, opts) {
     path: new Float64Array(MAX_BEASTS * PATH_SLOTS * 2),
     pathLen: new Int32Array(MAX_BEASTS),
     pathIdx: new Int32Array(MAX_BEASTS),
+    wary: new Uint8Array(MAX_BEASTS),        // DRESS-01b: brain.temperament==='wary' (ambient boars: short notice + leash until hit)
+    provoked: new Uint8Array(MAX_BEASTS),    // DRESS-01b: a wary beast that took damage fights normally until it is back in wander
     seen: new Uint8Array(MAX_BEASTS),
     pathReq: new Uint8Array(MAX_BEASTS),
     dmgCd: new Int32Array(MAX_BEASTS),       // US-079b (37.16.2): steps left in the damage cooldown
@@ -185,6 +187,7 @@ export function createBeastSim(world, opts) {
     const home = (e.components.brain && e.components.brain.home) || [e.transform.x, e.transform.y];
     sim.homeX[i] = home[0];
     sim.homeY[i] = home[1];
+    sim.wary[i] = e.components.brain && e.components.brain.temperament === 'wary' ? 1 : 0;
     sim.homeZ[i] = e.transform.z; // US-079b ARCH: the authored spawn z (restored on resetAll)
     sim.fx[i] = 0; sim.fy[i] = -1; // facing north by default
     sim.state[i] = STATE_WANDER;
@@ -220,6 +223,7 @@ export function createBeastSim(world, opts) {
       sim.dmgCd[i] = sim.cfgSteps.dmgCooldown;
       sim.hurtT[i] = 0;
       sim.cause[i] = p.cause === 'fire' ? 1 : 0;
+      sim.provoked[i] = 1;
       sim.seen[i] = 1; sim.unseen[i] = 0; // aggro: a hit from behind leads to chase, not return
     }
     if (health.hp <= 0) { enterDying(sim, i); return; } // 37.16.2 item 4 (no emit inside the listener)
@@ -303,6 +307,8 @@ function noticedOf(sim, i, px, py) {
   const steer = sim.steer, a = sim._pa, t = sim._pt;
   a.x = steer.x[i]; a.y = steer.y[i]; a.fx = sim.fx[i]; a.fy = sim.fy[i];
   t.x = px; t.y = py; t.noise = sim.noise;
+  const calm = sim.wary[i] === 1 && sim.provoked[i] === 0; // DRESS-01b: unprovoked ambient boar = short notice only
+  a.range = calm ? sim.cfg.calmNoticeR : sim.cfg.noticeR; a.hearR = calm ? sim.cfg.calmNearR : sim.cfg.nearR;
   sim._slot = i;
   const o = perceive(a, t, sim._losFn, sim._po);
   return o.hears || o.sees;
@@ -317,6 +323,7 @@ function leashOne(sim, i, px, py) {
   if (ag.leashMode === LEASH_GIVEUP) return; // stays given-up until the beast is home (wander resets it)
   ag.x = sim.steer.x[i]; ag.y = sim.steer.y[i];
   def.homeX = sim.homeX[i]; def.homeY = sim.homeY[i];
+  def.leashR = sim.wary[i] === 1 && sim.provoked[i] === 0 ? sim.cfg.calmLeashR : sim.cfg.leashR;
   const t = sim._lt; t.x = px; t.y = py;
   leashState(ag, def, t, SIM_STEP);
 }
@@ -515,6 +522,7 @@ function enterReturn(sim, i) {
 
 function enterWander(sim, i) {
   sim.state[i] = STATE_WANDER;
+  sim.provoked[i] = 0;
   sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
   sim.timer[i] = sim.cfgSteps.pauseMin + sim.rng.int(sim.cfgSteps.pauseMax - sim.cfgSteps.pauseMin + 1);
 }
@@ -952,7 +960,7 @@ function resetAllSim(sim) {
     }
     const health = sim.entities[i].components.health;
     health.hp = health.max; // US-079b: boars come back alive
-    sim.dmgCd[i] = 0; sim.hurtT[i] = 9999; sim.pendingDied[i] = 0; sim.despawnReq[i] = 0; sim.cause[i] = 0;
+    sim.dmgCd[i] = 0; sim.hurtT[i] = 9999; sim.pendingDied[i] = 0; sim.despawnReq[i] = 0; sim.cause[i] = 0; sim.provoked[i] = 0;
     sim.steer.x[i] = sim.homeX[i]; sim.steer.y[i] = sim.homeY[i];
     sim.steer.vx[i] = 0; sim.steer.vy[i] = 0;
     sim.steer.setIdle(i);

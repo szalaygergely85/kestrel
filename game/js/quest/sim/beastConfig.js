@@ -26,6 +26,9 @@ export const BEAST_DEFAULTS = Object.freeze({
   loseScale: 1.25,     // BEAST-PERCEIVE-01w: leash drop factor; aggroR = loseR / loseScale so the drop distance stays loseR
   leashR: 1e9,         // m, hard leash from home while engaged (default off = today's behaviour; lower it to tether a boar)
   giveUpSec: 1e9,      // s, engaged this long -> give up and walk home, ignoring the player (default off)
+  calmNoticeR: 5,      // m, DRESS-01b: notice range of an unprovoked `temperament:'wary'` (ambient) boar
+  calmNearR: 1.5,      // m, DRESS-01b: its any-direction hearing bubble
+  calmLeashR: 12,      // m, DRESS-01b: hard leash from home for an unprovoked wary boar (then it returns)
   repathSec: 0.5,      // s, minimum time between path requests
   repathMoveM: 2,       // m, player must move this far from the last path goal to force a repath
   returnSpeed: 1.5,    // m/s, return-home speed (PO 2026-10-01: same as wander's walk)
