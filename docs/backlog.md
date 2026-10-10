@@ -1516,7 +1516,7 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
 | RIG-02 | Rigged model in the registry/pool: collapseRig output drawn on the mesh path, play/partRot/mounts/shadows | P1 | todo [B2 or PC-A, 0.75 d] - deps RIG-00 | per RIG-00 |
 | RIG-03 | loadPack/KPKG asset types `model.rigged` / `model.static` -> `bundle.models`; main.js registers `char.<id>` | P1 | arch-review (engine half; main.js line = NEEDS B1-main) [PC-B B2] | `engine/content/loadPack.js`, `package.js`, `game/js/main.js` |
 | CHARGEN-15 | First villager from a `.kestrel` (`.glb`) + dialogue, like Burl | P1 | todo [PC-B B1, 0.5 d] - deps RIG-03 | package, `content/worlds/world_m1.world.json`, `game/js/main.js` |
-| CHARGEN-16 | Player look: `player.look` in the save + `hand@look` retint + owner walk (picks option A/B) | P1 | todo [PC-B B1, 0.5 d] | `game/js/quest/save/saveState.js`, `game/js/main.js` |
+| CHARGEN-16 | Player look: `player.look` in the save + `hand@look` retint + owner walk (picks option A/B) | P1 | po-review (owner walk) [PC-B B1] | `game/js/quest/save/saveState.js`, `game/js/main.js` |
 | CHARGEN-17 | New-game creation screen (title-menu skin, in-game-look preview built at runtime) | P1 | todo [PC-B B1, 0.75 d] - deps RIG-02 | `game/js/ui/charCreate.js` + test, `game/js/titleMenuHost.js` |
 | CHARGEN-18 | Builds slim/heavy (m, f) + elder overlay + piece set 2 | P2 | todo [PC-B designer, 0.75 d] | kit JSON |
 | KPKG-01 | `engine/content/zip.js` reader + writer (stored + deflate via platform streams) | P1 | arch-review [PC-B B2, 0.5 d] -> arch-review | `engine/content/zip.js` + test + fixture zip |

@@ -74,6 +74,7 @@ import { createWaystoneTouch } from './waystoneTouch.js'; // WAYSTONE-TOUCH-01
 import { createWaystoneWire } from './quest/wire/waystone.js'; // WAYSTONE-01w
 import { createTitleMenuHost } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
+import { retintHand, lookOrDefault } from './quest/look/handLook.js'; // CHARGEN-16
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
 import { parseOccl, createHzbInvalidator } from './occlGate.js'; // OCCL-MAIN-01
 import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
@@ -418,7 +419,9 @@ let titleMenuActive = true; // S8-B1-10: mirrors menuHost.active each frame (tru
 let deviceLostFrozen = false; // S8-B1-10 (38.10c): set once by watchDeviceLost's `freeze` hook below; gates `paused` in the frame loop
 try {
   const questDef = await (await fetch('../content/quests/m1.quest.json')).json();
-  saveRelay = createSaveRelay({ storage: saveStorage(), questDef, enabled: saveEnabled });
+  const charKit = await (await fetch('../content/chargen/human.charkit.json')).json(); // CHARGEN-16: kit default look + hand skin tones
+  saveRelay = createSaveRelay({ storage: saveStorage(), questDef, enabled: saveEnabled, defaultLook: charKit.defaults });
+  window.__charKit = charKit;
   saveRelay.bindEvents(engine.events);
   gameHooks.register(saveRelay.handlers());
   saveRelay.quest.onPoll = (name, a, b) => gameHooks.emitSimple(name, a, b);
@@ -696,8 +699,31 @@ if (spellHandLDef && !assets.has('model', 'spellHandL')) {
   assets.add('model', 'spellHandL', { ...spellHandLDef, voxel: { ...spellHandLDef.voxel, meshOnly: true } });
 }
 // HAND-WIRE-01: the realistic burning hand (`viewModels.hand`): every variant model (authored left) registered mesh-only.
-const handDef = window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.hand;
-if (handDef && handDef.variants) {
+let handDef = window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.hand;
+// CHARGEN-16: `hand@look` = the hand variants re-tinted to the player look (skin tone + top dye on the sleeve). The newest saved
+// look is peeked at boot (a different look chosen later needs a page reload to show: handles are built once). Off in capture/bench/compare
+// pages (gpucompare stays on today's hand) and falls back to the plain hand if the retint throws.
+let handLookDef = null;
+if (handDef && handDef.variants && !isCaptureOrBench && window.__charKit) {
+  try {
+    let best = null;
+    if (saveRelay && saveRelay.adapter) for (const s of saveRelay.adapter.listSlots()) {
+      const r = s.ok && s.meta ? saveRelay.adapter.readSlot(s.slot) : null;
+      if (r && r.save && r.save.player && r.save.player.look && (!best || (s.meta.savedAt || 0) >= best.t)) best = { t: s.meta.savedAt || 0, look: r.save.player.look };
+    }
+    const rt = retintHand(handDef, lookOrDefault(window.__charKit, best && best.look), window.__charKit, window.ASSETS.voxelModels);
+    for (const [name, rec] of Object.entries(rt.models)) assets.add('model', name, { ...rec, voxel: { ...rec.voxel, meshOnly: true } });
+    handLookDef = rt.def;
+  } catch (e) { console.warn('[look] hand@look retint failed, plain hand:', e && e.message); }
+}
+if (handDef && handDef.variants && handLookDef) {
+  if (window.ASSETS.handFx) for (const k of window.ASSETS.handFx.attach()) {
+    const pr = particlePresets.presets[k];
+    if (pr.spreadDeg > 88.9) pr.spreadDeg = 88.9;
+    engine.particles.defineEmitter(k, particlePresets.toEmitterDef(k, assets.palette.rgb));
+  }
+  handDef = handLookDef; // viewModel key 'hand' now loads the @look models (the plain ones are not registered: boot budget)
+} else if (handDef && handDef.variants) {
   if (window.ASSETS.handFx) for (const k of window.ASSETS.handFx.attach()) { // HAND-WIRE-02: presets defined after the generic loop
     const pr = particlePresets.presets[k];
     if (pr.spreadDeg > 88.9) pr.spreadDeg = 88.9; // engine EmitterDef limit (<= 88.999); handChargeSparks asks 180 (designer note)
