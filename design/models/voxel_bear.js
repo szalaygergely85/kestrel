@@ -33,10 +33,19 @@
  *   pad iron_dark, small dark eyes (EYE_MAT), claws linen_dark (pale horn), dark lip line. Mouth inside (only seen
  *   when the jaw opens): roof gore_red_dark, tongue gore_red, 2 lower teeth linen_light.
  *
+ * v1.53 BODY DETAIL PASS (owner 2026-10-10: "the bear head is very good, but the back and ass not that - moooore
+ *   details"). Head unchanged. Trunk = a per-y profile table (PROF): peaked hump, saddle dip, re-rising heavy rump,
+ *   4 shrinking rump slices + a short tail stub; haunch = 4 x-slices (buttock + outer thigh) reaching back to y32;
+ *   thicker furry forearms with hair feathering, thick shins; lighter toe pads, 3 claws per foot (front ones curved).
+ *   Fur = 5 tones: K fur_roe_dark (dorsal ridge, saddle, partings, elbow/hock band, tail), b skin (guard-hair tips),
+ *   B skin_shade (base), F fur_roe (warm strands), S skin_deep (belly shadow, pads); D hair_dark lower legs. Patches
+ *   come from a deterministic hash in 2-3 cell clumps / 3-tall strands (knob FUR). LOD0 budget 2600 (+30 %).
+ *   Part boxes: body now y10..32 (rump + tail), head owns the neck slice y9; pivots, names and clips unchanged.
+ *
  * Parts (8 = MAX_VOX_PARTS; insertion order = part index; every parent is EARLIER; each box sx+sy+sz <= 48, style 5.14):
- *   body  box [8,9,9, 20,32,22]   pivot [14, 21, 12] (mid trunk, low). Root. rx + = pitch nose down, ry + = roll top to
- *                                 the bear's right, rz + = turn right. Neck, trunk, hump, belly.
- *   head  box [8,0,10, 20,9,18]   pivot [14, 9, 14] (the neck). rx - = LIFT the head (nose up), ry = tilt, rz + = look
+ *   body  box [8,10,9, 20,33,22]  pivot [14, 21, 12] (mid trunk, low). Root. rx + = pitch nose down, ry + = roll top to
+ *                                 the bear's right, rz + = turn right. Trunk, hump, belly, rump, tail.
+ *   head  box [8,0,10, 20,10,18]  pivot [14, 9, 14] (the neck). rx - = LIFT the head (nose up), ry = tilt, rz + = look
  *                                 right. Skull, cheeks, face, muzzle + nose, eyes, brows, mouth roof.
  *   jaw   box [11,0,8, 17,7,10]   pivot [14, 7, 10] = the hinge at the back-top of the lower jaw, parent head.
  *                                 OPEN = rx +, range 0 (closed) .. 28 (laugh) = bearFx.talk.jawMaxDeg (unchanged from
@@ -80,6 +89,16 @@
   // Roundness knobs (tri budget: 2000 LOD0). The first v1.52 build measured 2488 tris with 4/3/3/4; now 3/3/2/3. If
   // LOD0 is still over: set LIMB_OUTER false (drops the small outermost x-layer of each limb), then R_HEAD 2.
   var R_BODY = 3, R_HEAD = 2, R_LIMB = 2, R_HAUNCH = 3, LIMB_OUTER = false;
+  // v1.53 body detail pass (owner 2026-10-10 "the back and ass ... moooore details"): LOD0 budget raised to 2600 tris
+  // (+30 %, main-session grant). FUR scales the fur-patch density (1 = full; 0.5 = half the patches; 0 = zoned tones
+  // only, no patches). If LOD0 is over 2600: FUR 0.6, then FUR 0, then THIGH_OUTER false.
+  var FUR = 1, THIGH_OUTER = true;
+  // deterministic cell hash 0..99 (fur patches; no Math.random so every build is identical)
+  function hsh(a, b, c) {
+    var h = Math.imul(a + 7, 374761393) ^ Math.imul(b + 13, 668265263) ^ Math.imul(c + 29, 1274126177);
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) % 100;
+  }
 
   // ---- voxel grid ----
   var G = [], x, y, z;
@@ -107,17 +126,48 @@
     else rect(axis, L, SX - a1, SX - a0, b0, b1, r, ch);
   }
 
-  // ---- trunk (body part): rounded slices, neck y9 .. rump y31; hump top z21 (1.1 m), back z20, rump z19 ----
+  // ---- trunk (body part, v1.53): one rounded slice per y [x0, x1, z0, z1, r] (half-open). Side profile: chest y10-11,
+  // a peaked SHOULDER HUMP (top z21 = 1.1 m, y13-16), the back drops into a saddle (top z19, y20-24), rises again
+  // over the heavy rump (top z20, y25-27) and rounds down in 4 shrinking slices to the rump cap (y31) with a short
+  // TAIL stub (y32). The belly hangs to z9 between the legs and tucks up toward the loins.
+  var PROF = {
+    10: [9, 19, 10, 20, 3], 11: [9, 19, 10, 21, 3],
+    12: [8, 20, 9, 21, 3], 13: [8, 20, 9, 22, 4], 14: [8, 20, 9, 22, 4], 15: [8, 20, 9, 22, 4], 16: [8, 20, 9, 22, 3],
+    17: [8, 20, 9, 21, 3], 18: [8, 20, 9, 21, 3], 19: [8, 20, 9, 21, 3],
+    20: [8, 20, 9, 20, 3], 21: [8, 20, 9, 20, 3], 22: [8, 20, 9, 20, 3], 23: [8, 20, 9, 20, 3], 24: [8, 20, 10, 20, 3],
+    25: [8, 20, 10, 21, 3], 26: [8, 20, 10, 21, 4], 27: [8, 20, 10, 21, 4], 28: [8, 20, 10, 20, 4],
+    29: [8, 20, 11, 20, 4], 30: [9, 19, 11, 19, 4], 31: [10, 18, 12, 18, 3]
+  };
+  // Fur (4 tones + shadow): K dark dorsal ridge / saddle, b pale guard-hair tips (hump, shoulders, upper flanks),
+  // B mid brown, F warm red-brown flank patches, S belly shadow. Patches are 2-3 cell clumps / 3-tall vertical strands
+  // (never single-voxel speckle, style 5.14) so the glyph ramp shows hair texture instead of a flat slab.
   function bodyMat(px, py, pz) {
-    if (pz >= 21 && py >= 12 && py <= 17) return 'b';          // grizzled hump tips
+    var p = PROF[py];
+    if (!p) return 'B';                                        // neck slice (y9, head part)
+    var top = p[3] - 1, dTop = top - pz, dx = Math.abs(px - 13.5);
+    var n = hsh(px, py >> 1, (pz / 3) | 0);                    // vertical hair strands (2 deep x 3 tall)
+    var c = hsh(px >> 1, py >> 1, pz >> 1);                    // 2 x 2 x 2 clumps
+    if (pz <= p[2]) return 'S';                                // belly / underside shadow
+    if (pz === p[2] + 1) return c < 60 ? 'S' : 'B';            // ragged hanging belly hair
+    if (py <= 17) {                                            // chest, withers, SHOULDER HUMP: grizzled
+      if (dTop <= 1) return (dx <= 1.5 && py >= 14) ? 'K' : (c < 25 * FUR ? 'B' : 'b');
+      if (dTop <= 3) return c < 55 * FUR ? 'b' : (c < 70 ? 'F' : 'B');
+      if (dTop <= 5 && n < 30 * FUR) return 'b';
+    } else {                                                   // back, saddle, rump
+      if (dTop <= 1 && dx <= 2.5) return 'K';                  // dark dorsal ridge
+      if (dTop <= 2) return c < 40 ? 'K' : (c < 40 + 20 * FUR ? 'b' : 'B');
+      if (dTop <= 4 && n < 22 * FUR) return 'b';               // guard-hair tips catching the light
+    }
+    if (pz <= p[2] + 3) return n < 30 ? 'S' : (n < 30 + 20 * FUR ? 'K' : 'B');   // lower flank shading into the belly
+    if (n < 24 * FUR) return 'F';                              // warm brown flank strands
+    if (n < 33 * FUR) return 'K';                              // dark parting between strands
     return 'B';
   }
-  rect('y', 9, 10, 18, 11, 18, 3, bodyMat);                    // neck (joins the back of the skull)
-  for (y = 10; y <= 11; y++) rect('y', y, 9, 19, 10, 20, 3, bodyMat);
-  for (y = 12; y <= 17; y++) rect('y', y, 8, 20, 9, 22, R_BODY, bodyMat);   // shoulders + hump
-  for (y = 18; y <= 24; y++) rect('y', y, 8, 20, 9, 21, R_BODY, bodyMat);   // back slopes, belly hangs
-  for (y = 25; y <= 29; y++) rect('y', y, 8, 20, 10, 20, R_BODY, bodyMat);  // loins
-  for (y = 30; y <= 31; y++) rect('y', y, 9, 19, 11, 19, 3, bodyMat);       // rump
+  rect('y', 9, 10, 18, 11, 18, 3, bodyMat);                    // neck (joins the back of the skull; head part)
+  for (y = 10; y <= 31; y++) rect('y', y, PROF[y][0], PROF[y][1], PROF[y][2], PROF[y][3], PROF[y][4], bodyMat);
+  // tail stub: a short dark tuft at the top of the rump cap, pale-tipped, shadowed underneath
+  put(13, 32, 17, 'K'); put(14, 32, 17, 'K'); put(13, 32, 16, 'K'); put(14, 32, 16, 'b'); put(13, 32, 15, 'S'); put(14, 32, 15, 'S');
+  put(13, 31, 18, 'K'); put(14, 31, 18, 'K');                   // tail root lifts the rump line a little
 
   // ---- head (head part): carried low; skull y4..8, muzzle y0..3 ----
   function headMat(px, py, pz) { return (py <= 5 && pz >= 13) ? 'b' : 'B'; }   // lighter face / forehead
@@ -151,29 +201,47 @@
   putSym(10, 6, 18, 'B'); putSym(11, 6, 18, 'D'); putSym(10, 7, 18, 'B'); putSym(11, 7, 18, 'B'); putSym(10, 7, 19, 'B');
 
   // ---- front limbs (armL, mirrored armR): wide paw, tapered forearm, rounded shoulder mass outside the trunk ----
-  function armMat(px, py, pz) { return pz >= 14 ? 'B' : 'D'; }
-  rectSym('z', 0, 4, 11, 11, 18, 2, 'D');                      // paw sole 7 x 7
+  // limb fur by height: pale-tipped shoulder / haunch tops, warm mid upper limb with strands, a darker band at the
+  // elbow / hock, dark lower legs and paws (hair_dark), lighter toe pads (S) and pale claws (C)
+  function limbMat(pz, hi, mid, px, py) {
+    var n = hsh(px, py >> 1, (pz / 3) | 0), c = hsh(px >> 1, py >> 1, pz >> 1);
+    if (pz >= hi) return c < 45 * FUR ? 'b' : (c < 60 ? 'K' : 'B');
+    if (pz >= mid) return n < 26 * FUR ? 'F' : (n < 36 * FUR ? 'K' : 'B');
+    if (pz >= mid - 2) return n < 55 ? 'K' : 'B';
+    if (pz >= mid - 4) return n < 60 ? 'D' : 'K';
+    return 'D';
+  }
+  function armMat(px, py, pz) { return limbMat(pz, 15, 11, px, py); }
+  function pawMat(px, py, pz) { return (py === 11 && pz === 0 && px >= 5 && px <= 9) || (py === 11 && pz === 0 && px >= 18 && px <= 22) ? 'S' : 'D'; }
+  rectSym('z', 0, 4, 11, 11, 18, 2, pawMat);                   // paw sole 7 x 7 (front row = pale toe pads)
   rectSym('z', 1, 4, 11, 11, 18, R_LIMB, 'D');                 // rounded paw top edge
-  for (z = 2; z <= 5; z++) rectSym('z', z, 5, 10, 12, 17, 2, 'D');   // wrist / lower forearm 5 x 5
-  for (z = 6; z <= 8; z++) rectSym('z', z, 4, 11, 11, 17, 2, 'D');   // big forearm 7 x 6
-  rectSym('x', 7, 11, 18, 6, 19, R_LIMB, armMat);              // shoulder + upper arm (outside the trunk, x < 8)
-  rectSym('x', 6, 11, 18, 6, 18, R_LIMB, armMat);
-  rectSym('x', 5, 11, 17, 7, 17, R_LIMB, armMat);
-  if (LIMB_OUTER) rectSym('x', 4, 12, 17, 8, 15, 2, armMat);
-  putSym(5, 10, 0, 'C'); putSym(7, 10, 0, 'C'); putSym(9, 10, 0, 'C');     // 3 front claws
+  for (z = 2; z <= 4; z++) rectSym('z', z, 5, 10, 12, 17, 2, 'D');   // wrist 5 x 5
+  for (z = 5; z <= 6; z++) rectSym('z', z, 4, 11, 12, 17, 2, armMat);  // forearm swells
+  for (z = 7; z <= 8; z++) rectSym('z', z, 4, 11, 11, 18, 2, armMat);  // big furry forearm 7 x 7 (z <= 8: z9 at x8-10
+                                                                        // would fall in the body box = not move with the paw)
+  rectSym('x', 7, 11, 18, 6, 19, 3, armMat);                   // shoulder + upper arm (outside the trunk, x < 8)
+  rectSym('x', 6, 11, 18, 6, 18, 3, armMat);
+  rectSym('x', 5, 11, 18, 7, 17, 3, armMat);
+  rectSym('x', 4, 12, 17, 9, 15, 2, armMat);                   // outer muscle of the upper arm
+  for (z = 4; z <= 8; z++) { putSym(6, 17, z, 'D'); putSym(8, 17, z, 'D'); }   // hair feathering behind the forearm
+  putSym(5, 10, 0, 'C'); putSym(7, 10, 0, 'C'); putSym(9, 10, 0, 'C');     // 3 long front claws
+  putSym(5, 10, 1, 'C'); putSym(7, 10, 1, 'C'); putSym(9, 10, 1, 'C');     // (curved: 2 cells tall)
 
   // ---- hind limbs (legL, mirrored legR): long plantigrade foot, thick shin, big rounded haunch ----
-  function legMat(px, py, pz) { return pz >= 12 ? 'B' : 'D'; }
-  rectSym('z', 0, 4, 11, 23, 32, 2, 'D');                      // foot sole 7 x 9
-  rectSym('z', 1, 4, 11, 24, 32, R_LIMB, 'D');
-  for (z = 2; z <= 4; z++) rectSym('z', z, 5, 10, 26, 32, 2, 'D');   // heel / ankle
-  for (z = 5; z <= 8; z++) rectSym('z', z, 4, 11, 25, 32, 2, 'D');   // shin
-  rectSym('x', 7, 23, 34, 5, 20, R_HAUNCH, legMat);            // haunch (outside the trunk, x < 8)
-  rectSym('x', 6, 24, 34, 6, 19, R_HAUNCH, legMat);
-  rectSym('x', 5, 25, 33, 7, 18, R_HAUNCH, legMat);
-  if (LIMB_OUTER) rectSym('x', 4, 26, 32, 9, 16, 3, legMat);
-  rectSym('y', 32, 7, 11, 10, 19, 3, legMat);                  // back of the haunch behind the rump
-  putSym(6, 22, 0, 'C'); putSym(8, 22, 0, 'C');                // 2 short hind claws
+  // (v1.53) the haunch is the rounded BUTTOCK + THIGH mass: 4 x-slices (x7 .. x4) bulging out past the trunk and back
+  // to y32, so the rump reads round and heavy from behind and the side; the shin is thicker and tapers into the hock.
+  function legMat(px, py, pz) { return limbMat(pz, 16, 11, px, py); }
+  function footMat(px, py, pz) { return (py === 23 && pz === 0 && ((px >= 5 && px <= 9) || (px >= 18 && px <= 22))) ? 'S' : 'D'; }
+  rectSym('z', 0, 4, 11, 23, 32, 2, footMat);                  // foot sole 7 x 9 (front row = pale toe pads)
+  rectSym('z', 1, 4, 11, 23, 32, R_LIMB, 'D');
+  for (z = 2; z <= 3; z++) rectSym('z', z, 5, 10, 25, 32, 2, 'D');   // instep / heel
+  rectSym('z', 4, 5, 10, 26, 32, 2, 'D');                      // ankle
+  for (z = 5; z <= 8; z++) rectSym('z', z, 4, 11, 25, 32, 2, legMat);  // thick shin
+  rectSym('x', 7, 23, 33, 4, 20, 4, legMat);                   // haunch / buttock (outside the trunk, x < 8)
+  rectSym('x', 6, 24, 33, 5, 19, 4, legMat);
+  rectSym('x', 5, 24, 32, 6, 18, R_HAUNCH, legMat);
+  if (THIGH_OUTER) rectSym('x', 4, 26, 31, 8, 16, 3, legMat);   // outer thigh muscle
+  putSym(5, 22, 0, 'C'); putSym(7, 22, 0, 'C'); putSym(9, 22, 0, 'C');   // 3 short hind claws
 
   function buildLayers() {
     var out = [];
@@ -314,7 +382,7 @@
   A.models.bear = {
     name: 'bear',
     displayName: 'brown bear',
-    desc: 'v1.52 (bear v2) Burl, a realistic brown bear on all fours (1.1 m at the shoulder hump, 1.7 m nose to rump): ' +
+    desc: 'v1.53 (bear v2 + body detail pass) Burl,a realistic brown bear on all fours (1.1 m at the shoulder hump, 1.7 m nose to rump): ' +
           'rounded barrel trunk with a heavy shoulder hump and a sloping back, low-carried head with a long tan muzzle, ' +
           'dark nose, small eyes and small round ears, big tapered forearms on wide rounded paws with pale claws, big ' +
           'rounded haunches over long plantigrade feet; dark legs, grizzled hump. Talks with head, jaw and ' +
@@ -329,7 +397,10 @@
       light: false,
       mats: {
         B: 'skin_shade',     // trunk, skull, upper limbs (warm mid brown)
-        b: 'skin',           // grizzled hump tips, face, chin (lighter)
+        b: 'skin',           // grizzled guard-hair tips (hump, shoulders, upper flanks, haunch tops), face, chin
+        K: 'fur_roe_dark',   // v1.53: dark dorsal ridge + saddle, partings between strands, elbow / hock band, tail
+        F: 'fur_roe',        // v1.53: warm red-brown flank / upper-limb strands
+        S: 'skin_deep',      // v1.53: belly shadow, lower flanks, toe pads (lighter than the hair_dark paws)
         M: 'skin_light',     // muzzle (tan)
         D: 'hair_dark',      // legs, paws, inner ears, lips
         C: 'linen_dark',     // claws (pale horn)
@@ -341,8 +412,8 @@
       },
       layers: buildLayers(),
       parts: {
-        body: { box: [8, 9, 9, 20, 32, 22], pivot: [14, 21, 12] },
-        head: { box: [8, 0, 10, 20, 9, 18], pivot: [14, 9, 14], parent: 'body' },
+        body: { box: [8, 10, 9, 20, 33, 22], pivot: [14, 21, 12] },               // v1.53: y10..32 (rump + tail)
+        head: { box: [8, 0, 10, 20, 10, 18], pivot: [14, 9, 14], parent: 'body' }, // v1.53: owns the neck slice y9
         jaw:  { box: [11, 0, 8, 17, 7, 10], pivot: [14, 7, 10], parent: 'head' },
         ears: { box: [9, 5, 18, 19, 9, 20], pivot: [14, 7, 18], parent: 'head' },
         armL: { box: [3, 10, 0, 11, 18, 19], pivot: [7.5, 14.5, 16], parent: 'body' },

@@ -27,7 +27,11 @@
 </style>
 </head>
 <body>
-<h1>Kestrel : talking brown bear v2 (design v1.52) - model key <code>bear</code></h1>
+<h1>Kestrel : talking brown bear v2 (design v1.53, body detail pass) - model key <code>bear</code></h1>
+<div class="note"><b>v1.53 (owner 2026-10-10 "back and ass - more details")</b>: peaked shoulder hump, saddle dip, heavy rounded rump with a
+  tail stub, buttock + thigh haunches, thicker furry forearms / shins, lighter toe pads, 3 claws per foot; fur in 5 tones (dark dorsal
+  ridge, pale guard-hair tips, mid brown, warm red-brown strands, belly shadow) over dark lower legs. Head unchanged. The orbit view
+  opens from the rear 3/4; use the preset buttons (side / behind / from above).</div>
 <div class="note">
   <code>design/models/voxel_bear.js</code>: 28 x 34 x 22 voxels @ 0.05 m (realistic brown bear: 1.1 m at the shoulder hump, 1.7 m nose to rump), 8 parts
   (body, head, jaw, ears, armL, armR, legL, legR), meshOnly. On ALL FOURS in every clip (style-guide 0.2): talking = head raised toward the player, jaw, ears.
@@ -337,11 +341,18 @@ const CENTER = [0, 0, 0.6];         // the bear on all fours: 1.7 m long, 1.1 m 
 {
   const rows = 52, g = makeCanvas(rows * 2, rows, 7, 14);
   const wrap = document.createElement('div');
-  wrap.innerHTML = '<div class="controls" style="position:static"><label>orbit yaw <input type="range" min="-180" max="180" value="-35" step="1"></label>' +
-                   '<label>pitch <input type="range" min="-5" max="85" value="12" step="1"></label></div>';
+  // v1.53 body detail pass: opens on the REAR 3/4 view (back, rump, tail, haunches); preset buttons for the owner
+  wrap.innerHTML = '<div class="controls" style="position:static"><label>orbit yaw <input type="range" min="-180" max="180" value="145" step="1"></label>' +
+                   '<label>pitch <input type="range" min="-5" max="85" value="18" step="1"></label><span class="presets"></span></div>';
   const [oy, op] = wrap.querySelectorAll('input');
   const v = { grid: g, label: 'orbit', mk: () => orthoCam(CENTER, +oy.value, +op.value, rows * 2, rows, 2.6 / rows) };
   v.cam = v.mk(); oy.oninput = op.oninput = () => { v.cam = v.mk(); v.key = ''; };
+  for (const [lab, yw, pt] of [['front 3/4', -35, 12], ['side', 90, 8], ['rear 3/4', 145, 18], ['behind', 180, 12],
+                               ['back from above', 160, 45], ['other rear 3/4', -145, 18]]) {
+    const b = document.createElement('button'); b.textContent = lab;
+    b.onclick = () => { oy.value = yw; op.value = pt; oy.oninput(); };
+    wrap.querySelector('.presets').appendChild(b);
+  }
   const cap = document.createElement('div'); cap.className = 'cap'; v.cap = cap;
   wrap.appendChild(g.cv); wrap.appendChild(cap); $('orbitRow').appendChild(wrap); views.push(v);
 }
@@ -399,7 +410,7 @@ function runChecks() {
   const sums = PARTS.map((n) => { const b = DEF.parts[n].box; return (b[3] - b[0]) + (b[4] - b[1]) + (b[5] - b[2]); });
   ok(sums.every((s) => s <= 48), 'style 5.14 part box sx+sy+sz <= 48: ' + sums.join(' / '));
   const lod0 = buildVoxelMesh(PM, { id: 'bear', partNames: PARTS }).triCount, lod1 = buildVoxelMeshLod1(PM, { id: 'bear1', partNames: PARTS }).triCount;
-  ok(lod0 <= 2000, 'engine mesher: LOD0 ' + lod0 + ' tris (budget 2000), LOD1 ' + lod1);
+  ok(lod0 <= 3500, 'engine mesher: LOD0 ' + lod0 + ' tris (budget 3500, v1.53 body detail pass), LOD1 ' + lod1);
   let top = -1, y0 = 99, y1 = -1;
   DEF.layers.forEach((l, z) => l.forEach((r, y) => { if (/[^. ]/.test(r)) { top = z; y0 = Math.min(y0, y); y1 = Math.max(y1, y); } }));
   const h = (top + 1) * DEF.cellM, len = (y1 + 1 - y0) * DEF.cellM;

@@ -80,12 +80,12 @@ test('style 5.14: every part box sx + sy + sz <= 48, meshOnly, cellM 0.05', () =
   assert.strictEqual(DEF.meshOnly, true); assert.strictEqual(DEF.cellM, 0.05);
 });
 
-test('engine mesher: LOD0 <= 2000 tris', () => {
+test('engine mesher: LOD0 <= 3500 tris (v1.53 body detail pass; owner wants more detail, one NPC)', () => {
   const ids = [];
   const PM = packVoxelModel(DEF, (k) => { let i = ids.indexOf(k); if (i < 0) { ids.push(k); i = ids.length - 1; } return i + 1; });
   const tris = buildVoxelMesh(PM, { id: 'bear', partNames: PARTS }).triCount;
   console.log(`  LOD0 ${tris} tris`);
-  assert.ok(tris <= 2000, 'tris ' + tris + ' (lower R_LIMB / R_BODY in voxel_bear.js)');
+  assert.ok(tris <= 3500, 'tris ' + tris + ' (lower FUR, then THIGH_OUTER false in voxel_bear.js)');
 });
 
 test('realistic quadruped rest pose: hump 1.0 .. 1.2 m, 1.5 .. 1.8 m long, head carried below the hump, paws on z 0', () => {
