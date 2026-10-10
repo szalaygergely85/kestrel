@@ -5,6 +5,9 @@
     "waystone": { "world": "world_m1", "trigger": "end" },
     "towerDoor": { "world": "world_m1", "trigger": "towerDoor" },
     "roadWest": { "world": "world_m1", "trigger": "roadWest" },
-    "bendRelay": { "world": "world_m1", "trigger": "bendRelay" }
+    "bendRelay": { "world": "world_m1", "trigger": "bendRelay" },
+    "riverBank": { "world": "world_m1", "trigger": "riverBank" },
+    "fordWest": { "world": "world_m1", "trigger": "fordWest" },
+    "northLook": { "world": "world_m1", "trigger": "northLook" }
   }
 }

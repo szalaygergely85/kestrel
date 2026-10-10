@@ -519,6 +519,19 @@ for (const [name, breakFixture, finding] of areaCases) {
   const { errors } = validateContent(f.a, { quests: f.quests, areas: f.areas });
   ok('quest area resolves a world trigger as well as a placed point marker', errors.length === 0, JSON.stringify(errors));
 }
+// QL-02: givers/hand-ins, rewards, requires chain.
+{
+  const gq = (id, extra = {}) => ({ path: id + '.quest.json', def: { version: 1, id, objectives: [{ id: 'o', text: 'Go', when: { type: 'flag', id: 'f', equals: true } }], ...extra } });
+  const run = (mut) => { const f = questFixture(); mut(f); return validateContent(f.a, { quests: f.quests, areas: f.areas }).errors; };
+  ok('QL-02 valid giver/reward/requires passes', run((f) => { f.quests.push(gq('sq.a', { giver: { npc: 'boar1' }, reward: { items: [{ id: 'sword', n: 1 }] }, requires: [{ quest: 'm1', step: 'lamp' }] })); }).length === 0);
+  ok('QL-02 unknown giver', hasFinding(run((f) => { f.quests.push(gq('sq.a', { giver: { npc: 'nobody' } })); }), ['giver.npc', 'nobody']));
+  ok('QL-02 unknown hand-in', hasFinding(run((f) => { f.quests.push(gq('sq.a', { giver: { npc: 'boar1', turnIn: 'ghost' } })); }), ['giver.turnIn', 'ghost']));
+  ok('QL-02 unknown reward item', hasFinding(run((f) => { f.quests.push(gq('sq.a', { reward: { items: [{ id: 'nope', n: 1 }] } })); }), ['reward.items[0].id', 'nope']));
+  ok('QL-02 duplicate quest id', hasFinding(run((f) => { f.quests.push(gq('m1')); }), ['duplicate quest id']));
+  ok('QL-02 unknown required quest', hasFinding(run((f) => { f.quests.push(gq('sq.a', { requires: [{ quest: 'zz', done: true }] })); }), ['required quest "zz"']));
+  ok('QL-02 unknown required step', hasFinding(run((f) => { f.quests.push(gq('sq.a', { requires: [{ quest: 'm1', step: 'zz' }] })); }), ['no step "zz"']));
+  ok('QL-02 requires cycle', hasFinding(run((f) => { f.quests.push(gq('sq.a', { requires: [{ quest: 'sq.b', done: true }] }), gq('sq.b', { requires: [{ quest: 'sq.a', done: true }] })); }), ['cycle']));
+}
 {
   const dir = mkdtempSync(join(tmpdir(), 'kestrel-quest-lint-'));
   try {
