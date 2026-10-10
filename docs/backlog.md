@@ -1837,6 +1837,7 @@ No engine change (38.35). Order: QG-W1 + QG-D1 in parallel with QG-01/02 -> QG-0
 | QG-04 | kestrel-1 | 0.5 d | `game/js/quest/wire/questMarks.js`, `game/js/quest/mapCard.js`, main.js marker wiring | QG-03, QG-D1 |
 | QG-05 | kestrel-1 (VIEW DONE kestrel-2, mount = NEEDS B1-main) | 0.5 d | `game/js/ui/questLog.js` (+ preview), `game/js/quest/input/bindings.js`, `game/js/gameKeys.js`, main.js | QG-03 |
 | COMPASS-01 | Golden pocket compass HUD module (D-061) | P1 | po-review [PC-B] | game/js/ui/compassHud.js + test; mount NEEDS B1-main |
+| COMPASS-02 | Compass in the game (style, mount, hide rules) | P1 | po-review [PC-B B1, owner look] | game/index.html, game/js/main.js, game/js/ui/compassHud.js |
 | QG-W1 | writer | 0.25 d | `docs/story.md` (Burl quest texts) - NEEDS WRITER | - |
 | QG-D1 | designer | 0.25 d | `?` marker model (`questMarkReady`), `coin` glyph/icon | - |
 
