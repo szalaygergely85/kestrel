@@ -5,7 +5,7 @@
 //   - part rotation = the root bone's local rotation composed with the next (compose - 1) bones of the list
 //     (body and head use compose 2), resampled to 50 ms keys in our Euler order Rz*Ry*Rx;
 //   - part pos = the root bone's Hips pos (cells) when the root is Hips.
-// PartRig: {cellM, parts:[{name,parent:index|-1,pivot:[x,y,z] cells,bones:[names]}], bones:[...], mesh (one range per part,
+// PartRig: {cellM, anchorCells:[x,y,z], parts:[{name,parent:index|-1,pivot:[x,y,z] grid cells,pivotM:[x,y,z] metres from the anchor,bones:[names]}], bones:[...], mesh (one range per part,
 //   same layout as meshCharacter), matKeys, clips:{name:{loop,interp:'linear',durations:[50..],frames:[{part:{rot,pos?}}]}}, mounts}
 export const MAX_PARTS = 8; // engine/chargen imports only itself; the test pins this to MAX_VOX_PARTS
 import { sampleClip, quatToEuler } from './clip.js';
@@ -56,7 +56,7 @@ export function collapseRig(rigged, partMap) {
       parent = partIdx.get(p.parent);
     }
     if (root.parent != null && partOfBone.get(root.parent) !== parent) throw new Error(`collapseRig: part "${p.name}" root bone parent is not in part "${p.parent}"`);
-    return { name: p.name, parent, pivot: root.jointCells.slice(), bones: p.bones.slice() };
+    return { name: p.name, parent, pivot: root.jointCells.slice(), pivotM: root.joint.slice(), bones: p.bones.slice() };
   });
 
   // mesh: concatenate the bone ranges part by part
@@ -118,8 +118,13 @@ export function collapseRig(rigged, partMap) {
     clips[cname] = { loop: clip.loop !== false, interp: 'linear', durations, frames };
   }
 
+  // anchor (grid cells) = root bone jointCells - joint / cellM; pivot is in grid cells, pivotM / mesh.pos in metres from it
+  const rootBone = rigged.bones.find((b) => b.parent == null) || rigged.bones[0];
+  const anchorCells = rootBone.jointCells.map((c, a) => c - rootBone.joint[a] / rigged.cellM);
+
   return {
     cellM: rigged.cellM,
+    anchorCells,
     parts,
     mesh: { quads: total, pos, nrm, mat, ranges },
     matKeys: rigged.matKeys.slice(),
