@@ -454,7 +454,7 @@ try {
     const qm = createQuestMarkers(questDef, [ // CH1-02 (38.37 item 1): flag/area steps only; item steps (sword) and wake/breach get no marker. doorMarker/roadWest resolve to their area trigger (markResolve)
       { objectiveId: 'leave', targets: ['doorMarker'] }, { objectiveId: 'follow', targets: ['bear'] }, { objectiveId: 'waystone', targets: ['endMarker'] },
       { objectiveId: 'road', targets: ['roadWest'] }, { objectiveId: 'relayFound', targets: ['relayBend'] }, { objectiveId: 'relay1', targets: ['relayBend'] }, { objectiveId: 'fen', targets: ['fen'] }]);
-    const MARK_AREA = { doorMarker: 'towerDoor', roadWest: 'roadWest' }; // marker id -> world area trigger id (no entity)
+    const MARK_AREA = { doorMarker: 'towerDoor', roadWest: 'roadWest' }; const MARK_AT = { doorMarker: { x: 1495.5, y: 1030.5 } }; // owner 2026-10-10: the leave marker hangs in the open SW doorway (cell Q), not at the area centre (that sat in the wall) // marker id -> world area trigger id (no entity)
     const MARK_TOP = { endMarker: 3.0, bear: 1.8 }; // prop top above its base z (waystone 24 voxels x 0.125 m); notes would use z + 1.55. bear 2.8 -> 1.8 (owner 2026-10-10: "!" floated up in the tree)
     gameHooks.setQuestSource((out) => { const st = saveRelay.quest.state; out.done = saveRelay.quest.done; out.id = out.done ? '' : questDef.objectives[st.completed.length].id; out.targets = qm.markerTargets(st); });
     let markN = 0;
@@ -473,7 +473,7 @@ try {
         setPos(a, b, c) { x = a; y = b; z = c; push(); },
       };
     };
-    const markResolve = (id, out) => { const h = markWorld && markWorld.get(id), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const gz = markWorld.heightAt(tr.x, tr.y); out.x = tr.x; out.y = tr.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y; out.z = t.z + (MARK_TOP[id] || 1.55); return true; };
+    const markResolve = (id, out) => { const h = markWorld && markWorld.get(id), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const at = MARK_AT[id] || tr, gz = markWorld.heightAt(at.x, at.y); out.x = at.x; out.y = at.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y; out.z = t.z + (MARK_TOP[id] || 1.55); return true; };
     registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle('questMark') });
     // QG-04: giver markers over Burl: '!' while his quest is available, '?' while ready, none while active/done (book.giverMarks)
     const gAvail = [], gReady = [];
@@ -1709,7 +1709,7 @@ async function runGame(mode, cinematic = null) {
       const simDue = hitStop.due(1000 / 60); // HITSTOP-01: the window gates beasts.step only; the sword freezes by its own hitStopHard counter
       if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); }
       if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); } // WILD-06: ambient only, never hashed
-      if (escort || fenEntrance) { const pt = playerHandle.data.transform; if (escort) { escort.step(dt, pt.x, pt.y); if (bearTurn) bearTurn.paused = escort.busy; } if (fenEntrance) fenEntrance.step(dt, pt.x, pt.y); } // CH1-07/08b: before the bear turn
+      if (escort || fenEntrance) { const uiHold = uiLocked || !!(dialogueCtl && dialogueCtl.open); /* AUD-06 */ const pt = playerHandle.data.transform; if (escort) { escort.step(dt, pt.x, pt.y, uiHold); if (bearTurn) bearTurn.paused = escort.busy; } if (fenEntrance) fenEntrance.step(dt, pt.x, pt.y, uiHold); } // CH1-07/08b: before the bear turn
       if (bearTurn) { const pt = playerHandle.data.transform; bearTurn.step(dt, pt.x, pt.y, !!(dialogueCtl && dialogueCtl.open)); } // NPC-BEAR-01 // US-079a (29.1)
       if (beasts && assets.uiStyle) stepCombatHint(engine.world, assets.uiStyle, beasts); // COMBAT-HINT-01: once-per-save first-fight hint (taken from lane C)
       if (telegraphWire) telegraphWire.step(performance.now());

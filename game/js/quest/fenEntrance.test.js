@@ -41,4 +41,8 @@ const run = (c, sec, px = 100, py = 0) => { for (let i = 0; i < Math.round(sec *
   assert.equal(c.ent.transform.x, 12); assert.equal(c.f.ready, true); assert.equal(c.talk.length, 1); }
 { const c = mk({ 'waystone.ws_roadBend.woken': true }); assert.equal(c.f.started, true); assert.equal(c.ent.components.voxel.hidden, false); assert.equal(c.ent.transform.x, 0);
   run(c, 12); assert.equal(c.f.ready, true); }
+// AUD-06: hold pauses the emerge walk
+{ const c = mk({ 'waystone.ws_roadBend.woken': true }); run(c, 0.5); const x0 = c.ent.transform.x;
+  for (let i = 0; i < 300; i++) c.f.step(DT, 100, 0, true); assert.equal(c.ent.transform.x, x0, 'held: no movement');
+  run(c, 12); assert.equal(c.f.ready, true, 'resumes'); }
 console.log('fenEntrance: PASS');

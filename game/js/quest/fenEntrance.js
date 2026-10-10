@@ -21,8 +21,9 @@ export function createFenEntrance(o) {
       else if (st[RELAY_KEY]) { started = true; walk.start('emerge', { lead: false, onArrive: arrived }); }
       else walk.hide();
     },
-    /** Fixed step. (px,py) = player. */
-    step(dt, px, py) {
+    /** Fixed step. (px,py) = player; hold = a dialogue/menu/note is open (AUD-06): the walk pauses. */
+    step(dt, px, py, hold) {
+      if (hold) return;
       if (!started) {
         if (st[RELAY_KEY] && !(o.noticeBusy && o.noticeBusy())) { started = true; walk.start('emerge', { lead: false, onArrive: arrived }); }
         return;

@@ -30,8 +30,9 @@ export function createBurlEscort(o) {
       else if (p === PHASE_STONE) walk.place('follow');     // at the end of the walk
       else if (p === PHASE_DEPART || p === PHASE_GONE) { walk.hide(); setPhase(PHASE_GONE); } // departure is not replayed
     },
-    /** Fixed step. (px,py) = player. */
-    step(dt, px, py) {
+    /** Fixed step. (px,py) = player; hold = a dialogue/menu/note is open (AUD-06): no walking, no barks. */
+    step(dt, px, py, hold) {
+      if (hold) return;
       const p = phase();
       if (p === PHASE_HOME) {
         if (st['burl.follow']) { setPhase(PHASE_WALK); st['burl.wp'] = 0; follow(); return; }

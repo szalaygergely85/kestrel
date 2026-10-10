@@ -74,4 +74,10 @@ const follow = (c) => () => c.ent.transform.x - 3;
     assert.ok(best < 100000, 'heap flat: ' + best);
   }
 }
+// AUD-06: hold (dialogue/menu open) -> no bark, no walking
+{
+  const c = mk(); c.st.afterLeave = true;
+  for (let i = 0; i < 120; i++) c.e.step(DT, 5, 0, true); assert.deepEqual(c.played, [], 'no bark while held');
+  run(c, 1, 5); assert.ok(c.played.length >= 1, 'bark resumes when released');
+}
 console.log('burlEscort ALL PASS');
