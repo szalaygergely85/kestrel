@@ -8,7 +8,7 @@ import { createQuestRelay } from '../questRelay.js';
 import { applySave, collectSave } from './save/saveState.js';
 
 const rd = (p) => JSON.parse(readFileSync(new URL('../../../' + p, import.meta.url), 'utf8'));
-const m1 = rd('content/quests/m1.quest.json'), burl = rd('content/quests/burl.boars.quest.json');
+const m1 = rd('content/quests/m1.quest.json'), burl = rd('content/quests/burl.boars.quest.json'), blade = rd('content/quests/tower.blade.quest.json');
 const dialogues = { bear: compileDialogue(rd('content/dialogue/bear.dialogue.json')) };
 const BOARS = burl.objectives[0].when.ids;
 const assets = new AssetRegistry({ palette: {} });
@@ -17,7 +17,7 @@ const TITLES = m1.sections.map((s) => s.title);
 
 const toasts = [];
 const mkRelay = (saved, sq) => {
-  const r = createQuestRelay(m1, saved, [burl], sq);
+  const r = createQuestRelay(m1, saved, [blade, burl], sq);
   r.world = { state: {} };
   r.onSection = (t) => toasts.push(t);
   return r;
@@ -45,14 +45,19 @@ const expectToasts = (n, msg) => assert.deepEqual(toasts, TITLES.slice(0, n), ms
 let r = mkRelay();
 assert.equal(toasts.length, 0);
 
+// note on the wake-spot wall: '!' ; reading it accepts 'A Blade in the Ashes'
+assert.equal(r.book.statusOf('burl.boars'), 0, 'Burl has no quest yet');
+assert.equal(r.book.actKey('q.tower.blade.accept'), true);
 // q01: wake -> breach -> sword
 r.feed({ type: 'flag:set', key: 'wake', value: true }); expectToasts(0, 'wake alone: no toast');
 r.feed({ type: 'area:entered', id: 'breach' }); expectToasts(0);
 r.feed({ type: 'item:got', id: 'sword' }); expectToasts(1, 'q01 toast after sword');
 // q02: door
 r.feed({ type: 'area:entered', id: 'towerDoor' }); expectToasts(2, 'q02 toast after door');
-// q03: accept, 5 boars, hand in
+// first talk with Burl turns the blade quest in, then he offers the boars (q03): accept, 5 boars, hand in
+assert.equal(r.book.statusOf('tower.blade'), 3, "left the tower: blade ready ('?' over Burl)");
 talk(r, 0);
+assert.equal(r.book.statusOf('tower.blade'), 4, 'blade turned in at Burl');
 assert.equal(r.book.statusOf('burl.boars'), 2, 'accepted');
 for (let i = 0; i < 4; i++) r.feed({ type: 'beast:died', id: BOARS[i] });
 expectToasts(2, 'no toast before the 5th boar');
@@ -67,8 +72,8 @@ r.checkSections(); r.feed({ type: 'item:got', id: 'sword' }); expectToasts(3, 'n
 
 // ---- save/load round trip midway (between q03 and q04) ----
 {
-  const save = collectSave(world0, { quest: r.state, questDef: m1, quests: r.book.toSave().quests, giverDefs: [burl], deadBeasts: BOARS });
-  const a = applySave(JSON.parse(JSON.stringify(save)), assets, { questDef: m1, giverDefs: [burl] });
+  const save = collectSave(world0, { quest: r.state, questDef: m1, quests: r.book.toSave().quests, giverDefs: [blade, burl], deadBeasts: BOARS });
+  const a = applySave(JSON.parse(JSON.stringify(save)), assets, { questDef: m1, giverDefs: [blade, burl] });
   const before = toasts.length, w = r.world;
   r = mkRelay(a.quest, a.quests); r.world = w;
   r.checkSections();

@@ -722,6 +722,13 @@ Notes:
 
 `bear.following` (PC-B writer, owner-authorised while PC-A offline): talking to Burl while `s.burl.follow` is set and before he arrives. One line, no flags. Replaces the "NEEDS WRITER" line in `content/dialogue/bear.dialogue.json`.
 
+| Key | Speaker | Text | Chars |
+|---|---|---|---|
+| `bear.early` (1) | BURL | `Out of the tower already, sky-cub? Empty-pawed?` | 47 |
+| `bear.early` (2) | BURL | `Climb back up. The top holds more than a view.` | 46 |
+
+`bear.early` (PC-B writer, owner-authorised): the fallback entry, talking to Burl before `q.tower.blade.ready` (the blade is not taken yet). Nudges the player back up the tower, echoing `note.keepLight` ("Climb the stair to the very top") without naming the blade or the player. End node, no flags. Replaces the "Come back when you've found your feet." placeholder.
+
 `bear.follow` is used both by the hand-in flow and by entry 4 (`q.burl.boars.done`, not following yet). Its last node sets `s.burl.follow`.
 
 ### q05 Awaken the Stone (CH1-W2, CH1-W3)

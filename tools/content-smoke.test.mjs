@@ -142,7 +142,7 @@ const unaccountedFor = allJsonFiles.filter((rel) => {
   // GFX-01: boot settings are validated/fetched by gfxPresets, not a content-pack kind.
   if (rel === 'settings/gfx-presets.json') return false;
   if (rel === 'quests/m1.quest.json') return false; // US-096a standalone sim definition, validated by quest.test.js
-  if (rel === 'quests/burl.boars.quest.json') return false; // QG-01 giver quest, validated by questBook.test.js + validate-content
+  if (rel === 'quests/burl.boars.quest.json' || rel === 'quests/tower.blade.quest.json') return false; // QG-01 giver quest, validated by questBook.test.js + validate-content
   if (rel === 'quests/areas.json') return false; // AREAS-01 standalone alias table, checked by validate-content.mjs
   if (rel.endsWith('.barks.json')) return false; // CH1-05/CH1-06 bark lines, fetched by main.js (no loadPack kind), checked by validate-content.mjs
   if (rel === 'items/recipes.json') return false; // RECIPES-01 data only, schema/refs checked by validate-content.mjs

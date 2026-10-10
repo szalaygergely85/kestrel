@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createQuestBook, validateGiverQuest, validateSections, migrateM1Ch1, STATUS_NAMES, UNAVAILABLE, AVAILABLE, ACTIVE, READY, DONE } from './questBook.js';
+import { createQuestBook, validateGiverQuest, validateSections, migrateM1Ch1, migrateQuestSave, STATUS_NAMES, UNAVAILABLE, AVAILABLE, ACTIVE, READY, DONE } from './questBook.js';
 import { questObjectives } from './quest.js';
 const rd = p => JSON.parse(readFileSync(new URL('../../../../content/quests/' + p, import.meta.url)));
-const burl = rd('burl.boars.quest.json');
+const burlReal = rd('burl.boars.quest.json'), blade = rd('tower.blade.quest.json');
+// generic step-requirement fixture: the real quest used to require m1 step `sword` (kept to cover the {quest, step} form)
+const burl = { ...burlReal, requires: [{ quest: 'm1', step: 'sword' }] };
 // QG-03 repoints m1 `beasts` at the hand-in flag; the test builds that variant itself.
 const mainDef = structuredClone(JSON.parse(readFileSync(new URL('./fixtures/m1.legacy.quest.json', import.meta.url)))); // legacy 6-step chain; the CH1 chain is tested below
 mainDef.objectives.find(o => o.id === 'beasts').when = { type: 'flag', id: 'quest.burl.boars.done', equals: true };
@@ -17,7 +19,7 @@ const kill = (b, k = 5) => { for (let i = 0; i < k; i++) b.feed({ type: 'beast:d
 
 assert.deepEqual([...STATUS_NAMES], ['unavailable', 'available', 'active', 'ready', 'done']);
 assert.equal(validateGiverQuest(burl), burl);
-for (const bad of [{ ...burl, giver: {} }, { ...burl, id: 'Burl' }, { ...burl, requires: [{ quest: 'm1' }] }, { ...burl, reward: { items: [{ id: 'coin', n: 0 }] } }])
+for (const bad of [{ ...burl, giver: {} }, { ...burl, id: 'Burl' }, { ...burl, requires: [{ quest: 'm1' }] }, { ...burl, requires: [{ quest: 'm1', done: 1 }] }, { ...burl, reward: { items: [{ id: 'coin', n: 0 }] } }])
   assert.throws(() => validateGiverQuest(bad));
 assert.equal(burl.reward, undefined, 'owner pick: no item reward');
 
@@ -116,9 +118,37 @@ if (global.gc) {
   assert.deepEqual(six.world.state, { 'waystone.waystone.woken': true, 'burl.phase': 4, 'aether.attuned': true });
   for (const c of [[], ['wake'], ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone', 'road']]) { const g = q(c); assert.equal(migrateM1Ch1(g), g, 'already-new save untouched'); }
   assert.equal(migrateM1Ch1(six), six, 'idempotent');
-  const book = createQuestBook(ch1, [burl], { quest: six.quest, quests: null });
+  const book = createQuestBook(ch1, [blade, burlReal], { quest: six.quest, quests: null });
   assert.equal(book.main.completed.length, 7); // round trip: restore + toSave keeps the prefix
   assert.deepEqual(book.toSave().quest.completed, six.quest.completed);
   const sv = book.toSave(); assert.equal(migrateM1Ch1(sv), sv, 'round trip: saved new chain is not migrated again');
+}
+// ---- chain: tower.blade (giver = the wake-spot note) -> turned in at Burl -> burl.boars ----
+{
+  const bk = createQuestBook(mainDef, [blade, burlReal]), A = [], R = [];
+  assert.equal(bk.statusOf('burl.boars'), UNAVAILABLE); assert.equal(bk.statusOf('tower.blade'), AVAILABLE);
+  bk.giverMarks(A, R); assert.deepEqual([A, R], [['noteKeepLight'], []], "'!' over the note only, nothing over Burl");
+  assert.equal(bk.hasKey('q.burl.boars.available'), false);
+  assert.equal(bk.actKey('q.tower.blade.accept'), true);
+  bk.giverMarks(A, R); assert.deepEqual([A, R], [[], []], 'accepted: no mark while active');
+  toSword(bk); assert.equal(bk.statusOf('tower.blade'), ACTIVE, 'sword taken but not out of the tower');
+  assert.equal(bk.statusOf('burl.boars'), UNAVAILABLE);
+  bk.feed({ type: 'area:entered', id: 'towerDoor' });
+  assert.equal(bk.statusOf('tower.blade'), READY); bk.giverMarks(A, R); assert.deepEqual([A, R], [[], ['bear']], "ready: '?' over Burl (giver.turnIn), not the note");
+  assert.equal(bk.statusOf('burl.boars'), UNAVAILABLE, 'not before the turn-in');
+  assert.equal(bk.actKey('q.tower.blade.handin'), true);
+  assert.equal(bk.statusOf('burl.boars'), AVAILABLE); bk.giverMarks(A, R); assert.deepEqual([A, R], [['bear'], []]);
+  // an accepted boar quest stays as it is even when its requirement is not met (old saves)
+  const sv = bk.toSave(); sv.quests['tower.blade'].handedIn = false; sv.quests['burl.boars'].accepted = true;
+  assert.equal(createQuestBook(mainDef, [blade, burlReal], sv).statusOf('burl.boars'), ACTIVE);
+  // migration: old saves derive the blade quest from m1 facts
+  const mk = (items, areas, completed, quests) => ({ quest: { questVersion: 1, questId: 'm1', flags: {}, items, deadBeasts: [], areas, completed }, quests });
+  const hist = (g) => migrateQuestSave(g, { main: rd('m1.quest.json'), givers: [blade, burlReal] });
+  assert.equal(hist(mk([], ['breach'], ['wake', 'breach'], null)), null, 'no sword yet: nothing to derive');
+  let mg = hist(mk(['sword'], ['breach', 'towerDoor'], ['wake', 'breach', 'sword', 'leave'], null));
+  assert.deepEqual([mg['tower.blade'].accepted, mg['tower.blade'].handedIn, mg['burl.boars']], [true, false, undefined]);
+  assert.equal(createQuestBook(mainDef, [blade, burlReal], { quest: mk([], [], [], null).quest, quests: mg }).statusOf('tower.blade'), READY);
+  mg = hist(mk(['sword'], ['breach', 'towerDoor'], ['wake', 'breach', 'sword', 'leave'], { 'burl.boars': { quest: JSON.parse(JSON.stringify(bk.toSave().quests['burl.boars'].quest)), accepted: true, handedIn: false } }));
+  assert.deepEqual([mg['tower.blade'].accepted, mg['tower.blade'].handedIn, mg['burl.boars'].accepted], [true, true, true], 'boars already active: blade counts as done');
 }
 console.log('questBook.test OK');
