@@ -38,6 +38,8 @@ export const BEAST_DEFAULTS = Object.freeze({
   targetZ: 1.0,         // m, target point above the player's feet (sight ray destination)
   losEvery: 6,          // steps between LOS samples per slot (round-robin by slot % losEvery)
   staggerSec: 0.6,      // s, US-078d amendment (D-034): heavy-hit stagger duration
+  blockStaggerSec: 0.4,  // s, EQ-06: stagger after the player's shield blocks a charge
+  blockKnock: 2,         // m/s, EQ-06: shove away from the player on a blocked charge
   staggerKnock: 4,       // m/s, the stagger shove speed (steer.maxSpeed while staggered; decays by accel)
   hp: 4,                 // US-079b (37.16.2): max HP per boar (also the fresh value on create/restart)
   dmgCooldownSec: 0.2,   // s, ignore damage from a second hit within this (12 steps)

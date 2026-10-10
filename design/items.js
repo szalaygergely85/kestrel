@@ -489,5 +489,35 @@
   Object.keys(defs).forEach(function (k) { if (A.items.order.indexOf(k) < 0 && (defs[k].kind === 'gear' || k === 'arrow' || k.indexOf('potion.') === 0)) A.items.order.push(k); });  // EQ-01                                   // CH1-D2
   A.items.iconSet = iconSet;
 
+  // EQ-D1 (appended): equipment icons (5x3, existing keys only). The shield + bow icons now match the voxel models in
+  // models/equipment.js (round plank shield, iron rim + boss; plain wooden longbow, gut string). arrow / potion.hp /
+  // potion.mp have no defs yet (EQ-01 adds them): their icons wait here, keyed by the planned item id.
+  A.items.eqIcons = {
+    //  .=-=.     iron rim, lit top
+    //  (H@H)     planks either side of the bright boss
+    //  `=-='     rim underside in shadow
+    shield: icon(['.=-=.', '(H@H)', "`=-='"],
+                 ['sSsSs', 'iHShi', 'KiKiK']),
+    //  /'|       upper limb, horn nock, string
+    // (#  |      grip wrap ... string        (the D of a braced bow)
+    //  \,|       lower limb, horn nock, string
+    bow: icon([" /'| ", '(#  |', ' \\,| '],
+              [' HnT ', 'hl  T', ' hnT ']),
+    // \\         fletching (grey goose, red cock feather)
+    // =-->       nock, shaft, iron socket, steel head
+    // //
+    arrow: icon(['\\\\   ', '=--=>', '//   '],
+                ['Tr   ', 'nwwiS', 'Tr   ']),
+    //  _#_       glass shoulders, wooden cork
+    // (*%%)      round flask, highlight, red draught
+    // `-=-'      dark bottom
+    'potion.hp': icon([' _#_ ', '(*%%)', "`-=-'"],
+                      [' GhG ', 'gPLcG', 'GdddG']),
+    'potion.mp': icon([' _#_ ', '(*%%)', "`-=-'"],
+                      [' GhG ', 'gQmmG', 'GqqqG'])
+  };
+  defs.shield.icon = A.items.eqIcons.shield; defs.shield.glyph = { ch: 'O', c: 'wood' };
+  defs.bow.icon = A.items.eqIcons.bow;
+
   if (typeof module === 'object' && module && module.exports) module.exports = { items: A.items, lootSprites: A.lootSprites };
 })(typeof window !== 'undefined' ? window : globalThis);

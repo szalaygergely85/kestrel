@@ -310,6 +310,42 @@
       "group": "hat",
       "shade": "dark"
     },
+    "x": {
+      "group": "hands",
+      "shade": "light"
+    },
+    "z": {
+      "group": "hands",
+      "shade": "base"
+    },
+    "t": {
+      "group": "hands",
+      "shade": "dark"
+    },
+    "B": {
+      "group": "belt",
+      "shade": "light"
+    },
+    "N": {
+      "group": "belt",
+      "shade": "base"
+    },
+    "O": {
+      "group": "belt",
+      "shade": "dark"
+    },
+    "C": {
+      "group": "cloak",
+      "shade": "light"
+    },
+    "D": {
+      "group": "cloak",
+      "shade": "base"
+    },
+    "E": {
+      "group": "cloak",
+      "shade": "dark"
+    },
     "P": {
       "fixed": "hair_black_dark",
       "keep": 9
@@ -594,6 +630,117 @@
       }
     },
     "hat": {
+      "undyed": {
+        "light": "linen_light",
+        "base": "linen",
+        "dark": "linen_dark"
+      },
+      "madder": {
+        "light": "dye_madder_light",
+        "base": "dye_madder",
+        "dark": "dye_madder_dark"
+      },
+      "woad": {
+        "light": "dye_woad_light",
+        "base": "dye_woad",
+        "dark": "dye_woad_dark"
+      },
+      "weld": {
+        "light": "dye_weld_light",
+        "base": "dye_weld",
+        "dark": "dye_weld_dark"
+      },
+      "walnut": {
+        "light": "dye_walnut_light",
+        "base": "dye_walnut",
+        "dark": "dye_walnut_dark"
+      },
+      "lincoln": {
+        "light": "dye_lincoln_light",
+        "base": "dye_lincoln",
+        "dark": "dye_lincoln_dark"
+      },
+      "gall": {
+        "light": "dye_gall_light",
+        "base": "dye_gall",
+        "dark": "dye_gall_dark"
+      }
+    },
+    "hands": {
+      "undyed": {
+        "light": "linen_light",
+        "base": "linen",
+        "dark": "linen_dark"
+      },
+      "madder": {
+        "light": "dye_madder_light",
+        "base": "dye_madder",
+        "dark": "dye_madder_dark"
+      },
+      "woad": {
+        "light": "dye_woad_light",
+        "base": "dye_woad",
+        "dark": "dye_woad_dark"
+      },
+      "weld": {
+        "light": "dye_weld_light",
+        "base": "dye_weld",
+        "dark": "dye_weld_dark"
+      },
+      "walnut": {
+        "light": "dye_walnut_light",
+        "base": "dye_walnut",
+        "dark": "dye_walnut_dark"
+      },
+      "lincoln": {
+        "light": "dye_lincoln_light",
+        "base": "dye_lincoln",
+        "dark": "dye_lincoln_dark"
+      },
+      "gall": {
+        "light": "dye_gall_light",
+        "base": "dye_gall",
+        "dark": "dye_gall_dark"
+      }
+    },
+    "belt": {
+      "undyed": {
+        "light": "linen_light",
+        "base": "linen",
+        "dark": "linen_dark"
+      },
+      "madder": {
+        "light": "dye_madder_light",
+        "base": "dye_madder",
+        "dark": "dye_madder_dark"
+      },
+      "woad": {
+        "light": "dye_woad_light",
+        "base": "dye_woad",
+        "dark": "dye_woad_dark"
+      },
+      "weld": {
+        "light": "dye_weld_light",
+        "base": "dye_weld",
+        "dark": "dye_weld_dark"
+      },
+      "walnut": {
+        "light": "dye_walnut_light",
+        "base": "dye_walnut",
+        "dark": "dye_walnut_dark"
+      },
+      "lincoln": {
+        "light": "dye_lincoln_light",
+        "base": "dye_lincoln",
+        "dark": "dye_lincoln_dark"
+      },
+      "gall": {
+        "light": "dye_gall_light",
+        "base": "dye_gall",
+        "dark": "dye_gall_dark"
+      }
+    },
+    "cloak": {
       "undyed": {
         "light": "linen_light",
         "base": "linen",
@@ -4506,6 +4653,65 @@
       ],
       "thick": 0,
       "paint": "2"
+    },
+    {
+      "id": "gloves",
+      "slot": "hands",
+      "regions": [
+        {
+          "bone": "LeftHand",
+          "t0": 0,
+          "t1": 1
+        },
+        {
+          "bone": "RightHand",
+          "t0": 0,
+          "t1": 1
+        }
+      ],
+      "thick": 1,
+      "paint": "z"
+    },
+    {
+      "id": "girdle",
+      "slot": "belt",
+      "regions": [
+        {
+          "bone": "Hips",
+          "t0": 0,
+          "t1": 0.25
+        }
+      ],
+      "thick": 1,
+      "paint": "N"
+    },
+    {
+      "id": "cloak",
+      "slot": "cloak",
+      "regions": [
+        {
+          "bone": "Chest",
+          "t0": 0,
+          "t1": 1
+        },
+        {
+          "bone": "Spine",
+          "t0": 0,
+          "t1": 1
+        },
+        {
+          "bone": "LeftShoulder",
+          "t0": 0,
+          "t1": 1
+        },
+        {
+          "bone": "RightShoulder",
+          "t0": 0,
+          "t1": 1
+        }
+      ],
+      "thick": 1,
+      "paint": "D"
     }
   ],
   "attachments": [

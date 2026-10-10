@@ -107,6 +107,13 @@ import { migrateEquipment, stepEquipment, defenceOf } from './quest/sim/equipmen
 import { createHands } from './quest/sim/hands.js'; // HANDS-01b (37.8a)
 import { createFireballSim } from './quest/sim/fireball.js'; // SPELL-01a (37.14)
 import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.14 view)
+import { createShieldSim } from './quest/sim/shield.js'; // EQ-07 (38.41 a)
+import { createArrowSim } from './quest/sim/arrows.js'; // EQ-09 (38.41 b)
+import { BOW_CFG } from './quest/bowConfig.js'; // EQ-09
+import { createEquipPlay, registerGearItems } from './quest/equipPlay.js'; // EQ-07/09: LMB/RMB/Q routing, bow draw, pick-up
+import { createStubItemSim } from './quest/sim/hands.js'; // EQ-07: no-op sims so the router arms shield / bow
+import { EQUIP_VIEW_MODELS, loadShieldView, presentShield, loadBowView, presentBow, drawBlockSpark, createArrowView } from './quest/equipView.js'; // EQ-07/09
+import { playShieldClank, playBowShot } from './audio/sfx.js'; // EQ-07/09
 import { createTargetables } from './quest/sim/targetables.js';
 import { FIREBALL_CFG } from './quest/spellConfig.js';
 import { featuresFromParams } from './quest/features.js'; // D-065: fireball off unless ?fireball=1
@@ -124,7 +131,7 @@ import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; /
 import { parseGlow } from './glowOpt.js'; // EMIS-03/04: bleed + halo knob
 import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
 import { PHYSICS } from '../../engine/index.js';
-import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
+import { drawArrowCount, drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
 import { ensureInventory, validateItemDefs, migrateSword, addItem } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
 import { presentPickups } from './quest/pickupsView.js';
@@ -285,6 +292,10 @@ bootMark('content pack loaded (manifest + JSON + meshes)');
 if (bootProg) { bootProg.phase('registry'); await bootPaint(); }
 applyPlaytestOverlay(bundle);
 await applyLocalOverlay(bundle, params, undefined, { lazyMeshes }); // git-ignored content/local/ (licence-restricted assets, this PC only)
+if (window.ASSETS.equipment) { // EQ-07/09: shield + bow + arrows -> ASSETS.models; the view-only ones are registered mesh-only below (boot budget), arrow/arrowStuck stay full models for the instance groups
+  window.ASSETS.equipment.attach();
+  for (const n of window.ASSETS.equipment.list) if (n !== 'arrow' && n !== 'arrowStuck' && window.ASSETS.models) delete window.ASSETS.models[n];
+}
 if (window.ASSETS.spellFx) window.ASSETS.spellFx.attach(); // SPELL-01b: fireball sprites -> ASSETS.models (atlas) + presets -> ASSETS.particles, BEFORE the registry/atlas/defineEmitter loop
 bootMark('local overlay applied');
 const assets = AssetRegistry.fromJSON(bundle, window.ASSETS);
@@ -758,6 +769,11 @@ const spellHandLDef = window.ASSETS && window.ASSETS.voxelModels && window.ASSET
 if (spellHandLDef && !assets.has('model', 'spellHandL')) {
   assets.add('model', 'spellHandL', { ...spellHandLDef, voxel: { ...spellHandLDef.voxel, meshOnly: true } });
 }
+// EQ-07/09: shield + bow view-model meshes (mesh-only, authored left), same precedent as swordHeld.
+if (window.ASSETS.equipment) for (const n of EQUIP_VIEW_MODELS) { // designer note (EQ-D1): shieldHeld anchor y 4.5 > size y 4 fails voxel validation; clamped here (0.5 voxel), asset untouched
+  const d = window.ASSETS.voxelModels[n];
+  if (d && !assets.has('model', n)) assets.add('model', n, { ...d, voxel: { ...d.voxel, anchor: d.voxel.anchor.map((v, i) => Math.min(v, d.voxel.size[i])), meshOnly: true } });
+}
 // HAND-WIRE-01: the realistic burning hand (`viewModels.hand`): every variant model (authored left) registered mesh-only.
 let handDef = window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.hand;
 // CHARGEN-16: `hand@look` = the hand variants re-tinted to the player look (skin tone + top dye on the sleeve). The newest saved
@@ -877,6 +893,14 @@ const spellVmH = handFxOn ? loadHandFireView(engine.viewModel, handDef, gameVoxe
   : (window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.spellHand && spellHandLDef
     ? loadSpellHandView(engine.viewModel, window.ASSETS.viewModels.spellHand, gameVoxelPool) : null);
 if (handFxOn) bindHandFx(spellVmH, engine.particles, FIREBALL_CFG.castOffset); // HAND-WIRE-02
+// EQ-07/09: shield + bow first-person handles (left arm) and the arrow instance groups; null when the designer asset is missing.
+let shieldVmH = null, bowVmH = null, arrowView = null, blockSparkAt = -1e9;
+try {
+  const evm = window.ASSETS && window.ASSETS.viewModels;
+  if (evm && evm.shield && assets.has('model', 'shieldHeld')) shieldVmH = loadShieldView(engine.viewModel, evm.shield, gameVoxelPool);
+  if (evm && evm.bow && assets.has('model', 'bowDraw3')) bowVmH = loadBowView(engine.viewModel, evm.bow, gameVoxelPool);
+  if (assets.has('model', 'arrow') && assets.has('model', 'arrowStuck')) arrowView = createArrowView(engine);
+} catch (e) { console.warn('[EQ-07/09] equipment views off:', e && e.message); }
 if (handFxOn) engine.viewModel.warmVariants(spellVmH.h, [...handDef.cycles.flame.variants, ...handDef.cycles.flameRelax.variants]);
 
 // D-025 (US-038a, architecture.md 22.3/22.7): the ONE `grid:changed`
@@ -1032,6 +1056,7 @@ async function runGame(mode, cinematic = null) {
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
+  let equipPlay = null, shieldSim = null, arrowSim = null; // EQ-07/09: rebuilt on every 'world:loaded'
   let fireball = null, fbTargets = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
   // US-091b: pack-screen mouse. Hover -> UI cell under the pointer; a click while open must not re-lock the pointer
   // (PlayerLook's own canvas click handler), so a capture listener on window swallows it first.
@@ -1112,6 +1137,7 @@ async function runGame(mode, cinematic = null) {
   // per-step allocations) - US-009 hoisted this out of update()'s body,
   // where it used to be rebuilt as a fresh object literal every call.
   const controls = { forward: 0, strafe: 0, run: false, jump: false, yawDeg: 0, pitchDeg: 0 };
+  const eqCtx = { gate: false, fx: 0, fy: 1, fz: 0, ex: 0, ey: 0, ez: 0, px: 0, py: 0, pz: 0, interact: false }; // EQ-07/09: reused per-step context
   const swordFwd = new Float64Array(2); // US-078d (30.1): reused forwardOf(look.yawDeg) output, no per-step allocation
   // Reused every fixed step for `updateInteraction` (US-012 arch review,
   // 2026-09-24 item 2): `Camera.fromEntity` allocated a `new Camera` 60x/s.
@@ -1290,6 +1316,12 @@ async function runGame(mode, cinematic = null) {
       fbTargets = createTargetables(world, engine.events);
       fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), enabled: FEATURES.fireball });
       hands.register('spell.fireball', fireball);
+      // EQ-07/09 (38.41): shield sim + arrow sim + the routing glue; shield/bow items get no-op sims so the router arms them (RMB -> left hand, LMB -> right hand)
+      shieldSim = createShieldSim();
+      arrowSim = createArrowSim(world, engine.events, BOW_CFG, fbTargets);
+      if (itemDefs) registerGearItems(hands, itemDefs, () => createStubItemSim());
+      equipPlay = createEquipPlay({ hands, shield: shieldSim, arrows: arrowSim, defs: itemDefs || {}, bowCfg: BOW_CFG, swordDamage: SWORD_CFG.light.damage,
+        say: (t) => { if (toasts) toasts.say(t, [226, 214, 176]); } });
       if (fbView) fbView.bind(fireball, lightSet); // SPELL-01b: 4 flight + 2 flash + 1 ember light, never removed
       if (practiceTarget) practiceTarget.dispose();
       practiceTarget = createPracticeTarget(world, engine.events, SWORD_CFG); // US-078d (30.1)
@@ -1300,7 +1332,7 @@ async function runGame(mode, cinematic = null) {
       engine.overlay.setGroundFn(world.terrain ? (x, y) => world.terrain.groundAt(x, y) : null);
       if (vitals) vitals.dispose(); // Q9 item 1a: drop the old world's `combat:hit` listener before a new one is added below
       hurtFx.reset();
-      vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting,
+      vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting, block: shieldSim, // EQ-07: hooks.block = the shield sim
         defence: () => { const c = playerHandle && playerHandle.data.components; return c && c.equipment && itemDefs ? defenceOf(c.equipment, itemDefs) : 0; }, // EQ-02
         respawnPose: () => { hzb.invalidate('respawn'); const rp = gameHooks.respawn(); if (rp && world.ensureBandFor) world.ensureBandFor(rp.x, rp.y); return rp; }, // WS2-05: band for the respawn pose // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
         onDied: (t) => { gameHooks.emitSimple('player:died', t.x, t.y, t.z); deathFlow.died(performance.now()); },
@@ -1495,6 +1527,7 @@ async function runGame(mode, cinematic = null) {
       window.__debug.playerHandle = playerHandle;
       window.__debug.look = look;
       window.__debug.beasts = beasts; window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; // HANDS-01b: test hooks
+      window.__debug.equipPlay = equipPlay; window.__debug.shieldSim = shieldSim; window.__debug.arrowSim = arrowSim; window.__debug.vitals = vitals; window.__debug.wakeOut = wakeOut; // EQ-07/09: tools/verify-equip-play.mjs hooks
       window.__debug.isMapOpen = isMapOpen; window.__debug.getMapPanel = getMapPanel; window.__debug.getMapChart = getMapChart; window.__debug.questBook = () => (saveRelay ? saveRelay.quest.book : null); window.__debug.questLogOpen = qlIsOpen; window.__debug.gameHooks = gameHooks; window.__debug.travel = travel; window.__debug.travelTo = (id) => travel.request(id, true); window.__debug.waystoneSim = () => (waystoneWire ? waystoneWire.sim : null); // QG-04/05: tools/verify-quest-ui.mjs hooks
       // S8-B1-15: test hook (tools/verify-map-wire.mjs)
     });
@@ -1701,7 +1734,7 @@ async function runGame(mode, cinematic = null) {
     // US-087 follow-up: drain blocked input without advancing targeting timers.
     // An allowed lock update still precedes look.update so it turns toward the fresh point.
     if (mode === 'world' && playerHandle && targeting) {
-      stepTargetingInput(targeting, dt, input, playerHandle.data, look, ending || uiLocked || paused);
+      stepTargetingInput(targeting, dt, input, playerHandle.data, look, ending || uiLocked || paused, gameKeys.lockTarget); // EQ-07: lock moved Q -> R
     }
     if (look && !ending) {
       // US-015 (7.6 item 5): while locked, PlayerLook still drains the raw
@@ -1729,6 +1762,7 @@ async function runGame(mode, cinematic = null) {
         controls.forward = (input.isDown(gameKeys.forward) ? 1 : 0) - (input.isDown(gameKeys.backward) ? 1 : 0);
         controls.strafe = (input.isDown(gameKeys.right) ? 1 : 0) - (input.isDown(gameKeys.left) ? 1 : 0);
         controls.run = input.isDown(gameKeys.run) || input.isDown(gameKeys.run2);
+        if (equipPlay && equipPlay.speedScale < 1) { controls.forward *= equipPlay.speedScale; controls.strafe *= equipPlay.speedScale; } // EQ-07: shield raised = walk x0.6
         // US-009: a HELD level, OR'd with the edge (`pressed`) so a Space tap
         // that starts and ends within one frame - between two fixed-step
         // updates - is never lost (integrate() does its own edge detection on
@@ -1783,8 +1817,20 @@ async function runGame(mode, cinematic = null) {
         if (!uiLocked && !paused && !ending && !vLocked() && input.pressed(gameKeys.swapHands)) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
         if (itemDefs) stepEquipment(playerHandle.data, itemDefs); // EQ-02: hands are derived (right = main/ranged, left = off)
         const gateOpen = look.locked && !uiLocked && !ending && !paused && !vLocked();
-        // EQ-02: main hand is the RIGHT slot now but LMB stays the attack button (owner question 2): buttons crossed here until EQ-07 reworks input.
-        hands.step(playerHandle.data, input.isDown(gameKeys.useRight) || input.pressed(gameKeys.useRight), input.isDown(gameKeys.useLeft) || input.pressed(gameKeys.useLeft), gateOpen);
+        // EQ-07 (settles the EQ-02 'crossed' note): hands.step(player, rawLeftHand, rawRightHand): the LEFT hand (shield) follows RMB,
+        // the RIGHT hand (main sword / bow) follows LMB. Q swaps the weapon set (0.3 s, buttons held back only for that time).
+        const swapHeld = equipPlay ? equipPlay.pre(playerHandle.data, input.pressed(gameKeys.swapSet), gateOpen) : false;
+        hands.step(playerHandle.data, !swapHeld && (input.isDown(gameKeys.useRight) || input.pressed(gameKeys.useRight)), !swapHeld && (input.isDown(gameKeys.useLeft) || input.pressed(gameKeys.useLeft)), gateOpen);
+        if (equipPlay) { // EQ-07/09: shield raise/block, bow draw/shoot, arrows + pick-up (look vector: trig stays here)
+          forwardOf(look.yawDeg, swordFwd);
+          const pr2 = look.pitchDeg * DEG2RAD, cp2 = Math.cos(pr2), pt2 = playerHandle.data.transform, pb2 = playerHandle.data.components.body;
+          eqCtx.gate = gateOpen; eqCtx.fx = swordFwd[0] * cp2; eqCtx.fy = swordFwd[1] * cp2; eqCtx.fz = Math.sin(pr2);
+          eqCtx.px = pt2.x; eqCtx.py = pt2.y; eqCtx.pz = pt2.z; eqCtx.ex = pt2.x; eqCtx.ey = pt2.y; eqCtx.ez = pt2.z + (pb2 && pb2.eyeH ? pb2.eyeH : 1.6);
+          eqCtx.interact = input.pressed(gameKeys.interact);
+          const shotBefore = equipPlay.bow.shotTick;
+          equipPlay.post(playerHandle.data, eqCtx);
+          if (equipPlay.bow.shotTick !== shotBefore) playBowShot();
+        }
         if (fireball) { // SPELL-01a: aim = unit 3D look vector (pitch > 0 = up); trig stays here, outside sim/
           forwardOf(look.yawDeg, swordFwd);
           const pr = look.pitchDeg * DEG2RAD, cp = Math.cos(pr);
@@ -1798,7 +1844,7 @@ async function runGame(mode, cinematic = null) {
       }
       if (sword) { // runs every step: inputs inside the hit-stop window are not lost
         forwardOf(look.yawDeg, swordFwd);
-        sword.step(playerHandle.data, swordFwd[0], swordFwd[1], hands ? hands.downOf('sword') : false);
+        sword.step(playerHandle.data, swordFwd[0], swordFwd[1], hands ? (equipPlay ? equipPlay.swordDown : hands.downOf('sword')) : false); // EQ-07: no swing while the shield is raised
       }
       if (practiceTarget) practiceTarget.step();
       if (vitals) {
@@ -2068,6 +2114,16 @@ async function runGame(mode, cinematic = null) {
         const spellMoving = !!sbody && sbody.grounded && (controls.forward !== 0 || controls.strafe !== 0);
         (handFxOn ? presentHandFire : presentSpellHand)(spellVmH, hands && !cinematic ? hands.handOf(SPELL_HAND_ITEM) : null, simTime, simTime, spellMoving, fireball);
       }
+      if (equipPlay && !cinematic) { // EQ-07/09: first-person shield / bow (left arm) + the arrow instances
+        const eq7 = playerHandle.data.components.equipment, b7 = playerHandle.data.components.body;
+        const mv7 = !!b7 && b7.grounded && (controls.forward !== 0 || controls.strafe !== 0);
+        const tk7 = vitals ? vitals.tick : 0;
+        const meleeOut = !!eq7 && eq7.set === 'melee' && eq7.off !== null && equipPlay.swapT === 0;
+        const rangedOut = !!eq7 && eq7.set === 'ranged' && eq7.ranged !== null;
+        if (presentShield(shieldVmH, meleeOut, shieldSim, tk7, simTime, mv7)) { playShieldClank(); blockSparkAt = simTime; }
+        presentBow(bowVmH, rangedOut, equipPlay.bow, equipPlay.swapFrac, equipPlay.bow.tick, simTime, mv7);
+        if (arrowView) { const pt7 = playerHandle.data.transform; arrowView.present(arrowSim, pt7.x, pt7.y); }
+      }
       // RE-07a (28.9): CPU overlay composite after the fade (no-op without recorded ops; GPU twin = RE-07b).
       if (fb.gpu) engine.overlay.flush(cam); // RE-07b: GPU path rasterises here, GpuOverlayPass composites in present()
       else if (engine.overlay.stats.ops) engine.overlay.renderCpu(cam, fb.rt.cells, fb.depth.depth);
@@ -2123,6 +2179,11 @@ async function runGame(mode, cinematic = null) {
           // not just while dead - the end card is already covered by the `!ending` gate around this whole block.
           drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals, FEATURES.fireball);
           drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals, isReduceMotion());
+          if (equipPlay) { // EQ-07/09: block spark + the arrow count next to the hearts while the bow set is out
+            const eqH = engine.world.get('player').data.components.equipment, hudOn = !vitals.dead && !wakeOut.inputLocked && !isMapOpen();
+            if (eqH && eqH.set === 'ranged' && eqH.ranged !== null) drawArrowCount(ui, assets.uiStyle.vitals, eqH.quiver ? eqH.quiver.n : 0, hudOn);
+            if (hudOn) drawBlockSpark(ui, ui.cols, ui.rows, (fb.timeSec - blockSparkAt) * 1000);
+          }
           hurtFx.draw(ui); // HURT-FX-01
           deathFlow.draw(ui, ui.cols, ui.rows); // DEATH-FLOW-01
           presentPickups(engine.world, assets.pickupStyle, fb.timeSec); // US-080b
