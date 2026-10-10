@@ -41,7 +41,7 @@
 // still +Inf (sky). One shared sprite pass/shader, no separate draw path.
 import { PROJ_HFOV_DEG as HFOV_DEG } from './projection.js';
 import { lightAt } from './lighting.js';
-import { createPitchedTerms, pitchedTerms, worldToCell, resolveProjection, isPitchedFamily, ORTHO_BACK_M } from './projection.js';
+import { createPitchedTerms, pitchedTermsInto, pitchedTerms, worldToCell, resolveProjection, isPitchedFamily, ORTHO_BACK_M } from './projection.js';
 
 export const MAX_SPRITES = 64;
 export const SPR_TEXELS = 5;
@@ -74,7 +74,7 @@ export function camBasis(cam, rt, out, renderer) {
     const pt = out.pt || (out.pt = createPitchedTerms());
     const g = out.grid || (out.grid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 });
     g.cols = cols; g.rows = rows; g.pxCellW = rt.pxCellW || 1; g.pxCellH = rt.pxCellH || 1;
-    pitchedTerms(cam, g, pt);
+    pitchedTermsInto(pt, cam, g);
     out.ptOn = true;
   } else {
     out.ptOn = false;
