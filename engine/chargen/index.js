@@ -7,4 +7,3 @@ export { composeCharacter } from './compose.js';
 export { meshCharacter } from './mesh.js';
 export { sampleClip, eulerToQuat, quatToEuler } from './clip.js';
 export { collapseRig, HUMANOID_PART_MAP, CLIP_STEP_MS, MAX_PARTS } from './collapse.js';
-export { riggedFromGlb } from './fromGlb.js';
