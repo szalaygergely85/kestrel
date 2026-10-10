@@ -769,6 +769,7 @@ The owner's workflow for a NEW rigged/animated voxel prop, no JS required:
   |---|---|---|
   | `questMark` | `!` (rounded bar tapering to a point, 4-voxel gap, 5 x 3 dot) | active marker |
   | `questMarkTurnIn` | `?` (same style, size, clips) | **later** (WoW "turn in"; no step uses it yet) |
+  | `questMarkReady` | `?` (QG-D1, D-058; same record() as `questMark`: size, anchor, pivot, mounts, clips, fx, v1.49 glow) | over a giver while the quest is **ready** to hand in (`!` = has a quest). `questMarkTurnIn` is now a legacy alias of the same object; `questMarkFx.models.ready` = `'questMarkReady'`; Node exports gain `questMarkReady` |
 
 - **Look:** a 5-voxel-deep gold slab. Faces (y0 front, y4 back): edge cells `brass_light`, interior `brass_hot`, a white-gold core line `brass_glint` (emissive 0.90: the highlight by day, the glowing stroke at night; mirrored on the back face). y1 / y3 `brass_light`, y2 `brass_dark` (dark seam when edge-on). Layer y2 also holds the **dark back plate**: an `iron_dark` ring on every cell 4-adjacent to the glyph, so it reads against a bright sky.
 - **v1.49 look (owner 2026-10-08: "why does it have a dark silhouette? I thought the whole sign would be white or orange"; supersedes the Look bullet above, kept as history):** the WHOLE glyph glows, only 3 merged emissive materials, no palette / detail-pass edit:
