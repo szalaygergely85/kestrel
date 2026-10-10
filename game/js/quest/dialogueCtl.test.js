@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import { compileDialogue } from '../../../engine/index.js';
 import { createDialogueCtl } from './dialogueCtl.js';
 
-const def = JSON.parse(readFileSync(new URL('../../../content/dialogue/bear.dialogue.json', import.meta.url), 'utf8'));
+// CH1-05: the live bear graph was rewritten; the controller test keeps the pre-CH1 shape as a fixture.
+const def = JSON.parse(readFileSync(new URL('./sim/fixtures/bear.legacy.dialogue.json', import.meta.url), 'utf8'));
 const dialogues = { bear: compileDialogue(def) };
 
 function fake() {

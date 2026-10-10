@@ -1,0 +1,67 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "bear",
+  "speakers": {
+    "burl": {"label": "BURL"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "bear.q.ready", "requires": "q.burl.boars.ready"},
+    {"node": "bear.q.active", "requires": "q.burl.boars.active"},
+    {"node": "bear.q.offer", "requires": "q.burl.boars.available"},
+    {"node": "bear.q.done", "requires": "q.burl.boars.done"},
+    {"node": "bear.repeat", "requires": "bear.talked"},
+    {"node": "bear.d1.l1"}
+  ],
+  "nodes": {
+    "bear.d1.l1": {"clip": "wave", "lines": [
+      "Well. A cub from the loud hill, fallen out of the sky."
+    ], "next": "bear.d1.l2", "speaker": "burl"},
+    "bear.d1.l2": {"lines": [
+      "...Bears don't talk."
+    ], "next": "bear.d1.l3", "speaker": "you"},
+    "bear.d1.l3": {"choices": [{"next": "bear.d1.a.l1", "text": "It's a trick. A speaking-tube."}, {"next": "bear.d1.b.l1", "text": "Can I have a berry?"}, {"next": "bear.d1.c.l1", "text": "Have you seen the blinking light?"}], "lines": [
+      "And cubs don't fly. Yet here we both are."
+    ], "speaker": "burl"},
+    "bear.d1.a.l1": {"lines": [
+      "Check my ears for brass, then. Gently."
+    ], "next": "bear.d1.close", "speaker": "burl"},
+    "bear.d1.b.l1": {"clip": "laugh", "lines": [
+      "One. The blue ones are mine. They are all blue."
+    ], "next": "bear.d1.close", "speaker": "burl"},
+    "bear.d1.c.l1": {"lines": [
+      "Since my grandmother was a cub. It never tires."
+    ], "next": "bear.d1.close", "speaker": "burl"},
+    "bear.d1.close": {"end": true, "lines": [
+      "Go on, sky-cub. Walk soft. The wild is listening."
+    ], "setFlag": "bear.talked", "speaker": "burl"},
+    "bear.repeat": {"end": true, "lines": [
+      "Back again? The berries are still mine. Mostly."
+    ], "speaker": "burl"},
+    "bear.q.offer": {"choices": [{"next": "bear.q.accepted", "setFlag": "q.burl.boars.accept", "text": "I'll thin them out."}, {"next": "bear.q.later", "text": "Not yet."}], "lines": [
+      "Five boars have found my berry slope.",
+      "They root up the bushes, and they do not share.",
+      "I am too old to chase. You have steel, sky-cub."
+    ], "speaker": "burl"},
+    "bear.q.accepted": {"end": true, "lines": [
+      "Good. Mind the tusks. They charge straight, turn slow."
+    ], "speaker": "burl"},
+    "bear.q.later": {"clip": "laugh", "end": true, "lines": [
+      "Then sit a while. The boars will still be rude."
+    ], "speaker": "burl"},
+    "bear.q.active": {"end": true, "lines": [
+      "Still snorting down there. I can hear them chewing."
+    ], "speaker": "burl"},
+    "bear.q.ready": {"lines": [
+      "Quiet. Listen. Only bees now, and the wind."
+    ], "next": "bear.q.thanks", "speaker": "burl"},
+    "bear.q.thanks": {"clip": "wave", "end": true, "lines": [
+      "Thank you, sky-cub. The slope can breathe again."
+    ], "setFlag": "q.burl.boars.handin", "speaker": "burl"},
+    "bear.q.done": {"end": true, "lines": [
+      "Quiet slope, full bushes. Still not the blue ones."
+    ], "speaker": "burl"}
+  },
+  "model": "bear"
+}

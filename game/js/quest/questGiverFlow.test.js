@@ -50,23 +50,24 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
   assert.equal(r.book.statusOf('burl.boars'), 1);
   assert.equal(r.objectiveText(), 'Find the old bear on the hillside');
   const offer = t.talk(0);
-  assert.equal(offer[0], 'Five boars have found my berry slope.');
-  assert.equal(offer.at(-1), 'Good. Mind the tusks. They charge straight, turn slow.');
+  assert.equal(offer[0], "If you're heading west, mind the woods.");
+  assert.equal(offer.at(-1), 'Mind their tusks, sky-cub.');
   assert.equal(r.book.statusOf('burl.boars'), 2, 'Accept -> active');
   assert.deepEqual(ev, ['quest:accepted:burl.boars']);
   assert.equal(r.objectiveText(), 'Bring down the five wild boars', 'HUD follows the tracked quest');
-  assert.deepEqual(t.talk(), ['Still snorting down there. I can hear them chewing.'], 'active -> reminder');
+  assert.deepEqual(t.talk(), ['Still hearing those greedy snouts.', 'Five boars. No need to chase the whole herd.'], 'active -> reminder');
   kill(r, 4); assert.equal(r.book.statusOf('burl.boars'), 2);
   kill(r, 5); assert.equal(r.book.statusOf('burl.boars'), 3);
   assert.equal(r.objectiveText(), 'Tell Burl the slope is quiet');
   assert.ok(ev.includes('quest:ready:burl.boars'));
   assert.equal(r.state.completed.length, 4, 'm1 beasts still open before the hand-in');
-  assert.deepEqual(t.talk(), ['Quiet. Listen. Only bees now, and the wind.', 'Thank you, sky-cub. The slope can breathe again.']);
+  const handIn = t.talk(); // CH1-05: after-five lines, thanks (hand-in), then flows into the follow offer
+  assert.equal(handIn[0], 'Ah! I can smell the berries again!'); assert.equal(handIn[7], "You've done an old bear a kindness."); assert.equal(handIn[8], 'Come along, sky-cub.');
   assert.equal(r.book.statusOf('burl.boars'), 4);
   assert.ok(ev.includes('quest:done:burl.boars'));
   assert.ok(r.state.completed.includes('beasts'), 'm1 beasts completed by the done flag');
   assert.equal(r.objectiveText(), m1.objectives[5].text, 'HUD back to m1 (waystone)');
-  assert.deepEqual(t.talk(), ['Quiet slope, full bushes. Still not the blue ones.'], 'done line comes before bear.talked');
+  assert.equal(t.talk()[0], 'Come along, sky-cub.', 'done -> follow offer (entry 4) comes before bear.talked');
   assert.equal(Object.keys(t.state).filter((k) => k.includes('q.')).length, 0, 'q.* never stored in world.state');
 }
 // ---- Later keeps it available; boars before accept count; Esc on the ready line hands in nothing ----
