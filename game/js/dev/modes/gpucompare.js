@@ -1,6 +1,6 @@
 import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
-  meshFromJSON, meshFromBin, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
+  meshFromJSON, meshFromBin, composeCharacter, meshCharacter, collapseRig, riggedModelDef, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
 } from '../../../../engine/index.js';
 import {
@@ -198,6 +198,12 @@ function buildCompareRuns(ctx) {
   // HANDS-01c: the spell glove (`voxelModels.spellHandL`, authored left), same mesh-only registration (pose `handsSwapped` below).
   const spellHandLDef = globalThis.ASSETS && globalThis.ASSETS.voxelModels && globalThis.ASSETS.voxelModels.spellHandL;
   if (spellHandLDef && !assets.has('model', 'spellHandL')) assets.add('model', 'spellHandL', { ...spellHandLDef, voxel: { ...spellHandLDef.voxel, meshOnly: true } });
+  // RIG-GC-01 (38.32 item 8): the chargen default character (fixed recipe, no randomness) through composeCharacter -> meshCharacter ->
+  // collapseRig -> riggedModelDef, registered as `char.gc` before the pool binds (mesh-only rigged voxel model).
+  try {
+    const gcKit = ctx.gcKit; // fetched in the async scene-mode entry
+    assets.add('model', 'char.gc', riggedModelDef(collapseRig(meshCharacter(composeCharacter(gcKit, gcKit.defaults)), gcKit.partMap)));
+  } catch (e) { console.warn('[gpucompare] char.gc not built:', e && e.message); }
   const compareVoxelPool = new VoxelPool();
   compareVoxelPool.renderer = ctx.renderer;
   compareVoxelPool.bind(assets, matTable);
@@ -345,6 +351,23 @@ function buildCompareRuns(ctx) {
           const x = 1462 - (i % 2) * 3.5, y = 1025 + (i - 2.5) * 3.2;
           writeUnitInstance(ltGroup.ib, ltGroup.count++, x, y, worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0, yaws[i], 0xB000 | i, 0);
         }
+      },
+    });
+  }
+
+  // RIG-GC-01: 1 rigged character, rest pose (the kit has no clips), jaw partRot ry 30, 3 m ahead of the camera, mesh only.
+  if (assets.has('model', 'char.gc')) {
+    const CG = { x: 1470, y: 1025 };
+    const cgZ = worldM1.terrain ? worldM1.terrain.groundAt(CG.x, CG.y) : 0;
+    runs.push({
+      world: worldM1, lights: worldM1Lights, real: true, meshOnly: true, name: 'world_m1: charRig (RIG-GC-01, rigged chargen character, jaw partRot ry 30, 3 m ahead)',
+      cam: { x: CG.x + 3, y: CG.y, z: cgZ + 1.6, yawDeg: 90, pitchDeg: 0 },
+      before: () => {
+        const pm = compareVoxelPool.models.get('char.gc');
+        const idle = pm && pm.clipIndex.idle !== undefined ? pm.clipIndex.idle : -1;
+        const slot = compareVoxelPool.pushInstance('char.gc', CG.x, CG.y, cgZ, 270, idle, 0, 0);
+        const jaw = pm && pm.partIndex ? pm.partIndex.jaw : undefined;
+        if (slot >= 0 && jaw !== undefined) { const sl = compareVoxelPool._rawSlot(slot); sl.addPart = jaw; sl.addRx = 0; sl.addRy = 30; sl.addRz = 0; } // = components.voxel.partRot
       },
     });
   }
@@ -761,6 +784,7 @@ async function runGpuCompareSceneMode(ctx) {
   if (wg && wg.setStable) wg.setStable(false); // US-073c: every normal row sees the unstabilised edge output; the `stable` row below switches it on for its two frames
 
   // TREES-LP-b: the unplaced Kenney stub (test-only content) for the `lowpolyTrees` pose; missing file = pose skipped.
+  try { ctx.gcKit = await (await fetch(new URL('../../../../content/chargen/human.charkit.json', import.meta.url))).json(); } catch (e) { ctx.gcKit = null; } // RIG-GC-01
   try { const u = new URL('../../../../content/meshes/kenney/tree_oak.mesh.json', import.meta.url), meta = await (await fetch(u)).json(); ctx.lowpolyTreeMesh = typeof meta.bin === 'string' ? meshFromBin(meta, await (await fetch(new URL(meta.bin, u))).arrayBuffer()) : meshFromJSON(meta); /* MESH-BIN-01 */ } catch (e) { ctx.lowpolyTreeMesh = null; }
   const { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances } = buildCompareRuns(ctx);
   gpuPipeline.bindVoxels(compareVoxelPool);

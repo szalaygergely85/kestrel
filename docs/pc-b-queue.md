@@ -174,7 +174,7 @@ Theme: character pipeline (RIG/CHARGEN) + flyers. Checked 2026-10-10 by grep in 
 2. `CHARGEN-15` - first villager from a `.kestrel` (files per its row: package, `content/worlds/world_m1.world.json`, `game/js/main.js`). Spec: backlog CHARGEN-15 AC. Ends: po-review (owner look). Deps RIG-03w. Then `CHARGEN-17` (creation screen, `game/js/ui/charCreate.js` + test, `titleMenuHost.js`) if time; deps RIG-02b.
 
 **kestrel-2** (wg/**, gpucompare)
-1. `RIG-GC-01` - files `game/js/dev/modes/gpucompare.js`, gpucompare test, baseline json. Spec: 38.32 item 8, skill `gpucompare`. ACs: new row `charRig` (1 rigged character instance at a fixed pose, jaw `partRot` set) PASS or recorded known-FAIL with metrics (D-039, no threshold widening); no other row changes; row name in the gpucompare Node test; Intel baseline updated via S8-B1-13 tooling. Ends: arch-review. Deps RIG-02b. If blocked, kestrel-2 stays on `S8-B1-11c`/`SWAY-GC-01` from the earlier block.
+1. `RIG-GC-01` - files `game/js/dev/modes/gpucompare.js`, gpucompare test, baseline json. Spec: 38.32 item 8, skill `gpucompare`. ACs: new row `charRig` (1 rigged character instance at a fixed pose, jaw `partRot` set) PASS or recorded known-FAIL with metrics (D-039, no threshold widening); no other row changes; row name in the gpucompare Node test; Intel baseline updated via S8-B1-13 tooling. Ends: arch-review. Deps RIG-02b. If blocked, kestrel-2 stays on `S8-B1-11c`/`SWAY-GC-01` from the earlier block. STATUS: dev done (Node), awaiting main-session browser gpucompare + baseline row; see docs/lanes/pc-b1.md.
 
 **kestrel-3** (engine/mesh, new engine modules)
 1. `RIG-02b` (already in its row; first, gates the rest). Ends: arch-review.
