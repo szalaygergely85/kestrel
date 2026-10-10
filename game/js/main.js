@@ -164,7 +164,7 @@ const saveStorage = () => (demo.on ? demoStorage(getSaveStorage()) : getSaveStor
 // (8:3 aspect kept, see `clampGrid`), logged once here on the user-facing
 // param (the RenderTarget-internal cpu-fallback log is separate).
 // ME-19a: mesh GPU versus the rasterJS twin; one geometry-parity mode.
-const isGeometryCompare = params.get('gpucompare') === '1';
+const isGeometryCompare = (params.get('gpucompare') === '1' || params.get('gpucompare') === 'emissive');
 // ME-06 diagnostic: `&voxels=0` on either compare page empties the voxel
 // instance queue on both sides after each pose's feed, so a mesh-vs-oracle
 // gap can be split into "voxel props (ME-08)" vs "everything else".
@@ -921,7 +921,7 @@ if (gpuBlocked) {
   modeByName.get('bench').run(ctx);
 } else if (params.get('shadetest') === '1') {
   modeByName.get('shadetest').run(ctx);
-} else if (params.get('gpucompare') === '1' || params.get('gpucompare') === 'shade' || params.get('gpucompare') === 'mesh') {
+} else if (params.get('gpucompare') === '1' || params.get('gpucompare') === 'emissive' || params.get('gpucompare') === 'shade' || params.get('gpucompare') === 'mesh') {
   modeByName.get('gpucompare').run(ctx);
 } else if (params.get('flicker') === '1') {
   modeByName.get('flicker').run(ctx);

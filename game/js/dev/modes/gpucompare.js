@@ -134,8 +134,9 @@ function buildCompareRuns(ctx) {
     const x = 1428 - 2 * Math.sin(yr), y = 1040 + 2 * Math.cos(yr);
     return { x, y, z: (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0.53) + 1.6, yawDeg: yawDeg + yawNudge, pitchDeg };
   };
-  // EMIS-03/04: `?gpucompare=emissive` runs ONLY this pose (brazier inside the tower; glow gate is material-only, so time of day does not matter for parity).
-  const emisPose = (GATE_POSES.find((g) => g.slug === 'brazier') || {}).cam;
+  // EMIS-03/04: `?gpucompare=emissive` runs ONLY this pose (tower crown from 15 m west, 24 emissive cells in view - the interior brazier is a sprite, hidden in this mode; glow gate is material-only, so time of day does not matter for parity).
+  const emisParam = ctx.params.get('emispose') || '1485,1025,6,90,20', emisNum = emisParam.split(',').map(Number); // `emispose=<slug>` or `x,y,z,yaw,pitch` (dev)
+  const emisPose = emisNum.length === 5 && emisNum.every(Number.isFinite) ? { x: emisNum[0], y: emisNum[1], z: emisNum[2], yawDeg: emisNum[3], pitchDeg: emisNum[4] } : (GATE_POSES.find((g) => g.slug === emisParam) || {}).cam;
   const runs = [
     ...GPU_COMPARE_POSES.map((pose) => ({ world: testRoom, lights: testRoomLights, name: `test_room: ${pose.name || '(pose)'}`, cam: { x: pose.x, y: pose.y, z: pose.z, yawDeg: pose.yawDeg, pitchDeg: pose.pitchDeg } })),
     { world: worldM1, lights: worldM1Lights, name: `world_m1: player spawn (${m1Eye.x.toFixed(1)}, ${m1Eye.y.toFixed(1)}) yaw ${m1Eye.yawDeg} pitch ${m1Eye.pitchDeg}`,
@@ -707,7 +708,7 @@ function buildCompareRuns(ctx) {
 
   if (ctx.params.get('gpucompare') === 'emissive' && emisPose) {
     runs.length = 0; // emissive mode: only the brazier pose (rows emissive-glow-fg/bg)
-    runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: brazier (EMIS glow)', cam: { ...emisPose }, real: true });
+    runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: tower crown (EMIS glow)', cam: { ...emisPose }, real: true });
   }
   return { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances };
 }
