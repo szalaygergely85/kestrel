@@ -5760,3 +5760,156 @@ createArrowSim(world, events, cfg, targets) -> {
    - **`shield.test.js`:** raise/lower in 7/9 steps; angle table (0, 45, 59 deg block; 61, 90, 180 deg do not); a blocked hit = 0 hp lost, `p.blocked = 1`, knockback 0.3 m +-0.1; the beast stays in STAGGER for 24 steps after a blocked charge; no swing while raised.
    - **`arrows.test.js`:** speed at draw 0/1; range parabola within 2 % of analytic; 45 m/s vs a 0.3 m wall on grid AND mesh physics sticks before the wall; beast hit damage 1..3x; 70 % pickable over 1000 serials (+-3); expiry at 1800 steps; pool full -> `fire` false; 0 alloc over 1000 steps; equal hash across two runs. `fireball.test` unchanged.
 12. **Do not:** put arrows or the shield in `engine/physics` (or import `game/` there); use trig or Math.random in the sim; emit `combat:hit` inside a `combat:hit` listener; save stuck arrows; let the sim touch the quiver or inventory; add a new event type for blocks (use the `blocked` out field).
+
+### 38.42 MAP-A1 Geography recipe layers + skyline (PC-B architect opus, 2026-10-11; final per D-066)
+
+Scope: D-067 enclosed world (river through the middle from the mountains to the sea, sea + beach/dunes/estuary on one side, mountains on the others, locked gate pass) built on the existing analytic recipe `design/levels/overworld_far.js` (contract: `heightAt`/`typeAt` are pure in (x, y)). Geography values come from MAP-00 (`docs/world-map-2026-10-11.md`). This note fixes the shape, not the coordinates. **Coordinates: engine convention (metres, x east, y SOUTH).** The MAP-00 draft row says "y north", so the designer converts before any data lands.
+
+**World rect.** New recipe key `geo.world: {x0, y0, x1, y1}`, 128 m aligned, inside `[0, 4096]^2` (chunk indices and `terrainBand.cx0/cy0` are >= 0, so no negative coords). The far grid covers exactly this rect: `map: {x0, y0, w, h, cell: 8}` with `w, h <= 512`. `x0/y0` default to 0 (today: 0, 0, 256, 256 = byte-identical). The rect must contain the keep rect below.
+
+**Keep mask (the gate for every layer).** `geo.keep: {x0: 704, y0: 832, x1: 1728, y1: 1344}` = zones east + west (x 768..1664, y 896..1280) + 64 m. Inside it every layer is a no-op **by branch, not by weight** (`if (inside keep) skip` before any float op), so near bakes, far texels and scatter there stay bit-identical. Layers fade in OUTSIDE it (the falloff starts at the keep edge). The validator throws if a layer's hard core overlaps the keep rect.
+
+**Layer API (design file; pure; 0 alloc per sample):**
+```js
+/** @typedef {{id: string, rect: [number, number, number, number],     // AABB incl. falloff; outside = skipped
+ *   heightFn?: (h: number, x: number, y: number, F: GeoFields) => number,
+ *   typeFn?: (t: number, x: number, y: number, h: number, slope: number, F: GeoFields) => number}} GeoLayer */
+```
+The order is fixed: `sea/coast -> ridges/peaks -> lake basin -> marsh -> river (carves last) -> biome types`. `recipeHeight` = today's sum, then the layers. Stamps, structureBlend and edits still apply after the layers (authored content wins). `typeAt`: the river halfWidth, edit paint, path and paints keep their priority as today, then the base rock/forest/grass pick runs, then the layers' `typeFn` (sea = 2, plus sand, snow, reeds, fen, flowers, alpine).
+- **GeoFields** are built once at recipe load as a pure function of the data. Each region (coast line, each ridge polyline, lake, marsh, each biome polygon, river polyline) gets one Float32 signed-distance grid at 16 m over the world rect: <= 16 fields x 256^2 x 4 B <= 4 MB. `sdf(id, x, y)` samples it bilinearly. Polygons have <= 32 verts and polylines <= 64. No per-sample polygon loops.
+- **Sea + coast:** a `seaLevel` z. The seabed beyond the beach is flattened to `seaLevel - 0.3` (type 2), so the far grid itself reads as sea. The beach band is `beachM` wide (sand, slope <= 0.15). Dunes = low fbm on sand. The estuary = a river width ramp plus a delta fan into the sea. Water: one world `water` rect region `sea` at `seaLevel`, `waves: 'sea'` (existing renderer; WATER_MAX 32 unchanged). No swimming: the walk bound sits on the beach (38.43).
+- **Ridges + peaks:** a ridge polyline with `width` and `baseH`, plus peaks `{x, y, h, r}`. Height = smoothstep(width) * (baseH + ridged fbm) + gaussian peaks. **Height budget: peaks <= +800 m above sea.** Foothill slopes steeper than `rock.slope` become rock (a natural wall). Snow type where `h > snowLine + 25 * fbm` and slope < rock slope. Steep faces above the snow line stay rock.
+- **River:** one polyline from source to mouth with per-vertex `[x, y, halfWidth, carve]`. Inside `keep.y0..y1` the river IS today's `riverX(y)` (ford x ~1029 at y 1068 unchanged). Outside it the polyline takes over, blended over 128 m at the keep edges. The carve reaches `seaLevel` at the mouth with no step (MAP-04 test).
+- **Lake:** the basin SDF shapes a bowl to `lakeZ - depth`, with a water region `lake` (circle/rect) at `lakeZ` and a sand/reeds shore band.
+- **Biomes (type layer + scatter driver):** `biomeAt(x, y) -> u8` = argmax over the biome SDF weights `w_i = smooth(blendM, 0, sdf_i) + 0.25 * (hash01(floor(x/2), floor(y/2)) - 0.5)`. This gives a soft, deterministic, stochastic edge. Inside keep the biome is 0 (`meadow`, today). Table: `geo.biomes[id] = {name, ground: typeName, forest: {fill, species: {meshId: weight}}, detail: {layerName: densityMult}}`. The different forest kinds all use ground type `forest` (id 1, canopy rule unchanged), with per-biome species weights over existing meshes (memory rule: no new env designs).
+
+**Terrain types (engine).** Append only: `sand 5, snow 6, reeds 7, fen 8, flowers 9, alpine 10` (ids 0-4 untouched). `Terrain.js TYPE_NAMES` and `scatter.js DETAIL_TYPES` become data-sized from the recipe `types` table (<= 16 entries, id = table order; the validator throws on gaps). The shade/glyph LUTs size from the same table. The GBuffer already carries the type in bits 16+. New palette entries are append-only in `design/palette.js`.
+
+**Skyline (what reads from the meadow at 1460,1030).**
+- The far grid covers the whole world rect: LOD0 8 m near, LOD1 32 m (`FAR_LOD1_STEP`) beyond. A 512^2 world is ~16k LOD1 quads, which is fine on both GPUs.
+- Fog: `far.full` stays 1500 (no global re-baseline). New look key `haze.skyline: {fogMax: 0.55, fromZ, seaFogMax: 0.7}`. The fog factor of FAR terrain texels is capped at `fogMax` where world z > `fromZ` (peaks), and at `seaFogMax` for type-2 texels at `seaLevel` (the sea line). Precedent: `farTower.fogMax`. Only far pixels change.
+- Sea beyond the world rect: a flat "horizon skirt" far tile at `seaLevel`, type 2, reaching `geo.seaSkirtM: 6000` out from the sea-side edge(s) only (4 verts per side, fixed index layout, no far exclusion). The water clipmap skirt (`WATER_SKIRT_HALF` 1900) is NOT widened.
+- MAP-06a verifies three things: the camera far clip and depth range are >= 6 km; far tiles stay out of the sun-shadow caster set beyond the existing cast range; and the larger `farMaxH` does not defeat the per-tile 23.4 early-out (per-tile bbox).
+
+**Perf budget.**
+- Per heightAt sample: a layer outside its `rect` costs one AABB test (<= 8 layers).
+- Near zone bake (5x3, AUD-30 path): +<= 10 % inside keep; <= 1.4x today's zone bake in mountain/coast zones.
+- Far bake (512^2, 5 heightAt per texel because cell 8 != slopeEps): measure it. Gate: <= 1.5 s total on the laptop, stepped at <= 4 ms/frame under the title/loading screen. If it is over, ASK ARCHITECT (worker, or a far-bake cache keyed like `nearBandKey`).
+- GeoFields build: <= 60 ms at load. GPU skyline (fog cap + skirt): <= 0.3 ms p95 ultra.
+
+**Tests.**
+- `geoLayers.test.js` (Node): an empty layer list gives today's bytes. With all layers on: `bakeNearBand` east + west hashes equal the pinned pre-change hashes, and far texels inside keep are equal. 0 alloc over 100k samples. River continuity at the keep edges (|dh| < 0.05 per 2 m); mouth z == seaLevel +- 0.05. Biome table validator. Type ids 0-4 unchanged.
+- Gates: route-walk all legs PASS. gpucompare: existing rows PASS, or show only far-pixel deltas with metrics (D-039). New row `meadowSkyline`.
+
+**Story split (rows in docs/pc-b-queue.md):**
+- MAP-01a: composer + keep mask + GeoFields (design file + test, ~0.75 d).
+- MAP-01b: engine work: world rect / far grid origin + size, data-sized type table, far bake timing (~1 d).
+- MAP-01c: biome scatter: per-biome species weights + detail density in `engine/world/scatter.js` (~0.75 d).
+- MAP-02..05: content layers (as written).
+- MAP-06a: JS twin: skyline fog cap + horizon skirt (~0.75 d).
+- MAP-06b: WGSL/GLSL + gpucompare row (~0.5 d).
+
+**Do not:**
+- Use weights or lerps inside the keep rect (branch out instead).
+- Evaluate polygons per sample.
+- Renumber or reuse type ids 0-4, or add per-biome forest TYPES (species vary by biome only).
+- Widen the water clipmap skirt or change the global fog.
+- Put geography or biome names in `engine/` (the engine sees layers, fields and a type table).
+- Add swimming or river physics, or place new Ruins-pack pieces.
+- Raise peaks past the 800 m budget without a re-measure.
+
+### 38.43 MAP-A2 Walk anywhere: band grid, map bounds, budgets (PC-B architect opus, 2026-10-11; final per D-066)
+
+Scope: generalise the 38.38 authored zones (WS2-01..05: `World.streamBand`, `ensureBandFor`, `Terrain.beginNearBand/nearBandStep/swapNearBand`, stepped scatter, terrainMesh swap, `band:late`) into a generated zone GRID over the 38.42 world rect, with walk bounds from the map. **Everything in 38.38 "Do not" still holds.** The old `terrainBand`/`terrainBands` paths stay byte-identical.
+
+**Data (world json, engine-validated; mutually exclusive with `terrainBand`/`terrainBands`):**
+```js
+terrainGrid: { cx0: 0, cy0: 0, cx1: 32, cy1: 32,   // chunk bounds of the world rect (128 m chunks), cx0/cy0 >= 0
+               cw: 5, ch: 3, stepX: 2, stepY: 1,    // zone size + pitch in chunks (v1: exactly these)
+               ox: 0, oy: 0,                        // origin phase: zone (i,j) starts at chunk (ox + i*stepX, oy + j*stepY)
+               switch: { prefetchX: 176, switchX: 112, prefetchY: 120, switchY: 88 } }
+```
+With `ox` even, zones `(4,7)` and `(3,7)` ARE today's east `{8,7}` and west `{6,7}`. The bake is per-cell pure, so stage 0-2 band bytes and gpucompare rows do not move. Zones are clamped to the chunk bounds, and all zones are the same size (5x3 = 640 x 384 m).
+
+**Selection (engine, deterministic; `engine/world/bandGrid.js`, pure, 0 alloc):**
+- `marginX/marginY(zone, x, y)` = the distance to the nearest x / y edge.
+- Keep the current zone while `mX >= switchX && mY >= switchY`.
+- When `mX < prefetchX || mY < prefetchY`, pick the target = the zone maximising `slack = min(mX - switchX, mY - switchY)` among the <= 3x3 zones around the pose (ties: lower j, then lower i). Prefetch only if the target differs from both the current and the pending zone.
+- Swap when the current zone is under its switch threshold on either axis AND the pending zone is ready. A pending zone that is no longer the target is dropped (its arrays are released, never pooled).
+- Proof against thrash: with ch 3 / stepY 1 the best zone always has `mY >= 128 > prefetchY 120`; with stepX 2 the best zone has `mX >= 192 > prefetchX 176`. At a zone corner a single swap fixes both axes (the slack picks the diagonal zone). At the world edge no zone improves the slack, so the target == current and nothing happens.
+- `band:late` (sync finish, logged) fires if `mX < 32 || mY < 32` while the bake is still pending.
+- y swaps drop or gain strips >= 88 m from the player (vs 112 m in x). Accepted: detail `drawM` is 70, trees beyond that switch canopy <-> instances as in 38.38.
+
+**API (additions only):** `World.load` accepts `terrainGrid`. `World.streamBand`/`ensureBandFor`/`bandId` keep their signatures; `bandId` = `"g{i}_{j}"`. `bandGrid.zoneAt(grid, i, j, out)`, `bandGrid.pick(grid, cur, x, y, out) -> 0 keep | 1 prefetch | 2 swap-ready-check`. `Terrain.beginNearBand` already copies overlap cells: stepX 2 = 6 new chunks, stepY 1 = 5 new chunks, ~80 ms laptop = <= 40 frames at 2 ms. Max 2 bands in memory (current + pending, ~2.2 MB with scatter twins).
+
+**Far coverage:** the far grid = the world rect (38.42 MAP-01b), so no zone sits outside it. `terrainMesh._updateFarExclusion` works for any band rect (no change), and the exclusion still moves at `_publishNear`. TerrainTextures/passRaster upload any band origin (MAP-12; today they are only exercised at east/west).
+
+**Walk bounds from the map.** New `bounds.shape: 'polygon'`: `{shape: 'polygon', pts: [[x, y], ...]}`, 3..128 verts, simple (validator checks for no self-intersection), walk = inside. MAP-00 traces it along the beach (no swimming), the mountain foot (where slopes turn to rock), the Wall and the gate pass (the gate itself = solid colliders, MAP-09). At load: edges go into a 64 m bucket grid, and the clamp is point-in-polygon + nearest-edge push-back over the <= 9 buckets around the pose (<= 0.02 ms/step, 0 alloc). The `union` capsule list stays for old worlds. When `terrainGrid` is set, the authored capsule bounds are replaced (MAP-11). Terrain steepness stays a second, natural wall. It is not a substitute for the polygon.
+
+**Save / load / travel / respawn.** Band state is derived and never saved. Load, travel, respawn and void-respawn call `ensureBandFor(pose)` anywhere in the grid behind the fade, and the fade-in waits for it. A saved pose outside the polygon (old save, edited map) is moved to the last woken relay. Save size is unchanged.
+
+**Scatter / instance budgets (dense biomes, per 640 x 384 m band = 0.246 km^2):**
+- Trees: <= 3000 placements per band (dense forest ~12k/km^2 peak, average <= 6k). `maxTrees` comes from the band, not the world. Drawn after GPU cull + LOD (`lodCells`): <= 2500 instances/frame. Beyond the band = far canopy only (no instances).
+- Detail (grass, flowers, reeds, rocks): `maxPlacements` <= 40000 per band, `maxDraw` 768 (unchanged). Per-biome `densityMult` (38.42) must keep a band under the cap (the validator sums the worst case). Colliders only for `collide` species (trunks, rocks), built in the stepped job.
+- Stepped scatter + collider jobs share the `streamBand` budget: <= 2 ms JS/frame total. The swap frame stays <= 16 ms (split the collider build if it is over).
+
+**Perf targets (bench poses `lakeEdge`, `denseForest`, `coast`, `ridgeFoot`, plus the existing ones):**
+- Intel iGPU laptop, WebGL2 + WebGPU, default quality 240x90: JS <= 8 ms (D-007), GPU p95 <= 14 ms, `streamBand` <= 2 ms, swap <= 16 ms, load bake <= 220 ms (the 38.38 stage-1 finding stands; PC-A to ratify).
+- RTX 4060, ultra 480x180: GPU p95 <= 8 ms, JS <= 6 ms.
+- Memory: 2 bands + far 512^2 (2.4 MB) + GeoFields (<= 4 MB) <= 12 MB terrain total.
+
+**Tests.**
+- `bandGrid.test.js`: zone math; east/west equal grid zones; pick table; 3x3 walk path = one swap per crossing; corner circle (r 40 m around a 4-zone corner, 2000 steps) <= 2 swaps total; idle 0 alloc over 10k calls.
+- `terrainGrid.test.js`: grid world bakes == `terrainBands` bakes at east/west.
+- `boundsPolygon.test.js`: inside/outside, push-back, concave notch, bucket edges, 0 alloc.
+- Fake-world travel test (MAP-13). Route-walk leg 10 (MAP-14): swaps printed, no `band:late`, no fall, max swap frame <= 16 ms.
+- gpucompare row `gridZone` (MAP-12).
+
+**Story split:**
+- MAP-10: `bandGrid.js` + World grid wiring + tests (~1 d).
+- MAP-11: polygon bounds + far coverage check (~0.75 d).
+- MAP-12: GPU band origin at any zone (~0.5 d).
+- MAP-13: travel/load (~0.5 d).
+- MAP-14: long walk + benches (~0.5 d).
+
+**Do not:**
+- Allow zones of different sizes, or more than 2 live bands.
+- Pick zones from the camera or a timer (player pose only).
+- Serialise band ids.
+- Let game code choose zones.
+- Run the polygon clamp outside the physics step.
+- Rebuild the far grid on a swap.
+- Raise `maxDraw`/`maxPlacements` per band instead of thinning with `densityMult`.
+- Revive the US-026b ring.
+### 38.44 Scalable quest pipeline (~100 quests) (PC-B architect opus, 2026-10-11; final per D-066)
+
+Owner (D-067): ~100 quests (main + side) before release, simple errands, giver `!` / hand-in `?` (D-058, marks only over givers), compass guides, never lock the player, zone bands 1-5 / 5-10 by river side, gear rewards (D-065), no XP (D-020). Builds on 38.35 (questBook) and QL-01/QL-04 (`pickups`, `deliver`, abandon). **`quest.js` semantics stay as they are**: templates expand at load to the plain `version:1` defs it already runs. No engine change (game-side + content + tools only).
+
+1. **Files.** `content/quests/index.json` = `{version:1, packs:["ch1","west","ford",...], legacy:["m1","tower.blade","burl.boars"]}` (the static server has no dir listing). One pack per region: `content/quests/<region>/pack.json` = `{version:1, region, band:[1,5], quests:[src...]}` (~10-20 quests each). Shared tables: `content/quests/sites.json`, `content/quests/rewards.json`, `content/dialogue/quest-snippets.json`. `questBoot.js` loads index -> packs in parallel (<= 12 fetches), then `expandAll`.
+2. **Template source shape** (one pack row, data only):
+   `{ id:"sq.rook.shiny", template:"collect", main:false, title, site:"rook.bend", turnIn?:"<site>", opensAfter:["mq.bend.call"], band?:2, params:{...}, reward:{table:"side.b1"} | {items:[{id,n}]}, lines?:{offer:[],active:[],ready:[],done:[]}, objText?:"..." }`
+
+   | template | params | expands to (`when`) |
+   |---|---|---|
+   | collect | `ids[], count` | `{type:"pickups", ids, count}` (QL-01) |
+   | deliver | `item, to:<site>` | accept gives `item` (`giveOnTalk`); `{type:"deliver", item, to}` (QL-04) |
+   | fetch | `item` | `{type:"item", id:item}`; hand-in at the giver consumes it (`requireItem`) |
+   | kill | `ids[], count` | `{type:"beasts", ids, count}` |
+   | talk | `to:<site>` | `{type:"flag", id:"talk.<site>", equals:true}` (set by the generated talk node, item 5) |
+   | escort | `npc, to:<area>` | `{type:"flag", id:"escort.<npc>.<area>", equals:true}`; follow = burlEscort generalised by npc id; waits, never blocks |
+   | explore | `areas[]` | one `{type:"area", id}` objective per area, in order |
+
+   Main quests may chain: `steps:[{template, params, objText}, ...]` -> objectives in order. A row with `objectives:[...]` and no `template` passes through unchanged (escape hatch).
+3. **API** `game/js/quest/sim/templates.js` (pure, Node): `expandQuest(src, ctx) -> def`, `expandAll(packs, ctx) -> {defs[], errors[]}`, `ctx = {sites, rewards, snippets, items}`. Output frozen and checked by `validateGiverQuest`. `opensAfter:[id]` -> `requires:[{quest:id, done:true}]`; `site` -> `giver:{npc:<site.entity>, turnIn}` plus `def.site`, `def.band`, `def.main`, `def.region`. Deterministic (no random/clock) and idempotent (same src -> byte-identical JSON).
+4. **Sites** `sites.json`: `{"rook.bend":{kind:"npc", entity:"rook", pos:[x,y], whileFlag?:"!s.rook.ford", label:"Rook"}, "post.ws":{kind:"prop", entity:"post1", pos:[x,y]}}`. One NPC may own several sites (Rook at the relay, later the ford; the entity moves out of view as today). Marks + compass resolve `giver` via `world.resolve('giver', entity)` as now; site `pos` is the fallback when the entity is not streamed in (the compass keeps pointing, never hides a ready quest).
+5. **Dialogue snippets.** At load the GAME (not the engine runner) generates entry rows + nodes per site, inserted BEFORE the hand-written entries of that NPC's dialogue: per quest `q.<id>.ready -> <id>.ready`, `.active -> <id>.active`, `.available -> <id>.offer`. Lines = `src.lines.<state>` if the writer wrote them, else the snippet with slots `{title} {objective} {giver} {reward} {count} {target}`. Offer choices = accept (`setFlag q.<id>.accept`) / later (sets nothing). Walking away closes any node (never lock). Main beats keep hand-written nodes above the generated ones.
+6. **Rewards** `rewards.json`: `{"side.b1":{items:[{id:"arrow",n:10}], gear:{tier:1, slots:["boots","belt","gloves"]}}, ...}`. Gear picked at EXPAND time, deterministic: `slots[fnv1a(questId) % len]` -> the tier-N item for that slot from design/items.js (`tier` field, EQ epic). Band = `src.band ?? pack.band`; tables per band (`side.b1..b3` for 1-5, `side.b4..b6` for 5-10). Heart/chart pieces, arrows, potions are plain items. The sim returns the reward, the game grants it (38.35 item 6; full pack -> drop at feet).
+7. **Gating.** Only `opensAfter` (quest done) + reachability (the river-crossing main quests ARE the band gate; no level stat, no XP). `main:true` cannot be abandoned (QL-03). The last main quest's reward is `key.gate` (exactly once, lint).
+8. **Save v2 (small).** `save.game.quests = {v:2, done:[ids], active:{<id>:{c:<completed count>}}, tracked:<id>|null}`, ~100 ids = ~2-3 KB. Not-accepted quests and per-quest fact lists are NOT stored: on load the book replays the global fact stores already in the save (world.state flags, `game.deadBeasts`, `game.pickedUp` (QL-01), `game.areasSeen` (add if missing), inventory) through `feed`, then applies `done`/`active`. `migrateQuestSave` maps the 38.35 v1 map -> v2; `SAVE_VERSION` unchanged (additive `v`). Unknown ids (quest removed) are dropped with a console warning, never throw.
+9. **Perf.** At create build `Map<"type:id", Int16Array>` (fact -> listening quest indices) and reverse `opensAfter` edges; `feed` touches only listeners (typ. 1-3) and recomputes status ints only for them + dependents. Events are rare; per-step cost is 0 when nothing happens. `giverMarks` + compass `target()` stay on book change / 2 Hz and scan only quests of streamed-in sites (site -> quest index list). Budget: load + expand 100 quests <= 20 ms, one `feed` <= 0.02 ms, 0 alloc per step (10k-step heap test).
+10. **Lint** (`tools/validate-content.mjs`, extends QL-02): template known + params complete; every site exists and its entity is placed in world data; `opensAfter` graph acyclic and every quest reachable from the start (BFS); pickups/beasts/areas/deliver targets exist; reward tables/items exist; no pickup id shared by two quests; `key.gate` given exactly once, by the last main quest; `objText` <= 38 chars; heart pieces total % 4 == 0 (warning); every generated dialogue key resolves.
+11. **Headless simulator** `tools/quest-sim.mjs [--region r] [--json]`: loads index + packs + world data in Node, builds the book, walks quests in `opensAfter` topological order: talk(site) -> accept -> synthesise each objective's facts FROM WORLD DATA (placed pickup props, beast spawns, area triggers, site entities; missing = FAIL) -> hand-in -> grant. Prints one row per quest (id, template, region, steps, reward, OK/FAIL reason) + totals (heart pieces, arrows, gear per band). Exit 1 on any FAIL. `quest-sim.test.mjs` (real content + 3 broken fixtures) runs in `run-tests.mjs`.
+12. **Authoring workflow** (a new errand needs no code): writer -> row in `docs/quest-roadmap.md` (QL-R1) + text keys in docs/story.md (title, objText, optional lines); designer -> placed pickups/beasts/areas/site entity in level data; programmer -> one pack row (template + params + reward table). Then `node tools/validate-content.mjs` and `node tools/quest-sim.mjs` must be clean.
+13. **Story split.** QL-T1 templates.js + index/pack loader + sites/rewards tables (items 1-4, 6, 7) ~1 d. QL-T2 lint + quest-sim (items 10-11) ~0.75 d. QL-T3 indexed feed + save v2 + migration (items 8-9) ~0.75 d. QL-T4 dialogue snippet generation + talk/escort flags (item 5) ~0.75 d. Order: T1 -> (T2 | T3 | T4).
+14. **Tests.** `templates.test.js`: each template -> the documented `when`; hand-written vs template Ch1-2 quest = identical runtime state after the same events; 100 synthetic quests expand <= 20 ms; gear pick stable. `questBook.test.js` (T3): listener-indexed feed == brute-force feed over 1k seeded events; save v2 round trip; v1 -> v2 fixture; save with a removed quest loads. `questSnippets.test.js` (T4): generated entry order, writer lines override snippets, every node exits without a forced choice.
+- **Do not:** add a quest DSL, scripts or callbacks in json; put quest/template logic in `engine/`; use random or the clock at expand/reward time; store per-quest fact lists or status strings in saves; poll every quest every step; let a template block movement or force a dialogue; show `!`/`?` from anything but book state; hand-edit generated dialogue nodes.

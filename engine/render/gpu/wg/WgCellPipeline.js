@@ -527,10 +527,8 @@ export class WgCellPipeline {
     const gp = this._glowPass; this._glowRan = false;
     if (!gp || !gp.enabled || !this._cellsShaded || this.debugMode >= 0) return;
     const sg = this._stableRan ? this._stablePass : null, sh = this._cellPass && this._cellPass.shadePass;
-    try {
-      this._begin(WG_PASS_SLOT.glow); // AUD2-07: glow GPU time in passStats / F3
-      try { this._glowRan = gp.run(t, sg ? sg.outFg : t.texFinalFg, sg ? sg.outBg : t.texFinalBg, sh ? sh.texMatF : null); } finally { this._end(); }
-    } catch (e) {
+    try { this._glowRan = gp.run(t, sg ? sg.outFg : t.texFinalFg, sg ? sg.outBg : t.texFinalBg, sh ? sh.texMatF : null); }
+    catch (e) {
       if (this.device._pass) { try { this.device.endPass(); } catch (_) { this.device._pass = null; } }
       gp.configure(null); this._glowRan = false; console.warn('[WgCellPipeline] glow pass disabled:', e);
     }
