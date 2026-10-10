@@ -2,7 +2,7 @@
 // Pure view + state: the host (titleMenuHost.js) feeds keys and draws; no DOM, so the flow runs in Node (charCreate.test.js).
 // Rows: Skin / Eyes / Height / Age, then one pair (item, colour) per kit slot that has items (hair, clothes appear once the
 // kit ships them), then Random / Confirm / Back. Confirm builds `char.player` (the in-game look) and hands the recipe out.
-import { drawText, randomRecipe, validateRecipe, composeCharacter, meshCharacter, collapseRig, HUMANOID_PART_MAP, riggedModelDef, SLOTS, HEIGHT_MIN, HEIGHT_MAX, AGES } from '../../../engine/index.js';
+import { drawText, randomRecipe, validateRecipe, composeCharacter, meshCharacter, collapseRig, HUMANOID_PART_MAP, riggedModelDef, RANDOM_SLOTS, HEIGHT_MIN, HEIGHT_MAX, AGES } from '../../../engine/index.js';
 
 const ascii = (s) => String(s).replace(/[^\x20-\x7e]/g, '?');
 const dyeGroup = (slot) => (slot === 'beard' ? 'hair' : slot);
@@ -34,7 +34,7 @@ export function createCharCreate({ kit, style = null, seed = 1, initial = null, 
   add('eyes', 'Eyes', () => look.eyes, (d) => { look.eyes = cycle(rampIds('eyes'), look.eyes, d); });
   add('height', 'Height', () => (look.height > 0 ? '+' : '') + look.height, (d) => { look.height = Math.max(HEIGHT_MIN, Math.min(HEIGHT_MAX, look.height + d)); });
   add('age', 'Age', () => look.age, (d) => { look.age = cycle(AGES, look.age, d); });
-  for (const slot of SLOTS) {
+  for (const slot of RANDOM_SLOTS) {
     const ids = slotItems(kit, slot);
     if (!ids.length) continue;
     const label = slot[0].toUpperCase() + slot.slice(1);
