@@ -35,7 +35,7 @@ try {
   for (let i = 0; i < 150; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.world && window.__debug.playerHandle && window.__debug.relayWake)')) { ready = true; break; } }
   assert.ok(ready, 'world / relayWake never ready: ' + JSON.stringify(errors));
   const shot = async (name) => { await pause(900); const s = await cdp.send('Page.captureScreenshot', { format: 'png' }); writeFileSync(path.join(outDir, name + '.png'), Buffer.from(s.data, 'base64')); };
-  const st = () => evaluate(cdp, `(()=>{const d=window.__debug,r=d.world.get('relayBend').data.components;return JSON.stringify({anim:r.voxel.anim,light:r.light.on,woken:!!d.world.state['waystone.ws_roadBend.woken'],phase:d.relayWake.relays[0].phase});})()`).then(JSON.parse);
+  const st = () => evaluate(cdp, `(()=>{const d=window.__debug,r=d.world.get('relayBend').data.components;return JSON.stringify({anim:r.voxel.anim,light:r.light.on,woken:!!d.world.state['waystone.ws_roadBend.woken'],phase:d.relayWake.relays.find(x=>x.wsId==='ws_roadBend').phase});})()`).then(JSON.parse);
   // stand 6 m west of the relay, facing it
   await evaluate(cdp, "(()=>{const d=window.__debug,r=d.world.get('relayBend').data.transform,t=d.playerHandle.data.transform;t.x=r.x-6;t.y=r.y;t.z=r.z+1;t.yawDeg=90;})()");
   const dead = await st(); assert.deepEqual(dead, { anim: 'dead', light: false, woken: false, phase: 0 }, 'dead at boot');
