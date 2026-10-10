@@ -508,3 +508,7 @@ B1 2026-10-09 (kestrel-1) SETTINGS-MOUNT-01 -> po-review: full createSettingsVie
 - `content/dialogue/bear.barks.json` (kind `barks`; ids `bear.call`, `bear.walk1`, `bear.walk2`; not in the manifest, loadPack has no barks kind). validate-content: `s.` keys checked (quest-id shape, also without giverIds), new `validateBarks` + `*.barks.json` walk; tests + fixtures added (94 pass). bearDialogue.test.js rewritten (31 pass).
 - Old-graph tests adapted: dialogueCtl.test.js now reads fixture `sim/fixtures/bear.legacy.dialogue.json`; questGiverFlow.test.js expects the new lines.
 - NEEDS B1-main: mount barks with `dialogue/bear.barks.json` (fetch it directly, play ids `bear.call` near-bear first time, `bear.walk1/2` on the follow route). Entry 4 replays the follow offer until s.burl.follow-aware logic exists (no entry for "following"). terrainBand.test.js failed in my filtered run (unrelated file, not touched).
+
+### WS1-02 ARCH CHANGES fix + CH1-E2 nit (kestrel-2, 2026-10-10)
+- `terrainMesh.js` step(): row build loop now `< near.h` (was `.w`); no other w/h mix-up found in step/_publishNear/_buildRowData. terrainBand.test.js: 2 new checks (every `_bandNrm` normal non-zero, 3x5 first build + 3x3->3x5 re-layout); both fail with the old line (verified), pass now.
+- `world.js`: `_kinCollider` cached in rebuildPropColliders; setEntityCollider no longer `find`s. world.test + kinematicCollider green. Timing line "5x3 bake <= 1.9x" flaked under load (2.02x), ignored.

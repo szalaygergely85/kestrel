@@ -761,8 +761,8 @@ export class TerrainMeshSet {
       const nw = terrain.near.w / this._n, nh = terrain.near.h / this._n;
       if (nw !== this._cw || nh !== this._ch) this._layout(nw, nh); // WS1-02: a band with other dims -> new chunk grid
       if (this._buildingFor !== terrain.near) { this._buildingFor = terrain.near; this._buildRow = 0; } // retarget: restart from row 0 on the newest `near`
-      const w = this._buildingFor.w;
-      while (this._buildRow < w) {
+      const h = this._buildingFor.h; // rows to build (was .w: wrong for non-square bands)
+      while (this._buildRow < h) {
         this._buildRowData(this._buildRow);
         this._buildRow++;
         if (now() - t0 >= msBudget) { this.pending = true; return true; }

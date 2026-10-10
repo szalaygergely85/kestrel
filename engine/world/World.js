@@ -219,6 +219,7 @@ export class World {
     this.decals = []; // DECAL-01: derived wall text, never serialized.
     this.detailMeshes = null; // TREES-LP-c: {meshId: MeshData} for ground-cover species with `mesh`
     this.detail = null; // ENV-01a1: derived ground detail, never serialized.
+    this._kinCollider = null;
     this._kinSlot = new Map(); // CH1-E2: kinematic entity id -> prism slot in 'npcs:kinematic'
     this._groundSnap = []; // ED-TERRAIN-1b: [{id, x, y}] of `z: 'ground'` props/entities, re-snapped after a terrain stroke.
     this._detailCtx = null; // ED-TERRAIN-1b: {cfg, keepOut} the detail scatter was built with.
@@ -1038,7 +1039,9 @@ export class World {
       } else if (collider) this.colliders.push(collider);
     };
     put('props:static', buildPropCollider(shapes, shapes.length));
-    put('npcs:kinematic', buildKinematicCollider(kin));
+    const kc = buildKinematicCollider(kin);
+    put('npcs:kinematic', kc);
+    this._kinCollider = kc || null; // cached for setEntityCollider (no per-call find)
   }
 
   /**
@@ -1049,7 +1052,7 @@ export class World {
   setEntityCollider(id, x, y, z) {
     const slot = this._kinSlot.get(id);
     if (slot === undefined) return false;
-    const c = this.colliders.find(k => k.id === 'npcs:kinematic');
+    const c = this._kinCollider;
     if (!c) return false;
     moveKinematicPrism(c, slot, x, y, z + this._entities.get(id).components.collider.h / 2);
     return true;
