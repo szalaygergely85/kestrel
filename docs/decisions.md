@@ -1084,3 +1084,9 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 
 ## D-061 - Golden pocket compass HUD (owner, 2026-10-10; recorded by the PC-B main session)
 - Owner: "can be a small golden pocket compass to show the next quest bottom right corner?" -> a small brass/gold pocket compass in the bottom-right HUD corner; the needle points to the next quest target (active step target, or the giver showing `!`/`?`), distance under it (e.g. `42 m`); hidden when nothing is tracked and in menus/dialogue/capture modes. Designer draws it (ASCII, in the UI style); programmer adds the pure HUD module + mount.
+
+## D-062 - Build Chapter 1 "Beyond the Wall" from the owner script (owner, 2026-10-10; recorded by the PC-B main session)
+- Script: docs/chapters/chapter-1-beyond-the-wall.md (owner, via ChatGPT). **Build all of it**: sword + note in the tower, second note, Leave the Tower, Burl's boar quest with the script lines, **Follow the Bear** (Burl walks a path to the Waystone with walking dialogue, waits for the player), **Awaken the Stone** (Burl's talk, wake, "WAYSTONE AWAKENED" notice, Burl walks into the forest and disappears), The Next Light (Bend Relay, stage 1), **Not Alone** (Fen - a male wanderer with a staff, built with the chargen in the D-059 style - at Bend Relay), chapter-complete card + final journal entry.
+- **No lamp** (owner: "i dont want lamp. we talked about it will be a torch. no lamp"): no lamp pickup step and no lamp in the waking; the torch stays the later M4 tool. **Waking uses an aether crystal**: killing the boars gives Wick a crystal ("maybe find boar gives you a crystal for killing the boar which activates") that wakes the Waystone; script lines that mention the lamp are rewritten to the crystal.
+- **The breach climb stays required** (owner) - Leave the Tower comes after the climb.
+- Fen supersedes the D-058 removal: the owner's own script brings him back as a man.
