@@ -14,7 +14,7 @@ export const WATER_REFLECT = Object.freeze({
 export function skyLutFromPalette(P, out) {
   const rec = P && P.materials && P.materials.sky;
   if (!rec || !P.timeOfDay) return 0;
-  const stops = P.timeOfDay[P.defaultTime].sky;
+  const stops = (P.liveLook || P.timeOfDay[P.defaultTime]).sky; // DN-01
   for (let i = 0; i < SKY_LUT_N; i++) {
     const t = i / (SKY_LUT_N - 1);
     let k = 0;
