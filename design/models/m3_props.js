@@ -1000,7 +1000,7 @@
   //     y0-y1: the timber bar (timber_old, a pale fresh gouge where it is jammed) held in two iron U-brackets on the jambs;
   //     y2-y3: the door leaf, five vertical planks (wood, dark timber seams, staggered worn tops) on two iron straps.
   //     Parts: frameW / frameE (brackets, never move), bar, leaf (hinge = EAST edge, BACK (outer) face of the leaf).
-  //     Clips (prop variant = clip): open (TOWER-DOOR-OPEN-01, what the level places: no bar, leaf swung out) |
+  //     Clips (prop variant = clip): closed / opening / closing (DOOR-TOGGLE-01, door.toggle: E opens/closes, bar stowed) | open (TOWER-DOOR-OPEN-01, what the level places: no bar, leaf swung out) |
   //     barred (rest, collider on) | unbar (0.6 s, events thud 3) - barred/unbar kept only for compatibility.
   //     ROTATION (owner bug 2026-10-10 "door disappeared"): the old pose (west hinge on the FRONT face, rz +100) laid the
   //     whole leaf on the wall side of its hinge line, i.e. inside wall cell q (14,11) - invisible. Engine Rz: +deg turns
@@ -1061,11 +1061,23 @@
             { bar: { pos: [0, 2, -8], rot: [0, 0, 4] }, leaf: { rot: [0, 0, -15] } },
             { bar: BAR_DOWN, leaf: { rot: [0, 0, OPEN_YAW] } }
           ] },
-          open: { durations: [1000], loop: true, frames: [{ bar: BAR_STOWED, leaf: { rot: [0, 0, OPEN_YAW] } }] }
+          open: { durations: [1000], loop: true, frames: [{ bar: BAR_STOWED, leaf: { rot: [0, 0, OPEN_YAW] } }] },
+          // DOOR-TOGGLE-01: closed = leaf shut, bar stowed in its wall socket (no bar across); opening / closing = 0.8 s swing
+          closed: { durations: [1000], loop: true, frames: [{ bar: BAR_STOWED }] },
+          opening: { durations: [250, 300, 250], loop: false, frames: [
+            { bar: BAR_STOWED, leaf: { rot: [0, 0, OPEN_YAW * 0.3] } },
+            { bar: BAR_STOWED, leaf: { rot: [0, 0, OPEN_YAW * 0.7] } },
+            { bar: BAR_STOWED, leaf: { rot: [0, 0, OPEN_YAW] } }
+          ] },
+          closing: { durations: [250, 300, 250], loop: false, frames: [
+            { bar: BAR_STOWED, leaf: { rot: [0, 0, OPEN_YAW * 0.7] } },
+            { bar: BAR_STOWED, leaf: { rot: [0, 0, OPEN_YAW * 0.3] } },
+            { bar: BAR_STOWED }
+          ] }
         },
         mounts: { prompt: { at: [10, 0, 20], part: 'bar' } }              // = the door.unbar aim point (z + 1.0)
       },
-      clipFor: { barred: 'barred', unbarring: 'unbar', open: 'open' },
+      clipFor: { barred: 'barred', unbarring: 'unbar', open: 'open', closed: 'closed', opening: 'opening', closing: 'closing' },
       readability: { note: 'At 3 m on 400x150 ~10 x 22 cells: brown plank stripes with two dark iron bands; the darker bar ' +
                      'across at hip height with iron blocks at both ends reads as "barred". Open: dark gap + daylight.' }
     };

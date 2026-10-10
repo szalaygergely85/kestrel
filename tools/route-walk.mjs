@@ -194,8 +194,8 @@ function routeRun(physics, { reload = false } = {}) {
     t.x = from.x; t.y = from.y; t.z = from.z; b.vx = b.vy = b.vz = 0; b.grounded = true; b.peakZ = t.z;
     bp.end = { ...t }; legs.push(bp);
   }
-  // 7c walk-down (TOWER-DOOR-OPEN-01: the SW door is open from the start): probe the doorway BEFORE the sword is taken
-  // (a capsule pushed +y into the doorway must pass), then take the sword and walk the summit -> upper steps ->
+  // 7c walk-down (DOOR-TOGGLE-01: the SW door starts CLOSED; the player opens it with E = the real door.toggle interactable):
+  // probe the doorway closed (blocked), open it, probe again (must pass), then take the sword and walk the summit -> upper steps ->
   // gap-alcove drop -> ground-floor SW door -> outside stair to the outer ring (8,12).
   const barProbe = () => { // mesh: a capsule pushed +y into the doorway (15.5, 11.1) is blocked only if a collider sits there
     if (physics !== 'mesh') return null;
@@ -203,13 +203,16 @@ function routeRun(physics, { reload = false } = {}) {
     const q = sim.world.collideCircle(O.x + 15.5, O.y + 10.9, 0, 0.3, 0.3, 0, true, op, o);
     return !!q.blockedY;
   };
-  info.doorBlocksBeforeSword = barProbe(); // must be false (door open before sword)
+  info.doorBlocksWhenClosed = barProbe(); // mesh: must be true (closed door blocks the doorway)
+  registerQuestBehaviours();
+  info.doorToggled = sim.world.fireInteraction('door.toggle', { structId: 'tower' }) === true;
+  info.doorBlocksWhenOpen = barProbe(); // mesh: must be false (open door lets you through)
   sim.world.state['tower.sword.taken'] = true;
-  info.doorOpen = sim.world.get('tower.doorBar').getComponent('voxel').anim === 'open' && !sim.world.interactables.some((r) => r.id === 'door');
+  info.doorOpen = sim.world.state['tower.door.open'] === true && sim.world.get('tower.doorBar').getComponent('voxel').variant === 'open';
   const down = [[7, 7], [7, 8], [8, 8], [9, 8], [10, 8], [10, 7], [11, 7], [12, 7], [13, 7], [13, 8], [13, 9], [14, 9], [14, 10], [16, 10, true], [17, 10], [18, 10], [19, 10], [19, 9],
     [20, 9], [20, 8], [20, 7], [20, 6], [20, 5], [20, 4], [19, 4], [19, 3], [18, 3], [17, 3], [16, 3], [15, 3], [15, 5], [16, 5], [16, 6], [17, 7], [17, 8], [17, 9], [16, 9], [15, 9],
     [15, 10], [15, 11], [15, 12], [14, 12], [13, 12], [12, 12], [11, 12], [10, 12], [9, 12], [8, 12]].map(([x, y, jump]) => (jump ? { ...W([x, y]), jump: true } : W([x, y])));
-  legs.push(runLeg(sim, '7c down -> door (pry) -> outside', down));
+  legs.push(runLeg(sim, '7c down -> door (E) -> outside', down));
   // 7b hillside + waystone (fires the real world `end` trigger zone).
   const endRec = sim.world.triggers.find((t) => t.id === 'end' && t.structId === null); // area-only zone (WAYSTONE-NORMAL-01): reached, but fires no end sequence
   let sawEnd = false;
@@ -257,15 +260,21 @@ function jumpProbe(physics) {
 // ---- stair-edge probe (AC 2): approach each stair step head-on from the base row (y=3 flight), see z follow.
 function pct(a, p) { const s = a.slice().sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * p))]; }
 
-// ---- probe C (TOWER-DOOR-OPEN-01): the SW door is OPEN before the sword is taken (mesh only: grid has no prop colliders).
+// ---- probe C (DOOR-TOGGLE-01): the SW door starts CLOSED and blocks the doorway; after door.toggle it lets you through
+// (mesh only: grid has no prop colliders).
 function doorClosedProbe(physics) {
   if (physics !== 'mesh') return { ok: true, skipped: true };
-  const sim = setup(physics), t = sim.player.transform, b = sim.player.components.body;
-  t.x = O.x + 15.5; t.y = O.y + 9.5; t.z = sim.world.floorAt(t.x, t.y) ?? 0; b.peakZ = t.z;
-  const swordTaken = !!sim.world.state['tower.sword.taken'];
-  const r = runLeg(sim, 'door open', [{ x: O.x + 15.5, y: O.y + 13 }], { maxWpSteps: 300 });
-  const y = sim.player.transform.y - O.y;
-  return { ok: !swordTaken && r.completed && y > 12.5, swordTaken, endY: +y.toFixed(2) };
+  registerQuestBehaviours();
+  const walkOut = (sim) => {
+    const t = sim.player.transform, b = sim.player.components.body;
+    t.x = O.x + 15.5; t.y = O.y + 9.5; t.z = sim.world.floorAt(t.x, t.y) ?? 0; b.peakZ = t.z;
+    const r = runLeg(sim, 'door', [{ x: O.x + 15.5, y: O.y + 13 }], { maxWpSteps: 300 });
+    return { completed: r.completed, y: sim.player.transform.y - O.y };
+  };
+  const closedSim = setup(physics), closed = walkOut(closedSim);
+  const openSim = setup(physics), toggled = openSim.world.fireInteraction('door.toggle', { structId: 'tower' }) === true, open = walkOut(openSim);
+  const blocked = !closed.completed && closed.y < 11.2, passes = open.completed && open.y > 12.5;
+  return { ok: toggled && blocked && passes && !closedSim.world.state['tower.sword.taken'], closedEndY: +closed.y.toFixed(2), openEndY: +open.y.toFixed(2) };
 }
 
 // ---- CH1-10 clearance of the NPC walk polylines (read from world_m1 data, not hard-coded).
@@ -332,7 +341,7 @@ else {
   console.log('info mesh:', JSON.stringify(M.info));
   console.log('save round trip (mid-route, after the upper stair):', 'mesh', JSON.stringify(MR.info.reload), 'grid', JSON.stringify(GR.info.reload), '| continued route end positions == uninterrupted mesh run:', reloadSame);
   console.log(`probe breach no-exit (grid/mesh): ${G.legs.find((l) => l.name.startsWith('7a2')).completed ? 'PASS' : 'FAIL'} / ${M.legs.find((l) => l.name.startsWith('7a2')).completed ? 'PASS' : 'FAIL'}  minZ ${f(G.info.breachMinZ)}/${f(M.info.breachMinZ)}`);
-  console.log(`probe door open before sword (mesh; grid has no prop colliders): ${DC[1].ok ? 'PASS' : 'FAIL'} ${JSON.stringify(DC[1])}`);
+  console.log(`probe door closed blocks / open lets through (mesh; grid has no prop colliders): ${DC[1].ok ? 'PASS' : 'FAIL'} ${JSON.stringify(DC[1])}`);
   console.log(`max fall distance (7c down->door->outside) grid/mesh: ${f(G.legs.find((l) => l.name.startsWith('7c')).maxFall)}/${f(M.legs.find((l) => l.name.startsWith('7c')).maxFall)} (limit 3.5)`);
   for (const c of CL) console.log(`clearance ${c.name} (${c.samples} samples, 0.8 m collider, slope<0.6${c.name === 'follow' ? ', inside nav' : ''}): ${c.bad.length ? 'FAIL' : 'PASS'}${c.bad.length ? NL + c.bad.join(NL) : ''}`);
   console.log('jump grid:', JSON.stringify(JG));
