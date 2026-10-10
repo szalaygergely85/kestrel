@@ -79,7 +79,8 @@
       "Mind their tusks, sky-cub."
     ], "speaker": "burl"},
     "bear.early": {"end": true, "lines": [
-      "Come back when you've found your feet."
+      "Out of the tower already, sky-cub? Empty-pawed?",
+      "Climb back up. The top holds more than a view."
     ], "speaker": "burl"},
     "bear.q.later": {"clip": "laugh", "end": true, "lines": [
       "Then sit a while. The boars will still be rude."
