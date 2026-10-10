@@ -2,6 +2,7 @@
 // A zip (zip.js) with a `kestrel.json` manifest + a content tree. Data only; no DOM.
 import { ContentError } from './ContentError.js';
 import { readZip, checkZipPath } from './zip.js';
+import { loadGltf, readRiggedGlb } from '../mesh/gltf.js';
 
 export const KPKG_FORMAT = 'kestrel-package';
 export const KPKG_FORMAT_VERSION = 1;
@@ -209,6 +210,38 @@ export async function mountPackages(pkgs, fallback = {}) {
     fetchText: async (url) => { const l = locate(url); return l ? l.pkg.readText(l.path) : (fallback.fetchText || defaultFetchText)(url); },
     fetchBytes: async (url) => { const l = locate(url); return l ? l.pkg.readBytes(l.path) : (fallback.fetchBytes || defaultFetchBytes)(url); },
     /** `kpkg://<id>/<content manifest>` for loadContentPack, or null. */
+    /** RIG-03: the `bundle.models` map of the mounted packages. */
+    loadModels: () => loadPackageModels(pkgs),
     manifestUrl: (id) => { const p = byId.get(id); return p && p.manifest.content ? `${KPKG_SCHEME}${id}/${p.manifest.content}` : null; },
   };
+}
+
+/**
+ * RIG-03 (38.29 item 5): load every `model.rigged` / `model.static` asset (.glb) of the packages.
+ * `model.rigged` -> readRiggedGlb, `model.static` -> loadGltf (MeshData). Other `model.*` types
+ * and duplicate model ids are ContentErrors naming the asset path; non-model assets are ignored.
+ * @param {KPackage[]} pkgs
+ * @returns {Promise<Object<string,{kind:'rigged'|'static', model:Object}>>} the `bundle.models` map
+ */
+export async function loadPackageModels(pkgs) {
+  const models = {};
+  const from = {};
+  for (const p of pkgs) {
+    for (const a of p.manifest.assets || []) {
+      if (!a.type.startsWith('model.')) continue;
+      const where = `${KPKG_SCHEME}${p.id}/${a.path}`;
+      if (a.type !== 'model.rigged' && a.type !== 'model.static') fail(where, 'type', `unknown model asset type "${a.type}" (expected model.rigged or model.static)`);
+      if (!/\.glb$/i.test(a.path)) fail(where, 'path', 'model assets must be .glb files');
+      if (typeof a.id !== 'string') fail(where, 'id', `${a.type} asset needs an id`);
+      if (models[a.id]) fail(where, 'id', `duplicate model id "${a.id}" (already loaded from ${from[a.id]})`);
+      const bytes = await p.readBytes(a.path);
+      try {
+        models[a.id] = a.type === 'model.rigged'
+          ? { kind: 'rigged', model: readRiggedGlb(bytes, a.id) }
+          : { kind: 'static', model: loadGltf(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), a.id) };
+      } catch (e) { fail(where, 'glb', e && e.message ? e.message : String(e)); }
+      from[a.id] = where;
+    }
+  }
+  return models;
 }
