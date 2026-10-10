@@ -437,9 +437,9 @@ function drawMenuSettingsPanel(ui, assets) {
 // S8-C-04: opt-in full Settings view. The host owns persistence/application;
 // the existing pause-panel exports above remain available to legacy callers.
 const FULL_OPTIONS = [
-  { id: 'quality', values: ['low', 'medium', 'high', 'ultra', 'auto'], default: 'high' },
+  { id: 'quality', values: ['low', 'medium', 'high', 'ultra', 'extreme', 'auto'], default: 'high' },
   { id: 'shadows', values: ['off', 'low', 'mid', 'high'], default: 'high' },
-  { id: 'grid', values: ['240x90', '320x120', '400x150', '480x180'], default: '400x150' },
+  { id: 'grid', values: ['240x90', '320x120', '400x150', '480x180', '560x210', '640x240', '720x270', '800x300'], default: '400x150' },
   { id: 'volume', type: 'range', min: 0, max: 1, step: 0.1, default: 1 },
   { id: 'mute', values: [false, true], default: false },
   { id: 'textSize', values: ['small', 'normal', 'large'], default: 'normal' },
@@ -648,7 +648,7 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
 //   textSize -> saved; main.js maps it to the UI grid cols at boot (comfort.textSizeCols; restart to apply)
 let fullView = null, fullCtx = null, fullRebuild = false;
 const FULL_KEYS = ['Escape', 'KeyW', 'ArrowUp', 'KeyS', 'ArrowDown', 'KeyA', 'ArrowLeft', 'KeyD', 'ArrowRight', 'Enter', 'Space'];
-const FULL_GRIDS = [240, 320, 400, 480];
+const FULL_GRIDS = [240, 320, 400, 480, 560, 640, 720, 800];
 const FULL_LODS = [0.6, 0.8, 1, 1.25];
 
 function canMountFull(assets) {

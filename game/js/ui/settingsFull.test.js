@@ -60,7 +60,7 @@ const changedMenu={...menuStyle,frame:{...menuStyle.frame,fg:'aether'},row:{...m
 createSettingsView({}, {...config,menuStyle:changedMenu}).draw(ui);
 assert.deepEqual([...ui.cells.fg.slice((12*160+45)*4,(12*160+45)*4+3)],[...config.rgb.aether],'frame reads menu token');
 assert.deepEqual([...ui.cells.fg.slice((18*160+46)*4,(18*160+46)*4+3)],[...config.rgb.aether],'marker reads menu token');
-const locked=createSettingsView({quality:'high'},{...config,isDisabled:(id,value)=>id==='shadows'||id==='quality'&&value==='ultra'});
+const locked=createSettingsView({quality:'high'},{...config,isDisabled:(id,value)=>id==='shadows'||id==='quality'&&(value==='ultra'||value==='extreme')});
 locked.handleKey('ArrowRight');assert.equal(locked.snapshot().quality,'auto');
 locked.handleKey('ArrowDown');assert.equal(locked.selectedId(),'grid');
 locked.handleKey('ArrowUp');assert.equal(locked.selectedId(),'quality');
