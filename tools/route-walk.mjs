@@ -9,6 +9,7 @@
 // The upper stair is permanently open. Rendering is irrelevant to physics, so this
 // is valid for both `?renderer=` values. Physics is renderer-independent JS; GPU numbers need the browser.
 import { performance } from 'node:perf_hooks';
+import { readFileSync } from 'node:fs';
 import {
   World, serialize, deserialize, PHYSICS_DEFAULTS, integrate, stepRollers, resolveBodyContacts, stepAnimations, stepSectorAnims, updateTriggers,
 } from '../engine/index.js';
@@ -28,7 +29,7 @@ import farTowerMod from '../design/models/far_tower.js';
 import ferrumLightsMod from '../design/models/ferrum_lights.js';
 import titleMod from '../design/models/title.js';
 import voxelWorldMod from '../design/models/voxel_world.js';
-import { moveCircleMesh } from '../engine/dev.js';
+import { moveCircleMesh, Events } from '../engine/dev.js';
 import { loadTestAssets } from './testing/content-node.mjs';
 import { registerQuestBehaviours } from '../game/js/quest/index.js';
 
@@ -58,7 +59,7 @@ function makePlayer(x, y, z) {
 }
 
 function setup(physics) {
-  const world = World.load(assets.world('world_m1'), assets, { physics });
+  const world = World.load(assets.world('world_m1'), assets, { physics, events: new Events() });
   const player = makePlayer(O.x + 17, O.y + 9.5, 0);
   const sim = { world, player, controls: { forward: 0, strafe: 0, run: true, jump: false, yawDeg: 0 }, ms: [], step: 0 };
   return sim;
@@ -74,6 +75,7 @@ function stepOnce(sim) {
   resolveBodyContacts(world, player, P);
   sim.ms.push(performance.now() - t0);
   updateTriggers(world, {}, player);
+  if (sim.stream) world.streamBand(player.transform.x, player.transform.y, 2); // WS2-07
   sim.step++;
 }
 
@@ -227,11 +229,31 @@ function routeRun(physics, { reload = false } = {}) {
   const relayD = Math.hypot(sim.player.transform.x - RELAY.x, sim.player.transform.y - RELAY.y);
   info.relayDist = relayD; l8.completed = l8.completed && relayD <= 3 && !l8.fell;
   legs.push(l8);
-  // Bound probe: keep walking west past x 1200; the walk bound must stop us (pass = leg blocked, min x stays >= ~1198).
-  const bp = runLeg(sim, '8b bound probe (west of 1200)', [{ x: 1180, y: 1047 }], { expectBlocked: true, maxWpSteps: 3000 });
+  // WS2-07 / 38.38 leg 9: bend relay -> road -> ford -> across the stepping stones -> relay #2 (ws_ford) -> bound probe -> back to the east.
+  // The sim streams the near band like the game (streamBand per step, 2 ms budget): one swap each way, no band:late, no fall.
+  const bandEv = []; let late = 0; sim.world.events = sim.world.events || new Events();
+  sim.world.events.on('world:band', (e) => bandEv.push(e.from + '>' + e.to));
+  sim.world.events.on('band:late', () => { late++; });
+  sim.stream = true;
+  const RELAY2 = { x: 992, y: 1079 };
+  const dataStones = JSON.parse(readFileSync(new URL('../content/worlds/world_m1.world.json', import.meta.url), 'utf8')).structures.filter((s) => /^fordS[0-9]+$/.test(s.id)).map((s) => ({ x: s.origin.x, y: s.origin.y }));
+  const E2W = dataStones.slice().sort((p, q) => q.x - p.x), W2E = dataStones.slice().sort((p, q) => p.x - q.x);
+  const to = [{ x: 1180, y: 1062 }, { x: 1090, y: 1070 }, { x: 1046, y: 1069 }, ...E2W, { x: 1010, y: 1070 }, { x: 998, y: 1075 }, { x: 993, y: 1077 }];
+  const l9 = runLeg(sim, '9 bend -> ford -> stones -> relay 2', to, { maxWpSteps: 1500 });
+  const r2 = Math.hypot(sim.player.transform.x - RELAY2.x, sim.player.transform.y - RELAY2.y);
+  info.relay2Dist = r2; l9.completed = l9.completed && r2 <= 3 && !l9.fell && dataStones.length >= 5;
+  legs.push(l9);
+  // Bound probe: keep walking west of the ford relay; the widened walk bound must stop us (min x stays >= ~958).
+  const bp = runLeg(sim, '9b bound probe (west of the ford)', [{ x: 900, y: 1075 }], { expectBlocked: true, maxWpSteps: 3000 });
   let minX = Infinity; for (let i = 0; i < bp.trace.length; i += 3) minX = Math.min(minX, bp.trace[i]);
-  info.boundMinX = minX; bp.completed = bp.completed && minX >= 1198;
+  info.boundMinX = minX; bp.completed = bp.completed && minX >= 955;
   legs.push(bp);
+  const back = runLeg(sim, '9c ford -> back over the stones -> bend', [{ x: 1008, y: 1070 }, ...W2E, { x: 1046, y: 1069 }, { x: 1090, y: 1070 }, { x: 1180, y: 1062 }, { x: 1260, y: 1045 }, { x: 1310, y: 1048 }], { maxWpSteps: 1500 });
+  back.completed = back.completed && !back.fell;
+  legs.push(back);
+  info.bands = bandEv.join(','); info.bandLate = late; info.maxSwapMs = +sim.world.lastSwapMs.toFixed(2);
+  l9.completed = l9.completed && bandEv.length === 2 && bandEv[0] === 'east>west' && bandEv[1] === 'west>east' && late === 0;
+  sim.stream = false;
   return { legs, info, ms: sim.ms, sim };
 }
 
@@ -368,6 +390,8 @@ else {
   for (const [i, nm] of ['grid', 'mesh'].entries()) console.log(`probe grass ring walkable (${nm}, ${RP[i].cells} cells, ${RP[i].pts} points): ${RP[i].cells > 0 && RP[i].bad.length === 0 ? 'PASS' : 'FAIL'} minDz ${f(RP[i].minDz)}${RP[i].bad.length ? NL + RP[i].bad.slice(0, 8).join(NL) : ''}`);
   console.log(`probe door closed blocks / open lets through (mesh; grid has no prop colliders): ${DC[1].ok ? 'PASS' : 'FAIL'} ${JSON.stringify(DC[1])}`);
   console.log(`max fall distance (7c down->door->outside) grid/mesh: ${f(G.legs.find((l) => l.name.startsWith('7c')).maxFall)}/${f(M.legs.find((l) => l.name.startsWith('7c')).maxFall)} (limit 3.5)`);
+  { const L = (R) => R.legs.filter((l) => /^9/.test(l.name)); const ok = [G, M].every((R) => L(R).length === 3 && L(R).every((l) => l.completed && !l.fell) && R.info.bandLate === 0 && R.info.bands === 'east>west,west>east');
+    console.log(`leg 9 ford (grid+mesh): ${ok ? 'PASS' : 'FAIL'} swaps ${M.info.bands} band:late ${M.info.bandLate} max swap ${M.info.maxSwapMs} ms, relay2 ${f(M.info.relay2Dist)} m, west bound minX ${f(M.info.boundMinX)}`); }
   for (const c of CL) console.log(`clearance ${c.name} (${c.samples} samples, 0.8 m collider, slope<0.6${c.name === 'follow' ? ', inside nav' : ''}): ${c.bad.length ? 'FAIL' : 'PASS'}${c.bad.length ? NL + c.bad.join(NL) : ''}`);
   console.log('jump grid:', JSON.stringify(JG));
   console.log('jump mesh:', JSON.stringify(JM));
