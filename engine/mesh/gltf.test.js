@@ -5,7 +5,7 @@
 // Every fixture below is built IN THIS FILE as a minimal valid GLB
 // container (JSON chunk + BIN chunk) - no third-party binary file is
 // committed, per the story's explicit requirement.
-import { loadGltf, KIND_MESH, meshPlaneIdBase } from './gltf.js';
+import { loadGltf, KIND_MESH, meshPlaneIdBase, readRiggedGlb, sampleRiggedClip } from './gltf.js';
 import { validateMesh, flatKind, flatFace, flatMat, AO_NONE } from './MeshData.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 import { FACE_U, FACE_N, FACE_PACKED } from '../render/GBuffer.js';
@@ -682,6 +682,77 @@ function sphereTris(radius, lonSegs, latSegs) {
   ok('crease: omitting opts.crease == explicit crease:5 (today\'s hardcoded default), byte-identical nrm/flat',
     meshNoFlag.nrm.every((v, i) => v === meshExplicit5.nrm[i]) && meshNoFlag.flat.every((v, i) => v === meshExplicit5.flat[i]));
 }
+
+// ---------------------------------------------------------------------------
+// RIG-01: readRiggedGlb (3 bones, rigid weights, one clip).
+// ---------------------------------------------------------------------------
+function riggedGlb({ weights, interp = 'LINEAR', extras } = {}) {
+  const chunks = [], views = [], accs = [];
+  const add = (buf, type, comp, count, target) => {
+    const off = chunks.reduce((n, c) => n + c.length, 0);
+    chunks.push(pad4(buf));
+    views.push({ buffer: 0, byteOffset: off, byteLength: buf.length });
+    accs.push({ bufferView: views.length - 1, componentType: comp, count, type });
+    return accs.length - 1;
+  };
+  const P = [[0, 0, 0], [1, 0, 0], [0, 0, -1], [0, 1, 0], [1, 1, 0], [0, 1, -1]]; // z-up-ish: y=1 is bone1's height
+  const aPos = add(f32Buf(P, 3), 'VEC3', 5126, 6);
+  const jb = Buffer.from([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]);
+  const aJ = add(jb, 'VEC4', 5121, 6);
+  const wRows = weights || [[1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0]];
+  const aW = add(f32Buf(wRows, 4), 'VEC4', 5126, 6);
+  const aIdx = add(u16Buf([0, 1, 2, 3, 4, 5]), 'SCALAR', 5123, 6);
+  const tr = (y) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -y, 0, 1]; // ibm: inverse of translate(0,y,0)
+  const aIbm = add(f32Buf([tr(0), tr(1), tr(2)], 16), 'MAT4', 5126, 3);
+  const aT = add(f32Buf([[0], [1]], 1), 'SCALAR', 5126, 2);
+  const s = Math.SQRT1_2;
+  const aR = add(f32Buf([[0, 0, 0, 1], [s, 0, 0, s]], 4), 'VEC4', 5126, 2); // 0 -> 90deg about glTF X
+  const aTr = add(f32Buf([[0, 1, 0], [0, 1, 2]], 3), 'VEC3', 5126, 2);
+  const json = {
+    asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0, 3] }],
+    nodes: [
+      { name: 'Hips', children: [1] },
+      { name: 'Spine', translation: [0, 1, 0], children: [2] },
+      { name: 'Chest', translation: [0, 1, 0] },
+      { name: 'body', mesh: 0, skin: 0 },
+    ],
+    meshes: [{ primitives: [{ attributes: { POSITION: aPos, JOINTS_0: aJ, WEIGHTS_0: aW }, indices: aIdx }] }],
+    skins: [{ joints: [0, 1, 2], inverseBindMatrices: aIbm }],
+    animations: [{ name: 'wave', channels: [
+      { sampler: 0, target: { node: 1, path: 'rotation' } },
+      { sampler: 1, target: { node: 2, path: 'translation' } },
+    ], samplers: [
+      { input: aT, output: aR, interpolation: 'LINEAR' },
+      { input: aT, output: aTr, interpolation: interp },
+    ] }],
+    accessors: accs, bufferViews: views,
+  };
+  if (extras) json.extras = { kestrel: extras };
+  return buildGlb(json, Buffer.concat(chunks));
+}
+
+{
+  const m = readRiggedGlb(riggedGlb({ extras: { format: 1, matKeys: ['skin'] } }), 'test:rig');
+  ok('rig: 3 bones named, parents -1/0/1', m.bones.map((b) => b.name + ':' + b.parent).join() === 'Hips:-1,Spine:0,Chest:1');
+  ok('rig: rest translation converted to our axes (glTF y=1 -> z=1)', m.bones[1].rest.t.join() === '0,0,1' && m.bones[0].rest.r.join() === '0,0,0,1');
+  ok('rig: ibm converted (bone1 translation column = (0,0,-1))', approxEqual(m.bones[1].ibm[14], -1) && approxEqual(m.bones[1].ibm[13], 0));
+  ok('rig: boneIndex per vertex', m.mesh.boneIndex.length === 6 && m.mesh.boneIndex.join() === '0,0,0,1,1,1');
+  ok('rig: positions converted (glTF (0,0,-1) -> (0,1,0))', approxEqual(m.mesh.positions[7], 1) && m.mesh.indices.length === 6);
+  ok('rig: extras.kestrel passthrough', m.extras && m.extras.format === 1 && m.extras.matKeys[0] === 'skin');
+  ok('rig: one clip, duration 1, 2 channels', m.clips.length === 1 && m.clips[0].name === 'wave' && m.clips[0].duration === 1 && m.clips[0].channels.length === 2);
+  const c = m.clips[0];
+  const s0 = sampleRiggedClip(m, c, 0), sh = sampleRiggedClip(m, c, 0.5), s1 = sampleRiggedClip(m, c, 5);
+  ok('rig: t=0 rotation identity, t=1 (clamped from 5) 90deg', s0.r[4 + 3] === 1 && approxEqual(s1.r[4], Math.SQRT1_2) && approxEqual(s1.r[7], Math.SQRT1_2));
+  ok('rig: t=0.5 LINEAR slerp = 45deg about X', approxEqual(sh.r[4], Math.sin(Math.PI / 8), 1e-4) && approxEqual(sh.r[7], Math.cos(Math.PI / 8), 1e-4));
+  ok('rig: translation channel LINEAR mid (glTF (0,1,1) -> ours (0,-1,1))', approxEqual(sh.t[6 + 2], 1) && approxEqual(sh.t[6 + 1], -1));
+  ok('rig: un-animated bone keeps rest', sh.t[0] === 0 && sh.t[3 + 2] === 1);
+  const st = readRiggedGlb(riggedGlb({ interp: 'STEP' }), 'test:rig-step');
+  const ss = sampleRiggedClip(st, st.clips[0], 0.5);
+  ok('rig: STEP holds previous key', approxEqual(ss.t[6 + 1], 0) && approxEqual(ss.t[6 + 2], 1) && approxEqual(sampleRiggedClip(st, st.clips[0], 1).t[6 + 1], -2));
+}
+expectThrow('rig: smooth weights rejected', () => readRiggedGlb(riggedGlb({ weights: [[1, 0, 0, 0], [0.5, 0.5, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0]] }), 'test:rig-smooth'));
+expectThrow('rig: unskinned glb rejected', () => readRiggedGlb(simpleGlb({ positions: [[0, 0, 0], [1, 0, 0], [0, 1, 0]] }), 'test:rig-static'));
+ok('rig: static loadGltf still rejects skins', (() => { try { loadGltf(riggedGlb(), 'x'); return false; } catch (e) { return /skin/.test(e.message); } })());
 
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

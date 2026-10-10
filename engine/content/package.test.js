@@ -4,7 +4,7 @@ import assert from 'node:assert';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { writeZip } from './zip.js';
-import { validatePackageManifest, openPackage, mountPackages, parseRange, parseSemver } from './package.js';
+import { validatePackageManifest, openPackage, mountPackages, loadPackageModels, parseRange, parseSemver } from './package.js';
 import { loadContentPack } from './loadPack.js';
 import { ContentError } from './ContentError.js';
 import { makeOk } from '../test/assert.js';
@@ -131,6 +131,48 @@ async function rejectsCE(p, re) {
   ok('same package twice', await rejectsCE(mountPackages([a, a]), /twice/));
   const bytes = await (await mountPackages([a])).fetchBytes('kpkg://kestrel.one/models/m.glb');
   ok('fetchBytes', bytes.length === 1 && bytes[0] === 103);
+}
+
+// 6. RIG-03: model.rigged / model.static -> models map.
+{
+  const f32 = (a) => Buffer.from(new Float32Array(a.flat()).buffer);
+  const glb = (json, bin) => {
+    const pad = (b, c) => (b.length % 4 ? Buffer.concat([b, Buffer.alloc(4 - (b.length % 4), c)]) : b);
+    json.buffers = [{ byteLength: bin.length }];
+    const j = pad(Buffer.from(JSON.stringify(json)), 0x20); const b = pad(bin, 0);
+    const h = Buffer.alloc(20); h.writeUInt32LE(0x46546c67, 0); h.writeUInt32LE(2, 4); h.writeUInt32LE(12 + 8 + j.length + 8 + b.length, 8);
+    h.writeUInt32LE(j.length, 12); h.writeUInt32LE(0x4e4f534a, 16);
+    const bh = Buffer.alloc(8); bh.writeUInt32LE(b.length, 0); bh.writeUInt32LE(0x004e4942, 4);
+    return new Uint8Array(Buffer.concat([h, j, bh, b]));
+  };
+  const tri = [[0, 0, 0], [1, 0, 0], [0, 0, -1]];
+  const view = (o, n) => ({ buffer: 0, byteOffset: o, byteLength: n });
+  const staticGlb = glb({ asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [0, 0, -1], max: [1, 0, 0] }], bufferViews: [view(0, 36)] }, f32(tri));
+  // one rigid bone: positions(36) joints(12) weights(48) ibm(64) indices(6 -> padded 8)
+  const bin = Buffer.concat([f32(tri), Buffer.from([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), f32([[1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0]]),
+    f32([[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]]), Buffer.from(new Uint16Array([0, 1, 2, 0]).buffer)]);
+  const riggedGlb = glb({ asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0, 1] }],
+    nodes: [{ name: 'Root' }, { name: 'body', mesh: 0, skin: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0, JOINTS_0: 1, WEIGHTS_0: 2 }, indices: 4 }] }],
+    skins: [{ joints: [0], inverseBindMatrices: 3 }],
+    accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3' }, { bufferView: 1, componentType: 5121, count: 3, type: 'VEC4' },
+      { bufferView: 2, componentType: 5126, count: 3, type: 'VEC4' }, { bufferView: 3, componentType: 5126, count: 1, type: 'MAT4' },
+      { bufferView: 4, componentType: 5123, count: 3, type: 'SCALAR' }],
+    bufferViews: [view(0, 36), view(36, 12), view(48, 48), view(96, 64), view(160, 6)] }, bin);
+  const files = [{ path: 'models/r.glb', bytes: riggedGlb }, { path: 'models/s.glb', bytes: staticGlb }];
+  const assets = [{ path: 'models/r.glb', type: 'model.rigged', id: 'mara' }, { path: 'models/s.glb', type: 'model.static', id: 'rock' },
+    { path: 'LICENSE.txt', type: 'license' }];
+  const pkg = await openPackage(await build(base({ id: 'kestrel.models', assets }), files));
+  const models = await (await mountPackages([pkg])).loadModels();
+  ok('rigged kind', models.mara && models.mara.kind === 'rigged' && models.mara.model.bones.length === 1 && models.mara.model.mesh.indices.length === 3);
+  ok('static kind', models.rock && models.rock.kind === 'static' && models.rock.model.id === 'rock');
+  ok('only model assets', Object.keys(models).length === 2);
+  const mk = async (as, fs = files) => openPackage(await build(base({ id: 'kestrel.bad', assets: as }), fs));
+  ok('unknown model type', await rejectsCE(loadPackageModels([await mk([{ path: 'models/r.glb', type: 'model.foo', id: 'x' }])]), /models\/r\.glb.*unknown model asset type/));
+  ok('duplicate id across packages', await rejectsCE(loadPackageModels([pkg, await openPackage(await build(base({ id: 'kestrel.m2', assets: [assets[0]] }), [files[0]]))]), /duplicate model id "mara"/));
+  ok('bad glb names path', await rejectsCE(loadPackageModels([await mk([{ path: 'models/r.glb', type: 'model.static', id: 'x' }], [{ path: 'models/r.glb', bytes: enc('nope') }])]), /models\/r\.glb/));
 }
 
 console.log(`package.test: ${pass} passed, ${fail} failed`);

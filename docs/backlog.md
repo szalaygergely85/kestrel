@@ -1512,9 +1512,9 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
 | CHARGEN-19 | Tauri shell + stage + unsigned Windows installer | P1 | todo [PC-B B1, 0.75 d] - deps 13, 14 | `tools/chargen-desktop/*` |
 | CHARGEN-20 | Signed release builds (Windows, macOS notarized, Linux AppImage) | P2 | todo [PC-B B1, 0.5 d] - needs owner certificates (ESCALATE 38.29 item 8) | `tools/chargen-desktop/*` |
 | RIG-00 | ARCH-NOTE NEEDED: rigged-model seam in VoxelPool/instances (prebuilt mesh + parts + clips) | P1 | todo [PC-A architect, fable] | `docs/architecture.md` |
-| RIG-01 | `engine/mesh/gltf.js`: rigid-skin + animation reader `readRiggedGlb` | P1 | todo [PC-B B2, 0.75 d] -> arch-review (PC-A) | `engine/mesh/gltf.js` + tests |
+| RIG-01 | `engine/mesh/gltf.js`: rigid-skin + animation reader `readRiggedGlb` | P1 | arch-review [PC-B B2, 0.75 d] | `engine/mesh/gltf.js` + tests |
 | RIG-02 | Rigged model in the registry/pool: collapseRig output drawn on the mesh path, play/partRot/mounts/shadows | P1 | todo [B2 or PC-A, 0.75 d] - deps RIG-00 | per RIG-00 |
-| RIG-03 | loadPack/KPKG asset types `model.rigged` / `model.static` -> `bundle.models`; main.js registers `char.<id>` | P1 | todo [PC-B B2, 0.5 d] -> arch-review | `engine/content/loadPack.js`, `package.js`, `game/js/main.js` |
+| RIG-03 | loadPack/KPKG asset types `model.rigged` / `model.static` -> `bundle.models`; main.js registers `char.<id>` | P1 | arch-review (engine half; main.js line = NEEDS B1-main) [PC-B B2] | `engine/content/loadPack.js`, `package.js`, `game/js/main.js` |
 | CHARGEN-15 | First villager from a `.kestrel` (`.glb`) + dialogue, like Burl | P1 | todo [PC-B B1, 0.5 d] - deps RIG-03 | package, `content/worlds/world_m1.world.json`, `game/js/main.js` |
 | CHARGEN-16 | Player look: `player.look` in the save + `hand@look` retint + owner walk (picks option A/B) | P1 | todo [PC-B B1, 0.5 d] | `game/js/quest/save/saveState.js`, `game/js/main.js` |
 | CHARGEN-17 | New-game creation screen (title-menu skin, in-game-look preview built at runtime) | P1 | todo [PC-B B1, 0.75 d] - deps RIG-02 | `game/js/ui/charCreate.js` + test, `game/js/titleMenuHost.js` |

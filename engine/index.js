@@ -34,7 +34,7 @@ export { stringifyContent } from './content/stringify.js';
 export { maskToJSON, maskFromJSON, downsampleAlpha, MASK_ID_RE } from './content/maskFile.js'; // ALPHA-01a
 export { prefabFromJSON, placePrefabItems, PREFAB_ITEM_TYPES } from './content/prefabFile.js'; // PREFAB-SEAM (38.11)
 export { loadContentPack, globalId } from './content/loadPack.js';
-export { validatePackageManifest, openPackage, mountPackages, checkDependencies, parseSemver, parseRange, KPKG_FORMAT, KPKG_FORMAT_VERSION, KPKG_SCHEME } from './content/package.js'; // KPKG-02 (38.30)
+export { validatePackageManifest, openPackage, mountPackages, loadPackageModels, checkDependencies, parseSemver, parseRange, KPKG_FORMAT, KPKG_FORMAT_VERSION, KPKG_SCHEME } from './content/package.js'; // KPKG-02 (38.30)
 export { readZip, writeZip, crc32, checkZipPath, ZIP_LIMITS } from './content/zip.js'; // KPKG-01/03 (38.30)
 
 // ---- world ----------------------------------------------------------------
@@ -86,7 +86,7 @@ export { deriveEmissiveLight, EMISSIVE_LIGHT_MIN } from './voxel/emissiveLight.j
 export { buildVoxelMesh, MESH_ONLY_MAX_QUADS } from './mesh/voxelMesh.js';
 export { prebuildTerrainMesh } from './mesh/terrainMesh.js'; // ED-MESH-1a
 export { createFrameRenderer } from './render/frameRenderer.js'; // ED-WG-01a (38.21)
-export { loadGltf, buildMeshFromTris, KIND_MESH } from './mesh/gltf.js'; // ME-13a (architecture.md 27.2 Public API)
+export { loadGltf, buildMeshFromTris, KIND_MESH, readRiggedGlb, sampleRiggedClip } from './mesh/gltf.js'; // ME-13a (architecture.md 27.2 Public API); RIG-01
 export { MaskAtlas, buildMaskAtlas, cutoffByte } from './render/MaskAtlas.js'; // ALPHA-01c: test worlds (gpucompare alphaLeaves) build their own atlas
 // ME-13b: content/meshes/<id>.mesh.json (de)serialization + validation -
 // needed by tools/gltf-import.mjs (and any future mesh-producing CLI tool)
