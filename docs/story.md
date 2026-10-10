@@ -593,6 +593,13 @@ Texts for D-062 / architecture 38.37 (PC-B writer, 2026-10-10). Source: `docs/ch
 | `m1.relayFound` | HUD | `Find Bend Relay` | 15 |
 | `m1.relay1` | HUD | `Wake Bend Relay` | 15 |
 | `m1.fen` | HUD | `Speak to the stranger` | 21 |
+| `note.keepLight.title` | note 0 | `A scrap, nailed up` | 18 |
+| `note.keepLight` (1) | note 0 | `Up. Do not stay down here.` | 26 |
+| `note.keepLight` (2) | note 0 | `` (empty row) | 0 |
+| `note.keepLight` (3) | note 0 | `Climb the stair to the very top.` | 32 |
+| `note.keepLight` (4) | note 0 | `A blade waits by the broken wall.` | 33 |
+| `note.keepLight` (5) | note 0 | `` (empty row) | 0 |
+| `note.keepLight` (6) | note 0 | `Do not go out without it.` | 25 |
 | `note.steelHush.title` | note 1 | `A note by the sword` | 19 |
 | `note.steelHush` (1) | note 1 | `To whoever finds this place:` | 28 |
 | `note.steelHush` (2) | note 1 | `` (empty row) | 0 |
@@ -614,6 +621,7 @@ Texts for D-062 / architecture 38.37 (PC-B writer, 2026-10-10). Source: `docs/ch
 | `hint.exit` | story hint | `The top. Look west through the breach.` | 38 |
 
 Notes:
+- `note.keepLight` (PC-B writer, owner request 2026-10-10): the pinned scrap behind the wake spot gives the first quest. Same unknown writer as `note.steelHush`; it points up to the blade by the breach ("broken wall") without repeating that note. Key kept for the level prop; replaces the old KEEP THE LIGHT scrawl.
 - `toast.door.open` (PC-B writer, owner-authorised while PC-A offline): fires once when `door.unbar` succeeds. `game/js/quest/doorUnbar.js` does not show it yet (code follow-up).
 - The bar is jammed, not locked, so the sword is what pries it. That explains the `tower.sword.taken` gate without saying it.
 - `hint.burner` replaces "Take what light you can." Suggested `skipIfState`: `tower.sword.taken`, so it stays quiet on the way back down. That is a code choice for CH1-02.

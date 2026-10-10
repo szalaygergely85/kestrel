@@ -73,8 +73,15 @@
     },
     keepLight: {
       title: 'A scrap, nailed up',
-      lines: ['KEEP THE LIGHT'],
-      source: 'US-021 scrawl text (was the decal `scrawl`)'
+      lines: [
+        'Up. Do not stay down here.',
+        '',
+        'Climb the stair to the very top.',
+        'A blade waits by the broken wall.',
+        '',
+        'Do not go out without it.'
+      ],
+      source: 'docs/story.md q01 note 0 `note.keepLight` (PC-B writer, owner request 2026-10-10: first quest, sends the player up to the sword; was the scrawl KEEP THE LIGHT)'
     },
     steelHush: {
       title: 'A note by the sword',
