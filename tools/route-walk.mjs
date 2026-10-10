@@ -257,6 +257,29 @@ function jumpProbe(physics) {
   return out;
 }
 
+// ---- GS-01f probe: every terrainFloor (grass ring) cell stays walkable. 5 points per flagged cell, drop 0.2 m above the
+// level floor, idle 20 steps, then a short walk along the ring: z must stay on the floor height (never fall through).
+function ringProbe(physics) {
+  const sim = setup(physics), st = sim.world.structures[0], lv = st.level;
+  let cells = 0, pts = 0, minZ = Infinity, bad = [];
+  const pt = [[0.5, 0.5], [0.2, 0.2], [0.8, 0.2], [0.2, 0.8], [0.8, 0.8]];
+  const tr = sim.player.transform, b = sim.player.components.body;
+  for (let r = 0; r < lv.height; r++) for (let c = 0; c < lv.width; c++) {
+    const sec = lv.sectorAt(c + 0.5, r + 0.5);
+    if (!sec || sec.terrainFloor !== true) continue;
+    cells++;
+    for (const [ox, oy] of pt) {
+      const want = st.origin.z + sec.floorH;
+      tr.x = O.x + c + ox; tr.y = O.y + r + oy; tr.z = want + 0.2; b.vx = b.vy = b.vz = 0; b.grounded = false; b.peakZ = tr.z;
+      idle(sim, 20);
+      pts++; minZ = Math.min(minZ, tr.z - want);
+      if (tr.z < want - 0.3) bad.push(`(${c},${r}) z${(tr.z - want).toFixed(2)}`);
+    }
+  }
+
+  return { cells, pts, minDz: minZ, bad };
+}
+
 // ---- stair-edge probe (AC 2): approach each stair step head-on from the base row (y=3 flight), see z follow.
 function pct(a, p) { const s = a.slice().sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * p))]; }
 
@@ -313,6 +336,7 @@ function clearance() {
 const G = routeRun('grid'), M = routeRun('mesh'), MR = routeRun('mesh', { reload: true }), GR = routeRun('grid', { reload: true });
 const JG = jumpProbe('grid'), JM = jumpProbe('mesh');
 const reloadSame = MR.legs.every((l, i) => l.completed === M.legs[i].completed && Math.abs(l.end.x - M.legs[i].end.x) < 1e-9 && Math.abs(l.end.y - M.legs[i].end.y) < 1e-9 && Math.abs(l.end.z - M.legs[i].end.z) < 1e-9);
+const RP = [ringProbe('grid'), ringProbe('mesh')];
 const DC = [doorClosedProbe('grid'), doorClosedProbe('mesh')], CL = clearance();
 const NL = '\n    ';
 const asJson = process.argv.includes('--json');
@@ -341,6 +365,7 @@ else {
   console.log('info mesh:', JSON.stringify(M.info));
   console.log('save round trip (mid-route, after the upper stair):', 'mesh', JSON.stringify(MR.info.reload), 'grid', JSON.stringify(GR.info.reload), '| continued route end positions == uninterrupted mesh run:', reloadSame);
   console.log(`probe breach no-exit (grid/mesh): ${G.legs.find((l) => l.name.startsWith('7a2')).completed ? 'PASS' : 'FAIL'} / ${M.legs.find((l) => l.name.startsWith('7a2')).completed ? 'PASS' : 'FAIL'}  minZ ${f(G.info.breachMinZ)}/${f(M.info.breachMinZ)}`);
+  for (const [i, nm] of ['grid', 'mesh'].entries()) console.log(`probe grass ring walkable (${nm}, ${RP[i].cells} cells, ${RP[i].pts} points): ${RP[i].cells > 0 && RP[i].bad.length === 0 ? 'PASS' : 'FAIL'} minDz ${f(RP[i].minDz)}${RP[i].bad.length ? NL + RP[i].bad.slice(0, 8).join(NL) : ''}`);
   console.log(`probe door closed blocks / open lets through (mesh; grid has no prop colliders): ${DC[1].ok ? 'PASS' : 'FAIL'} ${JSON.stringify(DC[1])}`);
   console.log(`max fall distance (7c down->door->outside) grid/mesh: ${f(G.legs.find((l) => l.name.startsWith('7c')).maxFall)}/${f(M.legs.find((l) => l.name.startsWith('7c')).maxFall)} (limit 3.5)`);
   for (const c of CL) console.log(`clearance ${c.name} (${c.samples} samples, 0.8 m collider, slope<0.6${c.name === 'follow' ? ', inside nav' : ''}): ${c.bad.length ? 'FAIL' : 'PASS'}${c.bad.length ? NL + c.bad.join(NL) : ''}`);

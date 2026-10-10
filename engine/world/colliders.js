@@ -34,6 +34,9 @@
 import { makeFrame } from '../core/transform.js';
 import { placementMatrix12 } from '../mesh/DrawList.js';
 import { buildLevelMesh } from '../mesh/levelMesh.js';
+
+/** GS-01f: terrainFloor cells draw no floor quad but keep a collision-only one (walkable, mesh physics). */
+const COLLIDER_MESH_OPTS = { collisionFloors: true };
 import { buildBvh, buildBvhFromMesh, refit } from '../physics/bvh.js';
 
 /** @typedef {import('../physics/meshCollide.js').MeshCollider} MeshCollider */
@@ -171,7 +174,7 @@ function refitColliderInPlace(collider, ceilH) {
  * Allocates every call; that's accepted here in exchange for correctness.
  */
 function rebuildDynColliderFallback(collider, structure, tag) {
-  const set = buildLevelMesh(structure.level);
+  const set = buildLevelMesh(structure.level, COLLIDER_MESH_OPTS);
   const dynEntry = set.dyn.find((d) => d.tag === tag);
   if (!dynEntry) { collider.enabled = false; return; }
   const ch = structure.tagMap.get(tag);
@@ -197,7 +200,7 @@ function buildDynCollider(structure, tag, normalBaseMesh, matrix12) {
   sector.ceilH = sentinel;
   let sentinelSet;
   try {
-    sentinelSet = buildLevelMesh(level);
+    sentinelSet = buildLevelMesh(level, COLLIDER_MESH_OPTS);
   } finally {
     sector.ceilH = currentCeilH;
   }
@@ -208,7 +211,7 @@ function buildDynCollider(structure, tag, normalBaseMesh, matrix12) {
       _warnedSentinelMismatch.add(key);
       console.warn(`engine/world/colliders.js: "${key}": the sentinel build's base mesh differs from the normal base - a base face depends on this tag's ceilH. Falling back to a full mesh rebuild on every refit for this tag (allocates).`);
     }
-    const normalSet = buildLevelMesh(level); // level is back at currentCeilH here
+    const normalSet = buildLevelMesh(level, COLLIDER_MESH_OPTS); // level is back at currentCeilH here
     const normalDyn = normalSet.dyn.find((d) => d.tag === tag);
     if (!normalDyn) return null;
     const fbPos = posWithBarriers(normalDyn.mesh, level, ch, currentCeilH);
@@ -271,7 +274,7 @@ export function buildWorldColliders(world) {
     // Imported meshes have no grid sectors or dynamic legend tags.
     if (s.mesh) continue; // merged below by buildStaticMeshCollider
     const matrix12 = translationMatrix(s.origin);
-    const set = buildLevelMesh(s.level);
+    const set = buildLevelMesh(s.level, COLLIDER_MESH_OPTS);
 
     const base = colliderFromMesh(s.id, set.base, matrix12);
     if (base) colliders.push(base);

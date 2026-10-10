@@ -500,3 +500,4 @@ skyGlow.js: posterise removed (continuous g) + Bayer 4x4 dither (ditherAmp, cell
 
 ### SHADOW-SUN-MOVE-01 (kestrel-3) po-review
 worldClock.js: STEP_HOURS 1/240 -> 1/480 (0.125 deg per step, 0.25 s real) and default day 24 -> 48 min (DN-Q1 proposal, ?daylen= kept): sun shadow shift per step ~4x smaller (sub-cell), shadow re-render ~4/s (~0.4-0.8 ms each, not measured here). No cross-fade (not needed). Frozen/capture path untouched. Not browser-verified.
+- GS-01f (kestrel-3): grass ring walkable again. buildLevelMesh opt collisionFloors keeps the floor quad for terrainFloor cells in COLLIDER builds only (engine/world/colliders.js COLLIDER_MESH_OPTS); draw build unchanged. tower.level.json re-flagged , ; l (k unflagged). route-walk ringProbe (115 cells x 5 pts, grid+mesh PASS; mesh FAILs minDz -0.97 without the fix). validate-content, route-walk, 19 suites PASS; gpucompare exit 0 (NEW rows PASS, see baseline diff).
