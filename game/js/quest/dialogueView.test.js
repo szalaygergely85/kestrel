@@ -65,11 +65,11 @@ const X0 = 32, Y8 = 60 - 3 - 8, Y12 = 60 - 3 - 12; // 96 wide centred on 160; bo
   for (let k = 2; k <= 5; k++) { assert.ok(g4.row(Y8 + k).includes('word'), `row ${k}`); assert.equal(g4.at(X0 + 95, Y8 + k), '|'); }
   assert.ok(!g4.row(Y8 + 6).slice(X0 + 3, X0 + 90).includes('word'), 'line 5+ not drawn');
 }
-// hints + blinking v (0.8 s period, 0.6 duty), no W/S without choices
+// hints + blinking v (0.8 s period, 0.6 duty), no Up/Down without choices
 {
   const g = grid(160, 60); view.draw(g, run({ state: 'waiting' }), 0);
   const hr = g.row(Y8 + 6);
-  assert.ok(hr.includes('E: next') && !hr.includes('Esc'), hr); assert.ok(!hr.includes('W/S'));
+  assert.ok(hr.includes('E: next') && !hr.includes('Esc'), hr); assert.ok(!hr.includes('Up/Down'));
   assert.equal(g.at(X0 + 96 - 4, Y8 + 6), 'v');
   assert.deepEqual(g.fgAt(X0 + 92, Y8 + 6), hex('gold'));
   const e = hr.indexOf('E: next'); assert.deepEqual(g.fgAt(e, Y8 + 6), hex('gold'), 'key gold'); assert.deepEqual(g.fgAt(e + 3, Y8 + 6), hex('uiDim'));
@@ -77,7 +77,7 @@ const X0 = 32, Y8 = 60 - 3 - 8, Y12 = 60 - 3 - 12; // 96 wide centred on 160; bo
   assert.equal(hasV(0.1), true); assert.equal(hasV(0.6), false); assert.equal(hasV(0.9), true);
   const gt = grid(160, 60); view.draw(gt, run({ state: 'typing' }), 0); assert.notEqual(gt.at(X0 + 92, Y8 + 6), 'v', 'no marker while typing');
 }
-// choices: 12 tall, separator, gold focus band + '>' marker, numbers, W/S hint
+// choices: 12 tall, separator, gold focus band + '>' marker, numbers, Up/Down hint
 {
   const g = grid(160, 60); view.draw(g, run({ state: 'choosing', choiceCount: 3, selected: 1 }), 0);
   assert.equal(g.at(X0, Y12), '+'); assert.equal(g.at(X0, Y12 + 11), '+'); assert.equal(g.at(X0 + 95, Y12 + 11), '+');
@@ -92,7 +92,7 @@ const X0 = 32, Y8 = 60 - 3 - 8, Y12 = 60 - 3 - 12; // 96 wide centred on 160; bo
   assert.deepEqual(g.fgAt(X0 + 6, Y12 + 8), hex('gold'), 'focus text gold');
   assert.deepEqual(g.fgAt(X0 + 3, Y12 + 8), hex('brassLight'), 'focus number');
   assert.deepEqual(g.fgAt(X0 + 6, Y12 + 7), hex('uiText')); assert.deepEqual(g.fgAt(X0 + 3, Y12 + 7), hex('uiDim'));
-  assert.ok(g.row(Y12 + 10).includes('E: next   W/S: choose') && !g.row(Y12 + 10).includes('Esc'));
+  assert.ok(g.row(Y12 + 10).includes('E: next   Up/Down: choose') && !g.row(Y12 + 10).includes('Esc'));
   assert.notEqual(g.at(X0 + 92, Y12 + 10), 'v', 'no more-marker with choices');
 }
 // optional seen / locked choices

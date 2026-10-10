@@ -9,6 +9,7 @@
   "entry": [
     {"node": "bear.departing", "requires": "s.burl.departing"},
     {"node": "bear.woken.1", "requires": "s.waystone.waystone.woken"},
+    {"node": "bear.stone.again", "requires": "bear.stone.told"},
     {"node": "bear.stone.1", "requires": "s.burl.arrived"},
     {"node": "bear.following", "requires": "s.burl.follow"},
     {"node": "bear.follow.1", "requires": "q.burl.boars.done"},
@@ -161,6 +162,10 @@
     "bear.stone.10": {"lines": [
       "That's impossible."
     ], "next": "bear.stone.11", "speaker": "you"},
+    "bear.stone.again": {"end": true, "lines": [
+      "Go on, sky-cub.",
+      "Hold that crystal up to the carved mark."
+    ], "speaker": "burl"},
     "bear.stone.11": {"end": true, "lines": [
       "You've said that before.",
       "Hold that crystal up to the carved mark."

@@ -34,7 +34,7 @@ function talk(relay, pick = 0) {
   const tick = (...k) => { keys.clear(); k.forEach((c) => keys.add(c)); ctl.step(1 / 60, input, true); };
   assert.equal(ctl.openFor('bear'), true);
   for (let i = 0; i < 300 && ctl.open; i++) {
-    if (ctl.runner.state === 'choosing') { for (let k = 0; k < pick; k++) tick('KeyS'); tick('KeyE'); continue; }
+    if (ctl.runner.state === 'choosing') { for (let k = 0; k < pick; k++) tick('ArrowDown'); tick('KeyE'); continue; }
     tick('KeyE');
   }
   tick();

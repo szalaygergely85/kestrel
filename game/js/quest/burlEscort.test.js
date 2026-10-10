@@ -11,7 +11,7 @@ function mk(state0 = {}, o = {}) {
     walks: { follow: [[0, 0], [10, 0], [20, 0], [30, 0]], depart: [[30, 0], [30, 10], [30, 25]] },
     walkBarks: { follow: { 1: 'bear.walk1', 3: 'bear.walk2' } } } };
   const world = { state, terrain: { groundAt: () => 0 }, get: () => ({ data: ent }), setEntityCollider: () => true };
-  const barks = { play: (id) => { if (state['bark.' + id]) return false; state['bark.' + id] = true; played.push(id); return true; } };
+  const barks = { play: (id, who, repeat) => { if (!repeat) { if (state['bark.' + id]) return false; state['bark.' + id] = true; } played.push(id); return true; } };
   const walk = createNpcWalk(world, 'bear', { barks });
   const questFlag = (k) => { flags.push(k); state[k] = true; };
   const st = { dialogueOpen: false, afterLeave: true };
@@ -40,7 +40,7 @@ const follow = (c) => () => c.ent.transform.x - 3;
   assert.ok(c.walk.waiting && c.ent.transform.x < 12 && c.e.phase === 1, 'waits ' + c.ent.transform.x);
   const wp = c.state['burl.wp']; assert.ok(wp >= 0);
   run(c, 40, follow(c)); assert.equal(c.e.phase, 2); assert.ok(c.state['burl.arrived']); assert.equal(c.state['burl.wp'], 3);
-  assert.deepEqual(c.played, ['bear.walk1', 'bear.walk2'].filter((b) => c.played.includes(b)));
+  assert.deepEqual(c.played.filter((b) => b !== 'bear.wait'), ['bear.walk1', 'bear.walk2'].filter((b) => c.played.includes(b)));
   assert.equal(c.played.filter((x) => x === 'bear.walk1').length, 1); assert.equal(c.played.filter((x) => x === 'bear.walk2').length, 1);
   assert.equal(c.flags.filter((f) => f === 'burl.arrived').length, 1); assert.ok(!c.e.busy);
   // stone talk auto-open: not while far, once within 4 m, re-arms after 7 m, stops after bear.stone.told
@@ -88,3 +88,12 @@ const follow = (c) => () => c.ent.transform.x - 3;
 { const c = mk({ 'burl.phase': 2, 'dlg.bear.stone.told': true, 'waystone.waystone.woken': true, 'burl.depart': true }); c.e.load();
   for (let i = 0; i < 30; i++) c.e.step(DT, 29, 0, false); assert.deepEqual(c.opened, [], 'no re-open once the departure is set'); }
 console.log('burlEscort ALL PASS');
+
+// PO-CH1-14: the player runs far ahead during the walk -> 'bear.wait' bark, at most once per 20 s
+{
+  const c = mk({ 'burl.follow': true });
+  run(c, 0.1, 0); run(c, 5, 60); // 60 m away from Burl
+  assert.equal(c.played.filter((b) => b === 'bear.wait').length, 1, 'one wait bark');
+  run(c, 15, 60); assert.equal(c.played.filter((b) => b === 'bear.wait').length, 1, 'cooldown 20 s');
+  run(c, 6, 60); assert.equal(c.played.filter((b) => b === 'bear.wait').length, 2, 'again after 20 s');
+}
