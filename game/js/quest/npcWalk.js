@@ -1,4 +1,4 @@
-// game/js/quest/npcWalk.js (CH1-07, architecture.md 38.37 item 5). Generic walking NPC (Burl's escort/departure, Fen's entrance).
+// game/js/quest/npcWalk.js (CH1-07, architecture.md 38.37 item 5). Generic walking NPC (Burl's escort/departure).
 // Polylines are authored in world data: entity.components.walks = { name: [[x,y],...] } and optional
 // components.walkBarks = { name: { "<wpIndex>": "<barkId>" } }. Movement = engine createPathFollower; z from terrain.groundAt;
 // clip walk/idle; the kinematic collider follows via world.setEntityCollider. Zero allocation per step (start() allocates).
