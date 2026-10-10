@@ -420,8 +420,9 @@ let titleMenuActive = true; // S8-B1-10: mirrors menuHost.active each frame (tru
 let deviceLostFrozen = false; // S8-B1-10 (38.10c): set once by watchDeviceLost's `freeze` hook below; gates `paused` in the frame loop
 try {
   const questDef = await (await fetch('../content/quests/m1.quest.json')).json();
+  const giverDefs = [await (await fetch('../content/quests/burl.boars.quest.json')).json()]; // QG-03 (D-058): giver quests, state in the quest book
   const charKit = await (await fetch('../content/chargen/human.charkit.json')).json(); // CHARGEN-16: kit default look + hand skin tones
-  saveRelay = createSaveRelay({ storage: saveStorage(), questDef, enabled: saveEnabled, defaultLook: charKit.defaults });
+  saveRelay = createSaveRelay({ storage: saveStorage(), questDef, giverDefs, enabled: saveEnabled, defaultLook: charKit.defaults });
   window.__charKit = charKit;
   saveRelay.bindEvents(engine.events);
   gameHooks.register(saveRelay.handlers());
@@ -1169,12 +1170,20 @@ async function runGame(mode, cinematic = null) {
       if (dialogueCtl) dialogueCtl.dispose();
       dialogueCtl = createDialogueCtl({ world, dialogues: bundle.dialogues, events: engine.events, style: window.ASSETS.uiStyle.dialogue,
         jawOpenDeg: window.ASSETS.bearFx && window.ASSETS.bearFx.talk ? window.ASSETS.bearFx.talk.jawMaxDeg : undefined, // jaw hinge: rx opens, 0..jawMaxDeg (voxel_bear.js header)
-        onFlag: (k, v) => gameHooks.emitSimple('flag:set', 'dlg.' + k, v) });
+        book: () => (saveRelay ? saveRelay.quest.book : null), // QG-03: `q.*` dialogue keys -> quest book
+        onFlag: (k, v) => { if (k.charCodeAt(0) !== 113 || k.charCodeAt(1) !== 46) gameHooks.emitSimple('flag:set', 'dlg.' + k, v); } });
       setDialogueApi(dialogueCtl);
       bearTurn = createNpcTurn(world, 'bear'); // NPC-BEAR-01: null when the world has no bear
       if (bearTurn) dialogueCtl.addNpc('bear');
       if (toasts) toasts.dispose();
       toasts = itemDefs ? createToastView(engine.events, window.ASSETS.items.toast, itemDefs, assets.palette.rgb) : null;
+      if (saveRelay) { // QG-03: book events -> seam + toasts (the reward, if any, is granted from book.lastReward; Burl's quest has none - owner pick)
+        const tv = toasts, msg = window.ASSETS.items.toast && window.ASSETS.items.toast.messages && window.ASSETS.items.toast.messages.packFull;
+        saveRelay.quest.book.onChange = (name, id) => {
+          gameHooks.emitSimple(name, id);
+          if (tv && msg) { if (name === 'quest:accepted') tv.say('Quest accepted', msg.fg); else if (name === 'quest:done') tv.say('Quest complete', msg.fg); }
+        };
+      }
       if (invView && invView.isOpen) invView.close();
       invView = itemDefs && window.ASSETS.uiStyle.inventory ? createInventoryView({
         style: window.ASSETS.uiStyle.inventory, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,

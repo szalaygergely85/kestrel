@@ -1,6 +1,7 @@
 // US-096w: bridges game events/facts into the lane-C quest sim (quest/sim/quest.js) and exposes the current
 // objective text for the HUD. Pure data + a small UI-layer draw; no world/engine imports, so it runs in Node.
-import { createQuest, applyQuestEvent, questObjectives } from './quest/sim/quest.js';
+import { questObjectives } from './quest/sim/quest.js';
+import { createQuestBook, READY } from './quest/sim/questBook.js'; // QG-03: the relay's m1 state IS book.main
 
 const BREACH_R2 = 3 * 3, BREACH_DZ = 2.5; // "reached the breach": within 3 m (xy) of the marker and 2.5 m in z
 export const DONE_TEXT = 'The pencil line runs on.';
@@ -9,9 +10,12 @@ const PLATE = [10, 11, 16], TEXT = [226, 214, 176], DIM = [140, 134, 112];
 /**
  * @param {any} def quest definition (content/quests/m1.quest.json)
  * @param {any} [saved] quest snapshot from a save
+ * @param {any[]} [giverDefs] giver quests (content/quests/*.quest.json with `giver`); QG-03
+ * @param {any} [savedQuests] save.game.quests map (or migrated)
  */
-export function createQuestRelay(def, saved = null) {
-  let state = createQuest(def, saved);
+export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests = null) {
+  let book = createQuestBook(def, giverDefs, { quest: saved, quests: savedQuests });
+  let state = book.main;
   let rows = questObjectives(state, def, []);
   const fired = { wake: false, lantern: false, sword: false, waystone: false, breach: false }; // edge guards (cheap polling)
   let dirty = false, lineFor = '', line = '';
@@ -25,13 +29,15 @@ export function createQuestRelay(def, saved = null) {
   /** Feeds one quest event (see quest.js); returns true when the quest changed. Malformed ids are ignored. */
   function feed(event) {
     let changed = false;
-    try { changed = applyQuestEvent(state, event, def); } catch (e) { return false; }
+    try { changed = book.feed(event); } catch (e) { return false; }
     if (changed) { questObjectives(state, def, rows); dirty = true; }
     return changed;
   }
 
   const relay = {
     def,
+    /** QG-03: the quest book (m1 + giver quests); replaced on reset(), so read it through the relay each time. */
+    get book() { return book; },
     /** Optional (name, a, b) callback for every event poll() fires (main.js points it at the gameHooks seam). */
     onPoll: null,
     get state() { return state; },
@@ -41,11 +47,14 @@ export function createQuestRelay(def, saved = null) {
     feed,
     /** Current objective text (first not-complete objective) or the done line (writer: "The pencil line runs on."). */
     objectiveText() {
+      const t = book.tracked(); // QG-03: an accepted giver quest owns the HUD line (its step, or its return line when ready)
+      if (t >= 0) { const d = book.def(t); return book.status(t) === READY && d.returnText ? d.returnText : d.objectives[Math.min(book.questState(t).completed.length, d.objectives.length - 1)].text; }
       return state.completed.length < def.objectives.length ? def.objectives[state.completed.length].text : (def.doneText || DONE_TEXT);
     },
     /** Replace the quest (restore from a save, or a fresh run when `saved` is null). */
-    reset(savedState = null) {
-      state = createQuest(def, savedState); rows = questObjectives(state, def, []); syncFired(); dirty = false;
+    reset(savedState = null, savedQuests = null) {
+      const onChange = book.onChange;
+      book = createQuestBook(def, giverDefs, { quest: savedState, quests: savedQuests }); book.onChange = onChange; state = book.main; rows = questObjectives(state, def, []); syncFired(); dirty = false;
     },
     /**
      * Per-fixed-step facts -> events. Every flag fires once (guards); cost is a few comparisons.

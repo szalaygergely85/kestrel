@@ -16,7 +16,7 @@ const small = { kind: 'manifest', schema: 1, id: 'bear-test', contentVersion: 1,
 const fetchText = async (u) => (u.endsWith('manifest.json') ? JSON.stringify(small) : readFileSync(new URL(u), 'utf8'));
 const bundle = await loadContentPack(new URL('manifest.json', root).href, { fetchText });
 const comp = bundle.dialogues.bear;
-ok('loadPack loads the bear dialogue (frozen, 8 nodes)', !!comp && Object.isFrozen(comp) && comp.nodes.length === 8);
+ok('loadPack loads the bear dialogue (frozen, 15 nodes)', !!comp && Object.isFrozen(comp) && comp.nodes.length === 15);
 ok('bear dialogue has no warnings (all nodes reachable)', !bundle.warnings.some((w) => /bear/.test(w)), bundle.warnings.join('|'));
 
 const mkFlags = () => { const s = new Set(); return { s, has: (k) => s.has(k), set: (k) => s.add(k) }; };

@@ -546,6 +546,13 @@ for (const [name, breakFixture, finding] of areaCases) {
     const broken = { ...bear, nodes: { ...bear.nodes, 'bear.repeat': { ...bear.nodes['bear.repeat'], lines: ['x'.repeat(60)] } } };
     writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(broken));
     ok('dialogue file check: engine rules (line > 56) are reported', hasFinding(validateDialogueFiles(dir, mk(all)).errors, ['60 chars']));
+    // QG-03: q.<id>.<op> keys name a loaded giver quest and a known op
+    writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(bear));
+    ok('quest keys: bear file passes with the giver quest loaded', validateDialogueFiles(dir, mk(all), ['burl.boars']).errors.length === 0);
+    ok('quest keys: unknown quest id is an error', hasFinding(validateDialogueFiles(dir, mk(all), ['other']).errors, ['q.burl.boars.ready', 'no giver quest']));
+    const badOp = JSON.parse(JSON.stringify(bear)); badOp.nodes['bear.q.thanks'].setFlag = 'q.burl.boars.reward';
+    writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(badOp));
+    ok('quest keys: unknown op is an error', hasFinding(validateDialogueFiles(dir, mk(all), ['burl.boars']).errors, ['q.burl.boars.reward', 'unknown quest op']));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 

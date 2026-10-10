@@ -1849,7 +1849,8 @@ No engine change (38.35). Order: QG-W1 + QG-D1 in parallel with QG-01/02 -> QG-0
 - [ ] `migrateQuestSave`: three fixtures (prefix incl. `beasts` -> done, no reward; prefix ends at `sword` -> accepted with old dead boars, ready if 5/5; earlier -> nothing).
 - [ ] `SAVE_VERSION` stays 1. `node tools/run-tests.mjs` + check-deps green.
 
-### QG-03 Wire the book: Burl's quest playable  [P1] [todo] [PC-B kestrel-1]
+### QG-03 Wire the book: Burl's quest playable  [P1] [po-review: owner walk] [PC-B kestrel-1]
+Done (D-058 owner pick: no reward, writer texts QG-W1 in place): questRelay/saveRelay hold the book (`relay.quest.book`, m1 state = book.main), dialogueCtl routes `q.*` to `opt.book()`, main.js loads burl.boars + toasts "Quest accepted"/"Quest complete" via book.onChange; validate-content checks `q.<id>.<op>`; test `game/js/quest/questGiverFlow.test.js`. No reward code (spawnDrop path not built: no item reward). Browser walk + offer-box capture left to the main session.
 - [ ] Relay/saveRelay hold the book (`relay.quest.state` still = m1 state); events fan out; `onChange` -> `gameHooks.emitSimple`.
 - [ ] `m1.quest.json` `beasts` -> flag `quest.burl.boars.done` (same id/index); `burl.boars.quest.json` (giver `bear`, requires m1 `sword`, 5 boars, reward `coin` x10 placeholder).
 - [ ] dialogueCtl flags adapter routes `q.*` to the book; `bear.dialogue.json` entries ready/active/available/talked/intro with offer (Accept/Later), reminder, hand-in nodes (placeholder lines until QG-W1).
