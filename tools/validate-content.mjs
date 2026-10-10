@@ -676,7 +676,30 @@ export function validateContent(ASSETS, opts = {}) {
         for (const id of objective.when.ids) check(beastIds.has(id), `${base}.when.ids`, `beast "${id}" not found in world entities`);
       }
     }
+    // QL-02: giver / hand-in ids resolve to a world entity or a level prop; rewards are item ids.
+    const actorIds = new Set();
+    for (const w of Object.values(worlds)) for (const e of w.entities || []) actorIds.add(e.id);
+    for (const lv of Object.values(levels)) for (const pr of lv?.props || []) actorIds.add(pr.id);
+    for (const key of ['npc', 'turnIn']) if (def.giver?.[key] !== undefined) check(actorIds.has(def.giver[key]), `${path}.giver.${key}`, `"${def.giver[key]}" is no world entity or level prop`);
+    for (const objective of def.objectives) if (objective.when?.type === 'deliver') check(actorIds.has(objective.when.to), `${path}.objectives[${objective.id}].when.to`, `hand-in "${objective.when.to}" is no world entity or level prop`);
+    for (const [i, r] of (def.reward?.items || []).entries()) check(itemIds.has(r.id), `${path}.reward.items[${i}].id`, `reward item "${r.id}" not found in item defs`);
   }
+  // QL-02: requires point at known quests/steps and form no cycle.
+  const byQuestId = new Map(quests.map(q => [q.def?.id, q]));
+  const reqEdges = new Map();
+  for (const { path, def } of quests) {
+    reqEdges.set(def?.id, []);
+    for (const r of def?.requires || []) {
+      const target = byQuestId.get(r.quest);
+      check(!!target, `${path}.requires`, `required quest "${r.quest}" not found`);
+      if (!target) continue;
+      if (r.step !== undefined) check((target.def.objectives || []).some(o => o.id === r.step), `${path}.requires`, `quest "${r.quest}" has no step "${r.step}"`);
+      reqEdges.get(def.id).push(r.quest);
+    }
+  }
+  const visiting = new Set(), visited = new Set();
+  const hasCycle = (id) => { if (visiting.has(id)) return true; if (visited.has(id)) return false; visiting.add(id); for (const n of reqEdges.get(id) || []) if (hasCycle(n)) return true; visiting.delete(id); visited.add(id); return false; };
+  for (const id of reqEdges.keys()) check(!hasCycle(id), `quests.${id}.requires`, 'requires chain has a cycle');
 
   // RECIPES-01: share the actual crafting schema, with path-specific ref findings.
   const recipeFile = opts.recipeFile;

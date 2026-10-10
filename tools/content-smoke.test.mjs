@@ -143,6 +143,7 @@ const unaccountedFor = allJsonFiles.filter((rel) => {
   if (rel === 'settings/gfx-presets.json') return false;
   if (rel === 'quests/m1.quest.json') return false; // US-096a standalone sim definition, validated by quest.test.js
   if (rel === 'quests/burl.boars.quest.json' || rel === 'quests/tower.blade.quest.json') return false; // QG-01 giver quest, validated by questBook.test.js + validate-content
+  if (/^quests\/[^/]+\.quest\.json$/.test(rel)) return false; // QL-02: any standalone quest definition, linted by validate-content.mjs
   if (rel === 'quests/areas.json') return false; // AREAS-01 standalone alias table, checked by validate-content.mjs
   if (rel.endsWith('.barks.json')) return false; // CH1-05/CH1-06 bark lines, fetched by main.js (no loadPack kind), checked by validate-content.mjs
   if (rel === 'items/loot.json') return false; // EQ-11 data only, schema/refs checked by validate-content.mjs
