@@ -340,3 +340,8 @@ B2 2026-10-09 (TWISTED-LOD-01) -> arch-review (importer data only): TwistedTree_
 - `tools/export/fbxWrite.js`: `exportFbx(model, {skeleton:true})` adds per bone a LimbNode Model (Lcl Translation = offset to parent, cm, Y-up) + NodeAttribute, a rigid Skin on the Geometry, one Cluster per bone (Indexes = its quads' vertices, Weights 1.0, Transform identity, TransformLink = joint translation), BindPose (mesh + 22 bones). Default (no option) bytes unchanged: golden SHA same.
 - Test: reader extended (readAll); 31 pass. Not run: Blender/Unity import (Unity Humanoid AC pending). Bones have no rotation, so matrices are pure translations.
 - ASK ARCHITECT: mesh Model is not parented under the skeleton and has no Lcl offset; confirm Unity/Blender accept this (else add a root "Armature" Null).
+
+## CHARGEN-12 (FBX-c anim stacks + OBJ/MTL + voxWrite split) - arch-review
+- `fbxWrite.js` `{skeleton:true, clips:true}`: AnimationStack+Layer per clip (sorted), 30 fps baked, R curve node (Euler XYZ deg, unwrapped, X/Y/Z curves) per bone + T node on the root only (not every bone), linear keys, KeyTime ticks 46186158000/s; clips off = bytes unchanged (golden). Not run: Blender/Unity import.
+- `objWrite.js` `exportObj` -> {obj, mtl, png}: `g <bone>` per non-empty bone, quads, map_Kd palette.png, glTF axes in metres. `voxWrite.js`: Uint8Array chunk writers + writeVoxSingle/Multi + `exportVoxGrid(grid)` (one shape + named nTRN per bone; takes the composeCharacter grid, since RiggedModel has no voxels). `vox-export.mjs` now calls voxWrite: all 13 real models byte-identical to before.
+- Tests: fbxWrite 41, objWrite 11, voxWrite 10 pass; vox-export/import/split, gltfWrite, check-deps OK. ASK ARCHITECT: T curves only on root OK for Unity Humanoid?

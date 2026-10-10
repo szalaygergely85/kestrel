@@ -4,7 +4,8 @@
 import { createHash } from 'node:crypto';
 import { makeOk } from '../../engine/test/assert.js';
 import { readPng } from '../png-read.mjs';
-import { loadKit, paletteRgbOf, buildGlb } from '../chargen/export.mjs';
+import { loadKit, paletteRgbOf, buildGlb, DEMO_CLIPS } from '../chargen/export.mjs';
+import { sampleClip } from '../../engine/index.js';
 import { exportFbx } from './fbxWrite.js';
 
 let pass = 0, fail = 0;
@@ -174,6 +175,55 @@ ok('palette png decodes 16x16 and matches the palette', pngImg.width === 16 && p
   const pose = find(o2, 'Pose'), pn = pose.kids.filter((k) => k.name === 'PoseNode').map((k) => find(k.kids, 'Node').props[0].v);
   ok('bind pose has all 22 bones + the mesh', find(pose.kids, 'NbPoseNodes').props[0].v === 23 && limbs.every((l) => pn.includes(l.props[0].v)) && pn.includes(id(find(o2, 'Model'))));
   ok('skeleton export is deterministic', sha(exportFbx(rigged, { rgbOf, skeleton: true }).fbx) === sha(sk));
+}
+
+// ---- CHARGEN-12: animation stacks
+{
+  const cr = buildGlb(kit, kit.defaults, { clips: DEMO_CLIPS }).rigged;
+  const noClips = exportFbx(cr, { rgbOf, skeleton: true }).fbx;
+  ok('clips off: bytes equal the CHARGEN-11 skeleton export of the same model', sha(noClips) === sha(exportFbx(rigged, { rgbOf, skeleton: true }).fbx));
+  const withC = exportFbx(cr, { rgbOf, skeleton: true, clips: true }).fbx;
+  ok('clips add bytes, clips without skeleton throws', sha(withC) !== sha(noClips) && (() => { try { exportFbx(cr, { rgbOf, clips: true }); } catch { return true; } return false; })());
+  const rd = readAll(withC), o3 = find(rd, 'Objects').kids, c3 = find(rd, 'Connections').kids.map((c) => c.props.map((p) => p.v));
+  const stacks = o3.filter((n) => n.name === 'AnimationStack'), layers = o3.filter((n) => n.name === 'AnimationLayer');
+  const names = Object.keys(DEMO_CLIPS).sort();
+  ok('one AnimationStack + AnimationLayer per clip, named after the clip', stacks.length === 2 && layers.length === 2 && stacks.map((n) => n.props[1].v.split(' ')[0]).join() === names.join());
+  ok('layer -> stack connections', stacks.every((st, i) => c3.some((c) => c[0] === 'OO' && c[1] === layers[i].props[0].v && c[2] === st.props[0].v)));
+  const nodes = o3.filter((n) => n.name === 'AnimationCurveNode'), curves = o3.filter((n) => n.name === 'AnimationCurve');
+  ok('per clip: 22 R + 1 T curve node, 3 curves each', nodes.length === 2 * 23 && curves.length === 2 * 23 * 3);
+  const limbId = new Map(o3.filter((n) => n.name === 'Model' && n.props[2].v === 'LimbNode').map((n) => [n.props[1].v.split(' ')[0], n.props[0].v]));
+  const TICKS = 46186158000;
+  let keysOk = true, lastOk = true, valsOk = true;
+  const tempo = cr.tempo || 1;
+  names.forEach((cn, ci) => {
+    const clip = DEMO_CLIPS[cn], durS = clip.duration / 1000 / tempo, n = Math.max(1, Math.round(durS * 30));
+    const layer = layers[ci].props[0].v;
+    const myNodes = nodes.filter((nd) => c3.some((c) => c[0] === 'OO' && c[1] === nd.props[0].v && c[2] === layer));
+    if (myNodes.length !== 23) keysOk = false;
+    const rotNode = (bone) => myNodes.find((nd) => c3.some((c) => c[0] === 'OP' && c[1] === nd.props[0].v && c[2] === limbId.get(bone) && c[3] === 'Lcl Rotation'));
+    const curveOf = (nd, ax) => curves.find((cv) => c3.some((c) => c[0] === 'OP' && c[1] === cv.props[0].v && c[2] === nd.props[0].v && c[3] === 'd|' + ax));
+    for (const bone of ['Spine', 'RightUpperArm']) {
+      const nd = rotNode(bone), cx = curveOf(nd, 'X');
+      const kt = find(cx.kids, 'KeyTime').props[0].v, kv = find(cx.kids, 'KeyValueFloat').props[0].v;
+      if (kt.length !== n + 1 || kv.length !== n + 1 || kt[0] !== 0) keysOk = false;
+      if (kt[n] !== Math.round(durS * TICKS)) lastOk = false;
+      if (!kt.every((t, i) => i === 0 || t > kt[i - 1])) keysOk = false;
+      // key at frame f: Euler XYZ (Rz*Ry*Rx) rebuilt into a quaternion equals the sampled clip quaternion (in FBX axes)
+      const f = Math.floor(n / 3), q = new Float64Array(4 * cr.bones.length), h = [0, 0, 0];
+      sampleClip(cr, clip, (f / n) * clip.duration, q, h);
+      const bi = cr.bones.findIndex((b) => b.name === bone), e = ['X', 'Y', 'Z'].map((a) => find(curveOf(nd, a).kids, 'KeyValueFloat').props[0].v[f] * Math.PI / 180);
+      const cx_ = Math.cos(e[0] / 2), sx = Math.sin(e[0] / 2), cy = Math.cos(e[1] / 2), sy = Math.sin(e[1] / 2), cz = Math.cos(e[2] / 2), sz = Math.sin(e[2] / 2);
+      const w = cz * cy * cx_ + sz * sy * sx, x = cz * cy * sx - sz * sy * cx_, y = cz * sy * cx_ + sz * cy * sx, z = sz * cy * cx_ - cz * sy * sx;
+      const want = [q[4 * bi], -q[4 * bi + 2], q[4 * bi + 1], q[4 * bi + 3]], dot = Math.abs(x * want[0] + y * want[1] + z * want[2] + w * want[3]);
+      if (Math.abs(dot - 1) > 1e-4) valsOk = false;
+    }
+  });
+  ok('key count = round(duration*30)+1 and times strictly increase from 0', keysOk);
+  ok('last KeyTime = clip duration in FBX ticks (46186158000/s)', lastOk);
+  ok('Euler XYZ keys rebuild the sampled clip rotation', valsOk);
+  const defs = find(rd, 'Definitions').kids.filter((n) => n.name === 'ObjectType');
+  ok('Definitions count the animation object types', defs.find((d) => d.props[0].v === 'AnimationStack').kids[0].props[0].v === 2 && defs.find((d) => d.props[0].v === 'AnimationCurve').kids[0].props[0].v === curves.length);
+  ok('clip export is deterministic', sha(exportFbx(cr, { rgbOf, skeleton: true, clips: true }).fbx) === sha(withC));
 }
 
 // ---- determinism + inputs
