@@ -15,7 +15,7 @@ const wrap180 = (d) => { d %= 360; return d > 180 ? d - 360 : d <= -180 ? d + 36
 /**
  * @param {{get:(id:string)=>any}} world
  * @param {string} id NPC entity id
- * @returns {{step:(dt:number, px:number, py:number, talking?:boolean)=>void, homeYaw:number, mode:number}|null} null when the entity is missing
+ * @returns {{step:(dt:number, px:number, py:number, talking?:boolean)=>void, homeYaw:number, mode:number, paused:boolean}|null} null when the entity is missing
  */
 export function createNpcTurn(world, id) {
   const h = world.get(id), t = h && h.data && h.data.transform;
@@ -25,7 +25,9 @@ export function createNpcTurn(world, id) {
     homeYaw: t.yawDeg || 0,
     mode: 0,       // 0 = home/idle, 1 = facing the player
     holdT: 0,      // seconds since the facing condition last held
+    paused: false, // CH1-07: set while Burl walks (npcWalk owns the yaw); the home yaw follows where he ends up
     step(dt, px, py, talking) {
+      if (st.paused) { st.mode = 0; st.holdT = 0; lpx = px; lpy = py; st.homeYaw = t.yawDeg || 0; return; }
       const dx = px - t.x, dy = py - t.y, d2 = dx * dx + dy * dy;
       const mx = px - lpx, my = py - lpy; lpx = px; lpy = py;
       const still = !(mx * mx + my * my > (STILL_MPS * dt) * (STILL_MPS * dt)); // NaN on the first step counts as still

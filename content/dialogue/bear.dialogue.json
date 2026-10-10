@@ -10,6 +10,7 @@
     {"node": "bear.departing", "requires": "s.burl.departing"},
     {"node": "bear.woken.1", "requires": "s.waystone.waystone.woken"},
     {"node": "bear.stone.1", "requires": "s.burl.arrived"},
+    {"node": "bear.following", "requires": "s.burl.follow"},
     {"node": "bear.follow.1", "requires": "q.burl.boars.done"},
     {"node": "bear.q.ready.1", "requires": "q.burl.boars.ready"},
     {"node": "bear.q.active", "requires": "q.burl.boars.active"},
@@ -185,6 +186,9 @@
     ], "setFlag": "s.burl.depart", "speaker": "burl"},
     "bear.departing": {"end": true, "lines": [
       "Go on, sky-cub. The road is west."
+    ], "speaker": "burl"},
+    "bear.following": {"end": true, "lines": [
+      "NEEDS WRITER: bear while following"
     ], "speaker": "burl"},
     "bear.repeat": {"end": true, "lines": [
       "Back again? The berries are still mine. Mostly."
