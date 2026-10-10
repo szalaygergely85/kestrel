@@ -1,5 +1,6 @@
 // COMPASS-01 test. Run: node game/js/ui/compassHud.test.js  (add --expose-gc for the heap check; it re-spawns itself)
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { makeOk } from '../../../engine/test/assert.js';
 import { createQuestBook } from '../quest/sim/questBook.js';
 import { createCompassHud, FALLBACK_COMPASS_STYLE } from './compassHud.js';
@@ -74,8 +75,45 @@ ok('hidden draws nothing', cells.length === 0 && !hd.visible);
 hd.setHidden(false); const none = hud(); none.draw(ui, 80, 30);
 ok('no target draws nothing', cells.length === 0);
 
+// COMPASS-02: designer style (design/models/compass_ui.js, 16 dirs, N mark, distance line, fade/flash)
+const DS = createRequire(import.meta.url)('../../../design/models/compass_ui.js');
+const dhud = () => createCompassHud({ style: DS });
+const dres = (px, py, yaw, tgtPos, kindSetup) => { POS['area:breach'] = tgtPos; const bk = mk(); if (kindSetup) kindSetup(bk); const hh = dhud(); hh.target(bk, world); hh.step(px, py, yaw); return hh; };
+ok('designer: 16 dirs', dhud().sectors === 16);
+ok('designer: ahead = 0, east = 4, south = 8, west = 12', dres(0, 0, 0, [0, -10]).sector === 0 && dres(0, 0, 0, [10, 0]).sector === 4 && dres(0, 0, 0, [0, 10]).sector === 8 && dres(0, 0, 0, [-10, 0]).sector === 12);
+ok('designer: view-relative (facing east, target east = 0)', dres(0, 0, 90, [10, 0]).sector === 0);
+ok('designer: N mark rides with yaw (yaw0 -> 0, yaw90 -> west=6, yaw180 -> 4)', dres(0, 0, 0, [0, -10]).northIndex === 0 && dres(0, 0, 90, [0, -10]).northIndex === 6 && dres(0, 0, 180, [0, -10]).northIndex === 4);
+{ // hysteresis: sit just past a border, no flip until > 0.65 steps from the shown centre
+  POS['area:breach'] = [0, -10]; const hy = dhud(); hy.target(mk(), world); hy.step(0, 0, 0); const s0 = hy.sector;
+  hy.step(0, 0, -12.0); const a1 = hy.sector;   // rel 12 deg = 0.53 steps: still the old dir
+  hy.step(0, 0, -16.0); const a2 = hy.sector;   // 0.71 steps: flips
+  ok('designer: hysteresis holds then flips', s0 === 0 && a1 === 0 && a2 === 1, `${s0} ${a1} ${a2}`);
+}
+const lab = (tp, setup, z0) => { const hh = dres(0, 0, 0, tp, setup); return hh.label; };
+ok('designer: label "42 m"', lab([0, -42]) === '42 m', lab([0, -42]));
+ok('designer: km format', lab([0, -1234]) === '1.2 km', lab([0, -1234]));
+ok('designer: here within 3 m', lab([0, -2]) === 'here', lab([0, -2]));
+ok('designer: giver ! prefix', (() => { POS['area:breach'] = null; const bk = mk(); bk.feed({ type: 'area:entered', id: 'breach' }); POS['flag:f'] = null; const hh = dhud(); hh.target(bk, world); hh.step(0, 0, 0); POS['area:breach'] = [0, -1]; POS['flag:f'] = [5, 5]; return hh.label === '! 100 m'; })());
+{ POS['area:breach'] = [0, -10]; POS['area:breach'] ||= 0; const hh = dhud(); const old = world.resolve; world.resolve = (k, i, o) => { const r = old(k, i, o); if (r) o.z = 10; return r; }; hh.target(mk(), world); hh.step(0, 0, 0, 0); world.resolve = old; ok('designer: height ^ when target 10 m above', hh.label === '10 m ^', hh.label); }
+{ // draw: bottom-right of a 160x60 layer, fade in, hidden
+  const hd2 = dres(0, 0, 0, [0, -42]), cl = [], u2 = { cols: 160, setCellRGB(x, y, g) { cl.push([x, y, g]); } };
+  hd2.draw(u2, 160, 60);
+  const xs = cl.map(c => c[0]), ys = cl.map(c => c[1]);
+  ok('designer: face 147..157 x 51..57, distance row 58', Math.min(...xs) >= 146 && Math.max(...xs) <= 158 && Math.min(...ys) === 51 && Math.max(...ys) === 58 && cl.some(c => c[0] === 147 && c[1] === 54), `${Math.min(...xs)}..${Math.max(...xs)} ${Math.min(...ys)}..${Math.max(...ys)}`);
+  cl.length = 0; hd2.setHidden(true); hd2.draw(u2, 160, 60, 1.0); cl.length = 0; hd2.draw(u2, 160, 60, 1.5);
+  ok('designer: hidden fades out then draws nothing', cl.length === 0 && hd2.alpha === 0 && !hd2.visible);
+  hd2.setHidden(false); cl.length = 0; hd2.draw(u2, 160, 60, 1.6);
+  ok('designer: fade-in is gradual', hd2.alpha > 0.4 && hd2.alpha < 0.6 && cl.length > 20, String(hd2.alpha));
+}
+
 // zero alloc
 if (typeof global.gc === 'function') {
+  const zd = dhud(); POS['area:breach'] = [30, -40]; zd.target(mk(), world); const ud = { cols: 160, setCellRGB() {} };
+  for (let i = 0; i < 1000; i++) { zd.step(i % 7, i % 5, i); zd.draw(ud, 160, 60, i / 60); }
+  global.gc(); const b0 = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 1e5; i++) { zd.step(0, 0, i % 360); zd.draw(ud, 160, 60, 20 + i / 60); }
+  global.gc(); const a0 = process.memoryUsage().heapUsed;
+  ok('designer step+draw 1e5 allocates nothing', a0 <= b0 + 2e5, `before=${b0} after=${a0}`);
   const z = hud(); POS['area:breach'] = [30, -40]; z.target(mk(), world);
   const u = { cols: 80, setCellRGB() {} };
   for (let i = 0; i < 1000; i++) { z.step(i % 7, i % 5, i); z.draw(u, 80, 30); }
