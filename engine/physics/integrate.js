@@ -234,6 +234,12 @@ export function integrate(entity, dt, controls, world, cfg) {
       } else {
         body.sliding = false;
       }
+    } else if (floorDiff > P.stepUpMax) {
+      // AUD-03: a ledge higher than stepUpMax is a wall, not a drop. Stay put (grounded, z unchanged); the old path went
+      // airborne and "landed" the same step on the ledge top (pop) with a negative fallDistance.
+      body.stepDelta = 0;
+      body.vz = 0;
+      body.sliding = false;
     } else {
       body.grounded = false;
       body.vz = 0;
@@ -258,7 +264,7 @@ export function integrate(entity, dt, controls, world, cfg) {
       body.grounded = true;
       body.coyote = 0;
       body.landed = true;
-      body.fallDistance = body.peakZ - t.z;
+      body.fallDistance = Math.max(0, body.peakZ - t.z);
     }
   }
 
