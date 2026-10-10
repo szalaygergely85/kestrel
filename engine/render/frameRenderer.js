@@ -150,8 +150,7 @@ export function createFrameRenderer({ engine, rt, pipeline = null, assets, idleS
       if (!fb.gpu) drawSprites(fb, spritePool);
       if (opts.beforePresent) opts.beforePresent(fb, world, cam);
       if (pipeline) pipeline.frame(fb, lightSet || ambientL, cam, world);
-      rt.present();
-      presented++;
+      if (opts.present !== false) { rt.present(); presented++; } // EQ-04a: `present: false` = CPU mini-stage, cells are read by the caller
       return true;
     },
 
