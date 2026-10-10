@@ -523,7 +523,7 @@ const demoEnd = demo.on ? createEndCard({
   onKeep: () => {} }) : null;
 if (saveEnabled) gameHooks.register(createWaystoneWire()); // WAYSTONE-01w: heal + save + toast on touch, respawn at the touched stone (off with ?save=0 / capture / bench)
 gameHooks.register(createWaystoneTouch(gameHooks)); // WAYSTONE-TOUCH-01: prop:touched {waystone} on walk-in / E (lane C's WAYSTONE-01w listens)
-if (demoEnd) gameHooks.register({ onEvent(name, d) { if (name === 'area:entered' && d && d.id === 'waystone') demoEnd.trigger(); } });
+// WAYSTONE-NORMAL-01 (D-056): the waystone no longer triggers the demo end card (demoEnd stays wired but is never triggered).
 // OWN-REQ-003 (architecture.md 17.1): `engine.ui` is a single UiLayer for
 // the whole run - `engine.setGrid` re-binds it in place (never replaces it),
 // so capturing it once here (unlike `depthBuffer`) stays valid

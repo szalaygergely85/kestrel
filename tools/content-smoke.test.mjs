@@ -255,6 +255,7 @@ function checkWorldEntitiesAndHorizon(worldKey, worldDef) {
  * duplicate of that warning. */
 function checkTriggerBehaviours(worldKey, world) {
   for (const tr of world.triggers || []) {
+    if (typeof tr.name !== 'string') continue; // area-only zone (world_m1 'end', WAYSTONE-NORMAL-01): no behaviour by design
     const label = tr.structId ? `${tr.structId}.${tr.id}` : `world.${tr.id}`;
     const { result: fn, warnings } = captured(() => getBehaviour(tr.name));
     ok(
