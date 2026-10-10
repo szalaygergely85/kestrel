@@ -527,17 +527,17 @@ function checkExportRules(file, src) {
   const stripped = stripComments(src);
   for (const { spec, line } of findImports(stripped)) {
     if (/vendor[\/]three/.test(spec) && !inDir(file, CHARGEN_APP_DIR)) {
-      findings.push(`${rel(file)}:${line}: import "${spec}" - vendor/three may only be imported under tools/chargen/** (rule 20, architecture.md 38.29 item 7)`);
+      findings.push(`${rel(file)}:${line}: import "${spec}" - vendor/three may only be imported under tools/chargen/** (rule 21, architecture.md 38.29 item 7)`);
     }
     if (!isExport) continue;
     if (isBareSpecifier(spec)) {
-      findings.push(`${rel(file)}:${line}: bare/built-in specifier "${spec}" - tools/export/** must be browser-safe (rule 19, architecture.md 38.29 item 6)`);
+      findings.push(`${rel(file)}:${line}: bare/built-in specifier "${spec}" - tools/export/** must be browser-safe (rule 20, architecture.md 38.29 item 6)`);
       continue;
     }
     const resolved = path.resolve(path.dirname(file), spec);
     const okEngine = resolved === path.join(ENGINE_DIR, 'index.js');
     if (!okEngine && !inDir(resolved, EXPORT_DIR)) {
-      findings.push(`${rel(file)}:${line}: import "${spec}" - tools/export/** may import only engine/index.js and tools/export/** (rule 19, architecture.md 38.29 item 6)`);
+      findings.push(`${rel(file)}:${line}: import "${spec}" - tools/export/** may import only engine/index.js and tools/export/** (rule 20, architecture.md 38.29 item 6)`);
     }
   }
 }
