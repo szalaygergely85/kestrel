@@ -999,13 +999,17 @@
   //     20 x 4 x 46 voxels at 0.05 m = 1.0 (fills the 1 m doorway) x 0.2 x 2.3 m. Front (y0) faces north = into the tower.
   //     y0-y1: the timber bar (timber_old, a pale fresh gouge where it is jammed) held in two iron U-brackets on the jambs;
   //     y2-y3: the door leaf, five vertical planks (wood, dark timber seams, staggered worn tops) on two iron straps.
-  //     Parts: frameW / frameE (brackets, never move), bar, leaf (hinge = west edge, front face of the leaf).
-  //     Clips (prop variant = clip): barred (rest, collider on) | unbar (0.6 s, events thud 3: the bar hits the floor) |
-  //     open (held end pose: bar lying in the doorway, leaf swung out by OPEN_YAW; the level's colliderOffVariant).
-  //     ROTATION NOTE: OPEN_YAW +100 is meant to swing the leaf SOUTH (out of the tower, along the passage's west side).
-  //     If the preview shows it swinging north into the tower (into step C), negate OPEN_YAW. Mats: all already merged.
+  //     Parts: frameW / frameE (brackets, never move), bar, leaf (hinge = EAST edge, BACK (outer) face of the leaf).
+  //     Clips (prop variant = clip): open (TOWER-DOOR-OPEN-01, what the level places: no bar, leaf swung out) |
+  //     barred (rest, collider on) | unbar (0.6 s, events thud 3) - barred/unbar kept only for compatibility.
+  //     ROTATION (owner bug 2026-10-10 "door disappeared"): the old pose (west hinge on the FRONT face, rz +100) laid the
+  //     whole leaf on the wall side of its hinge line, i.e. inside wall cell q (14,11) - invisible. Engine Rz: +deg turns
+  //     +x toward +y, model +y = world south (facing 0). Now: hinge at the east edge of the OUTER face [20,4,0], rz -80:
+  //     the leaf swings south out of the tower along the east jamb (f / t walls), its body on the passage side of the
+  //     hinge line, so it never enters a wall cell; the stair turns west at T, so the west ~0.7 m stays clear.
+  //     The bar slides 0.9 m west into its wall socket (hidden in the stone of q) - no fallen bar. Mats: all merged.
   (function () {
-    var SX = 20, SY = 4, SZ = 46, OPEN_YAW = 100;
+    var SX = 20, SY = 4, SZ = 46, OPEN_YAW = -80;
     var MATS = { w: 'wood', t: 'timber_old', d: 'iron_dark' };
     var g = [], x, y, z;
     for (z = 0; z < SZ; z++) { g.push([]); for (y = 0; y < SY; y++) { g[z].push([]); for (x = 0; x < SX; x++) g[z][y].push('.'); } }
@@ -1029,12 +1033,13 @@
     }
     var layers = g.map(function (L) { return L.map(function (r) { return r.join(''); }); });
     var BAR_DOWN = { pos: [0, 4, -18], rot: [0, 0, 8] };
+    var BAR_STOWED = { pos: [-18, 0, 0] };          // bar x3..17 -> x-15..-1 = world x 14.25-14.95: inside wall q, unseen
     A.voxelModels.doorBar = {
       name: 'doorBar',
       displayName: 'barred door',
-      desc: 'CH1-D1a: a weathered plank door (five planks, two iron straps) shut in the tower\'s south-west doorway, ' +
-            'barred on the inside by a heavy timber beam in two iron brackets. Pried loose with the sword (door.unbar): ' +
-            'the bar drops into the doorway and the leaf swings out. 1.0 x 0.2 x 2.3 m.',
+      desc: 'CH1-D1a / TOWER-DOOR-OPEN-01: a weathered plank door (five planks, two iron straps) in the tower\'s ' +
+            'south-west doorway, standing open: hinged on the east jamb and swung 80 deg out of the tower, the empty ' +
+            'iron bar brackets on both jambs. (Legacy clips barred / unbar keep the timber bar.) 1.0 x 0.2 x 2.3 m.',
       voxel: {
         version: 1,
         cellM: 0.05,
@@ -1046,17 +1051,17 @@
           frameW: { box: [0, 0, 16, 3, 2, 24], pivot: [1.5, 1, 16] },
           frameE: { box: [17, 0, 16, 20, 2, 24], pivot: [18.5, 1, 16] },
           bar:    { box: [3, 0, 18, 17, 2, 22], pivot: [10, 1, 20] },
-          leaf:   { box: [0, 2, 0, 20, 4, 46], pivot: [0, 2, 0] }        // hinge: west edge, leaf front face
+          leaf:   { box: [0, 2, 0, 20, 4, 46], pivot: [20, 4, 0] }       // hinge: east edge, leaf back (outer) face
         },
         animations: {
           barred: { durations: [1000], loop: true, frames: [{}] },
           unbar: { durations: [90, 110, 160, 240], loop: false, events: { thud: 3 }, frames: [
             {},
             { bar: { pos: [0, 0, 1.5] } },                                  // the sword bites: bar lifts in its brackets
-            { bar: { pos: [0, 2, -8], rot: [0, 0, 4] }, leaf: { rot: [0, 0, 15] } },
+            { bar: { pos: [0, 2, -8], rot: [0, 0, 4] }, leaf: { rot: [0, 0, -15] } },
             { bar: BAR_DOWN, leaf: { rot: [0, 0, OPEN_YAW] } }
           ] },
-          open: { durations: [1000], loop: true, frames: [{ bar: BAR_DOWN, leaf: { rot: [0, 0, OPEN_YAW] } }] }
+          open: { durations: [1000], loop: true, frames: [{ bar: BAR_STOWED, leaf: { rot: [0, 0, OPEN_YAW] } }] }
         },
         mounts: { prompt: { at: [10, 0, 20], part: 'bar' } }              // = the door.unbar aim point (z + 1.0)
       },
