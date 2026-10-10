@@ -814,3 +814,12 @@ export function emisFromPacked(table) {
   for (let id = 1; id < nMat; id++) e[id] = packed.matF[(id * w + 1) * 4];
   return e;
 }
+
+/**
+ * DRESS-01 follow-up: fg/bg cap of the mesh-twin compareCells bar (non-K8 cells). A sun shadow-map pose has far more
+ * shadow edges once the world carries ~1000 tree/plant placements; the GPU and JS shadow depth differ by a few ULP
+ * (shadowDepth withinPct 99.99), so a handful of terrain cells sit on opposite sides of a penumbra bias and differ by a
+ * whole shading band (measured 106, rtsHill58Shadow). The count is still bounded by maxOutsideFrac (1 %) and glyph match.
+ * Non-shadow poses keep 96. Not a caster-cap issue: shadowList/instances throw on overflow instead of dropping casters.
+ */
+export function meshCellCap(sunMapShadow) { return sunMapShadow ? 128 : 96; }
