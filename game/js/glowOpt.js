@@ -11,5 +11,5 @@ export function parseGlow(params, levelName) {
   if (v === 'off' || v === 'derived' || v === '0') return null;
   if (v === 'full') return GLOW_LEVELS[levelName === 'ultra' ? 'ultra' : 'high'];
   if (gc === 'emissive') return GLOW_LEVELS.high;
-  return GLOW_LEVELS[levelName] || null;
+  return null; // HOTFIX 2026-10-11 (owner: game drops out, "previous pass not ended"): glow off by default until the pass-leak fix lands; ?emissive=full turns it on
 }
