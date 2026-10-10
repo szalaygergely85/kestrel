@@ -381,9 +381,9 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
 
 // --- US-073b (38.25): the stable-glyph level target. OFF = byte-identical to the pre-073b shader; ON = one extra r8ui target. ---
 {
-  // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow and AUD-45 fog shape (38811 chars): the stable-off shader must not move by a single byte.
-  assert.equal(SHADE_WGSL.length, 38811, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '690edcc239d5009c725501925254b19a253353b72847d466f3443e7981fecba2', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain (39531 chars, + skyGlowOn gate): the stable-off shader must not move by a single byte.
+  assert.equal(SHADE_WGSL.length, 39531, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'ded592612b2fa35317051f7b820de097000ddebef08987e99ba195a4069dc8b1', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);
@@ -428,7 +428,10 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   assert.equal(SHADE_BLOCK.field('etC').word, SHADE_BLOCK.field('etId').word + 8);
   assert.equal(SHADE_BLOCK.field('etC').words, 32);
   assert.equal(SHADE_BLOCK.field('skyCam').word, SHADE_BLOCK.field('etC').word + 32, 'AUD-40 skyCam appended right after the tint table');
-  assert.equal(SHADE_BLOCK.sizeBytes, (SHADE_BLOCK.field('fogView').word + 4) * 4, 'fogView (AUD-45) is the tail of the block');
+  assert.equal(SHADE_BLOCK.sizeBytes, (SHADE_BLOCK.field('skyGlowOn').word + 4) * 4, 'skyGlowOn (AUD-40 fix) is the tail of the block');
+  assert.equal(SHADE_BLOCK.field('fogView').word, SHADE_BLOCK.field('skyCam').word + 4, 'fogView right after skyCam');
+  assert.equal(SHADE_BLOCK.field('skyGlowOn').word, SHADE_BLOCK.field('fogView').word + 4, 'skyGlowOn right after fogView');
+  assert.ok(/if \(su\.skyGlowOn\.x > 0\.5\) \{ col255 = skyGlow\(/.test(SHADE_WGSL), 'sky glow gated by skyGlowOn');
   assert.equal(SHADE_BLOCK.field('fogView').word, SHADE_BLOCK.field('skyCam').word + 4, 'AUD-45 fogView appended right after skyCam');
   assert.ok(/if \(su\.etA\.x > 0\.0\) \{/.test(SHADE_WGSL), 'branch guarded by count (0 = skipped, bit-identical)');
   assert.ok(SHADE_WGSL.indexOf('su.etA.x > 0.0') < SHADE_WGSL.indexOf('rgbF += (fogFgC - rgbF) * f') && SHADE_WGSL.indexOf('su.etA.x > 0.0') > SHADE_WGSL.indexOf('var rgbBg = rgbF * bgKAvg'), 'after lighting, before fog');

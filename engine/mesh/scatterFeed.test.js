@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { vegTintObjectId } from './vegTint.js';
 import { bindDetailInstances, feedDetail, removeDetailInstances, DETAIL_OBJECT_BASE } from './scatterFeed.js';
 import { InstanceGroups, createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE,
   INST_OBJECT_ID, INST_FLAGS, MAX_INSTANCE_GROUPS, MAX_INSTANCES_PER_FRAME } from './instances.js';
@@ -62,7 +63,7 @@ ok(binding.groupOf instanceof Uint8Array && binding.groupOf[2] === 255);
 const one = createInstanceBuffer(1);
 for (let i = 0; i < detail.count; i++) {
   writeUnitInstance(one, 0, detail.x[i], detail.y[i], detail.z[i], detail.yawDeg[i], DETAIL_OBJECT_BASE | i, 0);
-  if (detail.speciesDefs[detail.species[i]].sway) one.u32[INST_FLAGS] |= INST_FLAG_SWAY; // FOLIAGE-SWAY-01 part 2
+  if (detail.speciesDefs[detail.species[i]].sway) { one.u32[INST_FLAGS] |= INST_FLAG_SWAY; one.u32[INST_OBJECT_ID] = vegTintObjectId(DETAIL_OBJECT_BASE | i, i, detail.x[i], detail.y[i]); } // FOLIAGE-SWAY-01 part 2 + AUD-47
   for (let w = 0; w < INSTANCE_STRIDE; w++) assert.equal(binding.master.u32[i * INSTANCE_STRIDE + w], one.u32[w]);
 }
 checks++;
@@ -101,7 +102,7 @@ for (let p = 0; p < 20; p++) {
   for (let s = 0; s < 2; s++) {
     const g = binding.groups[s]; assert.equal(g.count, selected[s].length);
     for (let j = 0; j < g.count; j++) {
-      assert.equal(g.ib.u32[j * INSTANCE_STRIDE + INST_OBJECT_ID], DETAIL_OBJECT_BASE | selected[s][j]);
+      assert.equal(g.ib.u32[j * INSTANCE_STRIDE + INST_OBJECT_ID] & 0xFFFFF, (DETAIL_OBJECT_BASE | selected[s][j]) & 0xFFFFF); // AUD-47: bits 20+ may carry the veg tint
       for (let w = 0; w < INSTANCE_STRIDE; w++) {
         assert.equal(g.ib.u32[j * INSTANCE_STRIDE + w], binding.master.u32[selected[s][j] * INSTANCE_STRIDE + w]);
       }
@@ -136,10 +137,10 @@ const unbounded = bindDetailInstances(detail, registry(), { ...cfg, maxDraw: det
 const px = detail.x[0], py = detail.y[0], r = Math.sqrt(detail.r2[0]);
 feedDetail(unbounded, px + r, py, true);
 ok(!unbounded.groups[0].ib.u32.some((word, i) => i % INSTANCE_STRIDE === INST_OBJECT_ID &&
-  i < unbounded.groups[0].count * INSTANCE_STRIDE && word === DETAIL_OBJECT_BASE));
+  i < unbounded.groups[0].count * INSTANCE_STRIDE && (word & 0xFFFFF) === DETAIL_OBJECT_BASE));
 feedDetail(unbounded, px + r - 0.0001, py, true);
 ok(unbounded.groups[0].ib.u32.some((word, i) => i % INSTANCE_STRIDE === INST_OBJECT_ID &&
-  i < unbounded.groups[0].count * INSTANCE_STRIDE && word === DETAIL_OBJECT_BASE));
+  i < unbounded.groups[0].count * INSTANCE_STRIDE && (word & 0xFFFFF) === DETAIL_OBJECT_BASE));
 const tiny = { ...detail, count: 1, tileStart: new Uint32Array(tilesX * tilesY + 1).fill(1) };
 tiny.tileStart[0] = 0;
 const tinyBinding = bindDetailInstances(tiny, registry(), cfg);
