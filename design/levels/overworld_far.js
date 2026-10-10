@@ -117,17 +117,8 @@
           { shape: 'capsule', ax: 1261, ay: 1028, bx: 1176, by: 1045, r: 10.5 }
         ],
         layers: [
-          // PLANT-VOXEL-OFF-01 (owner 2026-10-10 "can you remove voxel plants?"): the voxel plant scatter (tufts layer, voxel flowers,
-          // bushRound, fern, mushrooms) is gone - placed Quaternius plant meshes (world_m1 mdw/roadL rows, PLANT-SCALE-01) are the plants now.
-          // The old 'shrubs' layer keeps only its stones; fill 0.17 = the old stone share (0.5 x 34 %) so meadow stone density is unchanged.
-          { name: 'stones', seed: 38203, cellM: 5, jitter: 1.8, fill: 0.17, maxSlope: 0.55, clearM: 1.2, drawM: 45, lodCells: 4,
-            ground: {
-              grass:  [ { model: 'rockSmallA', weight: 12, sinkM: 0.03 }, { model: 'rockSmallB', weight: 10, sinkM: 0.03 },
-                        { model: 'pebbles', weight: 12, sinkM: 0.03 } ],
-              forest: [ { model: 'rockSmallA', weight: 8, sinkM: 0.03 }, { model: 'pebbles', weight: 8, sinkM: 0.03 } ],
-              rock:   [ { model: 'rockSmallA', weight: 35, sinkM: 0.03 }, { model: 'rockSmallB', weight: 35, sinkM: 0.03 },
-                        { model: 'pebbles', weight: 20, sinkM: 0.03 } ]
-            } },
+          // PLANT-VOXEL-OFF-01 / STONES-VOXEL-OFF-01 (owner 2026-10-10): the voxel plant scatter and the small voxel stones/pebbles layer are gone;
+          // placed Quaternius meshes (world_m1 mdw/roadL rows) are the plants and stones now.
           // rocks: maxSlope 0.35 + large sinkM 0.20 (half the 0.32-0.40 m foot layer): props are not tilted to the slope
           // (37.4: yaw only), so a 2.8 m flat-bottomed boulder must not show a gap on the downhill side.
           { name: 'rocks', seed: 38307, cellM: 11, jitter: 3.0, fill: 0.5, maxSlope: 0.35, clearM: 1.6, drawM: 70, lodCells: 4,
