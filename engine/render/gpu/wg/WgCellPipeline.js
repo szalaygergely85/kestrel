@@ -38,6 +38,7 @@ function sumFinite(arr) {
 }
 
 const DEPTH_FADE_K = 0.05; // debug depth view: 1 / (1 + d * K)
+const RESIZE_RETRIES = 3; // RESIZE-RECOVER-01: failed grid resizes in a row before the pipeline stays disabled
 const DEBUG_MODE_WORD = DEBUG_BLOCK.field('mode').word;
 const DEBUG_RAYS_WORD = DEBUG_BLOCK.field('rays').word;
 const DEBUG_DEPTH_WORD = DEBUG_BLOCK.field('depthK').word;
@@ -59,6 +60,7 @@ export class WgCellPipeline {
     // US-073c (38.25): temporal glyph stability, `?stable=1`; absent = no pass, no extra target, frame byte-identical to before
     this.stableOpt = !!opts.stable; this._stablePass = null; this._stableOn = false; this._stableRan = false; this._stInp = { shadeFg: null, shadeBg: null, water: null, waterOn: false };
     this.ready = false;
+    this._rz = null; // pending resize retry {cols,rows,tries,wasEnabled}
     /** passes that really execute in this build; `frameComplete` = the pipeline can replace the CPU shading entirely */
     this.portedPasses = [];
     this.frameComplete = false;
@@ -68,7 +70,7 @@ export class WgCellPipeline {
     this._source = 'scene'; // 'upload' = `?gpucompare=shade` test source (CPU G-buffer -> cell-res textures)
     // same shape as GpuCellPipeline.stats so F3 / benches read it unchanged
     this.stats = {
-      uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN,
+      resizeFailures: 0, uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN,
       terrainSubmitMs: NaN, terrainSubmitMsP50: NaN, terrainSubmitMsP95: NaN,
       voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0, voxelDraws: 0, meshDraws: 0, vmDraws: 0, clothDraws: 0, instancedDraws: 0, instances: 0,
       waterSlots: 0, waterDraws: 0, shadowItems: 0, shadowDraws: 0, shadowCpuMs: 0, instancesCulled: 0, instancesLod1: 0,
@@ -166,6 +168,7 @@ export class WgCellPipeline {
 
   _onLost() {
     if (!this.ready) return;
+    this._rz = null;
     this.ready = false;
     this.setEnabled(false);
     console.warn('[WgCellPipeline] GPU device lost - pipeline disabled, reload the page');
@@ -253,21 +256,27 @@ export class WgCellPipeline {
   }
 
   /**
-   * Re-allocates the grid-sized targets. The new set is built before the old one is freed and committed only on success
-   * (a failed alloc keeps the old set but sets `ready=false` + `setEnabled(false)`: rt and pipeline grids must not diverge).
+   * Re-allocates the grid-sized targets. The new set is built before the old one is freed and committed only on success.
+   * RESIZE-RECOVER-01: a failed alloc keeps the old set, disables the pipeline for that frame (rt and pipeline grids must not
+   * diverge) and remembers the size; `frame()` retries it, 3 failures in a row = stays disabled (CPU path), `stats.resizeFailures` counts them.
    */
   resizeGrid(cols, rows) {
-    if (!this.ready) return;
+    const rz = this._rz;
+    if (!this.ready && !rz) return;
+    const tries = rz && rz.cols === cols && rz.rows === rows ? rz.tries : 0;
+    const wasEnabled = rz ? rz.wasEnabled : this._enabled;
+    const fail = (what, e) => {
+      this.stats.resizeFailures++;
+      const giveUp = tries + 1 >= RESIZE_RETRIES;
+      console.warn('[WgCellPipeline] resizeGrid failed at', `${cols}x${rows}`, what, giveUp ? '- pipeline disabled:' : '- retrying next frame:', e);
+      this._rz = giveUp ? null : { cols, rows, tries: tries + 1, wasEnabled };
+      this.ready = false;
+      this.setEnabled(false);
+    };
     let t;
     try {
       t = allocWgTargets(this.device, cols, rows, this.rays, this.stableOpt ? { stable: true } : null);
-    } catch (e) {
-      // rt and pipeline grids must never diverge (38.8a 23a/24a): a failed resize disables the pipeline (the CPU path keeps presenting)
-      console.warn('[WgCellPipeline] resizeGrid failed at', `${cols}x${rows}`, '- pipeline disabled:', e);
-      this.ready = false;
-      this.setEnabled(false);
-      return;
-    }
+    } catch (e) { fail('', e); return; }
     freeWgTargets(this.device, this._t);
     this._t = t;
     this.cols = cols; this.rows = rows;
@@ -281,10 +290,10 @@ export class WgCellPipeline {
         this._overlayPass.resize(cols, rows);
         this._overlayPass.setTarget(this._spritesPass.outFg);
       } catch (e) {
-        console.warn('[WgCellPipeline] sprites/overlay resize failed - pipeline disabled:', e);
-        this.ready = false; this.setEnabled(false); return;
+        fail('(sprites/overlay)', e); return;
       }
     }
+    if (rz) { this._rz = null; this.ready = true; this.setEnabled(wasEnabled); } // recovered: re-enable + _syncActive
     // async validation errors of the new targets surface only through the error scopes: drain them once (warn, never throw)
     if (typeof this.device.checkErrors === 'function') {
       this.device.checkErrors().then((errs) => { if (errs && errs.length) console.warn('[WgCellPipeline] resizeGrid validation errors:', errs); }, (e) => console.warn('[WgCellPipeline] resizeGrid checkErrors failed:', e));
@@ -314,6 +323,7 @@ export class WgCellPipeline {
 
   /** Called once per frame before present(): remembers inputs; GPU commands run in the render-target hook. */
   frame(fb, light, cam, world) {
+    if (this._rz) this.resizeGrid(this._rz.cols, this._rz.rows); // RESIZE-RECOVER-01: one retry per frame
     const sp = this._spritesPass;
     if (sp && fb) { // WG-3f: scene fade amount + LUT and scene dim: the same inputs the GL sprite pass gets
       sp.sceneFade = typeof fb.sceneFade === 'number' ? fb.sceneFade : 1;
@@ -506,7 +516,7 @@ export class WgCellPipeline {
   }
 
   dispose() {
-    this.ready = false;
+    this.ready = false; this._rz = null;
     if (this.rt && typeof this.rt.setCellPass === 'function') { try { this.rt.setCellPass(null); } catch (_) { /* best effort */ } }
     this._enabled = false;
     this._dropOutTarget();

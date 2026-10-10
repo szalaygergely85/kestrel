@@ -240,8 +240,27 @@ hook(); assert.strictEqual(passes.length, beforeResizeHook + 4, 'cleared again a
   console.warn = w; device.createTexture = orig; device.checkErrors = hadCE;
   assert.strictEqual(p._t, keep); assert.strictEqual(p.ready, false); assert.strictEqual(p.cols, 20); assert.strictEqual(hook, null, 'setEnabled(false) removed the hook');
   assert.strictEqual(warns.length, 1); assert.strictEqual(drained, 0);
-  p.ready = true; p.setEnabled(true); // restore for the following checks
+  assert.ok(p._rz, 'size remembered for retry'); assert.strictEqual(p.stats.resizeFailures, 1);
+  p._rz = null; p.ready = true; p.setEnabled(true); // restore for the following checks
   assert.ok(hook, 'hook restored');
+}
+// RESIZE-RECOVER-01: alloc fails once -> next frame retries and recovers; 3 failures -> stays disabled
+{
+  const orig = device.createTexture; const w = console.warn; console.warn = () => {};
+  const f0 = p.stats.resizeFailures; let fail = 1;
+  device.createTexture = (...a) => { if (fail > 0) throw new Error('oom'); return orig.apply(device, a); };
+  const keep = p._t;
+  p.resizeGrid(24, 12);
+  assert.strictEqual(p.ready, false); assert.strictEqual(p.frameComplete, false); assert.strictEqual(p._t, keep); assert.deepStrictEqual([p.cols, p.rows], [20, 10], 'grid unchanged while disabled');
+  fail = 0; p.frame(null, null, null, null);
+  assert.strictEqual(p.ready, true); assert.ok(hook, 'hook back'); assert.strictEqual(p._rz, null); assert.deepStrictEqual([p.cols, p.rows], [24, 12]);
+  assert.strictEqual(p._t.texSGI.desc.width, 48); assert.strictEqual(p.stats.resizeFailures, f0 + 1);
+  // 3 failures in a row -> old behaviour (disabled for good, no more retries)
+  fail = 1; p.resizeGrid(30, 15); p.frame(null, null, null, null); p.frame(null, null, null, null);
+  assert.strictEqual(p.ready, false); assert.strictEqual(p._rz, null); assert.strictEqual(p.stats.resizeFailures, f0 + 4); assert.strictEqual(hook, null);
+  fail = 0; p.frame(null, null, null, null); assert.strictEqual(p.ready, false, 'no retry after giving up');
+  device.createTexture = orig; console.warn = w;
+  p.ready = true; p.setEnabled(true); p.resizeGrid(20, 10); assert.ok(hook);
 }
 
 // readbackGeometry: payload shape (4-wide GI/GA/Depth), Depth spread from the 1-wide r32uint
