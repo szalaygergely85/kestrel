@@ -1,5 +1,12 @@
 # Kestrel – Product Backlog
 
+> **PC-B handoff 2026-10-10 LAPTOP - START HERE (supersedes the 2026-10-10 desktop block below; read docs/decisions.md D-055..D-062 first).**
+> **Done + pushed today (origin/pc-b):** WILD-06/06b (rabbits+deer in game), CHARGEN-08..16, 13a/13b/14/21/22a-e/23/25 (generator app + exports + per-recipe detail; base man restyled to the owner refs, D-059), RIG-00/01/02a/02b/03/03w/04/04b, PLANT-SCALE-01 + PLANT-VOXEL-OFF-01 (real plant sizes, voxel plants + shelf fungus removed), CULL-CAP-01 (the GPU->CPU 4 fps fallback: cull args overflow), RESIZE-RECOVER-01, GPU-OFF-REASON-01, WAYSTONE-NORMAL-01 (no restart at the waystone), QG-01..05 + QG-W1/D1 (quest giver flow: Burl's quest, ! / ? markers, J log), COMPASS-01/02 + D1 (golden pocket compass), WS1-01/05/W1 (bounds union, road dressing, relay texts). CHARGEN-17 (creation screen) PARKED, Fen (CHARGEN-15) removed then brought back by D-062 as a male NPC.
+> **In flight (clones, uncommitted/committed not merged):** WS1-02 (kestrel-3), WS1-06a (kestrel-2), WS1-04 (kestrel-4), WS1-07a committed in kestrel-1. Architect writing 38.37 Chapter 1 build plan (D-062 + tower addition). Next: WS1-03, 06b, 07b, 08, 09, then the Chapter 1 rows.
+> **Owner rules (memory):** ask before ANY feature not discussed (CHARGEN-17 lesson); owner wants frequent done/next lists. No lamp (torch later); boar gives an aether crystal that wakes stones; breach climb stays required; tower taller with the sword at the top, exit through a bottom entrance.
+> **Known flakes on this laptop:** fireballView alloc (passes alone), route-walk-browser boot timeout (passes alone), meshInstances under load.
+> **OWNER TO-DO:** walk Burl's quest + J log + compass; look at the new character in /tools/chargen/index.html; answer chapter-plan questions (tower height) when asked.
+
 > **PC-B handoff 2026-10-10 - START HERE (PC-B, 5x: 4 programmer clones kestrel-1..4; replaces all older PC-B blocks, now in docs/backlog-archive.md).** Sources: D-053 + D-054 (docs/decisions.md), docs/lanes/pc-b1.md + pc-b2.md, docs/test-reports/po-batch2-2026-10-09-pcb.md + batch-review-2026-10-09-pcb.md (batches 1-7). Skills: `pc-b-5x`, `pc-b-sync-verify`, `gpucompare`. Machine: Intel iGPU, baseline `docs/test-reports/gpucompare-baseline-webgpu-intel.json`; browser checks via `node tools/browser-batch.mjs`.
 > **Done (pc-b tip 86ab7ca8, 2026-10-09/10):**
 > - WebGL2 removed (WG-5a/b/c, D-053 WG-4c OK; rts-test on WebGPU, GL dead branches out of main.js); createRenderer is WebGPU-only.
