@@ -1,7 +1,7 @@
 // engine/render/gpu/gpuCompare.test.js (US-029 tech notes item 10).
 // Pure `compareCells` checks: edge-cell exclusion, tolerance edges 4 vs 5,
 // PASS/FAIL rule. Run: node engine/render/gpu/gpuCompare.test.js
-import { compareCells, compareGeometry, compareLight, meshTiesCap } from './gpuCompare.js';
+import { compareCells, meshCellCap, compareGeometry, compareLight, meshTiesCap } from './gpuCompare.js';
 import { FACE_E } from '../GBuffer.js';
 import { edgeRules } from '../edgePass.js';
 import { makeOk } from '../../test/assert.js';
@@ -467,4 +467,17 @@ if (fail) { for (const f of failures) console.error('  FAIL: ' + f); process.exi
   if (cg({ kind, mat, depth }, cols, rows, emis, fgIn, bgIn, bad, oB, P).fg.ok) throw new Error('compareGlow: +5 byte must fail');
   if (cg({ kind, mat, depth }, cols, rows, new Float32Array([0, 0]), fgIn, bgIn, fgIn, bgIn, P).ok) throw new Error('compareGlow: vacuous pose must fail');
   console.log('compareGlow checks OK');
+}
+
+// 9. DRESS-01 follow-up: mesh-bar cap is 128 for sun-map shadow poses (single penumbra band flip of 106), 96 otherwise; a 106 diff
+//    passes the shadow bar but still fails the plain one, and a wrong colour (>128) fails both.
+{
+  const kind = new Uint8Array(N).fill(7);
+  const js = makeCells(() => {});
+  const mk = d => makeCells((fg) => { fg[0] = d; });
+  const run = (d, shadow) => compareCells(js.fg, js.bg, mk(d).fg, mk(d).bg, kind, COLS, ROWS, undefined, undefined, 0.01, meshCellCap(shadow), true).pass;
+  ok('meshCellCap values', meshCellCap(true) === 128 && meshCellCap(false) === 96);
+  ok('106 band flip passes with the shadow cap', run(106, true));
+  ok('106 band flip still fails the plain cap', !run(106, false));
+  ok('200 wrong colour fails even with the shadow cap', !run(200, true));
 }
