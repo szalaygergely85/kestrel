@@ -53,6 +53,7 @@ import '../design/models/relay.js';
 import '../design/models/voxel_props.js';
 import '../design/models/voxel_tower.js';
 import '../design/models/voxel_world.js'; // waystone (endMarker, world_m1.world.json)
+import '../design/models/voxel_tower_crown.js'; // CH1-D1b towerCrown (world_m1 entity)
 import '../design/models/sword.js'; // US-078c: content/levels/tower.level.json prop "sword"
 import '../design/models/voxel_beast.js'; // US-079a: content/worlds/world_m1.world.json entities "boar1"/"boar2"
 import '../design/models/voxel_bear.js'; // NPC-BEAR-01: content/worlds/world_m1.world.json entity "bear"
