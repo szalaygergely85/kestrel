@@ -1103,7 +1103,7 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - **World stage 2 ford (OQ-WS2-1):** the river crossing is **stepping stones** (no wading, no bridge). Swimming / ford gameplay (OQ-WS2-3), relay #2 position (OQ-WS2-2) and the far-tree swap (OQ-WS2-4) not yet answered.
 - **Day/night in play (AUD-41):** **yes**, a game day lasts **2 real hours** (owner, DN-Q1) - the time of day runs during play (sun path, sky/light ramps already exist for cinematics / `?time=`). Needs an architect note (cycle length, save, night lighting, quest/beast effects) before programming.
 - **Quest flow (QUEST-CHAIN-GATE-01):** chain quests with giver marks: '!' over the wake-spot note -> 'A Blade in the Ashes' (climb, sword, leave) -> '?' over Burl to hand in -> Burl '!' for the boars -> '?' when done, etc. A giver quest only shows its mark once the previous one is handed in.
-- **Tower door (TOWER-DOOR-OPEN-01):** the south-west door is open from the start (no bar, no sword gate); the note sends the player up.
+- **Tower door:** superseded by DOOR-TOGGLE-01 - the south-west door starts CLOSED and E opens/closes it any time (no bar, no sword gate).
 - **Waystone:** no brass bowl / crystal on top (WAYSTONE-NOBOWL); state shows on the carved mark only.
 - **Meadow:** no voxel stones; bushes ~1.3-1.4 m; every plant/bush randomised in size (+-20/25 %).
 - **Never lock the player during the game (owner, 2026-10-10):** no movement/camera lock from dialogues, notes, notices, the chapter card, escorts or wake effects; only real menus (title, pause, settings, and screens that pause the game) stop the player. Dialogues advance with E and close when the player walks away.
