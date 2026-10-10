@@ -108,7 +108,7 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   // US-078c: + the "sword" interactable (content/levels/tower.level.json, copied in from design/models/sword.js's levelPatch.towerSword).
   // READ-01: + the 4 "note*" interactables (hand-copied from design/models/notes.js's levelPatch.towerNotes.appendInteractables).
   // CH1-D1a: - lantern (no lamp pickup), + door (door.unbar, ground-floor SW door), + noteLeave (summit doorway note).
-  ok('interactables ids = beacon, note* x5, sword', JSON.stringify(ids) === JSON.stringify(['beacon', 'noteKeepLight', 'noteKeeperLog', 'noteLeave', 'noteMason', 'noteSteelHush', 'sword']), ids.join(','));
+  ok('interactables ids = beacon, door, note* x5, sword', JSON.stringify(ids) === JSON.stringify(['beacon', 'door', 'noteKeepLight', 'noteKeeperLog', 'noteLeave', 'noteMason', 'noteSteelHush', 'sword']), ids.join(','));
   ok('every interactable has an interact name', (d.interactables || []).every((i) => typeof i.interact === 'string' && i.interact.length));
   // US-026a-content: the tower's own 'end' trigger is gone - the ending
   // moved to a world-level trigger at the waystone (worlds.world_m1.triggers,
@@ -157,7 +157,7 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
     ...(towerDef.triggers || []).map((t) => t.trigger),
     ...(worldM1.triggers || []).map((t) => t.trigger).filter(Boolean),
     'lantern.take', // kept registered (lantern.js, lantern.test/quest.test legacy fixtures) though CH1-D1a removed the tower interactable
-    'door.unbar', // kept registered (doorUnbar.js) though TOWER-DOOR-OPEN-01 removed the tower interactable (door open from start)
+    'door.unbar', // kept registered (doorUnbar.js, legacy) though DOOR-TOGGLE-01's door.toggle replaced it on the tower interactable
     'quest.end', // kept registered (end.js, end.test.js, restart.test.js) though world_m1 no longer references it (WAYSTONE-NORMAL-01)
     'npc.talk', // NPC-BEAR-01: runtime-only (dialogueCtl.addNpc -> World.addInteractable), no content reference
     'beast.loot', // US-091a2: runtime-only (sim/loot.js World.addInteractable per boar), no content reference
@@ -199,17 +199,18 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
 // ---------------------------------------------------------------------------
 {
   ok('3b: no lantern interactable any more (lamp pickup removed)', !towerDef.interactables.some((i) => i.id === 'lantern' || i.interact === 'lantern.take'));
-  // TOWER-DOOR-OPEN-01: the door is open from load: no door interactable, doorBar variant open, collider off.
-  ok('3b: no door interactable (door is open from the start)', !towerDef.interactables.some((i) => i.id === 'door' || i.interact === 'door.unbar'));
+  // DOOR-TOGGLE-01: the door starts CLOSED (variant closed, box collider) and has a door.toggle interactable (E, no requires).
+  const doorIa = towerDef.interactables.find((i) => i.id === 'door');
+  ok('3b: door interactable is door.toggle, prompt "[E] Open", no requires', !!doorIa && doorIa.interact === 'door.toggle' && doorIa.prompt === '[E] Open' && !doorIa.requires && doorIa.prop === 'doorBar');
   const doorProp = towerDef.props.find((p) => p.id === 'doorBar');
-  ok('3b: doorBar prop starts open with collider-off variant', doorProp.variant === 'open' && doorProp.colliders.length === 0);
+  ok('3b: doorBar prop starts closed with a box collider + collider-off variant open', doorProp.variant === 'closed' && doorProp.colliders.length === 1 && doorProp.colliders[0].type === 'box' && doorProp.colliderOffVariant === 'open');
   const doorWorld = World.load({
     name: 'tower_door_test', terrain: null,
     structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
     entities: [], state: {},
   }, assets, { physics: 'mesh' });
   const bar = doorWorld.get('tower.doorBar');
-  ok('3b: World.load spawns the doorBar prop open', !!bar && bar.getComponent('voxel').anim === 'open');
+  ok('3b: World.load spawns the doorBar prop closed', !!bar && bar.getComponent('voxel').anim === 'closed');
 }
 
 // ---------------------------------------------------------------------------

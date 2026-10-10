@@ -20,6 +20,7 @@ import { beastLoot } from './sim/loot.js';
 import { npcTalk } from './dialogueCtl.js';
 import { relayWake } from './relayWake.js';
 import { doorUnbar } from './doorUnbar.js';
+import { doorToggle } from './doorToggle.js';
 
 /** name -> the story that gives it a real body */
 export const QUEST_BEHAVIOURS = {
@@ -33,6 +34,7 @@ export const QUEST_BEHAVIOURS = {
   'npc.talk': 'DIALOGUE-01b2',
   'relay.wake': 'WS1-06b',
   'door.unbar': 'CH1-D1a',
+  'door.toggle': 'DOOR-TOGGLE-01',
 };
 
 const logged = new Set();
@@ -74,6 +76,7 @@ const REAL_BEHAVIOURS = {
   'npc.talk': npcTalk,
   'relay.wake': relayWake,
   'door.unbar': doorUnbar,
+  'door.toggle': doorToggle,
 };
 
 /** (Re)registers every quest behaviour. Idempotent; the tests call it to restore a removed registration. */

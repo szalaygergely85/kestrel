@@ -73,7 +73,7 @@ const player = world.get('player');
 // ---------------------------------------------------------------------------
 // CH1-D1a: no lamp pickup any more; the mutation under test is the ground-floor SW door (door.unbar, needs the sword).
 // TOWER-DOOR-OPEN-01: the door is open from load (no door interactable); the mutation under test is the sword take state.
-ok('1a: door is open from the start (no door interactable, variant open)', !world.interactables.some((r) => r.id === 'door') && world.get('tower.doorBar').getComponent('voxel').anim === 'open');
+ok('1a: door starts closed (door.toggle interactable, variant closed)', world.interactables.some((r) => r.id === 'door' && r.name === 'door.toggle') && world.get('tower.doorBar').getComponent('voxel').anim === 'closed');
 world.state['tower.sword.taken'] = true;
 ok('1b: tower.sword.taken set', world.state['tower.sword.taken'] === true);
 

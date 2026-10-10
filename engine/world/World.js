@@ -1035,7 +1035,8 @@ export class World {
         const component = e.components.voxel || e.components.sprite;
         if (!component) continue;
         // BUG-LAMP-COLLIDE-02: a prop may drop its collider in one variant (the taken wall lamp: bracket only).
-        if (p.colliderOffVariant && component.variant === p.colliderOffVariant) continue;
+        // DOOR-TOGGLE-01: a freshly spawned prop has no component.variant yet - fall back to the level's initial one.
+        if (p.colliderOffVariant && (component.variant !== undefined ? component.variant : p.variant) === p.colliderOffVariant) continue;
         const model = this.assets.model(component.model);
         const defs = Object.hasOwn(p, 'colliders') ? p.colliders : model.colliders;
         if (defs === undefined) continue;

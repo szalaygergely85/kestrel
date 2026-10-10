@@ -68,6 +68,7 @@ import { stepEnd, endFadeAmount } from './quest/end.js';
 import { stepBeacon } from './quest/beacon.js';
 import { stepLantern } from './quest/lantern.js'; // OWN-REQ-006: hook-light off, same fixed-step slot as stepBeacon
 import { removeSwordIfTaken } from './quest/swordTake.js'; // US-078c
+import { applyDoorState } from './quest/doorToggle.js'; // DOOR-TOGGLE-01
 import { resetNoteRead, stepNoteRead, isNoteOpen, pushNoteDim, drawNotePanel } from './quest/noteRead.js'; // READ-01
 import { wakeFrame, drawEyelid, applyWakeOnLoad } from './quest/wake.js';
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel, getMapChart, drawMapCard } from './quest/mapCard.js';
@@ -1280,6 +1281,7 @@ async function runGame(mode, cinematic = null) {
         },
       });
       resetPickups(world); // BUG-PICKUP-001: reindex retained drops on every load/restart.
+      applyDoorState(world); // DOOR-TOGGLE-01: tower door prop/collider/prompt follow the saved tower.door.open
       removeSwordIfTaken(world); // US-078c: a world with the flag already set shouldn't show a taken sword
       // US-091a1 (37.16.4 + 37.8a demo start): seed the pack only when missing, BEFORE
       // `initialState = serialize(...)` below, so `R` restarts keep the start pack. Owner answer 2: the
