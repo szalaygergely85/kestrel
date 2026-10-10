@@ -352,7 +352,7 @@ ok('the gap is exactly one cell wide', Math.abs(landing[0] - takeoff[0]) + Math.
 ok('the landing is at least 2 cells deep (PO note)', (() => {
   const beyond = jumpAxis === 'x' ? [landing[0] + jumpDir, landing[1]] : [landing[0], landing[1] + jumpDir];
   const s = cellSector(beyond[0], beyond[1]);
-  return s && !s.solid && near(s.floorH, cellSector(landing[0], landing[1]).floorH);
+  return s && !s.solid && Math.abs(s.floorH - cellSector(landing[0], landing[1]).floorH) <= 0.45; // STEP-HEIGHT-01: second landing cell may be a <= step-up half-step
 })());
 
 {
