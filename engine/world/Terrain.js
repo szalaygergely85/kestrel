@@ -59,6 +59,7 @@ export class Terrain {
     this.farVersion = 0;
     this._rbH = null; // rebakeRect height scratch (grow-only)
     this.farDirty = null; // ED-TERRAIN-1b: far texel rect touched by rebakeRect, consumed by TerrainMeshSet.markNearDirty
+    this._bb = null; // WS2-01 pending back band (beginNearBand)
     this._bakeRow = 0;
     // US-018 follow-up: column offset within `_bakeRow` - `bakeFarStep`
     // checks the time budget every `BAKE_CHECK_COLS` columns, not just once
@@ -201,6 +202,94 @@ export class Terrain {
       version: (this.near ? this.near.version : 0) + 1,
     };
     this.nearReady = true;
+  }
+
+  // ---- stepped near-band re-bake (WS2-01, arch 38.38) -----------------------
+
+  /**
+   * Starts a background bake of a new near band `(cx0, cy0, cw, ch)` (chunk rect, same-size as the
+   * current band in v1 so textures/mesh grids never realloc). Allocates FRESH back arrays (rare event,
+   * no pooling: terrainMesh keys on the `near` object identity) and copies the cells that overlap the
+   * current `near` (the bake is per-cell pure, so copy == re-bake, bit-identical). `nearBandStep`
+   * then bakes the missing cells in row slices; `swapNearBand` publishes atomically. A pending bake is replaced.
+   */
+  beginNearBand(cx0, cy0, cw, ch) {
+    if (!Number.isInteger(cw) || !Number.isInteger(ch) || cw < 1 || ch < 1 || cw > 6 || ch > 6) throw new Error(`beginNearBand: cw/ch must be integers 1..6 (got ${cw}x${ch})`);
+    const cur = this.near, n = this.chunkSize / this.nearCell;
+    const w = cw * n, h = ch * n, x0 = cx0 * this.chunkSize, y0 = cy0 * this.chunkSize;
+    const HC = cur ? cur.height.constructor : Float32Array, TC = cur ? cur.type.constructor : Uint8Array, DC = cur ? cur.hDraw.constructor : Float32Array;
+    const b = { x0, y0, w, h, cell: this.nearCell, height: new HC(w * h), type: new TC(w * h), hDraw: new DC(w * h), minH: 0, maxH: 0, version: 0 };
+    // overlap in new-band cell coords [ox0,ox1) x [oy0,oy1)
+    let ox0 = 0, ox1 = 0, oy0 = 0, oy1 = 0;
+    if (cur && cur.cell === b.cell) {
+      const dx = Math.round((cur.x0 - x0) / b.cell), dy = Math.round((cur.y0 - y0) / b.cell); // cur origin in new coords
+      ox0 = Math.max(0, dx); ox1 = Math.min(w, dx + cur.w); oy0 = Math.max(0, dy); oy1 = Math.min(h, dy + cur.h);
+      if (ox1 > ox0 && oy1 > oy0) {
+        for (let j = oy0; j < oy1; j++) {
+          const s0 = (j - dy) * cur.w + (ox0 - dx), d0 = j * w + ox0, len = ox1 - ox0;
+          b.height.set(cur.height.subarray(s0, s0 + len), d0);
+          b.type.set(cur.type.subarray(s0, s0 + len), d0);
+          b.hDraw.set(cur.hDraw.subarray(s0, s0 + len), d0);
+        }
+      } else { ox0 = ox1 = oy0 = oy1 = 0; }
+    }
+    this._bb = { b, ox0, ox1, oy0, oy1, row: 0, side: 0, ready: false, cx0, cy0, cw, ch };
+    return b;
+  }
+
+  /** True while a back band is baking or waiting to be swapped. */
+  get nearBandPending() { return this._bb != null; }
+  /** Rect of the pending back band (`{cx0,cy0,cw,ch}` fields of the internal state) or null. */
+  cancelNearBand() { this._bb = null; }
+
+  /**
+   * Bakes missing rows of the pending band until `msBudget` ms are used (always >= 1 slice of progress).
+   * Per slice: one `util.bake` of a full row, or of the left/right spans around the overlap (documented
+   * per-slice alloc exception, arch 38.38). Returns true once the band is complete.
+   */
+  nearBandStep(msBudget) {
+    const st = this._bb;
+    if (!st) return false;
+    if (st.ready) return true;
+    this._bindEdits();
+    const b = st.b, w = b.w, h = b.h, cell = b.cell;
+    const canopy = this.realTrees ? 0 : this._canopyM, forestId = this._forestTypeId;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    while (st.row < h) {
+      const r = st.row;
+      const inOv = r >= st.oy0 && r < st.oy1;
+      let cs, ce; // column span [cs, ce) to bake in this slice
+      if (!inOv) { cs = 0; ce = w; st.row++; }
+      else if (st.side === 0) { cs = 0; ce = st.ox0; st.side = 1; }
+      else { cs = st.ox1; ce = w; st.side = 0; st.row++; }
+      if (ce > cs) {
+        const G = this.util.bake(b.x0 + cs * cell, b.y0 + r * cell, cell, ce - cs, 1);
+        const o = r * w + cs;
+        for (let i = 0; i < ce - cs; i++) {
+          const hv = G.height[i];
+          b.height[o + i] = hv; b.type[o + i] = G.type[i];
+          b.hDraw[o + i] = hv + (G.type[i] === forestId ? canopy : 0);
+        }
+      }
+      if ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 >= msBudget) break;
+    }
+    if (st.row >= h) st.ready = true;
+    return st.ready;
+  }
+
+  /** Atomic publish: the finished back band becomes `terrain.near` (new object identity, version+1). Throws if not ready. */
+  swapNearBand() {
+    const st = this._bb;
+    if (!st || !st.ready) throw new Error('swapNearBand: no finished back band');
+    const b = st.b;
+    const canopy = this.realTrees ? 0 : this._canopyM, forestId = this._forestTypeId;
+    let minH = Infinity, maxH = -Infinity;
+    for (let i = 0; i < b.height.length; i++) { const v = b.height[i] + (b.type[i] === forestId ? canopy : 0); if (v < minH) minH = v; if (v > maxH) maxH = v; }
+    b.minH = minH; b.maxH = maxH;
+    b.version = (this.near ? this.near.version : 0) + 1;
+    this.near = b; this.nearReady = true; this._bb = null;
+    return b;
   }
 
   /**

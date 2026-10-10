@@ -53,6 +53,7 @@ export function serialize(world) {
     // is the world-level trigger DEFS (buildTriggers reads them fresh on
     // every load, same as a structure's `def.triggers`).
     bounds: world.bounds ? cloneBounds(world.bounds) : null,
+    ...(world.terrainBands ? { terrainBands: world.terrainBands.map((z) => ({ ...z })), ...(world._bandSwitchDef ? { bandSwitch: { ...world._bandSwitchDef } } : {}) } : {}), // WS2-01: zone list (content); the active band is derived, never saved
     ...(world.terrainBand ? { terrainBand: { ...world.terrainBand } } : {}), // WS1-02: only when authored (old saves byte-identical)
     triggers: structuredClone((world.def && world.def.triggers) || []),
     structures: world.structures.map((s) => s.kind === 'mesh' ? {
@@ -184,6 +185,7 @@ export function deserialize(state, assets, opts = {}) {
     waterfalls: state.waterfalls || [],
     bounds: state.bounds || null,
     terrainBand: state.terrainBand || null,
+    ...(state.terrainBands ? { terrainBands: state.terrainBands, bandSwitch: state.bandSwitch } : {}),
     triggers: state.triggers || [],
     time: state.time && state.time.timeOfDay,
     structures: state.structures.map((s) => s.mesh
