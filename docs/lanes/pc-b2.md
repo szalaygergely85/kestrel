@@ -450,3 +450,8 @@ AUD-04/34/35 (k3, aud-04): AUD-04 removed dead 3x3 ring (Terrain chunk/setCenter
 - New engine/render/waterReflect.js (WATER_REFLECT {f0,skyMix,darken}, skyLutFromPalette, waterReflectAt/Mix = JS twin); applied to opaque water fg+bg in waterComposite.js and waterComposite.wgsl.js (sky LUT = new uniforms reflectU + skyLut[32] at block end, baked in passWater.js; shade.wgsl.js untouched; off for ortho / no sky).
 - Tests: engine/render/waterReflect.test.js (3 view angles vs f32 ref, wiring); water.wgsl.test.js uniform size 3040 -> 3568; waterComposite.test.js "equal colours at different slopes" assertion inverted (view-dependent by design).
 - gpucompare rows to re-baseline (main session): any scene with water - water composite fg/bg (`water`, `waterComposite`, `stable` water sub-case, final cells in pool/lake/river scenes). glslref (GL) twin NOT updated (frozen reference).
+
+### WS2-01 (kestrel-3, ws2-01) - arch-review (NEEDS PC-A)
+Engine: Terrain.beginNearBand/nearBandStep/swapNearBand/cancelNearBand (+nearBandPending); World.terrainBands+bandSwitch validate (1..4 same-size, both-fields error, serialized as content), streamBand/ensureBandFor/bandId, load opts.spawn picks the start zone. Events world:band, band:late.
+Test engine/world/terrainBands.test.js 35 checks (sliced+overlap copy == bakeNearBand bytes, hysteresis, late, idle 0 alloc). Step ~2.3 ms (budget 2 + one 0.4 ms row). Margin includes the y edges (zone y 896..1280 => walk the row at y ~1088).
+WS2-02 hook: World._publishBand calls refreshTerrainScatter synchronously on swap (stepped split + terrainMesh far-exclusion fix + main.js hzb.invalidate on world:band are NOT done here).

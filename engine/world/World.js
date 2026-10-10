@@ -138,7 +138,7 @@ function fillMeshBbox(bbox, mesh, frame, k) {
 // ED-MESH-1d: cheap key of everything the near-band bake reads from the placed structures
 // (`structureBlend`: bbox + ringHAt = outer-ring sector floorH + frame z). Perimeter cells only.
 function nearBandKey(w, cx, cy, cw = 3, ch = 3) {
-  let k = w.terrainBand ? `${cx},${cy},${cw}x${ch}` : `${cx},${cy}`; // WS1-02: an authored rect is part of the key (absent = old key)
+  let k = (w.terrainBand || w.terrainBands) ? `${cx},${cy},${cw}x${ch}` : `${cx},${cy}`; // WS1-02: an authored rect is part of the key (absent = old key)
   for (const p of w.structures) {
     if (p.kind === 'mesh') continue;
     const lv = p.level, W = lv.width, H = lv.height, b = p.bbox;
@@ -163,6 +163,26 @@ function validateTerrainBand(b) {
   for (const k of ['cx0', 'cy0']) if (!Number.isInteger(b[k]) || b[k] < 0) throw new Error(`World.load: terrainBand.${k} must be an integer >= 0`);
   for (const k of ['cw', 'ch']) if (!Number.isInteger(b[k]) || b[k] < 1 || b[k] > 6) throw new Error(`World.load: terrainBand.${k} must be an integer 1..6`);
   return { cx0: b.cx0, cy0: b.cy0, cw: b.cw, ch: b.ch };
+}
+
+// WS2-01 (arch 38.38): `world.terrainBands` - 1..4 authored near-band zones (same cw x ch in v1) + optional
+// `bandSwitch {prefetchM, switchM}`. Mutually exclusive with `terrainBand`. Returns {zones, prefetchM, switchM, bandSwitch} or null.
+function validateTerrainBands(list, sw, single) {
+  if (list == null) return null;
+  if (single != null) throw new Error('World.load: terrainBand and terrainBands are mutually exclusive');
+  if (!Array.isArray(list) || list.length < 1 || list.length > 4) throw new Error('World.load: terrainBands must be an array of 1..4 zones');
+  const zones = [], ids = new Set();
+  list.forEach((z, i) => {
+    if (!z || typeof z !== 'object') throw new Error(`World.load: terrainBands[${i}] must be an object`);
+    if (typeof z.id !== 'string' || !z.id || ids.has(z.id)) throw new Error(`World.load: terrainBands[${i}].id must be a unique non-empty string`);
+    ids.add(z.id);
+    const r = validateTerrainBand({ cx0: z.cx0, cy0: z.cy0, cw: z.cw, ch: z.ch });
+    if (i && (r.cw !== zones[0].cw || r.ch !== zones[0].ch)) throw new Error(`World.load: terrainBands[${i}] must be the same cw x ch as zone 0 (v1)`);
+    zones.push({ id: z.id, cx0: r.cx0, cy0: r.cy0, cw: r.cw, ch: r.ch });
+  });
+  const prefetchM = sw && sw.prefetchM !== undefined ? sw.prefetchM : 176, switchM = sw && sw.switchM !== undefined ? sw.switchM : 112;
+  if (!(typeof prefetchM === 'number' && typeof switchM === 'number' && isFinite(prefetchM) && isFinite(switchM) && switchM > 32 && prefetchM > switchM)) throw new Error('World.load: bandSwitch needs numbers with prefetchM > switchM > 32');
+  return { zones, prefetchM, switchM, bandSwitch: sw ? { prefetchM, switchM } : null };
 }
 
 function validateBounds(b) {
@@ -254,6 +274,7 @@ export class World {
     // `null` (unbounded - every world before this story). Content, not
     // state; set once by `World.load` from `def.bounds`.
     this.bounds = null;
+    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this.bandId = null; // WS2-01
     this.terrainBand = null; // WS1-02: authored near-band chunk rect or null (auto 3x3)
     // US-016 D-011 addendum (architecture.md 14.4 item 13): horizon
     // billboards - plain data, content not state (never mutated at
@@ -404,6 +425,10 @@ export class World {
     }
     w.bounds = validateBounds(def.bounds);
     w.terrainBand = validateTerrainBand(def.terrainBand); // WS1-02 (null = auto 3x3)
+    { // WS2-01 (38.38): authored zone list; mutually exclusive with terrainBand
+      const tbs = validateTerrainBands(def.terrainBands, def.bandSwitch, def.terrainBand);
+      if (tbs) { w.terrainBands = tbs.zones; w.bandSwitch = { prefetchM: tbs.prefetchM, switchM: tbs.switchM }; w._bandSwitchDef = tbs.bandSwitch; }
+    }
     // US-138 (32.5): built once here, after bounds, before the sun block
     // below (order doesn't matter to wind itself - it reads nothing else off
     // `w`). `def.wind` may be absent -> `createWind(null, ...)` -> calm.
@@ -490,7 +515,12 @@ export class World {
       const cx = Math.floor((bx0 + bx1) / 2 / w.terrain.chunkSize);
       const cy = Math.floor((by0 + by1) / 2 / w.terrain.chunkSize);
       // WS1-02 (38.36): authored `terrainBand` rect (absent = the auto-centred 3x3, byte-identical).
-      const tb = w.terrainBand;
+      let tb = w.terrainBand;
+      if (w.terrainBands) { // WS2-01: start in the best zone for the spawn pose (opts.spawn) or zone 0
+        const sp = opts.spawn;
+        w._bandCur = sp && Number.isFinite(sp.x) && Number.isFinite(sp.y) ? w._bestBand(sp.x, sp.y, w.terrain.chunkSize) : 0;
+        tb = w.terrainBands[w._bandCur]; w.bandId = tb.id;
+      }
       const bcx0 = tb ? tb.cx0 : cx - 1, bcy0 = tb ? tb.cy0 : cy - 1, bcw = tb ? tb.cw : 3, bch = tb ? tb.ch : 3;
       // ED-MESH-1d: a reused Terrain whose band was baked for the same centre and the same
       // structure footprints (bbox + z + outer-ring floorH, all `ringHAt` can read) is still valid.
@@ -1073,6 +1103,82 @@ export class World {
     const c = this._kinCollider;
     if (!c) return false;
     moveKinematicPrism(c, slot, x, y, z + this._entities.get(id).components.collider.h / 2);
+    return true;
+  }
+
+  // ---- near-band zones (WS2-01, arch 38.38) --------------------------------
+
+  /** Distance (m) from (x, y) to the nearest edge of zone `z` (negative outside). No allocation. */
+  _bandMargin(z, x, y, cs) {
+    const x0 = z.cx0 * cs, y0 = z.cy0 * cs;
+    return Math.min(x - x0, x0 + z.cw * cs - x, y - y0, y0 + z.ch * cs - y);
+  }
+
+  /** Zone index with the largest margin at (x, y); ties keep the current zone, then the lowest index. */
+  _bestBand(x, y, cs) {
+    const zs = this.terrainBands;
+    let best = -1, bm = -Infinity;
+    for (let i = 0; i < zs.length; i++) {
+      const m = this._bandMargin(zs[i], x, y, cs);
+      if (m > bm || (m === bm && i === this._bandCur)) { bm = m; best = i; }
+    }
+    return best;
+  }
+
+  _publishBand(to, late) {
+    const terrain = this.terrain, z = this.terrainBands[to], from = this.bandId;
+    terrain.swapNearBand();
+    this._bandCur = to; this._bandPend = -1; this.bandId = z.id;
+    terrain._nearKey = nearBandKey(this, z.cx0, z.cy0, z.cw, z.ch) + `|realTrees:${terrain.realTrees}`;
+    if (this.events) {
+      this.events.emit('world:band', { from, to: z.id });
+      if (late) this.events.emit('band:late', { from, to: z.id });
+    }
+    // Scatter + collider flip: synchronous for now (WS2-02 splits it into stepped slices; this is its hook).
+    this.refreshTerrainScatter();
+  }
+
+  /**
+   * Player-pose band streaming (38.38): 0 idle | 1 baking | 2 swapped. Keeps the current zone while its
+   * margin >= switchM; below prefetchM it bakes the best zone in `msBudget` slices; swaps when margin <
+   * switchM and the bake is ready; below 32 m with a pending bake it finishes synchronously (`band:late`).
+   * Zero allocation while idle.
+   */
+  streamBand(px, py, msBudget) {
+    const zs = this.terrainBands, terrain = this.terrain;
+    if (!zs || zs.length < 2 || !terrain || this._bandCur < 0) return 0;
+    const cs = terrain.chunkSize;
+    const mc = this._bandMargin(zs[this._bandCur], px, py, cs);
+    if (mc >= this.bandSwitch.prefetchM) { // far from every edge: idle (drops a stale pending bake if the player walked back)
+      if (this._bandPend >= 0) { terrain.cancelNearBand(); this._bandPend = -1; }
+      return 0;
+    }
+    const best = this._bestBand(px, py, cs);
+    if (best === this._bandCur) { // still the best zone: nothing to switch to
+      if (this._bandPend >= 0) { terrain.cancelNearBand(); this._bandPend = -1; }
+      return 0;
+    }
+    if (this._bandPend !== best) {
+      const z = zs[best];
+      terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch);
+      this._bandPend = best;
+    }
+    const ready = terrain.nearBandStep(msBudget);
+    if (mc < 32 && !ready) { terrain.nearBandStep(Infinity); this._publishBand(best, true); return 2; }
+    if (ready && mc < this.bandSwitch.switchM) { this._publishBand(best, false); return 2; }
+    return ready ? 0 : 1;
+  }
+
+  /** Synchronous band pick for load / travel / respawn: bakes + swaps the best zone for (x, y) if it is not current. Returns true when it swapped. */
+  ensureBandFor(x, y) {
+    const zs = this.terrainBands, terrain = this.terrain;
+    if (!zs || !terrain || this._bandCur < 0) return false;
+    const best = this._bestBand(x, y, terrain.chunkSize);
+    if (best === this._bandCur) { if (this._bandPend >= 0) { terrain.cancelNearBand(); this._bandPend = -1; } return false; }
+    const z = zs[best];
+    terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch);
+    terrain.nearBandStep(Infinity);
+    this._publishBand(best, false);
     return true;
   }
 
