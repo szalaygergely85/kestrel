@@ -1877,3 +1877,83 @@ Done (D-058 owner pick: no reward, writer texts QG-W1 in place): questRelay/save
 ### QG-D1 `?` marker + coin  [P2] [design] [designer]
 - designer 2026-10-10: `questMarkReady` done in `design/models/quest_mark.js` (twin of `questMark`, same record/clips/fx; `questMarkTurnIn` = alias), preview `design/preview/quest-mark.html` ('!' left, '?' right). Coin skipped (owner pick: no reward item).
 - [ ] `questMarkReady` voxel model: `?` twin of `questMark` (same clips appear/active/complete, same size). `coin` item def glyph + icon in `design/items.js` (stackMax 999). Preview in the existing marker/item preview pages.
+
+## World stage 1 (D-060)
+
+PC-B architect opus, 2026-10-10 (owner-authorised while PC-A is offline; PC-A to ratify). Spec: architecture.md 38.36. Order: WS1-01, WS1-02 (kestrel-3) and WS1-05, WS1-W1 in parallel -> WS1-03 (kestrel-2) -> WS1-04 -> WS1-06a/b, WS1-07a/b (kestrel-1) -> WS1-08 gates -> owner walk. WS1-09 optional. Engine rows (01, 02, 03) end in `arch-review` (NEEDS PC-A).
+
+| ID | Slot | Size | Files | Deps | Status |
+|---|---|---|---|---|---|
+| WS1-01 | kestrel-3 | 0.75 d | `engine/physics/bounds.js` (new) + test, `engine/physics/integrate.js` 4b, `engine/world/triggers.js`, `engine/world/World.js` (validateBounds), `engine/world/serialize.js`, `engine/world/world.test.js` | - | todo [PC-B] |
+| WS1-02 | kestrel-3 | 1 d | `engine/world/World.js` (band rect, nearBandKey), `engine/world/Terrain.js` (`bakeNearBand(cx0,cy0,cw,ch)`), JS `near.w/h` consumers (scatter, terrainShade, detailShade), `engine/world/terrainBand.test.js` (new) | - | todo [PC-B] |
+| WS1-03 | kestrel-2 | 0.5 d | `engine/render/gpu/wgsl/terrainRaster.wgsl.js`, `engine/render/gpu/wg/passRaster.js`, `TerrainTextures.js`, `ShadeTextures.js`, `passShade.js` (audit) | WS1-02 | todo [PC-B] |
+| WS1-04 | kestrel-4 | 0.5 d | `content/worlds/world_m1.world.json` (bounds union, terrainBand, `relayBend` + base mesh, `waystone` components), `design/levels/overworld_far.js` (relay exclude disc) | WS1-01, WS1-02 | todo [PC-B] |
+| WS1-05 | kestrel-4 | 0.75 d | `tools/gen-roadside-meshes.mjs` (flags + `scale` fix), `content/worlds/world_m1.world.json` (`roadW###`, `roadN###`), `design/levels/overworld_far.js` (printed capsules) | - (runs before WS1-04 lands: keep-out disc is in the tool) | todo [PC-B] |
+| WS1-06a | kestrel-1 | 0.5 d | `game/js/quest/sim/waystone.js` + test, `game/js/quest/wire/waystone.js` + test, `game/js/waystoneTouch.js` | WS1-04 (data; tests use fixtures) | todo [PC-B] |
+| WS1-06b | kestrel-1 | 0.75 d | `game/js/quest/relayWake.js` (new) + test, `game/js/quest/index.js` (behaviour `relay.wake`), `game/js/main.js` (step + interactable on world:loaded) | WS1-06a, WS1-W1 (placeholder text ok) | todo [PC-B] |
+| WS1-07a | kestrel-1 | 0.5 d | `game/js/quest/mapCard.js` (`setMarker`, digits, travel line, digit keys) + `mapCard.test.js`, preview | WS1-06a | todo [PC-B] |
+| WS1-07b | kestrel-1 | 0.75 d | `game/js/quest/travel.js` (new) + test, `game/js/quest/sim/vitals.js` (`clearSafe`), `game/js/main.js` (wiring, fade draw, hzb invalidate) | WS1-07a | todo [PC-B] |
+| WS1-08 | kestrel-4 | 0.5 d | `tools/route-walk.mjs` (leg 8 + bound probe), bench/perf pose `roadBend`, gpucompare row | WS1-03, WS1-04, WS1-05 | todo [PC-B] |
+| WS1-09 | kestrel-4 | 0.25 d | `content/quests/m1.quest.json` (objective `relay1`), quest test | WS1-06b, WS1-W1; only if trivial (38.36 item 5) | todo [PC-B] |
+| WS1-W1 | writer | 0.25 d | `docs/story.md` | - | todo NEEDS WRITER |
+
+### WS1-01 Walk bound: union of circle/capsule parts  [P1] [todo] [PC-B kestrel-3] (engine)
+- [ ] `engine/physics/bounds.js`: `projectBounds(bounds, x, y, radius, out)` + `boundsOvershoot(bounds, x, y, radius)` for `circle` and `union` of `circle`/`capsule` parts (1..8), per 38.36 item 1; imports nothing outside `engine/physics/`.
+- [ ] integrate 4b and triggers `'bounds'` call the helper; `boundsHit` semantics unchanged; `shape:'circle'` worlds behave bit-identically (test compares old vs new projection on 1k random points).
+- [ ] `validateBounds` accepts `union` (throws with the part index on bad data), returns a deep copy; `serialize.js` deep-copies parts.
+- [ ] Tests: inside each part, circle/capsule seam, outside corner lands inside the union, velocity clip on the part normal, 0 alloc over 10k steps. `node tools/run-tests.mjs` + check-deps green. -> `arch-review`.
+
+### WS1-02 Data-driven near band rect  [P1] [todo] [PC-B kestrel-3] (engine)
+- [ ] Optional world field `terrainBand {cx0, cy0, cw, ch}` (ints, cw/ch 1..6), validated; absent = today's auto-centred 3x3 (same key, same bake, existing tests unchanged).
+- [ ] `Terrain.bakeNearBand(cx0, cy0, cw, ch)`; `near.w = cw*64`, `near.h = ch*64`; `nearBandKey` includes the rect.
+- [ ] Audit every JS read of `near.w`/`near.h` for a square assumption (list the files in the story); fix them.
+- [ ] `terrainBand.test.js`: 5x3 bake == stitched `bakeChunk` grids; `groundAt` continuous across x 1280; scatterTrees/detail counts printed for world_m1 with `{8,7,5,3}` (trees <= maxTrees, detail <= maxPlacements); bake time printed (<= 160 ms target). -> `arch-review`.
+
+### WS1-03 GPU: non-square near band  [P1] [todo] [PC-B kestrel-2] (engine render)
+- [ ] `terrainRaster.wgsl.js terrainTypeAt` uses separate width/height (`textureDimensions(uNearType)` or an extra uniform word); `passRaster`/`TerrainTextures`/`ShadeTextures`/`passShade` audited for `w == h`.
+- [ ] gpucompare (`gpucompare` skill): every existing row within tolerance with world_m1 on `terrainBand {8,7,5,3}`, plus one dev fixture with a 3x5 (tall) band. -> `arch-review`.
+
+### WS1-04 world_m1: stage-1 bounds, band, relay  [P1] [todo] [PC-B kestrel-4]
+- [ ] `bounds` = union: circle (1496.5, 1024.5) r 96 + capsule (1440,1034)-(1350,1048) r 40 + capsule (1350,1048)-(1240,1047) r 40. `terrainBand {cx0: 8, cy0: 7, cw: 5, ch: 3}`. `nav` unchanged; no beasts west of x 1400.
+- [ ] Entity `relayBend` at (1262, 1033), z ground on an existing flat-topped Quaternius rock/stone mesh base (mesh structure, z = base top): voxel `relay` anim `dead`, collider, `light {preset:'relay', on:false}` 1.1 m up, `waystone {id:'ws_roadBend', label, kind:'relay', order:2}`. `endMarker` gets `waystone {id:'waystone', kind:'stone', order:1}` (id unchanged).
+- [ ] Check that World.load and serialize keep the unknown component `waystone` on the entity; if not, stop and ASK ARCHITECT (no engine change in this row).
+- [ ] `overworld_far.js detail.exclude`: disc (1262, 1033) r 8. Content-canonical + content-smoke tests green; one headless capture at (1268, 1040, yaw 270) shows the relay on its base, no float/sink.
+
+### WS1-05 Dress the road west (existing meshes)  [P1] [todo] [PC-B kestrel-4]
+- [ ] `gen-roadside-meshes.mjs`: flags `--prefix --side left|right --u0 --u1 --v0 --v1 --count`; only the given prefix is replaced; `roadL###` untouched (diff shows no roadL change).
+- [ ] Fix: `fmt()` writes `scale` (PLANT_SCALE); test or dry-run check that every plant row carries it.
+- [ ] Runs: `roadW` left u 250..300 count ~60; `roadN` right u 110..300 v 8..26 count ~140, tree quota 0.25; keep-out disc relay (1262, 1033) r 8 and the WS1-08 route line (2 m). Printed capsules added to `overworld_far.js detail.exclude`, no warning.
+- [ ] Report counts by class + mesh; mesh-place budget tool (`tools/mesh-place-budget.mjs`) green.
+
+### WS1-06a Waystone list + save shape  [P1] [todo] [PC-B kestrel-1]
+- [ ] Sim: points from entities with `components.waystone` (ordered by `order`); `touch(id, pose)` = heal + one requestSave + anchor stored in `world.state['waystone.points'][id]`; `list(out)`, `anchor(id)`; `waystone {waystoneId, pos}` kept as the respawn record.
+- [ ] Old save (`waystoneId:'waystone'`, no points map) seeds the map with that entry; `SAVE_VERSION` stays 1; a fresh game has an empty map.
+- [ ] `waystoneTouch.js` list-driven for `kind:'stone'` points (meadow behaviour unchanged: same radius, re-arm, event `{id:'waystone'}`).
+- [ ] Tests: order, touch, double touch, old-save seed, save round-trip, 0 alloc per step.
+
+### WS1-06b Wake the road-bend relay  [P1] [todo] [PC-B kestrel-1]
+- [ ] Interactable `relay.<id>` (E, radius 2.2, WRITER prompt) for every `kind:'relay'` point, added on each `world:loaded`; behaviour `relay.wake` in `quest/index.js`.
+- [ ] `relayWake.js`: dead -> `wake` clip + `playRelayHum` -> light on at `wakeLightFrame` (grow ramp if LightSet allows, else on) -> `awake` loop; sets `waystone.<id>.woken`, calls the sim touch, emits `prop:touched {id, kind:'relay'}`, toast (WRITER). E on an awake relay = touch only.
+- [ ] Reload/restart: woken relays come back `awake` + light on, no hum; dead ones `dead`. Tower beacon keys untouched (tower.test.js green).
+- [ ] Tests: wake once, timer/clip/light order, reload awake, 0 alloc per step. One headless capture of dead + awake.
+
+### WS1-07a Map card: travel markers + pick  [P1] [todo] [PC-B kestrel-1]
+- [ ] `createChartCard` `setMarker(x, y, kind|digit)` (one-cell update); untouched relay = `o`, touched points show their digit while the card is open; travel line at the bottom (WRITER labels).
+- [ ] Digit key on the open card with a touched target -> `onTravel(id)` callback; other keys keep today's close rule; quest kinds (QG-04) intact.
+- [ ] mapCard tests: digits per touched set, setMarker, digit vs close key, no alloc in draw. Preview updated.
+
+### WS1-07b Travel: fade, teleport, reset  [P1] [todo] [PC-B kestrel-1]
+- [ ] `travel.js` state machine per 38.36 item 4 (0.35 s out / in, input locked, gates: alive, no dialogue/inventory/log, wake done, > 6 m from target).
+- [ ] At black: anchor pose, zero velocity, re-ground, `hzb.invalidate('travel')`, `beasts.resetAll`, `targeting.clear`, `syncFacing`, `vitals.clearSafe()`, target becomes the respawn point (touch = heal + save).
+- [ ] Tests: timings, gates, pose inside `bounds`, invalidate/reset calls, 0 alloc. Main session: one browser pass meadow -> relay -> meadow, fauna re-spawns, no frame of the old view after the fade.
+
+### WS1-08 Gates: route walk, perf, gpucompare  [P1] [todo] [PC-B kestrel-4]
+- [ ] `route-walk.mjs` leg 8 waystone -> relay ((1420,1032) -> (1350,1050) -> (1270,1042)), grid + mesh, completes, no fall, ends <= 3 m from the relay; bound probe west of x 1200 stops at the bound.
+- [ ] Perf pose `roadBend` (1268, 1040, yaw 270) + tower pose: JS <= 8 ms, GPU p95 <= 8 ms ultra, heap flat; load-time delta vs before WS1-02 printed. If GPU fails: report, fallback `cw: 4` (38.36 item 1).
+- [ ] gpucompare row at `roadBend`; existing rows within tolerance.
+
+### WS1-09 Optional m1 objective "Wake the relay at the road bend"  [P2] [todo] [PC-B kestrel-4]
+- [ ] Only if trivial (38.36 item 5): m1 objective 7 `relay1`, flag `waystone.ws_roadBend.woken`; old save with 6/6 shows step 7, no replayed "quest complete"; the waystone-step save still fires once. Else close as won't-do.
+
+### WS1-W1 Stage-1 texts  [P1] [todo] [writer] NEEDS WRITER
+- [ ] Relay prompt (`[E] ...`, <= 24); wake toast (2 lines, <= 40 each, the relay hums awake + saved/remembered); travel labels "Meadow stone" / "Road-bend relay" (<= 18); map travel line header (<= 30); optional m1 step `relay1` HUD text (<= 38). ASCII only, canon voice (game-design 3).
