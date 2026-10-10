@@ -559,3 +559,7 @@ Tests: new quest/ch1Mount.test.js; filter suites 72 PASS; main.js syntax OK (.mj
 
 - CH1-10 part B (branch ch1-10-walk): `game/js/quest/ch1Walkthrough.test.js` new. Real questRelay + book + dialogueCtl (Burl accept/hand-in) + collectSave/applySave round trip (between q03 and q04).
   Asserts wake..Fen chain completes, 7 section toasts exactly once in order, no toast on restore/repeat events. No game code changed, no bugs found.
+### CH1-10 C + WS1-08 perf AC (tooling) - kestrel-2, perf-poses
+- content/dev-poses.js GATE_POSES (shared table, re-exported by tools/bench-poses.js): added `towerInterior` (brazier cam) and `towerExterior` (1468,1025.5 yaw 90 pitch +14, towerCrown at 1497,1025 z12-14 in view; pitch is a first guess, check with one capture); `roadBend` already existed.
+- tools/perf-pose.mjs: `--poses` = GATE_POSES slugs (default roadBend,towerInterior,towerExterior), new columns heap delta MB (gc before/after window) + load ms, PASS/FAIL lines for ultra (JS p95 <= 8, GPU p95 <= 8, heap <= 2 MB). Exit 1 on FAIL. Node-checked only, not run in a browser. perf-gate.test unchanged (table shape unchanged).
+- Run: `node tools/perf-pose.mjs --port {port} --configs "ultra:480x180" --trees default --out perf-ws1-08.json` (port, port+1 used)
