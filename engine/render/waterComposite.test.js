@@ -314,7 +314,7 @@ function expectedHash(px, py, L, time = 0) {
   ok('shore: foam changes only foreground, background equals the same-depth centre', edge.bg.every((v, i) => v === centre.bg[i]));
   ok('column tint: shallow water is lighter than a column beyond tintDepth', centre.bg[2] > deep.bg[2]);
   const grazing = sample(5.5, 5.5, 0.2, false, -0.1);
-  ok('column tint: equal vertical columns keep equal colours at different view slopes', centre.bg.every((v, i) => v === grazing.bg[i]));
+  ok('AUD-42 fresnel: a grazing view no longer matches the steeper one (sky tint grows with view angle)', !centre.bg.every((v, i) => v === grazing.bg[i]));
   const sky = sample(2, 5.5, 0, true);
   ok('sky: keeps the deep path colour and surface ramp even at the edge', sky.glyph[0] === '~'.charCodeAt(0) - 32 && sky.bg.every((v, i) => v === deep.bg[i]));
   const far = sample(2, 5.5, 0.2, false, -0.2, 50);

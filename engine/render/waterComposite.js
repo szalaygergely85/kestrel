@@ -23,6 +23,8 @@
 import { sunFromWorld } from './lighting.js';
 import { unprojectCell, unprojectPitched, pitchedFogScale } from './projection.js';
 import { lastWaterSelection } from './water.js';
+import { SKY_LUT_N } from './gpu/wgsl/skyLut.js';
+import { skyLutFromPalette, waterReflectAt, waterReflectMix } from './waterReflect.js';
 import {
   WL_STRIDE, WL_SLOTS, WFOG_LEN, RIPPLE_SLOTS, RIPPLE_ACC_MIN, DEFAULT_RIPPLE_GLYPH, DEFAULT_RIPPLE_GAIN,
   fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit, waterSurfaceHash, waterEdgeDistance, waterfallHash, rippleAccAt,
@@ -32,6 +34,9 @@ const _table = new Float32Array(WL_SLOTS * WL_STRIDE);
 const _fog = new Float32Array(WFOG_LEN);
 const _rip = new Float32Array(RIPPLE_SLOTS * 4); // S8-B2-13b (38.14): 8 rings x (x, y, age, amp)
 const _p = new Float64Array(3);
+const _refl = new Float64Array(4); // AUD-42: [fresnel, skyR, skyG, skyB]
+const _skyLut = new Float32Array(4 * SKY_LUT_N);
+let _lutPalette = null, _lutTime = null, _lutElevTop = 0;
 const _floorP = new Float64Array(3);
 const _sun = { dirX: 0, dirY: 0, dirZ: 1, ambientI: 0, sunI: 0 };
 /** @type {Uint8Array|null} */
@@ -55,6 +60,9 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     if (!_mask || _mask.length !== n) _mask = new Uint8Array(n); else _mask.fill(0);
     fb.waterMask = _mask;
   }
+  const pal = fb.palette;
+  if (pal !== _lutPalette || (pal && pal.defaultTime !== _lutTime)) { _lutPalette = pal; _lutTime = pal ? pal.defaultTime : null; _lutElevTop = skyLutFromPalette(pal, _skyLut); }
+  const reflTerms = pitched ? pterms : terms, reflOn = _lutElevTop > 0 && !(pitched && pterms.ortho);
   const sel = lastWaterSelection();
   fillWaterSlotTable(sel, world, fb.waterLooks || defaultWaterLooks(), _table, fb.timeSec || 0);
   waterFogParams(fb.matTable, fb.palette, !!world.terrain, _fog);
@@ -110,6 +118,12 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
       if (flowStreakHit(_table, lb, _p[0], _p[1])) glyph = _table[lb + 24]; // US-141a (35.4): flowing water streaks
       if ((h >>> 8) * (1 / 16777216) > 1 - _table[lb + 15]) {
         wr += (_table[lb + 8] - wr) * 0.5; wg += (_table[lb + 9] - wg) * 0.5; wb += (_table[lb + 10] - wb) * 0.5;
+      }
+      if (reflOn) { // AUD-42: sky tint at the mirrored elevation + fresnel (fg and bg)
+        waterReflectAt(reflTerms.eyeZ, _p[0] - reflTerms.eyeX, _p[1] - reflTerms.eyeY, _p[2] - reflTerms.eyeZ, _skyLut, _lutElevTop, _refl);
+        const F = _refl[0];
+        wr = waterReflectMix(wr, F, _refl[1]); wg = waterReflectMix(wg, F, _refl[2]); wb = waterReflectMix(wb, F, _refl[3]);
+        br0 = waterReflectMix(br0, F, _refl[1]); bg0 = waterReflectMix(bg0, F, _refl[2]); bb0 = waterReflectMix(bb0, F, _refl[3]);
       }
     }
     // S8-B2-13b (38.14, the note of record): splash ripples, !sheet only (incl. see-through: replaces the floor
