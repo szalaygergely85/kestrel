@@ -80,7 +80,8 @@
       "Mind their tusks, sky-cub."
     ], "speaker": "burl"},
     "bear.blade.wait": {"end": true, "lines": [
-      "NEEDS WRITER: blade active, not ready (placeholder)"
+      "The tower's not done with you yet, sky-cub.",
+      "Finish up there. I'll be here. Bears keep."
     ], "speaker": "burl"},
     "bear.early": {"end": true, "lines": [
       "Out of the tower already, sky-cub? Empty-pawed?",

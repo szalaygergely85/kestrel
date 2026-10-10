@@ -95,7 +95,7 @@ const R = 'q.tower.blade.ready';
 { for (const have of [[], ['q.tower.blade.available']]) { const f = mk(...have); const w = walk(f, 0);
   ok('9b early (' + have + '): early lines, no new flags', ids(w.said) === ids([burl('Out of the tower already, sky-cub? Empty-pawed?'), burl('Climb back up. The top holds more than a view.')]) && f.s.size === have.length, w.said.join('|')); } }
 // 9c PO-CH1-01: blade accepted but not ready -> its own placeholder node (NEEDS WRITER), not 'Empty-pawed?'
-{ const f = mk('q.tower.blade.active'); const w = walk(f, 0); ok('9c blade active: bear.blade.wait placeholder, no flags', w.said.length === 1 && w.said[0].includes('NEEDS WRITER') && f.s.size === 1, w.said.join('|')); }
+{ const f = mk('q.tower.blade.active'); const w = walk(f, 0); ok('9c blade active: bear.blade.wait lines, no flags', w.said.length === 2 && w.said[0].includes('not done with you yet') && f.s.size === 1, w.said.join('|')); }
 // graph-wide
 {
   const reach = new Set(), st = comp.entry.map((e) => e.node);

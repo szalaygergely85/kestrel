@@ -729,6 +729,13 @@ Notes:
 | `bear.early` (1) | BURL | `Out of the tower already, sky-cub? Empty-pawed?` | 47 |
 | `bear.early` (2) | BURL | `Climb back up. The top holds more than a view.` | 46 |
 
+| Key | Speaker | Text | Chars |
+|---|---|---|---|
+| `bear.blade.wait` (1) | BURL | `The tower's not done with you yet, sky-cub.` | 43 |
+| `bear.blade.wait` (2) | BURL | `Finish up there. I'll be here. Bears keep.` | 42 |
+
+`bear.blade.wait` (PC-B writer, owner-authorised): entry for `q.tower.blade.active` (note read or sword taken, blade quest not finished). Dry nudge back to the tower; names neither the blade nor the player. End node, no flags. Replaces the "NEEDS WRITER" placeholder.
+
 `bear.early` (PC-B writer, owner-authorised): the fallback entry, talking to Burl before `q.tower.blade.ready` (the blade is not taken yet). Nudges the player back up the tower, echoing `note.keepLight` ("Climb the stair to the very top") without naming the blade or the player. End node, no flags. Replaces the "Come back when you've found your feet." placeholder.
 
 `bear.follow` is used both by the hand-in flow and by entry 4 (`q.burl.boars.done`, not following yet). Its last node sets `s.burl.follow`.
