@@ -93,7 +93,7 @@ const R = 'q.tower.blade.ready';
 }
 // 9b before the blade is done: one pre-quest line, no flags, nothing offered
 { for (const have of [[], ['q.tower.blade.available'], ['q.tower.blade.active']]) { const f = mk(...have); const w = walk(f, 0);
-  ok('9b early (' + have + '): one line, no new flags', ids(w.said) === ids([burl("Come back when you've found your feet.")]) && f.s.size === have.length, w.said.join('|')); } }
+  ok('9b early (' + have + '): early lines, no new flags', ids(w.said) === ids([burl('Out of the tower already, sky-cub? Empty-pawed?'), burl('Climb back up. The top holds more than a view.')]) && f.s.size === have.length, w.said.join('|')); } }
 // graph-wide
 {
   const reach = new Set(), st = comp.entry.map((e) => e.node);
