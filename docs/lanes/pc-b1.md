@@ -485,3 +485,9 @@ B1 2026-10-09 (kestrel-1) SETTINGS-MOUNT-01 -> po-review: full createSettingsVie
 - design/models/notes.js: `journalCh1` (CH1-W5, 13 lines, signed W.). questLog.js: options `doneTitle` ('Beyond the Wall' for a DONE main quest) + `onJournal(0)` on Enter (questLogJournal.test.js).
 - NEEDS B1-main: mount chapterCard on the last m1 section done (book onChange) with openNote = id => noteRead({world, def:{noteId:id}}), isNoteOpen = isNoteOpen; OR isLocked() into uiLocked, pushDim before applySceneDim, draw(ui); questLog onJournal: i => noteRead({world, def:{noteId:'journalCh1'}}).
 - Headless capture NOT run (only `node --check`): `node tools/verify-chapter-card.mjs {port}` (9575-9649).
+
+### CH1-D3 Fen recipe (kestrel-2, designer, 2026-10-10) - design (tests NOT run: no shell in this agent)
+- `design/chargen/human_kit.js`: shell `tunic` (top, long sleeves + skirt, paint 2), attachment `staff` (hat slot, bone RightHand, anchor hand_r, 4x4x67, fingers wrap it), `mended` (beard slot, paintOnly decal: stubble, 6 stitched patches, bag strap, ragged hem, boot scuffs); RANDOM weight 0 each; `kit.looks.fen` next to knight. defaults / knight untouched (attachments appended after heraldry).
+- `design/chargen/recipes/fen.recipe.json` = kit.looks.fen (bare CharRecipe). Preview chargen_kit.html outfit "Fen". README section 25 bullet. No palette change (lincoln / gall / walnut dyes).
+- NEEDS PC-A (engine ask): a `held` attachment slot + several decals per recipe (the staff / stubble+patches use hat / beard slots as a workaround).
+- Main: `node tools/chargen-build-kit.mjs`, `node tools/run-tests.mjs --filter chargen`, open preview/chargen_kit.html (outfit Fen), build the `villager.fen` package from the recipe.
