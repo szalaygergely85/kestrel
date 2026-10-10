@@ -1081,3 +1081,6 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - The world follows the canon pencil line (game-design 3): west of the tower, relay to relay toward the signal. Stages: 0 tower+meadow (done); **1 road west to the bend (~250 m play area), dead relay #1 = ws_roadBend**; 2 river crossing + crossroads, relay #2 = ws_fordWest; 3 Outwall village, relay #3 = ws_outwall; 4 north bank (M4 dungeon area); 5 signal-tower hill (Signal Source). Spots from docs/proposals/waystones-2026-10-10.md.
 - **Relays ARE the waystones:** waking a dead relay makes it a travel + save point (D-057 travel from the map, touched/woken only). The meadow waystone stays as the first one.
 - Dressing uses the existing meshes + animals (D-053). **Owner go: start stage 1**; stage 2 after the owner walks stage 1.
+
+## D-061 - Golden pocket compass HUD (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner: "can be a small golden pocket compass to show the next quest bottom right corner?" -> a small brass/gold pocket compass in the bottom-right HUD corner; the needle points to the next quest target (active step target, or the giver showing `!`/`?`), distance under it (e.g. `42 m`); hidden when nothing is tracked and in menus/dialogue/capture modes. Designer draws it (ASCII, in the UI style); programmer adds the pure HUD module + mount.
