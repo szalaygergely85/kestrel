@@ -7,8 +7,7 @@
     { "id": "q03", "title": "Boars in the Woods" },
     { "id": "q04", "title": "Follow the Bear" },
     { "id": "q05", "title": "Awaken the Stone" },
-    { "id": "q06", "title": "The Next Light" },
-    { "id": "q07", "title": "Not Alone" }
+    { "id": "q06", "title": "The Next Light" }
   ],
   "objectives": [
     { "id": "wake", "section": "q01", "text": "Get up from the wreck", "when": { "type": "flag", "id": "wake", "equals": true } },
@@ -20,7 +19,6 @@
     { "id": "waystone", "section": "q05", "text": "Wake the waystone", "when": { "type": "flag", "id": "waystone.waystone.woken", "equals": true } },
     { "id": "road", "section": "q06", "text": "Take the road west", "when": { "type": "area", "id": "roadWest" } },
     { "id": "relayFound", "section": "q06", "text": "Find the dead relay at the bend", "when": { "type": "area", "id": "bendRelay" } },
-    { "id": "relay1", "section": "q06", "text": "Wake the relay", "when": { "type": "flag", "id": "waystone.ws_roadBend.woken", "equals": true } },
-    { "id": "fen", "section": "q07", "text": "Meet the one who is not alone", "when": { "type": "flag", "id": "fen.met", "equals": true } }
+    { "id": "relay1", "section": "q06", "text": "Wake the relay", "when": { "type": "flag", "id": "waystone.ws_roadBend.woken", "equals": true } }
   ]
 }
