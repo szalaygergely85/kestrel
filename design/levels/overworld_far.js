@@ -46,7 +46,7 @@
   var DEF = {
     name: 'overworld_far',
     version: 2,
-    map: { w: 256, h: 256, cell: 8 },                 // FAR grid: 2048 m x 2048 m, baked once
+    map: { x0: 0, y0: 0, w: 256, h: 256, cell: 8 },                 // FAR grid: 2048 m x 2048 m, baked once
     chunk: { size: 128, nearCell: 2, note: 'D-007: 64x64 near cells of 2 m = 128 m chunks; 3x3 resident' },
     seed: 7331,
 
@@ -209,7 +209,14 @@
       water:  { id: 2, colors: ['river', 'river', 'riverLight'], glyphs: { close: '~-~=', near: '~-', mid: '~-', far: '-~' }, face: '~', albedo: 0.90,
                 glint: { hz: 1.5, amount: 0.35 } },
       rock:   { id: 3, colors: ['stoneDark', 'rock', 'stoneLight'], glyphs: { close: '#%&', near: '#%', mid: '%#', far: '%' }, face: '#%', albedo: 0.80 },
-      path:   { id: 4, colors: ['strawDark', 'strawDark', 'straw'], glyphs: { close: '.:,', near: '.:', mid: '.', far: '.' }, face: ':', albedo: 0.70 }
+      path:   { id: 4, colors: ['strawDark', 'strawDark', 'straw'], glyphs: { close: '.:,', near: '.:', mid: '.', far: '.' }, face: ':', albedo: 0.70 },
+      // MAP-01b (arch 38.42): appended ids 5-10, EXISTING palette colours only. 'mud' (designer doc) = fen (id 8).
+      sand:    { id: 5,  colors: ['strawDark', 'strawLight', 'white'], glyphs: { close: '.:`', near: '.:', mid: '.', far: '.' }, face: ':.', albedo: 0.90 },
+      snow:    { id: 6,  colors: ['stoneLight', 'white', 'white'], glyphs: { close: '.*`', near: '.*', mid: '.', far: '.' }, face: '*.', albedo: 1.00 },
+      reeds:   { id: 7,  colors: ['grassDark', 'grass', 'strawLight'], glyphs: { close: '|!;', near: '|!', mid: '!;', far: ';' }, face: '|!', albedo: 0.75 },
+      fen:     { id: 8,  colors: ['forestDark', 'strawDark', 'grassDark'], glyphs: { close: '~,;', near: ',;', mid: ',', far: ',' }, face: ';,', albedo: 0.60 },
+      flowers: { id: 9,  colors: ['turfDark', 'turf', 'gold'], glyphs: { close: '*",', near: '*"', mid: '"', far: '.' }, face: ',:', albedo: 0.85 },
+      alpine:  { id: 10, colors: ['stoneDark', 'turfDark', 'stoneLight'], glyphs: { close: '.,"', near: '.,', mid: ',', far: '.' }, face: '#,', albedo: 0.75 }
     },
 
     // ---- US-016b b: NEAR LOD look (2 m cells within 300 m) ----
@@ -500,9 +507,9 @@
       x = x0 + (i + 0.5) * cell; y = y0 + (j + 0.5) * cell;
       height[i + j * w] = heightAt(x, y); type[i + j * w] = typeAt(x, y);
     }
-    return { x0: x0, y0: y0, w: w, h: h, cell: cell, height: height, type: type, TYPES: ['grass', 'forest', 'water', 'rock', 'path'] };
+    return { x0: x0, y0: y0, w: w, h: h, cell: cell, height: height, type: type, TYPES: Object.keys(DEF.terrain).sort(function (a, b) { return DEF.terrain[a].id - DEF.terrain[b].id; }) };
   }
-  function generate() { return bake(0, 0, DEF.map.cell, DEF.map.w, DEF.map.h); }
+  function generate() { return bake(DEF.map.x0 || 0, DEF.map.y0 || 0, DEF.map.cell, DEF.map.w, DEF.map.h); }
   function bakeChunk(cx, cy) { var n = DEF.chunk.size / DEF.chunk.nearCell; return bake(cx * DEF.chunk.size, cy * DEF.chunk.size, DEF.chunk.nearCell, n, n); }
   function gridHeight(G, x, y) {                // bilinear on a baked grid; out of grid -> null
     var fx = (x - (G.x0 || 0)) / G.cell - 0.5, fy = (y - (G.y0 || 0)) / G.cell - 0.5, i = Math.floor(fx), j = Math.floor(fy);

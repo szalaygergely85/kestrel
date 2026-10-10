@@ -134,7 +134,8 @@ export function scatterTrees(terrain, structures = [], cfg = terrain.recipe.reci
  * yawDeg:Int16Array, species:Uint16Array, r2:Float32Array,
  * speciesDefs:Array<{model?:string,mesh?:string,layer:number,shadow:boolean,sway:boolean,lodCells:number,collider?:DetailCollider}>,
  * tileM:number,tx0:number,ty0:number,tilesX:number,tilesY:number,tileStart:Uint32Array}} DetailSet */
-const DETAIL_TYPES = ['grass', 'forest', 'water', 'rock', 'path'];
+// MAP-01b (arch 38.42): ids 0-4 fixed, 5-10 appended (sand, snow, reeds, fen, flowers, alpine); 'mud' = fen. Same order as the recipe `terrain` ids.
+const DETAIL_TYPES = ['grass', 'forest', 'water', 'rock', 'path', 'sand', 'snow', 'reeds', 'fen', 'flowers', 'alpine'];
 const detailNormal = { x: 0, y: 0, z: 1 };
 
 export function validateDetailConfig(cfg, typeNames = DETAIL_TYPES) {

@@ -46,7 +46,7 @@ const KIND_TERRAIN: u32 = ${KIND_TERRAIN}u;
 const FACE_PACKED: u32 = ${FACE_PACKED}u;
 const PLANEID_TERRAIN: u32 = 0xFFFFFFFFu;
 fn farTypeNearest(x: f32, y: f32) -> i32 {
-  let ix = i32(floor(x / u.farMap.z)); let iy = i32(floor(y / u.farMap.z));
+  let ix = i32(floor((x - u.farMap.x) / u.farMap.z)); let iy = i32(floor((y - u.farMap.y) / u.farMap.z));  // MAP-01b: far grid offset
   let W = i32(u.farMap.w);
   if (ix < 0 || iy < 0 || ix >= W || iy >= W) { return 0; }
   return i32(textureLoad(uFarType, vec2i(ix, iy), 0).r);

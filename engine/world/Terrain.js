@@ -16,6 +16,18 @@ const TYPE_NAMES = ['grass', 'forest', 'water', 'rock', 'path'];
 // palette material key, not look right yet.
 const TYPE_FLOOR_MAT = ['grass', 'grass', 'rock', 'rock', 'grass'];
 
+/** MAP-01b (arch 38.42): the type table is data-sized from `recipe.terrain` (id = entry.id, <= 16 entries, no gaps; ids 0-4 fixed). */
+const MAX_TYPES = 16;
+function typeTables(look) {
+  const names = TYPE_NAMES.slice(), floor = TYPE_FLOOR_MAT.slice();
+  if (!look) return { names, floor };
+  const keys = Object.keys(look);
+  if (keys.length > MAX_TYPES) throw new Error(`Terrain: ${keys.length} terrain types (max ${MAX_TYPES})`);
+  for (const k of keys) { const e = look[k]; names[e.id] = k; if (e.floor) floor[e.id] = e.floor; else if (e.id >= TYPE_FLOOR_MAT.length) floor[e.id] = 'grass'; }
+  for (let i = 0; i < keys.length; i++) if (!names[i]) throw new Error(`Terrain: terrain type id gap at ${i}`);
+  return { names, floor };
+}
+
 function now() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
@@ -40,6 +52,11 @@ export class Terrain {
     this.mapW = recipe.map.w;
     this.mapH = recipe.map.h;
     this.mapCell = recipe.map.cell;
+    this.mapX0 = recipe.map.x0 || 0; // MAP-01b: far grid origin (default 0,0 = byte-identical)
+    this.mapY0 = recipe.map.y0 || 0;
+    if (this.mapW > 512 || this.mapH > 512) throw new Error('Terrain: far grid max 512 x 512');
+    const tt = typeTables(recipe.terrain);
+    this.typeNames = tt.names; this.typeFloorMat = tt.floor;
 
     // Far bake (arch 7.2): R32F/R8UI-shaped typed arrays, GPU-upload-ready.
     this.farH = new Float32Array(this.mapW * this.mapH);
@@ -70,14 +87,14 @@ export class Terrain {
     this._bakeCol = 0;
     // Reused "grid" view object handed to `recipe.util.gridHeight` (no
     // per-call allocation) - farH is the whole 2048x2048 m map at (0,0).
-    this._farGrid = { x0: 0, y0: 0, w: this.mapW, h: this.mapH, cell: this.mapCell, height: this.farH };
+    this._farGrid = { x0: this.mapX0, y0: this.mapY0, w: this.mapW, h: this.mapH, cell: this.mapCell, height: this.farH };
     // Same shape, but over the RENDER heights (with canopy) - the terrain
     // caster/march samples this one, never `_farGrid` (US-016).
-    this._farGridDraw = { x0: 0, y0: 0, w: this.mapW, h: this.mapH, cell: this.mapCell, height: this.farHDraw };
+    this._farGridDraw = { x0: this.mapX0, y0: this.mapY0, w: this.mapW, h: this.mapH, cell: this.mapCell, height: this.farHDraw };
     // Forest type id + canopy height (m), read once from the recipe (never
     // hard-coded - architecture.md 14.4 item 10 "recipe constants arrive
     // through TLOOK/uniforms from the registry", same principle in JS).
-    this._forestTypeId = TYPE_NAMES.indexOf('forest');
+    this._forestTypeId = this.typeNames.indexOf('forest');
     this._canopyM = (recipe.recipe && recipe.recipe.forest && recipe.recipe.forest.canopy) || 0;
 
     // Chunk geometry (AUD-04: the dormant 3x3 resident ring was removed; the near band is the only near truth).
@@ -121,11 +138,11 @@ export class Terrain {
 
   /** Material key name for a terrain type id (query/physics use only, US-025 - castTerrain itself lands in US-016). */
   floorMatFor(typeId) {
-    return TYPE_FLOOR_MAT[typeId] || 'grass';
+    return this.typeFloorMat[typeId] || 'grass';
   }
 
   typeName(typeId) {
-    return TYPE_NAMES[typeId] || 'grass';
+    return this.typeNames[typeId] || 'grass';
   }
 
   /** Bilinear height on the baked far 8 m grid; null outside the grid or before `farReady`. */
@@ -355,17 +372,17 @@ export class Terrain {
       }
     }
     if (this.farReady) {
-      const c = this.mapCell, m = c + eps;
-      const i0 = Math.max(0, Math.ceil((x0 - m) / c - 0.5)), i1 = Math.min(this.mapW - 1, Math.floor((x1 + m) / c - 0.5));
-      const j0 = Math.max(0, Math.ceil((y0 - m) / c - 0.5)), j1 = Math.min(this.mapH - 1, Math.floor((y1 + m) / c - 0.5));
+      const c = this.mapCell, m = c + eps, ox = this.mapX0, oy = this.mapY0;
+      const i0 = Math.max(0, Math.ceil((x0 - ox - m) / c - 0.5)), i1 = Math.min(this.mapW - 1, Math.floor((x1 - ox + m) / c - 0.5));
+      const j0 = Math.max(0, Math.ceil((y0 - oy - m) / c - 0.5)), j1 = Math.min(this.mapH - 1, Math.floor((y1 - oy + m) / c - 0.5));
       if (i1 >= i0 && j1 >= j0) {
         const canopy = this._canopyM, forestId = this._forestTypeId, util = this.util;
-        const hi0 = Math.ceil((x0 - c) / c - 0.5), hi1 = Math.floor((x1 + c) / c - 0.5);
-        const hj0 = Math.ceil((y0 - c) / c - 0.5), hj1 = Math.floor((y1 + c) / c - 0.5);
+        const hi0 = Math.ceil((x0 - ox - c) / c - 0.5), hi1 = Math.floor((x1 - ox + c) / c - 0.5);
+        const hj0 = Math.ceil((y0 - oy - c) / c - 0.5), hj1 = Math.floor((y1 - oy + c) / c - 0.5);
         for (let j = j0; j <= j1; j++) {
-          const y = (j + 0.5) * c, rowH = j >= hj0 && j <= hj1;
+          const y = oy + (j + 0.5) * c, rowH = j >= hj0 && j <= hj1;
           for (let i = i0; i <= i1; i++) {
-            const x = (i + 0.5) * c, k = i + j * this.mapW;
+            const x = ox + (i + 0.5) * c, k = i + j * this.mapW;
             const t = util.typeAt(x, y);
             if (rowH && i >= hi0 && i <= hi1) this.farH[k] = util.heightAt(x, y);
             this.farType[k] = t;
@@ -479,10 +496,10 @@ export class Terrain {
     const BAKE_CHECK_COLS = 4;
     let col = this._bakeCol;
     outer: while (this._bakeRow < this.mapH) {
-      const y = (this._bakeRow + 0.5) * cell;
+      const y = this.mapY0 + (this._bakeRow + 0.5) * cell;
       const rowBase = this._bakeRow * w;
       while (col < w) {
-        const x = (col + 0.5) * cell;
+        const x = this.mapX0 + (col + 0.5) * cell;
         this.farH[rowBase + col] = this.util.heightAt(x, y);
         this.farType[rowBase + col] = this.util.typeAt(x, y);
         col++;
