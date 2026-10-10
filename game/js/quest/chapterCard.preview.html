@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8"><title>chapterCard preview</title>
+<body style="background:#111;color:#e8e2d0;margin:0"><pre id="out" style="font:14px monospace;margin:12px"></pre>
+<script type="module">
+// CH1-09 harness for tools/verify-chapter-card.mjs: the real chapterCard state machine over a text sink (no main.js).
+import { createChapterCard } from './chapterCard.js';
+const cols = 80, rows = 20, grid = Array.from({ length: rows }, () => ' '.repeat(cols).split(''));
+const ui = { cols, rows, setCell(x, y, ch) { if (grid[y]) grid[y][x] = ch; } };
+const world = { state: {} }; let noteOpen = false; const opened = [];
+const card = createChapterCard({ world, openNote: id => { opened.push(id); noteOpen = true; }, isNoteOpen: () => noteOpen });
+const dim = { all: 1 };
+function paint() { for (const r of grid) r.fill(' '); card.draw(ui); document.getElementById('out').textContent = grid.map(r => r.join('')).join('\n'); }
+window.__chapterCardPreview = {
+  card, world, opened, dim, paint,
+  step(sec) { for (let i = 0; i < Math.round(sec * 60); i++) card.update(1 / 60); dim.all = 1; card.pushDim(dim); paint(); },
+  closeNote() { noteOpen = false; },
+};
+paint();
+</script>

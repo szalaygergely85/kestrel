@@ -52,6 +52,25 @@
       ],
       source: 'docs/story.md "The keeper\'s corner" (log book lines + the tally / signal that were the scrawlKeeper decals)'
     },
+    journalCh1: {
+      title: 'Pencil, on the back of the chart',
+      lines: [
+        'I thought the Wall kept the world out.',
+        '',
+        'Now I wonder what it kept hidden.',
+        '',
+        'A talking bear. Stones that shine without fire.',
+        'A stranger who says magic is real.',
+        '',
+        'And somewhere ahead, that same blinking light.',
+        '',
+        'Three short. Three long. Three short.',
+        '',
+        'Someone is still calling.',
+        '- W.'
+      ],
+      source: 'docs/story.md "Chapter complete + journal (CH1-W5)"'
+    },
     keepLight: {
       title: 'A scrap, nailed up',
       lines: ['KEEP THE LIGHT'],
