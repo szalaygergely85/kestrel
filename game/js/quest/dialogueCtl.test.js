@@ -51,9 +51,11 @@ function run(c, f, n) { f.keys.clear(); for (let i = 0; i < n; i++) c.step(DT, f
   f.press('KeyE'); c.step(DT, f.input, true);           // finish typing node 3 (burl)
   assert.equal(c.runner.state === 'choosing', true, c.runner.state);
   const before = c.runner.state;
-  f.press('KeyS'); c.step(DT, f.input, true);
+  f.press('KeyS'); c.step(DT, f.input, true); f.press('KeyW'); c.step(DT, f.input, true);
+  assert.equal(c.runner.selected, 0, 'W/S are not read by the dialogue (movement stays live)');
+  f.press('ArrowDown'); c.step(DT, f.input, true);
   assert.equal(c.runner.selected, 1);
-  f.press('ArrowUp'); c.step(DT, f.input, true); f.press('KeyW'); c.step(DT, f.input, true);
+  f.press('ArrowUp'); c.step(DT, f.input, true); f.press('ArrowUp'); c.step(DT, f.input, true);
   assert.equal(c.runner.selected, 2, 'wraps up');
   f.press('Enter'); c.step(DT, f.input, true);          // pick choice 3 -> node c.l1, NOT also advancing it
   assert.equal(c.runner.state, 'typing');
@@ -154,4 +156,19 @@ console.log('dialogueCtl s. route ok');
   // a stuck lock without an open box self-heals
   c.runner.close(); c.locked = true; c._closing = false; f.keys.clear(); c.step(DT, f.input, true);
   assert.equal(c.locked, false);
+}
+
+// DIALOGUE-LOCK-01 (PO REJECT): arrows / wheel / digits choose, digit also confirms; the box stays open while the player is near.
+{
+  const f = fake(), c = mk(f);
+  let wheel = 0; f.input.consumeWheel = () => { const w = wheel; wheel = 0; return w; };
+  c.openFor('bear'); run(c, f, 1);
+  f.press('KeyE'); c.step(DT, f.input, true); f.press('Enter'); c.step(DT, f.input, true);
+  f.press('KeyE'); c.step(DT, f.input, true); f.press('KeyE'); c.step(DT, f.input, true); f.press('KeyE'); c.step(DT, f.input, true);
+  assert.equal(c.runner.state, 'choosing');
+  wheel = 1; f.press(); c.step(DT, f.input, true); assert.equal(c.runner.selected, 1, 'wheel down');
+  wheel = -1; f.press(); c.step(DT, f.input, true); assert.equal(c.runner.selected, 0, 'wheel up');
+  assert.equal(c.closeIfFar(1, 2), false, 'near: stays open'); assert.ok(c.open);
+  f.press('Digit2'); c.step(DT, f.input, true);
+  assert.notEqual(c.runner.state, 'choosing', 'digit picks and confirms');
 }

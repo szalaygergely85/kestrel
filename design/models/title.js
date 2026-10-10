@@ -408,7 +408,7 @@
   //   r7   |>  1. Tell me a story.                                                                |  (focus band, gold)
   //   r8   |   2. What is this place?                                                             |
   //   r9   |   3. Goodbye.                                                                        |
-  //   r10  |                                                  E: next   W/S: choose           |
+  //   r10  |                                                  E: next   Up/Down: choose           |
   //   r11  +==o===================================================================================o==+
   A.uiStyle.dialogue = {
     story: 'owner 2026-10-09 (talking bear); for the dialogue system (content/dialogue/*.dialogue.json)',
@@ -441,7 +441,7 @@
       keys: '1-3 pick directly; W/S or arrows move; E / Enter choose; mouse hover = focus, click = choose'
     },
     keyHints: { row: 'h-2', align: 'right', colEnd: 'w-4', fg: 'uiDim', keyFg: 'gold',
-                text: 'E: next   W/S: choose', keys: ['E', 'W/S'],
+                text: 'E: next   Up/Down: choose', keys: ['E', 'Up/Down'],
                 note: 'drawn left of the `more` marker; "W/S: choose" only while choices are shown' },
     prompt: { text: '[E] Talk', note: 'world prompt = uiStyle.prompt (gold [E]); aim = the speaker mount `interact`' },
     speechMark: { glyph: '...', fg: 'uiHint', mount: 'speech',

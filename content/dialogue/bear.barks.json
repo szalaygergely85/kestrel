@@ -7,6 +7,9 @@
       {"who":"you","text":"Who's there?"},
       {"who":"burl","text":"Down here. Among the berries."}
     ],
+    "bear.wait": [
+      {"who":"burl","text":"NEEDS WRITER: Not so fast, sky-cub. Wait for me."}
+    ],
     "bear.walk1": [
       {"who":"burl","text":"Hear those birds?"},
       {"who":"you","text":"What about them?"},

@@ -38,14 +38,15 @@ export function createBarks(opt) {
     /** true while a bark is on screen. */
     get active() { return lines !== null; },
     /** Plays bark `id` once ever. Returns true when started or queued. `speaker` (entity id/handle) is kept for the caller's use. */
-    play(id, speaker) {
+    play(id, speaker, repeat) { // repeat=true: no once-flag, dropped while another bark is on screen (PO-CH1-14 'wait for me')
       const ls = barks[id];
       if (!Array.isArray(ls) || ls.length === 0) return false;
       const key = 'bark.' + id;
-      if (world.state[key]) return false;                       // already played
+      if (!repeat && world.state[key]) return false;            // already played
+      if (repeat && lines !== null) return false;
       if (opt.dialogue && opt.dialogue.open) return false;      // never over a dialogue; not marked, can retry
       if (lines !== null && queue.indexOf(id) >= 0) return false;
-      opt.questFlag(key);
+      if (!repeat) opt.questFlag(key);
       api.speaker = speaker === undefined ? null : speaker;
       if (lines === null) begin(id); else queue.push(id);
       return true;
