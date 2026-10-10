@@ -120,7 +120,8 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0) 
   // WET_DARK constant detailShade.js uses (terrain has no emissive term to
   // keep separate, so the whole incoming `b` is the "lit term" here).
   const wet = ctx.shading.wetness || 0;
-  const bWet = b * (1 - WET_DARK * wet);
+  let bWet = b * (1 - WET_DARK * wet);
+  const flo = ctx.shading.floorLum; if (flo > 0 && bWet < flo) bWet = flo; // DN-02 night floor (WGSL twin: shadeTerrain)
 
   // 23.4 near-detail: close < ctx.closeBand wins over the near/mid/far tier
   // picked below (TLOOK texel 7, fixed) and gets a +-0.08 brightness jitter
@@ -333,13 +334,14 @@ function terrainShadingFor(matTable, ctx) {
   const ms = matTable && matTable.shading;
   if (!ms || !matTable.gainLUT) return ctx._paletteShading;
   if (!ctx._mtShading || ctx._mtShadingSrc !== matTable) {
-    ctx._mtShading = { fgMin: ms.fgMin, fgMaxGain: ms.fgMaxGain, fgGamma: ctx._paletteShading.fgGamma, gainLUT: matTable.gainLUT, wetness: ms.wetness };
+    ctx._mtShading = { fgMin: ms.fgMin, fgMaxGain: ms.fgMaxGain, fgGamma: ctx._paletteShading.fgGamma, gainLUT: matTable.gainLUT, wetness: ms.wetness, floorLum: ms.floorLum };
     ctx._mtShadingSrc = matTable;
   } else {
     // S8-B2-14b: wetness is a per-frame value (rain), same `table.shading.wetness`
     // slot detailShade.js reads every frame - refresh it even when the cached
     // object (built once per MaterialTable instance) is reused.
     ctx._mtShading.wetness = ms.wetness;
+    ctx._mtShading.floorLum = ms.floorLum; // DN-02
   }
   return ctx._mtShading;
 }

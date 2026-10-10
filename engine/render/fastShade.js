@@ -253,7 +253,8 @@ export function fastShade(P, matKey, u, v, dist, z, out) {
     if (tex.glyphOverride[idx] && tfFade > 0.5) glyphOverride = tex.glyphOverride[idx];
   }
 
-  const b = frameLm * rec.albedo * s + rec.emissive;
+  let b = frameLm * rec.albedo * s + rec.emissive;
+  const flo = P.liveLook ? P.liveLook.floorEff : 0; if (flo > 0 && b < flo) b = flo; // DN-02 night floor (same value the shade uniform carries)
 
   // glyph: exact Math.pow, see module doc.
   const cutoff = P.shading.cutoff;

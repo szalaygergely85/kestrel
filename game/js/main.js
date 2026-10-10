@@ -1201,8 +1201,18 @@ async function runGame(mode, cinematic = null) {
         if (Number.isFinite(timeHour) && !clockTimeApplied) world.state[CLOCK_KEY] = ((timeHour % 24) + 24) % 24;
         clockTimeApplied = true;
         const P = assets.palette;
-        clockDriver = createClockDriver((hq) => {
-          applySunHours(world, lightSet, hq, worldSunPath, sunEnabled, true);
+        // DN-02 (owner: shadows must not visibly move): the light/shadow sun (lightSet.sun) only follows the clock in 30 game-minute slots,
+        // eased over SHADOW_EASE_STEPS steps; world.sun (sky glow, fog, terrain sun) + sky/ambient/colours stay smooth every step.
+        let shadowHour = NaN, steps = 0;
+        const SHADOW_SLOT_H = 0.5, SHADOW_EASE_STEPS = 4;
+        clockDriver = createClockDriver((hq, force) => {
+          const target = Math.floor(hq / SHADOW_SLOT_H) * SHADOW_SLOT_H;
+          let dh = ((target - shadowHour + 36) % 24) - 12; // signed, wrapped
+          if (!(Math.abs(dh) <= SHADOW_SLOT_H * 1.01) || force) { shadowHour = target; dh = 0; steps = 0; } // load / jump / first step: snap
+          else if (dh !== 0) { const st = SHADOW_SLOT_H / SHADOW_EASE_STEPS; shadowHour = Math.abs(dh) <= st + 1e-9 ? target : shadowHour + Math.sign(dh) * st; }
+          shadowHour = ((shadowHour % 24) + 24) % 24;
+          applySunHours(world, lightSet, shadowHour, worldSunPath, sunEnabled, true); // light + shadow dir (stepped)
+          applySunHours(world, null, hq, worldSunPath, sunEnabled, true); // world.sun smooth (sky glow / fog / terrain)
           const L = blendLook(P, hq, P.daySchedule);
           if (lightSet) { const hu = P.hue[L.ambient]; lightSet.ambient[0] = hu[0] * L.ambientI; lightSet.ambient[1] = hu[1] * L.ambientI; lightSet.ambient[2] = hu[2] * L.ambientI; }
         });
