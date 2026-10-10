@@ -632,3 +632,5 @@ Gates: worldClock.test (5760 steps/day, wrap, round trip), main.js --check, chec
 
 - PO-FIXES-1 (kestrel-1): DIALOGUE-LOCK-01 choices = ArrowUp/Down, wheel, Digit1-4 (digit picks+confirms), W/S not read; hint 'Up/Down: choose' (also design/models/title.js text). CH1-10 m1 title 'Beyond the Wall', beasts text 'Help Burl with the boars'. CH1-12 giverEntity() for compass+map (noteKeepLight). CH1-15 bear.stone.again entry. CH1-17 Fen wiring removed. CH1-13/14 hooks: toast text in main.js (crystal) and bark `bear.wait` (barks.play(id,who,repeat), 12 m / 20 s) = NEEDS WRITER placeholders.
   Gates: quest/ch1/dialogue/bear/barks suites PASS, main.js --check, validate-content, check-deps OK. Not run: browser.
+
+- EDITOR-BAND-01 (kestrel-3): editor always showed band zone 0 (World.load without spawn, never ensureBandFor), so a camera outside it saw the far-canopy edge skirt as a green block. tools/editor/main.js: rebuild() passes spawn=cam; plate refresh (4 Hz) calls world.ensureBandFor(cam). Editor suites PASS; no headless capture run.
