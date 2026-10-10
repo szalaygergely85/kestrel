@@ -93,12 +93,12 @@
     "x": {"ceilH": "sky", "ceilMat": "sky", "desc": "CH1-D1a: head of the scree gully under the breach, 3.3 m (was the 6.0 outcrop): 3.6 m below the X parapet, the crash debris (envelopeHeap) lies here. Reached only from outside", "floorH": 3.3, "floorMat": "rubble", "solid": false, "wallMat": "rock", "zone": "outside"},
     "j": {"ceilH": "sky", "ceilMat": "sky", "desc": "CH1-D1a: scree gully, 3.0 m (was hill path 5.4)", "floorH": 3, "floorMat": "rubble", "solid": false, "wallMat": "rock", "zone": "outside"},
     "k": {"ceilH": "sky", "ceilMat": "sky", "desc": "CH1-D1a: scree gully, 2.7 m (was hill path 4.6)", "floorH": 2.7, "floorMat": "grass", "solid": false, "wallMat": "rock", "zone": "outside"},
-    "l": {"ceilH": "sky", "ceilMat": "sky", "desc": "CH1-D1a: gully mouth, 2.4 m = the hillside (was hill path 3.6)", "floorH": 2.4, "floorMat": "grass", "solid": false, "wallMat": "rock", "zone": "outside"},
+    "l": {"ceilH": "sky", "ceilMat": "sky", "desc": "CH1-D1a: gully mouth, 2.4 m = the hillside (was hill path 3.6)", "floorH": 2.4, "floorMat": "grass", "solid": false, "terrainFloor": true, "wallMat": "rock", "zone": "outside"},
     "m": {"ceilH": "sky", "ceilMat": "sky", "desc": "STEP-HEIGHT-01 (owner: cannot step up): west half of the gap landing (13,10) raised to a 4.2 half-step so D 3.9 -> m 4.2 -> F 4.5 / E 4.2 are all <= 0.3 m", "floorH": 4.2, "floorMat": "floor", "solid": false, "wallMat": "stone", "zone": "upper"},
     "w": {"ceilH": "sky", "ceilMat": "sky", "desc": "rock spur under the summit, 5.4 m", "floorH": 5.4, "floorMat": "rock", "solid": false, "wallMat": "rock", "zone": "outside"},
     "v": {"ceilH": "sky", "ceilMat": "sky", "desc": "rock slope, 4.2 m", "floorH": 4.2, "floorMat": "rock", "solid": false, "wallMat": "rock", "zone": "outside"},
-    ";": {"ceilH": "sky", "ceilMat": "sky", "desc": "hillside grass, 2.4 m", "floorH": 2.4, "floorMat": "grass", "solid": false, "wallMat": "rock", "zone": "outside"},
-    ",": {"ceilH": "sky", "ceilMat": "sky", "desc": "hilltop grass around the tower, 2.4 m (US-016b: the whole outer ring = 2.4 = terrain crown, so the handover mismatch is 0)", "floorH": 2.4, "floorMat": "grass", "solid": false, "wallMat": "rock", "zone": "outside"}
+    ";": {"ceilH": "sky", "ceilMat": "sky", "desc": "hillside grass, 2.4 m", "floorH": 2.4, "floorMat": "grass", "solid": false, "terrainFloor": true, "wallMat": "rock", "zone": "outside"},
+    ",": {"ceilH": "sky", "ceilMat": "sky", "desc": "hilltop grass around the tower, 2.4 m (US-016b: the whole outer ring = 2.4 = terrain crown, so the handover mismatch is 0)", "floorH": 2.4, "floorMat": "grass", "solid": false, "terrainFloor": true, "wallMat": "rock", "zone": "outside"}
   },
   "layers": {
     "tilt": [

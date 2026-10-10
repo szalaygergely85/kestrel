@@ -26,6 +26,11 @@ ok(count(flagged, KIND_WALL) === count(plain, KIND_WALL), 'walls unchanged');
 // flag is ignored without zone outside
 ok(count(buildLevelMesh(loadLevel(def(true, 'inside'))), KIND_FLOOR) === 12, 'zone != outside: flag ignored');
 
+// GS-01f: collider builds keep the floor quad (collision-only); default draw build byte-identical.
+const coll = buildLevelMesh(loadLevel(def(true, 'outside')), { collisionFloors: true });
+ok(count(coll, KIND_FLOOR) === 12, 'collisionFloors: flagged cells keep floors for physics');
+ok(buildLevelMesh(loadLevel(def(false, 'outside')), { collisionFloors: true }).base.triCount === plain.base.triCount, 'unflagged level unchanged by collisionFloors');
+
 // AC2: World carveMask + raster lookup.
 const mk = (d) => World.load({ name: 'w', structures: [{ id: 't', level: 'tf', origin: { x: 10, y: 20, z: 0 } }] },
   new AssetRegistry({ palette: { rgb: {} }, levels: { tf: d } }));

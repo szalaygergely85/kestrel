@@ -85,8 +85,9 @@ function emitPlane(builder, kind, face, matKey, c, r, zRef, h, bits, faceUp) {
   builder.addQuad(p12, uv8, 0, 0, nz, flat0, flat1, aux8);
 }
 
-function emitFloor(builder, sec, c, r, relief, w) {
-  if (isTerrainFloor(sec)) return; // GS-01a: terrain shows through (World.carveMask leaves this cell uncarved)
+function emitFloor(builder, sec, c, r, relief, w, keepTerrainFloor) {
+  // GS-01f: collider builds pass keepTerrainFloor so the cell stays walkable (collision-only floor)
+  if (!keepTerrainFloor && isTerrainFloor(sec)) return; // GS-01a: terrain shows through (World.carveMask leaves this cell uncarved)
   const h = sec.floorH;
   const kind = sec.solid ? KIND_TOP : KIND_FLOOR;
   const bits = relief.floorRise[r * w + c];
@@ -226,7 +227,7 @@ function pickTag(...secs) {
  * (both just re-run this - it is cheap and deterministic, so "re-run and
  * keep only what changed" needs no incremental bookkeeping).
  * @param {import('../world/Level.js').Level} level
- * @param {{matIdFor?: (key: string) => number, footZ?: number}} opts
+ * @param {{matIdFor?: (key: string) => number, footZ?: number, collisionFloors?: boolean}} opts
  */
 function computeLevelMeshData(level, opts) {
   const matIdFor = opts.matIdFor;
@@ -266,7 +267,7 @@ function computeLevelMeshData(level, opts) {
       const own = S(c, r);
       if (own) {
         const builder = builderFor(pickTag(own));
-        emitFloor(builder, own, c, r, relief, w);
+        emitFloor(builder, own, c, r, relief, w, opts.collisionFloors === true);
         emitCeil(builder, own, c, r, relief, w);
       }
       if (c === 0) doBoundary('EW', c, r, S(c - 1, r), own, c);
