@@ -163,7 +163,7 @@
       "That's impossible."
     ], "next": "bear.stone.11", "speaker": "you"},
     "bear.stone.again": {"end": true, "lines": [
-      "Go on, sky-cub.",
+      "The stone won't wake itself, sky-cub.",
       "Hold that crystal up to the carved mark."
     ], "speaker": "burl"},
     "bear.stone.11": {"end": true, "lines": [

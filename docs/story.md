@@ -683,7 +683,7 @@ Fires when `leave` completes (outside the door, in the meadow). The step and sec
 | `bear.q.later` | BURL | `Then sit a while. The boars will still be rude.` (kept) | 47 |
 | `bear.q.active` (1) | BURL | `Still hearing those greedy snouts.` | 34 |
 | `bear.q.active` (2) | BURL | `Five boars. No need to chase the whole herd.` | 44 |
-| `toast.crystal.found` | toast | `A crystal glints where the boar fell.` | 37 |
+| `toast.crystal.found` | toast | `A teal crystal lay under the last boar.` (PC-B writer, owner-authorised; PO-CH1-13, replaces `A crystal glints where the boar fell.`) | 32 |
 | `item.aetherCrystal.name` | item | `Teal Crystal` | 12 |
 | `item.aetherCrystal.desc` | item | `Warm, and it hums like the old stones.` | 38 |
 | `bear.q.ready` (1) | BURL | `Ah! I can smell the berries again!` | 34 |
@@ -721,6 +721,18 @@ Notes:
 | `bear.walk2` (5) | BURL (bark) | `Good question.` | 14 |
 | `bear.walk2` (6) | BURL (bark) | `The stones aren't telling.` | 26 |
 | `bear.following` | BURL | `Keep up, sky-cub. The stone won't come to us.` | 45 |
+| `bear.wait` | BURL (bark) | `Easy, sky-cub. These are old legs.` | 34 |
+| `bear.stone.again` (1) | BURL | `The stone won't wake itself, sky-cub.` | 37 |
+| `bear.stone.again` (2) | BURL | `Hold that crystal up to the carved mark.` (kept) | 40 |
+
+`bear.wait` and `bear.stone.again` (PC-B writer, owner-authorised; PO-CH1-14): `bear.wait` is the escort bark when the player gets > 12 m ahead, repeating every 20 s at most. One line (the bark format plays its array as a sequence, not as variants), so it stays short and wry. `bear.stone.again` line 1 replaces the programmer's "Go on, sky-cub." (too close to `bear.departing`).
+
+OPEN (PO-CH1-13, needs PO/programmer): the toast now says Burl GIVES the crystal, but `game/js/quest/crystal.js` still grants it at quest READY (last boar, burst at the corpse), and `bear.q.ready` lines 4-7 still say "It was under the last boar." For the gift to read right, the grant should move to `q.burl.boars.handin` (no corpse burst), and `bear.q.ready` (4)-(7) become, keeping the node shape BURL / YOU / BURL:
+- (4) BURL `Here. This is what they were rooting for.` (41)
+- (5) YOU `It's warm. And it glows.` (24)
+- (6) BURL `No use to a bear. Keep it close.` (32)
+- (7) BURL `Old stones like that light.` (27)
+Not yet applied to `bear.dialogue.json` so the current build stays consistent.
 
 `bear.following` (PC-B writer, owner-authorised while PC-A offline): talking to Burl while `s.burl.follow` is set and before he arrives. One line, no flags. Replaces the "NEEDS WRITER" line in `content/dialogue/bear.dialogue.json`.
 
