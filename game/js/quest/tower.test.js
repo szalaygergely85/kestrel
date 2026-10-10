@@ -108,7 +108,7 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   // US-078c: + the "sword" interactable (content/levels/tower.level.json, copied in from design/models/sword.js's levelPatch.towerSword).
   // READ-01: + the 4 "note*" interactables (hand-copied from design/models/notes.js's levelPatch.towerNotes.appendInteractables).
   // CH1-D1a: - lantern (no lamp pickup), + door (door.unbar, ground-floor SW door), + noteLeave (summit doorway note).
-  ok('interactables ids = beacon, door, note* x5, sword', JSON.stringify(ids) === JSON.stringify(['beacon', 'door', 'noteKeepLight', 'noteKeeperLog', 'noteLeave', 'noteMason', 'noteSteelHush', 'sword']), ids.join(','));
+  ok('interactables ids = beacon, note* x5, sword', JSON.stringify(ids) === JSON.stringify(['beacon', 'noteKeepLight', 'noteKeeperLog', 'noteLeave', 'noteMason', 'noteSteelHush', 'sword']), ids.join(','));
   ok('every interactable has an interact name', (d.interactables || []).every((i) => typeof i.interact === 'string' && i.interact.length));
   // US-026a-content: the tower's own 'end' trigger is gone - the ending
   // moved to a world-level trigger at the waystone (worlds.world_m1.triggers,
@@ -157,6 +157,7 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
     ...(towerDef.triggers || []).map((t) => t.trigger),
     ...(worldM1.triggers || []).map((t) => t.trigger).filter(Boolean),
     'lantern.take', // kept registered (lantern.js, lantern.test/quest.test legacy fixtures) though CH1-D1a removed the tower interactable
+    'door.unbar', // kept registered (doorUnbar.js) though TOWER-DOOR-OPEN-01 removed the tower interactable (door open from start)
     'quest.end', // kept registered (end.js, end.test.js, restart.test.js) though world_m1 no longer references it (WAYSTONE-NORMAL-01)
     'npc.talk', // NPC-BEAR-01: runtime-only (dialogueCtl.addNpc -> World.addInteractable), no content reference
     'beast.loot', // US-091a2: runtime-only (sim/loot.js World.addInteractable per boar), no content reference
@@ -164,8 +165,8 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   ]);
   ok('quest/index.js registers exactly the names the tower + world_m1 data references',
     names.length === referenced.size && names.every((n) => referenced.has(n)), `${names} vs ${[...referenced]}`);
-  unregisterBehaviour('door.unbar');
-  ok('one registration removed -> exactly that name is listed', JSON.stringify(validateBehaviours(worldFull)) === '["door.unbar"]');
+  unregisterBehaviour('sword.take');
+  ok('one registration removed -> exactly that name is listed', JSON.stringify(validateBehaviours(worldFull)) === '["sword.take"]');
   // World.load warns (once, one line) with the same list. `terrain: null`
   // also makes the prop spawn warn once for `envelopeHeap`'s `z: 'ground'`
   // (7.5 item 1: no terrain -> warn + 0) - filter to the behaviour line so
@@ -175,7 +176,7 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   World.load({ name: 'w', terrain: null, structures: [{ id: 'tower', level: 'tower', origin: placement.origin }], entities: [], state: {} }, assets, {});
   console.warn = origWarn;
   const behaviourWarns = warns.filter((w) => w.includes('behaviour(s) referenced'));
-  ok('World.load warns once naming the missing behaviour', behaviourWarns.length === 1 && /door.unbar/.test(behaviourWarns[0]), warns.join(' | '));
+  ok('World.load warns once naming the missing behaviour', behaviourWarns.length === 1 && /sword.take/.test(behaviourWarns[0]), warns.join(' | '));
   registerQuestBehaviours();
   ok('re-registration restores an empty list', validateBehaviours(worldFull).length === 0);
   // Every name QUEST_BEHAVIOURS lists now has a real body (US-012/US-014/
@@ -198,26 +199,17 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
 // ---------------------------------------------------------------------------
 {
   ok('3b: no lantern interactable any more (lamp pickup removed)', !towerDef.interactables.some((i) => i.id === 'lantern' || i.interact === 'lantern.take'));
-  const doorDef = towerDef.interactables.find((i) => i.id === 'door');
-  ok('3b: door interactable data: once, door.unbar, prop doorBar, requires tower.sword.taken',
-    !!doorDef && doorDef.once === true && doorDef.interact === 'door.unbar' && doorDef.prop === 'doorBar' && doorDef.requires === 'tower.sword.taken');
+  // TOWER-DOOR-OPEN-01: the door is open from load: no door interactable, doorBar variant open, collider off.
+  ok('3b: no door interactable (door is open from the start)', !towerDef.interactables.some((i) => i.id === 'door' || i.interact === 'door.unbar'));
   const doorProp = towerDef.props.find((p) => p.id === 'doorBar');
-  ok('3b: doorBar prop starts barred and drops its collider in variant open', doorProp.variant === 'barred' && doorProp.colliderOffVariant === 'open' && doorProp.colliders.length === 1);
+  ok('3b: doorBar prop starts open with collider-off variant', doorProp.variant === 'open' && doorProp.colliders.length === 0);
   const doorWorld = World.load({
     name: 'tower_door_test', terrain: null,
     structures: [{ id: 'tower', level: 'tower', origin: placement.origin, yawSteps: 0 }],
     entities: [], state: {},
   }, assets, { physics: 'mesh' });
   const bar = doorWorld.get('tower.doorBar');
-  ok('3b: World.load spawns the doorBar prop barred', !!bar && bar.getComponent('voxel').anim === 'barred' && bar.getComponent('voxel').variant !== 'open');
-  const tris = () => doorWorld.colliders.find((c) => c.id === 'props:static').bvh.triCount;
-  const before = tris();
-  const r = doorWorld.fireInteraction('door.unbar', { def: doorDef, entity: bar, actor: null });
-  ok('3b: door.unbar returns true', r === true);
-  ok('3b: door.unbar sets the open variant + tower.door.open', bar.getComponent('voxel').variant === 'open' && doorWorld.state['tower.door.open'] === true);
-  ok('3b: door.unbar drops the 12-triangle bar box from props:static', tris() === before - 12, before + ' -> ' + tris());
-  const rec = doorWorld.interactables.find((it) => it.id === 'door' && it.structId === 'tower');
-  ok('3b: interactables entry for the door carries a usedKey (once: true)', !!rec && rec.usedKey === 'used.tower.door');
+  ok('3b: World.load spawns the doorBar prop open', !!bar && bar.getComponent('voxel').anim === 'open');
 }
 
 // ---------------------------------------------------------------------------

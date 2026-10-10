@@ -72,11 +72,10 @@ const player = world.get('player');
 // 1. Take the lamp.
 // ---------------------------------------------------------------------------
 // CH1-D1a: no lamp pickup any more; the mutation under test is the ground-floor SW door (door.unbar, needs the sword).
-const doorRec = world.interactables.find((r) => r.id === 'door');
-ok('1a: world has the door interactable (door.unbar)', !!doorRec && doorRec.def.interact === 'door.unbar');
+// TOWER-DOOR-OPEN-01: the door is open from load (no door interactable); the mutation under test is the sword take state.
+ok('1a: door is open from the start (no door interactable, variant open)', !world.interactables.some((r) => r.id === 'door') && world.get('tower.doorBar').getComponent('voxel').anim === 'open');
 world.state['tower.sword.taken'] = true;
-world.fireInteraction(doorRec.name, { engine: {}, def: doorRec.def, entity: world.get(doorRec.propId), actor: player });
-ok('1b: door unbarred (tower.door.open + doorBar variant open)', world.state['tower.door.open'] === true && world.get(doorRec.propId).getComponent('voxel').variant === 'open');
+ok('1b: tower.sword.taken set', world.state['tower.sword.taken'] === true);
 
 // ---------------------------------------------------------------------------
 // 2. Upper stair starts open without a lever or dynamic gate.
