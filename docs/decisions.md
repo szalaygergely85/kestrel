@@ -1069,3 +1069,9 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - **Fen removed for now** (the villager added on 2026-10-10 without an owner OK, CHARGEN-15): entity + dialogue out of world_m1; the add-on package system (38.33) stays for later NPCs.
 - Order: architect note + story rows -> programmer(s) -> owner walk.
 - Owner picks (2026-10-10, after 38.35): Burl's boar quest gives **no item reward** - only the "Quest complete" moment (no coin item; currency stays an open question; QG-D1 = the `?` marker only). Quest log key = **J**. Build go: QG-01..05 + QG-W1.
+
+## D-059 - Character style follows the owner references (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner on the fine-head render: "poor guy :( look at him" + 6 reference images (stylised voxel characters: zombie, red-haired woman, bearded man, boy in jacket; files in the owner's Pictures folder, not committed - web images, licence unknown).
+- **Character style (replaces "realistic anatomy" for humans from D-053):** bigger head (~1/5 of the body) with a large flat face; simple face = white eye + one dark pupil, thick dark brow line, 1-2 cube nose shadow, short mouth line; **clean flat skin** (no noise/stripes, minimal shading); chunkier simple limbs; few colours; **default hair + simple clothes** (shirt, trousers, boots) - never bald/underwear by default.
+- Default detail = normal cubes (res 1/1); the fine head (1.25 cm) stays as an **option** in the generator.
+- Next: designer redoes the chargen base in this style (CHARGEN-25), then the owner looks before anything else builds on it.
