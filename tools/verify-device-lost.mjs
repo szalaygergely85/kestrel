@@ -7,6 +7,7 @@
 // Run: node tools/verify-device-lost.mjs 9512 (webgpu, default)
 // PC-B lane B1 port range only (9500-9574).
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
@@ -33,7 +34,7 @@ try {
   // `?dev=1` is required for window.__kestrel.loseDevice() to exist (38.10c dev hook gate). `?voxelbench=0` keeps
   // the real wake-then-play timeline out of the way (no title menu/pause overlay); `?save=1` forces the autosave
   // path on in this headless browser (main.js's saveEnabled would otherwise see navigator.webdriver and skip it).
-  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&save=1&voxelbench=0&grid=400x150&backend=${backend}` });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`dev=1&save=1&voxelbench=0&grid=400x150&backend=${backend}`)}` });
   let ready = false;
   for (let i = 0; i < 100; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.world)')) { ready = true; break; } }
   assert.ok(ready, 'world:loaded never fired: ' + JSON.stringify(errors));

@@ -18,9 +18,10 @@ import os from 'node:os';
 import {
   ROOT, findBrowserBinary, waitForHttp, killTree, connectCdp, evaluate, buildLaunchFlags, validatePort,
 } from './capture-browser.mjs';
+import { withTimeFreeze, parseTimeArg } from './tool-url.mjs'; // DN-04a
 import { buildFrameTrace, toCSV } from './frameTrace.mjs'; // S8-B1-14: per-frame p50/p95/p99/max per leg + worst-frame list
 
-const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
+const args = Object.fromEntries(process.argv.slice(2).map((v) => (/^--time=/.test(v) ? ['--time', v.slice(7)] : v)).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
 const port = Number(args.port);
 validatePort(port);
 if (args.renderer !== undefined) throw new Error('--renderer was removed; the geometry path is mesh');
@@ -28,7 +29,7 @@ const grid = args.grid || '400x150', physics = args.physics;
 const preset = args.preset || 'default'; // S8-B1-14: carried into the default --out file name alongside the backend
 const noSkip = args.noskip === '1'; // ME-15d: --noskip 1 forces the shadow map to re-render every frame (worst case row)
 const shadows = args.shadows; // ME-15c: `--shadows map` appends &shadows=map (sun shadow map instead of the sun DDA)
-const query = `voxelbench=0&grid=${grid}${physics ? `&physics=${physics}` : ''}${shadows ? `&shadows=${shadows}` : ''}${args.extra ? `&${args.extra}` : ''}`; // --extra "shadowres=1536" (ME-15e)
+const query = withTimeFreeze(`voxelbench=0&grid=${grid}${physics ? `&physics=${physics}` : ''}${shadows ? `&shadows=${shadows}` : ''}${args.extra ? `&${args.extra}` : ''}`, parseTimeArg(args.time)); // --extra "shadowres=1536" (ME-15e)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The in-page driver (runs inside the game page). Returns a Promise resolved with the result object.

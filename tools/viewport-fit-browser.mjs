@@ -4,6 +4,7 @@
 // For viewports 1280x720 / 1920x969 x grids 240x90 (rays 1+2) / 400x150 / 480x180 x DPR: the canvas bounding rect must lie inside
 // the window (so the bottom HUD and the top-left objective line are visible). Exit 1 on any overflow.
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import path from 'node:path';
 import os from 'node:os';
 import { rmSync } from 'node:fs';
@@ -47,7 +48,7 @@ try {
   for (const backend of backends) for (const [w, h] of VIEWS) for (const dpr of dprs) for (const [grid, rays] of GRIDS) {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: dpr, mobile: false });
     const loaded = new Promise((r) => cdp.onEvent((m) => { if (m === 'Page.loadEventFired') r(); }));
-    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?voxelbench=0&save=0&grid=${grid}&rays=${rays}&backend=${backend}` });
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`voxelbench=0&save=0&grid=${grid}&rays=${rays}&backend=${backend}`)}` });
     await loaded;
     const r = await evalIn(cdp, PROBE);
     const eps = 0.01;

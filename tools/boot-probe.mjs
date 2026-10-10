@@ -2,6 +2,7 @@
 // tools/boot-probe.mjs - headless boot timing: time to __debug.playerHandle, boot stage card, slowest requests, 404s.
 //   node tools/boot-probe.mjs --port 9620 [--backend webgpu] [--query save=0] [--root <dir>]
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import path from 'node:path';
 import os from 'node:os';
 import { rmSync } from 'node:fs';
@@ -10,7 +11,7 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (
 const port = Number(args.port); validatePort(port);
 const ROOT = args.root ? path.resolve(args.root) : R0;
 const backend = args.backend || 'webgpu';
-const url = `http://127.0.0.1:${port}/game/index.html?backend=${backend}&${args.query || 'save=0'}`;
+const url = `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`backend=${backend}&${args.query || 'save=0'}`)}`;
 const h = {}; const T0 = Date.now();
 const cleanup = () => { if (h.b) killTree(h.b.pid); if (h.s) killTree(h.s.pid); if (h.dir) { try { rmSync(h.dir, { recursive: true, force: true }); } catch {} } };
 setTimeout(() => { console.error('boot-probe: overall timeout'); cleanup(); process.exit(2); }, Number(args.timeout || 150) * 1000);

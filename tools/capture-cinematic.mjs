@@ -7,18 +7,21 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync, appendFileSync, rmSy
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withTimeFreeze, parseTimeArg } from './tool-url.mjs'; // DN-04a
 import { ROOT, validatePort, buildLaunchFlags, findBrowserBinary, waitForHttp, connectCdp, evaluate, killTree } from './capture-browser.mjs';
 
 export function parseArgs(argv) {
   const opts = { port: NaN, ids: [], grid: '240x90', outDir: null, maxFrames: Infinity, encode: true };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    if (arg.startsWith('--time=')) { opts.time = parseTimeArg(arg.slice(7)); continue; }
     if (arg === '--no-encode') { opts.encode = false; continue; }
     const value = argv[++i];
     if (!value || value.startsWith('--')) throw new Error(`missing value for ${arg}`);
     if (arg === '--port') opts.port = Number(value);
     else if (arg === '--cinematic') opts.ids = [value];
     else if (arg === '--compare') { opts.ids = value.split(','); if (opts.ids.length !== 2) throw new Error('--compare requires a,b'); }
+    else if (arg === '--time') opts.time = parseTimeArg(value);
     else if (arg === '--grid') opts.grid = value;
     else if (arg === '--out') opts.outDir = path.resolve(value);
     else if (arg === '--frames') opts.maxFrames = Number(value);
@@ -87,7 +90,7 @@ export async function captureCinematic(opts) {
       mkdirSync(dir);
       exceptions.length = 0;
       consoleLines.length = 0;
-      const navigation = await cdp.send('Page.navigate', { url: `http://127.0.0.1:${opts.port}/game/index.html?renderer=mesh&cinematic=${encodeURIComponent(id)}&capture=1&grid=${opts.grid}` });
+      const navigation = await cdp.send('Page.navigate', { url: `http://127.0.0.1:${opts.port}/game/index.html?${withTimeFreeze(`renderer=mesh&cinematic=${encodeURIComponent(id)}&capture=1&grid=${opts.grid}`, opts.time)}` });
       if (navigation.errorText) throw new Error(`cinematic navigation: ${navigation.errorText}`);
       const deadline = Date.now() + 120000;
       while (!(await evaluate(cdp, '!!window.__cine'))) {

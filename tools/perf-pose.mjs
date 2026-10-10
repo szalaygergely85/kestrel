@@ -7,13 +7,14 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { rmSync, writeFileSync } from 'node:fs';
+import { withTimeFreeze, parseTimeArg } from './tool-url.mjs'; // DN-04a
 import { ROOT, findBrowserBinary, waitForHttp, killTree, connectCdp, evaluate, evaluateAsync, validatePort } from './capture-browser.mjs';
 
 // Gate poses (roadBend, towerInterior, towerExterior, roadSouth ...) are GATE_POSES slugs of content/dev-poses.js (one table, re-exported by tools/bench-poses.js) -> `?pose=<slug>`.
 const POSES = { forest: 'at=1544.5,1201.3,-14.3,270,8' };
 const poseQuery = (n) => POSES[n] || `pose=${n}`;
 const JS_BUDGET_MS = 8, GPU_BUDGET_MS = 8, HEAP_FLAT_MB = 2; // WS1-08: JS <= 8 ms, GPU p95 <= 8 ms at ultra, heap flat
-const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
+const args = Object.fromEntries(process.argv.slice(2).map((v) => (/^--time=/.test(v) ? ['--time', v.slice(7)] : v)).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
 const port = Number(args.port || 9700);
 const settle = Number(args.settle || 5500), frames = Number(args.frames || 3000);
 const configs = (args.configs || 'high:400x150,ultra:480x180').split(',').map((s) => { const [q, g] = s.split(':'); const [w, h] = g.split('x').map(Number); return { q, w, h }; });
@@ -59,7 +60,7 @@ try {
     const q = `quality=${c.q}&f3=1&autoquality=0&${poseQuery(pose)}${t === 'voxel' ? '&trees=voxel' : ''}`;
     await evaluate(cdp, 'window.__perfOld = 1; true'); // marker: the NEW document has no __perfOld
     const loaded = new Promise((res) => cdp.onEvent((m) => { if (m === 'Page.loadEventFired') res(); }));
-    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${q}` });
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(q, parseTimeArg(args.time))}` });
     const tNav = Date.now();
     await loaded; await sleep(1500);
     for (let i = 0; i < 120 && !(await evaluate(cdp, '!window.__perfOld && !!(window.__debug && window.__debug.engine && window.__debug.look && window.__debug.loop)')); i++) await sleep(500);

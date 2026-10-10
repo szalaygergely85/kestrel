@@ -11,7 +11,7 @@ assert.throws(() => parseArgs([])); assert.throws(() => parseArgs(['--port', '95
 assert.throws(() => parseArgs(['--port', '9500', '--backend', 'gl'])); assert.throws(() => parseArgs(['--port', '9500', '--x']));
 assert.deepEqual(stillTimes(), [0, 500, 1500, 2500]);
 assert.equal(stillName('240x90', 'idle-8m'), 'combat-240x90-idle-8m.png');
-assert.equal(pageUrl(9500, '240x90', 'webgpu'), 'http://127.0.0.1:9500/game/index.html?bench=combat&grid=240x90&backend=webgpu');
+assert.equal(pageUrl(9500, '240x90', 'webgpu'), 'http://127.0.0.1:9500/game/index.html?bench=combat&grid=240x90&backend=webgpu&timefreeze=1&time=8');
 const out = mkdtempSync(path.join(os.tmpdir(), 'cc-test-'));
 try {
   const calls = [];
