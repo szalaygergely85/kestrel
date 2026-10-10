@@ -1780,7 +1780,7 @@ async function runGame(mode, cinematic = null) {
       // no-op while no note is open; the close guard (`state === 'open'`)
       // keeps the opening E press from also closing it.
       stepNoteRead(dt, input, !!(look && look.locked)); // BUG-NOTE-ESC-01: Esc under pointer lock = lock lost = close
-      if (saveRelay && world.state['notes.keepLight.read'] === true) saveRelay.quest.book.actKey('q.tower.blade.accept'); // reading the wake-spot page accepts 'A Blade in the Ashes' (no-op unless available)
+      if (saveRelay && engine.world && engine.world.state['notes.keepLight.read'] === true) saveRelay.quest.book.actKey('q.tower.blade.accept'); // reading the wake-spot page accepts 'A Blade in the Ashes' (no-op unless available)
       // US-022: the relay's own wake timer (clip switch wake -> awake, point
       // light on + 1.0 s grow) - a no-op every step before `beacon.light`
       // fires (game/js/quest/beacon.js), same "reads its own state key" split
