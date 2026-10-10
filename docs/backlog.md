@@ -1888,7 +1888,7 @@ PC-B architect opus, 2026-10-10 (owner-authorised while PC-A is offline; PC-A to
 | WS1-01 | kestrel-3 | 0.75 d | `engine/physics/bounds.js` (new) + test, `engine/physics/integrate.js` 4b, `engine/world/triggers.js`, `engine/world/World.js` (validateBounds), `engine/world/serialize.js`, `engine/world/world.test.js` | - | arch-review [PC-B] |
 | WS1-02 | kestrel-3 | 1 d | `engine/world/World.js` (band rect, nearBandKey), `engine/world/Terrain.js` (`bakeNearBand(cx0,cy0,cw,ch)`), JS `near.w/h` consumers (scatter, terrainShade, detailShade), `engine/world/terrainBand.test.js` (new) | - | todo [PC-B] |
 | WS1-03 | kestrel-2 | 0.5 d | `engine/render/gpu/wgsl/terrainRaster.wgsl.js`, `engine/render/gpu/wg/passRaster.js`, `TerrainTextures.js`, `ShadeTextures.js`, `passShade.js` (audit) | WS1-02 | todo [PC-B] |
-| WS1-04 | kestrel-4 | 0.5 d | `content/worlds/world_m1.world.json` (bounds union, terrainBand, `relayBend` + base mesh, `waystone` components), `design/levels/overworld_far.js` (relay exclude disc) | WS1-01, WS1-02 | todo [PC-B] |
+| WS1-04 | kestrel-4 | 0.5 d | `content/worlds/world_m1.world.json` (bounds union, terrainBand, `relayBend` + base mesh, `waystone` components), `design/levels/overworld_far.js` (relay exclude disc) | WS1-01, WS1-02 | po-review [PC-B] |
 | WS1-05 | kestrel-4 | 0.75 d | `tools/gen-roadside-meshes.mjs` (flags + `scale` fix), `content/worlds/world_m1.world.json` (`roadW###`, `roadN###`), `design/levels/overworld_far.js` (printed capsules) | - (runs before WS1-04 lands: keep-out disc is in the tool) | po-review [PC-B] |
 | WS1-06a | kestrel-1 | 0.5 d | `game/js/quest/sim/waystone.js` + test, `game/js/quest/wire/waystone.js` + test, `game/js/waystoneTouch.js` | WS1-04 (data; tests use fixtures) | todo [PC-B] |
 | WS1-06b | kestrel-1 | 0.75 d | `game/js/quest/relayWake.js` (new) + test, `game/js/quest/index.js` (behaviour `relay.wake`), `game/js/main.js` (step + interactable on world:loaded) | WS1-06a, WS1-W1 (placeholder text ok) | todo [PC-B] |
@@ -1914,7 +1914,7 @@ PC-B architect opus, 2026-10-10 (owner-authorised while PC-A is offline; PC-A to
 - [ ] `terrainRaster.wgsl.js terrainTypeAt` uses separate width/height (`textureDimensions(uNearType)` or an extra uniform word); `passRaster`/`TerrainTextures`/`ShadeTextures`/`passShade` audited for `w == h`.
 - [ ] gpucompare (`gpucompare` skill): every existing row within tolerance with world_m1 on `terrainBand {8,7,5,3}`, plus one dev fixture with a 3x5 (tall) band. -> `arch-review`.
 
-### WS1-04 world_m1: stage-1 bounds, band, relay  [P1] [todo] [PC-B kestrel-4]
+### WS1-04 world_m1: stage-1 bounds, band, relay  [P1] [po-review] [PC-B kestrel-4]
 - [ ] `bounds` = union: circle (1496.5, 1024.5) r 96 + capsule (1440,1034)-(1350,1048) r 40 + capsule (1350,1048)-(1240,1047) r 40. `terrainBand {cx0: 8, cy0: 7, cw: 5, ch: 3}`. `nav` unchanged; no beasts west of x 1400.
 - [ ] Entity `relayBend` at (1262, 1033), z ground on an existing flat-topped Quaternius rock/stone mesh base (mesh structure, z = base top): voxel `relay` anim `dead`, collider, `light {preset:'relay', on:false}` 1.1 m up, `waystone {id:'ws_roadBend', label, kind:'relay', order:2}`. `endMarker` gets `waystone {id:'waystone', kind:'stone', order:1}` (id unchanged).
 - [ ] Check that World.load and serialize keep the unknown component `waystone` on the entity; if not, stop and ASK ARCHITECT (no engine change in this row).

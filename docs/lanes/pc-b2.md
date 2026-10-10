@@ -403,3 +403,8 @@ B2 2026-10-09 (TWISTED-LOD-01) -> arch-review (importer data only): TwistedTree_
 - gen-roadside-meshes.mjs: flags --prefix/--side/--u0/--u1/--v0/--v1/--count/--tree-quota (presets roadL/roadW/roadN), only the given prefix is replaced (roadL diff = 0), rows now written via canonical JSON (scale kept; the old fmt() text path is gone), 2nd route line (WS1-08 leg 8, 2 m) + relay disc r 8 as keep-outs, side-aware capsules.
 - world_m1: roadW 60 (tree 21, rock 18, pebble 7, grass 6, mushroom 6, rockpath 2), roadN 126 of 140 (tree 35 = 0.25 quota, rock 42, pebble 17, grass 14, mushroom 14, rockpath 4; space-limited). 4 capsules added to overworld_far.js detail.exclude, no warning; re-run idempotent.
 - validate-content, meadow/content/smoke/scale/canonical/meshPlace suites, mesh-place-budget (roadSouth +49 props), check-deps green.
+
+## WS1-04 (kestrel-4, 2026-10-10) -> po-review
+- world_m1: bounds union (circle r96 + 2 capsules r40), `terrainBand {8,7,5,3}` (validate-content accepts it), `relayBendBase` (RockPath_Square_Wide, z -31.14), `relayBend` (1262,1033, z -30.97; voxel relay dead, collider, light off, waystone ws_roadBend kind relay order 2), endMarker waystone {id waystone, kind stone, label place.waystone, order 1}; relay exclude disc in overworld_far.js. World.load/validate keep the `waystone` component.
+- Tests updated for the union (world.test.js, worldWalk.perf.test.js bound-edge point (1195,1047)). Terrain falls ~1 m across the 2 m plinth: low side may float ~0.5 m (not captured; no browser run). Light offset used {down:-1.1} (attach.js: negative = up).
+- Not done: headless capture at (1268,1040,yaw 270) (Node-only rule). Relay plinth may want a chunkier rock if the capture shows a gap.
