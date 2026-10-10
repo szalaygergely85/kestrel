@@ -5,31 +5,31 @@
  * writes it (node tools/chargen-build-kit.mjs) and is loaded by the preview design/preview/chargen_kit.html,
  * which checks that the JSON on disk equals what this script builds.
  *
- * BASE m_avg v2 (CHARGEN-25, D-059 + owner follow-up 2026-10-10: "in between" the owner's stylised voxel references and
- * realism; replaces the v1 realistic small-head / noisy-skin / bald-in-underwear look):
+ * BASE m_avg v3 (CHARGEN-26, D-063 "make look like this": the owner's bearded-knight reference, for ALL characters, no
+ * wings / halo; owner follow-up "how they look from the sides ... not flat": the face has depth in profile):
  *   - a 1.75 m man, 70 rows (cellM 0.025) + 2 rows of hair room: grid 37 x 20 x 72 (odd width: face, nose and spine on
  *     the centre column x = 18). Axes 15.1: faces north (-y), z up, the anchor sits between the feet.
- *   - proportions: head 12 rows (z 58-69, ~1/6 of the body; 11 wide, 10 deep, large flat face with rounded vertical
- *     edges), neck z 54-60, shoulders z 55 (21 cells = 2 head widths over the deltoids), chest 13 wide, waist 11, hips 13,
- *     crotch z 34, elbow z 42/43 (one-cell step), wrist z 33, hands z 26-32 (blocks + thumb), knee z 17 (one-cell step),
- *     ankle z 3, feet z 0-2. Limbs: upper arm / forearm 5 x 5, thigh 5 x 6, shin 5 x 5, all with rounded corners.
- *   - face: eyes = white (c) + dark pupil (P) over a coloured iris (e), no lids / lashes; a thick brow line (b, the hair
- *     colour's dark shade); nose = bridge + lit tip standing one cell out, shade under it; mouth = 3-cell dark line on
- *     the Head / Jaw seam with a 3-cell lower lip (p) under it and a dark interior behind (seen when the Jaw opens);
- *     ears = simple blocks; chin = the jaw one cell narrower than the skull.
- *   - skin: ONE flat tone (a) per skin ramp; soft top-down shade (s) only under the chin, under the nose and in the
- *     armpits. No noise, no stripes, no anatomy speckles.
- *   - the base still wears plain undyed linen braies (waist to mid-thigh) under the clothes.
- *   - default look = kit pieces the generator can swap (38.29 item 3): attachment `short` (hair), shells `shirt` (top,
- *     rolled sleeves), `trousers` (legs), `boots` (feet), `belt` (outer). kit.defaults wears all of them, so the man is
- *     never bald + underwear by default.
- *   - head at 1.25 cm (CHARGEN-23 slot, 38.34): bases.m_avg.detail.head["2"] is now a STRAIGHT 2x UPSAMPLE of the
- *     level-1 Head + Jaw cells (no separate art; downsample2 gives the Standard head back exactly).
- *   - rest pose: standing, arms down in a slight A (gap >= 3 cells from the hips up to z 46; the armpit touches), 3 cells
- *     between the thighs, feet 7 cells apart (centre to centre 8).
+ *   - proportions: BIG head ~1/4 (z 53-69 = 17 rows + hair; 15 wide, up to 14 deep), short neck hidden behind the jaw,
+ *     shoulders z 50 (21 cells over the deltoids), chest 13-15 wide, waist 13, hips 15, crotch z 28 (shorter legs),
+ *     elbow z 40/41 (one-cell step), wrist z 31, block hands z 25-30, knee z 14/15 (one-cell step), ankle z 3.
+ *     Chunky limbs: upper arm / forearm 5 x 5, thigh 6 x 6, shin 5 x 5, all with rounded corners.
+ *   - face WITH DEPTH (profile): forehead slopes back at the top, a brow ridge one cell out (heavy dark brows painted on
+ *     it, angled down to the nose = determined look), eyes set in under it (white c, highlight i, pupil P, iris e;
+ *     narrow: 2 rows), cheekbones one cell out, nose 2 cells out (bridge + lit tip + shaded side), lips one cell out
+ *     (mouth line d over lower lip p, dark interior behind), chin forward, jaw one cell narrower, ears set back on the
+ *     side, back of the head rounded.
+ *   - skin: one flat tone (a) + broad shade (s) under the nose / chin, armpits, nose side, ear hole. No noise.
+ *   - plain undyed braies under the clothes. Default look (kit.defaults) = CHARGEN-25 civilian: `short` hair, `shirt`,
+ *     `trousers`, `boots`, `belt`. Knight pieces (kit.looks.knight): `full` beard + moustache (beard slot, hair colour),
+ *     `mail` (top) + `mail_legs` (legs) chainmail, `boots_gloves` (feet: dark boots + gloves), `tabard` (outer, white),
+ *     `heraldry` (hat slot, paintOnly decal: mail checker, red cross-on-gold emblem, red hem / split trim, red sash) -
+ *     a decal because an engine shell paints one char (engine ask in design/README.md section 25).
+ *   - head at 1.25 cm (38.34): bases.m_avg.detail.head["2"] = a straight 2x upsample of the level-1 Head + Jaw cells.
+ *   - rest pose: standing, arms down in a slight A (gap >= 3 cells from the hips up to z 46), 3 cells between the thighs.
  *
  * Bone boxes are axis-aligned and resolved FIRST-MATCH in skeleton order (38.29 item 3), so they are cut to the
- * anatomy: e.g. Neck (z 55-60) only takes y >= -1 (behind the jaw), the Jaw takes the chin + lower lip in front of it.
+ * anatomy: Chest takes z 41-50 (shoulder tops + neck base), Neck (z 51-57) only y >= 0 (behind the jaw), the Jaw box
+ * reaches down to z 51 so the region box holds the beard.
  */
 (function (root) {
   'use strict';
@@ -88,7 +88,12 @@
     W: { group: 'outer', shade: 'light' }, w: { group: 'outer', shade: 'base' }, m: { group: 'outer', shade: 'dark' },
     H: { group: 'hat', shade: 'light' }, h: { group: 'hat', shade: 'base' }, j: { group: 'hat', shade: 'dark' },
     // CHARGEN-25 pupil: near-black, the same for every skin tone / eye colour (existing key hair_black_dark #100d0c)
-    P: { fixed: 'hair_black_dark', keep: 9 }
+    P: { fixed: 'hair_black_dark', keep: 9 },
+    // CHARGEN-26 (fixed existing materials, valid for every skin tone): eye highlight, chainmail light / dark,
+    // heraldry red (trim, sash, cross) and gold (cross core)
+    i: { fixed: 'iron_light', keep: 9 },
+    q: { fixed: 'iron_light' }, r: { fixed: 'dye_gall_light' },
+    R: { fixed: 'gore_red' }, y: { fixed: 'dye_weld_light' }
   };
   // Ramp ids are picked by engine/chargen/compose.js (CHARGEN-02): skin / eyes = recipe.skin / recipe.eyes,
   // lips = recipe.skin, hair (also beard + brows: beard shares the hair group) = (recipe.hair || recipe.beard).ramp,
@@ -136,44 +141,82 @@
   // ===================================================================================================================
   // 4. HEAD + HAIR (centred cells)
   // ===================================================================================================================
-  // Front plane Y -5, rows X -5..5 ('.' = the rounded corner column, never filled). Rows not listed are flat skin.
-  //   66 brows (b, hair dark)   65 eye white | pupil | white   64 eye white | iris | white   62 shade under the nose (the
-  //   lit tip stands at Y -6)   61 mouth line (d) on the Head side of the seam   60 lower lip (p) on the Jaw
+  // The head is built as a PROFILE (owner: "look the face. not flat"): per row z a half width, and per (X, z) the
+  // front-most and back-most Y. Paint strings (X -7..7, '.' = never filled) colour the FRONT cell of that column.
+  //   66 brows outer (b) on the brow ridge   65 brows inner, angled down to the nose   64 / 63 eyes (set in under the ridge):
+  //   white c, highlight i over iris e, pupil P (2 x 2 dark block, highlight top-left: one light for both eyes)
+  //   59 shade under the nose   58 mouth line d (on the upper lip, Head)   57 lower lip p (Jaw)
   var FACE = {
-    66: '.bbbaaabbb.',
-    65: '.cPcaaacPc.',
-    64: '.cecaaacec.',
-    62: '.aaasasaaa.',
-    61: '.aaadddaaa.',
-    60: '.aaapppaaa.'
+    66: '.bbbbaaaaabbbb.',
+    65: '.aabbbaaabbbaa.',
+    64: '.aciPcaaaciPca.',
+    63: '.acePcaaacePca.',
+    59: '.aaaaasssaaaaa.',
+    58: '.aaaadddddaaaa.',
+    57: '.aaaaapppaaaaa.'
   };
-  // the head as a function (also drives the hair): skull z 61-68 (11 x 10, rounded vertical edges), top z 69 (inset one
-  // cell all round), jaw z 59-60 (one cell narrower, Y -5..0), chin z 58, ears (2 x 3 blocks at X +-6), nose (Y -6)
+  // half width of the head per row: skull z 58-67 (15 wide), z 68 (13), top z 69 (11), jaw z 54-57 (13), chin z 53 (9)
+  function headHalf(z) {
+    if (z >= 58 && z <= 67) return 7;
+    if (z === 68) return 6;
+    if (z === 69) return 5;
+    if (z >= 54 && z <= 57) return 6;
+    if (z === 53) return 4;
+    return -1;
+  }
+  // front-most Y of column (X, z): forehead slopes back (z 67-69), brow ridge out (z 65-66), eyes in (z 63-64),
+  // cheekbones out (z 61-62, |X| 3..6), upper lip out (z 58), lower lip out (z 57), chin forward (z 53-55); the outer
+  // column (|X| = half) always steps back (rounded vertical edges)
+  function headFront(X, z) {
+    var ax = Math.abs(X), h = headHalf(z);
+    if (h < 0 || ax > h) return null;
+    if (z === 69) return ax === 5 ? -3 : -4;
+    if (z === 68) return ax === 6 ? -4 : -5;
+    if (ax === h) return -5;
+    if (z === 67) return -6;
+    if (z === 65 || z === 66) return -7;
+    if (z === 61 || z === 62) return ax >= 3 ? -7 : -6;
+    if (z === 58) return ax <= 2 ? -7 : -6;
+    if (z === 57) return ax <= 1 ? -7 : -6;
+    if (z === 53 || z === 54 || z === 55) return ax <= 3 ? -7 : -6;
+    return -6;
+  }
+  // back-most Y: rounded back of the skull; the jaw ends at Y -1 (the neck sits behind it)
+  function headBack(X, z) {
+    var ax = Math.abs(X);
+    if (z <= 57) return -1;
+    if (z === 69) return ax === 5 ? 2 : 3;
+    if (z === 68) return ax === 6 ? 3 : 4;
+    if (z <= 59) return ax <= 5 ? 4 : 3;
+    return ax <= 5 ? 5 : 4;
+  }
+  // nose (2 cells out): bridge from the brow ridge down (Y -7, z 61-64), 3 wide at the base (z 60-61), tip Y -8 (z 60-61);
+  // l = lit ridge, s = the shaded side (+X, away from the preview light)
+  var NOSE = {
+    '0,-7,64': 'a', '0,-7,63': 'a', '0,-7,62': 'a', '1,-7,62': 's', '-1,-7,61': 'a', '0,-7,61': 'l', '1,-7,61': 's',
+    '-1,-7,60': 'a', '0,-7,60': 'a', '1,-7,60': 's', '0,-8,61': 'l', '0,-8,60': 'a'
+  };
+  // the head as a function (also drives hair + beard)
   function headChar(X, Y, z) {
-    var ax = Math.abs(X), c;
-    var skull = z >= 61 && z <= 68 && ax <= 5 && Y >= -5 && Y <= 4 && !(ax === 5 && (Y === -5 || Y === 4));
-    var top = z === 69 && ax <= 4 && Y >= -4 && Y <= 3 && !(ax === 4 && (Y === -4 || Y === 3));
-    var jaw = (z === 59 || z === 60) && ax <= 4 && Y >= -5 && Y <= 0 && !(ax === 4 && Y === -5);
-    var chin = z === 58 && ax <= 3 && Y >= -5 && Y <= -1 && !(ax === 3 && Y === -5);
-    var ear = ax === 6 && Y >= 0 && Y <= 1 && z >= 62 && z <= 64;
-    var nose = X === 0 && Y === -6 && (z === 62 || z === 63);
-    if (nose) return z === 62 ? 'l' : 'a';            // bridge (z 63) + lit tip (z 62)
-    if (ear) return Y === 0 && z === 63 ? 's' : 'a';  // a shaded ear hole on the front of the block
-    if (!(skull || top || jaw || chin)) return null;
-    if (Y === -5 && FACE[z]) { c = FACE[z].charAt(X + 5); return c === '.' ? 'a' : c; }
-    if (Y === -4 && (z === 60 || z === 61) && ax <= 1) return 'd';   // mouth interior (seen when the Jaw opens)
+    var ax = Math.abs(X), c, f;
+    var n = NOSE[X + ',' + Y + ',' + z];
+    if (n) return n;
+    if (ax === 8 && Y >= 1 && Y <= 2 && z >= 60 && z <= 63) return Y === 1 && z === 61 ? 's' : 'a';   // ears, set back
+    f = headFront(X, z);
+    if (f === null || Y < f || Y > headBack(X, z)) return null;
+    if (Y === -6 && (z === 57 || z === 58) && ax <= 1) return 'd';    // mouth interior behind the lips (Jaw opens)
+    if (Y === f && FACE[z]) { c = FACE[z].charAt(X + 7); return c === '.' ? 'a' : c; }
     return 'a';
   }
-  // short hair (attachment `short`): every empty cell touching the head inside the hair zone. Front: only the top edge
-  // (z 69) and the crown (z 70) so the forehead (z 67-68) shows; temples down to z 67, sides down to z 65 (above the
-  // ears), behind the ears to z 62, the back to z 61 (never over the Neck / Jaw rows). g = hair base, K = the dark rim
-  // along the hairline at the sides and back.
-  var HAIR_BOX = { X0: -6, Y0: -6, z0: 61, w: 13, d: 12, h: 10 };   // centred origin + size [x, y, z]
+  // short hair (attachment `short`): every empty cell touching the head inside the hair zone. Front: a hairline row
+  // over the top of the forehead (z 68) and the crown; temples down to z 65, above the ears z 64, behind the ears z 60,
+  // the back to z 58. g = hair base, K = the dark rim along the hairline, G = a broad lit patch on the crown.
+  var HAIR_BOX = { X0: -8, Y0: -6, z0: 58, w: 17, d: 13, h: 13 };   // centred origin + size [x, y, z]
   function hairZone(X, Y, z) {
     if (z >= 70) return true;
-    if (Y <= -5) return z >= 69;
-    if (Math.abs(X) < 5 && Y < 4) return false;
-    return z >= (Y >= 4 ? 61 : Y >= 2 ? 62 : Y >= -3 ? 65 : 67);
+    if (z < 58) return false;
+    if (Y <= -4 && Math.abs(X) <= 6) return z >= 68;
+    return z >= (Y >= 4 ? 58 : Y >= 3 ? 60 : Y >= -1 ? 64 : 65);
   }
   function isHair(X, Y, z) {
     if (headChar(X, Y, z) !== null || !hairZone(X, Y, z)) return false;
@@ -188,7 +231,47 @@
         var row = '';
         for (x = 0; x < HAIR_BOX.w; x++) {
           var X = HAIR_BOX.X0 + x, Y = HAIR_BOX.Y0 + y, Z = HAIR_BOX.z0 + z;
-          row += !isHair(X, Y, Z) ? '.' : (Z < 69 && !isHair(X, Y, Z - 1)) ? 'K' : 'g';
+          row += !isHair(X, Y, Z) ? '.' : (Z < 69 && !isHair(X, Y, Z - 1)) ? 'K' :
+                 (Z === 70 && Math.abs(X) <= 3 && Y >= -3 && Y <= 1) ? 'G' : 'g';
+        }
+        L.push(row);
+      }
+      layers.push(L);
+    }
+    return layers;
+  }
+  // full beard + moustache (attachment `full`, beard slot, dyed with the hair ramp; bone Jaw so it moves when he talks):
+  // every empty cell touching the head inside the beard zone - jaw, chin and the cells under them, around the jaw back
+  // to the neck (never over the neck, |X| <= 2 at Y 0), sideburns up to z 61, cheeks (z 60-61, |X| >= 5), the moustache
+  // row (z 59) and its droops (z 58, |X| >= 3); the lips (z 57 |X| <= 1, z 58 |X| <= 2) stay visible. Plus a chin tuft
+  // (z 51). g = base, K = the lower beard (z <= 52, in shadow).
+  var BEARD_BOX = { X0: -8, Y0: -8, z0: 51, w: 17, d: 9, h: 11 };
+  function beardZone(X, Y, z) {
+    var ax = Math.abs(X);
+    if (z < 51 || z > 61 || Y > 0) return false;
+    if (Y === 0) return ax >= 3 && z <= 57;
+    if (z <= 56) return true;
+    if (z === 57) return ax >= 2;
+    if (z === 58) return ax >= 3;
+    if (z === 59) return true;
+    return ax >= 5;
+  }
+  function isBeard(X, Y, z) {
+    if (headChar(X, Y, z) !== null) return false;
+    if (z === 51 && Math.abs(X) <= 3 && Y >= -7 && Y <= -3) return true;   // chin tuft
+    if (!beardZone(X, Y, z)) return false;
+    return headChar(X + 1, Y, z) !== null || headChar(X - 1, Y, z) !== null || headChar(X, Y + 1, z) !== null ||
+           headChar(X, Y - 1, z) !== null || headChar(X, Y, z + 1) !== null || headChar(X, Y, z - 1) !== null;
+  }
+  function buildBeard() {
+    var layers = [], x, y, z;
+    for (z = 0; z < BEARD_BOX.h; z++) {
+      var L = [];
+      for (y = 0; y < BEARD_BOX.d; y++) {
+        var row = '';
+        for (x = 0; x < BEARD_BOX.w; x++) {
+          var X = BEARD_BOX.X0 + x, Y = BEARD_BOX.Y0 + y, Z = BEARD_BOX.z0 + z;
+          row += !isBeard(X, Y, Z) ? '.' : Z <= 52 ? 'K' : 'g';
         }
         L.push(row);
       }
@@ -197,30 +280,30 @@
     return layers;
   }
 
-  // head region (38.34): Head + Jaw boxes plus the hair room, centred [X0,X1, Y0,Y1, z0,z1]
-  var HEAD_REGION = { bones: ['Head', 'Jaw'], box: [-6, 6, -10, 9, 58, 71] };
+  // head region (38.34): Head box U Jaw box (hair + beard room), centred [X0,X1, Y0,Y1, z0,z1]
+  var HEAD_REGION = { bones: ['Head', 'Jaw'], box: [-9, 9, -10, 9, 51, 71] };
 
   // ===================================================================================================================
   // 5. BONES: joint (centred coords, continuous) + box (centred, INCLUSIVE cell ranges [X0,X1, Y0,Y1, z0,z1]).
   //    Right side listed; Left mirrors X. First match in skeleton order wins.
   // ===================================================================================================================
   var CENTER_BONES = {
-    Hips:  { joint: [0, 0.5, 35.0],  box: [-8, 8, -10, 9, 34, 40] },
-    Spine: { joint: [0, 0.0, 41.0],  box: [-8, 8, -10, 9, 41, 46] },
-    Chest: { joint: [0, 0.0, 47.0],  box: [-6, 6, -10, 9, 47, 54] },
-    Neck:  { joint: [0, 1.0, 55.0],  box: [-2, 2, -1, 9, 55, 60] },
-    Head:  { joint: [0, 0.5, 61.0],  box: [-6, 6, -10, 9, 61, 71] },
-    Jaw:   { joint: [0, 0.5, 61.5],  box: [-5, 5, -10, 0, 58, 60] }
+    Hips:  { joint: [0, 0.5, 29.0],  box: [-8, 8, -10, 9, 28, 34] },
+    Spine: { joint: [0, 0.0, 35.0],  box: [-8, 8, -10, 9, 35, 40] },
+    Chest: { joint: [0, 0.0, 41.0],  box: [-7, 7, -10, 9, 41, 50] },
+    Neck:  { joint: [0, 1.5, 51.0],  box: [-3, 3, 0, 9, 51, 57] },
+    Head:  { joint: [0, 0.5, 58.0],  box: [-9, 9, -10, 9, 58, 71] },
+    Jaw:   { joint: [0, 0.5, 58.5],  box: [-7, 7, -10, 0, 51, 57] }
   };
   var SIDE_BONES = {   // right side, X >= 0
-    Shoulder: { joint: [2.5, 0.5, 54.5], box: [3, 6, -10, 9, 55, 56] },
-    UpperArm: { joint: [8.5, 0.0, 53.5], box: [7, 16, -10, 9, 43, 56] },
-    LowerArm: { joint: [11.5, 0.0, 43.0], box: [7, 16, -10, 9, 33, 42] },
-    Hand:     { joint: [12.0, -0.5, 33.0], box: [7, 16, -10, 9, 24, 32] },
-    UpperLeg: { joint: [4.0, -0.5, 33.5], box: [1, 9, -10, 9, 18, 33] },
-    LowerLeg: { joint: [4.0, -0.5, 17.5], box: [1, 9, -10, 9, 3, 17] },
-    Foot:     { joint: [4.0, 0.0, 3.0],   box: [1, 9, -4, 9, 0, 2] },
-    Toes:     { joint: [4.0, -4.5, 0.5],  box: [1, 9, -10, -5, 0, 2] }
+    Shoulder: { joint: [3.5, 0.5, 49.5], box: [8, 16, -10, 9, 49, 50] },
+    UpperArm: { joint: [9.5, 0.0, 48.0], box: [8, 16, -10, 9, 41, 48] },
+    LowerArm: { joint: [12.5, 0.0, 41.0], box: [8, 16, -10, 9, 31, 40] },
+    Hand:     { joint: [13.0, 0.0, 31.0], box: [8, 16, -10, 9, 24, 30] },
+    UpperLeg: { joint: [4.5, -0.5, 27.5], box: [1, 9, -10, 9, 15, 27] },
+    LowerLeg: { joint: [4.0, 0.0, 15.0],  box: [1, 9, -10, 9, 3, 14] },
+    Foot:     { joint: [4.0, 0.0, 3.0],   box: [1, 9, -3, 9, 0, 2] },
+    Toes:     { joint: [4.0, -3.5, 0.5],  box: [1, 9, -10, -4, 0, 2] }
   };
   function gridJoint(j) { return [r3(j[0] + CX + 0.5), r3(j[1] + CY + 0.5), r3(j[2])]; }
   // box = INCLUSIVE cell range [x0, y0, z0, x1, y1, z1] (engine/chargen/kit.js)
@@ -257,47 +340,49 @@
     }
     function pair(X0, X1, Y0, Y1, z0, z1, cut) { block(X0, X1, Y0, Y1, z0, z1, cut); block(-X1, -X0, Y0, Y1, z0, z1, cut); }
 
-    // legs: foot (sole + toes z 0-1, instep z 2), shin 5 x 5, knee + thigh 5 x 6 (the one-cell step at the knee front)
-    pair(2, 6, -5, 2, 0, 1, true);
-    pair(2, 6, -2, 2, 2, 16, true);
-    pair(2, 6, -3, 2, 17, 33, true);
-    // torso: hips 13 wide (z 34-40), waist 11 (z 41-46), chest 13 (z 47-53, deeper in front), shoulder top, traps
-    block(-6, 6, -3, 4, 34, 38, true);
-    block(-6, 6, -3, 3, 39, 40, true);
-    block(-5, 5, -3, 3, 41, 46, true);
-    block(-6, 6, -3, 3, 47, 47, true);
-    block(-6, 6, -4, 3, 48, 52, true);
-    block(-6, 6, -3, 3, 53, 53, true);
-    block(-5, 5, -3, 3, 54, 54, true);
-    block(-4, 4, -1, 2, 55, 55, true);
-    // neck 5 x 5, set back (behind the jaw)
-    block(-2, 2, -1, 3, 54, 60, true);
-    // arms (slight A): deltoid cap z 54-55, upper arm stepping out to X 9-13 by z 46 (>= 3 cells from the waist),
-    // forearm one cell further out below the elbow (z 34-42), wrist z 33
-    pair(7, 8, -1, 1, 55, 55, false);
-    pair(7, 9, -2, 2, 54, 54, true);
-    pair(7, 10, -2, 2, 51, 53, true);
-    pair(7, 11, -2, 2, 49, 50, true);
-    pair(8, 12, -2, 2, 47, 48, true);
-    pair(9, 13, -2, 2, 43, 46, true);
-    pair(10, 14, -2, 2, 34, 42, true);
-    pair(11, 13, -2, 1, 33, 33, false);
-    // hands (palm faces the thigh): a 3 x 4 block, fingers curled in at z 26, thumb forward (Y -3)
-    pair(11, 13, -2, 1, 27, 32, false);
-    pair(11, 12, -2, 1, 26, 26, false);
-    pair(11, 12, -3, -3, 29, 31, false);
-    // head
-    for (z = 58; z <= 69; z++) for (Y = -6; Y <= 4; Y++) for (X = -6; X <= 6; X++) {
+    // legs (shorter, chunky): foot (sole + toes z 0-1, instep z 2), shin 5 x 5 (z 3-14), thigh 6 x 6 (z 15-27; the
+    // one-cell step at the knee: forward and out)
+    pair(2, 6, -6, 2, 0, 1, true);
+    pair(2, 6, -3, 2, 2, 2, true);
+    pair(2, 6, -2, 2, 3, 14, true);
+    pair(2, 7, -3, 2, 15, 27, true);
+    // torso: crotch + hips 15 wide (z 28-34, seat at the back), waist 13 (z 35-42), chest 13 deeper in front (z 43-46),
+    // upper chest 15 (z 47-49), shoulder tops (z 50)
+    block(-7, 7, -3, 3, 28, 29, true);
+    block(-7, 7, -4, 4, 30, 33, true);
+    block(-7, 7, -4, 3, 34, 34, true);
+    block(-6, 6, -3, 3, 35, 42, true);
+    block(-6, 6, -4, 3, 43, 46, true);
+    block(-7, 7, -4, 3, 47, 49, true);
+    block(-6, 6, -3, 2, 50, 50, true);
+    // short neck 5 x 5, set back behind the jaw (hidden by the beard / jaw from the front)
+    block(-2, 2, 0, 4, 50, 57, true);
+    // arms (slight A): deltoid cap z 49-50, upper arm stepping out to X 10-14 by z 46 (>= 3 cells from the chest),
+    // forearm one cell further out below the elbow (z 32-40), wrist z 31
+    pair(7, 9, -2, 2, 50, 50, true);
+    pair(8, 10, -2, 2, 49, 49, true);
+    pair(8, 12, -2, 2, 48, 48, true);
+    pair(9, 13, -2, 2, 47, 47, true);
+    pair(10, 14, -2, 2, 41, 46, true);
+    pair(11, 15, -2, 2, 32, 40, true);
+    pair(12, 14, -2, 1, 31, 31, false);
+    // hands as blocks (palm faces the thigh): 3 x 5 x 5, fingers curled in at z 25, thumb forward (Y -3)
+    pair(12, 14, -2, 2, 26, 30, false);
+    pair(12, 13, -2, 1, 25, 25, false);
+    pair(12, 13, -3, -3, 27, 29, false);
+    // head (profile-built, see headChar)
+    for (z = 53; z <= 69; z++) for (Y = -8; Y <= 5; Y++) for (X = -8; X <= 8; X++) {
       var hc = headChar(X, Y, z);
       if (hc) put(X, Y, z, hc);
     }
-    // soft top-down shade only: under the chin (front of the neck), the armpits (torso side under the arm)
-    for (X = -1; X <= 1; X++) put(X, -1, 57, 's');
-    for (s = -1; s <= 1; s += 2) for (Y = -2; Y <= 2; Y++) for (z = 47; z <= 48; z++) put(s * 6, Y, z, 's');
-    // underwear: plain undyed linen braies, waist (z 40) to mid-thigh (z 28), waistband + hem in linen_dark
-    for (z = 28; z <= 40; z++) for (Y = -CY; Y < SY - CY; Y++) for (X = -8; X <= 8; X++) {
+    // broad shade only where light cannot reach: under the chin (neck front), the armpits (torso side under the arm)
+    function shade(X, Y, z) { var q = idx(X, Y, z); if (q >= 0 && G[q] === 'a') G[q] = 's'; }
+    for (X = -1; X <= 1; X++) for (z = 51; z <= 52; z++) shade(X, 0, z);
+    for (s = -1; s <= 1; s += 2) for (Y = -2; Y <= 2; Y++) for (z = 45; z <= 46; z++) shade(s * 6, Y, z);
+    // underwear: plain undyed linen braies, hip top (z 34) to mid-thigh (z 22), waistband + hem in linen_dark
+    for (z = 22; z <= 34; z++) for (Y = -CY; Y < SY - CY; Y++) for (X = -8; X <= 8; X++) {
       var q = idx(X, Y, z);
-      if (q >= 0 && G[q] === 'a') G[q] = (z === 40 || z === 28) ? 'U' : 'u';
+      if (q >= 0 && G[q] === 'a') G[q] = (z === 34 || z === 22) ? 'U' : 'u';
     }
 
     var layers = [];
@@ -398,19 +483,92 @@
         thick: 0, paint: '5' },
       // leather boots: foot + toes + the lower 45 % of the shin (to z 9), one cell thick (the cuff steps out)
       { id: 'boots', slot: 'feet', regions: sides('LowerLeg', 0.55, 1).concat(sides('Foot', 0, 1), sides('Toes', 0, 1)), thick: 1, paint: '9' },
-      // belt: the top two hip rows (z 39-40), one cell thick
-      { id: 'belt', slot: 'outer', regions: [{ bone: 'Hips', t0: 0, t1: 0.25 }], thick: 1, paint: 'm' }
+      // belt: the top two hip rows (z 33-34), one cell thick
+      { id: 'belt', slot: 'outer', regions: [{ bone: 'Hips', t0: 0, t1: 0.25 }], thick: 1, paint: 'm' },
+      // ---- knight pieces (CHARGEN-26, kit.looks.knight); the mail checker / trim / emblem come from the `heraldry` decal
+      // chainmail hauberk: torso + shoulders + full sleeves to the wrist (thick 0, light grey)
+      { id: 'mail', slot: 'top', regions: [{ bone: 'Spine', t0: 0, t1: 1 }, { bone: 'Chest', t0: 0, t1: 1 }]
+          .concat(sides('Shoulder', 0, 1), sides('UpperArm', 0, 1), sides('LowerArm', 0, 1)), thick: 0, paint: 'q' },
+      // chainmail chausses: hips to ankle
+      { id: 'mail_legs', slot: 'legs', regions: [{ bone: 'Hips', t0: 0, t1: 1 }].concat(sides('UpperLeg', 0, 1), sides('LowerLeg', 0, 1)),
+        thick: 0, paint: 'q' },
+      // dark boots + gloves (one paint: the feet dye's dark shade; knight look = gall, a dark grey), one cell thick
+      { id: 'boots_gloves', slot: 'feet', regions: sides('LowerLeg', 0.55, 1).concat(sides('Foot', 0, 1), sides('Toes', 0, 1), sides('Hand', 0, 1)),
+        thick: 1, paint: '9' },
+      // white tabard (surcoat): chest, waist, hips and a split skirt to above the knee (UpperLeg t < 0.75 = z 18-27), one
+      // cell thick; sleeveless, so the mail shows at the shoulders and arms
+      { id: 'tabard', slot: 'outer', regions: [{ bone: 'Chest', t0: 0, t1: 1 }, { bone: 'Spine', t0: 0, t1: 1 }, { bone: 'Hips', t0: 0, t1: 1 }]
+          .concat(sides('UpperLeg', 0, 0.75)), thick: 1, paint: 'k' }
     ];
   }
-  // random NPC weights (engine/chargen/random.js): trousers always, boots and hair mostly, shirt 3 in 4, belt 2 in 3
-  var RANDOM = { hair: { none: 0.3 }, legs: { none: 0 }, feet: { none: 0.2 }, top: { shirt: 3 }, outer: { belt: 2 } };
+  // random NPC weights (engine/chargen/random.js): trousers always, boots and hair mostly, shirt 3 in 4, belt 2 in 3,
+  // a beard 1 in 3; the knight pieces never (they are a look, kit.looks.knight)
+  var RANDOM = {
+    hair: { none: 0.3 }, beard: { none: 2, full: 1 }, hat: { none: 1, heraldry: 0 },
+    legs: { none: 0, trousers: 1, mail_legs: 0 }, feet: { none: 0.2, boots: 1, boots_gloves: 0 },
+    top: { shirt: 3, mail: 0 }, outer: { belt: 2, tabard: 0 }
+  };
+  // the knight look (D-063 reference): black short hair + full beard, mail, dark boots + gloves, white tabard + heraldry
+  function knightLook() {
+    return {
+      v: 1, kit: KIT_ID, base: 'm_avg', height: 0, age: 'adult', skin: 'medium', eyes: 'brown',
+      hair: { id: 'short', ramp: 'black' }, beard: { id: 'full', ramp: 'black' },
+      top: { id: 'mail', ramp: 'undyed' }, legs: { id: 'mail_legs', ramp: 'undyed' }, feet: { id: 'boots_gloves', ramp: 'gall' },
+      outer: { id: 'tabard', ramp: 'undyed' }, hat: { id: 'heraldry', ramp: 'undyed' }
+    };
+  }
+  // red cross on gold (rows z 49 down to 41, X -3..3): a red outline round a gold Latin cross
+  var EMBLEM = ['..RRR..', '..RyR..', 'RRRyRRR', 'RyyyyyR', 'RRRyRRR', '..RyR..', '..RyR..', '..RyR..', '..RRR..'];
+  // the `heraldry` decal (hat slot, paintOnly: never adds voxels, keeps every bone): computed from the knight composed
+  // WITHOUT it at height 0. Paints the chainmail checker (r on every odd x+y+z mail cell), the red sash (tabard z 34-35),
+  // the red hem (z 18) and the red split trim (skirt cells |X| <= 1), and the emblem on the front-most tabard cells.
+  // Anchor `belt` (z 33.5): the legs and sash stay aligned at every height (shin stretch rows z 4-7 lie below, waist
+  // rows z 35-37 above: the chest emblem / sleeve checker may sit up to 2 rows low at |height| 4, still on the tabard).
+  function buildHeraldry(kit) {
+    var rc = knightLook(); rc.hat = null;
+    var C = composePreview(kit, 'm_avg', rc), S = C.size, paint = {}, x, y, z, k, c, X;
+    for (z = 0; z < S[2]; z++) for (y = 0; y < S[1]; y++) for (x = 0; x < S[0]; x++) {
+      k = x + S[0] * (y + S[1] * z); c = C.ch[k]; X = x - CX;
+      if (c === 'q' && ((x + y + z) & 1)) paint[k] = 'r';
+      else if (c === 'k' && (z === 34 || z === 35 || z === 18 || (z >= 18 && z <= 27 && Math.abs(X) <= 1))) paint[k] = 'R';
+    }
+    EMBLEM.forEach(function (rowS, r) {
+      z = 49 - r;
+      for (var j = 0; j < rowS.length; j++) {
+        var e = rowS.charAt(j);
+        if (e === '.') continue;
+        x = j - 3 + CX;
+        for (y = 0; y < S[1]; y++) {
+          k = x + S[0] * (y + S[1] * z);
+          if (C.ch[k] === '.') continue;
+          if (C.ch[k] === 'k') paint[k] = e;
+          break;
+        }
+      }
+    });
+    var z0 = SZ, z1 = -1;
+    for (var key in paint) { z = Math.floor(+key / (S[0] * S[1])); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+    var layers = [];
+    for (z = z0; z <= z1; z++) {
+      var L = [];
+      for (y = 0; y < S[1]; y++) {
+        var row = '';
+        for (x = 0; x < S[0]; x++) row += paint[x + S[0] * (y + S[1] * z)] || '.';
+        L.push(row);
+      }
+      layers.push(L);
+    }
+    // anchor belt = cell centre (18.5, 6.5, 33.5): offset puts the box origin on grid (0, 0, z0)
+    return { id: 'heraldry', slot: 'hat', bone: 'Chest', anchor: 'belt', offset: [-18.5, -6.5, z0 - 33.5],
+             box: [S[0], S[1], z1 - z0 + 1], paintOnly: true, layers: layers };
+  }
 
   function buildHumanKit(P) {
     var CG = P.chargen;
     if (!CG) throw new Error('human_kit: palette.chargen missing (load design/palette.js v1.54+)');
     var bones = boneTable(), layers = buildBase();
     function mount(X, Y, z) { return gridJoint([X, Y, z]); }   // anchors: [x,y,z] cells; the bone = the box it sits in
-    return {
+    var kit = {
       kind: 'charkit',
       schema: 1,
       id: KIT_ID,
@@ -435,17 +593,18 @@
           bones: bones,
           anchors: {
             head_top: mount(0, -0.5, 69.5),
-            eyes: mount(0, -5.0, 64.5),
-            mouth: mount(0, -5.0, 60.5),
-            hand_r: mount(12.0, -0.5, 29.5),
-            hand_l: mount(-12.0, -0.5, 29.5),
-            back: mount(0, 4.5, 50.0),
-            belt: mount(0, -4.0, 39.5)
+            eyes: mount(0, -6.0, 63.5),
+            mouth: mount(0, -6.0, 57.5),
+            hand_r: mount(13.0, -0.5, 28.5),
+            hand_l: mount(-13.0, -0.5, 28.5),
+            back: mount(0, 4.5, 45.0),
+            belt: mount(0, -4.0, 33.5)
           },
           // height (-4..4): CHARGEN-05 (engine/chargen/height.js) duplicates / deletes |height| rows picked evenly
-          // over this sorted list. 6 shin rows (LowerLeg only) + 2 waist rows: z 37 (hips beside both forearms) and
-          // z 44 (waist beside both upper arms) - clear of every hand box (z 24-32) and the head region (z 58+).
-          stretchRows: [6, 8, 9, 11, 12, 14, 37, 44],
+          // over this sorted list. 4 lower-shin rows z 4-7 (LowerLeg only, inside the boots) + 3 waist rows z 35-37
+          // (Spine beside both forearms) - clear of every hand box (z 24-30) and the head region (z 51+). The heraldry
+          // decal (anchor belt z 33.5) relies on no stretch row between z 8 and z 34.
+          stretchRows: [4, 5, 6, 7, 35, 36, 37],
           layers: layers,
           // the head at 1.25 cm (level 2 of region head) = a straight 2x upsample of the level-1 head (CHARGEN-25)
           detail: { head: { '2': { layers: buildHeadL2(layers, bones) } } }
@@ -453,9 +612,12 @@
       },
       shells: buildShells(),
       attachments: [
-        // short hair; head_top = cell centre (18.5, 10, 69.5), so the offset puts the box origin on X -6, Y -6, z 61
-        { id: 'short', slot: 'hair', bone: 'Head', anchor: 'head_top', offset: [-6.5, -6, -8.5],
-          box: [HAIR_BOX.w, HAIR_BOX.d, HAIR_BOX.h], layers: buildHair() }
+        // short hair; head_top = cell centre (18.5, 10, 69.5), so the offset puts the box origin on X -8, Y -6, z 58
+        { id: 'short', slot: 'hair', bone: 'Head', anchor: 'head_top', offset: [-8.5, -6, -11.5],
+          box: [HAIR_BOX.w, HAIR_BOX.d, HAIR_BOX.h], layers: buildHair() },
+        // full beard + moustache; mouth = cell centre (18.5, 4.5, 57.5), so the box origin lands on X -8, Y -8, z 51
+        { id: 'full', slot: 'beard', bone: 'Jaw', anchor: 'mouth', offset: [-8.5, -2.5, -6.5],
+          box: [BEARD_BOX.w, BEARD_BOX.d, BEARD_BOX.h], layers: buildBeard() }
       ],
       clips: {},
       random: RANDOM,
@@ -464,8 +626,12 @@
         hair: { id: 'short', ramp: 'darkbrown' }, beard: null,
         top: { id: 'shirt', ramp: 'undyed' }, legs: { id: 'trousers', ramp: 'walnut' }, feet: { id: 'boots', ramp: 'walnut' },
         outer: { id: 'belt', ramp: 'walnut' }, hat: null
-      }
+      },
+      // named looks (CHARGEN-26): full recipes a game / UI may start from; civilian = defaults
+      looks: { knight: knightLook() }
     };
+    kit.attachments.push(buildHeraldry(kit));
+    return kit;
   }
 
   // deterministic JSON text: 2-space indent, short number arrays on one line, trailing newline
@@ -807,7 +973,7 @@
   }
 
   var api = {
-    version: 2, KIT_ID: KIT_ID, CELL: CELL, SKELETON: SKELETON, PART_MAP: PART_MAP, MAX_PARTS: MAX_PARTS,
+    version: 3, KIT_ID: KIT_ID, knightLook: knightLook, CELL: CELL, SKELETON: SKELETON, PART_MAP: PART_MAP, MAX_PARTS: MAX_PARTS,
     STRETCH_BONES: STRETCH_BONES, ARM_STRETCH: ARM_STRETCH,
     buildHumanKit: buildHumanKit, stringifyKit: stringifyKit, decodeBase: decodeBase, resolveMat: resolveMat,
     countQuads: countQuads, checkKit: checkKit, decodeDetail: decodeDetail, downsample2: downsample2,

@@ -16,7 +16,7 @@ const keys = (...c) => { const q = new Set(c); return (x) => q.has(x); };
 // then Random/Confirm/Back. Navigation below goes by row id, so it does not depend on how many slots the kit fills.
 let cc = createCharCreate({ kit, style, seed: 7 });
 assert.deepEqual(cc.snapshot().rows, ['skin', 'eyes', 'height', 'age', 'legs', 'legsRamp', 'feet', 'feetRamp', 'top', 'topRamp',
-  'outer', 'outerRamp', 'hair', 'hairRamp', 'random', 'confirm', 'back']);
+  'outer', 'outerRamp', 'hair', 'hairRamp', 'beard', 'beardRamp', 'hat', 'hatRamp', 'random', 'confirm', 'back']); // CHARGEN-26: beard + hat (heraldry) items
 const ROWS = cc.snapshot().rows, rowOf = (id) => ROWS.indexOf(id);
 cc.handleKey('KeyD'); assert.equal(cc.snapshot().look.skin, 'brown');
 for (let i = 0; i < 4; i++) cc.handleKey('KeyA'); assert.equal(cc.snapshot().look.skin, 'dark', 'wraps');
