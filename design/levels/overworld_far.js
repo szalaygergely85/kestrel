@@ -265,6 +265,10 @@
     }
   };
 
+  // MAP-01a: world rect (128 m aligned) + protected keep rect (zones east+west + 64 m) for the geography layers.
+  DEF.geo = { world: { x0: 0, y0: 0, x1: 4096, y1: 4096 }, keep: { x0: 704, y0: 832, x1: 1728, y1: 1344 } };
+  var GEO = DEF.geo;
+
   // ---------------- noise ----------------
   function hash(ix, iy, s) {
     var h = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + Math.imul(s, 982451653)) | 0;
@@ -307,7 +311,86 @@
     var valley = -R.valley.depth * Math.exp(-Math.pow(dr / R.valley.width, 2));
     var ridge = R.ridge.height * smooth(R.ridge.x0, R.ridge.x1, x) * (0.6 + 0.4 * fbm(x / R.ridge.scale, y / R.ridge.scale, s + 7, 3, 0.5, 2));
     var carve = R.river.carve * smooth(R.river.carveEdge[0], R.river.carveEdge[1], dr);
-    return home + hill2 + roll + valley + ridge - carve;
+    var hh = home + hill2 + roll + valley + ridge - carve;
+    if (GEO_N !== 0) hh = geoHeight(hh, x, y);
+    return hh;
+  }
+  // ---------------- MAP-01a (arch 38.42): ordered pure geography layers + keep mask + GeoFields ----------------
+  // Layers `{id, rect:[x0,y0,x1,y1], core?:[..], heightFn?(h,x,y,F), typeFn?(t,x,y,h,slope,F)}` run in list order AFTER the recipe sum.
+  // Inside geo.keep (stage 0-2 area) every layer is skipped BY BRANCH (no float op) -> near bands/scatter stay bit-identical.
+  // An empty list = today's bytes. Data (sea/ridges/river/lake/biomes) arrives with MAP-01b/c and the designer's map.
+  var GEO_N = 0, GEO_LAYERS = [], GEO_F = null;   // GEO = DEF.geo is set above
+  function inKeep(x, y) { var k = GEO.keep; return x >= k.x0 && x < k.x1 && y >= k.y0 && y < k.y1; }
+  function geoHeight(h, x, y) {
+    if (inKeep(x, y)) return h;
+    for (var i = 0; i < GEO_N; i++) {
+      var L = GEO_LAYERS[i], r = L.rect;
+      if (L.heightFn === undefined || x < r[0] || x >= r[2] || y < r[1] || y >= r[3]) continue;
+      h = L.heightFn(h, x, y, GEO_F);
+    }
+    return h;
+  }
+  function geoType(t, x, y, h, slope) {
+    for (var i = 0; i < GEO_N; i++) {
+      var L = GEO_LAYERS[i], r = L.rect;
+      if (L.typeFn === undefined || x < r[0] || x >= r[2] || y < r[1] || y >= r[3]) continue;
+      t = L.typeFn(t, x, y, h, slope, GEO_F);
+    }
+    return t;
+  }
+  // Signed-distance helpers for GeoFields builders (run once per grid node at build time, never per height sample).
+  function distSeg(px, py, ax, ay, bx, by) {
+    var dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy, t = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t; var qx = ax + dx * t - px, qy = ay + dy * t - py; return Math.sqrt(qx * qx + qy * qy);
+  }
+  function polylineSdf(pts) {                     // <= 64 verts; unsigned distance to the line
+    if (pts.length > 64) throw new Error('geo: polyline > 64 verts');
+    return function (x, y) { var b = 1e18; for (var i = 1; i < pts.length; i++) { var d = distSeg(x, y, pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]); if (d < b) b = d; } return b; };
+  }
+  function polygonSdf(pts) {                      // <= 32 verts; negative inside
+    if (pts.length > 32) throw new Error('geo: polygon > 32 verts');
+    return function (x, y) {
+      var b = 1e18, inside = false, n = pts.length, i, j;
+      for (i = 0, j = n - 1; i < n; j = i++) {
+        var d = distSeg(x, y, pts[j][0], pts[j][1], pts[i][0], pts[i][1]); if (d < b) b = d;
+        if ((pts[i][1] > y) !== (pts[j][1] > y) && x < (pts[j][0] - pts[i][0]) * (y - pts[i][1]) / (pts[j][1] - pts[i][1]) + pts[i][0]) inside = !inside;
+      }
+      return inside ? -b : b;
+    };
+  }
+  function GeoFields(world, fns) {                // one Float32 grid (16 m) per region, built once from {id: (x,y)->signed dist}
+    var ids = Object.keys(fns); if (ids.length > 16) throw new Error('geo: > 16 fields');
+    this.x0 = world.x0; this.y0 = world.y0; this.cell = 16;
+    this.w = Math.ceil((world.x1 - world.x0) / 16) + 1; this.h = Math.ceil((world.y1 - world.y0) / 16) + 1;
+    this.grids = {}; this.ids = ids;
+    for (var k = 0; k < ids.length; k++) {
+      var g = new Float32Array(this.w * this.h), fn = fns[ids[k]];
+      for (var j = 0; j < this.h; j++) for (var i = 0; i < this.w; i++) g[i + j * this.w] = fn(this.x0 + i * 16, this.y0 + j * 16);
+      this.grids[ids[k]] = g;
+    }
+  }
+  GeoFields.prototype.sdf = function (id, x, y) {   // bilinear, clamped at the grid edge; 0 alloc
+    var g = this.grids[id], fx = (x - this.x0) / 16, fy = (y - this.y0) / 16, W = this.w;
+    fx = fx < 0 ? 0 : fx > W - 1.001 ? W - 1.001 : fx; fy = fy < 0 ? 0 : fy > this.h - 1.001 ? this.h - 1.001 : fy;
+    var i = fx | 0, j = fy | 0, u = fx - i, v = fy - j, q = i + j * W;
+    var a = g[q], b = g[q + 1], c = g[q + W], d = g[q + W + 1];
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  };
+  // layers: array (may be empty = today's bytes); regions: {id: sdfFn} for GeoFields (built here, once, before any bake).
+  function setGeoLayers(layers, regions) {
+    layers = layers || [];
+    var k = GEO.keep, ids = {}, i;
+    for (i = 0; i < layers.length; i++) {
+      var L = layers[i];
+      if (!L.id || ids[L.id]) throw new Error('geo: layer needs a unique id (' + L.id + ')');
+      ids[L.id] = 1;
+      if (!L.rect || L.rect.length !== 4) throw new Error('geo: layer ' + L.id + ' needs rect [x0,y0,x1,y1]');
+      var c = L.core;                                  // hard core (full effect) must stay out of the keep rect
+      if (c && c[0] < k.x1 && c[2] > k.x0 && c[1] < k.y1 && c[3] > k.y0) throw new Error('geo: layer ' + L.id + ' core overlaps keep');
+    }
+    GEO_F = (regions && Object.keys(regions).length) ? new GeoFields(GEO.world, regions) : null;
+    GEO_LAYERS = layers.slice(); GEO_N = GEO_LAYERS.length;
+    return GEO_F;
   }
   // overrides: all stamps/paints flattened into one list at load (a stamp can reach into neighbouring chunks)
   var STAMPS = [], PAINTS = [];
@@ -393,9 +476,11 @@
     else { hx = (hxp - hxm) / (2 * e); hy = (hyp - hym) / (2 * e); }
     var slope = Math.sqrt(hx * hx + hy * hy), dh = Math.hypot(x - T.x, y - T.y), F = R.forest, K = R.rock;
     if (slope > K.slope || (dh > K.minHomeDist && fbm(x / K.scale, y / K.scale, s + 29, 2, 0.5, 2) > K.threshold)) return 3;
+    var base = 0;
     if (fbm(x / F.scale + 17, y / F.scale - 9, s + 13, F.octaves, 0.5, 2) > F.threshold && slope < F.maxSlope &&
-        dr > F.riverClear && pathDist(x, y) > F.pathClear && dh > F.homeClear) return 1;
-    return 0;
+        dr > F.riverClear && pathDist(x, y) > F.pathClear && dh > F.homeClear) base = 1;
+    if (GEO_N !== 0 && !inKeep(x, y)) return geoType(base, x, y, heightAt(x, y), slope);
+    return base;
   }
 
   // ---------------- baking helpers ----------------
@@ -431,6 +516,7 @@
   DEF.util = {
     heightAt: heightAt, typeAt: typeAt, recipeHeight: recipeHeight, setEditLayer: setEditLayer, getEditLayer: getEditLayer, baseHeightAt: baseHeightAt,
     generate: generate, bake: bake, bakeChunk: bakeChunk, gridHeight: gridHeight, chunkKey: chunkKey,
+    setGeoLayers: setGeoLayers, GeoFields: GeoFields, polylineSdf: polylineSdf, polygonSdf: polygonSdf,
     reindexOverrides: indexOverrides, hash: hash, fbm: fbm, riverX: riverX, pathDist: pathDist
   };
   A.levels.overworld_far = DEF;
