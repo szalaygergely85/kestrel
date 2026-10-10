@@ -1809,7 +1809,7 @@ async function runGame(mode, cinematic = null) {
       // step's position, before the event flush - `E` is edge-triggered the
       // same way Space is (US-009's convention). Forced false while ending
       // (input locked - no other interactable may fire mid-ending).
-      updateInteraction(engine.world, engine, Camera.fromEntityInto(playerHandle.data, undefined, interactEye, pitchClampDeg), !ending && !uiLocked && input.pressed(gameKeys.interact));
+      updateInteraction(engine.world, engine, Camera.fromEntityInto(playerHandle.data, undefined, interactEye, pitchClampDeg), !ending && !uiLocked && !isNoteOpen() && input.pressed(gameKeys.interact)); // NOTE-CLOSE-01: while a note is up, E only closes it (never re-reads)
       // READ-01: the open note's fade + `[E]`/`[Esc]` close, right after
       // `updateInteraction` (which just fired `note.read` on the E edge). A
       // no-op while no note is open; the close guard (`state === 'open'`)
