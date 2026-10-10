@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createQuestBook, validateGiverQuest, STATUS_NAMES, UNAVAILABLE, AVAILABLE, ACTIVE, READY, DONE } from './questBook.js';
+import { createQuestBook, validateGiverQuest, validateSections, migrateM1Ch1, STATUS_NAMES, UNAVAILABLE, AVAILABLE, ACTIVE, READY, DONE } from './questBook.js';
 import { questObjectives } from './quest.js';
 const rd = p => JSON.parse(readFileSync(new URL('../../../../content/quests/' + p, import.meta.url)));
 const burl = rd('burl.boars.quest.json');
 // QG-03 repoints m1 `beasts` at the hand-in flag; the test builds that variant itself.
-const mainDef = structuredClone(rd('m1.quest.json'));
+const mainDef = structuredClone(JSON.parse(readFileSync(new URL('./fixtures/m1.legacy.quest.json', import.meta.url)))); // legacy 6-step chain; the CH1 chain is tested below
 mainDef.objectives.find(o => o.id === 'beasts').when = { type: 'flag', id: 'quest.burl.boars.done', equals: true };
 const boars = ['boar1', 'boar2', 'boar3', 'boar4', 'boar5'];
 const ev = {
@@ -97,4 +97,28 @@ if (global.gc) {
   for (let i = 0; i < 10000; i++) step(i);
   global.gc(); assert.ok(process.memoryUsage().heapUsed - h0 < 200000, 'steady-state heap growth');
 } else for (let i = 0; i < 10000; i++) step(i);
+// ---- CH1-01: the real m1 chain, sections, migration ----
+{
+  const ch1 = rd('m1.quest.json');
+  assert.deepEqual(ch1.objectives.map(o => o.id), ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone', 'road', 'relayFound', 'relay1', 'fen']);
+  assert.equal(ch1.sections.length, 7); assert.equal(validateSections(ch1), ch1);
+  assert.equal(rd('burl.boars.quest.json').title, 'Boars in the Woods');
+  const o = structuredClone(ch1); o.objectives[1].section = 'q02';
+  assert.throws(() => validateSections(o), /contiguous/);
+  o.objectives[1].section = 'zz'; assert.throws(() => validateSections(o), /unknown section/);
+  const q = (completed, extra = {}) => ({ quest: { questVersion: 1, questId: 'm1', flags: {}, items: [], deadBeasts: [], areas: [], completed }, ...extra });
+  const mig = c => migrateM1Ch1(q(c)).quest.completed;
+  assert.deepEqual(mig(['wake', 'lantern']), ['wake']);
+  assert.deepEqual(mig(['wake', 'lantern', 'breach', 'sword']), ['wake', 'breach', 'sword']);
+  assert.deepEqual(mig(['wake', 'lantern', 'breach', 'sword', 'beasts']), ['wake', 'breach', 'sword', 'leave', 'beasts']);
+  const six = migrateM1Ch1(q(['wake', 'lantern', 'breach', 'sword', 'beasts', 'waystone']));
+  assert.deepEqual(six.quest.completed, ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone']);
+  assert.deepEqual(six.world.state, { 'waystone.waystone.woken': true, 'burl.phase': 4, 'aether.attuned': true });
+  for (const c of [[], ['wake'], ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone', 'road']]) { const g = q(c); assert.equal(migrateM1Ch1(g), g, 'already-new save untouched'); }
+  assert.equal(migrateM1Ch1(six), six, 'idempotent');
+  const book = createQuestBook(ch1, [burl], { quest: six.quest, quests: null });
+  assert.equal(book.main.completed.length, 7); // round trip: restore + toSave keeps the prefix
+  assert.deepEqual(book.toSave().quest.completed, six.quest.completed);
+  const sv = book.toSave(); assert.equal(migrateM1Ch1(sv), sv, 'round trip: saved new chain is not migrated again');
+}
 console.log('questBook.test OK');

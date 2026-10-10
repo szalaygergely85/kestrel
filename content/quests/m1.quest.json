@@ -1,12 +1,26 @@
 {
   "version": 1,
   "id": "m1",
+  "sections": [
+    { "id": "q01", "title": "A Blade in the Ashes" },
+    { "id": "q02", "title": "Leave the Tower" },
+    { "id": "q03", "title": "Boars in the Woods" },
+    { "id": "q04", "title": "Follow the Bear" },
+    { "id": "q05", "title": "Awaken the Stone" },
+    { "id": "q06", "title": "The Next Light" },
+    { "id": "q07", "title": "Not Alone" }
+  ],
   "objectives": [
-    { "id": "wake", "text": "Get up from the wreck", "when": { "type": "flag", "id": "wake", "equals": true } },
-    { "id": "lantern", "text": "Take the Kestrel's lamp", "when": { "type": "item", "id": "lantern" } },
-    { "id": "breach", "text": "Climb to the breach at the top", "when": { "type": "area", "id": "breach" } },
-    { "id": "sword", "text": "Take up the ruin steel", "when": { "type": "item", "id": "sword" } },
-    { "id": "beasts", "text": "Find the old bear on the hillside", "when": { "type": "flag", "id": "quest.burl.boars.done", "equals": true } },
-    { "id": "waystone", "text": "Walk the pencil line to the waystone", "when": { "type": "area", "id": "waystone" } }
+    { "id": "wake", "section": "q01", "text": "Get up from the wreck", "when": { "type": "flag", "id": "wake", "equals": true } },
+    { "id": "breach", "section": "q01", "text": "Climb to the top of the tower", "when": { "type": "area", "id": "breach" } },
+    { "id": "sword", "section": "q01", "text": "Take up the ruin steel", "when": { "type": "item", "id": "sword" } },
+    { "id": "leave", "section": "q02", "text": "Leave through the tower door", "when": { "type": "area", "id": "towerDoor" } },
+    { "id": "beasts", "section": "q03", "text": "Find the old bear on the hillside", "when": { "type": "flag", "id": "quest.burl.boars.done", "equals": true } },
+    { "id": "follow", "section": "q04", "text": "Follow the bear", "when": { "type": "flag", "id": "burl.arrived", "equals": true } },
+    { "id": "waystone", "section": "q05", "text": "Wake the waystone", "when": { "type": "flag", "id": "waystone.waystone.woken", "equals": true } },
+    { "id": "road", "section": "q06", "text": "Take the road west", "when": { "type": "area", "id": "roadWest" } },
+    { "id": "relayFound", "section": "q06", "text": "Find the dead relay at the bend", "when": { "type": "area", "id": "bendRelay" } },
+    { "id": "relay1", "section": "q06", "text": "Wake the relay", "when": { "type": "flag", "id": "waystone.ws_roadBend.woken", "equals": true } },
+    { "id": "fen", "section": "q07", "text": "Meet the one who is not alone", "when": { "type": "flag", "id": "fen.met", "equals": true } }
   ]
 }

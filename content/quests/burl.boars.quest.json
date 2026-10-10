@@ -1,7 +1,7 @@
 {
   "version": 1,
   "id": "burl.boars",
-  "title": "Boars in the Berries",
+  "title": "Boars in the Woods",
   "giver": { "npc": "bear" },
   "requires": [{ "quest": "m1", "step": "sword" }],
   "objectives": [

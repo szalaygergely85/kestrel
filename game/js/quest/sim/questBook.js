@@ -184,3 +184,58 @@ export function migrateQuestSave(game, defs) {
   }
   return any ? out : null;
 }
+
+/** CH1-01 (38.37 item 1): every objective `section` names a declared section and each section is one contiguous run. */
+export function validateSections(def) {
+  const secs = def?.sections;
+  const used = def.objectives.some(o => o.section !== undefined);
+  if (secs === undefined && !used) return def;
+  if (!Array.isArray(secs)) throw new Error('quest: sections must be an array');
+  const declared = new Set();
+  for (const s of secs) {
+    if (!s || typeof s.id !== 'string' || !s.id || typeof s.title !== 'string' || !s.title || declared.has(s.id)) throw new Error('quest: invalid section');
+    declared.add(s.id);
+  }
+  const closed = new Set();
+  let cur = null;
+  for (const o of def.objectives) {
+    const s = o.section;
+    if (s === undefined) { if (cur !== null) { closed.add(cur); cur = null; } continue; }
+    if (!declared.has(s)) throw new Error('quest: unknown section ' + s);
+    if (s !== cur) {
+      if (closed.has(s)) throw new Error('quest: section not contiguous ' + s);
+      if (cur !== null) closed.add(cur);
+      cur = s;
+    }
+  }
+  return def;
+}
+
+// Old (pre-CH1) m1 order -> the new step ids each old step implies. `lantern` is dropped.
+const CH1_IMPLIES = { wake: ['wake'], breach: ['breach'], sword: ['sword'], beasts: ['leave', 'beasts'], waystone: ['follow', 'waystone'] };
+const CH1_ORDER = ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone'];
+const CH1_ALL = [...CH1_ORDER, 'road', 'relayFound', 'relay1', 'fen'];
+
+/**
+ * CH1-01 (38.37 item 8). Pure: game = save-like {quest, world?:{state}}; returns game itself when nothing to do,
+ * else a copy with the m1 `completed` rewritten to the longest new prefix implied by the old one (facts kept).
+ * An old 'waystone' also sets flags waystone.waystone.woken, burl.phase 4, aether.attuned in world.state.
+ * Runs when `completed` has the old `lantern` or is otherwise not a prefix of the new chain.
+ */
+export function migrateM1Ch1(game, newIds = null) {
+  const q = game?.quest;
+  if (!q || !Array.isArray(q.completed) || q.questId !== 'm1') return game;
+  const ids = newIds || CH1_ALL;
+  const done = q.completed;
+  const isPrefix = done.every((id, i) => id === ids[i]);
+  if (isPrefix && !done.includes('lantern')) return game;
+  const implied = new Set();
+  for (const id of done) for (const n of CH1_IMPLIES[id] || []) implied.add(n);
+  const completed = [];
+  for (const id of CH1_ORDER) { if (!implied.has(id)) break; completed.push(id); }
+  const out = { ...game, quest: { ...q, completed } };
+  if (implied.has('waystone')) {
+    out.world = { ...(game.world || {}), state: { ...(game.world?.state || {}), 'waystone.waystone.woken': true, 'burl.phase': 4, 'aether.attuned': true } };
+  }
+  return out;
+}

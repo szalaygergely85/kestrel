@@ -18,10 +18,10 @@ assert.ok(s.lines.some(l => l.startsWith('  [>]')), 'active step marked');
 const empty = createQuestLogScreen({ version: 0, count: 0, status: () => 0, def: () => ({}), objectives: () => [] });
 empty.open(); assert.equal(empty.snapshot().lines.length, 0); empty.draw(ui);
 // one active giver quest
-for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'item:got', id: 'lantern' }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }]) book.feed(e);
+for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }, { type: 'area:entered', id: 'towerDoor' }]) book.feed(e);
 assert.equal(book.accept('burl.boars'), true);
 log.draw(ui); s = log.snapshot();
-assert.ok(s.lines.some(l => l.includes("Boars in the Berries")));
+assert.ok(s.lines.some(l => l.includes("Boars in the Woods")));
 assert.ok(log.handleKey('KeyS') && log.snapshot().sel === 1);
 s = log.snapshot(); assert.ok(s.lines.some(l => l.includes('[>] Bring down the five wild boars 0/5')));
 for (const id of ['boar1', 'boar2']) book.feed({ type: 'beast:died', id });
