@@ -28,7 +28,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { World, getBehaviour } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
+import { World, getBehaviour, openPackage } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 import { loadTestAssets } from './testing/content-node.mjs';
 
 // Same classic-script list as tools/validate-content.mjs (US-058), in the
@@ -211,6 +211,17 @@ for (const key of Object.keys(bundle.worlds)) {
  * resolves through the AssetRegistry, same numeric-variant rule
  * AssetRegistry/World.js use (a variant index only counts against a full
  * billboard sub-model) - mirrors validate-content.mjs's resolveModel. */
+// CHARGEN-15 (38.33): `char.<id>` models come from the add-on packages in content/packages/index.json (registered at boot).
+const addonChars = new Set();
+try {
+  const pdir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'content', 'packages');
+  const idx = JSON.parse(fs.readFileSync(path.join(pdir, 'index.json'), 'utf8'));
+  for (const rel of idx.packages || []) {
+    const pkg = await openPackage(new Uint8Array(fs.readFileSync(path.join(pdir, rel))));
+    for (const a of pkg.manifest.assets || []) if (/^model\.(rigged|static)$/.test(a.type) && a.id) addonChars.add('char.' + a.id);
+  }
+} catch { /* no index = no add-ons */ }
+
 function modelResolves(modelName, variantRaw) {
   if (!assets.has('model', modelName)) return false;
   if (typeof variantRaw !== 'number') return true;
@@ -225,7 +236,7 @@ function checkWorldEntitiesAndHorizon(worldKey, worldDef) {
       ok(`world "${worldKey}" entity "${e.id}".model "${e.model}" exists in the model registry`, modelResolves(e.model));
     }
     if (typeof voxelModel === 'string') {
-      ok(`world "${worldKey}" entity "${e.id}".components.voxel.model "${voxelModel}" exists in the model registry`, modelResolves(voxelModel));
+      ok(`world "${worldKey}" entity "${e.id}".components.voxel.model "${voxelModel}" exists in the model registry`, (modelResolves(voxelModel) || addonChars.has(voxelModel)));
     }
   }
   for (const h of worldDef.horizon || []) {
