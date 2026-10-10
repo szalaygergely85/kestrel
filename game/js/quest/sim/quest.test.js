@@ -102,6 +102,7 @@ const proximityWorld={state:{'tower.lantern.taken':true},
 function proximityRelay(saved=null) {
  const r=createSaveRelay({questDef:def,enabled:false,storage:null});
  r.quest.reset(saved);
+ if(!saved) r.quest.feed({type:'item:got',id:'lantern'}); // CH1-02: the relay no longer polls the lamp (legacy-def fixture still has the step)
  return r;
 }
 let proximity=proximityRelay(), breachEvents=0;
