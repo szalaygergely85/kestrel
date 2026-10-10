@@ -612,3 +612,7 @@ Perf: no point-shadow GPU p95 number exists in docs/test-reports (only the 0.15 
 
 ### WS2-05 (kestrel-1, ws2-05) - arch-review (NEEDS PC-A)
 main.js: `streamBand(px,py,2)` per frame (only when world.terrainBands), `ensureBandFor` at world:loaded (start pose), travel teleport (black) and vitals respawnPose; `world:band` -> `hzb.invalidate('band')`. travel.js: optional `bandReady()`; the fade-in holds at black until true (absent = identical timing). Test travel.test.js (fake band: waits 2 s, then full 0.35 s fade; 0 alloc). Idle 0 alloc covered by terrainBands.test. Node only: travel + check-deps OK, main.js --check OK; no browser (world_m1 has no bands until WS2-07).
+
+### DN-03 (kestrel-1, dn-03) - po-review (owner walk at `?daylen=2`; NEEDS PC-A arch glance)
+game/js/quest/worldClock.js (+test): `tickClock` (state['clock.hour'], 24 min/day, missing key = 8.0, wraps), `createClockDriver` (1/240 h = 0.25 deg step grid, `force` on load). main.js: driver rebuilt on `world:loaded` (hour from restored state; `?time=` seeds it once), ticks in the `!paused` sim block (title/pause stop it; respawn/R/travel keep the key), step = applySunHours(..., moon=true) + blendLook(daySchedule) + LightSet.ambient. Frozen (`?timefreeze=1`, capture/bench/gpucompare, cinematic, ?at=, ?pose=) = old code path, no liveLook. Params `?daylen=<min>`, `?time=<h>`.
+Gates: worldClock.test (5760 steps/day, wrap, round trip), main.js --check, check-deps. Not run: browser, GPU re-bake on liveLookVersion (DN-02), sun.col per step (unchanged).

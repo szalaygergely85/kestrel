@@ -21,7 +21,7 @@ import {
   PITCH_CLAMP_PITCHED_DEG,
   ambientL, World, repackMaterials,
   updateInteraction, drawCrosshair,
-  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun,
+  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun, blendLook,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim,
   loadContentPack, createRng, prebuildTerrainMesh, hitSparks,
@@ -49,6 +49,7 @@ import { createPauseMenu, PAUSE_KEYS } from './ui/pauseMenu.js'; // PAUSE-MENU-0
 // CHARGEN-17 parked (owner 2026-10-10): import { createCharCreate } from './ui/charCreate.js';
 import { createCreditsView } from './ui/creditsView.js'; // CREDITS-MOUNT-01
 import { updateSettings, drawSettingsPanel, isSettingsOpen, openSettings, dimSceneRect } from './ui/settings.js'; // US-038b
+import { tickClock, clockHour, createClockDriver, CLOCK_KEY, CLOCK_DEFAULTS } from './quest/worldClock.js'; // DN-03: day/night clock (D-064)
 import { isPaused, resetSimAccumulator, duckAudio, unduckAudio, installAutoPause } from './ui/pause.js'; // US-062
 // ---- US-020a: minimal procedural sound slice (game/js/audio/*, D-004) ----
 import { initAudio, setMuted, setVolume, toggleMute, isMuted } from './audio/synth.js';
@@ -623,6 +624,11 @@ const aoStrength = parseAoStrength(params.get('ao'));
 const sunEnabled = params.get('sun') !== '0';
 const timeHour = params.has('time') ? parseFloat(params.get('time')) : NaN;
 if (params.has('time') && !Number.isFinite(timeHour)) console.warn('[time] expected finite clock hours');
+// DN-03 (38.39): the clock runs in play unless frozen. `?timefreeze=1` / capture, bench, gpucompare, cinematic, ?at=, ?pose= keep today's static look.
+const dayLenMin = params.has('daylen') ? parseFloat(params.get('daylen')) : NaN;
+const clockCfg = { dayLenS: Number.isFinite(dayLenMin) && dayLenMin > 0 ? dayLenMin * 60 : CLOCK_DEFAULTS.dayLenS, startHour: CLOCK_DEFAULTS.startHour };
+const clockFrozen = params.get('timefreeze') === '1' || isCaptureOrBench || !!params.get('cinematic') || params.has('at') || params.has('pose');
+
 // ARCH CHANGES item 3 (14.4 item 8): `?terrain=0` dev A/B switch - skips
 // terrain on BOTH paths (GPU: `GpuCellPipeline`'s `_terrainActiveThisFrame`
 // gate; JS/CPU: `compositor.js`'s `castTerrain` call). Same shape as
@@ -1073,6 +1079,8 @@ async function runGame(mode, cinematic = null) {
   let waterfallHooks = null;
   let ambientMotes = null;
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
+  let clockDriver = null; // DN-03: step-quantised sun/look/ambient driver, rebuilt on every 'world:loaded'
+  let clockTimeApplied = false; // DN-03: ?time= seeds the clock once, not on every restart
   let worldSunPath = null; // US-122a: fit the load-time sun before static/cinematic hour writes.
   const cinematicHours = cinematic && Number.isFinite(cinematic.keys[0].hour);
   let wasPaused = false; // US-062: edge-detects isPaused() to drive duck/resume + accumulator reset once
@@ -1152,7 +1160,7 @@ async function runGame(mode, cinematic = null) {
       bootMark('world:loaded (world built, handler start)');
       if (saveRelay) saveRelay.onWorldLoaded(); // US-089w: consume a pending restore (or reset game data on restart) before any sim is created
       decalBind = bindDecals(engine.overlay, world.decals);
-      if (cinematic || Number.isFinite(timeHour)) worldSunPath = sunPathFrom(world.sun || assets.palette.lights.sun);
+      if (cinematic || Number.isFinite(timeHour) || !clockFrozen) worldSunPath = sunPathFrom(world.sun || assets.palette.lights.sun);
       // US-020a: reset every module-level audio counter (sector-anim rate
       // limit, footstep accumulator) here - the one
       // place both the first load and every restart go through (7.4 rule).
@@ -1182,7 +1190,19 @@ async function runGame(mode, cinematic = null) {
         // force it off - `setSun` is the only writer of `on`.
         if (!sunEnabled) lightSet.setSun({ elevation: lightSet.sun.elevation, azimuth: lightSet.sun.azimuth, on: false });
       }
-      if (Number.isFinite(timeHour)) applySunHours(world, lightSet, timeHour, worldSunPath, sunEnabled);
+      clockDriver = null;
+      if (!clockFrozen && assets.palette.daySchedule) {
+        // DN-03 (38.39 item 4/7): hour from world.state (restored by the save relay above); a forced step makes the first frame right.
+        if (Number.isFinite(timeHour) && !clockTimeApplied) world.state[CLOCK_KEY] = ((timeHour % 24) + 24) % 24;
+        clockTimeApplied = true;
+        const P = assets.palette;
+        clockDriver = createClockDriver((hq) => {
+          applySunHours(world, lightSet, hq, worldSunPath, sunEnabled, true);
+          const L = blendLook(P, hq, P.daySchedule);
+          if (lightSet) { const hu = P.hue[L.ambient]; lightSet.ambient[0] = hu[0] * L.ambientI; lightSet.ambient[1] = hu[1] * L.ambientI; lightSet.ambient[2] = hu[2] * L.ambientI; }
+        });
+        clockDriver.update(clockHour(world.state, clockCfg), true);
+      } else if (Number.isFinite(timeHour)) applySunHours(world, lightSet, timeHour, worldSunPath, sunEnabled);
       // Architect review 1 item 7 (tech notes item 8): `?lights=8` test-only -
       // 7 synthetic extra lights (torch preset) spread 2-4 m around the
       // level's first light, so the tester can measure the "8 point lights"
@@ -1673,6 +1693,7 @@ async function runGame(mode, cinematic = null) {
       if (paused) { duckAudio(); if (hands) hands.disarm(); } else { unduckAudio(); resetSimAccumulator(engine); } // HANDS-01b: the sim does not step while paused, so disarm at once
     }
     if (mode === 'world' && playerHandle && !paused) {
+      if (clockDriver && !titleMenuActive) { const w = engine.world; tickClock(w.state, dt, clockCfg); clockDriver.update(w.state[CLOCK_KEY]); } // DN-03: stops on title/pause (this block), runs through respawn/restart/travel
       if (ending || uiLocked || vLocked()) {
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {
