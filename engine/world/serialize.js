@@ -52,7 +52,7 @@ export function serialize(world) {
     // `world.bounds` is already a plain validated copy; `world.def.triggers`
     // is the world-level trigger DEFS (buildTriggers reads them fresh on
     // every load, same as a structure's `def.triggers`).
-    bounds: world.bounds ? { ...world.bounds } : null,
+    bounds: world.bounds ? cloneBounds(world.bounds) : null,
     triggers: structuredClone((world.def && world.def.triggers) || []),
     structures: world.structures.map((s) => s.kind === 'mesh' ? {
       id: s.id, mesh: s.mesh.id, origin: { ...s.origin }, yawDeg: s.frame.yawDeg,
@@ -243,4 +243,11 @@ export function deserialize(state, assets, opts = {}) {
  */
 export function stringifySave(state) {
   return stringifyContent({ kind: 'save', ...state });
+}
+
+// WS1-01: deep copy (union parts array must not be shared).
+function cloneBounds(b) {
+  const c = { ...b };
+  if (Array.isArray(b.parts)) c.parts = b.parts.map((p) => ({ ...p }));
+  return c;
 }

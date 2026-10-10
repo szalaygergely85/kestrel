@@ -1,3 +1,4 @@
+import { boundsOvershoot } from '../physics/bounds.js';
 import { localToWorld } from '../core/transform.js';
 
 // engine/world/triggers.js (US-017, D-006/D-008). Generic trigger-zone
@@ -186,9 +187,8 @@ function isInside(rec, world, ax, ay, az, actor) {
   // hint fires on first touch, not after the slide already clipped it).
   if (rec.shape === 'bounds') {
     if (!world.bounds) return false;
-    const dx = ax - world.bounds.x, dy = ay - world.bounds.y;
     const radius = (actor && actor.components && actor.components.body && actor.components.body.radius) || 0;
-    return Math.hypot(dx, dy) >= world.bounds.r - radius - 0.05;
+    return boundsOvershoot(world.bounds, ax, ay, radius) >= -0.05;
   }
   // 'cells' (default, structure-local)
   const lx = Math.floor(ax - rec.x), ly = Math.floor(ay - rec.y);

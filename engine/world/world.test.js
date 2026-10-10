@@ -285,6 +285,13 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   ok('bounds: unknown shape throws', boundsThrows({ shape: 'square', x: 0, y: 0, r: 5 }));
   ok('bounds: non-finite x throws', boundsThrows({ shape: 'circle', x: NaN, y: 0, r: 5 }));
   ok('bounds: r <= 0 throws', boundsThrows({ shape: 'circle', x: 0, y: 0, r: 0 }));
+  // WS1-01: union bounds
+  const U = { shape: 'union', parts: [{ shape: 'circle', x: 1496.5, y: 1024.5, r: 96 }, { shape: 'capsule', ax: 1440, ay: 1034, bx: 1350, by: 1048, r: 40 }] };
+  const wU = World.load({ ...baseNoTerrain, bounds: U }, assets, {});
+  ok('union bounds load as a deep copy', wU.bounds.shape === 'union' && wU.bounds.parts.length === 2 && wU.bounds.parts !== U.parts && wU.bounds.parts[1] !== U.parts[1]);
+  ok('union: serialize deep-copies parts', serialize(wU).bounds.parts !== wU.bounds.parts && serialize(wU).bounds.parts[1].bx === 1350);
+  ok('union: bad part index throws with the index', (() => { try { World.load({ ...baseNoTerrain, bounds: { shape: 'union', parts: [U.parts[0], { shape: 'capsule', ax: 0, ay: 0, bx: NaN, by: 0, r: 5 }] } }, assets, {}); return false; } catch (e) { return e.message.includes('parts[1]'); } })());
+  ok('union: empty / 9 parts / unknown part shape throw', boundsThrows({ shape: 'union', parts: [] }) && boundsThrows({ shape: 'union', parts: Array(9).fill(U.parts[0]) }) && boundsThrows({ shape: 'union', parts: [{ shape: 'box' }] }));
   ok('no bounds key -> world.bounds = null (unbounded, every world before this story)', World.load(baseNoTerrain, assets, {}).bounds === null);
 
   // -- world-level triggers: 3 shapes, structId: null (23.2/23.5) --

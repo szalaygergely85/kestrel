@@ -140,6 +140,23 @@ function nearBandKey(w, cx, cy) {
 // never mutated at runtime).
 function validateBounds(b) {
   if (b == null) return null;
+  if (b.shape === 'union') {
+    if (!Array.isArray(b.parts) || b.parts.length < 1 || b.parts.length > 8) throw new Error('World.load: bounds.parts must be an array of 1..8 parts');
+    const fin = (v) => typeof v === 'number' && isFinite(v);
+    const parts = b.parts.map((p, i) => {
+      const at = `bounds.parts[${i}]`;
+      if (!p || (p.shape !== 'circle' && p.shape !== 'capsule')) throw new Error(`World.load: ${at}: unknown shape "${p && p.shape}"`);
+      const o = { shape: p.shape };
+      for (const key of (p.shape === 'circle' ? ['x', 'y'] : ['ax', 'ay', 'bx', 'by'])) {
+        if (!fin(p[key])) throw new Error(`World.load: ${at}.${key} must be a finite number`);
+        o[key] = p[key];
+      }
+      if (!fin(p.r) || p.r <= 0) throw new Error(`World.load: ${at}.r must be a finite number > 0`);
+      o.r = p.r;
+      return o;
+    });
+    return { shape: 'union', parts };
+  }
   if (b.shape !== 'circle') throw new Error(`World.load: bounds: unknown shape "${b.shape}"`);
   if (typeof b.x !== 'number' || !isFinite(b.x)) throw new Error('World.load: bounds.x must be a finite number');
   if (typeof b.y !== 'number' || !isFinite(b.y)) throw new Error('World.load: bounds.y must be a finite number');
