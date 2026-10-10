@@ -113,6 +113,7 @@ export function mountUi(root, { kit, chargen, cb, platform = createPlatform() })
   // Random always rolls a fresh seed (the field shows it so it can be shared); Enter in the field replays a typed seed.
   const random = el('button', { id: 'random', onclick: () => { const s = seedFromText(''); seed.value = String(s); cb.onSeed(s); } }, 'Random');
   seed.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const s = seedFromText(seed.value); seed.value = String(s); cb.onSeed(s); } });
+  const seedBox = seed;
   panel.append(el('div', { class: 'row' }, seed, random));
 
   let playing = true;
@@ -125,7 +126,7 @@ export function mountUi(root, { kit, chargen, cb, platform = createPlatform() })
   const anim = el('div', { class: 'group' }, el('h2', {}, 'Animation'), el('div', { class: 'row' }, clipSel, play), el('div', { class: 'row' }, scrub),
     el('label', { class: 'row' }, turn, el('span', {}, 'Turntable')));
 
-  const run = (fn) => async () => { try { note('working...'); await fn(); note('done'); } catch (e) { note(String(e.message || e)); console.error(e); } };
+  const run = (fn) => async () => { try { note('working...'); const r = await fn(); note(typeof r === 'string' ? r : 'done'); } catch (e) { note(String(e.message || e)); console.error(e); } };
   const btn = (label, fn, disabled = false) => {
     const b = el('button', { onclick: run(fn) }, label);
     if (disabled) { b.disabled = true; b.title = 'needs CHARGEN-12'; }
@@ -136,8 +137,24 @@ export function mountUi(root, { kit, chargen, cb, platform = createPlatform() })
   const exp = el('div', { class: 'group' }, el('h2', {}, 'Export'),
     btn('.glb', () => save('character.glb', chargen.exportGlb(), 'glb')),
     btn('.fbx (+ png)', async () => { const { fbx, png } = chargen.exportFbx(); if (await save('character.fbx', fbx, 'fbx')) await save('palette.png', png, 'png'); }),
-    btn('.vox', () => {}, true), btn('.obj', () => {}, true),
+    btn('.vox', () => save('character.vox', chargen.exportVox(), 'vox')),
+    btn('.obj (+ mtl, png zip)', async () => save('character-obj.zip', await chargen.exportObjZip(), 'zip')),
     btn('All formats (.zip)', async () => save('character.zip', await chargen.exportAllZip(), 'zip')));
+  const share = el('div', { class: 'group' }, el('h2', {}, 'Share'),
+    btn('Copy seed', async () => { await navigator.clipboard.writeText(chargen.shareString()); }),
+    btn('Paste seed', async () => {
+      let t = ''; try { t = await navigator.clipboard.readText(); } catch (e) { t = window.prompt('Paste a kst1:... seed string') || ''; }
+      if (!t.trim()) return;
+      const { seed, recipe } = chargen.importShareString(t);
+      seedBox.value = String(seed); api.setRecipe(recipe); cb.onRecipe(recipe);
+    }),
+    btn('Recipe .json', () => save('recipe.json', new TextEncoder().encode(chargen.exportRecipeJson()), 'json')),
+    btn('Open recipe .json', async () => {
+      const f = await platform.openFile([{ name: 'Recipe', extensions: ['json'] }]); if (!f) return;
+      const { recipe, warnings } = chargen.importRecipeJson(new TextDecoder().decode(f.bytes));
+      api.setRecipe(recipe); cb.onRecipe(recipe); if (warnings.length) return warnings.join('; ');
+    }),
+    btn('Thumbnail .png', () => save('thumbnail.png', chargen.exportThumbPng(128), 'png')));
   const pkg = el('div', { class: 'group' }, el('h2', {}, 'Project'),
     btn('Save .kestrel', async () => save('character.kestrel', await chargen.savePackage({ name: 'Character' }), 'kestrel')),
     btn('Open .kestrel', async () => {
@@ -146,7 +163,7 @@ export function mountUi(root, { kit, chargen, cb, platform = createPlatform() })
       api.setRecipe(r); cb.onRecipe(r);
     }));
 
-  root.append(panel, anim, exp, pkg, status);
+  root.append(panel, anim, exp, share, pkg, status);
 
   const api = {
     /** Writes a recipe into the controls (no callbacks fired). */

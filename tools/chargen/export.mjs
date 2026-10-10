@@ -51,10 +51,10 @@ export function buildGlb(kit, recipe, { clips = null, colorMode } = {}) {
   return { rigged, glb: exportGlb(rigged, { rgbOf: paletteRgbOf(), recipe, partMap: kit.partMap, colorMode }) };
 }
 
-const USAGE = `usage: node tools/chargen/export.mjs (--recipe <json> | --seed <n>) --format glb|fbx|zip --out <path> [--demo-clips] [--fbx <file>]
+const USAGE = `usage: node tools/chargen/export.mjs (--recipe <json> | --seed <n>) --format glb|fbx|obj|vox|zip --out <path> [--demo-clips] [--fbx <file>]
   --recipe <json>  CharRecipe file (default: the kit defaults)
   --seed <n>       random recipe from seed n
-  --format         glb (default) | fbx (+ palette.png beside it) | zip (all available formats)
+  --format         glb (default) | fbx (+ palette.png beside it) | obj (+ .mtl + palette.png beside it) | vox | zip (all available formats)
   --out <path>     output file
   --help           this text`;
 
@@ -67,7 +67,7 @@ export function parseArgs(argv) {
     if (a === '--help' || a === '-h') o.help = true;
     else if (a === '--recipe') o.recipe = val();
     else if (a === '--seed') { o.seed = Number(val()); if (!Number.isInteger(o.seed)) throw new Error('--seed must be an integer'); }
-    else if (a === '--format') { o.format = val(); if (!['glb', 'fbx', 'zip'].includes(o.format)) throw new Error(`--format must be glb|fbx|zip, got ${o.format}`); }
+    else if (a === '--format') { o.format = val(); if (!['glb', 'fbx', 'obj', 'vox', 'zip'].includes(o.format)) throw new Error(`--format must be glb|fbx|obj|vox|zip, got ${o.format}`); }
     else if (a === '--out') o.out = val();
     else if (a === '--fbx') o.fbx = val();
     else if (a === '--demo-clips') o.demoClips = true;
@@ -93,7 +93,12 @@ async function main() {
     let bytes;
     if (o.format === 'glb') bytes = cg.exportGlb();
     else if (o.format === 'zip') bytes = await cg.exportAllZip();
-    else {
+    else if (o.format === 'vox') bytes = cg.exportVox();
+    else if (o.format === 'obj') {
+      const r = cg.exportObj(), dir = path.dirname(out);
+      bytes = Buffer.from(r.obj);
+      fs.writeFileSync(path.join(dir, r.mtlName), r.mtl); fs.writeFileSync(path.join(dir, r.pngName), r.png);
+    } else {
       const { fbx, png } = cg.exportFbx();
       bytes = fbx; fs.writeFileSync(path.join(path.dirname(out), 'palette.png'), png);
     }
