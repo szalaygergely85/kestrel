@@ -8,7 +8,7 @@
 // around Burl / the waystone / every boar home (+ the piece's own radius), the tower footprint, and every existing mesh structure.
 globalThis.window = globalThis.window || globalThis;
 import fs from 'node:fs';
-import { PLANT_SCALE, plantScaleFor } from './plant-scale.mjs';
+import { PLANT_SCALE, plantScaleFor, pickTree, treeScaleFor } from './plant-scale.mjs';
 import { pathToFileURL } from 'node:url';
 import '../design/palette.js';
 import '../design/detail-pass.js';
@@ -32,10 +32,12 @@ export const POOL = {
   plant: ['Plant_1', 'Plant_1_Big', 'Plant_7', 'Plant_7_Big'],
   mushroom: ['Mushroom_Common'],
   rock: ['Rock_Medium_1', 'Rock_Medium_2', 'Rock_Medium_3'],
+  // DRESS-01: the tree a placement gets is chosen by plant-scale.mjs pickTree (by area); this list is the allowed set
+  tree: ['CommonTree', 'Pine', 'TwistedTree'].flatMap((sp) => [1, 2, 3, 4, 5].flatMap((i) => [`${sp}_${i}`, `${sp}_${i}_LOD1`])).concat([1, 2, 3, 4, 5].map((i) => `DeadTree_${i}`)),
   pebble: ['Pebble_Round_1', 'Pebble_Round_2', 'Pebble_Round_3', 'Pebble_Square_1', 'Pebble_Square_2', 'Pebble_Square_5'],
 };
-const LIFT = { fern: 0, flower: 0, clover: 0, plant: 0, bush: 0, flowerBush: 0, grass: 0, mushroom: 0, rock: -0.12, pebble: -0.01 }; // ROCK-SNAP-01: rocks sunk 0.12 m (was +0.15 lift)
-const SHADOW = { fern: false, flower: false, clover: false, plant: false, bush: false, flowerBush: false, grass: false, mushroom: false, rock: true, pebble: false };
+const LIFT = { tree: 0.2, fern: 0, flower: 0, clover: 0, plant: 0, bush: 0, flowerBush: 0, grass: 0, mushroom: 0, rock: -0.12, pebble: -0.01 }; // ROCK-SNAP-01: rocks sunk 0.12 m (was +0.15 lift)
+const SHADOW = { tree: true, fern: false, flower: false, clover: false, plant: false, bush: false, flowerBush: false, grass: false, mushroom: false, rock: true, pebble: false };
 
 function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 export function segDist(x, y, pts) {
@@ -70,10 +72,11 @@ async function main() {
   const world = World.load(data, assets, { physics: 'mesh' });
   const T = world.terrain;
   const info = {};
-  for (const cls of Object.keys(POOL)) for (const n of POOL[cls]) if (!info[n]) {
-    const b = assets.mesh('quaternius/' + n).bbox, ext = 0.5 * Math.max(b[3] - b[0], b[4] - b[1]);
-    info[n] = { cls, ext, r: 0.65 * ext };
-  }
+  const meshInfo = (cls, n) => {
+    if (!info[n]) { const b = assets.mesh('quaternius/' + n).bbox, ext = 0.5 * Math.max(b[3] - b[0], b[4] - b[1]); info[n] = { cls, ext, r: (cls === 'tree' ? 0.45 : 0.65) * ext }; }
+    return info[n];
+  };
+  for (const cls of Object.keys(POOL)) for (const n of POOL[cls]) meshInfo(cls, n);
   const circles = data.structures.filter((s) => s.mesh).map((s) => ({ x: s.origin.x, y: s.origin.y, r: 1.2 }));
   const fixed = anchors(data);
   const slope = (x, y) => { const e = 1.2; return Math.hypot((T.groundAt(x + e, y) - T.groundAt(x - e, y)) / (2 * e), (T.groundAt(x, y + e) - T.groundAt(x, y - e)) / (2 * e)); };
@@ -93,8 +96,10 @@ async function main() {
     console.log('slope x0.1 histogram', JSON.stringify(h), 'steepest', best.sort((a, b) => b[0] - a[0]).slice(0, 5).map((b) => b.map((v) => +v.toFixed(2)).join('/')).join(' '));
   }
   const out = [];
-  const add = (cls, x, y) => {
-    const name = pick(POOL[cls]), inf = info[name];
+  const DOOR = [[1488, 1031], [1486.5, 1025]], DOOR_CLEAR = 5;   // DRESS-01: tower door trench + breach stay open
+  const add = (cls, x, y, area) => {
+    const name = cls === 'tree' ? pickTree(R, area) : pick(POOL[cls]), inf = meshInfo(cls, name);
+    if (DOOR.some(([dx, dy]) => Math.hypot(x - dx, y - dy) < DOOR_CLEAR + inf.r)) return false;
     if (!ok(x, y, inf.r)) return false;
     const e = inf.ext * 0.5;
     const zs = [T.groundAt(x, y), T.groundAt(x + e, y), T.groundAt(x - e, y), T.groundAt(x, y + e), T.groundAt(x, y - e)];
@@ -102,20 +107,39 @@ async function main() {
     circles.push({ x, y, r: inf.r });
     const st = { id: 'mdw' + String(out.length).padStart(3, '0'), mesh: 'quaternius/' + name, origin: { x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2) }, yawDeg: Math.floor(R() * 360) };
     if (PLANT_SCALE[name]) st.scale = plantScaleFor(name, st.id);   // PLANT-SCALE-01 + PLANT-SIZE-RANDOM-01
+    else if (cls === 'tree') st.scale = treeScaleFor(st.id);          // DRESS-01
     if (!SHADOW[cls]) st.castShadow = false;
     out.push(st); return true;
   };
   const site = () => [MEADOW.x0 + R() * (MEADOW.x1 - MEADOW.x0), MEADOW.y0 + R() * (MEADOW.y1 - MEADOW.y0)];
   const forestNear = (x, y) => [[9, 0], [-9, 0], [0, 9], [0, -9], [6, 6], [-6, -6], [6, -6], [-6, 6]].some(([dx, dy]) => T.groundTypeAt(x + dx, y + dy) === 1);
-  const counts = { bushClump: 0, flowerEdge: 0, rocks: 0, grass: 0, flowerPatch: 0, cloverPatch: 0, fernShade: 0 };
-  const QUOTA = { bushClump: 12, flowerEdge: 11, rocks: 10, grass: 20, flowerPatch: 12, cloverPatch: 12, fernShade: 12 };
+  // DRESS-01 (owner 2026-10-10 "more boars, different trees, more plants and bushes"): + meadow-edge trees (singles / pairs with ferns
+  // and mushrooms under them), bush clumps of 2-5 at the tower foot, more and denser flower / clover / fern patches.
+  const counts = { tree: 0, towerFoot: 0, bushClump: 0, flowerEdge: 0, rocks: 0, grass: 0, flowerPatch: 0, cloverPatch: 0, fernShade: 0 };
+  const QUOTA = { tree: 9, towerFoot: 4, bushClump: 16, flowerEdge: 13, rocks: 10, grass: 20, flowerPatch: 16, cloverPatch: 14, fernShade: 15 };
+  const towerDist = (x, y) => Math.hypot(Math.max(TOWER.x0 - x, 0, x - TOWER.x1), Math.max(TOWER.y0 - y, 0, y - TOWER.y1));
   for (let guard = 0; guard < 40000 && Object.keys(QUOTA).some((k) => counts[k] < QUOTA[k]); guard++) {
     const [cx, cy] = site(), pd = segDist(cx, cy, PATH), sl = slope(cx, cy);
     const sig = (s) => gauss() * s;
-    if (counts.rocks < QUOTA.rocks && sl > 0.06 && pd > 6) {         // rocks on the slopes: 1-3 boulders + pebbles + a grass tuft
+    if (counts.tree < QUOTA.tree && pd > 10 && sl < 0.45 && (forestNear(cx, cy) || cx < MEADOW.x0 + 10 || cy > MEADOW.y1 - 10 || cy < MEADOW.y0 + 8)) {   // trees at the meadow edge, open centre
+      const n0 = out.length, area = sl > 0.2 ? 'slope' : 'near';
+      for (let k = 0, n = R() < 0.6 ? 1 : 2; k < n; k++) add('tree', cx + sig(2.5), cy + sig(2.5), area);
+      if (out.length > n0) {
+        for (let k = 0, n = 1 + Math.floor(R() * 3); k < n; k++) add('fern', cx + sig(2.5), cy + sig(2.5));
+        if (R() < 0.6) add('mushroom', cx + sig(1.8), cy + sig(1.8));
+        if (R() < 0.5) add('bush', cx + sig(3), cy + sig(3));
+        counts.tree++;
+      }
+    } else if (counts.towerFoot < QUOTA.towerFoot && towerDist(cx, cy) < 4 && towerDist(cx, cy) > 0) {   // bush clumps against the tower wall
+      const n0 = out.length;
+      for (let k = 0, n = 2 + Math.floor(R() * 4); k < n; k++) add('bush', cx + sig(1.5), cy + sig(1.5));
+      for (let k = 0, n = 1 + Math.floor(R() * 2); k < n; k++) add('grass', cx + sig(1.8), cy + sig(1.8));
+      if (out.length > n0) counts.towerFoot++;
+    } else if (counts.rocks < QUOTA.rocks && sl > 0.06 && pd > 6) {         // rocks on the slopes: 1-3 boulders + pebbles + a grass tuft
       const n0 = out.length;
       for (let k = 0, n = 1 + Math.floor(R() * 3); k < n; k++) add('rock', cx + sig(1.6), cy + sig(1.6));
       for (let k = 0, n = 2 + Math.floor(R() * 4); k < n; k++) add('pebble', cx + sig(2.2), cy + sig(2.2));
+      for (let k = 0, n = Math.floor(R() * 3); k < n; k++) add('bush', cx + sig(2.4), cy + sig(2.4));   // DRESS-01: bushes around the rocks
       add('grass', cx + sig(2), cy + sig(2));
       if (out.length > n0) counts.rocks++;
     } else if (counts.flowerEdge < QUOTA.flowerEdge && (forestNear(cx, cy) || pd > 15) && sl < 0.3) {   // flowers at the meadow edge
@@ -123,11 +147,12 @@ async function main() {
       for (let k = 0, n = 1 + Math.floor(R() * 2); k < n; k++) add('flowerBush', cx + sig(1.5), cy + sig(1.5));
       for (let k = 0, n = 2 + Math.floor(R() * 3); k < n; k++) add('grass', cx + sig(1.8), cy + sig(1.8));
       for (let k = 0, n = 1 + Math.floor(R() * 2); k < n; k++) add('flower', cx + sig(1.8), cy + sig(1.8));
+      if (R() < 0.5) add('bush', cx + sig(2), cy + sig(2));   // DRESS-01: a leafy bush at the meadow edge
       if (R() < 0.3) add('mushroom', cx + sig(1.5), cy + sig(1.5));
       if (out.length > n0) counts.flowerEdge++;
     } else if (counts.bushClump < QUOTA.bushClump && pd > 6 && pd < 24 && sl < 0.35) {   // bush clump with grass and the odd mushroom
       const n0 = out.length;
-      for (let k = 0, n = 2 + Math.floor(R() * 3); k < n; k++) add('bush', cx + sig(1.7), cy + sig(1.7));
+      for (let k = 0, n = 2 + Math.floor(R() * 4); k < n; k++) add('bush', cx + sig(1.7), cy + sig(1.7));   // DRESS-01: clumps of 2-5
       for (let k = 0, n = 1 + Math.floor(R() * 3); k < n; k++) add('grass', cx + sig(2), cy + sig(2));
       for (let k = 0, n = 1 + Math.floor(R() * 3); k < n; k++) add('fern', cx + sig(2.2), cy + sig(2.2));   // ferns in the shade of the bushes
       if (R() < 0.4) add('plant', cx + sig(2), cy + sig(2));
@@ -140,7 +165,7 @@ async function main() {
       if (out.length > n0) counts.fernShade++;
     } else if (counts.flowerPatch < QUOTA.flowerPatch && pd > 8 && sl < 0.25) {   // flower patches in the open meadow
       const n0 = out.length;
-      for (let k = 0, n = 3 + Math.floor(R() * 4); k < n; k++) add('flower', cx + sig(1.8), cy + sig(1.8));
+      for (let k = 0, n = 4 + Math.floor(R() * 5); k < n; k++) add('flower', cx + sig(1.6), cy + sig(1.6));   // DRESS-01: denser
       for (let k = 0, n = 1 + Math.floor(R() * 3); k < n; k++) add('grass', cx + sig(2), cy + sig(2));
       if (out.length > n0) counts.flowerPatch++;
     } else if (counts.cloverPatch < QUOTA.cloverPatch && pd > 5 && sl < 0.3) {   // clover mats in the grass

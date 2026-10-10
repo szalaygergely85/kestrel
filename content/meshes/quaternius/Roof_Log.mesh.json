@@ -1,0 +1,38 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Roof_Log",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Roof_Log.mesh.bin",
+  "triCount": 164,
+  "bbox": [
+    -0.58632,
+    -5.3479,
+    3.84872,
+    0.56261,
+    5.3479,
+    5.23567
+  ],
+  "ranges": [
+    {"count": 164, "part": "Roof_Log#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_WoodTrim"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "GQQWv/hTI78EVnZAfT8Vv7By2L8EVnZAfT8Vv7By2L9QjadAGQQWv/hTI78EVnZAfT8Vv7By2L9QjadAGQQWv/hTI79QjadAfT8Vv7By2L8EVnZAxSAQv9Eiq8AEVnZAxSAQv9Eiq8BQjadAfT8Vv7By2L8EVnZAxSAQv9Eiq8BQjadAfT8Vv7By2L9QjadAxSAQv9Eiq8AEVnZAxSAQP9Eiq8AEVnZAxSAQP9Eiq8BQjadAxSAQv9Eiq8AEVnZAxSAQP9Eiq8BQjadAxSAQv9Eiq8BQjadAxSAQP9Eiq8AEVnZAxSAQP9Eiq0AEVnZAxSAQP9Eiq0BQjadAxSAQP9Eiq8AEVnZAxSAQP9Eiq0BQjadAxSAQP9Eiq8BQjadAxSAQP9Eiq0AEVnZAxSAQv9Eiq0AEVnZAxSAQv9Eiq0BQjadAxSAQP9Eiq0AEVnZAxSAQv9Eiq0BQjadAxSAQP9Eiq0BQjadAxSAQv9Eiq0AEVnZAfT8Vv7By2D8EVnZAfT8Vv7By2D9QjadAxSAQv9Eiq0AEVnZAfT8Vv7By2D9QjadAxSAQv9Eiq0BQjadAfT8Vv7By2D8EVnZAGQQWv/hTIz8EVnZAGQQWv/hTIz9QjadAfT8Vv7By2D8EVnZAGQQWv/hTIz9QjadAfT8Vv7By2D9QjadAGQQWv/hTIz8EVnZAGQQWv/hTI78EVnZAGQQWv/hTI79QjadAGQQWv/hTIz8EVnZAGQQWv/hTI79QjadAGQQWv/hTIz9QjadAGQQWv/hTI79QjadAfT8Vv7By2L9QjadAxSAQv9Eiq8BQjadAGQQWv/hTI78EVnZAxSAQv9Eiq8AEVnZAfT8Vv7By2L8EVnZAGQQWv/hTI79QjadAxSAQv9Eiq8BQjadAxSAQP9Eiq8BQjadAGQQWv/hTI78EVnZAxSAQP9Eiq8AEVnZAxSAQv9Eiq8AEVnZAGQQWv/hTI79QjadAxSAQP9Eiq8BQjadAxSAQP9Eiq0BQjadAGQQWv/hTI78EVnZAxSAQP9Eiq0AEVnZAxSAQP9Eiq8AEVnZAGQQWv/hTI79QjadAxSAQP9Eiq0BQjadAxSAQv9Eiq0BQjadAGQQWv/hTI78EVnZAxSAQv9Eiq0AEVnZAxSAQP9Eiq0AEVnZAGQQWv/hTI79QjadAxSAQv9Eiq0BQjadAfT8Vv7By2D9QjadAGQQWv/hTI78EVnZAfT8Vv7By2D8EVnZAxSAQv9Eiq0AEVnZAGQQWv/hTI79QjadAfT8Vv7By2D9QjadAGQQWv/hTIz9QjadAGQQWv/hTI78EVnZAGQQWv/hTIz8EVnZAfT8Vv7By2D8EVnZA"
+}

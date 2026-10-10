@@ -1,0 +1,38 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Prop_Wagon",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Prop_Wagon.mesh.bin",
+  "triCount": 1672,
+  "bbox": [
+    -0.97936,
+    -0.87358,
+    0.00313,
+    0.97205,
+    3.15043,
+    1.53233
+  ],
+  "ranges": [
+    {"count": 1672, "part": "Prop_Wagon#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_WoodTrim_Wear"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "vp96vwIrF0Cmm0Q77nw/v+58X7+mm0Q77nw/v+58X7+TGMQ/vp96vwIrF0Cmm0Q77nw/v+58X7+TGMQ/vp96vwIrF0CTGMQ/7nw/v+58X7+mm0Q7pHA9P+58X7+mm0Q7pHA9P+58X7+TGMQ/7nw/v+58X7+mm0Q7pHA9P+58X7+TGMQ/7nw/v+58X7+TGMQ/pHA9P+58X7+mm0Q7/tR4PwIrF0Cmm0Q7/tR4PwIrF0CTGMQ/pHA9P+58X7+mm0Q7/tR4PwIrF0CTGMQ/pHA9P+58X7+TGMQ//tR4PwIrF0Cmm0Q7H4VrP/p+OkCmm0Q7H4VrP/p+OkCTGMQ//tR4PwIrF0Cmm0Q7H4VrP/p+OkCTGMQ//tR4PwIrF0CTGMQ/H4VrP/p+OkCmm0Q7EFg5P/ypSUCmm0Q7EFg5P/ypSUCTGMQ/H4VrP/p+OkCmm0Q7EFg5P/ypSUCTGMQ/H4VrP/p+OkCTGMQ/EFg5P/ypSUCmm0Q70SI7v/ypSUCmm0Q70SI7v/ypSUCTGMQ/EFg5P/ypSUCmm0Q70SI7v/ypSUCTGMQ/EFg5P/ypSUCTGMQ/0SI7v/ypSUCmm0Q7aJFtv/p+OkCmm0Q7aJFtv/p+OkCTGMQ/0SI7v/ypSUCmm0Q7aJFtv/p+OkCTGMQ/0SI7v/ypSUCTGMQ/aJFtv/p+OkCmm0Q7vp96vwIrF0Cmm0Q7vp96vwIrF0CTGMQ/aJFtv/p+OkCmm0Q7vp96vwIrF0CTGMQ/aJFtv/p+OkCTGMQ/vp96vwIrF0CTGMQ/7nw/v+58X7+TGMQ/pHA9P+58X7+TGMQ/vp96vwIrF0Cmm0Q7pHA9P+58X7+mm0Q77nw/v+58X7+mm0Q7vp96vwIrF0CTGMQ/pHA9P+58X7+TGMQ//tR4PwIrF0CTGMQ/vp96vwIrF0Cmm0Q7/tR4PwIrF0Cmm0Q7pHA9P+58X7+mm0Q7vp96vwIrF0CTGMQ//tR4PwIrF0CTGMQ/H4VrP/p+OkCTGMQ/vp96vwIrF0Cmm0Q7H4VrP/p+OkCmm0Q7/tR4PwIrF0Cmm0Q7vp96vwIrF0CTGMQ/H4VrP/p+OkCTGMQ/EFg5P/ypSUCTGMQ/vp96vwIrF0Cmm0Q7EFg5P/ypSUCmm0Q7H4VrP/p+OkCmm0Q7vp96vwIrF0CTGMQ/EFg5P/ypSUCTGMQ/0SI7v/ypSUCTGMQ/vp96vwIrF0Cmm0Q70SI7v/ypSUCmm0Q7EFg5P/ypSUCmm0Q7vp96vwIrF0CTGMQ/0SI7v/ypSUCTGMQ/aJFtv/p+OkCTGMQ/vp96vwIrF0Cmm0Q7aJFtv/p+OkCmm0Q70SI7v/ypSUCmm0Q7"
+}

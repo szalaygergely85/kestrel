@@ -1,0 +1,40 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Window_Roof_Wide",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Window_Roof_Wide.mesh.bin",
+  "triCount": 66,
+  "bbox": [
+    -0.66079,
+    -1.10125,
+    1.33822,
+    0.7557,
+    0.0778,
+    2.51927
+  ],
+  "ranges": [
+    {"count": 16, "part": "Window_Roof_Wide#0", "start": 0},
+    {"count": 50, "part": "Window_Roof_Wide#1", "start": 16}
+  ],
+  "matKeys": [
+    "MI_WoodTrim",
+    "MI_WoodTrim_Wear"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "TDcpv8HKIb6WQ6s/nu8nv8/3g7+WQ6s/nu8nv8/3g79MNyFATDcpv8HKIb6WQ6s/nu8nv8/3g79MNyFATDcpv8HKIb5MNyFAnu8nv8/3g7+WQ6s/kxgkv5qZib+WQ6s/kxgkv5qZib9MNyFAnu8nv8/3g7+WQ6s/kxgkv5qZib9MNyFAnu8nv8/3g79MNyFAkxgkv5qZib+WQ6s/JQbBvs3MjL+WQ6s/JQbBvs3MjL9MNyFAkxgkv5qZib+WQ6s/JQbBvs3MjL9MNyFAkxgkv5qZib9MNyFAJQbBvs3MjL+WQ6s/nMRAP0SLjL+WQ6s/nMRAP0SLjL9MNyFAJQbBvs3MjL+WQ6s/nMRAP0SLjL9MNyFAJQbBvs3MjL9MNyFAnMRAP0SLjL+WQ6s/iUFAP8HKIb6WQ6s/iUFAP8HKIb5MNyFAnMRAP0SLjL+WQ6s/iUFAP8HKIb5MNyFAnMRAP0SLjL9MNyFAiUFAP8HKIb6WQ6s/CtcjP3e+nz2WQ6s/CtcjP3e+nz1MNyFAiUFAP8HKIb6WQ6s/CtcjP3e+nz1MNyFAiUFAP8HKIb5MNyFACtcjP3e+nz2WQ6s/Ctcjv3e+nz2WQ6s/Ctcjv3e+nz1MNyFACtcjP3e+nz2WQ6s/Ctcjv3e+nz1MNyFACtcjP3e+nz1MNyFACtcjv3e+nz2WQ6s/TDcpv8HKIb6WQ6s/TDcpv8HKIb5MNyFACtcjv3e+nz2WQ6s/TDcpv8HKIb5MNyFACtcjv3e+nz1MNyFATDcpv8HKIb5MNyFAnu8nv8/3g79MNyFAkxgkv5qZib9MNyFATDcpv8HKIb6WQ6s/kxgkv5qZib+WQ6s/nu8nv8/3g7+WQ6s/TDcpv8HKIb5MNyFAkxgkv5qZib9MNyFAJQbBvs3MjL9MNyFATDcpv8HKIb6WQ6s/JQbBvs3MjL+WQ6s/kxgkv5qZib+WQ6s/TDcpv8HKIb5MNyFAJQbBvs3MjL9MNyFAnMRAP0SLjL9MNyFATDcpv8HKIb6WQ6s/nMRAP0SLjL+WQ6s/JQbBvs3MjL+WQ6s/TDcpv8HKIb5MNyFAnMRAP0SLjL9MNyFAiUFAP8HKIb5MNyFATDcpv8HKIb6WQ6s/iUFAP8HKIb6WQ6s/nMRAP0SLjL+WQ6s/TDcpv8HKIb5MNyFAiUFAP8HKIb5MNyFACtcjP3e+nz1MNyFATDcpv8HKIb6WQ6s/CtcjP3e+nz2WQ6s/iUFAP8HKIb6WQ6s/TDcpv8HKIb5MNyFACtcjP3e+nz1MNyFACtcjv3e+nz1MNyFATDcpv8HKIb6WQ6s/Ctcjv3e+nz2WQ6s/CtcjP3e+nz2WQ6s/"
+}

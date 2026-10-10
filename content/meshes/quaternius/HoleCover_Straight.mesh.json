@@ -1,0 +1,39 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/HoleCover_Straight",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "HoleCover_Straight.mesh.bin",
+  "triCount": 12,
+  "bbox": [
+    -1,
+    0.88018,
+    -0.10509,
+    1,
+    1.11982,
+    0.10509
+  ],
+  "ranges": [
+    {"count": 12, "part": "HoleCover_Straight#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_WoodTrim"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false,
+  "castShadow": false
+}

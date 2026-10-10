@@ -1,0 +1,39 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Wall_BottomCover",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Wall_BottomCover.mesh.bin",
+  "triCount": 36,
+  "bbox": [
+    -1,
+    -0.11757,
+    -0.11676,
+    1,
+    0.31404,
+    0.12076
+  ],
+  "ranges": [
+    {"count": 36, "part": "Wall_BottomCover#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_WoodTrim"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false,
+  "castShadow": false
+}

@@ -1,0 +1,39 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Floor_WoodDark",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Floor_WoodDark.mesh.bin",
+  "triCount": 32,
+  "bbox": [
+    -1,
+    -1,
+    -0.01,
+    1,
+    1,
+    0.01
+  ],
+  "ranges": [
+    {"count": 32, "part": "Floor_WoodDark#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_WoodTrim"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false,
+  "castShadow": false
+}

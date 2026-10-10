@@ -1,0 +1,38 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Prop_WoodenFence_Extension1",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Prop_WoodenFence_Extension1.mesh.bin",
+  "triCount": 32,
+  "bbox": [
+    -1.0124,
+    -0.05518,
+    -0.02825,
+    1.03265,
+    0.05518,
+    0.80986
+  ],
+  "ranges": [
+    {"count": 32, "part": "Prop_WoodenFence_Extension1#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_WoodTrim"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "/KmBvylcD71CYOW8AACAv1g5NL1CYOW8AACAv1g5NL0pXE8//KmBvylcD71CYOW8AACAv1g5NL0pXE8//KmBvylcD70pXE8/AACAv1g5NL1CYOW85/tpP65HYb1CYOW85/tpP65HYb0pXE8/AACAv1g5NL1CYOW85/tpP65HYb0pXE8/AACAv1g5NL0pXE8/5/tpP65HYb1CYOW8HVqEP65HYb1CYOW8HVqEP65HYb0pXE8/5/tpP65HYb1CYOW8HVqEP65HYb0pXE8/5/tpP65HYb0pXE8/HVqEP65HYb1CYOW8HVqEP83MTD1CYOW8HVqEP83MTD0pXE8/HVqEP65HYb1CYOW8HVqEP83MTD0pXE8/HVqEP65HYb0pXE8/HVqEP83MTD1CYOW8pptkP65HYT1CYOW8pptkP65HYT0pXE8/HVqEP83MTD1CYOW8pptkP65HYT0pXE8/HVqEP83MTD0pXE8/pptkP65HYT1CYOW8yXZ+v0JgZTxCYOW8yXZ+v0JgZTwpXE8/pptkP65HYT1CYOW8yXZ+v0JgZTwpXE8/pptkP65HYT0pXE8/yXZ+v0JgZTxCYOW8/KmBv1g5NDxCYOW8/KmBv1g5NDwpXE8/yXZ+v0JgZTxCYOW8/KmBv1g5NDwpXE8/yXZ+v0JgZTwpXE8//KmBv1g5NDxCYOW8/KmBvylcD71CYOW8/KmBvylcD70pXE8//KmBv1g5NDxCYOW8/KmBvylcD70pXE8//KmBv1g5NDwpXE8//KmBvylcD70pXE8/AACAv1g5NL0pXE8/5/tpP65HYb0pXE8//KmBvylcD71CYOW85/tpP65HYb1CYOW8AACAv1g5NL1CYOW8/KmBvylcD70pXE8/5/tpP65HYb0pXE8/HVqEP65HYb0pXE8//KmBvylcD71CYOW8HVqEP65HYb1CYOW85/tpP65HYb1CYOW8/KmBvylcD70pXE8/HVqEP65HYb0pXE8/HVqEP83MTD0pXE8//KmBvylcD71CYOW8HVqEP83MTD1CYOW8HVqEP65HYb1CYOW8/KmBvylcD70pXE8/HVqEP83MTD0pXE8/pptkP65HYT0pXE8//KmBvylcD71CYOW8pptkP65HYT1CYOW8HVqEP83MTD1CYOW8/KmBvylcD70pXE8/pptkP65HYT0pXE8/yXZ+v0JgZTwpXE8//KmBvylcD71CYOW8yXZ+v0JgZTxCYOW8pptkP65HYT1CYOW8/KmBvylcD70pXE8/yXZ+v0JgZTwpXE8//KmBv1g5NDwpXE8//KmBvylcD71CYOW8/KmBv1g5NDxCYOW8yXZ+v0JgZTxCYOW8"
+}

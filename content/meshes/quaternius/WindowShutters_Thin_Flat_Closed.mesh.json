@@ -1,0 +1,38 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/WindowShutters_Thin_Flat_Closed",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "WindowShutters_Thin_Flat_Closed.mesh.bin",
+  "triCount": 96,
+  "bbox": [
+    -0.41865,
+    -0.30675,
+    1.09324,
+    0.43313,
+    -0.17098,
+    2.51728
+  ],
+  "ranges": [
+    {"count": 96, "part": "WindowShutters_Thin_Flat_Closed#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_WoodTrim_Wear"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "K4fWvo2Xbr5t54s/4XrUvuOlm75t54s/4XrUvuOlm76HFiFAK4fWvo2Xbr5t54s/4XrUvuOlm76HFiFAK4fWvo2Xbr6HFiFA4XrUvuOlm75t54s/QmDlOxsvnb5t54s/QmDlOxsvnb6HFiFA4XrUvuOlm75t54s/QmDlOxsvnb6HFiFA4XrUvuOlm76HFiFAQmDlOxsvnb5t54s//tR4PvYonL5t54s//tR4PvYonL6HFiFAQmDlOxsvnb5t54s//tR4PvYonL6HFiFAQmDlOxsvnb6HFiFA/tR4PvYonL5t54s/CKzcPr6fmr5t54s/CKzcPr6fmr6HFiFA/tR4PvYonL5t54s/CKzcPr6fmr6HFiFA/tR4PvYonL6HFiFACKzcPr6fmr5t54s/LbLdPg4tMr5t54s/LbLdPg4tMr6HFiFACKzcPr6fmr5t54s/LbLdPg4tMr6HFiFACKzcPr6fmr6HFiFALbLdPg4tMr5t54s/CtejPKAaL75t54s/CtejPKAaL76HFiFALbLdPg4tMr5t54s/CtejPKAaL76HFiFALbLdPg4tMr6HFiFACtejPKAaL75t54s/K4fWvukmMb5t54s/K4fWvukmMb6HFiFACtejPKAaL75t54s/K4fWvukmMb6HFiFACtejPKAaL76HFiFAK4fWvukmMb5t54s/K4fWvo2Xbr5t54s/K4fWvo2Xbr6HFiFAK4fWvukmMb5t54s/K4fWvo2Xbr6HFiFAK4fWvukmMb6HFiFAK4fWvo2Xbr6HFiFA4XrUvuOlm76HFiFAQmDlOxsvnb6HFiFAK4fWvo2Xbr5t54s/QmDlOxsvnb5t54s/4XrUvuOlm75t54s/K4fWvo2Xbr6HFiFAQmDlOxsvnb6HFiFA/tR4PvYonL6HFiFAK4fWvo2Xbr5t54s//tR4PvYonL5t54s/QmDlOxsvnb5t54s/K4fWvo2Xbr6HFiFA/tR4PvYonL6HFiFACKzcPr6fmr6HFiFAK4fWvo2Xbr5t54s/CKzcPr6fmr5t54s//tR4PvYonL5t54s/K4fWvo2Xbr6HFiFACKzcPr6fmr6HFiFALbLdPg4tMr6HFiFAK4fWvo2Xbr5t54s/LbLdPg4tMr5t54s/CKzcPr6fmr5t54s/K4fWvo2Xbr6HFiFALbLdPg4tMr6HFiFACtejPKAaL76HFiFAK4fWvo2Xbr5t54s/CtejPKAaL75t54s/LbLdPg4tMr5t54s/K4fWvo2Xbr6HFiFACtejPKAaL76HFiFAK4fWvukmMb6HFiFAK4fWvo2Xbr5t54s/K4fWvukmMb5t54s/CtejPKAaL75t54s/"
+}
