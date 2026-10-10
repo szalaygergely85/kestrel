@@ -1501,8 +1501,8 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
 | CHARGEN-05 | Height rows, age, build pick, randomRecipe(seed) | P1 | arch-review [PC-B B2, 0.5 d] | `engine/chargen/*` + tests |
 | CHARGEN-06 | Export base: png palette, check-deps rules (`tools/export/**`, `vendor/three` only in `tools/chargen/**`) | P1 | arch-review [PC-B B1, 0.25 d] | `tools/export/png.js`, `tools/check-deps.mjs` + tests |
 | CHARGEN-07 | GLB-a: static `.glb` (mesh + palette texture + COLOR_0 + `extras.kestrel`) | P1 | arch-review [PC-B B1, 0.5 d] (done with skin + baked clips = 08/09 scope in the writer) | `tools/export/gltfWrite.js`, `tools/chargen/export.mjs` + tests |
-| CHARGEN-08 | GLB-b: rigid skin + 22 humanoid joints | P1 | todo [PC-B B1, 0.5 d] | `gltfWrite.js` + tests |
-| CHARGEN-09 | GLB-c: 6 baked animations | P1 | todo [PC-B B1, 0.5 d] | `gltfWrite.js` + tests |
+| CHARGEN-08 | GLB-b: rigid skin + 22 humanoid joints | P1 | arch-review [PC-B B1, 0.5 d] (already delivered inside CHARGEN-07 writer; verified, no code change) | `gltfWrite.js` + tests |
+| CHARGEN-09 | GLB-c: 6 baked animations | P1 | arch-review [PC-B B1] (already in the CHARGEN-07 writer: 2 baked clips idle/wave, FK-checked in gltfWrite.test.mjs; 6-clip set waits for CHARGEN-04a) | `gltfWrite.js` + tests |
 | CHARGEN-10 | FBX-a: binary FBX 7.4 static mesh + material/texture | P1 | arch-review [PC-B B1, 0.75 d] (static part done: binary FBX 7.4, own reader in the test; Blender/Unity import not run) | `tools/export/fbxWrite.js` + tests |
 | CHARGEN-11 | FBX-b: skeleton + skin clusters + bind pose (Unity Humanoid) | P1 | todo [PC-B B1, 0.75 d] | `fbxWrite.js` + tests |
 | CHARGEN-12 | FBX-c anim stacks + OBJ/MTL + `.vox` (voxWrite split) | P1 | todo [PC-B B1, 0.75 d] | `fbxWrite.js`, `objWrite.js`, `voxWrite.js`, `tools/vox-export.mjs` + tests |
