@@ -489,3 +489,40 @@ Flow: l1 (two lines) -> close. Lines <= 56 chars (engine DIALOGUE_LINE_MAX), ASC
 | `villager.d1.close` | FEN | `Then rest at the humming stone. It remembers faces.` | 51 |
 
 Notes: points to the boar quest and the waystone, and echoes `toast.waystone.saved` ("The stone will remember."). If M1/M2 must stay NPC-free on screen, the label can go back to `VILLAGER` without changing any line.
+
+## EP-QUEST: Burl's boars (QG-W1, PC-B writer, 2026-10-10)
+
+Texts for D-058 / architecture 38.35. ASCII only, lengths counted by hand (text only, no speaker label). Limits: dialogue lines <= 56, replies (choices) <= 40, HUD / objective / returnText / toasts <= 38. No Esc hints. Burl keeps her BEAR-LINES-01 voice: dry, kind, unhurried, "sky-cub", berries, the blue ones. Owner pick: **no item reward**, so the thanks line promises nothing (no coin, no gift). QG-03 pastes these into `content/quests/burl.boars.quest.json`, `m1.quest.json` and `bear.dialogue.json`; this section edits no JSON.
+
+Flow: offer (3 lines) -> choice Accept | Later -> accepted / later reply (end). Active = reminder (end). Ready = ready line -> thanks node (node `setFlag: q.burl.boars.handin`, end). Done = after line (end).
+
+| Key | Where / speaker | Text | chars |
+|---|---|---|---|
+| `quest.burl.boars.title` | Quest title (log) | `Boars in the Berries` | 20 |
+| `bear.q.offer` (1) | BURL | `Five boars have found my berry slope.` | 37 |
+| `bear.q.offer` (2) | BURL | `They root up the bushes, and they do not share.` | 47 |
+| `bear.q.offer` (3) | BURL | `I am too old to chase. You have steel, sky-cub.` | 47 |
+| `bear.q.choice.accept` | YOU (choice) | `I'll thin them out.` | 19 |
+| `bear.q.choice.later` | YOU (choice) | `Not yet.` | 8 |
+| `bear.q.accepted` | BURL | `Good. Mind the tusks. They charge straight, turn slow.` | 54 |
+| `bear.q.later` | BURL | `Then sit a while. The boars will still be rude.` | 47 |
+| `bear.q.active` | BURL (reminder) | `Still snorting down there. I can hear them chewing.` | 51 |
+| `bear.q.ready` | BURL (ready entry) | `Quiet. Listen. Only bees now, and the wind.` | 43 |
+| `bear.q.thanks` | BURL (hand-in node) | `Thank you, sky-cub. The slope can breathe again.` | 48 |
+| `bear.q.done` | BURL (after hand-in) | `Quiet slope, full bushes. Still not the blue ones.` | 50 |
+| `quest.burl.boars.beasts` | Step text (HUD), `burl.boars` | `Bring down the five wild boars` | 30 |
+| `quest.burl.boars.beasts.done` | Step done line (optional) | `The slope goes quiet again.` | 27 |
+| `quest.burl.boars.returnText` | HUD / log tag when ready | `Tell Burl the slope is quiet` | 28 |
+| `m1.beasts` (new `text`) | m1 HUD line, replaces the boar line | `Find the old bear on the hillside` | 33 |
+| `m1.beasts.hint` (optional) | m1 hint | `Look for the bear near the waystone.` | 35 |
+| `toast.quest.accepted` | Toast | `Quest accepted` | 14 |
+| `toast.quest.complete` | Toast | `Quest complete` | 14 |
+| `quest.log.active` | Log header | `Active` | 6 |
+| `quest.log.done` | Log header | `Done` | 4 |
+
+Notes:
+- `m1.beasts` says "the old bear", not "Burl": the player may reach this step before meeting her, and the name tag only shows in the dialogue box. Once accepted, the HUD follows `tracked()` and shows the `burl.boars` step / returnText (which can say "Burl", because she has introduced herself by then).
+- The m1 `beasts` done line (`The hill goes quiet again.`) stays as is.
+- `bear.q.accepted` echoes `quest.note1` (charge straight, turn slow), so the torn notes and Burl agree.
+- `bear.q.done` needs an entry `{node: bear.q.done, requires: q.burl.boars.done}` before `bear.talked`; without it, done falls through to `bear.repeat`, which also works.
+- Clips (optional): `laugh` on `bear.q.later`, `wave` on `bear.q.thanks`.
