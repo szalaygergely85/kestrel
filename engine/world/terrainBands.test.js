@@ -63,7 +63,7 @@ let maxStep = 0, steps = 0, r = 1; const stepMs = [];
 while (r === 1) { const t = performance.now(); r = w.streamBand(1190, 1088, 2); const dt = performance.now() - t; stepMs.push(dt.toFixed(1)); maxStep = Math.max(maxStep, dt); if (++steps > 5000) break; }
 ok('bake completes; margin 166 >= switchM: no swap yet', r === 0 && w.bandId === 'east' && T.near === nearBefore && T.nearBandPending);
 console.log(`stepped bake: ${steps} steps, max ${maxStep.toFixed(2)} ms; ${stepMs.join(" ")}`);
-ok('slice budget: step <= 2 ms + one row (<6)', maxStep < 6, maxStep.toFixed(2));
+ok('slice budget: step <= 2 ms + one row / one collider slice (<10)', maxStep < 10, maxStep.toFixed(2));
 ok('x=1150 margin 126 >= 112: still no swap', w.streamBand(1150, 1088, 2) === 0 && w.bandId === 'east');
 ok('x=1130 margin 106 < switchM: swap', w.streamBand(1130, 1088, 2) === 2 && w.bandId === 'west');
 ok('events: world:band east>west, no band:late', ev.includes('world:band:east>west') && !ev.some((e) => e.startsWith('band:late')), ev.join(','));
@@ -130,6 +130,44 @@ ok('walking back west cancels the pending bake', !T.nearBandPending && w._bandPe
     const key = (sc) => { const out = []; for (let i = 0; i < sc.count; i++) { const x = sc.x[i]; if (x >= 1100 && x < 1330) out.push(x + ',' + sc.y[i]); } return out.join('|'); };
     ok('scatter trees in the overlap identical (A-first vs B-first world)', key(wa.scatter) === key(wb.scatter));
   } else ok('scatter n/a in this test world', true);
+}
+
+// --- WS2-02: stepped scatter/detail/colliders for the pending near, flipped on the swap frame ------------------
+{
+  const { scatterTrees, scatterDetail } = await import('./scatter.js');
+  const ws = mk({ terrainBands: [A, B] }), evs = []; ws.events = { emit: (n) => evs.push(n) };
+  const sc0 = ws.scatter, dt0 = ws.detail, col0 = ws.colliders.slice();
+  const hasDetail = !!ws.detail, hasTrees = !!ws.scatter && ws.terrain.realTrees;
+  ws.streamBand(1190, 1088, 0.01);
+  let n = 0, r2 = 1, maxStep2 = 0;
+  while (r2 === 1 && n++ < 5000) { const t = performance.now(); r2 = ws.streamBand(1190, 1088, 2); maxStep2 = Math.max(maxStep2, performance.now() - t); }
+  ok('pending: scatter/detail/colliders pointers untouched before the swap', ws.scatter === sc0 && ws.detail === dt0 && ws.colliders.length === col0.length && ws.colliders.every((c, i) => c === col0[i]));
+  ok('job finished ahead of the swap (phase 4)', ws._bandJob && ws._bandJob.phase === 4);
+  const pend = ws.terrain._bb.b;
+  const view = Object.create(ws.terrain); view.near = pend;
+  const refD = ws._detailCtx ? scatterDetail(view, ws.structures, ws._detailCtx.keepOut, ws._detailCtx.cfg) : null;
+  const refT = ws.terrain.realTrees ? scatterTrees(view, ws.structures) : null;
+  const evBefore = evs.length;
+  const sw = ws.streamBand(1130, 1088, 2);
+  ok('swap frame returns 2; events world:band then world:scatter', sw === 2 && evs.slice(evBefore).join() === 'world:band,world:scatter', evs.slice(evBefore).join());
+  const eqSet = (p, q, keys) => p.count === q.count && keys.every((k) => eq(p[k], q[k]));
+  if (refD) ok('detail: stepped == one-shot bytes, flipped on swap', ws.detail !== dt0 && eqSet(ws.detail, refD, ['x', 'y', 'z', 'yawDeg', 'species', 'r2', 'tileStart']));
+  if (refT) ok('trees: stepped == one-shot bytes, flipped on swap', ws.scatter !== sc0 && eqSet(ws.scatter, refT, ['x', 'y', 'z', 'yawDeg', 'species']));
+  ok('colliders replaced in place (same slots, no duplicates)', new Set(ws.colliders.map((c) => c.id)).size === ws.colliders.length && ws.colliders.length === col0.length);
+  // overlap (x 1100..1330, y 1000..1200): identical across zones
+  const ov = (set) => { const o = []; if (set) for (let i = 0; i < set.count; i++) if (set.x[i] >= 1100 && set.x[i] < 1330 && set.y[i] >= 1000 && set.y[i] < 1200) o.push(set.x[i] + ',' + set.y[i] + ',' + set.z[i] + ',' + set.species[i]); return o.sort().join('|'); };
+  ok('detail in the overlap identical east vs west', ov(dt0) === ov(ws.detail) && (!dt0 || dt0.count > 0));
+  if (hasTrees) ok('trees in the overlap identical east vs west', ov(sc0) === ov(ws.scatter));
+  // swap-frame cost
+  const wm = mk({ terrainBands: [A, B] }); wm.streamBand(1190, 1088, 0.01); let q = 1, m2 = 0, k = 0;
+  while (q === 1 && k++ < 5000) { const t = performance.now(); q = wm.streamBand(1190, 1088, 2); m2 = Math.max(m2, performance.now() - t); }
+  wm.streamBand(1130, 1088, 2);
+  ok('swap frame <= 16 ms', wm.lastSwapMs <= 16, wm.lastSwapMs.toFixed(2));
+  console.log(`WS2-02 caps: detail ${dt0 ? dt0.count : 0} -> ${ws.detail ? ws.detail.count : 0}, trees ${sc0 ? sc0.count : 0} -> ${ws.scatter ? ws.scatter.count : 0}; stream step max (incl. collider slice) ${m2.toFixed(1)} ms; swap frame ${wm.lastSwapMs.toFixed(2)} ms (target <= 16); steps ${k}`);
+  // idle after the swap: 0 alloc
+  for (let i = 0; i < 200; i++) wm.streamBand(1500, 1088, 2);
+  const h1 = heapMB(); for (let i = 0; i < 10000; i++) wm.streamBand(1500 + (i & 7), 1088, 2);
+  ok('idle after swap: 10k calls < 0.2 MB', heapMB() - h1 < 0.2);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

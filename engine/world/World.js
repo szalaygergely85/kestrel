@@ -4,7 +4,7 @@
 // for the build order this follows.
 import { loadLevel, isTerrainFloor } from './Level.js';
 import { Terrain } from './Terrain.js';
-import { scatterTrees, scatterDetail } from './scatter.js';
+import { scatterTrees, scatterDetail, TreeScatterJob, DetailScatterJob } from './scatter.js';
 import { packLevel, updateAnimatedSector } from './packed.js';
 import { Entity } from '../entities/Entity.js';
 import { EntityHandle } from '../entities/EntityHandle.js';
@@ -274,7 +274,7 @@ export class World {
     // `null` (unbounded - every world before this story). Content, not
     // state; set once by `World.load` from `def.bounds`.
     this.bounds = null;
-    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this.bandId = null; // WS2-01
+    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.lastSwapMs = 0; this.bandId = null; // WS2-01/02
     this.terrainBand = null; // WS1-02: authored near-band chunk rect or null (auto 3x3)
     // US-016 D-011 addendum (architecture.md 14.4 item 13): horizon
     // billboards - plain data, content not state (never mutated at
@@ -1125,17 +1125,70 @@ export class World {
     return best;
   }
 
+  /** Drops a pending bake and its scatter job. */
+  _cancelBand() { if (this._bandPend >= 0) { this.terrain.cancelNearBand(); this._bandPend = -1; } this._bandJob = null; }
+
+  /**
+   * WS2-02 (38.38): stepped scatter for the PENDING near band. Phases: trees, detail, trunk collider, detail collider
+   * (each collider is one slice, off the swap frame). Reads a view whose `near` is the pending band, never
+   * `terrain.near`. Returns true when all four results are ready. >= 1 unit of progress per call.
+   */
+  _bandJobStep(msBudget) {
+    let j = this._bandJob;
+    const terrain = this.terrain;
+    if (!j) {
+      const view = Object.create(terrain); view.near = terrain._bb.b;
+      j = this._bandJob = { view, phase: terrain.realTrees ? 0 : 1, trees: null, detail: null, scatter: this.scatter, detailSet: this.detail, trunks: null, detailCol: null, ms: 0 };
+      if (terrain.realTrees) j.trees = new TreeScatterJob(view, this.structures);
+      if (this._detailCtx) j.detail = new DetailScatterJob(view, this.structures, this._detailCtx.keepOut, this._detailCtx.cfg);
+    }
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const mesh = this.physicsMode === 'mesh';
+    while (j.phase < 4) {
+      const left = msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
+      if (j.phase === 0) { if (j.trees.step(left)) { j.scatter = j.trees.result; j.phase = 1; } }
+      else if (j.phase === 1) { if (!j.detail || j.detail.step(left)) { j.detailSet = j.detail ? j.detail.result : null; j.phase = 2; } }
+      else if (j.phase === 2) { j.trunks = mesh && j.scatter ? buildTrunkCollider(j.scatter, terrain.recipe.recipe.forest.trees) : null; j.phase = 3; }
+      else { j.detailCol = mesh && j.detailSet ? buildDetailCollider(j.detailSet) : null; j.phase = 4; }
+      if (msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) <= 0) break;
+    }
+    return j.phase >= 4;
+  }
+
+  /** Swap frame: only pointer flips + the ground-snap loop; every heavy result was prepared by `_bandJobStep`. */
   _publishBand(to, late) {
     const terrain = this.terrain, z = this.terrainBands[to], from = this.bandId;
+    if (!this._bandJob || this._bandJob.phase < 4) this._bandJobStep(Infinity); // sync path (ensureBandFor / band:late)
+    const j = this._bandJob;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
     terrain.swapNearBand();
-    this._bandCur = to; this._bandPend = -1; this.bandId = z.id;
+    this._bandCur = to; this._bandPend = -1; this.bandId = z.id; this._bandJob = null;
     terrain._nearKey = nearBandKey(this, z.cx0, z.cy0, z.cw, z.ch) + `|realTrees:${terrain.realTrees}`;
+    if (terrain.realTrees) this.scatter = j.scatter;
+    if (this._detailCtx) this.detail = j.detailSet;
+    if (this.physicsMode === 'mesh') {
+      const put = (id, collider) => {
+        const i = this.colliders.findIndex((c) => c.id === id);
+        if (i >= 0) { if (collider) this.colliders[i] = collider; else this.colliders.splice(i, 1); }
+        else if (collider) this.colliders.push(collider);
+      };
+      put('scatter:trunks', j.trunks);
+      put('scatter:detail', j.detailCol);
+    }
+    let snapped = 0;
+    for (const g of this._groundSnap) {
+      const e = this._entities.get(g.id);
+      if (!e) continue;
+      const gz = terrain.groundAt(e.transform.x, e.transform.y);
+      if (e.transform.z !== gz) { e.transform.z = gz; snapped++; }
+    }
+    if (snapped) { this.rebuildPropColliders(); this.renderVersion++; }
+    this.lastSwapMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
     if (this.events) {
       this.events.emit('world:band', { from, to: z.id });
       if (late) this.events.emit('band:late', { from, to: z.id });
+      this.events.emit('world:scatter', { world: this });
     }
-    // Scatter + collider flip: synchronous for now (WS2-02 splits it into stepped slices; this is its hook).
-    this.refreshTerrainScatter();
   }
 
   /**
@@ -1150,20 +1203,26 @@ export class World {
     const cs = terrain.chunkSize;
     const mc = this._bandMargin(zs[this._bandCur], px, py, cs);
     if (mc >= this.bandSwitch.prefetchM) { // far from every edge: idle (drops a stale pending bake if the player walked back)
-      if (this._bandPend >= 0) { terrain.cancelNearBand(); this._bandPend = -1; }
+      if (this._bandPend >= 0) this._cancelBand();
       return 0;
     }
     const best = this._bestBand(px, py, cs);
     if (best === this._bandCur) { // still the best zone: nothing to switch to
-      if (this._bandPend >= 0) { terrain.cancelNearBand(); this._bandPend = -1; }
+      if (this._bandPend >= 0) this._cancelBand();
       return 0;
     }
     if (this._bandPend !== best) {
+      if (this._bandPend >= 0) this._cancelBand();
       const z = zs[best];
       terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch);
       this._bandPend = best;
     }
-    const ready = terrain.nearBandStep(msBudget);
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    let ready = terrain.nearBandStep(msBudget);
+    if (ready && !(this._bandJob && this._bandJob.phase >= 4)) { // scatter + colliders for the pending near, in the leftover budget
+      const left = msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
+      ready = this._bandJobStep(left > 0 ? left : 0);
+    } else if (ready) ready = true;
     if (mc < 32 && !ready) { terrain.nearBandStep(Infinity); this._publishBand(best, true); return 2; }
     if (ready && mc < this.bandSwitch.switchM) { this._publishBand(best, false); return 2; }
     return ready ? 0 : 1;
@@ -1174,7 +1233,8 @@ export class World {
     const zs = this.terrainBands, terrain = this.terrain;
     if (!zs || !terrain || this._bandCur < 0) return false;
     const best = this._bestBand(x, y, terrain.chunkSize);
-    if (best === this._bandCur) { if (this._bandPend >= 0) { terrain.cancelNearBand(); this._bandPend = -1; } return false; }
+    if (best === this._bandCur) { if (this._bandPend >= 0) this._cancelBand(); return false; }
+    if (this._bandPend >= 0) this._cancelBand();
     const z = zs[best];
     terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch);
     terrain.nearBandStep(Infinity);

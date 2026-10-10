@@ -41,19 +41,45 @@ export function validateScatterConfig(cfg) {
   return cfg;
 }
 
-/** @param {import('./Terrain.js').Terrain} terrain */
-export function scatterTrees(terrain, structures = [], cfg = terrain.recipe.recipe.forest.trees) {
-  validateScatterConfig(cfg);
-  const forest = terrain.recipe.recipe.forest;
-  if (!Number.isFinite(forest.maxSlope) || forest.maxSlope < 0) throw new Error('forest.maxSlope: invalid scatter slope');
-  const g = terrain.near;
-  if (!g) throw new Error('scatterTrees: terrain.near must be baked');
-  const points = [], normal = { x: 0, y: 0, z: 1 };
-  const forestId = terrain._forestTypeId;
-  const weight = cfg.species.reduce((sum, s) => sum + s.weight, 0);
-  const u = (ix, iy, k) => hash2(ix, iy, cfg.seed + k) / 4294967296;
-  for (let iy = Math.floor(g.y0 / cfg.cellM); iy < Math.ceil((g.y0 + g.h * g.cell) / cfg.cellM); iy++) {
-    for (let ix = Math.floor(g.x0 / cfg.cellM); ix < Math.ceil((g.x0 + g.w * g.cell) / cfg.cellM); ix++) {
+const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+/**
+ * WS2-02 (arch 38.38): the tree scatter as a resumable job. `terrain` may be a view whose `near` is a PENDING band
+ * (`Object.create(terrain)` + own `near`), so nothing reads the live `terrain.near`. `step(ms)` places whole
+ * cell rows until the budget is spent (>= 1 row of progress per call) and returns true once `result` is ready.
+ * `scatterTrees` is this job run to completion, so stepped == one-shot bytes by construction.
+ */
+export class TreeScatterJob {
+  constructor(terrain, structures = [], cfg = terrain.recipe.recipe.forest.trees) {
+    validateScatterConfig(cfg);
+    const forest = terrain.recipe.recipe.forest;
+    if (!Number.isFinite(forest.maxSlope) || forest.maxSlope < 0) throw new Error('forest.maxSlope: invalid scatter slope');
+    const g = terrain.near;
+    if (!g) throw new Error('scatterTrees: terrain.near must be baked');
+    this.terrain = terrain; this.structures = structures; this.cfg = cfg; this.forest = forest; this.g = g;
+    this.points = []; this.normal = { x: 0, y: 0, z: 1 };
+    this.forestId = terrain._forestTypeId;
+    this.weight = cfg.species.reduce((sum, s) => sum + s.weight, 0);
+    this.iy = Math.floor(g.y0 / cfg.cellM);
+    this.iy1 = Math.ceil((g.y0 + g.h * g.cell) / cfg.cellM);
+    this.ix0 = Math.floor(g.x0 / cfg.cellM);
+    this.ix1 = Math.ceil((g.x0 + g.w * g.cell) / cfg.cellM);
+    this.result = null;
+  }
+  step(msBudget) {
+    if (this.result) return true;
+    const t0 = _now();
+    while (this.iy < this.iy1) {
+      this._row(this.iy++);
+      if (_now() - t0 >= msBudget) break;
+    }
+    if (this.iy >= this.iy1) this._finish();
+    return this.result !== null;
+  }
+  _row(iy) {
+    const { terrain, structures, cfg, forest, g, points, normal, forestId, weight } = this;
+    const u = (ix, iy2, k) => hash2(ix, iy2, cfg.seed + k) / 4294967296;
+    for (let ix = this.ix0; ix < this.ix1; ix++) {
       if (u(ix, iy, 0) >= cfg.fill) continue;
       const x = (ix + 0.5) * cfg.cellM + (u(ix, iy, 1) * 2 - 1) * cfg.jitter;
       const y = (iy + 0.5) * cfg.cellM + (u(ix, iy, 2) * 2 - 1) * cfg.jitter;
@@ -78,17 +104,28 @@ export function scatterTrees(terrain, structures = [], cfg = terrain.recipe.reci
       points.push({ x, y, z: terrain.groundAt(x, y) - 0.1, yawDeg: Math.floor(u(ix, iy, 4) * 360), species, ix, iy });
     }
   }
-  // Normative probability thinning is deterministic; maxTrees is an expected count, not a hard cap.
-  const keep = points.length > cfg.maxTrees ? cfg.maxTrees / points.length : 1;
-  const kept = points.filter(p => keep === 1 || u(p.ix, p.iy, 5) < keep);
-  const count = kept.length;
-  const out = { x: new Float64Array(count), y: new Float64Array(count), z: new Float64Array(count),
-    yawDeg: new Int16Array(count), species: new Uint8Array(count), count };
-  for (let i = 0; i < count; i++) {
-    const p = kept[i];
-    out.x[i] = p.x; out.y[i] = p.y; out.z[i] = p.z; out.yawDeg[i] = p.yawDeg; out.species[i] = p.species;
+  _finish() {
+    const { cfg, points } = this;
+    const u = (ix, iy, k) => hash2(ix, iy, cfg.seed + k) / 4294967296;
+    // Normative probability thinning is deterministic; maxTrees is an expected count, not a hard cap.
+    const keep = points.length > cfg.maxTrees ? cfg.maxTrees / points.length : 1;
+    const kept = points.filter(p => keep === 1 || u(p.ix, p.iy, 5) < keep);
+    const count = kept.length;
+    const out = { x: new Float64Array(count), y: new Float64Array(count), z: new Float64Array(count),
+      yawDeg: new Int16Array(count), species: new Uint8Array(count), count };
+    for (let i = 0; i < count; i++) {
+      const p = kept[i];
+      out.x[i] = p.x; out.y[i] = p.y; out.z[i] = p.z; out.yawDeg[i] = p.yawDeg; out.species[i] = p.species;
+    }
+    this.result = out; this.points = null;
   }
-  return out;
+}
+
+/** @param {import('./Terrain.js').Terrain} terrain */
+export function scatterTrees(terrain, structures = [], cfg = terrain.recipe.recipe.forest.trees) {
+  const job = new TreeScatterJob(terrain, structures, cfg);
+  job.step(Infinity);
+  return job.result;
 }
 
 // ENV-01a1 (architecture.md 37.4): content-driven, load-time ground detail.
@@ -207,80 +244,110 @@ function structBlocks(st, x, y, m) {
   return false;
 }
 
-export function scatterDetail(terrain, structures = [], keepOut = [], cfg = terrain.recipe.recipe.detail) {
-  cfg = validateDetailConfig(cfg);
-  const g = terrain.near;
-  if (!g) throw new Error('scatterDetail: terrain.near must be baked');
-  const x1 = g.x0 + g.w * g.cell, y1 = g.y0 + g.h * g.cell;
-  const tx0 = Math.floor(g.x0 / cfg.tileM), ty0 = Math.floor(g.y0 / cfg.tileM);
-  const tilesX = Math.ceil(x1 / cfg.tileM) - tx0, tilesY = Math.ceil(y1 / cfg.tileM) - ty0;
-  // Load/stroke-time broad phase: hundreds of roadside boxes need only touch their own tiles.
-  const structureTiles = new Array(tilesX * tilesY);
-  for (const s of structures) {
-    const b = s.bbox, m = cfg.structClearM;
-    const ix0 = Math.max(0, Math.floor((b.x0 - m) / cfg.tileM) - tx0);
-    const iy0 = Math.max(0, Math.floor((b.y0 - m) / cfg.tileM) - ty0);
-    const ix1 = Math.min(tilesX - 1, Math.floor((b.x1 + m) / cfg.tileM) - tx0);
-    const iy1 = Math.min(tilesY - 1, Math.floor((b.y1 + m) / cfg.tileM) - ty0);
-    for (let iy = iy0; iy <= iy1; iy++) for (let ix = ix0; ix <= ix1; ix++) {
-      const i = ix + iy * tilesX;
-      (structureTiles[i] || (structureTiles[i] = [])).push(s);
-    }
-  }
-  const points = [], speciesDefs = [], exclusions = cfg.exclude.concat(keepOut);
-  for (let layer = 0; layer < cfg.layers.length; layer++) {
-    const l = cfg.layers[layer], speciesByType = {};
-    for (const [type, list] of Object.entries(l.ground)) {
-      speciesByType[type] = list.map(s => {
-        const index = speciesDefs.length;
-        speciesDefs.push({ model: s.model, mesh: s.mesh, layer, shadow: s.shadow, sway: s.sway, lodCells: l.lodCells, collider: s.collider });
-        return index;
-      });
-    }
-    const u = (ix, iy, k) => hash2(ix, iy, l.seed + k) / 4294967296;
-    for (let iy = Math.floor(g.y0 / l.cellM); iy < Math.ceil(y1 / l.cellM); iy++) {
-      for (let ix = Math.floor(g.x0 / l.cellM); ix < Math.ceil(x1 / l.cellM); ix++) {
-        if (u(ix, iy, 0) >= l.fill) continue;
-        const x = (ix + 0.5) * l.cellM + (u(ix, iy, 1) * 2 - 1) * l.jitter;
-        const y = (iy + 0.5) * l.cellM + (u(ix, iy, 2) * 2 - 1) * l.jitter;
-        if (x < g.x0 || y < g.y0 || x >= x1 || y >= y1) continue;
-        const t = terrain.groundTypeAt(x, y), type = terrain.typeName(t), list = l.ground[type];
-        if (!list || !list.length) continue;
-        if (terrain.groundTypeAt(x - l.clearM, y - l.clearM) !== t ||
-            terrain.groundTypeAt(x - l.clearM, y + l.clearM) !== t ||
-            terrain.groundTypeAt(x + l.clearM, y - l.clearM) !== t ||
-            terrain.groundTypeAt(x + l.clearM, y + l.clearM) !== t) continue;
-        terrain.groundNormalAt(x, y, detailNormal);
-        if (Math.hypot(detailNormal.x, detailNormal.y) / detailNormal.z > l.maxSlope) continue;
-        const tile = Math.floor(x / cfg.tileM) - tx0 + (Math.floor(y / cfg.tileM) - ty0) * tilesX;
-        const boxes = structureTiles[tile];
-        let blocked = false;
-        if (boxes) for (const st of boxes) {
-          if (structBlocks(st, x, y, cfg.structClearM)) { blocked = true; break; }
-        }
-        if (blocked) continue;
-        if (exclusions.some(e => detailExcluded(x, y, e))) continue;
-        let pick = u(ix, iy, 3) * list.reduce((sum, s) => sum + s.weight, 0), chosen = list.length - 1;
-        for (let j = 0; j < list.length; j++) { pick -= list[j].weight; if (pick < 0) { chosen = j; break; } }
-        const s = list[chosen], r = l.drawM * (0.85 + 0.15 * u(ix, iy, 5));
-        points.push({ x, y, z: terrain.groundAt(x, y) - s.sinkM,
-          yawDeg: Math.floor(u(ix, iy, 4) * 360 / s.yawStep) * s.yawStep,
-          species: speciesByType[type][chosen], r2: r * r,
-          tile });
-        if (points.length > cfg.maxPlacements) throw new Error('detail.maxPlacements: placement cap exceeded');
+/** WS2-02: the detail scatter as a resumable job (see TreeScatterJob). Rows of every layer, then the tile sort. */
+export class DetailScatterJob {
+  constructor(terrain, structures = [], keepOut = [], cfg = terrain.recipe.recipe.detail) {
+    cfg = validateDetailConfig(cfg);
+    const g = terrain.near;
+    if (!g) throw new Error('scatterDetail: terrain.near must be baked');
+    const x1 = g.x0 + g.w * g.cell, y1 = g.y0 + g.h * g.cell;
+    const tx0 = Math.floor(g.x0 / cfg.tileM), ty0 = Math.floor(g.y0 / cfg.tileM);
+    const tilesX = Math.ceil(x1 / cfg.tileM) - tx0, tilesY = Math.ceil(y1 / cfg.tileM) - ty0;
+    // Load/stroke-time broad phase: hundreds of roadside boxes need only touch their own tiles.
+    const structureTiles = new Array(tilesX * tilesY);
+    for (const s of structures) {
+      const b = s.bbox, m = cfg.structClearM;
+      const ix0 = Math.max(0, Math.floor((b.x0 - m) / cfg.tileM) - tx0);
+      const iy0 = Math.max(0, Math.floor((b.y0 - m) / cfg.tileM) - ty0);
+      const ix1 = Math.min(tilesX - 1, Math.floor((b.x1 + m) / cfg.tileM) - tx0);
+      const iy1 = Math.min(tilesY - 1, Math.floor((b.y1 + m) / cfg.tileM) - ty0);
+      for (let iy = iy0; iy <= iy1; iy++) for (let ix = ix0; ix <= ix1; ix++) {
+        const i = ix + iy * tilesX;
+        (structureTiles[i] || (structureTiles[i] = [])).push(s);
       }
     }
+    const speciesDefs = [], layers = [];
+    for (let layer = 0; layer < cfg.layers.length; layer++) {
+      const l = cfg.layers[layer], speciesByType = {};
+      for (const [type, list] of Object.entries(l.ground)) {
+        speciesByType[type] = list.map(s => {
+          const index = speciesDefs.length;
+          speciesDefs.push({ model: s.model, mesh: s.mesh, layer, shadow: s.shadow, sway: s.sway, lodCells: l.lodCells, collider: s.collider });
+          return index;
+        });
+      }
+      layers.push({ l, speciesByType });
+    }
+    Object.assign(this, { terrain, cfg, g, x1, y1, tx0, ty0, tilesX, tilesY, structureTiles, speciesDefs, layers,
+      points: [], exclusions: cfg.exclude.concat(keepOut), layer: 0, iy: 0, rowInit: false, result: null });
   }
-  const count = points.length, tileStart = new Uint32Array(tilesX * tilesY + 1);
-  for (const p of points) tileStart[p.tile + 1]++;
-  for (let i = 1; i < tileStart.length; i++) tileStart[i] += tileStart[i - 1];
-  const cursor = tileStart.slice();
-  const out = { count, x: new Float64Array(count), y: new Float64Array(count), z: new Float64Array(count),
-    yawDeg: new Int16Array(count), species: new Uint16Array(count), r2: new Float32Array(count),
-    speciesDefs, tileM: cfg.tileM, tx0, ty0, tilesX, tilesY, tileStart };
-  for (const p of points) {
-    const i = cursor[p.tile]++;
-    for (const k of ['x', 'y', 'z', 'yawDeg', 'species', 'r2']) out[k][i] = p[k];
+  step(msBudget) {
+    if (this.result) return true;
+    const t0 = _now();
+    while (this.layer < this.layers.length) {
+      const l = this.layers[this.layer].l;
+      if (!this.rowInit) { this.iy = Math.floor(this.g.y0 / l.cellM); this.rowInit = true; }
+      if (this.iy >= Math.ceil(this.y1 / l.cellM)) { this.layer++; this.rowInit = false; continue; }
+      this._row(this.layer, this.iy++);
+      if (_now() - t0 >= msBudget) break;
+    }
+    if (this.layer >= this.layers.length) this._finish();
+    return this.result !== null;
   }
-  return out;
+  _row(layer, iy) {
+    const { terrain, cfg, g, x1, y1, tx0, ty0, tilesX, structureTiles, points, exclusions } = this;
+    const { l, speciesByType } = this.layers[layer];
+    const u = (ix, iy2, k) => hash2(ix, iy2, l.seed + k) / 4294967296;
+    for (let ix = Math.floor(g.x0 / l.cellM); ix < Math.ceil(x1 / l.cellM); ix++) {
+      if (u(ix, iy, 0) >= l.fill) continue;
+      const x = (ix + 0.5) * l.cellM + (u(ix, iy, 1) * 2 - 1) * l.jitter;
+      const y = (iy + 0.5) * l.cellM + (u(ix, iy, 2) * 2 - 1) * l.jitter;
+      if (x < g.x0 || y < g.y0 || x >= x1 || y >= y1) continue;
+      const t = terrain.groundTypeAt(x, y), type = terrain.typeName(t), list = l.ground[type];
+      if (!list || !list.length) continue;
+      if (terrain.groundTypeAt(x - l.clearM, y - l.clearM) !== t ||
+          terrain.groundTypeAt(x - l.clearM, y + l.clearM) !== t ||
+          terrain.groundTypeAt(x + l.clearM, y - l.clearM) !== t ||
+          terrain.groundTypeAt(x + l.clearM, y + l.clearM) !== t) continue;
+      terrain.groundNormalAt(x, y, detailNormal);
+      if (Math.hypot(detailNormal.x, detailNormal.y) / detailNormal.z > l.maxSlope) continue;
+      const tile = Math.floor(x / cfg.tileM) - tx0 + (Math.floor(y / cfg.tileM) - ty0) * tilesX;
+      const boxes = structureTiles[tile];
+      let blocked = false;
+      if (boxes) for (const st of boxes) {
+        if (structBlocks(st, x, y, cfg.structClearM)) { blocked = true; break; }
+      }
+      if (blocked) continue;
+      if (exclusions.some(e => detailExcluded(x, y, e))) continue;
+      let pick = u(ix, iy, 3) * list.reduce((sum, s) => sum + s.weight, 0), chosen = list.length - 1;
+      for (let j = 0; j < list.length; j++) { pick -= list[j].weight; if (pick < 0) { chosen = j; break; } }
+      const s = list[chosen], r = l.drawM * (0.85 + 0.15 * u(ix, iy, 5));
+      points.push({ x, y, z: terrain.groundAt(x, y) - s.sinkM,
+        yawDeg: Math.floor(u(ix, iy, 4) * 360 / s.yawStep) * s.yawStep,
+        species: speciesByType[type][chosen], r2: r * r,
+        tile });
+      if (points.length > cfg.maxPlacements) throw new Error('detail.maxPlacements: placement cap exceeded');
+    }
+  }
+  _finish() {
+    const { cfg, points, tx0, ty0, tilesX, tilesY, speciesDefs } = this;
+    const count = points.length, tileStart = new Uint32Array(tilesX * tilesY + 1);
+    for (const p of points) tileStart[p.tile + 1]++;
+    for (let i = 1; i < tileStart.length; i++) tileStart[i] += tileStart[i - 1];
+    const cursor = tileStart.slice();
+    const out = { count, x: new Float64Array(count), y: new Float64Array(count), z: new Float64Array(count),
+      yawDeg: new Int16Array(count), species: new Uint16Array(count), r2: new Float32Array(count),
+      speciesDefs, tileM: cfg.tileM, tx0, ty0, tilesX, tilesY, tileStart };
+    for (const p of points) {
+      const i = cursor[p.tile]++;
+      for (const k of ['x', 'y', 'z', 'yawDeg', 'species', 'r2']) out[k][i] = p[k];
+    }
+    this.result = out; this.points = null; this.structureTiles = null;
+  }
+}
+
+export function scatterDetail(terrain, structures = [], keepOut = [], cfg = terrain.recipe.recipe.detail) {
+  const job = new DetailScatterJob(terrain, structures, keepOut, cfg);
+  job.step(Infinity);
+  return job.result;
 }
