@@ -58,81 +58,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { writeVoxSingle, writeVoxMulti } from './export/voxWrite.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// ---- low-level RIFF / .vox chunk writers (mirror of vox-import.mjs's readers) --
-
-function u32(n) {
-  const b = Buffer.alloc(4);
-  b.writeUInt32LE(n >>> 0, 0);
-  return b;
-}
-function i32(n) {
-  const b = Buffer.alloc(4);
-  b.writeInt32LE(n | 0, 0);
-  return b;
-}
-function chunk(id, content) {
-  return Buffer.concat([Buffer.from(id, 'ascii'), u32(content.length), u32(0), content]);
-}
-function str(s) {
-  const b = Buffer.from(String(s), 'utf8');
-  return Buffer.concat([u32(b.length), b]);
-}
-function dict(obj) {
-  const keys = Object.keys(obj);
-  const parts = [u32(keys.length)];
-  for (const k of keys) { parts.push(str(k)); parts.push(str(obj[k])); }
-  return Buffer.concat(parts);
-}
-function sizeChunk(sx, sy, sz) {
-  return chunk('SIZE', Buffer.concat([u32(sx), u32(sy), u32(sz)]));
-}
-function xyziChunk(voxels) {
-  const body = Buffer.alloc(4 + voxels.length * 4);
-  body.writeUInt32LE(voxels.length, 0);
-  voxels.forEach((v, i) => {
-    const o = 4 + i * 4;
-    body[o] = v.x; body[o + 1] = v.y; body[o + 2] = v.z; body[o + 3] = v.c;
-  });
-  return chunk('XYZI', body);
-}
-function rgbaChunk(entries256) {
-  const body = Buffer.alloc(256 * 4);
-  for (let i = 0; i < 256; i++) {
-    const e = entries256[i] || [0, 0, 0, 0];
-    body[i * 4] = e[0]; body[i * 4 + 1] = e[1]; body[i * 4 + 2] = e[2]; body[i * 4 + 3] = e[3];
-  }
-  return chunk('RGBA', body);
-}
-/** One nTRN node: single frame, translation only (identity rotation - see
- * vox-import.mjs's ROTATION note; byte value 4 is identity, but the `_r`
- * key is simply omitted here, matching parseTranslation's "absent = no
- * rotation dict entry at all" path used by every existing test fixture). */
-function ntrnChunk(nodeId, childId, layerId, t) {
-  const frame = dict({ _t: `${t[0]} ${t[1]} ${t[2]}` });
-  const body = Buffer.concat([u32(nodeId), dict({}), u32(childId), i32(-1), i32(layerId), u32(1), frame]);
-  return chunk('nTRN', body);
-}
-function ngrpChunk(nodeId, childIds) {
-  const body = Buffer.concat([u32(nodeId), dict({}), u32(childIds.length), ...childIds.map(u32)]);
-  return chunk('nGRP', body);
-}
-function nshpChunk(nodeId, modelId) {
-  const body = Buffer.concat([u32(nodeId), dict({}), u32(1), u32(modelId), dict({})]);
-  return chunk('nSHP', body);
-}
-function layrChunk(layerId, name) {
-  const body = Buffer.concat([u32(layerId), dict({ _name: name }), i32(-1)]);
-  return chunk('LAYR', body);
-}
-function mainChunk(childrenBuf) {
-  return Buffer.concat([Buffer.from('MAIN', 'ascii'), u32(0), u32(childrenBuf.length), childrenBuf]);
-}
-function voxFile(version, mainBuf) {
-  return Buffer.concat([Buffer.from('VOX ', 'ascii'), u32(version), mainBuf]);
-}
 
 // ---- material / palette assignment --------------------------------------
 
@@ -218,12 +146,7 @@ function exportSingle(def, materials, rgb) {
       }
     }
   }
-  const children = Buffer.concat([
-    sizeChunk(sx, sy, sz),
-    xyziChunk(voxels),
-    rgbaChunk(paletteEntries(orderedKeys, materials, rgb))
-  ]);
-  const buffer = voxFile(150, mainChunk(children));
+  const buffer = Buffer.from(writeVoxSingle({ size: [sx, sy, sz], voxels, palette: paletteEntries(orderedKeys, materials, rgb) }));
   const map = {};
   orderedKeys.forEach((k, i) => { map[String(i + 1)] = k; });
   return { buffer, map };
@@ -233,11 +156,8 @@ function exportMulti(def, materials, rgb) {
   const partNames = Object.keys(def.parts);
   const { orderedKeys, indexOf } = collectMaterials(def);
 
-  const modelChunks = [];
-  const partInfo = []; // { msx, msy, msz, x0, y0, z0 }
-  partNames.forEach((pname) => {
+  const parts = partNames.map((pname) => {
     const [x0, y0, z0, x1, y1, z1] = def.parts[pname].box;
-    const msx = x1 - x0, msy = y1 - y0, msz = z1 - z0;
     const voxels = [];
     for (let z = z0; z < z1; z++) {
       const layer = def.layers[z];
@@ -252,36 +172,11 @@ function exportMulti(def, materials, rgb) {
         }
       }
     }
-    modelChunks.push(sizeChunk(msx, msy, msz));
-    modelChunks.push(xyziChunk(voxels));
-    partInfo.push({ msx, msy, msz, x0, y0, z0 });
+    return { name: pname, size: [x1 - x0, y1 - y0, z1 - z0], origin: [x0, y0, z0], voxels };
   });
-
-  const rgba = rgbaChunk(paletteEntries(orderedKeys, materials, rgb));
-
-  // Scene graph: node0 nTRN (root, no translation) -> node1 nGRP -> per
-  // part i: nTRN(translation = box origin + floor(local size / 2), so
-  // vox-import's `local - floor(size/2) + translation` formula lands
-  // exactly back on the original global box coordinates) -> nSHP(modelId
-  // = i, matching the SIZE/XYZI pair order above) + a named LAYR(i).
-  const partIds = partNames.map((_, i) => ({ trn: 2 + i * 2, shp: 2 + i * 2 + 1 }));
-  const scene = [];
-  scene.push(ntrnChunk(0, 1, -1, [0, 0, 0]));
-  scene.push(ngrpChunk(1, partIds.map((p) => p.trn)));
-  partNames.forEach((pname, i) => {
-    const info = partInfo[i];
-    const t = [
-      info.x0 + Math.floor(info.msx / 2),
-      info.y0 + Math.floor(info.msy / 2),
-      info.z0 + Math.floor(info.msz / 2)
-    ];
-    scene.push(ntrnChunk(partIds[i].trn, partIds[i].shp, i, t));
-    scene.push(nshpChunk(partIds[i].shp, i));
-  });
-  partNames.forEach((pname, i) => scene.push(layrChunk(i, pname)));
-
-  const children = Buffer.concat([...modelChunks, rgba, ...scene]);
-  const buffer = voxFile(200, mainChunk(children));
+  // Scene graph (voxWrite.js writeVoxMulti): nTRN translation = box origin + floor(size/2), so vox-import's
+  // `local - floor(size/2) + translation` lands back on the original global box coordinates.
+  const buffer = Buffer.from(writeVoxMulti({ parts, palette: paletteEntries(orderedKeys, materials, rgb) }));
   const map = {};
   orderedKeys.forEach((k, i) => { map[String(i + 1)] = k; });
   return { buffer, map };
