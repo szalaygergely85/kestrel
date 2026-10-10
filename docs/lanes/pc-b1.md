@@ -419,3 +419,8 @@ B1 2026-10-09 (kestrel-1) SETTINGS-MOUNT-01 -> po-review: full createSettingsVie
   J: bindings `questLog`=KeyJ + gameKeys; main.js lazy createQuestLogScreen per book, keys routed while open, counted in invOpen (pauses like the pack), excluded from pauseUp, re-locks pointer on close; draws after craftView.
   Tests: new game/js/quest/questUiMount.test.js (marker per status, map kinds, J binding, open/close); bindings/gameKeys tests moved their KeyJ rebind to KeyU. NOT run: browser. tools/verify-quest-ui.mjs <port 9500-9574> (debug hooks __debug.questBook/questLogOpen/gameHooks added).
 
+
+### COMPASS-01 (kestrel-2, 2026-10-10) - po-review, mount pending
+- `game/js/ui/compassHud.js`: `createCompassHud({style})` -> `target(book, world)`, `step(x,y,yaw)`, `draw(ui,cols,rows)`, `setHidden(b)`; `FALLBACK_COMPASS_STYLE` exported (shape documented in header; adapt to designer's `ASSETS.uiStyle.compass` when it lands). Test 28 checks, 0-alloc 1e5.
+- Priority ready `?` > tracked/main active step > available `!`. World resolver: `world.resolve(kind,id,out)` kinds giver|area|item|beast|flag (host maps flag `quest.burl.boars.done` -> bear entity, areas.json -> centres).
+- NEEDS B1-main: `const compass=createCompassHud({style:ASSETS.uiStyle?.compass}); const cw={resolve(kind,id,out){...}}`; on book.version change + ~2 Hz `compass.target(questBook,cw)`; each frame `compass.step(px,py,yaw); compass.setHidden(paused||dialog||menu||capture); compass.draw(ui,cols,rows)`.
