@@ -526,3 +526,35 @@ Notes:
 - `bear.q.accepted` echoes `quest.note1` (charge straight, turn slow), so the torn notes and Burl agree.
 - `bear.q.done` needs an entry `{node: bear.q.done, requires: q.burl.boars.done}` before `bear.talked`; without it, done falls through to `bear.repeat`, which also works.
 - Clips (optional): `laugh` on `bear.q.later`, `wave` on `bear.q.thanks`.
+
+## World stage 1: relay waystones (WS1-W1)
+
+Texts for D-060 / architecture 38.36 (PC-B writer, 2026-10-10). The relays are the waystones: a woken relay heals, saves, sets the respawn point and becomes a travel point on the M card. ASCII only, lengths counted by hand. Limits (the stricter of the backlog row and the brief): prompts <= 24, toasts / HUD / done <= 38, hint <= 40, map labels <= 14, map header <= 30. No Esc hints, no rewards promised, no line names Wick or says who sends the signal.
+
+**Name:** the road-bend relay is `Bend Relay`: plain, the way a Low Ward hand would name a mast by where it stands. The meadow stone keeps its name, `The Waystone` (`place.waystone`).
+
+| Key | Where | Text | chars |
+|---|---|---|---|
+| `place.relay.ws_roadBend` | Toast title, save-slot `{place}`, map label for `ws_roadBend` | `Bend Relay` | 10 |
+| `map.label.waystone` | Map label for the meadow stone (= `place.waystone`) | `The Waystone` | 12 |
+| `prompt.relay.wake` | Interact line, dead relay | `[E] Wake the relay` | 18 |
+| `prompt.relay.touch` | Interact line, awake relay (heal + save) | `[E] Touch the relay` | 19 |
+| `toast.relay.woken` (1) | Wake toast, line 1 (title `place.relay.ws_roadBend`) | `The relay hums awake.` | 21 |
+| `toast.relay.woken` (2) | Wake toast, line 2 | `Saved. The relay will remember.` | 31 |
+| `toast.relay.saved` | Touch on an awake relay (line 2 alone) | `Saved. The relay will remember.` | 31 |
+| `toast.relay.healed` | Under the saved line (reuse) | `Warmth in the hands. Hearts full.` | 33 |
+| `fade.respawn.relay` | Death fade / wake line, respawn at a relay | `I wake under the humming relay.` | 31 |
+| `lore.relay` | Optional echo, first wake | `Brass, crystal. Older than the Wall.` | 36 |
+| `map.travel.header` | M card, bottom line header | `Travel: press a number` | 22 |
+| `map.travel.line` (example) | M card list, built from labels by `order` | `1 The Waystone  2 Bend Relay` | 28 |
+| `toast.travel.here` | Digit pressed within 6 m of the target (optional; silent no-op also fine) | `Already here.` | 13 |
+| `m1.relay1` | Optional 7th m1 objective (WS1-09), HUD | `Wake the relay at the road bend` | 31 |
+| `m1.relay1.done` | Done line | `A second light on the pencil line.` | 34 |
+| `m1.relay1.hint` (optional) | Hint | `Follow the road west. Press E there.` | 36 |
+
+Notes:
+- `toast.relay.saved` echoes `toast.waystone.saved` ("The stone will remember.") on purpose: stone and relay are the same kind of place.
+- `toast.relay.healed` is the same text as `toast.waystone.healed`; one shared key is fine.
+- The wake beat stays wordless beyond the toast (canon: he has no word for it yet). "Hums" ties it to the relay stones under the Low Wards.
+- If the label list grows past two, keep the pattern `<digit> <label>` with two spaces between entries; 9 labels of <= 14 do not fit one 60-char line, so stage 2 needs a second line or shorter labels.
+- `lore.relay` follows canon (the machine part is older than Ferrum's Wall) and adds nothing new.
