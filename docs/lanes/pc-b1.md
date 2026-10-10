@@ -638,3 +638,9 @@ Gates: worldClock.test (5760 steps/day, wrap, round trip), main.js --check, chec
   Gates: quest/ch1/dialogue/bear/barks suites PASS, main.js --check, validate-content, check-deps OK. Not run: browser.
 
 - EDITOR-BAND-01 (kestrel-3): editor always showed band zone 0 (World.load without spawn, never ensureBandFor), so a camera outside it saw the far-canopy edge skirt as a green block. tools/editor/main.js: rebuild() passes spawn=cam; plate refresh (4 Hz) calls world.ensureBandFor(cam). Editor suites PASS; no headless capture run.
+
+- DRESS-02 (kestrel-2, po-review): tools/gen-road-props.mjs (seed 20261010, re-runnable, replaces rprop### rows only) places 35 Medieval Village props, yaw-only (no tilt in placeMesh), lowest ground + sink, fences per segment, vine z from its arch; solid props keep proxy colliders. Wagon @(1090,1070) bend: rprop000 Prop_Wagon (1086.05,1058.9), crates 001 (1087.75,1060.44) 002 (1084.45,1062.64), 003 Floor_WoodDark_Half1 tailgate (1083.59,1059.56).
+  Fences (one segment missing each): fenceMeadow 004-008 x 1408-1418 y 1050.6-1052.7 (16 m S of road, W of meadow); fenceField 009-012 x 1325-1333 y ~1032.5 (N of road).
+  Ruin at ws_roadBend: 013 Wall_Arch (1251.4,1024.37) + 014 Prop_Vine1 + 015/016 Wall_BottomCover + 017-020 bricks (14 m NW of relay). Ruin at ws_ford: 021 Wall_Arch (989.57,1092.29) + 022 vine + 023/024 BottomCover + 025-027 bricks (13 m S of relay).
+  Chimney ruin off road: 028 Prop_Chimney2 (1188.26,1032.57) + 029/030 BottomCover foundation + 031-034 bricks. Flagstones (Floor_UnevenBrick) were tried but no flat free spot (optional, dropped).
+  Keep-outs: road+1.5 m, route legs 7-9c/Burl walks/9b probe line +2.5 m, relays 8 m, stones 15 m, tower 16 m, boars 8 m, solid meshes, no path/water ground. Gates: validate-content OK, route-walk all Y + clearance PASS (7b diff 7.4 = baseline), run-tests filter 23/23 PASS. Not run: browser (poses roadBend / ford for a look).
