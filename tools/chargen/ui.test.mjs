@@ -1,7 +1,7 @@
 // CHARGEN-13: pure parts of ui.js (no DOM).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { controlsFor, applyControl, readControl, debounce, seedFromText } from './ui.js';
+import { controlsFor, applyControl, readControl, debounce, seedFromText, resRows, applyRes, quadLabel } from './ui.js';
 import { loadKit } from './export.mjs';
 
 const kit = loadKit();
@@ -35,4 +35,19 @@ test('seedFromText: number, word hash, empty uses rnd', () => {
   assert.equal(seedFromText('abc'), seedFromText(' abc '));
   assert.notEqual(seedFromText('abc'), seedFromText('abd'));
   assert.equal(seedFromText('', () => 0.5), Math.floor(0.5 * 0x7fffffff));
+});
+test('resRows: levels from kit.resLevels, disabled when missing', () => {
+  const rows = resRows({ resLevels: { body: [1], head: [1, 2] } }), by = Object.fromEntries(rows.map((r) => [r.key, r]));
+  assert.deepEqual(by.body.options.map((o) => o.disabled), [false, true]); assert.match(by.body.note, /CHARGEN-24/);
+  assert.deepEqual(by.head.options.map((o) => [o.value, o.disabled]), [[1, false], [2, false], [4, true]]);
+  assert.equal(resRows({}).every((r) => r.options[0].disabled === false && r.options[1].disabled), true);
+});
+test('applyRes: recipe.res round trip, head >= body, input untouched', () => {
+  const r0 = JSON.parse(JSON.stringify(kit.defaults)), r1 = applyRes(r0, 'head', '2');
+  assert.deepEqual(r1.res, { body: 1, head: 2 }); assert.equal(r0.res === undefined || r0.res.head === 1, true);
+  assert.deepEqual(applyRes(r1, 'body', 2).res, { body: 2, head: 2 });
+});
+test('quadLabel: plain within game-safe, hint above it', () => {
+  assert.equal(quadLabel(900, { res: { body: 1, head: 2 } }), '900 quads');
+  assert.match(quadLabel(5000, { res: { body: 1, head: 4 } }), /^5000 quads - Save for game will use Fine/);
 });

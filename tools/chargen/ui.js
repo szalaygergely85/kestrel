@@ -1,4 +1,5 @@
 import { createPlatform } from './platform.js';
+import { effectiveRes, clampRes, GAME_SAFE_RES } from '../../engine/index.js';
 // tools/chargen/ui.js (CHARGEN-13): recipe controls, seed field, export/save buttons. Pure parts (controlsFor,
 // applyControl, readControl, debounce, seedFromText) have no DOM and are node-tested; mountUi() is the only DOM code.
 const HEIGHT_MIN = -4, HEIGHT_MAX = 4, AGES = ['young', 'adult', 'elder'];
@@ -45,6 +46,34 @@ export function readControl(recipe, ctl) {
   return recipe[ctl.key];
 }
 
+// ---- CHARGEN-22d: resolution rows (pure) ----
+const RES_NAMES = { body: { 1: 'Standard 2.5 cm', 2: 'Fine 1.25 cm' }, head: { 1: 'Standard 2.5 cm', 2: 'Fine 1.25 cm', 4: 'Very fine 0.625 cm' } };
+/** Rows "Body detail" / "Head detail": options always listed, `disabled` when the level is not in kit.resLevels[region]. */
+export function resRows(kit) {
+  const lv = kit.resLevels || {};
+  return ['body', 'head'].map((region) => {
+    const have = lv[region] || [1];
+    return {
+      key: region, label: region === 'body' ? 'Body detail' : 'Head detail',
+      options: Object.keys(RES_NAMES[region]).map(Number).map((l) => ({ value: l, label: RES_NAMES[region][l], disabled: !have.includes(l) })),
+      note: region === 'body' && !have.includes(2) ? 'Fine body needs CHARGEN-24' : '',
+    };
+  });
+}
+/** New recipe with res.<region> = level (head never below body). */
+export function applyRes(recipe, region, level) {
+  const r = JSON.parse(JSON.stringify(recipe)), cur = effectiveRes(r), n = { ...cur, [region]: Number(level) };
+  if (n.head < n.body) n.head = n.body;
+  r.res = n; return r;
+}
+/** "1234 quads" plus, when the pick is above the game-safe set, which level "Save for game" will use. */
+export function quadLabel(quads, recipe) {
+  const res = effectiveRes(recipe), safe = clampRes(res), over = safe.body !== res.body || safe.head !== res.head;
+  const n = `${quads} quads`;
+  return over ? `${n} - Save for game will use ${RES_NAMES.head[safe.head].split(' ')[0]}` : n;
+}
+export { GAME_SAFE_RES };
+
 /** Trailing debounce; `timers` is injectable for tests. cancel() drops a pending call. */
 // Default timers are wrapped: a bare { setTimeout } object calls window.setTimeout with the wrong `this`
 // ("Illegal invocation" in browsers, fine in Node), which silently stopped every rebuild.
@@ -80,10 +109,11 @@ const el = (tag, attrs = {}, ...kids) => {
  */
 export function mountUi(root, { kit, chargen, cb, platform = createPlatform() }) {
   const ctls = controlsFor(kit);
-  const rows = new Map();
+  const rows = new Map(), resSel = new Map();
   const status = el('div', { class: 'status' });
   const note = (m) => { status.textContent = m; };
-  const emit = (r) => { chargen.setRecipe(r); cb.onRecipe(r); };
+  const showQuads = () => { try { quads.textContent = quadLabel(chargen.build().mesh.quads, chargen.recipe); } catch (e) { quads.textContent = ''; } };
+  const emit = (r) => { chargen.setRecipe(r); showQuads(); cb.onRecipe(r); };
   const fill = (sel, list, withNone) => {
     if (withNone) sel.append(el('option', { value: '' }, '(none)'));
     for (const o of list) sel.append(el('option', { value: o.value }, o.label));
@@ -109,6 +139,14 @@ export function mountUi(root, { kit, chargen, cb, platform = createPlatform() })
     }
     panel.append(row);
   }
+  for (const rr of resRows(kit)) {
+    const s = el('select'); for (const o of rr.options) { const op = el('option', { value: o.value }, o.label); if (o.disabled) op.disabled = true; s.append(op); }
+    s.addEventListener('change', () => emit(applyRes(chargen.recipe, rr.key, s.value)));
+    const row = el('label', { class: 'row' }, el('span', {}, rr.label), s); if (rr.note) row.title = rr.note;
+    panel.append(row); resSel.set(rr.key, s);
+    if (rr.note) panel.append(el('div', { class: 'status' }, rr.note));
+  }
+  const quads = el('div', { class: 'status', id: 'quads' }); panel.append(quads);
   const seed = el('input', { type: 'text', placeholder: 'seed, Enter to replay', size: 12, id: 'seed' });
   // Random always rolls a fresh seed (the field shows it so it can be shared); Enter in the field replays a typed seed.
   const random = el('button', { id: 'random', onclick: () => { const s = seedFromText(''); seed.value = String(s); cb.onSeed(s); } }, 'Random');
@@ -168,6 +206,7 @@ export function mountUi(root, { kit, chargen, cb, platform = createPlatform() })
   const api = {
     /** Writes a recipe into the controls (no callbacks fired). */
     setRecipe(r) {
+      { const e = effectiveRes(r); for (const [k, w] of resSel) w.value = e[k]; showQuads(); }
       for (const c of ctls) {
         const w = rows.get(c.key), v = readControl(r, c);
         if (c.kind === 'item') { w.id.value = v.id; w.ramp.value = v.ramp; w.ramp.disabled = !v.id; }
