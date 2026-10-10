@@ -28,6 +28,7 @@ import farTowerMod from '../design/models/far_tower.js';
 import ferrumLightsMod from '../design/models/ferrum_lights.js';
 import titleMod from '../design/models/title.js';
 import voxelWorldMod from '../design/models/voxel_world.js';
+import { moveCircleMesh } from '../engine/physics/meshCollide.js';
 import { loadTestAssets } from './testing/content-node.mjs';
 import { registerQuestBehaviours } from '../game/js/quest/index.js';
 
@@ -82,7 +83,7 @@ const yawTo = (fx, fy, tx, ty) => Math.atan2(tx - fx, -(ty - fy)) * 180 / Math.P
 function runLeg(sim, name, wps, { expectBlocked = false, detour = false, maxWpSteps = MAX_WP_STEPS } = {}) {
   const { world, player, controls } = sim;
   const tr = player.transform;
-  const rec = { name, steps: 0, completed: true, stuckAt: null, fell: false, minGap: Infinity, trace: [] };
+  const rec = { name, steps: 0, completed: true, stuckAt: null, fell: false, minGap: Infinity, maxFall: 0, trace: [] };
   let jumpLeft = 0;
   for (let i = 0; i < wps.length; i++) {
     const wp = wps[i];
@@ -105,6 +106,7 @@ function runLeg(sim, name, wps, { expectBlocked = false, detour = false, maxWpSt
       rec.steps++;
       const fl = world.floorAt(tr.x, tr.y);
       if (fl != null) { rec.minGap = Math.min(rec.minGap, tr.z - fl); if (tr.z < fl - 0.25) rec.fell = true; }
+      rec.maxFall = Math.max(rec.maxFall, player.components.body.fallDistance || 0);
       rec.trace.push(tr.x, tr.y, tr.z);
     }
     if (!rec.completed) break;
@@ -173,6 +175,25 @@ function routeRun(physics, { reload = false } = {}) {
   // 6 doorway + summit walkway to the breach.
   legs.push(runLeg(sim, '6 doorway + summit', [W([11, 7]), W([10, 7]), W([10, 8]), W([9, 8]), W([8, 8]), W([7, 8]), W([7, 7])]));
   legs.push(runLeg(sim, '7a breach (parapet overlook)', [W([6, 7])]));
+  // CH1-10 probe A: sword spot reached from the summit walk (leg 6 end is inside the sword's 1.8 m interact radius).
+  info.swordDist = Math.hypot(legs[legs.length - 2].end.x - 7.45 - O.x, legs[legs.length - 2].end.y - 8.4 - O.y);
+  legs[legs.length - 2].completed = legs[legs.length - 2].completed && info.swordDist <= 1.8;
+  // CH1-10 probe B: no exit over the parapet/breach. Walk W / NW / SW from the breach; every heading must stay blocked on the
+  // summit (z >= 5, x never past the outer ring of the breach). Pass = blocked and never dropped.
+  {
+    const t = sim.player.transform, b = sim.player.components.body, from = { x: t.x, y: t.y, z: t.z };
+    const bp = { name: '7a2 breach no-exit probe (W/NW/SW)', steps: 0, completed: true, stuckAt: null, fell: false, minGap: Infinity, maxFall: 0, trace: [] };
+    let minZ = Infinity;
+    for (const [tx, ty] of [[-6, 7.5], [1, 1], [1, 14]]) {
+      t.x = from.x; t.y = from.y; t.z = from.z; b.vx = b.vy = b.vz = 0; b.grounded = true; b.peakZ = t.z;
+      const r2 = runLeg(sim, 'sub', [{ x: O.x + tx, y: O.y + ty }], { expectBlocked: true, maxWpSteps: 300 });
+      for (let i = 2; i < r2.trace.length; i += 3) minZ = Math.min(minZ, r2.trace[i]);
+      bp.steps += r2.steps; bp.completed = bp.completed && r2.completed && !r2.fell; bp.trace.push(...r2.trace);
+    }
+    info.breachMinZ = minZ; bp.completed = bp.completed && minZ >= 5;
+    t.x = from.x; t.y = from.y; t.z = from.z; b.vx = b.vy = b.vz = 0; b.grounded = true; b.peakZ = t.z;
+    bp.end = { ...t }; legs.push(bp);
+  }
   // 7c CH1-D1a walk-down: take the sword (state), pry the bar through the real `door.unbar` interactable, then walk
   // the summit -> upper steps -> gap-alcove drop -> ground-floor SW door -> outside stair to the outer ring (8,12).
   sim.world.state['tower.sword.taken'] = true;
@@ -190,7 +211,7 @@ function routeRun(physics, { reload = false } = {}) {
   const down = [[7, 7], [7, 8], [8, 8], [9, 8], [10, 8], [10, 7], [11, 7], [12, 7], [13, 7], [13, 8], [13, 9], [14, 9], [14, 10], [16, 10, true], [17, 10], [18, 10], [19, 10], [19, 9],
     [20, 9], [20, 8], [20, 7], [20, 6], [20, 5], [20, 4], [19, 4], [19, 3], [18, 3], [17, 3], [16, 3], [15, 3], [15, 5], [16, 5], [16, 6], [17, 7], [17, 8], [17, 9], [16, 9], [15, 9],
     [15, 10], [15, 11], [15, 12], [14, 12], [13, 12], [12, 12], [11, 12], [10, 12], [9, 12], [8, 12]].map(([x, y, jump]) => (jump ? { ...W([x, y]), jump: true } : W([x, y])));
-  legs.push(runLeg(sim, '7c walk down -> SW door -> out', down));
+  legs.push(runLeg(sim, '7c down -> door (pry) -> outside', down));
   // 7b hillside + waystone (fires the real world `end` trigger zone).
   const endRec = sim.world.triggers.find((t) => t.id === 'end' && t.structId === null); // area-only zone (WAYSTONE-NORMAL-01): reached, but fires no end sequence
   let sawEnd = false;
@@ -238,9 +259,55 @@ function jumpProbe(physics) {
 // ---- stair-edge probe (AC 2): approach each stair step head-on from the base row (y=3 flight), see z follow.
 function pct(a, p) { const s = a.slice().sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * p))]; }
 
+// ---- CH1-10 probe C: the door is closed before the sword is taken (mesh only: grid has no prop colliders).
+function doorClosedProbe(physics) {
+  if (physics !== 'mesh') return { ok: true, skipped: true };
+  const sim = setup(physics), t = sim.player.transform, b = sim.player.components.body;
+  t.x = O.x + 15.5; t.y = O.y + 9.5; t.z = sim.world.floorAt(t.x, t.y) ?? 0; b.peakZ = t.z;
+  const swordTaken = !!sim.world.state['tower.sword.taken'];
+  const r = runLeg(sim, 'door closed', [{ x: O.x + 15.5, y: O.y + 13 }], { expectBlocked: true, maxWpSteps: 300 });
+  const y = sim.player.transform.y - O.y;
+  return { ok: !swordTaken && r.completed && y < 11.05, swordTaken, endY: +y.toFixed(2) };
+}
+
+// ---- CH1-10 clearance of the NPC walk polylines (read from world_m1 data, not hard-coded).
+function clearance() {
+  const { world } = setup('mesh'), data = assets.world('world_m1'), out = [];
+  const walks = (id) => { const e = data.entities.find((en) => en.components && en.components.walks && en.components.walks[id]); return e.components.walks[id]; };
+  const area = data.nav.area;
+  const statics = world.colliders.filter((c) => c.id !== 'npcs:kinematic');
+  const opts = { height: 1.7, stepUpMax: 0.45, walkCos: Math.cos(50 * Math.PI / 180) }, o = {}, nn = {};
+  for (const name of ['follow', 'depart', 'emerge']) {
+    const pts = walks(name), bad = [];
+    // sample every 1 m along the polyline
+    const samples = [];
+    for (let i = 0; i < pts.length; i++) {
+      samples.push(pts[i]);
+      if (i + 1 < pts.length) { const [ax, ay] = pts[i], [bx, by] = pts[i + 1], n = Math.floor(Math.hypot(bx - ax, by - ay)); for (let k = 1; k < n; k++) samples.push([ax + (bx - ax) * k / n, ay + (by - ay) * k / n]); }
+    }
+    for (const [x, y] of samples) {
+      const z = world.terrain.groundAt(x, y);
+      const q = moveCircleMesh(statics, statics.length, x, y, 0.001, 0, 0.8, z, true, opts, o);
+      const push = Math.hypot(q.x - (x + 0.001), q.y - y);
+      world.terrain.groundNormalAt(x, y, nn);
+      const slope = Math.hypot(nn.x, nn.y) / Math.max(1e-6, nn.z);
+      const inNav = x >= area.x0 && x < area.x0 + area.w && y >= area.y0 && y < area.y0 + area.h;
+      const why = [];
+      if (push > 0.02 || q.blockedX || q.blockedY) why.push(`collider<0.8m (push ${push.toFixed(2)})`);
+      if (slope >= 0.6) why.push(`slope ${slope.toFixed(2)}`);
+      if (name === 'follow' && !inNav) why.push('outside nav area');
+      if (why.length) bad.push(`(${x.toFixed(1)},${y.toFixed(1)}) ${why.join(', ')}`);
+    }
+    out.push({ name, samples: samples.length, bad });
+  }
+  return out;
+}
+
 const G = routeRun('grid'), M = routeRun('mesh'), MR = routeRun('mesh', { reload: true }), GR = routeRun('grid', { reload: true });
 const JG = jumpProbe('grid'), JM = jumpProbe('mesh');
 const reloadSame = MR.legs.every((l, i) => l.completed === M.legs[i].completed && Math.abs(l.end.x - M.legs[i].end.x) < 1e-9 && Math.abs(l.end.y - M.legs[i].end.y) < 1e-9 && Math.abs(l.end.z - M.legs[i].end.z) < 1e-9);
+const DC = [doorClosedProbe('grid'), doorClosedProbe('mesh')], CL = clearance();
+const NL = '\n    ';
 const asJson = process.argv.includes('--json');
 const f = (n) => (n == null ? '-' : n.toFixed(2));
 const rows = [];
@@ -266,6 +333,10 @@ else {
   console.log('info grid:', JSON.stringify(G.info));
   console.log('info mesh:', JSON.stringify(M.info));
   console.log('save round trip (mid-route, after the upper stair):', 'mesh', JSON.stringify(MR.info.reload), 'grid', JSON.stringify(GR.info.reload), '| continued route end positions == uninterrupted mesh run:', reloadSame);
+  console.log(`probe breach no-exit (grid/mesh): ${G.legs.find((l) => l.name.startsWith('7a2')).completed ? 'PASS' : 'FAIL'} / ${M.legs.find((l) => l.name.startsWith('7a2')).completed ? 'PASS' : 'FAIL'}  minZ ${f(G.info.breachMinZ)}/${f(M.info.breachMinZ)}`);
+  console.log(`probe door closed before sword (mesh; grid has no prop colliders): ${DC[1].ok ? 'PASS' : 'FAIL'} ${JSON.stringify(DC[1])}`);
+  console.log(`max fall distance (7c down->door->outside) grid/mesh: ${f(G.legs.find((l) => l.name.startsWith('7c')).maxFall)}/${f(M.legs.find((l) => l.name.startsWith('7c')).maxFall)} (limit 3.5)`);
+  for (const c of CL) console.log(`clearance ${c.name} (${c.samples} samples, 0.8 m collider, slope<0.6${c.name === 'follow' ? ', inside nav' : ''}): ${c.bad.length ? 'FAIL' : 'PASS'}${c.bad.length ? NL + c.bad.join(NL) : ''}`);
   console.log('jump grid:', JSON.stringify(JG));
   console.log('jump mesh:', JSON.stringify(JM));
   console.log(`sim ms/step p50 p95 max  grid: ${pct(G.ms, 0.5).toFixed(4)} ${pct(G.ms, 0.95).toFixed(4)} ${Math.max(...G.ms).toFixed(4)}   mesh: ${pct(M.ms, 0.5).toFixed(4)} ${pct(M.ms, 0.95).toFixed(4)} ${Math.max(...M.ms).toFixed(4)}`);

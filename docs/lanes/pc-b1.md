@@ -563,3 +563,8 @@ Tests: new quest/ch1Mount.test.js; filter suites 72 PASS; main.js syntax OK (.mj
 - content/dev-poses.js GATE_POSES (shared table, re-exported by tools/bench-poses.js): added `towerInterior` (brazier cam) and `towerExterior` (1468,1025.5 yaw 90 pitch +14, towerCrown at 1497,1025 z12-14 in view; pitch is a first guess, check with one capture); `roadBend` already existed.
 - tools/perf-pose.mjs: `--poses` = GATE_POSES slugs (default roadBend,towerInterior,towerExterior), new columns heap delta MB (gc before/after window) + load ms, PASS/FAIL lines for ultra (JS p95 <= 8, GPU p95 <= 8, heap <= 2 MB). Exit 1 on FAIL. Node-checked only, not run in a browser. perf-gate.test unchanged (table shape unchanged).
 - Run: `node tools/perf-pose.mjs --port {port} --configs "ultra:480x180" --trees default --out perf-ws1-08.json` (port, port+1 used)
+### kestrel-4: CH1-10 part A route walk (Node only, po-review)
+- tools/route-walk.mjs: tower legs now wake -> top (leg 6 end must be <= 1.8 m from the sword) -> 7a2 breach no-exit probe (W/NW/SW, stays blocked, z >= 5) -> 7c down -> door (real door.unbar) -> outside (max fall 1.9 m, no fall-through). Existing grid + mesh legs reused.
+- New probes: door closed before sword (mesh walk into the barred doorway, stops at y 10.73); clearance of Burl follow/depart and Fen emerge (data read from world_m1; 0.8 m via moveCircleMesh vs static colliders, slope < 0.6, follow inside nav): follow PASS, depart PASS, emerge FAIL.
+- OPEN (content, not edited): Fen `emerge` point (1250.7, 1027.0) is within 0.8 m of a collider (push 0.25 m) -> shift that segment ((1248,1024)->(1252,1028.5)).
+- Run: `node tools/route-walk.mjs`. Nothing needs a browser.
