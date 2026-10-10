@@ -16,6 +16,8 @@
  *   - face v2 (owner 2026-10-10): eyes (white + iris) on the face plane under brows and a lit brow bone, nose bridge +
  *     lit tip, cheek apples, lit cheekbones, ears with helix / concha / lobe, 3-wide lips with shaded corners, a dark
  *     mouth interior on the jaw seam (seen when the Jaw bone opens), lit chin. See the HEAD table.
+ *   - head at 1.25 cm (CHARGEN-23, D-055, architecture 38.34): kit.regions.head (Head + Jaw boxes), kit.resLevels,
+ *     bases.m_avg.detail.head["2"] (14 x 40 x 22 fine cells) + slot `keep`; face v2 above stays level 1 (Standard).
  *   - hands: palm facing the thigh, thumb forward, four fingers with natural lengths (middle longest, pinky
  *     shortest), slight curl, knuckles, nails, veins. Feet: heel, arch, ball, big toe, toes, ankle bones.
  *   - skin variation: broad anatomy cues only (collarbones, pec crowns, sternum, pec line, nipples, navel, spine
@@ -71,10 +73,13 @@
     a: { group: 'skin', shade: 'base' }, l: { group: 'skin', shade: 'light' }, s: { group: 'skin', shade: 'shade' },
     d: { group: 'skin', shade: 'deep' }, f: { group: 'skin', shade: 'flush' }, n: { group: 'skin', shade: 'nail' },
     v: { group: 'skin', shade: 'vein' },
-    p: { group: 'lips', shade: 'lip' },
-    e: { group: 'eyes', shade: 'iris' },
+    p: { group: 'lips', shade: 'lip', keep: 6 },
+    e: { group: 'eyes', shade: 'iris', keep: 9 },
     b: { group: 'hair', shade: 'brow' },
     u: { fixed: 'linen' }, U: { fixed: 'linen_dark' }, k: { fixed: 'linen_light' },
+    // CHARGEN-23: eye white + catchlight of the 1.25 cm head get their own chars, so their downsample `keep` never touches
+    // linen clothes (u / k). Brows / lash line (b) have no keep: hidden interior b cells carry the brow row instead (README 25)
+    o: { fixed: 'linen', keep: 7 }, c: { fixed: 'linen_light', keep: 8 },
     G: { group: 'hair', shade: 'light' }, g: { group: 'hair', shade: 'base' }, K: { group: 'hair', shade: 'dark' },
     1:{ group: 'top', shade: 'light' }, 2: { group: 'top', shade: 'base' }, 3: { group: 'top', shade: 'dark' },
     4: { group: 'legs', shade: 'light' }, 5: { group: 'legs', shade: 'base' }, 6: { group: 'legs', shade: 'dark' },
@@ -219,6 +224,49 @@
     61: ['.......', '..ppp..', '.sddds.', '.aaaaa.', '.......', '.......', '.......', '.......', '.......', '.......'],
     60: ['.......', '..ala..', '.aaaaa.', '.sssss.', '.......', '.......', '.......', '.......', '.......', '.......']
   };
+
+  // ---- HEAD at 1.25 cm (CHARGEN-23, D-055, architecture 38.34): bases.m_avg.detail.head["2"] -------------------------
+  // Region head = Head box U Jaw box (level-1 cells), so the block is 14 x 40 x 22 fine cells; origin = the box min.
+  // Working coords below: x2 0..13 (x2 = 2*(X+3) + sub; the centre line runs between x2 6 | 7), yy2 0..19 (Y -5..4,
+  // front -> back; yy2 2,3 = the face plane Y -4), zr 0..19 (z 60..69; zr 4,5 = z 62, the Head / Jaw seam is zr 3 | 4).
+  // Same silhouette and bone boxes as face v2; every 2x2x2 block downsamples (38.34 downsample2) back to the face v2 cell,
+  // except the two eye-white cells (the centred iris wins the keep vote there, see README 25).
+  //  - skull (Y >= -1): face v2 upsampled, convex edges / corners carved (never more than 4 of a block's 8 cells)
+  //  - face (Y -5..-2): FACE2_DEPTH = front cell per column (digit = yy2, 8 = no cell in front of Y -1), FACE2_COLOR = its
+  //    char; the column is filled back to yy2 7 (skin; mouth interior d; jaw underside s). Strings = x2 0..6, mirrored.
+  //    eyes: brow (arch z+, tail + head drop), lid gap, lash line arched over the iris (corners lower), 2x2 iris centred in
+  //    the eye with a catchlight (c) on the same side in both eyes, whites (o) both sides, lower lid shade under the iris;
+  //    nose: nasion -> bridge -> lit tip (2 deep), wings (s), dark nostrils, columella; mouth: upper lip + bow peaks with
+  //    the philtrum between, fuller lower lip (2 rows in the middle), dark corners, shade under the lower lip, lit chin.
+  var HEAD_REGION = { bones: ['Head', 'Jaw'], box: [-3, 3, -10, 9, 59, 69] };   // centred [X0,X1, Y0,Y1, z0,z1]
+  var FACE2_DEPTH = {
+    19: '8888776', 18: '8888766', 17: '8876544', 16: '8865444', 15: '7643333', 14: '6532222', 13: '6522222', 12: '6522222',
+    11: '5422222', 10: '5422221', 9: '5422221', 8: '5422220', 7: '8832210', 6: '8832221', 5: '8832222', 4: '8832222',
+    3: '8843222', 2: '8843222', 1: '8844233', 0: '8854322'
+  };
+  var FACE2_COLOR = {
+    19: 'aaaaaaa', 18: 'aaaaaaa', 17: 'aaaaall', 16: 'aaaaall', 15: 'aaaalll', 14: 'aaabbbl', 13: 'aabaaba', 12: 'aaabbaa',
+    11: 'aabeeba', 10: 'aaoeeoa', 9: 'llassaa', 8: 'lllaaaa', 7: 'aaffasl', 6: 'aaafsda', 5: 'aaaaapa', 4: 'aaaaspp',
+    3: 'aassdpp', 2: 'aassasp', 1: 'aaaaaas', 0: 'aaaaall'
+  };
+  // cells behind the front [x2, zr, yy2, char] (mirrored): the brow tail wrapping the temple (visible) and hidden interior
+  // cells that steer the downsample majority (brow row b, forehead l, nose-wing s, cheek apple f, jaw side s, chin l)
+  var FACE2_CELLS = [
+    [2, 13, 3, 'b'], [2, 13, 4, 'b'], [3, 12, 3, 'b'], [3, 13, 3, 'b'], [3, 12, 4, 'b'], [3, 13, 4, 'b'], [3, 12, 5, 'b'], [3, 13, 5, 'b'],
+    [4, 12, 3, 'b'], [5, 12, 3, 'b'], [4, 13, 3, 'b'], [5, 13, 3, 'b'],
+    [4, 14, 3, 'l'], [5, 14, 3, 'l'], [6, 14, 3, 'l'], [6, 16, 5, 'l'], [6, 17, 5, 'l'],
+    [5, 7, 2, 's'], [4, 6, 3, 's'], [5, 6, 3, 's'], [4, 7, 3, 's'], [5, 7, 3, 's'], [6, 7, 1, 'l'],
+    [3, 6, 3, 'f'], [3, 7, 3, 'f'],
+    [3, 2, 4, 's'], [3, 2, 5, 's'], [3, 3, 4, 's'], [3, 3, 5, 's'], [6, 0, 3, 'l']
+  ];
+  // left ear, side view: per layer (x2 0 = the outer skin, x2 1 = under it) rows zr 11..6, strings yy2 10..13 (front ->
+  // back); helix rim f (top + back, standing free of the skull behind it), antihelix s, scapha s, deep concha d, tragus,
+  // lobe f. Mirrored to x2 13 / 12.
+  var EAR2 = {
+    0: { 11: '.ff.', 10: 'f.sf', 9: 'a.sf', 8: 's..f', 7: '.fff', 6: '.f..' },
+    1: { 11: 'aaa.', 10: 'ass.', 9: 'sds.', 8: 'sdd.', 7: 'aff.', 6: '.f..' }
+  };
+  var CATCH2 = [[4, 11], [10, 11]];   // [x2, zr] catchlight on the upper iris cell, same side in both eyes (not mirrored)
 
   // ===================================================================================================================
   // 5. BONES: joint (centred coords, continuous) + box (centred, INCLUSIVE cell ranges [X0,X1, Y0,Y1, z0,z1]).
@@ -386,6 +434,101 @@
     return layers;
   }
 
+  // the 1.25 cm head block (see HEAD_REGION / FACE2_* above): layers[z][y] = string of x, block cells, origin = box min
+  function buildHeadL2() {
+    var W = 14, NY = 20, NZ = 20, g = new Array(W * NY * NZ), x, y, z, i, k;
+    for (i = 0; i < g.length; i++) g[i] = '.';
+    function at(xx, yy, zz) { return xx + W * (yy + NY * zz); }
+    function v1(X, Y, Z) { return (Z < 60 || Z > 69 || X < -3 || X > 3 || Y < -5 || Y > 4) ? '.' : HEAD[Z][Y + 5].charAt(X + 3); }
+    // an open side of a level-1 head cell; the underside of z 62 sits on the Neck (main grid), so it never counts
+    function open(X, Y, Z, dx, dy, dz) { return !(dz < 0 && Z === 62) && v1(X + dx, Y + dy, Z + dz) === '.'; }
+    var DIRS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+    // 1. skull (yy2 >= 8): carve a sub-cell when 2-3 of its own outward sides are open (blocks open on >= 4 sides stay whole)
+    for (z = 0; z < NZ; z++) for (y = 8; y < NY; y++) for (x = 0; x < W; x++) {
+      var X = (x >> 1) - 3, Y = (y >> 1) - 5, Z = (z >> 1) + 60, c = v1(X, Y, Z);
+      if (c === '.') continue;
+      var nOpen = 0;
+      for (k = 0; k < 6; k++) if (open(X, Y, Z, DIRS[k][0], DIRS[k][1], DIRS[k][2])) nOpen++;
+      var sx = (x & 1) ? 1 : -1, sy = (y & 1) ? 1 : -1, sz = (z & 1) ? 1 : -1;
+      var nSub = (open(X, Y, Z, sx, 0, 0) ? 1 : 0) + (open(X, Y, Z, 0, sy, 0) ? 1 : 0) + (open(X, Y, Z, 0, 0, sz) ? 1 : 0);
+      if (nOpen < 4 && nSub >= 2) continue;
+      g[at(x, y, z)] = c;
+    }
+    // 2. face (yy2 0..7): front cell + fill back to yy2 7
+    for (z = 0; z < NZ; z++) for (x = 0; x < W; x++) {
+      var hx = x < 7 ? x : 13 - x, d = +FACE2_DEPTH[z].charAt(hx);
+      for (y = d; y < 8; y++) {
+        var ch = 'a';
+        if (y === d) ch = FACE2_COLOR[z].charAt(hx);
+        else if (y >= 4 && y <= 5 && z >= 2 && z <= 5 && x >= 4 && x <= 9) ch = 'd';   // mouth interior (seen when the Jaw opens)
+        else if (y >= 6 && z <= 1) ch = 's';                                           // jaw underside
+        g[at(x, y, z)] = ch;
+      }
+    }
+    // 3. cells behind the front (only where filled)
+    FACE2_CELLS.forEach(function (q) {
+      [q[0], 13 - q[0]].forEach(function (xx) { var j = at(xx, q[2], q[1]); if (g[j] !== '.') g[j] = q[3]; });
+    });
+    // 4. ears (x2 0..1 and 12..13, yy2 10..13, zr 6..11 are replaced as a whole)
+    [0, 1].forEach(function (layer) {
+      for (var ez = 6; ez <= 11; ez++) for (var ey = 10; ey <= 13; ey++) {
+        var e = EAR2[layer][ez].charAt(ey - 10);
+        g[at(layer, ey, ez)] = e; g[at(13 - layer, ey, ez)] = e;
+      }
+    });
+    // 5. catchlights on the iris front cell
+    CATCH2.forEach(function (q) { var hx2 = q[0] < 7 ? q[0] : 13 - q[0]; g[at(q[0], +FACE2_DEPTH[q[1]].charAt(hx2), q[1])] = 'c'; });
+    // 6. emit the region block (box x 2); the working grid starts at Y -5, z 60 (x starts at the box min X -3)
+    var B = gridBox(HEAD_REGION.box), SXb = (B[3] - B[0] + 1) * 2, SYb = (B[4] - B[1] + 1) * 2, SZb = (B[5] - B[2] + 1) * 2;
+    var oy = (-5 + CY - B[1]) * 2, oz = (60 - B[2]) * 2, layers = [];
+    for (z = 0; z < SZb; z++) {
+      var L = [], wz = z - oz;
+      for (y = 0; y < SYb; y++) {
+        var row = '', wy = y - oy;
+        for (x = 0; x < SXb; x++) row += (wy >= 0 && wy < NY && wz >= 0 && wz < NZ && x < W) ? g[at(x, wy, wz)] : '.';
+        L.push(row);
+      }
+      layers.push(L);
+    }
+    return layers;
+  }
+
+  // 38.34 downsample2 (preview / check twin of engine/chargen/downsample.js): each 2x2x2 block -> one cell. Any filled
+  // cell with keep > 0: the char with the highest keep (ties: higher count, then lower char code); else >= 4 of 8
+  // filled: the majority char (ties: lower char code); else empty. size = [x, y, z] of `layers`.
+  function downsample2(layers, size, slots) {
+    var W = size[0], NY = size[1], NZ = size[2], w = Math.ceil(W / 2), h = Math.ceil(NY / 2), dz = Math.ceil(NZ / 2), out = [];
+    for (var z = 0; z < dz; z++) {
+      var L = [];
+      for (var y = 0; y < h; y++) {
+        var row = '';
+        for (var x = 0; x < w; x++) {
+          var cnt = {}, n = 0, maxKeep = 0, c, k;
+          for (k = 0; k < 8; k++) {
+            var xx = 2 * x + (k & 1), yy = 2 * y + ((k >> 1) & 1), zz = 2 * z + (k >> 2);
+            if (xx >= W || yy >= NY || zz >= NZ) continue;
+            c = layers[zz][yy].charAt(xx);
+            if (c === '.') continue;
+            n++; cnt[c] = (cnt[c] || 0) + 1;
+            var kp = (slots[c] && slots[c].keep) || 0;
+            if (kp > maxKeep) maxKeep = kp;
+          }
+          var best = '.';
+          if (maxKeep > 0 || n >= 4) {
+            for (c in cnt) {
+              if (maxKeep > 0 && ((slots[c] && slots[c].keep) || 0) !== maxKeep) continue;
+              if (best === '.' || cnt[c] > cnt[best] || (cnt[c] === cnt[best] && c.charCodeAt(0) < best.charCodeAt(0))) best = c;
+            }
+          }
+          row += best;
+        }
+        L.push(row);
+      }
+      out.push(L);
+    }
+    return out;
+  }
+
   // ===================================================================================================================
   // 7. THE KIT
   // ===================================================================================================================
@@ -404,6 +547,9 @@
             'layers[z][y] = string of x; joints / anchors / mount positions are continuous cell coordinates',
       skeleton: SKELETON,
       partMap: PART_MAP,
+      // 38.34: finer head grid. regions box = level-1 cells, inclusive; resLevels = the offered cells per 2.5 cm
+      regions: { head: { bones: HEAD_REGION.bones.slice(), box: gridBox(HEAD_REGION.box) } },
+      resLevels: { body: [1], head: [1, 2] },
       slots: SLOTS,
       ramps: buildRamps(CG),
       handTint: CG.handTint,
@@ -429,7 +575,9 @@
           // elbows (42-43), the linea-alba cues (44, 46) and every hand box. So a tall man grows in legs AND
           // torso (+4 = 3 shin rows + 1 waist row), and the arms grow with the torso, the fingertips staying at mid-thigh.
           stretchRows: [7, 9, 10, 12, 13, 15, 37, 45],
-          layers: buildBase()
+          layers: buildBase(),
+          // CHARGEN-23: the head at 1.25 cm (level 2 of region head; level 1 = the face v2 cells in `layers`)
+          detail: { head: { '2': { layers: buildHeadL2() } } }
         }
       },
       shells: [],
@@ -478,6 +626,86 @@
         return ch[k] === '.' ? -1 : k;
       }
     };
+  }
+  // a base's authored detail level as a decodeBase-like grid (block cells; bone = first region bone box x L that holds it,
+  // or detail.bones[name].box in block cells when given; -1 = outside every box)
+  function decodeDetail(kit, baseId, region, L) {
+    var B = kit.bases[baseId], R = kit.regions[region], bx = R.box, det = B.detail[region][String(L)];
+    var S = [(bx[3] - bx[0] + 1) * L, (bx[4] - bx[1] + 1) * L, (bx[5] - bx[2] + 1) * L], n = S[0] * S[1] * S[2];
+    var names = kit.skeleton.map(function (b) { return b.name; }), order = names.filter(function (nm) { return R.bones.indexOf(nm) >= 0; });
+    var boxes = order.map(function (nm) {
+      if (det.bones && det.bones[nm]) return det.bones[nm].box;
+      var b = B.bones[nm].box;
+      return [(b[0] - bx[0]) * L, (b[1] - bx[1]) * L, (b[2] - bx[2]) * L, (b[3] - bx[0] + 1) * L - 1, (b[4] - bx[1] + 1) * L - 1, (b[5] - bx[2] + 1) * L - 1];
+    });
+    var ch = new Array(n), bone = new Int16Array(n).fill(-2), x, y, z, q, i;
+    for (z = 0; z < S[2]; z++) for (y = 0; y < S[1]; y++) {
+      var row = det.layers[z] && det.layers[z][y] || '';
+      for (x = 0; x < S[0]; x++) {
+        q = x + S[0] * (y + S[1] * z);
+        var c = row.charAt(x) || '.';
+        ch[q] = c;
+        if (c === '.') continue;
+        bone[q] = -1;
+        for (i = 0; i < boxes.length; i++) {
+          var b2 = boxes[i];
+          if (x >= b2[0] && x <= b2[3] && y >= b2[1] && y <= b2[4] && z >= b2[2] && z <= b2[5]) { bone[q] = names.indexOf(order[i]); break; }
+        }
+      }
+    }
+    return {
+      size: S, ch: ch, bone: bone, names: names, origin: bx.slice(0, 3), k: L,
+      at: function (x, y, z) {
+        if (x < 0 || y < 0 || z < 0 || x >= S[0] || y >= S[1] || z >= S[2]) return -1;
+        var k = x + S[0] * (y + S[1] * z);
+        return ch[k] === '.' ? -1 : k;
+      }
+    };
+  }
+  // detail checks (38.34 validateKit twin for the designer data): size, level offered, chars, bone boxes, seam rule;
+  // stats: voxels, quads, and how many level-1 region cells differ after downsample2 (the authored level 1 still wins)
+  function checkDetail(kit, bid, errors, out) {
+    var B = kit.bases[bid], D1 = decodeBase(kit, bid), rn, Ls;
+    for (rn in B.detail) {
+      var R = kit.regions && kit.regions[rn];
+      if (!R) { errors.push(bid + ': detail.' + rn + ' has no kit.regions entry'); continue; }
+      var bx = R.box;
+      R.bones.forEach(function (bn) { if (!B.bones[bn]) errors.push('regions.' + rn + ': unknown bone ' + bn); });
+      for (Ls in B.detail[rn]) {
+        var L = +Ls, lay = B.detail[rn][Ls].layers, S = [(bx[3] - bx[0] + 1) * L, (bx[4] - bx[1] + 1) * L, (bx[5] - bx[2] + 1) * L];
+        var tag = bid + ': detail.' + rn + '["' + Ls + '"]';
+        if (L !== 2 && L !== 4) { errors.push(tag + ': level must be 2 or 4'); continue; }
+        if (!(kit.resLevels && kit.resLevels[rn] && kit.resLevels[rn].indexOf(L) >= 0)) errors.push(tag + ': level not in kit.resLevels.' + rn);
+        if (!Array.isArray(lay) || lay.length !== S[2] || lay.some(function (p) { return p.length !== S[1] || p.some(function (r) { return r.length !== S[0]; }); })) {
+          errors.push(tag + ': size is not box extent x ' + L + ' (' + S.join('x') + ')'); continue;
+        }
+        var D = decodeDetail(kit, bid, rn, L), unknown = {}, outside = 0, seam = 0, vox = 0, q;
+        for (q = 0; q < D.ch.length; q++) {
+          if (D.ch[q] === '.') continue;
+          vox++;
+          if (!kit.slots[D.ch[q]]) unknown[D.ch[q]] = 1;
+          if (D.bone[q] < 0) outside++;
+          var x = q % S[0], y = Math.floor(q / S[0]) % S[1], z = Math.floor(q / (S[0] * S[1]));
+          var k1 = D1.at(bx[0] + Math.floor(x / L), bx[1] + Math.floor(y / L), bx[2] + Math.floor(z / L));
+          if (k1 >= 0 && D1.bone[k1] >= 0 && R.bones.indexOf(D1.names[D1.bone[k1]]) < 0) seam++;
+        }
+        if (Object.keys(unknown).length) errors.push(tag + ': unknown slot chars ' + Object.keys(unknown).join(''));
+        if (outside) errors.push(tag + ': ' + outside + ' voxels outside every region bone box');
+        if (seam) errors.push(tag + ': ' + seam + ' voxels over level-1 cells of a non-region bone (seam rule)');
+        // downsample back to level 1 and compare with the authored region cells
+        var ds = lay, dsS = S.slice(), lv = L;
+        while (lv > 1) { ds = downsample2(ds, dsS, kit.slots); dsS = dsS.map(function (v) { return Math.ceil(v / 2); }); lv /= 2; }
+        var diff = [];
+        for (z = 0; z < dsS[2]; z++) for (y = 0; y < dsS[1]; y++) for (x = 0; x < dsS[0]; x++) {
+          var k2 = D1.at(bx[0] + x, bx[1] + y, bx[2] + z), c1 = '.';
+          if (k2 >= 0 && D1.bone[k2] >= 0 && R.bones.indexOf(D1.names[D1.bone[k2]]) >= 0) c1 = D1.ch[k2];
+          var c2 = ds[z][y].charAt(x);
+          if (c1 !== c2) diff.push([bx[0] + x, bx[1] + y, bx[2] + z, c1, c2]);
+        }
+        var matIds = {}, mOf = function (ch) { var m = resolveMat(kit, kit.defaults, ch) || ch; if (!matIds[m]) matIds[m] = Object.keys(matIds).length + 1; return matIds[m]; };
+        out[rn + Ls] = { region: rn, level: L, size: S, voxels: vox, quads: countQuads(D, mOf), downsampleDiff: diff.length, diffCells: diff };
+      }
+    }
   }
   // same ramp pick as engine/chargen/compose.js rampFor (base layer, no shell pick)
   function resolveMat(kit, recipe, c) {
@@ -608,6 +836,7 @@
         voxels: vox, perBone: cnt, heightM: r3((top + 1) * kit.cellM), depthM: r3((maxY - minY + 1) * kit.cellM),
         widthM: r3((maxX - minX + 1) * kit.cellM), quads: countQuads(D, mOf)
       };
+      if (B.detail) { stats.bases[bid].detail = {}; checkDetail(kit, bid, errors, stats.bases[bid].detail); }
     }
     return { errors: errors, warnings: warnings, stats: stats };
   }
@@ -616,7 +845,7 @@
     version: 1, KIT_ID: KIT_ID, CELL: CELL, SKELETON: SKELETON, PART_MAP: PART_MAP, MAX_PARTS: MAX_PARTS,
     STRETCH_BONES: STRETCH_BONES, ARM_STRETCH: ARM_STRETCH,
     buildHumanKit: buildHumanKit, stringifyKit: stringifyKit, decodeBase: decodeBase, resolveMat: resolveMat,
-    countQuads: countQuads, checkKit: checkKit
+    countQuads: countQuads, checkKit: checkKit, decodeDetail: decodeDetail, downsample2: downsample2
   };
   A.chargenKit = api;
   if (typeof module === 'object' && module && module.exports) module.exports = api;
