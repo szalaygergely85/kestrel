@@ -5628,3 +5628,135 @@ Today `applySunHours(world, lights, h, path, on)` (engine/render/lighting.js) + 
 8. **Out of scope (this story):** quest, beast, spawn or AI effects of time; sleeping or time skip (DN-Q2); weather; moon phases; stars. All time readers go through `world.state['clock.hour']` only, so later behaviours just read the key.
 9. **Do NOT:** tick the clock in the engine or from `performance.now`; call `blendLook`/`applySunHours`/re-bake every frame; allocate a look per step; change `P.defaultTime` at runtime (other readers cache on it); let a tool baseline depend on wall time.
 Tests: worldClock.test.js (wrap, save round-trip, missing key = 8.0, dt determinism); look.test.js (`blendLook` at schedule keys == the raw key record; midpoint lerp; 0 alloc); a lighting test (moon switch at -6 deg, floor holds); gpucompare rows at 8 / 19.5 / 23 h.
+
+### 38.40 EQ-A1 Character view in the Items|Character menu (PC-B architect opus, 2026-10-11; final per D-066)
+**Decision: CPU mini-stage, copied into the UI layer.** The menu pauses the sim, so the preview uses the real mesh CPU twin (the gpucompare reference look) on a private, detached engine, the same way the editor icons do (36.3). Its cells are copied into the view box of the UI layer with `setCellRGB`. Both backends present the UI layer, so WebGPU and WebGL2 show the same cells. There is no second GPU context and no WGSL work. The menu is never open in a compare pose, so existing gpucompare rows cannot change.
+1. **Module `engine/preview/modelPreview.js`.** New folder. It imports only `core/engine.js`, `render/frameRenderer.js` and `world/World.js`, and is exported from `engine/index.js`. render/world/ui/physics never import `engine/preview`. The charCreate studio-preview ASK ARCHITECT can reuse it later.
+```js
+/** @typedef {{x:number,y:number,w:number,h:number}} CellRect  // UI cells
+ *  @typedef {{key:string, yawDeg:number, clip?:string}} PreviewSubject
+ *  @typedef {{key:string, mount:string, yawDeg:number}} PreviewHeld */
+createModelPreview(baseAssets, opts?) -> ModelPreview   // lazy: built on the first menu open, kept for the session
+// opts: {lights?: PreviewLight[3], bg?: [r,g,b]}  default 3-point: key warm front-left 45 deg up, fill cool front-right, rim behind
+ModelPreview.setModel(key, def)        // add/replace `key` in a PRIVATE facade registry + rebind the private VoxelPool (<= 10 ms)
+ModelPreview.setHeld(list /* PreviewHeld[] <= 3 */)   // EQ-04b
+ModelPreview.render(subject, dtSec, ui, rect) -> boolean   // steps the idle clip, renders if changed, copies cells; false = nothing redrawn
+ModelPreview.dispose()
+```
+2. **Stage.** A detached `createEngine({canvas, assets: facade, cols: 160, gpu: false, force2d: true, inputTarget: <div>})` plus `createFrameRenderer({..., idleSkip: true})`.
+   - Mini world: an in-memory 6x6 m closed sector with a solid ceiling at 4 m. The subject is ONE entity at the centre (an entity, not a prop, so `EntityHandle.play(clip)` runs the idle clip).
+   - Lights: 3 static point lights through the level-doc light list (same schema as the `tower.level.json` lights). No flicker, no shadows.
+   - If the in-memory doc cannot carry lights: stop and ASK ARCHITECT.
+3. **Camera.** New pure, tested `fitPreviewCamera(bounds, rect, grid) -> cam`. The camera is fixed. It frames the bounds (character ~1.8 m + 10 %) into the centred `rect.w x rect.h` sub-rect of the 160x60 stage. UI and scene cells have the same aspect (`UI_GRID_ASPECT = GRID_ASPECT`), so the copy is 1:1. **Rotation turns the entity's yaw**, not the camera, so the lights stay fixed to the viewer.
+4. **Frame and copy.** Call `frame.step(world, cam, {animate: true, dt, present: false})`.
+   - `present: false` is a **new option**: it skips `rt.present()` (no canvas fillText). It is a 2-line change plus a test in `frameRenderer.js`; the default stays as it is.
+   - Then, for each cell of the sub-rect: where `gbuf.kind === KIND_MODEL`, `ui.setCellRGB(rect.x+c, rect.y+r, glyphIdx, fg, bg)` from `rt.cells`; else the panel bg. This is the iconRender `kindBounds` rule.
+5. **Change detection and rate.** Re-render only when `yaw`, the model/held version, or the clip key changes (the clip key is quantised to the 50 ms clip step). At most one preview render per rAF and at most 20 Hz. While the menu is open the main scene is not re-rendered: its last frame stays under the menu. If `main.js` still renders it while `invOpen`, EQ-04a adds that skip.
+6. **Recompose (EQ-05). Answer to epic section 6: use a separate preview key, `char.preview`, in the private registry.**
+   - The main registry and the main VoxelPool are NOT touched (first person never draws the player body). `registry.replace` plus a re-`bind` of the main pool stays load/New-game time only (38.32 item 2). Third person can later re-register `char.player` at load time from the same cache.
+   - Engine, `engine/chargen/cache.js`: `createCharCache(kit, max = 4) -> {get(recipe) -> RiggedVoxelDef, size}`.
+     - Key = fnv1a32 of the recipe's canonical JSON (sorted keys). LRU eviction.
+     - On a miss it runs `composeCharacter -> meshCharacter -> collapseRig -> riggedModelDef` (<= 50 ms). It throws above `CHAR_GAME_MAX_QUADS`.
+   - Game, pure, `game/js/quest/gearLook.js`: `gearRecipe(look, equipment, itemDefs) -> recipe`.
+     - Each equipped `equip.shell` overrides the look's pick for its kit slot (`{id: shell, ramp: paint}`).
+     - An empty slot keeps the look's own pick (the underclothes).
+     - Slot map (EQ-D2 may change it in the kit): head -> `hat`, body -> `top`, cloak -> `cloak`, hands -> `hands`, belt -> `belt`, legs -> `legs`, feet -> `feet`.
+   - Kit: `SHELL_ORDER = ['legs','feet','top','hands','belt','outer','cloak']`. A missing pick must add nothing, so today's recipes stay byte-identical (EQ-05 AC3). `charCreate` keeps its explicit row list (no gear rows).
+7. **Input (characterView, game).**
+   - A/D and Left/Right turn the model at 150 deg/s. If EQ-03's pack grid uses the arrow keys, they rotate only while the view box has focus or hover.
+   - Mouse drag turns 0.6 deg per UI px.
+   - After 3 s with no input, the model eases back to face the viewer (yaw 180) at 60 deg/s.
+   - Yaw is view state only and is never saved.
+8. **Budget (EQ-04 AC3).**
+   - Stage frame at 160x60, without present: <= 6 ms median. Only the character is drawn, and empty-kind cells are cheap.
+   - With the 20 Hz cap and the main scene paused, the menu adds <= 4 ms median per rAF over 3 s (idle and rotating) and <= 10 ms p95. The review uses F3 numbers.
+   - Recompose: <= 50 ms, once per equip change.
+   - Zero allocation per preview render. Test `render` and the copy loop with the alloc-probe pattern (`engine/chargen/allocProbe.mjs`).
+9. **Steps:**
+   - **EQ-05 (0.75 d):** the cache, `SHELL_ORDER`, `gearRecipe`.
+   - **EQ-04a (1 d):** modelPreview, `present: false`, `fitPreviewCamera`, characterView wiring, rotation.
+   - **EQ-04b (0.5 d):** held items.
+     - The `main`/`off`/`ranged` models are extra entities, placed on each render at `voxelPool.voxelMountWorld(subject, 'hand_r'|'hand_l'|'back')`, with yaw = subject yaw + held yaw.
+     - v1 does not follow part rotation. The idle clip barely moves the hands.
+10. **Tests:**
+   - `fitPreviewCamera`: the bounds land inside the rect +-1 cell.
+   - Cache: hit, miss and LRU; the same recipe returns the same object. Today's 6 sample looks are byte-equal through `gearRecipe` with empty equipment.
+   - modelPreview, in Node with a Canvas2D stub as in the iconRender tests:
+     - `setModel` + `render` fills only the rect cells.
+     - A second `render` with nothing changed returns false.
+     - Yaw 0 and yaw 90 give different cells.
+     - 0 alloc over 200 renders.
+   - frameRenderer with `present: false`: `presented` does not change.
+   - run-tests and check-deps green.
+11. **Do not:**
+   - render the preview on the GPU pipeline or open a second WebGL/WebGPU context;
+   - touch the main registry, the main VoxelPool or `char.player` at equip time;
+   - recompose per frame;
+   - draw the stage canvas (`present`);
+   - allocate in `render`;
+   - import game/ or design/ from `engine/preview`;
+   - save the preview yaw.
+
+### 38.41 EQ-A2 Shield block + arrows (PC-B architect opus, 2026-10-11; final per D-066)
+**Where the code lives:** game sim, `game/js/quest/sim/`, under rule 15: no Math.random, no trig, integer step counters, zero alloc in `step`. Arrows are game-specific (beasts, targetables, quiver). They only need `world.raySegment`, which already covers the mesh colliders and the terrain/sector march. So **`engine/physics` is not touched** (stand-alone rule, 27.10). A generic engine projectile can come later, when a second game needs one.
+
+**(a) Shield block: the damage-path hook.**
+1. **Sim, `game/js/quest/sim/shield.js`:** `createShieldSim(cfg) -> {step(down, has, fx, fy), raised, raiseFrac, blocking, speedScale, blockTick, hashInto}`.
+   - `has` = the `off` slot holds a shield. `fx, fy` = the unit look direction, computed by the caller (no trig in the sim).
+   - Raise takes 7 steps (0.12 s), lower takes 9 steps (0.15 s). `blocking` = fully raised and not lowering.
+   - `speedScale` = 0.6 while raised or raising, else 1.
+   - While `raised`, the caller passes `down = false` to the sword (no swing). Drinking (EQ-12) forces `down = false`.
+2. **Hook in `vitals.onHit`.** This is the single player damage path for every `combat:hit` with `target: 'player'`. Pass `hooks.block = shield` to `createVitals`. After the existing source-direction code (`dirX, dirY` = player minus source):
+   - **Blocked** when `shield.blocking` and `-(dirX*fx + dirY*fy) >= 0.5` (cos 60 deg: the source is within +-60 deg of the look direction). Then:
+     - set `p.blocked = 1`;
+     - no damage, no invuln, no `hurtTick`;
+     - set `blockTick = tick` (the view shows a spark and plays the clank);
+     - push the player back at `cfg.blockKnockSpeed` along `dirX, dirY`, tuned so the test measures 0.3 m +-0.1.
+   - No source position = no block.
+   - Otherwise: the EQ-02 defence scaling, then `applyDamage`.
+3. **Attacker reaction, with no re-entrant emit.**
+   - The payload gets an out field, `blocked` (0/1). The sender clears it before `emit`.
+   - In beastSim's contact (line ~759): `p.blocked = 0; emit(...); if (p.blocked) enterBlocked(sim, i, -dx, -dy); else enterRecover(sim, i, false);`
+   - `enterBlocked` = `STATE_STAGGER` with timer `cfgSteps.blockStagger` (24 steps = 0.4 s) and a shove of `cfg.blockKnock` (2 m/s) away from the player.
+   - Future senders (enemy arrows) read `blocked` the same way.
+   - Never emit `combat:hit` from inside the vitals listener.
+4. **View, `game/js/quest/shieldView.js`:**
+   - It drives the existing left-hand view-model slot (the hands.js path the sword and torch use). The pose lerps from rest to raised by `raiseFrac`.
+   - On a `blockTick` edge: a spark (an existing particle preset, at the shield) and the `clank` audio cue.
+   - No new engine API.
+
+**(b) Arrows: `game/js/quest/sim/arrows.js`.**
+5. **Shared sweep.** Move fireball's `sweep` into `game/js/quest/sim/sweep.js` as `sweepSegment(world, targets, pad, x0,y0,z0, x1,y1,z1, hit)`.
+   - It runs `world.raySegment` plus the cylinder test; ties go to the target.
+   - Fireball calls it with unchanged behaviour; `fireball.test` stays byte-identical.
+   - Arrows call it with `pad = cfg.hitPad` (0.05) and a zero-radius ray.
+6. **API:**
+```js
+createArrowSim(world, events, cfg, targets) -> {
+  fire(x,y,z, fx,fy,fz, draw /*0..1*/, damage) -> boolean   // false = pool full; caller decrements quiver only on true
+  step(), pickup(px,py,pz, radius) -> n                     // frees picked stuck slots that are pickable
+  nearestPickable(px,py,pz, maxR) -> slot|-1, take(slot)    // E key (EQ-09)
+  flying: SoA, stuck: SoA, hashInto(h)
+}
+// cfg (game/js/quest/bowConfig.js): vMin 20, vMax 45, g 9.8, drawSteps 48, maxFlightSteps 240, stickSteps 1800,
+// survivePct 70, maxFlying 8, maxStuck 16, hitPad 0.05, stuckBack 0.05
+```
+7. **Step.** Fixed 60 Hz, in the same place in the step order as `fireball.step` (before `beastSim.step`).
+   - Launch velocity: `v = (vMin + (vMax - vMin) * draw) * dir`.
+   - Each step (semi-implicit): `vz -= g*dt`, then sweep `p -> p + v*dt`.
+   - **Target hit:**
+     - `emit('combat:hit', payload{source: 'player', target: id, damage, heavy: 0, cause: 'arrow', dirX, dirY})`, then free the slot (v1: no arrows stuck in beasts).
+     - The caller passes `damage = round(sword * (1 + 2*draw))`, min 1.
+   - **World hit:**
+     - Move the arrow to `stuck` at `hit - dir*stuckBack`, keeping `dir` for the view, with `age = 0`.
+     - `pickable = ((serial*2654435761) >>> 0) % 100 < survivePct`. This is deterministic and keeps no rng state.
+     - A full stuck pool recycles its oldest slot.
+   - **Expiry:** flight longer than `maxFlightSteps` = arrow lost. A stuck arrow with `age >= stickSteps` is freed.
+   - **No tunnelling:** at 45 m/s one step is 0.75 m, but the sweep is continuous (mesh colliders are exact, and the march samples every 0.1 m), so a 0.3 m wall cannot be tunnelled.
+8. **Ownership:** the quiver count lives in `equipment.quiver.n` (EQ-02); the sim owns only flying and stuck arrows, both transient (not saved, lost on reload, like fireballs). Arrow hits change beast hp through the existing listener, so the beast replay hash stays deterministic for a given input stream.
+9. **View (EQ-09):** flying arrows (<= 8) are voxel instances of `arrow`; stuck arrows are drawn only within 20 m, the nearest 8 at most, so the 48-instance mesh cap holds (undrawn ones stay pickable). The view, never the sim, turns `dir` into an orientation.
+10. **Perf:** shield step O(1). Arrows: <= 8 sweeps per step (raySegment <= 20 samples + 16 cylinders) + 16 stuck ages = **<= 0.1 ms per step**. Zero alloc: one preallocated payload and one hit object.
+11. **Tests:**
+   - **`shield.test.js`:** raise/lower in 7/9 steps; angle table (0, 45, 59 deg block; 61, 90, 180 deg do not); a blocked hit = 0 hp lost, `p.blocked = 1`, knockback 0.3 m +-0.1; the beast stays in STAGGER for 24 steps after a blocked charge; no swing while raised.
+   - **`arrows.test.js`:** speed at draw 0/1; range parabola within 2 % of analytic; 45 m/s vs a 0.3 m wall on grid AND mesh physics sticks before the wall; beast hit damage 1..3x; 70 % pickable over 1000 serials (+-3); expiry at 1800 steps; pool full -> `fire` false; 0 alloc over 1000 steps; equal hash across two runs. `fireball.test` unchanged.
+12. **Do not:** put arrows or the shield in `engine/physics` (or import `game/` there); use trig or Math.random in the sim; emit `combat:hit` inside a `combat:hit` listener; save stuck arrows; let the sim touch the quiver or inventory; add a new event type for blocks (use the `blocked` out field).
