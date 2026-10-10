@@ -81,4 +81,48 @@ await t('CLI arg parsing', () => {
   assert.throws(() => parseArgs(['--seed', '1', '--recipe', 'r']), /exclusive/);
 });
 
+
+// ---- CHARGEN-21 ----
+await t('recipe json round trip, garbage + kit mismatch', () => {
+  const a = mk(), b = mk();
+  a.random(11);
+  const r = b.importRecipeJson(a.exportRecipeJson());
+  assert.deepEqual(r.warnings, []);
+  assert.deepEqual(b.recipe, a.recipe);
+  assert.deepEqual(b.importRecipeJson(JSON.stringify(a.recipe)).recipe, a.recipe); // bare recipe
+  for (const bad of ['', 'not json', '[]', '{"format":"x","recipe":{}}', '{"format":"kestrel-chargen-recipe"}', '{"height":"tall"}'])
+    assert.throws(() => b.importRecipeJson(bad), /recipe import/, bad);
+  const j = JSON.parse(a.exportRecipeJson()); j.kit.schema = 99;
+  assert.equal(b.importRecipeJson(JSON.stringify(j)).warnings.length, 1);
+});
+
+await t('seed share string round trip over 20 seeds, wrong hash rejected', () => {
+  const a = mk(), b = mk();
+  for (let seed = 1; seed <= 20; seed++) {
+    a.random(seed * 7919);
+    const s = a.shareString();
+    assert.match(s, /^kst1:\d+:[0-9a-f]{8}$/);
+    assert.equal(b.importShareString(s).seed, seed * 7919);
+    assert.deepEqual(b.recipe, a.recipe);
+  }
+  const s = a.shareString(), bad = s.slice(0, -1) + (s.endsWith('0') ? '1' : '0');
+  assert.throws(() => b.importShareString(bad), /hash does not match/);
+  assert.throws(() => b.importShareString('kst2:1:abcd'), /expected/);
+  const e = mk(); e.random(3); e.setRecipe({ ...e.recipe, height: e.recipe.height === 1 ? 2 : 1 });
+  assert.throws(() => e.shareString(), /edited/);
+});
+
+await t('thumbnail png: valid, deterministic, differs per recipe', () => {
+  const a = mk(), b = mk();
+  a.random(5); b.random(5);
+  const p = a.exportThumbPng(64);
+  assert.ok(eq(p, b.exportThumbPng(64)));
+  assert.deepEqual([...p.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const dv = new DataView(p.buffer, p.byteOffset);
+  assert.equal(dv.getUint32(16), 64); assert.equal(dv.getUint32(20), 64);
+  b.random(6);
+  assert.ok(!eq(p, b.exportThumbPng(64)));
+  assert.ok(p.length > 200);
+});
+
 console.log(`${n} passed`);

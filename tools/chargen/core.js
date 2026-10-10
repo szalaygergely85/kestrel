@@ -5,10 +5,24 @@ import { exportGlb } from '../export/gltfWrite.js';
 import { exportFbx } from '../export/fbxWrite.js';
 import { exportObj } from '../export/objWrite.js';
 import { exportVoxGrid } from '../export/voxWrite.js';
+import { encodePng } from '../export/png.js';
 
 const enc = new TextEncoder();
 const json = (o) => enc.encode(JSON.stringify(o, null, 2) + '\n');
 const clone = (o) => JSON.parse(JSON.stringify(o));
+
+// ---- CHARGEN-21: recipe json + seed share string + thumbnail (pure, no DOM) ----
+const RECIPE_FORMAT = 'kestrel-chargen-recipe';
+/** Canonical JSON (sorted keys) so the share hash does not depend on key order. */
+const canon = (v) => (Array.isArray(v) ? '[' + v.map(canon).join(',') + ']' : v && typeof v === 'object'
+  ? '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}' : JSON.stringify(v));
+/** FNV-1a 32 bit as 8 hex digits. */
+export function recipeHash(recipe) {
+  let h = 2166136261;
+  const t = canon(recipe);
+  for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
 
 /**
  * @param {{kit:Object, rgbOf:(matKey:string)=>number[], materials?:Object}} opts  `materials` (optional) enables validateKit.
@@ -37,6 +51,64 @@ export function createChargen({ kit, rgbOf, materials = null }) {
     setRecipe(r) { recipe = check(clone(r)); grid = null; return api.recipe; },
     random(seed) { recipe = check(randomRecipe(kit, seed)); grid = null; return api.recipe; },
     build,
+    // --- CHARGEN-21 ---
+    /** Recipe as text: {format, kit:{id,schema}, recipe}. */
+    exportRecipeJson() { return JSON.stringify({ format: RECIPE_FORMAT, kit: { id: kit.id, schema: kit.schema }, recipe }, null, 2) + '\n'; },
+    /** Parses + validates + adopts. Accepts the wrapper or a bare recipe. Returns {recipe, warnings}; throws a clear Error on garbage. */
+    importRecipeJson(text) {
+      let o;
+      try { o = JSON.parse(text); } catch (e) { throw new Error('recipe import: not valid JSON (' + e.message + ')'); }
+      if (!o || typeof o !== 'object' || Array.isArray(o)) throw new Error('recipe import: expected a JSON object');
+      const warnings = [];
+      let r = o;
+      if (o.format !== undefined || o.recipe !== undefined) {
+        if (o.format !== RECIPE_FORMAT) throw new Error(`recipe import: unknown format "${o.format}" (expected "${RECIPE_FORMAT}")`);
+        if (!o.recipe || typeof o.recipe !== 'object') throw new Error('recipe import: missing "recipe" object');
+        r = o.recipe;
+        const k = o.kit || {};
+        if (k.id !== kit.id || k.schema !== kit.schema) warnings.push(`kit mismatch: file was made for ${k.id}@${k.schema}, this is ${kit.id}@${kit.schema}`);
+      }
+      const { errors } = validateRecipe(kit, r);
+      if (errors.length) throw new Error('recipe import: invalid recipe:\n' + errors.join('\n'));
+      return { recipe: api.setRecipe(r), warnings };
+    },
+    /** `kst1:<seed>:<hash>` for the current recipe; only a recipe that is exactly randomRecipe(kit, seed) can be shared this way. */
+    shareString() {
+      const seed = recipe.seed;
+      if (!Number.isInteger(seed) || recipeHash(randomRecipe(kit, seed)) !== recipeHash(recipe)) throw new Error('seed share: the recipe was edited after Random; press Random or use Recipe .json');
+      return `kst1:${seed >>> 0}:${recipeHash(recipe)}`;
+    },
+    /** Regenerates the recipe from a share string; wrong format or hash throws; adopts it. */
+    importShareString(text) {
+      const m = /^kst1:(\d{1,10}):([0-9a-f]{8})$/.exec(String(text).trim());
+      if (!m) throw new Error('seed import: expected "kst1:<seed>:<hash>"');
+      const seed = Number(m[1]);
+      if (seed > 0xffffffff) throw new Error('seed import: seed out of range');
+      const r = randomRecipe(kit, seed);
+      if (recipeHash(r) !== m[2]) throw new Error('seed import: hash does not match (different kit version or corrupted string)');
+      return { seed, recipe: api.random(seed) };
+    },
+    /** Front-view PNG (size x size, transparent background) of the composed grid. Deterministic bytes. */
+    exportThumbPng(size = 128) {
+      size = Math.max(8, Math.min(1024, size | 0));
+      const g = getGrid(), [sx, sy, sz] = g.size;
+      const px = new Uint8Array(size * size * 4);
+      const scale = Math.min(size / sx, size / sz);
+      const ow = Math.max(1, Math.round(sx * scale)), oh = Math.max(1, Math.round(sz * scale));
+      const ox = (size - ow) >> 1, oy = size - oh; // feet on the bottom edge
+      const rgb = g.matKeys.map((k) => rgbOf(k));
+      for (let py = 0; py < oh; py++) for (let qx = 0; qx < ow; qx++) {
+        const z = sz - 1 - Math.min(sz - 1, (py / scale) | 0), x = sx - 1 - Math.min(sx - 1, (qx / scale) | 0); // viewer faces the character: its right (east) is on the left
+        for (let y = 0; y < sy; y++) { // character faces -y, so the nearest voxel to the viewer has the smallest y
+          const m = g.mat[x + sx * (y + sy * z)];
+          if (!m) continue;
+          const c = rgb[m - 1], i = ((oy + py) * size + ox + qx) * 4, shade = 1 - 0.25 * (y / sy);
+          px[i] = Math.round(c[0] * shade); px[i + 1] = Math.round(c[1] * shade); px[i + 2] = Math.round(c[2] * shade); px[i + 3] = 255;
+          break;
+        }
+      }
+      return encodePng(size, size, px);
+    },
     exportGlb: (opts) => exportGlb(build(), glbOpts(opts)),
     exportFbx: fbx, // -> {fbx, png}
     exportVox: () => exportVoxGrid(getGrid(), { rgbOf }), // -> Uint8Array
