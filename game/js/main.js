@@ -1046,6 +1046,7 @@ async function runGame(mode, cinematic = null) {
   // CH1-MOUNT (38.37): notice banner (page lifetime) + crystal grant / barks / chapter card (rebuilt per world; only when saves are live = never in capture/bench/compare/?at=)
   const notice = createNoticeView();
   let crystal = null, barks = null, chapterCard = null, ch1Hidden = true;
+  let burlReopen = false; // PO-CH1-07 latch
   let escort = null, fenEntrance = null; // CH1-07 Burl escort / CH1-08b Fen entrance (rebuilt per world, saves live only)
   window.__debug.notice = notice; window.__debug.ch1Hidden = () => ch1Hidden; // tools/verify-relay-wake.mjs
   engine.events.on('beast:died', (p) => { // crystal burst lands where the last boar fell
@@ -1329,7 +1330,7 @@ async function runGame(mode, cinematic = null) {
         if (bw) {
           const bt = world.get('bear').data.transform;
           escort = createBurlEscort({ world, walk: bw, questFlag: (k) => rq.questFlag(k), barks, id: 'bear', x: () => bt.x, y: () => bt.y,
-            dialogueOpen: () => dialogueCtl.open, afterLeave: () => rq.state.completed.includes('leave'), requestOpen: nearTalk });
+            dialogueOpen: () => dialogueCtl.open, afterLeave: () => rq.state.completed.includes('leave'), requestOpen: nearTalk, noticeBusy: () => notice.active });
           escort.load();
         }
         // CH1-08b: Fen hidden until the Bend Relay wakes, then walks `emerge`; dialogue auto-opens within 4 m
@@ -1348,11 +1349,12 @@ async function runGame(mode, cinematic = null) {
       toasts = itemDefs ? createToastView(engine.events, window.ASSETS.items.toast, itemDefs, assets.palette.rgb) : null;
       if (saveRelay) { // QG-03: book events -> seam + toasts (the reward, if any, is granted from book.lastReward; Burl's quest has none - owner pick)
         const tv = toasts, msg = window.ASSETS.items.toast && window.ASSETS.items.toast.messages && window.ASSETS.items.toast.messages.packFull;
-        saveRelay.quest.onSection = (title) => { if (tv && msg) tv.say('Quest complete: ' + title, msg.fg); if (chapterCard && saveRelay.quest.done) chapterCard.trigger(); }; // CH1-02: live section completion only
+        saveRelay.quest.onSection = (title) => { if (tv && msg) tv.say('Quest complete: ' + title, msg.fg); const ws = world.state; if (chapterCard && saveRelay.quest.done && ws['waystone.waystone.woken'] && ws['waystone.ws_roadBend.woken']) chapterCard.trigger(); /* PO-CH1-08: card only after the meadow stone AND the relay */ }; // CH1-02: live section completion only
         saveRelay.quest.book.onChange = (name, id) => {
           gameHooks.emitSimple(name, id);
           if (name === 'quest:ready' && id === 'burl.boars' && crystal) crystal.check('ready'); // CH1-03
-          if (tv && msg) { if (name === 'quest:accepted') tv.say('Quest accepted', msg.fg); else if (name === 'quest:done') tv.say('Quest complete', msg.fg); }
+          if (name === 'quest:ready' && id === 'burl.boars' && dialogueCtl && dialogueCtl.open) burlReopen = true; // PO-CH1-07: boars were already dead when accepted -> Burl speaks again (the hand-in) once this box closes
+          if (tv && msg) { const bk = saveRelay.quest.book, qt = (bk.def(bk.index(id)) || {}).title; if (name === 'quest:accepted') tv.say('Quest accepted: ' + qt, msg.fg); else if (name === 'quest:done') tv.say('Quest complete: ' + qt, msg.fg); }
         };
       }
       if (invView && invView.isOpen) invView.close();
@@ -1748,7 +1750,7 @@ async function runGame(mode, cinematic = null) {
       const simDue = hitStop.due(1000 / 60); // HITSTOP-01: the window gates beasts.step only; the sword freezes by its own hitStopHard counter
       if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); }
       if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); } // WILD-06: ambient only, never hashed
-      if (escort || fenEntrance) { const uiHold = uiLocked || !!(dialogueCtl && dialogueCtl.open); /* AUD-06 */ const pt = playerHandle.data.transform; if (escort) { escort.step(dt, pt.x, pt.y, uiHold); if (bearTurn) bearTurn.paused = escort.busy; } if (fenEntrance) fenEntrance.step(dt, pt.x, pt.y, uiHold); } // CH1-07/08b: before the bear turn
+      if (escort || fenEntrance) { const uiHold = uiLocked || !!(dialogueCtl && dialogueCtl.open); /* AUD-06 */ const pt = playerHandle.data.transform; if (escort) { if (burlReopen && !(dialogueCtl && (dialogueCtl.open || dialogueCtl._closing))) { burlReopen = false; const bh = engine.world.get('bear'), bt2 = bh && bh.data.transform; if (bt2 && (bt2.x - pt.x) ** 2 + (bt2.y - pt.y) ** 2 <= 36) dialogueCtl.openFor('bear'); } escort.step(dt, pt.x, pt.y, uiHold); if (bearTurn) bearTurn.paused = escort.busy; } if (fenEntrance) fenEntrance.step(dt, pt.x, pt.y, uiHold); } // CH1-07/08b: before the bear turn
       if (bearTurn) { const pt = playerHandle.data.transform; bearTurn.step(dt, pt.x, pt.y, !!(dialogueCtl && dialogueCtl.open)); } // NPC-BEAR-01 // US-079a (29.1)
       if (beasts && assets.uiStyle) stepCombatHint(engine.world, assets.uiStyle, beasts); // COMBAT-HINT-01: once-per-save first-fight hint (taken from lane C)
       if (telegraphWire) telegraphWire.step(performance.now());
@@ -1813,7 +1815,11 @@ async function runGame(mode, cinematic = null) {
       // no-op while no note is open; the close guard (`state === 'open'`)
       // keeps the opening E press from also closing it.
       stepNoteRead(dt, input, !!(look && look.locked)); // BUG-NOTE-ESC-01: Esc under pointer lock = lock lost = close
-      if (saveRelay && engine.world && engine.world.state['notes.keepLight.read'] === true) saveRelay.quest.book.actKey('q.tower.blade.accept'); // reading the wake-spot page accepts 'A Blade in the Ashes' (no-op unless available)
+      if (saveRelay && engine.world && (engine.world.state['notes.keepLight.read'] === true || engine.world.state['tower.sword.taken'] === true)) saveRelay.quest.book.actKey('q.tower.blade.accept'); // reading the wake-spot page accepts 'A Blade in the Ashes'; PO-CH1-01: taking the sword is the safety net when the note was skipped (no-op unless available)
+      if (saveRelay && engine.world && engine.world.state['tower.sword.taken'] === true && saveRelay.quest.book.statusOf('tower.blade') === 2) { // PO-CH1-09: sword in hand and Burl (outside) within 10 m = the player left the tower (old saves / door missed): the blade is ready to hand in
+        const bh = engine.world.get('bear'), bt3 = bh && bh.data.transform, p3 = playerHandle.data.transform;
+        if (bt3 && (bt3.x - p3.x) ** 2 + (bt3.y - p3.y) ** 2 <= 100) saveRelay.quest.feed({ type: 'area:entered', id: 'towerDoor' });
+      }
       // US-022: the relay's own wake timer (clip switch wake -> awake, point
       // light on + 1.0 s grow) - a no-op every step before `beacon.light`
       // fires (game/js/quest/beacon.js), same "reads its own state key" split

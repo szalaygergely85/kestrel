@@ -17,6 +17,7 @@
     {"node": "bear.q.offer.1", "requires": "q.burl.boars.available"},
     {"node": "bear.repeat", "requires": "bear.talked"},
     {"node": "bear.meet.1", "requires": "q.tower.blade.ready"},
+    {"node": "bear.blade.wait", "requires": "q.tower.blade.active"},
     {"node": "bear.early"}
   ],
   "nodes": {
@@ -77,6 +78,9 @@
     "bear.q.accepted": {"end": true, "lines": [
       "Five ought to convince the others.",
       "Mind their tusks, sky-cub."
+    ], "speaker": "burl"},
+    "bear.blade.wait": {"end": true, "lines": [
+      "NEEDS WRITER: blade active, not ready (placeholder)"
     ], "speaker": "burl"},
     "bear.early": {"end": true, "lines": [
       "Out of the tower already, sky-cub? Empty-pawed?",

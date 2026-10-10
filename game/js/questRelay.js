@@ -39,7 +39,7 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
   /** CH1-02: "Quest complete" callback(title) for every section whose last step completed in objectives [from, to). */
   let seen = state.completed.length; // steps already accounted for (restore sets it, so a restore never toasts)
   function sectionToasts(from, to) {
-    const objs = def.objectives, titles = new Map((def.sections || []).map(x => [x.id, x.title]));
+    const objs = def.objectives, titles = new Map((def.sections || []).filter(x => x.silent !== true).map(x => [x.id, x.title])); // PO-CH1-04: silent sections (owned by a giver quest's own toast) never toast
     for (let i = from; i < to; i++) {
       const sec = objs[i].section;
       if (sec && (i + 1 >= objs.length || objs[i + 1].section !== sec) && titles.has(sec)) relay.onSection(titles.get(sec));

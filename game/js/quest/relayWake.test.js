@@ -33,7 +33,7 @@ function mk(state = {}) {
   assert.equal(t.world.state['waystone.ws_roadBend.woken'], undefined); }
 
 // wake once; order: clip + hum, then light at the glow event, grow ramp, wake -> awake
-{ const t = mk({ [FLAG_ATTUNED]: true });
+{ const t = mk({ [FLAG_ATTUNED]: true, 'waystone.waystone.woken': true });
   assert.equal(t.rw.interact('ws_roadBend'), true);
   assert.deepEqual(t.log, ['play:wake', 'hum']);
   assert.equal(t.ent.components.light.on, false, 'light waits for the glow event');
@@ -70,10 +70,14 @@ function mk(state = {}) {
   assert.equal(t.recs[0].prompt, PROMPT_TOUCH); t.rw.step(1 / 60, t.lights); assert.ok(Math.abs(t.lights.baseIntensity[0] - 0.9) < 1e-6);
   assert.equal(t.rw.toastLeft, 0); }
 // dead stays dead after reload without the woken flag
-{ const t = mk({ [FLAG_ATTUNED]: true }); assert.equal(t.ent.components.light.on, false); assert.equal(t.ent.components.voxel.anim, 'dead'); }
+{ const t = mk({ [FLAG_ATTUNED]: true, 'waystone.waystone.woken': true }); assert.equal(t.ent.components.light.on, false); assert.equal(t.ent.components.voxel.anim, 'dead'); }
 
 // behaviour wiring: relay.wake registered, routes by def.waystoneId, never consumes
-{ registerQuestBehaviours(); const t = mk({ [FLAG_ATTUNED]: true }); setRelayWakeApi(t.rw);
+{ registerQuestBehaviours(); const t = mk({ [FLAG_ATTUNED]: true, 'waystone.waystone.woken': true }); setRelayWakeApi(t.rw);
   assert.equal(relayWake({ def: { waystoneId: 'ws_roadBend' } }), false); assert.equal(t.hums.length, 1); setRelayWakeApi(null);
   assert.equal(relayWake({ def: { waystoneId: 'ws_roadBend' } }), false); assert.equal(t.hums.length, 1); }
+// PO-CH1-08: the bend relay needs the meadow stone woken first (chain order, the chapter card fires at the relay)
+{ const t = mk({ [FLAG_ATTUNED]: true }); delete t.world.state['waystone.waystone.woken'];
+  assert.equal(t.rw.interact('ws_roadBend'), false); assert.equal(t.rw.hintLeft > 0, true); assert.equal(t.world.state['waystone.ws_roadBend.woken'], undefined, 'not woken before the meadow stone');
+  t.world.state['waystone.waystone.woken'] = true; assert.equal(t.rw.interact('ws_roadBend'), true, 'wakes after the stone'); }
 console.log('relayWake.test.js PASS');

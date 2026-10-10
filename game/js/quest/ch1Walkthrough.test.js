@@ -13,7 +13,7 @@ const dialogues = { bear: compileDialogue(rd('content/dialogue/bear.dialogue.jso
 const BOARS = burl.objectives[0].when.ids;
 const assets = new AssetRegistry({ palette: {} });
 const world0 = World.load({ name: 'walk', terrain: null, structures: [], entities: [] }, assets, {});
-const TITLES = m1.sections.map((s) => s.title);
+const TITLES = m1.sections.filter((s) => !s.silent).map((s) => s.title); // PO-CH1-04: q01-q03 are silent (the giver quests own those toasts)
 
 const toasts = [];
 const mkRelay = (saved, sq) => {
@@ -51,24 +51,24 @@ assert.equal(r.book.actKey('q.tower.blade.accept'), true);
 // q01: wake -> breach -> sword
 r.feed({ type: 'flag:set', key: 'wake', value: true }); expectToasts(0, 'wake alone: no toast');
 r.feed({ type: 'area:entered', id: 'breach' }); expectToasts(0);
-r.feed({ type: 'item:got', id: 'sword' }); expectToasts(1, 'q01 toast after sword');
+r.feed({ type: 'item:got', id: 'sword' }); expectToasts(0, 'q01 silent (blade giver quest owns it)');
 // q02: door
-r.feed({ type: 'area:entered', id: 'towerDoor' }); expectToasts(2, 'q02 toast after door');
+r.feed({ type: 'area:entered', id: 'towerDoor' }); expectToasts(0, 'q02 silent');
 // first talk with Burl turns the blade quest in, then he offers the boars (q03): accept, 5 boars, hand in
 assert.equal(r.book.statusOf('tower.blade'), 3, "left the tower: blade ready ('?' over Burl)");
 talk(r, 0);
 assert.equal(r.book.statusOf('tower.blade'), 4, 'blade turned in at Burl');
 assert.equal(r.book.statusOf('burl.boars'), 2, 'accepted');
 for (let i = 0; i < 4; i++) r.feed({ type: 'beast:died', id: BOARS[i] });
-expectToasts(2, 'no toast before the 5th boar');
+expectToasts(0, 'no toast before the 5th boar');
 r.feed({ type: 'beast:died', id: BOARS[4] });
 assert.equal(r.book.statusOf('burl.boars'), 3, 'ready');
-expectToasts(2, 'no toast at ready (needs the hand-in)');
+expectToasts(0, 'no toast at ready (needs the hand-in)');
 talk(r);
 assert.equal(r.book.statusOf('burl.boars'), 4, 'handed in');
 r.checkSections(); // saveRelay.stepGame does this each step for hand-ins that bypass feed
-expectToasts(3, 'q03 toast after hand-in');
-r.checkSections(); r.feed({ type: 'item:got', id: 'sword' }); expectToasts(3, 'no replay on repeated checks/events');
+expectToasts(0, 'q03 silent (burl.boars owns the toast)');
+r.checkSections(); r.feed({ type: 'item:got', id: 'sword' }); expectToasts(0, 'no replay on repeated checks/events');
 
 // ---- save/load round trip midway (between q03 and q04) ----
 {
@@ -83,18 +83,18 @@ r.checkSections(); r.feed({ type: 'item:got', id: 'sword' }); expectToasts(3, 'n
 }
 
 // q04 follow -> arrive
-r.questFlag('burl.arrived'); expectToasts(4, 'q04 toast on arrival');
+r.questFlag('burl.arrived'); expectToasts(1, 'q04 toast on arrival');
 // q05: wake stone
-r.questFlag('waystone.waystone.woken'); expectToasts(5, 'q05 toast after stone wake');
+r.questFlag('waystone.waystone.woken'); expectToasts(2, 'q05 toast after stone wake');
 assert.equal(r.world.state['waystone.waystone.woken'], true, 'questFlag writes world.state');
 // q06: road -> relay found -> relay woken
-r.feed({ type: 'area:entered', id: 'roadWest' }); expectToasts(5);
-r.feed({ type: 'area:entered', id: 'bendRelay' }); expectToasts(5, 'q06 not before the relay wakes');
-r.questFlag('waystone.ws_roadBend.woken'); expectToasts(6, 'q06 toast after relay wake');
+r.feed({ type: 'area:entered', id: 'roadWest' }); expectToasts(2);
+r.feed({ type: 'area:entered', id: 'bendRelay' }); expectToasts(2, 'q06 not before the relay wakes');
+r.questFlag('waystone.ws_roadBend.woken'); expectToasts(3, 'q06 toast after relay wake');
 assert.equal(r.done, true);
 // FEN-OFF-01: q07 removed; the chain ends at the relay step
 assert.equal(r.done, true, 'chain complete at the relay');
 assert.deepEqual(done(r).length, m1.objectives.length);
 assert.deepEqual(toasts, TITLES, 'every section toast exactly once, in order');
 r.checkSections(); r.questFlag('fen.met'); /* retired flag: ignored */ assert.equal(toasts.length, TITLES.length, 'no extra toast at the end');
-console.log('ch1Walkthrough: wake..relay, 6 section toasts once in order, save/load no replay PASS');
+console.log('ch1Walkthrough: wake..relay, 3 section toasts (q04-q06) once in order, q01-q03 silent, save/load no replay PASS');

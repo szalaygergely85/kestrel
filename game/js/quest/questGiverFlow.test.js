@@ -81,7 +81,7 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
   assert.equal(r.book.actKey('q.tower.blade.accept'), true); // reading the note
   for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }]) r.feed(e);
   r.book.giverMarks(A, R); assert.deepEqual([A, R], [[], []], 'sword taken, still in the tower: no marks');
-  assert.deepEqual(t.talk(), ['Out of the tower already, sky-cub? Empty-pawed?', 'Climb back up. The top holds more than a view.']);
+  assert.deepEqual(t.talk(), ['NEEDS WRITER: blade active, not ready (placeholder)'], 'PO-CH1-01: blade active, not ready: its own node, never "Empty-pawed?"');
   r.feed({ type: 'area:entered', id: 'towerDoor' });
   r.book.giverMarks(A, R); assert.deepEqual([A, R], [[], ['bear']], "left the tower: '?' over Burl");
   const meet = t.talk(1, -1); // choice 1 = 'I'm going west' -> flows into the boar offer, then 'Not yet'
@@ -134,5 +134,27 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
   const r4 = createQuestRelay(oldM1, fin.quest, [blade, burl], fin.quests);
   assert.equal(r4.book.statusOf('burl.boars'), 4);
   assert.equal(r4.book.handIn('burl.boars'), null, 'no retroactive reward');
+}
+// PO-CH1-01: note skipped, sword taken: accepting at the sword (main.js safety net) keeps the chain alive
+{
+  const r = mkRelay(), t = setup(r), A = [], R = [];
+  for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }]) r.feed(e);
+  assert.equal(r.book.actKey('q.tower.blade.accept'), true, 'sword pickup accepts the available blade quest');
+  assert.equal(r.book.statusOf('tower.blade'), 2);
+  assert.notDeepEqual(t.talk(), ['Out of the tower already, sky-cub? Empty-pawed?', 'Climb back up. The top holds more than a view.'], 'never Empty-pawed with the sword in hand');
+  r.feed({ type: 'area:entered', id: 'towerDoor' });
+  r.book.giverMarks(A, R); assert.deepEqual([A, R], [[], ['bear']], "left the tower: '?' over Burl");
+}
+// PO-CH1-07: boars dead before accepting -> accept makes the quest READY at once and the dialogue then lands on the hand-in
+{
+  const r = mkRelay(), t = setup(r), ev = [];
+  for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }, { type: 'area:entered', id: 'towerDoor' }]) r.feed(e);
+  r.book.actKey('q.tower.blade.accept'); r.book.actKey('q.tower.blade.handin');
+  for (const b of BOARS) r.feed({ type: 'beast:died', id: b });
+  r.book.onChange = (n, id) => ev.push(n + ':' + id);
+  assert.equal(r.book.actKey('q.burl.boars.accept'), true);
+  assert.deepEqual(ev, ['quest:accepted:burl.boars', 'quest:ready:burl.boars'], 'accept -> ready in one go (main.js re-opens Burl on this)');
+  assert.equal(r.book.statusOf('burl.boars'), 3);
+  const lines = t.talk(); assert.ok(lines[0].startsWith('Ah! I can smell the berries'), 'the re-opened talk lands on the hand-in: ' + lines[0]);
 }
 console.log('questGiverFlow: accept/kill/ready/hand-in/done, Later, Esc, boars-before-accept, save/load, old-save migration PASS');

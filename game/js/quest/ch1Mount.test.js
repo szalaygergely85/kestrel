@@ -7,7 +7,7 @@ import { createNoticeView } from '../ui/noticeView.js';
 // 1) relay wake pushes the notice (not the toast) when one is injected
 {
   const ent = { id: 'relayBend', transform: { x: 1, y: 2, z: 3 }, components: { voxel: { model: 'relay', anim: 'dead' }, light: { preset: 'relay', on: false }, waystone: { id: 'ws_roadBend', kind: 'relay' } } };
-  const world = { state: { [FLAG_ATTUNED]: true }, assets: { has: () => false }, forEachEntity: (fn) => fn(ent, ent.id),
+  const world = { state: { [FLAG_ATTUNED]: true, 'waystone.waystone.woken': true }, assets: { has: () => false }, forEachEntity: (fn) => fn(ent, ent.id),
     get: () => ({ data: ent, play() {} }), addInteractable: (s) => ({ ...s }) };
   const notice = createNoticeView();
   const rw = createRelayWake({ world, palette: { lights: {} }, emit() {}, hum() {}, notice });
