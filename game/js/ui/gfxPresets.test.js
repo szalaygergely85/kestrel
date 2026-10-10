@@ -31,13 +31,15 @@ assert.equal(saveQuality('auto',adapter).saved,true);assert.equal(blob.muted,tru
 assert.equal(saveQuality('low',{save:()=>{},load:()=>({})}).saved,false,'detect storage adapter dropping quality');
 assert.equal(saveQuality('low',{save:()=>{throw Error('quota');},load:()=>({})}).saved,false);
 assert.throws(()=>saveQuality('bad',adapter));
-for(const key of ['grid','rays','shadowQuality','scatter','lodScale']) {
+for(const key of ['grid','rays','shadowQuality','scatter','lodScale','pointShadows']) {
   const bad=structuredClone(data);bad.presets.low[key]=null;
   await assert.rejects(loadPresets(bad));
 }
 assert.equal(knobsFor('low').rays,1,'bad load does not replace previous table');
 const response=await loadPresets(null,async()=>({ok:true,json:async()=>data}));assert.equal(response.ultra.rays,4);
 await assert.rejects(loadPresets(null,async()=>({ok:false,status:404})),/404/);
+assert.deepEqual(['low','medium','high','ultra'].map(n=>knobsFor(n).pointShadows),[false,false,true,true],'AUD-44 point shadows on high/ultra only');
+assert.equal(resolve({param:'quality=high&pointshadows=0'}).knobs.pointShadows,true,'URL pointshadows is not a preset knob');
 console.log('gfxPresets: D-047 data, precedence, independent shadows, validation, immutable copies and adapter read-back PASS');
 
 // QUALITY-STALE-01: preset pick clears overrides; migration drops unmarked ones once; marked ones survive

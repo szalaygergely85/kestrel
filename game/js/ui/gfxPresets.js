@@ -4,7 +4,7 @@ import { GRID_VALUES } from '../settings/options.js';
 export const QUALITY_NAMES = Object.freeze(['low', 'medium', 'high', 'ultra']);
 export const QUALITY_CHOICES = Object.freeze([...QUALITY_NAMES, 'auto']);
 export const SHADOW_CHOICES = Object.freeze(['off', 'low', 'mid', 'high']);
-const KNOBS = ['grid', 'rays', 'shadowQuality', 'scatter', 'lodScale'];
+const KNOBS = ['grid', 'rays', 'shadowQuality', 'scatter', 'lodScale', 'pointShadows'];
 let presets = null;
 
 function validKnob(key, value) {
@@ -12,6 +12,7 @@ function validKnob(key, value) {
   if (key === 'rays') return [1, 2, 4].includes(value);
   if (key === 'shadowQuality') return SHADOW_CHOICES.includes(value);
   if (key === 'scatter') return Number.isFinite(value) && value >= 0 && value <= 1;
+  if (key === 'pointShadows') return typeof value === 'boolean'; // AUD-44: preset default for point-light shadows (?pointshadows= still wins)
   return key === 'lodScale' && Number.isFinite(value) && value >= 0.25 && value <= 4;
 }
 
@@ -62,7 +63,7 @@ export function resolveQuality({ param = new URLSearchParams(), saved = null, au
     else warn(`Invalid saved lodScale ${String(savedLod)}; using preset`);
   }
   for (const key of KNOBS) {
-    if (!params.has(key)) continue;
+    if (!params.has(key) || key === 'pointShadows') continue; // pointShadows: lowercase ?pointshadows= handled by parsePointShadows
     const raw = params.get(key);
     const value = ['grid', 'shadowQuality'].includes(key) ? raw : raw.trim() ? Number(raw) : NaN;
     if (validKnob(key, value)) { knobs[key] = value; knobSources[key] = 'param'; }

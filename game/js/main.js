@@ -393,7 +393,7 @@ if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
 // WG-5b: WebGPU is the only backend (`?backend=` is ignored with a warning).
 const shadowOpts = bootOpts.shadowOpts; // GFX-01w: shadow level from the preset (resolveShadowLevel) + ?shadows= / ?shadowinst / ?shadowres / ?shadowcast overrides (ME-15e/f, D-043: map is the default)
 const occlOpt = parseOccl(params, 'webgpu');
-const pointShadowOpt = parsePointShadows(params, resolvedQuality && resolvedQuality.name); // ME-16e: default OFF in every mode unless the URL sets it
+const pointShadowOpt = parsePointShadows(params, resolvedQuality && resolvedQuality.name, !!(resolvedQuality && resolvedQuality.knobs && resolvedQuality.knobs.pointShadows)); // ME-16e/AUD-44: ON by preset (high/ultra), `?pointshadows=0|N` overrides
 const tCR = bootNow();
 const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgpu', onWebGpuMissing,
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
