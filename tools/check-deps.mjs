@@ -70,6 +70,10 @@
 //       (outside comments) are findings anywhere in engine/** or game/** except engine/render/gpu/device/**.
 //   18. (ED-WG-01c, architecture.md 38.21) tools/editor/**/*.js (tests included) may not import GL-only modules:
 //       GpuCellPipeline, GpuDeviceGL2/WebGL2, GpuSpritePass, overlayPass, glsl/**, RenderTargetGL, editorRenderer.
+//   19. (WILD-03, docs/architecture.md 38.31 item 1) engine/fauna/** (non-test) may import only engine/fauna/**,
+//       engine/nav/**, engine/core/** and engine/entities/{clipPlayer,gait}.js; fauna tests may also import
+//       engine/test/**. engine/render|world|mesh|ui|physics|nav may never import engine/fauna/** (one-way leaf).
+//       (Numbers 15-16 are taken by the determinism WARN and the fx leaf, so the fauna rule is 19.)
 //   12. success message as above.
 
 import fs from 'node:fs';
@@ -96,6 +100,7 @@ const PHYSICS_DIR = path.join(ROOT, 'engine', 'physics');
 const MESH_DIR = path.join(ROOT, 'engine', 'mesh');
 const NAV_DIR = path.join(ROOT, 'engine', 'nav');
 const FX_DIR = path.join(ROOT, 'engine', 'fx');
+const FAUNA_DIR = path.join(ROOT, 'engine', 'fauna');
 const RENDER_DIR = path.join(ROOT, 'engine', 'render');
 const UI_DIR = path.join(ROOT, 'engine', 'ui');
 const WORLD_DIR = path.join(ROOT, 'engine', 'world');
@@ -394,6 +399,31 @@ function checkFxLeafRule(file, src) {
   }
 }
 
+// Rule 19 (WILD-03, docs/architecture.md 38.31 item 1): engine/fauna/** is a leaf. Non-test files may import
+// engine/fauna/**, engine/nav/**, engine/core/** and the two entity helpers clipPlayer.js + gait.js; tests may also
+// import engine/test/**. Render/world/mesh/ui/physics/nav may never import it.
+const FAUNA_ENTITY_OK = new Set(['clipPlayer.js', 'gait.js'].map((f) => path.join(ROOT, 'engine', 'entities', f)));
+function checkFaunaLeafRule(file, src) {
+  const isTest = /\.test\.(js|mjs)$/.test(file);
+  const isFauna = inDir(file, FAUNA_DIR);
+  const isForbiddenConsumer = inDir(file, RENDER_DIR) || inDir(file, MESH_DIR) || inDir(file, UI_DIR) || inDir(file, WORLD_DIR)
+    || inDir(file, PHYSICS_DIR) || inDir(file, NAV_DIR);
+  if (!isFauna && !isForbiddenConsumer) return;
+  const stripped = stripComments(src);
+  for (const { spec, line } of findImports(stripped)) {
+    if (isBareSpecifier(spec)) continue; // rule 1 already flags this
+    const resolved = path.resolve(path.dirname(file), spec);
+    if (isFauna) {
+      const allowed = inDir(resolved, FAUNA_DIR) || inDir(resolved, NAV_DIR) || inDir(resolved, CORE_DIR)
+        || FAUNA_ENTITY_OK.has(resolved) || (isTest && inDir(resolved, TEST_DIR));
+      if (!allowed) findings.push(`${rel(file)}:${line}: import "${spec}" - engine/fauna/** may only import engine/fauna/**, engine/nav/**, engine/core/**, entities/clipPlayer.js + gait.js${isTest ? ' (+ engine/test/** in tests)' : ''} (rule 19, docs/architecture.md 38.31)`);
+    }
+    if (isForbiddenConsumer && inDir(resolved, FAUNA_DIR)) {
+      findings.push(`${rel(file)}:${line}: import "${spec}" resolves into engine/fauna/ - render/world/mesh/ui/physics/nav must not import engine/fauna/** (rule 19, docs/architecture.md 38.31)`);
+    }
+  }
+}
+
 // Rule 15 (RE-14, docs/architecture.md 28.5, WARN only - the number is
 // reserved even if RE-05's rule 14 lands separately, which it already has).
 // Scope: non-test files under engine/nav/**, engine/core/{commands,rng,hash,
@@ -503,6 +533,7 @@ for (const file of walk(path.join(ROOT, 'engine'))) {
   const fsrc = fs.readFileSync(file, 'utf8');
   checkNavLeafRule(file, fsrc);
   checkFxLeafRule(file, fsrc);
+  checkFaunaLeafRule(file, fsrc);
 }
 for (const file of walk(path.join(ROOT, 'game'))) {
   const src = fs.readFileSync(file, 'utf8');

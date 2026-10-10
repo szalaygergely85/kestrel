@@ -155,6 +155,8 @@ export { EntityHandle } from './entities/EntityHandle.js';
 export { stepAnimations, animComponent } from './entities/animation.js';
 export { createAnimState, blend as animBlend, BLEND_MS as ANIM_BLEND_MS, PRIORITY as ANIM_PRIORITY } from './entities/animState.js';
 export { bindClips, applyAnimState, modelClipNames } from './entities/animClips.js';
+export { createClipPlayer, clipPlay, clipStep, clipSetPhase, clipFromW } from './entities/clipPlayer.js';
+export { pickGait, gaitRate } from './entities/gait.js';
 export { tintAt, setTint, sampleTint } from './entities/tintEnvelope.js';
 export { createEntityTintTable, clearEntityTints, pushEntityTint, pushEntityTintSample, fillEntityTints, entityTintAt, tintChannel, ENTITY_TINT_MAX } from './render/entityTint.js';
 export { Player } from './entities/Player.js';
@@ -259,3 +261,8 @@ export { createWaterfalls, collectWaterfallDefs } from './world/waterfalls.js';
 export { bindDecals, drawDecals } from './ui/decals.js';
 export { LazyMeshStore, ensureMesh, requestMesh, meshReady } from './mesh/lazyMesh.js'; // MESH-LOAD-01
 export * from './chargen/index.js'; // CHARGEN-02..05 (38.29)
+
+// ---- fauna (WILD-03, architecture.md 38.31) -----------------------------------
+export { compileFaunaDef } from './fauna/faunaDef.js';
+export { createFaunaFeed, WILD_DRAW_MAX } from './fauna/feed.js';
+export { createSpawner, FAUNA_MAX, CELL_M as FAUNA_CELL_M } from './fauna/spawner.js';

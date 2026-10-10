@@ -213,6 +213,7 @@ export function createEngine(opts) {
 
   const engine = {
     _detail: null,
+    feedVoxels: null, // WILD-05 hook (pool, cam), called after voxelPool.collect; the game sets it to fauna.feed
     feedDetail(cam, force = false) {
       if (engine._detail) return feedDetail(engine._detail, cam.x, cam.y, force || !!cam.teleport);
       return 0;
