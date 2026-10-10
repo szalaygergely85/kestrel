@@ -3,11 +3,12 @@
 import { composeCharacter, meshCharacter, randomRecipe, validateRecipe, validateKit, writeZip, openPackage } from '../../engine/index.js';
 import { exportGlb } from '../export/gltfWrite.js';
 import { exportFbx } from '../export/fbxWrite.js';
+import { exportObj } from '../export/objWrite.js';
+import { exportVoxGrid } from '../export/voxWrite.js';
 
 const enc = new TextEncoder();
 const json = (o) => enc.encode(JSON.stringify(o, null, 2) + '\n');
 const clone = (o) => JSON.parse(JSON.stringify(o));
-const notImpl = (what) => { const e = new Error(`${what}: not implemented (CHARGEN-12)`); e.notImplemented = true; return e; };
 
 /**
  * @param {{kit:Object, rgbOf:(matKey:string)=>number[], materials?:Object}} opts  `materials` (optional) enables validateKit.
@@ -25,29 +26,39 @@ export function createChargen({ kit, rgbOf, materials = null }) {
     return r;
   };
   let recipe = check(clone(kit.defaults));
-  const build = () => meshCharacter(composeCharacter(kit, recipe));
+  let grid = null; // composed grid, cached per recipe so .vox/.obj/.glb do not compose twice
+  const getGrid = () => grid || (grid = composeCharacter(kit, recipe));
+  const build = () => meshCharacter(getGrid());
   const glbOpts = (o = {}) => ({ rgbOf, recipe, partMap: kit.partMap, ...o });
   const fbx = () => exportFbx(build(), { rgbOf });
 
   const api = {
     get recipe() { return clone(recipe); },
-    setRecipe(r) { recipe = check(clone(r)); return api.recipe; },
-    random(seed) { recipe = check(randomRecipe(kit, seed)); return api.recipe; },
+    setRecipe(r) { recipe = check(clone(r)); grid = null; return api.recipe; },
+    random(seed) { recipe = check(randomRecipe(kit, seed)); grid = null; return api.recipe; },
     build,
     exportGlb: (opts) => exportGlb(build(), glbOpts(opts)),
     exportFbx: fbx, // -> {fbx, png}
-    exportVox() { throw notImpl('exportVox'); },
-    exportObj() { throw notImpl('exportObj'); },
-    /** glb + fbx + palette.png + recipe.json (+ obj/vox once CHARGEN-12 lands). */
+    exportVox: () => exportVoxGrid(getGrid(), { rgbOf }), // -> Uint8Array
+    exportObj: () => exportObj(build(), { rgbOf, name: 'character' }), // -> {obj, mtl, png, mtlName, pngName}
+    /** character.obj + .mtl + palette.png in one zip (for single-file save dialogs). */
+    async exportObjZip() {
+      const o = api.exportObj();
+      return writeZip([{ path: o.mtlName, bytes: enc.encode(o.mtl) }, { path: 'character.obj', bytes: enc.encode(o.obj) }, { path: o.pngName, bytes: o.png }]);
+    },
+    /** glb + fbx + palette.png + recipe.json + obj/mtl + vox. */
     async exportAllZip() {
       const { fbx: fbxBytes, png } = fbx();
+      const o = api.exportObj();
       const entries = [
         { path: 'character.glb', bytes: api.exportGlb() },
         { path: 'character.fbx', bytes: fbxBytes },
         { path: 'palette.png', bytes: png },
+        { path: 'character.obj', bytes: enc.encode(o.obj) },
+        { path: 'character.mtl', bytes: enc.encode(o.mtl) },
+        { path: 'character.vox', bytes: api.exportVox() },
         { path: 'recipe.json', bytes: json(recipe) },
       ];
-      // CHARGEN-12 adds .obj/.vox here; until then they are skipped, not an error.
       return writeZip(entries);
     },
     /** A `.kestrel` package (kestrel.json + recipe.json + character.glb). meta: {id, name, version?, license?, authors?}. */

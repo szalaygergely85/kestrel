@@ -136,7 +136,8 @@ export function mountUi(root, { kit, chargen, cb, platform = createPlatform() })
   const exp = el('div', { class: 'group' }, el('h2', {}, 'Export'),
     btn('.glb', () => save('character.glb', chargen.exportGlb(), 'glb')),
     btn('.fbx (+ png)', async () => { const { fbx, png } = chargen.exportFbx(); if (await save('character.fbx', fbx, 'fbx')) await save('palette.png', png, 'png'); }),
-    btn('.vox', () => {}, true), btn('.obj', () => {}, true),
+    btn('.vox', () => save('character.vox', chargen.exportVox(), 'vox')),
+    btn('.obj (+ mtl, png zip)', async () => save('character-obj.zip', await chargen.exportObjZip(), 'zip')),
     btn('All formats (.zip)', async () => save('character.zip', await chargen.exportAllZip(), 'zip')));
   const pkg = el('div', { class: 'group' }, el('h2', {}, 'Project'),
     btn('Save .kestrel', async () => save('character.kestrel', await chargen.savePackage({ name: 'Character' }), 'kestrel')),

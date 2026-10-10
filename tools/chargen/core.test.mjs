@@ -1,6 +1,8 @@
 // CHARGEN-13a: facade + CLI arg parsing. Run: node tools/chargen/core.test.mjs
 import assert from 'node:assert/strict';
 import { createChargen } from './core.js';
+import { readZip } from '../../engine/index.js';
+import { parseVox } from '../vox-import.mjs';
 import { loadKit, paletteRgbOf, parseArgs } from './export.mjs';
 
 const kit = loadKit();
@@ -48,10 +50,22 @@ await t('savePackage -> openPackage returns the recipe', async () => {
   assert.deepEqual(b.recipe, a.recipe);
 });
 
-await t('obj/vox throw not implemented (CHARGEN-12)', () => {
-  const c = mk();
-  assert.throws(() => c.exportObj(), /not implemented \(CHARGEN-12\)/);
-  assert.throws(() => c.exportVox(), /not implemented \(CHARGEN-12\)/);
+await t('obj + vox: same seed -> same bytes, vox parses, zip lists all files', async () => {
+  const a = mk(), b = mk();
+  a.random(7); b.random(7);
+  const oa = a.exportObj(), ob = b.exportObj();
+  assert.equal(oa.obj, ob.obj); assert.equal(oa.mtl, ob.mtl); assert.ok(eq(oa.png, ob.png));
+  assert.match(oa.obj, /mtllib character\.mtl/);
+  const va = a.exportVox();
+  assert.ok(va instanceof Uint8Array && eq(va, b.exportVox()));
+  const parsed = parseVox(va);
+  assert.ok(parsed.scene, 'vox has a scene graph');
+  b.random(8);
+  assert.ok(!eq(va, b.exportVox()));
+  const files = readZip(await a.exportAllZip());
+  const oz = readZip(await a.exportObjZip());
+  for (const f of ['character.obj', 'character.mtl', 'palette.png']) assert.ok(oz.has(f), 'obj zip ' + f);
+  for (const f of ['character.glb', 'character.fbx', 'palette.png', 'character.obj', 'character.mtl', 'character.vox', 'recipe.json']) assert.ok(files.has(f), f);
 });
 
 await t('CLI arg parsing', () => {
@@ -59,7 +73,9 @@ await t('CLI arg parsing', () => {
     { help: false, recipe: null, seed: 5, format: 'zip', out: 'a.zip', demoClips: false, fbx: null });
   assert.equal(parseArgs(['--help']).help, true);
   assert.equal(parseArgs(['--recipe', 'r.json', '--out', 'x']).format, 'glb');
-  assert.throws(() => parseArgs(['--format', 'obj']), /--format/);
+  assert.equal(parseArgs(['--format', 'obj']).format, 'obj');
+  assert.equal(parseArgs(['--format', 'vox']).format, 'vox');
+  assert.throws(() => parseArgs(['--format', 'stl']), /--format/);
   assert.throws(() => parseArgs(['--bogus']), /unknown argument/);
   assert.throws(() => parseArgs(['--seed']), /needs a value/);
   assert.throws(() => parseArgs(['--seed', '1', '--recipe', 'r']), /exclusive/);
