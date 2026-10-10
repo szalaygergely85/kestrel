@@ -24,7 +24,7 @@ import {
   buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim,
-  loadContentPack, createRng, prebuildTerrainMesh,
+  loadContentPack, createRng, prebuildTerrainMesh, hitSparks,
   forwardOf, DEG2RAD, hexToRgb, resolveWaterLooks, createEntityEmitters, AO_DEFAULTS,
 } from '../../engine/index.js';
 // US-047 (architecture.md section 5): pass internals + parity tooling +
@@ -119,11 +119,15 @@ import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from '.
 import { PHYSICS } from '../../engine/index.js';
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
-import { ensureInventory, validateItemDefs, migrateSword } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
+import { ensureInventory, validateItemDefs, migrateSword, addItem } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
 import { presentPickups } from './quest/pickupsView.js';
 import { createLoot, setLootApi } from './quest/sim/loot.js'; // US-091a2 (37.16.3)
 import { createRelayWake, setRelayWakeApi } from './quest/relayWake.js'; // WS1-06b: wake the road-bend relay
 import { createDialogueCtl, setDialogueApi } from './quest/dialogueCtl.js'; // DIALOGUE-01b2 (38.28)
+import { createCrystalGrant } from './quest/crystal.js'; // CH1-MOUNT: CH1-03 aether crystal after the boars
+import { createBarks } from './quest/barks.js'; // CH1-MOUNT: CH1-06 bark one-liners (Burl)
+import { createChapterCard } from './quest/chapterCard.js'; // CH1-MOUNT: CH1-09 chapter end card
+import { createNoticeView } from './ui/noticeView.js'; // CH1-MOUNT: CH1-04a notice banner
 import { createNpcTurn } from './quest/npcBear.js'; // NPC-BEAR-01 (38.28): turn-to-player
 import { LOOT_TABLE, LOOT_SEED_SALT } from './quest/sim/lootConfig.js';
 import { createToastView } from './quest/toastView.js';
@@ -422,8 +426,18 @@ let saveRelay = null;
 let markWorld = null; // QUEST-MARK-01w: the current World (set per load before gameHooks.boot)
 let titleMenuActive = true; // S8-B1-10: mirrors menuHost.active each frame (true until the first frame says otherwise); gates the loss autosave
 let deviceLostFrozen = false; // S8-B1-10 (38.10c): set once by watchDeviceLost's `freeze` hook below; gates `paused` in the frame loop
+// CH1-02 nit: area trigger per id, cached per world (compass + quest markers; no closure/find per call).
+const areaTrigCache = new Map(); let areaTrigWorld = null;
+function areaTrigger(w, id) {
+  if (w !== areaTrigWorld) { areaTrigCache.clear(); areaTrigWorld = w; }
+  let t = areaTrigCache.get(id);
+  if (t === undefined) { t = w.triggers.find((q) => q.key === 'world.' + id) || null; areaTrigCache.set(id, t); }
+  return t;
+}
+let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the content manifest)
 try {
   const questDef = await (await fetch('../content/quests/m1.quest.json')).json();
+  if (saveEnabled) { try { bearBarks = await (await fetch('../content/dialogue/bear.barks.json')).json(); } catch (e) { console.warn('[barks] bear.barks.json unavailable'); } }
   const giverDefs = [await (await fetch('../content/quests/burl.boars.quest.json')).json()]; // QG-03 (D-058): giver quests, state in the quest book
   const charKit = await (await fetch('../content/chargen/human.charkit.json')).json(); // CHARGEN-16: kit default look + hand skin tones
   saveRelay = createSaveRelay({ storage: saveStorage(), questDef, giverDefs, enabled: saveEnabled, defaultLook: charKit.defaults });
@@ -456,7 +470,7 @@ try {
         setPos(a, b, c) { x = a; y = b; z = c; push(); },
       };
     };
-    const markResolve = (id, out) => { const h = markWorld && markWorld.get(id), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && markWorld.triggers.find((q) => q.key === 'world.' + a); if (!tr) return false; const gz = markWorld.heightAt(tr.x, tr.y); out.x = tr.x; out.y = tr.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y; out.z = t.z + (MARK_TOP[id] || 1.55); return true; };
+    const markResolve = (id, out) => { const h = markWorld && markWorld.get(id), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const gz = markWorld.heightAt(tr.x, tr.y); out.x = tr.x; out.y = tr.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y; out.z = t.z + (MARK_TOP[id] || 1.55); return true; };
     registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle('questMark') });
     // QG-04: giver markers over Burl: '!' while his quest is available, '?' while ready, none while active/done (book.giverMarks)
     const gAvail = [], gReady = [];
@@ -966,7 +980,7 @@ async function runGame(mode, cinematic = null) {
       if (id === 'breach') { if (!compassBreach) compassBreach = compassFindMarker(w, 'breach'); if (!compassBreach) return false; out.x = compassBreach.x; out.y = compassBreach.y; out.z = compassBreach.z; return true; }
       if (id === 'waystone') e = w.get('endMarker');
       else if (id === 'towerDoor' || id === 'roadWest' || id === 'bendRelay') { // CH1-02: area-only world triggers
-        const tr = w.triggers.find((q) => q.key === 'world.' + id); if (!tr) return false;
+        const tr = areaTrigger(w, id); if (!tr) return false;
         out.x = tr.x; out.y = tr.y; out.z = NaN; return true;
       }
     }
@@ -1011,6 +1025,14 @@ async function runGame(mode, cinematic = null) {
   let hitSparkWire = null; // HIT-SPARK-WIRE: rebuilt on every 'world:loaded'
   let particleHooks = null; // US-053c: rebuilt on every 'world:loaded', below
   let relayWake = null; // WS1-06b: rebuilt on every 'world:loaded'
+  // CH1-MOUNT (38.37): notice banner (page lifetime) + crystal grant / barks / chapter card (rebuilt per world; only when saves are live = never in capture/bench/compare/?at=)
+  const notice = createNoticeView();
+  let crystal = null, barks = null, chapterCard = null, ch1Hidden = true;
+  window.__debug.notice = notice; window.__debug.ch1Hidden = () => ch1Hidden; // tools/verify-relay-wake.mjs
+  engine.events.on('beast:died', (p) => { // crystal burst lands where the last boar fell
+    if (!crystal || !p || typeof p.id !== 'string') return;
+    const h = engine.world.get(p.id), t = h && h.data && h.data.transform; if (t) crystal.noteBoar(t.x, t.y, t.z);
+  });
   let loot = null; // US-091a2 (37.16.3): rebuilt on every 'world:loaded', after beasts + the pack
   let toasts = null; // US-091a2: the loot toast view, rebuilt with loot
   let invView = null; // US-091b: the pack screen (`I`), rebuilt with the pack
@@ -1241,25 +1263,38 @@ async function runGame(mode, cinematic = null) {
         inventoryOf: () => playerHandle.data.components.inventory || null }) : null;
       setLootApi(loot);
       // WS1-06b: one [E] interactable per kind:'relay' point (crystal-gated wake; woken ones restore awake from world.state).
-      relayWake = createRelayWake({ world, palette: assets.palette, emit: (id, kind, p) => gameHooks.emitSimple('prop:touched', id, kind, p) });
+      relayWake = createRelayWake({ world, palette: assets.palette, notice: saveEnabled ? notice : null, emit: (id, kind, p) => gameHooks.emitSimple('prop:touched', id, kind, p) });
       setRelayWakeApi(relayWake); window.__debug.relayWake = relayWake; // tools/verify-relay-wake.mjs
       // DIALOGUE-01b2 (38.28): box + runner; NPCs with a `dialogue` component get an [E] Talk interactable (none until NPC-BEAR-01 places one).
       if (dialogueCtl) dialogueCtl.dispose();
       dialogueCtl = createDialogueCtl({ world, dialogues: bundle.dialogues, events: engine.events, style: window.ASSETS.uiStyle.dialogue,
         jawOpenDeg: window.ASSETS.bearFx && window.ASSETS.bearFx.talk ? window.ASSETS.bearFx.talk.jawMaxDeg : undefined, // jaw hinge: rx opens, 0..jawMaxDeg (voxel_bear.js header)
         book: () => (saveRelay ? saveRelay.quest.book : null), // QG-03: `q.*` dialogue keys -> quest book
+        questFlag: saveRelay ? (k) => saveRelay.quest.questFlag(k) : undefined, // CH1-06: `s.*` dialogue keys
         onFlag: (k, v) => { if (k.charCodeAt(0) !== 113 || k.charCodeAt(1) !== 46) gameHooks.emitSimple('flag:set', 'dlg.' + k, v); } });
       setDialogueApi(dialogueCtl);
       bearTurn = createNpcTurn(world, 'bear'); // NPC-BEAR-01: null when the world has no bear
       compassWorld = world; compassBreach = null; compassBookVer = -1; compassTick = 0; // COMPASS-02: re-resolve against the new world
       if (bearTurn) dialogueCtl.addNpc('bear');
+      crystal = barks = chapterCard = null;
+      if (saveEnabled && saveRelay) { // CH1-MOUNT: all three need the quest relay (flags + book)
+        const rq = saveRelay.quest, tmsg = () => window.ASSETS.items && window.ASSETS.items.toast && window.ASSETS.items.toast.messages && window.ASSETS.items.toast.messages.packFull;
+        crystal = createCrystalGrant({ world, questFlag: (k) => rq.questFlag(k),
+          addItem: (id) => { const inv = playerHandle && playerHandle.data.components.inventory; return inv && itemDefs ? addItem(inv, itemDefs, id, 1) : 0; },
+          burst: (x, y, z) => { try { hitSparks(engine.particles, x, y, z + 0.3, 0, 0, 1, 24, 2); } catch (e) { /* hit sparks not defined: no burst */ } }, // hue 2 = aether cyan
+          toast: () => { const m = tmsg(); if (toasts && m) toasts.say('A crystal glints where the boar fell.', m.fg); } }); // story.md toast.crystal.found
+        crystal.check(rq.book.statusOf('burl.boars'));
+        if (bearBarks) barks = createBarks({ world, data: bearBarks, questFlag: (k) => rq.questFlag(k), dialogue: dialogueCtl, style: window.ASSETS.uiStyle.dialogue });
+        chapterCard = createChapterCard({ world, openNote: (id) => noteRead({ world, def: { noteId: id } }), isNoteOpen, setFlag: (k, v) => rq.questFlag(k, v) });
+      }
       if (toasts) toasts.dispose();
       toasts = itemDefs ? createToastView(engine.events, window.ASSETS.items.toast, itemDefs, assets.palette.rgb) : null;
       if (saveRelay) { // QG-03: book events -> seam + toasts (the reward, if any, is granted from book.lastReward; Burl's quest has none - owner pick)
         const tv = toasts, msg = window.ASSETS.items.toast && window.ASSETS.items.toast.messages && window.ASSETS.items.toast.messages.packFull;
-        saveRelay.quest.onSection = (title) => { if (tv && msg) tv.say('Quest complete: ' + title, msg.fg); }; // CH1-02: live section completion only
+        saveRelay.quest.onSection = (title) => { if (tv && msg) tv.say('Quest complete: ' + title, msg.fg); if (chapterCard && saveRelay.quest.done) chapterCard.trigger(); }; // CH1-02: live section completion only
         saveRelay.quest.book.onChange = (name, id) => {
           gameHooks.emitSimple(name, id);
+          if (name === 'quest:ready' && id === 'burl.boars' && crystal) crystal.check('ready'); // CH1-03
           if (tv && msg) { if (name === 'quest:accepted') tv.say('Quest accepted', msg.fg); else if (name === 'quest:done') tv.say('Quest complete', msg.fg); }
         };
       }
@@ -1516,6 +1551,7 @@ async function runGame(mode, cinematic = null) {
       && typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
 
     // US-091b: the pack screen. Steps while paused too; eats every key edge while open (so M / S / N stay quiet).
+    if (barks && mode === 'world' && !ending && !ch1Hidden) barks.step(dt); // CH1-06: early, before the dialogue step
     if (dialogueCtl && mode === 'world' && playerHandle && !ending) dialogueCtl.step(dt, input, look ? look.locked : undefined); // DIALOGUE-01b2: early, so the lock covers the closing key press
     if (invView && mode === 'world' && playerHandle) {
       invView.step(dt, input, !ending && !(craftView && craftView.isOpen) && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look
@@ -1535,7 +1571,7 @@ async function runGame(mode, cinematic = null) {
       } else if (gameKeys.questLog && input.pressed(gameKeys.questLog) && !invOpen0 && !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look && look.locked
         && !(vitals && (vitals.dead || vLocked())) && !(questUiActive && wakeOut.inputLocked) && !(dialogueCtl && dialogueCtl.open)) {
         const bk = saveRelay.quest.book;
-        if (!qlView || qlBook !== bk) { qlBook = bk; qlView = createQuestLogScreen(bk, { style: window.ASSETS.uiStyle && window.ASSETS.uiStyle.menu }); }
+        if (!qlView || qlBook !== bk) { qlBook = bk; qlView = createQuestLogScreen(bk, { style: window.ASSETS.uiStyle && window.ASSETS.uiStyle.menu, onJournal: () => noteRead({ world: engine.world, def: { noteId: 'journalCh1' } }) }); }
         qlWasLocked = look.locked; qlView.open(); input.consumePressed();
       }
     }
@@ -1565,8 +1601,10 @@ async function runGame(mode, cinematic = null) {
       if (up) { for (const code of PAUSE_KEYS) if (input.pressed(code) && pauseMenu.handleKey(code)) { input.consumePressed(); break; } }
     }
     updateSettings(dt, input, { assets, engine, look, canOpen: false });
-    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked();
+    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked() || !!(chapterCard && chapterCard.isLocked());
     titleMenuActive = !!(menuHost && menuHost.active);
+    ch1Hidden = isCaptureOrBench || !saveEnabled || titleMenuActive || ending || invOpen || cardOpen || isMapOpen() || isSettingsOpen() || isNoteOpen() || qlIsOpen() || !!(dialogueCtl && dialogueCtl.open) || !!(vitals && vitals.dead); // CH1-MOUNT: notices/barks hidden under any menu/dialogue
+    notice.update(dt, ch1Hidden); if (chapterCard && !ending) chapterCard.update(dt); // CH1-04a / CH1-09
     const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || ((invOpen || cardOpen) && !ending)));
     { // COMPASS-02 (D-061): retarget on book change + ~2 Hz, step the needle, hide rule (menus/pack/log/map/dialogue/death/title/capture modes/ending)
       const bk = saveRelay && saveRelay.quest.book;
@@ -1950,6 +1988,7 @@ async function runGame(mode, cinematic = null) {
       if (invView) invView.pushDim(sceneDim); // US-091b
       if (craftView) craftView.pushDim(sceneDim); // MAIN-WIRE-01
       if (chestHook) chestHook.card.pushDim(sceneDim); // S8-B1-04
+      if (chapterCard) chapterCard.pushDim(sceneDim); // CH1-09
       pushNoteDim(sceneDim); // READ-01: whole-scene x 0.35 while a note is open (no-op otherwise), before applySceneDim/setSceneDim below
       if (questUiActive && !ending) {
         const mapPanel = getMapPanel();
@@ -2005,6 +2044,9 @@ async function runGame(mode, cinematic = null) {
       // `window.ASSETS.particles`/`window.ASSETS.waterLooks` above).
       drawNotePanel(ui, window.ASSETS.notes, assets.uiStyle);
       if (dialogueCtl) dialogueCtl.draw(ui, fb.timeSec); // DIALOGUE-01b2
+      if (barks && !ch1Hidden) barks.draw(ui, fb.timeSec); // CH1-06
+      notice.draw(ui, ch1Hidden); // CH1-04a
+      if (chapterCard) chapterCard.draw(ui); // CH1-09
       if (invView) invView.draw(ui); // US-091b: the pack screen, over HUD + toast
       if (craftView) craftView.draw(ui); // MAIN-WIRE-01
       if (qlIsOpen()) qlView.draw(ui); // QG-05

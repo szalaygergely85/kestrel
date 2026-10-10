@@ -46,6 +46,8 @@ try {
   assert.ok(await evaluate(cdp, 'window.__debug.relayWake.hintLeft > 0'), 'hint toast shown');
   await evaluate(cdp, "window.__debug.world.state['aether.attuned'] = true");
   await evaluate(cdp, "window.__debug.relayWake.interact('ws_roadBend')");
+  assert.ok(await evaluate(cdp, 'window.__debug.notice.active && window.__debug.notice.title.length > 0'), 'CH1-MOUNT: wake pushes the notice banner (title ' + await evaluate(cdp, 'window.__debug.notice.title') + ')');
+  assert.equal(await evaluate(cdp, 'window.__debug.relayWake.toastLeft'), 0, 'no old toast when the notice view is mounted');
   const waking = await st(); assert.equal(waking.anim, 'wake'); assert.equal(waking.woken, true);
   await evaluate(cdp, "(()=>{const rw=window.__debug.relayWake,c=window.__debug.world.get('relayBend').data.components.voxel;for(let i=0;i<180;i++){rw.step(1/60,null);if(c.anim==='wake'&&i===70)c.playing=false;}})()");
   const awake = await st(); assert.deepEqual(awake, { anim: 'awake', light: true, woken: true, phase: 2 }, 'awake after the wake');
