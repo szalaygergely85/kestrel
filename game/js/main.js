@@ -1358,7 +1358,8 @@ async function runGame(mode, cinematic = null) {
         if (bw) {
           const bt = world.get('bear').data.transform;
           escort = createBurlEscort({ world, walk: bw, questFlag: (k) => rq.questFlag(k), barks, id: 'bear', x: () => bt.x, y: () => bt.y,
-            dialogueOpen: () => dialogueCtl.open, afterLeave: () => rq.state.completed.includes('leave'), requestOpen: nearTalk, noticeBusy: () => notice.active });
+            dialogueOpen: () => dialogueCtl.open, afterLeave: () => rq.state.completed.includes('leave'), requestOpen: nearTalk, noticeBusy: () => notice.active,
+            restore: () => dialogueCtl.addNpc('bear'), hideSafe: true }); // QL-05: Burl's home switch re-adds her [E] Talk
           escort.load();
         }
         window.__debug.escort = escort; // tools/verify-ch1-mount.mjs
@@ -1653,7 +1654,7 @@ async function runGame(mode, cinematic = null) {
       } else if (gameKeys.questLog && input.pressed(gameKeys.questLog) && !invOpen0 && !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look && look.locked
         && !(vitals && (vitals.dead || vLocked())) && !(questUiActive && wakeOut.inputLocked) && !(dialogueCtl && dialogueCtl.open)) {
         const bk = saveRelay.quest.book;
-        if (!qlView || qlBook !== bk) { qlBook = bk; qlView = createQuestLogScreen(bk, { style: window.ASSETS.uiStyle && window.ASSETS.uiStyle.menu, onJournal: () => noteRead({ world: engine.world, def: { noteId: 'journalCh1' } }) }); }
+        if (!qlView || qlBook !== bk) { qlBook = bk; qlView = createQuestLogScreen(bk, { style: window.ASSETS.uiStyle && window.ASSETS.uiStyle.menu, giverName: (id) => (id === 'bear' ? 'Burl' : id), onJournal: () => noteRead({ world: engine.world, def: { noteId: 'journalCh1' } }) }); }
         qlWasLocked = look.locked; qlView.open(); input.consumePressed();
       }
     }

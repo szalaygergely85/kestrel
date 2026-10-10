@@ -26,7 +26,14 @@ export function createQuestPickups({ getBook, feed, defs }) {
   const hook = {
     onBoot(c) {
       ctx = c; props = []; tick = 0; ops = null;
-      c.world.forEachEntity((e, id) => { const q = e.components && e.components.questPickup; if (q && e.transform) props.push({ id, tr: e.transform, item: q.item, n: q.n || 1 }); });
+      c.world.forEachEntity((e, id) => {
+        const q = e.components && e.components.questPickup; if (!q || !e.transform) return;
+        props.push({ id, tr: e.transform, item: q.item, n: q.n || 1 });
+        // QL-05: "[E] Pick" prompt (the take itself stays in onTick; the behaviour 'pickup.take' is a no-op that only shows the prompt)
+        if (!c.world.addInteractable) return;
+        c.world.removeInteractable('qp.' + id);
+        c.world.addInteractable({ key: 'qp.' + id, name: 'pickup.take', x: e.transform.x, y: e.transform.y, z: e.transform.z + 0.3, radius: REACH, prompt: '[E] Pick', def: { pickupId: id } });
+      });
     },
     onTick() {
       if (!ctx || !ctx.player) return;
@@ -42,7 +49,7 @@ export function createQuestPickups({ getBook, feed, defs }) {
       if (best < 0) return;
       const pr = props[best];
       if (addItem(inv, defs, pr.item, pr.n) < 1) return; // pack full: stays in the world
-      ctx.world.remove(pr.id);
+      ctx.world.remove(pr.id); if (ctx.world.removeInteractable) ctx.world.removeInteractable('qp.' + pr.id);
       props.splice(best, 1);
       if (ctx.events) ctx.events.emit('inventory:added', { id: pr.item, n: pr.n });
       sync();
