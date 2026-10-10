@@ -15,6 +15,7 @@
 
 import { World } from '../world/World.js';
 import { integrate } from './integrate.js';
+import { boundsOvershoot } from './bounds.js';
 import { isSectorPassable, sectorOrOutside } from './capsule.js';
 import { PHYSICS_DEFAULTS } from './config.js';
 import paletteMod from '../../design/palette.js';
@@ -271,7 +272,7 @@ function runSlope(deg, forwardSign, steps = 400) {
 {
   const world = World.load(assets.world('world_m1'), assets, {});
   ok('world_m1 near band ready before the spawn test', world.terrain.nearReady === true);
-  const b = world.bounds;
+  const b = world.bounds && world.bounds.parts ? world.bounds.parts[0] : world.bounds; // WS1-04: world_m1 bounds are a union; spawn inside the tower circle part
   ok('world_m1 has bounds (23.2 content)', !!b);
 
   const rand = mulberry32(0xC0FFEE);
@@ -320,8 +321,8 @@ function runSlope(deg, forwardSign, steps = 400) {
       const g = world.floorAt(ent.transform.x, ent.transform.y);
       const below = g - 0.01 - ent.transform.z;
       if (below > worstBelow) worstBelow = below;
-      const d = Math.hypot(ent.transform.x - b.x, ent.transform.y - b.y);
-      if (d > b.r + 1e-6) sawOutsideBounds = true;
+      // WS1-04: the walk bound is a union (circle + road capsules); a spawn may legally wander into a capsule part
+      if (boundsOvershoot(world.bounds, ent.transform.x, ent.transform.y, 0) > 1e-6) sawOutsideBounds = true;
     }
   }
 

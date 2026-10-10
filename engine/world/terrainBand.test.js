@@ -29,7 +29,7 @@ let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 const { assets } = await loadTestAssets();
-const def0 = assets.world('world_m1');
+const def0 = (() => { const d = JSON.parse(JSON.stringify(assets.world('world_m1'))); delete d.terrainBand; return d; })(); // WS1-04 authored a band on world_m1; this case tests 'absent'
 const heapMB = () => { if (globalThis.gc) globalThis.gc(); return process.memoryUsage().heapUsed / 1048576; };
 
 // --- absent field = today's 3x3 (key + bake unchanged) ---------------------
