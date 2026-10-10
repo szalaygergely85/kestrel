@@ -33,7 +33,7 @@ import notesMod from '../../../design/models/notes.js'; // READ-01: ASSETS.notes
 import farTowerMod from '../../../design/models/far_tower.js';
 import ferrumLightsMod from '../../../design/models/ferrum_lights.js';
 import terrainMod from '../../../design/levels/overworld_far.js';
-import './index.js'; // registers every quest.* behaviour (lantern.take, quest.end, ...)
+import './index.js'; // registers every quest.* behaviour (door.unbar, quest.end, ...)
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 import { dynamicTowerAssets } from '../../../tools/testing/dynamic-tower.mjs';
 import { makeOk } from '../../../engine/test/assert.js';
@@ -71,10 +71,12 @@ const player = world.get('player');
 // ---------------------------------------------------------------------------
 // 1. Take the lamp.
 // ---------------------------------------------------------------------------
-const lanternRec = world.interactables.find((r) => r.id === 'lantern');
-ok('1a: world has the lantern interactable', !!lanternRec);
-world.fireInteraction(lanternRec.name, { engine: {}, def: lanternRec.def, entity: world.get(lanternRec.propId), actor: player });
-ok('1b: lantern taken', world.state['tower.lantern.taken'] === true);
+// CH1-D1a: no lamp pickup any more; the mutation under test is the ground-floor SW door (door.unbar, needs the sword).
+const doorRec = world.interactables.find((r) => r.id === 'door');
+ok('1a: world has the door interactable (door.unbar)', !!doorRec && doorRec.def.interact === 'door.unbar');
+world.state['tower.sword.taken'] = true;
+world.fireInteraction(doorRec.name, { engine: {}, def: doorRec.def, entity: world.get(doorRec.propId), actor: player });
+ok('1b: door unbarred (tower.door.open + doorBar variant open)', world.state['tower.door.open'] === true && world.get(doorRec.propId).getComponent('voxel').variant === 'open');
 
 // ---------------------------------------------------------------------------
 // 2. Upper stair starts open without a lever or dynamic gate.
@@ -130,7 +132,7 @@ ok('6a: serialize(deserialize(initialState)) deep-equals initialState', deepEqua
 // ---------------------------------------------------------------------------
 // 7. A world rebuilt from `initialState` has the SAME tower packed.geom as
 // a totally independent fresh World.load - the live world's mutations
-// (lantern.take, quest.end) never touched the shared def/legend objects.
+// (door.unbar, quest.end) never touched the shared def/legend objects.
 // ---------------------------------------------------------------------------
 const restored = deserialize(initialState, assets);
 const restoredTower = restored.structures.find((s) => s.id === 'tower');
