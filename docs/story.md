@@ -614,6 +614,7 @@ Texts for D-062 / architecture 38.37 (PC-B writer, 2026-10-10). Source: `docs/ch
 | `hint.exit` | story hint | `The top. Look west through the breach.` | 38 |
 
 Notes:
+- `toast.door.open` (PC-B writer, owner-authorised while PC-A offline): fires once when `door.unbar` succeeds. `game/js/quest/doorUnbar.js` does not show it yet (code follow-up).
 - The bar is jammed, not locked, so the sword is what pries it. That explains the `tower.sword.taken` gate without saying it.
 - `hint.burner` replaces "Take what light you can." Suggested `skipIfState`: `tower.sword.taken`, so it stays quiet on the way back down. That is a code choice for CH1-02.
 - `hint.exit` no longer says the breach is a way out or that the chapter ends there. The scrawl `NOT NOTHING` stays on the breach parapet, where it now marks the overlook.
@@ -709,6 +710,9 @@ Notes:
 | `bear.walk2` (4) | YOU (bark) | `Who built them?` | 15 |
 | `bear.walk2` (5) | BURL (bark) | `Good question.` | 14 |
 | `bear.walk2` (6) | BURL (bark) | `The stones aren't telling.` | 26 |
+| `bear.following` | BURL | `Keep up, sky-cub. The stone won't come to us.` | 45 |
+
+`bear.following` (PC-B writer, owner-authorised while PC-A offline): talking to Burl while `s.burl.follow` is set and before he arrives. One line, no flags. Replaces the "NEEDS WRITER" line in `content/dialogue/bear.dialogue.json`.
 
 `bear.follow` is used both by the hand-in flow and by entry 4 (`q.burl.boars.done`, not following yet). Its last node sets `s.burl.follow`.
 
@@ -774,6 +778,9 @@ Notes:
 | `notice.relay` (1) | notice | `Travel unlocked.` | 16 |
 | `notice.relay` (2) | notice | `You can now travel between` | 26 |
 | `notice.relay` (3) | notice | `awakened Waystones.` | 19 |
+| `hint.relay.nocrystal` | toast | `Cold stone. Your hands are not enough.` | 38 |
+
+`hint.relay.nocrystal` (PC-B writer, owner-authorised while PC-A offline): E on a dormant relay or the dormant meadow Waystone without `aether.attuned`. Used for both kinds, so it says "stone", not "relay". It hints that an object is needed without naming the crystal the player may not have yet. Replaces the placeholder `hint.relay.nocrystal.PLACEHOLDER` / "The relay stays dark." in `game/js/quest/relayWake.js`.
 
 **Stage note (replaces "Wick holds his lamp beside the crystal"):** Wick holds the teal crystal beside the dormant bowl. The bowl begins to hum, and teal light flows through the old brass.
 
