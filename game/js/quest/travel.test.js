@@ -66,4 +66,18 @@ function rig(over = {}) {
   for (let i = 0; i < 100000; i++) { q.tr.step(0); q.tr.alpha; }
   assert.ok(process.memoryUsage().heapUsed - h0 < 2e6, 'step is allocation-free');
 }
+{ // WS2-05: fade-in waits for the terrain band (fake world); no bandReady = byte-identical timing
+  let ready = false, polls = 0; const dt = 1 / 60;
+  const r = rig({ bandReady: () => { polls++; return ready; } });
+  r.tr.request('b'); while (r.tr.phase === 'out') r.tr.step(dt);
+  assert.equal(r.tr.phase, 'in');
+  for (let i = 0; i < 120; i++) r.tr.step(dt); // 2 s with the band still baking
+  assert.equal(r.tr.phase, 'in'); assert.equal(r.tr.alpha, 1, 'stays black while waiting'); assert.ok(r.tr.inputLocked); assert.ok(polls >= 120);
+  ready = true; let n = 0; while (r.tr.phase === 'in') { r.tr.step(dt); n++; assert.ok(n < 100); }
+  assert.ok(Math.abs(n * dt - 0.35) <= dt + 1e-9, 'fade-in runs its full 0.35 s once ready'); assert.equal(r.log.tele.length, 1);
+  const q = rig({ bandReady: () => true }); q.tr.request('b'); q.tr.step(0.36); global.gc && global.gc();
+  const h0 = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 100000; i++) { q.tr.step(0); q.tr.alpha; }
+  assert.ok(process.memoryUsage().heapUsed - h0 < 2e6, 'step with bandReady is allocation-free');
+}
 console.log('travel.test.js ok');

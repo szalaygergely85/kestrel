@@ -17,6 +17,7 @@ const smooth = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u));
  * @param {() => ({x:number,y:number})} o.playerPos
  * @param {(pose) => void} o.teleport  at black: transform, zero velocity, re-ground, hzb/beasts/targeting/vitals resets
  * @param {(id:string, pose) => void} o.arrive  at black, after teleport: target becomes the respawn point (touch = heal + save)
+ * @param {() => boolean} [o.bandReady]  WS2-05: false while the target's terrain band is still baking; the fade-in waits (screen stays black)
  * @param {(pose) => boolean} [o.inBounds]  target must be inside the walk bounds (else refused)
  */
 export function createTravel(o) {
@@ -50,6 +51,7 @@ export function createTravel(o) {
           phase = 'in'; t = 0;
         }
       } else if (phase === 'in') {
+        if (o.bandReady && !o.bandReady()) return; // black until the band is ready
         t += dt;
         if (t >= fadeSec) { phase = 'idle'; t = 0; targetId = null; targetPose = null; }
       }

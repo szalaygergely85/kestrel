@@ -1105,11 +1105,13 @@ async function runGame(mode, cinematic = null) {
       t.x = pose.x; t.y = pose.y; t.z = pose.z; t.yawDeg = pose.yawDeg; // anchor = a known-safe spot (the pose at the touch)
       if (b) { b.vx = 0; b.vy = 0; b.vz = 0; b.fallDistance = 0; }
       hzb.invalidate('travel');
+      if (engine.world.ensureBandFor) engine.world.ensureBandFor(pose.x, pose.y); // WS2-05 (38.38): band for the target while black
       if (beasts) beasts.resetAll();
       if (targeting) targeting.clear();
       if (look) { look.clearLock(); look.yawDeg = t.yawDeg; look.pitchDeg = t.pitchDeg; }
       if (vitals) vitals.clearSafe();
     },
+    bandReady: () => !(engine.world.terrainBands && engine.world._bandPend >= 0), // WS2-05: fade-in waits for the band (ensureBandFor is synchronous, so true at once)
     arrive: (id, pose) => { if (waystoneWire && waystoneWire.sim) waystoneWire.sim.touch(id, pose); }, // respawn point = target (heal + save)
   });
   const wakeOut = { blackA: 1, blinkOpen: 0, eyeH: 0, inputLocked: true, titleState: 'none', titleA: 0, wakeDoneAtSec: 0, titleDoneAtSec: 0 };
@@ -1144,6 +1146,7 @@ async function runGame(mode, cinematic = null) {
     // way the first load did, with no separate hand-written reset path
     // (architecture.md 7.4's "module-level game variables are reset only in
     // the 'world:loaded' handler" rule).
+    engine.events.on('world:band', () => hzb.invalidate('band')); // WS2-05: near/far seam jumped -> cut the HZB + stable history
     engine.events.on('world:loaded', (evt) => {
       const world = evt.world;
       bootMark('world:loaded (world built, handler start)');
@@ -1247,7 +1250,7 @@ async function runGame(mode, cinematic = null) {
       if (vitals) vitals.dispose(); // Q9 item 1a: drop the old world's `combat:hit` listener before a new one is added below
       hurtFx.reset();
       vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting,
-        respawnPose: () => { hzb.invalidate('respawn'); return gameHooks.respawn(); }, // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
+        respawnPose: () => { hzb.invalidate('respawn'); const rp = gameHooks.respawn(); if (rp && world.ensureBandFor) world.ensureBandFor(rp.x, rp.y); return rp; }, // WS2-05: band for the respawn pose // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
         onDied: (t) => { gameHooks.emitSimple('player:died', t.x, t.y, t.z); deathFlow.died(performance.now()); },
         syncFacing: (t) => {
           if (!look) return;
@@ -1364,6 +1367,7 @@ async function runGame(mode, cinematic = null) {
         Object.assign(startT, { x: atParts[0], y: atParts[1], z: atParts[2], yawDeg: atParts[3] || 0, pitchDeg: atParts[4] || 0 });
         playerHandle.data.components.body.peakZ = startT.z;
       }
+      if (world.ensureBandFor) world.ensureBandFor(startT.x, startT.y); // WS2-05: band for the start/saved pose (no-op without terrainBands)
       hzb.invalidate('world-load'); // new world / restart / title New+Continue / ?at / ?pose: the start pose is a camera cut
       const waterfallView = worldDef.name === 'waterfall_test' && waterfallPreset?.views[params.get('waterfallview')];
       if (waterfallView) {
@@ -1608,6 +1612,7 @@ async function runGame(mode, cinematic = null) {
     syncMapQuestMarks();
     const invOpen = !!(invView && invView.isOpen) || !!(craftView && craftView.isOpen) || qlIsOpen(); // MAIN-WIRE-01: craft list locks input / pauses like the pack
     const cardOpen = !!(chestHook && chestHook.card.isOpen); // S8-B1-04: item-get card gates input same as invOpen
+    if (mode === 'world' && playerHandle && engine.world.terrainBands) { const pt = playerHandle.data.transform; engine.world.streamBand(pt.x, pt.y, 2); } // WS2-05 (38.38): near-band streaming, player pose only, <= 2 ms
     // ---- US-015: wake timeline + map card (world_m1 only, questUiActive) ----
     let uiLocked = false;
     let mPressedEdge = false;
