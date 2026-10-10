@@ -14,7 +14,7 @@ import { buildTriggers } from './triggers.js';
 import { clamp01 } from '../core/math.js';
 import { makeFrame, localToWorld, localDirToWorld, QUARTER_COS, QUARTER_SIN, frameBBox } from '../core/transform.js';
 import { gridLocal } from './gridLocal.js';
-import { buildWorldColliders, buildStaticMeshCollider, buildTrunkCollider, buildDetailCollider, buildPropCollider, refitDynCollider } from './colliders.js';
+import { buildWorldColliders, buildStaticMeshCollider, buildTrunkCollider, buildDetailCollider, buildPropCollider, buildKinematicCollider, moveKinematicPrism, refitDynCollider } from './colliders.js';
 import { cosSinDeg } from '../voxel/voxelPose.js';
 import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastColliders, FLOOR_NONE } from '../physics/meshCollide.js';
 import { pointBlocked } from './interaction.js';
@@ -120,8 +120,8 @@ function fillMeshBbox(bbox, mesh, frame, k) {
 
 // ED-MESH-1d: cheap key of everything the near-band bake reads from the placed structures
 // (`structureBlend`: bbox + ringHAt = outer-ring sector floorH + frame z). Perimeter cells only.
-function nearBandKey(w, cx, cy) {
-  let k = `${cx},${cy}`;
+function nearBandKey(w, cx, cy, cw = 3, ch = 3) {
+  let k = w.terrainBand ? `${cx},${cy},${cw}x${ch}` : `${cx},${cy}`; // WS1-02: an authored rect is part of the key (absent = old key)
   for (const p of w.structures) {
     if (p.kind === 'mesh') continue;
     const lv = p.level, W = lv.width, H = lv.height, b = p.bbox;
@@ -138,8 +138,35 @@ function nearBandKey(w, cx, cy) {
 // this story). Validated up front like `validateHorizon` below (throws,
 // never silently dropped) and returns a plain copy (content, not state -
 // never mutated at runtime).
+// WS1-02 (arch 38.36): `world.terrainBand {cx0, cy0, cw, ch}` - the near terrain band as a chunk rect
+// (ints, cw/ch 1..6). Absent = null = the auto-centred 3x3. Validated up front, returned as a plain copy.
+function validateTerrainBand(b) {
+  if (b == null) return null;
+  if (typeof b !== 'object') throw new Error('World.load: terrainBand must be an object {cx0, cy0, cw, ch}');
+  for (const k of ['cx0', 'cy0']) if (!Number.isInteger(b[k]) || b[k] < 0) throw new Error(`World.load: terrainBand.${k} must be an integer >= 0`);
+  for (const k of ['cw', 'ch']) if (!Number.isInteger(b[k]) || b[k] < 1 || b[k] > 6) throw new Error(`World.load: terrainBand.${k} must be an integer 1..6`);
+  return { cx0: b.cx0, cy0: b.cy0, cw: b.cw, ch: b.ch };
+}
+
 function validateBounds(b) {
   if (b == null) return null;
+  if (b.shape === 'union') {
+    if (!Array.isArray(b.parts) || b.parts.length < 1 || b.parts.length > 8) throw new Error('World.load: bounds.parts must be an array of 1..8 parts');
+    const fin = (v) => typeof v === 'number' && isFinite(v);
+    const parts = b.parts.map((p, i) => {
+      const at = `bounds.parts[${i}]`;
+      if (!p || (p.shape !== 'circle' && p.shape !== 'capsule')) throw new Error(`World.load: ${at}: unknown shape "${p && p.shape}"`);
+      const o = { shape: p.shape };
+      for (const key of (p.shape === 'circle' ? ['x', 'y'] : ['ax', 'ay', 'bx', 'by'])) {
+        if (!fin(p[key])) throw new Error(`World.load: ${at}.${key} must be a finite number`);
+        o[key] = p[key];
+      }
+      if (!fin(p.r) || p.r <= 0) throw new Error(`World.load: ${at}.r must be a finite number > 0`);
+      o.r = p.r;
+      return o;
+    });
+    return { shape: 'union', parts };
+  }
   if (b.shape !== 'circle') throw new Error(`World.load: bounds: unknown shape "${b.shape}"`);
   if (typeof b.x !== 'number' || !isFinite(b.x)) throw new Error('World.load: bounds.x must be a finite number');
   if (typeof b.y !== 'number' || !isFinite(b.y)) throw new Error('World.load: bounds.y must be a finite number');
@@ -192,6 +219,8 @@ export class World {
     this.decals = []; // DECAL-01: derived wall text, never serialized.
     this.detailMeshes = null; // TREES-LP-c: {meshId: MeshData} for ground-cover species with `mesh`
     this.detail = null; // ENV-01a1: derived ground detail, never serialized.
+    this._kinCollider = null;
+    this._kinSlot = new Map(); // CH1-E2: kinematic entity id -> prism slot in 'npcs:kinematic'
     this._groundSnap = []; // ED-TERRAIN-1b: [{id, x, y}] of `z: 'ground'` props/entities, re-snapped after a terrain stroke.
     this._detailCtx = null; // ED-TERRAIN-1b: {cfg, keepOut} the detail scatter was built with.
     // ME-11a (docs/architecture.md 27.18): 'grid' (default, unchanged
@@ -208,6 +237,7 @@ export class World {
     // `null` (unbounded - every world before this story). Content, not
     // state; set once by `World.load` from `def.bounds`.
     this.bounds = null;
+    this.terrainBand = null; // WS1-02: authored near-band chunk rect or null (auto 3x3)
     // US-016 D-011 addendum (architecture.md 14.4 item 13): horizon
     // billboards - plain data, content not state (never mutated at
     // runtime), not entities (they have no world position - placed by
@@ -356,6 +386,7 @@ export class World {
       }
     }
     w.bounds = validateBounds(def.bounds);
+    w.terrainBand = validateTerrainBand(def.terrainBand); // WS1-02 (null = auto 3x3)
     // US-138 (32.5): built once here, after bounds, before the sun block
     // below (order doesn't matter to wind itself - it reads nothing else off
     // `w`). `def.wind` may be absent -> `createWind(null, ...)` -> calm.
@@ -441,11 +472,14 @@ export class World {
       }
       const cx = Math.floor((bx0 + bx1) / 2 / w.terrain.chunkSize);
       const cy = Math.floor((by0 + by1) / 2 / w.terrain.chunkSize);
+      // WS1-02 (38.36): authored `terrainBand` rect (absent = the auto-centred 3x3, byte-identical).
+      const tb = w.terrainBand;
+      const bcx0 = tb ? tb.cx0 : cx - 1, bcy0 = tb ? tb.cy0 : cy - 1, bcw = tb ? tb.cw : 3, bch = tb ? tb.ch : 3;
       // ED-MESH-1d: a reused Terrain whose band was baked for the same centre and the same
       // structure footprints (bbox + z + outer-ring floorH, all `ringHAt` can read) is still valid.
-      const key = nearBandKey(w, cx, cy) + `|realTrees:${w.terrain.realTrees}`;
+      const key = nearBandKey(w, tb ? bcx0 : cx, tb ? bcy0 : cy, bcw, bch) + `|realTrees:${w.terrain.realTrees}`;
       if (!(w.terrain.nearReady && w.terrain._nearKey === key)) {
-        w.terrain.bakeNearBand(cx, cy);
+        w.terrain.bakeNearBand(bcx0, bcy0, bcw, bch);
         w.terrain._nearKey = key;
       }
     }
@@ -943,7 +977,8 @@ export class World {
   /** PROP-COLLIDE-01: load/committed edit only; one BVH, never per drag frame. */
   rebuildPropColliders() {
     if (this.physicsMode !== 'mesh') return;
-    const shapes = [], cs = new Float64Array(2);
+    const shapes = [], kin = [], cs = new Float64Array(2);
+    this._kinSlot = new Map();
     for (const s of this.structures) {
       if (s.kind === 'mesh') continue;
       for (const p of s.level.def.props || []) {
@@ -991,14 +1026,36 @@ export class World {
       if (!cc || e.type === 'prop') continue;
       if (!Number.isFinite(cc.r) || cc.r <= 0 || !Number.isFinite(cc.h) || cc.h <= 0) throw new Error(`World.load: entity "${id}" invalid collider {r,h}`);
       const t = e.transform;
-      shapes.push({ kind: 1, x: t.x, y: t.y, zc: t.z + cc.h / 2, hx: 0, hy: 0, hz: 0, r: cc.r, h: cc.h, yawRad: 0 });
+      const shape = { kind: 1, x: t.x, y: t.y, zc: t.z + cc.h / 2, hx: 0, hy: 0, hz: 0, r: cc.r, h: cc.h, yawRad: 0 };
+      if (cc.kinematic === true) { kin.push(shape); this._kinSlot.set(id, kin.length - 1); } // CH1-E2
+      else shapes.push(shape);
     }
-    const collider = buildPropCollider(shapes, shapes.length);
-    const index = this.colliders.findIndex(c => c.id === 'props:static');
-    if (index >= 0) {
-      if (collider) this.colliders[index] = collider;
-      else this.colliders.splice(index, 1);
-    } else if (collider) this.colliders.push(collider);
+    if (kin.length > 8) throw new Error('World.load: at most 8 kinematic entity colliders');
+    const put = (cid, collider) => {
+      const index = this.colliders.findIndex(c => c.id === cid);
+      if (index >= 0) {
+        if (collider) this.colliders[index] = collider;
+        else this.colliders.splice(index, 1);
+      } else if (collider) this.colliders.push(collider);
+    };
+    put('props:static', buildPropCollider(shapes, shapes.length));
+    const kc = buildKinematicCollider(kin);
+    put('npcs:kinematic', kc);
+    this._kinCollider = kc || null; // cached for setEntityCollider (no per-call find)
+  }
+
+  /**
+   * CH1-E2 (38.37): moves a `collider.kinematic` entity's prism to feet (x, y, z) in place (no alloc, O(1)).
+   * Does not touch the entity transform (the caller moves that). Mesh physics only.
+   * @returns {boolean} false when the entity has no kinematic collider
+   */
+  setEntityCollider(id, x, y, z) {
+    const slot = this._kinSlot.get(id);
+    if (slot === undefined) return false;
+    const c = this._kinCollider;
+    if (!c) return false;
+    moveKinematicPrism(c, slot, x, y, z + this._entities.get(id).components.collider.h / 2);
+    return true;
   }
 
   /**

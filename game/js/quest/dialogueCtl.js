@@ -21,15 +21,26 @@ export function npcTalk(ctx) {
 
 /**
  * @param {{world:any, dialogues:Record<string,any>, events?:{on:Function}, style?:object,
- *   cps?:number, onFlag?:(key:string,v:boolean)=>void, onTalk?:(npcId:string)=>void}} opt
+ *   cps?:number, questFlag?:(key:string)=>void, onFlag?:(key:string,v:boolean)=>void, onTalk?:(npcId:string)=>void}} opt
  *   dialogues = bundle.dialogues (compiled). events: listens to 'combat:hit' on the player (damage closes).
  */
 export function createDialogueCtl(opt) {
   const { world, dialogues } = opt;
   const view = createDialogueView({ style: opt.style, palette: opt.palette }); // palette: ASSETS.palette (default globalThis.ASSETS.palette)
+  // QG-03 (38.35 item 5): `q.*` keys are quest-book checks/actions (opt.book() = current book), never stored in world.state.
+  // CH1-06 (38.37 item 6): `s.<key>` = world.state[key] check / opt.questFlag(key) set. rest-of-key strings are cached (no per-call slice).
+  const sRest = new Map();
+  const restOf = (k) => { let r = sRest.get(k); if (r === undefined) { r = k.slice(2); sRest.set(k, r); } return r; };
+  const isS = (k) => k.charCodeAt(0) === 115 && k.charCodeAt(1) === 46;
   const flags = {
-    has: (k) => world.state['dlg.' + k] === true,
+    has: (k) => {
+      if (isS(k)) return !!world.state[restOf(k)];
+      if (k.charCodeAt(0) === 113 && k.charCodeAt(1) === 46) { const b = opt.book && opt.book(); return !!b && b.hasKey(k); }
+      return world.state['dlg.' + k] === true;
+    },
     set: (k) => {
+      if (isS(k)) { if (opt.questFlag) opt.questFlag(restOf(k)); return; }
+      if (k.charCodeAt(0) === 113 && k.charCodeAt(1) === 46) { const b = opt.book && opt.book(); if (b) b.actKey(k); return; }
       world.state['dlg.' + k] = true;
       if (opt.onFlag) opt.onFlag(k, true); // main.js: gameHooks.emitSimple('flag:set', ...)
     },

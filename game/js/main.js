@@ -7,6 +7,7 @@
 // engine/index.js like everything else (check-deps rule 3).
 
 import { loadPresets, resolveQuality, saveQuality, knobsFor } from './ui/gfxPresets.js';
+import { registerRiggedChars } from './quest/charRegister.js';
 import { resolveBootOptions, describeQuality } from './gfxBoot.js';
 import { pickQuality, tierFromAdapter, p95 } from './gfxAuto.js'; // GFX-02
 import { gatherAdapterInfo, showCard, AutoBench } from './gfxAutoRun.js';
@@ -23,7 +24,7 @@ import {
   buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim,
-  loadContentPack, createRng, prebuildTerrainMesh,
+  loadContentPack, createRng, prebuildTerrainMesh, hitSparks,
   forwardOf, DEG2RAD, hexToRgb, resolveWaterLooks, createEntityEmitters, AO_DEFAULTS,
 } from '../../engine/index.js';
 // US-047 (architecture.md section 5): pass internals + parity tooling +
@@ -45,6 +46,7 @@ import { parseCloudShadowFlag, devCloudShadow, parseAoStrength } from './cloudPa
 import { MODES } from './dev/modes/index.js';
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { createPauseMenu, PAUSE_KEYS } from './ui/pauseMenu.js'; // PAUSE-MENU-01 (D-053): replaces the old 'Click to resume' overlay
+// CHARGEN-17 parked (owner 2026-10-10): import { createCharCreate } from './ui/charCreate.js';
 import { createCreditsView } from './ui/creditsView.js'; // CREDITS-MOUNT-01
 import { updateSettings, drawSettingsPanel, isSettingsOpen, openSettings, dimSceneRect } from './ui/settings.js'; // US-038b
 import { isPaused, resetSimAccumulator, duckAudio, unduckAudio, installAutoPause } from './ui/pause.js'; // US-062
@@ -54,7 +56,7 @@ import { resetGameAudio, stepGameAudio } from './audio/sfx.js';
 // ---- end US-020a ----
 import { createSafeBindings, resolveGameKeys } from './gameKeys.js'; // BINDINGS-WIRE-01
 import { loadSettings, saveSettings, getSaveStorage } from './platform/index.js'; // US-060: remembered mute (D-012)
-import { loadBundleFromPackages } from './packBoot.js';
+import { loadBootBundle } from './packBoot.js';
 import { applyLocalOverlay } from './localOverlay.js';
 import { createBootCard } from './bootCard.js'; // boot loading card + ASCII progress bar
 import { createBootStageTimer } from './bootStageTimer.js'; // S8-B1-20: per-stage ms (content/adapter/pipelines/world/meshes)
@@ -72,8 +74,10 @@ import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setH
 import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-050: the one seam to game content
 import { createWaystoneTouch } from './waystoneTouch.js'; // WAYSTONE-TOUCH-01
 import { createWaystoneWire } from './quest/wire/waystone.js'; // WAYSTONE-01w
+import { createTravel } from './quest/travel.js'; // WS1-07b: map travel (fade, teleport, reset)
 import { createTitleMenuHost } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
+import { retintHand, lookOrDefault } from './quest/look/handLook.js'; // CHARGEN-16
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
 import { parseOccl, createHzbInvalidator } from './occlGate.js'; // OCCL-MAIN-01
 import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
@@ -81,7 +85,7 @@ import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
 import { wireTelegraphs, telegraphsEnabled } from './fx/telegraphWire.js'; // TELEGRAPH-WIRE-01 (lane B1)
 import { stepCombatHint } from './quest/combatHint.js'; // COMBAT-HINT-01
-import { createWildFauna } from './wild/wildFauna.js'; // WILD-06 (38.31): ?fauna=1, default OFF until the owner approves the animal previews
+import { createWild } from './wild/wildEnv.js'; // WILD-06: ambient rabbits + deer
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
@@ -115,16 +119,26 @@ import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from '.
 import { PHYSICS } from '../../engine/index.js';
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
-import { ensureInventory, validateItemDefs, migrateSword } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
+import { ensureInventory, validateItemDefs, migrateSword, addItem } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
 import { presentPickups } from './quest/pickupsView.js';
 import { createLoot, setLootApi } from './quest/sim/loot.js'; // US-091a2 (37.16.3)
+import { createRelayWake, setRelayWakeApi } from './quest/relayWake.js'; // WS1-06b: wake the road-bend relay
 import { createDialogueCtl, setDialogueApi } from './quest/dialogueCtl.js'; // DIALOGUE-01b2 (38.28)
+import { createCrystalGrant } from './quest/crystal.js'; // CH1-MOUNT: CH1-03 aether crystal after the boars
+import { createNpcWalk } from './quest/npcWalk.js'; // CH1-07
+import { createBurlEscort } from './quest/burlEscort.js'; // CH1-07
+import { createFenEntrance } from './quest/fenEntrance.js'; // CH1-08b
+import { createBarks } from './quest/barks.js'; // CH1-MOUNT: CH1-06 bark one-liners (Burl)
+import { createChapterCard } from './quest/chapterCard.js'; // CH1-MOUNT: CH1-09 chapter end card
+import { createNoticeView } from './ui/noticeView.js'; // CH1-MOUNT: CH1-04a notice banner
 import { createNpcTurn } from './quest/npcBear.js'; // NPC-BEAR-01 (38.28): turn-to-player
 import { LOOT_TABLE, LOOT_SEED_SALT } from './quest/sim/lootConfig.js';
 import { createToastView } from './quest/toastView.js';
 import { createInventoryView } from './quest/inventoryView.js'; // US-091b
 import { createQuestMarkers } from './quest/sim/questMarkers.js'; // QUEST-MARK-01w
 import { registerQuestMarks } from './quest/wire/questMarks.js';
+import { createQuestLogScreen, QUEST_LOG_KEYS } from './ui/questLog.js'; // QG-05
+import { createCompassHud } from './ui/compassHud.js'; // COMPASS-02 (D-061)
 import { createCrafting } from './quest/sim/crafting.js'; // MAIN-WIRE-01: crafting list on C
 import { createCraftView } from './ui/craftView.js';
 import { drawDemoScene } from './dev/demoScene.js';
@@ -135,7 +149,7 @@ import { runPerfBench } from './dev/perfBench.js'; // US-018 (architecture.md 16
 import { createSpriteSystem, spawnTestSprites } from './dev/spriteDev.js';
 // ---- end US-030c ----
 // ---- US-010: quest behaviours (registered by name before any World loads) ----
-import { validateBehaviours, createRipples, createEntityTintTable, fillEntityTints } from '../../engine/index.js';
+import { validateBehaviours, createRipples, createEntityTintTable, fillEntityTints, localToWorld } from '../../engine/index.js';
 import './quest/index.js';
 import { parseDemo, filterDemoParams, demoStorage, blockFKeys, createEndCard, drawDemoBuildLine } from './demoMode.js';
 // ---- end US-010 ----
@@ -254,8 +268,7 @@ const canvas = document.getElementById('screen');
 // `codeParts` so `fromJSON` can overlay the JSON levels/worlds on top.
 // MESH-LOAD-01: lazy mesh payloads in the game (colliders stay eager); capture/bench/compare pages stay eager so their results stay comparable. ?lazymesh=0 = eager.
 const lazyMeshes = !isCaptureOrBench && params.get('lazymesh') !== '0';
-const bundle = (await loadBundleFromPackages(params, { lazyMeshes }, (m) => console.log('[pack] ' + m))) // KPKG-04: ?pack=<a.kestrel,...> boots from packages
-  || await loadContentPack('../content/manifest.json', { lazyMeshes });
+const bundle = await loadBootBundle(params, { lazyMeshes }, (m) => console.log('[pack] ' + m)); // KPKG-04 + CHARGEN-15 (38.33): ?pack= packages + content/packages/index.json add-ons (?addons=0 skips) over the loose base
 if (bundle.lazyMeshes) window.__lazyMeshStore = bundle.lazyMeshes; // MESH-LOAD-01: dev handle (tools/lazymesh-trace.mjs, F3 debugging); the engine no longer sets it
 // US-034 (24.11): `?playtest=1` overlays the editor's in-memory (possibly
 // unsaved) level/world edits from `kestrel.playtest` onto `bundle` BEFORE
@@ -416,24 +429,40 @@ let saveRelay = null;
 let markWorld = null; // QUEST-MARK-01w: the current World (set per load before gameHooks.boot)
 let titleMenuActive = true; // S8-B1-10: mirrors menuHost.active each frame (true until the first frame says otherwise); gates the loss autosave
 let deviceLostFrozen = false; // S8-B1-10 (38.10c): set once by watchDeviceLost's `freeze` hook below; gates `paused` in the frame loop
+// CH1-02 nit: area trigger per id, cached per world (compass + quest markers; no closure/find per call).
+const areaTrigCache = new Map(); let areaTrigWorld = null;
+function areaTrigger(w, id) {
+  if (w !== areaTrigWorld) { areaTrigCache.clear(); areaTrigWorld = w; }
+  let t = areaTrigCache.get(id);
+  if (t === undefined) { t = w.triggers.find((q) => q.key === 'world.' + id) || null; areaTrigCache.set(id, t); }
+  return t;
+}
+let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the content manifest)
 try {
   const questDef = await (await fetch('../content/quests/m1.quest.json')).json();
-  saveRelay = createSaveRelay({ storage: saveStorage(), questDef, enabled: saveEnabled });
+  if (saveEnabled) { try { bearBarks = await (await fetch('../content/dialogue/bear.barks.json')).json(); } catch (e) { console.warn('[barks] bear.barks.json unavailable'); } }
+  const giverDefs = [await (await fetch('../content/quests/burl.boars.quest.json')).json()]; // QG-03 (D-058): giver quests, state in the quest book
+  const charKit = await (await fetch('../content/chargen/human.charkit.json')).json(); // CHARGEN-16: kit default look + hand skin tones
+  saveRelay = createSaveRelay({ storage: saveStorage(), questDef, giverDefs, enabled: saveEnabled, defaultLook: charKit.defaults });
+  window.__charKit = charKit;
   saveRelay.bindEvents(engine.events);
   gameHooks.register(saveRelay.handlers());
   saveRelay.quest.onPoll = (name, a, b) => gameHooks.emitSimple(name, a, b);
   gameHooks.onSaveRequest(() => { if (saveRelay && gameHooks.ctx.world) saveRelay.save(gameHooks.ctx.world, { ending: gameHooks.ctx.state.ending }); });
   // QUEST-MARK-01w: '!' markers over available take steps (patch docs/patches/QUEST-MARK-01w.diff). Off in capture/bench/?save=0.
   if (saveEnabled && window.ASSETS && window.ASSETS.questMarkFx) {
-    const qm = createQuestMarkers(questDef, [{ objectiveId: 'waystone', targets: ['endMarker'] }]); // other take steps (wake/breach) have no prop to mark yet
-    const MARK_TOP = { endMarker: 3.0 }; // prop top above its base z (waystone 24 voxels x 0.125 m); notes would use z + 1.55
+    const qm = createQuestMarkers(questDef, [ // CH1-02 (38.37 item 1): flag/area steps only; item steps (sword) and wake/breach get no marker. doorMarker/roadWest resolve to their area trigger (markResolve)
+      { objectiveId: 'leave', targets: ['doorMarker'] }, { objectiveId: 'follow', targets: ['bear'] }, { objectiveId: 'waystone', targets: ['endMarker'] },
+      { objectiveId: 'road', targets: ['roadWest'] }, { objectiveId: 'relayFound', targets: ['relayBend'] }, { objectiveId: 'relay1', targets: ['relayBend'] }, { objectiveId: 'fen', targets: ['fen'] }]);
+    const MARK_AREA = { doorMarker: 'towerDoor', roadWest: 'roadWest' }; // marker id -> world area trigger id (no entity)
+    const MARK_TOP = { endMarker: 3.0, bear: 2.8 }; // prop top above its base z (waystone 24 voxels x 0.125 m); notes would use z + 1.55
     gameHooks.setQuestSource((out) => { const st = saveRelay.quest.state; out.done = saveRelay.quest.done; out.id = out.done ? '' : questDef.objectives[st.completed.length].id; out.targets = qm.markerTargets(st); });
     let markN = 0;
-    const markHandle = () => { // entity handle for one marker; re-spawns itself when a world reload dropped the entity
+    const markHandle = (model) => { // entity handle for one marker; re-spawns itself when a world reload dropped the entity
       const id = 'questMark_' + (markN++); let w = null, ent = null, hidden = true, scale = 1, anim = 'idle', x = 0, y = 0, z = 0;
       const cur = () => {
         const mw = markWorld; if (!mw) return null;
-        if (w !== mw || !ent || !ent.alive) { w = mw; ent = mw.get(id) || mw.spawn('prop', { x, y, z, yawDeg: 0, scale }, { voxel: { model: 'questMark', anim, loop: true, hidden } }, id); }
+        if (w !== mw || !ent || !ent.alive) { w = mw; ent = mw.get(id) || mw.spawn('prop', { x, y, z, yawDeg: 0, scale }, { voxel: { model, anim, loop: true, hidden } }, id); }
         return ent.data;
       };
       const push = () => { const d = cur(); if (!d) return; Object.assign(d.transform, { x, y, z }); d.transform.scale = scale; d.components.voxel.hidden = hidden; d.components.voxel.anim = anim; w.renderVersion++; };
@@ -444,8 +473,14 @@ try {
         setPos(a, b, c) { x = a; y = b; z = c; push(); },
       };
     };
-    const markResolve = (id, out) => { const h = markWorld && markWorld.get(id), t = h && h.data && h.data.transform; if (!t) return false; out.x = t.x; out.y = t.y; out.z = t.z + (MARK_TOP[id] || 1.55); return true; };
-    registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: markHandle });
+    const markResolve = (id, out) => { const h = markWorld && markWorld.get(id), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const gz = markWorld.heightAt(tr.x, tr.y); out.x = tr.x; out.y = tr.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y; out.z = t.z + (MARK_TOP[id] || 1.55); return true; };
+    registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle('questMark') });
+    // QG-04: giver markers over Burl: '!' while his quest is available, '?' while ready, none while active/done (book.giverMarks)
+    const gAvail = [], gReady = [];
+    for (const [model, list] of [['questMark', gAvail], ['questMarkReady', gReady]]) {
+      registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle(model),
+        source: (out) => { const b = saveRelay.quest.book; b.giverMarks(gAvail, gReady); out.done = false; out.targets = list; } });
+    }
   }
 } catch (e) { console.warn('[save] relay unavailable:', e && e.message); }
 // MAIN-WIRE-01: crafting recipes (content/items/recipes.json), loaded once; the craft view (key C) is built with the pack.
@@ -517,9 +552,10 @@ if (demo.on) blockFKeys(input); // demo: no F3 / F-key dev overlays
 const demoEnd = demo.on ? createEndCard({
   onRestart: () => { const a = createStorageAdapter(saveStorage()); for (let i = 0; i < 3; i++) a.deleteSlot(i); window.location.reload(); },
   onKeep: () => {} }) : null;
-if (saveEnabled) gameHooks.register(createWaystoneWire()); // WAYSTONE-01w: heal + save + toast on touch, respawn at the touched stone (off with ?save=0 / capture / bench)
+let waystoneWire = null; // WS1-07b: travel reads its sim (anchors / touch)
+if (saveEnabled) gameHooks.register(waystoneWire = createWaystoneWire()); // WAYSTONE-01w: heal + save + toast on touch, respawn at the touched stone (off with ?save=0 / capture / bench)
 gameHooks.register(createWaystoneTouch(gameHooks)); // WAYSTONE-TOUCH-01: prop:touched {waystone} on walk-in / E (lane C's WAYSTONE-01w listens)
-if (demoEnd) gameHooks.register({ onEvent(name, d) { if (name === 'area:entered' && d && d.id === 'waystone') demoEnd.trigger(); } });
+// WAYSTONE-NORMAL-01 (D-056): the waystone no longer triggers the demo end card (demoEnd stays wired but is never triggered).
 // OWN-REQ-003 (architecture.md 17.1): `engine.ui` is a single UiLayer for
 // the whole run - `engine.setGrid` re-binds it in place (never replaces it),
 // so capturing it once here (unlike `depthBuffer`) stays valid
@@ -696,8 +732,31 @@ if (spellHandLDef && !assets.has('model', 'spellHandL')) {
   assets.add('model', 'spellHandL', { ...spellHandLDef, voxel: { ...spellHandLDef.voxel, meshOnly: true } });
 }
 // HAND-WIRE-01: the realistic burning hand (`viewModels.hand`): every variant model (authored left) registered mesh-only.
-const handDef = window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.hand;
-if (handDef && handDef.variants) {
+let handDef = window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.hand;
+// CHARGEN-16: `hand@look` = the hand variants re-tinted to the player look (skin tone + top dye on the sleeve). The newest saved
+// look is peeked at boot (a different look chosen later needs a page reload to show: handles are built once). Off in capture/bench/compare
+// pages (gpucompare stays on today's hand) and falls back to the plain hand if the retint throws.
+let handLookDef = null;
+if (handDef && handDef.variants && !isCaptureOrBench && window.__charKit) {
+  try {
+    let best = null;
+    if (saveRelay && saveRelay.adapter) for (const s of saveRelay.adapter.listSlots()) {
+      const r = s.ok && s.meta ? saveRelay.adapter.readSlot(s.slot) : null;
+      if (r && r.save && r.save.player && r.save.player.look && (!best || (s.meta.savedAt || 0) >= best.t)) best = { t: s.meta.savedAt || 0, look: r.save.player.look };
+    }
+    const rt = retintHand(handDef, lookOrDefault(window.__charKit, best && best.look), window.__charKit, window.ASSETS.voxelModels);
+    for (const [name, rec] of Object.entries(rt.models)) assets.add('model', name, { ...rec, voxel: { ...rec.voxel, meshOnly: true } });
+    handLookDef = rt.def;
+  } catch (e) { console.warn('[look] hand@look retint failed, plain hand:', e && e.message); }
+}
+if (handDef && handDef.variants && handLookDef) {
+  if (window.ASSETS.handFx) for (const k of window.ASSETS.handFx.attach()) {
+    const pr = particlePresets.presets[k];
+    if (pr.spreadDeg > 88.9) pr.spreadDeg = 88.9;
+    engine.particles.defineEmitter(k, particlePresets.toEmitterDef(k, assets.palette.rgb));
+  }
+  handDef = handLookDef; // viewModel key 'hand' now loads the @look models (the plain ones are not registered: boot budget)
+} else if (handDef && handDef.variants) {
   if (window.ASSETS.handFx) for (const k of window.ASSETS.handFx.attach()) { // HAND-WIRE-02: presets defined after the generic loop
     const pr = particlePresets.presets[k];
     if (pr.spreadDeg > 88.9) pr.spreadDeg = 88.9; // engine EmitterDef limit (<= 88.999); handChargeSparks asks 180 (designer note)
@@ -708,6 +767,7 @@ if (handDef && handDef.variants) {
     if (hd && !assets.has('model', mk)) assets.add('model', mk, { ...hd, voxel: { ...hd.voxel, meshOnly: true } });
   }
 }
+registerRiggedChars(assets, bundle.models); // RIG-03w: char.<id> from package .glb, before bind
 const gameVoxelPool = new VoxelPool();
 gameVoxelPool.bind(assets, matTable);
 // RE-02b F1 + review: 'mesh' only when the mesh GpuCellPipeline is really active (CPU fallback renders shear).
@@ -902,13 +962,41 @@ async function runGame(mode, cinematic = null) {
   const entityTintTable = createEntityTintTable(); // TELEGRAPH-WIRE-01 part 2: one table, reused
   let telegraphWire = null; // TELEGRAPH-WIRE-01: rebuilt on 'world:loaded'
   let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
-  let wildFauna = null; // WILD-06: ambient rabbits + deer, rebuilt on 'world:loaded', only with ?fauna=1
-  const faunaOn = params.get('fauna') === '1';
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
+  let travel = null; // WS1-07b: created once below (after wakeOut)
   let dialogueCtl = null; // DIALOGUE-01b2 (38.28): rebuilt on every 'world:loaded', below
+  let wild = null; // WILD-06: ambient fauna, rebuilt on every 'world:loaded' (= reset on load / new game / restart)
+  Object.defineProperty(window.__debug, 'wild', { configurable: true, get: () => (wild ? { alive: wild.stats.alive, drawn: wild.drawn ? wild.drawn() : 0 } : null) }); Object.defineProperty(window.__debug, 'wildRaw', { configurable: true, get: () => (wild ? { w: wild, pool: gameVoxelPool } : null) }); // verify-wild steps/feeds through this (headless sim never runs) // WILD-06b: read-only headless hook
   let bearTurn = null; // NPC-BEAR-01: Burl's turn-to-player, rebuilt on every 'world:loaded'
-  const vLocked = () => !!(vitals && vitals.inputLocked) || deathFlow.inputLocked || !!(dialogueCtl && dialogueCtl.locked); // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
+  // COMPASS-02 (D-061): golden pocket compass, bottom-right. Resolver maps quest targets to world positions; hide rules are set in update(), drawn in render().
+  const compass = createCompassHud({ style: window.ASSETS && window.ASSETS.uiStyle && window.ASSETS.uiStyle.compass });
+  let compassBookVer = -1, compassTick = 0, compassWorld = null, compassBreach = null, compassHide = true;
+  const COMPASS_FLAG = { 'quest.burl.boars.done': 'bear', 'burl.arrived': 'bear', 'waystone.waystone.woken': 'endMarker', 'waystone.ws_roadBend.woken': 'relayBend', 'fen.met': 'fen' };
+  const compassResolver = { resolve(kind, id, out) {
+    const w = compassWorld; if (!w) return false;
+    let e = null;
+    if (kind === 'giver') e = w.get(id);
+    else if (kind === 'flag') e = w.get(COMPASS_FLAG[id] || ''); // CH1-02: flag step -> the prop/NPC that sets it (Burl hand-in, bear escort, stone, relay, Fen)
+    else if (kind === 'beast') { e = w.get(id); const h = e && e.data && e.data.components.health; if (h && h.hp <= 0) return false; }
+    else if (kind === 'area') {
+      if (id === 'breach') { if (!compassBreach) compassBreach = compassFindMarker(w, 'breach'); if (!compassBreach) return false; out.x = compassBreach.x; out.y = compassBreach.y; out.z = compassBreach.z; return true; }
+      if (id === 'waystone') e = w.get('endMarker');
+      else if (id === 'towerDoor' || id === 'roadWest' || id === 'bendRelay') { // CH1-02: area-only world triggers
+        const tr = areaTrigger(w, id); if (!tr) return false;
+        out.x = tr.x; out.y = tr.y; out.z = NaN; return true;
+      }
+    }
+    const t = e && e.data && e.data.transform; if (!t) return false;
+    out.x = t.x; out.y = t.y; out.z = t.z; return true;
+  } };
+  window.__debug.compass = compass; window.__debug.compassRetarget = () => { const b = saveRelay && saveRelay.quest.book; return b ? compass.target(b, compassResolver) : null; }; window.__debug.compassHidden = () => compassHide; // tools/verify-compass.mjs
+  function compassFindMarker(w, markerId) { // structure marker -> world position (same lookup as audio/ambient.js; load-time-ish, cached)
+    const o = { x: 0, y: 0, z: 0 };
+    for (const st of w.structures) { const m = st.level && st.level.def && st.level.def.markers && st.level.def.markers[markerId]; if (m) { localToWorld(st.frame, m.x, m.y, m.z || 0, o); return o; } }
+    return null;
+  }
+  const vLocked = () => !!(vitals && vitals.inputLocked) || (travel && travel.inputLocked) || deathFlow.inputLocked || !!(dialogueCtl && dialogueCtl.locked); // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
@@ -939,6 +1027,16 @@ async function runGame(mode, cinematic = null) {
   let practiceTarget = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hitSparkWire = null; // HIT-SPARK-WIRE: rebuilt on every 'world:loaded'
   let particleHooks = null; // US-053c: rebuilt on every 'world:loaded', below
+  let relayWake = null; // WS1-06b: rebuilt on every 'world:loaded'
+  // CH1-MOUNT (38.37): notice banner (page lifetime) + crystal grant / barks / chapter card (rebuilt per world; only when saves are live = never in capture/bench/compare/?at=)
+  const notice = createNoticeView();
+  let crystal = null, barks = null, chapterCard = null, ch1Hidden = true;
+  let escort = null, fenEntrance = null; // CH1-07 Burl escort / CH1-08b Fen entrance (rebuilt per world, saves live only)
+  window.__debug.notice = notice; window.__debug.ch1Hidden = () => ch1Hidden; // tools/verify-relay-wake.mjs
+  engine.events.on('beast:died', (p) => { // crystal burst lands where the last boar fell
+    if (!crystal || !p || typeof p.id !== 'string') return;
+    const h = engine.world.get(p.id), t = h && h.data && h.data.transform; if (t) crystal.noteBoar(t.x, t.y, t.z);
+  });
   let loot = null; // US-091a2 (37.16.3): rebuilt on every 'world:loaded', after beasts + the pack
   let toasts = null; // US-091a2: the loot toast view, rebuilt with loot
   let invView = null; // US-091b: the pack screen (`I`), rebuilt with the pack
@@ -949,8 +1047,22 @@ async function runGame(mode, cinematic = null) {
   let pauseWas = false;
   // True while the pause menu is the thing on screen (same gate the old overlay used, minus Settings which owns the screen).
   function pauseUp() {
-    return mode === 'world' && !!look && !look.locked && !isMapOpen() && !(invView && invView.isOpen) && !(craftView && craftView.isOpen)
+    return mode === 'world' && !!look && !look.locked && !isMapOpen() && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen()
       && !cinematic && !isWaterfallPreview && !(menuHost && menuHost.active) && !isSettingsOpen();
+  }
+  // QG-05: quest log (J). Built lazily per book (reset() replaces the book); pauses like the pack via qlOpen in invOpen.
+  let qlView = null, qlBook = null, qlWasLocked = false, mapQmChart = null, mapQmVer = -1;
+  const qlIsOpen = () => !!(qlView && qlView.isOpen());
+  // QG-04: giver '!'/'?' on the M card, rebuilt only when the card is open and book.version / the chart changed
+  function syncMapQuestMarks() {
+    const c = getMapChart(), b = saveRelay && saveRelay.quest.book;
+    if (!c || !b || !isMapOpen() || (c === mapQmChart && b.version === mapQmVer)) return;
+    mapQmChart = c; mapQmVer = b.version;
+    const a = [], r = [], list = []; b.giverMarks(a, r);
+    for (const [ids, kind] of [[a, 'quest'], [r, 'questReady']]) for (const id of ids) {
+      const e = engine.world.get(id), t = e && e.data && e.data.transform; if (t) list.push({ kind, x: t.x, y: t.y });
+    }
+    c.setQuestMarkers(list);
   }
   let invWasLocked = false; // pointer lock state when the pack opened (re-lock on close)
   let waterfallHooks = null;
@@ -978,6 +1090,23 @@ async function runGame(mode, cinematic = null) {
   // whole wake/title/map-card/hints system to worlds that actually declare
   // `quest.wakeT` in their initial state (world_m1 - `?level=<name>` adhoc
   // worlds have `state: {}` and skip it, unaffected).
+  // WS1-07b: map travel. Callbacks read the live per-world closures; no world state is kept here.
+  travel = createTravel({
+    canTravel: () => !!(vitals && !vitals.dead && !wakeOut.inputLocked && !(dialogueCtl && dialogueCtl.open) && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen()),
+    anchorOf: (id) => (waystoneWire && waystoneWire.sim ? waystoneWire.sim.anchor(id) : null),
+    playerPos: () => playerHandle.data.transform,
+    teleport: (pose) => {
+      const t = playerHandle.data.transform, b = playerHandle.data.components.body;
+      t.x = pose.x; t.y = pose.y; t.z = pose.z; t.yawDeg = pose.yawDeg; // anchor = a known-safe spot (the pose at the touch)
+      if (b) { b.vx = 0; b.vy = 0; b.vz = 0; b.fallDistance = 0; }
+      hzb.invalidate('travel');
+      if (beasts) beasts.resetAll();
+      if (targeting) targeting.clear();
+      if (look) { look.clearLock(); look.yawDeg = t.yawDeg; look.pitchDeg = t.pitchDeg; }
+      if (vitals) vitals.clearSafe();
+    },
+    arrive: (id, pose) => { if (waystoneWire && waystoneWire.sim) waystoneWire.sim.touch(id, pose); }, // respawn point = target (heal + save)
+  });
   const wakeOut = { blackA: 1, blinkOpen: 0, eyeH: 0, inputLocked: true, titleState: 'none', titleA: 0, wakeDoneAtSec: 0, titleDoneAtSec: 0 };
   const wakeCfg = { blackSec: 1.0, riseSec: 1.2, blinkCurve: [[0, 0], [1.5, 1]], titleIn: 1, titleHold: 3, titleOut: 1, startEyeH: 0.3, bodyEyeH: 1.6 };
   let questUiActive = false;
@@ -1084,15 +1213,13 @@ async function runGame(mode, cinematic = null) {
       // US-079a (29.1): rebuilt on every load/restart, same precedent as lightSet above.
       // US-078d: beastSim now owns a `combat:hit` listener (the stagger behaviour) - drop the old world's one
       // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.
+      wild = null; engine.feedVoxels = null; // WILD-06: off in capture/bench/compare/cinematic, `?at=`/`?pose=` dev poses and `?fauna=0`
+      if (mode === 'world' && !cinematic && params.get('fauna') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !params.has('at') && !params.has('pose')) {
+        try { wild = createWild({ world, pool: gameVoxelPool, fx: window.ASSETS.wildlifeFx, seed: 0x5EED }); if (wild) engine.feedVoxels = wild.feed; } catch (err) { console.warn('[wild] fauna off:', err && err.message); }
+      }
       if (beasts) beasts.dispose();
       if (params.get('bench') === 'combat' || (benchActive && params.get('enemies') === '4')) ensureBenchBoars(world); // COMBAT-BENCH-01
       beasts = createBeastSim(world, { nav: worldDef.nav && buildBeastNav(world, worldDef.nav), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events });
-      // WILD-06: fresh fauna per load (= reset on load / new game / restart). Not combat, not saved, not in the beastSim hash.
-      wildFauna = null; engine.feedVoxels = null;
-      if (faunaOn && window.ASSETS.wildlifeFx) {
-        try { wildFauna = createWildFauna(world, window.ASSETS.wildlifeFx, gameVoxelPool, { seed: worldDef.nav?.seed ?? 1 }); engine.feedVoxels = wildFauna.feed; window.__wildFauna = { wf: wildFauna, env: wildFauna.env, player: () => playerHandle.data.transform, look: () => look }; } // __wildFauna: dev/capture handle
-        catch (err) { console.warn('[fauna] disabled:', err.message); }
-      }
       if (telegraphWire) telegraphWire.dispose(); // TELEGRAPH-WIRE-01 part 1
       telegraphWire = wireTelegraphs(engine.events, world, beasts, telegraphsEnabled(params, isCaptureOrBench));
       if (saveRelay) saveRelay.applyDeadToBeasts(beasts); // US-089w: restored dead beasts stay gone (create reset them alive)
@@ -1139,16 +1266,61 @@ async function runGame(mode, cinematic = null) {
         rng: createRng(((worldDef.nav?.seed ?? 1) ^ LOOT_SEED_SALT) >>> 0),
         inventoryOf: () => playerHandle.data.components.inventory || null }) : null;
       setLootApi(loot);
+      // WS1-06b: one [E] interactable per kind:'relay' point (crystal-gated wake; woken ones restore awake from world.state).
+      relayWake = createRelayWake({ questFlag: saveEnabled && saveRelay ? (k) => saveRelay.quest.questFlag(k) : undefined, world, palette: assets.palette, notice: saveEnabled ? notice : null, emit: (id, kind, p) => gameHooks.emitSimple('prop:touched', id, kind, p) });
+      setRelayWakeApi(relayWake); window.__debug.relayWake = relayWake; // tools/verify-relay-wake.mjs
       // DIALOGUE-01b2 (38.28): box + runner; NPCs with a `dialogue` component get an [E] Talk interactable (none until NPC-BEAR-01 places one).
       if (dialogueCtl) dialogueCtl.dispose();
       dialogueCtl = createDialogueCtl({ world, dialogues: bundle.dialogues, events: engine.events, style: window.ASSETS.uiStyle.dialogue,
         jawOpenDeg: window.ASSETS.bearFx && window.ASSETS.bearFx.talk ? window.ASSETS.bearFx.talk.jawMaxDeg : undefined, // jaw hinge: rx opens, 0..jawMaxDeg (voxel_bear.js header)
-        onFlag: (k, v) => gameHooks.emitSimple('flag:set', 'dlg.' + k, v) });
+        book: () => (saveRelay ? saveRelay.quest.book : null), // QG-03: `q.*` dialogue keys -> quest book
+        questFlag: saveRelay ? (k) => saveRelay.quest.questFlag(k) : undefined, // CH1-06: `s.*` dialogue keys
+        onFlag: (k, v) => { if (k.charCodeAt(0) !== 113 || k.charCodeAt(1) !== 46) gameHooks.emitSimple('flag:set', 'dlg.' + k, v); } });
       setDialogueApi(dialogueCtl);
       bearTurn = createNpcTurn(world, 'bear'); // NPC-BEAR-01: null when the world has no bear
+      compassWorld = world; compassBreach = null; compassBookVer = -1; compassTick = 0; // COMPASS-02: re-resolve against the new world
       if (bearTurn) dialogueCtl.addNpc('bear');
+      crystal = barks = chapterCard = escort = fenEntrance = null;
+      if (bearTurn) bearTurn.paused = false;
+      if (saveEnabled && saveRelay) { // CH1-MOUNT: all three need the quest relay (flags + book)
+        const rq = saveRelay.quest, tmsg = () => window.ASSETS.items && window.ASSETS.items.toast && window.ASSETS.items.toast.messages && window.ASSETS.items.toast.messages.packFull;
+        crystal = createCrystalGrant({ world, questFlag: (k) => rq.questFlag(k),
+          addItem: (id) => { const inv = playerHandle && playerHandle.data.components.inventory; return inv && itemDefs ? addItem(inv, itemDefs, id, 1) : 0; },
+          burst: (x, y, z) => { try { hitSparks(engine.particles, x, y, z + 0.3, 0, 0, 1, 24, 2); } catch (e) { /* hit sparks not defined: no burst */ } }, // hue 2 = aether cyan
+          toast: () => { const m = tmsg(); if (toasts && m) toasts.say('A crystal glints where the boar fell.', m.fg); } }); // story.md toast.crystal.found
+        crystal.check(rq.book.statusOf('burl.boars'));
+        if (bearBarks) barks = createBarks({ world, data: bearBarks, questFlag: (k) => rq.questFlag(k), dialogue: dialogueCtl, style: window.ASSETS.uiStyle.dialogue });
+        // CH1-07 (38.37 item 5): Burl walks (follow -> stone, depart) + proximity talk; load rules per phase. Needs the bear entity.
+        const rm = (id) => world.removeInteractable('npc.' + id), nearTalk = (id) => dialogueCtl.openFor(id);
+        const bw = bearTurn ? createNpcWalk(world, 'bear', { barks, removeInteractable: rm }) : null;
+        if (bw) {
+          const bt = world.get('bear').data.transform;
+          escort = createBurlEscort({ world, walk: bw, questFlag: (k) => rq.questFlag(k), barks, id: 'bear', x: () => bt.x, y: () => bt.y,
+            dialogueOpen: () => dialogueCtl.open, afterLeave: () => rq.state.completed.includes('leave'), requestOpen: nearTalk });
+          escort.load();
+        }
+        // CH1-08b: Fen hidden until the Bend Relay wakes, then walks `emerge`; dialogue auto-opens within 4 m
+        const fw = world.get('fen') ? createNpcWalk(world, 'fen', { removeInteractable: rm }) : null;
+        if (fw) {
+          const ft = world.get('fen').data.transform;
+          fenEntrance = createFenEntrance({ world, walk: fw, id: 'fen', x: () => ft.x, y: () => ft.y, requestOpen: nearTalk, dialogueOpen: () => dialogueCtl.open,
+            noticeBusy: () => notice.active, addTalk: () => { if (!world.interactables.some((r) => r.key === 'npc.fen')) dialogueCtl.addNpc('fen'); } });
+          fenEntrance.load();
+        }
+        window.__debug.escort = escort; window.__debug.fenEntrance = fenEntrance; // tools/verify-ch1-mount.mjs
+        chapterCard = createChapterCard({ world, openNote: (id) => noteRead({ world, def: { noteId: id } }), isNoteOpen, setFlag: (k, v) => rq.questFlag(k, v) });
+      }
       if (toasts) toasts.dispose();
       toasts = itemDefs ? createToastView(engine.events, window.ASSETS.items.toast, itemDefs, assets.palette.rgb) : null;
+      if (saveRelay) { // QG-03: book events -> seam + toasts (the reward, if any, is granted from book.lastReward; Burl's quest has none - owner pick)
+        const tv = toasts, msg = window.ASSETS.items.toast && window.ASSETS.items.toast.messages && window.ASSETS.items.toast.messages.packFull;
+        saveRelay.quest.onSection = (title) => { if (tv && msg) tv.say('Quest complete: ' + title, msg.fg); if (chapterCard && saveRelay.quest.done) chapterCard.trigger(); }; // CH1-02: live section completion only
+        saveRelay.quest.book.onChange = (name, id) => {
+          gameHooks.emitSimple(name, id);
+          if (name === 'quest:ready' && id === 'burl.boars' && crystal) crystal.check('ready'); // CH1-03
+          if (tv && msg) { if (name === 'quest:accepted') tv.say('Quest accepted', msg.fg); else if (name === 'quest:done') tv.say('Quest complete', msg.fg); }
+        };
+      }
       if (invView && invView.isOpen) invView.close();
       invView = itemDefs && window.ASSETS.uiStyle.inventory ? createInventoryView({
         style: window.ASSETS.uiStyle.inventory, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
@@ -1242,10 +1414,11 @@ async function runGame(mode, cinematic = null) {
           // reveal (mapFog.js's `reveal`, never touches the pencil route) of each marker's own cell, not the
           // player-visit feed (mapFogHook.js's per-tick `visit`) that gates the surrounding terrain.
           if (mapFogHook && mapFogHook.fog) for (const m of markers) mapFogHook.fog.reveal(m.x, m.y);
-          chartOptions = { chart: chartData, markers, fog: mapFogHook ? mapFogHook.fog : null };
+          chartOptions = { chart: chartData, markers, fog: mapFogHook ? mapFogHook.fog : null, travel: !waystoneWire ? null : { list: () => { const ws = waystoneWire.sim; if (!ws) return []; const l = []; const n = ws.list(l); const out = []; for (let i = 0; i < n; i++) out.push({ id: l[i].id, name: l[i].label, order: l[i].order, touched: l[i].touched, woken: true, x: l[i].x, y: l[i].y }); return out; } } };
         }
         try {
           initMapCard(assets, ui.cols, ui.rows, chartOptions);
+          { const cv = getMapChart(); if (cv) cv.onTravel = (id) => travel.request(id); } // WS1-07b
         } catch (e) {
           console.warn('[map] chart card init failed, falling back to the plain card:', e && e.message);
           initMapCard(assets, ui.cols, ui.rows);
@@ -1264,7 +1437,8 @@ async function runGame(mode, cinematic = null) {
       window.__debug.playerHandle = playerHandle;
       window.__debug.look = look;
       window.__debug.beasts = beasts; window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; // HANDS-01b: test hooks
-      window.__debug.isMapOpen = isMapOpen; window.__debug.getMapPanel = getMapPanel; window.__debug.getMapChart = getMapChart; // S8-B1-15: test hook (tools/verify-map-wire.mjs)
+      window.__debug.isMapOpen = isMapOpen; window.__debug.getMapPanel = getMapPanel; window.__debug.getMapChart = getMapChart; window.__debug.questBook = () => (saveRelay ? saveRelay.quest.book : null); window.__debug.questLogOpen = qlIsOpen; window.__debug.gameHooks = gameHooks; window.__debug.travel = travel; window.__debug.travelTo = (id) => travel.request(id, true); window.__debug.waystoneSim = () => (waystoneWire ? waystoneWire.sim : null); // QG-04/05: tools/verify-quest-ui.mjs hooks
+      // S8-B1-15: test hook (tools/verify-map-wire.mjs)
     });
 
     // ME-11c (architecture.md 27.18): `?physics=mesh` opts into the mesh
@@ -1299,7 +1473,9 @@ async function runGame(mode, cinematic = null) {
     const makeMenuHost = () => createTitleMenuHost({
         adapter: createStorageAdapter(saveStorage()),
         style: window.ASSETS && window.ASSETS.uiStyle ? window.ASSETS.uiStyle.menu : null,
-        onNewGame: (slot) => { if (saveRelay) saveRelay.setSlot(slot); },
+        onNewGame: (slot, chosenLook) => { if (saveRelay) { saveRelay.setSlot(slot); if (chosenLook) saveRelay.look = chosenLook; } }, // CHARGEN-17: Confirm stores player.look in the new save
+        // CHARGEN-17 parked (owner 2026-10-10: "i dont want character creation in the beggining"): New game starts straight away.
+        // createCharCreate is not passed, so titleMenuHost keeps its old behaviour; game/js/ui/charCreate.js stays in the repo unused.
         onContinue: (slot, save) => {
           if (!saveRelay) return;
           saveRelay.setSlot(slot);
@@ -1398,6 +1574,7 @@ async function runGame(mode, cinematic = null) {
       && typeof engine.world.state['quest.endT'] === 'number' && engine.world.state['quest.endT'] >= 0;
 
     // US-091b: the pack screen. Steps while paused too; eats every key edge while open (so M / S / N stay quiet).
+    if (barks && mode === 'world' && !ending && !ch1Hidden) barks.step(dt); // CH1-06: early, before the dialogue step
     if (dialogueCtl && mode === 'world' && playerHandle && !ending) dialogueCtl.step(dt, input, look ? look.locked : undefined); // DIALOGUE-01b2: early, so the lock covers the closing key press
     if (invView && mode === 'world' && playerHandle) {
       invView.step(dt, input, !ending && !(craftView && craftView.isOpen) && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look
@@ -1410,7 +1587,19 @@ async function runGame(mode, cinematic = null) {
       else craftView.step(dt, input);
     }
     if (chestHook && mode === 'world' && playerHandle) chestHook.stepUi(dt, input.pressed(gameKeys.interact)); // S8-B1-04: steps while paused too (an open card pauses the sim)
-    const invOpen = !!(invView && invView.isOpen) || !!(craftView && craftView.isOpen); // MAIN-WIRE-01: craft list locks input / pauses like the pack
+    if (mode === 'world' && playerHandle && saveRelay) { // QG-05: J toggles the quest log; while open it owns its keys
+      if (qlIsOpen()) {
+        for (const code of QUEST_LOG_KEYS) if (input.pressed(code) && qlView.handleKey(code)) { input.consumePressed(); break; }
+        if (!qlIsOpen() && qlWasLocked && look && !look.locked) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* arrow-key fallback */ } }
+      } else if (gameKeys.questLog && input.pressed(gameKeys.questLog) && !invOpen0 && !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look && look.locked
+        && !(vitals && (vitals.dead || vLocked())) && !(questUiActive && wakeOut.inputLocked) && !(dialogueCtl && dialogueCtl.open)) {
+        const bk = saveRelay.quest.book;
+        if (!qlView || qlBook !== bk) { qlBook = bk; qlView = createQuestLogScreen(bk, { style: window.ASSETS.uiStyle && window.ASSETS.uiStyle.menu, onJournal: () => noteRead({ world: engine.world, def: { noteId: 'journalCh1' } }) }); }
+        qlWasLocked = look.locked; qlView.open(); input.consumePressed();
+      }
+    }
+    syncMapQuestMarks();
+    const invOpen = !!(invView && invView.isOpen) || !!(craftView && craftView.isOpen) || qlIsOpen(); // MAIN-WIRE-01: craft list locks input / pauses like the pack
     const cardOpen = !!(chestHook && chestHook.card.isOpen); // S8-B1-04: item-get card gates input same as invOpen
     // ---- US-015: wake timeline + map card (world_m1 only, questUiActive) ----
     let uiLocked = false;
@@ -1420,6 +1609,7 @@ async function runGame(mode, cinematic = null) {
       wakeFrame(engine.world.state['quest.wakeT'], wakeCfg, wakeOut);
       if (wakeOut.inputLocked) playerHandle.data.components.body.eyeH = wakeOut.eyeH;
       mPressedEdge = input.pressed(gameKeys.map);
+      if (travel) travel.step(dt);
       stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec, !!(look && look.locked)); // BUG-NOTE-ESC-01
       uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked();
     }
@@ -1434,9 +1624,18 @@ async function runGame(mode, cinematic = null) {
       if (up) { for (const code of PAUSE_KEYS) if (input.pressed(code) && pauseMenu.handleKey(code)) { input.consumePressed(); break; } }
     }
     updateSettings(dt, input, { assets, engine, look, canOpen: false });
-    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked();
+    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked() || !!(chapterCard && chapterCard.isLocked());
     titleMenuActive = !!(menuHost && menuHost.active);
+    ch1Hidden = isCaptureOrBench || !saveEnabled || titleMenuActive || ending || invOpen || cardOpen || isMapOpen() || isSettingsOpen() || isNoteOpen() || qlIsOpen() || !!(dialogueCtl && dialogueCtl.open) || !!(vitals && vitals.dead); // CH1-MOUNT: notices/barks hidden under any menu/dialogue
+    notice.update(dt, ch1Hidden); if (chapterCard && !ending) chapterCard.update(dt); // CH1-04a / CH1-09
     const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || ((invOpen || cardOpen) && !ending)));
+    { // COMPASS-02 (D-061): retarget on book change + ~2 Hz, step the needle, hide rule (menus/pack/log/map/dialogue/death/title/capture modes/ending)
+      const bk = saveRelay && saveRelay.quest.book;
+      compassHide = !(mode === 'world' && playerHandle && bk && questUiActive) || ending || paused || isCaptureOrBench || uiLocked || titleMenuActive || isSettingsOpen() || isNoteOpen()
+        || (dialogueCtl && dialogueCtl.open) || (vitals && vitals.dead) || deathFlow.active || (wakeOut && wakeOut.inputLocked);
+      if (bk && (bk.version !== compassBookVer || ++compassTick >= 30)) { compassBookVer = bk.version; compassTick = 0; compass.target(bk, compassResolver); }
+      if (playerHandle && look) { const pt = playerHandle.data.transform; compass.step(pt.x, pt.y, look.yawDeg, pt.z); }
+    }
 
     // US-087 follow-up: drain blocked input without advancing targeting timers.
     // An allowed lock update still precedes look.update so it turns toward the fresh point.
@@ -1509,7 +1708,8 @@ async function runGame(mode, cinematic = null) {
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
       const simDue = hitStop.due(1000 / 60); // HITSTOP-01: the window gates beasts.step only; the sword freezes by its own hitStopHard counter
       if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); }
-      if (wildFauna) { const pt = playerHandle.data.transform; wildFauna.step(dt, pt.x, pt.y, controls.run, look ? look.yawDeg : 0); } // WILD-06: after the player, outside the combat hash; a >30 m jump (waystone/respawn) resets it
+      if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); } // WILD-06: ambient only, never hashed
+      if (escort || fenEntrance) { const pt = playerHandle.data.transform; if (escort) { escort.step(dt, pt.x, pt.y); if (bearTurn) bearTurn.paused = escort.busy; } if (fenEntrance) fenEntrance.step(dt, pt.x, pt.y); } // CH1-07/08b: before the bear turn
       if (bearTurn) { const pt = playerHandle.data.transform; bearTurn.step(dt, pt.x, pt.y, !!(dialogueCtl && dialogueCtl.open)); } // NPC-BEAR-01 // US-079a (29.1)
       if (beasts && assets.uiStyle) stepCombatHint(engine.world, assets.uiStyle, beasts); // COMBAT-HINT-01: once-per-save first-fight hint (taken from lane C)
       if (telegraphWire) telegraphWire.step(performance.now());
@@ -1581,6 +1781,7 @@ async function runGame(mode, cinematic = null) {
       // first `buildLightSet`) - `stepBeacon` treats that as a no-op past the
       // clip switch (the light ramp itself just does not run without one).
       stepBeacon(engine.world, lightSet, dt, assets.palette);
+      if (relayWake) relayWake.step(dt, lightSet); // WS1-06b: relay wake timer / light grow (no-op while all relays are dead)
       // OWN-REQ-006: a no-op every step before `lantern.take` fires and every
       // step after (no ramp, unlike stepBeacon - the hook light just needs to
       // go off the instant the lamp is taken); same fixed step as
@@ -1743,7 +1944,6 @@ async function runGame(mode, cinematic = null) {
       // needs its own explicit `.project()` before `renderWorld` reads
       // `fb.voxelPool.list` (compositor.js).
       gameVoxelPool.collect(engine.world, cam);
-      if (engine.feedVoxels) engine.feedVoxels(gameVoxelPool, cam); // WILD-06: ambient fauna pushes (same hook as frameRenderer.js)
       if (telegraphWire && beasts) { fillEntityTints(entityTintTable, beasts.entities, gameVoxelPool, performance.now()); fb.entityTints = entityTintTable; } else if (fb.entityTints) fb.entityTints = undefined; // TELEGRAPH-WIRE-01 part 2
       if (!fb.gpu) gameVoxelPool.project(cam, rt, renderer); // ME-19a: CPU reference uses the same mesh camera.
       lap(SEC.voxel);
@@ -1812,6 +2012,7 @@ async function runGame(mode, cinematic = null) {
       if (invView) invView.pushDim(sceneDim); // US-091b
       if (craftView) craftView.pushDim(sceneDim); // MAIN-WIRE-01
       if (chestHook) chestHook.card.pushDim(sceneDim); // S8-B1-04
+      if (chapterCard) chapterCard.pushDim(sceneDim); // CH1-09
       pushNoteDim(sceneDim); // READ-01: whole-scene x 0.35 while a note is open (no-op otherwise), before applySceneDim/setSceneDim below
       if (questUiActive && !ending) {
         const mapPanel = getMapPanel();
@@ -1832,7 +2033,7 @@ async function runGame(mode, cinematic = null) {
       // regardless of `?grid=`.
       if (!ending && !uiLockedNow && !cinematic && !isWaterfallPreview) drawCrosshair(ui, crosshairStyle, engine.world.interaction);
       if (questUiActive && !ending) {
-        if ((!isCaptureOrBench || params.get('save') === '1') && !wakeOut.inputLocked) gameHooks.drawHud(ui); // D-050 seam: today the quest relay's TEMPORARY objective line, top-left
+        if ((!isCaptureOrBench || params.get('save') === '1') && !wakeOut.inputLocked) { gameHooks.drawHud(ui); if (relayWake) relayWake.drawHud(ui); } // D-050 seam: today the quest relay's TEMPORARY objective line, top-left
         drawHints(ui, assets.uiStyle, fadeLut);
         // 17.4: an eyelid over the 3D view, not UI text. BUG-WEBGPU-EYELID-01: once the WebGPU frame is complete its presenter shows the sprite-pass
         // output, so CPU scene-cell writes never appear -> draw the lid on the UI layer there (an opaque full-row overlay); else in the scene grid.
@@ -1842,6 +2043,7 @@ async function runGame(mode, cinematic = null) {
         // blank (unexplored fog) cells an opaque black backing so they never show the scene through (ARCH note,
         // docs/lanes/pc-c.md batch 16); the fog itself is fed by mapFogHook.js (S8-B1-16).
         drawMapCard(ui, fb.timeSec * 1000, fadeLut);
+        if (travel) travel.draw(ui, ui.cols, ui.rows); // WS1-07b: fade over the world + card, under the later HUD
         // US-080a2/080b (30.2): HP+MP HUD + hurt edge - hidden on title/map/end/death cards (visibleRule, uiStyle.vitals).
         if (vitals) {
           // Q9 item 2c: hidden on the title (wakeOut.inputLocked covers the wake/title timeline) and map cards too,
@@ -1851,6 +2053,7 @@ async function runGame(mode, cinematic = null) {
           hurtFx.draw(ui); // HURT-FX-01
           deathFlow.draw(ui, ui.cols, ui.rows); // DEATH-FLOW-01
           presentPickups(engine.world, assets.pickupStyle, fb.timeSec); // US-080b
+          compass.setHidden(compassHide); compass.draw(ui, ui.cols, ui.rows, fb.timeSec); // COMPASS-02 (D-061)
           if (toasts && !vitals.dead && !wakeOut.inputLocked && !isMapOpen()) toasts.draw(ui, fb.timeSec); // US-091a2 loot toast
         }
       }
@@ -1865,8 +2068,12 @@ async function runGame(mode, cinematic = null) {
       // `window.ASSETS.particles`/`window.ASSETS.waterLooks` above).
       drawNotePanel(ui, window.ASSETS.notes, assets.uiStyle);
       if (dialogueCtl) dialogueCtl.draw(ui, fb.timeSec); // DIALOGUE-01b2
+      if (barks && !ch1Hidden) barks.draw(ui, fb.timeSec); // CH1-06
+      notice.draw(ui, ch1Hidden); // CH1-04a
+      if (chapterCard) chapterCard.draw(ui); // CH1-09
       if (invView) invView.draw(ui); // US-091b: the pack screen, over HUD + toast
       if (craftView) craftView.draw(ui); // MAIN-WIRE-01
+      if (qlIsOpen()) qlView.draw(ui); // QG-05
       // US-080a1/a2 (30.2): death fade (CPU path, same gating as the end-card
       // scene fade above) + the death card (typed line + "[E] Wake again").
       if (vitals && vitals.dead && !deathFlow.active) { // DEATH-FLOW-01 part 2: the flow replaces the old fade+card (old path stays when the flow is off)

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "id": "burl.boars",
+  "title": "Boars in the Woods",
+  "giver": { "npc": "bear" },
+  "requires": [{ "quest": "m1", "step": "sword" }],
+  "objectives": [
+    { "id": "beasts", "text": "Bring down the five wild boars", "when": { "type": "beasts", "ids": ["boar1", "boar2", "boar3", "boar4", "boar5"], "count": 5 } }
+  ],
+  "returnText": "Tell Burl the slope is quiet"
+}

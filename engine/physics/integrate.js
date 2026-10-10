@@ -12,11 +12,13 @@
 //   4b. Walk bound (US-026a, architecture.md 23.3) - only when `world.bounds`.
 //   5. Vertical, gated on the CURRENT grounded; terrain slope rule (US-026a).
 //   6. updateEyeFeel (visual only).
+import { projectBounds } from './bounds.js';
 import { moveCapsule, sectorOrOutside } from './capsule.js';
 import { updateEyeFeel } from '../entities/EyeFeel.js';
 import { clamp, approach } from '../core/math.js';
 
 const EPS = 1e-6;
+const _bp = { x: 0, y: 0, nx: 0, ny: 0 }; // step 4b scratch (WS1-01)
 
 // Per-body scratch (architecture.md section 9: no per-step allocations) -
 // created once per entity (on first `integrate` call for it) and reused
@@ -175,18 +177,13 @@ export function integrate(entity, dt, controls, world, cfg) {
   // inside integrate (flags only; `world.triggers`' `'bounds'` shape reads
   // position against `world.bounds` separately, per 23.5).
   if (world.bounds) {
-    const bx = world.bounds.x, by = world.bounds.y, r = world.bounds.r;
-    const dx = t.x - bx, dy = t.y - by;
-    const d = Math.hypot(dx, dy);
-    const lim = r - body.radius;
-    if (d > lim && d > EPS) {
-      const nx2 = dx / d, ny2 = dy / d;
-      t.x = bx + nx2 * lim;
-      t.y = by + ny2 * lim;
-      const vn = body.vx * nx2 + body.vy * ny2;
+    if (projectBounds(world.bounds, t.x, t.y, body.radius, _bp)) {
+      t.x = _bp.x;
+      t.y = _bp.y;
+      const vn = body.vx * _bp.nx + body.vy * _bp.ny;
       if (vn > 0) {
-        body.vx -= vn * nx2;
-        body.vy -= vn * ny2;
+        body.vx -= vn * _bp.nx;
+        body.vy -= vn * _bp.ny;
       }
       body.boundsHit = true;
     } else {

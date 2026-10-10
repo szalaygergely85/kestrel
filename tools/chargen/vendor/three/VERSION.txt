@@ -1,0 +1,1 @@
+three.js r169 (0.169.0) from npm package 'three', MIT; files: build/three.module.js, examples/jsm/{loaders/GLTFLoader,controls/OrbitControls,utils/BufferGeometryUtils}.js. Addons import 'three' -> use an import map in tools/chargen/index.html.

@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - towerCrown (CH1-D1b) preview</title>
+<style>
+  body { margin: 0; background: #07080b; color: #c9c2b4; font: 13px "Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace; }
+  header { padding: 8px 12px; border-bottom: 1px solid #222; }
+  h1 { font-size: 15px; margin: 0 0 4px; color: #e8c872; }
+  .row { display: flex; gap: 14px; padding: 8px 12px; flex-wrap: wrap; align-items: center; }
+  label { white-space: nowrap; }
+  input[type=range] { vertical-align: middle; width: 130px; }
+  button { background: #1a1c22; color: #c9c2b4; border: 1px solid #333; padding: 3px 8px; font: inherit; cursor: pointer; }
+  #wrap { display: flex; gap: 12px; padding: 0 12px 12px; }
+  canvas { display: block; background: #000; border: 1px solid #222; }
+  #stats { min-width: 300px; white-space: pre; line-height: 1.45; }
+  .ok { color: #7c6; } .bad { color: #e55; }
+</style>
+</head>
+<body>
+<header>
+  <h1>towerCrown - the broken crown + the Kestrel's snagged envelope (CH1-D1b part 2)</h1>
+  ASCII splat preview (orthographic, one glyph per cell, material ramp + base colour, Lambert on the visible voxel face).
+  Scale figures: 1.8 m on the broken west string course and 1.8 m at the foot of the (proxy) 12 m wall.
+</header>
+<div class="row">
+  <label>view yaw <input id="yaw" type="range" min="0" max="359" value="215"> <span id="yawV"></span></label>
+  <label>pitch <input id="pitch" type="range" min="-15" max="80" value="8"> <span id="pitchV"></span></label>
+  <label>zoom <input id="zoom" type="range" min="6" max="60" value="16"> <span id="zoomV"></span></label>
+  <label>target h <input id="th" type="range" min="0" max="16" value="9" step="0.5"> <span id="thV"></span></label>
+  <label>light az <input id="laz" type="range" min="0" max="359" value="300"></label>
+  <label>light elev <input id="lel" type="range" min="5" max="90" value="40"></label>
+  <label><input id="walls" type="checkbox" checked> proxy walls 0-12 m</label>
+  <label><input id="figs" type="checkbox" checked> 1.8 m figures</label>
+  <label><input id="fine" type="checkbox"> fine cells</label>
+</div>
+<div class="row">
+  <button data-v="215,8,16,9">meadow (SW, low)</button>
+  <button data-v="180,10,22,13">from the west / breach side</button>
+  <button data-v="90,15,22,13">east (sun side)</button>
+  <button data-v="270,20,22,13">north</button>
+  <button data-v="215,75,22,13">top-down</button>
+  <button data-v="215,30,40,13">close-up NW snag</button>
+</div>
+<div id="wrap"><canvas id="cv"></canvas><div id="stats">loading...</div></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../models/voxel_tower_crown.js"></script>
+<script>
+(function () {
+  'use strict';
+  var A = window.ASSETS, P = A.palette, M = A.voxelModels.towerCrown, V = M.voxel, D2R = Math.PI / 180;
+  var $ = function (id) { return document.getElementById(id); };
+  var BASE_Z = M.placement.entity.z;                         // world z of the anchor (12.0)
+
+  function hex2rgb(h) { h = (h || '#888888').replace('#', ''); if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    return [parseInt(h.substr(0, 2), 16), parseInt(h.substr(2, 2), 16), parseInt(h.substr(4, 2), 16)]; }
+  function matInfo(key) {
+    var m = P.materials[key] || {}, col = (P.colors && P.colors[m.base]) || null;
+    var ramp = (P.ramps && P.ramps[m.ramp]) || ' .,:;+*%#&@';
+    if (!col && A.detailPass && A.detailPass.materials[key] && A.detailPass.materials[key].tones) col = P.colors[A.detailPass.materials[key].tones[0][0]];
+    return { rgb: hex2rgb(col || '#888888'), ramp: ramp.replace(/^ +/, '') || '#' };
+  }
+
+  // ---- voxel list (surface only), in a right-handed frame X east, Y NORTH (= -model y), Z up, metres, world z ----
+  var sx = V.size[0], sy = V.size[1], sz = V.size[2], c = V.cellM, an = V.anchor;
+  function full(x, y, z) { return x >= 0 && y >= 0 && z >= 0 && x < sx && y < sy && z < sz && V.layers[z][y][x] !== '.'; }
+  var FACES = [[1, 0, 0, 1, 0, 0], [-1, 0, 0, -1, 0, 0], [0, 1, 0, 0, -1, 0], [0, -1, 0, 0, 1, 0], [0, 0, 1, 0, 0, 1], [0, 0, -1, 0, 0, -1]];
+  var MODEL = [], solid = 0, surface = 0, perMat = {}, INFO = {};
+  Object.keys(V.mats).forEach(function (ch) { INFO[ch] = matInfo(V.mats[ch]); });
+  for (var z = 0; z < sz; z++) for (var y = 0; y < sy; y++) for (var x = 0; x < sx; x++) {
+    var ch = V.layers[z][y][x]; if (ch === '.') continue;
+    solid++;
+    var faces = [];
+    FACES.forEach(function (f) { if (!full(x + f[0], y + f[1], z + f[2])) faces.push([f[3], f[4], f[5]]); });
+    if (!faces.length) continue;
+    surface++; perMat[V.mats[ch]] = (perMat[V.mats[ch]] || 0) + 1;
+    MODEL.push({ p: [(x + 0.5 - an[0]) * c, -(y + 0.5 - an[1]) * c, (z + 0.5 - an[2]) * c + BASE_Z], f: faces, info: INFO[ch], s: c });
+  }
+  // proxy walls (the sector walls the level rework will raise): ring r 4.9..6.0, 0..12 m, surface samples only
+  var WALLS = [], stoneI = matInfo('stone');
+  (function () {
+    var step = 0.25;
+    [[6.0, 1], [4.9, -1]].forEach(function (rr) {
+      var n = Math.round(2 * Math.PI * rr[0] / step);
+      for (var i = 0; i < n; i++) {
+        var a = i / n * 2 * Math.PI, nx = Math.cos(a) * rr[1], ny = Math.sin(a) * rr[1];
+        for (var h = 0.125; h < 11.25; h += step) WALLS.push({ p: [rr[0] * Math.cos(a), rr[0] * Math.sin(a), h], f: [[nx, ny, 0]], info: stoneI, s: step, dim: 0.75 });
+      }
+    });
+  })();
+  // 1.8 m figures (0.1 m voxels): legs, torso, arms, head; hero green
+  var FIGS = [], heroI = { rgb: hex2rgb((P.colors && P.colors.heroGreen) || '#5fbf4a'), ramp: '.:-=+*#%@' };
+  function figure(cx, cy, cz) {
+    function box(x0, x1, y0, y1, z0, z1) {
+      for (var zz = z0; zz < z1; zz += 0.1) for (var yy = y0; yy < y1; yy += 0.1) for (var xx = x0; xx < x1; xx += 0.1)
+        FIGS.push({ p: [cx + xx + 0.05, cy + yy + 0.05, cz + zz + 0.05], f: [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1]], info: heroI, s: 0.1 });
+    }
+    box(-0.2, -0.05, -0.1, 0.1, 0, 0.85); box(0.05, 0.2, -0.1, 0.1, 0, 0.85);    // legs
+    box(-0.22, 0.22, -0.12, 0.12, 0.85, 1.5);                                   // torso
+    box(-0.32, -0.22, -0.06, 0.06, 0.8, 1.45); box(0.22, 0.32, -0.06, 0.06, 0.8, 1.45);  // arms
+    box(-0.1, 0.1, -0.1, 0.1, 1.55, 1.8);                                       // head (neck gap 0.05)
+  }
+  var aF = 168 * D2R;                                       // west string course, south of the snag (model th +168 = south of west)
+  figure(5.6 * Math.cos(aF), -5.6 * Math.sin(aF), BASE_Z + 0.5);
+  figure(7.2 * Math.cos(aF), -7.2 * Math.sin(aF), 0);
+
+  // ---- render ----
+  var cv = $('cv'), ctx = cv.getContext('2d');
+  function render() {
+    var fine = $('fine').checked, cw = fine ? 4 : 7, chh = fine ? 7 : 12, W = 1120, H = 720;
+    cv.width = W; cv.height = H;
+    var cols = Math.floor(W / cw), rows = Math.floor(H / chh);
+    var yaw = +$('yaw').value * D2R, pit = +$('pitch').value * D2R, zoom = +$('zoom').value, tz = +$('th').value;
+    // view yaw = compass bearing of the camera FROM the tower (0 = north, 90 = east, 180 = south, 270 = west) -> math az
+    var az = (90 - +$('yaw').value) * D2R;
+    var cd = [Math.cos(az) * Math.cos(pit), Math.sin(az) * Math.cos(pit), Math.sin(pit)];
+    var v = [-cd[0], -cd[1], -cd[2]], right = [v[1], -v[0], 0], rl = Math.hypot(right[0], right[1]) || 1;
+    right = [right[0] / rl, right[1] / rl, 0];
+    var up = [right[1] * v[2] - right[2] * v[1], right[2] * v[0] - right[0] * v[2], right[0] * v[1] - right[1] * v[0]];
+    var laz = (90 - +$('laz').value) * D2R, lel = +$('lel').value * D2R;
+    var L = [Math.cos(laz) * Math.cos(lel), Math.sin(laz) * Math.cos(lel), Math.sin(lel)];
+    var zb = new Float32Array(cols * rows).fill(-1e9), gl = new Array(cols * rows), co = new Array(cols * rows);
+    function splat(list) {
+      for (var i = 0; i < list.length; i++) {
+        var o = list[i], px = o.p[0], py = o.p[1], pz = o.p[2] - tz;
+        var sxp = px * right[0] + py * right[1], syp = px * up[0] + py * up[1] + pz * up[2], d = px * cd[0] + py * cd[1] + pz * cd[2];
+        var best = null, bd = 0.05;
+        for (var k = 0; k < o.f.length; k++) { var n = o.f[k], dd = n[0] * cd[0] + n[1] * cd[1] + n[2] * cd[2]; if (dd > bd) { bd = dd; best = n; } }
+        if (!best) continue;
+        var lam = Math.max(0, best[0] * L[0] + best[1] * L[1] + best[2] * L[2]), s = (0.22 + 0.78 * lam) * (o.dim || 1);
+        var hs = o.s * 0.62 * zoom;
+        var c0 = Math.floor((sxp * zoom - hs) / cw + cols / 2), c1 = Math.floor((sxp * zoom + hs) / cw + cols / 2);
+        var r0 = Math.floor((-syp * zoom - hs) / chh + rows / 2), r1 = Math.floor((-syp * zoom + hs) / chh + rows / 2);
+        var ramp = o.info.ramp, g = ramp[Math.min(ramp.length - 1, Math.max(0, Math.round(s * (ramp.length - 1))))];
+        var m = 0.35 + 0.85 * s, rgb = o.info.rgb;
+        var col = 'rgb(' + Math.min(255, rgb[0] * m | 0) + ',' + Math.min(255, rgb[1] * m | 0) + ',' + Math.min(255, rgb[2] * m | 0) + ')';
+        for (var rr = r0; rr <= r1; rr++) for (var cc = c0; cc <= c1; cc++) {
+          if (rr < 0 || cc < 0 || rr >= rows || cc >= cols) continue;
+          var idx = rr * cols + cc;
+          if (d > zb[idx]) { zb[idx] = d; gl[idx] = g; co[idx] = col; }
+        }
+      }
+    }
+    splat(MODEL);
+    if ($('walls').checked) splat(WALLS);
+    if ($('figs').checked) splat(FIGS);
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    ctx.font = (fine ? 7 : 12) + 'px "Cascadia Mono", Consolas, monospace'; ctx.textBaseline = 'top';
+    for (var i = 0; i < cols * rows; i++) if (gl[i]) { ctx.fillStyle = co[i]; ctx.fillText(gl[i], (i % cols) * cw, Math.floor(i / cols) * chh); }
+    // 1.8 m and 12 m scale bars (screen-vertical, exact only at pitch 0)
+    ctx.fillStyle = '#e8c872'; var bx = 14, by = H - 20, px18 = 1.8 * zoom * Math.cos(pit), px12 = 12 * zoom * Math.cos(pit);
+    ctx.fillRect(bx, by - px18, 2, px18); ctx.fillText('1.8 m', bx + 5, by - px18);
+    ctx.fillRect(bx + 50, by - px12, 2, px12); ctx.fillText('12 m', bx + 55, by - px12);
+    ['yaw', 'pitch', 'zoom', 'th'].forEach(function (k) { $(k + 'V').textContent = $(k).value; });
+  }
+
+  // ---- stats ----
+  function statsText(valid) {
+    var b = M.budget, lines = [];
+    lines.push('grid        ' + V.size.join(' x ') + ' @ ' + V.cellM + ' m = ' + V.size.map(function (n) { return (n * V.cellM).toFixed(2); }).join(' x ') + ' m');
+    lines.push('anchor      [' + V.anchor.join(', ') + '] = ring centre, crown base');
+    lines.push('solid       ' + solid);
+    lines.push('surface     ' + surface + ' / ' + b.limit + '  ' + (surface <= b.limit ? 'OK' : 'OVER BUDGET'));
+    lines.push('  (model.budget says ' + b.surfaceVoxels + ')');
+    lines.push('');
+    lines.push('surface by material:');
+    Object.keys(perMat).sort(function (a, b2) { return perMat[b2] - perMat[a]; }).forEach(function (k) { lines.push('  ' + (k + '                  ').slice(0, 18) + perMat[k]); });
+    lines.push('');
+    lines.push('registry    ASSETS.models.towerCrown ' + (A.models.towerCrown ? 'attached' : 'NOT attached (material missing)'));
+    lines.push('validate    ' + valid);
+    lines.push('');
+    lines.push('placement   world (' + M.placement.entity.x + ', ' + M.placement.entity.y + '), z ' + M.placement.entity.z + ', yaw 0');
+    lines.push('            no collider, castShadow true');
+    lines.push('extent      z ' + M.placement.worldExtent.z.join('..') + ' m');
+    $('stats').innerHTML = lines.join('\n').replace('OVER BUDGET', '<span class="bad">OVER BUDGET</span>').replace(/ OK$/m, ' <span class="ok">OK</span>');
+  }
+  statsText('(loading engine validator...)');
+  import('../../engine/voxel/VoxelModel.js').then(function (mod) {
+    var r = mod.validateVoxelModel(V, { materialKeys: Object.keys(P.materials) });
+    statsText(r.errors.length ? 'ERRORS: ' + r.errors.slice(0, 4).join(' | ') : 'OK (' + r.warnings.length + ' warnings)');
+  }).catch(function () { statsText('(engine module not loaded - serve over http from the repo root)'); });
+
+  ['yaw', 'pitch', 'zoom', 'th', 'laz', 'lel', 'walls', 'figs', 'fine'].forEach(function (id) { $(id).oninput = render; $(id).onchange = render; });
+  Array.prototype.forEach.call(document.querySelectorAll('button[data-v]'), function (b) {
+    b.onclick = function () { var v = b.getAttribute('data-v').split(','); $('yaw').value = v[0]; $('pitch').value = v[1]; $('zoom').value = v[2]; $('th').value = v[3]; render(); };
+  });
+  render();
+})();
+</script>
+</body>
+</html>

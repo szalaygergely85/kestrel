@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "id": "m1",
+  "objectives": [
+    { "id": "wake", "text": "Get up from the wreck", "when": { "type": "flag", "id": "wake", "equals": true } },
+    { "id": "lantern", "text": "Take the Kestrel's lamp", "when": { "type": "item", "id": "lantern" } },
+    { "id": "breach", "text": "Climb to the breach at the top", "when": { "type": "area", "id": "breach" } },
+    { "id": "sword", "text": "Take up the ruin steel", "when": { "type": "item", "id": "sword" } },
+    { "id": "beasts", "text": "Find the old bear on the hillside", "when": { "type": "flag", "id": "quest.burl.boars.done", "equals": true } },
+    { "id": "waystone", "text": "Walk the pencil line to the waystone", "when": { "type": "area", "id": "waystone" } }
+  ]
+}

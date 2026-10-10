@@ -9,45 +9,66 @@ import { createWaystone } from '../sim/waystone.js';
 export const TOAST_SAVED = 'Saved. The stone will remember.';
 export const TOAST_HEALED = 'Warmth in the hands. Hearts full.';
 export const TOAST_SEC = 3.5;
+export const RELAY_SAVED = 'Saved. The relay will remember.'; // story.md toast.relay.saved
+export const RELAY_TITLES = { ws_roadBend: 'Bend Relay' }; // story.md place.relay.<id>
 const FG = [236, 226, 190], BG = [10, 11, 16];
 
 export function createWaystoneWire(opts = {}) {
   const toastSec = opts.toastSec ?? TOAST_SEC;
   let ctx = null, sim = null, left = 0;
-  const lines = [TOAST_SAVED, TOAST_HEALED];
+  const dormant = new Set(); // CH1-04b: stone ids whose first touch is the wake (notice only)
+  const pose = { x: 0, y: 0, z: 0, yawDeg: 0 };
+  const lines = [TOAST_SAVED, TOAST_HEALED, ''];
+  let nLines = 2;
 
   function put(ui, x, y, code) { if (x >= 0 && x < ui.cols) ui.setCellRGB(x, y, code - 32, FG[0], FG[1], FG[2], BG[0], BG[1], BG[2]); }
 
-  return {
-    get sim() { return sim; },
-    get toastLeft() { return left; },
-    onBoot(c) {
-      ctx = c; sim = null; left = 0;
-      const p = c.player;
+  function init() {
+    const c = ctx, p = c && c.player;
       if (!p || !p.transform || !p.components || !p.components.health || !c.world || !c.world.state) return;
       const t = p.transform;
       try {
+        // Travel points come from entity data (components.waystone); no coordinates here.
+        const points = []; dormant.clear();
+        if (c.world.forEachEntity) c.world.forEachEntity((e) => {
+          const w = e && e.components && e.components.waystone;
+          if (w && w.dormant && typeof w.id === 'string') dormant.add(w.id);
+          if (w && typeof w.id === 'string') points.push({ id: w.id, label: w.label, kind: w.kind, order: w.order });
+        });
         sim = createWaystone(c.world, p, {
-          waystones: [], requestSave: c.requestSave,
+          waystones: [], points, requestSave: c.requestSave, canWake: opts.canWake,
           spawn: { x: t.x, y: t.y, z: t.z, yawDeg: Number.isFinite(t.yawDeg) ? t.yawDeg : 0 },
         });
-      } catch (e) { sim = null; }
-    },
+      } catch (e) { sim = null; console.error('[waystone] sim init failed:', e && e.message); }
+  }
+  return {
+    get sim() { if (!sim && ctx) init(); return sim; }, // lazy: the player's health component may only exist after the first vitals step
+    get toastLeft() { return left; },
+    onBoot(c) { ctx = c; sim = null; left = 0; init(); },
     onEvent(name, d) {
-      if (name !== 'prop:touched' || !d || d.id !== 'waystone' || !ctx || !sim) return;
+      if (name !== 'prop:touched' || !d || !ctx) return;
+      if (d.kind !== 'waystone' && d.kind !== 'relay') return;
+      // The meadow stone keeps id 'waystone' (no save migration); register it when the data carries no waystone component.
+      if (!sim && ctx) init();
+      if (!sim) return;
+      if (!sim.has(d.id)) { if (d.id !== 'waystone') return; sim.register({ id: 'waystone', label: 'Meadow stone', kind: 'stone', order: 1 }); }
       const t = ctx.player.transform;
       const yaw = Number.isFinite(ctx.state.playerYawDeg) ? ctx.state.playerYawDeg : (t.yawDeg || 0);
-      // Touch happens once per walk-in (the seam re-arms only after leaving), so building the 1-point sim here is a one-off.
-      const touch = createWaystone(ctx.world, ctx.player, {
-        waystones: [{ id: 'waystone', pos: { x: t.x, y: t.y, z: t.z, yawDeg: yaw } }],
-        spawn: sim.snapshot().pos, requestSave: ctx.requestSave,
-      });
-      if (touch.touch('waystone')) { sim = touch; left = toastSec; }
+      pose.x = t.x; pose.y = t.y; pose.z = t.z; pose.yawDeg = yaw;
+      const first = !sim.isTouched(d.id);
+      if (!sim.touch(d.id, pose)) return;
+      if (d.kind === 'relay') {
+        if (first) return; // the wake itself shows the relay notice (relayWake.js): one message only
+        lines[0] = RELAY_TITLES[d.id] || d.id; lines[1] = RELAY_SAVED; lines[2] = TOAST_HEALED; nLines = 3;
+      } else {
+        if (first && dormant.has(d.id)) return; // CH1-04b: the stone's first touch is its wake: the notice only
+        lines[0] = TOAST_SAVED; lines[1] = TOAST_HEALED; nLines = 2; }
+      left = toastSec;
     },
     onTick(dt) { if (left > 0) left -= dt; },
     drawHud(ui) {
       if (left <= 0) return;
-      for (let i = 0; i < 2; i++) {
+      for (let i = 0; i < nLines; i++) {
         const s = lines[i], y = 3 + i;
         for (let j = -1; j <= s.length; j++) put(ui, 2 + j, y, 32);
         for (let j = 0; j < s.length; j++) put(ui, 2 + j, y, s.charCodeAt(j));

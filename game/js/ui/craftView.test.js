@@ -2,6 +2,14 @@
 // Run: node --expose-gc game/js/ui/craftView.test.js
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+// heap-growth check needs gc: re-spawn with --expose-gc when run without it (e.g. via run-tests.mjs)
+if (typeof globalThis.gc !== 'function') {
+  const res = spawnSync(process.execPath, ['--expose-gc', fileURLToPath(import.meta.url)], { stdio: 'inherit' });
+  process.exit(res.status ?? 1);
+}
 import { createUiLayer } from '../../../engine/index.js';
 import itemsMod from '../../../design/items.js';
 import invStyleMod from '../../../design/models/inventory_ui.js';
@@ -68,7 +76,9 @@ press('Enter'); assert.equal(countOf(inv, 'torch'), 1, 'second Enter without inp
 press('Escape'); assert.equal(view.isOpen, false);
 
 // zero allocation per frame
+// warm-up: Node 24 tiers JIT up late (same as FRAME-ALLOC-03), so 1e4 steps was too short to see steady state
 view.open(); view.draw(ui);
+for (let i = 0; i < 6e4; i++) view.draw(ui);
 globalThis.gc?.();
 const m0 = process.memoryUsage().heapUsed;
 for (let i = 0; i < 1e4; i++) view.draw(ui);

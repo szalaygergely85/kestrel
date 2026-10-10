@@ -140,10 +140,10 @@ const toWorld = ([lx, ly]) => ({ x: TOWER_ORIGIN.x + lx, y: TOWER_ORIGIN.y + ly,
 // do-not list for game/js/quest/* - this is a physics probe, not that
 // module, but it still reads the real values off the loaded world below).
 function buildWaypoints(world) {
-  const b = world.bounds;
+  const b = world.bounds.parts[0]; // WS1-04: union; part 0 = the old circle
   const terrainNear = { x: 1470, y: 1029 }; // real terrain, just past the breach/outcrop (outside the tower's 24x14 bbox)
   const waystone = { x: 1428, y: 1040 }; // content/worlds/world_m1.world.json endMarker/trigger
-  const boundEdge = { x: b.x - (b.r + 5), y: b.y }; // past the walk bound, along -x from centre
+  const boundEdge = { x: 1195, y: 1047 }; // WS1-04: past the west end of the road corridor (capsule end x 1240 - r 40 = 1200)
   return [
     ...routeLocal.map(toWorld), // ground floor -> stairs -> breach (structure interior)
     { x: terrainNear.x, y: terrainNear.y }, // onto real terrain, just past the breach
@@ -244,7 +244,7 @@ ok('upper stair landing is open without animation', world.structures.find(s => s
 const waypoints = buildWaypoints(world);
 const player = makePlayer(TOWER_ORIGIN.x + startPose.x, TOWER_ORIGIN.y + startPose.y, 1);
 
-const endTriggerRec = world.triggers.find((t) => t.name === 'quest.end');
+const endTriggerRec = world.triggers.find((t) => t.id === 'end' && t.structId === null) // area-only zone since WAYSTONE-NORMAL-01;
 const boundsTriggerRec = world.triggers.find((t) => t.def && t.def.hint === 'boundsEdge');
 let sawEndTrigger = false, sawBoundsTrigger = false, sawOutsideStructure = false, sawInsideStructure = false;
 
@@ -280,7 +280,7 @@ ok('route visited the tower structure at some point', sawInsideStructure);
 // actually proves the route reached both real triggers is each TriggerRec's
 // own runtime `inside` flag (rebuilt every step by `updateTriggers`),
 // latched into `sawEndTrigger`/`sawBoundsTrigger` above the instant it read 1.
-ok('route actually entered the waystone `end` trigger circle', !!endTriggerRec && sawEndTrigger, `found=${!!endTriggerRec} entered=${sawEndTrigger}`);
+ok('route actually entered the waystone `end` zone circle', !!endTriggerRec && sawEndTrigger, `found=${!!endTriggerRec} entered=${sawEndTrigger}`);
 ok('route actually entered the `boundsEdge` bounds trigger', !!boundsTriggerRec && sawBoundsTrigger, `found=${!!boundsTriggerRec} entered=${sawBoundsTrigger}`);
 
 // =============================================================================

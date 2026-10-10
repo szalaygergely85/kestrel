@@ -52,7 +52,8 @@ export function serialize(world) {
     // `world.bounds` is already a plain validated copy; `world.def.triggers`
     // is the world-level trigger DEFS (buildTriggers reads them fresh on
     // every load, same as a structure's `def.triggers`).
-    bounds: world.bounds ? { ...world.bounds } : null,
+    bounds: world.bounds ? cloneBounds(world.bounds) : null,
+    ...(world.terrainBand ? { terrainBand: { ...world.terrainBand } } : {}), // WS1-02: only when authored (old saves byte-identical)
     triggers: structuredClone((world.def && world.def.triggers) || []),
     structures: world.structures.map((s) => s.kind === 'mesh' ? {
       id: s.id, mesh: s.mesh.id, origin: { ...s.origin }, yawDeg: s.frame.yawDeg,
@@ -182,6 +183,7 @@ export function deserialize(state, assets, opts = {}) {
     water: state.water || [],
     waterfalls: state.waterfalls || [],
     bounds: state.bounds || null,
+    terrainBand: state.terrainBand || null,
     triggers: state.triggers || [],
     time: state.time && state.time.timeOfDay,
     structures: state.structures.map((s) => s.mesh
@@ -243,4 +245,11 @@ export function deserialize(state, assets, opts = {}) {
  */
 export function stringifySave(state) {
   return stringifyContent({ kind: 'save', ...state });
+}
+
+// WS1-01: deep copy (union parts array must not be shared).
+function cloneBounds(b) {
+  const c = { ...b };
+  if (Array.isArray(b.parts)) c.parts = b.parts.map((p) => ({ ...p }));
+  return c;
 }

@@ -1,0 +1,25 @@
+{
+  "kind": "barks", "schema": 1, "id": "bear",
+  "speakers": {"burl":{"label":"BURL"},"you":{"label":"YOU","player":true}},
+  "barks": {
+    "bear.call": [
+      {"who":"burl","text":"Well, well. The falling cub lives."},
+      {"who":"you","text":"Who's there?"},
+      {"who":"burl","text":"Down here. Among the berries."}
+    ],
+    "bear.walk1": [
+      {"who":"burl","text":"Hear those birds?"},
+      {"who":"you","text":"What about them?"},
+      {"who":"burl","text":"They sing when the woods are at peace."},
+      {"who":"burl","text":"Not everything out here means you harm."}
+    ],
+    "bear.walk2": [
+      {"who":"you","text":"Where does this road lead?"},
+      {"who":"burl","text":"West. To the river, and farther."},
+      {"who":"burl","text":"Older roads cross it. Older stones too."},
+      {"who":"you","text":"Who built them?"},
+      {"who":"burl","text":"Good question."},
+      {"who":"burl","text":"The stones aren't telling."}
+    ]
+  }
+}

@@ -93,6 +93,7 @@
           { shape: 'capsule', ax: 1461, ay: 1031, bx: 1444, by: 1035, r: 4 },     // boar route (boar1 -> boar2 homes)
           { shape: 'disc', x: 1478, y: 1025, r: 5 },                              // breach landing at the tower's west foot
           { shape: 'disc', x: 1500, y: 1010, r: 5.5 },                            // quietPond (world water region r 4: not a terrain water type)
+          { shape: 'disc', x: 1262, y: 1033, r: 8 },                              // WS1-04 Bend Relay (relay + plinth + travel anchor + wake approach)
           { shape: 'capsule', ax: 1487, ay: 1000, bx: 1493, by: 1000, r: 6 },    // floodedCellar water rect [1485, 995, 1495, 1005]
           // OWNER 2026-10-06 "clean the left side of the road": the south (left, walking west) verge of the walk-out path is bare
           // grass, 1..11 m off the centre line (capsule centres = path points + 6 m south, r 5), so the placed Quaternius meshes
@@ -108,29 +109,24 @@
           { shape: 'capsule', ax: 1474, ay: 1040, bx: 1422, by: 1046, r: 9.5 },
           { shape: 'capsule', ax: 1422, ay: 1046, bx: 1353, by: 1064, r: 9.5 },
           { shape: 'capsule', ax: 1353, ay: 1064, bx: 1259, by: 1059, r: 9.5 },
-          { shape: 'capsule', ax: 1259, ay: 1059, bx: 1230, by: 1066, r: 9.5 }
+          { shape: 'capsule', ax: 1259, ay: 1059, bx: 1230, by: 1066, r: 9.5 },
+          // WS1-05 (D-060) road west dressing, printed by `gen-roadside-meshes.mjs --prefix roadW|roadN`: south verge u 250..300 (roadW###) and north verge u 110..300 (roadN###).
+          { shape: 'capsule', ax: 1242, ay: 1063, bx: 1183, by: 1076, r: 9.5 },
+          { shape: 'capsule', ax: 1374, ay: 1026, bx: 1346, by: 1034, r: 10.5 },
+          { shape: 'capsule', ax: 1346, ay: 1034, bx: 1261, by: 1028, r: 10.5 },
+          { shape: 'capsule', ax: 1261, ay: 1028, bx: 1176, by: 1045, r: 10.5 }
         ],
         layers: [
-          { name: 'tufts', seed: 38101, cellM: 2.5, jitter: 1.0, fill: 0.6, maxSlope: 0.7, clearM: 0.8, drawM: 28, lodCells: 4,
+          // PLANT-VOXEL-OFF-01 (owner 2026-10-10 "can you remove voxel plants?"): the voxel plant scatter (tufts layer, voxel flowers,
+          // bushRound, fern, mushrooms) is gone - placed Quaternius plant meshes (world_m1 mdw/roadL rows, PLANT-SCALE-01) are the plants now.
+          // The old 'shrubs' layer keeps only its stones; fill 0.17 = the old stone share (0.5 x 34 %) so meadow stone density is unchanged.
+          { name: 'stones', seed: 38203, cellM: 5, jitter: 1.8, fill: 0.17, maxSlope: 0.55, clearM: 1.2, drawM: 45, lodCells: 4,
             ground: {
-              grass:  [ { model: 'tuftMeadow', weight: 35, sinkM: 0.02, sway: true }, { model: 'tuftLush', weight: 30, sinkM: 0.02, sway: true },
-                        { model: 'tuftShort', weight: 35, sinkM: 0.02, sway: true } ],
-              forest: [ { model: 'tuftLush', weight: 50, sinkM: 0.02, sway: true }, { model: 'tuftShort', weight: 30, sinkM: 0.02, sway: true },
-                        { model: 'pebbles', weight: 20, sinkM: 0.03 } ],
-              rock:   [ { model: 'pebbles', weight: 50, sinkM: 0.03 }, { model: 'tuftShort', weight: 30, sinkM: 0.02, sway: true },
-                        { model: 'rockSmallB', weight: 20, sinkM: 0.03 } ]
-            } },
-          { name: 'shrubs', seed: 38203, cellM: 5, jitter: 1.8, fill: 0.5, maxSlope: 0.55, clearM: 1.2, drawM: 45, lodCells: 4,
-            ground: {
-              grass:  [ { model: 'flowersYellow', weight: 20, sinkM: 0.02, sway: true }, { model: 'flowersWhite', weight: 16, sinkM: 0.02, sway: true },
-                        { model: 'flowersPink', weight: 12, sinkM: 0.02, sway: true }, { model: 'bushRound', weight: 18, sinkM: 0.04, shadow: true, sway: true },
-                        { model: 'rockSmallA', weight: 12, sinkM: 0.03 }, { model: 'rockSmallB', weight: 10, sinkM: 0.03 },
+              grass:  [ { model: 'rockSmallA', weight: 12, sinkM: 0.03 }, { model: 'rockSmallB', weight: 10, sinkM: 0.03 },
                         { model: 'pebbles', weight: 12, sinkM: 0.03 } ],
-              forest: [ { model: 'fern', weight: 40, sinkM: 0.02, sway: true }, { model: 'mushrooms', weight: 16, sinkM: 0.01 },
-                        { model: 'bushRound', weight: 20, sinkM: 0.04, shadow: true, sway: true }, { model: 'flowersWhite', weight: 8, sinkM: 0.02, sway: true },
-                        { model: 'rockSmallA', weight: 8, sinkM: 0.03 }, { model: 'pebbles', weight: 8, sinkM: 0.03 } ],
+              forest: [ { model: 'rockSmallA', weight: 8, sinkM: 0.03 }, { model: 'pebbles', weight: 8, sinkM: 0.03 } ],
               rock:   [ { model: 'rockSmallA', weight: 35, sinkM: 0.03 }, { model: 'rockSmallB', weight: 35, sinkM: 0.03 },
-                        { model: 'pebbles', weight: 20, sinkM: 0.03 }, { model: 'tuftShort', weight: 10, sinkM: 0.02, sway: true } ]
+                        { model: 'pebbles', weight: 20, sinkM: 0.03 } ]
             } },
           // rocks: maxSlope 0.35 + large sinkM 0.20 (half the 0.32-0.40 m foot layer): props are not tilted to the slope
           // (37.4: yaw only), so a 2.8 m flat-bottomed boulder must not show a gap on the downhill side.

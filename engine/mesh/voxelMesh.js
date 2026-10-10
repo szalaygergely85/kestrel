@@ -251,6 +251,7 @@ function emitPartFaces(builder, pm, p, cellM) {
  * @returns {MeshData}
  */
 export function buildVoxelMesh(pm, opts) {
+  if (pm.rig) return buildRiggedMesh(pm, opts); // RIG-02b (38.32)
   const builder = new StaticMeshBuilder(opts.id);
   for (let p = 0; p < pm.partCount; p++) {
     builder.beginRange(opts.partNames[p]);
@@ -266,6 +267,56 @@ export function buildVoxelMesh(pm, opts) {
     console.warn(`buildVoxelMesh: model '${opts.id}' has ${quadCount} quads (> 16384) - u32 index path`);
   }
   return mesh;
+}
+
+/**
+ * RIG-02b (38.32 item 4): mesh of a rigged model from its prebuilt quads (pm.rig), emitted through the SAME
+ * emitFaceQuad as a native voxel model so winding, uv, flat0 (part/face/layer) and flat1 match. Positions are
+ * integer local cells (>= 0); each quad must be one axis-aligned rectangle on one plane.
+ */
+function buildRiggedMesh(pm, opts) {
+  const r = pm.rig;
+  const builder = new StaticMeshBuilder(opts.id);
+  for (let p = 0; p < pm.partCount; p++) {
+    builder.beginRange(opts.partNames[p]);
+    const { start, count } = r.ranges[p];
+    for (let q = start; q < start + count; q++) emitRigQuad(builder, pm, r, q, p);
+  }
+  const mesh = builder.build();
+  mesh.matsResolved = true;
+  const quadCount = mesh.triCount / 2;
+  if (quadCount > MESH_ONLY_MAX_QUADS) {
+    throw new Error(`buildVoxelMesh: model '${opts.id}' has ${quadCount} quads, exceeds MESH_ONLY_MAX_QUADS (${MESH_ONLY_MAX_QUADS})`);
+  }
+  return mesh;
+}
+
+function emitRigQuad(builder, pm, r, q, p) {
+  const P = r.pos, o = 12 * q;
+  const bad = (why) => { throw new Error(`buildRiggedMesh: quad ${q} (part ${p}) ${why}`); };
+  const nx = r.nrm[o], ny = r.nrm[o + 1], nz = r.nrm[o + 2];
+  // axis of the normal (0 x, 1 y, 2 z) and sign
+  const ax = nx ? 0 : ny ? 1 : 2, sg = (nx || ny || nz) > 0 ? 1 : -1;
+  if (Math.abs(nx) + Math.abs(ny) + Math.abs(nz) !== 1) bad('normal is not an axis unit vector');
+  const plane = P[o + ax];
+  const u = ax === 0 ? 1 : 0, v = ax === 2 ? 1 : 2; // in-plane axes: W/E (y,z), N/S (x,z), U/D (x,y)
+  let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+  for (let c = 0; c < 4; c++) {
+    if (P[o + 3 * c + ax] !== plane) bad('corners are not on one plane');
+    const a = P[o + 3 * c + u], b = P[o + 3 * c + v];
+    if (a !== (a | 0) || b !== (b | 0) || plane !== (plane | 0) || plane < 0 || a < 0 || b < 0) bad('has off-grid or negative coordinates');
+    if (a < a0) a0 = a; if (a > a1) a1 = a; if (b < b0) b0 = b; if (b > b1) b1 = b;
+  }
+  if (!(a1 > a0 && b1 > b0)) bad('is degenerate');
+  for (let c = 0; c < 4; c++) { // every corner must be a rectangle corner
+    const a = P[o + 3 * c + u], b = P[o + 3 * c + v];
+    if ((a !== a0 && a !== a1) || (b !== b0 && b !== b1)) bad('is not an axis-aligned rectangle');
+  }
+  let face, layer;
+  if (ax === 0) { face = sg < 0 ? FACE_W : FACE_E; layer = sg < 0 ? plane : plane - 1; }
+  else if (ax === 1) { face = sg < 0 ? FACE_N : FACE_S; layer = sg < 0 ? plane : plane - 1; }
+  else { face = sg < 0 ? FACE_D : FACE_U; layer = sg < 0 ? plane : plane - 1; }
+  emitFaceQuad(builder, pm, face, 0, 0, 0, layer, a0, a1, b0, b1, r.mat[q], pm.cellM, p);
 }
 
 let _buildSeq = 1;
@@ -467,7 +518,7 @@ export class VoxelMeshCache {
    * @returns {MeshData}
    */
   get(pm, modelKey, partNames, lod = 0) {
-    if (lod === 1) {
+    if (lod === 1 && !pm.rig) { // rig models: LOD1 = LOD0 (38.32; downsamplePart reads pm.vox)
       let mesh = this._mapLod1.get(pm);
       if (!mesh) {
         const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();

@@ -65,7 +65,7 @@ const pa = json.accessors[prim.attributes.POSITION];
 let mmOk = true;
 for (let k = 0; k < 3; k++) { let lo = Infinity, hi = -Infinity; for (let i = k; i < pos.length; i += 3) { lo = Math.min(lo, pos[i]); hi = Math.max(hi, pos[i]); } if (lo !== pa.min[k] || hi !== pa.max[k]) mmOk = false; }
 ok('POSITION min/max exact', mmOk);
-ok('character is 1.75 m tall (Y up) and ~0.9 m wide', Math.abs(pa.max[1] - pa.min[1] - 1.75) < 0.01 && pa.min[1] >= -0.001 && pa.max[0] - pa.min[0] > 0.4, `${pa.min} ${pa.max}`);
+ok('character is 1.75 m tall + default hair (Y up, <= 1.78 m) and > 0.4 m wide (D-059 restyle)', Math.abs(pa.max[1] - pa.min[1] - 1.75) < 0.03 && pa.min[1] >= -0.001 && pa.max[0] - pa.min[0] > 0.4, `${pa.min} ${pa.max}`);
 ok('normals are unit axis vectors', (() => { for (let i = 0; i < nv; i++) { const l = Math.hypot(nrm[3 * i], nrm[3 * i + 1], nrm[3 * i + 2]); if (Math.abs(l - 1) > 1e-6) return false; } return true; })());
 
 // ---- winding: the right-handed geometric normal of every triangle equals the exported NORMAL (front face = CCW)
@@ -203,7 +203,7 @@ try { exportGlb(rigged, { rgbOf: () => null }); } catch { threw++; }
 ok('missing rgbOf / object partMap / missing colour throw', threw === 3);
 
 // golden: pinned hash of the default recipe, demo clips (changes only when the format intentionally changes)
-const GOLDEN = '66daffb327e6aee5812ee46fcab179b4468b3f8736d541d21a31970d0254e41c'; // 2026-10-10: default colorMode 'white' (was 9daf4473...); update on an intended kit/format change
+const GOLDEN = 'b5c9fb1a69ceca3c575614706136ca29a6e29fcbc873a822f6fbded4cd343abf'; // 2026-10-10: CHARGEN-26b detail pass (was 42d9d395...); update on an intended kit/format change
 if (sha(glb) !== GOLDEN) console.log('golden sha256 now:', sha(glb));
 ok('real kit validates (array partMap)', validateKit(JSON.parse(JSON.stringify(kit)), globalThis.ASSETS.palette.materials).errors.length === 0);
 ok('golden SHA-256 of the default recipe (demo clips)', sha(glb) === GOLDEN);

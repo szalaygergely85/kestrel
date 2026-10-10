@@ -127,6 +127,16 @@ ok('breach exit is visible: tower start is within 25 m', Math.hypot(tower.origin
   ok('talked flag set once', world.state['dlg.bear.talked'] === true && flags.filter((f) => f === 'bear.talked').length === 1);
   setDialogueApi(null);
 }
+// ---- paused while walking (CH1-07) ----
+{
+  const d = { transform: { x: 0, y: 0, z: 0, yawDeg: 90 } };
+  const turn = createNpcTurn({ get: () => ({ data: d }) }, 'n');
+  turn.paused = true;
+  for (let i = 0; i < 120; i++) turn.step(1 / 60, 0, -1.5, true); // even talking: the walk owns the yaw
+  ok('paused: yaw untouched', d.transform.yawDeg === 90);
+  d.transform.yawDeg = 10; turn.step(1 / 60, 0, -1.5); ok('paused: the home yaw follows the walk', turn.homeYaw === 10 && turn.mode === 0);
+  turn.paused = false; for (let i = 0; i < 300; i++) turn.step(1 / 60, 0, 20); ok('unpaused: stays at the new home yaw', d.transform.yawDeg === 10);
+}
 
 console.log(`npcBear: ${pass} pass, ${fail} fail`);
 if (fail) { console.error(failures.join('\n')); process.exit(1); }

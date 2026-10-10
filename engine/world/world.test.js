@@ -273,9 +273,10 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   ok('outsideSector floorH == terrain.groundAt', outSec.floorH === world.terrain.groundAt(outsideX, outsideY));
 
   // -- world.bounds loaded from content, exactly (23.2) --
-  ok('world.bounds loaded from content', !!world.bounds && world.bounds.shape === 'circle');
-  const boundsDef = assets.world('world_m1').bounds;
-  ok('world.bounds matches content bounds', world.bounds.x === boundsDef.x && world.bounds.y === boundsDef.y && world.bounds.r === boundsDef.r);
+  ok('world.bounds loaded from content', !!world.bounds && world.bounds.shape === 'union');
+  const boundsDef = assets.world('world_m1').bounds.parts[0]; // WS1-04: union; part 0 = the old circle
+  const bp0 = world.bounds.parts[0];
+  ok('world.bounds matches content bounds', bp0.x === boundsDef.x && bp0.y === boundsDef.y && bp0.r === boundsDef.r);
 
   // -- validateBounds throws on a bad shape/field (mirrors validateHorizon's convention) --
   const baseNoTerrain = { terrain: 'overworld_far', structures: [{ id: 'tower', level: 'tower', origin: { x: 1480, y: 1018, z: 0 } }], entities: [] };
@@ -285,11 +286,18 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   ok('bounds: unknown shape throws', boundsThrows({ shape: 'square', x: 0, y: 0, r: 5 }));
   ok('bounds: non-finite x throws', boundsThrows({ shape: 'circle', x: NaN, y: 0, r: 5 }));
   ok('bounds: r <= 0 throws', boundsThrows({ shape: 'circle', x: 0, y: 0, r: 0 }));
+  // WS1-01: union bounds
+  const U = { shape: 'union', parts: [{ shape: 'circle', x: 1496.5, y: 1024.5, r: 96 }, { shape: 'capsule', ax: 1440, ay: 1034, bx: 1350, by: 1048, r: 40 }] };
+  const wU = World.load({ ...baseNoTerrain, bounds: U }, assets, {});
+  ok('union bounds load as a deep copy', wU.bounds.shape === 'union' && wU.bounds.parts.length === 2 && wU.bounds.parts !== U.parts && wU.bounds.parts[1] !== U.parts[1]);
+  ok('union: serialize deep-copies parts', serialize(wU).bounds.parts !== wU.bounds.parts && serialize(wU).bounds.parts[1].bx === 1350);
+  ok('union: bad part index throws with the index', (() => { try { World.load({ ...baseNoTerrain, bounds: { shape: 'union', parts: [U.parts[0], { shape: 'capsule', ax: 0, ay: 0, bx: NaN, by: 0, r: 5 }] } }, assets, {}); return false; } catch (e) { return e.message.includes('parts[1]'); } })());
+  ok('union: empty / 9 parts / unknown part shape throw', boundsThrows({ shape: 'union', parts: [] }) && boundsThrows({ shape: 'union', parts: Array(9).fill(U.parts[0]) }) && boundsThrows({ shape: 'union', parts: [{ shape: 'box' }] }));
   ok('no bounds key -> world.bounds = null (unbounded, every world before this story)', World.load(baseNoTerrain, assets, {}).bounds === null);
 
   // -- world-level triggers: 3 shapes, structId: null (23.2/23.5) --
   const worldTriggers = world.triggers.filter((t) => t.structId === null);
-  ok('world_m1 has the 3 content world-level triggers', worldTriggers.length === 3, worldTriggers.map((t) => t.id).join(','));
+  ok('world_m1 has the 6 content world-level triggers', worldTriggers.length === 6, worldTriggers.map((t) => t.id).join(','));
   const endRec = worldTriggers.find((t) => t.id === 'end');
   const hintStoneRec = worldTriggers.find((t) => t.id === 'hintStone');
   const boundsEdgeRec = worldTriggers.find((t) => t.id === 'boundsEdge');
@@ -328,11 +336,12 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
     fired.length = 0;
     actor.transform.x = 1428; actor.transform.y = 1040;
     updateTriggers(w2, {}, actor);
-    ok('circle "end" fires standing at the waystone', fired.includes(endDef));
+    // WAYSTONE-NORMAL-01: "end" is an area-only zone now - it tracks `inside` but fires no behaviour.
+    ok('circle "end" is area-only: inside=1 at the waystone, fires nothing', !fired.includes(endDef) && w2.triggers.find((t) => t.id === 'end').inside === 1);
 
     // 'bounds' shape: well inside the circle -> no fire; at/past the edge -> fires.
     fired.length = 0;
-    const b = w2.bounds;
+    const b = w2.bounds.parts[0];
     actor.transform.x = b.x; actor.transform.y = b.y; // dead centre
     updateTriggers(w2, {}, actor);
     ok('"bounds" shape does not fire near the centre', !fired.includes(boundsEdgeDef));
@@ -350,12 +359,12 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   {
     const state = serialize(world);
     ok('serialize writes world.bounds', state.bounds && state.bounds.x === world.bounds.x && state.bounds.r === world.bounds.r);
-    ok('serialize writes world.triggers (the world-level trigger DEFS)', Array.isArray(state.triggers) && state.triggers.length === 3);
+    ok('serialize writes world.triggers (the world-level trigger DEFS)', Array.isArray(state.triggers) && state.triggers.length === 6);
 
     const world2 = deserialize(state, assets, {});
     ok('deserialize restores world.bounds', world2.bounds && world2.bounds.x === world.bounds.x && world2.bounds.r === world.bounds.r);
     const world2Triggers = world2.triggers.filter((t) => t.structId === null);
-    ok('deserialize rebuilds the same 3 world-level triggers', world2Triggers.length === 3, world2Triggers.map((t) => t.id).join(','));
+    ok('deserialize rebuilds the same 6 world-level triggers', world2Triggers.length === 6, world2Triggers.map((t) => t.id).join(','));
     ok('deserialize re-bakes the near band', world2.terrain.nearReady === true);
   }
 }

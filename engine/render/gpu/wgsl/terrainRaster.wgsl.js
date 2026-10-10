@@ -52,8 +52,8 @@ fn terrainTypeAt(x: f32, y: f32) -> i32 {
   if (u.nearReady != 0u) {
     let ix = i32(floor((x - u.nearMap.x) / u.nearMap.z));
     let iy = i32(floor((y - u.nearMap.y) / u.nearMap.z));
-    let W = i32(u.nearMap.w);
-    if (ix >= 0 && iy >= 0 && ix < W && iy < W) { return i32(textureLoad(uNearType, vec2i(ix, iy), 0).r); }
+    let W = i32(u.nearMap.w); let H = i32(textureDimensions(uNearType).y); // WS1-03: band may be non-square (W from the uniform, H from the texture)
+    if (ix >= 0 && iy >= 0 && ix < W && iy < H) { return i32(textureLoad(uNearType, vec2i(ix, iy), 0).r); }
   }
   return farTypeNearest(x, y);
 }

@@ -21,7 +21,8 @@ import { CULL_BLOCK, CULL_BUFFERS, CULL_WGSL, CULL_WORKGROUP } from '../wgsl/cul
 import { CULL_SHADOW_BLOCK, CULL_SHADOW_BUFFERS, CULL_SHADOW_WGSL } from '../wgsl/cullShadow.wgsl.js';
 
 const EMPTY = Object.freeze([]);
-export const MAX_CULL_BATCHES = 64;
+export const MAX_CULL_BATCHES = 128; // CULL-CAP-01: 64 -> 128 (per-scale plant groups, owner 2026-10-10 'args slot capacity exceeded (130 > 128)')
+export const MAX_CULL_RANGES = 4;    // CULL-CAP-01: args slots per batch LOD sized for masked meshes up to 4 ranges (was 1 -> overflow)
 export const CULL_IDLE_FRAMES = 600; // 38.10a: a batch untouched by add() for this many begin() calls (~10 s at 60 Hz) is swept
 const ARGS_WORDS = 5; // indexCount, instanceCount, firstIndex, baseVertex, firstInstance
 const ARGS_BYTES = ARGS_WORDS * 4;
@@ -50,7 +51,7 @@ export class WgCullPass {
     this.occlStats = this.occl && (opts.occl === 2 || !!opts.occlStats); // 38.20: debug-only readback (?occl=2), off by default
     this.maxBatches = opts.maxBatches || MAX_CULL_BATCHES;
     this.pipeline = createCullPipeline(device, this.shadow);
-    this.argsCpu = new Uint32Array(this.maxBatches * 2 * ARGS_WORDS);
+    this.argsCpu = new Uint32Array(this.maxBatches * 2 * MAX_CULL_RANGES * ARGS_WORDS);
     this.argsBuffer = device.createBuffer({ usage: 'indirect', bytes: this.argsCpu.byteLength });
     /** @type {Map<any, any>} group -> batch state */
     this.batches = new Map();
@@ -151,6 +152,12 @@ export class WgCullPass {
    */
   supports(g, meshes) {
     if (!this.batches.has(g) && this.batches.size >= this.maxBatches) return false;
+    if (!this.batches.has(g)) { // CULL-CAP-01: never throw at _allocSlots mid-frame - a group that would overflow the args buffer takes the non-cull path
+      let rc = 1;
+      for (const m of meshes) { if (m && m.maskRanges && m.ranges && m.ranges.length > rc) rc = m.ranges.length; }
+      if (rc > 1 && this._nextSlot + 2 * rc > this.argsCpu.length / ARGS_WORDS) return false;
+      if (rc === 1 && this._freeTop === 0 && this._nextSlot + 2 > this.argsCpu.length / ARGS_WORDS) return false;
+    }
     for (let i = 0; i < 2; i++) {
       const m = meshes[i];
       if (!m) continue;

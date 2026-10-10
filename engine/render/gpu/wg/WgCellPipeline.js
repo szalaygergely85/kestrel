@@ -38,6 +38,7 @@ function sumFinite(arr) {
 }
 
 const DEPTH_FADE_K = 0.05; // debug depth view: 1 / (1 + d * K)
+const RESIZE_RETRIES = 3; // RESIZE-RECOVER-01: failed grid resizes in a row before the pipeline stays disabled
 const DEBUG_MODE_WORD = DEBUG_BLOCK.field('mode').word;
 const DEBUG_RAYS_WORD = DEBUG_BLOCK.field('rays').word;
 const DEBUG_DEPTH_WORD = DEBUG_BLOCK.field('depthK').word;
@@ -59,16 +60,18 @@ export class WgCellPipeline {
     // US-073c (38.25): temporal glyph stability, `?stable=1`; absent = no pass, no extra target, frame byte-identical to before
     this.stableOpt = !!opts.stable; this._stablePass = null; this._stableOn = false; this._stableRan = false; this._stInp = { shadeFg: null, shadeBg: null, water: null, waterOn: false };
     this.ready = false;
+    this._rz = null; // pending resize retry {cols,rows,tries,wasEnabled}
     /** passes that really execute in this build; `frameComplete` = the pipeline can replace the CPU shading entirely */
     this.portedPasses = [];
     this.frameComplete = false;
     /** the sun map holds depth in [0.5, 1] (38.5 item 6): shadowParity converts `(d - 0.5) * 2` before the twin compare */
     this.shadowDepthHalfRange = true;
     this.rendererString = 'webgpu (WG-4b raster+cull+shadow+water+light+shade+edge+sprites+overlay)';
+    this._offCaller = null;
     this._source = 'scene'; // 'upload' = `?gpucompare=shade` test source (CPU G-buffer -> cell-res textures)
     // same shape as GpuCellPipeline.stats so F3 / benches read it unchanged
     this.stats = {
-      uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN,
+      resizeFailures: 0, offReason: null, offCount: 0, uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN,
       terrainSubmitMs: NaN, terrainSubmitMsP50: NaN, terrainSubmitMsP95: NaN,
       voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0, voxelDraws: 0, meshDraws: 0, vmDraws: 0, clothDraws: 0, instancedDraws: 0, instances: 0,
       waterSlots: 0, waterDraws: 0, shadowItems: 0, shadowDraws: 0, shadowCpuMs: 0, instancesCulled: 0, instancesLod1: 0,
@@ -166,6 +169,7 @@ export class WgCellPipeline {
 
   _onLost() {
     if (!this.ready) return;
+    this._rz = null;
     this.ready = false;
     this.setEnabled(false);
     console.warn('[WgCellPipeline] GPU device lost - pipeline disabled, reload the page');
@@ -174,6 +178,9 @@ export class WgCellPipeline {
   /** Installs/removes the cell-pass hook. Never touches `rt.gpuActive` (the CPU shading must keep running until WG-3). */
   setEnabled(enabled) {
     if (enabled && !this.ready) return;
+    if (!enabled && this.frameComplete) { // GPU-OFF-REASON-01: who switched a running GPU path off (3 stack lines, only on this transition)
+      this._offCaller = String(new Error().stack || '').split('\n').slice(2, 5).map((l) => l.trim()).join(' <- ');
+    }
     this._enabled = !!enabled;
     if (typeof this.rt.setCellPass === 'function') this.rt.setCellPass(enabled ? this._hookFn : null);
     this._syncActive();
@@ -181,12 +188,34 @@ export class WgCellPipeline {
 
   /** WG-3f: `frameComplete` + `rt.gpuActive` follow the wiring (rt.gpuActive is left alone while the pipeline was never complete). */
   _syncActive() {
-    const complete = !!(this.ready && this._enabled && this._spritesBound && this._spritesPass && this._overlayPass &&
-      this._waterPass && this._shadowPass && (this._shadowPass.enabled || this._shadowPass.off) && this._source === 'scene');
+    const reason = this._offReason();
+    const complete = reason === null;
+    const was = this.frameComplete;
     this.frameComplete = complete;
+    this.stats.offReason = reason;
+    if (was && !complete) { // GPU-OFF-REASON-01: once per true -> false transition (the F3 `path: cpu` used to give no hint)
+      this.stats.offCount++;
+      console.warn('[WgCellPipeline] GPU path off:', reason, this._offCaller ? `(setEnabled caller: ${this._offCaller})` : '');
+    }
+    this._offCaller = null;
     const rt = this.rt;
     if (complete || rt.gpuActive) rt.gpuActive = complete;
     if (!complete) this._setPresent(null, null);
+  }
+
+  /** GPU-OFF-REASON-01: null = the GPU path is complete, else the failing terms of the `frameComplete` condition. */
+  _offReason() {
+    const sh = this._shadowPass, bad = [];
+    if (!this.ready) bad.push('ready=false');
+    if (!this._enabled) bad.push('enabled=false');
+    if (!this._spritesBound) bad.push(this._spritesPending ? 'spritesBound=false (compiling)' : 'spritesBound=false');
+    if (!this._spritesPass) bad.push('spritesPass=null');
+    if (!this._overlayPass) bad.push('overlayPass=null');
+    if (!this._waterPass) bad.push('waterPass=null');
+    if (!sh) bad.push('shadowPass=null');
+    else if (!(sh.enabled || sh.off)) bad.push(`shadowPass.enabled=${sh.enabled} off=${sh.off} (sun=${sh.shadowOpts && sh.shadowOpts.sun})`);
+    if (this._source !== 'scene') bad.push(`source=${this._source}`);
+    return bad.length ? bad.join(', ') : null;
   }
 
   _setPresent(fg, bg) { if (typeof this.rt.setPresentCells === 'function') this.rt.setPresentCells(fg, bg); }
@@ -253,21 +282,27 @@ export class WgCellPipeline {
   }
 
   /**
-   * Re-allocates the grid-sized targets. The new set is built before the old one is freed and committed only on success
-   * (a failed alloc keeps the old set but sets `ready=false` + `setEnabled(false)`: rt and pipeline grids must not diverge).
+   * Re-allocates the grid-sized targets. The new set is built before the old one is freed and committed only on success.
+   * RESIZE-RECOVER-01: a failed alloc keeps the old set, disables the pipeline for that frame (rt and pipeline grids must not
+   * diverge) and remembers the size; `frame()` retries it, 3 failures in a row = stays disabled (CPU path), `stats.resizeFailures` counts them.
    */
   resizeGrid(cols, rows) {
-    if (!this.ready) return;
+    const rz = this._rz;
+    if (!this.ready && !rz) return;
+    const tries = rz && rz.cols === cols && rz.rows === rows ? rz.tries : 0;
+    const wasEnabled = rz ? rz.wasEnabled : this._enabled;
+    const fail = (what, e) => {
+      this.stats.resizeFailures++;
+      const giveUp = tries + 1 >= RESIZE_RETRIES;
+      console.warn('[WgCellPipeline] resizeGrid failed at', `${cols}x${rows}`, what, giveUp ? '- pipeline disabled:' : '- retrying next frame:', e);
+      this._rz = giveUp ? null : { cols, rows, tries: tries + 1, wasEnabled };
+      this.ready = false;
+      this.setEnabled(false);
+    };
     let t;
     try {
       t = allocWgTargets(this.device, cols, rows, this.rays, this.stableOpt ? { stable: true } : null);
-    } catch (e) {
-      // rt and pipeline grids must never diverge (38.8a 23a/24a): a failed resize disables the pipeline (the CPU path keeps presenting)
-      console.warn('[WgCellPipeline] resizeGrid failed at', `${cols}x${rows}`, '- pipeline disabled:', e);
-      this.ready = false;
-      this.setEnabled(false);
-      return;
-    }
+    } catch (e) { fail('', e); return; }
     freeWgTargets(this.device, this._t);
     this._t = t;
     this.cols = cols; this.rows = rows;
@@ -281,10 +316,10 @@ export class WgCellPipeline {
         this._overlayPass.resize(cols, rows);
         this._overlayPass.setTarget(this._spritesPass.outFg);
       } catch (e) {
-        console.warn('[WgCellPipeline] sprites/overlay resize failed - pipeline disabled:', e);
-        this.ready = false; this.setEnabled(false); return;
+        fail('(sprites/overlay)', e); return;
       }
     }
+    if (rz) { this._rz = null; this.ready = true; this.setEnabled(wasEnabled); } // recovered: re-enable + _syncActive
     // async validation errors of the new targets surface only through the error scopes: drain them once (warn, never throw)
     if (typeof this.device.checkErrors === 'function') {
       this.device.checkErrors().then((errs) => { if (errs && errs.length) console.warn('[WgCellPipeline] resizeGrid validation errors:', errs); }, (e) => console.warn('[WgCellPipeline] resizeGrid checkErrors failed:', e));
@@ -314,6 +349,7 @@ export class WgCellPipeline {
 
   /** Called once per frame before present(): remembers inputs; GPU commands run in the render-target hook. */
   frame(fb, light, cam, world) {
+    if (this._rz) this.resizeGrid(this._rz.cols, this._rz.rows); // RESIZE-RECOVER-01: one retry per frame
     const sp = this._spritesPass;
     if (sp && fb) { // WG-3f: scene fade amount + LUT and scene dim: the same inputs the GL sprite pass gets
       sp.sceneFade = typeof fb.sceneFade === 'number' ? fb.sceneFade : 1;
@@ -506,7 +542,7 @@ export class WgCellPipeline {
   }
 
   dispose() {
-    this.ready = false;
+    this.ready = false; this._rz = null;
     if (this.rt && typeof this.rt.setCellPass === 'function') { try { this.rt.setCellPass(null); } catch (_) { /* best effort */ } }
     this._enabled = false;
     this._dropOutTarget();

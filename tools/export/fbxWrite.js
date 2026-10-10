@@ -9,10 +9,16 @@
 // (X,Y,Z)_fbx = (-x, z, -y) from authoring, x100. One Model "Body" (Mesh) = one Geometry of quads + one Material (white
 // Lambert) + one Texture (DiffuseColor) on the 16x16 palette. Normal, UV and Color layers are per polygon vertex (UV and Color
 // IndexToDirect over the materials). FBX cannot express nearest-neighbour: set Point filtering in the importer.
-// CHARGEN-11 adds skeleton + skin + bind pose, CHARGEN-12 the animation stacks (not in this file yet).
+// CHARGEN-11 (opts.skeleton:true) adds 22 LimbNode Models + NodeAttributes, a rigid Skin with one Cluster per bone and a BindPose;
+// without it the bytes are unchanged. CHARGEN-12 (opts.clips:true, needs skeleton:true) adds one AnimationStack + AnimationLayer per
+// clip (sorted by name, like the .glb), baked at 30 fps (frames = round(duration/tempo*30), loop clips end on their first frame):
+// per bone an "R" AnimationCurveNode (Lcl Rotation, Euler XYZ degrees, unwrapped) with X/Y/Z AnimationCurves, plus a "T" node
+// (Lcl Translation = Hips joint + Hips offset, cm) on the root bone. KeyTime = FBX ticks (46186158000 per second), linear keys.
+// Without clips the bytes are unchanged.
 // Container: header "Kaydara FBX Binary  \0\x1a\0" + u32 version; 32-bit node records {endOffset,numProps,propsLen,nameLen};
 // a 13-byte null record closes every child list and the file; footer as Blender's encode_bin (footer id, 4 zero bytes, pad to
 // 16 (a full 16 when already aligned), version, 120 zero bytes, magic).
+import { sampleClip } from '../../engine/index.js';
 import { paletteTexture, texelUv } from './png.js';
 
 const TEXTURE_FILE = 'palette.png';
@@ -100,8 +106,135 @@ export function encodeFbx(roots, version = 7400) {
   return out;
 }
 
+// 4x4 translation matrix, FBX order (column-major, translation in elements 12..14)
+const tMat = (x, y, z) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1];
+
+/** Skeleton part (CHARGEN-11): LimbNode per bone, rigid Skin + Cluster per bone (all weights 1), BindPose. Joints use the
+ *  mesh axis map (-x, z, -y) x100. A bone's Lcl Translation is its offset from the parent joint; clusters/pose are global. */
+function skeletonNodes(model, mesh, GEO, MODEL, withClips) {
+  const { bones } = model;
+  const nb = bones.length, nq = mesh.quads;
+  if (nb !== mesh.ranges.length) throw new Error(`exportFbx: ${nb} bones but ${mesh.ranges.length} mesh ranges`);
+  const index = new Map(bones.map((b, i) => [b.name, i]));
+  const jw = bones.map((b) => [-b.joint[0] * 100, b.joint[2] * 100, -b.joint[1] * 100]);
+  const roots = bones.filter((b) => b.parent == null);
+  if (roots.length !== 1) throw new Error(`exportFbx: skeleton needs exactly one root, has ${roots.length}`);
+  const BONE = 2000000, ATTR = 2100000, CLUSTER = 2200000, SKIN = 2300000, POSE = 2400000;
+  const objects = [], connections = [];
+  bones.forEach((b, i) => {
+    const pi = b.parent == null ? -1 : index.get(b.parent);
+    if (b.parent != null && pi === undefined) throw new Error(`exportFbx: bone ${b.name} has unknown parent ${b.parent}`);
+    const t = pi < 0 ? jw[i] : jw[i].map((v, k) => v - jw[pi][k]);
+    objects.push(N('NodeAttribute', [L(ATTR + i), S(b.name + '\0\x01NodeAttribute'), S('LimbNode')], [
+      N('Properties70', [], [P('Size', 'double', 'Number', '', 1)]), N('TypeFlags', [S('Skeleton')]),
+    ]));
+    objects.push(N('Model', [L(BONE + i), S(b.name + '\0\x01Model'), S('LimbNode')], [
+      N('Version', [I(232)]),
+      N('Properties70', [], [P('Lcl Translation', 'Lcl Translation', '', 'A', t[0], t[1], t[2]), P('Lcl Rotation', 'Lcl Rotation', '', 'A', 0, 0, 0), P('Lcl Scaling', 'Lcl Scaling', '', 'A', 1, 1, 1)]),
+      N('Shading', [C(1)]), N('Culling', [S('CullingOff')]),
+    ]));
+    connections.push(N('C', [S('OO'), L(BONE + i), L(pi < 0 ? 0 : BONE + pi)]));
+    connections.push(N('C', [S('OO'), L(ATTR + i), L(BONE + i)]));
+  });
+  objects.push(N('Deformer', [L(SKIN), S('Skin\0\x01Deformer'), S('Skin')], [
+    N('Version', [I(101)]), N('Link_DeformAcuracy', [D(50)]), N('SkinningType', [S('Rigid')]),
+  ]));
+  connections.push(N('C', [S('OO'), L(SKIN), L(GEO)]));
+  const seen = new Uint8Array(4 * nq);
+  bones.forEach((b, i) => {
+    const r = mesh.ranges[i], idx = [], w = [];
+    for (let q = r.start; q < r.start + r.count; q++) for (let k = 0; k < 4; k++) { idx.push(4 * q + k); w.push(1); seen[4 * q + k]++; }
+    objects.push(N('Deformer', [L(CLUSTER + i), S(b.name + '\0\x01SubDeformer'), S('Cluster')], [
+      N('Version', [I(100)]), N('UserData', [S(''), S('')]),
+      N('Indexes', [['i', idx]]), N('Weights', [['d', w]]),
+      N('Transform', [['d', tMat(0, 0, 0)]]), N('TransformLink', [['d', tMat(...jw[i])]]),
+    ]));
+    connections.push(N('C', [S('OO'), L(CLUSTER + i), L(SKIN)]));
+    connections.push(N('C', [S('OO'), L(BONE + i), L(CLUSTER + i)]));
+  });
+  if (seen.some((c) => c !== 1)) throw new Error('exportFbx: mesh.ranges must cover every quad exactly once');
+  objects.push(N('Pose', [L(POSE), S('Pose\0\x01Pose'), S('BindPose')], [
+    N('Type', [S('BindPose')]), N('Version', [I(100)]), N('NbPoseNodes', [I(nb + 1)]),
+    N('PoseNode', [], [N('Node', [L(MODEL)]), N('Matrix', [['d', tMat(0, 0, 0)]])]),
+    ...bones.map((b, i) => N('PoseNode', [], [N('Node', [L(BONE + i)]), N('Matrix', [['d', tMat(...jw[i])]])])),
+  ]));
+  const anim = withClips ? clipNodes(model, jw, BONE, objects, connections) : { stacks: 0, nodes: 0, curves: 0 };
+  return { objects, connections, nb, anim };
+}
+
+const FBX_TICKS = 46186158000, FPS = 30;
+const DEG = 180 / Math.PI;
+/** Quaternion (authoring axes) -> Euler XYZ degrees in FBX axes (R = Rz*Ry*Rx); same axis map as the .glb: (x,y,z,w) -> (x,-z,y,w). */
+function quatToEuler(qx, qy, qz, qw, out) {
+  const x = qx, y = -qz, z = qy, w = qw;
+  const r20 = 2 * (x * z - w * y), r21 = 2 * (y * z + w * x), r22 = 1 - 2 * (x * x + y * y), r10 = 2 * (x * y + w * z), r00 = 1 - 2 * (y * y + z * z);
+  out[1] = Math.asin(Math.max(-1, Math.min(1, -r20))) * DEG;
+  if (Math.abs(r20) > 0.999999) { out[0] = Math.atan2(-(2 * (y * z - w * x)), 1 - 2 * (x * x + z * z)) * DEG; out[2] = 0; } // gimbal lock
+  else { out[0] = Math.atan2(r21, r22) * DEG; out[2] = Math.atan2(r10, r00) * DEG; }
+}
+
+/** CHARGEN-12: AnimationStack + AnimationLayer per clip, R curve node per bone, T curve node on the root. */
+function clipNodes(model, jw, BONE, objects, connections) {
+  const { bones } = model;
+  const nb = bones.length, tempo = model.tempo || 1;
+  const rootIdx = bones.findIndex((b) => b.parent == null);
+  const quat = new Float64Array(4 * nb), hips = [0, 0, 0], eul = [0, 0, 0];
+  let id = 3000000, stacks = 0, nodes = 0, curves = 0;
+  const tickOf = (t) => Math.round(t * FBX_TICKS);
+  for (const name of Object.keys(model.clips || {}).sort()) {
+    const clip = model.clips[name];
+    if (!(clip.duration > 0)) throw new Error(`exportFbx: clip "${name}" has no duration`);
+    const durS = clip.duration / 1000 / tempo, n = Math.max(1, Math.round(durS * FPS));
+    const times = [], rot = Array.from({ length: nb }, () => [[], [], []]), trn = [[], [], []];
+    const prev = new Float64Array(3 * nb);
+    for (let f = 0; f <= n; f++) {
+      times.push(tickOf((f / n) * durS));
+      sampleClip(model, clip, (f / n) * clip.duration, quat, hips);
+      for (let b = 0; b < nb; b++) {
+        quatToEuler(quat[4 * b], quat[4 * b + 1], quat[4 * b + 2], quat[4 * b + 3], eul);
+        for (let k = 0; k < 3; k++) { // unwrap to the nearest 360-multiple of the previous key
+          let v = eul[k];
+          if (f > 0) { const p = prev[3 * b + k]; v += 360 * Math.round((p - v) / 360); }
+          prev[3 * b + k] = v; rot[b][k].push(v);
+        }
+      }
+      trn[0].push(jw[rootIdx][0] - hips[0] * 100); trn[1].push(jw[rootIdx][1] + hips[2] * 100); trn[2].push(jw[rootIdx][2] - hips[1] * 100);
+    }
+    const stack = id++, layer = id++;
+    objects.push(N('AnimationStack', [L(stack), S(name + ' AnimStack'), S('')], [
+      N('Properties70', [], [N('P', [S('LocalStart'), S('KTime'), S('Time'), S(''), L(0)]), N('P', [S('LocalStop'), S('KTime'), S('Time'), S(''), L(times[n])])]),
+    ]));
+    objects.push(N('AnimationLayer', [L(layer), S(name + ' AnimLayer'), S('')]));
+    connections.push(N('C', [S('OO'), L(layer), L(stack)]));
+    stacks++;
+    const addNode = (label, prop, bone, vals) => {
+      const cn = id++;
+      objects.push(N('AnimationCurveNode', [L(cn), S(label + ' AnimCurveNode'), S('')], [
+        N('Properties70', [], ['X', 'Y', 'Z'].map((a, k) => P('d|' + a, 'Number', '', 'A', vals[k][0]))),
+      ]));
+      connections.push(N('C', [S('OO'), L(cn), L(layer)]));
+      connections.push(N('C', [S('OP'), L(cn), L(BONE + bone), S(prop)]));
+      nodes++;
+      ['X', 'Y', 'Z'].forEach((a, k) => {
+        const cv = id++;
+        objects.push(N('AnimationCurve', [L(cv), S(' AnimCurve'), S('')], [
+          N('Default', [D(vals[k][0])]), N('KeyVer', [I(4008)]),
+          N('KeyTime', [['l', times]]), N('KeyValueFloat', [['f', vals[k]]]),
+          N('KeyAttrFlags', [['i', [4]]]), N('KeyAttrDataFloat', [['f', [0, 0, 0, 0]]]), N('KeyAttrRefCount', [['i', [times.length]]]),
+        ]));
+        connections.push(N('C', [S('OP'), L(cv), L(cn), S('d|' + a)]));
+        curves++;
+      });
+    };
+    for (let b = 0; b < nb; b++) addNode('R', 'Lcl Rotation', b, rot[b]);
+    addNode('T', 'Lcl Translation', rootIdx, trn);
+  }
+  return { stacks, nodes, curves };
+}
+
 export function exportFbx(model, opts = {}) {
-  const { rgbOf, colorMode = 'white', name = 'Body' } = opts;
+  const { rgbOf, colorMode = 'white', name = 'Body', skeleton = false, clips = false } = opts;
+  if (clips && !skeleton) throw new Error('exportFbx: opts.clips needs opts.skeleton');
   if (typeof rgbOf !== 'function') throw new Error('exportFbx: opts.rgbOf(matKey) -> [r,g,b] is required');
   if (colorMode !== 'rgb' && colorMode !== 'white') throw new Error(`exportFbx: colorMode must be 'rgb' or 'white', got ${colorMode}`);
   const { mesh, matKeys } = model;
@@ -175,6 +308,24 @@ export function exportFbx(model, opts = {}) {
       N('ModelUVTranslation', [D(0), D(0)]), N('ModelUVScaling', [D(1), D(1)]), N('Texture_Alpha_Source', [S('None')]), N('Cropping', [I(0), I(0), I(0), I(0)]),
     ]),
   ]);
+  const connections = [
+    N('C', [S('OO'), L(MODEL), L(0)]),
+    N('C', [S('OO'), L(GEO), L(MODEL)]),
+    N('C', [S('OO'), L(MAT), L(MODEL)]),
+    N('C', [S('OP'), L(TEX), L(MAT), S('DiffuseColor')]),
+  ];
+  let defTypes = ['GlobalSettings', 'Model', 'Geometry', 'Material', 'Texture'], defCounts = [1, 1, 1, 1, 1];
+  if (skeleton) {
+    const sk = skeletonNodes(model, mesh, GEO, MODEL, clips);
+    objects.kids.push(...sk.objects);
+    connections.push(...sk.connections);
+    defTypes = ['GlobalSettings', 'Model', 'Geometry', 'Material', 'Texture', 'NodeAttribute', 'Deformer', 'Pose'];
+    defCounts = [1, 1 + sk.nb, 1, 1, 1, sk.nb, 1 + sk.nb, 1];
+    if (sk.anim.stacks) {
+      defTypes.push('AnimationStack', 'AnimationLayer', 'AnimationCurveNode', 'AnimationCurve');
+      defCounts.push(sk.anim.stacks, sk.anim.stacks, sk.anim.nodes, sk.anim.curves);
+    }
+  }
   const roots = [
     N('FBXHeaderExtension', [], [
       N('FBXHeaderVersion', [I(1003)]), N('FBXVersion', [I(7400)]),
@@ -197,16 +348,11 @@ export function exportFbx(model, opts = {}) {
     N('Documents', [], [N('Count', [I(1)]), N('Document', [L(1000000), S(''), S('Scene')], [N('Properties70', [], [P('SourceObject', 'object', '', ''), P('ActiveAnimStackName', 'KString', '', '', '')]), N('RootNode', [L(0)])])]),
     N('References'),
     N('Definitions', [], [
-      N('Version', [I(100)]), N('Count', [I(5)]),
-      ...['GlobalSettings', 'Model', 'Geometry', 'Material', 'Texture'].map((t) => N('ObjectType', [S(t)], [N('Count', [I(1)])])),
+      N('Version', [I(100)]), N('Count', [I(defTypes.length)]),
+      ...defTypes.map((t, i) => N('ObjectType', [S(t)], [N('Count', [I(defCounts[i])])])),
     ]),
     objects,
-    N('Connections', [], [
-      N('C', [S('OO'), L(MODEL), L(0)]),
-      N('C', [S('OO'), L(GEO), L(MODEL)]),
-      N('C', [S('OO'), L(MAT), L(MODEL)]),
-      N('C', [S('OP'), L(TEX), L(MAT), S('DiffuseColor')]),
-    ]),
+    N('Connections', [], connections),
     N('Takes', [], [N('Current', [S('')])]),
   ];
   return { fbx: encodeFbx(roots), png: tex.png };

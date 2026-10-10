@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import '../design/palette.js';
 import '../design/detail-pass.js';
 import '../design/chargen/human_kit.js';
-import { HUMANOID_PART_MAP } from '../engine/index.js';
+import { HUMANOID_PART_MAP, composeCharacter } from '../engine/index.js';
 
 let passed = 0;
 const test = (name, fn) => { try { fn(); passed++; console.log(`ok - ${name}`); } catch (e) { console.error(`not ok - ${name}\n${e.stack}`); process.exitCode = 1; } };
@@ -42,14 +42,15 @@ test('size: 1.75 m tall, ~70 rows, shoulders + upper arms (slight A) 0.42-0.55 m
   const st = res.stats.bases.m_avg;
   assert.strictEqual(st.heightM, 1.75);
   assert.ok(B.size[0] <= 40 && B.size[1] <= 20 && B.size[2] <= 76, B.size.join('x'));
-  // shoulder width: widest row between z 52 and 57, arms excluded by the box
+  // shoulder width: widest row between z 49 and 51 (CHARGEN-26: shoulders at z 50 under the bigger head; was z 52-57)
   let w = 0;
-  for (let z = 52; z <= 57; z++) { let lo = 99, hi = -1; for (let y = 0; y < B.size[1]; y++) for (let x = 0; x < B.size[0]; x++) { const k = D.at(x, y, z); if (k >= 0) { lo = Math.min(lo, x); hi = Math.max(hi, x); } } w = Math.max(w, hi - lo + 1); }
+  for (let z = 49; z <= 51; z++) { let lo = 99, hi = -1; for (let y = 0; y < B.size[1]; y++) for (let x = 0; x < B.size[0]; x++) { const k = D.at(x, y, z); if (k >= 0) { lo = Math.min(lo, x); hi = Math.max(hi, x); } } w = Math.max(w, hi - lo + 1); }
   assert.ok(w * kit.cellM >= 0.42 && w * kit.cellM <= 0.55, 'shoulders ' + w * kit.cellM);
 });
 test('rest pose gaps: thighs >= 2 cells apart (crotch to knee), arm-torso >= 3 cells from z 46 down to the hands', () => {
   const S = B.size, cx = 18;
-  for (let z = 20; z <= 33; z++) for (let y = 0; y < S[1]; y++) for (let x = cx - 1; x <= cx + 1; x++) assert.ok(D.at(x, y, z) < 0, 'thigh gap at ' + [x, y, z]);
+  // CHARGEN-26: shorter legs, crotch at z 28 (was 34), so the thigh gap is checked over z 20-27 (was 20-33)
+  for (let z = 20; z <= 27; z++) for (let y = 0; y < S[1]; y++) for (let x = cx - 1; x <= cx + 1; x++) assert.ok(D.at(x, y, z) < 0, 'thigh gap at ' + [x, y, z]);
   // Hands rest by the thigh (designer CHARGEN-01: 'palm faces the thigh'; owner Q2 pending) - the >= 3 gap applies to the arm bones only.
   const isArm = (k) => /Arm/.test(D.names[D.bone[k]]);
   const isHand = (k) => /Hand/.test(D.names[D.bone[k]]);
@@ -113,6 +114,35 @@ test('every appended palette key has a color, a v1 material and a v2 record (+ r
 test('materials per character <= 255; quads within the 38.29 budget (<= 6000)', () => {
   assert.ok(res.stats.materialKeys <= 255);
   assert.ok(res.stats.bases.m_avg.quads <= 6000, 'quads ' + res.stats.bases.m_avg.quads);
+});
+test('CHARGEN-25: kit.defaults wears the outfit (hair, shirt, trousers, boots) - never bald + underwear', () => {
+  for (const s of ['hair', 'top', 'legs', 'feet']) assert.ok(kit.defaults[s] && kit.defaults[s].id, 'defaults.' + s);
+});
+test('preview composePreview = engine composeCharacter for kit.defaults (same material in every cell)', () => {
+  const g = composeCharacter(kit, kit.defaults), C = CK.composePreview(kit, 'm_avg', kit.defaults);
+  assert.deepStrictEqual(Array.from(g.size), Array.from(C.size));
+  let diff = 0, first = '';
+  for (let i = 0; i < g.mat.length; i++) {
+    const a = g.mat[i] ? g.matKeys[g.mat[i] - 1] : null, b = C.ch[i] === '.' ? null : CK.resolveMat(kit, kit.defaults, C.ch[i]);
+    if (a !== b && !diff++) first = 'cell ' + i + ': engine ' + a + ' / preview ' + b;
+  }
+  assert.strictEqual(diff, 0, diff + ' cells differ, first ' + first);
+});
+test('CHARGEN-26 knight look: validates, engine composeCharacter = composePreview, beard + heraldry painted', () => {
+  const kn = kit.looks && kit.looks.knight;
+  assert.ok(kn && kn.beard && kn.beard.id === 'full' && kn.outer.id === 'tabard' && kn.hat.id === 'heraldry');
+  const g = composeCharacter(kit, kn), C = CK.composePreview(kit, 'm_avg', kn);
+  let diff = 0, first = '';
+  const seen = {};
+  for (let i = 0; i < g.mat.length; i++) {
+    const a = g.mat[i] ? g.matKeys[g.mat[i] - 1] : null, b = C.ch[i] === '.' ? null : CK.resolveMat(kit, kn, C.ch[i]);
+    if (a !== b && !diff++) first = 'cell ' + i + ': engine ' + a + ' / preview ' + b;
+    seen[C.ch[i]] = 1;
+  }
+  assert.strictEqual(diff, 0, diff + ' cells differ, first ' + first);
+  for (const c of ['q', 'r', 'R', 'y', 'k', '9', 'g']) assert.ok(seen[c], 'knight shows slot char ' + c);
+  for (const h of [-4, 4]) composeCharacter(kit, { ...kn, height: h });
+  composeCharacter(kit, { ...kn, res: { body: 1, head: 2 } });
 });
 test('deterministic: two builds give identical text', () => {
   assert.strictEqual(CK.stringifyKit(CK.buildHumanKit(P)), CK.stringifyKit(kit));

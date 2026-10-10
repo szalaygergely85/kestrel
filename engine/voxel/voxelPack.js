@@ -3,7 +3,7 @@
 // function - only computeVoxelPose/marchVoxelRay/castModels/packNormalOct
 // are, per the tech notes' "do not allocate" list).
 
-import { assertVoxelModel, PART_STRIDE } from './VoxelModel.js';
+import { assertVoxelModel, PART_STRIDE, MAX_VOX_PARTS } from './VoxelModel.js';
 import { deriveEmissiveLight } from './emissiveLight.js';
 
 /**
@@ -15,6 +15,7 @@ import { deriveEmissiveLight } from './emissiveLight.js';
  * without it `pm.emissiveLight` is null.
  */
 export function packVoxelModel(def, matIdFor, lightInfo) {
+  if (def.rig) return packRiggedModel(def, matIdFor); // RIG-02b (38.32): prebuilt quads, no layers
   assertVoxelModel(def);
 
   const [sx, sy, sz] = def.size;
@@ -85,7 +86,32 @@ export function packVoxelModel(def, matIdFor, lightInfo) {
     }
   }
 
-  // ---- clips ------------------------------------------------------------------
+  const { clips, clipIndex } = packClips(def, partNames, partCount);
+  const mounts = packMounts(def, partNames);
+  const partIndex = packPartIndex(partNames, partCount);
+
+  return {
+    sx, sy, sz,
+    cellM: def.cellM,
+    partCount,
+    partIndex,
+    // 15.1: "version++ on every repack" (the GPU re-upload key, US-040) -
+    // that increment is the LIVE model's responsibility across repacks of
+    // the same model; a fresh pack always starts at 1.
+    version: 1,
+    anchor: new Float64Array(def.anchor),
+    parts,
+    vox,
+    matIds,
+    clips,
+    clipIndex,
+    mounts,
+    emissiveLight: lightInfo ? deriveEmissiveLight(def, lightInfo.matInfo, lightInfo.presetInfo, lightInfo.override) : null,
+  };
+}
+
+// ---- shared with the rig branch (RIG-02b): clips / mounts / partIndex are packed by the same code ----
+function packClips(def, partNames, partCount) {
   const clips = [];
   const clipIndex = {};
   const anims = def.animations || {};
@@ -129,6 +155,10 @@ export function packVoxelModel(def, matIdFor, lightInfo) {
     clipIndex[name] = ci;
   }
 
+  return { clips, clipIndex };
+}
+
+function packMounts(def, partNames) {
   // ---- mounts (US-041a, 15.3 item 5) -----------------------------------------
   // `partIdx` resolved once here (not per `voxelMountWorld` call, rule 9) -
   // `assertVoxelModel` above already guarantees every named `part` exists;
@@ -140,27 +170,76 @@ export function packVoxelModel(def, matIdFor, lightInfo) {
     mounts[name] = { at: new Float64Array(m.at), partIdx: m.part !== undefined ? partNames.indexOf(m.part) : 0 };
   }
 
+  return mounts;
+}
+
+function packPartIndex(partNames, partCount) {
   // TALK-E1 (38.28 item 7): part name -> index, frozen, so a per-step `partRot` lookup is done once by the caller.
   const partIndex = {};
   for (let i = 0; i < partCount; i++) partIndex[partNames[i]] = i;
   Object.freeze(partIndex);
 
+  return partIndex;
+}
+
+// ---- RIG-02b (38.32 item 4): rigged header (no layers) -> PackedVoxelModel with pm.rig ----
+function checkRiggedHeader(def) {
+  const fail = (m) => { throw new Error('packVoxelModel (rig): ' + m); };
+  const names = Object.keys(def.parts || {});
+  const n = names.length;
+  if (n < 1 || n > MAX_VOX_PARTS) fail(n + ' parts, need 1..' + MAX_VOX_PARTS);
+  names.forEach((nm, i) => {
+    const pd = def.parts[nm];
+    if (!pd || !Array.isArray(pd.box) || pd.box.length !== 6 || !Array.isArray(pd.pivot) || pd.pivot.length !== 3) fail('part ' + nm + ' needs box[6] and pivot[3]');
+    if (pd.parent !== undefined && !(names.indexOf(pd.parent) >= 0 && names.indexOf(pd.parent) < i)) fail('part ' + nm + ' parent must be an earlier part');
+  });
+  const r = def.rig;
+  if (!r.ranges || r.ranges.length !== n) fail('rig.ranges.length must equal the part count');
+  if (!(r.pos instanceof Float32Array) || r.pos.length !== 12 * r.quads || r.nrm.length !== 12 * r.quads || r.mat.length !== r.quads) fail('rig pos/nrm/mat sizes do not match rig.quads');
+  let sum = 0;
+  for (const rg of r.ranges) { if (rg.start !== sum) fail('rig.ranges must be contiguous in part order'); sum += rg.count; }
+  if (sum !== r.quads) fail('rig.ranges do not cover all quads');
+  for (let q = 0; q < r.quads; q++) if (r.mat[q] < 1 || r.mat[q] > r.matKeys.length) fail('rig.mat out of range at quad ' + q);
+  for (const [cn, cd] of Object.entries(def.animations || {})) {
+    if (!Array.isArray(cd.frames) || !cd.frames.length || !Array.isArray(cd.durations) || cd.durations.length !== cd.frames.length) fail('clip ' + cn + ' malformed');
+    for (const fr of cd.frames) for (const pn of Object.keys(fr)) if (!(pn in def.parts)) fail('clip ' + cn + ' names unknown part ' + pn);
+  }
+  for (const [mn, m] of Object.entries(def.mounts || {})) {
+    if (!Array.isArray(m.at) || m.at.length !== 3 || (m.part !== undefined && !(m.part in def.parts))) fail('mount ' + mn + ' malformed');
+  }
+}
+
+function packRiggedModel(def, matIdFor) {
+  checkRiggedHeader(def);
+  const partNames = Object.keys(def.parts);
+  const partCount = partNames.length;
+  const parts = new Float64Array(partCount * PART_STRIDE);
+  for (let i = 0; i < partCount; i++) {
+    const pd = def.parts[partNames[i]];
+    const base = i * PART_STRIDE;
+    for (let k = 0; k < 6; k++) parts[base + k] = pd.box[k];
+    parts[base + 6] = pd.pivot[0]; parts[base + 7] = pd.pivot[1]; parts[base + 8] = pd.pivot[2];
+    parts[base + 9] = pd.parent !== undefined ? partNames.indexOf(pd.parent) : -1;
+    // 10..15 stay 0: no atlas
+  }
+  const matKeys = def.rig.matKeys;
+  const matIds = new Uint16Array(matKeys.length + 1);
+  for (let i = 1; i <= matKeys.length; i++) matIds[i] = matIdFor(matKeys[i - 1]);
+  const { clips, clipIndex } = packClips(def, partNames, partCount);
   return {
-    sx, sy, sz,
+    sx: def.size[0], sy: def.size[1], sz: def.size[2],
     cellM: def.cellM,
     partCount,
-    partIndex,
-    // 15.1: "version++ on every repack" (the GPU re-upload key, US-040) -
-    // that increment is the LIVE model's responsibility across repacks of
-    // the same model; a fresh pack always starts at 1.
+    partIndex: packPartIndex(partNames, partCount),
     version: 1,
     anchor: new Float64Array(def.anchor),
     parts,
-    vox,
+    vox: new Uint8Array(0),
     matIds,
     clips,
     clipIndex,
-    mounts,
-    emissiveLight: lightInfo ? deriveEmissiveLight(def, lightInfo.matInfo, lightInfo.presetInfo, lightInfo.override) : null,
+    mounts: packMounts(def, partNames),
+    emissiveLight: null, // v1: deriveEmissiveLight reads layers
+    rig: def.rig,
   };
 }

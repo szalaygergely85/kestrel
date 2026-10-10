@@ -1,6 +1,7 @@
 // US-089a: game save envelope over the public WorldState serializer/migration path.
 import { serialize, deserialize } from '../../../../engine/index.js';
 import { createQuest } from '../sim/quest.js';
+import { migrateQuestSave } from '../sim/questBook.js';
 
 export const SAVE_VERSION = 1;
 export const SAVE_SLOTS = 3;
@@ -48,6 +49,23 @@ function ids(value) {
   return [...new Set(value)].sort();
 }
 
+const LOOK_SLOTS = ['hair','beard','top','legs','feet','outer','hat'];
+/** CHARGEN-16: structural check of a CharRecipe (kit-free; the host may also run engine validateRecipe). Throws with the field path. */
+export function validateLook(look, path = 'player.look') {
+  const bad = (f, why) => { throw new Error(`save: invalid ${path}.${f}: ${why}`); };
+  if (!look || typeof look !== 'object' || Array.isArray(look)) throw new Error(`save: invalid ${path}: not an object`);
+  if (look.v !== 1) bad('v', 'must be 1');
+  for (const f of ['kit','base','skin','eyes']) if (typeof look[f] !== 'string' || !look[f]) bad(f, 'string expected');
+  if (!Number.isInteger(look.height) || look.height < -4 || look.height > 4) bad('height', 'int -4..4 expected');
+  if (!['young','adult','elder'].includes(look.age)) bad('age', 'young/adult/elder expected');
+  for (const f of LOOK_SLOTS) {
+    const p = look[f];
+    if (p == null) continue;
+    if (typeof p !== 'object' || typeof p.id !== 'string' || typeof p.ramp !== 'string') bad(f, 'pick must be {id, ramp} or null');
+  }
+  return look;
+}
+
 export function validateSave(save) {
   if (!save || save.saveVersion !== SAVE_VERSION) throw new Error('save: unsupported saveVersion');
   if (!save.world || ![1,2].includes(save.world.version) || !Array.isArray(save.world.entities) || !Array.isArray(save.world.structures)) throw new Error('save: invalid WorldState');
@@ -56,27 +74,55 @@ export function validateSave(save) {
     || (save.meta.savedAt !== undefined && !(Number.isFinite(save.meta.savedAt) && save.meta.savedAt >= 0))) throw new Error('save: invalid metadata');
   ids(save.game.openedChests); ids(save.game.deadBeasts);
   if (save.game.quest !== null && (!save.game.quest || save.game.quest.questVersion !== 1)) throw new Error('save: invalid quest');
+  if (save.game.quests !== undefined) { // QG-02: optional {<id>:{quest,accepted,handedIn}}; absent = old save
+    const q = save.game.quests;
+    if (!q || typeof q !== 'object' || Array.isArray(q)) throw new Error('save: invalid quests');
+    for (const id of Object.keys(q)) {
+      const e = q[id];
+      if (!validId(id) || !e || typeof e.accepted !== 'boolean' || typeof e.handedIn !== 'boolean' || !e.quest || e.quest.questVersion !== 1 || e.quest.questId !== id) throw new Error('save: invalid quests');
+    }
+  }
+  if (save.player !== undefined) { if (!save.player || typeof save.player !== 'object') throw new Error('save: invalid player'); if (save.player.look !== undefined) validateLook(save.player.look); }
   canonical(save);
   return save;
 }
 
 /** Player transform, hearts/mana, pack and hands have one source: WorldState entity components. */
-export function collectSave(world, { quest = null, questDef = null, openedChests = [], deadBeasts = [], playerName = 'Wick', place = '', playTimeSec = 0, savedAt } = {}) {
+export function collectSave(world, { quest = null, questDef = null, quests = null, giverDefs = [], openedChests = [], deadBeasts = [], playerName = 'Wick', place = '', playTimeSec = 0, savedAt, look } = {}) {
   if (quest && !questDef) throw new Error('save: quest definition required');
   const save = { saveVersion:SAVE_VERSION, world:serialize(world),
     game:{quest:quest ? createQuest(questDef,quest) : null,openedChests:ids(openedChests),deadBeasts:ids(deadBeasts)},
     meta: savedAt === undefined ? {playerName,place,playTimeSec} : {playerName,place,playTimeSec,savedAt} }; // SAVE-TIME-01: ms epoch; optional on read (old saves sort oldest)
+  if (quests) { // QG-02: each entry re-validated through createQuest against its giver def
+    const out = {};
+    for (const id of Object.keys(quests)) {
+      const def = giverDefs.find(d => d.id === id); if (!def) throw new Error('save: giver quest definition required');
+      out[id] = { quest: createQuest(def, quests[id].quest), accepted: quests[id].accepted === true, handedIn: quests[id].handedIn === true };
+    }
+    save.game.quests = out;
+  }
+  if (look !== undefined && look !== null) save.player = { look }; // CHARGEN-16: absent = old-save shape
   validateSave(save);
   return canonical(save);
 }
 
 /** Fresh World via deserialize uses CO-5 migrateState internally; no deep engine import. */
-export function applySave(save, assets, { questDef = null, worldOptions = {} } = {}) {
+export function applySave(save, assets, { questDef = null, giverDefs = null, worldOptions = {}, defaultLook = null } = {}) {
   validateSave(save);
   if (save.game.quest && !questDef) throw new Error('save: quest definition required');
   const quest = save.game.quest ? createQuest(questDef,save.game.quest) : null;
   const world = deserialize(canonical(save.world),assets,worldOptions);
-  return { world,quest,openedChests:ids(save.game.openedChests),deadBeasts:ids(save.game.deadBeasts),meta:canonical(save.meta) };
+  // QG-02: giver defs given -> migrate old saves and re-validate; else return the stored map as-is (null when absent).
+  let quests = save.game.quests ? canonical(save.game.quests) : null;
+  if (giverDefs) {
+    const raw = migrateQuestSave(save.game, { main: questDef, givers: giverDefs });
+    quests = raw ? {} : null;
+    if (raw) for (const id of Object.keys(raw)) {
+      const def = giverDefs.find(d => d.id === id); if (!def) throw new Error('save: unknown giver quest ' + id);
+      quests[id] = { quest: createQuest(def, raw[id].quest), accepted: raw[id].accepted === true, handedIn: raw[id].handedIn === true };
+    }
+  }
+  return { world,quest,quests,openedChests:ids(save.game.openedChests),deadBeasts:ids(save.game.deadBeasts),look:save.player && save.player.look ? canonical(save.player.look) : defaultLook,meta:canonical(save.meta) };
 }
 
 export function stringifyGameSave(save) { validateSave(save); return JSON.stringify(canonical(save)); }

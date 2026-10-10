@@ -49,6 +49,87 @@ function checkLayers(layers, size, where, err) {
   return chars;
 }
 
+const REGION_LEVELS = { body: [1, 2], head: [1, 2, 4] }; // levels a region may offer (38.34)
+
+/** 38.34 item 1: kit.regions / resLevels / slots.keep (grid-independent part). Returns Map region -> {bones:Set, box}. */
+function checkRegions(kit, bones, err) {
+  const regions = new Map();
+  const owner = new Map();
+  for (const [rn, r] of Object.entries(kit.regions || {})) {
+    const W = `regions.${rn}`;
+    if (rn === 'body') { err(`${W}: "body" is implicit, do not declare it`); continue; }
+    if (!r || !Array.isArray(r.bones) || !r.bones.length || !isVec(r.box, 6) || !r.box.every(isInt) || r.box[0] > r.box[3] || r.box[1] > r.box[4] || r.box[2] > r.box[5]) { err(`${W}: needs bones[] and box [x0,y0,z0,x1,y1,z1] ints`); continue; }
+    for (const b of r.bones) {
+      if (!bones.has(b)) err(`${W}: unknown bone "${b}"`);
+      else if (owner.has(b)) err(`${W}: bone "${b}" is already in region "${owner.get(b)}"`);
+      else owner.set(b, rn);
+    }
+    regions.set(rn, { bones: new Set(r.bones), box: r.box });
+  }
+  for (const [rn, lv] of Object.entries(kit.resLevels || {})) {
+    if (rn !== 'body' && !regions.has(rn)) { err(`resLevels.${rn}: unknown region`); continue; }
+    const allowed = REGION_LEVELS[rn] || [1, 2, 4];
+    if (!Array.isArray(lv) || !lv.includes(1) || !lv.every((l) => allowed.includes(l))) err(`resLevels.${rn}: must be an array containing 1, from ${allowed.join('/')}`);
+  }
+  for (const [ch, s] of Object.entries(kit.slots || {})) {
+    if (s && s.keep !== undefined && !(isInt(s.keep) && s.keep >= 0 && s.keep <= 9)) err(`slots["${ch}"]: keep must be an int 0..9`);
+  }
+  return regions;
+}
+
+/** 38.34 item 1: base.detail (authored finer levels), seam rule and resLevels derivability, per base. */
+function checkDetail(base, W, { regions, boxes, boneAt, levelsOf, usedChars, err }) {
+  const detail = base.detail || {};
+  for (const [rn, byL] of Object.entries(detail)) {
+    const reg = regions.get(rn);
+    if (!reg) { err(`${W}.detail.${rn}: unknown region (body detail is not supported yet)`); continue; }
+    const [x0, y0, z0, x1, y1, z1] = reg.box;
+    for (const [ls, d] of Object.entries(byL || {})) {
+      const L = Number(ls);
+      const D = `${W}.detail.${rn}["${ls}"]`;
+      if (L !== 2 && L !== 4) { err(`${D}: level must be 2 or 4`); continue; }
+      const size = [(x1 - x0 + 1) * L, (y1 - y0 + 1) * L, (z1 - z0 + 1) * L];
+      if (!d || !Array.isArray(d.layers)) { err(`${D}: layers missing`); continue; }
+      const nz = d.layers.length;
+      const ny = nz && Array.isArray(d.layers[0]) ? d.layers[0].length : 0;
+      const nx = ny && typeof d.layers[0][0] === 'string' ? d.layers[0][0].length : 0;
+      if (nx !== size[0] || ny !== size[1] || nz !== size[2]) { err(`${D}: size ${nx}x${ny}x${nz} does not match box extent x ${L} = ${size.join('x')}`); continue; }
+      const chars = checkLayers(d.layers, size, D, err);
+      for (const c of chars) if (!usedChars.has(c)) err(`${D}: layer char "${c}" has no slot`);
+      // bone boxes in block cells (default: the level-1 boxes x L, relative to the region origin)
+      const own = [];
+      for (const b of boxes) {
+        if (!reg.bones.has(b.name)) continue;
+        own.push(d.bones && d.bones[b.name] ? d.bones[b.name].box : [(b.box[0] - x0) * L, (b.box[1] - y0) * L, (b.box[2] - z0) * L, (b.box[3] + 1 - x0) * L - 1, (b.box[4] + 1 - y0) * L - 1, (b.box[5] + 1 - z0) * L - 1]);
+      }
+      let outside = 0;
+      let first = '';
+      for (let z = 0; z < size[2]; z++) for (let y = 0; y < size[1]; y++) {
+        const row = d.layers[z] && d.layers[z][y];
+        if (typeof row !== 'string') continue;
+        for (let x = 0; x < size[0] && x < row.length; x++) {
+          if (isEmptyChar(row[x])) continue;
+          if (!own.some((q) => x >= q[0] && x <= q[3] && y >= q[1] && y <= q[4] && z >= q[2] && z <= q[5]) && !outside++) first = `(${x},${y},${z})`;
+          // seam rule: the level-1 cell holds a voxel of a bone outside the region
+          const ax = x0 + Math.floor(x / L), ay = y0 + Math.floor(y / L), az = z0 + Math.floor(z / L);
+          const lr = base.layers && base.layers[az] && base.layers[az][ay];
+          if (lr && !isEmptyChar(lr[ax])) {
+            const hit = boneAt(ax, ay, az);
+            if (hit && !reg.bones.has(hit.name)) err(`${D}: ${rn} L${L} overlaps ${hit.name} at ${ax},${ay},${az}`);
+          }
+        }
+      }
+      if (outside) err(`${D}: ${outside} voxel(s) outside every bone box, first at ${first}`);
+    }
+  }
+  // every offered level must be authored or derivable from a finer authored one; none finer than the finest authored
+  for (const rn of ['body', ...regions.keys()]) {
+    const authored = Object.keys(detail[rn] || {}).map(Number).filter((n) => n === 2 || n === 4);
+    const finest = authored.length ? Math.max(...authored) : 1;
+    for (const l of levelsOf(rn)) if (l > finest) err(`${W}: resLevels.${rn} lists ${l} but the finest authored level is ${finest} (never upsample authored data)`);
+  }
+}
+
 const MAX_PARTS_KIT = 8; // = MAX_VOX_PARTS (collapse.js pins it with a test)
 function checkPartMap(pm, bones, err) {
   if (!Array.isArray(pm)) { err('partMap: must be an array [{name,bones,parent,compose?}] (the object form is not accepted)'); return; }
@@ -125,6 +206,10 @@ export function validateKit(kit, knownMats) {
   }
   if (worst > MAX_MATERIALS) err(`ramps: a character can need ${worst} materials (max ${MAX_MATERIALS})`);
 
+  const regions = checkRegions(kit, bones, err);
+  const regionOfBone = (b) => { for (const [rn, r] of regions) if (r.bones.has(b)) return rn; return 'body'; };
+  const levelsOf = (rn) => (kit.resLevels && Array.isArray(kit.resLevels[rn]) ? kit.resLevels[rn] : [1]);
+
   // bases
   const bases = kit.bases || {};
   if (!Object.keys(bases).length) err('bases: none');
@@ -161,6 +246,11 @@ export function validateKit(kit, knownMats) {
       }
     }
     if (outside) err(`${W}: ${outside} voxel(s) outside every bone box, first at ${firstOut}`);
+    checkDetail(base, W, { regions, boxes, boneAt, levelsOf, usedChars, err });
+    for (const [rn, r] of regions) {
+      if (r.box[0] < 0 || r.box[1] < 0 || r.box[2] < 0 || r.box[3] >= sx || r.box[4] >= sy || r.box[5] >= sz) err(`${W}: region "${rn}" box is outside the grid`);
+      for (const z of base.stretchRows || []) if (z >= r.box[2] && z <= r.box[5]) err(`${W}.stretchRows: row ${z} is inside region "${rn}" box`);
+    }
     for (const [name, a] of Object.entries(base.anchors || {})) if (!isVec(a, 3)) err(`${W}.anchors.${name}: must be [x,y,z]`);
     // a stretch row may only contain voxels of the waist/shin bones
     for (const z of base.stretchRows || []) {
@@ -203,6 +293,10 @@ export function validateKit(kit, knownMats) {
     for (const c of chars) if (!usedChars.has(c)) err(`${W}: layer char "${c}" has no slot`);
     for (const [bid, base] of Object.entries(bases)) if (!base.anchors || !base.anchors[a.anchor]) err(`${W}: base "${bid}" has no anchor "${a.anchor}"`);
     for (const h of a.hides || []) checkSlot(`${W}.hides`, h);
+    if (a.res !== undefined) {
+      const rn = bones.has(a.bone) ? regionOfBone(a.bone) : 'body';
+      if (!isInt(a.res) || !levelsOf(rn).includes(a.res)) err(`${W}: res ${a.res} is not in resLevels.${rn} [${levelsOf(rn).join(',')}]`);
+    }
   }
   return { errors, warnings };
 }

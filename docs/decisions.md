@@ -1050,3 +1050,51 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - three.js (MIT, vendored + pinned) allowed as an exception to the no-external-library rule, ONLY in tools/chargen (the generator app). Desktop shell = Tauri (tools/chargen-desktop).
 - In-game rig stays 8 parts for v1 (decide 24 at the CHARGEN-16 owner walk).
 - OPEN for the owner: code-signing costs (Apple ~99 USD/yr + a Windows certificate), which store(s) to sell on, default licence for exported characters/packages.
+
+## D-055 - Chargen head at a finer grid (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner on face v2: "if we make smaller cubes? wouldnt be better? i dont like the eyes and lips". Options shown: finer head only / whole body 2x finer / same cubes + redesign. **Owner pick: finer head only** - the Head (+ Jaw) bones use 1.25 cm cells (2x the 2.5 cm body grid, face ~20 cells wide); the body stays 2.5 cm.
+- Architect note first (architecture 38.34: per-bone cell size in the kit, compose/mesh/collapse/riggedModelDef grid snap, exports, in-game cost), then a programmer, then the designer redraws the head. PC-A to ratify.
+
+## D-056 - M3 "Steel and Hush" closed (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner: "m3 done". M3 exit accepted by the owner walk on PC-B (laptop). Open M3 rows that are not bugs move to M4 or stay parked (BEAST-TUNING-01 dodge = design question).
+- Owner note: "waystones restarts" - the waystone still carries the M1/M2 demo end trigger (`quest.end`: scripted walk + end card, then the game starts over). What happens instead is an owner decision (asked 2026-10-10).
+
+## D-057 - Waystones are travel points (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner: "waystone also teleport location". Travel is picked **from the map (M)**; only waystones the player has **touched** (saved) can be travelled to.
+- Placement: **one more along the road west**, then waystones spread "around the map: crossroads, villages, etc." - the **designer proposes** spots on the chart, the owner picks before anything is built.
+- Order: designer proposal -> owner pick -> PO story rows (travel from the map, touched list in the save, fade + invalidate on arrival) -> programmer.
+
+## D-058 - Quest giver flow; Fen removed (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner: "i wanna able to see, pick up, and finish" quests. Picked the **giver flow**: SEE = a `!` over an NPC with a quest + a map marker; PICK UP = talk -> quest text -> Accept / Later -> quest log; FINISH = NPC shows `?` when the steps are done -> talk -> hand in -> reward (item/coin) + "Quest complete". The boar quest becomes **Burl's quest** (first user of the flow).
+- **Fen removed for now** (the villager added on 2026-10-10 without an owner OK, CHARGEN-15): entity + dialogue out of world_m1; the add-on package system (38.33) stays for later NPCs.
+- Order: architect note + story rows -> programmer(s) -> owner walk.
+- Owner picks (2026-10-10, after 38.35): Burl's boar quest gives **no item reward** - only the "Quest complete" moment (no coin item; currency stays an open question; QG-D1 = the `?` marker only). Quest log key = **J**. Build go: QG-01..05 + QG-W1.
+
+## D-059 - Character style follows the owner references (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner on the fine-head render: "poor guy :( look at him" + 6 reference images (stylised voxel characters: zombie, red-haired woman, bearded man, boy in jacket; files in the owner's Pictures folder, not committed - web images, licence unknown).
+- **Character style (replaces "realistic anatomy" for humans from D-053):** bigger head (~1/5 of the body) with a large flat face; simple face = white eye + one dark pupil, thick dark brow line, 1-2 cube nose shadow, short mouth line; **clean flat skin** (no noise/stripes, minimal shading); chunkier simple limbs; few colours; **default hair + simple clothes** (shirt, trousers, boots) - never bald/underwear by default.
+- Default detail = normal cubes (res 1/1); the fine head (1.25 cm) stays as an **option** in the generator.
+- Next: designer redoes the chargen base in this style (CHARGEN-25), then the owner looks before anything else builds on it.
+- Owner follow-up (2026-10-10): "can go a bit realistic way.. but you understand the difference" -> **in between** the references and realism: head ~1/6 of the body (refs ~1/5, real ~1/7.5), eyes = white + coloured iris + pupil (no lashes/lids), nose and mouth with a little shape, flat skin with only soft top-down shading, sturdy clean limbs, default hair + simple clothes.
+
+## D-060 - World plan "The Relay Line"; relays are the waystones (owner, 2026-10-10; recorded by the PC-B main session)
+- The world follows the canon pencil line (game-design 3): west of the tower, relay to relay toward the signal. Stages: 0 tower+meadow (done); **1 road west to the bend (~250 m play area), dead relay #1 = ws_roadBend**; 2 river crossing + crossroads, relay #2 = ws_fordWest; 3 Outwall village, relay #3 = ws_outwall; 4 north bank (M4 dungeon area); 5 signal-tower hill (Signal Source). Spots from docs/proposals/waystones-2026-10-10.md.
+- **Relays ARE the waystones:** waking a dead relay makes it a travel + save point (D-057 travel from the map, touched/woken only). The meadow waystone stays as the first one.
+- Dressing uses the existing meshes + animals (D-053). **Owner go: start stage 1**; stage 2 after the owner walks stage 1.
+
+## D-061 - Golden pocket compass HUD (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner: "can be a small golden pocket compass to show the next quest bottom right corner?" -> a small brass/gold pocket compass in the bottom-right HUD corner; the needle points to the next quest target (active step target, or the giver showing `!`/`?`), distance under it (e.g. `42 m`); hidden when nothing is tracked and in menus/dialogue/capture modes. Designer draws it (ASCII, in the UI style); programmer adds the pure HUD module + mount.
+
+## D-062 - Build Chapter 1 "Beyond the Wall" from the owner script (owner, 2026-10-10; recorded by the PC-B main session)
+- Script: docs/chapters/chapter-1-beyond-the-wall.md (owner, via ChatGPT). **Build all of it**: sword + note in the tower, second note, Leave the Tower, Burl's boar quest with the script lines, **Follow the Bear** (Burl walks a path to the Waystone with walking dialogue, waits for the player), **Awaken the Stone** (Burl's talk, wake, "WAYSTONE AWAKENED" notice, Burl walks into the forest and disappears), The Next Light (Bend Relay, stage 1), **Not Alone** (Fen - a male wanderer with a staff, built with the chargen in the D-059 style - at Bend Relay), chapter-complete card + final journal entry.
+- **No lamp** (owner: "i dont want lamp. we talked about it will be a torch. no lamp"): no lamp pickup step and no lamp in the waking; the torch stays the later M4 tool. **Waking uses an aether crystal**: killing the boars gives Wick a crystal ("maybe find boar gives you a crystal for killing the boar which activates") that wakes the Waystone; script lines that mention the lamp are rewritten to the crystal.
+- **The breach climb stays required** (owner) - Leave the Tower comes after the climb.
+- Fen supersedes the D-058 removal: the owner's own script brings him back as a man.
+- Owner addition (2026-10-10): the tower must read as a TALL tower from outside (interior is good - keep it), the **sword lies at the top**; order = wake -> climb to the top (breach, required) -> sword + note -> come back down -> leave through an **entrance at the bottom** -> meadow.
+- Owner answer (2026-10-10, CH1-D1a): the tower exit is a **real ground-floor south-west door at 0 m**. The stair may be re-routed to make room, but the climb (stairs, gap jump, upper steps, summit) stays. The designer had proposed a 3.6 m door cut off the upper stair; the owner rejected it.
+
+## D-063 - Character style = the bearded-knight reference (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner sent a stylised voxel knight (Screenshot 2026-10-10 123203.png in the owner's Pictures/Screenshots, not committed) "make look like this please" -> applies to **the whole character style** (all characters), **no wings / halo**.
+- Replaces the D-059 "in between" proportions: **big head ~1/4 of the body**, large expressive face (heavy dark brows, narrow eyes with a highlight, defined nose, full beard as an option, mouth line), chunky simple limbs, clean blocky shading with a few tones per material; outfits with readable texture (e.g. chainmail checker, tabard with an emblem, belt sash). Beard, chainmail, tabard become generator pieces. Default res stays 1/1.
+- Owner tower picks (2026-10-10, 38.37 questions): walls **12-14 m + crown** (about double today), bottom entrance faces **south-west** (toward Burl and the road). Unblocks CH1-D1a/D1b.
+- Owner note on CHARGEN-26 (2026-10-10, end of session): "my issue with the model is the details... i think you can still add more... but after our break" -> after the break: a detail pass on the character model (more detail in face, hair, clothes, hands - follow the D-063 reference closely). Not started.

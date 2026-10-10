@@ -52,15 +52,53 @@
       ],
       source: 'docs/story.md "The keeper\'s corner" (log book lines + the tally / signal that were the scrawlKeeper decals)'
     },
+    journalCh1: {
+      title: 'Pencil, on the back of the chart',
+      lines: [
+        'I thought the Wall kept the world out.',
+        '',
+        'Now I wonder what it kept hidden.',
+        '',
+        'A talking bear. Stones that shine without fire.',
+        'A stranger who says magic is real.',
+        '',
+        'And somewhere ahead, that same blinking light.',
+        '',
+        'Three short. Three long. Three short.',
+        '',
+        'Someone is still calling.',
+        '- W.'
+      ],
+      source: 'docs/story.md "Chapter complete + journal (CH1-W5)"'
+    },
     keepLight: {
       title: 'A scrap, nailed up',
       lines: ['KEEP THE LIGHT'],
       source: 'US-021 scrawl text (was the decal `scrawl`)'
     },
     steelHush: {
-      title: 'A scrap by the sword',
-      lines: ['STEEL FOR THE HUSH'],
-      source: 'docs/story.md "Scrawl" (US-078, was the decal `scrawlSword`)'
+      title: 'A note by the sword',
+      lines: [
+        'To whoever finds this place:',
+        '',
+        'The road beyond is no longer safe.',
+        'Take the blade. You may need it.',
+        '',
+        'And if you hear something below, do not answer.'
+      ],
+      source: 'docs/story.md q01 note 1 `note.steelHush` (CH1-D1a: page by the sword on the summit; was the scrawl STEEL FOR THE HUSH)'
+    },
+    leave: {
+      title: 'A note by the stair',
+      lines: [
+        'These stones are not as dead as they seem.',
+        '',
+        'Do not stay here after dark.',
+        'Something moves beneath the tower.',
+        '',
+        'Leave while there is still light.'
+      ],
+      source: 'docs/story.md q01 note 2 `note.leave` (CH1-D1a: summit doorway, prompt only after tower.sword.taken)'
     },
     masonChit: {
       title: 'Mason\'s chit',

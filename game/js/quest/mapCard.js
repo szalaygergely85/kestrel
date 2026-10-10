@@ -19,6 +19,7 @@ export const CHART_GLYPHS = Object.freeze({
   road: { glyph: '-', color: 'uiText' }, structure: { glyph: '#', color: 'ferrum' },
   steep: { glyph: '/', color: 'chartInk' },
   relay: { glyph: 'o', color: 'aetherDim' }, waystone: { glyph: 'O', color: 'aether' },
+  quest: { glyph: '!', color: 'gold' }, questReady: { glyph: '?', color: 'gold' }, // QG-04: giver markers (dynamic, setQuestMarkers)
   player: { glyph: '^', color: 'gold' }, edge: { glyph: '+', color: 'chartEdge' },
   route: { glyph: '*', color: 'pencil' }, print: { glyph: 'N', color: 'chartInk' },
 });
@@ -26,7 +27,7 @@ export const CHART_GLYPHS = Object.freeze({
 /** Load-time raster of the baked semantic planes. Pose updates touch two cells,
  * retaining the marker underneath; no per-frame lists, strings or allocations.
  */
-export function createChartCard(chart, palette, { markers = [], glyphs = CHART_GLYPHS, width = 96, rows = 40, fog = null } = {}) {
+export function createChartCard(chart, palette, { markers = [], glyphs = CHART_GLYPHS, width = 96, rows = 40, fog = null, travel = null, travelHeader = 'Travel: press a number' } = {}) {
   const bounds = chart?.bounds;
   if (chart?.chartVersion !== 1 || !Number.isInteger(chart.width) || chart.width < 1
     || !Number.isInteger(chart.rows) || chart.rows < 1 || chart.width * chart.rows > 524288
@@ -39,7 +40,7 @@ export function createChartCard(chart, palette, { markers = [], glyphs = CHART_G
     || !Number.isInteger(width) || width < 16 || width > 128 || !Number.isInteger(rows) || rows < 8 || rows > 52)
     throw new Error('chart: invalid planes, bounds or card size');
   const colors = {}, codes = {};
-  for (const key of [...chart.categories, 'relay', 'waystone', 'player', 'edge', 'route', 'print']) {
+  for (const key of [...chart.categories, 'relay', 'waystone', 'quest', 'questReady', 'player', 'edge', 'route', 'print']) {
     const token = glyphs[key];
     if (!token || typeof token.glyph !== 'string' || !/^[!-~]$/.test(token.glyph)
       || !/^#[0-9a-f]{6}$/i.test(palette.colors[token.color] || '')) throw new Error('chart: invalid glyph/colour');
@@ -83,7 +84,10 @@ export function createChartCard(chart, palette, { markers = [], glyphs = CHART_G
     markerCells[i]=1;
   }
   const baseCodes = chartArt.codes.slice(), baseRgb = chartArt.rgb.slice();
+  const plainCodes = baseCodes.slice(), plainRgb = baseRgb.slice(); // static markers only (QG-04 restores cells from here)
   const fullCodes = fog ? baseCodes.slice() : null, fullRgb = fog ? baseRgb.slice() : null;
+  const baseMarker = markerCells.slice(); // markerCells without digits/quest (restore)
+  const qCells = []; // cells currently holding a quest marker
   let fogRevision = -1;
   let previous = -1;
   function revealed(i){
@@ -117,10 +121,83 @@ export function createChartCard(chart, palette, { markers = [], glyphs = CHART_G
     previous=-1;fogRevision=fog.revision;
   }
   refreshFog();
+  /** QG-04: replace the dynamic quest markers; list = [{kind:'quest'|'questReady', x, y}]. Off-map entries are skipped. */
+  function setQuestMarkers(list) {
+    const tc = fog ? fullCodes : baseCodes, tr = fog ? fullRgb : baseRgb;
+    for (const i of qCells) { tc[i] = plainCodes[i]; tr[i*3] = plainRgb[i*3]; tr[i*3+1] = plainRgb[i*3+1]; tr[i*3+2] = plainRgb[i*3+2]; markerCells[i] = 0; }
+    qCells.length = 0;
+    for (const m of list) {
+      if (m.kind !== 'quest' && m.kind !== 'questReady') throw new Error('chart: invalid quest marker');
+      const i = index(m.x, m.y); if (i < 0 || markerCells[i]) continue;
+      tc[i] = codes[m.kind]; tr[i*3] = colors[m.kind][0]; tr[i*3+1] = colors[m.kind][1]; tr[i*3+2] = colors[m.kind][2];
+      markerCells[i] = 1; qCells.push(i);
+    }
+    if (fog) fogRevision = -1; else { chartArt.codes.set(baseCodes); chartArt.rgb.set(baseRgb); }
+    previous = -1;
+    refreshFog();
+  }
+  /** WS1-07a: one-cell marker update. kind = 'relay'|'waystone' (permanent static marker, e.g. a wake) or a digit 1-9
+   * (number or string; shown only until the next setTravelPoints). Off-map -> false. No re-raster. */
+  const digitCells = []; // cells currently showing a travel digit
+  function writeCell(i, code, color) {
+    const tc = fog ? fullCodes : baseCodes, tr = fog ? fullRgb : baseRgb;
+    tc[i] = code; tr[i*3] = color[0]; tr[i*3+1] = color[1]; tr[i*3+2] = color[2];
+  }
+  function applyBase() {
+    if (fog) fogRevision = -1; else { chartArt.codes.set(baseCodes); chartArt.rgb.set(baseRgb); }
+    previous = -1; refreshFog();
+  }
+  function setMarker(x, y, kind, silent = false) {
+    const i = index(x, y); if (i < 0) return false;
+    const d = typeof kind === 'number' ? kind : /^[1-9]$/.test(kind) ? +kind : 0;
+    if (d >= 1 && d <= 9) {
+      writeCell(i, 48 + d, colors.waystone); markerCells[i] = 1; digitCells.push(i);
+    } else if (kind === 'relay' || kind === 'waystone') {
+      plainCodes[i] = codes[kind]; plainRgb[i*3] = colors[kind][0]; plainRgb[i*3+1] = colors[kind][1]; plainRgb[i*3+2] = colors[kind][2];
+      writeCell(i, codes[kind], colors[kind]); markerCells[i] = 1;
+    } else throw new Error('chart: invalid marker kind');
+    if (!silent) applyBase();
+    return true;
+  }
+  // travel line: text on the bottom border row (static strings built only when the card opens or a wake happens)
+  const lineColor = hexToRgb(palette.colors.uiText || palette.colors[glyphs.print.color]);
+  const travelIds = []; let travelLine = '';
+  function setTravelPoints(list) {
+    for (const i of digitCells) { // restore digit cells to the static marker underneath
+      writeCell(i, plainCodes[i], [plainRgb[i*3], plainRgb[i*3+1], plainRgb[i*3+2]]);
+      if (!qCells.includes(i)) markerCells[i] = baseMarker[i];
+    }
+    digitCells.length = 0; travelIds.length = 0;
+    const pts = [];
+    for (const p of list || []) if (p && p.touched !== false && p.woken !== false && index(p.x, p.y) >= 0) pts.push(p);
+    if (pts.some((p) => typeof p.order === 'number')) pts.sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+    let text = '';
+    for (let k = 0; k < pts.length && k < 9; k++) {
+      setMarker(pts[k].x, pts[k].y, k + 1, true); travelIds.push(pts[k].id);
+      text += (k ? '  ' : '') + (k + 1) + ' ' + pts[k].name;
+    }
+    travelLine = text ? travelHeader + '   ' + text : '';
+    if (travelLine.length > w - 4) travelLine = travelLine.slice(0, w - 4);
+    const row = (h - 1) * w, tc = fog ? fullCodes : baseCodes, tr = fog ? fullRgb : baseRgb;
+    for (let x = 0; x < w; x++) { // border back to edge glyph, then the text centred on it
+      tc[row + x] = plainCodes[row + x]; tr[(row + x)*3] = plainRgb[(row + x)*3]; tr[(row + x)*3+1] = plainRgb[(row + x)*3+1]; tr[(row + x)*3+2] = plainRgb[(row + x)*3+2];
+    }
+    const pad = travelLine ? 1 : 0, start = ((w - travelLine.length) >> 1) - pad;
+    for (let x = -pad; x < travelLine.length + pad; x++) { // one blank cell either side of the text
+      const c = x < 0 || x >= travelLine.length ? 32 : travelLine.charCodeAt(x), i = row + start + pad + x;
+      tc[i] = c; tr[i*3] = lineColor[0]; tr[i*3+1] = lineColor[1]; tr[i*3+2] = lineColor[2];
+    }
+    applyBase();
+    return pts.length;
+  }
+  function refreshTravel() { return travel ? setTravelPoints(travel.list()) : 0; }
+  /** Digit n (1-9) -> travel id of the n-th shown point, or null. */
+  function travelIdFor(n) { return n >= 1 && n <= travelIds.length ? travelIds[n - 1] : null; }
   const arrows = [94,62,118,60]; // yaw 0 north (-y), 90 east, 180 south, 270 west
   const position = { x: -1, y: -1, code: 0 };
   return {
-    art: chartArt, position, fog,
+    art: chartArt, position, fog, setQuestMarkers, setMarker, setTravelPoints, refreshTravel, travelIdFor, onTravel: null,
+    get travelLine() { return travelLine; },
     updatePose(x,y,yawDeg) {
       refreshFog();
       if (previous >= 0) {
@@ -152,6 +229,20 @@ export function initMapCard(assets, sceneCols, sceneRows, chartOptions = null) {
   return panel;
 }
 
+const DIGIT_KEYS = ['Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9'];
+/** WS1-07a: digit key with a shown travel point -> onTravel(id), card closes; else false (normal close rule). */
+function pickTravel(input) {
+  for (let n = 1; n <= 9; n++) {
+    if (!input.pressed(DIGIT_KEYS[n-1]) && !input.pressed('Numpad' + n)) continue;
+    const id = chartView.travelIdFor(n);
+    if (id === null) return false;
+    input.consumePressed();
+    panel.close();
+    if (chartView.onTravel) chartView.onTravel(id);
+    return true;
+  }
+  return false;
+}
 export function getMapPanel() { return panel; }
 export function isMapOpen() { return !!panel && panel.state !== 'closed'; }
 export function getMapChart() { return chartView; }
@@ -225,9 +316,12 @@ export function stepMapCard(world, assets, dt, input, wakeT, titleDoneAtSec, loc
   if (panel.state === 'closed') {
     if (input.pressed('KeyM')) {
       input.consumePressed();
+      if (chartView) chartView.refreshTravel();
       panel.open();
       world.state['ui.mapCard.opened'] = true;
     }
+  } else if (chartView && panel.state !== 'closing' && pickTravel(input)) {
+    return;
   } else if (input.anyPressed()) {
     // `M`, Esc (the browser drops pointer lock itself - accepted, 7.6 item
     // 5) or any other key closes it.

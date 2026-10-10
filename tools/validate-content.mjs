@@ -1,6 +1,17 @@
 #!/usr/bin/env node
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
+// CHARGEN-15 (38.33): `char.<id>` models come from the add-on packages in content/packages/index.json (registered at boot, not in ASSETS.models).
+const addonChars = new Set();
+try {
+  const { openPackage } = await import('../engine/index.js');
+  const dir = resolvePath('content/packages');
+  const idx = JSON.parse(readFileSync(resolvePath(dir, 'index.json'), 'utf8'));
+  for (const rel of idx.packages || []) {
+    const pkg = await openPackage(new Uint8Array(readFileSync(resolvePath(dir, rel))));
+    for (const a of pkg.manifest.assets || []) if (/^model\.(rigged|static)$/.test(a.type) && a.id) addonChars.add('char.' + a.id);
+  }
+} catch { /* no index = no add-ons */ }
 // tools/validate-content.mjs (US-058, docs/backlog.md row 30b).
 //
 // Cross-reference checker for the designer's design/ content pack: catches
@@ -73,6 +84,7 @@ const CLASSIC_SCRIPTS = [
   '../design/models/relay.js',
   '../design/models/voxel_props.js',
   '../design/models/voxel_tower.js',
+  '../design/models/voxel_tower_crown.js', // CH1-D1b: ASSETS.models.towerCrown (world_m1 entity "towerCrown"); game/index.html needs the same tag after voxel_tower.js.
   '../design/models/voxel_world.js', // US-026a-content: waystone. Node/tooling only - see the header note above.
   '../design/models/sword.js', // US-078c: the ruin-steel sword (content/levels/tower.level.json prop "sword"), same load position as game/index.html.
   '../design/models/voxel_beast.js', // US-079a: the placeholder boar (content/worlds/world_m1.world.json entities "boar1"/"boar2"), same load position as game/index.html.
@@ -409,7 +421,7 @@ export function validateContent(ASSETS, opts = {}) {
         check(!!resolveModel(models, e.model, undefined), `${base}.entities[${e.id}].model`, `model "${e.model}" not found in ASSETS.models`);
       }
       if (typeof voxelModel === 'string') {
-        check(!!resolveModel(models, voxelModel, undefined), `${base}.entities[${e.id}].components.voxel.model`, `model "${voxelModel}" not found in ASSETS.models`);
+        check(!!resolveModel(models, voxelModel, undefined) || addonChars.has(voxelModel), `${base}.entities[${e.id}].components.voxel.model`, `model "${voxelModel}" not found in ASSETS.models`);
       }
       // ED-SCALE-1 (34.1): `scale` inline shorthand or `transform.scale`.
       const rawScale = e.scale !== undefined ? e.scale : (e.transform && e.transform.scale);
@@ -738,7 +750,7 @@ export function validateContent(ASSETS, opts = {}) {
     checks += scanned.checks;
   }
   if (opts.dialogueFilesDir) {
-    const dl = validateDialogueFiles(opts.dialogueFilesDir, models);
+    const dl = validateDialogueFiles(opts.dialogueFilesDir, models, opts.quests ? opts.quests.filter(q => q.def && q.def.giver).map(q => q.def.id) : null);
     errors.push(...dl.errors);
     warnings.push(...dl.warnings);
     checks += dl.checks;
@@ -750,19 +762,82 @@ export function validateContent(ASSETS, opts = {}) {
 // cross-file check: every node `clip` (and the runtime `talk`/`listen` clips) exists on the NPC model named by
 // the file's optional top-level `model`. A model that is not registered (yet) is a warning, not an error.
 const DIALOGUE_RUNTIME_CLIPS = ['talk', 'listen'];
-export function validateDialogueFiles(dir, models = {}) {
+const BARK_LINE_MAX = 56; // = engine DIALOGUE_LINE_MAX (not exported)
+const S_KEY_RE = /^[A-Za-z][A-Za-z0-9_.-]*$/; // same shape as a quest id
+const Q_OPS = ['available', 'active', 'ready', 'done', 'accept', 'handin'];
+// QG-03 (38.35 item 5): `q.<questId>.<op>` flag keys (requires / setFlag) must name a giver quest (giverIds, null = not checked) and a known op.
+function checkQuestKeys(def, giverIds, file, errors) {
+  const keys = [];
+  for (const e of def.entry || []) if (e && typeof e.requires === 'string') keys.push(e.requires);
+  for (const n of Object.values(def.nodes || {})) {
+    if (n && typeof n.setFlag === 'string') keys.push(n.setFlag);
+    for (const c of (n && n.choices) || []) if (c && typeof c.setFlag === 'string') keys.push(c.setFlag);
+  }
+  let checks = 0;
+  for (const k of keys) {
+    if (k.startsWith('s.')) { // CH1-05: `s.<key>` = world.state flag; the rest must look like a quest id / state key
+      checks++;
+      if (!S_KEY_RE.test(k.slice(2))) errors.push(`${file}: flag "${k}" has a bad state key "${k.slice(2)}"`);
+      continue;
+    }
+    if (!k.startsWith('q.')) continue;
+    if (!giverIds) continue;
+    checks++;
+    const dot = k.lastIndexOf('.'), id = k.slice(2, dot), op = k.slice(dot + 1);
+    if (!giverIds.includes(id)) errors.push(`${file}: flag "${k}" names no giver quest "${id}"`);
+    else if (!Q_OPS.includes(op)) errors.push(`${file}: flag "${k}" has unknown quest op "${op}"`);
+  }
+  return checks;
+}
+/** CH1-05: {kind:'barks', speakers:{k:{label,player?}}, barks:{id:[{who,text}]}}; text <= 56 ASCII chars. */
+export function validateBarks(def) {
+  const errors = []; let checks = 0;
+  const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
+  if (!isObj(def) || def.kind !== 'barks') return { errors: ['kind: expected "barks"'], checks };
+  const sp = isObj(def.speakers) ? def.speakers : null;
+  if (!sp) errors.push('speakers: expected an object');
+  else for (const [k, s] of Object.entries(sp)) if (!isObj(s) || typeof s.label !== 'string' || !s.label) errors.push(`speakers.${k}: needs a non-empty label`);
+  if (!isObj(def.barks) || !Object.keys(def.barks).length) { errors.push('barks: expected a non-empty object'); return { errors, checks }; }
+  for (const [id, lines] of Object.entries(def.barks)) {
+    checks++;
+    if (!S_KEY_RE.test(id)) errors.push(`barks.${id}: bad bark id`);
+    if (!Array.isArray(lines) || !lines.length) { errors.push(`barks.${id}: expected a non-empty array`); continue; }
+    lines.forEach((l, i) => {
+      const p = `barks.${id}[${i}]`;
+      if (!isObj(l)) { errors.push(`${p}: expected {who, text}`); return; }
+      if (!sp || typeof l.who !== 'string' || !Object.prototype.hasOwnProperty.call(sp, l.who)) errors.push(`${p}.who: unknown speaker ${JSON.stringify(l.who)}`);
+      if (typeof l.text !== 'string' || !l.text) errors.push(`${p}.text: expected a non-empty string`);
+      else {
+        if (l.text.length > BARK_LINE_MAX) errors.push(`${p}.text: ${l.text.length} chars, max ${BARK_LINE_MAX}`);
+        if (!/^[ -~]*$/.test(l.text)) errors.push(`${p}.text: char outside ASCII 32-126`);
+      }
+    });
+  }
+  return { errors, checks };
+}
+export function validateDialogueFiles(dir, models = {}, giverIds = null) {
   const errors = [], warnings = [];
   let checks = 0;
-  const files = [];
+  const files = [], barkFiles = [];
   const walk = (d) => {
     let entries;
     try { entries = readdirSync(d, { withFileTypes: true }); } catch (e) { if (e && e.code === 'ENOENT') return; throw e; }
     for (const entry of entries) {
       const full = `${d}/${entry.name}`;
-      if (entry.isDirectory()) walk(full); else if (entry.name.endsWith('.dialogue.json')) files.push(full);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.dialogue.json')) files.push(full);
+      else if (entry.name.endsWith('.barks.json')) barkFiles.push(full);
     }
   };
   walk(dir);
+  for (const full of barkFiles) { // CH1-05: `barks` content kind (read by game/js/quest/barks.js, not in the manifest)
+    checks++;
+    let def;
+    try { def = JSON.parse(readFileSync(full, 'utf8')); } catch (e) { errors.push(`${full}: JSON parse failed: ${e.message}`); continue; }
+    const r = validateBarks(def);
+    for (const m of r.errors) errors.push(`${full}: ${m}`);
+    checks += r.checks;
+  }
   for (const full of files) {
     checks++;
     let def;
@@ -770,6 +845,7 @@ export function validateDialogueFiles(dir, models = {}) {
     const r = validateDialogue(def);
     for (const m of r.errors) errors.push(`${full}: ${m}`);
     for (const m of r.warnings) warnings.push(`${full}: ${m}`);
+    checks += checkQuestKeys(def, giverIds, full, errors);
     if (def.model === undefined) continue;
     checks++;
     const model = typeof def.model === 'string' ? models[def.model] : null;

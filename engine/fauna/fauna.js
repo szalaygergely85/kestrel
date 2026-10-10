@@ -9,6 +9,7 @@
 import { createRng } from '../core/rng.js';
 import { createSpawner, VIEW_MARGIN_RAD } from './spawner.js';
 import { extendGroundSlot, initGroundAnimal, groundStep } from './groundBrain.js';
+import { extendFlyerSlot, initFlyerBird, flyerStep } from './flyerBrain.js';
 
 export function createFauna(def, env, opts) {
   const o = opts || {};
@@ -16,15 +17,15 @@ export function createFauna(def, env, opts) {
   const models = o.models;
   const spawner = createSpawner(def, env, { seed, maxAlive: o.maxAlive });
   const slots = spawner.slots;
-  for (let i = 0; i < slots.length; i++) extendGroundSlot(slots[i]);
+  for (let i = 0; i < slots.length; i++) { extendGroundSlot(slots[i]); extendFlyerSlot(slots[i]); }
   const sps = def.species;
   const ctx = { env, player: null, rng: createRng(seed ^ 0x57494C45), slots, n: slots.length, tick: 0, dt: 1 / 60 };
 
   spawner.onSpawn = function onSpawn(slot, spc) {
-    if (spc.kind !== 'ground') return;
+    if (spc.kind !== 'ground' && spc.kind !== 'flyer') return;
     const name = spc.models[slot.model];
     const pm = typeof models === 'function' ? models(name) : (models ? models[name] : null);
-    initGroundAnimal(slot, spc, pm || null);
+    if (spc.kind === 'flyer') initFlyerBird(slot, spc, pm || null, env); else initGroundAnimal(slot, spc, pm || null);
   };
 
   const fauna = { spawner, slots, def, ctx, stats: spawner.stats };
@@ -37,8 +38,7 @@ export function createFauna(def, env, opts) {
       const s = slots[i];
       if (!s.alive) continue;
       const spc = sps[s.species];
-      if (spc.kind !== 'ground') continue;
-      groundStep(s, spc, ctx);
+      if (spc.kind === 'ground') groundStep(s, spc, ctx); else if (spc.kind === 'flyer') flyerStep(s, spc, ctx); else continue;
       if (s.despawnReq) { // hideOrDespawn: gone once out of view
         const dx = s.x - cam.x, dy = s.y - cam.y, d = Math.sqrt(dx * dx + dy * dy);
         if (d > spc.drawM || (dx * cam.fx + dy * cam.fy) / (d || 1) < cosHalf) spawner.despawn(s, true);

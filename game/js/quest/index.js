@@ -18,6 +18,8 @@ import { request as requestHint } from './hints.js';
 import { noteRead } from './noteRead.js';
 import { beastLoot } from './sim/loot.js';
 import { npcTalk } from './dialogueCtl.js';
+import { relayWake } from './relayWake.js';
+import { doorUnbar } from './doorUnbar.js';
 
 /** name -> the story that gives it a real body */
 export const QUEST_BEHAVIOURS = {
@@ -29,6 +31,8 @@ export const QUEST_BEHAVIOURS = {
   'note.read': 'READ-01',
   'beast.loot': 'US-091a2',
   'npc.talk': 'DIALOGUE-01b2',
+  'relay.wake': 'WS1-06b',
+  'door.unbar': 'CH1-D1a',
 };
 
 const logged = new Set();
@@ -68,6 +72,8 @@ const REAL_BEHAVIOURS = {
   'note.read': noteRead,
   'beast.loot': beastLoot,
   'npc.talk': npcTalk,
+  'relay.wake': relayWake,
+  'door.unbar': doorUnbar,
 };
 
 /** (Re)registers every quest behaviour. Idempotent; the tests call it to restore a removed registration. */

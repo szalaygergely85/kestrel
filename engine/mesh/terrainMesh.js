@@ -436,40 +436,16 @@ export class TerrainMeshSet {
     if (chunkSize % nearCell !== 0) throw new Error(`TerrainMeshSet: chunkSize (${chunkSize}) must be a multiple of nearCell (${nearCell})`);
     if (chunkSize % farCell !== 0) throw new Error(`TerrainMeshSet: chunkSize (${chunkSize}) must be a multiple of the far cell (${farCell})`);
     const n = chunkSize / nearCell;
-    const bandW = 3 * n;
-    if (terrain.near) {
-      const g = terrain.near;
-      if (g.w !== bandW || g.h !== bandW) throw new Error(`TerrainMeshSet: terrain.near is ${g.w}x${g.h}, expected ${bandW}x${bandW} (3 * chunkSize/nearCell)`);
-      if (g.x0 % farCell !== 0 || g.y0 % farCell !== 0) throw new Error('TerrainMeshSet: terrain.near.x0/y0 must be multiples of the far cell');
+    this._n = n;
+    this._nearVersion = 1; // one counter for both near sets (they share ids) - see `_publishNear`
+    // WS1-02: the chunk grid follows the baked band (cw x ch chunks, default 3x3); re-laid out if a later band has other dims.
+    const g0 = terrain.near;
+    if (g0) {
+      if (g0.w % n !== 0 || g0.h % n !== 0) throw new Error(`TerrainMeshSet: terrain.near is ${g0.w}x${g0.h}, not a multiple of ${n} (chunkSize/nearCell)`);
+      if (g0.x0 % farCell !== 0 || g0.y0 % farCell !== 0) throw new Error('TerrainMeshSet: terrain.near.x0/y0 must be multiples of the far cell');
     }
-    this._bandW = bandW;
+    this._layout(g0 ? g0.w / n : 3, g0 ? g0.h / n : 3);
 
-    // Chunk (kx) column bounds: [n*kx, min(n*kx+n, bandW-1)] - the shared
-    // boundary column/row is duplicated across neighbours (watertight by
-    // construction: both read the SAME `hDraw`/normal value there).
-    this._chunkCol = [];
-    for (let k = 0; k < 3; k++) {
-      const start = n * k, end = Math.min(n * k + n, bandW - 1);
-      this._chunkCol.push({ start, end, count: end - start + 1 });
-    }
-    this._chunkRow = this._chunkCol; // square band
-
-    /** @type {NearChunkMesh[]} */
-    this._nearA = new Array(9);
-    /** @type {NearChunkMesh[]} */
-    this._nearB = new Array(9);
-    for (let ky = 0; ky < 3; ky++) {
-      for (let kx = 0; kx < 3; kx++) {
-        const i9 = ky * 3 + kx;
-        const cc = this._chunkCol[kx].count, rc = this._chunkRow[ky].count;
-        const idxBuf = buildGridIndex(cc, rc); // shared topology - same idx array reused by both buffers
-        this._nearA[i9] = makeNearChunkMesh(`terrain:near${i9}`, cc, rc, idxBuf);
-        this._nearB[i9] = makeNearChunkMesh(`terrain:near${i9}`, cc, rc, idxBuf);
-      }
-    }
-    /** @type {NearChunkMesh[]} published (front) near chunks - `addToDrawList` reads this. */
-    this.near = this._nearA;
-    /** One counter for both near sets (they share ids) - see `_publishNear`. */
     this._nearVersion = 1;
 
     /** @type {MeshData} */
@@ -505,7 +481,6 @@ export class TerrainMeshSet {
     this._builtFor = null;      // the `near` object the PUBLISHED (front) set matches
     this._buildingFor = null;   // the `near` object currently being built into the back set
     this._buildRow = 0;
-    this._bandNrm = new Float32Array(bandW * bandW * 3); // scratch: per-band-vertex normal, filled row by row
     this._scratchN = { x: 0, y: 0, z: 1 };
     // Far-tile scratch for _updateFarExclusion (avoids a per-call array literal).
     this._farOrder = new Int32Array(this._farTiles.length);
@@ -515,6 +490,44 @@ export class TerrainMeshSet {
   }
 
   // -- near band --------------------------------------------------------
+
+  /** (Re)build the near chunk grid for a `cw x ch`-chunk band: column/row bounds, front/back chunk meshes, normal scratch. */
+  _layout(cw, ch) {
+    const n = this._n, bandW = cw * n, bandH = ch * n;
+    this._cw = cw; this._ch = ch;
+    // Chunk (kx) column bounds: [n*kx, min(n*kx+n, bandW-1)] - the shared boundary column/row is duplicated
+    // across neighbours (watertight by construction: both read the SAME `hDraw`/normal value there).
+    this._chunkCol = [];
+    for (let k = 0; k < cw; k++) {
+      const start = n * k, end = Math.min(n * k + n, bandW - 1);
+      this._chunkCol.push({ start, end, count: end - start + 1 });
+    }
+    this._chunkRow = [];
+    for (let k = 0; k < ch; k++) {
+      const start = n * k, end = Math.min(n * k + n, bandH - 1);
+      this._chunkRow.push({ start, end, count: end - start + 1 });
+    }
+    const total = cw * ch;
+    /** @type {NearChunkMesh[]} */
+    this._nearA = new Array(total);
+    /** @type {NearChunkMesh[]} */
+    this._nearB = new Array(total);
+    for (let ky = 0; ky < ch; ky++) {
+      for (let kx = 0; kx < cw; kx++) {
+        const i9 = ky * cw + kx;
+        const cc = this._chunkCol[kx].count, rc = this._chunkRow[ky].count;
+        const idxBuf = buildGridIndex(cc, rc); // shared topology - same idx array reused by both buffers
+        this._nearA[i9] = makeNearChunkMesh(`terrain:near${i9}`, cc, rc, idxBuf);
+        this._nearB[i9] = makeNearChunkMesh(`terrain:near${i9}`, cc, rc, idxBuf);
+      }
+    }
+    /** @type {NearChunkMesh[]} published (front) near chunks - `addToDrawList` reads this. */
+    this.near = this._nearA;
+    this._builtFor = null; this._buildingFor = null; this._buildRow = 0;
+    this._bandNrm = new Float32Array(bandW * bandH * 3); // scratch: per-band-vertex normal, filled row by row
+    // Draw-list keys: near chunks 0..total-1, stitch = total (9 for 3x3), far tiles from `_farKey0` (16 for 3x3)
+    this._farKey0 = Math.max(16, total + 1);
+  }
 
   _buildRowData(j) {
     const g = this._buildingFor;
@@ -532,9 +545,9 @@ export class TerrainMeshSet {
 
   _publishNear(g) {
     const back = this.near === this._nearA ? this._nearB : this._nearA;
-    for (let ky = 0; ky < 3; ky++) {
-      for (let kx = 0; kx < 3; kx++) {
-        const i9 = ky * 3 + kx;
+    for (let ky = 0; ky < this._ch; ky++) {
+      for (let kx = 0; kx < this._cw; kx++) {
+        const i9 = ky * this._cw + kx;
         const mesh = back[i9];
         const colInfo = this._chunkCol[kx], rowInfo = this._chunkRow[ky];
         const cc = colInfo.count, rc = rowInfo.count;
@@ -576,7 +589,7 @@ export class TerrainMeshSet {
 
   _rebuildStitch(g) {
     const terrain = this.terrain, w = g.w;
-    const nearIJ = perimeterIJList(0, w - 1, 0, w - 1);
+    const nearIJ = perimeterIJList(0, w - 1, 0, g.h - 1);
     const nearVerts = new Array(nearIJ.length);
     for (let k = 0; k < nearIJ.length; k++) {
       const i = nearIJ[k][0], j = nearIJ[k][1];
@@ -674,13 +687,13 @@ export class TerrainMeshSet {
           this._bandNrm[o3] = sN.x; this._bandNrm[o3 + 1] = sN.y; this._bandNrm[o3 + 2] = sN.z;
         }
       }
-      for (let ky = 0; ky < 3; ky++) {
+      for (let ky = 0; ky < this._ch; ky++) {
         const rowInfo = this._chunkRow[ky];
         if (r.j1 < rowInfo.start || r.j0 > rowInfo.end) continue;
-        for (let kx = 0; kx < 3; kx++) {
+        for (let kx = 0; kx < this._cw; kx++) {
           const colInfo = this._chunkCol[kx];
           if (r.i1 < colInfo.start || r.i0 > colInfo.end) continue;
-          this._patchNearChunk(this.near[ky * 3 + kx], g, colInfo, rowInfo, r);
+          this._patchNearChunk(this.near[ky * this._cw + kx], g, colInfo, rowInfo, r);
         }
       }
       const m = 20; // samples (40 m): the far ring + far normals reach ~20 m past a rect
@@ -745,9 +758,11 @@ export class TerrainMeshSet {
     }
 
     if (terrain.near && terrain.near !== this._builtFor) {
+      const nw = terrain.near.w / this._n, nh = terrain.near.h / this._n;
+      if (nw !== this._cw || nh !== this._ch) this._layout(nw, nh); // WS1-02: a band with other dims -> new chunk grid
       if (this._buildingFor !== terrain.near) { this._buildingFor = terrain.near; this._buildRow = 0; } // retarget: restart from row 0 on the newest `near`
-      const w = this._buildingFor.w;
-      while (this._buildRow < w) {
+      const h = this._buildingFor.h; // rows to build (was .w: wrong for non-square bands)
+      while (this._buildRow < h) {
         this._buildRowData(this._buildRow);
         this._buildRow++;
         if (now() - t0 >= msBudget) { this.pending = true; return true; }
@@ -771,12 +786,13 @@ export class TerrainMeshSet {
    * @param {{x:number,y:number,z:number}} cam
    */
   addToDrawList(list, cam) {
-    for (let i = 0; i < 9; i++) {
+    const nNear = this._cw * this._ch;
+    for (let i = 0; i < nNear; i++) {
       const mesh = this.near[i];
       if (mesh.triCount === 0) continue;
       pushTerrainItem(list, mesh, mesh._origin.x, mesh._origin.y, mesh._origin.z, 0x7000 | i);
     }
-    if (this.stitch.triCount > 0) pushTerrainItem(list, this.stitch, 0, 0, 0, 0x7000 | 9);
+    if (this.stitch.triCount > 0) pushTerrainItem(list, this.stitch, 0, 0, 0, 0x7000 | nNear);
 
     const tiles = this._farTiles, order = this._farOrder, dist = this._farDist;
     // US-068b2 (38.19 risk d): ortho keys ring/fade distance on the FOCUS (the ortho eye sits 500 m behind it); perspective unchanged
@@ -801,7 +817,7 @@ export class TerrainMeshSet {
       const useLod0 = this._excludedTileSet.has(k) || dist[s] < RING0_M;
       const rangeIdx = useLod0 ? 0 : 1;
       if (mesh.ranges[rangeIdx].count === 0) continue;
-      pushTerrainItem(list, mesh, 0, 0, 0, 0x7000 | (16 + k), rangeIdx);
+      pushTerrainItem(list, mesh, 0, 0, 0, 0x7000 | (this._farKey0 + k), rangeIdx);
     }
   }
 

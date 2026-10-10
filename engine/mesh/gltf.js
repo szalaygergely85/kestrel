@@ -251,7 +251,8 @@ function readAccessor(json, buffers, accIdx, id, opts = {}) {
   if (!numComp) bad(id, `accessor ${accIdx} has unsupported type "${acc.type}"`);
   const compSize = COMPONENT_BYTES[acc.componentType];
   if (!compSize) bad(id, `accessor ${accIdx} has unsupported componentType ${acc.componentType}`);
-  if (!opts.allowIndexTypes && acc.componentType !== 5126) {
+  const normInt = opts.allowNormalized && acc.normalized === true && (acc.componentType === 5121 || acc.componentType === 5123);
+  if (!opts.allowIndexTypes && !normInt && acc.componentType !== 5126) {
     bad(id, `accessor ${accIdx} componentType ${acc.componentType} is not FLOAT (only FLOAT vertex attributes are supported)`);
   }
   if (acc.bufferView === undefined) bad(id, `accessor ${accIdx} has no bufferView (zero-filled accessors are unsupported)`);
@@ -281,6 +282,7 @@ function readAccessor(json, buffers, accIdx, id, opts = {}) {
     if (base + numComp * compSize > buf.byteLength) bad(id, `accessor ${accIdx} element ${i} reads past the end of its buffer`);
     const row = new Array(numComp);
     for (let c = 0; c < numComp; c++) row[c] = readOne(base + c * compSize);
+    if (normInt) { const d = acc.componentType === 5121 ? 255 : 65535; for (let c = 0; c < numComp; c++) row[c] /= d; }
     out[i] = row;
   }
   return out;
@@ -836,4 +838,214 @@ export function buildMeshFromTris(allTris, primRanges, id, opts = {}) {
   };
   assertMesh(mesh);
   return mesh;
+}
+
+// ---------------------------------------------------------------------------
+// RIG-01: rigid-skin + animation reader (docs/architecture.md 38.x item 5).
+// Load-time only. Output is in OUR axes (axisConvert applied to positions,
+// translations, quaternions, inverse bind matrices, scales).
+// ---------------------------------------------------------------------------
+
+// RIG-02a (architecture.md 38.32 item 6): the rigged reader is the exact inverse of tools/export/gltfWrite.js, whose
+// map authoring (x,y,z) -> glTF (-x, z, -y) is a REFLECTION. So glTF (X,Y,Z) -> ours (-X, -Z, Y), the quaternion
+// (x,y,z,w)_gltf -> (x, z, -y, w) and triangle winding is flipped. The static loadGltf map (axisConvert) is untouched.
+function rigPoint(x, y, z) { return [-x, -z, y]; }
+function quatConvert(x, y, z, w) { return [x, z, -y, w]; }
+
+/** M' = C M C^-1 for a column-major 4x4 (C = axisConvert as a matrix). */
+function mat4ConvertBasis(m) {
+  const C = [-1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1]; // glTF -> ours (column-major)
+  const Ci = [-1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1];
+  return mat4Mul(mat4Mul(C, m), Ci);
+}
+
+function slerp(a, b, t, out, o) {
+  let d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+  let s = 1;
+  if (d < 0) { d = -d; s = -1; }
+  let k0, k1;
+  if (d > 0.9995) { k0 = 1 - t; k1 = t * s; } else {
+    const th = Math.acos(d), sn = Math.sin(th);
+    k0 = Math.sin((1 - t) * th) / sn; k1 = Math.sin(t * th) / sn * s;
+  }
+  const x = a[0] * k0 + b[0] * k1, y = a[1] * k0 + b[1] * k1, z = a[2] * k0 + b[2] * k1, w = a[3] * k0 + b[3] * k1;
+  const l = Math.hypot(x, y, z, w) || 1;
+  out[o] = x / l; out[o + 1] = y / l; out[o + 2] = z / l; out[o + 3] = w / l;
+}
+
+/**
+ * Samples a clip at time `t` (clamped to [0,duration]; STEP holds the
+ * previous key, LINEAR lerps / slerps). Bones without a channel keep rest.
+ * @param {Object} model RiggedModel
+ * @param {Object} clip  one of model.clips
+ * @param {number} t
+ * @returns {{t: Float32Array, r: Float32Array, s: Float32Array}} per-bone local TRS (3n, 4n, 3n)
+ */
+export function sampleRiggedClip(model, clip, t) {
+  const n = model.bones.length;
+  const out = { t: new Float32Array(n * 3), r: new Float32Array(n * 4), s: new Float32Array(n * 3) };
+  for (let b = 0; b < n; b++) {
+    const rest = model.bones[b].rest;
+    out.t.set(rest.t, b * 3); out.r.set(rest.r, b * 4); out.s.set(rest.s, b * 3);
+  }
+  const tt = Math.min(Math.max(t, 0), clip.duration);
+  for (const ch of clip.channels) {
+    const times = ch.times, comps = ch.path === 'rotation' ? 4 : 3;
+    const dst = ch.path === 'translation' ? out.t : ch.path === 'rotation' ? out.r : out.s;
+    let i = 0;
+    while (i + 1 < times.length && times[i + 1] <= tt) i++;
+    const v = ch.values, o = ch.bone * comps;
+    const last = i + 1 >= times.length;
+    if (ch.interpolation === 'STEP' || last || tt <= times[0]) {
+      for (let c = 0; c < comps; c++) dst[o + c] = v[i * comps + c];
+      continue;
+    }
+    const f = (tt - times[i]) / (times[i + 1] - times[i]);
+    if (comps === 4) {
+      slerp(v.subarray(i * 4, i * 4 + 4), v.subarray(i * 4 + 4, i * 4 + 8), f, dst, o);
+    } else {
+      for (let c = 0; c < 3; c++) dst[o + c] = v[i * 3 + c] * (1 - f) + v[(i + 1) * 3 + c] * f;
+    }
+  }
+  return out;
+}
+
+/**
+ * Reads a rigid-skinned, animated .glb (or .gltf JSON / ArrayBuffer / Uint8Array).
+ * Accepts JOINTS_0/WEIGHTS_0 only when each vertex has one weight of 1 (within 1e-3);
+ * anything else (smooth weights, CUBICSPLINE, morph weights, several skins) throws.
+ * @param {ArrayBuffer|Uint8Array|string} bytes
+ * @param {string} [id]
+ * @param {{buffers?: Uint8Array[]}} [opts]
+ * @returns {{
+ *   bones: {name:string, parent:number, node:number, rest:{t:number[],r:number[],s:number[]}, ibm:number[]}[],
+ *   mesh: {positions:Float32Array, normals:Float32Array|null, uvs:Float32Array|null, indices:Uint32Array, boneIndex:Uint8Array, materials:number[]},
+ *   clips: {name:string, duration:number, loop:boolean, channels:{bone:number, path:string, interpolation:string, times:Float32Array, values:Float32Array}[]}[],
+ *   extras: Object|null }} bone parent is an index into bones (-1 root); boneIndex is per vertex.
+ */
+export function readRiggedGlb(bytes, id = 'rigged', opts = {}) {
+  let ab;
+  if (typeof bytes === 'string') ab = new TextEncoder().encode(bytes).buffer;
+  else if (bytes instanceof ArrayBuffer) ab = bytes;
+  else if (bytes instanceof Uint8Array) ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  else bad(id, 'buffer must be an ArrayBuffer, Uint8Array or string');
+
+  let jsonText, glbBin = null;
+  if (ab.byteLength >= 4 && new DataView(ab).getUint32(0, true) === GLB_MAGIC) {
+    const c = parseGlbContainer(ab, id);
+    jsonText = c.json; glbBin = c.bin;
+  } else jsonText = new TextDecoder('utf-8').decode(new Uint8Array(ab));
+  let json;
+  try { json = JSON.parse(jsonText); } catch (e) { bad(id, `JSON parse failed: ${e.message}`); }
+  const buffers = resolveBuffers(json, glbBin, opts.buffers, id);
+
+  const skins = json.skins || [];
+  if (skins.length !== 1) bad(id, `expected exactly one skin, found ${skins.length}`);
+  const skin = skins[0];
+  const joints = skin.joints || [];
+  if (joints.length === 0) bad(id, 'skin has no joints');
+  if (joints.length > 255) bad(id, `skin has ${joints.length} joints (max 255, boneIndex is a byte)`);
+  const nodes = json.nodes || [];
+  const jointOf = new Map(joints.map((n, i) => [n, i]));
+
+  // Parent per node from the children lists, then per bone (nearest joint ancestor).
+  const nodeParent = new Array(nodes.length).fill(-1);
+  nodes.forEach((nd, i) => (nd.children || []).forEach((c) => { nodeParent[c] = i; }));
+  const ibmRaw = skin.inverseBindMatrices !== undefined ? readAccessor(json, buffers, skin.inverseBindMatrices, id) : null;
+  const bones = joints.map((nodeIdx, bi) => {
+    const nd = nodes[nodeIdx];
+    if (!nd) bad(id, `joint ${bi} references missing node ${nodeIdx}`);
+    if (Array.isArray(nd.matrix)) bad(id, `joint node "${nd.name || nodeIdx}" uses a matrix; use TRS`);
+    let p = nodeParent[nodeIdx];
+    while (p !== -1 && !jointOf.has(p)) p = nodeParent[p];
+    const t = nd.translation || [0, 0, 0], r = nd.rotation || [0, 0, 0, 1], s = nd.scale || [1, 1, 1];
+    return {
+      name: nd.name || `bone${bi}`,
+      parent: p === -1 ? -1 : jointOf.get(p),
+      node: nodeIdx,
+      rest: { t: rigPoint(t[0], t[1], t[2]), r: quatConvert(r[0], r[1], r[2], r[3]), s: [s[0], s[2], s[1]] },
+      ibm: ibmRaw ? mat4ConvertBasis(ibmRaw[bi]) : mat4Identity(),
+    };
+  });
+
+  // Mesh: every primitive of every node that uses the skin (positions are in skin/bind space).
+  const pos = [], nrm = [], uv = [], idx = [], boneIdx = [], mats = [];
+  let hasN = true, hasUv = true;
+  nodes.forEach((nd, ni) => {
+    if (nd.skin === undefined) return;
+    if (nd.skin !== 0) bad(id, `node "${nd.name || ni}" uses skin ${nd.skin}`);
+    const mesh = json.meshes[nd.mesh];
+    for (const prim of mesh.primitives) {
+      if (prim.mode !== undefined && prim.mode !== 4) bad(id, `mesh "${mesh.name || nd.mesh}" has mode ${prim.mode} - only TRIANGLES`);
+      if (Array.isArray(prim.targets) && prim.targets.length) bad(id, 'morph targets are not supported');
+      const a = prim.attributes;
+      if (a.POSITION === undefined) bad(id, 'primitive has no POSITION');
+      if (a.JOINTS_0 === undefined || a.WEIGHTS_0 === undefined) bad(id, 'skinned primitive lacks JOINTS_0/WEIGHTS_0');
+      const base = pos.length;
+      const P = readAccessor(json, buffers, a.POSITION, id);
+      const J = readAccessor(json, buffers, a.JOINTS_0, id, { allowIndexTypes: true });
+      const W = readAccessor(json, buffers, a.WEIGHTS_0, id, { allowNormalized: true });
+      for (let v = 0; v < P.length; v++) {
+        let best = 0;
+        for (let k = 1; k < 4; k++) if (W[v][k] > W[v][best]) best = k;
+        let others = 0;
+        for (let k = 0; k < 4; k++) if (k !== best) others += Math.abs(W[v][k]);
+        if (Math.abs(W[v][best] - 1) > 1e-3 || others > 1e-3) {
+          bad(id, `non-rigid skin weights at vertex ${v} (weights ${W[v].map((x) => +x.toFixed(4)).join(',')}); only one weight of 1 per vertex is supported`);
+        }
+        const j = J[v][best];
+        if (j >= joints.length) bad(id, `vertex ${v} joint index ${j} out of range`);
+        boneIdx.push(j);
+        pos.push(rigPoint(P[v][0], P[v][1], P[v][2]));
+      }
+      if (a.NORMAL !== undefined) readAccessor(json, buffers, a.NORMAL, id).forEach((n) => nrm.push(rigPoint(n[0], n[1], n[2])));
+      else hasN = false;
+      if (a.TEXCOORD_0 !== undefined) readAccessor(json, buffers, a.TEXCOORD_0, id).forEach((u) => uv.push(u));
+      else hasUv = false;
+      const before = idx.length;
+      if (prim.indices !== undefined) readAccessor(json, buffers, prim.indices, id, { allowIndexTypes: true }).forEach((i) => idx.push(i[0] + base));
+      else for (let v = 0; v < P.length; v++) idx.push(base + v);
+      for (let k = before; k + 2 < idx.length; k += 3) { const t1 = idx[k + 1]; idx[k + 1] = idx[k + 2]; idx[k + 2] = t1; } // reflection: flip winding
+      for (let k = 0; k < (idx.length - before) / 3; k++) mats.push(prim.material === undefined ? -1 : prim.material);
+    }
+  });
+  if (pos.length === 0) bad(id, 'no skinned mesh primitives found');
+
+  // Animations.
+  const clips = (json.animations || []).map((an, ai) => {
+    let duration = 0;
+    const channels = an.channels.map((ch) => {
+      const tgt = ch.target;
+      if (!['translation', 'rotation', 'scale'].includes(tgt.path)) bad(id, `animation "${an.name || ai}" targets unsupported path "${tgt.path}"`);
+      if (!jointOf.has(tgt.node)) bad(id, `animation "${an.name || ai}" targets non-joint node ${tgt.node}`);
+      const smp = an.samplers[ch.sampler];
+      const interpolation = smp.interpolation || 'LINEAR';
+      if (interpolation !== 'LINEAR' && interpolation !== 'STEP') bad(id, `animation "${an.name || ai}" uses ${interpolation} (only LINEAR/STEP)`);
+      const times = Float32Array.from(readAccessor(json, buffers, smp.input, id), (r) => r[0]);
+      const raw = readAccessor(json, buffers, smp.output, id);
+      if (raw.length !== times.length) bad(id, `animation "${an.name || ai}" sampler output/input length mismatch`);
+      const comps = tgt.path === 'rotation' ? 4 : 3;
+      const values = new Float32Array(raw.length * comps);
+      raw.forEach((r, i) => {
+        const c = tgt.path === 'translation' ? rigPoint(r[0], r[1], r[2])
+          : tgt.path === 'rotation' ? quatConvert(r[0], r[1], r[2], r[3]) : [r[0], r[2], r[1]];
+        values.set(c, i * comps);
+      });
+      if (times.length) duration = Math.max(duration, times[times.length - 1]);
+      return { bone: jointOf.get(tgt.node), path: tgt.path, interpolation, times, values };
+    });
+    const kx = an.extras && an.extras.kestrel;
+    return { name: an.name || `clip${ai}`, duration, loop: !(kx && kx.loop === false), channels };
+  });
+
+  const flat = (rows, k) => { const f = new Float32Array(rows.length * k); rows.forEach((r, i) => f.set(r.slice(0, k), i * k)); return f; };
+  return {
+    bones,
+    mesh: {
+      positions: flat(pos, 3), normals: hasN ? flat(nrm, 3) : null, uvs: hasUv ? flat(uv, 2) : null,
+      indices: Uint32Array.from(idx), boneIndex: Uint8Array.from(boneIdx), materials: mats,
+    },
+    clips,
+    extras: (json.extras && json.extras.kestrel) || null,
+  };
 }

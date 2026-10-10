@@ -43,6 +43,7 @@ const DT = P.fixedDt;
 const O = { x: 1480, y: 1018 }; // tower origin (world_m1)
 const W = ([x, y]) => ({ x: O.x + x + 0.5, y: O.y + y + 0.5 }); // route entries are CELL indices: aim at cell centres
 const WAYSTONE = { x: 1428, y: 1040 };
+const RELAY = { x: 1262, y: 1033 }; // ws_roadBend (38.36)
 const TERRAIN_NEAR = { x: 1470, y: 1029 };
 const MAX_WP_STEPS = 600; // 4 s per waypoint before it counts as stuck
 
@@ -78,7 +79,7 @@ function stepOnce(sim) {
 const yawTo = (fx, fy, tx, ty) => Math.atan2(tx - fx, -(ty - fy)) * 180 / Math.PI;
 
 /** Walks through waypoints [{x,y,jump?}]; returns the leg record. `trace` collects x,y,z per step. */
-function runLeg(sim, name, wps, { expectBlocked = false, detour = false } = {}) {
+function runLeg(sim, name, wps, { expectBlocked = false, detour = false, maxWpSteps = MAX_WP_STEPS } = {}) {
   const { world, player, controls } = sim;
   const tr = player.transform;
   const rec = { name, steps: 0, completed: true, stuckAt: null, fell: false, minGap: Infinity, trace: [] };
@@ -89,7 +90,7 @@ function runLeg(sim, name, wps, { expectBlocked = false, detour = false } = {}) 
     for (;; n++) {
       const dx = wp.x - tr.x, dy = wp.y - tr.y, dist = Math.hypot(dx, dy);
       if (dist < 0.4) break;
-      if (n >= MAX_WP_STEPS) { rec.completed = false; rec.stuckAt = { wp: i, x: tr.x, y: tr.y, z: tr.z }; break; }
+      if (n >= maxWpSteps) { rec.completed = false; rec.stuckAt = { wp: i, x: tr.x, y: tr.y, z: tr.z }; break; }
       // `detour` (hillside only): after 60 steps without progress steer +-50/100 deg off the line for 45 steps (slope slide-offs).
       if (detour) {
         if (dist < best - 0.3) { best = dist; bestAt = n; }
@@ -140,15 +141,15 @@ function routeRun(physics, { reload = false } = {}) {
   info.stairBaseClear = !anyRoller(sim.world);
   r.end = { ...sim.player.transform }; legs.push(r);
   // 3 stairs: base -> top of the lower flight and the step before the gap.
-  const stairs = [[16, 3], [17, 3], [18, 3], [19, 3], [19, 4], [20, 4], [20, 5], [20, 6], [20, 7]].map(W);
+  const stairs = [[16, 3], [17, 3], [18, 3], [19, 3], [19, 4], [20, 4], [20, 5], [20, 6], [20, 7], [20, 8]].map(W);
   legs.push(runLeg(sim, '3 stairs (to step 9)', stairs));
-  // 4 gap jump to the mid ledge.
-  legs.push(runLeg(sim, '4 gap jump + ledge', [{ ...W([20, 9]), jump: true }, W([19, 9])]));
+  // 4 ledge (CH1-D1a: no jump here any more; the gap moved to the SW corner, leg 5b).
+  legs.push(runLeg(sim, '4 ledge', [W([20, 9]), W([19, 9])]));
   // TOWER-LEVER-01: pass the landing and upper flight without an interaction.
   info.upperStairOpen = upperStairOpen(sim);
   info.leverAbsent = !sim.world.get('tower.lever') && !sim.world.interactables.some(r => r.id === 'lever');
   legs.push(runLeg(sim, '5a open landing', [W([19, 10]), W([18, 10])]));
-  legs.push(runLeg(sim, '5b upper steps', [W([17, 10]), W([16, 10]), W([15, 10]), W([14, 10]), W([14, 9]), W([13, 9]), W([13, 8]), W([13, 7]), W([12, 7])]));
+  legs.push(runLeg(sim, '5b upper steps + gap jump (SW)', [W([17, 10]), W([16, 10]), { ...W([14, 10]), jump: true }, W([14, 9]), W([13, 9]), W([13, 8]), W([13, 7]), W([12, 7])]));
   if (reload) {
     // AC 4: save mid-route (upper stair open), reload on the same physics mode, probes bit-equal, walk continues.
     const w1 = sim.world, w2 = deserialize(serialize(w1), assets, { physics });
@@ -171,15 +172,44 @@ function routeRun(physics, { reload = false } = {}) {
   }
   // 6 doorway + summit walkway to the breach.
   legs.push(runLeg(sim, '6 doorway + summit', [W([11, 7]), W([10, 7]), W([10, 8]), W([9, 8]), W([8, 8]), W([7, 8]), W([7, 7])]));
-  legs.push(runLeg(sim, '7a breach + outcrop', [W([6, 7]), W([5, 7])]));
+  legs.push(runLeg(sim, '7a breach (parapet overlook)', [W([6, 7])]));
+  // 7c CH1-D1a walk-down: take the sword (state), pry the bar through the real `door.unbar` interactable, then walk
+  // the summit -> upper steps -> gap-alcove drop -> ground-floor SW door -> outside stair to the outer ring (8,12).
+  sim.world.state['tower.sword.taken'] = true;
+  const doorRec = sim.world.interactables.find((r) => r.id === 'door');
+  const barProbe = () => { // mesh: a capsule pushed +y into the doorway (15.5, 11.1) is blocked while the bar collider exists
+    if (physics !== 'mesh') return null;
+    const o = {}, op = { height: 1.7, stepUpMax: 0.45, walkCos: Math.cos(50 * Math.PI / 180) };
+    const q = sim.world.collideCircle(O.x + 15.5, O.y + 10.9, 0, 0.3, 0.3, 0, true, op, o);
+    return !!q.blockedY;
+  };
+  info.doorBarBlocksBefore = barProbe();
+  sim.world.fireInteraction(doorRec.name, { engine: {}, def: doorRec.def, entity: sim.world.get(doorRec.propId), actor: sim.player });
+  info.doorBarBlocksAfter = barProbe();
+  info.doorOpen = sim.world.state['tower.door.open'] === true && sim.world.get(doorRec.propId).getComponent('voxel').variant === 'open';
+  const down = [[7, 7], [7, 8], [8, 8], [9, 8], [10, 8], [10, 7], [11, 7], [12, 7], [13, 7], [13, 8], [13, 9], [14, 9], [14, 10], [16, 10, true], [17, 10], [18, 10], [19, 10], [19, 9],
+    [20, 9], [20, 8], [20, 7], [20, 6], [20, 5], [20, 4], [19, 4], [19, 3], [18, 3], [17, 3], [16, 3], [15, 3], [15, 5], [16, 5], [16, 6], [17, 7], [17, 8], [17, 9], [16, 9], [15, 9],
+    [15, 10], [15, 11], [15, 12], [14, 12], [13, 12], [12, 12], [11, 12], [10, 12], [9, 12], [8, 12]].map(([x, y, jump]) => (jump ? { ...W([x, y]), jump: true } : W([x, y])));
+  legs.push(runLeg(sim, '7c walk down -> SW door -> out', down));
   // 7b hillside + waystone (fires the real world `end` trigger zone).
-  const endRec = sim.world.triggers.find((t) => t.name === 'quest.end');
+  const endRec = sim.world.triggers.find((t) => t.id === 'end' && t.structId === null); // area-only zone (WAYSTONE-NORMAL-01): reached, but fires no end sequence
   let sawEnd = false;
   const origStep = sim.step;
   const hill = runLeg(sim, '7b hillside -> waystone', [TERRAIN_NEAR, WAYSTONE], { detour: true });
   sawEnd = !!endRec && endRec.inside === 1;
   info.endTrigger = sawEnd; hill.sawEnd = sawEnd;
+  info.endStarted = sim.world.state['quest.endT'] >= 0; // must stay false: no end sequence (WAYSTONE-NORMAL-01)
   legs.push(hill);
+  // WS1-08 / 38.36: leg 8 waystone -> road-bend relay (1420,1032) -> (1350,1050) -> (1270,1042); must end <= 3 m from the relay (1262,1033).
+  const l8 = runLeg(sim, '8 waystone -> relay', [{ x: 1420, y: 1032 }, { x: 1350, y: 1050 }, { x: 1270, y: 1042 }, { x: 1263, y: 1034 }], { maxWpSteps: 1500 }); // 80+ m legs at 6 m/s need > 600 steps
+  const relayD = Math.hypot(sim.player.transform.x - RELAY.x, sim.player.transform.y - RELAY.y);
+  info.relayDist = relayD; l8.completed = l8.completed && relayD <= 3 && !l8.fell;
+  legs.push(l8);
+  // Bound probe: keep walking west past x 1200; the walk bound must stop us (pass = leg blocked, min x stays >= ~1198).
+  const bp = runLeg(sim, '8b bound probe (west of 1200)', [{ x: 1180, y: 1047 }], { expectBlocked: true, maxWpSteps: 3000 });
+  let minX = Infinity; for (let i = 0; i < bp.trace.length; i += 3) minX = Math.min(minX, bp.trace[i]);
+  info.boundMinX = minX; bp.completed = bp.completed && minX >= 1198;
+  legs.push(bp);
   return { legs, info, ms: sim.ms, sim };
 }
 

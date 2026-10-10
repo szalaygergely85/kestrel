@@ -995,6 +995,77 @@
     };
   })();
 
+  // 6d. CH1-D1a doorBar: the barred plank door in the tower's south-west doorway (content/levels/tower.level.json Q 15,11).
+  //     20 x 4 x 46 voxels at 0.05 m = 1.0 (fills the 1 m doorway) x 0.2 x 2.3 m. Front (y0) faces north = into the tower.
+  //     y0-y1: the timber bar (timber_old, a pale fresh gouge where it is jammed) held in two iron U-brackets on the jambs;
+  //     y2-y3: the door leaf, five vertical planks (wood, dark timber seams, staggered worn tops) on two iron straps.
+  //     Parts: frameW / frameE (brackets, never move), bar, leaf (hinge = west edge, front face of the leaf).
+  //     Clips (prop variant = clip): barred (rest, collider on) | unbar (0.6 s, events thud 3: the bar hits the floor) |
+  //     open (held end pose: bar lying in the doorway, leaf swung out by OPEN_YAW; the level's colliderOffVariant).
+  //     ROTATION NOTE: OPEN_YAW +100 is meant to swing the leaf SOUTH (out of the tower, along the passage's west side).
+  //     If the preview shows it swinging north into the tower (into step C), negate OPEN_YAW. Mats: all already merged.
+  (function () {
+    var SX = 20, SY = 4, SZ = 46, OPEN_YAW = 100;
+    var MATS = { w: 'wood', t: 'timber_old', d: 'iron_dark' };
+    var g = [], x, y, z;
+    for (z = 0; z < SZ; z++) { g.push([]); for (y = 0; y < SY; y++) { g[z].push([]); for (x = 0; x < SX; x++) g[z][y].push('.'); } }
+    // leaf (y2-y3): planks x 4 wide, seam column x%4 === 3 dark; tops 43/44 staggered, worn corners
+    for (x = 0; x < SX; x++) {
+      var plank = (x / 4) | 0, top = plank % 2 ? 43 : 44, seam = x % 4 === 3;
+      if (x % 4 === 0 && plank % 2) top = 42;
+      for (z = 0; z < top; z++) for (y = 2; y < SY; y++) {
+        var strap = y === 2 && ((z >= 7 && z <= 8) || (z >= 34 && z <= 35));
+        var nail = y === 2 && !strap && (z === 6 || z === 9 || z === 33 || z === 36) && x % 4 === 1;
+        g[z][y][x] = strap || nail ? 'd' : (seam || z === 0 ? 't' : 'w');
+      }
+    }
+    // bar (y0-y1), x3..16, z18..21: dark old timber, lighter top edge, a pale gouge at x12-13
+    for (x = 3; x < 17; x++) for (z = 18; z < 22; z++) for (y = 0; y < 2; y++) {
+      g[z][y][x] = (z === 21 && y === 0) || ((x === 12 || x === 13) && z >= 20) ? 'w' : 't';
+    }
+    // iron U-brackets on the jambs: x0-2 and x17-19, z16..23 (they hide the bar ends)
+    for (z = 16; z < 24; z++) for (y = 0; y < 2; y++) for (x = 0; x < SX; x++) {
+      if (x < 3 || x > 16) g[z][y][x] = 'd';
+    }
+    var layers = g.map(function (L) { return L.map(function (r) { return r.join(''); }); });
+    var BAR_DOWN = { pos: [0, 4, -18], rot: [0, 0, 8] };
+    A.voxelModels.doorBar = {
+      name: 'doorBar',
+      displayName: 'barred door',
+      desc: 'CH1-D1a: a weathered plank door (five planks, two iron straps) shut in the tower\'s south-west doorway, ' +
+            'barred on the inside by a heavy timber beam in two iron brackets. Pried loose with the sword (door.unbar): ' +
+            'the bar drops into the doorway and the leaf swings out. 1.0 x 0.2 x 2.3 m.',
+      voxel: {
+        version: 1,
+        cellM: 0.05,
+        size: [SX, SY, SZ],
+        anchor: [10, 0, 0],                         // front (inside) face, centre, floor: the level point
+        mats: MATS,
+        layers: layers,
+        parts: {
+          frameW: { box: [0, 0, 16, 3, 2, 24], pivot: [1.5, 1, 16] },
+          frameE: { box: [17, 0, 16, 20, 2, 24], pivot: [18.5, 1, 16] },
+          bar:    { box: [3, 0, 18, 17, 2, 22], pivot: [10, 1, 20] },
+          leaf:   { box: [0, 2, 0, 20, 4, 46], pivot: [0, 2, 0] }        // hinge: west edge, leaf front face
+        },
+        animations: {
+          barred: { durations: [1000], loop: true, frames: [{}] },
+          unbar: { durations: [90, 110, 160, 240], loop: false, events: { thud: 3 }, frames: [
+            {},
+            { bar: { pos: [0, 0, 1.5] } },                                  // the sword bites: bar lifts in its brackets
+            { bar: { pos: [0, 2, -8], rot: [0, 0, 4] }, leaf: { rot: [0, 0, 15] } },
+            { bar: BAR_DOWN, leaf: { rot: [0, 0, OPEN_YAW] } }
+          ] },
+          open: { durations: [1000], loop: true, frames: [{ bar: BAR_DOWN, leaf: { rot: [0, 0, OPEN_YAW] } }] }
+        },
+        mounts: { prompt: { at: [10, 0, 20], part: 'bar' } }              // = the door.unbar aim point (z + 1.0)
+      },
+      clipFor: { barred: 'barred', unbarring: 'unbar', open: 'open' },
+      readability: { note: 'At 3 m on 400x150 ~10 x 22 cells: brown plank stripes with two dark iron bands; the darker bar ' +
+                     'across at hip height with iron blocks at both ends reads as "barred". Open: dark gap + daylight.' }
+    };
+  })();
+
   // ===================================================================================================================
   // 7. ATTACH: only once the materials / colours are merged (a missing v2 record would switch the GPU path off).
   // ===================================================================================================================
@@ -1013,6 +1084,9 @@
         for (k in nm) if (!P.materials[nm[k]] || !DP.materials[nm[k]]) nok = false;
         if (nok && !A.models[nk]) { A.models[nk] = A.voxelModels[nk]; done.push(nk); }
       }
+      var dm = A.voxelModels.doorBar.voxel.mats, dok = true;   // 6d CH1-D1a barred door
+      for (k in dm) if (!P.materials[dm[k]] || !DP.materials[dm[k]]) dok = false;
+      if (dok && !A.models.doorBar) { A.models.doorBar = A.voxelModels.doorBar; done.push('doorBar'); }
       for (a = 0; a < AWK_KEYS.length; a++) {
         if (ok && !A.models[AWK_KEYS[a]]) { A.models[AWK_KEYS[a]] = A.voxelModels[AWK_KEYS[a]]; done.push(AWK_KEYS[a]); }
       }

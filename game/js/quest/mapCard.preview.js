@@ -12,7 +12,12 @@ const player={data:{transform}};world.get=()=>player;
 const fog=new URLSearchParams(location.search).has('fog')?createMapFog(chart.bounds):null;
 fog?.visit(transform.x,transform.y);
 const keys=new Set();const input={pressed:key=>keys.has(key),anyPressed:()=>keys.size>0,consumePressed:()=>keys.clear()};
-initMapCard(assets,ui.cols,ui.rows,{chart,fog,markers:[{kind:'waystone',x:1428,y:1040},{kind:'relay',x:1489,y:1025}]});
+// WS1-07a fixture travel source: stone always touched; press W (card closed) to wake the relay; digit keys log the request.
+const woken={relay:false};
+const travel={list:()=>woken.relay?[{id:'waystone',name:'The Waystone',x:1428,y:1040,order:1},{id:'ws_roadBend',name:'Bend Relay',x:1489,y:1025,order:2}]:[{id:'waystone',name:'The Waystone',x:1428,y:1040,order:1}]};
+window.addEventListener('keydown',e=>{if(e.code==='KeyW'){woken.relay=!woken.relay;getMapChart()?.refreshTravel();}});
+initMapCard(assets,ui.cols,ui.rows,{chart,fog,travel,markers:[{kind:'waystone',x:1428,y:1040},{kind:'relay',x:1489,y:1025}]});
+getMapChart().onTravel=id=>console.log('travel request',id);
 window.addEventListener('keydown',event=>{keys.add(event.code);event.preventDefault();});
 document.querySelector('#rotate').onclick=()=>{transform.yawDeg=(transform.yawDeg+90)%360;};
 document.querySelector('#move').onclick=()=>{transform.x+=64;fog?.visit(transform.x,transform.y);};

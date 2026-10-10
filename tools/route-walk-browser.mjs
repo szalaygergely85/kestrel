@@ -116,9 +116,12 @@ const DRIVER = `(async () => {
   await leg('5b upper steps', [W(17, 10), W(16, 10), W(15, 10), W(14, 10), W(14, 9), W(13, 9), W(13, 8), W(13, 7), W(12, 7)]);
   await leg('6 doorway + summit', [W(11, 7), W(10, 7), W(10, 8), W(9, 8), W(8, 8), W(7, 8), W(7, 7)]);
   await leg('7a breach + outcrop', [W(6, 7), W(5, 7)]);
-  await leg('7b hillside -> waystone', [NEAR, WAY], { detour: true, maxFrames: 2400, untilEnd: true });
-  out.info.endTrigger = world().state['quest.endT'] >= 0 || (world().triggers.find((x) => x.name === 'quest.end') || {}).inside === 1;
+  await leg('7b hillside -> waystone', [NEAR, WAY], { detour: true, maxFrames: 2400 });
+  // WAYSTONE-NORMAL-01 (D-056): no end sequence any more - the walk reaches the stone, nothing ends, the player can still move.
+  out.info.endTrigger = (world().triggers.find((x) => x.id === 'end' && x.structId === null) || {}).inside === 1; // reached the waystone zone
   out.info.endT = world().state['quest.endT'];
+  out.info.noEnd = !(world().state['quest.endT'] >= 0); // asserted true: no end card / restart
+  { const a = T(); await leg('8 move after waystone', [{ x: a.x + 3, y: a.y }], { maxFrames: 600 }); const b = T(); out.info.movedAfterWaystone = Math.hypot(b.x - a.x, b.y - a.y) > 1.5; }
   sampling = false;
   const mean = (a) => { const v = a.filter((x) => Number.isFinite(x)); return v.length ? v.reduce((p, q) => p + q, 0) / v.length : null; };
   out.shadowCpuMean = mean(shc);

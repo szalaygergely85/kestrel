@@ -59,6 +59,7 @@ export const GATE_POSES = [
   // NPC-BEAR-01: Burl the bear at (1471, 1029.1), seen from 3.2 m east on the path (he faces east, towards the breach).
   { slug: 'burl', name: 'Burl the bear on the walk-out path (NPC-BEAR-01)', cam: { x: 1474.2, y: 1029.4, z: 1.7, yawDeg: 270, pitchDeg: 4, groundEye: true } },
   { slug: 'roadSouth', name: 'walk-out road, looking west-south-west at the cleaned south verge + placed meshes (ME-14c3)', cam: { x: 1466, y: 1035, z: 1.7, yawDeg: 240, pitchDeg: 6, groundEye: true } },
+  { slug: 'roadBend', name: 'road bend, looking west at the relay waystone (WS1-08 gate pose)', cam: { x: 1268, y: 1040, z: 1.7, yawDeg: 270, pitchDeg: 0, groundEye: true } },
   { slug: 'roadLeft', name: 'walk-out road, looking south-west across the left (south) verge scatter roadL### (tools/gen-roadside-meshes.mjs)', cam: { x: 1440, y: 1030, z: 1.7, yawDeg: 215, pitchDeg: 4, groundEye: true } },
   { slug: 'hillside', name: 'hillside outside (owner pose A)', cam: { x: 1464.33, y: 1045.50, z: 3.92, yawDeg: 54, pitchDeg: 19 } },
   // waystoneLookBack: eye 2 m back along -forward from (1428, 1040) so it is not inside the model

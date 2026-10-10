@@ -8,7 +8,7 @@ import { frustumPlanes } from '../../../mesh/culling.js';
 import { projTerms, shearProjection } from '../../projection.js';
 import { CULL_WGSL, CULL_BLOCK } from '../wgsl/cull.wgsl.js';
 import { compileFn } from '../wgsl/wgslProbe.js';
-import { WgCullPass } from './passCull.js';
+import { WgCullPass, MAX_CULL_RANGES } from './passCull.js';
 
 const mock = makeMockGpuDevice(), d = mock.device;
 const f32 = (x) => Math.fround(x);
@@ -149,7 +149,13 @@ for (const [lodCells, maxDistM] of [[0, 0], [14, 0], [14, 120]]) {
   const gc = makeGroup(10, 5);
   cull.begin({ planes: null }); cull.add(gc, [mesh0, null]); cull.run();
   assert.notStrictEqual(cull._argsView, view, 'args view rebuilt when a batch slot is added');
-  assert.equal(cull._argsView.length, 6 * cull.argsCpu.length / (cull.maxBatches * 2), 'view covers the 6 used slots');
+  assert.equal(cull._argsView.length, 6 * cull.argsCpu.length / (cull.maxBatches * 2 * MAX_CULL_RANGES), 'view covers the 6 used slots');
+  { // CULL-CAP-01: a full args buffer makes supports() say no (non-cull path) instead of add() throwing mid-frame
+    const saved = cull._nextSlot, savedTop = cull._freeTop;
+    cull._nextSlot = cull.argsCpu.length / 5; cull._freeTop = 0;
+    assert.equal(cull.supports({ ib: { capacity: 8 }, mesh: null }, [mesh0, null]), false, 'full args buffer -> supports() false');
+    cull._nextSlot = saved; cull._freeTop = savedTop;
+  }
   cull.dispose();
 }
 // ---- 38.10a S8-B1-06: slot free list + idle sweep ----

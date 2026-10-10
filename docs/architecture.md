@@ -3523,6 +3523,7 @@ Do not: delete across step boundaries (one step id per commit, each leaving boot
 - let a gate close produce a release edge on a held item.
 
 - **Golden material keys (2026-10-06):** frozen goldens compare material KEYS, never raw MaterialTable ids (a new palette material shifts every later id). Each fixture whose gbuf `mat` is a palette id ships `engine/mesh/fixtures/<name>.matkeys.json` (frozen id->key table built from palette.js + detail-pass.js at the capture commit, loaded by `loadGoldenMatKeys` in `tools/testing/mesh-golden.mjs`); the live side maps via `table.records[id].key`. Today: `levelMesh` (bced9b8). Synthetic-table goldens (voxel, voxelRaster) and kind-only users need none. ARCH OK required to change a matkeys file.
+- **Golden input levels (TOWER-GOLDEN-STALE, 2026-10-10, PC-B architect; PC-A to ratify):** a golden is only meaningful against the content it was captured from. The levelMesh/rasterJS goldens (bced9b8) were captured on the pre-CH1-D1a tower, and since ME-19b no CPU oracle exists to re-freeze them (Option B rejected: a "regenerated" golden would just be the mesh twin checked against itself). So golden-comparing tests load the frozen input `engine/mesh/fixtures/tower.pre-D1a.level.json` (tower at dfbf0c79^) via `loadGoldenLevel` in `tools/testing/mesh-golden.mjs`, never the live `content/levels/tower.level.json`; thresholds unchanged. The live tower (D-062 / CH1-D1b walls) is covered by route-walk + `?gpucompare=1`. Same rule for any future golden: freeze its input level next to it; ARCH OK to change either.
 
 ### 37.14 Fireball SPELL-01a/b (architect, 2026-10-05; D-040, owner answers 2026-10-05: known at start in the demo, no self-damage)
 
@@ -5000,3 +5001,557 @@ createClipPlayer(), clipPlay, clipStep, clipSetPhase, clipFromW, pickGait, gaitR
   - bench numbers against item 9;
   - no `Math.random`.
 - Open for the PO, not in v1: hunting or hitting animals, time-of-day activity (deer at dusk), sounds (an EP-SOUND hook later via a `fauna.events` ring).
+
+### 38.32 RIG-00: rigged-model seam (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; PC-A to ratify)
+Goal: a character from chargen (`composeCharacter -> meshCharacter -> collapseRig`) or from a `.kestrel` `.glb` (`readRiggedGlb`) is drawn by the existing voxel-model path. `EntityHandle.play`, `animState`, `partRot` (jaw), mounts, sun shadows, culling and the 48-instance mesh cap work unchanged. No new per-frame code.
+
+**1. The seam in one line.** A rigged model is registered as an ordinary `ModelDef` with `def.voxel` = a VoxelModelDef **header without `layers`** plus `def.voxel.rig` = the prebuilt quads. `packVoxelModel` branches on `def.voxel.rig`. `buildVoxelMesh` builds the MeshData from `pm.rig` instead of `pm.vox`. Everything downstream already reads only `pm.parts/partCount/partIndex/clips/clipIndex/mounts/anchor/cellM` (voxelPose, instanceRect, VoxelPool, instances.js, shadowList) or `def.voxel.animations` (EntityHandle, animation.js, World.js, animClips.js).
+
+**2. Registered shape** (runtime only: holds typed arrays, so it is never serialized, never in a save, and never written by the editor; entities reference it by key):
+```js
+/** @typedef {{
+ *   version: 1, cellM: number,                  // rig cellM (0.025)
+ *   size: [sx,sy,sz],                            // ints = ceil(max local coord) per axis
+ *   anchor: [ax,ay,az],                          // local cells of the feet point (= offset G, item 3)
+ *   mats: {}, layers: [],                        // empty: no voxel grid
+ *   meshOnly: true,                              // forced: never enters the DDA atlas / non-mesh renderers
+ *   parts: {[name]: {box:[x0,y0,z0,x1,y1,z1], pivot:[x,y,z], parent?:string}},  // partMap order, <= MAX_VOX_PARTS
+ *   animations: {[clip]: VoxelClipDef},          // = PartRig.clips as-is ({loop, interp:'linear', durations:[50..], frames:[{part:{rot,pos?}}]})
+ *   mounts: {[name]: {at:[x,y,z], part:string}},
+ *   rig: {quads:number, pos:Float32Array(12q) local cells (ints), nrm:Int8Array(12q), mat:Uint8Array(q) 1-based into matKeys,
+ *         ranges:{start,count}[] (one per part, quads, part order), matKeys:string[]}
+ * }} RiggedVoxelDef */
+riggedModelDef(partRig, opts?) -> {voxel: RiggedVoxelDef}   // engine/chargen/rigModel.js, load time, pure
+// opts.mountParts?: {[mount]: partName}   override of the nearest-joint rule (item 3)
+```
+- Registry API: **no new method.** Use `registry.add('model', 'char.<id>', riggedModelDef(...))` (or `replace` for a re-built `char.player`). Register before `VoxelPool.bind`. A later add/replace needs a re-`bind` (load or New-game time only, same as the editor import).
+- main.js (RIG-03 line, B1-main): `riggedModelDef(collapseRig(riggedFromGlb(entry.model), entry.model.extras.partMap || HUMANOID_PART_MAP))`.
+
+**3. Units and spaces** (all conversion at load time in `riggedModelDef`).
+- Mesh-local space = **cells**, like 15.1, with the anchor at `G`. `G[a] = round3(-min over all mesh vertices of posM[a]/cellM)`, where posM = metres from the anchor (meshCharacter/PartRig `mesh.pos`). So every local coordinate is >= 0, as `flat0`'s 18-bit layer needs.
+  - local vertex = `posM/cellM + G`, snapped to the nearest integer. A vertex more than 1e-3 off the grid throws (`not a voxel-grid mesh`).
+  - pivot = `pivotM/cellM + G` (not snapped; joints sit on cell centres).
+  - mount = `(mountCells - anchorCells) + G`.
+  - box = the integer AABB of that part's local vertices (used only for the cull / instanceRect).
+- `collapseRig` change (RIG-02a): each part gets `pivotM` (= the root bone's `joint`, metres from the anchor). The PartRig gets `anchorCells` (= `root.jointCells - root.joint/cellM`). Today `pivot` (absolute grid cells) and `mesh.pos` (metres from the anchor) are in different spaces, and the PartRig carries no anchor.
+- Clip `pos` (Hips only, part `body`) is already in cells (`collapseRig`: hips/cellM). Clip `rot` is degrees, Rz*Ry*Rx, the same as `setRot`. Unchanged.
+- Mount part: `opts.mountParts[name]`, else the part of the bone whose joint is nearest the mount (ties: skeleton order). Kit v0 gives: hand_r -> armR, hand_l -> armL, mouth -> jaw, eyes/head_top -> head, back/belt -> chest/body. Pinned by a test.
+
+**4. Engine changes (where `pm.vox` is replaced).**
+- `engine/voxel/voxelPack.js`: `packVoxelModel(def, matIdFor)`: when `def.rig` is set, skip `assertVoxelModel` (it checks layers) and run a small `checkRiggedHeader(def)`: partCount 1..8, parents earlier, clip frames well-formed, rig.ranges.length === partCount, mats 1..matKeys.length.
+  - Then pack `parts`, `clips`, `clipIndex`, `mounts` and `partIndex` with the **same code** as the voxel path: extract the clip/mount/partIndex blocks into local helpers. Existing pack output must stay byte-identical.
+  - Set `vox = new Uint8Array(0)`, atlas fields `parts[10..13] = 0`, and `matIds = Uint16Array(n+1)` with `matIds[i] = matIdFor(rig.matKeys[i-1])`.
+  - Set `pm.rig = def.rig` (a reference), `emissiveLight = null` (v1; `deriveEmissiveLight` reads layers), and `sx/sy/sz` from `size`.
+- `engine/render/voxelPool.js`: `bind` sets `pm.meshOnly = def.voxel.meshOnly === true`. That is already true for rig defs, so **no change** is expected. The meshOnly routing (atlas skip, DDA skip with warn) already handles rig models.
+- `engine/mesh/voxelMesh.js`:
+  - `buildVoxelMesh(pm, opts)`: `if (pm.rig) return buildRiggedMesh(pm, opts)`. This is a module-private function.
+  - `buildRiggedMesh`: for each part range, `builder.beginRange(partNames[p])`, then for each quad derive `face`, `layer` and the rect from its 4 corners and call the existing `emitFaceQuad(builder, pm, face, 0,0,0, layer, a0,a1,b0,b1, mat, pm.cellM, p)`. This gives the same winding, uv (`a*cellM`), `flat0` (part/face/layer) and `flat1` (`KIND_MODEL`, matId) as a native voxel model. Glyph shading, edges and planeIds then match.
+  - Face from the normal: -x W (layer = X), +x E (layer = X-1), -y N (Y), +y S (Y-1), +z U (Z-1), -z D (Z). a/b axes: W/E (y, z), N/S (x, z), U/D (x, y).
+  - Throw if the 4 corners are not one axis-aligned rectangle on one plane.
+  - Same quad budget (`MESH_ONLY_MAX_QUADS`).
+  - `VoxelMeshCache.get(pm, key, names, 1)`: when `pm.rig` is set, return (and cache) the LOD0 mesh. `downsamplePart` reads `pm.vox`, and a ~5k-quad character needs no LOD1.
+- Not touched: voxelPose.js, instanceRect.js, instances.js, shadowList.js, VoxelTextures.js, EntityHandle.js, animation.js, the GPU/WGSL side.
+
+**5. glb -> RiggedModel** (`engine/chargen/fromGlb.js`, `riggedFromGlb(glb) -> RiggedModel` in the meshCharacter shape; load time). It needs `glb.extras` = `extras.kestrel` format 1, or it throws "not a Kestrel character .glb; use tools/gltf-import".
+- **Bones:** names, parent name (`null` for the root) and `joint` (metres, ours) = minus the IBM translation. `jointCells = joint/cellM`, so `anchorCells` = 0. Each `rest.r` must be identity (within 1e-4), or it throws.
+- **Mesh:** vertices in groups of 4 (= the exporter's quads). All 4 vertices must have the same bone, and the index pattern is checked. `pos` = positions. `nrm` = rounded normals. `mat` = 1 + texel index from `TEXCOORD_0` (`floor(u*16) + 16*floor(v*16)`, the inverse of tools/export/png.js `texelUv`; PALETTE_TEX_SIZE 16). `matKeys` = `extras.matKeys`. Ranges come per bone after a stable sort of the quads by bone.
+- **Clips:** `duration` = round to 50 ms of glb seconds x 1000 (the exporter has already applied tempo); `loop` from the clip. Keys every 50 ms: `rot[bone]` = quatToEuler(sampleRiggedClip local rotation), `pos.Hips` = (t - rest.t)/cellM.
+- **Mounts:** `extras.mounts` (metres from the anchor) / cellM.
+
+**6. RIG-01 reader defects found while writing this note** (probe: `tools/chargen/export.mjs buildGlb` -> `readRiggedGlb`). These are input for PC-A's RIG-01 review, to be fixed in RIG-02a.
+1. WEIGHTS_0 written by our exporter is UNSIGNED_BYTE normalized. `readRiggedGlb` throws "componentType 5121 is not FLOAT", so **it cannot read our own files**. It must accept normalized u8/u16 weights (value/255, value/65535) and u8/u16 joints.
+2. **Mirror:** the reader uses the static map `(X,-Z,Y)`, but `gltfWrite.js` writes `(-x, z, -y)`, a reflection. The round trip negates x: LeftHand lands at +x, and the vertices and IBM are mirrored.
+   - The rigged reader must be the exact inverse of the exporter: ours = `(-X, -Z, Y)`, quaternion `(x,y,z,w)_gltf -> (x, z, -y, w)`, IBM translation the same way, triangle winding flipped.
+   - The static `loadGltf` map stays as it is (see risk 3).
+3. Clip `loop` (the exporter's `animations[].extras.kestrel.loop`) is dropped. Return `clip.loop` (default true).
+
+**7. Steps (each <= 1 programmer-day).**
+- **RIG-02a (0.5 d):**
+  - the item 6 fixes in `engine/mesh/gltf.js`;
+  - `engine/chargen/fromGlb.js`;
+  - `collapseRig` `pivotM` / `anchorCells`;
+  - tests.
+- **RIG-02b (0.75 d):**
+  - `engine/chargen/rigModel.js` `riggedModelDef`;
+  - the voxelPack.js rig branch;
+  - the voxelMesh.js `buildRiggedMesh` + LOD1 rule;
+  - exports in `engine/chargen/index.js` + `engine/index.js`;
+  - tests.
+
+**8. Node tests RIG-02 must add.**
+- **(a) Round trip** (`tools/chargen/rig.test.mjs`; it may import tools/ and design/): `riggedFromGlb(readRiggedGlb(buildGlb(kit, recipe, {clips: DEMO_CLIPS}).glb))` vs the direct `meshCharacter`.
+  - Bones and joints within 1e-5 m, LeftHand at -x.
+  - Quad positions equal within 1e-5 m, in the same per-bone order.
+  - `mat`/`matKeys` equal.
+  - `collapseRig` of both: clip rot within 0.5 deg at every 50 ms key; Hips pos within 1e-3 cells.
+- **(b) Pose equivalence** (`engine/chargen/rig.test.js`). The key check, because it pins the Euler/handedness chain. Use a synthetic clip that rotates only `LeftUpperArm` (45 deg about x, then about z) and only `Jaw`:
+  - Take the vertices of that bone through `computeVoxelPose`'s FORWARD (rest part matrices: cellM, anchor G).
+  - Take the same vertices through rigid FK from chargen `sampleClip` quaternions.
+  - They must agree within 1e-3 cells.
+  - Also check the Hips translation clip.
+- **(c) Mesh parity:** `buildVoxelMesh` of a rig pm vs a native voxel model of the same tiny 2-part grid.
+  - The native model is built as a VoxelModelDef with layers. The rig pm comes from `meshCharacter` on the same cells, through `collapseRig` with a 2-part map.
+  - They must have the same triangle count, the same multiset of `flat1`, and the same per-range bbox.
+  - Every rig `flat0` layer must be >= 0.
+- **(d) Pool:** `VoxelPool.bind` with a registry holding one rig model and one voxel model.
+  - The rig model is `meshOnly` and not in the atlas.
+  - `pushInstance` + `project` + `projectShadow` + `addVoxelInstances` give `partCount` part matrices.
+  - `objectIdFor`, `partRot` on `jaw` (pose differs only in the jaw part) and `voxelMountWorld('hand_r')` all work.
+  - The second `project` call allocates nothing (same pattern as the existing alloc tests).
+  - LOD1 `get` returns the LOD0 mesh.
+- **(e) Errors:** a non-Kestrel glb, a non-identity rest rotation, an off-grid vertex, and > 8 parts each throw a clear message.
+- **(f) Regression:** the existing voxelPack / voxelMesh / voxelPool / chargen / gltf suites stay green. The static `loadGltf` outputs do not change. `node tools/check-deps.mjs` passes (engine/chargen may import `../mesh/gltf.js` and its own files only; no voxel/render import from chargen).
+
+**9. Files RIG-02 may touch:**
+- `engine/mesh/gltf.js` (rigged reader only);
+- `engine/chargen/{collapse.js, fromGlb.js (new), rigModel.js (new), index.js}`;
+- `engine/voxel/voxelPack.js`;
+- `engine/mesh/voxelMesh.js`;
+- `engine/index.js` (exports `riggedFromGlb`, `riggedModelDef`);
+- tests: `engine/chargen/rig.test.js`, `tools/chargen/rig.test.mjs`, additions to `engine/render/voxelPool.test.js`.
+
+Not to touch: voxelPose, instanceRect, instances, shadowList, gpu/*, EntityHandle, animation.js, `game/` (the main.js line is RIG-03 / B1-main).
+
+**10. Zero-allocation and cost.** All new code runs at load / New-game time: glb parse, collapse, def build, pack and mesh build (<= 10 ms per character, as in 38.29 item 4). Per frame the rig model runs exactly the existing voxel code (one draw per instance x part, FORWARD part matrices). A rig quad count of 4-6k counts against the mesh raster budget like any mesh-only voxel model.
+
+**11. Risks / open items.**
+1. Rigged models render only on the mesh renderer. The DDA / non-mesh fallback skips them (meshOnly, warn once). Accepted for v1.
+2. Limbs are rigid (8 parts, no elbows/knees): the 38.29 item 1 ESCALATE (A/B) is unchanged. B would need `MAX_VOX_PARTS` 24 and touches voxelPose/instances/GPU rows (PC-A).
+3. **For PC-A to check (not a RIG-02 change):** the static `loadGltf` map `(X,-Z,Y)` is a proper rotation that puts glTF +X (the model's left, per the glTF spec, which faces +Z) at our +x (east). For a model facing north (-y), its left lands on east, so third-party static meshes may be mirrored. Our exporter and the rigged reader follow the exporter map. If PC-A confirms, unifying the two maps is a separate item: it changes every imported static mesh, a re-import plus gpucompare (ESCALATE only if PC-A wants to change the static map).
+4. Re-resampling (exporter 30 fps -> 50 ms keys -> linear Euler) can soften fast clips slightly; the tolerances in test (a) bound it.
+
+### 38.33 Add-on packages at boot (CHARGEN-15) (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; PC-A to ratify)
+**Decision: option (a).** Every boot mounts the add-on packages listed in an index file on top of the base content (loose or `?pack=`) and merges their `bundle.models`. A villager package stays models-only (`.glb` + recipe + thumb, as CHARGEN Save writes it, 38.29 item 5); it never needs its own content manifest. 38.30 is unchanged: still only one content manifest is loaded, add-ons add models only.
+1. **Finding packages: an index file, no directory listing** (the static server has none). `content/packages/index.json` = `{"format":"kestrel-addons","formatVersion":1,"packages":["villager.mara-1.0.0.kestrel", ...]}`; paths relative to the index, same zip-slip rules as 38.30 (no `..`, `/`, `\`, `:`). The `.kestrel` files sit next to it and are checked in (data). `kestrel.base.pkg.json` already excludes `packages/**`, so add-ons never end up inside the base package. Index 404 = no add-ons (one info log); a malformed index or a failed package fetch = boot error naming the file.
+2. **Boot flow** (all in `game/js/packBoot.js`, replaces today's `loadBundleFromPackages` body; main.js keeps one call site at line ~258):
+   ```js
+   /** @returns {Promise<Bundle>} never null; loose boot when no package carries content */
+   loadBootBundle(params, {lazyMeshes, baseManifest:'../content/manifest.json', addonIndex:'../content/packages/index.json', fetch?}, log)
+   ```
+   - pkgs = `?pack=` packages, then index packages (that order). The same package id twice -> error naming both sources.
+   - `mount = mountPackages(pkgs, {})`: dependency and content-id checks as in 38.30. A dependency on `kestrel.base` is satisfied by a loose boot (pass it as a virtual entry with the version from `content/packages/kestrel.base.pkg.json`; do not change `checkDependencies`' rules).
+   - Content: the first `?pack=` package with a content manifest; else the loose `baseManifest` (fetched through the mount's fallback). **An index add-on that carries a content manifest -> error** ("add-on content is not supported in v1, use ?pack="). `?pack=` with only models-only packages is now valid (loose base + their models), no longer "none carries a content manifest".
+   - Models: `bundle.models = mount.loadModels()` (loadPackageModels already rejects duplicate model ids naming both paths). Merging into an existing `bundle.models` or registering `char.<id>` over an existing registry name -> error naming the package and "base content". No silent override.
+3. **Capture / bench / compare:** add-ons load on every page, including capture, bench and gpucompare (world data references them, and the index is versioned data, so runs stay comparable). Adding a package to the index changes gpucompare/route goldens once: rerun them in the same commit. `?addons=0` = dev switch to skip the index; world entities whose `char.*` model is missing then warn once and are skipped (throw under `?strict=1`). Cost: load time only (one fetch + readRiggedGlb per package), nothing per frame.
+4. **Files CHARGEN-15 may touch:** `game/js/packBoot.js`, new `game/js/packBoot.test.js`, `game/js/main.js` (the call site + the RIG-03 `char.<id>` registration only), `content/packages/index.json`, `content/packages/<villager>.kestrel`, `content/worlds/world_m1.world.json`, its dialogue file, docs. **No engine changes** (`mountPackages` / `loadPackageModels` already suffice); anything else -> ASK ARCHITECT.
+5. **Node tests** (`game/js/packBoot.test.js`, injected `fetch`, packages built with `writeZip` in memory): (a) no index (404) -> loose bundle, no models; (b) index with a models-only package -> loose bundle + `models.<id>.kind==='rigged'`; (c) `?pack=` models-only -> loose base + models; (d) `?pack=` content package + index add-on -> content from `?pack=`, models from both; (e) two packages with the same model id -> error text names both; (f) add-on with a content manifest -> error; (g) same package id in `?pack=` and index -> error; (h) bad index path (`../x.kestrel`) -> error; (i) `?addons=0` skips the index.
+6. **Do not:** list directories, auto-pick "latest" versions, load add-on content manifests, let an add-on override a base model, or put package lookup into `engine/` (the engine stays URL-agnostic; packBoot is game code).
+
+### 38.34 Fine head grid and per-recipe detail (D-055 + owner follow-up 2026-10-10) (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; PC-A to ratify)
+Owner: the face is too coarse at 2.5 cm, and the cell size is a **recipe choice**: `recipe.res = {body: 1|2, head: 1|2|4}` (cells per 2.5 cm: 1 = 2.5 cm, 2 = 1.25 cm, 4 = 0.625 cm). Skeleton, bones, joints, clips, partMap, mounts, anchors, stretchRows and the 8-part collapse are the **same at every resolution** (the kit keeps them in continuous level-1 cell coordinates). Nothing per frame changes.
+
+**1. Kit format (schema 1, additive).**
+- `kit.regions = {head: {bones: ['Head','Jaw'], box: [x0,y0,z0,x1,y1,z1]}}` (level-1 cells, inclusive, integers). `box` = the region volume (skull + hair room); it may be larger than the bone boxes. Every bone not in a region belongs to the implicit region `body` (the whole grid).
+- `kit.resLevels = {body: [1] | [1,2], head: [1,2] | [1,2,4]}`: the levels this kit offers (the UI and validateRecipe read it).
+- `base.layers` = level 1 for everything (as today). It always exists and **wins at level 1**, so face v2 stays the Standard head (the designer may refresh it from L2 with the downsample tool).
+- `base.detail = {<region>: {"<L>": {layers, bones?}}}`: an authored finer level of one region. Origin = the region box min (level-1 cells; body: 0,0,0). Size = box extent x L. `layers[z][y]` = strings of x, as today. `bones?: {Head:{box}, Jaw:{box}}` in block cells (default: the level-1 bone boxes x L). A voxel's bone = the first box in skeleton order that contains it; outside every box = kit error.
+- **Derived levels:** a level in `resLevels` that is not authored = `downsample2` of the next finer level (authored or derived), repeated (4 -> 2 -> 1). Never upsample authored detail to make a finer level: listing a level finer than the finest authored one is a validateKit error.
+- `kit.slots[ch].keep` (optional int 0..9, default 0) = downsample priority. The designer sets it on iris, eye white, catchlight, lid line, lips and brows.
+- `downsample2(layers, slots)` (new `engine/chargen/downsample.js`, pure): each 2x2x2 block (odd sizes padded with empty) -> one cell. If any filled cell has `keep > 0`: the char with the highest keep (ties: higher count, then lower char code). Else if >= 4 of 8 are filled: the majority char (ties: lower char code). Else empty. Bones of derived cells come from the box rule at that level, not from a vote.
+- **validateKit adds:**
+  - region bones exist and are in at most one region; the region box is inside the grid;
+  - detail `size` = box extent x L; L in {2, 4}; every `resLevels` entry is authored or derivable;
+  - **seam rule:** a filled detail cell whose level-1 cell holds a filled voxel of a non-region bone = error ("head L2 overlaps Neck at x,y,z");
+  - no `stretchRows` row inside a non-body region box;
+  - attachments: `res` (below) is in `resLevels` of their bone's region.
+- Attachments get `res` (default 1 = the level their layers are authored at); anchor + offset stay level-1 cells. Shells: `thick` stays in 2.5 cm units; a region at level L grows `thick*L` layers (the same physical thickness).
+
+**2. Recipe + compose.**
+- `recipe.res` is optional; **missing = {body:1, head:1}**, so old recipes and the CHARGEN-15 villager keep their bytes. New recipes from the app / `randomRecipe` use `kit.defaults.res` = {body:1, head:2} once head L2 is authored (CHARGEN-23). validateRecipe: levels must be in `kit.resLevels`, and **head >= body** (no coarser block inside a finer grid). `res` is part of the recipe hash / share string.
+- CharGrid (additive): the main grid = region `body` at level `B = res.body`: `cellM = kit.cellM / B`; `size`, `anchor`, joints and mounts are in main cells (x B). At 1/1 the output is **byte-identical** to today plus `blocks: []`.
+- A region with `res == B` is pasted into the main grid (the main-grid cells of its bones are cleared first). A region with `res = H > B` becomes `blocks[i] = {region, k: H/B, origin:[x,y,z] main cells (ints), size, mat, bone}`, and its bones' cells in the main grid are cleared.
+- Order per region (main grid or block, each at its own level): base cells -> shells -> attachments (resampled to the block level: downsample2, or nearest-cell upsample) -> elder overlay. Attachment cells outside the block are clipped (validateKit warns at kit build). The main grid and the blocks share one matKeys (<= 255).
+- Height: `heightBase(base, h)` also remaps blocks. The origin z goes through mapZ, which is an integer shift because no stretch row lies inside a region box. A body detail level duplicates/deletes L fine rows per stretch row.
+- **Neck seam:** no gap and no overlap by construction (the block origin sits on an integer main cell; the seam rule above). Nothing culls across bones today (each bone is a closed shell, 38.29 item 4), so nothing culls across the seam. The coincident Neck cap (+z) and Head cap (-z) face away from each other and are back-face culled, as at 1/1.
+- Cost: compose + mesh <= 10 ms at body 1 with head <= 2 (1/1 measures ~11 ms cold in Node, including JIT). <= 60 ms for body 2 / head 4. UI changes only, never per frame.
+
+**3. meshCharacter.**
+- Refactor the per-bone greedy loop into `meshBlock(size, mat, bone, b, k, origin, out)`. For each bone in skeleton order, mesh it in the one grid that owns it (the main grid or its block).
+- Output space = the **finest grid G**: `F = max(res)`, `rigged.cellM = kit.cellM / F`. A vertex = `((origin + q/k) - anchor) * mainCellM` metres (exact multiples of cellM). `jointCells`, `mounts` and the Hips clip pos scale to F cells.
+- collapseRig, clip.js and fromGlb need **no change** (they already use `rigged.cellM`). `riggedModelDef` needs **no change**: it snaps to `partRig.cellM` (= G), and the off-grid throw stays. Ranges and per-bone ordering are unchanged.
+- Pin by a test: body-bone quads at {1,2} == at {1,1} (a region kept at level 1 meshes the same).
+
+**4. Budget + in-game.**
+- Today m_avg has 1845 quads (head 164 + jaw 34). Estimates: head L2 ~0.8k, head L4 ~3.2k, body L2 ~6.6k; the max combination ~10k, under `MESH_ONLY_MAX_QUADS` 32768 (unchanged).
+- The voxel def `cellM` = G (0.0125 or 0.00625). voxelPose, instanceRect, mounts and shadows already use the per-model `pm.cellM`, and the 18-bit flat0 layer is ample.
+- `CHAR_GAME_MAX_QUADS = 4096` and `GAME_SAFE_RES = {body:1, head:2}` (engine/chargen/recipe.js).
+- The game (creation screen CHARGEN-17, and package Save "for the game") **auto-clamps** res to GAME_SAFE_RES with a visible warning. The character.json records `gameRes`; the clamp is pure, so it stays deterministic.
+- The game loader **refuses** a rigged glb over CHAR_GAME_MAX_QUADS (the error names the file). Meshes are never downsampled at runtime.
+- Honest limit: in-game, a 1.25 cm feature at 3 m is smaller than one ASCII glyph. The fine head pays off in the generator viewer, the exports and close dialogue shots. Owner walk-check at CHARGEN-23.
+
+**5. Exports.**
+- glb / fbx / obj: plain meshes at G; the only change is the finer `cellM` (glb `extras.kestrel.cellM` = G, which fromGlb reads).
+- **.vox: option (a).** `flattenGrid(grid, F)` (tools/export, not engine) builds one dense grid at the finest level (the main grid upsampled by k). `exportVoxGrid` keeps one shape per bone, so MagicaVoxel shows correct relative sizes.
+  - Why not (b): separate shapes each at its own scale are impossible, because .vox has no per-shape scale.
+  - Why not (c): downsampling the head throws away the detail the user picked.
+- The existing per-axis <= 256 check applies **per bone shape** (worst: a leg of ~35 rows x 4 = 140, OK).
+- Upsampling multiplies the body voxel count (x8 / x64). Files of up to ~5 MB are fine; body 2 + head 4 warns "large .vox".
+
+**6. ASCII renderer: no change.**
+- Shading keys on uv in metres (`a*cellM`, physical), so the texel/glyph density is the same on body and head.
+- Edges come from planeId changes (part/face/layer). The finer head therefore has more voxel steps, which means more outline glyphs on the face at close range. Check at CHARGEN-23; if it looks busy, the designer smooths the steps (no engine knob).
+
+**7. Steps.**
+- **CHARGEN-22a (0.75 d, engine/kit):**
+  - kit.regions / resLevels / detail / keep in `kit.js` validateKit;
+  - `downsample.js`;
+  - `recipe.js`: res, head >= body, GAME_SAFE_RES / CHAR_GAME_MAX_QUADS;
+  - tests.
+- **CHARGEN-22b (1 d, engine):**
+  - compose blocks + paste + shells/attachments per level;
+  - the `height.js` block remap;
+  - `mesh.js`: meshBlock + finest-grid output;
+  - tests.
+- **CHARGEN-22c (0.5 d, tools):**
+  - `flattenGrid` + `.vox` per (a);
+  - glb cellM;
+  - the game loader quad cap;
+  - `tools/chargen-build-kit.mjs` stats per level.
+- **CHARGEN-22d (0.5 d, app UI):**
+  - rows **Body detail** (Standard 2.5 cm / Fine 1.25 cm) and **Head detail** (Standard / Fine / Ultra 0.625 cm); options not in `kit.resLevels` are disabled;
+  - a live quad count + a "game uses Fine max" note;
+  - the package Save clamp + `gameRes`;
+  - the CHARGEN-17 creation screen offers Head Standard/Fine only, with the body at Standard.
+- **Designer:**
+  - **CHARGEN-23:** head L2 (`base.detail.head["2"]` + `keep`);
+  - **CHARGEN-23b:** head L4 (procedural script, optional);
+  - **CHARGEN-24:** body L2 (re-evaluate the body shapes at 2x; the hand/foot tables are nearest-upsampled first).
+
+**8. Tests** (engine/chargen/*.test.js unless noted).
+- (a) 1/1 regression: CharGrid and RiggedModel bytes are identical to before for `kit.defaults` and the villager recipe.
+- (b) downsample2: keep priority (a 1-cell iris survives L2 -> L1), majority, 3-of-8 -> empty, odd sizes, determinism.
+- (c) validateKit: seam overlap, a stretch row in the head box, a detail size mismatch, an unauthorable resLevel, attachment res.
+- (d) compose {1,2} on a tiny synthetic kit:
+  - block origin and size are right;
+  - head bones are absent from the main grid;
+  - height +2/-2 shifts only the block origin.
+- (e) mesh:
+  - every vertex is an integer multiple of G;
+  - body-bone quads at {1,2} == at {1,1};
+  - `riggedModelDef` accepts {1,2} and {1,4} and rejects a hand-made off-grid vertex.
+- (f) pose: the 38.32 test (b) repeated at F = 2 (jaw + head part through the voxelPose FORWARD vs FK, within 1e-3 cells).
+- (g) recipe: missing res = {1,1}; head < body is rejected; the clamp to GAME_SAFE_RES is deterministic.
+- (h) tools:
+  - `flattenGrid` .vox: one shape per bone, sizes x k, palette unchanged;
+  - glb round trip at F = 2 (38.32 test a).
+- (i) all suites + `node tools/check-deps.mjs` green (downsample.js imports only engine/chargen).
+
+**9. Do not:**
+- store a per-voxel scale;
+- make `cellM` per part in the voxel def or the pool;
+- add cross-bone culling;
+- upsample authored data into a "finer" level;
+- downsample meshes in the game;
+- change the skeleton, partMap, clips or mounts per resolution.
+
+### 38.35 Quest giver flow (D-058) (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; PC-A to ratify)
+
+Owner: "see, pick up, and finish" quests. First user: Burl's boar quest. **No engine change**: the dialogue runner's `requires`/`setFlag` (38.28) already carry everything; all work is game-side (`game/js/quest/**`, `game/js/ui/**`, main.js) + content. Keep compatible with D-057 (waystone travel) and WAYSTONE-NORMAL-01 (the waystone no longer ends the game).
+
+1. **Quest data.** One file per quest, `content/quests/<id>.quest.json`, same `version:1` shape as `m1` (`objectives[]` with today's `when` types flag/item/area/beasts, so `quest.js` is reused unchanged). Giver quests add optional fields that `validateQuestDefinition` already ignores; a new `validateGiverQuest(def)` in `questBook.js` checks them:
+   `{ version:1, id:'burl.boars', title, giver:{npc:'bear'}, requires:[{quest:'m1', step:'sword'}], objectives:[{id:'beasts', text, when:{type:'beasts', ids:[boar1..boar5], count:5}}], returnText, reward:{items:[{id:'coin', n:10}]} }`.
+   Quest ids match `/^[a-z][a-zA-Z0-9_.]*$/` (the stricter dialogue flag regex, so `q.<id>.<op>` keys stay valid). `requires` = every listed `(quest, step)` pair is in that quest's completed prefix. `reward.items` go through `addItem`; coins are a stackable item `coin` (design/items.js def, `stackMax` 999), no separate wallet.
+2. **States** (derived ints, never stored as strings): `unavailable` (requires not met) -> `available` (met, `!accepted`) -> `active` (accepted, completed < n) -> `ready` (accepted, all steps complete, `!handedIn`) -> `done` (`handedIn`). Stored per giver quest: its `quest.js` state + `accepted:boolean` + `handedIn:boolean`. **Facts count before accept**: `applyQuestEvent` runs for every quest from boot, so boars killed before talking to Burl count (boars stay dead in the save; anything else could soft-lock). Accepting with all steps already complete goes straight to `ready`.
+3. **m1 chain mapping.** wake, lantern, breach, sword stay auto (no giver, always "accepted"). The `beasts` objective **keeps its id and index** (the saved completed prefix stays valid) but its `when` becomes `{type:'flag', id:'quest.burl.boars.done', equals:true}` and its text becomes the writer's "go see Burl" line. The book feeds that flag (a normal `flag:set`) at hand-in. The boar `when` moves to `content/quests/burl.boars.quest.json`. `waystone` stays the last m1 step, untouched (WAYSTONE-NORMAL-01 owns what touching it does; D-057 owns travel).
+4. **Module `game/js/quest/sim/questBook.js`** (pure, Node-testable, no world/DOM):
+   `createQuestBook(mainDef, giverDefs[], saved?) -> book` with `book.main` (the m1 quest state), `feed(event) -> bool` (fans out to every quest), `status(i) -> 0..4` (`STATUS_NAMES` frozen for UI), `accept(id) -> bool`, `handIn(id) -> rewardDef|null` (only when ready; sets `handedIn`, feeds the `quest.<id>.done` flag), `hasKey(key) -> bool` / `actKey(key) -> bool` for the dialogue adapter (item 5), `giverMarks(outAvail, outReady)` (fills two caller-owned arrays with NPC ids, sets `length`), `tracked() -> index|-1` (most recently accepted quest that is active or ready), `version` (int, ++ on any change), `toSave()` / restore via `saved`, `hashInto(h)`. Events out via `onChange(name, questId)`: `quest:accepted`, `quest:ready`, `quest:done` (main.js forwards to `gameHooks.emitSimple`). questRelay/saveRelay hold the book instead of the bare m1 state; `relay.quest.state` keeps returning the m1 state so existing readers (questMarkers, save) keep working.
+5. **Dialogue hooks** (no engine change). `dialogueCtl`'s flags adapter routes keys that start with `q.` to the book, everything else to `world.state['dlg.'+k]` as today:
+   - `has('q.burl.boars.available' | '.active' | '.ready' | '.done')` = status test;
+   - `set('q.burl.boars.accept')` = `book.accept`; `set('q.burl.boars.handin')` = `book.handIn` + reward grant + toast. `q.*` keys are never written to `world.state`.
+   The book builds a `Map<fullKey, {quest, op}>` once at create, so a lookup is one `Map.get`, no slicing. `bear.dialogue.json` entry order: `q..ready -> q..active -> q..available -> bear.talked -> intro`. Offer node = quest text lines + choices `[{text:<accept>, setFlag:'q.burl.boars.accept', next:'bear.q.accepted'}, {text:<later>, next:'bear.q.later'}]` ("Later" sets nothing, so the `!` stays). Hand-in = the ready entry node (Burl line) -> `next` a thanks node with a **node** `setFlag:'q.burl.boars.handin'` (set on enter, so Esc on the first line hands in nothing). Active entry = one reminder line, end. `tools/validate-content.mjs` gains one cross-file check: every `q.<id>.<op>` key names a loaded quest and a known op.
+6. **Reward + toast.** `handIn` returns the frozen reward; the main.js handler calls `addItem` per item (fires `inventory:added` -> `item:got`, harmless) and `spawnDrop`s any remainder at the player's feet when the pack is full (a reward is never lost). Toasts via `toastView` message lines: "Quest accepted" on accept, "Quest complete" on hand-in (plus the normal loot lines), optional `returnText` on `quest:ready`. Strings come from the writer row / quest file, not the sim.
+7. **Markers.** `!` over the giver while `available`, `?` while `ready`, nothing while active/done. Reuse `wire/questMarks.js`: add an optional `host.source(out)` (default `hooks.questObjective`) so two more instances run with sources filled from `book.giverMarks`, models `questMark` / `questMarkReady` (designer: a `?` voxel twin of the `!`, same fx curves). Resolve = giver entity transform + model top. **Map (M):** `mapCard` marker kinds gain `quest` (`!`) and `questReady` (`?`) in `CHART_GLYPHS` + colours; main.js rebuilds the chart marker list when the card opens and `book.version` changed (open-time allocation is fine). D-057 adds touched-waystone markers to the same list; whichever lands second rebases the kind table, kinds stay distinct.
+8. **Quest log screen** (key `J`, new binding `questLog` in `quest/input/bindings.js`, rebindable; locks input like the inventory). Extend `game/js/ui/questLog.js` to take the book: list = Active (incl. ready, tagged with the return line) / Done, newest first, m1 listed as the main quest; detail = the selected quest's steps `[x]/[>]/[ ]` with `n/target` for counted steps. Rows rebuild only when `book.version` changed; `drawLog` never formats or allocates. HUD objective line: the `tracked()` quest's active step (or its `returnText` when ready), else the m1 line - one line only (D-050 note in questRelay).
+9. **Save + migration.** `save.game.quest` stays the m1 state (unchanged shape). New optional `save.game.quests = {<id>: {quest:<quest.js state>, accepted, handedIn}}`; absent = old save. `migrateQuestSave(game, defs)` in `questBook.js` (pure, tested), applied where the save is restored:
+   - m1 completed prefix includes `beasts` -> `burl.boars` done (accepted, handedIn, steps complete), **no** retroactive reward;
+   - prefix ends right after `sword` (mid boar fight) -> `burl.boars` **accepted** (the player already had this objective); its `deadBeasts` = old m1 `deadBeasts` union `game.deadBeasts`; may be `ready` at once -> Burl shows `?`;
+   - earlier -> nothing; the quest derives unavailable/available from facts.
+   `validateSave` accepts the optional field (each entry through `createQuest` + two booleans). `SAVE_VERSION` stays 1 (additive field).
+10. **Zero alloc + determinism.** Per step: `feed` loops fixed arrays, statuses are ints, marker arrays are reused, key lookups are `Map.get` on data strings, no `Date`/`Math.random`. Allocation only on accept / hand-in / save / log open. `hashInto` folds statuses + per-quest `questHash`.
+11. **Tests.** `questBook.test.js`: walk unavailable->done; facts before accept; accept when complete -> ready; handIn only when ready (twice = null); the done flag advances m1 `beasts`; `hasKey/actKey` table incl. unknown keys = false; giverMarks; 10k-step heap check; hash stable across save/load. `questSave.test.js`: the three migration fixtures + round trip + old-save shape unchanged. `questMarks.test.js`: custom `source`. `questLog.test.js`: grouped list, 0-alloc draw. `bearDialogue.test.js`: entry per status, Esc on the ready line hands in nothing, "Later" keeps `available`.
+- Do not: add quest logic to `engine/ui/dialogue.js`; store `q.*` keys in `world.state`; store status strings in saves; grant rewards from the sim (it returns the reward, the game grants it); change `quest.js` semantics or the m1 objective ids/order.
+
+### 38.36 World stage 1: road west + relay waystones (D-060) (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; PC-A to ratify)
+
+Scope = D-060 stage 1 only: the play area grows west along the road to the bend; dead relay #1 at `ws_roadBend` (1262, 1033) (docs/proposals/waystones-2026-10-10.md); a woken relay = heal + save + travel point; travel from the M card (D-057). Dressing from existing meshes only (D-053). Rows: backlog `## World stage 1 (D-060)` (WS1-*).
+
+**Facts found (2026-10-10, read, not probed):**
+- Walk bound = `world_m1.world.json` `bounds {shape:'circle', x 1496.5, y 1024.5, r 96}`. Enforced in `engine/physics/integrate.js` 4b (projection + velocity clip), read by `engine/world/triggers.js` (`shape:'bounds'`, the `boundsEdge` hint), validated in `World.js validateBounds` (circle only), copied in `serialize.js` (shallow).
+- **The near terrain band does not reach the bend.** `World.load` bakes one 3x3-chunk band (384 m, 2 m cells), centred on the chunk of the non-mesh structures' bbox centre (tower -> chunk 11,8) = x 1280..1664, y 896..1280. The relay at x 1262 is 18 m outside it. There the ground renders from the 8 m far grid, `groundAt` falls back to analytic `heightAt` (small seam), and `scatterTrees` / ground detail (both band-only) stop. Fixing the band is the only real engine work in stage 1.
+- The WGSL type fetch assumes a square band (`terrainRaster.wgsl.js terrainTypeAt`: `W = nearMap.w` is used for both axes).
+- Already there: the far terrain (2048 m: road, river, forest recipe); the `roadL###` south-verge meshes run to u 250 (x ~1250); the south `detail.exclude` capsules run to x 1230; the voxel `relay` model (`design/models/relay.js` + `voxel_tower.js`) with clips `dead` / `wake` / `awake`, `wakeLightFrame` and palette light `relay`; `world.addInteractable` (dialogueCtl uses it); fauna resets on a > 25 m jump (`wildEnv.js TELEPORT_M`); HZB + stable-history invalidation (`occlGate.js createHzbInvalidator`, `trackPose` > 6 m); vitals `respawn()` (pose, zero velocity, beasts reset, targeting clear).
+- Bug to fix on the way: `tools/gen-roadside-meshes.mjs` sets `st.scale` (PLANT-SCALE-01) but `fmt()` never writes it, so a re-run drops the plant scales.
+
+**1. Play area growth.**
+- Shape: a **union of convex parts**, not a bigger circle. A circle big enough for the bend (r ~245) takes in hills and forest north/south that lie outside any band we can afford. New bound shape (engine, data-driven, editor friendly):
+  `bounds: { shape:'union', parts:[ {shape:'circle', x, y, r}, {shape:'capsule', ax, ay, bx, by, r}, ... ] }` (1..8 parts; capsule field names = the `detail.exclude` ones). `shape:'circle'` stays valid as is.
+- Stage-1 data: `circle (1496.5, 1024.5) r 96` (today, unchanged) + `capsule (1440,1034)-(1350,1048) r 40` + `capsule (1350,1048)-(1240,1047) r 40`. West edge x ~1200; the relay has a ~20 m apron inside; the corridor is ~80 m wide (road in the middle, the forest edge north is a natural limit).
+- Engine helper `engine/physics/bounds.js` (physics stays stand-alone): `projectBounds(bounds, x, y, radius, out) -> boolean`. Inside any part (`d <= r - radius`) = no hit; otherwise project onto the part with the smallest overshoot, `out = {x, y, nx, ny}`, and the caller clips velocity on that normal. Also `boundsOvershoot(bounds, x, y, radius) -> number` (<= 0 inside). integrate 4b and the triggers `'bounds'` shape both call it (one rule). Projecting onto the nearest convex part from outside always lands inside the union. Cost: <= 8 parts x a few flops, 0 alloc (caller-owned `out`).
+- `validateBounds`: union -> validated deep copy (parts array copied). `serialize.js` deep-copies parts (the current `{...world.bounds}` would share the array).
+- **Near band**: new optional world field `terrainBand: { cx0, cy0, cw, ch }` (chunk indices, cw/ch 1..6). Absent = today's auto 3x3 (byte-identical for every other world). Stage 1: `{cx0: 8, cy0: 7, cw: 5, ch: 3}` = x 1024..1664, y 896..1280 = 320 x 192 cells (1.67x today). Margins: tower east bound 72 m (same as today), west bound edge 176 m, corridor >= 100 m north/south. `Terrain.bakeNearBand(cx0, cy0, cw, ch)` (the old `(cx, cy)` call = `(cx-1, cy-1, 3, 3)`); `nearBandKey` includes the rect. Stage 2 (ford, x 992) will need band streaming (US-026b `setCenter`/`bakeChunkStep`) or a wider rect; not now.
+- Non-square band: the JS consumers of `near.w`/`near.h` (Terrain, scatter, terrainShade, detailShade, ShadeTextures, TerrainTextures, the terrain mesh set, temporalStable/projection reads) are audited for a `w == h` assumption. The WGSL `terrainTypeAt` uses separate W/H (`textureDimensions(uNearType)` or one more uniform word). The JS twin must match (gpucompare parity).
+- Nav: `nav.area` stays 192 x 192 at (1400, 928). Boars live in the meadow; wild fauna does not use nav. No beasts are placed west of x 1400 in stage 1 (rule for WS1-04).
+- Budgets (gate, D-053 + D-007): band bake once at load <= 160 ms (today ~80 ms). Per frame: JS <= 8 ms and GPU p95 <= 8 ms on ultra, at the tower pose AND at the bend pose. The tree count stays under `maxTrees 1500` and detail under `maxPlacements 40000` (print both; if the tree cap clips, raise it in data, never silently truncate the west end). Fallback if the GPU gate fails: `cw: 4` (x 1152..1664, west margin 48 m), recorded in the story.
+
+**2. Dressing the new stretch (existing meshes only).**
+- Extend `tools/gen-roadside-meshes.mjs` with flags, not a new tool: `--prefix <name>` (default `roadL`; only rows with that prefix are replaced), `--side left|right`, `--u0 --u1 --v0 --v1 --count`. The existing `roadL###` rows are NOT regenerated (no churn in bench/gpucompare scenes).
+- Stage-1 runs: `roadW` south verge u 250..300 (x ~1250..1205), count ~60; `roadN` north verge (right side walking west) u 110..300, v 8..26, count ~140, same cluster recipes but `tree` quota 0.25 (keeps the bend readable from the meadow). Both use `PLANT_SCALE` and actually write `scale` (fix `fmt`).
+- Keep-outs (generator circles + `detail.exclude`): relay disc (1262, 1033) r 8 (relay + base + travel anchor + wake approach); the new route-walk leg (road centre line, `ROUTE_CLEAR` 2 m); the road itself (`nearest().d >= v0`); forest/rock/water types (already `groundTypeAt === 0`); slope < 0.6. The generator prints the matching `detail.exclude` capsules; they go into `overworld_far.js` next to the existing ones (the generator warns if any are missing).
+- No new forest paints, no recipe change. Relay base = an existing Quaternius rock/stone mesh (flat top, ~0.6-1.0 m), placed as a mesh structure under the relay so it reads as a plinth like the summit one. No designer work unless the owner later asks for a mast.
+
+**3. Relay as waystone.**
+- Data marks a travel point with a game component on the entity (World ignores unknown components; check once in WS1-04): `"waystone": {"id": "...", "label": "...", "kind": "stone"|"relay", "order": n}`. `endMarker` gets `{id:'waystone', kind:'stone', order:1}`. **The id stays `'waystone'`**: the saved `state.waystone.waystoneId`, `prop:touched {id:'waystone'}`, `saveRelay`'s quest feed and the m1 `waystone` step all keep working, no migration. New entity `relayBend` at (1262, 1033): `voxel {model:'relay', anim:'dead', loop:true}`, `collider`, `light {preset:'relay', on:false, offset 1.1 m up (attach.js: down < 0 = up)}`, `waystone {id:'ws_roadBend', kind:'relay', order:2}`.
+- Meadow stone: touch as today (walk-in or E) = heal + save + joins the list. Relay: **E only** (a prompt, no walk-in wake): `world.addInteractable({key:'relay.ws_roadBend', name:'relay.wake', x, y, z+1, radius 2.2, prompt (WRITER), def:{waystoneId}})`, behaviour `relay.wake` registered in `game/js/quest/index.js`. Wake = the M1 look reused: `entity.play('wake')`, `playRelayHum()`, at `wakeLightFrame` set `light.on = true` (+ the palette `lights.relay.grow` ramp through `lights.entityHandle.get(id)` if LightSet can set intensity; otherwise plain on, noted in the story), clip `wake` -> `awake` when it ends. Generalise beacon.js's step into `game/js/quest/relayWake.js` (per-relay state in a small fixed array built at boot; the tower beacon keys stay untouched). E on an awake relay = touch (heal + save, no replay).
+- Waking = `waystone.touch(id)` (heal + one `requestSave` + toast) + flag `waystone.<id>.woken = true` + emit `prop:touched {id:'ws_roadBend', kind:'relay'}`.
+- Save shape (additive, `SAVE_VERSION` stays 1, all in `world.state`, which the save already serialises): keep `waystone: {waystoneId, pos}` (current respawn) and add `'waystone.points': { <id>: {x, y, z, yawDeg} }` = the touched/woken list + travel anchors (anchor = the player's pose at the touch, the existing "known-safe spot" rule, no literal coordinates in code). An old save with `waystone.waystoneId === 'waystone'` and no points map gets the map seeded with that entry on load. Woken relays restore on load: points has the id -> clip `awake`, light on, no hum.
+- Sim: extend `game/js/quest/sim/waystone.js` (`points` registry from the entity list at boot, `touch(id, pose)`, `list(out)` in `order`, `anchor(id)`). The wire/touch modules become list-driven (`waystoneTouch.js` loops the `kind:'stone'` points; relays go through the interactable). Per step: no allocation, fixed arrays.
+
+**4. Travel from the map (D-057).**
+- On the open M card, each touched point's marker cell shows its digit (`1`..`9`, by `order`) instead of `O`; a bottom line lists them ("1 Meadow stone  2 Road-bend relay", WRITER labels). A digit key = travel; any other key keeps today's close rule (digits are checked first). Untouched relays show `o` (aetherDim) and are always revealed (landmark, like today's markers). `createChartCard` gets `setMarker(x, y, kind|digit)` (one-cell update, no re-raster), so a wake updates the card without `initMapCard`.
+- Gates: travel only while alive, with no dialogue/inventory/quest log open, after the wake intro, and not when already within 6 m of the target (no-op).
+- Sequence (`game/js/quest/travel.js`, pure state machine, fixed step): `fadeOut 0.35 s` (input locked; reuse the vitals death-card fade colour) -> at black: set the transform to the anchor, zero velocity, re-ground (`terrain.groundAt` + the existing spawn snap, never below the anchor), `yawDeg` from the anchor, `hzb.invalidate('travel')` (also drops the stable history), `beasts.resetAll()`, `targeting.clear()`, `syncFacing`, vitals `lastSafe` cleared (add `vitals.clearSafe()`, same reason as respawn), respawn point = the target (a travel counts as a touch: heal + save; the arrival is inside TOUCH_R anyway) -> `fadeIn 0.35 s`. Fauna resets itself (> 25 m jump). Respawn after death keeps using `waystone.onDeath()` (= last touched / travelled point).
+- Travel targets are always inside `bounds` (test).
+
+**5. Quest hook (optional, only if trivial).** Giver quests need an NPC (`questBook validateGiverQuest`), so the only cheap hook is a **7th m1 objective** `relay1` "Wake the relay at the road bend" (WRITER), `when {type:'flag', id:'waystone.ws_roadBend.woken', equals:true}`. Trivial only if `createQuest` accepts an old save with 6/6 done (step 7 becomes current, no "quest complete" replay) and `saveRelay`'s `ending:true` save on the waystone step still fires once. If either needs code, drop the hook (stage 1 ships without it).
+
+**6. Tests and gates.**
+- Node: `engine/physics/bounds.test.js` (inside each part, the circle/capsule seam, outside corner -> lands inside, velocity clip, 0 alloc over 10k steps, circle shape identical to the old projection); `world.test.js` union validate + serialize round-trip; `terrainBand.test.js` (5x3 rect bake == stitched `bakeChunk`s, `groundAt` continuous across the old band edge x 1280, absent field = old key/bake); waystone sim/wire tests (list order, touch, old-save seed, wake once, reload awake); `travel.test.js` (fade timings, gates, pose, invalidate called, beasts reset, 0 alloc); mapCard digits + `setMarker`.
+- `tools/route-walk.mjs`: new leg 8 "waystone -> road bend relay" (waypoints (1420,1032) -> (1350,1050) -> (1270,1042)), grid + mesh physics, completes, no fall, ends within 3 m of the relay; plus a bound probe: walking west past x 1200 stops at the bound.
+- gpucompare (`gpucompare` skill): all existing rows within tolerance after WS1-02/03 (the band change alters what is near-sampled: parity, not a baseline); add one row at the bend pose (1268, 1040, yaw 270).
+- Perf (`tools/perf-gate.mjs` / bench-poses): tower pose + a new `roadBend` pose; JS <= 8 ms, GPU p95 <= 8 ms ultra; heap flat over 10k frames; load-time delta printed.
+- check-deps: `engine/physics/bounds.js` imports nothing outside physics; no game/design import in engine.
+
+**Do not:** add a second walk-bound mechanism in game code; hard-code coordinates in game modules (anchors come from touches, points from entity data); regenerate `roadL###`; place beasts outside the nav area; change the `waystone` id; start band streaming in stage 1; put travel/waystone logic in `engine/`.
+
+
+### 38.37 Chapter 1 build (D-062) (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; PC-A to ratify)
+
+This section builds the owner script `docs/chapters/chapter-1-beyond-the-wall.md` with the D-062 changes: no lamp, killing the boars gives an aether crystal, the breach climb stays required, and Fen comes back as a male wanderer made with the chargen (D-059). It also covers the owner's tower request (2026-10-10: "should be taller ... the top is the sword ... come down and entrance is there on the bottom"). It reuses 38.35 (questBook, giver flow, markers, J log, compass D-061) and 38.36 (relay waystones, `relayWake.js`, travel), and duplicates none of the WS1 rows. Rows: backlog `## Chapter 1 build (D-062)` (CH1-*).
+
+**What the code does today (read, not probed):**
+- `quest.js` only accepts a strict ordered prefix. `advance` walks `objectives[completed.length]`, and a restore throws when the saved prefix does not match the def ids. So removing `lantern` or inserting steps needs a save migration.
+- The sword is on the ground floor today (tower level `sword` prop and interactable at (12.86, 6.12), with note `noteSteelHush` beside it).
+- The current exit is the breach at the summit (marker `breach` (6.5, 7, z 6)), then the outer steps `l k j x X b` down the west outcrop.
+- The interior ground floor is at z ~0, but the outer ring cells (`,` `;`) and the terrain crown are at 2.4 m (`overworld_far` `towerCrown` flatten h 2.4). A door at ground level therefore needs about 2.4 m of steps.
+- Wall tops are 6.5-8.5 m today.
+- Entity colliders (`components.collider`) are **static** prisms baked into `props:static` at load. A walking Burl needs engine work.
+- `components.voxel.hidden` already hides an entity (voxelPool).
+- An interactable's `requires` is one `world.state` key that must be truthy.
+- A prop with `colliderOffVariant` already drops its collider when its variant changes (the lantern hook).
+- The bear model has a `walk` clip tuned to about 1.0 m/s.
+- Loot drops (`pickups.js`) exist only at runtime and despawn, so they cannot safely carry a key item.
+- The `createQuestMarkers` bindings live in main.js. Today there is only `waystone -> endMarker`.
+
+**1. The m1 chain (the id stays `m1`; `content/quests/m1.quest.json`).**
+- m1 stays one main quest. Each objective gets an optional `section` (the script quest id), and the def gets `sections: [{id, title}]`. `validateQuestDefinition` ignores both fields; a new `validateSections` in questBook checks them.
+- When the last objective of a section completes, the game shows the toast "Quest complete: <title>" (strings come from the quest file / WRITER).
+- Order and `when`:
+
+| # | id | section | when | kind |
+|---|---|---|---|---|
+| 1 | wake | q01 A Blade in the Ashes | flag `wake` | auto |
+| 2 | breach | q01 | area `breach` (now the top of the tower) | auto |
+| 3 | sword | q01 | item `sword` | auto |
+| 4 | leave | q02 Leave the Tower | area `towerDoor` (outside the new ground-floor door) | auto |
+| 5 | beasts | q03 Boars in the Woods | flag `quest.burl.boars.done` (giver quest, same mechanics as now) | giver (Burl) |
+| 6 | follow | q04 Follow the Bear | flag `burl.arrived` | auto, started from Burl's dialogue |
+| 7 | waystone | q05 Awaken the Stone | flag `waystone.waystone.woken` (was area `waystone`) | auto |
+| 8 | road | q06 The Next Light | area `roadWest` | auto |
+| 9 | relayFound | q06 | area `bendRelay` | auto |
+| 10 | relay1 | q06 | flag `waystone.ws_roadBend.woken` | auto |
+| 11 | fen | q07 Not Alone | flag `fen.met` | auto, set by the end node of Fen's dialogue |
+
+- `lantern` is removed.
+- `burl.boars` keeps `requires m1 sword`. Its title becomes "Boars in the Woods" (WRITER).
+- Facts count early (the quest.js rule), so doing things out of order never soft-locks the chain. Example: waking the relay before the meadow stone.
+- New areas in `content/quests/areas.json`, each with a world-level area-only trigger (same as the existing `end` zone):
+  - `towerDoor`: circle r 3 just outside the door.
+  - `roadWest`: r 10 on the road at about (1340, 1048).
+  - `bendRelay`: r 12 at (1262, 1033).
+  - The `waystone` area stays defined; only old saves and the migration use it.
+- **Quest flags set by game code** go through one helper, `questFlag(key, value=true)` in `questRelay.js`. It sets `world.state[key] = value` and calls `book.feed({type:'flag:set', key, value})`. Every new flag above uses it (wake modules, escort, dialogue). Never set these flags by writing `world.state` alone.
+- Marker and compass bindings (main.js `createQuestMarkers(m1, ...)`):
+  - `leave -> doorMarker` (a prop or marker at the door)
+  - `follow -> bear`
+  - `waystone -> endMarker`
+  - `road -> roadWest` marker
+  - `relayFound` and `relay1 -> relayBend`
+  - `fen -> fen`
+  - Item steps (sword) get no marker (existing rule).
+- This chain replaces WS1-09: close WS1-09 as won't-do, pointing here. The notice (item 4) replaces WS1-W1's relay wake toast.
+
+**2. Tower: sword at the top, door at the bottom, taller shell (owner 2026-10-10).**
+- Flow:
+  1. Wake on the ground floor, at the wreck.
+  2. Climb: the stair and the gap jump, unchanged.
+  3. Reach the top (the summit around the breach).
+  4. Take the sword and read note 1.
+  5. Read note 2 at the head of the way down.
+  6. Go back down.
+  7. Leave through the ground-floor door into the meadow.
+- **Level data (`content/levels/tower.level.json`, designer):**
+  - Move the `sword` prop and interactable, and `noteSteelHush`, to the summit floor near the breach. The sword must be visible from where the player enters the summit. `noteSteelHush` becomes note 1, with the text from the script.
+  - Add interactable `noteLeave` (note 2) at the head of the way down, with `requires: 'tower.sword.taken'` so its prompt stays hidden until then.
+  - **The breach is no longer an exit.** The outer outcrop steps become solid rubble or a parapet no higher than 1.2 m, above a sheer drop the player cannot use. Keep the view west: it is the overlook moment.
+  - **Way down:** only walking and jumping, with no drop bigger than the existing gap jump and no jump up. The 2.7 <-> 3.0 gap is crossed downward. If the current route cannot be walked in reverse, the designer adds a rubble ramp or a ledge.
+  - **Door:** one doorway, 1.2 m wide, in the south-west wall of the ground floor. It opens onto steps of no more than 0.3 m each (the stair rule) that rise from 0 to 2.4 m to the outer ring. The steps are level cells (grow `size.h` by 2-3 rows if needed), so physics and collision stay sector-native.
+  - **The door is barred until the sword is taken:** prop `doorBar` (with a collider and `colliderOffVariant: 'open'`) plus interactable `door.unbar` (`requires: 'tower.sword.taken'`, WRITER prompt) that switches the variant. No engine change. This keeps the climb required, as the owner wants, without relying on the player choosing to climb.
+- **Taller shell, in two layers.** Both are data/content; no engine change.
+  - (a) Raise the `floorH` of the solid wall cells (sector walls) to the owner's target height (see OWNER QUESTION). Recommendation: walls 12-14 m, with jagged crumbled steps of 0.5-1.5 m between neighbouring cells, and the west/breach side kept lowest. Chamfer the outer wall cells so the footprint reads round. Collision and shadows come for free.
+  - (b) A designer voxel model `towerCrown`: a round broken crown ring with the Kestrel's torn envelope snagged on it and rope ends hanging down. Place it as a world entity at the tower origin, above the wall tops. The player cannot reach it, so it has no collider. Budget: at most 8k surface voxels at 0.125-0.25 m and the shadow cost of one caster. If it does not fit, cut detail, not the silhouette.
+- The interior look must survive (the owner likes it). The east `#` wall casts the edge of the sun shaft. Any height change on the sun side is checked with a headless capture of the wake pose and the shaft pose, before and after. If the shaft is lost, keep the east wall at its current height and add height only on the N/S/W walls and the crown.
+- Far view / horizon: from anywhere inside the stage-1 bounds the tower stays inside the near band, so it needs no far proxy. If the footprint grows, update the `overworld_far` `structures[0]` note and the `towerCrown` flatten disc. The map chart glyph does not change.
+- **Lamp removal:**
+  - Remove the `lantern.take` interactable. The hook and lamp props stay as wreck dressing, with no prompt.
+  - `beacon.light` keeps `requires: 'tower.lantern.taken'`. That flag is never set in new games, so the beacon stays dormant. A later chapter may give it a new gate.
+  - `questRelay` stops feeding `lantern`.
+  - `hintBurner`'s `skipIfState` and the `hintExit` text ("the way out ends the chapter") are WRITER rewrites.
+  - Old saves that already took the lamp keep its light. It is harmless and not worth code.
+  - The designer checks interior exposure without the carried lantern (capture). If it is too dark, fix it with level lights, never by bringing the lamp back.
+
+**3. Aether crystal (the key that wakes the stones).**
+- Item `aetherCrystal`: a design/items.js def with `stackMax 1`. Make it a key item (no drop/sell) if the inventory supports that tag; otherwise a plain item.
+- The real gate is the flag **`aether.attuned`**. The item is only visible proof, so dropping it can never soft-lock.
+- Grant rule (game code, `game/js/quest/crystal.js`). When `burl.boars` reaches `ready` (5/5 boars) and `aether.attuned` is not set:
+  - `addItem('aetherCrystal')`. If the pack is full, the player is still attuned; the flag decides, and no retry is needed.
+  - `questFlag('aether.attuned')`.
+  - A teal particle burst at the last boar's corpse (existing preset, `particleHooks`).
+  - A toast (WRITER).
+- **Self-healing:** the same check runs once on every `world:loaded`. Old saves that are past the boar quest get the crystal with no migration code.
+- **One crystal wakes any stone.** The script gives no per-stone cost, so the meadow stone and every relay need `aether.attuned`. The crystal is not consumed.
+
+**4. Waking the meadow stone + notices.**
+- In new games the meadow waystone (`endMarker`, `waystone {id:'waystone', kind:'stone'}`) starts **dormant**: no walk-in touch and no heal/save until it is woken. `waystoneTouch.js` (list-driven after WS1-06a) skips points that have `dormant: true` in their `waystone` component while `waystone.<id>.woken` is false. Only `endMarker` gets `dormant`; relays are E-only anyway.
+- Waking reuses the WS1-06b `relayWake.js`, extended to `kind:'stone'`:
+  - Interactable `stone.waystone`: E, `requires: 'dlg.bear.stone.told'`. Burl's stone-talk node sets that flag, and the talk itself can only be reached with the crystal.
+  - Sequence: clip `wake` -> light on at the wake frame -> `awake` loop -> `waystone.touch` (heal + save) -> `questFlag('waystone.waystone.woken')` -> notice.
+  - Relays use interactable `requires: 'aether.attuned'`.
+- Designer work on the waystone model:
+  - `dead` / `wake` / `awake` clips (the aether mark goes from dark to teal).
+  - A small brass crystal bowl on top. It is the script's "crystal bowl" and keeps Wick's "old machine" line true.
+  - A light preset.
+  - The existing `idle` clip stays, as an alias of `awake`, for old saves.
+- **Notice view** `game/js/ui/noticeView.js` (pure layout + draw, mounted in main.js):
+  - A centred banner: a title row (at most 30 chars) and up to 3 body lines (at most 38 each).
+  - Fade in 0.3 s, hold 3.5 s, fade out 0.5 s.
+  - Non-blocking: input stays live. Queue of 2.
+  - No allocation in draw (strings are formatted when pushed).
+  - Used for "WAYSTONE AWAKENED" and "BEND RELAY AWAKENED". Each point's `waystone` component names its text with `notice: '<textKey>'`, and the WRITER strings live in a game text table.
+  - Hidden in menus and dialogue, like the compass.
+
+**5. NPC walks: Burl's escort and departure, Fen's entrance.**
+- **Engine (generic, kestrel-3):**
+  - `engine/nav/pathFollow.js` (pure, no world): `createPathFollower(points:Float64Array /*x,y pairs*/, {speed, arriveR}) -> {step(dt, speedScale) -> boolean /*moved*/, x, y, yawDeg, seg, s, done, reset(seg)}`.
+    - Follows a polyline at constant speed, rounding corners by looking ahead (arriveR), with yaw from `yawFromDelta`.
+    - No allocation; deterministic (fixed dt, no random).
+    - Tests: arrives at the end, `seg` counts correctly, `reset(seg)` resumes at a waypoint, speedScale 0 means no movement, heap stays flat over 10k steps.
+  - **Kinematic entity colliders:** `World.setEntityCollider(id, x, y, z)` moves an entity's collider prism.
+    - Entities whose collider has `kinematic: true` go into a separate `npcs:kinematic` collider (at most 8 prisms) instead of `props:static`.
+    - An update writes the shape in place and refits its bounds: no allocation, O(1).
+    - Static colliders (Burl today) behave byte-identically when the flag is absent.
+    - Physics stays stand-alone: the collider set is owned by the world, and physics imports do not change.
+    - Tests: the player capsule is blocked at the new spot and free at the old one, the static set is unchanged, no allocation over 10k moves.
+    - If the collider structure cannot be updated in place, ASK ARCHITECT before rebuilding it every step.
+- **Game (`game/js/quest/npcWalk.js`, generic, used by Burl and Fen):**
+  - Each NPC gets a small state built from its entity data: `components.walks = { <name>: [[x,y], ...] }`. These are authored polylines in world data, so there are no coordinates in code.
+  - API: `createNpcWalk(world, id, {questFlag, emit})` -> `{start(name, opts), step(dt, px, py), phase, wp}`, with `opts = {lead: true, waitFar: 10, resumeNear: 6, barks: {<wpIndex>: '<barkId>'}, onArrive, hideAtEnd}`.
+  - Movement:
+    - x/y come from the follower; `z = terrain.groundAt(x, y)` (feet); `transform.yawDeg` comes from the follower.
+    - Clip `walk` while moving, `idle`/`listen` while waiting.
+    - Call `World.setEntityCollider` on every step the NPC moves.
+    - `npcBear`'s turn-to-player is paused while walking.
+  - **Wait for the player** (lead mode): when the player is more than `waitFar` m away, stop and turn toward the player; resume when the player is closer than `resumeNear`. The NPC never runs away from the player and never teleports in view.
+  - **Walking dialogue = barks:** speaker lines that do not lock input (`game/js/quest/barks.js`, dialogue box style).
+    - Typed at dialogue speed; each line auto-advances after 1.6 s; a real dialogue interrupts them.
+    - Each bark id fires once (flag `bark.<id>`), when Burl reaches its waypoint index and the player is within 8 m.
+    - Bark text lives in `content/dialogue/bear.barks.json`: `{kind:'barks', schema:1, id, speakers, barks:{<id>: [{speaker, line}]}}`. This kind is game-side, validated in `barks.js` and in `tools/validate-content.mjs`. At most 56 chars per line.
+  - `hideAtEnd`: at the last waypoint, set `components.voxel.hidden = true`, remove the collider (move it far away or disable it with `setEntityCollider`), and remove the dialogue interactable.
+- **Burl's phases.** `world.state['burl.phase']` and `world.state['burl.wp']` are ints, saved with world.state.
+  - 0 home.
+  - 1 walking to the stone. Started by the follow node's `setFlag 's.burl.follow'`.
+  - 2 at the stone. `questFlag('burl.arrived')`; the stone talk opens on its own when the player is within 4 m, otherwise Burl waits there with a talk prompt (like `!`).
+  - 3 departing. Set by the after-wake node.
+  - 4 gone (hidden).
+  - Load rules: phase 1 -> Burl stands at waypoint `burl.wp` and resumes when the player is near; phase 2 -> at the end of the walk; phases 3 and 4 -> gone (the departure is not replayed).
+  - The departure walk is the authored `depart` polyline into the forest: at least 20 m, ending out of sight of the road. Burl is hidden at the end.
+- **First call** (script: "As Wick approaches the trees, a deep voice calls"): one bark `bear.call` the first time the player comes within 14 m of Burl after `leave`.
+- **Fen:**
+  - The `fen` entity stands at Bend Relay: `type: 'npc'`, model `char.fen` from the add-on package, `collider {r, h, kinematic: true}`, `dialogue: 'fen'`, and `walks: {emerge: [...]}` from behind the fallen wall to about 4 m from the relay.
+  - He stays `voxel.hidden = true`, with no interactable, until `waystone.ws_roadBend.woken`.
+  - After the notice he walks `emerge` (no lead, no waiting). His dialogue opens on its own when the player is within 4 m; otherwise the compass and marker point at him, and E opens it too.
+  - The end node of the `fen` graph sets `s.fen.met` -> m1 step `fen` -> chapter complete.
+  - Load: if the relay is woken, Fen is visible at the end of `emerge`.
+
+**6. Dialogue graphs (content, written after the WRITER rows).**
+- New adapter route in dialogueCtl for keys starting with `s.`: `has` = `!!world.state[<rest>]`, `set` = `questFlag(<rest>)`. These keys go into the same `Map` that is built once at open for the `q.` routes. `q.*` keys and plain keys (-> `dlg.*`) work as before. validate-content checks that `s.` keys match the quest id regex.
+- `bear.dialogue.json` entries (first match wins):
+  1. `s.burl.departing` -> farewell repeat line.
+  2. `s.waystone.waystone.woken` -> after-wake lines; the last node sets `s.burl.depart` (-> phase 3).
+  3. `s.burl.arrived` -> the stone talk. Its last node sets `bear.stone.told`. The lamp line is rewritten to the crystal.
+  4. `q.burl.boars.done` -> follow offer ("Come along, sky-cub" ...); a node sets `s.burl.follow`.
+  5. `q.burl.boars.ready` -> the after-five lines -> thanks node (sets `q.burl.boars.handin`) -> `next` the follow lines. So the hand-in flows straight into Follow the Bear; if the player presses Esc after the hand-in, the follow offer is the next entry.
+  6. `q.burl.boars.active` -> the two "while active" lines.
+  7. `q.burl.boars.available` -> the script's Offer block: Accept "I'll clear the path." / Later "Not yet.", then the accepted lines.
+  8. `bear.talked` -> repeat line.
+  9. Default -> first encounter: the script lines, with the optional crash exchange as a choice branch. It ends by setting `bear.talked` and flows into the offer when the quest is available.
+- `content/dialogue/fen.dialogue.json`:
+  - The script, split into nodes at each change of speaker.
+  - 3 choice points where Wick asks questions in the script ("Who are you?" / "What kind of things?" / the chart). Every choice leads back into the main line, so no lines are lost.
+  - Repeat entry (`s.fen.met`): 2-3 lines pointing at the river road.
+  - Speaker `fen` with label "FEN", player "YOU" (existing convention). At most 56 chars per line.
+
+**7. Chapter complete card + journal.**
+- `game/js/quest/chapterCard.js`: a pure state machine + draw, in the end.js timing style. When m1 completes (book `onChange`, main quest done):
+  1. The scene dims to 50 % over 1.0 s. No full black, and play does not reset (D-056).
+  2. "CHAPTER COMPLETE" and the chapter name are typed at `TYPE_CPS`.
+  3. "Next chapter: The River and the Forgotten".
+  4. After 2 s, the journal page opens in the existing note panel (`noteRead.js`, `ASSETS.notes.journalCh1`, title and lines from the script; WRITER fits them to the panel width).
+  5. E or Esc closes it and play continues.
+  - Input is locked while the card runs.
+- Flags: `chapter.ch1.done = true` (saved) and `chapter.next = 'ch2'`. Nothing reads `chapter.next` yet; stage 2 / chapter 2 will gate on it later. The card shows only once: it checks the flag on load and never replays.
+- Quest log (J): the Done list shows "Beyond the Wall" as the m1 entry, and Enter on it opens the journal page again.
+
+**8. Save migration (old saves, partway through the chain).**
+- A pure function `migrateM1Ch1(game)` in `game/js/quest/sim/questBook.js` (or `ch1Migrate.js`), run on restore **before** `createQuest`.
+- It runs when the saved `completed` list is not a prefix of the new ids. It maps the old completed set to the longest new prefix in which every step is implied:
+  - wake <- old `wake`
+  - breach <- old `breach`
+  - sword <- old `sword`
+  - leave <- old `beasts` (or old `sword` plus a saved pose outside the tower footprint)
+  - beasts <- old `beasts`
+  - follow + waystone <- old `waystone` (touched). This also sets `waystone.waystone.woken`, `burl.phase = 4` and `aether.attuned` (the self-heal adds the crystal item).
+  - Later steps are never implied.
+  - Old `lantern` is dropped. The facts arrays (flags/items/areas/deadBeasts) are kept unchanged.
+- Old save with the boars done but the waystone not touched -> Burl is at home with the follow offer as his entry, and the escort plays.
+- Old 6/6 save -> the next step is `road`, Burl is gone, the stone is awake, and no "Quest complete" toasts replay. Section toasts fire only on a live completion, never on restore.
+- Pose safety: if a saved pose is inside a cell that is now solid (removed outcrop steps, raised walls) or below the ground, use the existing spawn snap to the nearest valid spot. If none is within 4 m, use the last touched waystone, else the level start. Test it with a pose on the old outcrop.
+- `SAVE_VERSION` stays 1: the new flags in `world.state` are additive, and the m1 prefix is rewritten in place on load.
+
+**9. Tests and gates.**
+- Node:
+  - `questBook`/`ch1Migrate` fixtures: fresh game; mid-tower `[wake, lantern]` -> `[wake]`; `[.., sword]`; `[.., beasts]` -> follow offer; 6/6 -> `road`; round trip; no section toast on restore.
+  - m1 def validation, including sections.
+  - `crystal.test.js`: granted once at ready, self-heal on load, still attuned with a full pack.
+  - `pathFollow.test.js`.
+  - Kinematic collider test (engine).
+  - `npcWalk.test.js`: wait/resume thresholds, each bark fires once, phase save/load for every phase, hideAtEnd, no allocation.
+  - `barks.test.js`.
+  - `noticeView.test.js`: queue, timings, no allocation in draw.
+  - `chapterCard.test.js`: shows once, flags, hand-off to the journal.
+  - `bearDialogue.test.js` + `fenDialogue.test.js`: entry for each state, every node reachable, every line at most 56 chars.
+  - **`ch1Walkthrough.test.js`:** a scripted sim run that feeds the event sequence wake -> breach -> sword -> door -> accept -> 5 boars -> hand-in -> follow/arrive -> wake stone -> road -> relay -> Fen end node. It asserts that the chain completes and that every section toast fires once, in order.
+- Route walk (`tools/route-walk.mjs`):
+  - Replace the tower legs: wake -> top (sword spot) -> down -> door -> outside. Grid and mesh physics, no fall damage, no getting stuck.
+  - Probe: there is no exit through the breach (walking off the parapet fails).
+  - Probe: the door is closed before the sword is taken.
+  - Clearance of Burl's `follow` and `depart` polylines: no trunk or rock collider within 0.8 m, slope below 0.6, and `follow` stays inside the nav area.
+  - Clearance of Fen's `emerge` polyline.
+- Perf (`tools/perf-gate.mjs`): tower interior pose, tower exterior pose (from the meadow, crown in view) and `roadBend`. JS at most 8 ms and GPU p95 at most 8 ms on ultra. Escort cost per step at most 0.05 ms, no allocation.
+- gpucompare: the tower rows are re-baselined once, in the tower-shell commit, after the owner has looked. New row: tower exterior.
+- Do not:
+  - Put chapter or escort logic in `engine/`. Only `pathFollow` and kinematic colliders go there, and both are generic.
+  - Hard-code coordinates in game code. Paths, the door and markers come from data.
+  - Grant the crystal as a world drop.
+  - Replay section toasts or the chapter card on load.
+  - Add back any lamp step.
+  - Leave the breach usable as an exit.

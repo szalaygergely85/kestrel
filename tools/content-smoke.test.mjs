@@ -28,7 +28,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { World, getBehaviour } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
+import { World, getBehaviour, openPackage } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 import { loadTestAssets } from './testing/content-node.mjs';
 
 // Same classic-script list as tools/validate-content.mjs (US-058), in the
@@ -53,6 +53,7 @@ import '../design/models/relay.js';
 import '../design/models/voxel_props.js';
 import '../design/models/voxel_tower.js';
 import '../design/models/voxel_world.js'; // waystone (endMarker, world_m1.world.json)
+import '../design/models/voxel_tower_crown.js'; // CH1-D1b towerCrown (world_m1 entity)
 import '../design/models/sword.js'; // US-078c: content/levels/tower.level.json prop "sword"
 import '../design/models/voxel_beast.js'; // US-079a: content/worlds/world_m1.world.json entities "boar1"/"boar2"
 import '../design/models/voxel_bear.js'; // NPC-BEAR-01: content/worlds/world_m1.world.json entity "bear"
@@ -141,7 +142,9 @@ const unaccountedFor = allJsonFiles.filter((rel) => {
   // GFX-01: boot settings are validated/fetched by gfxPresets, not a content-pack kind.
   if (rel === 'settings/gfx-presets.json') return false;
   if (rel === 'quests/m1.quest.json') return false; // US-096a standalone sim definition, validated by quest.test.js
+  if (rel === 'quests/burl.boars.quest.json') return false; // QG-01 giver quest, validated by questBook.test.js + validate-content
   if (rel === 'quests/areas.json') return false; // AREAS-01 standalone alias table, checked by validate-content.mjs
+  if (rel.endsWith('.barks.json')) return false; // CH1-05/CH1-06 bark lines, fetched by main.js (no loadPack kind), checked by validate-content.mjs
   if (rel === 'items/recipes.json') return false; // RECIPES-01 data only, schema/refs checked by validate-content.mjs
   if (rel === 'chart/world_m1.chart.json') return false; // MAP-01b baked data, validated/freshness-checked by bake-chart.test.mjs
   if (rel.startsWith('vox/') && rel.endsWith('.map.json')) return false;
@@ -211,6 +214,17 @@ for (const key of Object.keys(bundle.worlds)) {
  * resolves through the AssetRegistry, same numeric-variant rule
  * AssetRegistry/World.js use (a variant index only counts against a full
  * billboard sub-model) - mirrors validate-content.mjs's resolveModel. */
+// CHARGEN-15 (38.33): `char.<id>` models come from the add-on packages in content/packages/index.json (registered at boot).
+const addonChars = new Set();
+try {
+  const pdir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'content', 'packages');
+  const idx = JSON.parse(fs.readFileSync(path.join(pdir, 'index.json'), 'utf8'));
+  for (const rel of idx.packages || []) {
+    const pkg = await openPackage(new Uint8Array(fs.readFileSync(path.join(pdir, rel))));
+    for (const a of pkg.manifest.assets || []) if (/^model\.(rigged|static)$/.test(a.type) && a.id) addonChars.add('char.' + a.id);
+  }
+} catch { /* no index = no add-ons */ }
+
 function modelResolves(modelName, variantRaw) {
   if (!assets.has('model', modelName)) return false;
   if (typeof variantRaw !== 'number') return true;
@@ -225,7 +239,7 @@ function checkWorldEntitiesAndHorizon(worldKey, worldDef) {
       ok(`world "${worldKey}" entity "${e.id}".model "${e.model}" exists in the model registry`, modelResolves(e.model));
     }
     if (typeof voxelModel === 'string') {
-      ok(`world "${worldKey}" entity "${e.id}".components.voxel.model "${voxelModel}" exists in the model registry`, modelResolves(voxelModel));
+      ok(`world "${worldKey}" entity "${e.id}".components.voxel.model "${voxelModel}" exists in the model registry`, (modelResolves(voxelModel) || addonChars.has(voxelModel)));
     }
   }
   for (const h of worldDef.horizon || []) {
@@ -244,6 +258,7 @@ function checkWorldEntitiesAndHorizon(worldKey, worldDef) {
  * duplicate of that warning. */
 function checkTriggerBehaviours(worldKey, world) {
   for (const tr of world.triggers || []) {
+    if (typeof tr.name !== 'string') continue; // area-only zone (world_m1 'end', WAYSTONE-NORMAL-01): no behaviour by design
     const label = tr.structId ? `${tr.structId}.${tr.id}` : `world.${tr.id}`;
     const { result: fn, warnings } = captured(() => getBehaviour(tr.name));
     ok(

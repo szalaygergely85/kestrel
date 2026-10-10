@@ -34,7 +34,7 @@ export { stringifyContent } from './content/stringify.js';
 export { maskToJSON, maskFromJSON, downsampleAlpha, MASK_ID_RE } from './content/maskFile.js'; // ALPHA-01a
 export { prefabFromJSON, placePrefabItems, PREFAB_ITEM_TYPES } from './content/prefabFile.js'; // PREFAB-SEAM (38.11)
 export { loadContentPack, globalId } from './content/loadPack.js';
-export { validatePackageManifest, openPackage, mountPackages, checkDependencies, parseSemver, parseRange, KPKG_FORMAT, KPKG_FORMAT_VERSION, KPKG_SCHEME } from './content/package.js'; // KPKG-02 (38.30)
+export { validatePackageManifest, openPackage, mountPackages, loadPackageModels, checkDependencies, parseSemver, parseRange, KPKG_FORMAT, KPKG_FORMAT_VERSION, KPKG_SCHEME } from './content/package.js'; // KPKG-02 (38.30)
 export { readZip, writeZip, crc32, checkZipPath, ZIP_LIMITS } from './content/zip.js'; // KPKG-01/03 (38.30)
 
 // ---- world ----------------------------------------------------------------
@@ -86,7 +86,7 @@ export { deriveEmissiveLight, EMISSIVE_LIGHT_MIN } from './voxel/emissiveLight.j
 export { buildVoxelMesh, MESH_ONLY_MAX_QUADS } from './mesh/voxelMesh.js';
 export { prebuildTerrainMesh } from './mesh/terrainMesh.js'; // ED-MESH-1a
 export { createFrameRenderer } from './render/frameRenderer.js'; // ED-WG-01a (38.21)
-export { loadGltf, buildMeshFromTris, KIND_MESH } from './mesh/gltf.js'; // ME-13a (architecture.md 27.2 Public API)
+export { loadGltf, buildMeshFromTris, KIND_MESH, readRiggedGlb, sampleRiggedClip } from './mesh/gltf.js'; // ME-13a (architecture.md 27.2 Public API); RIG-01
 export { MaskAtlas, buildMaskAtlas, cutoffByte } from './render/MaskAtlas.js'; // ALPHA-01c: test worlds (gpucompare alphaLeaves) build their own atlas
 // ME-13b: content/meshes/<id>.mesh.json (de)serialization + validation -
 // needed by tools/gltf-import.mjs (and any future mesh-producing CLI tool)
@@ -216,6 +216,7 @@ export { rayTerrain, pickNearest, selectInRect } from './render/pick.js';
 // ---- RE-08/RE-09 flow-field pathfinding + local avoidance (docs/architecture.md 28.2) --
 export { createFlowField, FlowCache } from './nav/flowField.js';
 export { createSteer } from './nav/steer.js';
+export { createPathFollower } from './nav/pathFollow.js';
 export { perceive, NOISE_SPRINT, NOISE_SWING } from './nav/perceive.js';
 export { leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from './nav/leash.js';
 
@@ -261,9 +262,10 @@ export { createWaterfalls, collectWaterfallDefs } from './world/waterfalls.js';
 export { bindDecals, drawDecals } from './ui/decals.js';
 export { LazyMeshStore, ensureMesh, requestMesh, meshReady } from './mesh/lazyMesh.js'; // MESH-LOAD-01
 export * from './chargen/index.js'; // CHARGEN-02..05 (38.29)
+export { riggedFromGlb } from './chargen/fromGlb.js'; // RIG-02a (38.32); not via chargen/index.js: loading gltf.js there shifts mesh.test's heap-based alloc probe
 
 // ---- fauna (WILD-03, architecture.md 38.31) -----------------------------------
 export { compileFaunaDef } from './fauna/faunaDef.js';
-export { createFauna } from './fauna/fauna.js';
+export { createFauna } from './fauna/fauna.js'; // WILD-06
 export { createFaunaFeed, WILD_DRAW_MAX } from './fauna/feed.js';
 export { createSpawner, FAUNA_MAX, CELL_M as FAUNA_CELL_M } from './fauna/spawner.js';

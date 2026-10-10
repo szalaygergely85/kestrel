@@ -8,9 +8,9 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import '../../design/palette.js';
 import '../../design/detail-pass.js';
-import { composeCharacter, meshCharacter, randomRecipe, validateKit, validateRecipe } from '../../engine/index.js';
+import { composeCharacter, meshCharacter } from '../../engine/index.js';
 import { exportGlb } from '../export/gltfWrite.js';
-import { exportFbx } from '../export/fbxWrite.js';
+import { createChargen } from './core.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const KIT_PATH = path.join(ROOT, 'content', 'chargen', 'human.charkit.json');
@@ -51,29 +51,67 @@ export function buildGlb(kit, recipe, { clips = null, colorMode } = {}) {
   return { rigged, glb: exportGlb(rigged, { rgbOf: paletteRgbOf(), recipe, partMap: kit.partMap, colorMode }) };
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const args = process.argv.slice(2);
-  const arg = (n) => { const i = args.indexOf(n); return i < 0 ? null : args[i + 1]; };
-  const out = arg('--out');
-  if (!out) { console.error('usage: node tools/chargen/export.mjs --out file.glb [--seed N] [--demo-clips] [--fbx file.fbx]'); process.exit(2); }
-  const kit = loadKit();
-  const P = globalThis.ASSETS.palette;
-  const kv = validateKit(kit, P.materials);
-  if (kv.errors.length) { console.error('kit errors:\n' + kv.errors.join('\n')); process.exit(1); }
-  const seed = arg('--seed');
-  const recipe = seed == null ? kit.defaults : randomRecipe(kit, Number(seed));
-  const re = validateRecipe(kit, recipe).errors;
-  if (re.length) { console.error('recipe errors:\n' + re.join('\n')); process.exit(1); }
-  const { glb } = buildGlb(kit, recipe, { clips: args.includes('--demo-clips') ? DEMO_CLIPS : null });
-  fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
-  fs.writeFileSync(out, glb);
-  console.log(`wrote ${out} (${glb.length} bytes)`);
-  const fbxOut = arg('--fbx'); // CHARGEN-10: also a static .fbx + palette.png next to it
-  if (fbxOut) {
-    const { fbx, png } = exportFbx(buildGlb(kit, recipe).rigged, { rgbOf: paletteRgbOf() });
-    const dir = path.dirname(path.resolve(fbxOut));
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(fbxOut, fbx); fs.writeFileSync(path.join(dir, 'palette.png'), png);
-    console.log(`wrote ${fbxOut} (${fbx.length} bytes) + palette.png`);
+const USAGE = `usage: node tools/chargen/export.mjs (--recipe <json> | --seed <n>) --format glb|fbx|obj|vox|zip --out <path> [--demo-clips] [--fbx <file>]
+  --recipe <json>  CharRecipe file (default: the kit defaults)
+  --seed <n>       random recipe from seed n
+  --format         glb (default) | fbx (+ palette.png beside it) | obj (+ .mtl + palette.png beside it) | vox | zip (all available formats)
+  --out <path>     output file
+  --help           this text`;
+
+/** argv -> {help, recipe, seed, format, out, demoClips, fbx}; throws on unknown flags / bad values. */
+export function parseArgs(argv) {
+  const o = { help: false, recipe: null, seed: null, format: 'glb', out: null, demoClips: false, fbx: null };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const val = () => { if (i + 1 >= argv.length) throw new Error(`${a} needs a value`); return argv[++i]; };
+    if (a === '--help' || a === '-h') o.help = true;
+    else if (a === '--recipe') o.recipe = val();
+    else if (a === '--seed') { o.seed = Number(val()); if (!Number.isInteger(o.seed)) throw new Error('--seed must be an integer'); }
+    else if (a === '--format') { o.format = val(); if (!['glb', 'fbx', 'obj', 'vox', 'zip'].includes(o.format)) throw new Error(`--format must be glb|fbx|obj|vox|zip, got ${o.format}`); }
+    else if (a === '--out') o.out = val();
+    else if (a === '--fbx') o.fbx = val();
+    else if (a === '--demo-clips') o.demoClips = true;
+    else throw new Error(`unknown argument ${a}`);
   }
+  if (o.recipe && o.seed != null) throw new Error('--recipe and --seed are exclusive');
+  return o;
 }
+
+async function main() {
+  let o;
+  try { o = parseArgs(process.argv.slice(2)); } catch (e) { console.error(e.message + '\n' + USAGE); process.exit(2); }
+  if (o.help) { console.log(USAGE); return; }
+  if (!o.out) { console.error('--out is required\n' + USAGE); process.exit(2); }
+  const kit0 = loadKit();
+  const kit = o.demoClips ? { ...kit0, clips: DEMO_CLIPS } : kit0;
+  try {
+    const cg = createChargen({ kit, rgbOf: paletteRgbOf(), materials: globalThis.ASSETS.palette.materials });
+    if (o.recipe) cg.setRecipe(JSON.parse(fs.readFileSync(o.recipe, 'utf8')));
+    else if (o.seed != null) cg.random(o.seed);
+    const out = path.resolve(o.out);
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    let bytes;
+    if (o.format === 'glb') bytes = cg.exportGlb();
+    else if (o.format === 'zip') bytes = await cg.exportAllZip();
+    else if (o.format === 'vox') bytes = cg.exportVox();
+    else if (o.format === 'obj') {
+      const r = cg.exportObj(), dir = path.dirname(out);
+      bytes = Buffer.from(r.obj);
+      fs.writeFileSync(path.join(dir, r.mtlName), r.mtl); fs.writeFileSync(path.join(dir, r.pngName), r.png);
+    } else {
+      const { fbx, png } = cg.exportFbx();
+      bytes = fbx; fs.writeFileSync(path.join(path.dirname(out), 'palette.png'), png);
+    }
+    fs.writeFileSync(out, bytes);
+    console.log(`wrote ${o.out} (${bytes.length} bytes)`);
+    if (o.fbx) { // CHARGEN-10 flag kept: also a static .fbx + palette.png
+      const { fbx, png } = cg.exportFbx();
+      const dir = path.dirname(path.resolve(o.fbx));
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(o.fbx, fbx); fs.writeFileSync(path.join(dir, 'palette.png'), png);
+      console.log(`wrote ${o.fbx} (${fbx.length} bytes) + palette.png`);
+    }
+  } catch (e) { console.error(e.message); process.exit(1); }
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1]).href) await main();

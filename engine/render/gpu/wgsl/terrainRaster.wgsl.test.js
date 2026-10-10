@@ -24,7 +24,7 @@ function makeTypeAt(tex, u) {
   const toI = Math.trunc, vec2i = (x, y) => [x, y], load = (t, c) => t.data[c[1] * t.w + c[0]];
   const floor = Math.floor;
   const farFn = new Function('u', 'uFarType', 'toI', 'vec2i', 'load', 'floor', `return function(x, y){${js(far.code)}};`)(u, tex.far, toI, vec2i, load, floor);
-  return new Function('u', 'uNearType', 'toI', 'vec2i', 'load', 'floor', 'farTypeNearest', `return function(x, y){${js(tpa.code)}};`)(u, tex.near, toI, vec2i, load, floor, farFn);
+  return new Function('u', 'uNearType', 'toI', 'vec2i', 'load', 'floor', 'farTypeNearest', 'textureDimensions', `return function(x, y){${js(tpa.code)}};`)(u, tex.near, toI, vec2i, load, floor, farFn, (t) => ({ x: t.w, y: t.h }));
 }
 
 let seed = 7;
@@ -41,7 +41,7 @@ function oracle(x, y) { // TerrainMeshSet.typeAt, source of truth (engine/mesh/t
 }
 const u = { nearReady: 1, nearMap: { x: x0, y: y0, z: nearCell, w: nearW }, farMap: { x: 0, y: 0, z: mapCell, w: mapW } };
 // vec4 fields are .x/.y/.z/.w in WGSL, the fake block uses the same names
-const typeAt = makeTypeAt({ near: { w: nearW, data: nearType }, far: { w: mapW, data: farType } }, u);
+const typeAt = makeTypeAt({ near: { w: nearW, h: nearW, data: nearType }, far: { w: mapW, data: farType } }, u);
 let near = 0;
 for (let i = 0; i < 5000; i++) {
   const x = rand() * 160 - 16, y = rand() * 160 - 16;
@@ -51,6 +51,21 @@ for (let i = 0; i < 5000; i++) {
 assert.ok(near > 100, 'near band was exercised');
 u.nearReady = 0; terrain.nearReady = false;
 for (let i = 0; i < 1000; i++) { const x = rand() * 160 - 16, y = rand() * 160 - 16; assert.equal(typeAt(x, y), oracle(x, y)); }
+
+// WS1-03: non-square near bands (wide 5x3 and tall 3x5 texels-of-cells), vs the oracle; every texel and its outside edge.
+for (const [bw, bh] of [[10, 6], [6, 10], [12, 4]]) {
+  const nt = new Uint8Array(bw * bh).map(() => (rand() * 6) | 0);
+  terrain.near = { x0, y0, cell: nearCell, w: bw, h: bh, type: nt }; terrain.nearReady = true;
+  const un = { nearReady: 1, nearMap: { x: x0, y: y0, z: nearCell, w: bw }, farMap: { x: 0, y: 0, z: mapCell, w: mapW } };
+  const tn = makeTypeAt({ near: { w: bw, h: bh, data: nt }, far: { w: mapW, data: farType } }, un);
+  let inNear = 0;
+  for (let i = 0; i < 4000; i++) {
+    const x = rand() * 80 + x0 - 20, y = rand() * 80 + y0 - 20;
+    assert.equal(tn(x, y), oracle(x, y), `nonsquare ${bw}x${bh} typeAt(${x},${y})`);
+    if (terrain._nearGridType(x, y) !== null) inNear++;
+  }
+  assert.ok(inNear > 100, `non-square ${bw}x${bh} near band exercised`);
+}
 
 // Same-op-order string checks against the GLSL twin.
 const src = TERRAIN_RASTER_WGSL;
