@@ -282,7 +282,8 @@
           'one merlon tooth left at the north-west. The Kestrel\'s torn red / ochre envelope is snagged on the tooth and ' +
           'hangs 2-5 m down the outer north-west face in folds, with a burnt torn hem, two streamers and 8 rope lines.',
     voxel: {
-      version: 1, cellM: CELL, size: [SX, SY, SZ], anchor: [CX, CY, ZB], mats: matsOf(gC), layers: gC.layers(),
+      version: 1, meshOnly: true, cellM: CELL, // meshOnly: 56x52x36 > the 256-row DDA atlas (voxelPacks.test)
+      size: [SX, SY, SZ], anchor: [CX, CY, ZB], mats: matsOf(gC), layers: gC.layers(),
       parts: { crown: { box: [0, 0, 0, SX, SY, SZ], pivot: [CX, CY, ZB] } },
       animations: { idle: { durations: [1000], loop: true, frames: [{}] } }
     },
