@@ -60,7 +60,7 @@
         'Now I wonder what it kept hidden.',
         '',
         'A talking bear. Stones that shine without fire.',
-        'A stranger who says magic is real.',
+        'A crystal that wakes the old stones.',
         '',
         'And somewhere ahead, that same blinking light.',
         '',

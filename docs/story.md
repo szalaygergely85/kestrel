@@ -619,6 +619,7 @@ Texts for D-062 / architecture 38.37 (PC-B writer, 2026-10-10). Source: `docs/ch
 | `toast.door.open` | toast | `The sword bites. The bar gives.` | 31 |
 | `hint.burner` | story hint | `The burner ticks. The Kestrel is done.` | 38 |
 | `hint.exit` | story hint | `The top. Look west through the breach.` | 38 |
+| `hint.stone` REWRITE | story hint | `Someone hums on the hillside.` | 29 |
 
 Notes:
 - `note.keepLight` (PC-B writer, owner request 2026-10-10): the pinned scrap behind the wake spot gives the first quest. Same unknown writer as `note.steelHush`; it points up to the blade by the breach ("broken wall") without repeating that note. Key kept for the level prop; replaces the old KEEP THE LIGHT scrawl.
@@ -626,6 +627,7 @@ Notes:
 - The bar is jammed, not locked, so the sword is what pries it. That explains the `tower.sword.taken` gate without saying it.
 - `hint.burner` replaces "Take what light you can." Suggested `skipIfState`: `tower.sword.taken`, so it stays quiet on the way back down. That is a code choice for CH1-02.
 - `hint.exit` no longer says the breach is a way out or that the chapter ends there. The scrawl `NOT NOTHING` stays on the breach parapet, where it now marks the overlook.
+- `hint.stone` (`storyHints.stone`, zone `hintStone`; PC-B writer, owner-authorised; PO-CH1-06): was "A stone stands below. Go to it." That sent the player past Burl into the boars before the chain allows the stone. Now it fires on the first terrain step after the door and points at Burl, the next one to see (he hums among his berries), without naming him.
 - `STEEL FOR THE HUSH` stays as wall scrawl if the decal is kept. The note panel shows the script text.
 
 ### q02 Leave the Tower (CH1-W1)
@@ -752,7 +754,7 @@ Notes:
 | `bear.stone` (15) | BURL | `That's the idea.` | 16 |
 | `bear.stone` (16) | YOU | `That's impossible.` | 18 |
 | `bear.stone` (17) | BURL | `You've said that before.` | 24 |
-| `bear.stone` (18) REWRITE | BURL | `Try holding that crystal to the bowl.` | 36 |
+| `bear.stone` (18) REWRITE | BURL | `Hold that crystal up to the carved mark.` | 40 |
 | `prompt.stone.wake` | prompt | `[E] Hold up the crystal` | 23 |
 | `notice.waystone.title` | notice | `WAYSTONE AWAKENED` | 17 |
 | `notice.waystone` (1) | notice | `Your journey is remembered here.` | 32 |
@@ -773,10 +775,11 @@ Notes:
 | `bear.woken` (13) | BURL | `The world is wider than your Wall.` | 33 |
 | `bear.departing` | BURL | `Go on, sky-cub. The road is west.` | 33 |
 
-**Stage note (not on screen; replaces "Wick raises the Kestrel's lamp"):** Wick holds the teal crystal out over the bowl. A low hum rises from the brass mount and the mirrors turn. Teal light runs from his hand into the bowl and spreads through the stone, lighting old marks under the moss. The crystal in his hand stays whole and warm, so it is not spent.
+**Stage note (not on screen; replaces "Wick raises the Kestrel's lamp"; no bowl, D-064):** Wick holds the teal crystal up to the carved mark on the stone's face. A low hum rises from deep in the stone. Teal light runs from his hand into the mark and spreads through the stone, lighting old marks under the moss. The crystal in his hand stays whole and warm, so it is not spent.
 
 Notes:
 - `bear.stone` (18) replaces "Try bringing your lamp closer." Its last node sets `bear.stone.told`.
+- `bear.stone` (18) (PC-B writer, owner-authorised; PO-CH1-05): was "Try holding that crystal to the bowl." The waystone has no bowl (D-064); the line now names the carved mark and matches the prompt `[E] Hold up the crystal`.
 - `bear.woken` is entry 2 (`s.waystone.waystone.woken`). Lines 1-4 are the script's reaction lines, which play after the notice. Its last node sets `s.burl.depart`. `bear.departing` is entry 1, the farewell repeat.
 
 ### q06 The Next Light (CH1-W3)
@@ -903,7 +906,7 @@ Notes:
 | `journalCh1` (3) | note | `Now I wonder what it kept hidden.` | 33 |
 | `journalCh1` (4) | note | `` (empty row) | 0 |
 | `journalCh1` (5) | note | `A talking bear. Stones that shine without fire.` | 47 |
-| `journalCh1` (6) | note | `A stranger who says magic is real.` | 33 |
+| `journalCh1` (6) REWRITE | note | `A crystal that wakes the old stones.` | 35 |
 | `journalCh1` (7) | note | `` (empty row) | 0 |
 | `journalCh1` (8) | note | `And somewhere ahead, that same blinking light.` | 46 |
 | `journalCh1` (9) | note | `` (empty row) | 0 |
@@ -915,3 +918,4 @@ Notes:
 Notes:
 - The journal is the script's text, line for line, with one addition: the "W." signature from canon (his pencil notes are signed W.).
 - Every line fits the note panel's 56-column wrap, so none of them wraps.
+- `journalCh1` (6) (PC-B writer, owner-authorised; PO-CH1-03): was "A stranger who says magic is real." Fen is removed (D-064), so the chapter now ends on the crystal and the stones it woke, last of them the Bend Relay.

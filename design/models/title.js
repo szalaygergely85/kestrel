@@ -289,7 +289,7 @@
       // boundsEdge). Not wired to fire yet (needs PC-A's world-level-trigger engine work,
       // US-026a-engine S1-S6) - the text/ids exist so validate-content and the content
       // data are complete now.
-      { id: 'stone', text: 'A stone stands below. Go to it.', keys: [],
+      { id: 'stone', text: 'Someone hums on the hillside.', keys: [],
         when: 'once, on first reaching the near-terrain band, before the waystone (US-026a)',
         on: { type: 'zone', zone: 'hintStone' }, doneOn: 'timeout only' },
       // COMBAT-HINT-01 (writer: story.md 'Sprint 8 texts' hint.combat.dodge): once per save at the first beast aggro (game/js/quest/combatHint.js).

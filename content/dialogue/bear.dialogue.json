@@ -158,7 +158,7 @@
     ], "next": "bear.stone.11", "speaker": "you"},
     "bear.stone.11": {"end": true, "lines": [
       "You've said that before.",
-      "Try holding that crystal to the bowl."
+      "Hold that crystal up to the carved mark."
     ], "setFlag": "bear.stone.told", "speaker": "burl"},
     "bear.woken.1": {"lines": [
       "What is that?"
