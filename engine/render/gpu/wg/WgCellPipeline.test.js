@@ -389,3 +389,31 @@ console.log('WgCellPipeline.test.js: all checks passed.');
   assert.deepEqual([b.occl, b.occlStats, c.occl, c.occlStats], [true, false, true, false]);
   assert.deepEqual([d0.occl, d0.occlStats, e.occlStats], [false, false, true]);
 }
+
+// GPU-OFF-REASON-01: offReason strings + one warn per true -> false transition; shadow levels never leave the path off
+{
+  const warns = []; const w = console.warn; console.warn = (...a) => warns.push(a.join(' '));
+  try {
+    for (const sun of ['map', 'off']) { // every Settings shadow level resolves to 'map' or 'off' on the mesh renderer
+      const q = new WgCellPipeline(rt, { rays: 2, shadows: { sun } });
+      assert.strictEqual(q.frameComplete, false); assert.ok(/spritesBound=false/.test(q.stats.offReason), q.stats.offReason);
+      q._spritesBound = true; q._spritesPass = { dispose() {} }; q._overlayPass = { dispose() {} }; q._syncActive();
+      assert.strictEqual(q.frameComplete, true, `sun=${sun} completes`); assert.strictEqual(q.stats.offReason, null);
+      assert.strictEqual(warns.length, 0, 'no warn while turning on');
+      q.setSource('upload'); q._syncActive();
+      assert.strictEqual(q.stats.offReason, 'source=upload'); assert.strictEqual(q.stats.offCount, 1);
+      assert.ok(warns.length === 1 && /GPU path off: source=upload/.test(warns[0]), warns[0]);
+      q._syncActive(); assert.strictEqual(warns.length, 1, 'once per transition'); // still off, no second warn
+      q.setSource('scene'); q._syncActive(); assert.strictEqual(q.frameComplete, true);
+      q.setEnabled(false); // caller hint
+      assert.ok(/enabled=false/.test(q.stats.offReason) && /setEnabled caller:/.test(warns[warns.length - 1]), warns[warns.length - 1]);
+      assert.strictEqual(q.stats.offCount, 2);
+      warns.length = 0; q.dispose();
+    }
+    const r = new WgCellPipeline(rt, { rays: 2 });
+    r._spritesBound = true; r._spritesPass = { dispose() {} }; r._overlayPass = { dispose() {} }; r._syncActive(); assert.strictEqual(r.frameComplete, true);
+    r._shadowPass.enabled = false; r._shadowPass.off = false; r.ready = false; r._syncActive(); // simulated unknown shadow mode
+    assert.ok(/ready=false/.test(r.stats.offReason) && /shadowPass\.enabled=false off=false/.test(r.stats.offReason), r.stats.offReason);
+  } finally { console.warn = w; }
+}
+console.log('WgCellPipeline.test.js: GPU-OFF-REASON-01 checks passed.');

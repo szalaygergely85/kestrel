@@ -67,10 +67,11 @@ export class WgCellPipeline {
     /** the sun map holds depth in [0.5, 1] (38.5 item 6): shadowParity converts `(d - 0.5) * 2` before the twin compare */
     this.shadowDepthHalfRange = true;
     this.rendererString = 'webgpu (WG-4b raster+cull+shadow+water+light+shade+edge+sprites+overlay)';
+    this._offCaller = null;
     this._source = 'scene'; // 'upload' = `?gpucompare=shade` test source (CPU G-buffer -> cell-res textures)
     // same shape as GpuCellPipeline.stats so F3 / benches read it unchanged
     this.stats = {
-      resizeFailures: 0, uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN,
+      resizeFailures: 0, offReason: null, offCount: 0, uploadMs: 0, repackMs: 0, drawMs: 0, gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN,
       terrainSubmitMs: NaN, terrainSubmitMsP50: NaN, terrainSubmitMsP95: NaN,
       voxelMs: NaN, voxelMsP50: NaN, voxelMsP95: NaN, voxelInstances: 0, voxelDraws: 0, meshDraws: 0, vmDraws: 0, clothDraws: 0, instancedDraws: 0, instances: 0,
       waterSlots: 0, waterDraws: 0, shadowItems: 0, shadowDraws: 0, shadowCpuMs: 0, instancesCulled: 0, instancesLod1: 0,
@@ -177,6 +178,9 @@ export class WgCellPipeline {
   /** Installs/removes the cell-pass hook. Never touches `rt.gpuActive` (the CPU shading must keep running until WG-3). */
   setEnabled(enabled) {
     if (enabled && !this.ready) return;
+    if (!enabled && this.frameComplete) { // GPU-OFF-REASON-01: who switched a running GPU path off (3 stack lines, only on this transition)
+      this._offCaller = String(new Error().stack || '').split('\n').slice(2, 5).map((l) => l.trim()).join(' <- ');
+    }
     this._enabled = !!enabled;
     if (typeof this.rt.setCellPass === 'function') this.rt.setCellPass(enabled ? this._hookFn : null);
     this._syncActive();
@@ -184,12 +188,34 @@ export class WgCellPipeline {
 
   /** WG-3f: `frameComplete` + `rt.gpuActive` follow the wiring (rt.gpuActive is left alone while the pipeline was never complete). */
   _syncActive() {
-    const complete = !!(this.ready && this._enabled && this._spritesBound && this._spritesPass && this._overlayPass &&
-      this._waterPass && this._shadowPass && (this._shadowPass.enabled || this._shadowPass.off) && this._source === 'scene');
+    const reason = this._offReason();
+    const complete = reason === null;
+    const was = this.frameComplete;
     this.frameComplete = complete;
+    this.stats.offReason = reason;
+    if (was && !complete) { // GPU-OFF-REASON-01: once per true -> false transition (the F3 `path: cpu` used to give no hint)
+      this.stats.offCount++;
+      console.warn('[WgCellPipeline] GPU path off:', reason, this._offCaller ? `(setEnabled caller: ${this._offCaller})` : '');
+    }
+    this._offCaller = null;
     const rt = this.rt;
     if (complete || rt.gpuActive) rt.gpuActive = complete;
     if (!complete) this._setPresent(null, null);
+  }
+
+  /** GPU-OFF-REASON-01: null = the GPU path is complete, else the failing terms of the `frameComplete` condition. */
+  _offReason() {
+    const sh = this._shadowPass, bad = [];
+    if (!this.ready) bad.push('ready=false');
+    if (!this._enabled) bad.push('enabled=false');
+    if (!this._spritesBound) bad.push(this._spritesPending ? 'spritesBound=false (compiling)' : 'spritesBound=false');
+    if (!this._spritesPass) bad.push('spritesPass=null');
+    if (!this._overlayPass) bad.push('overlayPass=null');
+    if (!this._waterPass) bad.push('waterPass=null');
+    if (!sh) bad.push('shadowPass=null');
+    else if (!(sh.enabled || sh.off)) bad.push(`shadowPass.enabled=${sh.enabled} off=${sh.off} (sun=${sh.shadowOpts && sh.shadowOpts.sun})`);
+    if (this._source !== 'scene') bad.push(`source=${this._source}`);
+    return bad.length ? bad.join(', ') : null;
   }
 
   _setPresent(fg, bg) { if (typeof this.rt.setPresentCells === 'function') this.rt.setPresentCells(fg, bg); }
