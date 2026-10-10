@@ -408,3 +408,7 @@ B1 2026-10-09 (kestrel-1) SETTINGS-MOUNT-01 -> po-review: full createSettingsVie
 - CHARGEN-22d (app UI) po-review: tools/chargen/ui.js rows "Body detail"/"Head detail" (resRows/applyRes/quadLabel, pure + tested in ui.test.mjs), disabled by kit.resLevels, body Fine note "needs CHARGEN-24", live quad count via chargen.build().mesh.quads, hint "Save for game will use Fine" above GAME_SAFE_RES.
   tools/verify-chargen.mjs switches Head detail and asserts glb bytes change (node --check only; main session runs the browser).
   NOT done (out of my scope): package Save clamp + gameRes (core.js, other agent), CHARGEN-17 creation screen (parked). Needs main-session verify of the "Save for game" wording once core clamps.
+
+### QG-05 view (kestrel-2, 2026-10-10) - arch-review pending mount
+- `createQuestLogScreen(book,{style})` added to game/js/ui/questLog.js (old createQuestLog untouched); test `game/js/ui/questLogScreen.test.js` (0-alloc 1e4 draws ~3.7 KB). Keys `QUEST_LOG_KEYS`: W/S/arrows move, Enter/J/Esc close (no Esc hint text). Rows rebuilt on open/nav/`book.version` change only.
+- NEEDS B1-main: bindings.js `questLog`=KeyJ + gameKeys.js; main.js: `const questLogView = createQuestLogScreen(questBook, { style: ASSETS.uiStyle?.menu })`; J (when not paused/dialog) -> `questLogView.open()` + pause sim like inventory; while `isOpen()` route keys to `questLogView.handleKey(code)`; each frame `if (questLogView.isOpen()) questLogView.draw(ui)`. Not done: HUD tracked() line (main/questRelay), preview page update (questLog.preview.js still shows old HUD log).
