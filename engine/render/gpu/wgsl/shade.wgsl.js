@@ -27,6 +27,7 @@ import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
 import { KIND_TERRAIN, KIND_MODEL, KIND_MESH, FACE_PACKED } from '../../GBuffer.js';
 import { WET_DARK, WET_SPEC } from '../../detailShade.js';
 import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // CLOUD_Q_SHIFT: S8-B2-12c (38.13)
+import { SKY_GLOW_WGSL } from '../../skyGlow.js';
 import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE } from '../../terrainShade.js';
 
 
@@ -55,6 +56,7 @@ export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'faceK', type: 'vec4', count: 2 }, // float[7] (index = face 1..6), contiguous
   // 38.23 entity tint table, APPENDED (no earlier word moves): etA.x = count (0 = branch skipped), etId = 8 u32 ids (written through a Uint32Array view), etC = rgb 0..1 + k
   { name: 'etA', type: 'vec4' }, { name: 'etId', type: 'vec4', count: 2 }, { name: 'etC', type: 'vec4', count: 8 },
+  { name: 'skyCam', type: 'vec4' }, // AUD-40, APPENDED: shear-mode sky ray = (dirX + planeX*cx, dirY + planeY*cx): dirX, dirY, planeX, planeY
 ]);
 
 export const SHADE_TEXTURES = Object.freeze([
@@ -283,6 +285,7 @@ fn faceK(face: i32) -> f32 { return su.faceK[u32(face) >> 2u][u32(face) & 3u]; }
 
 ${TERRAIN_SHADE_WGSL}
 
+${SKY_GLOW_WGSL}
 fn pickCode(setId: i32, entryIdx: i32, hA: f32, useAlt: bool) -> i32 {
   let t = textureLoad(uSetI, vec2i(2 + entryIdx, setId), 0);
   let cnt = t.x;
@@ -566,7 +569,18 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
       }
       let t = clamp(elevDeg / su.skyElevTop, 0.0, 1.0);
       let idx = i32(t * ${SKY_LUT_N - 1}.0 + 0.5);
-      let col255 = textureLoad(uSky, vec2i(idx, 0), 0).rgb;
+      var skyDir: vec3f;
+      if (su.projMode == 0) {
+        // AUD-40: shear mode has no per-cell 3D ray; rebuild it from the camera basis (same cameraX as the CPU fillSky).
+        let cx = (2.0 * (f32(cell.x) + 0.5)) / f32(gridSize.x) - 1.0;
+        let hx = su.skyCam.x + su.skyCam.z * cx; let hy = su.skyCam.y + su.skyCam.w * cx;
+        let er = radians(elevDeg);
+        skyDir = vec3f(hx, hy, 0.0) * (cos(er) * inverseSqrt(max(hx * hx + hy * hy, 1e-12)));
+        skyDir.z = sin(er);
+      } else {
+        skyDir = normalize(select(pitchedCellDir(vec2f(cell), gridSize), su.pitchA.xyz, su.projMode == 2));
+      }
+      let col255 = skyGlow(textureLoad(uSky, vec2i(idx, 0), 0).rgb, skyDir, elevDeg, su.sunDir, su.sunI);
       o.fg = vec4f(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 0.0);
       o.bg = vec4f(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 1.0);
     } else {

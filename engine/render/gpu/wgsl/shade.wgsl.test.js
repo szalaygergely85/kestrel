@@ -381,9 +381,9 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
 
 // --- US-073b (38.25): the stable-glyph level target. OFF = byte-identical to the pre-073b shader; ON = one extra r8ui target. ---
 {
-  // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge (35967 chars): the stable-off shader must not move by a single byte.
-  assert.equal(SHADE_WGSL.length, 35967, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '8c6b91cb67f1745e239d12bc6923aa4925bac4cd1fcd186242396d32cefc65b0', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow (37264 chars): the stable-off shader must not move by a single byte.
+  assert.equal(SHADE_WGSL.length, 37264, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '185d8a167ebb426426f5df15b503d523db55007eb7afc66318c9fbdfddaeb903', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);
@@ -427,7 +427,8 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   assert.equal(SHADE_BLOCK.field('etId').word, SHADE_BLOCK.field('etA').word + 4);
   assert.equal(SHADE_BLOCK.field('etC').word, SHADE_BLOCK.field('etId').word + 8);
   assert.equal(SHADE_BLOCK.field('etC').words, 32);
-  assert.equal(SHADE_BLOCK.sizeBytes, (SHADE_BLOCK.field('etC').word + 32) * 4, 'tint table is the tail of the block');
+  assert.equal(SHADE_BLOCK.field('skyCam').word, SHADE_BLOCK.field('etC').word + 32, 'AUD-40 skyCam appended right after the tint table');
+  assert.equal(SHADE_BLOCK.sizeBytes, (SHADE_BLOCK.field('skyCam').word + 4) * 4, 'skyCam is the tail of the block');
   assert.ok(/if \(su\.etA\.x > 0\.0\) \{/.test(SHADE_WGSL), 'branch guarded by count (0 = skipped, bit-identical)');
   assert.ok(SHADE_WGSL.indexOf('su.etA.x > 0.0') < SHADE_WGSL.indexOf('rgbF += (su.fogFg - rgbF) * f') && SHADE_WGSL.indexOf('su.etA.x > 0.0') > SHADE_WGSL.indexOf('var rgbBg = rgbF * bgKAvg'), 'after lighting, before fog');
   const tintCh = compileFn(SHADE_WGSL, 'tintCh', shims);
