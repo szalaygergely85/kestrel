@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Waystone spots - proposal 2026-10-10</title>
+<style>
+  body { margin: 0; background: #0b0d10; color: #cfd6dc; font: 13px/1.4 Consolas, monospace; display: flex; gap: 16px; padding: 12px; }
+  canvas { background: #000; border: 1px solid #2a3038; cursor: crosshair; }
+  #side { width: 430px; }
+  h1 { font-size: 15px; margin: 0 0 6px; color: #e8eef2; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border-bottom: 1px solid #222a32; padding: 3px 4px; text-align: left; vertical-align: top; }
+  .ok { color: #7fd67f; } .bad { color: #ff6b5b; } .now { color: #ffd34d; } .m4 { color: #5fd8e8; } .m5 { color: #c79bff; }
+  .key span { display: inline-block; width: 10px; height: 10px; margin: 0 4px 0 10px; vertical-align: middle; }
+  button { background: #1b222a; color: #cfd6dc; border: 1px solid #39424c; padding: 3px 8px; font: inherit; cursor: pointer; }
+  #hover { color: #9aa4ad; min-height: 1.4em; }
+</style>
+</head>
+<body>
+<canvas id="map" width="1024" height="1024"></canvas>
+<div id="side">
+  <h1>Waystone spots (proposal, nothing placed)</h1>
+  <div>Doc: docs/proposals/waystones-2026-10-10.md. D-057: travel points picked from the map, only touched ones.</div>
+  <p>
+    <button id="zFull">Whole chart</button>
+    <button id="zRoad">Road + river zoom</button>
+    <button id="zHome">Tower zoom</button>
+  </p>
+  <div class="key">
+    <span style="background:#ffd34d"></span>NOW
+    <span style="background:#5fd8e8"></span>M4
+    <span style="background:#c79bff"></span>M5
+    <span style="background:#ffffff"></span>existing
+  </div>
+  <p id="src">terrain: loading...</p>
+  <table id="tbl"><thead><tr><th>id</th><th>x, y</th><th>when</th><th>live check</th></tr></thead><tbody></tbody></table>
+  <p>Check = centre and an 8-point ring at 6 m are grass (type 0) in <code>overworld_far.util.typeAt</code>, and the road centre is &gt;= 6 m away (<code>pathDist</code>).
+     Dashed circle = today's play bounds (world_m1 bounds r 96). Dotted line = pencil line tower -&gt; signal tower.</p>
+  <div id="hover"></div>
+</div>
+
+<script src="../levels/overworld_far.js"></script>
+<script>
+(function () {
+  'use strict';
+  var OW = window.ASSETS.levels.overworld_far, U = OW.util;
+  // CO-9: the recipe has no structure placement without World.load; stub the tower footprint (level origin 1480,1018).
+  OW.structures.forEach(function (st) {
+    if (!st.bbox) { st.bbox = { x0: 1480, y0: 1018, x1: 1513, y1: 1031 }; st.ringHAt = function () { return 2.4; }; }
+  });
+
+  var TOWER = { x: 1496.5, y: 1024.5 }, BOUNDS_R = 96, SIGNAL = { x: 713.8, y: 1232.1 };
+  var EXISTING = { id: 'endMarker (waystone)', x: 1428, y: 1040 };
+  var CANDS = [
+    { id: 'ws_roadBend',    x: 1262, y: 1033, ms: 'NOW', pick: true,  why: 'road middle bend, halfway to the river' },
+    { id: 'ws_fordWest',    x: 992,  y: 1079, ms: 'NOW', pick: false, why: 'road end past the river crossing, future crossroads (NOW alternative / M4)' },
+    { id: 'ws_outwall',     x: 905,  y: 940,  ms: 'M5',  why: 'exile village site (US-099), west bank north of the ford' },
+    { id: 'ws_signalNorth', x: 695,  y: 1090, ms: 'M5',  why: 'north foot of the signal-tower hill' },
+    { id: 'ws_northBank',   x: 1150, y: 800,  ms: 'M4',  why: 'river valley viewpoint north, M4 tool area / dungeon' },
+    { id: 'ws_southFields', x: 1300, y: 1400, ms: 'M4',  why: 'open south bowl, future south road / farmstead' },
+    { id: 'ws_westRidge',   x: 450,  y: 1180, ms: 'M5',  why: 'western ridge lookout over the relay region' }
+  ];
+  var MS_COL = { NOW: '#ffd34d', M4: '#5fd8e8', M5: '#c79bff' };
+  var CAT_COL = ['#3d6b2e', '#1f3d1c', '#2f6f9f', '#6b6660', '#c9a45a', '#8a5a3c', '#55504a'];  // grass forest water rock road structure steep
+  var TYPE_NAME = ['grass', 'forest', 'water', 'rock', 'path'];
+
+  var cv = document.getElementById('map'), g = cv.getContext('2d');
+  var view = { x0: 0, y0: 0, size: 2048 };
+  var terrain = null;   // { cols, rows, cell w/h, cat(i,j) }
+
+  function setView(x0, y0, size) { view = { x0: x0, y0: y0, size: size }; draw(); }
+  function sx(x) { return (x - view.x0) / view.size * cv.width; }
+  function sy(y) { return (y - view.y0) / view.size * cv.height; }
+
+  // --- terrain source: the baked chart if served over http, else a recipe bake at 8 m ---
+  function fromChart(ch) {
+    var rows = ch.glyphs, W = ch.width, H = ch.rows, b = ch.bounds || { x0: 0, y0: 0, x1: 2048, y1: 2048 };
+    terrain = { W: W, H: H, x0: b.x0, y0: b.y0, cw: (b.x1 - b.x0) / W, ch: (b.y1 - b.y0) / H,
+                cat: function (i, j) { return +rows[j].charAt(i); } };
+    document.getElementById('src').textContent = 'terrain: content/chart/world_m1.chart.json (' + W + 'x' + H + ', with placed structures)';
+    draw();
+  }
+  function fromRecipe() {
+    var N = 256, c = 8, T = new Uint8Array(N * N);
+    for (var j = 0; j < N; j++) for (var i = 0; i < N; i++) T[i + j * N] = U.typeAt((i + 0.5) * c, (j + 0.5) * c);
+    terrain = { W: N, H: N, x0: 0, y0: 0, cw: c, ch: c, cat: function (i, j) { var t = T[i + j * N]; return t === 4 ? 4 : t; } };
+    document.getElementById('src').textContent = 'terrain: recipe bake 8 m (chart JSON not reachable - serve the repo root over http)';
+    draw();
+  }
+  fetch('../../content/chart/world_m1.chart.json').then(function (r) { if (!r.ok) throw 0; return r.json(); })
+    .then(fromChart).catch(fromRecipe);
+
+  // --- live checks ---
+  function check(c) {
+    var t0 = U.typeAt(c.x, c.y), pd = U.pathDist(c.x, c.y), ringBad = [], k;
+    for (k = 0; k < 8; k++) {
+      var a = k * Math.PI / 4, t = U.typeAt(c.x + 6 * Math.cos(a), c.y + 6 * Math.sin(a));
+      if (t !== 0) ringBad.push(TYPE_NAME[t]);
+    }
+    var ok = t0 === 0 && ringBad.length === 0 && pd >= 6;
+    var h = U.heightAt(c.x, c.y), dB = Math.hypot(c.x - TOWER.x, c.y - TOWER.y);
+    return { ok: ok, text: (ok ? 'OK' : 'FAIL') + ' - centre ' + TYPE_NAME[t0] + (ringBad.length ? ', ring hits ' + ringBad.join('/') : '') +
+             ', road ' + pd.toFixed(1) + ' m, z ' + h.toFixed(1) + ', ' + Math.round(dB) + ' m from tower' + (dB > BOUNDS_R ? ' (outside bounds)' : '') };
+  }
+  var tb = document.querySelector('#tbl tbody');
+  CANDS.forEach(function (c) {
+    var r = check(c), tr = document.createElement('tr');
+    tr.innerHTML = '<td class="' + c.ms.toLowerCase() + '">' + (c.pick ? '* ' : '') + c.id + '</td><td>' + c.x + ', ' + c.y + '</td><td class="' +
+      c.ms.toLowerCase() + '">' + c.ms + (c.ms === 'NOW' && !c.pick ? ' alt' : '') + '</td><td class="' + (r.ok ? 'ok' : 'bad') + '">' + r.text + '<br><span style="color:#8b949c">' + c.why + '</span></td>';
+    tb.appendChild(tr);
+  });
+
+  // --- drawing ---
+  function draw() {
+    g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height);
+    if (terrain) {
+      for (var j = 0; j < terrain.H; j++) for (var i = 0; i < terrain.W; i++) {
+        var x = terrain.x0 + i * terrain.cw, y = terrain.y0 + j * terrain.ch;
+        if (x + terrain.cw < view.x0 || y + terrain.ch < view.y0 || x > view.x0 + view.size || y > view.y0 + view.size) continue;
+        g.fillStyle = CAT_COL[terrain.cat(i, j)] || '#000';
+        g.fillRect(Math.floor(sx(x)), Math.floor(sy(y)), Math.ceil(sx(x + terrain.cw) - sx(x)) + 1, Math.ceil(sy(y + terrain.ch) - sy(y)) + 1);
+      }
+    }
+    // river centre line (analytic)
+    g.strokeStyle = 'rgba(120,190,255,0.6)'; g.lineWidth = Math.max(1, 20 / view.size * cv.width); g.beginPath();
+    for (var yy = 0; yy <= 2048; yy += 4) { var rx = U.riverX(yy); if (yy === 0) g.moveTo(sx(rx), sy(yy)); else g.lineTo(sx(rx), sy(yy)); }
+    g.stroke();
+    // road
+    var P = OW.recipe.path.points;
+    g.strokeStyle = '#f0c870'; g.lineWidth = Math.max(2, 6 / view.size * cv.width); g.beginPath();
+    P.forEach(function (p, k) { if (k === 0) g.moveTo(sx(p[0]), sy(p[1])); else g.lineTo(sx(p[0]), sy(p[1])); });
+    g.stroke();
+    // pencil line tower -> signal tower
+    g.setLineDash([2, 6]); g.strokeStyle = '#d0d0d0'; g.lineWidth = 1; g.beginPath();
+    g.moveTo(sx(TOWER.x), sy(TOWER.y)); g.lineTo(sx(SIGNAL.x), sy(SIGNAL.y)); g.stroke();
+    // bounds
+    g.setLineDash([6, 4]); g.strokeStyle = '#ff8a5b'; g.beginPath();
+    g.arc(sx(TOWER.x), sy(TOWER.y), BOUNDS_R / view.size * cv.width, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
+    // landmarks
+    mark(TOWER.x, TOWER.y, '#ffffff', 'square', 'Hollow Watchtower');
+    mark(SIGNAL.x, SIGNAL.y, '#3fe0c8', 'square', 'signal tower');
+    mark(EXISTING.x, EXISTING.y, '#ffffff', 'diamond', EXISTING.id);
+    CANDS.forEach(function (c) { var r = check(c); mark(c.x, c.y, MS_COL[c.ms], 'diamond', (c.pick ? '* ' : '') + c.id + (r.ok ? '' : ' (FAIL)'), c.pick); });
+    // scale bar 100 m
+    var px = 100 / view.size * cv.width;
+    g.fillStyle = '#fff'; g.fillRect(16, cv.height - 20, px, 3); g.font = '12px Consolas, monospace'; g.fillText('100 m', 16, cv.height - 26);
+  }
+  function mark(x, y, col, shape, label, ring) {
+    var X = sx(x), Y = sy(y);
+    if (X < -50 || Y < -50 || X > cv.width + 50 || Y > cv.height + 50) return;
+    g.fillStyle = col; g.strokeStyle = '#000'; g.lineWidth = 1.5;
+    g.beginPath();
+    if (shape === 'square') g.rect(X - 4, Y - 4, 8, 8);
+    else { g.moveTo(X, Y - 7); g.lineTo(X + 6, Y); g.lineTo(X, Y + 7); g.lineTo(X - 6, Y); g.closePath(); }
+    g.fill(); g.stroke();
+    if (ring) { g.strokeStyle = col; g.lineWidth = 1.5; g.beginPath(); g.arc(X, Y, 12, 0, Math.PI * 2); g.stroke(); }
+    // 6 m keep-clear circle when zoomed in
+    var r6 = 6 / view.size * cv.width;
+    if (r6 > 3) { g.strokeStyle = col; g.setLineDash([2, 2]); g.beginPath(); g.arc(X, Y, r6, 0, Math.PI * 2); g.stroke(); g.setLineDash([]); }
+    g.font = '12px Consolas, monospace'; g.lineWidth = 3; g.strokeStyle = '#000';
+    g.strokeText(label, X + 9, Y - 8); g.fillStyle = col; g.fillText(label, X + 9, Y - 8);
+  }
+
+  cv.addEventListener('mousemove', function (e) {
+    var r = cv.getBoundingClientRect(), x = view.x0 + (e.clientX - r.left) / cv.width * view.size, y = view.y0 + (e.clientY - r.top) / cv.height * view.size;
+    if (x < 0 || y < 0 || x > 2048 || y > 2048) return;
+    document.getElementById('hover').textContent = 'x ' + x.toFixed(0) + '  y ' + y.toFixed(0) + '  type ' + TYPE_NAME[U.typeAt(x, y)] +
+      '  road ' + U.pathDist(x, y).toFixed(1) + ' m  z ' + U.heightAt(x, y).toFixed(1);
+  });
+  document.getElementById('zFull').onclick = function () { setView(0, 0, 2048); };
+  document.getElementById('zRoad').onclick = function () { setView(820, 760, 760); };
+  document.getElementById('zHome').onclick = function () { setView(1200, 880, 340); };
+  draw();
+})();
+</script>
+</body>
+</html>
