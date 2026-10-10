@@ -25,8 +25,12 @@
 </style>
 </head>
 <body>
-<h1>Kestrel : EP-WILD step 1 preview - wild rabbit + deer (design v1.53)</h1>
+<h1>Kestrel : EP-WILD preview - rabbit, deer, fox, squirrel, robin / chaffinch, crow (Rook) (design v1.58)</h1>
 <div class="note">
+  <b>v1.58:</b> detail pass on rabbit + deer; new <b>fox</b> (cellM 0.025, 10 x 44 x 21, 8 parts), <b>squirrel</b> (0.015, 8 x 24 x 20, 8 parts;
+  climb / peek on a trunk = body pitched -90 deg in the clip), <b>songbird</b> (0.01, 23 x 16 x 10, 6 parts, robin + chaffinch coats) and
+  <b>crow</b> (0.02, 39 x 26 x 13, 8 parts incl. a moving lower beak for Rook's caw / talk). Bird wings are modelled spread; perched = folded
+  by rotation. Use the <i>variant</i> menu for deer / buck and robin / chaffinch.<br>
   <code>design/models/voxel_wildlife.js</code>: <b>rabbit</b> (European wild rabbit, 0.42 m, cellM 0.02, 12 x 21 x 16) and <b>deer</b>
   (red / roe hind, 1.6 m long, 1.0 m at the withers, cellM 0.05, 12 x 32 x 33) + <b>deerBuck</b> (small roe-buck antlers). 8 parts each,
   meshOnly, ellipse-slice bodies (no flat boxes), natural coat variation. Four-legged in every clip; the rabbit's <code>alert</code> sits up on its
@@ -81,18 +85,27 @@ const T0 = performance.now();
 // ------------------------------------------------------------------ pack every model (one shared material table)
 const matKeys = [];
 const matId = (k) => { let i = matKeys.indexOf(k); if (i < 0) { matKeys.push(k); i = matKeys.length - 1; } return i + 1; };
-const MODELS = ['rabbit', 'deer', 'deerBuck'];
+const MODELS = ['rabbit', 'deer', 'deerBuck', 'fox', 'squirrel', 'robin', 'finch', 'crow'];
+const BIRDS = { robin: 1, finch: 1, crow: 1 };
 const PMS = {};
 for (const k of MODELS) PMS[k] = packVoxelModel(A.models[k].voxel, matId);
 
-// ------------------------------------------------------------------ animals on the page
+// ------------------------------------------------------------------ animals on the page (models = variants)
 const ANIMALS = [
-  { id: 'rabbit', title: 'Wild rabbit (European rabbit, ~0.4 m)', model: () => 'rabbit', center: [0, 0, 0.17], viewH: 0.66,
+  { id: 'rabbit', title: 'Wild rabbit (European rabbit, ~0.4 m)', models: ['rabbit'], center: [0, 0, 0.17], viewH: 0.66,
     seqs: { 'demo: graze -> sitUp -> alert -> run -> hop': [['graze', 2600], ['sitUp', 400], ['alert', 2400], ['run', 1500], ['hop', 1600]] } },
-  { id: 'deer', title: 'Deer (red / roe hind, 1.6 m, 1.0 m at the withers) + roe-buck antler variant', model: null, center: [0, 0, 0.82], viewH: 2.1,
-    seqs: { 'demo: graze -> alert -> trot -> gallop -> walk': [['graze', 4250], ['alert', 2000], ['trot', 1200], ['gallop', 2000], ['walk', 2000]] } }
+  { id: 'deer', title: 'Deer (red / roe hind, 1.6 m, 1.0 m at the withers) + roe-buck antler variant', models: ['deer', 'deerBuck'], center: [0, 0, 0.82], viewH: 2.1,
+    seqs: { 'demo: graze -> alert -> trot -> gallop -> walk': [['graze', 4250], ['alert', 2000], ['trot', 1200], ['gallop', 2000], ['walk', 2000]] } },
+  { id: 'fox', title: 'Red fox (1.1 m with the tail, 0.40 m at the shoulder)', models: ['fox'], center: [0, 0, 0.26], viewH: 1.15,
+    seqs: { 'demo: sniff -> pounce -> alert -> trot -> run': [['sniff', 3200], ['pounce', 2300], ['alert', 1500], ['trot', 1200], ['run', 1600]] } },
+  { id: 'squirrel', title: 'Red squirrel (0.34 m with the tail; climb / peek = body pitched 90 deg on a trunk)', models: ['squirrel'], center: [0, 0, 0.2], viewH: 0.5,
+    seqs: { 'demo: forage -> alert -> run -> climb -> peek': [['forage', 2800], ['alert', 1400], ['run', 1200], ['climb', 1600], ['peek', 3700]] } },
+  { id: 'songbird', title: 'Songbird (16 cm): robin / chaffinch coats', models: ['robin', 'finch'], center: [0, 0, 0.05], viewH: 0.26,
+    seqs: { 'demo: perch -> takeoff -> flap -> glide -> land -> peck': [['perch', 1800], ['takeoff', 300], ['flap', 1500], ['glide', 1000], ['land', 400], ['peck', 1600]] } },
+  { id: 'crow', title: 'Crow (0.5 m, wingspan 0.78 m) = Rook, the talking crow: tilt / caw / talk', models: ['crow'], center: [0, 0, 0.13], viewH: 0.85,
+    seqs: { 'demo: perch -> tilt -> talk -> caw -> walk': [['perch', 1500], ['tilt', 3000], ['talk', 2000], ['caw', 1200], ['walk', 1600]] } }
 ];
-const state = {};      // per animal: { sel, t0, buck }
+const state = {};      // per animal: { sel, t0, vi }
 const views = [];
 const ctl = {};
 let ver = 1;
@@ -113,7 +126,7 @@ function selState(PM, an, sel, e) {
   for (const s of seq) { if (e < s[1]) return { name: s[0], st: clipState(PM, s[0], e) }; e -= s[1]; }
   return { name: seq[0][0], st: clipState(PM, seq[0][0], 0) };
 }
-const modelOf = (an) => an.id === 'rabbit' ? 'rabbit' : (state.deer.buck ? 'deerBuck' : 'deer');
+const modelOf = (an) => an.models[state[an.id].vi];
 
 // ------------------------------------------------------------------ controls
 function readCtl() {
@@ -280,7 +293,8 @@ function buildAllIngame() { for (const an of ANIMALS) buildIngame(an); }
 const selName = (an) => state[an.id].sel;
 
 for (const an of ANIMALS) {
-  state[an.id] = { sel: 'idle', t0: performance.now(), buck: false };
+  const firstClip = Object.keys(A.models[an.models[0]].voxel.animations)[0];
+  state[an.id] = { sel: firstClip, t0: performance.now(), vi: 0 };
   const sec = document.createElement('div');
   const h = document.createElement('h2'); h.textContent = an.title; sec.appendChild(h);
   const bar = document.createElement('div'); bar.className = 'controls local';
@@ -289,13 +303,15 @@ for (const an of ANIMALS) {
   for (const c of clipNames().concat(Object.keys(an.seqs))) {
     const b = document.createElement('button'); b.textContent = c; btns.push(b);
     b.onclick = () => { state[an.id].sel = c; state[an.id].t0 = performance.now(); btns.forEach((x) => x.classList.toggle('on', x === b)); ver++; };
-    if (c === 'idle') b.classList.add('on');
+    if (c === firstClip) b.classList.add('on');
     bar.appendChild(b);
   }
-  if (an.id === 'deer') {
-    const lab = document.createElement('label'); lab.innerHTML = '<input type="checkbox"> antlers (deerBuck)';
-    lab.firstChild.oninput = () => { state.deer.buck = lab.firstChild.checked; ver++; };
-    bar.appendChild(lab);
+  if (an.models.length > 1) {
+    const lab = document.createElement('label'); lab.textContent = 'variant ';
+    const sel = document.createElement('select');
+    an.models.forEach((m, i) => { const o = document.createElement('option'); o.value = i; o.textContent = m; sel.appendChild(o); });
+    sel.oninput = () => { state[an.id].vi = +sel.value; ver++; };
+    lab.appendChild(sel); bar.appendChild(lab);
   }
   const fxInfo = document.createElement('span'); fxInfo.className = 'cap';
   const X = FX.animals[an.id];
@@ -360,7 +376,8 @@ function runChecks() {
     ok(sums.every((s) => s <= 48), k + ': style 5.14 part box sx+sy+sz <= 48: ' + sums.join(' / '));
     const lod0 = buildVoxelMesh(PM, { id: k, partNames: PARTS }).triCount, lod1 = buildVoxelMeshLod1(PM, { id: k + '1', partNames: PARTS }).triCount;
     let vox = 0; DEF.layers.forEach((l) => l.forEach((r) => { for (const c of r) if (c !== '.') vox++; }));
-    ok(lod0 <= 2000, k + ': ' + vox + ' voxels, engine mesher LOD0 ' + lod0 + ' tris (budget 2000), LOD1 ' + lod1);
+    const budget = k === 'crow' ? 1600 : (BIRDS[k] ? 800 : 2000);   // 38.31 item 9: ground <= 2.5k quads, small bird <= 0.4k quads
+    ok(lod0 <= budget, k + ': ' + vox + ' voxels, engine mesher LOD0 ' + lod0 + ' tris (budget ' + budget + '), LOD1 ' + lod1);
     let top = -1, y0 = 99, y1 = -1;
     DEF.layers.forEach((l, z) => l.forEach((r, y) => { if (/[^. ]/.test(r)) { top = z; y0 = Math.max(0, Math.min(y0, y)); y1 = Math.max(y1, y); } }));
     info(k + ': ' + DEF.size.join(' x ') + ' @ ' + DEF.cellM + ' m, nose to tail ' + ((y1 + 1 - y0) * DEF.cellM).toFixed(2) + ' m, top ' + ((top + 1) * DEF.cellM).toFixed(2) +

@@ -210,4 +210,49 @@ test('wildlifeFx: every state maps to an existing clip, gaits / speeds / distanc
   }
 });
 
+// ---- v1.58 (EP-WILD step 2): fox, squirrel, robin, finch, crow ----
+const NEW = { fox: 2000, squirrel: 2000, robin: 800, finch: 800, crow: 1600 };   // LOD0 tri budgets (38.31 item 9)
+const NEW_CLIPS = {
+  fox: ['alert', 'idle', 'pounce', 'run', 'sniff', 'trot', 'walk'],
+  squirrel: ['alert', 'climb', 'forage', 'hop', 'idle', 'peek', 'run'],
+  robin: ['alert', 'flap', 'glide', 'hop', 'land', 'peck', 'perch', 'takeoff'],
+  crow: ['alert', 'caw', 'flap', 'glide', 'hop', 'land', 'peck', 'perch', 'takeoff', 'talk', 'tilt', 'walk']
+};
+NEW_CLIPS.finch = NEW_CLIPS.robin;
+test('v1.58 models: valid, budgets, clip names, whole 50 ms keys, every frame names every part, |rot| <= 180', () => {
+  const keys = Object.keys(P.materials).filter((k) => DP.materials[k]);
+  for (const k of Object.keys(NEW)) {
+    const DEF = A.models[k] && A.models[k].voxel;
+    assert.ok(DEF, k);
+    const r = validateVoxelModel(DEF, { materialKeys: keys });
+    assert.deepStrictEqual(r.errors, [], k);
+    assert.deepStrictEqual(r.warnings, [], k);
+    const PARTS = Object.keys(DEF.parts);
+    for (const n of PARTS) { const b = DEF.parts[n].box; assert.ok((b[3] - b[0]) + (b[4] - b[1]) + (b[5] - b[2]) <= 48, `${k} ${n} box sum`); }
+    const ids = [];
+    const PM = packVoxelModel(DEF, (m) => { let i = ids.indexOf(m); if (i < 0) { ids.push(m); i = ids.length - 1; } return i + 1; });
+    const tris = buildVoxelMesh(PM, { id: k, partNames: PARTS }).triCount;
+    let vox = 0; DEF.layers.forEach((l) => l.forEach((row) => { for (const c of row) if (c !== '.') vox++; }));
+    console.log(`  ${k}: ${DEF.size.join('x')} @ ${DEF.cellM} m, ${vox} voxels, LOD0 ${tris} tris`);
+    assert.ok(tris <= NEW[k], `${k} tris ${tris}`);
+    assert.deepStrictEqual(Object.keys(DEF.animations).sort(), NEW_CLIPS[k], k);
+    for (const c of Object.keys(DEF.animations)) {
+      for (const d of DEF.animations[c].durations) assert.strictEqual(d % 50, 0, `${k} ${c} duration ${d}`);
+      for (const f of DEF.animations[c].frames) {
+        assert.deepStrictEqual(Object.keys(f).sort(), PARTS.slice().sort(), `${k} ${c}`);
+        for (const n of PARTS) for (const v of f[n].rot) assert.ok(Math.abs(v) <= 180 && Number.isFinite(v), `${k} ${c} ${n} rot ${v}`);
+      }
+    }
+  }
+});
+
+test('v1.58 fox / squirrel stand on all fours in idle (feet within 2 cm); squirrel climb is pitched -90', () => {
+  for (const k of ['fox', 'squirrel']) {
+    const r = rig(k);
+    for (const n of LIMBS) assert.ok(Math.abs(r.lowest(r.posed(null), n)) < 1e-9, `${k} ${n} rest on z 0`);
+    r.DEF.animations.idle.frames.forEach((f, i) => { const T = r.posed(f); for (const n of LIMBS) assert.ok(within(r.lowest(T, n), 0.02), `${k} idle[${i}] ${n} ${r.lowest(T, n).toFixed(3)}`); });
+  }
+  for (const f of A.models.squirrel.voxel.animations.climb.frames) assert.ok(f.body.rot[0] <= -85, 'climb body pitch');
+});
+
 console.log(`${passed} passed`);

@@ -1186,6 +1186,25 @@
       face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
       lod: { mid: 12, far: 25, dither: 3 }
     },
+    // EP-WILD step 2 (v1.58, voxel_wildlife.js fox / squirrel / robin; palette.js v1 records of the same key).
+    fur_fox: {
+      v1: 'fur_fox', seed: 1210,
+      desc: 'WILDLIFE (EP-WILD v1.58). Red fox coat: orange-red with darker guard-hair ticks.',
+      albedo: 0.88, bgK: 0.15, detail: 32, jitter: 0.06,
+      tones: [['furFox', 4], ['furRoeDark', 1], ['furFoxLight', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_fox_light: {
+      v1: 'fur_fox_light', seed: 1211,
+      desc: 'WILDLIFE (EP-WILD v1.58). Fox lower flanks, muzzle bridge; squirrel tail fringe.',
+      albedo: 0.90, bgK: 0.16, detail: 32, jitter: 0.05,
+      tones: [['furFoxLight', 4], ['furFox', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
     // QM-SLIM (v1.57, design/models/quest_mark.js; palette.js v1 records of the same key): the slim quest-sign gold.
     mark_gold: {
       v1: 'mark_gold', seed: 1201,
@@ -1252,6 +1271,7 @@
     // EP-WILD (v1.53, design/models/voxel_wildlife.js), same key in both files.
     fur_agouti: 'fur_agouti', fur_agouti_dark: 'fur_agouti_dark', fur_agouti_light: 'fur_agouti_light', fur_cream: 'fur_cream',
     fur_roe: 'fur_roe', fur_roe_dark: 'fur_roe_dark', fur_roe_light: 'fur_roe_light', antler: 'antler',
+    fur_fox: 'fur_fox', fur_fox_light: 'fur_fox_light',   // EP-WILD step 2 (v1.58)
     // QM-SLIM (v1.57, design/models/quest_mark.js), same key in both files.
     mark_gold: 'mark_gold', mark_shine: 'mark_shine'
   };
