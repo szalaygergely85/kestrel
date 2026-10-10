@@ -387,3 +387,8 @@ B1 2026-10-09 (kestrel-1) SETTINGS-MOUNT-01 -> po-review: full createSettingsVie
 ### CHARGEN-15 (kestrel-1) - NOT STARTED, ASK ARCHITECT
 - Unclear package mount path: default boot mounts no .kestrel (only `?pack=`), and loadBundleFromPackages needs a package with a content manifest (a glb-only villager package gives "none carries a content manifest"). Also world_m1 entity needs model `char.<id>` + dialogue file wiring.
 - Need decision: (a) default boot auto-mounts content/packages/*.kestrel (models only, merge with the normal content pack), or (b) villager package carries a full content manifest. Then CHARGEN-15 is ~0.5 d.
+
+### CHARGEN-17 (kestrel-1) - po-review
+- New game/js/ui/charCreate.js (createCharCreate, buildPlayerModel) + test: rows skin/eyes/height/age (+hair/clothes pairs once the kit has items), Random (seed counter, randomRecipe), Confirm (validate -> riggedModelDef(collapseRig(meshCharacter(composeCharacter))) -> register `char.player` -> look out), Back/Esc. W/S/A/D/Enter, no Esc hint.
+- titleMenuHost: option `createCharCreate`; New game opens it (menu stays active), Confirm -> onNewGame(slot, look); main.js sets saveRelay.look (saved as player.look); no creator (capture/bench/at=/title=0 never show the menu) = old behaviour. tools/verify-charcreate.mjs <port> written, node --check only (not run).
+- Preview = hand/skin/eye/sleeve colour swatches only. ASK ARCHITECT: in-menu 3D body preview of char.player (studio scene on the game renderer) needs engine work; also `hand@look` is retinted once at boot, so a look chosen now shows on the hands after a page reload (CHARGEN-16 limit).
