@@ -1507,6 +1507,18 @@
       }
     }
   })();
+  // QM-SLIM (v1.57, design/models/quest_mark.js, owner 2026-10-10 "too much glow"): the slim quest-sign gold. Appended
+  // last so no material id moves; v2 records in detail-pass.js. Faint emissive (>= 0.3 = a glow.js source, small aura).
+  materials.mark_gold = {
+    desc: 'QUEST MARK (QM-SLIM). The gold body of the floating ! / ? sign: warm gold, faint self-glow (emissive 0.40).',
+    base: 'gold', albedo: 1.00, ramp: 'brass', spec: 0.70, emissive: 0.40,
+    bg: { mode: 'darken', k: 0.22 }, textureFade: [4, 12]
+  };
+  materials.mark_shine = {
+    desc: 'QUEST MARK (QM-SLIM). The 1-voxel polished shine on one edge of every stroke: pale white-gold, emissive 0.45.',
+    base: 'brassHot', albedo: 1.00, ramp: 'brass', spec: 0.90, emissive: 0.45,
+    bg: { mode: 'darken', k: 0.24 }, textureFade: [4, 12]
+  };
 
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)
