@@ -106,8 +106,10 @@ export function mountUi(root, { kit, chargen, cb, platform = createPlatform() })
     }
     panel.append(row);
   }
-  const seed = el('input', { type: 'text', placeholder: 'seed (empty = new)', size: 12, id: 'seed' });
-  const random = el('button', { id: 'random', onclick: () => { const s = seedFromText(seed.value); seed.value = String(s); cb.onSeed(s); } }, 'Random');
+  const seed = el('input', { type: 'text', placeholder: 'seed, Enter to replay', size: 12, id: 'seed' });
+  // Random always rolls a fresh seed (the field shows it so it can be shared); Enter in the field replays a typed seed.
+  const random = el('button', { id: 'random', onclick: () => { const s = seedFromText(''); seed.value = String(s); cb.onSeed(s); } }, 'Random');
+  seed.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const s = seedFromText(seed.value); seed.value = String(s); cb.onSeed(s); } });
   panel.append(el('div', { class: 'row' }, seed, random));
 
   let playing = true;
