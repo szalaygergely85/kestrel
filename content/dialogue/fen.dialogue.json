@@ -1,50 +1,161 @@
 {
-  "kind": "dialogue", "schema": 1, "id": "fen",
-  "speakers": {"fen":{"label":"FEN"},"you":{"label":"YOU","player":true}},
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "fen",
+  "speakers": {
+    "fen": {"label": "FEN"},
+    "you": {"label": "YOU", "player": true}
+  },
   "entry": [
-    {"node":"fen.repeat","requires":"s.fen.met"},
-    {"node":"fen.meet"}
+    {"node": "fen.repeat", "requires": "s.fen.met"},
+    {"node": "fen.meet"}
   ],
   "nodes": {
-    "fen.meet": {"speaker":"fen","lines":["By the old stones...","Another person!","I thought I was the only soul on this road!"],"clip":"wave","choices":[{"text":"Who are you?","next":"fen.who"},{"text":"You startled me.","next":"fen.startled"}]},
-    "fen.who": {"speaker":"fen","lines":["Fen. Just Fen."],"next":"fen.ask.1"},
-    "fen.startled": {"speaker":"fen","lines":["Forgive me. You learn to hide out here.","Fen, by the way. Just Fen."],"next":"fen.ask.1"},
-    "fen.ask.1": {"speaker":"fen","lines":["And you?"],"next":"fen.ask.2"},
-    "fen.ask.2": {"speaker":"you","lines":["Just a lamp-trimmer."],"next":"fen.ask.3"},
-    "fen.ask.3": {"speaker":"fen","lines":["Well met, then!","It's good to hear a human voice again.","Hold on...","That coat. You're from Ferrum?"],"next":"fen.ask.4"},
-    "fen.ask.4": {"speaker":"you","lines":["Yes."],"next":"fen.ask.5"},
-    "fen.ask.5": {"speaker":"fen","lines":["How in the world did you get out?"],"next":"fen.ask.6"},
-    "fen.ask.6": {"speaker":"you","lines":["I borrowed an airship."],"next":"fen.ask.7"},
-    "fen.ask.7": {"speaker":"fen","lines":["Borrowed?"],"next":"fen.ask.8"},
-    "fen.ask.8": {"speaker":"you","lines":["It didn't survive."],"next":"fen.ask.9"},
-    "fen.ask.9": {"speaker":"fen","lines":["Ha! I suppose that explains the smoke.","You picked a strange road to wander.","These woods are beautiful, aren't they?"],"next":"fen.ask.10"},
-    "fen.ask.10": {"speaker":"you","lines":["More than I expected."],"next":"fen.ask.11"},
-    "fen.ask.11": {"speaker":"fen","lines":["Aye. But don't let that fool you.","Not everything here is friendly.","There are thieves on the western roads.","And things in the old ruins...","Things best left sleeping."],"choices":[{"text":"What kind of things?","next":"fen.things"},{"text":"I've met the boars.","next":"fen.boars"}]},
-    "fen.things": {"speaker":"fen","lines":["Old guardians. Beasts. Stranger things."],"next":"fen.aether.1"},
-    "fen.boars": {"speaker":"fen","lines":["Boars are the least of it, friend."],"next":"fen.aether.1"},
-    "fen.aether.1": {"speaker":"fen","lines":["This land still holds aether."],"next":"fen.aether.2"},
-    "fen.aether.2": {"speaker":"you","lines":["Aether?"],"next":"fen.aether.3"},
-    "fen.aether.3": {"speaker":"fen","lines":["Magic, lad."],"next":"fen.aether.4"},
-    "fen.aether.4": {"speaker":"you","lines":["Magic isn't real."],"next":"fen.aether.5"},
-    "fen.aether.5": {"speaker":"fen","lines":["Is that what Ferrum teaches now?"],"next":"fen.aether.6"},
-    "fen.aether.6": {"speaker":"you","lines":["It's a children's tale."],"next":"fen.aether.7"},
-    "fen.aether.7": {"speaker":"fen","lines":["Then how did you wake that stone?"],"next":"fen.aether.8"},
-    "fen.aether.8": {"speaker":"you","lines":["I don't know."],"next":"fen.aether.9"},
-    "fen.aether.9": {"speaker":"fen","lines":["There's a great deal you don't know yet.","But that's what makes a journey worth taking.","What's that you've got?"],"choices":[{"text":"A sky-chart.","next":"fen.chart"},{"text":"Nothing much.","next":"fen.nothing"}]},
-    "fen.chart": {"speaker":"fen","lines":["And that line?"],"next":"fen.signal.1"},
-    "fen.nothing": {"speaker":"fen","lines":["Crown ink, and a pencil line. Not nothing."],"next":"fen.signal.1"},
-    "fen.signal.1": {"speaker":"you","lines":["Something is sending a signal.","Three short. Three long. Three short."],"next":"fen.signal.2"},
-    "fen.signal.2": {"speaker":"fen","lines":["A signal?"],"next":"fen.signal.3"},
-    "fen.signal.3": {"speaker":"you","lines":["From beyond the Wall."],"next":"fen.signal.4"},
-    "fen.signal.4": {"speaker":"fen","lines":["Well...","I've seen a light on the far hills.","Never knew what to make of it."],"next":"fen.signal.5"},
-    "fen.signal.5": {"speaker":"you","lines":["I intend to find out."],"next":"fen.signal.6"},
-    "fen.signal.6": {"speaker":"fen","lines":["Then you'll want the river road.","It leads to a ford, farther west.","And beyond that, there are people."],"next":"fen.signal.7"},
-    "fen.signal.7": {"speaker":"you","lines":["People?"],"next":"fen.signal.8"},
-    "fen.signal.8": {"speaker":"fen","lines":["More than you'd think.","Some might even welcome you.","Just remember one thing."],"next":"fen.signal.9"},
-    "fen.signal.9": {"speaker":"you","lines":["What?"],"next":"fen.signal.10"},
-    "fen.signal.10": {"speaker":"fen","lines":["Out here, a friendly face means more","than any fine coat or polished blade.","Choose your friends carefully."],"next":"fen.end.1"},
-    "fen.end.1": {"speaker":"you","lines":["I'll remember."],"next":"fen.end.2"},
-    "fen.end.2": {"speaker":"fen","lines":["Good.","May the old lights guide you, lad."],"setFlag":"s.fen.met","end":true},
-    "fen.repeat": {"speaker":"fen","lines":["The river road. West, to the ford.","Mind the thieves. And mind the ruins.","May the old lights guide you."],"end":true}
+    "fen.meet": {"choices": [{"next": "fen.who", "text": "Who are you?"}, {"next": "fen.startled", "text": "You startled me."}], "clip": "wave", "lines": [
+      "By the old stones...",
+      "Another person!",
+      "I thought I was the only soul on this road!"
+    ], "speaker": "fen"},
+    "fen.who": {"lines": [
+      "Fen. Just Fen."
+    ], "next": "fen.ask.1", "speaker": "fen"},
+    "fen.startled": {"lines": [
+      "Forgive me. You learn to hide out here.",
+      "Fen, by the way. Just Fen."
+    ], "next": "fen.ask.1", "speaker": "fen"},
+    "fen.ask.1": {"lines": [
+      "And you?"
+    ], "next": "fen.ask.2", "speaker": "fen"},
+    "fen.ask.2": {"lines": [
+      "Just a lamp-trimmer."
+    ], "next": "fen.ask.3", "speaker": "you"},
+    "fen.ask.3": {"lines": [
+      "Well met, then!",
+      "It's good to hear a human voice again.",
+      "Hold on...",
+      "That coat. You're from Ferrum?"
+    ], "next": "fen.ask.4", "speaker": "fen"},
+    "fen.ask.4": {"lines": [
+      "Yes."
+    ], "next": "fen.ask.5", "speaker": "you"},
+    "fen.ask.5": {"lines": [
+      "How in the world did you get out?"
+    ], "next": "fen.ask.6", "speaker": "fen"},
+    "fen.ask.6": {"lines": [
+      "I borrowed an airship."
+    ], "next": "fen.ask.7", "speaker": "you"},
+    "fen.ask.7": {"lines": [
+      "Borrowed?"
+    ], "next": "fen.ask.8", "speaker": "fen"},
+    "fen.ask.8": {"lines": [
+      "It didn't survive."
+    ], "next": "fen.ask.9", "speaker": "you"},
+    "fen.ask.9": {"lines": [
+      "Ha! I suppose that explains the smoke.",
+      "You picked a strange road to wander.",
+      "These woods are beautiful, aren't they?"
+    ], "next": "fen.ask.10", "speaker": "fen"},
+    "fen.ask.10": {"lines": [
+      "More than I expected."
+    ], "next": "fen.ask.11", "speaker": "you"},
+    "fen.ask.11": {"choices": [{"next": "fen.things", "text": "What kind of things?"}, {"next": "fen.boars", "text": "I've met the boars."}], "lines": [
+      "Aye. But don't let that fool you.",
+      "Not everything here is friendly.",
+      "There are thieves on the western roads.",
+      "And things in the old ruins...",
+      "Things best left sleeping."
+    ], "speaker": "fen"},
+    "fen.things": {"lines": [
+      "Old guardians. Beasts. Stranger things."
+    ], "next": "fen.aether.1", "speaker": "fen"},
+    "fen.boars": {"lines": [
+      "Boars are the least of it, friend."
+    ], "next": "fen.aether.1", "speaker": "fen"},
+    "fen.aether.1": {"lines": [
+      "This land still holds aether."
+    ], "next": "fen.aether.2", "speaker": "fen"},
+    "fen.aether.2": {"lines": [
+      "Aether?"
+    ], "next": "fen.aether.3", "speaker": "you"},
+    "fen.aether.3": {"lines": [
+      "Magic, lad."
+    ], "next": "fen.aether.4", "speaker": "fen"},
+    "fen.aether.4": {"lines": [
+      "Magic isn't real."
+    ], "next": "fen.aether.5", "speaker": "you"},
+    "fen.aether.5": {"lines": [
+      "Is that what Ferrum teaches now?"
+    ], "next": "fen.aether.6", "speaker": "fen"},
+    "fen.aether.6": {"lines": [
+      "It's a children's tale."
+    ], "next": "fen.aether.7", "speaker": "you"},
+    "fen.aether.7": {"lines": [
+      "Then how did you wake that stone?"
+    ], "next": "fen.aether.8", "speaker": "fen"},
+    "fen.aether.8": {"lines": [
+      "I don't know."
+    ], "next": "fen.aether.9", "speaker": "you"},
+    "fen.aether.9": {"choices": [{"next": "fen.chart", "text": "A sky-chart."}, {"next": "fen.nothing", "text": "Nothing much."}], "lines": [
+      "There's a great deal you don't know yet.",
+      "But that's what makes a journey worth taking.",
+      "What's that you've got?"
+    ], "speaker": "fen"},
+    "fen.chart": {"lines": [
+      "And that line?"
+    ], "next": "fen.signal.1", "speaker": "fen"},
+    "fen.nothing": {"lines": [
+      "Crown ink, and a pencil line. Not nothing."
+    ], "next": "fen.signal.1", "speaker": "fen"},
+    "fen.signal.1": {"lines": [
+      "Something is sending a signal.",
+      "Three short. Three long. Three short."
+    ], "next": "fen.signal.2", "speaker": "you"},
+    "fen.signal.2": {"lines": [
+      "A signal?"
+    ], "next": "fen.signal.3", "speaker": "fen"},
+    "fen.signal.3": {"lines": [
+      "From beyond the Wall."
+    ], "next": "fen.signal.4", "speaker": "you"},
+    "fen.signal.4": {"lines": [
+      "Well...",
+      "I've seen a light on the far hills.",
+      "Never knew what to make of it."
+    ], "next": "fen.signal.5", "speaker": "fen"},
+    "fen.signal.5": {"lines": [
+      "I intend to find out."
+    ], "next": "fen.signal.6", "speaker": "you"},
+    "fen.signal.6": {"lines": [
+      "Then you'll want the river road.",
+      "It leads to a ford, farther west.",
+      "And beyond that, there are people."
+    ], "next": "fen.signal.7", "speaker": "fen"},
+    "fen.signal.7": {"lines": [
+      "People?"
+    ], "next": "fen.signal.8", "speaker": "you"},
+    "fen.signal.8": {"lines": [
+      "More than you'd think.",
+      "Some might even welcome you.",
+      "Just remember one thing."
+    ], "next": "fen.signal.9", "speaker": "fen"},
+    "fen.signal.9": {"lines": [
+      "What?"
+    ], "next": "fen.signal.10", "speaker": "you"},
+    "fen.signal.10": {"lines": [
+      "Out here, a friendly face means more",
+      "than any fine coat or polished blade.",
+      "Choose your friends carefully."
+    ], "next": "fen.end.1", "speaker": "fen"},
+    "fen.end.1": {"lines": [
+      "I'll remember."
+    ], "next": "fen.end.2", "speaker": "you"},
+    "fen.end.2": {"end": true, "lines": [
+      "Good.",
+      "May the old lights guide you, lad."
+    ], "setFlag": "s.fen.met", "speaker": "fen"},
+    "fen.repeat": {"end": true, "lines": [
+      "The river road. West, to the ford.",
+      "Mind the thieves. And mind the ruins.",
+      "May the old lights guide you."
+    ], "speaker": "fen"}
   }
 }
