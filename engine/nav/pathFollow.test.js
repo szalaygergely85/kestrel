@@ -1,6 +1,8 @@
 // CH1-E1. Run: node engine/nav/pathFollow.test.js
 import assert from 'node:assert/strict';
 import { createPathFollower } from './pathFollow.js';
+import { ensureGcChild } from '../test/allocGate.js';
+ensureGcChild(); // AUD2-40: heap gate needs a fresh --expose-gc child
 let checks = 0;
 const ok = (v, m) => { assert.ok(v, m); checks++; };
 const pts = Float64Array.from([0, 0, 10, 0, 10, 10]);
@@ -61,10 +63,10 @@ const DT = 1 / 60;
   const loop = Float64Array.from([0, 0, 5, 0, 5, 5, 0, 5]);
   const g = createPathFollower(loop, { speed: 3 });
   for (let i = 0; i < 2000; i++) { g.step(DT, 1, 0, 0); if (g.done) g.reset(0); }
-  global.gc && global.gc();
+  global.gc();
   const h0 = process.memoryUsage().heapUsed;
   for (let i = 0; i < 10000; i++) { g.step(DT, 1, 0, 0); if (g.done) g.reset(0); }
-  global.gc && global.gc();
+  global.gc();
   const grow = process.memoryUsage().heapUsed - h0;
   ok(grow < 200000, 'heap flat over 10k steps: ' + grow);
 }

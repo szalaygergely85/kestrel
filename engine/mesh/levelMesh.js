@@ -295,7 +295,7 @@ function computeLevelMeshData(level, opts) {
  * mesh-local frame (1 cell = 1 m) - moving the level's world placement never
  * touches these vertices (uv anchoring AC).
  * @param {import('../world/Level.js').Level} level
- * @param {{matIdFor?: (key: string) => number, footZ?: number}} [opts]
+ * @param {{matIdFor?: (key: string) => number, footZ?: number, collisionFloors?: boolean}} [opts]
  * @returns {LevelMeshSet}
  */
 export function buildLevelMesh(level, opts = {}) {
@@ -312,7 +312,7 @@ export function buildLevelMesh(level, opts = {}) {
  * @param {LevelMeshSet} set
  * @param {import('../world/Level.js').Level} level
  * @param {string} tag
- * @param {{matIdFor?: (key: string) => number, footZ?: number}} [opts]
+ * @param {{matIdFor?: (key: string) => number, footZ?: number, collisionFloors?: boolean}} [opts]
  * @returns {LevelMeshSet}
  */
 export function rebuildLevelMeshDyn(set, level, tag, opts = {}) {

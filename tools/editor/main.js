@@ -2465,7 +2465,7 @@ function refreshViewportPlates(nowMs) {
   if (nowMs - lastPlateRefresh < 250) return;
   lastPlateRefresh = nowMs;
   // WS2: the editor camera flies anywhere; keep the near band under it (else the far-canopy edge skirt shows as a green block)
-  if (world && world.ensureBandFor && world.ensureBandFor(cam.x, cam.y)) frame.markDirty();
+  if (world && world.ensureBandFor && world.ensureBandFor(cam.x, cam.y, world.bandSwitch.switchM)) frame.markDirty();
   camPlateEl.textContent = `CAM ${cam.x.toFixed(1)} ${cam.y.toFixed(1)} ${cam.z.toFixed(1)}  yaw ${cam.yawDeg.toFixed(0)} pitch ${cam.pitchDeg.toFixed(0)}  SPD ${speed.toFixed(1)} m/s`;
   const fps = engine.loop.stats.intervalMs > 0 ? 1000 / engine.loop.stats.intervalMs : 0;
   statsPlateEl.textContent = `${fps.toFixed(0)} fps  grid ${rt.cols}x${rt.rows}  presented ${lastPresented}`;

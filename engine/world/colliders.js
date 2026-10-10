@@ -299,6 +299,7 @@ export function buildWorldColliders(world) {
  * order, so a rebuild after an edit is bit-identical to a fresh load). `null` when nothing collides.
  * @param {import('./World.js').World} world
  * @returns {MeshCollider|null}
+ * @param {MeshCollider|null} [prev] previous merged collider (rebuild reuse)
  */
 export function buildStaticMeshCollider(world, prev) {
   const meshParts = [];

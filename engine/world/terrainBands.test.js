@@ -108,6 +108,10 @@ ok('walking back west cancels the pending bake', !T.nearBandPending && w._bandPe
   ok('ensureBandFor same zone -> false', w2.ensureBandFor(1500, 1000) === false);
   ok('ensureBandFor west -> swaps', w2.ensureBandFor(1000, 1072) === true && w2.bandId === 'west' && w2.terrain.near.x0 === 768);
   ok('ensureBandFor emitted world:band + world:scatter', ev2.includes('world:band') && ev2.includes('world:scatter'));
+  // AUD2-06: keepM hysteresis - a current zone with margin >= keepM is kept (no bake); outside the zone (margin < keepM) it still swaps
+  const w4 = mk({ terrainBands: [A, B] });
+  ok('ensureBandFor keepM keeps current zone while margin >= keepM', w4.ensureBandFor(1000, 1072, -1e9) === false && w4.bandId === 'east');
+  ok('ensureBandFor keepM swaps once margin < keepM', w4.ensureBandFor(1000, 1072, w4.bandSwitch.switchM) === true && w4.bandId === 'west');
   const w3 = mk({ terrainBands: [A, B] }), ev3 = []; w3.events = { emit: (n) => ev3.push(n) };
   w3.streamBand(1190, 1088, 0.01);
   ok('margin < 32 with pending bake: sync finish + band:late', w3.streamBand(1040, 1088, 0.01) === 2 && ev3.includes('band:late') && w3.bandId === 'west');

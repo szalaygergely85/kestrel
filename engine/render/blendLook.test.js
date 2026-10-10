@@ -5,6 +5,8 @@ import { fastShadeSky } from './fastShade.js';
 import { skyLutFromPalette } from './waterReflect.js';
 import { sunFromWorld, applySunHours } from './lighting.js';
 import { sunPathFrom } from '../core/sunPath.js';
+import { ensureGcChild } from '../test/allocGate.js';
+ensureGcChild(); // AUD2-40: heap gate needs a fresh --expose-gc child
 
 let fail = 0;
 function check(n, c) { if (!c) { fail++; console.error('FAIL:', n); } }
@@ -72,9 +74,9 @@ applySunHours(w, ls, 12, path, true, true); check('noon unchanged by moon flag',
 
 // zero alloc after warm-up
 blendLook(P, 7, S, out);
-const m0 = process.memoryUsage().heapUsed; let acc = 0;
+globalThis.gc(); globalThis.gc(); const m0 = process.memoryUsage().heapUsed; let acc = 0;
 for (let i = 0; i < 20000; i++) { blendLook(P, (i * 0.37) % 24, S, out); acc += out.sunI; }
-const grown = process.memoryUsage().heapUsed - m0;
+globalThis.gc(); const grown = process.memoryUsage().heapUsed - m0;
 check('blendLook ~0 alloc (' + grown + ' B)', grown < 200000 && acc > 0);
 
 if (fail) { console.error(fail + ' failed'); process.exit(1); }

@@ -331,7 +331,7 @@ export function blendLook(P, hour, schedule, out) {
     out.cloud = liveKey(P, out, 'cloud'); out.fog = liveKey(P, out, 'fog');
     out.sky = [];
     for (let s = 0; s < A.sky.length; s++) out.sky.push({ t: 0, c: liveKey(P, out, 'sky' + s) });
-    out.floorLum = 0;
+    out.ambientI = 0; out.sunI = 0; out.sunElev = 0; out.floorLum = 0; out.floorEff = 0; // fixed shape up front (no late field adds)
   }
   const near = f < 0.5 ? A : B;
   out.ambientI = A.ambientI + (B.ambientI - A.ambientI) * f;
