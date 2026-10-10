@@ -455,7 +455,7 @@ try {
       { objectiveId: 'leave', targets: ['doorMarker'] }, { objectiveId: 'follow', targets: ['bear'] }, { objectiveId: 'waystone', targets: ['endMarker'] },
       { objectiveId: 'road', targets: ['roadWest'] }, { objectiveId: 'relayFound', targets: ['relayBend'] }, { objectiveId: 'relay1', targets: ['relayBend'] }, { objectiveId: 'fen', targets: ['fen'] }]);
     const MARK_AREA = { doorMarker: 'towerDoor', roadWest: 'roadWest' }; // marker id -> world area trigger id (no entity)
-    const MARK_TOP = { endMarker: 3.0, bear: 2.8 }; // prop top above its base z (waystone 24 voxels x 0.125 m); notes would use z + 1.55
+    const MARK_TOP = { endMarker: 3.0, bear: 1.8 }; // prop top above its base z (waystone 24 voxels x 0.125 m); notes would use z + 1.55. bear 2.8 -> 1.8 (owner 2026-10-10: "!" floated up in the tree)
     gameHooks.setQuestSource((out) => { const st = saveRelay.quest.state; out.done = saveRelay.quest.done; out.id = out.done ? '' : questDef.objectives[st.completed.length].id; out.targets = qm.markerTargets(st); });
     let markN = 0;
     const markHandle = (model) => { // entity handle for one marker; re-spawns itself when a world reload dropped the entity
