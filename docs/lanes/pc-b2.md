@@ -433,3 +433,9 @@ No `sectorCaster.js` exists in this repo (only levelMesh/packed), so no caster s
 ### GS-01c + AUD-03 (kestrel-3, branch gs01c) - arch-review
 - GS-01c: scatter.js `structBlocks`: structures with `carveMask` (GS-01a) keep out only within structClearM of NON-flagged cells (flagged ring open); no mask = old bbox rule; trees untouched; overworld_far.js needs no change (config only). scatterDetail.test +flagged-ring/2 m/null-mask checks.
 - AUD-03: integrate.js + entities/Player.js (own copy of the same step-5 logic): grounded with floorDiff > stepUpMax now stays put (stepDelta 0) instead of airborne+same-step land; fallDistance clamped >= 0. physics.test +12 checks (199 pass), jump.test 111 pass, route-walk legs identical to baseline (7b mesh 694 vs grid 620 is pre-existing).
+
+### AUD-30 + AUD-09 (k3, aud-speed) - arch-review
+- AUD-30: `bake()` in design/levels/overworld_far.js uses 1 heightAt/sample (padded Float64 ring -> typeAt neighbour overload) when cell == slopeEps; else old path. 5x3 band bake median/5: 187 ms -> 56 ms. New engine/world/bakeParity.test.js: bit-identical vs legacy on 3 bands + far-cell path.
+- AUD-31: not done (second pass is ~61k trivial ops, <2 ms; normals live in terrainMesh.js, bigger change) - leave to a separate story if wanted.
+- AUD-09: NOT a leak. Retained growth after gc() is ~0 (probe: 0..9 KB at 1k-100k calls); the 360 KB was uncollected young-gen/JIT noise, non-proportional. Test now warms up in a function and gc()s before reading heap (re-spawns with --expose-gc); threshold 64 KB unchanged.
+- Gates: filter overworld,terrain,bounds,band,bakeParity 14/14 PASS; check-deps OK; route-walk legs unchanged.

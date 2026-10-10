@@ -403,9 +403,19 @@
 
   // ---------------- baking helpers ----------------
   function bake(x0, y0, cell, w, h) {           // any grid: far (8 m, whole map) or a near chunk (2 m, 64x64)
-    var height = new Float32Array(w * h), type = new Uint8Array(w * h);
-    for (var j = 0; j < h; j++) for (var i = 0; i < w; i++) {
-      var x = x0 + (i + 0.5) * cell, y = y0 + (j + 0.5) * cell;
+    var height = new Float32Array(w * h), type = new Uint8Array(w * h), i, j, x, y;
+    if (cell === DEF.recipe.slopeEps) {
+      // AUD-30: slopeEps == cell, so typeAt's +-eps heights ARE the neighbour sample centres: one heightAt per sample
+      // (padded 1-ring, double precision), handed to typeAt (bit-identical to the 5-heightAt path).
+      var pw = w + 2, H = new Float64Array(pw * (h + 2));
+      for (j = 0; j < h + 2; j++) { y = y0 + (j - 1 + 0.5) * cell; for (i = 0; i < pw; i++) H[i + j * pw] = heightAt(x0 + (i - 1 + 0.5) * cell, y); }
+      for (j = 0; j < h; j++) for (i = 0; i < w; i++) {
+        var q = (i + 1) + (j + 1) * pw;
+        height[i + j * w] = H[q];
+        type[i + j * w] = typeAt(x0 + (i + 0.5) * cell, y0 + (j + 0.5) * cell, H[q + 1], H[q - 1], H[q + pw], H[q - pw]);
+      }
+    } else for (j = 0; j < h; j++) for (i = 0; i < w; i++) {
+      x = x0 + (i + 0.5) * cell; y = y0 + (j + 0.5) * cell;
       height[i + j * w] = heightAt(x, y); type[i + j * w] = typeAt(x, y);
     }
     return { x0: x0, y0: y0, w: w, h: h, cell: cell, height: height, type: type, TYPES: ['grass', 'forest', 'water', 'rock', 'path'] };
