@@ -76,12 +76,12 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
   r.book.onChange = (n, id) => ev.push(n + ':' + id);
   r.book.giverMarks(A, R); assert.deepEqual([A, R], [['noteKeepLight'], []], "start: '!' over the note, nothing over Burl");
   assert.equal(r.book.statusOf('burl.boars'), 0);
-  assert.deepEqual(t.talk(), ["Come back when you've found your feet."], 'pre-quest line, no offer');
+  assert.deepEqual(t.talk(), ['Out of the tower already, sky-cub? Empty-pawed?', 'Climb back up. The top holds more than a view.'], 'pre-quest line, no offer');
   assert.equal(r.book.statusOf('burl.boars'), 0);
   assert.equal(r.book.actKey('q.tower.blade.accept'), true); // reading the note
   for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }]) r.feed(e);
   r.book.giverMarks(A, R); assert.deepEqual([A, R], [[], []], 'sword taken, still in the tower: no marks');
-  assert.deepEqual(t.talk(), ["Come back when you've found your feet."]);
+  assert.deepEqual(t.talk(), ['Out of the tower already, sky-cub? Empty-pawed?', 'Climb back up. The top holds more than a view.']);
   r.feed({ type: 'area:entered', id: 'towerDoor' });
   r.book.giverMarks(A, R); assert.deepEqual([A, R], [[], ['bear']], "left the tower: '?' over Burl");
   const meet = t.talk(1, -1); // choice 1 = 'I'm going west' -> flows into the boar offer, then 'Not yet'
