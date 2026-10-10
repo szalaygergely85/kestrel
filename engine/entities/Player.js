@@ -214,6 +214,11 @@ export class Player {
         this.stepDelta = floorDiff; // walked the step (up or down), no fall - EyeFeel smooths this
         this.z = floorH;
         this.vz = 0;
+      } else if (floorDiff > 0) {
+        // AUD-03: a ledge higher than stepUpMax is a wall, not a drop. Stay put (grounded, z unchanged); the old path went
+        // airborne and "landed" the same step on the ledge top (pop) with a negative fallDistance.
+        this.stepDelta = 0;
+        this.vz = 0;
       } else {
         // Floor dropped away by more than a step: start falling from where
         // we are (do not snap down - that would skip the fall entirely).
@@ -246,7 +251,7 @@ export class Player {
         this.grounded = true;
         this.coyote = 0;
         this.landed = true;
-        this.fallDistance = this.peakZ - this.z; // apex-to-landing (ASK PO 3 / PO ruling)
+        this.fallDistance = Math.max(0, this.peakZ - this.z); // apex-to-landing (ASK PO 3 / PO ruling)
       }
     }
 
