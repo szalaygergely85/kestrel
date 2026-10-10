@@ -399,6 +399,41 @@
     GEO_LAYERS = layers.slice(); GEO_N = GEO_LAYERS.length;
     return GEO_F;
   }
+  // ---------------- MAP-01c (arch 38.42): biome map = scatter driver ----------------
+  // biomeAt(x, y) -> u8: argmax of w_i = smooth(+b/2, -b/2, sdf_i) + 1.0 * (hash01_i(floor(x/2), floor(y/2)) - 0.5) (b = blendM_i; w = 0.5 on
+  // the area edge, so two touching biomes mix over ~b/2 either side; each biome has its own 2 m hash), biome 0 (meadow) when no weight beats BIO_BASE. Inside the keep rect it returns 0 by branch. Table `geo.biomes[id]` is read by engine/world/scatter.js.
+  var BIO_F = null, BIO_KEYS = [], BIO_IDS = [], BIO_BLEND = [], BIO_BASE = 0.35, BIO_NOISE = 1.0;   // noise amp 1.0 (not 0.25): 0.25 gave a ~5 m mixed edge, 1.0 gives ~blendM
+  function biomeAt(x, y) {
+    if (BIO_F === null || inKeep(x, y)) return 0;
+    var ix = Math.floor(x / 2), iy = Math.floor(y / 2), best = 0, bw = BIO_BASE;
+    for (var i = 0; i < BIO_IDS.length; i++) {
+      var b = BIO_BLEND[i] * 0.5, d = BIO_F.sdf(BIO_KEYS[i], x, y);
+      if (d >= b) continue;
+      var w = smooth(b, -b, d) + BIO_NOISE * (hash(ix, iy, 8191 + BIO_IDS[i]) - 0.5);
+      if (w >= bw) { bw = w; best = BIO_IDS[i]; }   // ties: the higher id (more specific area) wins
+    }
+    return best;
+  }
+  // table: {id: {name, blendM?, forest?: {fill, species: {meshId: weight}}, detail?: {layer: densityMult}, scale?: [min,max], hueJitter?}}
+  // areas: {id: signed-distance fn (negative inside)} (<= 16). Passing no table clears the biomes (today's bytes).
+  function setGeoBiomes(table, areas) {
+    BIO_F = null; BIO_KEYS = []; BIO_IDS = []; BIO_BLEND = []; GEO.biomes = null;
+    if (!table || !Object.keys(table).length) return null;
+    var ids = Object.keys(table);
+    for (var i = 0; i < ids.length; i++) {
+      var id = +ids[i];
+      if (!(id >= 1 && id <= 255 && id === Math.floor(id))) throw new Error('geo.biomes: id ' + ids[i] + ' must be an integer 1..255 (0 = default meadow)');
+    }
+    areas = areas || {};
+    var keys = Object.keys(areas);
+    for (i = 0; i < keys.length; i++) if (!table[keys[i]]) throw new Error('geo.biomes: area for unknown biome ' + keys[i]);
+    if (keys.length) {
+      BIO_F = new GeoFields(GEO.world, areas);
+      for (i = 0; i < keys.length; i++) { BIO_KEYS.push(keys[i]); BIO_IDS.push(+keys[i]); BIO_BLEND.push(table[keys[i]].blendM || 24); }
+    }
+    GEO.biomes = table;
+    return BIO_F;
+  }
   // overrides: all stamps/paints flattened into one list at load (a stamp can reach into neighbouring chunks)
   var STAMPS = [], PAINTS = [];
   function indexOverrides() {
@@ -523,7 +558,7 @@
   DEF.util = {
     heightAt: heightAt, typeAt: typeAt, recipeHeight: recipeHeight, setEditLayer: setEditLayer, getEditLayer: getEditLayer, baseHeightAt: baseHeightAt,
     generate: generate, bake: bake, bakeChunk: bakeChunk, gridHeight: gridHeight, chunkKey: chunkKey,
-    setGeoLayers: setGeoLayers, GeoFields: GeoFields, polylineSdf: polylineSdf, polygonSdf: polygonSdf,
+    setGeoLayers: setGeoLayers, setGeoBiomes: setGeoBiomes, biomeAt: biomeAt, GeoFields: GeoFields, polylineSdf: polylineSdf, polygonSdf: polygonSdf,
     reindexOverrides: indexOverrides, hash: hash, fbm: fbm, riverX: riverX, pathDist: pathDist
   };
   A.levels.overworld_far = DEF;
