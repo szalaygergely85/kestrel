@@ -66,6 +66,22 @@
 <div class="row" id="angles"></div>
 <div class="row" id="face"></div>
 
+<h2>2b. Head detail (CHARGEN-23, D-055): Standard 2.5 cm (face v2) vs Fine 1.25 cm vs Fine downsampled back to 2.5 cm</h2>
+<div class="note">
+  Rendered straight from <code>regions.head</code> + <code>bases.m_avg.detail.head["2"]</code> (architecture 38.34), so it works before the engine
+  compose lands. Region = Head + Jaw boxes; the Neck stub inside the box is drawn for the seam. Row 3 = the 38.34 <code>downsample2</code> of the fine
+  head (keep: iris 9, catchlight 8, eye white 7, lips 6): it should match face v2 except the two eye-white cells (the fine iris is centred, so it
+  wins both level-1 eye cells). Fine head: brows with an arch and dropping tail, lid gap, lash line arched over a 2x2 iris with a catchlight and
+  whites on both sides, lower-lid shade; nose bridge, lit tip, wings, dark nostrils; upper lip with bow peaks + philtrum, fuller lower lip, dark
+  corners, shade under the lip, lit chin; cheek apples, lit cheekbones; ears with helix, antihelix, concha, lobe. Tone = the section 2 buttons.
+</div>
+<div id="headInfo" class="note"></div>
+<div id="headCmp"></div>
+<h3>Fine head in all 5 tones (front, 3/4)</h3>
+<div class="row" id="headTones"></div>
+<h3>In-game ASCII close-up (dialogue shot, ~1 m): Standard vs Fine, front and 3/4</h3>
+<div class="row" id="headAscii"></div>
+
 <h2>3. In-game look (ASCII; palette v1 shader + edge rules): near, mid, far</h2>
 <div class="row" id="ascii"></div>
 
@@ -331,6 +347,161 @@
     faceViews.forEach(function (f) { paintMesh(f.v.ctx, traceView(orthoCam([18.5, 9.5, 64.5], f.yaw, 4, 240, 240, 13), null), col); });
   }
 
+  // ------------------------------------------------------------------ section 2b: head detail (fine-cell grids, 1 unit = 1.25 cm)
+  function headGrids() {
+    var R = kit.regions && kit.regions.head, det = kit.bases.m_avg.detail && kit.bases.m_avg.detail.head;
+    if (!R || !det || !det['2']) return null;
+    var bx = R.box, S = [(bx[3] - bx[0] + 1) * 2, (bx[4] - bx[1] + 1) * 2, (bx[5] - bx[2] + 1) * 2], n = S[0] * S[1] * S[2];
+    function l1(x, y, z, regionOnly) {   // level-1 char at a fine cell; regionOnly: Head / Jaw cells only, else non-region (Neck)
+      var k = D.at(bx[0] + (x >> 1), bx[1] + (y >> 1), bx[2] + (z >> 1));
+      if (k < 0 || D.bone[k] < 0) return '.';
+      var inR = R.bones.indexOf(NAMES[D.bone[k]]) >= 0;
+      return inR === regionOnly ? D.ch[k] : '.';
+    }
+    function grid(fn) {
+      var ch = new Array(n), x, y, z, c;
+      for (z = 0; z < S[2]; z++) for (y = 0; y < S[1]; y++) for (x = 0; x < S[0]; x++) {
+        c = fn(x, y, z); if (c === '.') c = l1(x, y, z, false);
+        ch[x + S[0] * (y + S[1] * z)] = c;
+      }
+      return { S: S, ch: ch };
+    }
+    var lay2 = det['2'].layers, ds = CK.downsample2(lay2, S, kit.slots);
+    return [
+      { g: grid(function (x, y, z) { return l1(x, y, z, true); }), label: 'Standard 2.5 cm (face v2)' },
+      { g: grid(function (x, y, z) { return lay2[z][y].charAt(x); }), label: 'Fine 1.25 cm (detail.head["2"])' },
+      { g: grid(function (x, y, z) { return ds[z >> 1][y >> 1].charAt(x >> 1); }), label: 'Fine -> downsample2 -> 2.5 cm' }
+    ];
+  }
+  var GH = { t: 0, c: '.', face: -1, fs: 0, x: 0, y: 0, z: 0 }, GS = { t: 0, c: '.', face: -1, fs: 0, x: 0, y: 0, z: 0 };
+  function gCast(G, ox, oy, oz, dx, dy, dz, out) {
+    var S = G.S, O = [ox, oy, oz], Dv = [dx, dy, dz], t0 = 0, t1 = 1e9, ea = -1, a;
+    for (a = 0; a < 3; a++) {
+      if (Math.abs(Dv[a]) < 1e-12) { if (O[a] < 0 || O[a] > S[a]) return false; continue; }
+      var ta = -O[a] / Dv[a], tb = (S[a] - O[a]) / Dv[a];
+      if (ta > tb) { var sw = ta; ta = tb; tb = sw; }
+      if (ta > t0) { t0 = ta; ea = a; }
+      if (tb < t1) t1 = tb;
+      if (t0 > t1) return false;
+    }
+    var I = [0, 0, 0], st = [0, 0, 0], tm = [0, 0, 0], td = [0, 0, 0];
+    for (a = 0; a < 3; a++) {
+      var c = Math.floor(O[a] + Dv[a] * t0); if (c < 0) c = 0; if (c > S[a] - 1) c = S[a] - 1; I[a] = c;
+      if (Dv[a] > 0) { st[a] = 1; tm[a] = (c + 1 - O[a]) / Dv[a]; td[a] = 1 / Dv[a]; }
+      else if (Dv[a] < 0) { st[a] = -1; tm[a] = (c - O[a]) / Dv[a]; td[a] = -1 / Dv[a]; }
+      else { st[a] = 0; tm[a] = Infinity; td[a] = Infinity; }
+    }
+    var t = t0, face = ea;
+    for (var it = 0; it < 400; it++) {
+      var ch = G.ch[I[0] + S[0] * (I[1] + S[1] * I[2])];
+      if (ch !== '.') {
+        out.t = t; out.c = ch; out.face = face; out.fs = face >= 0 ? -st[face] : 0;
+        out.x = ox + dx * t; out.y = oy + dy * t; out.z = oz + dz * t; return true;
+      }
+      a = tm[0] < tm[1] ? (tm[0] < tm[2] ? 0 : 2) : (tm[1] < tm[2] ? 1 : 2);
+      t = tm[a]; if (t > t1) return false;
+      I[a] += st[a]; tm[a] += td[a]; face = a;
+      if (I[a] < 0 || I[a] >= S[a]) return false;
+    }
+    return false;
+  }
+  function traceGrid(G, cam) {
+    var n = cam.W * cam.H, L = lightVec(), O = [0, 0, 0], d = cam.fwd, cm = 0.0125;
+    var B = { cam: cam, kind: new Uint8Array(n), k: new Int32Array(n), nz: new Float32Array(n), lit: new Float32Array(n),
+              depth: new Float32Array(n), u: new Float32Array(n), v: new Float32Array(n) };
+    for (var py = 0; py < cam.H; py++) for (var px = 0; px < cam.W; px++) {
+      var i = py * cam.W + px;
+      cam.ray(px, py, O);
+      if (!gCast(G, O[0], O[1], O[2], d[0], d[1], d[2], GH)) continue;
+      var nn = [0, 0, 0]; if (GH.face >= 0) nn[GH.face] = GH.fs;
+      var ndl = nn[0] * L[0] + nn[1] * L[1] + nn[2] * L[2], lit = 0;
+      if (ndl > 0) lit = gCast(G, GH.x + nn[0] * 0.02, GH.y + nn[1] * 0.02, GH.z + nn[2] * 0.02, L[0], L[1], L[2], GS) ? 0 : ndl;
+      B.kind[i] = 2; B.k[i] = GH.c.charCodeAt(0); B.nz[i] = nn[2]; B.lit[i] = lit; B.depth[i] = GH.t;
+      if (GH.face === 0) { B.u[i] = GH.y * cm; B.v[i] = GH.z * cm; }
+      else if (GH.face === 1) { B.u[i] = GH.x * cm; B.v[i] = GH.z * cm; }
+      else { B.u[i] = GH.x * cm; B.v[i] = GH.y * cm; }
+    }
+    return B;
+  }
+  var HEAD_C = [7, 19.5, 11.5], HEAD_ANG = [[0, 'front'], [-35, '3/4'], [-90, 'profile']];
+  var headCmpViews = null, headToneViews = null, headAsciiViews = null;
+  function asciiPaint(v, B, tab, dist) {
+    var cols = v.cols, rows = v.rows, n = cols * rows, gl = new Array(n), fg = new Float32Array(n * 3), bg = new Float32Array(n * 3);
+    var SHO = { fg: [0, 0, 0], bg: [0, 0, 0] }, Lacc = [0, 0, 0], E = DP && DP.edges, i, k, r, c;
+    for (i = 0; i < n; i++) {
+      if (!B.kind[i]) { gl[i] = ' '; bg[i * 3] = 7; bg[i * 3 + 1] = 8; bg[i * 3 + 2] = 12; continue; }
+      var t = tab[String.fromCharCode(B.k[i])], mat = t && t.mat;
+      if (!mat) { gl[i] = '?'; fg[i * 3] = 255; fg[i * 3 + 2] = 255; continue; }
+      Lacc[0] = 0; Lacc[1] = 0; Lacc[2] = 0;
+      U.addLight(Lacc, 'ambient', 0.14 * ctl.amb);
+      if (B.lit[i] > 0) U.addLight(Lacc, 'sun', ctl.int * B.lit[i]);
+      U.shade(mat, Lacc, B.u[i], B.v[i], dist, SHO, { fog: null, z: B.v[i] });
+      gl[i] = SHO.glyph;
+      for (k = 0; k < 3; k++) { fg[i * 3 + k] = SHO.fg[k]; bg[i * 3 + k] = SHO.bg[k]; }
+    }
+    if (E) {
+      var far = function (a, b) { return B.kind[b] === 0 || B.depth[b] > B.depth[a] * E.depthRatio + E.depthAbs; }, rule = new Int8Array(n);
+      for (r = 0; r < rows; r++) for (c = 0; c < cols; c++) {
+        i = r * cols + c; if (B.kind[i] !== 2) continue;
+        if (r > 0 && far(i, i - cols)) rule[i] = 1;
+        else if ((c > 0 && far(i, i - 1)) || (c < cols - 1 && far(i, i + 1))) rule[i] = 2;
+        else if (r < rows - 1 && far(i, i + cols)) rule[i] = 3;
+      }
+      var rim = E.modelRim || 0.55;
+      for (i = 0; i < n; i++) {
+        if (!rule[i]) continue;
+        var RR = rule[i] === 1 ? E.rules.cap : rule[i] === 2 ? E.rules.side : E.rules.lip;
+        if (gl[i] !== ' ') gl[i] = RR.glyph;
+        for (k = 0; k < 3; k++) { fg[i * 3 + k] = Math.min(255, fg[i * 3 + k] * RR.gain) * rim; bg[i * 3 + k] *= rim; }
+      }
+    }
+    var ctx = v.ctx;
+    for (r = 0; r < rows; r++) for (c = 0; c < cols; c++) {
+      i = r * cols + c;
+      ctx.fillStyle = 'rgb(' + (bg[i * 3] | 0) + ',' + (bg[i * 3 + 1] | 0) + ',' + (bg[i * 3 + 2] | 0) + ')';
+      ctx.fillRect(c * v.cw, r * v.ch, v.cw + 0.5, v.ch + 0.5);
+      if (gl[i] && gl[i] !== ' ') {
+        ctx.fillStyle = 'rgb(' + (fg[i * 3] | 0) + ',' + (fg[i * 3 + 1] | 0) + ',' + (fg[i * 3 + 2] | 0) + ')';
+        ctx.fillText(gl[i], c * v.cw + v.cw / 2, r * v.ch + v.ch / 2 + 1);
+      }
+    }
+  }
+  function renderHead() {
+    var HG = headGrids();
+    if (!HG) { $('headInfo').textContent = 'no regions.head / detail.head["2"] in the kit'; return; }
+    var tab = charTable(recipe(ctl.tone)), col = function (k) { var t = tab[String.fromCharCode(k)]; return t ? t.rgb : [255, 0, 255]; };
+    if (!headCmpViews) {
+      headCmpViews = HG.map(function (h) {
+        var row = document.createElement('div'); row.className = 'row'; $('headCmp').appendChild(row);
+        return HEAD_ANG.map(function (a) { return makeCanvas(row, 230, 230, h.label + ' - ' + a[1]); });
+      });
+      headToneViews = [];
+      TONES.forEach(function (t) { [0, -35].forEach(function (yw) { headToneViews.push({ tone: t, yaw: yw, v: makeCanvas($('headTones'), 150, 150, t + (yw ? ' 3/4' : ' front')) }); }); });
+      headAsciiViews = [];
+      [[0, 0], [0, -35], [1, 0], [1, -35]].forEach(function (p) {
+        var rows = 46, cols = 46, cw = 7, chh = 14, v = makeCanvas($('headAscii'), cols * cw, rows * chh, (p[0] ? 'Fine 1.25 cm' : 'Standard 2.5 cm') + (p[1] ? ' 3/4' : ' front'));
+        v.ctx.font = Math.round(chh * 0.92) + 'px ' + FONT; v.ctx.textAlign = 'center'; v.ctx.textBaseline = 'middle';
+        v.cols = cols; v.rows = rows; v.cw = cw; v.ch = chh; v.g = p[0]; v.yaw = p[1];
+        headAsciiViews.push(v);
+      });
+    }
+    HG.forEach(function (h, j) {
+      HEAD_ANG.forEach(function (a, m) { paintMesh(headCmpViews[j][m].ctx, traceGrid(h.g, orthoCam(HEAD_C, a[0], 6, 230, 230, 27)), col); });
+    });
+    headToneViews.forEach(function (tv) {
+      var tb = charTable(recipe(tv.tone));
+      paintMesh(tv.v.ctx, traceGrid(HG[1].g, orthoCam(HEAD_C, tv.yaw, 6, 150, 150, 27)), function (k) { var t = tb[String.fromCharCode(k)]; return t ? t.rgb : [255, 0, 255]; });
+    });
+    headAsciiViews.forEach(function (v) { asciiPaint(v, traceGrid(HG[v.g].g, orthoCam(HEAD_C, v.yaw, 6, v.cols, v.rows, 27, 2)), tab, 1.0); });
+  }
+  function headInfo(st) {
+    var d = st && st.detail && st.detail.head2;
+    if (!d) return;
+    $('headInfo').innerHTML = 'Fine head: ' + d.voxels + ' voxels, ' + d.quads + ' quads (Standard head + jaw: see the bones line in Checks); ' +
+      'downsample2 vs face v2: <b>' + d.downsampleDiff + '</b> level-1 cells differ' +
+      (d.diffCells.length ? ' (' + d.diffCells.slice(0, 12).map(function (c) { return '[' + c[0] + ',' + c[1] + ',' + c[2] + '] ' + c[3] + '->' + c[4]; }).join(', ') + ')' : '');
+  }
+
   // ------------------------------------------------------------------ section 3: ASCII
   var asciiDefs = [{ rows: 84, cw: 6, ch: 12, label: 'near (~2.5 m)', dist: 2.5 }, { rows: 42, cw: 6, ch: 12, label: 'mid (~6 m)', dist: 6 },
                    { rows: 21, cw: 6, ch: 12, label: 'far (~12 m)', dist: 12 }];
@@ -488,6 +659,12 @@
     out.push(['info', 'INFO m_avg: ' + st.voxels + ' voxels, ' + st.quads + ' quads (per-bone greedy; 38.29 target 4-6k), ' +
               st.heightM + ' m tall, ' + st.widthM + ' m wide (arms in), ' + st.depthM + ' m deep; ' + res.stats.materialKeys + ' material keys in the kit (<= 255 per character)']);
     out.push(['info', 'INFO bones: ' + NAMES.map(function (n) { return n + ' ' + st.perBone[n]; }).join(', ')]);
+    if (st.detail && st.detail.head2) {
+      var hd = st.detail.head2;
+      out.push([hd.downsampleDiff <= 2 ? 'pass' : 'warn', (hd.downsampleDiff <= 2 ? 'PASS ' : 'WARN ') + 'head L2 (1.25 cm): ' + hd.size.join('x') + ' block, ' +
+                hd.voxels + ' voxels, ' + hd.quads + ' quads; downsample2 vs face v2: ' + hd.downsampleDiff + ' cells differ (expected 2: eye whites)']);
+    }
+    headInfo(st);
     var newK = P.chargen.newMaterials.length, missV2 = P.chargen.newMaterials.filter(function (r) { return !DP || !DP.materials[r.key]; }).length;
     out.push([missV2 ? 'fail' : 'pass', (missV2 ? 'FAIL ' : 'PASS ') + 'palette.chargen: ' + newK + ' appended keys (colour + v1 material + v2 detail-pass record), missing v2: ' + missV2]);
     var pv = U.validate().filter(function (e) { return P.chargen.newMaterials.some(function (r) { return e.indexOf(r.key) === 0; }); });
@@ -498,7 +675,7 @@
 
   // ------------------------------------------------------------------ main
   function renderAll() {
-    try { renderTones(); renderAngles(); renderAscii(); renderRig(); }
+    try { renderTones(); renderAngles(); renderHead(); renderAscii(); renderRig(); }
     catch (e) { $('fatal').textContent = 'render threw: ' + e.message; console.error(e); }
   }
   var pend = 0;
