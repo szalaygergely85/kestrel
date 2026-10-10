@@ -1506,7 +1506,7 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
 | CHARGEN-10 | FBX-a: binary FBX 7.4 static mesh + material/texture | P1 | arch-review [PC-B B1, 0.75 d] (static part done: binary FBX 7.4, own reader in the test; Blender/Unity import not run) | `tools/export/fbxWrite.js` + tests |
 | CHARGEN-11 | FBX-b: skeleton + skin clusters + bind pose (Unity Humanoid) | P1 | todo [PC-B B1, 0.75 d] | `fbxWrite.js` + tests |
 | CHARGEN-12 | FBX-c anim stacks + OBJ/MTL + `.vox` (voxWrite split) | P1 | todo [PC-B B1, 0.75 d] | `fbxWrite.js`, `objWrite.js`, `voxWrite.js`, `tools/vox-export.mjs` + tests |
-| CHARGEN-13a | UI-independent facade `createChargen` + CLI | P1 | todo [PC-B B1, 0.5 d] | `tools/chargen/core.js`, `tools/chargen/export.mjs` + test |
+| CHARGEN-13a | UI-independent facade `createChargen` + CLI | P1 | arch-review [PC-B B1, 0.5 d] | `tools/chargen/core.js`, `tools/chargen/export.mjs` + test |
 | CHARGEN-13 | App UI + three.js viewer (vendored, MIT): preview = parsed export `.glb`, orbit, clips, Random/seed, export buttons | P1 | todo [PC-B B1, 0.75 d] | `tools/chargen/index.html`, `ui.js`, `viewer.js`, `vendor/three/*` |
 | CHARGEN-14 | App Save/Open `.kestrel` + "All formats (.zip)" + `platform.js` adapter (browser fallback) | P1 | todo [PC-B B1, 0.5 d] - deps KPKG-02 | `tools/chargen/ui.js`, `platform.js`, `core.js` |
 | CHARGEN-19 | Tauri shell + stage + unsigned Windows installer | P1 | todo [PC-B B1, 0.75 d] - deps 13, 14 | `tools/chargen-desktop/*` |
