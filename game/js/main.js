@@ -46,7 +46,7 @@ import { parseCloudShadowFlag, devCloudShadow, parseAoStrength } from './cloudPa
 import { MODES } from './dev/modes/index.js';
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { createPauseMenu, PAUSE_KEYS } from './ui/pauseMenu.js'; // PAUSE-MENU-01 (D-053): replaces the old 'Click to resume' overlay
-import { createCharCreate } from './ui/charCreate.js'; // CHARGEN-17
+// CHARGEN-17 parked (owner 2026-10-10): import { createCharCreate } from './ui/charCreate.js';
 import { createCreditsView } from './ui/creditsView.js'; // CREDITS-MOUNT-01
 import { updateSettings, drawSettingsPanel, isSettingsOpen, openSettings, dimSceneRect } from './ui/settings.js'; // US-038b
 import { isPaused, resetSimAccumulator, duckAudio, unduckAudio, installAutoPause } from './ui/pause.js'; // US-062
@@ -1326,7 +1326,8 @@ async function runGame(mode, cinematic = null) {
         adapter: createStorageAdapter(saveStorage()),
         style: window.ASSETS && window.ASSETS.uiStyle ? window.ASSETS.uiStyle.menu : null,
         onNewGame: (slot, chosenLook) => { if (saveRelay) { saveRelay.setSlot(slot); if (chosenLook) saveRelay.look = chosenLook; } }, // CHARGEN-17: Confirm stores player.look in the new save
-        createCharCreate: window.__charKit && window.ASSETS?.uiStyle?.menu ? () => createCharCreate({ kit: window.__charKit, style: window.ASSETS.uiStyle.menu, seed: (Date.now() & 0x7fffffff) || 1, initial: saveRelay && saveRelay.look, colorOf: (k) => { const c = assets.palette.rgb[k]; return c ? '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('') : null; }, register: (def) => { try { assets.add('model', 'char.player', def); } catch (e) { console.warn('[look] char.player register failed:', e && e.message); } } }) : null,
+        // CHARGEN-17 parked (owner 2026-10-10: "i dont want character creation in the beggining"): New game starts straight away.
+        // createCharCreate is not passed, so titleMenuHost keeps its old behaviour; game/js/ui/charCreate.js stays in the repo unused.
         onContinue: (slot, save) => {
           if (!saveRelay) return;
           saveRelay.setSlot(slot);
