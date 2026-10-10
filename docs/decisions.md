@@ -1091,3 +1091,7 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - **The breach climb stays required** (owner) - Leave the Tower comes after the climb.
 - Fen supersedes the D-058 removal: the owner's own script brings him back as a man.
 - Owner addition (2026-10-10): the tower must read as a TALL tower from outside (interior is good - keep it), the **sword lies at the top**; order = wake -> climb to the top (breach, required) -> sword + note -> come back down -> leave through an **entrance at the bottom** -> meadow.
+
+## D-063 - Character style = the bearded-knight reference (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner sent a stylised voxel knight (Screenshot 2026-10-10 123203.png in the owner's Pictures/Screenshots, not committed) "make look like this please" -> applies to **the whole character style** (all characters), **no wings / halo**.
+- Replaces the D-059 "in between" proportions: **big head ~1/4 of the body**, large expressive face (heavy dark brows, narrow eyes with a highlight, defined nose, full beard as an option, mouth line), chunky simple limbs, clean blocky shading with a few tones per material; outfits with readable texture (e.g. chainmail checker, tabard with an emblem, belt sash). Beard, chainmail, tabard become generator pieces. Default res stays 1/1.
