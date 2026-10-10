@@ -568,3 +568,8 @@ Tests: new quest/ch1Mount.test.js; filter suites 72 PASS; main.js syntax OK (.mj
 - New probes: door closed before sword (mesh walk into the barred doorway, stops at y 10.73); clearance of Burl follow/depart and Fen emerge (data read from world_m1; 0.8 m via moveCircleMesh vs static colliders, slope < 0.6, follow inside nav): follow PASS, depart PASS, emerge FAIL.
 - OPEN (content, not edited): Fen `emerge` point (1250.7, 1027.0) is within 0.8 m of a collider (push 0.25 m) -> shift that segment ((1248,1024)->(1252,1028.5)).
 - Run: `node tools/route-walk.mjs`. Nothing needs a browser.
+
+### kestrel-2: STONES-VOXEL-OFF-01 + PLANT-SIZE-RANDOM-01 (Node only, po-review)
+- Voxel 'stones' layer removed from design/levels/overworld_far.js (rocks layer + mesh rocks stay); scatterFeed.test.js groups 10/17 -> 7/14.
+- tools/plant-scale.mjs: bushes 0.6 -> 0.85; `plantScaleFor(name, id)` = FNV hash of the id, +-20 % plants / +-25 % bushes, 2 decimals, min 0.25, never exactly 1; used by gen-meadow/gen-roadside (+ burlBush). 301 world_m1 plant rows rescaled in place (0.25..1.06), layout unchanged.
+- Checks: validate-content OK, filtered suites 25/25 PASS, route-walk exit 0. gpucompare rows likely to change: meadow + road poses (bush/plant sizes, stones gone) - main session re-baselines.

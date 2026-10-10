@@ -8,7 +8,7 @@
 // around Burl / the waystone / every boar home (+ the piece's own radius), the tower footprint, and every existing mesh structure.
 globalThis.window = globalThis.window || globalThis;
 import fs from 'node:fs';
-import { PLANT_SCALE } from './plant-scale.mjs';
+import { PLANT_SCALE, plantScaleFor } from './plant-scale.mjs';
 import { pathToFileURL } from 'node:url';
 import '../design/palette.js';
 import '../design/detail-pass.js';
@@ -64,7 +64,7 @@ async function main() {
   const data = JSON.parse(fs.readFileSync(FILE, 'utf8'));
   data.structures = data.structures.filter((s) => !isMeadowId(s.id));
   const burlBush = data.structures.find((s) => s.id === 'burlBush');
-  burlBush.mesh = 'quaternius/Bush_Common'; burlBush.scale = PLANT_SCALE.Bush_Common;
+  burlBush.mesh = 'quaternius/Bush_Common'; burlBush.scale = plantScaleFor("Bush_Common", "burlBush");
   burlBush.note = 'NPC-BEAR-01: the bush beside Burl (MESH-PLACE-01: leafy Bush_Common; no berry mesh exists in content/meshes)';
   const { assets } = await loadTestAssets();
   const world = World.load(data, assets, { physics: 'mesh' });
@@ -100,7 +100,7 @@ async function main() {
     const z = Math.max(T.groundAt(x, y), T.groundAt(x + e, y), T.groundAt(x - e, y), T.groundAt(x, y + e), T.groundAt(x, y - e)) + LIFT[cls];
     circles.push({ x, y, r: inf.r });
     const st = { id: 'mdw' + String(out.length).padStart(3, '0'), mesh: 'quaternius/' + name, origin: { x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2) }, yawDeg: Math.floor(R() * 360) };
-    if (PLANT_SCALE[name]) st.scale = PLANT_SCALE[name];   // PLANT-SCALE-01
+    if (PLANT_SCALE[name]) st.scale = plantScaleFor(name, st.id);   // PLANT-SCALE-01 + PLANT-SIZE-RANDOM-01
     if (!SHADOW[cls]) st.castShadow = false;
     out.push(st); return true;
   };
