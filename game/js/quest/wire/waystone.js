@@ -9,13 +9,16 @@ import { createWaystone } from '../sim/waystone.js';
 export const TOAST_SAVED = 'Saved. The stone will remember.';
 export const TOAST_HEALED = 'Warmth in the hands. Hearts full.';
 export const TOAST_SEC = 3.5;
+export const RELAY_SAVED = 'Saved. The relay will remember.'; // story.md toast.relay.saved
+export const RELAY_TITLES = { ws_roadBend: 'Bend Relay' }; // story.md place.relay.<id>
 const FG = [236, 226, 190], BG = [10, 11, 16];
 
 export function createWaystoneWire(opts = {}) {
   const toastSec = opts.toastSec ?? TOAST_SEC;
   let ctx = null, sim = null, left = 0;
   const pose = { x: 0, y: 0, z: 0, yawDeg: 0 };
-  const lines = [TOAST_SAVED, TOAST_HEALED];
+  const lines = [TOAST_SAVED, TOAST_HEALED, ''];
+  let nLines = 2;
 
   function put(ui, x, y, code) { if (x >= 0 && x < ui.cols) ui.setCellRGB(x, y, code - 32, FG[0], FG[1], FG[2], BG[0], BG[1], BG[2]); }
 
@@ -50,12 +53,18 @@ export function createWaystoneWire(opts = {}) {
       const t = ctx.player.transform;
       const yaw = Number.isFinite(ctx.state.playerYawDeg) ? ctx.state.playerYawDeg : (t.yawDeg || 0);
       pose.x = t.x; pose.y = t.y; pose.z = t.z; pose.yawDeg = yaw;
-      if (sim.touch(d.id, pose)) left = toastSec;
+      const first = !sim.isTouched(d.id);
+      if (!sim.touch(d.id, pose)) return;
+      if (d.kind === 'relay') {
+        if (first) return; // the wake itself shows the relay notice (relayWake.js): one message only
+        lines[0] = RELAY_TITLES[d.id] || d.id; lines[1] = RELAY_SAVED; lines[2] = TOAST_HEALED; nLines = 3;
+      } else { lines[0] = TOAST_SAVED; lines[1] = TOAST_HEALED; nLines = 2; }
+      left = toastSec;
     },
     onTick(dt) { if (left > 0) left -= dt; },
     drawHud(ui) {
       if (left <= 0) return;
-      for (let i = 0; i < 2; i++) {
+      for (let i = 0; i < nLines; i++) {
         const s = lines[i], y = 3 + i;
         for (let j = -1; j <= s.length; j++) put(ui, 2 + j, y, 32);
         for (let j = 0; j < s.length; j++) put(ui, 2 + j, y, s.charCodeAt(j));

@@ -158,6 +158,7 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
     'quest.end', // kept registered (end.js, end.test.js, restart.test.js) though world_m1 no longer references it (WAYSTONE-NORMAL-01)
     'npc.talk', // NPC-BEAR-01: runtime-only (dialogueCtl.addNpc -> World.addInteractable), no content reference
     'beast.loot', // US-091a2: runtime-only (sim/loot.js World.addInteractable per boar), no content reference
+    'relay.wake', // WS1-06b: runtime-only (relayWake.js World.addInteractable per kind:'relay' point), no content reference
   ]);
   ok('quest/index.js registers exactly the names the tower + world_m1 data references',
     names.length === referenced.size && names.every((n) => referenced.has(n)), `${names} vs ${[...referenced]}`);

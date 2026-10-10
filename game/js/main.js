@@ -122,6 +122,7 @@ import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (
 import { ensureInventory, validateItemDefs, migrateSword } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
 import { presentPickups } from './quest/pickupsView.js';
 import { createLoot, setLootApi } from './quest/sim/loot.js'; // US-091a2 (37.16.3)
+import { createRelayWake, setRelayWakeApi } from './quest/relayWake.js'; // WS1-06b: wake the road-bend relay
 import { createDialogueCtl, setDialogueApi } from './quest/dialogueCtl.js'; // DIALOGUE-01b2 (38.28)
 import { createNpcTurn } from './quest/npcBear.js'; // NPC-BEAR-01 (38.28): turn-to-player
 import { LOOT_TABLE, LOOT_SEED_SALT } from './quest/sim/lootConfig.js';
@@ -1001,6 +1002,7 @@ async function runGame(mode, cinematic = null) {
   let practiceTarget = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hitSparkWire = null; // HIT-SPARK-WIRE: rebuilt on every 'world:loaded'
   let particleHooks = null; // US-053c: rebuilt on every 'world:loaded', below
+  let relayWake = null; // WS1-06b: rebuilt on every 'world:loaded'
   let loot = null; // US-091a2 (37.16.3): rebuilt on every 'world:loaded', after beasts + the pack
   let toasts = null; // US-091a2: the loot toast view, rebuilt with loot
   let invView = null; // US-091b: the pack screen (`I`), rebuilt with the pack
@@ -1230,6 +1232,9 @@ async function runGame(mode, cinematic = null) {
         rng: createRng(((worldDef.nav?.seed ?? 1) ^ LOOT_SEED_SALT) >>> 0),
         inventoryOf: () => playerHandle.data.components.inventory || null }) : null;
       setLootApi(loot);
+      // WS1-06b: one [E] interactable per kind:'relay' point (crystal-gated wake; woken ones restore awake from world.state).
+      relayWake = createRelayWake({ world, palette: assets.palette, emit: (id, kind, p) => gameHooks.emitSimple('prop:touched', id, kind, p) });
+      setRelayWakeApi(relayWake); window.__debug.relayWake = relayWake; // tools/verify-relay-wake.mjs
       // DIALOGUE-01b2 (38.28): box + runner; NPCs with a `dialogue` component get an [E] Talk interactable (none until NPC-BEAR-01 places one).
       if (dialogueCtl) dialogueCtl.dispose();
       dialogueCtl = createDialogueCtl({ world, dialogues: bundle.dialogues, events: engine.events, style: window.ASSETS.uiStyle.dialogue,
@@ -1705,6 +1710,7 @@ async function runGame(mode, cinematic = null) {
       // first `buildLightSet`) - `stepBeacon` treats that as a no-op past the
       // clip switch (the light ramp itself just does not run without one).
       stepBeacon(engine.world, lightSet, dt, assets.palette);
+      if (relayWake) relayWake.step(dt, lightSet); // WS1-06b: relay wake timer / light grow (no-op while all relays are dead)
       // OWN-REQ-006: a no-op every step before `lantern.take` fires and every
       // step after (no ramp, unlike stepBeacon - the hook light just needs to
       // go off the instant the lamp is taken); same fixed step as
@@ -1955,7 +1961,7 @@ async function runGame(mode, cinematic = null) {
       // regardless of `?grid=`.
       if (!ending && !uiLockedNow && !cinematic && !isWaterfallPreview) drawCrosshair(ui, crosshairStyle, engine.world.interaction);
       if (questUiActive && !ending) {
-        if ((!isCaptureOrBench || params.get('save') === '1') && !wakeOut.inputLocked) gameHooks.drawHud(ui); // D-050 seam: today the quest relay's TEMPORARY objective line, top-left
+        if ((!isCaptureOrBench || params.get('save') === '1') && !wakeOut.inputLocked) { gameHooks.drawHud(ui); if (relayWake) relayWake.drawHud(ui); } // D-050 seam: today the quest relay's TEMPORARY objective line, top-left
         drawHints(ui, assets.uiStyle, fadeLut);
         // 17.4: an eyelid over the 3D view, not UI text. BUG-WEBGPU-EYELID-01: once the WebGPU frame is complete its presenter shows the sprite-pass
         // output, so CPU scene-cell writes never appear -> draw the lid on the UI layer there (an opaque full-row overlay); else in the scene grid.

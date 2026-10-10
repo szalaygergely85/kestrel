@@ -1898,7 +1898,7 @@ PC-B architect opus, 2026-10-10 (owner-authorised while PC-A is offline; PC-A to
 | WS1-04 | kestrel-4 | 0.5 d | `content/worlds/world_m1.world.json` (bounds union, terrainBand, `relayBend` + base mesh, `waystone` components), `design/levels/overworld_far.js` (relay exclude disc) | WS1-01, WS1-02 | po-review [PC-B] |
 | WS1-05 | kestrel-4 | 0.75 d | `tools/gen-roadside-meshes.mjs` (flags + `scale` fix), `content/worlds/world_m1.world.json` (`roadW###`, `roadN###`), `design/levels/overworld_far.js` (printed capsules) | - (runs before WS1-04 lands: keep-out disc is in the tool) | po-review [PC-B] |
 | WS1-06a | kestrel-1 | 0.5 d | `game/js/quest/sim/waystone.js` + test, `game/js/quest/wire/waystone.js` + test, `game/js/waystoneTouch.js` | WS1-04 (data; tests use fixtures) | po-review [PC-B] |
-| WS1-06b | kestrel-1 | 0.75 d | `game/js/quest/relayWake.js` (new) + test, `game/js/quest/index.js` (behaviour `relay.wake`), `game/js/main.js` (step + interactable on world:loaded) | WS1-06a, WS1-W1 (placeholder text ok) | todo [PC-B] |
+| WS1-06b | kestrel-1 | 0.75 d | `game/js/quest/relayWake.js` (new) + test, `game/js/quest/index.js` (behaviour `relay.wake`), `game/js/main.js` (step + interactable on world:loaded) | WS1-06a, WS1-W1 (placeholder text ok) | po-review [PC-B] |
 | WS1-07a | kestrel-1 | 0.5 d | `game/js/quest/mapCard.js` (`setMarker`, digits, travel line, digit keys) + `mapCard.test.js`, preview | WS1-06a | po-review [PC-B] |
 | WS1-07b | kestrel-1 | 0.75 d | `game/js/quest/travel.js` (new) + test, `game/js/quest/sim/vitals.js` (`clearSafe`), `game/js/main.js` (wiring, fade draw, hzb invalidate) | WS1-07a | po-review [PC-B] |
 | WS1-08 | kestrel-4 | 0.5 d | `tools/route-walk.mjs` (leg 8 + bound probe), bench/perf pose `roadBend`, gpucompare row | WS1-03, WS1-04, WS1-05 | todo [PC-B] |
@@ -1940,7 +1940,7 @@ PC-B architect opus, 2026-10-10 (owner-authorised while PC-A is offline; PC-A to
 - [ ] Tests: order, touch, double touch, old-save seed, save round-trip, 0 alloc per step.
 Note (kestrel-2, 2026-10-10): done; sim API `points` (entity data), `touch(id,pose)`, `list(out)`, `anchor`, `isTouched`, `has`, `register`, `canWake(id)` (opts.canWake gate, D-062 hook; default open). Wire builds points from `components.waystone` at boot; accepts kind waystone|relay. NEEDS B1-main: none for 06a; 06b/07 use `wire.sim`.
 
-### WS1-06b Wake the road-bend relay  [P1] [todo] [PC-B kestrel-1]
+### WS1-06b Wake the road-bend relay  [P1] [po-review] [PC-B kestrel-1]
 - [ ] Interactable `relay.<id>` (E, radius 2.2, WRITER prompt) for every `kind:'relay'` point, added on each `world:loaded`; behaviour `relay.wake` in `quest/index.js`.
 - [ ] `relayWake.js`: dead -> `wake` clip + `playRelayHum` -> light on at `wakeLightFrame` (grow ramp if LightSet allows, else on) -> `awake` loop; sets `waystone.<id>.woken`, calls the sim touch, emits `prop:touched {id, kind:'relay'}`, toast (WRITER). E on an awake relay = touch only.
 - [ ] Reload/restart: woken relays come back `awake` + light on, no hum; dead ones `dead`. Tower beacon keys untouched (tower.test.js green).

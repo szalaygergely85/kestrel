@@ -43,6 +43,13 @@ console.log('waystone wire: ok');
   r.hooks.emitSimple('prop:touched', 'ws_roadBend', 'relay', { x: 90, y: 10, z: 0 });
   assert.equal(r.saves(), 1); assert.deepEqual(r.world.state['waystone.points'].ws_roadBend, { x: 89, y: 11, z: 0, yawDeg: 0 });
   r.hooks.emitSimple('prop:touched', 'ghost', 'relay'); assert.equal(r.saves(), 1, 'unknown id ignored');
+  { // WS1-06b follow-up: the wake (first touch) shows no wire toast; a later touch shows title + relay saved + healed
+    const c = []; const u = { cols: 80, setCellRGB(x, y, g) { c.push([x, y, g]); } };
+    r.hooks.drawHud(u); assert.equal(c.length, 0, 'wake: no second toast');
+    r.hooks.emitSimple('prop:touched', 'ws_roadBend', 'relay', { x: 90, y: 10, z: 0 });
+    r.hooks.drawHud(u); const rows = new Set(c.map((e) => e[1])); assert.equal(rows.size, 3, 'relay touch: 3 lines');
+    assert.ok(c.some((e) => e[2] === 'B'.charCodeAt(0) - 32), 'title "Bend Relay" drawn'); assert.equal(r.saves(), 2);
+  }
   assert.deepEqual(r.hooks.respawn(), { x: 89, y: 11, z: 0, yawDeg: 0 }, 'respawn at last touched');
   console.log('waystone wire points: ok');
 }
