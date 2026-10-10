@@ -5000,3 +5000,121 @@ createClipPlayer(), clipPlay, clipStep, clipSetPhase, clipFromW, pickGait, gaitR
   - bench numbers against item 9;
   - no `Math.random`.
 - Open for the PO, not in v1: hunting or hitting animals, time-of-day activity (deer at dusk), sounds (an EP-SOUND hook later via a `fauna.events` ring).
+
+### 38.32 RIG-00: rigged-model seam (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; PC-A to ratify)
+Goal: a character from chargen (`composeCharacter -> meshCharacter -> collapseRig`) or from a `.kestrel` `.glb` (`readRiggedGlb`) is drawn by the existing voxel-model path. `EntityHandle.play`, `animState`, `partRot` (jaw), mounts, sun shadows, culling and the 48-instance mesh cap work unchanged. No new per-frame code.
+
+**1. The seam in one line.** A rigged model is registered as an ordinary `ModelDef` with `def.voxel` = a VoxelModelDef **header without `layers`** plus `def.voxel.rig` = the prebuilt quads. `packVoxelModel` branches on `def.voxel.rig`. `buildVoxelMesh` builds the MeshData from `pm.rig` instead of `pm.vox`. Everything downstream already reads only `pm.parts/partCount/partIndex/clips/clipIndex/mounts/anchor/cellM` (voxelPose, instanceRect, VoxelPool, instances.js, shadowList) or `def.voxel.animations` (EntityHandle, animation.js, World.js, animClips.js).
+
+**2. Registered shape** (runtime only: holds typed arrays, so it is never serialized, never in a save, and never written by the editor; entities reference it by key):
+```js
+/** @typedef {{
+ *   version: 1, cellM: number,                  // rig cellM (0.025)
+ *   size: [sx,sy,sz],                            // ints = ceil(max local coord) per axis
+ *   anchor: [ax,ay,az],                          // local cells of the feet point (= offset G, item 3)
+ *   mats: {}, layers: [],                        // empty: no voxel grid
+ *   meshOnly: true,                              // forced: never enters the DDA atlas / non-mesh renderers
+ *   parts: {[name]: {box:[x0,y0,z0,x1,y1,z1], pivot:[x,y,z], parent?:string}},  // partMap order, <= MAX_VOX_PARTS
+ *   animations: {[clip]: VoxelClipDef},          // = PartRig.clips as-is ({loop, interp:'linear', durations:[50..], frames:[{part:{rot,pos?}}]})
+ *   mounts: {[name]: {at:[x,y,z], part:string}},
+ *   rig: {quads:number, pos:Float32Array(12q) local cells (ints), nrm:Int8Array(12q), mat:Uint8Array(q) 1-based into matKeys,
+ *         ranges:{start,count}[] (one per part, quads, part order), matKeys:string[]}
+ * }} RiggedVoxelDef */
+riggedModelDef(partRig, opts?) -> {voxel: RiggedVoxelDef}   // engine/chargen/rigModel.js, load time, pure
+// opts.mountParts?: {[mount]: partName}   override of the nearest-joint rule (item 3)
+```
+- Registry API: **no new method.** Use `registry.add('model', 'char.<id>', riggedModelDef(...))` (or `replace` for a re-built `char.player`). Register before `VoxelPool.bind`. A later add/replace needs a re-`bind` (load or New-game time only, same as the editor import).
+- main.js (RIG-03 line, B1-main): `riggedModelDef(collapseRig(riggedFromGlb(entry.model), entry.model.extras.partMap || HUMANOID_PART_MAP))`.
+
+**3. Units and spaces** (all conversion at load time in `riggedModelDef`).
+- Mesh-local space = **cells**, like 15.1, with the anchor at `G`. `G[a] = round3(-min over all mesh vertices of posM[a]/cellM)`, where posM = metres from the anchor (meshCharacter/PartRig `mesh.pos`). So every local coordinate is >= 0, as `flat0`'s 18-bit layer needs.
+  - local vertex = `posM/cellM + G`, snapped to the nearest integer. A vertex more than 1e-3 off the grid throws (`not a voxel-grid mesh`).
+  - pivot = `pivotM/cellM + G` (not snapped; joints sit on cell centres).
+  - mount = `(mountCells - anchorCells) + G`.
+  - box = the integer AABB of that part's local vertices (used only for the cull / instanceRect).
+- `collapseRig` change (RIG-02a): each part gets `pivotM` (= the root bone's `joint`, metres from the anchor). The PartRig gets `anchorCells` (= `root.jointCells - root.joint/cellM`). Today `pivot` (absolute grid cells) and `mesh.pos` (metres from the anchor) are in different spaces, and the PartRig carries no anchor.
+- Clip `pos` (Hips only, part `body`) is already in cells (`collapseRig`: hips/cellM). Clip `rot` is degrees, Rz*Ry*Rx, the same as `setRot`. Unchanged.
+- Mount part: `opts.mountParts[name]`, else the part of the bone whose joint is nearest the mount (ties: skeleton order). Kit v0 gives: hand_r -> armR, hand_l -> armL, mouth -> jaw, eyes/head_top -> head, back/belt -> chest/body. Pinned by a test.
+
+**4. Engine changes (where `pm.vox` is replaced).**
+- `engine/voxel/voxelPack.js`: `packVoxelModel(def, matIdFor)`: when `def.rig` is set, skip `assertVoxelModel` (it checks layers) and run a small `checkRiggedHeader(def)`: partCount 1..8, parents earlier, clip frames well-formed, rig.ranges.length === partCount, mats 1..matKeys.length.
+  - Then pack `parts`, `clips`, `clipIndex`, `mounts` and `partIndex` with the **same code** as the voxel path: extract the clip/mount/partIndex blocks into local helpers. Existing pack output must stay byte-identical.
+  - Set `vox = new Uint8Array(0)`, atlas fields `parts[10..13] = 0`, and `matIds = Uint16Array(n+1)` with `matIds[i] = matIdFor(rig.matKeys[i-1])`.
+  - Set `pm.rig = def.rig` (a reference), `emissiveLight = null` (v1; `deriveEmissiveLight` reads layers), and `sx/sy/sz` from `size`.
+- `engine/render/voxelPool.js`: `bind` sets `pm.meshOnly = def.voxel.meshOnly === true`. That is already true for rig defs, so **no change** is expected. The meshOnly routing (atlas skip, DDA skip with warn) already handles rig models.
+- `engine/mesh/voxelMesh.js`:
+  - `buildVoxelMesh(pm, opts)`: `if (pm.rig) return buildRiggedMesh(pm, opts)`. This is a module-private function.
+  - `buildRiggedMesh`: for each part range, `builder.beginRange(partNames[p])`, then for each quad derive `face`, `layer` and the rect from its 4 corners and call the existing `emitFaceQuad(builder, pm, face, 0,0,0, layer, a0,a1,b0,b1, mat, pm.cellM, p)`. This gives the same winding, uv (`a*cellM`), `flat0` (part/face/layer) and `flat1` (`KIND_MODEL`, matId) as a native voxel model. Glyph shading, edges and planeIds then match.
+  - Face from the normal: -x W (layer = X), +x E (layer = X-1), -y N (Y), +y S (Y-1), +z U (Z-1), -z D (Z). a/b axes: W/E (y, z), N/S (x, z), U/D (x, y).
+  - Throw if the 4 corners are not one axis-aligned rectangle on one plane.
+  - Same quad budget (`MESH_ONLY_MAX_QUADS`).
+  - `VoxelMeshCache.get(pm, key, names, 1)`: when `pm.rig` is set, return (and cache) the LOD0 mesh. `downsamplePart` reads `pm.vox`, and a ~5k-quad character needs no LOD1.
+- Not touched: voxelPose.js, instanceRect.js, instances.js, shadowList.js, VoxelTextures.js, EntityHandle.js, animation.js, the GPU/WGSL side.
+
+**5. glb -> RiggedModel** (`engine/chargen/fromGlb.js`, `riggedFromGlb(glb) -> RiggedModel` in the meshCharacter shape; load time). It needs `glb.extras` = `extras.kestrel` format 1, or it throws "not a Kestrel character .glb; use tools/gltf-import".
+- **Bones:** names, parent name (`null` for the root) and `joint` (metres, ours) = minus the IBM translation. `jointCells = joint/cellM`, so `anchorCells` = 0. Each `rest.r` must be identity (within 1e-4), or it throws.
+- **Mesh:** vertices in groups of 4 (= the exporter's quads). All 4 vertices must have the same bone, and the index pattern is checked. `pos` = positions. `nrm` = rounded normals. `mat` = 1 + texel index from `TEXCOORD_0` (`floor(u*16) + 16*floor(v*16)`, the inverse of tools/export/png.js `texelUv`; PALETTE_TEX_SIZE 16). `matKeys` = `extras.matKeys`. Ranges come per bone after a stable sort of the quads by bone.
+- **Clips:** `duration` = round to 50 ms of glb seconds x 1000 (the exporter has already applied tempo); `loop` from the clip. Keys every 50 ms: `rot[bone]` = quatToEuler(sampleRiggedClip local rotation), `pos.Hips` = (t - rest.t)/cellM.
+- **Mounts:** `extras.mounts` (metres from the anchor) / cellM.
+
+**6. RIG-01 reader defects found while writing this note** (probe: `tools/chargen/export.mjs buildGlb` -> `readRiggedGlb`). These are input for PC-A's RIG-01 review, to be fixed in RIG-02a.
+1. WEIGHTS_0 written by our exporter is UNSIGNED_BYTE normalized. `readRiggedGlb` throws "componentType 5121 is not FLOAT", so **it cannot read our own files**. It must accept normalized u8/u16 weights (value/255, value/65535) and u8/u16 joints.
+2. **Mirror:** the reader uses the static map `(X,-Z,Y)`, but `gltfWrite.js` writes `(-x, z, -y)`, a reflection. The round trip negates x: LeftHand lands at +x, and the vertices and IBM are mirrored.
+   - The rigged reader must be the exact inverse of the exporter: ours = `(-X, -Z, Y)`, quaternion `(x,y,z,w)_gltf -> (x, z, -y, w)`, IBM translation the same way, triangle winding flipped.
+   - The static `loadGltf` map stays as it is (see risk 3).
+3. Clip `loop` (the exporter's `animations[].extras.kestrel.loop`) is dropped. Return `clip.loop` (default true).
+
+**7. Steps (each <= 1 programmer-day).**
+- **RIG-02a (0.5 d):**
+  - the item 6 fixes in `engine/mesh/gltf.js`;
+  - `engine/chargen/fromGlb.js`;
+  - `collapseRig` `pivotM` / `anchorCells`;
+  - tests.
+- **RIG-02b (0.75 d):**
+  - `engine/chargen/rigModel.js` `riggedModelDef`;
+  - the voxelPack.js rig branch;
+  - the voxelMesh.js `buildRiggedMesh` + LOD1 rule;
+  - exports in `engine/chargen/index.js` + `engine/index.js`;
+  - tests.
+
+**8. Node tests RIG-02 must add.**
+- **(a) Round trip** (`tools/chargen/rig.test.mjs`; it may import tools/ and design/): `riggedFromGlb(readRiggedGlb(buildGlb(kit, recipe, {clips: DEMO_CLIPS}).glb))` vs the direct `meshCharacter`.
+  - Bones and joints within 1e-5 m, LeftHand at -x.
+  - Quad positions equal within 1e-5 m, in the same per-bone order.
+  - `mat`/`matKeys` equal.
+  - `collapseRig` of both: clip rot within 0.5 deg at every 50 ms key; Hips pos within 1e-3 cells.
+- **(b) Pose equivalence** (`engine/chargen/rig.test.js`). The key check, because it pins the Euler/handedness chain. Use a synthetic clip that rotates only `LeftUpperArm` (45 deg about x, then about z) and only `Jaw`:
+  - Take the vertices of that bone through `computeVoxelPose`'s FORWARD (rest part matrices: cellM, anchor G).
+  - Take the same vertices through rigid FK from chargen `sampleClip` quaternions.
+  - They must agree within 1e-3 cells.
+  - Also check the Hips translation clip.
+- **(c) Mesh parity:** `buildVoxelMesh` of a rig pm vs a native voxel model of the same tiny 2-part grid.
+  - The native model is built as a VoxelModelDef with layers. The rig pm comes from `meshCharacter` on the same cells, through `collapseRig` with a 2-part map.
+  - They must have the same triangle count, the same multiset of `flat1`, and the same per-range bbox.
+  - Every rig `flat0` layer must be >= 0.
+- **(d) Pool:** `VoxelPool.bind` with a registry holding one rig model and one voxel model.
+  - The rig model is `meshOnly` and not in the atlas.
+  - `pushInstance` + `project` + `projectShadow` + `addVoxelInstances` give `partCount` part matrices.
+  - `objectIdFor`, `partRot` on `jaw` (pose differs only in the jaw part) and `voxelMountWorld('hand_r')` all work.
+  - The second `project` call allocates nothing (same pattern as the existing alloc tests).
+  - LOD1 `get` returns the LOD0 mesh.
+- **(e) Errors:** a non-Kestrel glb, a non-identity rest rotation, an off-grid vertex, and > 8 parts each throw a clear message.
+- **(f) Regression:** the existing voxelPack / voxelMesh / voxelPool / chargen / gltf suites stay green. The static `loadGltf` outputs do not change. `node tools/check-deps.mjs` passes (engine/chargen may import `../mesh/gltf.js` and its own files only; no voxel/render import from chargen).
+
+**9. Files RIG-02 may touch:**
+- `engine/mesh/gltf.js` (rigged reader only);
+- `engine/chargen/{collapse.js, fromGlb.js (new), rigModel.js (new), index.js}`;
+- `engine/voxel/voxelPack.js`;
+- `engine/mesh/voxelMesh.js`;
+- `engine/index.js` (exports `riggedFromGlb`, `riggedModelDef`);
+- tests: `engine/chargen/rig.test.js`, `tools/chargen/rig.test.mjs`, additions to `engine/render/voxelPool.test.js`.
+
+Not to touch: voxelPose, instanceRect, instances, shadowList, gpu/*, EntityHandle, animation.js, `game/` (the main.js line is RIG-03 / B1-main).
+
+**10. Zero-allocation and cost.** All new code runs at load / New-game time: glb parse, collapse, def build, pack and mesh build (<= 10 ms per character, as in 38.29 item 4). Per frame the rig model runs exactly the existing voxel code (one draw per instance x part, FORWARD part matrices). A rig quad count of 4-6k counts against the mesh raster budget like any mesh-only voxel model.
+
+**11. Risks / open items.**
+1. Rigged models render only on the mesh renderer. The DDA / non-mesh fallback skips them (meshOnly, warn once). Accepted for v1.
+2. Limbs are rigid (8 parts, no elbows/knees): the 38.29 item 1 ESCALATE (A/B) is unchanged. B would need `MAX_VOX_PARTS` 24 and touches voxelPose/instances/GPU rows (PC-A).
+3. **For PC-A to check (not a RIG-02 change):** the static `loadGltf` map `(X,-Z,Y)` is a proper rotation that puts glTF +X (the model's left, per the glTF spec, which faces +Z) at our +x (east). For a model facing north (-y), its left lands on east, so third-party static meshes may be mirrored. Our exporter and the rigged reader follow the exporter map. If PC-A confirms, unifying the two maps is a separate item: it changes every imported static mesh, a re-import plus gpucompare (ESCALATE only if PC-A wants to change the static map).
+4. Re-resampling (exporter 30 fps -> 50 ms keys -> linear Euler) can soften fast clips slightly; the tolerances in test (a) bound it.
