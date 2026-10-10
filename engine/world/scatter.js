@@ -190,6 +190,23 @@ function detailExcluded(x, y, e) {
 }
 
 /** @returns {DetailSet} */
+/**
+ * GS-01c: keep-out test for one structure. No `carveMask` (or null) = the whole bbox +- m, as before. With a carveMask
+ * (World, GS-01a: w*h Uint8, 0 = `terrainFloor` cell, row-major, 1 m cells from bbox.x0/y0) the flagged cells are open
+ * ground; plants stay `m` clear of every NON-flagged cell instead.
+ */
+function structBlocks(st, x, y, m) {
+  const b = st.bbox;
+  if (!(x >= b.x0 - m && x <= b.x1 + m && y >= b.y0 - m && y <= b.y1 + m)) return false;
+  const mask = st.carveMask;
+  if (!mask) return true;
+  const w = Math.round(b.x1 - b.x0), h = Math.round(b.y1 - b.y0);
+  const c0 = Math.max(0, Math.floor(x - m - b.x0)), c1 = Math.min(w - 1, Math.floor(x + m - b.x0));
+  const r0 = Math.max(0, Math.floor(y - m - b.y0)), r1 = Math.min(h - 1, Math.floor(y + m - b.y0));
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) if (mask[r * w + c] !== 0) return true;
+  return false;
+}
+
 export function scatterDetail(terrain, structures = [], keepOut = [], cfg = terrain.recipe.recipe.detail) {
   cfg = validateDetailConfig(cfg);
   const g = terrain.near;
@@ -207,7 +224,7 @@ export function scatterDetail(terrain, structures = [], keepOut = [], cfg = terr
     const iy1 = Math.min(tilesY - 1, Math.floor((b.y1 + m) / cfg.tileM) - ty0);
     for (let iy = iy0; iy <= iy1; iy++) for (let ix = ix0; ix <= ix1; ix++) {
       const i = ix + iy * tilesX;
-      (structureTiles[i] || (structureTiles[i] = [])).push(b);
+      (structureTiles[i] || (structureTiles[i] = [])).push(s);
     }
   }
   const points = [], speciesDefs = [], exclusions = cfg.exclude.concat(keepOut);
@@ -238,9 +255,8 @@ export function scatterDetail(terrain, structures = [], keepOut = [], cfg = terr
         const tile = Math.floor(x / cfg.tileM) - tx0 + (Math.floor(y / cfg.tileM) - ty0) * tilesX;
         const boxes = structureTiles[tile];
         let blocked = false;
-        if (boxes) for (const b of boxes) {
-          if (x >= b.x0 - cfg.structClearM && x <= b.x1 + cfg.structClearM &&
-              y >= b.y0 - cfg.structClearM && y <= b.y1 + cfg.structClearM) { blocked = true; break; }
+        if (boxes) for (const st of boxes) {
+          if (structBlocks(st, x, y, cfg.structClearM)) { blocked = true; break; }
         }
         if (blocked) continue;
         if (exclusions.some(e => detailExcluded(x, y, e))) continue;
