@@ -24,6 +24,9 @@ function mk(state = {}) {
 { const t = mk(); assert.equal(t.recs.length, 1); assert.equal(t.recs[0].key, 'relay.ws_roadBend'); assert.equal(t.recs[0].name, 'relay.wake');
   assert.equal(t.recs[0].radius, 2.2); assert.equal(t.recs[0].prompt, PROMPT_WAKE); assert.equal(t.recs[0].def.waystoneId, 'ws_roadBend'); }
 
+// the relay interactable carries no `requires` (hint + prompt stay reachable); the gate is inside interact()
+{ const t = mk(); assert.ok(!t.recs[0].requires, 'no requires on a dead relay'); }
+
 // crystal gate: no flag -> hint only, nothing wakes, no hum, no touch
 { const t = mk(); assert.equal(t.rw.interact('ws_roadBend'), false);
   assert.equal(t.rw.hintLeft > 0, true); assert.equal(t.hums.length, 0); assert.equal(t.emits.length, 0); assert.equal(t.ent.components.voxel.anim, 'dead');

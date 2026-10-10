@@ -10,14 +10,14 @@ export function createWaystoneTouch(hooks, opts = {}) {
   // WS1-06a: list-driven. Every entity with components.waystone.kind === 'stone' is a walk-in/E point (relays wake via their
   // own interactable). Fallback for data without the component: the 'endMarker' entity as id 'waystone'.
   let stones = [], c = null;
-  const add = (id, tr) => stones.push({ id, tr, inside: false, pos: { x: tr.x, y: tr.y, z: tr.z || 0 } });
+  const add = (id, tr, dormant) => stones.push({ id, tr, dormant: !!dormant, inside: false, pos: { x: tr.x, y: tr.y, z: tr.z || 0 } });
   return {
     onBoot(ctx) {
       c = ctx; stones = [];
       const w = ctx.world;
       if (w && w.forEachEntity) w.forEachEntity((e) => {
         const g = e && e.components && e.components.waystone;
-        if (g && g.kind === 'stone' && typeof g.id === 'string' && e.transform) add(g.id, e.transform);
+        if (g && g.kind === 'stone' && typeof g.id === 'string' && e.transform) add(g.id, e.transform, g.dormant);
       });
       if (!stones.length) {
         const h = w && w.get && w.get(entityId);
@@ -28,7 +28,9 @@ export function createWaystoneTouch(hooks, opts = {}) {
       if (!stones.length || !c || !c.player) return;
       const t = c.player.transform, walkable = !c.state.ending; // never during the ending
       for (let i = 0; i < stones.length; i++) {
-        const s = stones[i], dx = t.x - s.tr.x, dy = t.y - s.tr.y, d2 = dx * dx + dy * dy;
+        const s = stones[i];
+        if (s.dormant && !(c.world && c.world.state && c.world.state['waystone.' + s.id + '.woken'])) continue; // CH1-04b: dormant until woken (relayWake.js)
+        const dx = t.x - s.tr.x, dy = t.y - s.tr.y, d2 = dx * dx + dy * dy;
         s.pos.x = s.tr.x; s.pos.y = s.tr.y; s.pos.z = s.tr.z || 0;
         if (s.inside) { if (d2 > rearmR2) s.inside = false; }
         else if (d2 <= touchR2 && walkable) { s.inside = true; hooks.emitSimple('prop:touched', s.id, 'waystone', s.pos); return; }

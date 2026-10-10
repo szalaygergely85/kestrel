@@ -13,6 +13,8 @@ export const PROMPT_TOUCH = '[E] Touch the relay';    // WS1-W1 prompt.relay.tou
 export const HINT_NO_CRYSTAL = { key: 'hint.relay.nocrystal.PLACEHOLDER', text: 'The relay stays dark.' };
 // Wake notice (story.md q06 notice.relay.title / notice.relay); CH1-04a replaces the toast with the notice view.
 export const NOTICE = ['BEND RELAY AWAKENED', 'Travel unlocked.', 'You can now travel between', 'awakened Waystones.'];
+export const FLAG_STONE_TOLD = 'dlg.bear.stone.told'; // set by Burl's stone talk (bear.dialogue.json)
+export const PROMPT_STONE = '[E] Hold up the crystal';
 export const RADIUS = 2.2;
 const TOAST_SEC = 4, TOAST_Y = 6, FG = [236, 226, 190], BG = [10, 11, 16];
 const DEAD = 0, WAKING = 1, AWAKE = 2;
@@ -34,7 +36,7 @@ function lightDelay(model) {
 }
 
 /**
- * @param {{notice?:{push:(key:string)=>boolean}, world:Object, palette?:Object, emit:(id:string,kind:string,pos:Object)=>void, hum?:()=>void}} o
+ * @param {{questFlag?:(k:string)=>void, notice?:{push:(key:string)=>boolean}, world:Object, palette?:Object, emit:(id:string,kind:string,pos:Object)=>void, hum?:()=>void}} o
  *   emit = gameHooks.emitSimple('prop:touched', ...) in main.js; hum defaults to playRelayHum.
  */
 export function createRelayWake(o) {
@@ -45,12 +47,14 @@ export function createRelayWake(o) {
   const pos = { x: 0, y: 0, z: 0 };
   world.forEachEntity((e) => {
     const w = e && e.components && e.components.waystone;
-    if (!w || w.kind !== 'relay' || typeof w.id !== 'string') return;
+    if (!w || (w.kind !== 'relay' && w.kind !== 'stone') || typeof w.id !== 'string') return;
+    const stone = w.kind === 'stone'; // CH1-04b: the dormant meadow stone wakes the same way (needs Burl's stone talk + the crystal)
+    if (stone && !w.dormant) return;
     const comp = e.components.voxel || e.components.sprite;
     const model = comp && world.assets && world.assets.has && world.assets.has('model', comp.model) ? world.assets.model(comp.model) : null;
     const preset = palette && palette.lights && e.components.light && palette.lights[e.components.light.preset];
     const r = {
-      entId: e.id, wsId: w.id, phase: DEAD, t: 0, delay: lightDelay(model), lightOn: false, growDone: false,
+      entId: e.id, wsId: w.id, stone, notice: typeof w.notice === 'string' ? w.notice : 'relay', phase: DEAD, t: 0, delay: lightDelay(model), lightOn: false, growDone: false,
       growDur: preset && preset.grow && typeof preset.grow.duration === 'number' ? preset.grow.duration : 1,
       target: preset && typeof preset.intensity === 'number' ? preset.intensity : null,
       rec: null,
@@ -62,7 +66,7 @@ export function createRelayWake(o) {
       const h = world.get(e.id); if (h) h.play('awake');
     }
     r.rec = world.addInteractable({
-      key: 'relay.' + r.wsId, name: 'relay.wake', x: e.transform.x, y: e.transform.y, z: e.transform.z + 1, radius: RADIUS,
+      key: stone ? 'stone.' + r.wsId : 'relay.' + r.wsId, requires: r.phase === AWAKE || !stone ? undefined : FLAG_STONE_TOLD, name: 'relay.wake', x: e.transform.x, y: e.transform.y, z: e.transform.z + 1, radius: RADIUS,
       prompt: r.phase === AWAKE ? PROMPT_TOUCH : PROMPT_WAKE, def: { waystoneId: r.wsId, entityId: e.id },
     });
     relays.push(r);
@@ -72,10 +76,10 @@ export function createRelayWake(o) {
   function touch(r) {
     const h = world.get(r.entId), tr = h && h.data && h.data.transform;
     pos.x = tr ? tr.x : 0; pos.y = tr ? tr.y : 0; pos.z = tr ? tr.z : 0;
-    emit(r.wsId, 'relay', pos);
+    emit(r.wsId, r.stone ? 'waystone' : 'relay', pos);
   }
   /** One function so CH1-04a can swap the toast for the notice view. */
-  function showWakeNotice() { if (o.notice && o.notice.push('relay')) return; toast.left = TOAST_SEC; } // CH1-04a: notice view when injected, toast fallback (tests)
+  function showWakeNotice(r) { if (o.notice && o.notice.push(r.notice)) return; toast.left = TOAST_SEC; } // CH1-04a: notice view when injected, toast fallback (tests)
 
   return {
     relays,
@@ -84,14 +88,16 @@ export function createRelayWake(o) {
       const r = find(wsId);
       if (!r || r.phase === WAKING) return false;
       if (r.phase === AWAKE) { touch(r); return true; }
-      if (!world.state[FLAG_ATTUNED]) { hint.left = TOAST_SEC; return false; } // gate: the crystal wakes stones
+      if (!world.state[FLAG_ATTUNED] || (r.stone && !world.state[FLAG_STONE_TOLD])) { hint.left = TOAST_SEC; return false; } // gate: the crystal wakes stones
       const h = world.get(r.entId);
       if (h) h.play('wake');
       hum();
       r.phase = WAKING; r.t = 0; r.rec.prompt = PROMPT_TOUCH;
       world.state[woken(r.wsId)] = true;
       touch(r);
-      showWakeNotice();
+      if (o.questFlag) o.questFlag(woken(r.wsId)); // chain flag (m1 step 'waystone')
+      r.rec.requires = undefined; // woken: E = plain touch
+      showWakeNotice(r);
       return true;
     },
     /** Fixed step: timer, light on + grow ramp, wake -> awake. No allocation. `lights` may be null (?lights=0). */

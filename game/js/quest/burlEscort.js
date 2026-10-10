@@ -50,7 +50,7 @@ export function createBurlEscort(o) {
           return;
         }
         // auto-open the stone talk once per approach until it has been told
-        if (!st['bear.stone.told'] && o.requestOpen) {
+        if (!st['dlg.bear.stone.told'] && !st['bear.stone.told'] && o.requestOpen) {
           const dx = px - o.x(), dy = py - o.y(), d2 = dx * dx + dy * dy;
           if (!talkLatch && !open && d2 <= TALK_NEAR_M * TALK_NEAR_M) { talkLatch = true; o.requestOpen(id); }
           else if (talkLatch && d2 > TALK_REARM_M * TALK_REARM_M) talkLatch = false;

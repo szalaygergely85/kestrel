@@ -125,6 +125,9 @@ import { createLoot, setLootApi } from './quest/sim/loot.js'; // US-091a2 (37.16
 import { createRelayWake, setRelayWakeApi } from './quest/relayWake.js'; // WS1-06b: wake the road-bend relay
 import { createDialogueCtl, setDialogueApi } from './quest/dialogueCtl.js'; // DIALOGUE-01b2 (38.28)
 import { createCrystalGrant } from './quest/crystal.js'; // CH1-MOUNT: CH1-03 aether crystal after the boars
+import { createNpcWalk } from './quest/npcWalk.js'; // CH1-07
+import { createBurlEscort } from './quest/burlEscort.js'; // CH1-07
+import { createFenEntrance } from './quest/fenEntrance.js'; // CH1-08b
 import { createBarks } from './quest/barks.js'; // CH1-MOUNT: CH1-06 bark one-liners (Burl)
 import { createChapterCard } from './quest/chapterCard.js'; // CH1-MOUNT: CH1-09 chapter end card
 import { createNoticeView } from './ui/noticeView.js'; // CH1-MOUNT: CH1-04a notice banner
@@ -1028,6 +1031,7 @@ async function runGame(mode, cinematic = null) {
   // CH1-MOUNT (38.37): notice banner (page lifetime) + crystal grant / barks / chapter card (rebuilt per world; only when saves are live = never in capture/bench/compare/?at=)
   const notice = createNoticeView();
   let crystal = null, barks = null, chapterCard = null, ch1Hidden = true;
+  let escort = null, fenEntrance = null; // CH1-07 Burl escort / CH1-08b Fen entrance (rebuilt per world, saves live only)
   window.__debug.notice = notice; window.__debug.ch1Hidden = () => ch1Hidden; // tools/verify-relay-wake.mjs
   engine.events.on('beast:died', (p) => { // crystal burst lands where the last boar fell
     if (!crystal || !p || typeof p.id !== 'string') return;
@@ -1263,7 +1267,7 @@ async function runGame(mode, cinematic = null) {
         inventoryOf: () => playerHandle.data.components.inventory || null }) : null;
       setLootApi(loot);
       // WS1-06b: one [E] interactable per kind:'relay' point (crystal-gated wake; woken ones restore awake from world.state).
-      relayWake = createRelayWake({ world, palette: assets.palette, notice: saveEnabled ? notice : null, emit: (id, kind, p) => gameHooks.emitSimple('prop:touched', id, kind, p) });
+      relayWake = createRelayWake({ questFlag: saveEnabled && saveRelay ? (k) => saveRelay.quest.questFlag(k) : undefined, world, palette: assets.palette, notice: saveEnabled ? notice : null, emit: (id, kind, p) => gameHooks.emitSimple('prop:touched', id, kind, p) });
       setRelayWakeApi(relayWake); window.__debug.relayWake = relayWake; // tools/verify-relay-wake.mjs
       // DIALOGUE-01b2 (38.28): box + runner; NPCs with a `dialogue` component get an [E] Talk interactable (none until NPC-BEAR-01 places one).
       if (dialogueCtl) dialogueCtl.dispose();
@@ -1276,7 +1280,8 @@ async function runGame(mode, cinematic = null) {
       bearTurn = createNpcTurn(world, 'bear'); // NPC-BEAR-01: null when the world has no bear
       compassWorld = world; compassBreach = null; compassBookVer = -1; compassTick = 0; // COMPASS-02: re-resolve against the new world
       if (bearTurn) dialogueCtl.addNpc('bear');
-      crystal = barks = chapterCard = null;
+      crystal = barks = chapterCard = escort = fenEntrance = null;
+      if (bearTurn) bearTurn.paused = false;
       if (saveEnabled && saveRelay) { // CH1-MOUNT: all three need the quest relay (flags + book)
         const rq = saveRelay.quest, tmsg = () => window.ASSETS.items && window.ASSETS.items.toast && window.ASSETS.items.toast.messages && window.ASSETS.items.toast.messages.packFull;
         crystal = createCrystalGrant({ world, questFlag: (k) => rq.questFlag(k),
@@ -1285,6 +1290,24 @@ async function runGame(mode, cinematic = null) {
           toast: () => { const m = tmsg(); if (toasts && m) toasts.say('A crystal glints where the boar fell.', m.fg); } }); // story.md toast.crystal.found
         crystal.check(rq.book.statusOf('burl.boars'));
         if (bearBarks) barks = createBarks({ world, data: bearBarks, questFlag: (k) => rq.questFlag(k), dialogue: dialogueCtl, style: window.ASSETS.uiStyle.dialogue });
+        // CH1-07 (38.37 item 5): Burl walks (follow -> stone, depart) + proximity talk; load rules per phase. Needs the bear entity.
+        const rm = (id) => world.removeInteractable('npc.' + id), nearTalk = (id) => dialogueCtl.openFor(id);
+        const bw = bearTurn ? createNpcWalk(world, 'bear', { barks, removeInteractable: rm }) : null;
+        if (bw) {
+          const bt = world.get('bear').data.transform;
+          escort = createBurlEscort({ world, walk: bw, questFlag: (k) => rq.questFlag(k), barks, id: 'bear', x: () => bt.x, y: () => bt.y,
+            dialogueOpen: () => dialogueCtl.open, afterLeave: () => rq.state.completed.includes('leave'), requestOpen: nearTalk });
+          escort.load();
+        }
+        // CH1-08b: Fen hidden until the Bend Relay wakes, then walks `emerge`; dialogue auto-opens within 4 m
+        const fw = world.get('fen') ? createNpcWalk(world, 'fen', { removeInteractable: rm }) : null;
+        if (fw) {
+          const ft = world.get('fen').data.transform;
+          fenEntrance = createFenEntrance({ world, walk: fw, id: 'fen', x: () => ft.x, y: () => ft.y, requestOpen: nearTalk, dialogueOpen: () => dialogueCtl.open,
+            noticeBusy: () => notice.active, addTalk: () => { if (!world.interactables.some((r) => r.key === 'npc.fen')) dialogueCtl.addNpc('fen'); } });
+          fenEntrance.load();
+        }
+        window.__debug.escort = escort; window.__debug.fenEntrance = fenEntrance; // tools/verify-ch1-mount.mjs
         chapterCard = createChapterCard({ world, openNote: (id) => noteRead({ world, def: { noteId: id } }), isNoteOpen, setFlag: (k, v) => rq.questFlag(k, v) });
       }
       if (toasts) toasts.dispose();
@@ -1686,6 +1709,7 @@ async function runGame(mode, cinematic = null) {
       const simDue = hitStop.due(1000 / 60); // HITSTOP-01: the window gates beasts.step only; the sword freezes by its own hitStopHard counter
       if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); }
       if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); } // WILD-06: ambient only, never hashed
+      if (escort || fenEntrance) { const pt = playerHandle.data.transform; if (escort) { escort.step(dt, pt.x, pt.y); if (bearTurn) bearTurn.paused = escort.busy; } if (fenEntrance) fenEntrance.step(dt, pt.x, pt.y); } // CH1-07/08b: before the bear turn
       if (bearTurn) { const pt = playerHandle.data.transform; bearTurn.step(dt, pt.x, pt.y, !!(dialogueCtl && dialogueCtl.open)); } // NPC-BEAR-01 // US-079a (29.1)
       if (beasts && assets.uiStyle) stepCombatHint(engine.world, assets.uiStyle, beasts); // COMBAT-HINT-01: once-per-save first-fight hint (taken from lane C)
       if (telegraphWire) telegraphWire.step(performance.now());

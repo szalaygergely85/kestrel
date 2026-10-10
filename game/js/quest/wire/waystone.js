@@ -16,6 +16,7 @@ const FG = [236, 226, 190], BG = [10, 11, 16];
 export function createWaystoneWire(opts = {}) {
   const toastSec = opts.toastSec ?? TOAST_SEC;
   let ctx = null, sim = null, left = 0;
+  const dormant = new Set(); // CH1-04b: stone ids whose first touch is the wake (notice only)
   const pose = { x: 0, y: 0, z: 0, yawDeg: 0 };
   const lines = [TOAST_SAVED, TOAST_HEALED, ''];
   let nLines = 2;
@@ -28,9 +29,10 @@ export function createWaystoneWire(opts = {}) {
       const t = p.transform;
       try {
         // Travel points come from entity data (components.waystone); no coordinates here.
-        const points = [];
+        const points = []; dormant.clear();
         if (c.world.forEachEntity) c.world.forEachEntity((e) => {
           const w = e && e.components && e.components.waystone;
+          if (w && w.dormant && typeof w.id === 'string') dormant.add(w.id);
           if (w && typeof w.id === 'string') points.push({ id: w.id, label: w.label, kind: w.kind, order: w.order });
         });
         sim = createWaystone(c.world, p, {
@@ -58,7 +60,9 @@ export function createWaystoneWire(opts = {}) {
       if (d.kind === 'relay') {
         if (first) return; // the wake itself shows the relay notice (relayWake.js): one message only
         lines[0] = RELAY_TITLES[d.id] || d.id; lines[1] = RELAY_SAVED; lines[2] = TOAST_HEALED; nLines = 3;
-      } else { lines[0] = TOAST_SAVED; lines[1] = TOAST_HEALED; nLines = 2; }
+      } else {
+        if (first && dormant.has(d.id)) return; // CH1-04b: the stone's first touch is its wake: the notice only
+        lines[0] = TOAST_SAVED; lines[1] = TOAST_HEALED; nLines = 2; }
       left = toastSec;
     },
     onTick(dt) { if (left > 0) left -= dt; },
