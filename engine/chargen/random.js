@@ -54,6 +54,7 @@ export function randomRecipe(kit, seed) {
     const ramp = rampIds.length ? choose(next, rampIds, W.ramp && W.ramp[g]) : '';
     r[slot] = id === 'none' ? null : { id, ramp };
   }
+  if (kit.defaults && kit.defaults.res) r.res = { body: kit.defaults.res.body, head: kit.defaults.res.head }; // no rng draw
   r.seed = seed >>> 0;
   return r;
 }
