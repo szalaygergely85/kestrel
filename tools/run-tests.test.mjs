@@ -253,6 +253,29 @@ await test('--json omits output for a PASS suite', async () => {
   }
 });
 
+await test('exit-0 suite printing "<tool> FAILED" is FAIL; suite lines stream before the run ends', async () => {
+  const root = makeFixtureRoot();
+  try {
+    fs.writeFileSync(path.join(root, 'tools', 'check-deps.mjs'), "console.error('check-deps FAILED (1 finding)');\n");
+    fs.writeFileSync(path.join(root, 'tools', 'a-fast.test.js'), "console.log('ok');\n");
+    fs.writeFileSync(path.join(root, 'tools', 'z-slow.test.js'), 'setTimeout(() => {}, 1500);\n');
+    const t0 = Date.now();
+    const r = await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [RUNNER, '--filter', 'a-fast,z-slow,check-deps', '--timeout-ms', '10000'], { cwd: root });
+      let out = ''; let firstAt = 0;
+      child.stdout.on('data', (d) => { if (!firstAt) firstAt = Date.now() - t0; out += d; });
+      child.on('close', (code) => resolve({ code, out, firstAt, total: Date.now() - t0 }));
+      child.on('error', reject);
+    });
+    assert.ok(/^FAIL tools\/check-deps\.mjs \d+ms$/m.test(r.out), r.out);
+    assert.strictEqual(r.code, 1);
+    assert.ok(r.out.indexOf('a-fast') < r.out.indexOf('z-slow'), r.out);
+    assert.ok(r.firstAt + 700 < r.total, 'first line at ' + r.firstAt + 'ms, end at ' + r.total + 'ms');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 console.log(`\n${passed} test(s) passed`);
 if (failures.length) {
   console.error(`${failures.length} test(s) failed: ${failures.join(', ')}`);

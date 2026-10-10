@@ -27,6 +27,9 @@
 // requirement everywhere run-tests.mjs runs (see docs/architecture.md
 // section 11).
 //
+// A suite is FAIL on a nonzero exit code OR a "<tool> FAILED" line; each suite's
+// line is written the moment it finishes (streamed), the summary comes last.
+//
 // WARN: this project's suites are hand-rolled (no test framework) and most
 // print a line starting with "FAIL" per failed check (see e.g.
 // engine/core/behaviours.test.js: `console.error('FAIL:', f)`) while also
@@ -152,6 +155,11 @@ function runSuite(file, timeoutMs, warnOnFail) {
         resolve({ status: warnOnFail ? 'WARN' : 'FAIL', ms, output });
         return;
       }
+      // Exit 0 but a "<tool> FAILED" verdict line (check-deps style): FAIL (AUD-07); not for *.test.* (fixtures print it on purpose).
+      if (!/\.test\.(js|mjs)$/.test(file) && /(^|\n)[\w./-]+ FAILED\b/.test(output)) {
+        resolve({ status: warnOnFail ? 'WARN' : 'FAIL', ms, output });
+        return;
+      }
       // Exit 0: check for a suite that printed a FAIL-shaped line anyway.
       const printedFail = /(^|\n)\s*FAIL\b/.test(output);
       resolve({ status: printedFail ? 'WARN' : 'PASS', ms, output });
@@ -166,6 +174,11 @@ function runSuite(file, timeoutMs, warnOnFail) {
       resolve({ status: warnOnFail ? 'WARN' : 'FAIL', ms, output });
     });
   });
+}
+
+/** Synchronous write so each suite line reaches a pipe/file as soon as the suite ends (AUD-07). */
+function emit(line) {
+  try { fs.writeSync(1, line + '\n'); } catch { console.log(line); }
 }
 
 function lastLines(text, n) {
@@ -194,7 +207,7 @@ async function main() {
     const name = toPosix(path.relative(ROOT, file));
     const { status, ms, output } = await runSuite(file, timeoutMs, WARN_ON_FAIL.has(name));
     if (status === 'FAIL' || status === 'TIMEOUT') anyFail = true;
-    console.log(`${status} ${name} ${ms}ms`);
+    emit(`${status} ${name} ${ms}ms`);
     results.push({ name, status, ms, output });
   }
 
