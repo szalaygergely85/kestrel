@@ -53,7 +53,7 @@
   <label>view turn <input type="range" id="yaw" min="-180" max="180" step="5" value="0"><span class="val" id="yawV"></span></label>
   <label>view pitch <input type="range" id="pitch" min="-10" max="60" step="1" value="8"><span class="val" id="pitchV"></span></label>
   <label><input type="checkbox" id="spin"> turntable</label>
-  <label>outfit <select id="outfit"><option value="default">default (kit.defaults)</option><option value="knight">knight (kit.looks.knight)</option><option value="bare">bare base</option></select></label>
+  <label>outfit <select id="outfit"><option value="default">default (kit.defaults)</option><option value="knight">knight (kit.looks.knight)</option><option value="fen">Fen (kit.looks.fen, CH1-D3)</option><option value="bare">bare base</option></select></label>
   <label>eyes <select id="eyes"></select></label>
   <label>hair + brows <select id="hair"></select></label>
 </div>
@@ -99,11 +99,11 @@
   var D, S, NB, NAMES, BAABB, JOINTS, PARENT, FULLBOX, TONES, builtOutfit = null;
   var ctl = { tone: 'medium', pose: 'rest', collapsed: false, rots: {}, outfit: 'default' };
   var GRIDS = {};
-  function lookOf(o) { return o === 'knight' ? kit.looks.knight : kit.defaults; }
+  function lookOf(o) { return o === 'knight' ? kit.looks.knight : o === 'fen' ? kit.looks.fen : kit.defaults; }
   function setup() {
     builtOutfit = ctl.outfit;
     GRIDS = { 'default': CK.composePreview(kit, 'm_avg', kit.defaults), knight: CK.composePreview(kit, 'm_avg', kit.looks.knight),
-              bare: CK.decodeBase(kit, 'm_avg') };
+              fen: CK.composePreview(kit, 'm_avg', kit.looks.fen), bare: CK.decodeBase(kit, 'm_avg') };
     D = GRIDS[ctl.outfit] || GRIDS['default'];
     S = D.size; NAMES = D.names; NB = NAMES.length; FULLBOX = [0, 0, 0, S[0], S[1], S[2]];
     BAABB = NAMES.map(function () { return [1e9, 1e9, 1e9, -1e9, -1e9, -1e9]; });

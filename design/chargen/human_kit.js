@@ -30,6 +30,10 @@
  *     combed strands + side parting; beard strands, lit moustache, forked chin tuft; hands with
  *     four fingers (ridged backs, grooves), knuckles, nails, a separate thumb; a waistband buckle bump; knight decal:
  *     mail hems, red neckline trim, skirt folds, glove cuffs + knuckles, gold buckle. Proportions / rig unchanged.
+ *   - CH1-D3 Fen (kit.looks.fen, a wanderer): `tunic` (top, long sleeves + a short skirt over the trousers), `mended`
+ *     (beard slot, paintOnly decal: stubble + sewn cloth patches + a shoulder-bag strap + ragged hem + worn boot scuffs),
+ *     `staff` (hat slot, held: bone RightHand, anchor hand_r, the fingers wrap round it). All random weight 0; the
+ *     defaults and kit.looks.knight are unchanged.
  *   - rest pose: standing, arms down in a slight A (gap >= 3 cells from the hips up to z 46), 3 cells between the thighs.
  *
  * Bone boxes are axis-aligned and resolved FIRST-MATCH in skeleton order (38.29 item 3), so they are cut to the
@@ -557,15 +561,20 @@
       // white tabard (surcoat): chest, waist, hips and a split skirt to above the knee (UpperLeg t < 0.75 = z 18-27), one
       // cell thick; sleeveless, so the mail shows at the shoulders and arms
       { id: 'tabard', slot: 'outer', regions: [{ bone: 'Chest', t0: 0, t1: 1 }, { bone: 'Spine', t0: 0, t1: 1 }, { bone: 'Hips', t0: 0, t1: 1 }]
-          .concat(sides('UpperLeg', 0, 0.75)), thick: 1, paint: 'k' }
+          .concat(sides('UpperLeg', 0, 0.75)), thick: 1, paint: 'k' },
+      // ---- CH1-D3 Fen: long wool tunic - torso, sleeves to just above the wrist (LowerArm t < 0.8 = z 33-40) and a
+      // short skirt over the trousers (Hips + UpperLeg t < 0.3 = z 24-27); thick 0 so the arm / hip gap stays open.
+      // Patches, strap, ragged hem come from the `mended` decal (beard slot)
+      { id: 'tunic', slot: 'top', regions: [{ bone: 'Spine', t0: 0, t1: 1 }, { bone: 'Chest', t0: 0, t1: 1 }, { bone: 'Hips', t0: 0, t1: 1 }]
+          .concat(sides('Shoulder', 0, 1), sides('UpperArm', 0, 1), sides('LowerArm', 0, 0.8), sides('UpperLeg', 0, 0.3)), thick: 0, paint: '2' }
     ];
   }
   // random NPC weights (engine/chargen/random.js): trousers always, boots and hair mostly, shirt 3 in 4, belt 2 in 3,
   // a beard 1 in 3; the knight pieces never (they are a look, kit.looks.knight)
   var RANDOM = {
-    hair: { none: 0.3 }, beard: { none: 2, full: 1 }, hat: { none: 1, heraldry: 0 },
+    hair: { none: 0.3 }, beard: { none: 2, full: 1, mended: 0 }, hat: { none: 1, heraldry: 0, staff: 0 },
     legs: { none: 0, trousers: 1, mail_legs: 0 }, feet: { none: 0.2, boots: 1, boots_gloves: 0 },
-    top: { shirt: 3, mail: 0 }, outer: { belt: 2, tabard: 0 }
+    top: { shirt: 3, mail: 0, tunic: 0 }, outer: { belt: 2, tabard: 0 }
   };
   // the knight look (D-063 reference): black short hair + full beard, mail, dark boots + gloves, white tabard + heraldry
   function knightLook() {
@@ -640,6 +649,159 @@
              box: [S[0], S[1], z1 - z0 + 1], paintOnly: true, layers: layers };
   }
 
+  // ===================================================================================================================
+  // CH1-D3 Fen (D-063 style): a lone wanderer - weathered (warm skin, grey eyes), brown hair + stubble, a faded sage
+  // tunic and grey trousers mended with scraps of each other and dark linen, a walnut belt and shoulder-bag strap,
+  // worn walnut boots, an old walnut travelling staff in the right hand. No new palette keys (natural dyes only).
+  // ===================================================================================================================
+  function fenLook() {
+    return {
+      v: 1, kit: KIT_ID, base: 'm_avg', height: 0, age: 'adult', skin: 'warm', eyes: 'grey',
+      hair: { id: 'short', ramp: 'brown' }, beard: { id: 'mended', ramp: 'brown' },
+      top: { id: 'tunic', ramp: 'lincoln' }, legs: { id: 'trousers', ramp: 'gall' }, feet: { id: 'boots', ramp: 'walnut' },
+      outer: { id: 'belt', ramp: 'walnut' }, hat: { id: 'staff', ramp: 'walnut' }
+    };
+  }
+  // the staff (hat slot: the only free attachment slot; bone RightHand so it swings with the hand). Box X 11..14,
+  // Y -6..-3 (in front of the fist: the thumb is Y -3, the forearm Y -2..2, so the shaft never touches the arm), z 0..66
+  // (1.68 m, the iron ferrule on the ground). 2 x 2 shaft X 12-13 / Y -5..-4; wood = the hat dye (H h j, Fen: walnut)
+  // with a lit front-right edge and a dark back-left grain, three knots, a leather grip wrap above + below the fist
+  // (m / w = outer dye), the fist (skin a / s / l + a nail n) wrapped round the shaft at z 26-28 so it reads as held,
+  // a worn knob z 61-66, a linen cord (U) tied under the knob with a dangling weld-gold bead (y).
+  var STAFF_BOX = { X0: 11, Y0: -6, z0: 0, w: 4, d: 4, h: 67 };
+  function staffChar(X, Y, z) {
+    var sh = X >= 12 && X <= 13 && Y >= -5 && Y <= -4;
+    if (z >= 26 && z <= 28 && !sh) {                                       // the fist round the shaft
+      var ring = Y === -6 || (X === 14 && Y >= -5) || (X === 11 && Y <= -4);
+      if (!ring) return null;                                              // X 12-13 / X 11 at Y -3 = the thumb side
+      if (Y === -6 && (X === 11 || X === 14) && z !== 27) return null;     // rounded fist corners
+      if (X === 11 && Y === -5 && z === 27) return 'n';                    // finger tip on the palm side
+      if (z === 26) return 's';
+      if (z === 28 && Y === -6) return X === 12 ? 'l' : 's';               // knuckles
+      return 'a';
+    }
+    if (z >= 61 && z <= 64) {                                              // the knob, 4 x 4 minus corners
+      if ((X === 11 || X === 14) && (Y === -6 || Y === -3)) return null;
+      if (z === 61) return 'j';
+      if (z === 64) return (X === 11 || Y === -3) ? 'h' : 'H';
+      return (X === 14 || Y === -6) ? 'H' : (X === 11 || Y === -3) ? 'j' : 'h';
+    }
+    if (z === 65) return sh ? (X === 13 && Y === -5 ? 'H' : 'h') : null;
+    if (z === 66) return X === 13 && Y === -5 ? 'H' : null;
+    if (!sh) {
+      if (X === 14 && Y === -5 && z >= 55 && z <= 59) return 'U';          // the dangling cord
+      if (X === 14 && Y === -5 && z === 54) return 'y';                    // its bead
+      if ((z === 12 && X === 14 && Y === -5) || (z === 37 && X === 11 && Y === -4) || (z === 47 && X === 14 && Y === -4)) return 'j';   // knots
+      return null;
+    }
+    if (z === 0) return 'r';                                               // iron ferrule
+    if (z <= 2) return X === 13 && Y === -5 ? 'q' : 'r';
+    if (z === 59 || z === 60) return 'U';                                  // the cord tied round the neck of the staff
+    if ((z >= 29 && z <= 33) || (z >= 23 && z <= 25)) return (z & 1) ? 'm' : 'w';   // grip wrap
+    if (X === 13 && Y === -5) return z % 7 === 3 ? 'h' : 'H';              // lit edge
+    if (X === 12 && Y === -4) return 'j';                                  // shadowed grain
+    return z % 9 === 4 ? 'j' : 'h';
+  }
+  function buildStaff() {
+    var layers = [], x, y, z;
+    for (z = 0; z < STAFF_BOX.h; z++) {
+      var L = [];
+      for (y = 0; y < STAFF_BOX.d; y++) {
+        var row = '';
+        for (x = 0; x < STAFF_BOX.w; x++) row += staffChar(STAFF_BOX.X0 + x, STAFF_BOX.Y0 + y, STAFF_BOX.z0 + z) || '.';
+        L.push(row);
+      }
+      layers.push(L);
+    }
+    // hand_r = cell centre (31.5, 10, 28.5): the offset puts the box origin on grid (29, 4, 0) = X 11, Y -6, z 0
+    return { id: 'staff', slot: 'hat', bone: 'RightHand', anchor: 'hand_r', offset: [-2.5, -6, -28.5],
+             box: [STAFF_BOX.w, STAFF_BOX.d, STAFF_BOX.h], layers: layers };
+  }
+  // the `mended` decal (beard slot, paintOnly; the hat slot holds the staff and a shell paints one char - engine ask in
+  // design/README.md section 25): computed from Fen composed WITHOUT it and without the staff, at height 0.
+  //   stubble: Jaw skin = a K / g checker (short dark growth), Head skin z 58-62 = sparse K (upper lip, jaw line,
+  //     sideburns |X| >= 6); the beard pick (Fen: brown) dyes it.
+  //   patches: rectangles projected on the front / back / right-side cloth, a dotted stitch edge (top / legs dark):
+  //     tunic = dark linen (U) or the trouser cloth (4), trousers = the tunic cloth (1) or dark linen.
+  //   bag strap (outer dark m, 2 wide) from the right shoulder to the left side, front and back; ragged tunic hem (3);
+  //   worn boots: a folded cuff (8) on the top boot row, an ankle crease (8) and scuffed toe caps (7).
+  // Rigid like `heraldry` (anchor belt): meant for height 0 / res 1 (Fen's recipe); at res head 2 the stubble is not
+  // painted (it rides the Chest bone in the main grid).
+  function buildMended(kit) {
+    var rc = fenLook(); rc.beard = null; rc.hat = null;
+    var C = composePreview(kit, 'm_avg', rc), S = C.size, paint = {}, x, y, z, k, c, X, Y, u;
+    var HEAD = C.names.indexOf('Head'), JAW = C.names.indexOf('Jaw');
+    function key(xx, yy, zz) { return xx + S[0] * (yy + S[1] * zz); }
+    function proj(face, uu, zz) {   // the outermost filled cell seen from a face (u = X for front / back, Y for right)
+      var n = face === 'right' ? S[0] : S[1], i, kk;
+      for (i = 0; i < n; i++) {
+        kk = face === 'front' ? key(uu + CX, i, zz) : face === 'back' ? key(uu + CX, S[1] - 1 - i, zz) : key(S[0] - 1 - i, uu + CY, zz);
+        if (C.ch[kk] !== '.') return kk;
+      }
+      return -1;
+    }
+    // stubble
+    for (z = 51; z <= 62; z++) for (y = 0; y < S[1]; y++) for (x = 0; x < S[0]; x++) {
+      k = key(x, y, z); c = C.ch[k]; X = x - CX; Y = y - CY;
+      if ((c !== 'a' && c !== 's' && c !== 'l') || Y > 0) continue;
+      if (C.bone[k] === JAW) paint[k] = ((x + z) & 1) ? 'g' : 'K';
+      else if (C.bone[k] === HEAD && ((x + y + z) & 1) && (z <= 59 || (Math.abs(X) >= 6 && Y >= -3))) paint[k] = 'K';
+    }
+    // patches: [face, u0, u1, z0, z1, cloth char, patch char, stitch char]
+    var PATCHES = [
+      ['front', -6, -3, 43, 46, '2', 'U', '3'],    // left chest: dark linen on the tunic
+      ['back', -6, -3, 44, 47, '2', '4', '3'],     // left shoulder blade: a scrap of the trouser cloth
+      ['right', -1, 2, 38, 41, '2', 'U', '3'],     // right elbow, outer side
+      ['back', -14, -11, 38, 41, '2', '4', '3'],   // left elbow, back
+      ['front', 3, 6, 13, 16, '5', '1', '6'],      // right knee: a scrap of the tunic cloth
+      ['front', -7, -4, 19, 22, '5', 'U', '6']     // left thigh
+    ];
+    PATCHES.forEach(function (p) {
+      for (z = p[3]; z <= p[4]; z++) for (u = p[1]; u <= p[2]; u++) {
+        k = proj(p[0], u, z);
+        if (k < 0 || C.ch[k] !== p[5]) continue;
+        var edge = u === p[1] || u === p[2] || z === p[3] || z === p[4];
+        paint[k] = edge && ((u + z) & 1) ? p[7] : p[6];
+      }
+    });
+    // bag strap: right shoulder (X 6, z 49) down to the left side (X -6, z 35), 2 cells wide, front + back
+    for (z = 35; z <= 49; z++) {
+      var sx = Math.round(6 - (49 - z) * 12 / 14);
+      ['front', 'back'].forEach(function (f) {
+        for (u = sx - 1; u <= sx; u++) { k = proj(f, u, z); if (k >= 0 && C.ch[k] === '2' && !paint[k]) paint[k] = 'm'; }
+      });
+    }
+    // ragged hem (the tunic's two lowest rows) + worn boots
+    var hem = SZ, bootTop = -1;
+    for (k = 0; k < C.ch.length; k++) {
+      z = Math.floor(k / (S[0] * S[1]));
+      if (C.ch[k] === '2' && z < 30) hem = Math.min(hem, z);
+      if (C.ch[k] === '9') bootTop = Math.max(bootTop, z);
+    }
+    for (z = 0; z < S[2] && z <= Math.max(hem + 1, bootTop); z++) for (y = 0; y < S[1]; y++) for (x = 0; x < S[0]; x++) {
+      k = key(x, y, z); c = C.ch[k]; Y = y - CY;
+      if (c === '2' && (z === hem && x % 3 === 0 || z === hem + 1 && x % 6 === 0)) paint[k] = '3';
+      else if (c === '9' && z === bootTop) paint[k] = '8';                              // folded cuff
+      else if (c === '9' && z === 4 && Y < 0 && (x & 1)) paint[k] = '8';                // ankle crease
+      else if (c === '9' && z >= 1 && z <= 2 && Y <= -5 && (x + z) % 3 === 0) paint[k] = '7';   // scuffed toe caps
+    }
+    var z0 = SZ, z1 = -1, keyS;
+    for (keyS in paint) { z = Math.floor(+keyS / (S[0] * S[1])); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+    var layers = [];
+    for (z = z0; z <= z1; z++) {
+      var L = [];
+      for (y = 0; y < S[1]; y++) {
+        var row = '';
+        for (x = 0; x < S[0]; x++) row += paint[key(x, y, z)] || '.';
+        L.push(row);
+      }
+      layers.push(L);
+    }
+    // anchor belt = cell centre (18.5, 6.5, 33.5): offset puts the box origin on grid (0, 0, z0)
+    return { id: 'mended', slot: 'beard', bone: 'Chest', anchor: 'belt', offset: [-18.5, -6.5, z0 - 33.5],
+             box: [S[0], S[1], z1 - z0 + 1], paintOnly: true, layers: layers };
+  }
+
   function buildHumanKit(P) {
     var CG = P.chargen;
     if (!CG) throw new Error('human_kit: palette.chargen missing (load design/palette.js v1.54+)');
@@ -705,9 +867,12 @@
         outer: { id: 'belt', ramp: 'walnut' }, hat: null
       },
       // named looks (CHARGEN-26): full recipes a game / UI may start from; civilian = defaults
-      looks: { knight: knightLook() }
+      looks: { knight: knightLook(), fen: fenLook() }
     };
     kit.attachments.push(buildHeraldry(kit));
+    // CH1-D3 Fen: the held staff (hat slot) and the mended decal (beard slot), appended after the knight pieces
+    kit.attachments.push(buildStaff());
+    kit.attachments.push(buildMended(kit));
     return kit;
   }
 
