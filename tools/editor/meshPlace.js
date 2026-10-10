@@ -16,7 +16,7 @@ export const SHADOW = Object.freeze({ tree: true, rock: true, rockpath: false, p
 export function meshClass(key) {
   const name = key.split('/').at(-1);
   return /Tree/.test(name) ? 'tree' : /^Rock_/.test(name) ? 'rock' : /^RockPath/.test(name) ? 'rockpath'
-    : /^Pebble/.test(name) ? 'pebble' : /^Grass/.test(name) ? 'grass' : /^Mushroom/.test(name) ? 'mushroom' : 'other';
+    : /^Pebble/.test(name) ? 'pebble' : /^Grass/.test(name) ? 'grass' : /^Mushroom_Laetiporus/.test(name) ? 'other' /* shelf fungus: grows on trunks, never on the ground (owner 2026-10-10) */ : /^Mushroom/.test(name) ? 'mushroom' : 'other';
 }
 export const roundMeshPosition = v => +v.toFixed(2);
 export const meshYaw = v => ((Math.round(v) % 360) + 360) % 360;

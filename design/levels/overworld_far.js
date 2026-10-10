@@ -111,26 +111,16 @@
           { shape: 'capsule', ax: 1259, ay: 1059, bx: 1230, by: 1066, r: 9.5 }
         ],
         layers: [
-          { name: 'tufts', seed: 38101, cellM: 2.5, jitter: 1.0, fill: 0.6, maxSlope: 0.7, clearM: 0.8, drawM: 28, lodCells: 4,
+          // PLANT-VOXEL-OFF-01 (owner 2026-10-10 "can you remove voxel plants?"): the voxel plant scatter (tufts layer, voxel flowers,
+          // bushRound, fern, mushrooms) is gone - placed Quaternius plant meshes (world_m1 mdw/roadL rows, PLANT-SCALE-01) are the plants now.
+          // The old 'shrubs' layer keeps only its stones; fill 0.17 = the old stone share (0.5 x 34 %) so meadow stone density is unchanged.
+          { name: 'stones', seed: 38203, cellM: 5, jitter: 1.8, fill: 0.17, maxSlope: 0.55, clearM: 1.2, drawM: 45, lodCells: 4,
             ground: {
-              grass:  [ { model: 'tuftMeadow', weight: 35, sinkM: 0.02, sway: true }, { model: 'tuftLush', weight: 30, sinkM: 0.02, sway: true },
-                        { model: 'tuftShort', weight: 35, sinkM: 0.02, sway: true } ],
-              forest: [ { model: 'tuftLush', weight: 50, sinkM: 0.02, sway: true }, { model: 'tuftShort', weight: 30, sinkM: 0.02, sway: true },
-                        { model: 'pebbles', weight: 20, sinkM: 0.03 } ],
-              rock:   [ { model: 'pebbles', weight: 50, sinkM: 0.03 }, { model: 'tuftShort', weight: 30, sinkM: 0.02, sway: true },
-                        { model: 'rockSmallB', weight: 20, sinkM: 0.03 } ]
-            } },
-          { name: 'shrubs', seed: 38203, cellM: 5, jitter: 1.8, fill: 0.5, maxSlope: 0.55, clearM: 1.2, drawM: 45, lodCells: 4,
-            ground: {
-              grass:  [ { model: 'flowersYellow', weight: 20, sinkM: 0.02, sway: true }, { model: 'flowersWhite', weight: 16, sinkM: 0.02, sway: true },
-                        { model: 'flowersPink', weight: 12, sinkM: 0.02, sway: true }, { model: 'bushRound', weight: 18, sinkM: 0.04, shadow: true, sway: true },
-                        { model: 'rockSmallA', weight: 12, sinkM: 0.03 }, { model: 'rockSmallB', weight: 10, sinkM: 0.03 },
+              grass:  [ { model: 'rockSmallA', weight: 12, sinkM: 0.03 }, { model: 'rockSmallB', weight: 10, sinkM: 0.03 },
                         { model: 'pebbles', weight: 12, sinkM: 0.03 } ],
-              forest: [ { model: 'fern', weight: 40, sinkM: 0.02, sway: true }, { model: 'mushrooms', weight: 16, sinkM: 0.01 },
-                        { model: 'bushRound', weight: 20, sinkM: 0.04, shadow: true, sway: true }, { model: 'flowersWhite', weight: 8, sinkM: 0.02, sway: true },
-                        { model: 'rockSmallA', weight: 8, sinkM: 0.03 }, { model: 'pebbles', weight: 8, sinkM: 0.03 } ],
+              forest: [ { model: 'rockSmallA', weight: 8, sinkM: 0.03 }, { model: 'pebbles', weight: 8, sinkM: 0.03 } ],
               rock:   [ { model: 'rockSmallA', weight: 35, sinkM: 0.03 }, { model: 'rockSmallB', weight: 35, sinkM: 0.03 },
-                        { model: 'pebbles', weight: 20, sinkM: 0.03 }, { model: 'tuftShort', weight: 10, sinkM: 0.02, sway: true } ]
+                        { model: 'pebbles', weight: 20, sinkM: 0.03 } ]
             } },
           // rocks: maxSlope 0.35 + large sinkM 0.20 (half the 0.32-0.40 m foot layer): props are not tilted to the slope
           // (37.4: yaw only), so a 2.8 m flat-bottomed boulder must not show a gap on the downhill side.

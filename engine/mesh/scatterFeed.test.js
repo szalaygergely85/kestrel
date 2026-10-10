@@ -195,9 +195,9 @@ canonicalRegistry.bindPool({ models: new Map(canonical.detail.speciesDefs.map(d 
 // Existing trees and the compare harness's unit group count against the cap.
 for (let i = 0; i < 7; i++) canonicalRegistry.group('tree-or-unit', 1);
 const canonicalBinding = bindDetailInstances(canonical.detail, canonicalRegistry, canonical.terrain.recipe.recipe.detail, 485);
-ok(canonicalBinding.groups.length === 19 && canonicalRegistry.groups.length === 26);
+ok(canonicalBinding.groups.length === 10 && canonicalRegistry.groups.length === 17); // PLANT-VOXEL-OFF-01: voxel plant species removed (was 19 / 26)
 const active = new Set(canonical.detail.species);
-ok(canonical.detail.speciesDefs.every((d, s) => active.has(s) ? canonicalBinding.groupOf[s] < 19 : canonicalBinding.groupOf[s] === 255));
+ok(canonical.detail.speciesDefs.every((d, s) => active.has(s) ? canonicalBinding.groupOf[s] < 10 : canonicalBinding.groupOf[s] === 255));
 feedDetail(canonicalBinding, 1474.5, 1025, true);
 ok(canonicalBinding.fed > 0 && canonicalBinding.fed <= canonicalBinding.maxDraw);
 console.log(`world_m1: ${canonical.detail.count} placements, ${canonicalBinding.groups.length} detail groups`);

@@ -1050,3 +1050,7 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - three.js (MIT, vendored + pinned) allowed as an exception to the no-external-library rule, ONLY in tools/chargen (the generator app). Desktop shell = Tauri (tools/chargen-desktop).
 - In-game rig stays 8 parts for v1 (decide 24 at the CHARGEN-16 owner walk).
 - OPEN for the owner: code-signing costs (Apple ~99 USD/yr + a Windows certificate), which store(s) to sell on, default licence for exported characters/packages.
+
+## D-055 - Chargen head at a finer grid (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner on face v2: "if we make smaller cubes? wouldnt be better? i dont like the eyes and lips". Options shown: finer head only / whole body 2x finer / same cubes + redesign. **Owner pick: finer head only** - the Head (+ Jaw) bones use 1.25 cm cells (2x the 2.5 cm body grid, face ~20 cells wide); the body stays 2.5 cm.
+- Architect note first (architecture 38.34: per-bone cell size in the kit, compose/mesh/collapse/riggedModelDef grid snap, exports, in-game cost), then a programmer, then the designer redraws the head. PC-A to ratify.

@@ -5135,3 +5135,110 @@ Not to touch: voxelPose, instanceRect, instances, shadowList, gpu/*, EntityHandl
 4. **Files CHARGEN-15 may touch:** `game/js/packBoot.js`, new `game/js/packBoot.test.js`, `game/js/main.js` (the call site + the RIG-03 `char.<id>` registration only), `content/packages/index.json`, `content/packages/<villager>.kestrel`, `content/worlds/world_m1.world.json`, its dialogue file, docs. **No engine changes** (`mountPackages` / `loadPackageModels` already suffice); anything else -> ASK ARCHITECT.
 5. **Node tests** (`game/js/packBoot.test.js`, injected `fetch`, packages built with `writeZip` in memory): (a) no index (404) -> loose bundle, no models; (b) index with a models-only package -> loose bundle + `models.<id>.kind==='rigged'`; (c) `?pack=` models-only -> loose base + models; (d) `?pack=` content package + index add-on -> content from `?pack=`, models from both; (e) two packages with the same model id -> error text names both; (f) add-on with a content manifest -> error; (g) same package id in `?pack=` and index -> error; (h) bad index path (`../x.kestrel`) -> error; (i) `?addons=0` skips the index.
 6. **Do not:** list directories, auto-pick "latest" versions, load add-on content manifests, let an add-on override a base model, or put package lookup into `engine/` (the engine stays URL-agnostic; packBoot is game code).
+
+### 38.34 Fine head grid and per-recipe detail (D-055 + owner follow-up 2026-10-10) (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; PC-A to ratify)
+Owner: the face is too coarse at 2.5 cm, and the cell size is a **recipe choice**: `recipe.res = {body: 1|2, head: 1|2|4}` (cells per 2.5 cm: 1 = 2.5 cm, 2 = 1.25 cm, 4 = 0.625 cm). Skeleton, bones, joints, clips, partMap, mounts, anchors, stretchRows and the 8-part collapse are the **same at every resolution** (the kit keeps them in continuous level-1 cell coordinates). Nothing per frame changes.
+
+**1. Kit format (schema 1, additive).**
+- `kit.regions = {head: {bones: ['Head','Jaw'], box: [x0,y0,z0,x1,y1,z1]}}` (level-1 cells, inclusive, integers). `box` = the region volume (skull + hair room); it may be larger than the bone boxes. Every bone not in a region belongs to the implicit region `body` (the whole grid).
+- `kit.resLevels = {body: [1] | [1,2], head: [1,2] | [1,2,4]}`: the levels this kit offers (the UI and validateRecipe read it).
+- `base.layers` = level 1 for everything (as today). It always exists and **wins at level 1**, so face v2 stays the Standard head (the designer may refresh it from L2 with the downsample tool).
+- `base.detail = {<region>: {"<L>": {layers, bones?}}}`: an authored finer level of one region. Origin = the region box min (level-1 cells; body: 0,0,0). Size = box extent x L. `layers[z][y]` = strings of x, as today. `bones?: {Head:{box}, Jaw:{box}}` in block cells (default: the level-1 bone boxes x L). A voxel's bone = the first box in skeleton order that contains it; outside every box = kit error.
+- **Derived levels:** a level in `resLevels` that is not authored = `downsample2` of the next finer level (authored or derived), repeated (4 -> 2 -> 1). Never upsample authored detail to make a finer level: listing a level finer than the finest authored one is a validateKit error.
+- `kit.slots[ch].keep` (optional int 0..9, default 0) = downsample priority. The designer sets it on iris, eye white, catchlight, lid line, lips and brows.
+- `downsample2(layers, slots)` (new `engine/chargen/downsample.js`, pure): each 2x2x2 block (odd sizes padded with empty) -> one cell. If any filled cell has `keep > 0`: the char with the highest keep (ties: higher count, then lower char code). Else if >= 4 of 8 are filled: the majority char (ties: lower char code). Else empty. Bones of derived cells come from the box rule at that level, not from a vote.
+- **validateKit adds:**
+  - region bones exist and are in at most one region; the region box is inside the grid;
+  - detail `size` = box extent x L; L in {2, 4}; every `resLevels` entry is authored or derivable;
+  - **seam rule:** a filled detail cell whose level-1 cell holds a filled voxel of a non-region bone = error ("head L2 overlaps Neck at x,y,z");
+  - no `stretchRows` row inside a non-body region box;
+  - attachments: `res` (below) is in `resLevels` of their bone's region.
+- Attachments get `res` (default 1 = the level their layers are authored at); anchor + offset stay level-1 cells. Shells: `thick` stays in 2.5 cm units; a region at level L grows `thick*L` layers (the same physical thickness).
+
+**2. Recipe + compose.**
+- `recipe.res` is optional; **missing = {body:1, head:1}**, so old recipes and the CHARGEN-15 villager keep their bytes. New recipes from the app / `randomRecipe` use `kit.defaults.res` = {body:1, head:2} once head L2 is authored (CHARGEN-23). validateRecipe: levels must be in `kit.resLevels`, and **head >= body** (no coarser block inside a finer grid). `res` is part of the recipe hash / share string.
+- CharGrid (additive): the main grid = region `body` at level `B = res.body`: `cellM = kit.cellM / B`; `size`, `anchor`, joints and mounts are in main cells (x B). At 1/1 the output is **byte-identical** to today plus `blocks: []`.
+- A region with `res == B` is pasted into the main grid (the main-grid cells of its bones are cleared first). A region with `res = H > B` becomes `blocks[i] = {region, k: H/B, origin:[x,y,z] main cells (ints), size, mat, bone}`, and its bones' cells in the main grid are cleared.
+- Order per region (main grid or block, each at its own level): base cells -> shells -> attachments (resampled to the block level: downsample2, or nearest-cell upsample) -> elder overlay. Attachment cells outside the block are clipped (validateKit warns at kit build). The main grid and the blocks share one matKeys (<= 255).
+- Height: `heightBase(base, h)` also remaps blocks. The origin z goes through mapZ, which is an integer shift because no stretch row lies inside a region box. A body detail level duplicates/deletes L fine rows per stretch row.
+- **Neck seam:** no gap and no overlap by construction (the block origin sits on an integer main cell; the seam rule above). Nothing culls across bones today (each bone is a closed shell, 38.29 item 4), so nothing culls across the seam. The coincident Neck cap (+z) and Head cap (-z) face away from each other and are back-face culled, as at 1/1.
+- Cost: compose + mesh <= 10 ms at body 1 with head <= 2 (1/1 measures ~11 ms cold in Node, including JIT). <= 60 ms for body 2 / head 4. UI changes only, never per frame.
+
+**3. meshCharacter.**
+- Refactor the per-bone greedy loop into `meshBlock(size, mat, bone, b, k, origin, out)`. For each bone in skeleton order, mesh it in the one grid that owns it (the main grid or its block).
+- Output space = the **finest grid G**: `F = max(res)`, `rigged.cellM = kit.cellM / F`. A vertex = `((origin + q/k) - anchor) * mainCellM` metres (exact multiples of cellM). `jointCells`, `mounts` and the Hips clip pos scale to F cells.
+- collapseRig, clip.js and fromGlb need **no change** (they already use `rigged.cellM`). `riggedModelDef` needs **no change**: it snaps to `partRig.cellM` (= G), and the off-grid throw stays. Ranges and per-bone ordering are unchanged.
+- Pin by a test: body-bone quads at {1,2} == at {1,1} (a region kept at level 1 meshes the same).
+
+**4. Budget + in-game.**
+- Today m_avg has 1845 quads (head 164 + jaw 34). Estimates: head L2 ~0.8k, head L4 ~3.2k, body L2 ~6.6k; the max combination ~10k, under `MESH_ONLY_MAX_QUADS` 32768 (unchanged).
+- The voxel def `cellM` = G (0.0125 or 0.00625). voxelPose, instanceRect, mounts and shadows already use the per-model `pm.cellM`, and the 18-bit flat0 layer is ample.
+- `CHAR_GAME_MAX_QUADS = 4096` and `GAME_SAFE_RES = {body:1, head:2}` (engine/chargen/recipe.js).
+- The game (creation screen CHARGEN-17, and package Save "for the game") **auto-clamps** res to GAME_SAFE_RES with a visible warning. The character.json records `gameRes`; the clamp is pure, so it stays deterministic.
+- The game loader **refuses** a rigged glb over CHAR_GAME_MAX_QUADS (the error names the file). Meshes are never downsampled at runtime.
+- Honest limit: in-game, a 1.25 cm feature at 3 m is smaller than one ASCII glyph. The fine head pays off in the generator viewer, the exports and close dialogue shots. Owner walk-check at CHARGEN-23.
+
+**5. Exports.**
+- glb / fbx / obj: plain meshes at G; the only change is the finer `cellM` (glb `extras.kestrel.cellM` = G, which fromGlb reads).
+- **.vox: option (a).** `flattenGrid(grid, F)` (tools/export, not engine) builds one dense grid at the finest level (the main grid upsampled by k). `exportVoxGrid` keeps one shape per bone, so MagicaVoxel shows correct relative sizes.
+  - Why not (b): separate shapes each at its own scale are impossible, because .vox has no per-shape scale.
+  - Why not (c): downsampling the head throws away the detail the user picked.
+- The existing per-axis <= 256 check applies **per bone shape** (worst: a leg of ~35 rows x 4 = 140, OK).
+- Upsampling multiplies the body voxel count (x8 / x64). Files of up to ~5 MB are fine; body 2 + head 4 warns "large .vox".
+
+**6. ASCII renderer: no change.**
+- Shading keys on uv in metres (`a*cellM`, physical), so the texel/glyph density is the same on body and head.
+- Edges come from planeId changes (part/face/layer). The finer head therefore has more voxel steps, which means more outline glyphs on the face at close range. Check at CHARGEN-23; if it looks busy, the designer smooths the steps (no engine knob).
+
+**7. Steps.**
+- **CHARGEN-22a (0.75 d, engine/kit):**
+  - kit.regions / resLevels / detail / keep in `kit.js` validateKit;
+  - `downsample.js`;
+  - `recipe.js`: res, head >= body, GAME_SAFE_RES / CHAR_GAME_MAX_QUADS;
+  - tests.
+- **CHARGEN-22b (1 d, engine):**
+  - compose blocks + paste + shells/attachments per level;
+  - the `height.js` block remap;
+  - `mesh.js`: meshBlock + finest-grid output;
+  - tests.
+- **CHARGEN-22c (0.5 d, tools):**
+  - `flattenGrid` + `.vox` per (a);
+  - glb cellM;
+  - the game loader quad cap;
+  - `tools/chargen-build-kit.mjs` stats per level.
+- **CHARGEN-22d (0.5 d, app UI):**
+  - rows **Body detail** (Standard 2.5 cm / Fine 1.25 cm) and **Head detail** (Standard / Fine / Ultra 0.625 cm); options not in `kit.resLevels` are disabled;
+  - a live quad count + a "game uses Fine max" note;
+  - the package Save clamp + `gameRes`;
+  - the CHARGEN-17 creation screen offers Head Standard/Fine only, with the body at Standard.
+- **Designer:**
+  - **CHARGEN-23:** head L2 (`base.detail.head["2"]` + `keep`);
+  - **CHARGEN-23b:** head L4 (procedural script, optional);
+  - **CHARGEN-24:** body L2 (re-evaluate the body shapes at 2x; the hand/foot tables are nearest-upsampled first).
+
+**8. Tests** (engine/chargen/*.test.js unless noted).
+- (a) 1/1 regression: CharGrid and RiggedModel bytes are identical to before for `kit.defaults` and the villager recipe.
+- (b) downsample2: keep priority (a 1-cell iris survives L2 -> L1), majority, 3-of-8 -> empty, odd sizes, determinism.
+- (c) validateKit: seam overlap, a stretch row in the head box, a detail size mismatch, an unauthorable resLevel, attachment res.
+- (d) compose {1,2} on a tiny synthetic kit:
+  - block origin and size are right;
+  - head bones are absent from the main grid;
+  - height +2/-2 shifts only the block origin.
+- (e) mesh:
+  - every vertex is an integer multiple of G;
+  - body-bone quads at {1,2} == at {1,1};
+  - `riggedModelDef` accepts {1,2} and {1,4} and rejects a hand-made off-grid vertex.
+- (f) pose: the 38.32 test (b) repeated at F = 2 (jaw + head part through the voxelPose FORWARD vs FK, within 1e-3 cells).
+- (g) recipe: missing res = {1,1}; head < body is rejected; the clamp to GAME_SAFE_RES is deterministic.
+- (h) tools:
+  - `flattenGrid` .vox: one shape per bone, sizes x k, palette unchanged;
+  - glb round trip at F = 2 (38.32 test a).
+- (i) all suites + `node tools/check-deps.mjs` green (downsample.js imports only engine/chargen).
+
+**9. Do not:**
+- store a per-voxel scale;
+- make `cellM` per part in the voxel def or the pool;
+- add cross-bone culling;
+- upsample authored data into a "finer" level;
+- downsample meshes in the game;
+- change the skeleton, partMap, clips or mounts per resolution.
