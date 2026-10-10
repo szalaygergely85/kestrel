@@ -1,8 +1,8 @@
 // DN-03 (docs/architecture.md 38.39, D-064): the world clock. Game data only: the hour lives in
 // world.state['clock.hour'] (saved with the world state); the engine just receives hours/looks.
 export const CLOCK_KEY = 'clock.hour';
-export const CLOCK_DEFAULTS = { dayLenS: 1440, startHour: 8 }; // 24 real minutes per game day
-export const STEP_HOURS = 1 / 240; // 0.25 deg of sun per step (1 s real at the default day length)
+export const CLOCK_DEFAULTS = { dayLenS: 2880, startHour: 8 }; // 48 real minutes per game day (SHADOW-SUN-MOVE-01, DN-Q1 proposal; ?daylen= overrides)
+export const STEP_HOURS = 1 / 480; // 0.125 deg of sun per step (0.25 s real at the default day): shadow shift per step stays sub-cell (was 1/240 = 0.25 deg every 1 s at 24 min/day)
 
 /** Advance the clock by dtSim real seconds (fixed sim step). Missing/invalid key starts at cfg.startHour. Returns the hour. */
 export function tickClock(state, dtSim, cfg = CLOCK_DEFAULTS) {

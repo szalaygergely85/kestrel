@@ -62,7 +62,7 @@ function shadeSkyAndWrite(rt, x, y, ctx, azimuthDeg, elevDeg, tag) {
     const er = elevDeg * Math.PI / 180, ar = azimuthDeg * Math.PI / 180, ce = Math.cos(er);
     const cosA = Math.sin(ar) * ce * sun.dirX - Math.cos(ar) * ce * sun.dirY + Math.sin(er) * sun.dirZ;
     glowBg[0] = bg[0]; glowBg[1] = bg[1]; glowBg[2] = bg[2]; glowFg[0] = fg[0]; glowFg[1] = fg[1]; glowFg[2] = fg[2];
-    applySkyGlow(glowBg, cosA, elevDeg, sun.dirZ, sun.sunI); applySkyGlow(glowFg, cosA, elevDeg, sun.dirZ, sun.sunI);
+    applySkyGlow(glowBg, cosA, elevDeg, sun.dirZ, sun.sunI, x, y); applySkyGlow(glowFg, cosA, elevDeg, sun.dirZ, sun.sunI, x, y);
     fg = glowFg; bg = glowBg;
   }
   rt.setCellRGB(x, y, glyphIdx, clampByte(fg[0]), clampByte(fg[1]), clampByte(fg[2]),

@@ -22,17 +22,17 @@ const s4 = { [CLOCK_KEY]: 'x' };
 tickClock(s4, 0, cfg);
 check('invalid starts at 8', s4[CLOCK_KEY] === 8);
 // respawn/travel keep the hour: the state key is never touched by anything but tickClock (no reset API)
-// quantised updates: 1 game day at 60 Hz, 24 min/day => 240*24 = 5760 steps
+// quantised updates: 1 game day at 60 Hz, 24 min/day => 480*24 = 11520 steps
 const s5 = { [CLOCK_KEY]: 8 };
 let applied = 0, lastQ = -1, mono = true;
 const drv = createClockDriver((q) => { applied++; if (q === lastQ) mono = false; lastQ = q; });
 check('forced first update', drv.update(8, true) === true);
 for (let i = 0; i < 1440 * 60; i++) { tickClock(s5, 1 / 60, cfg); drv.update(s5[CLOCK_KEY]); }
-check('about 5760 steps/day (got ' + applied + ')', Math.abs(applied - 1 - 5760) <= 2);
+check('about 11520 steps/day (got ' + applied + ')', Math.abs(applied - 1 - 11520) <= 2);
 check('no repeated step hour', mono);
 check('force reruns', drv.update(8, true) === true && drv.update(8) === false);
-check('stepHour grid', Math.abs(stepHour(8.0041) - 8) < 1e-9 && stepHour(8.0042) > 8);
+check('stepHour grid', Math.abs(stepHour(8.0020) - 8) < 1e-9 && stepHour(8.0021) > 8);
 // frozen = driver never called: nothing to assert except state untouched
 const fz = { [CLOCK_KEY]: 8 };
-check('frozen state untouched', fz[CLOCK_KEY] === 8 && STEP_HOURS === 1 / 240);
+check('frozen state untouched', fz[CLOCK_KEY] === 8 && STEP_HOURS === 1 / 480);
 if (fail) { console.error(fail + ' failed'); process.exit(1); } else console.log('worldClock.test: all pass');
