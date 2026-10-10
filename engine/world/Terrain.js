@@ -179,12 +179,16 @@ export class Terrain {
    * rule as `farHDraw`; `minH`/`maxH` are the band's hDraw extremes (render
    * escape bounds, mirrors `farMaxH`).
    */
-  bakeNearBand(cx, cy) {
+  bakeNearBand(cx0, cy0, cw, ch) {
+    // WS1-02 (arch 38.36): chunk RECT form `(cx0, cy0, cw, ch)` (non-square band, cw/ch 1..6). The legacy
+    // 2-arg call `(cx, cy)` = the 3x3 band centred on chunk (cx, cy) = `(cx-1, cy-1, 3, 3)`, byte-identical.
+    if (cw === undefined) { cx0 -= 1; cy0 -= 1; cw = 3; ch = 3; }
+    if (!Number.isInteger(cw) || !Number.isInteger(ch) || cw < 1 || ch < 1 || cw > 6 || ch > 6) throw new Error(`bakeNearBand: cw/ch must be integers 1..6 (got ${cw}x${ch})`);
     this._bindEdits();
     const n = this.chunkSize / this.nearCell; // 64 near-cells per 128 m chunk
-    const w = 3 * n, h = 3 * n;
-    const x0 = (cx - 1) * this.chunkSize;
-    const y0 = (cy - 1) * this.chunkSize;
+    const w = cw * n, h = ch * n;
+    const x0 = cx0 * this.chunkSize;
+    const y0 = cy0 * this.chunkSize;
     const G = this.util.bake(x0, y0, this.nearCell, w, h);
 
     const hDraw = new Float32Array(w * h);

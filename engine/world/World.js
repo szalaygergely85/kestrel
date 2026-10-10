@@ -120,8 +120,8 @@ function fillMeshBbox(bbox, mesh, frame, k) {
 
 // ED-MESH-1d: cheap key of everything the near-band bake reads from the placed structures
 // (`structureBlend`: bbox + ringHAt = outer-ring sector floorH + frame z). Perimeter cells only.
-function nearBandKey(w, cx, cy) {
-  let k = `${cx},${cy}`;
+function nearBandKey(w, cx, cy, cw = 3, ch = 3) {
+  let k = w.terrainBand ? `${cx},${cy},${cw}x${ch}` : `${cx},${cy}`; // WS1-02: an authored rect is part of the key (absent = old key)
   for (const p of w.structures) {
     if (p.kind === 'mesh') continue;
     const lv = p.level, W = lv.width, H = lv.height, b = p.bbox;
@@ -138,6 +138,16 @@ function nearBandKey(w, cx, cy) {
 // this story). Validated up front like `validateHorizon` below (throws,
 // never silently dropped) and returns a plain copy (content, not state -
 // never mutated at runtime).
+// WS1-02 (arch 38.36): `world.terrainBand {cx0, cy0, cw, ch}` - the near terrain band as a chunk rect
+// (ints, cw/ch 1..6). Absent = null = the auto-centred 3x3. Validated up front, returned as a plain copy.
+function validateTerrainBand(b) {
+  if (b == null) return null;
+  if (typeof b !== 'object') throw new Error('World.load: terrainBand must be an object {cx0, cy0, cw, ch}');
+  for (const k of ['cx0', 'cy0']) if (!Number.isInteger(b[k]) || b[k] < 0) throw new Error(`World.load: terrainBand.${k} must be an integer >= 0`);
+  for (const k of ['cw', 'ch']) if (!Number.isInteger(b[k]) || b[k] < 1 || b[k] > 6) throw new Error(`World.load: terrainBand.${k} must be an integer 1..6`);
+  return { cx0: b.cx0, cy0: b.cy0, cw: b.cw, ch: b.ch };
+}
+
 function validateBounds(b) {
   if (b == null) return null;
   if (b.shape === 'union') {
@@ -225,6 +235,7 @@ export class World {
     // `null` (unbounded - every world before this story). Content, not
     // state; set once by `World.load` from `def.bounds`.
     this.bounds = null;
+    this.terrainBand = null; // WS1-02: authored near-band chunk rect or null (auto 3x3)
     // US-016 D-011 addendum (architecture.md 14.4 item 13): horizon
     // billboards - plain data, content not state (never mutated at
     // runtime), not entities (they have no world position - placed by
@@ -373,6 +384,7 @@ export class World {
       }
     }
     w.bounds = validateBounds(def.bounds);
+    w.terrainBand = validateTerrainBand(def.terrainBand); // WS1-02 (null = auto 3x3)
     // US-138 (32.5): built once here, after bounds, before the sun block
     // below (order doesn't matter to wind itself - it reads nothing else off
     // `w`). `def.wind` may be absent -> `createWind(null, ...)` -> calm.
@@ -458,11 +470,14 @@ export class World {
       }
       const cx = Math.floor((bx0 + bx1) / 2 / w.terrain.chunkSize);
       const cy = Math.floor((by0 + by1) / 2 / w.terrain.chunkSize);
+      // WS1-02 (38.36): authored `terrainBand` rect (absent = the auto-centred 3x3, byte-identical).
+      const tb = w.terrainBand;
+      const bcx0 = tb ? tb.cx0 : cx - 1, bcy0 = tb ? tb.cy0 : cy - 1, bcw = tb ? tb.cw : 3, bch = tb ? tb.ch : 3;
       // ED-MESH-1d: a reused Terrain whose band was baked for the same centre and the same
       // structure footprints (bbox + z + outer-ring floorH, all `ringHAt` can read) is still valid.
-      const key = nearBandKey(w, cx, cy) + `|realTrees:${w.terrain.realTrees}`;
+      const key = nearBandKey(w, tb ? bcx0 : cx, tb ? bcy0 : cy, bcw, bch) + `|realTrees:${w.terrain.realTrees}`;
       if (!(w.terrain.nearReady && w.terrain._nearKey === key)) {
-        w.terrain.bakeNearBand(cx, cy);
+        w.terrain.bakeNearBand(bcx0, bcy0, bcw, bch);
         w.terrain._nearKey = key;
       }
     }
