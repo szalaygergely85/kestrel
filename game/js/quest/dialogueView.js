@@ -19,7 +19,7 @@ const DEF = {
   choices: { firstRow: 7, max: 3, markerCol: 1, numberCol: 3, textCol: 6, bandFrom: 1, bandTo: 94,
     number: { fg: 'uiDim', focusFg: 'brassLight' }, normal: { fg: 'uiText' },
     focus: { fg: 'gold', marker: '>', markerFg: 'gold' }, seen: { fg: 'uiHint' }, disabled: { fg: 'uiDim', suffix: ' (locked)' } },
-  keyHints: { fg: 'uiDim', keyFg: 'gold', text: 'E: next   W/S: choose' },
+  keyHints: { fg: 'uiDim', keyFg: 'gold', text: 'E: next   Up/Down: choose' },
 };
 // Last-resort colours when neither the palette nor the key resolves.
 const FB = { brass: [201, 160, 74], brassLight: [240, 210, 122], brassHot: [255, 240, 180], heroGreen: [79, 214, 106], uiText: [232, 226, 208],
@@ -77,10 +77,10 @@ export function createDialogueView(opt = {}) {
   const NO_CH_H = 8, MAX_CH = num(ch.max, 3) | 0, MAX_LINES = num(tx.maxLines, 4) | 0;
   const period = num(mo.blink.periodSec, 0.8) > 0 ? num(mo.blink.periodSec, 0.8) : 0.8, duty = num(mo.blink.duty, 0.6);
 
-  // Key hints: precomputed text + per-char "is key" flag (the part before each ':'), with / without the W/S part.
+  // Key hints: precomputed text + per-char "is key" flag (the part before each ':'), with / without the choose part.
   function hintOf(withChoose) {
     let t = typeof kh.text === 'string' ? kh.text : DEF.keyHints.text;
-    if (!withChoose) t = t.split('   ').filter((p) => p.indexOf('W/S') !== 0).join('   ');
+    if (!withChoose) t = t.split('   ').filter((p) => p.indexOf('Up/Down') !== 0).join('   ');
     const key = new Uint8Array(t.length);
     let k = 1;
     for (let i = 0; i < t.length; i++) {

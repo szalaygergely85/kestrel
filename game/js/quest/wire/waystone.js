@@ -10,7 +10,7 @@ export const TOAST_SAVED = 'Saved. The stone will remember.';
 export const TOAST_HEALED = 'Warmth in the hands. Hearts full.';
 export const TOAST_SEC = 3.5;
 export const RELAY_SAVED = 'Saved. The relay will remember.'; // story.md toast.relay.saved
-export const RELAY_TITLES = { ws_roadBend: 'Bend Relay' }; // story.md place.relay.<id>
+export const RELAY_TITLES = { ws_roadBend: 'Bend Relay', ws_ford: 'Ford Relay' }; // story.md place.relay.<id>
 const FG = [236, 226, 190], BG = [10, 11, 16];
 
 export function createWaystoneWire(opts = {}) {

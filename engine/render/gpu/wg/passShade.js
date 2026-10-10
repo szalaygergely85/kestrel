@@ -83,7 +83,7 @@ export class WgShadePass {
     this.skyElevTop = 0;
     this.table = null; this.palette = null; this.uniforms = null; this.packed = null;
     this.tableDirty = false; this.nRec = 0;
-    this.skyPalette = null; this.skyTime = null;
+    this.skyPalette = null; this.skyTime = null; this.skyLiveVer = -1; // DN-02: liveLookVersion of the last bake (-1 = baked from the static look)
     this.terrainWorld = null; this.terrainVersion = -1;
     this.terrainU = { bandNear: 0, bandMid: 0, fogOn: false, fogStart: 0, fogFull: 0, fogCurve: 1, nearRGB: null, farRGB: null, nearDetail: false, handover: null, closeBand: 0 };
     this.sunScratch = { dirX: 0, dirY: 0, dirZ: 0, ambientI: 0, sunI: 0 };
@@ -144,13 +144,21 @@ export class WgShadePass {
     for (let i = 0; i < 8; i++) { eu[E_GLYPH + i] = U.edges ? U.edges.ruleGlyph[i] : 0; eu[E_GAIN + i] = U.edges ? U.edges.ruleGain[i] : 1; }
   }
 
+  /** DN-02: the sky LUT needs a (re)bake: new palette / default time, or liveLookVersion changed (-1 = no live look = frozen path). */
+  _skyStale() {
+    const P = this.palette;
+    return this.skyPalette !== P || this.skyTime !== P.defaultTime || this.skyLiveVer !== (P.liveLook ? (P.liveLookVersion | 0) : -1);
+  }
+
   // GL _bakeSkyLUT twin (flat gradient, SKY_LUT_N samples over elevation [0, elevTop]); re-baked when the palette / time of day changes.
   _bakeSky() {
     const P = this.palette;
     this.skyPalette = P; this.skyTime = P ? P.defaultTime : null;
+    const live = P && P.liveLook; // DN-02: day/night look (blendLook); unset = the frozen path, byte-identical to before
+    this.skyLiveVer = live ? (P.liveLookVersion | 0) : -1;
     const rec = P && P.materials && P.materials.sky;
     if (!rec || !P.timeOfDay) return;
-    const stops = P.timeOfDay[P.defaultTime].sky;
+    const stops = (live || P.timeOfDay[P.defaultTime]).sky;
     const data = this.skyData;
     for (let i = 0; i < SKY_LUT_N; i++) {
       const t = i / (SKY_LUT_N - 1);
@@ -213,7 +221,7 @@ export class WgShadePass {
     if (this.table && this.table.records && this.table.records.length !== this.nRec) this.tableDirty = true; // bindLevel appended materials in place
     if (this.tableDirty) this._uploadTable();
     if (!this.packed) return false; // nothing bound: no shade possible (the CPU present is unaffected)
-    if (this.palette && (this.skyPalette !== this.palette || this.skyTime !== this.palette.defaultTime)) this._bakeSky();
+    if (this.palette && this._skyStale()) this._bakeSky(); // DN-02: re-bake only on a new liveLookVersion
     const useScene = p._source !== 'upload' && !!p._cam && !!p._world;
     if (useScene) this._ensureTerrain(p._world);
     const rp = p._rasterPass, pitched = useScene && !!(rp && rp.pitched);
@@ -234,6 +242,7 @@ export class WgShadePass {
     // AUD-45: height fog + sun in-scatter, same gate as the CPU compositor (terrain world with a time-of-day palette).
     const fogShapeOn = useScene && !!p._world.terrain && !!(p._palette && p._palette.timeOfDay);
     su[S_FOGVIEW] = fogShapeOn ? p._cam.z : 0; su[S_FOGVIEW + 1] = fogShapeOn ? 1 : 0;
+    const liveK = this.palette && this.palette.liveLook; su[S_SKYGLOWON + 1] = liveK && liveK.floorEff > 0 ? liveK.floorEff : 0; // DN-02 night glyph-luminance floor (0 = off)
     su[S_SKYGLOWON] = fogShapeOn ? 1 : 0; // AUD-40: same gate, written every frame (sunDir/sunI are stale outside terrain worlds)
     if (pitched) {
       const q = rp.pitch;

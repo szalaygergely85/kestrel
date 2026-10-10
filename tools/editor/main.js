@@ -705,7 +705,7 @@ function snapTo(v, snap) { return normZero(Math.round(v / snap) * snap); }
 /** `engine.setWorld(World.load(...))` - the one mutation path's rebuild (24.8). <= 5 ms budget. */
 function rebuild() {
   const t0 = performance.now();
-  const w = World.load(assets.world(doc.worldId), assets, { events: engine.events, terrain: engine.world && engine.world.terrain });
+  const w = World.load(assets.world(doc.worldId), assets, { events: engine.events, terrain: engine.world && engine.world.terrain, spawn: { x: cam.x, y: cam.y } }); // WS2: start in the band under the camera
   engine.setWorld(w);
   reapplyVisibility(); // US-067: hide/lock survives this rebuild (in-memory overlay, never in `doc`)
   const ms = performance.now() - t0;
@@ -2464,6 +2464,8 @@ let lastPlateRefresh = -Infinity;
 function refreshViewportPlates(nowMs) {
   if (nowMs - lastPlateRefresh < 250) return;
   lastPlateRefresh = nowMs;
+  // WS2: the editor camera flies anywhere; keep the near band under it (else the far-canopy edge skirt shows as a green block)
+  if (world && world.ensureBandFor && world.ensureBandFor(cam.x, cam.y)) frame.markDirty();
   camPlateEl.textContent = `CAM ${cam.x.toFixed(1)} ${cam.y.toFixed(1)} ${cam.z.toFixed(1)}  yaw ${cam.yawDeg.toFixed(0)} pitch ${cam.pitchDeg.toFixed(0)}  SPD ${speed.toFixed(1)} m/s`;
   const fps = engine.loop.stats.intervalMs > 0 ? 1000 / engine.loop.stats.intervalMs : 0;
   statsPlateEl.textContent = `${fps.toFixed(0)} fps  grid ${rt.cols}x${rt.rows}  presented ${lastPresented}`;

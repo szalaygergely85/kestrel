@@ -341,6 +341,9 @@ export function blendLook(P, hour, schedule, out) {
   if (nf) {
     if (out.ambientI < nf.ambientI) out.ambientI = nf.ambientI;
     out.floorLum = nf.lum || 0;
+    // DN-02: effective glyph-luminance floor = floorLum faded out with the sun/moon intensity (full at night, 0 by dusk's sunI .8), so day shadows keep today's look.
+    const sk = (out.sunI - 0.25) / 0.55, ss = sk <= 0 ? 0 : sk >= 1 ? 1 : sk * sk * (3 - 2 * sk);
+    out.floorEff = out.floorLum * (1 - ss);
   }
   setLiveColor(P, out.ambient, P.rgb[A.ambient], P.rgb[B.ambient], f);
   setLiveColor(P, out.sun, P.rgb[A.sun], P.rgb[B.sun], f);

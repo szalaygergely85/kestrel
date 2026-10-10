@@ -3,6 +3,7 @@
 //   0 home  1 walking to the stone  2 at the stone  3 departing  4 gone (hidden)
 // s.* dialogue flags live in world.state without the "s." (dialogueCtl): burl.follow, burl.depart, burl.departing.
 export const PHASE_HOME = 0, PHASE_WALK = 1, PHASE_STONE = 2, PHASE_DEPART = 3, PHASE_GONE = 4;
+export const WAIT_BARK_M = 12, WAIT_BARK_COOL_S = 20; // PO-CH1-14: player runs ahead of Burl during the walk
 export const CALL_NEAR_M = 14, TALK_NEAR_M = 4, TALK_REARM_M = 7;
 
 /**
@@ -13,7 +14,7 @@ export const CALL_NEAR_M = 14, TALK_NEAR_M = 4, TALK_REARM_M = 7;
  */
 export function createBurlEscort(o) {
   const { world, walk, questFlag } = o, st = world.state, id = o.id || 'bear';
-  let talkLatch = false, wokenLatch = false;
+  let talkLatch = false, wokenLatch = false, waitCool = 0;
   const phase = () => st['burl.phase'] | 0;
   const setPhase = (p) => { st['burl.phase'] = p; };
   const follow = () => walk.start('follow', { lead: true, fromWp: st['burl.wp'] | 0, onArrive: arrived });
@@ -43,6 +44,11 @@ export function createBurlEscort(o) {
       } else if (p === PHASE_WALK) {
         walk.step(dt, px, py);
         st['burl.wp'] = walk.wp;
+        if (waitCool > 0) waitCool -= dt;
+        if (o.barks && waitCool <= 0) { // NEEDS WRITER: bark key 'bear.wait' (placeholder text in bear.barks.json)
+          const dx = px - o.x(), dy = py - o.y();
+          if (dx * dx + dy * dy > WAIT_BARK_M * WAIT_BARK_M && o.barks.play('bear.wait', id, true)) waitCool = WAIT_BARK_COOL_S;
+        }
       } else if (p === PHASE_STONE) {
         const open = o.dialogueOpen && o.dialogueOpen();
         if (st['burl.depart'] && !open) { // the after-wake node ended: leave

@@ -143,7 +143,7 @@ function buildWaypoints(world) {
   const b = world.bounds.parts[0]; // WS1-04: union; part 0 = the old circle
   const terrainNear = { x: 1470, y: 1029 }; // real terrain, just past the breach/outcrop (outside the tower's 24x14 bbox)
   const waystone = { x: 1428, y: 1040 }; // content/worlds/world_m1.world.json endMarker/trigger
-  const boundEdge = { x: 1195, y: 1047 }; // WS1-04: past the west end of the road corridor (capsule end x 1240 - r 40 = 1200)
+  const boundEdge = { x: 1300, y: 995 }; // WS2-07: the road corridor now runs to the ford; walk north off it (capsule y 1047 - r 40 = 1007)
   return [
     ...routeLocal.map(toWorld), // ground floor -> stairs -> breach (structure interior)
     { x: terrainNear.x, y: terrainNear.y }, // onto real terrain, just past the breach

@@ -29,7 +29,7 @@ function setup(relay) {
     assert.equal(ctl.openFor('bear'), true);
     for (let i = 0; i < 300 && ctl.open; i++) {
       if (i === esc) { tick('Escape'); break; }
-      if (ctl.runner.state === 'choosing') { for (let k = 0; k < pick; k++) tick('KeyS'); tick('KeyE'); continue; }
+      if (ctl.runner.state === 'choosing') { for (let k = 0; k < pick; k++) tick('ArrowDown'); tick('KeyE'); continue; }
       if (ctl.runner.state === 'typing' && said.at(-1) !== ctl.runner.line) said.push(ctl.runner.line);
       tick('KeyE');
     }
@@ -48,7 +48,7 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
   r.book.onChange = (n, id) => ev.push(n + ':' + id);
   toSword(r);
   assert.equal(r.book.statusOf('burl.boars'), 1);
-  assert.equal(r.objectiveText(), 'Find the old bear on the hillside');
+  assert.equal(r.objectiveText(), 'Help Burl with the boars');
   const offer = t.talk(0);
   assert.equal(offer[0], "If you're heading west, mind the woods.");
   assert.equal(offer.at(-1), 'Mind their tusks, sky-cub.');

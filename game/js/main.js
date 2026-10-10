@@ -130,7 +130,6 @@ import { createDialogueCtl, setDialogueApi } from './quest/dialogueCtl.js'; // D
 import { createCrystalGrant } from './quest/crystal.js'; // CH1-MOUNT: CH1-03 aether crystal after the boars
 import { createNpcWalk } from './quest/npcWalk.js'; // CH1-07
 import { createBurlEscort } from './quest/burlEscort.js'; // CH1-07
-import { createFenEntrance } from './quest/fenEntrance.js'; // CH1-08b
 import { createBarks } from './quest/barks.js'; // CH1-MOUNT: CH1-06 bark one-liners (Burl)
 import { createChapterCard } from './quest/chapterCard.js'; // CH1-MOUNT: CH1-09 chapter end card
 import { createNoticeView } from './ui/noticeView.js'; // CH1-MOUNT: CH1-04a notice banner
@@ -987,12 +986,15 @@ async function runGame(mode, cinematic = null) {
   // COMPASS-02 (D-061): golden pocket compass, bottom-right. Resolver maps quest targets to world positions; hide rules are set in update(), drawn in render().
   const compass = createCompassHud({ style: window.ASSETS && window.ASSETS.uiStyle && window.ASSETS.uiStyle.compass });
   let compassBookVer = -1, compassTick = 0, compassWorld = null, compassBreach = null, compassHide = true;
-  const COMPASS_FLAG = { 'quest.burl.boars.done': 'bear', 'burl.arrived': 'bear', 'waystone.waystone.woken': 'endMarker', 'waystone.ws_roadBend.woken': 'relayBend', 'fen.met': 'fen' };
+  const COMPASS_FLAG = { 'quest.burl.boars.done': 'bear', 'burl.arrived': 'bear', 'waystone.waystone.woken': 'endMarker', 'waystone.ws_roadBend.woken': 'relayBend' };
+  // PO-CH1-12: giver ids that are level props (placementId.propId) resolve through one helper for compass + map marks.
+  const GIVER_ENT = { noteKeepLight: 'tower.noteKeepLight' };
+  const giverEntity = (w, id) => w.get(GIVER_ENT[id] || id);
   const compassResolver = { resolve(kind, id, out) {
     const w = compassWorld; if (!w) return false;
     let e = null;
-    if (kind === 'giver') e = w.get(id);
-    else if (kind === 'flag') e = w.get(COMPASS_FLAG[id] || ''); // CH1-02: flag step -> the prop/NPC that sets it (Burl hand-in, bear escort, stone, relay, Fen)
+    if (kind === 'giver') e = giverEntity(w, id);
+    else if (kind === 'flag') e = w.get(COMPASS_FLAG[id] || ''); // CH1-02: flag step -> the prop/NPC that sets it (Burl hand-in, bear escort, stone, relay)
     else if (kind === 'beast') { e = w.get(id); const h = e && e.data && e.data.components.health; if (h && h.hp <= 0) return false; }
     else if (kind === 'area') {
       if (id === 'breach') { if (!compassBreach) compassBreach = compassFindMarker(w, 'breach'); if (!compassBreach) return false; out.x = compassBreach.x; out.y = compassBreach.y; out.z = compassBreach.z; return true; }
@@ -1047,7 +1049,7 @@ async function runGame(mode, cinematic = null) {
   const notice = createNoticeView();
   let crystal = null, barks = null, chapterCard = null, ch1Hidden = true;
   let burlReopen = false; // PO-CH1-07 latch
-  let escort = null, fenEntrance = null; // CH1-07 Burl escort / CH1-08b Fen entrance (rebuilt per world, saves live only)
+  let escort = null; // CH1-07 Burl escort (rebuilt per world, saves live only)
   window.__debug.notice = notice; window.__debug.ch1Hidden = () => ch1Hidden; // tools/verify-relay-wake.mjs
   engine.events.on('beast:died', (p) => { // crystal burst lands where the last boar fell
     if (!crystal || !p || typeof p.id !== 'string') return;
@@ -1076,7 +1078,7 @@ async function runGame(mode, cinematic = null) {
     mapQmChart = c; mapQmVer = b.version;
     const a = [], r = [], list = []; b.giverMarks(a, r);
     for (const [ids, kind] of [[a, 'quest'], [r, 'questReady']]) for (const id of ids) {
-      const e = engine.world.get(id), t = e && e.data && e.data.transform; if (t) list.push({ kind, x: t.x, y: t.y });
+      const e = giverEntity(engine.world, id), t = e && e.data && e.data.transform; if (t) list.push({ kind, x: t.x, y: t.y });
     }
     c.setQuestMarkers(list);
   }
@@ -1201,8 +1203,18 @@ async function runGame(mode, cinematic = null) {
         if (Number.isFinite(timeHour) && !clockTimeApplied) world.state[CLOCK_KEY] = ((timeHour % 24) + 24) % 24;
         clockTimeApplied = true;
         const P = assets.palette;
-        clockDriver = createClockDriver((hq) => {
-          applySunHours(world, lightSet, hq, worldSunPath, sunEnabled, true);
+        // DN-02 (owner: shadows must not visibly move): the light/shadow sun (lightSet.sun) only follows the clock in 30 game-minute slots,
+        // eased over SHADOW_EASE_STEPS steps; world.sun (sky glow, fog, terrain sun) + sky/ambient/colours stay smooth every step.
+        let shadowHour = NaN, steps = 0;
+        const SHADOW_SLOT_H = 0.5, SHADOW_EASE_STEPS = 4;
+        clockDriver = createClockDriver((hq, force) => {
+          const target = Math.floor(hq / SHADOW_SLOT_H) * SHADOW_SLOT_H;
+          let dh = ((target - shadowHour + 36) % 24) - 12; // signed, wrapped
+          if (!(Math.abs(dh) <= SHADOW_SLOT_H * 1.01) || force) { shadowHour = target; dh = 0; steps = 0; } // load / jump / first step: snap
+          else if (dh !== 0) { const st = SHADOW_SLOT_H / SHADOW_EASE_STEPS; shadowHour = Math.abs(dh) <= st + 1e-9 ? target : shadowHour + Math.sign(dh) * st; }
+          shadowHour = ((shadowHour % 24) + 24) % 24;
+          applySunHours(world, lightSet, shadowHour, worldSunPath, sunEnabled, true); // light + shadow dir (stepped)
+          applySunHours(world, null, hq, worldSunPath, sunEnabled, true); // world.sun smooth (sky glow / fog / terrain)
           const L = blendLook(P, hq, P.daySchedule);
           if (lightSet) { const hu = P.hue[L.ambient]; lightSet.ambient[0] = hu[0] * L.ambientI; lightSet.ambient[1] = hu[1] * L.ambientI; lightSet.ambient[2] = hu[2] * L.ambientI; }
         });
@@ -1314,14 +1326,14 @@ async function runGame(mode, cinematic = null) {
       bearTurn = createNpcTurn(world, 'bear'); // NPC-BEAR-01: null when the world has no bear
       compassWorld = world; compassBreach = null; compassBookVer = -1; compassTick = 0; // COMPASS-02: re-resolve against the new world
       if (bearTurn) dialogueCtl.addNpc('bear');
-      crystal = barks = chapterCard = escort = fenEntrance = null;
+      crystal = barks = chapterCard = escort = null;
       if (bearTurn) bearTurn.paused = false;
       if (saveEnabled && saveRelay) { // CH1-MOUNT: all three need the quest relay (flags + book)
         const rq = saveRelay.quest, tmsg = () => window.ASSETS.items && window.ASSETS.items.toast && window.ASSETS.items.toast.messages && window.ASSETS.items.toast.messages.packFull;
         crystal = createCrystalGrant({ world, questFlag: (k) => rq.questFlag(k),
           addItem: (id) => { const inv = playerHandle && playerHandle.data.components.inventory; return inv && itemDefs ? addItem(inv, itemDefs, id, 1) : 0; },
           burst: (x, y, z) => { try { hitSparks(engine.particles, x, y, z + 0.3, 0, 0, 1, 24, 2); } catch (e) { /* hit sparks not defined: no burst */ } }, // hue 2 = aether cyan
-          toast: () => { const m = tmsg(); if (toasts && m) toasts.say('A crystal glints where the boar fell.', m.fg); } }); // story.md toast.crystal.found
+          toast: () => { const m = tmsg(); if (toasts && m) toasts.say('A teal crystal lay under the last boar.', m.fg); } }); // story.md toast.crystal.found (PO-CH1-13: reads as GIVEN by Burl, not a pickup)
         crystal.check(rq.book.statusOf('burl.boars'));
         if (bearBarks) barks = createBarks({ world, data: bearBarks, questFlag: (k) => rq.questFlag(k), dialogue: dialogueCtl, style: window.ASSETS.uiStyle.dialogue });
         // CH1-07 (38.37 item 5): Burl walks (follow -> stone, depart) + proximity talk; load rules per phase. Needs the bear entity.
@@ -1333,16 +1345,7 @@ async function runGame(mode, cinematic = null) {
             dialogueOpen: () => dialogueCtl.open, afterLeave: () => rq.state.completed.includes('leave'), requestOpen: nearTalk, noticeBusy: () => notice.active });
           escort.load();
         }
-        // CH1-08b: Fen hidden until the Bend Relay wakes, then walks `emerge`; dialogue auto-opens within 4 m
-        // FEN-OFF-01: Fen removed from the world; this is a no-op without a `fen` entity (fenEntrance.js kept, unused)
-        const fw = world.get('fen') ? createNpcWalk(world, 'fen', { removeInteractable: rm }) : null;
-        if (fw) {
-          const ft = world.get('fen').data.transform;
-          fenEntrance = createFenEntrance({ world, walk: fw, id: 'fen', x: () => ft.x, y: () => ft.y, requestOpen: nearTalk, dialogueOpen: () => dialogueCtl.open,
-            noticeBusy: () => notice.active, addTalk: () => { if (!world.interactables.some((r) => r.key === 'npc.fen')) dialogueCtl.addNpc('fen'); } });
-          fenEntrance.load();
-        }
-        window.__debug.escort = escort; window.__debug.fenEntrance = fenEntrance; // tools/verify-ch1-mount.mjs
+        window.__debug.escort = escort; // tools/verify-ch1-mount.mjs
         chapterCard = createChapterCard({ world, openNote: (id) => noteRead({ world, def: { noteId: id } }), isNoteOpen, setFlag: (k, v) => rq.questFlag(k, v) });
       }
       if (toasts) toasts.dispose();
@@ -1750,7 +1753,7 @@ async function runGame(mode, cinematic = null) {
       const simDue = hitStop.due(1000 / 60); // HITSTOP-01: the window gates beasts.step only; the sword freezes by its own hitStopHard counter
       if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); }
       if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); } // WILD-06: ambient only, never hashed
-      if (escort || fenEntrance) { const uiHold = uiLocked || !!(dialogueCtl && dialogueCtl.open); /* AUD-06 */ const pt = playerHandle.data.transform; if (escort) { if (burlReopen && !(dialogueCtl && (dialogueCtl.open || dialogueCtl._closing))) { burlReopen = false; const bh = engine.world.get('bear'), bt2 = bh && bh.data.transform; if (bt2 && (bt2.x - pt.x) ** 2 + (bt2.y - pt.y) ** 2 <= 36) dialogueCtl.openFor('bear'); } escort.step(dt, pt.x, pt.y, uiHold); if (bearTurn) bearTurn.paused = escort.busy; } if (fenEntrance) fenEntrance.step(dt, pt.x, pt.y, uiHold); } // CH1-07/08b: before the bear turn
+      if (escort) { const uiHold = uiLocked || !!(dialogueCtl && dialogueCtl.open); /* AUD-06 */ const pt = playerHandle.data.transform; if (escort) { if (burlReopen && !(dialogueCtl && (dialogueCtl.open || dialogueCtl._closing))) { burlReopen = false; const bh = engine.world.get('bear'), bt2 = bh && bh.data.transform; if (bt2 && (bt2.x - pt.x) ** 2 + (bt2.y - pt.y) ** 2 <= 36) dialogueCtl.openFor('bear'); } escort.step(dt, pt.x, pt.y, uiHold); if (bearTurn) bearTurn.paused = escort.busy; } } // CH1-07/08b: before the bear turn
       if (bearTurn) { const pt = playerHandle.data.transform; bearTurn.step(dt, pt.x, pt.y, !!(dialogueCtl && dialogueCtl.open)); } // NPC-BEAR-01 // US-079a (29.1)
       if (beasts && assets.uiStyle) stepCombatHint(engine.world, assets.uiStyle, beasts); // COMBAT-HINT-01: once-per-save first-fight hint (taken from lane C)
       if (telegraphWire) telegraphWire.step(performance.now());

@@ -9,7 +9,8 @@ import { createJawSync } from './jawSync.js';
 
 export const CLOSE_FAR_M = 6.5;
 const CONFIRM_KEYS = ['KeyE', 'Enter'];
-const UP_KEYS = ['KeyW', 'ArrowUp'], DOWN_KEYS = ['KeyS', 'ArrowDown'];
+// DIALOGUE-LOCK-01 (PO REJECT): movement stays live, so W/S are NOT read here; choose with arrows / wheel / digits 1-4.
+const DIGIT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4'];
 
 let api = null;
 /** main.js: point the `npc.talk` behaviour at this load's ctl (or null). */
@@ -133,11 +134,17 @@ export function createDialogueCtl(opt) {
       if (!ctl.open) { if (ctl.locked && !ctl._closing) ctl.locked = false; return; } // DIALOGUE-LOCK-01: never stay locked without an open box. runner.state is read-only here ('ended' already counts as closed)
       if (lookLocked === false) { ctl.close(); return; }
       if (input.pressed('Escape')) { ctl.close(); return; }
+      let digit = false;
       if (runner.state === 'choosing') {
-        if (input.pressed(UP_KEYS[0]) || input.pressed(UP_KEYS[1])) runner.move(-1);
-        if (input.pressed(DOWN_KEYS[0]) || input.pressed(DOWN_KEYS[1])) runner.move(1);
+        if (input.pressed('ArrowUp')) runner.move(-1);
+        if (input.pressed('ArrowDown')) runner.move(1);
+        const wh = input.consumeWheel ? input.consumeWheel() : 0;
+        if (wh !== 0) runner.move(wh < 0 ? -1 : 1);
+        for (let i = 0; i < DIGIT_KEYS.length; i++) {
+          if (i < runner.choiceCount && input.pressed(DIGIT_KEYS[i])) { runner.selected = i; digit = true; break; }
+        }
       }
-      if (input.pressed(CONFIRM_KEYS[0]) || input.pressed(CONFIRM_KEYS[1])) {
+      if (digit || input.pressed(CONFIRM_KEYS[0]) || input.pressed(CONFIRM_KEYS[1])) {
         if (runner.state === 'choosing') runner.choose(); else runner.press();
         if (input.consumePressed) input.consumePressed(); // DIALOGUE-LOCK-01: the confirm edge is used up, later handlers (E interact) must not see it
       } // one confirm per step: a pick never also advances the next line
