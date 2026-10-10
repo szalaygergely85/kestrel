@@ -1120,3 +1120,8 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - The owner delegates PC-A's sign-off to PC-B: PC-B architect verdicts (ARCH OK / ARCH CHANGES, opus or fable) and PC-B PO verdicts (PO OK / PO REJECT) are FINAL; no "PC-A to ratify" step is needed. PC-B may record decisions (D-xxx) on the owner's word and merge to master after the normal gates (tests + check-deps + validate-content + gpucompare vs the machine baseline + route walk).
 - Ratified now: D-053..D-065 and architecture 38.24-38.39 written by PC-B while PC-A was offline; the batch reviews arch-batch-2026-10-10-pcb.md, po-batch-2026-10-10-evening-pcb.md, po-ch1-flow-2026-10-10.md, arch-audit-2026-10-10.md, arch-audit2-2026-10-10.md; the D-025 grid-max amendment (GRID-MAX-01) when it lands.
 - If PC-A comes back online it follows the same rule (either PC may sign; the owner decides conflicts).
+
+## D-067 - World layout + release scope (owner, 2026-10-11; recorded by the PC-B main session)
+- **Enclosed world:** a river and mountains form two sides, the sea one side, and mountains the fourth side. In the fourth-side mountains stands a **gate with walls** (fortified pass), locked; the **last quest gives the key** and opens **Part II after release** (not built for 1.0).
+- **Release scope:** about **100 quests** (main + side) before release, on a data-driven quest pipeline. No dungeon (D-065).
+- Designer world map: docs/world-map-2026-10-11.md + design/preview/world-map.html (in progress); PO stories: MAP + QL tables in docs/pc-b-queue.md.
