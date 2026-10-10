@@ -25,6 +25,11 @@
  *     `heraldry` (hat slot, paintOnly decal: mail checker, red cross-on-gold emblem, red hem / split trim, red sash) -
  *     a decal because an engine shell paints one char (engine ask in design/README.md section 25).
  *   - head at 1.25 cm (38.34): bases.m_avg.detail.head["2"] = a straight 2x upsample of the level-1 Head + Jaw cells.
+ *   - CHARGEN-26b detail pass (owner "add more detail"): eyelid row over 2-row eyes, heavier angled brows + crease,
+ *     nostrils, mouth corners + under-lip shadow, chin dimple, shaped ears (rim, hole, lobe); hair widow's peak,
+ *     combed strands + side parting; beard strands, lit moustache, forked chin tuft; hands with
+ *     four fingers (ridged backs, grooves), knuckles, nails, a separate thumb; a waistband buckle bump; knight decal:
+ *     mail hems, red neckline trim, skirt folds, glove cuffs + knuckles, gold buckle. Proportions / rig unchanged.
  *   - rest pose: standing, arms down in a slight A (gap >= 3 cells from the hips up to z 46), 3 cells between the thighs.
  *
  * Bone boxes are axis-aligned and resolved FIRST-MATCH in skeleton order (38.29 item 3), so they are cut to the
@@ -146,14 +151,22 @@
   //   66 brows outer (b) on the brow ridge   65 brows inner, angled down to the nose   64 / 63 eyes (set in under the ridge):
   //   white c, highlight i over iris e, pupil P (2 x 2 dark block, highlight top-left: one light for both eyes)
   //   59 shade under the nose   58 mouth line d (on the upper lip, Head)   57 lower lip p (Jaw)
+  // CHARGEN-26b detail pass (owner "add more detail"): heavier brows (outer end high on z 66, inner end low on z 65,
+  // glabella crease s between them, temple shadow s), a dark upper eyelid row (z 64) over 2-row eyes (z 63 / 62),
+  // under-eye line s on the cheekbone (z 61), philtrum dip (z 59), mouth line with shaded corners (z 58), lower lip
+  // with corners (z 57), shadow under the lower lip (z 56), chin dimple (z 54).
   var FACE = {
-    66: '.bbbbaaaaabbbb.',
-    65: '.aabbbaaabbbaa.',
-    64: '.aciPcaaaciPca.',
-    63: '.acePcaaacePca.',
-    59: '.aaaaasssaaaaa.',
-    58: '.aaaadddddaaaa.',
-    57: '.aaaaapppaaaaa.'
+    66: '.bbbbbaaabbbbb.',
+    65: '.sabbbbsbbbbas.',
+    64: '.sddddaaadddds.',
+    63: '.aciPcaaaciPca.',
+    62: '.acePcaaacePca.',
+    61: '.assssaaassssa.',
+    59: '.aaaaasdsaaaaa.',
+    58: '.aaaasdddsaaaa.',
+    57: '.aaaaspppsaaaa.',
+    56: '.aaaasssssaaaa.',
+    54: '.aaaaaasaaaaaa.'
   };
   // half width of the head per row: skull z 58-67 (15 wide), z 68 (13), top z 69 (11), jaw z 54-57 (13), chin z 53 (9)
   function headHalf(z) {
@@ -175,7 +188,7 @@
     if (ax === h) return -5;
     if (z === 67) return -6;
     if (z === 65 || z === 66) return -7;
-    if (z === 61 || z === 62) return ax >= 3 ? -7 : -6;
+    if (z === 61) return ax >= 3 ? -7 : -6;   // cheekbones (26b: one row, the eyes now sit on z 62-63)
     if (z === 58) return ax <= 2 ? -7 : -6;
     if (z === 57) return ax <= 1 ? -7 : -6;
     if (z === 53 || z === 54 || z === 55) return ax <= 3 ? -7 : -6;
@@ -193,15 +206,25 @@
   // nose (2 cells out): bridge from the brow ridge down (Y -7, z 61-64), 3 wide at the base (z 60-61), tip Y -8 (z 60-61);
   // l = lit ridge, s = the shaded side (+X, away from the preview light)
   var NOSE = {
-    '0,-7,64': 'a', '0,-7,63': 'a', '0,-7,62': 'a', '1,-7,62': 's', '-1,-7,61': 'a', '0,-7,61': 'l', '1,-7,61': 's',
-    '-1,-7,60': 'a', '0,-7,60': 'a', '1,-7,60': 's', '0,-8,61': 'l', '0,-8,60': 'a'
+    '0,-7,64': 'a', '0,-7,63': 'l', '0,-7,62': 'a', '1,-7,62': 's', '-1,-7,61': 'a', '0,-7,61': 'l', '1,-7,61': 's',
+    '-1,-7,60': 'd', '0,-7,60': 'a', '1,-7,60': 'd', '0,-8,61': 'l', '0,-8,60': 'a'
+  };
+  // 26b nostrils: the nose wings at z 60 (X +-1) are deep d; lit bridge cell at z 63.
+  // ears (26b, set back on the side, X +-8): keyed 'Y,z' - helix rim a / lit l round a dark ear hole d, tragus in front
+  // (Y 0), shaded concha s, a flushed lobe f at the bottom (z 59)
+  var EAR = {
+    '1,63': 'a', '2,63': 'a',
+    '0,62': 'a', '1,62': 's', '2,62': 'l',
+    '0,61': 'a', '1,61': 'd', '2,61': 'a',
+    '0,60': 's', '1,60': 's', '2,60': 'a',
+    '1,59': 'f', '2,59': 'a'
   };
   // the head as a function (also drives hair + beard)
   function headChar(X, Y, z) {
     var ax = Math.abs(X), c, f;
     var n = NOSE[X + ',' + Y + ',' + z];
     if (n) return n;
-    if (ax === 8 && Y >= 1 && Y <= 2 && z >= 60 && z <= 63) return Y === 1 && z === 61 ? 's' : 'a';   // ears, set back
+    if (ax === 8) return EAR[Y + ',' + z] || null;   // ears, set back
     f = headFront(X, z);
     if (f === null || Y < f || Y > headBack(X, z)) return null;
     if (Y === -6 && (z === 57 || z === 58) && ax <= 1) return 'd';    // mouth interior behind the lips (Jaw opens)
@@ -211,17 +234,28 @@
   // short hair (attachment `short`): every empty cell touching the head inside the hair zone. Front: a hairline row
   // over the top of the forehead (z 68) and the crown; temples down to z 65, above the ears z 64, behind the ears z 60,
   // the back to z 58. g = hair base, K = the dark rim along the hairline, G = a broad lit patch on the crown.
+  // 26b: a widow's peak (z 67, |X| <= 1, over the forehead), combed locks:
+  // strands run front-to-back on top (stripes by X, lit G between dark K partings, a side parting at X -3) and
+  // downward on the sides / back (stripes by Y on the sides, by X at the back; lit G only high up).
   var HAIR_BOX = { X0: -8, Y0: -6, z0: 58, w: 17, d: 13, h: 13 };   // centred origin + size [x, y, z]
   function hairZone(X, Y, z) {
     if (z >= 70) return true;
     if (z < 58) return false;
-    if (Y <= -4 && Math.abs(X) <= 6) return z >= 68;
+    if (Y <= -4 && Math.abs(X) <= 6) return z >= 68 || (z === 67 && Math.abs(X) <= 1);
     return z >= (Y >= 4 ? 58 : Y >= 3 ? 60 : Y >= -1 ? 64 : 65);
   }
   function isHair(X, Y, z) {
     if (headChar(X, Y, z) !== null || !hairZone(X, Y, z)) return false;
     return headChar(X + 1, Y, z) !== null || headChar(X - 1, Y, z) !== null || headChar(X, Y + 1, z) !== null ||
            headChar(X, Y - 1, z) !== null || headChar(X, Y, z + 1) !== null || headChar(X, Y, z - 1) !== null;
+  }
+  function hairChar(X, Y, Z) {
+    var ax = Math.abs(X), t;
+    if (Z < 69 && !isHair(X, Y, Z - 1)) return 'K';                       // hairline / lower rim
+    if (X === -3 && Y <= 1 && Z >= 70) return 'K';                         // side parting
+    if (Z === 70) return (ax <= 3 && Y >= -3 && Y <= 1) ? 'G' : ((X + 9) % 3 === 1 ? 'K' : 'g');
+    t = ((ax >= 7 && Y < 5 ? Y : X) + 21) % 4;                             // downward strands
+    return t === 0 ? 'K' : (t === 2 && Z >= 66) ? 'G' : 'g';
   }
   function buildHair() {
     var layers = [], x, y, z;
@@ -231,8 +265,7 @@
         var row = '';
         for (x = 0; x < HAIR_BOX.w; x++) {
           var X = HAIR_BOX.X0 + x, Y = HAIR_BOX.Y0 + y, Z = HAIR_BOX.z0 + z;
-          row += !isHair(X, Y, Z) ? '.' : (Z < 69 && !isHair(X, Y, Z - 1)) ? 'K' :
-                 (Z === 70 && Math.abs(X) <= 3 && Y >= -3 && Y <= 1) ? 'G' : 'g';
+          row += !isHair(X, Y, Z) ? '.' : hairChar(X, Y, Z);
         }
         L.push(row);
       }
@@ -258,10 +291,19 @@
   }
   function isBeard(X, Y, z) {
     if (headChar(X, Y, z) !== null) return false;
-    if (z === 51 && Math.abs(X) <= 3 && Y >= -7 && Y <= -3) return true;   // chin tuft
+    if (z === 51 && Math.abs(X) <= 3 && Y >= -7 && Y <= -3) return !(X === 0 && Y <= -6);   // chin tuft, forked tip (26b)
     if (!beardZone(X, Y, z)) return false;
     return headChar(X + 1, Y, z) !== null || headChar(X - 1, Y, z) !== null || headChar(X, Y + 1, z) !== null ||
            headChar(X, Y - 1, z) !== null || headChar(X, Y, z + 1) !== null || headChar(X, Y, z - 1) !== null;
+  }
+  // 26b strands: vertical dark K strands every 3rd column, lit g strands in the shadowed lower beard, a lit moustache
+  // top (z 59, |X| <= 2) with dark droop tips (z 58)
+  function beardChar(X, Y, Z) {
+    var ax = Math.abs(X), t = ax % 3;   // mirror-symmetric strands
+    if (Z <= 52) return t === 1 ? 'g' : 'K';
+    if (Z === 59) return ax <= 2 ? 'G' : 'g';
+    if (Z === 58) return 'K';
+    return t === 0 ? 'K' : 'g';
   }
   function buildBeard() {
     var layers = [], x, y, z;
@@ -271,7 +313,7 @@
         var row = '';
         for (x = 0; x < BEARD_BOX.w; x++) {
           var X = BEARD_BOX.X0 + x, Y = BEARD_BOX.Y0 + y, Z = BEARD_BOX.z0 + z;
-          row += !isBeard(X, Y, Z) ? '.' : Z <= 52 ? 'K' : 'g';
+          row += !isBeard(X, Y, Z) ? '.' : beardChar(X, Y, Z);
         }
         L.push(row);
       }
@@ -366,10 +408,27 @@
     pair(10, 14, -2, 2, 41, 46, true);
     pair(11, 15, -2, 2, 32, 40, true);
     pair(12, 14, -2, 1, 31, 31, false);
-    // hands as blocks (palm faces the thigh): 3 x 5 x 5, fingers curled in at z 25, thumb forward (Y -3)
-    pair(12, 14, -2, 2, 26, 30, false);
-    pair(12, 13, -2, 1, 25, 25, false);
+    // hands (26b; palm faces the thigh, the back of the hand = outer X 14): palm 3 x 5 (z 28-30) with a knuckle row
+    // (z 28); four fingers Y -2..1 curled in (X 12-13, z 25-27), middle + ring one row longer (z 24); the backs of
+    // the index + ring fingers ridge out to X 14 so the grooves between the fingers read; thumb forward (Y -3,
+    // z 27-29) with its tip turned in (X 12, z 26), apart from the index finger
+    pair(12, 14, -2, 2, 28, 30, false);
+    pair(12, 13, -2, 1, 25, 27, false);
+    pair(12, 13, -1, 0, 24, 24, false);
+    pair(14, 14, -2, -2, 25, 27, false);
+    pair(14, 14, 0, 0, 25, 27, false);
     pair(12, 13, -3, -3, 27, 29, false);
+    pair(12, 12, -3, -3, 26, 26, false);
+    // hand paint: lit knuckles over the ridged fingers (l) and shaded between (s), shaded finger grooves, nails n on
+    // the finger tips + thumb tip, the thumb crease s, a vein v on the back of the hand
+    function pp(X, Y, z, c) { put(X, Y, z, c); put(-X, Y, z, c); }
+    pp(14, -2, 28, 'l'); pp(14, -1, 28, 's'); pp(14, 0, 28, 'l'); pp(14, 1, 28, 's');
+    for (z = 25; z <= 27; z++) { pp(13, -1, z, 's'); pp(13, 1, z, 's'); }
+    pp(13, -2, 25, 'n'); pp(13, -1, 24, 'n'); pp(13, 0, 24, 'n'); pp(13, 1, 25, 'n'); pp(12, -3, 26, 'n');
+    pp(13, -3, 29, 's'); pp(14, -1, 30, 'v');
+    // belt-buckle / drawstring knot: a 3 x 2 bump on the front of the waistband (z 33-34) - the belt / tabard grow
+    // over it, so the buckle stands out on every outfit (26b)
+    block(-1, 1, -5, -5, 33, 34, false);
     // head (profile-built, see headChar)
     for (z = 53; z <= 69; z++) for (Y = -8; Y <= 5; Y++) for (X = -8; X <= 8; X++) {
       var hc = headChar(X, Y, z);
@@ -529,8 +588,26 @@
     var C = composePreview(kit, 'm_avg', rc), S = C.size, paint = {}, x, y, z, k, c, X;
     for (z = 0; z < S[2]; z++) for (y = 0; y < S[1]; y++) for (x = 0; x < S[0]; x++) {
       k = x + S[0] * (y + S[1] * z); c = C.ch[k]; X = x - CX;
-      if (c === 'q' && ((x + y + z) & 1)) paint[k] = 'r';
-      else if (c === 'k' && (z === 34 || z === 35 || z === 18 || (z >= 18 && z <= 27 && Math.abs(X) <= 1))) paint[k] = 'R';
+      var aX = Math.abs(X);
+      // 26b: solid dark mail hems at the sleeve ends (z 31-32) and over the boots (z 8-9, above the shin stretch rows)
+      if (c === 'q' && ((aX >= 10 && z <= 32) || (aX <= 8 && (z === 8 || z === 9)))) paint[k] = 'r';
+      else if (c === 'q' && ((x + y + z) & 1)) paint[k] = 'r';
+      // red trim: neckline + shoulder edge (z >= 50, 26b), sash, hem, split
+      else if (c === 'k' && (z >= 50 || z === 34 || z === 35 || z === 18 || (z >= 18 && z <= 27 && aX <= 1))) paint[k] = 'R';
+      else if (c === 'k' && z >= 19 && z <= 27 && aX === 4) paint[k] = 'u';   // skirt folds (26b)
+      else if (c === '9' && z >= 29 && z <= 31 && aX >= 9) paint[k] = '8';    // glove cuffs (26b)
+      else if (c === '9' && z === 28 && aX === 15) paint[k] = '7';            // glove knuckles (26b)
+    }
+    // gold belt buckle on the sash over the waistband bump (26b), front-most tabard cells, X -1..1, z 35 / 34 / 33
+    var BUCKLE = { 35: 'yyy', 34: 'yRy', 33: 'yyy' };
+    for (z = 33; z <= 35; z++) for (var bj = 0; bj < 3; bj++) {
+      x = bj - 1 + CX;
+      for (y = 0; y < S[1]; y++) {
+        k = x + S[0] * (y + S[1] * z);
+        if (C.ch[k] === '.') continue;
+        if (C.ch[k] === 'k') paint[k] = BUCKLE[z].charAt(bj);
+        break;
+      }
     }
     EMBLEM.forEach(function (rowS, r) {
       z = 49 - r;
@@ -593,7 +670,7 @@
           bones: bones,
           anchors: {
             head_top: mount(0, -0.5, 69.5),
-            eyes: mount(0, -6.0, 63.5),
+            eyes: mount(0, -6.0, 63.0),   // 26b: the eyes are rows z 62-63
             mouth: mount(0, -6.0, 57.5),
             hand_r: mount(13.0, -0.5, 28.5),
             hand_l: mount(-13.0, -0.5, 28.5),
