@@ -479,3 +479,9 @@ B1 2026-10-09 (kestrel-1) SETTINGS-MOUNT-01 -> po-review: full createSettingsVie
 - Fades 0.3/3.5/0.5 s; queue 2 pending (oldest pending dropped); hidden pauses timer + draws nothing; draw 0-alloc (gc test).
 - NEEDS B1-main: mount noticeView in main.js (update(dt, menuOrDialogueOpen) + draw(ui, menuOrDialogueOpen)) + relayWake.showWakeNotice -> notice.push('relay') (stone: 'waystone'; later `waystone.notice` key).
 - Headless capture NOT run (verify script only `node --check`ed): `node tools/verify-notice.mjs 9575`.
+
+### CH1-09 chapter card + journal (kestrel-2, 2026-10-10) - modules done, Node tests pass (`node tools/run-tests.mjs --filter chapterCard,questLog`)
+- New game/js/quest/chapterCard.js (+ test, + chapterCard.preview.html harness): createChapterCard({world, openNote, isNoteOpen, setFlag?}) -> trigger/update/isLocked/pushDim/draw. dim 1.0 s -> 50 %, typed 3 lines (30 cps), 2 s hold, journal via openNote('journalCh1'), closes with the note; flags chapter.ch1.done + chapter.next='ch2'; trigger() no-op if flag set (never on load). draw 0-alloc.
+- design/models/notes.js: `journalCh1` (CH1-W5, 13 lines, signed W.). questLog.js: options `doneTitle` ('Beyond the Wall' for a DONE main quest) + `onJournal(0)` on Enter (questLogJournal.test.js).
+- NEEDS B1-main: mount chapterCard on the last m1 section done (book onChange) with openNote = id => noteRead({world, def:{noteId:id}}), isNoteOpen = isNoteOpen; OR isLocked() into uiLocked, pushDim before applySceneDim, draw(ui); questLog onJournal: i => noteRead({world, def:{noteId:'journalCh1'}}).
+- Headless capture NOT run (only `node --check`): `node tools/verify-chapter-card.mjs {port}` (9575-9649).
