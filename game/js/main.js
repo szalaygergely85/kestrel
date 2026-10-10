@@ -839,8 +839,7 @@ engine.events.on('grid:changed', ({ cols, rows }) => {
 // of the game's own UI.
 window.__debug = { input, overlay, rt, engine, gbuf, matTable, ambientL, depthBuffer, sprites, wgPipeline, hzb };
 bridgeEngineEvents(engine.events, gameHooks); // beast:died / inventory:added -> seam events
-window.__debug.saveRelay = saveRelay;
-Object.defineProperty(window.__debug, 'wild', { configurable: true, get: () => (wild ? { alive: wild.stats.alive, drawn: wild.drawn ? wild.drawn() : 0 } : null) }); // WILD-06b: read-only headless hook // US-089w: test hook (headless reload check)
+window.__debug.saveRelay = saveRelay; // US-089w: test hook (headless reload check)
 
 // US-048 (PC-B QUEUE 4 item 2): the shared `ctx` every game/js/dev/modes/*
 // module's `run(ctx)` reads from - built once here, after every module-scope
@@ -933,6 +932,7 @@ async function runGame(mode, cinematic = null) {
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   let dialogueCtl = null; // DIALOGUE-01b2 (38.28): rebuilt on every 'world:loaded', below
   let wild = null; // WILD-06: ambient fauna, rebuilt on every 'world:loaded' (= reset on load / new game / restart)
+  Object.defineProperty(window.__debug, 'wild', { configurable: true, get: () => (wild ? { alive: wild.stats.alive, drawn: wild.drawn ? wild.drawn() : 0 } : null) }); Object.defineProperty(window.__debug, 'wildRaw', { configurable: true, get: () => (wild ? { w: wild, pool: gameVoxelPool } : null) }); // verify-wild steps/feeds through this (headless sim never runs) // WILD-06b: read-only headless hook
   let bearTurn = null; // NPC-BEAR-01: Burl's turn-to-player, rebuilt on every 'world:loaded'
   const vLocked = () => !!(vitals && vitals.inputLocked) || deathFlow.inputLocked || !!(dialogueCtl && dialogueCtl.locked); // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below

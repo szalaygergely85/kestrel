@@ -1,6 +1,6 @@
 // WILD-06b: headless check that the ambient fauna spawns and is drawn in the real game (WebGPU).
 // Loads game/index.html?dev=1&save=0&backend=webgpu (NO voxelbench param: any non-empty value disables fauna),
-// puts the player in the meadow (1460, 1035), turns the view for up to 40 s, asserts >= 1 animal alive and
+// puts the player in the meadow (1460, 1035), forces look.locked (headless has no pointer lock; unlocked = paused sim), turns the view for up to 40 s, asserts >= 1 animal alive and
 // >= 1 drawn (window.__debug.wild {alive, drawn}), rt.gpuActive stays true, 0 console errors.
 // Run: node tools/verify-wild.mjs <port>   (PC-B lane B1 ports 9500-9574; the CDP port is port+1)
 import { spawn } from 'node:child_process';
@@ -41,12 +41,15 @@ try {
   // Turn the view slowly so animals spawned behind the camera enter the frustum; poll alive + drawn.
   const t0 = Date.now(); let alive = 0, drawn = 0, seen = false;
   while (Date.now() - t0 < 40000) {
-    await evaluate(cdp, '(()=>{const l=window.__debug.look; if(l) l.yawDeg=(l.yawDeg+25)%360;})()');
+    // The headless sim never runs (no pointer lock + wake sequence) and main.js never moves the render camera, so step the fauna
+    // through the dev hook and call its feed against the real game voxel pool for four view directions (= what the frame does).
+    await evaluate(cdp, '(()=>{const l=window.__debug.look, W=window.__debug.wildRaw; if(l) l.locked=true; if(W&&W.w){ for(let i=0;i<120;i++) W.w.step(1/60,1460,1035,false,0); if(W.pool){ let best=0; for(const yaw of [0,90,180,270]){ const n=W.w.feed(W.pool,{x:1460,y:1035,yawDeg:yaw}); if(n>best) best=n; } window.__wildFeedBest=best; } }})()');
     await pause(500);
     const w = await evaluate(cdp, 'JSON.stringify(window.__debug.wild)');
     const o = w && JSON.parse(w);
-    if (o) { if (o.alive > alive) alive = o.alive; if (o.drawn > drawn) drawn = o.drawn; if (alive >= 1 && drawn >= 1) { seen = true; break; } }
+    if (o) { if (o.alive > alive) alive = o.alive; const fb = await evaluate(cdp, 'window.__wildFeedBest||0'); if (fb > drawn) drawn = fb; if (o.drawn > drawn) drawn = o.drawn; if (alive >= 1 && drawn >= 1) { seen = true; break; } }
   }
+  if (!seen) console.log('last wild =', await evaluate(cdp, 'JSON.stringify([window.__debug.wild, (()=>{const t=window.__debug.playerHandle.data.transform;return [t.x,t.y]})(), Object.keys(window.__debug.rt).join(), location.search, !!window.__debug.world, window.__debug.rt.mode, document.title])'), JSON.stringify(errors));
   assert.ok(seen, `no animal alive+drawn within 40 s (max alive ${alive}, max drawn ${drawn})`);
   console.log(`[3/4] fauna alive ${alive}, drawn ${drawn} after ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 
