@@ -5,7 +5,7 @@
 //   - part rotation = the root bone's local rotation composed with the next (compose - 1) bones of the list
 //     (body and head use compose 2), resampled to 50 ms keys in our Euler order Rz*Ry*Rx;
 //   - part pos = the root bone's Hips pos (cells) when the root is Hips.
-// PartRig: {cellM, anchorCells:[x,y,z], parts:[{name,parent:index|-1,pivot:[x,y,z] grid cells,pivotM:[x,y,z] metres from the anchor,bones:[names]}], bones:[...], mesh (one range per part,
+// PartRig: {cellM, anchorCells:[x,y,z], boneJoints:[{name,part,jointCells}], parts:[{name,parent:index|-1,pivot:[x,y,z] grid cells,pivotM:[x,y,z] metres from the anchor,bones:[names]}], bones:[...], mesh (one range per part,
 //   same layout as meshCharacter), matKeys, clips:{name:{loop,interp:'linear',durations:[50..],frames:[{part:{rot,pos?}}]}}, mounts}
 export const MAX_PARTS = 8; // engine/chargen imports only itself; the test pins this to MAX_VOX_PARTS
 import { sampleClip, quatToEuler } from './clip.js';
@@ -125,6 +125,7 @@ export function collapseRig(rigged, partMap) {
   return {
     cellM: rigged.cellM,
     anchorCells,
+    boneJoints: rigged.bones.map((b) => ({ name: b.name, part: partMap[partOfBone.get(b.name)].name, jointCells: b.jointCells.slice() })), // RIG-02b: mount -> nearest-joint part
     parts,
     mesh: { quads: total, pos, nrm, mat, ranges },
     matKeys: rigged.matKeys.slice(),
