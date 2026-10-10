@@ -4,7 +4,7 @@
 import { composeCharacter, meshCharacter, collapseRig, riggedModelDef, randomRecipe, HUMANOID_PART_MAP, VoxelPool } from '../engine/index.js';
 import { loadKit, DEMO_CLIPS } from './chargen/export.mjs';
 
-const FRAMES = +process.argv[2] || 30000, WARM = +(process.env.WARM || 30000), N = 100, CHARS = 10;
+const FRAMES = +process.argv[2] || 30000, WARM = +(process.env.WARM || 30000), N = +(process.env.N || 100), CHARS = +(process.env.CHARS || 10);
 const STAGE = +(process.env.STAGE ?? 2); // 0 push only, 1 +project, 2 +projectShadow, 3 +feed (debug aid)
 const kit = loadKit();
 const defs = {}, keys = [];

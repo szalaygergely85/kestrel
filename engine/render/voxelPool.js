@@ -37,6 +37,12 @@ function warnOnce(pool, msg) {
   if (typeof console !== 'undefined' && console.warn) console.warn(msg);
 }
 
+// RIG-04b: `arr.length = n` with n < capacity/2 right-trims V8's backing store, so the next frame that grows the list again
+// allocates a new one (~600 B when a 48-instance list drops to 4 and back). pop() keeps the capacity: zero allocation.
+function shrinkTo(arr, n) {
+  while (arr.length > n) arr.pop();
+}
+
 function projectedSlot() {
   return { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, fromClip: -1, fromFrame: 0, fromTMs: 0, fromW: 0, scale: 1, slot: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0,
     pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE),
@@ -345,7 +351,7 @@ export class VoxelPool {
       out.addPart = inst.addPart; out.addRx = inst.addRx; out.addRy = inst.addRy; out.addRz = inst.addRz;
       out.slot = i;
     }
-    this.shadowList.length = n;
+    shrinkTo(this.shadowList, n);
     return n;
   }
 
@@ -389,7 +395,7 @@ export class VoxelPool {
       out.entity = inst.entity;
       count++;
     }
-    this.list.length = count;
+    shrinkTo(this.list, count);
     this.stats.count = count;
     this.stats.instancesCulled = culled + Math.max(0, this._rawCount - this.cap);
   }
