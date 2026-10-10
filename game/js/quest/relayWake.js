@@ -16,6 +16,7 @@ export const NOTICE = ['BEND RELAY AWAKENED', 'Travel unlocked.', 'You can now t
 export const RADIUS = 2.2;
 const TOAST_SEC = 4, TOAST_Y = 6, FG = [236, 226, 190], BG = [10, 11, 16];
 const DEAD = 0, WAKING = 1, AWAKE = 2;
+const WAKE_MAX_EXTRA = 3; // s after light-on + grow before a stuck wake is forced awake
 
 const woken = (wsId) => 'waystone.' + wsId + '.woken';
 
@@ -118,6 +119,10 @@ export function createRelayWake(o) {
         }
         if (c && c.anim === 'wake' && c.playing === false && h) h.play('awake');
         if (frac >= 1 && c && c.anim === 'awake') { r.phase = AWAKE; r.growDone = true; }
+        else if (r.t > r.delay + r.growDur + WAKE_MAX_EXTRA) { // model without a `wake` clip: never stay WAKING (E would be dead)
+          if (d && d.components.light) d.components.light.on = true;
+          r.lightOn = true; r.phase = AWAKE; if (h) h.play('awake');
+        }
       }
     },
     get toastLeft() { return toast.left; },
