@@ -7,6 +7,7 @@
 // planeId, uv, z, aoD all match the caster's G-buffer output - that parity
 // is what `levelMesh.test.js`'s caster-oracle test checks). Never imports
 // the caster itself (27.15.0: "never import a caster... tests may").
+import { isTerrainFloor } from '../world/Level.js';
 import {
   KIND_WALL, KIND_STEP, KIND_UPPER, KIND_FLOOR, KIND_TOP, KIND_CEIL,
   FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D,
@@ -85,6 +86,7 @@ function emitPlane(builder, kind, face, matKey, c, r, zRef, h, bits, faceUp) {
 }
 
 function emitFloor(builder, sec, c, r, relief, w) {
+  if (isTerrainFloor(sec)) return; // GS-01a: terrain shows through (World.carveMask leaves this cell uncarved)
   const h = sec.floorH;
   const kind = sec.solid ? KIND_TOP : KIND_FLOOR;
   const bits = relief.floorRise[r * w + c];

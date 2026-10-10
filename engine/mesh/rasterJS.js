@@ -71,6 +71,7 @@ export const BIAS_UNITS = 1;
  * @property {Float64Array|Float32Array} [structFoot] - x0, y0, x1, y1 per placed structure (world m): terrain
  *   fragments inside any box are skipped (the DDA `buildSkips` rule; GPU twin: terrain.vert.js `uStructFoot`)
  * @property {number} [structCount] - boxes used in `structFoot`
+ * @property {(Uint8Array|null)[]} [structMask] - GS-01a: per box, carve mask (stride = box width) or null = carve the whole box
  * @property {import('../render/MaskAtlas.js').MaskAtlas|null} [maskAtlas] - ALPHA-01b: needed for meshes with `maskRanges`
  * @property {{field: import('./sway.js').SwayWind, t: number}|null} [wind] - S8-B2-06: the world wind field (createWind) + seconds; instances flagged INST_FLAG_SWAY sway (absent/speed 0 = off)
  * @property {{slotIds: Uint32Array, mat: Uint32Array}|null} [team] - RE-06: `table.team` (teamRemap.js); DRAW_INSTANCED mat remap
@@ -174,13 +175,23 @@ const _info = {
   biasFlag: 0, biasFactor: BIAS_FACTOR, biasUnits: BIAS_UNITS, twoSided: false,
   maskW: -1, maskX0: 0, maskY0: 0, maskH: 0, maskCut: 0, // ALPHA-01b: maskW < 0 = opaque range (no discard)
   structFoot: /** @type {Float64Array|Float32Array|null} */ (null), structCount: 0,
+  structMask: /** @type {(Uint8Array|null)[]|null} */ (null), // GS-01a: per-box carve mask (null entry = whole box)
 };
 
-/** True when world (x, y) is inside any `[x0, x1) x [y0, y1)` box of `foot` (structure footprint carve, terrain only). */
-function insideStructFoot(foot, count, x, y) {
+/**
+ * True when world (x, y) is inside any `[x0, x1) x [y0, y1)` box of `foot` (structure footprint carve, terrain only).
+ * GS-01a: when `masks[i]` is set, the box test is followed by a per-cell lookup (mask stride = box width, 1 = carve);
+ * unflagged structures (null / no masks) carve the whole box as before.
+ */
+export function insideStructFoot(foot, count, x, y, masks) {
   for (let i = 0; i < count; i++) {
     const o = i * 4;
-    if (x >= foot[o] && x < foot[o + 2] && y >= foot[o + 1] && y < foot[o + 3]) return true;
+    if (x >= foot[o] && x < foot[o + 2] && y >= foot[o + 1] && y < foot[o + 3]) {
+      const m = masks ? masks[i] : null;
+      if (m === null || m === undefined) return true;
+      const w = (foot[o + 2] - foot[o]) | 0;
+      if (m[((y - foot[o + 1]) | 0) * w + ((x - foot[o]) | 0)] !== 0) return true;
+    }
   }
   return false;
 }
@@ -427,7 +438,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
             const iq = 1 / (l0 * iw0 + l1 * iw1 + l2 * iw2);
             const cwx = (l0 * wx0 * iw0 + l1 * wx1 * iw1 + l2 * wx2 * iw2) * iq;
             const cwy = (l0 * wy0 * iw0 + l1 * wy1 * iw1 + l2 * wy2 * iw2) * iq;
-            if (insideStructFoot(info.structFoot, info.structCount, cwx, cwy)) continue;
+            if (insideStructFoot(info.structFoot, info.structCount, cwx, cwy, info.structMask)) continue;
           }
           target.zbuf[idx] = zn;
           if (target.writes) target.writes[idx]++;
@@ -456,7 +467,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
 
         let face = info.face, mat = info.mat, outU = u, outV = v;
         if (info.isTerrain) {
-          if (info.structCount > 0 && insideStructFoot(info.structFoot, info.structCount, wx, wy)) continue;
+          if (info.structCount > 0 && insideStructFoot(info.structFoot, info.structCount, wx, wy, info.structMask)) continue;
           outU = wx; outV = wy;
           mat = info.kind7Mat ? info.kind7Mat(wx, wy) : 0;
         } else if (info.isVoxel) {
@@ -558,6 +569,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.kind7Mat = ctx.kind7Mat || null;
       _info.structFoot = ctx.structFoot || null;
       _info.structCount = ctx.structFoot ? (ctx.structCount || 0) : 0;
+      _info.structMask = ctx.structMask || null;
       _info.biasFlag = item.flags & DRAW_FLAG_DEPTH_BIAS;
       _info.cullBack = false;
     } else {

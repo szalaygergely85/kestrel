@@ -2,7 +2,7 @@
 // docs/architecture.md section 7 (World/WorldQuery), 7.2 (structTable) and
 // 10/10.1 (entities/handles). See the tech notes in docs/backlog.md US-025
 // for the build order this follows.
-import { loadLevel } from './Level.js';
+import { loadLevel, isTerrainFloor } from './Level.js';
 import { Terrain } from './Terrain.js';
 import { scatterTrees, scatterDetail } from './scatter.js';
 import { packLevel, updateAnimatedSector } from './packed.js';
@@ -104,6 +104,23 @@ function makeRingHAt(placed) {
     const s = level.sectorAt(cx, cy);
     return s ? s.floorH + g.z : g.z;
   };
+}
+
+/**
+ * GS-01a: per-cell terrain carve mask of a placed level (Uint8Array w*h, 1 = carve the terrain, 0 = terrain shows
+ * through on `terrainFloor` cells). null when the level has no flagged cell (whole bbox carved, as before).
+ */
+function buildCarveMask(level) {
+  const w = level.width, h = level.height;
+  let mask = null;
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      if (!isTerrainFloor(level.sectorAt(c + 0.5, r + 0.5))) continue;
+      if (!mask) mask = new Uint8Array(w * h).fill(1);
+      mask[r * w + c] = 0;
+    }
+  }
+  return mask;
 }
 
 /** Fill `bbox` with the world AABB of `mesh`'s local bbox under `frame` and uniform scale `k`. */
@@ -787,6 +804,7 @@ export class World {
     const frame = makeFrame(origin.x, origin.y, origin.z || 0, yawSteps);
     const bbox = frameBBox(frame, level.width, level.height, { x0: 0, y0: 0, x1: 0, y1: 0 });
     const packed = packLevel(level, null);
+    const carveMask = buildCarveMask(level); // GS-01a: null = carve the whole bbox
     // US-014 tech note 1: a tag -> legend-char Map built once here, instead
     // of `animateSector` scanning `Object.keys(level.legend)` on every call
     // (an interaction/save-load call, but also every `stepSectorAnims` tick
@@ -798,7 +816,7 @@ export class World {
     }
     // CO-2: `frame` = the authored placement (content items convert through
     // it); `origin`/`bbox` = the baked grid (equal to the frame while yawSteps = 0).
-    const placed = { id: structId, level, frame, origin: { x: origin.x, y: origin.y, z: origin.z || 0 }, yawSteps, bbox, packed, structSeq, dynamics: {}, tagMap };
+    const placed = { id: structId, level, frame, origin: { x: origin.x, y: origin.y, z: origin.z || 0 }, yawSteps, bbox, packed, structSeq, dynamics: {}, tagMap, carveMask };
     this.structures.push(placed);
 
     if (structSeq < 8) {

@@ -52,8 +52,9 @@ let meshHashCell = 0; // BUG-RTS-001 (28.11a)
 let pitchDepthSave = /** @type {Float32Array|null} */ (null);
 const meshFrustumPlanes = new Float64Array(24);
 const meshStructFoot = new Float64Array(MAX_STRUCTS * 4);
+const meshStructMask = /** @type {(Uint8Array|null)[]} */ (new Array(MAX_STRUCTS).fill(null)); // GS-01a: carveMask per box
 const meshGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
-const meshCtx = { M: meshViewProj, kind7Mat: null, structFoot: null, structCount: 0, team: null };
+const meshCtx = { M: meshViewProj, kind7Mat: null, structFoot: null, structCount: 0, structMask: null, team: null };
 /** @type {WeakMap<import('../world/World.js').World, LevelMeshCache>} */
 const _meshLevelMeshCaches = new WeakMap();
 /** @type {import('../mesh/rasterJS.js').RasterTarget|null} */
@@ -65,7 +66,7 @@ const sunShadowMat = createSunShadowMatrix();
 const sunShadowCentreV = new Float64Array(3);
 const sunShadowWorldZ = { min: 0, max: 0 };
 const sunShadowSrc = { centre: { x: 0, y: 0, z: 0 }, cache: /** @type {any} */ (null), terrainSet: /** @type {any} */ (null), voxelPool: /** @type {any} */ (null), voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, eye: { x: 0, y: 0 }, meshLod0M: 25, instCastM: 48, instances: /** @type {any} */ (null), cloths: /** @type {any} */ (null), matIdFor: /** @type {any} */ (undefined) };
-const sunShadowRasterCtx = { M: sunShadowMat.M, depthBias: { factor: 0, units: 0 }, structFoot: /** @type {any} */ (null), structCount: 0 };
+const sunShadowRasterCtx = { M: sunShadowMat.M, depthBias: { factor: 0, units: 0 }, structFoot: /** @type {any} */ (null), structCount: 0, structMask: /** @type {any} */ (null) };
 /** What `lightSurfaces` reads (`fb.sunMap`): {map, M, opts}. */
 const sunMapState = { map: /** @type {any} */ (null), M: sunShadowMat.M, opts: /** @type {any} */ (null) };
 /** @type {import('../mesh/rasterJS.js').RasterTarget|null} */
@@ -114,7 +115,7 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
   buildShadowList(sunShadowList, cameraList, world, sm.planes, src);
   const ctx = sunShadowRasterCtx;
   ctx.depthBias.factor = so.depthBias[0]; ctx.depthBias.units = so.depthBias[1];
-  ctx.structFoot = meshStructFoot; ctx.structCount = structCount;
+  ctx.structFoot = meshStructFoot; ctx.structCount = structCount; ctx.structMask = meshStructMask;
   ctx.maskAtlas = world.maskAtlas || null; // ALPHA-01b
   ctx.wind = windCtx(world, fb, true); // FOLIAGE-SWAY-01: same field + 10 Hz-quantised clock as the GPU shadow pass
   rasterDrawList(sunShadowList, _sunShadowTarget, ctx);
@@ -128,7 +129,7 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
  */
 const pointTwin = createPointShadowTwin();
 const pointSrc = { centre: { x: 0, y: 0, z: 0 }, cache: /** @type {any} */ (null), terrainSet: /** @type {any} */ (null), voxelPool: /** @type {any} */ (null), voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, eye: { x: 0, y: 0 }, meshLod0M: 25, instCastM: 48, instances: /** @type {any} */ (null), cloths: /** @type {any} */ (null), matIdFor: /** @type {any} */ (undefined), gpu: null };
-const pointRasterExtras = { depthBias: /** @type {any} */ (null), structFoot: /** @type {any} */ (null), structCount: 0, wind: /** @type {any} */ (null), maskAtlas: /** @type {any} */ (null) };
+const pointRasterExtras = { depthBias: /** @type {any} */ (null), structFoot: /** @type {any} */ (null), structCount: 0, structMask: /** @type {any} */ (null), wind: /** @type {any} */ (null), maskAtlas: /** @type {any} */ (null) };
 let _pointWorld = null, _pointCameraList = null, _pointShadowOpts = null;
 function buildPointCasters(list, O, radius, planes) {
   const src = pointSrc, c = src.centre;
@@ -149,7 +150,7 @@ function renderPointShadowsJS(fb, world, cam, cameraList, cache, terrainMeshSet,
   src.meshCache = sharedMeshDrawCache;
   src.meshIdFor = fb.matTable ? strictMatIdFor(fb.matTable) : undefined;
   src.maskAtlas = world.maskAtlas || null;
-  pointRasterExtras.structFoot = meshStructFoot; pointRasterExtras.structCount = structCount;
+  pointRasterExtras.structFoot = meshStructFoot; pointRasterExtras.structCount = structCount; pointRasterExtras.structMask = meshStructMask;
   pointRasterExtras.maskAtlas = world.maskAtlas || null;
   pointRasterExtras.wind = windCtx(world, fb, true);
   _pointWorld = world; _pointCameraList = cameraList; _pointShadowOpts = fb.shadowOpts || null;
@@ -283,11 +284,13 @@ function renderWorldMesh(fb, world, cam) {
       const b = structs[i].bbox;
       if (!b) continue;
       const o4 = structCount * 4;
+      meshStructMask[structCount] = structs[i].carveMask || null;
       meshStructFoot[o4] = b.x0; meshStructFoot[o4 + 1] = b.y0; meshStructFoot[o4 + 2] = b.x1; meshStructFoot[o4 + 3] = b.y1;
       structCount++;
     }
     meshCtx.structFoot = meshStructFoot;
     meshCtx.structCount = structCount;
+    meshCtx.structMask = meshStructMask;
   } else {
     meshCtx.kind7Mat = null;
     meshCtx.structFoot = null;
