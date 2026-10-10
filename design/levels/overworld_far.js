@@ -108,7 +108,12 @@
           { shape: 'capsule', ax: 1474, ay: 1040, bx: 1422, by: 1046, r: 9.5 },
           { shape: 'capsule', ax: 1422, ay: 1046, bx: 1353, by: 1064, r: 9.5 },
           { shape: 'capsule', ax: 1353, ay: 1064, bx: 1259, by: 1059, r: 9.5 },
-          { shape: 'capsule', ax: 1259, ay: 1059, bx: 1230, by: 1066, r: 9.5 }
+          { shape: 'capsule', ax: 1259, ay: 1059, bx: 1230, by: 1066, r: 9.5 },
+          // WS1-05 (D-060) road west dressing, printed by `gen-roadside-meshes.mjs --prefix roadW|roadN`: south verge u 250..300 (roadW###) and north verge u 110..300 (roadN###).
+          { shape: 'capsule', ax: 1242, ay: 1063, bx: 1183, by: 1076, r: 9.5 },
+          { shape: 'capsule', ax: 1374, ay: 1026, bx: 1346, by: 1034, r: 10.5 },
+          { shape: 'capsule', ax: 1346, ay: 1034, bx: 1261, by: 1028, r: 10.5 },
+          { shape: 'capsule', ax: 1261, ay: 1028, bx: 1176, by: 1045, r: 10.5 }
         ],
         layers: [
           // PLANT-VOXEL-OFF-01 (owner 2026-10-10 "can you remove voxel plants?"): the voxel plant scatter (tufts layer, voxel flowers,
