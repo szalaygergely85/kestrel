@@ -138,6 +138,21 @@ const consts = {
   d.beginPass(tgt);
   ok('beginPass twice throws', throws(() => d.beginPass(tgt)));
   d.endPass();
+  // FIX-PASS: stale-pass guard - an error swallowed inside a pass must be recoverable with abortPass()
+  ok('abortPass with no open pass returns null', d.abortPass() === null && d.passOpen === false);
+  const warn0 = console.warn; console.warn = () => {};
+  const pipeC = d.createPipeline({ vertex: { src: { wgsl: 'y' } }, fragment: { src: { wgsl: 'y' }, targets: 1 }, bindings: { uniformBytes: 0, textures: [] }, targetFormats: ['rgba32ui'] });
+  pipeC.gpu = null; // simulates a pipeline still compiling: bind throws INSIDE the pass
+  d.beginPass(tgt);
+  ok('bind of a compiling pipeline throws inside the pass', throws(() => d.bind(pipeC, {})) && d.passOpen);
+  const owner = d.abortPass('test');
+  ok('abortPass ends the open pass and names its target', d.passOpen === false && /target 4x4 colour=1 depth=true/.test(String(owner)), String(owner));
+  ok('abortPass turns owner tracing on', d.tracePasses === true && d.abortedPasses === 1);
+  d.beginPass(tgt);
+  ok('beginPass works again after abortPass', d.passOpen);
+  const owner2 = d.abortPass('test');
+  ok('second stale pass carries the opening stack', /opened at: .*pass opened here/s.test(String(owner2)));
+  console.warn = warn0;
   ok('canvasTarget without canvas throws at beginPass', throws(() => d.beginPass(d.canvasTarget())));
   ok('writeTexture rejects depth', throws(() => d.writeTexture(dep, new Uint8Array(4))));
   d.dispose();

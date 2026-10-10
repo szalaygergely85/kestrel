@@ -207,27 +207,33 @@ export class RenderTargetWebGPU {
   present() {
     if (!this.ready) return;
     const d = this.device;
+    // FIX-PASS: a pass some earlier code opened and never ended (an error swallowed inside a pass) used to crash here forever
+    // ("beginPass: previous pass not ended"); end it, name its owner once per frame it happens, and carry on.
+    if (d._pass && typeof d.abortPass === 'function') console.error('[RenderTargetWebGPU] stale GPU pass left open before present (aborted): ' + d.abortPass());
     d.timer.begin(FRAME_TIMER_SLOT); // WG-1b3: whole GPU present, including the cell-pass hook.
-    d.writeTexture(this.fgTex, this.cells.fg);
-    d.writeTexture(this.bgTex, this.cells.bg);
-    if (this._cellPass) this._cellPass();
-    if (this._spritePass) this._spritePass();
-    if (this._overlayPass) this._overlayPass();
+    try { // FIX-PASS: a throw anywhere below must not leave the frame's pass or timer span open (the next present would crash)
+      d.writeTexture(this.fgTex, this.cells.fg);
+      d.writeTexture(this.bgTex, this.cells.bg);
+      if (this._cellPass) this._cellPass();
+      if (this._spritePass) this._spritePass();
+      if (this._overlayPass) this._overlayPass();
+      if (d._pass && typeof d.abortPass === 'function') console.error('[RenderTargetWebGPU] cell-pass hook left a GPU pass open (aborted): ' + d.abortPass());
 
-    d.beginPass(this._target, this._clearOpts);
-    this._grid = this._grid || [null, null, null];
-    const own = !(this._pf && this._pb); // WG-3f: the pipeline's sprite/overlay output replaces the CPU cell textures
-    const pf = own ? this.fgTex : this._pf, pb = own ? this.bgTex : this._pb;
-    this._grid[0] = pf; this._grid[1] = pb; this._grid[2] = this.atlasTex;
-    this._draw(this._pipeScene, this._bindScene, this._texScene, this._grid, this.cols, this.rows, 0);
-    this._presentFg = pf; this._presentBg = pb;
-    if (this._uiLayer && this._uiFgTex) {
-      const ui = this._uiLayer;
-      d.writeTexture(this._uiFgTex, ui.cells.fg);
-      d.writeTexture(this._uiBgTex, ui.cells.bg);
-      this._grid[0] = this._uiFgTex; this._grid[1] = this._uiBgTex; this._grid[2] = this._uiAtlasTex;
-      this._draw(this._pipeUi, this._bindUi, this._texUi, this._grid, ui.cols, ui.rows, 1);
-    }
+      d.beginPass(this._target, this._clearOpts);
+      this._grid = this._grid || [null, null, null];
+      const own = !(this._pf && this._pb); // WG-3f: the pipeline's sprite/overlay output replaces the CPU cell textures
+      const pf = own ? this.fgTex : this._pf, pb = own ? this.bgTex : this._pb;
+      this._grid[0] = pf; this._grid[1] = pb; this._grid[2] = this.atlasTex;
+      this._draw(this._pipeScene, this._bindScene, this._texScene, this._grid, this.cols, this.rows, 0);
+      this._presentFg = pf; this._presentBg = pb;
+      if (this._uiLayer && this._uiFgTex) {
+        const ui = this._uiLayer;
+        d.writeTexture(this._uiFgTex, ui.cells.fg);
+        d.writeTexture(this._uiBgTex, ui.cells.bg);
+        this._grid[0] = this._uiFgTex; this._grid[1] = this._uiBgTex; this._grid[2] = this._uiAtlasTex;
+        this._draw(this._pipeUi, this._bindUi, this._texUi, this._grid, ui.cols, ui.rows, 1);
+      }
+    } catch (e) { if (typeof d.abortPass === 'function') d.abortPass(); d.timer.end(); throw e; }
     d.endPass();
     d.timer.end();
     d.submit();
