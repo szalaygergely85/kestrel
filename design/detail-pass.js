@@ -1185,6 +1185,25 @@
       grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
       face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
       lod: { mid: 12, far: 25, dither: 3 }
+    },
+    // QM-SLIM (v1.57, design/models/quest_mark.js; palette.js v1 records of the same key): the slim quest-sign gold.
+    mark_gold: {
+      v1: 'mark_gold', seed: 1201,
+      desc: 'QUEST MARK (QM-SLIM). Gold body of the floating ! / ? sign, emissive 0.40.',
+      albedo: 1.00, bgK: 0.22, detail: 40, jitter: 0.04,
+      tones: [['gold', 4], ['brassLight', 1]],
+      grid: { u: 0.035, v: 0.035, stagger: 0, lines: false },
+      face: { set: 'brassFace', mid: 'brassFace', far: 'brassFace' },
+      lod: { mid: 12, far: 25, dither: 3 }, emissive: 0.40
+    },
+    mark_shine: {
+      v1: 'mark_shine', seed: 1202,
+      desc: 'QUEST MARK (QM-SLIM). Polished shine edge of the sign strokes, emissive 0.45.',
+      albedo: 1.00, bgK: 0.24, detail: 40, jitter: 0.04,
+      tones: [['brassHot', 3], ['white', 1]],
+      grid: { u: 0.035, v: 0.035, stagger: 0, lines: false },
+      face: { set: 'brassFace', mid: 'brassFace', far: 'brassFace' },
+      lod: { mid: 12, far: 25, dither: 3 }, emissive: 0.45
     }
   };
 
@@ -1232,7 +1251,9 @@
     skin_flush: 'skin_flush', skin_deep: 'skin_deep', skin_vein: 'skin_vein', flame_mid: 'flame_mid',
     // EP-WILD (v1.53, design/models/voxel_wildlife.js), same key in both files.
     fur_agouti: 'fur_agouti', fur_agouti_dark: 'fur_agouti_dark', fur_agouti_light: 'fur_agouti_light', fur_cream: 'fur_cream',
-    fur_roe: 'fur_roe', fur_roe_dark: 'fur_roe_dark', fur_roe_light: 'fur_roe_light', antler: 'antler'
+    fur_roe: 'fur_roe', fur_roe_dark: 'fur_roe_dark', fur_roe_light: 'fur_roe_light', antler: 'antler',
+    // QM-SLIM (v1.57, design/models/quest_mark.js), same key in both files.
+    mark_gold: 'mark_gold', mark_shine: 'mark_shine'
   };
   // CHARGEN-01 (v1.54): one v2 record (+ remap k -> k) per key appended by palette.js `chargen.newMaterials`
   // (skin tones, hair, eyes, natural dyes). Generated from the same table, so the two files cannot drift.
