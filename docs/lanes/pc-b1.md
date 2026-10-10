@@ -432,6 +432,11 @@ B1 2026-10-09 (kestrel-1) SETTINGS-MOUNT-01 -> po-review: full createSettingsVie
 - New `engine/physics/bounds.js` (`projectBounds`, `boundsOvershoot`; circle + union of 1..8 circle/capsule parts, 0 alloc, no imports). integrate 4b and triggers `'bounds'` call it; `World.validateBounds` accepts union (error names `parts[i]`), `serialize` deep-copies parts.
 - Tests: new `engine/physics/bounds.test.js` (14 checks: circle bit-identical to old projection on 1k points, parts/seams, outside->inside, velocity clip, 10k-step heap) + 4 union checks in world.test.js. Green: bounds, world.test, physics, jump, terrainWalk; check-deps OK. Not run: route-walk, full suite.
 - Note: trigger `'bounds'` on a union fires at min-part overshoot >= -0.05 (nearest edge of the part you are deepest in only near that part's rim; interior seams do not fire). Circle worlds unchanged.
+### CHARGEN-26b detail pass (kestrel-2, 2026-10-10) - design, NOT BUILT / NOT TESTED (agent had no shell)
+- design/chargen/human_kit.js only (+ design/README.md 25 note): eyelids, brows + crease, nostrils, mouth corners, ears (EAR table), chin; hair peak/volume z 71/strands; beard strands; hands with fingers/knuckles/nails/thumb; buckle bump; knight decal hems/trim/folds/glove cuffs/buckle. Rig, proportions, tones, defaults, looks unchanged.
+- MAIN SESSION: `node tools/chargen-build-kit.mjs` -> `node tools/run-tests.mjs --filter chargen,charCreate,fbxWrite,gltfWrite`; update goldens (counts/hashes only) in chargen-kit/fbxWrite/gltfWrite/charCreate tests; report quads vs 1266 (budget ~2500).
+- Owner look: /design/preview/chargen_kit.html (default + knight x 5 tones x 3 views) and /tools/chargen/index.html.
+- NEEDS PC-A / PO: civilian clothes (collar, seams, cuffs, shirt buckle paint) need an engine `detail` paint layer per shell (a shell paints one char; the only decal slot is hat) - see design/README.md 25.
 
 ### WS1-07a (kestrel-1, 2026-10-10) - po-review
 - mapCard.js: `createChartCard` opts `travel` ({list()->[{id,name,x,y,order?,touched?}]}) + `travelHeader`; new `setMarker(x,y,'relay'|'waystone'|1-9)` (one cell, no re-raster), `setTravelPoints(list)`, `refreshTravel()`, `travelIdFor(n)`, `onTravel` slot, `travelLine`. Digits/line refresh when M opens; line sits on the bottom border row.
