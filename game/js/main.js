@@ -116,6 +116,7 @@ import { createDeathFlow, deathFlowEnabled } from './fx/deathFade.js'; // DEATH-
 import { createHurtFx, hurtFxEnabled } from './fx/hurtFx.js'; // HURT-FX-01 (lane B1): low-hearts pulse only (hurt edge + kick = US-080a2)
 import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-SPARK-WIRE (lane B1)
 import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
+import { parseGlow } from './glowOpt.js'; // EMIS-03/04: bleed + halo knob
 import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
 import { PHYSICS } from '../../engine/index.js';
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
@@ -164,7 +165,7 @@ const saveStorage = () => (demo.on ? demoStorage(getSaveStorage()) : getSaveStor
 // (8:3 aspect kept, see `clampGrid`), logged once here on the user-facing
 // param (the RenderTarget-internal cpu-fallback log is separate).
 // ME-19a: mesh GPU versus the rasterJS twin; one geometry-parity mode.
-const isGeometryCompare = params.get('gpucompare') === '1';
+const isGeometryCompare = (params.get('gpucompare') === '1' || params.get('gpucompare') === 'emissive');
 // ME-06 diagnostic: `&voxels=0` on either compare page empties the voxel
 // instance queue on both sides after each pose's feed, so a mesh-vs-oracle
 // gap can be split into "voxel props (ME-08)" vs "everything else".
@@ -399,7 +400,7 @@ const tCR = bootNow();
 const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgpu', onWebGpuMissing,
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
   stable: params.get('stable') === '1' || params.get('gpucompare') === '1', // US-073c (38.25): temporal glyph stability, default OFF; ?gpucompare=1 builds it for the `stable` row (the pass stays off for every other row)
-  shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.occl, pointShadows: pointShadowOpt.pointShadows, pointShadowLevel: pointShadowOpt.pointShadowLevel, // OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
+  shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.occl, pointShadows: pointShadowOpt.pointShadows, pointShadowLevel: pointShadowOpt.pointShadowLevel, glow: parseGlow(params, resolvedQuality && resolvedQuality.name), // EMIS-03/04: emissive bleed + halo (High/Ultra, ?emissive=); OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
   onCompileProgress: (done, total) => { bootStages.enter('pipelines'); if (bootCard) bootCard.setStageLines(bootStages.cardText()); if (bootProg) bootProg.count('compile', done, total); } }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
 bootSpan('createRenderer total (' + rendererInfo.label + ')', tCR);
 if (bootProg) { bootProg.phase('engine'); await bootPaint(); }
@@ -926,7 +927,7 @@ if (gpuBlocked) {
   modeByName.get('bench').run(ctx);
 } else if (params.get('shadetest') === '1') {
   modeByName.get('shadetest').run(ctx);
-} else if (params.get('gpucompare') === '1' || params.get('gpucompare') === 'shade' || params.get('gpucompare') === 'mesh') {
+} else if (params.get('gpucompare') === '1' || params.get('gpucompare') === 'emissive' || params.get('gpucompare') === 'shade' || params.get('gpucompare') === 'mesh') {
   modeByName.get('gpucompare').run(ctx);
 } else if (params.get('flicker') === '1') {
   modeByName.get('flicker').run(ctx);

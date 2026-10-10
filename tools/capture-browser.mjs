@@ -159,8 +159,8 @@ export function buildQuery(mode, { grid, variant, rays, shadows, backend, stable
   const parts = [];
   if (WEBGPU_PAGE_MODES.has(mode)) return ''; // dedicated page, no query (see pagePathFor)
   if (mode === 'gpucompare') {
-    if (variant && variant !== 'shade') throw new Error('gpucompare has only the default mesh twin or --variant shade');
-    parts.push(variant === 'shade' ? 'gpucompare=shade' : 'gpucompare=1');
+    if (variant && variant !== 'shade' && variant !== 'emissive') throw new Error('gpucompare has only the default mesh twin, --variant shade or --variant emissive');
+    parts.push(variant === 'shade' ? 'gpucompare=shade' : variant === 'emissive' ? 'gpucompare=emissive' : 'gpucompare=1');
   } else if (mode === 'bench') {
     // ME-06 (docs/architecture.md 27.11 ME-06 row): `--variant world`
     // requests the real US-018 `?bench=1` pass-timing bench (3 fixed views

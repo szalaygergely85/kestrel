@@ -2,6 +2,8 @@ import { KIND_TERRAIN, FACE_PACKED } from '../GBuffer.js';
 import { unpackNormalOct } from '../../voxel/octNormal.js';
 import { edgeRules } from '../edgePass.js';
 import { shadeDetailFast } from '../detailShade.js';
+import { packMaterialTable } from './ShadeTextures.js';
+import { glowFrame } from '../glow.js'; // EMIS-03/04: compareGlow twin
 
 // US-029 tech notes item 7 / AC "Parity page": `compareCells` is the pure,
 // Node-testable comparison core; `runGpuCompare` drives it against a real
@@ -774,4 +776,41 @@ export function compareShadowDepth(gpuBits, jsZbuf, res) {
     hist: { le64: h64, le1024: h1024, big: hBig }, ratioHist: ratioHist.join('/'),
     pass: withinPct >= 99.9 && covMismatchPct <= 0.3,
   };
+}
+
+/**
+ * EMIS-03/04 `?gpucompare=emissive`: rows `emissive-glow-fg` / `emissive-glow-bg`. Runs the JS twin `glowFrame` on the GPU's own pre-glow
+ * cells (fgIn/bgIn = readbackCells with the glow pass off) + the GPU G-buffer (kind/mat/depth) and compares it with the GPU glow output.
+ * Tolerance 1 byte per channel (glyph byte exact on fg.a). `live` = cells the twin changed (0 = vacuous pose, row fails).
+ * @param {{kind:ArrayLike<number>,mat:ArrayLike<number>,depth:Float32Array}} geom @param {Float32Array} emis emissive by material id
+ * @param {Uint8Array} fgIn @param {Uint8Array} bgIn @param {Uint8Array} gpuFg @param {Uint8Array} gpuBg @param {object} P glow params
+ */
+export function compareGlow(geom, cols, rows, emis, fgIn, bgIn, gpuFg, gpuBg, P, tol = 1) {
+  const n = cols * rows, jsFg = new Uint8Array(n * 4), jsBg = new Uint8Array(n * 4);
+  glowFrame(geom, cols, rows, emis, fgIn, bgIn, jsFg, jsBg, P);
+  const one = (js, gpu, inp) => {
+    let max = 0, bad = 0, live = 0;
+    for (let i = 0; i < n; i++) {
+      let changed = false, cellBad = false;
+      for (let k = 0; k < 4; k++) {
+        const o = i * 4 + k, d = Math.abs(js[o] - gpu[o]);
+        if (d > max) max = d;
+        if (d > tol) cellBad = true;
+        if (js[o] !== inp[o]) changed = true;
+      }
+      if (cellBad) bad++;
+      if (changed) live++;
+    }
+    return { max, bad, live, ok: bad === 0 && live > 0 };
+  };
+  const fg = one(jsFg, gpuFg, fgIn), bg = one(jsBg, gpuBg, bgIn);
+  return { fg: { pose: 'emissive-glow-fg', ...fg }, bg: { pose: 'emissive-glow-bg', ...bg }, ok: fg.ok && bg.ok };
+}
+
+/** Emissive by material id from the bound material table, packed like the shade pass (matF texel 1 .x), the same value the WGSL `emisAt` reads. */
+export function emisFromPacked(table) {
+  const packed = packMaterialTable(table);
+  const w = packed.dims.matFWidth, nMat = packed.dims.nMat, e = new Float32Array(nMat);
+  for (let id = 1; id < nMat; id++) e[id] = packed.matF[(id * w + 1) * 4];
+  return e;
 }
