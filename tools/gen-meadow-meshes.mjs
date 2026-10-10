@@ -34,7 +34,7 @@ export const POOL = {
   rock: ['Rock_Medium_1', 'Rock_Medium_2', 'Rock_Medium_3'],
   pebble: ['Pebble_Round_1', 'Pebble_Round_2', 'Pebble_Round_3', 'Pebble_Square_1', 'Pebble_Square_2', 'Pebble_Square_5'],
 };
-const LIFT = { fern: 0, flower: 0, clover: 0, plant: 0, bush: 0, flowerBush: 0, grass: 0, mushroom: 0, rock: 0.15, pebble: -0.01 };
+const LIFT = { fern: 0, flower: 0, clover: 0, plant: 0, bush: 0, flowerBush: 0, grass: 0, mushroom: 0, rock: -0.12, pebble: -0.01 }; // ROCK-SNAP-01: rocks sunk 0.12 m (was +0.15 lift)
 const SHADOW = { fern: false, flower: false, clover: false, plant: false, bush: false, flowerBush: false, grass: false, mushroom: false, rock: true, pebble: false };
 
 function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -97,7 +97,8 @@ async function main() {
     const name = pick(POOL[cls]), inf = info[name];
     if (!ok(x, y, inf.r)) return false;
     const e = inf.ext * 0.5;
-    const z = Math.max(T.groundAt(x, y), T.groundAt(x + e, y), T.groundAt(x - e, y), T.groundAt(x, y + e), T.groundAt(x, y - e)) + LIFT[cls];
+    const zs = [T.groundAt(x, y), T.groundAt(x + e, y), T.groundAt(x - e, y), T.groundAt(x, y + e), T.groundAt(x, y - e)];
+    const z = (/^(rock|pebble|rockpath)$/.test(cls) ? Math.min(...zs) : Math.max(...zs)) + LIFT[cls]; // ROCK-SNAP-01: rocks sit on the LOWEST ground (no floating downhill side)
     circles.push({ x, y, r: inf.r });
     const st = { id: 'mdw' + String(out.length).padStart(3, '0'), mesh: 'quaternius/' + name, origin: { x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2) }, yawDeg: Math.floor(R() * 360) };
     if (PLANT_SCALE[name]) st.scale = plantScaleFor(name, st.id);   // PLANT-SCALE-01 + PLANT-SIZE-RANDOM-01

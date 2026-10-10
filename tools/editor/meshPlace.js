@@ -10,7 +10,7 @@ export function meshScale(value) {
   return clampScale(Math.round(value/0.05)*0.05);
 }
 
-export const LIFT = Object.freeze({ tree: 0.2, rock: 0.15, rockpath: -0.02, pebble: -0.01, grass: 0, mushroom: 0, other: 0 });
+export const LIFT = Object.freeze({ tree: 0.2, rock: -0.12, rockpath: -0.02, pebble: -0.01, grass: 0, mushroom: 0, other: 0 });
 export const SHADOW = Object.freeze({ tree: true, rock: true, rockpath: false, pebble: false, grass: false, mushroom: false, other: true });
 
 export function meshClass(key) {

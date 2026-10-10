@@ -123,7 +123,8 @@ while (out.length < COUNT && guard++ < 200000) {
     const [x, y] = at(u + gauss() * 4.5, SIDE * (v + gauss() * 3.2));
     if (!ok(x, y, inf.r)) continue;
     const e = inf.ext * 0.5;   // footprint: highest ground under centre + 4 points, so slopes do not leave the piece floating
-    const z = Math.max(T.groundAt(x, y), T.groundAt(x + e, y), T.groundAt(x - e, y), T.groundAt(x, y + e), T.groundAt(x, y - e)) + LIFT[c];
+    const zs = [T.groundAt(x, y), T.groundAt(x + e, y), T.groundAt(x - e, y), T.groundAt(x, y + e), T.groundAt(x, y - e)];
+    const z = (/^(rock|pebble|rockpath)$/.test(c) ? Math.min(...zs) : Math.max(...zs)) + LIFT[c]; // ROCK-SNAP-01: rocks sit on the LOWEST ground (no floating downhill side)
     circles.push({ x, y, r: inf.r });
     const st = { id: PREFIX + String(out.length).padStart(3, '0'), mesh: 'quaternius/' + name, origin: { x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2) }, yawDeg: Math.floor(R() * 360) };
     if (PLANT_SCALE[name]) st.scale = plantScaleFor(name, st.id);   // PLANT-SCALE-01 + PLANT-SIZE-RANDOM-01
