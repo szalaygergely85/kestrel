@@ -1,3 +1,4 @@
+import { createPlatform } from './platform.js';
 // tools/chargen/ui.js (CHARGEN-13): recipe controls, seed field, export/save buttons. Pure parts (controlsFor,
 // applyControl, readControl, debounce, seedFromText) have no DOM and are node-tested; mountUi() is the only DOM code.
 const HEIGHT_MIN = -4, HEIGHT_MAX = 4, AGES = ['young', 'adult', 'elder'];
@@ -70,17 +71,11 @@ const el = (tag, attrs = {}, ...kids) => {
   return e;
 };
 
-/** Browser download fallback (platform.js = CHARGEN-14 replaces this in the Tauri shell). */
-export function download(name, bytes, type = 'application/octet-stream') {
-  const a = el('a', { href: URL.createObjectURL(new Blob([bytes], { type })), download: name });
-  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-}
-
 /**
  * Builds the side panel into `root`. cb: { onRecipe(recipe), onSeed(seed), onClip(name), onPlay(bool),
  * onScrub(t01), onTurntable(bool) }. Returns { setRecipe, setClips, setTime, status }.
  */
-export function mountUi(root, { kit, chargen, cb }) {
+export function mountUi(root, { kit, chargen, cb, platform = createPlatform() }) {
   const ctls = controlsFor(kit);
   const rows = new Map();
   const status = el('div', { class: 'status' });
@@ -131,20 +126,20 @@ export function mountUi(root, { kit, chargen, cb }) {
     if (disabled) { b.disabled = true; b.title = 'needs CHARGEN-12'; }
     return b;
   };
+  const KFILT = [{ name: 'Kestrel package', extensions: ['kestrel', 'zip'] }];
+  const save = (name, bytes, ext) => platform.saveFile(name, bytes, [{ name: ext, extensions: [ext] }]);
   const exp = el('div', { class: 'group' }, el('h2', {}, 'Export'),
-    btn('.glb', () => download('character.glb', chargen.exportGlb(), 'model/gltf-binary')),
-    btn('.fbx (+ png)', () => { const { fbx, png } = chargen.exportFbx(); download('character.fbx', fbx); download('palette.png', png, 'image/png'); }),
+    btn('.glb', () => save('character.glb', chargen.exportGlb(), 'glb')),
+    btn('.fbx (+ png)', async () => { const { fbx, png } = chargen.exportFbx(); if (await save('character.fbx', fbx, 'fbx')) await save('palette.png', png, 'png'); }),
     btn('.vox', () => {}, true), btn('.obj', () => {}, true),
-    btn('All formats (.zip)', async () => download('character.zip', await chargen.exportAllZip(), 'application/zip')));
-  const file = el('input', { type: 'file', accept: '.kestrel,.zip', hidden: '' });
-  file.addEventListener('change', run(async () => {
-    const f = file.files[0]; if (!f) return;
-    const r = await chargen.openPackage(new Uint8Array(await f.arrayBuffer())); file.value = '';
-    api.setRecipe(r); cb.onRecipe(r);
-  }));
+    btn('All formats (.zip)', async () => save('character.zip', await chargen.exportAllZip(), 'zip')));
   const pkg = el('div', { class: 'group' }, el('h2', {}, 'Project'),
-    btn('Save .kestrel', async () => download('character.kestrel', await chargen.savePackage({ name: 'Character' }), 'application/zip')),
-    el('button', { onclick: () => file.click() }, 'Open .kestrel'), file);
+    btn('Save .kestrel', async () => save('character.kestrel', await chargen.savePackage({ name: 'Character' }), 'kestrel')),
+    btn('Open .kestrel', async () => {
+      const f = await platform.openFile(KFILT); if (!f) return;
+      const r = await chargen.openPackage(f.bytes);
+      api.setRecipe(r); cb.onRecipe(r);
+    }));
 
   root.append(panel, anim, exp, pkg, status);
 
