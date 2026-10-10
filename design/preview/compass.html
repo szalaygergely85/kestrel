@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - golden pocket compass (COMPASS-D1)</title>
+<style>
+  body { background: #07080c; color: #e8e2d0; font: 13px/1.45 Consolas, monospace; margin: 16px 24px; }
+  h1 { color: #ffd24a; font-size: 18px; margin: 0 0 4px; }
+  h2 { color: #f0d27a; font-size: 14px; margin: 22px 0 6px; }
+  .note { color: #a9a390; max-width: 1100px; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+  .tile { background: #0d1018; padding: 6px; border: 1px solid #1c2030; }
+  .tile div { color: #a9a390; font-size: 11px; text-align: center; }
+  canvas { display: block; image-rendering: pixelated; }
+  label { margin-right: 14px; white-space: nowrap; }
+  input[type=range] { vertical-align: middle; width: 160px; }
+  .ok { color: #4fd66a; } .bad { color: #ff3b3b; }
+  #controls { background: #0d1018; border: 1px solid #1c2030; padding: 8px 10px; margin: 10px 0; }
+</style>
+</head>
+<body>
+<h1>Golden pocket compass - HUD bottom-right (COMPASS-D1, D-061)</h1>
+<div class="note">Needle = direction to the quest target <b>relative to where the player looks</b> (up = ahead, down = behind).
+The dim <b>N</b> is true north and rides round the glass with camera yaw. Data: <code>ASSETS.uiStyle.compass</code>
+(design/models/compass_ui.js). UI cells are 12 x 18 px (the fixed 160x60 UI layer at 1920x1080), so the compass is the same size on every scene grid.</div>
+
+<div id="controls">
+  <label>target bearing <input id="tb" type="range" min="0" max="359" value="60"> <span id="tbv"></span></label>
+  <label>camera yaw <input id="yaw" type="range" min="0" max="359" value="0"> <span id="yawv"></span></label>
+  <label>distance <input id="dist" type="range" min="0" max="2500" value="42"> <span id="distv"></span></label>
+  <label>height diff <input id="dz" type="range" min="-12" max="12" value="0"> <span id="dzv"></span></label><br>
+  <label>dirs <select id="dirs"><option value="16">16</option><option value="8">8</option></select></label>
+  <label>face <select id="face"><option>small</option><option>large</option></select></label>
+  <label>target kind <select id="kind"><option value="step">step target</option><option value="giverHas">giver !</option><option value="giverReady">giver ?</option></select></label>
+  <label><input id="nmark" type="checkbox" checked> N mark</label>
+  <label><input id="glint" type="checkbox" checked> glass glint</label>
+  <label><input id="spin" type="checkbox"> auto-turn camera</label>
+  <label>scene <select id="tod"><option>day</option><option>dusk</option><option>night</option></select></label>
+  <button id="ping">new target (ping + swing)</button>
+</div>
+
+<h2>Live, in-game corner at 3 scene grids (bottom-right 600 x 300 px crop of a 1920 x 1080 screen)</h2>
+<div class="row" id="live"></div>
+
+<h2>All needle states - small face (11 x 7)</h2>
+<div class="row" id="sheetS"></div>
+<h2>All needle states - large face (15 x 9, option)</h2>
+<div class="row" id="sheetL"></div>
+<h2>Distance line examples</h2>
+<div class="row" id="dists"></div>
+<h2>Checks</h2>
+<div id="checks"></div>
+
+<script src="../palette.js"></script>
+<script src="../models/compass_ui.js"></script>
+<script>
+(function () {
+  'use strict';
+  var C = ASSETS.uiStyle.compass, P = ASSETS.palette, PC = P.colors;
+  var UW = 12, UH = 18;                         // UI cell px at 1920x1080
+  function rgb(a) { return 'rgb(' + a[0] + ',' + a[1] + ',' + a[2] + ')'; }
+  function hexOf(key) { return PC[key] || C.hex[key] || '#ff00ff'; }
+  function h2a(h) { return [parseInt(h.substr(1, 2), 16), parseInt(h.substr(3, 2), 16), parseInt(h.substr(5, 2), 16)]; }
+  function mix(a, b, t) { return [0, 1, 2].map(function (i) { return Math.round(a[i] + (b[i] - a[i]) * t); }); }
+
+  function cell(ctx, x, y, g, fg, bg, cw, ch) {
+    if (bg) { ctx.fillStyle = bg; ctx.fillRect(x * cw, y * ch, cw, ch); }
+    if (g && g !== ' ') {
+      ctx.fillStyle = fg; ctx.font = Math.round(ch * 0.9) + 'px Consolas, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(g, x * cw + cw / 2, y * ch + ch / 2 + 1);
+    }
+  }
+  function fmtDist(st) {
+    var D = C.distance, parts = [];
+    if (D.kindMark[st.kind]) parts.push([D.kindMark[st.kind], hexOf(D.kindMark.fg)], [' ', null]);
+    if (st.dist <= D.here.withinM) { parts.push([D.here.text, hexOf(D.here.fg)]); return parts; }
+    var num = st.dist >= D.format.kmFrom ? (st.dist / 1000).toFixed(D.format.kmDecimals) : String(Math.round(st.dist));
+    var unit = st.dist >= D.format.kmFrom ? 'km' : 'm';
+    parts.push([num, hexOf(D.number.fg)], [' ', null], [unit, hexOf(D.unit.fg)]);
+    if (Math.abs(st.dz) >= D.height.fromM) parts.push([' ', null], [st.dz > 0 ? D.height.up : D.height.down, hexOf(D.height.fg)]);
+    return parts;
+  }
+  // draw the compass with its top-left at UI cell (ox, oy); returns nothing. st = { dir, nDir, dist, dz, kind, t, ping, nmark, glint }
+  function drawCompass(ctx, ox, oy, faceName, st, cw, ch, withDist) {
+    var F = C.faces[faceName], hx = F.hub.x, hy = F.hub.y, near = st.dist <= C.near.withinM;
+    var pingOn = st.ping > 0;
+    for (var y = 0; y < F.h; y++) for (var x = 0; x < F.w; x++) {
+      var bk = F.bg[y][x]; if (bk === ' ') continue;
+      var fk = F.fg[y][x], key = C.fgKeys[fk];
+      if (pingOn && (fk === 'L' || fk === 'B')) key = C.newTarget.rimTo;
+      cell(ctx, ox + x, oy + y, F.glyphs[y][x] === 'o' && x === hx && y === hy ? ' ' : F.glyphs[y][x],
+           key ? hexOf(key) : '#000', rgb(C.bgRgb[C.bgKeys[bk]]), cw, ch);
+    }
+    var glassBg = rgb(C.bgRgb.glass);
+    if (st.glint && F.glint) cell(ctx, ox + F.glint.x, oy + F.glint.y, F.glint.glyph, hexOf(C.fgKeys[F.glint.fg]), glassBg, cw, ch);
+    if (st.nmark && C.nMark.enabled) {
+      var np = F.nMark.positions8[st.nDir];
+      cell(ctx, ox + hx + np[0], oy + hy + np[1], C.nMark.glyph, hexOf(C.nMark.fg), glassBg, cw, ch);
+    }
+    var N = C.needleStyle, cells = F.needle[st.dir];
+    var period = near ? C.near.tipPeriodSec : N.tip.periodSec;
+    var a = 0.5 - 0.5 * Math.cos(2 * Math.PI * st.t / period);
+    var tipCol = rgb(mix(h2a(hexOf(N.tip.fg)), h2a(hexOf(N.tip.pulseTo)), a));
+    ['x', 'b', 't'].forEach(function (role) {
+      cells.forEach(function (c) {
+        if (c[3] !== role) return;
+        var col = role === 't' ? tipCol : hexOf(role === 'b' ? N.body.fg : N.tail.fg);
+        cell(ctx, ox + hx + c[0], oy + hy + c[1], c[2], col, glassBg, cw, ch);
+      });
+    });
+    var hub = near ? N.hub.near : N.hub;
+    cell(ctx, ox + hx, oy + hy, hub.glyph, hexOf(hub.fg), glassBg, cw, ch);
+    if (withDist) {
+      var parts = fmtDist(st), text = parts.map(function (p) { return p[0]; }).join('');
+      var len = text.length, x0 = ox + hx - Math.floor((len - 1) / 2), yy = oy + F.h + C.distance.rowsBelowFace;
+      var pbg = rgb(C.bgRgb.plate);
+      for (var i = -C.distance.pad; i < len + C.distance.pad; i++) cell(ctx, x0 + i, yy, ' ', null, pbg, cw, ch);
+      var cx = x0;
+      parts.forEach(function (p) { for (var k = 0; k < p[0].length; k++) { cell(ctx, cx, yy, p[0][k], p[1] || '#000', pbg, cw, ch); cx++; } });
+    }
+  }
+
+  // ---- game-like scene background (procedural) at a scene grid ----
+  var SKY = { day: ['#2f6fc8', '#c4dcef'], dusk: ['#3a2a58', '#e89a6a'], night: ['#05070f', '#1a2238'] };
+  var GRASS = { day: [[70, 120, 40], [150, 190, 80]], dusk: [[50, 60, 40], [120, 100, 60]], night: [[10, 16, 18], [30, 44, 50]] };
+  function hash(x, y) { var h = (x * 374761393 + y * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+  function drawScene(ctx, cols, rows, pxW, pxH, tod, offX, offY) {
+    var cw = 1920 / cols, ch = 1080 / rows, sky = SKY[tod], g = GRASS[tod];
+    var c0 = Math.floor(offX / cw), r0 = Math.floor(offY / ch);
+    for (var r = r0; r * ch < offY + pxH; r++) for (var c = c0; c * cw < offX + pxW; c++) {
+      var v = r / rows, hill = 0.55 + 0.05 * Math.sin(c / cols * 9) + 0.03 * Math.sin(c / cols * 23);
+      var x = c * cw - offX, y = r * ch - offY, fg, bg, gl;
+      if (v < hill) {
+        var t = v / hill; bg = mix(h2a(sky[0]), h2a(sky[1]), t);
+        gl = hash(c, r) < 0.06 ? (tod === 'night' ? '.' : '\'') : ' '; fg = mix(bg, [255, 255, 255], 0.35);
+      } else {
+        var d = (v - hill) / (1 - hill), n = hash(c, r);
+        fg = mix(g[0], g[1], Math.min(1, d * 0.8 + n * 0.4)); bg = fg.map(function (q) { return Math.round(q * 0.18); });
+        gl = '.,\'";:'.charAt(Math.floor(n * 6)); if (d > 0.6 && n > 0.8) gl = '%';
+      }
+      ctx.fillStyle = rgb(bg); ctx.fillRect(x, y, cw + 0.5, ch + 0.5);
+      ctx.fillStyle = rgb(fg); ctx.font = Math.round(ch * 0.9) + 'px Consolas, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(gl, x + cw / 2, y + ch / 2 + 1);
+    }
+  }
+
+  // ---- state from controls ----
+  function $(id) { return document.getElementById(id); }
+  var pingUntil = 0, swingUntil = 0, swingDir = 0, lastDir = -1, shownDir = 0;
+  function wrap(a) { a %= 360; return a < 0 ? a + 360 : a; }
+  function quant(rel, n) { return Math.round(rel / (360 / n)) % n; }
+  function current(t) {
+    var n = +$('dirs').value, yaw = +$('yaw').value;
+    if ($('spin').checked) { yaw = wrap(yaw + t * 25); }
+    var rel = wrap(+$('tb').value - yaw);
+    // hysteresis (as data rule): keep shown dir until rel leaves its band by C.meaning.hysteresis.steps
+    if (shownDir >= n) { shownDir = 0; lastDir = -1; }
+    var step = 360 / n, centre = shownDir * step, diff = Math.abs(((rel - centre + 540) % 360) - 180) / step;
+    if (diff > 0.5 + C.meaning.hysteresis.steps || lastDir < 0) shownDir = quant(rel, n);
+    var dir16 = n === 16 ? shownDir : C.dirs8[shownDir];
+    if (lastDir >= 0 && dir16 !== lastDir) {
+      var jump = Math.min(Math.abs(dir16 - lastDir), 16 - Math.abs(dir16 - lastDir));
+      if (jump / (16 / n) >= C.swing.minSteps) {
+        var sense = ((dir16 - lastDir + 16) % 16) <= 8 ? 1 : -1;
+        swingDir = (dir16 + sense * (16 / n) * C.swing.overshootSteps + 16) % 16; swingUntil = t + C.swing.overshootMs / 1000;
+      }
+    }
+    lastDir = dir16;
+    var nDir = quant(wrap(0 - yaw), 8);
+    return { dir: t < swingUntil ? swingDir : dir16, nDir: nDir, dist: +$('dist').value, dz: +$('dz').value, kind: $('kind').value,
+             t: t, ping: t < pingUntil ? 1 : 0, nmark: $('nmark').checked, glint: $('glint').checked, yaw: yaw, rel: rel };
+  }
+  $('ping').onclick = function () { var t = performance.now() / 1000; pingUntil = t + C.newTarget.ms / 1000; $('tb').value = Math.floor(Math.random() * 360); };
+
+  // ---- live crops ----
+  var GRIDS = [[160, 60], [240, 90], [400, 150]], CROP_W = 600, CROP_H = 300, live = [];
+  GRIDS.forEach(function (gs) {
+    var d = document.createElement('div'); d.className = 'tile';
+    var cv = document.createElement('canvas'); cv.width = CROP_W; cv.height = CROP_H; d.appendChild(cv);
+    var lab = document.createElement('div'); lab.textContent = 'scene ' + gs[0] + 'x' + gs[1] + ' (scene cell ' +
+      (1920 / gs[0]).toFixed(1) + ' x ' + (1080 / gs[1]).toFixed(1) + ' px) + UI layer 160x60'; d.appendChild(lab);
+    $('live').appendChild(d); live.push({ cv: cv, gs: gs });
+  });
+  function frame() {
+    var t = performance.now() / 1000, st = current(t), face = $('face').value;
+    $('tbv').textContent = $('tb').value + ' deg'; $('yawv').textContent = Math.round(st.yaw) + ' deg (rel ' + Math.round(st.rel) + ')';
+    $('distv').textContent = st.dist + ' m'; $('dzv').textContent = st.dz + ' m';
+    var anc = C.anchor[face], offX = 1920 - CROP_W, offY = 1080 - CROP_H;
+    live.forEach(function (L) {
+      var ctx = L.cv.getContext('2d');
+      drawScene(ctx, L.gs[0], L.gs[1], CROP_W, CROP_H, $('tod').value, offX, offY);
+      ctx.save(); ctx.translate(-offX, -offY);
+      drawCompass(ctx, anc.x, anc.y, face, st, UW, UH, true);
+      ctx.restore();
+    });
+    requestAnimationFrame(frame);
+  }
+
+  // ---- sheets ----
+  function sheet(hostId, faceName) {
+    var F = C.faces[faceName];
+    for (var d = 0; d < 16; d++) {
+      var tile = document.createElement('div'); tile.className = 'tile';
+      var cv = document.createElement('canvas'); cv.width = (F.w + 2) * UW; cv.height = (F.h + 2) * UH; tile.appendChild(cv);
+      var lab = document.createElement('div');
+      lab.textContent = d + ' ' + C.names[d] + (C.dirs8.indexOf(d) >= 0 ? ' (8)' : ''); tile.appendChild(lab);
+      $(hostId).appendChild(tile);
+      var ctx = cv.getContext('2d'); ctx.fillStyle = '#121a14'; ctx.fillRect(0, 0, cv.width, cv.height);
+      drawCompass(ctx, 1, 0, faceName, { dir: d, nDir: 0, dist: 42, dz: 0, kind: 'step', t: 0, ping: 0, nmark: true, glint: true }, UW, UH, true);
+    }
+  }
+  sheet('sheetS', 'small'); sheet('sheetL', 'large');
+  [{ d: 42, k: 'step', z: 0 }, { d: 128, k: 'giverHas', z: 0 }, { d: 9, k: 'giverReady', z: 0 }, { d: 1234, k: 'step', z: 0 },
+   { d: 37, k: 'step', z: 6 }, { d: 2, k: 'step', z: 0 }].forEach(function (e) {
+    var tile = document.createElement('div'); tile.className = 'tile';
+    var cv = document.createElement('canvas'); cv.width = 13 * UW; cv.height = 9 * UH; tile.appendChild(cv); $('dists').appendChild(tile);
+    var ctx = cv.getContext('2d'); ctx.fillStyle = '#121a14'; ctx.fillRect(0, 0, cv.width, cv.height);
+    drawCompass(ctx, 1, 0, 'small', { dir: 2, nDir: 6, dist: e.d, dz: e.z, kind: e.k, t: 0, ping: 0, nmark: true, glint: true }, UW, UH, true);
+  });
+
+  // ---- checks ----
+  var out = [];
+  function chk(name, ok, info) { out.push('<div class="' + (ok ? 'ok' : 'bad') + '">' + (ok ? 'OK  ' : 'FAIL ') + name + (info ? ' - ' + info : '') + '</div>'); }
+  var keys = Object.keys(C.hex), bad = keys.filter(function (k) { return (PC[k] || '').toLowerCase() !== C.hex[k]; });
+  chk('every fg key exists in palette.js with the same hex', bad.length === 0, bad.join(' '));
+  ['small', 'large'].forEach(function (fn) {
+    var F = C.faces[fn], e = [];
+    ['glyphs', 'fg', 'bg'].forEach(function (k) {
+      if (F[k].length !== F.h) e.push(k + ' rows'); F[k].forEach(function (r, i) { if (r.length !== F.w) e.push(k + ' row ' + i + ' len ' + r.length); });
+    });
+    F.glyphs.forEach(function (r) { for (var i = 0; i < r.length; i++) { var c = r.charCodeAt(i); if (c < 32 || c > 126) e.push('non-ASCII'); } });
+    F.fg.forEach(function (r, y) { for (var x = 0; x < r.length; x++) if (r[x] !== ' ' && !C.fgKeys[r[x]]) e.push('fg char ' + r[x]); });
+    chk(fn + ' face rows ' + F.w + ' x ' + F.h + ' aligned, ASCII only, fg chars known', e.length === 0, e.join(', '));
+    var outside = [];
+    F.needle.forEach(function (cells, d) { cells.forEach(function (c) {
+      var x = F.hub.x + c[0], y = F.hub.y + c[1]; if (!F.bg[y] || F.bg[y][x] !== 'g') outside.push(d + ':' + c[0] + ',' + c[1]);
+      if (c[2].charCodeAt(0) < 32 || c[2].charCodeAt(0) > 126) outside.push('glyph');
+    }); if (cells.filter(function (c) { return c[3] === 't'; }).length !== 1) outside.push(d + ': tip count'); });
+    F.nMark.positions8.forEach(function (p, i) { if (F.bg[F.hub.y + p[1]][F.hub.x + p[0]] !== 'g') outside.push('N' + i); });
+    chk(fn + ': ' + F.needle.length + ' needle states, every cell + N position on glass, one tip each', outside.length === 0 && F.needle.length === 16, outside.join(' '));
+    var a = C.anchor[fn];
+    chk(fn + ' anchor inside the 160x60 UI grid (face + distance row)', a.x + F.w <= 160 - C.anchor.marginRight + 0 && a.distanceRow === a.y + F.h && a.distanceRow <= 59,
+        'x ' + a.x + '..' + (a.x + F.w - 1) + ', rows ' + a.y + '..' + a.distanceRow);
+  });
+  chk('size at 160x60 UI layer: small ' + C.faces.small.w * UW + ' x ' + C.faces.small.h * UH + ' px (round case: w/h ~ 1)',
+      Math.abs(C.faces.small.w * UW / (C.faces.small.h * UH) - 1) < 0.15);
+  $('checks').innerHTML = out.join('');
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
