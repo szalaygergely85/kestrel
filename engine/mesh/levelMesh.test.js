@@ -1,4 +1,4 @@
-import { loadGolden, goldenFrame, goldenRelief, loadGoldenMatKeys } from '../../tools/testing/mesh-golden.mjs';
+import { loadGolden, goldenFrame, goldenRelief, loadGoldenMatKeys, loadGoldenLevel } from '../../tools/testing/mesh-golden.mjs';
 const golden = loadGolden('levelMesh');
 const goldenMatKeys = loadGoldenMatKeys('levelMesh'); // frozen id->key (37.13.5): compare keys, not ids
 let oracleIndex = 0;
@@ -164,7 +164,7 @@ const { assets } = await loadTestAssets();
 const COLS = 32, ROWS = 18, PXW = 9, PXH = 16;
 
 for (const name of ['tower', 'test_room']) {
-  const level = loadLevel(assets.level(name));
+  const level = loadLevel(name === 'tower' ? loadGoldenLevel('tower.pre-D1a') : assets.level(name)); // frozen pre-D1a tower = the goldens' input
   const matTable = bindShading(assets.palette, assets.detailPass, PXH / PXW);
   bindLevel(matTable, level);
   const ref = goldenRelief(golden.frames[oracleIndex++]);
@@ -264,8 +264,8 @@ function expectedFromTri(tri, P) {
   return { kind, face, mat: flatMat(tri.flat1), planeId: tri.flat0, u, v, z, aoD };
 }
 
-function runOracle(name, poses) {
-  const level = loadLevel(assets.level(name));
+function runOracle(name, poses, def = assets.level(name)) {
+  const level = loadLevel(def);
   const matTable = bindShading(assets.palette, assets.detailPass, PXH / PXW);
   bindLevel(matTable, level);
   const set = buildLevelMesh(level, { matIdFor: matTable.idFor });
@@ -326,12 +326,12 @@ function runOracle(name, poses) {
 }
 
 {
-  const tower = loadLevel(assets.level('tower'));
+  const tower = loadLevel(loadGoldenLevel('tower.pre-D1a')); // frozen pre-D1a tower = the goldens' input (TOWER-GOLDEN-STALE)
   const tEyeH = 1.6;
   const towerPoses = [0, 90, 180, 270].map((yawDeg) => ({
     x: tower.start.x, y: tower.start.y, z: tower.sectorAt(tower.start.x, tower.start.y).floorH + tEyeH, yawDeg, pitchDeg: 0,
   }));
-  runOracle('tower', towerPoses);
+  runOracle('tower', towerPoses, loadGoldenLevel('tower.pre-D1a'));
 
   const room = loadLevel(assets.level('test_room'));
   const roomPoses = [0, 90, 180, 270].map((yawDeg) => ({

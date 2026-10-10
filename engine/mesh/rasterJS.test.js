@@ -1,4 +1,4 @@
-import { loadGolden, goldenFrame } from '../../tools/testing/mesh-golden.mjs';
+import { loadGolden, goldenFrame, loadGoldenLevel } from '../../tools/testing/mesh-golden.mjs';
 const golden = loadGolden('rasterJS');
 let oracleIndex = 0;
 // engine/mesh/rasterJS.test.js (ME-03, docs/backlog.md ME-03 ACs,
@@ -457,7 +457,7 @@ function isEdgeCell(kind, cols, rows, x, y, i) {
 const { assets } = await loadTestAssets();
 {
   const COLS = 160, ROWS = 60;
-  const tower = loadLevel(assets.level('tower'));
+  const tower = loadLevel(loadGoldenLevel('tower.pre-D1a')); // frozen pre-D1a tower = the golden's input (TOWER-GOLDEN-STALE)
   const matTable = bindShading(assets.palette, assets.detailPass, 1);
   bindLevel(matTable, tower);
 
