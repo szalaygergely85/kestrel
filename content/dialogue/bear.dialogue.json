@@ -188,7 +188,7 @@
       "Go on, sky-cub. The road is west."
     ], "speaker": "burl"},
     "bear.following": {"end": true, "lines": [
-      "NEEDS WRITER: bear while following"
+      "Keep up, sky-cub. The stone won't come to us."
     ], "speaker": "burl"},
     "bear.repeat": {"end": true, "lines": [
       "Back again? The berries are still mine. Mostly."

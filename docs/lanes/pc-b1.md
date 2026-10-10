@@ -556,3 +556,6 @@ Tests: new quest/ch1Mount.test.js; filter suites 72 PASS; main.js syntax OK (.mj
 - Fixed burlEscort: stone-talk flag is `dlg.bear.stone.told` (plain dialogue flags get the `dlg.` prefix).
 - Tests: fenEntrance.test, stoneWake.test (new) + all filtered suites green. NOT run in a browser: `node tools/verify-ch1-mount.mjs {port}` (9500-9574, needs ?save=1).
 - Open: stone first-wake shows the wire's "saved/healed" toast over the notice (wire shows toast for kind waystone; silence it like relays if it looks bad); walk polylines still first-guess (CH1-10 route walk).
+
+- CH1-10 part B (branch ch1-10-walk): `game/js/quest/ch1Walkthrough.test.js` new. Real questRelay + book + dialogueCtl (Burl accept/hand-in) + collectSave/applySave round trip (between q03 and q04).
+  Asserts wake..Fen chain completes, 7 section toasts exactly once in order, no toast on restore/repeat events. No game code changed, no bugs found.
