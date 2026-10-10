@@ -13,12 +13,13 @@
  *     waist 28 cm, foot 25 cm.
  *   - every body section is an ellipse / superellipse slice with keyframed radii (torso S-curve, pecs, buttocks,
  *     calves, knees, ankles), so no flat cube face reads at 3-6 m. Head, hands and feet are hand-placed cells.
- *   - face: recessed eyes under a brow ridge, nose bridge + tip, cheekbones, ears with concha and lobe, lips with
- *     darker corners, a dark mouth interior on the jaw seam (seen when the Jaw bone opens), chin.
+ *   - face v2 (owner 2026-10-10): eyes (white + iris) on the face plane under brows and a lit brow bone, nose bridge +
+ *     lit tip, cheek apples, lit cheekbones, ears with helix / concha / lobe, 3-wide lips with shaded corners, a dark
+ *     mouth interior on the jaw seam (seen when the Jaw bone opens), lit chin. See the HEAD table.
  *   - hands: palm facing the thigh, thumb forward, four fingers with natural lengths (middle longest, pinky
  *     shortest), slight curl, knuckles, nails, veins. Feet: heel, arch, ball, big toe, toes, ankle bones.
- *   - skin variation: soft 7.5 cm tone patches (light / flush), plus anatomy cues (collarbones, sternum, pec line,
- *     nipples, navel, spine groove, shoulder blades, kneecaps, elbows).
+ *   - skin variation: broad anatomy cues only (collarbones, pec crowns, sternum, pec line, nipples, navel, spine
+ *     groove, shoulder blades, kneecaps, elbows, throat shade); the v1 random tone patches were removed (stripy).
  *   - underwear: undyed linen braies from the waist to mid-thigh (waistband + hem in linen_dark, a few folds).
  *   - rest pose: standing, arms down in a slight A (gap >= 3 cells from the lower ribs down; the armpit itself
  *     touches, as on a real body), >= 3 cells between the thighs, feet 12 cm apart.
@@ -198,18 +199,25 @@
   function footXc(Y) { return 4.3 + (1 - Y) * 0.1; }
 
   // head, rows z 60..69; each row = 10 strings (Y -5 front .. +4 back) of 7 chars (X -3 .. +3)
-  // a skin, l light, s shade, d deep, f flush, p lips, e iris, b brow
+  // a skin, l light, s shade, d deep, f flush, p lips, e iris, k eye white (linen_light), b brow (hair group)
+  // Face v2 (owner 2026-10-10 "redesign the face": v1 read as a skull - eyes sunk one cell behind the face plane under an
+  // overhanging brow, dark temples, hollow cheeks). v2: the eyes sit ON the face plane (Y -4: white outside, iris inside),
+  // brows on the same plane above them with a lit brow bone / forehead (z 67), no overhang and no dark socket cells; nose
+  // = bridge (z 64) + lit tip (z 63) on Y -5, soft nose-wing shade, flushed cheek apples, lit cheekbones filling the
+  // cheek-to-ear hollow (X +-3, z 64-65); 3-wide lips (upper z 62 on Head, lower z 61 on Jaw) with shaded corners and the
+  // dark mouth interior behind them (seen when the Jaw opens); lit chin, shaded underside; ears (helix flush, concha
+  // shade, lobe) stand free of the skull behind them (Y +2 empty at z 63-65).
   var HEAD = {
     69: ['.......', '.......', '.......', '..aaa..', '.aaaaa.', '.aaaaa.', '.aaaaa.', '..aaa..', '.......', '.......'],
-    68: ['.......', '.......', '..aaa..', '.aaaaa.', '.aaaaa.', 'aaaaaaa', 'aaaaaaa', '.aaaaa.', '..aaa..', '.......'],
-    67: ['.......', '.aalaa.', '.aaaaa.', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', '.aaaaa.', '.......'],
-    66: ['.......', '.bblbb.', '.aaaaa.', 'saaaaas', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', '.aaaaa.', '..aaa..'],
-    65: ['.......', '.s.l.s.', '.seaes.', 'saaaaas', 'saaaaas', 'faaaaaf', 'faaaaaf', 'aaaaaaa', '.aaaaa.', '..aaa..'],
-    64: ['...a...', '.laaal.', '.aaaaa.', '.aaaaa.', '.aaaaa.', 'daaaaad', 'faaaaaf', '.aaaaa.', '.aaaaa.', '..aaa..'],
-    63: ['...l...', '.afsfa.', '.aaaaa.', '.aaaaa.', '.aaaaa.', 'faaaaaf', '.aaaaa.', '.aaaaa.', '.aaaaa.', '.......'],
-    62: ['.......', '.aspsa.', '.addda.', '.aaaaa.', '.aaaaa.', '.aaaaa.', '.aaaaa.', '.aaaaa.', '..aaa..', '.......'],
-    61: ['.......', '..apa..', '.addda.', '.aaaaa.', '.......', '.......', '.......', '.......', '.......', '.......'],
-    60: ['.......', '..ala..', '.aaaaa.', '..sss..', '.......', '.......', '.......', '.......', '.......', '.......']
+    68: ['.......', '.......', '..ala..', '.aaaaa.', '.aaaaa.', 'aaaaaaa', 'aaaaaaa', '.aaaaa.', '..aaa..', '.......'],
+    67: ['.......', '.allla.', '.aaaaa.', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', '.aaaaa.', '.......'],
+    66: ['.......', '.bbabb.', '.baaab.', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', '.aaaaa.', '..aaa..'],
+    65: ['.......', '.keaek.', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', 'faaaaaf', '.aaaaa.', '.aaaaa.', '..aaa..'],
+    64: ['...a...', '.aaaaa.', 'laaaaal', 'aaaaaaa', 'aaaaaaa', 'saaaaas', 'faaaaaf', '.aaaaa.', '.aaaaa.', '..aaa..'],
+    63: ['...l...', '.fsasf.', '.aaaaa.', '.aaaaa.', '.aaaaa.', 'faaaaaf', '.aaaaa.', '.aaaaa.', '.aaaaa.', '.......'],
+    62: ['.......', '.apppa.', '.addda.', '.aaaaa.', '.aaaaa.', '.aaaaa.', '.aaaaa.', '.aaaaa.', '..aaa..', '.......'],
+    61: ['.......', '..ppp..', '.sddds.', '.aaaaa.', '.......', '.......', '.......', '.......', '.......', '.......'],
+    60: ['.......', '..ala..', '.aaaaa.', '.sssss.', '.......', '.......', '.......', '.......', '.......', '.......']
   };
 
   // ===================================================================================================================
@@ -348,13 +356,11 @@
       if (xi !== null) { put(s * xi, y3, 3, 'l'); put(s * xo, y3, 3, 'l'); }
     }
 
-    // ---- soft skin-tone patches (7.5 cm lattice): flush / light, never on authored cells ----
-    for (z = 0; z < SZ; z++) for (Y = -CY; Y < SY - CY; Y++) for (X = -CX; X < SX - CX; X++) {
-      k = idx(X, Y, z);
-      if (G[k] !== 'a' || LOCK[k]) continue;
-      var nz = vnoise(X + 40, Y + 40, z, 3, 17);
-      if (nz > 0.70) G[k] = 'f'; else if (nz < 0.27) G[k] = 'l';
-    }
+    // broad, anatomical shading only (face v2, owner 2026-10-10): the v1 random 7.5 cm flush / light patches read as
+    // noisy vertical stripes over the whole body, so they are gone; the skin stays the base tone and the cues above plus
+    // these few broad ones carry the variation (the renderer's light does the rest)
+    for (s = -1; s <= 1; s += 2) { cue(s * 3, 51, 'l', -1); cue(s * 4, 51, 'l', -1); }   // pec crowns catch the light
+    for (X = -2; X <= 2; X++) cue(X, 59, 's', -1);                                         // throat in the chin's shadow
 
     // ---- underwear: undyed linen braies, waist (z 40) to mid-thigh (z 28) ----
     for (z = 28; z <= 40; z++) for (Y = -CY; Y < SY - CY; Y++) for (X = -8; X <= 8; X++) {
