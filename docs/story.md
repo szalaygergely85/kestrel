@@ -475,3 +475,17 @@ Flow: l1 -> l2 -> l3 -> choice (a | b | c) -> one Burl line per branch -> `bear.
 Notes:
 - `wave` is on the greeting (`l1`). `bear.d1.close` would also work as a farewell wave if the clip team wants a second one.
 - Branch c only shows that the light is old (canon: it has been sending for years). It does not say who sends it or why.
+
+## EP-TALK: the first villager (VILLAGER-LINES-01, PC-B writer, 2026-10-10)
+
+**Name:** `Fen` (label `FEN`, entity `villager1`). A fen is a wet, low meadow. Fen stands about 6 m from Burl, near the waystone. She is one of the people Ferrum cast out. She never says so, never names the village (unnamed until M3), never calls the player Wick, and says nothing about the signal. She knows Burl the way you know a neighbour's dog. Her voice is short and practical.
+
+Flow: l1 (two lines) -> close. Lines <= 56 chars (engine DIALOGUE_LINE_MAX), ASCII, counted by hand.
+
+| Key | Speaker | Text | len |
+|---|---|---|---|
+| `villager.d1.l1` (1) | FEN | `Burl let you this close? Then you'll do, stranger.` | 50 |
+| `villager.d1.l1` (2) | FEN | `The boars are tearing up the slope. Thin them out.` | 50 |
+| `villager.d1.close` | FEN | `Then rest at the humming stone. It remembers faces.` | 51 |
+
+Notes: points to the boar quest and the waystone, and echoes `toast.waystone.saved` ("The stone will remember."). If M1/M2 must stay NPC-free on screen, the label can go back to `VILLAGER` without changing any line.

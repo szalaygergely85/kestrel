@@ -3,17 +3,18 @@
   "schema": 1,
   "id": "villager",
   "speakers": {
-    "villager": {"label": "VILLAGER"}
+    "villager": {"label": "FEN"}
   },
   "entry": [
     {"node": "villager.d1.l1"}
   ],
   "nodes": {
     "villager.d1.l1": {"lines": [
-      "WRITER: villager greeting line."
+      "Burl let you this close? Then you'll do, stranger.",
+      "The boars are tearing up the slope. Thin them out."
     ], "next": "villager.d1.close", "speaker": "villager"},
     "villager.d1.close": {"end": true, "lines": [
-      "WRITER: villager farewell line."
+      "Then rest at the humming stone. It remembers faces."
     ], "speaker": "villager"}
   }
 }
