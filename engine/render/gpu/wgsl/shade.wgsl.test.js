@@ -18,6 +18,7 @@ import { shadeCore, shadeDetailFast, wetGain, WET_DARK, levelFromThresholds as j
 import { SHADE_LEVEL_WGSL, SHADE_LEVEL_TARGETS } from './shade.wgsl.js';
 import { createHash } from 'node:crypto';
 import { shadeTerrain, hashFastU, hashFast01 } from '../../terrainShade.js';
+import { blendLook } from '../../look.js';
 import { packMaterialTable, MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH, SET_F_WIDTH, MAX_LEVELS } from '../ShadeTextures.js';
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
 import { KIND_MODEL, KIND_MESH, KIND_TERRAIN, FACE_PACKED } from '../../GBuffer.js';
@@ -74,6 +75,13 @@ let probes = 0;
   assert.ok(diff > 40, 'mutation: hash constant caught');
 }
 
+// --- DN-02: floor values at the three gate hours (8 morning, 19.5 dusk, 23 night) from blendLook ---
+const DN_FLOORS = (() => {
+  const P2 = { ...(paletteModule.default || paletteModule), rgb: { ...(paletteModule.default || paletteModule).rgb }, hue: { ...(paletteModule.default || paletteModule).hue } }, o = {};
+  return [8, 19.5, 23].map((h) => { blendLook(P2, h, P2.daySchedule, o); return o.floorEff; });
+})();
+assert.equal(DN_FLOORS[0], 0, 'morning: no floor'); assert.ok(DN_FLOORS[1] >= 0 && DN_FLOORS[1] < DN_FLOORS[2], 'dusk floor below night'); assert.ok(DN_FLOORS[2] > 0.17, 'night floor ~0.18');
+
 // --- real content pack ---
 const palette = paletteModule.default || paletteModule;
 const detailPass = detailPassModule.default || detailPassModule;
@@ -88,7 +96,7 @@ const f1Tex = (flat, width, height) => { const d = []; for (let i = 0; i < width
 const faceKRows = [[table.faceK[0], table.faceK[1], table.faceK[2], table.faceK[3]], [table.faceK[4], table.faceK[5], table.faceK[6], 0]];
 const shading = table.shading;
 const su = {
-  wetness: 0, cellAspect: packed.uniforms.cellAspect, cutoff: shading.cutoff, lift: shading.lift, aoR: table.ao.r, aoK: table.ao.k, faceK: faceKRows,
+  wetness: 0, skyGlowOn: { x: 0, y: 0, z: 0, w: 0 }, cellAspect: packed.uniforms.cellAspect, cutoff: shading.cutoff, lift: shading.lift, aoR: table.ao.r, aoK: table.ao.k, faceK: faceKRows,
 };
 assert.equal(su.cellAspect, shading.cellAspect, 'uniform cellAspect == shading.cellAspect');
 const POW2 = [0.125, 0.25, 0.5, 1, 2, 4];
@@ -209,18 +217,19 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   const bands = { near: 150, mid: 600 };
   const fog = { start: 50, full: 1500, curve: 0.7, nearRGB: [143, 168, 196], farRGB: [196, 220, 239] };
   const uTl = toTex(tlook, TLOOK_WIDTH, rows), uGain = f1Tex(gainLUT, 256, 1);
-  const makeSu = (hashCell, wet = 0) => ({
+  const makeSu = (hashCell, wet = 0, floorY = 0) => ({
     hashCell, nearDetailOn: 1, handover: { x: 40, y: 90 }, closeBand: 40, fgMin: shadingT.fgMin, fgMaxGain: shadingT.fgMaxGain, bandNear: bands.near, bandMid: bands.mid,
     terrainFogStart: fog.start, terrainFogFull: fog.full, terrainFogCurve: fog.curve,
     terrainFogNearRGB: { x: fog.nearRGB[0], y: fog.nearRGB[1], z: fog.nearRGB[2] }, terrainFogFarRGB: { x: fog.farRGB[0], y: fog.farRGB[1], z: fog.farRGB[2] },
     wetness: wet, // S8-B2-14b
+    skyGlowOn: { x: 0, y: floorY, z: 0, w: 0 }, // DN-02
   });
   const MAX_F = MAX_FEATURES_PER_TYPE;
-  function runTerrain(src, trials, wet = 0) {
+  function runTerrain(src, trials, wet = 0, floorY = 0) {
     let bad = 0, n = 0, faces = 0, closeN = 0;
     const h = mkHash(src);
     for (const hashCell of [0, 3, -0.05]) {
-      const suT = makeSu(hashCell, wet);
+      const suT = makeSu(hashCell, wet, floorY);
       const base = { ...shims, textureLoad, su: suT, uTlook: uTl, uGain, imul, ...h, MAX_FEATURES_PER_TYPE: MAX_F, FOREST_FACE_NZ,
         exp2: (x) => Math.pow(2, x), ceil: Math.ceil, log2: Math.log2, pow: Math.pow };
       base.samplePowLUT = compileFn(SHADE_WGSL, 'samplePowLUT', base);
@@ -233,7 +242,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
       base.smoothstepFast = compileFn(SHADE_WGSL, 'smoothstepFast', base);
       base.wetGain = compileFn(SHADE_WGSL, 'wetGain', base);
       const st = compileFn(src, 'shadeTerrain', base);
-      const ctx = { tlook, tlookWidth: TLOOK_WIDTH, bands, fog, shading: { ...shadingT, wetness: wet }, closeBand: 40, handover: [40, 90], features: null, hashCell };
+      const ctx = { tlook, tlookWidth: TLOOK_WIDTH, bands, fog, shading: { ...shadingT, wetness: wet, floorLum: floorY }, closeBand: 40, handover: [40, 90], features: null, hashCell };
       for (let t = 0; t < trials; t++) {
         const type = Math.floor(rand() * rows), tt = rand() < 0.5 ? rand() * 60 : rand() * 1700;
         const b = rand() * 1.3, u = rand() * 900 - 100, v = rand() * 900 - 100, time = rand() * 20, faceMode = Math.floor(rand() * 3);
@@ -297,10 +306,18 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   }
   // mutation: terrain wet-darkening constant must be caught
   {
-    const anchor = `let bWet = b * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness);`;
+    const anchor = `var bWet = b * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness);`;
     assert.ok(SHADE_WGSL.includes(anchor), 'anchor terrain wet dark');
-    const mutT2 = SHADE_WGSL.replace(anchor, 'let bWet = b * (1.0 - 0.1000 * su.wetness);');
+    const mutT2 = SHADE_WGSL.replace(anchor, 'var bWet = b * (1.0 - 0.1000 * su.wetness);');
     assert.ok(runTerrain(mutT2, 600, 1).bad > 15, 'mutation: terrain wet darkening constant caught');
+  }
+  // DN-02: terrain night floor (su.skyGlowOn.y) JS twin == WGSL at the floorEff of 8 h / 19.5 h / 23 h
+  for (const fy of DN_FLOORS) {
+    const r = runTerrain(SHADE_WGSL, 800, 0, fy); assert.equal(r.bad, 0, `terrain floor ${fy}: ${r.bad}/${r.n}`);
+  }
+  {
+    const mutF = SHADE_WGSL.replace('{ bWet = su.skyGlowOn.y; }', '{ bWet = su.skyGlowOn.y * 0.5; }');
+    assert.ok(runTerrain(mutF, 800, 0, DN_FLOORS[2]).bad > 20, 'mutation: terrain floor caught');
   }
 }
 
@@ -325,6 +342,24 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   const mutSrc = probeSrc.replace('/ 255.0)', '/ 254.0)');
   const fMut = compileFn(mutSrc, 'cloudFactorProbe', shims);
   assert.ok(Math.abs(fMut({ x: 0, y: 0, z: 0, w: 153 << 24 }) - (1 - 153 * (1 / 255))) > 1e-6, 'mutation: wrong divisor caught');
+}
+
+// --- DN-02: shadeCore night floor, JS twin == WGSL at 8 / 19.5 / 23 h; 0 = untouched; floor lifts dark b ---
+{
+  for (const fy of DN_FLOORS) {
+    su.skyGlowOn.y = fy; Object.defineProperty(shading, 'floorLum', { value: fy, configurable: true });
+    const r = runCore(SHADE_WGSL, 1200); assert.ok(r.bad <= r.n * 0.002, `shadeCore floor ${fy} vs JS: ${r.bad}/${r.n}`); probes += r.n;
+    if (fy > 0) {
+      const id = Object.keys(table.records).map(Number).find((i) => i > 0 && table.records[i] && table.records[i].v2);
+      const o = shadeCore(table, table.records[id].v2, 1, 1, 1, 1e30, 0.01, 0, 0, 0.01, 5, 1, 2, [0, 0, 0], {});
+      assert.ok(o.b >= fy - 1e-9, 'JS floor holds b >= floor on an unlit cell');
+    }
+  }
+  su.skyGlowOn.y = 0; delete shading.floorLum; Object.defineProperty(shading, 'floorLum', { get() { return 0; }, configurable: true });
+  const mutF = SHADE_WGSL.replace('{ b = su.skyGlowOn.y; }', '{ b = su.skyGlowOn.y * 0.5; }');
+  su.skyGlowOn.y = DN_FLOORS[2]; Object.defineProperty(shading, 'floorLum', { value: DN_FLOORS[2], configurable: true });
+  { const rm = runCore(mutF, 6000); assert.ok(rm.bad > 5, 'mutation: shadeCore floor caught ' + rm.bad); }
+  su.skyGlowOn.y = 0; Object.defineProperty(shading, 'floorLum', { value: 0, configurable: true });
 }
 
 // --- S8-B2-14 wetness: uniform slot replaces pad0 (layout unchanged), JS twin == WGSL, 0 = untouched, 1 darkens 10-25 % ---
@@ -381,9 +416,9 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
 
 // --- US-073b (38.25): the stable-glyph level target. OFF = byte-identical to the pre-073b shader; ON = one extra r8ui target. ---
 {
-  // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01 (39780 chars, + skyGlowOn gate): the stable-off shader must not move by a single byte.
-  assert.equal(SHADE_WGSL.length, 39780, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '15e5d16bf3426229d5d720c0a045d5772d54e6764701313166eae9b7e5288c83', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01, DN-02 night floor (40033 chars, + skyGlowOn gate): the stable-off shader must not move by a single byte.
+  assert.equal(SHADE_WGSL.length, 40033, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '302faaa8241d8c81f84ea161b6a15dd0d929ae391de57fa5824b2c1f2437378d', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);

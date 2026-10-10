@@ -564,7 +564,8 @@ export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist
   let aok = 1;
   if (aoD < table.ao.r) aok = table.ao.k + (1 - table.ao.k) * smoothstepFast(0, table.ao.r, aoD);
   const jit = 1 + rec.jitter * (hJ * 2 - 1);
-  const b = Lm * rec.albedo * shadeK * fk * aok * jit * (1 - WET_DARK * (shading.wetness || 0)) + rec.emissive;
+  let b = Lm * rec.albedo * shadeK * fk * aok * jit * (1 - WET_DARK * (shading.wetness || 0)) + rec.emissive;
+  const flo = shading.floorLum; if (flo > 0 && b < flo) b = flo; // DN-02 night floor (WGSL twin: shadeCore)
   const lift = shading.lift;
   const gb = b < cutoff ? 0 : lift + (1 - lift) * Math.min(b, 1);
 

@@ -60,7 +60,7 @@ export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'etA', type: 'vec4' }, { name: 'etId', type: 'vec4', count: 2 }, { name: 'etC', type: 'vec4', count: 8 },
   { name: 'skyCam', type: 'vec4' }, // AUD-40, APPENDED: shear-mode sky ray = (dirX + planeX*cx, dirY + planeY*cx): dirX, dirY, planeX, planeY
   { name: 'fogView', type: 'vec4' }, // AUD-45, APPENDED: x = eye height (m), y = 1 when height fog + sun in-scatter are on (terrain worlds), z/w unused
-  { name: 'skyGlowOn', type: 'vec4' }, // AUD-40 fix, APPENDED: x = 1 when sky glow + horizon haze apply (compositor gate: terrain world + timeOfDay palette), written every frame
+  { name: 'skyGlowOn', type: 'vec4' }, // AUD-40 fix, APPENDED: x = 1 when sky glow + horizon haze apply (compositor gate: terrain world + timeOfDay palette), written every frame; DN-02 y = night glyph-luminance floor (liveLook.floorEff, 0 = off)
 ]);
 
 export const SHADE_TEXTURES = Object.freeze([
@@ -97,7 +97,8 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
 
   // S8-B2-14b wetness: darkens the lit term entering the tier/gain pick, same WET_DARK as detailShade.js/shadeCore
   // (terrain has no emissive term to keep separate - the whole incoming b is the "lit term" here).
-  let bWet = b * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness);
+  var bWet = b * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness);
+  if (su.skyGlowOn.y > 0.0 && bWet < su.skyGlowOn.y) { bWet = su.skyGlowOn.y; } // DN-02 night floor (twin: terrainShade.js)
 
   // 23.4 near-detail: close (< closeBand) gets a +-0.08 brightness jitter (own hash salt 10, per-cell).
   let close = su.nearDetailOn != 0 && t < su.closeBand;
@@ -543,7 +544,8 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
   var aok = 1.0;
   if (aoD < su.aoR) { aok = su.aoK + (1.0 - su.aoK) * smoothstepFast(0.0, su.aoR, aoD); }
   let jit = 1.0 + jitter * (hJ * 2.0 - 1.0);
-  let b = Lm * albedo * shadeK * fk * aok * jit * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness) + mf1.x;
+  var b = Lm * albedo * shadeK * fk * aok * jit * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness) + mf1.x;
+  if (su.skyGlowOn.y > 0.0 && b < su.skyGlowOn.y) { b = su.skyGlowOn.y; } // DN-02 night floor (twin: detailShade.js shadeCore)
   var gb = 0.0;
   if (!(b < su.cutoff)) { gb = su.lift + (1.0 - su.lift) * min(b, 1.0); }
 
