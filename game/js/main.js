@@ -839,7 +839,8 @@ engine.events.on('grid:changed', ({ cols, rows }) => {
 // of the game's own UI.
 window.__debug = { input, overlay, rt, engine, gbuf, matTable, ambientL, depthBuffer, sprites, wgPipeline, hzb };
 bridgeEngineEvents(engine.events, gameHooks); // beast:died / inventory:added -> seam events
-window.__debug.saveRelay = saveRelay; // US-089w: test hook (headless reload check)
+window.__debug.saveRelay = saveRelay;
+Object.defineProperty(window.__debug, 'wild', { configurable: true, get: () => (wild ? { alive: wild.stats.alive, drawn: wild.drawn ? wild.drawn() : 0 } : null) }); // WILD-06b: read-only headless hook // US-089w: test hook (headless reload check)
 
 // US-048 (PC-B QUEUE 4 item 2): the shared `ctx` every game/js/dev/modes/*
 // module's `run(ctx)` reads from - built once here, after every module-scope

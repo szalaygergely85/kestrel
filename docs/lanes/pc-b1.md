@@ -365,3 +365,8 @@ B1 2026-10-09 (kestrel-1) SETTINGS-MOUNT-01 -> po-review: full createSettingsVie
 - 2026-10-10 CHARGEN-14 (kestrel-2, arch-review, uncommitted, browser NOT run): tools/chargen/platform.js `createPlatform(win)` -> {kind:'tauri'|'browser', saveFile(name,bytes,filters)->bool, openFile(filters)->{name,bytes}|null}; tauri = dialog.save/open + fs.writeFile/readFile on the picked path only (cancel -> nothing written); browser = Blob+a[download] / input[type=file] (cancel event -> null).
   ui.js: inline download()/file input removed; mountUi takes optional `platform` (default createPlatform()); all export buttons, All formats (.zip), Save/Open .kestrel go through it; palette.png saved only if the .fbx save was not cancelled.
   platform.test.mjs 5 tests with fake windows. Not verified: real browser dialogs; Tauri v2 API shape (dialog.save/open -> path string, fs.writeFile(path, Uint8Array)) - recheck in CHARGEN-19.
+
+### WILD-06b (kestrel-1) - po-review
+- wildEnv.blocked() now also hits colliding placed meshes: 2 m occupancy grid from world.structures AABBs (mesh.collide!==false, has collider/triCount; big > 12 m = ring only). Plants (collide:false) skipped. Tests 21/21, 1e5 queries ~0 alloc.
+- main.js: read-only `window.__debug.wild` {alive, drawn} (wild.drawn() = feeder.stats.drawn).
+- tools/verify-wild.mjs (NOT run, no browser): `node tools/verify-wild.mjs {port}` (port 9500-9574). Limit: AABB, not triangle-exact.
