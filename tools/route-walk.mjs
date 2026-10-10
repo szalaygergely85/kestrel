@@ -28,7 +28,7 @@ import farTowerMod from '../design/models/far_tower.js';
 import ferrumLightsMod from '../design/models/ferrum_lights.js';
 import titleMod from '../design/models/title.js';
 import voxelWorldMod from '../design/models/voxel_world.js';
-import { moveCircleMesh } from '../engine/physics/meshCollide.js';
+import { moveCircleMesh } from '../engine/dev.js';
 import { loadTestAssets } from './testing/content-node.mjs';
 import { registerQuestBehaviours } from '../game/js/quest/index.js';
 
