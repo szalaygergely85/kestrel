@@ -143,6 +143,19 @@ function assetsWithRingWorld() {
   return a;
 }
 
+// GS-01d: terrainFloor flag rule.
+{
+  const a = assetsWithRingWorld();
+  a.levels.keep.legend.o.zone = 'outside'; a.levels.keep.legend.o.terrainFloor = true;
+  ok('terrainFloor on an equal-height outside ring is accepted', !validateContent(a).errors.some((e) => e.includes('terrainFloor')));
+  a.levels.keep.legend.g = { floorH: 2.7, solid: false, zone: 'outside', terrainFloor: true };
+  a.levels.keep.rows = ['ooo', 'ogo', 'ooo'];
+  ok('terrainFloor cell off the ring height is rejected', hasFinding(validateContent(a).errors, ['rows[1][1]', 'terrainFloor', 'height step']));
+  const b = assetsWithRingWorld();
+  b.levels.keep.legend['#'].terrainFloor = true;
+  ok('terrainFloor on a solid / non-outside cell is rejected', hasFinding(validateContent(b).errors, ["legend['#']", 'terrainFloor']));
+}
+
 // 1. Clean fixture: zero errors.
 {
   const a = goodAssets();

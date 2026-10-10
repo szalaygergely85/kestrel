@@ -543,6 +543,37 @@ export function validateContent(ASSETS, opts = {}) {
     }
   }
 
+  // ---- 5b. GS-01d: legend flag terrainFloor (engine/world/Level.js isTerrainFloor) ----
+  // Only non-solid 'outside' cells whose floorH equals the nearest outer-ring cell's floorH (+-0.01, what the
+  // terrain blend ringHAt gives under the bbox) may show the terrain: anything else would put a height step
+  // between the terrain and the walkable sector.
+  for (const [levelId, level] of Object.entries(levels)) {
+    if (!level || !Array.isArray(level.rows) || !level.legend) continue;
+    const flagged = Object.entries(level.legend).filter(([, e]) => e && e.terrainFloor !== undefined);
+    if (!flagged.length) continue;
+    const rows = level.rows, h = rows.length, w = h > 0 ? rows[0].length : 0;
+    const ringH = (cx, cy) => { // same nearest-edge rule as World.makeRingHAt
+      const dl = cx + 0.5, dr = w - cx - 0.5, dt = cy + 0.5, db = h - cy - 0.5, m = Math.min(dl, dr, dt, db);
+      let rx = cx, ry = cy;
+      if (m === dl) rx = 0; else if (m === dr) rx = w - 1;
+      if (m === dt) ry = 0; else if (m === db) ry = h - 1;
+      const e = level.legend[rows[ry][rx]];
+      return e ? e.floorH : NaN;
+    };
+    for (const [ch, e] of flagged) {
+      const base = `levels.${levelId}.legend['${ch}']`;
+      check(e.terrainFloor === true, base, 'terrainFloor must be true when present');
+      check(!e.solid && e.zone === 'outside', base, 'terrainFloor is only allowed on non-solid cells with zone "outside"');
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (rows[y][x] !== ch) continue;
+        const rh = ringH(x, y);
+        check(typeof e.floorH === 'number' && Math.abs(e.floorH - rh) <= 0.01,
+          `levels.${levelId}.rows[${y}][${x}]`,
+          `terrainFloor cell '${ch}' floorH ${e.floorH} != outer-ring floorH ${rh} (terrain height step)`);
+      }
+    }
+  }
+
   // ---- 4. UI text: ASCII 32-126, endText lines <= 40 chars ----
   for (const { path, text, isEndTextLine } of collectUiTexts(uiStyle)) {
     check(isAscii(text), path, `not ASCII 32-126: ${JSON.stringify(text)}`);
