@@ -44,8 +44,8 @@ export function createQuestLog(def, {hudWidth=60,width=72,fg='#e8e2d0',bg='#0a0b
 
 // QG-05 (D-058, 38.35 item 8): quest log SCREEN over the quest book, in the pause/title menu skin (uiStyle.menu).
 // Rows (strings) are rebuilt only on open, key input and a changed book.version; draw() never formats or allocates.
-export const QUEST_LOG_KEYS = ['ArrowUp', 'ArrowDown', 'KeyW', 'KeyS', 'Enter', 'KeyJ', 'Escape', 'KeyX'];
-export const QUEST_LOG_TEXT = Object.freeze({ header: 'PENCIL NOTES', empty: 'Nothing yet. Not nothing.', active: 'Active', abandon: '[X] Abandon quest', abandonSure: '[X] again to abandon (progress resets)', done: 'Done', main: '(main)' });
+export const QUEST_LOG_KEYS = ['ArrowUp', 'ArrowDown', 'KeyW', 'KeyS', 'ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'Tab', 'KeyE', 'Backspace', 'Enter', 'KeyJ', 'Escape', 'KeyX'];
+export const QUEST_LOG_TEXT = Object.freeze({ header: 'PENCIL NOTES', empty: 'Nothing yet. Not nothing.', active: 'Active', abandon: '[X] Abandon quest', abandonSure: '[X] again to abandon (progress resets)', done: 'Done', main: '(main)', footer: 'W/S select  E open  A/D main/side', footerDetail: 'E back  J close', giver: 'Given by: ', reward: 'Reward: ', tabs: ['[ MAIN ]    SIDE  ', '  MAIN    [ SIDE ]'] });
 const READY = 3, DONE = 4, LIST_TOP = 6, LIST_ROWS = 14;
 
 /**
@@ -62,19 +62,36 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
   const titleText = style ? style.title.decor[0] + heading.split('').join(' '.repeat(style.title.letterSpace)) + style.title.decor[1] : heading;
   const bounds = { x: 0, y: 0, w: width, h: 24 };
   const scratch = [];
-  let open = false, built = -1, sel = 0, top = 0, quests = [], lines = [], sure = false; // sure: X pressed once (QUESTS-01 abandon)
+  let open = false, built = -1, sel = 0, top = 0, quests = [], lines = [], sure = false, tab = 0, detail = false; // tab 0=MAIN 1=SIDE; detail = quest detail view // sure: X pressed once (QUESTS-01 abandon)
 
-  /** quests = selectable quest indices: Active (main first, then newest = highest index) then Done. */
+  /** MAIN = the chapter quest (index 0), `mq.*` ids, or def.kind === 'main'; everything else is SIDE. */
+  const isMain = i => { const d = book.def(i); return i === 0 || d.kind === 'main' || (typeof d.id === 'string' && d.id.startsWith('mq.')); };
+  /** quests = selectable quest indices of the current tab: Active (main first, then newest = highest index) then Done. */
   function rebuild() {
     built = book.version; quests = [];
     const n = book.count, done = [];
-    for (let i = 0; i < n; i++) { const s = book.status(i); if (s === 2 || s === READY) quests.push(i); }
+    for (let i = 0; i < n; i++) { const s = book.status(i); if ((s === 2 || s === READY) && isMain(i) === (tab === 0)) quests.push(i); }
     quests.sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : b - a));
     const nActive = quests.length;
-    for (let i = n - 1; i >= 0; i--) if (book.status(i) === DONE) done.push(i);
+    for (let i = n - 1; i >= 0; i--) if (book.status(i) === DONE && isMain(i) === (tab === 0)) done.push(i);
     for (const i of done) quests.push(i);
     if (sel >= quests.length) sel = Math.max(0, quests.length - 1);
     lines = []; let selLine = 0, lastHeader = '';
+    if (detail && quests[sel] === undefined) detail = false;
+    if (detail) {
+      const i = quests[sel], def = book.def(i), s = book.status(i);
+      lines.push({ kind: 'head', text: ascii(def.title || def.id) + (s === DONE ? ' (' + T.done + ')' : '') });
+      if (def.giver && def.giver.npc) lines.push({ kind: 'head', text: T.giver + ascii(def.giver.npc) });
+      if (s === READY && def.returnText) lines.push({ kind: 'return', text: '> ' + clipped(ascii(def.returnText), W - 8) });
+      const rows = book.objectives(i, scratch);
+      for (let r = 0; r < rows.length; r++) {
+        const row = rows[r], mark = row.status === 'complete' ? '[x] ' : row.status === 'active' ? '[>] ' : '[ ] ';
+        lines.push({ kind: 'step', status: row.status, text: '  ' + clipped(mark + ascii(row.text) + (row.target > 1 ? ' ' + row.progress + '/' + row.target : ''), W - 8) });
+      }
+      if (def.reward && def.reward.items && def.reward.items.length) lines.push({ kind: 'head', text: clipped(T.reward + def.reward.items.map(it => ascii(it.id) + (it.n > 1 ? ' x' + it.n : '')).join(', '), W - 4) });
+      if (book.canAbandon && book.canAbandon(def.id)) lines.push({ kind: 'return', text: '  ' + (sure ? T.abandonSure : T.abandon) });
+      top = 0; return;
+    }
     for (let k = 0; k < quests.length; k++) {
       const i = quests[k], isDone = k >= nActive, head = isDone ? T.done : T.active;
       if (head !== lastHeader) { lines.push({ kind: 'head', text: head }); lastHeader = head; }
@@ -94,13 +111,27 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     if (selLine >= top + LIST_ROWS) top = selLine - LIST_ROWS + 1;
     if (top < 0 || lines.length <= LIST_ROWS) top = 0;
   }
-  function show() { open = true; sure = false; sel = 0; top = 0; rebuild(); }
+  function show() { open = true; sure = false; sel = 0; top = 0; tab = 0; detail = false; rebuild(); }
   function close() { open = false; }
   /** Returns true when the key was consumed. Enter/J/Esc close; W/S move (wraps). */
   function handleKey(code) {
     if (!open) return false;
-    if (code === 'Enter' && onJournal && quests[sel] === 0 && book.status(0) === DONE) { close(); onJournal(0); return true; }
-    if (code === 'Enter' || code === 'KeyJ' || code === 'Escape') { close(); return true; }
+    if (code === 'Enter' && !detail && onJournal && quests[sel] === 0 && book.status(0) === DONE) { close(); onJournal(0); return true; }
+    if (code === 'Escape' || code === 'Backspace' || code === 'KeyJ') { // detail -> list -> close
+      sure = false;
+      if (detail) { detail = false; rebuild(); } else close();
+      return true;
+    }
+    if (code === 'Enter' || code === 'KeyE') { // open the selected quest / back out of the detail view
+      sure = false;
+      if (detail) detail = false; else if (quests[sel] !== undefined) detail = true; else return true;
+      rebuild(); return true;
+    }
+    if (code === 'ArrowLeft' || code === 'ArrowRight' || code === 'KeyA' || code === 'KeyD' || code === 'Tab') {
+      sure = false;
+      if (detail) return true;
+      tab = tab ? 0 : 1; sel = 0; top = 0; rebuild(); return true;
+    }
     if (code === 'KeyX') { // QUESTS-01: two presses abandon the selected quest (only `abandonable` ones)
       const id = quests[sel] !== undefined ? book.def(quests[sel]).id : null;
       if (!id || !book.canAbandon || !book.canAbandon(id)) return true;
@@ -110,7 +141,7 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     sure = false;
     const d = code === 'ArrowUp' || code === 'KeyW' ? -1 : code === 'ArrowDown' || code === 'KeyS' ? 1 : 0;
     if (!d) return false;
-    if (quests.length > 1) { sel = (sel + d + quests.length) % quests.length; rebuild(); }
+    if (!detail && quests.length > 1) { sel = (sel + d + quests.length) % quests.length; rebuild(); }
     return true;
   }
   function draw(ui) {
@@ -131,8 +162,10 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
       for (let x = 3; x <= 68; x++) ui.setCell(bounds.x + x, bounds.y + 4, '-', colour('brassShadow'), bg);
     }
     drawText(ui, bounds.x + (style ? Math.floor((bounds.w - titleText.length) / 2) : 3), bounds.y + 2, titleText, style ? colour(style.title.fg) : fg, bg);
-    if (!lines.length) { drawText(ui, bounds.x + 4, bounds.y + LIST_TOP + 1, T.empty, fg, bg); return bounds; }
     const dim = style ? colour(style.row.disabled.fg) : fg, head = style ? colour(style.sectionLabel.newGame.fg) : fg;
+    if (!detail) drawText(ui, bounds.x + 4, bounds.y + LIST_TOP - 1, T.tabs[tab], head, bg);
+    drawText(ui, bounds.x + 4, bounds.y + bounds.h - 3, detail ? T.footerDetail : T.footer, dim, bg);
+    if (!lines.length) { drawText(ui, bounds.x + 4, bounds.y + LIST_TOP + 1, T.empty, fg, bg); return bounds; }
     const focusSt = style?.row.focus, normSt = style?.row.normal;
     for (let r = 0; r < LIST_ROWS; r++) {
       const ln = lines[top + r]; if (!ln) break;
@@ -150,5 +183,5 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     }
     return bounds;
   }
-  return { open: show, close, handleKey, draw, isOpen: () => open, snapshot: () => ({ open, sel, top, lines: lines.map(l => l.text) }) };
+  return { open: show, close, handleKey, draw, isOpen: () => open, snapshot: () => ({ open, sel, top, tab, detail, lines: lines.map(l => l.text) }) };
 }

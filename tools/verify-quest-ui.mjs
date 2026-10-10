@@ -58,7 +58,11 @@ try {
   // J needs the real frame loop with pointer lock, which headless Chrome does not run: report, do not fail (owner checks J in the walk).
   await key('KeyJ', 'j'); await pause(600);
   const opened = await ev('window.__debug.questLogOpen()');
-  if (opened) { await key('KeyJ', 'j'); await pause(600); }
+  if (opened) { // QL-J: D switches MAIN/SIDE, E opens a detail, Esc backs to the list (log stays open), J closes
+    await key('KeyD', 'd'); await pause(150); await key('KeyE', 'e'); await pause(150); await key('Escape', 'Escape'); await pause(150);
+    assert.equal(await ev('window.__debug.questLogOpen()'), true, 'Esc from detail keeps the log open');
+    await key('KeyJ', 'j'); await pause(600);
+  }
   console.log(opened ? '[5/5] J opens + closes the log' : '[5/5] WARN: J not testable headless (no pointer lock / frame loop) - owner walk checks it');
   assert.deepEqual(errors, [], 'console errors: ' + JSON.stringify(errors));
   console.log('Quest UI (QG-04/05): giver markers + quest log, PASS');

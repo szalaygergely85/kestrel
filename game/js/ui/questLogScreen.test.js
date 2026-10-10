@@ -8,6 +8,7 @@ const rd = n => JSON.parse(readFileSync(new URL('../../../content/quests/' + n, 
 const main = rd('m1.quest.json'), blade = rd('tower.blade.quest.json'), boars = rd('burl.boars.quest.json');
 const ui = createUiLayer({ cols: 160 });
 const book = createQuestBook(main, [blade, boars]);
+const MAIN_T = 0, SIDE_T = 1;
 const log = createQuestLogScreen(book);
 log.open();
 let s = log.snapshot();
@@ -22,8 +23,22 @@ for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'area:e
 assert.equal(book.accept('tower.blade'), true); assert.ok(book.handIn('tower.blade'));
 assert.equal(book.accept('burl.boars'), true);
 log.draw(ui); s = log.snapshot();
+// tabs: MAIN holds only the chapter quest; side quests are on the SIDE tab
+assert.equal(s.tab, MAIN_T); assert.ok(!s.lines.some(l => l.includes('Boars in the Woods')), 'side quest not under MAIN');
+assert.ok(log.handleKey('KeyD')); s = log.snapshot(); assert.equal(s.tab, SIDE_T);
+assert.ok(!s.lines.some(l => l.includes('(main)')), 'main not under SIDE');
 assert.ok(s.lines.some(l => l.includes("Boars in the Woods")));
-assert.ok(log.handleKey('KeyS') && log.snapshot().sel === 1);
+assert.ok(log.handleKey('Tab') && log.snapshot().tab === MAIN_T); assert.ok(log.handleKey('ArrowRight') && log.snapshot().tab === SIDE_T);
+// open / back: detail shows title, giver, objectives, reward; Esc backs to list, Esc again closes
+assert.ok(log.handleKey('KeyE')); s = log.snapshot(); assert.equal(s.detail, true);
+assert.ok(s.lines[0].includes('Boars in the Woods') || s.lines[0].length > 0); assert.ok(s.lines.some(l => l.startsWith('Given by: ')), 'giver shown: ' + s.lines);
+assert.ok(s.lines.some(l => l.startsWith('  [>]')), 'objectives in detail');
+assert.equal(log.handleKey('KeyS'), true); assert.equal(log.handleKey('KeyD'), true); assert.equal(log.snapshot().tab, SIDE_T, 'tab switch ignored in detail');
+assert.ok(log.handleKey('Escape') && log.isOpen() && !log.snapshot().detail, 'Esc: detail -> list');
+assert.ok(log.handleKey('Enter') && log.snapshot().detail); assert.ok(log.handleKey('Backspace') && !log.snapshot().detail && log.isOpen());
+assert.ok(log.handleKey('KeyJ') === true && !log.isOpen(), 'J from list closes'); log.open(); assert.equal(log.snapshot().tab, MAIN_T, 'reopens on MAIN');
+log.handleKey('KeyA'); assert.equal(log.snapshot().tab, SIDE_T);
+assert.equal(log.snapshot().sel, 0, 'boars is the only active side quest');
 s = log.snapshot(); assert.ok(s.lines.some(l => l.includes('[>] Bring down the five wild boars 0/5')));
 for (const id of ['boar1', 'boar2']) book.feed({ type: 'beast:died', id });
 log.draw(ui); assert.ok(log.snapshot().lines.some(l => l.endsWith('2/5')), 'rebuilt on version change');
@@ -34,14 +49,15 @@ assert.ok(s.lines.some(l => l.includes('> Tell Burl the slope is quiet')), 'retu
 assert.ok(s.lines.some(l => l.includes('[x] Bring down')));
 // done
 assert.ok(book.handIn('burl.boars')); log.draw(ui); s = log.snapshot();
-assert.ok(s.lines.indexOf('Active') >= 0 && s.lines.indexOf('Done') > s.lines.indexOf('Active'));
+assert.equal(s.tab, SIDE_T);
+assert.ok(s.lines.includes('Done') && !s.lines.includes('Active'), 'SIDE: all done'); log.handleKey('KeyA'); s = log.snapshot(); assert.ok(s.lines.indexOf('Active') >= 0 && s.tab === MAIN_T); log.handleKey('KeyD');
 // navigation wraps, unknown keys pass through
 const n0 = log.snapshot().sel;
 assert.equal(log.handleKey('KeyS'), true); assert.notEqual(log.snapshot().sel, n0);
 assert.equal(log.handleKey('KeyW'), true); assert.equal(log.snapshot().sel, n0);
 assert.equal(log.handleKey('KeyZ'), false);
 // close keys
-for (const k of ['Enter', 'KeyJ', 'Escape']) { log.open(); assert.ok(log.isOpen()); assert.equal(log.handleKey(k), true); assert.ok(!log.isOpen()); }
+for (const k of ['KeyJ', 'Escape']) { log.open(); assert.ok(log.isOpen()); assert.equal(log.handleKey(k), true); assert.ok(!log.isOpen()); }
 assert.equal(log.handleKey('KeyS'), false, 'closed log ignores keys');
 assert.ok(QUEST_LOG_KEYS.includes('KeyJ'));
 // zero alloc draw
