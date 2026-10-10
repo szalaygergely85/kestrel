@@ -1,0 +1,38 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Prop_Crate",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Prop_Crate.mesh.bin",
+  "triCount": 230,
+  "bbox": [
+    -0.54179,
+    -0.54179,
+    0.00336,
+    0.54179,
+    0.54179,
+    1.06294
+  ],
+  "ranges": [
+    {"count": 230, "part": "Prop_Crate#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_WoodTrim"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "g8AKv4PACr+mm0Q7g8AKP4PACr+mm0Q7g8AKP4PACr9iEIg/g8AKv4PACr+mm0Q7g8AKP4PACr9iEIg/g8AKv4PACr9iEIg/g8AKP4PACr+mm0Q7g8AKP4PACj+mm0Q7g8AKP4PACj9iEIg/g8AKP4PACr+mm0Q7g8AKP4PACj9iEIg/g8AKP4PACr9iEIg/g8AKP4PACj+mm0Q7g8AKv4PACj+mm0Q7g8AKv4PACj9iEIg/g8AKP4PACj+mm0Q7g8AKv4PACj9iEIg/g8AKP4PACj9iEIg/g8AKv4PACj+mm0Q7g8AKv4PACr+mm0Q7g8AKv4PACr9iEIg/g8AKv4PACj+mm0Q7g8AKv4PACr9iEIg/g8AKv4PACj9iEIg/g8AKv4PACr9iEIg/g8AKP4PACr9iEIg/g8AKP4PACj9iEIg/g8AKv4PACr+mm0Q7g8AKP4PACj+mm0Q7g8AKP4PACr+mm0Q7g8AKv4PACr9iEIg/g8AKP4PACj9iEIg/g8AKv4PACj9iEIg/g8AKv4PACr+mm0Q7g8AKv4PACj+mm0Q7g8AKP4PACj+mm0Q7"
+}

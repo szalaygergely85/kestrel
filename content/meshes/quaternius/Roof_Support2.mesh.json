@@ -1,0 +1,39 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Roof_Support2",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Roof_Support2.mesh.bin",
+  "triCount": 84,
+  "bbox": [
+    -0.09985,
+    -0.76513,
+    -0.67726,
+    0.09985,
+    0,
+    0.06567
+  ],
+  "ranges": [
+    {"count": 84, "part": "Roof_Support2#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_WoodTrim"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false,
+  "castShadow": false
+}

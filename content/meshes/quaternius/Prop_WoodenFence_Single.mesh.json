@@ -1,0 +1,38 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Prop_WoodenFence_Single",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Prop_WoodenFence_Single.mesh.bin",
+  "triCount": 40,
+  "bbox": [
+    -1.03145,
+    -0.05991,
+    -0.02825,
+    1.03265,
+    0.05991,
+    0.80986
+  ],
+  "ranges": [
+    {"count": 40, "part": "Prop_WoodenFence_Single#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_WoodTrim"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "z/eDv4/Cdb1CYOW8L91kv4/Cdb1CYOW8L91kv4/Cdb0pXE8/z/eDv4/Cdb1CYOW8L91kv4/Cdb0pXE8/z/eDv4/Cdb0pXE8/L91kv4/Cdb1CYOW8WDmEP65HYb1CYOW8WDmEP65HYb0pXE8/L91kv4/Cdb1CYOW8WDmEP65HYb0pXE8/L91kv4/Cdb0pXE8/WDmEP65HYb1CYOW8WDmEP83MTD1CYOW8WDmEP83MTD0pXE8/WDmEP65HYb1CYOW8WDmEP83MTD0pXE8/WDmEP65HYb0pXE8/WDmEP83MTD1CYOW8N4mBP65HYT1CYOW8N4mBP65HYT0pXE8/WDmEP83MTD1CYOW8N4mBP65HYT0pXE8/WDmEP83MTD0pXE8/N4mBP65HYT1CYOW8L91kv4/CdT1CYOW8L91kv4/CdT0pXE8/N4mBP65HYT1CYOW8L91kv4/CdT0pXE8/N4mBP65HYT0pXE8/L91kv4/CdT1CYOW8z/eDv4/CdT1CYOW8z/eDv4/CdT0pXE8/L91kv4/CdT1CYOW8z/eDv4/CdT0pXE8/L91kv4/CdT0pXE8/z/eDv4/CdT1CYOW8z/eDv4/Cdb1CYOW8z/eDv4/Cdb0pXE8/z/eDv4/CdT1CYOW8z/eDv4/Cdb0pXE8/z/eDv4/CdT0pXE8/z/eDv4/Cdb0pXE8/L91kv4/Cdb0pXE8/WDmEP65HYb0pXE8/z/eDv4/Cdb1CYOW8WDmEP65HYb1CYOW8L91kv4/Cdb1CYOW8z/eDv4/Cdb0pXE8/WDmEP65HYb0pXE8/WDmEP83MTD0pXE8/z/eDv4/Cdb1CYOW8WDmEP83MTD1CYOW8WDmEP65HYb1CYOW8z/eDv4/Cdb0pXE8/WDmEP83MTD0pXE8/N4mBP65HYT0pXE8/z/eDv4/Cdb1CYOW8N4mBP65HYT1CYOW8WDmEP83MTD1CYOW8z/eDv4/Cdb0pXE8/N4mBP65HYT0pXE8/L91kv4/CdT0pXE8/z/eDv4/Cdb1CYOW8L91kv4/CdT1CYOW8N4mBP65HYT1CYOW8z/eDv4/Cdb0pXE8/L91kv4/CdT0pXE8/z/eDv4/CdT0pXE8/z/eDv4/Cdb1CYOW8z/eDv4/CdT1CYOW8L91kv4/CdT1CYOW8"
+}
