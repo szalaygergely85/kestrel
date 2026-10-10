@@ -36,10 +36,10 @@ const quiet = (fn) => { const e = console.error, w = console.warn; const log = [
   ok('present aborts a pass the cell hook left open', d.aborted === 2 && d.submits === 2 && !d._pass, log.join('|'));
   rt._cellPass = null; rt._draw = () => { throw new Error('bind failed inside the present pass'); };
   let threw = false; try { quiet(() => rt.present()); } catch (_) { threw = true; }
-  ok('a throw inside the present pass still ends pass + timer span', threw && !d._pass && !d.timerOpen);
+  ok('a throw inside the present pass drops the frame: no rethrow, pass + timer span ended, frame submitted (ring reset)', !threw && !d._pass && !d.timerOpen && d.submits === 3 && rt.failedFrames === 1);
   rt._draw = () => {};
   quiet(() => rt.present());
-  ok('the next present runs normally', d.submits === 3);
+  ok('the next present runs normally', d.submits === 4);
 }
 
 // --- WgCellPipeline: glow failure aborts its pass and keeps glow ON ---

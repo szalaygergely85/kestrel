@@ -21,7 +21,8 @@ import { bootNow, span as bootSpan } from '../../../core/bootMarks.js'; // BOOT-
 /** @typedef {import('./GpuDevice.js').GpuHandle} GpuHandle */
 
 /** Ring size (38.4): MAX_DRAW_ITEMS * 3 + 64 slots of 256 B. */
-export const DEFAULT_RING_SLOTS = MAX_DRAW_ITEMS * 3 + 64;
+// FIX-RING (owner crash 2026-10-11): 832 slots overflowed in the sun-shadow caster loop on the dressed world; 1 MB ring.
+export const DEFAULT_RING_SLOTS = MAX_DRAW_ITEMS * 16 + 64;
 const ZERO4 = [0, 0, 0, 0];
 
 /** The GPU* constant tables, read lazily so this module imports in Node. @returns {{buf: any, tex: any, stage: any, map: any}} */

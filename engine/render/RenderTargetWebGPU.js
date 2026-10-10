@@ -233,7 +233,16 @@ export class RenderTargetWebGPU {
         this._grid[0] = this._uiFgTex; this._grid[1] = this._uiBgTex; this._grid[2] = this._uiAtlasTex;
         this._draw(this._pipeUi, this._bindUi, this._texUi, this._grid, ui.cols, ui.rows, 1);
       }
-    } catch (e) { if (typeof d.abortPass === 'function') d.abortPass(); d.timer.end(); throw e; }
+    } catch (e) {
+      // FIX-RING: a failed frame used to skip submit(), so the uniform ring never reset and every later frame overflowed
+      // ("uniform ring overflow" -> fatal). End the pass, submit what was recorded (resets the ring), drop this frame only.
+      if (typeof d.abortPass === 'function') d.abortPass();
+      d.timer.end();
+      try { d.submit(); } catch (_) { if (d.uniformRing) d.uniformRing.reset(); d._encoder = null; }
+      this.failedFrames = (this.failedFrames || 0) + 1;
+      if (this.failedFrames <= 3 || this.failedFrames % 600 === 0) console.error(`[RenderTargetWebGPU] frame dropped (${this.failedFrames}):`, e);
+      return;
+    }
     d.endPass();
     d.timer.end();
     d.submit();

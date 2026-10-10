@@ -15,7 +15,7 @@
 // GPU" treatment) - NOT the "400x150/480x180 both ultra" shorthand used
 // elsewhere; the bench data + the shipped design asset agree and are the
 // more specific source, so options.js follows them.
-export const GRID_VALUES = ['240x90', '320x120', '400x150', '480x180', '560x210', '640x240', '720x270', '800x300'];
+export const GRID_VALUES = ['240x90', '320x120', '400x150', '480x180', '560x210']; // owner 2026-10-11: max one step above ultra
 export const ULTRA_GRID_VALUES = ['480x180'];
 
 export const OPTIONS = [
