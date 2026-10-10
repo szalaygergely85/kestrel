@@ -98,6 +98,7 @@ export { encodeMeshBin, decodeMeshBin, meshFromBin, meshBinMeta, MESH_BIN_VERSIO
 export { simplifyTriangles } from './mesh/simplify.js'; // TREES-LP-a: tools/dae-import.mjs
 export { buildPrismProxy, buildHullProxy, HULL_MAX_FACES, planMeshCollision, PROXY_BAND_H, WALK_OVER_H } from './mesh/colliderProxy.js';
 export { VoxelPool } from './render/voxelPool.js';
+export { GLOW_LEVELS } from './render/glow.js'; // EMIS-03/04: emissive bleed + halo presets
 export { bindShading, bindLevel } from './render/MaterialTable.js';
 // RE-06 (28.6): instanced voxel units - per-instance buffer helpers + team colour remap.
 export { createViewModelLayer, VM_OBJECT_ID, VM_MAX_HANDLES, VM_FEET_BELOW_EYE } from './render/viewModel.js'; // US-078a

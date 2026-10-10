@@ -10,6 +10,7 @@ import { LIGHT_WGSL } from './light.wgsl.js';
 import { SHADE_WGSL, SHADE_LEVEL_WGSL } from './shade.wgsl.js';
 import { STABLE_WGSL } from './stable.wgsl.js'; // US-073b
 import { EDGE_WGSL } from './edge.wgsl.js';
+import { GLOW_WGSL } from './glow.wgsl.js'; // EMIS-03/04
 import { SHADOW_WGSL, SHADOW_TERRAIN_WGSL, SHADOW_DEPTH_COPY_WGSL } from './shadow.wgsl.js';
 import { RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL, RASTER_SHADOW_WGSL, RASTER_VOXEL_SHADOW_WGSL, RASTER_INSTANCED_SHADOW_WGSL, RASTER_CLOTH_SHADOW_WGSL, RASTER_MASK_WGSL, RASTER_MASK_SHADOW_WGSL, RASTER_INSTANCED_MASK_WGSL, RASTER_INSTANCED_MASK_SHADOW_WGSL } from './raster.wgsl.js';
 import { TERRAIN_RASTER_WGSL } from './terrainRaster.wgsl.js';
@@ -37,6 +38,7 @@ export const WGSL_MODULES = Object.freeze([
   { name: 'shadeLevel', code: SHADE_LEVEL_WGSL }, // US-073b: shade + r8uint level target (stable enabled only)
   { name: 'stable', code: STABLE_WGSL }, // US-073b: temporal glyph stability pass (host wiring = US-073c)
   { name: 'edge', code: EDGE_WGSL },
+  { name: 'glow', code: GLOW_WGSL }, // EMIS-03/04: emissive bleed + halo (post-edge)
   { name: 'shadow', code: SHADOW_WGSL },
   { name: 'shadowTerrain', code: SHADOW_TERRAIN_WGSL },
   { name: 'shadowDepthCopy', code: SHADOW_DEPTH_COPY_WGSL },

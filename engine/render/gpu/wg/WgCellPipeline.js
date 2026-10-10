@@ -23,6 +23,7 @@ import { WgPointShadowPass } from './passPointShadow.js';
 import { WgWaterPass } from './passWater.js';
 import { WgSpritesPass } from './passSprites.js';
 import { WgOverlayPass } from './passOverlay.js';
+import { WgGlowPass } from './passGlow.js'; // EMIS-03/04
 import { WgStablePass } from './passStable.js'; // US-073c (38.25)
 
 // Same list/order as GpuCellPipeline.PASS_NAMES (stats.passMs* line up with it).
@@ -59,6 +60,8 @@ export class WgCellPipeline {
     this.gpuCull = opts.gpuCull !== false; // WG-4a compute cull of instance batches (`?gpucull=0` = CPU path)
     // US-073c (38.25): temporal glyph stability, `?stable=1`; absent = no pass, no extra target, frame byte-identical to before
     this.stableOpt = !!opts.stable; this._stablePass = null; this._stableOn = false; this._stableRan = false; this._stInp = { shadeFg: null, shadeBg: null, water: null, waterOn: false };
+    // EMIS-03/04 (38.12): emissive bleed + halo, `opts.glow` = {radius, gain, haloBg, haloMin} (High/Ultra); absent = no pass, frame byte-identical to before
+    this.glowOpt = opts.glow || null; this._glowPass = null; this._glowRan = false;
     this.ready = false;
     this._rz = null; // pending resize retry {cols,rows,tries,wasEnabled}
     /** passes that really execute in this build; `frameComplete` = the pipeline can replace the CPU shading entirely */
@@ -141,6 +144,7 @@ export class WgCellPipeline {
       this._cellPass.lightPass.pointPass = this._pointShadowPass;
       bootSpan('pass cell (ctor total)', tp);
       if (this.stableOpt) { this._stablePass = new WgStablePass(this.device); this._stablePass.resize(this.cols, this.rows); this._stableOn = true; }
+      if (this.glowOpt) { this._glowPass = new WgGlowPass(this.device); this._glowPass.resize(this.cols, this.rows); this._glowPass.configure(this.glowOpt); }
       this.shadowOpts = this._shadowPass.shadowOpts; // resolved (GL pipeline exposes the same field)
       this.portedPasses.push('debug', 'raster', 'resolve', 'deriv', 'light', 'shade', 'edge');
       if (this._shadowPass.enabled) this.portedPasses.push('shadow');
@@ -310,6 +314,7 @@ export class WgCellPipeline {
     this._gbufCleared = false; this._cellsShaded = false;
     this._dropOutTarget();
     if (this._stablePass) { try { this._stablePass.resize(cols, rows); } catch (e) { console.warn('[WgCellPipeline] stable resize failed - stable off:', e); this._stableOn = false; } }
+    if (this._glowPass) { try { this._glowPass.resize(cols, rows); } catch (e) { console.warn('[WgCellPipeline] glow resize failed - glow off:', e); this._glowPass.configure(null); } }
     if (this._spritesPass) {
       try {
         this._spritesPass.resize(cols, rows);
@@ -423,7 +428,7 @@ export class WgCellPipeline {
     outFg = outFg || (this._rbFg = this._rbFg && this._rbFg.length === n ? this._rbFg : new Uint8Array(n));
     outBg = outBg || (this._rbBg = this._rbBg && this._rbBg.length === n ? this._rbBg : new Uint8Array(n));
     const rect = { x: 0, y: 0, w: this.cols, h: this.rows };
-    const sp = this._stableRan ? this._stablePass : null; // US-073c: the stable output replaces the edge output
+    const sp = this._glowRan ? this._glowPass : (this._stableRan ? this._stablePass : null); // US-073c: the stable output replaces the edge output; EMIS-03/04: glow comes last
     await this.device.readback(sp ? sp.outFg : t.texFinalFg, rect, outFg);
     await this.device.readback(sp ? sp.outBg : t.texFinalBg, rect, outBg);
     return { fg: outFg, bg: outBg };
@@ -478,6 +483,7 @@ export class WgCellPipeline {
     catch (e) { this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] resolve/deriv/light/shade/edge disabled:', e); return; }
     this._cellsShaded = this._cellPass.shaded;
     this._runStable(t);
+    this._runGlow(t);
     this._runSprites(t);
     if (!this.ready) return;
     if (this.debugMode < 0) return;
@@ -515,6 +521,19 @@ export class WgCellPipeline {
     }
   }
 
+  /** EMIS-03/04 (38.12): emissive bleed + halo over the final cells (edge, or the stable output), before sprites. Off = no work. */
+  runtimeGlow(P) { if (this._glowPass) this._glowPass.configure(P); }
+  _runGlow(t) {
+    const gp = this._glowPass; this._glowRan = false;
+    if (!gp || !gp.enabled || !this._cellsShaded || this.debugMode >= 0) return;
+    const sg = this._stableRan ? this._stablePass : null, sh = this._cellPass && this._cellPass.shadePass;
+    try { this._glowRan = gp.run(t, sg ? sg.outFg : t.texFinalFg, sg ? sg.outBg : t.texFinalBg, sh ? sh.texMatF : null); }
+    catch (e) {
+      if (this.device._pass) { try { this.device.endPass(); } catch (_) { this.device._pass = null; } }
+      gp.configure(null); this._glowRan = false; console.warn('[WgCellPipeline] glow pass disabled:', e);
+    }
+  }
+
   /** WG-3f: sprites then overlay right after edge, every frame the cell pass shaded (also with 0 sprites). */
   _runSprites(t) {
     const sp = this._spritesPass;
@@ -524,7 +543,7 @@ export class WgCellPipeline {
       this._begin(WG_PASS_SLOT.sprites);
       const inp = this._spInp || (this._spInp = { gi: null, depth: null, edgeFg: null, edgeBg: null }); // reused: an object literal here was per-frame garbage
       inp.gi = t.texGI; inp.depth = t.texDepth; const sg = this._stableRan ? this._stablePass : null; // US-073c: stable output replaces the edge output as sprites' background
-      inp.edgeFg = sg ? sg.outFg : t.texFinalFg; inp.edgeBg = sg ? sg.outBg : t.texFinalBg;
+      inp.edgeFg = this._glowRan ? this._glowPass.outFg : (sg ? sg.outFg : t.texFinalFg); inp.edgeBg = this._glowRan ? this._glowPass.outBg : (sg ? sg.outBg : t.texFinalBg); // EMIS-03/04: glow output wins
       try { sp.run(inp); } finally { this._end(); }
       this._begin(WG_PASS_SLOT.overlay);
       try { this._overlayPass.run(t.texDepth); } finally { this._end(); }
@@ -554,6 +573,8 @@ export class WgCellPipeline {
     this._cellPass = null;
     if (this._stablePass) this._stablePass.dispose();
     this._stablePass = null; this._stableRan = false;
+    if (this._glowPass) this._glowPass.dispose();
+    this._glowPass = null; this._glowRan = false;
     if (this._pointShadowPass) this._pointShadowPass.dispose();
     this._pointShadowPass = null;
     if (this._shadowPass) this._shadowPass.dispose();
