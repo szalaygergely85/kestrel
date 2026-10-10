@@ -1,3 +1,4 @@
+// unused since FEN-OFF-01 (Fen removed from the world; main.js mount is a no-op without a `fen` entity)
 // game/js/quest/fenEntrance.js (CH1-08b, architecture.md 38.37 item 5). Fen is hidden until the Bend Relay is woken (and its notice is
 // gone), then walks `emerge` (npcWalk, no lead); his dialogue opens on its own within 4 m (once per approach until `fen.met`), E works too.
 // Load: met -> standing at the end of `emerge`; not met + relay woken -> emerges again; relay dead -> hidden.

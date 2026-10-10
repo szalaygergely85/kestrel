@@ -284,7 +284,7 @@ function clearance() {
   const area = data.nav.area;
   const statics = world.colliders.filter((c) => c.id !== 'npcs:kinematic');
   const opts = { height: 1.7, stepUpMax: 0.45, walkCos: Math.cos(50 * Math.PI / 180) }, o = {}, nn = {};
-  for (const name of ['follow', 'depart', 'emerge']) {
+  for (const name of ['follow', 'depart']) {
     const pts = walks(name), bad = [];
     // sample every 1 m along the polyline
     const samples = [];

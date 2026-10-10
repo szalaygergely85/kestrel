@@ -102,8 +102,8 @@ if (global.gc) {
 // ---- CH1-01: the real m1 chain, sections, migration ----
 {
   const ch1 = rd('m1.quest.json');
-  assert.deepEqual(ch1.objectives.map(o => o.id), ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone', 'road', 'relayFound', 'relay1', 'fen']);
-  assert.equal(ch1.sections.length, 7); assert.equal(validateSections(ch1), ch1);
+  assert.deepEqual(ch1.objectives.map(o => o.id), ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone', 'road', 'relayFound', 'relay1']);
+  assert.equal(ch1.sections.length, 6); assert.equal(validateSections(ch1), ch1);
   assert.equal(rd('burl.boars.quest.json').title, 'Boars in the Woods');
   const o = structuredClone(ch1); o.objectives[1].section = 'q02';
   assert.throws(() => validateSections(o), /contiguous/);
@@ -118,6 +118,10 @@ if (global.gc) {
   assert.deepEqual(six.world.state, { 'waystone.waystone.woken': true, 'burl.phase': 4, 'aether.attuned': true });
   for (const c of [[], ['wake'], ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone', 'road']]) { const g = q(c); assert.equal(migrateM1Ch1(g), g, 'already-new save untouched'); }
   assert.equal(migrateM1Ch1(six), six, 'idempotent');
+  // FEN-OFF-01: a save that finished/reached the retired `fen` step keeps its chain minus `fen`
+  const full = ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone', 'road', 'relayFound', 'relay1'];
+  assert.deepEqual(mig([...full, 'fen']), full, 'old fen step dropped, rest kept');
+  assert.deepEqual(mig(full), full, 'new-chain save untouched');
   const book = createQuestBook(ch1, [blade, burlReal], { quest: six.quest, quests: null });
   assert.equal(book.main.completed.length, 7); // round trip: restore + toSave keeps the prefix
   assert.deepEqual(book.toSave().quest.completed, six.quest.completed);

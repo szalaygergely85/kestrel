@@ -37,15 +37,14 @@ try {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 640, height: 360, deviceScaleFactor: 1, mobile: false });
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`dev=1&save=1&backend=${backend}`)}` });
   let ready = false;
-  for (let i = 0; i < 150; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.world && window.__debug.playerHandle && window.__debug.relayWake && window.__debug.fenEntrance)')) { ready = true; break; } }
-  assert.ok(ready, 'world / relayWake / fenEntrance never ready (needs ?save=1): ' + JSON.stringify(errors));
+  for (let i = 0; i < 150; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.world && window.__debug.playerHandle && window.__debug.relayWake && window.__debug.relayWake)')) { ready = true; break; } }
+  assert.ok(ready, 'world / relayWake never ready (needs ?save=1): ' + JSON.stringify(errors));
   const shot = async (name) => { await pause(900); const s = await cdp.send('Page.captureScreenshot', { format: 'png' }); writeFileSync(path.join(outDir, name + '.png'), Buffer.from(s.data, 'base64')); };
   const D = (js) => evaluate(cdp, js);
   const stone = () => D(`(()=>{const d=window.__debug,c=d.world.get('endMarker').data.components;return JSON.stringify({anim:c.voxel.anim,light:c.light.on,woken:!!d.world.state['waystone.waystone.woken'],notice:d.notice.active});})()`).then(JSON.parse);
-  const fen = () => D(`(()=>{const d=window.__debug,f=d.world.get('fen').data;return JSON.stringify({hidden:!!f.components.voxel.hidden,anim:f.components.voxel.anim,x:f.transform.x,y:f.transform.y,started:d.fenEntrance.started});})()`).then(JSON.parse);
   // far from everything: the stone is dormant
   const s0 = await stone(); assert.deepEqual(s0, { anim: 'dead', light: false, woken: false, notice: false }, 'stone dormant at boot');
-  const f0 = await fen(); assert.equal(f0.hidden, true, 'Fen hidden at boot'); assert.equal(f0.started, false);
+  assert.equal(await D("window.__debug.world.get('fen') == null"), true, 'no Fen entity (FEN-OFF-01)'); assert.equal(await D('window.__debug.fenEntrance == null'), true);
   // gates: no crystal, no talk -> nothing; crystal only -> nothing
   await D("window.__debug.relayWake.interact('waystone')"); assert.deepEqual(await stone(), s0, 'gated: nothing');
   await D("window.__debug.world.state['aether.attuned'] = true"); await D("window.__debug.relayWake.interact('waystone')"); assert.deepEqual(await stone(), s0, 'needs the stone talk');
@@ -57,18 +56,12 @@ try {
   assert.equal(await D('window.__debug.notice.title'), 'WAYSTONE AWAKENED');
   await D("(()=>{const rw=window.__debug.relayWake,c=window.__debug.world.get('endMarker').data.components.voxel;for(let i=0;i<240;i++){rw.step(1/60,null);if(c.anim==='wake'&&i===70)c.playing=false;}})()");
   const aw = await stone(); assert.equal(aw.anim, 'awake'); assert.equal(aw.light, true);
-  // relay wake -> Fen emerges after the notice has gone
-  await D("window.__debug.notice.update(20, false)"); // expire the stone notice
+  // relay wake: no Fen entrance any more (FEN-OFF-01)
   await D("window.__debug.relayWake.interact('ws_roadBend')");
-  assert.equal((await fen()).started, false, 'Fen waits while the relay notice shows');
-  await D("window.__debug.notice.update(20, false)");
-  await D("(()=>{const d=window.__debug,t=d.playerHandle.data.transform,r=d.world.get('relayBend').data.transform;t.x=r.x-12;t.y=r.y+10;for(let i=0;i<120;i++)d.fenEntrance.step(1/60,t.x,t.y);})()");
-  const f1 = await fen(); assert.equal(f1.hidden, false, 'Fen visible'); assert.equal(f1.started, true); assert.equal(f1.anim, 'walk', 'Fen walking');
-  assert.ok(Math.hypot(f1.x - f0.x, f1.y - f0.y) > 1, 'Fen moved along emerge');
-  await shot('ch1-mount-fen-' + backend);
-  console.log(JSON.stringify({ s0, w, aw, f0, f1 }));
+  await shot('ch1-mount-relay-' + backend);
+  console.log(JSON.stringify({ s0, w, aw }));
   assert.deepEqual(errors, [], 'console errors: ' + JSON.stringify(errors));
-  console.log('CH1 mount (CH1-04b stone wake + CH1-08b Fen): PASS');
+  console.log('CH1 mount (CH1-04b stone wake; Fen removed): PASS');
 } finally {
   cdp?.close(); if (browser?.pid) killTree(browser.pid); if (server.pid) killTree(server.pid);
   if (path.dirname(path.resolve(profile)) !== path.resolve(os.tmpdir())) throw Error('Unexpected profile path');

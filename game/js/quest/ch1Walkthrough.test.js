@@ -91,11 +91,10 @@ assert.equal(r.world.state['waystone.waystone.woken'], true, 'questFlag writes w
 r.feed({ type: 'area:entered', id: 'roadWest' }); expectToasts(5);
 r.feed({ type: 'area:entered', id: 'bendRelay' }); expectToasts(5, 'q06 not before the relay wakes');
 r.questFlag('waystone.ws_roadBend.woken'); expectToasts(6, 'q06 toast after relay wake');
-assert.equal(r.done, false);
-// q07: Fen end node
-r.questFlag('fen.met'); expectToasts(7, 'q07 toast at the Fen end node');
-assert.equal(r.done, true, 'chain complete');
+assert.equal(r.done, true);
+// FEN-OFF-01: q07 removed; the chain ends at the relay step
+assert.equal(r.done, true, 'chain complete at the relay');
 assert.deepEqual(done(r).length, m1.objectives.length);
 assert.deepEqual(toasts, TITLES, 'every section toast exactly once, in order');
-r.checkSections(); r.questFlag('fen.met'); assert.equal(toasts.length, TITLES.length, 'no extra toast at the end');
-console.log('ch1Walkthrough: wake..Fen, 7 section toasts once in order, save/load no replay PASS');
+r.checkSections(); r.questFlag('fen.met'); /* retired flag: ignored */ assert.equal(toasts.length, TITLES.length, 'no extra toast at the end');
+console.log('ch1Walkthrough: wake..relay, 6 section toasts once in order, save/load no replay PASS');

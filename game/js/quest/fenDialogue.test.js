@@ -63,14 +63,10 @@ for (const picks of [[0, 0, 0], [1, 1, 1], [0, 1, 0], [1, 0, 1]]) {
   const flags = new Set(comp.nodes.flatMap((n) => [n.setFlag, ...n.choices.map((c) => c.setFlag)]).filter(Boolean));
   ok('only flag set is s.fen.met', [...flags].join() === 's.fen.met', [...flags].join());
 }
-// world entity
+// world entity (FEN-OFF-01: Fen removed from the world; dialogue/package kept, unused)
 {
   const wd = JSON.parse(readFileSync(new URL('worlds/world_m1.world.json', root), 'utf8'));
-  const fen = wd.entities.find((e) => e.id === 'fen');
-  ok('world: fen npc, char.fen hidden, kinematic collider, dialogue fen', !!fen && fen.type === 'npc' && fen.components.voxel.model === 'char.fen' && fen.components.voxel.hidden === true && fen.components.collider.kinematic === true && fen.components.dialogue === 'fen');
-  const path = fen.components.walks.emerge;
-  const end = path[path.length - 1], d = Math.hypot(end[0] - 1262, end[1] - 1033);
-  ok('world: emerge has >= 3 points and ends 3-5 m from the relay', path.length >= 3 && d >= 3 && d <= 5, String(d));
+  ok('world: no fen entity (FEN-OFF-01)', !wd.entities.some((e) => e.id === 'fen'));
 }
 console.log(`${pass} pass, ${fail} fail`);
 if (fail) { for (const f of failures) console.log(' - ' + f); process.exit(1); } else console.log('ALL PASS');

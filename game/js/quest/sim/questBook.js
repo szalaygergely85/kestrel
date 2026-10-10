@@ -233,7 +233,7 @@ export function validateSections(def) {
 // Old (pre-CH1) m1 order -> the new step ids each old step implies. `lantern` is dropped.
 const CH1_IMPLIES = { wake: ['wake'], breach: ['breach'], sword: ['sword'], beasts: ['leave', 'beasts'], waystone: ['follow', 'waystone'] };
 const CH1_ORDER = ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone'];
-const CH1_ALL = [...CH1_ORDER, 'road', 'relayFound', 'relay1', 'fen'];
+const CH1_ALL = [...CH1_ORDER, 'road', 'relayFound', 'relay1']; // 'fen' removed (FEN-OFF-01)
 
 /**
  * CH1-01 (38.37 item 8). Pure: game = save-like {quest, world?:{state}}; returns game itself when nothing to do,
@@ -245,7 +245,10 @@ export function migrateM1Ch1(game, newIds = null) {
   const q = game?.quest;
   if (!q || !Array.isArray(q.completed) || q.questId !== 'm1') return game;
   const ids = newIds || CH1_ALL;
-  const done = q.completed;
+  // FEN-OFF-01: the retired `fen` step is dropped; the rest of the chain is kept as-is.
+  const hadFen = q.completed.includes('fen');
+  const done = hadFen ? q.completed.filter((id) => id !== 'fen') : q.completed;
+  if (hadFen && done.every((id, i) => id === ids[i]) && !done.includes('lantern')) return { ...game, quest: { ...q, completed: done } };
   const isPrefix = done.every((id, i) => id === ids[i]);
   if (isPrefix && !done.includes('lantern')) return game;
   const implied = new Set();
