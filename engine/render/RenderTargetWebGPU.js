@@ -13,6 +13,9 @@ import { rasterizeGlyphAtlas, glyphAtlasPixels, GLYPH_COUNT } from './glyphAtlas
 import { PRESENT_WGSL, PRESENT_BLOCK, PRESENT_TEXTURES } from './gpu/wgsl/present.wgsl.js';
 import { FRAME_TIMER_SLOT } from './gpu/device/WebGpuTimer.js';
 
+/** GRID-MAX-01: estimated render-target VRAM ceiling for a live grid (800x300 at 4 rays ~ 190 MB, so this only trips on tiny-limit devices). */
+export const GRID_VRAM_BUDGET = 512 * 1048576;
+
 const GRID_W = PRESENT_BLOCK.field('grid').word;
 const SIZE_W = PRESENT_BLOCK.field('size').word;
 const LAYER_W = PRESENT_BLOCK.field('layer').word;
@@ -135,11 +138,21 @@ export class RenderTargetWebGPU {
     if (this._uiLayer) this._rebuildUiAtlas();
   }
 
-  /** WebGPU twin of the GL pre-flight: only the 2D texture dimension limit matters for the cell textures. */
-  canHoldGrid(cols, rows) {
+  /**
+   * GRID-MAX-01: pre-flight for engine.setGrid. Checks (a) the raster G-buffer sub-sample size (cols*rays x rows*rays) against
+   * maxTextureDimension2D, (b) an estimated total VRAM for the per-grid targets (36 B per sub-sample raster G-buffer +
+   * ~170 B per cell for resolve/deriv/light/shade/final/stable/glow/hzb) against GRID_VRAM_BUDGET.
+   */
+  canHoldGrid(cols, rows, rays = 1) {
     const lim = this.device.gpu && this.device.gpu.limits;
-    const max = lim ? lim.maxTextureDimension2D : 8192;
-    return (cols > max || rows > max) ? { ok: false, reason: `grid ${cols}x${rows} exceeds maxTextureDimension2D ${max}` } : { ok: true };
+    const maxTex = lim ? lim.maxTextureDimension2D : 8192;
+    const r = Math.max(1, rays | 0);
+    const subC = cols * r, subR = rows * r;
+    if (subC > maxTex || subR > maxTex) return { ok: false, reason: `grid ${cols}x${rows} at ${r} rays needs a ${subC}x${subR} G-buffer, exceeds maxTextureDimension2D ${maxTex}` };
+    const subBytes = subC * subR * 36;
+    const total = subBytes + cols * rows * 170;
+    if (total > GRID_VRAM_BUDGET) return { ok: false, reason: `grid ${cols}x${rows} at ${r} rays needs ~${(total / 1048576).toFixed(0)} MB of render targets, over the ${(GRID_VRAM_BUDGET / 1048576).toFixed(0)} MB budget` };
+    return { ok: true };
   }
 
   setGrid(cols, rows) {

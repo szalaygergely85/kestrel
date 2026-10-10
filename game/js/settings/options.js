@@ -15,13 +15,13 @@
 // GPU" treatment) - NOT the "400x150/480x180 both ultra" shorthand used
 // elsewhere; the bench data + the shipped design asset agree and are the
 // more specific source, so options.js follows them.
-export const GRID_VALUES = ['240x90', '320x120', '400x150', '480x180'];
+export const GRID_VALUES = ['240x90', '320x120', '400x150', '480x180', '560x210', '640x240', '720x270', '800x300'];
 export const ULTRA_GRID_VALUES = ['480x180'];
 
 export const OPTIONS = [
   { id: 'grid', type: 'choice', label: 'Grid', values: GRID_VALUES, default: '240x90' },
   // QUALITY-GRID-01: the quality preset owns the grid (settings.js applies knobsFor(q).grid live and saves both).
-  { id: 'quality', type: 'choice', label: 'Quality', values: ['low', 'medium', 'high', 'ultra', 'auto'], default: 'auto' },
+  { id: 'quality', type: 'choice', label: 'Quality', values: ['low', 'medium', 'high', 'ultra', 'extreme', 'auto'], default: 'auto' },
   { id: 'fullscreen', type: 'toggle', label: 'Fullscreen', values: [false, true], default: false },
   // GDD 4 / US-038 AC: 0.05-0.40 deg/px, step 0.025, default 0.15.
   { id: 'mouseSensitivity', type: 'range', label: 'Mouse sensitivity', min: 0.05, max: 0.40, step: 0.025, default: 0.15 },

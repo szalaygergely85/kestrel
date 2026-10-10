@@ -28,13 +28,14 @@ export const GRID_MIN_COLS = 160;
 // exactly 240x90 / 320x120 / 400x150 / 480x180 at the 8:3 aspect below.
 // 160x60 stays reachable (dev-only, via `?grid=`) but is no longer a
 // player-facing option (US-038b's list starts at 240x90).
-export const GRID_MAX_COLS = 480;
+// GRID-MAX-01 (amends D-025, owner 2026-10-10): max raised 480 -> 800 (800x300); RenderTarget.canHoldGrid refuses what the GPU cannot hold.
+export const GRID_MAX_COLS = 800;
 // D-009 amendment 2 (owner decision, 2026-09-23): 320x120 cells are 4-6 px
 // on a normal laptop screen - too small to read. Default is now 240x90;
 // `?grid=` still overrides, range is 160x60..480x180 (D-025). Auto-grid-by-
 // window (architect review 1's recommendation) is a future story, not built here.
 export const GRID_DEFAULT_COLS = 240; // US-030a 14.2 item 5: the default on the gl2 GPU path
-export const GRID_ASPECT = 3 / 8; // rows = round(cols * GRID_ASPECT) - 160x60 .. 480x180
+export const GRID_ASPECT = 3 / 8; // rows = round(cols * GRID_ASPECT) - 160x60 .. 800x300
 
 export const SCATTER_OBJECT_BASE = 0x20000;
 

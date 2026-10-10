@@ -42,10 +42,10 @@ for (const how of ['title', 'pause']) {
 
 // pause panel still open: quality row is focused first; Right -> next quality saves + applies its grid
 const q0 = loadSettings().quality || 'auto';
-tick('ArrowLeft'); // auto is the last choice: step to ultra
+tick('ArrowLeft'); // auto is the last choice: step to extreme (GRID-MAX-01)
 const s1 = loadSettings();
 assert.notEqual(s1.quality, q0, 'quality persisted');
-assert.equal(s1.quality, 'ultra');
+assert.equal(s1.quality, 'extreme');
 assert.equal(grids.length, 1, 'quality applied its grid live');
 assert.equal(s1.grid, grids[grids.length - 1], 'grid saved with quality');
 

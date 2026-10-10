@@ -358,11 +358,11 @@
                     '"<" / ">" steps the value down / up, a click elsewhere on the value steps it up (wraps)' },
       labels: { grid: 'Grid', mute: 'Mute', back: 'Back' },
       valueText: {
-        grid: { '240x90': '240x90', '320x120': '320x120', '400x150': '400x150', '480x180': '480x180 ultra' },
+        grid: { '240x90': '240x90', '320x120': '320x120', '400x150': '400x150', '480x180': '480x180 ultra', '560x210': '560x210', '640x240': '640x240 extreme', '720x270': '720x270', '800x300': '800x300 extreme' },
         mute: { 'false': 'off', 'true': 'on' }
       },
       notes: {
-        grid: { '480x180': 'ultra: needs a fast GPU', default: null },
+        grid: { '480x180': 'ultra: needs a fast GPU', '640x240': 'extreme: needs a very fast GPU', '800x300': 'extreme: needs a very fast GPU', default: null },
         mute: { default: 'same as the N key' }
       },
       marker: { glyph: '>', color: 'gold', note: 'at markerCol on the selected row only' },

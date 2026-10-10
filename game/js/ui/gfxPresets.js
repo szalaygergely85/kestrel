@@ -1,7 +1,7 @@
 // GFX-01a: boot-time data/resolution only. B1 wires the resolved knobs into main.js.
 import { GRID_VALUES } from '../settings/options.js';
 
-export const QUALITY_NAMES = Object.freeze(['low', 'medium', 'high', 'ultra']);
+export const QUALITY_NAMES = Object.freeze(['low', 'medium', 'high', 'ultra', 'extreme']);
 export const QUALITY_CHOICES = Object.freeze([...QUALITY_NAMES, 'auto']);
 export const SHADOW_CHOICES = Object.freeze(['off', 'low', 'mid', 'high']);
 const KNOBS = ['grid', 'rays', 'shadowQuality', 'scatter', 'lodScale', 'pointShadows'];

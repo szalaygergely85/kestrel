@@ -324,7 +324,7 @@ function recordingUi(cols = 160, rows = 60) {
   press('KeyS');
   const q0 = loadSettings().quality;
   press('KeyD'); // quality row: auto -> (end of list, no wrap)
-  press('KeyA'); press('KeyA'); press('KeyA'); press('KeyA'); // auto -> ultra -> high -> medium -> low
+  press('KeyA'); press('KeyA'); press('KeyA'); press('KeyA'); press('KeyA'); // auto -> extreme -> ultra -> high -> medium -> low
   const s = loadSettings();
   ok('quality row A steps down to low and saves it', s.quality === 'low', `${q0} -> ${s.quality}`);
   ok('quality low sets the preset grid live (240x90) and saves it', calls.length > 0 && calls[calls.length - 1].join('x') === '240x90' && s.grid === '240x90', JSON.stringify(calls) + s.grid);
