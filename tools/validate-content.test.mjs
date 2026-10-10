@@ -561,25 +561,25 @@ for (const [name, breakFixture, finding] of areaCases) {
     ok('dialogue file check: engine rules (line > 56) are reported', hasFinding(validateDialogueFiles(dir, mk(all)).errors, ['60 chars']));
     // QG-03: q.<id>.<op> keys name a loaded giver quest and a known op
     writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(bear));
-    ok('quest keys: bear file passes with the giver quest loaded', validateDialogueFiles(dir, mk(all), ['burl.boars']).errors.length === 0);
+    ok('quest keys: bear file passes with the giver quest loaded', validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade']).errors.length === 0);
     ok('quest keys: unknown quest id is an error', hasFinding(validateDialogueFiles(dir, mk(all), ['other']).errors, ['q.burl.boars.ready', 'no giver quest']));
     const badOp = JSON.parse(JSON.stringify(bear)); badOp.nodes['bear.q.ready.6'].setFlag = 'q.burl.boars.reward';
     writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(badOp));
-    ok('quest keys: unknown op is an error', hasFinding(validateDialogueFiles(dir, mk(all), ['burl.boars']).errors, ['q.burl.boars.reward', 'unknown quest op']));
+    ok('quest keys: unknown op is an error', hasFinding(validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade']).errors, ['q.burl.boars.reward', 'unknown quest op']));
     // CH1-05: `s.<key>` state flags and the `barks` kind
     writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(bear));
-    ok('s. keys: bear file passes (s.burl.follow, s.waystone.waystone.woken ...)', validateDialogueFiles(dir, mk(all), ['burl.boars']).errors.length === 0);
+    ok('s. keys: bear file passes (s.burl.follow, s.waystone.waystone.woken ...)', validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade']).errors.length === 0);
     const badS = JSON.parse(JSON.stringify(bear)); badS.nodes['bear.follow.3'].setFlag = 's.1bad key';
     writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(badS));
-    ok('s. keys: a bad s. key is an error', validateDialogueFiles(dir, mk(all), ['burl.boars']).errors.length > 0);
+    ok('s. keys: a bad s. key is an error', validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade']).errors.length > 0);
     writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(bear));
     const barks = JSON.parse(readFileSync(new URL('../content/dialogue/bear.barks.json', import.meta.url), 'utf8'));
     writeFileSync(join(dir, 'bear.barks.json'), JSON.stringify(barks));
-    const gb = validateDialogueFiles(dir, mk(all), ['burl.boars']);
+    const gb = validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade']);
     ok('barks kind: the real bear.barks.json passes', gb.errors.length === 0, gb.errors.join('|'));
     const b1 = JSON.parse(JSON.stringify(barks)); b1.barks['bear.call'][0].who = 'nobody'; b1.barks['bear.walk1'][0].text = 'x'.repeat(60);
     writeFileSync(join(dir, 'bear.barks.json'), JSON.stringify(b1));
-    const bad = validateDialogueFiles(dir, mk(all), ['burl.boars']).errors;
+    const bad = validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade']).errors;
     ok('barks kind: unknown speaker and a 60-char line are errors', hasFinding(bad, ['unknown speaker']) && hasFinding(bad, ['60 chars']), bad.join('|'));
     ok('barks kind: wrong kind / empty barks are errors', validateBarks({ kind: 'dialogue' }).errors.length === 1 && validateBarks({ kind: 'barks', speakers: {}, barks: {} }).errors.length > 0);
     rmSync(join(dir, 'bear.barks.json'));

@@ -16,7 +16,8 @@
     {"node": "bear.q.active", "requires": "q.burl.boars.active"},
     {"node": "bear.q.offer.1", "requires": "q.burl.boars.available"},
     {"node": "bear.repeat", "requires": "bear.talked"},
-    {"node": "bear.meet.1"}
+    {"node": "bear.meet.1", "requires": "q.tower.blade.ready"},
+    {"node": "bear.early"}
   ],
   "nodes": {
     "bear.meet.1": {"clip": "wave", "lines": [
@@ -37,7 +38,7 @@
     ], "next": "bear.meet.6", "speaker": "burl"},
     "bear.meet.6": {"lines": [
       "This isn't possible."
-    ], "next": "bear.meet.7", "speaker": "you"},
+    ], "next": "bear.meet.7", "setFlag": "q.tower.blade.handin", "speaker": "you"},
     "bear.meet.7": {"choices": [{"next": "bear.crash.1", "text": "You saw me fall?"}, {"next": "bear.q.offer.1", "text": "I'm going west."}], "lines": [
       "You folk from the loud hill are odd.",
       "You believe a balloon can fly,",
@@ -76,6 +77,9 @@
     "bear.q.accepted": {"end": true, "lines": [
       "Five ought to convince the others.",
       "Mind their tusks, sky-cub."
+    ], "speaker": "burl"},
+    "bear.early": {"end": true, "lines": [
+      "Come back when you've found your feet."
     ], "speaker": "burl"},
     "bear.q.later": {"clip": "laugh", "end": true, "lines": [
       "Then sit a while. The boars will still be rude."

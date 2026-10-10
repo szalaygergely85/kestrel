@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "id": "tower.blade",
+  "title": "A Blade in the Ashes",
+  "giver": { "npc": "noteKeepLight", "turnIn": "bear" },
+  "objectives": [
+    { "id": "breach", "text": "Climb to the top of the tower", "when": { "type": "area", "id": "breach" } },
+    { "id": "sword", "text": "Take up the ruin steel", "when": { "type": "item", "id": "sword" } },
+    { "id": "leave", "text": "Leave through the tower door", "when": { "type": "area", "id": "towerDoor" } }
+  ],
+  "returnText": "Show Burl the blade"
+}

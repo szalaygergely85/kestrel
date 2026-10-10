@@ -12,8 +12,8 @@ import { createQuestLogScreen } from '../ui/questLog.js';
 
 const rd = n => JSON.parse(readFileSync(new URL('../../../content/quests/' + n, import.meta.url)));
 const main = rd('m1.quest.json'); main.objectives.find(o => o.id === 'beasts').when = { type: 'flag', id: 'quest.burl.boars.done', equals: true };
-const burl = rd('burl.boars.quest.json');
-const book = createQuestBook(main, [burl]);
+const burl = rd('burl.boars.quest.json'), blade = rd('tower.blade.quest.json');
+const book = createQuestBook(main, [blade, burl]);
 const fx = globalThis.ASSETS.questMarkFx;
 
 // two marker instances fed by book.giverMarks, same shape as main.js
@@ -31,7 +31,10 @@ const A = inst(aList), R = inst(rList);
 const state = () => [A.w.active, R.w.active];
 const run = (s = 1) => { A.run(s); R.run(s); };
 for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'item:got', id: 'lantern' }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }]) book.feed(e);
-run(); assert.deepEqual(state(), [1, 0], 'available -> ! only');
+run(); assert.deepEqual(state(), [1, 0], "blade available -> '!' (over the note)");
+book.accept('tower.blade'); run(); assert.deepEqual(state(), [0, 0], 'blade active -> none');
+book.feed({ type: 'area:entered', id: 'towerDoor' }); run(); assert.deepEqual(state(), [0, 1], "blade done -> '?' (over Burl)");
+book.handIn('tower.blade'); run(); assert.deepEqual(state(), [1, 0], "blade turned in -> boars '!'");
 book.accept('burl.boars'); run(); assert.deepEqual(state(), [0, 0], 'active -> none');
 for (const id of ['boar1', 'boar2', 'boar3', 'boar4', 'boar5']) book.feed({ type: 'beast:died', id });
 run(); assert.deepEqual(state(), [0, 1], 'ready -> ? only');
