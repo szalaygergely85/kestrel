@@ -1860,12 +1860,12 @@ Done (D-058 owner pick: no reward, writer texts QG-W1 in place): questRelay/save
 - [ ] Coordinate with WAYSTONE-NORMAL-01: do not change `relay.poll` facts or the waystone step.
 - [ ] One headless capture of the offer box; then owner walk: sword -> `!` on Burl -> Accept -> 5 boars -> `?` -> hand in -> coins + "Quest complete".
 
-### QG-04 Giver markers: `!` / `?` over the NPC + map  [P1] [todo] [PC-B kestrel-1]
+### QG-04 Giver markers: `!` / `?` over the NPC + map  [P1] [po-review] [PC-B kestrel-1]
 - [ ] `questMarks` optional `host.source(out)` (default unchanged; existing test still passes) + test.
 - [ ] Two instances in main.js fed by `book.giverMarks`: `questMark` while available, `questMarkReady` while ready, none while active/done.
 - [ ] `mapCard` kinds `quest` / `questReady`; markers rebuilt on card open when `book.version` changed. Keep D-057 waystone kinds intact. mapCard test per kind.
 
-### QG-05 Quest log screen (J)  [P1] [todo] [PC-B kestrel-1]
+### QG-05 Quest log screen (J)  [P1] [po-review] [PC-B kestrel-1]
 - [ ] Binding `questLog` = `KeyJ` (rebindable, no conflict test break); opens/closes like the inventory and locks input.
 - [ ] `questLog.js` over the book: Active (ready tagged with the return line) / Done, main quest listed; detail steps `[x]/[>]/[ ]` + `n/target`.
 - [ ] Rows rebuilt only on `book.version` change; `drawLog` 0-alloc test; preview page updated; no "Esc to close" text (D-053).

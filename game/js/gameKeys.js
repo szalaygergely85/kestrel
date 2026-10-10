@@ -16,6 +16,6 @@ export function resolveGameKeys(bindings) {
     forward: k('forward'), backward: k('backward'), left: k('left'), right: k('right'),
     run: k('run', 0), run2: k('run', 1), jump: k('jump'), interact: k('interact'),
     useLeft: k('useLeft'), useRight: k('useRight'), swapHands: k('swapHands'),
-    map: k('map'), mute: k('mute'),
+    map: k('map'), mute: k('mute'), questLog: k('questLog'),
   });
 }

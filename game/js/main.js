@@ -128,6 +128,7 @@ import { createToastView } from './quest/toastView.js';
 import { createInventoryView } from './quest/inventoryView.js'; // US-091b
 import { createQuestMarkers } from './quest/sim/questMarkers.js'; // QUEST-MARK-01w
 import { registerQuestMarks } from './quest/wire/questMarks.js';
+import { createQuestLogScreen, QUEST_LOG_KEYS } from './ui/questLog.js'; // QG-05
 import { createCrafting } from './quest/sim/crafting.js'; // MAIN-WIRE-01: crafting list on C
 import { createCraftView } from './ui/craftView.js';
 import { drawDemoScene } from './dev/demoScene.js';
@@ -431,14 +432,14 @@ try {
   // QUEST-MARK-01w: '!' markers over available take steps (patch docs/patches/QUEST-MARK-01w.diff). Off in capture/bench/?save=0.
   if (saveEnabled && window.ASSETS && window.ASSETS.questMarkFx) {
     const qm = createQuestMarkers(questDef, [{ objectiveId: 'waystone', targets: ['endMarker'] }]); // other take steps (wake/breach) have no prop to mark yet
-    const MARK_TOP = { endMarker: 3.0 }; // prop top above its base z (waystone 24 voxels x 0.125 m); notes would use z + 1.55
+    const MARK_TOP = { endMarker: 3.0, bear: 2.8 }; // prop top above its base z (waystone 24 voxels x 0.125 m); notes would use z + 1.55
     gameHooks.setQuestSource((out) => { const st = saveRelay.quest.state; out.done = saveRelay.quest.done; out.id = out.done ? '' : questDef.objectives[st.completed.length].id; out.targets = qm.markerTargets(st); });
     let markN = 0;
-    const markHandle = () => { // entity handle for one marker; re-spawns itself when a world reload dropped the entity
+    const markHandle = (model) => { // entity handle for one marker; re-spawns itself when a world reload dropped the entity
       const id = 'questMark_' + (markN++); let w = null, ent = null, hidden = true, scale = 1, anim = 'idle', x = 0, y = 0, z = 0;
       const cur = () => {
         const mw = markWorld; if (!mw) return null;
-        if (w !== mw || !ent || !ent.alive) { w = mw; ent = mw.get(id) || mw.spawn('prop', { x, y, z, yawDeg: 0, scale }, { voxel: { model: 'questMark', anim, loop: true, hidden } }, id); }
+        if (w !== mw || !ent || !ent.alive) { w = mw; ent = mw.get(id) || mw.spawn('prop', { x, y, z, yawDeg: 0, scale }, { voxel: { model, anim, loop: true, hidden } }, id); }
         return ent.data;
       };
       const push = () => { const d = cur(); if (!d) return; Object.assign(d.transform, { x, y, z }); d.transform.scale = scale; d.components.voxel.hidden = hidden; d.components.voxel.anim = anim; w.renderVersion++; };
@@ -450,7 +451,13 @@ try {
       };
     };
     const markResolve = (id, out) => { const h = markWorld && markWorld.get(id), t = h && h.data && h.data.transform; if (!t) return false; out.x = t.x; out.y = t.y; out.z = t.z + (MARK_TOP[id] || 1.55); return true; };
-    registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: markHandle });
+    registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle('questMark') });
+    // QG-04: giver markers over Burl: '!' while his quest is available, '?' while ready, none while active/done (book.giverMarks)
+    const gAvail = [], gReady = [];
+    for (const [model, list] of [['questMark', gAvail], ['questMarkReady', gReady]]) {
+      registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle(model),
+        source: (out) => { const b = saveRelay.quest.book; b.giverMarks(gAvail, gReady); out.done = false; out.targets = list; } });
+    }
   }
 } catch (e) { console.warn('[save] relay unavailable:', e && e.message); }
 // MAIN-WIRE-01: crafting recipes (content/items/recipes.json), loaded once; the craft view (key C) is built with the pack.
@@ -978,8 +985,22 @@ async function runGame(mode, cinematic = null) {
   let pauseWas = false;
   // True while the pause menu is the thing on screen (same gate the old overlay used, minus Settings which owns the screen).
   function pauseUp() {
-    return mode === 'world' && !!look && !look.locked && !isMapOpen() && !(invView && invView.isOpen) && !(craftView && craftView.isOpen)
+    return mode === 'world' && !!look && !look.locked && !isMapOpen() && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen()
       && !cinematic && !isWaterfallPreview && !(menuHost && menuHost.active) && !isSettingsOpen();
+  }
+  // QG-05: quest log (J). Built lazily per book (reset() replaces the book); pauses like the pack via qlOpen in invOpen.
+  let qlView = null, qlBook = null, qlWasLocked = false, mapQmChart = null, mapQmVer = -1;
+  const qlIsOpen = () => !!(qlView && qlView.isOpen());
+  // QG-04: giver '!'/'?' on the M card, rebuilt only when the card is open and book.version / the chart changed
+  function syncMapQuestMarks() {
+    const c = getMapChart(), b = saveRelay && saveRelay.quest.book;
+    if (!c || !b || !isMapOpen() || (c === mapQmChart && b.version === mapQmVer)) return;
+    mapQmChart = c; mapQmVer = b.version;
+    const a = [], r = [], list = []; b.giverMarks(a, r);
+    for (const [ids, kind] of [[a, 'quest'], [r, 'questReady']]) for (const id of ids) {
+      const e = engine.world.get(id), t = e && e.data && e.data.transform; if (t) list.push({ kind, x: t.x, y: t.y });
+    }
+    c.setQuestMarkers(list);
   }
   let invWasLocked = false; // pointer lock state when the pack opened (re-lock on close)
   let waterfallHooks = null;
@@ -1299,7 +1320,8 @@ async function runGame(mode, cinematic = null) {
       window.__debug.playerHandle = playerHandle;
       window.__debug.look = look;
       window.__debug.beasts = beasts; window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; // HANDS-01b: test hooks
-      window.__debug.isMapOpen = isMapOpen; window.__debug.getMapPanel = getMapPanel; window.__debug.getMapChart = getMapChart; // S8-B1-15: test hook (tools/verify-map-wire.mjs)
+      window.__debug.isMapOpen = isMapOpen; window.__debug.getMapPanel = getMapPanel; window.__debug.getMapChart = getMapChart; window.__debug.questBook = () => (saveRelay ? saveRelay.quest.book : null); window.__debug.questLogOpen = qlIsOpen; window.__debug.gameHooks = gameHooks; // QG-04/05: tools/verify-quest-ui.mjs hooks
+      // S8-B1-15: test hook (tools/verify-map-wire.mjs)
     });
 
     // ME-11c (architecture.md 27.18): `?physics=mesh` opts into the mesh
@@ -1447,7 +1469,19 @@ async function runGame(mode, cinematic = null) {
       else craftView.step(dt, input);
     }
     if (chestHook && mode === 'world' && playerHandle) chestHook.stepUi(dt, input.pressed(gameKeys.interact)); // S8-B1-04: steps while paused too (an open card pauses the sim)
-    const invOpen = !!(invView && invView.isOpen) || !!(craftView && craftView.isOpen); // MAIN-WIRE-01: craft list locks input / pauses like the pack
+    if (mode === 'world' && playerHandle && saveRelay) { // QG-05: J toggles the quest log; while open it owns its keys
+      if (qlIsOpen()) {
+        for (const code of QUEST_LOG_KEYS) if (input.pressed(code) && qlView.handleKey(code)) { input.consumePressed(); break; }
+        if (!qlIsOpen() && qlWasLocked && look && !look.locked) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* arrow-key fallback */ } }
+      } else if (gameKeys.questLog && input.pressed(gameKeys.questLog) && !invOpen0 && !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look && look.locked
+        && !(vitals && (vitals.dead || vLocked())) && !(questUiActive && wakeOut.inputLocked) && !(dialogueCtl && dialogueCtl.open)) {
+        const bk = saveRelay.quest.book;
+        if (!qlView || qlBook !== bk) { qlBook = bk; qlView = createQuestLogScreen(bk, { style: window.ASSETS.uiStyle && window.ASSETS.uiStyle.menu }); }
+        qlWasLocked = look.locked; qlView.open(); input.consumePressed();
+      }
+    }
+    syncMapQuestMarks();
+    const invOpen = !!(invView && invView.isOpen) || !!(craftView && craftView.isOpen) || qlIsOpen(); // MAIN-WIRE-01: craft list locks input / pauses like the pack
     const cardOpen = !!(chestHook && chestHook.card.isOpen); // S8-B1-04: item-get card gates input same as invOpen
     // ---- US-015: wake timeline + map card (world_m1 only, questUiActive) ----
     let uiLocked = false;
@@ -1903,6 +1937,7 @@ async function runGame(mode, cinematic = null) {
       if (dialogueCtl) dialogueCtl.draw(ui, fb.timeSec); // DIALOGUE-01b2
       if (invView) invView.draw(ui); // US-091b: the pack screen, over HUD + toast
       if (craftView) craftView.draw(ui); // MAIN-WIRE-01
+      if (qlIsOpen()) qlView.draw(ui); // QG-05
       // US-080a1/a2 (30.2): death fade (CPU path, same gating as the end-card
       // scene fade above) + the death card (typed line + "[E] Wake again").
       if (vitals && vitals.dead && !deathFlow.active) { // DEATH-FLOW-01 part 2: the flow replaces the old fade+card (old path stays when the flow is off)

@@ -8,12 +8,13 @@ export const DEFAULT_BINDINGS = Object.freeze({
     useRight: Object.freeze(['Mouse2']), swapHands: Object.freeze(['KeyH']),
     lockTarget: Object.freeze(['KeyQ']), cycleTarget: Object.freeze(['Tab']),
     inventory: Object.freeze(['KeyI']), map: Object.freeze(['KeyM']), mute: Object.freeze(['KeyN']),
+    questLog: Object.freeze(['KeyJ']), // QG-05
   }),
   // No gamepad layout is shipped by the current host. Empty lists are unbound;
   // Button0..31 / Axis0..15+ or - can be supplied independently by a future host.
   gamepad: Object.freeze(Object.fromEntries([
     'forward', 'backward', 'left', 'right', 'run', 'jump', 'interact', 'useLeft',
-    'useRight', 'swapHands', 'lockTarget', 'cycleTarget', 'inventory', 'map', 'mute',
+    'useRight', 'swapHands', 'lockTarget', 'cycleTarget', 'inventory', 'map', 'mute', 'questLog',
   ].map(action => [action, Object.freeze([])]))),
 });
 
