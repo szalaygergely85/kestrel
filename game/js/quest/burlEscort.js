@@ -1,8 +1,9 @@
 // game/js/quest/burlEscort.js (CH1-07, architecture.md 38.37 item 5). Pure phase logic for Burl's escort and departure;
 // movement is npcWalk. world.state['burl.phase'] (int) and ['burl.wp'] (int) are saved with world.state.
-//   0 home  1 walking to the stone  2 at the stone  3 departing  4 gone (hidden)
+//   0 home  1 walking to the stone  2 at the stone  3 departing  4 gone (hidden)  5 back home (flags burl.home)
 // s.* dialogue flags live in world.state without the "s." (dialogueCtl): burl.follow, burl.depart, burl.departing.
-export const PHASE_HOME = 0, PHASE_WALK = 1, PHASE_STONE = 2, PHASE_DEPART = 3, PHASE_GONE = 4;
+export const PHASE_HOME = 0, PHASE_WALK = 1, PHASE_STONE = 2, PHASE_DEPART = 3, PHASE_GONE = 4, PHASE_BACK = 5; // 5 = QL-05: back on her berry slope (errand giver)
+export const HOME_FAR_M = 40; // QL-05: Burl reappears at home only when the player is at least this far away (never pops in sight)
 export const WAIT_BARK_M = 12, WAIT_BARK_COOL_S = 20; // PO-CH1-14: player runs ahead of Burl during the walk
 export const CALL_NEAR_M = 14, TALK_NEAR_M = 4, TALK_REARM_M = 7;
 
@@ -14,12 +15,21 @@ export const CALL_NEAR_M = 14, TALK_NEAR_M = 4, TALK_REARM_M = 7;
  */
 export function createBurlEscort(o) {
   const { world, walk, questFlag } = o, st = world.state, id = o.id || 'bear';
+  const t0 = (world.get(id) && world.get(id).data.transform) || null, homeYaw = t0 ? t0.yawDeg : 0;
   let talkLatch = false, wokenLatch = false, waitCool = 0;
   const phase = () => st['burl.phase'] | 0;
   const setPhase = (p) => { st['burl.phase'] = p; };
   const follow = () => walk.start('follow', { lead: true, fromWp: st['burl.wp'] | 0, onArrive: arrived });
   function arrived() { st['burl.wp'] = walk.wp; setPhase(PHASE_STONE); questFlag('burl.arrived'); }
   function gone() { setPhase(PHASE_GONE); }
+  // QL-05: the walk's first waypoint is her berry slope (data). Appears there, talkable again, flag s.burl.home / quest flag burl.home.
+  function goHome() {
+    setPhase(PHASE_BACK); st['burl.home'] = true; st['burl.departing'] = false;
+    walk.place('follow', 0); if (t0) t0.yawDeg = homeYaw;
+    if (o.restore) o.restore();
+    questFlag('burl.home');
+  }
+  const homeXY = () => { const w = world.get(id), p = w && w.data.components && w.data.components.walks && w.data.components.walks.follow; return p ? p[0] : null; };
   const api = {
     get phase() { return phase(); },
     /** true while Burl is on a walk (npcBear's turn-to-player stays paused). */
@@ -29,7 +39,7 @@ export function createBurlEscort(o) {
       const p = phase();
       if (p === PHASE_WALK) follow();                       // mid-walk: stands at burl.wp, resumes when the player is near
       else if (p === PHASE_STONE) walk.place('follow');     // at the end of the walk
-      else if (p === PHASE_DEPART || p === PHASE_GONE) { walk.hide(); setPhase(PHASE_GONE); } // departure is not replayed
+      else if (p === PHASE_DEPART || p === PHASE_GONE || p === PHASE_BACK) goHome(); // departure is not replayed; a fresh load puts her home (QL-05)
     },
     /** Fixed step. (px,py) = player; hold = a dialogue/menu/note is open (AUD-06): no walking, no barks. */
     step(dt, px, py, hold) {
@@ -70,6 +80,9 @@ export function createBurlEscort(o) {
         }
       } else if (p === PHASE_DEPART) {
         walk.step(dt, px, py);
+      } else if (p === PHASE_GONE) { // QL-05: out of sight and far away -> she is home again
+        const h = homeXY();
+        if (h && (px - h[0]) ** 2 + (py - h[1]) ** 2 >= HOME_FAR_M * HOME_FAR_M) goHome();
       }
     },
   };

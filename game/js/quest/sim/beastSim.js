@@ -104,6 +104,7 @@ export function createBeastSim(world, opts) {
       recoverWall: toSteps(cfg.recoverWallSec),
       loseSight: toSteps(cfg.loseSightSec),
       repath: toSteps(cfg.repathSec),
+      blockStagger: toSteps(cfg.blockStaggerSec || 0.4),
       stagger: toSteps(cfg.staggerSec), // US-078d amendment (D-034)
       dmgCooldown: toSteps(cfg.dmgCooldownSec), // US-079b (37.16.2)
       flash: toSteps(cfg.flashSec),
@@ -169,7 +170,7 @@ export function createBeastSim(world, opts) {
     _xy: new Float64Array(grid.w * grid.h * 2),
     // US-079c: a charge contact emits `damage: 1`; vitals scales it by `beastDamageScale` (5) -> 5 HP per charge
     // hit (the AC's "6 hits from 30 HP kill"). Verified end-to-end in beastSim.test.js.
-    _hitPayload: beastEntities.slice(0, count).map((e) => ({ source: e.id, target: 'player', damage: 1 })),
+    _hitPayload: beastEntities.slice(0, count).map((e) => ({ source: e.id, target: 'player', damage: 1, blocked: 0 })),
     // US-079b: preallocated emit payloads (one per slot, never reallocated). `beast:died` carries the cause string
     // resolved from the 2-entry CAUSE_STR table; `beast:sink` the dust-burst position for particleHooks.
     _diedPayload: beastEntities.slice(0, count).map((e) => ({ id: e.id, x: 0, y: 0, z: 0, cause: 'sword' })),
@@ -511,6 +512,14 @@ function enterStagger(sim, i, dirX, dirY, knock) {
   steer.accel[i] = DEFAULT_ACCEL;
 }
 
+/** EQ-06: the player's shield blocked this charge: stagger for cfgSteps.blockStagger, shoved away from the player. */
+function enterBlocked(sim, i, awayX, awayY) {
+  const d = Math.sqrt(awayX * awayX + awayY * awayY);
+  const k = sim.cfg.blockKnock !== undefined ? sim.cfg.blockKnock : 2;
+  enterStagger(sim, i, d > 1e-9 ? awayX / d : sim.fx[i] * -1, d > 1e-9 ? awayY / d : sim.fy[i] * -1, k);
+  sim.timer[i] = sim.cfgSteps.blockStagger;
+}
+
 function enterReturn(sim, i) {
   sim.state[i] = STATE_RETURN;
   sim._ldef.homeX = sim.homeX[i]; sim._ldef.homeY = sim.homeY[i];
@@ -757,8 +766,11 @@ function postOne(sim, i, px, py, pz) {
   const dx = px - steer.x[i], dy = py - steer.y[i];
   const contactR = cfg.radius + PHYSICS.radius + CONTACT_PAD;
   if (sim.state[i] === STATE_CHARGE && dx * dx + dy * dy <= contactR * contactR) {
-    sim.events.emit('combat:hit', sim._hitPayload[i]);
-    enterRecover(sim, i, false);
+    const hp = sim._hitPayload[i];
+    hp.blocked = 0;
+    sim.events.emit('combat:hit', hp);
+    if (hp.blocked) enterBlocked(sim, i, -dx, -dy); // EQ-06: shield block -> 0.4 s stagger instead of recover
+    else enterRecover(sim, i, false);
   }
 
   // Facing: velocity direction when moving; the player's direction in notice/windup; frozen while staggered

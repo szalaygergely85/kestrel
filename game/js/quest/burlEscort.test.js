@@ -1,7 +1,7 @@
 // burlEscort.test.js (CH1-07): phases 0-4, wait/resume, barks once, load per phase, auto-open, 0 alloc.
 import assert from 'node:assert/strict';
 import { createNpcWalk } from './npcWalk.js';
-import { createBurlEscort, CALL_NEAR_M } from './burlEscort.js';
+import { createBurlEscort, CALL_NEAR_M, HOME_FAR_M } from './burlEscort.js';
 
 const DT = 1 / 60;
 function mk(state0 = {}, o = {}) {
@@ -61,7 +61,8 @@ const follow = (c) => () => c.ent.transform.x - 3;
   assert.ok(!c.played.includes('bear.walk1'), 'passed bark not replayed');
   c = mk({ 'burl.phase': 2, 'burl.wp': 3, 'burl.arrived': true }); c.e.load();
   assert.equal(c.ent.transform.x, 30); assert.equal(c.ent.components.voxel.hidden, false); assert.ok(!c.e.busy);
-  for (const p of [3, 4]) { c = mk({ 'burl.phase': p }); c.e.load(); assert.equal(c.ent.components.voxel.hidden, true, 'phase ' + p); assert.equal(c.e.phase, 4); }
+  // QL-05: a fresh load after the departure puts Burl on her slope (walks.follow[0]), talkable, flag burl.home
+  for (const p of [3, 4, 5]) { let back = 0; c = mk({ 'burl.phase': p }, { restore: () => back++ }); c.ent.transform.x = 77; c.e.load(); assert.equal(c.ent.components.voxel.hidden, false, 'phase ' + p); assert.equal(c.e.phase, 5); assert.equal(c.ent.transform.x, 0); assert.ok(c.state['burl.home'] && c.flags.includes('burl.home') && back === 1); }
   c = mk(); c.e.load(); assert.equal(c.ent.components.voxel.hidden, false); assert.equal(c.e.phase, 0);
 }
 // 0 allocation per step at home (proximity) and while waiting
@@ -97,3 +98,15 @@ console.log('burlEscort ALL PASS');
   run(c, 15, 60); assert.equal(c.played.filter((b) => b === 'bear.wait').length, 1, 'cooldown 20 s');
   run(c, 6, 60); assert.equal(c.played.filter((b) => b === 'bear.wait').length, 2, 'again after 20 s');
 }
+
+// QL-05: same session - she stays gone while the player is near the slope, reappears once the player is >= HOME_FAR_M away
+{
+  const c = mk({ 'burl.phase': 2, 'burl.wp': 3, 'burl.arrived': true, 'waystone.waystone.woken': true, 'dlg.bear.stone.told': true });
+  c.e.load(); c.state['burl.depart'] = true; run(c, 0.1, 28); run(c, 40, 28);
+  assert.equal(c.e.phase, 4); run(c, 2, 5); assert.equal(c.e.phase, 4, 'player near home: no pop-in');
+  assert.equal(c.ent.components.voxel.hidden, true);
+  run(c, 1, HOME_FAR_M + 5);
+  assert.equal(c.e.phase, 5); assert.equal(c.ent.components.voxel.hidden, false); assert.equal(c.ent.transform.x, 0);
+  assert.ok(c.state['burl.home'] && !c.state['burl.departing'] && c.flags.includes('burl.home'));
+}
+console.log('burlEscort QL-05 home switch ok');

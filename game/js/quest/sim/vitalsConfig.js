@@ -10,6 +10,7 @@ export const VITALS_DEFAULTS = Object.freeze({
   fallDamage6m: 5,       // hp, damage for a fall > fallThreshold6m (and <= fallThreshold10m)
   fallThreshold10m: 10,  // m, the bigger fall damage threshold
   fallDamage10m: 10,     // hp, damage for a fall > fallThreshold10m
+  blockKnockSpeed: 5.5,  // m/s, EQ-06: shield-block push-back (about 0.3 m of slide)
   knockbackSpeed: 2,     // m/s, added to the player's body velocity away from the hit's source, once per hit
 
   // ---- VOID-RESPAWN-01 ----

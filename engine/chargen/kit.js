@@ -10,7 +10,9 @@
 //   clips / random: passed through untouched (CHARGEN-03/05).
 
 /** Recipe slots; SHELL_ORDER then ATTACH_ORDER is the compose order. */
-export const SHELL_ORDER = ['legs', 'feet', 'top', 'outer'];
+export const SHELL_ORDER = ['legs', 'feet', 'top', 'hands', 'belt', 'outer', 'cloak']; // EQ-05: hands/belt/cloak are gear slots
+/** Slots randomRecipe draws for, in the pre-EQ-05 order: a new slot must not shift the rng stream (byte-identical looks). */
+export const RANDOM_SLOTS = ['legs', 'feet', 'top', 'outer', 'hair', 'beard', 'hat'];
 export const ATTACH_ORDER = ['hair', 'beard', 'hat'];
 export const SLOTS = [...SHELL_ORDER, ...ATTACH_ORDER];
 /** Attachment slots a kit may define: 'overlay' (elder overlay) is kit-only, never a recipe pick, painted last. */

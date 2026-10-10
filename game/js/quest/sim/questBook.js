@@ -26,8 +26,10 @@ export function validateGiverQuest(def) {
   if (def.giver.turnIn !== undefined && (typeof def.giver.turnIn !== 'string' || !def.giver.turnIn)) throw new Error('quest: invalid giver.turnIn');
   if (def.requires !== undefined) {
     if (!Array.isArray(def.requires)) throw new Error('quest: requires must be an array');
-    for (const r of def.requires) if (!r || typeof r.quest !== 'string' || (r.done !== true && typeof r.step !== 'string')) throw new Error('quest: invalid requires entry');
+    for (const r of def.requires) if (!r || (typeof r.flag === 'string' ? !r.flag : typeof r.quest !== 'string' || (r.done !== true && typeof r.step !== 'string'))) throw new Error('quest: invalid requires entry'); // QL-05: {flag} = main quest flag set (Burl home)
   }
+  for (const o of def.objectives) if (o.when.type === 'deliver' && o.when.to !== (def.giver.turnIn || def.giver.npc)) throw new Error('quest: deliver.to must be the hand-in npc (giver.turnIn or giver.npc)');
+  if (def.abandonable !== undefined && typeof def.abandonable !== 'boolean') throw new Error('quest: invalid abandonable');
   if (def.returnText !== undefined && typeof def.returnText !== 'string') throw new Error('quest: invalid returnText');
   if (def.reward !== undefined) {
     if (!def.reward || !Array.isArray(def.reward.items)) throw new Error('quest: invalid reward');
@@ -56,6 +58,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   const byId = new Map(); entries.forEach((e, i) => byId.set(e.def.id, i));
   const n = entries.length;
   const requireSteps = entries.map(e => (e.def.requires || []).map(r => {
+    if (typeof r.flag === 'string') return { qi: 0, si: -2, flag: r.flag };
     const qi = byId.get(r.quest); if (qi === undefined) throw new Error('quest: requires unknown quest ' + r.quest);
     if (r.done === true) return { qi, si: -1 }; // giver quest handed in (turned in at its giver)
     const si = entries[qi].def.objectives.findIndex(o => o.id === r.step);
@@ -69,12 +72,14 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     for (const op of ACT_OPS) keys.set('q.' + id + '.' + op, { qi: i, op, act: true });
   }
 
-  const book = { main: entries[0].state, version: 0, onChange: null, lastReward: null, count: n };
+  const book = { main: entries[0].state, version: 0, onChange: null, lastReward: null, count: n, packOps: null /* QUESTS-01: {count(id), remove(id, n)} set by the game; deliver needs it */ };
+  const packCounts = new Map(); // last absolute pack count per item id (runtime mirror of item:count, re-applied on abandon)
 
   function met(i) {
     const r = requireSteps[i];
     for (let k = 0; k < r.length; k++) {
       const q = entries[r[k].qi];
+      if (r[k].si === -2) { if (q.state.flags[r[k].flag] !== true) return false; continue; }
       if (r[k].si < 0 ? !q.handedIn : q.state.completed.length <= r[k].si) return false;
     }
     return true;
@@ -100,11 +105,13 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   book.STATUS_NAMES = STATUS_NAMES;
   book.index = id => byId.has(id) ? byId.get(id) : -1;
   book.def = i => entries[i].def;
+  book.giverOf = i => entries[i].giver; // QL-03: npc id that offers quest i
   book.questState = i => entries[i].state;
   book.status = i => statusOf(i);
   book.statusOf = id => byId.has(id) ? statusOf(byId.get(id)) : -1;
   book.feed = function feed(event) {
     let changed = false;
+    if (event && event.type === 'item:count' && typeof event.id === 'string' && Number.isInteger(event.n)) { if (event.n > 0) packCounts.set(event.id, event.n); else packCounts.delete(event.id); }
     for (let i = 0; i < n; i++) if (applyQuestEvent(entries[i].state, event, entries[i].def)) changed = true;
     if (changed) { book.version++; settle(); }
     return changed;
@@ -123,6 +130,12 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     const i = byId.get(id);
     if (i === undefined || i === 0 || statusOf(i) !== READY) return null;
     const e = entries[i];
+    const dl = e.def.objectives.filter(o => o.when.type === 'deliver').map(o => o.when);
+    if (dl.length) { // QUESTS-01: items must still be in the pack; they leave it at hand-in
+      if (!book.packOps) return null;
+      for (const w of dl) if (book.packOps.count(w.id) < w.count) return null;
+      for (const w of dl) { book.packOps.remove(w.id, w.count); book.feed({ type: 'item:count', id: w.id, n: Math.max(0, book.packOps.count(w.id)) }); }
+    }
     e.handedIn = true; book.version++;
     const reward = e.def.reward ? deepFreeze(structuredClone(e.def.reward)) : NO_REWARD;
     book.lastReward = reward;
@@ -130,6 +143,30 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     e.prev = DONE;
     emit('quest:done', id);
     return reward;
+  };
+  /** QUESTS-01: J quest log "start stop". Only `abandonable: true` quests; progress resets, taken pickups stay taken, pack items stay (counts re-applied). */
+  book.canAbandon = function canAbandon(id) {
+    const i = byId.get(id);
+    if (i === undefined || i === 0) return false;
+    const s = statusOf(i);
+    return entries[i].def.abandonable === true && (s === ACTIVE || s === READY);
+  };
+  book.abandon = function abandon(id) {
+    if (!book.canAbandon(id)) return false;
+    const e = entries[byId.get(id)];
+    e.state = createQuest(e.def, null); e.accepted = false; e.seq = 0; e.prev = 0;
+    for (const [item, c] of packCounts) applyQuestEvent(e.state, { type: 'item:count', id: item, n: c }, e.def);
+    book.version++;
+    if (entries[0].state.flags['ui.tracked'] === id) book.feed({ type: 'flag:set', key: 'ui.tracked', value: '' });
+    emit('quest:abandoned', id);
+    settle();
+    return true;
+  };
+  /** Item ids the quests count in the pack (collect/deliver), for the game's pack poll. */
+  book.countedItems = function countedItems() {
+    const out = new Set();
+    for (let i = 1; i < n; i++) for (const o of entries[i].def.objectives) if (o.when.type === 'collect' || o.when.type === 'deliver') out.add(o.when.id);
+    return [...out];
   };
   book.hasKey = function hasKey(key) {
     const k = keys.get(key);
@@ -150,14 +187,23 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     }
     outAvail.length = a; outReady.length = r;
   };
-  /** Index of the most recently accepted giver quest that is active or ready, else -1. */
+  /** QL-03: index of the tracked giver quest: the player's pick (main flag `ui.tracked`, saved with the main quest) while it is active/ready, else the most recently accepted one, else -1. */
   book.tracked = function tracked() {
+    const pin = entries[0].state.flags['ui.tracked'];
+    if (typeof pin === 'string' && pin && byId.has(pin) && byId.get(pin) > 0) { const s = statusOf(byId.get(pin)); if (s === ACTIVE || s === READY) return byId.get(pin); }
     let best = -1, seq = 0;
     for (let i = 1; i < n; i++) {
       const s = statusOf(i);
       if ((s === ACTIVE || s === READY) && entries[i].seq >= seq) { best = i; seq = entries[i].seq; }
     }
     return best;
+  };
+  /** QL-03: pin a giver quest as THE tracked one (HUD objective + compass); `null`/'' clears the pin. Returns true if the pin changed. */
+  book.track = function track(id) {
+    const i = id ? byId.get(id) : 0;
+    if (id && (i === undefined || i === 0)) return false;
+    if (id) { const s = statusOf(i); if (s !== ACTIVE && s !== READY) return false; }
+    return book.feed({ type: 'flag:set', key: 'ui.tracked', value: id || '' });
   };
   book.objectives = (i, out) => questObjectives(entries[i].state, entries[i].def, out);
   book.toSave = function toSave() {

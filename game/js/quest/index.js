@@ -33,6 +33,7 @@ export const QUEST_BEHAVIOURS = {
   'npc.talk': 'DIALOGUE-01b2',
   'relay.wake': 'WS1-06b',
   'door.toggle': 'DOOR-TOGGLE-01',
+  'pickup.take': 'QL-05',
 };
 
 const logged = new Set();
@@ -74,6 +75,7 @@ const REAL_BEHAVIOURS = {
   'npc.talk': npcTalk,
   'relay.wake': relayWake,
   'door.toggle': doorToggle,
+  'pickup.take': () => false, // QL-05: prompt only; questPickups.onTick takes the item on E
 };
 
 /** (Re)registers every quest behaviour. Idempotent; the tests call it to restore a removed registration. */

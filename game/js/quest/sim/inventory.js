@@ -45,6 +45,9 @@ export function ensureInventory(player, start) {
   return c.inventory;
 }
 
+export const EQUIP_SLOTS = ['head', 'body', 'cloak', 'hands', 'belt', 'legs', 'feet', 'main', 'off', 'ranged', 'quiver'];
+export const EQUIP_TIERS = ['worn', 'sturdy', 'fine'];
+
 /**
  * Validates every item def once at load (id/name/kind/stackMax/icon); throws naming the bad id. Called by
  * main.js at boot. This checks the fields the inventory code actually depends on (the designer's own
@@ -53,7 +56,7 @@ export function ensureInventory(player, start) {
  * @param {Record<string, any>} defs
  */
 export function validateItemDefs(defs) {
-  const KINDS = { weapon: 1, spell: 1, tool: 1, food: 1, material: 1, pickup: 1, shield: 1, key: 1, upgrade: 1, currency: 1 };
+  const KINDS = { weapon: 1, spell: 1, tool: 1, food: 1, material: 1, pickup: 1, shield: 1, key: 1, upgrade: 1, currency: 1, gear: 1, ammo: 1, potion: 1 };
   for (const id in defs) {
     const d = defs[id];
     if (!d || d.id !== id) throw new Error(`[items] bad def "${id}": id mismatch`);
@@ -63,6 +66,13 @@ export function validateItemDefs(defs) {
     if (!d.icon || !Array.isArray(d.icon.glyphs) || !Array.isArray(d.icon.fg) || d.icon.glyphs.length !== 3 || d.icon.fg.length !== 3) {
       throw new Error(`[items] bad def "${id}": icon`);
     }
+    const q = d.equip; // EQ-01: { slot, tier, def, shell?, held? }
+    if (q !== undefined) {
+      if (!q || !EQUIP_SLOTS.includes(q.slot)) throw new Error(`[items] bad def "${id}": equip.slot "${q && q.slot}"`);
+      if (!EQUIP_TIERS.includes(q.tier)) throw new Error(`[items] bad def "${id}": equip.tier "${q.tier}"`);
+      if (typeof q.def !== 'number' || !(q.def >= 0)) throw new Error(`[items] bad def "${id}": equip.def`);
+    }
+    if (d.kind === 'gear' && !q) throw new Error(`[items] bad def "${id}": gear needs equip`);
   }
 }
 

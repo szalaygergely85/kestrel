@@ -561,25 +561,25 @@ for (const [name, breakFixture, finding] of areaCases) {
     ok('dialogue file check: engine rules (line > 56) are reported', hasFinding(validateDialogueFiles(dir, mk(all)).errors, ['60 chars']));
     // QG-03: q.<id>.<op> keys name a loaded giver quest and a known op
     writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(bear));
-    ok('quest keys: bear file passes with the giver quest loaded', validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade']).errors.length === 0);
+    ok('quest keys: bear file passes with the giver quest loaded', validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade', 'sq.burl.blue']).errors.length === 0);
     ok('quest keys: unknown quest id is an error', hasFinding(validateDialogueFiles(dir, mk(all), ['other']).errors, ['q.burl.boars.ready', 'no giver quest']));
     const badOp = JSON.parse(JSON.stringify(bear)); badOp.nodes['bear.q.ready.6'].setFlag = 'q.burl.boars.reward';
     writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(badOp));
-    ok('quest keys: unknown op is an error', hasFinding(validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade']).errors, ['q.burl.boars.reward', 'unknown quest op']));
+    ok('quest keys: unknown op is an error', hasFinding(validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade', 'sq.burl.blue']).errors, ['q.burl.boars.reward', 'unknown quest op']));
     // CH1-05: `s.<key>` state flags and the `barks` kind
     writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(bear));
-    ok('s. keys: bear file passes (s.burl.follow, s.waystone.waystone.woken ...)', validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade']).errors.length === 0);
+    ok('s. keys: bear file passes (s.burl.follow, s.waystone.waystone.woken ...)', validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade', 'sq.burl.blue']).errors.length === 0);
     const badS = JSON.parse(JSON.stringify(bear)); badS.nodes['bear.follow.3'].setFlag = 's.1bad key';
     writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(badS));
-    ok('s. keys: a bad s. key is an error', validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade']).errors.length > 0);
+    ok('s. keys: a bad s. key is an error', validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade', 'sq.burl.blue']).errors.length > 0);
     writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(bear));
     const barks = JSON.parse(readFileSync(new URL('../content/dialogue/bear.barks.json', import.meta.url), 'utf8'));
     writeFileSync(join(dir, 'bear.barks.json'), JSON.stringify(barks));
-    const gb = validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade']);
+    const gb = validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade', 'sq.burl.blue']);
     ok('barks kind: the real bear.barks.json passes', gb.errors.length === 0, gb.errors.join('|'));
     const b1 = JSON.parse(JSON.stringify(barks)); b1.barks['bear.call'][0].who = 'nobody'; b1.barks['bear.walk1'][0].text = 'x'.repeat(60);
     writeFileSync(join(dir, 'bear.barks.json'), JSON.stringify(b1));
-    const bad = validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade']).errors;
+    const bad = validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade', 'sq.burl.blue']).errors;
     ok('barks kind: unknown speaker and a 60-char line are errors', hasFinding(bad, ['unknown speaker']) && hasFinding(bad, ['60 chars']), bad.join('|'));
     ok('barks kind: wrong kind / empty barks are errors', validateBarks({ kind: 'dialogue' }).errors.length === 1 && validateBarks({ kind: 'barks', speakers: {}, barks: {} }).errors.length > 0);
     rmSync(join(dir, 'bear.barks.json'));
@@ -599,6 +599,22 @@ for (const [name, breakFixture, finding] of areaCases) {
   ok('item names <= 14 chars', !badName, badName && `items.defs.${badName[0]}.name`);
   const badDesc = Object.entries(defs).find(([, d]) => d.desc.length > 38);
   ok('item descs <= 38 chars', !badDesc, badDesc && `items.defs.${badDesc[0]}.desc`);
+}
+
+// EQ-11: loot.json validation (real file + real item defs, then broken copies)
+{
+  const { loadDesignAssets } = await import('./validate-content.mjs');
+  const A = await loadDesignAssets();
+  const loot = JSON.parse(readFileSync(new URL('../content/items/loot.json', import.meta.url), 'utf8'));
+  const run = (lootFile) => validateContent(A, { lootFile }).errors.filter((e) => String(e).includes('loot.json'));
+  ok('real loot.json validates', run(loot).length === 0, JSON.stringify(run(loot)));
+  ok('loot rates 4/3/8 %', loot.sources.boar.rolls[0].chance === 0.04 && loot.sources.container.rolls[0].chance === 0.03 && loot.sources.chest.rolls[0].chance === 0.08);
+  const bad = (name, fn, text) => { const c = JSON.parse(JSON.stringify(loot)); fn(c); const e = run(c); ok(`loot lint: ${name}`, e.some((x) => String(x).includes(text)), JSON.stringify(e)); };
+  bad('unknown item', (c) => { c.sources.chest.rolls[1].give.item = 'nope'; }, 'not found');
+  bad('chance > 1', (c) => { c.sources.boar.rolls[0].chance = 1.5; }, 'chance');
+  bad('tier odds sum', (c) => { c.tiers.fine = 0.2; }, 'sum to 1');
+  bad('slot without gear', (c) => { c.slots.push('off'); }, 'no gear item');
+  bad('crafting-free fixed ref', (c) => { c.sources.boar.fixed[0].item = 'ghost'; }, 'fixed');
 }
 
 console.log(`${pass} passed, ${fail} failed`);

@@ -390,3 +390,12 @@ export function drawDeathCard(ui, style, state) {
     }
   }
 }
+
+/** EQ-09 AC3: the quiver count ("}> 12") right of the HP number while the bow set is out. Pure draw, no allocation beyond the text. */
+export function drawArrowCount(ui, style, n, visible) {
+  if (!visible || !style || !style.layout) return;
+  const L = style.layout, row = L.hpRow, x0 = L.x + L.numberCol + 9;
+  const bg = style.textBg || [0, 0, 0], fg = n > 0 ? [214, 188, 120] : [200, 70, 60];
+  const text = '}> ' + n;
+  for (let i = 0; i < text.length + 1; i++) writeChar(ui, x0 + i, row, i < text.length ? text[i] : ' ', fg, bg);
+}

@@ -39,7 +39,7 @@ assert.ok(s.lines.indexOf('Active') >= 0 && s.lines.indexOf('Done') > s.lines.in
 const n0 = log.snapshot().sel;
 assert.equal(log.handleKey('KeyS'), true); assert.notEqual(log.snapshot().sel, n0);
 assert.equal(log.handleKey('KeyW'), true); assert.equal(log.snapshot().sel, n0);
-assert.equal(log.handleKey('KeyX'), false);
+assert.equal(log.handleKey('KeyZ'), false);
 // close keys
 for (const k of ['Enter', 'KeyJ', 'Escape']) { log.open(); assert.ok(log.isOpen()); assert.equal(log.handleKey(k), true); assert.ok(!log.isOpen()); }
 assert.equal(log.handleKey('KeyS'), false, 'closed log ignores keys');
