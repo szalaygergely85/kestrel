@@ -219,6 +219,17 @@
     icon: icon([" .-'*", '(=#=)', "`-=-'"],
                [' FpDE', 'FpDpo', 'oopoo'])
   };
+  defs['berry.blue'] = {
+    id: 'berry.blue', name: 'Blue Sprig', kind: 'material', stackMax: 20, hand: false, inPack: true,
+    desc: 'Blue berries. Burl is counting.',
+    use: { none: 'Material - quest errand (sq.burl.blue)' },
+    glyph: { ch: 'o', c: 'manaLight' },
+    //  .o.      berry cluster
+    // (oQo)
+    //   |       stem
+    icon: icon([' .o. ', '(oQo)', '  |  '],
+               [' qQq ', 'qQqQq', '  h  '])
+  };
   defs['heart.piece'] = {
     id: 'heart.piece', name: 'Heart Piece', kind: 'upgrade', stackMax: 3, hand: false, inPack: true,
     desc: 'A warm red stone. Four make a heart.',

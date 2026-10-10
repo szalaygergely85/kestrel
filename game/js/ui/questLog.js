@@ -44,8 +44,8 @@ export function createQuestLog(def, {hudWidth=60,width=72,fg='#e8e2d0',bg='#0a0b
 
 // QG-05 (D-058, 38.35 item 8): quest log SCREEN over the quest book, in the pause/title menu skin (uiStyle.menu).
 // Rows (strings) are rebuilt only on open, key input and a changed book.version; draw() never formats or allocates.
-export const QUEST_LOG_KEYS = ['ArrowUp', 'ArrowDown', 'KeyW', 'KeyS', 'Enter', 'KeyJ', 'Escape'];
-export const QUEST_LOG_TEXT = Object.freeze({ header: 'PENCIL NOTES', empty: 'Nothing yet. Not nothing.', active: 'Active', done: 'Done', main: '(main)' });
+export const QUEST_LOG_KEYS = ['ArrowUp', 'ArrowDown', 'KeyW', 'KeyS', 'Enter', 'KeyJ', 'Escape', 'KeyX'];
+export const QUEST_LOG_TEXT = Object.freeze({ header: 'PENCIL NOTES', empty: 'Nothing yet. Not nothing.', active: 'Active', abandon: '[X] Abandon quest', abandonSure: '[X] again to abandon (progress resets)', done: 'Done', main: '(main)' });
 const READY = 3, DONE = 4, LIST_TOP = 6, LIST_ROWS = 14;
 
 /**
@@ -62,7 +62,7 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
   const titleText = style ? style.title.decor[0] + heading.split('').join(' '.repeat(style.title.letterSpace)) + style.title.decor[1] : heading;
   const bounds = { x: 0, y: 0, w: width, h: 24 };
   const scratch = [];
-  let open = false, built = -1, sel = 0, top = 0, quests = [], lines = [];
+  let open = false, built = -1, sel = 0, top = 0, quests = [], lines = [], sure = false; // sure: X pressed once (QUESTS-01 abandon)
 
   /** quests = selectable quest indices: Active (main first, then newest = highest index) then Done. */
   function rebuild() {
@@ -83,6 +83,7 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
       lines.push({ kind: 'quest', k, text: ascii((isDone && i === 0 && doneTitle) || def.title || def.id) + (i === 0 ? ' ' + T.main : ''), done: isDone });
       if (k !== sel) continue;
       if (s === READY && def.returnText) lines.push({ kind: 'return', text: '  > ' + clipped(ascii(def.returnText), W - 8) });
+      if (book.canAbandon && book.canAbandon(def.id)) lines.push({ kind: 'return', text: '  ' + (sure ? T.abandonSure : T.abandon) });
       const rows = book.objectives(i, scratch);
       for (let r = 0; r < rows.length; r++) {
         const row = rows[r], mark = row.status === 'complete' ? '[x] ' : row.status === 'active' ? '[>] ' : '[ ] ';
@@ -93,13 +94,20 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     if (selLine >= top + LIST_ROWS) top = selLine - LIST_ROWS + 1;
     if (top < 0 || lines.length <= LIST_ROWS) top = 0;
   }
-  function show() { open = true; sel = 0; top = 0; rebuild(); }
+  function show() { open = true; sure = false; sel = 0; top = 0; rebuild(); }
   function close() { open = false; }
   /** Returns true when the key was consumed. Enter/J/Esc close; W/S move (wraps). */
   function handleKey(code) {
     if (!open) return false;
     if (code === 'Enter' && onJournal && quests[sel] === 0 && book.status(0) === DONE) { close(); onJournal(0); return true; }
     if (code === 'Enter' || code === 'KeyJ' || code === 'Escape') { close(); return true; }
+    if (code === 'KeyX') { // QUESTS-01: two presses abandon the selected quest (only `abandonable` ones)
+      const id = quests[sel] !== undefined ? book.def(quests[sel]).id : null;
+      if (!id || !book.canAbandon || !book.canAbandon(id)) return true;
+      if (!sure) { sure = true; rebuild(); return true; }
+      sure = false; book.abandon(id); rebuild(); return true;
+    }
+    sure = false;
     const d = code === 'ArrowUp' || code === 'KeyW' ? -1 : code === 'ArrowDown' || code === 'KeyS' ? 1 : 0;
     if (!d) return false;
     if (quests.length > 1) { sel = (sel + d + quests.length) % quests.length; rebuild(); }

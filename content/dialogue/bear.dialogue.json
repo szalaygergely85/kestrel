@@ -7,6 +7,9 @@
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
+    {"node": "bear.blue.ready", "requires": "q.sq.burl.blue.ready"},
+    {"node": "bear.blue.active", "requires": "q.sq.burl.blue.active"},
+    {"node": "bear.blue.offer.1", "requires": "q.sq.burl.blue.available"},
     {"node": "bear.departing", "requires": "s.burl.departing"},
     {"node": "bear.woken.1", "requires": "s.waystone.waystone.woken"},
     {"node": "bear.stone.again", "requires": "bear.stone.told"},
@@ -22,6 +25,23 @@
     {"node": "bear.early"}
   ],
   "nodes": {
+    "bear.blue.offer.1": {"lines": [
+      "The boars trampled half my bushes, sky-cub.",
+      "The blue sprigs by the north trees still stand."
+    ], "next": "bear.blue.offer.2", "speaker": "burl"},
+    "bear.blue.offer.2": {"choices": [{"next": "bear.blue.accepted", "setFlag": "q.sq.burl.blue.accept", "text": "I'll fetch them."}, {"next": "bear.q.later", "text": "Not yet."}], "lines": [
+      "Six would do. Don't eat any. I'll know."
+    ], "speaker": "burl"},
+    "bear.blue.accepted": {"end": true, "lines": [
+      "Blue ones. North trees."
+    ], "speaker": "burl"},
+    "bear.blue.active": {"end": true, "lines": [
+      "Blue ones. North trees. Six. I'm counting."
+    ], "speaker": "burl"},
+    "bear.blue.ready": {"end": true, "lines": [
+      "Oh, look at them. Not one nibbled.",
+      "Found this in the roots. Warm. Yours."
+    ], "setFlag": "q.sq.burl.blue.handin", "speaker": "burl"},
     "bear.meet.1": {"clip": "wave", "lines": [
       "Quite a fall you took, sky-cub."
     ], "next": "bear.meet.2", "speaker": "burl"},

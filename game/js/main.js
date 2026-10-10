@@ -84,6 +84,7 @@ import { retintHand, lookOrDefault } from './quest/look/handLook.js'; // CHARGEN
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
 import { parseOccl, createHzbInvalidator } from './occlGate.js'; // OCCL-MAIN-01
 import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
+import { createQuestPickups } from './questPickups.js'; // QUESTS-01
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
 import { wireTelegraphs, telegraphsEnabled } from './fx/telegraphWire.js'; // TELEGRAPH-WIRE-01 (lane B1)
@@ -552,6 +553,9 @@ const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
   })
   : null;
 if (chestHook) gameHooks.register(chestHook);
+// QUESTS-01: generic world pickup prop + pack counts for collect/deliver objectives + hand-in reward grant (game/js/questPickups.js)
+const questPickups = (itemDefs && saveRelay) ? createQuestPickups({ getBook: () => saveRelay.quest.book, feed: (e) => saveRelay.quest.feed(e), defs: itemDefs }) : null;
+if (questPickups) gameHooks.register(questPickups);
 // US-090w: title menu before play. Off for `?title=0`, capture/bench/compare/cinematic pages, `?capture=1`, `?at=`/`?pose=` dev poses and bare `?level=` rooms.
 const menuWanted = params.get('title') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !params.has('at') && !params.has('pose') && !params.get('level') && !params.get('cinematic');
 // D-025 (US-038a): `renderTarget` now resizes IN PLACE (`engine.setGrid`
@@ -1369,6 +1373,7 @@ async function runGame(mode, cinematic = null) {
           gameHooks.emitSimple(name, id);
           if (name === 'quest:ready' && id === 'burl.boars' && crystal) crystal.check('ready'); // CH1-03
           if (name === 'quest:ready' && id === 'burl.boars' && dialogueCtl && dialogueCtl.open) burlReopen = true; // PO-CH1-07: boars were already dead when accepted -> Burl speaks again (the hand-in) once this box closes
+          if (name === 'quest:done' && questPickups) questPickups.grantReward(saveRelay.quest.book.lastReward); // QUESTS-01: hand-in reward -> pack (+ toast)
           if (tv && msg) { const bk = saveRelay.quest.book, qt = (bk.def(bk.index(id)) || {}).title; if (name === 'quest:accepted') tv.say('Quest accepted: ' + qt, msg.fg); else if (name === 'quest:done') tv.say('Quest complete: ' + qt, msg.fg); }
         };
       }

@@ -605,6 +605,10 @@ export function validateContent(ASSETS, opts = {}) {
       if (typeof pickup.interact === 'string' && pickup.interact.endsWith('.take')) itemIds.add(pickup.id);
     }
   }
+  for (const [wid, world] of Object.entries(worlds)) for (const e of world.entities || []) { // QUESTS-01: generic pickup props name a real item
+    const q = e.components?.questPickup;
+    if (q) check(itemIds.has(q.item) && Number.isInteger(q.n ?? 1) && (q.n ?? 1) >= 1, `worlds.${wid}.${e.id}.questPickup`, `item "${q.item}" not found in item defs (or bad n)`);
+  }
   const beastIds = new Set();
   for (const world of Object.values(worlds)) {
     for (const entity of world.entities || []) if (entity.type === 'beast') beastIds.add(entity.id);
@@ -659,6 +663,11 @@ export function validateContent(ASSETS, opts = {}) {
       if (typeof objective.text === 'string') check(objective.text.length <= MAX_OBJECTIVE_TEXT, `${base}.text`, `objective text is ${objective.text.length} chars, expected <= ${MAX_OBJECTIVE_TEXT}`);
       if (objective.when.type === 'area') {
         check(Object.hasOwn(areas, objective.when.id), `${base}.when.id`, `area "${objective.when.id}" not found in ${areaPath}`);
+      }
+      if (objective.when.type === 'collect' || objective.when.type === 'deliver') { // QUESTS-01
+        check(itemIds.has(objective.when.id), `${base}.when.id`, `item "${objective.when.id}" not found in item defs`);
+        const placed = Object.values(worlds).reduce((n, w) => n + (w.entities || []).filter(e => e.components?.questPickup?.item === objective.when.id).reduce((m, e) => m + (e.components.questPickup.n || 1), 0), 0);
+        check(objective.when.type === 'deliver' || placed >= objective.when.count, `${base}.when.count`, `needs ${objective.when.count} "${objective.when.id}" but only ${placed} placed as questPickup world entities`);
       }
       if (objective.when.type === 'item') {
         check(itemIds.has(objective.when.id), `${base}.when.id`, `item "${objective.when.id}" not found in item defs or level pickups`);

@@ -11,12 +11,16 @@ export function validateQuestDefinition(def) {
     if (seen.has(objective.id) || typeof objective.text !== 'string') throw new Error('quest: duplicate objective or invalid text');
     seen.add(objective.id);
     const when = objective.when;
-    if (!when || !['flag','item','area','beasts'].includes(when.type)) throw new Error('quest: invalid condition');
+    if (!when || !['flag','item','area','beasts','collect','deliver'].includes(when.type)) throw new Error('quest: invalid condition');
     if (when.type === 'beasts') {
       if (!Array.isArray(when.ids) || !when.ids.length || new Set(when.ids).size !== when.ids.length || !when.ids.every(safeId)
         || !Number.isInteger(when.count) || when.count < 1 || when.count > when.ids.length) throw new Error('quest: invalid beast targets');
     } else {
       requireId(when.id);
+      if (when.type === 'collect' || when.type === 'deliver') { // QUESTS-01: pack-counted item (event item:count sets counts[id])
+        if (!Number.isInteger(when.count) || when.count < 1) throw new Error('quest: invalid collect count');
+        if (when.type === 'deliver') requireId(when.to);
+      }
       if (when.type === 'flag' && !scalar(when.equals)) throw new Error('quest: invalid flag value');
     }
   }
@@ -27,6 +31,7 @@ function progress(state, when) {
   if (when.type === 'flag') return Object.hasOwn(state.flags, when.id) && state.flags[when.id] === when.equals ? 1 : 0;
   if (when.type === 'item') return state.items.includes(when.id) ? 1 : 0;
   if (when.type === 'area') return state.areas.includes(when.id) ? 1 : 0;
+  if (when.type === 'collect' || when.type === 'deliver') return Math.min(state.counts[when.id] || 0, when.count);
   let count = 0;
   for (const id of when.ids) if (state.deadBeasts.includes(id)) count++;
   return count;
@@ -43,12 +48,16 @@ function advance(state, def) {
 /** Restore validates a completed prefix; facts received early remain available to later objectives. */
 export function createQuest(def, saved = null) {
   validateQuestDefinition(def);
-  const state = { questVersion: 1, questId: def.id, flags: {}, items: [], deadBeasts: [], areas: [], completed: [] };
+  const state = { questVersion: 1, questId: def.id, flags: {}, items: [], deadBeasts: [], areas: [], completed: [], counts: {} };
   if (saved) {
     if (saved.questVersion !== 1 || saved.questId !== def.id || !saved.flags || typeof saved.flags !== 'object' || Array.isArray(saved.flags)) throw new Error('quest: incompatible save');
     for (const key of Object.keys(saved.flags).sort()) {
       requireId(key); if (!scalar(saved.flags[key])) throw new Error('quest: invalid saved flag');
       state.flags[key] = saved.flags[key];
+    }
+    if (saved.counts !== undefined) { // QUESTS-01: optional (older saves have none)
+      if (!saved.counts || typeof saved.counts !== 'object' || Array.isArray(saved.counts)) throw new Error('quest: invalid saved counts');
+      for (const key of Object.keys(saved.counts).sort()) { requireId(key); if (!Number.isInteger(saved.counts[key]) || saved.counts[key] < 1) throw new Error('quest: invalid saved count'); state.counts[key] = saved.counts[key]; }
     }
     for (const key of ['items','deadBeasts','areas','completed']) {
       if (!Array.isArray(saved[key]) || !saved[key].every(safeId) || new Set(saved[key]).size !== saved[key].length) throw new Error('quest: invalid saved ids');
@@ -63,11 +72,16 @@ export function createQuest(def, saved = null) {
 
 /** Known malformed events throw before mutation; unrelated event types are ignored. */
 export function applyQuestEvent(state, event, def) {
-  if (!event || !['flag:set','item:got','beast:died','area:entered'].includes(event.type)) return false;
+  if (!event || !['flag:set','item:got','beast:died','area:entered','item:count'].includes(event.type)) return false;
   const id = event.type === 'flag:set' ? event.key : event.id;
   requireId(id);
   let changed = false;
-  if (event.type === 'flag:set') {
+  if (event.type === 'item:count') { // absolute pack count (idempotent: never double counts)
+    const n = event.n;
+    if (!Number.isInteger(n) || n < 0) throw new Error('quest: invalid item count');
+    const cur = state.counts[id] || 0;
+    if (n !== cur) { if (n) state.counts[id] = n; else delete state.counts[id]; changed = true; }
+  } else if (event.type === 'flag:set') {
     if (!scalar(event.value)) throw new Error('quest: invalid event flag');
     changed = !Object.hasOwn(state.flags,id) || state.flags[id] !== event.value;
     if (changed) state.flags[id] = event.value;
@@ -93,7 +107,7 @@ export function questObjectives(state, def, out = []) {
 
 /** Canonical save bytes and an FNV-1a replay hash; save/hashing happens outside the per-frame sim. */
 export function stringifyQuest(state, def) {
-  return JSON.stringify(createQuest(def,state));
+  return JSON.stringify(createQuest(def,state), (k, v) => k === 'counts' && v && !Object.keys(v).length ? undefined : v); // empty counts stay out of old-shape saves/hashes
 }
 export function questHash(state, def) {
   const bytes = stringifyQuest(state,def);

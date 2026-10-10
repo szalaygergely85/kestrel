@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "id": "sq.burl.blue",
+  "title": "The Blue Ones",
+  "giver": { "npc": "bear" },
+  "abandonable": true,
+  "requires": [{ "quest": "burl.boars", "done": true }, { "quest": "m1", "step": "road" }],
+  "objectives": [
+    { "id": "sprigs", "text": "Pick six blue sprigs", "when": { "type": "collect", "id": "berry.blue", "count": 6 } },
+    { "id": "bring", "text": "Bring the sprigs to Burl", "when": { "type": "deliver", "id": "berry.blue", "count": 6, "to": "bear" } }
+  ],
+  "returnText": "Take the blue sprigs to Burl",
+  "reward": { "items": [{ "id": "gear.cloak.cloak.worn", "n": 1 }] }
+}

@@ -28,6 +28,8 @@ export function validateGiverQuest(def) {
     if (!Array.isArray(def.requires)) throw new Error('quest: requires must be an array');
     for (const r of def.requires) if (!r || typeof r.quest !== 'string' || (r.done !== true && typeof r.step !== 'string')) throw new Error('quest: invalid requires entry');
   }
+  for (const o of def.objectives) if (o.when.type === 'deliver' && o.when.to !== (def.giver.turnIn || def.giver.npc)) throw new Error('quest: deliver.to must be the hand-in npc (giver.turnIn or giver.npc)');
+  if (def.abandonable !== undefined && typeof def.abandonable !== 'boolean') throw new Error('quest: invalid abandonable');
   if (def.returnText !== undefined && typeof def.returnText !== 'string') throw new Error('quest: invalid returnText');
   if (def.reward !== undefined) {
     if (!def.reward || !Array.isArray(def.reward.items)) throw new Error('quest: invalid reward');
@@ -69,7 +71,8 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     for (const op of ACT_OPS) keys.set('q.' + id + '.' + op, { qi: i, op, act: true });
   }
 
-  const book = { main: entries[0].state, version: 0, onChange: null, lastReward: null, count: n };
+  const book = { main: entries[0].state, version: 0, onChange: null, lastReward: null, count: n, packOps: null /* QUESTS-01: {count(id), remove(id, n)} set by the game; deliver needs it */ };
+  const packCounts = new Map(); // last absolute pack count per item id (runtime mirror of item:count, re-applied on abandon)
 
   function met(i) {
     const r = requireSteps[i];
@@ -105,6 +108,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   book.statusOf = id => byId.has(id) ? statusOf(byId.get(id)) : -1;
   book.feed = function feed(event) {
     let changed = false;
+    if (event && event.type === 'item:count' && typeof event.id === 'string' && Number.isInteger(event.n)) { if (event.n > 0) packCounts.set(event.id, event.n); else packCounts.delete(event.id); }
     for (let i = 0; i < n; i++) if (applyQuestEvent(entries[i].state, event, entries[i].def)) changed = true;
     if (changed) { book.version++; settle(); }
     return changed;
@@ -123,6 +127,12 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     const i = byId.get(id);
     if (i === undefined || i === 0 || statusOf(i) !== READY) return null;
     const e = entries[i];
+    const dl = e.def.objectives.filter(o => o.when.type === 'deliver').map(o => o.when);
+    if (dl.length) { // QUESTS-01: items must still be in the pack; they leave it at hand-in
+      if (!book.packOps) return null;
+      for (const w of dl) if (book.packOps.count(w.id) < w.count) return null;
+      for (const w of dl) { book.packOps.remove(w.id, w.count); book.feed({ type: 'item:count', id: w.id, n: Math.max(0, book.packOps.count(w.id)) }); }
+    }
     e.handedIn = true; book.version++;
     const reward = e.def.reward ? deepFreeze(structuredClone(e.def.reward)) : NO_REWARD;
     book.lastReward = reward;
@@ -130,6 +140,29 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     e.prev = DONE;
     emit('quest:done', id);
     return reward;
+  };
+  /** QUESTS-01: J quest log "start stop". Only `abandonable: true` quests; progress resets, taken pickups stay taken, pack items stay (counts re-applied). */
+  book.canAbandon = function canAbandon(id) {
+    const i = byId.get(id);
+    if (i === undefined || i === 0) return false;
+    const s = statusOf(i);
+    return entries[i].def.abandonable === true && (s === ACTIVE || s === READY);
+  };
+  book.abandon = function abandon(id) {
+    if (!book.canAbandon(id)) return false;
+    const e = entries[byId.get(id)];
+    e.state = createQuest(e.def, null); e.accepted = false; e.seq = 0; e.prev = 0;
+    for (const [item, c] of packCounts) applyQuestEvent(e.state, { type: 'item:count', id: item, n: c }, e.def);
+    book.version++;
+    emit('quest:abandoned', id);
+    settle();
+    return true;
+  };
+  /** Item ids the quests count in the pack (collect/deliver), for the game's pack poll. */
+  book.countedItems = function countedItems() {
+    const out = new Set();
+    for (let i = 1; i < n; i++) for (const o of entries[i].def.objectives) if (o.when.type === 'collect' || o.when.type === 'deliver') out.add(o.when.id);
+    return [...out];
   };
   book.hasKey = function hasKey(key) {
     const k = keys.get(key);
