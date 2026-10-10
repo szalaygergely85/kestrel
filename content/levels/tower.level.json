@@ -22,7 +22,7 @@
     ";lkjxXb=OO=dJI....:.9##,",
     ";vwwwYP====+@HR....rL##,",
     ";vwwwwPPPPP~+FE....LL%#,",
-    ";;vvwwwwwvv,@DDgBAGLL%,,",
+    ";;vvwwwwwvv,@mDgBAGLL%,,",
     ",;;vvvvv;;,,,@qQfCfqt,,,",
     ",,;;;;;,,SNMWVUTtqCy,,,,",
     ",,,,,,,,,,,,,,,,,,,,,,,,"
@@ -94,6 +94,7 @@
     "j": {"ceilH": "sky", "ceilMat": "sky", "desc": "CH1-D1a: scree gully, 3.0 m (was hill path 5.4)", "floorH": 3, "floorMat": "rubble", "solid": false, "wallMat": "rock", "zone": "outside"},
     "k": {"ceilH": "sky", "ceilMat": "sky", "desc": "CH1-D1a: scree gully, 2.7 m (was hill path 4.6)", "floorH": 2.7, "floorMat": "grass", "solid": false, "wallMat": "rock", "zone": "outside"},
     "l": {"ceilH": "sky", "ceilMat": "sky", "desc": "CH1-D1a: gully mouth, 2.4 m = the hillside (was hill path 3.6)", "floorH": 2.4, "floorMat": "grass", "solid": false, "terrainFloor": true, "wallMat": "rock", "zone": "outside"},
+    "m": {"ceilH": "sky", "ceilMat": "sky", "desc": "STEP-HEIGHT-01 (owner: cannot step up): west half of the gap landing (13,10) raised to a 4.2 half-step so D 3.9 -> m 4.2 -> F 4.5 / E 4.2 are all <= 0.3 m", "floorH": 4.2, "floorMat": "floor", "solid": false, "wallMat": "stone", "zone": "upper"},
     "w": {"ceilH": "sky", "ceilMat": "sky", "desc": "rock spur under the summit, 5.4 m", "floorH": 5.4, "floorMat": "rock", "solid": false, "wallMat": "rock", "zone": "outside"},
     "v": {"ceilH": "sky", "ceilMat": "sky", "desc": "rock slope, 4.2 m", "floorH": 4.2, "floorMat": "rock", "solid": false, "wallMat": "rock", "zone": "outside"},
     ";": {"ceilH": "sky", "ceilMat": "sky", "desc": "hillside grass, 2.4 m", "floorH": 2.4, "floorMat": "grass", "solid": false, "terrainFloor": true, "wallMat": "rock", "zone": "outside"},
