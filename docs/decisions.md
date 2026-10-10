@@ -1115,3 +1115,8 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - **No dungeon now:** the M4 dungeon (US-094) is parked; the quest line stays in the open world.
 - **Quest line:** a proper main quest along the relays + simple side errands (pick up, deliver, fetch, reward items) with the giver '!' / '?' flow. Writer draft: docs/questline-2026-10-10.md (in progress).
 - **Loot = gear, not crafting materials (owner, 2026-10-10):** beasts, chests and containers drop gear with a low chance (shield, chest armour, head, boots, belt, gloves, ...) instead of crafting materials. Equipment + character window next to the item window (EQUIP epic, docs/equipment-epic-2026-10-10.md). Players can dress (visible gear).
+
+## D-066 - PC-B signs instead of PC-A (owner, 2026-10-11; recorded by the PC-B main session)
+- The owner delegates PC-A's sign-off to PC-B: PC-B architect verdicts (ARCH OK / ARCH CHANGES, opus or fable) and PC-B PO verdicts (PO OK / PO REJECT) are FINAL; no "PC-A to ratify" step is needed. PC-B may record decisions (D-xxx) on the owner's word and merge to master after the normal gates (tests + check-deps + validate-content + gpucompare vs the machine baseline + route walk).
+- Ratified now: D-053..D-065 and architecture 38.24-38.39 written by PC-B while PC-A was offline; the batch reviews arch-batch-2026-10-10-pcb.md, po-batch-2026-10-10-evening-pcb.md, po-ch1-flow-2026-10-10.md, arch-audit-2026-10-10.md, arch-audit2-2026-10-10.md; the D-025 grid-max amendment (GRID-MAX-01) when it lands.
+- If PC-A comes back online it follows the same rule (either PC may sign; the owner decides conflicts).
