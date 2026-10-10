@@ -28,6 +28,7 @@ import { KIND_TERRAIN, KIND_MODEL, KIND_MESH, FACE_PACKED } from '../../GBuffer.
 import { WET_DARK, WET_SPEC } from '../../detailShade.js';
 import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // CLOUD_Q_SHIFT: S8-B2-12c (38.13)
 import { SKY_GLOW_WGSL } from '../../skyGlow.js';
+import { FOG_SHAPE_WGSL } from '../../fogShape.js';
 import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE } from '../../terrainShade.js';
 
 
@@ -57,6 +58,7 @@ export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   // 38.23 entity tint table, APPENDED (no earlier word moves): etA.x = count (0 = branch skipped), etId = 8 u32 ids (written through a Uint32Array view), etC = rgb 0..1 + k
   { name: 'etA', type: 'vec4' }, { name: 'etId', type: 'vec4', count: 2 }, { name: 'etC', type: 'vec4', count: 8 },
   { name: 'skyCam', type: 'vec4' }, // AUD-40, APPENDED: shear-mode sky ray = (dirX + planeX*cx, dirY + planeY*cx): dirX, dirY, planeX, planeY
+  { name: 'fogView', type: 'vec4' }, // AUD-45, APPENDED: x = eye height (m), y = 1 when height fog + sun in-scatter are on (terrain worlds), z/w unused
 ]);
 
 export const SHADE_TEXTURES = Object.freeze([
@@ -286,6 +288,18 @@ fn faceK(face: i32) -> f32 { return su.faceK[u32(face) >> 2u][u32(face) & 3u]; }
 ${TERRAIN_SHADE_WGSL}
 
 ${SKY_GLOW_WGSL}
+${FOG_SHAPE_WGSL}
+// AUD-45: unit view direction of a cell for the standard fog (same rays as the sky: shear basis / pitched / ortho F).
+fn fogCellDir(cell: vec2i, gridSize: vec2i) -> vec3f {
+  if (su.projMode == 0) {
+    let cx = (2.0 * (f32(cell.x) + 0.5)) / f32(gridSize.x) - 1.0;
+    let hx = su.skyCam.x + su.skyCam.z * cx; let hy = su.skyCam.y + su.skyCam.w * cx;
+    let tanE = (su.horizonRow - f32(cell.y)) / su.planeDistY;
+    let ce = inverseSqrt(1.0 + tanE * tanE);
+    return vec3f(vec2f(hx, hy) * (inverseSqrt(max(hx * hx + hy * hy, 1e-12)) * ce), tanE * ce);
+  }
+  return normalize(select(pitchedCellDir(vec2f(cell), gridSize), su.pitchA.xyz, su.projMode == 2));
+}
 fn pickCode(setId: i32, entryIdx: i32, hA: f32, useAlt: bool) -> i32 {
   let t = textureLoad(uSetI, vec2i(2 + entryIdx, setId), 0);
   let cnt = t.x;
@@ -709,7 +723,14 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   let bgKAvg = bgKSum * invCount;
   let hAAvg = hAW; let hBAvg = hBW;
 
-  let f = select(select((dist - su.fogStart) / (su.fogFull - su.fogStart), 1.0, dist >= su.fogFull), 0.0, dist <= su.fogStart);
+  var f = select(select((dist - su.fogStart) / (su.fogFull - su.fogStart), 1.0, dist >= su.fogFull), 0.0, dist <= su.fogStart);
+  var fogFgC = su.fogFg; var fogBgC = su.fogBg;
+  if (su.fogView.y > 0.5 && f > 0.0) { // AUD-45: height fog + sun in-scatter (only where f > 0)
+    let fd = fogCellDir(cell, gridSize);
+    f = fogShapeF(f, dist, su.fogView.x, fd.z * inverseSqrt(max(fd.x * fd.x + fd.y * fd.y, 1e-12)));
+    let sw = fogScatterW(dot(fd, su.sunDir), su.sunDir.z, su.sunI);
+    fogFgC += (FOG_SUN_TINT - fogFgC) * sw; fogBgC += (FOG_SUN_TINT - fogBgC) * sw;
+  }
 
   var glyphCode: i32;${L.vars}
   if (gbAvg <= 0.0) { glyphCode = 0; }
@@ -758,8 +779,8 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
     }
   }
   if (f > 0.0) {
-    rgbF += (su.fogFg - rgbF) * f;
-    rgbBg += (su.fogBg - rgbBg) * f;
+    rgbF += (fogFgC - rgbF) * f;
+    rgbBg += (fogBgC - rgbBg) * f;
   }
 
   o.fg = vec4f(toByte01(rgbF.x), toByte01(rgbF.y), toByte01(rgbF.z), toByte01(f32(glyphCode)));

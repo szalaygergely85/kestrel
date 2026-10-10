@@ -30,7 +30,7 @@ const S_N = S('n'), S_GPUSKY = S('gpuSky'), S_PROJ = S('projMode'), S_SUNMAP = S
 const S_SPARSE_ALT = S('fogSparseAlt'), S_HAZE_ALT = S('fogHazeAlt');
 const S_SPARSE_C0 = S('fogSparseCode0'), S_SPARSE_C1 = S('fogSparseCode1'), S_HAZE_C0 = S('fogHazeCode0'), S_HAZE_C1 = S('fogHazeCode1');
 const S_ETA = S('etA'), S_ETID = S('etId'), S_ETC = S('etC'); // 38.23 tint words
-const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK'), S_SKYCAM = S('skyCam');
+const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK'), S_SKYCAM = S('skyCam'), S_FOGVIEW = S('fogView');
 /** 38.23: copy the tint table (fb.entityTints) into the ShadeU words: etA.x = count, etId (u32 view), etC rgb+k. Zero alloc; count 0 and cleared tail when absent. */
 export function writeEntityTints(su, su32, tints) {
   const n = tints && tints.count > 0 ? (tints.count > 8 ? 8 : tints.count) : 0;
@@ -231,6 +231,9 @@ export class WgShadePass {
       const yr = p._cam.yawDeg * Math.PI / 180, th = Math.tan(PROJ_HFOV_DEG * Math.PI / 360), dx = Math.sin(yr), dy = -Math.cos(yr);
       su[S_SKYCAM] = dx; su[S_SKYCAM + 1] = dy; su[S_SKYCAM + 2] = -dy * th; su[S_SKYCAM + 3] = dx * th;
     }
+    // AUD-45: height fog + sun in-scatter, same gate as the CPU compositor (terrain world with a time-of-day palette).
+    const fogShapeOn = useScene && !!p._world.terrain && !!(p._palette && p._palette.timeOfDay);
+    su[S_FOGVIEW] = fogShapeOn ? p._cam.z : 0; su[S_FOGVIEW + 1] = fogShapeOn ? 1 : 0;
     if (pitched) {
       const q = rp.pitch;
       su[S_PITCH_A] = q.fX; su[S_PITCH_A + 1] = q.fY; su[S_PITCH_A + 2] = q.fZ; su[S_PITCH_A + 3] = q.tanHalfX;
