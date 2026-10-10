@@ -71,3 +71,8 @@ export function createTitleMenuHost({ adapter, style = null, onNewGame, onContin
   };
   return host;
 }
+
+/** NEWGAME-PAUSED-01: isPaused() = !look.locked, so a menu start must re-lock the pointer (the menu key/click is the user gesture). */
+export function withRelock(fn, relock) {
+  return (...args) => { const r = fn(...args); try { relock(); } catch { /* arrow-key fallback */ } return r; };
+}

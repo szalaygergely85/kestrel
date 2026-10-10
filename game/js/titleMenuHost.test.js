@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createTitleMenuHost } from './titleMenuHost.js';
+import { createTitleMenuHost, withRelock } from './titleMenuHost.js';
 import { createMemoryAdapter } from './quest/save/saveState.js';
 
 const log = [];
@@ -20,7 +20,7 @@ assert.equal(h.active, false);
 // settings keeps the menu active
 log.length = 0;
 h = mk(createMemoryAdapter());
-for (let i = 0; i < 4; i++) h.step(keys('ArrowDown'));
+h.step(keys('ArrowDown')); // New game -> Settings (Continue/Load greyed)
 h.step(keys('Enter'));
 assert.deepEqual(log, [['set']]);
 assert.equal(h.active, true);
@@ -79,3 +79,32 @@ assert.equal(h.active, false);
   h2 = mkF([{ type: 'credits' }]); h2.consume(); assert.equal(h2.creditsOpen, true); assert.equal(h2.active, true);
 }
 console.log('titleMenuHost.test: ok');
+
+// NEWGAME-PAUSED-01: New game / Continue / Load end in live play. isPaused() = !look.locked, so each menu start must re-lock the pointer.
+{
+  const { isPaused } = await import('./ui/pause.js');
+  const look = { locked: false }, relocks = [];
+  const relock = () => { relocks.push(1); look.locked = true; }; // pointer lock granted by the menu key/click gesture
+  const paused = () => isPaused({ ending: false, look, isMapOpen: () => false });
+  const mkR = (ad) => createTitleMenuHost({ adapter: ad, onNewGame: withRelock(() => {}, relock), onContinue: withRelock(() => {}, relock), onSettings: () => {} });
+  let hr = mkR(createMemoryAdapter());
+  assert.equal(paused(), true, 'menu up: look not locked');
+  hr.step(keys('Enter')); hr.step(keys('Enter')); // New game -> first empty slot
+  assert.equal(hr.active, false);
+  assert.equal(paused(), false, 'after New game the sim runs (not paused)');
+  assert.equal(relocks.length, 1);
+  look.locked = false; // Esc pauses afterwards as before
+  assert.equal(paused(), true);
+  // Continue and Load slot
+  const adr = createMemoryAdapter();
+  adr.writeSlot(0, { saveVersion: 1, world: { version: 2, entities: [], structures: [] }, game: { quest: null, openedChests: [], deadBeasts: [] }, meta: { playerName: 'W', place: 'T', playTimeSec: 1 } });
+  hr = mkR(adr); look.locked = false;
+  hr.step(keys('ArrowDown')); hr.step(keys('Enter')); // Continue
+  assert.equal(paused(), false, 'after Continue the sim runs');
+  hr = mkR(adr); look.locked = false;
+  hr.step(keys('ArrowDown')); hr.step(keys('ArrowDown')); hr.step(keys('Enter')); // Load sub-card
+  assert.equal(hr.active, true); assert.equal(hr.menu.snapshot().mode, 'load');
+  hr.step(keys('Enter')); // slot 1
+  assert.equal(hr.active, false); assert.equal(paused(), false, 'after Load slot the sim runs');
+}
+console.log('titleMenuHost: new game / continue / load drop into play PASS');

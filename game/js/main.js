@@ -75,7 +75,7 @@ import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-05
 import { createWaystoneTouch } from './waystoneTouch.js'; // WAYSTONE-TOUCH-01
 import { createWaystoneWire } from './quest/wire/waystone.js'; // WAYSTONE-01w
 import { createTravel } from './quest/travel.js'; // WS1-07b: map travel (fade, teleport, reset)
-import { createTitleMenuHost } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
+import { createTitleMenuHost, withRelock } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { retintHand, lookOrDefault } from './quest/look/handLook.js'; // CHARGEN-16
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
@@ -692,6 +692,10 @@ if (wgPipeline && (wgPipeline.frameComplete || (isGeometryCompare && params.get(
   depthBuffer = engine.depthBuffer;
   gbuf = new GBuffer(rt.cols, rt.rows);
 }
+// QUALITY-BOOT-01: the WebGPU target is built at the 160x60 CPU grid; if the pipeline is not frameComplete yet at this point, the saved
+// quality's grid used to be dropped for the whole session (panel said Ultra, render stayed low; re-selecting Ultra called setGrid). Keep it pending.
+const bootCpuCols = rt.cols;
+let pendingBootGrid = !!(wgPipeline && rt.backend === 'webgpu' && (rt.cols !== gridResult.cols || rt.rows !== gridResult.rows) && !(isGeometryCompare) && !isCaptureOrBench);
 const particlePresets = window.ASSETS.particles;
 if (window.ASSETS.boarFx) window.ASSETS.boarFx.attach(); // US-079b: copy boarFx's corpseDust preset into particles.presets before the defineEmitter loop below
 if (particlePresets) {
@@ -1473,10 +1477,10 @@ async function runGame(mode, cinematic = null) {
     const makeMenuHost = () => createTitleMenuHost({
         adapter: createStorageAdapter(saveStorage()),
         style: window.ASSETS && window.ASSETS.uiStyle ? window.ASSETS.uiStyle.menu : null,
-        onNewGame: (slot, chosenLook) => { if (saveRelay) { saveRelay.setSlot(slot); if (chosenLook) saveRelay.look = chosenLook; } }, // CHARGEN-17: Confirm stores player.look in the new save
+        onNewGame: withRelock((slot, chosenLook) => { if (saveRelay) { saveRelay.setSlot(slot); if (chosenLook) saveRelay.look = chosenLook; } }, () => relockPointer()), // NEWGAME-PAUSED-01: menu key/click is the gesture that re-locks the pointer (else look.locked=false = isPaused) // CHARGEN-17: Confirm stores player.look in the new save
         // CHARGEN-17 parked (owner 2026-10-10: "i dont want character creation in the beggining"): New game starts straight away.
         // createCharCreate is not passed, so titleMenuHost keeps its old behaviour; game/js/ui/charCreate.js stays in the repo unused.
-        onContinue: (slot, save) => {
+        onContinue: withRelock((slot, save) => {
           if (!saveRelay) return;
           saveRelay.setSlot(slot);
           const w = saveRelay.load(assets, worldLoadOpts, true);
@@ -1485,7 +1489,7 @@ async function runGame(mode, cinematic = null) {
             console.warn('[save] restore failed, starting fresh:', err && err.message);
             guardLoad(() => engine.setWorld(deserialize(initialState, assets, worldLoadOpts)));
           }
-        },
+        }, () => relockPointer()),
         onSettings: () => openSettings({ assets, engine, look }),
         // CREDITS-MOUNT-01: licence inventory is fetched lazily on first open (menu only, never in capture/bench paths)
         createCredits: () => creditsInv && window.ASSETS?.uiStyle?.menu ? createCreditsView(creditsInv, { style: window.ASSETS.uiStyle.menu }) : null,
@@ -1626,6 +1630,7 @@ async function runGame(mode, cinematic = null) {
     updateSettings(dt, input, { assets, engine, look, canOpen: false });
     uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked() || !!(chapterCard && chapterCard.isLocked());
     titleMenuActive = !!(menuHost && menuHost.active);
+    if (pendingBootGrid && wgPipeline.frameComplete && rt.gpuActive) { pendingBootGrid = false; if (rt.cols === bootCpuCols) engine.setGrid(gridResult.cols, gridResult.rows); } // (skip if the player already picked a grid) QUALITY-BOOT-01
     ch1Hidden = isCaptureOrBench || !saveEnabled || titleMenuActive || ending || invOpen || cardOpen || isMapOpen() || isSettingsOpen() || isNoteOpen() || qlIsOpen() || !!(dialogueCtl && dialogueCtl.open) || !!(vitals && vitals.dead); // CH1-MOUNT: notices/barks hidden under any menu/dialogue
     notice.update(dt, ch1Hidden); if (chapterCard && !ending) chapterCard.update(dt); // CH1-04a / CH1-09
     const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || ((invOpen || cardOpen) && !ending)));

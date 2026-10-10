@@ -74,3 +74,11 @@ o = boot('shadows=dda&rays=4', { noPresets: true }); assert.deepEqual([o.shadowO
 // F3 line
 assert.match(describeQuality(boot('quality=low'), 240, 90, 1), /^quality: low \(param\)  grid 240x90  rays 1  shadows low  scatter 0.5  lodScale 0.6$/);
 console.log('gfxBoot.test.js ok');
+
+// QUALITY-BOOT-01: a saved Ultra boots with the full Ultra knobs (grid/rays/shadows/scatter/LOD), whatever legacy grid is in the blob.
+for (const grid of ['240x90', '400x150', '480x180']) {
+  const u = boot('', { saved: { quality: 'ultra', grid } });
+  assert.deepEqual([u.reqCols, u.reqRows, u.rays, u.shadowLevel, u.gfx.scatterDensity, u.gfx.lodScale], [480, 180, 4, 'high', 1, 1.25], 'saved ultra ' + grid);
+  assert.equal(u.quality.name, 'ultra'); assert.equal(u.quality.source, 'saved');
+}
+console.log('gfxBoot: saved Ultra applies fully at boot PASS');
