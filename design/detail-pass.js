@@ -119,7 +119,7 @@
     // densities, no reduced sets). Far = mid. Only the speckle layer (chips / knots / tufts) stays near-only.
     // Blank-share rule kept: no '.' at level 3 (floor sets: level 3 and 4).
     stoneMid:   [".'`", ".,`'", ",:;'", ":;,+", ";+:x", "+x=%", "x%#+", "%#&x"],
-    stoneFar:   [".'`", ".,`'", ",:;'", ":;,+", ";+:x", "+x=%", "x%#+", "%#&x"],
+    stoneFar:   [".'`", ".,`'", ",:;'", ":;,+", ";+:x", "+x=%", "x%#&+", "%#&@x"], // GS-01e: top two levels denser than stoneMid so far block tones keep contrast
     chip:       [".", "'", "'`", "`'", "\"'", "%'", "%&", "&%"],
     moss:       [".", ",", ",'", "\",", "\";", "\"%", "%&", "&@"],
     // US-028 D2 (blank share): with lift 0.12 + gamma 0.70 an 8-level set never lands below level 3 when
@@ -221,7 +221,7 @@
   var STONE = {
     albedo: 0.85, bgK: 0.28, seed: 11, detail: 18, jitter: 0.08,
     tones: [['stoneMid', 4], ['stoneMidHi', 3], ['stoneMidLo', 3]],
-    grid: { u: 0.8, v: 0.4, stagger: 0.5, shade: 0.55, tint: 'mortar', amount: 0.5, bgK: 0.16, cross: '|', maxCover: 0.25, tie: true },
+    grid: { u: 0.8, v: 0.4, stagger: 0.5, shade: 0.55, tint: 'mortar', amount: 0.5, bgK: 0.16, cross: '|', maxCover: 0.5, tie: true },
     face: { set: 'stoneFace', mid: 'stoneMid', far: 'stoneFar',
             bevel: { top: 0.05, topShade: 1.15, bottom: 0.05, bottomShade: 0.80 } },
     speckle: { set: 'chip', chance: 0.05, shade: 0.72 },

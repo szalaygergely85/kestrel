@@ -124,7 +124,7 @@
     stoneWarm:      '#9c8c72',
     stoneDeep:      '#655d52',
     // MESH-TONE-AMP-01: per-block tones within +-10 RGB of their base (same hue), replace the cool/warm/deep flip
-    stoneMidHi:     '#948978', stoneMidLo: '#807564',
+    stoneMidHi:     '#a29684', stoneMidLo: '#726857',
     rockHi:         '#94969a', rockLo:     '#808286',
     rubbleHi:       '#877e70', rubbleLo:   '#736a5c',
     flagHi:         '#847c70', flagLo:     '#70685c',
