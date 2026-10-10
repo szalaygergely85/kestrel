@@ -1730,6 +1730,7 @@ Note (KPKG-03 dev): tools/pack.mjs (spec `entries` from/to/exclude globs -> dete
 | RESIZE-RECOVER-01 | WG pipeline: failed grid resize retries (3x) instead of staying on the CPU path | P1 | arch-review [PC-B B1] | engine/render/gpu/wg/WgCellPipeline.js + test |
 | FRAME-ALLOC-03 | frameRenderer zero-alloc gate back under 16 KB / 1000 steps | P1 | arch-review [PC-B B1] | engine/render/frameRenderer.test.js (warm-up 25000), engine/render/sprites.js (camBasis uses pitchedTermsInto) |
 | GPU-OFF-REASON-01 | WG pipeline warns why the GPU path turned off (+ fix any settings-driven silent off) | P1 | arch-review [PC-B B1] | engine/render/gpu/wg/WgCellPipeline.js + test |
+| CULL-CAP-01 | GPU path fell back to CPU (4-9 fps) when >128 cull args slots were in view ('args slot capacity exceeded (130 > 128)', found via GPU-OFF-REASON-01): MAX_CULL_BATCHES 64 -> 128, args slots sized for 4 ranges per LOD, supports() rejects a group that would overflow (non-cull path) instead of throwing mid-frame | P0 | arch-review [PC-B main] (gpucompare + route walk + verify-wild PASS) | `engine/render/gpu/wg/passCull.js` + test |
 
 ### WILD-01 Voxel pose crossfade  [P1] [arch-review] [PC-B B2]
 - Note (kestrel-3): `sampleClip` -> `sampleInto` x2 in `voxelPose.js`; `pushInstance` returns slot, `blendInstance`, from-fields on raw/projected/shadow slots in `voxelPool.js`. fromW<=0 byte-identical: 288 poses (boar, bear, quadruped12, all clips/frames) vs HEAD voxelPose, 0 mismatches. fromW=1 equals from-pose to 1e-9 (not bit-exact: cur+(from-cur)*1).
