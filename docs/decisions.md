@@ -1068,3 +1068,4 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - Owner: "i wanna able to see, pick up, and finish" quests. Picked the **giver flow**: SEE = a `!` over an NPC with a quest + a map marker; PICK UP = talk -> quest text -> Accept / Later -> quest log; FINISH = NPC shows `?` when the steps are done -> talk -> hand in -> reward (item/coin) + "Quest complete". The boar quest becomes **Burl's quest** (first user of the flow).
 - **Fen removed for now** (the villager added on 2026-10-10 without an owner OK, CHARGEN-15): entity + dialogue out of world_m1; the add-on package system (38.33) stays for later NPCs.
 - Order: architect note + story rows -> programmer(s) -> owner walk.
+- Owner picks (2026-10-10, after 38.35): Burl's boar quest gives **no item reward** - only the "Quest complete" moment (no coin item; currency stays an open question; QG-D1 = the `?` marker only). Quest log key = **J**. Build go: QG-01..05 + QG-W1.
