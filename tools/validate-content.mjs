@@ -690,6 +690,7 @@ export function validateContent(ASSETS, opts = {}) {
   for (const { path, def } of quests) {
     reqEdges.set(def?.id, []);
     for (const r of def?.requires || []) {
+      if (!r || r.quest === undefined) continue; // flag-only requires ({flag}) have no quest edge
       const target = byQuestId.get(r.quest);
       check(!!target, `${path}.requires`, `required quest "${r.quest}" not found`);
       if (!target) continue;
