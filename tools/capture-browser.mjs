@@ -52,6 +52,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { withTimeFreeze, parseTimeArg } from './tool-url.mjs'; // DN-04a
 import { makeBaseline, diffBaseline, formatBaselineDiff, baselineMismatch } from './gpucompare-baseline.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -74,16 +75,18 @@ export function parseArgs(argv) {
   const opts = {
     mode: null, grid: null, port: null, variant: null, rays: null,
     import: undefined, // string path, or true meaning "read stdin"
-    diff: null, timeoutMs: 120000, swiftshader: false, backend: null,
+    diff: null, timeoutMs: 120000, swiftshader: false, backend: null, time: undefined,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => argv[++i];
+    if (a.startsWith('--time=')) { opts.time = parseTimeArg(a.slice(7)); continue; } // DN-04a
     if (a === '--mode') opts.mode = next();
     else if (a === '--grid') opts.grid = next();
     else if (a === '--port') opts.port = Number(next());
     else if (a === '--variant') opts.variant = next();
     else if (a === '--rays') opts.rays = Number(next());
+    else if (a === '--time') opts.time = parseTimeArg(next()); // DN-04a: frozen game hour (default 8)
     else if (a === '--query') opts.query = next();
     else if (a === '--stable') opts.stable = true; // FLICKER-WG-01 (flicker mode: &stable=1)
     else if (a === '--shadows') opts.shadows = next(); // ME-15e: appends &shadows=<map|off; dda maps to map> to the mode's own query
@@ -759,7 +762,9 @@ export async function runLiveCapture(opts) {
     // Server is started at the repo root (matches CLAUDE.md's own
     // `python -m http.server 8000` convention) - the entry point lives at
     // game/index.html, not at the root.
-    const url = `http://127.0.0.1:${opts.port}/${pagePathFor(opts.mode)}${query ? '?' + query : ''}`;
+    // DN-04a: dedicated WebGPU pages (no game clock) keep their bare URL; every game page gets timefreeze=1&time=<h>
+    const timedQuery = WEBGPU_PAGE_MODES.has(opts.mode) ? query : withTimeFreeze(query, opts.time);
+    const url = `http://127.0.0.1:${opts.port}/${pagePathFor(opts.mode)}${timedQuery ? '?' + timedQuery : ''}`;
     const navigated = new Promise((resolve) => {
       cdp.onEvent((method) => { if (method === 'Page.loadEventFired') resolve(); });
     });

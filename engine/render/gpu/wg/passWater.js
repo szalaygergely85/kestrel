@@ -27,6 +27,8 @@ import {
   WL_STRIDE, WL_SLOTS, WFOG_LEN, RIPPLE_SLOTS, DEFAULT_RIPPLE_GLYPH, DEFAULT_RIPPLE_GAIN,
   defaultWaterLooks, resolveWaterLooks, fillWaterSlotTable, waterFogParams,
 } from '../../waterLook.js';
+import { SKY_LUT_N } from '../wgsl/skyLut.js';
+import { skyLutFromPalette } from '../../waterReflect.js';
 import { sunFromWorld } from '../../lighting.js';
 import { PROJ_HFOV_DEG } from '../../projection.js';
 
@@ -39,6 +41,7 @@ const C_PLANEX = CF('planeX'), C_PLANEY = CF('planeY'), C_HORIZON = CF('horizonR
 const C_PA = CF('pitchA'), C_PB = CF('pitchB'), C_PC = CF('pitchC'), C_WL = CF('wl'), C_WFOG = CF('wfog');
 // S8-B2-13b (38.14, the note of record): splash ripples. `rippleCount` (i32), the global `rippleGlyph`/`rippleGain`
 // uniform (fb overrides, else waterLook.js defaults), and `ripple` (8 x vec4: x, y, age, amp per live ring).
+const C_REFLECT = CF('reflectU'), C_SKYLUT = CF('skyLut'); // AUD-42
 const C_RIPPLE_COUNT = CF('rippleCount'), C_RIPPLE_GLYPH = CF('rippleGlyph'), C_RIPPLE_GAIN = CF('rippleGain'), C_RIPPLE = CF('ripple');
 
 export class WgWaterPass {
@@ -60,6 +63,7 @@ export class WgWaterPass {
     this.wu = new Float32Array(WATER_BLOCK.sizeWords); this.wi = new Int32Array(this.wu.buffer); this.wb = new Uint32Array(this.wu.buffer);
     this.cu = new Float32Array(WATER_COMPOSITE_BLOCK.sizeWords); this.ci = new Int32Array(this.cu.buffer);
     this._rip32 = new Float32Array(RIPPLE_SLOTS * 4); // S8-B2-13b (38.14): packInto scratch, allocated once
+    this._lut = new Float32Array(4 * SKY_LUT_N); this._lutPal = null; this._lutTime = null; this._lutTop = 0; // AUD-42: sky LUT bake cache
     this.projMode = 0; this.view = null; // the raster pass's f64 viewProj (set by prepare)
     this.clearOpts = { clear: { color: [[WATER_CLEAR_X, 0, 0, 0]], depth: 1 } };
     this.waterTex = [{ slot: 0, texture: null }];
@@ -199,6 +203,12 @@ export class WgWaterPass {
       cu[C_PC] = q.uZ; cu[C_PC + 1] = q.tanHalfY; cu[C_PC + 2] = q.cosP; cu[C_PC + 3] = q.sinP;
     }
     cu.set(this.wlTable, C_WL); cu.set(this.wfog, C_WFOG);
+    const pal = p._palette; // AUD-42: re-bake only when the palette / time of day changes
+    if (pal !== this._lutPal || (pal && pal.defaultTime !== this._lutTime)) {
+      this._lutPal = pal; this._lutTime = pal ? pal.defaultTime : null; this._lutTop = skyLutFromPalette(pal, this._lut);
+      cu.set(this._lut, C_SKYLUT);
+    }
+    cu[C_REFLECT] = this._lutTop;
     // S8-B2-13b (38.14, the note of record): splash ripples, zero-alloc (this._rip32 preallocated on construct).
     // fb.ripples is duck-typed {packInto} (engine/fx/ripples.js); absent = 0 rings. 0 rings: only rippleCount
     // changes - the `ripple` words are never read past rippleCount (shader's early break), so leave them untouched.

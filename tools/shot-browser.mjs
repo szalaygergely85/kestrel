@@ -7,12 +7,13 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 import { rmSync, writeFileSync } from 'node:fs';
+import { withTimeFreeze, parseTimeArg } from './tool-url.mjs'; // DN-04a
 import { ROOT, findBrowserBinary, waitForHttp, killTree, connectCdp, buildLaunchFlags, validatePort } from './capture-browser.mjs';
 
-const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
+const args = Object.fromEntries(process.argv.slice(2).map((v) => (/^--time=/.test(v) ? ['--time', v.slice(7)] : v)).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
 const port = Number(args.port); validatePort(port);
 const backend = args.backend || 'webgl2';
-const url = `http://127.0.0.1:${port}/game/index.html?backend=${backend}&${args.query || 'save=0'}`;
+const url = `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`backend=${backend}&${args.query || 'save=0'}`, parseTimeArg(args.time))}`;
 const handles = {};
 function cleanup() {
   if (handles.b) killTree(handles.b.pid);

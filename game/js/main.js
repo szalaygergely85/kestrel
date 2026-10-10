@@ -114,7 +114,7 @@ import { createHitStop, hitStopEnabled } from './fx/hitStop.js'; // HITSTOP-01 (
 import { createDeathFlow, deathFlowEnabled } from './fx/deathFade.js'; // DEATH-FLOW-01 part 1 (lane B1)
 import { createHurtFx, hurtFxEnabled } from './fx/hurtFx.js'; // HURT-FX-01 (lane B1): low-hearts pulse only (hurt edge + kick = US-080a2)
 import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-SPARK-WIRE (lane B1)
-import { parsePointShadows } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
+import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
 import { parseGlow } from './glowOpt.js'; // EMIS-03/04: bleed + halo knob
 import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
 import { PHYSICS } from '../../engine/index.js';
@@ -394,7 +394,7 @@ if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
 // WG-5b: WebGPU is the only backend (`?backend=` is ignored with a warning).
 const shadowOpts = bootOpts.shadowOpts; // GFX-01w: shadow level from the preset (resolveShadowLevel) + ?shadows= / ?shadowinst / ?shadowres / ?shadowcast overrides (ME-15e/f, D-043: map is the default)
 const occlOpt = parseOccl(params, 'webgpu');
-const pointShadowOpt = parsePointShadows(params, resolvedQuality && resolvedQuality.name); // ME-16e: default OFF in every mode unless the URL sets it
+const pointShadowOpt = parsePointShadows(params, resolvedQuality && resolvedQuality.name, presetPointShadowsOn(resolvedQuality, isCaptureOrBench, params)); // ME-16e/AUD-44: ON by preset (high/ultra), `?pointshadows=0|N` overrides
 const tCR = bootNow();
 const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgpu', onWebGpuMissing,
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
@@ -442,7 +442,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
 try {
   const questDef = await (await fetch('../content/quests/m1.quest.json')).json();
   if (saveEnabled) { try { bearBarks = await (await fetch('../content/dialogue/bear.barks.json')).json(); } catch (e) { console.warn('[barks] bear.barks.json unavailable'); } }
-  const giverDefs = [await (await fetch('../content/quests/burl.boars.quest.json')).json()]; // QG-03 (D-058): giver quests, state in the quest book
+  const giverDefs = [await (await fetch('../content/quests/tower.blade.quest.json')).json(), await (await fetch('../content/quests/burl.boars.quest.json')).json()]; // QG-03 (D-058): giver quests, state in the quest book
   const charKit = await (await fetch('../content/chargen/human.charkit.json')).json(); // CHARGEN-16: kit default look + hand skin tones
   saveRelay = createSaveRelay({ storage: saveStorage(), questDef, giverDefs, enabled: saveEnabled, defaultLook: charKit.defaults });
   window.__charKit = charKit;
@@ -456,7 +456,7 @@ try {
       { objectiveId: 'leave', targets: ['doorMarker'] }, { objectiveId: 'follow', targets: ['bear'] }, { objectiveId: 'waystone', targets: ['endMarker'] },
       { objectiveId: 'road', targets: ['roadWest'] }, { objectiveId: 'relayFound', targets: ['relayBend'] }, { objectiveId: 'relay1', targets: ['relayBend'] }, { objectiveId: 'fen', targets: ['fen'] }]);
     const MARK_AREA = { doorMarker: 'towerDoor', roadWest: 'roadWest' }; const MARK_AT = { doorMarker: { x: 1495.5, y: 1030.5 } }; // owner 2026-10-10: the leave marker hangs in the open SW doorway (cell Q), not at the area centre (that sat in the wall) // marker id -> world area trigger id (no entity)
-    const MARK_TOP = { endMarker: 3.0, bear: 1.1 }; // prop top above its base z (waystone 24 voxels x 0.125 m; bear 22 voxels x 0.05 m = 1.1 m, glyph floats 0.35 m above); notes would use z + 1.55 (owner 2026-10-10: "!" too high)
+    const MARK_TOP = { endMarker: 3.0, bear: 1.1, noteKeepLight: 0.75 }; // prop top above its base z (waystone 24 voxels x 0.125 m; bear 22 voxels x 0.05 m = 1.1 m, glyph floats 0.35 m above); notes would use z + 1.55 (owner 2026-10-10: "!" too high)
     gameHooks.setQuestSource((out) => { const st = saveRelay.quest.state; out.done = saveRelay.quest.done; out.id = out.done ? '' : questDef.objectives[st.completed.length].id; out.targets = qm.markerTargets(st); });
     let markN = 0;
     const markHandle = (model) => { // entity handle for one marker; re-spawns itself when a world reload dropped the entity
@@ -474,7 +474,8 @@ try {
         setPos(a, b, c) { x = a; y = b; z = c; push(); },
       };
     };
-    const markResolve = (id, out) => { const h = markWorld && markWorld.get(id), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const at = MARK_AT[id] || tr, gz = markWorld.heightAt(at.x, at.y); out.x = at.x; out.y = at.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y; out.z = t.z + (MARK_TOP[id] || 1.55); return true; };
+    const MARK_ENT = { noteKeepLight: 'tower.noteKeepLight' }; // level props are world entities '<placementId>.<propId>'
+    const markResolve = (id, out) => { const h = markWorld && markWorld.get(MARK_ENT[id] || id), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const at = MARK_AT[id] || tr, gz = markWorld.heightAt(at.x, at.y); out.x = at.x; out.y = at.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y; out.z = t.z + (MARK_TOP[id] || 1.55); return true; };
     registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle('questMark') });
     // QG-04: giver markers over Burl: '!' while his quest is available, '?' while ready, none while active/done (book.giverMarks)
     const gAvail = [], gReady = [];
@@ -1527,6 +1528,8 @@ async function runGame(mode, cinematic = null) {
 
   function update(dt) {
     lapStart();
+    // QUALITY-BOOT-01: apply the saved quality's grid as soon as the GPU pipeline renders - BEFORE the title-menu early return below (it used to sit after it, so a boot via the title menu stayed at the CPU grid). Skipped if the player already picked a grid.
+    if (pendingBootGrid && wgPipeline.frameComplete && rt.gpuActive) { pendingBootGrid = false; if (rt.cols === bootCpuCols) engine.setGrid(gridResult.cols, gridResult.rows); }
     simTime += dt;
     clothTick++;
     if (cinematic) {
@@ -1631,7 +1634,6 @@ async function runGame(mode, cinematic = null) {
     updateSettings(dt, input, { assets, engine, look, canOpen: false });
     uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked() || !!(chapterCard && chapterCard.isLocked());
     titleMenuActive = !!(menuHost && menuHost.active);
-    if (pendingBootGrid && wgPipeline.frameComplete && rt.gpuActive) { pendingBootGrid = false; if (rt.cols === bootCpuCols) engine.setGrid(gridResult.cols, gridResult.rows); } // (skip if the player already picked a grid) QUALITY-BOOT-01
     ch1Hidden = isCaptureOrBench || !saveEnabled || titleMenuActive || ending || invOpen || cardOpen || isMapOpen() || isSettingsOpen() || isNoteOpen() || qlIsOpen() || !!(dialogueCtl && dialogueCtl.open) || !!(vitals && vitals.dead); // CH1-MOUNT: notices/barks hidden under any menu/dialogue
     notice.update(dt, ch1Hidden); if (chapterCard && !ending) chapterCard.update(dt); // CH1-04a / CH1-09
     const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || ((invOpen || cardOpen) && !ending)));
@@ -1780,6 +1782,7 @@ async function runGame(mode, cinematic = null) {
       // no-op while no note is open; the close guard (`state === 'open'`)
       // keeps the opening E press from also closing it.
       stepNoteRead(dt, input, !!(look && look.locked)); // BUG-NOTE-ESC-01: Esc under pointer lock = lock lost = close
+      if (saveRelay && engine.world && engine.world.state['notes.keepLight.read'] === true) saveRelay.quest.book.actKey('q.tower.blade.accept'); // reading the wake-spot page accepts 'A Blade in the Ashes' (no-op unless available)
       // US-022: the relay's own wake timer (clip switch wake -> awake, point
       // light on + 1.0 s grow) - a no-op every step before `beacon.light`
       // fires (game/js/quest/beacon.js), same "reads its own state key" split

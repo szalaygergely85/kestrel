@@ -4,6 +4,7 @@
 // Shots: docs/test-reports/captures/relay-dead.png / relay-awake.png.
 // Run: node tools/verify-relay-wake.mjs <port 9500-9574> [backend]   (CDP = port+1; backend webgpu default)
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
@@ -30,7 +31,7 @@ try {
     if (m === 'Runtime.consoleAPICalled' && p.type === 'error') errors.push(p.args.map((a) => a.value ?? a.description).join(' '));
   });
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 640, height: 360, deviceScaleFactor: 1, mobile: false });
-  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&save=1&backend=${backend}` });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`dev=1&save=1&backend=${backend}`)}` });
   let ready = false;
   for (let i = 0; i < 150; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.world && window.__debug.playerHandle && window.__debug.relayWake)')) { ready = true; break; } }
   assert.ok(ready, 'world / relayWake never ready: ' + JSON.stringify(errors));

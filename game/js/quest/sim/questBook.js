@@ -10,14 +10,23 @@ const ACT_OPS = ['accept', 'handin'];
 const NO_REWARD = Object.freeze({ items: Object.freeze([]) });
 // Old saves (pre-book): the boar fight lived in m1 step `beasts`, entered after step `sword`.
 const LEGACY = { 'burl.boars': { afterStep: 'sword', doneStep: 'beasts' } };
+const BLADE = 'tower.blade'; // chain quest given by the wake-spot note, turned in at Burl; saves from before it get it derived from m1 facts
+
+/** tower.blade entry for an old save: facts (items/areas) copied from m1; accepted once the sword was taken; handed in once the boar quest was begun. */
+function bladeFromMain(def, main, boars) {
+  if (!def || !Array.isArray(main?.items) || !main.items.includes('sword')) return null;
+  const q = createQuest(def, { questVersion: 1, questId: def.id, flags: {}, items: [...main.items], deadBeasts: [], areas: [...(main.areas || [])], completed: [] });
+  return { quest: JSON.parse(stringifyQuest(q, def)), accepted: true, handedIn: !!(boars && (boars.accepted || boars.handedIn)) };
+}
 
 export function validateGiverQuest(def) {
   validateQuestDefinition(def);
   if (!QUEST_ID.test(def.id)) throw new Error('quest: invalid giver quest id');
   if (!def.giver || typeof def.giver.npc !== 'string' || !def.giver.npc) throw new Error('quest: giver.npc required');
+  if (def.giver.turnIn !== undefined && (typeof def.giver.turnIn !== 'string' || !def.giver.turnIn)) throw new Error('quest: invalid giver.turnIn');
   if (def.requires !== undefined) {
     if (!Array.isArray(def.requires)) throw new Error('quest: requires must be an array');
-    for (const r of def.requires) if (!r || typeof r.quest !== 'string' || typeof r.step !== 'string') throw new Error('quest: invalid requires entry');
+    for (const r of def.requires) if (!r || typeof r.quest !== 'string' || (r.done !== true && typeof r.step !== 'string')) throw new Error('quest: invalid requires entry');
   }
   if (def.returnText !== undefined && typeof def.returnText !== 'string') throw new Error('quest: invalid returnText');
   if (def.reward !== undefined) {
@@ -40,7 +49,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     if (ids.has(def.id)) throw new Error('quest: duplicate quest id ' + def.id);
     ids.add(def.id);
     const s = saved?.quests?.[def.id];
-    const e = { def, giver: def.giver.npc, state: createQuest(def, s ? s.quest : null), accepted: !!(s && s.accepted === true), handedIn: !!(s && s.handedIn === true), seq: 0, prev: 0 };
+    const e = { def, giver: def.giver.npc, turnIn: def.giver.turnIn || def.giver.npc, state: createQuest(def, s ? s.quest : null), accepted: !!(s && s.accepted === true), handedIn: !!(s && s.handedIn === true), seq: 0, prev: 0 };
     if (e.accepted) e.seq = ++seqCounter; // restore: array order stands in for accept order
     entries.push(e);
   }
@@ -48,6 +57,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   const n = entries.length;
   const requireSteps = entries.map(e => (e.def.requires || []).map(r => {
     const qi = byId.get(r.quest); if (qi === undefined) throw new Error('quest: requires unknown quest ' + r.quest);
+    if (r.done === true) return { qi, si: -1 }; // giver quest handed in (turned in at its giver)
     const si = entries[qi].def.objectives.findIndex(o => o.id === r.step);
     if (si < 0) throw new Error('quest: requires unknown step ' + r.step);
     return { qi, si };
@@ -63,15 +73,17 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
 
   function met(i) {
     const r = requireSteps[i];
-    for (let k = 0; k < r.length; k++) if (entries[r[k].qi].state.completed.length <= r[k].si) return false;
+    for (let k = 0; k < r.length; k++) {
+      const q = entries[r[k].qi];
+      if (r[k].si < 0 ? !q.handedIn : q.state.completed.length <= r[k].si) return false;
+    }
     return true;
   }
   function statusOf(i) {
     const e = entries[i];
     if (i === 0) return e.state.completed.length >= e.def.objectives.length ? DONE : ACTIVE;
     if (e.handedIn) return DONE;
-    if (!met(i)) return UNAVAILABLE;
-    if (!e.accepted) return AVAILABLE;
+    if (!e.accepted) return met(i) ? AVAILABLE : UNAVAILABLE; // an accepted quest never goes back to unavailable (old saves)
     return e.state.completed.length < e.def.objectives.length ? ACTIVE : READY;
   }
   function emit(name, id) { if (book.onChange) book.onChange(name, id); }
@@ -134,7 +146,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     for (let i = 1; i < n; i++) {
       const s = statusOf(i);
       if (s === AVAILABLE) outAvail[a++] = entries[i].giver;
-      else if (s === READY) outReady[r++] = entries[i].giver;
+      else if (s === READY) outReady[r++] = entries[i].turnIn; // '?' hangs where the quest is handed in (default: the giver)
     }
     outAvail.length = a; outReady.length = r;
   };
@@ -164,8 +176,13 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
 
 /** Old save (no game.quests) -> quests map for the giver quests, or null. Pure; no retroactive reward. */
 export function migrateQuestSave(game, defs) {
-  if (game?.quests) return game.quests;
   const main = game?.quest;
+  if (game?.quests) {
+    const bd = (defs.givers || []).find(d => d.id === BLADE);
+    if (!bd || game.quests[BLADE]) return game.quests;
+    const b = bladeFromMain(bd, main, game.quests['burl.boars']);
+    return b ? { ...game.quests, [BLADE]: b } : game.quests;
+  }
   if (!main || !Array.isArray(main.completed)) return null;
   const out = {};
   let any = false;
@@ -182,6 +199,8 @@ export function migrateQuestSave(game, defs) {
     out[def.id] = { quest: JSON.parse(stringifyQuest(q, def)), accepted: true, handedIn: done };
     any = true;
   }
+  const bd = (defs.givers || []).find(d => d.id === BLADE), b = bladeFromMain(bd, main, out['burl.boars']);
+  if (b) { out[BLADE] = b; any = true; }
   return any ? out : null;
 }
 

@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, evaluateAsync, killTree } from './capture-browser.mjs';
 
 const args = process.argv.slice(2);
@@ -27,7 +28,7 @@ try {
   cdp = await connectCdp(port + 1, 15000);
   await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
   const errors = []; cdp.onEvent((m, p) => { if (m === 'Runtime.exceptionThrown') errors.push(p.exceptionDetails.text + ' ' + (p.exceptionDetails.exception && p.exceptionDetails.exception.description)); if (m === 'Runtime.consoleAPICalled' && /gpucompare|error/i.test(JSON.stringify(p.args))) errors.push(JSON.stringify(p.args.map((a) => a.value)).slice(0, 300)); });
-  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?gpucompare=1&renderer=mesh&backend=${backend}&${q}` });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`gpucompare=1&renderer=mesh&backend=${backend}&${q}`)}` });
   for (let i = 0; i < 500; i++) { await pause(500); if (await evaluate(cdp, '!!window.__gpuCompare')) break; }
   console.log(JSON.stringify(errors.filter((e) => /FAIL|violat/i.test(e)).slice(0,6)).slice(0,4500));
   console.log(await evaluate(cdp, 'JSON.stringify({ rows: (window.__gpuCompare||{}).rows && window.__gpuCompare.rows.map(r => [r.pose, r.ok]), probe: window.__gpuProbe })'));

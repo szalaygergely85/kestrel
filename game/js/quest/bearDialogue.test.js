@@ -79,28 +79,32 @@ const you = (t) => 'YOU: ' + t;
 // 8 repeat
 { const f = mk('bear.talked'); const w = walk(f, 0);
   ok('8 talked: only the repeat line', ids(w.said) === ids([burl('Back again? The berries are still mine. Mostly.')])); }
-// 9 first encounter (default); flows into the offer
+// 9 first encounter = turning in 'A Blade in the Ashes' (q.tower.blade.ready); flows into the boar offer
+const R = 'q.tower.blade.ready';
 {
-  const f = mk(); const w = walk(f, 0); // meet choice 0 (crash), offer choice 0 (accept)
+  const f = mk(R); const w = walk(f, 0); // meet choice 0 (crash), offer choice 0 (accept)
   ok('9 fresh: opens with the quote, 10 meet lines then the crash exchange', first(w) === burl('Quite a fall you took, sky-cub.') && w.said[9] === burl('but a bear with words troubles you?') && w.said[10] === burl('Hard to miss a burning sky-boat.') && w.said[13] === burl('Not much of one now.'), w.said.slice(8, 14).join('|'));
   ok('9 fresh crash+accept: 10 + 4 + 10 + 2 = 26 lines; talked + accept set', w.said.length === 26 && f.s.has('bear.talked') && f.s.has('q.burl.boars.accept'), w.said.length);
   ok('9 fresh: wave clip on the first line', w.clips[0] === 'wave');
-  const g = mk(); const w2 = walk(g, 1); // meet choice 1 (west) skips the crash lines; offer choice 1 (Not yet)
-  ok('9 fresh west+later: no crash lines (10 + 10 + 1 = 21), talked set, no accept', !w2.said.includes(burl('Hard to miss a burning sky-boat.')) && w2.said.length === 21 && g.s.has('bear.talked') && !g.s.has('q.burl.boars.accept'), w2.said.length);
-  const h = mk(); const r = createDialogueRunner({}); r.open(comp, h); r.press(); r.press(); r.close();
-  ok('9 Esc halfway through the meet: nothing set', h.s.size === 0);
+  const g = mk(R); const w2 = walk(g, 1); // meet choice 1 (west) skips the crash lines; offer choice 1 (Not yet)
+  ok('9 fresh west+later: no crash lines (10 + 10 + 1 = 21), talked set, no accept, blade handed in', !w2.said.includes(burl('Hard to miss a burning sky-boat.')) && w2.said.length === 21 && g.s.has('bear.talked') && g.s.has('q.tower.blade.handin') && !g.s.has('q.burl.boars.accept'), w2.said.length);
+  const h = mk(R); const r = createDialogueRunner({}); r.open(comp, h); r.press(); r.press(); r.close();
+  ok('9 Esc halfway through the meet: nothing set', h.s.size === 1 && !h.s.has('q.tower.blade.handin'));
 }
+// 9b before the blade is done: one pre-quest line, no flags, nothing offered
+{ for (const have of [[], ['q.tower.blade.available'], ['q.tower.blade.active']]) { const f = mk(...have); const w = walk(f, 0);
+  ok('9b early (' + have + '): early lines, no new flags', ids(w.said) === ids([burl('Out of the tower already, sky-cub? Empty-pawed?'), burl('Climb back up. The top holds more than a view.')]) && f.s.size === have.length, w.said.join('|')); } }
 // graph-wide
 {
   const reach = new Set(), st = comp.entry.map((e) => e.node);
   while (st.length) { const i = st.pop(); if (reach.has(i)) continue; reach.add(i); const n = comp.nodes[i]; if (n.next != null && n.next >= 0) st.push(n.next); for (const c of n.choices) st.push(c.next); }
   ok(`every node reachable (${reach.size}/${comp.nodes.length})`, reach.size === comp.nodes.length);
-  ok('10 entries, last is unconditional', comp.entry.length === 10 && comp.entry[9].requires === null);
+  ok('11 entries, last is unconditional', comp.entry.length === 11 && comp.entry[10].requires === null);
   const long = comp.nodes.flatMap((n) => n.lines).filter((l) => l.length > 56);
   ok('every line <= 56 chars', long.length === 0, long.join('|'));
   ok('D-013: no player name in the lines', !comp.nodes.flatMap((n) => n.lines).some((l) => /\bWick\b/.test(l)));
   const flags = new Set(comp.nodes.flatMap((n) => [n.setFlag, ...n.choices.map((c) => c.setFlag)]).filter(Boolean));
-  ok('flags set by the graph', ids([...flags].sort()) === ids(['bear.stone.told', 'bear.talked', 'q.burl.boars.accept', 'q.burl.boars.handin', 's.burl.depart', 's.burl.follow']), [...flags].join());
+  ok('flags set by the graph', ids([...flags].sort()) === ids(['bear.stone.told', 'bear.talked', 'q.burl.boars.accept', 'q.burl.boars.handin', 'q.tower.blade.handin', 's.burl.depart', 's.burl.follow']), [...flags].join());
 }
 // barks file shape
 {

@@ -1098,3 +1098,11 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - Replaces the D-059 "in between" proportions: **big head ~1/4 of the body**, large expressive face (heavy dark brows, narrow eyes with a highlight, defined nose, full beard as an option, mouth line), chunky simple limbs, clean blocky shading with a few tones per material; outfits with readable texture (e.g. chainmail checker, tabard with an emblem, belt sash). Beard, chainmail, tabard become generator pieces. Default res stays 1/1.
 - Owner tower picks (2026-10-10, 38.37 questions): walls **12-14 m + crown** (about double today), bottom entrance faces **south-west** (toward Burl and the road). Unblocks CH1-D1a/D1b.
 - Owner note on CHARGEN-26 (2026-10-10, end of session): "my issue with the model is the details... i think you can still add more... but after our break" -> after the break: a detail pass on the character model (more detail in face, hair, clothes, hands - follow the D-063 reference closely). Not started.
+
+## D-064 - Stage 2 ford, day/night, quest chain, tower door, waystone, meadow (owner, 2026-10-10; recorded by the PC-B main session)
+- **World stage 2 ford (OQ-WS2-1):** the river crossing is **stepping stones** (no wading, no bridge). Swimming / ford gameplay (OQ-WS2-3), relay #2 position (OQ-WS2-2) and the far-tree swap (OQ-WS2-4) not yet answered.
+- **Day/night in play (AUD-41):** **yes** - the time of day runs during play (sun path, sky/light ramps already exist for cinematics / `?time=`). Needs an architect note (cycle length, save, night lighting, quest/beast effects) before programming.
+- **Quest flow (QUEST-CHAIN-GATE-01):** chain quests with giver marks: '!' over the wake-spot note -> 'A Blade in the Ashes' (climb, sword, leave) -> '?' over Burl to hand in -> Burl '!' for the boars -> '?' when done, etc. A giver quest only shows its mark once the previous one is handed in.
+- **Tower door (TOWER-DOOR-OPEN-01):** the south-west door is open from the start (no bar, no sword gate); the note sends the player up.
+- **Waystone:** no brass bowl / crystal on top (WAYSTONE-NOBOWL); state shows on the carved mark only.
+- **Meadow:** no voxel stones; bushes ~1.3-1.4 m; every plant/bush randomised in size (+-20/25 %).

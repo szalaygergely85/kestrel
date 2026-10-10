@@ -106,9 +106,9 @@ ok('deterministic ids/order: level colliders, authored props, then kinematic NPC
 
 {
   const base = world.colliders.find((c) => c.id === 'tower');
-  ok('base collider AABB x matches structure bbox', Math.abs(base.min[0] - tower.bbox.x0) < 1e-6 && Math.abs(base.max[0] - tower.bbox.x1) < 1e-6,
+  ok('base collider AABB x inside structure bbox (GS-01d: terrainFloor ring cells emit no floor, <= 1 cell short)', base.min[0] >= tower.bbox.x0 - 1e-6 && base.max[0] <= tower.bbox.x1 + 1e-6 && base.min[0] - tower.bbox.x0 <= 1 + 1e-6 && tower.bbox.x1 - base.max[0] <= 1 + 1e-6,
     `min.x=${base.min[0]} max.x=${base.max[0]} bbox=${tower.bbox.x0}..${tower.bbox.x1}`);
-  ok('base collider AABB y matches structure bbox', Math.abs(base.min[1] - tower.bbox.y0) < 1e-6 && Math.abs(base.max[1] - tower.bbox.y1) < 1e-6,
+  ok('base collider AABB y inside structure bbox (GS-01d: terrainFloor ring cells emit no floor, <= 1 cell short)', base.min[1] >= tower.bbox.y0 - 1e-6 && base.max[1] <= tower.bbox.y1 + 1e-6 && base.min[1] - tower.bbox.y0 <= 1 + 1e-6 && tower.bbox.y1 - base.max[1] <= 1 + 1e-6,
     `min.y=${base.min[1]} max.y=${base.max[1]} bbox=${tower.bbox.y0}..${tower.bbox.y1}`);
   ok('base collider AABB z is a sane range (below floor, above summit)', base.min[2] < tower.origin.z && base.max[2] > tower.origin.z + 6,
     `min.z=${base.min[2]} max.z=${base.max[2]}`);

@@ -26,6 +26,7 @@ import { MAX_LEVELS } from '../ShadeTextures.js';
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
 import { KIND_TERRAIN, KIND_MODEL, KIND_MESH, FACE_PACKED } from '../../GBuffer.js';
 import { WET_DARK, WET_SPEC } from '../../detailShade.js';
+import { VEG_TINT_WGSL } from '../../../mesh/vegTint.js'; // AUD-47
 import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // CLOUD_Q_SHIFT: S8-B2-12c (38.13)
 import { SKY_GLOW_WGSL } from '../../skyGlow.js';
 import { FOG_SHAPE_WGSL } from '../../fogShape.js';
@@ -59,6 +60,7 @@ export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'etA', type: 'vec4' }, { name: 'etId', type: 'vec4', count: 2 }, { name: 'etC', type: 'vec4', count: 8 },
   { name: 'skyCam', type: 'vec4' }, // AUD-40, APPENDED: shear-mode sky ray = (dirX + planeX*cx, dirY + planeY*cx): dirX, dirY, planeX, planeY
   { name: 'fogView', type: 'vec4' }, // AUD-45, APPENDED: x = eye height (m), y = 1 when height fog + sun in-scatter are on (terrain worlds), z/w unused
+  { name: 'skyGlowOn', type: 'vec4' }, // AUD-40 fix, APPENDED: x = 1 when sky glow + horizon haze apply (compositor gate: terrain world + timeOfDay palette), written every frame
 ]);
 
 export const SHADE_TEXTURES = Object.freeze([
@@ -246,7 +248,7 @@ var<private> POW2: array<f32, 6> = array<f32, 6>(0.125, 0.25, 0.5, 1.0, 2.0, 4.0
 
 // 38.23: one channel of the entity tint, literal twin of entityTint.js tintChannel (c on the 0..255 scale, t = rgb 0..1).
 fn tintCh(c: f32, t: f32, k: f32) -> f32 { return c + (t * 255.0 - c) * k; }
-// First table entry matching objectId, or -1 (twin: entityTintAt).
+${VEG_TINT_WGSL}// First table entry matching objectId, or -1 (twin: entityTintAt).
 fn tintIndex(oid: u32, count: i32) -> i32 {
   for (var i = 0; i < 8; i++) {
     if (i >= count) { break; }
@@ -594,7 +596,8 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
       } else {
         skyDir = normalize(select(pitchedCellDir(vec2f(cell), gridSize), su.pitchA.xyz, su.projMode == 2));
       }
-      let col255 = skyGlow(textureLoad(uSky, vec2i(idx, 0), 0).rgb, skyDir, elevDeg, su.sunDir, su.sunI);
+      var col255 = textureLoad(uSky, vec2i(idx, 0), 0).rgb;
+      if (su.skyGlowOn.x > 0.5) { col255 = skyGlow(col255, skyDir, elevDeg, su.sunDir, su.sunI); } // gated like compositor.js (sun === null skips glow+haze)
       o.fg = vec4f(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 0.0);
       o.bg = vec4f(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 1.0);
     } else {
@@ -769,6 +772,10 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   // Item 4: dim a firing line by sub-sample agreement (2-of-4 tie fades to half strength, 4-of-4 stays full).
   if (lineWins) { rgbF *= 0.5 + 0.5 * f32(jointN) / f32(count); }
   var rgbBg = rgbF * bgKAvg;
+  { // AUD-47 vegetation colour variation (objectId tint bits; marker-less ids multiply by 1.0 -> bit-identical)
+    let vg = vegGain(textureLoad(uGI, cell, 0).w);
+    rgbF *= vg; rgbBg *= vg;
+  }
   // 38.23 entity tint: display override after lighting, before fog; count 0 skips the whole branch (bit-identical).
   if (su.etA.x > 0.0) {
     let ti = tintIndex(textureLoad(uGI, cell, 0).w, i32(su.etA.x));

@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { withTimeFreeze, parseTimeArg } from './tool-url.mjs'; // DN-04a
 import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, killTree } from './capture-browser.mjs';
 
 export const STILLS = [
@@ -21,7 +22,9 @@ export function parseArgs(argv) {
   const o = { port: NaN, backend: DEFAULTS.backend, grids: [...DEFAULTS.grids], out: DEFAULTS.out };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i], v = () => { if (i + 1 >= argv.length) throw new Error(`${a} needs a value`); return argv[++i]; };
-    if (a === '--port') o.port = Number(v());
+    if (a.startsWith('--time=')) o.time = parseTimeArg(a.slice(7));
+    else if (a === '--time') o.time = parseTimeArg(v());
+    else if (a === '--port') o.port = Number(v());
     else if (a === '--backend') o.backend = v();
     else if (a === '--grids') o.grids = v().split(',').filter(Boolean);
     else if (a === '--out') o.out = v();
@@ -34,7 +37,7 @@ export function parseArgs(argv) {
 }
 export const stillName = (grid, slug) => `combat-${grid}-${slug}.png`;
 export const stillTimes = () => STILLS.map((s) => s.tMs);
-export const pageUrl = (port, grid, backend) => `http://127.0.0.1:${port}/game/index.html?bench=combat&grid=${grid}&backend=${backend}`;
+export const pageUrl = (port, grid, backend, hour) => `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`bench=combat&grid=${grid}&backend=${backend}`, hour)}`;
 
 export function contactSheetHtml(grids, backend) {
   const rows = grids.map((g) => `<h2>${g}</h2><div class="row">${STILLS.map((s) =>
@@ -74,7 +77,7 @@ async function main() {
     const shoot = async (grid, still) => {
       if (cur !== grid) {
         cur = grid;
-        await cdp.send('Page.navigate', { url: pageUrl(opts.port, grid, opts.backend) });
+        await cdp.send('Page.navigate', { url: pageUrl(opts.port, grid, opts.backend, opts.time) });
         let ready = false;
         for (let i = 0; i < 200 && !ready; i++) { await pause(300); ready = await evaluate(cdp, '!!(window.__debug && window.__debug.beasts && window.__debug.beasts.count >= 4)'); }
         if (!ready) throw new Error(`combat bench not ready at grid ${grid}`);

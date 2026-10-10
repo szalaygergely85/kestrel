@@ -10,7 +10,8 @@ import { createGameHooks, bridgeEngineEvents } from './gameHooks.js';
 import { DONE_TEXT } from './questRelay.js';
 
 const burl = JSON.parse(readFileSync(new URL('../../content/quests/burl.boars.quest.json', import.meta.url)));
-const giverDefs = [burl];
+const blade = JSON.parse(readFileSync(new URL('../../content/quests/tower.blade.quest.json', import.meta.url)));
+const giverDefs = [blade, burl];
 const questDef = JSON.parse(readFileSync(new URL('../../content/quests/m1.quest.json', import.meta.url)));
 // objective texts come from the content (writer pass may change them), not from this test
 const OBJ = Object.fromEntries(questDef.objectives.map((o) => [o.id, o.text]));
@@ -60,6 +61,8 @@ events.emit('beast:died', { id: 'boar2' });
 assert.equal(A.quest.objectiveText(), OBJ.beasts, 'QG-03: m1 waits for Burl until the hand-in');
 for (const id of ['boar3', 'boar4', 'boar5']) events.emit('beast:died', { id });
 assert.equal(A.quest.objectiveText(), OBJ.beasts, 'boars killed before accept: m1 still says find the bear');
+assert.equal(A.quest.book.statusOf('burl.boars'), 0, 'unavailable until the blade quest is turned in at Burl');
+assert.equal(A.quest.book.accept('tower.blade'), true); assert.equal(A.quest.book.statusOf('tower.blade'), 3, 'blade facts came first -> ready'); assert.ok(A.quest.book.handIn('tower.blade'));
 assert.equal(A.quest.book.statusOf('burl.boars'), 1, 'available');
 assert.equal(A.quest.book.accept('burl.boars'), true); assert.equal(A.quest.book.statusOf('burl.boars'), 3, 'accepted with 5 dead -> ready');
 assert.equal(A.quest.objectiveText(), burl.returnText);

@@ -8,6 +8,7 @@
 // what it started. This machine has a slow Intel iGPU - timeouts are generous (up to 2 minutes to first frame).
 //   node tools/boot-prefetch-browser.mjs --port 9500 [--grid 240x90]
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import path from 'node:path';
 import os from 'node:os';
 import { rmSync } from 'node:fs';
@@ -20,7 +21,7 @@ if (port < 9500 || port > 9574) throw new Error('PC-B lane B1 range is 9500-9574
 const grid = args.grid || '240x90';
 // No voxelbench/bench/gpucompare/cinematic param: isCaptureOrBench stays false, so lazyMeshes defaults ON -
 // the same boot path a real player gets, not the "stay eager for comparability" capture path.
-const url = `http://127.0.0.1:${port}/game/index.html?grid=${grid}&autoquality=0${args.extra ? "&" + args.extra : ""}`;
+const url = `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`grid=${grid}&autoquality=0${args.extra ? "&" + args.extra : ""}`)}`;
 
 const handles = {};
 const consoleErrors = [];

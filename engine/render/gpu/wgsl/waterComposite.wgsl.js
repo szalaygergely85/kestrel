@@ -13,6 +13,8 @@ import {
 } from './common.wgsl.js';
 import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // CLOUD_Q_SHIFT: S8-B2-12c (38.13)
 import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, RIPPLE_SLOTS, RIPPLE_ACC_MIN } from '../../waterLook.js';
+import { SKY_LUT_N } from './skyLut.js';
+import { WATER_REFLECT } from '../../waterReflect.js'; // AUD-42: constants shared with the JS twin
 import { RIPPLE_SPEED, RIPPLE_W, RIPPLE_LIFE } from '../../../fx/ripples.js'; // S8-B2-13b (38.14, the note of record)
 
 export const WATER_COMPOSITE_VECS_PER_SLOT = WL_STRIDE / 4;
@@ -33,6 +35,8 @@ export const WATER_COMPOSITE_BLOCK = defineUniformBlock('WaterCompositeU', [
   // defaults in waterLook.js) + 2 pad words (align the `ripple` array to 16 B, already aligned, kept explicit).
   { name: 'rippleGlyph', type: 'u32' }, { name: 'rippleGain', type: 'f32' }, { name: 'ripplePad0', type: 'f32' }, { name: 'ripplePad1', type: 'f32' },
   { name: 'ripple', type: 'vec4', count: RIPPLE_SLOTS }, // x, y, age, amp per live ring, densely packed
+  { name: 'reflectU', type: 'vec4' }, // AUD-42: x = sky elevTop (deg; 0 = no sky LUT -> reflection off)
+  { name: 'skyLut', type: 'vec4', count: SKY_LUT_N }, // AUD-42: baked sky gradient rgb (0..255), same bake as shade's uSky
 ]);
 export const WATER_COMPOSITE_TEXTURES = Object.freeze(['float', 'float', 'uint', 'uint', 'uint', 'uint']);
 export const WATER_COMPOSITE_TARGETS = Object.freeze(['rgba8', 'rgba8']);
@@ -150,6 +154,23 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
       if (f32(fh >> 8u) * (1.0 / 16777216.0) > r6.w) { glyph = r6.x; }
     }
     if (f32(h >> 8u) * (1.0 / 16777216.0) > 1.0 - r3.w) { wc += (r2.rgb - wc) * 0.5; }
+    // AUD-42: sky tint at the mirrored view elevation + Schlick fresnel (twin: waterReflect.js); off for ortho / no sky LUT
+    if (wu.reflectU.x > 0.0 && wu.projMode != 2) {
+      let rv = P - vec3f(wu.posX, wu.posY, wu.eyeH);
+      let rlen = sqrt(rv.x * rv.x + rv.y * rv.y + rv.z * rv.z);
+      var rc = 0.0;
+      if (rlen > 1.0e-6) { rc = -rv.z / rlen; }
+      rc = clamp(rc, 0.0, 1.0);
+      let rm = 1.0 - rc;
+      let rm2 = rm * rm;
+      let rF = ${WATER_REFLECT.f0} + (1.0 - ${WATER_REFLECT.f0}) * (rm2 * rm2 * rm);
+      let rt = clamp(degrees(asin(rc)) / wu.reflectU.x, 0.0, 1.0);
+      let rsky = wu.skyLut[i32(floor(rt * ${SKY_LUT_N - 1}.0 + 0.5))].rgb;
+      let rkS = rF * ${WATER_REFLECT.skyMix};
+      let rBody = (1.0 - ${WATER_REFLECT.darken} * (1.0 - rF)) * (1.0 - rkS);
+      wc = wc * rBody + rsky * rkS;
+      wb = wb * rBody + rsky * rkS;
+    }
   }
 
   // S8-B2-13b (38.14, the note of record): splash ripples, !sheet only (incl. see-through: replaces the floor

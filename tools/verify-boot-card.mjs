@@ -1,6 +1,7 @@
 // S8-B1-20: real-GPU check of the boot loading card's per-stage ms lines + the F3 boot summary's 10 s window.
 // Run: node tools/verify-boot-card.mjs <port> [webgpu]   (owner machine only - not run by this change)
 import {spawn} from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import assert from 'node:assert/strict';
 import {mkdtempSync} from 'node:fs';
 import path from 'node:path';import os from 'node:os';
@@ -18,7 +19,7 @@ try{
  browser=spawn(findBrowserBinary(),['--headless=new',`--remote-debugging-port=${port+1}`,...buildLaunchFlags({}),'--no-sandbox',`--user-data-dir=${profile}`,'about:blank'],{stdio:'ignore',windowsHide:true});
  cdp=await connectCdp(port+1,15000);await cdp.send('Page.enable');await cdp.send('Runtime.enable');
  const errors=[];cdp.onEvent((m,p)=>{if(m==='Runtime.exceptionThrown')errors.push(p.exceptionDetails);});
- await cdp.send('Page.navigate',{url:`http://127.0.0.1:${port}/game/index.html?backend=${backend}&f3=1`});
+ await cdp.send('Page.navigate',{url:`http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`backend=${backend}&f3=1`)}`});
 
  // Catch the card mid-boot: poll for #bootcard text that already has at least one "<stage> <n> ms" line
  // (content closes first, so this should show up well before first frame on any real GPU).

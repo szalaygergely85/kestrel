@@ -5,9 +5,9 @@ import { createQuestBook } from '../quest/sim/questBook.js';
 import { createQuestLogScreen, QUEST_LOG_KEYS } from './questLog.js';
 
 const rd = n => JSON.parse(readFileSync(new URL('../../../content/quests/' + n, import.meta.url)));
-const main = rd('m1.quest.json'), boars = rd('burl.boars.quest.json');
+const main = rd('m1.quest.json'), blade = rd('tower.blade.quest.json'), boars = rd('burl.boars.quest.json');
 const ui = createUiLayer({ cols: 160 });
-const book = createQuestBook(main, [boars]);
+const book = createQuestBook(main, [blade, boars]);
 const log = createQuestLogScreen(book);
 log.open();
 let s = log.snapshot();
@@ -19,6 +19,7 @@ const empty = createQuestLogScreen({ version: 0, count: 0, status: () => 0, def:
 empty.open(); assert.equal(empty.snapshot().lines.length, 0); empty.draw(ui);
 // one active giver quest
 for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }, { type: 'area:entered', id: 'towerDoor' }]) book.feed(e);
+assert.equal(book.accept('tower.blade'), true); assert.ok(book.handIn('tower.blade'));
 assert.equal(book.accept('burl.boars'), true);
 log.draw(ui); s = log.snapshot();
 assert.ok(s.lines.some(l => l.includes("Boars in the Woods")));

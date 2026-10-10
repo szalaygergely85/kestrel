@@ -23,6 +23,7 @@
 
 import { fastShade, samplePowLUT } from './fastShade.js';
 import { entityTintAt, tintChannel } from './entityTint.js';
+import { vegTintGain } from '../mesh/vegTint.js';
 import { KIND_MODEL, KIND_MESH, FACE_PACKED } from './GBuffer.js';
 import { clamp01, clampByte } from '../core/math.js';
 import { fogShapeCtx, fogShapeF, fogScatterW, fogScatterColor, fogCellDirJS } from './fogShape.js';
@@ -587,10 +588,13 @@ export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist
  * needed for `orientClassCode`'s du/dv axis pick.
  */
 const _fogFgS = [0, 0, 0], _fogBgS = [0, 0, 0];
+let vegOn = false; // AUD-47: set per cell by shadeSurfaces (v2 path) so the gain lands before fog like the WGSL
+const vegGain = new Float32Array(3);
 function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out, cellIdx) {
   const fog = table.fog;
   let f = dist <= fog.start ? 0 : dist >= fog.full ? 1 : (dist - fog.start) / (fog.full - fog.start);
   let fogFgC = fog.fgRGB, fogBgC = fog.bgRGB;
+  const fLin = f; // edge-pass gate (gbuf.fogF): the LINEAR factor - edge.wgsl fogF(dist) recomputes it without the AUD-45 boost
   if (fogShapeCtx.on && f > 0) { // AUD-45 (twin of the WGSL block in fs_main): height fog + sun in-scatter
     const sc = fogShapeCtx, cols = sc.terms.cols;
     const row = Math.floor(cellIdx / cols), col = cellIdx - row * cols;
@@ -629,6 +633,10 @@ function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff
   }
   if (r > 255) r = 255; if (gg > 255) gg = 255; if (bl > 255) bl = 255;
   let xr = r * core.bgK, xg = gg * core.bgK, xb = bl * core.bgK;
+  if (vegOn) { // AUD-47: WGSL order - gain on fg and bg after the byte clamp / bgK, BEFORE fog (fog below blends the tinted colour)
+    r *= vegGain[0]; gg *= vegGain[1]; bl *= vegGain[2];
+    xr *= vegGain[0]; xg *= vegGain[1]; xb *= vegGain[2];
+  }
   if (f > 0) {
     const fogFg = fogFgC, fogBg = fogBgC;
     r += (fogFg[0] - r) * f; gg += (fogFg[1] - gg) * f; bl += (fogFg[2] - bl) * f;
@@ -638,7 +646,7 @@ function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff
   out.glyphIdx = glyphCode;
   out.fg[0] = r; out.fg[1] = gg; out.fg[2] = bl;
   out.bg[0] = xr; out.bg[1] = xg; out.bg[2] = xb;
-  out.f = f;
+  out.f = fLin; // NOT the height-boosted f: GPU edge gate parity (fix of AUD-45 edge divergence)
   out.onJoint = core.onJoint;
   return out;
 }
@@ -728,6 +736,7 @@ const fastOut = { fg: [0, 0, 0], bg: [0, 0, 0], glyphIdx: 0 };
 // `shadeSurfaces`), handed to `shadeDetailFast` unchanged.
 const cellLight = [0, 0, 0];
 const tintScratch = new Float32Array(4), tintFg = [0, 0, 0], tintBg = [0, 0, 0]; // 38.23
+const vegFg = [0, 0, 0], vegBg = [0, 0, 0]; // AUD-47 (v1 path post-hoc; v2 path via shadeTail)
 
 // v1 interior fog (US-004b's own fast fog, duplicated here in numbers only -
 // no `P.util.fogFactor` call per cell; matches `fastShade.js`'s
@@ -799,7 +808,9 @@ export function shadeSurfaces(fb, gbuf, table, DP, lightBuf) {
       const light = cellLight;
 
       if (DP && rec && rec.v2) {
+        vegOn = gbuf.objectId ? vegTintGain(gbuf.objectId[i], vegGain) : false;
         shadeDetailFast(table, rec.v2, i, gbuf, dist, light, fastV2Out);
+        vegOn = false;
         glyphIdx = fastV2Out.glyphIdx; fg = fastV2Out.fg; bg = fastV2Out.bg;
         f = fastV2Out.f; onJoint = fastV2Out.onJoint;
       } else {
@@ -810,6 +821,11 @@ export function shadeSurfaces(fb, gbuf, table, DP, lightBuf) {
         onJoint = false;
       }
 
+      if (!(DP && rec && rec.v2) && gbuf.objectId && vegTintGain(gbuf.objectId[i], vegGain)) { // AUD-47 v1 path (v2 applied before fog in shadeTail)
+        vegFg[0] = fg[0] * vegGain[0]; vegFg[1] = fg[1] * vegGain[1]; vegFg[2] = fg[2] * vegGain[2];
+        vegBg[0] = bg[0] * vegGain[0]; vegBg[1] = bg[1] * vegGain[1]; vegBg[2] = bg[2] * vegGain[2];
+        fg = vegFg; bg = vegBg;
+      }
       if (tints !== null && tints.count > 0 && gbuf.objectId && entityTintAt(tints, gbuf.objectId[i], tintScratch)) {
         // 38.23: display override after lighting, before fog (fogF below); no light emitted.
         const tk = tintScratch[3];
