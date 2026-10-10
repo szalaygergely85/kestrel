@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Kestrel - CHARGEN-25 preview: human kit, base m_avg v2 + default outfit (design v1.56)</title>
+<title>Kestrel - CHARGEN-26 preview: human kit, base m_avg v3 (bearded-knight style) + default and knight outfits (design v1.58)</title>
 <style>
   body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
   h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
@@ -29,15 +29,16 @@
 </style>
 </head>
 <body>
-<h1>Kestrel : CHARGEN-25 preview - base <code>m_avg</code> v2 + default outfit (design v1.56) - owner: please look before anything builds on it</h1>
+<h1>Kestrel : CHARGEN-26 preview - base <code>m_avg</code> v3, bearded-knight style (D-063) - default + knight outfits (design v1.58)</h1>
 <div class="note">
   Kit = <code>content/chargen/human.charkit.json</code> (the only source), written by <code>node tools/chargen-build-kit.mjs</code> from
-  <code>design/chargen/human_kit.js</code>. D-059 + follow-up: <b>in between</b> the owner's stylised voxel references and realism. 1.75 m (70 rows of
-  2.5 cm + hair), head 12 rows (~1/6) with a large flat face: eye white + dark pupil over a coloured iris (no lids / lashes), thick brow line in
-  the hair colour, a nose that stands out one cell (bridge + lit tip), a 3-cell mouth line with a lower lip, block ears. One flat skin tone,
-  soft shade only under the chin, under the nose and in the armpits. Sturdy blocky limbs with rounded corners, one-cell steps at elbows and
-  knees, block hands with a thumb. Default look = kit pieces the generator swaps: short hair (attachment), linen shirt with rolled sleeves,
-  brown trousers, leather boots, belt (shells). Untick "outfit" to see the bare base (plain linen braies).
+  <code>design/chargen/human_kit.js</code>. D-063: the owner's bearded-knight reference for ALL characters (no wings, no halo), plus "look the
+  face from the side, not flat". 1.75 m (70 rows of 2.5 cm + hair), BIG head ~1/4 (17 rows + hair) with a face that has depth in profile:
+  forehead sloping back, brow ridge one cell out with heavy angled brows, narrow eyes set in (white, light highlight, dark pupil, iris),
+  cheekbones out, nose 2 cells out (bridge, lit ridge, shaded side), lips out with a mouth line, chin forward, ears set back, rounded back of
+  the head. Chunky limbs, shorter legs, block hands. Default look (kit.defaults) = short hair, linen shirt, trousers, boots, belt.
+  Knight look (kit.looks.knight) = black hair + full beard, chainmail sleeves / legs (two-grey checker), white tabard with a red-and-gold cross,
+  red hem / split trim and a red sash, dark boots + gloves. The "outfit" control switches the turntable / angle / ASCII / rig views.
   Section 1 = lit mesh look (flat cubes, palette colours, key + sky light + shadows: roughly the exported <code>.glb</code> in three.js).
   Section 3 = in-game ASCII. Section 4 = rig + test poses. Needs http for the JSON check: <code>python -m http.server</code> from the repo root.
   Tests: <code>node tools/chargen-kit.test.mjs</code>.
@@ -52,7 +53,7 @@
   <label>view turn <input type="range" id="yaw" min="-180" max="180" step="5" value="0"><span class="val" id="yawV"></span></label>
   <label>view pitch <input type="range" id="pitch" min="-10" max="60" step="1" value="8"><span class="val" id="pitchV"></span></label>
   <label><input type="checkbox" id="spin"> turntable</label>
-  <label><input type="checkbox" id="outfit" checked> outfit (kit.defaults)</label>
+  <label>outfit <select id="outfit"><option value="default">default (kit.defaults)</option><option value="knight">knight (kit.looks.knight)</option><option value="bare">bare base</option></select></label>
   <label>eyes <select id="eyes"></select></label>
   <label>hair + brows <select id="hair"></select></label>
 </div>
@@ -60,7 +61,7 @@
 <h2>Checks</h2>
 <div id="checks"><div class="info">building ...</div></div>
 
-<h2>1. All 5 skin tones: front, 3/4, profile + face close-ups (default outfit)</h2>
+<h2>1. All 5 skin tones: default outfit front / 3/4 / profile, knight outfit front / 3/4 / profile, knight face front / 3/4 / profile</h2>
 <div id="sheet"></div>
 
 <h2>1b. All 5 tones from the view slider (turntable)</h2>
@@ -96,10 +97,14 @@
   // ------------------------------------------------------------------ kit (generator now; the JSON replaces it if present)
   var kit = CK.buildHumanKit(P), genText = CK.stringifyKit(kit), jsonLine = ['info', 'INFO content/chargen/human.charkit.json: loading ...'];
   var D, S, NB, NAMES, BAABB, JOINTS, PARENT, FULLBOX, TONES, builtOutfit = null;
-  var ctl = { tone: 'medium', pose: 'rest', collapsed: false, rots: {}, outfit: true };
+  var ctl = { tone: 'medium', pose: 'rest', collapsed: false, rots: {}, outfit: 'default' };
+  var GRIDS = {};
+  function lookOf(o) { return o === 'knight' ? kit.looks.knight : kit.defaults; }
   function setup() {
     builtOutfit = ctl.outfit;
-    D = ctl.outfit ? CK.composePreview(kit, 'm_avg', kit.defaults) : CK.decodeBase(kit, 'm_avg');
+    GRIDS = { 'default': CK.composePreview(kit, 'm_avg', kit.defaults), knight: CK.composePreview(kit, 'm_avg', kit.looks.knight),
+              bare: CK.decodeBase(kit, 'm_avg') };
+    D = GRIDS[ctl.outfit] || GRIDS['default'];
     S = D.size; NAMES = D.names; NB = NAMES.length; FULLBOX = [0, 0, 0, S[0], S[1], S[2]];
     BAABB = NAMES.map(function () { return [1e9, 1e9, 1e9, -1e9, -1e9, -1e9]; });
     for (var z = 0; z < S[2]; z++) for (var y = 0; y < S[1]; y++) for (var x = 0; x < S[0]; x++) {
@@ -119,14 +124,16 @@
   Object.keys(kit.ramps.hair).forEach(function (e) { var o = document.createElement('option'); o.textContent = e; $('hair').appendChild(o); });
   function readCtl() {
     ['az', 'el', 'int', 'amb', 'yaw', 'pitch'].forEach(function (k) { ctl[k] = +$(k).value; $(k + 'V').textContent = ctl[k]; });
-    ctl.eyes = $('eyes').value; ctl.hair = $('hair').value; ctl.spin = $('spin').checked; ctl.outfit = $('outfit').checked;
+    ctl.eyes = $('eyes').value; ctl.hair = $('hair').value; ctl.spin = $('spin').checked; ctl.outfit = $('outfit').value;
   }
+  $('hair').value = 'black';
   readCtl();
-  // the colour recipe: kit.defaults (outfit dyes) with the chosen tone, eyes and hair colour (brows follow the hair)
-  function recipe(tone) {
-    var r = JSON.parse(JSON.stringify(kit.defaults));
+  // the colour recipe: the look (outfit dyes) with the chosen tone, eyes and hair colour (brows + beard follow the hair)
+  function recipe(tone, look) {
+    var r = JSON.parse(JSON.stringify(lookOf(look || ctl.outfit)));
     r.skin = tone; r.eyes = ctl.eyes;
     r.hair = { id: r.hair ? r.hair.id : 'preview', ramp: ctl.hair };
+    if (r.beard) r.beard.ramp = ctl.hair;
     return r;
   }
   function lightVec() { var a = ctl.az * D2R, e = ctl.el * D2R; return [Math.sin(a) * Math.cos(e), -Math.cos(a) * Math.cos(e), Math.sin(e)]; }
@@ -255,7 +262,7 @@
       project: function (Pt) { var q = [Pt[0] - pos[0], Pt[1] - pos[1], Pt[2] - pos[2]]; return [dot(q, right) / pw + W / 2, H / 2 - dot(q, up) / ph]; }
     };
   }
-  var BODY_C = [18.5, 10.5, 36], FACE_C = [18.5, 9.5, 64.5], FACE_VIEW = 16;
+  var BODY_C = [18.5, 10.5, 36], FACE_C = [18.5, 9.5, 60.5], FACE_VIEW = 24;
 
   // ------------------------------------------------------------------ trace once, shade per colour table
   function traceView(cam, pose) {
@@ -328,19 +335,27 @@
         var lab = document.createElement('div'); lab.className = 'tlabel'; lab.textContent = t; row.appendChild(lab);
         return {
           tone: t,
-          body: SHEET_ANG.map(function (a) { return makeCanvas(row, 120, 250, t + ' ' + a[1]); }),
-          face: SHEET_ANG.map(function (a) { return makeCanvas(row, 150, 150, t + ' face ' + a[1]); })
+          body: SHEET_ANG.map(function (a) { return makeCanvas(row, 110, 230, t + ' default ' + a[1]); }),
+          knight: SHEET_ANG.map(function (a) { return makeCanvas(row, 110, 230, t + ' knight ' + a[1]); }),
+          face: SHEET_ANG.map(function (a) { return makeCanvas(row, 150, 150, t + ' knight face ' + a[1]); })
         };
       });
     }
-    // trace each view once, paint it per tone
-    var bodyB = SHEET_ANG.map(function (a) { return traceView(orthoCam(BODY_C, a[0], ctl.pitch, 120, 250, 76), null); });
+    // trace each view once per outfit grid (D is swapped), paint it per tone
+    var keep = D;
+    D = GRIDS['default'];
+    var bodyB = SHEET_ANG.map(function (a) { return traceView(orthoCam(BODY_C, a[0], ctl.pitch, 110, 230, 76), null); });
+    var colsD = sheetRows.map(function (r) { return colOf(charTable(recipe(r.tone, 'default'))); });
+    sheetRows.forEach(function (r, i) { r.body.forEach(function (v, j) { paintMesh(v.ctx, bodyB[j], colsD[i]); }); });
+    D = GRIDS.knight;
+    var knB = SHEET_ANG.map(function (a) { return traceView(orthoCam(BODY_C, a[0], ctl.pitch, 110, 230, 76), null); });
     var faceB = SHEET_ANG.map(function (a) { return traceView(orthoCam(FACE_C, a[0], 4, 150, 150, FACE_VIEW), null); });
-    sheetRows.forEach(function (r) {
-      var col = colOf(charTable(recipe(r.tone)));
-      r.body.forEach(function (v, j) { paintMesh(v.ctx, bodyB[j], col); });
-      r.face.forEach(function (v, j) { paintMesh(v.ctx, faceB[j], col); });
+    var colsK = sheetRows.map(function (r) { return colOf(charTable(recipe(r.tone, 'knight'))); });
+    sheetRows.forEach(function (r, i) {
+      r.knight.forEach(function (v, j) { paintMesh(v.ctx, knB[j], colsK[i]); });
+      r.face.forEach(function (v, j) { paintMesh(v.ctx, faceB[j], colsK[i]); });
     });
+    D = keep;
   }
 
   // ------------------------------------------------------------------ section 1b: five tones from the view slider
@@ -531,6 +546,13 @@
     for (var q = 0; q < C.ch.length; q++) if (C.ch[q] !== '.') cv++;
     out.push([dr.hair && dr.top && dr.legs && dr.feet ? 'pass' : 'fail', (dr.hair && dr.top && dr.legs && dr.feet ? 'PASS ' : 'FAIL ') + 'kit.defaults outfit: ' + items.join(', ') +
               ' -> ' + cv + ' voxels, ~' + CK.countQuads(C, mo) + ' quads dressed']);
+    var kn = kit.looks && kit.looks.knight;
+    if (kn) {
+      var KC = CK.composePreview(kit, 'm_avg', kn), kv = 0, kOf = {}, ko = function (ch) { var m = CK.resolveMat(kit, kn, ch) || ch; if (!kOf[m]) kOf[m] = Object.keys(kOf).length + 1; return kOf[m]; };
+      for (q = 0; q < KC.ch.length; q++) if (KC.ch[q] !== '.') kv++;
+      out.push(['pass', 'PASS kit.looks.knight: ' + ['hair', 'beard', 'top', 'legs', 'feet', 'outer', 'hat'].map(function (sl) { return sl + ' ' + (kn[sl] ? kn[sl].id + '/' + kn[sl].ramp : 'none'); }).join(', ') +
+                ' -> ' + kv + ' voxels, ~' + CK.countQuads(KC, ko) + ' quads']);
+    } else out.push(['fail', 'FAIL kit.looks.knight missing']);
     out.push(['info', 'INFO bones: ' + NAMES.map(function (n) { return n + ' ' + st.perBone[n]; }).join(', ')]);
     if (st.detail && st.detail.head2) {
       var hd = st.detail.head2;

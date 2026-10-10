@@ -236,7 +236,7 @@ try { exportFbx(rigged, { rgbOf, colorMode: 'x' }); } catch { threw++; }
 try { exportFbx(rigged, { rgbOf: () => null }); } catch { threw++; }
 ok('missing rgbOf / bad colorMode / missing colour throw', threw === 3);
 
-const GOLDEN = '4f14087910014ce5f954a961b382e46589dfbac0350fe4019783566aac2caea6';
+const GOLDEN = '034acca6432615740964b4ffdbf36ec2af1be87d25105248c6990c013e03bdfe';
 const got = sha(fbx);
 if (got !== GOLDEN) console.log('golden sha256 now:', got);
 ok('golden SHA-256 of the default recipe', got === GOLDEN);
