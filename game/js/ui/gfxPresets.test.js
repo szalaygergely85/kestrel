@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { loadPresets, resolveQuality, knobsFor, saveQuality } from './gfxPresets.js';
+import { loadPresets, resolveQuality, knobsFor, saveQuality, dropStaleOverrides } from './gfxPresets.js';
 const data = JSON.parse(readFileSync(new URL('../../../content/settings/gfx-presets.json', import.meta.url)));
 await loadPresets(data);
 assert.deepEqual(['low','medium','high','ultra'].map(n=>knobsFor(n).rays),[1,2,2,4]);
@@ -39,3 +39,14 @@ assert.equal(knobsFor('low').rays,1,'bad load does not replace previous table');
 const response=await loadPresets(null,async()=>({ok:true,json:async()=>data}));assert.equal(response.ultra.rays,4);
 await assert.rejects(loadPresets(null,async()=>({ok:false,status:404})),/404/);
 console.log('gfxPresets: D-047 data, precedence, independent shadows, validation, immutable copies and adapter read-back PASS');
+
+// QUALITY-STALE-01: preset pick clears overrides; migration drops unmarked ones once; marked ones survive
+{
+  let b={quality:'high',shadowQuality:'low',lodScale:0.6,gfxOverrides:true};
+  const a={save:p=>{b={...b,...p};for(const k of Object.keys(b))if(b[k]===undefined)delete b[k];},load:()=>({...b})};
+  saveQuality('low',a);assert.deepEqual(b,{quality:'low'});
+  b={quality:'high',shadowQuality:'low',lodScale:0.6};
+  const out=dropStaleOverrides({...b},a);assert.equal(out.shadowQuality,undefined);assert.equal(b.lodScale,undefined);
+  b={quality:'high',shadowQuality:'low',gfxOverrides:true};
+  assert.equal(dropStaleOverrides({...b},a).shadowQuality,'low');
+}
