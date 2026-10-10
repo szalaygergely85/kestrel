@@ -120,7 +120,7 @@ export { packLevel, repackMaterials } from './world/packed.js';
 
 // ---- US-006 lighting (ambient + point lights + flicker) -------------------
 export {
-  LightSet, buildLightSet, setWorldSun, applySunHours, syncEntityLights, lightAt, lightSurfaces,
+  LightSet, buildLightSet, setWorldSun, applySunHours, applySunPair, syncEntityLights, lightAt, lightSurfaces,
   computeVisGrid, sunVisible, falloff as lightFalloff, packLightUniforms,
   makeLightBuffer, MAX_LIGHTS, setLook, OUTDOOR_SHIFT,
 } from './render/lighting.js';

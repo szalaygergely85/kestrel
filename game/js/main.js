@@ -7,6 +7,7 @@
 // engine/index.js like everything else (check-deps rule 3).
 
 import { loadPresets, resolveQuality, saveQuality, knobsFor, dropStaleOverrides } from './ui/gfxPresets.js';
+import { loadQuestFiles, showBootErrors } from './questBoot.js';
 import { registerRiggedChars } from './quest/charRegister.js';
 import { resolveBootOptions, describeQuality } from './gfxBoot.js';
 import { pickQuality, tierFromAdapter, p95 } from './gfxAuto.js'; // GFX-02
@@ -21,7 +22,7 @@ import {
   PITCH_CLAMP_PITCHED_DEG,
   ambientL, World, repackMaterials,
   updateInteraction, drawCrosshair,
-  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, setWorldSun, blendLook,
+  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, applySunPair, setWorldSun, blendLook,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim,
   loadContentPack, createRng, prebuildTerrainMesh, hitSparks,
@@ -440,11 +441,14 @@ function areaTrigger(w, id) {
   return t;
 }
 let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the content manifest)
-try {
-  const questDef = await (await fetch('../content/quests/m1.quest.json')).json();
-  if (saveEnabled) { try { bearBarks = await (await fetch('../content/dialogue/bear.barks.json')).json(); } catch (e) { console.warn('[barks] bear.barks.json unavailable'); } }
-  const giverDefs = [await (await fetch('../content/quests/tower.blade.quest.json')).json(), await (await fetch('../content/quests/burl.boars.quest.json')).json()]; // QG-03 (D-058): giver quests, state in the quest book
-  const charKit = await (await fetch('../content/chargen/human.charkit.json')).json(); // CHARGEN-16: kit default look + hand skin tones
+{
+  // AUD2-09: per-file loads; a missing file is logged by name and shown on screen (no silent quest-less game)
+  const qb = await loadQuestFiles((u) => fetch(u).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }), { wantBarks: saveEnabled });
+  bearBarks = qb.bearBarks;
+  window.__debug = window.__debug || {}; window.__debug.bootErrors = qb.errors;
+  if (qb.errors.length) showBootErrors(document, qb.errors);
+  if (qb.questDef && qb.giverDefs && qb.charKit) { try {
+  const { questDef, giverDefs, charKit } = qb;
   saveRelay = createSaveRelay({ storage: saveStorage(), questDef, giverDefs, enabled: saveEnabled, defaultLook: charKit.defaults });
   window.__charKit = charKit;
   saveRelay.bindEvents(engine.events);
@@ -487,7 +491,9 @@ try {
         source: (out) => { const b = saveRelay.quest.book; b.giverMarks(gAvail, gReady); out.done = false; out.targets = list; } });
     }
   }
-} catch (e) { console.warn('[save] relay unavailable:', e && e.message); }
+  } catch (e) { console.error('[save] relay setup failed:', e); window.__debug.bootErrors.push({ file: 'save relay', message: String(e && e.message) }); showBootErrors(document, [{ file: 'save relay', message: '' }]); }
+  }
+}
 // MAIN-WIRE-01: crafting recipes (content/items/recipes.json), loaded once; the craft view (key C) is built with the pack.
 let recipeList = null;
 try { recipeList = (await (await fetch('../content/items/recipes.json')).json()).recipes; } catch (e) { console.warn('[craft] recipes unavailable:', e && e.message); }
@@ -986,7 +992,8 @@ async function runGame(mode, cinematic = null) {
   // COMPASS-02 (D-061): golden pocket compass, bottom-right. Resolver maps quest targets to world positions; hide rules are set in update(), drawn in render().
   const compass = createCompassHud({ style: window.ASSETS && window.ASSETS.uiStyle && window.ASSETS.uiStyle.compass });
   let compassBookVer = -1, compassTick = 0, compassWorld = null, compassBreach = null, compassHide = true;
-  const COMPASS_FLAG = { 'quest.burl.boars.done': 'bear', 'burl.arrived': 'bear', 'waystone.waystone.woken': 'endMarker', 'waystone.ws_roadBend.woken': 'relayBend' };
+  const COMPASS_FLAG = { 'quest.burl.boars.done': 'bear', 'burl.arrived': 'bear', 'waystone.waystone.woken': 'endMarker', 'waystone.ws_roadBend.woken': 'relayBend', 'waystone.ws_ford.woken': 'relayFord' };
+  const COMPASS_ITEM = { sword: 'tower.sword' }; // COMPASS-QUEST-01: item step -> the level prop entity (placementId.propId)
   // PO-CH1-12: giver ids that are level props (placementId.propId) resolve through one helper for compass + map marks.
   const GIVER_ENT = { noteKeepLight: 'tower.noteKeepLight' };
   const giverEntity = (w, id) => w.get(GIVER_ENT[id] || id);
@@ -995,6 +1002,7 @@ async function runGame(mode, cinematic = null) {
     let e = null;
     if (kind === 'giver') e = giverEntity(w, id);
     else if (kind === 'flag') e = w.get(COMPASS_FLAG[id] || ''); // CH1-02: flag step -> the prop/NPC that sets it (Burl hand-in, bear escort, stone, relay)
+    else if (kind === 'item') e = w.get(COMPASS_ITEM[id] || id);
     else if (kind === 'beast') { e = w.get(id); const h = e && e.data && e.data.components.health; if (h && h.hp <= 0) return false; }
     else if (kind === 'area') {
       if (id === 'breach') { if (!compassBreach) compassBreach = compassFindMarker(w, 'breach'); if (!compassBreach) return false; out.x = compassBreach.x; out.y = compassBreach.y; out.z = compassBreach.z; return true; }
@@ -1213,8 +1221,7 @@ async function runGame(mode, cinematic = null) {
           if (!(Math.abs(dh) <= SHADOW_SLOT_H * 1.01) || force) { shadowHour = target; dh = 0; steps = 0; } // load / jump / first step: snap
           else if (dh !== 0) { const st = SHADOW_SLOT_H / SHADOW_EASE_STEPS; shadowHour = Math.abs(dh) <= st + 1e-9 ? target : shadowHour + Math.sign(dh) * st; }
           shadowHour = ((shadowHour % 24) + 24) % 24;
-          applySunHours(world, lightSet, shadowHour, worldSunPath, sunEnabled, true); // light + shadow dir (stepped)
-          applySunHours(world, null, hq, worldSunPath, sunEnabled, true); // world.sun smooth (sky glow / fog / terrain)
+          applySunPair(world, lightSet, shadowHour, hq, worldSunPath, sunEnabled); // AUD2-02: ONE sun/moon decision for the stepped light/shadow sun and the smooth world.sun
           const L = blendLook(P, hq, P.daySchedule);
           if (lightSet) { const hu = P.hue[L.ambient]; lightSet.ambient[0] = hu[0] * L.ambientI; lightSet.ambient[1] = hu[1] * L.ambientI; lightSet.ambient[2] = hu[2] * L.ambientI; }
         });

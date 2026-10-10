@@ -80,6 +80,26 @@ export function applySunHours(world, lights, h, path, on, moon = false) {
   if (moon && hourSunScratch.elevationDeg < MOON_SWITCH_DEG) sunFromHours(h + 12, path, hourSunScratch);
   setWorldSun(world, lights, hourSunScratch.elevationDeg, hourSunScratch.azimuthDeg, on);
 }
+/** AUD2-02: dark gap (deg below MOON_SWITCH_DEG) in which the moon-lit light stays off, so the sun<->moon direction flip is never visible. */
+export const MOON_GAP_DEG = 2;
+/**
+ * AUD2-02: ONE sun/moon decision per clock step, shared by the stepped shadow/light sun (`shadowH`, lags in slots)
+ * and the smooth world sun (`h`). The decision is taken on the smooth sun; the light is off across the switch
+ * (sun below the horizon, then the MOON_GAP_DEG gap), so no 180 deg flip can show. Returns true when it is the moon.
+ */
+export function applySunPair(world, lights, shadowH, h, path, on) {
+  sunFromHours(h, path, hourSunScratch);
+  const moon = hourSunScratch.elevationDeg < MOON_SWITCH_DEG;
+  const gap = moon && hourSunScratch.elevationDeg > MOON_SWITCH_DEG - MOON_GAP_DEG;
+  if (lights) {
+    sunFromHours(shadowH + (moon ? 12 : 0), path, hourSunScratch);
+    worldSunScratch.elevation = hourSunScratch.elevationDeg; worldSunScratch.azimuth = hourSunScratch.azimuthDeg; worldSunScratch.on = on && !gap;
+    lights.setSun(worldSunScratch);
+  }
+  sunFromHours(h + (moon ? 12 : 0), path, hourSunScratch);
+  setWorldSun(world, null, hourSunScratch.elevationDeg, hourSunScratch.azimuthDeg, on);
+  return moon;
+}
 // PO REJECT item 1: CPU fallback (`?gpu=0`) evaluates at most this many
 // nearest `on` lights per frame (tech notes item 7, "reduced light count
 // (max 4, nearest first)"). GPU/GLSL and `?gpucompare=1` are unaffected -
