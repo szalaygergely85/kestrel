@@ -14,6 +14,7 @@ const FG = [236, 226, 190], BG = [10, 11, 16];
 export function createWaystoneWire(opts = {}) {
   const toastSec = opts.toastSec ?? TOAST_SEC;
   let ctx = null, sim = null, left = 0;
+  const pose = { x: 0, y: 0, z: 0, yawDeg: 0 };
   const lines = [TOAST_SAVED, TOAST_HEALED];
 
   function put(ui, x, y, code) { if (x >= 0 && x < ui.cols) ui.setCellRGB(x, y, code - 32, FG[0], FG[1], FG[2], BG[0], BG[1], BG[2]); }
@@ -27,22 +28,27 @@ export function createWaystoneWire(opts = {}) {
       if (!p || !p.transform || !p.components || !p.components.health || !c.world || !c.world.state) return;
       const t = p.transform;
       try {
+        // Travel points come from entity data (components.waystone); no coordinates here.
+        const points = [];
+        if (c.world.forEachEntity) c.world.forEachEntity((e) => {
+          const w = e && e.components && e.components.waystone;
+          if (w && typeof w.id === 'string') points.push({ id: w.id, label: w.label, kind: w.kind, order: w.order });
+        });
         sim = createWaystone(c.world, p, {
-          waystones: [], requestSave: c.requestSave,
+          waystones: [], points, requestSave: c.requestSave, canWake: opts.canWake,
           spawn: { x: t.x, y: t.y, z: t.z, yawDeg: Number.isFinite(t.yawDeg) ? t.yawDeg : 0 },
         });
       } catch (e) { sim = null; }
     },
     onEvent(name, d) {
-      if (name !== 'prop:touched' || !d || d.id !== 'waystone' || !ctx || !sim) return;
+      if (name !== 'prop:touched' || !d || !ctx || !sim) return;
+      if (d.kind !== 'waystone' && d.kind !== 'relay') return;
+      // The meadow stone keeps id 'waystone' (no save migration); register it when the data carries no waystone component.
+      if (!sim.has(d.id)) { if (d.id !== 'waystone') return; sim.register({ id: 'waystone', label: 'Meadow stone', kind: 'stone', order: 1 }); }
       const t = ctx.player.transform;
       const yaw = Number.isFinite(ctx.state.playerYawDeg) ? ctx.state.playerYawDeg : (t.yawDeg || 0);
-      // Touch happens once per walk-in (the seam re-arms only after leaving), so building the 1-point sim here is a one-off.
-      const touch = createWaystone(ctx.world, ctx.player, {
-        waystones: [{ id: 'waystone', pos: { x: t.x, y: t.y, z: t.z, yawDeg: yaw } }],
-        spawn: sim.snapshot().pos, requestSave: ctx.requestSave,
-      });
-      if (touch.touch('waystone')) { sim = touch; left = toastSec; }
+      pose.x = t.x; pose.y = t.y; pose.z = t.z; pose.yawDeg = yaw;
+      if (sim.touch(d.id, pose)) left = toastSec;
     },
     onTick(dt) { if (left > 0) left -= dt; },
     drawHud(ui) {

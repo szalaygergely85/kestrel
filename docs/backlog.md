@@ -1890,7 +1890,7 @@ PC-B architect opus, 2026-10-10 (owner-authorised while PC-A is offline; PC-A to
 | WS1-03 | kestrel-2 | 0.5 d | `engine/render/gpu/wgsl/terrainRaster.wgsl.js`, `engine/render/gpu/wg/passRaster.js`, `TerrainTextures.js`, `ShadeTextures.js`, `passShade.js` (audit) | WS1-02 | todo [PC-B] |
 | WS1-04 | kestrel-4 | 0.5 d | `content/worlds/world_m1.world.json` (bounds union, terrainBand, `relayBend` + base mesh, `waystone` components), `design/levels/overworld_far.js` (relay exclude disc) | WS1-01, WS1-02 | todo [PC-B] |
 | WS1-05 | kestrel-4 | 0.75 d | `tools/gen-roadside-meshes.mjs` (flags + `scale` fix), `content/worlds/world_m1.world.json` (`roadW###`, `roadN###`), `design/levels/overworld_far.js` (printed capsules) | - (runs before WS1-04 lands: keep-out disc is in the tool) | po-review [PC-B] |
-| WS1-06a | kestrel-1 | 0.5 d | `game/js/quest/sim/waystone.js` + test, `game/js/quest/wire/waystone.js` + test, `game/js/waystoneTouch.js` | WS1-04 (data; tests use fixtures) | todo [PC-B] |
+| WS1-06a | kestrel-1 | 0.5 d | `game/js/quest/sim/waystone.js` + test, `game/js/quest/wire/waystone.js` + test, `game/js/waystoneTouch.js` | WS1-04 (data; tests use fixtures) | po-review [PC-B] |
 | WS1-06b | kestrel-1 | 0.75 d | `game/js/quest/relayWake.js` (new) + test, `game/js/quest/index.js` (behaviour `relay.wake`), `game/js/main.js` (step + interactable on world:loaded) | WS1-06a, WS1-W1 (placeholder text ok) | todo [PC-B] |
 | WS1-07a | kestrel-1 | 0.5 d | `game/js/quest/mapCard.js` (`setMarker`, digits, travel line, digit keys) + `mapCard.test.js`, preview | WS1-06a | po-review [PC-B] |
 | WS1-07b | kestrel-1 | 0.75 d | `game/js/quest/travel.js` (new) + test, `game/js/quest/sim/vitals.js` (`clearSafe`), `game/js/main.js` (wiring, fade draw, hzb invalidate) | WS1-07a | todo [PC-B] |
@@ -1926,11 +1926,12 @@ PC-B architect opus, 2026-10-10 (owner-authorised while PC-A is offline; PC-A to
 - [ ] Runs: `roadW` left u 250..300 count ~60; `roadN` right u 110..300 v 8..26 count ~140, tree quota 0.25; keep-out disc relay (1262, 1033) r 8 and the WS1-08 route line (2 m). Printed capsules added to `overworld_far.js detail.exclude`, no warning.
 - [ ] Report counts by class + mesh; mesh-place budget tool (`tools/mesh-place-budget.mjs`) green.
 
-### WS1-06a Waystone list + save shape  [P1] [todo] [PC-B kestrel-1]
+### WS1-06a Waystone list + save shape  [P1] [po-review] [PC-B kestrel-1]
 - [ ] Sim: points from entities with `components.waystone` (ordered by `order`); `touch(id, pose)` = heal + one requestSave + anchor stored in `world.state['waystone.points'][id]`; `list(out)`, `anchor(id)`; `waystone {waystoneId, pos}` kept as the respawn record.
 - [ ] Old save (`waystoneId:'waystone'`, no points map) seeds the map with that entry; `SAVE_VERSION` stays 1; a fresh game has an empty map.
 - [ ] `waystoneTouch.js` list-driven for `kind:'stone'` points (meadow behaviour unchanged: same radius, re-arm, event `{id:'waystone'}`).
 - [ ] Tests: order, touch, double touch, old-save seed, save round-trip, 0 alloc per step.
+Note (kestrel-2, 2026-10-10): done; sim API `points` (entity data), `touch(id,pose)`, `list(out)`, `anchor`, `isTouched`, `has`, `register`, `canWake(id)` (opts.canWake gate, D-062 hook; default open). Wire builds points from `components.waystone` at boot; accepts kind waystone|relay. NEEDS B1-main: none for 06a; 06b/07 use `wire.sim`.
 
 ### WS1-06b Wake the road-bend relay  [P1] [todo] [PC-B kestrel-1]
 - [ ] Interactable `relay.<id>` (E, radius 2.2, WRITER prompt) for every `kind:'relay'` point, added on each `world:loaded`; behaviour `relay.wake` in `quest/index.js`.
