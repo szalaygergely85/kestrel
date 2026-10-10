@@ -249,6 +249,25 @@
     icon: icon([' ._/|', '/%o=/', "`~-' "],
                [' ABAB', 'BvVBJ', 'JvjJ '])
   };
+  // CH1-D2 (architecture.md 38.37 item 3): the crystal the boars were rooting for. Name + desc = docs/story.md CH1-W3
+  // (item.aetherCrystal.*; the in-world name avoids "aether"). stackMax 1. The inventory has NO key-item / no-drop tag
+  // today (game/js/quest/sim/inventory.js), so this is a plain item of kind 'key'; the real gate is the flag
+  // aether.attuned, the item is only proof (dropping it can never soft-lock). Not consumed when it wakes a stone.
+  keys.N = { c: 'aether', e: true };  keys.I = { c: 'aetherLight', e: true };
+  keys.x = { c: 'aetherCore', e: true }; keys['1'] = { c: 'aetherMid', e: true };
+  defs.aetherCrystal = {
+    id: 'aetherCrystal', name: 'Teal Crystal', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'Warm, and it hums like the old stones.',
+    use: { none: 'not used from the pack', note: 'proof of aether.attuned (game/js/quest/crystal.js grants it); ' +
+           'held up at a stone by relayWake.js, never consumed' },
+    keyItem: false, keyItemNote: 'set true once the inventory supports a no-drop / no-sell tag',
+    glyph: { ch: '*', c: 'aether' },
+    //   /\'     the tip, a sparkle off it
+    //  |*:|     the prism, white-hot core, shaded right facet
+    //  \__/     the broken base
+    icon: icon(["  /\\'", ' |*:|', ' \\__/'],
+               ['  INx', ' IxN1', ' N11N'])
+  };
   // the S8-A-07 icon list in sheet order (sword, shield, lantern, potion, key, bow, bomb, heart piece, currency, 3 materials)
   var iconSet = ['sword', 'shield', 'lantern', 'orb.hp', 'key.small', 'bow', 'bomb', 'heart.piece', 'cog',
                  'boar.hide', 'boar.tusk', 'brass.scrap'];
@@ -389,6 +408,7 @@
 
   // S8-A-07 (appended): new ids at the end of the pack display order + the 12-icon set
   A.items.order.push('shield', 'lantern', 'key.small', 'bow', 'bomb', 'heart.piece', 'cog', 'brass.scrap');
+  A.items.order.push('aetherCrystal');                                   // CH1-D2
   A.items.iconSet = iconSet;
 
   if (typeof module === 'object' && module && module.exports) module.exports = { items: A.items, lootSprites: A.lootSprites };
