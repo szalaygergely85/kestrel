@@ -601,6 +601,22 @@ for (const [name, breakFixture, finding] of areaCases) {
   ok('item descs <= 38 chars', !badDesc, badDesc && `items.defs.${badDesc[0]}.desc`);
 }
 
+// EQ-11: loot.json validation (real file + real item defs, then broken copies)
+{
+  const { loadDesignAssets } = await import('./validate-content.mjs');
+  const A = await loadDesignAssets();
+  const loot = JSON.parse(readFileSync(new URL('../content/items/loot.json', import.meta.url), 'utf8'));
+  const run = (lootFile) => validateContent(A, { lootFile }).errors.filter((e) => String(e).includes('loot.json'));
+  ok('real loot.json validates', run(loot).length === 0, JSON.stringify(run(loot)));
+  ok('loot rates 4/3/8 %', loot.sources.boar.rolls[0].chance === 0.04 && loot.sources.container.rolls[0].chance === 0.03 && loot.sources.chest.rolls[0].chance === 0.08);
+  const bad = (name, fn, text) => { const c = JSON.parse(JSON.stringify(loot)); fn(c); const e = run(c); ok(`loot lint: ${name}`, e.some((x) => String(x).includes(text)), JSON.stringify(e)); };
+  bad('unknown item', (c) => { c.sources.chest.rolls[1].give.item = 'nope'; }, 'not found');
+  bad('chance > 1', (c) => { c.sources.boar.rolls[0].chance = 1.5; }, 'chance');
+  bad('tier odds sum', (c) => { c.tiers.fine = 0.2; }, 'sum to 1');
+  bad('slot without gear', (c) => { c.slots.push('off'); }, 'no gear item');
+  bad('crafting-free fixed ref', (c) => { c.sources.boar.fixed[0].item = 'ghost'; }, 'fixed');
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) {
   console.error('FAILURES:');

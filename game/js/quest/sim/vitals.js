@@ -11,6 +11,8 @@
 // `dead`/`deathStep`/`cardReady`/`hurtTick` are transient presentation/flow state, kept on the returned sim object
 // only (not serialized - a reload always comes back alive, same as the "respawn never touches world.state" rule).
 
+import { applyDefence } from './equipment.js'; // EQ-02
+
 /** @param {any} player plain entity data (`world.get('player').data`-shaped: `{transform, components}`) */
 function ensureHealth(player, cfg) {
   const c = player.components || (player.components = {});
@@ -101,7 +103,7 @@ export function createVitals(world, events, cfg, hooks) {
   function onHit(p) {
     if (!p || p.target !== 'player' || !player || !health) return;
     const scale = p.source !== 'player' ? cfg.beastDamageScale : 1;
-    const n = Math.round((p.damage || 0) * scale);
+    let n = Math.round((p.damage || 0) * scale);
     let dirX, dirY;
     if (p.source != null) {
       const srcHandle = world.get(p.source);
@@ -113,6 +115,9 @@ export function createVitals(world, events, cfg, hooks) {
         if (d > 1e-9) { dirX = dx / d; dirY = dy / d; }
       }
     }
+    // EQ-A2 hook (architecture 38.41): the shield block (`h.block`) goes HERE, before defence, and returns early.
+    // EQ-02: worn gear reduces the damage taken; `h.defence()` = total defence points (equipment.defenceOf).
+    if (typeof h.defence === 'function') n = applyDefence(n, h.defence());
     applyDamage(n, dirX, dirY);
   }
   const offCombatHit = events.on('combat:hit', onHit);

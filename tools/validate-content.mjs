@@ -693,6 +693,38 @@ export function validateContent(ASSETS, opts = {}) {
     }
   }
 
+  // EQ-11: gear loot tables (content/items/loot.json, data-only like recipes.json)
+  const lootFile = opts.lootFile;
+  const lootPath = opts.lootPath || 'content/items/loot.json';
+  if (lootFile !== undefined && lootFile !== null) {
+    const chance01 = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
+    const slots = Array.isArray(lootFile.slots) ? lootFile.slots : [];
+    const tiers = plain(lootFile.tiers) ? lootFile.tiers : {};
+    check(lootFile.version === 1 && plain(lootFile.sources), lootPath, 'expected version 1 and a sources object');
+    check(slots.length > 0, `${lootPath}.slots`, 'needs at least one slot');
+    const tierSum = Object.values(tiers).reduce((a, b) => a + (typeof b === 'number' ? b : NaN), 0);
+    check(Object.keys(tiers).length > 0 && Object.values(tiers).every(chance01) && Math.abs(tierSum - 1) < 1e-9, `${lootPath}.tiers`, `tier odds must be in 0..1 and sum to 1, got ${tierSum}`);
+    const gearIds = (slot, tier) => Object.values(itemDefs).filter(d => d?.equip?.slot === slot && d.equip.tier === tier && d.kind === 'gear').map(d => d.id);
+    for (const slot of slots) for (const tier of Object.keys(tiers)) {
+      check(gearIds(slot, tier).length > 0, `${lootPath}.slots`, `no gear item for slot "${slot}" tier "${tier}"`);
+    }
+    const checkGive = (g, path) => {
+      check(Object.hasOwn(itemDefs, g?.item), `${path}.item`, `item "${g?.item}" not found`);
+      check(Number.isInteger(g?.min) && Number.isInteger(g?.max) && g.min >= 1 && g.max >= g.min, `${path}`, 'min/max must be integers, 1 <= min <= max');
+    };
+    for (const [src, table] of Object.entries(lootFile.sources || {})) {
+      for (const [i, roll] of (table?.rolls || []).entries()) {
+        const path = `${lootPath}.sources.${src}.rolls[${i}]`;
+        check(chance01(roll?.chance), `${path}.chance`, `chance must be a number in 0..1, got ${roll?.chance}`);
+        check(!!roll?.pick !== !!roll?.give, path, 'a roll needs exactly one of pick / give');
+        if (roll?.give) checkGive(roll.give, `${path}.give`);
+      }
+      for (const [i, f] of (table?.fixed || []).entries()) {
+        check(Object.hasOwn(itemDefs, f?.item) && Number.isInteger(f?.n) && f.n >= 1, `${lootPath}.sources.${src}.fixed[${i}]`, `fixed entry needs a known item and n >= 1`);
+      }
+    }
+  }
+
   // ---- 6. CO-8 (docs/coordinates.md section 8): coordinate/frame content rules ----
   // World structures: origin.x/y/z finite, yawSteps an integer 0..3.
   for (const worldKey of Object.keys(worlds)) {
@@ -1004,6 +1036,11 @@ export function loadRecipeFile(path) {
   catch (e) { return { recipeFile: null, recipePath: path, errors: [`${path}: recipe JSON read/parse failed: ${e.message}`] }; }
 }
 
+export function loadLootFile(path) {
+  try { return { lootFile: JSON.parse(readFileSync(path, 'utf8')), lootPath: path, errors: [] }; }
+  catch (e) { return { lootFile: null, lootPath: path, errors: [`${path}: loot JSON read/parse failed: ${e.message}`] }; }
+}
+
 async function main() {
   const ASSETS = await loadDesignAssets();
   const meshFilesDir = fileURLToPath(new URL('../content/meshes', import.meta.url));
@@ -1011,8 +1048,10 @@ async function main() {
   const dialogueFilesDir = fileURLToPath(new URL('../content/dialogue', import.meta.url));
   const questFiles = loadQuestFiles(fileURLToPath(new URL('../content/quests', import.meta.url)));
   const recipeFile = loadRecipeFile(fileURLToPath(new URL('../content/items/recipes.json', import.meta.url)));
-  const { errors: allErrors, warnings, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, dialogueFilesDir, quests: questFiles.quests, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile });
+  const lootFile = loadLootFile(fileURLToPath(new URL('../content/items/loot.json', import.meta.url)));
+  const { errors: allErrors, warnings, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, dialogueFilesDir, quests: questFiles.quests, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile, ...lootFile });
   allErrors.push(...questFiles.errors);
+  allErrors.push(...lootFile.errors);
   allErrors.push(...recipeFile.errors);
   for (const w of warnings) console.warn(`WARN ${w}`);
   const meshOnlyText = meshOnlyCount ? `, ${meshOnlyCount} mesh-only model(s)` : '';
