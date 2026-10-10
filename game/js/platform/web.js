@@ -136,6 +136,7 @@ export function loadSettings() {
   if (TEXT_SIZES.includes(parsed.textSize)) out.textSize = parsed.textSize;
   if (isBoolean(parsed.reduceMotion)) out.reduceMotion = parsed.reduceMotion;
   if (validLod(parsed.lodScale)) out.lodScale = parsed.lodScale;
+  if (parsed.gfxOverrides === true) out.gfxOverrides = true; // QUALITY-STALE-01: shadow/LOD rows changed after the preset pick
   // BINDINGS-WIRE-01: optional saved control bindings (plain object; the bindings module validates the contents)
   if (isPlainObject(parsed.bindings)) out.bindings = parsed.bindings;
   // settingsVersion is informational only for now (single version exists);
@@ -167,14 +168,18 @@ export function saveSettings(partial) {
   // GFX-01w: only written once chosen, so existing blobs stay byte-identical
   const quality = QUALITY_CHOICES.includes(p.quality) ? p.quality : current.quality;
   if (quality !== undefined) next.quality = quality;
-  const shadowQuality = SHADOW_CHOICES.includes(p.shadowQuality) ? p.shadowQuality : current.shadowQuality;
+  // QUALITY-STALE-01: an explicit undefined removes the key (a preset pick clears per-knob overrides)
+  const clears = k => k in p && p[k] === undefined;
+  const shadowQuality = clears('shadowQuality') ? undefined : SHADOW_CHOICES.includes(p.shadowQuality) ? p.shadowQuality : current.shadowQuality;
   if (shadowQuality !== undefined) next.shadowQuality = shadowQuality;
   const textSize = TEXT_SIZES.includes(p.textSize) ? p.textSize : current.textSize;
   if (textSize !== undefined) next.textSize = textSize;
   const reduceMotion = isBoolean(p.reduceMotion) ? p.reduceMotion : current.reduceMotion;
   if (reduceMotion !== undefined) next.reduceMotion = reduceMotion;
-  const lodScale = validLod(p.lodScale) ? p.lodScale : current.lodScale;
+  const lodScale = clears('lodScale') ? undefined : validLod(p.lodScale) ? p.lodScale : current.lodScale;
   if (lodScale !== undefined) next.lodScale = lodScale;
+  const gfxOverrides = clears('gfxOverrides') ? undefined : p.gfxOverrides === true ? true : current.gfxOverrides;
+  if (gfxOverrides) next.gfxOverrides = true;
   const bindings = isPlainObject(p.bindings) ? p.bindings : current.bindings;
   if (bindings !== undefined) next.bindings = bindings;
   if (!storage) return next; // no persistence available, but callers still get a valid object back

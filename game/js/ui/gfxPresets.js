@@ -76,7 +76,20 @@ export function saveQuality(name, adapter) {
   name = choice(name);
   if (!QUALITY_CHOICES.includes(name)) throw new Error(`Unknown quality ${String(name)}`);
   try {
-    adapter.save({ quality: name });
+    // QUALITY-STALE-01: a preset pick owns all its knobs; per-knob overrides only count if set after it
+    adapter.save({ quality: name, shadowQuality: undefined, lodScale: undefined, gfxOverrides: undefined });
     return { name, saved: adapter.load().quality === name };
   } catch { return { name, saved: false }; }
+}
+
+/**
+ * QUALITY-STALE-01 migration: a save with a quality but no `gfxOverrides` marker holds shadow/LOD values of unknown age;
+ * drop them (owner prefers the preset). Returns the settings to use for boot.
+ */
+export function dropStaleOverrides(settings, adapter) {
+  if (!settings || settings.quality === undefined || settings.gfxOverrides) return settings;
+  if (settings.shadowQuality === undefined && settings.lodScale === undefined) return settings;
+  try { adapter.save({ shadowQuality: undefined, lodScale: undefined }); } catch { /* keep going: boot just ignores them below */ }
+  const { shadowQuality, lodScale, ...rest } = settings;
+  return rest;
 }

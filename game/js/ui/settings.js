@@ -688,8 +688,8 @@ function buildFullView(assets, over) {
 function onFullChange(id, v) {
   const ctx = fullCtx;
   if (id === 'quality') { applyQuality(v, ctx); fullRebuild = true; } // refused save / new grid: rebuild from `values`
-  else if (id === 'shadows') saveSettings({ shadowQuality: v });
-  else if (id === 'lodScale') saveSettings({ lodScale: v });
+  else if (id === 'shadows') saveSettings({ shadowQuality: v, gfxOverrides: true });
+  else if (id === 'lodScale') saveSettings({ lodScale: v, gfxOverrides: true });
   else if (id === 'grid') {
     const m = /^(\d+)x(\d+)$/.exec(v);
     const r = m && ctx.engine && typeof ctx.engine.setGrid === 'function' ? ctx.engine.setGrid(Number(m[1]), Number(m[2])) : { error: true };

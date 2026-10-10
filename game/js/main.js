@@ -6,7 +6,7 @@
 // (engine/entities/Player.js, engine/physics/*), so this now comes from
 // engine/index.js like everything else (check-deps rule 3).
 
-import { loadPresets, resolveQuality, saveQuality, knobsFor } from './ui/gfxPresets.js';
+import { loadPresets, resolveQuality, saveQuality, knobsFor, dropStaleOverrides } from './ui/gfxPresets.js';
 import { registerRiggedChars } from './quest/charRegister.js';
 import { resolveBootOptions, describeQuality } from './gfxBoot.js';
 import { pickQuality, tierFromAdapter, p95 } from './gfxAuto.js'; // GFX-02
@@ -179,7 +179,7 @@ const isGpuCompareMode = isGeometryCompare || params.get('gpucompare') === 'shad
 // GFX-01w: quality preset (grid, rays, shadow level, scatter density, LOD scale) resolved once at boot; explicit URL knobs win.
 // Precedence: URL knob > ?quality= > saved > auto (GFX-02) > 'high'. Presets failing to load -> boot exactly as before (no preset).
 // Capture/bench/compare pages stay on today's options unless ?quality= is given (must stay comparable across runs).
-const savedSettings = loadSettings();
+const savedSettings = dropStaleOverrides(loadSettings(), { save: saveSettings }); // QUALITY-STALE-01
 const controlBindings = createSafeBindings(savedSettings.bindings); // BINDINGS-WIRE-01: invalid saved table -> defaults
 const gameKeys = resolveGameKeys(controlBindings); // resolved once; re-run after a rebinding UI changes the table
 const isWaterfallPreview = params.get('waterfallpreview') === '1' && params.get('world') === 'waterfall_test';
