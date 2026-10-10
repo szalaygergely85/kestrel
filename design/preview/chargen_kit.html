@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Kestrel - CHARGEN-01 preview: human kit v0, base m_avg (design v1.54)</title>
+<title>Kestrel - CHARGEN-25 preview: human kit, base m_avg v2 + default outfit (design v1.56)</title>
 <style>
   body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
   h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
@@ -25,21 +25,22 @@
   .sw { display:inline-block; width:22px; height:16px; border:1px solid #000; vertical-align:middle; margin-right:2px; }
   table.r { border-collapse:collapse; font-size:12px; margin:4px 0 10px; }
   table.r td { padding:2px 8px 2px 0; vertical-align:middle; font-family:Consolas, monospace; }
+  .tlabel { width:70px; font-family:Consolas, monospace; font-size:12px; color:#e0b860; align-self:center; }
 </style>
 </head>
 <body>
-<h1>Kestrel : CHARGEN-01 preview - human kit v0, base <code>m_avg</code> (design v1.54) - owner: please OK the realism before CHARGEN-04</h1>
+<h1>Kestrel : CHARGEN-25 preview - base <code>m_avg</code> v2 + default outfit (design v1.56) - owner: please look before anything builds on it</h1>
 <div class="note">
   Kit = <code>content/chargen/human.charkit.json</code> (the only source), written by <code>node tools/chargen-build-kit.mjs</code> from
-  <code>design/chargen/human_kit.js</code>. A realistic 1.75 m man built from 2.5 cm voxels (37 x 20 x 70), 22 humanoid bones (rigid, one bone per
-  voxel), folding to 8 parts in-game. Bald on purpose: hair, beards and clothes are CHARGEN-04b pieces; the base wears undyed linen braies.
-  Section 1-2 = the lit mesh look (flat cubes, palette colours, key light + sky light + shadows: roughly what the exported <code>.glb</code> shows in
-  the app's three.js viewer). Section 3 = the in-game ASCII look (palette v1 shader + edge rules). Section 4 = the rig with test poses (not clips;
-  clips are CHARGEN-04a). Needs http for the JSON check: <code>python -m http.server</code> from the repo root, open <code>/design/preview/chargen_kit.html</code>.
+  <code>design/chargen/human_kit.js</code>. D-059 + follow-up: <b>in between</b> the owner's stylised voxel references and realism. 1.75 m (70 rows of
+  2.5 cm + hair), head 12 rows (~1/6) with a large flat face: eye white + dark pupil over a coloured iris (no lids / lashes), thick brow line in
+  the hair colour, a nose that stands out one cell (bridge + lit tip), a 3-cell mouth line with a lower lip, block ears. One flat skin tone,
+  soft shade only under the chin, under the nose and in the armpits. Sturdy blocky limbs with rounded corners, one-cell steps at elbows and
+  knees, block hands with a thumb. Default look = kit pieces the generator swaps: short hair (attachment), linen shirt with rolled sleeves,
+  brown trousers, leather boots, belt (shells). Untick "outfit" to see the bare base (plain linen braies).
+  Section 1 = lit mesh look (flat cubes, palette colours, key + sky light + shadows: roughly the exported <code>.glb</code> in three.js).
+  Section 3 = in-game ASCII. Section 4 = rig + test poses. Needs http for the JSON check: <code>python -m http.server</code> from the repo root.
   Tests: <code>node tools/chargen-kit.test.mjs</code>.
-  <br><b>Face v2 (owner 2026-10-10, "redesign the face"):</b> eyes (white + iris) on the face plane instead of sunk sockets, brows + lit brow bone,
-  nose bridge with a lit tip, cheek apples and lit cheekbones (no hollow cheeks), 3-wide lips with shaded corners on the Jaw seam, lit chin, ears
-  standing free. The random skin tone patches (stripy) are gone: broad anatomical shading only. Check section 2 "face front / 3/4 / profile" in all tones.
 </div>
 <div id="fatal" class="fail"></div>
 
@@ -48,39 +49,27 @@
   <label>elev <input type="range" id="el" min="0" max="85" step="1" value="40"><span class="val" id="elV"></span></label>
   <label>sun <input type="range" id="int" min="0" max="1.5" step="0.01" value="1.0"><span class="val" id="intV"></span></label>
   <label>ambient x <input type="range" id="amb" min="0" max="3" step="0.05" value="1.0"><span class="val" id="ambV"></span></label>
-  <label>view turn <input type="range" id="yaw" min="-180" max="180" step="5" value="-25"><span class="val" id="yawV"></span></label>
+  <label>view turn <input type="range" id="yaw" min="-180" max="180" step="5" value="0"><span class="val" id="yawV"></span></label>
   <label>view pitch <input type="range" id="pitch" min="-10" max="60" step="1" value="8"><span class="val" id="pitchV"></span></label>
   <label><input type="checkbox" id="spin"> turntable</label>
+  <label><input type="checkbox" id="outfit" checked> outfit (kit.defaults)</label>
   <label>eyes <select id="eyes"></select></label>
-  <label>brows (hair colour) <select id="brows"></select></label>
+  <label>hair + brows <select id="hair"></select></label>
 </div>
 
 <h2>Checks</h2>
 <div id="checks"><div class="info">building ...</div></div>
 
-<h2>1. The base in all 5 skin tones (lit mesh look)</h2>
+<h2>1. All 5 skin tones: front, 3/4, profile + face close-ups (default outfit)</h2>
+<div id="sheet"></div>
+
+<h2>1b. All 5 tones from the view slider (turntable)</h2>
 <div class="row" id="tones"></div>
 
-<h2>2. One tone: four angles and the face</h2>
+<h2>2. One tone: five angles and the face</h2>
 <div class="controls local" id="toneBar"></div>
 <div class="row" id="angles"></div>
 <div class="row" id="face"></div>
-
-<h2>2b. Head detail (CHARGEN-23, D-055): Standard 2.5 cm (face v2) vs Fine 1.25 cm vs Fine downsampled back to 2.5 cm</h2>
-<div class="note">
-  Rendered straight from <code>regions.head</code> + <code>bases.m_avg.detail.head["2"]</code> (architecture 38.34), so it works before the engine
-  compose lands. Region = Head + Jaw boxes; the Neck stub inside the box is drawn for the seam. Row 3 = the 38.34 <code>downsample2</code> of the fine
-  head (keep: iris 9, catchlight 8, eye white 7, lips 6): it should match face v2 except the two eye-white cells (the fine iris is centred, so it
-  wins both level-1 eye cells). Fine head: brows with an arch and dropping tail, lid gap, lash line arched over a 2x2 iris with a catchlight and
-  whites on both sides, lower-lid shade; nose bridge, lit tip, wings, dark nostrils; upper lip with bow peaks + philtrum, fuller lower lip, dark
-  corners, shade under the lip, lit chin; cheek apples, lit cheekbones; ears with helix, antihelix, concha, lobe. Tone = the section 2 buttons.
-</div>
-<div id="headInfo" class="note"></div>
-<div id="headCmp"></div>
-<h3>Fine head in all 5 tones (front, 3/4)</h3>
-<div class="row" id="headTones"></div>
-<h3>In-game ASCII close-up (dialogue shot, ~1 m): Standard vs Fine, front and 3/4</h3>
-<div class="row" id="headAscii"></div>
 
 <h2>3. In-game look (ASCII; palette v1 shader + edge rules): near, mid, far</h2>
 <div class="row" id="ascii"></div>
@@ -106,9 +95,12 @@
 
   // ------------------------------------------------------------------ kit (generator now; the JSON replaces it if present)
   var kit = CK.buildHumanKit(P), genText = CK.stringifyKit(kit), jsonLine = ['info', 'INFO content/chargen/human.charkit.json: loading ...'];
-  var D, S, NB, NAMES, BAABB, JOINTS, PARENT, FULLBOX, TONES;
+  var D, S, NB, NAMES, BAABB, JOINTS, PARENT, FULLBOX, TONES, builtOutfit = null;
+  var ctl = { tone: 'medium', pose: 'rest', collapsed: false, rots: {}, outfit: true };
   function setup() {
-    D = CK.decodeBase(kit, 'm_avg'); S = D.size; NAMES = D.names; NB = NAMES.length; FULLBOX = [0, 0, 0, S[0], S[1], S[2]];
+    builtOutfit = ctl.outfit;
+    D = ctl.outfit ? CK.composePreview(kit, 'm_avg', kit.defaults) : CK.decodeBase(kit, 'm_avg');
+    S = D.size; NAMES = D.names; NB = NAMES.length; FULLBOX = [0, 0, 0, S[0], S[1], S[2]];
     BAABB = NAMES.map(function () { return [1e9, 1e9, 1e9, -1e9, -1e9, -1e9]; });
     for (var z = 0; z < S[2]; z++) for (var y = 0; y < S[1]; y++) for (var x = 0; x < S[0]; x++) {
       var k = D.at(x, y, z); if (k < 0 || D.bone[k] < 0) continue;
@@ -123,15 +115,20 @@
   setup();
 
   // ------------------------------------------------------------------ controls
-  var ctl = { tone: 'medium', pose: 'rest', collapsed: false, rots: {} };
   Object.keys(kit.ramps.eyes).forEach(function (e) { var o = document.createElement('option'); o.textContent = e; $('eyes').appendChild(o); });
-  Object.keys(kit.ramps.hair).forEach(function (e) { var o = document.createElement('option'); o.textContent = e; $('brows').appendChild(o); });
+  Object.keys(kit.ramps.hair).forEach(function (e) { var o = document.createElement('option'); o.textContent = e; $('hair').appendChild(o); });
   function readCtl() {
     ['az', 'el', 'int', 'amb', 'yaw', 'pitch'].forEach(function (k) { ctl[k] = +$(k).value; $(k + 'V').textContent = ctl[k]; });
-    ctl.eyes = $('eyes').value; ctl.brows = $('brows').value; ctl.spin = $('spin').checked;
+    ctl.eyes = $('eyes').value; ctl.hair = $('hair').value; ctl.spin = $('spin').checked; ctl.outfit = $('outfit').checked;
   }
   readCtl();
-  function recipe(tone) { return { skin: tone, eyes: ctl.eyes, hair: { id: 'preview', ramp: ctl.brows }, beard: null }; }
+  // the colour recipe: kit.defaults (outfit dyes) with the chosen tone, eyes and hair colour (brows follow the hair)
+  function recipe(tone) {
+    var r = JSON.parse(JSON.stringify(kit.defaults));
+    r.skin = tone; r.eyes = ctl.eyes;
+    r.hair = { id: r.hair ? r.hair.id : 'preview', ramp: ctl.hair };
+    return r;
+  }
   function lightVec() { var a = ctl.az * D2R, e = ctl.el * D2R; return [Math.sin(a) * Math.cos(e), -Math.cos(a) * Math.cos(e), Math.sin(e)]; }
   function charTable(rc) {   // slot char -> { key, mat, rgb }
     var t = {};
@@ -258,7 +255,7 @@
       project: function (Pt) { var q = [Pt[0] - pos[0], Pt[1] - pos[1], Pt[2] - pos[2]]; return [dot(q, right) / pw + W / 2, H / 2 - dot(q, up) / ph]; }
     };
   }
-  var BODY_C = [18.5, 10.5, 35.5];
+  var BODY_C = [18.5, 10.5, 36], FACE_C = [18.5, 9.5, 64.5], FACE_VIEW = 16;
 
   // ------------------------------------------------------------------ trace once, shade per colour table
   function traceView(cam, pose) {
@@ -320,14 +317,38 @@
     wrap.appendChild(cv); wrap.appendChild(c); host.appendChild(wrap);
     return { cv: cv, ctx: cv.getContext('2d'), cap: c };
   }
+  function colOf(tab) { return function (k) { var t = tab[D.ch[k]]; return t ? t.rgb : [255, 0, 255]; }; }
 
-  // ------------------------------------------------------------------ section 1: five tones
+  // ------------------------------------------------------------------ section 1: sheet (5 tones x front / 3/4 / profile, body + face)
+  var SHEET_ANG = [[0, 'front'], [-35, '3/4'], [-90, 'profile']], sheetRows = null;
+  function renderSheet() {
+    if (!sheetRows) {
+      sheetRows = TONES.map(function (t) {
+        var row = document.createElement('div'); row.className = 'row'; $('sheet').appendChild(row);
+        var lab = document.createElement('div'); lab.className = 'tlabel'; lab.textContent = t; row.appendChild(lab);
+        return {
+          tone: t,
+          body: SHEET_ANG.map(function (a) { return makeCanvas(row, 120, 250, t + ' ' + a[1]); }),
+          face: SHEET_ANG.map(function (a) { return makeCanvas(row, 150, 150, t + ' face ' + a[1]); })
+        };
+      });
+    }
+    // trace each view once, paint it per tone
+    var bodyB = SHEET_ANG.map(function (a) { return traceView(orthoCam(BODY_C, a[0], ctl.pitch, 120, 250, 76), null); });
+    var faceB = SHEET_ANG.map(function (a) { return traceView(orthoCam(FACE_C, a[0], 4, 150, 150, FACE_VIEW), null); });
+    sheetRows.forEach(function (r) {
+      var col = colOf(charTable(recipe(r.tone)));
+      r.body.forEach(function (v, j) { paintMesh(v.ctx, bodyB[j], col); });
+      r.face.forEach(function (v, j) { paintMesh(v.ctx, faceB[j], col); });
+    });
+  }
+
+  // ------------------------------------------------------------------ section 1b: five tones from the view slider
   var toneViews = TONES.map(function (t) { return makeCanvas($('tones'), 130, 272, t); });
   function renderTones() {
     var cam = orthoCam(BODY_C, ctl.yaw, ctl.pitch, 130, 272, 76), B = traceView(cam, null);
     TONES.forEach(function (t, j) {
-      var tab = charTable(recipe(t));
-      paintMesh(toneViews[j].ctx, B, function (k) { return tab[D.ch[k]].rgb; });
+      paintMesh(toneViews[j].ctx, B, colOf(charTable(recipe(t))));
       toneViews[j].cap.textContent = t + ' (skin ' + kit.ramps.skin[t].base + ')';
     });
   }
@@ -340,166 +361,11 @@
   });
   var ANG = [[0, 'front'], [90, 'right side (his left)'], [180, 'back'], [-90, 'left side (his right)'], [-35, '3/4 front']];
   var angleViews = ANG.map(function (a) { return makeCanvas($('angles'), 170, 352, a[1]); });
-  var faceViews = [[0, 'face front'], [-35, 'face 3/4'], [-90, 'face profile']].map(function (a) { return { yaw: a[0], v: makeCanvas($('face'), 240, 240, a[1]) }; });
+  var faceViews = [[0, 'face front'], [-35, 'face 3/4'], [-90, 'face profile'], [180, 'head back']].map(function (a) { return { yaw: a[0], v: makeCanvas($('face'), 240, 240, a[1]) }; });
   function renderAngles() {
-    var tab = charTable(recipe(ctl.tone)), col = function (k) { return tab[D.ch[k]].rgb; };
+    var col = colOf(charTable(recipe(ctl.tone)));
     ANG.forEach(function (a, j) { paintMesh(angleViews[j].ctx, traceView(orthoCam(BODY_C, a[0] + (ctl.spin ? ctl.yaw : 0), ctl.pitch, 170, 352, 74), null), col); });
-    faceViews.forEach(function (f) { paintMesh(f.v.ctx, traceView(orthoCam([18.5, 9.5, 64.5], f.yaw, 4, 240, 240, 13), null), col); });
-  }
-
-  // ------------------------------------------------------------------ section 2b: head detail (fine-cell grids, 1 unit = 1.25 cm)
-  function headGrids() {
-    var R = kit.regions && kit.regions.head, det = kit.bases.m_avg.detail && kit.bases.m_avg.detail.head;
-    if (!R || !det || !det['2']) return null;
-    var bx = R.box, S = [(bx[3] - bx[0] + 1) * 2, (bx[4] - bx[1] + 1) * 2, (bx[5] - bx[2] + 1) * 2], n = S[0] * S[1] * S[2];
-    function l1(x, y, z, regionOnly) {   // level-1 char at a fine cell; regionOnly: Head / Jaw cells only, else non-region (Neck)
-      var k = D.at(bx[0] + (x >> 1), bx[1] + (y >> 1), bx[2] + (z >> 1));
-      if (k < 0 || D.bone[k] < 0) return '.';
-      var inR = R.bones.indexOf(NAMES[D.bone[k]]) >= 0;
-      return inR === regionOnly ? D.ch[k] : '.';
-    }
-    function grid(fn) {
-      var ch = new Array(n), x, y, z, c;
-      for (z = 0; z < S[2]; z++) for (y = 0; y < S[1]; y++) for (x = 0; x < S[0]; x++) {
-        c = fn(x, y, z); if (c === '.') c = l1(x, y, z, false);
-        ch[x + S[0] * (y + S[1] * z)] = c;
-      }
-      return { S: S, ch: ch };
-    }
-    var lay2 = det['2'].layers, ds = CK.downsample2(lay2, S, kit.slots);
-    return [
-      { g: grid(function (x, y, z) { return l1(x, y, z, true); }), label: 'Standard 2.5 cm (face v2)' },
-      { g: grid(function (x, y, z) { return lay2[z][y].charAt(x); }), label: 'Fine 1.25 cm (detail.head["2"])' },
-      { g: grid(function (x, y, z) { return ds[z >> 1][y >> 1].charAt(x >> 1); }), label: 'Fine -> downsample2 -> 2.5 cm' }
-    ];
-  }
-  var GH = { t: 0, c: '.', face: -1, fs: 0, x: 0, y: 0, z: 0 }, GS = { t: 0, c: '.', face: -1, fs: 0, x: 0, y: 0, z: 0 };
-  function gCast(G, ox, oy, oz, dx, dy, dz, out) {
-    var S = G.S, O = [ox, oy, oz], Dv = [dx, dy, dz], t0 = 0, t1 = 1e9, ea = -1, a;
-    for (a = 0; a < 3; a++) {
-      if (Math.abs(Dv[a]) < 1e-12) { if (O[a] < 0 || O[a] > S[a]) return false; continue; }
-      var ta = -O[a] / Dv[a], tb = (S[a] - O[a]) / Dv[a];
-      if (ta > tb) { var sw = ta; ta = tb; tb = sw; }
-      if (ta > t0) { t0 = ta; ea = a; }
-      if (tb < t1) t1 = tb;
-      if (t0 > t1) return false;
-    }
-    var I = [0, 0, 0], st = [0, 0, 0], tm = [0, 0, 0], td = [0, 0, 0];
-    for (a = 0; a < 3; a++) {
-      var c = Math.floor(O[a] + Dv[a] * t0); if (c < 0) c = 0; if (c > S[a] - 1) c = S[a] - 1; I[a] = c;
-      if (Dv[a] > 0) { st[a] = 1; tm[a] = (c + 1 - O[a]) / Dv[a]; td[a] = 1 / Dv[a]; }
-      else if (Dv[a] < 0) { st[a] = -1; tm[a] = (c - O[a]) / Dv[a]; td[a] = -1 / Dv[a]; }
-      else { st[a] = 0; tm[a] = Infinity; td[a] = Infinity; }
-    }
-    var t = t0, face = ea;
-    for (var it = 0; it < 400; it++) {
-      var ch = G.ch[I[0] + S[0] * (I[1] + S[1] * I[2])];
-      if (ch !== '.') {
-        out.t = t; out.c = ch; out.face = face; out.fs = face >= 0 ? -st[face] : 0;
-        out.x = ox + dx * t; out.y = oy + dy * t; out.z = oz + dz * t; return true;
-      }
-      a = tm[0] < tm[1] ? (tm[0] < tm[2] ? 0 : 2) : (tm[1] < tm[2] ? 1 : 2);
-      t = tm[a]; if (t > t1) return false;
-      I[a] += st[a]; tm[a] += td[a]; face = a;
-      if (I[a] < 0 || I[a] >= S[a]) return false;
-    }
-    return false;
-  }
-  function traceGrid(G, cam) {
-    var n = cam.W * cam.H, L = lightVec(), O = [0, 0, 0], d = cam.fwd, cm = 0.0125;
-    var B = { cam: cam, kind: new Uint8Array(n), k: new Int32Array(n), nz: new Float32Array(n), lit: new Float32Array(n),
-              depth: new Float32Array(n), u: new Float32Array(n), v: new Float32Array(n) };
-    for (var py = 0; py < cam.H; py++) for (var px = 0; px < cam.W; px++) {
-      var i = py * cam.W + px;
-      cam.ray(px, py, O);
-      if (!gCast(G, O[0], O[1], O[2], d[0], d[1], d[2], GH)) continue;
-      var nn = [0, 0, 0]; if (GH.face >= 0) nn[GH.face] = GH.fs;
-      var ndl = nn[0] * L[0] + nn[1] * L[1] + nn[2] * L[2], lit = 0;
-      if (ndl > 0) lit = gCast(G, GH.x + nn[0] * 0.02, GH.y + nn[1] * 0.02, GH.z + nn[2] * 0.02, L[0], L[1], L[2], GS) ? 0 : ndl;
-      B.kind[i] = 2; B.k[i] = GH.c.charCodeAt(0); B.nz[i] = nn[2]; B.lit[i] = lit; B.depth[i] = GH.t;
-      if (GH.face === 0) { B.u[i] = GH.y * cm; B.v[i] = GH.z * cm; }
-      else if (GH.face === 1) { B.u[i] = GH.x * cm; B.v[i] = GH.z * cm; }
-      else { B.u[i] = GH.x * cm; B.v[i] = GH.y * cm; }
-    }
-    return B;
-  }
-  var HEAD_C = [7, 19.5, 11.5], HEAD_ANG = [[0, 'front'], [-35, '3/4'], [-90, 'profile']];
-  var headCmpViews = null, headToneViews = null, headAsciiViews = null;
-  function asciiPaint(v, B, tab, dist) {
-    var cols = v.cols, rows = v.rows, n = cols * rows, gl = new Array(n), fg = new Float32Array(n * 3), bg = new Float32Array(n * 3);
-    var SHO = { fg: [0, 0, 0], bg: [0, 0, 0] }, Lacc = [0, 0, 0], E = DP && DP.edges, i, k, r, c;
-    for (i = 0; i < n; i++) {
-      if (!B.kind[i]) { gl[i] = ' '; bg[i * 3] = 7; bg[i * 3 + 1] = 8; bg[i * 3 + 2] = 12; continue; }
-      var t = tab[String.fromCharCode(B.k[i])], mat = t && t.mat;
-      if (!mat) { gl[i] = '?'; fg[i * 3] = 255; fg[i * 3 + 2] = 255; continue; }
-      Lacc[0] = 0; Lacc[1] = 0; Lacc[2] = 0;
-      U.addLight(Lacc, 'ambient', 0.14 * ctl.amb);
-      if (B.lit[i] > 0) U.addLight(Lacc, 'sun', ctl.int * B.lit[i]);
-      U.shade(mat, Lacc, B.u[i], B.v[i], dist, SHO, { fog: null, z: B.v[i] });
-      gl[i] = SHO.glyph;
-      for (k = 0; k < 3; k++) { fg[i * 3 + k] = SHO.fg[k]; bg[i * 3 + k] = SHO.bg[k]; }
-    }
-    if (E) {
-      var far = function (a, b) { return B.kind[b] === 0 || B.depth[b] > B.depth[a] * E.depthRatio + E.depthAbs; }, rule = new Int8Array(n);
-      for (r = 0; r < rows; r++) for (c = 0; c < cols; c++) {
-        i = r * cols + c; if (B.kind[i] !== 2) continue;
-        if (r > 0 && far(i, i - cols)) rule[i] = 1;
-        else if ((c > 0 && far(i, i - 1)) || (c < cols - 1 && far(i, i + 1))) rule[i] = 2;
-        else if (r < rows - 1 && far(i, i + cols)) rule[i] = 3;
-      }
-      var rim = E.modelRim || 0.55;
-      for (i = 0; i < n; i++) {
-        if (!rule[i]) continue;
-        var RR = rule[i] === 1 ? E.rules.cap : rule[i] === 2 ? E.rules.side : E.rules.lip;
-        if (gl[i] !== ' ') gl[i] = RR.glyph;
-        for (k = 0; k < 3; k++) { fg[i * 3 + k] = Math.min(255, fg[i * 3 + k] * RR.gain) * rim; bg[i * 3 + k] *= rim; }
-      }
-    }
-    var ctx = v.ctx;
-    for (r = 0; r < rows; r++) for (c = 0; c < cols; c++) {
-      i = r * cols + c;
-      ctx.fillStyle = 'rgb(' + (bg[i * 3] | 0) + ',' + (bg[i * 3 + 1] | 0) + ',' + (bg[i * 3 + 2] | 0) + ')';
-      ctx.fillRect(c * v.cw, r * v.ch, v.cw + 0.5, v.ch + 0.5);
-      if (gl[i] && gl[i] !== ' ') {
-        ctx.fillStyle = 'rgb(' + (fg[i * 3] | 0) + ',' + (fg[i * 3 + 1] | 0) + ',' + (fg[i * 3 + 2] | 0) + ')';
-        ctx.fillText(gl[i], c * v.cw + v.cw / 2, r * v.ch + v.ch / 2 + 1);
-      }
-    }
-  }
-  function renderHead() {
-    var HG = headGrids();
-    if (!HG) { $('headInfo').textContent = 'no regions.head / detail.head["2"] in the kit'; return; }
-    var tab = charTable(recipe(ctl.tone)), col = function (k) { var t = tab[String.fromCharCode(k)]; return t ? t.rgb : [255, 0, 255]; };
-    if (!headCmpViews) {
-      headCmpViews = HG.map(function (h) {
-        var row = document.createElement('div'); row.className = 'row'; $('headCmp').appendChild(row);
-        return HEAD_ANG.map(function (a) { return makeCanvas(row, 230, 230, h.label + ' - ' + a[1]); });
-      });
-      headToneViews = [];
-      TONES.forEach(function (t) { [0, -35].forEach(function (yw) { headToneViews.push({ tone: t, yaw: yw, v: makeCanvas($('headTones'), 150, 150, t + (yw ? ' 3/4' : ' front')) }); }); });
-      headAsciiViews = [];
-      [[0, 0], [0, -35], [1, 0], [1, -35]].forEach(function (p) {
-        var rows = 46, cols = 46, cw = 7, chh = 14, v = makeCanvas($('headAscii'), cols * cw, rows * chh, (p[0] ? 'Fine 1.25 cm' : 'Standard 2.5 cm') + (p[1] ? ' 3/4' : ' front'));
-        v.ctx.font = Math.round(chh * 0.92) + 'px ' + FONT; v.ctx.textAlign = 'center'; v.ctx.textBaseline = 'middle';
-        v.cols = cols; v.rows = rows; v.cw = cw; v.ch = chh; v.g = p[0]; v.yaw = p[1];
-        headAsciiViews.push(v);
-      });
-    }
-    HG.forEach(function (h, j) {
-      HEAD_ANG.forEach(function (a, m) { paintMesh(headCmpViews[j][m].ctx, traceGrid(h.g, orthoCam(HEAD_C, a[0], 6, 230, 230, 27)), col); });
-    });
-    headToneViews.forEach(function (tv) {
-      var tb = charTable(recipe(tv.tone));
-      paintMesh(tv.v.ctx, traceGrid(HG[1].g, orthoCam(HEAD_C, tv.yaw, 6, 150, 150, 27)), function (k) { var t = tb[String.fromCharCode(k)]; return t ? t.rgb : [255, 0, 255]; });
-    });
-    headAsciiViews.forEach(function (v) { asciiPaint(v, traceGrid(HG[v.g].g, orthoCam(HEAD_C, v.yaw, 6, v.cols, v.rows, 27, 2)), tab, 1.0); });
-  }
-  function headInfo(st) {
-    var d = st && st.detail && st.detail.head2;
-    if (!d) return;
-    $('headInfo').innerHTML = 'Fine head: ' + d.voxels + ' voxels, ' + d.quads + ' quads (Standard head + jaw: see the bones line in Checks); ' +
-      'downsample2 vs face v2: <b>' + d.downsampleDiff + '</b> level-1 cells differ' +
-      (d.diffCells.length ? ' (' + d.diffCells.slice(0, 12).map(function (c) { return '[' + c[0] + ',' + c[1] + ',' + c[2] + '] ' + c[3] + '->' + c[4]; }).join(', ') + ')' : '');
+    faceViews.forEach(function (f) { paintMesh(f.v.ctx, traceView(orthoCam(FACE_C, f.yaw, 4, 240, 240, FACE_VIEW), null), col); });
   }
 
   // ------------------------------------------------------------------ section 3: ASCII
@@ -516,10 +382,11 @@
       var d = v.d, cols = v.cols, rows = d.rows;
       // a text cell is twice as tall as wide: aspect 2
       var cam = orthoCam(BODY_C, ctl.yaw, ctl.pitch, cols, rows, 76, 2), B = traceView(cam, null), n = cols * rows;
-      var gl = new Array(n), fg = new Float32Array(n * 3), bg = new Float32Array(n * 3), i, k;
+      var gl = new Array(n), fg = new Float32Array(n * 3), bg = new Float32Array(n * 3), i, k, r, c;
       for (i = 0; i < n; i++) {
         if (!B.kind[i]) { gl[i] = ' '; bg[i * 3] = 7; bg[i * 3 + 1] = 8; bg[i * 3 + 2] = 12; continue; }
-        var mat = B.kind[i] === 2 ? tab[D.ch[B.k[i]]].mat : P.materials.grass;
+        var tt = B.kind[i] === 2 ? tab[D.ch[B.k[i]]] : null, mat = B.kind[i] === 2 ? (tt && tt.mat) : P.materials.grass;
+        if (!mat) { gl[i] = '?'; fg[i * 3] = 255; fg[i * 3 + 2] = 255; continue; }
         Lacc[0] = 0; Lacc[1] = 0; Lacc[2] = 0;
         U.addLight(Lacc, 'ambient', 0.14 * ctl.amb);
         if (B.lit[i] > 0) U.addLight(Lacc, 'sun', ctl.int * B.lit[i]);
@@ -528,7 +395,7 @@
         for (k = 0; k < 3; k++) { fg[i * 3 + k] = SHO.fg[k]; bg[i * 3 + k] = SHO.bg[k]; }
       }
       if (E) {   // edge rules: cap (top), side, lip (bottom) where depth jumps, as voxel_bear / wildlife previews
-        var far = function (a, b) { return B.kind[b] === 0 || B.depth[b] > B.depth[a] * E.depthRatio + E.depthAbs; }, rule = new Int8Array(n), r, c;
+        var far = function (a, b) { return B.kind[b] === 0 || B.depth[b] > B.depth[a] * E.depthRatio + E.depthAbs; }, rule = new Int8Array(n);
         for (r = 0; r < rows; r++) for (c = 0; c < cols; c++) {
           i = r * cols + c; if (B.kind[i] !== 2) continue;
           if (r > 0 && far(i, i - cols)) rule[i] = 1;
@@ -538,9 +405,9 @@
         var rim = E.modelRim || 0.55;
         for (i = 0; i < n; i++) {
           if (!rule[i]) continue;
-          var R = rule[i] === 1 ? E.rules.cap : rule[i] === 2 ? E.rules.side : E.rules.lip;
-          if (gl[i] !== ' ') gl[i] = R.glyph;
-          for (k = 0; k < 3; k++) { fg[i * 3 + k] = Math.min(255, fg[i * 3 + k] * R.gain) * rim; bg[i * 3 + k] *= rim; }
+          var RR = rule[i] === 1 ? E.rules.cap : rule[i] === 2 ? E.rules.side : E.rules.lip;
+          if (gl[i] !== ' ') gl[i] = RR.glyph;
+          for (k = 0; k < 3; k++) { fg[i * 3 + k] = Math.min(255, fg[i * 3 + k] * RR.gain) * rim; bg[i * 3 + k] *= rim; }
         }
       }
       var ctx = v.ctx;
@@ -578,7 +445,7 @@
   });
   var colLab = document.createElement('label'); colLab.innerHTML = '<input type="checkbox" id="collapsed"> in-game 8 parts (no elbows / knees, 38.29 option A)';
   $('poseBar').appendChild(colLab);
-  var colorBy = document.createElement('label'); colorBy.innerHTML = 'colour <select id="rigCol"><option value="bone">22 bones</option><option value="part">8 parts</option><option value="skin">skin (selected tone)</option></select>';
+  var colorBy = document.createElement('label'); colorBy.innerHTML = 'colour <select id="rigCol"><option value="bone">22 bones</option><option value="part">8 parts</option><option value="skin">look (selected tone)</option></select>';
   $('poseBar').appendChild(colorBy);
   var boneSel = document.createElement('label'); boneSel.innerHTML = 'bone <select id="boneSel"></select>';
   $('poseBar').appendChild(boneSel);
@@ -611,7 +478,7 @@
   var PART_OF_BONE = NAMES.map(function (n) { for (var i = 0; i < kit.partMap.length; i++) if (kit.partMap[i].bones.indexOf(n) >= 0) return i; return 0; });
   function renderRig() {
     var pose = computePose(ctl.rots, ctl.collapsed), mode = $('rigCol').value, tab = charTable(recipe(ctl.tone));
-    var col = function (k) { var b = D.bone[k]; return mode === 'bone' ? BONE_RGB[b] : mode === 'part' ? PART_RGB[PART_OF_BONE[b]] : tab[D.ch[k]].rgb; };
+    var col = function (k) { var b = D.bone[k], t = tab[D.ch[k]]; return mode === 'bone' ? BONE_RGB[b] : mode === 'part' ? PART_RGB[PART_OF_BONE[b]] : (t ? t.rgb : [255, 0, 255]); };
     rigViews.forEach(function (rv) {
       var cam = orthoCam([18.5, 10.5, 36], rv.yaw, 10, 200, 372, 80), B = traceView(cam, pose);
       paintMesh(rv.v.ctx, B, col);
@@ -626,7 +493,8 @@
       return '<span class="sw" style="background:rgb(' + PART_RGB[i].map(Math.round).join(',') + ')"></span>' + p + ' (' + kit.partMap[i].bones.join(', ') + ')';
     }) : NAMES.map(function (n, i) {
       return '<span class="sw" style="background:rgb(' + BONE_RGB[i].map(Math.round).join(',') + ')"></span>' + n + (st ? ' ' + st.perBone[n] : '');
-    })).join(' &nbsp; ') + '<br>Test poses only check the boxes and pivots (no clips in v0). Waist / knee seams are rigid by design (one bone per voxel).';
+    })).join(' &nbsp; ') + '<br>Test poses only check the boxes and pivots (no clips in the kit). Waist / knee seams are rigid by design (one bone per voxel). ' +
+      'Shell voxels grown by thick clothes (boots, belt) take the bone they grew from; hair is on the Head bone.';
   }
 
   // ------------------------------------------------------------------ section 5: ramps
@@ -637,7 +505,7 @@
   function renderRamps() {
     var h = '', id, s;
     var groups = ['skin', 'hair', 'eyes', 'top'];
-    var titles = { skin: 'Skin tones (light, base, shade, deep, flush, nail, vein)', hair: 'Hair (light, base, dark, brow)', eyes: 'Eyes (iris)', top: 'Natural dyes (light, base, dark): top / legs / feet / outer / hat share them' };
+    var titles = { skin: 'Skin tones (light, base, shade, deep, flush, nail, vein)', hair: 'Hair (light, base, dark, brow)', eyes: 'Eyes (iris; pupil = fixed hair_black_dark, white = fixed linen_light)', top: 'Natural dyes (light, base, dark): top / legs / feet / outer / hat share them' };
     groups.forEach(function (gr) {
       h += '<h3>' + titles[gr] + '</h3><table class="r">';
       for (id in kit.ramps[gr]) { h += '<tr><td>' + id + '</td><td>'; for (s in kit.ramps[gr][id]) h += sw(kit.ramps[gr][id][s]); h += '</td><td class="cap">' + Object.keys(kit.ramps[gr][id]).map(function (k) { return kit.ramps[gr][id][k]; }).join(' ') + '</td></tr>'; }
@@ -656,15 +524,19 @@
     out.push(jsonLine);
     out.push([res.errors.length ? 'fail' : 'pass', (res.errors.length ? 'FAIL ' : 'PASS ') + 'checkKit: ' + (res.errors.slice(0, 8).join(' ; ') || 'no errors')]);
     if (res.warnings.length) out.push(['warn', 'WARN ' + res.warnings.join(' ; ')]);
-    out.push(['info', 'INFO m_avg: ' + st.voxels + ' voxels, ' + st.quads + ' quads (per-bone greedy; 38.29 target 4-6k), ' +
-              st.heightM + ' m tall, ' + st.widthM + ' m wide (arms in), ' + st.depthM + ' m deep; ' + res.stats.materialKeys + ' material keys in the kit (<= 255 per character)']);
+    out.push(['info', 'INFO m_avg base: ' + st.voxels + ' voxels, ' + st.quads + ' quads (per-bone greedy), ' +
+              st.heightM + ' m tall (scalp), ' + st.widthM + ' m wide (arms in), ' + st.depthM + ' m deep; ' + res.stats.materialKeys + ' material keys in the kit (<= 255 per character)']);
+    var dr = kit.defaults, items = ['hair', 'top', 'legs', 'feet', 'outer'].map(function (sl) { return sl + ' ' + (dr[sl] ? dr[sl].id + '/' + dr[sl].ramp : 'none'); });
+    var C = CK.composePreview(kit, 'm_avg', dr), cv = 0, mOf = {}, mo = function (ch) { var m = CK.resolveMat(kit, dr, ch) || ch; if (!mOf[m]) mOf[m] = Object.keys(mOf).length + 1; return mOf[m]; };
+    for (var q = 0; q < C.ch.length; q++) if (C.ch[q] !== '.') cv++;
+    out.push([dr.hair && dr.top && dr.legs && dr.feet ? 'pass' : 'fail', (dr.hair && dr.top && dr.legs && dr.feet ? 'PASS ' : 'FAIL ') + 'kit.defaults outfit: ' + items.join(', ') +
+              ' -> ' + cv + ' voxels, ~' + CK.countQuads(C, mo) + ' quads dressed']);
     out.push(['info', 'INFO bones: ' + NAMES.map(function (n) { return n + ' ' + st.perBone[n]; }).join(', ')]);
     if (st.detail && st.detail.head2) {
       var hd = st.detail.head2;
-      out.push([hd.downsampleDiff <= 2 ? 'pass' : 'warn', (hd.downsampleDiff <= 2 ? 'PASS ' : 'WARN ') + 'head L2 (1.25 cm): ' + hd.size.join('x') + ' block, ' +
-                hd.voxels + ' voxels, ' + hd.quads + ' quads; downsample2 vs face v2: ' + hd.downsampleDiff + ' cells differ (expected 2: eye whites)']);
+      out.push([hd.downsampleDiff === 0 ? 'pass' : 'warn', (hd.downsampleDiff === 0 ? 'PASS ' : 'WARN ') + 'head L2 (1.25 cm option) = straight 2x upsample of the head: ' + hd.size.join('x') + ' block, ' +
+                hd.voxels + ' voxels, ' + hd.quads + ' quads; downsample2 vs level 1: ' + hd.downsampleDiff + ' cells differ (expected 0)']);
     }
-    headInfo(st);
     var newK = P.chargen.newMaterials.length, missV2 = P.chargen.newMaterials.filter(function (r) { return !DP || !DP.materials[r.key]; }).length;
     out.push([missV2 ? 'fail' : 'pass', (missV2 ? 'FAIL ' : 'PASS ') + 'palette.chargen: ' + newK + ' appended keys (colour + v1 material + v2 detail-pass record), missing v2: ' + missV2]);
     var pv = U.validate().filter(function (e) { return P.chargen.newMaterials.some(function (r) { return e.indexOf(r.key) === 0; }); });
@@ -675,8 +547,10 @@
 
   // ------------------------------------------------------------------ main
   function renderAll() {
-    try { renderTones(); renderAngles(); renderHead(); renderAscii(); renderRig(); }
-    catch (e) { $('fatal').textContent = 'render threw: ' + e.message; console.error(e); }
+    try {
+      if (ctl.outfit !== builtOutfit) setup();
+      renderSheet(); renderTones(); renderAngles(); renderAscii(); renderRig();
+    } catch (e) { $('fatal').textContent = 'render threw: ' + e.message; console.error(e); }
   }
   var pend = 0;
   document.querySelectorAll('.controls input, .controls select').forEach(function (el) {

@@ -70,7 +70,7 @@ for (const h of [-4, -2, -1, 1, 2, 4]) {
   // overlay: any kit attachment of slot 'overlay' is painted last, only for elder
   const k2 = clone(kit);
   const skinChar = Object.keys(k2.slots).find((c) => k2.slots[c].fixed !== undefined); // a fixed-material char: visibly different from the skin
-  k2.attachments = [{ id: 'elder_overlay', slot: 'overlay', bone: 'Head', anchor: 'head_top', offset: [0, 0, -2], box: [1, 1, 1], layers: [[[skinChar]]] }];
+  k2.attachments = [...k2.attachments, { id: 'elder_overlay', slot: 'overlay', bone: 'Head', anchor: 'head_top', offset: [0, 0, -2], box: [1, 1, 1], layers: [[[skinChar]]] }]; // appended: the kit's own items (default hair) stay valid
   const plain = composeCharacter(kit, { ...r, height: 1 }), withOv = composeCharacter(k2, { ...r, height: 1 }); // elder height 1 -> 0 rows
   const diff = (x, y) => x.mat.reduce((n, v, i2) => n + (x.matKeys[v - 1] !== y.matKeys[y.mat[i2] - 1] ? 1 : 0), 0);
   ok('elder overlay paints its voxel', diff(plain, withOv) === 1, `${diff(plain, withOv)}`);

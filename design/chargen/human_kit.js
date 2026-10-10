@@ -1,39 +1,41 @@
 /*
- * design/chargen/human_kit.js - CHARGEN-01 Human kit v0 GENERATOR (designer script, architecture 38.29 items 1-3).
+ * design/chargen/human_kit.js - CHARGEN-01 Human kit GENERATOR (designer script, architecture 38.29 items 1-3).
  *
  * The kit JSON `content/chargen/human.charkit.json` is the ONLY source the core / app / game read. This file just
  * writes it (node tools/chargen-build-kit.mjs) and is loaded by the preview design/preview/chargen_kit.html,
  * which checks that the JSON on disk equals what this script builds.
  *
- * BASE m_avg (style-guide 0: realistic, built from 2.5 cm voxels, not boxy, natural skin variation):
- *   - a 1.75 m adult man, 70 rows (cellM 0.025), grid 37 x 20 x 70 (odd width: the face, nose, spine and navel sit
- *     on one centre column x = 18). Axes 15.1: faces north (-y), z up, the anchor sits between the feet.
- *   - real proportions: head 25 cm (1/7), chin 1.50 m, shoulders 1.45 m, elbow 1.08 m, waist 1.05 m, crotch 0.85 m,
- *     wrist 0.84 m, fingertips 0.65 m, knee 0.49 m, ankle 0.09 m; shoulders 47 cm over the deltoids, hips 37 cm,
- *     waist 28 cm, foot 25 cm.
- *   - every body section is an ellipse / superellipse slice with keyframed radii (torso S-curve, pecs, buttocks,
- *     calves, knees, ankles), so no flat cube face reads at 3-6 m. Head, hands and feet are hand-placed cells.
- *   - face v2 (owner 2026-10-10): eyes (white + iris) on the face plane under brows and a lit brow bone, nose bridge +
- *     lit tip, cheek apples, lit cheekbones, ears with helix / concha / lobe, 3-wide lips with shaded corners, a dark
- *     mouth interior on the jaw seam (seen when the Jaw bone opens), lit chin. See the HEAD table.
- *   - head at 1.25 cm (CHARGEN-23, D-055, architecture 38.34): kit.regions.head (Head + Jaw boxes), kit.resLevels,
- *     bases.m_avg.detail.head["2"] (14 x 40 x 22 fine cells) + slot `keep`; face v2 above stays level 1 (Standard).
- *   - hands: palm facing the thigh, thumb forward, four fingers with natural lengths (middle longest, pinky
- *     shortest), slight curl, knuckles, nails, veins. Feet: heel, arch, ball, big toe, toes, ankle bones.
- *   - skin variation: broad anatomy cues only (collarbones, pec crowns, sternum, pec line, nipples, navel, spine
- *     groove, shoulder blades, kneecaps, elbows, throat shade); the v1 random tone patches were removed (stripy).
- *   - underwear: undyed linen braies from the waist to mid-thigh (waistband + hem in linen_dark, a few folds).
- *   - rest pose: standing, arms down in a slight A (gap >= 3 cells from the lower ribs down; the armpit itself
- *     touches, as on a real body), >= 3 cells between the thighs, feet 12 cm apart.
+ * BASE m_avg v2 (CHARGEN-25, D-059 + owner follow-up 2026-10-10: "in between" the owner's stylised voxel references and
+ * realism; replaces the v1 realistic small-head / noisy-skin / bald-in-underwear look):
+ *   - a 1.75 m man, 70 rows (cellM 0.025) + 2 rows of hair room: grid 37 x 20 x 72 (odd width: face, nose and spine on
+ *     the centre column x = 18). Axes 15.1: faces north (-y), z up, the anchor sits between the feet.
+ *   - proportions: head 12 rows (z 58-69, ~1/6 of the body; 11 wide, 10 deep, large flat face with rounded vertical
+ *     edges), neck z 54-60, shoulders z 55 (21 cells = 2 head widths over the deltoids), chest 13 wide, waist 11, hips 13,
+ *     crotch z 34, elbow z 42/43 (one-cell step), wrist z 33, hands z 26-32 (blocks + thumb), knee z 17 (one-cell step),
+ *     ankle z 3, feet z 0-2. Limbs: upper arm / forearm 5 x 5, thigh 5 x 6, shin 5 x 5, all with rounded corners.
+ *   - face: eyes = white (c) + dark pupil (P) over a coloured iris (e), no lids / lashes; a thick brow line (b, the hair
+ *     colour's dark shade); nose = bridge + lit tip standing one cell out, shade under it; mouth = 3-cell dark line on
+ *     the Head / Jaw seam with a 3-cell lower lip (p) under it and a dark interior behind (seen when the Jaw opens);
+ *     ears = simple blocks; chin = the jaw one cell narrower than the skull.
+ *   - skin: ONE flat tone (a) per skin ramp; soft top-down shade (s) only under the chin, under the nose and in the
+ *     armpits. No noise, no stripes, no anatomy speckles.
+ *   - the base still wears plain undyed linen braies (waist to mid-thigh) under the clothes.
+ *   - default look = kit pieces the generator can swap (38.29 item 3): attachment `short` (hair), shells `shirt` (top,
+ *     rolled sleeves), `trousers` (legs), `boots` (feet), `belt` (outer). kit.defaults wears all of them, so the man is
+ *     never bald + underwear by default.
+ *   - head at 1.25 cm (CHARGEN-23 slot, 38.34): bases.m_avg.detail.head["2"] is now a STRAIGHT 2x UPSAMPLE of the
+ *     level-1 Head + Jaw cells (no separate art; downsample2 gives the Standard head back exactly).
+ *   - rest pose: standing, arms down in a slight A (gap >= 3 cells from the hips up to z 46; the armpit touches), 3 cells
+ *     between the thighs, feet 7 cells apart (centre to centre 8).
  *
  * Bone boxes are axis-aligned and resolved FIRST-MATCH in skeleton order (38.29 item 3), so they are cut to the
- * anatomy: e.g. Neck (z 58-61) only takes y >= the jaw seam, the Jaw takes the chin + lower lip in front of it.
+ * anatomy: e.g. Neck (z 55-60) only takes y >= -1 (behind the jaw), the Jaw takes the chin + lower lip in front of it.
  */
 (function (root) {
   'use strict';
   var A = root.ASSETS = root.ASSETS || {};
 
-  var SX = 37, SY = 20, SZ = 70, CX = 18, CY = 10, CELL = 0.025;
+  var SX = 37, SY = 20, SZ = 72, CX = 18, CY = 10, CELL = 0.025;
   var KIT_ID = 'kestrel.chargen.human';
 
   // ===================================================================================================================
@@ -77,20 +79,21 @@
     e: { group: 'eyes', shade: 'iris', keep: 9 },
     b: { group: 'hair', shade: 'brow' },
     u: { fixed: 'linen' }, U: { fixed: 'linen_dark' }, k: { fixed: 'linen_light' },
-    // CHARGEN-23: eye white + catchlight of the 1.25 cm head get their own chars, so their downsample `keep` never touches
-    // linen clothes (u / k). Brows / lash line (b) have no keep: hidden interior b cells carry the brow row instead (README 25)
-    o: { fixed: 'linen', keep: 7 }, c: { fixed: 'linen_light', keep: 8 },
+    // eye white (CHARGEN-25: c = the white of the eye; keep so a downsample never loses it)
+    c: { fixed: 'linen_light', keep: 8 },
     G: { group: 'hair', shade: 'light' }, g: { group: 'hair', shade: 'base' }, K: { group: 'hair', shade: 'dark' },
     1:{ group: 'top', shade: 'light' }, 2: { group: 'top', shade: 'base' }, 3: { group: 'top', shade: 'dark' },
     4: { group: 'legs', shade: 'light' }, 5: { group: 'legs', shade: 'base' }, 6: { group: 'legs', shade: 'dark' },
     7: { group: 'feet', shade: 'light' }, 8: { group: 'feet', shade: 'base' }, 9: { group: 'feet', shade: 'dark' },
     W: { group: 'outer', shade: 'light' }, w: { group: 'outer', shade: 'base' }, m: { group: 'outer', shade: 'dark' },
-    H: { group: 'hat', shade: 'light' }, h: { group: 'hat', shade: 'base' }, j: { group: 'hat', shade: 'dark' }
+    H: { group: 'hat', shade: 'light' }, h: { group: 'hat', shade: 'base' }, j: { group: 'hat', shade: 'dark' },
+    // CHARGEN-25 pupil: near-black, the same for every skin tone / eye colour (existing key hair_black_dark #100d0c)
+    P: { fixed: 'hair_black_dark', keep: 9 }
   };
   // Ramp ids are picked by engine/chargen/compose.js (CHARGEN-02): skin / eyes = recipe.skin / recipe.eyes,
   // lips = recipe.skin, hair (also beard + brows: beard shares the hair group) = (recipe.hair || recipe.beard).ramp,
   // a dye group = recipe[group].ramp; a missing pick takes the FIRST ramp of the group. So the first ramp is the
-  // natural default: darkbrown hair (brows of a bald man), undyed linen, walnut-brown shoes.
+  // natural default: darkbrown hair, undyed linen, walnut-brown shoes.
   function firstThen(obj, first) {
     var o = {}, k;
     if (obj[first]) o[first] = obj[first];
@@ -121,174 +124,103 @@
   var ARM_STRETCH = { LeftUpperArm: 'RightUpperArm', RightUpperArm: 'LeftUpperArm', LeftLowerArm: 'RightLowerArm', RightLowerArm: 'LeftLowerArm' };
 
   // ===================================================================================================================
-  // 3. MATHS + GRID (centred coords: X = x - 18 (+ = the character's RIGHT = east), Y = y - 10 (- = front/north))
+  // 3. GRID (centred coords: X = x - 18 (+ = the character's RIGHT = east), Y = y - 10 (- = front/north))
   // ===================================================================================================================
   function idx(X, Y, z) {
     var x = X + CX, y = Y + CY;
     if (x < 0 || x >= SX || y < 0 || y >= SY || z < 0 || z >= SZ) return -1;
     return x + SX * (y + SY * z);
   }
-  function lerpKeys(keys, z) {
-    if (z < keys[0][0] || z > keys[keys.length - 1][0]) return null;
-    for (var i = 0; i < keys.length - 1; i++) {
-      var a = keys[i], b = keys[i + 1];
-      if (z <= b[0]) {
-        var t = (z - a[0]) / (b[0] - a[0]), o = [];
-        for (var j = 1; j < a.length; j++) o.push(a[j] + (b[j] - a[j]) * t);
-        return o;
-      }
-    }
-    return keys[keys.length - 1].slice(1);
-  }
-  function inSuper(u, v, n) { return Math.pow(Math.abs(u), n) + Math.pow(Math.abs(v), n) <= 1; }
-  function hash3(x, y, z, s) {
-    var h = (Math.imul(x | 0, 0x27d4eb2d) ^ Math.imul(y | 0, 0x165667b1) ^ Math.imul(z | 0, 0x9e3779b1) ^ Math.imul(s | 0, 0x2545f491)) | 0;
-    h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
-    h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
-    h ^= h >>> 16;
-    return (h >>> 0) / 4294967296;
-  }
-  function sm(t) { return t * t * (3 - 2 * t); }
-  // smooth value noise, lattice `sc` cells, 0..1
-  function vnoise(x, y, z, sc, seed) {
-    var fx = x / sc, fy = y / sc, fz = z / sc, ix = Math.floor(fx), iy = Math.floor(fy), iz = Math.floor(fz);
-    var tx = sm(fx - ix), ty = sm(fy - iy), tz = sm(fz - iz), out = 0;
-    for (var c = 0; c < 8; c++) {
-      var dx = c & 1, dy = (c >> 1) & 1, dz = (c >> 2) & 1;
-      var w = (dx ? tx : 1 - tx) * (dy ? ty : 1 - ty) * (dz ? tz : 1 - tz);
-      out += w * hash3(ix + dx, iy + dy, iz + dz, seed);
-    }
-    return out;
-  }
   function r3(v) { return Math.round(v * 1000) / 1000; }
 
   // ===================================================================================================================
-  // 4. BODY SHAPES (cells; zc = row centre). Radii were set against adult male averages, see the header.
+  // 4. HEAD + HAIR (centred cells)
   // ===================================================================================================================
-  // torso: zc, rx (half width), ryF (front), ryB (back), cy (centre y: the spine's S-curve)
-  var TORSO = [
-    [34.5, 6.2, 4.0, 4.8, 0.3], [36, 6.6, 4.2, 5.2, 0.3], [38, 6.5, 4.2, 4.8, 0.2], [40, 6.1, 4.1, 4.0, 0.1],
-    [42, 5.7, 4.1, 3.7, 0.0], [44, 5.8, 4.1, 3.8, 0.0], [46, 6.0, 4.2, 4.1, -0.1], [48, 6.3, 4.5, 4.5, -0.1],
-    [50, 6.6, 4.9, 4.8, -0.1], [52, 6.8, 5.0, 4.9, 0.0], [54, 6.9, 4.7, 4.9, 0.1], [56, 6.9, 3.8, 4.4, 0.3],
-    [57.5, 7.0, 2.6, 3.4, 0.6], [58.5, 3.6, 2.2, 3.0, 0.8]
-  ];
-  var NECK = [[55, 2.4, 2.5, 2.5, 0.9], [62, 2.3, 2.3, 2.4, 0.5]];
-  // leg (right side; left mirrors): zc, cx, cy, rx, ryF, ryB
-  var LEG = [
-    [3, 4.3, 1.0, 1.4, 1.4, 1.6], [5, 4.3, 1.0, 1.3, 1.3, 1.4], [8, 4.3, 0.7, 1.6, 1.4, 1.8], [11, 4.2, 0.4, 2.0, 1.6, 2.4],
-    [14, 4.2, 0.1, 2.2, 1.8, 2.7], [17, 4.2, -0.2, 2.0, 2.0, 2.2], [19, 4.2, -0.4, 2.0, 2.3, 1.9], [21, 4.2, -0.4, 2.1, 2.2, 2.0],
-    [24, 4.3, -0.4, 2.4, 2.5, 2.4], [28, 4.5, -0.3, 2.6, 2.8, 2.8], [32, 4.7, -0.1, 2.8, 3.0, 3.2], [35, 4.6, 0.0, 3.0, 3.2, 3.6]
-  ];
-  // arm (right side): zc, cx, cy, rx, ry. Shoulder joint (7.6, 0.3, 56) -> elbow (12.2, 0.8, 43) -> wrist (12.6, 0, 34)
-  var ARM = [
-    [34, 12.6, 0.0, 1.0, 1.5], [36, 12.5, 0.2, 1.2, 1.6], [39, 12.4, 0.5, 1.5, 1.9], [42, 12.25, 0.75, 1.6, 1.9],
-    [43, 12.2, 0.8, 1.6, 1.8], [44, 11.85, 0.76, 1.6, 1.8], [47, 10.8, 0.65, 1.75, 2.0], [50, 9.7, 0.53, 1.9, 2.2],
-    [54, 8.3, 0.38, 2.1, 2.3], [56, 7.6, 0.3, 2.0, 2.2]
-  ];
-  var DELTOID = { c: [7.8, 0.3, 55.0], r: [2.0, 2.6, 2.8] };
+  // Front plane Y -5, rows X -5..5 ('.' = the rounded corner column, never filled). Rows not listed are flat skin.
+  //   66 brows (b, hair dark)   65 eye white | pupil | white   64 eye white | iris | white   62 shade under the nose (the
+  //   lit tip stands at Y -6)   61 mouth line (d) on the Head side of the seam   60 lower lip (p) on the Jaw
+  var FACE = {
+    66: '.bbbaaabbb.',
+    65: '.cPcaaacPc.',
+    64: '.cecaaacec.',
+    62: '.aaasasaaa.',
+    61: '.aaadddaaa.',
+    60: '.aaapppaaa.'
+  };
+  // the head as a function (also drives the hair): skull z 61-68 (11 x 10, rounded vertical edges), top z 69 (inset one
+  // cell all round), jaw z 59-60 (one cell narrower, Y -5..0), chin z 58, ears (2 x 3 blocks at X +-6), nose (Y -6)
+  function headChar(X, Y, z) {
+    var ax = Math.abs(X), c;
+    var skull = z >= 61 && z <= 68 && ax <= 5 && Y >= -5 && Y <= 4 && !(ax === 5 && (Y === -5 || Y === 4));
+    var top = z === 69 && ax <= 4 && Y >= -4 && Y <= 3 && !(ax === 4 && (Y === -4 || Y === 3));
+    var jaw = (z === 59 || z === 60) && ax <= 4 && Y >= -5 && Y <= 0 && !(ax === 4 && Y === -5);
+    var chin = z === 58 && ax <= 3 && Y >= -5 && Y <= -1 && !(ax === 3 && Y === -5);
+    var ear = ax === 6 && Y >= 0 && Y <= 1 && z >= 62 && z <= 64;
+    var nose = X === 0 && Y === -6 && (z === 62 || z === 63);
+    if (nose) return z === 62 ? 'l' : 'a';            // bridge (z 63) + lit tip (z 62)
+    if (ear) return Y === 0 && z === 63 ? 's' : 'a';  // a shaded ear hole on the front of the block
+    if (!(skull || top || jaw || chin)) return null;
+    if (Y === -5 && FACE[z]) { c = FACE[z].charAt(X + 5); return c === '.' ? 'a' : c; }
+    if (Y === -4 && (z === 60 || z === 61) && ax <= 1) return 'd';   // mouth interior (seen when the Jaw opens)
+    return 'a';
+  }
+  // short hair (attachment `short`): every empty cell touching the head inside the hair zone. Front: only the top edge
+  // (z 69) and the crown (z 70) so the forehead (z 67-68) shows; temples down to z 67, sides down to z 65 (above the
+  // ears), behind the ears to z 62, the back to z 61 (never over the Neck / Jaw rows). g = hair base, K = the dark rim
+  // along the hairline at the sides and back.
+  var HAIR_BOX = { X0: -6, Y0: -6, z0: 61, w: 13, d: 12, h: 10 };   // centred origin + size [x, y, z]
+  function hairZone(X, Y, z) {
+    if (z >= 70) return true;
+    if (Y <= -5) return z >= 69;
+    if (Math.abs(X) < 5 && Y < 4) return false;
+    return z >= (Y >= 4 ? 61 : Y >= 2 ? 62 : Y >= -3 ? 65 : 67);
+  }
+  function isHair(X, Y, z) {
+    if (headChar(X, Y, z) !== null || !hairZone(X, Y, z)) return false;
+    return headChar(X + 1, Y, z) !== null || headChar(X - 1, Y, z) !== null || headChar(X, Y + 1, z) !== null ||
+           headChar(X, Y - 1, z) !== null || headChar(X, Y, z + 1) !== null || headChar(X, Y, z - 1) !== null;
+  }
+  function buildHair() {
+    var layers = [], x, y, z;
+    for (z = 0; z < HAIR_BOX.h; z++) {
+      var L = [];
+      for (y = 0; y < HAIR_BOX.d; y++) {
+        var row = '';
+        for (x = 0; x < HAIR_BOX.w; x++) {
+          var X = HAIR_BOX.X0 + x, Y = HAIR_BOX.Y0 + y, Z = HAIR_BOX.z0 + z;
+          row += !isHair(X, Y, Z) ? '.' : (Z < 69 && !isHair(X, Y, Z - 1)) ? 'K' : 'g';
+        }
+        L.push(row);
+      }
+      layers.push(L);
+    }
+    return layers;
+  }
 
-  // right hand cells [X, Y, z, char] (palm faces the thigh = -X, thumb forward = -Y); the left hand mirrors X
-  var HAND = [
-    [12, -1, 33, 's'], [12, 0, 33, 's'], [12, 1, 33, 's'], [13, -1, 33, 'a'], [13, 0, 33, 'v'], [13, 1, 33, 'a'],
-    [12, -2, 32, 'f'], [12, -1, 32, 'a'], [12, 0, 32, 'a'], [12, 1, 32, 'f'], [13, -2, 32, 'a'], [13, -1, 32, 'a'], [13, 0, 32, 'v'], [13, 1, 32, 'a'],
-    [12, -3, 31, 'a'], [12, -2, 31, 'f'], [12, -1, 31, 's'], [12, 0, 31, 'a'], [12, 1, 31, 'f'], [13, -2, 31, 'a'], [13, -1, 31, 'v'], [13, 0, 31, 'a'], [13, 1, 31, 'l'],
-    [12, -3, 30, 'a'], [11, -3, 30, 'f'], [12, -2, 30, 'a'], [12, -1, 30, 'a'], [12, 0, 30, 'a'], [12, 1, 30, 'a'],
-    [13, -2, 30, 'l'], [13, -1, 30, 'f'], [13, 0, 30, 'l'], [13, 1, 30, 'f'],
-    [11, -3, 29, 'n'], [12, -2, 29, 'a'], [12, -1, 29, 'f'], [12, 0, 29, 'a'], [12, 1, 29, 'f'],
-    [12, -2, 28, 's'], [12, -1, 28, 's'], [12, 0, 28, 's'], [12, 1, 28, 'n'],
-    [12, -2, 27, 'n'], [12, -1, 27, 'a'], [11, -1, 27, 'f'], [12, 0, 27, 'n'],
-    [11, -1, 26, 'n']
-  ];
-  // foot (right): half width per Y (heel +3 .. toe tip -6), centre line toes-out ~6 deg
-  var FOOT_HW = { 3: 1.15, 2: 1.3, 1: 1.4, 0: 1.45, '-1': 1.5, '-2': 1.7, '-3': 1.9, '-4': 2.0, '-5': 1.8, '-6': 1.2 };
-  function footXc(Y) { return 4.3 + (1 - Y) * 0.1; }
-
-  // head, rows z 60..69; each row = 10 strings (Y -5 front .. +4 back) of 7 chars (X -3 .. +3)
-  // a skin, l light, s shade, d deep, f flush, p lips, e iris, k eye white (linen_light), b brow (hair group)
-  // Face v2 (owner 2026-10-10 "redesign the face": v1 read as a skull - eyes sunk one cell behind the face plane under an
-  // overhanging brow, dark temples, hollow cheeks). v2: the eyes sit ON the face plane (Y -4: white outside, iris inside),
-  // brows on the same plane above them with a lit brow bone / forehead (z 67), no overhang and no dark socket cells; nose
-  // = bridge (z 64) + lit tip (z 63) on Y -5, soft nose-wing shade, flushed cheek apples, lit cheekbones filling the
-  // cheek-to-ear hollow (X +-3, z 64-65); 3-wide lips (upper z 62 on Head, lower z 61 on Jaw) with shaded corners and the
-  // dark mouth interior behind them (seen when the Jaw opens); lit chin, shaded underside; ears (helix flush, concha
-  // shade, lobe) stand free of the skull behind them (Y +2 empty at z 63-65).
-  var HEAD = {
-    69: ['.......', '.......', '.......', '..aaa..', '.aaaaa.', '.aaaaa.', '.aaaaa.', '..aaa..', '.......', '.......'],
-    68: ['.......', '.......', '..ala..', '.aaaaa.', '.aaaaa.', 'aaaaaaa', 'aaaaaaa', '.aaaaa.', '..aaa..', '.......'],
-    67: ['.......', '.allla.', '.aaaaa.', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', '.aaaaa.', '.......'],
-    66: ['.......', '.bbabb.', '.baaab.', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', '.aaaaa.', '..aaa..'],
-    65: ['.......', '.keaek.', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', 'aaaaaaa', 'faaaaaf', '.aaaaa.', '.aaaaa.', '..aaa..'],
-    64: ['...a...', '.aaaaa.', 'laaaaal', 'aaaaaaa', 'aaaaaaa', 'saaaaas', 'faaaaaf', '.aaaaa.', '.aaaaa.', '..aaa..'],
-    63: ['...l...', '.fsasf.', '.aaaaa.', '.aaaaa.', '.aaaaa.', 'faaaaaf', '.aaaaa.', '.aaaaa.', '.aaaaa.', '.......'],
-    62: ['.......', '.apppa.', '.addda.', '.aaaaa.', '.aaaaa.', '.aaaaa.', '.aaaaa.', '.aaaaa.', '..aaa..', '.......'],
-    61: ['.......', '..ppp..', '.sddds.', '.aaaaa.', '.......', '.......', '.......', '.......', '.......', '.......'],
-    60: ['.......', '..ala..', '.aaaaa.', '.sssss.', '.......', '.......', '.......', '.......', '.......', '.......']
-  };
-
-  // ---- HEAD at 1.25 cm (CHARGEN-23, D-055, architecture 38.34): bases.m_avg.detail.head["2"] -------------------------
-  // Region head = Head box U Jaw box (level-1 cells), so the block is 14 x 40 x 22 fine cells; origin = the box min.
-  // Working coords below: x2 0..13 (x2 = 2*(X+3) + sub; the centre line runs between x2 6 | 7), yy2 0..19 (Y -5..4,
-  // front -> back; yy2 2,3 = the face plane Y -4), zr 0..19 (z 60..69; zr 4,5 = z 62, the Head / Jaw seam is zr 3 | 4).
-  // Same silhouette and bone boxes as face v2; every 2x2x2 block downsamples (38.34 downsample2) back to the face v2 cell,
-  // except the two eye-white cells (the centred iris wins the keep vote there, see README 25).
-  //  - skull (Y >= -1): face v2 upsampled, convex edges / corners carved (never more than 4 of a block's 8 cells)
-  //  - face (Y -5..-2): FACE2_DEPTH = front cell per column (digit = yy2, 8 = no cell in front of Y -1), FACE2_COLOR = its
-  //    char; the column is filled back to yy2 7 (skin; mouth interior d; jaw underside s). Strings = x2 0..6, mirrored.
-  //    eyes: brow (arch z+, tail + head drop), lid gap, lash line arched over the iris (corners lower), 2x2 iris centred in
-  //    the eye with a catchlight (c) on the same side in both eyes, whites (o) both sides, lower lid shade under the iris;
-  //    nose: nasion -> bridge -> lit tip (2 deep), wings (s), dark nostrils, columella; mouth: upper lip + bow peaks with
-  //    the philtrum between, fuller lower lip (2 rows in the middle), dark corners, shade under the lower lip, lit chin.
-  var HEAD_REGION = { bones: ['Head', 'Jaw'], box: [-3, 3, -10, 9, 59, 69] };   // centred [X0,X1, Y0,Y1, z0,z1]
-  var FACE2_DEPTH = {
-    19: '8888776', 18: '8888766', 17: '8876544', 16: '8865444', 15: '7643333', 14: '6532222', 13: '6522222', 12: '6522222',
-    11: '5422222', 10: '5422221', 9: '5422221', 8: '5422220', 7: '8832210', 6: '8832221', 5: '8832222', 4: '8832222',
-    3: '8843222', 2: '8843222', 1: '8844233', 0: '8854322'
-  };
-  var FACE2_COLOR = {
-    19: 'aaaaaaa', 18: 'aaaaaaa', 17: 'aaaaall', 16: 'aaaaall', 15: 'aaaalll', 14: 'aaabbbl', 13: 'aabaaba', 12: 'aaabbaa',
-    11: 'aabeeba', 10: 'aaoeeoa', 9: 'llassaa', 8: 'lllaaaa', 7: 'aaffasl', 6: 'aaafsda', 5: 'aaaaapa', 4: 'aaaaspp',
-    3: 'aassdpp', 2: 'aassasp', 1: 'aaaaaas', 0: 'aaaaall'
-  };
-  // cells behind the front [x2, zr, yy2, char] (mirrored): the brow tail wrapping the temple (visible) and hidden interior
-  // cells that steer the downsample majority (brow row b, forehead l, nose-wing s, cheek apple f, jaw side s, chin l)
-  var FACE2_CELLS = [
-    [2, 13, 3, 'b'], [2, 13, 4, 'b'], [3, 12, 3, 'b'], [3, 13, 3, 'b'], [3, 12, 4, 'b'], [3, 13, 4, 'b'], [3, 12, 5, 'b'], [3, 13, 5, 'b'],
-    [4, 12, 3, 'b'], [5, 12, 3, 'b'], [4, 13, 3, 'b'], [5, 13, 3, 'b'],
-    [4, 14, 3, 'l'], [5, 14, 3, 'l'], [6, 14, 3, 'l'], [6, 16, 5, 'l'], [6, 17, 5, 'l'],
-    [5, 7, 2, 's'], [4, 6, 3, 's'], [5, 6, 3, 's'], [4, 7, 3, 's'], [5, 7, 3, 's'], [6, 7, 1, 'l'],
-    [3, 6, 3, 'f'], [3, 7, 3, 'f'],
-    [3, 2, 4, 's'], [3, 2, 5, 's'], [3, 3, 4, 's'], [3, 3, 5, 's'], [6, 0, 3, 'l']
-  ];
-  // left ear, side view: per layer (x2 0 = the outer skin, x2 1 = under it) rows zr 11..6, strings yy2 10..13 (front ->
-  // back); helix rim f (top + back, standing free of the skull behind it), antihelix s, scapha s, deep concha d, tragus,
-  // lobe f. Mirrored to x2 13 / 12.
-  var EAR2 = {
-    0: { 11: '.ff.', 10: 'f.sf', 9: 'a.sf', 8: 's..f', 7: '.fff', 6: '.f..' },
-    1: { 11: 'aaa.', 10: 'ass.', 9: 'sds.', 8: 'sdd.', 7: 'aff.', 6: '.f..' }
-  };
-  var CATCH2 = [[4, 11], [10, 11]];   // [x2, zr] catchlight on the upper iris cell, same side in both eyes (not mirrored)
+  // head region (38.34): Head + Jaw boxes plus the hair room, centred [X0,X1, Y0,Y1, z0,z1]
+  var HEAD_REGION = { bones: ['Head', 'Jaw'], box: [-6, 6, -10, 9, 58, 71] };
 
   // ===================================================================================================================
   // 5. BONES: joint (centred coords, continuous) + box (centred, INCLUSIVE cell ranges [X0,X1, Y0,Y1, z0,z1]).
   //    Right side listed; Left mirrors X. First match in skeleton order wins.
   // ===================================================================================================================
   var CENTER_BONES = {
-    Hips:  { joint: [0, 0.3, 36.0],  box: [-7, 7, -10, 9, 34, 40] },
-    Spine: { joint: [0, 0.0, 41.0],  box: [-7, 7, -10, 9, 41, 47] },
-    Chest: { joint: [0, 0.0, 48.0],  box: [-6, 6, -10, 9, 48, 57] },
-    Neck:  { joint: [0, 0.8, 58.0],  box: [-2, 2, -1, 9, 58, 61] },
-    Head:  { joint: [0, 0.5, 62.0],  box: [-3, 3, -10, 9, 62, 69] },
-    Jaw:   { joint: [0, -0.5, 63.0], box: [-3, 3, -10, -2, 59, 61] }
+    Hips:  { joint: [0, 0.5, 35.0],  box: [-8, 8, -10, 9, 34, 40] },
+    Spine: { joint: [0, 0.0, 41.0],  box: [-8, 8, -10, 9, 41, 46] },
+    Chest: { joint: [0, 0.0, 47.0],  box: [-6, 6, -10, 9, 47, 54] },
+    Neck:  { joint: [0, 1.0, 55.0],  box: [-2, 2, -1, 9, 55, 60] },
+    Head:  { joint: [0, 0.5, 61.0],  box: [-6, 6, -10, 9, 61, 71] },
+    Jaw:   { joint: [0, 0.5, 61.5],  box: [-5, 5, -10, 0, 58, 60] }
   };
   var SIDE_BONES = {   // right side, X >= 0
-    Shoulder: { joint: [1.0, -1.5, 56.5], box: [3, 8, -10, 9, 57, 58] },
-    UpperArm: { joint: [7.6, 0.3, 56.0],  box: [6, 16, -10, 9, 43, 58] },
-    LowerArm: { joint: [12.2, 0.8, 43.0], box: [6, 16, -10, 9, 34, 42] },
-    Hand:     { joint: [12.6, 0.0, 34.0], box: [6, 16, -10, 9, 24, 33] },
-    UpperLeg: { joint: [4.5, 0.0, 35.0],  box: [1, 9, -10, 9, 20, 33] },
-    LowerLeg: { joint: [4.2, -0.4, 19.8], box: [1, 9, -10, 9, 4, 19] },
-    Foot:     { joint: [4.3, 1.0, 3.6],   box: [1, 9, -4, 9, 0, 3] },
-    Toes:     { joint: [4.8, -4.5, 0.6],  box: [1, 9, -10, -5, 0, 3] }
+    Shoulder: { joint: [2.5, 0.5, 54.5], box: [3, 6, -10, 9, 55, 56] },
+    UpperArm: { joint: [8.5, 0.0, 53.5], box: [7, 16, -10, 9, 43, 56] },
+    LowerArm: { joint: [11.5, 0.0, 43.0], box: [7, 16, -10, 9, 33, 42] },
+    Hand:     { joint: [12.0, -0.5, 33.0], box: [7, 16, -10, 9, 24, 32] },
+    UpperLeg: { joint: [4.0, -0.5, 33.5], box: [1, 9, -10, 9, 18, 33] },
+    LowerLeg: { joint: [4.0, -0.5, 17.5], box: [1, 9, -10, 9, 3, 17] },
+    Foot:     { joint: [4.0, 0.0, 3.0],   box: [1, 9, -4, 9, 0, 2] },
+    Toes:     { joint: [4.0, -4.5, 0.5],  box: [1, 9, -10, -5, 0, 2] }
   };
   function gridJoint(j) { return [r3(j[0] + CX + 0.5), r3(j[1] + CY + 0.5), r3(j[2])]; }
   // box = INCLUSIVE cell range [x0, y0, z0, x1, y1, z1] (engine/chargen/kit.js)
@@ -310,117 +242,64 @@
   }
 
   // ===================================================================================================================
-  // 6. BUILD THE BASE m_avg
+  // 6. BUILD THE BASE m_avg (rounded blocks; one flat skin tone)
   // ===================================================================================================================
   function buildBase() {
-    var N = SX * SY * SZ, G = new Array(N), LOCK = new Uint8Array(N), X, Y, z, k, s, i;
+    var N = SX * SY * SZ, G = new Array(N), X, Y, z, i, s;
     for (i = 0; i < N; i++) G[i] = '.';
-    function put(X, Y, z, ch, lock) { var q = idx(X, Y, z); if (q < 0) return; if (LOCK[q] && !lock) return; G[q] = ch; if (lock) LOCK[q] = 1; }
-    function occ(X, Y, z) { var q = idx(X, Y, z); return q >= 0 && G[q] !== '.'; }
+    function put(X, Y, z, ch) { var q = idx(X, Y, z); if (q >= 0) G[q] = ch; }
+    // a block of skin, inclusive centred ranges; cut = leave out the four vertical edge columns (rounded corners)
+    function block(X0, X1, Y0, Y1, z0, z1, cut) {
+      for (var zz = z0; zz <= z1; zz++) for (var yy = Y0; yy <= Y1; yy++) for (var xx = X0; xx <= X1; xx++) {
+        if (cut && (xx === X0 || xx === X1) && (yy === Y0 || yy === Y1)) continue;
+        put(xx, yy, zz, 'a');
+      }
+    }
+    function pair(X0, X1, Y0, Y1, z0, z1, cut) { block(X0, X1, Y0, Y1, z0, z1, cut); block(-X1, -X0, Y0, Y1, z0, z1, cut); }
 
-    for (z = 0; z < SZ; z++) {
-      var zc = z + 0.5;
-      // torso (superellipse n 2.4)
-      var t = lerpKeys(TORSO, zc);
-      if (t) for (X = -9; X <= 9; X++) for (Y = -9; Y <= 9; Y++) {
-        var dy = Y - t[3];
-        if (inSuper(X / t[0], dy / (dy < 0 ? t[1] : t[2]), 2.4)) put(X, Y, z, 'a');
-      }
-      // neck (n 2.2)
-      var nk = lerpKeys(NECK, zc);
-      if (nk) for (X = -3; X <= 3; X++) for (Y = -4; Y <= 5; Y++) {
-        var dn = Y - nk[3];
-        if (inSuper(X / nk[0], dn / (dn < 0 ? nk[1] : nk[2]), 2.2)) put(X, Y, z, 'a');
-      }
-      // legs (n 2.2)
-      var lg = lerpKeys(LEG, zc);
-      if (lg) for (s = -1; s <= 1; s += 2) for (X = 0; X <= 10; X++) for (Y = -6; Y <= 6; Y++) {
-        var dl = Y - lg[1];
-        if (inSuper((X - lg[0]) / lg[2], dl / (dl < 0 ? lg[3] : lg[4]), 2.2)) put(s * X, Y, z, 'a');
-      }
-      // arms (ellipse) rows 34..55
-      var am = lerpKeys(ARM, zc);
-      if (am) for (s = -1; s <= 1; s += 2) for (X = 5; X <= 16; X++) for (Y = -5; Y <= 5; Y++) {
-        if (inSuper((X - am[0]) / am[2], (Y - am[1]) / am[3], 2)) put(s * X, Y, z, 'a');
-      }
-      // deltoids (ellipsoid)
-      for (s = -1; s <= 1; s += 2) for (X = 5; X <= 11; X++) for (Y = -4; Y <= 4; Y++) {
-        var ex = (X - DELTOID.c[0]) / DELTOID.r[0], ey = (Y - DELTOID.c[1]) / DELTOID.r[1], ez = (zc - DELTOID.c[2]) / DELTOID.r[2];
-        if (ex * ex + ey * ey + ez * ez <= 1) put(s * X, Y, z, 'a');
-      }
-    }
-    // feet (rows 0..2): sole + toes (z 0), instep (z 1), ankle / Achilles (z 2); arch cut on the inner sole
-    for (s = -1; s <= 1; s += 2) for (Y = -6; Y <= 3; Y++) {
-      var xc = footXc(Y), hw = FOOT_HW[Y];
-      for (X = 0; X <= 9; X++) {
-        var ax = Math.abs(X - xc);
-        if (ax <= hw) {
-          var arch = Y >= -2 && Y <= 1 && X < xc - 0.6, bigToe = Y === -6 && X > xc + 0.2;
-          if (!arch && !bigToe) put(s * X, Y, 0, Y === 3 ? 'f' : 'a', true);
-        }
-        if (Y >= -4 && ax <= hw * 0.95) put(s * X, Y, 1, Y === 3 ? 'f' : 'a', true);
-        if (Y >= -2 && Y <= 2 && ax <= hw * 0.8) put(s * X, Y, 2, 'a', true);
-      }
-      // nails / toe tips: big toe nail (inner tip), the little toes' row a touch warmer, creases
-      put(s * 4, -6, 0, 'n', true); put(s * 5, -6, 0, 'a', true);
-      put(s * 4, -5, 0, 's', true); put(s * 6, -5, 0, 'f', true);
-    }
-    // hands
-    HAND.forEach(function (c) { for (var sd = -1; sd <= 1; sd += 2) put(sd * c[0], c[1], c[2], c[3], true); });
+    // legs: foot (sole + toes z 0-1, instep z 2), shin 5 x 5, knee + thigh 5 x 6 (the one-cell step at the knee front)
+    pair(2, 6, -5, 2, 0, 1, true);
+    pair(2, 6, -2, 2, 2, 16, true);
+    pair(2, 6, -3, 2, 17, 33, true);
+    // torso: hips 13 wide (z 34-40), waist 11 (z 41-46), chest 13 (z 47-53, deeper in front), shoulder top, traps
+    block(-6, 6, -3, 4, 34, 38, true);
+    block(-6, 6, -3, 3, 39, 40, true);
+    block(-5, 5, -3, 3, 41, 46, true);
+    block(-6, 6, -3, 3, 47, 47, true);
+    block(-6, 6, -4, 3, 48, 52, true);
+    block(-6, 6, -3, 3, 53, 53, true);
+    block(-5, 5, -3, 3, 54, 54, true);
+    block(-4, 4, -1, 2, 55, 55, true);
+    // neck 5 x 5, set back (behind the jaw)
+    block(-2, 2, -1, 3, 54, 60, true);
+    // arms (slight A): deltoid cap z 54-55, upper arm stepping out to X 9-13 by z 46 (>= 3 cells from the waist),
+    // forearm one cell further out below the elbow (z 34-42), wrist z 33
+    pair(7, 8, -1, 1, 55, 55, false);
+    pair(7, 9, -2, 2, 54, 54, true);
+    pair(7, 10, -2, 2, 51, 53, true);
+    pair(7, 11, -2, 2, 49, 50, true);
+    pair(8, 12, -2, 2, 47, 48, true);
+    pair(9, 13, -2, 2, 43, 46, true);
+    pair(10, 14, -2, 2, 34, 42, true);
+    pair(11, 13, -2, 1, 33, 33, false);
+    // hands (palm faces the thigh): a 3 x 4 block, fingers curled in at z 26, thumb forward (Y -3)
+    pair(11, 13, -2, 1, 27, 32, false);
+    pair(11, 12, -2, 1, 26, 26, false);
+    pair(11, 12, -3, -3, 29, 31, false);
     // head
-    for (z = 60; z <= 69; z++) {
-      var rows = HEAD[z];
-      for (var yy = 0; yy < 10; yy++) for (var xx = 0; xx < 7; xx++) {
-        var ch = rows[yy].charAt(xx);
-        if (ch !== '.') put(xx - 3, yy - 5, z, ch, true);
-      }
+    for (z = 58; z <= 69; z++) for (Y = -6; Y <= 4; Y++) for (X = -6; X <= 6; X++) {
+      var hc = headChar(X, Y, z);
+      if (hc) put(X, Y, z, hc);
     }
-
-    // ---- anatomy cues (only on unlocked skin) ----
-    function front(X, z) { for (var y = -9; y <= 9; y++) if (occ(X, y, z)) return y; return null; }
-    function back(X, z) { for (var y = 9; y >= -9; y--) if (occ(X, y, z)) return y; return null; }
-    function cue(X, z, ch, side) { var y = side < 0 ? front(X, z) : back(X, z); if (y !== null) put(X, y, z, ch); }
-    for (X = -4; X <= 4; X++) if (X) cue(X, 56, 'l', -1);                 // collarbones
-    cue(0, 56, 's', -1);                                                   // sternal notch
-    for (z = 49; z <= 52; z++) cue(0, z, 's', -1);                         // sternum between the pecs
-    for (X = -5; X <= 5; X++) if (X) cue(X, 48, 's', -1);                  // lower pec line
-    cue(-3, 50, 'f', -1); cue(3, 50, 'f', -1);                             // nipples
-    cue(0, 46, 's', -1); cue(0, 44, 's', -1);                              // linea alba
-    cue(0, 42, 'd', -1);                                                   // navel
-    cue(-3, 41, 's', -1); cue(3, 41, 's', -1);                             // iliac lines
-    for (z = 39; z <= 55; z++) cue(0, z, 's', 1);                          // spine groove
-    for (X = -4; X <= 4; X++) if (Math.abs(X) >= 2) cue(X, 53, 'l', 1);    // shoulder blades
-    for (s = -1; s <= 1; s += 2) {
-      cue(s * 12, 43, 'f', 1); cue(s * 11, 43, 'f', 1);                    // elbow point
-      cue(s * 12, 43, 's', -1);                                            // elbow crease
-      cue(s * 12, 39, 'v', -1);                                            // a forearm vein
-      for (X = 3; X <= 6; X++) cue(s * X, 19, X === 4 || X === 5 ? 'l' : 'a', -1); // kneecap
-      for (X = 3; X <= 6; X++) cue(s * X, 18, 's', 1);                     // back of the knee
-      cue(s * 4, 20, 'f', -1);
-      cue(s * 8, 54, 'l', -1); cue(s * 8, 56, 'l', 1);                     // deltoid tops catch the light
-      // ankle bones (malleoli): the outermost / innermost cell at row 3
-      var y3 = 1, xo = null, xi = null;
-      for (X = 1; X <= 9; X++) if (occ(s * X, y3, 3)) { if (xi === null) xi = X; xo = X; }
-      if (xi !== null) { put(s * xi, y3, 3, 'l'); put(s * xo, y3, 3, 'l'); }
-    }
-
-    // broad, anatomical shading only (face v2, owner 2026-10-10): the v1 random 7.5 cm flush / light patches read as
-    // noisy vertical stripes over the whole body, so they are gone; the skin stays the base tone and the cues above plus
-    // these few broad ones carry the variation (the renderer's light does the rest)
-    for (s = -1; s <= 1; s += 2) { cue(s * 3, 51, 'l', -1); cue(s * 4, 51, 'l', -1); }   // pec crowns catch the light
-    for (X = -2; X <= 2; X++) cue(X, 59, 's', -1);                                         // throat in the chin's shadow
-
-    // ---- underwear: undyed linen braies, waist (z 40) to mid-thigh (z 28) ----
+    // soft top-down shade only: under the chin (front of the neck), the armpits (torso side under the arm)
+    for (X = -1; X <= 1; X++) put(X, -1, 57, 's');
+    for (s = -1; s <= 1; s += 2) for (Y = -2; Y <= 2; Y++) for (z = 47; z <= 48; z++) put(s * 6, Y, z, 's');
+    // underwear: plain undyed linen braies, waist (z 40) to mid-thigh (z 28), waistband + hem in linen_dark
     for (z = 28; z <= 40; z++) for (Y = -CY; Y < SY - CY; Y++) for (X = -8; X <= 8; X++) {
-      k = idx(X, Y, z);
-      if (G[k] === '.' || LOCK[k]) continue;
-      var nb = vnoise(X + 11, Y + 23, z, 2, 41);
-      G[k] = (z === 40 || z === 28) ? 'U' : nb < 0.2 ? 'U' : nb > 0.76 ? 'k' : 'u';
+      var q = idx(X, Y, z);
+      if (q >= 0 && G[q] === 'a') G[q] = (z === 40 || z === 28) ? 'U' : 'u';
     }
-    for (z = 33; z <= 36; z++) { var yf = front(0, z); if (yf !== null) G[idx(0, yf, z)] = 'U'; }   // front seam
-    for (s = -1; s <= 1; s += 2) { var yb = back(s * 4, 33); if (yb !== null) G[idx(s * 4, yb, 33)] = 'U'; } // seat fold
 
-    // ---- layers ----
     var layers = [];
     for (z = 0; z < SZ; z++) {
       var L = [];
@@ -434,63 +313,38 @@
     return layers;
   }
 
-  // the 1.25 cm head block (see HEAD_REGION / FACE2_* above): layers[z][y] = string of x, block cells, origin = box min
-  function buildHeadL2() {
-    var W = 14, NY = 20, NZ = 20, g = new Array(W * NY * NZ), x, y, z, i, k;
-    for (i = 0; i < g.length; i++) g[i] = '.';
-    function at(xx, yy, zz) { return xx + W * (yy + NY * zz); }
-    function v1(X, Y, Z) { return (Z < 60 || Z > 69 || X < -3 || X > 3 || Y < -5 || Y > 4) ? '.' : HEAD[Z][Y + 5].charAt(X + 3); }
-    // an open side of a level-1 head cell; the underside of z 62 sits on the Neck (main grid), so it never counts
-    function open(X, Y, Z, dx, dy, dz) { return !(dz < 0 && Z === 62) && v1(X + dx, Y + dy, Z + dz) === '.'; }
-    var DIRS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
-    // 1. skull (yy2 >= 8): carve a sub-cell when 2-3 of its own outward sides are open (blocks open on >= 4 sides stay whole)
-    for (z = 0; z < NZ; z++) for (y = 8; y < NY; y++) for (x = 0; x < W; x++) {
-      var X = (x >> 1) - 3, Y = (y >> 1) - 5, Z = (z >> 1) + 60, c = v1(X, Y, Z);
-      if (c === '.') continue;
-      var nOpen = 0;
-      for (k = 0; k < 6; k++) if (open(X, Y, Z, DIRS[k][0], DIRS[k][1], DIRS[k][2])) nOpen++;
-      var sx = (x & 1) ? 1 : -1, sy = (y & 1) ? 1 : -1, sz = (z & 1) ? 1 : -1;
-      var nSub = (open(X, Y, Z, sx, 0, 0) ? 1 : 0) + (open(X, Y, Z, 0, sy, 0) ? 1 : 0) + (open(X, Y, Z, 0, 0, sz) ? 1 : 0);
-      if (nOpen < 4 && nSub >= 2) continue;
-      g[at(x, y, z)] = c;
-    }
-    // 2. face (yy2 0..7): front cell + fill back to yy2 7
-    for (z = 0; z < NZ; z++) for (x = 0; x < W; x++) {
-      var hx = x < 7 ? x : 13 - x, d = +FACE2_DEPTH[z].charAt(hx);
-      for (y = d; y < 8; y++) {
-        var ch = 'a';
-        if (y === d) ch = FACE2_COLOR[z].charAt(hx);
-        else if (y >= 4 && y <= 5 && z >= 2 && z <= 5 && x >= 4 && x <= 9) ch = 'd';   // mouth interior (seen when the Jaw opens)
-        else if (y >= 6 && z <= 1) ch = 's';                                           // jaw underside
-        g[at(x, y, z)] = ch;
+  // the 1.25 cm head block (38.34 detail.head["2"]): a straight 2x upsample of the level-1 cells owned by Head / Jaw
+  // (first-match bone box), origin = the region box min, size = box extent x 2. downsample2 gives level 1 back exactly.
+  function buildHeadL2(layers, bones) {
+    var B = gridBox(HEAD_REGION.box), ex = B[3] - B[0] + 1, ey = B[4] - B[1] + 1, ez = B[5] - B[2] + 1;
+    var order = SKELETON.map(function (b) { return b.name; }), own = {};
+    function inRegion(x, y, z) {
+      var key = x + ',' + y + ',' + z;
+      if (own[key] !== undefined) return own[key];
+      var r = false;
+      if (layers[z][y].charAt(x) !== '.') {
+        for (var i = 0; i < order.length; i++) {
+          var q = bones[order[i]].box;
+          if (x >= q[0] && x <= q[3] && y >= q[1] && y <= q[4] && z >= q[2] && z <= q[5]) { r = HEAD_REGION.bones.indexOf(order[i]) >= 0; break; }
+        }
       }
+      own[key] = r;
+      return r;
     }
-    // 3. cells behind the front (only where filled)
-    FACE2_CELLS.forEach(function (q) {
-      [q[0], 13 - q[0]].forEach(function (xx) { var j = at(xx, q[2], q[1]); if (g[j] !== '.') g[j] = q[3]; });
-    });
-    // 4. ears (x2 0..1 and 12..13, yy2 10..13, zr 6..11 are replaced as a whole)
-    [0, 1].forEach(function (layer) {
-      for (var ez = 6; ez <= 11; ez++) for (var ey = 10; ey <= 13; ey++) {
-        var e = EAR2[layer][ez].charAt(ey - 10);
-        g[at(layer, ey, ez)] = e; g[at(13 - layer, ey, ez)] = e;
-      }
-    });
-    // 5. catchlights on the iris front cell
-    CATCH2.forEach(function (q) { var hx2 = q[0] < 7 ? q[0] : 13 - q[0]; g[at(q[0], +FACE2_DEPTH[q[1]].charAt(hx2), q[1])] = 'c'; });
-    // 6. emit the region block (box x 2); the working grid starts at Y -5, z 60 (x starts at the box min X -3)
-    var B = gridBox(HEAD_REGION.box), SXb = (B[3] - B[0] + 1) * 2, SYb = (B[4] - B[1] + 1) * 2, SZb = (B[5] - B[2] + 1) * 2;
-    var oy = (-5 + CY - B[1]) * 2, oz = (60 - B[2]) * 2, layers = [];
-    for (z = 0; z < SZb; z++) {
-      var L = [], wz = z - oz;
-      for (y = 0; y < SYb; y++) {
-        var row = '', wy = y - oy;
-        for (x = 0; x < SXb; x++) row += (wy >= 0 && wy < NY && wz >= 0 && wz < NZ && x < W) ? g[at(x, wy, wz)] : '.';
+    var out = [];
+    for (var z = 0; z < ez * 2; z++) {
+      var L = [];
+      for (var y = 0; y < ey * 2; y++) {
+        var row = '';
+        for (var x = 0; x < ex * 2; x++) {
+          var gx = B[0] + (x >> 1), gy = B[1] + (y >> 1), gz = B[2] + (z >> 1);
+          row += inRegion(gx, gy, gz) ? layers[gz][gy].charAt(gx) : '.';
+        }
         L.push(row);
       }
-      layers.push(L);
+      out.push(L);
     }
-    return layers;
+    return out;
   }
 
   // 38.34 downsample2 (preview / check twin of engine/chargen/downsample.js): each 2x2x2 block -> one cell. Any filled
@@ -532,10 +386,29 @@
   // ===================================================================================================================
   // 7. THE KIT
   // ===================================================================================================================
+  // clothes (shells, 38.29 item 3: one paint char each; thick 0 repaints the body surface, thick n grows n layers)
+  function sides(bone, t0, t1) { return SIDES.map(function (S) { return { bone: S + bone, t0: t0, t1: t1 }; }); }
+  function buildShells() {
+    return [
+      // linen shirt, rolled sleeves (the top 30 % of the forearm = 3 rows below the elbow); the Neck stays bare (collar)
+      { id: 'shirt', slot: 'top', regions: [{ bone: 'Spine', t0: 0, t1: 1 }, { bone: 'Chest', t0: 0, t1: 1 }]
+          .concat(sides('Shoulder', 0, 1), sides('UpperArm', 0, 1), sides('LowerArm', 0, 0.3)), thick: 0, paint: '2' },
+      // trousers: hips to ankle (the boots cover the lower shin)
+      { id: 'trousers', slot: 'legs', regions: [{ bone: 'Hips', t0: 0, t1: 1 }].concat(sides('UpperLeg', 0, 1), sides('LowerLeg', 0, 1)),
+        thick: 0, paint: '5' },
+      // leather boots: foot + toes + the lower 45 % of the shin (to z 9), one cell thick (the cuff steps out)
+      { id: 'boots', slot: 'feet', regions: sides('LowerLeg', 0.55, 1).concat(sides('Foot', 0, 1), sides('Toes', 0, 1)), thick: 1, paint: '9' },
+      // belt: the top two hip rows (z 39-40), one cell thick
+      { id: 'belt', slot: 'outer', regions: [{ bone: 'Hips', t0: 0, t1: 0.25 }], thick: 1, paint: 'm' }
+    ];
+  }
+  // random NPC weights (engine/chargen/random.js): trousers always, boots and hair mostly, shirt 3 in 4, belt 2 in 3
+  var RANDOM = { hair: { none: 0.3 }, legs: { none: 0 }, feet: { none: 0.2 }, top: { shirt: 3 }, outer: { belt: 2 } };
+
   function buildHumanKit(P) {
     var CG = P.chargen;
     if (!CG) throw new Error('human_kit: palette.chargen missing (load design/palette.js v1.54+)');
-    var bones = boneTable();
+    var bones = boneTable(), layers = buildBase();
     function mount(X, Y, z) { return gridJoint([X, Y, z]); }   // anchors: [x,y,z] cells; the bone = the box it sits in
     return {
       kind: 'charkit',
@@ -561,31 +434,36 @@
           anchor: [CX + 0.5, CY + 0.5, 0],
           bones: bones,
           anchors: {
-            head_top: mount(0, -0.3, 69.5),
-            eyes: mount(0, -4.0, 65.5),
-            mouth: mount(0, -4.5, 61.5),
-            hand_r: mount(12.0, -0.5, 30.5),
-            hand_l: mount(-12.0, -0.5, 30.5),
-            back: mount(0, 4.5, 51.0),
-            belt: mount(0, -4.0, 40.5)
+            head_top: mount(0, -0.5, 69.5),
+            eyes: mount(0, -5.0, 64.5),
+            mouth: mount(0, -5.0, 60.5),
+            hand_r: mount(12.0, -0.5, 29.5),
+            hand_l: mount(-12.0, -0.5, 29.5),
+            back: mount(0, 4.5, 50.0),
+            belt: mount(0, -4.0, 39.5)
           },
           // height (-4..4): CHARGEN-05 (engine/chargen/height.js) duplicates / deletes |height| rows picked evenly
-          // over this sorted list. 6 shin rows + 2 waist rows (arch Batch 9): z 37 (hips / braies beside both
-          // forearms) and z 45 (belly beside both upper arms) - clear of the wrists (34), waistband (40), navel /
-          // elbows (42-43), the linea-alba cues (44, 46) and every hand box. So a tall man grows in legs AND
-          // torso (+4 = 3 shin rows + 1 waist row), and the arms grow with the torso, the fingertips staying at mid-thigh.
-          stretchRows: [7, 9, 10, 12, 13, 15, 37, 45],
-          layers: buildBase(),
-          // CHARGEN-23: the head at 1.25 cm (level 2 of region head; level 1 = the face v2 cells in `layers`)
-          detail: { head: { '2': { layers: buildHeadL2() } } }
+          // over this sorted list. 6 shin rows (LowerLeg only) + 2 waist rows: z 37 (hips beside both forearms) and
+          // z 44 (waist beside both upper arms) - clear of every hand box (z 24-32) and the head region (z 58+).
+          stretchRows: [6, 8, 9, 11, 12, 14, 37, 44],
+          layers: layers,
+          // the head at 1.25 cm (level 2 of region head) = a straight 2x upsample of the level-1 head (CHARGEN-25)
+          detail: { head: { '2': { layers: buildHeadL2(layers, bones) } } }
         }
       },
-      shells: [],
-      attachments: [],
+      shells: buildShells(),
+      attachments: [
+        // short hair; head_top = cell centre (18.5, 10, 69.5), so the offset puts the box origin on X -6, Y -6, z 61
+        { id: 'short', slot: 'hair', bone: 'Head', anchor: 'head_top', offset: [-6.5, -6, -8.5],
+          box: [HAIR_BOX.w, HAIR_BOX.d, HAIR_BOX.h], layers: buildHair() }
+      ],
       clips: {},
+      random: RANDOM,
       defaults: {
         v: 1, kit: KIT_ID, base: 'm_avg', height: 0, age: 'adult', skin: 'medium', eyes: 'brown',
-        hair: null, beard: null, top: null, legs: null, feet: null, outer: null, hat: null
+        hair: { id: 'short', ramp: 'darkbrown' }, beard: null,
+        top: { id: 'shirt', ramp: 'undyed' }, legs: { id: 'trousers', ramp: 'walnut' }, feet: { id: 'boots', ramp: 'walnut' },
+        outer: { id: 'belt', ramp: 'walnut' }, hat: null
       }
     };
   }
@@ -618,6 +496,93 @@
         }
       }
     }
+    return {
+      size: S, ch: ch, bone: bone, names: names,
+      at: function (x, y, z) {
+        if (x < 0 || y < 0 || z < 0 || x >= S[0] || y >= S[1] || z >= S[2]) return -1;
+        var k = x + S[0] * (y + S[1] * z);
+        return ch[k] === '.' ? -1 : k;
+      }
+    };
+  }
+  // preview twin of engine/chargen/compose.js at res 1/1 and height 0: base -> shells (legs, feet, top, outer) ->
+  // attachments (hair, beard, hat); no blocks, no elder overlay. Returns a decodeBase-like grid of SLOT CHARS (the shell
+  // paint / attachment chars), so the preview colours it with resolveMat(kit, recipe, ch) like the base.
+  // tools/chargen-kit.test.mjs pins it cell by cell to the engine's composeCharacter for kit.defaults.
+  var SHELL_SLOTS = ['legs', 'feet', 'top', 'outer'], ATTACH_SLOTS = ['hair', 'beard', 'hat'];
+  var NB6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+  function composePreview(kit, baseId, recipe) {
+    var D = decodeBase(kit, baseId), S = D.size, B = kit.bases[baseId], N = S[0] * S[1] * S[2];
+    var ch = D.ch.slice(), bone = new Int16Array(N), names = D.names, i;
+    for (i = 0; i < N; i++) bone[i] = D.bone[i];
+    function item(slot, id) {
+      var all = (kit.shells || []).concat(kit.attachments || []);
+      for (var j = 0; j < all.length; j++) if (all[j].slot === slot && all[j].id === id) return all[j];
+      return null;
+    }
+    function filled(x, y, z) { return x >= 0 && y >= 0 && z >= 0 && x < S[0] && y < S[1] && z < S[2] && ch[x + S[0] * (y + S[1] * z)] !== '.'; }
+    var hidden = {};
+    ATTACH_SLOTS.forEach(function (slot) {
+      var p = recipe[slot], it = p ? item(slot, p.id) : null;
+      if (it && it.hides) it.hides.forEach(function (h) { hidden[h] = 1; });
+    });
+    SHELL_SLOTS.forEach(function (slot) {
+      var p = recipe[slot], sh = p && !hidden[slot] ? item(slot, p.id) : null;
+      if (!sh) return;
+      var inR = new Uint8Array(N), any = false, x, y, z, k, n;
+      sh.regions.forEach(function (r) {
+        var bi = names.indexOf(r.bone), q = B.bones[r.bone] && B.bones[r.bone].box;
+        if (!q) return;
+        var h = q[5] - q[2] + 1;
+        for (var zz = q[2]; zz <= q[5]; zz++) {
+          var t = (q[5] + 1 - (zz + 0.5)) / h;
+          if (t < r.t0 || t >= r.t1) continue;
+          for (var yy = 0; yy < S[1]; yy++) for (var xx = 0; xx < S[0]; xx++) {
+            var kk = xx + S[0] * (yy + S[1] * zz);
+            if (ch[kk] !== '.' && bone[kk] === bi) { inR[kk] = 1; any = true; }
+          }
+        }
+      });
+      if (!any) return;
+      var frontier = [];
+      for (z = 0; z < S[2]; z++) for (y = 0; y < S[1]; y++) for (x = 0; x < S[0]; x++) {
+        k = x + S[0] * (y + S[1] * z);
+        if (!inR[k]) continue;
+        for (n = 0; n < 6; n++) if (!filled(x + NB6[n][0], y + NB6[n][1], z + NB6[n][2])) { frontier.push(k); break; }
+      }
+      frontier.forEach(function (q) { ch[q] = sh.paint; });
+      for (var layer = 0; layer < sh.thick; layer++) {
+        var grown = {}, cells = [];
+        frontier.forEach(function (q) {
+          var qx = q % S[0], qy = Math.floor(q / S[0]) % S[1], qz = Math.floor(q / (S[0] * S[1]));
+          for (var m = 0; m < 6; m++) {
+            var nx = qx + NB6[m][0], ny = qy + NB6[m][1], nz = qz + NB6[m][2];
+            if (nx < 0 || ny < 0 || nz < 0 || nx >= S[0] || ny >= S[1] || nz >= S[2] || filled(nx, ny, nz)) continue;
+            var j = nx + S[0] * (ny + S[1] * nz);
+            if (grown[j] === undefined) { grown[j] = bone[q]; cells.push(j); }
+          }
+        });
+        cells.sort(function (a, b) { return a - b; });
+        cells.forEach(function (j) { ch[j] = sh.paint; bone[j] = grown[j]; });
+        frontier = cells;
+      }
+    });
+    ATTACH_SLOTS.forEach(function (slot) {
+      var p = recipe[slot], a = p && !hidden[slot] ? item(slot, p.id) : null;
+      if (!a) return;
+      var anc = B.anchors[a.anchor], ox = anc[0] + a.offset[0], oy = anc[1] + a.offset[1], oz = anc[2] + a.offset[2];
+      var bi = names.indexOf(a.bone);
+      for (var z = 0; z < a.box[2]; z++) for (var y = 0; y < a.box[1]; y++) for (var x = 0; x < a.box[0]; x++) {
+        var c = a.layers[z][y].charAt(x);
+        if (c === '.' || c === ' ') continue;
+        var cx = Math.round(ox + x), cy = Math.round(oy + y), cz = Math.round(oz + z);
+        if (cx < 0 || cy < 0 || cz < 0 || cx >= S[0] || cy >= S[1] || cz >= S[2]) continue;
+        var k = cx + S[0] * (cy + S[1] * cz);
+        if (a.paintOnly && ch[k] === '.') continue;
+        ch[k] = c;
+        if (!a.paintOnly) bone[k] = bi;
+      }
+    });
     return {
       size: S, ch: ch, bone: bone, names: names,
       at: function (x, y, z) {
@@ -842,10 +807,11 @@
   }
 
   var api = {
-    version: 1, KIT_ID: KIT_ID, CELL: CELL, SKELETON: SKELETON, PART_MAP: PART_MAP, MAX_PARTS: MAX_PARTS,
+    version: 2, KIT_ID: KIT_ID, CELL: CELL, SKELETON: SKELETON, PART_MAP: PART_MAP, MAX_PARTS: MAX_PARTS,
     STRETCH_BONES: STRETCH_BONES, ARM_STRETCH: ARM_STRETCH,
     buildHumanKit: buildHumanKit, stringifyKit: stringifyKit, decodeBase: decodeBase, resolveMat: resolveMat,
-    countQuads: countQuads, checkKit: checkKit, decodeDetail: decodeDetail, downsample2: downsample2
+    countQuads: countQuads, checkKit: checkKit, decodeDetail: decodeDetail, downsample2: downsample2,
+    composePreview: composePreview
   };
   A.chargenKit = api;
   if (typeof module === 'object' && module && module.exports) module.exports = api;
