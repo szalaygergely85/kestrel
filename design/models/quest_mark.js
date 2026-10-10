@@ -1,13 +1,14 @@
 /* design/models/quest_mark.js - WoW-style quest marker (designer, v1.46, owner request 2026-10-08): a bold 3D golden
  * '!' that floats over the ACTIVE quest step's target (note, sword, waystone ...), spins slowly and bobs; it pops in
- * when a step starts and scales out when the step completes. `questMarkTurnIn` = the golden '?' (WoW "turn in"),
- * built in the same style for LATER (no step uses it yet).
+ * when a step starts and scales out when the step completes. `questMarkReady` (QG-D1, D-058) = the golden '?' twin
+ * shown over a giver while the quest is ready to hand in (`questMarkTurnIn` = legacy alias of the same object).
  *
  * ASSET ONLY: no engine / game wiring here. Classic script (no import/export, check-deps rule 4), same loading
  * convention as design/models/chest.js:
  *   <script src="../design/models/quest_mark.js">       (browser, game/index.html, after props_m1.js)
  *   import '../../../design/models/quest_mark.js';       (Node tests: side-effect import; module.exports below)
- * Sets ASSETS.voxelModels.questMark / questMarkTurnIn (= ASSETS.models.*, no billboard) and ASSETS.questMarkFx.
+ * Sets ASSETS.voxelModels.questMark / questMarkReady (+ alias questMarkTurnIn) (= ASSETS.models.*, no billboard) and
+ * ASSETS.questMarkFx.
  * Only ALREADY-MERGED materials (palette.materials AND detailPass.materials: brass_glint, brass_hot, ember_glow):
  * no palette.js / detail-pass.js edit. Format: design/README.md sections 7 + 20, architecture.md 15.1 (VoxelModelDef).
  * Preview: design/preview/quest-mark.html.
@@ -227,16 +228,23 @@
     'Quest marker (owner 2026-10-08): a bold golden 3D "!" floating 0.35 m over the active quest step\'s target, ' +
     '0.45 x 0.25 x 0.90 m, the whole glyph glowing (v1.49): white-hot gold body, white core band, ember-orange ' +
     'underside lips and side seam, no dark rim. Spins 0.5 rev/s and bobs 0.08 m.');
-  A.voxelModels.questMarkTurnIn = record('questMarkTurnIn', GLYPHS.query,
-    'LATER (not used by any step yet): the golden 3D "?" turn-in marker, same style, size and clips as questMark.');
+  // QG-D1 (D-058, architecture 38.35 item 7): `questMarkReady` = the golden 3D '?' over a giver whose quest is READY to
+  // hand in ('!' = has a quest). Built by the same record() as questMark: same size 9 x 5 x 25, anchor, part `mark`,
+  // pivot, mounts, clips (pop / idle / bob / fade) and questMarkFx curves + light, same 3 emissive materials and core
+  // rule, so questMarks.js can swap the model id with no other change. `questMarkTurnIn` = legacy alias (same object).
+  A.voxelModels.questMarkReady = record('questMarkReady', GLYPHS.query,
+    'Quest-ready marker (QG-D1, D-058): the golden 3D "?" floating over a quest giver while the quest is ready to hand ' +
+    'in; twin of questMark ("!" = has a quest): same size, anchor, pivot, clips, fx and whole-glyph glow (v1.49).');
+  A.voxelModels.questMarkTurnIn = A.voxelModels.questMarkReady;
   A.models.questMark = A.voxelModels.questMark;
-  A.models.questMarkTurnIn = A.voxelModels.questMarkTurnIn;
+  A.models.questMarkReady = A.voxelModels.questMarkReady;
+  A.models.questMarkTurnIn = A.voxelModels.questMarkReady;
 
   A.questMarkFx = {
     note: 'View data for the quest-marker hook (content / game step, not built). One marker entity per ACTIVE step; ' +
           'step done -> clip fade, remove after fadeMs; the next step -> a new entity at its target with clip pop, then idle.',
-    models: { active: 'questMark', turnIn: 'questMarkTurnIn' },
-    turnInStatus: 'later',
+    models: { active: 'questMark', ready: 'questMarkReady', turnIn: 'questMarkReady' },   // turnIn = legacy alias
+    turnInStatus: 'ready: QG-D1 questMarkReady ("?" while a giver quest is ready to hand in; wiring QG-04)',
     floatM: 0.35,                 // built into the model (7 empty layers under the glyph; anchor = base point)
     bobM: 0.08,                   // idle clip amplitude
     bobPeriodMs: 2000,
@@ -278,7 +286,7 @@
   };
 
   if (typeof module === 'object' && module && module.exports) {
-    module.exports = { questMark: A.voxelModels.questMark, questMarkTurnIn: A.voxelModels.questMarkTurnIn,
-                       questMarkFx: A.questMarkFx };
+    module.exports = { questMark: A.voxelModels.questMark, questMarkReady: A.voxelModels.questMarkReady,
+                       questMarkTurnIn: A.voxelModels.questMarkReady, questMarkFx: A.questMarkFx };
   }
 })(typeof window !== 'undefined' ? window : globalThis);

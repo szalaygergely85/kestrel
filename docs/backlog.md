@@ -1871,5 +1871,6 @@ No engine change (38.35). Order: QG-W1 + QG-D1 in parallel with QG-01/02 -> QG-0
 ### QG-W1 Burl's quest texts  [P1] [todo] [writer] NEEDS WRITER
 - [ ] Quest title; offer lines (<= 56 chars each, 2-3 lines); choices Accept / Later (<= 40); accepted reply; later reply; reminder line; ready line; thanks line; step text `beasts` (HUD <= 38); `returnText` (<= 38); new m1 `beasts` HUD line ("go see Burl", <= 38); toasts "Quest accepted" / "Quest complete"; log headers Active / Done. ASCII only; Burl voice per the existing bear lines.
 
-### QG-D1 `?` marker + coin  [P2] [todo] [designer]
+### QG-D1 `?` marker + coin  [P2] [design] [designer]
+- designer 2026-10-10: `questMarkReady` done in `design/models/quest_mark.js` (twin of `questMark`, same record/clips/fx; `questMarkTurnIn` = alias), preview `design/preview/quest-mark.html` ('!' left, '?' right). Coin skipped (owner pick: no reward item).
 - [ ] `questMarkReady` voxel model: `?` twin of `questMark` (same clips appear/active/complete, same size). `coin` item def glyph + icon in `design/items.js` (stackMax 999). Preview in the existing marker/item preview pages.

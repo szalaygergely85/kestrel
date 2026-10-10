@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-<h1>Kestrel : quest marker (design v1.49, whole glyph glowing) - model keys <code>questMark</code> ('!'), <code>questMarkTurnIn</code> ('?', later)</h1>
+<h1>Kestrel : quest marker (design v1.49, whole glyph glowing) - model keys <code>questMark</code> ('!'), <code>questMarkReady</code> ('?', quest ready to hand in, QG-D1)</h1>
 <div class="note">
   <code>design/models/quest_mark.js</code>: 9 x 5 x 25 voxels @ 0.05 m (0.45 wide x 0.25 deep, glyph 0.90 m tall over a built-in 0.35 m float;
   anchor = the base point). One part <code>mark</code> (pivot = glyph centre), clips <code>idle</code> (spin 0.5 rev/s + bob 0.08 m, 2 s loop),
@@ -65,7 +65,7 @@
   The 3 m / 12 m views aim at the glyph centre (2.35 m); the note-mock views stand 7 m away and aim at 1.2 m so the page on the ground and the mark both show.
   Pose = the idle clip at the "idle time" slider (default 1000 ms = face-on). Night = sun 0.06, ambient 0.45, the mark light on.</div>
 <div class="controls" style="position:static">
-  <label>model <select id="igModel"><option value="questMark">questMark '!'</option><option value="questMarkTurnIn">questMarkTurnIn '?'</option></select></label>
+  <label>model <select id="igModel"><option value="questMark">questMark '!'</option><option value="questMarkReady">questMarkReady '?'</option></select></label>
   <label>grid <select id="igGrid"><option value="240">240x90 (90x45 crop, 8x12 px)</option><option value="400" selected>400x150 (150x75 crop, 4.8x7.2 px)</option></select></label>
   <label>view angle <input type="range" id="vaz" min="-180" max="180" step="5" value="0"><span class="val" id="vazV"></span></label>
   <label>zoom <select id="zoom"><option value="0.75" selected>0.75</option><option value="1">1.0 (real 1080p size)</option></select></label>
@@ -93,7 +93,7 @@ window.__qmOK = true;
 const A = window.ASSETS, P = A.palette, U = P.util, DP = A.detailPass, FX = A.questMarkFx, D2R = Math.PI / 180;
 const FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
 const $ = (id) => document.getElementById(id);
-const KEYS = [FX.models.active, FX.models.turnIn];
+const KEYS = [FX.models.active, FX.models.ready];
 
 // ------------------------------------------------------------------ pack (engine)
 const matKeys = [];
@@ -402,7 +402,7 @@ function perspCam(gridCols, gridRows, cropCols, cropRows, target, azDeg, dist, e
 
 // ------------------------------------------------------------------ views
 const views = [];
-const PLACE = { questMark: [-0.36, 0], questMarkTurnIn: [0.36, 0] }, CENTER = [0, 0, 0.62];
+const PLACE = { questMark: [-0.36, 0], questMarkReady: [0.36, 0] }, CENTER = [0, 0, 0.62];
 {
   const rows = 46, g = makeCanvas(rows * 2, rows, 7, 14);
   const wrap = document.createElement('div');
@@ -548,7 +548,7 @@ function runChecks() {
        FX.fadeScale[FX.fadeScale.length - 1][0] === FX.fadeMs && FX.popScale[FX.popScale.length - 1][1] === 1,
        key + ': pop / fade scale curves span popMs / fadeMs, end at 1 / 0.05, never 0 (scale <= 0 means 1 in computeVoxelPose)');
   }
-  info('2 hue families: white-gold (brass_hot body, brass_glint core) + a touch of ember orange (ember_glow lips + side seam); no dark rim (v1.49). questMarkTurnIn status: ' + FX.turnInStatus +
+  info('2 hue families: white-gold (brass_hot body, brass_glint core) + a touch of ember orange (ember_glow lips + side seam); no dark rim (v1.49). questMarkReady status: ' + FX.turnInStatus +
        '. The \'?\' reads mirrored from behind (a slab glyph); the \'!\' is symmetric.');
   info('questMarkFx: floatM ' + FX.floatM + ', bobM ' + FX.bobM + ', spinRevPerS ' + FX.spinRevPerS + ', popMs ' + FX.popMs + ', fadeMs ' + FX.fadeMs +
        ', visibleRangeM ' + FX.visibleRangeM + ', placement.noteZOffsetM ' + FX.placement.noteZOffsetM + ' (glyph bottom ' + FX.placement.aboveNoteM + ' m over the note)');
