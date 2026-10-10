@@ -5,6 +5,7 @@ import { OCT_NORMAL } from './raster.wgsl.js';
 import { ORTHO_NEAR_WGSL, ORTHO_FAR_WGSL } from './common.wgsl.js';
 import { KIND_TERRAIN, FACE_PACKED } from '../../GBuffer.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
+import { structMaskDecl, IN_STRUCT_FOOT_WGSL } from './structMask.wgsl.js';
 
 export const TERRAIN_BLOCK = defineUniformBlock('TerrainU', [
   { name: 'model', type: 'mat4' }, { name: 'viewProj', type: 'mat4' }, { name: 'modelRel', type: 'mat4' }, // PREC-01a: chunk translation - O, clip only
@@ -12,13 +13,15 @@ export const TERRAIN_BLOCK = defineUniformBlock('TerrainU', [
   { name: 'structFoot', type: 'vec4', count: MAX_STRUCTS },
   { name: 'objectId', type: 'u32' }, { name: 'nearReady', type: 'u32' }, { name: 'structCount', type: 'u32' },
   { name: 'projMode', type: 'u32' }, // US-068b1 (38.19): 2 = ortho (appended; earlier offsets unchanged)
+  { name: 'structMask', type: 'vec4', count: MAX_STRUCTS }, // GS-01b: (row offset in uStructMask, hasMask, 0, 0) per structure (appended)
 ]);
-/** Slot order of PipelineDesc.bindings.textures: 0 = uNearType, 1 = uFarType (both r8ui). */
-export const TERRAIN_TEXTURES = Object.freeze(['uint', 'uint']);
+/** Slot order of PipelineDesc.bindings.textures: 0 = uNearType, 1 = uFarType, 2 = uStructMask (GS-01b carve mask atlas; all r8ui). */
+export const TERRAIN_TEXTURES = Object.freeze(['uint', 'uint', 'uint']);
 
 export const TERRAIN_RASTER_WGSL = `${TERRAIN_BLOCK.wgsl}
 @group(0) @binding(0) var uNearType: texture_2d<u32>;
 @group(0) @binding(1) var uFarType: texture_2d<u32>;
+${structMaskDecl(2)}
 @group(1) @binding(0) var<uniform> u: TerrainU;
 ${OCT_NORMAL}
 struct VertexIn {
@@ -57,14 +60,11 @@ fn terrainTypeAt(x: f32, y: f32) -> i32 {
   }
   return farTypeNearest(x, y);
 }
+${IN_STRUCT_FOOT_WGSL}
 struct FragmentOut { @location(0) GI: vec4u, @location(1) GA: vec4u, @location(2) Depth: u32, };
 @fragment fn fs_main(v: VertexOut) -> FragmentOut {
   var out: FragmentOut;
-  for (var i = 0; i < ${MAX_STRUCTS}; i++) {
-    if (u32(i) >= u.structCount) { break; }
-    let b = u.structFoot[i];
-    if (v.vWorldPos.x >= b.x && v.vWorldPos.x < b.z && v.vWorldPos.y >= b.y && v.vWorldPos.y < b.w) { discard; }
-  }
+  if (inStructFoot(v.vWorldPos)) { discard; } // bbox, then the GS-01b mask lookup
   let N = normalize(v.vNormal);
   let terrType = terrainTypeAt(v.vWorldPos.x, v.vWorldPos.y);
   let dist = select(1.0 / v.pos.w, ${ORTHO_NEAR_WGSL} + v.pos.z * (${ORTHO_FAR_WGSL} - ${ORTHO_NEAR_WGSL}), u.projMode == 2u); // 38.19 ortho: w = 1, depth = linear z

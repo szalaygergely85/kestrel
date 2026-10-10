@@ -85,7 +85,7 @@ export function makeMockGpuDevice() {
     // CLOTH-1b2: counts writes (tests assert "1 write per changed version, 0 when asleep"); keeps the last payload.
     // ME-16c: `device.modelHazard = true` models the real queue: writeBuffer copies at call time and lands at once, draws execute at submit, so
     // every draw sees the LAST written contents of its instance buffer; `device.hazardDraws()` returns [{buffer, seen}] resolved that way.
-    writeBuffer(handle, data, dstOffsetBytes = 0) { handle._writes = (handle._writes || 0) + 1; handle._lastWrite = { data, dstOffsetBytes }; state.writeCount++; if (device.modelHazard) handle._queued = data.slice(); },
+    writeBuffer(handle, data, dstOffsetBytes = 0, byteLength = data.byteLength) { handle._writes = (handle._writes || 0) + 1; handle._lastWrite = { data, dstOffsetBytes, byteLength }; state.writeCount++; if (device.modelHazard) handle._queued = byteLength < data.byteLength ? data.slice(0, byteLength / data.BYTES_PER_ELEMENT) : data.slice(); },
     createTexture(desc) {
       // ME-16b (38.22): 2d-array textures mirror GpuDeviceWebGPU's validation (depth24 + sampled only, integer layers >= 1)
       if (desc.layers !== undefined && (desc.format !== 'depth24' || !desc.sampled || !(desc.layers >= 1) || (desc.layers | 0) !== desc.layers)) {

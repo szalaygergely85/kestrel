@@ -3,7 +3,8 @@
 // literal bitcast of a float32 depth (the exactness gpuCompare relies on). node engine/render/gpu/wgsl/shadow.wgsl.test.js
 import assert from 'node:assert/strict';
 import { SHADOW_WGSL, SHADOW_TERRAIN_WGSL, SHADOW_DEPTH_COPY_WGSL, SHADOW_TERRAIN_BLOCK, SHADOW_TEXTURES, SHADOW_TARGETS,
-  SHADOW_DEPTH_COPY_TEXTURES, SHADOW_DEPTH_COPY_TARGETS } from './shadow.wgsl.js';
+  SHADOW_DEPTH_COPY_TEXTURES, SHADOW_DEPTH_COPY_TARGETS, SHADOW_TERRAIN_TEXTURES } from './shadow.wgsl.js';
+import { insideStructFoot } from '../../../mesh/rasterJS.js';
 import { WGSL_MODULES } from './index.js';
 import { SHADOW_Z_LINE, RASTER_Z_LINE, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL, RASTER_SHADOW_WGSL, RASTER_VOXEL_SHADOW_WGSL,
   RASTER_INSTANCED_SHADOW_WGSL, RASTER_CLOTH_SHADOW_WGSL, toShadowVertexWgsl } from './raster.wgsl.js';
@@ -22,7 +23,10 @@ assert.ok(/fn vs_main/.test(SHADOW_DEPTH_COPY_WGSL) && /-> @location\(0\) vec4u/
 assert.deepEqual(SHADOW_TEXTURES, []); assert.deepEqual(SHADOW_TARGETS, []);
 assert.deepEqual(SHADOW_DEPTH_COPY_TEXTURES, ['depth']); assert.deepEqual(SHADOW_DEPTH_COPY_TARGETS, ['r32uint']);
 assert.deepEqual(['model', 'viewProj', 'structCount', 'structFoot'].map((n) => SHADOW_TERRAIN_BLOCK.field(n).offset), [0, 64, 128, 144]);
-assert.equal(SHADOW_TERRAIN_BLOCK.sizeBytes, 144 + MAX_STRUCTS * 16);
+assert.equal(SHADOW_TERRAIN_BLOCK.sizeBytes, 144 + MAX_STRUCTS * 32);
+assert.equal(SHADOW_TERRAIN_BLOCK.field('structMask').offset, 144 + MAX_STRUCTS * 16, 'GS-01b: structMask appended after structFoot');
+assert.deepEqual(SHADOW_TERRAIN_TEXTURES, ['uint']);
+assert.ok(SHADOW_TERRAIN_WGSL.includes('@group(0) @binding(0) var uStructMask: texture_2d<u32>;'));
 assert.ok(/@vertex fn vs_main/.test(SHADOW_TERRAIN_WGSL) && SHADOW_TERRAIN_WGSL.includes(SHADOW_Z_LINE), 'terrain shadow module owns its vs_main with the shadow z line');
 assert.ok(!SHADOW_TERRAIN_WGSL.includes(RASTER_Z_LINE), 'no [0,1] raster z line in the terrain shadow vertex stage');
 
@@ -31,7 +35,7 @@ const rand = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; retur
 // independent twin of rasterJS.js insideStructFoot (x0, y0, x1, y1 per struct, half-open boxes)
 const insideFoot = (foot, count, x, y) => { for (let i = 0; i < count; i++) { const o = i * 4; if (x >= foot[o] && x < foot[o + 2] && y >= foot[o + 1] && y < foot[o + 3]) return true; } return false; };
 
-function run(src, trials) {
+function run(src, trials, withMasks = false) {
   let bad = 0, hits = 0, n = 0;
   for (let t = 0; t < trials; t++) {
     const count = Math.floor(rand() * (MAX_STRUCTS + 1));
@@ -40,12 +44,25 @@ function run(src, trials) {
       const x0 = Math.floor(rand() * 20), y0 = Math.floor(rand() * 20), x1 = x0 + 1 + Math.floor(rand() * 6), y1 = y0 + 1 + Math.floor(rand() * 6);
       foot.set([x0, y0, x1, y1], i * 4); rows.push({ x: x0, y: y0, z: x1, w: y1 });
     }
-    const u = { structCount: count, structFoot: rows };
-    const f = compileFn(src, 'inStructFoot', { u, MAX_STRUCTS, ...shims });
+    // GS-01b: masks (random per box when withMasks) packed like StructMaskAtlas: rowOff = running sum of heights, hasMask in .y
+    const masks = [], mrows = [], tex = { w: 8, h: 1, data: [] };
+    let rowOff = 0;
+    for (let i = 0; i < MAX_STRUCTS; i++) {
+      const w = foot[i * 4 + 2] - foot[i * 4], h = foot[i * 4 + 3] - foot[i * 4 + 1];
+      if (withMasks && rand() < 0.6) {
+        const m = new Uint8Array(w * h).map(() => (rand() < 0.5 ? 1 : 0)); masks.push(m);
+        mrows.push({ x: rowOff, y: 1, z: 0, w: 0 });
+        for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < 8; xx++) tex.data[(rowOff + yy) * 8 + xx] = [xx < w ? m[yy * w + xx] : 0, 0, 0, 0];
+        rowOff += h;
+      } else { masks.push(null); mrows.push({ x: 0, y: 0, z: 0, w: 0 }); }
+    }
+    tex.h = Math.max(1, rowOff); for (let k = 0; k < 8 * tex.h; k++) if (!tex.data[k]) tex.data[k] = [0, 0, 0, 0];
+    const u = { structCount: count, structFoot: rows, structMask: mrows };
+    const f = compileFn(src, 'inStructFoot', { u, MAX_STRUCTS, uStructMask: tex, textureLoad: (t, c) => { const v = t.data[c.y * t.w + c.x]; if (!v || c.x < 0 || c.x >= t.w) throw new Error('mask read out of range ' + c.x + ',' + c.y); return { x: v[0], y: v[1], z: v[2], w: v[3] }; }, ...shims });
     for (let k = 0; k < 40; k++) {
       // include exact box edges (half-open rule) as well as random points
       const px = rand() < 0.3 ? Math.floor(rand() * 26) : rand() * 26, py = rand() < 0.3 ? Math.floor(rand() * 26) : rand() * 26;
-      const got = f({ x: px, y: py, z: 3 }), want = insideFoot(foot, count, px, py);
+      const got = f({ x: px, y: py, z: 3 }), want = withMasks ? insideStructFoot(foot, count, px, py, masks) : insideFoot(foot, count, px, py);
       n++; if (want) hits++; if (got !== want) bad++;
     }
   }
@@ -57,7 +74,15 @@ assert.ok(base.hits > 100 && base.hits < base.n - 100, 'both outcomes occur: ' +
 const mut = (a, b) => { assert.ok(SHADOW_TERRAIN_WGSL.includes(a), 'anchor ' + a); return SHADOW_TERRAIN_WGSL.replace(a, b); };
 assert.ok(run(mut('wp.x < b.z', 'wp.x <= b.z'), 60).bad > 0, 'mutation: closed upper x edge');
 assert.ok(run(mut('wp.y >= b.y', 'wp.y > b.y'), 60).bad > 0, 'mutation: open lower y edge');
-assert.ok(run(mut('if (i >= u.structCount) { break; }', ''), 60).bad > 0, 'mutation: structCount ignored');
+assert.ok(run(mut('if (u32(i) >= u32(u.structCount)) { break; }', ''), 60).bad > 0, 'mutation: structCount ignored');
+// GS-01b: the mask lookup against the real JS twin (rasterJS.js insideStructFoot): some boxes masked, some whole-box
+const mbase = run(SHADOW_TERRAIN_WGSL, 80, true);
+assert.equal(mbase.bad, 0, `masked inStructFoot mismatches ${mbase.bad}/${mbase.n}`);
+assert.ok(mbase.hits > 100 && mbase.hits < mbase.n - 100, 'masked: both outcomes occur: ' + mbase.hits + '/' + mbase.n);
+assert.ok(run(mut('if (m.y < 0.5) { return true; }', 'if (m.y < 0.5) { return false; }'), 80, true).bad > 0, 'mutation: unmasked box must carve whole');
+assert.ok(run(mut('+ i32(m.x)', ''), 80, true).bad > 0, 'mutation: row offset ignored');
+assert.ok(run(mut('i32(wp.x - b.x)', 'i32(wp.y - b.y)'), 80, true).bad > 0, 'mutation: x/y swapped in the mask lookup');
+assert.ok(run(mut('.x != 0u', '.x == 0u'), 80, true).bad > 0, 'mutation: mask polarity');
 
 // depth copy: bitcast of the float depth is exact for every float32 (what compareShadowDepth reads back)
 const bc = compileFn(SHADOW_DEPTH_COPY_WGSL.replace('textureLoad(uShadowDepth, vec2i(floor(frag.xy)), 0)', 'd'), 'fs_main', { ...shims, vec4u: (a, b, c, d) => ({ x: a, y: b, z: c, w: d }) });

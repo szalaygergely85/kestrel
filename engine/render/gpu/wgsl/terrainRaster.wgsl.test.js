@@ -75,11 +75,12 @@ assert.ok(src.includes('const PLANEID_TERRAIN: u32 = 0xFFFFFFFFu;')); // GL uint
 assert.ok(src.includes(`const KIND_TERRAIN: u32 = ${KIND_TERRAIN}u;`) && src.includes(`const FACE_PACKED: u32 = ${FACE_PACKED}u;`));
 assert.ok(src.includes('KIND_TERRAIN | (FACE_PACKED << 8u) | (u32(terrType) << 16u)'));
 assert.ok(src.includes('bitcast<u32>(1.0e30f)'));
-assert.ok(/x >= b\.x && .*x < b\.z && .*y >= b\.y && .*y < b\.w\) \{ discard; \}/.test(src.replace(/v\.vWorldPos\./g, '')), 'half-open footprint carve');
+assert.ok(/x >= b\.x && wp\.x < b\.z && wp\.y >= b\.y && wp\.y < b\.w\)/.test(src) && src.includes('if (inStructFoot(v.vWorldPos)) { discard; }'), 'half-open footprint carve (GS-01b: bbox then mask lookup, shared fn)');
 assert.ok(TERRAIN_RASTER_FRAG_SRC.includes('vWorldPos.x >= b.x && vWorldPos.x < b.z') && TERRAIN_VERT_SRC.includes('unpackNormalOct(aNrmBits)'));
 assert.ok(!/\bround\s*\(|dpdx|dpdy|fwidth|frag_depth|textureSample|%/.test(src));
 assert.ok(src.includes(`for (var i = 0; i < ${MAX_STRUCTS}; i++)`));
-assert.deepEqual(TERRAIN_TEXTURES, ['uint', 'uint']);
+assert.deepEqual(TERRAIN_TEXTURES, ['uint', 'uint', 'uint']);
+assert.ok(src.includes('@group(0) @binding(2) var uStructMask: texture_2d<u32>;') && TERRAIN_BLOCK.field('structMask').count === MAX_STRUCTS, 'GS-01b mask atlas binding + uniform');
 assert.ok(src.includes('@group(0) @binding(0) var uNearType: texture_2d<u32>;') && src.includes('@group(0) @binding(1) var uFarType: texture_2d<u32>;'));
 assert.ok(WGSL_MODULES.some((m) => m.name === 'rasterTerrain' && m.code === TERRAIN_RASTER_WGSL));
 assert.equal(TERRAIN_BLOCK.sizeBytes % 16, 0);

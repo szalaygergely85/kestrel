@@ -23,7 +23,7 @@
 // Zero allocation per frame after a build.
 import { MAX_VOX_PARTS } from '../voxel/VoxelModel.js';
 import { addMeshStructures, placementMatrix12, DRAW_FLAG_ONE_PART } from './DrawList.js';
-import { INSTANCE_STRIDE, INST_OBJECT_ID, INST_FLAGS, makeInstanceGroup, createInstanceParts, groupRadius } from './instances.js';
+import { INSTANCE_STRIDE, INST_OBJECT_ID, INST_FLAGS, makeInstanceGroup, createInstanceParts, groupRadius, touchInstances } from './instances.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
 import { lazyMeshVersion } from './lazyMesh.js';
 
@@ -205,6 +205,7 @@ export class MeshGroupSet {
         f[o + 14] = 0; f[o + 15] = 0;
         snap[w++] = s.frame.x; snap[w++] = s.frame.y; snap[w++] = s.frame.z; snap[w++] = s.frame.yawDeg || 0; snap[w++] = sk;
       }
+      touchInstances(g.ib); // AUD-02: raw row writes above
       g._R = groupRadius(draw, g.parts) * maxScale;
       this.groups.push(g);
     }
@@ -236,7 +237,7 @@ export class MeshGroupSet {
         for (let c = 0; c < INSTANCE_STRIDE; c++) dst[wo + c] = srcU[o + c];
         w++;
       }
-      g.drawCount[0] = w;
+      g.drawCount[0] = w; touchInstances(g.drawIb[0]); // AUD-02: raw compaction writes -> version bump
       kept += w;
       if (w > 0) { const it = list.addInstances(g.draw, g.parts, g.drawIb[0], w, R); if (it) it.flags |= DRAW_FLAG_ONE_PART; }
     }

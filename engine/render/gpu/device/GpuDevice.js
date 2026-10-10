@@ -152,7 +152,7 @@ export class GpuDevice {
    * `queue.writeBuffer`; GL2 `bufferSubData`). Never allocates a new buffer: callers upload only when their data changed.
    * @param {GpuHandle} handle @param {ArrayBufferView} data @param {number} [dstOffsetBytes]
    */
-  writeBuffer(handle, data, dstOffsetBytes) { throw new Error('GpuDevice.writeBuffer: not implemented'); }
+  writeBuffer(handle, data, dstOffsetBytes, byteLength) { throw new Error('GpuDevice.writeBuffer: not implemented'); }
   /** @param {GpuHandle} target @param {PassDesc} [opts] */
   beginPass(target, opts) { throw new Error('GpuDevice.beginPass: not implemented'); }
   /** @param {GpuHandle} pipeline @param {BindDesc} desc */

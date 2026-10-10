@@ -76,7 +76,7 @@ assert.ok(td, 'terrain draw issued'); assert.equal(td.pipe.desc.cull, 'none'); a
 assert.equal(td.count, 6); assert.equal(td.first, 3); assert.equal(td.bind.indexBuffer, tib);
 assert.equal(td.uniforms[TERRAIN_BLOCK.field('objectId').word], 0x7003);
 assert.deepEqual([...new Float32Array(td.uniforms.buffer)].slice(TERRAIN_BLOCK.field('model').word + 12, TERRAIN_BLOCK.field('model').word + 16), [16, 32, 2, 1]);
-assert.deepEqual(td.bind.textures.map((t) => t.slot), [0, 1]); assert.deepEqual(td.pipe.desc.bindings.textures, ['uint', 'uint']);
+assert.deepEqual(td.bind.textures.map((t) => t.slot), [0, 1, 2]); assert.deepEqual(td.pipe.desc.bindings.textures, ['uint', 'uint', 'uint']);
 assert.equal(p.stats.terrainDraws, 1);
 // Type textures: uploaded on version change only (r8ui, resized when the bake size differs), never per frame.
 const world = { terrain: { farReady: true, farVersion: 1, mapW: 4, mapH: 4, farType: new Uint8Array(16), nearReady: true, near: { version: 1, w: 3, h: 3, type: new Uint8Array(9) } } };
