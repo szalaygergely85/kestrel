@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { makeMockGpuDevice } from '../../../test/assert.js';
 import { WgCellPipeline, WG_PASS_NAMES, WG_PASS_SLOT } from './WgCellPipeline.js';
 import { WgRasterPass } from './passRaster.js';
-import { FRAME_TIMER_SLOT } from '../device/WebGpuTimer.js';
+import { FRAME_TIMER_SLOT, SLOT_COUNT } from '../device/WebGpuTimer.js';
 
 // 1. Slot-mapping contract: one unique slot per name, 0..N-1 contiguous (writePassStats assumes slot === array index,
 // WebGpuTimer.js), and never FRAME_TIMER_SLOT (15).
@@ -18,6 +18,7 @@ import { FRAME_TIMER_SLOT } from '../device/WebGpuTimer.js';
   assert.deepStrictEqual([...slots].sort((a, b) => a - b), [...Array(WG_PASS_NAMES.length).keys()], 'slots are 0..N-1');
   for (const n of WG_PASS_NAMES) assert.strictEqual(WG_PASS_NAMES[WG_PASS_SLOT[n]], n, `WG_PASS_SLOT.${n} indexes back to "${n}"`);
   assert.ok(!slots.includes(FRAME_TIMER_SLOT), 'no WG pass slot collides with FRAME_TIMER_SLOT');
+  assert.ok(WG_PASS_NAMES.includes('glow') && FRAME_TIMER_SLOT < SLOT_COUNT && slots.every((x) => x < SLOT_COUNT), 'AUD2-07: glow has a slot; all slots < SLOT_COUNT');
 }
 
 // A strict spy reproduces WebGpuTimer's single-active-span invariant (begin() throws if one is already open, end()
