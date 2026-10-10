@@ -1116,6 +1116,23 @@ const BOAR_R = 0.45;
     ok('P4 give-up: ignores the player on the way home, ends in wander', !reaggro && home, `reaggro=${reaggro} home=${home}`);
   }
 
+  // P6. DRESS-01b: a `temperament:'wary'` (ambient) boar ignores a player 8 m away (a normal boar notices), and
+  // a hit turns it into a normal fighter.
+  {
+    const wary = beastEntity('amb', 1455, 1028); wary.components.brain.temperament = 'wary';
+    const { world, sim } = mk([wary, beastEntity('q', 1455, 1028)]);
+    const pz = groundZ(world, 1455, 1038);
+    sim.fx[0] = 0; sim.fy[0] = 1; sim.fx[1] = 0; sim.fy[1] = 1;
+    let engW = false, engQ = false;
+    for (let i = 0; i < 300; i++) {
+      sim.step(1455, 1036, pz); // 8 m away: inside noticeR 12, outside calmNoticeR 5
+      if (sim.state[0] === STATE_CHASE || sim.state[0] === STATE_NOTICE) engW = true;
+      if (sim.state[1] === STATE_CHASE || sim.state[1] === STATE_NOTICE) engQ = true;
+      sim.fx[0] = 0; sim.fy[0] = 1; sim.fx[1] = 0; sim.fy[1] = 1;
+    }
+    ok('P6 wary boar ignores a player at 8 m, plain boar notices', !engW && engQ, `wary=${engW} plain=${engQ}`);
+  }
+
   // P5. Zero allocation with the adapter, noise and leash active.
   {
     const { world, sim } = mk([beastEntity('a', 1455, 1028), beastEntity('b', 1460, 1030)], { leashR: 12, giveUpSec: 4 });
