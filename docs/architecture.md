@@ -5321,3 +5321,236 @@ Scope = D-060 stage 1 only: the play area grows west along the road to the bend;
 - check-deps: `engine/physics/bounds.js` imports nothing outside physics; no game/design import in engine.
 
 **Do not:** add a second walk-bound mechanism in game code; hard-code coordinates in game modules (anchors come from touches, points from entity data); regenerate `roadL###`; place beasts outside the nav area; change the `waystone` id; start band streaming in stage 1; put travel/waystone logic in `engine/`.
+
+
+### 38.37 Chapter 1 build (D-062) (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; PC-A to ratify)
+
+This section builds the owner script `docs/chapters/chapter-1-beyond-the-wall.md` with the D-062 changes: no lamp, killing the boars gives an aether crystal, the breach climb stays required, and Fen comes back as a male wanderer made with the chargen (D-059). It also covers the owner's tower request (2026-10-10: "should be taller ... the top is the sword ... come down and entrance is there on the bottom"). It reuses 38.35 (questBook, giver flow, markers, J log, compass D-061) and 38.36 (relay waystones, `relayWake.js`, travel), and duplicates none of the WS1 rows. Rows: backlog `## Chapter 1 build (D-062)` (CH1-*).
+
+**What the code does today (read, not probed):**
+- `quest.js` only accepts a strict ordered prefix. `advance` walks `objectives[completed.length]`, and a restore throws when the saved prefix does not match the def ids. So removing `lantern` or inserting steps needs a save migration.
+- The sword is on the ground floor today (tower level `sword` prop and interactable at (12.86, 6.12), with note `noteSteelHush` beside it).
+- The current exit is the breach at the summit (marker `breach` (6.5, 7, z 6)), then the outer steps `l k j x X b` down the west outcrop.
+- The interior ground floor is at z ~0, but the outer ring cells (`,` `;`) and the terrain crown are at 2.4 m (`overworld_far` `towerCrown` flatten h 2.4). A door at ground level therefore needs about 2.4 m of steps.
+- Wall tops are 6.5-8.5 m today.
+- Entity colliders (`components.collider`) are **static** prisms baked into `props:static` at load. A walking Burl needs engine work.
+- `components.voxel.hidden` already hides an entity (voxelPool).
+- An interactable's `requires` is one `world.state` key that must be truthy.
+- A prop with `colliderOffVariant` already drops its collider when its variant changes (the lantern hook).
+- The bear model has a `walk` clip tuned to about 1.0 m/s.
+- Loot drops (`pickups.js`) exist only at runtime and despawn, so they cannot safely carry a key item.
+- The `createQuestMarkers` bindings live in main.js. Today there is only `waystone -> endMarker`.
+
+**1. The m1 chain (the id stays `m1`; `content/quests/m1.quest.json`).**
+- m1 stays one main quest. Each objective gets an optional `section` (the script quest id), and the def gets `sections: [{id, title}]`. `validateQuestDefinition` ignores both fields; a new `validateSections` in questBook checks them.
+- When the last objective of a section completes, the game shows the toast "Quest complete: <title>" (strings come from the quest file / WRITER).
+- Order and `when`:
+
+| # | id | section | when | kind |
+|---|---|---|---|---|
+| 1 | wake | q01 A Blade in the Ashes | flag `wake` | auto |
+| 2 | breach | q01 | area `breach` (now the top of the tower) | auto |
+| 3 | sword | q01 | item `sword` | auto |
+| 4 | leave | q02 Leave the Tower | area `towerDoor` (outside the new ground-floor door) | auto |
+| 5 | beasts | q03 Boars in the Woods | flag `quest.burl.boars.done` (giver quest, same mechanics as now) | giver (Burl) |
+| 6 | follow | q04 Follow the Bear | flag `burl.arrived` | auto, started from Burl's dialogue |
+| 7 | waystone | q05 Awaken the Stone | flag `waystone.waystone.woken` (was area `waystone`) | auto |
+| 8 | road | q06 The Next Light | area `roadWest` | auto |
+| 9 | relayFound | q06 | area `bendRelay` | auto |
+| 10 | relay1 | q06 | flag `waystone.ws_roadBend.woken` | auto |
+| 11 | fen | q07 Not Alone | flag `fen.met` | auto, set by the end node of Fen's dialogue |
+
+- `lantern` is removed.
+- `burl.boars` keeps `requires m1 sword`. Its title becomes "Boars in the Woods" (WRITER).
+- Facts count early (the quest.js rule), so doing things out of order never soft-locks the chain. Example: waking the relay before the meadow stone.
+- New areas in `content/quests/areas.json`, each with a world-level area-only trigger (same as the existing `end` zone):
+  - `towerDoor`: circle r 3 just outside the door.
+  - `roadWest`: r 10 on the road at about (1340, 1048).
+  - `bendRelay`: r 12 at (1262, 1033).
+  - The `waystone` area stays defined; only old saves and the migration use it.
+- **Quest flags set by game code** go through one helper, `questFlag(key, value=true)` in `questRelay.js`. It sets `world.state[key] = value` and calls `book.feed({type:'flag:set', key, value})`. Every new flag above uses it (wake modules, escort, dialogue). Never set these flags by writing `world.state` alone.
+- Marker and compass bindings (main.js `createQuestMarkers(m1, ...)`):
+  - `leave -> doorMarker` (a prop or marker at the door)
+  - `follow -> bear`
+  - `waystone -> endMarker`
+  - `road -> roadWest` marker
+  - `relayFound` and `relay1 -> relayBend`
+  - `fen -> fen`
+  - Item steps (sword) get no marker (existing rule).
+- This chain replaces WS1-09: close WS1-09 as won't-do, pointing here. The notice (item 4) replaces WS1-W1's relay wake toast.
+
+**2. Tower: sword at the top, door at the bottom, taller shell (owner 2026-10-10).**
+- Flow:
+  1. Wake on the ground floor, at the wreck.
+  2. Climb: the stair and the gap jump, unchanged.
+  3. Reach the top (the summit around the breach).
+  4. Take the sword and read note 1.
+  5. Read note 2 at the head of the way down.
+  6. Go back down.
+  7. Leave through the ground-floor door into the meadow.
+- **Level data (`content/levels/tower.level.json`, designer):**
+  - Move the `sword` prop and interactable, and `noteSteelHush`, to the summit floor near the breach. The sword must be visible from where the player enters the summit. `noteSteelHush` becomes note 1, with the text from the script.
+  - Add interactable `noteLeave` (note 2) at the head of the way down, with `requires: 'tower.sword.taken'` so its prompt stays hidden until then.
+  - **The breach is no longer an exit.** The outer outcrop steps become solid rubble or a parapet no higher than 1.2 m, above a sheer drop the player cannot use. Keep the view west: it is the overlook moment.
+  - **Way down:** only walking and jumping, with no drop bigger than the existing gap jump and no jump up. The 2.7 <-> 3.0 gap is crossed downward. If the current route cannot be walked in reverse, the designer adds a rubble ramp or a ledge.
+  - **Door:** one doorway, 1.2 m wide, in the south-west wall of the ground floor. It opens onto steps of no more than 0.3 m each (the stair rule) that rise from 0 to 2.4 m to the outer ring. The steps are level cells (grow `size.h` by 2-3 rows if needed), so physics and collision stay sector-native.
+  - **The door is barred until the sword is taken:** prop `doorBar` (with a collider and `colliderOffVariant: 'open'`) plus interactable `door.unbar` (`requires: 'tower.sword.taken'`, WRITER prompt) that switches the variant. No engine change. This keeps the climb required, as the owner wants, without relying on the player choosing to climb.
+- **Taller shell, in two layers.** Both are data/content; no engine change.
+  - (a) Raise the `floorH` of the solid wall cells (sector walls) to the owner's target height (see OWNER QUESTION). Recommendation: walls 12-14 m, with jagged crumbled steps of 0.5-1.5 m between neighbouring cells, and the west/breach side kept lowest. Chamfer the outer wall cells so the footprint reads round. Collision and shadows come for free.
+  - (b) A designer voxel model `towerCrown`: a round broken crown ring with the Kestrel's torn envelope snagged on it and rope ends hanging down. Place it as a world entity at the tower origin, above the wall tops. The player cannot reach it, so it has no collider. Budget: at most 8k surface voxels at 0.125-0.25 m and the shadow cost of one caster. If it does not fit, cut detail, not the silhouette.
+- The interior look must survive (the owner likes it). The east `#` wall casts the edge of the sun shaft. Any height change on the sun side is checked with a headless capture of the wake pose and the shaft pose, before and after. If the shaft is lost, keep the east wall at its current height and add height only on the N/S/W walls and the crown.
+- Far view / horizon: from anywhere inside the stage-1 bounds the tower stays inside the near band, so it needs no far proxy. If the footprint grows, update the `overworld_far` `structures[0]` note and the `towerCrown` flatten disc. The map chart glyph does not change.
+- **Lamp removal:**
+  - Remove the `lantern.take` interactable. The hook and lamp props stay as wreck dressing, with no prompt.
+  - `beacon.light` keeps `requires: 'tower.lantern.taken'`. That flag is never set in new games, so the beacon stays dormant. A later chapter may give it a new gate.
+  - `questRelay` stops feeding `lantern`.
+  - `hintBurner`'s `skipIfState` and the `hintExit` text ("the way out ends the chapter") are WRITER rewrites.
+  - Old saves that already took the lamp keep its light. It is harmless and not worth code.
+  - The designer checks interior exposure without the carried lantern (capture). If it is too dark, fix it with level lights, never by bringing the lamp back.
+
+**3. Aether crystal (the key that wakes the stones).**
+- Item `aetherCrystal`: a design/items.js def with `stackMax 1`. Make it a key item (no drop/sell) if the inventory supports that tag; otherwise a plain item.
+- The real gate is the flag **`aether.attuned`**. The item is only visible proof, so dropping it can never soft-lock.
+- Grant rule (game code, `game/js/quest/crystal.js`). When `burl.boars` reaches `ready` (5/5 boars) and `aether.attuned` is not set:
+  - `addItem('aetherCrystal')`. If the pack is full, the player is still attuned; the flag decides, and no retry is needed.
+  - `questFlag('aether.attuned')`.
+  - A teal particle burst at the last boar's corpse (existing preset, `particleHooks`).
+  - A toast (WRITER).
+- **Self-healing:** the same check runs once on every `world:loaded`. Old saves that are past the boar quest get the crystal with no migration code.
+- **One crystal wakes any stone.** The script gives no per-stone cost, so the meadow stone and every relay need `aether.attuned`. The crystal is not consumed.
+
+**4. Waking the meadow stone + notices.**
+- In new games the meadow waystone (`endMarker`, `waystone {id:'waystone', kind:'stone'}`) starts **dormant**: no walk-in touch and no heal/save until it is woken. `waystoneTouch.js` (list-driven after WS1-06a) skips points that have `dormant: true` in their `waystone` component while `waystone.<id>.woken` is false. Only `endMarker` gets `dormant`; relays are E-only anyway.
+- Waking reuses the WS1-06b `relayWake.js`, extended to `kind:'stone'`:
+  - Interactable `stone.waystone`: E, `requires: 'dlg.bear.stone.told'`. Burl's stone-talk node sets that flag, and the talk itself can only be reached with the crystal.
+  - Sequence: clip `wake` -> light on at the wake frame -> `awake` loop -> `waystone.touch` (heal + save) -> `questFlag('waystone.waystone.woken')` -> notice.
+  - Relays use interactable `requires: 'aether.attuned'`.
+- Designer work on the waystone model:
+  - `dead` / `wake` / `awake` clips (the aether mark goes from dark to teal).
+  - A small brass crystal bowl on top. It is the script's "crystal bowl" and keeps Wick's "old machine" line true.
+  - A light preset.
+  - The existing `idle` clip stays, as an alias of `awake`, for old saves.
+- **Notice view** `game/js/ui/noticeView.js` (pure layout + draw, mounted in main.js):
+  - A centred banner: a title row (at most 30 chars) and up to 3 body lines (at most 38 each).
+  - Fade in 0.3 s, hold 3.5 s, fade out 0.5 s.
+  - Non-blocking: input stays live. Queue of 2.
+  - No allocation in draw (strings are formatted when pushed).
+  - Used for "WAYSTONE AWAKENED" and "BEND RELAY AWAKENED". Each point's `waystone` component names its text with `notice: '<textKey>'`, and the WRITER strings live in a game text table.
+  - Hidden in menus and dialogue, like the compass.
+
+**5. NPC walks: Burl's escort and departure, Fen's entrance.**
+- **Engine (generic, kestrel-3):**
+  - `engine/nav/pathFollow.js` (pure, no world): `createPathFollower(points:Float64Array /*x,y pairs*/, {speed, arriveR}) -> {step(dt, speedScale) -> boolean /*moved*/, x, y, yawDeg, seg, s, done, reset(seg)}`.
+    - Follows a polyline at constant speed, rounding corners by looking ahead (arriveR), with yaw from `yawFromDelta`.
+    - No allocation; deterministic (fixed dt, no random).
+    - Tests: arrives at the end, `seg` counts correctly, `reset(seg)` resumes at a waypoint, speedScale 0 means no movement, heap stays flat over 10k steps.
+  - **Kinematic entity colliders:** `World.setEntityCollider(id, x, y, z)` moves an entity's collider prism.
+    - Entities whose collider has `kinematic: true` go into a separate `npcs:kinematic` collider (at most 8 prisms) instead of `props:static`.
+    - An update writes the shape in place and refits its bounds: no allocation, O(1).
+    - Static colliders (Burl today) behave byte-identically when the flag is absent.
+    - Physics stays stand-alone: the collider set is owned by the world, and physics imports do not change.
+    - Tests: the player capsule is blocked at the new spot and free at the old one, the static set is unchanged, no allocation over 10k moves.
+    - If the collider structure cannot be updated in place, ASK ARCHITECT before rebuilding it every step.
+- **Game (`game/js/quest/npcWalk.js`, generic, used by Burl and Fen):**
+  - Each NPC gets a small state built from its entity data: `components.walks = { <name>: [[x,y], ...] }`. These are authored polylines in world data, so there are no coordinates in code.
+  - API: `createNpcWalk(world, id, {questFlag, emit})` -> `{start(name, opts), step(dt, px, py), phase, wp}`, with `opts = {lead: true, waitFar: 10, resumeNear: 6, barks: {<wpIndex>: '<barkId>'}, onArrive, hideAtEnd}`.
+  - Movement:
+    - x/y come from the follower; `z = terrain.groundAt(x, y)` (feet); `transform.yawDeg` comes from the follower.
+    - Clip `walk` while moving, `idle`/`listen` while waiting.
+    - Call `World.setEntityCollider` on every step the NPC moves.
+    - `npcBear`'s turn-to-player is paused while walking.
+  - **Wait for the player** (lead mode): when the player is more than `waitFar` m away, stop and turn toward the player; resume when the player is closer than `resumeNear`. The NPC never runs away from the player and never teleports in view.
+  - **Walking dialogue = barks:** speaker lines that do not lock input (`game/js/quest/barks.js`, dialogue box style).
+    - Typed at dialogue speed; each line auto-advances after 1.6 s; a real dialogue interrupts them.
+    - Each bark id fires once (flag `bark.<id>`), when Burl reaches its waypoint index and the player is within 8 m.
+    - Bark text lives in `content/dialogue/bear.barks.json`: `{kind:'barks', schema:1, id, speakers, barks:{<id>: [{speaker, line}]}}`. This kind is game-side, validated in `barks.js` and in `tools/validate-content.mjs`. At most 56 chars per line.
+  - `hideAtEnd`: at the last waypoint, set `components.voxel.hidden = true`, remove the collider (move it far away or disable it with `setEntityCollider`), and remove the dialogue interactable.
+- **Burl's phases.** `world.state['burl.phase']` and `world.state['burl.wp']` are ints, saved with world.state.
+  - 0 home.
+  - 1 walking to the stone. Started by the follow node's `setFlag 's.burl.follow'`.
+  - 2 at the stone. `questFlag('burl.arrived')`; the stone talk opens on its own when the player is within 4 m, otherwise Burl waits there with a talk prompt (like `!`).
+  - 3 departing. Set by the after-wake node.
+  - 4 gone (hidden).
+  - Load rules: phase 1 -> Burl stands at waypoint `burl.wp` and resumes when the player is near; phase 2 -> at the end of the walk; phases 3 and 4 -> gone (the departure is not replayed).
+  - The departure walk is the authored `depart` polyline into the forest: at least 20 m, ending out of sight of the road. Burl is hidden at the end.
+- **First call** (script: "As Wick approaches the trees, a deep voice calls"): one bark `bear.call` the first time the player comes within 14 m of Burl after `leave`.
+- **Fen:**
+  - The `fen` entity stands at Bend Relay: `type: 'npc'`, model `char.fen` from the add-on package, `collider {r, h, kinematic: true}`, `dialogue: 'fen'`, and `walks: {emerge: [...]}` from behind the fallen wall to about 4 m from the relay.
+  - He stays `voxel.hidden = true`, with no interactable, until `waystone.ws_roadBend.woken`.
+  - After the notice he walks `emerge` (no lead, no waiting). His dialogue opens on its own when the player is within 4 m; otherwise the compass and marker point at him, and E opens it too.
+  - The end node of the `fen` graph sets `s.fen.met` -> m1 step `fen` -> chapter complete.
+  - Load: if the relay is woken, Fen is visible at the end of `emerge`.
+
+**6. Dialogue graphs (content, written after the WRITER rows).**
+- New adapter route in dialogueCtl for keys starting with `s.`: `has` = `!!world.state[<rest>]`, `set` = `questFlag(<rest>)`. These keys go into the same `Map` that is built once at open for the `q.` routes. `q.*` keys and plain keys (-> `dlg.*`) work as before. validate-content checks that `s.` keys match the quest id regex.
+- `bear.dialogue.json` entries (first match wins):
+  1. `s.burl.departing` -> farewell repeat line.
+  2. `s.waystone.waystone.woken` -> after-wake lines; the last node sets `s.burl.depart` (-> phase 3).
+  3. `s.burl.arrived` -> the stone talk. Its last node sets `bear.stone.told`. The lamp line is rewritten to the crystal.
+  4. `q.burl.boars.done` -> follow offer ("Come along, sky-cub" ...); a node sets `s.burl.follow`.
+  5. `q.burl.boars.ready` -> the after-five lines -> thanks node (sets `q.burl.boars.handin`) -> `next` the follow lines. So the hand-in flows straight into Follow the Bear; if the player presses Esc after the hand-in, the follow offer is the next entry.
+  6. `q.burl.boars.active` -> the two "while active" lines.
+  7. `q.burl.boars.available` -> the script's Offer block: Accept "I'll clear the path." / Later "Not yet.", then the accepted lines.
+  8. `bear.talked` -> repeat line.
+  9. Default -> first encounter: the script lines, with the optional crash exchange as a choice branch. It ends by setting `bear.talked` and flows into the offer when the quest is available.
+- `content/dialogue/fen.dialogue.json`:
+  - The script, split into nodes at each change of speaker.
+  - 3 choice points where Wick asks questions in the script ("Who are you?" / "What kind of things?" / the chart). Every choice leads back into the main line, so no lines are lost.
+  - Repeat entry (`s.fen.met`): 2-3 lines pointing at the river road.
+  - Speaker `fen` with label "FEN", player "YOU" (existing convention). At most 56 chars per line.
+
+**7. Chapter complete card + journal.**
+- `game/js/quest/chapterCard.js`: a pure state machine + draw, in the end.js timing style. When m1 completes (book `onChange`, main quest done):
+  1. The scene dims to 50 % over 1.0 s. No full black, and play does not reset (D-056).
+  2. "CHAPTER COMPLETE" and the chapter name are typed at `TYPE_CPS`.
+  3. "Next chapter: The River and the Forgotten".
+  4. After 2 s, the journal page opens in the existing note panel (`noteRead.js`, `ASSETS.notes.journalCh1`, title and lines from the script; WRITER fits them to the panel width).
+  5. E or Esc closes it and play continues.
+  - Input is locked while the card runs.
+- Flags: `chapter.ch1.done = true` (saved) and `chapter.next = 'ch2'`. Nothing reads `chapter.next` yet; stage 2 / chapter 2 will gate on it later. The card shows only once: it checks the flag on load and never replays.
+- Quest log (J): the Done list shows "Beyond the Wall" as the m1 entry, and Enter on it opens the journal page again.
+
+**8. Save migration (old saves, partway through the chain).**
+- A pure function `migrateM1Ch1(game)` in `game/js/quest/sim/questBook.js` (or `ch1Migrate.js`), run on restore **before** `createQuest`.
+- It runs when the saved `completed` list is not a prefix of the new ids. It maps the old completed set to the longest new prefix in which every step is implied:
+  - wake <- old `wake`
+  - breach <- old `breach`
+  - sword <- old `sword`
+  - leave <- old `beasts` (or old `sword` plus a saved pose outside the tower footprint)
+  - beasts <- old `beasts`
+  - follow + waystone <- old `waystone` (touched). This also sets `waystone.waystone.woken`, `burl.phase = 4` and `aether.attuned` (the self-heal adds the crystal item).
+  - Later steps are never implied.
+  - Old `lantern` is dropped. The facts arrays (flags/items/areas/deadBeasts) are kept unchanged.
+- Old save with the boars done but the waystone not touched -> Burl is at home with the follow offer as his entry, and the escort plays.
+- Old 6/6 save -> the next step is `road`, Burl is gone, the stone is awake, and no "Quest complete" toasts replay. Section toasts fire only on a live completion, never on restore.
+- Pose safety: if a saved pose is inside a cell that is now solid (removed outcrop steps, raised walls) or below the ground, use the existing spawn snap to the nearest valid spot. If none is within 4 m, use the last touched waystone, else the level start. Test it with a pose on the old outcrop.
+- `SAVE_VERSION` stays 1: the new flags in `world.state` are additive, and the m1 prefix is rewritten in place on load.
+
+**9. Tests and gates.**
+- Node:
+  - `questBook`/`ch1Migrate` fixtures: fresh game; mid-tower `[wake, lantern]` -> `[wake]`; `[.., sword]`; `[.., beasts]` -> follow offer; 6/6 -> `road`; round trip; no section toast on restore.
+  - m1 def validation, including sections.
+  - `crystal.test.js`: granted once at ready, self-heal on load, still attuned with a full pack.
+  - `pathFollow.test.js`.
+  - Kinematic collider test (engine).
+  - `npcWalk.test.js`: wait/resume thresholds, each bark fires once, phase save/load for every phase, hideAtEnd, no allocation.
+  - `barks.test.js`.
+  - `noticeView.test.js`: queue, timings, no allocation in draw.
+  - `chapterCard.test.js`: shows once, flags, hand-off to the journal.
+  - `bearDialogue.test.js` + `fenDialogue.test.js`: entry for each state, every node reachable, every line at most 56 chars.
+  - **`ch1Walkthrough.test.js`:** a scripted sim run that feeds the event sequence wake -> breach -> sword -> door -> accept -> 5 boars -> hand-in -> follow/arrive -> wake stone -> road -> relay -> Fen end node. It asserts that the chain completes and that every section toast fires once, in order.
+- Route walk (`tools/route-walk.mjs`):
+  - Replace the tower legs: wake -> top (sword spot) -> down -> door -> outside. Grid and mesh physics, no fall damage, no getting stuck.
+  - Probe: there is no exit through the breach (walking off the parapet fails).
+  - Probe: the door is closed before the sword is taken.
+  - Clearance of Burl's `follow` and `depart` polylines: no trunk or rock collider within 0.8 m, slope below 0.6, and `follow` stays inside the nav area.
+  - Clearance of Fen's `emerge` polyline.
+- Perf (`tools/perf-gate.mjs`): tower interior pose, tower exterior pose (from the meadow, crown in view) and `roadBend`. JS at most 8 ms and GPU p95 at most 8 ms on ultra. Escort cost per step at most 0.05 ms, no allocation.
+- gpucompare: the tower rows are re-baselined once, in the tower-shell commit, after the owner has looked. New row: tower exterior.
+- Do not:
+  - Put chapter or escort logic in `engine/`. Only `pathFollow` and kinematic colliders go there, and both are generic.
+  - Hard-code coordinates in game code. Paths, the door and markers come from data.
+  - Grant the crystal as a world drop.
+  - Replay section toasts or the chapter card on load.
+  - Add back any lamp step.
+  - Leave the breach usable as an exit.
