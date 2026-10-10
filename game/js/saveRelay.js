@@ -13,6 +13,14 @@ const STATE_GONE = 12; // beastSim.STATE_GONE (hidden, skipped everywhere) - sam
 /**
  * @param {{storage:any, questDef:any, giverDefs?:any[], slot?:number, enabled?:boolean, autosaveSec?:number, playerName?:string, place?:string}} o
  */
+/** AUD2-03: saved player xy (world coordinates) or null; World.load uses it as `opts.spawn` so only one terrain band bakes. */
+export function savedSpawn(save) {
+  const es = save && save.world && save.world.entities;
+  const p = Array.isArray(es) ? es.find((e) => e && e.id === 'player') : null;
+  const t = p && p.transform;
+  return t && Number.isFinite(t.x) && Number.isFinite(t.y) ? { x: t.x, y: t.y } : null;
+}
+
 export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0 = 0, enabled = true, autosaveSec = AUTOSAVE_SEC, playerName = 'Wick', place = 'Kestrel', defaultLook = null }) {
   let slot = slot0; // US-090w: the title menu picks the slot (setSlot)
   const adapter = storage ? createStorageAdapter(storage) : null;
@@ -77,7 +85,7 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
           const m = migrateM1Ch1({ quest: save.game.quest, world: save.world }, questDef.objectives.map(o => o.id));
           if (m.quest !== save.game.quest) save = { ...save, game: { ...save.game, quest: m.quest }, world: m.world || save.world };
         }
-        const a = applySave(save, assets, { questDef, giverDefs, worldOptions: worldOpts, defaultLook });
+        const a = applySave(save, assets, { questDef, giverDefs, worldOptions: { ...worldOpts, spawn: savedSpawn(save) || worldOpts.spawn }, defaultLook }); // AUD2-03: saved player pose picks the first band (one bake, not two)
         pending = a;
         lastResult = { op: 'load', ok: true };
         return a.world;

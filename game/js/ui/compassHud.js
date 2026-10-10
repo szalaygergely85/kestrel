@@ -85,6 +85,7 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
       if (book.status(qi) === ACTIVE) {
         const idx = st.completed.length;
         if (idx < def.objectives.length && stepPos(def.objectives[idx].when, st, world)) kind = 2;
+        else if (def.giver && def.giver.npc && world.resolve('giver', def.giver.npc, tmp)) kind = 2;   // COMPASS-QUEST-01: unresolvable step -> point at the quest's giver instead of hiding
       }
       if (!kind && resolveGiver(world, npcA)) kind = 3;
     }
