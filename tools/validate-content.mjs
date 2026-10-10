@@ -84,6 +84,7 @@ const CLASSIC_SCRIPTS = [
   '../design/models/relay.js',
   '../design/models/voxel_props.js',
   '../design/models/voxel_tower.js',
+  '../design/models/voxel_tower_crown.js', // CH1-D1b: ASSETS.models.towerCrown (world_m1 entity "towerCrown"); game/index.html needs the same tag after voxel_tower.js.
   '../design/models/voxel_world.js', // US-026a-content: waystone. Node/tooling only - see the header note above.
   '../design/models/sword.js', // US-078c: the ruin-steel sword (content/levels/tower.level.json prop "sword"), same load position as game/index.html.
   '../design/models/voxel_beast.js', // US-079a: the placeholder boar (content/worlds/world_m1.world.json entities "boar1"/"boar2"), same load position as game/index.html.
