@@ -377,3 +377,8 @@ B2 2026-10-09 (TWISTED-LOD-01) -> arch-review (importer data only): TwistedTree_
 - New: engine/chargen/downsample.js (downsample2, keep priority), validateKit regions/resLevels/detail/keep/seam/stretch-in-region/attachment res, recipe.res + effectiveRes/clampRes/GAME_SAFE_RES/CHAR_GAME_MAX_QUADS, randomRecipe copies kit.defaults.res (no rng draw); tests engine/chargen/detail.test.js (38).
 - Not done (22b+): compose/mesh at mixed res, height block remap, validateKit warning for attachment cells outside block, tools stats per level. human_kit.js/JSON untouched (kit.defaults.res + regions come with CHARGEN-23).
 - Note: `--filter mesh` run showed meshInstances.test.js FAIL once in parallel, passes alone (timing flake, unrelated). check-deps OK.
+
+## CHARGEN-22b (kestrel-3, 2026-10-10) -> arch-review
+- compose.js: grids (main + one block per region finer than body; attachments/shells per owning grid, resampled, thick*level), height.js `heightBase(base,h,regions)` -> `regionBoxes`, mesh.js `meshBlock` + finest grid G (`cellM/f`; jointCells, mounts, Hips clip pos x f). 1/1 byte-identical (all existing goldens/suites PASS). body>1 throws until CHARGEN-24.
+- tools/chargen-build-kit.mjs: per-level quad stats + attachment-outside-region-box warning. Tests: engine/chargen/blocks.test.js (33; synthetic kit + real kit with nearest-upsampled head; quads 1845 at every level since nearest upsample keeps greedy quads - real counts need the designer's L2).
+- Limits: test (f) is a joint-cell/metre consistency check at F=2, not the full voxelPose FORWARD-vs-FK repeat; main-grid shells treat block-filled cells as occupied (no growth into the head block). check-deps OK.
