@@ -1333,7 +1333,7 @@ async function runGame(mode, cinematic = null) {
         crystal = createCrystalGrant({ world, questFlag: (k) => rq.questFlag(k),
           addItem: (id) => { const inv = playerHandle && playerHandle.data.components.inventory; return inv && itemDefs ? addItem(inv, itemDefs, id, 1) : 0; },
           burst: (x, y, z) => { try { hitSparks(engine.particles, x, y, z + 0.3, 0, 0, 1, 24, 2); } catch (e) { /* hit sparks not defined: no burst */ } }, // hue 2 = aether cyan
-          toast: () => { const m = tmsg(); if (toasts && m) toasts.say('NEEDS WRITER: Burl presses a glowing crystal into your paw.', m.fg); } }); // story.md toast.crystal.found (PO-CH1-13: reads as GIVEN by Burl, not a pickup)
+          toast: () => { const m = tmsg(); if (toasts && m) toasts.say('A teal crystal lay under the last boar.', m.fg); } }); // story.md toast.crystal.found (PO-CH1-13: reads as GIVEN by Burl, not a pickup)
         crystal.check(rq.book.statusOf('burl.boars'));
         if (bearBarks) barks = createBarks({ world, data: bearBarks, questFlag: (k) => rq.questFlag(k), dialogue: dialogueCtl, style: window.ASSETS.uiStyle.dialogue });
         // CH1-07 (38.37 item 5): Burl walks (follow -> stone, depart) + proximity talk; load rules per phase. Needs the bear entity.
