@@ -101,7 +101,7 @@ const tower = world.structures.find((s) => s.id === 'tower');
 
 ok('world.physicsMode === "mesh"', world.physicsMode === 'mesh');
 ok('world.colliders is non-empty', world.colliders.length > 0);
-ok('deterministic ids/order: level colliders then authored props', world.colliders.map((c) => c.id).filter((id) => id !== 'meshes:static').join(',') === 'tower,tower:grate,props:static',
+ok('deterministic ids/order: level colliders, authored props, then kinematic NPCs', world.colliders.map((c) => c.id).filter((id) => id !== 'meshes:static').join(',') === 'tower,tower:grate,props:static,npcs:kinematic', // CH1-08a: Fen (kinematic NPC) in world_m1
   world.colliders.map((c) => c.id).join(','));
 
 {
