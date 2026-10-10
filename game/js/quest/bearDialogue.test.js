@@ -51,6 +51,9 @@ const you = (t) => 'YOU: ' + t;
 { const f = mk('s.burl.arrived', 'q.burl.boars.done', 's.burl.follow'); const w = walk(f, 0);
   ok('3 arrived: stone talk, 18 lines, ends on the crystal line', first(w) === burl('There we are.') && w.said.length === 18 && lastOf(w) === burl('Try holding that crystal to the bowl.'), w.said.length);
   ok('3 arrived: sets bear.stone.told, no lamp', f.s.has('bear.stone.told') && !w.said.some((l) => /lamp/i.test(l))); }
+// 3b following (CH1-07): no follow offer replay, no flags, one line; arrived wins
+{ const f = mk('q.burl.boars.done', 's.burl.follow', 'bear.talked'); const w = walk(f, 0);
+  ok('3b following: one placeholder line, no offer, no new flags', w.said.length === 1 && !w.said[0].includes('Come along') && f.s.size === 3, w.said.join('|')); }
 // 4 done -> follow offer
 { const f = mk('q.burl.boars.done'); const w = walk(f, 0);
   ok('4 done: follow offer (5 lines) sets s.burl.follow', first(w) === burl('Come along, sky-cub.') && w.said.length === 5 && f.s.has('s.burl.follow'), w.said.length); }
@@ -92,7 +95,7 @@ const you = (t) => 'YOU: ' + t;
   const reach = new Set(), st = comp.entry.map((e) => e.node);
   while (st.length) { const i = st.pop(); if (reach.has(i)) continue; reach.add(i); const n = comp.nodes[i]; if (n.next != null && n.next >= 0) st.push(n.next); for (const c of n.choices) st.push(c.next); }
   ok(`every node reachable (${reach.size}/${comp.nodes.length})`, reach.size === comp.nodes.length);
-  ok('9 entries, last is unconditional', comp.entry.length === 9 && comp.entry[8].requires === null);
+  ok('10 entries, last is unconditional', comp.entry.length === 10 && comp.entry[9].requires === null);
   const long = comp.nodes.flatMap((n) => n.lines).filter((l) => l.length > 56);
   ok('every line <= 56 chars', long.length === 0, long.join('|'));
   ok('D-013: no player name in the lines', !comp.nodes.flatMap((n) => n.lines).some((l) => /\bWick\b/.test(l)));

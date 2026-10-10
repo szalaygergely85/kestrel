@@ -197,8 +197,10 @@
     check('Grate open: the ' + (endCells.length ? 'end trigger' : 'breach (exit)') + ' is reachable from the start', trig);
     var outs;
     if (endCells.length) outs = Object.keys(open).filter(function (k) { var p = k.split(','), d = def(+p[0], +p[1]); return d.zone === 'outside' && d.tag !== 'trigger:end'; });
-    else { blockTag = 'breach'; outs = Object.keys(reach(sx, sy, true)).filter(function (k) { var p = k.split(','); return def(+p[0], +p[1]).zone === 'outside'; }); blockTag = null; }   // no end trigger any more: outside is the walkable exit, so with the breach walled off nothing outside may be reachable
-    check('Grate open: the only way outside is through the breach' + (endCells.length ? ' onto the trigger' : ''), !outs.length, outs.join(' '));
+    else { blockTag = 'towerDoor'; outs = Object.keys(reach(sx, sy, true)).filter(function (k) { var p = k.split(','); return def(+p[0], +p[1]).zone === 'outside'; }); blockTag = null; }   // CH1-D1a: the breach is an overlook (X parapet solid); with the barred door cell (tag towerDoor) blocked nothing outside may be reachable
+    check('CH1-D1a: the only way outside is the south-west door (door barred -> no outside cell reachable; the breach is no exit)' + (endCells.length ? ' onto the trigger' : ''), !outs.length, outs.join(' '));
+    var doorOut = Object.keys(open).some(function (k) { var p = k.split(','), d = def(+p[0], +p[1]); return d.zone === 'outside' && d.floorH === 2.4; });
+    check('CH1-D1a: door open -> the outer ring (2.4 m) is reachable by steps of <= 0.3 m', doorOut);
     var bowl = Object.keys(LV.legend).filter(function (k) { return LV.legend[k].tag === 'beaconBowl'; });
     check('Beacon bowl is on the summit and reachable', Object.keys(open).some(function (k) { var p = k.split(','); return def(+p[0], +p[1]).tag === 'beaconBowl'; }), bowl.join(''));
 

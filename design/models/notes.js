@@ -77,9 +77,28 @@
       source: 'US-021 scrawl text (was the decal `scrawl`)'
     },
     steelHush: {
-      title: 'A scrap by the sword',
-      lines: ['STEEL FOR THE HUSH'],
-      source: 'docs/story.md "Scrawl" (US-078, was the decal `scrawlSword`)'
+      title: 'A note by the sword',
+      lines: [
+        'To whoever finds this place:',
+        '',
+        'The road beyond is no longer safe.',
+        'Take the blade. You may need it.',
+        '',
+        'And if you hear something below, do not answer.'
+      ],
+      source: 'docs/story.md q01 note 1 `note.steelHush` (CH1-D1a: page by the sword on the summit; was the scrawl STEEL FOR THE HUSH)'
+    },
+    leave: {
+      title: 'A note by the stair',
+      lines: [
+        'These stones are not as dead as they seem.',
+        '',
+        'Do not stay here after dark.',
+        'Something moves beneath the tower.',
+        '',
+        'Leave while there is still light.'
+      ],
+      source: 'docs/story.md q01 note 2 `note.leave` (CH1-D1a: summit doorway, prompt only after tower.sword.taken)'
     },
     masonChit: {
       title: 'Mason\'s chit',
