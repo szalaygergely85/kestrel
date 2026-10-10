@@ -273,9 +273,10 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   ok('outsideSector floorH == terrain.groundAt', outSec.floorH === world.terrain.groundAt(outsideX, outsideY));
 
   // -- world.bounds loaded from content, exactly (23.2) --
-  ok('world.bounds loaded from content', !!world.bounds && world.bounds.shape === 'circle');
-  const boundsDef = assets.world('world_m1').bounds;
-  ok('world.bounds matches content bounds', world.bounds.x === boundsDef.x && world.bounds.y === boundsDef.y && world.bounds.r === boundsDef.r);
+  ok('world.bounds loaded from content', !!world.bounds && world.bounds.shape === 'union');
+  const boundsDef = assets.world('world_m1').bounds.parts[0]; // WS1-04: union; part 0 = the old circle
+  const bp0 = world.bounds.parts[0];
+  ok('world.bounds matches content bounds', bp0.x === boundsDef.x && bp0.y === boundsDef.y && bp0.r === boundsDef.r);
 
   // -- validateBounds throws on a bad shape/field (mirrors validateHorizon's convention) --
   const baseNoTerrain = { terrain: 'overworld_far', structures: [{ id: 'tower', level: 'tower', origin: { x: 1480, y: 1018, z: 0 } }], entities: [] };
@@ -340,7 +341,7 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
 
     // 'bounds' shape: well inside the circle -> no fire; at/past the edge -> fires.
     fired.length = 0;
-    const b = w2.bounds;
+    const b = w2.bounds.parts[0];
     actor.transform.x = b.x; actor.transform.y = b.y; // dead centre
     updateTriggers(w2, {}, actor);
     ok('"bounds" shape does not fire near the centre', !fired.includes(boundsEdgeDef));

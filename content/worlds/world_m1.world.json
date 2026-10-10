@@ -756,12 +756,14 @@
     {"id": "mdw245", "castShadow": false, "mesh": "quaternius/Grass_Common_Tall", "origin": {"x": 1450.24, "y": 1018.33, "z": 2.14}, "scale": 0.35, "yawDeg": 43},
     {"id": "mdw246", "castShadow": false, "mesh": "quaternius/Grass_Common_Short", "origin": {"x": 1450.2, "y": 1019.37, "z": 2.14}, "scale": 0.3, "yawDeg": 135},
     {"id": "mdw247", "castShadow": false, "mesh": "quaternius/Grass_Common_Tall", "origin": {"x": 1448.47, "y": 1018.62, "z": 2.08}, "scale": 0.35, "yawDeg": 274},
-    {"id": "burlBush", "collide": false, "mesh": "quaternius/Bush_Common", "note": "NPC-BEAR-01: the bush beside Burl (MESH-PLACE-01: leafy Bush_Common; no berry mesh exists in content/meshes)", "origin": {"x": 1470.6, "y": 1030.9, "z": 2.4}, "scale": 0.6, "yawDeg": 20}
+    {"id": "burlBush", "collide": false, "mesh": "quaternius/Bush_Common", "note": "NPC-BEAR-01: the bush beside Burl (MESH-PLACE-01: leafy Bush_Common; no berry mesh exists in content/meshes)", "origin": {"x": 1470.6, "y": 1030.9, "z": 2.4}, "scale": 0.6, "yawDeg": 20},
+    {"id": "relayBendBase", "mesh": "quaternius/RockPath_Square_Wide", "note": "WS1-04: plinth under the Bend Relay (flat slab, 2 m x 0.17 m, sunk 0.1 m into the high side)", "origin": {"x": 1262, "y": 1033, "z": -31.14}, "yawDeg": 0}
   ],
   "entities": [
     {"id": "player", "note": "pose = tower.start (x 17.0, y 9.5, facingDeg 330, pitchDeg 30, eyeH 0.3, lying) + origin -> world (1497.0, 1027.5)", "spawn": {"from": "start", "structure": "tower"}, "type": "player"},
     {"id": "farTower", "detailRows": 12, "fogMax": 0.4, "fogModel": "far", "minCells": {"h": 4, "w": 3}, "model": "farTower", "note": "the signal tower; matches overworld_far.farTower (azimuth 255 from the breach, 15 deg left of centre, top ~1.9 deg above the horizon)", "sizeM": {"h": 42, "w": 14}, "type": "billboard", "unlit": true, "x": 713.8, "y": 1232.1, "z": -8},
-    {"id": "endMarker", "components": {"voxel": {"anim": "idle", "loop": true, "model": "waystone"}}, "note": "US-026a waystone: copied verbatim from design/models/voxel_world.js ASSETS.worldPatch.world_m1.entities.append", "type": "prop", "x": 1428, "y": 1040, "yawDeg": 75, "z": "ground"},
+    {"id": "endMarker", "components": {"voxel": {"anim": "idle", "loop": true, "model": "waystone"}, "waystone": {"id": "waystone", "kind": "stone", "label": "place.waystone", "order": 1}}, "note": "US-026a waystone: copied verbatim from design/models/voxel_world.js ASSETS.worldPatch.world_m1.entities.append", "type": "prop", "x": 1428, "y": 1040, "yawDeg": 75, "z": "ground"},
+    {"id": "relayBend", "components": {"collider": {"h": 2.2, "r": 0.9}, "light": {"offset": {"down": -1.1}, "on": false, "preset": "relay"}, "voxel": {"anim": "dead", "loop": true, "model": "relay"}, "waystone": {"id": "ws_roadBend", "kind": "relay", "label": "place.relay.ws_roadBend", "order": 2}}, "note": "WS1-04 (D-060): dead relay #1 at ws_roadBend on relayBendBase; name key place.relay.ws_roadBend", "type": "prop", "x": 1262, "y": 1033, "yawDeg": 90, "z": -30.97},
     {"id": "boar1", "components": {"brain": {"home": [1461.01, 1031], "kind": "beast"}, "targetable": {"height": 0.7, "radius": 0.45}, "voxel": {"anim": "idle", "loop": true, "model": "boarPlaceholder"}}, "note": "US-079a: hillside route before the waystone, ~26 m from the breach (1486.5,1025) - clear of the 15 m AC 6 radius", "type": "beast", "x": 1461.01, "y": 1031, "z": "ground"},
     {"id": "boar2", "components": {"brain": {"home": [1444.02, 1035], "kind": "beast"}, "targetable": {"height": 0.7, "radius": 0.45}, "voxel": {"anim": "idle", "loop": true, "model": "boarPlaceholder"}}, "note": "US-079a: hillside route before the waystone, ~43 m from the breach - further along toward the waystone than boar1", "type": "beast", "x": 1444.02, "y": 1035, "z": "ground"},
     {"id": "boar3", "components": {"brain": {"home": [1472, 1050], "kind": "beast"}, "targetable": {"height": 0.7, "radius": 0.45}, "voxel": {"anim": "idle", "loop": true, "model": "boarPlaceholder"}}, "note": "QUEST-CHAIN-02c (taken from lane C): south flank of the hillside path, slope < 1 deg, >= 18 m from boar1/boar2 and from the breach spawn", "type": "beast", "x": 1472, "y": 1050, "z": "ground"},
@@ -784,10 +786,8 @@
     "ui.mapCard.opened": false
   },
   "bounds": {
-    "r": 96,
-    "shape": "circle",
-    "x": 1496.5,
-    "y": 1024.5
+    "parts": [{"r": 96, "shape": "circle", "x": 1496.5, "y": 1024.5}, {"ax": 1440, "ay": 1034, "bx": 1350, "by": 1048, "r": 40, "shape": "capsule"}, {"ax": 1350, "ay": 1048, "bx": 1240, "by": 1047, "r": 40, "shape": "capsule"}],
+    "shape": "union"
   },
   "triggers": [
     {"id": "hintStone", "hint": "stone", "once": true, "shape": "terrain", "trigger": "hint.show"},
@@ -803,6 +803,12 @@
     "maxSlopeDeg": 30,
     "maxStepM": 1,
     "seed": 1
+  },
+  "terrainBand": {
+    "ch": 3,
+    "cw": 5,
+    "cx0": 8,
+    "cy0": 7
   },
   "water": [
     {"id": "quietPond", "c": [1500, 1010], "look": "pond", "r": 4, "shape": "circle", "z": 2.5},

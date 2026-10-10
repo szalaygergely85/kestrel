@@ -93,6 +93,7 @@
           { shape: 'capsule', ax: 1461, ay: 1031, bx: 1444, by: 1035, r: 4 },     // boar route (boar1 -> boar2 homes)
           { shape: 'disc', x: 1478, y: 1025, r: 5 },                              // breach landing at the tower's west foot
           { shape: 'disc', x: 1500, y: 1010, r: 5.5 },                            // quietPond (world water region r 4: not a terrain water type)
+          { shape: 'disc', x: 1262, y: 1033, r: 8 },                              // WS1-04 Bend Relay (relay + plinth + travel anchor + wake approach)
           { shape: 'capsule', ax: 1487, ay: 1000, bx: 1493, by: 1000, r: 6 },    // floodedCellar water rect [1485, 995, 1495, 1005]
           // OWNER 2026-10-06 "clean the left side of the road": the south (left, walking west) verge of the walk-out path is bare
           // grass, 1..11 m off the centre line (capsule centres = path points + 6 m south, r 5), so the placed Quaternius meshes
