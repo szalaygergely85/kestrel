@@ -7,6 +7,7 @@ import { createDialogueRunner } from '../../../engine/index.js';
 import { createDialogueView } from './dialogueView.js';
 import { createJawSync } from './jawSync.js';
 
+export const CLOSE_FAR_M = 6.5;
 const CONFIRM_KEYS = ['KeyE', 'Enter'];
 const UP_KEYS = ['KeyW', 'ArrowUp'], DOWN_KEYS = ['KeyS', 'ArrowDown'];
 
@@ -74,7 +75,7 @@ export function createDialogueCtl(opt) {
 
     /** Opens the conversation of NPC entity `id`. Returns false when it has no (known) dialogue or one is open. */
     openFor(id) {
-      if (ctl.open) return false;
+      if (ctl.open || ctl._closing) return false; // DIALOGUE-LOCK-01: not in the step that just closed (the closing E must not re-open via the [E] Talk interactable)
       const did = ctl.dialogueIdOf(id);
       const comp = did && dialogues[did];
       if (!comp) return false;
@@ -108,6 +109,15 @@ export function createDialogueCtl(opt) {
       if (npcId !== null) ctl._play('idle');
       npcId = null; pendingClip = null; oneShot = false; lastBase = null;
     },
+    /** DIALOGUE-LOCK-01: the player is never frozen by a dialogue; walking further than `r` m from the speaker closes the box. */
+    closeIfFar(px, py, r = CLOSE_FAR_M) {
+      if (!ctl.open || npcId === null) return false;
+      const h = world.get(npcId), t = h && h.data && h.data.transform;
+      if (!t) return false;
+      const dx = px - t.x, dy = py - t.y;
+      if (dx * dx + dy * dy <= r * r) return false;
+      ctl.close(); return true;
+    },
     /** Damage to the player closes the box. */
     notifyDamage() { ctl.close(); },
 
@@ -120,7 +130,7 @@ export function createDialogueCtl(opt) {
     step(dt, input, lookLocked) {
       if (ctl._closing) { ctl._closing = false; ctl.locked = false; } // the closing step is over
       ctl._jaw(dt);
-      if (!ctl.open) return; // runner.state is read-only here ('ended' already counts as closed)
+      if (!ctl.open) { if (ctl.locked && !ctl._closing) ctl.locked = false; return; } // DIALOGUE-LOCK-01: never stay locked without an open box. runner.state is read-only here ('ended' already counts as closed)
       if (lookLocked === false) { ctl.close(); return; }
       if (input.pressed('Escape')) { ctl.close(); return; }
       if (runner.state === 'choosing') {
@@ -129,6 +139,7 @@ export function createDialogueCtl(opt) {
       }
       if (input.pressed(CONFIRM_KEYS[0]) || input.pressed(CONFIRM_KEYS[1])) {
         if (runner.state === 'choosing') runner.choose(); else runner.press();
+        if (input.consumePressed) input.consumePressed(); // DIALOGUE-LOCK-01: the confirm edge is used up, later handlers (E interact) must not see it
       } // one confirm per step: a pick never also advances the next line
       runner.tick(dt);
       if (runner.state === 'ended') { ctl._finish(); return; }

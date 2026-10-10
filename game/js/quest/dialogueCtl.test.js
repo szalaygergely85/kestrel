@@ -138,3 +138,20 @@ console.log('dialogueCtl.test.js ok');
   assert.equal(f.state['dlg.waystone.woken'], undefined);
 }
 console.log('dialogueCtl s. route ok');
+
+// DIALOGUE-LOCK-01: the closing E is used up (no re-open through the [E] Talk interactable), walking away closes, no lock without a box
+{
+  const f = fake(), c = mk(f);
+  let consumed = 0; f.input.consumePressed = () => { consumed++; f.keys.clear(); };
+  c.openFor('bear');
+  f.press('KeyE'); c.step(DT, f.input, true);
+  assert.ok(consumed >= 1, 'confirm edge consumed');
+  assert.equal(c.closeIfFar(1, 2), false, 'near: stays open');
+  assert.equal(c.closeIfFar(30, 2), true); assert.equal(c.open, false);
+  assert.equal(c.openFor('bear'), false, 'no re-open in the closing step');
+  f.keys.clear(); c.step(DT, f.input, true);
+  assert.equal(c.locked, false); assert.equal(c.openFor('bear'), true);
+  // a stuck lock without an open box self-heals
+  c.runner.close(); c.locked = true; c._closing = false; f.keys.clear(); c.step(DT, f.input, true);
+  assert.equal(c.locked, false);
+}

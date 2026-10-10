@@ -94,3 +94,20 @@ const run = (w, sec, px, py) => { for (let i = 0; i < Math.round(sec * 60); i++)
   w.hide(); assert.equal(ent.components.voxel.hidden, true);
 }
 console.log('npcWalk ALL PASS');
+
+// BURL-WALK-ANIM-01: the clip goes through EntityHandle.play (walk while moving, idle when waiting/arrived)
+{
+  const { world, ent } = mkWorld(); const base = world.get;
+  const plays = [];
+  world.get = (id) => { const h = base(id); return h && { data: h.data, play(a) { plays.push(a); h.data.components.voxel.anim = a; h.data.components.voxel.playing = true; return this; } }; };
+  const w = createNpcWalk(world, 'n', {});
+  w.start('a', { lead: true, waitFar: 10, resumeNear: 6 });
+  run(w, 1, 0, 0);
+  assert.equal(ent.components.voxel.anim, 'walk'); assert.equal(plays.at(-1), 'walk');
+  run(w, 3, 0, 100); // player far: Burl waits
+  assert.equal(w.waiting, true); assert.equal(plays.at(-1), 'idle'); assert.equal(ent.components.voxel.anim, 'idle');
+  run(w, 8, () => ent.transform.x, 0); // player at his side: walks on
+  assert.equal(plays.at(-1) === 'walk' || w.done, true);
+  const n = plays.length; run(w, 0.5, () => ent.transform.x, 0);
+  assert.ok(plays.length - n <= 1, 'play is not spammed every step');
+}
