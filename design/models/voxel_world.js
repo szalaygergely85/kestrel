@@ -325,12 +325,8 @@
     },
     // CH1-D2 light preset + wake contract (relayWake.js, kind 'stone'). Emissive voxels do not light the scene: the
     // game adds ONE point light at mounts.light while the stone is awake, starting its grow at wake frame 2.
-    light: { preset: 'relay', mount: 'light', offsetM: [-0.125, -0.125, 2.875],
-             on: { dead: false, wake: 'wakeLightFrame', awake: true, idle: true },
-             wantPreset: { name: 'waystone', color: 'aether', intensity: 0.6, type: 'point', radius: 6, falloff: 'smooth',
-                           flicker: { hzMin: 0.4, hzMax: 0.9, amount: 0.10, jitter: 0.0 }, grow: { duration: 0.75 } },
-             note: 'uses lights.relay (0.9 / 10 m) until the main session adds palette lights.waystone (wantPreset: a ' +
-                   'smaller pool, the stone is a marker not a beacon); then set preset to "waystone"' },
+    light: { preset: 'waystone', mount: 'light', offsetM: [-0.125, -0.125, 2.875],
+             on: { dead: false, wake: 'wakeLightFrame', awake: true, idle: true } },
     wakeLightFrame: WAKE_LIGHT_FRAME,
     clipFor: { dormant: 'dead', waking: 'wake', woken: 'awake' },
     placement: {

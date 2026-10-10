@@ -394,6 +394,10 @@
     relay:   { color: 'aether', intensity: 0.9, type: 'point', radius: 10, falloff: 'smooth',
                flicker: { hzMin: 0.4, hzMax: 0.9, amount: 0.10, jitter: 0.0 },
                grow: { duration: 1.0, note: 'intensity ramps 0 -> 1 with the relay "wake" animation (light on at wake frame 2)' } },
+    // CH1-D2 (D-062): the meadow waystone's bowl crystal once woken - a smaller pool than the relay (a marker, not a beacon).
+    waystone: { color: 'aether', intensity: 0.6, type: 'point', radius: 6, falloff: 'smooth',
+               flicker: { hzMin: 0.4, hzMax: 0.9, amount: 0.10, jitter: 0.0 },
+               grow: { duration: 0.75, note: 'ramps with the waystone "wake" clip (light on at wakeLightFrame 2)' } },
     // ENV-02 (D-038, v1.31): SPARE preset for a candle / small coal glow (not placed: the keeper's candle stub in the
     // tower is cold, canon). A small warm pool, well under the hook lamp (0.55 / 3.5 m). Editor light list + previews.
     candle:  { color: 'torch', intensity: 0.32, type: 'point', radius: 2.2, falloff: 'smooth',
