@@ -156,7 +156,7 @@ const ENTRIES = [
     wallY: 2.0, wallMat: 'stone_scorched', floorMat: 'ash', view: { dist: 2.5, eye: 1.1 }, rim: ['brass_light', 'brass_hot'], body: ['copper', 'iron_dark'] },
   // v1.16 US-026a: world prop on the terrain (grass floor, far fog). Typical view = 20 m walking up (the brief's "readable
   // from ~20 m"); extra fixed views = from the breach (60.4 m, eye 7.07 m above the stone's ground) and the end camera.
-  { name: 'waystone', title: 'Waystone (US-026a end marker + CH1-D2 states: slate menhir, teal mark, brass crystal bowl; dead / wake / awake, idle = awake)', clips: ['wake', 'dead', 'awake', 'idle'], floorZ: 0, wallY: null,
+  { name: 'waystone', title: 'Waystone (US-026a end marker + CH1-D2 states: slate menhir, teal mark; dead / wake / awake, idle = awake)', clips: ['wake', 'dead', 'awake', 'idle'], floorZ: 0, wallY: null,
     wallMat: 'rock', floorMat: 'grass', fog: 'far', view: { dist: 20, eye: 1.6 }, rim: ['waystone_light'], body: ['waystone', 'waystone_dark'],
     extraViews: [{ label: 'from the breach (fixed 60.4 m, eye +7.07 m)', dist: 60.4, eye: 7.07, fixed: true },
                  { label: 'end camera (fixed 2.5 m, eye 1.6 m)', dist: 2.5, eye: 1.6, fixed: true }] }
@@ -994,19 +994,19 @@ function runChecks() {
       const b = own.filter((v) => v.k === kl).map((v) => v.x + ',' + v.y + ',' + v.z).sort();
       return a.length > 0 && a.join('|') === b.join('|');
     };
-    ok(swapOk('markDark', 'markLit', 'dead') && swapOk('cryDark', 'cryLit', 'dead'),
+    ok(swapOk('markDark', 'markLit', 'dead'),
        'waystone (CH1-D2): dead copies land EXACTLY on the lit parts (same voxel set: no hole, no extra voxel on a swap)');
     const fullAll = new Set(own.map((v) => v.x + ',' + v.y + ',' + v.z));
     const inBox = (b, x, y, z) => x >= b[0] && x < b[3] && y >= b[1] && y < b[4] && z >= b[2] && z < b[5];
-    const sealed = own.filter((v) => PN[v.k] === 'markDark' || PN[v.k] === 'cryDark').every((v) =>
+    const sealed = own.filter((v) => PN[v.k] === 'markDark').every((v) =>
       [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1]].every((d) => {
         const x = v.x + d[0], y = v.y + d[1], z = v.z + d[2];
         return fullAll.has(x + ',' + y + ',' + z) || inBox(def.parts[PN[v.k]].box, x, y, z);   // a voxel, or the part's own cavity
       }));
     info('waystone (CH1-D2): dead copies sealed at rest (every side but the buried crystal bottom touches a voxel): ' + (sealed ? 'yes' : 'NO - check'));
-    const bowlV = own.filter((v) => v.k === PN.indexOf('bowl')), litC = own.filter((v) => def.mats[v.ch] === 'crystal_lit');
-    ok(bowlV.length > 0 && bowlV.every((v) => /^brass_/.test(def.mats[v.ch])) && litC.length === 9,
-       'waystone (CH1-D2): brass bowl ' + bowlV.length + ' voxels (brass only), bowl crystal ' + litC.length + ' crystal_lit voxels (2x2x2 + tip), light mount ' + def.mounts.light.at.join(','));
+    const bowlV = own.filter((v) => /^brass_|^crystal_lit$/.test(def.mats[v.ch])), lm = def.mounts.light;
+    ok(PN.indexOf('bowl') < 0 && bowlV.length === 0 && lm.part === 'stone' && lm.at[1] < def.mounts.mark.at[1] && lm.at[2] === def.mounts.mark.at[2],
+       'waystone (owner 2026-10-10): no bowl / brass / lit crystal voxels; light mount ' + lm.at.join(',') + ' just in front of the mark ring centre');
     ok(!!A.models.waystone && A.models.waystone.voxel === def && !A.models.waystone.billboard,
        'waystone: ASSETS.models.waystone attached (the key components.voxel.model resolves; voxel only, no billboard)');
     const mm = P.materials.waystone_mark || VMAT.v1.waystone_mark, mm2 = DP.materials.waystone_mark || VMAT.v2.waystone_mark;
@@ -1036,7 +1036,7 @@ function runChecks() {
        'worldPatch.world_m1 endMarker (' + (ent ? ent.x + ', ' + ent.y + ', ' + ent.z + ', yaw ' + ent.yawDeg : 'missing') + ') = model placement, model waystone, anim idle');
     ok(!!trg && trg.x === pl.x && trg.y === pl.y && trg.r === en.trigger.r && trg.walkTo.x === en.walkTo.x && trg.walkTo.y === en.walkTo.y && trg.lookAt === 'farTower' && trg.pitchTo === 0 && trg.once && trg.trigger === 'quest.end',
        'worldPatch.world_m1 trigger end: circle r ' + (trg && trg.r) + ' at the stone, walkTo (' + (trg && trg.walkTo.x) + ', ' + (trg && trg.walkTo.y) + '), lookAt farTower, pitchTo 0, once');
-    info('waystone: ' + PN.length + ' parts (CH1-D2 swap: markDark / markLit / cryDark / cryLit + stone + bowl), ONE instance; tower voxel instances 13 + burner = 14, + waystone = 15 <= MAX_VOX_INSTANCES 16 (nearest 16 win)');
+    info('waystone: ' + PN.length + ' parts (CH1-D2 swap: markDark / markLit + stone), ONE instance; tower voxel instances 13 + burner = 14, + waystone = 15 <= MAX_VOX_INSTANCES 16 (nearest 16 win)');
     if (OF && OF.util) {
       const HU = OF.util, x = pl.x, y = pl.y, h = HU.heightAt(x, y), ty = HU.typeAt(x, y), e = 2;
       const gx = (HU.heightAt(x + e, y) - HU.heightAt(x - e, y)) / (2 * e), gy = (HU.heightAt(x, y + e) - HU.heightAt(x, y - e)) / (2 * e);

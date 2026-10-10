@@ -12,9 +12,9 @@
  * (and the same line in any Node / tool loader that mirrors the index.html list, e.g. tools/export-content.mjs).
  *
  * WHAT THIS FILE SETS
- *   ASSETS.voxelModels.waystone   an old standing stone by the road below the tower, 14x10x27 @ 0.125 m (1.75 x 1.25 x
- *                                 3.375 m grid; stone 2.5 m + the brass crystal bowl to 3.125 m above the ground, a
- *                                 0.25 m buried foot), one emissive teal mark. CH1-D2: clips dead / wake / awake (+ idle
+ *   ASSETS.voxelModels.waystone   an old standing stone by the road below the tower, 14x10x24 @ 0.125 m (1.75 x 1.25 x
+ *                                 3.0 m grid; stone 2.625 m above the ground at the high shoulder, no bowl (owner
+ *                                 2026-10-10), a 0.25 m buried foot), one emissive teal mark. CH1-D2: clips dead / wake / awake (+ idle
  *                                 = awake alias), `light` preset block, `wakeLightFrame` 2, `clipFor`
  *   ASSETS.models.waystone        = the same record (attached only when its materials are merged, like attachTower)
  *   ASSETS.voxelMaterials.*       + 4 materials (v1 + v2 + remap + fallback), listed in `.batch3`; ALREADY MERGED into
@@ -70,25 +70,23 @@
     return L;
   };
 
-  // CH1-D2: + a dead mark / dead crystal (crystal_dead, grey with a teal memory), the lit bowl crystal (crystal_lit,
-  // emissive 0.85) and the brass bowl (brass_light rim + body ring, brass_dark foot + hollow, brass_hot rivets).
-  // All existing palette / detail-pass materials: no palette change.
+  // CH1-D2: + a dead mark (crystal_dead, grey with a teal memory). Owner 2026-10-10 "take it out": the brass crystal
+  // bowl is gone; the states run on the mark only. All existing palette / detail-pass materials: no palette change
+  // (crystal_lit / brass_* stay defined, other models use them).
   var KEY = { S: 'waystone_light', s: 'waystone', k: 'waystone_dark', A: 'waystone_mark', m: 'moss_cap',
-              a: 'crystal_dead', c: 'crystal_lit', H: 'brass_light', b: 'brass_dark', o: 'brass_hot' };
+              a: 'crystal_dead' };
   function matsOf(G) {
     var used = {}, o = {}, k;
     G.each(function (x, y, z, c) { used[c] = 1; });
     for (k in used) o[k] = KEY[k];
     return o;
   }
-  // CH1-D2 state frames (fresh objects per frame, JSON-safe): dead = both dark copies in, cry = only the bowl crystal
-  // lit, lit = the rest pose (awake)
+  // CH1-D2 state frames (fresh objects per frame, JSON-safe): dead = the dark mark copy in, lit = the rest pose (awake)
   var WAKE_LIGHT_FRAME = 2, HIDE = [0, 0, -64];
   function st(s) {
     var f = {};
     if (s === 'lit') return f;
     f.markLit = { pos: HIDE.slice() }; f.markDark = { pos: [0, -2, 0] };
-    if (s === 'dead') { f.cryLit = { pos: HIDE.slice() }; f.cryDark = { pos: [0, 0, 24] }; }
     return f;
   }
 
@@ -184,11 +182,9 @@
     '..AA..',
     'AAAAAA'
   ];
-  var G0 = 2, MARK_TOP = 16, MARK_X0 = 4, FRONT_Y = 2;
-  var BOWL_Z = G0 + 20, CRY_Z = BOWL_Z + 2, MARK_DY = 2;          // CH1-D2: bowl foot z22, crystal z24..26
-  var RIVETS = { '3,4': 1, '8,3': 1, '6,1': 1, '5,6': 1 };          // one brass_hot rivet per rim side
+  var G0 = 2, MARK_TOP = 16, MARK_X0 = 4, FRONT_Y = 2, MARK_DY = 2, SZW = 24;
   function buildWaystone() {
-    var SX = 14, SY = 10, SZ = 27, G = new Grid(SX, SY, SZ), x, y, z, zz, CX = 7;
+    var SX = 14, SY = 10, SZ = SZW, G = new Grid(SX, SY, SZ), x, y, z, zz, CX = 7;
     function hw(q) { var t = Math.max(0, q) / 21; return 5.0 - 1.8 * Math.pow(t, 1.3) + 0.25 * Math.sin(Math.PI * t); }
     function yFront(q) { return q < 3 ? 1 : FRONT_Y; }                 // a 1-voxel wider foot at the front
     function yBack(q) { return q < 3 ? 9 : q < 10 ? 8 : q < 17 ? 7 : 6; }   // exclusive; the back leans in
@@ -205,12 +201,7 @@
     // broken top: a chip off the front top-east corner, one off the back top
     for (x = 9; x <= 10; x++) for (zz = 16; zz <= 18; zz++) G.set(x, FRONT_Y, zz + G0, '.');
     G.set(4, 5, 20 + G0, '.'); G.set(5, 5, 20 + G0, '.'); G.set(4, 5, 19 + G0, '.');
-    // CH1-D2: a flat seat for the crystal bowl on the high shoulder (x4..7, y2..5, top at zz19); the stone keeps its
-    // slant east of it (zz18 -> 17)
-    for (x = 4; x <= 7; x++) for (y = 2; y <= 5; y++) {
-      G.set(x, y, 19 + G0, 's');
-      for (zz = 20; zz <= 21; zz++) G.set(x, y, zz + G0, '.');
-    }
+    // (owner 2026-10-10: the CH1-D2 bowl seat is gone; the natural slanted, chipped top is back)
     // paint the exposed body: top rim, damp foot, moss on the NNW flank + low shoulder, lichen patches
     var paint = [];
     G.each(function (x, y, z, c) {
@@ -249,35 +240,13 @@
       if (p[2] < 0 || G.full(p[0], p[1], p[2] + G0 + 1)) return;
       G.set(p[0], p[1], p[2] + G0, p[0] <= 1 ? 'm' : 'S');
     });
-    // CH1-D2 THE CRYSTAL BOWL (the script's "crystal bowl", Wick's "old machine"): a small brass bowl on the seat.
-    //   z BOWL_Z   foot 4 x 4 (brass_dark)
-    //   z +1       body 6 x 6, corners cut: brass_light ring, brass_dark hollow floor
-    //   z +2       rim ring (brass_light) with 4 brass_hot rivets; inside: the crystal
-    //   crystal    2 x 2 x 2 + a 1-voxel tip (x5..6, y3..4, z +2..+4): crystal_lit (rest pose = awake)
-    for (x = 4; x <= 7; x++) for (y = 2; y <= 5; y++) G.set(x, y, BOWL_Z, 'b');
-    for (x = 3; x <= 8; x++) for (y = 1; y <= 6; y++) {
-      var ex = x === 3 || x === 8, ey = y === 1 || y === 6;
-      if (ex && ey) continue;
-      G.set(x, y, BOWL_Z + 1, (ex || ey) ? 'H' : 'b');
-      if (ex || ey) G.set(x, y, BOWL_Z + 2, RIVETS[x + ',' + y] ? 'o' : 'H');
-    }
-    crystal(G, CRY_Z, 'c');
-    // the DEAD copies (lamp / relay hide trick, props_m1 lanternPost): sealed inside the stone at rest, swapped in by
-    // the clips. Dead mark = the front patch (x4..9, zz4..16) copied 2 voxels back (y4) with A -> a; dead crystal = the
-    // same crystal shape in the buried foot (z0..2, its bottom face under the terrain).
+    // the DEAD mark copy (lamp / relay hide trick, props_m1 lanternPost): sealed inside the stone at rest, swapped in
+    // by the clips. Dead mark = the front patch (x4..9, zz4..16) copied 2 voxels back (y4) with A -> a.
     for (zz = MARK_TOP - MARK.length + 1; zz <= MARK_TOP; zz++) for (x = MARK_X0; x < MARK_X0 + 6; x++) {
       var ch = G.get(x, FRONT_Y, zz + G0);
       G.set(x, FRONT_Y + MARK_DY, zz + G0, ch === 'A' ? 'a' : ch);
     }
-    crystal(G, 0, 'a');
     return G;
-  }
-  // crystal shape at z0: 2 x 2 x 2 block + the tip on (5, 3); the 3 cells beside the tip are EMPTY so the lit and the
-  // dead copy have exactly the same shape (a swap never adds or loses a voxel)
-  function crystal(G, z0, c) {
-    for (var y = 3; y <= 4; y++) for (var x = 5; x <= 6; x++) {
-      G.set(x, y, z0, c); G.set(x, y, z0 + 1, c); G.set(x, y, z0 + 2, (x === 5 && y === 3) ? c : '.');
-    }
   }
   var gW = buildWaystone();
   A.voxelModels.waystone = {
@@ -285,47 +254,42 @@
     desc: 'Voxel waystone (US-026a end marker): an old standing stone by the road below the tower. A chunky tapering slate ' +
           'menhir, 2.6 m tall, dark blue-grey with a pale lichen top rim, a slanted broken top, moss up its north flank, a ' +
           'damp dark foot with packing stones, and one faint aether-teal carved sign on the front face: a ring with a centre ' +
-          'point over a stroke and a foot bar (the relay light over the road), framed by a dark cut edge. CH1-D2: a small ' +
-          'brass crystal bowl (riveted rim, one teal crystal) sits on a flat seat on the high shoulder; dead = grey mark ' +
-          '+ grey crystal, wake = the bowl crystal lights first, then the mark (one sputter), awake = both teal.',
+          'point over a stroke and a foot bar (the relay light over the road), framed by a dark cut edge. CH1-D2 states on ' +
+          'the mark only (owner 2026-10-10: no bowl): dead = grey mark, wake = the mark lights with two sputters, ' +
+          'awake = teal.',
     voxel: {
-      version: 1, cellM: 0.125, size: [14, 10, 27], anchor: [7, 5, G0], mats: matsOf(gW), layers: gW.layers(),
-      // order matters (the first box owns a cell): the 4 swap parts first, then the stone and the static bowl.
+      version: 1, cellM: 0.125, size: [14, 10, SZW], anchor: [7, 5, G0], mats: matsOf(gW), layers: gW.layers(),
+      // order matters (the first box owns a cell): the 2 swap parts first, then the stone.
       // Boxes overlap (the swap parts sit inside the stone box), so vox-export keeps the 'single' mode.
       parts: {
         markDark: { box: [4, FRONT_Y + MARK_DY, G0 + 4, 10, FRONT_Y + MARK_DY + 1, G0 + 17], pivot: [7, 4.5, G0 + 10] },
         markLit:  { box: [4, FRONT_Y, G0 + 4, 10, FRONT_Y + 1, G0 + 17],                     pivot: [7, 2.5, G0 + 10] },
-        cryDark:  { box: [5, 3, 0, 7, 5, 3],                                                 pivot: [6, 4, 1] },
-        cryLit:   { box: [5, 3, CRY_Z, 7, 5, CRY_Z + 3],                                     pivot: [6, 4, CRY_Z + 1] },
-        stone:    { box: [0, 0, 0, 14, 10, BOWL_Z],                                          pivot: [7, 5, G0] },
-        bowl:     { box: [2, 0, BOWL_Z, 12, 8, 27],                                          pivot: [7, 5, G0] }
+        stone:    { box: [0, 0, 0, 14, 10, SZW],                                             pivot: [7, 5, G0] }
       },
-      // CH1-D2 states (architecture.md 38.37 item 4). Rest pose = AWAKE (lit mark + lit crystal). interp 'step': the
-      // swap parts jump, never slide. pos in voxels: lit parts drop 64 below the grid (8 m under the terrain), the dark
-      // copies move onto their boxes (mark 2 forward, crystal 24 up).
-      //   dead   1 frame loop: dark mark, dark crystal in the bowl
-      //   wake   8 frames @ 8 fps (1.0 s), once: f0-1 dead (the crystal is held over the bowl) | f2 the BOWL crystal
-      //          lights (wakeLightFrame 2, the light starts its grow) | f3 bowl only | f4 the mark lights | f5 sputters
-      //          dark | f6-7 lit = the awake pose
+      // CH1-D2 states (architecture.md 38.37 item 4). Rest pose = AWAKE (lit mark). interp 'step': the swap parts
+      // jump, never slide. pos in voxels: the lit mark drops 64 below the grid (8 m under the terrain), the dark copy
+      // moves 2 forward onto the face.
+      //   dead   1 frame loop: dark mark
+      //   wake   8 frames @ 8 fps (1.0 s), once: f0-1 dead | f2 the mark lights (wakeLightFrame 2, the light starts
+      //          its grow) | f3 sputters dark | f4 lit | f5 sputters dark | f6-7 lit = the awake pose
       //   awake  1 frame loop (rest pose); idle = an alias of awake (old saves, world_m1 endMarker anim 'idle')
       animations: {
         dead:  { durations: [1000], loop: true, interp: 'step', frames: [st('dead')] },
-        wake:  { fps: 8, loop: false, interp: 'step', events: { light: WAKE_LIGHT_FRAME, mark: 4 },
-                 frames: ['dead', 'dead', 'cry', 'cry', 'lit', 'cry', 'lit', 'lit'].map(st) },
+        wake:  { fps: 8, loop: false, interp: 'step', events: { light: WAKE_LIGHT_FRAME, mark: WAKE_LIGHT_FRAME },
+                 frames: ['dead', 'dead', 'lit', 'dead', 'lit', 'dead', 'lit', 'lit'].map(st) },
         awake: { durations: [1000], loop: true, interp: 'step', frames: [st('lit')] },
         idle:  { durations: [1000], loop: true, interp: 'step', frames: [st('lit')] }
       },
       mounts: {
         mark:  { at: [7, FRONT_Y, G0 + 14], part: 'stone' },   // centre of the ring on the front face, 1.75 m above the ground
-        top:   { at: [6, 4, 27], part: 'bowl' },               // top of the bowl crystal (3.125 m)
-        bowl:  { at: [6, 4, CRY_Z], part: 'bowl' },            // bowl floor centre: where Wick holds the crystal
-        light: { at: [6, 4, CRY_Z + 1], part: 'bowl' },        // CH1-D2 light origin (the bowl crystal, 2.875 m)
+        top:   { at: [5, 4, G0 + 21], part: 'stone' },         // top of the high west shoulder (2.625 m)
+        light: { at: [7, FRONT_Y - 1, G0 + 14], part: 'stone' }, // light origin: 1 voxel in front of the ring centre (1.75 m)
         front: { at: [7, 0, G0], part: 'stone' }               // ground point in front of the face (end-camera reference)
       }
     },
     // CH1-D2 light preset + wake contract (relayWake.js, kind 'stone'). Emissive voxels do not light the scene: the
     // game adds ONE point light at mounts.light while the stone is awake, starting its grow at wake frame 2.
-    light: { preset: 'waystone', mount: 'light', offsetM: [-0.125, -0.125, 2.875],
+    light: { preset: 'waystone', mount: 'light', offsetM: [0, -0.5, 1.75],
              on: { dead: false, wake: 'wakeLightFrame', awake: true, idle: true } },
     wakeLightFrame: WAKE_LIGHT_FRAME,
     clipFor: { dormant: 'dead', waking: 'wake', woken: 'awake' },
