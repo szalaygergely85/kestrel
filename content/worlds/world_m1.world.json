@@ -793,7 +793,7 @@
     {"id": "hintStone", "hint": "stone", "once": true, "shape": "terrain", "trigger": "hint.show"},
     {"id": "boundsEdge", "hint": "boundsEdge", "once": true, "shape": "bounds", "trigger": "hint.show"},
     {"id": "end", "note": "WAYSTONE-NORMAL-01 (D-056): area-only zone for the quest area \"waystone\" (no behaviour: the demo end sequence is gone)", "r": 2.5, "shape": "circle", "x": 1428, "y": 1040},
-    {"id": "towerDoor", "note": "CH1-01 area-only zone (38.37 item 1). TODO CH1-D1a: placeholder at the old breach outcrop; move just outside the new ground-floor door", "r": 3, "shape": "circle", "x": 1486.5, "y": 1025},
+    {"id": "towerDoor", "note": "CH1-01 area-only zone (38.37 item 1). CH1-D1a (owner: ground-floor SW door): on the outer ring at the top of the door trench (tower level (8.0, 13.0); trench exit (8,12); door cell Q (15,11) = world 1495-1496 x 1029-1030, floor 0); r 3 only covers the ring + trench steps outside the bar, >= 3 m from any interior cell", "r": 3, "shape": "circle", "x": 1488, "y": 1031},
     {"id": "roadWest", "note": "CH1-01 area-only zone (38.37 item 1): on the road", "r": 10, "shape": "circle", "x": 1340, "y": 1048},
     {"id": "bendRelay", "note": "CH1-01 area-only zone (38.37 item 1): at the dead relay relayBend", "r": 12, "shape": "circle", "x": 1262, "y": 1033}
   ],
