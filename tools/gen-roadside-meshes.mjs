@@ -7,6 +7,7 @@
 // Mesh structures have no scale field (World.placeMesh), so only yaw varies. lift = per-class z offset measured from the roadS* rows.
 globalThis.window = globalThis.window || globalThis;
 import fs from 'node:fs';
+import { PLANT_SCALE } from './plant-scale.mjs';
 import paletteMod from '../design/palette.js';
 import detailPassMod from '../design/detail-pass.js';
 import terrainDef from '../design/levels/overworld_far.js';
@@ -115,6 +116,7 @@ while (out.length < COUNT && guard++ < 200000) {
     const z = Math.max(T.groundAt(x, y), T.groundAt(x + e, y), T.groundAt(x - e, y), T.groundAt(x, y + e), T.groundAt(x, y - e)) + LIFT[c];
     circles.push({ x, y, r: inf.r });
     const st = { id: 'roadL' + String(out.length).padStart(3, '0'), mesh: 'quaternius/' + name, origin: { x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2) }, yawDeg: Math.floor(R() * 360) };
+    if (PLANT_SCALE[name]) st.scale = PLANT_SCALE[name];   // PLANT-SCALE-01
     if (!SHADOW[c]) st.castShadow = false;
     out.push(st); counts[c] = (counts[c] || 0) + 1;
   }
