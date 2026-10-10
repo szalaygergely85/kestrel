@@ -340,7 +340,8 @@ export class WgRasterPass {
     if (this.strictMatIdFor) addMeshStructuresBatched(list, world, cam, this.meshCache, this.strictMatIdFor, 2000, this.meshGroups, this.planes);
     if (p.terrainEnabled && world.terrain) {
       this._terrainTextures(world); this._terrainUniforms(world);
-      const set = terrainMeshSetFor(world.terrain); set.step(2); set.addToDrawList(list, cam);
+      const set = terrainMeshSetFor(world.terrain); if (!p.terrainStepExternal) set.step(2); // AUD-34: the host may step it at frame start (shared budget with bakeFarStep)
+      set.addToDrawList(list, cam);
     }
     const pool = p._voxelPool;
     if (pool) { pool.project(cam, p.rt, 'mesh'); if (pool.list.length) addVoxelInstances(list, pool, sharedVoxelMeshCache, pool.partNamesFor); }

@@ -32,7 +32,7 @@ import {
 // paths (?bench=1, shadetest, ?gpucompare=1|shade) and the real-game mouse
 // look/perf-spike-hunt glue (PlayerLook/FrameProfiler) import from there.
 import {
-  PlayerLook, FrameProfiler, blockContextMenu,
+  PlayerLook, FrameProfiler, blockContextMenu, terrainMeshSetFor,
 } from '../../engine/dev.js';
 // US-048 (PC-B QUEUE 4 item 2): pose data now lives in content/dev-poses.js
 // (a plain data module neither engine/game/tools' check-deps rules scan),
@@ -1901,7 +1901,11 @@ async function runGame(mode, cinematic = null) {
     // column-granular (checks the time budget every few cells, not once per
     // row), so a 1 ms target actually holds even on the first frame after
     // load/teleport instead of overrunning on one expensive row.
-    if (mode === 'world' && engine.world.terrain) engine.world.terrain.bakeFarStep(1);
+    if (mode === 'world' && engine.world.terrain) {
+      engine.world.terrain.bakeFarStep(1);
+      // AUD-34: terrain-mesh row builds (2 ms) moved here from the raster prepare hook; passRaster skips its own step when this flag is set.
+      if (wgPipeline && terrainEnabled) { wgPipeline.terrainStepExternal = true; terrainMeshSetFor(engine.world.terrain).step(2); }
+    }
     lap(SEC.bake);
 
     if (mode === 'glyphs') {
