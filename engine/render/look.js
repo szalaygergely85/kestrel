@@ -279,3 +279,82 @@ export function validateLook(P, key, onWarn) {
 
   return errors;
 }
+
+// ---- DN-01 (docs/architecture.md 38.39): live day/night look ----------------
+// `blendLook(P, hour, schedule, out)` lerps the two schedule neighbours of `hour`
+// into ONE reusable record `out` (same shape as `P.timeOfDay[key]`, so every
+// reader that takes a timeOfDay record takes it unchanged) and publishes it as
+// `P.liveLook`, bumping `P.liveLookVersion`. Colours are written as synthetic
+// palette keys ('$live.ambient' ...) into P.rgb / P.hue, so readers that do
+// `P.rgb[T.ambient]` or `P.rgb[stops[i].c]` need no change. Allocation-free after
+// the first call for a given `out`. `P.nightFloor` (data) clamps ambientI; the
+// glyph-luminance floor is exposed as `out.floorLum` for the shaders.
+const LIVE_PREFIX = '$live.';
+function liveKey(P, out, slot) {
+  const k = LIVE_PREFIX + slot;
+  if (!P.rgb[k]) { P.rgb[k] = [0, 0, 0]; P.hue[k] = [1, 1, 1]; }
+  return k;
+}
+function setLiveColor(P, key, ra, rb, f) {
+  const c = P.rgb[key], h = P.hue[key];
+  c[0] = ra[0] + (rb[0] - ra[0]) * f; c[1] = ra[1] + (rb[1] - ra[1]) * f; c[2] = ra[2] + (rb[2] - ra[2]) * f;
+  const mx = Math.max(c[0], c[1], c[2]) || 1;
+  h[0] = c[0] / mx; h[1] = c[1] / mx; h[2] = c[2] / mx;
+}
+
+/**
+ * @param {any} P palette (needs rgb, hue, timeOfDay)
+ * @param {number} hour 0..24 (wraps)
+ * @param {Array<{h:number,key:string}>} schedule ascending hours; wraps last -> first (+24)
+ * @param {any} [out] reusable record (default: P.liveLook or a new one)
+ * @returns {any} out (also P.liveLook)
+ */
+export function blendLook(P, hour, schedule, out) {
+  const n = schedule.length;
+  const h = ((hour % 24) + 24) % 24;
+  // segment i = [schedule[i], schedule[i+1]); the last wraps to the first + 24.
+  let i = n - 1;
+  for (let k = 0; k < n; k++) { if (schedule[k].h > h) { i = k - 1; break; } }
+  let h0, h1, a, b;
+  if (i < 0) { i = n - 1; h0 = schedule[i].h - 24; } else h0 = schedule[i].h;
+  a = schedule[i]; b = schedule[(i + 1) % n];
+  h1 = (i + 1 < n) ? b.h : b.h + 24;
+  const span = h1 - h0;
+  const f = span > 0 ? (h - h0) / span : 0;
+  const A = P.timeOfDay[a.key], B = P.timeOfDay[b.key];
+
+  if (!out) out = P.liveLook;
+  if (!out) out = {};
+  if (!out.sky) {
+    out.key = 'live';
+    out.ambient = liveKey(P, out, 'ambient'); out.sun = liveKey(P, out, 'sun');
+    out.cloud = liveKey(P, out, 'cloud'); out.fog = liveKey(P, out, 'fog');
+    out.sky = [];
+    for (let s = 0; s < A.sky.length; s++) out.sky.push({ t: 0, c: liveKey(P, out, 'sky' + s) });
+    out.floorLum = 0;
+  }
+  const near = f < 0.5 ? A : B;
+  out.ambientI = A.ambientI + (B.ambientI - A.ambientI) * f;
+  out.sunI = A.sunI + (B.sunI - A.sunI) * f;
+  out.sunElev = A.sunElev + (B.sunElev - A.sunElev) * f;
+  const nf = P.nightFloor;
+  if (nf) {
+    if (out.ambientI < nf.ambientI) out.ambientI = nf.ambientI;
+    out.floorLum = nf.lum || 0;
+  }
+  setLiveColor(P, out.ambient, P.rgb[A.ambient], P.rgb[B.ambient], f);
+  setLiveColor(P, out.sun, P.rgb[A.sun], P.rgb[B.sun], f);
+  setLiveColor(P, out.cloud, P.rgb[A.cloud], P.rgb[B.cloud], f);
+  setLiveColor(P, out.fog, P.rgb[A.fog], P.rgb[B.fog], f);
+  // sky stops: lerp only when both records have the same stop count (else the nearer one wins).
+  const same = A.sky.length === B.sky.length && A.sky.length === out.sky.length;
+  for (let s = 0; s < out.sky.length; s++) {
+    const sa = same ? A.sky[s] : near.sky[Math.min(s, near.sky.length - 1)];
+    const sb = same ? B.sky[s] : sa;
+    out.sky[s].t = sa.t + (sb.t - sa.t) * f;
+    setLiveColor(P, out.sky[s].c, P.rgb[sa.c], P.rgb[sb.c], f);
+  }
+  P.liveLook = out;
+  P.liveLookVersion = (P.liveLookVersion | 0) + 1;
+  return out;
+}

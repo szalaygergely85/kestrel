@@ -1783,6 +1783,9 @@
     fog: fog,
     timeOfDay: timeOfDay,
     defaultTime: 'morning',
+    // DN-01 (38.39, defaults pending owner DN-Q1/Q3): hours -> look keys (wraps 21 -> 5 night); nightFloor = min ambientI + min glyph luminance.
+    daySchedule: [{ h: 5, key: 'night' }, { h: 6.5, key: 'morning' }, { h: 12, key: 'noon' }, { h: 19, key: 'dusk' }, { h: 21, key: 'night' }],
+    nightFloor: { ambientI: 0.06, lum: 0.18 },
     materials: materials,
     chargen: chargen,  // CHARGEN-01: skin / hair / eye / dye ramps + hand tint maps + the list of appended keys
     semantic: semantic,

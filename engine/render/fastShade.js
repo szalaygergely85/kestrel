@@ -312,7 +312,7 @@ export function fastShade(P, matKey, u, v, dist, z, out) {
  */
 export function fastShadeSky(P, az, elev, timeKey, out) {
   const rec = resolveSky(P);
-  const T = P.timeOfDay[timeKey || P.defaultTime];
+  const T = (P.liveLook && (!timeKey || timeKey === P.defaultTime)) ? P.liveLook : P.timeOfDay[timeKey || P.defaultTime]; // DN-01
   const stops = T.sky;
 
   // skyGradient, inlined (no array/string alloc): find the bracketing stops.

@@ -73,8 +73,11 @@ export function setWorldSun(world, lights, elevationDeg, azimuthDeg, on) {
   }
 }
 
-export function applySunHours(world, lights, h, path, on) {
+export const MOON_SWITCH_DEG = -6; // DN-01: below this sun elevation the light dir is the moon (sun path + 12 h)
+/** `moon` (DN-01, default false = unchanged): below MOON_SWITCH_DEG light from the moon, i.e. the sun path at h + 12. */
+export function applySunHours(world, lights, h, path, on, moon = false) {
   sunFromHours(h, path, hourSunScratch);
+  if (moon && hourSunScratch.elevationDeg < MOON_SWITCH_DEG) sunFromHours(h + 12, path, hourSunScratch);
   setWorldSun(world, lights, hourSunScratch.elevationDeg, hourSunScratch.azimuthDeg, on);
 }
 // PO REJECT item 1: CPU fallback (`?gpu=0`) evaluates at most this many
@@ -1303,7 +1306,7 @@ export function makeLightBuffer(cols, rows) {
 // ME-19b: shared sun uniform source, moved from terrainCaster.
 const _sunScratch = { dirX: 0, dirY: 0, dirZ: 0, ambientI: 0, sunI: 0 };
 export function sunFromWorld(world, palette, out = _sunScratch) {
-  const T = palette.timeOfDay[palette.defaultTime];
+  const T = palette.liveLook || palette.timeOfDay[palette.defaultTime]; // DN-01
   let az = 112.5, elev = T.sunElev;
   let sun = world.sun;
   if (!sun) {

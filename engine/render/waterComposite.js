@@ -36,7 +36,7 @@ const _rip = new Float32Array(RIPPLE_SLOTS * 4); // S8-B2-13b (38.14): 8 rings x
 const _p = new Float64Array(3);
 const _refl = new Float64Array(4); // AUD-42: [fresnel, skyR, skyG, skyB]
 const _skyLut = new Float32Array(4 * SKY_LUT_N);
-let _lutPalette = null, _lutTime = null, _lutElevTop = 0;
+let _lutPalette = null, _lutTime = null, _lutElevTop = 0, _lutVer = 0;
 const _floorP = new Float64Array(3);
 const _sun = { dirX: 0, dirY: 0, dirZ: 1, ambientI: 0, sunI: 0 };
 /** @type {Uint8Array|null} */
@@ -61,7 +61,7 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     fb.waterMask = _mask;
   }
   const pal = fb.palette;
-  if (pal !== _lutPalette || (pal && pal.defaultTime !== _lutTime)) { _lutPalette = pal; _lutTime = pal ? pal.defaultTime : null; _lutElevTop = skyLutFromPalette(pal, _skyLut); }
+  if (pal !== _lutPalette || (pal && (pal.defaultTime !== _lutTime || (pal.liveLookVersion | 0) !== _lutVer))) { _lutPalette = pal; _lutTime = pal ? pal.defaultTime : null; _lutVer = pal ? (pal.liveLookVersion | 0) : 0; _lutElevTop = skyLutFromPalette(pal, _skyLut); }
   const reflTerms = pitched ? pterms : terms, reflOn = _lutElevTop > 0 && !(pitched && pterms.ortho);
   const sel = lastWaterSelection();
   fillWaterSlotTable(sel, world, fb.waterLooks || defaultWaterLooks(), _table, fb.timeSec || 0);

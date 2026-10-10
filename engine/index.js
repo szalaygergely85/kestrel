@@ -125,7 +125,7 @@ export {
 } from './render/lighting.js';
 
 // ---- ART-01a look + roof map (docs/architecture.md 37.18 items 2/3) ----------
-export { resolveLook, validateLook } from './render/look.js';
+export { resolveLook, validateLook, blendLook } from './render/look.js';
 export { buildRoofMap, outdoorAt, MAX_ROOF_BOXES } from './render/roofMap.js';
 
 // ---- US-029 GPU cell pipeline (shading + edge pass on the GPU) ------------
