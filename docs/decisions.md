@@ -1076,3 +1076,8 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - Default detail = normal cubes (res 1/1); the fine head (1.25 cm) stays as an **option** in the generator.
 - Next: designer redoes the chargen base in this style (CHARGEN-25), then the owner looks before anything else builds on it.
 - Owner follow-up (2026-10-10): "can go a bit realistic way.. but you understand the difference" -> **in between** the references and realism: head ~1/6 of the body (refs ~1/5, real ~1/7.5), eyes = white + coloured iris + pupil (no lashes/lids), nose and mouth with a little shape, flat skin with only soft top-down shading, sturdy clean limbs, default hair + simple clothes.
+
+## D-060 - World plan "The Relay Line"; relays are the waystones (owner, 2026-10-10; recorded by the PC-B main session)
+- The world follows the canon pencil line (game-design 3): west of the tower, relay to relay toward the signal. Stages: 0 tower+meadow (done); **1 road west to the bend (~250 m play area), dead relay #1 = ws_roadBend**; 2 river crossing + crossroads, relay #2 = ws_fordWest; 3 Outwall village, relay #3 = ws_outwall; 4 north bank (M4 dungeon area); 5 signal-tower hill (Signal Source). Spots from docs/proposals/waystones-2026-10-10.md.
+- **Relays ARE the waystones:** waking a dead relay makes it a travel + save point (D-057 travel from the map, touched/woken only). The meadow waystone stays as the first one.
+- Dressing uses the existing meshes + animals (D-053). **Owner go: start stage 1**; stage 2 after the owner walks stage 1.
