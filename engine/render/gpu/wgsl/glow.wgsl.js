@@ -70,7 +70,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
       if (!(e >= ${f(GLOW_EMIS_MIN)})) { continue; }
       let Rp = f32(R + 1);
       let t = 1.0 - f32(dx * dx + dy * dy) / (Rp * Rp);
-      var w = select(0.0, t * t, t > 0.0);
+      var w = select(0.0, t * t * t, t > 0.0);
       if (w == 0.0) { continue; }
       if (solid) { w = w * exp(-abs(depthAt(c) - dc) / (${f(GLOW_DEPTH_K)} * dc + ${f(GLOW_DEPTH_EPS)})); }
       w = w * min(e, 1.0);
