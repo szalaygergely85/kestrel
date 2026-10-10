@@ -11,6 +11,7 @@
 // RGB arrays directly.
 import { compileRichLine, drawRichLine, applySceneFade } from '../../../engine/index.js';
 import { VITALS_DEFAULTS } from './sim/vitalsConfig.js';
+import { quarters } from './sim/heartPieces.js'; // QL-08
 
 const DEFAULT_CELLS = 20; // uiStyle.vitals.layout.cells
 
@@ -182,6 +183,8 @@ export function drawVitals(ui, world, style, simTime, visible, vitals, showMp = 
   const mana = data && data.components && data.components.mana;
   if (!health) return;
   drawBar(ui, 'hp', health.hp, health.max, style, style.hp, style.layout.hpRow, simTime);
+  const q = quarters(world.state); // QL-08: 0-3 heart-piece marks after the HP number
+  for (let i = 0; i < q; i++) writeChar(ui, style.layout.x + style.layout.numberCol + 8 + i, style.layout.hpRow, 'v', [216, 52, 74], style.textBg);
   if (showMp && mana && style.mp) { // showMp=false while the fireball is off (D-065): hearts/HP only
     // BUG-MANA-001: both ticks share the vitals clock, which pauses and resets independently of simTime.
     const flashAgeMs = vitals && vitals.manaFlashTick > 0

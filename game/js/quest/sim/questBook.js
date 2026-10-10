@@ -31,6 +31,11 @@ export function validateGiverQuest(def) {
   for (const o of def.objectives) if (o.when.type === 'deliver' && o.when.to !== (def.giver.turnIn || def.giver.npc)) throw new Error('quest: deliver.to must be the hand-in npc (giver.turnIn or giver.npc)');
   if (def.abandonable !== undefined && typeof def.abandonable !== 'boolean') throw new Error('quest: invalid abandonable');
   if (def.returnText !== undefined && typeof def.returnText !== 'string') throw new Error('quest: invalid returnText');
+  for (const k of ['entity', 'turnInEntity', 'text', 'turnInText', 'refuseText']) if (def.giver[k] !== undefined && (typeof def.giver[k] !== 'string' || !def.giver[k])) throw new Error('quest: invalid giver.' + k); // QL-04: object givers (inspect props)
+  if (def.giveOnAccept !== undefined) {
+    if (!Array.isArray(def.giveOnAccept)) throw new Error('quest: invalid giveOnAccept');
+    for (const it of def.giveOnAccept) if (!it || typeof it.id !== 'string' || !Number.isInteger(it.n) || it.n < 1) throw new Error('quest: invalid giveOnAccept item');
+  }
   if (def.reward !== undefined) {
     if (!def.reward || !Array.isArray(def.reward.items)) throw new Error('quest: invalid reward');
     for (const it of def.reward.items) if (!it || typeof it.id !== 'string' || !Number.isInteger(it.n) || it.n < 1) throw new Error('quest: invalid reward item');
@@ -51,7 +56,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     if (ids.has(def.id)) throw new Error('quest: duplicate quest id ' + def.id);
     ids.add(def.id);
     const s = saved?.quests?.[def.id];
-    const e = { def, giver: def.giver.npc, turnIn: def.giver.turnIn || def.giver.npc, state: createQuest(def, s ? s.quest : null), accepted: !!(s && s.accepted === true), handedIn: !!(s && s.handedIn === true), seq: 0, prev: 0 };
+    const e = { def, giver: def.giver.npc, turnIn: def.giver.turnIn || def.giver.npc, state: createQuest(def, s ? s.quest : null), accepted: !!(s && s.accepted === true), handedIn: !!(s && s.handedIn === true), seq: 0, prev: 0, given: Array.isArray(s && s.given) ? s.given.filter(g => g && typeof g.id === 'string' && Number.isInteger(g.n) && g.n > 0) : [] };
     if (e.accepted) e.seq = ++seqCounter; // restore: array order stands in for accept order
     entries.push(e);
   }
@@ -72,7 +77,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     for (const op of ACT_OPS) keys.set('q.' + id + '.' + op, { qi: i, op, act: true });
   }
 
-  const book = { main: entries[0].state, version: 0, onChange: null, lastReward: null, count: n, packOps: null /* QUESTS-01: {count(id), remove(id, n)} set by the game; deliver needs it */ };
+  const book = { main: entries[0].state, version: 0, onChange: null, lastReward: null, count: n, packOps: null /* QUESTS-01: {count(id), remove(id, n), add?(id, n) -> n added} set by the game; deliver needs it */ };
   const packCounts = new Map(); // last absolute pack count per item id (runtime mirror of item:count, re-applied on abandon)
 
   function met(i) {
@@ -121,6 +126,8 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     if (i === undefined || i === 0 || statusOf(i) !== AVAILABLE) return false;
     const e = entries[i];
     e.accepted = true; e.seq = ++seqCounter; book.version++;
+    e.given = []; // QL-04: items handed over on accept (taken back on abandon)
+    if (e.def.giveOnAccept && book.packOps && book.packOps.add) for (const it of e.def.giveOnAccept) { const k = book.packOps.add(it.id, it.n); if (k > 0) e.given.push({ id: it.id, n: k }); }
     emit('quest:accepted', id);
     settle();
     return true;
@@ -155,6 +162,8 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     if (!book.canAbandon(id)) return false;
     const e = entries[byId.get(id)];
     e.state = createQuest(e.def, null); e.accepted = false; e.seq = 0; e.prev = 0;
+    if (e.given.length && book.packOps) for (const g of e.given) book.packOps.remove(g.id, Math.min(g.n, book.packOps.count(g.id))); // QL-03/04: given items go back
+    e.given = [];
     for (const [item, c] of packCounts) applyQuestEvent(e.state, { type: 'item:count', id: item, n: c }, e.def);
     book.version++;
     if (entries[0].state.flags['ui.tracked'] === id) book.feed({ type: 'flag:set', key: 'ui.tracked', value: '' });
@@ -177,6 +186,37 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     if (k === undefined || !k.act) return false;
     const id = entries[k.qi].def.id;
     return k.op === 'accept' ? book.accept(id) : book.handIn(id) !== null;
+  };
+  /** QL-04: world entity id for a giver / hand-in object id (def.giver.entity / turnInEntity), or the id itself. */
+  book.entityFor = function entityFor(id) {
+    for (let i = 1; i < n; i++) {
+      const g = entries[i].def.giver;
+      if (g.npc === id && g.entity) return g.entity;
+      if (entries[i].turnIn === id && g.turnInEntity) return g.turnInEntity;
+    }
+    return id;
+  };
+  /**
+   * QL-04: the player inspects object `objectId` (no dialogue). Accepts the first AVAILABLE quest it gives, else hands in the
+   * first READY quest whose hand-in is this object. Returns {action:'accept'|'handin'|'refuse', id, text, reward?} or null
+   * (nothing to do here). 'refuse' = a quest of this object is active but its items are not in the pack.
+   */
+  book.inspect = function inspect(objectId) {
+    for (let i = 1; i < n; i++) {
+      const e = entries[i];
+      if (e.giver === objectId && statusOf(i) === AVAILABLE && book.accept(e.def.id)) return { action: 'accept', id: e.def.id, text: e.def.giver.text || '' };
+    }
+    for (let i = 1; i < n; i++) {
+      const e = entries[i], s = statusOf(i);
+      if (e.turnIn !== objectId) continue;
+      if (s === READY) {
+        const reward = book.handIn(e.def.id);
+        if (reward) return { action: 'handin', id: e.def.id, text: e.def.giver.turnInText || '', reward };
+        return { action: 'refuse', id: e.def.id, text: e.def.giver.refuseText || '' }; // items left the pack since
+      }
+      if (s === ACTIVE) return { action: 'refuse', id: e.def.id, text: e.def.giver.refuseText || '' };
+    }
+    return null;
   };
   book.giverMarks = function giverMarks(outAvail, outReady) {
     let a = 0, r = 0;
@@ -211,6 +251,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     for (let i = 1; i < n; i++) {
       const e = entries[i];
       quests[e.def.id] = { quest: JSON.parse(stringifyQuest(e.state, e.def)), accepted: e.accepted, handedIn: e.handedIn };
+      if (e.given.length) quests[e.def.id].given = e.given.map(g => ({ id: g.id, n: g.n })); // QL-04
     }
     return { quest: JSON.parse(stringifyQuest(entries[0].state, entries[0].def)), quests };
   };
