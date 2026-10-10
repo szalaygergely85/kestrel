@@ -2,6 +2,7 @@
 // (numericLiterals sets), and JS-evaluated (wgslProbe) probes vs the JS oracles: waterInside (region shape test of rasterWaterTri: rect half-open,
 // circle inclusive, sheet always) and diamondAngle (waterLook.js). Mutation-checked. Not probed (no vec3/vec4 shim): fs_main bodies, composite glyph/
 // flow/shore/fog math -> compile check + the WG gpucompare water rows. node engine/render/gpu/wgsl/water.wgsl.test.js
+import { WATER_REFLECT } from '../../waterReflect.js';
 import assert from 'node:assert/strict';
 import { WATER_WGSL, WATER_BLOCK, WATER_TEXTURES, WATER_TARGETS } from './water.wgsl.js';
 import { WATER_COMPOSITE_WGSL, WATER_COMPOSITE_BLOCK, WATER_COMPOSITE_TEXTURES, WATER_COMPOSITE_TARGETS } from './waterComposite.wgsl.js';
@@ -77,7 +78,7 @@ assert.deepEqual(['gridCols', 'sunMapOn', 'projMode', 'sunDir', 'ambientI', 'sun
 assert.equal(C.field('wl').count, WL_SLOTS * (WL_STRIDE / 4)); assert.equal(C.field('wfog').count, 5);
 assert.equal(C.field('ripple').count, RIPPLE_SLOTS); // S8-B2-13b (38.14): 8 vec4 rings, appended after rippleGlyph/rippleGain + 2 pad words
 assert.equal(C.field('ripple').offset, 2912);
-assert.equal(C.sizeBytes, 128 + (WL_SLOTS * (WL_STRIDE / 4) + 5) * 16 + 16 + RIPPLE_SLOTS * 16); // 3040 B (was 3024)
+assert.equal(C.sizeBytes, 128 + (WL_SLOTS * (WL_STRIDE / 4) + 5) * 16 + 16 + RIPPLE_SLOTS * 16 + 16 + 32 * 16); // 3568 B (AUD-42: + reflectU vec4 + 32-sample sky LUT; was 3040)
 assert.deepEqual(WATER_COMPOSITE_TEXTURES, ['float', 'float', 'uint', 'uint', 'uint', 'uint']);
 assert.deepEqual(WATER_COMPOSITE_TARGETS, ['rgba8', 'rgba8']);
 const kinds = { float: 'texture_2d<f32>', uint: 'texture_2d<u32>' };
@@ -93,6 +94,7 @@ const wgslC = WATER_COMPOSITE_WGSL.slice(WATER_COMPOSITE_WGSL.indexOf('// diamon
 const gC = numericLiterals(glslC), wC = numericLiterals(wgslC);
 wC.delete(24); // S8-B2-12b (38.13): CLOUD_SHIFT, the cloud-darkening byte's bit shift - no GLSL equivalent (GLSL frozen, D-044)
 for (const v of [RIPPLE_SPEED, RIPPLE_W]) wC.delete(v); // S8-B2-13b (38.14): ripple-only constants (2, 0.2, 255 are already required by unrelated GLSL text), no GLSL equivalent (GLSL frozen, D-044)
+wC.delete(0.000001); for (const v of [WATER_REFLECT.f0, WATER_REFLECT.skyMix, WATER_REFLECT.darken]) wC.delete(v); // AUD-42: reflection-only constants (GLSL frozen, D-044)
 assert.deepEqual([...gC].filter((v) => !wC.has(v)), [], 'GLSL constants missing in WGSL');
 assert.deepEqual([...wC].filter((v) => !gC.has(v)), [], 'WGSL constants not in GLSL');
 
