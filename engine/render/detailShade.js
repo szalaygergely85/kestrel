@@ -23,6 +23,7 @@
 
 import { fastShade, samplePowLUT } from './fastShade.js';
 import { entityTintAt, tintChannel } from './entityTint.js';
+import { vegTintGain } from '../mesh/vegTint.js';
 import { KIND_MODEL, KIND_MESH, FACE_PACKED } from './GBuffer.js';
 import { clamp01, clampByte } from '../core/math.js';
 
@@ -717,6 +718,7 @@ const fastOut = { fg: [0, 0, 0], bg: [0, 0, 0], glyphIdx: 0 };
 // `shadeSurfaces`), handed to `shadeDetailFast` unchanged.
 const cellLight = [0, 0, 0];
 const tintScratch = new Float32Array(4), tintFg = [0, 0, 0], tintBg = [0, 0, 0]; // 38.23
+const vegGain = new Float32Array(3), vegFg = [0, 0, 0], vegBg = [0, 0, 0]; // AUD-47
 
 // v1 interior fog (US-004b's own fast fog, duplicated here in numbers only -
 // no `P.util.fogFactor` call per cell; matches `fastShade.js`'s
@@ -799,6 +801,11 @@ export function shadeSurfaces(fb, gbuf, table, DP, lightBuf) {
         onJoint = false;
       }
 
+      if (gbuf.objectId && vegTintGain(gbuf.objectId[i], vegGain)) { // AUD-47: same gain as the WGSL vegGain, before the entity tint
+        vegFg[0] = fg[0] * vegGain[0]; vegFg[1] = fg[1] * vegGain[1]; vegFg[2] = fg[2] * vegGain[2];
+        vegBg[0] = bg[0] * vegGain[0]; vegBg[1] = bg[1] * vegGain[1]; vegBg[2] = bg[2] * vegGain[2];
+        fg = vegFg; bg = vegBg;
+      }
       if (tints !== null && tints.count > 0 && gbuf.objectId && entityTintAt(tints, gbuf.objectId[i], tintScratch)) {
         // 38.23: display override after lighting, before fog (fogF below); no light emitted.
         const tk = tintScratch[3];
