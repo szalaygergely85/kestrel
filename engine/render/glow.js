@@ -4,11 +4,11 @@
 // SIMPLIFICATION vs 38.12 (the spec leaves the pass placement open enough to pick the simplest): ONE screen-space pass
 // over the FINAL cells (after edge / stable, before sprites) instead of two separable passes before shade + a halo inside
 // edge. Why: no MatF GLOW column, no shade binding, no edge change, no timer-slot move; the glow colour is simply the
-// source cell's own final fg colour (what the player sees). Cost: 1 pass, (2R+1)^2 taps at cell resolution, High R=3, Ultra R=4.
+// source cell's own final fg colour (what the player sees). Cost: 1 pass, (2R+1)^2 taps at cell resolution, High/Ultra R=2.
 //
 // Per destination cell c (not itself an emissive voxel cell):
 //   for every source cell s within R (kind != sky/terrain, material emissive >= GLOW_EMIS_MIN):
-//     w = (1 - r^2 / (R+1)^2)^2          (r = cell distance, 0 beyond the radius)
+//     w = (1 - r^2 / (R+1)^2)^3          (r = cell distance, 0 beyond the radius)
 //     g = exp(-|ds - dc| / (GLOW_DEPTH_K * dc + GLOW_DEPTH_EPS))   solid destinations only: no leak across a silhouette
 //     sumW += w*g*e ; acc += w*g*e * colN(s)     colN = fg rgb / max(fg rgb)  (hue of the source, brightness-free)
 //   a = min(1, sumW), glow = acc / sumW
@@ -27,17 +27,20 @@ export const HALO_GLYPHS = Object.freeze(Array.from(HALO_RAMP, (c) => c.charCode
 export const GLOW_RADIUS_MAX = 6;
 
 /** Quality presets (38.12 knob): off / derived (no pass) / full. radius in cells. */
+// GLOW_TUNE = the one data object to tweak (owner 2026-10-10: subtle + tight). Kernel w = t^3 (steeper than the old t^2): with
+// radius 2, ring 1 ~0.7, ring 2 ~0.17 -> halo glyph (a >= haloMin) only on the immediate ring, bg tint/bleed fades within 2 cells.
+export const GLOW_TUNE = Object.freeze({ radius: 2, gain: 0.18, haloBg: 0.25, haloMin: 0.4 });
 export const GLOW_LEVELS = Object.freeze({
   low: null, medium: null,
-  high: Object.freeze({ radius: 3, gain: 0.35, haloBg: 0.55, haloMin: 0.25 }),
-  ultra: Object.freeze({ radius: 4, gain: 0.35, haloBg: 0.55, haloMin: 0.25 }),
+  high: GLOW_TUNE,
+  ultra: GLOW_TUNE,
 });
 
 /** Shared scalar kernel pieces (the WGSL repeats exactly these expressions). */
 export function glowWeight(dx, dy, radius) {
   const r2 = dx * dx + dy * dy, R = radius + 1;
   const t = 1 - r2 / (R * R);
-  return t > 0 ? t * t : 0;
+  return t > 0 ? t * t * t : 0;
 }
 export function glowDepthGate(ds, dc) { return Math.exp(-Math.abs(ds - dc) / (GLOW_DEPTH_K * dc + GLOW_DEPTH_EPS)); }
 
