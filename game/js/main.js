@@ -114,7 +114,7 @@ import { createHitStop, hitStopEnabled } from './fx/hitStop.js'; // HITSTOP-01 (
 import { createDeathFlow, deathFlowEnabled } from './fx/deathFade.js'; // DEATH-FLOW-01 part 1 (lane B1)
 import { createHurtFx, hurtFxEnabled } from './fx/hurtFx.js'; // HURT-FX-01 (lane B1): low-hearts pulse only (hurt edge + kick = US-080a2)
 import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-SPARK-WIRE (lane B1)
-import { parsePointShadows } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
+import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
 import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
 import { PHYSICS } from '../../engine/index.js';
 import { drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
@@ -393,7 +393,7 @@ if (assets.uiStyle) setHintPaletteColors(assets.uiStyle, P.colors);
 // WG-5b: WebGPU is the only backend (`?backend=` is ignored with a warning).
 const shadowOpts = bootOpts.shadowOpts; // GFX-01w: shadow level from the preset (resolveShadowLevel) + ?shadows= / ?shadowinst / ?shadowres / ?shadowcast overrides (ME-15e/f, D-043: map is the default)
 const occlOpt = parseOccl(params, 'webgpu');
-const pointShadowOpt = parsePointShadows(params, resolvedQuality && resolvedQuality.name, !!(resolvedQuality && resolvedQuality.knobs && resolvedQuality.knobs.pointShadows)); // ME-16e/AUD-44: ON by preset (high/ultra), `?pointshadows=0|N` overrides
+const pointShadowOpt = parsePointShadows(params, resolvedQuality && resolvedQuality.name, presetPointShadowsOn(resolvedQuality, isCaptureOrBench, params)); // ME-16e/AUD-44: ON by preset (high/ultra), `?pointshadows=0|N` overrides
 const tCR = bootNow();
 const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgpu', onWebGpuMissing,
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
@@ -1526,6 +1526,8 @@ async function runGame(mode, cinematic = null) {
 
   function update(dt) {
     lapStart();
+    // QUALITY-BOOT-01: apply the saved quality's grid as soon as the GPU pipeline renders - BEFORE the title-menu early return below (it used to sit after it, so a boot via the title menu stayed at the CPU grid). Skipped if the player already picked a grid.
+    if (pendingBootGrid && wgPipeline.frameComplete && rt.gpuActive) { pendingBootGrid = false; if (rt.cols === bootCpuCols) engine.setGrid(gridResult.cols, gridResult.rows); }
     simTime += dt;
     clothTick++;
     if (cinematic) {
@@ -1630,7 +1632,6 @@ async function runGame(mode, cinematic = null) {
     updateSettings(dt, input, { assets, engine, look, canOpen: false });
     uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked() || !!(chapterCard && chapterCard.isLocked());
     titleMenuActive = !!(menuHost && menuHost.active);
-    if (pendingBootGrid && wgPipeline.frameComplete && rt.gpuActive) { pendingBootGrid = false; if (rt.cols === bootCpuCols) engine.setGrid(gridResult.cols, gridResult.rows); } // (skip if the player already picked a grid) QUALITY-BOOT-01
     ch1Hidden = isCaptureOrBench || !saveEnabled || titleMenuActive || ending || invOpen || cardOpen || isMapOpen() || isSettingsOpen() || isNoteOpen() || qlIsOpen() || !!(dialogueCtl && dialogueCtl.open) || !!(vitals && vitals.dead); // CH1-MOUNT: notices/barks hidden under any menu/dialogue
     notice.update(dt, ch1Hidden); if (chapterCard && !ending) chapterCard.update(dt); // CH1-04a / CH1-09
     const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || ((invOpen || cardOpen) && !ending)));

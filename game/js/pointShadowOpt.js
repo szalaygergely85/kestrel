@@ -10,3 +10,8 @@ export function parsePointShadows(params, levelName, presetOn = false) {
   out.pointShadows = (v === '1' || v === 'on' || v === 'true' || !(n >= 1)) ? true : { n };
   return out;
 }
+
+/** AUD-44: the preset's pointShadows knob counts only on normal pages; capture/bench/gpucompare pages keep the old OFF default unless ?quality= is explicit. */
+export function presetPointShadowsOn(resolved, captureLike, params) {
+  return !!(resolved && resolved.knobs && resolved.knobs.pointShadows && (!captureLike || params.has('quality')));
+}
