@@ -251,7 +251,8 @@ function readAccessor(json, buffers, accIdx, id, opts = {}) {
   if (!numComp) bad(id, `accessor ${accIdx} has unsupported type "${acc.type}"`);
   const compSize = COMPONENT_BYTES[acc.componentType];
   if (!compSize) bad(id, `accessor ${accIdx} has unsupported componentType ${acc.componentType}`);
-  if (!opts.allowIndexTypes && acc.componentType !== 5126) {
+  const normInt = opts.allowNormalized && acc.normalized === true && (acc.componentType === 5121 || acc.componentType === 5123);
+  if (!opts.allowIndexTypes && !normInt && acc.componentType !== 5126) {
     bad(id, `accessor ${accIdx} componentType ${acc.componentType} is not FLOAT (only FLOAT vertex attributes are supported)`);
   }
   if (acc.bufferView === undefined) bad(id, `accessor ${accIdx} has no bufferView (zero-filled accessors are unsupported)`);
@@ -281,6 +282,7 @@ function readAccessor(json, buffers, accIdx, id, opts = {}) {
     if (base + numComp * compSize > buf.byteLength) bad(id, `accessor ${accIdx} element ${i} reads past the end of its buffer`);
     const row = new Array(numComp);
     for (let c = 0; c < numComp; c++) row[c] = readOne(base + c * compSize);
+    if (normInt) { const d = acc.componentType === 5121 ? 255 : 65535; for (let c = 0; c < numComp; c++) row[c] /= d; }
     out[i] = row;
   }
   return out;
@@ -844,13 +846,16 @@ export function buildMeshFromTris(allTris, primRanges, id, opts = {}) {
 // translations, quaternions, inverse bind matrices, scales).
 // ---------------------------------------------------------------------------
 
-/** glTF quaternion (x,y,z,w) -> ours. axisConvert is a proper rotation, so the vector part converts like a point. */
-function quatConvert(x, y, z, w) { return [x, -z, y, w]; }
+// RIG-02a (architecture.md 38.32 item 6): the rigged reader is the exact inverse of tools/export/gltfWrite.js, whose
+// map authoring (x,y,z) -> glTF (-x, z, -y) is a REFLECTION. So glTF (X,Y,Z) -> ours (-X, -Z, Y), the quaternion
+// (x,y,z,w)_gltf -> (x, z, -y, w) and triangle winding is flipped. The static loadGltf map (axisConvert) is untouched.
+function rigPoint(x, y, z) { return [-x, -z, y]; }
+function quatConvert(x, y, z, w) { return [x, z, -y, w]; }
 
 /** M' = C M C^-1 for a column-major 4x4 (C = axisConvert as a matrix). */
 function mat4ConvertBasis(m) {
-  const C = [1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1];
-  const Ci = [1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1];
+  const C = [-1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1]; // glTF -> ours (column-major)
+  const Ci = [-1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1];
   return mat4Mul(mat4Mul(C, m), Ci);
 }
 
@@ -915,7 +920,7 @@ export function sampleRiggedClip(model, clip, t) {
  * @returns {{
  *   bones: {name:string, parent:number, node:number, rest:{t:number[],r:number[],s:number[]}, ibm:number[]}[],
  *   mesh: {positions:Float32Array, normals:Float32Array|null, uvs:Float32Array|null, indices:Uint32Array, boneIndex:Uint8Array, materials:number[]},
- *   clips: {name:string, duration:number, channels:{bone:number, path:string, interpolation:string, times:Float32Array, values:Float32Array}[]}[],
+ *   clips: {name:string, duration:number, loop:boolean, channels:{bone:number, path:string, interpolation:string, times:Float32Array, values:Float32Array}[]}[],
  *   extras: Object|null }} bone parent is an index into bones (-1 root); boneIndex is per vertex.
  */
 export function readRiggedGlb(bytes, id = 'rigged', opts = {}) {
@@ -958,7 +963,7 @@ export function readRiggedGlb(bytes, id = 'rigged', opts = {}) {
       name: nd.name || `bone${bi}`,
       parent: p === -1 ? -1 : jointOf.get(p),
       node: nodeIdx,
-      rest: { t: axisConvert(t[0], t[1], t[2]), r: quatConvert(r[0], r[1], r[2], r[3]), s: [s[0], s[2], s[1]] },
+      rest: { t: rigPoint(t[0], t[1], t[2]), r: quatConvert(r[0], r[1], r[2], r[3]), s: [s[0], s[2], s[1]] },
       ibm: ibmRaw ? mat4ConvertBasis(ibmRaw[bi]) : mat4Identity(),
     };
   });
@@ -979,7 +984,7 @@ export function readRiggedGlb(bytes, id = 'rigged', opts = {}) {
       const base = pos.length;
       const P = readAccessor(json, buffers, a.POSITION, id);
       const J = readAccessor(json, buffers, a.JOINTS_0, id, { allowIndexTypes: true });
-      const W = readAccessor(json, buffers, a.WEIGHTS_0, id);
+      const W = readAccessor(json, buffers, a.WEIGHTS_0, id, { allowNormalized: true });
       for (let v = 0; v < P.length; v++) {
         let best = 0;
         for (let k = 1; k < 4; k++) if (W[v][k] > W[v][best]) best = k;
@@ -991,15 +996,16 @@ export function readRiggedGlb(bytes, id = 'rigged', opts = {}) {
         const j = J[v][best];
         if (j >= joints.length) bad(id, `vertex ${v} joint index ${j} out of range`);
         boneIdx.push(j);
-        pos.push(axisConvert(P[v][0], P[v][1], P[v][2]));
+        pos.push(rigPoint(P[v][0], P[v][1], P[v][2]));
       }
-      if (a.NORMAL !== undefined) readAccessor(json, buffers, a.NORMAL, id).forEach((n) => nrm.push(axisConvert(n[0], n[1], n[2])));
+      if (a.NORMAL !== undefined) readAccessor(json, buffers, a.NORMAL, id).forEach((n) => nrm.push(rigPoint(n[0], n[1], n[2])));
       else hasN = false;
       if (a.TEXCOORD_0 !== undefined) readAccessor(json, buffers, a.TEXCOORD_0, id).forEach((u) => uv.push(u));
       else hasUv = false;
       const before = idx.length;
       if (prim.indices !== undefined) readAccessor(json, buffers, prim.indices, id, { allowIndexTypes: true }).forEach((i) => idx.push(i[0] + base));
       else for (let v = 0; v < P.length; v++) idx.push(base + v);
+      for (let k = before; k + 2 < idx.length; k += 3) { const t1 = idx[k + 1]; idx[k + 1] = idx[k + 2]; idx[k + 2] = t1; } // reflection: flip winding
       for (let k = 0; k < (idx.length - before) / 3; k++) mats.push(prim.material === undefined ? -1 : prim.material);
     }
   });
@@ -1021,14 +1027,15 @@ export function readRiggedGlb(bytes, id = 'rigged', opts = {}) {
       const comps = tgt.path === 'rotation' ? 4 : 3;
       const values = new Float32Array(raw.length * comps);
       raw.forEach((r, i) => {
-        const c = tgt.path === 'translation' ? axisConvert(r[0], r[1], r[2])
+        const c = tgt.path === 'translation' ? rigPoint(r[0], r[1], r[2])
           : tgt.path === 'rotation' ? quatConvert(r[0], r[1], r[2], r[3]) : [r[0], r[2], r[1]];
         values.set(c, i * comps);
       });
       if (times.length) duration = Math.max(duration, times[times.length - 1]);
       return { bone: jointOf.get(tgt.node), path: tgt.path, interpolation, times, values };
     });
-    return { name: an.name || `clip${ai}`, duration, channels };
+    const kx = an.extras && an.extras.kestrel;
+    return { name: an.name || `clip${ai}`, duration, loop: !(kx && kx.loop === false), channels };
   });
 
   const flat = (rows, k) => { const f = new Float32Array(rows.length * k); rows.forEach((r, i) => f.set(r.slice(0, k), i * k)); return f; };

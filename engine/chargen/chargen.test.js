@@ -258,12 +258,12 @@ const BONE = { Hips: 0, Spine: 1, Head: 2, LeftUpperArm: 3 };
   ok('compose with one shade stays small', composeCharacter(k, recipe({ skin: 'big' })).matKeys.length === 1);
 }
 
-// 11. imports stay inside engine/chargen
+// 11. imports stay inside engine/chargen (RIG-02a: fromGlb.js may import ../mesh/gltf.js, 38.32 item 8 f)
 {
   const bad = [];
   for (const f of fs.readdirSync(__dirname).filter((n) => n.endsWith('.js') && !n.endsWith('.test.js'))) {
     for (const m of fs.readFileSync(path.join(__dirname, f), 'utf8').matchAll(/from\s+'([^']+)'/g)) {
-      if (!m[1].startsWith('./')) bad.push(`${f}: ${m[1]}`);
+      if (!m[1].startsWith('./') && !(f === 'fromGlb.js' && m[1] === '../mesh/gltf.js')) bad.push(`${f}: ${m[1]}`);
     }
   }
   ok('engine/chargen imports only its own files', bad.length === 0, bad.join('; '));
