@@ -49,7 +49,7 @@ const you = (t) => 'YOU: ' + t;
   ok('2 woken: last node sets s.burl.depart (only new flag)', lastOf(w) === burl('The world is wider than your Wall.') && f.s.has('s.burl.depart') && f.s.size === 3); }
 // 3 arrived (the stone talk)
 { const f = mk('s.burl.arrived', 'q.burl.boars.done', 's.burl.follow'); const w = walk(f, 0);
-  ok('3 arrived: stone talk, 18 lines, ends on the crystal line', first(w) === burl('There we are.') && w.said.length === 18 && lastOf(w) === burl('Try holding that crystal to the bowl.'), w.said.length);
+  ok('3 arrived: stone talk, 18 lines, ends on the crystal line', first(w) === burl('There we are.') && w.said.length === 18 && lastOf(w) === burl('Hold that crystal up to the carved mark.'), w.said.length);
   ok('3 arrived: sets bear.stone.told, no lamp', f.s.has('bear.stone.told') && !w.said.some((l) => /lamp/i.test(l))); }
 // 3b following (CH1-07): no follow offer replay, no flags, one line; arrived wins
 { const f = mk('q.burl.boars.done', 's.burl.follow', 'bear.talked'); const w = walk(f, 0);
