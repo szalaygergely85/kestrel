@@ -79,15 +79,9 @@ export class Terrain {
     this._forestTypeId = TYPE_NAMES.indexOf('forest');
     this._canopyM = (recipe.recipe && recipe.recipe.forest && recipe.recipe.forest.canopy) || 0;
 
-    // Near chunks (arch 7.2): 64x64 cells of 2 m (128 m), 3x3 resident ring
-    // in a fixed 9-slot array - `slot = (cy mod 3)*3 + (cx mod 3)`, never a
-    // string-keyed Map on the query path.
+    // Chunk geometry (AUD-04: the dormant 3x3 resident ring was removed; the near band is the only near truth).
     this.chunkSize = (recipe.chunk && recipe.chunk.size) || 128;
     this.nearCell = (recipe.chunk && recipe.chunk.nearCell) || 2;
-    this._chunks = new Array(9).fill(null); // { cx, cy, h, type, version }
-    this._centerCx = null;
-    this._centerCy = null;
-    this._chunkQueue = []; // [{cx, cy}] pending bakes, drained by bakeChunkStep
 
     // US-026a (architecture.md 23.1 item 1): one contiguous 3x3-chunk near
     // band, baked once (synchronously) at World.load, never streamed/
@@ -221,7 +215,6 @@ export class Terrain {
    */
   rebakeRect(x0, y0, x1, y1) {
     this._bindEdits();
-    if (this.nearReady) this._chunks.fill(null), this._centerCx = null; // 3x3 chunk cache is stale now
     const eps = (this.recipe.recipe && this.recipe.recipe.slopeEps) || this.nearCell;
     const g = this.near;
     let out = null;
@@ -449,52 +442,6 @@ export class Terrain {
       h = Math.imul(h, 0x01000193);
     }
     return h >>> 0;
-  }
-
-  // ---- near chunks ----------------------------------------------------------
-
-  _slot(cx, cy) {
-    return (((cy % 3) + 3) % 3) * 3 + (((cx % 3) + 3) % 3);
-  }
-
-  /** Resident chunk at (cx, cy), or null if not currently resident (not yet baked by `bakeChunkStep`). */
-  chunk(cx, cy) {
-    const slot = this._slot(cx, cy);
-    const c = this._chunks[slot];
-    return c && c.cx === cx && c.cy === cy ? c : null;
-  }
-
-  /**
-   * Recenters the resident 3x3 ring on the chunk containing (x, y). Queues
-   * only the chunks not already resident (a one-chunk move regenerates
-   * exactly the new row/column, per AC) - draining happens in `bakeChunkStep`.
-   */
-  setCenter(x, y) {
-    const cx = Math.floor(x / this.chunkSize);
-    const cy = Math.floor(y / this.chunkSize);
-    if (cx === this._centerCx && cy === this._centerCy) return;
-    this._centerCx = cx;
-    this._centerCy = cy;
-    this._chunkQueue.length = 0;
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const ccx = cx + dx, ccy = cy + dy;
-        const existing = this.chunk(ccx, ccy);
-        if (!existing) this._chunkQueue.push({ cx: ccx, cy: ccy });
-      }
-    }
-  }
-
-  /** Bakes queued chunks, spending at most `msBudget` ms this call. */
-  bakeChunkStep(msBudget = 5) {
-    this._bindEdits();
-    const t0 = now();
-    while (this._chunkQueue.length && now() - t0 < msBudget) {
-      const { cx, cy } = this._chunkQueue.shift();
-      const G = this.util.bakeChunk(cx, cy);
-      const slot = this._slot(cx, cy);
-      this._chunks[slot] = { cx, cy, h: G.height, type: G.type, version: (this._chunks[slot] ? this._chunks[slot].version : 0) + 1 };
-    }
   }
 }
 

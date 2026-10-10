@@ -69,49 +69,6 @@ while (!d.farReady) {
 }
 ok('bakeFarStep respects its ms budget (row-granular)', worstOver === 0, `worst overrun ${worstOver} ms`);
 
-// --- setCenter by one chunk regenerates exactly 3 chunks --------------------
-const e = new Terrain(recipe);
-e.setCenter(1480, 1018);
-e.bakeChunkStep(10000);
-const before = [];
-for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-  const cx = e._centerCx + dx, cy = e._centerCy + dy;
-  before.push(e.chunk(cx, cy));
-}
-ok('setCenter bakes the initial 3x3 resident ring', before.every((c2) => c2 !== null));
-
-const keysBefore = new Set(before.map((c2) => `${c2.cx},${c2.cy}`));
-e.setCenter(1480 + e.chunkSize, 1018); // move exactly one chunk east
-e.bakeChunkStep(10000);
-let regenerated = 0;
-for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-  const cx = e._centerCx + dx, cy = e._centerCy + dy;
-  const c2 = e.chunk(cx, cy);
-  ok(`chunk (${cx},${cy}) resident after the move`, c2 !== null);
-  if (c2 && !keysBefore.has(`${c2.cx},${c2.cy}`)) regenerated++;
-}
-ok('moving one chunk regenerates exactly 3 chunks (the new column)', regenerated === 3, `regenerated=${regenerated}`);
-
-// --- chunk seam vertices equal on both sides --------------------------------
-const f = new Terrain(recipe);
-f.setCenter(1480, 1018);
-f.bakeChunkStep(10000);
-const cx0 = f._centerCx, cy0 = f._centerCy;
-const left = f.chunk(cx0, cy0);
-const right = f.chunk(cx0 + 1, cy0);
-if (left && right) {
-  const n = f.chunkSize / f.nearCell; // 65x65 vertex convention would need n+1; this recipe bakes n x n cell centers,
-  // so the "seam" check here compares the two chunks' shared-edge CELL HEIGHTS via the analytic heightAt directly
-  // (both must read the same real-world height at the shared boundary, since heightAt is continuous/analytic - 7).
-  const boundaryX = (cx0 + 1) * f.chunkSize;
-  const y = (cy0 + 0.5) * f.chunkSize;
-  const hL = recipe.util.heightAt(boundaryX - 1e-6, y);
-  const hR = recipe.util.heightAt(boundaryX + 1e-6, y);
-  ok('chunk seam heights agree (continuous analytic heightAt)', Math.abs(hL - hR) < 1e-3, `${hL} vs ${hR}`);
-} else {
-  ok('chunk seam vertices equal on both sides', false, 'chunks not resident');
-}
-
 // --- sample before farReady does not throw ----------------------------------
 const g = new Terrain(recipe);
 let threw = false;
