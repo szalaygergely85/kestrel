@@ -107,6 +107,7 @@ import { createFireballSim } from './quest/sim/fireball.js'; // SPELL-01a (37.14
 import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.14 view)
 import { createTargetables } from './quest/sim/targetables.js';
 import { FIREBALL_CFG } from './quest/spellConfig.js';
+import { featuresFromParams } from './quest/features.js'; // D-065: fireball off unless ?fireball=1
 import { START_DEMO, START_FULL } from './quest/startConfig.js';
 import { createPracticeTarget, applyPropTargetables } from './quest/practiceTarget.js';
 import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js'; // US-053c
@@ -166,6 +167,7 @@ const saveStorage = () => (demo.on ? demoStorage(getSaveStorage()) : getSaveStor
 // (8:3 aspect kept, see `clampGrid`), logged once here on the user-facing
 // param (the RenderTarget-internal cpu-fallback log is separate).
 // ME-19a: mesh GPU versus the rasterJS twin; one geometry-parity mode.
+const FEATURES = featuresFromParams(new URLSearchParams(window.location.search)); // not via filterDemoParams: dev flag
 const isGeometryCompare = (params.get('gpucompare') === '1' || params.get('gpucompare') === 'emissive');
 // ME-06 diagnostic: `&voxels=0` on either compare page empties the voxel
 // instance queue on both sides after each pose's feed, so a mesh-vs-oracle
@@ -1281,7 +1283,7 @@ async function runGame(mode, cinematic = null) {
       hands.register('sword', sword);
       if (fbTargets) fbTargets.dispose();
       fbTargets = createTargetables(world, engine.events);
-      fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n) });
+      fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), enabled: FEATURES.fireball });
       hands.register('spell.fireball', fireball);
       if (fbView) fbView.bind(fireball, lightSet); // SPELL-01b: 4 flight + 2 flash + 1 ember light, never removed
       if (practiceTarget) practiceTarget.dispose();
@@ -2108,7 +2110,7 @@ async function runGame(mode, cinematic = null) {
         if (vitals) {
           // Q9 item 2c: hidden on the title (wakeOut.inputLocked covers the wake/title timeline) and map cards too,
           // not just while dead - the end card is already covered by the `!ending` gate around this whole block.
-          drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals);
+          drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals, FEATURES.fireball);
           drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals, isReduceMotion());
           hurtFx.draw(ui); // HURT-FX-01
           deathFlow.draw(ui, ui.cols, ui.rows); // DEATH-FLOW-01
