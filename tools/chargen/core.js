@@ -1,6 +1,6 @@
 // tools/chargen/core.js (CHARGEN-13a, architecture.md 38.29 item 7): the UI-independent facade.
 // No DOM, no fs, no Tauri, no three. Callers: UI, CLI (export.mjs), Tauri shell, later the editor.
-import { composeCharacter, meshCharacter, randomRecipe, validateRecipe, validateKit, writeZip, openPackage } from '../../engine/index.js';
+import { composeCharacter, meshCharacter, randomRecipe, validateRecipe, validateKit, writeZip, openPackage, effectiveRes, clampRes, CHAR_GAME_MAX_QUADS } from '../../engine/index.js';
 import { exportGlb } from '../export/gltfWrite.js';
 import { exportFbx } from '../export/fbxWrite.js';
 import { exportObj } from '../export/objWrite.js';
@@ -47,6 +47,7 @@ export function createChargen({ kit, rgbOf, materials = null }) {
   const fbx = () => exportFbx(build(), { rgbOf });
 
   const api = {
+    lastWarnings: [], // savePackage warnings of the last call
     get recipe() { return clone(recipe); },
     setRecipe(r) { recipe = check(clone(r)); grid = null; return api.recipe; },
     random(seed) { recipe = check(randomRecipe(kit, seed)); grid = null; return api.recipe; },
@@ -135,6 +136,19 @@ export function createChargen({ kit, rgbOf, materials = null }) {
     },
     /** A `.kestrel` package (kestrel.json + recipe.json + character.glb). meta: {id, name, version?, license?, authors?}. */
     async savePackage(meta = {}) {
+      // CHARGEN-22c (38.34): "for the game" clamps finer picks to GAME_SAFE_RES, deterministic, with a warning
+      const want = effectiveRes(recipe), safe = clampRes(want);
+      const warnings = [];
+      let rec = recipe, model = build();
+      if (safe.body !== want.body || safe.head !== want.head) {
+        rec = { ...clone(recipe), res: safe };
+        warnings.push(`game-safe: res ${want.body}/${want.head} clamped to ${safe.body}/${safe.head} (game cap ${CHAR_GAME_MAX_QUADS} quads)`);
+        model = meshCharacter(composeCharacter(kit, rec));
+      }
+      const glb = exportGlb(model, glbOpts({ recipe: rec }));
+      if (model.mesh.quads > CHAR_GAME_MAX_QUADS) warnings.push(`game-safe: ${model.mesh.quads} quads is over the game cap ${CHAR_GAME_MAX_QUADS}; the game will refuse it`);
+      api.lastWarnings = warnings;
+      if (meta.onWarning) warnings.forEach((w) => meta.onWarning(w));
       const manifest = {
         format: 'kestrel-package', formatVersion: 1,
         id: meta.id || 'chargen.character', name: meta.name || 'Character', version: meta.version || '1.0.0',
@@ -144,8 +158,8 @@ export function createChargen({ kit, rgbOf, materials = null }) {
       };
       return writeZip([
         { path: 'kestrel.json', bytes: json(manifest) },
-        { path: 'recipe.json', bytes: json(recipe) },
-        { path: 'character.glb', bytes: api.exportGlb() },
+        { path: 'recipe.json', bytes: json(rec) },
+        { path: 'character.glb', bytes: glb },
       ]);
     },
     /** Reads a package written by savePackage, validates and adopts its recipe. */

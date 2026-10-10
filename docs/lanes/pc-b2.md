@@ -382,3 +382,9 @@ B2 2026-10-09 (TWISTED-LOD-01) -> arch-review (importer data only): TwistedTree_
 - compose.js: grids (main + one block per region finer than body; attachments/shells per owning grid, resampled, thick*level), height.js `heightBase(base,h,regions)` -> `regionBoxes`, mesh.js `meshBlock` + finest grid G (`cellM/f`; jointCells, mounts, Hips clip pos x f). 1/1 byte-identical (all existing goldens/suites PASS). body>1 throws until CHARGEN-24.
 - tools/chargen-build-kit.mjs: per-level quad stats + attachment-outside-region-box warning. Tests: engine/chargen/blocks.test.js (33; synthetic kit + real kit with nearest-upsampled head; quads 1845 at every level since nearest upsample keeps greedy quads - real counts need the designer's L2).
 - Limits: test (f) is a joint-cell/metre consistency check at F=2, not the full voxelPose FORWARD-vs-FK repeat; main-grid shells treat block-filled cells as occupied (no growth into the head block). check-deps OK.
+
+## CHARGEN-22c -> arch-review (kestrel-3)
+- voxWrite.js: `flattenGrid(grid)` (finest F = max block k; no blocks = same grid, bytes unchanged) used by exportVoxGrid; glb/fbx/obj verified at {1,2},{1,4} (cellM = 0.025/F).
+- core.js savePackage: clampRes(effectiveRes) -> GAME_SAFE_RES + warning (`meta.onWarning`, `api.lastWarnings`); package recipe.json/glb use the clamped res; warns if quads > cap.
+- charRegister.js: rigged glb over CHAR_GAME_MAX_QUADS -> ContentError naming the id (optional 4th arg maxQuads for tests). Test: tools/chargen/res22c.test.mjs.
+- Open: chargen-build-kit per-level stats (row text) not done; ui.js not touched (Save-for-game warning display is UI's job, reads savePackage lastWarnings).
