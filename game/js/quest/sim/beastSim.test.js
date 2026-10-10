@@ -1149,6 +1149,22 @@ const BOAR_R = 0.45;
   }
 }
 
+// EQ-06: a charge whose combat:hit comes back `blocked` -> 0.4 s stagger (not recover), shoved away from the player.
+{
+  const bx = 1461, by = 1031, px = bx, py = by - 0.5;
+  const { sim, events } = freshSim([beastEntity('b1', bx, by)]);
+  events.on('combat:hit', (p) => { if (p.target === 'player') p.blocked = 1; });
+  sim.steer.x[0] = bx; sim.steer.y[0] = by;
+  sim.state[0] = STATE_CHARGE; sim.timer[0] = sim.cfgSteps.chargeMax; sim.cdx[0] = 0; sim.cdy[0] = -1;
+  let n = 0;
+  while (sim.state[0] === STATE_CHARGE && n++ < 20) sim.step(px, py, 0);
+  ok('EQ-06 blocked charge -> STAGGER (not recover)', sim.state[0] === 7, `state=${sim.state[0]}`);
+  ok('EQ-06 blocked stagger lasts blockStagger = 24 steps', sim.cfgSteps.blockStagger === 24 && sim.timer[0] === 24, `timer=${sim.timer[0]}`);
+  ok('EQ-06 beast shoved away from the player (+y)', sim.steer.vy[0] > 0, `vy=${sim.steer.vy[0]}`);
+  for (let i = 0; i < 30; i++) sim.step(px, py, 0);
+  ok('EQ-06 stagger ends after ~24 steps', sim.state[0] !== 7, `state=${sim.state[0]}`);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
