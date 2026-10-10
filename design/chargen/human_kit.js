@@ -37,7 +37,7 @@
  *     a rolled shirt cuff, a boot lacing ridge, a sole welt. Decals: knight armhole trim, dotted side + back seams,
  *     glove knuckles on the bumps; Fen criss-cross laces, upper band, iron buckle, collar band + neck slit, sleeve
  *     hems, shoulder seams, knee creases. buildHumanKit(P, { legacy26b: true }) = the 26b look (preview compare).
- *   - CH1-D3 Fen (kit.looks.fen, a wanderer): `tunic` (top, long sleeves + a short skirt over the trousers), `mended`
+ *   - CH1-D3 Fen look (mended outfit part): `tunic` (top, long sleeves + a short skirt over the trousers), `mended`
  *     (beard slot, paintOnly decal: stubble + sewn cloth patches + a shoulder-bag strap + ragged hem + worn boot scuffs),
  *     `staff` (hat slot, held: bone RightHand, anchor hand_r, the fingers wrap round it). All random weight 0; the
  *     defaults and kit.looks.knight are unchanged.
@@ -995,7 +995,7 @@
         outer: { id: 'belt', ramp: 'walnut' }, hat: null
       },
       // named looks (CHARGEN-26): full recipes a game / UI may start from; civilian = defaults
-      looks: { knight: knightLook(), fen: fenLook() }
+      looks: { knight: knightLook() }
     };
     kit.attachments.push(buildHeraldry(kit));
     // CH1-D3 Fen: the held staff (hat slot) and the mended decal (beard slot), appended after the knight pieces

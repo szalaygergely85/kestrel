@@ -157,7 +157,6 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
     ...(towerDef.triggers || []).map((t) => t.trigger),
     ...(worldM1.triggers || []).map((t) => t.trigger).filter(Boolean),
     'lantern.take', // kept registered (lantern.js, lantern.test/quest.test legacy fixtures) though CH1-D1a removed the tower interactable
-    'door.unbar', // kept registered (doorUnbar.js, legacy) though DOOR-TOGGLE-01's door.toggle replaced it on the tower interactable
     'quest.end', // kept registered (end.js, end.test.js, restart.test.js) though world_m1 no longer references it (WAYSTONE-NORMAL-01)
     'npc.talk', // NPC-BEAR-01: runtime-only (dialogueCtl.addNpc -> World.addInteractable), no content reference
     'beast.loot', // US-091a2: runtime-only (sim/loot.js World.addInteractable per boar), no content reference
