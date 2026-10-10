@@ -1063,3 +1063,8 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - Owner: "waystone also teleport location". Travel is picked **from the map (M)**; only waystones the player has **touched** (saved) can be travelled to.
 - Placement: **one more along the road west**, then waystones spread "around the map: crossroads, villages, etc." - the **designer proposes** spots on the chart, the owner picks before anything is built.
 - Order: designer proposal -> owner pick -> PO story rows (travel from the map, touched list in the save, fade + invalidate on arrival) -> programmer.
+
+## D-058 - Quest giver flow; Fen removed (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner: "i wanna able to see, pick up, and finish" quests. Picked the **giver flow**: SEE = a `!` over an NPC with a quest + a map marker; PICK UP = talk -> quest text -> Accept / Later -> quest log; FINISH = NPC shows `?` when the steps are done -> talk -> hand in -> reward (item/coin) + "Quest complete". The boar quest becomes **Burl's quest** (first user of the flow).
+- **Fen removed for now** (the villager added on 2026-10-10 without an owner OK, CHARGEN-15): entity + dialogue out of world_m1; the add-on package system (38.33) stays for later NPCs.
+- Order: architect note + story rows -> programmer(s) -> owner walk.
