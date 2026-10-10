@@ -11,7 +11,7 @@ import { DONE_TEXT } from './questRelay.js';
 
 const burl = JSON.parse(readFileSync(new URL('../../content/quests/burl.boars.quest.json', import.meta.url)));
 const giverDefs = [burl];
-const questDef = JSON.parse(readFileSync(new URL('../../content/quests/m1.quest.json', import.meta.url)));
+const questDef = JSON.parse(readFileSync(new URL('./quest/sim/fixtures/m1.legacy.quest.json', import.meta.url)));
 // objective texts come from the content (writer pass may change them), not from this test
 const OBJ = Object.fromEntries(questDef.objectives.map((o) => [o.id, o.text]));
 const assets = new AssetRegistry({ palette: {} });
