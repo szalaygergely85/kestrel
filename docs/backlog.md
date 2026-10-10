@@ -2020,7 +2020,7 @@ Order: writer rows + CH1-D1a + CH1-E1/E2 + CH1-01 in parallel -> CH1-02, CH1-03,
 - [ ] `noticeView.js` per 38.37 item 4 (title + up to 3 lines, 0.3/3.5/0.5 s, queue of 2, non-blocking, hidden in menus/dialogue); mounted in main.js.
 - [ ] Tests: queue order, timings, 0-alloc draw, hide rules. One headless capture.
 
-### CH1-04b Dormant meadow stone, woken with the crystal  [P1] [todo] [PC-B kestrel-1]
+### CH1-04b Dormant meadow stone, woken with the crystal  [P1] [po-review] [PC-B kestrel-1]
 - [ ] `endMarker` `waystone {dormant: true, notice}`; `waystoneTouch` skips it until `waystone.waystone.woken`.
 - [ ] `relayWake.js` handles `kind:'stone'`: interactable `requires: 'dlg.bear.stone.told'`; relays `requires: 'aether.attuned'`. Wake -> touch -> `questFlag` -> notice.
 - [ ] Reload: the woken stone stays `awake`, light on, no hum; old saves with the waystone touched restore it awake (via the migration flag).
@@ -2045,7 +2045,7 @@ Order: writer rows + CH1-D1a + CH1-E1/E2 + CH1-01 in parallel -> CH1-02, CH1-03,
 - [x] Without the flag, `props:static` is byte-identical (existing tests unchanged). Serialize keeps the flag.
 - [x] Tests: capsule blocked at the new spot, free at the old one, 0 alloc over 10k moves. If an in-place update is impossible, ASK ARCHITECT. -> `arch-review`.
 
-### CH1-07 Burl escort + departure  [P1] [todo] [PC-B kestrel-1]
+### CH1-07 Burl escort + departure  [P1] [po-review] [PC-B kestrel-1]
 - [ ] `npcWalk.js` per 38.37 item 5 (lead mode: wait > 10 m, resume < 6 m; barks at waypoints; `hideAtEnd`; walk/idle clips; ground z; collider follows).
 - [ ] Burl phases 0-4 in world.state (`burl.phase`, `burl.wp`); `questFlag('burl.arrived')` at the stone; stone talk auto-opens within 4 m; the after-wake node starts the departure; hidden at the end of `depart`.
 - [ ] Load rules per phase (mid-walk resumes from `burl.wp`; departing/gone = hidden). `bear.call` bark on first approach after `leave`.
@@ -2056,7 +2056,7 @@ Order: writer rows + CH1-D1a + CH1-E1/E2 + CH1-01 in parallel -> CH1-02, CH1-03,
 - [ ] `fen.dialogue.json` per 38.37 item 6 (3 choice points that rejoin, end node sets `s.fen.met`, repeat entry); package in `content/packages/index.json` (38.33).
 - [ ] `fenDialogue.test.js`: every node reachable, lines <= 56, end flag; packBoot test with the Fen package green.
 
-### CH1-08b Fen at the relay  [P1] [todo] [PC-B kestrel-1]
+### CH1-08b Fen at the relay  [P1] [po-review] [PC-B kestrel-1]
 - [ ] Hidden until `waystone.ws_roadBend.woken`; after the notice, walks `emerge` and the dialogue auto-opens within 4 m (E works too); `fen.met` completes m1.
 - [ ] Load: relay woken -> Fen visible at the end of `emerge`, the repeat entry if met. Tests.
 

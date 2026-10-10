@@ -53,3 +53,15 @@ console.log('waystone wire: ok');
   assert.deepEqual(r.hooks.respawn(), { x: 89, y: 11, z: 0, yawDeg: 0 }, 'respawn at last touched');
   console.log('waystone wire points: ok');
 }
+// CH1-04b: a dormant stone's first touch (the wake) shows no wire toast; later touches do
+{
+  const world = World.load({ name: 'ws_wire3', terrain: null, structures: [], entities: [] }, assets, {});
+  world.spawn('unit', { x: 10, y: 10, z: 0 }, { waystone: { id: 'waystone', label: 'Meadow stone', kind: 'stone', order: 1, dormant: true } }, 'endMarker');
+  const r = rig(world), c = []; const u = { cols: 80, setCellRGB(x, y, g) { c.push([x, y, g]); } };
+  r.player.transform.x = 9; r.player.transform.y = 10;
+  r.hooks.emitSimple('prop:touched', 'waystone', 'waystone', { x: 10, y: 10, z: 0 });
+  assert.equal(r.saves(), 1, 'wake still saves'); r.hooks.drawHud(u); assert.equal(c.length, 0, 'wake: notice only, no toast');
+  r.hooks.emitSimple('prop:touched', 'waystone', 'waystone', { x: 10, y: 10, z: 0 });
+  r.hooks.drawHud(u); assert.ok(c.length > 0, 'later touch: normal toast');
+  console.log('waystone wire dormant: ok');
+}
