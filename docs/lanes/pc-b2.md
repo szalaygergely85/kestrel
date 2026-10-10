@@ -398,3 +398,8 @@ B2 2026-10-09 (TWISTED-LOD-01) -> arch-review (importer data only): TwistedTree_
 
 ## CHARGEN-22e (kestrel-4, 2026-10-10) -> po-review
 - Default stays res 1/1 (owner); kit/goldens/tests untouched. Only mesh.test alloc fix: the 16 B/call on the 22-bone fixture was polluted feedback from earlier calls in the file; now measured in child engine/chargen/allocProbe.mjs (--expose-gc, 400k warm-up), test also re-spawns with --expose-gc. Threshold unchanged; 3x green.
+
+## WS1-05 (kestrel-4, 2026-10-10) -> po-review
+- gen-roadside-meshes.mjs: flags --prefix/--side/--u0/--u1/--v0/--v1/--count/--tree-quota (presets roadL/roadW/roadN), only the given prefix is replaced (roadL diff = 0), rows now written via canonical JSON (scale kept; the old fmt() text path is gone), 2nd route line (WS1-08 leg 8, 2 m) + relay disc r 8 as keep-outs, side-aware capsules.
+- world_m1: roadW 60 (tree 21, rock 18, pebble 7, grass 6, mushroom 6, rockpath 2), roadN 126 of 140 (tree 35 = 0.25 quota, rock 42, pebble 17, grass 14, mushroom 14, rockpath 4; space-limited). 4 capsules added to overworld_far.js detail.exclude, no warning; re-run idempotent.
+- validate-content, meadow/content/smoke/scale/canonical/meshPlace suites, mesh-place-budget (roadSouth +49 props), check-deps green.

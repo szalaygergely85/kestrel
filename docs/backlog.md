@@ -1888,7 +1888,7 @@ PC-B architect opus, 2026-10-10 (owner-authorised while PC-A is offline; PC-A to
 | WS1-02 | kestrel-3 | 1 d | `engine/world/World.js` (band rect, nearBandKey), `engine/world/Terrain.js` (`bakeNearBand(cx0,cy0,cw,ch)`), JS `near.w/h` consumers (scatter, terrainShade, detailShade), `engine/world/terrainBand.test.js` (new) | - | todo [PC-B] |
 | WS1-03 | kestrel-2 | 0.5 d | `engine/render/gpu/wgsl/terrainRaster.wgsl.js`, `engine/render/gpu/wg/passRaster.js`, `TerrainTextures.js`, `ShadeTextures.js`, `passShade.js` (audit) | WS1-02 | todo [PC-B] |
 | WS1-04 | kestrel-4 | 0.5 d | `content/worlds/world_m1.world.json` (bounds union, terrainBand, `relayBend` + base mesh, `waystone` components), `design/levels/overworld_far.js` (relay exclude disc) | WS1-01, WS1-02 | todo [PC-B] |
-| WS1-05 | kestrel-4 | 0.75 d | `tools/gen-roadside-meshes.mjs` (flags + `scale` fix), `content/worlds/world_m1.world.json` (`roadW###`, `roadN###`), `design/levels/overworld_far.js` (printed capsules) | - (runs before WS1-04 lands: keep-out disc is in the tool) | todo [PC-B] |
+| WS1-05 | kestrel-4 | 0.75 d | `tools/gen-roadside-meshes.mjs` (flags + `scale` fix), `content/worlds/world_m1.world.json` (`roadW###`, `roadN###`), `design/levels/overworld_far.js` (printed capsules) | - (runs before WS1-04 lands: keep-out disc is in the tool) | po-review [PC-B] |
 | WS1-06a | kestrel-1 | 0.5 d | `game/js/quest/sim/waystone.js` + test, `game/js/quest/wire/waystone.js` + test, `game/js/waystoneTouch.js` | WS1-04 (data; tests use fixtures) | todo [PC-B] |
 | WS1-06b | kestrel-1 | 0.75 d | `game/js/quest/relayWake.js` (new) + test, `game/js/quest/index.js` (behaviour `relay.wake`), `game/js/main.js` (step + interactable on world:loaded) | WS1-06a, WS1-W1 (placeholder text ok) | todo [PC-B] |
 | WS1-07a | kestrel-1 | 0.5 d | `game/js/quest/mapCard.js` (`setMarker`, digits, travel line, digit keys) + `mapCard.test.js`, preview | WS1-06a | todo [PC-B] |
@@ -1919,7 +1919,7 @@ PC-B architect opus, 2026-10-10 (owner-authorised while PC-A is offline; PC-A to
 - [ ] Check that World.load and serialize keep the unknown component `waystone` on the entity; if not, stop and ASK ARCHITECT (no engine change in this row).
 - [ ] `overworld_far.js detail.exclude`: disc (1262, 1033) r 8. Content-canonical + content-smoke tests green; one headless capture at (1268, 1040, yaw 270) shows the relay on its base, no float/sink.
 
-### WS1-05 Dress the road west (existing meshes)  [P1] [todo] [PC-B kestrel-4]
+### WS1-05 Dress the road west (existing meshes)  [P1] [po-review] [PC-B kestrel-4]
 - [ ] `gen-roadside-meshes.mjs`: flags `--prefix --side left|right --u0 --u1 --v0 --v1 --count`; only the given prefix is replaced; `roadL###` untouched (diff shows no roadL change).
 - [ ] Fix: `fmt()` writes `scale` (PLANT_SCALE); test or dry-run check that every plant row carries it.
 - [ ] Runs: `roadW` left u 250..300 count ~60; `roadN` right u 110..300 v 8..26 count ~140, tree quota 0.25; keep-out disc relay (1262, 1033) r 8 and the WS1-08 route line (2 m). Printed capsules added to `overworld_far.js detail.exclude`, no warning.
