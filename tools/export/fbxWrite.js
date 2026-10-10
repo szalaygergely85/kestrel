@@ -9,7 +9,8 @@
 // (X,Y,Z)_fbx = (-x, z, -y) from authoring, x100. One Model "Body" (Mesh) = one Geometry of quads + one Material (white
 // Lambert) + one Texture (DiffuseColor) on the 16x16 palette. Normal, UV and Color layers are per polygon vertex (UV and Color
 // IndexToDirect over the materials). FBX cannot express nearest-neighbour: set Point filtering in the importer.
-// CHARGEN-11 adds skeleton + skin + bind pose, CHARGEN-12 the animation stacks (not in this file yet).
+// CHARGEN-11 (opts.skeleton:true) adds 22 LimbNode Models + NodeAttributes, a rigid Skin with one Cluster per bone and a BindPose;
+// without it the bytes are unchanged. CHARGEN-12 the animation stacks (not in this file yet).
 // Container: header "Kaydara FBX Binary  \0\x1a\0" + u32 version; 32-bit node records {endOffset,numProps,propsLen,nameLen};
 // a 13-byte null record closes every child list and the file; footer as Blender's encode_bin (footer id, 4 zero bytes, pad to
 // 16 (a full 16 when already aligned), version, 120 zero bytes, magic).
@@ -100,8 +101,63 @@ export function encodeFbx(roots, version = 7400) {
   return out;
 }
 
+// 4x4 translation matrix, FBX order (column-major, translation in elements 12..14)
+const tMat = (x, y, z) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1];
+
+/** Skeleton part (CHARGEN-11): LimbNode per bone, rigid Skin + Cluster per bone (all weights 1), BindPose. Joints use the
+ *  mesh axis map (-x, z, -y) x100. A bone's Lcl Translation is its offset from the parent joint; clusters/pose are global. */
+function skeletonNodes(model, mesh, GEO, MODEL) {
+  const { bones } = model;
+  const nb = bones.length, nq = mesh.quads;
+  if (nb !== mesh.ranges.length) throw new Error(`exportFbx: ${nb} bones but ${mesh.ranges.length} mesh ranges`);
+  const index = new Map(bones.map((b, i) => [b.name, i]));
+  const jw = bones.map((b) => [-b.joint[0] * 100, b.joint[2] * 100, -b.joint[1] * 100]);
+  const roots = bones.filter((b) => b.parent == null);
+  if (roots.length !== 1) throw new Error(`exportFbx: skeleton needs exactly one root, has ${roots.length}`);
+  const BONE = 2000000, ATTR = 2100000, CLUSTER = 2200000, SKIN = 2300000, POSE = 2400000;
+  const objects = [], connections = [];
+  bones.forEach((b, i) => {
+    const pi = b.parent == null ? -1 : index.get(b.parent);
+    if (b.parent != null && pi === undefined) throw new Error(`exportFbx: bone ${b.name} has unknown parent ${b.parent}`);
+    const t = pi < 0 ? jw[i] : jw[i].map((v, k) => v - jw[pi][k]);
+    objects.push(N('NodeAttribute', [L(ATTR + i), S(b.name + '\0\x01NodeAttribute'), S('LimbNode')], [
+      N('Properties70', [], [P('Size', 'double', 'Number', '', 1)]), N('TypeFlags', [S('Skeleton')]),
+    ]));
+    objects.push(N('Model', [L(BONE + i), S(b.name + '\0\x01Model'), S('LimbNode')], [
+      N('Version', [I(232)]),
+      N('Properties70', [], [P('Lcl Translation', 'Lcl Translation', '', 'A', t[0], t[1], t[2]), P('Lcl Rotation', 'Lcl Rotation', '', 'A', 0, 0, 0), P('Lcl Scaling', 'Lcl Scaling', '', 'A', 1, 1, 1)]),
+      N('Shading', [C(1)]), N('Culling', [S('CullingOff')]),
+    ]));
+    connections.push(N('C', [S('OO'), L(BONE + i), L(pi < 0 ? 0 : BONE + pi)]));
+    connections.push(N('C', [S('OO'), L(ATTR + i), L(BONE + i)]));
+  });
+  objects.push(N('Deformer', [L(SKIN), S('Skin\0\x01Deformer'), S('Skin')], [
+    N('Version', [I(101)]), N('Link_DeformAcuracy', [D(50)]), N('SkinningType', [S('Rigid')]),
+  ]));
+  connections.push(N('C', [S('OO'), L(SKIN), L(GEO)]));
+  const seen = new Uint8Array(4 * nq);
+  bones.forEach((b, i) => {
+    const r = mesh.ranges[i], idx = [], w = [];
+    for (let q = r.start; q < r.start + r.count; q++) for (let k = 0; k < 4; k++) { idx.push(4 * q + k); w.push(1); seen[4 * q + k]++; }
+    objects.push(N('Deformer', [L(CLUSTER + i), S(b.name + '\0\x01SubDeformer'), S('Cluster')], [
+      N('Version', [I(100)]), N('UserData', [S(''), S('')]),
+      N('Indexes', [['i', idx]]), N('Weights', [['d', w]]),
+      N('Transform', [['d', tMat(0, 0, 0)]]), N('TransformLink', [['d', tMat(...jw[i])]]),
+    ]));
+    connections.push(N('C', [S('OO'), L(CLUSTER + i), L(SKIN)]));
+    connections.push(N('C', [S('OO'), L(BONE + i), L(CLUSTER + i)]));
+  });
+  if (seen.some((c) => c !== 1)) throw new Error('exportFbx: mesh.ranges must cover every quad exactly once');
+  objects.push(N('Pose', [L(POSE), S('Pose\0\x01Pose'), S('BindPose')], [
+    N('Type', [S('BindPose')]), N('Version', [I(100)]), N('NbPoseNodes', [I(nb + 1)]),
+    N('PoseNode', [], [N('Node', [L(MODEL)]), N('Matrix', [['d', tMat(0, 0, 0)]])]),
+    ...bones.map((b, i) => N('PoseNode', [], [N('Node', [L(BONE + i)]), N('Matrix', [['d', tMat(...jw[i])]])])),
+  ]));
+  return { objects, connections, nb };
+}
+
 export function exportFbx(model, opts = {}) {
-  const { rgbOf, colorMode = 'white', name = 'Body' } = opts;
+  const { rgbOf, colorMode = 'white', name = 'Body', skeleton = false } = opts;
   if (typeof rgbOf !== 'function') throw new Error('exportFbx: opts.rgbOf(matKey) -> [r,g,b] is required');
   if (colorMode !== 'rgb' && colorMode !== 'white') throw new Error(`exportFbx: colorMode must be 'rgb' or 'white', got ${colorMode}`);
   const { mesh, matKeys } = model;
@@ -175,6 +231,20 @@ export function exportFbx(model, opts = {}) {
       N('ModelUVTranslation', [D(0), D(0)]), N('ModelUVScaling', [D(1), D(1)]), N('Texture_Alpha_Source', [S('None')]), N('Cropping', [I(0), I(0), I(0), I(0)]),
     ]),
   ]);
+  const connections = [
+    N('C', [S('OO'), L(MODEL), L(0)]),
+    N('C', [S('OO'), L(GEO), L(MODEL)]),
+    N('C', [S('OO'), L(MAT), L(MODEL)]),
+    N('C', [S('OP'), L(TEX), L(MAT), S('DiffuseColor')]),
+  ];
+  let defTypes = ['GlobalSettings', 'Model', 'Geometry', 'Material', 'Texture'], defCounts = [1, 1, 1, 1, 1];
+  if (skeleton) {
+    const sk = skeletonNodes(model, mesh, GEO, MODEL);
+    objects.kids.push(...sk.objects);
+    connections.push(...sk.connections);
+    defTypes = ['GlobalSettings', 'Model', 'Geometry', 'Material', 'Texture', 'NodeAttribute', 'Deformer', 'Pose'];
+    defCounts = [1, 1 + sk.nb, 1, 1, 1, sk.nb, 1 + sk.nb, 1];
+  }
   const roots = [
     N('FBXHeaderExtension', [], [
       N('FBXHeaderVersion', [I(1003)]), N('FBXVersion', [I(7400)]),
@@ -197,16 +267,11 @@ export function exportFbx(model, opts = {}) {
     N('Documents', [], [N('Count', [I(1)]), N('Document', [L(1000000), S(''), S('Scene')], [N('Properties70', [], [P('SourceObject', 'object', '', ''), P('ActiveAnimStackName', 'KString', '', '', '')]), N('RootNode', [L(0)])])]),
     N('References'),
     N('Definitions', [], [
-      N('Version', [I(100)]), N('Count', [I(5)]),
-      ...['GlobalSettings', 'Model', 'Geometry', 'Material', 'Texture'].map((t) => N('ObjectType', [S(t)], [N('Count', [I(1)])])),
+      N('Version', [I(100)]), N('Count', [I(defTypes.length)]),
+      ...defTypes.map((t, i) => N('ObjectType', [S(t)], [N('Count', [I(defCounts[i])])])),
     ]),
     objects,
-    N('Connections', [], [
-      N('C', [S('OO'), L(MODEL), L(0)]),
-      N('C', [S('OO'), L(GEO), L(MODEL)]),
-      N('C', [S('OO'), L(MAT), L(MODEL)]),
-      N('C', [S('OP'), L(TEX), L(MAT), S('DiffuseColor')]),
-    ]),
+    N('Connections', [], connections),
     N('Takes', [], [N('Current', [S('')])]),
   ];
   return { fbx: encodeFbx(roots), png: tex.png };

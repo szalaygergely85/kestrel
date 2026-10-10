@@ -15,10 +15,10 @@ const sha = (b) => createHash('sha256').update(b).digest('hex');
 const kit = loadKit();
 const rgbOf = paletteRgbOf();
 const { rigged } = buildGlb(kit, kit.defaults);
-const { fbx, png } = exportFbx(rigged, { rgbOf });
+let { fbx, png } = exportFbx(rigged, { rgbOf });
 
 // ---- reader
-const dv = new DataView(fbx.buffer, fbx.byteOffset, fbx.byteLength);
+let dv = new DataView(fbx.buffer, fbx.byteOffset, fbx.byteLength);
 const dec = new TextDecoder();
 function readProp(o) {
   const t = String.fromCharCode(fbx[o++]);
@@ -37,6 +37,9 @@ function readProp(o) {
       return [t, a, o + 12 + len];
     }
   }
+}
+function readAll(buf) { // same reader on another buffer: swap the module-level views, parse, swap back
+  const sf = fbx, sd = dv; try { fbx = buf; dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength); return readNodes(HEAD.length + 4).nodes; } finally { fbx = sf; dv = sd; }
 }
 let offsetsOk = true;
 function readNodes(o, end) { // child list ending in a 13-byte null record
@@ -134,6 +137,44 @@ const cons = find(roots, 'Connections').kids.map((c) => c.props.map((p) => p.v).
 ok('connections: model->root, geometry->model, material->model, texture->material DiffuseColor',
   cons.includes(`OO|${id(model)}|0`) && cons.includes(`OO|${id(geo)}|${id(model)}`) && cons.includes(`OO|${id(mat)}|${id(model)}`) && cons.includes(`OP|${id(tex)}|${id(mat)}|DiffuseColor`));
 ok('palette png decodes 16x16 and matches the palette', pngImg.width === 16 && pngImg.height === 16);
+
+// ---- CHARGEN-11: skeleton + skin + bind pose
+{
+  const sk = exportFbx(rigged, { rgbOf, skeleton: true }).fbx;
+  ok('skeleton export differs from static (static is pinned by the golden below)', sha(sk) !== sha(fbx));
+  const rd = readAll(sk);
+  const o2 = find(rd, 'Objects').kids;
+  const limbs = o2.filter((n) => n.name === 'Model' && n.props[2].v === 'LimbNode');
+  const bn = (n) => n.props[1].v.split('\0')[0];
+  ok('22 LimbNode models', limbs.length === 22 && rigged.bones.length === 22);
+  const idOf = new Map(limbs.map((n) => [bn(n), n.props[0].v]));
+  const limbIds = new Set(limbs.map((l) => l.props[0].v));
+  const cons2 = find(rd, 'Connections').kids.map((c) => c.props.map((p) => p.v));
+  const parentOf = (bid) => cons2.find((c) => c[0] === 'OO' && c[1] === bid && (c[2] === 0 || limbIds.has(c[2])))?.[2];
+  ok('LimbNode names and parents match the rig', rigged.bones.every((b) => idOf.get(b.name) !== undefined && parentOf(idOf.get(b.name)) === (b.parent == null ? 0 : idOf.get(b.parent))));
+  ok('exactly one root bone, connected to the scene root', limbs.filter((l) => parentOf(l.props[0].v) === 0).length === 1);
+  const geo2 = find(o2, 'Geometry'), skin = o2.find((n) => n.name === 'Deformer' && n.props[2].v === 'Skin');
+  ok('skin deformer connects to the geometry', cons2.some((c) => c[0] === 'OO' && c[1] === skin.props[0].v && c[2] === geo2.props[0].v));
+  const clusters = o2.filter((n) => n.name === 'Deformer' && n.props[2].v === 'Cluster');
+  ok('one cluster per bone, under the skin, linked to its bone', clusters.length === 22 && clusters.every((c) => {
+    const cid = c.props[0].v, link = cons2.find((x) => x[0] === 'OO' && x[2] === cid && limbIds.has(x[1]));
+    return cons2.some((x) => x[0] === 'OO' && x[1] === cid && x[2] === skin.props[0].v) && link && idOf.get(bn(c)) === link[1];
+  }));
+  const cnt = new Array(4 * nq).fill(0);
+  let wOk = true, tlOk = true;
+  for (const c of clusters) {
+    const ix = find(c.kids, 'Indexes').props[0].v, w = find(c.kids, 'Weights').props[0].v;
+    if (ix.length !== w.length || !w.every((x) => x === 1)) wOk = false;
+    ix.forEach((i) => cnt[i]++);
+    const b = rigged.bones.find((x) => x.name === bn(c)), tl = find(c.kids, 'TransformLink').props[0].v;
+    if (Math.abs(tl[12] + b.joint[0] * 100) > 1e-9 || Math.abs(tl[13] - b.joint[2] * 100) > 1e-9 || Math.abs(tl[14] + b.joint[1] * 100) > 1e-9 || tl[15] !== 1) tlOk = false;
+  }
+  ok('every vertex is in exactly one cluster, weights 1.0', cnt.every((c) => c === 1) && wOk);
+  ok('cluster TransformLink = bone joint in Y-up cm', tlOk);
+  const pose = find(o2, 'Pose'), pn = pose.kids.filter((k) => k.name === 'PoseNode').map((k) => find(k.kids, 'Node').props[0].v);
+  ok('bind pose has all 22 bones + the mesh', find(pose.kids, 'NbPoseNodes').props[0].v === 23 && limbs.every((l) => pn.includes(l.props[0].v)) && pn.includes(id(find(o2, 'Model'))));
+  ok('skeleton export is deterministic', sha(exportFbx(rigged, { rgbOf, skeleton: true }).fbx) === sha(sk));
+}
 
 // ---- determinism + inputs
 const again = exportFbx(buildGlb(kit, JSON.parse(JSON.stringify(kit.defaults))).rigged, { rgbOf }).fbx;
