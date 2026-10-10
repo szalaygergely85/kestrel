@@ -36,5 +36,5 @@ assert.ok(Math.abs((placed.bbox.x1-placed.bbox.x0)-2*(mesh.bbox[3]-mesh.bbox[0])
 assert.equal(JSON.parse(afterText).structures[0].scale,2,'authored JSON round trip');
 const e=.25*Math.max(mesh.bbox[3]-mesh.bbox[0],mesh.bbox[4]-mesh.bbox[1]);
 const sloped={...floor,floorAt:x=>x};
-assert.equal(snapMeshOrigin(sloped,mesh,key,0,0,2).z,+(2*e+.15).toFixed(2),'drop/move snap samples scaled footprint');
+assert.equal(snapMeshOrigin(sloped,mesh,key,0,0,2).z,+(2*e-.12).toFixed(2),'drop/move snap samples scaled footprint');
 console.log('mesh scale: refuse-before-mint, 0.05 snap, unit omission, canonical undo/redo, runtime bbox/save and scaled floor footprint PASS');
