@@ -4,6 +4,7 @@
 // transform == anchor, velocity 0, fade timeline 0.35 s out / 0.35 s in, respawn point == target -> travel to the stone you stand at
 // -> "here" with no fade. 0 console errors. Run: node tools/verify-travel.mjs <port>   (PC-B lane B1 ports 9500-9574; CDP = port+1)
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
@@ -28,7 +29,7 @@ try {
     if (m === 'Runtime.consoleAPICalled' && p.type === 'error') errors.push(p.args.map((a) => a.value ?? a.description).join(' '));
   });
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 640, height: 360, deviceScaleFactor: 1, mobile: false });
-  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&save=1&backend=webgpu` });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`dev=1&save=1&backend=webgpu`)}` });
 
   let ready = false;
   for (let i = 0; i < 150; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.world && window.__debug.playerHandle && window.__debug.travel && window.__debug.waystoneSim)')) { ready = true; break; } }

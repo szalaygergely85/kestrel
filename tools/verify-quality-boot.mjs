@@ -3,6 +3,7 @@
 // the processes it spawned, screenshots into docs/test-reports/captures/.
 // Run: node tools/verify-quality-boot.mjs 9500 (webgpu, default)
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
@@ -44,7 +45,7 @@ try {
     if (scriptId) await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: scriptId });
     const blob = JSON.stringify({ settingsVersion: 1, ...v.ls });
     scriptId = (await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `try{localStorage.setItem('kestrel.settings', ${JSON.stringify(blob)});}catch(e){}` })).identifier;
-    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&backend=webgpu&${v.q}` });
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`dev=1&backend=webgpu&${v.q}`)}` });
     let ready = false;
     for (let i = 0; i < 100; i++) { await pause(300); if (await evaluate(cdp, '!!window.__kestrel && !!window.__debug && !!window.__debug.engine')) { ready = true; break; } }
     assert.ok(ready, JSON.stringify(errors));

@@ -1,5 +1,6 @@
 // S8-C-04: real-GPU Settings preview. Run: node tools/verify-settings.mjs 9886 webgpu (or webgl2)
 import {spawn} from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import assert from 'node:assert/strict';
 import {writeFileSync,mkdtempSync,rmSync,mkdirSync} from 'node:fs';
 import path from 'node:path';import os from 'node:os';
@@ -40,7 +41,7 @@ try {
  await pause(350);const titleShot=await cdp.send('Page.captureScreenshot',{format:'png'});writeFileSync(path.join(out,'settings-title-'+backend+'.png'),Buffer.from(titleShot.data,'base64'));
  await key('Escape');assert.equal(await evaluate(cdp,'__titleMenuPreview.settings'),null);
  if(process.argv.includes('--game')) {
-  await cdp.send('Page.navigate',{url:`http://127.0.0.1:${port}/game/index.html?quality=high&grid=400x150&backend=${backend}`});
+  await cdp.send('Page.navigate',{url:`http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`quality=high&grid=400x150&backend=${backend}`)}`});
   let loaded=false;for(let i=0;i<1000;i++){await pause(300);if(await evaluate(cdp,'!!window.__debug?.menuHost && !!window.__bootReport')){loaded=true;break;}}
   assert.ok(loaded,'game menu never booted: '+JSON.stringify(errors));
   const gridSet=await evaluate(cdp,'__debug.engine.setGrid(400,150,{immediate:true})');assert.ok(!gridSet.error,JSON.stringify(gridSet));

@@ -6,6 +6,7 @@
 // (9500-9574).
 // Run: node tools/verify-ripple-hook.mjs 9513 (webgpu, default)
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
@@ -31,7 +32,7 @@ try {
 
   // `?dev=1` is required for window.__kestrel.ripple(...) to exist. `?voxelbench=0` keeps the real
   // wake-then-play timeline out of the way (no title menu/pause overlay).
-  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&voxelbench=0&grid=400x150&backend=${backend}` });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`dev=1&voxelbench=0&grid=400x150&backend=${backend}`)}` });
   let ready = false;
   for (let i = 0; i < 100; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.world)')) { ready = true; break; } }
   assert.ok(ready, 'world:loaded never fired: ' + JSON.stringify(errors));

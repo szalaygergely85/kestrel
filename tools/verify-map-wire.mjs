@@ -14,6 +14,7 @@
 // and avoids depending on 100 m of obstacle-free terrain in a known direction.
 // Run: node tools/verify-map-wire.mjs 9510 (webgpu, default)
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import assert from 'node:assert/strict';
 import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
@@ -43,7 +44,7 @@ try {
   // `?voxelbench=0` = isCaptureOrBench (truthy string, never runs the bench mode) - no title menu/pause overlay,
   // same real wake-then-play timeline as a normal boot otherwise (no `?at=`/`?pose=`, which would skip
   // questUiActive - the map card only mounts under the real wake sequence, docs/sprints/sprint-8-queue.md S8-B1-15).
-  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?voxelbench=0&grid=400x150&backend=${backend}` });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`voxelbench=0&grid=400x150&backend=${backend}`)}` });
   let ready = false;
   for (let i = 0; i < 100; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.world)')) { ready = true; break; } }
   assert.ok(ready, 'world:loaded never fired: ' + JSON.stringify(errors));

@@ -4,6 +4,7 @@
 // wgPipeline._spritesPass.readbackCells() with cropColumns on / off / on and asserts the particle cells are identical.
 // Prints one JSON line; exit 1 on mismatch.
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import { mkdtempSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path'; import os from 'node:os';
@@ -33,7 +34,7 @@ async function main() {
     cdp = await connectCdp(port + 1, 15000);
     await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false });
-    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&title=0&backend=${backend}&pose=${process.env.POSE || 'roadSouth'}` });
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`dev=1&title=0&backend=${backend}&pose=${process.env.POSE || 'roadSouth'}`)}` });
     let ready = false;
     for (let i = 0; i < 100; i++) { await pause(300); if (await evaluate(cdp, '!!window.__kestrel')) { ready = true; break; } }
     if (!ready) throw new Error('game did not boot');

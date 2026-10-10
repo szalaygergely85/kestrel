@@ -2,6 +2,7 @@
 // the F3 overlay line shows `occl on` only when requested; prints pipeline stats (culled counts when exposed).
 // Run: node tools/verify-occl.mjs 9520 [webgpu]   (PC-B port range; port+1 = CDP)
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
@@ -25,7 +26,7 @@ try {
   const results = {};
   for (const occl of [1, 0]) {
     errors.length = 0;
-    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?backend=${backend}&pose=roadSouth&occl=${occl}&debug=1` });
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`backend=${backend}&pose=roadSouth&occl=${occl}&debug=1`)}` });
     let ready = false;
     for (let i = 0; i < 100; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.overlay)')) { ready = true; break; } }
     assert.ok(ready, 'no __debug for occl=' + occl + ' ' + errors.join('|'));
