@@ -50,7 +50,7 @@ export function createNpcWalk(world, id, ctx = {}) {
       t.x = poly[k][0]; t.y = poly[k][1];
       if (k > 0) t.yawDeg = yawFromDelta(poly[k][0] - poly[k - 1][0], poly[k][1] - poly[k - 1][1]);
       snap(); api.active = false; api.done = true; api.waiting = false;
-      if (v) { v.anim = 'idle'; v.hidden = false; }
+      if (v) { setAnim('idle'); v.hidden = false; }
       return true;
     },
     /** Gone: hidden, collider parked, no interactable. */
@@ -69,7 +69,7 @@ export function createNpcWalk(world, id, ctx = {}) {
         const m = TURN_DEG_S * dt;
         t.yawDeg += diff > m ? m : diff < -m ? -m : diff;
       }
-      if (v) { const a = moved ? 'walk' : 'idle'; if (v.anim !== a) v.anim = a; }
+      if (v) setAnim(moved ? 'walk' : 'idle');
       // barks: when waypoint idx is reached and the player is near; kept pending until the player is near
       for (let i = 0; i < barkIdx.length; i++) {
         if (barkDone[i] || f.seg < barkIdx[i]) continue;
@@ -79,12 +79,18 @@ export function createNpcWalk(world, id, ctx = {}) {
       if (f.done) finish();
     },
   };
+  // BURL-WALK-ANIM-01: the clip must go through EntityHandle.play (it compiles the clip and resets frame/t); writing voxel.anim
+  // alone left the pose frozen. Falls back to the plain field for handle-less mocks.
+  function setAnim(a) {
+    if (v.anim === a && (v.playing !== false)) return;
+    if (h.play) h.play(a); else v.anim = a;
+  }
   function snap() {
     const z = world.terrain ? world.terrain.groundAt(t.x, t.y) : t.z;
     t.z = z;
     if (comps.collider && comps.collider.kinematic) world.setEntityCollider(id, t.x, t.y, z);
   }
-  function place() { t.x = f.x; t.y = f.y; t.yawDeg = f.yawDeg; snap(); if (v) { v.hidden = false; v.anim = 'idle'; } }
+  function place() { t.x = f.x; t.y = f.y; t.yawDeg = f.yawDeg; snap(); if (v) { v.hidden = false; setAnim('idle'); } }
   function hideNow() {
     api.hidden = true;
     if (v) v.hidden = true;
@@ -93,7 +99,7 @@ export function createNpcWalk(world, id, ctx = {}) {
   }
   function finish() {
     api.active = false; api.done = true; api.waiting = false;
-    if (v) v.anim = 'idle';
+    if (v) setAnim('idle');
     if (opts.hideAtEnd) hideNow();
     if (opts.onArrive) opts.onArrive(name);
     if (ctx.emit) ctx.emit('npc:walked', { id, walk: name });

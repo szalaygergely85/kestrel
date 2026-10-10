@@ -478,7 +478,9 @@ try {
     };
     const MARK_ENT = { noteKeepLight: 'tower.noteKeepLight' }; // level props are world entities '<placementId>.<propId>'
     const markResolve = (id, out) => { const h = markWorld && markWorld.get(MARK_ENT[id] || id), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const at = MARK_AT[id] || tr, gz = markWorld.heightAt(at.x, at.y); out.x = at.x; out.y = at.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y + (MARK_DY[id] || 0); out.z = t.z + (MARK_TOP[id] || 1.55); return true; };
-    registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle('questMark') });
+    // MARK-GIVER-ONLY-01 (owner): '!' / '?' mean a quest GIVER only; objective/waypoint steps get no world mark (the compass points there). Flip to re-enable if a distinct waypoint symbol is designed.
+    const OBJECTIVE_MARKS = false;
+    if (OBJECTIVE_MARKS) registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle('questMark') });
     // QG-04: giver markers over Burl: '!' while his quest is available, '?' while ready, none while active/done (book.giverMarks)
     const gAvail = [], gReady = [];
     for (const [model, list] of [['questMark', gAvail], ['questMarkReady', gReady]]) {
@@ -1009,7 +1011,7 @@ async function runGame(mode, cinematic = null) {
     for (const st of w.structures) { const m = st.level && st.level.def && st.level.def.markers && st.level.def.markers[markerId]; if (m) { localToWorld(st.frame, m.x, m.y, m.z || 0, o); return o; } }
     return null;
   }
-  const vLocked = () => !!(vitals && vitals.inputLocked) || (travel && travel.inputLocked) || deathFlow.inputLocked || !!(dialogueCtl && dialogueCtl.locked); // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
+  const vLocked = () => !!(vitals && vitals.inputLocked) || (travel && travel.inputLocked) || deathFlow.inputLocked; // DIALOGUE-LOCK-01 (owner: never lock during game): dialogue/notes/chapter card/notices no longer lock movement or look; only menus, death, travel fade and the intro wake do. // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
@@ -1610,7 +1612,7 @@ async function runGame(mode, cinematic = null) {
 
     // US-091b: the pack screen. Steps while paused too; eats every key edge while open (so M / S / N stay quiet).
     if (barks && mode === 'world' && !ending && !ch1Hidden) barks.step(dt); // CH1-06: early, before the dialogue step
-    if (dialogueCtl && mode === 'world' && playerHandle && !ending) dialogueCtl.step(dt, input, look ? look.locked : undefined); // DIALOGUE-01b2: early, so the lock covers the closing key press
+    if (dialogueCtl && mode === 'world' && playerHandle && !ending) { dialogueCtl.step(dt, input, look ? look.locked : undefined); const pt0 = playerHandle.data.transform; dialogueCtl.closeIfFar(pt0.x, pt0.y); } // DIALOGUE-01b2: early, so the lock covers the closing key press
     if (invView && mode === 'world' && playerHandle) {
       invView.step(dt, input, !ending && !(craftView && craftView.isOpen) && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look
         && !(vitals && (vitals.dead || vLocked())) && !(questUiActive && wakeOut.inputLocked));
@@ -1647,7 +1649,7 @@ async function runGame(mode, cinematic = null) {
       mPressedEdge = input.pressed(gameKeys.map);
       if (travel) travel.step(dt);
       stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec, !!(look && look.locked)); // BUG-NOTE-ESC-01
-      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked();
+      uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || invOpen || cardOpen || vLocked();
     }
     // US-038b: settings panel (S from pause, or its own entry point)
     // canOpen requires the pause overlay to actually be up (!look.locked) -
@@ -1660,7 +1662,7 @@ async function runGame(mode, cinematic = null) {
       if (up) { for (const code of PAUSE_KEYS) if (input.pressed(code) && pauseMenu.handleKey(code)) { input.consumePressed(); break; } }
     }
     updateSettings(dt, input, { assets, engine, look, canOpen: false });
-    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked() || !!(chapterCard && chapterCard.isLocked());
+    uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || invOpen || cardOpen || vLocked(); // DIALOGUE-LOCK-01: note panel + chapter card no longer lock
     titleMenuActive = !!(menuHost && menuHost.active);
     ch1Hidden = isCaptureOrBench || !saveEnabled || titleMenuActive || ending || invOpen || cardOpen || isMapOpen() || isSettingsOpen() || isNoteOpen() || qlIsOpen() || !!(dialogueCtl && dialogueCtl.open) || !!(vitals && vitals.dead); // CH1-MOUNT: notices/barks hidden under any menu/dialogue
     notice.update(dt, ch1Hidden); if (chapterCard && !ending) chapterCard.update(dt); // CH1-04a / CH1-09
