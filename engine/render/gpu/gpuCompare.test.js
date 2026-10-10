@@ -363,8 +363,9 @@ const geom = (f, opts) => compareGeometry(f.gbuf, f.depth, f.giBuf, f.gaBuf, f.d
 {
   const table = bindShading(palette, detailPass, 1), id = table.idFor('stone');
   const boundary = table.records[id].v2.grid.v;
+  const uMid = 0.25 * table.records[id].v2.grid.u; // mid-block in both staggered courses (stagger .5)
   const makeTexel = (n = N) => {
-    const f = makeGeomFixture(2, id, 123, 0.2, boundary - 0.00005, 10, n);
+    const f = makeGeomFixture(2, id, 123, uMid, boundary - 0.00005, 10, n);
     Object.assign(f.gbuf, { face: new Uint8Array(n), z: new Float32Array(n), aoD: new Float32Array(n).fill(Infinity),
       dudx: new Float32Array(n).fill(0.01), dvdx: new Float32Array(n), dudy: new Float32Array(n), dvdy: new Float32Array(n).fill(0.01) });
     for (let i = 0; i < n; i++) f.gaBuf[i * 4 + 3] = f32Bits(Infinity);
