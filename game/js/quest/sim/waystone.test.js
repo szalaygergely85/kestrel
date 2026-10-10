@@ -62,3 +62,31 @@ assert.equal(vitals.dead,false);assert.equal(live.player.transform.x,20);assert.
 assert.equal(live.player.transform.z,4);assert.equal(live.player.transform.yawDeg,180);assert.equal(live.player.components.health.hp,6);
 assert.equal(live.player.components.body.vx,0,'vitals owns body reset');
 console.log('waystone: full healing, autosave ordering, last-point/fallback, canonical restore, deterministic sequence and existing vitals respawn PASS');
+// WS1-06a: entity-driven points, pose anchors, list/anchor, old-save seed, round-trip, canWake, 0 alloc.
+{
+  const defs=[{id:'ws_b',label:'Relay',kind:'relay',order:2},{id:'waystone',label:'Meadow',kind:'stone',order:1}];
+  const mk=(restored,canWake)=>{const world=restored?.world||World.load({name:'ws_pts',terrain:null,structures:[],entities:[]},assets,{});
+    const player=world.get('player')?.data||world.spawn('unit',spawn,{health:{hp:2,max:6,invuln:0},body:{vx:0,vy:0,vz:0,eyeH:1.6,grounded:true}},'player').data;
+    const saves=[];return {world,player,saves,sim:createWaystone(world,player,{points:defs,spawn,canWake,requestSave:()=>saves.push(1)})};};
+  const t=mk();assert.deepEqual(t.world.state['waystone.points'],{},'fresh game: empty map');
+  const out=[];assert.equal(t.sim.list(out),2);assert.deepEqual(out.map(e=>[e.id,e.touched]),[['waystone',false],['ws_b',false]],'ordered by order');
+  assert.equal(t.sim.anchor('ws_b'),null);assert.equal(t.sim.touch('ws_b'),false,'no pose, no fixed pos');assert.equal(t.sim.touch('nope',spawn),false);
+  const pose={x:5,y:6,z:7,yawDeg:45};t.player.components.health.hp=1;
+  assert.equal(t.sim.touch('ws_b',pose),true);pose.x=999;
+  assert.deepEqual(t.sim.anchor('ws_b'),{x:5,y:6,z:7,yawDeg:45},'anchor is a copy');assert.equal(t.saves.length,1);assert.equal(t.player.components.health.hp,6);
+  t.sim.touch('ws_b',{x:5,y:6,z:7,yawDeg:45});assert.equal(t.saves.length,2,'double touch = another save, one entry');
+  assert.deepEqual(Object.keys(t.world.state['waystone.points']),['ws_b']);assert.equal(t.sim.snapshot().waystoneId,'ws_b');
+  t.sim.list(out);assert.equal(out[1].touched,true);assert.equal(out[1].x,5);assert.equal(out[0].touched,false);
+  const bytes=stringifyGameSave(collectSave(t.world)),l=mk(applySave(parseGameSave(bytes),assets));
+  assert.deepEqual(l.sim.anchor('ws_b'),{x:5,y:6,z:7,yawDeg:45},'round trip');assert.equal(stringifyGameSave(collectSave(l.world)),bytes);
+  assert.equal(mk(null,id=>id!=='ws_b').sim.canWake('ws_b'),false);assert.equal(t.sim.canWake('ws_b'),true,'default gate open');assert.equal(t.sim.canWake('x'),false);
+  // old save: waystone state without a points map seeds the list
+  const old=mk();delete old.world.state['waystone.points'];old.world.state.waystone={waystoneId:'waystone',pos:{x:9,y:8,z:7,yawDeg:6}};
+  const o=createWaystone(old.world,old.player,{points:defs,spawn,requestSave(){}});
+  assert.deepEqual(o.anchor('waystone'),{x:9,y:8,z:7,yawDeg:6},'old save seeded');assert.equal(o.isTouched('ws_b'),false);assert.equal(o.isTouched('constructor'),false);
+  // 0 alloc: touch + list + anchor in a loop
+  global.gc&&global.gc();const m0=process.memoryUsage().heapUsed;
+  for(let i=0;i<20000;i++){t.sim.touch('ws_b',pose);t.sim.list(out);t.sim.anchor('ws_b');}
+  const grown=process.memoryUsage().heapUsed-m0;assert.ok(grown<2e6,'steady loop does not allocate per call ('+grown+')');
+  console.log('waystone points (WS1-06a): PASS');
+}

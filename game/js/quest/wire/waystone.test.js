@@ -32,3 +32,17 @@ const pose = r.hooks.respawn(); assert.deepEqual(pose, { x: 20, y: 30, z: 4, yaw
 // re-arm: the seam only fires again after leaving; a second event is a second touch (one more save), not a double within one event
 r.hooks.emitSimple('prop:touched', 'waystone', 'waystone'); assert.equal(r.saves(), 2);
 console.log('waystone wire: ok');
+// WS1-06a: entity-driven points; relay id touches via the same wire; unknown ids ignored.
+{
+  const world = World.load({ name: 'ws_wire2', terrain: null, structures: [], entities: [] }, assets, {});
+  world.spawn('unit', { x: 10, y: 10, z: 0 }, { waystone: { id: 'waystone', label: 'Meadow stone', kind: 'stone', order: 1 } }, 'endMarker');
+  world.spawn('unit', { x: 90, y: 10, z: 0 }, { waystone: { id: 'ws_roadBend', label: 'Road-bend relay', kind: 'relay', order: 2 } }, 'relayBend');
+  const r = rig(world);
+  assert.deepEqual([r.wire.sim.has('waystone'), r.wire.sim.has('ws_roadBend')], [true, true]);
+  r.player.transform.x = 89; r.player.transform.y = 11; r.player.transform.z = 0;
+  r.hooks.emitSimple('prop:touched', 'ws_roadBend', 'relay', { x: 90, y: 10, z: 0 });
+  assert.equal(r.saves(), 1); assert.deepEqual(r.world.state['waystone.points'].ws_roadBend, { x: 89, y: 11, z: 0, yawDeg: 0 });
+  r.hooks.emitSimple('prop:touched', 'ghost', 'relay'); assert.equal(r.saves(), 1, 'unknown id ignored');
+  assert.deepEqual(r.hooks.respawn(), { x: 89, y: 11, z: 0, yawDeg: 0 }, 'respawn at last touched');
+  console.log('waystone wire points: ok');
+}
