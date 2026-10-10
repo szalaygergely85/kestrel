@@ -261,6 +261,7 @@ export { createWaterfalls, collectWaterfallDefs } from './world/waterfalls.js';
 export { bindDecals, drawDecals } from './ui/decals.js';
 export { LazyMeshStore, ensureMesh, requestMesh, meshReady } from './mesh/lazyMesh.js'; // MESH-LOAD-01
 export * from './chargen/index.js'; // CHARGEN-02..05 (38.29)
+export { riggedFromGlb } from './chargen/fromGlb.js'; // RIG-02a (38.32); not via chargen/index.js: loading gltf.js there shifts mesh.test's heap-based alloc probe
 
 // ---- fauna (WILD-03, architecture.md 38.31) -----------------------------------
 export { compileFaunaDef } from './fauna/faunaDef.js';
