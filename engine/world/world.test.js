@@ -297,7 +297,7 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
 
   // -- world-level triggers: 3 shapes, structId: null (23.2/23.5) --
   const worldTriggers = world.triggers.filter((t) => t.structId === null);
-  ok('world_m1 has the 6 content world-level triggers', worldTriggers.length === 6, worldTriggers.map((t) => t.id).join(','));
+  ok('world_m1 has the 9 content world-level triggers', worldTriggers.length === 9, worldTriggers.map((t) => t.id).join(',')); // +3 QL-14 areas (riverBank, fordWest, northLook)
   const endRec = worldTriggers.find((t) => t.id === 'end');
   const hintStoneRec = worldTriggers.find((t) => t.id === 'hintStone');
   const boundsEdgeRec = worldTriggers.find((t) => t.id === 'boundsEdge');
@@ -359,12 +359,12 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   {
     const state = serialize(world);
     ok('serialize writes world.bounds', state.bounds && state.bounds.x === world.bounds.x && state.bounds.r === world.bounds.r);
-    ok('serialize writes world.triggers (the world-level trigger DEFS)', Array.isArray(state.triggers) && state.triggers.length === 6);
+    ok('serialize writes world.triggers (the world-level trigger DEFS)', Array.isArray(state.triggers) && state.triggers.length === 9);
 
     const world2 = deserialize(state, assets, {});
     ok('deserialize restores world.bounds', world2.bounds && world2.bounds.x === world.bounds.x && world2.bounds.r === world.bounds.r);
     const world2Triggers = world2.triggers.filter((t) => t.structId === null);
-    ok('deserialize rebuilds the same 6 world-level triggers', world2Triggers.length === 6, world2Triggers.map((t) => t.id).join(','));
+    ok('deserialize rebuilds the same 9 world-level triggers', world2Triggers.length === 9, world2Triggers.map((t) => t.id).join(','));
     ok('deserialize re-bakes the near band', world2.terrain.nearReady === true);
   }
 }

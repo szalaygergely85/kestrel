@@ -2,7 +2,7 @@
 // xorshift32 stream, so the same kit + seed gives the same recipe on every platform. Optional kit.random weights:
 //   {base:{id:w}, age:{young:w,..}, height:{"-4":w,..}, skin:{ramp:w}, eyes:{ramp:w}, <slot>:{none:w, <itemId>:w},
 //    ramp:{<group>:{ramp:w}}}   a missing entry weighs 1 (height: bell-shaped default, slots: "none" weighs 1).
-import { SLOTS, dyeGroupOf } from './kit.js';
+import { SLOTS, RANDOM_SLOTS, dyeGroupOf } from './kit.js';
 import { slotItems, AGES, HEIGHT_MIN, HEIGHT_MAX } from './recipe.js';
 
 const HEIGHT_DEFAULT = [1, 2, 4, 6, 8, 6, 4, 2, 1]; // -4..4
@@ -45,7 +45,7 @@ export function randomRecipe(kit, seed) {
     eyes: choose(next, Object.keys(ramps.eyes || {}), W.eyes),
   };
   r.height = Number(choose(next, heights, W.height, (h) => HEIGHT_DEFAULT[Number(h) - HEIGHT_MIN]));
-  for (const slot of SLOTS) {
+  for (const slot of RANDOM_SLOTS) {
     const ids = [...new Set(slotItems(kit, slot).map((i) => i.id))];
     const id = choose(next, ['none', ...ids], W[slot]);
     const g = dyeGroupOf(slot);

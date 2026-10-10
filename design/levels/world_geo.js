@@ -243,7 +243,50 @@
     return U.fbm(x / 140, y / 140, G.seed + 43, 2, 0.5, 2) > 0.52 ? 'grassTall' : 'grass';
   }
 
-  G.util = { geoHeight: geoHeight, biomeAt: biomeAt, mask: mask, coastSD: coastSD, regionAt: regionAt, riverHalfWidth: riverHalfWidth,
+
+  // ---- MAP-01c (38.42): biome table for the scatter (ids >= 1; 0 = meadow = today's placements) + area fields ----
+  // forest.fill <= 0.72 keeps a tree band under the ~4k visible-tree cap (cellM 6.5 -> 2.37 cells/100 m2 x fill; budget printed by
+  // geoBiomes.test.js). species weights name existing recipe species (CommonTree/Pine meshes); TwistedTree/DeadTree have no LOD1 or
+  // measured trunk yet, so those biomes use stand-ins (see `standIn`). scale/hueJitter are data for a later placement channel.
+  var CT = function (a) { var o = {}; a.forEach(function (w, i) { o['quaternius/CommonTree_' + (i + 1)] = w; }); return o; };
+  var PN = function (a) { var o = {}; a.forEach(function (w, i) { o['quaternius/Pine_' + (i + 1)] = w; }); return o; };
+  var mix = function (a, b) { var o = {}, k; for (k in a) o[k] = a[k]; for (k in b) o[k] = b[k]; return o; };
+  G.biomes = {
+    1: { name: 'broadleafForest', blendM: 24, forest: { fill: 0.72, species: CT([14, 14, 12, 10, 10]) }, detail: { rocks: 1.2 }, scale: [0.85, 1.2], hueJitter: 0.1 },
+    2: { name: 'pineForest', blendM: 30, forest: { fill: 0.72, species: mix(PN([10, 10, 8, 6, 6]), CT([2, 2, 1, 0, 0])) }, detail: { rocks: 1.0 }, scale: [0.9, 1.4], hueJitter: 0.08 },
+    3: { name: 'twistedWood', blendM: 20, standIn: 'TwistedTree_*', forest: { fill: 0.72, species: mix(CT([0, 0, 6, 14, 14]), PN([0, 0, 8, 0, 0])) }, detail: { rocks: 1.5 }, scale: [1.0, 1.6], hueJitter: 0.12 },
+    4: { name: 'ashMile', blendM: 40, standIn: 'DeadTree_*', forest: { fill: 0.13, species: CT([0, 0, 0, 0, 1]) }, detail: { rocks: 0.6 }, scale: [0.8, 1.1], hueJitter: 0.15 },
+    5: { name: 'flowerFields', blendM: 30, forest: { fill: 0.04, species: CT([1, 1, 1, 0, 0]) }, detail: { rocks: 0.3 }, scale: [0.9, 1.3], hueJitter: 0.4 },
+    6: { name: 'grassFields', blendM: 30, forest: { fill: 0.06, species: CT([1, 1, 1, 0, 0]) }, detail: { rocks: 0.3 }, scale: [1.0, 1.5], hueJitter: 0.2 },
+    7: { name: 'beachDunes', blendM: 60, forest: { fill: 0 }, detail: { rocks: 0.1 }, scale: [0.8, 1.2], hueJitter: 0.1 },
+    8: { name: 'fen', blendM: 40, forest: { fill: 0.1, species: CT([0, 0, 0, 1, 1]) }, detail: { rocks: 0.2 }, scale: [1.0, 1.5], hueJitter: 0.1 },
+    9: { name: 'alpineMeadow', blendM: 20, forest: { fill: 0.05, species: PN([1, 1, 1, 1, 1]) }, detail: { rocks: 0.5 }, scale: [0.8, 1.1], hueJitter: 0.08 }
+  };
+  var KIND_BIOME = { broadleaf: 1, pine: 2, twisted: 3, dead: 4 };
+  function rectSd(r, x, y) {   // signed distance to an axis rect (negative inside)
+    var cx = (r[0] + r[2]) / 2, cy = (r[1] + r[3]) / 2, qx = Math.abs(x - cx) - (r[2] - r[0]) / 2, qy = Math.abs(y - cy) - (r[3] - r[1]) / 2;
+    return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0);
+  }
+  // {biomeId: sdf(x, y)}: union (min) of the region rects of one biome; beach strip along the 'beach' coast; fen = marsh ellipse.
+  // The catch-all 'heartland' stays biome 0. Alpine/Downs override the pine/broadleaf kind of their region.
+  function biomeAreas() {
+    var rects = {}, id, i;
+    for (i = 0; i < G.regions.length; i++) {
+      var R = G.regions[i];
+      if (R.id === 'heartland' || !R.forest && R.id !== 'downs') continue;
+      id = R.id === 'downs' ? 5 : R.id === 'alpine' ? 9 : KIND_BIOME[R.forest.kind];
+      if (id) (rects[id] = rects[id] || []).push(R.r);
+    }
+    var out = {};
+    Object.keys(rects).forEach(function (k) { var L = rects[k]; out[k] = function (x, y) { var b = 1e9; for (var j = 0; j < L.length; j++) { var d = rectSd(L[j], x, y); if (d < b) b = d; } return b; }; });
+    out[7] = function (x, y) { var c = coastSD(x, y); return c.kind === 'beach' ? c.sd - (G.coast.beachWidth + 30) : 1e3; };
+    out[8] = function (x, y) { var M = G.marsh; return (ell(M, x, y) - 1) * Math.min(M.rx, M.ry); };
+    return out;
+  }
+  // far = ASSETS.levels.overworld_far.util
+  function installBiomes(far) { return far.setGeoBiomes(G.biomes, biomeAreas()); }
+
+  G.util = { biomeAreas: biomeAreas, installBiomes: installBiomes, geoHeight: geoHeight, biomeAt: biomeAt, mask: mask, coastSD: coastSD, regionAt: regionAt, riverHalfWidth: riverHalfWidth,
              wallX: function (y) { return G.wall.x0 + G.wall.amp * Math.sin(y / G.wall.period); }, ell: ell, lineDist: lineDist };
   root.ASSETS.levels.world_geo = G;
 })();

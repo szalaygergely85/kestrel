@@ -44,9 +44,9 @@ export function createQuestLog(def, {hudWidth=60,width=72,fg='#e8e2d0',bg='#0a0b
 
 // QG-05 (D-058, 38.35 item 8): quest log SCREEN over the quest book, in the pause/title menu skin (uiStyle.menu).
 // Rows (strings) are rebuilt only on open, key input and a changed book.version; draw() never formats or allocates.
-export const QUEST_LOG_KEYS = ['ArrowUp', 'ArrowDown', 'KeyW', 'KeyS', 'ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'Tab', 'KeyE', 'Backspace', 'Enter', 'KeyJ', 'Escape', 'KeyX'];
-export const QUEST_LOG_TEXT = Object.freeze({ header: 'PENCIL NOTES', empty: 'Nothing yet. Not nothing.', active: 'Active', abandon: '[X] Abandon quest', abandonSure: '[X] again to abandon (progress resets)', done: 'Done', main: '(main)', footer: 'W/S select  E open  A/D main/side', footerDetail: 'E back  J close', giver: 'Given by: ', reward: 'Reward: ', tabs: ['[ MAIN ]    SIDE  ', '  MAIN    [ SIDE ]'] });
-const READY = 3, DONE = 4, LIST_TOP = 6, LIST_ROWS = 14;
+export const QUEST_LOG_KEYS = ['ArrowUp', 'ArrowDown', 'KeyW', 'KeyS', 'ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'Tab', 'KeyE', 'Backspace', 'Enter', 'KeyJ', 'Escape', 'KeyX', 'KeyT'];
+export const QUEST_LOG_TEXT = Object.freeze({ header: 'PENCIL NOTES', empty: 'Nothing yet. Not nothing.', active: 'Active', abandon: '[X] Abandon quest', track: '[T] Track this quest', tracked: '[T] Tracked (compass + objective)', offered: 'Offered', talkTo: 'Talk to ', abandonSure: '[X] again to abandon (progress resets)', done: 'Done', main: '(main)', footer: 'W/S select  E open  A/D main/side', footerDetail: 'E back  J close', giver: 'Given by: ', reward: 'Reward: ', tabs: ['[ MAIN ]    SIDE  ', '  MAIN    [ SIDE ]'] });
+const AVAILABLE = 1, READY = 3, DONE = 4, LIST_TOP = 6, LIST_ROWS = 14;
 
 /**
  * @param {any} book createQuestBook() result
@@ -54,7 +54,7 @@ const READY = 3, DONE = 4, LIST_TOP = 6, LIST_ROWS = 14;
  * CH1-09: a DONE main quest (index 0) is listed as `doneTitle` ("Beyond the Wall"); Enter on it closes the log and calls
  * `onJournal(0)` (main.js re-opens the chapter journal). Without `onJournal`, Enter just closes like before.
  */
-export function createQuestLogScreen(book, { style = null, text = {}, width = 72, doneTitle = 'Beyond the Wall', onJournal = null } = {}) {
+export function createQuestLogScreen(book, { style = null, text = {}, width = 72, doneTitle = 'Beyond the Wall', onJournal = null, giverName = (id) => id } = {}) {
   const T = { ...QUEST_LOG_TEXT, ...text }, W = width - 8;
   const colour = key => (style && (style.hex[key] || style.bg[key])) || '#e8e2d0';
   const fg = style ? colour(style.row.normal.fg) : '#e8e2d0', bg = style ? style.bg.plate : '#0a0b10';
@@ -72,7 +72,10 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     const n = book.count, done = [];
     for (let i = 0; i < n; i++) { const s = book.status(i); if ((s === 2 || s === READY) && isMain(i) === (tab === 0)) quests.push(i); }
     quests.sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : b - a));
-    const nActive = quests.length;
+    const nActive = quests.length, offered = [];
+    for (let i = n - 1; i > 0; i--) if (book.status(i) === AVAILABLE && isMain(i) === (tab === 0)) offered.push(i); // QL-03: offered = unlocked but not accepted
+    for (const i of offered) quests.push(i);
+    const nOffered = nActive + offered.length;
     for (let i = n - 1; i >= 0; i--) if (book.status(i) === DONE && isMain(i) === (tab === 0)) done.push(i);
     for (const i of done) quests.push(i);
     if (sel >= quests.length) sel = Math.max(0, quests.length - 1);
@@ -83,6 +86,8 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
       lines.push({ kind: 'head', text: ascii(def.title || def.id) + (s === DONE ? ' (' + T.done + ')' : '') });
       if (def.giver && def.giver.npc) lines.push({ kind: 'head', text: T.giver + ascii(def.giver.npc) });
       if (s === READY && def.returnText) lines.push({ kind: 'return', text: '> ' + clipped(ascii(def.returnText), W - 8) });
+      if (s === AVAILABLE) lines.push({ kind: 'return', text: '> ' + clipped(T.talkTo + ascii(String(giverName(book.giverOf ? book.giverOf(i) : ''))), W - 8) });
+      if (i > 0 && (s === 2 || s === READY) && book.track) lines.push({ kind: 'return', text: '  ' + (book.tracked() === i ? T.tracked : T.track) });
       const rows = book.objectives(i, scratch);
       for (let r = 0; r < rows.length; r++) {
         const row = rows[r], mark = row.status === 'complete' ? '[x] ' : row.status === 'active' ? '[>] ' : '[ ] ';
@@ -93,12 +98,14 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
       top = 0; return;
     }
     for (let k = 0; k < quests.length; k++) {
-      const i = quests[k], isDone = k >= nActive, head = isDone ? T.done : T.active;
+      const i = quests[k], isOffered = k >= nActive && k < nOffered, isDone = k >= nOffered, head = isDone ? T.done : isOffered ? T.offered : T.active;
       if (head !== lastHeader) { lines.push({ kind: 'head', text: head }); lastHeader = head; }
       const def = book.def(i), s = book.status(i);
       if (k === sel) selLine = lines.length;
       lines.push({ kind: 'quest', k, text: ascii((isDone && i === 0 && doneTitle) || def.title || def.id) + (i === 0 ? ' ' + T.main : ''), done: isDone });
       if (k !== sel) continue;
+      if (isOffered) { lines.push({ kind: 'return', text: '  > ' + clipped(T.talkTo + ascii(String(giverName(book.giverOf ? book.giverOf(i) : '')) ), W - 8) }); continue; }
+      if (i > 0 && !isDone && book.track) lines.push({ kind: 'return', text: '  ' + (book.tracked() === i ? T.tracked : T.track) });
       if (s === READY && def.returnText) lines.push({ kind: 'return', text: '  > ' + clipped(ascii(def.returnText), W - 8) });
       if (book.canAbandon && book.canAbandon(def.id)) lines.push({ kind: 'return', text: '  ' + (sure ? T.abandonSure : T.abandon) });
       const rows = book.objectives(i, scratch);
@@ -137,6 +144,11 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
       if (!id || !book.canAbandon || !book.canAbandon(id)) return true;
       if (!sure) { sure = true; rebuild(); return true; }
       sure = false; book.abandon(id); rebuild(); return true;
+    }
+    if (code === 'KeyT') { // QL-03: pin the selected active side quest as THE tracked one (HUD objective + compass); again = back to newest
+      const i = quests[sel];
+      if (i > 0 && (book.status(i) === 2 || book.status(i) === READY) && book.track) { sure = false; book.track(book.tracked() === i ? null : book.def(i).id); rebuild(); }
+      return true;
     }
     sure = false;
     const d = code === 'ArrowUp' || code === 'KeyW' ? -1 : code === 'ArrowDown' || code === 'KeyS' ? 1 : 0;

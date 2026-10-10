@@ -474,7 +474,19 @@
       frame(["','", "'|'"], ['TtT', 'tTt']), frame(["' '", '. .'], ['T T', 'u u']), frame(['.  ', '  .'], ['t  ', '  u'])
     ] } } } }
   };
-  A.m3Sprites = { pickupHp: pickupHp, pickupMp: pickupMp, strawPuff: strawPuff };
+  // QL-05 berrySprig: the blue-sprig quest pickup (replaces the pickupMp placeholder). A leafy sprig with blue berries; lit, not emissive.
+  var berrySprig = {
+    name: 'berrySprig', displayName: 'blue sprig', billboard: true, directions: ['S'],
+    desc: 'QL-05 sq.burl.blue pickup: a green sprig hung with blue berries (mana palette, lit).',
+    size: { w: 7, h: 5 }, anchor: { x: 3, y: 4 }, world: { w: 0.5, h: 0.5 },
+    keys: { O: { c: 'manaLight' }, m: { c: 'mana' }, e: { c: 'leafLight' }, f: { c: 'leaf' }, s: { c: 'leafDark' } },
+    animations: { idle: { durations: [1000], loop: true, frames: [frame(
+      ['  o o  ', ' /o|o\\ ', ' \\ | / ', '  \\|/  ', '   |   '],
+      ['  O m  ', ' fmsOf ', ' e s e ', '  fsf  ', '   s   '])] } },
+    lods: { half: { size: { w: 3, h: 3 }, anchor: { x: 1, y: 2 }, animations: { idle: { durations: [1000], loop: true, frames: [frame(
+      ['o o', '\\|/', ' | '], ['O m', 'fsf', ' s '])] } } } }
+  };
+  A.m3Sprites = { pickupHp: pickupHp, pickupMp: pickupMp, strawPuff: strawPuff, berrySprig: berrySprig };
 
   // View-only pickup behaviour (presentPickups, architecture 30.2 US-080b: "the bob and the last-180-step blink are
   // view-only, no sim state"). Steps are the 60 Hz sim steps.

@@ -103,6 +103,10 @@
     7: { group: 'feet', shade: 'light' }, 8: { group: 'feet', shade: 'base' }, 9: { group: 'feet', shade: 'dark' },
     W: { group: 'outer', shade: 'light' }, w: { group: 'outer', shade: 'base' }, m: { group: 'outer', shade: 'dark' },
     H: { group: 'hat', shade: 'light' }, h: { group: 'hat', shade: 'base' }, j: { group: 'hat', shade: 'dark' },
+    // EQ-05 gear slots (hands / belt / cloak): one dye group each, so an equipped shell's ramp applies to its own paint
+    x: { group: 'hands', shade: 'light' }, z: { group: 'hands', shade: 'base' }, t: { group: 'hands', shade: 'dark' },
+    B: { group: 'belt', shade: 'light' }, N: { group: 'belt', shade: 'base' }, O: { group: 'belt', shade: 'dark' },
+    C: { group: 'cloak', shade: 'light' }, D: { group: 'cloak', shade: 'base' }, E: { group: 'cloak', shade: 'dark' },
     // CHARGEN-25 pupil: near-black, the same for every skin tone / eye colour (existing key hair_black_dark #100d0c)
     P: { fixed: 'hair_black_dark', keep: 9 },
     // CHARGEN-26 (fixed existing materials, valid for every skin tone): eye highlight, chainmail light / dark,
@@ -122,7 +126,7 @@
     return o;
   }
   function buildRamps(CG) {
-    var r = { skin: {}, lips: {}, eyes: {}, hair: {}, top: {}, legs: {}, feet: {}, outer: {}, hat: {} };
+    var r = { skin: {}, lips: {}, eyes: {}, hair: {}, top: {}, legs: {}, feet: {}, outer: {}, hat: {}, hands: {}, belt: {}, cloak: {} };
     var id, g;
     for (id in CG.skin) {
       var s = CG.skin[id];
@@ -132,7 +136,7 @@
     for (id in CG.eyes) r.eyes[id] = { iris: CG.eyes[id].iris };
     var hair = firstThen(CG.hair, 'darkbrown');
     for (id in hair) r.hair[id] = { light: hair[id].light, base: hair[id].base, dark: hair[id].dark, brow: hair[id].dark };
-    ['top', 'legs', 'feet', 'outer', 'hat'].forEach(function (grp) {
+    ['top', 'legs', 'feet', 'outer', 'hat', 'hands', 'belt', 'cloak'].forEach(function (grp) {
       var dyes = firstThen(CG.dyes, grp === 'feet' ? 'walnut' : 'undyed');
       for (g in dyes) r[grp][g] = { light: dyes[g].light, base: dyes[g].base, dark: dyes[g].dark };
     });
@@ -651,7 +655,15 @@
       // short skirt over the trousers (Hips + UpperLeg t < 0.3 = z 24-27); thick 0 so the arm / hip gap stays open.
       // Patches, strap, ragged hem come from the `mended` decal (beard slot)
       { id: 'tunic', slot: 'top', regions: [{ bone: 'Spine', t0: 0, t1: 1 }, { bone: 'Chest', t0: 0, t1: 1 }, { bone: 'Hips', t0: 0, t1: 1 }]
-          .concat(sides('Shoulder', 0, 1), sides('UpperArm', 0, 1), sides('LowerArm', 0, 0.8), sides('UpperLeg', 0, 0.3)), thick: 0, paint: '2' }
+          .concat(sides('Shoulder', 0, 1), sides('UpperArm', 0, 1), sides('LowerArm', 0, 0.8), sides('UpperLeg', 0, 0.3)), thick: 0, paint: '2' },
+      // ---- EQ-05 gear shells (equip.shell ids; never in the random weights, never in a look)
+      // gloves: both hands, one cell thick
+      { id: 'gloves', slot: 'hands', regions: sides('Hand', 0, 1), thick: 1, paint: 'z' },
+      // girdle: the top two hip rows (like `belt`, but its own slot so it stacks with a tabard)
+      { id: 'girdle', slot: 'belt', regions: [{ bone: 'Hips', t0: 0, t1: 0.25 }], thick: 1, paint: 'N' },
+      // cloak: shoulders, chest and spine, one cell thick (over everything else)
+      { id: 'cloak', slot: 'cloak', regions: [{ bone: 'Chest', t0: 0, t1: 1 }, { bone: 'Spine', t0: 0, t1: 1 }].concat(sides('Shoulder', 0, 1)),
+        thick: 1, paint: 'D' }
     ];
   }
   // random NPC weights (engine/chargen/random.js): trousers always, boots and hair mostly, shirt 3 in 4, belt 2 in 3,
@@ -1041,11 +1053,11 @@
       }
     };
   }
-  // preview twin of engine/chargen/compose.js at res 1/1 and height 0: base -> shells (legs, feet, top, outer) ->
+  // preview twin of engine/chargen/compose.js at res 1/1 and height 0: base -> shells (legs, feet, top, hands, belt, outer, cloak) ->
   // attachments (hair, beard, hat); no blocks, no elder overlay. Returns a decodeBase-like grid of SLOT CHARS (the shell
   // paint / attachment chars), so the preview colours it with resolveMat(kit, recipe, ch) like the base.
   // tools/chargen-kit.test.mjs pins it cell by cell to the engine's composeCharacter for kit.defaults.
-  var SHELL_SLOTS = ['legs', 'feet', 'top', 'outer'], ATTACH_SLOTS = ['hair', 'beard', 'hat'];
+  var SHELL_SLOTS = ['legs', 'feet', 'top', 'hands', 'belt', 'outer', 'cloak'], ATTACH_SLOTS = ['hair', 'beard', 'hat'];
   var NB6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
   function composePreview(kit, baseId, recipe) {
     var D = decodeBase(kit, baseId), S = D.size, B = kit.bases[baseId], N = S[0] * S[1] * S[2];
