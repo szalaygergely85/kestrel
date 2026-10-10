@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EQ-D1 equipment - shield, bow, arrow, quiver, icons</title>
+<style>
+  body { background: #07080c; color: #c8c2b0; font: 13px/1.35 Consolas, monospace; margin: 16px; }
+  h1 { font-size: 16px; color: #ffd24a; margin: 0 0 6px; }
+  h2 { font-size: 14px; color: #e8e2d0; margin: 18px 0 6px; }
+  .row { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+  .card { background: #0c0e14; border: 1px solid #22252e; padding: 8px; }
+  .card b { color: #e8e2d0; }
+  pre.scr { margin: 4px 0 0; font: 10px/13px Consolas, monospace; letter-spacing: 0; background: #0a0b10; }
+  pre.fp { font: 9px/12px Consolas, monospace; }
+  pre.icon { font: 20px/26px Consolas, monospace; margin: 0; background: #14161d; padding: 4px 6px; display: inline-block; }
+  label { margin-right: 12px; }
+  .dim { color: #6a6a78; }
+  button { background: #1a1d26; color: #e8e2d0; border: 1px solid #333846; margin: 2px; padding: 2px 8px; font: inherit; cursor: pointer; }
+  button.on { border-color: #ffd24a; color: #ffd24a; }
+</style>
+</head>
+<body>
+<h1>EQ-D1 equipment: shield, longbow, arrow, quiver, worn variants, icons</h1>
+<div>
+  <label>light azimuth <input id="laz" type="range" min="0" max="360" value="220"></label>
+  <label>light elevation <input id="lel" type="range" min="5" max="85" value="45"></label>
+  <label>orbit yaw <input id="yaw" type="range" min="0" max="360" value="30"></label>
+  <label><input id="spin" type="checkbox" checked> spin</label>
+  <span class="dim">CPU ray-march of the voxel data (material base colour + lambert + glyph ramp); the engine look comes from palette + detail-pass.</span>
+</div>
+
+<h2>Models (orbit view, 3/4 from the front)</h2>
+<div class="row" id="models"></div>
+
+<h2>First person (75 deg HFOV, 16:9, eye space per README 7.4)</h2>
+<div class="row">
+  <div class="card"><b>Shield (left forearm)</b>
+    <div>
+      <button data-sc="idle" class="on">idle</button><button data-sc="raise">raise 117 ms</button><button data-sc="lower">lower 150 ms</button><button data-sc="blocked">blocked</button>
+      <label>raiseFrac <input id="rf" type="range" min="0" max="100" value="0"></label>
+    </div>
+    <div class="dim" id="cov"></div>
+    <pre class="scr fp" id="fpShield"></pre>
+  </div>
+  <div class="card"><b>Bow (left hand, right hand draws)</b>
+    <div>
+      <button data-bc="idle" class="on">idle</button><button data-bc="raise">raise</button><button data-bc="draw">draw 0.8 s</button><button data-bc="hold">hold</button><button data-bc="release">release</button><button data-bc="lower">lower</button><button data-bc="dry">dry</button>
+      <label><input id="loopBow" type="checkbox" checked> auto cycle raise-draw-hold-release</label>
+    </div>
+    <div class="dim" id="bowInfo"></div>
+    <pre class="scr fp" id="fpBow"></pre>
+  </div>
+</div>
+
+<h2>Icons (5x3) - single and in a 7x4 quick-bar slot</h2>
+<div class="row" id="icons"></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../items.js"></script>
+<script src="../models/equipment.js"></script>
+<script>
+(function () {
+  'use strict';
+  var A = window.ASSETS, P = A.palette, VM = A.voxelModels;
+  var RGB = (P && P.rgb) || {};
+  var RAMPS = (P && P.ramps) || {};
+  var FALLBACK = { wood: '#8a5a32', wood_cut: '#c09a68', timber_old: '#7a6a58', iron: '#5c6068', iron_light: '#9aa0a8',
+    iron_dark: '#34373d', steel_edge: '#c4d0d8', steel_old: '#9aa0a8', leather: '#5a3820', rope: '#9a7a48',
+    linen_light: '#f6f1e4', linen_dark: '#6c685e', gore_red: '#b04a36', bronze: '#866044' };
+  function hex(h) { return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]; }
+  var matCache = {};
+  function mat(name) {
+    if (matCache[name]) return matCache[name];
+    var m = P && P.materials && P.materials[name], c, ramp;
+    if (m && RGB[m.base]) c = RGB[m.base]; else c = hex(FALLBACK[name] || '#ff00ff');
+    ramp = (m && RAMPS[m.ramp]) || RAMPS['default'] || ' .,:;-=+*o#%&@';
+    return (matCache[name] = { c: c, ramp: ramp, spec: (m && m.spec) || 0.1, missing: !m });
+  }
+  function hsh(x, y, z) { var h = (x * 73856093) ^ (y * 19349663) ^ (z * 83492791); h = Math.imul(h ^ (h >>> 13), 0x5bd1e995); return ((h ^ (h >>> 15)) >>> 0) % 1000 / 1000; }
+
+  // ---- rotation helpers (R = Rz * Ry * Rx, degrees) ----
+  var D = Math.PI / 180;
+  function rot(r, v) {
+    var x = v[0], y = v[1], z = v[2], c, s, t;
+    c = Math.cos(r[0] * D); s = Math.sin(r[0] * D); t = c * y - s * z; z = s * y + c * z; y = t;
+    c = Math.cos(r[1] * D); s = Math.sin(r[1] * D); t = c * x + s * z; z = -s * x + c * z; x = t;
+    c = Math.cos(r[2] * D); s = Math.sin(r[2] * D); t = c * x - s * y; y = s * x + c * y; x = t;
+    return [x, y, z];
+  }
+  function rotInv(r, v) {
+    var x = v[0], y = v[1], z = v[2], c, s, t;
+    c = Math.cos(-r[2] * D); s = Math.sin(-r[2] * D); t = c * x - s * y; y = s * x + c * y; x = t;
+    c = Math.cos(-r[1] * D); s = Math.sin(-r[1] * D); t = c * x + s * z; z = -s * x + c * z; x = t;
+    c = Math.cos(-r[0] * D); s = Math.sin(-r[0] * D); t = c * y - s * z; z = s * y + c * z; y = t;
+    return [x, y, z];
+  }
+  function norm(v) { var l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; }
+  function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+
+  // ---- DDA through the voxel grid (model cell space). Returns {ch, n:[...], t, x,y,z} or null ----
+  function march(vox, o, d) {
+    var S = vox.size, t0 = 0, t1 = 1e9, i, a, b, ta, tb;
+    for (i = 0; i < 3; i++) {
+      if (Math.abs(d[i]) < 1e-9) { if (o[i] < 0 || o[i] > S[i]) return null; continue; }
+      ta = (0 - o[i]) / d[i]; tb = (S[i] - o[i]) / d[i]; if (ta > tb) { a = ta; ta = tb; tb = a; }
+      if (ta > t0) t0 = ta; if (tb < t1) t1 = tb;
+    }
+    if (t0 > t1 || t1 < 0) return null;
+    var t = Math.max(t0, 0) + 1e-6, p = [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t];
+    var c = [Math.min(S[0] - 1, Math.max(0, Math.floor(p[0]))), Math.min(S[1] - 1, Math.max(0, Math.floor(p[1]))), Math.min(S[2] - 1, Math.max(0, Math.floor(p[2])))];
+    var st = [], tm = [], td = [], ax = -1;
+    for (i = 0; i < 3; i++) {
+      st[i] = d[i] > 0 ? 1 : -1;
+      td[i] = Math.abs(d[i]) < 1e-9 ? 1e9 : Math.abs(1 / d[i]);
+      tm[i] = Math.abs(d[i]) < 1e-9 ? 1e9 : t + ((d[i] > 0 ? c[i] + 1 - p[i] : p[i] - c[i]) / Math.abs(d[i]));
+    }
+    // entry face axis
+    var best = -1, bt = -1e9;
+    for (i = 0; i < 3; i++) if (Math.abs(d[i]) > 1e-9) { ta = ((d[i] > 0 ? 0 : S[i]) - o[i]) / d[i]; if (ta > bt) { bt = ta; best = i; } }
+    ax = best;
+    for (var guard = 0; guard < 400; guard++) {
+      var ch = vox.layers[c[2]][c[1]].charAt(c[0]);
+      if (ch !== '.') { var n = [0, 0, 0]; if (ax >= 0) n[ax] = -st[ax]; return { ch: ch, n: n, t: t, x: c[0], y: c[1], z: c[2] }; }
+      ax = tm[0] < tm[1] ? (tm[0] < tm[2] ? 0 : 2) : (tm[1] < tm[2] ? 1 : 2);
+      t = tm[ax]; c[ax] += st[ax]; tm[ax] += td[ax];
+      if (c[ax] < 0 || c[ax] >= S[ax]) return null;
+    }
+    return null;
+  }
+  function shade(vox, hit, L) {
+    var m = mat(vox.mats[hit.ch]);
+    var lam = Math.max(0, hit.n[0] * L[0] + hit.n[1] * L[1] + hit.n[2] * L[2]);
+    var v = 0.28 + 0.78 * lam + (hsh(hit.x, hit.y, hit.z) - 0.5) * 0.12;
+    var rgb = [Math.min(255, m.c[0] * v) | 0, Math.min(255, m.c[1] * v) | 0, Math.min(255, m.c[2] * v) | 0];
+    var lum = (0.3 * rgb[0] + 0.59 * rgb[1] + 0.11 * rgb[2]) / 255;
+    var ri = Math.max(1, Math.min(m.ramp.length - 1, Math.round(0.25 * m.ramp.length + lum * 0.85 * m.ramp.length)));
+    return { g: m.ramp.charAt(ri), c: rgb };
+  }
+  function esc(ch) { return ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch === '&' ? '&amp;' : ch; }
+  function toHtml(buf, cols, rows) {
+    var out = '', r, c, cell;
+    for (r = 0; r < rows; r++) {
+      for (c = 0; c < cols; c++) {
+        cell = buf[r * cols + c];
+        if (!cell) out += ' ';
+        else out += '<span style="color:rgb(' + cell.c.join(',') + ')' + (cell.bg ? ';background:' + cell.bg : '') + '">' + esc(cell.g) + '</span>';
+      }
+      out += '\n';
+    }
+    return out;
+  }
+  function lightVec() {
+    var az = +document.getElementById('laz').value * D, el = +document.getElementById('lel').value * D;
+    return [Math.cos(el) * Math.sin(az), -Math.cos(el) * Math.cos(az), Math.sin(el)];
+  }
+
+  // ---- orbit view (orthographic) ----
+  function orbit(model, yawDeg, cols, rows) {
+    var vox = model.voxel, S = vox.size, cell = vox.cellM, Lw = lightVec();
+    var C = [S[0] / 2, S[1] / 2, S[2] / 2], yaw = yawDeg * D, pit = 18 * D;
+    var dir = norm([Math.sin(yaw) * Math.cos(pit), Math.cos(yaw) * Math.cos(pit), -Math.sin(pit)]);
+    var right = norm(cross(dir, [0, 0, 1])), up = cross(right, dir);
+    var ext = Math.hypot(S[0], S[1], S[2]);
+    var s = Math.max(ext / (cols * 0.95), ext / (rows * 1.5 * 0.95));
+    var org = [C[0] - dir[0] * ext, C[1] - dir[1] * ext, C[2] - dir[2] * ext];
+    var buf = new Array(cols * rows), r, c;
+    for (r = 0; r < rows; r++) for (c = 0; c < cols; c++) {
+      var sx = (c - cols / 2 + 0.5) * s, sy = -(r - rows / 2 + 0.5) * s * 1.5;
+      var o = [org[0] + right[0] * sx + up[0] * sy, org[1] + right[1] * sx + up[1] * sy, org[2] + right[2] * sx + up[2] * sy];
+      var h = march(vox, o, dir);
+      if (h) buf[r * cols + c] = shade(vox, h, Lw);
+    }
+    return buf;
+  }
+
+  // ---- first-person view (perspective, eye space) ----
+  var FP_COLS = 112, FP_ROWS = 42, TANH = Math.tan(37.5 * D);
+  function fpBackdrop() {
+    var buf = new Array(FP_COLS * FP_ROWS), r, c;
+    for (r = 0; r < FP_ROWS; r++) for (c = 0; c < FP_COLS; c++) {
+      var sky = r < FP_ROWS * 0.45, g, col;
+      if (sky) { g = ' '; col = [40, 52, 70]; }
+      else { g = ((c * 7 + r * 13) % 11 === 0) ? '"' : ((c * 5 + r * 3) % 7 === 0 ? ',' : "'"); var k = 0.4 + 0.6 * (r / FP_ROWS); col = [50 * k | 0, 96 * k | 0, 44 * k | 0]; }
+      buf[r * FP_COLS + c] = { g: g, c: col, bg: sky ? '#1a2230' : null, back: true };
+    }
+    buf[(FP_ROWS >> 1) * FP_COLS + (FP_COLS >> 1)] = { g: '+', c: [255, 210, 74] };
+    return buf;
+  }
+  function fpDraw(buf, model, pose) {
+    var vox = model.voxel, cell = vox.cellM, an = vox.anchor, Le = lightVec(), Lm = rotInv(pose.rot, Le), hits = 0;
+    var oE = [-pose.pos[0], -pose.pos[1], -pose.pos[2]];
+    var oM = rotInv(pose.rot, oE); oM = [oM[0] / cell + an[0], oM[1] / cell + an[1], oM[2] / cell + an[2]];
+    var vh = TANH * (FP_ROWS * 1.5) / FP_COLS, r, c;
+    for (r = 0; r < FP_ROWS; r++) for (c = 0; c < FP_COLS; c++) {
+      var dE = [(2 * (c + 0.5) / FP_COLS - 1) * TANH, -1, -(2 * (r + 0.5) / FP_ROWS - 1) * vh];
+      var dM = rotInv(pose.rot, dE);
+      var h = march(vox, oM, dM);
+      if (h && h.t * cell > 0.05 / 1.0) { buf[r * FP_COLS + c] = shade(vox, h, Lm); hits++; }
+    }
+    return hits / (FP_COLS * FP_ROWS);
+  }
+  function lerp(a, b, f) { return a + (b - a) * f; }
+  function sample(clip, t) {
+    var ks = clip.keys, i, v = null;
+    if (clip.loop) t = t % ks[ks.length - 1].t;
+    for (i = 0; i < ks.length; i++) if (ks[i].v && ks[i].t <= t) v = ks[i].v;
+    if (t >= ks[ks.length - 1].t) { var L = ks[ks.length - 1]; return { pos: L.pos, rot: L.rot, v: v, done: true }; }
+    for (i = 0; i < ks.length - 1; i++) if (t >= ks[i].t && t < ks[i + 1].t) {
+      var f = (t - ks[i].t) / (ks[i + 1].t - ks[i].t), a = ks[i], b = ks[i + 1];
+      return { pos: [0, 1, 2].map(function (j) { return lerp(a.pos[j], b.pos[j], f); }),
+               rot: [0, 1, 2].map(function (j) { return lerp(a.rot[j], b.rot[j], f); }), v: v };
+    }
+    return { pos: ks[0].pos, rot: ks[0].rot, v: v };
+  }
+
+  // ---- model cards ----
+  var cards = [
+    ['shieldHeld', 'shield (held / back share voxels)'], ['shieldBack', 'shield worn on back'],
+    ['bowRest', 'bow rest (braced)'], ['bowDraw1', 'bow draw 1/3'], ['bowDraw2', 'bow draw 2/3'], ['bowDraw3', 'bow full draw'],
+    ['bowBack', 'bow worn on back'], ['arrow', 'arrow (flight)'], ['arrowStuck', 'arrow stuck'],
+    ['quiverFull', 'quiver full'], ['quiverHalf', 'quiver half'], ['quiverEmpty', 'quiver empty']
+  ];
+  var host = document.getElementById('models'), pres = {};
+  cards.forEach(function (cd) {
+    var m = VM[cd[0]], v = m.voxel, d = document.createElement('div');
+    d.className = 'card';
+    d.innerHTML = '<b>' + cd[0] + '</b> <span class="dim">' + cd[1] + '<br>' + v.size.join('x') + ' @ ' + v.cellM + ' m = ' +
+      v.size.map(function (n) { return (n * v.cellM).toFixed(2); }).join(' x ') + ' m, ' + m.stats.voxels + ' voxels' +
+      (m.worn ? '<br>worn: ' + m.worn.mount + ' rot ' + m.worn.rot.join(',') : '') + '</span><pre class="scr"></pre>';
+    host.appendChild(d); pres[cd[0]] = d.querySelector('pre');
+  });
+  var missing = Object.keys(A.equipment.mats).map(function (k) { return A.equipment.mats[k]; }).filter(function (n) { return mat(n).missing; });
+  if (missing.length) host.insertAdjacentHTML('beforebegin', '<div style="color:#ff8f7e">materials missing in palette (fallback colours used): ' + missing.join(', ') + '</div>');
+  function drawModels(yaw) {
+    cards.forEach(function (cd) {
+      var m = VM[cd[0]], S = m.voxel.size, tall = S[2] > 30;
+      var cols = tall ? 34 : 46, rows = tall ? 44 : 24;
+      pres[cd[0]].innerHTML = toHtml(orbit(m, yaw, cols, rows), cols, rows);
+    });
+  }
+
+  // ---- FP state ----
+  var shClip = 'idle', shT0 = performance.now(), bwClip = 'idle', bwT0 = performance.now(), bwVar = 'rest';
+  var cycle = ['raise', 'draw', 'hold', 'release', 'idle'], cycI = -1;
+  document.querySelectorAll('[data-sc]').forEach(function (b) { b.onclick = function () {
+    shClip = b.dataset.sc; shT0 = performance.now(); document.querySelectorAll('[data-sc]').forEach(function (x) { x.classList.toggle('on', x === b); }); }; });
+  document.querySelectorAll('[data-bc]').forEach(function (b) { b.onclick = function () {
+    bwClip = b.dataset.bc; bwT0 = performance.now(); document.getElementById('loopBow').checked = false;
+    document.querySelectorAll('[data-bc]').forEach(function (x) { x.classList.toggle('on', x === b); }); }; });
+  document.getElementById('rf').oninput = function () { shClip = 'frac'; };
+
+  function frame(now) {
+    var yawEl = document.getElementById('yaw');
+    if (document.getElementById('spin').checked) yawEl.value = (+yawEl.value + 1) % 360;
+    drawModels(+yawEl.value);
+    // shield
+    var SV = A.viewModels.shield, pose;
+    if (shClip === 'frac') {
+      var f = +document.getElementById('rf').value / 100;
+      pose = { pos: [0, 1, 2].map(function (j) { return lerp(SV.rest.pos[j], SV.raised.pos[j], f); }),
+               rot: [0, 1, 2].map(function (j) { return lerp(SV.rest.rot[j], SV.raised.rot[j], f); }) };
+    } else {
+      var tt = now - shT0, cl = SV.clips[shClip];
+      if (!cl.loop) tt = tt % (cl.keys[cl.keys.length - 1].t + 700);
+      pose = sample(cl, tt);
+    }
+    var buf = fpBackdrop(), cov = fpDraw(buf, VM.shieldHeld, pose);
+    document.getElementById('fpShield').innerHTML = toHtml(buf, FP_COLS, FP_ROWS);
+    document.getElementById('cov').textContent = 'clip ' + shClip + ' | view covered ' + (cov * 100).toFixed(0) +
+      ' % (raised target ~25-30 %) | pos ' + pose.pos.map(function (n) { return n.toFixed(3); }).join(', ');
+    // bow
+    var BV = A.viewModels.bow, bt = now - bwT0, bc = BV.clips[bwClip], bp;
+    if (document.getElementById('loopBow').checked) {
+      var end = bc.loop ? 900 : bc.keys[bc.keys.length - 1].t + 150;
+      if (cycI < 0 || bt > end) { cycI = (cycI + 1) % cycle.length; bwClip = cycle[cycI]; bwT0 = now; bt = 0; bc = BV.clips[bwClip]; }
+    } else if (!bc.loop) bt = bt % (bc.keys[bc.keys.length - 1].t + 700);
+    bp = sample(bc, bt); if (bp.v) bwVar = bp.v;
+    var vm = BV.variants[bwVar] || VM.bowRest, bb = fpBackdrop(), bcov = fpDraw(bb, vm, bp);
+    document.getElementById('fpBow').innerHTML = toHtml(bb, FP_COLS, FP_ROWS);
+    document.getElementById('bowInfo').textContent = 'clip ' + bwClip + ' | variant ' + bwVar + ' | t ' + (bt | 0) + ' ms | covered ' + (bcov * 100).toFixed(0) + ' %';
+    setTimeout(function () { requestAnimationFrame(frame); }, 60);
+  }
+
+  // ---- icons ----
+  var IK = A.items.keys, icons = A.items.eqIcons, ih = document.getElementById('icons');
+  function keyRgb(k) { var c = RGB[IK[k].c]; return c ? 'rgb(' + c.join(',') + ')' : '#f0f'; }
+  function iconHtml(ic) {
+    var s = '', r, c;
+    for (r = 0; r < 3; r++) { for (c = 0; c < 5; c++) { var g = ic.glyphs[r].charAt(c), k = ic.fg[r].charAt(c);
+      s += k === ' ' ? ' ' : '<span style="color:' + keyRgb(k) + '">' + esc(g) + '</span>'; } s += '\n'; }
+    return s;
+  }
+  Object.keys(icons).forEach(function (id, i) {
+    var ic = icons[id], d = document.createElement('div'); d.className = 'card';
+    var slot = '<span style="color:#ffd24a">' + (i + 1) + '</span>      \n' + iconHtml(ic).split('\n').slice(0, 3).map(function (l) { return ' ' + l + ' '; }).join('\n') +
+               '\n     <span style="color:#e8e2d0">' + (id === 'arrow' ? 'x18' : id.indexOf('potion') === 0 ? ' x3' : '   ') + '</span>';
+    d.innerHTML = '<b>' + id + '</b><br><pre class="icon">' + iconHtml(ic) + '</pre> <pre class="icon" style="font-size:12px;line-height:16px;border:1px solid #ffd24a;background:#0a0b10">' + slot + '</pre>';
+    ih.appendChild(d);
+  });
+  var errs = A.items.validate(P);
+  if (errs.length) ih.insertAdjacentHTML('beforeend', '<div style="color:#ff8f7e">items.validate: ' + errs.join('; ') + '</div>');
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
