@@ -231,6 +231,7 @@ export function compactGroup(g, planes, R, vp, rows, swayPad = 0) {
     }
   }
   g.drawCount[0] = w0; g.drawCount[1] = w1;
+  touchInstances(g.drawIb[0]); touchInstances(g.drawIb[1]); // AUD-02: raw compaction writes -> version bump (the GPU upload skips an unchanged version)
   return w0 + w1;
 }
 
@@ -290,6 +291,7 @@ export function fillShadowBands(g, ex, ey, lod0M, castM, planes, R, swayPad = 0)
     if (b) w1++; else w0++;
   }
   g.shadowCount[0] = w0; g.shadowCount[1] = w1;
+  touchInstances(g.shadowIb[0]); touchInstances(g.shadowIb[1]); // AUD-02 (see compactGroup)
   return w0 + w1;
 }
 

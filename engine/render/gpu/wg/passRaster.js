@@ -3,6 +3,7 @@ import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STA
 import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_MASK_BLOCK, RASTER_MASK_WGSL, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL, RASTER_INSTANCED_MASK_BLOCK, RASTER_INSTANCED_MASK_WGSL, RASTER_FLAG_VAO, rasterWgsl } from '../wgsl/raster.wgsl.js';
 import { TERRAIN_BLOCK, TERRAIN_RASTER_WGSL, TERRAIN_TEXTURES } from '../wgsl/terrainRaster.wgsl.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
+import { StructMaskAtlas } from '../StructMaskAtlas.js';
 import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, MAX_DRAW_ITEMS } from '../../../mesh/DrawList.js';
 import { MeshGroupSet, addMeshStructuresBatched } from '../../../mesh/meshGroups.js';
 import { instancedRanges } from '../../../mesh/DrawList.js';
@@ -33,7 +34,7 @@ const ORIGIN = RASTER_BLOCK.field('origin').word, T_MODEL_REL = TERRAIN_BLOCK.fi
 // S8-B2-05/06: wind/sway uniforms (RASTER_BLOCK, instanced variant only; the base/mask blocks end before them).
 const WIND = RASTER_BLOCK.field('wind').word, WIND_T = RASTER_BLOCK.field('windT').word, WIND_K = RASTER_BLOCK.field('windK').word;
 const T_MODEL = TERRAIN_BLOCK.field('model').word, T_VIEW = TERRAIN_BLOCK.field('viewProj').word;
-const T_NEAR = TERRAIN_BLOCK.field('nearMap').word, T_FAR = TERRAIN_BLOCK.field('farMap').word, T_FOOT = TERRAIN_BLOCK.field('structFoot').word;
+const T_NEAR = TERRAIN_BLOCK.field('nearMap').word, T_FAR = TERRAIN_BLOCK.field('farMap').word, T_FOOT = TERRAIN_BLOCK.field('structFoot').word, T_MASK = TERRAIN_BLOCK.field('structMask').word;
 const T_OBJECT = TERRAIN_BLOCK.field('objectId').word, T_READY = TERRAIN_BLOCK.field('nearReady').word, T_COUNT = TERRAIN_BLOCK.field('structCount').word;
 /**
  * PREC-01b (37.9 step 6) switch. true = terrain clip is camera-relative too (viewRel + modelRel = model - O). Measured 2026-10-08: with it ON the PASS row
@@ -73,7 +74,8 @@ export class WgRasterPass {
     this.bindDesc = { uniforms: this.u, vertexBuffer: null, indexBuffer: null, instanceBuffer: null };
     this.clearOpts = { clear: { color: [[0, 0, 0, 0], [0, 0, 0, 0], [0x7f800000, 0, 0, 0]], depth: 1 } };
     this.vmClearOpts = { clear: { depth: 1 } };
-    this.instanceBuffers = new Map();
+    /** @type {Map<any, {buffer: any, version: number, count: number}>} AUD-02: GPU copy per InstanceBuffer + what it holds (shadow passes may share it) */
+    this.instanceBuffers = new Map(); this.instUploads = 0; this.instSkips = 0;
     // ALPHA-01c: mask-discard static pipeline state (own uniform copy: the base `u` also holds the instanced team rows), R8UI atlas texture
     this.mu = new Float32Array(RASTER_MASK_BLOCK.sizeWords); this.mbits = new Uint32Array(this.mu.buffer);
     this.maskDraws = 0; this.maskTex = null; this.maskDims = [1, 1]; this.maskAtlas = null; this.maskVersion = -1; this.maskUploads = 0; this.maskReady = false;
@@ -98,13 +100,15 @@ export class WgRasterPass {
     this._gpuHook = { accept: (g, m0, m1) => this._accept(g, m0, m1) };
     // Terrain (ME-06 twin): own uniform block + the near/far type textures (r8ui, 1x1 placeholders until a bake is uploaded).
     this.tu = new Float32Array(TERRAIN_BLOCK.sizeWords); this.tbits = new Uint32Array(this.tu.buffer);
-    this.terrainTex = [{ slot: 0, texture: null }, { slot: 1, texture: null }];
+    this.terrainTex = [{ slot: 0, texture: null }, { slot: 1, texture: null }, { slot: 2, texture: null }]; // 2 = GS-01b carve mask atlas
+    this.structMasks = null; // StructMaskAtlas, built with the terrain pipeline
     this.terrainBind = { uniforms: this.tu, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: null, textures: this.terrainTex };
     this.nearTex = null; this.farTex = null; this.nearDims = [1, 1]; this.farDims = [1, 1]; this.nearVersion = -1; this.farVersion = -1; this.farWorld = null;
     try {
       this.nearTex = device.createTexture({ format: 'r8ui', width: 1, height: 1 });
       this.farTex = device.createTexture({ format: 'r8ui', width: 1, height: 1 });
       this.terrainTex[0].texture = this.nearTex; this.terrainTex[1].texture = this.farTex;
+      this.structMasks = new StructMaskAtlas(device); this.terrainTex[2].texture = this.structMasks.tex;
       this.terrainPipe = device.createPipeline({ vertex: { src: { wgsl: TERRAIN_RASTER_WGSL }, layout: TERRAIN_VERTEX_LAYOUT, strideBytes: TERRAIN_STRIDE_BYTES },
         fragment: { src: { wgsl: TERRAIN_RASTER_WGSL }, targets: 3 }, bindings: { uniformBytes: TERRAIN_BLOCK.sizeBytes, textures: TERRAIN_TEXTURES.slice() },
         targetFormats: ['rgba32ui', 'rgba32ui', 'r32ui'], depthFormat: 'depth24', depth: { test: true, write: true }, cull: 'none', frontFace: 'cw' });
@@ -283,6 +287,7 @@ export class WgRasterPass {
       const o = T_FOOT + n * 4; tu[o] = b.x0; tu[o + 1] = b.y0; tu[o + 2] = b.x1; tu[o + 3] = b.y1; n++;
     }
     this.tbits[T_COUNT] = n;
+    this.structMasks.sync(structs, tu, T_MASK); this.terrainTex[2].texture = this.structMasks.tex; // GS-01b: carve masks (same box order as above)
     this.tbits[T_PROJ] = this.ortho ? 2 : 0; // US-068b2
   }
 
@@ -485,9 +490,14 @@ export class WgRasterPass {
           if (item.type !== DRAW_INSTANCED || !item.mesh || !item.instBuf) continue;
           instances += item.instCount;
           if (instances > MAX_INSTANCES_PER_FRAME) throw new Error(`instanced units over ${MAX_INSTANCES_PER_FRAME} per frame`);
-          let buffer = this.instanceBuffers.get(item.instBuf);
-          if (!buffer) { buffer = d.createBuffer({ usage: 'vertex', data: item.instBuf.f32, dynamic: true }); this.instanceBuffers.set(item.instBuf, buffer); }
-          else d.writeBuffer(buffer, item.instBuf.f32, 0);
+          // AUD-02: upload only the used rows, and nothing when the buffer's version is unchanged (writers bump `ib.version`; a buffer without one always uploads)
+          const ib = item.instBuf, cnt = item.instCount;
+          let ent = this.instanceBuffers.get(ib);
+          if (!ent) { ent = { buffer: d.createBuffer({ usage: 'vertex', data: ib.f32, dynamic: true }), version: ib.version, count: cnt }; this.instanceBuffers.set(ib, ent); }
+          else if (ib.version === undefined || ent.version !== ib.version || ent.count < cnt) {
+            d.writeBuffer(ent.buffer, ib.f32, 0, cnt * INSTANCE_BYTES); ent.version = ib.version; ent.count = cnt; this.instUploads++;
+          } else this.instSkips++;
+          const buffer = ent.buffer;
           this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0;
           const entry = this.buffers.getVoxel(item.mesh);
           const ranges = instancedRanges(item);
@@ -555,7 +565,8 @@ export class WgRasterPass {
     if (this.farTex) this.device.dispose(this.farTex);
     this.nearTex = this.farTex = null;
     if (this.cull) { this.cull.dispose(); this.cull = null; }
-    for (const buffer of this.instanceBuffers.values()) this.device.dispose(buffer);
+    for (const ent of this.instanceBuffers.values()) this.device.dispose(ent.buffer);
     this.instanceBuffers.clear();
+    if (this.structMasks) this.structMasks.dispose(); // kept (tests poke uniforms after dispose); dispose is idempotent
   }
 }

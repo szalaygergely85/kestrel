@@ -22,13 +22,13 @@ export function createShadowParityRunner(res) {
   const bits = new Uint32Array(res * res);
   const target = createRasterTarget(res, res, 1, { depthOnly: true });
   const windOut = { field: null, t: 0 };
-  const ctx = { M: null, wind: null, depthBias: { factor: 0, units: 0 }, structFoot: null, structCount: 0 };
+  const ctx = { M: null, wind: null, depthBias: { factor: 0, units: 0 }, structFoot: null, structCount: 0, structMask: null };
   // shared JS-twin half: raster the same caster list / matrix / bias / carve footprints and compare with the GPU bits
-  const compare = (list, M, so, foot, count, atlas, world, fb) => {
+  const compare = (list, M, so, foot, count, atlas, world, fb, masks) => {
     ctx.wind = sunWindCtx(world && world.wind, fb && fb.timeSec, windOut); // same field + quantised clock the GPU shadow pass packs
     ctx.M = M; ctx.maskAtlas = atlas || null; // ALPHA-01c: the depth-only twin skips the same masked fragments as the GPU pass
     ctx.depthBias.factor = so.depthBias[0]; ctx.depthBias.units = so.depthBias[1];
-    ctx.structFoot = foot; ctx.structCount = count;
+    ctx.structFoot = foot; ctx.structCount = count; ctx.structMask = masks || null; // GS-01b: same carve masks as the GPU atlas
     clearRasterTarget(target);
     rasterDrawList(list, target, ctx);
     const r = compareShadowDepth(bits, target.zbuf, res);
@@ -41,7 +41,7 @@ export function createShadowParityRunner(res) {
       if (!sh || !(await sh.readbackDepth(bits))) return null;
       if (pipeline.shadowDepthHalfRange) halfRangeDepthBitsToUnit(bits);
       const fp = sh.footprints();
-      return compare(sh.casterList ? sh.casterList() : sh.list, sh.sunMat.M, sh.shadowOpts, fp ? fp.foot : null, fp ? fp.count : 0, pipeline._world && pipeline._world.maskAtlas, pipeline._world, pipeline._fb);
+      return compare(sh.casterList ? sh.casterList() : sh.list, sh.sunMat.M, sh.shadowOpts, fp ? fp.foot : null, fp ? fp.count : 0, pipeline._world && pipeline._world.maskAtlas, pipeline._world, pipeline._fb, fp ? fp.masks : null);
     },
     /** @param {import('./GpuCellPipeline.js').GpuCellPipeline} pipeline @returns {object|null} null when no sun pass ran this frame */
     run(pipeline) {
@@ -53,6 +53,6 @@ export function createShadowParityRunner(res) {
   };
   function finish(pipeline) {
     if (pipeline.shadowDepthHalfRange) halfRangeDepthBitsToUnit(bits);
-    return compare(pipeline._shadowList, pipeline._sunMat.M, pipeline.shadowOpts, pipeline._meshStructFoot, pipeline._structCount, pipeline._world && pipeline._world.maskAtlas, pipeline._world, pipeline._fb);
+    return compare(pipeline._shadowList, pipeline._sunMat.M, pipeline.shadowOpts, pipeline._meshStructFoot, pipeline._structCount, pipeline._world && pipeline._world.maskAtlas, pipeline._world, pipeline._fb, pipeline._meshStructMask || null);
   }
 }

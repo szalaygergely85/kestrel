@@ -125,15 +125,16 @@ export class GpuDeviceWebGPU {
     return h;
   }
 
-  /** @param {GpuHandle} handle @param {ArrayBufferView} data @param {number} [dstOffsetBytes] */
-  writeBuffer(handle, data, dstOffsetBytes = 0) {
-    let view = data;
-    if (data.byteLength & 3) { // queue.writeBuffer wants a multiple of 4: pad (rare: odd Uint16 index counts)
-      const padded = new Uint8Array((data.byteLength + 3) & ~3);
-      padded.set(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
-      view = padded;
+  /** @param {GpuHandle} handle @param {ArrayBufferView} data @param {number} [dstOffsetBytes] @param {number} [byteLength] AUD-02: upload only the first `byteLength` bytes of `data` (default all; no subarray allocation) */
+  writeBuffer(handle, data, dstOffsetBytes = 0, byteLength = data.byteLength) {
+    const n = byteLength < data.byteLength ? byteLength : data.byteLength;
+    if (n & 3) { // queue.writeBuffer wants a multiple of 4: pad (rare: odd Uint16 index counts)
+      const padded = new Uint8Array((n + 3) & ~3);
+      padded.set(new Uint8Array(data.buffer, data.byteOffset, n));
+      this.gpu.queue.writeBuffer(handle.gpu, dstOffsetBytes, padded.buffer, padded.byteOffset, padded.byteLength);
+      return;
     }
-    this.gpu.queue.writeBuffer(handle.gpu, dstOffsetBytes, view.buffer, view.byteOffset, view.byteLength);
+    this.gpu.queue.writeBuffer(handle.gpu, dstOffsetBytes, data.buffer, data.byteOffset, n);
   }
 
   /** @param {import('./GpuDevice.js').TextureDesc} desc */
