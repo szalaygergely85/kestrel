@@ -18,6 +18,7 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
   let state = book.main;
   let rows = questObjectives(state, def, []);
   const fired = { wake: false, sword: false, waystone: false, breach: false }; // edge guards (cheap polling)
+  const firedAreas = new Set();
   let dirty = false, lineFor = '', line = '';
 
   function syncFired() {
@@ -80,7 +81,7 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
     /** Replace the quest (restore from a save, or a fresh run when `saved` is null). */
     reset(savedState = null, savedQuests = null) {
       const onChange = book.onChange;
-      book = createQuestBook(def, giverDefs, { quest: savedState, quests: savedQuests }); book.onChange = onChange; state = book.main; rows = questObjectives(state, def, []); syncFired(); dirty = false; seen = state.completed.length;
+      book = createQuestBook(def, giverDefs, { quest: savedState, quests: savedQuests }); firedAreas.clear(); book.onChange = onChange; state = book.main; rows = questObjectives(state, def, []); syncFired(); dirty = false; seen = state.completed.length;
     },
     /**
      * Per-fixed-step facts -> events. Every flag fires once (guards); cost is a few comparisons.
@@ -95,6 +96,19 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
         if (dx * dx + dy * dy <= BREACH_R2 && Math.abs(f.z - breach.z) <= BREACH_DZ) { fired.breach = true; feed({ type: 'area:entered', id: 'breach' }); if (relay.onPoll) relay.onPoll('area:entered', 'breach'); }
       }
       if (f.endStarted && !fired.waystone) { fired.waystone = true; feed({ type: 'area:entered', id: 'waystone' }); if (relay.onPoll) relay.onPoll('area:entered', 'waystone'); }
+    },
+    /**
+     * QUEST-CHAIN-Q-01: area-only world zones (towerDoor / roadWest / bendRelay: circle x,y,r,zMin) -> area:entered once.
+     * Nothing else emitted these live (triggers.js skips nameless zones), so the 'leave' / 'road' / 'relay' steps never completed.
+     * @param {number} x @param {number} y @param {number} z @param {{id:string,x:number,y:number,r:number,zMin:number}[]} zones
+     */
+    pollAreas(x, y, z, zones) {
+      for (let i = 0; i < zones.length; i++) {
+        const q = zones[i];
+        if (state.areas.includes(q.id) || firedAreas.has(q.id)) continue;
+        const dx = x - q.x, dy = y - q.y;
+        if (dx * dx + dy * dy <= q.r * q.r && z >= q.zMin) { firedAreas.add(q.id); feed({ type: 'area:entered', id: q.id }); if (relay.onPoll) relay.onPoll('area:entered', q.id); }
+      }
     },
     /** HUD: objective line at the top-left of the UI layer (setCellRGB cells; no allocation).
      *  TEMPORARY (D-050): lane C's quest HUD replaces this line; until then it is the only objective line (never draw two). */
