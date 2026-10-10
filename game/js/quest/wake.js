@@ -76,17 +76,25 @@ export function wakeFrame(t, cfg, out) {
  * @param {{blink:{edgeGlyph:string, edgeColor:string, edgeRows:number}}} uiStyle
  * @param {number} openFrac 0..1
  */
+/** uiStyle gives palette NAMES (e.g. 'emberDark'); CellBuffer needs '#rrggbb'. Unknown names fall back to black. */
+export function resolveHex(c) {
+  if (typeof c === 'string' && c[0] === '#') return c;
+  const cols = globalThis.ASSETS && globalThis.ASSETS.palette && globalThis.ASSETS.palette.colors;
+  return (cols && cols[c]) || '#000000';
+}
+
 export function drawEyelid(rt, uiStyle, openFrac) {
   if (openFrac >= 1) return; // fully open - nothing to draw
   const rows = rt.rows, cols = rt.cols;
   const centre = rows / 2;
   const blink = uiStyle.blink;
+  const edgeColor = resolveHex(blink.edgeColor);
   for (let y = 0; y < rows; y++) {
     const dist = Math.abs(y + 0.5 - centre) / centre; // 0 at centre, 1 at the edge rows
     if (dist <= openFrac) continue; // open row - leave the scene showing
     const isEdge = dist - openFrac <= blink.edgeRows / centre;
     for (let x = 0; x < cols; x++) {
-      if (isEdge) rt.setCell(x, y, blink.edgeGlyph, blink.edgeColor, '#000000');
+      if (isEdge) rt.setCell(x, y, blink.edgeGlyph, edgeColor, '#000000');
       else rt.setCell(x, y, ' ', '#000000', '#000000');
     }
   }

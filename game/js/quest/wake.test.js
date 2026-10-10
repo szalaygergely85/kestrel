@@ -1,6 +1,7 @@
 // game/js/quest/wake.test.js (US-015). Headless Node ESM, no framework.
 // Run: node game/js/quest/wake.test.js
-import { wakeFrame, applyWakeOnLoad, drawEyelid } from './wake.js';
+import { wakeFrame, applyWakeOnLoad, drawEyelid, resolveHex } from './wake.js';
+import '../../../design/palette.js';
 import { createUiLayer } from '../../../engine/index.js';
 import { makeOk } from '../../../engine/test/assert.js';
 
@@ -75,6 +76,14 @@ ok('titleDoneAtSec = wakeDoneAtSec + 1+3+1', near(out.titleDoneAtSec, 2.5 + 5.0)
   ok('ui lid: centre row open (transparent)', rowCells(ui.rows >> 1) === 0 && rowCells((ui.rows >> 1) - 1) === 0);
   ui.clear(); drawEyelid(ui, { blink }, 1);
   ok('ui lid: fully open draws nothing', rowCells(0) === 0);
+}
+
+// palette NAME edgeColor (as in design/models/title.js) resolves to hex, no CellBuffer warning
+{
+  ok('resolveHex: name -> hex', resolveHex('emberDark') === '#8a2a10' && resolveHex('#123456') === '#123456');
+  const ui = createUiLayer({ cols: 160 });
+  ui.clear(); drawEyelid(ui, { blink: { edgeGlyph: '-', edgeColor: 'emberDark', edgeRows: 1 } }, 0.25);
+  ok('ui lid: name colour draws', ui.cells.bg[3] === 255);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
