@@ -26,7 +26,10 @@ import { MAX_LEVELS } from '../ShadeTextures.js';
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
 import { KIND_TERRAIN, KIND_MODEL, KIND_MESH, FACE_PACKED } from '../../GBuffer.js';
 import { WET_DARK, WET_SPEC } from '../../detailShade.js';
+import { VEG_TINT_WGSL } from '../../../mesh/vegTint.js'; // AUD-47
 import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // CLOUD_Q_SHIFT: S8-B2-12c (38.13)
+import { SKY_GLOW_WGSL } from '../../skyGlow.js';
+import { FOG_SHAPE_WGSL } from '../../fogShape.js';
 import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE } from '../../terrainShade.js';
 
 
@@ -55,6 +58,9 @@ export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'faceK', type: 'vec4', count: 2 }, // float[7] (index = face 1..6), contiguous
   // 38.23 entity tint table, APPENDED (no earlier word moves): etA.x = count (0 = branch skipped), etId = 8 u32 ids (written through a Uint32Array view), etC = rgb 0..1 + k
   { name: 'etA', type: 'vec4' }, { name: 'etId', type: 'vec4', count: 2 }, { name: 'etC', type: 'vec4', count: 8 },
+  { name: 'skyCam', type: 'vec4' }, // AUD-40, APPENDED: shear-mode sky ray = (dirX + planeX*cx, dirY + planeY*cx): dirX, dirY, planeX, planeY
+  { name: 'fogView', type: 'vec4' }, // AUD-45, APPENDED: x = eye height (m), y = 1 when height fog + sun in-scatter are on (terrain worlds), z/w unused
+  { name: 'skyGlowOn', type: 'vec4' }, // AUD-40 fix, APPENDED: x = 1 when sky glow + horizon haze apply (compositor gate: terrain world + timeOfDay palette), written every frame
 ]);
 
 export const SHADE_TEXTURES = Object.freeze([
@@ -242,7 +248,7 @@ var<private> POW2: array<f32, 6> = array<f32, 6>(0.125, 0.25, 0.5, 1.0, 2.0, 4.0
 
 // 38.23: one channel of the entity tint, literal twin of entityTint.js tintChannel (c on the 0..255 scale, t = rgb 0..1).
 fn tintCh(c: f32, t: f32, k: f32) -> f32 { return c + (t * 255.0 - c) * k; }
-// First table entry matching objectId, or -1 (twin: entityTintAt).
+${VEG_TINT_WGSL}// First table entry matching objectId, or -1 (twin: entityTintAt).
 fn tintIndex(oid: u32, count: i32) -> i32 {
   for (var i = 0; i < 8; i++) {
     if (i >= count) { break; }
@@ -283,6 +289,19 @@ fn faceK(face: i32) -> f32 { return su.faceK[u32(face) >> 2u][u32(face) & 3u]; }
 
 ${TERRAIN_SHADE_WGSL}
 
+${SKY_GLOW_WGSL}
+${FOG_SHAPE_WGSL}
+// AUD-45: unit view direction of a cell for the standard fog (same rays as the sky: shear basis / pitched / ortho F).
+fn fogCellDir(cell: vec2i, gridSize: vec2i) -> vec3f {
+  if (su.projMode == 0) {
+    let cx = (2.0 * (f32(cell.x) + 0.5)) / f32(gridSize.x) - 1.0;
+    let hx = su.skyCam.x + su.skyCam.z * cx; let hy = su.skyCam.y + su.skyCam.w * cx;
+    let tanE = (su.horizonRow - f32(cell.y)) / su.planeDistY;
+    let ce = inverseSqrt(1.0 + tanE * tanE);
+    return vec3f(vec2f(hx, hy) * (inverseSqrt(max(hx * hx + hy * hy, 1e-12)) * ce), tanE * ce);
+  }
+  return normalize(select(pitchedCellDir(vec2f(cell), gridSize), su.pitchA.xyz, su.projMode == 2));
+}
 fn pickCode(setId: i32, entryIdx: i32, hA: f32, useAlt: bool) -> i32 {
   let t = textureLoad(uSetI, vec2i(2 + entryIdx, setId), 0);
   let cnt = t.x;
@@ -566,7 +585,19 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
       }
       let t = clamp(elevDeg / su.skyElevTop, 0.0, 1.0);
       let idx = i32(t * ${SKY_LUT_N - 1}.0 + 0.5);
-      let col255 = textureLoad(uSky, vec2i(idx, 0), 0).rgb;
+      var skyDir: vec3f;
+      if (su.projMode == 0) {
+        // AUD-40: shear mode has no per-cell 3D ray; rebuild it from the camera basis (same cameraX as the CPU fillSky).
+        let cx = (2.0 * (f32(cell.x) + 0.5)) / f32(gridSize.x) - 1.0;
+        let hx = su.skyCam.x + su.skyCam.z * cx; let hy = su.skyCam.y + su.skyCam.w * cx;
+        let er = radians(elevDeg);
+        skyDir = vec3f(hx, hy, 0.0) * (cos(er) * inverseSqrt(max(hx * hx + hy * hy, 1e-12)));
+        skyDir.z = sin(er);
+      } else {
+        skyDir = normalize(select(pitchedCellDir(vec2f(cell), gridSize), su.pitchA.xyz, su.projMode == 2));
+      }
+      var col255 = textureLoad(uSky, vec2i(idx, 0), 0).rgb;
+      if (su.skyGlowOn.x > 0.5) { col255 = skyGlow(col255, skyDir, elevDeg, su.sunDir, su.sunI); } // gated like compositor.js (sun === null skips glow+haze)
       o.fg = vec4f(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 0.0);
       o.bg = vec4f(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 1.0);
     } else {
@@ -695,7 +726,14 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   let bgKAvg = bgKSum * invCount;
   let hAAvg = hAW; let hBAvg = hBW;
 
-  let f = select(select((dist - su.fogStart) / (su.fogFull - su.fogStart), 1.0, dist >= su.fogFull), 0.0, dist <= su.fogStart);
+  var f = select(select((dist - su.fogStart) / (su.fogFull - su.fogStart), 1.0, dist >= su.fogFull), 0.0, dist <= su.fogStart);
+  var fogFgC = su.fogFg; var fogBgC = su.fogBg;
+  if (su.fogView.y > 0.5 && f > 0.0) { // AUD-45: height fog + sun in-scatter (only where f > 0)
+    let fd = fogCellDir(cell, gridSize);
+    f = fogShapeF(f, dist, su.fogView.x, fd.z * inverseSqrt(max(fd.x * fd.x + fd.y * fd.y, 1e-12)));
+    let sw = fogScatterW(dot(fd, su.sunDir), su.sunDir.z, su.sunI);
+    fogFgC += (FOG_SUN_TINT - fogFgC) * sw; fogBgC += (FOG_SUN_TINT - fogBgC) * sw;
+  }
 
   var glyphCode: i32;${L.vars}
   if (gbAvg <= 0.0) { glyphCode = 0; }
@@ -734,6 +772,10 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   // Item 4: dim a firing line by sub-sample agreement (2-of-4 tie fades to half strength, 4-of-4 stays full).
   if (lineWins) { rgbF *= 0.5 + 0.5 * f32(jointN) / f32(count); }
   var rgbBg = rgbF * bgKAvg;
+  { // AUD-47 vegetation colour variation (objectId tint bits; marker-less ids multiply by 1.0 -> bit-identical)
+    let vg = vegGain(textureLoad(uGI, cell, 0).w);
+    rgbF *= vg; rgbBg *= vg;
+  }
   // 38.23 entity tint: display override after lighting, before fog; count 0 skips the whole branch (bit-identical).
   if (su.etA.x > 0.0) {
     let ti = tintIndex(textureLoad(uGI, cell, 0).w, i32(su.etA.x));
@@ -744,8 +786,8 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
     }
   }
   if (f > 0.0) {
-    rgbF += (su.fogFg - rgbF) * f;
-    rgbBg += (su.fogBg - rgbBg) * f;
+    rgbF += (fogFgC - rgbF) * f;
+    rgbBg += (fogBgC - rgbBg) * f;
   }
 
   o.fg = vec4f(toByte01(rgbF.x), toByte01(rgbF.y), toByte01(rgbF.z), toByte01(f32(glyphCode)));

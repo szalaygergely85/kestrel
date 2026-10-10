@@ -61,6 +61,7 @@ const _old = new Uint32Array(INSTANCE_STRIDE);
  * @param {InstanceBuffer} ib
  * @param {number} i
  * @param {number} objectId - game-set; convention `UNIT_OBJECT_BASE | unitIndex`
+ *   Bits 20-26 are reserved for the AUD-47 vegetation tint (marker bit 26); units/game ids must not use them.
  * @param {number} team - 0..7
  */
 export function writeUnitInstance(ib, i, x, y, z, yawDeg, objectId, team) {

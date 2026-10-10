@@ -8,6 +8,7 @@ import { PROJ_HFOV_DEG as HFOV_DEG, createPitchedTerms, pitchedTerms, screenRay,
 // `clouds` record (null when the look has no clouds block).
 import { hashFast01 } from './terrainShade.js';
 import { resolveLook } from './look.js';
+import { applySkyGlow } from './skyGlow.js';
 import { dirFromAzEl } from '../core/transform.js';
 
 const refOut = { fg: [0, 0, 0], bg: [0, 0, 0], glyph: ' ' };
@@ -30,6 +31,7 @@ export function primeAmbientLight(P) {
   ambientL[2] = hue[2] * amb.intensity;
 }
 
+const glowBg = [0, 0, 0], glowFg = [0, 0, 0];
 function shadeSkyAndWrite(rt, x, y, ctx, azimuthDeg, elevDeg, tag) {
   let glyphIdx, fg, bg;
   if (ctx.useReferenceShader) {
@@ -54,6 +56,14 @@ function shadeSkyAndWrite(rt, x, y, ctx, azimuthDeg, elevDeg, tag) {
     fastShadeSky(ctx.P, azimuthDeg, elevDeg, ctx.P.defaultTime, fastOut);
     glyphIdx = fastOut.glyphIdx;
     fg = fastOut.fg; bg = fastOut.bg;
+  }
+  const sun = ctx.sun;
+  if (sun && !ctx.useReferenceShader) { // AUD-40: glow + haze on bg and fg (the GPU sky has fg == bg)
+    const er = elevDeg * Math.PI / 180, ar = azimuthDeg * Math.PI / 180, ce = Math.cos(er);
+    const cosA = Math.sin(ar) * ce * sun.dirX - Math.cos(ar) * ce * sun.dirY + Math.sin(er) * sun.dirZ;
+    glowBg[0] = bg[0]; glowBg[1] = bg[1]; glowBg[2] = bg[2]; glowFg[0] = fg[0]; glowFg[1] = fg[1]; glowFg[2] = fg[2];
+    applySkyGlow(glowBg, cosA, elevDeg, sun.dirZ, sun.sunI); applySkyGlow(glowFg, cosA, elevDeg, sun.dirZ, sun.sunI);
+    fg = glowFg; bg = glowBg;
   }
   rt.setCellRGB(x, y, glyphIdx, clampByte(fg[0]), clampByte(fg[1]), clampByte(fg[2]),
     clampByte(bg[0]), clampByte(bg[1]), clampByte(bg[2]));
@@ -177,7 +187,7 @@ const skyRay = { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 };
  * Paints cells whose depth is Infinity with sky. Both camera branches
  * retain the old expression order until ME-19d removes shear.
  */
-export function fillSky(fb, cam) {
+export function fillSky(fb, cam, sun = null) {
   const rt = fb.rt;
   const cols = rt.cols, rows = rt.rows;
   const P = fb.palette;
@@ -211,7 +221,7 @@ export function fillSky(fb, cam) {
   const ctx = {
     P, U: P.util, rows, horizonRow, planeDistY,
     depthBuffer: fb.depth, useReferenceShader: false,
-    clouds, off, band,
+    clouds, off, band, sun, // AUD-40: sun = {dirX,dirY,dirZ,sunI} (terrain worlds only, like the GPU) or null
   };
 
   // RE-02a (28.1 A2 item 2): the pitched sky twin - per cell the `screenRay` direction gives
