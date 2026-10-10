@@ -32,7 +32,7 @@ const w = World.load(def, assets, { physics: 'mesh' });
 const structure = w.structures.find(s => s.id === 'tower'), O = structure.origin;
 const c = w.colliders.find(c => c.id === 'props:static');
 ok(c && w.colliders.filter(c => c.id === 'props:static').length === 1, 'one static prop collider');
-ok(c.bvh.triCount === 176 + 4 * 32 + 12, 'CH1-07: the bear prism moved to npcs:kinematic; 11 piece boxes, gondola box, practice-post prism, 4 wall-lamp prisms (BUG-LAMP-COLLIDE; the hanging lamp is decor since CH1-D1a) + the 12-triangle doorBar box (CH1-D1a)');
+ok(c.bvh.triCount === 176 + 4 * 32, 'CH1-07: the bear prism moved to npcs:kinematic; 11 piece boxes, gondola box, practice-post prism, 4 wall-lamp prisms (BUG-LAMP-COLLIDE; the hanging lamp is decor since CH1-D1a) ; the doorBar box is gone (TOWER-DOOR-OPEN-01)');
 ok(w.colliders.some(k => k.id === 'npcs:kinematic'), 'CH1-07/CH1-08a: kinematic NPC collider (bear, fen) exists');
 const hashes = {
   gondola: 'bd66286192399a8c8ebf35ae625edd1f526e3c22d96fa8ce111468ff54134ce3', // owner 2026-10-06: basket back to its original wood/brass mats (cloth meant the balloon fabric),
@@ -153,23 +153,11 @@ for (const [x,y] of corridor.slice(1)) {
 {
   const dw = World.load(def, assets, { physics: 'mesh' });
   const bar = level.props.find(p => p.id === 'doorBar'), bx = O.x + bar.x, by = O.y + bar.y;
-  const doorTris = dw.colliders.find(k => k.id === 'props:static').bvh.triCount;
   const o2 = { height: P.height, stepUpMax: P.stepUpMax, walkCos: Math.cos(P.maxSlopeDeg*Math.PI/180) }, r2 = {};
   // walk +y from the alcove (inside) into the doorway cell; feet at floor level
   const push = () => { let x = bx, y = by - 0.9, blocked = false; for (let i = 0; i < 150; i++) { dw.collideCircle(x, y, 0, 0.01, P.radius, O.z, true, o2, r2); blocked ||= Math.abs(r2.y - (y + 0.01)) > 1e-8; x = r2.x; y = r2.y; } return { blocked, y }; };
-  const before = push();
-  ok(before.blocked && before.y < by, 'barred door: the player cannot walk through the doorway (stops inside, y ' + before.y.toFixed(2) + ')');
-  // interact ray from the alcove at bar-centre height: offered only once the sword is taken (interactable "requires")
-  const eye = { x: bx, y: by - 1.2, z: O.z + bar.z + 1.0, yawDeg: 180, pitchDeg: 0 };
-  const st = dw.interaction; updateInteraction(dw, null, eye, false);
-  ok(!st.targetKey || !st.targetKey.endsWith('door'), 'door.unbar is NOT offered before tower.sword.taken');
-  dw.state['tower.sword.taken'] = true; updateInteraction(dw, null, eye, false);
-  ok(st.targetKey && st.targetKey.endsWith('door'), 'door.unbar offered from 1.2 m through the bar collider after the sword is taken');
-  updateInteraction(dw, null, eye, true);
-  ok(dw.state['tower.door.open'] === true, 'door unbarred through the interact ray');
-  ok(dw.colliders.find(k => k.id === 'props:static').bvh.triCount === doorTris - 12, 'unbarred door: the box is dropped from props:static');
-  ok(!push().blocked, 'unbarred door: the doorway is walkable (1.5 m +y push from the alcove, no block)');
+  ok(!push().blocked, 'open door (TOWER-DOOR-OPEN-01): the doorway is walkable from the start (no bar collider)');
   const re = deserialize(serialize(dw), assets, { physics: 'mesh' });
-  ok(re.colliders.find(k => k.id === 'props:static').bvh.triCount === doorTris - 12, 'save reload keeps the unbarred door collider-free');
+  ok(!(() => { const q = re; let x = bx, y = by - 0.9, bl = false; for (let i = 0; i < 150; i++) { q.collideCircle(x, y, 0, 0.01, P.radius, O.z, true, o2, r2); bl ||= Math.abs(r2.y - (y + 0.01)) > 1e-8; x = r2.x; y = r2.y; } return bl; })(), 'save reload keeps the doorway open');
 }
 console.log(`tower-prop-colliders: ${checks} PASS; ${clearanceSamples} clearance samples; ${walkSteps} capsule steps; ${c.bvh.triCount} triangles`);

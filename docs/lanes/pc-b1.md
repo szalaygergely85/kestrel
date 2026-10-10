@@ -568,3 +568,8 @@ Tests: new quest/ch1Mount.test.js; filter suites 72 PASS; main.js syntax OK (.mj
 - New probes: door closed before sword (mesh walk into the barred doorway, stops at y 10.73); clearance of Burl follow/depart and Fen emerge (data read from world_m1; 0.8 m via moveCircleMesh vs static colliders, slope < 0.6, follow inside nav): follow PASS, depart PASS, emerge FAIL.
 - OPEN (content, not edited): Fen `emerge` point (1250.7, 1027.0) is within 0.8 m of a collider (push 0.25 m) -> shift that segment ((1248,1024)->(1252,1028.5)).
 - Run: `node tools/route-walk.mjs`. Nothing needs a browser.
+
+### TOWER-DOOR-OPEN-01 + STEP-HEIGHT-01 (kestrel-4, 2026-10-10)
+- A DONE: tower.level.json doorBar prop variant open + colliders [] (World.load only sets anim, not component.variant, so colliderOffVariant never fires at load), door interactable removed; doorUnbar.js/door.unbar stay registered (legacy). Tests adapted (tower, restart, tower-prop-colliders); route-walk leg 7c no longer pries, probe "door open before sword" PASS. Old saves: level props are not restored from save variant (not verified for entity anim in save).
+- B PARTIAL: tools/step-probe.mjs (mesh ray heights, 0.5 m grid, capsule push) lists 37 blocked pairs 0.45<delta<1.2, mostly tower stair/ledge faces (x17-19,y3-7 0.5-0.9; x7-10,y5-8 z6 0.6 summit lip; x12-15,y6-9 z0 0.6-0.9; x13-14,y9 z3.9 0.6). No data change made: cannot tell which is the owner's spot. ASK ARCHITECT/PO: which place, or approve lowering those.
+- route-walk: all legs ok; "clearance emerge" FAIL at (1250.7,1027) is outside the tower, not checked vs baseline.
