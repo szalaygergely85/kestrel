@@ -373,3 +373,8 @@ B1 2026-10-09 (kestrel-1) SETTINGS-MOUNT-01 -> po-review: full createSettingsVie
 - 2026-10-10 GPU-OFF-REASON-01 (kestrel-2, arch-review, uncommitted, Node only): WgCellPipeline._syncActive now builds `_offReason()` (failing terms: ready/enabled/spritesBound/spritesPass/overlayPass/waterPass/shadowPass.enabled+off+sun/source); `stats.offReason` (null = on), `stats.offCount`; one console.warn '[WgCellPipeline] GPU path off: <reason>' per true->false transition, plus a 3-line caller stack when setEnabled(false) was the trigger.
   Settings-driven silent off: NONE found. Shadow levels resolve to sun 'map'|'off' (both accepted); 'dda' only exists for non-mesh renderers (WG is 'mesh'); main.js only calls setSource('scene'). Remaining suspects: a silent off from sprites compile pending (`spritesBound=false (compiling)`), resizeGrid retry path, or device-lost; the new warn will name it on the owner's next occurrence.
   Test: WgCellPipeline.test.js (reason strings, once-per-transition, map/off shadow levels complete). Not run: browser.
+
+### WILD-06b (kestrel-1) - po-review
+- wildEnv.blocked() now also hits colliding placed meshes: 2 m occupancy grid from world.structures AABBs (mesh.collide!==false, has collider/triCount; big > 12 m = ring only). Plants (collide:false) skipped. Tests 21/21, 1e5 queries ~0 alloc.
+- main.js: read-only `window.__debug.wild` {alive, drawn} (wild.drawn() = feeder.stats.drawn).
+- tools/verify-wild.mjs (NOT run, no browser): `node tools/verify-wild.mjs {port}` (port 9500-9574). Limit: AABB, not triangle-exact.

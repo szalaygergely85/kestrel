@@ -45,6 +45,47 @@ function trunkHit(g, x, y, r) {
   return false;
 }
 
+// WILD-06b: colliding placed meshes (rocks, dead trees, ruins) as a coarse occupancy grid. Plant meshes are
+// `collide:false` walk-through and are skipped. Small meshes fill their world AABB; big ones (> BIG_M) only a
+// 1-cell ring so a hollow building does not become a solid block. Built once, queried allocation-free.
+export const MESH_CELL_M = 2;
+const BIG_M = 12;
+export function buildMeshBlockGrid(structures) {
+  const list = [];
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of structures || []) {
+    const m = s && s.mesh;
+    if (!m || typeof m !== 'object' || m.collide === false || s.collide === false || !s.bbox) continue;
+    if (!((m.collider && m.collider.length >= 9) || m.triCount)) continue;
+    list.push(s.bbox);
+    if (s.bbox.x0 < x0) x0 = s.bbox.x0; if (s.bbox.y0 < y0) y0 = s.bbox.y0;
+    if (s.bbox.x1 > x1) x1 = s.bbox.x1; if (s.bbox.y1 > y1) y1 = s.bbox.y1;
+  }
+  if (!list.length) return { n: 0, x0: 0, y0: 0, w: 0, h: 0, cells: new Uint8Array(0) };
+  const w = Math.floor((x1 - x0) / MESH_CELL_M) + 1, h = Math.floor((y1 - y0) / MESH_CELL_M) + 1;
+  const cells = new Uint8Array(w * h);
+  for (const b of list) {
+    const ax = Math.floor((b.x0 - x0) / MESH_CELL_M), bx = Math.floor((b.x1 - x0) / MESH_CELL_M);
+    const ay = Math.floor((b.y0 - y0) / MESH_CELL_M), by = Math.floor((b.y1 - y0) / MESH_CELL_M);
+    const big = b.x1 - b.x0 > BIG_M || b.y1 - b.y0 > BIG_M;
+    for (let cy = ay; cy <= by; cy++) for (let cx = ax; cx <= bx; cx++) {
+      if (big && cx > ax && cx < bx && cy > ay && cy < by) continue;
+      cells[cy * w + cx] = 1;
+    }
+  }
+  return { n: list.length, x0, y0, w, h, cells };
+}
+
+function meshHit(g, x, y, r) {
+  if (!g.n) return false;
+  const cx0 = Math.floor((x - r - g.x0) / MESH_CELL_M), cx1 = Math.floor((x + r - g.x0) / MESH_CELL_M);
+  const cy0 = Math.floor((y - r - g.y0) / MESH_CELL_M), cy1 = Math.floor((y + r - g.y0) / MESH_CELL_M);
+  for (let cy = cy0 < 0 ? 0 : cy0; cy <= cy1 && cy < g.h; cy++) {
+    for (let cx = cx0 < 0 ? 0 : cx0; cx <= cx1 && cx < g.w; cx++) if (g.cells[cy * g.w + cx]) return true;
+  }
+  return false;
+}
+
 /** @returns {import('../../../engine/fauna/fauna.js').FaunaEnv-like} allocation-free FaunaEnv over a loaded world. */
 export function createWildEnv(world, opts) {
   const terr = world.terrain;
@@ -54,6 +95,7 @@ export function createWildEnv(world, opts) {
     trunkR = sp ? sp.map((s) => s.trunkR) : [];
   }
   const grid = buildTrunkGrid(world.scatter, trunkR);
+  const meshGrid = buildMeshBlockGrid(world.structures);
   function habitatAt(x, y) {
     if (world.structureAt(x, y)) return 0;
     const t = terr.typeAt(x, y);
@@ -66,11 +108,12 @@ export function createWildEnv(world, opts) {
   function blocked(x, y, r) {
     if (trunkHit(grid, x, y, r)) return true;
     if (world.structureAt(x, y)) return true;
+    if (meshHit(meshGrid, x, y, r)) return true;
     const t = terr.typeAt(x, y);
     return t !== T_GRASS && t !== T_FOREST && t !== 4; // water / rock (path is walkable-through but not a habitat)
   }
   return {
-    grid,
+    grid, meshGrid,
     groundAt: (x, y) => terr.groundAt(x, y),
     slopeZ: (x, y) => terr.groundNormalAt(x, y, nrm).z,
     habitatAt,
@@ -97,7 +140,7 @@ export function createWild({ world, pool, fx, seed = 1, hfovRad }) {
   const fwd = new Float64Array(2);
   let lx = NaN, ly = NaN;
   return {
-    fauna, env, feed: feeder.feed, stats: fauna.stats,
+    fauna, env, feed: feeder.feed, stats: fauna.stats, drawn: () => feeder.stats.drawn,
     /** once per fixed step, after the player moved. A jump > 25 m (waystone / respawn) resets the fauna. */
     step(dt, px, py, run, yawDeg) {
       if (lx === lx && (px - lx) * (px - lx) + (py - ly) * (py - ly) > TELEPORT_M * TELEPORT_M) fauna.reset();

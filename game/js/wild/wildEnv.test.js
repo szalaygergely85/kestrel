@@ -18,7 +18,7 @@ import { makeOk } from '../../../engine/test/assert.js';
 import { buildBeastNav } from '../quest/sim/beastNav.js';
 import { createBeastSim } from '../quest/sim/beastSim.js';
 import wildlifeMod from '../../../design/models/voxel_wildlife.js'; // the real rabbit + deer data (sets ASSETS.models/wildlifeFx)
-import { createWildEnv, createWild, buildTrunkGrid } from './wildEnv.js';
+import { createWildEnv, createWild, buildTrunkGrid, buildMeshBlockGrid } from './wildEnv.js';
 
 wildlifeMod; paletteMod; detailPassMod; terrainMod; boarMod; swordMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; m3PropsMod;
 const { assets } = await loadTestAssets();
@@ -50,6 +50,27 @@ const ok = makeOk(() => pass++, () => fail++, (m) => console.log('FAIL', m));
   fakeWorld.terrain.typeAt = () => 0; fakeWorld.structureAt = () => ({});
   ok(env.habitatAt(0, 0) === 0 && env.blocked(0, 0, 0.2) === true, 'structure: no habitat, blocked');
   ok(env.perchNear(0, 0, 1, 2, {}) === false, 'perchNear: none until WILD-08');
+}
+
+// ---- 1b. colliding placed meshes block, collide:false plants do not, zero alloc ----
+{
+  const bb = (x0, y0, x1, y1) => ({ x0, y0, z0: 0, x1, y1, z1: 2 });
+  const structures = [
+    { id: 'rock', mesh: { collider: new Float32Array(18), collide: undefined }, bbox: bb(300, 300, 303, 303) },
+    { id: 'bush', mesh: { collide: false, triCount: 40 }, bbox: bb(320, 300, 322, 302) },
+    { id: 'hall', mesh: { triCount: 12 }, bbox: bb(400, 400, 440, 430) },
+  ];
+  const fw = { terrain: { typeAt: () => 0, groundAt: () => 0, groundNormalAt: (x, y, o) => { o.z = 1; return o; } }, structureAt: () => null, scatter: null, structures };
+  const env = createWildEnv(fw, { trunkR: [] });
+  ok(buildMeshBlockGrid(structures).n === 2, 'plant (collide:false) not in the block grid');
+  ok(env.blocked(301, 301, 0.3) === true, 'rock placement blocks');
+  ok(env.blocked(321, 301, 0.3) === false, 'collide:false bush does not block');
+  ok(env.blocked(310, 301, 0.3) === false, 'open ground free');
+  ok(env.blocked(401, 401, 0.3) === true && env.blocked(420, 415, 0.3) === false, 'big building: walls block, hollow interior free');
+  const a0 = process.memoryUsage().heapUsed; let n = 0;
+  for (let i = 0; i < 1e5; i++) if (env.blocked(290 + (i % 40) * 0.5, 300 + (i % 7), 0.3)) n++;
+  const grew = process.memoryUsage().heapUsed - a0;
+  ok(n > 0 && grew < 2e6, `blocked() 1e5 queries ~no allocation (${grew} B)`);
 }
 
 // ---- 2. replay hash identical with fauna on / off ----
