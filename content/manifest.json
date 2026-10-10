@@ -6,7 +6,6 @@
   "files": [
     "worlds/world_m1.world.json",
     "dialogue/bear.dialogue.json",
-    "dialogue/villager.dialogue.json",
     "levels/tower.level.json",
     "levels/test_room.level.json",
     "levels/waterfall_cliff.level.json",
