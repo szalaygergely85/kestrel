@@ -69,7 +69,8 @@
       // o+==>     pommel, guard, blade, point
       //  '        cross-guard bottom
       icon: icon([' .   ', 'o+==>', " '   "],
-                 [' Z   ', 'zZSSW', ' z   '])
+                 [' Z   ', 'zZSSW', ' z   ']),
+      equip: { slot: 'main', tier: 'worn', def: 0, held: 'sword' }   // EQ-01
     },
     'spell.fireball': {
       id: 'spell.fireball', name: 'Ember', kind: 'spell', stackMax: 1, hand: true, inPack: true,
@@ -171,7 +172,8 @@
     // |:@:|     dented plate, bright boss
     // \___/     lower rim in shadow
     icon: icon(['/=o=\\', '|:@:|', '\\___/'],
-               ['ABVBA', 'BjAjJ', 'JjjjJ'])
+               ['ABVBA', 'BjAjJ', 'JjjjJ']),
+    equip: { slot: 'off', tier: 'worn', def: 2, held: 'shield' }   // EQ-01 (shield counts x2)
   };
   defs.lantern = {
     id: 'lantern', name: 'Kestrel Lamp', kind: 'tool', stackMax: 1, hand: true, inPack: true,
@@ -203,7 +205,8 @@
     // (-+->     grip, fletch, nock on the string, shaft, iron head
     //  \|       lower limb + string
     icon: icon([' /|  ', '(-+->', ' \\|  '],
-               [' Hu  ', 'hfuws', ' lu  '])
+               [' Hu  ', 'hfuws', ' lu  ']),
+    equip: { slot: 'ranged', tier: 'worn', def: 0, held: 'bow' }   // EQ-01
   };
   defs.bomb = {
     id: 'bomb', name: 'Blast Pot', kind: 'tool', stackMax: 10, hand: true, inPack: true,
@@ -365,10 +368,64 @@
     return true;
   }
 
+  // ==================================================================================================================
+  // EQ-01 (equipment epic, docs/equipment-epic-2026-10-10.md s1): equip data. PLACEHOLDER icons (EQ-D1/D2 replace them).
+  // equip: { slot, tier: worn|sturdy|fine, def, shell?, held? }. 11 slots; 7 wearable bases x 3 tiers = 21 gear ids
+  // `gear.<slot>.<base>.<tier>`; def worn 1 / sturdy 2 / fine 3, body x2. Ammo `arrow` (quiver), `potion.hp` / `potion.mp`.
+  // ==================================================================================================================
+  var EQUIP_SLOTS = ['head', 'body', 'cloak', 'hands', 'belt', 'legs', 'feet', 'main', 'off', 'ranged', 'quiver'];
+  var EQUIP_TIERS = ['worn', 'sturdy', 'fine'];
+  var tierPrefix = { worn: 'Worn', sturdy: 'Sturdy', fine: 'Fine' };
+  var tierKey = { worn: 'h', sturdy: 'v', fine: 'Y' };           // placeholder icon colour per tier (wood / verdigris / gold)
+  var gearBases = [
+    { slot: 'head', base: 'hood', name: 'Hood', ch: 'n', rows: [' ,-. ', '(   )', '     '], shell: 'hat' },
+    { slot: 'body', base: 'jerkin', name: 'Jerkin', ch: 'T', rows: ['\\   /', ' |#| ', ' |_| '], shell: 'top' },
+    { slot: 'cloak', base: 'cloak', name: 'Cloak', ch: 'A', rows: [' ,-. ', '/ | \\', '/_|_\\'], shell: 'outer' },
+    { slot: 'hands', base: 'gloves', name: 'Gloves', ch: 'm', rows: ['     ', '|||||', '\\___/'], shell: 'gloves' },
+    { slot: 'belt', base: 'belt', name: 'Belt', ch: '=', rows: ['     ', '=[o]=', '     '], shell: 'belt' },
+    { slot: 'legs', base: 'pants', name: 'Pants', ch: 'H', rows: ['|===|', '| | |', '|_|_|'], shell: 'legs' },
+    { slot: 'feet', base: 'boots', name: 'Boots', ch: 'L', rows: ['     ', '|_| |', '|_|_|'], shell: 'feet' }
+  ];
+  gearBases.forEach(function (b) {
+    EQUIP_TIERS.forEach(function (tier, ti) {
+      var id = 'gear.' + b.slot + '.' + b.base + '.' + tier, k = tierKey[tier];
+      var fg = b.rows.map(function (r) { return r.replace(/[^ ]/g, k); });
+      defs[id] = {
+        id: id, name: tierPrefix[tier] + ' ' + b.name, kind: 'gear', stackMax: 1, hand: false, inPack: true,
+        desc: tierPrefix[tier] + ' ' + b.name.toLowerCase() + '. Placeholder copy.',
+        glyph: { ch: b.ch, c: tier === 'fine' ? 'gold' : tier === 'sturdy' ? 'verdigris' : 'wood' },
+        icon: icon(b.rows, fg),
+        equip: { slot: b.slot, tier: tier, def: (ti + 1) * (b.slot === 'body' ? 2 : 1), shell: b.shell }
+      };
+    });
+  });
+  defs.arrow = {
+    id: 'arrow', name: 'Arrow', kind: 'ammo', stackMax: 30, hand: false, inPack: true,
+    desc: 'Yew shaft, iron head.',
+    glyph: { ch: '>', c: 'woodLight' },
+    icon: icon(['     ', '-->>>', '     '], ['     ', 'hhhss', '     ']),
+    equip: { slot: 'quiver', tier: 'worn', def: 0 }
+  };
+  defs['potion.hp'] = {
+    id: 'potion.hp', name: 'Red Draught', kind: 'potion', stackMax: 5, hand: false, inPack: true,
+    desc: 'Heals two hearts. Placeholder copy.',
+    use: { heal: 2, unit: 'hearts', time: 0.6 },
+    glyph: { ch: '!', c: 'vital' },
+    icon: icon(['  _  ', ' (R) ', ' \\_/ '], ['  g  ', ' cLc ', ' ccc '])
+  };
+  defs['potion.mp'] = {
+    id: 'potion.mp', name: 'Blue Draught', kind: 'potion', stackMax: 5, hand: false, inPack: true,
+    desc: 'Restores magic. Not dropped yet.',
+    use: { mp: 2, unit: 'mana', time: 0.6, dropped: false },
+    glyph: { ch: '!', c: 'mana' },
+    icon: icon(['  _  ', ' (M) ', ' \\_/ '], ['  g  ', ' qmq ', ' qqq '])
+  };
+
+
   // Data self-check: [] = OK. palette = ASSETS.palette (optional: checks colour keys exist).
   function validate(palette) {
     var errs = [], rgb = palette && palette.rgb, id, d, r, j, cc, ch;
-    var KINDS = { weapon: 1, spell: 1, tool: 1, food: 1, material: 1, pickup: 1, shield: 1, key: 1, upgrade: 1, currency: 1 };
+    var KINDS = { weapon: 1, spell: 1, tool: 1, food: 1, material: 1, pickup: 1, shield: 1, key: 1, upgrade: 1, currency: 1, gear: 1, ammo: 1, potion: 1 };
     for (ch in keys) if (rgb && !rgb[keys[ch].c]) errs.push('keys.' + ch + ': unknown colour ' + keys[ch].c);
     for (id in defs) {
       d = defs[id];
@@ -390,6 +447,13 @@
         }
       }
     }
+    for (id in defs) {
+      var q = defs[id].equip;
+      if (q && EQUIP_SLOTS.indexOf(q.slot) < 0) errs.push(id + ': bad equip.slot ' + q.slot);
+      if (q && EQUIP_TIERS.indexOf(q.tier) < 0) errs.push(id + ': bad equip.tier ' + q.tier);
+      if (q && !(q.def >= 0)) errs.push(id + ': bad equip.def');
+      if (defs[id].kind === 'gear' && !q) errs.push(id + ': gear without equip');
+    }
     var e = loot.boar.entries;
     for (j = 0; j < e.length; j++) if (!defs[e[j].item]) errs.push('loot.boar: unknown item ' + e[j].item);
     return errs;
@@ -403,12 +467,15 @@
     loot: loot,
     toast: toast,
     attachSprites: attachSprites,
-    validate: validate
+    validate: validate,
+    equipSlots: EQUIP_SLOTS,
+    equipTiers: EQUIP_TIERS
   };
 
   // S8-A-07 (appended): new ids at the end of the pack display order + the 12-icon set
   A.items.order.push('shield', 'lantern', 'key.small', 'bow', 'bomb', 'heart.piece', 'cog', 'brass.scrap');
-  A.items.order.push('aetherCrystal');                                   // CH1-D2
+  A.items.order.push('aetherCrystal');
+  Object.keys(defs).forEach(function (k) { if (A.items.order.indexOf(k) < 0 && (defs[k].kind === 'gear' || k === 'arrow' || k.indexOf('potion.') === 0)) A.items.order.push(k); });  // EQ-01                                   // CH1-D2
   A.items.iconSet = iconSet;
 
   if (typeof module === 'object' && module && module.exports) module.exports = { items: A.items, lootSprites: A.lootSprites };

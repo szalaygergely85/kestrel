@@ -231,6 +231,20 @@ function killAndRespawn(vitals, player) {
   ok('a bad def throws naming its id', !!threw && /bad\.item/.test(threw.message), threw && threw.message);
 }
 
+// EQ-01: equip data validated; 21 gear ids; bad slot/tier throws.
+{
+  const gear = Object.values(defs).filter((d) => d.kind === 'gear');
+  ok('21 gear ids over 7 slots x 3 tiers', gear.length === 21 && new Set(gear.map((d) => d.equip.slot)).size === 7);
+  ok('arrow quiver stack 30', defs.arrow.kind === 'ammo' && defs.arrow.stackMax === 30 && defs.arrow.equip.slot === 'quiver');
+  ok('potions', defs['potion.hp'].stackMax === 5 && defs['potion.hp'].use.heal === 2 && defs['potion.mp'].kind === 'potion');
+  ok('sword/shield/bow equip slots', defs.sword.equip.slot === 'main' && defs.shield.equip.slot === 'off' && defs.bow.equip.slot === 'ranged');
+  const mk = (equip) => ({ ...defs, 'bad.gear': { ...defs['gear.head.hood.worn'], id: 'bad.gear', equip } });
+  for (const [label, equip] of [['slot', { slot: 'tail', tier: 'worn', def: 1 }], ['tier', { slot: 'head', tier: 'epic', def: 1 }], ['def', { slot: 'head', tier: 'fine', def: -1 }]]) {
+    let t = null; try { validateItemDefs(mk(equip)); } catch (e) { t = e; }
+    ok(`bad equip.${label} throws`, !!t && /bad\.gear/.test(t.message), t && t.message);
+  }
+}
+
 // S8-C-08: explicit kinds preserve authored stack limits, hand assignment and saved ids.
 {
   const expected = { shield: 'shield', 'key.small': 'key', 'heart.piece': 'upgrade', cog: 'currency' };
