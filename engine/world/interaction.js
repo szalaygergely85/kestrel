@@ -130,7 +130,9 @@ export function findInteractTarget(world, eye, cfg, out) {
     let cosAngle = dist < 1e-9 ? 1 : (dx * vx + dy * vy + dz * vz) / dist;
     if (cosAngle > 1) cosAngle = 1; else if (cosAngle < -1) cosAngle = -1;
     const angleDeg = Math.acos(cosAngle) * 180 / Math.PI;
-    if (angleDeg > coneDeg) continue;
+    // DOOR-CLOSE-01 (owner: too close to the door -> cannot open): within arm's length the aim point sits steeply off the
+    // view ray (looking down / sideways at a big object), so the cone widens to 70 deg below 0.9 m.
+    if (angleDeg > (dist < 0.9 && coneDeg < 70 ? 70 : coneDeg)) continue;
 
     if (!hasLineOfSight(world, eye.x, eye.y, eye.z, rec.x, rec.y, rec.z)) continue;
 
