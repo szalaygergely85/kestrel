@@ -120,3 +120,20 @@ if (global.gc) {
   global.gc(); assert.ok(process.memoryUsage().heapUsed - h0 < 200000, 'heap growth ' + (process.memoryUsage().heapUsed - h0));
 }
 console.log('dialogueCtl.test.js ok');
+
+// CH1-06: `s.<key>` route = world.state check / injected questFlag set (not dlg.*, not the book)
+{
+  const f = fake(), setKeys = [];
+  const comp = compileDialogue({ id: 'sx', speakers: { a: { label: 'A' } },
+    entry: [{ node: 'n1', requires: 's.waystone.woken' }, { node: 'n0' }],
+    nodes: { n0: { speaker: 'a', lines: ['hi'], setFlag: 's.burl.follow', end: true }, n1: { speaker: 'a', lines: ['woken'], end: true } } });
+  f.world.get = (id) => (id === 'x' ? { data: { components: { dialogue: 'sx' } }, play() {} } : null);
+  const c2 = createDialogueCtl({ world: f.world, dialogues: { sx: comp }, questFlag: (k) => { setKeys.push(k); f.state[k] = true; } });
+  c2.openFor('x'); assert.equal(c2.runner.line, 'hi', 'has false -> default entry');
+  assert.deepEqual(setKeys, ['burl.follow'], 's. set -> questFlag(rest)'); assert.equal(f.state['dlg.s.burl.follow'], undefined);
+  c2.close(); run(c2, f, 1);
+  f.state['waystone.woken'] = true;
+  c2.openFor('x'); assert.equal(c2.runner.line, 'woken', 's. has reads world.state[rest]');
+  assert.equal(f.state['dlg.waystone.woken'], undefined);
+}
+console.log('dialogueCtl s. route ok');

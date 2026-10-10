@@ -477,3 +477,8 @@ B1 2026-10-09 (kestrel-1) SETTINGS-MOUNT-01 -> po-review: full createSettingsVie
 ### CH1-03 Aether crystal (kestrel-3, programmer, 2026-10-10) - module + tests, arch-review
 - `game/js/quest/crystal.js` `createCrystalGrant({world,addItem,questFlag,burst,toast})` -> `{check(questState), noteBoar(x,y,z)}`; check takes status number/name/{status}; grants when >= ready and `world.state['aether.attuned']` unset; toast key `toast.crystal.found`. Tests `crystal.test.js` pass.
 - NEEDS B1-main: hook crystal.check on quest:ready (burl.boars) + world:loaded; call noteBoar on beast:died; burst = teal preset via engine.particles.burstAt; toast text from story q03; addItem = inventory add. questFlag injected (kestrel-1).
+
+### CH1-06 dialogue `s.` route + barks (kestrel-3, programmer, 2026-10-10) - modules + tests, po-review
+- `dialogueCtl.js`: opt `questFlag`; `s.<key>` has = `!!world.state[key]`, set = `questFlag(key)` (rest-of-key cached in a per-ctl Map; the `q.` route had no Map, it calls the book directly). Test appended to `dialogueCtl.test.js`.
+- `barks.js` `createBarks({world,data,questFlag,dialogue,style?,palette?})` -> `{play(id,speaker), step(dt), draw(layer,t), cancel, active}`; data `{speakers:{k:{label,player?}}, barks:{id:[{who,text}]}}`; flag `bark.<id>`; 1.6 s/line, typed at the view cps, queue for overlapping ids, cancelled (and refused, flag not consumed) while `dialogue.open`; reuses dialogueView with key hints hidden. `barks.test.js` incl. 0-alloc draw (run with `node --expose-gc`) passes.
+- NEEDS B1-main: mount barks (load `bear.barks.json` from CH1-05, step early, draw after dialogue) + pass `questFlag` to createDialogueCtl and createBarks (dialogue: the ctl).
