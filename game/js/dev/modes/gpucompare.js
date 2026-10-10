@@ -158,6 +158,8 @@ function buildCompareRuns(ctx) {
       cam: { x: 1499.5, y: 1027.8, z: 4.6, yawDeg: 280, pitchDeg: -10 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: relay at distance (half LOD)',
       cam: { x: 1497.0, y: 1027.5, z: engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -2 }, real: true },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: roadBend (WS1-08 road bend, relay waystone, yaw 270)',
+      cam: { x: 1268, y: 1040, z: -29.79 + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: 0 }, real: true }, // floorAt(1268,1040) = -29.79 (absolute z)
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: summit east (relay plinth, yaw 87.6)',
       cam: { x: 1489.0, y: 1025.0, z: 8.2, yawDeg: 87.6, pitchDeg: 0 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: breach looking back east (yaw 87.6)',
