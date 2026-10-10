@@ -1054,3 +1054,18 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 ## D-055 - Chargen head at a finer grid (owner, 2026-10-10; recorded by the PC-B main session)
 - Owner on face v2: "if we make smaller cubes? wouldnt be better? i dont like the eyes and lips". Options shown: finer head only / whole body 2x finer / same cubes + redesign. **Owner pick: finer head only** - the Head (+ Jaw) bones use 1.25 cm cells (2x the 2.5 cm body grid, face ~20 cells wide); the body stays 2.5 cm.
 - Architect note first (architecture 38.34: per-bone cell size in the kit, compose/mesh/collapse/riggedModelDef grid snap, exports, in-game cost), then a programmer, then the designer redraws the head. PC-A to ratify.
+
+## D-056 - M3 "Steel and Hush" closed (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner: "m3 done". M3 exit accepted by the owner walk on PC-B (laptop). Open M3 rows that are not bugs move to M4 or stay parked (BEAST-TUNING-01 dodge = design question).
+- Owner note: "waystones restarts" - the waystone still carries the M1/M2 demo end trigger (`quest.end`: scripted walk + end card, then the game starts over). What happens instead is an owner decision (asked 2026-10-10).
+
+## D-057 - Waystones are travel points (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner: "waystone also teleport location". Travel is picked **from the map (M)**; only waystones the player has **touched** (saved) can be travelled to.
+- Placement: **one more along the road west**, then waystones spread "around the map: crossroads, villages, etc." - the **designer proposes** spots on the chart, the owner picks before anything is built.
+- Order: designer proposal -> owner pick -> PO story rows (travel from the map, touched list in the save, fade + invalidate on arrival) -> programmer.
+
+## D-058 - Quest giver flow; Fen removed (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner: "i wanna able to see, pick up, and finish" quests. Picked the **giver flow**: SEE = a `!` over an NPC with a quest + a map marker; PICK UP = talk -> quest text -> Accept / Later -> quest log; FINISH = NPC shows `?` when the steps are done -> talk -> hand in -> reward (item/coin) + "Quest complete". The boar quest becomes **Burl's quest** (first user of the flow).
+- **Fen removed for now** (the villager added on 2026-10-10 without an owner OK, CHARGEN-15): entity + dialogue out of world_m1; the add-on package system (38.33) stays for later NPCs.
+- Order: architect note + story rows -> programmer(s) -> owner walk.
+- Owner picks (2026-10-10, after 38.35): Burl's boar quest gives **no item reward** - only the "Quest complete" moment (no coin item; currency stays an open question; QG-D1 = the `?` marker only). Quest log key = **J**. Build go: QG-01..05 + QG-W1.

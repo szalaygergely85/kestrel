@@ -1518,7 +1518,7 @@ Design needed: designer confirms the `jaw` pivot and max open angle in `voxel_be
 | RIG-03 | loadPack/KPKG asset types `model.rigged` / `model.static` -> `bundle.models`; main.js registers `char.<id>` | P1 | arch-review (engine half + RIG-03w main.js/charRegister.js done, B1) [PC-B B2] | `engine/content/loadPack.js`, `package.js`, `game/js/main.js` |
 | CHARGEN-15 | First villager from a `.kestrel` (`.glb`) + dialogue, like Burl | P1 | po-review [PC-B B1] (code+Node done; browser pass + gpucompare/route walk pending, see lanes/pc-b1.md) - deps RIG-03; boot/add-on loading per architecture.md 38.33 | package, `content/worlds/world_m1.world.json`, `game/js/main.js` |
 | CHARGEN-16 | Player look: `player.look` in the save + `hand@look` retint + owner walk (picks option A/B) | P1 | po-review (owner walk) [PC-B B1] | `game/js/quest/save/saveState.js`, `game/js/main.js` |
-| CHARGEN-17 | New-game creation screen (title-menu skin, in-game-look preview built at runtime) | P1 | po-review [PC-B B1, 0.75 d; Node-only, body preview ASK ARCHITECT] - deps RIG-02 | `game/js/ui/charCreate.js` + test, `game/js/titleMenuHost.js`, `tools/verify-charcreate.mjs` |
+| CHARGEN-17 | New-game creation screen (title-menu skin, in-game-look preview built at runtime) | P1 | parked (owner 2026-10-10: no character creation at the start; screen unwired from New game, code kept) | `game/js/ui/charCreate.js` + test, `game/js/titleMenuHost.js`, `tools/verify-charcreate.mjs` |
 | CHARGEN-18 | Builds slim/heavy (m, f) + elder overlay + piece set 2 | P2 | todo [PC-B designer, 0.75 d] | kit JSON |
 | CHARGEN-22a | Per-recipe detail, kit + recipe half (D-055, 38.34 items 1-2, 7): `kit.regions`/`resLevels`/`base.detail`/`slots.keep` validation, `downsample2` (keep-priority), `recipe.res` (missing = 1/1, head >= body), GAME_SAFE_RES + CHAR_GAME_MAX_QUADS; tests 38.34 item 8 b, c, g | P1 | arch-review [PC-B kestrel-3, 0.75 d; done: downsample.js, kit regions/resLevels/detail/keep/seam/stretch/attachment-res checks, recipe.res + DEFAULT_RES/effectiveRes/clampRes/GAME_SAFE_RES/CHAR_GAME_MAX_QUADS, randomRecipe res from kit.defaults.res (no rng draw), engine/chargen/detail.test.js 38 checks; human_kit.js untouched (no res/regions yet, bytes identical)] | `engine/chargen/{kit,downsample,recipe,index}.js` + tests |
 | CHARGEN-22b | Per-recipe detail, compose + mesh (38.34 items 2-3): CharGrid `blocks` (head at its own level), height block remap, `meshBlock` + finest-grid output (`rigged.cellM` = G); 1/1 byte-identical; tests 38.34 item 8 a, d, e, f | P1 | arch-review [PC-B kestrel-3, done 2026-10-10: see docs/lanes/pc-b2.md] | `engine/chargen/{compose,height,mesh}.js` + `blocks.test.js` |
@@ -1822,3 +1822,53 @@ Note: groundBrain.js + fauna.js (createFauna: spawner + brains, onSpawn/onDespaw
 - [ ] Ground models <= 2.5k quads, bird <= 0.4k (38.31 item 9).
 - [ ] Gait clips tuned with `tunedMps` + `rate[]`.
 - [ ] D3 includes `perchByModel` measured on the forest tree meshes. D4 sets the `spawn` blocks with the PO.
+
+## EP-QUEST giver flow (D-058) (PC-B architect opus, 2026-10-10; architecture 38.35; PC-A to ratify)
+
+No engine change (38.35). Order: QG-W1 + QG-D1 in parallel with QG-01/02 -> QG-03 -> QG-04, QG-05 -> owner walk. Placeholder text is fine until QG-W1 lands (swap = data only).
+
+| ID | Slot | Size | Files | Deps |
+|---|---|---|---|---|
+| QG-01 | kestrel-3 (pure game sim, no main.js) | 0.5 d | `game/js/quest/sim/questBook.js` + test | - |
+| QG-02 | kestrel-3 | 0.5 d | `questBook.js` (`migrateQuestSave`), `game/js/quest/save/saveState.js`, `questSave.test.js` | QG-01 |
+| QG-03 | kestrel-1 | 0.75 d | `game/js/questRelay.js`, `game/js/saveRelay.js`, `game/js/quest/dialogueCtl.js`, `game/js/main.js`, `content/quests/m1.quest.json`, `content/quests/burl.boars.quest.json` (new) + wherever m1 is loaded, `content/dialogue/bear.dialogue.json`, `tools/validate-content.mjs` | QG-01, QG-02, QG-D1 (coin def; until then reward an existing item) |
+| QG-04 | kestrel-1 | 0.5 d | `game/js/quest/wire/questMarks.js`, `game/js/quest/mapCard.js`, main.js marker wiring | QG-03, QG-D1 |
+| QG-05 | kestrel-1 | 0.5 d | `game/js/ui/questLog.js` (+ preview), `game/js/quest/input/bindings.js`, `game/js/gameKeys.js`, main.js | QG-03 |
+| QG-W1 | writer | 0.25 d | `docs/story.md` (Burl quest texts) - NEEDS WRITER | - |
+| QG-D1 | designer | 0.25 d | `?` marker model (`questMarkReady`), `coin` glyph/icon | - |
+
+### QG-01 questBook sim  [P1] [todo] [PC-B kestrel-3]
+- [ ] `createQuestBook(mainDef, giverDefs, saved?)` + `validateGiverQuest` per 38.35 items 1, 2, 4; `quest.js` unchanged.
+- [ ] Status ints unavailable/available/active/ready/done; `accept`, `handIn` (null unless ready; second call null), `quest.<id>.done` flag fed to every quest on hand-in.
+- [ ] `hasKey`/`actKey` over a `Map` built at create; unknown key -> false, no throw. `giverMarks(outA, outR)`, `tracked()`, `version`, `onChange`, `toSave`, `hashInto`.
+- [ ] Tests (38.35 item 11, questBook part) incl. facts before accept, accept-when-complete -> ready, 10k-step heap check.
+
+### QG-02 Quest save field + migration  [P1] [todo] [PC-B kestrel-3]
+- [ ] `save.game.quests` optional (38.35 item 9); `validateSave`/`collectSave`/`applySave` accept and round-trip it; old saves without it still load byte-identically.
+- [ ] `migrateQuestSave`: three fixtures (prefix incl. `beasts` -> done, no reward; prefix ends at `sword` -> accepted with old dead boars, ready if 5/5; earlier -> nothing).
+- [ ] `SAVE_VERSION` stays 1. `node tools/run-tests.mjs` + check-deps green.
+
+### QG-03 Wire the book: Burl's quest playable  [P1] [todo] [PC-B kestrel-1]
+- [ ] Relay/saveRelay hold the book (`relay.quest.state` still = m1 state); events fan out; `onChange` -> `gameHooks.emitSimple`.
+- [ ] `m1.quest.json` `beasts` -> flag `quest.burl.boars.done` (same id/index); `burl.boars.quest.json` (giver `bear`, requires m1 `sword`, 5 boars, reward `coin` x10 placeholder).
+- [ ] dialogueCtl flags adapter routes `q.*` to the book; `bear.dialogue.json` entries ready/active/available/talked/intro with offer (Accept/Later), reminder, hand-in nodes (placeholder lines until QG-W1).
+- [ ] Hand-in grants via `addItem`, overflow `spawnDrop`; toasts "Quest accepted" / "Quest complete". HUD line follows `tracked()`.
+- [ ] validate-content `q.<id>.<op>` cross-file check + fixture. `bearDialogue.test.js` cases (38.35 item 11).
+- [ ] Coordinate with WAYSTONE-NORMAL-01: do not change `relay.poll` facts or the waystone step.
+- [ ] One headless capture of the offer box; then owner walk: sword -> `!` on Burl -> Accept -> 5 boars -> `?` -> hand in -> coins + "Quest complete".
+
+### QG-04 Giver markers: `!` / `?` over the NPC + map  [P1] [todo] [PC-B kestrel-1]
+- [ ] `questMarks` optional `host.source(out)` (default unchanged; existing test still passes) + test.
+- [ ] Two instances in main.js fed by `book.giverMarks`: `questMark` while available, `questMarkReady` while ready, none while active/done.
+- [ ] `mapCard` kinds `quest` / `questReady`; markers rebuilt on card open when `book.version` changed. Keep D-057 waystone kinds intact. mapCard test per kind.
+
+### QG-05 Quest log screen (J)  [P1] [todo] [PC-B kestrel-1]
+- [ ] Binding `questLog` = `KeyJ` (rebindable, no conflict test break); opens/closes like the inventory and locks input.
+- [ ] `questLog.js` over the book: Active (ready tagged with the return line) / Done, main quest listed; detail steps `[x]/[>]/[ ]` + `n/target`.
+- [ ] Rows rebuilt only on `book.version` change; `drawLog` 0-alloc test; preview page updated; no "Esc to close" text (D-053).
+
+### QG-W1 Burl's quest texts  [P1] [todo] [writer] NEEDS WRITER
+- [ ] Quest title; offer lines (<= 56 chars each, 2-3 lines); choices Accept / Later (<= 40); accepted reply; later reply; reminder line; ready line; thanks line; step text `beasts` (HUD <= 38); `returnText` (<= 38); new m1 `beasts` HUD line ("go see Burl", <= 38); toasts "Quest accepted" / "Quest complete"; log headers Active / Done. ASCII only; Burl voice per the existing bear lines.
+
+### QG-D1 `?` marker + coin  [P2] [todo] [designer]
+- [ ] `questMarkReady` voxel model: `?` twin of `questMark` (same clips appear/active/complete, same size). `coin` item def glyph + icon in `design/items.js` (stackMax 999). Preview in the existing marker/item preview pages.
