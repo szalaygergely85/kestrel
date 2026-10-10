@@ -43,6 +43,16 @@ try {
   let h1 = h0;
   for (let i = 0; i < 40 && h1 === h0; i++) { await pause(150); h1 = await hash(); }
   assert.notEqual(h1, h0, 'Random did not change the glb bytes');
+  // CHARGEN-22d: switch Head detail to the finest enabled level and assert the glb bytes change
+  const fine = await evaluate(cdp, `(() => { const sel = [...document.querySelectorAll('select')].find((x) => x.previousSibling && x.previousSibling.textContent === 'Head detail'); if (!sel) return -1;
+    const o = [...sel.options].filter((x) => !x.disabled && Number(x.value) > 1).pop(); if (!o) return 0; sel.value = o.value; sel.dispatchEvent(new Event('change')); return Number(o.value); })()`);
+  assert.notEqual(fine, -1, 'Head detail row missing');
+  if (fine > 0) {
+    const h2a = await hash(); let h2 = h2a;
+    for (let i = 0; i < 40 && h2 === h2a; i++) { await pause(150); h2 = await hash(); }
+    assert.notEqual(h2, h2a, 'Head detail did not change the glb bytes');
+    console.log('head detail level ' + fine + ': glb ' + h2a + ' -> ' + h2);
+  } else console.log('head detail: no finer level enabled in this kit, skipped');
   await pause(300);
   const s = await cdp.send('Page.captureScreenshot', { format: 'png' }); writeFileSync(path.join(out, 'chargen-app.png'), Buffer.from(s.data, 'base64'));
   assert.deepEqual(errors, [], 'console errors');

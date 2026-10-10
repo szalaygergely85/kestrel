@@ -25,7 +25,7 @@ function mapZ(first, z) {
   return first[i] + (z - i) * rowsHere;
 }
 
-export function heightBase(base, h) {
+export function heightBase(base, h, regions) {
   if (!h) return base;
   const counts = rowCounts(base, h);
   const [sx, sy, sz] = base.size;
@@ -44,8 +44,16 @@ export function heightBase(base, h) {
     bones[name] = { ...b, joint: pt(b.joint), box: [q[0], q[1], z0, q[3], q[4], z1] };
   }
   const mapAll = (o) => { if (!o) return o; const r = {}; for (const k in o) r[k] = pt(o[k]); return r; };
+  // 38.34: region boxes (level-1 cells) in the new grid. No stretch row lies inside a region box, so the box keeps its height
+  // and the block origin only shifts by an integer.
+  const regionBoxes = {};
+  for (const rn in regions || {}) {
+    const q = regions[rn].box;
+    regionBoxes[rn] = [q[0], q[1], first[q[2]], q[3], q[4], first[q[5] + 1] - 1];
+  }
   return {
     ...base,
+    regionBoxes,
     size: [sx, sy, first[sz]],
     layers,
     bones,

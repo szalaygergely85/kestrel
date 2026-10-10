@@ -1,6 +1,7 @@
 // engine/chargen/index.js (CHARGEN-02, docs/architecture.md 38.29 item 4): the character generator core.
 export { validateKit, SLOTS, KIT_ATTACH_SLOTS, SHELL_ORDER, ATTACH_ORDER, STRETCH_BONES, MAX_MATERIALS } from './kit.js';
-export { validateRecipe, HEIGHT_MIN, HEIGHT_MAX, AGES, ELDER_TEMPO, effectiveHeight, ageTempo } from './recipe.js';
+export { validateRecipe, HEIGHT_MIN, HEIGHT_MAX, AGES, ELDER_TEMPO, effectiveHeight, ageTempo, DEFAULT_RES, GAME_SAFE_RES, CHAR_GAME_MAX_QUADS, effectiveRes, clampRes } from './recipe.js';
+export { downsample2 } from './downsample.js';
 export { heightBase } from './height.js';
 export { randomRecipe } from './random.js';
 export { composeCharacter } from './compose.js';
