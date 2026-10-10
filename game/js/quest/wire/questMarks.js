@@ -53,6 +53,8 @@ export function createQuestMarks(hooks, host) {
         const h = r.h;
         if (r.seen !== tickNo && r.st !== ST_FADE) { r.st = ST_FADE; r.t = 0; h.anim = fx.clipFor.complete; }
         r.t += ms;
+        // MARK-FOLLOW-01 (owner: the mark stayed behind when Burl walked): re-resolve the target every tick so marks follow moving NPCs (zero alloc: shared pos).
+        if (host.resolve(r.id, pos) && (pos.x !== r.x || pos.y !== r.y || pos.z !== r.z)) { r.x = pos.x; r.y = pos.y; r.z = pos.z; h.setPos(r.x, r.y, r.z); }
         if (r.st === ST_POP) {
           h.scale = curve(fx.popScale, r.t, 0.05);
           if (r.t >= fx.popMs) { r.st = ST_ACTIVE; h.scale = 1; h.anim = fx.clipFor.active; }

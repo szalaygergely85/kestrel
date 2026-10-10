@@ -455,7 +455,7 @@ try {
   // QUEST-MARK-01w: '!' markers over available take steps (patch docs/patches/QUEST-MARK-01w.diff). Off in capture/bench/?save=0.
   if (saveEnabled && window.ASSETS && window.ASSETS.questMarkFx) {
     const qm = createQuestMarkers(questDef, [ // CH1-02 (38.37 item 1): flag/area steps only; item steps (sword) and wake/breach get no marker. doorMarker/roadWest resolve to their area trigger (markResolve)
-      { objectiveId: 'leave', targets: ['doorMarker'] }, { objectiveId: 'follow', targets: ['bear'] }, { objectiveId: 'waystone', targets: ['endMarker'] },
+      { objectiveId: 'leave', targets: ['doorMarker'] }, /* MARK-FOLLOW-01: no mark while following Burl (owner) */ { objectiveId: 'waystone', targets: ['endMarker'] },
       { objectiveId: 'road', targets: ['roadWest'] }, { objectiveId: 'relayFound', targets: ['relayBend'] }, { objectiveId: 'relay1', targets: ['relayBend'] }]);
     const MARK_AREA = { doorMarker: 'towerDoor', roadWest: 'roadWest' }; const MARK_AT = { doorMarker: { x: 1495.5, y: 1030.5 } }; // owner 2026-10-10: the leave marker hangs in the open SW doorway (cell Q), not at the area centre (that sat in the wall) // marker id -> world area trigger id (no entity)
     const MARK_TOP = { endMarker: 3.0, bear: 1.1, noteKeepLight: 0.75 }; const MARK_DY = { noteKeepLight: -0.55 }; // QUEST-CHAIN-Q-01: the page sits ON the tower wall (y 10.0 local, interior = smaller y): hang the '!' 0.55 m inside so it is not half in / through the wall // prop top above its base z (waystone 24 voxels x 0.125 m; bear 22 voxels x 0.05 m = 1.1 m, glyph floats 0.35 m above); notes would use z + 1.55 (owner 2026-10-10: "!" too high)
