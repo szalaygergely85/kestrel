@@ -1,11 +1,11 @@
 {
   "version": 1,
   "id": "burl.boars",
-  "title": "Burl's boars",
+  "title": "Boars in the Berries",
   "giver": { "npc": "bear" },
   "requires": [{ "quest": "m1", "step": "sword" }],
   "objectives": [
     { "id": "beasts", "text": "Bring down the five wild boars", "when": { "type": "beasts", "ids": ["boar1", "boar2", "boar3", "boar4", "boar5"], "count": 5 } }
   ],
-  "returnText": "The boars are down. Go back to Burl."
+  "returnText": "Tell Burl the slope is quiet"
 }

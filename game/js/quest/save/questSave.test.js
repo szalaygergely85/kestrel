@@ -6,13 +6,14 @@ import { createQuest, applyQuestEvent } from '../sim/quest.js';
 import { migrateQuestSave, createQuestBook } from '../sim/questBook.js';
 import { collectSave, applySave, stringifyGameSave, parseGameSave, validateSave, SAVE_VERSION } from './saveState.js';
 const rd = p => JSON.parse(readFileSync(new URL('../../../../content/quests/' + p, import.meta.url)));
-const m1 = rd('m1.quest.json'), burl = rd('burl.boars.quest.json'), defs = { main: m1, givers: [burl] };
+const m1 = rd('m1.quest.json'), m1Old = structuredClone(m1), burl = rd('burl.boars.quest.json'), defs = { main: m1, givers: [burl] };
 const assets = new AssetRegistry({ palette: {} }), world = World.load({ name: 'qs', terrain: null, structures: [], entities: [] }, assets, {});
+m1Old.objectives[4].when = { type: 'beasts', ids: ['boar1', 'boar2', 'boar3', 'boar4', 'boar5'], count: 5 }; // pre-QG-03 m1: old saves were written with this shape
 const m1At = (n, dead = []) => {
-  const q = createQuest(m1);
+  const q = createQuest(m1Old);
   const evs = [{ type: 'flag:set', key: 'wake', value: true }, { type: 'item:got', id: 'lantern' }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }];
-  for (const e of evs.slice(0, Math.min(n, 4))) applyQuestEvent(q, e, m1);
-  for (const id of dead) applyQuestEvent(q, { type: 'beast:died', id }, m1);
+  for (const e of evs.slice(0, Math.min(n, 4))) applyQuestEvent(q, e, m1Old);
+  for (const id of dead) applyQuestEvent(q, { type: 'beast:died', id }, m1Old);
   return q;
 };
 assert.equal(SAVE_VERSION, 1);

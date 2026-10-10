@@ -9,6 +9,8 @@ import { createSaveRelay } from './saveRelay.js';
 import { createGameHooks, bridgeEngineEvents } from './gameHooks.js';
 import { DONE_TEXT } from './questRelay.js';
 
+const burl = JSON.parse(readFileSync(new URL('../../content/quests/burl.boars.quest.json', import.meta.url)));
+const giverDefs = [burl];
 const questDef = JSON.parse(readFileSync(new URL('../../content/quests/m1.quest.json', import.meta.url)));
 // objective texts come from the content (writer pass may change them), not from this test
 const OBJ = Object.fromEntries(questDef.objectives.map((o) => [o.id, o.text]));
@@ -24,7 +26,7 @@ ensureInventory(player.data, { pack: [{ id: 'lantern', n: 1 }, { id: 'sword', n:
 world.state['tower.lantern.taken'] = true; world.state['tower.sword.taken'] = true; world.state['quest.wakeT'] = 99;
 
 const events = new Events();
-const A = createSaveRelay({ storage, questDef });
+const A = createSaveRelay({ storage, questDef, giverDefs });
 A.onWorldLoaded();
 A.bindEvents(events);
 const H = createGameHooks(); // the seam: engine events -> bridge -> relay handlers
@@ -50,8 +52,13 @@ events.emit('chest:opened', { id: 'chestA' });
 events.emit('inventory:added', { id: 'boar_meat', n: 1 });
 assert.equal(A.quest.objectiveText(), OBJ.beasts);
 events.emit('beast:died', { id: 'boar2' });
-assert.equal(A.quest.objectiveText(), OBJ.beasts, 'QUEST-CHAIN-02c: 5 boars needed');
+assert.equal(A.quest.objectiveText(), OBJ.beasts, 'QG-03: m1 waits for Burl until the hand-in');
 for (const id of ['boar3', 'boar4', 'boar5']) events.emit('beast:died', { id });
+assert.equal(A.quest.objectiveText(), OBJ.beasts, 'boars killed before accept: m1 still says find the bear');
+assert.equal(A.quest.book.statusOf('burl.boars'), 1, 'available');
+assert.equal(A.quest.book.accept('burl.boars'), true); assert.equal(A.quest.book.statusOf('burl.boars'), 3, 'accepted with 5 dead -> ready');
+assert.equal(A.quest.objectiveText(), burl.returnText);
+assert.deepEqual(A.quest.book.handIn('burl.boars'), { items: [] }); assert.equal(A.quest.state.completed.includes('beasts'), true, 'hand-in completes m1 beasts');
 assert.equal(A.quest.objectiveText(), OBJ.waystone);
 A.quest.poll(facts({ endStarted: true }), breach);
 assert.equal(A.quest.done, true, 'scripted sequence completes the demo quest');
@@ -62,7 +69,7 @@ assert.equal(DONE_TEXT, 'The pencil line runs on.');
 {
   const C = new Relay0();
   function Relay0() { this.cols = 160; this.cells = new Map(); this.setCellRGB = (x, y, g) => { this.cells.set(y * 1000 + x, String.fromCharCode(g + 32)); }; }
-  const R = createSaveRelay({ storage: null, questDef });
+  const R = createSaveRelay({ storage: null, questDef, giverDefs });
   R.quest.draw(C);
   let row = ''; for (let x = 0; x < 40; x++) row += C.cells.get(1000 + x) ?? '';
   assert.equal(row.trim(), ('> ' + OBJ.wake).slice(0, 40).trim(), 'objective line at row 1');
@@ -75,7 +82,7 @@ assert.equal(DONE_TEXT, 'The pencil line runs on.');
 assert.equal(A.tick(10, world, false), false, 'no autosave when canSave is false');
 assert.equal(A.tick(55, world, true), true, 'autosave after 60 s');
 const text1 = mem.get([...mem.keys()][0]);
-const B = createSaveRelay({ storage, questDef });
+const B = createSaveRelay({ storage, questDef, giverDefs });
 B.onWorldLoaded(); // boot: fresh world first (as main.js does), then the restore swap
 const w2 = B.load(assets, {});
 assert.ok(w2, 'slot exists -> world restored');
@@ -113,8 +120,8 @@ assert.equal(world.state['quest.endT'], 0, 'live world untouched');
 const mem2 = new Map();
 const off = createSaveRelay({ storage: { getItem: (k) => mem2.get(k) ?? null, setItem: (k, v) => mem2.set(k, v), removeItem: (k) => mem2.delete(k) }, questDef, enabled: false });
 assert.equal(off.save(world), false); assert.equal(off.tick(999, world, true), false); assert.equal(off.load(assets, {}), null); assert.equal(mem2.size, 0);
-assert.equal(createSaveRelay({ storage: null, questDef }).save(world), false);
+assert.equal(createSaveRelay({ storage: null, questDef, giverDefs }).save(world), false);
 // corrupt slot -> no crash, no restore
-mem.set([...mem.keys()][0], '{bad'); assert.equal(createSaveRelay({ storage, questDef }).load(assets, {}), null);
+mem.set([...mem.keys()][0], '{bad'); assert.equal(createSaveRelay({ storage, questDef, giverDefs }).load(assets, {}), null);
 
 console.log('saveRelay: event-driven quest to done, byte-stable relay round trip, restart reset, dead beasts, disabled/corrupt slots PASS');

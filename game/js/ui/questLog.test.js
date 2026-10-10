@@ -5,6 +5,8 @@ import { createQuest,applyQuestEvent } from '../quest/sim/quest.js';
 import { createQuestLog } from './questLog.js';
 
 const def=JSON.parse(readFileSync(new URL('../../../content/quests/m1.quest.json',import.meta.url)));
+def.objectives[4].when={type:'beasts',ids:['boar1','boar2','boar3','boar4','boar5'],count:5}; // legacy m1 shape (QG-03)
+
 const state=createQuest(def), view=createQuestLog(def,{hudWidth:12}), ui=createUiLayer({cols:160});
 assert.equal(view.update(state),'Get up fr...');
 applyQuestEvent(state,{type:'flag:set',key:'wake',value:true},def);

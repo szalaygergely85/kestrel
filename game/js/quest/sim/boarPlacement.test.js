@@ -11,7 +11,7 @@ import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 import { buildBeastNav } from './beastNav.js';
 
 const rd = (p) => JSON.parse(readFileSync(new URL(`../../../../${p}`, import.meta.url)));
-const quest = rd('content/quests/m1.quest.json');
+const quest = rd('content/quests/burl.boars.quest.json'); // QG-03: the boar objective lives in Burl's quest
 const worldJson = rd('content/worlds/world_m1.world.json');
 
 const obj = quest.objectives.find((o) => o.id === 'beasts');

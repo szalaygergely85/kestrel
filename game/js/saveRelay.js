@@ -10,12 +10,12 @@ export const AUTOSAVE_SEC = 60;
 const STATE_GONE = 12; // beastSim.STATE_GONE (hidden, skipped everywhere) - same literal beastSim exports
 
 /**
- * @param {{storage:any, questDef:any, slot?:number, enabled?:boolean, autosaveSec?:number, playerName?:string, place?:string}} o
+ * @param {{storage:any, questDef:any, giverDefs?:any[], slot?:number, enabled?:boolean, autosaveSec?:number, playerName?:string, place?:string}} o
  */
-export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = true, autosaveSec = AUTOSAVE_SEC, playerName = 'Wick', place = 'Kestrel', defaultLook = null }) {
+export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0 = 0, enabled = true, autosaveSec = AUTOSAVE_SEC, playerName = 'Wick', place = 'Kestrel', defaultLook = null }) {
   let slot = slot0; // US-090w: the title menu picks the slot (setSlot)
   const adapter = storage ? createStorageAdapter(storage) : null;
-  const quest = createQuestRelay(questDef);
+  const quest = createQuestRelay(questDef, null, giverDefs);
   const chests = new Set(), dead = new Set();
   const facts = { wakeDone: false, lanternTaken: false, swordTaken: false, endStarted: false, x: 0, y: 0, z: 0 };
   const tmp = { x: 0, y: 0, z: 0 };
@@ -69,7 +69,7 @@ export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = 
       if (!r.ok) { lastResult = { op: 'load', ok: false, error: r.error }; return null; }
       if (!r.save) return null;
       try {
-        const a = applySave(r.save, assets, { questDef, worldOptions: worldOpts, defaultLook });
+        const a = applySave(r.save, assets, { questDef, giverDefs, worldOptions: worldOpts, defaultLook });
         pending = a;
         lastResult = { op: 'load', ok: true };
         return a.world;
@@ -80,7 +80,7 @@ export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = 
     onWorldLoaded() {
       chests.clear(); dead.clear(); sinceSave = 0;
       if (pending) {
-        quest.reset(pending.quest ? pending.quest : null);
+        quest.reset(pending.quest ? pending.quest : null, pending.quests);
         for (const id of pending.openedChests) chests.add(id);
         for (const id of pending.deadBeasts) dead.add(id);
         playSec = pending.meta.playTimeSec;
@@ -107,7 +107,7 @@ export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = 
       if (!enabled || !adapter || !world) return false;
       let save;
       try {
-        save = collectSave(world, { quest: quest.state, questDef, openedChests: [...chests], deadBeasts: [...dead], playerName, place, playTimeSec: playSec, savedAt: Date.now(), look }); // SAVE-TIME-01: only the real writer stamps time (pure collect stays deterministic)
+        save = collectSave(world, { quest: quest.state, questDef, quests: quest.book.toSave().quests, giverDefs, openedChests: [...chests], deadBeasts: [...dead], playerName, place, playTimeSec: playSec, savedAt: Date.now(), look }); // SAVE-TIME-01: only the real writer stamps time (pure collect stays deterministic)
         if (ending && save.world.state) save.world.state['quest.endT'] = -1;
       } catch (e) { lastResult = { op: 'save', ok: false, error: String(e) }; return false; }
       const r = adapter.writeSlot(slot, save);

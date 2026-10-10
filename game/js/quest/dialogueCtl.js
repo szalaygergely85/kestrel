@@ -27,9 +27,14 @@ export function npcTalk(ctx) {
 export function createDialogueCtl(opt) {
   const { world, dialogues } = opt;
   const view = createDialogueView({ style: opt.style, palette: opt.palette }); // palette: ASSETS.palette (default globalThis.ASSETS.palette)
+  // QG-03 (38.35 item 5): `q.*` keys are quest-book checks/actions (opt.book() = current book), never stored in world.state.
   const flags = {
-    has: (k) => world.state['dlg.' + k] === true,
+    has: (k) => {
+      if (k.charCodeAt(0) === 113 && k.charCodeAt(1) === 46) { const b = opt.book && opt.book(); return !!b && b.hasKey(k); }
+      return world.state['dlg.' + k] === true;
+    },
     set: (k) => {
+      if (k.charCodeAt(0) === 113 && k.charCodeAt(1) === 46) { const b = opt.book && opt.book(); if (b) b.actKey(k); return; }
       world.state['dlg.' + k] = true;
       if (opt.onFlag) opt.onFlag(k, true); // main.js: gameHooks.emitSimple('flag:set', ...)
     },

@@ -749,7 +749,7 @@ export function validateContent(ASSETS, opts = {}) {
     checks += scanned.checks;
   }
   if (opts.dialogueFilesDir) {
-    const dl = validateDialogueFiles(opts.dialogueFilesDir, models);
+    const dl = validateDialogueFiles(opts.dialogueFilesDir, models, opts.quests ? opts.quests.filter(q => q.def && q.def.giver).map(q => q.def.id) : null);
     errors.push(...dl.errors);
     warnings.push(...dl.warnings);
     checks += dl.checks;
@@ -761,7 +761,26 @@ export function validateContent(ASSETS, opts = {}) {
 // cross-file check: every node `clip` (and the runtime `talk`/`listen` clips) exists on the NPC model named by
 // the file's optional top-level `model`. A model that is not registered (yet) is a warning, not an error.
 const DIALOGUE_RUNTIME_CLIPS = ['talk', 'listen'];
-export function validateDialogueFiles(dir, models = {}) {
+const Q_OPS = ['available', 'active', 'ready', 'done', 'accept', 'handin'];
+// QG-03 (38.35 item 5): `q.<questId>.<op>` flag keys (requires / setFlag) must name a giver quest (giverIds, null = not checked) and a known op.
+function checkQuestKeys(def, giverIds, file, errors) {
+  const keys = [];
+  for (const e of def.entry || []) if (e && typeof e.requires === 'string') keys.push(e.requires);
+  for (const n of Object.values(def.nodes || {})) {
+    if (n && typeof n.setFlag === 'string') keys.push(n.setFlag);
+    for (const c of (n && n.choices) || []) if (c && typeof c.setFlag === 'string') keys.push(c.setFlag);
+  }
+  let checks = 0;
+  for (const k of keys) {
+    if (!k.startsWith('q.')) continue;
+    checks++;
+    const dot = k.lastIndexOf('.'), id = k.slice(2, dot), op = k.slice(dot + 1);
+    if (!giverIds.includes(id)) errors.push(`${file}: flag "${k}" names no giver quest "${id}"`);
+    else if (!Q_OPS.includes(op)) errors.push(`${file}: flag "${k}" has unknown quest op "${op}"`);
+  }
+  return checks;
+}
+export function validateDialogueFiles(dir, models = {}, giverIds = null) {
   const errors = [], warnings = [];
   let checks = 0;
   const files = [];
@@ -781,6 +800,7 @@ export function validateDialogueFiles(dir, models = {}) {
     const r = validateDialogue(def);
     for (const m of r.errors) errors.push(`${full}: ${m}`);
     for (const m of r.warnings) warnings.push(`${full}: ${m}`);
+    if (giverIds) checks += checkQuestKeys(def, giverIds, full, errors);
     if (def.model === undefined) continue;
     checks++;
     const model = typeof def.model === 'string' ? models[def.model] : null;
