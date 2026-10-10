@@ -20,7 +20,7 @@ export function createPointShadowTwin(maxN = 6) {
     keys: new Int32Array(maxN * 2),
     keyValid: new Uint8Array(maxN),
     planes: new Float64Array(24), M: new Float64Array(16), O3: new Float64Array(3), hash: new Int32Array(2), key: new Int32Array(2),
-    ctx: { M: null, depthBias: { factor: 0, units: 0 }, structFoot: null, structCount: 0, wind: null, maskAtlas: null },
+    ctx: { M: null, depthBias: { factor: 0, units: 0 }, structFoot: null, structCount: 0, structMask: null, wind: null, maskAtlas: null },
     stats: { rendered: 0, skipped: 0 }, // slots re-rendered / skipped this call
     out: { depth: new Float32Array(0), res: 0, slot: new Uint8Array(MAX_LIGHTS), O: new Float64Array(maxN * 4), opts: null },
   };
@@ -60,7 +60,7 @@ export function updatePointShadowTwin(tw, lights, cam, opts, build, rctx, struct
   const res = tw.res, layerLen = res * res, ctx = tw.ctx, O3 = tw.O3;
   const db = (rctx && rctx.depthBias) || SUN_SHADOW_DEFAULTS.depthBias; // the GPU point faces inherit the sun caster pipelines' depthBias
   ctx.depthBias.factor = db[0]; ctx.depthBias.units = db[1];
-  if (rctx) { ctx.structFoot = rctx.structFoot; ctx.structCount = rctx.structCount; ctx.wind = rctx.wind; ctx.maskAtlas = rctx.maskAtlas; }
+  if (rctx) { ctx.structFoot = rctx.structFoot; ctx.structCount = rctx.structCount; ctx.structMask = rctx.structMask || null; ctx.wind = rctx.wind; ctx.maskAtlas = rctx.maskAtlas; }
   for (let s = 0; s < n; s++) {
     const h = tw.sel.slots[s];
     if (h < 0) { tw.keyValid[s] = 0; tw.holder[s] = -1; continue; }

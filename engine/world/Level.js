@@ -79,6 +79,15 @@ const OUTSIDE_SECTOR = Object.freeze({
  *   route, layers, ...).
  * @returns {Level|null} null if validation failed (errors are logged to console.error).
  */
+/**
+ * GS-01a: legend flag `terrainFloor: true` = no level floor quad here, the open-world terrain shows through
+ * (collision sectors are unchanged). Only honoured on non-solid cells with `zone: 'outside'`.
+ * @param {{terrainFloor?: boolean, solid?: boolean, zone?: string}|null|undefined} sec
+ */
+export function isTerrainFloor(sec) {
+  return !!sec && sec.terrainFloor === true && !sec.solid && sec.zone === 'outside';
+}
+
 export function loadLevel(def) {
   const name = (def && def.name) || '(unnamed level)';
   const tag = `[Level ${name}]`;
