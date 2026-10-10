@@ -19,12 +19,8 @@ export function createWaystoneWire(opts = {}) {
 
   function put(ui, x, y, code) { if (x >= 0 && x < ui.cols) ui.setCellRGB(x, y, code - 32, FG[0], FG[1], FG[2], BG[0], BG[1], BG[2]); }
 
-  return {
-    get sim() { return sim; },
-    get toastLeft() { return left; },
-    onBoot(c) {
-      ctx = c; sim = null; left = 0;
-      const p = c.player;
+  function init() {
+    const c = ctx, p = c && c.player;
       if (!p || !p.transform || !p.components || !p.components.health || !c.world || !c.world.state) return;
       const t = p.transform;
       try {
@@ -38,12 +34,18 @@ export function createWaystoneWire(opts = {}) {
           waystones: [], points, requestSave: c.requestSave, canWake: opts.canWake,
           spawn: { x: t.x, y: t.y, z: t.z, yawDeg: Number.isFinite(t.yawDeg) ? t.yawDeg : 0 },
         });
-      } catch (e) { sim = null; }
-    },
+      } catch (e) { sim = null; console.error('[waystone] sim init failed:', e && e.message); }
+  }
+  return {
+    get sim() { if (!sim && ctx) init(); return sim; }, // lazy: the player's health component may only exist after the first vitals step
+    get toastLeft() { return left; },
+    onBoot(c) { ctx = c; sim = null; left = 0; init(); },
     onEvent(name, d) {
-      if (name !== 'prop:touched' || !d || !ctx || !sim) return;
+      if (name !== 'prop:touched' || !d || !ctx) return;
       if (d.kind !== 'waystone' && d.kind !== 'relay') return;
       // The meadow stone keeps id 'waystone' (no save migration); register it when the data carries no waystone component.
+      if (!sim && ctx) init();
+      if (!sim) return;
       if (!sim.has(d.id)) { if (d.id !== 'waystone') return; sim.register({ id: 'waystone', label: 'Meadow stone', kind: 'stone', order: 1 }); }
       const t = ctx.player.transform;
       const yaw = Number.isFinite(ctx.state.playerYawDeg) ? ctx.state.playerYawDeg : (t.yawDeg || 0);

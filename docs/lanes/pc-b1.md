@@ -442,3 +442,7 @@ B1 2026-10-09 (kestrel-1) SETTINGS-MOUNT-01 -> po-review: full createSettingsVie
 - wire/waystone.js: points from `components.waystone` at boot, one sim, touch with the player pose (kinds waystone|relay, unknown ids ignored). waystoneTouch.js: loops `kind:'stone'` entities (fallback endMarker), same radii/re-arm.
 - Tests +sim/wire/touch (order, double touch, seed, round-trip, canWake, no alloc): filter waystone 3/3, save/quest/vitals 63/63, check-deps OK.
 - NEEDS B1-main: none for 06a (06b/07a/07b read `wire.sim`). Data: WS1-04 must add `components.waystone` to endMarker/relayBend.
+### WS1-07b (kestrel-1, 2026-10-10) - po-review
+- `quest/travel.js` pure state machine (0.35 s out / in, one request, gates via canTravel, "here" <= 6 m -> toast "Already here.", teleport + arrive once at black, optional inBounds, 0 alloc) + travel.test.js; `vitals.clearSafe()`.
+- main.js: `travel` (teleport = anchor pose, v 0, hzb.invalidate('travel'), beasts.resetAll, targeting.clear, look sync, clearSafe; arrive = `wire.sim.touch` = respawn point + heal + save), `chartOptions.travel` from `wire.sim.list`, `onTravel`, `vLocked` includes travel, fade draw after drawMapCard, `__debug.travel/travelTo/waystoneSim`. No re-ground beyond anchor z (anchor = pose at the touch); inBounds not wired (anchors are touched poses).
+- Not browser-run: `node tools/verify-travel.mjs <port 9500-9574>` (node --check ok). Main session: meadow -> relay -> meadow pass; Map card travel needs WS1-04 data (components.waystone) to list a relay.

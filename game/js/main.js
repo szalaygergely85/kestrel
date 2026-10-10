@@ -74,6 +74,7 @@ import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setH
 import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-050: the one seam to game content
 import { createWaystoneTouch } from './waystoneTouch.js'; // WAYSTONE-TOUCH-01
 import { createWaystoneWire } from './quest/wire/waystone.js'; // WAYSTONE-01w
+import { createTravel } from './quest/travel.js'; // WS1-07b: map travel (fade, teleport, reset)
 import { createTitleMenuHost } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { retintHand, lookOrDefault } from './quest/look/handLook.js'; // CHARGEN-16
@@ -530,7 +531,8 @@ if (demo.on) blockFKeys(input); // demo: no F3 / F-key dev overlays
 const demoEnd = demo.on ? createEndCard({
   onRestart: () => { const a = createStorageAdapter(saveStorage()); for (let i = 0; i < 3; i++) a.deleteSlot(i); window.location.reload(); },
   onKeep: () => {} }) : null;
-if (saveEnabled) gameHooks.register(createWaystoneWire()); // WAYSTONE-01w: heal + save + toast on touch, respawn at the touched stone (off with ?save=0 / capture / bench)
+let waystoneWire = null; // WS1-07b: travel reads its sim (anchors / touch)
+if (saveEnabled) gameHooks.register(waystoneWire = createWaystoneWire()); // WAYSTONE-01w: heal + save + toast on touch, respawn at the touched stone (off with ?save=0 / capture / bench)
 gameHooks.register(createWaystoneTouch(gameHooks)); // WAYSTONE-TOUCH-01: prop:touched {waystone} on walk-in / E (lane C's WAYSTONE-01w listens)
 // WAYSTONE-NORMAL-01 (D-056): the waystone no longer triggers the demo end card (demoEnd stays wired but is never triggered).
 // OWN-REQ-003 (architecture.md 17.1): `engine.ui` is a single UiLayer for
@@ -941,6 +943,7 @@ async function runGame(mode, cinematic = null) {
   let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
+  let travel = null; // WS1-07b: created once below (after wakeOut)
   let dialogueCtl = null; // DIALOGUE-01b2 (38.28): rebuilt on every 'world:loaded', below
   let wild = null; // WILD-06: ambient fauna, rebuilt on every 'world:loaded' (= reset on load / new game / restart)
   Object.defineProperty(window.__debug, 'wild', { configurable: true, get: () => (wild ? { alive: wild.stats.alive, drawn: wild.drawn ? wild.drawn() : 0 } : null) }); Object.defineProperty(window.__debug, 'wildRaw', { configurable: true, get: () => (wild ? { w: wild, pool: gameVoxelPool } : null) }); // verify-wild steps/feeds through this (headless sim never runs) // WILD-06b: read-only headless hook
@@ -967,7 +970,7 @@ async function runGame(mode, cinematic = null) {
     for (const st of w.structures) { const m = st.level && st.level.def && st.level.def.markers && st.level.def.markers[markerId]; if (m) { localToWorld(st.frame, m.x, m.y, m.z || 0, o); return o; } }
     return null;
   }
-  const vLocked = () => !!(vitals && vitals.inputLocked) || deathFlow.inputLocked || !!(dialogueCtl && dialogueCtl.locked); // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
+  const vLocked = () => !!(vitals && vitals.inputLocked) || (travel && travel.inputLocked) || deathFlow.inputLocked || !!(dialogueCtl && dialogueCtl.locked); // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
@@ -1051,6 +1054,23 @@ async function runGame(mode, cinematic = null) {
   // whole wake/title/map-card/hints system to worlds that actually declare
   // `quest.wakeT` in their initial state (world_m1 - `?level=<name>` adhoc
   // worlds have `state: {}` and skip it, unaffected).
+  // WS1-07b: map travel. Callbacks read the live per-world closures; no world state is kept here.
+  travel = createTravel({
+    canTravel: () => !!(vitals && !vitals.dead && !wakeOut.inputLocked && !(dialogueCtl && dialogueCtl.open) && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen()),
+    anchorOf: (id) => (waystoneWire && waystoneWire.sim ? waystoneWire.sim.anchor(id) : null),
+    playerPos: () => playerHandle.data.transform,
+    teleport: (pose) => {
+      const t = playerHandle.data.transform, b = playerHandle.data.components.body;
+      t.x = pose.x; t.y = pose.y; t.z = pose.z; t.yawDeg = pose.yawDeg; // anchor = a known-safe spot (the pose at the touch)
+      if (b) { b.vx = 0; b.vy = 0; b.vz = 0; b.fallDistance = 0; }
+      hzb.invalidate('travel');
+      if (beasts) beasts.resetAll();
+      if (targeting) targeting.clear();
+      if (look) { look.clearLock(); look.yawDeg = t.yawDeg; look.pitchDeg = t.pitchDeg; }
+      if (vitals) vitals.clearSafe();
+    },
+    arrive: (id, pose) => { if (waystoneWire && waystoneWire.sim) waystoneWire.sim.touch(id, pose); }, // respawn point = target (heal + save)
+  });
   const wakeOut = { blackA: 1, blinkOpen: 0, eyeH: 0, inputLocked: true, titleState: 'none', titleA: 0, wakeDoneAtSec: 0, titleDoneAtSec: 0 };
   const wakeCfg = { blackSec: 1.0, riseSec: 1.2, blinkCurve: [[0, 0], [1.5, 1]], titleIn: 1, titleHold: 3, titleOut: 1, startEyeH: 0.3, bodyEyeH: 1.6 };
   let questUiActive = false;
@@ -1322,10 +1342,11 @@ async function runGame(mode, cinematic = null) {
           // reveal (mapFog.js's `reveal`, never touches the pencil route) of each marker's own cell, not the
           // player-visit feed (mapFogHook.js's per-tick `visit`) that gates the surrounding terrain.
           if (mapFogHook && mapFogHook.fog) for (const m of markers) mapFogHook.fog.reveal(m.x, m.y);
-          chartOptions = { chart: chartData, markers, fog: mapFogHook ? mapFogHook.fog : null };
+          chartOptions = { chart: chartData, markers, fog: mapFogHook ? mapFogHook.fog : null, travel: !waystoneWire ? null : { list: () => { const ws = waystoneWire.sim; if (!ws) return []; const l = []; const n = ws.list(l); const out = []; for (let i = 0; i < n; i++) out.push({ id: l[i].id, name: l[i].label, order: l[i].order, touched: l[i].touched, woken: true, x: l[i].x, y: l[i].y }); return out; } } };
         }
         try {
           initMapCard(assets, ui.cols, ui.rows, chartOptions);
+          { const cv = getMapChart(); if (cv) cv.onTravel = (id) => travel.request(id); } // WS1-07b
         } catch (e) {
           console.warn('[map] chart card init failed, falling back to the plain card:', e && e.message);
           initMapCard(assets, ui.cols, ui.rows);
@@ -1344,7 +1365,7 @@ async function runGame(mode, cinematic = null) {
       window.__debug.playerHandle = playerHandle;
       window.__debug.look = look;
       window.__debug.beasts = beasts; window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; // HANDS-01b: test hooks
-      window.__debug.isMapOpen = isMapOpen; window.__debug.getMapPanel = getMapPanel; window.__debug.getMapChart = getMapChart; window.__debug.questBook = () => (saveRelay ? saveRelay.quest.book : null); window.__debug.questLogOpen = qlIsOpen; window.__debug.gameHooks = gameHooks; // QG-04/05: tools/verify-quest-ui.mjs hooks
+      window.__debug.isMapOpen = isMapOpen; window.__debug.getMapPanel = getMapPanel; window.__debug.getMapChart = getMapChart; window.__debug.questBook = () => (saveRelay ? saveRelay.quest.book : null); window.__debug.questLogOpen = qlIsOpen; window.__debug.gameHooks = gameHooks; window.__debug.travel = travel; window.__debug.travelTo = (id) => travel.request(id, true); window.__debug.waystoneSim = () => (waystoneWire ? waystoneWire.sim : null); // QG-04/05: tools/verify-quest-ui.mjs hooks
       // S8-B1-15: test hook (tools/verify-map-wire.mjs)
     });
 
@@ -1515,6 +1536,7 @@ async function runGame(mode, cinematic = null) {
       wakeFrame(engine.world.state['quest.wakeT'], wakeCfg, wakeOut);
       if (wakeOut.inputLocked) playerHandle.data.components.body.eyeH = wakeOut.eyeH;
       mPressedEdge = input.pressed(gameKeys.map);
+      if (travel) travel.step(dt);
       stepMapCard(engine.world, assets, dt, input, engine.world.state['quest.wakeT'], wakeOut.titleDoneAtSec, !!(look && look.locked)); // BUG-NOTE-ESC-01
       uiLocked = wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || isNoteOpen() || invOpen || cardOpen || vLocked();
     }
@@ -1943,6 +1965,7 @@ async function runGame(mode, cinematic = null) {
         // blank (unexplored fog) cells an opaque black backing so they never show the scene through (ARCH note,
         // docs/lanes/pc-c.md batch 16); the fog itself is fed by mapFogHook.js (S8-B1-16).
         drawMapCard(ui, fb.timeSec * 1000, fadeLut);
+        if (travel) travel.draw(ui, ui.cols, ui.rows); // WS1-07b: fade over the world + card, under the later HUD
         // US-080a2/080b (30.2): HP+MP HUD + hurt edge - hidden on title/map/end/death cards (visibleRule, uiStyle.vitals).
         if (vitals) {
           // Q9 item 2c: hidden on the title (wakeOut.inputLocked covers the wake/title timeline) and map cards too,

@@ -239,5 +239,8 @@ export function createVitals(world, events, cfg, hooks) {
   // same as the old unbounded behaviour, but now exactly one survives at a time).
   sim.dispose = function dispose() { offCombatHit(); };
 
+  // WS1-07b: travel jumps far; the old safe spot would pull the player back through the void rule.
+  sim.clearSafe = function clearSafe() { lastSafe = null; };
+
   return sim;
 }
