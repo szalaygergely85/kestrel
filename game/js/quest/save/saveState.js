@@ -98,6 +98,7 @@ export function collectSave(world, { quest = null, questDef = null, quests = nul
     for (const id of Object.keys(quests)) {
       const def = giverDefs.find(d => d.id === id); if (!def) throw new Error('save: giver quest definition required');
       out[id] = { quest: createQuest(def, quests[id].quest), accepted: quests[id].accepted === true, handedIn: quests[id].handedIn === true };
+      if (Array.isArray(quests[id].given) && quests[id].given.length) out[id].given = quests[id].given.map(g => ({ id: g.id, n: g.n })); // M4 exit: giveOnAccept/giveOnTalk items survive (abandon returns them)
     }
     save.game.quests = out;
   }
@@ -120,6 +121,7 @@ export function applySave(save, assets, { questDef = null, giverDefs = null, wor
     if (raw) for (const id of Object.keys(raw)) {
       const def = giverDefs.find(d => d.id === id); if (!def) throw new Error('save: unknown giver quest ' + id);
       quests[id] = { quest: createQuest(def, raw[id].quest), accepted: raw[id].accepted === true, handedIn: raw[id].handedIn === true };
+      if (Array.isArray(raw[id].given) && raw[id].given.length) quests[id].given = raw[id].given.map(g => ({ id: g.id, n: g.n }));
     }
   }
   return { world,quest,quests,openedChests:ids(save.game.openedChests),deadBeasts:ids(save.game.deadBeasts),look:save.player && save.player.look ? canonical(save.player.look) : defaultLook,meta:canonical(save.meta) };
