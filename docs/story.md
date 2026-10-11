@@ -1437,3 +1437,38 @@ Notes:
 ## M4 story quests (QL-09..12 text, programmer)
 
 Built from the QL-W lines above (no new voices). Quest rows in `content/quests/ch12/pack.json`: `sq.wreck.plate` (giver object `gondola`, fetch `boar.hide`, Brass Buckler), `sq.honey` (Burl -> Rook, `honeycomb`, 10 arrows + Rook's Hood = `gear.head.hood.worn`), `sq.rook.shiny` (Rook, 4 `brass.scrap` pickups brass1..4, Hunter's Bow + 10 arrows), `sq.packet` (giver object `packet`, deliver `packet` to the post, 20 arrows). New item texts: `honeycomb` "Honeycomb" / `Sticky gold. It is for the crow.`; `packet` "Cloth Packet" / `Tied with twine. FOR THE FORD POST.` Lines not in the tables above: `sq.wreck.plate` active `A plate and a strap. Boar hide would do.` / done `The gondola creaks. The plate is yours now.`; `sq.honey` active `The comb is for the crow. Do not lick it.` / done `Square with the crow. Good. I hate owing.`; `sq.rook.shiny` done `Shiny things. I keep them. You keep the bow.`; `sq.packet` active `The packet. The ford post, by the crossroads.` / done `The basket waits. The tags turn in the wind.`
+
+## Ch3 opening (QL-21, PC-B writer, 2026-10-11)
+
+Rows in `content/quests/ch3/pack.json`; look-at texts in `content/dialogue/inspect.json`. No new voices and no personal names (the 12 Ch3 names are not owner-approved). The village is not named on screen yet: the player has met nobody there, so it stays "the smoke" / "the palisade" until `mq.ow.names` (GDD 3: "Outwall" is a working name).
+
+| id | title | HUD | return |
+|---|---|---|---|
+| mq.ow.path | Cookfire Smoke | Follow the track toward the smoke | - |
+| mq.ow.fence | Wolves at the Fence | Drive the wolves from the goose pen | - |
+| sq.hw.piers | The Pulled Bridge | Read the stone north of the road | - |
+| sq.fc.sign | The West Arm | Find the sign arm in the shallows | Bring the sign arm to the ford post |
+
+Givers: `sq.hw.piers` = the stone itself (what the player sees); `sq.fc.sign` = a basket tag at the ford post (same unsigned caps hand as TAKEN). Lines are in the pack rows (<= 56 chars).
+
+| key | where | text | chars |
+|---|---|---|---|
+| `place.relay.ws_outwall` | toast title, save slot, map label | `Palisade Relay` | 14 |
+| `prompt` (`note.owBoard`) | prompt | `[E] Read the board` | 18 |
+| `note.owBoard.title` | note (`owBoard`) | `Notices, nailed up` | 18 |
+| `note.owBoard` (1) | note | `Crown notices, printed in Ferrum. Rain-soft.` | 44 |
+| `note.owBoard` (2) | note | `FELL BEYOND THE WALL. Name after name.` | 38 |
+| `note.owBoard` (3) | note | `Carried out here and nailed up, one by one.` | 43 |
+| `note.owBoard` (4) | note | `One line cut away. On the nail, a skyworks knot.` | 48 |
+| `prompt` (`note.pierStone`) | prompt | `[E] Read the stone` | 18 |
+| `note.pierStone.title` | note (`pierStone`) | `A standing stone` | 16 |
+| `note.pierStone` (1) | note | `A dressed block, set on end beside the track.` | 45 |
+| `note.pierStone` (2) | note | `Old mortar on one face. Once part of a bridge pier.` | 51 |
+| `note.pierStone` (3) | note | `A Crown stamp, half chiselled away.` | 35 |
+| `note.pierStone` (4) | note | `The bridge was pulled down. Not by the river.` | 45 |
+
+Notes:
+- `Palisade Relay`, not "Outwall Relay": the name is still a working name. Swap once the owner fixes it. Wiring (programmer): add `ws_outwall: 'Palisade Relay'` to `RELAY_TITLES` in `game/js/quest/wire/waystone.js`.
+- The board is the `mq.ow.board` "Board of the Dead": Ferrum's FELL notices for the exiles. The cut line and the skyworks knot (same hitch as `note.knot`) are a soft Maren echo, not proof.
+- The pier stone says the bridge was pulled down on purpose, Crown stamp chiselled off, without saying who or why.
+- "West points west again" answers the shrine note's "IT WAS ALWAYS WEST" from the same unsigned hand.

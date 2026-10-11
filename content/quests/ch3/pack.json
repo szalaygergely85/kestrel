@@ -5,9 +5,9 @@
   "quests": [
     {
       "id": "mq.ow.path",
-      "title": "The Outwall Track",
+      "title": "Cookfire Smoke",
       "main": true,
-      "steps": [{ "template": "explore", "params": { "areas": ["owPath"] }, "objText": "Follow the track to the Outwall" }],
+      "steps": [{ "template": "explore", "params": { "areas": ["owPath"] }, "objText": "Follow the track toward the smoke" }],
       "requires": [{ "quest": "mq.smoke", "step": "north" }],
       "abandonable": false
     },
@@ -15,32 +15,37 @@
       "id": "mq.ow.fence",
       "title": "Wolves at the Fence",
       "main": true,
-      "steps": [{ "template": "kill", "params": { "ids": ["wolf1", "wolf2", "wolf3", "wolf4", "wolf5"], "count": 5 }, "objText": "Drive off the wolves at the pen" }],
+      "steps": [{ "template": "kill", "params": { "ids": ["wolf1", "wolf2", "wolf3", "wolf4", "wolf5"], "count": 5 }, "objText": "Drive the wolves from the goose pen" }],
       "requires": [{ "quest": "mq.ow.path", "step": "explore" }],
       "abandonable": false
     },
     {
       "id": "sq.hw.piers",
-      "title": "The Standing Stone",
+      "title": "The Pulled Bridge",
       "site": "pierStone",
       "objectives": [{ "id": "read", "text": "Read the stone north of the road", "when": { "type": "flag", "id": "lore.pierStone.read", "equals": true } }],
       "opensAfter": ["mq.ford.mirror"],
       "reward": { "items": [{ "id": "arrow", "n": 10 }] },
-      "lines": { "offer": ["NEEDS WRITER: sq.hw.piers offer"], "active": ["NEEDS WRITER: sq.hw.piers active"], "ready": ["NEEDS WRITER: sq.hw.piers ready"], "done": ["NEEDS WRITER: sq.hw.piers done"] }
+      "lines": {
+        "offer": ["A tall stone by the track. Cut square, set on end.", "Marks on one face. Too worn to read from here."],
+        "active": ["The stone by the track. Read it up close."],
+        "ready": ["Bridge stone. Pulled down from the west bank.", "Behind it, in the grass, ten arrows tied with twine."],
+        "done": ["The stone stands. The river runs where the bridge was."]
+      }
     },
     {
       "id": "sq.fc.sign",
-      "title": "The Lost Sign Arm",
+      "title": "The West Arm",
       "site": "post",
       "steps": [{ "template": "fetch", "params": { "item": "signArm" }, "objText": "Find the sign arm in the shallows" }],
       "opensAfter": ["mq.ford.mirror"],
       "reward": { "items": [{ "id": "arrow", "n": 10 }] },
-      "returnText": "Bring the sign arm to the signpost",
+      "returnText": "Bring the sign arm to the ford post",
       "lines": {
-        "offer": ["NEEDS WRITER: sq.fc.sign offer"],
-        "active": ["NEEDS WRITER: sq.fc.sign active"],
-        "ready": ["NEEDS WRITER: sq.fc.sign ready"],
-        "done": ["NEEDS WRITER: sq.fc.sign done"]
+        "offer": ["A tag on the basket: THE WEST ARM OF THE SIGN FELL.", "IN THE SHALLOWS BY THE FORD. BRING IT BACK."],
+        "active": ["The tag: WEST ARM. IN THE SHALLOWS."],
+        "ready": ["You lay the arm in the basket. The wood is river-black.", "Under it, tied with twine: ten arrows."],
+        "done": ["The tag: WEST POINTS WEST AGAIN. THANK YOU."]
       }
     }
   ]
