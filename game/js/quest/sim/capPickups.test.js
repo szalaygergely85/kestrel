@@ -1,4 +1,4 @@
-// M4: cap1..5 are redcap questPickups with the pickupRedCap sprite; smoke1..3 are far smokeColumn billboards.
+// M4: cap1..5 are redcap questPickups with the pickupRedCap sprite; smoke1..3 are bare anchors (OB-020).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 const w = JSON.parse(readFileSync(new URL('../../../../content/worlds/world_m1.world.json', import.meta.url), 'utf8'));
@@ -11,6 +11,6 @@ for (let i = 1; i <= 5; i++) {
 }
 for (let i = 1; i <= 3; i++) {
   const e = by('smoke' + i);
-  assert.ok(e && e.type === 'billboard' && e.model === 'smokeColumn' && e.unlit && e.fogModel === 'far' && e.detailRows === 14 && e.minCells.h === 6, 'smoke' + i);
+  assert.ok(e && e.type === 'prop' && !e.model, 'smoke' + i + ' is a bare anchor (OB-020: billboard removed)');
 }
 console.log('capPickups.test OK (5 caps, 3 smoke)');
