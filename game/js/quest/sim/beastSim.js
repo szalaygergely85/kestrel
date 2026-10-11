@@ -15,7 +15,7 @@ import { canSee } from './sight.js';
 import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } from './wolfBrain.js'; // WOLF-01
 import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from '../../../../engine/index.js';
 
-export const MAX_BEASTS = 16;
+export const MAX_BEASTS = 32; // M5: 18 boars + 5 Outwall wolves (was 16: the wolves got no brain)
 const PATH_SLOTS = 64; // waypoints kept per beast path (truncated, final = the exact goal - see `storePath`)
 
 // ---- states -----------------------------------------------------------------------------------------------------
