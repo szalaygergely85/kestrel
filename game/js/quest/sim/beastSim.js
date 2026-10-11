@@ -261,6 +261,19 @@ export function createBeastSim(world, opts) {
   sim.load = function load(obj) { loadSim(sim, obj); };
   /** US-080a1: every slot back to home, state wander, timers/paths cleared, steer positions reset. */
   sim.resetAll = function resetAll() { resetAllSim(sim); };
+  /** OB-077: true if any live beast in an aggro state (notice, chase, windup, charge, recover, stagger, flinch) is within `r` m (2D). */
+  sim.aggroNear = function aggroNear(x, y, r) {
+    const r2 = r * r;
+    for (let i = 0; i < sim.entities.length; i++) {
+      const st = sim.state[i];
+      if (st === STATE_WANDER || st === STATE_RETURN || st >= FIRST_DEAD_STATE) continue;
+      const t = sim.entities[i].transform;
+      if (!t) continue;
+      const dx = t.x - x, dy = t.y - y;
+      if (dx * dx + dy * dy <= r2) return true;
+    }
+    return false;
+  };
   /** US-079b: request a corpse sink (loot emptied the body). True if the slot was DYING/CORPSE (sets despawnReq). */
   sim.despawnCorpse = function despawnCorpse(id) {
     const i = idSlot[id];
