@@ -90,8 +90,8 @@ ok('unscaled boulder radius unchanged', base.get('tower.boulder').getComponent('
 // Round trip: unscaled world -> no scale keys, byte-identical; scaled -> stable.
 const s0 = stringifySave(serialize(base));
 // PLANT-SCALE-01: world_m1 mesh placements (plants) carry their own `scale`; unscaled props must add none on top.
-const meshScaled = (def.structures || []).filter((s) => s.scale !== undefined).length + (def.entities || []).filter((e) => e.scale !== undefined && e.scale !== 1).length; // + scaled entities (Rook 1.6, red caps)
-ok('unscaled save adds no "scale" key beyond the scaled mesh placements', (s0.match(/"scale"/g) || []).length === meshScaled);
+const meshScaled = (JSON.stringify(def).match(/"scale":(?!1[,}])/g) || []).length; // every non-1 scale the content itself carries (plants, Rook, structure meshes); scale 1 is dropped on save; unscaled props add none on top
+ok('unscaled save adds no "scale" key beyond the scaled mesh placements', (s0.match(/"scale"/g) || []).length === meshScaled, `save=${(s0.match(/"scale"/g) || []).length} content=${meshScaled}`);
 const s0b = stringifySave(serialize(deserialize(serialize(base), assets, {})));
 ok('unscaled round trip byte-identical', s0 === s0b);
 const sc = serialize(w1);
