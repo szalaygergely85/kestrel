@@ -101,12 +101,12 @@ const R = 'q.tower.blade.ready';
   const reach = new Set(), st = comp.entry.map((e) => e.node);
   while (st.length) { const i = st.pop(); if (reach.has(i)) continue; reach.add(i); const n = comp.nodes[i]; if (n.next != null && n.next >= 0) st.push(n.next); for (const c of n.choices) st.push(c.next); }
   ok(`every node reachable (${reach.size}/${comp.nodes.length})`, reach.size === comp.nodes.length);
-  ok('13 entries, last is unconditional', comp.entry.length === 17 && comp.entry[16].requires === null);
+  ok('13 entries, last is unconditional', comp.entry.length === 18 && comp.entry[17].requires === null);
   const long = comp.nodes.flatMap((n) => n.lines).filter((l) => l.length > 56);
   ok('every line <= 56 chars', long.length === 0, long.join('|'));
   ok('D-013: no player name in the lines', !comp.nodes.flatMap((n) => n.lines).some((l) => /\bWick\b/.test(l)));
   const flags = new Set(comp.nodes.flatMap((n) => [n.setFlag, ...n.choices.map((c) => c.setFlag)]).filter(Boolean));
-  ok('flags set by the graph', ids([...flags].sort()) === ids(['bear.stone.told', 'bear.talked', 'q.burl.boars.accept', 'q.burl.boars.handin', 'q.sq.burl.blue.accept', 'q.sq.burl.blue.handin', 'q.tower.blade.handin', 's.burl.depart', 's.burl.follow']), [...flags].join());
+  ok('flags set by the graph', ids([...flags].sort()) === ids(['bear.stone.told', 'bear.talked', 'q.burl.boars.accept', 'q.burl.boars.handin', 'q.sq.burl.blue.accept', 'q.sq.burl.blue.handin', 'q.tower.blade.handin', 's.burl.depart', 's.burl.follow', 's.burl.home.met']), [...flags].join());
 }
 // barks file shape
 {

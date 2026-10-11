@@ -37,14 +37,14 @@ b2.track(null); assert.equal(b2.tracked(), 2);
 // J log: offered list says "Talk to <giver>", T toggles the tracked row
 b = createQuestBook(main, [{ ...blue, requires: undefined }, other]);
 const log = createQuestLogScreen(b, { giverName: (id) => (id === 'bear' ? 'Burl' : id) });
-log.open(); log.handleKey('KeyS');
+log.open(); log.handleKey('KeyD'); // SIDE tab
 let lines = log.snapshot().lines.join('\n');
 assert.ok(/Offered/.test(lines) && /The Blue Ones/.test(lines), lines);
 assert.ok(/Talk to Burl/.test(lines) || (log.handleKey('KeyS'), /Talk to/.test(log.snapshot().lines.join('\n'))), 'offered row shows giver');
 assert.ok(!/Esc/.test(lines));
-b.accept('sq.two'); log.open(); log.handleKey('KeyS');
+b.accept('sq.two'); log.open(); log.handleKey('KeyD'); // SIDE tab
 const act = log.snapshot().lines; assert.ok(act.some(l => /\[T\] Track this|\[T\] Tracked/.test(l)));
-b.accept('sq.burl.blue'); log.open(); log.handleKey('KeyS'); // main, two (blue is newest = tracked by default)
+b.accept('sq.burl.blue'); log.open(); log.handleKey('KeyD'); // SIDE tab // side: two, blue (blue is newest = tracked by default)
 log.handleKey('KeyT'); const t1 = b.tracked(); assert.equal(t1, 2, 'T pins the selected quest');
 log.handleKey('KeyT'); assert.notEqual(b.tracked(), t1, 'T again unpins back to newest/other');
 console.log('questLine ok');

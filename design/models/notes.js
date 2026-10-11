@@ -91,7 +91,7 @@
         'The road beyond is no longer safe.',
         'Take the blade. You may need it.',
         '',
-        'And if you hear something below, do not answer.'
+        'And if something follows you at dusk, do not run.'
       ],
       source: 'docs/story.md q01 note 1 `note.steelHush` (CH1-D1a: page by the sword on the summit; was the scrawl STEEL FOR THE HUSH)'
     },
@@ -101,7 +101,7 @@
         'These stones are not as dead as they seem.',
         '',
         'Do not stay here after dark.',
-        'Something moves beneath the tower.',
+        'Something walks the woods at night.',
         '',
         'Leave while there is still light.'
       ],

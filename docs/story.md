@@ -39,6 +39,7 @@ Wick grew up with machines only. Out here every upgrade is something he was told
 - **The *Kestrel*.** A Crown patrol balloon: a brass gondola, a copper burner and a lamp that still works. Now it is wreckage, and it was the only way out.
 - **The Relay Line.** Old signal towers strung across the Emberlands, each with an aether-crystal bowl in a brass-and-mirror mount. Every one is dead until you wake it.
 - **The Signal Tower.** A far spire where a teal light pulses at the end of his pencil line.
+- **The map names** (sea, coast, mountains, lake, marsh, forests, river, map labels): see "Places on the chart (MAP-27)" at the end.
 
 ## 4. Relay-keeper's log (US-021, each line <= 60 chars)
 
@@ -606,12 +607,12 @@ Texts for D-062 / architecture 38.37 (PC-B writer, 2026-10-10). Source: `docs/ch
 | `note.steelHush` (3) | note 1 | `The road beyond is no longer safe.` | 34 |
 | `note.steelHush` (4) | note 1 | `Take the blade. You may need it.` | 32 |
 | `note.steelHush` (5) | note 1 | `` (empty row) | 0 |
-| `note.steelHush` (6) | note 1 | `And if you hear something below, do not answer.` | 47 |
+| `note.steelHush` (6) REWORD (QL-W1) | note 1 | `And if something follows you at dusk, do not run.` | 48 |
 | `note.leave.title` | note 2 | `A note by the stair` | 19 |
 | `note.leave` (1) | note 2 | `These stones are not as dead as they seem.` | 42 |
 | `note.leave` (2) | note 2 | `` (empty row) | 0 |
 | `note.leave` (3) | note 2 | `Do not stay here after dark.` | 28 |
-| `note.leave` (4) | note 2 | `Something moves beneath the tower.` | 34 |
+| `note.leave` (4) REWORD (QL-W1) | note 2 | `Something walks the woods at night.` | 35 |
 | `note.leave` (5) | note 2 | `` (empty row) | 0 |
 | `note.leave` (6) | note 2 | `Leave while there is still light.` | 33 |
 | `bark.wick.sword` | YOU | `Better than empty hands.` | 24 |
@@ -938,3 +939,258 @@ Notes:
 - The journal is the script's text, line for line, with one addition: the "W." signature from canon (his pencil notes are signed W.).
 - Every line fits the note panel's 56-column wrap, so none of them wraps.
 - `journalCh1` (6) (PC-B writer, owner-authorised; PO-CH1-03): was "A stranger who says magic is real." Fen is removed (D-064), so the chapter now ends on the crystal and the stones it woke, last of them the Bend Relay.
+
+## Quest line Ch1-2 (QL-W1, PC-B writer, 2026-10-11)
+
+Moved from `docs/questline-2026-10-10.md` (ratified, D-065) and finished. This section is now the text source; the questline doc keeps only the design. ASCII only, lengths counted by hand (text only, no speaker label). Limits: dialogue / note lines <= 56, choices <= 40, HUD / objective / toast / item desc <= 38, prompts <= 24, journal titles <= 28. Speakers: `BURL`, `ROOK`, player `YOU`. No magic word, no "aether" on screen, nobody says "Wick", no Esc hints. Keys named `bark.wick.*` are ids only; the name never shows.
+
+### Journal titles (J log, `quest.<id>.title`)
+
+All six quests in `content/quests/` already carry a `title` (checked 2026-10-11; no JSON change needed). Titles for the new rows, to paste when their JSON is written:
+
+| key | text | chars |
+|---|---|---|
+| `quest.mq.bend.call.title` | `The Call Carries` | 16 |
+| `quest.mq.ford.mirror.title` | `The Missing Glass` | 17 |
+| `quest.mq.smoke.title` | `Smoke in the North` | 18 |
+| `quest.sq.wreck.plate.title` | `Gondola Plate` | 13 |
+| `quest.sq.rook.shiny.title` | `Shiny Things` | 12 |
+| `quest.sq.honey.title` | `Honey for a Crow` | 16 |
+| `quest.sq.rook.caps.title` | `Red Caps` | 8 |
+| `quest.sq.packet.title` | `The Oilcloth Packet` | 19 |
+| `quest.sq.straw.title` | `Three Straw Men` | 15 |
+| `chapter2.card.name` | `The River and the Forgotten` | 27 |
+
+Existing (kept): `m1` Beyond the Wall, `tower.blade` A Blade in the Ashes, `burl.boars` Boars in the Woods, `sq.burl.blue` The Blue Ones, `mq.river.road` The River Road, `mq.ford.stones` Stones in the Water.
+
+### HUD objectives (all <= 38)
+
+| key | text | chars |
+|---|---|---|
+| `mq.bend.call.1` | `Watch the relay light` | 21 |
+| `mq.bend.call.2` | `Look at the knot on the mount` | 29 |
+| `mq.bend.call.3` | `Go back to Rook` | 15 |
+| `mq.river.road` | `Follow the road to the river` | 28 |
+| `mq.ford.stones` | `Cross the stepping stones` | 25 |
+| `mq.ford.mirror.1` | `Ask Rook about the cold relay` | 29 |
+| `mq.ford.mirror.2` | `Take the glass from Rook's nest` | 31 |
+| `mq.ford.mirror.3` | `Wake the Ford Relay` | 19 |
+| `mq.smoke.1` | `Look at the mark on the relay` | 29 |
+| `mq.smoke.2` | `Follow the footpath north` | 25 |
+| `sq.burl.blue.1` | `Pick six blue sprigs` | 20 |
+| `sq.burl.blue.2` | `Bring the sprigs to Burl` | 24 |
+| `sq.wreck.plate.1` | `Find hide for a strap` | 21 |
+| `sq.wreck.plate.2` | `Bring the hide to the gondola` | 29 |
+| `sq.rook.shiny.1` | `Find four brass scraps` | 22 |
+| `sq.rook.shiny.2` | `Bring the brass to Rook` | 23 |
+| `sq.honey` | `Bring Burl's honeycomb to Rook` | 30 |
+| `sq.rook.caps.1` | `Pick five red caps by the river` | 31 |
+| `sq.rook.caps.2` | `Bring the caps to Rook` | 22 |
+| `sq.packet` | `Leave the packet at the ford post` | 33 |
+| `sq.straw` | `Hit the three straw men` | 23 |
+
+`sq.burl.blue` says six to match the built JSON (`berry1..6`, count 6). If MAP-21 places only five, change "six"/"Six" in `sq.burl.blue.1`, `burl.blue.offer` (3) and `bear.blue.active` to five; nothing else changes.
+
+### mq.bend.call "The Call Carries" (Ch1 close)
+
+| key | who | text | chars |
+|---|---|---|---|
+| `bark.wick.relayPulse` | YOU | `It's blinking. Three short. Three long.` | 39 |
+| `bark.wick.relayPulse2` | YOU | `It's passing the call along.` | 28 |
+| `prompt.knot` | prompt | `[E] Look at the knot` | 20 |
+| `note.knot.title` | note | `A knot on the brass` | 19 |
+| `note.knot` (1) | note | `A skyworks hitch. Lamp-trimmers tie it.` | 39 |
+| `note.knot` (2) | note | `Pulled tight. Weathered grey. Years old.` | 40 |
+| `rook.name` | label | `Rook` | 4 |
+| `rook.meet` (1) | ROOK | `Ha. The fell-bird walks.` | 24 |
+| `rook.meet` (2) | YOU | `...You talk too.` | 17 |
+| `rook.meet` (3) | ROOK | `Talk. Count. Keep. Crows do all three.` | 38 |
+| `rook.meet` (4) | ROOK | `Rook, the others call me.` | 25 |
+| `rook.meet` (5) | ROOK | `Your stone blinks now. Like the far one.` | 40 |
+| `rook.meet` (6) | YOU | `It's passing the call along. Toward home.` | 41 |
+| `rook.meet` (7) | ROOK | `The loud hill? The loud hill never listens.` | 43 |
+| `rook.meet` (8) | ROOK | `Watch it blink. Count. Then see the knot.` | 41 |
+| `rook.call.active` | ROOK | `Count the blinks. Then the knot. Then me.` | 41 |
+| `rook.call.ready` (1) | ROOK | `Counted? Nine blinks, then quiet. Again.` | 40 |
+| `rook.call.ready` (2) | YOU | `That knot. A lamp-trimmer tied it.` | 34 |
+| `rook.call.ready` (3) | ROOK | `Long ago. Nobody untied it. I tried.` | 36 |
+| `rook.call.ready` (4) | ROOK | `Here. Paper. River on it. Not shiny.` | 36 |
+| `rook.call.ready` (5) | ROOK | `West is the river. The next stone is cold.` | 42 |
+| `rook.call.ready` (6) | ROOK | `I will be there first. Wings.` | 29 |
+| `rook.repeat` | ROOK | `River. West. Do not drown, fell-bird.` | 37 |
+| `toast.chart.river` | toast | `Chart piece: the river and the ford.` | 36 |
+
+Notes: `rook.meet` gives the quest (main quest, no choice). `rook.call.ready` is the hand-in; its last node grants `chart.river` and plays the Ch1 chapter card (`journalCh1` unchanged). The knot is the Maren hook (section 9.5); nobody names her. "Nine blinks" = 3+3+3, the SOS, without naming it.
+
+### Chapter 2 main
+
+| key | who | text | chars |
+|---|---|---|---|
+| `bark.wick.river` | YOU | `Water. Loud as the steam mains.` | 31 |
+| `rook.ford` (1) | ROOK | `Slow walker. Wet boots?` | 23 |
+| `rook.ford` (2) | YOU | `The relay here is dead. Its glass is gone.` | 42 |
+| `rook.ford` (3) | ROOK | `Gone? No. Kept. Kept is different.` | 34 |
+| `rook.ford` (4) | YOU | `You took it.` | 12 |
+| `rook.ford` (5) | ROOK | `It fell. I found it. Then it was mine.` | 38 |
+| `rook.ford` (6) | ROOK | `Old house roof, by the crossing. Take it.` | 41 |
+| `rook.ford` (7) | ROOK | `I have other shinies. Many.` | 27 |
+| `rook.mirror.active` | ROOK | `Old house roof. By the crossing. Climb.` | 39 |
+| `rook.mirror.done` (1) | ROOK | `It blinks. Like Bend. Like the far one.` | 39 |
+| `rook.mirror.done` (2) | ROOK | `My glass, your stone. A fair loan.` | 34 |
+| `rook.ford.repeat` | ROOK | `North, smoke. Fires. People, maybe. Go look.` | 44 |
+| `rook.ford.repeat2` | ROOK | `Wet boots, full pack. Still a slow walker.` | 42 |
+| `hint.relay.nomirror` | toast | `The mount is empty. Glass is missing.` | 37 |
+| `item.relay.mirror` | item | `Relay Glass` / `Round, silvered, scratched by claws.` | 11 / 35 |
+| `place.relay.ws_ford` | toast title, save slot, map label | `Ford Relay` | 10 |
+| `notice.relayFord.title` | notice | `FORD RELAY AWAKENED` | 19 |
+| `prompt.fordMark` | prompt | `[E] Look at the mark` | 20 |
+| `note.fordMark.title` | note | `A mark cut in the base` | 22 |
+| `note.fordMark` (1) | note | `Three rings and a line through them.` | 36 |
+| `note.fordMark` (2) | note | `The same mark as the stones under the Wards.` | 44 |
+| `note.fordMark` (3) | note | `The ones that hum.` | 18 |
+| `bark.wick.smoke` | YOU | `Smoke. Cookfires. Out here?` | 27 |
+| `chapter2.card.name` | card | `The River and the Forgotten` | 27 |
+| `journalCh2.title` | note panel | `Pencil, under the river` | 23 |
+| `journalCh2` (1) | note | `The relays are not lamps. They are a voice.` | 43 |
+| `journalCh2` (2) | note | `` (empty row) | 0 |
+| `journalCh2` (3) | note | `Someone built a line to reach the city.` | 39 |
+| `journalCh2` (4) | note | `Ferrum stopped answering.` | 25 |
+| `journalCh2` (5) | note | `` (empty row) | 0 |
+| `journalCh2` (6) | note | `North of the ford, smoke. People.` | 33 |
+| `journalCh2` (7) | note | `If people live out here, so could she.` | 38 |
+| `journalCh2` (8) | note | `- W.` | 4 |
+
+Rook entry order at the ford: `rook.caps.*` / `rook.shiny.*` / `rook.honey.done` states first, then `rook.ford` (mirror available), `rook.mirror.active`, `rook.mirror.done` (once, right after the wake), `rook.ford.repeat` (until `mq.smoke` done), `rook.ford.repeat2`. At the Bend (Ch1): `rook.meet`, `rook.call.active`, `rook.call.ready`, then `rook.repeat`.
+
+### Burl back home (QL-05)
+
+| key | who | text | chars |
+|---|---|---|---|
+| `bear.home` (1) | BURL | `There you are. I took the long way home.` | 41 |
+| `bear.home` (2) | BURL | `The stone hums all night now. I sleep better.` | 45 |
+| `bear.home` (3) | BURL | `Sit a while, sky-cub. Mind the blue ones.` | 41 |
+| `burl.blue.offer` (1) | BURL | `The boars trampled half my bushes, sky-cub.` | 43 |
+| `burl.blue.offer` (2) | BURL | `The blue sprigs by the north trees still stand.` | 47 |
+| `burl.blue.offer` (3) | BURL | `Six would do. Don't eat any. I'll know.` | 39 |
+| `bear.blue.accepted` | BURL | `Blue ones. North trees.` (as built) | 23 |
+| `bear.blue.active` | BURL | `Blue ones. North trees. Six. I'm counting.` | 42 |
+| `burl.blue.done` (1) | BURL | `Oh, look at them. Not one nibbled.` | 34 |
+| `burl.blue.done` (2) | BURL | `A cloak was on my slope. Smells of smoke.` | 41 |
+| `burl.blue.done` (3) | BURL | `Yours, I think. Nights get cold, sky-cub.` | 41 |
+| `bear.blue.after` | BURL | `Warm enough? The nights out here bite.` | 38 |
+| `burl.honey.offer` (1) | BURL | `That crow on the old stone. Loud thing.` | 39 |
+| `burl.honey.offer` (2) | BURL | `Take it this comb. Tell it we're square.` | 40 |
+| `bear.honey.active` | BURL | `Give the crow the comb. Then we're square.` | 42 |
+
+`bear.home` plays once, the first talk after `s.burl.home` (sets `s.burl.home.met`), then flows into `burl.blue.offer` if that is available. It does not say where she went or how long it took.
+
+### Side quest texts
+
+| key | who | text | chars |
+|---|---|---|---|
+| `prompt.gondola` | prompt | `[E] Look at the gondola` | 23 |
+| `note.gondola` (1) | note | `The side plate hangs by one rivet.` | 34 |
+| `note.gondola` (2) | note | `Bent round. Light. A strap would hold it.` | 41 |
+| `note.gondola.done` | note | `Hide strap, brass plate. A buckler now.` | 38 |
+| `toast.buckler` | toast | `Brass Buckler. Hold {block} to block.` (`{block}` = binding label, e.g. `RMB` -> 33) | 33 |
+| `rook.shiny.offer` (1) | ROOK | `Your sky-boat dropped shinies. Everywhere.` | 42 |
+| `rook.shiny.offer` (2) | ROOK | `Four brass bits. Bring them. I trade fair.` | 42 |
+| `rook.shiny.active` | ROOK | `Four brass bits. Your sky-boat sheds them.` | 42 |
+| `rook.shiny.done` (1) | ROOK | `One, two, three, four. Good count.` | 34 |
+| `rook.shiny.done` (2) | ROOK | `A bow, from the river. Not shiny. Yours.` | 40 |
+| `toast.bow` | toast | `Hunter's Bow and ten arrows.` | 27 |
+| `rook.honey.done` (1) | ROOK | `Sticky. From the bear? Hm. Square, then.` | 40 |
+| `rook.honey.done` (2) | ROOK | `Sticks with feathers. Hunters lose them.` | 40 |
+| `rook.honey.done` (3) | ROOK | `And this. On a branch. Fits a fell-bird.` | 40 |
+| `rook.caps.offer` | ROOK | `Red caps grow by the water. Five. I'm hungry.` | 45 |
+| `rook.caps.active` | ROOK | `Red caps. By the water. I am still hungry.` | 42 |
+| `rook.caps.done` | ROOK | `Red, red, red, red, red. Take this. Warm stone.` | 46 |
+| `prompt.packet` | prompt | `[E] Look at the packet` | 22 |
+| `note.packet.title` | note | `Oilcloth, tied with twine` | 25 |
+| `note.packet` (1) | note | `Stitched on the cloth: FOR THE FORD POST.` | 41 |
+| `note.packet` (2) | note | `It has waited here a long time.` | 31 |
+| `prompt.post` | prompt | `[E] Look at the post` | 20 |
+| `note.post` (1) | note | `A basket on a post. Arrows inside, and a tag:` | 45 |
+| `note.post` (2) | note | `TAKEN. LEAVE WHAT YOU CAN SPARE.` | 32 |
+| `toast.packet.left` | toast | `Packet left. Arrows taken. Fair trade.` | 38 |
+| `note.straw` (1) | note | `Three straw men. Three arrows. Three hits.` | 42 |
+| `note.straw` (2) | note | `The quiver under the post is for whoever can.` | 45 |
+| `toast.straw.done` | toast | `Three hits. The quiver is yours.` | 32 |
+
+The `TAKEN` tag is fresh, unsigned handwriting: the second sign of people after the smoke. It names nobody.
+
+### Items (name / desc <= 38)
+
+| key | name | desc | chars |
+|---|---|---|---|
+| `item.heart.piece` | `Heart Piece` | `A warm red stone. Four make a heart.` | 36 |
+| `item.cloak` | `Smoke-Grey Cloak` | `Wool, singed at the hem. Warm.` | 30 |
+| `item.hood` | `Rook's Hood` | `Dark cloth, one black feather sewn in.` | 38 |
+| `item.boots` | `River Boots` | `Greased leather. Wet stones, sure feet.` | 38 |
+| `item.tunic` | `Wayfarer Tunic` | `Patched twice. Left for the next one.` | 37 |
+| `item.buckler` | `Brass Buckler` | `Kestrel plate on a boar-hide strap.` | 35 |
+| `item.bow` | `Hunter's Bow` | `Ash wood, river-damp. Still true.` | 33 |
+| `item.arrow` | `Arrow` | `Grey-fletched. Pick them up again.` | 34 |
+| `item.quiver` | `Big Quiver` | `Room for twenty more.` | 21 |
+| `item.honeycomb` | `Honeycomb` | `Sticky. One corner already licked.` | 34 |
+| `item.packet` | `Oilcloth Packet` | `Tied with twine. For the ford post.` | 35 |
+| `item.redcap` | `Red Cap` | `A river mushroom. Crows love them.` | 34 |
+| `item.berry.blue` | `Blue Sprig` | `Burl's favourite. Do not eat it.` | 32 |
+| `item.brass.scrap` | `Brass Scrap` | `A bent rivet plate from the Kestrel.` | 36 |
+| `item.chart.river` | `Chart Piece` | `The river, the ford, a crossing road.` | 37 |
+
+### No dungeon: tower note rewording (D-065)
+
+`note.leave` (4) and `note.steelHush` (6) in "q01 A Blade in the Ashes" above now point outside (marked REWORD). Old: `Something moves beneath the tower.` / `And if you hear something below, do not answer.` New: `Something walks the woods at night.` / `And if something follows you at dusk, do not run.` Paste needed in `design/models/notes.js` (designer/programmer; the writer does not edit design data).
+
+### The Sealed Gate (locked, inspect)
+
+| key | where | text | chars |
+|---|---|---|---|
+| `place.sealedGate` | map label, toast title | `The Sealed Gate` | 15 |
+| `prompt.sealedGate` | prompt | `[E] Look at the gate` | 20 |
+| `note.sealedGate.title` | note | `A gate across the pass` | 22 |
+| `note.sealedGate` (1) | note | `Iron bars. A lock the size of a fist.` | 37 |
+| `note.sealedGate` (2) | note | `` (empty row) | 0 |
+| `note.sealedGate` (3) | note | `The keyhole is clean. No rust in it.` | 36 |
+| `note.sealedGate` (4) | note | `Someone still keeps a key.` | 26 |
+| `hint.sealedGate` | toast, push / repeat E | `Locked. The bars do not even rattle.` | 36 |
+
+The clean keyhole says the gate is used, not who uses it. Nothing names what lies beyond (Part II).
+
+## Places on the chart (MAP-27, PC-B writer, 2026-10-11)
+
+The Crown chart prints nothing beyond the Wall, so every name here is what ends up pencilled on it. Plain names, the way a Low Ward hand names a mast by where it stands. Approved/proposed names from `docs/world-map-2026-10-11.md` are kept; this adds only the missing ones (marked NEW). Map labels <= 16, ASCII.
+
+| feature | label key | label | chars | note |
+|---|---|---|---|---|
+| sea (south) NEW | `map.label.sea` | `The Quiet Sea` | 13 | Ferrum has never heard it. |
+| river NEW | `map.label.river` | `The Braid` | 9 | It plaits round the stones at the ford; a rope-mender's word. |
+| river mouth NEW | `map.label.estuary` | `Braidmouth` | 10 | The estuary at (1180,1725). |
+| river source | `map.label.tarn` | `Highspring Tarn` | 15 | |
+| sand coast | `map.label.strand` | `The Long Strand` | 15 | |
+| cliff coast (west) NEW | `map.label.cliffs` | `The Shearcliffs` | 15 | Replaces "The Heath coast (P)"; Gull Cove and Signal Head stay. |
+| north range | `map.label.whitecombs` | `The Whitecombs` | 14 | |
+| west range | `map.label.fells` | `The West Fells` | 14 | |
+| highest peak | `map.label.oldPale` | `Old Pale` | 8 | |
+| lake | `map.label.lake` | `Glasswater` | 10 | |
+| marsh | `map.label.marsh` | `The Reedmire` | 12 | |
+| pine forest | `map.label.northwood` | `Northwood` | 9 | |
+| old twisted wood | `map.label.thornwood` | `The Thornwood` | 13 | |
+| broadleaf belts NEW | `map.label.hollins` | `The Hollins` | 11 | The heartland woods on both banks (hollin = holly). |
+| downs | `map.label.downs` | `The Downs` | 9 | |
+| burnt heath | `map.label.ashMile` | `The Ash Mile` | 12 | |
+| alpine meadows | `map.label.pastures` | `High Pastures` | 13 | |
+| fishing village | `map.label.gullhaven` | `Gullhaven` | 9 | |
+| signal hill | `map.label.signalHill` | `Signal Hill` | 11 | |
+| sea cape | `map.label.signalHead` | `Signal Head` | 11 | |
+| the gate | `place.sealedGate` | `The Sealed Gate` | 15 | |
+| the wall | `map.label.wall` | `Ferrum's Wall` | 13 | |
+| the city | `map.label.ferrum` | `Ferrum` | 6 | |
+| tower | `map.label.tower` | `The Watchtower` | 14 | Short form of the Hollow Watchtower. |
+| crossroads | `map.label.crossroads` | `The Crossroads` | 14 | |
+| Bend relay | `place.relay.ws_roadBend` | `Bend Relay` | 10 | existing |
+| Ford relay | `place.relay.ws_ford` | `Ford Relay` | 10 | |
+| village (stage 3) | `map.label.outwallSmoke` | `Cookfire Smoke` | 14 | Until M3 names the village (GDD 3: unnamed in M1/M2); never show "Outwall" before that. |
+
+Owner question OQ-MAP-1 (the (P) names) still applies to all names above; none of them is canon until approved.

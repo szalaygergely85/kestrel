@@ -10,6 +10,7 @@
     {"node": "bear.blue.ready", "requires": "q.sq.burl.blue.ready"},
     {"node": "bear.blue.active", "requires": "q.sq.burl.blue.active"},
     {"node": "bear.blue.offer.1", "requires": "q.sq.burl.blue.available"},
+    {"node": "bear.home.again", "requires": "s.burl.home.met"},
     {"node": "bear.home", "requires": "s.burl.home"},
     {"node": "bear.departing", "requires": "s.burl.departing"},
     {"node": "bear.woken.1", "requires": "s.waystone.waystone.woken"},
@@ -221,8 +222,11 @@
       "The world is wider than your Wall."
     ], "setFlag": "s.burl.depart", "speaker": "burl"},
     "bear.home": {"end": true, "lines": [
-      "Back on my slope. The boars keep their distance now.",
-      "Bears keep, sky-cub. Come by if you want a berry."
+      "There you are. I took the long way home.",
+      "The stone hums all night now. I sleep better."
+    ], "setFlag": "s.burl.home.met", "speaker": "burl"},
+    "bear.home.again": {"end": true, "lines": [
+      "Sit a while, sky-cub. Mind the blue ones."
     ], "speaker": "burl"},
     "bear.departing": {"end": true, "lines": [
       "Go on, sky-cub. The road is west."
