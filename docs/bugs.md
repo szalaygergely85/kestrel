@@ -8,6 +8,7 @@ Newest at the top of each table. Keep one line per bug; details go in the commit
 
 | ID | Date | Owner report (short) | Where / notes | Status |
 |---|---|---|---|---|
+| OB-023 | 2026-10-11 | Mushroom (big shelf fungus) lies in the middle of the road; should grow on a trunk | Red caps cap1..5 (MAP-25, Laetiporus scaled 2.2) placed on the east bank edge without checking road/trees. Fix: place them on tree trunks / stumps / logs, off the road, sensible size. | open - in progress |
 | OB-022 | 2026-10-11 | Dialogue: every short sentence needs its own E press - boring. Make lines shorter and GROUP consecutive lines of the same speaker into one box | Dialogue runner/box (game/js/quest/dialogue*). | open - in progress |
 | OB-021 | 2026-10-11 | At 560x210 the text (settings menu) becomes blurry | UI layer at the top grid size: non-integer cell scaling / canvas resampling. | open - in progress |
 | OB-020 | 2026-10-11 | Smoke north of the ford looks very bad (huge flat grey pillars) | The smokeColumn billboards (6x28 m sprites) removed at once; anchors kept. Proper smoke = thin rising particle plumes (existing particle system), owner to see it before it ships. Particle plumes (farSmoke) on smoke1..3; screenshot docs/test-reports/ob020-smoke-northlook.png. | fixed - verify |
