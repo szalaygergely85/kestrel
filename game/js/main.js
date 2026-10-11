@@ -112,6 +112,8 @@ import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.1
 import { createShieldSim } from './quest/sim/shield.js'; // EQ-07 (38.41 a)
 import { createArrowSim } from './quest/sim/arrows.js'; // EQ-09 (38.41 b)
 import { BOW_CFG } from './quest/bowConfig.js'; // EQ-09
+import { createQuickbar, ensureQuickbar, autoFill, assign as qbAssign } from './quest/sim/quickbar.js'; // EQ-12
+import { createQuickbarView } from './quest/quickbarView.js'; // EQ-12 + D-068
 import { createEquipPlay, registerGearItems } from './quest/equipPlay.js'; // EQ-07/09: LMB/RMB/Q routing, bow draw, pick-up
 import { createStubItemSim } from './quest/sim/hands.js'; // EQ-07: no-op sims so the router arms shield / bow
 import { EQUIP_VIEW_MODELS, loadShieldView, presentShield, loadBowView, presentBow, drawBlockSpark, createArrowView } from './quest/equipView.js'; // EQ-07/09
@@ -1058,10 +1060,17 @@ async function runGame(mode, cinematic = null) {
     return null;
   }
   const vLocked = () => !!(vitals && vitals.inputLocked) || (travel && travel.inputLocked) || deathFlow.inputLocked; // DIALOGUE-LOCK-01 (owner: never lock during game): dialogue/notes/chapter card/notices no longer lock movement or look; only menus, death, travel fade and the intro wake do. // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
+  const qbToast = (res) => { // EQ-12: quick-bar / potion feedback (no menu, never locks)
+    const T = { none: 'No potions', full: 'Not hurt', refuse: 'Cannot use that now', empty: '' };
+    if (toasts && T[res]) toasts.say(T[res], [226, 214, 176]);
+  };
+  const qbPlayOk = () => !!(vitals && !vitals.dead) && !wakeOut.inputLocked && !isMapOpen() && !isSettingsOpen() && !qbBlocked && !(invView && invView.isOpen) && !vLocked();
+  const qbDrink = () => { if (quickbar && playerHandle) qbToast(quickbar.drink(playerHandle.data)); };
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
   let equipPlay = null, shieldSim = null, arrowSim = null; // EQ-07/09: rebuilt on every 'world:loaded'
+  let quickbar = null, qbView = null, qbTick = 0, qbBlocked = false; const POTION_KEY = 'KeyH'; // EQ-12 + D-068: sim rebuilt per world, view per page; H drinks (takes over the old swap-hands key)
   let fireball = null, fbTargets = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
   // US-091b: pack-screen mouse. Hover -> UI cell under the pointer; a click while open must not re-lock the pointer
   // (PlayerLook's own canvas click handler), so a capture listener on window swallows it first.
@@ -1071,6 +1080,14 @@ async function runGame(mode, cinematic = null) {
     invView.setPointer(Math.floor((e.clientX - r.left) / r.width * ui.cols), Math.floor((e.clientY - r.top) / r.height * ui.rows));
   });
   window.addEventListener('click', (e) => { if (invView && invView.isOpen) e.stopPropagation(); }, true);
+  // D-068: the potion HUD button is clickable whenever the pointer is free (a click while the pointer is locked is an attack)
+  const potionClick = (e) => {
+    if (!qbView || !quickbar || !ui || !playerHandle || (look && look.locked) || (invView && invView.isOpen) || mode !== 'world' || !qbPlayOk()) return false;
+    const r = canvas.getBoundingClientRect();
+    return qbView.hitPotion(Math.floor((e.clientX - r.left) / r.width * ui.cols), Math.floor((e.clientY - r.top) / r.height * ui.rows));
+  };
+  canvas.addEventListener('mousedown', (e) => { if (potionClick(e)) qbDrink(); });
+  window.addEventListener('click', (e) => { if (potionClick(e)) e.stopPropagation(); }, true);
   // US-090w: title menu pointer - hover selects, click activates; the click never reaches PlayerLook's pointer-lock handler.
   const menuCell = (e) => { const r = canvas.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / r.width * ui.cols), Math.floor((e.clientY - r.top) / r.height * ui.rows)]; };
   canvas.addEventListener('mousemove', (e) => {
@@ -1331,6 +1348,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
       if (itemDefs) registerGearItems(hands, itemDefs, () => createStubItemSim());
       equipPlay = createEquipPlay({ hands, shield: shieldSim, arrows: arrowSim, defs: itemDefs || {}, bowCfg: BOW_CFG, swordDamage: SWORD_CFG.light.damage,
         say: (t) => { if (toasts) toasts.say(t, [226, 214, 176]); } });
+      quickbar = itemDefs ? createQuickbar(itemDefs) : null; qbTick = 0; // EQ-12: sip timer lives per world
       if (fbView) fbView.bind(fireball, lightSet); // SPELL-01b: 4 flight + 2 flash + 1 ember light, never removed
       if (practiceTarget) practiceTarget.dispose();
       practiceTarget = createPracticeTarget(world, engine.events, SWORD_CFG); // US-078d (30.1)
@@ -1408,6 +1426,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
       }
       if (toasts) toasts.dispose();
       toasts = itemDefs ? createToastView(engine.events, window.ASSETS.items.toast, itemDefs, assets.palette.rgb) : null;
+      qbView = itemDefs ? createQuickbarView({ defs: itemDefs, keys: window.ASSETS.items.keys, rgb: assets.palette.rgb }) : null; // EQ-12
       if (saveRelay) { // QG-03: book events -> seam + toasts (the reward, if any, is granted from book.lastReward; Burl's quest has none - owner pick)
         const tv = toasts, msg = window.ASSETS.items.toast && window.ASSETS.items.toast.messages && window.ASSETS.items.toast.messages.packFull;
         saveRelay.quest.onSection = (title) => { if (tv && msg) tv.say('Quest complete: ' + title, msg.fg); const ws = world.state; if (chapterCard && saveRelay.quest.done && ws['waystone.waystone.woken'] && ws['waystone.ws_roadBend.woken']) chapterCard.trigger(); /* PO-CH1-08: card only after the meadow stone AND the relay */ }; // CH1-02: live section completion only
@@ -1425,6 +1444,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
         inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
         healthOf: () => (playerHandle && playerHandle.data.components.health) || null,
         onHandsChanged: () => { if (hands && playerHandle) hands.step(playerHandle.data, false, false, false); }, // router sees the change now (cancel + setHand + hands:changed)
+        quickbar: itemDefs ? { assign: (n, id) => !!playerHandle && qbAssign(playerHandle.data, itemDefs, n, id) } : undefined, // EQ-12: 1-4 over an item in the Items / Character tab
         characterKey: params.get('craft') !== '1', // EQ-03: C opens the Character tab (the crafting list keeps C under ?craft=1)
         character: window.__charKit ? { // EQ-03/04: lazy preview + char cache, built on the first Character-tab open
           equipmentOf: () => (playerHandle && playerHandle.data.components.equipment) || null,
@@ -1544,7 +1564,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
       window.__debug.playerHandle = playerHandle;
       window.__debug.look = look;
       window.__debug.beasts = beasts; window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; window.__debug.getUi = () => ui; // HANDS-01b: test hooks; EQ-04: verify-equip-play reads the UI cells of the Character view box
-      window.__debug.equipPlay = equipPlay; window.__debug.shieldSim = shieldSim; window.__debug.arrowSim = arrowSim; window.__debug.vitals = vitals; window.__debug.wakeOut = wakeOut; // EQ-07/09: tools/verify-equip-play.mjs hooks
+      window.__debug.equipPlay = equipPlay; window.__debug.quickbar = quickbar; window.__debug.shieldSim = shieldSim; window.__debug.arrowSim = arrowSim; window.__debug.vitals = vitals; window.__debug.wakeOut = wakeOut; // EQ-07/09: tools/verify-equip-play.mjs hooks
       window.__debug.isMapOpen = isMapOpen; window.__debug.getMapPanel = getMapPanel; window.__debug.getMapChart = getMapChart; window.__debug.questBook = () => (saveRelay ? saveRelay.quest.book : null); window.__debug.questLogOpen = qlIsOpen; window.__debug.gameHooks = gameHooks; window.__debug.travel = travel; window.__debug.travelTo = (id) => travel.request(id, true); window.__debug.waystoneSim = () => (waystoneWire ? waystoneWire.sim : null); // QG-04/05: tools/verify-quest-ui.mjs hooks
       // S8-B1-15: test hook (tools/verify-map-wire.mjs)
     });
@@ -1831,7 +1851,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
       if (hands) {
         // HANDS-01b (37.8a): the router turns LMB/RMB + the gate into one `down` per item; every item sim is stepped
         // every step (down = false when it is in no hand).
-        if (!uiLocked && !paused && !ending && !vLocked() && input.pressed(gameKeys.swapHands)) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
+        if (!uiLocked && !paused && !ending && !vLocked() && input.pressed(gameKeys.swapHands) && gameKeys.swapHands !== POTION_KEY) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
         if (itemDefs) stepEquipment(playerHandle.data, itemDefs); // EQ-02: hands are derived (right = main/ranged, left = off)
         const gateOpen = look.locked && !uiLocked && !ending && !paused && !vLocked();
         // EQ-07 (settles the EQ-02 'crossed' note): hands.step(player, rawLeftHand, rawRightHand): the LEFT hand (shield) follows RMB,
@@ -1847,6 +1867,16 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
           const shotBefore = equipPlay.bow.shotTick;
           equipPlay.post(playerHandle.data, eqCtx);
           if (equipPlay.bow.shotTick !== shotBefore) playBowShot();
+        }
+        if (quickbar) { // EQ-12 AC3/AC4 + D-068: keys 1-4 act per item kind, H drinks a red draught. While a dialogue choice list is open the digits belong to
+          // the dialogue (its own pick consumes the edge; out-of-range digits are held back too). Sip = 0.6 s, never locks movement.
+          const pl = playerHandle.data; ensureQuickbar(pl); quickbar.step(); qbBlocked = ending || paused;
+          if ((++qbTick % 30) === 0) autoFill(pl);
+          if (qbPlayOk()) {
+            const choosing = !!(dialogueCtl && dialogueCtl.open && dialogueCtl.runner.state === 'choosing');
+            if (!choosing) for (let n = 0; n < 4; n++) if (input.pressed('Digit' + (n + 1))) { qbToast(quickbar.press(pl, n)); break; }
+            if (input.pressed(POTION_KEY)) qbDrink();
+          }
         }
         if (fireball) { // SPELL-01a: aim = unit 3D look vector (pitch > 0 = up); trig stays here, outside sim/
           forwardOf(look.yawDeg, swordFwd);
@@ -2200,6 +2230,11 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
             const eqH = engine.world.get('player').data.components.equipment, hudOn = !vitals.dead && !wakeOut.inputLocked && !isMapOpen();
             if (eqH && eqH.set === 'ranged' && eqH.ranged !== null) drawArrowCount(ui, assets.uiStyle.vitals, eqH.quiver ? eqH.quiver.n : 0, hudOn);
             if (hudOn) drawBlockSpark(ui, ui.cols, ui.rows, (fb.timeSec - blockSparkAt) * 1000);
+          }
+          if (qbView && quickbar && playerHandle) { // EQ-12 + D-068: quick bar bottom-centre + the potion button by the hearts (not in menus / cinematics)
+            const qbOn = !vitals.dead && !wakeOut.inputLocked && !isMapOpen() && !isSettingsOpen() && !(invView && invView.isOpen) && !cinematic;
+            qbView.drawBar(ui, playerHandle.data, quickbar.st, qbOn);
+            qbView.drawPotion(ui, assets.uiStyle.vitals, playerHandle.data, quickbar.st, 'H', qbOn);
           }
           hurtFx.draw(ui); // HURT-FX-01
           deathFlow.draw(ui, ui.cols, ui.rows); // DEATH-FLOW-01

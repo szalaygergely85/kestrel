@@ -138,6 +138,8 @@ export function createCharacterView(o) {
   const view = {
     get isOpen() { return isOpen; },
     get cursor() { return cur; },
+    /** EQ-12: item id under the cursor (worn piece or pack item), null on the model view / an empty cell */
+    get hoveredId() { return idAt(nodes[cur]); },
     get nodes() { return nodes; },
     get yawDeg() { return yaw.yawDeg; },
     get previewOk() { return previewOk; },

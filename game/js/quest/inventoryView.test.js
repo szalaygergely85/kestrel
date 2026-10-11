@@ -42,7 +42,7 @@ function makeInput() {
 }
 
 const FULL = { pack: [{ id: 'sword', n: 1 }, { id: 'spell.fireball', n: 1 }, { id: 'boar.meat', n: 3 }, { id: 'boar.hide', n: 2 }], left: 'sword', right: 'spell.fireball' };
-function rig({ hp = 20, max = 30, pack = true } = {}) {
+function rig({ hp = 20, max = 30, pack = true, quickbar } = {}) {
   const events = makeEvents();
   const player = { components: { health: { hp, max, invuln: 0 } } };
   ensureInventory(player, pack ? FULL : { pack: [], left: null, right: null });
@@ -52,7 +52,7 @@ function rig({ hp = 20, max = 30, pack = true } = {}) {
   let opened = 0, closed = 0;
   const toast = createToastView(events, items.toast, defs, rgb);
   const view = createInventoryView({
-    style, items, rgb, toast,
+    style, items, rgb, toast, quickbar,
     inventoryOf: () => player.components.inventory, healthOf: () => player.components.health,
     onHandsChanged: () => hands.step(player, false, false, false),
     onOpen: () => opened++, onClose: () => closed++,
@@ -192,6 +192,18 @@ function rig({ hp = 20, max = 30, pack = true } = {}) {
     const after = process.memoryUsage().heapUsed;
     ok('draw allocates nothing (--expose-gc heap check)', after <= before + 3e5, `before=${before} after=${after}`);
   } else console.log('(skip) zero-allocation heap check needs --expose-gc');
+}
+
+// ---- EQ-12: 1-4 over the selected item assigns it to a quick-bar slot ----
+{
+  const got = [];
+  const r = rig({ quickbar: { assign: (n, id) => { got.push([n, id]); return id !== 'boar.hide'; } } });
+  r.step('KeyI');
+  r.step('Digit2'); ok('Items tab: 2 assigns the selected item to slot index 1', got.length === 1 && got[0][0] === 1 && got[0][1] === 'sword');
+  ok('assign eats the edge (menu stays open)', r.view.isOpen);
+  r.step('KeyD'); r.step('KeyD'); r.step('KeyD'); r.step('Digit4'); ok('4 assigns the item under the cursor', got.length === 2 && got[1][0] === 3 && got[1][1] === 'boar.hide');
+  r.step('KeyD'); r.step('KeyD'); r.step('KeyD'); r.step('KeyD'); r.step('Digit1'); ok('empty cell: nothing assigned', got.length === 2);
+  const none = rig(); none.step('KeyI'); none.step('Digit1'); ok('no quickbar option: digit ignored', none.view.isOpen);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
