@@ -78,6 +78,7 @@ import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-05
 import { createWaystoneTouch } from './waystoneTouch.js'; // WAYSTONE-TOUCH-01
 import { createWaystoneWire } from './quest/wire/waystone.js'; // WAYSTONE-01w
 import { createTravel } from './quest/travel.js'; // WS1-07b: map travel (fade, teleport, reset)
+import { ensureBand, bandReady, placeLoaded, gridEnabled, gridVariant } from './quest/bandPose.js'; // MAP-13: band at any pose + ?grid=1 variant
 import { createTitleMenuHost, withRelock } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { retintHand, lookOrDefault } from './quest/look/handLook.js'; // CHARGEN-16
@@ -1187,13 +1188,13 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
       t.x = pose.x; t.y = pose.y; t.z = pose.z; t.yawDeg = pose.yawDeg; // anchor = a known-safe spot (the pose at the touch)
       if (b) { b.vx = 0; b.vy = 0; b.vz = 0; b.fallDistance = 0; }
       hzb.invalidate('travel');
-      if (engine.world.ensureBandFor) engine.world.ensureBandFor(pose.x, pose.y); // WS2-05 (38.38): band for the target while black
+      ensureBand(engine.world, pose); // WS2-05/MAP-13: band for the target (any grid zone) while black
       if (beasts) beasts.resetAll();
       if (targeting) targeting.clear();
       if (look) { look.clearLock(); look.yawDeg = t.yawDeg; look.pitchDeg = t.pitchDeg; }
       if (vitals) vitals.clearSafe();
     },
-    bandReady: () => !(engine.world.terrainBands && engine.world._bandPend >= 0), // WS2-05: fade-in waits for the band (ensureBandFor is synchronous, so true at once)
+    bandReady: () => bandReady(engine.world), // MAP-13: WS2-05: fade-in waits for the band (ensureBandFor is synchronous, so true at once)
     arrive: (id, pose) => { if (waystoneWire && waystoneWire.sim) waystoneWire.sim.touch(id, pose); }, // respawn point = target (heal + save)
   });
   const wakeOut = { blackA: 1, blinkOpen: 0, eyeH: 0, inputLocked: true, titleState: 'none', titleA: 0, wakeDoneAtSec: 0, titleDoneAtSec: 0 };
@@ -1218,7 +1219,10 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
         entities: [{ id: 'player', type: 'player', spawn: { structure: levelParam, from: 'start' } }],
         state: {},
       }
-      : assets.world(params.get('world') || 'world_m1'); // US-034 (24.11): the play-test handoff's `?world=` param
+      : (() => { // US-034 (24.11): the play-test handoff's `?world=` param
+        const wd = assets.world(params.get('world') || 'world_m1');
+        return gridEnabled(params) && wd.terrainBands ? gridVariant(wd, window.ASSETS.levels.world_geo) : wd; // MAP-13: ?grid=1 (default OFF) = terrainGrid + polygon bounds; shipped json untouched
+      })();
 
     // US-017 (7.4 "Restart / world swap"): every runtime rebuild this block
     // used to do ONCE, inline, now happens on `'world:loaded'` - emitted by
@@ -1361,7 +1365,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
       hurtFx.reset();
       vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting, block: shieldSim, // EQ-07: hooks.block = the shield sim
         defence: () => { const c = playerHandle && playerHandle.data.components; return c && c.equipment && itemDefs ? defenceOf(c.equipment, itemDefs) : 0; }, // EQ-02
-        respawnPose: () => { hzb.invalidate('respawn'); const rp = gameHooks.respawn(); if (rp && world.ensureBandFor) world.ensureBandFor(rp.x, rp.y); return rp; }, // WS2-05: band for the respawn pose // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
+        respawnPose: () => { hzb.invalidate('respawn'); const rp = gameHooks.respawn(); ensureBand(world, rp); return rp; }, // WS2-05: band for the respawn pose // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
         onDied: (t) => { gameHooks.emitSimple('player:died', t.x, t.y, t.z); deathFlow.died(performance.now()); },
         syncFacing: (t) => {
           if (!look) return;
@@ -1485,7 +1489,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
         Object.assign(startT, { x: atParts[0], y: atParts[1], z: atParts[2], yawDeg: atParts[3] || 0, pitchDeg: atParts[4] || 0 });
         playerHandle.data.components.body.peakZ = startT.z;
       }
-      if (world.ensureBandFor) world.ensureBandFor(startT.x, startT.y); // WS2-05: band for the start/saved pose (no-op without terrainBands)
+      placeLoaded(world, startT, () => gameHooks.respawn()); // WS2-05/MAP-13: saved pose outside a polygon bound -> last relay; band for the final pose (no-op without bands)
       hzb.invalidate('world-load'); // new world / restart / title New+Continue / ?at / ?pose: the start pose is a camera cut
       const waterfallView = worldDef.name === 'waterfall_test' && waterfallPreset?.views[params.get('waterfallview')];
       if (waterfallView) {
