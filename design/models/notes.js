@@ -71,6 +71,20 @@
       ],
       source: 'docs/story.md "Chapter complete + journal (CH1-W5)"'
     },
+    journalCh2: {
+      title: 'Pencil, under the river',
+      lines: [
+        'The relays are not lamps. They are a voice.',
+        '',
+        'Someone built a line to reach the city.',
+        'Ferrum stopped answering.',
+        '',
+        'North of the ford, smoke. People.',
+        'If people live out here, so could she.',
+        '- W.'
+      ],
+      source: 'docs/story.md "Chapter 2 card + journal (QL-W1)"'
+    },
     keepLight: {
       title: 'A scrap, nailed up',
       lines: [

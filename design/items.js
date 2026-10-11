@@ -435,8 +435,17 @@
         icon: icon(b.rows, fg),
         equip: { slot: b.slot, tier: tier, def: (ti + 1) * (b.slot === 'body' ? 2 : 1), shell: b.shell }
       };
+      if (b.slot === 'cloak') defs[id].equip.passive = { nightDef: 0.1 }; // QL-19: +10 % damage reduction at night (clock 21-05), inside the 0.6 cap
     });
   });
+  // QL-16/QL-19: River Boots (mq.ford.mirror chest by Rook's nest). `unique` keeps it OUT of the random gear rolls (loot.js gearIdFor skips it).
+  defs['gear.feet.riverBoots'] = {
+    id: 'gear.feet.riverBoots', name: 'River Boots', kind: 'gear', stackMax: 1, hand: false, inPack: true, unique: true,
+    desc: 'Greased leather. Sure on wet stones.',
+    glyph: { ch: 'L', c: 'verdigris' },
+    icon: icon(['     ', '|_| |', '|_|_|'], ['     ', 'vvv v', 'vvvvv']),
+    equip: { slot: 'feet', tier: 'sturdy', def: 2, shell: 'feet', passive: { wetStone: true } } // QL-19: no stumble on wet stepping stones
+  };
   defs.arrow = {
     id: 'arrow', name: 'Arrow', kind: 'ammo', stackMax: 30, hand: false, inPack: true,
     desc: 'Yew shaft, iron head.',

@@ -56,3 +56,15 @@ if (global.gc) {
   global.gc(); const d = process.memoryUsage().heapUsed - h0; assert.ok(d < 200000, 'draw heap growth ' + d);
 }
 console.log('chapterCard tests passed');
+
+// QL-17: Ch2 card reuses the machine with its own once-only flag; journalCh2 opens, chapter.next -> ch3
+{
+  const world = { state: {} }, opened = [], flags = [];
+  const card = createChapterCard({ world, openNote: (id) => opened.push(id), isNoteOpen: () => false, setFlag: (k, v) => flags.push([k, v]),
+    text: { name: 'The River and the Forgotten', next: '', journalId: 'journalCh2' }, flagDone: 'chapter.ch2.done', nextVal: 'ch3' });
+  assert.equal(card.trigger(), true); assert.equal(world.state['chapter.ch2.done'], true); assert.equal(world.state['chapter.next'], 'ch3');
+  assert.equal(card.trigger(), false, 'once only');
+  for (let i = 0; i < 60 * 12; i++) card.update(1 / 60);
+  assert.deepEqual(opened, ['journalCh2']); assert.equal(card.isDone(), true);
+  assert.equal(world.state['chapter.ch1.done'], undefined, 'ch1 flag untouched');
+}

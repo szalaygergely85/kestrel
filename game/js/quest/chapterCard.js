@@ -12,24 +12,28 @@ export const CHAPTER_TEXT = Object.freeze({
   journalId: 'journalCh1',
 });
 export const FLAG_DONE = 'chapter.ch1.done', FLAG_NEXT = 'chapter.next';
+export const FLAG_DONE_CH2 = 'chapter.ch2.done';
+/** QL-17: Ch2 card text (story.md chapter2.card.name + journalCh2); `next` stays empty: stage 3 is not named yet. */
+export const CHAPTER2_TEXT = Object.freeze({ title: 'CHAPTER COMPLETE', name: 'The River and the Forgotten', next: '', journalId: 'journalCh2' });
 const LINE_GAP = 2;
 
 /**
  * @param {{world:{state:Object}, openNote:(id:string)=>void, isNoteOpen:()=>boolean, setFlag?:(k:string,v:any)=>void,
  *   text?:Partial<typeof CHAPTER_TEXT>, cps?:number, fg?:string, bg?:string}} o
  */
-export function createChapterCard({ world, openNote, isNoteOpen, setFlag = null, text = {}, cps = TYPE_CPS, fg = '#e8e2d0', bg = '#000000' }) {
+export function createChapterCard({ world, openNote, isNoteOpen, setFlag = null, text = {}, cps = TYPE_CPS, fg = '#e8e2d0', bg = '#000000', flagDone = FLAG_DONE, flagNext = FLAG_NEXT, nextVal = 'ch2' }) {
+  // QL-17: flagDone / flagNext / nextVal let a second chapter (Ch2 -> 'ch3') reuse the card with its own once-only flag.
   const T = { ...CHAPTER_TEXT, ...text };
   const lines = [T.title, T.name, T.next];
   const total = lines[0].length + lines[1].length + lines[2].length;
   let state = 'idle', t = 0, undim = 0;
-  const isDone = () => state === 'idle' ? !!world.state[FLAG_DONE] : state === 'done';
+  const isDone = () => state === 'idle' ? !!world.state[flagDone] : state === 'done';
 
   /** Call when the main quest completes. Returns false (and does nothing) if the card already ran / was saved done. */
   function trigger() {
-    if (state !== 'idle' || world.state[FLAG_DONE]) return false;
-    world.state[FLAG_DONE] = true; world.state[FLAG_NEXT] = 'ch2';
-    if (setFlag) { setFlag(FLAG_DONE, true); setFlag(FLAG_NEXT, 'ch2'); }
+    if (state !== 'idle' || world.state[flagDone]) return false;
+    world.state[flagDone] = true; world.state[flagNext] = nextVal;
+    if (setFlag) { setFlag(flagDone, true); setFlag(flagNext, nextVal); }
     state = 'dim'; t = 0;
     return true;
   }
