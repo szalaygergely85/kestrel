@@ -68,12 +68,15 @@ try {
     await evaluate(cdp, `if (!window.__debug.overlay.visible) window.__debug.overlay.toggle(); window.__debug.engine.setGrid(${c.w}, ${c.h}, { immediate: true }); true`); // overlay visible = pass timers on
     const loadMs = Date.now() - tNav - 1500; // navigate -> __debug ready (load-time delta: compare runs before/after WS1-02)
     await sleep(settle);
+    if (args.cpuprof) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.start'); }
     let r = await evaluateAsync(cdp, SAMPLER(frames));
+    if (args.cpuprof) { const { profile } = await cdp.send('Profiler.stop'); writeFileSync(args.cpuprof + '-' + pose + '.cpuprofile', JSON.stringify(profile)); }
     for (let k = 0; !r.gpu && k < 3; k++) { await sleep(2000); r = await evaluateAsync(cdp, SAMPLER(frames)); } // pass timers need a few frames after the overlay turns them on
     const row = { quality: c.q, grid: `${c.w}x${c.h}`, pose, trees: t, frames: r.cpu.length, loadMs, heapDeltaMb: r.heap0 != null && r.heap1 != null ? (r.heap1 - r.heap0) / 1048576 : null,
       gpuP50: r.gpu && r.gpu.p50, gpuP95: r.gpu && r.gpu.p95, cpuP50: pct(r.cpu, 0.5), cpuP95: pct(r.cpu, 0.95),
       frameP50: pct(r.itv, 0.5), frameP95: pct(r.itv, 0.95), fps: 1000 / (r.itv.reduce((a, b) => a + b, 0) / r.itv.length) };
     if (process.env.CAP_LOG) console.error('[passStats]', JSON.stringify(r.gpu), r.rawAvail);
+    if (args.probe) console.log('[probe]', pose, JSON.stringify(await evaluate(cdp, args.probe)));
     rows.push(row);
     console.log(JSON.stringify(row));
   }

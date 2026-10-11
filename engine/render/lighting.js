@@ -1047,9 +1047,10 @@ function sunVisibleP(world, P, dir) {
   // blocks and costs no fetch, but keeps going (a structure across a gap
   // still shadows) until `h0` clears this bound.
   let worldMaxH = 0;
-  for (let i = 0; i < world.structures.length; i++) {
-    const s = world.structures[i];
-    if (s.kind === 'mesh') continue; // ME-14c1: no sun-DDA grid for imported meshes
+  const gs = world._gridStructures ? world._gridStructures() : world.structures; // ME-14c1: imported meshes have no sun-DDA grid
+  for (let i = 0; i < gs.length; i++) {
+    const s = gs[i];
+    if (s.kind === 'mesh') continue;
     const m = s.frame.z + s.packed.maxH;
     if (m > worldMaxH) worldMaxH = m;
   }
