@@ -115,12 +115,21 @@ anchor('chestBend', 1268, 1014, 'MAP-25 heart-piece chest 2 (Bend Relay ridge, ~
 { const hx = 930, hy = 968; world.ensureBandFor(hx, hy); put('Rock_Medium_1', hx + 1.5, hy + 1.2, 40, { ext: 1.2 }); put('Rock_Medium_2', hx - 1.8, hy + 1.0, 200, { ext: 1.2 });
   ruinEnts.push({ id: 'hiddenScrawl', type: 'prop', x: hx - 0.5, y: hy + 5, z: 'ground', components: { inspect: { text: 'scrawl.hiddenChest' } }, note: 'MAP-25 scrawl on the footpath north (text key scrawl.hiddenChest, writer QL-W1)' });
   anchor('chestHidden', hx, hy, 'MAP-25 hidden chest (Wayfarer Tunic): between two rocks, behind scrawl.hiddenChest (hiddenScrawl, 5 m south)'); }
-{ let k = 0; const caps = ['Mushroom_Common', 'Mushroom_Laetiporus'];
-  for (const [x, y] of [[1056, 1038], [1062, 1052], [1058, 1070], [1068, 1086], [1054, 1096]]) {
-    world.ensureBandFor(x, y); let px = x; while (!free(px, y) && px < x + 30) px += 2;
-    k++; put(caps[k % 2], px, y, k * 67, { collide: false, noShadow: true, ext: 0.3, scale: 2.2 });
-    ruinEnts.push({ id: 'cap' + k, type: 'prop', x: +px.toFixed(1), y, z: 'ground', components: { questPickup: { item: 'redcap', n: 1 }, sprite: { model: 'pickupRedCap', anim: 'idle', frame: 0 } }, note: 'MAP-25 red-cap pickup ' + k + ' (east bank edge, mushroom mesh stays as decoration; M4 pickupRedCap sprite, questPickup item redcap; QL-18 sq.rook.caps)' });
-  } }
+// OB-023: the caps grow on tree TRUNKS (Laetiporus shelf fungus 0.5-1.1 m up, facing out, realistic size) with the pickup at the trunk foot;
+// Mushroom_Common only on the ground beside the trunk. Trees come from existing scatter rows (never the road: pathDist >= 6 m, no water).
+{ const TREES = ['roadG059', 'roadG058', 'roadG086', 'roadF064', 'roadF018'], pd = globalThis.ASSETS.levels.overworld_far.util.pathDist;
+  TREES.forEach((tid, i) => {
+    const t = data.structures.find((s) => s.id === tid), k = i + 1, tx = t.origin.x, ty = t.origin.y, sc = t.scale || 1;
+    world.ensureBandFor(tx, ty);
+    const ang = (k * 67 + 20) * Math.PI / 180, rt = 0.42 * sc;           // out-direction and approx trunk radius
+    const fx = tx + Math.cos(ang) * rt, fy = ty + Math.sin(ang) * rt;
+    put('Mushroom_Laetiporus', fx, fy, (ang * 180 / Math.PI) + 90, { collide: false, noShadow: true, ext: 0.2, scale: 1.0, dz: 0.5 + 0.12 * k });
+    const gx = tx + Math.cos(ang + 0.9) * (rt + 0.5), gy = ty + Math.sin(ang + 0.9) * (rt + 0.5);
+    if (k % 2) put('Mushroom_Common', gx, gy, k * 53, { collide: false, noShadow: true, ext: 0.2, scale: 0.9 });
+    const px = tx + Math.cos(ang) * (rt + 0.8), py = ty + Math.sin(ang) * (rt + 0.8);
+    if (pd(px, py) < 6 || !free(px, py)) throw new Error('cap' + k + ' on road/water');
+    ruinEnts.push({ id: 'cap' + k, type: 'prop', x: +px.toFixed(1), y: +py.toFixed(1), z: 'ground', components: { questPickup: { item: 'redcap', n: 1 }, sprite: { model: 'pickupRedCap', anim: 'idle', frame: 0 } }, note: 'MAP-25 red-cap pickup ' + k + ' (OB-023: at the foot of tree ' + tid + ', shelf fungus on its trunk; M4 pickupRedCap sprite, questPickup item redcap; QL-18 sq.rook.caps)' });
+  }); }
 // M4: smokeColumn far billboard (design/models/m3_props.js settings: unlit, far fog, minCells 3x6, detailRows 14); z 'ground' like the other props
 // OB-020 (owner: the billboard smoke looked very bad): smoke1..3 carry a thin particle plume (preset farSmoke, game ASSETS.particles) via components.emitters.
 [[958, 1004], [951, 1008], [962, 1000]].forEach(([x, y], i) => { world.ensureBandFor(x, y); ruinEnts.push({ id: 'smoke' + (i + 1), type: 'prop', x, y, z: 'ground', components: { emitters: [{ preset: 'farSmoke', offset: { up: 0.5 }, on: true }] }, note: 'MAP-25 smoke anchor ' + (i + 1) + ' (north of northLook); OB-020 particle plume (farSmoke), not a billboard' }); });
