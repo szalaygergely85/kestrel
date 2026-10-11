@@ -1,0 +1,38 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Prop_Vine5",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Prop_Vine5.mesh.bin",
+  "triCount": 117,
+  "bbox": [
+    -1.31835,
+    -0.10167,
+    -1.95482,
+    0.98273,
+    1.02417,
+    1.0309
+  ],
+  "ranges": [
+    {"count": 117, "part": "Prop_Vine5#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_Vine"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "leaf_light",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "ObSov7x0k7xxPfq/MzNzv1CNl71xPfq/MzNzv1CNl73P94M/ObSov7x0k7xxPfq/MzNzv1CNl73P94M/ObSov7x0k7zP94M/MzNzv1CNl71xPfq/8KfGPWDl0L1xPfq/8KfGPWDl0L3P94M/MzNzv1CNl71xPfq/8KfGPWDl0L3P94M/MzNzv1CNl73P94M/8KfGPWDl0L1xPfq/I9sZP6abxDxxPfq/I9sZP6abxDzP94M/8KfGPWDl0L1xPfq/I9sZP6abxDzP94M/8KfGPWDl0L3P94M/I9sZP6abxDxxPfq/rkdhP23n+z1xPfq/rkdhP23n+z3P94M/I9sZP6abxDxxPfq/rkdhP23n+z3P94M/I9sZP6abxDzP94M/rkdhP23n+z1xPfq/NV46vvLSTT5xPfq/NV46vvLSTT7P94M/rkdhP23n+z1xPfq/NV46vvLSTT7P94M/rkdhP23n+z3P94M/NV46vvLSTT5xPfq/2/lev4tsZz5xPfq/2/lev4tsZz7P94M/NV46vvLSTT5xPfq/2/lev4tsZz7P94M/NV46vvLSTT7P94M/2/lev4tsZz5xPfq/vHSjv/ypcT5xPfq/vHSjv/ypcT7P94M/2/lev4tsZz5xPfq/vHSjv/ypcT7P94M/2/lev4tsZz7P94M/vHSjv/ypcT5xPfq/ObSov7x0k7xxPfq/ObSov7x0k7zP94M/vHSjv/ypcT5xPfq/ObSov7x0k7zP94M/vHSjv/ypcT7P94M/ObSov7x0k7zP94M/MzNzv1CNl73P94M/8KfGPWDl0L3P94M/ObSov7x0k7xxPfq/8KfGPWDl0L1xPfq/MzNzv1CNl71xPfq/ObSov7x0k7zP94M/8KfGPWDl0L3P94M/I9sZP6abxDzP94M/ObSov7x0k7xxPfq/I9sZP6abxDxxPfq/8KfGPWDl0L1xPfq/ObSov7x0k7zP94M/I9sZP6abxDzP94M/rkdhP23n+z3P94M/ObSov7x0k7xxPfq/rkdhP23n+z1xPfq/I9sZP6abxDxxPfq/ObSov7x0k7zP94M/rkdhP23n+z3P94M/NV46vvLSTT7P94M/ObSov7x0k7xxPfq/NV46vvLSTT5xPfq/rkdhP23n+z1xPfq/ObSov7x0k7zP94M/NV46vvLSTT7P94M/2/lev4tsZz7P94M/ObSov7x0k7xxPfq/2/lev4tsZz5xPfq/NV46vvLSTT5xPfq/ObSov7x0k7zP94M/2/lev4tsZz7P94M/vHSjv/ypcT7P94M/ObSov7x0k7xxPfq/vHSjv/ypcT5xPfq/2/lev4tsZz5xPfq/"
+}
