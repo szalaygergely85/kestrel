@@ -34,8 +34,8 @@ assert.equal(EDGE_BLOCK.field('softGain').word, 11, 'softGain replaces pad0 (lay
 const w = (n) => EDGE_BLOCK.field(n).word;
 assert.deepEqual(['gridCols', 'fogMax', 'waterOn', 'terrainFogStart', 'pitchC', 'edgeGlyph', 'edgeGain', 'wos'].map(w), [0, 2, 4, 8, 12, 16, 24, 32]);
 assert.equal(EDGE_BLOCK.field('edgeGlyph').words, 8);
-assert.equal(EDGE_BLOCK.field('wos').words, 24);
-assert.equal(EDGE_BLOCK.sizeBytes, 224);
+assert.equal(EDGE_BLOCK.field('wos').words, 28);
+assert.equal(EDGE_BLOCK.sizeBytes, 240);
 
 // --- decideRule vs edgeRules ---
 let seed = 31;

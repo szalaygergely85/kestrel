@@ -90,6 +90,7 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
   if (!(dW < raw)) { return o; }
 
   let sheet = (w.w & 32u) != 0u;
+  let ribbon = (w.w & 64u) != 0u; // RIVER-03 (38.45): river ribbon texel (w = slot | back<<4 | 1<<6 | rapidQ<<8 | e*1000<<16, z = tau)
   let lb = i32(w.w & 15u) * ${WL_STRIDE / 4};
   let r0 = wu.wl[lb]; let r1 = wu.wl[lb + 1]; let r2 = wu.wl[lb + 2]; let r3 = wu.wl[lb + 3];
   let opaqueAt = r0.w; let seeThrough = r1.w; let bgK = r3.y;
@@ -109,6 +110,13 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
     if (wu.projMode == 0) { floorP = cellRayP(vec2f(cell), grid, wu.posX, wu.posY, wu.eyeH, wu.dirX, wu.dirY, wu.planeX, wu.planeY, wu.horizonRow, wu.planeDistY, raw); }
     else { floorP = cellRayPitched(vec2f(cell), grid, vec3f(wu.posX, wu.posY, wu.eyeH), wu.pitchA.xyz, wu.pitchB.xy, vec3f(wu.pitchB.zw, wu.pitchC.x), vec2f(wu.pitchA.w, wu.pitchC.y), raw, wu.projMode == 2); }
     column = max(0.0, P.z - floorP.z);
+  }
+  // river ribbon (twin of waterComposite.js / waterLook.js riverAlpha): alpha feather by edge distance e and column; row 7 = (o, streakT, feather, shoreFade)
+  var rE = 0.0; var rRapid = 0.0;
+  if (ribbon) {
+    rE = f32(w.w >> 16u) * 0.001; rRapid = f32((w.w >> 8u) & 255u) * (1.0 / 255.0);
+    let rr7 = wu.wl[lb + 7];
+    a = a * select(1.0, min(1.0, rE / rr7.z), rr7.z > 0.0) * min(1.0, column / rr7.w);
   }
   var tint = a;
   if (!isSky) { tint = min(column / wu.wl[lb + 9].z, 1.0); }
@@ -139,7 +147,17 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
     glyph = select(select(select(gv.w, gv.z, gc == 2), gv.y, gc == 1), gv.x, gc == 0);
     // flow streaks (twin of waterLook.js flowStreakHit): r6 = (streak glyph, L, W, K), r7 = (fhat.xy, |f|, o), r8 = (mode, c.xy, nAng)
     let r6 = wu.wl[lb + 6]; let r7 = wu.wl[lb + 7]; let r8 = wu.wl[lb + 8];
-    if (r8.x > 0.5) {
+    if (ribbon) {
+      // river streak (twin of waterLook.js riverStreakHit): material coordinate tau / streakT - o, across by e / W
+      let ra = i32(floor(bitcast<f32>(w.z) / r7.y - r7.x));
+      let rb = i32(floor(rE / r6.z));
+      let rh = hashFastU(ra & 1023, rb & 1023, ${WATER_FLOW_SALT});
+      if (f32(rh >> 8u) * (1.0 / 16777216.0) > r6.w) { glyph = r6.x; }
+      if (rRapid > 0.0 && f32(h >> 8u) * (1.0 / 16777216.0) < rRapid * r8.y) { // rapids: foam glyph + rim tint
+        glyph = wu.wl[lb + 11].x;
+        wc += (wu.wl[lb + 12].rgb - wc) * 0.5;
+      }
+    } else if (r8.x > 0.5) {
       var fa: f32; var fib: f32;
       if (r8.x < 1.5) {
         fa = P.x * r7.x + P.y * r7.y;
@@ -220,7 +238,8 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
     let dx = P.x - shape.x; let dy = P.y - shape.y;
     e = shape.z - sqrt(dx * dx + dy * dy);
   } else { e = min(min(P.x - shape.x, P.y - shape.y), min(shape.z - P.x, shape.w - P.y)); }
-  let shoreS = max(0.0, min(column / shoreParams.x, e / wu.wl[lb + 9].w));
+  var shoreS = max(0.0, min(column / shoreParams.x, e / wu.wl[lb + 9].w));
+  if (ribbon) { shoreS = max(0.0, min(column / shoreParams.x, 1.0)); } // 38.45: shore band by column only
   let shore = !sheet && !isSky && shoreS < 1.0 && dW < shoreParams.y;
   if (shore) {
     let fi = min(i32(floor(shoreS * foam.w)), i32(foam.w) - 1);

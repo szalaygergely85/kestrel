@@ -16,6 +16,7 @@ import { RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGS
 import { TERRAIN_RASTER_WGSL } from './terrainRaster.wgsl.js';
 import { WATER_WGSL } from './water.wgsl.js';
 import { WATER_COMPOSITE_WGSL } from './waterComposite.wgsl.js';
+import { WATER_RIVER_WGSL } from './waterRiver.wgsl.js';
 import { SPRITES_WGSL } from './sprites.wgsl.js';
 import { OVERLAY_WGSL } from './overlay.wgsl.js';
 import { CULL_WGSL } from './cull.wgsl.js';
@@ -44,6 +45,7 @@ export const WGSL_MODULES = Object.freeze([
   { name: 'shadowDepthCopy', code: SHADOW_DEPTH_COPY_WGSL },
   { name: 'water', code: WATER_WGSL },
   { name: 'waterComposite', code: WATER_COMPOSITE_WGSL },
+  { name: 'waterRiver', code: WATER_RIVER_WGSL },
   { name: 'sprites', code: SPRITES_WGSL },
   { name: 'overlay', code: OVERLAY_WGSL },
   { name: 'cull', code: CULL_WGSL }, // WG-4a compute (entry cs_main)

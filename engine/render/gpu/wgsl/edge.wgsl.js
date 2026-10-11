@@ -23,7 +23,7 @@ export const EDGE_BLOCK = defineUniformBlock('EdgeU', [
   { name: 'pitchC', type: 'vec4' },                // uZ, tanHalfY, cosP, sinP (only .y .z .w read)
   { name: 'edgeGlyph', type: 'vec4', count: 2 },   // float[8], rule glyph codes (ASCII-32), index 0 = cap .. 7 = nosing
   { name: 'edgeGain', type: 'vec4', count: 2 },    // float[8]
-  { name: 'wos', type: 'vec4', count: 6 },         // vec2[12]: per slot opaqueAt, seeThrough (waterLook.js rows 3 / 7)
+  { name: 'wos', type: 'vec4', count: 7 },         // vec2[14] (RIVER-03: slots 12..13 = ribbons): per slot opaqueAt, seeThrough (waterLook.js rows 3 / 7)
 ]);
 
 export const EDGE_TEXTURES = Object.freeze(['uint', 'uint', 'float', 'float', 'uint', 'sint']);
