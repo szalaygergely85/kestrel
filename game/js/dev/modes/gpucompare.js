@@ -522,7 +522,7 @@ function buildCompareRuns(ctx) {
         before: () => { vmLayer.setBob(0, 0); vmLayer.show(vmH, vmLayer.clipId(vmH, 'idle'), 0, false); } });
     }
     // HANDS-01c (37.8a): `handsSwapped` - the winding-flip pose (HANDS-01a's GPU frontFace(CW) for det<0 items was never
-    // drawn by a pose). Two handles at once (VM_MAX_HANDLES 4 = main's sword + spell, this sword, the spell glove): the sword
+    // drawn by a pose). Two handles at once (VM_MAX_HANDLES 8; main: main's sword + spell, this sword, the spell glove): the sword
     // (authored left, vmH) in the RIGHT hand = mirrored (det<0), the spell glove (authored left) in the LEFT hand = unmirrored
     // (per-item flip, restored between items). Default pitched camera, vmAssert.
     if (globalThis.ASSETS.viewModels.spellHand && compareVoxelPool.models.has('spellHandL') && vmLayer.stats.items === 0) {

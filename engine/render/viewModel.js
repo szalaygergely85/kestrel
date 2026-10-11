@@ -24,7 +24,7 @@ import { PROJ_NEAR } from './projection.js';
 /** G-buffer objectId of the view model (props use 0x8000|k with k < 48, units >= 0x10000). */
 export const VM_OBJECT_ID = 0xFFFF;
 /** Maximum number of independently shown held-item handles (TORCH-01a, 37.8). */
-export const VM_MAX_HANDLES = 4;
+export const VM_MAX_HANDLES = 8; // EQ-07/09: sword, spell, shield, bow in play + gpucompare's own sword; ids 0xFFFF..0xFFF8 stay above props/below units
 /** The model's `zBase` is the eye z minus this (a feet-height stand-in; both twins use the same value). */
 export const VM_FEET_BELOW_EYE = 1.6;
 const KEY_STRIDE = 7; // t, px, py, pz, rx, ry, rz

@@ -335,14 +335,14 @@ function worldTipFromList(list) {
   }
   ok('zero-alloc: 1000 two-handle frames grow the heap < 64 KB', growth < 65536, `growth=${growth}`);
   ok('two-handle frame loop keeps all pose/capture/item buffers', multi._defs[a].last === lastA && multi._defs[b].last === lastB && multi._defs[a].cap === capA && multi._defs[b].cap === capB && multi.list.items[0] === item0 && multi.list.items[1] === item1 && item0.partMatrices === mats0 && item1.partMatrices === mats1);
-  multi.load('third', def, pool); multi.load('fourth', def, pool);
+  for (let k = multi._defs.length; k < VM_MAX_HANDLES; k++) multi.load('extra' + k, def, pool);
   let overflow = false;
-  try { multi.load('fifth', def, pool); } catch (e) { overflow = /at most 4 handles/.test(e.message); }
-  ok('load enforces VM_MAX_HANDLES = 4', VM_MAX_HANDLES === 4 && multi._defs.length === 4 && overflow);
+  try { multi.load('one-too-many', def, pool); } catch (e) { overflow = /at most 8 handles/.test(e.message); }
+  ok('load enforces VM_MAX_HANDLES = 8', VM_MAX_HANDLES === 8 && multi._defs.length === 8 && overflow);
   multi.setBob(0, 0);
   for (let handle = 0; handle < VM_MAX_HANDLES; handle++) multi.show(handle, multi.clipId(handle, 'idle'), 0, false);
   const full = multi.buildList(cam, true);
-  ok('all four preallocated handles draw and report total stats', full.count === VM_MAX_HANDLES && multi.stats.items === VM_MAX_HANDLES && full.items.slice(0, full.count).every((it, i) => it.objectId === VM_OBJECT_ID - i));
+  ok('all preallocated handles draw and report total stats', full.count === VM_MAX_HANDLES && multi.stats.items === VM_MAX_HANDLES && full.items.slice(0, full.count).every((it, i) => it.objectId === VM_OBJECT_ID - i));
 }
 
 // ---- HANDS-01a: hand mirror (37.8a) -------------------------------------------------------------------------------
