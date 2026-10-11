@@ -8,6 +8,7 @@ Newest at the top of each table. Keep one line per bug; details go in the commit
 
 | ID | Date | Owner report (short) | Where / notes | Status |
 |---|---|---|---|---|
+| OB-017 | 2026-10-11 | Quick bar slot L shows the sword, but the sword is held in the RIGHT hand on screen | L/R slots are labelled as mouse buttons; the view holds the main weapon in the right hand. Owner to choose: slot = hand (sword in L -> drawn in the left hand) or relabel the slots as mouse buttons. | open - asked owner |
 | OB-016 | 2026-10-11 | Walking west toward the river, 2 steps past a "beacon in the forest" (lamp-post structure among pines, river behind), teleported back to the tower. Debug mode on. | Root cause (likely): void rescue (fall > 30 m below last safe spot -> snap back) - safe spot only refreshed when grounded AND fallDistance 0; walking down the hill (tower +2 -> Bend relay -31) left small fallDistance, safe spot stayed at the tower. Fix: any grounded step is safe; void rule only while airborne. Test in vitals.test. | fixed - verify |
 | OB-015 | 2026-10-11 | Relay/beacon stands "in the forest in a strange way" | Biome forest (MAP-01c) planted trees around the relay/waystone. Proposal: clearing around relays + waystones. | open - owner to confirm clearing |
 | OB-014 | 2026-10-11 | Game failed to load: `World.load: prop "tower.pallet" references unknown model "canvasHeap"` | Not reproducible on reload (game loads to the title). Likely a reload during a merge + generator run. | open - watch; reopen if seen again |
