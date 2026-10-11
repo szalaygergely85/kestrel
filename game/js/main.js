@@ -133,6 +133,7 @@ import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; /
 import { parseGlow } from './glowOpt.js'; // EMIS-03/04: bleed + halo knob
 import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
 import { PHYSICS } from '../../engine/index.js';
+import { createModelPreview, createCharCache } from '../../engine/index.js'; // EQ-03/04: Character tab model preview
 import { drawArrowCount, drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
 import { ensureInventory, validateItemDefs, migrateSword, addItem } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
@@ -1423,6 +1424,14 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
         inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
         healthOf: () => (playerHandle && playerHandle.data.components.health) || null,
         onHandsChanged: () => { if (hands && playerHandle) hands.step(playerHandle.data, false, false, false); }, // router sees the change now (cancel + setHand + hands:changed)
+        characterKey: params.get('craft') !== '1', // EQ-03: C opens the Character tab (the crafting list keeps C under ?craft=1)
+        character: window.__charKit ? { // EQ-03/04: lazy preview + char cache, built on the first Character-tab open
+          equipmentOf: () => (playerHandle && playerHandle.data.components.equipment) || null,
+          getLook: () => lookOrDefault(window.__charKit, saveRelay && saveRelay.look),
+          charCache: createCharCache(window.__charKit, 4),
+          createPreview: () => createModelPreview(assets),
+          onGearChanged: () => { if (hands && playerHandle) hands.step(playerHandle.data, false, false, false); },
+        } : undefined,
         onOpen: () => { invWasLocked = !!(look && look.locked); if (invWasLocked && document.exitPointerLock) document.exitPointerLock(); },
         onClose: () => { if (invWasLocked) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* click to resume */ } } },
       }) : null;
@@ -1533,7 +1542,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
       window.__debug.world = world;
       window.__debug.playerHandle = playerHandle;
       window.__debug.look = look;
-      window.__debug.beasts = beasts; window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; // HANDS-01b: test hooks
+      window.__debug.beasts = beasts; window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; // HANDS-01b: test hooks window.__debug.getUi = () => ui; // EQ-04: verify-equip-play reads the UI cells of the Character view box
       window.__debug.equipPlay = equipPlay; window.__debug.shieldSim = shieldSim; window.__debug.arrowSim = arrowSim; window.__debug.vitals = vitals; window.__debug.wakeOut = wakeOut; // EQ-07/09: tools/verify-equip-play.mjs hooks
       window.__debug.isMapOpen = isMapOpen; window.__debug.getMapPanel = getMapPanel; window.__debug.getMapChart = getMapChart; window.__debug.questBook = () => (saveRelay ? saveRelay.quest.book : null); window.__debug.questLogOpen = qlIsOpen; window.__debug.gameHooks = gameHooks; window.__debug.travel = travel; window.__debug.travelTo = (id) => travel.request(id, true); window.__debug.waystoneSim = () => (waystoneWire ? waystoneWire.sim : null); // QG-04/05: tools/verify-quest-ui.mjs hooks
       // S8-B1-15: test hook (tools/verify-map-wire.mjs)

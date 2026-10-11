@@ -9,6 +9,7 @@
 // is built once at construct time.
 import { assignHand, removeItem, countOf, SLOTS } from './sim/inventory.js';
 import { wrapNoteLines } from './noteRead.js';
+import { createCharacterView } from './characterView.js'; // EQ-03: the Character tab
 
 const ZONE_GRID = 0, ZONE_LEFT = 1, ZONE_RIGHT = 2;
 const F_ASSIGN = 1, F_CLEARED = 2, F_USE = 3, F_REFUSE = 4;
@@ -26,6 +27,8 @@ const F_ASSIGN = 1, F_CLEARED = 2, F_USE = 3, F_REFUSE = 4;
  * @param {() => void} [o.onClose]
  * @param {(index:number) => boolean} [o.isSlotDisabled] host-owned pack/cutscene locks; no inventory schema changes
  * @param {(hand:string) => boolean} [o.isHandDisabled] host-owned charging/cutscene locks
+ * @param {object} [o.character] EQ-03: options for characterView (equipmentOf, createPreview, charCache, getLook, onGearChanged); absent = no Character tab
+ * @param {boolean} [o.characterKey] false when `C` belongs to something else (crafting); Tab / I still switch tabs
  */
 export function createInventoryView(o) {
   const S = o.style, C = S.rgb, defs = o.items.defs, keyMap = o.items.keys;
@@ -84,6 +87,10 @@ export function createInventoryView(o) {
   }
 
   // ---- state ----
+  const cv = o.character ? createCharacterView({ ...o.character, style: S, items: o.items, inventoryOf: o.inventoryOf, healthOf: o.healthOf, toast: o.toast, isSlotDisabled: o.isSlotDisabled }) : null;
+  const charKey = o.characterKey !== false;
+  let tab = 0; // 0 Items, 1 Character
+  const TAB_ITEMS = { x: 3, w: 7 }, TAB_CHAR = { x: 11, w: 11 };
   let isOpen = false, t = 0;
   let zone = ZONE_GRID, idx = 0;
   let pxLast = -1, pyLast = -1;
@@ -107,9 +114,13 @@ export function createInventoryView(o) {
     slotFlash.until = t + (kind === F_USE ? slotCfg.flash.use.ms : slotCfg.flash.refuse.ms) / 1000;
   }
 
-  function doOpen() {
+  function setTab(n) {
+    tab = cv ? n : 0;
+    if (tab === 1) cv.open(); else if (cv) cv.close();
+  }
+  function doOpen(n) {
     const v = inv();
-    isOpen = true; zone = ZONE_GRID; idx = 0; pxLast = pyLast = -1;
+    isOpen = true; tab = 0; zone = ZONE_GRID; idx = 0; pxLast = pyLast = -1;
     if (v) {
       let first = -1;
       for (let i = 0; i < SLOTS; i++) if (!slotDisabled(i)) {
@@ -119,10 +130,12 @@ export function createInventoryView(o) {
       if(first>=0)idx=first;
     }
     handFlash[0].kind = handFlash[1].kind = 0; slotFlash.kind = 0;
+    if (n === 1) setTab(1);
     if (o.onOpen) o.onOpen();
   }
   function doClose() {
     isOpen = false;
+    if (cv) cv.close();
     if (o.onClose) o.onClose();
   }
 
@@ -243,16 +256,28 @@ export function createInventoryView(o) {
   }
 
 
+  // tab bar (row 1): the active tab in gold, the other dim
+  function drawTabs() {
+    if (!cv) return;
+    text(TAB_ITEMS.x, 1, ' Items ', tab === 0 ? S.slot.selected.fg : C.uiDim, bg);
+    text(TAB_CHAR.x, 1, ' Character ', tab === 1 ? S.slot.selected.fg : C.uiDim, bg);
+    text(TAB_CHAR.x + TAB_CHAR.w + 2, 1, 'Tab', S.keyHints.keyFg, bg);
+  }
+  const kit = { put, text, box, info: (id) => info[id], ui: null, ox, oy, bg };
+
   const view = {
     get isOpen() { return isOpen; },
     get cursor() { return { zone, idx }; },
-    open() { if (!isOpen) doOpen(); },
+    get tab() { return tab; },
+    get character() { return cv; },
+    open(n) { if (!isOpen) doOpen(n || 0); else if (n !== undefined && cv) setTab(n); },
     close() { if (isOpen) doClose(); },
 
     /** Hover: UI-layer cell under the mouse (or -1). Only a changed cell moves the cursor (keyboard keeps it otherwise). */
     setPointer(px, py) {
       if (!isOpen || (px === pxLast && py === pyLast)) return;
       pxLast = px; pyLast = py;
+      if (tab === 1) { cv.setPointer(px - ox, py - oy); return; }
       hitTest(px, py);
     },
 
@@ -265,11 +290,26 @@ export function createInventoryView(o) {
     step(dt, input, canOpen) {
       t += dt;
       if (!isOpen) {
-        if (canOpen && input.pressed('KeyI')) { doOpen(); if (input.consumePressed) input.consumePressed(); }
+        if (canOpen && input.pressed('KeyI')) { doOpen(0); if (input.consumePressed) input.consumePressed(); }
+        else if (canOpen && cv && charKey && input.pressed('KeyC')) { doOpen(1); if (input.consumePressed) input.consumePressed(); }
         return;
       }
-      if (input.pressed('KeyI') || input.pressed('Escape')) {
+      // EQ-03: I = Items (close when already there), C = Character (close when already there), Tab = the other tab. No Esc text anywhere.
+      const kI = input.pressed('KeyI'), kC = !!cv && charKey && input.pressed('KeyC'), kTab = !!cv && input.pressed('Tab');
+      let click = -1;
+      if (cv && input.pressed('Mouse0') && pyLast === oy + 1) click = pxLast >= ox + TAB_ITEMS.x && pxLast < ox + TAB_ITEMS.x + TAB_ITEMS.w ? 0 : pxLast >= ox + TAB_CHAR.x && pxLast < ox + TAB_CHAR.x + TAB_CHAR.w ? 1 : -1;
+      if (input.pressed('Escape') || (kI && tab === 0) || (kC && tab === 1)) {
         doClose();
+        if (input.consumePressed) input.consumePressed();
+        return;
+      }
+      if (kTab || kI || kC || click >= 0) {
+        setTab(click >= 0 ? click : kTab ? 1 - tab : kI ? 0 : 1);
+        if (input.consumePressed) input.consumePressed();
+        return;
+      }
+      if (tab === 1) {
+        cv.step(dt, input);
         if (input.consumePressed) input.consumePressed();
         return;
       }
@@ -311,6 +351,8 @@ export function createInventoryView(o) {
       const tl = F.title.text.length + 2, tx = ((P.w - tl) >> 1);
       text(tx, 0, ' ' + F.title.text + ' ', F.title.fg, bg);
       text(F.pausedTag.col - 1, F.pausedTag.row, ' ' + F.pausedTag.text + ' ', F.pausedTag.fg, bg);
+      drawTabs();
+      if (tab === 1) { kit.ui = ui; cv.draw(kit); return; }
       for (let si = 0; si < S.separators.length; si++) {
         const sp = S.separators[si];
         const g = sp.glyph.charCodeAt(0);
