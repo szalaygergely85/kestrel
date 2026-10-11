@@ -40,6 +40,14 @@ export const DRAW_WATER = 5;
 export const DRAW_FLAG_DEPTH_BIAS = 1;
 /** MESH-INST-01: DRAW_INSTANCED item whose mesh is ONE identity part: both twins draw `mesh.triCount` triangles as one range (one GL draw per group, the single-draw triangle order) instead of one per `mesh.ranges` entry. */
 export const DRAW_FLAG_ONE_PART = 2;
+/** MESH-INST-02: DRAW_INSTANCED item of an "open" (thin / one-sided: grass cards, walls, bushes) mesh: both twins draw it WITHOUT back-face culling, like the single placed-mesh draw (the instanced path culls back faces otherwise). */
+export const DRAW_FLAG_NO_CULL = 4;
+
+/** MESH-INST-02: placed-mesh object ids live in [0xA000, 0xA000 + MESH_ID_SPAN) (0xFF00..0xFFFF stay free for viewmodel handles); the old `0xA000 | si` overflowed into 0xB000.. at 4096 structures. Identical to the old value for si < 4096. */
+export const MESH_ID_BASE = 0xA000;
+export const MESH_ID_SPAN = 0x5F00;
+/** @param {number} si structure index @returns {number} object id of the placed-mesh draw (wraps, harmlessly, past MESH_ID_SPAN structures) */
+export function meshObjectId(si) { return MESH_ID_BASE + (si < MESH_ID_SPAN ? si : si % MESH_ID_SPAN); }
 
 const _onePartRange = [{ start: 0, count: 0 }]; // shared scratch: callers iterate synchronously (zero alloc)
 /**
@@ -494,7 +502,7 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
     placementMatrix12(s, item.matrix);
     item.zBase = s.origin.z;
     item.planeIdOr = (k & 0xFF) << 20;
-    item.objectId = 0xA000 | si;
+    item.objectId = meshObjectId(si);
     item.rangeFirst = 0;
     item.rangeCount = mesh.triCount;
     const b = s.bbox, a = item.aabb;

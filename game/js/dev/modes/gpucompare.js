@@ -354,7 +354,7 @@ function buildCompareRuns(ctx) {
         const yaws = [0, 40, 95, 150, 210, 300];
         for (let i = 0; i < 6; i++) {
           const x = 1462 - (i % 2) * 3.5, y = 1025 + (i - 2.5) * 3.2;
-          writeUnitInstance(ltGroup.ib, ltGroup.count++, x, y, worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0, yaws[i], 0xB000 | i, 0);
+          writeUnitInstance(ltGroup.ib, ltGroup.count++, x, y, worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0, yaws[i], 0xFF00 | i, 0); // MESH-INST-02: clear of the placed-mesh id range 0xA000..0xFEFF
         }
       },
     });
