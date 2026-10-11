@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "id": "mq.smoke",
+  "title": "Smoke in the North",
+  "main": true,
+  "requires": [{ "quest": "mq.ford.mirror", "done": true }],
+  "objectives": [
+    { "id": "mark", "text": "Look at the mark on the relay", "when": { "type": "flag", "id": "lore.fordMark.read", "equals": true } },
+    { "id": "north", "text": "Follow the footpath north", "when": { "type": "area", "id": "northLook" } }
+  ],
+  "abandonable": false
+}

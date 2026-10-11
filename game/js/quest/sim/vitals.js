@@ -129,7 +129,7 @@ export function createVitals(world, events, cfg, hooks) {
       return;
     }
     // EQ-02: worn gear reduces the damage taken; `h.defence()` = total defence points (equipment.defenceOf).
-    if (typeof h.defence === 'function') n = applyDefence(n, h.defence());
+    if (typeof h.defence === 'function') n = applyDefence(n, h.defence(), typeof h.defenceBonus === 'function' ? h.defenceBonus() : 0); // QL-19: night cloak
     applyDamage(n, dirX, dirY);
   }
   const offCombatHit = events.on('combat:hit', onHit);
