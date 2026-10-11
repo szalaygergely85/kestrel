@@ -17,10 +17,10 @@
       waterfallLip: { ...base, rate: 12, life: [0.35, 0.65], speed: [0.3, 0.6], spreadDeg: 40,
         box: [0, 0, 0.03], accelZ: -2, drag: 0.6, maxLive: 12, glyphs: ":'.", colors: ['riverLight', 'skyHorizon', 'river'], sizeM: 0.06 },
       waterfallSpray: { ...base, rate: 48, life: [0.45, 0.9], speed: [1.5, 2.8], spreadDeg: 65,
-        box: [0.65, 0.3, 0.04], accelZ: -4.9, drag: 0.5, maxLive: 48, glyphs: "*+:'.", colors: ['white', 'riverLight', 'skyHorizon', 'riverLight', 'river'], sizeM: 0.07 },
+        box: [0.65, 0.3, 0.04], accelZ: -4.9, drag: 0.5, maxLive: 48, glyphs: "*+:'.", colors: ['white', 'riverLight', 'skyHorizon', 'riverLight', 'river'], sizeM: 0.07, bgMix: 0.35 },
       // OB-045: a pale mist bank over the plunge pool (was 1 m wide, 0.12 m dots in river/ironDark: invisible in front of the sheet).
       waterfallMist: { ...base, rate: 16, life: [1.2, 2], speed: [0.4, 1.0], spreadDeg: 80,
-        box: [2.5, 1.5, 0.2], accelZ: 0.18, drag: 0.8, maxLive: 32, glyphs: '*+:', colors: ['white', 'skyHorizon', 'cloudLit'], sizeM: 0.5, sizeEndM: 1.4 },
+        box: [2.5, 1.5, 0.2], accelZ: 0.18, drag: 0.8, maxLive: 32, glyphs: '*+:', colors: ['white', 'skyHorizon', 'cloudLit'], sizeM: 0.5, sizeEndM: 1.4, bgMix: 0.45 },
       waterfallRipple: { ...base, rate: 0, life: [1.5, 1.5], speed: [0, 0], spreadDeg: 0,
         box: [0, 0, 0], accelZ: 0, drag: 0, maxLive: 96, glyphs: "o:'.", colors: ['white', 'riverLight', 'river', 'ironDark'], sizeM: 0.06 },
     },

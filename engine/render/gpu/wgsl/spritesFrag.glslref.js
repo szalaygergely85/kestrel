@@ -73,6 +73,7 @@ uniform float uDimMul[4];
 // twins read the identical arrays, so parity is exact by construction.
 uniform sampler2D uPart;   // RGBA8: rgb colour, a = glyph index / 255 (CellBuffer glyphIdx convention)
 uniform sampler2D uPartZ;  // R32F: depth (0 = empty)
+uniform sampler2D uPartBg; // RGBA8: rgb = fg * bgMix (premixed), a = bgMix (PART-VIS-01)
 
 const int MAX_SPRITES = ${MAX_SPRITES};
 const float SPRITE_NEAR_DEPTH = ${SPRITE_NEAR_DEPTH};
@@ -146,7 +147,8 @@ void main() {
   if (pz > 0.0 && pz < cellDepth && pz < best) {
     vec4 pcol = texelFetch(uPart, cell, 0);
     outFg = pcol;
-    outBg = vec4(ebg.rgb, 1.0);
+    vec4 pbg = texelFetch(uPartBg, cell, 0);
+    outBg = vec4(min(ebg.rgb * (1.0 - pbg.a) + pbg.rgb, vec3(1.0)), 1.0);
   }
 
   // US-017: fade this non-mask cell (mask already returned above), plain

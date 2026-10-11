@@ -52,7 +52,7 @@ export class WgSpritesPass {
     this.atlas = null; this.texAtlas = null; this.texPal = null;
     this._lutRef = null; this._rampLen = 1;
     this.layer = null; this._partCols = 1; this._partRows = 1; this._partRef = null; this._partDirty = true;
-    this.texSpr = this.texFadeLut = this.texFadeRamp = this.texPart = this.texPartZ = null; this.pipe = null;
+    this.texSpr = this.texFadeLut = this.texFadeRamp = this.texPart = this.texPartZ = this.texPartBg = null; this.pipe = null;
     this.tex = [];
     this.bindDesc = null;
     try {
@@ -66,7 +66,8 @@ export class WgSpritesPass {
       this.texFadeRamp = device.createTexture({ format: 'r8ui', width: 1, height: 1 });
       this.texPart = device.createTexture({ format: 'rgba8', width: 1, height: 1 });
       this.texPartZ = device.createTexture({ format: 'r32f', width: 1, height: 1 });
-      this.tex = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((slot) => ({ slot, texture: null }));
+      this.texPartBg = device.createTexture({ format: 'rgba8', width: 1, height: 1 });
+      this.tex = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((slot) => ({ slot, texture: null }));
       this.bindDesc = { uniforms: this.u, textures: this.tex };
       if (opts.atlas) this.setAtlas(opts.atlas);
     } catch (e) { this.dispose(); throw e; }
@@ -135,9 +136,10 @@ export class WgSpritesPass {
     const d = this.device;
     if (l.cols !== this._partCols || l.rows !== this._partRows) {
       if (!(l.cols > 0 && l.rows > 0)) return;
-      d.dispose(this.texPart); d.dispose(this.texPartZ);
+      d.dispose(this.texPart); d.dispose(this.texPartZ); d.dispose(this.texPartBg);
       this.texPart = d.createTexture({ format: 'rgba8', width: l.cols, height: l.rows });
       this.texPartZ = d.createTexture({ format: 'r32f', width: l.cols, height: l.rows });
+      this.texPartBg = d.createTexture({ format: 'rgba8', width: l.cols, height: l.rows });
       this._partCols = l.cols; this._partRows = l.rows; this._partDirty = true;
     }
     if (l.part !== this._partRef) { this._partRef = l.part; this._partDirty = true; }
@@ -162,7 +164,8 @@ export class WgSpritesPass {
     const off = r0 * C + c0;
     d.writeTexture(this.texPart, l.part, rect, off * 4);
     d.writeTexture(this.texPartZ, l.partZ, rect, off);
-    this.stats.partBytes += rect.w * rect.h * 8; // rgba8 (4 B) + r32f (4 B) per texel
+    d.writeTexture(this.texPartBg, l.partBg, rect, off * 4);
+    this.stats.partBytes += rect.w * rect.h * 12; // rgba8 (4 B) + r32f (4 B) + rgba8 bg (4 B) per texel
   }
 
   /**
@@ -182,7 +185,7 @@ export class WgSpritesPass {
     const tx = this.tex;
     tx[0].texture = inp.gi; tx[1].texture = inp.depth; tx[2].texture = inp.edgeFg; tx[3].texture = inp.edgeBg;
     tx[4].texture = this.texSpr; tx[5].texture = this.texAtlas; tx[6].texture = this.texPal;
-    tx[7].texture = this.texFadeLut; tx[8].texture = this.texFadeRamp; tx[9].texture = this.texPart; tx[10].texture = this.texPartZ;
+    tx[7].texture = this.texFadeLut; tx[8].texture = this.texFadeRamp; tx[9].texture = this.texPart; tx[10].texture = this.texPartZ; tx[11].texture = this.texPartBg;
     if (this.timeUploads) this.stats.uploadMs = now() - t0;
     d.beginPass(this.target);
     d.bind(this.pipe, this.bindDesc);
@@ -206,7 +209,7 @@ export class WgSpritesPass {
   dispose() {
     const d = this.device;
     this._freeTarget();
-    for (const k of ['pipe', 'texSpr', 'texFadeLut', 'texFadeRamp', 'texPart', 'texPartZ', 'texAtlas', 'texPal']) {
+    for (const k of ['pipe', 'texSpr', 'texFadeLut', 'texFadeRamp', 'texPart', 'texPartZ', 'texPartBg', 'texAtlas', 'texPal']) {
       if (this[k]) { try { d.dispose(this[k]); } catch (_) { /* best effort */ } this[k] = null; }
     }
     this.atlas = null;

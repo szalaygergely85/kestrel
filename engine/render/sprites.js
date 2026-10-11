@@ -586,7 +586,14 @@ export function drawSprites(fb, pool, layer) {
       if (!(pz > 0 && pz < depth[i] && pz < spriteDepth[i])) continue;
       const o4 = i * 4;
       const x = i % cols, y = (i / cols) | 0;
-      cells.setCellRGB(x, y, part[o4 + 3], part[o4], part[o4 + 1], part[o4 + 2], bg[o4], bg[o4 + 1], bg[o4 + 2]);
+      // PART-VIS-01: bg = bg*(1-a) + tint (tint premixed by the layer); a = 0 leaves bg untouched
+      const pb = layer.partBg, ma = pb ? pb[o4 + 3] : 0;
+      if (ma === 0) cells.setCellRGB(x, y, part[o4 + 3], part[o4], part[o4 + 1], part[o4 + 2], bg[o4], bg[o4 + 1], bg[o4 + 2]);
+      else {
+        const ia = 255 - ma;
+        cells.setCellRGB(x, y, part[o4 + 3], part[o4], part[o4 + 1], part[o4 + 2],
+          Math.min(255, Math.round((bg[o4] * ia) / 255) + pb[o4]), Math.min(255, Math.round((bg[o4 + 1] * ia) / 255) + pb[o4 + 1]), Math.min(255, Math.round((bg[o4 + 2] * ia) / 255) + pb[o4 + 2]));
+      }
     }
   }
 }

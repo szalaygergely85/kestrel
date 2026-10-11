@@ -304,6 +304,20 @@ const camE = { x: 2.5, y: 2.5, z: 1.6, yawDeg: 90, pitchDeg: 0 }; // facing east
   ok('particle in front of a wall: drawn (glyph + colour from the layer)',
     cells.glyphIdx[i0] === 1 && cells.fg[i0 * 4] === 200 && cells.fg[i0 * 4 + 1] === 50 && cells.fg[i0 * 4 + 2] === 50);
 
+  // PART-VIS-01: partBg a=0 leaves the bg untouched; a>0 blends bg*(1-a) + premixed tint
+  {
+    cells.clear('#000000'); depth.depth.fill(10); pool.reset(); pool.project(camE, cells, light);
+    const bgBefore = [cells.bg[i0 * 4], cells.bg[i0 * 4 + 1], cells.bg[i0 * 4 + 2]];
+    const lb = fakeLayer(); lb.partBg = new Uint8Array(COLS * ROWS * 4);
+    writeParticle(lb, i0, 5, 1, 200, 100, 50);
+    drawSprites(fb, pool, lb);
+    ok('partBg a=0: bg untouched', cells.bg[i0 * 4] === bgBefore[0] && cells.bg[i0 * 4 + 1] === bgBefore[1] && cells.bg[i0 * 4 + 2] === bgBefore[2]);
+    cells.clear('#000000'); pool.reset(); pool.project(camE, cells, light);
+    lb.partBg.set([80, 40, 20, 102], i0 * 4); // 0.4 mix of (200,100,50)
+    drawSprites(fb, pool, lb);
+    ok('partBg a>0: bg = 0*(1-a) + tint', cells.bg[i0 * 4] === 80 && cells.bg[i0 * 4 + 1] === 40 && cells.bg[i0 * 4 + 2] === 20);
+  }
+
   // sprite vs particle at the exact same depth: the sprite wins (strict `<` for the particle to override)
   cells.clear('#000000'); depth.depth.fill(100);
   pool.reset(); pool.push('lantern', 'unlit', 0, 6.5, 2.5, 1.6); pool.project(camE, cells, light); // depth = 4.0 exactly (camE at x=2.5 facing +x)
