@@ -58,7 +58,7 @@
       home:    { top: 2.4, drop: 70, radius: 300, note: 'our hilltop, falls ~70 m into the land' },
       hill2:   { height: 58, radius: 170, note: 'hill crown under the far tower' },
       rolling: { scale: 520, octaves: 5, gain: 0.5, lacunarity: 2, amp: 34, flatNearHome: 150, flatNearTower2: 120 },
-      river:   { base: 1120, a1: 110, p1: 260, a2: 45, p2: 95, ph2: 1.3, halfWidth: 10, carve: 2.0, carveEdge: [14, 8],
+      river:   { base: 1120, a1: 110, p1: 260, a2: 45, p2: 95, ph2: 1.3, halfWidth: 9.5, bankRock: { ring: 5, slope: 0.9 }, carve: 2.0, carveEdge: [14, 8],
                  note: 'x_r(y) = base + a1 sin(y/p1) + a2 sin(y/p2 + ph2). Bed carved smoothly: carve * smoothstep(|x-x_r| 14 -> 8 m); water where |x-x_r| < halfWidth',
                  // RIVER-04 (arch 38.45 resolution): the recipe valley RISES ~3 m downstream of the ford inside the keep (where the MAP-04 layer is
                  // branched out), so a falling river could not lie on it. bedLine = a monotone channel: h = min(h, bed(y) + lift + bank * max(0, |x-x_r| - flatW)),
@@ -214,7 +214,7 @@
       // OB-045 (2026-10-11, owner "water still looks not good"): type 2 is the river BED / wet bank, not the water. The river ribbon,
       // ford, lake and sea draw the water on top (WebGPU). Was river/riverLight '~' + glint = a second, blue "water" level above the
       // real surface at every bank and on the ford bar. Now wet gravel: dark, pebbly, no glint; under water the composite tints it.
-      water:  { id: 2, colors: ['stoneDeep', 'stoneMidLo', 'rubbleHi'], glyphs: { close: 'o.,:', near: '.,o', mid: ',.', far: '.,' }, face: ':.', albedo: 0.75 },
+      water:  { id: 2, colors: ['woodDark', 'ropeDark', 'turfDark'], glyphs: { close: 'o.,:', near: '.,o', mid: ',.', far: '.,' }, face: ':.', albedo: 0.75 },
       rock:   { id: 3, colors: ['stoneDark', 'rock', 'stoneLight'], glyphs: { close: '#%&', near: '#%', mid: '%#', far: '%' }, face: '#%', albedo: 0.80 },
       path:   { id: 4, colors: ['strawDark', 'strawDark', 'straw'], glyphs: { close: '.:,', near: '.:', mid: '.', far: '.' }, face: ':', albedo: 0.70 },
       // MAP-01b (arch 38.42): appended ids 5-10, EXISTING palette colours only. 'mud' (designer doc) = fen (id 8).
@@ -536,6 +536,8 @@
     else { hx = (hxp - hxm) / (2 * e); hy = (hyp - hym) / (2 * e); }
     var slope = Math.sqrt(hx * hx + hy * hy), dh = Math.hypot(x - T.x, y - T.y), F = R.forest, K = R.rock;
     var rockHit = slope > K.slope || (dh > K.minHomeDist && fbm(x / K.scale, y / K.scale, s + 29, 2, 0.5, 2) > K.threshold);
+    // OB-062b: the gentle carved bank beside the water (ring m past the band) is wet earth, not grey rock; only a real cliff stays rock
+    if (rockHit && dr < R.river.halfWidth + R.river.bankRock.ring && slope <= R.river.bankRock.slope) rockHit = false;
     var geoOn = GEO_N !== 0 && !inKeep(x, y);
     if (rockHit && !geoOn) return 3;
     if (rockHit) return geoType(3, x, y, heightAt(x, y), slope);   // MAP-02/03: sea/snow layers may override rock noise
