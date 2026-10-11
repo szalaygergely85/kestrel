@@ -32,8 +32,12 @@ try {
   const mouse = (type, button) => cdp.send('Input.dispatchMouseEvent', { type, button, buttons: button === 'right' ? 2 : 1, clickCount: 1, x: 550, y: 350 });
   const key = async (code, k) => { await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', code, key: k, text: k }); await pause(60); await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: k }); };
 
+  // OB-017: side of the screen a view model is drawn on = mean part translation along the camera's right vector (compass yaw 0 = -y: right = (cos, sin)).
+  const sideOf = (name) => evaluate(cdp, `(() => { const d = window.__debug, h = d.vmHandles['${name}'], vm = d.engine.viewModel, id = 0xFFFF - h, it = vm.list.items.slice(0, vm.list.count).find((i) => i.objectId === id);
+    if (!it) return null; const y = d.look.yawDeg * Math.PI / 180, rx = Math.cos(y), ry = Math.sin(y), t = d.cam; let s = 0, n = 0;
+    for (let p = 0; p + 11 < it.partMatrices.length; p += 12) { if (Math.abs(it.partMatrices[p + 9] - t.x) > 5) continue; s += (it.partMatrices[p + 9] - t.x) * rx + (it.partMatrices[p + 10] - t.y) * ry; n++; } return { side: n ? s / n : 0, hand: vm.handOf(h), n }; })()`);
   // gear: sword + shield, bow + 5 arrows in the quiver
-  await evaluate(cdp, `(() => { const d = window.__debug, eq = d.playerHandle.data.components.equipment; eq.main = 'sword'; eq.off = 'shield'; eq.ranged = 'bow'; eq.quiver = { id: 'arrow', n: 5 }; eq.set = 'melee'; return true; })()`);
+  await evaluate(cdp, `(() => { const d = window.__debug, eq = d.playerHandle.data.components.equipment; eq.main = 'sword'; eq.off = 'shield'; eq.ranged = 'bow'; eq.quiver = { id: 'arrow', n: 5 }; eq.set = 'melee'; d.engine.world.state['tower.sword.taken'] = true; return true; })()`);
   await pause(300);
   const hit = `(() => { const d = window.__debug, h = d.playerHandle.data, t = h.transform, hp0 = h.components.health.hp, b = d.engine.world.get('boar1');
     const yaw = d.look.yawDeg * Math.PI / 180; const bt = b.data.transform; bt.x = t.x + Math.sin(yaw) * 2; bt.y = t.y - Math.cos(yaw) * 2; bt.z = t.z;
@@ -44,6 +48,11 @@ try {
   await mouse('mousePressed', 'right'); await pause(500);
   const up = await evaluate(cdp, '(() => { const d = window.__debug, c = d.playerHandle.data.components; return { raised: d.shieldSim.raised, blocking: d.shieldSim.blocking, speed: d.equipPlay.speedScale, mouse2: d.input.isDown("Mouse2"), down: d.hands.downOf("shield"), left: c.inventory.left, right: c.inventory.right, locked: d.look.locked, set: c.equipment.set, off: c.equipment.off, btick: d.equipPlay.bow.tick, paused: !!(d.isPaused && d.isPaused()), uiLocked: d.uiLocked }; })()');
   const blocked = await evaluate(cdp, hit);
+  const sideSword = await sideOf('sword'), sideShield = await sideOf('shield');
+  console.log(JSON.stringify({ sideSword, sideShield, left: up.left, right: up.right }));
+  assert.ok(up.left === 'sword' && up.right === 'shield', 'OB-017: left hand = sword (main), right hand = shield (off)');
+  assert.ok(sideSword && sideSword.hand === 'left' && sideSword.side < 0, 'OB-017: the sword is drawn on the LEFT of the screen');
+  assert.ok(sideShield && sideShield.hand === 'right' && sideShield.side > 0, 'OB-017: the raised shield is drawn on the RIGHT of the screen');
   await mouse('mouseReleased', 'right'); await pause(400);
   console.log(JSON.stringify({ base, up, blocked }));
   assert.ok(base.hp1 < base.hp0 && base.blocked === 0, 'unguarded hit lands');
@@ -53,7 +62,9 @@ try {
   await key('KeyQ', 'q'); await pause(600);
   const set = await evaluate(cdp, 'window.__debug.playerHandle.data.components.equipment.set');
   assert.equal(set, 'ranged', 'Q swaps to the bow set');
-  await mouse('mousePressed', 'left'); await pause(1000); await mouse('mouseReleased', 'left'); await pause(400);
+  await mouse('mousePressed', 'left'); await pause(1000);
+  const sideBow = await sideOf('bow'); console.log(JSON.stringify({ sideBow }));
+  assert.ok(sideBow && sideBow.hand === 'left' && sideBow.side < 0, 'OB-017: the bow is drawn on the LEFT of the screen'); await mouse('mouseReleased', 'left'); await pause(400);
   const bow = await evaluate(cdp, '(() => { const d = window.__debug, a = d.arrowSim; return { n: d.playerHandle.data.components.equipment.quiver.n, flying: a.flyingCount, stuck: a.stuckCount }; })()');
   console.log(JSON.stringify({ set, bow, errors: errors.length }));
   assert.equal(bow.n, 4, 'quiver 5 -> 4');

@@ -30,7 +30,7 @@ function setup(opts = {}) {
   function step(lmb, rmb, q = false) {
     syncHands(player.components.inventory, eq);
     const held = play.pre(player, q, ctx.gate);
-    hands.step(player, !held && rmb, !held && lmb, ctx.gate);
+    hands.step(player, !held && lmb, !held && rmb, ctx.gate) // OB-017: left hand = main = LMB;
     play.post(player, ctx);
   }
   const run = (n, l, r) => { for (let i = 0; i < n; i++) step(l, r); };

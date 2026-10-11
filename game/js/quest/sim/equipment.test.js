@@ -78,14 +78,14 @@ const mkPlayer = (start) => { const p = { components: {} }; ensureInventory(p, s
 {
   const p = mkPlayer(), inv = p.components.inventory, eq = ensureEquipment(p);
   eq.main = 'sword'; eq.off = 'shield'; eq.ranged = null;
-  syncHands(inv, eq); assert.equal(inv.right, 'sword'); assert.equal(inv.left, 'shield');
+  syncHands(inv, eq); assert.equal(inv.left, 'sword'); assert.equal(inv.right, 'shield');
   assert.equal(swapSet(eq), 'melee', 'no bow: stays melee');
   eq.ranged = 'bow'; assert.equal(swapSet(eq), 'ranged');
-  syncHands(inv, eq); assert.equal(inv.right, 'bow'); assert.equal(inv.left, null, 'bow is two-handed');
-  assert.equal(swapSet(eq), 'melee'); syncHands(inv, eq); assert.equal(inv.right, 'sword'); assert.equal(inv.left, 'shield');
+  syncHands(inv, eq); assert.equal(inv.left, 'bow'); assert.equal(inv.right, null, 'bow is two-handed');
+  assert.equal(swapSet(eq), 'melee'); syncHands(inv, eq); assert.equal(inv.left, 'sword'); assert.equal(inv.right, 'shield');
   // stepEquipment auto-equips a sword that entered the pack (tower pickup) and derives the hands
   const t = mkPlayer({ pack: [{ id: 'sword', n: 1 }] });
-  stepEquipment(t, defs); assert.equal(t.components.equipment.main, 'sword'); assert.equal(t.components.inventory.right, 'sword');
+  stepEquipment(t, defs); assert.equal(t.components.equipment.main, 'sword'); assert.equal(t.components.inventory.left, 'sword');
   assert.equal(countOf(t.components.inventory, 'sword'), 0);
 }
 
@@ -95,7 +95,7 @@ const mkPlayer = (start) => { const p = { components: {} }; ensureInventory(p, s
   const eq = migrateEquipment(p, defs);
   assert.equal(eq.main, 'sword'); assert.equal(eq.off, 'shield');
   assert.equal(countOf(p.components.inventory, 'spell.fireball'), 1, 'fireball stays in the pack');
-  assert.equal(p.components.inventory.right, 'sword'); assert.equal(p.components.inventory.left, 'shield');
+  assert.equal(p.components.inventory.left, 'sword'); assert.equal(p.components.inventory.right, 'shield');
   assert.equal(migrateEquipment(p, defs), eq, 'idempotent');
   const none = mkPlayer({ pack: [] }); const e2 = migrateEquipment(none, defs); assert.equal(e2.main, null); assert.equal(e2.off, null);
   const swordOnly = mkPlayer({ pack: [{ id: 'sword', n: 1 }], left: 'sword' }); assert.equal(migrateEquipment(swordOnly, defs).off, null);
