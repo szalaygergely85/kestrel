@@ -231,10 +231,10 @@ function killAndRespawn(vitals, player) {
   ok('a bad def throws naming its id', !!threw && /bad\.item/.test(threw.message), threw && threw.message);
 }
 
-// EQ-01: equip data validated; 21 gear ids; bad slot/tier throws.
+// EQ-01: equip data validated; 35 gear ids (EQ-21); bad slot/tier throws.
 {
   const gear = Object.values(defs).filter((d) => d.kind === 'gear' && !d.unique);
-  ok('21 rollable gear ids over 7 slots x 3 tiers (+ unique River Boots)', gear.length === 21 && new Set(gear.map((d) => d.equip.slot)).size === 7);
+  ok('35 rollable gear ids over 7 slots x 5 tiers (+ unique River Boots)', gear.length === 35 && new Set(gear.map((d) => d.equip.slot)).size === 7);
   ok('arrow quiver stack 30', defs.arrow.kind === 'ammo' && defs.arrow.stackMax === 30 && defs.arrow.equip.slot === 'quiver');
   ok('potions', defs['potion.hp'].stackMax === 5 && defs['potion.hp'].use.heal === 2 && defs['potion.mp'].kind === 'potion');
   ok('sword/shield/bow equip slots', defs.sword.equip.slot === 'main' && defs.shield.equip.slot === 'off' && defs.bow.equip.slot === 'ranged');
