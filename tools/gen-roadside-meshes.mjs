@@ -39,7 +39,9 @@ const PRESETS = { roadL: { side: 'left', u0: 14, u1: 250, v0: 6, v1: 22, count: 
   roadF: { side: 'left', u0: 305, u1: 470, v0: 6, v1: 20, count: 80, tree: 0.27 }, roadG: { side: 'right', u0: 305, u1: 470, v0: 8, v1: 24, count: 92, tree: 0.22 } };   // WS2-07 ford stretch (band west), DRESS-01 counts/tree share
 const PRE = PRESETS[PREFIX] || PRESETS.roadL;
 const SIDE = argS('--side', PRE.side) === 'right' ? -1 : 1;   // +1 left (south), -1 right (north)
-const SEED = argN('--seed', 20261007), COUNT = argN('--count', PRE.count), dry = argv.includes('--dry-run');
+// OB-034: every prefix used the SAME seed, so roadW/N/G/F shared one random stream (identical yaws, same tree trio at each section start).
+// roadL keeps the base seed (its rows stay); every other prefix mixes its name into the seed.
+const SEED = argN('--seed', 20261007 + (PREFIX === 'roadL' ? 0 : [...PREFIX].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 100003, 7) * 17)), COUNT = argN('--count', PRE.count), dry = argv.includes('--dry-run');
 const TREE_Q = argN('--tree-quota', PRE.tree);
 const FILE = 'content/worlds/world_m1.world.json';
 const PATH = [[1480, 1025], [1420, 1032], [1350, 1050], [1260, 1045], [1180, 1062], [1090, 1070], [1000, 1066]];
@@ -117,6 +119,7 @@ const ok = (x, y, r) => {
   if (routeDist(x, y) < r + ROUTE_CLEAR) return false;
   for (const c of circles) { const dx = c.x - x, dy = c.y - y, m = c.r + r + 0.3; if (dx * dx + dy * dy < m * m) return false; }
   const nn = nearest(x, y); if (nn.side !== SIDE || nn.d < V0 - 0.5 || nn.d > V1 + 1 || nn.u < U0 - 4 || nn.u > U1 + 4) return false;
+  { const o = {}; if (world.riverAt(x, y, o) || world.riverAt(x + 2, y, o) || world.riverAt(x - 2, y, o) || world.riverAt(x, y + 2, o) || world.riverAt(x, y - 2, o)) return false; }   // design walk: roadF075/roadG075 stood in a river water area
   if (T.groundTypeAt(x, y) !== 0) return false;        // grass only (no water / path / forest paint / rock type)
   const e = 1.2, gx = (T.groundAt(x + e, y) - T.groundAt(x - e, y)) / (2 * e), gy = (T.groundAt(x, y + e) - T.groundAt(x, y - e)) / (2 * e);
   return Math.hypot(gx, gy) < 0.6;

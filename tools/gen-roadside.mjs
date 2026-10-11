@@ -21,7 +21,7 @@ import { plantScaleFor, treeScaleFor } from './plant-scale.mjs';
 const dry = process.argv.includes('--dry-run');
 const FILE = 'content/worlds/world_m1.world.json';
 const data = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-const rsRe = /^rs\d+$/, entRe = /^rsLamp\d+$/;
+const rsRe = /^rs\d+$/, entRe = /^rs(Lamp|Smoke)[0-9]+$/;
 data.structures = data.structures.filter((s) => !rsRe.test(s.id));
 data.entities = data.entities.filter((e) => !entRe.test(e.id));
 const { assets } = await loadTestAssets();
@@ -67,7 +67,7 @@ put('Prop_Wagon', 1347, 1058, 28, { ext: 1.4, dz: -0.28 });
 put('Prop_Crate', 1344.2, 1055.4, 70, { ext: 0.5, scale: 0.8 }); put('Prop_Crate', 1351.8, 1059.9, 200, { ext: 0.5, scale: 0.65 });
 put('Prop_Crate', 1350.9, 1055.2, 120, { ext: 0.5, scale: 0.75 }); put('Prop_Crate', 1350.9, 1055.2, 155, { ext: 0.5, scale: 0.6, dz: 0.8, free: true });
 log(1337, 1055, 100, 0.25, { ext: 1.1 });
-put('Prop_Support', 1349, 1054.6, 155, { ext: 0.4, collide: false });
+put('Prop_Support', 1349, 1054.6, 155, { ext: 0.4, collide: false, dz: -1.21 });   // design walk: the brace's foot is 1.21 m above its origin (it floated); dz plants the foot, it leans on the wagon
 // 2. fallen fence line + open gate at the meadow's north edge (x 1394..1378): three standing sections, a 2 m GAP, then two leaning/sagging
 // sections (sunk on one side) and a rail down in the grass; the gate leaf stands swung open
 { const Y = (x) => 1029.5 - (1394 - x) * 0.02;
@@ -103,7 +103,7 @@ for (const [dx, dy, yw, dz, sc] of [[0, 0, 5, 0, 0.9], [1.0, 0.1, 340, 0, 0.8], 
 // 6. brass lamps on crate posts along the Bend (south verge); static floorLantern sprite on top, no light (one light per lamp is too dear)
 [[1280, 1052], [1246, 1053.5]].forEach(([x, y], i) => {
   const st = put('Prop_Crate', x, y, 15 + i * 40, { scale: 0.5, ext: 0.4 });
-  ents.push({ id: 'rsLamp' + (i + 1), type: 'prop', x, y, z: +(st.origin.z + 0.53 + 0.04).toFixed(2), components: { voxel: { anim: 'lit', loop: true, model: 'floorLantern' } }, note: 'M4 lived-in: brass lamp on a crate post at the Bend (gen-roadside.mjs, static, no light)' });
+  ents.push({ id: 'rsLamp' + (i + 1), type: 'prop', x, y, z: +(st.origin.z + 0.53 + 0.04).toFixed(2), components: { light: { preset: 'lanternHook', on: true, offset: { down: -0.3 } }, voxel: { anim: 'lit', loop: true, model: 'floorLantern' } }, note: 'M4 lived-in: brass lamp on a crate post at the Bend (gen-roadside.mjs); OB-031: lit with the existing lanternHook point light' });
   put('Rock_Medium_3', x + 1.6, y + 0.9, i * 90, { ext: 0.9 });
 });
 // 7. rotten jetty at the ford's east bank: broken planks running to the water's edge, two mooring bricks, a stuck log
@@ -115,9 +115,10 @@ for (const [dx, dy, yw, dz, sc] of [[0, 0, 5, 0, 0.9], [1.0, 0.1, 340, 0, 0.8], 
 // 8. rocks + fallen logs at the forest edge north of the road, between Bend and ford
 { const F = [1190, 1044];
   put('Rock_Medium_2', F[0], F[1], 30, { ext: 1.4 }); put('Rock_Medium_1', F[0] + 2.4, F[1] + 1.5, 200, { ext: 1.4 }); put('Rock_Medium_3', F[0] - 1.8, F[1] + 2.4, 120, { ext: 1.4 });
-  log(F[0] + 1.0, F[1] + 5.0, 12, 0.34, { ext: 1.8 }); log(F[0] + 5.5, F[1] + 3.2, 160, 0.27, { ext: 1.5 });
+  log(F[0] + 1.0, F[1] + 5.0, 12, 0.34, { ext: 1.8 }); log(F[0] - 1.5, F[1] + 8.0, 160, 0.27, { ext: 1.5 });   // OB-034: moved (re-seeded roadN tree stood 2.3 m away)
   log(F[0] - 4.5, F[1] - 2.5, 78, 0.3, { ext: 1.6 }); }
 
+// OB-031: the existing `smoke` emitter preset on every chimney this generator places (set below, after the detail pass)
 // ---- 9. natural detail (density, not landmarks): seeded, every plant is walk-through (mesh json collide:false), no shadow; plants keep pathDist >= 1.6
 // and 1 m off the route-walk lines, stay out of water and the tower footprint; trees/props keep pathDist >= 6 / 3. Skipped spots are counted.
 function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -200,6 +201,38 @@ accent('DeadTree_4', [1030, 1040, 1075, 1090], (x, y) => nearWater(x, y, 11), fa
   cluster(1006, 1047, 1.8, 4.2, [['Fern_1', 4], ['Plant_7_Big', 2], ['Clover_2', 3], ['Mushroom_Common', 2]], { pd: 2.5 });  // shrine
   cluster(1491, 1033.8, 0.5, 2.6, [['Fern_1', 3], ['Plant_1_Big', 1], ['Clover_1', 2]], { pd: 3 });                          // tower foot
 }
+
+// ---- OB-037 / OB-038 (design walk 2026-10-11): river banks, west-bank framing, hedge + fence, all existing meshes. tryPut keeps a piece only when the
+// same checks as put() pass (water, road, walk lines, solids) and no entity is within 3 m; the stepping-stone walk line gets a 2.5 m clear corridor.
+const entXY = data.entities.filter((e) => typeof e.x === 'number');
+function tryPut(mesh, x, y, yaw, o = {}) {
+  world.ensureBandFor(x, y);
+  const n = bad.length; check('try', x, y, o.ext ?? 0.6); const ok = bad.length === n; bad.length = n;
+  if (!ok || inTower(x, y, 1) || entXY.some((e) => Math.hypot(e.x - x, e.y - y) < 3 + (o.ext ?? 0.6))) { skipped++; return null; }
+  return put(mesh, x, y, yaw, { ...o, free: true });
+}
+// tall grass / reed strips on both banks of the ford (the biome rule 'reeds' had no mesh): 1.5-4 m from the water, never within 2.5 m of the walk line
+rect(['Grass_Wispy_Tall', 'Grass_Common_Tall', 'Grass_Wispy_Tall'], 46, FORD, (x, y) => nearWater(x, y, 3.5) && !nearWater(x, y, 1.3) && lineD(x, y) > 2.5, { pd: 1.4, r: 0.5 });
+rect(['Grass_Wispy_Tall', 'Grass_Common_Tall'], 14, FORD, (x, y) => nearWater(x, y, 6) && !nearWater(x, y, 4) && lineD(x, y) > 2.5, { pd: 1.4, r: 0.5 });
+// stepping stones (fordS1..7, around 1028,1068): ferns and a few rocks on the banks beside them
+rect(['Fern_1', 'Plant_1_Big', 'Fern_1'], 12, [1016, 1058, 1042, 1080], (x, y) => nearWater(x, y, 3) && lineD(x, y) > 2.5, { pd: 1.4, wet: 0.7 });
+for (const [x, y, m] of [[1024, 1074.5, 'Rock_Medium_1'], [1032, 1063, 'Rock_Medium_2'], [1021, 1062.5, 'Rock_Medium_3'], [1035.5, 1075, 'Rock_Medium_2'], [1018, 1073, 'Rock_Medium_1']]) tryPut(m, x, y, Math.floor(R() * 360), { ext: 0.9 });
+// west bank: framing tree clumps (TwistedTree_3 / _5 / _2 + CommonTree), around the crossroads, the straw field and Rook's ruin
+const CLUMPS = [[[952, 1049, 'TwistedTree_3_LOD1'], [957, 1043, 'TwistedTree_5_LOD1'], [947, 1056, 'TwistedTree_2_LOD1']],     // behind the ruin
+  [[981, 1040, 'TwistedTree_5_LOD1'], [987, 1036, 'TwistedTree_3_LOD1'], [1008, 1038, 'TwistedTree_2_LOD1']],                    // north of the crossroads
+  [[951, 1096, 'TwistedTree_3_LOD1'], [945, 1088, 'TwistedTree_5_LOD1'], [957, 1104, 'TwistedTree_5_LOD1']],                      // west edge of the straw field
+  [[1000, 1102, 'TwistedTree_3_LOD1'], [1008, 1096, 'TwistedTree_5_LOD1'], [994, 1108, 'TwistedTree_2_LOD1']],                    // east edge of the straw field
+  [[968, 1070, 'TwistedTree_3_LOD1'], [962, 1067, 'CommonTree_4_LOD1'], [1010, 1064, 'TwistedTree_5_LOD1']]];                     // ruin forecourt, crossroads east
+let framed = 0;
+for (const clump of CLUMPS) for (const [x, y, m] of clump) { const id = 'rs' + String(out.length).padStart(3, '0'); const st = tryPut(m, x + (R() - 0.5) * 3, y + (R() - 0.5) * 3, Math.floor(R() * 360), { ext: 1.2 });
+  if (st) { st.scale = +Math.min(1.15, treeScaleFor(st.id)).toFixed(2); framed++; } }
+// hedge line (field boundary north of the straw field) + a post-and-rail fence along its south edge
+let hedge = 0, fence = 0;
+for (let x = 950; x <= 1000; x += 1.5) if (tryPut(R() < 0.25 ? 'Bush_Common_Flowers' : 'Bush_Common', x, 1077 + Math.sin(x * 0.4) * 0.35, Math.floor(R() * 360), { ext: 0.6, collide: false, noShadow: true })) hedge++;
+for (let x = 960; x <= 1000; x += 2.04) if (tryPut('Prop_WoodenFence_Single', x, 1106 + (x - 960) * 0.01, 0, { ext: 1.0 })) fence++;
+console.log('OB-037/038: framing trees', framed, 'hedge bushes', hedge, 'fence sections', fence);
+// OB-031: smoke from every chimney placed here
+for (const c of out.filter((q) => /Chimney/.test(q.mesh))) { const h = assets.mesh(c.mesh).bbox[5] * (c.scale || 1); ents.push({ id: 'rsSmoke' + (ents.filter((q) => /^rsSmoke/.test(q.id)).length + 1), type: 'prop', x: c.origin.x, y: c.origin.y, z: +(c.origin.z + h).toFixed(2), components: { emitters: [{ preset: 'smoke', offset: { up: 0.1 }, on: true }] }, note: 'OB-031: smoke from ' + c.id + ' (' + c.mesh + '), existing emitter preset smoke' }); }
 console.log('natural detail:', plants, 'plants placed,', skipped, 'spots skipped');
 
 if (process.env.DBG) out.forEach((s) => console.log(s.id, s.mesh, s.origin.x, s.origin.y));

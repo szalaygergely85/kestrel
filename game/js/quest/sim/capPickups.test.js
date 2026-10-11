@@ -16,7 +16,7 @@ for (let i = 1; i <= 3; i++) {
 // OB-023: caps sit on tree trunks, never on the road (path polyline of overworld_far recipe).
 const PATH = [[1480, 1025], [1420, 1032], [1350, 1050], [1260, 1045], [1180, 1062], [1090, 1070], [1000, 1066]];
 const segDist = (px, py) => { let b = 1e9; for (let i = 1; i < PATH.length; i++) { const [ax, ay] = PATH[i - 1], dx = PATH[i][0] - ax, dy = PATH[i][1] - ay; const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy))); b = Math.min(b, Math.hypot(ax + dx * t - px, ay + dy * t - py)); } return b; };
-const trunks = w.structures.filter((s) => /Tree|Stump|Log/.test(s.mesh) && !/^poi/.test(s.id));
+const trunks = w.structures.filter((s) => /Tree|Pine|Stump|Log/.test(s.mesh) && !/^poi/.test(s.id));
 for (let i = 1; i <= 5; i++) {
   const e = by('cap' + i);
   assert.ok(segDist(e.x, e.y) >= 3, 'cap' + i + ' >= 3 m off the road');
