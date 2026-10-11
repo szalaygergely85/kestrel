@@ -70,7 +70,7 @@ import { stepBeacon } from './quest/beacon.js';
 import { stepLantern } from './quest/lantern.js'; // OWN-REQ-006: hook-light off, same fixed-step slot as stepBeacon
 import { removeSwordIfTaken } from './quest/swordTake.js'; // US-078c
 import { applyDoorState } from './quest/doorToggle.js'; // DOOR-TOGGLE-01
-import { resetNoteRead, stepNoteRead, isNoteOpen, pushNoteDim, drawNotePanel } from './quest/noteRead.js'; // READ-01
+import { noteRead, resetNoteRead, stepNoteRead, isNoteOpen, pushNoteDim, drawNotePanel } from './quest/noteRead.js'; // READ-01
 import { wakeFrame, drawEyelid, applyWakeOnLoad } from './quest/wake.js';
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel, getMapChart, drawMapCard } from './quest/mapCard.js';
 import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
@@ -1443,7 +1443,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         questFlag: saveRelay ? (k) => saveRelay.quest.questFlag(k) : undefined, // CH1-06: `s.*` dialogue keys
         onTalk: (npcId) => errands.talked(npcId), // QL-WIRE: talk.<site> flag for 'talk' errands
         onFlag: (k, v) => { if (k.charCodeAt(0) !== 113 || k.charCodeAt(1) !== 46) gameHooks.emitSimple('flag:set', 'dlg.' + k, v); } });
-      setDialogueApi(dialogueCtl);
+      setDialogueApi(dialogueCtl); window.__debug.dialogue = dialogueCtl; // tools/verify-ch12-run.mjs: read-only test hook
       errands.load(world); // QL-WIRE: [E] Inspect on post / notePost
       bearTurn = createNpcTurn(world, 'bear'); // NPC-BEAR-01: null when the world has no bear
       compassWorld = world; compassBreach = null; compassBookVer = -1; compassTick = 0; // COMPASS-02: re-resolve against the new world
