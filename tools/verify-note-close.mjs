@@ -34,6 +34,15 @@ try {
     assert.equal(s.pause, false, name + ': pause menu must not open on the same press');
     console.log('PASS', name, JSON.stringify(s));
   }
+  // OB-049 dialogue: talk to Burl (bear), Esc, expect the box closed. Headless has no pointer lock (look.locked=false), so the lock-loss
+  // edge that arms escGrace cannot occur here: pause state is reported only; the grace itself is covered by escGrace.test.js.
+  const opened = await evaluate(cdp, '!!(__debug.dialogue && __debug.dialogue.openFor("bear"))');
+  if (opened) {
+    await key('Escape', 'Escape');
+    const d = await evaluate(cdp, '({open: !!__debug.dialogue.open, grace: __debug.dialogue.escGrace.active, pause: !!__debug.pauseUp()})');
+    assert.equal(d.open, false, 'Esc closes the dialogue');
+    console.log('PASS dialogue Esc', JSON.stringify(d), '(pause/grace informational headless)');
+  } else console.log('SKIP dialogue (bear not openable here)');
   console.log('ALL PASS');
 } finally {
   cdp?.close(); if (browser?.pid) killTree(browser.pid); if (server.pid) killTree(server.pid);

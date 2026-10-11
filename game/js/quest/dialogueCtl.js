@@ -3,6 +3,7 @@
 // world.state['dlg.*'], damage close, NPC clips and the [E] Talk interactable.
 // Works with any entity whose `components.dialogue` is a dialogue id (string or {id}).
 // Zero allocation per step: keys are interned constants, clip names are data strings.
+import { createEscGrace } from './escGrace.js'; // OB-049
 import { createDialogueRunner } from '../../../engine/index.js';
 import { createDialogueView } from './dialogueView.js';
 import { createJawSync } from './jawSync.js';
@@ -70,6 +71,7 @@ export function createDialogueCtl(opt) {
     locked: false,
     get open() { return runner.state !== 'idle' && runner.state !== 'ended'; },
     _closing: false,
+    escGrace: createEscGrace(), // OB-049: Esc under pointer lock closes the box only; main.js keeps pause down while .active
 
     /** Entity id -> dialogue id (components.dialogue as string or {id}), else null. */
     dialogueIdOf(id) {
@@ -134,6 +136,8 @@ export function createDialogueCtl(opt) {
      */
     step(dt, input, lookLocked) {
       if (ctl._closing) { ctl._closing = false; ctl.locked = false; } // the closing step is over
+      if (ctl.escGrace.lockLost(lookLocked, ctl.open)) ctl.close();
+      ctl.escGrace.tick(!ctl.open, input);
       ctl._jaw(dt);
       if (!ctl.open) { if (ctl.locked && !ctl._closing) ctl.locked = false; return; } // DIALOGUE-LOCK-01: never stay locked without an open box. runner.state is read-only here ('ended' already counts as closed)
       if (lookLocked === false) { ctl.close(); return; }

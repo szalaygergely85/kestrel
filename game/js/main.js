@@ -1180,7 +1180,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   let pauseWas = false;
   // True while the pause menu is the thing on screen (same gate the old overlay used, minus Settings which owns the screen).
   function pauseUp() {
-    return mode === 'world' && !!look && !look.locked && !isMapOpen() && !isNoteOpen() && !isNoteEscGrace() && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen() // OB-049: Esc closes the note only
+    return mode === 'world' && !!look && !look.locked && !isMapOpen() && !isNoteOpen() && !isNoteEscGrace() && !(dialogueCtl && dialogueCtl.escGrace.active) && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen() // OB-049: Esc closes the note only
       && !cinematic && !isWaterfallPreview && !(menuHost && menuHost.active) && !isSettingsOpen();
   }
   // QG-05: quest log (J). Built lazily per book (reset() replaces the book); pauses like the pack via qlOpen in invOpen.
@@ -1820,7 +1820,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     titleMenuActive = !!(menuHost && menuHost.active);
     ch1Hidden = isCaptureOrBench || !saveEnabled || titleMenuActive || ending || invOpen || cardOpen || isMapOpen() || isSettingsOpen() || isNoteOpen() || qlIsOpen() || !!(dialogueCtl && dialogueCtl.open) || !!(vitals && vitals.dead); // CH1-MOUNT: notices/barks hidden under any menu/dialogue
     notice.update(dt, ch1Hidden); if (chapterCard && !ending) chapterCard.update(dt); if (chapterCard2 && !ending) chapterCard2.update(dt); // CH1-04a / CH1-09
-    const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen: () => isMapOpen() || isNoteEscGrace() }) || ((invOpen || cardOpen) && !ending)));
+    const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen: () => isMapOpen() || isNoteEscGrace() || !!(dialogueCtl && dialogueCtl.escGrace.active) }) || ((invOpen || cardOpen) && !ending)));
     { // COMPASS-02 (D-061): retarget on book change + ~2 Hz, step the needle, hide rule (menus/pack/log/map/dialogue/death/title/capture modes/ending)
       const bk = saveRelay && saveRelay.quest.book;
       compassHide = !(mode === 'world' && playerHandle && bk && questUiActive) || ending || paused || isCaptureOrBench || uiLocked || titleMenuActive || isSettingsOpen() || isNoteOpen()

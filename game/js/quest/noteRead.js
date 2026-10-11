@@ -24,6 +24,7 @@
 // primitives the end/map/death cards use (`compileRichLine`/`drawRichLine` +
 // `setCellRGB` on the duck-typed `UiLayer`), no new engine helper.
 import { compileRichLine, drawRichLine } from '../../../engine/index.js';
+import { createEscGrace } from './escGrace.js'; // OB-049
 
 // Module-level runtime state, rebuilt on every 'world:loaded' (architecture.md
 // 7.6 item 6 "runtime state is NOT world.state" - same as mapCard.js's `panel`
@@ -35,7 +36,6 @@ let noteId = null;        // ASSETS.notes key of the note currently open
 let noteA = 0;            // 0..1 fade alpha (uiStyle.note fadeIn/fadeOut)
 let fadeIn = 0.12;
 let fadeOut = 0.08;
-let prevLocked = false;   // pointer-lock state of the previous step (BUG-NOTE-ESC-01)
 let sceneMul = 0.35;      // uiStyle.note.sceneDim.bgMul (whole scene while open)
 
 // Per-note render cache, built once per open (NOT per frame - rule 9): the
@@ -48,7 +48,7 @@ export const FOOTER_TEXT = '<< CLOSE >>'; // OB-048a: clickable close line (owne
 export const WALK_AWAY_MARGIN = 0.5; // OB-048b: note closes past min(radius, interact reach 1.8) + this (m)
 const INTERACT_REACH = 1.8; // engine/world/interaction.js DEFAULT_REACH
 let srcX = 0, srcY = 0, srcZ = 0, srcLimit = -1; // source interactable pos + close distance (-1 = no source: no walk-away)
-let escGrace = false;     // OB-049: lock lost by Esc closed the note; that same press must not open the pause menu
+const grace = createEscGrace(); // OB-049: lock lost by Esc closed the note; that same press must not open the pause menu
 const PANEL_W = 64;
 
 /** ASCII 32-126 only (uiStyle.note.text.wrapRule): any other char -> "?". */
@@ -134,7 +134,7 @@ export function resetNoteRead(uiStyle) {
   noteId = null;
   noteA = 0;
   noteRender = null;
-  srcLimit = -1; escGrace = false; prevLocked = false;
+  srcLimit = -1; grace.reset();
   const n = uiStyle && uiStyle.note;
   fadeIn = (n && typeof n.fadeIn === 'number') ? n.fadeIn : 0.12;
   fadeOut = (n && typeof n.fadeOut === 'number') ? n.fadeOut : 0.08;
@@ -156,12 +156,8 @@ export function resetNoteRead(uiStyle) {
 export function stepNoteRead(dt, input, locked, eye) {
   // BUG-NOTE-ESC-01: under pointer lock Chrome eats Esc (releases the lock, no keydown reaches the page), so a lock-lost
   // edge (true -> false) while a note is up closes it. `locked` undefined (old callers / no lock support) = never closes.
-  if (typeof locked === 'boolean') {
-    if (prevLocked && !locked && (noteState === 'open' || noteState === 'opening')) { noteState = 'closing'; escGrace = true; }
-    if (locked) escGrace = false;
-    prevLocked = locked;
-  }
-  if (escGrace && noteState === 'closed' && input && input.pressed('Escape')) escGrace = false; // a second Esc opens pause as usual
+  if (grace.lockLost(locked, noteState === 'open' || noteState === 'opening')) noteState = 'closing';
+  grace.tick(noteState === 'closed', input);
   if (noteState === 'opening') {
     noteA += fadeIn > 0 ? dt / fadeIn : 1;
     if (noteA >= 1) { noteA = 1; noteState = 'open'; }
@@ -180,7 +176,7 @@ export function stepNoteRead(dt, input, locked, eye) {
 }
 
 /** OB-049: true while the pointer lock was lost by the Esc that closed a note: the pause menu stays down for that press. */
-export function isNoteEscGrace() { return escGrace; }
+export function isNoteEscGrace() { return grace.active; }
 
 /** Input gate (main.js ORs this into `uiLocked`, same as `isMapOpen()`). */
 export function isNoteOpen() { return noteState !== 'closed'; }
