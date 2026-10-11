@@ -51,6 +51,7 @@ try {
   })()`));
   console.log(JSON.stringify(r));
   assert.ok(!r.err, r.err);
+  assert.ok(r.byPitch['5'] > 0.5 && r.byPitch['10'] > 0.5, 'pitch +5/+10 rows must be > 0.5: ' + JSON.stringify(r.byPitch));
   assert.ok(r.fraction >= 0.6, 'prompt fraction too low: ' + r.fraction);
   console.log('Interact aim sweep PASS');
 } finally {
