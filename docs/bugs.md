@@ -8,6 +8,7 @@ Newest at the top of each table. Keep one line per bug; details go in the commit
 
 | ID | Date | Owner report (short) | Where / notes | Status |
 |---|---|---|---|---|
+| OB-044 | 2026-10-11 | (gate found) Route-walk R1 'Rook ruin climb' gets stuck at waypoint 11 on the mesh path since the stone-ruin rebuild (OB-024) - the player may not reach Rook's roof (mirror + River Boots) | Fix the rubble ramp / deck colliders or the climb route; make R1 failing set the route-walk exit code. | open |
 | OB-043 | 2026-10-11 | (agent found) Draw list near its limit: at the roadBend pose the scene already sits at MAX_DRAW_ITEMS 256; more meshes there throw `DrawList.push over capacity` (a crash risk); instance-group budget 1992/2048 used | Make push degrade (drop farthest + count) instead of throwing, raise budgets with a measured cost; MAP-08 far silhouettes as one merged far mesh. Architect. | open - architect |
 | OB-042 | 2026-10-11 | (agent found) sq.rook.shiny rewards a second bow (stackMax 1) - Burl's sq.tm.nub already gives the bow | Change the reward to a sturdy bow upgrade or arrows + gear roll. | open |
 | OB-041 | 2026-10-11 | (gate found) gpucompare cloth row PASS->FAIL after today's merges | Suspect OB-039 frustum pre-cull / mesh feed change; cloth banner (CLOTH-1b2). | fixed (GPU terrain interpolates world - render origin; f32 edge ties; gpucompare 0 PASS->FAIL) |
