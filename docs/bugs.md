@@ -1,0 +1,31 @@
+# Owner bug log (OB-NNN)
+
+Rule (owner, 2026-10-11): every finding the owner reports gets an **OB-NNN** number here at once, before any work starts.
+Commits, agent prompts and lane entries cite the number. Status: `open` -> `fixed <commit>` (main session) -> `verified` (owner) or `reopened`.
+Newest at the top of each table. Keep one line per bug; details go in the commit / lane entry.
+
+## Open
+
+| ID | Date | Owner report (short) | Where / notes | Status |
+|---|---|---|---|---|
+| OB-016 | 2026-10-11 | Walking west toward the river, 2 steps past a "beacon in the forest" (lamp-post structure among pines, river behind), teleported back to the tower. Debug mode on. | Likely the Bend relay (1262,1033); agent reproducing in the browser with ?debug=1 (Bend relay, Ford relay, waystone). First Node walk could not reproduce. | open - investigating |
+| OB-015 | 2026-10-11 | Relay/beacon stands "in the forest in a strange way" | Biome forest (MAP-01c) planted trees around the relay/waystone. Proposal: clearing around relays + waystones. | open - owner to confirm clearing |
+| OB-014 | 2026-10-11 | Game failed to load: `World.load: prop "tower.pallet" references unknown model "canvasHeap"` | Not reproducible on reload (game loads to the title). Likely a reload during a merge + generator run. | open - watch; reopen if seen again |
+| OB-013 | 2026-10-11 | Editor shows `.` invalid: content level:world_geo util.biomeAreas function values | Editor treated the world_geo helper as a content file. | fixed (editor doc skips code-only levels) - verify |
+| OB-012 | 2026-10-11 | Quick bar: sword in slot 1 / right hand; wants [L][R] mouse slots + 1-4 key slots, drag and drop | QB-6 redesign merged; browser check running. | fixed (QB-6) - verify |
+| OB-011 | 2026-10-11 | "What is that next to the health bar?" - potion box floating | Potion HUD button moved right after the HP number, no box (QB-6). | fixed (QB-6) - verify |
+
+## Fixed / answered (2026-10-11)
+
+| ID | Owner report (short) | Fix | Status |
+|---|---|---|---|
+| OB-010 | T-posed woman next to Burl ("asked 6 times") | Synty `localHero` statue in git-ignored content/local/placements.json removed (backup in scratchpad) | fixed - verify |
+| OB-009 | Stones at the tower foot still different from the tower | tower.level.json rock cells -> stone_moss / moss_top (TOWER-STONE-01) | fixed - verify |
+| OB-008 | Lake "in the air" (flat water sheet above the river) | Glasswater bowl only under the water rect + shore shelf (LAKE-FIX) | fixed - verify |
+| OB-007 | Editor looks different from the game | Editor now installs the geography (world_geo) like the game | fixed - verify |
+| OB-006 | Resolution too big; max one step above ultra | Grid list capped at 560x210 (GRID-CAP) | fixed - verify |
+| OB-005 | Game drops out: "uniform ring overflow" / "previous pass not ended" | Ring 4160 slots + failed frame dropped instead of fatal (FIX-RING); passes always ended (CRASH-PASS-01) | fixed - verify |
+| OB-004 | Console: invalid colour "emberDark" | Wake eyelid resolves palette names to hex | fixed |
+| OB-003 | J should list quest titles, open them, main vs side | QL-J + merged with QL-03 (Offered/Active/Done, T track, X abandon) | fixed - verify |
+| OB-002 | Starting note "!" missing / character model missing / animals invisible (browser gate) | items catalog to loadQuestFiles; gearLook skips missing shells; voxelPool reserve for fauna (FIX-BROWSER-3) | fixed |
+| OB-001 | Editor markers `*` and `o` | Answered: editor-only gizmos (lights, interactables) | answered |

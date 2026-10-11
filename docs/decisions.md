@@ -1134,3 +1134,4 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - **Roadmap:** M4/M5 in docs/roadmap.md are rewritten to D-064..D-067 (no dungeon, no magic, shield + bow, gear drops, ~100 quests, enclosed world).
 - Still open for the owner: the new place names (story.md "Places on the chart") and the 12 new characters (quest-roadmap.md section 2b).
 - **Place names approved (owner, 2026-10-11):** The Quiet Sea, The Braid (river), Braidmouth (river mouth), The Shearcliffs (west cliff coast), The Hollins (broadleaf woods) - docs/story.md "Places on the chart (MAP-27)" is canon. Still open: the 12 new characters (quest-roadmap.md 2b).
+- **Owner bug log (owner, 2026-10-11):** every owner finding gets an `OB-NNN` ticket in docs/bugs.md immediately; commits / agent prompts / lane entries cite it; owner verifies the fix. Rule also in CLAUDE.md.
