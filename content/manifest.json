@@ -126,6 +126,10 @@
     "meshes/quaternius/Stair_Interior_Solid.mesh.json",
     "meshes/quaternius/Wall_Arch.mesh.json",
     "meshes/quaternius/Wall_BottomCover.mesh.json",
+    "meshes/quaternius/Wall_UnevenBrick_Straight.mesh.json",
+    "meshes/quaternius/Wall_UnevenBrick_Door_Round.mesh.json",
+    "meshes/quaternius/Wall_UnevenBrick_Window_Wide_Round.mesh.json",
+    "meshes/quaternius/Corner_Exterior_Brick.mesh.json",
     "meshes/quaternius/WindowShutters_Thin_Flat_Closed.mesh.json",
     "meshes/quaternius/WindowShutters_Wide_Flat_Open.mesh.json",
     "meshes/quaternius/Window_Roof_Wide.mesh.json"

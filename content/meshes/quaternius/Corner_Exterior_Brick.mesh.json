@@ -1,0 +1,38 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Corner_Exterior_Brick",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Corner_Exterior_Brick.mesh.bin",
+  "triCount": 500,
+  "bbox": [
+    -0.34716,
+    -0.3684,
+    -0.00568,
+    0.16293,
+    0.18715,
+    3.00556
+  ],
+  "ranges": [
+    {"count": 500, "part": "Corner_Exterior_Brick#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_RockTrim"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "nMSgvrgeBb6mm8S7d76fvTVeur6mm8S7d76fvTVeur5OYkBAnMSgvrgeBb6mm8S7d76fvTVeur5OYkBAnMSgvrgeBb5OYkBAd76fvTVeur6mm8S7cT0KPkjhur6mm8S7cT0KPkjhur5OYkBAd76fvTVeur6mm8S7cT0KPkjhur5OYkBAd76fvTVeur5OYkBAcT0KPkjhur6mm8S7DAIrPt9Pjb6mm8S7DAIrPt9Pjb5OYkBAcT0KPkjhur6mm8S7DAIrPt9Pjb5OYkBAcT0KPkjhur5OYkBADAIrPt9Pjb6mm8S7bxIDPnsULj6mm8S7bxIDPnsULj5OYkBADAIrPt9Pjb6mm8S7bxIDPnsULj5OYkBADAIrPt9Pjb5OYkBAbxIDPnsULj6mm8S7bxIDvoGVQz6mm8S7bxIDvoGVQz5OYkBAbxIDPnsULj6mm8S7bxIDvoGVQz5OYkBAbxIDPnsULj5OYkBAbxIDvoGVQz6mm8S7mpmZvp7vJz6mm8S7mpmZvp7vJz5OYkBAbxIDvoGVQz6mm8S7mpmZvp7vJz5OYkBAbxIDvoGVQz5OYkBAmpmZvp7vJz6mm8S7MzOzvots5z2mm8S7MzOzvots5z1OYkBAmpmZvp7vJz6mm8S7MzOzvots5z1OYkBAmpmZvp7vJz5OYkBAMzOzvots5z2mm8S7nMSgvrgeBb6mm8S7nMSgvrgeBb5OYkBAMzOzvots5z2mm8S7nMSgvrgeBb5OYkBAMzOzvots5z1OYkBAnMSgvrgeBb5OYkBAd76fvTVeur5OYkBAcT0KPkjhur5OYkBAnMSgvrgeBb6mm8S7cT0KPkjhur6mm8S7d76fvTVeur6mm8S7nMSgvrgeBb5OYkBAcT0KPkjhur5OYkBADAIrPt9Pjb5OYkBAnMSgvrgeBb6mm8S7DAIrPt9Pjb6mm8S7cT0KPkjhur6mm8S7nMSgvrgeBb5OYkBADAIrPt9Pjb5OYkBAbxIDPnsULj5OYkBAnMSgvrgeBb6mm8S7bxIDPnsULj6mm8S7DAIrPt9Pjb6mm8S7nMSgvrgeBb5OYkBAbxIDPnsULj5OYkBAbxIDvoGVQz5OYkBAnMSgvrgeBb6mm8S7bxIDvoGVQz6mm8S7bxIDPnsULj6mm8S7nMSgvrgeBb5OYkBAbxIDvoGVQz5OYkBAmpmZvp7vJz5OYkBAnMSgvrgeBb6mm8S7mpmZvp7vJz6mm8S7bxIDvoGVQz6mm8S7nMSgvrgeBb5OYkBAmpmZvp7vJz5OYkBAMzOzvots5z1OYkBAnMSgvrgeBb6mm8S7MzOzvots5z2mm8S7mpmZvp7vJz6mm8S7"
+}

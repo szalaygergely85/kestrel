@@ -1,0 +1,42 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Wall_UnevenBrick_Window_Wide_Round",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Wall_UnevenBrick_Window_Wide_Round.mesh.bin",
+  "triCount": 116,
+  "bbox": [
+    -1,
+    -0.09245,
+    0,
+    1,
+    0.31404,
+    3.12269
+  ],
+  "ranges": [
+    {"count": 50, "part": "Wall_UnevenBrick_Window_Wide_Round#0", "start": 0},
+    {"count": 30, "part": "Wall_UnevenBrick_Window_Wide_Round#1", "start": 50},
+    {"count": 36, "part": "Wall_UnevenBrick_Window_Wide_Round#2", "start": 80}
+  ],
+  "matKeys": [
+    "MI_WoodTrim",
+    "MI_Plaster",
+    "MI_UnevenBrick"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "stone",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "AACAvwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAA730dAAACAvwAAAAAAAAAAAACAPwAAAAA730dAAACAvwAAAAA730dAAACAPwAAAAAAAAAAAACAP83MTD4AAAAAAACAP83MTD4730dAAACAPwAAAAAAAAAAAACAP83MTD4730dAAACAPwAAAAA730dAAACAP83MTD4AAAAAAACAv83MTD4AAAAAAACAv83MTD4730dAAACAP83MTD4AAAAAAACAv83MTD4730dAAACAP83MTD4730dAAACAv83MTD4AAAAAAACAvwAAAAAAAAAAAACAvwAAAAA730dAAACAv83MTD4AAAAAAACAvwAAAAA730dAAACAv83MTD4730dAAACAvwAAAAA730dAAACAPwAAAAA730dAAACAP83MTD4730dAAACAvwAAAAAAAAAAAACAP83MTD4AAAAAAACAPwAAAAAAAAAAAACAvwAAAAA730dAAACAP83MTD4730dAAACAv83MTD4730dAAACAvwAAAAAAAAAAAACAv83MTD4AAAAAAACAP83MTD4AAAAA"
+}

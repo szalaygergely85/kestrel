@@ -31,7 +31,7 @@ const WATER = T.groundTypeAt(1028, 1068);
 const low = (x, y, e = 0.6) => Math.min(T.groundAt(x, y), T.groundAt(x + e, y), T.groundAt(x - e, y), T.groundAt(x, y + e), T.groundAt(x, y - e));
 // lowest ground of the footprint, slight sink; o.dz stacks on a lower piece; o.scale; o.collide:false; o.ext = footprint half size
 function put(mesh, x, y, yaw, o = {}) {
-  const st = { id: 'poi' + String(out.length).padStart(3, '0'), mesh: 'quaternius/' + mesh, origin: { x: +x.toFixed(2), y: +y.toFixed(2), z: o.z != null ? o.z : +(low(x, y, o.ext ?? 0.6) - 0.04 + (o.dz ?? 0)).toFixed(2) }, yawDeg: ((Math.round(yaw) % 360) + 360) % 360 };
+  const st = { id: 'poi' + String(out.length).padStart(3, '0'), mesh: mesh.includes('/') ? mesh : 'quaternius/' + mesh, origin: { x: +x.toFixed(2), y: +y.toFixed(2), z: o.z != null ? o.z : +(low(x, y, o.ext ?? 0.6) - 0.04 + (o.dz ?? 0)).toFixed(2) }, yawDeg: ((Math.round(yaw) % 360) + 360) % 360 };
   if (o.scale) st.scale = o.scale;
   if (o.collide === false) st.collide = false;
   if (o.noShadow) st.castShadow = false;
@@ -66,22 +66,34 @@ put('Prop_Crate', basket.x, basket.y, 20, { scale: 0.8, ext: 0.4 });
     put(['RockPath_Round_Small_1', 'RockPath_Round_Small_2', 'RockPath_Round_Small_3'][n % 3], x, y, (n * 53) % 360, { collide: false, noShadow: true, ext: 0.4 });
   }
 }
-// ---- MAP-23 Rook's nest ruin (975,1058): broken house of Wall_Arch walls (3 m), rubble gaps, no door, half roof (north half),
-// stair-block rubble steps up the east side to the roof deck; nest + boots-chest anchors on the roof. All solid (collide default true).
+// ---- MAP-23 / OB-024 Rook's nest ruin (975,1058): a ruined STONE house from the Quaternius Medieval Village kit (CC0): 6x6 m footprint of 2 m
+// Wall_UnevenBrick pieces (3.12 m): north wall whole (window), east wall with the arched door, west wall partly, south wall and SW corner fallen
+// into rubble; corner pillars, a chimney, brick-floor patches, moss; the roof is mostly gone: two tie beams (Roof_Log) still span the room and two
+// Roof_Wooden_2x1 tiles hang on the north wall = the roof deck (nest + Rook + chest). Climb: stair-block rubble ramp up the west side.
+// All pieces solid (collide default true) except floors / moss / fallen tiles.
 const RC = [975, 1058];
 let base = 1e9; for (let dx = -3.5; dx <= 3.5; dx += 0.5) for (let dy = -3.5; dy <= 3.5; dy += 0.5) base = Math.min(base, T.groundAt(RC[0] + dx, RC[1] + dy));
-const WALLH = 3, ROOFZ = +(base + WALLH).toFixed(2), DECK = +(ROOFZ + 1.09).toFixed(2); // roof piece collider is a box z -0.16..1.09: deck top = ROOFZ + 1.09
-const wall = (x, y, yaw) => put('Wall_Arch', x, y, yaw, { ext: 1.0 });
+const WALLH = 3.12, ROOFZ = +(base + WALLH).toFixed(2), DECK = +(ROOFZ + 1.09).toFixed(2); // roof piece collider is a box z -0.16..1.09: deck top = ROOFZ + 1.09
+const wall = (mesh, x, y, yaw) => put(mesh, x, y, yaw, { ext: 1.0 });
 const rubble = (x, y, yaw, i) => put(['Wall_BottomCover', 'Prop_Brick1', 'Prop_Brick2', 'Prop_Brick3', 'Prop_Brick4'][i % 5], x, y, yaw, { ext: 0.3 });
-for (const dx of [-2, 0, 2]) wall(RC[0] + dx, RC[1] - 3, 0);                     // north wall: whole
-for (const dy of [-2, 0]) wall(RC[0] - 3, RC[1] + dy, 90);                       // west wall: two segments, SW corner fallen
-wall(RC[0] + 3, RC[1] + 2, 90);                                                  // east wall: south segment only; the NE is open (rubble steps come in there)
-for (const dx of [-2, 2]) wall(RC[0] + dx, RC[1] + 3, 0);                        // south wall: two segments, gap between (no door)
-[[-3, 2, 90], [3, 0, 90], [3, -2, 90], [0, 3, 0], [-3, 3.4, 20]].forEach(([dx, dy, yw], i) => put('Wall_BottomCover', RC[0] + dx, RC[1] + dy, yw, { ext: 1.0 }));
-[[-1.5, 1.5], [0.8, 0.4], [-0.6, -0.9], [2.1, 1.7], [1.4, 2.4], [-2.2, 0.6]].forEach(([dx, dy], i) => rubble(RC[0] + dx, RC[1] + dy, i * 71, 1 + i));
-// half roof (north half), absolute z so the three pieces stay level on the slope
-for (const dx of [-2.3, 0, 2.3]) put('Roof_Wooden_2x1', RC[0] + dx, RC[1] - 1.4, 0, { z: ROOFZ, ext: 0.3 });
-// rubble steps: a pile of 2 m stair-block columns running south from the west side of the roof (south of the road end, clear of the 9e line and of the world-bounds
+// local +y of a wall piece = its inner face: north yaw 0, east 90, south 180, west 270
+[['Wall_UnevenBrick_Straight', -2], ['Wall_UnevenBrick_Window_Wide_Round', 0], ['Wall_UnevenBrick_Straight', 2]].forEach(([m, dx]) => wall(m, RC[0] + dx, RC[1] - 3, 0));   // north: whole, window
+[['Wall_UnevenBrick_Straight', -2], ['Wall_UnevenBrick_Door_Round', 0]].forEach(([m, dy]) => wall(m, RC[0] + 3, RC[1] + dy, 90));                                    // east: arched door
+wall('Wall_UnevenBrick_Straight', RC[0] - 3, RC[1] - 2, 270);                                                                                                       // west: north segment only
+wall('Wall_UnevenBrick_Straight', RC[0] + 2, RC[1] + 3, 180);                                                                                                       // south: east segment only
+[[3, 2, 90], [0, 3, 180], [-3, 0, 270]].forEach(([dx, dy, yw]) => put('Wall_BottomCover', RC[0] + dx, RC[1] + dy, yw, { ext: 1.0 }));                                  // foundation stubs of the fallen walls
+for (const [dx, dy] of [[-3, -3], [3, -3], [3, 3]]) put('Corner_Exterior_Brick', RC[0] + dx, RC[1] + dy, dx < 0 ? 0 : dy < 0 ? 270 : 180, { ext: 0.5 }); // corner pillars (SW fell)
+put('Prop_Chimney2', RC[0] + 3.7, RC[1] + 2.4, 90, { ext: 0.6 });                                                                                                   // chimney stack still standing outside the east stub
+for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [1, 3]]) put('Floor_UnevenBrick', RC[0] + dx, RC[1] + dy, 0, { collide: false, noShadow: true, ext: 1.0, dz: 0.03 }); // broken brick floor
+[[-1.5, 1.5], [0.8, 0.4], [-0.6, -0.9], [2.1, 1.7], [1.4, 2.4], [-2.2, 0.6], [-2.8, 2.9], [-1.6, 3.4], [-3.8, 2.0], [-2.4, 3.9]].forEach(([dx, dy], i) => rubble(RC[0] + dx, RC[1] + dy, i * 71, 1 + i)); // collapsed SW corner
+// roof: two tie beams (ridge-size logs, 10.7 m long scaled to 6.2 m) across the room on the north/south... walls, resting level with the wall tops
+const beamZ = +(ROOFZ - 5.24 * 0.58).toFixed(2);
+for (const dy of [-1.7, 0.1]) put('Roof_Log', RC[0], RC[1] + dy, 90, { z: beamZ, scale: 0.58, ext: 0.3 });
+// two roof tiles still on the north wall (deck: absolute z so they stay level on the slope); the third lies fallen in the east yard
+for (const dx of [-2.3, 0]) put('Roof_Wooden_2x1', RC[0] + dx, RC[1] - 1.4, 0, { z: ROOFZ, ext: 0.3 });
+put('Roof_Wooden_2x1', RC[0] + 5.2, RC[1] - 0.6, 160, { collide: false, ext: 1.0, dz: 0.1 });
+put('Roof_Support2', RC[0] + 2.0, RC[1] - 0.2, 90, { z: +(ROOFZ - 0.6).toFixed(2), scale: 2, ext: 0.3 }); put('Roof_Support2', RC[0] - 1.8, RC[1] + 1.4, 20, { collide: false, scale: 2, ext: 0.3, dz: 0.3 });
+// rubble ramp: a pile of 2 m stair-block columns running south from the west side of the roof (clear of the 9e line and of the world-bounds
 // edge in the north), each top <= 0.7 m above the previous (jump apex 1.05 m, step-up 0.45), first top ~0.7 m over its ground, the last (against the roof box) exactly DECK.
 const PX = RC[0] - 4.3, stepTops = [], stepYs = [];
 {
@@ -94,13 +106,13 @@ const PX = RC[0] - 4.3, stepTops = [], stepYs = [];
     stepTops.push(+top.toFixed(2)); stepYs.push(+y.toFixed(1));
   }
 }
-{ rubble(PX - 2.1, stepYs[0] - 0.4, 30, 2); rubble(PX - 2.3, stepYs[2], 120, 3); rubble(PX + 2.2, stepYs[1], 75, 4); } // beside the pile, never on the approach line
+{ rubble(PX - 2.1, stepYs[0] - 0.4, 30, 2); rubble(PX - 2.3, stepYs[2], 120, 3); rubble(PX + 2.2, stepYs[1], 75, 4); rubble(PX - 1.9, stepYs[1] + 0.5, 200, 1); } // beside the pile, never on the approach line
 const nestZ = +(DECK + 0.05).toFixed(2);
 const CHEST = { voxel: { anim: 'closed', loop: false, model: 'chestSmall' } };
 const ruinEnts = [
-  { id: 'nest', type: 'prop', x: RC[0] - 1, y: RC[1] - 1.6, z: nestZ, note: 'MAP-23 Rook nest anchor on the ruin roof (QL-16 relay.mirror pickup; QL-D1 nest sprite pending). Roof deck z ' + DECK },
+  { id: 'nest', type: 'prop', x: RC[0] - 0.9, y: RC[1] - 1.6, z: nestZ, note: 'MAP-23 Rook nest anchor on the ruin roof (QL-16 relay.mirror pickup; QL-D1 nest sprite pending). Roof deck z ' + DECK },
   { id: 'rook', type: 'npc', x: RC[0] - 0.1, y: RC[1] - 1.6, z: nestZ, yawDeg: 90, scale: 1.6, components: { collider: { h: 0.7, kinematic: true, r: 0.3 }, dialogue: 'rook', voxel: { anim: 'perch', loop: true, model: 'crow' } }, note: 'QL-06 Rook the talking crow (crow model x1.6) on the nest of the ruin roof; [E] Talk via the dialogue component' },
-  { id: 'chestRook', type: 'prop', x: RC[0] + 1.6, y: RC[1] - 1.6, z: nestZ, yawDeg: 180, components: CHEST, note: 'MAP-23 chest on the ruin roof (EQ-10: arrows 15 + a sturdy gear roll; table in chestDefs.js)' },
+  { id: 'chestRook', type: 'prop', x: RC[0] - 2.4, y: RC[1] - 1.6, z: nestZ, yawDeg: 180, components: CHEST, note: 'MAP-23 chest on the ruin roof (EQ-10: arrows 15 + a sturdy gear roll; table in chestDefs.js)' },
 ];
 // ---- MAP-25 loot spots + red caps + smoke anchors. Anchors are bare props (QL-18/QL-17 wire the content); caps are Quaternius mushrooms.
 const free = (x, y) => T.groundTypeAt(x, y) !== WATER && T.groundTypeAt(x + 1, y) !== WATER && T.groundTypeAt(x, y + 1) !== WATER;
