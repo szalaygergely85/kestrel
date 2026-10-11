@@ -52,6 +52,13 @@
     marsh: { id: 'reedmire', name: 'the Reedmire (P)', x: 1110, y: 1560, rx: 230, ry: 140, rot: 0.55, flatH: 0.8, blend: 0.4,
              pool: { scale: 40, threshold: 0.6 } },
 
+    // ---- walk bounds (MAP-11, 38.43): the enclosed world outline as engine `bounds` {shape:'polygon'}; replaces the capsule
+    // list when `terrainGrid` is set. Clockwise from the NW: mountain foot (north, y 80), the Wall killing ground (x 1880), the
+    // coast pulled 40 m inland of the sea polygon (no swimming), the West Fells foot (x 20). PROPOSED, MAP-00 refines the trace.
+    bounds: { shape: 'polygon', pts: [[20, 80], [1880, 80], [1880, 1690], [1750, 1730], [1600, 1740], [1450, 1720], [1320, 1695], [1230, 1705],
+      [1160, 1690], [1110, 1650], [1040, 1600], [960, 1540], [880, 1460], [800, 1395], [700, 1380], [600, 1400], [470, 1430], [300, 1480],
+      [120, 1460], [20, 1490]] },
+
     // ---- coast: sea polygon (sea INSIDE). kinds[k] = segment pts[k] -> pts[k+1] ----
     coast: {
       pts: [[-60, 1530], [120, 1500], [300, 1520], [470, 1470], [600, 1440], [700, 1420], [800, 1435], [880, 1500],

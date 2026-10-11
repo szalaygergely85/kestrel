@@ -2,6 +2,7 @@
 // docs/architecture.md section 7 (World/WorldQuery), 7.2 (structTable) and
 // 10/10.1 (entities/handles). See the tech notes in docs/backlog.md US-025
 // for the build order this follows.
+import { validatePolygon, compilePolygon } from '../physics/bounds.js';
 import { makeGrid, zoneAt, zoneId, best as bandBest, pick as bandPick, marginX as bandMarginX, marginY as bandMarginY } from './bandGrid.js';
 import { loadLevel, isTerrainFloor } from './Level.js';
 import { Terrain } from './Terrain.js';
@@ -188,6 +189,12 @@ function validateTerrainBands(list, sw, single) {
 
 function validateBounds(b) {
   if (b == null) return null;
+  if (b.shape === 'polygon') { // MAP-11 (38.43): simple polygon, 3..128 verts; bucket grid built here, not in the first step
+    validatePolygon(b.pts);
+    const o = { shape: 'polygon', pts: b.pts.map((p) => [p[0], p[1]]) };
+    compilePolygon(o);
+    return o;
+  }
   if (b.shape === 'union') {
     if (!Array.isArray(b.parts) || b.parts.length < 1 || b.parts.length > 8) throw new Error('World.load: bounds.parts must be an array of 1..8 parts');
     const fin = (v) => typeof v === 'number' && isFinite(v);

@@ -256,5 +256,7 @@ export function stringifySave(state) {
 function cloneBounds(b) {
   const c = { ...b };
   if (Array.isArray(b.parts)) c.parts = b.parts.map((p) => ({ ...p }));
+  if (Array.isArray(b.pts)) c.pts = b.pts.map((p) => [p[0], p[1]]); // MAP-11 polygon
+  if (Array.isArray(b.pts)) c.pts = b.pts.map((p) => [p[0], p[1]]); // MAP-11 polygon
   return c;
 }
