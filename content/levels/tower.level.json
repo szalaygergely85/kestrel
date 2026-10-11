@@ -149,7 +149,7 @@
     {"id": "lampFlame", "facing": 270, "model": "lampFlame", "note": "OWN-REQ-006: the lamp's flame, removed by lantern.take (game/js/quest/lantern.js), respawned on restart with the level", "variant": "burn", "x": 19.719, "y": 6.5, "z": 1.456},
     {"id": "beaconBowl", "facing": 90, "interactable": "beacon", "model": "relay", "note": "the dead relay (D-011 reskin of the beacon bowl) stands on the O plinth; US-022 glow anchor = relay.mounts.glow", "variant": "dead", "x": 9, "y": 7, "z": 6.6},
     {"id": "rubble1", "model": "rubble", "variant": 0, "x": 19.5, "y": 8.5, "z": 0.3},
-    {"id": "rubble2", "model": "rubble", "variant": 1, "x": 14.5, "y": 8.5, "z": 0.6},
+    {"id": "rubble2", "model": "rubble", "variant": 1, "x": 14.5, "y": 8.53, "z": 0.55},
     {"id": "rubble3", "model": "rubble", "variant": 2, "x": 12.5, "y": 6.5, "z": 0.9},
     {"id": "rubble4", "model": "rubble", "variant": 1, "x": 16.5, "y": 2.5, "z": 0.6},
     {"id": "rubble5", "model": "rubble", "note": "debris in the gap (CH1-D1a: the gap moved to the SW alcove g (15,10); kept in its east corner, off the door line x 15.2-15.8)", "variant": 0, "x": 15.85, "y": 10.2, "z": 0},

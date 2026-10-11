@@ -63,5 +63,6 @@ console.log(`coplanar-lint.test: ${checks} checks OK (${pairs.length} world pair
   ok(heap.length >= 1, 'tower spot: envelopeHeap x level floor pair found');
   ok(heap.every((p) => p.tiers[0] !== p.tiers[1]), 'envelopeHeap x floor is cross-tier (0 vs 2)');
   ok(full.voxelTris > 1000 && full.terrainTris > 0, 'voxel + terrain sources loaded');
+  ok(cls.same.length === 0, 'OB-053d: 0 same-tier world pairs (allow-list only the carved-terrain artefact)');
   console.log(`coplanar-lint.test (full): ${fp.length} pairs, same-tier ${cls.same.length}, cross-tier ${cls.cross.length}, by tier ${JSON.stringify(cls.byTier)}`);
 }
