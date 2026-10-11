@@ -8,6 +8,7 @@ Newest at the top of each table. Keep one line per bug; details go in the commit
 
 | ID | Date | Owner report (short) | Where / notes | Status |
 |---|---|---|---|---|
+| OB-039 | 2026-10-11 | (agent found) Sealed Gate wooden leaves sg039/sg040 never draw (a test crate there did not draw either) - doorway looks open | Suspect mesh draw caps (MAX_MESH_DRAWS 64 single draws / instance groups) - may also drop meshes elsewhere now that ~650 roadside + gate meshes were added. Architect to check. | open - architect |
 | OB-038 | 2026-10-11 | Design walk: west bank (crossroads, straw field, ruin) almost bare; trade post does not read | framing tree clumps (TwistedTree_3/5), hedge, fence, awning (M); report docs/test-reports/design-walk-2026-10-11.md | open |
 | OB-037 | 2026-10-11 | Design walk: river banks bare | tall-grass/reed strips, ferns + rocks at the stepping stones (S/M); report docs/test-reports/design-walk-2026-10-11.md | open |
 | OB-036 | 2026-10-11 | Design walk: Rook's nest shows the gear pickup sprite | ring of small Roof_Log + grass meshes on the roof (S); report docs/test-reports/design-walk-2026-10-11.md | open |
