@@ -80,7 +80,7 @@ export function createCharacterView(o) {
     if (!o.createPreview || !o.charCache || !o.getLook) return;
     try {
       if (!preview) preview = o.createPreview();
-      const def = o.charCache.get(gearRecipe(o.getLook(), eq(), defs));
+      const def = o.charCache.get(gearRecipe(o.getLook(), eq(), defs, o.kit));
       if (def !== curDef) { preview.setModel('char.preview', def); curDef = def; }
       previewOk = true;
     } catch (e) { previewOk = false; if (typeof console !== 'undefined') console.warn('[character] preview off:', e && e.message); }

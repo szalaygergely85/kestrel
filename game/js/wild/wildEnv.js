@@ -200,6 +200,7 @@ export function createWildEnv(world, opts) {
 }
 
 /** One object for main.js: fauna + feed over a world. Returns null when the world has no terrain. */
+const WILD_POOL_RESERVE = 12; // collect() keeps the nearest (cap - 12) entities; animals draw into the rest
 export function createWild({ world, pool, fx, seed = 1, hfovRad }) {
   if (!world || !world.terrain || !fx) return null;
   const models = (name) => pool.models.get(name);
@@ -209,6 +210,7 @@ export function createWild({ world, pool, fx, seed = 1, hfovRad }) {
   for (const spc of def.species) if (GROUND_START[spc.name] !== undefined) spc.groundStart = GROUND_START[spc.name];
   const fauna = createFauna(def, env, { seed, models });
   const feeder = createFaunaFeed(def, fauna.slots, { hfovRad });
+  if (pool.reserve !== undefined) pool.reserve = WILD_POOL_RESERVE; // static world props (47+ since the POI pass) filled the 48-slot pool: keep room for the animals
   const player = { x: 0, y: 0, sprinting: false }, cam = { x: 0, y: 0, fx: 0, fy: -1, hfovRad: hfovRad || 1.3089969389957472 /* 75 deg */ };
   const fwd = new Float64Array(2);
   let lx = NaN, ly = NaN;

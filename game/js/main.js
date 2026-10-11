@@ -465,7 +465,7 @@ function areaTrigger(w, id) {
 let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the content manifest)
 {
   // AUD2-09: per-file loads; a missing file is logged by name and shown on screen (no silent quest-less game)
-  const qb = await loadQuestFiles((u) => fetch(u).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }), { wantBarks: saveEnabled });
+  const qb = await loadQuestFiles((u) => fetch(u).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }), { wantBarks: saveEnabled, items: itemDefs ? Object.values(itemDefs).map((d) => ({ id: d.id, slot: d.equip && d.equip.slot, tier: d.equip && d.equip.tier })) : [] }); // EQ-13: gear rewards resolve to real item ids
   bearBarks = qb.bearBarks;
   window.__debug = window.__debug || {}; window.__debug.bootErrors = qb.errors;
   if (qb.errors.length) showBootErrors(document, qb.errors);
@@ -1453,7 +1453,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
         character: window.__charKit ? { // EQ-03/04: lazy preview + char cache, built on the first Character-tab open
           equipmentOf: () => (playerHandle && playerHandle.data.components.equipment) || null,
           getLook: () => lookOrDefault(window.__charKit, saveRelay && saveRelay.look),
-          charCache: createCharCache(window.__charKit, 4),
+          charCache: createCharCache(window.__charKit, 4), kit: window.__charKit,
           createPreview: () => createModelPreview(assets),
           onGearChanged: () => { if (hands && playerHandle) hands.step(playerHandle.data, false, false, false); },
         } : undefined,
