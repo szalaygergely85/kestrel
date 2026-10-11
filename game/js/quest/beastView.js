@@ -8,7 +8,7 @@
 // so `playing` is false and the engine's `stepAnimations` never double-advances them; `hurt`/`flinch`/state clips
 // are let to play normally (playing true). `hidden` hides the instance at STATE_GONE (the US-079b0 voxel-pool skip).
 import { yawFromDelta } from '../../../engine/index.js';
-import { STATE_NOTICE, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE } from './sim/beastSim.js';
+import { STATE_NOTICE, STATE_RETURN, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE } from './sim/beastSim.js';
 
 const STEP_MS = 1000 / 60; // one fixed sim step in ms (die/sink clip t is derived from sim step counters)
 const HURT_STEPS = 10;     // 37.16.2: the view shows `hurt` while hurtT < 10 (the flash + follow-through window)
@@ -17,6 +17,18 @@ const NOTICE_POP_STEPS = 6; // US-079c (boarFx.notice.popSteps): white-hot pop s
 
 // State -> clip for the alive, non-hurt/non-flinch fallback, mirroring boarFx.clipFor.state (wander/notice/recover/
 // return -> idle, chase/charge -> charge, windup -> windup, stagger -> flinch).
+// WOLF-D1: boar clip names/states -> the wolf clips via ASSETS.wolfFx.clipFor.state (windup->crouch, charge->leap,
+// chase/recover/flee->run, wander/return->walk when fleeing). Falls back to the built-in names without ASSETS.
+const WOLF_STATE_NAMES = ['wander', 'notice', 'chase', 'windup', 'leap', 'recover', 'return', 'stagger'];
+function wolfClip(clip, st, fleeing) {
+  if (clip === 'hurt' || clip === 'flinch') return clip;
+  const fx = globalThis.ASSETS && globalThis.ASSETS.wolfFx;
+  const m = fx && fx.clipFor && fx.clipFor.state;
+  if (st === STATE_RETURN) return fleeing ? 'run' : 'walk';
+  const name = WOLF_STATE_NAMES[st];
+  if (m && name && m[name]) return m[name];
+  return clip === 'charge' ? 'run' : clip === 'windup' ? 'crouch' : clip;
+}
 const STATE_CLIPS = ['idle', 'idle', 'charge', 'windup', 'charge', 'idle', 'idle', 'flinch'];
 
 // US-079b ARCH (37.16.1 amendment): the manually-driven clips' keyframe durations (ms), matching
@@ -74,6 +86,7 @@ export function presentBeasts(sim, world, overlay, styleIds, anim) {
     else if (sim.hurtT[i] < HURT_STEPS) clip = 'hurt';
     else if (st === STATE_FLINCH) clip = 'flinch';
     else clip = STATE_CLIPS[st] || 'idle';
+    if (v.model === 'wolf') clip = wolfClip(clip, st, sim.fleeing[i]); // WOLF-D1: wolfFx.clipFor names
 
     if (clip !== v.anim) { v.anim = clip; v.frame = 0; v.t = 0; v.loop = undefined; }
     if (anim) { v.blendFrom = anim.prevClip[i]; v.blendW = anim.w[i]; } // cross-fade data; renderer does not consume it yet

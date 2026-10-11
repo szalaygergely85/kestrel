@@ -6,7 +6,7 @@
 import { BEAST_DEFAULTS } from './beastConfig.js';
 
 /** The ONE place the wolf model id lives (boar stand-in until WOLF-D1's voxel_wolf lands: set this to its key). */
-export const WOLF_MODEL = 'boarPlaceholder';
+export const WOLF_MODEL = 'wolf';
 export const WOLF_ANCHOR_IDS = Object.freeze(['wolf1', 'wolf2', 'wolf3', 'wolf4', 'wolf5']);
 
 /** Tier-1 multipliers vs the boar (US-129a scales them later). */
