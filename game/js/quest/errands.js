@@ -75,6 +75,8 @@ const ESCORT_R = 14;
 const MQ = ['mq.bend.call', 'mq.ford.mirror']; // Rook's main quests (world.state keys 'mq.<id>.*' = dialogue 's.mq.<id>.*')
 const MQ_AUTO = new Set(['mq.ford.mirror']); // no hand-in line: handed in as soon as READY
 const KNOT_TITLE = 'A knot on the brass', KNOT_LINES = ['A skyworks hitch. Lamp-trimmers tie it.', 'Pulled tight. Weathered grey. Years old.']; // story.md note.knot
+// MAP-09: the Sealed Gate (entity sealedGate, inspect.requireItem gate.key = the LAST quest reward). Part II is not built: the hook always refuses with the locked text.
+const GATE_TITLE = 'A gate across the pass', GATE_LINES = ['Iron bars. A lock the size of a fist.', '', 'The keyhole is clean. No rust in it.', 'Someone still keeps a key.'], GATE_HINT = 'Locked. The bars do not even rattle.'; // story.md Sealed Gate
 const PULSE_DELAY = 4; // seconds after the Bend relay wakes (questline: flag relay.bend.pulseSeen)
 const ACTIVE = 2; // questBook statusOf: 0 unavailable, 1 available, 2 active, 3 ready, 4 done
 /**
@@ -120,6 +122,11 @@ export function createErrands({ getBook, questFlag, inspect, note }) {
         w.addInteractable({ key: 'qi.knot', name: 'quest.inspect', x: kt.x, y: kt.y, z: kt.z + 0.6, radius: 2.4, prompt: '[E] Look at the knot', def: { objectId: 'knot' } });
         added++;
       }
+      const gd = w.get('sealedGate'), gt = gd && gd.data && gd.data.transform;
+      if (gt && !w.interactables.some((r) => r.key === 'qi.sealedGate')) {
+        w.addInteractable({ key: 'qi.sealedGate', name: 'quest.inspect', x: gt.x, y: gt.y, z: gt.z + 0.6, radius: 3.2, prompt: '[E] Look at the gate', def: { objectId: 'sealedGate' } });
+        added++;
+      }
       return added;
     },
     /** gameHooks event: touching an awake relay inspects its errands. */
@@ -128,6 +135,7 @@ export function createErrands({ getBook, questFlag, inspect, note }) {
     },
     /** Any inspect of entity `id`: sets talk.<site> while an errand wants it, then lets the book act. */
     inspected(id) {
+      if (id === 'sealedGate') { if (note) { note(GATE_TITLE, GATE_LINES); note('The Sealed Gate', [GATE_HINT]); } return; } // requireItem gate.key: never satisfied yet (Part II)
       const f = 'talk.' + siteOf(id);
       if (wants(f)) questFlag(f, true);
       if (id === 'knot' || id === 'relayKnot') { questFlag('lore.knot.read', true); if (note) note(KNOT_TITLE, KNOT_LINES); } // mq.bend.call: inspect prop on the relay mount
