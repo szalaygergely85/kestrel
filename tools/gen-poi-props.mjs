@@ -117,9 +117,10 @@ anchor('chestBend', 1268, 1014, 'MAP-25 heart-piece chest 2 (Bend Relay ridge, ~
   for (const [x, y] of [[1056, 1038], [1062, 1052], [1058, 1070], [1068, 1086], [1054, 1096]]) {
     world.ensureBandFor(x, y); let px = x; while (!free(px, y) && px < x + 30) px += 2;
     k++; put(caps[k % 2], px, y, k * 67, { collide: false, noShadow: true, ext: 0.3, scale: 2.2 });
-    ruinEnts.push({ id: 'cap' + k, type: 'prop', x: +px.toFixed(1), y, z: 'ground', note: 'MAP-25 red-cap anchor ' + k + ' (east bank edge; QL-18 sq.rook.caps pickup)' });
+    ruinEnts.push({ id: 'cap' + k, type: 'prop', x: +px.toFixed(1), y, z: 'ground', components: { questPickup: { item: 'redcap', n: 1 }, sprite: { model: 'pickupRedCap', anim: 'idle', frame: 0 } }, note: 'MAP-25 red-cap pickup ' + k + ' (east bank edge, mushroom mesh stays as decoration; M4 pickupRedCap sprite, questPickup item redcap; QL-18 sq.rook.caps)' });
   } }
-[[958, 1004], [951, 1008], [962, 1000]].forEach(([x, y], i) => anchor('smoke' + (i + 1), x, y, 'MAP-25 smoke-column billboard anchor ' + (i + 1) + ' (far-only, north of northLook; QL-D1 smokeColumn sprite pending)'));
+// M4: smokeColumn far billboard (design/models/m3_props.js settings: unlit, far fog, minCells 3x6, detailRows 14); z 'ground' like the other props
+[[958, 1004], [951, 1008], [962, 1000]].forEach(([x, y], i) => { world.ensureBandFor(x, y); ruinEnts.push({ id: 'smoke' + (i + 1), type: 'billboard', model: 'smokeColumn', x, y, z: 'ground', sizeM: { w: 6, h: 28 }, unlit: true, fogModel: 'far', fogMax: 0.55, minCells: { w: 3, h: 6 }, detailRows: 14, note: 'MAP-25/M4 smoke-column far billboard ' + (i + 1) + ' (north of northLook; looping 3-frame idle)' }); });
 console.log('ruin: wall top', ROOFZ, 'deck', DECK, 'steps tops', stepTops.join(','), 'base', base.toFixed(2));
 // ---- MAP-24 straw-man field: note post (crate + upright board) and 3 practiceTarget entities 13-23 m away
 const NOTE = [966, 1086];
