@@ -98,7 +98,7 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
 // Water glint only touches the glint-flagged type (1), never plain grass (0).
 {
   let sawAlt = false;
-  for (let ts = 0; ts < 20; ts++) {
+  for (let ts = 0; ts < 200; ts++) { // GLINT_RATE 0.1: 20 re-rolls
     const o = shadeTerrain(100, 1, 0.9, 8, 8, ts, ctx, out());
     if (o.glyph === 5) sawAlt = true;
   }
@@ -236,11 +236,11 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
     const u = 40 + i * 1.37, v = 13.3 + i * 0.71;
     const a = shadeTerrain(20, 0, 0.6, u, v, 0, c25, out()), c = shadeTerrain(20, 0, 0.6, u + 0.3, v, 0, c25, out());
     if (a.glyph !== c.glyph || a.fg[0] !== c.fg[0]) diff25++;
-    const e = shadeTerrain(20, 0, 0.6, Math.floor(u / 2) * 2 + 0.1, v, 0, ctxH, out()), g = shadeTerrain(20, 0, 0.6, Math.floor(u / 2) * 2 + 0.4, v, 0, ctxH, out());
+    const e = shadeTerrain(3, 0, 0.6, Math.floor(u / 2) * 2 + 0.1, v, 0, ctxH, out()), g = shadeTerrain(3, 0, 0.6, Math.floor(u / 2) * 2 + 0.4, v, 0, ctxH, out()); // OB-073: near the feet
     if (e.glyph !== g.glyph || e.fg[0] !== g.fg[0]) diff2++;
   }
   check('hashCell 0.25: u and u+0.3 land in different cells (output differs)', diff25 > 10);
-  check('fixed 2 m cell: u and u+0.3 inside one cell are identical', diff2 === 0);
+  check('OB-073 no 2 m block: u and u+0.3 inside one 2 m cell can differ (smooth noise + 0.25 m glyph cell)', diff2 > 10);
 }
 
 // BUG-FP-002 per-cell hash size (hashCell = -k).
@@ -251,53 +251,9 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
   check('perCellHashSize t*k=5 -> 2', perCellHashSize(100, 0.05, undefined) === 2);
   check('perCellHashSize t >= handover[1] -> 8', perCellHashSize(170, 0.001, H) === 8 && perCellHashSize(500, 0.001, H) === 8);
   check('perCellHashSize no handover never 8', perCellHashSize(1e6, 1, undefined) === 2);
-  // through shadeTerrain: hashCell=-k equals a fixed positive cell of the same size; hashCell 0 equals the explicit 2/8 m path
-  const cH = { ...ctx, handover: [130, 170] };
-  const same = (a, b) => a.glyph === b.glyph && a.fg[0] === b.fg[0] && a.fg[1] === b.fg[1] && a.fg[2] === b.fg[2] && a.bg[0] === b.bg[0] && a.bg[1] === b.bg[1] && a.bg[2] === b.bg[2];
-  let okNeg = true, ok0 = true;
-  for (let i = 0; i < 64; i++) {
-    const u = 40 + i * 1.37, v = 13.3 + i * 0.71, t = [30, 3, 100, 150, 175, 400][i % 6];
-    const kk = 0.3 / t * (1 + (i % 3));
-    const sz = perCellHashSize(t, kk, cH.handover);
-    if (!same(shadeTerrain(t, 0, 0.6, u, v, 0, { ...cH, hashCell: -kk }, out()), shadeTerrain(t, 0, 0.6, u, v, 0, { ...cH, hashCell: sz }, out()))) okNeg = false;
-    const fixed = t < 170 ? 2 : 8;
-    if (!same(shadeTerrain(t, 0, 0.6, u, v, 0, { ...cH, hashCell: 0 }, out()), shadeTerrain(t, 0, 0.6, u, v, 0, { ...cH, hashCell: fixed }, out()))) ok0 = false;
-    if (!same(shadeTerrain(t, 0, 0.6, u, v, 0, cH, out()), shadeTerrain(t, 0, 0.6, u, v, 0, { ...cH, hashCell: 0 }, out()))) ok0 = false;
-  }
-  check('hashCell -k == fixed cell of perCellHashSize', okNeg);
-  check('hashCell 0 == explicit 2/8 m path (unchanged)', ok0);
+  // OB-073: shadeTerrain no longer keys on perCellHashSize (smooth noise band-limited by groundFootprint instead); the helper stays for old callers.
 }
 
-
-// OB-054: patch colour is world-anchored - identical for a world point from any camera distance 2..40 m (cell hash follows distance, colour must not).
-export function patchColourStable(shade, closeBand) {
-  const H = [130, 170];
-  const c = { ...ctx, handover: H, closeBand, fog: { ...ctx.fog, start: 1e6, full: 2e6 }, hashCell: -0.02 };
-  let bad = 0, n = 0;
-  for (let i = 0; i < 200; i++) {
-    const u = 11.37 + i * 0.913, v = 3.21 + i * 0.571, b = [0.3, 0.6, 0.95][i % 3];
-    const ref = shade(2, 0, b, u, v, 0, c, out());
-    const r0 = [ref.fg[0], ref.fg[1], ref.fg[2], ref.bg[0], ref.bg[1], ref.bg[2]];
-    for (let t = 2.5; t <= 40; t *= 1.37) {
-      const o = shade(t, 0, b, u, v, 0, c, out()); n++;
-      if (o.fg[0] !== r0[0] || o.fg[1] !== r0[1] || o.fg[2] !== r0[2] || o.bg[0] !== r0[3]) bad++;
-    }
-  }
-  return { bad, n };
-}
-{
-  const r = patchColourStable(shadeTerrain, undefined);
-  check('OB-054 patch colour identical across camera distance 2..40 m (' + r.bad + '/' + r.n + ' changed)', r.bad === 0);
-  // close band: brightness jitter amplitude fades smoothly (no re-roll, no step): 0.05 m of camera motion moves fg by <= 2 bytes
-  const cc = { ...ctx, handover: [130, 170], closeBand: 6, fog: { ...ctx.fog, start: 1e6, full: 2e6 }, hashCell: -0.02 };
-  let worst = 0;
-  for (let i = 0; i < 200; i++) for (let t = 1; t < 9; t += 0.05) {
-    const u = 11.37 + i * 0.913, v = 3.21 + i * 0.571;
-    const a = shadeTerrain(t, 0, 0.6, u, v, 0, cc, out()), c = shadeTerrain(t + 0.05, 0, 0.6, u, v, 0, cc, out());
-    worst = Math.max(worst, Math.abs(a.fg[1] - c.fg[1]));
-  }
-  check('OB-054 close-band colour continuous in t (worst step ' + worst + ' bytes)', worst <= 2);
-}
 
 // ---- S8-B2-12b (38.13): shadeTerrainCells scales the terrain analytic sun term by cF = 1 - light.cloudQ[i]/255 ----
 // A self-contained synthetic recipe/palette (no `design/` import, same pattern as TerrainTextures.test.js's stub)
@@ -365,35 +321,73 @@ export function patchColourStable(shade, closeBand) {
 }
 
 
-// OB-067: GLYPH and colour of a world point identical from any camera distance 2..40 m; slow walk flips < 5 % of glyphs 3..30 m ahead.
+// OB-073 (replaces the OB-054/067 identical-at-any-distance checks, which forced hard 1 m squares): a world point's look may only
+// change smoothly or ONCE per switch as the camera approaches (never re-roll); slow walk flips < 3 % of glyphs 3..30 m ahead.
+const K_REAL = -0.011; // 2*tanHalfX/cols of the owner's view (~90 deg, ~180 cols)
 export function glyphStable(shade) {
-  const c = { ...ctx, handover: [130, 170], fog: { ...ctx.fog, start: 1e6, full: 2e6 }, hashCell: -0.02 };
-  let bad = 0, n = 0;
+  const c = { ...ctx, handover: [130, 170], closeBand: 6, fog: { ...ctx.fog, start: 1e6, full: 2e6 }, hashCell: K_REAL };
+  let worstG = 0, worstJ = 0, n = 0;
   for (let i = 0; i < 200; i++) {
     const u = 11.37 + i * 0.913, v = 3.21 + i * 0.571, b = [0.3, 0.6, 0.95][i % 3], ty = i % 2;
-    const ref = shade(2, ty, b, u, v, 0, c, out()), g0 = ref.glyph, r0 = [ref.fg[0], ref.fg[1], ref.fg[2], ref.bg[0]];
-    for (let t = 2.5; t <= 40; t *= 1.37) {
+    let p = shade(2, ty, b, u, v, 0, c, out()), gch = 0, jumps = 0, pg = p.glyph, pf = p.fg[1];
+    for (let t = 2.05; t <= 40; t += 0.05) {
       const o = shade(t, ty, b, u, v, 0, c, out()); n++;
-      if (o.glyph !== g0 || o.fg[0] !== r0[0] || o.fg[1] !== r0[1] || o.fg[2] !== r0[2] || o.bg[0] !== r0[3]) bad++;
+      if (o.glyph !== pg) gch++;
+      if (Math.abs(o.fg[1] - pf) > 4) jumps++;
+      pg = o.glyph; pf = o.fg[1];
     }
+    worstG = Math.max(worstG, gch); worstJ = Math.max(worstJ, jumps);
   }
-  return { bad, n };
+  return { worstG, worstJ, n };
 }
+const meadowTl = (() => { // ctx.tlook row 0 with overworld_far grass glyphs: close ".,'`", near ".,'"
+  const tl = ctx.tlook.slice(), pk = (str) => { let x = 0; for (let i = 0; i < str.length; i++) x |= (str.charCodeAt(i) - 32) << (8 * i); return x; };
+  tl[4 * 4] = pk(".,'"); tl[4 * 4 + 1] = 3; tl[7 * 4] = pk(".,'`"); tl[7 * 4 + 1] = 4; return tl;
+})();
 export function slowWalkFlips(shade) {
-  const c = { ...ctx, handover: [130, 170], closeBand: 6, fog: { ...ctx.fog, start: 1e6, full: 2e6 }, hashCell: -0.02 };
+  const c = { ...ctx, tlook: meadowTl, handover: [130, 170], closeBand: 40, fog: { ...ctx.fog, start: 1e6, full: 2e6 }, hashCell: K_REAL };
   let flips = 0, n = 0;
-  for (let i = 0; i < 400; i++) { // point at forward distance d from the eye; eye then moves 1 m closer
-    const d = 3 + (i / 400) * 27, u = 100 + d, v = 50 + (i % 7) * 0.37;
+  for (let i = 0; i < 2000; i++) { // point at forward distance d from the eye; eye then moves 1 m closer
+    const d = 3 + (i / 2000) * 27, u = 100 + d * 1.003, v = 50 + (i % 37) * 0.137;
     const a = shade(d, 0, 0.6, u, v, 0, c, out()), bb = shade(d - 1, 0, 0.6, u, v, 0, c, out()); n++;
     if (a.glyph !== bb.glyph) flips++;
   }
   return { flips, n };
 }
+// top-down 20x20 m at 0.1 m from 2..6 m away (near detail on): colour-boundary pixels on 1 m grid lines, largest one-colour region
+export function patchShape(shade) {
+  const c = { ...ctx, handover: [130, 170], fog: { ...ctx.fog, start: 1e6, full: 2e6 }, hashCell: K_REAL };
+  const N = 200, col = new Int32Array(N * N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = 300 + x * 0.1 + 0.05, v = 700 + y * 0.1 + 0.05, t = 2 + 4 * ((x + y) / (2 * N));
+    const o = shade(t, 0, 0.6, u, v, 0, c, out()); col[y * N + x] = (o.fg[0] << 16) | (o.fg[1] << 8) | o.fg[2];
+  }
+  let edges = 0, onGrid = 0;
+  for (let y = 0; y < N; y++) for (let x = 0; x < N - 1; x++) if (col[y * N + x] !== col[y * N + x + 1]) { edges++; if ((x + 1) % 10 === 0) onGrid++; }
+  for (let y = 0; y < N - 1; y++) for (let x = 0; x < N; x++) if (col[y * N + x] !== col[(y + 1) * N + x]) { edges++; if ((y + 1) % 10 === 0) onGrid++; }
+  // largest solid one-colour square (a "flat block"); wandering connected strands of a tier are fine, compact blocks are not
+  const dp = new Int16Array(N * N); let sq = 0;
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const i = y * N + x;
+    dp[i] = (x && y && col[i] === col[i - 1] && col[i] === col[i - N] && col[i] === col[i - N - 1]) ? 1 + Math.min(dp[i - 1], dp[i - N], dp[i - N - 1]) : 1;
+    if (dp[i] > sq) sq = dp[i];
+  }
+  const maxA = sq * sq;
+  return { gridFrac: onGrid / Math.max(1, edges), maxM2: maxA * 0.01, edges };
+}
 {
   const r = glyphStable(shadeTerrain);
-  check('OB-067 glyph + colour identical across camera distance 2..40 m (' + r.bad + '/' + r.n + ' changed)', r.bad === 0);
+  console.log('OB-073 2..40 m sweep (0.05 m steps): worst glyph changes/point ' + r.worstG + ', worst colour jumps/point ' + r.worstJ);
+  check('OB-073 approaching 2..40 m: each point changes glyph <= 3x (band/near->far switch, never re-rolls) (' + r.worstG + ')', r.worstG <= 3);
+  check('OB-073 approaching 2..40 m: each point colour jumps (> 4 bytes / 0.05 m) <= 4x (tier crossings only) (' + r.worstJ + ')', r.worstJ <= 4);
   const w = slowWalkFlips(shadeTerrain);
-  check('OB-067 walking 1 m flips < 5 % of glyphs 3..30 m ahead (' + w.flips + '/' + w.n + ')', w.flips / w.n < 0.05);
+  console.log('OB-073 walk 1 m: ' + w.flips + '/' + w.n + ' glyphs flip 3..30 m ahead');
+  check('OB-073 walking 1 m flips < 3 % of glyphs 3..30 m ahead (' + w.flips + '/' + w.n + ')', w.flips / w.n < 0.03);
+  const sh = patchShape(shadeTerrain);
+  console.log('OB-073 shape: boundary px on 1 m grid lines ' + (sh.gridFrac * 100).toFixed(1) + ' % (random ~10 %), largest solid one-colour square ' + sh.maxM2.toFixed(2) + ' m2, edges ' + sh.edges);
+  check('OB-073 no square grid: < 15 % of colour boundaries on 1 m lines', sh.gridFrac < 0.15);
+  check('OB-073 no big flat block near the player: largest solid one-colour square <= 4 m2', sh.maxM2 <= 4);
+  check('OB-073 has variety near the feet (enough boundaries)', sh.edges > 2000);
 }
 
 // OB-067 / gpucompare world_m1: WGSL gets u,v as f32. Points within 1e-4 m of a cell edge at x,y ~ 1000-1500: the JS twin must pick the same
