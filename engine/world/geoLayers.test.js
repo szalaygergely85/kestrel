@@ -27,6 +27,8 @@ util.setGeoLayers([]);
 // RIVER-04 (arch 38.45 resolution): the recipe's river bedLine deliberately carves the channel downstream of the ford inside the keep;
 // the pinned pre-change compare runs with it off (everything else must still be byte-identical), the rest of the test with it on.
 const bedLine = recipe.recipe.river.bedLine; delete recipe.recipe.river.bedLine;
+const bankRock = recipe.recipe.river.bankRock; delete recipe.recipe.river.bankRock; // OB-062b: gentle banks earth/grass + band 9.5 m (same treatment as bedLine)
+const riverHalfW = recipe.recipe.river.halfWidth; recipe.recipe.river.halfWidth = 10;
 const h0 = { e: hashOf(east()), w: hashOf(west()), f: hashOf(far()) };
 // pre-change recipe = the file at git commit d3be9a62 (MAP-01a parent); GEO_BASE overrides with a file path
 let BASE = process.env.GEO_BASE;
@@ -39,7 +41,7 @@ if (BASE && existsSync(BASE)) {
   ok('empty list: near west == pre-change', hashOf(b.bake(6 * 128, 7 * 128, 2, 3 * 64, 3 * 64)) === h0.w);
   ok('empty list: far bake == pre-change', hashOf(b.generate()) === h0.f);
 } else console.log('SKIP baseline compare (set GEO_BASE)');
-recipe.recipe.river.bedLine = bedLine;
+recipe.recipe.river.bedLine = bedLine; if (bankRock) recipe.recipe.river.bankRock = bankRock; recipe.recipe.river.halfWidth = riverHalfW;
 h0.e = hashOf(east()); h0.w = hashOf(west()); h0.f = hashOf(far());
 
 // 2. four dummy layers outside keep: keep area unchanged, outside changed

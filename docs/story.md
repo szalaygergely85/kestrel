@@ -1501,3 +1501,22 @@ Notes:
 - `Outwall Blade` only if the owner fixes "Outwall" as the village name (GDD 3: working name; Ch3 text still avoids it on screen). `Reforged Steel` follows GDD 3 "sword (ruin steel, then reforged at forges)" and fits the Outwall forge chest.
 - `Crown Plate` B desc instead: `Crown brass from the wreck. Light.` (34). The worn shield is already the gondola `Brass Buckler`, so A avoids a second wreck shield.
 - `Keeper's Edge` names no person: "the keeper" is the unnamed relay-keeper of the log.
+
+## Prompt names (OB-058/066)
+
+PC-B writer, 2026-10-11. Plain names for `[E] <Verb> <name>`, lower case, ASCII. `promptFor` caps the whole prompt at 28, so after `[E] Inspect ` a name must be <= 16. Sources: `LABELS` / `labelOf` in `game/js/quest/errands.js` (object givers), `prompt` fields in `content/levels/tower.level.json`, and `content/dialogue/inspect.json`.
+
+| id (source) | old | new | reason |
+|---|---|---|---|
+| `gondola` (labelOf, giver of sq.wreck.plate) | `gondola` | `wrecked airship` | What the player sees and woke beside; "gondola" is a ship-part word |
+| `post` (LABELS) | `basket` | `trade basket` | Says which basket: the one at the trade post |
+| `notePost` (LABELS) | `note post` | `notice post` | Plain English for a post with notes pinned to it |
+| `packet` (labelOf, giver of sq.packet) | `packet` | `cloth packet` | Matches its item name "Cloth Packet" |
+| `noteKeepLight` / `noteSteelHush` / `noteLeave` (tower json; LABELS) | `pinned page` | `pinned note` | "Note" is the everyday word; same for all three |
+| `noteKeeperLog` (tower json) | `keeper's log` | `old logbook` | The keeper is unmet at this point; a logbook is obvious |
+| `noteMason` (tower json) | `mason's chit` | `scrap of paper` | "Chit" is obscure; the hidden find should read as a find |
+| `inspect.woodpile` (inspect.json) | `the stack` | `the woodpile` | "Stack" of what? (24 chars with the verb, at the limit) |
+
+Unchanged, already plain: door, sword, the relay, knot, gate, cart, well, shrine, lanterns, lamp, nest, mark, board, stone.
+
+Follow-ups (text only, for the programmer with the above): HUD `sq.wreck.plate.2` -> `Bring the hide to the wrecked airship` (36); done line `The gondola creaks. The plate is yours now.` -> `The wreck creaks. The plate is yours now.` (41); `prompt.gondola` -> `[E] Look at the wreck` (21) if that key is ever wired. Mixed verbs ("Inspect" vs "Look at") are the PO's call; the names fit both.

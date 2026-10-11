@@ -537,7 +537,7 @@
     var slope = Math.sqrt(hx * hx + hy * hy), dh = Math.hypot(x - T.x, y - T.y), F = R.forest, K = R.rock;
     var rockHit = slope > K.slope || (dh > K.minHomeDist && fbm(x / K.scale, y / K.scale, s + 29, 2, 0.5, 2) > K.threshold);
     // OB-062b: the gentle carved bank beside the water (ring m past the band) is wet earth, not grey rock; only a real cliff stays rock
-    if (rockHit && dr < R.river.halfWidth + R.river.bankRock.ring && slope <= R.river.bankRock.slope) rockHit = false;
+    if (rockHit && R.river.bankRock && dr < R.river.halfWidth + R.river.bankRock.ring && slope <= R.river.bankRock.slope) rockHit = false;
     var geoOn = GEO_N !== 0 && !inKeep(x, y);
     if (rockHit && !geoOn) return 3;
     if (rockHit) return geoType(3, x, y, heightAt(x, y), slope);   // MAP-02/03: sea/snow layers may override rock noise
