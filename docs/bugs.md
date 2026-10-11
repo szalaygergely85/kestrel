@@ -8,6 +8,8 @@ Newest at the top of each table. Keep one line per bug; details go in the commit
 
 | ID | Date | Owner report (short) | Where / notes | Status |
 |---|---|---|---|---|
+| OB-041 | 2026-10-11 | (gate found) gpucompare cloth row PASS->FAIL after today's merges | Suspect OB-039 frustum pre-cull / mesh feed change; cloth banner (CLOTH-1b2). | open - in progress |
+| OB-040 | 2026-10-11 | (gate found) Continue loads the player at the Bend relay (1258,1033) instead of the saved spot at the tower (1497,1027.5) | verify-m4-exit; suspects QL-T3 save v2, saveRelay zone change, placeLoaded, waystone respawn anchor. | open - in progress |
 | OB-039 | 2026-10-11 | (agent found) Sealed Gate wooden leaves sg039/sg040 never draw (a test crate there did not draw either) - doorway looks open | Suspect mesh draw caps (MAX_MESH_DRAWS 64 single draws / instance groups) - may also drop meshes elsewhere now that ~650 roadside + gate meshes were added. Architect to check. | fixed - verify (frustum cull before the 64-draw cap; F3 shows dropped) |
 | OB-038 | 2026-10-11 | Design walk: west bank (crossroads, straw field, ruin) almost bare; trade post does not read | framing tree clumps (TwistedTree_3/5), hedge, fence, awning (M); report docs/test-reports/design-walk-2026-10-11.md | fixed - verify (west bank clumps, hedge, fences, trade-post awning) |
 | OB-037 | 2026-10-11 | Design walk: river banks bare | tall-grass/reed strips, ferns + rocks at the stepping stones (S/M); report docs/test-reports/design-walk-2026-10-11.md | fixed - verify (reeds/ferns/rocks on the ford banks) |
