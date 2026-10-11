@@ -8,6 +8,7 @@ Newest at the top of each table. Keep one line per bug; details go in the commit
 
 | ID | Date | Owner report (short) | Where / notes | Status |
 |---|---|---|---|---|
+| OB-028 | 2026-10-11 | Editor: scene tree needs groups, and groups foldable | tools/editor scene tree panel. | open - in progress |
 | OB-027 | 2026-10-11 | Owner changed things in the editor (tools/editor) - wants them saved and used everywhere | Editor edits live in browser memory until the editor's Save (file picker) writes the content file; then the main session commits + spreads it to all clones. Generated rows (POI props, river water) are rewritten by their generators - owner edits there need the generator updated. | open - waiting for the owner's Save |
 | OB-026 | 2026-10-11 | "What is that on the ground?" - a lighter striped rectangle on the dark stone floor (tower area) | Needs the debug position to identify (candidates: floodedCellar water patch 1485-1495 x 995-1005, a floor decal/hatch, a light pool). | open - need position |
 | OB-025 | 2026-10-11 | Character creator (tools/chargen) human still not good: wants a proper, detailed, more realistic human like the bear - bigger model / finer voxels | Owner asked for the fable designer. Human kit: design/chargen/human_kit.js + content/chargen/human.charkit.json (shells, paints, gear). | open - fable designer |
