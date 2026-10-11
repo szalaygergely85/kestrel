@@ -1128,3 +1128,8 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - Designer world map: docs/world-map-2026-10-11.md + design/preview/world-map.html (in progress); PO stories: MAP + QL tables in docs/pc-b-queue.md.
 - **Zone level bands (owner, 2026-10-11):** this side of the river (tower side, start) = levels 1-5; the other side of the river = levels 5-10 (zone difficulty: enemy strength + gear tiers; no XP, D-020). The river crossings are the gateways; beyond the mountain gate = Part II.
 - **World map approved (owner, 2026-10-11: "perfect, I like the map, do it"):** docs/world-map-2026-10-11.md + design/preview/world-map.html + design/levels/world_geo.js are the plan of record: Whitecombs north, West Fells + the Sealed Gate west (locked until Part II), sea south (cliffs + Long Strand beaches), Ferrum's Wall east, river spine through Glasswater to the estuary, 17 regions, 74 sites, level bands. The proposed (P) names are accepted unless the owner renames them; Gullhaven is the second village.
+
+## D-068 - Potions on a HUD button; roadmap M4/M5 rewrite (owner, 2026-10-11; recorded by the PC-B main session)
+- **Potions:** used from a **HUD button** (always visible in play, count shown), not only from the item bag. Health potion heals; mana potion stays defined but unused while magic is off (D-065).
+- **Roadmap:** M4/M5 in docs/roadmap.md are rewritten to D-064..D-067 (no dungeon, no magic, shield + bow, gear drops, ~100 quests, enclosed world).
+- Still open for the owner: the new place names (story.md "Places on the chart") and the 12 new characters (quest-roadmap.md section 2b).
