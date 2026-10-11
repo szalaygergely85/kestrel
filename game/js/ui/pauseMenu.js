@@ -6,14 +6,14 @@ import { slotLabel } from './titleMenu.js';
 
 const PLATE = '#0a0b10', TEXT = '#e8e2d0';
 export const PAUSE_KEYS = ['ArrowUp', 'ArrowDown', 'KeyW', 'KeyS', 'Enter', 'Space', 'Escape'];
-export const PAUSE_ITEMS = ['Resume', 'Settings', 'Save', 'Load', 'Back to main menu'];
-const IDS = ['resume', 'settings', 'save', 'load', 'menu'];
+export const PAUSE_ITEMS = ['Resume', 'Settings', 'Fullscreen', 'Save', 'Load', 'Back to main menu']; // OB-072: Fullscreen (Keyboard Lock for Esc)
+const IDS = ['resume', 'settings', 'fullscreen', 'save', 'load', 'menu'];
 
 /**
  * @param {{adapter:any, style?:any, onResume:()=>void, onSettings:()=>void, onSave:()=>boolean, onLoad:(slot:number,save:any)=>void,
  *          onMainMenu:()=>void, isDirty?:()=>boolean}} o
  */
-export function createPauseMenu({ adapter, style = null, onResume, onSettings, onSave, onLoad, onMainMenu, isDirty = () => false }) {
+export function createPauseMenu({ adapter, style = null, onResume, onSettings, onFullscreen = () => {}, onSave, onLoad, onMainMenu, isDirty = () => false }) {
   const colour = key => (style && (style.hex[key] || style.bg[key])) || TEXT;
   const fg = style ? colour(style.row.normal.fg) : TEXT, bg = style ? style.bg.plate : PLATE;
   const heading = 'PAUSED';
@@ -51,23 +51,24 @@ export function createPauseMenu({ adapter, style = null, onResume, onSettings, o
     switch (row.id) {
       case 'resume': onResume(); break;
       case 'settings': onSettings(); break;
+      case 'fullscreen': onFullscreen(); break;
       case 'save': { const ok = onSave(); message = ok ? 'Saved.' : 'Could not save.'; error = !ok; break; }
       case 'load': refreshSlots(); go('load', Math.max(0, slots.findIndex(s => s.ok && s.meta))); break;
       case 'menu': if (isDirty()) go('confirm'); else onMainMenu(); break;
-      case 'back': go('main', 3); break;
+      case 'back': go('main', 4); break;
       case 'slot':
         try {
           const r = adapter.readSlot(row.slot);
           if (r.ok && r.save) onLoad(row.slot, r.save); else { message = 'Could not read slot.'; error = true; }
         } catch (e) { message = 'Could not read slot.'; error = true; }
         break;
-      case 'yes': { const ok = onSave(); if (ok) onMainMenu(); else { message = 'Could not save.'; error = true; go('main', 4); } break; }
+      case 'yes': { const ok = onSave(); if (ok) onMainMenu(); else { message = 'Could not save.'; error = true; go('main', 5); } break; }
       case 'no': onMainMenu(); break;
     }
     return true;
   }
   function handleKey(code) {
-    if (code === 'Escape') { if (mode === 'main') return false; message = ''; go('main', mode === 'load' ? 3 : 4); return true; }
+    if (code === 'Escape') { if (mode === 'main') return false; message = ''; go('main', mode === 'load' ? 4 : 5); return true; }
     if (code === 'Enter' || code === 'Space') return activate();
     const d = code === 'ArrowUp' || code === 'KeyW' ? -1 : code === 'ArrowDown' || code === 'KeyS' ? 1 : 0;
     if (!d) return false;
