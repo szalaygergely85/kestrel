@@ -63,6 +63,9 @@ export const GATE_POSES = [
   // WS1-08 / CH1-10 C perf-gate poses (tools/perf-pose.mjs default --poses): interior = the brazier view inside the tower (same cam as 'brazier'); exterior = from the walk-out meadow 29 m west of the tower, looking east (+x) with the towerCrown prop (world_m1 entity at 1497,1025, z 12-14) in view (pitch +14).
   { slug: 'towerInterior', name: 'tower interior, brazier view (WS1-08 perf pose)', cam: { x: 1496.0, y: 1024.5, z: EYE_H, yawDeg: 90, pitchDeg: -5 } },
   { slug: 'towerExterior', name: 'tower from the meadow, crown in view (WS1-08 perf pose)', cam: { x: 1468, y: 1025.5, z: 1.7, yawDeg: 90, pitchDeg: 14, groundEye: true } },
+  // PERF-2026-10-11 poses: meadow toward the tower through the rs### flowers/ferns, and the ford bank looking west.
+  { slug: 'meadowDetail', name: 'meadow toward the tower through the roadside plants (perf 2026-10-11)', cam: { x: 1450, y: 1035, z: 1.7, yawDeg: 102, pitchDeg: 0, groundEye: true } },
+  { slug: 'fordDetail', name: 'ford bank looking west (perf 2026-10-11)', cam: { x: 1040, y: 1068, z: 1.7, yawDeg: 270, pitchDeg: 0, groundEye: true } },
   { slug: 'roadLeft', name: 'walk-out road, looking south-west across the left (south) verge scatter roadL### (tools/gen-roadside-meshes.mjs)', cam: { x: 1440, y: 1030, z: 1.7, yawDeg: 215, pitchDeg: 4, groundEye: true } },
   { slug: 'hillside', name: 'hillside outside (owner pose A)', cam: { x: 1464.33, y: 1045.50, z: 3.92, yawDeg: 54, pitchDeg: 19 } },
   // waystoneLookBack: eye 2 m back along -forward from (1428, 1040) so it is not inside the model

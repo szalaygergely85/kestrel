@@ -954,11 +954,20 @@ export class World {
   /** World (x, y) -> the placed structure's baked grid; see `gridLocal.js`. */
   static gridLocal(placed, x, y, out) { return gridLocal(placed, x, y, out); }
 
-  /** Bbox test first (structures.length is tiny), then the level's own footprint. */
+  /** Grid-level structures only (kind !== 'mesh'). PERF-2026-10-11: 370+ mesh structures made the linear scan below dominate the sun DDA. Cached per (array identity, length). */
+  _gridStructures() {
+    const a = this.structures;
+    if (this._gsSrc !== a || this._gsLen !== a.length) {
+      this._gs = a.filter((s) => s.kind !== 'mesh'); this._gsSrc = a; this._gsLen = a.length;
+    }
+    return this._gs;
+  }
+
+  /** Bbox test first (grid-level structures only, see _gridStructures), then the level's own footprint. */
   structureAt(x, y) {
-    for (let i = 0; i < this.structures.length; i++) {
-      const s = this.structures[i];
-      if (s.kind === 'mesh') continue;
+    const gs = this._gridStructures();
+    for (let i = 0; i < gs.length; i++) {
+      const s = gs[i];
       const b = s.bbox;
       if (x >= b.x0 && x < b.x1 && y >= b.y0 && y < b.y1) return s;
     }
