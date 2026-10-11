@@ -199,6 +199,7 @@ export function swapHands(inv) {
  */
 export function migrateSword(inv, defs) {
   if (countOf(inv, 'sword') > 0) return false;
+  if (inv.left === 'sword' || inv.right === 'sword') return false; // OB-079: a wielded sword has left the pack slots but is NOT missing - Continue used to duplicate it (hands sword/sword + a pack copy)
   if (addItem(inv, defs, 'sword', 1) === 0) return false;
   if (inv.left === null) inv.left = 'sword';
   else if (inv.right === null) inv.right = 'sword';

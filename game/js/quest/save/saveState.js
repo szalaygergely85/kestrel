@@ -89,10 +89,18 @@ export function validateSave(save) {
   return save;
 }
 
+/** OB-079 (M4-C2): runtime-only marker entities ('questMark_N', main.js markHandle) pop in at scale 0.05, which World.load rejects
+ *  (min 0.25) - a save taken mid-pop made Continue fail silently (fresh world, no player health). They respawn on demand, so never persist them. */
+const TRANSIENT_ENTITY = /^questMark/;
+function dropTransient(worldState) {
+  if (!worldState || !Array.isArray(worldState.entities)) return worldState;
+  return { ...worldState, entities: worldState.entities.filter(e => !(e && typeof e.id === 'string' && TRANSIENT_ENTITY.test(e.id))) };
+}
+
 /** Player transform, hearts/mana, pack and hands have one source: WorldState entity components. */
 export function collectSave(world, { quest = null, questDef = null, quests = null, giverDefs = [], openedChests = [], deadBeasts = [], playerName = 'Wick', place = '', playTimeSec = 0, savedAt, look } = {}) {
   if (quest && !questDef) throw new Error('save: quest definition required');
-  const save = { saveVersion:SAVE_VERSION, world:serialize(world),
+  const save = { saveVersion:SAVE_VERSION, world:dropTransient(serialize(world)),
     game:{quest:quest ? createQuest(questDef,quest) : null,openedChests:ids(openedChests),deadBeasts:ids(deadBeasts)},
     meta: savedAt === undefined ? {playerName,place,playTimeSec} : {playerName,place,playTimeSec,savedAt} }; // SAVE-TIME-01: ms epoch; optional on read (old saves sort oldest)
   if (quests) { // QG-02: each entry re-validated through createQuest against its giver def; QL-T3: written as compact v2
@@ -117,7 +125,7 @@ export function applySave(save, assets, { questDef = null, giverDefs = null, wor
   validateSave(save);
   if (save.game.quest && !questDef) throw new Error('save: quest definition required');
   const quest = save.game.quest ? createQuest(questDef,save.game.quest) : null;
-  const world = deserialize(canonical(save.world),assets,worldOptions);
+  const world = deserialize(canonical(dropTransient(save.world)),assets,worldOptions); // also heals saves written before OB-079
   // QG-02: giver defs given -> migrate old saves and re-validate; else return the stored map as-is (null when absent).
   let quests = save.game.quests ? canonical(save.game.quests) : null;
   if (giverDefs) {

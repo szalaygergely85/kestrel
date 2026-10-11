@@ -177,6 +177,8 @@ function killAndRespawn(vitals, player) {
   const inv = freshInv();
   ok('migrateSword on a sword-less pack adds sword + left', migrateSword(inv, defs) === true && countOf(inv, 'sword') === 1 && inv.left === 'sword');
   ok('migrateSword is idempotent (sword already present)', migrateSword(inv, defs) === false && countOf(inv, 'sword') === 1);
+  const held = freshInv(); held.right = 'sword'; // OB-079: wielded sword (in hand, not in pack slots) must not be re-added on Continue
+  ok('migrateSword leaves a wielded sword alone', migrateSword(held, defs) === false && countOf(held, 'sword') === 0 && held.left === null);
 }
 {
   const world = buildWorld([playerEntity()]);

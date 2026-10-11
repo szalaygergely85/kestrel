@@ -9,9 +9,11 @@ import path from 'node:path'; import os from 'node:os';
 import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, evaluateAsync, killTree } from './capture-browser.mjs';
 import { buildGapTable, compareSnaps, questVerdict, renderReport, SAMPLE_EVERY_S } from './verify-ch12-lib.mjs';
 
+/** short window around the first differing character of two JSON strings */
+const firstDiff = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; const w = (x) => x.slice(Math.max(0, i - 40), i + 80); return `@${i}/${a.length},${b.length} ${w(a)} -> ${w(b)}`; };
 const port = Number(process.argv[2] || 9560);
 validatePort(port);
-if (port < 9500 || port + 1 > 9574) throw new Error('PC-B lane B1 range is 9500-9574 (next port is CDP)');
+if (port < 9500 || port + 1 > 9999) throw new Error('PC-B port range is 9500-9999 (next port is CDP)');
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-ch12-'));
 const server = spawn('python', ['-c', 'import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()', String(port)], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -66,8 +68,8 @@ const LIB = `(() => { const D = window.__debug, w = D.world, p = D.playerHandle.
           log.push('[' + ch.join(' | ') + '] -> ' + k); r.selected = k; r.choose(); } else r.press();
         await sl(50); } await sl(300); return log; },
     snap() { const q = book().toSave(), st = {}, pd = D.playerHandle.data, t = pd.transform, c = pd.components; /* live handles: Continue rebuilds the player */ for (const k of Object.keys(w.state)) if (!/^(clock\\.|quest\\.wakeT|quest\\.endT|hints\\.|ui\\.)/.test(k)) st[k] = w.state[k];
-      const quests = {}; for (const id of Object.keys(q.quests)) { const e = q.quests[id]; quests[id] = { a: e.accepted, h: e.handedIn, g: e.given || [], done: e.quest.completed }; }
-      return JSON.parse(JSON.stringify({ pos: [t.x, t.y, t.z], hp: c.health.hp, max: c.health.max, inventory: c.inventory.slots, equipment: c.equipment, quickbar: c.quickbar, main: { done: q.quest.completed, flags: q.quest.flags }, quests, tracked: book().tracked(), state: st, dead: D.saveRelay.deadBeasts, chests: D.saveRelay.openedChests })); } };
+      const quests = {}; for (const id of Object.keys(q.quests)) { const e = q.quests[id]; quests[id] = { a: e.accepted, h: e.handedIn, g: e.handedIn ? [] : (e.given || []) /* v2 save drops given once handed in (questSaveV2): same canonical form before/after */, done: e.quest.completed }; }
+      return JSON.parse(JSON.stringify({ pos: [t.x, t.y, t.z], hp: c.health.hp, max: c.health.max, inventory: c.inventory.slots, hands: [c.inventory.left, c.inventory.right], equipment: c.equipment, quickbar: c.quickbar, main: { done: q.quest.completed, flags: q.quest.flags }, quests, tracked: book().tracked(), state: st, dead: D.saveRelay.deadBeasts, chests: D.saveRelay.openedChests })); } };
   return true; })()`;
 
 function rec(name, ok, why, still) { rows.push({ name, ok, why: why || '', still: still || null }); console.log((ok ? 'PASS ' : 'FAIL ') + name + (why ? '  - ' + why : '')); }
@@ -309,9 +311,12 @@ try {
     await waitFor(() => ev('typeof __debug !== "undefined" && !!(__debug.playerHandle && __debug.playerHandle.data.components.health && __debug.saveRelay)'), 20000); await waitFor(() => ev('!!(__debug.saveRelay.quest && __debug.saveRelay.quest.book)'), 20000); await pause(2500); await ev(LIB);
     // the quest book / save relay finish after the player exists: retry until snap() stops throwing
     const ready = await waitFor(() => ev('(() => { try { __t.snap(); window.__snapErr = null; return true; } catch (e) { window.__snapErr = String(e && e.stack || e).slice(0, 300); return false; } })()'), 20000, 500);
-    if (!ready) return { ok: false, why: 'snap never ready: ' + await ev('window.__snapErr') };
+    if (!ready) { // AC3b diagnostics: is the save missing hp, or is the loaded player not stepping?
+      const dg = await ev(`(() => { const D = __debug, p = D.playerHandle, c = p && p.data.components, raw = JSON.parse(localStorage.getItem('kestrel.save.slot.0') || 'null'), pe = raw && raw.world.entities.find((e) => e.id === 'player' || (e.components && e.components.inventory)); return JSON.stringify({ hasPlayer: !!p, comps: c ? Object.keys(c) : null, savedComps: pe ? Object.keys(pe.components) : null, savedHealth: pe && pe.components.health, vitals: !!D.vitals, menu: !!(D.menuHost && D.menuHost.active), last: D.saveRelay.lastResult, slot: D.saveRelay.slot, pos: p && [p.data.transform.x, p.data.transform.y], savedPos: pe && pe.transform && [pe.transform.x, pe.transform.y], sameWorld: D.world === (D.engine && D.engine.world), worldPlayer: !!(D.world && D.world.get('player') === p), wpComps: D.world && D.world.get('player') ? Object.keys(D.world.get('player').data.components) : null }); })()`);
+      return { ok: false, why: 'snap never ready: ' + await ev('window.__snapErr') + ' | ' + dg };
+    }
     const after = await ev('__t.snap()');
-    ac3Diffs = compareSnaps(before, after); const diffs = ac3Diffs.map((d) => d.name + ' ' + JSON.stringify(d.before).slice(0, 120) + ' -> ' + JSON.stringify(d.after).slice(0, 120));
+    ac3Diffs = compareSnaps(before, after); const diffs = ac3Diffs.map((d) => d.name + ' ' + firstDiff(JSON.stringify(d.before), JSON.stringify(d.after)));
     return { ok: diffs.length === 0, why: diffs.slice(0, 6).join(' ; ') + (diffs.length ? ' || warns: ' + warns.slice(0, 4).join(' | ') : '') };
   });
   await beat('no console errors', async () => ({ ok: errors.length === 0, why: errors.slice(0, 3).join(' | ') }));
