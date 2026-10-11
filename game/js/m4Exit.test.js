@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { World, AssetRegistry } from '../../engine/index.js';
+import { toQuestSaveV2 } from './quest/sim/questSaveV2.js';
 import { loadQuestFiles } from './questBoot.js';
 import { createSaveRelay } from './saveRelay.js';
 import { ensureInventory, addItem, removeItem, countOf } from './quest/sim/inventory.js';
@@ -39,7 +40,7 @@ function snap(world, relay) {
   return structuredClone({
     pos: [p.transform.x, p.transform.y, p.transform.z, p.transform.yawDeg], health: c.health, mana: c.mana, inventory: c.inventory,
     equipment: c.equipment, quickbar: c.quickbar, quickbarSeen: c.quickbarSeen, state: world.state,
-    quests: book.toSave(), tracked: book.tracked(), statuses: Array.from({ length: book.count }, (_, i) => book.status(i)),
+    quests: { main: book.toSave().quest, v2: toQuestSaveV2(book.toSave().quests, giverDefs, book.main.flags['ui.tracked']) }, tracked: book.tracked(), statuses: Array.from({ length: book.count }, (_, i) => book.status(i)),
     objective: relay.quest.objectiveText(), dead: relay.deadBeasts.sort(), chests: relay.openedChests.sort(), play: relay.playTimeSec, look: relay.look,
   });
 }
@@ -74,7 +75,7 @@ A.tick(125, wA, false);
 assert.equal(A.save(wA), true, 'rest/save');
 const before = snap(wA, A), text1 = mem.get(KEY);
 assert.ok(before.tracked >= 1 && before.state['hearts.pieces'] === 4 && before.state['clock.hour'] > 8, JSON.stringify([before.tracked, before.state]));
-assert.equal(before.quests.quests['sq.burl.parcel'].given?.[0]?.id, 'boar.meat', 'given list reaches toSave');
+assert.equal(before.quests.v2.active['sq.burl.parcel'].g?.[0]?.id, 'boar.meat', 'given list reaches toSave');
 assert.equal(before.equipment.main, 'sword'); assert.equal(before.equipment.off, 'shield');
 
 // ---------- phase B: quit -> Continue (fresh relay + world) ----------

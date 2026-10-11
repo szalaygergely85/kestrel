@@ -123,7 +123,7 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
       if (!enabled || !adapter || !world) return false;
       let save;
       try {
-        save = collectSave(world, { quest: quest.state, questDef, quests: quest.book.toSave().quests, giverDefs, openedChests: [...chests], deadBeasts: [...dead], playerName, place, playTimeSec: playSec, savedAt: Date.now(), look }); // SAVE-TIME-01: only the real writer stamps time (pure collect stays deterministic)
+        save = collectSave(world, { quest: quest.state, questDef, quests: quest.book.toSave().quests, /* collectSave writes it as v2 */ giverDefs, openedChests: [...chests], deadBeasts: [...dead], playerName, place, playTimeSec: playSec, savedAt: Date.now(), look }); // SAVE-TIME-01: only the real writer stamps time (pure collect stays deterministic)
         if (ending && save.world.state) save.world.state['quest.endT'] = -1;
       } catch (e) { lastResult = { op: 'save', ok: false, error: String(e) }; return false; }
       const r = adapter.writeSlot(slot, save);
