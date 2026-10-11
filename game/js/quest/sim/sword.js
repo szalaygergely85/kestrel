@@ -8,6 +8,7 @@
 import { arcHits, applyImpulse, PHYSICS } from '../../../../engine/index.js';
 import { ARC_BOUNDS_L, ARC_BOUNDS_R } from '../swordConfig.js';
 import { weaponMods } from './weaponStats.js'; // EQ-20
+import { MAX_TARGETABLES } from './targetables.js'; // OB-076: one shared cap
 
 export const ST_IDLE = 0;
 export const ST_HOLD = 1;
@@ -21,7 +22,7 @@ export const ST_REST = 5;
 // and main.js calls `sword.step()` after that reset (same slot the amendment's main.js line uses).
 const SPEED_SCALE = [1, 1, 0.3, 0.6, 0.3, 0.6]; // idle, hold, charge, light, hard, rest
 
-const MAX_TARGETS = 64; // OB-076: was 16 (world has 26+ targetables; the 17th+ boar could not be hit)
+const MAX_TARGETS = MAX_TARGETABLES; // OB-076: was 16 (world has 26+ targetables; the 17th+ boar could not be hit)
 const RING_SIZE = 4;    // "Sparks from a 4-slot ring in the sim" (30.1 View paragraph)
 export const SPARK_CLINK = 0;
 export const SPARK_HIT = 1;

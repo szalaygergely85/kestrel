@@ -46,6 +46,24 @@
  *     a lit chin point. The game keeps the 1.25 cm head (GAME_SAFE_RES head 2); the body stays 2.5 cm (body detail
  *     level 2 is not supported by the engine yet - CHARGEN-24 - and would not fit the 4096-quad game cap).
  *
+ * v6 (OB-071, owner 2026-10-11 on the v5 screenshot: "getting there, but still shape better") - SHAPE pass, same grid,
+ * bones, slots, shells, decals, clips; only the base volumes (and the tints that sit on them) changed:
+ *   - torso slices are SUPERELLIPSE ovals (`oval`): a flat pec plane in front (exponent 3, still at Y -4 - the OB-065
+ *     male-chest rule), round sides and a round back (exponent 2). Ribcage half 7 (z 50-56) tapers to half 6 (44-49)
+ *     and a half-5 waist (41-43, 11 x 6 oval, belly set back to Y -3, lumbar hollow), hips half 6-7 again, a round seat.
+ *   - shoulder / neck: trapezius slope half 7 -> 5 -> 3 over z 56-58 into a 5 x 6 neck ring (nape at Y 3, Neck box
+ *     widened to Y 3); deltoid caps round off the slope (acromion 2 x 3 at z 56, cap z 55, widest z 53-54).
+ *   - arms: deltoid -> biceps 4 x 5 -> elbow 4 x 4 (olecranon at Y 2) -> forearm 5 wide under the elbow, set one cell
+ *     forward (a slight natural bend) -> 4 wide -> wrist 3 x 4. Hands: palm 2 x 4, fingers curl in to X 12 at the tips,
+ *     thumb 2 thick down the palm's front edge (z 31-33) angling forward to a tip + nail at z 30.
+ *   - legs: thigh 6 wide at the hip (X -1..1 empty for the rig's thigh gap) -> 5 -> 4 above the knee, knee cap forward,
+ *     calf 5 wide with the bulge back (Y 3) and in, lower calf 4, shin + ankle 3 x 4. Trouser hem ring at z 11-12
+ *     breaks over the boot top; the z 10 boot rim and the sole welt are gone (they stacked blocks).
+ *   - feet: a wedge - instep z 2 (Y -4..2), z 1 (Y -6..3), sole z 0 (Y -7..3), toe line slanting (big toe longest),
+ *     a round heel (Y 3 only at X 3-5); the thick-1 boot grows a sloping toe box and a rounded heel from it.
+ *   - head: the skull narrows at z 68 (X +-3 only at Y 0..1) under the hair; the forehead keeps z 68 bare so the hairline
+ *     sits at z 69 (3 rows brow to hair); the v5 face (L1 + the 1.25 cm L2 pass) is untouched.
+ *
  * Bone boxes are axis-aligned and resolved FIRST-MATCH in skeleton order (38.29 item 3): Chest takes z 48-58 (ribcage,
  * shoulder tops, the lower neck rows 57-58), Neck is the z 59 ring, Jaw z 60-61 (lower lip + chin, full width),
  * Head z 62-71 (hair room), Shoulder = the deltoid caps X 8-16 z 55-58, UpperArm z 45-54, LowerArm z 35-44, Hand z 27-34.
@@ -170,7 +188,7 @@
     var ax = Math.abs(X), h = headHalf(z);
     if (h < 0 || ax > h) return null;
     if (z === 69) return ax === 2 ? 0 : -1;
-    if (z === 68) return ax === 3 ? -1 : ax === 2 ? -2 : -3;
+    if (z === 68) return ax === 3 ? 0 : ax === 2 ? -2 : -3;       // OB-071: the skull narrows toward the crown
     if (z === 67 || z === 66) return ax === 3 ? -3 : -4;          // forehead + brow ridge, temples set back
     if (z === 65) return X === 0 ? -4 : -3;                        // eye sockets recessed, nose bridge out
     if (z === 64) return X === 0 ? -5 : -4;                        // nose tip one cell out, cheekbones
@@ -182,7 +200,8 @@
   function headBack(X, z) {
     var ax = Math.abs(X);
     if (z === 69) return ax === 2 ? 1 : 2;
-    if (z === 68 || z === 67) return ax === 3 ? 2 : 3;
+    if (z === 68) return ax === 3 ? 1 : ax === 2 ? 2 : 3;        // OB-071: rounder parietal
+    if (z === 67) return ax === 3 ? 2 : 3;
     if (z >= 63 && z <= 66) return ax <= 1 ? 4 : 3;                // occiput
     if (z === 62) return ax === 3 ? 2 : 3;
     if (z === 61) return 2;
@@ -224,8 +243,8 @@
   var HAIR_BOX = { X0: -5, Y0: -5, z0: 60, w: 11, d: 11, h: 12 };
   function hairZone(X, Y, z) {
     var ax = Math.abs(X);
-    if (z >= 70) return true;
-    if (z >= 68) return true;                                         // all round the top of the skull (hairline on the forehead top)
+    if (z >= 69) return true;                                         // all round the top of the skull
+    if (z === 68) return ax >= 3 || Y >= -1;                          // OB-071: the forehead keeps z 68 bare - hairline at z 69
     if (z === 67) return ax === 4 ? Y >= -2 : Y >= 3;                 // temples + the back
     if (z >= 64) return ax === 4 ? Y >= -1 : Y >= 3;                  // sides down to the ears (sideburn in front of the ear), back
     if (z >= 62) return ax === 4 ? Y >= 2 : Y >= 3;                   // behind the ears, nape
@@ -319,17 +338,17 @@
     Hips:  { joint: [0, 0.5, 34.0],  box: [-7, 7, -10, 9, 33, 40] },
     Spine: { joint: [0, 0.0, 41.0],  box: [-7, 7, -10, 9, 41, 47] },
     Chest: { joint: [0, 0.0, 48.0],  box: [-7, 7, -10, 9, 48, 58] },
-    Neck:  { joint: [0, 0.5, 59.0],  box: [-2, 2, -2, 2, 59, 59] },
+    Neck:  { joint: [0, 0.5, 59.0],  box: [-2, 2, -2, 3, 59, 59] },   // OB-071: nape at Y 3
     Head:  { joint: [0, 0.5, 61.0],  box: [-5, 5, -10, 9, 62, 71] },
     Jaw:   { joint: [0, 1.5, 62.0],  box: [-4, 4, -10, 9, 60, 61] }
   };
   var SIDE_BONES = {   // right side, X >= 0
     Shoulder: { joint: [4.0, 0.5, 57.0],  box: [8, 16, -10, 9, 55, 58] },
-    UpperArm: { joint: [10.0, 0.5, 55.5], box: [8, 16, -10, 9, 45, 54] },
-    LowerArm: { joint: [12.5, 0.5, 45.0], box: [8, 16, -10, 9, 35, 44] },
+    UpperArm: { joint: [9.0, 0.5, 55.5],  box: [8, 16, -10, 9, 45, 54] },   // OB-071: joints re-centred on the new volumes
+    LowerArm: { joint: [11.5, 0.0, 45.0], box: [8, 16, -10, 9, 35, 44] },
     Hand:     { joint: [12.5, -0.5, 35.0], box: [8, 16, -10, 9, 27, 34] },
     UpperLeg: { joint: [4.5, 0.0, 33.0],  box: [1, 9, -10, 9, 20, 32] },
-    LowerLeg: { joint: [4.0, 0.0, 20.0],  box: [1, 9, -10, 9, 3, 19] },
+    LowerLeg: { joint: [4.5, 0.0, 20.0],  box: [1, 9, -10, 9, 3, 19] },
     Foot:     { joint: [4.0, 0.0, 3.0],   box: [1, 9, -3, 9, 0, 2] },
     Toes:     { joint: [4.0, -4.5, 0.5],  box: [1, 9, -10, -4, 0, 2] }
   };
@@ -354,50 +373,51 @@
   // ===================================================================================================================
   // 6. BUILD THE BASE m_avg (rounded slices, anatomy zones of skin tone)
   // ===================================================================================================================
-  // torso rows: [z0, z1, half width, front Y, back Y, corner radius]
-  // OB-065 (owner: "this is a man, why it got tits?"): a MALE torso - the two pec mounds in front of the chest (with the
-  // gap between them, lit tops and a shadow under them) are gone; the front is one flat plane from the collar bones to
-  // the belt (Y -4), so a shirt hangs straight from the shoulders. Broad upper chest under the deltoids (half 7 from z 53),
-  // a straight waist (half 6, no hourglass pinch, no hollow in front), the lumbar hollow stays at the back.
+  // torso rows (OB-071): [z0, z1, half width, front Y, back Y, front exponent, back exponent] - every slice is a
+  // SUPERELLIPSE oval (`oval` below): exponent 3 in front = a flat male pec plane (OB-065: nothing in front of Y -4,
+  // no pec mounds), exponent 2 behind = a round back; the sides are round at every row. Ribcage half 7 tapers to the
+  // half-5 waist (belly set back one cell), hips widen again, round seat, trapezius slope into the neck ring.
   var TORSO = [
-    [33, 33, 7, -3, 3, 3],   // pelvis floor (crotch)
-    [34, 36, 7, -4, 4, 3],   // pelvis + seat
-    [37, 37, 7, -4, 3, 3],
-    [38, 40, 6, -4, 3, 3],   // hip crest, lower belly
-    [41, 43, 6, -4, 2, 3],   // waist (straight in front), lumbar hollow at the back
-    [44, 44, 6, -4, 3, 3],
-    [45, 47, 6, -4, 3, 3],   // lower ribs
-    [48, 49, 6, -4, 4, 3],   // ribcage
-    [50, 52, 6, -4, 4, 3],   // chest (flat front, shoulder blades behind)
-    [53, 54, 7, -4, 4, 3],   // broad upper chest under the deltoids
-    [55, 56, 7, -4, 3, 3],   // upper chest, collar bones
-    [57, 57, 6, -3, 3, 3],   // shoulder tops (trapezius)
-    [58, 58, 3, -2, 3, 2]    // neck base
+    [33, 33, 7, -3, 3, 2.5, 2],   // pelvic floor (crotch), the thighs hang from it
+    [34, 36, 7, -4, 4, 2.5, 2],   // pelvis + seat (round buttocks)
+    [37, 37, 7, -4, 3, 2.5, 2],
+    [38, 40, 6, -4, 3, 2.5, 2],   // hip crest, belt line, lower belly
+    [41, 43, 5, -3, 2, 2.5, 2],   // waist: an 11 x 6 oval, belly behind the chest plane, lumbar hollow at the back
+    [44, 46, 6, -4, 3, 2.5, 2],   // lower ribs
+    [47, 49, 6, -4, 4, 3, 2],     // ribcage widens, shoulder blades begin
+    [50, 55, 7, -4, 4, 3, 2],     // chest: flat pec plane in front, round sides, round back
+    [56, 56, 7, -4, 4, 2.5, 2],   // upper chest, collar bones (the deltoid caps sit beside it)
+    [57, 57, 5, -3, 3, 2, 2],     // trapezius slope toward the acromions
+    [58, 58, 3, -2, 3, 2, 2]      // neck base
   ];
-  // one-side limb slices (right side, X >= 0): [z0, z1, X0, X1, Y0, Y1, r]
+  // one-side limb slices (right side, X >= 0): [z0, z1, X0, X1, Y0, Y1, r] (rounded rectangles, r 2 cuts the corners)
   var ARM = [
-    [57, 57, 7, 9, -2, 2, 2],     // deltoid cap (acromion)
-    [55, 56, 7, 10, -3, 3, 2],    // deltoid bulge
-    [53, 54, 8, 11, -3, 2, 2],    // deltoid insertion
-    [47, 52, 9, 13, -2, 2, 2],    // biceps / triceps
-    [45, 46, 10, 14, -2, 2, 2],   // elbow
-    [40, 44, 10, 14, -2, 2, 2],   // forearm swelling under the elbow
-    [36, 39, 11, 14, -2, 1, 2],   // forearm
+    [56, 56, 7, 8, -1, 1, 0],     // acromion: the top of the deltoid cap, rounding off the trapezius slope
+    [55, 55, 7, 10, -3, 3, 2],    // deltoid cap
+    [53, 54, 8, 11, -3, 3, 2],    // deltoid, widest
+    [51, 52, 9, 12, -3, 2, 2],    // deltoid insertion
+    [48, 50, 10, 13, -2, 2, 2],   // biceps / triceps (4 wide, 5 deep)
+    [45, 47, 10, 13, -2, 1, 2],   // taper to the elbow (the olecranon point sits at Y 2)
+    [41, 44, 10, 14, -3, 1, 2],   // forearm: widest just under the elbow, one cell forward = the slight natural bend
+    [38, 40, 11, 14, -3, 1, 2],   // forearm narrows
+    [36, 37, 11, 14, -3, 0, 2],
     [35, 35, 11, 13, -2, 1, 0]    // wrist (flat oval)
   ];
   var LEG = [
-    [29, 32, 2, 7, -3, 3, 3],     // upper thigh
-    [25, 28, 2, 7, -3, 2, 3],     // mid thigh
-    [21, 24, 2, 6, -2, 2, 2],     // lower thigh
-    [19, 20, 2, 6, -3, 2, 2],     // knee (cap forward)
-    [15, 18, 2, 6, -2, 3, 2],     // calf (bulge back)
-    [11, 14, 3, 6, -2, 2, 2],     // lower calf
-    [8, 10, 3, 6, -2, 1, 2],      // above the ankle
-    [3, 7, 3, 5, -2, 1, 0]        // ankle
+    [29, 32, 2, 7, -3, 3, 3],     // upper thigh, 6 wide at the hip (X -1..1 stay empty: the rig needs the thigh gap)
+    [26, 28, 2, 7, -3, 2, 3],
+    [23, 25, 2, 6, -3, 2, 2],     // thigh tapers
+    [21, 22, 3, 6, -2, 2, 2],     // above the knee
+    [19, 20, 3, 6, -3, 2, 2],     // knee (cap forward)
+    [17, 18, 3, 6, -2, 3, 2],     // calf head (bulge back)
+    [14, 16, 2, 6, -2, 3, 2],     // calf, widest - bulges back and in
+    [11, 13, 3, 6, -2, 2, 2],     // lower calf
+    [3, 10, 3, 5, -2, 1, 0]       // shin + ankle (inside the boot)
   ];
+  function armRow(z) { for (var i = 0; i < ARM.length; i++) if (z >= ARM[i][0] && z <= ARM[i][1]) return ARM[i]; return null; }
 
   function buildBase() {
-    var N = SX * SY * SZ, G = new Array(N), X, Y, z, i;
+    var N = SX * SY * SZ, G = new Array(N), X, Y, z, i, ar;
     for (i = 0; i < N; i++) G[i] = '.';
     function put(X, Y, z, ch) { var q = idx(X, Y, z); if (q >= 0) G[q] = ch; }
     function get(X, Y, z) { var q = idx(X, Y, z); return q < 0 ? '.' : G[q]; }
@@ -407,38 +427,50 @@
         put(xx, yy, z, ch || 'a');
       }
     }
+    // OB-071 superellipse slice centred on X 0: |X / (hw + .5)|^p + |(Y - yc) / (d + .5)|^p <= 1, the front half (Y < yc)
+    // with exponent pF (3 = a flat pec plane, 2.5 = a gently rounded belly), the back half with pB (2 = round)
+    function oval(z, hw, yF, yB, pF, pB, ch) {
+      var yc = (yF + yB) / 2;
+      for (var yy = yF; yy <= yB; yy++) {
+        var front = yy < yc, d = front ? yc - yF : yB - yc, p = front ? pF : pB, fy = Math.pow(Math.abs(yy - yc) / (d + 0.5), p);
+        for (var xx = -hw; xx <= hw; xx++) if (Math.pow(Math.abs(xx) / (hw + 0.5), p) + fy <= 1) put(xx, yy, z, ch || 'a');
+      }
+    }
     function slabPair(z, X0, X1, Y0, Y1, r, ch) { slab(z, X0, X1, Y0, Y1, r, ch); slab(z, -X1, -X0, Y0, Y1, r, ch); }
-    function pp(X, Y, z, ch) { put(X, Y, z, ch); put(-X, Y, z, ch); }
+    function pp(X, Y, z, ch) { put(X, Y, z, ch || 'a'); put(-X, Y, z, ch || 'a'); }
     // tint only an existing skin cell (never adds geometry)
     function tint(X, Y, z, ch) { var q = idx(X, Y, z); if (q >= 0 && G[q] === 'a') G[q] = ch; }
     function tintPair(X, Y, z, ch) { tint(X, Y, z, ch); tint(-X, Y, z, ch); }
 
-    // ---- torso
-    TORSO.forEach(function (r) { for (z = r[0]; z <= r[1]; z++) slab(z, -r[2], r[2], r[3], r[4], r[5]); });
+    // ---- torso: oval slices (OB-071)
+    TORSO.forEach(function (r) { for (z = r[0]; z <= r[1]; z++) oval(z, r[2], r[3], r[4], r[5], r[6]); });
     // (OB-065: no pec mounds - the male chest is the flat TORSO front; the pec edge is only a tint, see skin zones)
-    // ---- neck ring (z 57-59; 57-58 sit inside the torso slices)
-    for (z = 57; z <= 59; z++) slab(z, -2, 2, -2, 2, 2);
+    // ---- neck ring (z 57-59; 57-58 sit inside the torso slices): 5 wide, 6 deep (nape at Y 3), corners cut
+    for (z = 57; z <= 59; z++) slab(z, -2, 2, -2, 3, 2);
     // ---- arms (both sides)
     ARM.forEach(function (r) { for (z = r[0]; z <= r[1]; z++) slabPair(z, r[2], r[3], r[4], r[5], r[6]); });
-    pp(12, 3, 45, 'a');                                                           // elbow point (olecranon)
-    // ---- hands: palm 2 thick (X 12-13) z 31-34, fingers along Y (index -2 .. little 1), 2 thick at the base, 1 at the tips
-    for (z = 31; z <= 34; z++) for (Y = -2; Y <= 1; Y++) { pp(12, Y, z, 'a'); pp(13, Y, z, 'a'); }
+    pp(12, 2, 45);                                                                // elbow point (olecranon) behind the joint
+    // ---- hands: palm 2 thick (X 12-13) z 31-34, fingers along Y (index -2 .. little 1), 2 thick at the base; the lower
+    // phalanges curl in to X 12 (a relaxed hang, the back of the hand at X 13 stays flat)
+    for (z = 31; z <= 34; z++) for (Y = -2; Y <= 1; Y++) { pp(12, Y, z); pp(13, Y, z); }
     var FINGER_TOP = { '-2': 28, '-1': 27, '0': 28, '1': 29 };                    // lowest row of each finger
-    for (Y = -2; Y <= 1; Y++) for (z = FINGER_TOP[String(Y)]; z <= 30; z++) { pp(13, Y, z, 'a'); if (z >= 29) pp(12, Y, z, 'a'); }
-    for (Y = -2; Y <= 1; Y++) pp(13, Y, FINGER_TOP[String(Y)], 'n');              // nails on the fingertips
-    pp(12, -3, 32, 'a'); pp(13, -3, 32, 'a'); pp(12, -3, 33, 'a'); pp(13, -3, 33, 'a');   // thumb base, pointing forward
-    pp(13, -4, 32, 'a'); pp(13, -4, 31, 'n');                                       // thumb tip + nail
+    for (Y = -2; Y <= 1; Y++) for (z = FINGER_TOP[String(Y)]; z <= 30; z++) { pp(12, Y, z); if (z >= 29) pp(13, Y, z); }
+    for (Y = -2; Y <= 1; Y++) pp(12, Y, FINGER_TOP[String(Y)], 'n');              // nails on the fingertips
+    for (z = 31; z <= 33; z++) { pp(12, -3, z); pp(13, -3, z); }                  // thumb: 2 thick down the palm's front edge
+    pp(12, -4, 31); pp(13, -4, 31); pp(12, -4, 30, 'n');                          // angling forward + down to the tip + nail
     // ---- legs
     LEG.forEach(function (r) { for (z = r[0]; z <= r[1]; z++) slabPair(z, r[2], r[3], r[4], r[5], r[6]); });
-    // ---- feet: instep, foot with heel, sole with toes (toes Y <= -4 = the Toes bone)
-    slabPair(2, 2, 6, -4, 2, 2);
-    slabPair(1, 2, 6, -6, 3, 2);
-    slabPair(0, 2, 6, -7, 3, 2);
-    // ---- relief for the clothes (outer / front / back only; the arm + thigh gaps stay)
-    slabPair(42, 15, 15, -1, 1, 0); for (X = 11; X <= 14; X++) { pp(X, -3, 42, 'a'); pp(X, 3, 42, 'a'); }   // rolled-cuff ring
-    slabPair(10, 7, 7, -2, 1, 0); for (X = 3; X <= 6; X++) { pp(X, -3, 10, 'a'); pp(X, 2, 10, 'a'); }       // boot-top rim
+    // ---- feet (OB-071): a wedge - instep z 2, foot z 1, sole z 0 - with a slanting toe line (the big toe at X 2 is the
+    // longest, the little toe ends a cell earlier) and a round heel (Y 3 only at X 3-5); toes Y <= -4 = the Toes bone.
+    // The thick-1 boot shell grows a sloping toe box and a rounded heel from this (no welt, no stacked rims).
+    slabPair(2, 2, 6, -3, 2, 0); for (X = 3; X <= 5; X++) pp(X, -4, 2);
+    slabPair(1, 2, 6, -5, 2, 0); for (X = 3; X <= 5; X++) pp(X, 3, 1); for (X = 2; X <= 4; X++) pp(X, -6, 1);
+    slabPair(0, 2, 6, -6, 2, 0); for (X = 3; X <= 5; X++) pp(X, 3, 0); for (X = 2; X <= 4; X++) pp(X, -7, 0);
+    // ---- relief for the clothes
+    slabPair(42, 15, 15, -2, 0, 0); for (X = 11; X <= 13; X++) { pp(X, -4, 42); pp(X, 2, 42); }           // rolled-cuff ring
+    for (Y = -2; Y <= 0; Y++) pp(9, Y, 42);                                                                 //   (inner side too)
+    for (z = 11; z <= 12; z++) slabPair(z, 2, 7, -3, 3, 2);                                                // trouser hem bunching over the boot top (boots end at z 10)
     for (X = -1; X <= 1; X++) { put(X, -5, 39, 'a'); put(X, -5, 40, 'a'); }                                 // belt-buckle bump
-    slabPair(0, 7, 7, -5, 2, 0); for (X = 3; X <= 5; X++) { pp(X, -8, 0, 'a'); pp(X, 4, 0, 'a'); }         // sole welt
     // ---- head (profile-built, see headChar)
     for (z = 60; z <= 69; z++) for (Y = -6; Y <= 5; Y++) for (X = -4; X <= 4; X++) {
       var hc = headChar(X, Y, z);
@@ -446,36 +478,37 @@
     }
     // ---- skin zones
     if (DETAIL.skinZones) {
-      // throat + under the chin
-      for (z = 57; z <= 59; z++) for (X = -2; X <= 2; X++) tint(X, -2, z, 's');
+      // throat + under the chin (Adam's apple left base)
+      for (z = 57; z <= 59; z++) for (X = -1; X <= 1; X++) tint(X, -2, z, 's');
       tint(0, -2, 58, 'a'); tint(0, -2, 59, 'a');
-      // shoulder tops, collar bones, pec tops
-      for (X = 7; X <= 9; X++) tintPair(X, -1, 57, 'l'), tintPair(X, 0, 57, 'l');
-      for (X = 1; X <= 5; X++) tintPair(X, -4, 56, 'l');
-      for (X = 3; X <= 5; X++) tintPair(X, -4, 51, 's');                    // flat pec edge (outer only, no centre line)
+      // trapezius slope lit, deltoid cap tops lit, collar bones, the lower pec edge
+      for (X = 3; X <= 5; X++) { tintPair(X, -1, 57, 'l'); tintPair(X, 0, 57, 'l'); }
+      for (Y = -1; Y <= 1; Y++) tintPair(8, Y, 56, 'l');
+      tintPair(7, 0, 56, 'l');
+      for (X = 1; X <= 4; X++) tintPair(X, -4, 56, 'l');
+      for (X = 2; X <= 4; X++) tintPair(X, -4, 50, 's');                    // flat pec edge (outer only, no centre line)
       // armpits (torso sides under the deltoids) + the core
-      for (z = 50; z <= 53; z++) for (Y = -2; Y <= 2; Y++) tintPair(6, Y, z, 's');
-      tintPair(6, 0, 52, 'd');
+      for (z = 50; z <= 52; z++) for (Y = -1; Y <= 1; Y++) tintPair(7, Y, z, 's');
+      tintPair(7, 0, 51, 'd');
       // navel, spine groove, gluteal cleft, crotch shadow
-      tint(0, -4, 41, 'd');
+      tint(0, -3, 41, 'd');
       for (z = 41; z <= 47; z++) tint(0, headBackTorso(z), z, 'd');
       for (z = 48; z <= 54; z++) tint(0, 4, z, 'd');
       for (z = 34; z <= 36; z++) tint(0, 4, z, 'd');
       for (z = 31; z <= 32; z++) for (Y = -1; Y <= 1; Y++) tintPair(2, Y, z, 'd');
-      for (z = 20; z <= 30; z++) for (Y = -2; Y <= 2; Y++) tintPair(2, Y, z, 's');   // inner thighs
+      for (z = 20; z <= 30; z++) for (Y = -2; Y <= 2; Y++) tintPair(z >= 23 ? 2 : 3, Y, z, 's');   // inner thighs
       for (z = 19; z <= 20; z++) for (X = 3; X <= 5; X++) { tintPair(X, -3, z, 'l'); tintPair(X, 2, z, 's'); }   // kneecap, back of the knee
       tintPair(4, -3, 19, 'f');
       for (z = 8; z <= 14; z++) tintPair(4, -2, z, 'l');                     // shin ridge
       tintPair(5, 0, 3, 'l'); tintPair(3, 0, 4, 'l');                         // ankle bones
       for (X = 3; X <= 5; X++) { tintPair(X, -4, 2, 'l'); tintPair(X, -3, 2, 'l'); }   // top of the foot
-      for (Y = -4; Y <= 3; Y++) for (X = 2; X <= 7; X++) tintPair(X, Y, 0, 's');     // sole
-      for (X = 3; X <= 5; X++) tintPair(X, -8, 0, 's');
-      tintPair(4, -7, 0, 'd'); tintPair(4, -7, 1, 'd');                      // between the toes
-      // arms: inner sides shaded, outer top lit, elbow flushed, veins
-      for (z = 47; z <= 52; z++) for (Y = -1; Y <= 1; Y++) tintPair(9, Y, z, 's');
-      for (z = 36; z <= 44; z++) for (Y = -1; Y <= 1; Y++) tintPair(z >= 40 ? 10 : 11, Y, z, 's');
-      for (z = 40; z <= 44; z++) tintPair(14, 0, z, 'l');
-      tintPair(12, 3, 45, 'f'); tintPair(14, -1, 39, 'v');
+      for (Y = -6; Y <= 3; Y++) for (X = 2; X <= 6; X++) tintPair(X, Y, 0, 's');     // sole
+      tintPair(3, -7, 0, 'd'); tintPair(3, -6, 1, 'd');                      // between the big toe and the next
+      // arms: inner sides shaded, outer forearm lit, elbow flushed, veins (positions follow the ARM table)
+      for (z = 47; z <= 52; z++) { ar = armRow(z); for (Y = -1; Y <= 1; Y++) tintPair(ar[2], Y, z, 's'); }
+      for (z = 36; z <= 44; z++) { ar = armRow(z); for (Y = -2; Y <= 0; Y++) tintPair(ar[2], Y, z, 's'); }
+      for (z = 40; z <= 44; z++) tintPair(armRow(z)[3], -1, z, 'l');
+      tintPair(12, 2, 45, 'f'); tintPair(14, -2, 39, 'v');
       // hands: palm shaded, back of the hand lit with knuckles and a vein, thumb crease
       for (z = 31; z <= 33; z++) for (Y = -2; Y <= 1; Y++) tintPair(12, Y, z, 's');
       for (Y = -2; Y <= 1; Y++) { tintPair(13, Y, 32, 'l'); tintPair(13, Y, 31, 'l'); }
@@ -836,7 +869,7 @@
     var PATCHES = [
       ['front', -5, -2, 49, 52, '2', 'U', '3'],    // left chest
       ['back', -5, -2, 50, 53, '2', '4', '3'],     // left shoulder blade
-      ['right', -1, 2, 43, 46, '2', 'U', '3'],     // right elbow, outer side
+      ['right', -2, 1, 43, 46, '2', 'U', '3'],     // right elbow, outer side (OB-071: the elbow / forearm span Y -3..1)
       ['back', -14, -11, 43, 46, '2', '4', '3'],   // left elbow, back
       ['front', 3, 6, 18, 21, '5', '1', '6'],      // right knee
       ['front', -6, -3, 24, 27, '5', 'U', '6']     // left thigh
@@ -948,7 +981,7 @@
       kind: 'charkit',
       schema: 1,
       id: KIT_ID,
-      name: 'Kestrel human kit v5 (OB-065)',
+      name: 'Kestrel human kit v6 (OB-071 shape pass)',
       cellM: CELL,
       axes: 'cells; x = east (the character\'s right), y = south (the character faces north, -y), z = up; ' +
             'layers[z][y] = string of x; joints / anchors / mount positions are continuous cell coordinates',
@@ -1318,7 +1351,7 @@
   }
 
   var api = {
-    version: 5, KIT_ID: KIT_ID, knightLook: knightLook, fenLook: fenLook, CELL: CELL, SKELETON: SKELETON, PART_MAP: PART_MAP, MAX_PARTS: MAX_PARTS,
+    version: 6, KIT_ID: KIT_ID, knightLook: knightLook, fenLook: fenLook, CELL: CELL, SKELETON: SKELETON, PART_MAP: PART_MAP, MAX_PARTS: MAX_PARTS,
     STRETCH_BONES: STRETCH_BONES, ARM_STRETCH: ARM_STRETCH, DETAIL: DETAIL,
     buildHumanKit: buildHumanKit, stringifyKit: stringifyKit, decodeBase: decodeBase, resolveMat: resolveMat,
     countQuads: countQuads, checkKit: checkKit, decodeDetail: decodeDetail, downsample2: downsample2,

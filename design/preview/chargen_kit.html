@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Kestrel - OB-065 preview: human kit v5 (male chest, face) vs v4, default / knight / Fen outfits</title>
+<title>Kestrel - OB-071 preview: human kit v6 (shape pass) vs v5, default / knight / Fen outfits</title>
 <style>
   body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
   h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
@@ -29,7 +29,7 @@
 </style>
 </head>
 <body>
-<h1>Kestrel : OB-065 preview - base <code>m_avg</code> v5 (flat male chest, face pass) - before (v4) vs after (v5) in section 0</h1>
+<h1>Kestrel : OB-071 preview - base <code>m_avg</code> v6 (shape pass: oval torso, trapezius, tapered limbs, wedge feet) - before (v5) vs after (v6) in section 0</h1>
 <div class="note">
   Kit = <code>content/chargen/human.charkit.json</code> (the only source), written by <code>node tools/chargen-build-kit.mjs</code> from
   <code>design/chargen/human_kit.js</code>. OB-025 (owner: "look how detailed the bear is ... a bigger model, a bit more realistic"): same
@@ -41,8 +41,12 @@
   openings, half-cell nose tip, ear hole, dimple). New kit.clips <code>idle</code> (breath) and <code>walk</code>.
   OB-065 (v5): flat male chest (no pec mounds, the shirt hangs straight), face pass (eyes beside the bridge, white - iris - white set
   half a cell proud of the socket, lids, 2-row brows, nose bridge / wings / nostrils, upper lip - mouth line - lower lip, no pink cheeks).
-  "version" switches sections 1-4 between AFTER (the generator, v5) and BEFORE (v4: <code>design/chargen/human_kit_v4.charkit.json</code>,
-  written with <code>git show HEAD:content/chargen/human.charkit.json | Out-File -Encoding utf8 design/chargen/human_kit_v4.charkit.json</code>
+  OB-071 (v6, owner: "still shape better"): superellipse torso slices (flat pec plane, round sides and back, ribcage tapering to an
+  11 x 6 waist, hips + round seat), a trapezius slope into a deeper neck, round deltoid caps, arms that swell at the deltoid / under the
+  elbow and narrow at the wrist with a slight bend, curled fingers + a thumb, thighs tapering to the knee, calf bulge, 3 x 4 ankles,
+  trouser hems breaking over the boots, wedge feet (sloping toe box, round heel), a rounder skull with the hairline at z 69.
+  "version" switches sections 1-4 between AFTER (the generator, v6) and BEFORE (v5: <code>design/chargen/human_kit_v5.charkit.json</code>,
+  written with <code>git show HEAD:content/chargen/human.charkit.json | Out-File -Encoding utf8 design/chargen/human_kit_v5.charkit.json</code>
   BEFORE the kit JSON is rebuilt; until then the stale content JSON is used).
   Section 1 = lit mesh look (flat cubes, palette colours, key + sky light + shadows: roughly the exported <code>.glb</code> in three.js).
   Section 3 = in-game ASCII. Section 4 = rig + test poses (incl. the clip keys). Needs http: <code>python -m http.server</code> from the repo root.
@@ -58,7 +62,7 @@
   <label>view turn <input type="range" id="yaw" min="-180" max="180" step="5" value="0"><span class="val" id="yawV"></span></label>
   <label>view pitch <input type="range" id="pitch" min="-10" max="60" step="1" value="8"><span class="val" id="pitchV"></span></label>
   <label><input type="checkbox" id="spin"> turntable</label>
-  <label>version <select id="ver"><option value="v4">AFTER: v5 (OB-065, generator)</option><option value="v3">BEFORE: v4 (JSON snapshot)</option></select></label>
+  <label>version <select id="ver"><option value="v4">AFTER: v6 (OB-071, generator)</option><option value="v3">BEFORE: v5 (JSON snapshot)</option></select></label>
   <label>outfit <select id="outfit"><option value="default">default (kit.defaults)</option><option value="knight">knight (kit.looks.knight)</option><option value="fen">Fen (kit.looks.fen)</option><option value="bare">bare base</option></select></label>
   <label>eyes <select id="eyes"></select></label>
   <label>hair + brows <select id="hair"></select></label>
@@ -67,12 +71,13 @@
 <h2>Checks</h2>
 <div id="checks"><div class="info">building ...</div></div>
 
-<h2>0. OB-065 before / after: v4 (BEFORE) vs v5 (AFTER, generator) - default, knight, Fen, bare (skin tone = section 2 buttons, light = sliders)</h2>
+<h2>0. OB-071 before / after: v5 (BEFORE) vs v6 (AFTER, generator) - default, knight, Fen, bare (skin tone = section 2 buttons, light = sliders)</h2>
 <div class="note">
   Each pair of rows = the same recipe on both kits: face front / 3/4 / profile / back (2.5 cm head), body front / 3/4 / profile / back,
   then the "head 1.25 cm" close-ups (the authored <code>detail.head["2"]</code> block = the chargen tool at Head detail "Fine 1.25 cm" and what
-  "Save for game" keeps). Look at the "bare" rows for the chest (v5: flat male chest, no pec mounds) and the 1.25 cm rows for the face.
-  BEFORE = <code>design/chargen/human_kit_v4.charkit.json</code> if present, else <code>content/chargen/human.charkit.json</code> while it is
+  "Save for game" keeps). Look at the "bare" rows for the silhouette (v6: oval torso, shoulder slope, tapered limbs, wedge feet) and the
+  default rows for how the shirt / trousers / boots follow it; the face (v5) should look the same.
+  BEFORE = <code>design/chargen/human_kit_v5.charkit.json</code> if present, else <code>content/chargen/human.charkit.json</code> while it is
   still the old (stale) kit. If the BEFORE row says "kit missing", write the snapshot (command in the checks).
 </div>
 <div id="compare"></div>
@@ -573,7 +578,7 @@
     var out = [], res = CK.checkKit(kit, P, DP), st = res.stats.bases.m_avg;
     lastStats = st;
     out.push(jsonLine); out.push(v3Line);
-    out.push(['info', 'INFO showing ' + (kit === kitV3 ? 'BEFORE (v4)' : 'AFTER (v5 generator)') + ' in sections 1-4; clips: ' + Object.keys(kit.clips || {}).join(', ')]);
+    out.push(['info', 'INFO showing ' + (kit === kitV3 ? 'BEFORE (v5)' : 'AFTER (v6 generator)') + ' in sections 1-4; clips: ' + Object.keys(kit.clips || {}).join(', ')]);
     out.push([res.errors.length ? 'fail' : 'pass', (res.errors.length ? 'FAIL ' : 'PASS ') + 'checkKit: ' + (res.errors.slice(0, 8).join(' ; ') || 'no errors')]);
     if (res.warnings.length) out.push(['warn', 'WARN ' + res.warnings.join(' ; ')]);
     out.push(['info', 'INFO m_avg base: ' + st.voxels + ' voxels, ' + st.quads + ' quads (per-bone greedy), ' +
@@ -674,8 +679,8 @@
   renderAll();
   spin();
 
-  // OB-065 before / after: "before" = the v4 snapshot (preferred), else the content JSON while it is still stale
-  var OLD_SNAPSHOT = '../chargen/human_kit_v4.charkit.json', oldFromSnapshot = false;
+  // OB-071 before / after: "before" = the v5 snapshot (preferred), else the content JSON while it is still stale
+  var OLD_SNAPSHOT = '../chargen/human_kit_v5.charkit.json', oldFromSnapshot = false;
   function useOld(text, src, snap) {
     var k = JSON.parse(text.replace(/^﻿/, ''));
     if (!k.looks) k.looks = {};
@@ -709,7 +714,7 @@
   }).catch(function (e) {
     if (!kitV3) {
       v3Line = ['warn', 'WARN old kit snapshot ' + OLD_SNAPSHOT.replace('../', 'design/') + ' not readable (' + e.message + '): write it with ' +
-                'git show HEAD:content/chargen/human.charkit.json | Out-File -Encoding utf8 design/chargen/human_kit_v4.charkit.json ' +
+                'git show HEAD:content/chargen/human.charkit.json | Out-File -Encoding utf8 design/chargen/human_kit_v5.charkit.json ' +
                 '(until the kit JSON is rebuilt, the stale content JSON is used as "before")'];
       runChecks();
     }

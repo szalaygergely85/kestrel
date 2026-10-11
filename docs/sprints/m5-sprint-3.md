@@ -85,3 +85,29 @@ Clarity fixes from the M4-C2 gap table; EQ-22 / US-129b tier look (owner); Outwa
 3. **REGION-01:** banner on the first entry per save plus re-entry after 10 min (PO default), or only on the first entry ever?
 4. **US-104a:** 4 hidden chests on this side of the river OK, or a different count?
 5. Not planned, asking only: do you want a Controls page in the pause menu (a list of all keys)? This would be a new feature, so it is not in the sprint unless you say yes.
+
+## Sprint review (PC-B PO opus, 2026-10-11; manager to ratify)
+
+All 6 stories were implemented today. None is `done` yet: each waits for the PO verdict and, where marked, an owner look.
+
+| id | result | status |
+|---|---|---|
+| FS-01 | 7 M4 action hints on the hints.js FIFO, key labels from the binding table, no Esc text | po-review (owner look: Q2 hint list) |
+| M4-C2 | Ch1-2 run script + dev mode built, Node part green. The **browser run is still pending**, so there is no guidance-gap table yet | po-review once the browser run and report exist |
+| US-104a | 4 hidden chests off the Ch1-2 path, deterministic generator | po-review (owner look: Q4 count) |
+| REGION-01 | Region-entry banner with the approved place names | po-review (owner look: Q3 re-entry rule) |
+| QL-19b | Wet ford stones slow a sprint without River Boots | po-review |
+| INT-HL-01 | Faint highlight on usable things in range (architect note written) | po-review / owner look (Q1 look) |
+
+Owner and playtester bug flow today: **33 reports (OB-045..OB-077)** went into docs/bugs.md. Most are fixed in today's commits and wait for the owner to verify them. Still open: the chargen human (OB-069/070/071), the ground look (OB-073, top priority) and a handful of world-look rows (OB-059..062).
+
+Not done in the sprint: the guidance-gap table that should drive the clarity fixes. It needs the M4-C2 browser run, which is carried over to sprint 4.
+
+## Missing to be playable (gap list, from bugs.md themes)
+1. **First-session clarity.** Reading notes broke after the merge (OB-055). The note close key is unclear (OB-056). Notes must freeze movement (OB-057). Prompts must name the object (OB-058). There is no measured guidance-gap table yet (M4-C2 browser run).
+2. **Interaction.** The `[E]` prompt picks an object that is off-screen or off to the side (OB-063, OB-066). After Esc closes pause, the mouse look does not come back (OB-068, OB-072).
+3. **Ground and world look.** The ground squares shimmer and then turned into big flat blocks (OB-054/067/073). Water at the ford looks flat with hard edges (OB-062). Far trees draw as dark blobs (OB-061). A floating dark J-shape hangs in the sky (OB-059). Beams float in the air near crates (OB-060). Faces z-fight (OB-053).
+4. **Combat and loot.** All fixed today, owner to verify: the sword never hit the Ford boars or wolves (OB-076, cap 16 -> 64); loot waits in the corpse until E (OB-064/074); a `Looted: X` toast replaces the big card (OB-075); HP regenerates out of combat (OB-077).
+5. **Sign-off.** M4-C1 (PO batch verdict + tester on the old po-review rows) and the owner walk (QL-20 / EQ-14) have not happened yet.
+
+**Owner walk-test request:** once OB-055 and OB-073 are in, please walk docs/sprints/m4-review-2026-10-11.md section 4 (15-20 min). On the way, check the FS-01 hints, the region banner, one hidden chest and the highlight.
