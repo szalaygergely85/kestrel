@@ -7,7 +7,8 @@
 
 export const STATE_NAMES = ['idle', 'graze', 'move', 'flee', 'alert']; // fallback when the data has no `states`
 export const HAB_MEADOW = 1, HAB_EDGE = 2, HAB_FOREST = 4;
-const HAB_BITS = { meadow: HAB_MEADOW, edge: HAB_EDGE, forest: HAB_FOREST };
+export const HAB_RIVER = 8; // WILD-05: meadow cell next to water (the game ORs it onto the meadow / edge bit)
+const HAB_BITS = { meadow: HAB_MEADOW, edge: HAB_EDGE, forest: HAB_FOREST, riverbank: HAB_RIVER };
 
 /** Per-species-name defaults of the `spawn` block (38.31 item 2). Unknown names fall back to GENERIC. */
 const GENERIC = { spawnMaxM: 80, drawM: 40, cap: 6, kind: 'ground' };
@@ -20,7 +21,8 @@ const NAME_DEFAULTS = {
 };
 const KINDS = ['ground', 'climber', 'flyer'];
 const KNOWN_KEYS = new Set(['models', 'clipFor', 'enter', 'once', 'extra', 'gaits', 'speeds', 'dist', 'times', 'flee',
-  'blendMs', 'groupSize', 'buckChance', 'habitat', 'note', 'spawn', 'bodyR', 'trunkR', 'perchByModel']);
+  'blendMs', 'groupSize', 'buckChance', 'habitat', 'note', 'spawn', 'bodyR', 'trunkR', 'perchByModel', 'kind', 'flight', 'climb',
+  'variantChance', 'perchFrom']);
 const KNOWN_SPAWN_KEYS = new Set(['habitats', 'cellChance', 'spawnMinM', 'spawnMaxM', 'despawnM', 'drawM', 'cap', 'kind']);
 const warned = new Set();
 
@@ -28,6 +30,13 @@ function warnOnce(msg, warn) {
   if (warned.has(msg)) return;
   warned.add(msg);
   (warn || console.warn)(msg);
+}
+
+/** speeds, plus flyMin / flyMax from flight.speedMps (flyerBrain reads those). */
+function flightSpeeds(a) {
+  const sp = a.speeds || {};
+  if (!a.flight || !a.flight.speedMps || sp.flyMin !== undefined) return sp;
+  return Object.assign({}, sp, { flyMin: a.flight.speedMps[0], flyMax: a.flight.speedMps[1] });
 }
 
 function fail(sp, key, why) { throw new Error(`faunaDef: species "${sp}" ${key}: ${why}`); }
@@ -74,6 +83,9 @@ export function compileFaunaDef(wildlifeFx, models, opts) {
     for (const c of Object.keys(a.once || {})) { add(c); add(a.once[c]); }
     for (const c of Object.keys(a.extra || {})) add(a.extra[c]);
     for (const g of (a.gaits || [])) add(g.clip);
+    // WILD-05: flyer clips (flight { takeoff, glide, land }) and climber clips (climb { clip, peek }) live in their own blocks
+    if (a.flight) for (const k of ['takeoff', 'glide', 'land']) add(a.flight[k]);
+    if (a.climb) { add(a.climb.clip); add(a.climb.peek); }
     const clips = {};
     for (let m = 0; m < a.models.length; m++) {
       const pm = lookupModel(models, a.models[m]);
@@ -91,6 +103,8 @@ export function compileFaunaDef(wildlifeFx, models, opts) {
     for (const st of Object.keys(a.enter || {})) enter[st] = clips[a.enter[st]];
     const extra = {};
     for (const c of Object.keys(a.extra || {})) extra[c] = clips[a.extra[c]];
+    if (a.flight) for (const k of ['takeoff', 'glide', 'land']) if (a.flight[k] !== undefined) extra[k] = clips[a.flight[k]];
+    if (a.climb) { extra.climb = clips[a.climb.clip]; if (a.climb.peek !== undefined) extra.peek = clips[a.climb.peek]; }
     const once = {}; // clip index -> next clip index
     for (const c of Object.keys(a.once || {})) once[clips[c]] = clips[a.once[c]];
 
@@ -135,16 +149,18 @@ export function compileFaunaDef(wildlifeFx, models, opts) {
     const drawM = num(name, 'spawn.drawM', sp.drawM, dflt.drawM);
     const cap = num(name, 'spawn.cap', sp.cap, dflt.cap);
     if (!(cap >= 1) || cap !== Math.floor(cap)) fail(name, 'spawn.cap', `must be an integer >= 1, got ${cap}`);
-    const kind = sp.kind === undefined ? dflt.kind : sp.kind;
+    const kind = sp.kind === undefined ? (a.kind === undefined ? dflt.kind : a.kind) : sp.kind;
     if (!KINDS.includes(kind)) fail(name, 'spawn.kind', `must be one of ${KINDS.join('|')}, got "${kind}"`);
     const gs = pair(name, 'groupSize', a.groupSize, [1, 1]);
     if (gs[0] < 1 || gs[0] !== Math.floor(gs[0]) || gs[1] !== Math.floor(gs[1])) fail(name, 'groupSize', 'needs integers >= 1');
 
     species.push({
       index: k, name, kind, models: a.models.slice(), states, clipFor, enter, extra, once, gaits,
-      speeds: a.speeds || {}, dist: { notice: d.notice, alert: d.alert, flee: d.flee, fleeIfRunning, safe: d.safe },
+      speeds: flightSpeeds(a), dist: { notice: d.notice, alert: d.alert, flee: d.flee, fleeIfRunning, safe: d.safe },
       times: a.times || {}, flee: a.flee || {}, blendMs: num(name, 'blendMs', a.blendMs, 120),
-      groupSize: gs, buckChance: num(name, 'buckChance', a.buckChance, 0), bodyR: num(name, 'bodyR', a.bodyR, 0.4),
+      groupSize: gs, buckChance: num(name, 'buckChance', a.buckChance, a.variantChance && a.models.length > 1 ? 1 - (a.variantChance[a.models[0]] === undefined ? 1 : a.variantChance[a.models[0]]) : 0),
+      climb: a.climb ? { tunedMps: a.climb.tunedMps || 1.2, rate: a.climb.rate || [0.6, 1.6], heightM: a.climb.heightM || [2, 5], bodyLiftM: a.climb.bodyLiftM || 0 } : null,
+      flight: a.flight || null, perchFrom: a.perchFrom || null, bodyR: num(name, 'bodyR', a.bodyR, 0.4),
       habitatMask: mask, cellChance, spawnMinM, spawnMaxM, despawnM, drawM, cap,
       hideOrDespawn: !!(a.flee && a.flee.hideOrDespawn),
     });

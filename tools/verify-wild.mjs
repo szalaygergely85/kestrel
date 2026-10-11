@@ -52,6 +52,11 @@ try {
   }
   if (!seen) console.log('last wild =', await evaluate(cdp, 'JSON.stringify([window.__debug.wild, (()=>{const t=window.__debug.playerHandle.data.transform;return [t.x,t.y]})(), Object.keys(window.__debug.rt).join(), location.search, !!window.__debug.world, window.__debug.rt.mode, document.title])'), JSON.stringify(errors));
   assert.ok(seen, `no animal alive+drawn within 40 s (max alive ${alive}, max drawn ${drawn})`);
+  // WILD-05: the new species spawn near the meadow (step the fauna through four spots, read the live slot species)
+  const sp5 = JSON.parse(await evaluate(cdp, '(()=>{const W=window.__debug.wildRaw; if(!W||!W.w) return "{}"; const out={}; for(const [x,y] of [[1460,1035],[1420,1032],[1350,1050],[1450,960]]){ W.w.reset(); for(let i=0;i<1500;i++) W.w.step(1/60,x+Math.cos(i/90)*10,y+Math.sin(i/90)*10,false,0); for(const s of W.w.fauna.slots) if(s.alive){const n=W.w.fauna.def.species[s.species].name; out[n]=(out[n]||0)+1;} } return JSON.stringify(out); })()') || '{}');
+  console.log('[3b] species seen near the meadow:', JSON.stringify(sp5));
+  for (const n of ['fox', 'squirrel', 'songbird', 'crow']) if (!sp5[n]) console.log(`[warn] ${n} not alive at the sampled instants (rare species; unit test covers spawn)`);
+  assert.ok(Object.keys(sp5).length >= 3, 'expected at least 3 species alive near the meadow: ' + JSON.stringify(sp5));
   console.log(`[3/4] fauna alive ${alive}, drawn ${drawn} after ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 
   assert.equal(await evaluate(cdp, '!!window.__debug.rt.gpuActive'), true, 'rt.gpuActive is not true');

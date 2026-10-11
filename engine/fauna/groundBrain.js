@@ -45,7 +45,7 @@ export function extendGroundSlot(slot) {
   slot.stateDur = 0; slot.goalYaw = 0; slot.wanderX = 0; slot.wanderY = 0; slot.hasWander = false; slot.watch = false;
   slot.thinkDt = 0; slot.fresh = true; slot.dPlayer = 0;
   slot.zigT = 0; slot.zigSign = 1; slot.yawBias = 0; slot.biasT = 0; slot.stuckT = 0; slot.expect = 0; slot.moved = 0;
-  slot.alarmT = 0; slot.despawnReq = false;
+  slot.alarmT = 0; slot.despawnReq = false; slot.pounceT = 0;
   return slot;
 }
 
@@ -72,6 +72,7 @@ export function initGroundAnimal(slot, sp, pm) {
   slot.zigT = 0; slot.zigSign = 1; slot.yawBias = 0; slot.biasT = 0; slot.stuckT = 0; slot.expect = 0; slot.moved = 0;
   slot.alarmT = 0; slot.despawnReq = false;
   slot.state = -1; slot.stateT = 0; slot.stateDur = 0;
+  slot.pounceT = sp.times && sp.times.pounceEveryS ? range(sp.times.pounceEveryS, { nextFloat: () => 0.5 }) : 0; // fox: first pounce mid-range
 }
 
 function range(r, rng) { return r[0] + (r[1] - r[0]) * rng.nextFloat(); }
@@ -290,6 +291,15 @@ export function groundStep(slot, sp, ctx) {
       if (st === ST_MOVE) { slot.hasWander = false; enter(slot, sp, ctx, ST_IDLE); }
     }
     slot.stuckT = 0; slot.expect = 0; slot.moved = 0;
+  }
+
+  // WILD-05 fox: now and then a mousing pounce (extra.pounce, once -> back to the graze clip) while it sniffs
+  if (st === ST_GRAZE && sp.extra.pounce !== undefined && sp.times.pounceEveryS) {
+    slot.pounceT -= dt;
+    if (slot.pounceT <= 0 && slot.stateT > 1.2) {
+      slot.pounceT = range(sp.times.pounceEveryS, ctx.rng);
+      setClip(slot, sp, sp.extra.pounce, false, sp.clipFor.graze);
+    }
   }
 
   // gait + clip (rate = speed / tunedMps within the gait's rate[])
