@@ -111,9 +111,9 @@
       waveHz: 1.2, bgK: 0.45,
       cellM: 0.22, glintP: 0.035, drift: 0.2, tintDepth: 1.0, shoreW: 0.5,
       rim: [206, 226, 222],       // #cee2de froth
-      foamRamp: '*o.', foamDepth: 0.3, foamFar: 60,
+      foamRamp: '*o.', foamDepth: 0.12, foamFar: 60, // OB-045: 0.3 -> 0.12 (a thin froth line at the waterline and rings at stones, not a pale shelf)
       bands: '-~=~', glintCos: 0.985, crestK: 0.6,
-      streak: '-', streakLen: 1.4, streakW: 0.3, streakK: 0.8,
+      streak: '-', streakLen: 1.4, streakW: 0.3, streakK: 0.88, // OB-045: 0.8 -> 0.88, fewer pale flow dashes (side-on they read as bands)
       shoreFade: 0.15, streakT: 0.8, rapidFoam: 0.7, riverFarM: 1200,
     },
   };

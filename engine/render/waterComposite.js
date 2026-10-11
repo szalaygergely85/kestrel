@@ -152,7 +152,8 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
       const h = waterfallHash(_table, lb, _p[0], _p[1], wt.z[i]);
       glyph = _table[lb + 16 + h % (_table[lb + 12] | 0)];
       const brightness = 0.6 + (h % 3) * 0.2;
-      wr = Math.min(255, _table[lb] * k * brightness); wg = Math.min(255, _table[lb + 1] * k * brightness); wb = Math.min(255, _table[lb + 2] * k * brightness);
+      const kS = sun.ambientI + sun.sunI * cF; // OB-045: foam scatters every way (full sun term, no N.L) and hangs in front of the cliff (no cliff sun map)
+      wr = Math.min(255, _table[lb] * kS * brightness); wg = Math.min(255, _table[lb + 1] * kS * brightness); wb = Math.min(255, _table[lb + 2] * kS * brightness);
       br0 = wr * bgK; bg0 = wg * bgK; bb0 = wb * bgK;
       if ((h >>> 8) * (1 / 16777216) > 0.92) { wr = _table[lb + 8]; wg = _table[lb + 9]; wb = _table[lb + 10]; }
     }

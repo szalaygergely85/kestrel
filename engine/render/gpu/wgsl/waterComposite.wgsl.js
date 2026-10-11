@@ -228,7 +228,9 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
     let gc = gi & 3;
     glyph = select(select(select(gv.w, gv.z, gc == 2), gv.y, gc == 1), gv.x, gc == 0);
     let brightness = 0.6 + f32(umod(h, 3u)) * 0.2;
-    wc = min(vec3f(255.0), r0.rgb * k * brightness);
+    // OB-045: the sheet hangs in front of the cliff, so the cliff cell's sun-map shadow bits must not darken it (white water)
+    let kS = wu.ambientI + wu.sunI * cF; // foam scatters light every way: full sun term, no N.L
+    wc = min(vec3f(255.0), r0.rgb * kS * brightness);
     wb = wc * bgK;
     if (f32(h >> 8u) * (1.0 / 16777216.0) > 0.92) { wc = r2.rgb; }
   }

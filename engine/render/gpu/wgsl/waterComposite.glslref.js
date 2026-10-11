@@ -133,7 +133,8 @@ void main() {
     int gc = gi & 3;
     glyph = gc == 0 ? gv.x : (gc == 1 ? gv.y : (gc == 2 ? gv.z : gv.w));
     float brightness = 0.6 + float(h % 3u) * 0.2;
-    wc = min(vec3(255.0), r0.rgb * k * brightness);
+    float kS = uAmbientI + uSunI; // OB-045: no cliff sun-map shadow on the sheet
+    wc = min(vec3(255.0), r0.rgb * kS * brightness);
     wb = wc * bgK;
     if (float(h >> 8u) * (1.0 / 16777216.0) > 0.92) wc = r2.rgb;
   }
