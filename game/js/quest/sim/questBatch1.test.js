@@ -48,6 +48,7 @@ function feedFor(def) { // events that complete every objective of a def
     else if (w.type === 'flag') ev.push({ type: 'flag:set', key: w.id, value: w.equals });
     else if (w.type === 'item') ev.push({ type: 'item:got', id: w.id });
     else if (w.type === 'deliver') ev.push({ type: 'item:count', id: w.id, n: w.count }); // given on accept, still in the pack
+    else if (w.type === 'collect') ev.push({ type: 'item:count', id: w.id, n: w.count }); // QL-B2: pack-counted pickups
     else throw new Error('unhandled ' + w.type);
   }
   return ev;

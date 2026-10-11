@@ -1343,3 +1343,30 @@ Notes:
 - The buckler at the Bend is "left for the next walker, no name": the same unsigned kindness as the TAKEN tag. It does not say who.
 - `sq.rb.road` area `roadWest` lies back toward the tower (m1 chain order), so the HUD says "back along the road", not "west"; the title is kept.
 - Design flag: zone `hintStone` is terrain-shaped and `once`; if `used.world.hintStone` is already set, `sq.burl.hint` may never fire or complete at once. PO/architect to check.
+
+## Ch1-2 errands batch 2 (QL-B2)
+
+PC-B, 2026-10-11. 18 side errands in `content/quests/ch12/pack.json`. Voices: Burl warm ("sky-cub"), Rook dry and clever, relays terse TICK, notes written. Keys: `quest.<id>.title`, step objText, returnText, `lines.{offer,active,ready,done}`.
+
+| id | title | HUD | return |
+|---|---|---|---|
+| sq.tm.gap | The Open Gate | Look at the gap in the meadow fence | Tell Burl about the fence |
+| sq.tm.wood | The Woodcutter's Corner | Check the woodcutter's stack | Tell Burl the stack is dry |
+| sq.tm.cart | The Cart on the Road | Look at the cart by the road | Tell Burl about the cart |
+| sq.rb.lamps | Lamps on the Verge | Walk along the lamps by the road | Report to the Bend Relay |
+| sq.rb.rocks | Rocks at the Forest Edge | Check the rocks by the forest edge | Report to the Bend Relay |
+| sq.rb.parcel | Brass for the Ford | Carry the brass to the Ford Relay | Set the brass at the Ford Relay |
+| sq.he.wallow | The Boar Wallow | Look at the wallow south of the road | Tell Rook what you saw |
+| sq.he.farm | Plates for Three | Look at the river farm gate | Tell Burl what you found |
+| sq.dw.bees | Where the Bees Go | Follow the bees to the old bee farm | Tell Burl where the bees go |
+| sq.dw.stones | The Standing Stones | Walk to the ring of standing stones | Tell Burl about the stones |
+| sq.fc.stores | Boars in the Stores | Drive off the two boars at the post | Take what the post left for you |
+| sq.fc.caps | Red Caps | Pick five red caps on tree trunks | Bring the caps to Rook |
+| sq.fc.well | The Dry Well | Look at the dry well north of the post | Tell Rook about the well |
+| sq.fc.shrine | The Fallen Shrine | Look at the fallen shrine by the post | Read the note post |
+| sq.fc.jetty | Rotten Planks | Walk out on the old jetty | Report to the Ford Relay |
+| sq.fc.cog | A Cog for the Bend | Carry the cog to the Bend Relay | Set the cog at the Bend Relay |
+| sq.fc.ask | Ask the Bear | Ask Burl if bears eat crows | Tell Rook what the bear said |
+| sq.rook.gift | A Gift for the Bear | Give the brass scrap to Burl | Give Burl the brass scrap |
+
+Lines (offer / active / ready / done) are pasted in the pack rows; each <= 56 chars.
