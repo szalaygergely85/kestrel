@@ -30,16 +30,12 @@ import { gridLocal } from './gridLocal.js';
 /** @typedef {{targetKey:string|null, prompt:string, dist:number, angleDeg:number}} InteractionState */
 
 const DEFAULT_REACH = 1.8;
-const DEFAULT_CONE_DEG = 22; // OB-052: forgiving aim (was 20); OB-063: 40 was too wide (owner saw a prompt 25 deg off), now 22 h / 35 v
-export const HYST_CONE_DEG = 8;  // the current target survives this far outside the cone
-export const HYST_REACH = 0.3;   // ...and this much beyond reach
-const DIST_WEIGHT = 15;          // score = angleDeg + dist * 15: 1 m of distance costs 15 deg of aim
-const KEEP_BONUS = 5;            // a challenger must beat the current target's score by 5 to replace it
-export const DEFAULT_NEAR_DIST = 0.7; // DOOR-CLOSE-01: inside this range the cone widens
-export const DEFAULT_NEAR_CONE_DEG = 70;
-const DEFAULT_HEIGHT = 0.8;       // OB-052b: vertical extent of an interactable (rec.height overrides)
-const VERT_RATIO = 1.6;          // vertical tolerance = 35/22 of the horizontal one (OB-063)
-const MIN_COS_VIEW = 0.5;        // OB-063: the aim point must lie in front, within 60 deg of the view direction
+export const HYST_REACH = 0.3;   // the held target survives this far beyond reach
+export const PICK_PAD = 0.15;    // OB-066: every pick volume is inflated by this (forgiving aim on small items)
+export const HYST_PAD = 0.1;     // ...and the held target's volume by this much more
+const DEFAULT_HALF_W = 0.25;     // default pick volume: 0.5 m wide,
+const DEFAULT_HEIGHT = 0.8;      // ...0.8 m tall (rec.height overrides), centred on rec.x/y/z
+const LOS_BACKOFF = 0.05;        // LOS is checked to just in front of the hit point (a note sits flush on a wall)
 const LOS_STEP = 0.1;
 const LOS_MAX_SAMPLES = 20;
 const losGrid = { x: 0, y: 0, z: 0 }; // gridLocal scratch (rule 9)
@@ -101,24 +97,19 @@ export function hasLineOfSight(world, ax, ay, az, bx, by, bz) {
 }
 
 /**
- * Finds the interaction target (a candidate is: not used, `requires` met,
- * `|p - eye| <= min(rec.radius, reach)`, `angle(viewDir, p - eye) <= coneDeg`,
- * has line of sight). Winner (OB-052): lowest score = angleDeg + 15 * dist, then
- * array order. Hysteresis: the previous target (`out.targetKey` on entry) keeps
- * a 5 point bonus and a wider gate (cone + 15 deg, reach + 0.3 m). Fills and returns `out` - never allocates. Reads `rec.x/y/z`
- * LIVE (a runtime rec may be moved by its owner after add, US-079b0).
+ * Finds the interaction target by CROSSHAIR RAY (OB-066, replaces the angular cone). Each candidate (not used,
+ * `requires` met) has a pick volume: `rec.pick` {x0,y0,z0,x1,y1,z1} (world AABB, e.g. a prop's collider box) or a
+ * default box (0.5 m wide, rec.height tall, centred on rec.x/y/z), inflated by PICK_PAD (+HYST_PAD when it is the
+ * held target). The target is the nearest volume the view ray enters within min(rec.radius, reach) (+HYST_REACH for the
+ * held one) that has line of sight to the hit point. Fills and returns `out` - never allocates. Reads rec.x/y/z LIVE.
  * @param {import('./World.js').World} world
  * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number}} eye
- * @param {{reach?:number, coneDeg?:number, nearDist?:number, nearConeDeg?:number}} [cfg]
+ * @param {{reach?:number}} [cfg]
  * @param {InteractionState} out
  * @returns {InteractionState}
  */
 export function findInteractTarget(world, eye, cfg, out) {
   const reach = (cfg && typeof cfg.reach === 'number') ? cfg.reach : DEFAULT_REACH;
-  const coneDeg = (cfg && typeof cfg.coneDeg === 'number') ? cfg.coneDeg : DEFAULT_CONE_DEG;
-  const nearDist = (cfg && typeof cfg.nearDist === 'number') ? cfg.nearDist : DEFAULT_NEAR_DIST;
-  const nearConeDeg = (cfg && typeof cfg.nearConeDeg === 'number') ? cfg.nearConeDeg : DEFAULT_NEAR_CONE_DEG;
-
   const yawRad = eye.yawDeg * Math.PI / 180;
   const pitchRad = eye.pitchDeg * Math.PI / 180;
   const cosPitch = Math.cos(pitchRad);
@@ -129,54 +120,45 @@ export function findInteractTarget(world, eye, cfg, out) {
 
   const list = world.interactables;
   const prevKey = out.targetKey;
-  let bestIdx = -1, bestAngle = Infinity, bestDist = Infinity, bestScore = Infinity;
+  let bestIdx = -1, bestT = Infinity;
   for (let i = 0; i < list.length; i++) {
     const rec = list[i];
     if (rec.usedKey && world.state[rec.usedKey]) continue;
     if (rec.requires && !world.state[rec.requires]) continue;
 
-    const dx = rec.x - eye.x, dy = rec.y - eye.y, dz = rec.z - eye.z;
-    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     const isPrev = prevKey !== null && rec.key === prevKey;
-    const maxReach = (rec.radius < reach ? rec.radius : reach) + (isPrev ? HYST_REACH : 0);
-    if (dist > maxReach) continue;
-
-    // OB-052b: aim at the object's vertical extent, not one point. Closest point on the vertical segment
-    // [rec.z - h/2, rec.z + h/2] to the view ray (line-line closest approach, clamped), so looking a bit up/down still hits.
-    const hh = (typeof rec.height === 'number' ? rec.height : DEFAULT_HEIGHT) * 0.5;
-    const dot = dx * vx + dy * vy + dz * vz;
-    const denom = 1 - vz * vz;
-    let s = denom > 1e-6 ? (vz * dot - dz) / denom : 0;
-    if (s > hh) s = hh; else if (s < -hh) s = -hh;
-    const az = dz + s; // aim point (relative to the eye)
-    const hd = Math.sqrt(dx * dx + dy * dy);
-    const aimDist = Math.sqrt(hd * hd + az * az);
-    let cosAngle = aimDist < 1e-9 ? 1 : (dx * vx + dy * vy + az * vz) / aimDist;
-    if (cosAngle > 1) cosAngle = 1; else if (cosAngle < -1) cosAngle = -1;
-    const angleDeg = Math.acos(cosAngle) * 180 / Math.PI;
-    // Elliptical gate on the yaw/pitch components: horizontal = cone, vertical = cone * VERT_RATIO.
-    // DOOR-CLOSE-01: within nearDist the cone widens to nearConeDeg.
-    if (cosAngle < MIN_COS_VIEW) continue;
-    const lim = (dist < nearDist && coneDeg < nearConeDeg ? nearConeDeg : coneDeg) + (isPrev ? HYST_CONE_DEG : 0);
-    let dyawDeg = 0;
-    if (hd > 1e-6) {
-      dyawDeg = Math.atan2(dx, -dy) * 180 / Math.PI - eye.yawDeg;
-      dyawDeg -= 360 * Math.round(dyawDeg / 360);
+    const maxT = (rec.radius < reach ? rec.radius : reach) + (isPrev ? HYST_REACH : 0);
+    const pad = PICK_PAD + (isPrev ? HYST_PAD : 0);
+    let x0, y0, z0, x1, y1, z1;
+    const pk = rec.pick;
+    if (pk) { x0 = pk.x0; y0 = pk.y0; z0 = pk.z0; x1 = pk.x1; y1 = pk.y1; z1 = pk.z1; }
+    else {
+      const hh = (typeof rec.height === 'number' ? rec.height : DEFAULT_HEIGHT) * 0.5;
+      x0 = rec.x - DEFAULT_HALF_W; x1 = rec.x + DEFAULT_HALF_W;
+      y0 = rec.y - DEFAULT_HALF_W; y1 = rec.y + DEFAULT_HALF_W;
+      z0 = rec.z - hh; z1 = rec.z + hh;
     }
-    const dpitchDeg = Math.atan2(az, hd) * 180 / Math.PI - eye.pitchDeg;
-    const ey2 = dpitchDeg / (lim * VERT_RATIO), ex2 = dyawDeg / lim;
-    if (ex2 * ex2 + ey2 * ey2 > 1) continue;
+    x0 -= pad; y0 -= pad; z0 -= pad; x1 += pad; y1 += pad; z1 += pad;
 
-    if (!hasLineOfSight(world, eye.x, eye.y, eye.z, rec.x, rec.y, eye.z + az) &&
-        !hasLineOfSight(world, eye.x, eye.y, eye.z, rec.x, rec.y, rec.z)) continue;
+    // Slab test: entry distance tn along the (unit) view ray; the eye inside the box gives tn = 0.
+    let tn = 0, tf = maxT;
+    let o = eye.x, v = vx;
+    if (v > -1e-9 && v < 1e-9) { if (o < x0 || o > x1) continue; }
+    else { let t0 = (x0 - o) / v, t1 = (x1 - o) / v; if (t0 > t1) { const q = t0; t0 = t1; t1 = q; } if (t0 > tn) tn = t0; if (t1 < tf) tf = t1; if (tn > tf) continue; }
+    o = eye.y; v = vy;
+    if (v > -1e-9 && v < 1e-9) { if (o < y0 || o > y1) continue; }
+    else { let t0 = (y0 - o) / v, t1 = (y1 - o) / v; if (t0 > t1) { const q = t0; t0 = t1; t1 = q; } if (t0 > tn) tn = t0; if (t1 < tf) tf = t1; if (tn > tf) continue; }
+    o = eye.z; v = vz;
+    if (v > -1e-9 && v < 1e-9) { if (o < z0 || o > z1) continue; }
+    else { let t0 = (z0 - o) / v, t1 = (z1 - o) / v; if (t0 > t1) { const q = t0; t0 = t1; t1 = q; } if (t0 > tn) tn = t0; if (t1 < tf) tf = t1; if (tn > tf) continue; }
+    if (tn >= bestT) continue;
 
-    const score = angleDeg + dist * DIST_WEIGHT - (isPrev ? KEEP_BONUS : 0);
-    if (score < bestScore - 1e-9) {
-      bestScore = score;
-      bestAngle = angleDeg;
-      bestDist = dist;
-      bestIdx = i;
+    if (tn > LOS_BACKOFF) {
+      const tl = tn - LOS_BACKOFF;
+      if (!hasLineOfSight(world, eye.x, eye.y, eye.z, eye.x + vx * tl, eye.y + vy * tl, eye.z + vz * tl)) continue;
     }
+    bestT = tn;
+    bestIdx = i;
   }
 
   if (bestIdx === -1) {
@@ -186,15 +168,19 @@ export function findInteractTarget(world, eye, cfg, out) {
     out.angleDeg = 0;
   } else {
     const rec = list[bestIdx];
+    const dx = rec.x - eye.x, dy = rec.y - eye.y, dz = rec.z - eye.z;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    let cosA = dist < 1e-9 ? 1 : (dx * vx + dy * vy + dz * vz) / dist;
+    if (cosA > 1) cosA = 1; else if (cosA < -1) cosA = -1;
     out.targetKey = rec.key;
     out.prompt = rec.prompt;
-    out.dist = bestDist;
-    out.angleDeg = bestAngle;
+    out.dist = dist;
+    out.angleDeg = Math.acos(cosA) * 180 / Math.PI;
   }
   return out;
 }
 
-const INTERACT_CFG = { reach: DEFAULT_REACH, coneDeg: DEFAULT_CONE_DEG, nearDist: DEFAULT_NEAR_DIST, nearConeDeg: DEFAULT_NEAR_CONE_DEG }; // reused (rule 9)
+const INTERACT_CFG = { reach: DEFAULT_REACH }; // reused (rule 9)
 
 function findRecByKey(world, key) {
   const list = world.interactables;

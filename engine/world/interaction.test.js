@@ -1,7 +1,7 @@
 // engine/world/interaction.test.js (US-012). Headless Node ESM, no
 // framework. Run: node engine/world/interaction.test.js
 //
-// Sections 1-7 (mechanics: cone/reach/nearest/LOS/once/requires/no-alloc)
+// Sections (mechanics: ray pick/reach/nearest/LOS/once/requires/no-alloc)
 // use an inline fixture (architect tech note 6) - a hand-built "world" with
 // just the surface `findInteractTarget`/`updateInteraction` read
 // (`interactables`, `state`, `sectorAt`, `get`, `fireInteraction`,
@@ -93,50 +93,6 @@ function recAtAngle(id, angleFromNorthDeg, dist, extra = {}) {
 
 const EYE_NORTH = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
 
-// ---------------------------------------------------------------------------
-// 1. Cone: 21 deg is a hit, 24 deg is a miss (default coneDeg = 22, OB-063).
-// ---------------------------------------------------------------------------
-{
-  const w = makeWorld();
-  const out = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
-  w.interactables = [recAtAngle('a19', 21, 1.0)];
-  findInteractTarget(w, EYE_NORTH, null, out);
-  ok('21 deg inside the 22 deg cone: a hit', out.targetKey === 's.a19', JSON.stringify(out));
-
-  w.interactables = [recAtAngle('a21', 24, 1.0)];
-  findInteractTarget(w, EYE_NORTH, null, out);
-  ok('24 deg outside the 22 deg cone: a miss', out.targetKey === null, JSON.stringify(out));
-}
-
-// ---------------------------------------------------------------------------
-// 2. Reach: 1.79 m is a hit, 1.81 m is a miss (radius 1.8, default reach 1.8).
-// ---------------------------------------------------------------------------
-{
-  const w = makeWorld();
-  const out = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
-  w.interactables = [recAtAngle('near', 0, 1.79)];
-  findInteractTarget(w, EYE_NORTH, null, out);
-  ok('1.79 m within radius/reach 1.8: a hit', out.targetKey === 's.near');
-
-  w.interactables = [recAtAngle('far', 0, 1.81)];
-  findInteractTarget(w, EYE_NORTH, null, out);
-  ok('1.81 m beyond radius/reach 1.8: a miss', out.targetKey === null);
-}
-
-// ---------------------------------------------------------------------------
-// 3. Of two targets in the cone, the one nearest the view centre wins.
-// ---------------------------------------------------------------------------
-{
-  const w = makeWorld();
-  const out = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
-  w.interactables = [recAtAngle('wide', 15, 1.0), recAtAngle('narrow', 5, 1.0)];
-  findInteractTarget(w, EYE_NORTH, null, out);
-  ok('nearest-to-centre wins regardless of array order', out.targetKey === 's.narrow', JSON.stringify(out));
-
-  w.interactables = [recAtAngle('narrow', 5, 1.0), recAtAngle('wide', 15, 1.0)];
-  findInteractTarget(w, EYE_NORTH, null, out);
-  ok('...and order-independent', out.targetKey === 's.narrow', JSON.stringify(out));
-}
 
 // ---------------------------------------------------------------------------
 // 4. Line of sight blocked through a solid cell.
@@ -287,114 +243,62 @@ const EYE_NORTH = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
     hasLineOfSight(w, 0, 0, 1, 8, 0, 1));
 }
 
-// DOOR-CLOSE-01: near-range cone widening (nearDist/nearConeDeg), defaults 0.9 m / 70 deg.
+
+
+// ---------------------------------------------------------------------------
+// OB-066: crosshair RAY targeting (replaces the OB-052/OB-063 angular cone).
+// ---------------------------------------------------------------------------
+const fresh = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
+const pick = (w, eye, cfg) => { const o = fresh(); findInteractTarget(w, eye, cfg || null, o); return o; };
 {
   const w = makeWorld();
-  const out = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
-  w.interactables = [recAtAngle('n', 50, 0.5)];
-  findInteractTarget(w, EYE_NORTH, null, out);
-  ok('near 0.5 m / 50 deg off-axis: picked', out.targetKey === 's.n', JSON.stringify(out));
-  w.interactables = [recAtAngle('f', 50, 1.0)];
-  findInteractTarget(w, EYE_NORTH, null, out);
-  ok('1.0 m / 50 deg off-axis: not picked', out.targetKey === null);
-  w.interactables = [recAtAngle('n', 50, 0.5)];
-  findInteractTarget(w, EYE_NORTH, { nearConeDeg: 40 }, out);
-  ok('custom nearConeDeg 40: 50 deg missed', out.targetKey === null);
-  w.interactables = [recAtAngle('c', 50, 1.0)];
-  findInteractTarget(w, EYE_NORTH, { nearDist: 1.5 }, out);
-  ok('custom nearDist 1.5: 1.0 m / 50 deg picked', out.targetKey === 's.c');
-}
-
-// OB-052: forgiving targeting.
-{
-  const w = makeWorld();
-  const fresh = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
-  let out = fresh();
-  w.interactables = [recAtAngle('o30', 20, 1.5)];
-  findInteractTarget(w, EYE_NORTH, null, out);
-  ok('20 deg off-axis at 1.5 m is targeted', out.targetKey === 's.o30', JSON.stringify(out));
-
-  // hysteresis (OB-063: 22 cone + 8): 28 deg is outside the cone but inside 22+8 -> a held target stays, a fresh one is not picked
-  w.interactables = [recAtAngle('h', 20, 1.0)];
-  out = fresh(); findInteractTarget(w, EYE_NORTH, null, out);
-  ok('hyst: acquired at 20 deg', out.targetKey === 's.h');
-  w.interactables = [recAtAngle('h', 28, 1.0)];
-  findInteractTarget(w, EYE_NORTH, null, out);
-  ok('hyst: 28 deg keeps the held target', out.targetKey === 's.h');
-  out = fresh(); findInteractTarget(w, EYE_NORTH, null, out);
-  ok('hyst: 28 deg is not acquired fresh', out.targetKey === null);
-  w.interactables = [recAtAngle('h', 34, 1.0)];
-  out.targetKey = 's.h'; findInteractTarget(w, EYE_NORTH, null, out);
-  ok('hyst: 34 deg (beyond cone+8) drops it', out.targetKey === null);
-  w.interactables = [recAtAngle('h', 0, 2.0)];
-  out.targetKey = 's.h'; findInteractTarget(w, EYE_NORTH, { reach: 2.0 }, out);
-  ok('hyst: 2.0 m held at reach 2.0', out.targetKey === 's.h');
-  w.interactables = [recAtAngle('h', 0, 2.2, { radius: 3 })];
-  out.targetKey = 's.h'; findInteractTarget(w, EYE_NORTH, { reach: 2.0 }, out);
-  ok('hyst: 2.2 m (reach+0.3 = 2.3) still held', out.targetKey === 's.h');
-  w.interactables = [recAtAngle('h', 0, 2.4, { radius: 3 })];
-  out.targetKey = 's.h'; findInteractTarget(w, EYE_NORTH, { reach: 2.0 }, out);
-  ok('hyst: 2.4 m beyond reach+0.3 dropped', out.targetKey === null);
-
-  // scoring: closer slightly-off-centre beats far dead-centre; a clearly better challenger replaces the held one, a marginal one does not
-  w.interactables = [recAtAngle('far', 0, 1.7), recAtAngle('close', 12, 0.7)];
-  out = fresh(); findInteractTarget(w, EYE_NORTH, null, out);
-  ok('score: close 12 deg beats far dead-centre', out.targetKey === 's.close', JSON.stringify(out));
-  w.interactables = [recAtAngle('a', 10, 1.0), recAtAngle('b', 8, 1.0)];
-  out = fresh(); out.targetKey = 's.a'; findInteractTarget(w, EYE_NORTH, null, out);
-  ok('hyst: marginally better challenger does not steal', out.targetKey === 's.a');
-  w.interactables = [recAtAngle('a', 28, 1.0), recAtAngle('b', 2, 1.0)];
-  out.targetKey = 's.a'; findInteractTarget(w, EYE_NORTH, null, out);
-  ok('hyst: clearly better challenger replaces', out.targetKey === 's.b');
-
-  // reach / LOS
-  w.interactables = [recAtAngle('r', 0, 2.2)];
-  out = fresh(); findInteractTarget(w, EYE_NORTH, null, out);
-  ok('nothing beyond reach', out.targetKey === null);
-  w.interactables = [recAtAngle('l', 0, 1.0)];
-  w._blockCell(0, -1); // the cell between (0,0) and (0,-1.0]
-  out = fresh(); findInteractTarget(w, EYE_NORTH, null, out);
-  ok('LOS still blocks', out.targetKey === null);
-
-  // pitch: eye at 1.6 m, objects at foot (0.3) and head (2.2) height, 1.2 m ahead
-  const w2 = makeWorld();
-  const mk = (z) => ({ ...recAtAngle('p', 0, 1.2), y: -1.2, z });
-  const hits = (pitch, z) => {
-    w2.interactables = [mk(z)]; const o = fresh();
-    findInteractTarget(w2, { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: pitch }, { reach: 2.5 }, o); return o.targetKey === 's.p';
-  };
-  ok('pitch -40: foot-height object targeted', hits(-40, 0.3));
-  ok('pitch -20: foot-height object targeted', hits(-20, 0.3));
-  // OB-052b: expectation changed from the point model (z 0.3 is now a 0.8 m tall object reaching up to 0.7)
-  ok('pitch 0: object far below (z -1.0, top 61 deg below) not targeted', !hits(0, -1.0));
-  ok('pitch +20: head-height object targeted', hits(20, 2.2));
-  ok('pitch -40: object far above (z 3.4) not targeted', !hits(-40, 3.4));
-}
-
-
-// OB-052b: note-height object (z 1.0, 0.8 m tall), eye 1.6 m, 1.2 m ahead: forgiving vertical + horizontal aim.
-{
-  const w = makeWorld();
-  const mkN = (dxm) => ({ key: 's.n', structId: 's', name: 'n', prompt: 'Read', x: dxm, y: -1.2, z: 1.0, radius: 3, once: false, requires: null, propId: null, usedKey: null });
-  const hit = (yaw, pitch, rec = mkN(0)) => {
-    w.interactables = [rec]; const o = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
-    findInteractTarget(w, { x: 0, y: 0, z: 1.6, yawDeg: yaw, pitchDeg: pitch }, null, o); return o.targetKey === 's.n';
-  };
-  let allPitch = true;
-  for (let p = -40; p <= 15; p += 5) if (!hit(0, p)) { allPitch = false; ok('note: pitch ' + p + ' targeted', false); }
-  ok('note: pitch -40..+15 at yaw 0 all targeted', allPitch);
-  let allYaw = true;
-  for (const pitch of [0, 10]) for (const yaw of [-18, 18]) if (!hit(yaw, pitch)) { allYaw = false; ok('note: yaw ' + yaw + ' pitch ' + pitch, false); }
-  ok('note: yaw +-18 at pitch 0 and +10 targeted', allYaw);
-  ok('note: yaw 60 not targeted', !hit(60, 0) && !hit(-60, 10));
-  ok('note: beyond reach not targeted', !hit(0, 0, { ...mkN(0), y: -2.5 }));
+  w.interactables = [recAtAngle('a', 0, 1.0)];
+  ok('ray: crosshair on the object -> target', pick(w, EYE_NORTH).targetKey === 's.a');
+  w.interactables = [recAtAngle('side', 30, 1.0)];
+  ok('ray: object 30 deg aside (0.5 m off the ray) -> none', pick(w, EYE_NORTH).targetKey === null);
+  w.interactables = [recAtAngle('side', 90, 1.0)];
+  ok('ray: object 90 deg aside -> none', pick(w, EYE_NORTH).targetKey === null);
+  w.interactables = [recAtAngle('behind', 180, 1.0)];
+  ok('ray: object behind -> none', pick(w, EYE_NORTH).targetKey === null);
+  w.interactables = [recAtAngle('far', 0, 2.5)];
+  ok('ray: beyond reach (2.5 m) -> none', pick(w, EYE_NORTH).targetKey === null);
+  w.interactables = [recAtAngle('far', 0, 1.7)];
+  ok('ray: 1.7 m within reach -> target', pick(w, EYE_NORTH).targetKey === 's.far');
+  w.interactables = [recAtAngle('small', 0, 1.7, { radius: 1.0 })];
+  ok('ray: per-rec radius cap (radius 1.0 at 1.7 m) -> none', pick(w, EYE_NORTH).targetKey === null);
+  w.interactables = [recAtAngle('far', 0, 1.6), recAtAngle('near', 0, 0.9)];
+  ok('ray: two on the ray, nearest wins', pick(w, EYE_NORTH).targetKey === 's.near');
+  w.interactables = [recAtAngle('near', 0, 0.9), recAtAngle('far', 0, 1.6)];
+  ok('ray: ...order independent', pick(w, EYE_NORTH).targetKey === 's.near');
+  w.interactables = [recAtAngle('behindWall', 0, 1.5)];
   w._blockCell(0, -1);
-  ok('note: LOS still blocks', !hit(0, 0, { ...mkN(0), y: -1.5 }));
+  ok('ray: LOS-blocked target -> none', pick(w, EYE_NORTH).targetKey === null);
+}
+{ // forgiveness + hysteresis + vertical extent
+  const w = makeWorld();
+  // small note on a post at 1.2 m: 0.1 m wide pick (half 0.05); pad 0.15
+  const note = { ...recAtAngle('note', 0, 1.2), pick: { x0: -0.05, x1: 0.05, y0: -1.25, y1: -1.15, z0: -0.1, z1: 0.1 } };
+  w.interactables = [note];
+  const yawFor = (offM) => Math.atan2(offM, 1.2) * 180 / Math.PI;
+  ok('note: crosshair 0.1 m off its edge still targeted', pick(w, { ...EYE_NORTH, yawDeg: yawFor(0.15) }).targetKey === 's.note');
+  ok('note: crosshair 0.3 m off the edge not targeted', pick(w, { ...EYE_NORTH, yawDeg: yawFor(0.35) }).targetKey === null);
+  const o = fresh(); o.targetKey = 's.note';
+  findInteractTarget(w, { ...EYE_NORTH, yawDeg: yawFor(0.27) }, null, o);
+  ok('hyst: held target survives 0.22 m off the edge', o.targetKey === 's.note');
+  ok('hyst: ...but is not acquired fresh', pick(w, { ...EYE_NORTH, yawDeg: yawFor(0.27) }).targetKey === null);
+  // vertical: default box 0.8 m tall centred on rec.z; eye 1.6, object z 1.0 at 1.2 m
+  const mk = { key: 's.n', structId: 's', name: 'n', prompt: 'Read', x: 0, y: -1.2, z: 1.0, radius: 3, once: false, requires: null, propId: null, usedKey: null };
+  w.interactables = [mk];
+  let allPitch = true;
+  for (let p = -40; p <= -20; p += 5) if (pick(w, { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: p }, { reach: 3 }).targetKey !== 's.n') allPitch = false;
+  ok('vertical: pitch -40..-20 hits a 0.8 m tall object 1.2 m ahead from eye 1.6', allPitch);
+  ok('vertical: pitch +10 misses it', pick(w, { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: 10 }, { reach: 3 }).targetKey === null);
+  ok('eye inside the pick volume -> target', pick(w, { x: 0, y: -1.2, z: 1.0, yawDeg: 123, pitchDeg: 5 }).targetKey === 's.n');
+  w.interactables = [{ ...mk, y: 50, pick: { x0: -1, x1: 1, y0: -2, y1: -1, z0: 0, z1: 3 } }];
+  ok('rec.pick used instead of rec.x/y/z', pick(w, { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: 0 }, { reach: 3 }).targetKey === 's.n');
 }
 
-
-// OB-063: owner pose on the tower summit (1489.50, 1026.33, 6.00) yaw 264 pitch -30 - looking at a figure, not at a note: no prompt.
-// Real tower content: interactable positions from tower.level.json + the world origin (1480, 1018) from world_m1.world.json.
+// OB-063/OB-066 real tower content: positions from tower.level.json + the world origin from world_m1.world.json.
 {
   const { readFileSync } = await import('node:fs');
   const lvl = JSON.parse(readFileSync(new URL('../../content/levels/tower.level.json', import.meta.url), 'utf8'));
@@ -403,25 +307,39 @@ const EYE_NORTH = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
   const w = makeWorld();
   w._setStructures([{ origin: { x: 0, y: 0, z: 0 }, bbox: { x0: -1e6, x1: 1e6, y0: -1e6, y1: 1e6 },
     level: { sectorAt: () => ({ solid: false, floorH: 0, ceilH: 'sky' }) } }]);
-  w.interactables = lvl.interactables.filter((r) => r.prompt && typeof r.x === 'number').map((r) => ({
+  const recs = lvl.interactables.filter((r) => r.prompt && typeof r.x === 'number').map((r) => ({
     key: 't.' + r.id, structId: 't', id: r.id, name: r.id, prompt: r.prompt, x: org.x + r.x, y: org.y + r.y, z: (org.z || 0) + (r.z || 0),
     radius: r.radius ?? 1.8, once: false, requires: null, propId: null, usedKey: null }));
-  ok('OB-063 fixture: tower notes loaded', w.interactables.some((r) => r.id === 'noteSteelHush'), String(w.interactables.length));
-  const o = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
+  // the gondola: an errands-style inspect rec on the prop's collider box (as World.propPickBox builds it)
+  const g = lvl.props.find((p) => p.id === 'gondola'), gc = g.colliders[0];
+  const rad = g.facing * Math.PI / 180, c = Math.cos(rad), sn = Math.sin(rad);
+  const gx = org.x + g.x + c * gc.c[0] - sn * gc.c[1], gy = org.y + g.y + sn * gc.c[0] + c * gc.c[1];
+  const ex = Math.abs(c) * gc.half[0] + Math.abs(sn) * gc.half[1], ey = Math.abs(sn) * gc.half[0] + Math.abs(c) * gc.half[1];
+  const gz0 = (org.z || 0) + g.z;
+  recs.push({ key: 'qi.gondola', structId: null, name: 'quest.inspect', prompt: '[E] Inspect gondola', x: gx, y: gy, z: gz0 + gc.c[2],
+    radius: 2.4, once: false, requires: null, propId: null, usedKey: null,
+    pick: { x0: gx - ex, x1: gx + ex, y0: gy - ey, y1: gy + ey, z0: gz0, z1: gz0 + 2 * gc.half[2] } });
+  w.interactables = recs;
+  ok('fixture: tower notes + gondola loaded', recs.some((r) => r.id === 'noteSteelHush') && recs.some((r) => r.key === 'qi.gondola'), String(recs.length));
+  // OB-066 owner pose (1496.26, 1024.19) yaw 304 pitch -19, looking at the wall: the gondola must NOT be picked
+  let hit = null;
+  for (const eyeZ of [1.6, 1.7, 1.8]) { const o = pick(w, { x: 1496.26, y: 1024.19, z: gz0 + eyeZ, yawDeg: 304, pitchDeg: -19 }, { reach: 2.4 }); if (o.targetKey) hit = eyeZ + ':' + o.targetKey; }
+  ok('OB-066: owner pose yaw 304 pitch -19 does not pick the gondola', hit === null, String(hit));
+  // positive control: aim at the box centre from the same spot (only if within the 2.4 m radius)
+  const brg = Math.atan2(gx - 1496.26, -(gy - 1024.19)) * 180 / Math.PI, d = Math.hypot(gx - 1496.26, gy - 1024.19);
+  const ez = gz0 + 1.6, pit = Math.atan2(gz0 + gc.c[2] - ez, d) * 180 / Math.PI;
+  ok('OB-066: aiming at the gondola box centre picks it (d=' + d.toFixed(2) + ')', d > 2.0 || pick(w, { x: 1496.26, y: 1024.19, z: ez, yawDeg: brg, pitchDeg: pit }, { reach: 2.4 }).targetKey === 'qi.gondola');
+  // OB-063 owner pose (1489.50, 1026.33, 6.00) yaw 264 pitch -30 gives no target
   let any = null;
-  for (const eyeZ of [6.0, 6.6, 7.0, 7.6]) {
-    o.targetKey = null;
-    findInteractTarget(w, { x: 1489.5, y: 1026.33, z: eyeZ, yawDeg: 264, pitchDeg: -30 }, null, o);
-    if (o.targetKey) any = eyeZ + ':' + o.targetKey;
-  }
-  ok('OB-063: owner pose yaw 264 pitch -30 gives no target (eye z 6.0..7.6)', any === null, String(any));
-  // positive control: face the steel-hush page from 1.2 m, slightly off in yaw/pitch, still prompts
-  const n = w.interactables.find((r) => r.id === 'noteSteelHush');
-  const brg = 239; // compass bearing from the owner spot to the note (approx)
-  const ex = n.x - 1.2 * Math.sin(brg * Math.PI / 180), ey = n.y + 1.2 * Math.cos(brg * Math.PI / 180);
-  const bearing = Math.atan2(n.x - ex, -(n.y - ey)) * 180 / Math.PI;
-  o.targetKey = null; findInteractTarget(w, { x: ex, y: ey, z: n.z + 0.6, yawDeg: bearing + 10, pitchDeg: -20 }, null, o);
-  ok('OB-063: facing the page from 1.2 m (yaw +10, pitch -20) still prompts', o.targetKey === 't.noteSteelHush', JSON.stringify(o));
+  for (const eyeZ of [6.0, 6.6, 7.0, 7.6]) { const o = pick(w, { x: 1489.5, y: 1026.33, z: eyeZ, yawDeg: 264, pitchDeg: -30 }); if (o.targetKey) any = eyeZ + ':' + o.targetKey; }
+  ok('OB-063/066: owner pose yaw 264 pitch -30 gives no target (eye z 6.0..7.6)', any === null, String(any));
+  // positive control: face the steel-hush page from 1.2 m
+  const n = recs.find((r) => r.id === 'noteSteelHush');
+  const bx = n.x - 1.2 * Math.sin(239 * Math.PI / 180), by = n.y + 1.2 * Math.cos(239 * Math.PI / 180);
+  const bearing = Math.atan2(n.x - bx, -(n.y - by)) * 180 / Math.PI;
+  const pitchN = -Math.atan2(0.6, 1.2) * 180 / Math.PI; // eye 0.6 m above the page
+  ok('OB-066: aiming at the page from 1.2 m (yaw +3) prompts', pick(w, { x: bx, y: by, z: n.z + 0.6, yawDeg: bearing + 3, pitchDeg: pitchN }).targetKey === 't.noteSteelHush');
+  ok('OB-066: 30 deg off the page does not', pick(w, { x: bx, y: by, z: n.z + 0.6, yawDeg: bearing + 30, pitchDeg: pitchN }).targetKey === null);
 }
 
 console.log(`interaction.test.js: ${pass} passed, ${fail} failed`);
