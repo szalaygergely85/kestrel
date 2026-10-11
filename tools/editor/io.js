@@ -121,9 +121,22 @@ function downloadFallback(text, filename) {
  * @param {Object} file - a `doc.files` entry
  * @param {{forceDownload?: boolean}} [opts]
  */
+/** OB-030: PUT to tools/serve.py (localhost, content/**.json only). True when written; false -> fall back to picker/download. */
+async function saveViaServer(file, text) {
+  try {
+    if (typeof location === 'undefined' || !['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) return false;
+    if (!file.meta.url) return false;
+    const p = new URL(file.meta.url, location.href).pathname;
+    if (!p.startsWith('/content/') || !p.endsWith('.json')) return false;
+    const r = await fetch(p, { method: 'PUT', body: text, headers: { 'Content-Type': 'application/json' } });
+    return r.ok;
+  } catch (e) { return false; }
+}
+
 export async function saveFile(file, opts = {}) {
   const text = stringifyContent(toFileObject(file));
   const name = `${file.id}.${file.kind}.json`;
+  if (!opts.forceDownload && await saveViaServer(file, text)) { file.dirty = false; return; }
   const canPicker = typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function' && !opts.forceDownload;
   if (canPicker) {
     if (!file.handle) {

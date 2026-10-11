@@ -40,6 +40,7 @@ import {
 } from './treeGroups.js';
 import { findUnusedAssets, planAssetDelete, serializePendingDeletes } from './assetRefs.js';
 import { nextScale, fineScale, clampScale } from './scale.js';
+import { applySnapshot, snapshotDiffers, formatAge, startAutosave, getSnapshot, clearSnapshot } from './autosave.js';
 import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits } from './io.js';
 import {
   BRUSH_OPS, PAINT_TYPES, effectiveStrength, beginStroke, endStroke, isTerrainRecord, applyTerrainSide, rectToWorld, ringPoints,
@@ -1797,6 +1798,7 @@ async function doSave() {
     const saved = await saveAll(doc);
     if (tb.dirty && tb.layer) { await saveTerrainEdits(tb, { forceDownload: !!doc.readOnly }); saved.push(`terrainEdits/${tb.key}`); }
     flash(saved.length ? `saved: ${saved.join(', ')}` : 'save: nothing dirty');
+    if (!anyDirty(doc) && !tb.dirty) autosaver.flush(); // clears the OB-030 autosave record
   } catch (e) {
     flash(`save failed: ${e && e.message ? e.message : e}`);
   }
@@ -1836,6 +1838,27 @@ playtestBtn.addEventListener('click', doPlaytest);
 window.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && ['KeyS','KeyP','KeyD','KeyG'].includes(e.code) && editorKeysActive()) e.preventDefault();
 });
+
+// OB-030: autosave dirty files to IndexedDB every 5 s + on hide; offer restore on open.
+const autosaver = startAutosave(() => doc);
+(async function offerRestore() {
+  let snap = null;
+  try { snap = await getSnapshot(doc.worldId); } catch (e) { return; }
+  if (!snap || !snapshotDiffers(doc, snap).length) return;
+  const bar = document.createElement('div');
+  bar.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:9999;background:#222;color:#fd8;border:1px solid #fd8;padding:8px 12px;font:13px monospace;display:flex;gap:10px;align-items:center';
+  const txt = document.createElement('span');
+  txt.textContent = `Restore unsaved changes from ${new Date(snap.savedAt).toLocaleTimeString()} (${formatAge(snap.savedAt)})?`;
+  const mk = (label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ed-btn'; b.textContent = label; b.onclick = () => { bar.remove(); fn(); }; return b; };
+  bar.append(txt,
+    mk('Restore', () => {
+      const keys = applySnapshot(doc, assets, snap);
+      undoStack.clear(); sel = replaceSelection(); rebuild(); refreshIcons(); refreshIoStatus();
+      flash(`restored unsaved changes: ${keys.join(', ')}`);
+    }),
+    mk('Discard', () => { clearSnapshot(doc.worldId).catch(() => {}); }));
+  document.body.appendChild(bar);
+})();
 
 // 24.10: "beforeunload warns while any file is dirty".
 window.addEventListener('beforeunload', (e) => {
