@@ -78,13 +78,50 @@ function pickCodeFromPacked(x, count, idx) {
  * Power of two clamped 0.125..2; 8 m once past the handover's far edge (near band absent). GLSL twin: terrain.frag.js.
  * @param {number} t @param {number} k @param {number[]} [handover]
  */
-// OB-054: patch COLOUR (tier pick hA + close brightness jitter) is keyed on this fixed world cell (m), never on the
-// distance-following `cellSz`, so a point's colour cannot re-roll when the camera moves. Glyph/feature/glint keep `cellSz`. WGSL twin: PATCH_CELL.
-export const PATCH_CELL = 1.0;
-// OB-067 (38.50 b/c): glyph, glint and close features are ALSO keyed on the fixed world cell (no distance-following cell), so
-// nothing re-rolls while walking. Far calm: each patch drops its tier dither and switches to a coarse FAR_GLYPH_CELL glyph once
-// the camera is further than its own CALM_AT0 + CALM_SPAN*h (m, spread per patch so there is no ring); glint re-rolls every 1/GLINT_RATE s.
-export const CALM_AT0 = 48, CALM_SPAN = 32, FAR_GLYPH_CELL = 4.0, GLINT_RATE = 0.1;
+// OB-073 (replaces the OB-054/067 hard 1 m / 4 m cells): patch colour = world-anchored SMOOTH value noise (bilinear, smoothstep
+// weights, NOISE_CELLS octaves, power-of-two cells so u*inv is exact in f32 and f64), thresholded into the tier colours with a
+// 0.25 m dither -> soft organic blobs, no square edges. Each octave fades out by the cell's ground footprint `fp` (mip-like band
+// limit: full when cell >= 3 fp, gone at 1.5 fp), so far ground calms down instead of strobing; nothing keys on a distance-sized cell.
+// Glyph: a fixed GLYPH_CELL world hash near the eye; each point switches ONCE (per-point threshold) to a glyph that follows the
+// noise contours when its footprint outgrows the cell. WGSL twin: TERRAIN_SHADE_WGSL (same constants).
+export const NOISE_CELLS = [8, 2, 0.5], NOISE_W = [0.2, 0.3, 0.5], NOISE_SALT = 40; // fine octave dominates near the feet (largest one-tier square ~1.5 m)
+export const GLYPH_CELL = 0.25, PATCH_K = 3.5, PATCH_DITHER = 0.5, FP_DEFAULT_K = 0.01, FP_ANISO_T = 8, FP_ANISO_MAX = 4;
+// FAR_GLYPH_CELL: background canopy face / trunk cell (>= bands.near only, unchanged from OB-067's calm cell); glint re-rolls every 1/GLINT_RATE s.
+export const FAR_GLYPH_CELL = 4.0, GLINT_RATE = 0.1;
+/** OB-073: ground footprint (m) of one screen cell at depth t; hashCell as in shadeTerrain (<0 = -k, >0 = fixed ortho cell, 0 = default k). */
+export function groundFootprint(t, hashCell) {
+  if (hashCell > 0) return hashCell;
+  const k = hashCell < 0 ? -hashCell : FP_DEFAULT_K;
+  const a = t / FP_ANISO_T;
+  return k * t * (a < 1 ? 1 : a > FP_ANISO_MAX ? FP_ANISO_MAX : a); // grazing view: depth footprint grows ~t^2 (capped anisotropy)
+}
+/** smoothstep weight of a lattice cell vs footprint: 1 when cell >= 3 fp, 0 when cell <= 1.5 fp. */
+export function octaveFade(cell, fp) {
+  let s = (cell / Math.max(fp, 1e-6) - 1.5) / 1.5;
+  s = s < 0 ? 0 : s > 1 ? 1 : s;
+  return s * s * (3 - 2 * s);
+}
+/** bilinear value noise 0..1 at lattice coords (x, y), smoothstep weights, hashFast01 corners. */
+export function valueNoise(x, y, salt) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  let fx = x - ix, fy = y - iy;
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+  const a = hashFast01(ix, iy, salt), b = hashFast01(ix + 1, iy, salt), c = hashFast01(ix, iy + 1, salt), d = hashFast01(ix + 1, iy + 1, salt);
+  return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+}
+/** OB-073: band-limited patch field, roughly -2..2 (0 = calm/mid tier). fu, fv = f32-rounded world metres. */
+// v8 = the unfaded 8 m octave (valueNoise at NOISE_CELLS[0]), computed once by the caller (also drives the far glyph).
+export function patchNoise(fu, fv, fp, v8) {
+  const f0 = octaveFade(NOISE_CELLS[0], fp);
+  let ws = NOISE_W[0] * f0, n = ws * (v8 * 2 - 1);
+  for (let o = 1; o < 3; o++) {
+    const c = NOISE_CELLS[o], f = octaveFade(c, fp);
+    if (f <= 0) continue;
+    const w = NOISE_W[o] * f;
+    n += w * (valueNoise(fu * (1 / c), fv * (1 / c), NOISE_SALT + o) * 2 - 1); ws += w;
+  }
+  return n / (ws > 0.55 ? ws : 0.55);
+}
 export function perCellHashSize(t, k, handover) {
   if (handover && !(t < handover[1])) return 8;
   return Math.min(2, Math.max(0.125, Math.pow(2, Math.ceil(Math.log2(Math.max(t * k, 1e-6))))));
@@ -117,15 +154,19 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   // BUG-RTS-001 (28.11a): a per-frame `ctx.hashCell` > 0 (pitched views) replaces the fixed cell.
   // BUG-FP-002: hashCell < 0 = per-cell mode, k = -hashCell (ground m per column per m of depth): each cell keys
   // its own power-of-two cell from its distance (0.125..2 m near, 8 m past the handover) - no 2 m blocks at the feet.
-  const hk = ctx.hashCell < 0 ? -ctx.hashCell : 0;
-  const cellSz = hk > 0 ? perCellHashSize(t, hk, ctx.handover)
-    : ctx.hashCell > 0 ? ctx.hashCell : (ctx.handover && t < ctx.handover[1] ? 2 : 8);
-  // f32-robust cell index (WGSL receives u,v as f32): round to f32 first so both twins floor the same value (PATCH_CELL = 1.0 divides exactly)
-  const pcx = Math.floor(Math.fround(u) / PATCH_CELL), pcy = Math.floor(Math.fround(v) / PATCH_CELL);
-  const calm = t > CALM_AT0 + CALM_SPAN * hashFast01(pcx, pcy, 11);   // OB-067 far calm (per-patch threshold, WGSL twin: same)
-  const cx = calm ? Math.floor(Math.fround(u) / FAR_GLYPH_CELL) : pcx, cy = calm ? Math.floor(Math.fround(v) / FAR_GLYPH_CELL) : pcy;
-  const hA = calm ? 0.5 : hashFast01(pcx, pcy, type);
-  const hB = hashFast01(cx, cy, 7);
+  // OB-073: no distance-sized cell any more (perCellHashSize stays exported for the old callers/tests only).
+  // f32-robust: round u,v to f32 first (WGSL receives f32); every cell below is a power of two, so the lattice coords are exact in both twins.
+  const fu = Math.fround(u), fv = Math.fround(v);
+  const fp = groundFootprint(t, ctx.hashCell || 0);
+  const v8 = valueNoise(fu * (1 / NOISE_CELLS[0]), fv * (1 / NOISE_CELLS[0]), NOISE_SALT);
+  const nP = patchNoise(fu, fv, fp, v8);
+  const gx = Math.floor(fu * (1 / GLYPH_CELL)), gy = Math.floor(fv * (1 / GLYPH_CELL));
+  const sw = hashFast01(gx, gy, 12);                      // per-point switch threshold (glyph near->far, close set -> band set)
+  const fpOk = fp < GLYPH_CELL * (0.35 + 0.4 * sw);
+  const dith = (hashFast01(gx, gy, 13) - 0.5) * PATCH_DITHER * octaveFade(GLYPH_CELL, fp);
+  let off = Math.floor(nP * PATCH_K + 0.5 + dith);
+  off = off < -1 ? -1 : off > 1 ? 1 : off;
+  const hF = v8 > 0.999 ? 0.999 : v8;                     // far glyph: unfaded 8 m noise (calm ~4 m regions, never changes with distance)
 
   // S8-B2-14b wetness (follow-up to S8-B2-14): `ctx.shading.wetness` 0..1
   // (absent = 0) darkens the lit term entering the tier/gain pick - same
@@ -139,17 +180,19 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   // picked below (TLOOK texel 7, fixed) and gets a +-0.08 brightness jitter
   // (own hash salt 10, per-2 m-cell - "shading only, heightAt stays smooth").
   const close = ctx.closeBand != null && t < ctx.closeBand;
-  // OB-067: the close glyph set / features hand over to the band set at a per-patch distance 0.6..1.0 x closeBand (each point switches once, no ring)
-  const closeG = close && t < ctx.closeBand * (0.6 + 0.4 * hashFast01(pcx, pcy, 12));
+  // OB-073: close set + features + hashed glyph hand over to the band set ONCE per point (same sw for the distance and footprint tests)
+  const closeG = close && t < ctx.closeBand * (0.6 + 0.4 * sw) && fpOk;
+  const nearG = ctx.closeBand != null ? closeG : fpOk;
+  const hB = nearG ? hashFast01(gx, gy, 7) : hF;
   // OB-054: jitter amplitude fades smoothstep to 0 over closeBand/2..closeBand (no brightness step at the band edge). WGSL twin: same expression.
   let bEff = bWet;
   if (close) {
     const q = Math.min(1, Math.max(0, (t - ctx.closeBand * 0.5) / (ctx.closeBand * 0.5)));
-    bEff = bWet + (hashFast01(pcx, pcy, 10) * 2 - 1) * 0.08 * (1 - q * q * (3 - 2 * q));
+    bEff = bWet + nP * 0.05 * (1 - q * q * (3 - 2 * q)); // OB-073: smooth noise, not a per-cell dice
   }
 
   const tier = bEff < 0.45 ? 0 : bEff < 0.8 ? 1 : 2;
-  let i = tier + (Math.floor(hA * 3) - 1);
+  let i = tier + off;
   if (i < 0) i = 0; else if (i > 2) i = 2;
 
   const TL = ctx.tlook, W = ctx.tlookWidth, base = type * W * 4;
@@ -169,7 +212,7 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   // Water glint (item 5): timeSec-keyed, still world-keyed via (cx, cy).
   const albedo = TL[base + 3 * 4], glintFlag = TL[base + 3 * 4 + 1];
   if (glintFlag) {
-    const g = hashFast01(cx, cy, Math.floor(timeSec * GLINT_RATE) | 0);
+    const g = hashFast01(gx, gy, Math.floor(timeSec * GLINT_RATE) | 0);
     if (g > 0.5) {
       const alt = pickCodeFromPacked(packedX, packedCount, (Math.floor(hB * packedCount) + 1) % Math.max(1, packedCount));
       code = alt;
@@ -192,7 +235,7 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
     for (let fi = 0; fi < ctx.features.length; fi++) {
       const feat = ctx.features[fi];
       if (feat.typeId !== type) continue;
-      const fh = hashFast01(cx, cy, 20 + fi);
+      const fh = hashFast01(gx, gy, 20 + fi); // OB-073: 0.25 m specks (was 1 m grey squares)
       if (fh >= feat.chance) continue;
       code = fh < feat.chance * 0.5 ? feat.code0 : feat.code1;
       fr = feat.fg[0]; fg = feat.fg[1]; fb = feat.fg[2];
@@ -210,8 +253,9 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   const faceCount = TL[base + 3 * 4 + 3];
   if (faceMode !== 0 && faceCount > 0 && !close && t >= ctx.bands.near) {
     const faceX = TL[base + 3 * 4 + 2];
-    const trunk = faceMode === 2 && hashFast01(cx, cy, FOREST_TRUNK_SALT) < FOREST_TRUNK_CHANCE;
-    code = trunk ? FOREST_TRUNK_CODE : pickCodeFromPacked(faceX, faceCount, faceMode === 2 ? faceCount - 1 : Math.floor(hB * faceCount));
+    const fx4 = Math.floor(fu / FAR_GLYPH_CELL), fy4 = Math.floor(fv / FAR_GLYPH_CELL);
+    const trunk = faceMode === 2 && hashFast01(fx4, fy4, FOREST_TRUNK_SALT) < FOREST_TRUNK_CHANCE;
+    code = trunk ? FOREST_TRUNK_CODE : pickCodeFromPacked(faceX, faceCount, faceMode === 2 ? faceCount - 1 : Math.floor(hashFast01(fx4, fy4, 7) * faceCount));
     if (trunk) {
       const tOff = base + 16 * 4;
       fr = TL[tOff] * 255 * gain; fg = TL[tOff + 1] * 255 * gain; fb = TL[tOff + 2] * 255 * gain;

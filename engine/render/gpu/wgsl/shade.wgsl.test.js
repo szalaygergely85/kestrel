@@ -243,6 +243,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
       base.smoothstepFast = compileFn(SHADE_WGSL, 'smoothstepFast', base);
       base.wetGain = compileFn(SHADE_WGSL, 'wetGain', base);
       base.skylineFogF = compileFn(src, 'skylineFogF', base); // MAP-06b
+      for (const fnName of ['tsFootprint', 'tsOctFade', 'tsValueNoise', 'tsPatchNoise']) base[fnName] = compileFn(src, fnName, base); // OB-073 noise helpers
       const st = compileFn(src, 'shadeTerrain', base);
       const ctx = { tlook, tlookWidth: TLOOK_WIDTH, bands, fog, shading: { ...shadingT, wetness: wet, floorLum: floorY }, closeBand: 40, handover: [40, 90], features: null, hashCell, skyline: sky };
       for (let t = 0; t < trials; t++) {
@@ -428,9 +429,9 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
 
 // --- US-073b (38.25): the stable-glyph level target. OFF = byte-identical to the pre-073b shader; ON = one extra r8ui target. ---
 {
-  // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01, DN-02 night floor, MAP-06b skyline cap (40573 chars): the stable-off shader must not move by a single byte.
-  assert.equal(SHADE_WGSL.length, 40573, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '638ae17d42ac0792d16313a816f8f9e4d1f0eacefc0afce966276c88b8d685f6', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01, DN-02 night floor, MAP-06b skyline cap, OB-073 smooth ground noise (42233 chars): the stable-off shader must not move by a single byte.
+  assert.equal(SHADE_WGSL.length, 42233, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '763d0815802adf8ca1a31ee025693220e5620feeb5eb5e7c0f2f600b261a4f79', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);

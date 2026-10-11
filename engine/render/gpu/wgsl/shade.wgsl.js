@@ -31,7 +31,7 @@ import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // 
 import { SKY_GLOW_WGSL } from '../../skyGlow.js';
 import { FOG_SHAPE_WGSL } from '../../fogShape.js';
 import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
-import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, PATCH_CELL, CALM_AT0, CALM_SPAN, FAR_GLYPH_CELL, GLINT_RATE } from '../../terrainShade.js';
+import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, GLINT_RATE, NOISE_CELLS, NOISE_W, NOISE_SALT, GLYPH_CELL, PATCH_K, PATCH_DITHER, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX } from '../../terrainShade.js';
 
 
 
@@ -81,17 +81,48 @@ fn pickCodeFromPacked(x: i32, count: i32, idx: i32) -> i32 {
   return (x >> u32(8 * i)) & 0xff;
 }
 
+// OB-073: literal twins of terrainShade.js groundFootprint / octaveFade / valueNoise / patchNoise (power-of-two cells: u * inv exact in f32).
+fn tsFootprint(t: f32) -> f32 {
+  if (su.hashCell > 0.0) { return su.hashCell; }
+  let k = select(${FP_DEFAULT_K.toFixed(4)}, -su.hashCell, su.hashCell < 0.0);
+  return k * t * clamp(t / ${FP_ANISO_T.toFixed(4)}, 1.0, ${FP_ANISO_MAX.toFixed(4)});
+}
+fn tsOctFade(cell: f32, fp: f32) -> f32 {
+  let s = clamp((cell / max(fp, 0.000001) - 1.5) / 1.5, 0.0, 1.0);
+  return s * s * (3.0 - 2.0 * s);
+}
+fn tsValueNoise(x: f32, y: f32, salt: i32) -> f32 {
+  let x0 = floor(x); let y0 = floor(y);
+  let ix = i32(x0); let iy = i32(y0);
+  var fx = x - x0; var fy = y - y0;
+  fx = fx * fx * (3.0 - 2.0 * fx); fy = fy * fy * (3.0 - 2.0 * fy);
+  let a = hashFast(ix, iy, salt); let b = hashFast(ix + 1, iy, salt); let c = hashFast(ix, iy + 1, salt); let d = hashFast(ix + 1, iy + 1, salt);
+  return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+}
+fn tsPatchNoise(u: f32, v: f32, fp: f32, v8: f32) -> f32 {
+  let f0 = tsOctFade(${NOISE_CELLS[0].toFixed(4)}, fp);
+  var ws = ${NOISE_W[0].toFixed(4)} * f0; var n = ws * (v8 * 2.0 - 1.0);
+  let f1 = tsOctFade(${NOISE_CELLS[1].toFixed(4)}, fp);
+  if (f1 > 0.0) { let w1 = ${NOISE_W[1].toFixed(4)} * f1; n += w1 * (tsValueNoise(u * ${(1 / NOISE_CELLS[1]).toFixed(4)}, v * ${(1 / NOISE_CELLS[1]).toFixed(4)}, ${NOISE_SALT + 1}) * 2.0 - 1.0); ws += w1; }
+  let f2 = tsOctFade(${NOISE_CELLS[2].toFixed(4)}, fp);
+  if (f2 > 0.0) { let w2 = ${NOISE_W[2].toFixed(4)} * f2; n += w2 * (tsValueNoise(u * ${(1 / NOISE_CELLS[2]).toFixed(4)}, v * ${(1 / NOISE_CELLS[2]).toFixed(4)}, ${NOISE_SALT + 2}) * 2.0 - 1.0); ws += w2; }
+  return n / max(ws, 0.55);
+}
+
 struct TerrainOut { fr: f32, fg: f32, fb: f32, br: f32, bg: f32, bb: f32, glyph: i32 };
 
 ${SKYLINE_FOG_WGSL}
 fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceMode: i32, z: f32) -> TerrainOut {
-  // OB-067: glyph/glint/features keyed on the fixed world cell (twin: terrainShade.js); far calm = coarse cell + no tier dither.
-  let pcx = i32(floor(u / ${PATCH_CELL.toFixed(4)})); let pcy = i32(floor(v / ${PATCH_CELL.toFixed(4)}));
-  let calm = t > ${CALM_AT0.toFixed(4)} + ${CALM_SPAN.toFixed(4)} * hashFast(pcx, pcy, 11);
-  var cx = pcx; var cy = pcy;
-  if (calm) { cx = i32(floor(u / ${FAR_GLYPH_CELL.toFixed(4)})); cy = i32(floor(v / ${FAR_GLYPH_CELL.toFixed(4)})); }
-  let hA = select(hashFast(pcx, pcy, typeId), 0.5, calm);
-  let hB = hashFast(cx, cy, 7);
+  // OB-073: band-limited smooth value noise for the patch tier + 0.25 m glyph cell with one per-point switch (twin: terrainShade.js).
+  let fp = tsFootprint(t);
+  let v8 = tsValueNoise(u * ${(1 / NOISE_CELLS[0]).toFixed(4)}, v * ${(1 / NOISE_CELLS[0]).toFixed(4)}, ${NOISE_SALT});
+  let nP = tsPatchNoise(u, v, fp, v8);
+  let gx = i32(floor(u * ${(1 / GLYPH_CELL).toFixed(4)})); let gy = i32(floor(v * ${(1 / GLYPH_CELL).toFixed(4)}));
+  let sw = hashFast(gx, gy, 12);
+  let fpOk = fp < ${GLYPH_CELL.toFixed(4)} * (0.35 + 0.4 * sw);
+  let dith = (hashFast(gx, gy, 13) - 0.5) * ${PATCH_DITHER.toFixed(4)} * tsOctFade(${GLYPH_CELL.toFixed(4)}, fp);
+  let off = clamp(i32(floor(nP * ${PATCH_K.toFixed(4)} + 0.5 + dith)), -1, 1);
+  let hF = min(v8, 0.999);
 
   // S8-B2-14b wetness: darkens the lit term entering the tier/gain pick, same WET_DARK as detailShade.js/shadeCore
   // (terrain has no emissive term to keep separate - the whole incoming b is the "lit term" here).
@@ -103,13 +134,15 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
   var bEff = bWet;
   if (close) { // OB-054: jitter fades smoothstep to 0 over closeBand/2..closeBand (twin: terrainShade.js)
     let q = clamp((t - su.closeBand * 0.5) / (su.closeBand * 0.5), 0.0, 1.0);
-    bEff = bWet + (hashFast(pcx, pcy, 10) * 2.0 - 1.0) * 0.08 * (1.0 - q * q * (3.0 - 2.0 * q));
+    bEff = bWet + nP * 0.05 * (1.0 - q * q * (3.0 - 2.0 * q));
   }
 
-  let closeG = close && t < su.closeBand * (0.6 + 0.4 * hashFast(pcx, pcy, 12));
+  let closeG = close && t < su.closeBand * (0.6 + 0.4 * sw) && fpOk;
+  let nearG = select(fpOk, closeG, su.nearDetailOn != 0);
+  let hB = select(hF, hashFast(gx, gy, 7), nearG);
   var tier = 2;
   if (bEff < 0.45) { tier = 0; } else if (bEff < 0.8) { tier = 1; }
-  var ii = tier + (i32(floor(hA * 3.0)) - 1);
+  var ii = tier + off;
   ii = clamp(ii, 0, 2);
 
   let base = typeId; // TLOOK row = type id (texel x = 0..6, see TerrainTextures.js)
@@ -134,7 +167,7 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
 
   let t3 = textureLoad(uTlook, vec2i(3, base), 0);
   if (t3.y > 0.5) {
-    let g = hashFast(cx, cy, i32(floor(timeSec * ${GLINT_RATE.toFixed(4)})));
+    let g = hashFast(gx, gy, i32(floor(timeSec * ${GLINT_RATE.toFixed(4)})));
     if (g > 0.5) {
       let alt = pickCodeFromPacked(packedX, packedCount, imod(i32(hB * f32(packedCount)) + 1, max(1, packedCount)));
       code = alt;
@@ -152,7 +185,7 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
       let fchance = fa.x;
       if (fchance <= 0.0) { continue; }
       let fi = i32(fa.w);
-      let fh = hashFast(cx, cy, 20 + fi);
+      let fh = hashFast(gx, gy, 20 + fi);
       if (fh >= fchance) { continue; }
       code = select(i32(fa.z), i32(fa.y), fh < fchance * 0.5);
       let fbCol = textureLoad(uTlook, vec2i(9 + slot * 2, base), 0);
@@ -165,9 +198,10 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
   // ME-06b: background canopy FACE look: TLOOK texel 3 .z/.w = face glyphs + count (forest only), texel 16 = trunk colour.
   if (faceMode != 0 && t3.w > 0.5 && !close && t >= su.bandNear) {
     let faceCount = i32(t3.w);
-    let trunk = faceMode == 2 && hashFast(cx, cy, ${FOREST_TRUNK_SALT}) < ${FOREST_TRUNK_CHANCE.toFixed(10)};
+    let fx4 = i32(floor(u / ${FAR_GLYPH_CELL.toFixed(4)})); let fy4 = i32(floor(v / ${FAR_GLYPH_CELL.toFixed(4)}));
+    let trunk = faceMode == 2 && hashFast(fx4, fy4, ${FOREST_TRUNK_SALT}) < ${FOREST_TRUNK_CHANCE.toFixed(10)};
     if (trunk) { code = ${FOREST_TRUNK_CODE}; }
-    else { code = pickCodeFromPacked(i32(t3.z), faceCount, select(i32(hB * f32(faceCount)), faceCount - 1, faceMode == 2)); }
+    else { code = pickCodeFromPacked(i32(t3.z), faceCount, select(i32(hashFast(fx4, fy4, 7) * f32(faceCount)), faceCount - 1, faceMode == 2)); }
     if (trunk) {
       let tc = textureLoad(uTlook, vec2i(16, base), 0);
       fr = tc.r * 255.0 * gain; fgc = tc.g * 255.0 * gain; fbc = tc.b * 255.0 * gain;
