@@ -274,10 +274,11 @@ function routeRun(physics, { reload = false } = {}) {
     const cols = [...new Set(wd.structures.filter((q) => /^poi[0-9]+$/.test(q.id) && q.mesh === 'quaternius/Stairs_Exterior_Straight' && Math.abs(q.origin.x - 970.7) < 0.5 && q.origin.y < 1075).map((q) => q.origin.y))].sort((p, q) => q - p); // pile columns, south end (start) first
     const PX = wd.structures.find((q) => q.mesh === 'quaternius/Stairs_Exterior_Straight' && /^poi/.test(q.id)).origin.x;
     const nest = wd.entities.find((e) => e.id === 'nest'), up = cols.map((y) => ({ x: PX, y, jump: true }));
-    const rk = runLeg(sim, 'R1 Rook ruin climb (steps -> roof -> nest -> down)', [{ x: 1001, y: 1064 }, { x: 994, y: 1064 }, { x: 990, y: 1067 }, { x: 980, y: 1071 }, { x: 975.5, y: cols[0] + 2.2 }, { x: PX, y: cols[0] + 2.2 }, ...up, { x: nest.x, y: nest.y }, { x: nest.x + 1.6, y: nest.y }, ...up.slice().reverse().map((w) => ({ x: w.x, y: w.y })), { x: PX, y: cols[0] + 2.2 }, { x: 975.5, y: cols[0] + 2.2 }, { x: 980, y: 1071 }, { x: 990, y: 1067 }, { x: 994, y: 1058 }, { x: 1001, y: 1064 }, { x: 1008, y: 1069 }], { maxWpSteps: 1500 });
+    const rk = runLeg(sim, 'R1 Rook ruin climb (steps -> roof -> nest -> down)', [{ x: 1001, y: 1064 }, { x: 994, y: 1064 }, { x: 990, y: 1067 }, { x: 980, y: 1071 }, { x: 975.5, y: cols[0] + 2.2 }, { x: PX, y: cols[0] + 2.2 }, ...up, { x: nest.x, y: nest.y }, { x: wd.entities.find((e) => e.id === "chestBoots").x - 0.5, y: nest.y }, { x: nest.x, y: nest.y }, { x: wd.entities.find((e) => e.id === "chestRook").x + 0.5, y: nest.y }, { x: nest.x, y: nest.y }, ...up.slice().reverse().map((w) => ({ x: w.x, y: w.y })), { x: PX, y: cols[0] + 2.2 }, { x: 975.5, y: cols[0] + 2.2 }, { x: 980, y: 1071 }, { x: 990, y: 1067 }, { x: 994, y: 1058 }, { x: 1001, y: 1064 }, { x: 1008, y: 1069 }], { maxWpSteps: 1500 });
     rk.completed = rk.completed && !rk.fell && cols.length >= 3;
     info.roofZ = Math.max(...rk.trace.filter((_, i) => i % 3 === 2)); info.roofCols = cols.length;
     if (sim.physics === 'mesh') rk.completed = rk.completed && info.roofZ >= nest.z - 0.6; // the grid has no mesh colliders: there it only has to walk the line without a stuck spot
+    if (!rk.completed) process.exitCode = 1; // OB-044: a failing R1 fails the whole route-walk
     legs.push(rk);
   }
   const back = runLeg(sim, '9c ford -> back over the stones -> bend', [{ x: 1008, y: 1069 }, ...W2E, { x: 1046, y: 1069 }, { x: 1090, y: 1070 }, { x: 1180, y: 1062 }, { x: 1260, y: 1045 }, { x: 1310, y: 1048 }], { maxWpSteps: 1500 });
