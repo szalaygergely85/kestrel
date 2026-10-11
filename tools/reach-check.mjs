@@ -5,8 +5,9 @@
 import { readFileSync } from 'node:fs';
 
 const R = 0.3; // player capsule radius
+// MAP-26: pierStone (1045,1320) is outside the walk bounds until the north-bank stage opens them (flagged to PO).
 // Ch2 scenery that is outside the M1 walk bounds by design (footpath north of the ford, MAP-25); not a quest objective.
-const ALLOW = new Set(['hiddenScrawl', 'sealedGate']) // sealedGate: West Fells pass, outside the M4 walk bounds by design (Part II);
+const ALLOW = new Set(['hiddenScrawl', 'sealedGate', 'pierStone']) // sealedGate: West Fells pass, outside the M4 walk bounds by design (Part II);
 // Signed distance past the walk bound for a capsule body (<= 0 inside). Local copy of engine/physics/bounds.js (circle / capsule / union;
 // tools may not deep-import the engine). A polygon bound is not supported here.
 function partOver(p, x, y, rad) {

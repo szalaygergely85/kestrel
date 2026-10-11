@@ -241,6 +241,14 @@
     icon: icon([' .-. ', '(obo)', ' |=| '],
                [' rRr ', 'RbRbR', ' ffb '])
   };
+  defs.signArm = {
+    id: 'signArm', name: 'Signpost Arm', kind: 'material', stackMax: 1, hand: false, inPack: true,
+    desc: 'Washed up. For the crossroads post.',
+    use: { none: 'Material - quest errand (sq.fc.sign, MAP-26 pickup)' },
+    glyph: { ch: '=', c: 'goreRed' },
+    icon: icon(['=---=', '  |  ', '  |  '],
+               ['bbbbb', '  b  ', '  b  '])
+  };
   defs['heart.piece'] = {
     id: 'heart.piece', name: 'Heart Piece', kind: 'upgrade', stackMax: 3, hand: false, inPack: true,
     desc: 'A warm red stone. Four make a heart.',

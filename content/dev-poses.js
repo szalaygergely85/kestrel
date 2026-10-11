@@ -60,6 +60,9 @@ export const GATE_POSES = [
   { slug: 'burl', name: 'Burl the bear on the walk-out path (NPC-BEAR-01)', cam: { x: 1474.2, y: 1029.4, z: 1.7, yawDeg: 270, pitchDeg: 4, groundEye: true } },
   // MAP-14: Glasswater south shore (the leg 10 turn-around, 1237,606), looking north across the lake; perf-pose JS p95 <= 8 ms.
   { slug: 'lakeEdge', name: 'Glasswater lake edge, looking north over the water (MAP-14 perf pose)', cam: { x: 1237, y: 606, z: 1.7, yawDeg: 0, pitchDeg: 2, groundEye: true } },
+  // MAP-26: Outwall. `outwall` = just inside the south-east gate looking at the relay on the plaza (perf pose, JS p95 <= 8 ms); `outwallFord` = ford west bank looking at the walled settlement.
+  { slug: 'outwall', name: 'Outwall, inside the gate looking at the relay (MAP-26 perf pose)', cam: { x: 937, y: 927, z: 1.7, yawDeg: 314, pitchDeg: 4, groundEye: true } },
+  { slug: 'outwallFord', name: 'ford west bank looking at the Outwall palisade (MAP-26 still)', cam: { x: 998, y: 1066, z: 1.7, yawDeg: 217, pitchDeg: 4, groundEye: true } },
   { slug: 'roadSouth', name: 'walk-out road, looking west-south-west at the cleaned south verge + placed meshes (ME-14c3)', cam: { x: 1466, y: 1035, z: 1.7, yawDeg: 240, pitchDeg: 6, groundEye: true } },
   { slug: 'roadBend', name: 'road bend, looking west at the relay waystone (WS1-08 gate pose)', cam: { x: 1268, y: 1040, z: 1.7, yawDeg: 270, pitchDeg: 0, groundEye: true } },
   // WS1-08 / CH1-10 C perf-gate poses (tools/perf-pose.mjs default --poses): interior = the brazier view inside the tower (same cam as 'brazier'); exterior = from the walk-out meadow 29 m west of the tower, looking east (+x) with the towerCrown prop (world_m1 entity at 1497,1025, z 12-14) in view (pitch +14).
