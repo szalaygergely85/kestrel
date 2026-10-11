@@ -18,6 +18,10 @@ export const WATER_BLOCK = defineUniformBlock('WaterU', [
   { name: 'kind', type: 'i32' },   // 0 rect, 1 circle, 2 sheet
   { name: 'slot', type: 'u32' },
   { name: 'projMode', type: 'u32' }, // US-068b1 (38.19): 2 = ortho (appended)
+  // RIVER-03 (38.45): ribbon draws only (waterRiver.wgsl.js): clip regions (-1 none, 0 rect, 1 circle) with their shapes local to O.
+  { name: 'clipK0', type: 'i32' }, { name: 'clipK1', type: 'i32' },
+  { name: 'clip0', type: 'vec4' }, // rect x0, y0, x1, y1 | circle cx, cy, r^2, -
+  { name: 'clip1', type: 'vec4' },
 ]);
 /** Slot kinds of PipelineDesc.bindings.textures: 0 = uSceneDepth (r32uint). */
 export const WATER_TEXTURES = Object.freeze(['uint']);

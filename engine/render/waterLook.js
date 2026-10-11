@@ -32,10 +32,10 @@ export const WATER_FLOW_SALT = 59;
 export const WATER_FALL_SALT = 61;
 /** Flow below this speed (m/s) is still water: the 32.2 time-bucket hash, no streaks. */
 export const FLOW_MIN = 0.05;
-/** Waterfall sheets later take slots 8..11 (35.3). */
-export const WL_SLOTS = 12;
-/** OB-019 RIVER-02 (38.45): JS-twin slot table size = 12 + river slots 12..13. The GPU uniform stays WL_SLOTS (12) until RIVER-03 ports the WGSL. */
-export const WL_TABLE_SLOTS = 14;
+/** Slots 0..7 regions, 8..11 waterfall sheets (35.3), 12..13 river ribbons (38.45, RIVER-03: the GPU uniform now holds all 14). */
+export const WL_SLOTS = 14;
+/** JS-twin slot table size (RIVER-02); equal to WL_SLOTS since RIVER-03 ported the WGSL (kept as an alias). */
+export const WL_TABLE_SLOTS = WL_SLOTS;
 export const RIVER_SLOT0 = 12;
 /** Ripple ring slots in `WaterCompositeU.ripple` (S8-B2-13b, 38.14): `array<vec4f, 8>`, matches `createRipples()`'s default cap. */
 export const RIPPLE_SLOTS = 8;
