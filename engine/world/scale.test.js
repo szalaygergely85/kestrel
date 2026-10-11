@@ -90,13 +90,13 @@ ok('unscaled boulder radius unchanged', base.get('tower.boulder').getComponent('
 // Round trip: unscaled world -> no scale keys, byte-identical; scaled -> stable.
 const s0 = stringifySave(serialize(base));
 // PLANT-SCALE-01: world_m1 mesh placements (plants) carry their own `scale`; unscaled props must add none on top.
-const meshScaled = (def.structures || []).filter((s) => s.scale !== undefined).length;
+const meshScaled = (def.structures || []).filter((s) => s.scale !== undefined).length + (def.entities || []).filter((e) => e.scale !== undefined && e.scale !== 1).length; // + scaled entities (Rook 1.6, red caps)
 ok('unscaled save adds no "scale" key beyond the scaled mesh placements', (s0.match(/"scale"/g) || []).length === meshScaled);
 const s0b = stringifySave(serialize(deserialize(serialize(base), assets, {})));
 ok('unscaled round trip byte-identical', s0 === s0b);
 const sc = serialize(w1);
 const scs = stringifySave(sc);
-ok('scaled save writes scale 1.5 on the lever only', sc.entities.filter((e) => e.transform.scale !== undefined).map((e) => e.id).join() === 'tower.lever' && sc.entities.find((e) => e.id === 'tower.lever').transform.scale === 1.5);
+ok('scaled save writes scale 1.5 on the lever only', sc.entities.filter((e) => e.transform.scale !== undefined && !(def.entities || []).some((d) => d.id === e.id && d.scale !== undefined)).map((e) => e.id).join() === 'tower.lever' && sc.entities.find((e) => e.id === 'tower.lever').transform.scale === 1.5);
 const w1b = deserialize(sc, assets, {});
 ok('restored scale 1.5', w1b.get('tower.lever').data.transform.scale === 1.5);
 ok('scaled round trip stable', stringifySave(serialize(w1b)) === scs);
