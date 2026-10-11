@@ -4,9 +4,10 @@
 // dialogue lines/choices go through the dialogue runner (press/choose); boar kills and straw-man hits are combat:hit events (the same event sword and arrow emit).
 // Run: node tools/verify-ch12-run.mjs 9560   (PC-B lane ports 9500-9574; CDP = port+1). Prints beat -> PASS/FAIL, exit 1 on any FAIL.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
 import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, evaluateAsync, killTree } from './capture-browser.mjs';
+import { buildGapTable, compareSnaps, questVerdict, renderReport, SAMPLE_EVERY_S } from './verify-ch12-lib.mjs';
 
 const port = Number(process.argv[2] || 9560);
 validatePort(port);
@@ -18,6 +19,18 @@ const url = `http://127.0.0.1:${port}/game/index.html?voxelbench=0&save=1&backen
 const rows = []; const errors = []; const warns = []; let browser, cdp;
 const ev = (js) => evaluate(cdp, js);
 const evA = (js) => evaluateAsync(cdp, js);
+// ---- M4-C2 report plumbing: stills per beat, guidance-gap sampler (AC4), quest table (AC1), save diffs (AC3) -> docs/test-reports/m4-c2/report.md ----
+const OUT = path.join(ROOT, 'docs', 'test-reports', 'm4-c2'); mkdirSync(OUT, { recursive: true });
+const rdj = (p) => JSON.parse(readFileSync(path.join(ROOT, p), 'utf8'));
+const CH12_IDS = [...rdj('content/quests/index.json').legacy.filter((i) => i !== 'm1'), ...rdj('content/quests/ch12/pack.json').quests.map((q) => q.id)]; // m1 is the main quest
+const stills = []; const samples = []; let curBeat = 'start', quests = [], ac3Diffs = [], gearInfo = null, t0 = Date.now(), sampler = null;
+async function still(name) { try { const r = await cdp.send('Page.captureScreenshot', { format: 'png' }); const f = name.replace(/[^a-z0-9]+/gi, '-').slice(0, 40) + '.png'; writeFileSync(path.join(OUT, f), Buffer.from(r.data, 'base64')); return f; } catch (e) { return null; } }
+// one sample = tracked HUD objective? compass target? a ! / ? giver within 30 m? (compass hide flag ignored: capture-like pages hide it)
+const SAMPLE = `(() => { const D = window.__debug, b = D.saveRelay.quest.book, t = D.playerHandle.data.transform, w = D.world, a = [], r = [], O = { x: 1480, y: 1018 }; b.giverMarks(a, r);
+  let giver = false; for (const id of a.concat(r)) { let e = null; try { e = w.get(id); } catch (e2) {} const p = e && e.data && e.data.transform; if (p && Math.hypot(p.x - t.x, p.y - t.y) < 30) giver = true; }
+  let compass = false; try { compass = !!D.compassRetarget(); } catch (e) {}
+  return { x: t.x - O.x, y: t.y - O.y, hour: w.state['clock.hour'] || 0, tracked: b.tracked() >= 0, compass, giver }; })()`;
+function startSampler() { t0 = Date.now(); sampler = setInterval(async () => { try { const s = await evaluate(cdp, SAMPLE); if (s) samples.push({ ...s, t: (Date.now() - t0) / 1000, event: curBeat }); } catch (e) { /* page reloading */ } }, SAMPLE_EVERY_S * 1000); }
 const key = async (code, k) => { await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', code, key: k, text: k.length === 1 ? k : undefined }); await pause(70); await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: k }); await pause(120); };
 
 // ---- page-side helper library (window.__t) ----
@@ -57,9 +70,10 @@ const LIB = `(() => { const D = window.__debug, w = D.world, p = D.playerHandle.
       return JSON.parse(JSON.stringify({ pos: [t.x, t.y, t.z], hp: c.health.hp, max: c.health.max, inventory: c.inventory.slots, equipment: c.equipment, quickbar: c.quickbar, main: { done: q.quest.completed, flags: q.quest.flags }, quests, tracked: book().tracked(), state: st, dead: D.saveRelay.deadBeasts, chests: D.saveRelay.openedChests })); } };
   return true; })()`;
 
-function rec(name, ok, why) { rows.push({ name, ok, why: why || '' }); console.log((ok ? 'PASS ' : 'FAIL ') + name + (why ? '  - ' + why : '')); }
+function rec(name, ok, why, still) { rows.push({ name, ok, why: why || '', still: still || null }); console.log((ok ? 'PASS ' : 'FAIL ') + name + (why ? '  - ' + why : '')); }
 async function beat(name, fn) {
-  try { const r = await fn(); if (r === true || r === undefined) rec(name, true); else rec(name, !!r.ok, r.why); }
+  curBeat = name;
+  try { const r = await fn(); const ok = r === true || r === undefined || !!r.ok; rec(name, ok, ok ? '' : r.why, await still('beat-' + String(rows.length + 1).padStart(2, '0') + '-' + name)); }
   catch (e) { rec(name, false, String(e && e.message || e).slice(0, 400)); }
 }
 const stOf = (id) => ev(`__t.st(${JSON.stringify(id)})`);
@@ -117,6 +131,7 @@ try {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 640, height: 360, deviceScaleFactor: 1, mobile: false });
   await open();
   if (!(await ev("localStorage.getItem('kestrel.save.slot.0') === null"))) throw new Error('profile not fresh');
+  startSampler();
 
   if (process.argv[3]) { const { readFileSync } = await import('node:fs'); console.log(JSON.stringify(await evA(readFileSync(process.argv[3], 'utf8')), null, 1)); if (process.argv[4]) { await pressE(1); console.log(JSON.stringify(await evA(readFileSync(process.argv[4], 'utf8')), null, 1)); } throw new Error('probe done'); } // dev: run a snippet after the page is ready
   // ===== Chapter 1: the tower =====
@@ -262,9 +277,18 @@ try {
     return { ok, why: ok ? '' : await state('sq.tm.nub', 'sq.straw') };
   });
 
+  // ===== AC1: every Ch1-2 quest done (m1 main + giver quests); lists the last objective of any that is not =====
+  curBeat = 'AC1 quest table';
+  quests = await ev(`(() => { const b = __t.D.saveRelay.quest.book, ids = ${JSON.stringify(CH12_IDS)}, N = ['unavailable', 'available', 'active', 'ready', 'done'], out = [];
+    const last = (i) => { const d = b.def(i), c = b.questState(i).completed, o = d.objectives.find((x, k) => !(c.includes(x.id) || c.includes(k))); return o ? o.id + ' (' + o.when.type + ' ' + (o.when.id || (o.when.ids || []).join('+')) + ')' : '-'; };
+    out.push({ id: 'm1', status: b.main.completed.length >= b.def(0).objectives.length ? 'done' : 'active', lastObjective: last(0) });
+    for (let i = 1; i < b.count; i++) if (ids.includes(b.def(i).id)) out.push({ id: b.def(i).id, status: N[b.status(i)], lastObjective: last(i) }); return out; })()`);
+  await beat('AC1 all Ch1-2 beats + errands done', async () => { const v = questVerdict(quests); return { ok: v.ok, why: v.open.map((q) => `${q.id}=${q.status}@${q.lastObjective}`).join(', ') }; });
+
   // ===== AC2: gear shows on the player =====
   await beat('AC2 gear shows (equipment + view model)', async () => {
     const g = await ev(`(() => { const D = __t.D, c = D.playerHandle.data.components; return { main: c.equipment.main, off: c.equipment.off, left: c.inventory.left, right: c.inventory.right, vm: !!(D.vmHandles && D.vmHandles.sword) }; })()`);
+    gearInfo = g;
     return { ok: g.main === 'sword' && (g.left === 'sword' || g.right === 'sword'), why: JSON.stringify(g) };
   });
 
@@ -276,7 +300,7 @@ try {
     return { ok: len > 0, why: 'slot bytes ' + len };
   });
   await beat('AC3b Continue restores position, hearts, items, gear, quick bar, quests, flags', async () => {
-    warns.length = 0;
+    warns.length = 0; clearInterval(sampler); sampler = null;
     // voxelbench=0 is a capture-like page (no title menu): reload on the normal page and press Continue on the title card
     await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=1&backend=webgpu` });
     if (!(await waitFor(() => ev('typeof __debug !== "undefined" && !!(__debug.menuHost && __debug.menuHost.active)'), 15000))) return { ok: false, why: 'title menu never showed' };
@@ -287,11 +311,7 @@ try {
     const ready = await waitFor(() => ev('(() => { try { __t.snap(); window.__snapErr = null; return true; } catch (e) { window.__snapErr = String(e && e.stack || e).slice(0, 300); return false; } })()'), 20000, 500);
     if (!ready) return { ok: false, why: 'snap never ready: ' + await ev('window.__snapErr') };
     const after = await ev('__t.snap()');
-    const canon = (v) => (v && typeof v === 'object') ? (Array.isArray(v) ? v.map(canon) : Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]))) : v;
-    const diffs = [];
-    if (!before.pos.every((v, i) => Math.abs(v - after.pos[i]) <= 0.05)) diffs.push('pos ' + before.pos + ' -> ' + after.pos);
-    for (const k of ['hp', 'max', 'inventory', 'equipment', 'quickbar', 'main', 'quests', 'tracked', 'dead', 'chests']) if (JSON.stringify(canon(before[k])) !== JSON.stringify(canon(after[k]))) diffs.push(k + ' ' + JSON.stringify(before[k]).slice(0, 120) + ' -> ' + JSON.stringify(after[k]).slice(0, 120));
-    for (const k of new Set([...Object.keys(before.state), ...Object.keys(after.state)])) if (JSON.stringify(before.state[k]) !== JSON.stringify(after.state[k])) diffs.push('state.' + k + ' ' + JSON.stringify(before.state[k]) + ' -> ' + JSON.stringify(after.state[k]));
+    ac3Diffs = compareSnaps(before, after); const diffs = ac3Diffs.map((d) => d.name + ' ' + JSON.stringify(d.before).slice(0, 120) + ' -> ' + JSON.stringify(d.after).slice(0, 120));
     return { ok: diffs.length === 0, why: diffs.slice(0, 6).join(' ; ') + (diffs.length ? ' || warns: ' + warns.slice(0, 4).join(' | ') : '') };
   });
   await beat('no console errors', async () => ({ ok: errors.length === 0, why: errors.slice(0, 3).join(' | ') }));
@@ -302,7 +322,16 @@ try {
   if (path.dirname(path.resolve(profile)) !== path.resolve(os.tmpdir())) throw Error('Unexpected profile path');
   await pause(300);
   try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch (e) { console.warn('[cleanup] temp profile left behind:', e.message); }
+  clearInterval(sampler);
   const fails = rows.filter((r) => !r.ok);
+  try { // AC5 report (written even when the run failed part-way)
+    const ac = { ac1: quests.length > 0 && questVerdict(quests).ok, ac2: !!(gearInfo && gearInfo.main === 'sword'), ac3: rows.some((r) => r.name.startsWith('AC3b')) && !!rows.find((r) => r.name.startsWith('AC3b')).ok };
+    const beats = rows.filter((r) => /^\d/.test(r.name)).map((r, i) => ({ id: r.name + (r.ok ? '' : ' [FAIL]'), t: i, still: r.still }));
+    const md = renderReport({ date: new Date().toISOString().slice(0, 10), quests, beats, forced: rows.filter((r) => !r.ok).map((r) => r.name + ': ' + r.why), gaps: buildGapTable(samples), ac, diffs: ac3Diffs, equipment: gearInfo,
+      notes: [`${samples.length} samples every ${SAMPLE_EVERY_S} s of wall time; the script teleports between beats, so the "where" is the spot the player stood at while a beat ran (event = beat name)`, 'compass column = __debug.compassRetarget() has a target; giver = a ! / ? giver within 30 m', `console errors: ${errors.length}`] });
+    writeFileSync(path.join(OUT, 'report.md'), md); console.log('report: docs/test-reports/m4-c2/report.md');
+    if (!ac.ac1 || !ac.ac3) process.exitCode = 1; // AC1 / AC3 failure = non-zero
+  } catch (e) { console.error('report failed', e && e.message); process.exitCode = 1; }
   console.log('\n' + 'beat'.padEnd(64) + 'result'); for (const r of rows) console.log(r.name.padEnd(64) + (r.ok ? 'PASS' : 'FAIL ' + r.why));
   console.log(fails.length ? `Ch1-2 run: ${fails.length} FAIL` : 'Ch1-2 run: all beats PASS');
   if (fails.length) process.exitCode = 1;

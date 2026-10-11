@@ -618,3 +618,8 @@ EQ-23 (kestrel-4, eq-23, Node-only): leftover stacks drop at the player's feet. 
 - AC1-3 pass as Node tests (`node tools/run-tests.mjs --filter actionHints,hints,combatHint,bindings,check-deps`: 6/6 PASS; --check ok on main/actionHints/hints).
 - AC4 NOT run (no browser): `node tools/verify-action-hints.mjs 9500` (drives hints via __debug.playerHandle state, stills `docs/test-reports/captures/action-hints-*.png`; owner look: none overlaps OB-051 prompt). Script unrun, item ids/state hooks unverified in a browser.
 - Limits: Q-swap done = swapT start; potion/pickup hints are edge-based (starting kit seeded as baseline); `[1-4]` is literal (digits not in bindings table).
+
+## M4-C2 Ch1-2 run + gap report (kestrel-1, Node only, branch m4c2-run)
+- `tools/verify-ch12-run.mjs` already existed (f77ce6ba, 23/24 beats). Added: per-beat stills + `docs/test-reports/m4-c2/report.md` (AC5), 5 s guidance-gap sampler (AC4: tracked HUD / `compassRetarget()` / ! ? giver within 30 m), AC1 quest table (m1 + legacy + ch12 pack ids, last objective of any open one), AC3 diff via `compareSnaps`; exit 1 on any beat FAIL or AC1/AC3 fail. No main.js change.
+- Pure parts in `tools/verify-ch12-lib.mjs` (+ `verify-ch12-run.test.mjs`): `node tools/run-tests.mjs --filter verify-ch12` PASS; `node --check` ok. Browser NOT run.
+- Main session runs once: `node tools/verify-ch12-run.mjs 9560` (then read the report; unverified: sampler vs. page busy, `__debug.compassRetarget`/`invView` hooks, still count). Caveat: the script teleports, so gap "where" = spot of each beat, not a walked route; the original ch12run.js was not needed.
