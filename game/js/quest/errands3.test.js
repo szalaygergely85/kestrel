@@ -11,7 +11,7 @@ const dir = fileURLToPath(new URL('../../../content/quests', import.meta.url));
 const files = loadQuestFiles(dir), packs = await loadPackQuests(dir, assets.items?.defs);
 const all = [...files.quests, ...packs.quests].map(q => q.def);
 const get = id => all.find(d => d.id === id);
-const IDS = ['sq.ow.wolves', 'sq.ow.boars', 'sq.ow.parcel', 'sq.ow.ford'];
+const IDS = ['sq.ow.wolves', 'sq.ow.boars', 'sq.ow.parcel', 'sq.ow.ford', 'sq.ow.barley', 'sq.ow.range'];
 const gate = { ...get('mq.ford.mirror') }; delete gate.requires; // stub the earlier chapters: the gate quest opens at once
 const mk = () => {
   const b = createQuestBook(get('m1'), [gate, ...IDS.map(get)]);
@@ -21,7 +21,7 @@ const mk = () => {
 };
 const done = (b, id) => b.statusOf(id) === DONE;
 
-ok(IDS.every(id => get(id)), 'all 4 quests are in the pack');
+ok(IDS.every(id => get(id)), 'all 6 quests are in the pack');
 for (const id of IDS) {
   const d = get(id);
   for (const o of d.objectives) ok(o.text.length <= 38, id + ' objective <= 38 chars');
@@ -65,6 +65,20 @@ for (const id of IDS) {
   b.feed({ type: 'area:entered', id: 'fordWest' });
   ok(b.statusOf('sq.ow.ford') === READY, 'ready on the west bank');
   ok(!!b.handIn('sq.ow.ford') && done(b, 'sq.ow.ford'), 'handed in at the stone');
+}
+{ // fetch the sheaf at the barley gate, hand in at the board
+  const { b } = mk();
+  ok(b.accept('sq.ow.barley'), 'barley accepted');
+  b.packOps.add('barleySheaf', 1); b.feed({ type: 'item:count', id: 'barleySheaf', n: 1 });
+  ok(b.statusOf('sq.ow.barley') === READY, 'ready with the sheaf');
+  ok(!!b.handIn('sq.ow.barley') && done(b, 'sq.ow.barley'), 'barley handed in');
+}
+{ // practice targets near owPathPost: flags owTarget1-3.hit
+  const { b } = mk();
+  ok(b.accept('sq.ow.range'), 'range accepted');
+  for (const i of [1, 2, 3]) { ok(b.statusOf('sq.ow.range') === ACTIVE, 'active before target ' + i); b.feed({ type: 'flag:set', key: 'owTarget' + i + '.hit', value: true }); }
+  ok(b.statusOf('sq.ow.range') === READY, 'ready after 3 targets');
+  ok(!!b.handIn('sq.ow.range') && done(b, 'sq.ow.range'), 'range handed in');
 }
 console.log(`errands3: ${pass} pass, ${fail} fail`);
 if (fail) { for (const m of failures) console.error('FAIL ' + m); process.exit(1); }

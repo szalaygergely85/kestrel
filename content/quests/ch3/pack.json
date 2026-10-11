@@ -254,6 +254,81 @@
           }
         ]
       }
+    },
+    {
+      "id": "sq.ow.barley",
+      "title": "Barley Sheaf",
+      "site": "owBoard",
+      "steps": [
+        {
+          "template": "fetch",
+          "params": {
+            "item": "barleySheaf"
+          },
+          "objText": "Fetch the sheaf at the barley gate"
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 1
+          },
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.range",
+      "title": "Track Targets",
+      "site": "owBoard",
+      "objectives": [
+        {
+          "id": "t1",
+          "text": "Hit target 1",
+          "when": {
+            "type": "flag",
+            "id": "owTarget1.hit",
+            "equals": true
+          }
+        },
+        {
+          "id": "t2",
+          "text": "Hit target 2",
+          "when": {
+            "type": "flag",
+            "id": "owTarget2.hit",
+            "equals": true
+          }
+        },
+        {
+          "id": "t3",
+          "text": "Hit target 3",
+          "when": {
+            "type": "flag",
+            "id": "owTarget3.hit",
+            "equals": true
+          }
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 15
+          }
+        ]
+      },
+      "returnText": "Back to the board"
     }
   ]
 }

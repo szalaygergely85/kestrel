@@ -41,7 +41,6 @@ export function bannerLines(def, action, wrap, maxRows = 10) {
   return rows.slice(0, maxRows);
 }
 
-const TARGET_RE = /^target([123])$/;
 const ESCORT_R = 14;
 const MQ = ['mq.bend.call', 'mq.ford.mirror']; // Rook's main quests (world.state keys 'mq.<id>.*' = dialogue 's.mq.<id>.*')
 const MQ_AUTO = new Set(['mq.ford.mirror']); // no hand-in line: handed in as soon as READY
@@ -141,10 +140,10 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
     },
     /** dialogueCtl.onTalk(npcId): talk flag only (the dialogue itself drives accept / hand-in). */
     talked(id) { const f = 'talk.' + siteOf(id); if (wants(f)) questFlag(f, true); api.mainSync(0); },
-    /** combat:hit {target}: straw men (sword or arrow) while sq.straw is active. */
+    /** combat:hit {target}: any target whose `<id>.hit` flag is an objective of an ACTIVE quest (sq.straw target1-3, sq.ow.range owTarget1-3, ...). */
     hit(p) {
-      const m = p && typeof p.target === 'string' ? TARGET_RE.exec(p.target) : null;
-      if (m && status('sq.straw') === ACTIVE) questFlag('target' + m[1] + '.hit', true);
+      const t = p && typeof p.target === 'string' ? p.target : null;
+      if (t && wants(t + '.hit')) questFlag(t + '.hit', true);
     },
     /**
      * Rook's main quests: publish book status as world.state flags, consume the dialogue's accept / handin flags,
