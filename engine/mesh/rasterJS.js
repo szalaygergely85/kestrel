@@ -16,7 +16,7 @@
 // Zero allocation per frame (27.15.0 "hard gate"): every scratch buffer
 // below is module-level and reused; no closures, array literals or
 // destructuring inside the hot per-triangle/per-pixel path.
-import { PROJ_NEAR, PROJ_FAR } from '../render/projection.js';
+import { PROJ_NEAR, PROJ_FAR, DEPTH_TIER } from '../render/projection.js';
 import {
   KIND_TERRAIN, KIND_MODEL, KIND_MESH, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED, PLANEID_TERRAIN,
 } from '../render/GBuffer.js';
@@ -173,6 +173,7 @@ const _info = {
   aux2: 0, aux3: 0, aux4: 0, aux5: 0,
   dither: 0, zBase: 0, objectId: 0, isTerrain: false, isVoxel: false, isMesh: false,
   partAxisAligned: false, kind7Mat: /** @type {((x:number,y:number)=>number)|null} */ (null),
+  depthTier: 0, // OB-053 (38.49): item.depthTier; the depth TEST is pulled forward by 2 * tier * DEPTH_TIER (NDC [-1,1]); 0 in depth-bias (shadow) passes
   biasFlag: 0, biasFactor: BIAS_FACTOR, biasUnits: BIAS_UNITS, twoSided: false,
   maskW: -1, maskX0: 0, maskY0: 0, maskH: 0, maskCut: 0, // ALPHA-01b: maskW < 0 = opaque range (no discard)
   structFoot: /** @type {Float64Array|Float32Array|null} */ (null), structCount: 0,
@@ -405,6 +406,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
     biasAdd = info.biasFactor * Math.max(Math.abs(dznX), Math.abs(dznY)) + 2 * info.biasUnits * Math.pow(2, -24);
   }
 
+  const tierShift = 2 * info.depthTier * DEPTH_TIER;
   for (let py = pyMin; py <= pyMax; py++) {
     const Py = py * 256 + 128;
     const rowBase = py * W;
@@ -422,6 +424,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
       let zn = l0 * zn0 + l1 * zn1 + l2 * zn2;
       const znRaw = zn; // fragment position.z has no rasterizer bias (ortho depth below)
       if (info.biasFlag) zn += biasAdd;
+      if (info.depthTier !== 0) zn -= tierShift; // OB-053: compare + zbuf only, the written depth (vD) stays raw
       if (zn > 1) continue;
       if (info.dither !== 0 && !ditherKeep(info.dither, px, py)) continue; // S8-B2-07: the GPU discards before the depth test, so does this
 
@@ -597,6 +600,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.biasFlag = 0;
       _info.cullBack = (isVoxelItem || instAligned !== undefined) && _mW < 0 && !_noCull;
     }
+    _info.depthTier = ctx.depthBias ? 0 : (item.depthTier | 0); // OB-053: colour pass only (shadow casters keep their depthBias)
     if (ctx.depthBias) { // ME-15a: the shadow pass biases every caster
       _info.biasFlag = 1; _info.biasFactor = ctx.depthBias.factor; _info.biasUnits = ctx.depthBias.units;
     } else {

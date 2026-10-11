@@ -168,6 +168,8 @@ function buildCompareRuns(ctx) {
       cam: { x: 1489.0, y: 1025.0, z: 8.2, yawDeg: 87.6, pitchDeg: 0 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: breach looking back east (yaw 87.6)',
       cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 87.6, pitchDeg: 0 }, real: true },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: ob053Heap (OB-053 depth tiers: envelopeHeap voxel prop on the tower floor, yaw 104 pitch -24)',
+      cam: { x: 1481.85, y: 1024.30, z: 2.40, yawDeg: 104, pitchDeg: -24 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: breach',
       cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 270, pitchDeg: 0 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: breachDown',

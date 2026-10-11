@@ -23,6 +23,8 @@ export const PROJ_NEAR = 0.05;
  *  skirt the JS raster draws (it has no far clip); must stay >= the far grid reach + `geo.seaSkirtM`. Perspective depth
  *  precision is set by PROJ_NEAR, not by this; ortho linear depth spacing stays ~1 mm. */
 export const PROJ_FAR = 16000;
+/** OB-053 (38.49): depth-test pull-forward per DrawItem.depthTier, in [0,1] depth (8 depth24 ulps). Both raster twins subtract tier * DEPTH_TIER from the TESTED depth only. */
+export const DEPTH_TIER = 2 ** -21;
 
 /**
  * @typedef {Object} GridSpec

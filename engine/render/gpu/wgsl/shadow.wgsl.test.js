@@ -6,7 +6,7 @@ import { SHADOW_WGSL, SHADOW_TERRAIN_WGSL, SHADOW_DEPTH_COPY_WGSL, SHADOW_TERRAI
   SHADOW_DEPTH_COPY_TEXTURES, SHADOW_DEPTH_COPY_TARGETS, SHADOW_TERRAIN_TEXTURES } from './shadow.wgsl.js';
 import { insideStructFoot } from '../../../mesh/rasterJS.js';
 import { WGSL_MODULES } from './index.js';
-import { SHADOW_Z_LINE, RASTER_Z_LINE, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL, RASTER_SHADOW_WGSL, RASTER_VOXEL_SHADOW_WGSL,
+import { SHADOW_Z_LINE, RASTER_Z_LINE, RASTER_TIER_LINE, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL, RASTER_SHADOW_WGSL, RASTER_VOXEL_SHADOW_WGSL,
   RASTER_INSTANCED_SHADOW_WGSL, RASTER_CLOTH_SHADOW_WGSL, toShadowVertexWgsl } from './raster.wgsl.js';
 import { compileFn, shims } from './wgslProbe.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
@@ -95,7 +95,7 @@ for (const [n, raster, shadow] of [['static', RASTER_WGSL, RASTER_SHADOW_WGSL], 
   assert.equal(raster.split(RASTER_Z_LINE).length, 2, n + ': raster has exactly one z line');
   assert.equal(shadow.split(SHADOW_Z_LINE).length, 2, n + ': shadow variant has exactly one shadow z line');
   assert.ok(!shadow.includes(RASTER_Z_LINE), n + ': no [0,1] z line left');
-  assert.equal(shadow.replace(SHADOW_Z_LINE, RASTER_Z_LINE), raster, n + ': nothing else differs from the raster stage');
+  assert.equal(shadow.replace(SHADOW_Z_LINE, RASTER_Z_LINE + '\n  ' + RASTER_TIER_LINE), raster, n + ': nothing else differs from the raster stage');
 }
 assert.throws(() => toShadowVertexWgsl('no z line here'), /exactly one/);
 assert.throws(() => toShadowVertexWgsl(RASTER_Z_LINE + RASTER_Z_LINE), /exactly one/);

@@ -92,6 +92,7 @@ const MAX_STRUCTS = 8;
  * @property {number} mirror - 0|1: part matrices have det < 0 (HANDS-01a, view-model hand mirror); front faces wind CW on screen, both twins flip the cull sign
  * @property {number} zBase - G-buffer z = worldZ - zBase - aux.zRef
  * @property {number} flags - DRAW_FLAG_*
+ * @property {number} depthTier - OB-053 (38.49): 0..3, the depth TEST is pulled forward by tier * DEPTH_TIER (both twins); written depth unchanged. 0 level/terrain/cloth, 1 placed meshes, 2 voxel props/models
  * @property {Float64Array} aabb - 6, world, for culling
  * @property {import('./instances.js').InstanceBuffer|null} instBuf - DRAW_INSTANCED: per-instance buffer (64 B each)
  * @property {number} instCount - DRAW_INSTANCED: instances used
@@ -113,6 +114,7 @@ function makeDrawItem() {
     mirror: 0,
     zBase: 0,
     flags: 0,
+    depthTier: 0,
     aabb: new Float64Array(6),
     instBuf: null,
     instCount: 0,
@@ -138,6 +140,7 @@ function resetDrawItem(item) {
   item.mirror = 0;
   item.zBase = 0;
   item.flags = 0;
+  item.depthTier = 0;
   item.aabb.fill(0);
   item.instBuf = null;
   item.instCount = 0;
@@ -183,6 +186,7 @@ export class DrawList {
     resetDrawItem(item);
     item.mesh = mesh;
     item.type = type;
+    item.depthTier = type === DRAW_VOXEL ? 2 : type === DRAW_INSTANCED ? 1 : 0; // OB-053 default per type; placed static meshes set 1 (MeshDrawCache), view models 0
     return item;
   }
 
@@ -529,6 +533,7 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
     const s = structs[si];
     const mesh = cache.get(s.mesh, idFor, world.maskAtlas);
     const item = list.push(mesh, DRAW_STATIC);
+    item.depthTier = 1; // OB-053: placed mesh sits above level/terrain at an exact tie
     placementMatrix12(s, item.matrix);
     item.zBase = s.origin.z;
     item.planeIdOr = (k & 0xFF) << 20;

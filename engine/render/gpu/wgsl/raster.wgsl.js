@@ -2,6 +2,7 @@
 import { defineUniformBlock } from './uniformBlock.js';
 import { INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from '../../../mesh/sway.js';
 import { WIND_AT_WGSL, ORTHO_NEAR_WGSL, ORTHO_FAR_WGSL } from './common.wgsl.js';
+import { DEPTH_TIER } from '../../projection.js';
 import { KIND_MODEL, KIND_MESH, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED } from '../../GBuffer.js';
 
 const RASTER_FIELDS = [
@@ -9,7 +10,9 @@ const RASTER_FIELDS = [
   { name: 'planeIdOr', type: 'u32' }, { name: 'zBase', type: 'f32' },
   { name: 'objectId', type: 'u32' }, { name: 'axisAligned', type: 'u32' },
   // US-068b1/b2 (38.19): `projMode` (2 = ortho) sits in the shared prefix, so every raster block has it at the same word; the host writes it once per frame; fragment dist = linear z when 2.
-  { name: 'projMode', type: 'u32' }, { name: 'flat', type: 'vec2' },
+  { name: 'projMode', type: 'u32' },
+  // OB-053 (38.49): `depthTier` fills the 4-byte hole before `flat` (vec2 align 8): no other offset or block size moves.
+  { name: 'depthTier', type: 'u32' }, { name: 'flat', type: 'vec2' },
 ];
 export const RASTER_BASE_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS]);
 // ALPHA-01c: static mesh with a mask range (one draw per masked range): the base block + the atlas rect (x0,y0,w,h) and the cutoff byte
@@ -189,7 +192,8 @@ ${cloth || compact ? '' : '  o.aux0123 = a.aAux0123; o.aux4567 = vec4f(a.aAux456
 ${mask ? '  o.vUVMask = a.aUVMask;' : ''}
 ${ao ? '  o.vAo = a.aAo;' : ''}
   o.pos = u.viewProj * worldPos;
-  o.pos.y = -o.pos.y; o.pos.z = 0.5 * (o.pos.z + o.pos.w);
+  o.pos.y = -o.pos.y; ${RASTER_Z_LINE}
+  ${RASTER_TIER_LINE}
   return o;
 }
 const KIND_MODEL: u32 = ${KIND_MODEL}u;
@@ -261,6 +265,8 @@ ${mask ? `@fragment fn fs_mask_shadow(v: VertexOut) {
 
 /** The raster vertex stages' depth line (z -> [0,1], the GL2 convention after the y flip). */
 export const RASTER_Z_LINE = 'o.pos.z = 0.5 * (o.pos.z + o.pos.w);';
+/** OB-053 (38.49): depth tier pull-forward of the depth TEST (fragment Depth / GA come from 1/pos.w and stay unbiased). Raster colour passes only; the shadow variant drops it. */
+export const RASTER_TIER_LINE = `o.pos.z -= f32(u.depthTier) * ${DEPTH_TIER.toExponential()} * o.pos.w;`;
 /**
  * Sun shadow vertex line (38.5 item 6, depth32float): clip z lands in [0.5, 1] so one float ULP / depthBias unit is 2^-24 at every
  * depth (= the twin's 24-bit model). light.wgsl.js sunShadowTaps compares against 0.5 + 0.5 * sd; shadowParity converts back (d - 0.5) * 2.
@@ -270,7 +276,8 @@ export const SHADOW_Z_LINE = 'o.pos.z = 0.25 * (o.pos.z + o.pos.w) + 0.5 * o.pos
 export function toShadowVertexWgsl(code) {
   const parts = code.split(RASTER_Z_LINE);
   if (parts.length !== 2) throw new Error(`toShadowVertexWgsl: expected exactly one raster z line, found ${parts.length - 1}`);
-  return parts.join(SHADOW_Z_LINE);
+  return parts.join(SHADOW_Z_LINE).replace(`
+  ${RASTER_TIER_LINE}`, '');
 }
 
 export const RASTER_WGSL = rasterWgsl('static');

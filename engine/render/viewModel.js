@@ -411,6 +411,7 @@ class ViewModelLayerImpl {
       }
       setRot(p[3], p[4], p[5], R);
       const item = list.push(d.mesh, DRAW_VOXEL);
+      item.depthTier = 0; // OB-053: view models keep their own depth path
       const F = d.forward, pm = item.partMatrices;
       for (let q = 0; q < d.partCount; q++) {
         const fo = q * 12;

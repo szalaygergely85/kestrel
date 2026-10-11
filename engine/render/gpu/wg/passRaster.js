@@ -21,7 +21,7 @@ import { windSwayOn, packWindUniforms, SWAY_MAX } from '../../../mesh/sway.js'; 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
 const PLANE = RASTER_BLOCK.field('planeIdOr').word, ZBASE = RASTER_BLOCK.field('zBase').word;
 const OBJECT = RASTER_BLOCK.field('objectId').word, AXIS = RASTER_BLOCK.field('axisAligned').word;
-const FLAT = RASTER_BLOCK.field('flat').word;
+const FLAT = RASTER_BLOCK.field('flat').word, TIER = RASTER_BLOCK.field('depthTier').word; // OB-053 (38.49)
 const TEAM_SLOT = RASTER_BLOCK.field('teamSlot').word, TEAM_MAT = RASTER_BLOCK.field('teamMat').word;
 const M_X0 = RASTER_MASK_BLOCK.field('maskX0').word, M_Y0 = RASTER_MASK_BLOCK.field('maskY0').word, M_W = RASTER_MASK_BLOCK.field('maskW').word;
 const M_H = RASTER_MASK_BLOCK.field('maskH').word, M_CUT = RASTER_MASK_BLOCK.field('maskCut').word;
@@ -177,7 +177,7 @@ export class WgRasterPass {
         for (let r = 0; r < R; r++) {
           const e = entries[lod * R + r];
           if (!e.active) continue;
-          this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0
+          this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0; this.bits[TIER] = 1
           this._model(e.parts.m, 0);
           const entry = this.buffers.getVoxel(e.mesh); this.bits[AXIS] = this._axis(e.parts.flags[0], entry);
           const mr = e.mesh.maskRanges;
@@ -394,7 +394,7 @@ export class WgRasterPass {
 
   _item(item) {
     this.bits[PLANE] = item.planeIdOr; this.u[ZBASE] = item.zBase;
-    this.bits[OBJECT] = item.objectId; this.bits[AXIS] = 0;
+    this.bits[OBJECT] = item.objectId; this.bits[AXIS] = 0; this.bits[TIER] = item.depthTier;
   }
 
   _draw(pipe, entry, count, first, instanceBuffer = null, instances = 1) {
@@ -514,7 +514,7 @@ export class WgRasterPass {
             d.writeBuffer(ent.buffer, ib.f32, 0, cnt * INSTANCE_BYTES); ent.version = ib.version; ent.count = cnt; this.instUploads++;
           } else this.instSkips++;
           const buffer = ent.buffer;
-          this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0;
+          this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0; this.bits[TIER] = item.depthTier;
           const entry = this.buffers.getVoxel(item.mesh);
           const ranges = instancedRanges(item);
           const mr = item.mesh.maskRanges; // ALPHA-01f (b): per-range mask lookup, same shape as _staticMesh's
