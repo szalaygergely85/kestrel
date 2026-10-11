@@ -201,12 +201,15 @@ export function createVitals(world, events, cfg, hooks) {
       // world (past lastSafe.z - voidFallM, e.g. the BUG-GONDOLA-FALL z=-1977), teleport back with no damage.
       const t = player.transform;
       const body = player.components && player.components.body;
-      if (body && body.grounded && !body.fallDistance) {
+      // OB-016: walking down a long slope (tower +2 -> Bend relay -31) left fallDistance > 0 between small step-downs, so the
+      // safe spot stayed at the tower and the 30 m void rule snapped the player back. Any grounded step is safe now, and the
+      // void rule only fires while actually airborne (falling out of the world), never while walking on ground.
+      if (body && body.grounded) {
         if (!lastSafe || tick - lastSafe.tick >= cfg.voidSafeIntervalSteps) {
           lastSafe = { x: t.x, y: t.y, z: t.z, yawDeg: t.yawDeg, tick };
         }
       }
-      if (lastSafe && t.z < lastSafe.z - cfg.voidFallM) {
+      if (lastSafe && !(body && body.grounded) && t.z < lastSafe.z - cfg.voidFallM) {
         t.x = lastSafe.x; t.y = lastSafe.y; t.z = lastSafe.z;
         if (typeof lastSafe.yawDeg === 'number') t.yawDeg = lastSafe.yawDeg;
         if (body) { body.vx = 0; body.vy = 0; body.vz = 0; body.grounded = true; body.fallDistance = 0; body.landed = false; } // no fall damage for the void drop
