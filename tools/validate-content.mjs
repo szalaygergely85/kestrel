@@ -238,6 +238,7 @@ const MAX_OBJECTIVE_TEXT = 38, MAX_ITEM_NAME = 14, MAX_ITEM_DESC = 38;
 export function validateContent(ASSETS, opts = {}) {
   const errors = [];
   const warnings = [];
+  const infos = []; // QL-T2: informational notes (not findings)
   let checks = 0;
   const fail = (path, msg) => errors.push(`${path}: ${msg}`);
   const check = (cond, path, msg) => { checks++; if (!cond) fail(path, msg); };
@@ -709,6 +710,39 @@ export function validateContent(ASSETS, opts = {}) {
   const visiting = new Set(), visited = new Set();
   const hasCycle = (id) => { if (visiting.has(id)) return true; if (visited.has(id)) return false; visiting.add(id); for (const n of reqEdges.get(id) || []) if (hasCycle(n)) return true; visiting.delete(id); visited.add(id); return false; };
   for (const id of reqEdges.keys()) check(!hasCycle(id), `quests.${id}.requires`, 'requires chain has a cycle');
+  // QL-T2 (38.44 item 10): giver sites exist and are placed, every quest is reachable from the start, gate key given once by the last main quest.
+  if (quests.length) {
+    const actors = new Set();
+    for (const w of Object.values(worlds)) for (const e of w.entities || []) actors.add(e.id);
+    for (const lv of Object.values(levels)) for (const pr of lv?.props || []) actors.add(pr.id);
+    if (opts.sites) for (const { path, def } of quests) {
+      if (def?.site === undefined) continue;
+      const s = Object.hasOwn(opts.sites, def.site) ? opts.sites[def.site] : null;
+      check(!!s, `${path}.site`, `site "${def.site}" not found in sites.json`);
+      if (s) check(actors.has(s.entity), `${path}.site`, `site "${def.site}" entity "${s.entity}" is not placed in world data`);
+    }
+    // reachability: a quest opens once every quest it requires is reachable (flag-only requires count as satisfiable)
+    const reach = new Set();
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const { def } of quests) {
+        if (!def || reach.has(def.id)) continue;
+        if ((def.requires || []).every(r => r.quest === undefined || reach.has(r.quest))) { reach.add(def.id); grew = true; }
+      }
+    }
+    for (const { path, def } of quests) if (def) check(reach.has(def.id), `${path}.requires`, `quest "${def.id}" is not reachable from the start (cycle or missing prerequisite)`);
+    const GATE = 'key.gate';
+    const givers = quests.filter(q => (q.def?.reward?.items || []).some(r => r.id === GATE));
+    if (!givers.length) infos.push('gate key not assigned yet');
+    else {
+      const total = givers.reduce((n, g) => n + g.def.reward.items.filter(r => r.id === GATE).reduce((m, r) => m + r.n, 0), 0);
+      check(total === 1, 'quests.key.gate', `"${GATE}" must be given exactly once (given ${total}x by ${givers.map(g => g.def.id).join(', ')})`);
+      const needs = new Set(); // main quests another main quest requires are not the last one
+      for (const q of quests) if (q.def?.main === true) for (const r of q.def.requires || []) if (r.quest !== undefined && r.quest !== q.def.id) needs.add(r.quest);
+      const last = quests.filter(q => q.def?.main === true && !needs.has(q.def.id)).map(q => q.def.id);
+      for (const g of givers) check(g.def.main === true && last.includes(g.def.id), `${g.path}.reward`, `"${GATE}" must be given by the last main quest (last: ${last.join(', ') || 'none'})`);
+    }
+  }
 
   // RECIPES-01: share the actual crafting schema, with path-specific ref findings.
   const recipeFile = opts.recipeFile;
@@ -859,7 +893,7 @@ export function validateContent(ASSETS, opts = {}) {
     warnings.push(...dl.warnings);
     checks += dl.checks;
   }
-  return { errors, warnings, checks, meshOnlyCount };
+  return { errors, warnings, infos, checks, meshOnlyCount };
 }
 
 // DIALOGUE-01a2 (38.28): content/dialogue/*.dialogue.json - engine rules via validateDialogue, plus the one
@@ -1075,6 +1109,7 @@ export function loadQuestFiles(dir) {
 /** QL-B1: content/quests/index.json packs -> expanded giver defs (sites.json + rewards.json + item defs), validated like plain quest files. */
 export async function loadPackQuests(dir, itemDefs = {}) {
   const quests = [], errors = [];
+  let sites;
   const read = (f) => JSON.parse(readFileSync(`${dir}/${f}`, 'utf8'));
   let index; try { index = read('index.json'); } catch (e) { return { quests, errors }; }
   if (!Array.isArray(index.packs) || !index.packs.length) return { quests, errors };
@@ -1082,11 +1117,12 @@ export async function loadPackQuests(dir, itemDefs = {}) {
   try {
     const packs = index.packs.map(p => read(`${p}/pack.json`));
     const items = Object.values(itemDefs).map(d => ({ id: d.id, slot: d.equip?.slot, tier: d.equip?.tier }));
-    const ex = expandAll(packs, { sites: read('sites.json').sites, rewards: read('rewards.json').tables, items, strictText: true });
+    sites = read('sites.json').sites;
+    const ex = expandAll(packs, { sites, rewards: read('rewards.json').tables, items, strictText: true });
     for (const e of ex.errors) errors.push(`pack:${e.region}:${e.id}: ${e.message}`);
     for (const def of ex.defs) quests.push({ path: `pack:${def.id}`, def });
   } catch (e) { errors.push(`content/quests packs: ${e.message}`); }
-  return { quests, errors };
+  return { quests, errors, sites };
 }
 
 export function loadRecipeFile(path) {
@@ -1109,11 +1145,12 @@ async function main() {
   const lootFile = loadLootFile(fileURLToPath(new URL('../content/items/loot.json', import.meta.url)));
   const packQuests = await loadPackQuests(fileURLToPath(new URL('../content/quests', import.meta.url)), ASSETS?.items?.defs);
   questFiles.quests.push(...packQuests.quests); questFiles.errors.push(...packQuests.errors);
-  const { errors: allErrors, warnings, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, dialogueFilesDir, quests: questFiles.quests, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile, ...lootFile });
+  const { errors: allErrors, warnings, infos, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, dialogueFilesDir, sites: packQuests.sites, quests: questFiles.quests, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile, ...lootFile });
   allErrors.push(...questFiles.errors);
   allErrors.push(...lootFile.errors);
   allErrors.push(...recipeFile.errors);
   for (const w of warnings) console.warn(`WARN ${w}`);
+  for (const i of infos) console.log(`INFO ${i}`);
   const meshOnlyText = meshOnlyCount ? `, ${meshOnlyCount} mesh-only model(s)` : '';
   if (allErrors.length) {
     for (const e of allErrors) console.error(e);
