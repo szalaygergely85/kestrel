@@ -165,7 +165,7 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   const N = 10000;
   let gear = 0, arrows = 0, meat = 0, maxEntries = 0, arrowMin = 99, arrowMax = 0;
   const seq = [], tiers = { worn: 0, sturdy: 0, fine: 0 };
-  const gearIds = () => { const r = []; env.world.forEachEntity((e) => { const p = e.components && e.components.pickup; if (p && p.kind === 'item') r.push(p.itemId); }); return r; };
+  const gearIds = () => { const g = env.loot.gearOf('boar1'); return g ? [g] : []; }; // OB-064: gear is held by the corpse until E
   for (let d = 0; d < N; d++) {
     kill(env);
     const g = gearIds();
@@ -203,7 +203,7 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   const { createBand } = await import('./band.js');
   const real = createBand(globalThis.ASSETS.levels.world_geo.regions);
   const outwall = { gearTierAt: () => real.gearTierAt(905, 940) };
-  const gearIds = (env) => { const r = []; env.world.forEachEntity((e) => { const p = e.components && e.components.pickup; if (p && p.kind === 'item') r.push(p.itemId); }); return r; };
+  const gearIds = (env) => { const g = env.loot.gearOf('boar1'); return g ? [g] : []; };
   const run = (band, N) => {
     const env = fresh({ seed: 1, band }); const out = [];
     for (let d = 0; d < N; d++) {
@@ -405,6 +405,33 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   env.loot.dispose();
   stepPickups(env.world, env.player);
   ok('dispose uninstalls the item sink', !!env.world.entity(id3));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// 10. OB-064: kill != loot. Player standing ON the corpse: the pack stays unchanged until E; gear shows only at E.
+// ---------------------------------------------------------------------------------------------------------------
+{
+  const env = fresh({ seed: 7 });
+  const inv = env.player.components.inventory;
+  const total = () => inv.slots.reduce((a, s) => a + (s.id ? s.n : 0), 0);
+  let gearKills = 0, leaked = 0, gearInPackAfterLoot = 0;
+  for (let d = 0; d < 400; d++) {
+    const t0 = env.player.transform; t0.x = BX; t0.y = BY; t0.z = env.world.get('boar1').data.transform.z;
+    const before = total();
+    kill(env);
+    for (let k = 0; k < 3; k++) stepPickups(env.world, env.player);
+    if (total() !== before) leaked++;
+    const g = env.loot.gearOf('boar1');
+    env.loot.lootBoar('boar1');
+    stepPickups(env.world, env.player);
+    if (g) { gearKills++; if (countOf(inv, g) === 1) gearInPackAfterLoot++; }
+    inv.slots.forEach((s) => { s.id = null; s.n = 0; });
+    env.world.forEachEntity((e, id) => { if (e.components && e.components.pickup) env.world.remove(id); });
+    resetPickups(env.world);
+    env.beasts.resetAll();
+  }
+  ok('OB-064: pack unchanged by a kill with the player on the corpse (400 kills)', leaked === 0, leaked);
+  ok('OB-064: some gear rolled; gear reaches the pack only after E', gearKills > 3 && gearInPackAfterLoot === gearKills, gearKills + '/' + gearInPackAfterLoot);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

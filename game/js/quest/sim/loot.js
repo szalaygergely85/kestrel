@@ -110,6 +110,8 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
   const loot = {
     count,
     corpseN: new Int8Array(MAX_SLOTS * ITEMS_PER_CORPSE),
+    gearHeld: new Array(MAX_SLOTS).fill(null), // OB-064: rolled gear id / tier waits IN the corpse; the drop spawns at E
+    gearTier: new Array(MAX_SLOTS).fill('worn'),
     corpseItem: new Array(MAX_SLOTS * ITEMS_PER_CORPSE).fill(null), // item id per column (entry order: fixed, then give rolls)
     // Preallocated emit payloads (toastView builds its string from them, on the event).
     _added: { id: '', n: 0 },
@@ -118,6 +120,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
 
   function clearSlot(i) {
     delete world.state[flagKey[i]];
+    loot.gearHeld[i] = null;
     const o = i * ITEMS_PER_CORPSE;
     for (let k = 0; k < ITEMS_PER_CORPSE; k++) { loot.corpseN[o + k] = 0; loot.corpseItem[o + k] = null; }
   }
@@ -140,12 +143,12 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
         // US-129a: gear tier from the zone band (T1 = today's weighted roll, so the meadow is unchanged); same draws either way.
         const forced = band ? BAND_TABLE.gearItemTier[band.gearTierAt(p.x, p.y)] : null;
         const gid = rollGear(items, b, c, undefined, undefined, forced);
-        if (gid) spawnItemDrop(world, gid, p.x, p.y, p.z, items && items[gid] && items[gid].equip ? items[gid].equip.tier : 'worn');
+        if (gid) { loot.gearHeld[i] = gid; loot.gearTier[i] = items && items[gid] && items[gid].equip ? items[gid].equip.tier : 'worn'; } // OB-064: no ground drop before E
       }
     }
     if (beasts.wolf && beasts.wolf[i]) { // EQ-20: wolves 3 % sturdy shield/bow (fine only from band 5)
       const wid = rollWolfWeapon(items, band ? band.bandAt(p.x, p.y) : 1, wrng(), wrng(), wrng());
-      if (wid) spawnItemDrop(world, wid, p.x, p.y, p.z, items[wid].equip.tier);
+      if (wid) { loot.gearHeld[i] = wid; loot.gearTier[i] = items[wid].equip.tier; }
     }
     const orbHit = rng.nextFloat() < table.orb.chance;
     const orbKind = table.orb.kinds[rng.int(table.orb.kinds.length)];
@@ -195,6 +198,12 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
         events.emit('inventory:added', loot._added);
       }
     }
+    const gh = loot.gearHeld[i]; // OB-064: held gear appears as a pickup at the body on the first E (pack full -> it lies there, EQ-23)
+    if (gh) {
+      loot.gearHeld[i] = null;
+      const t = recs[i];
+      spawnItemDrop(world, gh, t.x, t.y, t.z - CORPSE_LIFT, loot.gearTier[i]);
+    }
     if (left > 0) {
       // Corpse keeps the leftover and stays lootable (simpler than a drop; nothing is lost or duplicated).
       loot._full.id = leftId; loot._full.dropped = false;
@@ -210,6 +219,11 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
   loot.countOf = function countOf(id, k) {
     const i = beasts.slotOf(id);
     return i < 0 ? -1 : loot.corpseN[i * ITEMS_PER_CORPSE + k];
+  };
+  /** Gear id still held by the corpse of beast `id` (OB-064), or null. Test/debug hook. */
+  loot.gearOf = function gearOf(id) {
+    const i = beasts.slotOf(id);
+    return i < 0 ? null : loot.gearHeld[i];
   };
   /** Item id in column `k` for beast `id` (null = empty / untracked). Test hook. */
   loot.itemOf = function itemOf(id, k) {

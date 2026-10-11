@@ -1447,7 +1447,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       loot = itemDefs ? createLoot(world, engine.events, { items: itemDefs, beasts, table: LOOT_TABLE.boar, band: worldBand,
         rng: createRng(((worldDef.nav?.seed ?? 1) ^ LOOT_SEED_SALT) >>> 0),
         inventoryOf: () => playerHandle.data.components.inventory || null }) : null;
-      setLootApi(loot);
+      setLootApi(loot); window.__debug.loot = loot; // OB-064: tools/verify-boar-loot.mjs
       // WS1-06b: one [E] interactable per kind:'relay' point (crystal-gated wake; woken ones restore awake from world.state).
       relayWake = createRelayWake({ questFlag: saveEnabled && saveRelay ? (k) => saveRelay.quest.questFlag(k) : undefined, world, palette: assets.palette, notice: saveEnabled ? notice : null, emit: (id, kind, p) => gameHooks.emitSimple('prop:touched', id, kind, p) });
       setRelayWakeApi(relayWake); window.__debug.relayWake = relayWake; // tools/verify-relay-wake.mjs
