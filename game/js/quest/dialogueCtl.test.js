@@ -110,7 +110,7 @@ function run(c, f, n) { f.keys.clear(); for (let i = 0; i < n; i++) c.step(DT, f
 {
   const f = fake(), c = mk(f);
   const rec = c.addNpc('bear');
-  assert.equal(rec.name, 'npc.talk'); assert.equal(rec.prompt, '[E] Talk'); assert.deepEqual(rec.def, { npcId: 'bear' });
+  assert.equal(rec.name, 'npc.talk'); assert.equal(rec.prompt, '[E] Talk to Burl'); assert.deepEqual(rec.def, { npcId: 'bear' });
   assert.equal(c.addNpc('ghost'), null);
 }
 

@@ -10,6 +10,7 @@ import { createJawSync } from './jawSync.js';
 
 export const CLOSE_FAR_M = 6.5;
 const CONFIRM_KEYS = ['KeyE', 'Enter'];
+const NPC_NAMES = { bear: 'Burl', rook: 'Rook' }; // OB-054b: prompt names the NPC (id as fallback)
 // DIALOGUE-LOCK-01 (PO REJECT): movement stays live, so W/S are NOT read here; choose with arrows / wheel / digits 1-4.
 const DIGIT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4'];
 
@@ -95,13 +96,13 @@ export function createDialogueCtl(opt) {
       return true;
     },
 
-    /** Registers the [E] Talk interactable for NPC entity `id` (call on every 'world:loaded'). */
+    /** Registers the [E] Talk to <name> interactable for NPC entity `id` (call on every 'world:loaded'). */
     addNpc(id, o = {}) {
       const h = world.get(id), t = h && h.data && h.data.transform;
       if (!t) return null;
       return world.addInteractable({
         key: 'npc.' + id, name: 'npc.talk', x: t.x, y: t.y, z: t.z + (o.lift ?? 1), radius: o.radius ?? 2.2,
-        prompt: o.prompt ?? '[E] Talk', def: { npcId: id },
+        prompt: o.prompt ?? ('[E] Talk to ' + (NPC_NAMES[id] || id)).slice(0, 28), def: { npcId: id },
       });
     },
 

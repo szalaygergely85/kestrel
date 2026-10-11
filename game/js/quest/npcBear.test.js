@@ -101,7 +101,7 @@ ok('breach exit is visible: tower start is within 25 m', Math.hypot(tower.origin
   const ctl = createDialogueCtl({ world, dialogues: bundle.dialogues, jawOpenDeg: FX.talk.jawMaxDeg, onFlag: (k) => flags.push(k), book: () => ({ hasKey: (k) => k === 'q.tower.blade.ready', actKey: () => false }) });
   setDialogueApi(ctl);
   const it = ctl.addNpc('bear');
-  ok('addNpc registers [E] Talk, radius 2.2, def.npcId bear', it && it.prompt === '[E] Talk' && it.radius === 2.2 && it.def.npcId === 'bear');
+  ok('addNpc registers [E] Talk, radius 2.2, def.npcId bear', it && it.prompt === '[E] Talk to Burl' && it.radius === 2.2 && it.def.npcId === 'bear');
   ok('jaw axis in the model header is rx, sign +', FX.talk.jawAxis === 'rx' && FX.talk.jawOpenSign === 1 && FX.talk.jawPart === 
 'jaw');
   const model = assets.model('bear');

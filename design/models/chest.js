@@ -192,7 +192,7 @@
     return {
       name: key, desc: desc, voxel: voxel,
       world: { w: +(sx * S.cellM).toFixed(3), d: +((sy - 1) * S.cellM).toFixed(3), h: +(sz * S.cellM).toFixed(3) },
-      interact: { prompt: '[E] Open', radius: 1.6, facingDeg: 70, from: 'front',
+      interact: { prompt: '[E] Open chest', radius: 1.6, facingDeg: 70, from: 'front',
                   note: 'radius from the anchor (footprint centre); facing = player forward within 70 deg of the chest ' +
                         'centre AND the player in the front half-plane (local -y). Sim owns the numbers (S8-C-06 data fields); these are defaults.' },
       readability: { note: 'see design/preview/chest.html captions: rows x cols at 1.6 m and 6 m, 240x90 / 400x150' }
@@ -222,7 +222,7 @@
       opened: { intensity: 0 }
     },
     particles: { thud: 'dust', note: 'optional: a small dust puff at mounts.dust on event thud (particles.js preset `dust`)' },
-    interact: { radius: 1.6, facingDeg: 70, prompt: '[E] Open' }
+    interact: { radius: 1.6, facingDeg: 70, prompt: '[E] Open chest' }
   };
 
   if (typeof module === 'object' && module && module.exports) {

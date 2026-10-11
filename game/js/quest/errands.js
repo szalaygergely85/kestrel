@@ -26,6 +26,12 @@ export function isWorn(eq, id) {
   return false;
 }
 
+/** OB-054b: short plain noun for an interactable's prompt. Table first (ids whose camelCase split reads badly), else the id split into words. */
+const LABELS = { post: 'basket', notePost: 'note post', noteKeepLight: 'pinned page' };
+export function labelOf(id) { return LABELS[id] || String(id).replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase(); }
+/** '[E] <Verb> <name>' capped at 28 chars (name trimmed, never a bare verb). */
+export function promptFor(verb, name) { return ('[E] ' + verb + ' ' + name).slice(0, 28).trim(); }
+
 /** Banner rows for an object inspect result: the writer's lines for the action, else null (caller keeps def.giver text). */
 export function bannerLines(def, action, wrap, maxRows = 10) {
   const L = def && def.lines; if (!L) return null;
@@ -105,7 +111,7 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
           if (c.dialogue) continue;
           const key = 'qi.' + id;
           if (w.interactables.some((r) => r.key === key)) continue;
-          w.addInteractable({ key, name: 'quest.inspect', x: d.transform.x, y: d.transform.y, z: d.transform.z + 0.6, radius: 2.4, prompt: '[E] Inspect', def: { objectId: id } });
+          w.addInteractable({ key, name: 'quest.inspect', x: d.transform.x, y: d.transform.y, z: d.transform.z + 0.6, radius: 2.4, prompt: promptFor('Inspect', labelOf(id)), def: { objectId: id } });
           added++;
         }
       }

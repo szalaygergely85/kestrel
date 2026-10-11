@@ -32,12 +32,12 @@ const rec = (world) => world.interactables.find((r) => r.key === 'tower.door');
 const propColliderTris = (world) => world.colliders.find((c) => c.id === 'props:static').bvh.triCount;
 const fire = (world) => world.fireInteraction('door.toggle', { structId: 'tower', entity: world.get('tower.doorBar') });
 
-ok('1a: starts closed (clip closed, state unset, prompt [E] Open)', voxel(w).anim === 'closed' && !w.state[DOOR_KEY] && rec(w).prompt === '[E] Open');
+ok('1a: starts closed (clip closed, state unset, prompt [E] Open)', voxel(w).anim === 'closed' && !w.state[DOOR_KEY] && rec(w).prompt === '[E] Open door');
 const tris0 = propColliderTris(w);
 ok('1b: door.toggle opens: variant open, clip opening, state true, prompt [E] Close, collider dropped', fire(w) === true
-  && voxel(w).variant === 'open' && voxel(w).anim === 'opening' && w.state[DOOR_KEY] === true && rec(w).prompt === '[E] Close' && propColliderTris(w) === tris0 - 12);
+  && voxel(w).variant === 'open' && voxel(w).anim === 'opening' && w.state[DOOR_KEY] === true && rec(w).prompt === '[E] Close door' && propColliderTris(w) === tris0 - 12);
 ok('1c: toggling again closes: variant closed, clip closing, prompt [E] Open, collider back', fire(w) === true
-  && voxel(w).variant === 'closed' && voxel(w).anim === 'closing' && !w.state[DOOR_KEY] && rec(w).prompt === '[E] Open' && propColliderTris(w) === tris0);
+  && voxel(w).variant === 'closed' && voxel(w).anim === 'closing' && !w.state[DOOR_KEY] && rec(w).prompt === '[E] Open door' && propColliderTris(w) === tris0);
 ok('1d: no Esc text in prompts', !/esc/i.test(rec(w).def.openPrompt + rec(w).def.closePrompt + rec(w).prompt));
 
 // save round trip (open) + applyDoorState on 'world:loaded'
@@ -45,17 +45,17 @@ fire(w);
 const re = deserialize(serialize(w), assets, { physics: 'mesh' });
 applyDoorState(re);
 ok('2a: reload shows the saved open state (variant, clip, state, prompt, collider)', voxel(re).variant === 'open' && voxel(re).anim === 'open' && re.state[DOOR_KEY] === true
-  && rec(re).prompt === '[E] Close' && propColliderTris(re) === tris0 - 12);
+  && rec(re).prompt === '[E] Close door' && propColliderTris(re) === tris0 - 12);
 fire(re);
 const re2 = deserialize(serialize(re), assets, { physics: 'mesh' });
 applyDoorState(re2);
-ok('2b: reload shows the saved closed state', voxel(re2).variant === 'closed' && voxel(re2).anim === 'closed' && !re2.state[DOOR_KEY] && rec(re2).prompt === '[E] Open' && propColliderTris(re2) === tris0);
+ok('2b: reload shows the saved closed state', voxel(re2).variant === 'closed' && voxel(re2).anim === 'closed' && !re2.state[DOOR_KEY] && rec(re2).prompt === '[E] Open door' && propColliderTris(re2) === tris0);
 
 // state-only: a fresh world given state open (e.g. a state-only save) is fixed up by applyDoorState
 // (also: a level whose prop starts at the collider-off variant has no collider at load - World honours colliderOffVariant)
 const fresh = World.load(def, assets, { physics: 'mesh' });
 fresh.state[DOOR_KEY] = true; applyDoorState(fresh);
-ok('3: applyDoorState on a fresh world with state open opens it', voxel(fresh).variant === 'open' && propColliderTris(fresh) === tris0 - 12 && rec(fresh).prompt === '[E] Close');
+ok('3: applyDoorState on a fresh world with state open opens it', voxel(fresh).variant === 'open' && propColliderTris(fresh) === tris0 - 12 && rec(fresh).prompt === '[E] Close door');
 
 // never close the door on the player standing in the doorway
 const wp = World.load(def, assets, { physics: 'mesh' });
