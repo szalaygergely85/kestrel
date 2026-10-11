@@ -148,6 +148,7 @@ const unaccountedFor = allJsonFiles.filter((rel) => {
   if (/^quests\/[^/]+\.quest\.json$/.test(rel)) return false; // QL-02: any standalone quest definition, linted by validate-content.mjs
   if (rel === 'quests/areas.json') return false; // AREAS-01 standalone alias table, checked by validate-content.mjs
   if (['quests/index.json', 'quests/sites.json', 'quests/rewards.json'].includes(rel) || rel.startsWith('quests/') && rel.endsWith('/pack.json')) return false; // QL-T1 (38.44): pack index, site + reward tables and region packs, loaded by questBoot.js
+  if (rel === 'dialogue/inspect.json' || rel === 'dialogue/quest-snippets.json') return false; // QL-T4: look-at text table + generated quest snippets, loaded by game/js/main.js
   if (rel.endsWith('.barks.json')) return false; // CH1-05/CH1-06 bark lines, fetched by main.js (no loadPack kind), checked by validate-content.mjs
   if (rel === 'items/loot.json') return false; // EQ-11 data only, schema/refs checked by validate-content.mjs
   if (rel === 'items/recipes.json') return false; // RECIPES-01 data only, schema/refs checked by validate-content.mjs
