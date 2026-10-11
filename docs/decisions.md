@@ -1135,3 +1135,4 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - Still open for the owner: the new place names (story.md "Places on the chart") and the 12 new characters (quest-roadmap.md section 2b).
 - **Place names approved (owner, 2026-10-11):** The Quiet Sea, The Braid (river), Braidmouth (river mouth), The Shearcliffs (west cliff coast), The Hollins (broadleaf woods) - docs/story.md "Places on the chart (MAP-27)" is canon. Still open: the 12 new characters (quest-roadmap.md 2b).
 - **Owner bug log (owner, 2026-10-11):** every owner finding gets an `OB-NNN` ticket in docs/bugs.md immediately; commits / agent prompts / lane entries cite it; owner verifies the fix. Rule also in CLAUDE.md.
+- **D-068 changed (owner, 2026-10-11, OB-011):** no potion HUD button. Potions show their count in the Items tab and are dragged into the quick bar [1]-[4]; the bar slot shows the count; the slot key drinks one.

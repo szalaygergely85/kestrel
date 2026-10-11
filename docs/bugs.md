@@ -13,7 +13,7 @@ Newest at the top of each table. Keep one line per bug; details go in the commit
 | OB-014 | 2026-10-11 | Game failed to load: `World.load: prop "tower.pallet" references unknown model "canvasHeap"` | Not reproducible on reload (game loads to the title). Likely a reload during a merge + generator run. | open - watch; reopen if seen again |
 | OB-013 | 2026-10-11 | Editor shows `.` invalid: content level:world_geo util.biomeAreas function values | Editor treated the world_geo helper as a content file. | fixed (editor doc skips code-only levels) - verify |
 | OB-012 | 2026-10-11 | Quick bar: sword in slot 1 / right hand; wants [L][R] mouse slots + 1-4 key slots, drag and drop | QB-6 redesign merged; browser check running. | fixed (QB-6) - verify |
-| OB-011 | 2026-10-11 | "What is that next to the health bar?" - potion box floating | Potion HUD button moved right after the HP number, no box (QB-6). | fixed (QB-6) - verify |
+| OB-011 | 2026-10-11 | Potion box next to the HP bar: REMOVE it; potions show their count in Items and are dragged into the quick bar, whose slot shows the count | Supersedes the D-068 HUD button. Agent on it (with the quick bar checks). | reopened - in progress |
 
 ## Fixed / answered (2026-10-11)
 
