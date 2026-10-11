@@ -74,3 +74,16 @@ console.log('saveState: player components/hands, quest/chests/deaths, byte-stabl
   assert.doesNotThrow(() => applySave(parseGameSave(stringifyGameSave(old)), assets, {}), 'old save without savedAt loads');
   const bad2 = structuredClone(fresh); bad2.meta.savedAt = 'x'; assert.throws(() => stringifyGameSave(bad2));
 }
+
+// OB-079: transient questMark_* entities (scale 0.05 mid-pop) are not saved, and old saves holding them still load; player vitals survive
+{
+  const w2=World.load({name:'save_fixture2',terrain:null,structures:[],entities:[]},assets,{});
+  w2.spawn('unit',{x:1,y:2,z:0,yawDeg:0,pitchDeg:0},{health:{hp:17,max:30,invuln:0}},'player');
+  w2.spawn('prop',{x:3,y:3,z:0,yawDeg:0,scale:0.05},{voxel:{model:'questMark',anim:'idle',loop:true,hidden:false}},'questMark_0');
+  const s2=collectSave(w2,{});
+  assert.ok(!s2.world.entities.some(e=>/^questMark/.test(e.id)),'marker not persisted');
+  const old=structuredClone(s2);old.world.entities.push({id:'questMark_0',kind:'prop',transform:{x:3,y:3,z:0,yawDeg:0,scale:0.05},components:{voxel:{model:'questMark',anim:'idle',loop:true,hidden:false}}});
+  const r2=applySave(old,assets,{});
+  assert.equal(r2.world.get('player').data.components.health.hp,17,'hp restored on Continue');
+  assert.ok(!r2.world.get('questMark_0'));
+}
