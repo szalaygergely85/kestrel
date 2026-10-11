@@ -592,3 +592,8 @@ EQ-23 (kestrel-4, eq-23, Node-only): leftover stacks drop at the player's feet. 
 - Corpse (loot.js lootBoar): keeps leftover and stays lootable (simpler than a drop); inventory:full now {id: leftover item, n, dropped:false} -> named toast. Chest already all-or-nothing (stays closed, lootable); unchanged.
 - Gear sink returns the stored count; stepPickups accepts bool or count and keeps the remainder lying (no duplicates). Test in pickups.test.js (gem stack 3/4, drop 3 -> pack 4, drop 2).
 - PICKUP_LIFE 1200 -> 3600 (60 s).
+
+### OB-048/049/050 (kestrel-1, ob048-note, Node-only; touched main.js)
+- noteRead.js: footer `<< CLOSE >>` (FOOTER_TEXT), Mouse0 click closes (E/Esc too), walk-away close at min(radius,1.8)+0.5 m 3D from the source interactable (notes opened without a def x/y, e.g. chapter card, never walk-away close); movement/look stay allowed (OB-050).
+- OB-049: under pointer lock Esc is eaten by Chrome (lock lost -> note closes) and `look.locked=false` raised pause. Fix: `isNoteEscGrace()` (set on that lock-loss close, cleared on re-lock or a 2nd Esc) + `!isNoteOpen()` in main.js `pauseUp()` and `isPaused` ctx. Same pattern likely affects dialogueCtl (closes on lock loss too) - not changed, ASK PO/ARCHITECT if wanted.
+- main.js: `stepNoteRead(..., interactEye)`, `__debug.isNoteOpen/pauseUp/openNote`. Tests: `node tools/run-tests.mjs --filter noteRead` (31 PASS). Browser: `node tools/verify-note-close.mjs 9500` (not run; opens a note, presses Esc then E, expects note closed and pauseUp false; headless synthetic Esc is not the real pointer-lock path, so owner should also try Esc in a real locked session).
