@@ -18,6 +18,8 @@ import { clampByte } from '../core/math.js';
 import { sunFromWorld } from './lighting.js';
 import { WET_DARK, wetGain } from './detailShade.js';
 import { LEVEL_NONE, LEVEL_ANIM } from './temporalStable.js';
+import { skylineFogF } from './skyline.js';
+import { resolveLook } from './look.js';
 
 // US-026a (23.4): exported so terrainCaster.js's near-sampling dither uses
 // the SAME avalanche mix (never a second, drifting copy) - the dither must
@@ -99,7 +101,7 @@ export function perCellHashSize(t, k, handover) {
  * }} ctx
  * @param {{glyph:number, fg:Uint8Array|number[], bg:Uint8Array|number[]}} out - written in place (fg/bg length 3)
  */
-export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0) {
+export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, z = NaN) {
   // 23.4 near-detail: inside the near-handover band the world-cell hash is
   // keyed at 2 m (matches the near band's own cell size), else at 8 m (the
   // far grid's cell size) - `nearLOD.rules` ("hash cell 2 m when t < h1,
@@ -205,7 +207,8 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0) 
 
   // Fog (item 5 + overworld_far.js "fog" section): 50 -> 1500 m, curve 0.7.
   const F = ctx.fog;
-  const f = terrainFogF(t, F);
+  // MAP-06a (38.42 Skyline): optional far-texel fog cap (`ctx.skyline` from the look's haze.skyline, `z` = texel height); absent = unchanged.
+  const f = ctx.skyline ? skylineFogF(terrainFogF(t, F), t, type, z, ctx.skyline) : terrainFogF(t, F);
   const fcr = F.nearRGB[0] + (F.farRGB[0] - F.nearRGB[0]) * f;
   const fcg = F.nearRGB[1] + (F.farRGB[1] - F.nearRGB[1]) * f;
   const fcb = F.nearRGB[2] + (F.farRGB[2] - F.nearRGB[2]) * f;
@@ -328,6 +331,29 @@ export function forestFaceMode(gbuf, alias, ctx, i, t) {
   return faceNrm[2] < FOREST_FACE_NZ ? 1 : 2;
 }
 
+/**
+ * MAP-06a: the look's `haze.skyline` + the recipe's `geo.seaLevel`, cached per (look record, terrain). null = off (no block, no sea level).
+ * The edge-pass gate `gbuf.fogF` stays the UNCAPPED terrain fog (far pixels only; edges there are fog-suppressed as before).
+ */
+function skylineFor(terrain, palette) {
+  const geo = terrain.recipe && terrain.recipe.geo;
+  if (!geo || !Number.isFinite(geo.seaLevel)) return null; // checked first: worlds without a sea never touch the look
+  const lk = resolveLook(palette), sk = lk && lk.haze ? lk.haze.skyline : null;
+  if (!sk) return null;
+  const c = terrain._skylineCache;
+  if (c && c.src === sk && c.seaLevel === geo.seaLevel) return c.S;
+  const S = { fogMax: sk.fogMax, fromZ: sk.fromZ, seaFogMax: sk.seaFogMax, seaLevel: geo.seaLevel };
+  terrain._skylineCache = { src: sk, seaLevel: geo.seaLevel, S };
+  return S;
+}
+
+/** Draw height (m) of the far-grid texel under world (u, v); off-grid = the sea skirt level. Allocation-free. */
+export function farHeightAt(terrain, u, v, seaLevel) {
+  const ix = Math.floor((u - terrain.mapX0) / terrain.mapCell), iy = Math.floor((v - terrain.mapY0) / terrain.mapCell);
+  if (ix < 0 || iy < 0 || ix >= terrain.mapW || iy >= terrain.mapH) return seaLevel;
+  return terrain.farHDraw[iy * terrain.mapW + ix];
+}
+
 /** Lazily (re)builds and caches `terrain`'s shading context, keyed by `farVersion`. */
 function terrainShadingFor(matTable, ctx) {
   if (!ctx._paletteShading) ctx._paletteShading = ctx.shading;
@@ -390,6 +416,7 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
   // from `MaterialTable.shading` (design/detail-pass.js); match it whenever a
   // v2 MaterialTable is bound, else keep `palette.shading` + Math.pow.
   ctx.shading = terrainShadingFor(fb.matTable, ctx);
+  ctx.skyline = skylineFor(terrain, palette);
   const sun = sunFromWorld(world, palette);
   const cells = fb.rt.cells || fb.rt;
   const n = gbuf.cols * gbuf.rows;
@@ -413,7 +440,7 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
       lr = light.rgb[0]; lg = light.rgb[1]; lb = light.rgb[2];
     }
     const bT = b + Math.max(lr, Math.max(lg, lb));
-    shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t));
+    shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t), ctx.skyline ? farHeightAt(terrain, u, v, ctx.skyline.seaLevel) : NaN);
     gbuf.fogF[i] = terrainFogF(t, ctx.fog); // edge pass gate (BUG-GPU-005): never a stale value
     shadeOut.fg[0] = clampByte(shadeOut.fg[0] + lr * 0.5 * 255);
     shadeOut.fg[1] = clampByte(shadeOut.fg[1] + lg * 0.5 * 255);

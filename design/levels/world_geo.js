@@ -429,6 +429,8 @@
   function installGeo(far) {
     var rockSlope = root.ASSETS.levels.overworld_far.recipe.rock.slope;
     far.setGeoLayers(geoLayers(far, rockSlope), geoFieldFns());
+    // MAP-06a (38.42 Skyline): the sea is on the south edge; the engine adds a flat sea horizon skirt there and caps the sea-line fog.
+    var gd = root.ASSETS.levels.overworld_far.geo; gd.seaLevel = G.seaLevel; gd.seaSides = ['s']; gd.seaSkirtM = 6000;
     return installBiomes(far);
   }
 
