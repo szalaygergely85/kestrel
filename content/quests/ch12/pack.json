@@ -2235,12 +2235,12 @@
       "reward": {
         "items": [
           {
-            "id": "bow",
-            "n": 1
+            "id": "arrow",
+            "n": 15
           },
           {
-            "id": "arrow",
-            "n": 10
+            "id": "potion.hp",
+            "n": 2
           }
         ]
       },
@@ -2257,10 +2257,10 @@
         ],
         "ready": [
           "One, two, three, four. Good count.",
-          "A bow, from the river. Not shiny. Yours."
+          "Arrows, and red drink. Not shiny. Useful."
         ],
         "done": [
-          "Shiny things. I keep them. You keep the bow."
+          "Shiny things. I keep them. You keep the arrows."
         ]
       }
     },
