@@ -58,6 +58,8 @@ export const GATE_POSES = [
   { slug: 'towerShadow', name: 'signal tower + its NW shadow, seen from the NNW (ME-15c)', cam: { x: 1474, y: 1006, z: 9.0, yawDeg: 137, pitchDeg: -17, groundEye: true } },
   // NPC-BEAR-01: Burl the bear at (1471, 1029.1), seen from 3.2 m east on the path (he faces east, towards the breach).
   { slug: 'burl', name: 'Burl the bear on the walk-out path (NPC-BEAR-01)', cam: { x: 1474.2, y: 1029.4, z: 1.7, yawDeg: 270, pitchDeg: 4, groundEye: true } },
+  // MAP-14: Glasswater south shore (the leg 10 turn-around, 1237,606), looking north across the lake; perf-pose JS p95 <= 8 ms.
+  { slug: 'lakeEdge', name: 'Glasswater lake edge, looking north over the water (MAP-14 perf pose)', cam: { x: 1237, y: 606, z: 1.7, yawDeg: 0, pitchDeg: 2, groundEye: true } },
   { slug: 'roadSouth', name: 'walk-out road, looking west-south-west at the cleaned south verge + placed meshes (ME-14c3)', cam: { x: 1466, y: 1035, z: 1.7, yawDeg: 240, pitchDeg: 6, groundEye: true } },
   { slug: 'roadBend', name: 'road bend, looking west at the relay waystone (WS1-08 gate pose)', cam: { x: 1268, y: 1040, z: 1.7, yawDeg: 270, pitchDeg: 0, groundEye: true } },
   // WS1-08 / CH1-10 C perf-gate poses (tools/perf-pose.mjs default --poses): interior = the brazier view inside the tower (same cam as 'brazier'); exterior = from the walk-out meadow 29 m west of the tower, looking east (+x) with the towerCrown prop (world_m1 entity at 1497,1025, z 12-14) in view (pitch +14).
@@ -65,6 +67,8 @@ export const GATE_POSES = [
   { slug: 'towerExterior', name: 'tower from the meadow, crown in view (WS1-08 perf pose)', cam: { x: 1468, y: 1025.5, z: 1.7, yawDeg: 90, pitchDeg: 14, groundEye: true } },
   // PERF-2026-10-11 poses: meadow toward the tower through the rs### flowers/ferns, and the ford bank looking west.
   { slug: 'meadowDetail', name: 'meadow toward the tower through the roadside plants (perf 2026-10-11)', cam: { x: 1450, y: 1035, z: 1.7, yawDeg: 102, pitchDeg: 0, groundEye: true } },
+  // MAP-07: meadow looking south-west at the sea line + sea skirt (MAP-06b skyline), still for docs/test-reports/MAP-geo.md.
+  { slug: 'meadowSea', name: 'meadow looking south-west at the sea line (MAP-07 still)', cam: { x: 1460, y: 1030, z: 1.7, yawDeg: 235, pitchDeg: 0, groundEye: true } },
   { slug: 'fordDetail', name: 'ford bank looking west (perf 2026-10-11)', cam: { x: 1040, y: 1068, z: 1.7, yawDeg: 270, pitchDeg: 0, groundEye: true } },
   { slug: 'roadLeft', name: 'walk-out road, looking south-west across the left (south) verge scatter roadL### (tools/gen-roadside-meshes.mjs)', cam: { x: 1440, y: 1030, z: 1.7, yawDeg: 215, pitchDeg: 4, groundEye: true } },
   { slug: 'hillside', name: 'hillside outside (owner pose A)', cam: { x: 1464.33, y: 1045.50, z: 3.92, yawDeg: 54, pitchDeg: 19 } },

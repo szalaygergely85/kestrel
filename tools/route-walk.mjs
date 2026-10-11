@@ -483,3 +483,14 @@ else {
   console.log(`probe sealed gate blocks (every start on the pass floor y 808..872 (door y840, towers), run + jump, 20 s, yaw ${eastYaw}): ${worst < 239.6 && openWest ? 'PASS' : 'FAIL'} east-most x ${worst.toFixed(2)} (wall west face ~239.2)`);
   if (!(worst < 239.6 && openWest)) process.exitCode = 1;
 }
+
+// MAP-14 / M4-C3 leg 10: the long `?grid=1` walk (tower -> bend -> ford -> crossroads -> outwall bound -> lake edge -> back to the tower), run
+// in its own process (tools/verify-grid-walk.mjs builds the grid world variant). Prints the swap list, band:late, max swap ms; fails on a stuck
+// waypoint, a fall, band:late > 0 or a swap frame > 16 ms.
+{
+  const { spawnSync } = await import('node:child_process');
+  const r = spawnSync(process.execPath, ['--no-warnings', new URL('./verify-grid-walk.mjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')], { encoding: 'utf8' });
+  console.log('leg 10 long grid walk (?grid=1 semantics, tools/verify-grid-walk.mjs):');
+  for (const l of (r.stdout || '').split('\n').filter(Boolean)) console.log('  ' + l);
+  if (r.status !== 0) { console.log('leg 10: FAIL'); process.exitCode = 1; } else console.log('leg 10: PASS');
+}

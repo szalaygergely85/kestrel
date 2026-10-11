@@ -4,7 +4,7 @@
   "sha": "885044f",
   "date": "2026-10-09",
   "grid": null,
-  "pass": 152,
+  "pass": 166,
   "fail": 2,
   "rows": {
     "test_room: start pose (S, facing east, level)": "PASS",
@@ -160,6 +160,20 @@
     "world_m1: fireballInFlight (SPELL-01b, core sprite 3 m ahead + moving light + flash at 50 %, crash room) [shadow depth parity]": "PASS",
     "world_m1: fireballBurst (SPELL-01b, blast sprite frame 2 + embers/smoke frozen at 10 steps + flash light, crash room) [shadow depth parity]": "PASS",
     "world_m1: alphaLeaves (ALPHA-01c, masked leaf cards, eye 6 m) [shadow depth parity]": "PASS",
-    "world_m1: alphaLeavesFar (ALPHA-01c, eye 30 m) [shadow depth parity]": "PASS"
+    "world_m1: alphaLeavesFar (ALPHA-01c, eye 30 m) [shadow depth parity]": "PASS",
+    "world_m1: meadowSkyline yaw 270 (west fells)": "PASS",
+    "world_m1: meadowSkyline yaw 0 (north whitecombs)": "PASS",
+    "world_m1: meadowSkyline yaw 235 (south-west sea line)": "PASS",
+    "world_m1: dusk 19.5 h Bend lamps (DN-04b)": "PASS",
+    "world_m1: dusk 19.5 h tower (DN-04b)": "PASS",
+    "world_m1: night 23 h Bend lamps (DN-04b)": "PASS",
+    "world_m1: night 23 h tower (DN-04b)": "PASS",
+    "world_m1: meadowSkyline yaw 270 (west fells) [shadow depth parity]": "PASS",
+    "world_m1: meadowSkyline yaw 0 (north whitecombs) [shadow depth parity]": "PASS",
+    "world_m1: meadowSkyline yaw 235 (south-west sea line) [shadow depth parity]": "PASS",
+    "world_m1: dusk 19.5 h Bend lamps (DN-04b) [shadow depth parity]": "PASS",
+    "world_m1: dusk 19.5 h tower (DN-04b) [shadow depth parity]": "PASS",
+    "world_m1: night 23 h Bend lamps (DN-04b) [shadow depth parity]": "PASS",
+    "world_m1: night 23 h tower (DN-04b) [shadow depth parity]": "PASS"
   }
 }
