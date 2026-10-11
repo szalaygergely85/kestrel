@@ -1146,7 +1146,7 @@ async function runGame(mode, cinematic = null) {
     else if (pauseMenu && pauseUp()) { const c = menuCell(e); pauseMenu.handlePointer(c[0], c[1], false); }
   });
   window.addEventListener('click', (e) => {
-    if (pauseResume.active) pauseResume.click(); // OB-068
+    if (pauseResume.active) { pauseResume.click(); e.stopPropagation(); return; } // OB-068/072: the re-locking click is consumed (no attack, no PlayerLook double request)
     if ((!menuHost || !menuHost.active) && pauseMenu && pauseUp()) { // PAUSE-MENU-01: a click never re-locks by itself; only the Resume row does
       e.stopPropagation(); const c = menuCell(e); pauseMenu.handlePointer(c[0], c[1], true); return;
     }
@@ -1190,9 +1190,23 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   let pauseMenu = null; // PAUSE-MENU-01: built once with the world, shown while the pointer is unlocked in play
   let pauseWas = false;
   const pauseResume = createPauseResume(() => { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); }); // OB-068: Esc in the pause menu resumes
+  // OB-072: resumed-unlocked: ANY pointerdown / non-Esc keydown on the document is the activation gesture that re-takes the lock (a refused request = keep waiting).
+  // The gesture is swallowed (swallowGesture -> input.consumePressed() next step) so it never also attacks / interacts.
+  let swallowGesture = false;
+  document.addEventListener('pointerdown', () => { if (pauseResume.gesture('Mouse0')) swallowGesture = true; }, true);
+  document.addEventListener('keydown', (e) => { if (pauseResume.gesture(e.code)) swallowGesture = true; }, true);
+  // OB-072: Keyboard Lock (Chrome/Edge, fullscreen only): Esc arrives as a keydown and the pointer lock is NOT released.
+  let kbLockOn = false;
+  const kbLockApi = () => (typeof navigator !== 'undefined' && navigator.keyboard && navigator.keyboard.lock ? navigator.keyboard : null);
+  document.addEventListener('fullscreenchange', () => {
+    const kb = kbLockApi(); if (!kb) return;
+    if (document.fullscreenElement) { try { Promise.resolve(kb.lock(['Escape'])).then(() => { kbLockOn = !!document.fullscreenElement; }, () => { kbLockOn = false; }); } catch (e) { kbLockOn = false; } }
+    else { kbLockOn = false; pauseResume.reset(); try { kb.unlock(); } catch (e) { /* ignore */ } }
+  });
+  const toggleFullscreen = () => { try { const r = document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* unsupported: no change */ } };
   // True while the pause menu is the thing on screen (same gate the old overlay used, minus Settings which owns the screen).
   function pauseUp() {
-    return mode === 'world' && !!look && !look.locked && !pauseResume.active && !isMapOpen() && !isNoteOpen() && !isNoteEscGrace() && !(dialogueCtl && dialogueCtl.escGrace.active) && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen() // OB-049: Esc closes the note only
+    return mode === 'world' && !!look && (!look.locked || pauseResume.soft) && !pauseResume.active && !isMapOpen() && !isNoteOpen() && !isNoteEscGrace() && !(dialogueCtl && dialogueCtl.escGrace.active) && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen() // OB-049: Esc closes the note only
       && !cinematic && !isWaterfallPreview && !(menuHost && menuHost.active) && !isSettingsOpen();
   }
   // QG-05: quest log (J). Built lazily per book (reset() replaces the book); pauses like the pack via qlOpen in invOpen.
@@ -1699,8 +1713,9 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     if (!cinematic && mode === 'world') pauseMenu = createPauseMenu({
       adapter: (saveRelay && saveRelay.adapter) || { listSlots: () => [], readSlot: () => ({ ok: true, save: null }) },
       style: window.ASSETS && window.ASSETS.uiStyle ? window.ASSETS.uiStyle.menu : null,
-      onResume: relockPointer,
+      onResume: () => { if (pauseResume.soft) pauseResume.resume(); else relockPointer(); }, // OB-072: soft pause = lock never lost
       onSettings: () => openSettings({ assets, engine, look }),
+      onFullscreen: toggleFullscreen, // OB-072
       onSave: () => !!(saveRelay && saveRelay.enabled && gameHooks.ctx.world && (gameHooks.ctx.requestSave(), saveRelay.lastResult && saveRelay.lastResult.op === 'save' && saveRelay.lastResult.ok)), // same path as the waystone save
       onLoad: (slot) => {
         if (!saveRelay) return;
@@ -1825,7 +1840,14 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     // S is also WASD "move backward", so this must never trigger in play.
     // PAUSE-MENU-01: the pause menu owns W/S/Enter while it is up (S no longer opens Settings; the Settings row does).
     if (pauseMenu) {
+      // OB-072: keyboard-lock path: Esc keydown while the pointer is locked. Plain play -> soft pause (lock kept); any other Esc owner
+      // (note, map, pack, dialogue, ...) keeps its "Esc = lock lost" meaning, so release the lock ourselves for those.
+      if (kbLockOn && look && look.locked && !pauseResume.soft && !ending && input.pressed('Escape')) {
+        if (mode === 'world' && !isMapOpen() && !isNoteOpen() && !isNoteEscGrace() && !(dialogueCtl && dialogueCtl.open) && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen() && !cinematic && !(menuHost && menuHost.active) && !isSettingsOpen()) { pauseResume.softPause(); input.consumePressed(); }
+        else if (document.exitPointerLock) document.exitPointerLock();
+      }
       pauseResume.tick(!!(look && look.locked), input); // OB-068
+      if (swallowGesture) { swallowGesture = false; input.consumePressed(); } // OB-072
       const up = pauseUp();
       if (up && !pauseWas) pauseMenu.reset();
       pauseWas = up;
@@ -1836,7 +1858,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     titleMenuActive = !!(menuHost && menuHost.active);
     ch1Hidden = isCaptureOrBench || !saveEnabled || titleMenuActive || ending || invOpen || cardOpen || isMapOpen() || isSettingsOpen() || isNoteOpen() || qlIsOpen() || !!(dialogueCtl && dialogueCtl.open) || !!(vitals && vitals.dead); // CH1-MOUNT: notices/barks hidden under any menu/dialogue
     notice.update(dt, ch1Hidden); if (chapterCard && !ending) chapterCard.update(dt); if (chapterCard2 && !ending) chapterCard2.update(dt); // CH1-04a / CH1-09
-    const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen: () => isMapOpen() || pauseResume.active || isNoteEscGrace() || !!(dialogueCtl && dialogueCtl.escGrace.active) }) || ((invOpen || cardOpen) && !ending)));
+    const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (pauseResume.soft || isPaused({ ending, look, isMapOpen: () => isMapOpen() || pauseResume.active || isNoteEscGrace() || !!(dialogueCtl && dialogueCtl.escGrace.active) }) || ((invOpen || cardOpen) && !ending)));
     { // COMPASS-02 (D-061): retarget on book change + ~2 Hz, step the needle, hide rule (menus/pack/log/map/dialogue/death/title/capture modes/ending)
       const bk = saveRelay && saveRelay.quest.book;
       compassHide = !(mode === 'world' && playerHandle && bk && questUiActive) || ending || paused || isCaptureOrBench || uiLocked || titleMenuActive || isSettingsOpen() || isNoteOpen()
@@ -1854,7 +1876,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // US-015 (7.6 item 5): while locked, PlayerLook still drains the raw
       // mouse delta every step (so nothing pent up snaps the camera once
       // input unlocks) but its result is simply discarded, not applied.
-      if (uiLocked || isNoteOpen()) input.consumeMouseDelta(); // OB-057: reading a note freezes the view
+      if (uiLocked || isNoteOpen() || pauseResume.soft) input.consumeMouseDelta(); // OB-057: reading a note freezes the view
       else look.update(dt);
     }
     // US-062: real pause - freeze player/physics/quest/animations/triggers
@@ -2395,6 +2417,9 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     if (pauseMenu && pauseUp()) { // PAUSE-MENU-01: dim the scene like the Settings view, then the card (title menu skin)
       const sm = assets.uiStyle.menu; if (sm) dimSceneRect(rt, ui, 0, 0, ui.cols, ui.rows, sm.sceneDim.bgMul);
       pauseMenu.draw(ui);
+    } else if (mode === 'world' && pauseResume.active && !cinematic) { // OB-072: resumed-unlocked hint (no Esc text)
+      const t = 'Click to continue', x0 = Math.floor((ui.cols - t.length) / 2), y0 = Math.floor(ui.rows / 2);
+      for (let i = 0; i < t.length; i++) ui.setCell(x0 + i, y0, t[i], '#e8e2d0', '#0a0b10');
     }
     // US-038b: settings panel, drawn over the pause overlay when open
     if (!cinematic && !isWaterfallPreview) drawSettingsPanel(ui, rt, assets, { showEntry: false });

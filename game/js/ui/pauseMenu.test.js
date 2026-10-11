@@ -21,8 +21,8 @@ const down = (m, n) => { for (let i = 0; i < n; i++) m.handleKey('KeyS'); };
 
 test('item order and no slot list on the main view', () => {
   const { m } = mk();
-  assert.deepEqual(m.snapshot().rows.map(r => r.text), ['Resume', 'Settings', 'Save', 'Load', 'Back to main menu']);
-  assert.deepEqual(PAUSE_ITEMS, ['Resume', 'Settings', 'Save', 'Load', 'Back to main menu']);
+  assert.deepEqual(m.snapshot().rows.map(r => r.text), ['Resume', 'Settings', 'Fullscreen', 'Save', 'Load', 'Back to main menu']);
+  assert.deepEqual(PAUSE_ITEMS, ['Resume', 'Settings', 'Fullscreen', 'Save', 'Load', 'Back to main menu']);
   assert.ok(!m.snapshot().rows.some(r => /Slot/.test(r.text)));
 });
 
@@ -34,14 +34,14 @@ test('Resume and Settings fire their callbacks', () => {
 
 test('Save calls the save path once and toasts', () => {
   const { m, log } = mk();
-  down(m, 2); m.handleKey('Enter');
+  down(m, 3); m.handleKey('Enter');
   assert.deepEqual(log, ['save']);
   assert.equal(m.snapshot().message, 'Saved.');
 });
 
 test('Load submenu lists the slots with dates; empty slots are skipped; selecting loads', () => {
   const { m, log } = mk();
-  down(m, 3); m.handleKey('Enter');
+  down(m, 4); m.handleKey('Enter');
   const s = m.snapshot();
   assert.equal(s.mode, 'load');
   assert.equal(s.rows.filter(r => r.id === 'slot').length, 3);
@@ -56,17 +56,17 @@ test('Load submenu lists the slots with dates; empty slots are skipped; selectin
 
 test('Back to main menu: direct when clean, asks "Save first?" when dirty', () => {
   let t = mk();
-  down(t.m, 4); t.m.handleKey('Enter');
+  down(t.m, 5); t.m.handleKey('Enter');
   assert.deepEqual(t.log, ['menu']);
   t = mk({ dirty: true });
-  down(t.m, 4); t.m.handleKey('Enter');
+  down(t.m, 5); t.m.handleKey('Enter');
   assert.equal(t.m.snapshot().mode, 'confirm');
   assert.deepEqual(t.m.snapshot().rows.map(r => r.text), ['Yes', 'No']);
   assert.deepEqual(t.log, []);
   t.m.handleKey('Enter'); // Yes: save then leave
   assert.deepEqual(t.log, ['save', 'menu']);
   t = mk({ dirty: true });
-  down(t.m, 4); t.m.handleKey('Enter'); down(t.m, 1); t.m.handleKey('Enter'); // No: leave without saving
+  down(t.m, 5); t.m.handleKey('Enter'); down(t.m, 1); t.m.handleKey('Enter'); // No: leave without saving
   assert.deepEqual(t.log, ['menu']);
 });
 
@@ -83,7 +83,7 @@ test('pointer: hover selects, click activates', () => {
 test('draw: real skin, no Esc text, no allocation-free surprises', () => {
   const { m } = mk(); const text = [];
   const ui = { cols: 160, rows: 60, setCell(x, y, g) { text.push(g); } };
-  for (const key of [null, 'Enter']) { if (key) { down(m, 3); m.handleKey(key); } m.draw(ui); }
+  for (const key of [null, 'Enter']) { if (key) { down(m, 4); m.handleKey(key); } m.draw(ui); }
   assert.ok(text.length > 1000);
   assert.doesNotMatch(text.join(''), /esc/i);
 });
