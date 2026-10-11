@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
-import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, killTree } from './capture-browser.mjs';
+import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, evaluateAsync, killTree } from './capture-browser.mjs';
 
 const port = Number(process.argv[2] || 9725);
 validatePort(port);
@@ -48,10 +48,10 @@ try {
   // ---- run 1: new game (empty profile) ----
   await open();
   assert.equal(await evaluate(cdp, "localStorage.getItem('kestrel.save.slot.0') === null"), true, 'fresh profile = no save = new game');
-  await evaluate(cdp, `(async () => { const D = window.__debug, w = D.world, p = D.playerHandle.data, c = p.components, defs = window.ASSETS.items.defs;
+  await evaluateAsync(cdp, `(async () => { const D = window.__debug, w = D.world, p = D.playerHandle.data, c = p.components, defs = window.ASSETS.items.defs;
     const inv = await import('/game/js/quest/sim/inventory.js'), eqm = await import('/game/js/quest/sim/equipment.js'), qbm = await import('/game/js/quest/sim/quickbar.js'), hp = await import('/game/js/quest/sim/heartPieces.js');
     w.state['quest.wakeT'] = 100; c.body.eyeH = D.engine.physics.eyeHeight; // as after a played wake
-    const relay = w.get('relayBend').data.transform, t = p.transform; t.x = relay.x - 4; t.y = relay.y; t.z = relay.z + 1; t.yawDeg = 90; // at the first relay
+    const relay = w.get('relayBend').data.transform, t = p.transform; t.x = relay.x - 4; t.y = relay.y; t.z = relay.z + 1; t.yawDeg = 90; D.vitals.clearSafe(); // at the first relay; a teleport (like real travel, main.js teleport) must drop the old safe spot, else the 30 m void rule snaps the player back to the tower (OB-040)
     const inventory = inv.ensureInventory(p, null);
     for (const id of ['sword', 'shield', 'bow', 'arrow', 'potion.hp']) inv.addItem(inventory, defs, id, id === 'arrow' ? 12 : 1);
     const eq = eqm.ensureEquipment(p); for (const id of ['sword', 'shield']) eqm.equip(inventory, eq, defs, id);
@@ -61,6 +61,7 @@ try {
     w.state['aether.attuned'] = true; w.state['clock.hour'] = 13.5; w.state['m4.marker'] = 'kept';
     D.relayWake.interact('ws_roadBend'); for (let i = 0; i < 180; i++) D.relayWake.step(1 / 60, null); // wake the relay
     D.saveRelay.quest.feed({ type: 'flag:set', key: 'wake', value: true }); // the played wake completes the first objective (as game/js/m4Exit.test.js)
+    await new Promise((r) => setTimeout(r, 800)); // let the area zones at the relay fire (QL-B2: saveRelay zones) BEFORE the save, else the pre-save snapshot differs from the next frames' (OB-040)
     const book = D.saveRelay.quest.book, gi = D.saveRelay.quest.book.def; let n = 0;
     for (let i = 1; i < book.count; i++) if (book.def(i).id === 'tower.blade') { book.def(i).giveOnAccept = [{ id: 'potion.hp', n: 1 }]; n = i; } // exercise the given-items path on a gate-free quest
     if (!book.accept('tower.blade')) throw new Error('tower.blade not acceptable');
@@ -68,7 +69,7 @@ try {
     D.gameHooks.ctx.requestSave(); // rest / save (same path as the waystone touch)
     return true; })()`);
   const slotLen = await evaluate(cdp, "(localStorage.getItem('kestrel.save.slot.0') || '').length");
-  assert.ok(slotLen > 0, 'slot written');
+  assert.ok(slotLen > 0, 'slot written ' + await evaluate(cdp, 'JSON.stringify([window.__debug.saveRelay.lastResult, window.__debug.playerHandle.data.transform.x, window.__debug.playerHandle.data.components.health.hp])'));
   const before = await evaluate(cdp, SNAP);
   assert.equal(before.max, 40, 'extra heart from 4 pieces'); assert.equal(before.state['hearts.pieces'], 4);
   assert.equal(before.equipment.main, 'sword'); assert.equal(before.equipment.off, 'shield');
