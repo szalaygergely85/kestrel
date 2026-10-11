@@ -116,6 +116,8 @@ import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.1
 import { createShieldSim } from './quest/sim/shield.js'; // EQ-07 (38.41 a)
 import { createArrowSim } from './quest/sim/arrows.js'; // EQ-09 (38.41 b)
 import { createWetStones } from './quest/sim/wetStones.js'; // QL-19: wet ford stones + River Boots sure footing
+import { createBand } from './quest/sim/band.js'; // US-129a: level band for beasts + loot
+import { createWadeFx } from './quest/sim/wadeFx.js'; // US-055a
 import { createWading } from './quest/sim/wading.js'; // RIVER-04 (38.45 (3)): river wading around the player's integrate
 import { BOW_CFG } from './quest/bowConfig.js'; // EQ-09
 import { createQuickbar, ensureQuickbar, autoFill, assign as qbAssign, clearSlot as qbClear, syncHandSlots, HAND_SLOTS } from './quest/sim/quickbar.js'; // EQ-12 + QB-6
@@ -175,7 +177,7 @@ import { runPerfBench } from './dev/perfBench.js'; // US-018 (architecture.md 16
 import { createSpriteSystem, spawnTestSprites } from './dev/spriteDev.js';
 // ---- end US-030c ----
 // ---- US-010: quest behaviours (registered by name before any World loads) ----
-import { validateBehaviours, createRipples, createEntityTintTable, fillEntityTints, localToWorld } from '../../engine/index.js';
+import { validateBehaviours, createRipples, defineWadeSplash, createEntityTintTable, fillEntityTints, localToWorld } from '../../engine/index.js';
 import './quest/index.js';
 import { parseDemo, filterDemoParams, demoStorage, blockFKeys, createEndCard, drawDemoBuildLine } from './demoMode.js';
 // ---- end US-010 ----
@@ -454,6 +456,10 @@ bootSpan('createEngine', tCE);
 // (not saved, not hashed). `fb.ripples = ripples` below hands it to the renderer (duck-typed `{packInto}`,
 // waterComposite.js twin/WGSL); the dev hook and the splash-entry call (US-055b) both call `ripples.add`.
 const ripples = createRipples();
+const wadeFx = createWadeFx(engine.particles, ripples); // US-055a: wade splash + leg rings + arrow water hit
+defineWadeSplash(engine.particles, {});
+const worldBand = window.ASSETS.levels.world_geo ? createBand(window.ASSETS.levels.world_geo.regions) : null; // US-129a (null = tier 1)
+const wadeArrowHit = (x, y, z) => wadeFx.arrowHit(x, y, z, fb ? fb.timeSec : 0); // one closure, not per frame
 // US-089w/US-096w: save relay (autosave 60 s + waystone, load at boot) and quest hook. `?save=0` off; capture/bench/compare/cinematic
 // pages and automated browsers never load or save unless `?save=1` forces it (the headless reload check does).
 const saveEnabled = params.get('save') !== '0' && (params.get('save') === '1' || !(isCaptureOrBench || params.get('capture') === '1' || params.has('at') || navigator.webdriver)); // `?at` = dev pose: never autosave it into slot 0
@@ -1377,7 +1383,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (beasts) beasts.dispose();
       if (params.get('bench') === 'combat' || (benchActive && params.get('enemies') === '4')) ensureBenchBoars(world); // COMBAT-BENCH-01
       ensureWolves(world); // WOLF-01: turns MAP-26 anchors wolf1..5 into wolf beasts (no-op while they are absent)
-      beasts = createBeastSim(world, { nav: worldDef.nav && buildBeastNav(world, worldDef.nav), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events });
+      beasts = createBeastSim(world, { nav: worldDef.nav && buildBeastNav(world, worldDef.nav), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand });
       if (telegraphWire) telegraphWire.dispose(); // TELEGRAPH-WIRE-01 part 1
       telegraphWire = wireTelegraphs(engine.events, world, beasts, telegraphsEnabled(params, isCaptureOrBench));
       if (saveRelay) saveRelay.applyDeadToBeasts(beasts); // US-089w: restored dead beasts stay gone (create reset them alive)
@@ -1391,7 +1397,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       hands.register('spell.fireball', fireball);
       // EQ-07/09 (38.41): shield sim + arrow sim + the routing glue; shield/bow items get no-op sims so the router arms them (RMB -> left hand, LMB -> right hand)
       shieldSim = createShieldSim();
-      arrowSim = createArrowSim(world, engine.events, BOW_CFG, fbTargets);
+      arrowSim = createArrowSim(world, engine.events, BOW_CFG, fbTargets, wadeArrowHit);
       wading = createWading(world);
       wetStones = createWetStones(worldDef.structures); // QL-19
       if (itemDefs) registerGearItems(hands, itemDefs, () => createStubItemSim());
@@ -1433,7 +1439,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // US-091a2 (37.16.3): corpse loot + toast. Own RNG stream (nav seed ^ salt) so the beast wander RNG is never
       // perturbed; `beast.loot` (quest/index.js) reaches this load's sim through setLootApi.
       if (loot) loot.dispose();
-      loot = itemDefs ? createLoot(world, engine.events, { items: itemDefs, beasts, table: LOOT_TABLE.boar,
+      loot = itemDefs ? createLoot(world, engine.events, { items: itemDefs, beasts, table: LOOT_TABLE.boar, band: worldBand,
         rng: createRng(((worldDef.nav?.seed ?? 1) ^ LOOT_SEED_SALT) >>> 0),
         inventoryOf: () => playerHandle.data.components.inventory || null }) : null;
       setLootApi(loot);
@@ -1885,7 +1891,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         if (m < 1) { controls.forward *= m; controls.strafe *= m; }
       }
       integrate(playerHandle.data, dt, controls, engine.world, engine.physics);
-      if (wading) wading.after(playerHandle.data); // deep water (> 1.0 m) is a wall (D-064)
+      if (wading) wading.after(playerHandle.data);
+      wadeFx.step(playerHandle.data, fb ? fb.timeSec : 0); // deep water (> 1.0 m) is a wall (D-064)
       // CLOTH-1b3/1b5 (33.5): the player capsule pushes cloth; sleep-by-distance reads the eye (presentation-only,
       // never hashed/saved - cloths.js's own doc comment). Approx eye = feet + eyeH (good enough for a sleep radius).
       {
