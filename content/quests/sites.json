@@ -15,6 +15,9 @@
     },
     "relayFord": {
       "entity": "relayFord"
+    },
+    "rook": {
+      "entity": "rook"
     }
   }
 }

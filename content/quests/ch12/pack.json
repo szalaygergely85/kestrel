@@ -1189,6 +1189,934 @@
           "TICK. FORD SOUND. WALKER SOUND. LINE HOLDS."
         ]
       }
+    },
+    {
+      "id": "sq.tm.gap",
+      "title": "The Open Gate",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "fenceGap"
+            ]
+          },
+          "objText": "Look at the gap in the meadow fence"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 5
+          }
+        ]
+      },
+      "band": 1,
+      "returnText": "Tell Burl about the fence",
+      "lines": {
+        "offer": [
+          "Someone opened the old gate on the meadow side.",
+          "Boars don't unlatch. Go and look, sky-cub."
+        ],
+        "active": [
+          "The meadow fence. Where the posts lean. Go look."
+        ],
+        "ready": [
+          "A gap and a leaning rail? Rot, not paws. Good.",
+          "Here. I found these in the roots. You use them."
+        ],
+        "done": [
+          "Rot, not paws. I can sleep on that."
+        ]
+      }
+    },
+    {
+      "id": "sq.tm.wood",
+      "title": "The Woodcutter's Corner",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "woodpile"
+            ]
+          },
+          "objText": "Check the woodcutter's stack"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        },
+        {
+          "quest": "sq.tm.gap",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 1
+          }
+        ]
+      },
+      "band": 1,
+      "returnText": "Tell Burl the stack is dry",
+      "lines": {
+        "offer": [
+          "There's a woodcutter's stack by my clearing.",
+          "Nobody cuts here. Who stacked it? Go and sniff."
+        ],
+        "active": [
+          "The stack, north of my clearing. Look closely."
+        ],
+        "ready": [
+          "Dry, and old. Left by a walker, then. Like you.",
+          "Trade you a red draught for the news."
+        ],
+        "done": [
+          "An old stack, warm in the sun. I sit by it now."
+        ]
+      }
+    },
+    {
+      "id": "sq.tm.cart",
+      "title": "The Cart on the Road",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "wagon"
+            ]
+          },
+          "objText": "Look at the cart by the road"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        },
+        {
+          "quest": "sq.tm.gap",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
+      "band": 1,
+      "returnText": "Tell Burl about the cart",
+      "lines": {
+        "offer": [
+          "I smell a cart on the road west. Wood, and old rope.",
+          "No horse. Go and tell me what it carried."
+        ],
+        "active": [
+          "The cart, down the road west. Mind the crates."
+        ],
+        "ready": [
+          "Empty and tipped. Whoever left it left in a hurry.",
+          "Feathered sticks. They were in the straw."
+        ],
+        "done": [
+          "A tipped cart. Many left in a hurry, that year."
+        ]
+      }
+    },
+    {
+      "id": "sq.rb.lamps",
+      "title": "Lamps on the Verge",
+      "site": "relayBend",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "lamps"
+            ]
+          },
+          "objText": "Walk along the lamps by the road"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "m1",
+          "step": "relay1"
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 1
+          }
+        ]
+      },
+      "band": 2,
+      "returnText": "Report to the Bend Relay",
+      "lines": {
+        "offer": [
+          "TICK. LAMPS: TWO. LIT: UNKNOWN.",
+          "WALK THE VERGE. RETURN. REPORT."
+        ],
+        "active": [
+          "TICK. LAMP COUNT OPEN. WALK THE VERGE."
+        ],
+        "ready": [
+          "TICK. LAMPS COUNTED. TWO. BRASS.",
+          "ONE DRAUGHT, HELD FOR YOU."
+        ],
+        "done": [
+          "TICK. TWO LAMPS. LINE HOLDS."
+        ]
+      }
+    },
+    {
+      "id": "sq.rb.rocks",
+      "title": "Rocks at the Forest Edge",
+      "site": "relayBend",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "forestEdge"
+            ]
+          },
+          "objText": "Check the rocks by the forest edge"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "m1",
+          "step": "relay1"
+        },
+        {
+          "quest": "sq.rb.lamps",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 5
+          }
+        ]
+      },
+      "band": 2,
+      "returnText": "Report to the Bend Relay",
+      "lines": {
+        "offer": [
+          "TICK. ROAD NORTH VERGE: ROCKS. FALLEN LOGS.",
+          "CHECK. RETURN. REPORT."
+        ],
+        "active": [
+          "TICK. VERGE CHECK OPEN. ROCKS. LOGS."
+        ],
+        "ready": [
+          "TICK. VERGE CLEAR. LOGS OLD. LOGGED.",
+          "FIVE ARROWS, HELD FOR YOU."
+        ],
+        "done": [
+          "TICK. VERGE LOGGED. LINE HOLDS."
+        ]
+      }
+    },
+    {
+      "id": "sq.rb.parcel",
+      "title": "Brass for the Ford",
+      "site": "relayBend",
+      "steps": [
+        {
+          "template": "deliver",
+          "params": {
+            "item": "brass.scrap",
+            "count": 1,
+            "to": "relayFord"
+          },
+          "objText": "Carry the brass to the Ford Relay"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "m1",
+          "step": "relay1"
+        },
+        {
+          "quest": "sq.rb.rocks",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
+      "band": 2,
+      "returnText": "Set the brass at the Ford Relay",
+      "lines": {
+        "offer": [
+          "TICK. BRASS, ONE PIECE. HELD FOR THE FORD.",
+          "CARRY WEST. LEAVE AT THE FORD MOUNT."
+        ],
+        "active": [
+          "TICK. BRASS IN TRANSIT. FORD. WEST."
+        ],
+        "ready": [
+          "TICK. BRASS RECEIVED. FORD MOUNT SEATED.",
+          "TEN ARROWS, HELD FOR YOU."
+        ],
+        "done": [
+          "TICK. BRASS DELIVERED. BEND RELAY: NOTED."
+        ]
+      }
+    },
+    {
+      "id": "sq.he.wallow",
+      "title": "The Boar Wallow",
+      "site": "rook",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "wallow"
+            ]
+          },
+          "objText": "Look at the wallow south of the road"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.river.road",
+          "step": "riverBank"
+        }
+      ],
+      "reward": {
+        "table": "gear.t1"
+      },
+      "band": 2,
+      "returnText": "Tell Rook what you saw",
+      "lines": {
+        "offer": [
+          "Boars. At the wallow, south of the Bend road.",
+          "They dug up my hides. I counted. They are short.",
+          "Go and look. Tell me how many holes."
+        ],
+        "active": [
+          "The wallow. South. Count the holes for me."
+        ],
+        "ready": [
+          "Eleven holes, and one very fat boar. Ha.",
+          "Mine, the hides, but you may have this. Found it."
+        ],
+        "done": [
+          "Eleven. I will never get them all back."
+        ]
+      }
+    },
+    {
+      "id": "sq.he.farm",
+      "title": "Plates for Three",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "farmGate"
+            ]
+          },
+          "objText": "Look at the river farm gate"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        },
+        {
+          "quest": "sq.burl.scout",
+          "done": true
+        }
+      ],
+      "reward": {
+        "table": "gear.t2"
+      },
+      "band": 3,
+      "returnText": "Tell Burl what you found",
+      "lines": {
+        "offer": [
+          "A farm by the river. I smelled bread there once.",
+          "Go and look at its gate. Tell me who lives there."
+        ],
+        "active": [
+          "The farm gate, by the river. South of the road."
+        ],
+        "ready": [
+          "Plates set for three. The gate chained from outside.",
+          "Oh, sky-cub. Here. Take this. Wear it well."
+        ],
+        "done": [
+          "Three plates. I will not think about it. Much."
+        ]
+      }
+    },
+    {
+      "id": "sq.dw.bees",
+      "title": "Where the Bees Go",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "beeFarm"
+            ]
+          },
+          "objText": "Follow the bees to the old bee farm"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        },
+        {
+          "quest": "sq.burl.scout",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
+      "band": 2,
+      "returnText": "Tell Burl where the bees go",
+      "lines": {
+        "offer": [
+          "My bees fly south at noon and come back sticky.",
+          "Follow them, sky-cub. Walk. Don't swat."
+        ],
+        "active": [
+          "South-east, past the meadow. Follow the hum."
+        ],
+        "ready": [
+          "A bee farm! Old boxes, and honey still in them.",
+          "Good. I won't tell the crow. Take these."
+        ],
+        "done": [
+          "The bees know a farm I don't. Fair enough."
+        ]
+      }
+    },
+    {
+      "id": "sq.dw.stones",
+      "title": "The Standing Stones",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "standStones"
+            ]
+          },
+          "objText": "Walk to the ring of standing stones"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        },
+        {
+          "quest": "sq.dw.bees",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 2
+          }
+        ]
+      },
+      "band": 3,
+      "returnText": "Tell Burl about the stones",
+      "lines": {
+        "offer": [
+          "Past the bees, there is a ring of stones. Old ones.",
+          "Cut with the same letters as the humming stone.",
+          "Go and see. Take your paw, hand, whichever."
+        ],
+        "active": [
+          "The ring of stones. Past the bee farm."
+        ],
+        "ready": [
+          "Cut like the waystone. So it is a long road, this.",
+          "Two red draughts. Mind the hills on the way home."
+        ],
+        "done": [
+          "The same letters. The same hum, I think."
+        ]
+      }
+    },
+    {
+      "id": "sq.fc.stores",
+      "title": "Boars in the Stores",
+      "site": "post",
+      "steps": [
+        {
+          "template": "kill",
+          "params": {
+            "ids": [
+              "boarF1",
+              "boarF2"
+            ],
+            "count": 2
+          },
+          "objText": "Drive off the two boars at the post"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.river.road",
+          "step": "riverBank"
+        }
+      ],
+      "reward": {
+        "table": "gear.t2"
+      },
+      "band": 5,
+      "returnText": "Take what the post left for you",
+      "lines": {
+        "offer": [
+          "A tag on the basket: BOARS BROKE THE CROCK.",
+          "TWO. SOUTH OF THE POST. DRIVE THEM OFF."
+        ],
+        "active": [
+          "The tag: TWO BOARS, SOUTH OF THE POST."
+        ],
+        "ready": [
+          "The grain crock is whole again. The boars are gone.",
+          "In the basket, new, tied with twine: a bundle."
+        ],
+        "done": [
+          "The tag is turned over. It reads: THANK YOU."
+        ]
+      }
+    },
+    {
+      "id": "sq.fc.caps",
+      "title": "Red Caps",
+      "site": "rook",
+      "steps": [
+        {
+          "template": "collect",
+          "params": {
+            "ids": [
+              "redcap"
+            ],
+            "count": 5
+          },
+          "objText": "Pick five red caps on tree trunks"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.river.road",
+          "step": "riverBank"
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 2
+          }
+        ]
+      },
+      "band": 4,
+      "returnText": "Bring the caps to Rook",
+      "lines": {
+        "offer": [
+          "Red caps. Shelf fungus on trunks, up the road.",
+          "Five. I like red. A crow may like what it likes."
+        ],
+        "active": [
+          "Five red caps. On the trunks. Up the road."
+        ],
+        "ready": [
+          "Five. Not one eaten. You are better than a crow.",
+          "Take these. I made them. Yes, I did."
+        ],
+        "done": [
+          "Red. Shiny. Mine. Thank you, fell-bird."
+        ]
+      }
+    },
+    {
+      "id": "sq.fc.well",
+      "title": "The Dry Well",
+      "site": "rook",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "well"
+            ]
+          },
+          "objText": "Look at the dry well north of the post"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.river.road",
+          "step": "riverBank"
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 5
+          }
+        ]
+      },
+      "band": 4,
+      "returnText": "Tell Rook about the well",
+      "lines": {
+        "offer": [
+          "There is a well. Dry. Planks on it. A brick fell.",
+          "I think the bottom has something in it. Look. I can't."
+        ],
+        "active": [
+          "The well, north of the trade post. Planks and bricks."
+        ],
+        "ready": [
+          "Dry, and no echo? Then it is full of leaves. Ha.",
+          "You looked. I counted. Here, five sticks."
+        ],
+        "done": [
+          "A dry well. Even the rain gave up on it."
+        ]
+      }
+    },
+    {
+      "id": "sq.fc.shrine",
+      "title": "The Fallen Shrine",
+      "site": "notePost",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "shrine"
+            ]
+          },
+          "objText": "Look at the fallen shrine by the post"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.river.road",
+          "step": "riverBank"
+        },
+        {
+          "quest": "sq.straw",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
+      "band": 4,
+      "returnText": "Read the note post",
+      "lines": {
+        "offer": [
+          "A fresh scrap pinned on the post, in a careful hand:",
+          "THE SHRINE EAST OF HERE FELL. TELL ME WHICH WAY."
+        ],
+        "active": [
+          "The note: THE SHRINE EAST FELL. WHICH WAY?"
+        ],
+        "ready": [
+          "You look. The pillar leans WEST, toward the water.",
+          "A new line on the note, and ten arrows tied below."
+        ],
+        "done": [
+          "The note: WEST. THANK YOU. IT WAS ALWAYS WEST."
+        ]
+      }
+    },
+    {
+      "id": "sq.fc.jetty",
+      "title": "Rotten Planks",
+      "site": "relayFord",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "jetty"
+            ]
+          },
+          "objText": "Walk out on the old jetty"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.river.road",
+          "step": "riverBank"
+        },
+        {
+          "quest": "sq.fc.ford",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 5
+          }
+        ]
+      },
+      "band": 4,
+      "returnText": "Report to the Ford Relay",
+      "lines": {
+        "offer": [
+          "TICK. EAST BANK JETTY: PLANKS. CONDITION: ROT.",
+          "WALK OUT. RETURN. REPORT."
+        ],
+        "active": [
+          "TICK. JETTY CHECK OPEN. PLANKS: ROT."
+        ],
+        "ready": [
+          "TICK. JETTY HOLDS A WALKER. NOT TWO. LOGGED.",
+          "FIVE ARROWS, HELD FOR YOU."
+        ],
+        "done": [
+          "TICK. JETTY LOGGED. ONE WALKER MAX."
+        ]
+      }
+    },
+    {
+      "id": "sq.fc.cog",
+      "title": "A Cog for the Bend",
+      "site": "relayFord",
+      "steps": [
+        {
+          "template": "deliver",
+          "params": {
+            "item": "cog",
+            "count": 1,
+            "to": "relayBend"
+          },
+          "objText": "Carry the cog to the Bend Relay"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.river.road",
+          "step": "riverBank"
+        },
+        {
+          "quest": "sq.fc.jetty",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
+      "band": 5,
+      "returnText": "Set the cog at the Bend Relay",
+      "lines": {
+        "offer": [
+          "TICK. SPARE COG, ONE. HELD FOR THE BEND.",
+          "CARRY EAST. LEAVE AT THE BEND MOUNT."
+        ],
+        "active": [
+          "TICK. COG IN TRANSIT. BEND. EAST."
+        ],
+        "ready": [
+          "TICK. COG SEATED. BEND MOUNT QUIET. SOUND.",
+          "TEN ARROWS, HELD FOR YOU."
+        ],
+        "done": [
+          "TICK. COG DELIVERED. BOTH MOUNTS SOUND."
+        ]
+      }
+    },
+    {
+      "id": "sq.fc.ask",
+      "title": "Ask the Bear",
+      "site": "rook",
+      "steps": [
+        {
+          "template": "talk",
+          "params": {
+            "to": "burl"
+          },
+          "objText": "Ask Burl if bears eat crows"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.river.road",
+          "step": "riverBank"
+        },
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 1
+          }
+        ]
+      },
+      "band": 4,
+      "returnText": "Tell Rook what the bear said",
+      "lines": {
+        "offer": [
+          "I have a question for the bear. I won't ask it myself.",
+          "Ask her: do bears eat crows? Say it plain."
+        ],
+        "active": [
+          "The question for the bear. Plain. Not mine."
+        ],
+        "ready": [
+          "Only on feast days? Hm. Is today a feast day?",
+          "Never mind. A red draught. I stole it, fairly."
+        ],
+        "done": [
+          "I will stay on the high branch. Thank you."
+        ]
+      }
+    },
+    {
+      "id": "sq.rook.gift",
+      "title": "A Gift for the Bear",
+      "site": "rook",
+      "steps": [
+        {
+          "template": "deliver",
+          "params": {
+            "item": "brass.scrap",
+            "count": 1,
+            "to": "burl"
+          },
+          "objText": "Give the brass scrap to Burl"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.river.road",
+          "step": "riverBank"
+        },
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        },
+        {
+          "quest": "sq.fc.ask",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
+      "band": 5,
+      "returnText": "Give Burl the brass scrap",
+      "lines": {
+        "offer": [
+          "A scrap of brass. My second best. Take it to the bear.",
+          "Say it is from the crow. Say nothing else."
+        ],
+        "active": [
+          "The brass. To the bear. Say nothing else."
+        ],
+        "ready": [
+          "A crow gives me brass? Oh. Put it by my bed, sky-cub.",
+          "Tell him: not on feast days. Not ever. Here."
+        ],
+        "done": [
+          "The brass shines by my bed. Tell the crow so."
+        ]
+      }
     }
   ]
 }
