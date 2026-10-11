@@ -20,6 +20,7 @@ import { beastLoot } from './sim/loot.js';
 import { npcTalk } from './dialogueCtl.js';
 import { relayWake } from './relayWake.js';
 import { doorToggle } from './doorToggle.js';
+import { questInspect } from './questInspect.js';
 
 /** name -> the story that gives it a real body */
 export const QUEST_BEHAVIOURS = {
@@ -34,6 +35,7 @@ export const QUEST_BEHAVIOURS = {
   'relay.wake': 'WS1-06b',
   'door.toggle': 'DOOR-TOGGLE-01',
   'pickup.take': 'QL-05',
+  'quest.inspect': 'QL-04',
 };
 
 const logged = new Set();
@@ -75,6 +77,7 @@ const REAL_BEHAVIOURS = {
   'npc.talk': npcTalk,
   'relay.wake': relayWake,
   'door.toggle': doorToggle,
+  'quest.inspect': questInspect, // QL-04: object givers / hand-ins
   'pickup.take': () => false, // QL-05: prompt only; questPickups.onTick takes the item on E
 };
 

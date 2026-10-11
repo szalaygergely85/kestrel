@@ -85,6 +85,8 @@ import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + aut
 import { parseOccl, createHzbInvalidator } from './occlGate.js'; // OCCL-MAIN-01
 import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
 import { createQuestPickups } from './questPickups.js'; // QUESTS-01
+import { setInspectSink, wrapText } from './quest/questInspect.js'; // QL-04
+import { createHeartHook } from './heartHook.js'; // QL-08: heart pieces -> max HP
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
 import { wireTelegraphs, telegraphsEnabled } from './fx/telegraphWire.js'; // TELEGRAPH-WIRE-01 (lane B1)
@@ -495,7 +497,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
       };
     };
     const MARK_ENT = { noteKeepLight: 'tower.noteKeepLight' }; // level props are world entities '<placementId>.<propId>'
-    const markResolve = (id, out) => { const h = markWorld && markWorld.get(MARK_ENT[id] || id), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const at = MARK_AT[id] || tr, gz = markWorld.heightAt(at.x, at.y); out.x = at.x; out.y = at.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y + (MARK_DY[id] || 0); out.z = t.z + (MARK_TOP[id] || 1.55); return true; };
+    const markResolve = (id, out) => { const h = markWorld && markWorld.get(MARK_ENT[id] || (saveRelay.quest.book ? saveRelay.quest.book.entityFor(id) : id)), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const at = MARK_AT[id] || tr, gz = markWorld.heightAt(at.x, at.y); out.x = at.x; out.y = at.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y + (MARK_DY[id] || 0); out.z = t.z + (MARK_TOP[id] || 1.55); return true; };
     // MARK-GIVER-ONLY-01 (owner): '!' / '?' mean a quest GIVER only; objective/waypoint steps get no world mark (the compass points there). Flip to re-enable if a distinct waypoint symbol is designed.
     const OBJECTIVE_MARKS = false;
     if (OBJECTIVE_MARKS) registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle('questMark') });
@@ -564,6 +566,7 @@ const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
   })
   : null;
 if (chestHook) gameHooks.register(chestHook);
+if (chestHook) gameHooks.register(createHeartHook({ getCard: () => chestHook.card })); // QL-08
 // QUESTS-01: generic world pickup prop + pack counts for collect/deliver objectives + hand-in reward grant (game/js/questPickups.js)
 const questPickups = (itemDefs && saveRelay) ? createQuestPickups({ getBook: () => saveRelay.quest.book, feed: (e) => saveRelay.quest.feed(e), defs: itemDefs }) : null;
 if (questPickups) gameHooks.register(questPickups);
@@ -1027,7 +1030,7 @@ async function runGame(mode, cinematic = null) {
   const COMPASS_ITEM = { sword: 'tower.sword' }; // COMPASS-QUEST-01: item step -> the level prop entity (placementId.propId)
   // PO-CH1-12: giver ids that are level props (placementId.propId) resolve through one helper for compass + map marks.
   const GIVER_ENT = { noteKeepLight: 'tower.noteKeepLight' };
-  const giverEntity = (w, id) => w.get(GIVER_ENT[id] || id);
+  const giverEntity = (w, id) => w.get(GIVER_ENT[id] || (saveRelay && saveRelay.quest.book ? saveRelay.quest.book.entityFor(id) : id)); // QL-04: object givers / hand-ins resolve through def.giver.entity / turnInEntity
   const compassResolver = { resolve(kind, id, out) {
     const w = compassWorld; if (!w) return false;
     let e = null;
@@ -1087,6 +1090,10 @@ async function runGame(mode, cinematic = null) {
   let relayWake = null; // WS1-06b: rebuilt on every 'world:loaded'
   // CH1-MOUNT (38.37): notice banner (page lifetime) + crystal grant / barks / chapter card (rebuilt per world; only when saves are live = never in capture/bench/compare/?at=)
   const notice = createNoticeView();
+setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accept or hand in, show its short text (banner, never locks)
+  const b = saveRelay && saveRelay.quest.book, r = b && b.inspect(id); if (!r) return;
+  const d = b.def(b.index(r.id)); notice.push(String(d.title || r.id).slice(0, 30), wrapText(r.text || (r.action === 'handin' ? 'Done.' : r.action === 'accept' ? 'Quest accepted.' : 'Not yet.')));
+});
   let crystal = null, barks = null, chapterCard = null, ch1Hidden = true;
   let burlReopen = false; // PO-CH1-07 latch
   let escort = null; // CH1-07 Burl escort (rebuilt per world, saves live only)
