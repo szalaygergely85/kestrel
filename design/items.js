@@ -230,6 +230,17 @@
     icon: icon([' .o. ', '(oQo)', '  |  '],
                [' qQq ', 'qQqQq', '  h  '])
   };
+  defs.redcap = {
+    id: 'redcap', name: 'Red Cap', kind: 'material', stackMax: 10, hand: false, inPack: true,
+    desc: 'East-bank mushroom. Rook wants some.',
+    use: { none: 'Material - quest errand (sq.rook.caps)' },
+    glyph: { ch: 'n', c: 'goreRed' },
+    //  .-.      red cap, white warts
+    // (o:o)
+    //  |=|      stem
+    icon: icon([' .-. ', '(obo)', ' |=| '],
+               [' rRr ', 'RbRbR', ' ffb '])
+  };
   defs['heart.piece'] = {
     id: 'heart.piece', name: 'Heart Piece', kind: 'upgrade', stackMax: 3, hand: false, inPack: true,
     desc: 'A warm red stone. Four make a heart.',
