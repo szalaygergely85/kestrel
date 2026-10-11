@@ -175,13 +175,17 @@ function resolveBreach(world, out) {
   return null;
 }
 
-/** QUEST-CHAIN-Q-01: the area-only world circle zones the quests wait on (content/quests/areas.json 'trigger' areas except the waystone). */
-const ZONE_IDS = ['towerDoor', 'roadWest', 'bendRelay'];
+/** QUEST-CHAIN-Q-01 + QL-B2 follow-up: EVERY area-only world circle zone (trigger key `world.<id>`, no structure) -> area:entered once.
+ *  Data-driven (was a hand list of 3, so the other quest areas never fired). `hillPath` also answers to the area id `hintStone`.
+ *  `end` is the waystone (own path). zMin null/absent = any height (a bare `z >= null` is `z >= 0`, false below sea level). */
+const ZONE_ALIAS = { hillPath: 'hintStone' };
 function resolveZones(world) {
   const out = [];
-  for (const id of ZONE_IDS) {
-    const t = (world.triggers || []).find((q) => q.key === 'world.' + id);
-    if (t && t.shape === 'circle') out.push({ id, x: t.x, y: t.y, r: t.r, zMin: t.zMin });
+  for (const t of world.triggers || []) {
+    if (t.shape !== 'circle' || t.structId || typeof t.key !== 'string' || !t.key.startsWith('world.') || t.key === 'world.end') continue;
+    const id = t.key.slice(6), zMin = typeof t.zMin === 'number' ? t.zMin : -Infinity;
+    out.push({ id, x: t.x, y: t.y, r: t.r, zMin });
+    if (ZONE_ALIAS[id]) out.push({ id: ZONE_ALIAS[id], x: t.x, y: t.y, r: t.r, zMin });
   }
   return out;
 }

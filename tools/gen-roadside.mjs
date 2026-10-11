@@ -21,7 +21,7 @@ import { plantScaleFor, treeScaleFor } from './plant-scale.mjs';
 const dry = process.argv.includes('--dry-run');
 const FILE = 'content/worlds/world_m1.world.json';
 const data = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-const rsRe = /^rs\d+$/, entRe = /^rsLamp\d+$/;
+const rsRe = /^rs\d+$/, entRe = /^(rsLamp\d+|rsInspect[A-Z]\w*)$/;
 data.structures = data.structures.filter((s) => !rsRe.test(s.id));
 data.entities = data.entities.filter((e) => !entRe.test(e.id));
 const { assets } = await loadTestAssets();
@@ -204,6 +204,10 @@ console.log('natural detail:', plants, 'plants placed,', skipped, 'spots skipped
 
 if (process.env.DBG) out.forEach((s) => console.log(s.id, s.mesh, s.origin.x, s.origin.y));
 if (bad.length) { console.error('PLACEMENT PROBLEMS:\n' + bad.join('\n')); if (!dry) process.exit(1); }
+// QL-B2 follow-up: invisible inspect anchors on the four vignettes quests refer to (a quest can name one as an object giver / hand-in:
+// errands.js turns any dialogue-less giver entity into a [E] Inspect interactable). Text keys are data only (no writer text yet).
+for (const [id, x, y, what] of [['rsInspectWagon', 1347, 1058, 'abandoned cart'], ['rsInspectWell', 994, 1051.5, 'dry well'], ['rsInspectShrine', 1005, 1046, 'collapsed wayside shrine'], ['rsInspectWoodpile', 1461.4, 1016.2, "woodcutter's corner"]])
+  ents.push({ id, type: 'prop', x, y, z: 'ground', components: { inspect: { text: 'inspect.' + id.slice(9).toLowerCase() } }, note: 'QL-B2 follow-up inspect anchor: ' + what + ' (gen-roadside.mjs)' });
 data.structures.push(...out); data.entities.push(...ents);
 console.log(`roadside: ${out.length} meshes, ${ents.length} entities`);
 if (!dry) { fs.writeFileSync(FILE, stringifyContent(data), 'utf8'); console.log('wrote', FILE); }

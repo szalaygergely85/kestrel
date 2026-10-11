@@ -1053,9 +1053,9 @@ async function runGame(mode, cinematic = null) {
     else if (kind === 'area') {
       if (id === 'breach') { if (!compassBreach) compassBreach = compassFindMarker(w, 'breach'); if (!compassBreach) return false; out.x = compassBreach.x; out.y = compassBreach.y; out.z = compassBreach.z; return true; }
       if (id === 'waystone') e = w.get('endMarker');
-      else if (id === 'towerDoor' || id === 'roadWest' || id === 'bendRelay' || id === 'riverBank' || id === 'fordWest' || id === 'northLook' || id === 'crossroads' || id === 'hintStone') { // CH1-02 + QL-WIRE: area-only world triggers (hintStone = the hillPath circle)
-        const tr = areaTrigger(w, id === 'hintStone' ? 'hillPath' : id); if (!tr) return false;
-        out.x = tr.x; out.y = tr.y; out.z = NaN; return true;
+      else { // QL-B2 follow-up: data-driven - any area id with an area-only world zone (key world.<id>; hintStone = hillPath) gets an arrow
+        const tr = areaTrigger(w, id === 'hintStone' ? 'hillPath' : id);
+        if (tr) { out.x = tr.x; out.y = tr.y; out.z = NaN; return true; }
       }
     }
     const t = e && e.data && e.data.transform; if (!t) return false;
