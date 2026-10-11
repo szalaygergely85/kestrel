@@ -548,3 +548,7 @@ B1 2026-10-11 (QL-09/10/11/12, kestrel-4) -> po-review: ch12 pack.json +4 quests
 
 - M4-C2 step 2 (kestrel-1, m4-c2): root cause of the stuck notice = SCRIPT, not game. `?voxelbench=0` is truthy -> isCaptureOrBench -> ch1Hidden always true -> notice timer never runs -> burlEscort noticeBusy blocks Burl's departure talk. Real play: wake -> chapter card -> journal note (E closes) -> notice 4.3 s -> talk. Script now closes the note with E and drains notice.update(10,false); also fixed beat 9 regex (step ids "road"/"relayFound"). tools/verify-ch12-run.mjs: beats 1-10, 12 PASS.
   Still FAIL: 11,13,14,E1-E6 (E does not open dialogue with rook/bear: interaction.targetKey null at dist 1.2-1.5, notice drained, no note; rook dz=-3.7 -> player below Rook's deck?; look/aim not on npc?), AC3b (capture-like page has no Continue; needs a real title-menu flow: without voxelbench=0 the player has no health component until New Game/Continue via window.__debug.menuHost).
+
+### QL-19 remainder (kestrel-1, riverboots): passives wired
+- Night cloak was already wired (main.js vitals `defenceBonus` -> `nightBonus`, clockHour). River Boots wet-stone now wired: new `game/js/quest/sim/wetStones.js` (stones = structures `wet:true` or id `fordS<n>`, r 1.1 m, flat arrays, 0 alloc) + `wetStones.step` before `integrate` in main.js (scales controls x0.5 for 0.4 s on a sprint onto a stone without boots).
+- Test `wetStones.test.js` (tagging in world_m1, slow/boots/walk cases, wiring grep). Suites 113/113 PASS, quest-sim 52/52 OK. Not browser-checked.

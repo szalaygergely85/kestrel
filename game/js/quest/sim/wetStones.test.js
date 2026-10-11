@@ -1,0 +1,26 @@
+// QL-19: wet stone tagging + slow step + main.js wiring.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { collectWetStones, createWetStones } from './wetStones.js';
+import { ensureEquipment } from './equipment.js';
+const world = JSON.parse(fs.readFileSync(new URL('../../../../content/worlds/world_m1.world.json', import.meta.url), 'utf8'));
+const c = collectWetStones(world.structures);
+assert.ok(c.n >= 5, 'ford stones found in world_m1: ' + c.n);
+const defs = { riverBoots: { equip: { slot: 'feet', passive: { wetStone: true } } } };
+const player = { components: {} }; const eq = ensureEquipment(player);
+const ws = createWetStones([{ id: 'fordS1', origin: { x: 10, y: 10 } }, { id: 'tree', origin: { x: 0, y: 0 } }]);
+assert.equal(ws.count, 1);
+const dt = 1 / 60;
+assert.equal(ws.step(eq, defs, true, 5, 10, dt), 1, 'off stone');
+assert.equal(ws.step(eq, defs, true, 10, 10, dt), 0.5, 'sprint onto wet stone: slow');
+let n = 0; while (ws.step(eq, defs, true, 10, 10, dt) < 1) n++;
+assert.ok(n >= 22 && n <= 24, 'about 0.4 s: ' + n);
+ws.reset(); ws.step(eq, defs, true, 5, 10, dt);
+assert.equal(ws.step(eq, defs, false, 10, 10, dt), 1, 'walking: no slow');
+ws.reset(); ws.step(eq, defs, true, 5, 10, dt);
+eq.feet = 'riverBoots';
+assert.equal(ws.step(eq, defs, true, 10, 10, dt), 1, 'River Boots: no slow');
+const main = fs.readFileSync(new URL('../../main.js', import.meta.url), 'utf8');
+assert.ok(/createWetStones\(worldDef\.structures\)/.test(main) && /wetStones\.step\(/.test(main), 'main.js wired');
+assert.ok(/defenceBonus:[^\n]*nightBonus/.test(main), 'night cloak wired in vitals');
+console.log('wetStones: ok');
