@@ -1,0 +1,33 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "far/ferrum_far",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "ferrum_far.mesh.bin",
+  "triCount": 5440,
+  "bbox": [
+    -225.55599975585938,
+    -383.70001220703125,
+    0,
+    170.7740020751953,
+    383.70001220703125,
+    167.96800231933594
+  ],
+  "ranges": [
+    {"count": 5440, "part": "ferrum_far#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_UnevenBrick",
+    "MI_Brick",
+    "MI_RockTrim"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick"
+  },
+  "matsResolved": false,
+  "meshVersion": 1
+}

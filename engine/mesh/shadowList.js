@@ -11,7 +11,7 @@
 // cast) and RE-06 instanced groups (`src.instances`) are added with their FULL
 // instance buffer `g.ib` (not the camera-compacted `drawIb`): units in the sun
 // outside the view still shadow what is on screen; the sun-plane cull is per group.
-import { DrawList, addStructures, addMeshStructures, pushClothItem, DRAW_TERRAIN, DRAW_FLAG_ONE_PART, MAX_DRAW_ITEMS, MAX_MESH_DRAWS } from './DrawList.js';
+import { DrawList, addStructures, addMeshStructures, pushClothItem, DRAW_TERRAIN, DRAW_FLAG_ONE_PART, MAX_MESH_DRAWS } from './DrawList.js';
 import { addVoxelInstances } from './voxelMesh.js';
 import { fillShadowBands, groupRadius, resolveGroupLod1, meshIsMasked } from './instances.js';
 
@@ -24,7 +24,10 @@ import { fillShadowBands, groupRadius, resolveGroupLod1, meshIsMasked } from './
  */
 const _budget = { eye: /** @type {any} */ (null), cutM: 25, cap: MAX_MESH_DRAWS };
 
-/** Builder output capacity before the overflow trim (the trim keeps `MAX_DRAW_ITEMS`). */
+/** OB-043: sun-shadow list size after the overflow trim (was MAX_DRAW_ITEMS = 256; kept when the camera list went to 512). */
+export const MAX_SHADOW_ITEMS = 256;
+
+/** Builder output capacity before the overflow trim (the trim keeps `MAX_SHADOW_ITEMS`). */
 export const SHADOW_BUILD_CAPACITY = 1024;
 
 /** @param {number} [capacity] @returns {DrawList} a list sized for `buildShadowList`. */
@@ -154,10 +157,10 @@ function syncTerrainLod(list, cameraList) {
   }
 }
 
-/** Drops farthest-from-centre items (ties: the later one) until `count <= MAX_DRAW_ITEMS`; stable order otherwise. */
+/** Drops farthest-from-centre items (ties: the later one) until `count <= MAX_SHADOW_ITEMS`; stable order otherwise. */
 export function trimShadowList(list, cx, cy) {
   const items = list.items;
-  while (list.count > MAX_DRAW_ITEMS) {
+  while (list.count > MAX_SHADOW_ITEMS) {
     let worst = 0, worstD = -1;
     for (let i = 0; i < list.count; i++) {
       const a = items[i].aabb;

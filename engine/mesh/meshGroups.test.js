@@ -10,7 +10,8 @@ import { DrawList, DRAW_STATIC, DRAW_INSTANCED, DRAW_FLAG_ONE_PART, DRAW_FLAG_NO
 import { unpackNormalOct } from '../voxel/octNormal.js';
 import { buildWorldColliders } from '../world/colliders.js';
 import { moveCircleMesh } from '../physics/meshCollide.js';
-import { groupRadius } from './instances.js';
+import { groupRadius, MAX_INSTANCES_PER_FRAME } from './instances.js';
+import { meshFeedStats, DRAW_TAIL_RESERVE, MAX_LIST_INSTANCES } from './DrawList.js';
 import { MeshGroupSet, addMeshStructuresBatched, meshIsSolid, MAX_GROUPED_INSTANCES, MAX_GROUPED_KEPT } from './meshGroups.js';
 import { rasterDrawList, createRasterTarget } from './rasterJS.js';
 import { frustumPlanes } from './culling.js';
@@ -330,7 +331,7 @@ const place = (w, m, x, y, yaw = 0, over) => World.prototype.placeMesh.call(w, m
   ok('meshObjectId no overflow past 4096: unique, in range, clear of 0xFF00+', meshObjectId(4096) === 0xB000 && meshObjectId(5000) === 0xA000 + 5000 && meshObjectId(MESH_ID_SPAN - 1) < 0xFF00
     && meshObjectId(MESH_ID_SPAN) === MESH_ID_BASE && new Set([4095, 4096, 4097, 8000, 20000].map(meshObjectId)).size === 5);
   ok('meshObjectId keeps (id & 0xF) = si & 0xF for planeId (outline) mixing', [4096, 5001, 20000].every((i) => (meshObjectId(i) & 0xF) === (i & 0xF)));
-  ok('group cap constants sane', MAX_GROUPED_KEPT <= 2048 && MAX_GROUPED_INSTANCES >= MAX_GROUPED_KEPT);
+  ok('group cap constants sane', MAX_GROUPED_KEPT <= 2048 && MAX_GROUPED_INSTANCES >= MAX_GROUPED_KEPT && MAX_GROUPED_KEPT + MAX_INSTANCES_PER_FRAME === MAX_LIST_INSTANCES);
 }
 
 // ---- 6. zero allocation ------------------------------------------------------------------------
@@ -348,6 +349,26 @@ const place = (w, m, x, y, yaw = 0, over) => World.prototype.placeMesh.call(w, m
   for (let i = 0; i < 1000; i++) frame();
   global.gc(); const grew = process.memoryUsage().heapUsed - h0;
   ok('0 allocation over 1000 batched feeds', grew < 32 * 1024, `grew ${grew}`);
+}
+
+// ---- OB-043: group items over the list budget -> nearest groups kept, farthest dropped + counted, never throws ----
+{
+  const w = mkWorld();
+  for (let k = 0; k < 6; k++) { const m = { ...rockA, id: 'ob43_' + k }; place(w, m, 10 + k * 10, 0); place(w, m, 11 + k * 10, 0); } // group k nearest x = 10 + 10k
+  const g = new MeshGroupSet(); const cache = new MeshDrawCache();
+  g.update(w, cache, idFor);
+  const l = new DrawList(DRAW_TAIL_RESERVE + 3); l.begin();
+  addMeshStructuresBatched(l, w, { x: 0, y: 0, z: 1.7 }, cache, idFor, 2000, g, null);
+  const xs = []; for (let i = 0; i < l.count; i++) xs.push(l.items[i].instBuf.f32[3]);
+  ok('OB-043: 3 of 6 group items fit the budget (capacity - DRAW_TAIL_RESERVE)', l.count === 3 && g.stats.groupsDropped === 3 && g.stats.instancesDropped === 6, `count ${l.count} drop ${g.stats.groupsDropped}`);
+  ok('OB-043: the 3 nearest groups kept, build order preserved', xs.join() === '10,20,30', xs.join());
+  ok('OB-043: meshFeedStats.groupsDropped', meshFeedStats.groupsDropped === 3);
+  const l2 = new DrawList(DRAW_TAIL_RESERVE + 3); l2.begin();
+  addMeshStructuresBatched(l2, w, { x: 70, y: 0, z: 1.7 }, cache, idFor, 2000, g, null);
+  const xs2 = []; for (let i = 0; i < l2.count; i++) xs2.push(l2.items[i].instBuf.f32[3]);
+  ok('OB-043: ranking follows the eye (x 70 -> groups at 40/50/60)', xs2.join() === '40,50,60', xs2.join());
+  const big = new DrawList(); big.begin(); addMeshStructuresBatched(big, w, { x: 0, y: 0, z: 1.7 }, cache, idFor, 2000, g, null);
+  ok('OB-043: under budget nothing dropped', big.count === 6 && g.stats.groupsDropped === 0 && meshFeedStats.groupsDropped === 0);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

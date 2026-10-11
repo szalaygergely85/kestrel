@@ -264,7 +264,7 @@ export { createWaterfalls, collectWaterfallDefs } from './world/waterfalls.js';
 // DECAL-01: wall-text bindings over the shared overlay layer.
 export { bindDecals, drawDecals } from './ui/decals.js';
 export { LazyMeshStore, ensureMesh, requestMesh, meshReady } from './mesh/lazyMesh.js'; // MESH-LOAD-01
-export { meshFeedStats, MAX_MESH_DRAWS } from './mesh/DrawList.js'; // OB-039: single placed-mesh draws requested/kept/dropped (F3)
+export { meshFeedStats, MAX_MESH_DRAWS, MAX_DRAW_ITEMS } from './mesh/DrawList.js'; // OB-039: single placed-mesh draws requested/kept/dropped (F3)
 export * from './chargen/index.js'; // CHARGEN-02..05 (38.29)
 export { riggedFromGlb } from './chargen/fromGlb.js'; // RIG-02a (38.32); not via chargen/index.js: loading gltf.js there shifts mesh.test's heap-based alloc probe
 

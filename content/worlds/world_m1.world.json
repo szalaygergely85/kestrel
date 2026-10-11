@@ -2011,7 +2011,8 @@
     {"id": "rs558", "mesh": "quaternius/Prop_WoodenFence_Single", "origin": {"x": 992.64, "y": 1106.33, "z": -85.85}, "yawDeg": 0},
     {"id": "rs559", "mesh": "quaternius/Prop_WoodenFence_Single", "origin": {"x": 994.68, "y": 1106.35, "z": -85.98}, "yawDeg": 0},
     {"id": "rs560", "mesh": "quaternius/Prop_WoodenFence_Single", "origin": {"x": 996.72, "y": 1106.37, "z": -86.1}, "yawDeg": 0},
-    {"id": "rs561", "mesh": "quaternius/Prop_WoodenFence_Single", "origin": {"x": 998.76, "y": 1106.39, "z": -86.2}, "yawDeg": 0}
+    {"id": "rs561", "mesh": "quaternius/Prop_WoodenFence_Single", "origin": {"x": 998.76, "y": 1106.39, "z": -86.2}, "yawDeg": 0},
+    {"id": "fr000", "castShadow": false, "collide": false, "mesh": "far/ferrum_far", "note": "MAP-08 far-only Ferrum + Wall silhouette, ONE baked mesh (tools/gen-ferrum-far.mjs; OB-043 / architecture.md 38.46)", "origin": {"x": 2200, "y": 1000, "z": -67.6}, "yawDeg": 0}
   ],
   "entities": [
     {"id": "player", "note": "pose = tower.start (x 17.0, y 9.5, facingDeg 330, pitchDeg 30, eyeH 0.3, lying) + origin -> world (1497.0, 1027.5)", "spawn": {"from": "start", "structure": "tower"}, "type": "player"},
@@ -2090,7 +2091,8 @@
     {"id": "rsInspectWagon", "components": {"inspect": {"text": "inspect.wagon"}}, "note": "QL-B2 follow-up inspect anchor: abandoned cart (gen-roadside.mjs)", "type": "prop", "x": 1347, "y": 1058, "z": "ground"},
     {"id": "rsInspectWell", "components": {"inspect": {"text": "inspect.well"}}, "note": "QL-B2 follow-up inspect anchor: dry well (gen-roadside.mjs)", "type": "prop", "x": 994, "y": 1051.5, "z": "ground"},
     {"id": "rsInspectShrine", "components": {"inspect": {"text": "inspect.shrine"}}, "note": "QL-B2 follow-up inspect anchor: collapsed wayside shrine (gen-roadside.mjs)", "type": "prop", "x": 1005, "y": 1046, "z": "ground"},
-    {"id": "rsInspectWoodpile", "components": {"inspect": {"text": "inspect.woodpile"}}, "note": "QL-B2 follow-up inspect anchor: woodcutter's corner (gen-roadside.mjs)", "type": "prop", "x": 1461.4, "y": 1016.2, "z": "ground"}
+    {"id": "rsInspectWoodpile", "components": {"inspect": {"text": "inspect.woodpile"}}, "note": "QL-B2 follow-up inspect anchor: woodcutter's corner (gen-roadside.mjs)", "type": "prop", "x": 1461.4, "y": 1016.2, "z": "ground"},
+    {"id": "ferrumGlow", "fogMax": 0.5, "fogModel": "far", "minCells": {"h": 2, "w": 18}, "model": "ferrumLights", "note": "MAP-08 Ferrum glow lights (amber pinpoints, model ferrumLights) as a world billboard behind/above the Crown (gen-ferrum-far.mjs; the removed fixed-angle horizon sprite looked bad)", "sizeM": {"h": 71, "w": 640}, "type": "billboard", "unlit": true, "x": 2250, "y": 1000, "z": -7.6}
   ],
   "horizon": [],
   "state": {
