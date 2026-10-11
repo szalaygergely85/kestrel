@@ -140,8 +140,8 @@ const ENTRIES = [
     view: { dist: 2, eye: 1.0 }, rim: ['block_light'], body: ['block_dark'] },
   { name: 'rubble2', title: 'Rubble variant 2 (small chunk)', clips: ['idle'], floorZ: 0, wallY: 1.5, wallMat: 'stone', floorMat: 'rubble',
     view: { dist: 2, eye: 0.7 }, rim: ['block_light'], body: ['block_dark'] },
-  { name: 'canvasHeap', title: 'Canvas heap (the wake spot: linen tarp over a crate, sagging scalloped hem, seams; fabric glyphs v1.39; west + east halves)', clips: ['idle'], floorZ: 0, wallY: 0.5, wallMat: 'stone',
-    floorMat: 'floor', view: { dist: 2.2, eye: 1.6 }, rim: ['tarp_light'], body: ['tarp_dark'], hiRes: true },
+  { name: 'canvasHeap', title: 'Canvas heap (OB-026: the wake spot, crumpled torn envelope canvas: pile + folds, frayed / burnt edges, scorch hole, spar, rope ends, straw; west + east halves)', clips: ['idle'], floorZ: 0, wallY: 0.5, wallMat: 'stone',
+    floorMat: 'floor', view: { dist: 2.2, eye: 1.6 }, rim: ['tarp_light'], body: ['balloon_dark'], hiRes: true },
   { name: 'gondola', title: 'Gondola (bow + stern halves share one tilt pose; chock static)', clips: ['idle'], floorZ: 0, wallY: 1.4, wallMat: 'stone', floorMat: 'floor',
     view: { dist: 3, eye: 1.6 }, rim: ['brass_light', 'brass_hot'], body: ['brass_dark', 'iron_dark'] },
   { name: 'strut', title: 'Bent strut (bar)', clips: ['idle'], floorZ: 0, wallY: 0.4, wallMat: 'stone', floorMat: 'rubble',
@@ -899,6 +899,8 @@ function runChecks() {
       const st = TOWER.start; let hmax = 0;
       for (const w of r.wv) if (Math.hypot(w.p[0] - st.x, w.p[1] - st.y) < 0.35) hmax = Math.max(hmax, w.p[2] + MODELS.canvasHeap.voxel.cellM / 2);
       ok(hmax < st.eyeH - 0.1, 'canvasHeap: within 0.35 m of the start pose (' + st.x + ', ' + st.y + ') the canvas top is ' + hmax.toFixed(3) + ' m < eye ' + st.eyeH + ' - 0.1 (the hollow)');
+      const rd = MODELS.canvasHeap.readability || {};
+      ok(rd.tris > 0 && rd.tris <= 2000, 'canvasHeap (OB-026): greedy mesh ' + rd.tris + ' tris <= 2000 (paint level ' + rd.paintLevel + ', 0 = full detail)');
     }
     if (name === 'strut') ok(Object.values(r.cells).every((c) => c === 'R'), 'strut: every voxel over the rubble cell R (14,8)');
     if (name === 'relay') {
