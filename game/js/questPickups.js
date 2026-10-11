@@ -60,7 +60,12 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
     grantReward(reward) {
       const inv = pack(); let k = 0;
       if (!inv || !reward || !reward.items) return 0;
-      for (const it of reward.items) if (addItem(inv, defs, it.id, it.n) > 0) { k++; if (ctx.events) ctx.events.emit('inventory:added', { id: it.id, n: it.n }); }
+      for (const it of reward.items) {
+        const got = addItem(inv, defs, it.id, it.n);
+        if (got > 0) { k++; if (ctx.events) ctx.events.emit('inventory:added', { id: it.id, n: got }); }
+        // Never lose a reward silently (full pack / stackMax already held): report the leftover on the bus.
+        if (got < it.n && ctx.events) ctx.events.emit('inventory:full', { id: it.id, n: it.n - got });
+      }
       return k;
     },
     get props() { return props; },
