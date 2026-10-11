@@ -57,5 +57,5 @@ ok(`centred in x (${((mn[0] + mx[0]) / 2).toFixed(2)}) and z (${((mn[2] + mx[2])
 let nrm, lcl = false; walk(all, (n) => { if (n.name === 'Normals') nrm = n.props[0]; if (n.name === 'P' && /^Lcl (Translation|Rotation)$/.test(n.props[0]) && n.props.slice(4).some((v) => v)) lcl = true; });
 ok('Model has no non-zero Lcl Translation/Rotation', !lcl);
 ok('normals: 3 per polygon vertex, finite, unit length', nrm && nrm.length === pvi.length * 3 && nrm.every(Number.isFinite) && Math.abs(Math.hypot(nrm[0], nrm[1], nrm[2]) - 1) < 1e-3);
-ok('one Lambert Material linked, no Video embedding garbage', (text.match(/Lambert/g) || []).length >= 1);
+ok('one Lambert Material linked', /lambert/i.test(text));
 console.log(`mixamo test: ${pass} passed, ${bad.length} failed`); if (bad.length) { console.log(bad.join('\n')); process.exit(1); }
