@@ -22,7 +22,7 @@ function setVariant(e, variant) {
 
 function setPrompts(world, open) {
   for (const r of world.interactables || []) {
-    if (r.name === 'door.toggle') r.prompt = open ? (r.def.closePrompt || '[E] Close') : (r.def.openPrompt || '[E] Open');
+    if (r.name === 'door.toggle') r.prompt = open ? (r.def.closePrompt || '[E] Close door') : (r.def.openPrompt || '[E] Open door');
   }
 }
 

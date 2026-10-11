@@ -1,5 +1,5 @@
 // game/js/quest/questInspect.js (QL-04). Behaviour `quest.inspect` for any level prop / interactable:
-// `{ interact: 'quest.inspect', objectId: '<giver or hand-in object id>', prompt: '[E] Inspect' }`. It only forwards the
+// `{ interact: 'quest.inspect', objectId: '<giver or hand-in object id>', prompt: '[E] Inspect <name>' }`. It only forwards the
 // object id to the game's sink (main.js: book.inspect -> accept / hand-in + a short notice text). No dialogue, never locks.
 let sink = null;
 export function setInspectSink(fn) { sink = typeof fn === 'function' ? fn : null; }

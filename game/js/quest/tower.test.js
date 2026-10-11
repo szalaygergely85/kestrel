@@ -202,7 +202,7 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
   ok('3b: no lantern interactable any more (lamp pickup removed)', !towerDef.interactables.some((i) => i.id === 'lantern' || i.interact === 'lantern.take'));
   // DOOR-TOGGLE-01: the door starts CLOSED (variant closed, box collider) and has a door.toggle interactable (E, no requires).
   const doorIa = towerDef.interactables.find((i) => i.id === 'door');
-  ok('3b: door interactable is door.toggle, prompt "[E] Open", no requires', !!doorIa && doorIa.interact === 'door.toggle' && doorIa.prompt === '[E] Open' && !doorIa.requires && doorIa.prop === 'doorBar');
+  ok('3b: door interactable is door.toggle, prompt "[E] Open door", no requires', !!doorIa && doorIa.interact === 'door.toggle' && doorIa.prompt === '[E] Open door' && !doorIa.requires && doorIa.prop === 'doorBar');
   const doorProp = towerDef.props.find((p) => p.id === 'doorBar');
   ok('3b: doorBar prop starts closed with a box collider + collider-off variant open', doorProp.variant === 'closed' && doorProp.colliders.length === 1 && doorProp.colliders[0].type === 'box' && doorProp.colliderOffVariant === 'open');
   const doorWorld = World.load({
