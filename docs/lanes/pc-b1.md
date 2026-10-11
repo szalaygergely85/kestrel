@@ -612,3 +612,9 @@ EQ-23 (kestrel-4, eq-23, Node-only): leftover stacks drop at the player's feet. 
 - 051a: uiLayer.setCellScaled + UI_SCALE2_BIT, textDraw.drawTextScaled (1x fallback), engine/ui/uiScale.js (scaledFrac), present.wgsl.js (raw&127u, quadrant frac), RenderTargetCanvas2D raster + rare-merge degrade. Tests: uiLayer/uiScale/textDraw(new, incl. Canvas2D raster = 1x mask upsampled)/wgsl index string test, all PASS + check-deps.
 - 051b: crosshair.js `style.prompt.scale===2` path (even origin, rows py/py+1), crosshair.test.js cases, tools/verify-prompt-scale.mjs {port} (not run; uses __debug.getUi()).
 - NEEDS B1-main: in game/js/main.js uiStyle prompt entry (~l.413) add `scale: 2` -> `prompt: { color: P.colors[P.ui.prompt], keyColor: P.colors[P.ui.promptKey], plateBg: '#0a0b10', scale: 2 },`. Then main session runs `node tools/verify-prompt-scale.mjs 95xx` once and an eyeball of the WGSL UI pass (untested on a real GPU).
+
+## FS-01 M4 action hints (kestrel-1, Node only)
+- New `game/js/quest/actionHints.js` (+ `.test.js`): 7 rows `act*` in `uiStyle.hints` (title.js, `fmt` with {action} slots filled from the live bindings via `relabelHint` in hints.js); main.js feeds `actionSig` after stepHints' signals and calls `resetActionHints()` with `resetHints()`.
+- AC1-3 pass as Node tests (`node tools/run-tests.mjs --filter actionHints,hints,combatHint,bindings,check-deps`: 6/6 PASS; --check ok on main/actionHints/hints).
+- AC4 NOT run (no browser): `node tools/verify-action-hints.mjs 9500` (drives hints via __debug.playerHandle state, stills `docs/test-reports/captures/action-hints-*.png`; owner look: none overlaps OB-051 prompt). Script unrun, item ids/state hooks unverified in a browser.
+- Limits: Q-swap done = swapT start; potion/pickup hints are edge-based (starting kit seeded as baseline); `[1-4]` is literal (digits not in bindings table).

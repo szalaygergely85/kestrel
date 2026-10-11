@@ -260,7 +260,16 @@
       { id: 'run', text: 'Shift run', keys: ['Shift'], when: 'after 10 s of walking', on: { type: 'walkTime', sec: 10 }, doneOn: 'run input' },
       { id: 'jump', text: '[Space] Jump', keys: ['[Space]'], when: 'on entering hintJump (tower.js triggers, r 2 m round markers.gapEdge, zMin 2.0)',
         on: { type: 'zone', zone: 'hintJump' }, doneOn: 'jump input' },
-      { id: 'capture', text: 'Click to capture mouse', keys: ['Click'], when: 'pointer not locked', on: { type: 'pointerUnlocked' }, doneOn: 'pointer locked' }
+      { id: 'capture', text: 'Click to capture mouse', keys: ['Click'], when: 'pointer not locked', on: { type: 'pointerUnlocked' }, doneOn: 'pointer locked' },
+      // FS-01 (M4 action hints, game/js/quest/actionHints.js): `fmt` = text with {action} key slots, filled from the live
+      // bindings table at request time (text/keys here are the default labels). Once per save, FIFO like the rest.
+      { id: 'actItems', text: '[I] Items', keys: ['[I]'], fmt: '[{inventory}] Items', when: 'first item or gear picked up', on: { type: 'poll' }, doneOn: 'Items window opened' },
+      { id: 'actJournal', text: '[J] Journal', keys: ['[J]'], fmt: '[{questLog}] Journal', when: 'first quest accepted', on: { type: 'poll' }, doneOn: 'journal opened' },
+      { id: 'actSwing', text: '[LMB] Swing', keys: ['[LMB]'], fmt: '[{useLeft}] Swing', when: 'sword taken', on: { type: 'poll' }, doneOn: 'first swing' },
+      { id: 'actBlock', text: 'Hold [RMB] Block', keys: ['[RMB]'], fmt: 'Hold [{useRight}] Block', when: 'shield equipped', on: { type: 'poll' }, doneOn: 'first block raise' },
+      { id: 'actDraw', text: 'Hold [LMB] Draw, release to shoot', keys: ['[LMB]'], fmt: 'Hold [{useLeft}] Draw, release to shoot', when: 'bow equipped', on: { type: 'poll' }, doneOn: 'first arrow shot' },
+      { id: 'actSwap', text: '[Q] Swap weapon', keys: ['[Q]'], fmt: '[{swapSet}] Swap weapon', when: 'second weapon in the bar', on: { type: 'poll' }, doneOn: 'first swap' },
+      { id: 'actQuickbar', text: '[1-4] Use the quick bar', keys: ['[1-4]'], fmt: '[1-4] Use the quick bar', when: 'first potion picked up', on: { type: 'poll' }, doneOn: 'first slot key used' }
     ],
     // story.md 5 narrative hints (writer), same hint style. `when` = the US-015 programmer AC wording; `on` = the same rule as data.
     // Zones: levelPatch.towerHints below (append to tower.js triggers[]). `skipIfState`: never shown if that world.state key is true.

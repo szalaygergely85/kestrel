@@ -208,5 +208,12 @@ export function drawHints(ui, uiStyle, lut) {
   drawRichLine(ui, x + prefixLen, y, current.textLine, current.a, lut);
 }
 
+/** FS-01: sets a hint's text/keys (live key labels after a rebind) and drops its cached lines. No-op for an unknown id or an unchanged text. */
+export function relabelHint(uiStyle, id, text, keys) {
+  const def = defFor(uiStyle, id);
+  if (!def || (def.text === text && def.keys === keys)) return;
+  def.text = text; def.keys = keys; lineCache.delete(id);
+}
+
 /** Test/debug: the id of the hint currently on screen, or null. */
 export function currentHintId() { return current ? current.id : null; }
