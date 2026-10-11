@@ -1520,3 +1520,81 @@ PC-B writer, 2026-10-11. Plain names for `[E] <Verb> <name>`, lower case, ASCII.
 Unchanged, already plain: door, sword, the relay, knot, gate, cart, well, shrine, lanterns, lamp, nest, mark, board, stone.
 
 Follow-ups (text only, for the programmer with the above): HUD `sq.wreck.plate.2` -> `Bring the hide to the wrecked airship` (36); done line `The gondola creaks. The plate is yours now.` -> `The wreck creaks. The plate is yours now.` (41); `prompt.gondola` -> `[E] Look at the wreck` (21) if that key is ever wired. Mixed verbs ("Inspect" vs "Look at") are the PO's call; the names fit both.
+
+## QL-22 west-bank errands
+
+PC-B writer, 2026-10-12. Rows in `content/quests/ch3/pack.json` (fields as QL-B1: `title`, step `objText`, `returnText`, `lines.{offer,active,ready,done}`). Limits: title <= 24, HUD <= 38, lines <= 56, ASCII. No voices and no names: the village has not spoken to Wick yet, so every giver is an object. The board errands are fresh notes in an unsigned caps hand, nailed over the Crown FELL notices (the exiles answer the board in their own hand). The village stays unnamed on screen. `ready` plays at the hand-in, the rest at the giver.
+
+**sq.ow.wolves** (giver `owBoard`)
+
+| key | text | chars |
+|---|---|---|
+| title | `Wolf Bounty` | 11 |
+| obj | `Drive three wolves from the goose pen` | 37 |
+| offer | `A new nail, over the Crown notices. A fresh hand:` / `WOLVES AT THE GEESE AGAIN. THREE FEWER, FAIR PAY.` | 49 / 50 |
+| active | `The note: WOLVES. GOOSE PEN. THREE.` | 35 |
+| ready | `Under the note now, tied with twine: arrows, a red vial.` | 56 |
+| done | `Someone has written under it: GEESE COUNTED. ALL HERE.` | 54 |
+
+**sq.ow.boars** (giver `owBoard`)
+
+| key | text | chars |
+|---|---|---|
+| title | `Boar Bounty` | 11 |
+| obj | `Drive off two boars on the west bank` | 36 |
+| offer | `Another note, same hand, nailed over a FELL notice:` / `TWO BOARS ROOTING ON THE WEST BANK. MIND THE TUSKS.` | 50 / 51 |
+| active | `The note: TWO BOARS. WEST BANK. TUSKS.` | 38 |
+| ready | `Under the note, wrapped in sacking: old gear, oiled.` | 52 |
+| done | `Under the note, a new line: THE BANK IS QUIET. THANKS.` | 54 |
+
+**sq.ow.parcel** (giver `owBoard`, hand-in `owForge`)
+
+| key | text | chars |
+|---|---|---|
+| title | `Parcel for the Forge` | 20 |
+| obj | `Take the parcel to the forge` | 28 |
+| offer | `A parcel hangs from a nail, wrapped in oilcloth.` / `Tag: FOR THE FORGE. LEAVE IT BY THE DOOR.` | 48 / 41 |
+| active | `The tag: FOR THE FORGE. BY THE DOOR.` | 36 |
+| ready | `You set the parcel by the forge door. It clinks.` / `On the step, waiting: two red vials.` | 48 / 36 |
+| done | `The parcel tag is gone. The nail is bare.` | 41 |
+
+Item clash: the pack reuses `packet`, whose desc reads `FOR THE FORD POST.` (sq.packet). Use a new item instead: `parcel` "Oilcloth Parcel" (15) / `Heavy for its size. FOR THE FORGE.` (34). If `packet` must stay, change the obj to `Take the packet to the forge` (28) and accept the wrong desc. The forge is cold (sets up `sq.ow.forge` "Cold Forge"); the clink is metal, left unexplained.
+
+**sq.ow.ford** (giver `pierStone`, same voice as `sq.hw.piers`: what the player sees)
+
+| key | text | chars |
+|---|---|---|
+| title | `Scout the Far Bank` | 18 |
+| obj | `Cross the ford to the west bank` | 31 |
+| offer | `Across the water, the other half of the old pier.` / `Someone pulled the bridge from that side. Go and see.` | 49 / 53 |
+| active | `The far pier. Across the ford, on the west bank.` | 48 |
+| ready | `The west pier: rope grooves, worn deep. A crossing.` / `In a dry crack of the stone: fifteen arrows, waxed.` | 51 / 51 |
+| done | `Two piers, one river. Neither side built it back.` | 48 |
+
+**Barley gate fetch** (new; giver `barleyGate`, a tag on the gate; suggested id `sq.ow.seed`)
+
+| key | text | chars |
+|---|---|---|
+| title | `Spilled Seed` | 12 |
+| obj | `Find the seed sack on the track` | 31 |
+| return | `Bring the seed sack to the barley gate` | 38 |
+| offer | `A tag on the barley gate, same caps hand:` / `SEED SACK FELL OFF THE CART. SOMEWHERE ON THE TRACK.` / `FIND IT BEFORE THE CROWS DO.` | 41 / 52 / 28 |
+| active | `The tag: SEED SACK. TRACK. BEFORE THE CROWS.` | 44 |
+| ready | `You hang the sack on the gate. A crow watches.` / `Tied to the gate for you, in twine: a fair share.` | 46 / 49 |
+| done | `The tag is turned over: SEED SAFE. THE CROWS SULK.` | 50 |
+
+New item: `seedSack` "Seed Sack" (9) / `Barley seed. A crow has been at it.` (35). If the sack lies somewhere other than the track, swap "track" in obj/offer/active for the place (keep obj <= 38).
+
+**Path post shoot** (new; giver `owPathPost`, a tag on the post; suggested id `sq.ow.marks`)
+
+| key | text | chars |
+|---|---|---|
+| title | `Three White Marks` | 17 |
+| obj | `Shoot the three white marks` | 27 |
+| return | `Go back to the post by the track` | 32 |
+| offer | `A tag on the post, the same caps hand:` / `CAN YOU SHOOT? HIT THE THREE WHITE MARKS.` / `WE WATCH FROM THE FENCE. WE WILL SEE.` | 38 / 41 / 36 |
+| active | `The tag: THREE WHITE MARKS. WE ARE WATCHING.` | 44 |
+| ready | `A new line on the tag: GOOD EYE. THAT IS YOURS.` / `Under it, tied in twine, a bundle left for you.` | 47 / 47 |
+| done | `The tag is gone. At the fence, a face, then none.` | 48 |
+
+The targets need a visible white mark (chalk or lime) so "white marks" matches what the player sees; if the design uses straw targets instead, read `three straw targets` (obj `Shoot the three straw targets`, 29). The watching from the fence follows `mq.ow.fence` (faces watch from it): the village tests the stranger before anyone speaks.

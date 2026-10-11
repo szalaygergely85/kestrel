@@ -42,7 +42,7 @@ Owner rules applied: every story comes from the roadmap, the M4 review or the sp
 | QL-22 | kestrel-3 | West-bank errand batch (6 quests, template pipeline) | no | **now** | po-review |
 | US-104b | kestrel-3 (after QL-22) | West-bank hidden chests (US-104a generator) | no | **now** (queued behind QL-22) | po-review (owner look) |
 | BEAR-01 | kestrel-1 (after CL-01) | Bear beast family for bands 6-7 | no (wolfBrain/beastSim pattern) | after owner Q1 | po-review (owner look) |
-| STREAM-01 | kestrel-2 (after OB-073) | Placement residency by distance (US-026b step 1) | **ARCH-NOTE NEEDED** | after the note + OB-073 | arch-review |
+| STREAM-01 | kestrel-2 (after OB-073) | Placement residency by distance (US-026b step 1) | note: arch 38.51 (split 01a/01b/01c) | after the note + OB-073 | arch-review |
 
 File ownership (no two stories share a file; the same slot runs its two stories one after the other):
 - **M4-W1:** new `tools/verify-m4-walk.mjs` (+ test), `docs/test-reports/m4-walk/`. It only reads `tools/verify-ch12-run.mjs`, `tools/verify-m4-exit.mjs` and `tools/route-walk.mjs`; it does not edit them.
