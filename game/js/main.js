@@ -87,7 +87,8 @@ import { parseOccl, createHzbInvalidator } from './occlGate.js'; // OCCL-MAIN-01
 import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
 import { createQuestPickups } from './questPickups.js'; // QUESTS-01
 import { setInspectSink, wrapText } from './quest/questInspect.js'; // QL-04
-import { createErrands, gateOnMeet, patchBearDialogue, isWorn, bannerLines } from './quest/errands.js'; // QL-WIRE: Ch1-2 errands
+import { createErrands, gateOnMeet, isWorn, bannerLines } from './quest/errands.js'; // QL-WIRE: Ch1-2 errands
+import { generateAll } from './quest/questSnippets.js'; // QL-T4: generated q.<id>.* dialogue routes
 import { createHeartHook } from './heartHook.js'; // QL-08: heart pieces -> max HP
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
@@ -466,14 +467,23 @@ function areaTrigger(w, id) {
   if (t === undefined) { t = w.triggers.find((q) => q.key === 'world.' + id) || null; areaTrigCache.set(id, t); }
   return t;
 }
+let inspectTexts = null; // content/dialogue/inspect.json
 let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the content manifest)
 {
   // AUD2-09: per-file loads; a missing file is logged by name and shown on screen (no silent quest-less game)
   const qb = await loadQuestFiles((u) => fetch(u).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }), { wantBarks: saveEnabled, items: itemDefs ? Object.values(itemDefs).map((d) => ({ id: d.id, slot: d.equip && d.equip.slot, tier: d.equip && d.equip.tier })) : [] }); // QL-WIRE: EQ-13 gear rewards resolve against the design item defs
   bearBarks = qb.bearBarks;
+  inspectTexts = await fetch('../content/dialogue/inspect.json').then((r) => (r.ok ? r.json() : null)).catch(() => null); // QL-T4+: look-at table (errands.js loadTexts)
   if (qb.giverDefs) { // QL-WIRE: errands open after Burl's first greeting; his errand lines become dialogue routes
     qb.giverDefs = gateOnMeet(qb.giverDefs);
-    try { const raw = await fetch('../content/dialogue/bear.dialogue.json').then((r) => r.json()); if (bundle.dialogues && bundle.dialogues.bear) bundle.dialogues.bear = compileDialogue(patchBearDialogue(raw, qb.giverDefs)); } catch (e) { console.warn('[QL-WIRE] errand dialogue off:', e && e.message); }
+    try { // QL-T4: every giver NPC with a dialogue gets generated ready / offer / active routes (writer lines override the snippets)
+      const ids = [...new Set(qb.giverDefs.map((d) => d.giver && d.giver.npc).concat(qb.giverDefs.map((d) => d.giver && d.giver.turnIn)))].filter((id) => id && bundle.dialogues && bundle.dialogues[id]);
+      const get = (u) => fetch(u).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+      const [snip, ...rawList] = await Promise.all([get('../content/dialogue/quest-snippets.json').catch(() => null), ...ids.map((id) => get('../content/dialogue/' + id + '.dialogue.json').catch(() => null))]);
+      const raws = {}; ids.forEach((id, i) => { if (rawList[i]) raws[id] = rawList[i]; });
+      const gen = generateAll(raws, qb.giverDefs, snip || {});
+      for (const id of Object.keys(gen)) if (gen[id] !== raws[id]) bundle.dialogues[id] = compileDialogue(gen[id]);
+    } catch (e) { console.warn('[QL-T4] quest dialogue off:', e && e.message); }
   }
   window.__debug = window.__debug || {}; window.__debug.bootErrors = qb.errors;
   if (qb.errors.length) showBootErrors(document, qb.errors);
@@ -1138,7 +1148,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   notice.push(String(d.title || r.id).slice(0, 30), bannerLines(d, r.action, wrapText) || wrapText(r.text || (r.action === 'handin' ? 'Done.' : r.action === 'accept' ? 'Quest accepted.' : 'Not yet.')));
 };
   // QL-WIRE: Ch1-2 errands: object givers (post / notePost / relays), talk.<site>, target1..3.hit (sword + arrow = combat:hit), escort flag
-  const errands = createErrands({ getBook: () => (saveRelay ? saveRelay.quest.book : null), questFlag: (k, v) => saveRelay.quest.questFlag(k, v), inspect: inspectObject, note: (t, l) => notice.push(t, l) });
+  const errands = createErrands({ getBook: () => (saveRelay ? saveRelay.quest.book : null), questFlag: (k, v) => saveRelay.quest.questFlag(k, v), inspect: inspectObject, note: (t, l) => notice.push(t, l), texts: inspectTexts });
   setInspectSink((id) => errands.inspected(id));
   engine.events.on('combat:hit', (p) => errands.hit(p));
   gameHooks.register({ onEvent: (name, d) => errands.onEvent(name, d) });
