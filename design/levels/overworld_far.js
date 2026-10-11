@@ -211,8 +211,10 @@
       // the ENV-01 ground detail scatter brings the variety. Was colors grassDark/grass/grassLight, close '"\',;`', near '"\',;', face ';:'.
       grass:  { id: 0, colors: ['turfDark', 'turf', 'turfLight'], glyphs: { close: ".,'`", near: ".,'", mid: ",'.", far: '.,' }, face: ',:', albedo: 0.85 },
       forest: { id: 1, colors: ['forestDark', 'forest', 'grassDark'], glyphs: { close: '&%@&', near: '&%@', mid: '%&', far: '%:' }, face: '&%', albedo: 0.70 },
-      water:  { id: 2, colors: ['river', 'river', 'riverLight'], glyphs: { close: '~-~=', near: '~-', mid: '~-', far: '-~' }, face: '~', albedo: 0.90,
-                glint: { hz: 1.5, amount: 0.35 } },
+      // OB-045 (2026-10-11, owner "water still looks not good"): type 2 is the river BED / wet bank, not the water. The river ribbon,
+      // ford, lake and sea draw the water on top (WebGPU). Was river/riverLight '~' + glint = a second, blue "water" level above the
+      // real surface at every bank and on the ford bar. Now wet gravel: dark, pebbly, no glint; under water the composite tints it.
+      water:  { id: 2, colors: ['stoneDeep', 'stoneMidLo', 'rubbleHi'], glyphs: { close: 'o.,:', near: '.,o', mid: ',.', far: '.,' }, face: ':.', albedo: 0.75 },
       rock:   { id: 3, colors: ['stoneDark', 'rock', 'stoneLight'], glyphs: { close: '#%&', near: '#%', mid: '%#', far: '%' }, face: '#%', albedo: 0.80 },
       path:   { id: 4, colors: ['strawDark', 'strawDark', 'straw'], glyphs: { close: '.:,', near: '.:', mid: '.', far: '.' }, face: ':', albedo: 0.70 },
       // MAP-01b (arch 38.42): appended ids 5-10, EXISTING palette colours only. 'mud' (designer doc) = fen (id 8).
@@ -243,7 +245,7 @@
         { id: 'pebble', on: 'grass', bands: ['close', 'near'], chance: 0.012, glyphs: 'o.', colors: ['rock', 'stoneLight'] },
         { id: 'tallGrass', on: 'grass', bands: ['close'], chance: 0.02, glyphs: '"', colors: ['grassLight'], note: 'drawn one row ABOVE the surface row (0.5 m tuft). v1.33: 0.06 -> 0.02 (calm turf; the scatter tufts carry it)' },
         { id: 'reed', on: 'grass', bands: ['close', 'near'], nearWater: 14, chance: 0.2, glyphs: '|!', colors: ['grass', 'strawDark'] },
-        { id: 'foam', on: 'water', bands: ['close'], nearBank: 3, chance: 0.3, glyphs: '-=', colors: ['riverLight', 'white'] }
+        { id: 'foam', on: 'water', bands: ['close'], nearBank: 3, chance: 0.2, glyphs: 'o.', colors: ['stoneMid', 'rubbleHi'], note: 'OB-045: wet pebbles at the bank (was white foam dashes)' }
       ]
     },
 

@@ -4,7 +4,9 @@
   const base = { burst: 0, dir: [0, 0, 1], wind: 0, emissive: false, emissiveFog: 0, killBelow: null };
   A.waterfall = {
     preset: { id: 'waterfall', lip: [6, 7, 12, 7], z: 8, out: 1.5, outDeg: 180, drop: 8, look: 'waterfall' },
-    look: { fallRamp: "|:'", fallSpeed: 10, highlight: [196, 220, 239], sheetAlpha: 0.75 },
+    // OB-045: white water. The sheet colour is the look's `shallow` (was the engine default sea-glass blue -> a dark slate wall).
+    look: { fallRamp: "|:'", fallSpeed: 10, highlight: [250, 252, 255], sheetAlpha: 0.75,
+            shallow: [236, 244, 248], deep: [150, 182, 198], bgK: 0.85 }, // bgK high: thin fall glyphs, the bg carries the white
     // View z is feet height; the normal game camera adds standing eye height.
     views: {
       front: { x: 9, y: 23, z: 0.15, yawDeg: 0, pitchDeg: 7 },
@@ -16,8 +18,9 @@
         box: [0, 0, 0.03], accelZ: -2, drag: 0.6, maxLive: 12, glyphs: ":'.", colors: ['riverLight', 'skyHorizon', 'river'], sizeM: 0.06 },
       waterfallSpray: { ...base, rate: 48, life: [0.45, 0.9], speed: [1.5, 2.8], spreadDeg: 65,
         box: [0.65, 0.3, 0.04], accelZ: -4.9, drag: 0.5, maxLive: 48, glyphs: "*+:'.", colors: ['white', 'riverLight', 'skyHorizon', 'riverLight', 'river'], sizeM: 0.07 },
-      waterfallMist: { ...base, rate: 16, life: [1.2, 2], speed: [0.15, 0.4], spreadDeg: 65,
-        box: [1.2, 0.5, 0.08], accelZ: 0.18, drag: 0.8, maxLive: 32, glyphs: ":'.", colors: ['riverLight', 'river', 'ironDark'], sizeM: 0.12 },
+      // OB-045: a pale mist bank over the plunge pool (was 1 m wide, 0.12 m dots in river/ironDark: invisible in front of the sheet).
+      waterfallMist: { ...base, rate: 16, life: [1.2, 2], speed: [0.4, 1.0], spreadDeg: 80,
+        box: [2.5, 1.5, 0.2], accelZ: 0.18, drag: 0.8, maxLive: 32, glyphs: '*+:', colors: ['white', 'skyHorizon', 'cloudLit'], sizeM: 0.5, sizeEndM: 1.4 },
       waterfallRipple: { ...base, rate: 0, life: [1.5, 1.5], speed: [0, 0], spreadDeg: 0,
         box: [0, 0, 0], accelZ: 0, drag: 0, maxLive: 96, glyphs: "o:'.", colors: ['white', 'riverLight', 'river', 'ironDark'], sizeM: 0.06 },
     },
