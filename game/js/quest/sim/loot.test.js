@@ -25,6 +25,7 @@ import { createBeastSim, STATE_CORPSE, STATE_SINK, STATE_GONE } from './beastSim
 import { ensureInventory, addItem, countOf } from './inventory.js';
 import { readFileSync } from 'node:fs';
 import { resetPickups, spawnItemDrop, stepPickups } from './pickups.js';
+import { BAND_TABLE } from './band.js';
 import { createLoot, setLootApi, rollGear, gearIdFor } from './loot.js';
 import { LOOT_TABLE, LOOT_PROMPT, LOOT_SEED_SALT, LOOT_TIERS, LOOT_SLOTS } from './lootConfig.js';
 import '../index.js'; // registers `beast.loot`
@@ -215,6 +216,44 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   const o = run(outwall, 10000).join('|').split('|').map((x) => x.split('/')[0]).filter(Boolean);
   ok('Outwall 10k kills: gear drops exist, all T3 (fine)', o.length > 300 && o.every((t) => t === 'fine'), o.length);
   ok('meadow band (T1) rolls identical to no band', run(real, 1500).join() === run(null, 1500).join());
+  // EQ-21 AC2: band 7-8 (T4) -> only tempered, band 9-10 (T5) -> only warden; bands 1-6 untouched (golden above + fine-only T3).
+  for (const [band, tier, name] of [[7, 'tempered', 'T4'], [9, 'warden', 'T5']]) {
+    const t = run({ gearTierAt: () => band === 7 ? 4 : 5 }, 10000).join('|').split('|').map((x) => x.split('/')[0]).filter(Boolean);
+    ok('band ' + band + ' 10k kills: gear drops exist, all ' + tier, t.length > 300 && t.every((x) => x === tier), t.length);
+  }
+  ok('real band: T4 regions -> tempered, T5 -> warden', [7, 8].every((b) => BAND_TABLE.gearItemTier[BAND_TABLE.gearTier[b - 1]] === 'tempered') && [9, 10].every((b) => BAND_TABLE.gearItemTier[BAND_TABLE.gearTier[b - 1]] === 'warden'));
+}
+
+// EQ-21 AC1/AC3: 35 gear ids, def strictly monotonic per base, old 21 unchanged; warden piece equips + save round trip.
+{
+  const bases = ['head.hood', 'body.jerkin', 'cloak.cloak', 'hands.gloves', 'belt.belt', 'legs.pants', 'feet.boots'];
+  const tiers = ['worn', 'sturdy', 'fine', 'tempered', 'warden'];
+  let all = true, mono = true, golden = true;
+  for (const b of bases) {
+    const mul = b.startsWith('body') ? 2 : 1;
+    tiers.forEach((t, i) => {
+      const d = defs['gear.' + b + '.' + t];
+      if (!d || d.equip.tier !== t || d.equip.def !== (i + 1) * mul) all = false;
+      if (i < 3 && d && (d.equip.def !== (i + 1) * mul || !/^(Worn|Sturdy|Fine) /.test(d.name))) golden = false;
+      if (i > 0 && d && defs['gear.' + b + '.' + tiers[i - 1]].equip.def >= d.equip.def) mono = false;
+    });
+  }
+  ok('35 gear ids valid (tier + def pattern)', all);
+  ok('def strictly monotonic worn < sturdy < fine < tempered < warden', mono);
+  ok('old 21 ids keep def + names', golden);
+  ok('validate(palette) has no errors', globalThis.ASSETS.items.validate(globalThis.ASSETS.palette || null).length === 0);
+  const { World: W, AssetRegistry: AR } = await import('../../../../engine/index.js');
+  const { ensureEquipment, equip } = await import('./equipment.js');
+  const { collectSave, applySave, stringifyGameSave, parseGameSave } = await import('../save/saveState.js');
+  const reg = new AR({ palette: {} });
+  const w = W.load({ name: 'eq21', terrain: null, structures: [], entities: [] }, reg, {});
+  const h = w.spawn('unit', { x: 1, y: 2, z: 0, yawDeg: 0, pitchDeg: 0 }, { health: { hp: 5, max: 10, invuln: 0 } }, 'player');
+  ensureInventory(h.data, { pack: [{ id: 'gear.body.jerkin.warden', n: 1 }] });
+  const eq = ensureEquipment(h.data);
+  ok('warden jerkin equips', equip(h.data.components.inventory, eq, defs, 'gear.body.jerkin.warden') && eq.body === 'gear.body.jerkin.warden');
+  const text = stringifyGameSave(collectSave(w, {}));
+  const back = applySave(parseGameSave(text), reg, {});
+  ok('warden piece save round trip', back.world.get('player').data.components.equipment.body === 'gear.body.jerkin.warden' && stringifyGameSave(collectSave(back.world, {})) === text);
 }
 
 // ---------------------------------------------------------------------------------------------------------------

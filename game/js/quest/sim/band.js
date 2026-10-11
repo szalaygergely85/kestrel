@@ -12,7 +12,7 @@ export const BAND_TABLE = Object.freeze({
   }),
   beastTier: Object.freeze([1, 1, 1, 1, 2, 2, 2, 3, 3, 3]),  // index = band - 1
   gearTier: Object.freeze([1, 1, 2, 2, 3, 3, 4, 4, 5, 5]),   // T1 b1-2 .. T5 b9-10 (quest-roadmap section 0)
-  gearItemTier: Object.freeze({ 1: null, 2: 'sturdy', 3: 'fine', 4: 'fine', 5: 'fine' }), // null = today's weighted roll
+  gearItemTier: Object.freeze({ 1: null, 2: 'sturdy', 3: 'fine', 4: 'tempered', 5: 'warden' }), // null = today's weighted roll
 });
 
 const CELL = 8, SIZE = 2048, N = SIZE / CELL, WEST_X = 1100;

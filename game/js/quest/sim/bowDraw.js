@@ -5,7 +5,7 @@ export const BOW_MIN_DRAW = 6;     // steps held before a release counts as a sh
 export const BOW_COOLDOWN = 15;    // steps after a shot before the next draw (0.25 s)
 
 export function createBowDraw(cfg) {
-  const max = cfg.drawSteps;
+  let max = cfg.drawSteps;
   let drawing = false, dryLatch = false, cooldown = 0;
   const sim = {
     tick: 0,
@@ -39,6 +39,8 @@ export function createBowDraw(cfg) {
       sim.drawFrac = sim.drawSteps / max;
       return ev;
     },
+    /** EQ-20: draw speed multiplier of the equipped bow (1 = base); full draw takes round(drawSteps / mul) steps, min BOW_MIN_DRAW. */
+    setDrawMul(m) { const v = Math.max(BOW_MIN_DRAW, Math.round(cfg.drawSteps / (m > 0 ? m : 1))); if (v !== max) { max = v; if (sim.drawSteps > max) sim.drawSteps = max; } },
     cancel() { drawing = false; sim.drawSteps = 0; sim.drawFrac = 0; dryLatch = false; },
     hashInto(h) { h.i32(sim.drawSteps); h.i32(cooldown); },
   };

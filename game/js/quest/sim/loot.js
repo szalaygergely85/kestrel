@@ -13,6 +13,7 @@ import { addItem } from './inventory.js';
 import { spawnDrop, spawnItemDrop, setItemPickupSink } from './pickups.js';
 import { BAND_TABLE } from './band.js';
 import { LOOT_PROMPT, LOOT_TIERS, LOOT_SLOTS } from './lootConfig.js';
+import { rollWolfWeapon, rollChestWeapon, weaponRng } from './weaponLoot.js'; // EQ-20
 
 // EQ-10: 0..4 rolled entries per corpse (table.fixed + the `give` rolls). Gear is a world pickup, never a column.
 const ITEMS_PER_CORPSE = 4;
@@ -93,6 +94,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
   // 37.16.3 "At create: delete any stale loot.* flag from a save". Create-time only (Object.keys allocates).
   for (const k of Object.keys(world.state)) if (k.startsWith('loot.')) delete world.state[k];
 
+  const wrng = weaponRng(0x5EA90 ^ count); // EQ-20: wolf weapon drops use their own stream (boar/chest streams stay untouched)
   /** @type {string[]} `loot.<id>` per slot, built once (no string concat on events). */
   const flagKey = ids.map((id) => 'loot.' + id);
   /** @type {any[]} the live interactable records, one per slot (x/y/z rewritten on death). */
@@ -140,6 +142,10 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
         const gid = rollGear(items, b, c, undefined, undefined, forced);
         if (gid) spawnItemDrop(world, gid, p.x, p.y, p.z, items && items[gid] && items[gid].equip ? items[gid].equip.tier : 'worn');
       }
+    }
+    if (beasts.wolf && beasts.wolf[i]) { // EQ-20: wolves 3 % sturdy shield/bow (fine only from band 5)
+      const wid = rollWolfWeapon(items, band ? band.bandAt(p.x, p.y) : 1, wrng(), wrng(), wrng());
+      if (wid) spawnItemDrop(world, wid, p.x, p.y, p.z, items[wid].equip.tier);
     }
     const orbHit = rng.nextFloat() < table.orb.chance;
     const orbKind = table.orb.kinds[rng.int(table.orb.kinds.length)];
@@ -252,7 +258,7 @@ function buildChestLoot(events, {items, table, rng, inventoryOf}) {
   }
   for (const row of table.fixed) validate(row, false);
   for (const row of table.weighted) { validate(row, true); weight += row.weight; }
-  if (!Number.isFinite(weight) || !table.fixed.length && !table.weighted.length && !table.gear) throw new Error('chest loot: empty or overflowing table');
+  if (!Number.isFinite(weight) || !table.fixed.length && !table.weighted.length && !table.gear && !table.weapon) throw new Error('chest loot: empty or overflowing table');
   function add(row) {
     let i = ids.indexOf(row.item);
     if (i < 0) { i = ids.length; ids.push(row.item); counts.push(0); caps.push(items[row.item].stackMax); }
@@ -272,6 +278,11 @@ function buildChestLoot(events, {items, table, rng, inventoryOf}) {
     const gid = rollGear(items, b, c, undefined, undefined, table.gear.tier || null);
     if (!gid) throw new Error('chest loot: no gear def for the roll');
     add({item: gid, n: 1});
+  }
+  if (table.weapon) { // EQ-20: one weapon roll (1 draw, after the gear roll); tier fixed (default sturdy)
+    const wid = rollChestWeapon(items, table.weapon, rng.nextFloat());
+    if (!wid) throw new Error('chest loot: no weapon def for the roll');
+    add({item: wid, n: 1});
   }
   const added = {id:'', n:0};
   function fits(inv) {

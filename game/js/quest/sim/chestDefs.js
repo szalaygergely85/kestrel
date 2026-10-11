@@ -13,6 +13,7 @@ export const CHEST_TABLES = {
   chestRook: { fixed: [{ item: 'arrow', n: 15 }], weighted: [], gear: { tier: 'sturdy' } },
   chestBoots: { fixed: [{ item: 'gear.feet.riverBoots', n: 1 }], weighted: [] }, // QL-16: River Boots (unique, never rolled)
   chestHidden: { fixed: [], weighted: [], gear: { tier: 'fine' } },
+  chestForge: { fixed: [{ item: 'gear.main.sword.sturdy', n: 1 }], weighted: [] }, // EQ-20: Outwall forge chest (a sturdy sword). Band 5+ chests: add `weapon: { tier: 'fine' }`.
 };
 
 /** @param {{entity: (id: string) => any}} world @returns {any[]} createChests defs (propId = the entity id) */

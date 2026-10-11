@@ -7,6 +7,7 @@
 // rotation = multiply/add, no trig call), no wall clock, integer step counters only, zero allocation after create.
 import { arcHits, applyImpulse, PHYSICS } from '../../../../engine/index.js';
 import { ARC_BOUNDS_L, ARC_BOUNDS_R } from '../swordConfig.js';
+import { weaponMods } from './weaponStats.js'; // EQ-20
 
 export const ST_IDLE = 0;
 export const ST_HOLD = 1;
@@ -217,7 +218,7 @@ export function createSwordSim(world, events, cfg, hooks) {
     const d = Math.sqrt(dx * dx + dy * dy);
     const dirX = d > 1e-9 ? dx / d : fx, dirY = d > 1e-9 ? dy / d : fy;
     const p = _hitPayload;
-    p.source = 'player'; p.target = e.id; p.damage = S.damage; p.heavy = S.heavy;
+    p.source = 'player'; p.target = e.id; p.damage = S.damage * weaponMods.dmgMul; p.heavy = S.heavy; // EQ-20: equipped sword tier
     p.dirX = dirX; p.dirY = dirY; p.px = ex; p.py = ey; p.pz = ez;
     events.emit('combat:hit', p);
     if (S.heavy) {

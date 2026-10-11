@@ -433,13 +433,14 @@
 
   // ==================================================================================================================
   // EQ-01 (equipment epic, docs/equipment-epic-2026-10-10.md s1): equip data. PLACEHOLDER icons (EQ-D1/D2 replace them).
-  // equip: { slot, tier: worn|sturdy|fine, def, shell?, held? }. 11 slots; 7 wearable bases x 3 tiers = 21 gear ids
-  // `gear.<slot>.<base>.<tier>`; def worn 1 / sturdy 2 / fine 3, body x2. Ammo `arrow` (quiver), `potion.hp` / `potion.mp`.
+  // equip: { slot, tier: worn|sturdy|fine|tempered|warden, def, shell?, held? }. 11 slots; 7 wearable bases x 5 tiers = 35 gear ids (EQ-21: tempered/warden)
+  // `gear.<slot>.<base>.<tier>`; def worn 1 / sturdy 2 / fine 3 / tempered 4 / warden 5, body x2. Ammo `arrow` (quiver), `potion.hp` / `potion.mp`.
   // ==================================================================================================================
   var EQUIP_SLOTS = ['head', 'body', 'cloak', 'hands', 'belt', 'legs', 'feet', 'main', 'off', 'ranged', 'quiver'];
-  var EQUIP_TIERS = ['worn', 'sturdy', 'fine'];
-  var tierPrefix = { worn: 'Worn', sturdy: 'Sturdy', fine: 'Fine' };
-  var tierKey = { worn: 'h', sturdy: 'v', fine: 'Y' };           // placeholder icon colour per tier (wood / verdigris / gold)
+  var EQUIP_TIERS = ['worn', 'sturdy', 'fine', 'tempered', 'warden'];
+  var tierPrefix = { worn: 'Worn', sturdy: 'Sturdy', fine: 'Fine', tempered: 'T4', warden: 'T5' }; // T4/T5 names = NEEDS WRITER (final names + desc)
+  var tierKey = { worn: 'h', sturdy: 'v', fine: 'Y', tempered: 'i', warden: 's' }; // placeholder icon colour per tier (wood / verdigris / gold / iron / light iron)
+  var tierGlyphC = { worn: 'wood', sturdy: 'verdigris', fine: 'gold', tempered: 'iron', warden: 'ironLight' };
   var gearBases = [
     { slot: 'head', base: 'hood', name: 'Hood', ch: 'n', rows: [' ,-. ', '(   )', '     '], shell: 'hat' },
     { slot: 'body', base: 'jerkin', name: 'Jerkin', ch: 'T', rows: ['\\   /', ' |#| ', ' |_| '], shell: 'top' },
@@ -456,7 +457,7 @@
       defs[id] = {
         id: id, name: tierPrefix[tier] + ' ' + b.name, kind: 'gear', stackMax: 1, hand: false, inPack: true,
         desc: tierPrefix[tier] + ' ' + b.name.toLowerCase() + '. Placeholder copy.',
-        glyph: { ch: b.ch, c: tier === 'fine' ? 'gold' : tier === 'sturdy' ? 'verdigris' : 'wood' },
+        glyph: { ch: b.ch, c: tierGlyphC[tier] },
         icon: icon(b.rows, fg),
         equip: { slot: b.slot, tier: tier, def: (ti + 1) * (b.slot === 'body' ? 2 : 1), shell: b.shell }
       };
@@ -580,5 +581,6 @@
   defs.shield.icon = A.items.eqIcons.shield; defs.shield.glyph = { ch: 'O', c: 'wood' };
   defs.bow.icon = A.items.eqIcons.bow;
 
+  if (typeof module === 'object' && module && module.exports && typeof require === 'function') require('./itemsWeapons.js'); // EQ-20 (browser: own script tag)
   if (typeof module === 'object' && module && module.exports) module.exports = { items: A.items, lootSprites: A.lootSprites };
 })(typeof window !== 'undefined' ? window : globalThis);

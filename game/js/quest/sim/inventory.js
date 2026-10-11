@@ -46,7 +46,7 @@ export function ensureInventory(player, start) {
 }
 
 export const EQUIP_SLOTS = ['head', 'body', 'cloak', 'hands', 'belt', 'legs', 'feet', 'main', 'off', 'ranged', 'quiver'];
-export const EQUIP_TIERS = ['worn', 'sturdy', 'fine'];
+export const EQUIP_TIERS = ['worn', 'sturdy', 'fine', 'tempered', 'warden']; // EQ-21: T4/T5
 
 /**
  * Validates every item def once at load (id/name/kind/stackMax/icon); throws naming the bad id. Called by
