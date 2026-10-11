@@ -104,7 +104,7 @@ for (const dy of [-1.7, 0.1]) put('Roof_Log', RC[0], RC[1] + dy, 90, { z: beamZ,
 // two roof tiles still on the north wall (deck: absolute z so they stay level on the slope); the third lies fallen in the east yard
 for (const dx of [-2.3, 0]) put('Roof_Wooden_2x1', RC[0] + dx, RC[1] - 1.4, 0, { z: ROOFZ, ext: 0.3 });
 put('Roof_Wooden_2x1', RC[0] + 5.2, RC[1] - 0.6, 160, { collide: false, ext: 1.0, dz: 0.1 });
-put('Roof_Support2', RC[0] + 2.0, RC[1] - 0.2, 90, { z: +(ROOFZ - 0.6).toFixed(2), scale: 2, ext: 0.3 }); put('Roof_Support2', RC[0] - 1.8, RC[1] + 1.4, 20, { collide: false, scale: 2, ext: 0.3, dz: 0.3 });
+// OB-060: no Roof_Support2 (crossed X-beams hovered 0.8 m above the ground / leaned out of the slope); removed from world_m1 too
 // rubble ramp: a pile of 2 m stair-block columns running south from the west side of the roof (clear of the 9e line and of the world-bounds
 // edge in the north), each top <= 0.7 m above the previous (jump apex 1.05 m, step-up 0.45), first top ~0.7 m over its ground, the last (against the roof box) exactly DECK.
 const PX = RC[0] - 4.3, stepTops = [], stepYs = [];

@@ -138,12 +138,12 @@ function overlap(P, N, a, b) { // project both onto a's plane basis, clip
 }
 
 let _assets = null; // one content load per process (loadTestAssets merges into globalThis.ASSETS: a second call would trip the dual-source check)
-async function getAssets() {
+export async function getAssets() {
   return _assets || (_assets = (async () => {
     globalThis.window = globalThis.window || globalThis;
     const root = new URL('../design/', import.meta.url);
     await import(new URL('palette.js', root).href);
-    for (const f of ['detail-pass.js', 'levels/overworld_far.js']) await import(new URL(f, root).href).catch(() => {});
+    for (const f of ['detail-pass.js', 'levels/overworld_far.js', 'levels/world_geo.js']) await import(new URL(f, root).href).catch(() => {});
     for (const f of (await readdir(new URL('models/', root))).filter((n) => n.endsWith('.js')).sort((a, b) => ((/^(voxel|vp_|forest)/.test(a) ? 1 : 0) - (/^(voxel|vp_|forest)/.test(b) ? 1 : 0)) || a.localeCompare(b))) await import(new URL('models/' + f, root).href).catch((e) => { if (process.env.LINT_DEBUG) console.warn('model import failed', f, e.message); });
     return loadTestAssets();
   })());
@@ -214,6 +214,11 @@ export function addTerrainUnder(soup, groundAt, step = 1) {
  * Soup of the whole world: level meshes of structures with a `level`, placed meshes of structures with a `mesh`.
  * opts.full (OB-053b): also voxel props/entities (tier 2) and the terrain surface under the up-facing faces (tier 0).
  */
+function installGeo() {
+  const A = globalThis.ASSETS; if (!A?.levels?.world_geo || !A.levels.overworld_far) return;
+  A.levels.world_geo.util.installGeo(A.levels.overworld_far.util);
+}
+
 export async function worldSoup(worldId = 'world_m1', opts = {}) {
   const { bundle, assets } = await getAssets();
   const world = bundle.worlds[worldId];
@@ -235,6 +240,7 @@ export async function worldSoup(worldId = 'world_m1', opts = {}) {
   }
   soup.missing = missing;
   if (opts.full) {
+    installGeo(); // the terrain the game shows (OB-053d: without the geography the 'terrain' tier sat 0-2 m off in places)
     const w = World.load(assets.world(worldId), assets, { physics: 'mesh' });
     soup.voxelTris = addVoxelEntities(soup, w, assets);
     soup.terrainTris = w.terrain ? addTerrainUnder(soup, (x, y) => w.terrain.groundAt(x, y)) : 0;
