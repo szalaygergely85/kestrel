@@ -233,7 +233,7 @@ function clipNodes(model, jw, BONE, objects, connections) {
 }
 
 export function exportFbx(model, opts = {}) {
-  const { rgbOf, colorMode = 'white', name = 'Body', skeleton = false, clips = false } = opts;
+  const { rgbOf, colorMode = 'white', name = 'Body', skeleton = false, clips = false, weld = false } = opts;
   if (clips && !skeleton) throw new Error('exportFbx: opts.clips needs opts.skeleton');
   if (typeof rgbOf !== 'function') throw new Error('exportFbx: opts.rgbOf(matKey) -> [r,g,b] is required');
   if (colorMode !== 'rgb' && colorMode !== 'white') throw new Error(`exportFbx: colorMode must be 'rgb' or 'white', got ${colorMode}`);
@@ -250,7 +250,7 @@ export function exportFbx(model, opts = {}) {
 
   // geometry: 4 vertices per quad; polygon corner order b, b+3, b+2, b+1 (the axis map is a reflection)
   const ORDER = [0, 3, 2, 1];
-  const verts = new Array(12 * nq), pvi = new Array(4 * nq), nrm = new Array(12 * nq), uvIdx = new Array(4 * nq), colIdx = new Array(4 * nq);
+  let verts = new Array(12 * nq), pvi = new Array(4 * nq), nrm = new Array(12 * nq), uvIdx = new Array(4 * nq), colIdx = new Array(4 * nq);
   for (let q = 0; q < nq; q++) {
     const m = mesh.mat[q] - 1;
     if (!(m >= 0 && m < matKeys.length)) throw new Error(`exportFbx: quad ${q} has material ${mesh.mat[q]} outside matKeys`);
@@ -264,6 +264,17 @@ export function exportFbx(model, opts = {}) {
       pvi[i] = j === 3 ? -(4 * q + c) - 1 : 4 * q + c;
       uvIdx[i] = m; colIdx[i] = colorMode === 'rgb' ? m : 0;
     }
+  }
+  if (weld) { // opts.weld (OB-070 Mixamo): share vertices at equal positions so the surface is closed for Mixamo's voxel-to-skin step
+    const idx = new Map(), wv = [];
+    for (let i = 0; i < pvi.length; i++) {
+      const last = pvi[i] < 0, k = last ? -pvi[i] - 1 : pvi[i], o = 3 * k;
+      const key = Math.round(verts[o] * 1000) + ',' + Math.round(verts[o + 1] * 1000) + ',' + Math.round(verts[o + 2] * 1000);
+      let n = idx.get(key);
+      if (n === undefined) { n = wv.length / 3; idx.set(key, n); wv.push(verts[o], verts[o + 1], verts[o + 2]); }
+      pvi[i] = last ? -n - 1 : n;
+    }
+    verts = wv;
   }
   const uvs = [];
   for (let m = 0; m < matKeys.length; m++) uvs.push(...texelUv(m));

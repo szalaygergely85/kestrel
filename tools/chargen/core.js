@@ -4,6 +4,7 @@ import { composeCharacter, meshCharacter, randomRecipe, validateRecipe, validate
 import { exportGlb } from '../export/gltfWrite.js';
 import { exportFbx } from '../export/fbxWrite.js';
 import { exportObj } from '../export/objWrite.js';
+import { tposeModel } from '../export/mixamoPose.js';
 import { exportVoxGrid } from '../export/voxWrite.js';
 import { encodePng } from '../export/png.js';
 
@@ -112,6 +113,13 @@ export function createChargen({ kit, rgbOf, materials = null }) {
     },
     exportGlb: (opts) => exportGlb(build(), glbOpts(opts)),
     exportFbx: fbx, // -> {fbx, png}
+    /** OB-070: Mixamo upload = static T-posed FBX (no skeleton, welded, Y-up, +Z front, cm) -> {fbx, png}. */
+    exportMixamo: () => exportFbx(tposeModel(build()), { rgbOf, weld: true, name: 'character_mixamo' }),
+    /** character_mixamo.fbx + palette.png in one zip (the FBX refers to palette.png by relative name). */
+    async exportMixamoZip() {
+      const { fbx: f, png } = api.exportMixamo();
+      return writeZip([{ path: 'character_mixamo.fbx', bytes: f }, { path: 'palette.png', bytes: png }]);
+    },
     exportVox: () => exportVoxGrid(getGrid(), { rgbOf }), // -> Uint8Array
     exportObj: () => exportObj(build(), { rgbOf, name: 'character' }), // -> {obj, mtl, png, mtlName, pngName}
     /** character.obj + .mtl + palette.png in one zip (for single-file save dialogs). */
