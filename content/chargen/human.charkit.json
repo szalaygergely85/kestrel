@@ -7398,7 +7398,11 @@
       "id": "belt",
       "ramp": "walnut"
     },
-    "hat": null
+    "hat": null,
+    "res": {
+      "body": 1,
+      "head": 2
+    }
   },
   "looks": {
     "knight": {

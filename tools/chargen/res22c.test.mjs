@@ -34,7 +34,7 @@ const up = (L) => {
   return out;
 };
 base.detail = { head: { 2: { layers: up(2) }, 4: { layers: up(4) } } };
-const mk = (res) => { const c = createChargen({ kit, rgbOf }); const r = c.recipe; if (res) r.res = res; c.setRecipe(r); return c; };
+const mk = (res) => { const c = createChargen({ kit, rgbOf }); const r = c.recipe; r.res = res || { body: 1, head: 1 }; c.setRecipe(r); return c; };
 let n = 0;
 const t = async (name, f) => { await f(); n++; console.log('ok  ' + name); };
 

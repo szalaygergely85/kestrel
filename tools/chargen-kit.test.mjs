@@ -118,8 +118,9 @@ test('materials per character <= 255; quads within the 38.29 budget (<= 6000)', 
 test('CHARGEN-25: kit.defaults wears the outfit (hair, shirt, trousers, boots) - never bald + underwear', () => {
   for (const s of ['hair', 'top', 'legs', 'feet']) assert.ok(kit.defaults[s] && kit.defaults[s].id, 'defaults.' + s);
 });
+const R1 = { ...kit.defaults, res: { body: 1, head: 1 } }; // composePreview is the res-1 reference
 test('preview composePreview = engine composeCharacter for kit.defaults (same material in every cell)', () => {
-  const g = composeCharacter(kit, kit.defaults), C = CK.composePreview(kit, 'm_avg', kit.defaults);
+  const g = composeCharacter(kit, R1), C = CK.composePreview(kit, 'm_avg', R1);
   assert.deepStrictEqual(Array.from(g.size), Array.from(C.size));
   let diff = 0, first = '';
   for (let i = 0; i < g.mat.length; i++) {
@@ -131,7 +132,7 @@ test('preview composePreview = engine composeCharacter for kit.defaults (same ma
 test('CHARGEN-26 knight look: validates, engine composeCharacter = composePreview, beard + heraldry painted', () => {
   const kn = kit.looks && kit.looks.knight;
   assert.ok(kn && kn.beard && kn.beard.id === 'full' && kn.outer.id === 'tabard' && kn.hat.id === 'heraldry');
-  const g = composeCharacter(kit, kn), C = CK.composePreview(kit, 'm_avg', kn);
+  const kn1 = { ...kn, res: { body: 1, head: 1 } }, g = composeCharacter(kit, kn1), C = CK.composePreview(kit, 'm_avg', kn1);
   let diff = 0, first = '';
   const seen = {};
   for (let i = 0; i < g.mat.length; i++) {

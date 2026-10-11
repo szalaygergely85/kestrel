@@ -27,7 +27,8 @@ export function composeCharacter(kit, recipe) {
   if (errors.length) throw new Error('composeCharacter: invalid recipe: ' + errors.join('; '));
   const base = heightBase(kit.bases[recipe.base], effectiveHeight(recipe), kit.regions);
   const [sx, sy, sz] = base.size;
-  const res = effectiveRes(recipe);
+  // OB-069: a recipe without res takes the kit default (fine head); explicit res always wins
+  const res = effectiveRes(recipe.res === undefined && kit.defaults && kit.defaults.res ? { res: kit.defaults.res } : recipe);
   const B = res.body;
   if (B !== 1) throw new Error('composeCharacter: res.body > 1 needs authored body detail (CHARGEN-24)');
   const boneIndex = new Map(kit.skeleton.map((b, i) => [b.name, i]));

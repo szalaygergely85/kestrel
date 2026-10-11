@@ -43,7 +43,7 @@ test('resRows: levels from kit.resLevels, disabled when missing', () => {
   assert.equal(resRows({}).every((r) => r.options[0].disabled === false && r.options[1].disabled), true);
 });
 test('applyRes: recipe.res round trip, head >= body, input untouched', () => {
-  const r0 = JSON.parse(JSON.stringify(kit.defaults)), r1 = applyRes(r0, 'head', '2');
+  const r0 = JSON.parse(JSON.stringify({ ...kit.defaults, res: undefined })), r1 = applyRes(r0, 'head', '2');
   assert.deepEqual(r1.res, { body: 1, head: 2 }); assert.equal(r0.res === undefined || r0.res.head === 1, true);
   assert.deepEqual(applyRes(r1, 'body', 2).res, { body: 2, head: 2 });
 });
