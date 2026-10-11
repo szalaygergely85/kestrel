@@ -8,6 +8,7 @@ Newest at the top of each table. Keep one line per bug; details go in the commit
 
 | ID | Date | Owner report (short) | Where / notes | Status |
 |---|---|---|---|---|
+| OB-045 | 2026-10-11 | "Water still looks not good" | Seen in the ford shots: visible step between two water levels, flat banded surface, blue-painted ground under/around the water, hard rectangular edges at the ford region, plain far bank. Water look pass (river ribbon + ford + lake + sea + waterfall). | open - in progress |
 | OB-044 | 2026-10-11 | (gate found) Route-walk R1 'Rook ruin climb' gets stuck at waypoint 11 on the mesh path since the stone-ruin rebuild (OB-024) - the player may not reach Rook's roof (mirror + River Boots) | Fix the rubble ramp / deck colliders or the climb route; make R1 failing set the route-walk exit code. | fixed - verify (climb OK; Rook no longer blocks the deck; R1 reaches nest + both chests) |
 | OB-043 | 2026-10-11 | (agent found) Draw list near its limit: at the roadBend pose the scene already sits at MAX_DRAW_ITEMS 256; more meshes there throw `DrawList.push over capacity` (a crash risk); instance-group budget 1992/2048 used | Make push degrade (drop farthest + count) instead of throwing, raise budgets with a measured cost; MAP-08 far silhouettes as one merged far mesh. Architect. | open - architect |
 | OB-042 | 2026-10-11 | (agent found) sq.rook.shiny rewards a second bow (stackMax 1) - Burl's sq.tm.nub already gives the bow | Change the reward to a sturdy bow upgrade or arrows + gear roll. | open |
