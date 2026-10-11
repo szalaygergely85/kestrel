@@ -1519,6 +1519,17 @@
     base: 'brassHot', albedo: 1.00, ramp: 'brass', spec: 0.90, emissive: 0.45,
     bg: { mode: 'darken', k: 0.24 }, textureFade: [4, 12]
   };
+  // EP-WILD step 2 (v1.58, design/models/voxel_wildlife.js: fox, squirrel, robin): the only coat tone the palette lacked,
+  // the orange-red of a red fox (muted, below `ember`). Colours + materials appended last so no colour / material id
+  // moves; v2 records in detail-pass.js.
+  colors.furFox = '#b45a28';        // red fox back and flanks, robin breast
+  colors.furFoxLight = '#d08c52';   // fox lower flanks, legs' backs, muzzle bridge; squirrel fringe
+  materials.fur_fox = fabricMat('WILDLIFE (EP-WILD v1.58). Red fox coat: orange-red, a few darker guard-hair ticks; robin breast.', 'furFox', 0.88, 0.15,
+    { a: { shade: 1.00 }, t: { shade: 0.86, tint: 'furRoeDark', amount: 0.35, glyph: "'" }, l: { shade: 1.06, tint: 'furFoxLight', amount: 0.3 } },
+    ['atal', 'aaaa', 'laat', 'aaaa']);
+  materials.fur_fox_light = fabricMat('WILDLIFE (EP-WILD v1.58). Fox lower flanks and muzzle bridge, squirrel tail fringe: pale orange.', 'furFoxLight', 0.90, 0.16,
+    { a: { shade: 1.00 }, s: { shade: 0.92, tint: 'furFox', amount: 0.3 } },
+    ['aaaa', 'asaa', 'aaaa', 'aaas']);
 
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)

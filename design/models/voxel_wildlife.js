@@ -79,6 +79,12 @@
  *                         tail UP = the white rump flag. Tuned 9 m/s.
  *     alert   loop 3.5 s  head high, ears perked, tail half raised (rump flare), frozen; ears swivel; a forefoot STAMP.
  *
+ * v1.58 (EP-WILD step 2, owner 2026-10-11 "nice properly detailed rabbit, fox, bird etc."): detail pass on rabbit
+ * (dorsal stripe, rufous shoulders, 2-cell eyes + catch-light, wider pink inner ears, bigger white scut) and deer
+ * (back ticks, pale muzzle band, eye ring + preorbital line, dark pasterns, dewclaws, hock tuft); NEW fox, squirrel,
+ * songbird (robin + finch coats), crow (= Rook). Their headers sit above each builder below. New palette materials:
+ * fur_fox, fur_fox_light; the rest reuse fur_*, hair_*, dye_*, eye_brown, iron_dark, linen_light (catch-lights).
+ *
  * Clip -> state map: ASSETS.wildlifeFx (bottom of the file). Engine notes for the wildlife system (architect): clip
  * switches want a short crossfade (~120 ms; voxel clips have no blend today), and the gait clips' playback rate should
  * follow the ground speed (rate = speed / tunedMps, clamped) so the planted feet do not slide.
@@ -225,14 +231,17 @@
         if (rel < -0.3) return h < 0.2 ? 'A' : 'L';                   // buff lower flank
         if (rel > 0.55) {
           if (y <= 8) return h < 0.3 ? 'A' : 'R';                     // rufous nape patch
-          return h < 0.3 ? 'K' : 'A';                                 // ticked back
+          if (Math.abs(x + 0.5 - CX) < 1.2) return h < 0.55 ? 'K' : 'A';   // v1.58: darker dorsal stripe
+          return h < 0.3 ? 'K' : (h > 0.9 ? 'L' : 'A');               // ticked back, a few pale tips
         }
+        if (rel > 0.2 && y <= 10) return h < 0.25 ? 'R' : 'A';        // v1.58: warm rufous wash on the shoulders
         return h < 0.1 ? 'L' : (h > 0.94 ? 'K' : 'A');
       };
     }
     for (var i = 0; i < TR.length; i++) g.ellY(7 + i, CX, TR[i][0], TR[i][2], TR[i][1], trunkMat(TR[i][0], TR[i][1]), 3);
-    // tail: a fluffy puff on the rump, dark top, white underside (the white flash when running)
-    g.sym(5, 20, 5, 'W'); g.sym(5, 20, 6, 'W'); g.sym(5, 20, 7, 'K'); g.sym(5, 19, 7, 'K');
+    // tail: a fluffy white scut on the rump (the white flash when running), dark top
+    g.sym(5, 20, 4, 'W'); g.sym(5, 20, 5, 'W'); g.sym(4, 20, 5, 'W'); g.sym(5, 20, 6, 'W'); g.sym(4, 20, 6, 'W');
+    g.sym(5, 19, 4, 'W'); g.sym(5, 20, 7, 'K'); g.sym(5, 19, 7, 'K');
 
     // ---- head (head part): y 0..6, round skull, large side eyes ----
     var HD = [[8.2, 1.2, 1.2], [8.5, 1.8, 1.7], [8.8, 2.2, 2.1], [9.0, 2.5, 2.4], [9.1, 2.6, 2.6], [9.0, 2.6, 2.6], [8.6, 2.4, 2.4]];
@@ -249,14 +258,16 @@
     for (i = 0; i < HD.length; i++) g.ellY(i, CX, HD[i][0], HD[i][2], HD[i][1], headMat(HD[i][0], HD[i][1]), 5);
     g.sym(5, 0, 8, 'N');                                              // nose (pinkish brown)
     g.sym(5, 0, 7, 'W');
-    g.paint(4, 3, 9, 'E');                                            // large dark eyes on the sides
-    g.paint(4, 3, 10, 'W'); g.paint(4, 2, 9, 'W');                    // pale eye ring
+    g.paint(4, 3, 9, 'E'); g.paint(3, 4, 9, 'E');                     // large dark eyes on the sides (2 cells)
+    g.paint(4, 3, 10, 'S');                                           // v1.58: wet catch-light on the top front of the eye
+    g.paint(4, 2, 9, 'W');                                            // pale eye ring
 
     // ---- ears (earL / earR parts): 4 cells (8 cm) on the top of the head, leaning back and a little out ----
+    // v1.58: pink inner face 2 cells wide, dark rim on the back edge, dark tips both columns
     g.sym(5, 4, 12, 'A'); g.sym(5, 5, 12, 'A');
-    g.sym(5, 4, 13, 'P'); g.sym(5, 5, 13, 'A');
-    g.sym(4, 4, 14, 'P'); g.sym(4, 5, 14, 'A'); g.sym(5, 5, 14, 'A');
-    g.sym(4, 5, 15, 'K');                                             // dark ear tips
+    g.sym(5, 4, 13, 'P'); g.sym(5, 5, 13, 'A'); g.sym(4, 5, 13, 'K');
+    g.sym(4, 4, 14, 'P'); g.sym(5, 4, 14, 'P'); g.sym(4, 5, 14, 'A'); g.sym(5, 5, 14, 'A');
+    g.sym(4, 5, 15, 'K'); g.sym(4, 4, 15, 'K');                       // dark ear tips
 
     // ---- forelegs (legFL / legFR): thin, vertical under the chest, pale toes ----
     for (var z = 0; z <= 2; z++) g.sym(4, 8, z, 'L');
@@ -412,7 +423,8 @@
           R: 'fur_roe_light',     // rufous nape
           P: 'skin',              // inner ear (pinkish)
           N: 'skin_flush',        // nose
-          E: 'iron_dark'          // eyes
+          E: 'iron_dark',         // eyes
+          S: 'linen_light'        // v1.58: eye catch-light
         },
         layers: g.layers(),
         parts: PARTS,
@@ -447,7 +459,8 @@
         if (rel < -0.8 && ax < 2) return 'W';                         // cream belly line
         if (rel < -0.45) return h < 0.25 ? 'B' : 'L';                 // lighter lower flank
         if (rel > 0.7) return ax <= 1.0 ? 'K' : (h < 0.15 ? 'K' : 'B');   // dark dorsal line
-        return h < 0.08 ? 'L' : 'B';
+        if (rel > 0.35 && h > 0.9) return 'K';                        // v1.58: darker hair ticks over the back
+        return h < 0.1 ? 'L' : 'B';
       };
     }
     for (i = 0; i < TR.length; i++) g.ellY(12 + i, CX, TR[i][0], TR[i][2], TR[i][1], trunkMat(TR[i][0], TR[i][1]), 11);
@@ -460,7 +473,7 @@
         if (rel > 0.7) return 'K';
         if (y >= 8 && y <= 10 && rel < -0.6) return 'W';
         if (rel < -0.35) return 'L';
-        return 'B';
+        return hash(x, y, z, SEED + 5) < 0.1 ? 'K' : 'B';             // v1.58: a few darker hairs
       };
     }
     for (i = 0; i < NK.length; i++) g.ellY(11 - i, CX, NK[i][0], NK[i][2], NK[i][1], neckMat(NK[i][0], NK[i][1]), 12);
@@ -471,6 +484,7 @@
       return function (x, y, z) {
         var rel = (z + 0.5 - cz) / rz;
         if (y <= 2 && rel < -0.2) return 'W';                         // white chin and lower lip
+        if (y === 2 && rel < 0.45) return 'W';                        // v1.58: the roe's pale muzzle band behind the nose
         if (y <= 2) return 'L';                                       // muzzle
         if (y >= 4 && rel > 0.6) return 'K';                          // darker crown
         if (rel < -0.4) return 'L';                                   // cheeks
@@ -480,6 +494,8 @@
     for (i = 0; i < HD.length; i++) g.ellY(i, CX, HD[i][0], HD[i][2], HD[i][1], headMat(HD[i][0], HD[i][1]), 12);
     g.paint(5, 0, 22, 'H'); g.paint(5, 0, 23, 'H'); g.paint(5, 1, 23, 'H');   // black nose (rhinarium)
     g.paint(4, 5, 25, 'H');                                                  // eyes
+    g.paint(4, 5, 24, 'W');                                                  // v1.58: pale eye ring (lower lid)
+    g.paint(4, 4, 24, 'K');                                                  // v1.58: dark preorbital line in front of the eye
     g.sym(4, 7, 26, 'B');                                                    // ear roots (head part)
 
     // ---- ears (ears part): big, out and up at ~45 deg, cream inner face, dark rims ----
@@ -512,6 +528,10 @@
     g.sym(4, 26, 8, 'B'); g.sym(4, 27, 8, 'B');
     g.sym(4, 25, 9, 'B'); g.sym(4, 26, 9, 'B'); g.sym(3, 26, 9, 'B');
     for (y = 24; y <= 26; y++) { g.sym(4, y, 10, 'B'); g.sym(3, y, 10, 'B'); g.sym(4, y, 11, 'B'); g.sym(3, y, 11, 'B'); g.sym(3, y, 12, 'B'); }
+    // v1.58 detail: dark pasterns over the hooves, dewclaws behind the fetlocks, dark hock tuft (metatarsal gland),
+    // pale back of the hind cannon, darker knee
+    g.sym(4, 14, 1, 'K'); g.sym(4, 15, 1, 'H'); g.sym(4, 14, 6, 'K');
+    g.sym(4, 26, 1, 'K'); g.sym(4, 27, 1, 'H'); g.paint(4, 27, 7, 'K'); g.paint(4, 26, 4, 'L');
 
     var PARTS = {
       body:  { box: [2, 12, 11, 10, 30, 21], pivot: [6, 20, 15] },
@@ -677,6 +697,852 @@
   A.models.deerBuck = buildDeer(true);
 
   // =================================================================================================================
+  // v1.58 shared: procedural quadruped gait (same maths as the deer's `gait`, any limb table; cfg.rot(t) gives the
+  // rotations of the non-limb parts), bird pose / clip helpers
+  // =================================================================================================================
+  function gaitKeys(LIMBS, cfg) {
+    var LN = ['FL', 'FR', 'BL', 'BR'], keys = [], n = cfg.n, ms = cfg.T / n;
+    for (var k = 0; k < n; k++) {
+      var t = k / n, o = {}, drop = 0, cnt = 0, mid = 0;
+      for (var j = 0; j < 4; j++) {
+        var L = LN[j], u = (t + cfg.phase[L]) % 1, dy, lift;
+        if (u < cfg.beta) {
+          var s = u / cfg.beta;
+          dy = -cfg.A + 2 * cfg.A * s; lift = 0;
+          var th = Math.asin(Math.max(-0.9, Math.min(0.9, dy / LIMBS[L].L)));
+          drop += LIMBS[L].L * (1 - Math.cos(th)); cnt++;
+          mid = Math.max(mid, Math.sin(Math.PI * s));
+        } else {
+          var s2 = (u - cfg.beta) / (1 - cfg.beta), e = 0.5 - 0.5 * Math.cos(Math.PI * s2);
+          dy = cfg.A - 2 * cfg.A * e; lift = cfg.H * Math.sin(Math.PI * s2);
+        }
+        o[L] = { dy: dy, lift: lift };
+      }
+      var bz = -(cnt ? drop / cnt : 0) * cfg.dropK + cfg.bounce * mid;
+      o.b = [cfg.pitch * Math.sin(4 * Math.PI * t), 0, cfg.yaw * Math.sin(2 * Math.PI * t), 0, 0, bz];
+      o.rot = cfg.rot(t);
+      keys.push([ms, o]);
+    }
+    return keys;
+  }
+
+  // Birds: the wings are modelled SPREAD (horizontal, chord along y) so a flap is a clean roll about the body axis
+  // (left wing ry + = up, right wing ry - = up). FOLD_L = the folded wing: flat against the body side, tip back, the
+  // chord hanging down from the shoulder (left [-90,0,-90], right [-90,0,90]). Legs: `legs` / `legL` / `legR` keys are
+  // WORLD pitch (the body pitch is taken out), so the feet stay under the bird when it leans; omitted = vertical.
+  var FOLD_L = [-90, 0, -90];
+  function birdPose(parts, o) {
+    var out = {}, b = o.b || [], brx = b[0] || 0, wl = o.wl || FOLD_L, wr = o.wr || [wl[0], -wl[1], -wl[2]];
+    for (var i = 0; i < parts.length; i++) {
+      var n = parts[i], r, lg;
+      if (n === 'body') { out[n] = { rot: rr([brx, b[1] || 0, b[2] || 0]), pos: rr([b[3] || 0, b[4] || 0, b[5] || 0]) }; continue; }
+      if (n === 'wingL') r = wl;
+      else if (n === 'wingR') r = wr;
+      else if (n === 'legs' || n === 'legL' || n === 'legR') { lg = o[n] || o.legs || [0, 0, 0]; r = [lg[0] - brx, lg[1], lg[2]]; }
+      else r = o[n] || [0, 0, 0];
+      out[n] = { rot: rr(r), pos: [0, 0, 0] };
+    }
+    return out;
+  }
+  function bclip(parts, keys, loop) {
+    var d = [], f = [];
+    for (var i = 0; i < keys.length; i++) { d.push(keys[i][0]); f.push(birdPose(parts, keys[i][1])); }
+    return { durations: d, loop: loop, frames: f };
+  }
+  function legAng(u) { return u < 0.6 ? -22 + 44 * (u / 0.6) : 22 - 44 * ((u - 0.6) / 0.4); }
+  // k: pitch (perched body pitch, - = upright), tail, up / down (flap ry of the left wing), glide, hopZ, peck /
+  // peckHead (pitch that puts the beak on the ground), beatMs (50 small bird, 100 crow), bound (finch-style bounding
+  // flight), crow (adds walk, tilt, caw, talk)
+  function birdClips(parts, k) {
+    var P0 = { b: [k.pitch, 0, 0, 0, 0, 0], head: [-k.pitch - 6, 0, 0], tail: [k.tail, 0, 0] };
+    function P(o) { return M(P0, o); }
+    function hd(rx, ry, rz) { return [-k.pitch - 6 + rx, ry, rz]; }
+    var U = k.up, D = k.down, T1 = k.beatMs, T2 = 2 * k.beatMs;
+    var UPb = k.pitch * 0.6, UP = { b: [UPb, 0, 0, 0, 0, 0], head: [-UPb - 4, 0, 0], tail: [k.tail, 0, 0] };
+    var PK = { b: [k.peck, 0, 0, 0, 0, -0.2], head: [k.peckHead, 0, 0], tail: [k.tail - 10, 0, 0] };
+    var PK2 = M(PK, { b: [k.peck - 6, 0, 0, 0, 0, -0.1], head: [k.peckHead - 12, 0, 0] });
+    var FL = { b: [0, 0, 0, 0, 0, 0], head: [0, 0, 0], tail: [4, 0, 0], legs: [80, 0, 0] };
+    function fl(w, z) { return M(FL, { wl: w, b: [0, 0, 0, 0, 0, z || 0] }); }
+    var AL = { b: [k.pitch - 8, 0, 0, 0, 0, 0.2], head: [-k.pitch + 4, 0, 0], tail: [k.tail + 8, 0, 0] };
+    var c = {
+      // perched: quick head turns, tail flicks, a wing flick, a look down, a head tilt, breathing
+      perch: bclip(parts, [
+        [500, P0],
+        [100, P({ head: hd(0, 0, -35) })],
+        [500, P({ head: hd(0, 0, -35) })],
+        [100, P({ head: hd(0, 0, 28) })],
+        [400, P({ head: hd(0, 0, 28) })],
+        [100, P({ tail: [k.tail + 22, 0, 0] })],
+        [100, P({ tail: [k.tail - 4, 0, 0] })],
+        [100, P({ tail: [k.tail + 18, 0, 0] })],
+        [100, P0],
+        [100, P({ wl: [-90, 0, -76] })],
+        [100, P0],
+        [300, P({ head: hd(12, 0, 0) })],
+        [200, P({ head: hd(6, 14, 0) })],
+        [300, P({ b: [k.pitch, 0, 0, 0, 0, 0.2] })],
+        [500, P0]
+      ], true),
+      // two-footed hop on the ground (feet together), wings flick open a little in the air
+      hop: bclip(parts, [
+        [50, P({ b: [k.pitch * 0.4, 0, 0, 0, 0, -0.6], head: hd(4, 0, 0), tail: [k.tail + 8, 0, 0] })],
+        [50, P({ b: [k.pitch * 0.9, 0, 0, 0, 0, 0.4], legs: [30, 0, 0], wl: [-82, 0, -82] })],
+        [50, P({ b: [k.pitch * 0.6, 0, 0, 0, 0, k.hopZ], legs: [40, 0, 0], wl: [-72, 0, -76] })],
+        [50, P({ b: [k.pitch * 0.5, 0, 0, 0, 0, k.hopZ * 1.1], legs: [10, 0, 0] })],
+        [50, P({ b: [k.pitch * 0.3, 0, 0, 0, 0, k.hopZ * 0.5], legs: [-15, 0, 0] })],
+        [50, P({ b: [k.pitch * 0.2, 0, 0, 0, 0, 0], tail: [k.tail + 16, 0, 0] })],
+        [50, P({ b: [k.pitch * 0.4, 0, 0, 0, 0, -0.4], tail: [k.tail + 10, 0, 0] })]
+      ], true),
+      // pecking on the ground: beak to the grass twice, look around, twice again
+      peck: bclip(parts, [
+        [200, UP], [100, PK], [100, PK2], [100, PK],
+        [300, M(UP, { head: [-UPb - 4, 0, -22] })],
+        [200, M(UP, { head: [-UPb - 4, 0, 16] })],
+        [100, PK], [100, PK2],
+        [400, UP]
+      ], true),
+      // play once: crouch, leap with wings up, first beats, legs tucked back
+      takeoff: bclip(parts, [
+        [T1, { b: [k.pitch * 0.3, 0, 0, 0, 0, -0.8], head: [4, 0, 0], tail: [k.tail + 6, 0, 0], wl: [-50, 0, -50] }],
+        [T1, { b: [-30, 0, 0, 0, 0, 0.4], head: [22, 0, 0], tail: [-10, 0, 0], legs: [40, 0, 0], wl: [0, U, -10] }],
+        [T1, { b: [-24, 0, 0, 0, 0, 1.0], head: [18, 0, 0], tail: [-6, 0, 0], legs: [60, 0, 0], wl: [0, D, 0] }],
+        [T1, { b: [-16, 0, 0, 0, 0, 1.2], head: [12, 0, 0], legs: [75, 0, 0], wl: [0, U, -10] }],
+        [T1, { b: [-10, 0, 0, 0, 0, 1.0], head: [8, 0, 0], legs: [80, 0, 0], wl: [0, D, 0] }],
+        [T1, { b: [-6, 0, 0, 0, 0, 0.5], head: [5, 0, 0], legs: [80, 0, 0], wl: [0, U * 0.7, -6] }]
+      ], false),
+      // climbing / level flight; small birds: 3 beats then a closed-wing bound (the dipping finch flight)
+      flap: bclip(parts, k.bound ?
+        [[50, fl([0, U, -12], 0.2)], [50, fl([0, D, 0], -0.2)], [50, fl([0, U, -12], 0.3)], [50, fl([0, D, 0], 0)],
+         [50, fl([0, U, -12], 0.4)], [50, fl([0, D, 0], 0.2)], [200, fl(FOLD_L, -0.4)]] :
+        [[100, fl([0, U, -10], -0.3)], [50, fl([0, 10, -5], 0)], [100, fl([0, D, 0], 0.4)], [50, fl([0, 5, -5], 0.1)]], true),
+      // level / descending: wings spread with a slight dihedral, small corrections
+      glide: bclip(parts, [[500, fl([0, k.glide, 0], 0)], [500, fl([0, k.glide - 4, 3], -0.2)]], true),
+      // play once (the last 1.5 m): flare upright, legs forward, braking beats, touch down, fold
+      land: bclip(parts, [
+        [T2, { b: [-35, 0, 0, 0, 0, 1.5], head: [30, 0, 0], tail: [25, 0, 0], legs: [-30, 0, 0], wl: [0, U * 0.8, -10] }],
+        [T1, { b: [-40, 0, 0, 0, 0, 1.0], head: [32, 0, 0], tail: [30, 0, 0], legs: [-25, 0, 0], wl: [0, -20, -20] }],
+        [T1, { b: [-30, 0, 0, 0, 0, 0.3], head: [26, 0, 0], tail: [25, 0, 0], legs: [-10, 0, 0], wl: [0, U * 0.6, -30] }],
+        [T2, { b: [k.pitch * 0.6, 0, 0, 0, 0, -0.5], head: [-k.pitch * 0.6 - 2, 0, 0], tail: [k.tail + 10, 0, 0], wl: [-60, 0, -60] }],
+        [T2, P0]
+      ], false),
+      // sleek and upright, quick head turns, alarm tail flicks
+      alert: bclip(parts, [
+        [400, AL],
+        [100, M(AL, { head: [-k.pitch + 4, 0, -30] })],
+        [400, M(AL, { head: [-k.pitch + 4, 0, -30] })],
+        [100, M(AL, { head: [-k.pitch + 4, 0, 25] })],
+        [300, M(AL, { head: [-k.pitch + 4, 0, 25] })],
+        [100, M(AL, { tail: [k.tail + 30, 0, 0] })],
+        [100, AL],
+        [100, M(AL, { tail: [k.tail + 28, 0, 0] })],
+        [100, AL],
+        [300, AL]
+      ], true)
+    };
+    if (k.crow) {
+      // walk: alternate legs (crows walk, they do not hop), head bob, a slight waddle
+      var wk = [];
+      for (var i = 0; i < 8; i++) {
+        var t = i / 8;
+        wk.push([50, P({ b: [k.pitch, 2 * Math.sin(2 * Math.PI * t), 3 * Math.sin(2 * Math.PI * t), 0, 0, -0.15 * Math.abs(Math.sin(2 * Math.PI * t))],
+                         head: hd(6 * Math.sin(4 * Math.PI * t), 0, -2 * Math.sin(2 * Math.PI * t)),
+                         legL: [legAng(t), 0, 0], legR: [legAng((t + 0.5) % 1), 0, 0] })]);
+      }
+      c.walk = bclip(parts, wk, true);
+      // Rook: the curious head tilt (one eye on you, then the other)
+      c.tilt = bclip(parts, [
+        [500, P0],
+        [200, P({ head: hd(-4, 26, 10) })],
+        [900, P({ head: hd(-4, 26, 10) })],
+        [150, P({ head: hd(0, -4, 0) })],
+        [150, P({ head: hd(-4, -28, -10) })],
+        [800, P({ head: hd(-4, -28, -10) })],
+        [300, P0]
+      ], true);
+      // caw: lean back to breathe in, bow forward with the beak wide open, wings half out, tail pumps down (x2)
+      var IN = P({ b: [k.pitch - 6, 0, 0, 0, 0, -0.2], head: hd(-14, 0, 0), tail: [k.tail + 6, 0, 0] });
+      var CAW = P({ b: [k.pitch + 14, 0, 0, 0, 0, -0.5], head: hd(14, 0, 0), jaw: [30, 0, 0], tail: [k.tail - 12, 0, 0], wl: [-84, 0, -72] });
+      c.caw = bclip(parts, [
+        [200, P0], [100, IN], [100, CAW], [150, CAW], [100, M(CAW, { jaw: [6, 0, 0] })],
+        [100, IN], [100, CAW], [150, CAW], [200, P0]
+      ], true);
+      // talk (Rook's dialogue loop): beak flaps of different sizes, small head bobs and tilts
+      c.talk = bclip(parts, [
+        [100, P({ head: hd(0, 6, 0), jaw: [14, 0, 0] })],
+        [100, P({ head: hd(2, 6, 0), jaw: [3, 0, 0] })],
+        [150, P({ head: hd(-2, 10, 4), jaw: [18, 0, 0] })],
+        [100, P({ head: hd(0, 10, 4), jaw: [5, 0, 0] })],
+        [100, P({ head: hd(2, 4, -2), jaw: [12, 0, 0] })],
+        [150, P({ head: hd(0, -6, -4), jaw: [0, 0, 0] })],
+        [100, P({ head: hd(-2, -8, -4), jaw: [16, 0, 0] })],
+        [200, P({ head: hd(0, 0, 0), jaw: [0, 0, 0] })]
+      ], true);
+    }
+    return c;
+  }
+  // bird voxels: neck + body ellipse slices ([y, cz, rz, rx]), an ellipsoid head ([cy, cz, rx, ry, rz]), the spread
+  // wings from a per-column profile, then S.extra(g) adds beak, eyes, tail and legs. Roles -> mats per species.
+  function buildBirdLayers(S) {
+    var g = Grid(S.SX, S.SY, S.SZ), CX = S.SX / 2, q, d, j;
+    function slices(list, zMin, seed) {
+      for (q = 0; q < list.length; q++) (function (sl) {
+        g.ellY(sl[0], CX, sl[1], sl[3], sl[2], function (x, y, z) { return S.bodyRole((z + 0.5 - sl[1]) / sl[2], y, hash(x, y, z, seed)); }, zMin);
+      })(list[q]);
+    }
+    slices(S.neck, S.neckZMin, S.seed + 1);
+    slices(S.body, S.bodyZMin, S.seed);
+    var H = S.head;
+    g.ell3(CX, H[0], H[1], H[2], H[3], H[4], 0, S.SX - 1, S.headZMin, function (x, y, z) {
+      return S.headRole((y + 0.5 - H[0]) / H[3], (z + 0.5 - H[1]) / H[4], hash(x, y, z, S.seed + 2));
+    });
+    for (d = 0; d < S.wingLen; d++) {
+      var ys = S.wingProf(d), wx = S.wingRootX - d;
+      for (j = 0; j < ys.length; j++) g.sym(wx, ys[j], S.wingZ, S.wingRole(d, ys[j] - ys[0], hash(wx, ys[j], S.wingZ, S.seed + 3)));
+    }
+    S.extra(g);
+    return g.layers();
+  }
+  function range(a, b) { var o = []; for (var v = a; v <= b; v++) o.push(v); return o; }
+
+  // =================================================================================================================
+  // FOX (red fox, v1.58): cellM 0.025, grid 10 x 44 x 21, anchor [5, 18.25, 0] (between the four paws).
+  //   1.1 m nose to tail tip (body 0.67 m + tail 0.43 m), 0.40 m at the shoulder, ear tips 0.50 m. Deep narrow chest,
+  //   tucked waist, rounded haunch; long slim muzzle with a black nose, dark tear line, white lips / cheeks / throat /
+  //   chest bib; big upright triangular ears (white inner fur, BLACK backs and tips); black stockings to the elbow and
+  //   hock; bushy tail hanging low (dark guard hairs on top, paler underside, WHITE tip). Coat: orange-red with ticked
+  //   darker saddle, pale lower flanks, grey-cream belly. Eyes: dark with a catch-light.
+  //   Parts (8): body [1,11,9, 9,27,17] pivot [5,19,12.5]; head (neck + head) [1,0,10, 9,11,17] pivot [5,11,12.5];
+  //              ears [1,4,17, 9,8,21] pivot [5,5.5,17] (both: rx perk / pin, ry flick, rz swivel);
+  //              tail [1,27,2, 9,44,17] pivot [5,27,12.6]; legFL/FR [1|5,9,0, 5|9,16,9] pivot [3.5|6.5,12.5,10];
+  //              legBL/BR [1|5,20,0, 5|9,28,9] pivot [3.5|6.5,24,10].
+  //   Clips: idle 4.4 s, sniff 3.2 s (nose on the ground, sweeps, a forefoot step), walk 0.6 s (4-beat, 0.67 m/s),
+  //          trot 0.4 s (diagonal, 1.9 m/s), run 0.4 s (rotary gallop, flee, ~8 m/s, ears flat, tail streaming),
+  //          alert 3.0 s (head high, ears forward, one forepaw raised, a head tilt), pounce once 2.3 s (the mousing
+  //          jump: crouch, aim, spring, arc, nose-first dive, forepaws land, nose in the grass, stand).
+  // =================================================================================================================
+  (function () {
+    var SX = 10, SY = 44, SZ = 21, CX = 5, SEED = 41;
+    var g = Grid(SX, SY, SZ), i, y, z;
+
+    // ---- trunk (body): y 11..26, shoulder 0.40 m, tucked waist, chest / belly >= z 9 ----
+    var TR = [
+      [12.5, 3.0, 2.2], [12.3, 3.4, 2.5], [12.2, 3.6, 2.7], [12.1, 3.7, 2.8], [12.1, 3.6, 2.8], [12.2, 3.4, 2.7],
+      [12.4, 3.1, 2.6], [12.5, 2.9, 2.5], [12.6, 2.8, 2.5], [12.6, 2.8, 2.5], [12.6, 2.9, 2.6], [12.6, 3.0, 2.7],
+      [12.5, 3.1, 2.8], [12.4, 3.1, 2.8], [12.3, 2.9, 2.6], [12.3, 2.5, 2.3]
+    ];
+    function trunkMat(cz, rz) {
+      return function (x, y, z) {
+        var rel = (z + 0.5 - cz) / rz, ax = Math.abs(x + 0.5 - CX), h = hash(x, y, z, SEED);
+        if (rel < -0.6 && y <= 15) return h < 0.85 ? 'W' : 'g';          // white chest bib
+        if (rel < -0.72) return h < 0.4 ? 'W' : 'g';                       // pale grey-cream belly
+        if (rel < -0.3) return h < 0.35 ? 'F' : 'L';                       // lighter lower flank
+        if (rel > 0.62) return ax <= 1 ? (h < 0.55 ? 'D' : 'F') : (h < 0.22 ? 'D' : 'F');   // ticked darker saddle
+        return h < 0.12 ? 'L' : (h > 0.92 ? 'D' : 'F');
+      };
+    }
+    for (i = 0; i < TR.length; i++) g.ellY(11 + i, CX, TR[i][0], TR[i][2], TR[i][1], trunkMat(TR[i][0], TR[i][1]), 9);
+    for (y = 12; y <= 14; y++) g.sym(2, y, 9, 'F');                                        // shoulder over the forearm
+    for (y = 22; y <= 25; y++) { g.sym(2, y, 9, 'F'); g.sym(3, y, 9, 'F'); g.sym(2, y, 10, y === 22 ? 'L' : 'F'); }   // haunch
+
+    // ---- neck (head part): y 10..7, rising forward, white throat ----
+    var NK = [[13.2, 2.6, 2.0], [13.6, 2.4, 1.9], [13.9, 2.3, 1.9], [14.0, 2.3, 2.0]];
+    function neckMat(cz, rz) {
+      return function (x, y, z) {
+        var rel = (z + 0.5 - cz) / rz, h = hash(x, y, z, SEED + 1);
+        if (rel < -0.3) return 'W';
+        if (rel > 0.6) return h < 0.35 ? 'D' : 'F';
+        return h < 0.2 ? 'L' : 'F';
+      };
+    }
+    for (i = 0; i < NK.length; i++) g.ellY(10 - i, CX, NK[i][0], NK[i][2], NK[i][1], neckMat(NK[i][0], NK[i][1]), 10);
+    // ---- head: y 0..6, long slim muzzle (y 0..3) in front of a broad skull with white cheeks ----
+    var HD = [[12.7, 0.8, 0.8], [12.8, 1.0, 1.0], [13.0, 1.2, 1.2], [13.4, 1.6, 1.5], [14.0, 2.1, 2.2], [14.2, 2.3, 2.5], [14.2, 2.4, 2.4]];
+    function headMat(cz, rz) {
+      return function (x, y, z) {
+        var rel = (z + 0.5 - cz) / rz, h = hash(x, y, z, SEED + 2);
+        if (y <= 3) return rel < -0.1 ? 'W' : (rel > 0.4 ? 'F' : 'L');   // muzzle: white lips and chin, orange bridge
+        if (rel < -0.25) return 'W';                                      // white cheeks and throat
+        if (rel > 0.55) return h < 0.3 ? 'D' : 'F';                       // crown
+        return h < 0.25 ? 'L' : 'F';
+      };
+    }
+    for (i = 0; i < HD.length; i++) g.ellY(i, CX, HD[i][0], HD[i][2], HD[i][1], headMat(HD[i][0], HD[i][1]), 10);
+    g.paint(4, 0, 12, 'N'); g.paint(4, 1, 13, 'N');                    // black nose
+    g.paint(4, 3, 13, 'K');                                            // dark tear line down the muzzle side
+    g.paint(3, 4, 14, 'E'); g.paint(3, 4, 15, 'S');                    // eye + catch-light
+    // ---- ears: roots on the skull (head part), then 3 cells up (ears part); white inner fur, black backs and tips ----
+    g.sym(3, 5, 16, 'W'); g.sym(4, 5, 16, 'F'); g.sym(3, 6, 16, 'K');
+    g.sym(2, 5, 17, 'F'); g.sym(3, 5, 17, 'W'); g.sym(2, 6, 17, 'K'); g.sym(3, 6, 17, 'K');
+    g.sym(3, 5, 18, 'W'); g.sym(3, 6, 18, 'K');
+    g.sym(3, 5, 19, 'K');
+
+    // ---- tail (tail part): y 27..43, hangs from the rump to 15 cm over the ground, bushy, white tip ----
+    var TL = [1.4, 1.6, 1.8, 2.0, 2.2, 2.3, 2.4, 2.4, 2.4, 2.4, 2.4, 2.3, 2.1, 1.9, 1.7, 1.4, 1.0];
+    function tailMat(cz, r, yy) {
+      return function (x, y, z) {
+        var rel = (z + 0.5 - cz) / r, h = hash(x, y, z, SEED + 3);
+        if (yy >= 41 || (yy === 40 && h < 0.6)) return 'W';
+        if (yy >= 38 && rel > 0.3 && h < 0.5) return 'K';
+        if (rel > 0.4) return h < 0.4 ? 'D' : (h < 0.5 ? 'K' : 'F');
+        if (rel < -0.45) return h < 0.5 ? 'L' : 'g';
+        return h < 0.15 ? 'D' : (h > 0.85 ? 'L' : 'F');
+      };
+    }
+    for (i = 0; i < TL.length; i++) {
+      var tcz = 12.6 - i * 0.42;
+      g.ellY(27 + i, CX, tcz, TL[i] * 0.95, TL[i], tailMat(tcz, TL[i], 27 + i), 0);
+    }
+
+    // ---- legs: black stockings; forelegs (x 3, mirrored x 6) paw, cannon, forearm ----
+    g.sym(3, 11, 0, 'K'); g.sym(3, 12, 0, 'K');
+    for (z = 1; z <= 6; z++) g.sym(3, 12, z, z === 3 ? 'k' : 'K');
+    g.sym(3, 13, 6, 'D');
+    g.sym(2, 12, 7, 'F'); g.sym(3, 12, 7, 'K'); g.sym(2, 13, 7, 'F'); g.sym(3, 13, 7, 'F');
+    g.sym(2, 12, 8, 'F'); g.sym(3, 12, 8, 'F'); g.sym(2, 13, 8, 'F'); g.sym(3, 13, 8, 'L');
+    // hind: paw, slanted metatarsus, hock pointing back, gaskin, thigh
+    g.sym(3, 24, 0, 'K'); g.sym(3, 25, 0, 'K');
+    g.sym(3, 25, 1, 'K'); g.sym(3, 25, 2, 'K'); g.sym(3, 26, 2, 'k'); g.sym(3, 26, 3, 'K'); g.sym(3, 25, 3, 'k');
+    g.sym(3, 25, 4, 'F'); g.sym(3, 26, 4, 'D'); g.sym(3, 25, 5, 'F'); g.sym(3, 26, 5, 'F');
+    for (y = 24; y <= 25; y++) { g.sym(2, y, 6, 'F'); g.sym(3, y, 6, 'F'); }
+    for (y = 23; y <= 25; y++) { g.sym(2, y, 7, 'F'); g.sym(3, y, 7, y === 23 ? 'L' : 'F'); g.sym(2, y, 8, 'F'); g.sym(3, y, 8, 'F'); }
+
+    var PARTS = {
+      body:  { box: [1, 11, 9, 9, 27, 17], pivot: [5, 19, 12.5] },
+      head:  { box: [1, 0, 10, 9, 11, 17], pivot: [5, 11, 12.5], parent: 'body' },
+      ears:  { box: [1, 4, 17, 9, 8, 21], pivot: [5, 5.5, 17], parent: 'head' },
+      tail:  { box: [1, 27, 2, 9, 44, 17], pivot: [5, 27, 12.6], parent: 'body' },
+      legFL: { box: [1, 9, 0, 5, 16, 9], pivot: [3.5, 12.5, 10], parent: 'body' },
+      legFR: { box: [5, 9, 0, 9, 16, 9], pivot: [6.5, 12.5, 10], parent: 'body' },
+      legBL: { box: [1, 20, 0, 5, 28, 9], pivot: [3.5, 24, 10], parent: 'body' },
+      legBR: { box: [5, 20, 0, 9, 28, 9], pivot: [6.5, 24, 10], parent: 'body' }
+    };
+    var ORDER = Object.keys(PARTS), PIV = {};
+    for (i = 0; i < ORDER.length; i++) PIV[ORDER[i]] = PARTS[ORDER[i]].pivot;
+    var LIMBS = {
+      FL: { part: 'legFL', foot: [3.5, 12, 0], L: 10, auto: true },
+      FR: { part: 'legFR', foot: [6.5, 12, 0], L: 10, auto: true },
+      BL: { part: 'legBL', foot: [3.5, 24.5, 0], L: 10, auto: true },
+      BR: { part: 'legBR', foot: [6.5, 24.5, 0], L: 10, auto: true }
+    };
+    var clip = Rig(ORDER, PIV, 'body', LIMBS).clip;
+    function R3(h, e, t) { return { head: h, ears: e || [0, 0, 0], tail: t || [0, 0, 0] }; }
+    function W(base, over) { var o = M(base, {}), k; for (k in over) o[k] = over[k]; return o; }
+
+    // sniff base: body tipped 8 deg and 2.5 cm lower, nose on the ground (head 58 + body 8), ears forward, tail low
+    var SN = { b: [8, 0, 0, 0, 0, -1], rot: R3([58, 0, 0], [10, 0, 0], [-6, 0, 0]), FL: { dy: -1 }, FR: { dy: 0.5 } };
+    function sn(h, e, extra) { return W(M(SN, { rot: R3(h, e || [10, 0, 0], [-6, 0, 0]) }), extra || {}); }
+    // alert base: head high, ears forward, tail straight out, the left forepaw raised (the frozen fox)
+    var AL = { b: [0, 0, 0, 0, 0, 0.3], rot: R3([-14, 0, 0], [12, 0, 0], [12, 0, 0]), FL: { dy: -0.5, lift: 3, rx: -15 } };
+    function al(h, e, t) { return M(AL, { rot: R3(h, e, t || [12, 0, 0]) }); }
+
+    var animations = {
+      idle: clip([
+        [600, {}],
+        [500, { b: [0, 0, 0, 0, 0, 0.15], rot: R3([2, 0, 0]) }],
+        [400, { rot: R3([-4, 0, -18], [0, 0, -10]) }],
+        [600, { rot: R3([-4, 0, -18], [0, 0, -10]) }],
+        [100, { rot: R3([-4, 0, -18], [0, 12, -10]) }],
+        [100, { rot: R3([-4, 0, -18], [0, -6, -10]) }],
+        [400, { rot: R3([-2, 0, 14], [4, 0, 10], [0, 0, 10]) }],
+        [500, { rot: R3([-2, 0, 14], [4, 0, 10], [0, 0, -8]) }],
+        [300, { rot: R3([0, 0, 10], [2, 0, 6], [0, 0, 6]) }],
+        [600, { b: [0, 0, 0, 0, 0, 0.15], rot: R3([2, 0, 0]) }],
+        [300, {}]
+      ], true),
+      sniff: clip([
+        [300, SN],
+        [200, sn([60, 0, -8])],
+        [200, sn([57, 0, -10])],
+        [200, sn([60, 0, 4])],
+        [200, sn([57, 0, 10])],
+        [250, sn([61, 0, 6])],
+        [150, sn([58, 0, 6])],
+        [300, sn([58, 0, 2], null, { FL: { dy: -2.5, lift: 1.5 } })],
+        [200, sn([59, 0, 0], null, { FL: { dy: -2.5 } })],
+        [300, sn([50, 0, -4], [14, 0, -8], { FL: { dy: -2.5 } })],
+        [400, sn([54, 0, -4], [14, 0, -8], { FL: { dy: -2.5 } })],
+        [200, sn([58, 0, 0], null, { FL: { dy: -1.8, lift: 1 } })],
+        [300, SN]
+      ], true),
+      walk: clip(gaitKeys(LIMBS, { n: 12, T: 600, beta: 0.62, A: 5, H: 2.5, phase: { BL: 0, FL: 0.75, BR: 0.5, FR: 0.25 },
+        dropK: 0.6, bounce: 0.15, pitch: 0.6, yaw: 1.5,
+        rot: function (t) { return R3([10 + 3 * Math.sin(4 * Math.PI * t + 1.57), 0, -Math.sin(2 * Math.PI * t)], [4, 0, 0], [6, 0, 6 * Math.sin(2 * Math.PI * t)]); } }), true),
+      trot: clip(gaitKeys(LIMBS, { n: 8, T: 400, beta: 0.42, A: 6.5, H: 3.5, phase: { FL: 0, BR: 0, FR: 0.5, BL: 0.5 },
+        dropK: 0.6, bounce: -0.4, pitch: 0.8, yaw: 0,
+        rot: function (t) { return R3([14 + 2 * Math.sin(4 * Math.PI * t), 0, 0], [-4, 0, 0], [16, 0, 4 * Math.sin(2 * Math.PI * t)]); } }), true),
+      run: clip([
+        [50, { b: [-5, 0, 0, 0, 0, 0], rot: R3([12, 0, 0], [-28, 0, 0], [22, 0, 0]),
+               BL: { dy: 3 }, BR: { dy: -3.5 }, FL: { free: [-10, 0, 0], up: 2 }, FR: { free: [35, 0, 0], up: 1.5 } }],
+        [50, { b: [-7, 0, 0, 0, 0, 0.1], rot: R3([10, 0, 0], [-28, 0, 0], [22, 0, 0]),
+               BL: { free: [35, 0, 0], up: 0.5 }, BR: { dy: 3 }, FL: { free: [-40, 0, 0], up: 1 }, FR: { free: [-15, 0, 0], up: 2 } }],
+        [50, { b: [-2, 0, 0, 0, 0, 2.5], rot: R3([12, 0, 0], [-30, 0, 0], [20, 0, 0]),
+               BL: { free: [45, 0, 0] }, BR: { free: [40, 0, 0], up: 0.5 }, FL: { free: [-50, 0, 0] }, FR: { free: [-45, 0, 0], up: 0.5 } }],
+        [50, { b: [4, 0, 0, 0, 0, 2.0], rot: R3([16, 0, 0], [-28, 0, 0], [18, 0, 0]),
+               BL: { free: [25, 0, 0], up: 1.5 }, BR: { free: [45, 0, 0] }, FL: { free: [-35, 0, 0] }, FR: { free: [-48, 0, 0] } }],
+        [50, { b: [7, 0, 0, 0, 0, 0.3], rot: R3([18, 0, 0], [-26, 0, 0], [18, 0, 0]),
+               BL: { free: [-10, 0, 0], up: 2 }, BR: { free: [20, 0, 0], up: 1.5 }, FL: { dy: -3.5 }, FR: { free: [-30, 0, 0], up: 0.5 } }],
+        [50, { b: [9, 0, 0, 0, 0, -0.2], rot: R3([16, 0, 0], [-26, 0, 0], [20, 0, 0]),
+               BL: { free: [-35, 0, 0], up: 1.5 }, BR: { free: [-15, 0, 0], up: 2 }, FL: { dy: 3 }, FR: { dy: -3.5 } }],
+        [50, { b: [5, 0, 0, 0, 0, -0.2], rot: R3([12, 0, 0], [-28, 0, 0], [22, 0, 0]),
+               BL: { free: [-40, 0, 0], up: 0.5 }, BR: { free: [-38, 0, 0], up: 1.5 }, FL: { free: [30, 0, 0], up: 1 }, FR: { dy: 3 } }],
+        [50, { b: [0, 0, 0, 0, 0, 0], rot: R3([10, 0, 0], [-28, 0, 0], [22, 0, 0]),
+               BL: { dy: -3.5 }, BR: { free: [-35, 0, 0], up: 0.5 }, FL: { free: [40, 0, 0], up: 1.5 }, FR: { free: [30, 0, 0], up: 1 } }]
+      ], true),
+      alert: clip([
+        [900, AL],
+        [300, al([-14, 0, 0], [12, 0, 14])],
+        [700, al([-14, 0, 0], [12, 0, 14])],
+        [150, al([-14, 10, 6], [12, 0, 0])],
+        [600, al([-14, 10, 6], [12, 0, 0])],
+        [200, al([-16, 0, 0], [16, 0, 0])],
+        [150, AL]
+      ], true),
+      pounce: clip([
+        [300, { b: [4, 0, 0, 0, 0, -1.5], rot: R3([22, 0, 0], [16, 0, 0], [10, 0, 0]), FL: { dy: -1 }, FR: { dy: -1 } }],
+        [250, { b: [4, 0, 0, 0, 0, -1.5], rot: R3([24, 0, 0], [18, 0, 0], [10, 0, 10]), FL: { dy: -1 }, FR: { dy: -1 } }],
+        [100, { b: [-30, 0, 0, 0, 0, 1], rot: R3([12, 0, 0], [12, 0, 0], [30, 0, 0]),
+                FL: { free: [-55, 0, 0] }, FR: { free: [-50, 0, 0] }, BL: { dy: 3, rx: 14 }, BR: { dy: 3, rx: 14 } }],
+        [150, { b: [10, 0, 0, 0, 0, 9], rot: R3([25, 0, 0], [18, 0, 0], [35, 0, 0]),
+                FL: { free: [-15, 0, 0] }, FR: { free: [-15, 0, 0] }, BL: { free: [40, 0, 0] }, BR: { free: [40, 0, 0] } }],
+        [150, { b: [45, 0, 0, 0, 0, 7], rot: R3([20, 0, 0], [16, 0, 0], [20, 0, 0]),
+                FL: { free: [-30, 0, 0] }, FR: { free: [-30, 0, 0] }, BL: { free: [30, 0, 0] }, BR: { free: [30, 0, 0] } }],
+        [150, { b: [30, 0, 0, 0, 0, 1.5], rot: R3([35, 0, 0], [10, 0, 0], [30, 0, 0]),
+                FL: { dy: -3, rx: -15 }, FR: { dy: -2.5, rx: -14 }, BL: { free: [20, 0, 0] }, BR: { free: [20, 0, 0] } }],
+        [400, { b: [18, 0, 0, 0, 0, -0.5], rot: R3([44, 0, 0], [10, 0, 0], [15, 0, 0]),
+                FL: { dy: -3 }, FR: { dy: -2.5 }, BL: { dy: -2 }, BR: { dy: -2 } }],
+        [500, { b: [18, 0, 0, 0, 0, -0.5], rot: R3([44, 0, 6], [10, 0, 0], [15, 0, 12]),
+                FL: { dy: -3 }, FR: { dy: -2.5 }, BL: { dy: -2 }, BR: { dy: -2 } }],
+        [300, { rot: R3([10, 0, 0]) }]
+      ], false)
+    };
+
+    A.models.fox = {
+      name: 'fox',
+      displayName: 'red fox',
+      desc: 'v1.58 EP-WILD: red fox, 1.1 m nose to tail tip, 0.40 m at the shoulder: orange-red coat with a ticked ' +
+            'darker saddle, white lips / cheeks / throat / chest, black nose, tear lines, ear backs and stockings, big ' +
+            'upright ears, bushy low tail with a white tip. 8 parts: idle, sniff, walk, trot, run, alert, pounce.',
+      voxel: {
+        version: 1,
+        meshOnly: true,
+        cellM: 0.025,
+        size: [SX, SY, SZ],
+        anchor: [5, 18.25, 0],
+        light: false,
+        mats: {
+          F: 'fur_fox',            // back, flanks, head, upper legs, tail
+          L: 'fur_fox_light',      // lower flanks, muzzle sides, tail underside
+          D: 'hair_auburn',        // darker saddle ticks, crown, nape, tail guard hairs
+          W: 'fur_cream',          // lips, cheeks, throat, chest bib, inner ears, tail tip
+          g: 'hair_grey_light',    // grey-cream belly, tail underside
+          K: 'hair_black',         // ear backs and tips, stockings, tear line
+          k: 'hair_black_light',   // stocking variation
+          N: 'iron_dark',          // nose
+          E: 'iron_dark',          // eyes
+          S: 'linen_light'         // eye catch-light
+        },
+        layers: g.layers(),
+        parts: PARTS,
+        animations: animations,
+        mounts: {
+          eyes:    { at: [5, 4, 14.5], part: 'head' },
+          nose:    { at: [5, 0, 12.5], part: 'head' },
+          tailTip: { at: [5, 42, 6.5], part: 'tail' },
+          center:  { at: [5, 19, 12.5], part: 'body' }
+        }
+      }
+    };
+  })();
+
+  // =================================================================================================================
+  // SQUIRREL (red squirrel, v1.58): cellM 0.015, grid 8 x 24 x 20, anchor [4, 9, 0].
+  //   0.34 m nose to tail (body 0.20 m), crouched back 0.12 m, tail curled up over the back to 0.28 m, ear tufts
+  //   0.19 m. Rusty-red coat with dark and grey-brown hairs, cream belly / chin / throat, big dark eyes with a pale
+  //   ring and a catch-light, ears with dark TUFTS, long flat hind feet, short forelegs, very bushy S-curved tail with a
+  //   frosted pale fringe.
+  //   Parts (8): body [1,5,3, 7,16,11] pivot [4,12,5] (hips); head [0,0,4, 8,5,9] pivot [4,5,6]; ears [0,2,9, 8,6,13]
+  //              pivot [4,3.5,9]; tail [1,13,3, 7,24,20] pivot [4,15.5,4.5]; legFL/FR [0|5,4,0, 3|8,9,3] pivot
+  //              [2.5|5.5,6.5,4]; legBL/BR [0|5,9,0, 3|8,15,3] pivot [2|6,12,4.5].
+  //   Clips: idle 3.6 s (jerky looks, tail flicks), forage 2.8 s (nose down, forepaws dig, head up to chew), hop 0.4 s
+  //          (bound, 0.36 m/s), run 0.3 s (fast bound, tail streaming), alert 2.8 s (frozen, alarm tail flicks),
+  //          climb 0.4 s and peek 3.7 s ON A TRUNK: the body is pitched -90 deg (nose up, belly to the trunk) inside the
+  //          clip, paws on the instance's y plane (the trunk surface), body raised 16.5 cm (tail clear of the ground).
+  // =================================================================================================================
+  (function () {
+    var SX = 8, SY = 24, SZ = 20, CX = 4, SEED = 53;
+    var g = Grid(SX, SY, SZ), i;
+
+    var TR = [[5.4, 2.0, 1.7], [5.2, 2.3, 1.9], [5.1, 2.4, 2.0], [5.1, 2.4, 2.0], [5.2, 2.5, 2.0], [5.3, 2.6, 2.1],
+              [5.4, 2.8, 2.3], [5.4, 2.9, 2.4], [5.3, 2.9, 2.4], [5.1, 2.6, 2.2], [4.9, 2.0, 1.8]];   // y 5..15
+    function trunkMat(cz, rz) {
+      return function (x, y, z) {
+        var rel = (z + 0.5 - cz) / rz, h = hash(x, y, z, SEED);
+        if (rel < -0.55) return 'W';
+        if (rel < -0.2) return h < 0.3 ? 'W' : 'O';
+        if (rel > 0.5) return h < 0.25 ? 'T' : (h > 0.85 ? 'G' : 'R');
+        return h < 0.15 ? 'G' : (h > 0.8 ? 'O' : 'R');
+      };
+    }
+    for (i = 0; i < TR.length; i++) g.ellY(5 + i, CX, TR[i][0], TR[i][2], TR[i][1], trunkMat(TR[i][0], TR[i][1]), 3);
+    g.sym(1, 11, 3, 'R'); g.sym(1, 12, 3, 'R'); g.sym(1, 13, 3, 'R'); g.sym(1, 12, 4, 'R'); g.sym(1, 11, 4, 'O');   // haunches
+
+    var HD = [[6.6, 0.8, 0.8], [7.0, 1.3, 1.2], [7.3, 1.7, 1.6], [7.5, 1.9, 1.8], [7.4, 1.8, 1.7]];   // y 0..4
+    function headMat(cz, rz) {
+      return function (x, y, z) {
+        var rel = (z + 0.5 - cz) / rz, h = hash(x, y, z, SEED + 1);
+        if (rel < -0.4) return 'W';
+        if (y <= 1) return rel > 0.3 ? 'R' : 'O';
+        if (rel > 0.5) return h < 0.3 ? 'T' : 'R';
+        return h < 0.3 ? 'O' : 'R';
+      };
+    }
+    g.ellY(4, CX, 5.6, 1.4, 1.6, headMat(5.6, 1.6), 4);                                   // neck
+    for (i = 0; i < HD.length; i++) g.ellY(i, CX, HD[i][0], HD[i][2], HD[i][1], headMat(HD[i][0], HD[i][1]), 4);
+    g.paint(3, 0, 6, 'N');                                                                // nose
+    g.paint(2, 3, 7, 'E'); g.paint(2, 3, 8, 'S'); g.paint(2, 2, 7, 'W'); g.paint(2, 4, 7, 'W');   // eye, catch-light, pale ring
+    // ears with dark tufts (ears part)
+    g.sym(2, 3, 9, 'O'); g.sym(2, 4, 9, 'R'); g.sym(2, 3, 10, 'O'); g.sym(2, 4, 10, 'R');
+    g.sym(2, 3, 11, 'T'); g.sym(2, 4, 11, 'T'); g.sym(1, 4, 12, 'T');
+
+    // tail: overlapping round puffs along an S curve, back from the rump then up and over the back
+    var TC = [[16, 4.5, 1.2], [17.5, 5.5, 1.6], [19, 7, 2.0], [20, 9, 2.3], [20.3, 11, 2.5], [19.8, 13, 2.6],
+              [18.8, 15, 2.5], [17.5, 16.3, 2.3], [16.2, 17, 2.0], [15, 17.2, 1.6]];
+    function tailMat(cy, cz, r) {
+      return function (x, y, z) {
+        var dx = (x + 0.5 - CX) / (r * 0.9), dy = (y + 0.5 - cy) / r, dz = (z + 0.5 - cz) / r;
+        var d = Math.sqrt(dx * dx + dy * dy + dz * dz), h = hash(x, y, z, SEED + 2);
+        if (d > 0.78) return h < 0.4 ? 'O' : (h < 0.55 ? 'T' : 'R');
+        return h < 0.3 ? 'T' : 'R';
+      };
+    }
+    for (i = 0; i < TC.length; i++) g.ell3(CX, TC[i][0], TC[i][1], TC[i][2] * 0.9, TC[i][2], TC[i][2], 0, SX - 1, 0, tailMat(TC[i][0], TC[i][1], TC[i][2]));
+
+    // legs: short forelegs with pale toes; long flat hind feet, heel, thigh
+    g.sym(2, 5, 0, 'O'); g.sym(2, 6, 0, 'R'); g.sym(2, 6, 1, 'R'); g.sym(2, 6, 2, 'O'); g.sym(2, 7, 2, 'R');
+    g.sym(2, 10, 0, 'O'); g.sym(2, 11, 0, 'R'); g.sym(2, 12, 0, 'R'); g.sym(2, 13, 0, 'T');
+    g.sym(2, 12, 1, 'R'); g.sym(2, 13, 1, 'R');
+    g.sym(1, 11, 2, 'R'); g.sym(1, 12, 2, 'R'); g.sym(2, 11, 2, 'R'); g.sym(2, 12, 2, 'O');
+
+    var PARTS = {
+      body:  { box: [1, 5, 3, 7, 16, 11], pivot: [4, 12, 5] },
+      head:  { box: [0, 0, 4, 8, 5, 9], pivot: [4, 5, 6], parent: 'body' },
+      ears:  { box: [0, 2, 9, 8, 6, 13], pivot: [4, 3.5, 9], parent: 'head' },
+      tail:  { box: [1, 13, 3, 7, 24, 20], pivot: [4, 15.5, 4.5], parent: 'body' },
+      legFL: { box: [0, 4, 0, 3, 9, 3], pivot: [2.5, 6.5, 4], parent: 'body' },
+      legFR: { box: [5, 4, 0, 8, 9, 3], pivot: [5.5, 6.5, 4], parent: 'body' },
+      legBL: { box: [0, 9, 0, 3, 15, 3], pivot: [2, 12, 4.5], parent: 'body' },
+      legBR: { box: [5, 9, 0, 8, 15, 3], pivot: [6, 12, 4.5], parent: 'body' }
+    };
+    var ORDER = Object.keys(PARTS), PIV = {};
+    for (i = 0; i < ORDER.length; i++) PIV[ORDER[i]] = PARTS[ORDER[i]].pivot;
+    var clip = Rig(ORDER, PIV, 'body', {
+      FL: { part: 'legFL', foot: [2.5, 6, 0], L: 4, auto: false },
+      FR: { part: 'legFR', foot: [5.5, 6, 0], L: 4, auto: false },
+      BL: { part: 'legBL', foot: [2, 11, 0], L: 4.5, auto: false },
+      BR: { part: 'legBR', foot: [6, 11, 0], L: 4.5, auto: false }
+    }).clip;
+    function SR(h, e, t) { return { head: h || [0, 0, 0], ears: e || [0, 0, 0], tail: t || [0, 0, 0] }; }
+    function W(base, over) { var o = M(base, {}), k; for (k in over) o[k] = over[k]; return o; }
+
+    var FG = { b: [14, 0, 0, 0, 0, -0.4], rot: SR([38, 0, 0], [6, 0, 0], [-6, 0, 0]) };
+    function fg(h, extra) { return W(M(FG, { rot: SR(h, [6, 0, 0], [-6, 0, 0]) }), extra || {}); }
+    var CHEW = { b: [4, 0, 0, 0, 0, 0], rot: SR([0, 0, 0], [4, 0, 0], [6, 0, 0]) };
+    var AL = { b: [-6, 0, 0, 0, 0, 0.3], rot: SR([-14, 0, 0], [10, 0, 0], [4, 0, 0]) };
+    // on the trunk: body pitched -90 (nose up, belly and paws to the trunk), tail laid down along the bark
+    var FREE0 = { free: [0, 0, 0] };
+    var CL = { b: [-90, 0, 0, 0, 2, 11], rot: SR([-25, 0, 0], [-6, 0, 0], [-70, 0, 0]), FL: FREE0, FR: FREE0, BL: FREE0, BR: FREE0 };
+    function cl(over) { return M(CL, over); }
+
+    var animations = {
+      idle: clip([
+        [500, {}],
+        [100, { rot: SR([-6, 0, -22]) }],
+        [600, { rot: SR([-6, 0, -22], [0, 0, -8]) }],
+        [100, { rot: SR([-6, 0, -22], [0, 0, -8], [10, 0, 0]) }],
+        [100, { rot: SR([-6, 0, -22], [0, 0, -8], [-4, 0, 0]) }],
+        [100, { rot: SR([-6, 0, -22], [0, 0, -8], [10, 0, 6]) }],
+        [100, { rot: SR([-6, 0, -22], [0, 0, -8], [0, 0, 0]) }],
+        [100, { rot: SR([-4, 0, 18], [0, 0, 8]) }],
+        [700, { rot: SR([-4, 0, 18], [0, 0, 8]) }],
+        [100, { rot: SR([5, 0, 4]) }],
+        [100, { rot: SR([0, 0, 0]) }],
+        [600, { b: [0, 0, 0, 0, 0, 0.15], rot: SR([2, 0, 0], null, [3, 0, 0]) }],
+        [400, {}]
+      ], true),
+      forage: clip([
+        [300, FG],
+        [150, fg([38, 0, 0], { FL: { dy: -0.8, lift: 1.2 } })],
+        [150, fg([38, 0, 0], { FR: { dy: -0.8, lift: 1.2 } })],
+        [150, fg([38, 0, 0], { FL: { dy: -0.8, lift: 1.2 } })],
+        [150, fg([38, 0, 0], { FR: { dy: 0.4 } })],
+        [300, fg([38, 0, -8])],
+        [200, fg([40, 0, 6])],
+        [150, fg([36, 0, 0])],
+        [400, CHEW],
+        [100, M(CHEW, { rot: SR([4, 0, 0], [4, 0, 0], [6, 0, 0]) })],
+        [100, CHEW],
+        [100, M(CHEW, { rot: SR([4, 0, -6], [4, 0, 0], [6, 0, 0]) })],
+        [100, M(CHEW, { rot: SR([0, 0, -6], [4, 0, 0], [6, 0, 0]) })],
+        [450, FG]
+      ], true),
+      hop: clip([
+        [50, { b: [-3, 0, 0, 0, 0, -0.3], rot: SR([2, 0, 0], [-6, 0, 0], [4, 0, 0]),
+               FL: { free: [30, 0, 0], up: 0.6 }, FR: { free: [30, 0, 0], up: 0.6 }, BL: { dy: 0.6, rx: 6 }, BR: { dy: 0.6, rx: 6 } }],
+        [50, { b: [-8, 0, 0, 0, 0, 0.2], rot: SR([4, 0, 0], [-8, 0, 0], [0, 0, 0]),
+               FL: { free: [-30, 0, 0], up: 0.4 }, FR: { free: [-30, 0, 0], up: 0.4 }, BL: { dy: 1.8, rx: 25 }, BR: { dy: 1.8, rx: 25 } }],
+        [50, { b: [-2, 0, 0, 0, 0, 2.2], rot: SR([1, 0, 0], [-12, 0, 0], [-10, 0, 0]),
+               FL: { free: [-45, 0, 0] }, FR: { free: [-45, 0, 0] }, BL: { free: [40, 0, 0] }, BR: { free: [40, 0, 0] } }],
+        [50, { b: [10, 0, 0, 0, 0, 1.4], rot: SR([-5, 0, 0], [-10, 0, 0], [-14, 0, 0]),
+               FL: { free: [-20, 0, 0] }, FR: { free: [-20, 0, 0] }, BL: { free: [10, 0, 0] }, BR: { free: [10, 0, 0] } }],
+        [50, { b: [14, 0, 0, 0, 0, 0.4], rot: SR([-8, 0, 0], [-4, 0, 0], [-8, 0, 0]),
+               FL: { dy: -1.8, rx: -15 }, FR: { dy: -1.8, rx: -15 }, BL: { free: [-15, 0, 0], up: 0.4 }, BR: { free: [-15, 0, 0], up: 0.4 } }],
+        [50, { b: [8, 0, 0, 0, 0, 0], rot: SR([-5, 0, 0], [-4, 0, 0], [0, 0, 0]),
+               FL: { dy: -0.6, rx: -5 }, FR: { dy: -0.6, rx: -5 }, BL: { free: [-30, 0, 0], up: 1.2 }, BR: { free: [-30, 0, 0], up: 1.2 } }],
+        [50, { b: [2, 0, 0, 0, 0, -0.2], rot: SR([-1, 0, 0], [-6, 0, 0], [6, 0, 0]),
+               FL: { dy: 0.6, rx: 8 }, FR: { dy: 0.6, rx: 8 }, BL: { dy: -1.8, rx: -6 }, BR: { dy: -1.8, rx: -6 } }],
+        [50, { b: [0, 0, 0, 0, 0, -0.3], rot: SR([0, 0, 0], [-6, 0, 0], [6, 0, 0]),
+               FL: { dy: 1.8, rx: 20 }, FR: { dy: 1.8, rx: 20 }, BL: { dy: -0.6 }, BR: { dy: -0.6 } }]
+      ], true),
+      run: clip([
+        [50, { b: [-8, 0, 0, 0, 0, 0.3], rot: SR([6, 0, 0], [-25, 0, 0], [-30, 0, 0]),
+               FL: { free: [-55, 0, 0], up: 0.4 }, FR: { free: [-50, 0, 0], up: 0.4 }, BL: { dy: 1.2, rx: 30 }, BR: { dy: 1.2, rx: 30 } }],
+        [50, { b: [-2, 0, 0, 0, 0, 2.8], rot: SR([4, 0, 0], [-28, 0, 0], [-36, 0, 0]),
+               FL: { free: [-60, 0, 0] }, FR: { free: [-55, 0, 0] }, BL: { free: [55, 0, 0] }, BR: { free: [55, 0, 0] } }],
+        [50, { b: [8, 0, 0, 0, 0, 2.4], rot: SR([0, 0, 0], [-26, 0, 0], [-34, 0, 0]),
+               FL: { free: [-15, 0, 0] }, FR: { free: [-25, 0, 0] }, BL: { free: [15, 0, 0], up: 0.8 }, BR: { free: [20, 0, 0], up: 0.8 } }],
+        [50, { b: [14, 0, 0, 0, 0, 0.5], rot: SR([-6, 0, 0], [-22, 0, 0], [-28, 0, 0]),
+               FL: { dy: -2.4, rx: -20 }, FR: { free: [-30, 0, 0], up: 0.8 }, BL: { free: [-20, 0, 0], up: 1.2 }, BR: { free: [-20, 0, 0], up: 1.2 } }],
+        [50, { b: [10, 0, 0, 0, 0, 0.2], rot: SR([-4, 0, 0], [-24, 0, 0], [-30, 0, 0]),
+               FL: { dy: 0, rx: 5 }, FR: { dy: -1.6, rx: -12 }, BL: { free: [-50, 0, 0], up: 1.6 }, BR: { free: [-50, 0, 0], up: 1.6 } }],
+        [50, { b: [0, 0, 0, 0, 0, -0.2], rot: SR([2, 0, 0], [-25, 0, 0], [-32, 0, 0]),
+               FL: { free: [35, 0, 0], up: 0.8 }, FR: { dy: 1.6, rx: 25 }, BL: { dy: -2.4, rx: -10 }, BR: { dy: -2, rx: -8 } }]
+      ], true),
+      alert: clip([
+        [700, AL],
+        [100, M(AL, { rot: SR([-14, 0, 0], [10, 0, 0], [14, 0, 0]) })],
+        [100, M(AL, { rot: SR([-14, 0, 0], [10, 0, 0], [0, 0, 0]) })],
+        [100, M(AL, { rot: SR([-14, 0, 0], [10, 0, 0], [14, 0, 6]) })],
+        [100, AL],
+        [500, M(AL, { rot: SR([-12, 0, 20], [10, 0, 10], [4, 0, 0]) })],
+        [600, M(AL, { rot: SR([-12, 0, 20], [10, 0, 10], [4, 0, 0]) })],
+        [100, M(AL, { rot: SR([-14, 0, -6], [10, 0, 0], [12, 0, -6]) })],
+        [100, AL],
+        [400, AL]
+      ], true),
+      climb: clip([
+        [100, cl({ FL: { free: [15, 0, 0] }, FR: { free: [20, 0, 0] }, BL: { free: [-35, 0, 0], up: 0.6 }, BR: { free: [-30, 0, 0], up: 0.6 } })],
+        [100, cl({ b: [-92, 0, 0, 0, 2, 12], rot: SR([-30, 0, 0], [-10, 0, 0], [-66, 0, 0]),
+                   FL: { free: [-35, 0, 0] }, FR: { free: [-30, 0, 0] }, BL: { free: [20, 0, 0] }, BR: { free: [25, 0, 0] } })],
+        [100, cl({ b: [-90, 0, 0, 0, 2, 12.5], FL: { free: [-15, 0, 0] }, FR: { free: [-12, 0, 0] }, BL: { free: [10, 0, 0] }, BR: { free: [12, 0, 0] } })],
+        [100, cl({ b: [-88, 0, 0, 0, 2, 11.5], FL: { free: [5, 0, 0] }, FR: { free: [8, 0, 0] }, BL: { free: [-15, 0, 0], up: 0.3 }, BR: { free: [-12, 0, 0], up: 0.3 } })]
+      ], true),
+      peek: clip([
+        [600, CL],
+        [300, cl({ b: [-90, 0, 0, -1.5, 2, 11], rot: SR([-20, 0, -40], [4, 0, -10], [-70, 0, 0]) })],
+        [800, cl({ b: [-90, 0, 0, -1.5, 2, 11], rot: SR([-20, 0, -40], [4, 0, -10], [-70, 0, 0]) })],
+        [100, cl({ b: [-90, 0, 0, -1.5, 2, 11], rot: SR([-18, 0, -34], [4, 0, -10], [-60, 0, 0]) })],
+        [300, CL],
+        [400, CL],
+        [300, cl({ b: [-90, 0, 0, 1.5, 2, 11], rot: SR([-20, 0, 40], [4, 0, 10], [-70, 0, 0]) })],
+        [600, cl({ b: [-90, 0, 0, 1.5, 2, 11], rot: SR([-22, 0, 38], [4, 0, 10], [-64, 0, 0]) })],
+        [300, CL]
+      ], true)
+    };
+
+    A.models.squirrel = {
+      name: 'squirrel',
+      displayName: 'red squirrel',
+      desc: 'v1.58 EP-WILD: red squirrel, 0.34 m with the tail: rusty-red coat, cream belly, big dark eyes with a pale ' +
+            'ring, tufted ears, long hind feet, bushy S-curved tail over the back. 8 parts: idle, forage, hop, run, alert, ' +
+            'climb + peek (body pitched -90 deg on a trunk inside the clip).',
+      voxel: {
+        version: 1,
+        meshOnly: true,
+        cellM: 0.015,
+        size: [SX, SY, SZ],
+        anchor: [4, 9, 0],
+        light: false,
+        mats: {
+          R: 'hair_auburn_light',  // rusty-red coat, tail
+          O: 'fur_fox_light',      // bright orange: flanks, muzzle, ear fronts, tail fringe, toes
+          T: 'hair_auburn_dark',   // ear tufts, dark hairs on back / tail, heels
+          G: 'hair_brown',         // grey-brown hairs on the flanks
+          W: 'fur_cream',          // belly, chin, throat, eye ring
+          N: 'skin_deep',          // nose
+          E: 'iron_dark',          // eyes
+          S: 'linen_light'         // eye catch-light
+        },
+        layers: g.layers(),
+        parts: PARTS,
+        animations: animations,
+        mounts: {
+          eyes:   { at: [4, 3, 7.5], part: 'head' },
+          nose:   { at: [4, 0, 6.5], part: 'head' },
+          tail:   { at: [4, 20, 11], part: 'tail' },
+          center: { at: [4, 10, 5], part: 'body' }
+        }
+      }
+    };
+  })();
+
+  // =================================================================================================================
+  // SONGBIRDS (v1.58): one shape, two coats - `robin` (European robin: orange face and breast, grey border, olive-brown
+  //   back, white belly) and `finch` (male chaffinch: blue-grey crown, pink-brick breast, chestnut back, olive rump,
+  //   black wings with white bars, white outer tail). cellM 0.01, grid 23 x 16 x 10, anchor [11.5, 6.5, 0] (the feet
+  //   = the perch point). 16 cm beak to tail, wingspan 23 cm, 8 cm tall perched. Round body, small round head, dark eye
+  //   with a catch-light, thin beak, two thin legs with toes.
+  //   Parts (6): body [9,5,2, 14,11,8] pivot [11.5,6.5,3]; head (+ neck) [8,0,3, 15,5,9] pivot [11.5,4.5,5.5];
+  //              tail [9,11,3, 14,16,8] pivot [11.5,11,5.5]; wingL [0,4,6, 9,11,7] pivot [8.6,5.5,6.5];
+  //              wingR [14,4,6, 23,11,7] pivot [14.4,5.5,6.5]; legs (both, hop together) [9,4,0, 14,9,2] pivot [11.5,6.5,2].
+  //   Clips: perch 3.5 s, hop 0.35 s (0.3 m/s), peck 1.6 s, takeoff once 0.3 s, flap 0.5 s (3 beats + a closed-wing
+  //          bound), glide 1.0 s, land once 0.4 s, alert 2.0 s.
+  // CROW (carrion crow; also ROOK, the talking crow of the quest line): cellM 0.02, grid 39 x 26 x 13, anchor
+  //   [19.5, 8.5, 0]. 0.50 m beak to tail, wingspan 0.78 m, 0.24 m tall. All black with a faint sheen (hair_black_light
+  //   flecks), stout grey-black beak whose LOWER MANDIBLE is its own part (caw / talk), dark brown eyes with a
+  //   catch-light, fingered wing tips, rounded tail, two legs (crows walk).
+  //   Parts (8): body [17,6,4, 22,16,11] pivot [19.5,8.5,5]; head [16,0,8, 23,6,13] pivot [19.5,5.5,8.5];
+  //              jaw [18,0,6, 21,3,8] pivot [19.5,2.5,8] (rx + = open); tail [17,16,4, 23,26,9] pivot [19.5,16,7.5];
+  //              wingL [0,6,9, 17,15,10] pivot [16.6,7.5,9.5]; wingR [22,6,9, 39,15,10] pivot [22.4,7.5,9.5];
+  //              legL [17,5,0, 19,11,4] pivot [18.5,8.5,4]; legR [20,5,0, 22,11,4] pivot [20.5,8.5,4].
+  //   Clips: the songbird set (slower beats) + walk 0.4 s (0.25 m/s), tilt 3.0 s (Rook's curious head tilt), caw 1.2 s,
+  //          talk 1.0 s (beak flaps for dialogue).
+  // =================================================================================================================
+  (function () {
+    var SONG = {
+      SX: 23, SY: 16, SZ: 10, seed: 61,
+      body: [[5, 4.7, 2.7, 2.6], [6, 4.6, 2.8, 2.7], [7, 4.6, 2.7, 2.6], [8, 4.7, 2.4, 2.3], [9, 4.9, 2.0, 1.9], [10, 5.1, 1.5, 1.4]],
+      bodyZMin: 2,
+      neck: [[3, 5.0, 1.8, 1.8], [4, 4.8, 2.4, 2.4]], neckZMin: 3,
+      head: [2.4, 6.6, 1.6, 1.7, 1.6], headZMin: 0,
+      bodyRole: function (rel, y, h) {
+        if (rel > 0.55) return y >= 9 ? 'U' : (h < 0.2 ? 'D' : 'O');      // back, rump
+        if (y <= 6 && rel < 0.3) return 'R';                              // breast
+        if (y === 7 && rel > -0.45 && rel < 0.3) return 'R';
+        if (rel < 0.3) return 'W';                                        // belly, undertail
+        return y <= 7 ? 'g' : 'O';                                        // grey border of the breast / flank
+      },
+      headRole: function (ry, rz, h) {
+        if (rz > 0.5) return ry > 0.3 ? 'O' : 'C';                        // crown / nape
+        if (ry < 0.25 || rz < -0.2) return 'R';                           // face, throat
+        return ry > 0.5 ? 'O' : 'g';
+      },
+      wingLen: 9, wingRootX: 8, wingZ: 6,
+      wingProf: function (d) { return [range(5, 8), range(5, 9), range(5, 9), range(5, 9), range(6, 9), range(6, 10), range(7, 10), range(8, 10), range(9, 10)][d]; },
+      wingRole: function (d, r, h) { if (r === 0) return 'O'; if (r === 1 && d <= 5) return 'V'; return h < 0.15 ? 'O' : 'D'; },
+      extra: function (g) {
+        var y;
+        for (y = 11; y <= 15; y++) g.put(11, y, 5, 'D');                  // tail: dark centre feathers
+        for (y = 12; y <= 15; y++) g.sym(10, y, 5, 'T');                  // outer tail feathers
+        g.put(11, 0, 6, 'B');                                             // thin beak
+        g.paint(10, 2, 6, 'E'); g.paint(10, 2, 7, 'S');                   // eye + catch-light
+        g.sym(10, 6, 1, 'K'); g.sym(10, 6, 0, 'K'); g.sym(10, 5, 0, 'K'); g.sym(10, 7, 0, 'K');   // legs, toes
+      }
+    };
+    var songLayers = buildBirdLayers(SONG);
+    var SONG_PARTS = {
+      body:  { box: [9, 5, 2, 14, 11, 8], pivot: [11.5, 6.5, 3] },
+      head:  { box: [8, 0, 3, 15, 5, 9], pivot: [11.5, 4.5, 5.5], parent: 'body' },
+      tail:  { box: [9, 11, 3, 14, 16, 8], pivot: [11.5, 11, 5.5], parent: 'body' },
+      wingL: { box: [0, 4, 6, 9, 11, 7], pivot: [8.6, 5.5, 6.5], parent: 'body' },
+      wingR: { box: [14, 4, 6, 23, 11, 7], pivot: [14.4, 5.5, 6.5], parent: 'body' },
+      legs:  { box: [9, 4, 0, 14, 9, 2], pivot: [11.5, 6.5, 2], parent: 'body' }
+    };
+    var SONG_K = { pitch: -22, tail: 10, up: 65, down: -45, glide: 8, hopZ: 2.5, peck: 35, peckHead: 43, beatMs: 50, bound: true };
+    function songbird(name, displayName, desc, mats) {
+      return {
+        name: name, displayName: displayName, desc: desc,
+        voxel: {
+          version: 1, meshOnly: true, cellM: 0.01, size: [SONG.SX, SONG.SY, SONG.SZ], anchor: [11.5, 6.5, 0], light: false,
+          mats: mats, layers: songLayers, parts: SONG_PARTS,
+          animations: birdClips(Object.keys(SONG_PARTS), SONG_K),
+          mounts: {
+            eyes:   { at: [11.5, 2.5, 6.5], part: 'head' },
+            beak:   { at: [11.5, 0, 6.5], part: 'head' },
+            feet:   { at: [11.5, 6.5, 0], part: 'legs' },
+            center: { at: [11.5, 7, 4.5], part: 'body' }
+          }
+        }
+      };
+    }
+    A.models.robin = songbird('robin', 'robin',
+      'v1.58 EP-WILD songbird (robin coat): 16 cm, orange face and breast with a grey border, olive-brown back and ' +
+      'wings, white belly, dark eye with a catch-light. 6 parts: perch, hop, peck, takeoff, flap, glide, land, alert.',
+      { O: 'dye_walnut_light', C: 'dye_walnut_light', U: 'dye_walnut_light', R: 'fur_fox', g: 'hair_grey_light', W: 'fur_cream',
+        D: 'dye_walnut', V: 'hair_brown_light', T: 'dye_walnut', B: 'iron_dark', K: 'skin_shade', E: 'iron_dark', S: 'linen_light' });
+    A.models.finch = songbird('finch', 'chaffinch',
+      'v1.58 EP-WILD songbird (male chaffinch coat): blue-grey crown and nape, pink-brick face and breast, chestnut back, ' +
+      'olive rump, dark wings with a white bar, white outer tail. Same shape and clips as the robin.',
+      { O: 'hair_brown', C: 'dye_woad_light', U: 'dye_lincoln_light', R: 'dye_madder_light', g: 'dye_woad_light', W: 'fur_cream',
+        D: 'hair_black_light', V: 'linen_light', T: 'linen_light', B: 'dye_gall_light', K: 'skin_shade', E: 'iron_dark', S: 'linen_light' });
+
+    var CROW = {
+      SX: 39, SY: 26, SZ: 13, seed: 71,
+      body: [[6, 7.0, 2.4, 2.2], [7, 6.8, 2.9, 2.7], [8, 6.7, 3.1, 2.9], [9, 6.6, 3.2, 3.0], [10, 6.6, 3.1, 2.9],
+             [11, 6.7, 2.9, 2.7], [12, 6.8, 2.6, 2.4], [13, 7.0, 2.2, 2.0], [14, 7.2, 1.8, 1.6], [15, 7.4, 1.4, 1.2]],
+      bodyZMin: 4,
+      neck: [[5, 8.6, 1.9, 2.0]], neckZMin: 8,
+      head: [3.8, 9.6, 1.9, 2.1, 2.0], headZMin: 8,
+      bodyRole: function (rel, y, h) { return h < 0.18 ? 'R' : (rel < -0.5 ? 'W' : 'O'); },
+      headRole: function (ry, rz, h) { return h < 0.15 ? 'R' : 'O'; },
+      wingLen: 17, wingRootX: 16, wingZ: 9,
+      wingProf: function (d) {
+        if (d <= 2) return range(7, 12);
+        if (d <= 8) return range(7, 13);
+        if (d <= 11) return range(8, 13);
+        if (d <= 13) return range(9, 13);
+        if (d === 14) return [9, 11, 13];                                  // fingered primaries (slots between)
+        if (d === 15) return [10, 12];
+        return [11, 13];
+      },
+      wingRole: function (d, r, h) { if (r === 0 && d <= 11) return 'V'; return h < 0.2 ? 'R' : 'D'; },
+      extra: function (g) {
+        var y, dx;
+        for (y = 16; y <= 24; y++) {                                       // rounded tail, drooping a little
+          var tz = y <= 20 ? 7 : 6, w = (y <= 18 || y === 24) ? 1 : 2;
+          for (dx = 0; dx <= w; dx++) g.sym(19 - dx, y, tz, dx === 0 ? 'D' : (hash(dx, y, tz, 77) < 0.3 ? 'R' : 'D'));
+        }
+        g.put(19, 0, 8, 'B'); g.put(19, 1, 8, 'B'); g.put(19, 1, 9, 'B');    // upper mandible (head), arched tip
+        g.put(19, 1, 7, 'B'); g.put(19, 2, 7, 'B');                          // lower mandible (jaw part)
+        g.paint(18, 3, 9, 'E'); g.paint(18, 3, 10, 'S');                     // dark brown eye + catch-light
+        g.sym(18, 8, 1, 'K'); g.sym(18, 8, 2, 'K'); g.sym(18, 8, 3, 'O');    // tarsus, feathered thigh
+        g.sym(18, 6, 0, 'K'); g.sym(18, 7, 0, 'K'); g.sym(18, 8, 0, 'K'); g.sym(18, 9, 0, 'K');   // toes (3 front, 1 back)
+      }
+    };
+    var CROW_PARTS = {
+      body:  { box: [17, 6, 4, 22, 16, 11], pivot: [19.5, 8.5, 5] },
+      head:  { box: [16, 0, 8, 23, 6, 13], pivot: [19.5, 5.5, 8.5], parent: 'body' },
+      jaw:   { box: [18, 0, 6, 21, 3, 8], pivot: [19.5, 2.5, 8], parent: 'head' },
+      tail:  { box: [17, 16, 4, 23, 26, 9], pivot: [19.5, 16, 7.5], parent: 'body' },
+      wingL: { box: [0, 6, 9, 17, 15, 10], pivot: [16.6, 7.5, 9.5], parent: 'body' },
+      wingR: { box: [22, 6, 9, 39, 15, 10], pivot: [22.4, 7.5, 9.5], parent: 'body' },
+      legL:  { box: [17, 5, 0, 19, 11, 4], pivot: [18.5, 8.5, 4], parent: 'body' },
+      legR:  { box: [20, 5, 0, 22, 11, 4], pivot: [20.5, 8.5, 4], parent: 'body' }
+    };
+    A.models.crow = {
+      name: 'crow',
+      displayName: 'crow',
+      desc: 'v1.58 EP-WILD: carrion crow (also Rook, the talking crow), 0.50 m: glossy black with faint sheen, stout ' +
+            'grey-black beak with a moving lower mandible, dark brown eyes with a catch-light, fingered wing tips, ' +
+            'rounded tail, walks on two legs. 8 parts: perch, hop, walk, peck, takeoff, flap, glide, land, alert, tilt, caw, talk.',
+      voxel: {
+        version: 1, meshOnly: true, cellM: 0.02, size: [CROW.SX, CROW.SY, CROW.SZ], anchor: [19.5, 8.5, 0], light: false,
+        mats: { O: 'hair_black', R: 'hair_black_light', W: 'hair_black_dark', D: 'hair_black_dark', V: 'hair_black_light',
+                B: 'iron_dark', K: 'hair_black_dark', E: 'eye_brown', S: 'linen_light' },
+        layers: buildBirdLayers(CROW),
+        parts: CROW_PARTS,
+        animations: birdClips(Object.keys(CROW_PARTS),
+          { pitch: -10, tail: 2, up: 50, down: -40, glide: 6, hopZ: 2, peck: 45, peckHead: 40, beatMs: 100, bound: false, crow: true }),
+        mounts: {
+          eyes:   { at: [19.5, 3.5, 9.5], part: 'head' },
+          beak:   { at: [19.5, 0, 8.5], part: 'head' },
+          center: { at: [19.5, 10, 6.5], part: 'body' },
+          talk:   { at: [19.5, 1, 7.5], part: 'jaw' }       // speech-bubble / caw anchor
+        }
+      }
+    };
+  })();
+
+  // =================================================================================================================
   // ASSETS.wildlifeFx - presentation data for the ambient wildlife system (architect designs the system next; no game
   // logic here). Distances in metres from the player, speeds in m/s, times in seconds.
   // =================================================================================================================
@@ -699,6 +1565,8 @@
         flee: { turnDegPerS: 540, zigzagDeg: 35, zigzagEveryS: 0.5, maxDistM: 30, hideOrDespawn: true },
         blendMs: 120,
         groupSize: [1, 3],
+        kind: 'ground',
+        spawn: { kind: 'ground', habitats: ['meadow', 'edge'], cellChance: 0.35, spawnMinM: 35, spawnMaxM: 60, despawnM: 75, drawM: 35, cap: 10 },
         habitat: 'meadow edges, path verges, forest clearings; never deep forest',
         note: 'Gait rate = speed / tunedMps clamped to `rate`: the hop keeps its planted feet still at 0.6 m/s; the run ' +
               'touches the ground for only 50 ms per foot, so it can play at 1.0-1.6x for any flee speed (foot slip is ' +
@@ -720,10 +1588,108 @@
         blendMs: 150,
         groupSize: [1, 4],
         buckChance: 0.3,
+        kind: 'ground',
+        spawn: { kind: 'ground', habitats: ['edge', 'meadow', 'forest'], cellChance: 0.15, spawnMinM: 45, spawnMaxM: 120, despawnM: 150, drawM: 90, cap: 6 },
         habitat: 'forest edges and clearings, meadows at the forest line',
         note: 'Gait rate = speed / tunedMps clamped to `rate`. alert = head up, frozen, a forefoot stamp; then flee ' +
               '(gallop, tail up = white rump flag) or back to graze / idle. Trot = the first second of a flee or a ' +
               'nervous move away.'
+      },
+      // ---- v1.58 (EP-WILD step 2): fox, squirrel, songbirds, crow. Spawn blocks = WILD-D4 (38.31 item 2), modest
+      // densities; habitats: 'forest' | 'edge' (forest line, clearings) | 'meadow' | 'riverbank' (the game maps them to
+      // its habitatAt mask). Every species: 'once' clips chain to their next clip, 'extra' = optional clips.
+      fox: {
+        models: ['fox'],
+        kind: 'ground',
+        clipFor: { idle: 'idle', graze: 'sniff', move: 'walk', flee: 'run', alert: 'alert' },
+        extra: { trot: 'trot', pounce: 'pounce' },     // trot = nervous move / first second of a flee; pounce = mousing
+        once: { pounce: 'sniff' },
+        gaits: [
+          { clip: 'walk', tunedMps: 0.67, minMps: 0.3, maxMps: 1.3, rate: [0.6, 1.8] },
+          { clip: 'trot', tunedMps: 1.9, minMps: 1.3, maxMps: 4.0, rate: [0.7, 1.6] },
+          { clip: 'run', tunedMps: 8.0, minMps: 4.0, maxMps: 12.0, rate: [0.6, 1.5] }
+        ],
+        speeds: { wander: 0.7, nervous: 1.9, flee: 8.0 },
+        dist: { notice: 30, alert: 22, flee: 14, fleeIfRunning: 22, safe: 50 },
+        times: { idle: [3, 7], graze: [5, 14], alert: [1.5, 4], wanderM: [4, 15], pounceEveryS: [8, 25] },
+        flee: { turnDegPerS: 300, maxDistM: 60, hideOrDespawn: true },
+        blendMs: 130,
+        groupSize: [1, 1],
+        spawn: { kind: 'ground', habitats: ['forest', 'edge', 'meadow'], cellChance: 0.06, spawnMinM: 40, spawnMaxM: 90, despawnM: 112, drawM: 60, cap: 2 },
+        habitat: 'forest edges and meadows at dusk-like light; hunts mice in long grass (sniff -> pounce)',
+        note: 'graze = sniff (nose on the ground). pounce is a once clip played from sniff now and then (times.pounceEveryS), ' +
+              'in place (no root motion: the body rises 25 cm and dives back). alert = the frozen fox with a raised forepaw.'
+      },
+      squirrel: {
+        models: ['squirrel'],
+        kind: 'climber',
+        clipFor: { idle: 'idle', graze: 'forage', move: 'hop', flee: 'run', alert: 'alert' },
+        climb: { clip: 'climb', peek: 'peek', tunedMps: 1.2, rate: [0.6, 1.6], heightM: [2, 5], bodyLiftM: 0.165,
+                 note: 'climb/peek have the body pitched -90 deg in the clip; instance yaw faces the trunk, instance x/y on ' +
+                       'the trunk surface (paws on the instance y plane), instance z = height of the paws minus 0.165 m.' },
+        gaits: [
+          { clip: 'hop', tunedMps: 0.36, minMps: 0.1, maxMps: 0.8, rate: [0.6, 2.0] },
+          { clip: 'run', tunedMps: 1.35, minMps: 0.8, maxMps: 4.0, rate: [1.0, 2.6] }
+        ],
+        speeds: { wander: 0.4, flee: 3.5 },
+        dist: { notice: 14, alert: 10, flee: 6, fleeIfRunning: 10, safe: 25 },
+        times: { idle: [2, 5], graze: [3, 8], alert: [1, 3], wanderHopM: [0.5, 3], peek: [3, 8] },
+        flee: { toTrunk: true, turnDegPerS: 600, maxDistM: 20, hideOrDespawn: false },
+        blendMs: 100,
+        groupSize: [1, 2],
+        spawn: { kind: 'climber', habitats: ['forest'], cellChance: 0.3, spawnMinM: 25, spawnMaxM: 50, despawnM: 62, drawM: 25, cap: 6 },
+        habitat: 'forest floor near trunks (oak, pine); flees up the nearest trunk'
+      },
+      songbird: {
+        models: ['robin', 'finch'],
+        kind: 'flyer',
+        clipFor: { idle: 'perch', graze: 'peck', move: 'hop', flee: 'flap', alert: 'alert' },
+        flight: { takeoff: 'takeoff', flap: 'flap', glide: 'glide', land: 'land', perch: 'perch', speedMps: [6, 9],
+                  cruiseAboveCanopyM: [3, 6], landLastM: 1.5 },
+        once: { takeoff: 'flap', land: 'perch' },
+        gaits: [{ clip: 'hop', tunedMps: 0.3, minMps: 0.05, maxMps: 0.8, rate: [0.6, 1.8] }],
+        speeds: { wander: 0.3, flee: 7.5 },
+        dist: { notice: 14, alert: 9, flee: 6, fleeIfRunning: 10, safe: 30 },
+        times: { idle: [3, 10], graze: [2, 6], alert: [0.5, 2], perchS: [6, 25] },
+        blendMs: 80,
+        groupSize: [1, 4],
+        variantChance: { robin: 0.5, finch: 0.5 },
+        spawn: { kind: 'flyer', habitats: ['forest', 'edge', 'meadow'], cellChance: 0.4, spawnMinM: 30, spawnMaxM: 70, despawnM: 87, drawM: 30, cap: 14 },
+        // perch ring per forest tree model: r = metres from the trunk axis, z = metres over the tree base. DERIVED from
+        // ASSETS.forestTrees trunk numbers (trunkR, trunkH = lowest canopy next to the trunk) + the lower canopy, not
+        // ray-measured on the meshes yet: re-check on preview/forest.html (WILD-D3 follow-up).
+        perchByModel: {
+          forestOakSmall:   { r: [0.9, 2.1], z: [2.8, 4.0] },
+          forestOakLarge:   { r: [1.0, 2.5], z: [3.3, 4.8] },
+          forestBirchSmall: { r: [0.8, 1.6], z: [2.9, 4.2] },
+          forestBirchLarge: { r: [0.9, 1.9], z: [3.4, 5.0] },
+          forestPineSmall:  { r: [0.8, 1.6], z: [1.6, 3.0] },
+          forestPineLarge:  { r: [0.9, 1.9], z: [1.9, 3.6] }
+        },
+        habitat: 'perches in forest and edge trees, hops and pecks on meadows and paths near cover'
+      },
+      crow: {
+        models: ['crow'],
+        kind: 'flyer',
+        clipFor: { idle: 'perch', graze: 'peck', move: 'walk', flee: 'flap', alert: 'alert' },
+        flight: { takeoff: 'takeoff', flap: 'flap', glide: 'glide', land: 'land', perch: 'perch', speedMps: [7, 11],
+                  cruiseAboveCanopyM: [5, 10], landLastM: 2.0 },
+        once: { takeoff: 'flap', land: 'perch' },
+        extra: { hop: 'hop', tilt: 'tilt', caw: 'caw', talk: 'talk' },   // Rook (quest NPC) uses tilt / talk / caw
+        gaits: [
+          { clip: 'walk', tunedMps: 0.25, minMps: 0.05, maxMps: 0.6, rate: [0.6, 1.8] },
+          { clip: 'hop', tunedMps: 0.8, minMps: 0.6, maxMps: 1.6, rate: [0.7, 1.5] }
+        ],
+        speeds: { wander: 0.3, flee: 9.0 },
+        dist: { notice: 30, alert: 20, flee: 12, fleeIfRunning: 20, safe: 45 },
+        times: { idle: [4, 12], graze: [4, 12], alert: [1, 3], perchS: [8, 30], cawEveryS: [6, 20] },
+        blendMs: 120,
+        groupSize: [1, 3],
+        spawn: { kind: 'flyer', habitats: ['meadow', 'edge', 'riverbank'], cellChance: 0.08, spawnMinM: 40, spawnMaxM: 90, despawnM: 112, drawM: 45, cap: 3 },
+        perchFrom: 'songbird',                         // same perchByModel table (the crow sits a little higher: + 0.5 m z)
+        habitat: 'meadows, field edges and riverbanks; walks and pecks in the open, perches on tall trees',
+        note: 'Rook (the talking crow of the quest line) = this model placed as an NPC: perch + tilt while idle, talk while ' +
+              'speaking (jaw part), caw on greet. Mount `talk` = the beak (speech-bubble anchor).'
       }
     },
     engineNotes: [
@@ -734,6 +1700,8 @@
   };
 
   if (typeof module === 'object' && module && module.exports) {
-    module.exports = { rabbit: A.models.rabbit, deer: A.models.deer, deerBuck: A.models.deerBuck, wildlifeFx: A.wildlifeFx };
+    module.exports = { rabbit: A.models.rabbit, deer: A.models.deer, deerBuck: A.models.deerBuck, fox: A.models.fox,
+                       squirrel: A.models.squirrel, robin: A.models.robin, finch: A.models.finch, crow: A.models.crow,
+                       wildlifeFx: A.wildlifeFx };
   }
 })(typeof window !== 'undefined' ? window : globalThis);
