@@ -8,6 +8,7 @@ Newest at the top of each table. Keep one line per bug; details go in the commit
 
 | ID | Date | Owner report (short) | Where / notes | Status |
 |---|---|---|---|---|
+| OB-042 | 2026-10-11 | (agent found) sq.rook.shiny rewards a second bow (stackMax 1) - Burl's sq.tm.nub already gives the bow | Change the reward to a sturdy bow upgrade or arrows + gear roll. | open |
 | OB-041 | 2026-10-11 | (gate found) gpucompare cloth row PASS->FAIL after today's merges | Suspect OB-039 frustum pre-cull / mesh feed change; cloth banner (CLOTH-1b2). | fixed (GPU terrain interpolates world - render origin; f32 edge ties; gpucompare 0 PASS->FAIL) |
 | OB-040 | 2026-10-11 | (gate found) Continue loads the player at the Bend relay (1258,1033) instead of the saved spot at the tower (1497,1027.5) | verify-m4-exit; suspects QL-T3 save v2, saveRelay zone change, placeLoaded, waystone respawn anchor. | fixed - the test script raced (game Continue was correct); verify-m4-exit PASS |
 | OB-039 | 2026-10-11 | (agent found) Sealed Gate wooden leaves sg039/sg040 never draw (a test crate there did not draw either) - doorway looks open | Suspect mesh draw caps (MAX_MESH_DRAWS 64 single draws / instance groups) - may also drop meshes elsewhere now that ~650 roadside + gate meshes were added. Architect to check. | fixed - verify (frustum cull before the 64-draw cap; F3 shows dropped) |
