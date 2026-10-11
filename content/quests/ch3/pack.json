@@ -8,7 +8,7 @@
       "title": "The Outwall Track",
       "main": true,
       "steps": [{ "template": "explore", "params": { "areas": ["owPath"] }, "objText": "Follow the track to the Outwall" }],
-      "opensAfter": ["mq.smoke"],
+      "requires": [{ "quest": "mq.smoke", "step": "north" }],
       "abandonable": false
     },
     {
@@ -16,7 +16,7 @@
       "title": "Wolves at the Fence",
       "main": true,
       "steps": [{ "template": "kill", "params": { "ids": ["wolf1", "wolf2", "wolf3", "wolf4", "wolf5"], "count": 5 }, "objText": "Drive off the wolves at the pen" }],
-      "opensAfter": ["mq.ow.path"],
+      "requires": [{ "quest": "mq.ow.path", "step": "explore" }],
       "abandonable": false
     },
     {

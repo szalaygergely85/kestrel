@@ -160,6 +160,7 @@ put('Prop_Brick2', 985.1, 1040.1, gz(985, 1040) + 0.55, 15, { scale: 1.6, collid
 
 // ---- entities
 const ground = (id, x, y, extra) => ({ id, type: 'prop', x, y, z: 'ground', ...extra });
+const wolfBeast = (id, x, y, extra) => ({ id, type: 'beast', x, y, z: 'ground', components: { brain: { home: [x, y], kind: 'beast', species: 'wolf' }, targetable: { height: 0.7, radius: 0.45 }, voxel: { anim: 'idle', loop: true, model: 'boarPlaceholder' } }, ...extra }); // QL-21: wolves are beast entities (WOLF-01 species wolf)
 const ents = [];
 const gateX = CX + HALF;
 ents.push({ id: 'relayOutwall', type: 'prop', x: 912, y: 952, yawDeg: 90, z: 'ground', components: { collider: { h: 2.2, r: 0.9 }, light: { offset: { down: -1.1 }, on: false, preset: 'relay' }, voxel: { anim: 'dead', loop: true, model: 'relay' }, waystone: { id: 'ws_outwall', kind: 'relay', label: 'place.relay.ws_outwall', order: 4 } }, note: 'MAP-26 / 38.36: dead relay #3 (anchor owRelay) at ws_outwall in the Outwall plaza; no wake yet; name key place.relay.ws_outwall' });
@@ -169,10 +170,10 @@ ents.push(ground('owForge', 912, 935, { note: 'MAP-26 anchor owForge: forge shel
 ents.push(ground('owPathPost', 985, 1040, { note: 'MAP-26 anchor owPathPost: cairn at the start of the Outwall track north-west of the ford (QL-21)' }));
 ents.push(ground('gooseFarm', 860, 990, { note: 'MAP-26 anchor gooseFarm: centre of the goose pen (QL-21 mq.ow.fence area, 5 wolves)' }));
 ents.push(ground('barleyGate', 975, 900, { note: 'MAP-26 anchor barleyGate: gate of the barley farm south-east of the settlement' }));
-ents.push(ground('pierStone', 1045, 1320, { components: { inspect: { text: 'note.pierStone' } }, note: 'MAP-26 anchor pierStone: standing stone north of the road (QL-21 sq.hw.piers, text note.pierStone = NEEDS WRITER); outside the M4 walk bounds until the lake stage' }));
+ents.push(ground('pierStone', 978, 1050, { components: { inspect: { text: 'note.pierStone' } }, note: 'MAP-26 anchor pierStone: standing stone north of the road (QL-21 sq.hw.piers, text note.pierStone = NEEDS WRITER); moved by QL-21 from (1045,1320, outside the walk bounds) to the Outwall track beside owPathPost' }));
 ents.push(ground('signArm', 985, 1062, { components: { questPickup: { item: 'signArm', n: 1 }, sprite: { anim: 'idle', frame: 0, model: 'pickupGear' } }, note: 'MAP-26 signArm pickup in the ford shallows (QL-21 sq.fc.sign: bring it to the crossroads signpost); item def design/items.js signArm' }));
 const wolves = [[150, 12], [200, 15], [250, 10], [310, 18], [100, 14]];
-wolves.forEach(([a, d], i) => ents.push(ground('wolf' + (i + 1), +(860 + Math.cos(a * Math.PI / 180) * d).toFixed(1), +(990 + Math.sin(a * Math.PI / 180) * d).toFixed(1), { note: `MAP-26 wolf spawn anchor ${i + 1} (${d} m from gooseFarm; WOLF-01 pack home)` })));
+wolves.forEach(([a, d], i) => ents.push(wolfBeast('wolf' + (i + 1), +(860 + Math.cos(a * Math.PI / 180) * d).toFixed(1), +(990 + Math.sin(a * Math.PI / 180) * d).toFixed(1), { note: `MAP-26 wolf spawn anchor ${i + 1} (${d} m from gooseFarm; WOLF-01 pack home)` })));
 smokes.forEach((s, i) => ents.push({ id: 'owSmoke' + (i + 1), type: 'prop', x: +s.x.toFixed(2), y: +s.y.toFixed(2), z: +s.z.toFixed(2), components: { emitters: [{ offset: { up: 0.1 }, on: true, preset: 'smoke' }] }, note: 'MAP-26 chimney smoke (existing emitter preset smoke) on an Outwall chimney' }));
 data.structures.push(...out); data.entities.push(...ents);
 console.log(`outwall: ${out.length} meshes (${tn} track stones), ${ents.length} entities, ${smokes.length} smokes, ground at relay ${gz(912, 952).toFixed(2)}`);
