@@ -601,7 +601,9 @@
   <script src="../../design/models/far_tower.js"></script>
   <script src="../../design/models/ferrum_lights.js"></script>
   <script src="../../design/levels/overworld_far.js"></script>
+  <script src="../../design/levels/world_geo.js"></script>
 
-  <script>window.__editorBoot.start(() => import('./main.js'));</script>
+  <script>if (window.ASSETS.levels.world_geo && new URLSearchParams(location.search).get('geo') !== '0') window.ASSETS.levels.world_geo.util.installGeo(window.ASSETS.levels.overworld_far.util); // MAP-02..05, same as game/js/main.js
+  window.__editorBoot.start(() => import('./main.js'));</script>
 </body>
 </html>

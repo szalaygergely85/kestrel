@@ -54,7 +54,10 @@
                     [1344, -92, 10], [1420, -95, 10], [1470, -96.6, 14], [1600, -97, 24], [1725, -97.5, 42], [1760, -97.6, 46]],
              fade: 128, bank: 0.4, bankW: 60, corridor: [880, 100, 1360, 1760] },
 
-    lake: { id: 'glasswater', name: 'Glasswater (P)', x: 1235, y: 505, rx: 165, ry: 90, rot: 0.2, surface: -58, depth: 10, shore: 0.3 },
+    lake: { id: 'glasswater', name: 'Glasswater (P)', x: 1235, y: 505, rx: 165, ry: 90, rot: 0.2, surface: -58, depth: 10, shore: 0.3,
+            // water region rect (content/worlds/world_m1.world.json 'glasswater'): the open water. The rest of the ellipse is a shore shelf at surface+0.8
+            // (a flat region sheet over a deeper bowl hung in the air at its edge: owner 2026-10-11).
+            pond: [1145, 470, 1325, 540], shelf: 8 },
     marsh: { id: 'reedmire', name: 'the Reedmire (P)', x: 1110, y: 1560, rx: 230, ry: 140, rot: 0.55, flatH: 0.8, blend: 0.4,
              pool: { scale: 40, threshold: 0.6 } },
 
@@ -187,6 +190,13 @@
     for (var i = 0; i < P.discs.length; i++) { var D = P.discs[i]; m *= smooth(D.r, D.r + P.margin, Math.hypot(x - D.x, y - D.y)); }
     return m;
   }
+  // Lake bowl height at e<1: deep only inside the water-region rect (floor S-depth(1-e^2)), ramping up to the shelf S+0.8 over `shelf` m before the rect edge.
+  function lakeFloor(L, e, x, y, h) {
+    var P = L.pond, dx = Math.max(P[0] - x, 0, x - P[2]), dy = Math.max(P[1] - y, 0, y - P[3]), out = Math.hypot(dx, dy);
+    var inside = Math.min(x - P[0], P[2] - x, y - P[1], P[3] - y);              // > 0 inside, depth below the rect edge
+    var d = out > 0 ? -out : inside, floor = Math.min(h, L.surface - L.depth * (1 - e * e));
+    return floor + (L.surface + 0.8 - floor) * smooth(L.shelf, 0, d);   // the shelf also fills the river valley, so the pond is dammed all round
+  }
   function riverHalfWidth(y) { var E = G.river.estuaryWiden; return 10 + E.extra * smooth(E.y0, E.y1, y); }
   function regionAt(x, y) { for (var i = 0; i < G.regions.length; i++) { var r = G.regions[i].r; if (x >= r[0] && x < r[2] && y >= r[1] && y < r[3]) return G.regions[i]; } return G.regions[G.regions.length - 1]; }
 
@@ -209,7 +219,7 @@
     if (y < 780) h += (Math.min(h, interp(Rv.bedNorth, y)) - h) * bw;
     if (y > 1280) h += (Math.min(h, interp(Rv.bedSouth, y)) - h) * bw;
     var L = G.lake; e = ell(L, x, y);
-    if (e < 1) h = Math.min(h, L.surface - L.depth * (1 - e * e)); else if (e < 1 + L.shore) h += (L.surface + 0.8 - h) * smooth(1 + L.shore, 1, e);
+    if (e < 1) h = lakeFloor(L, e, x, y, h); else if (e < 1 + L.shore) h += (L.surface + 0.8 - h) * smooth(1 + L.shore, 1, e);
     var M = G.marsh; e = ell(M, x, y);
     if (e < 1 + M.blend) { var flat = G.seaLevel + M.flatH + 0.6 * (U.fbm(x / 30, y / 30, G.seed + 51, 2, 0.5, 2) - 0.5); h += (flat - h) * smooth(1 + M.blend, 1, e); }
     var C = G.coast, c = coastSD(x, y);
@@ -356,7 +366,7 @@
       { id: 'lake', rect: bbox(L, 1 + L.shore), heightFn: function (h, x, y) {   // MAP-05: Glasswater bowl + shore lip
           var e = ell(L, x, y); if (e >= 1 + L.shore) return h;
           var m = mask(x, y); if (m <= 0) return h;
-          var hn = e < 1 ? Math.min(h, L.surface - L.depth * (1 - e * e)) : h + (L.surface + 0.8 - h) * smooth(1 + L.shore, 1, e);
+          var hn = e < 1 ? lakeFloor(L, e, x, y, h) : h + (L.surface + 0.8 - h) * smooth(1 + L.shore, 1, e);
           return h + m * (hn - h);
         } },
       { id: 'marsh', rect: bbox(M, 1 + M.blend), heightFn: function (h, x, y) {   // MAP-05: Reedmire, low flat wet ground
@@ -404,7 +414,7 @@
       { id: 'terrainTypes', rect: WORLD_RECT, typeFn: function (t, x, y, h, slope) {   // lake/marsh/snow/alpine/flowers
           if (t === 2) return 2;                                          // sea / river water is never repainted (marsh, snow)
           var e = ell(L, x, y);
-          if (e < 1) return 2;
+          if (e < 1) return h < L.surface + 0.5 ? 2 : 5;                  // open water only where the ground is under the water sheet; the shelf is sand
           if (e < 1 + L.shore * 0.6) return 5;
           if (ell(M, x, y) < 1) return U.fbm(x / M.pool.scale, y / M.pool.scale, G.seed + 53, 2, 0.5, 2) > M.pool.threshold ? 7 : 8;
           if (h > G.snowLine + 25 * (U.fbm(x / 60, y / 60, G.seed + 81, 2, 0.5, 2) - 0.5) && slope <= rockSlope) return 6;   // steep faces stay rock

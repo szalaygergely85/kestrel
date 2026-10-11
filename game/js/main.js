@@ -1543,7 +1543,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
       window.__debug.world = world;
       window.__debug.playerHandle = playerHandle;
       window.__debug.look = look;
-      window.__debug.beasts = beasts; window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; // HANDS-01b: test hooks window.__debug.getUi = () => ui; // EQ-04: verify-equip-play reads the UI cells of the Character view box
+      window.__debug.beasts = beasts; window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; window.__debug.getUi = () => ui; // HANDS-01b: test hooks; EQ-04: verify-equip-play reads the UI cells of the Character view box
       window.__debug.equipPlay = equipPlay; window.__debug.shieldSim = shieldSim; window.__debug.arrowSim = arrowSim; window.__debug.vitals = vitals; window.__debug.wakeOut = wakeOut; // EQ-07/09: tools/verify-equip-play.mjs hooks
       window.__debug.isMapOpen = isMapOpen; window.__debug.getMapPanel = getMapPanel; window.__debug.getMapChart = getMapChart; window.__debug.questBook = () => (saveRelay ? saveRelay.quest.book : null); window.__debug.questLogOpen = qlIsOpen; window.__debug.gameHooks = gameHooks; window.__debug.travel = travel; window.__debug.travelTo = (id) => travel.request(id, true); window.__debug.waystoneSim = () => (waystoneWire ? waystoneWire.sim : null); // QG-04/05: tools/verify-quest-ui.mjs hooks
       // S8-B1-15: test hook (tools/verify-map-wire.mjs)
