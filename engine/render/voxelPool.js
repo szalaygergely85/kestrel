@@ -59,6 +59,7 @@ export class VoxelPool {
     // slot across frames (no per-frame allocation once warm).
     this.raw = Array.from({ length: MAX_VOX_INSTANCES_MESH }, () => ({ model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, fromClip: -1, fromFrame: 0, fromTMs: 0, fromW: 0, scale: 1, seed: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0 }));
     this._rawCount = 0;
+    this.reserve = 0;
     // Projected + culled instances, compact 0..count-1 (list.length ===
     // stats.count after project()); each entry's `slot` index is what the
     // GPU instance rows / planeId's slot field key off.
@@ -271,7 +272,8 @@ export class VoxelPool {
     if (world !== this._entWorld || world.renderVersion !== this._entVersion) this._rebuildEnts(world);
     const ents = this._ents;
     const n = ents.length;
-    if (n <= this.cap) {
+    const ecap = this.cap - this.reserve; // `reserve` slots stay free for pushInstance feeds (ambient fauna)
+    if (n <= ecap) {
       for (let i = 0; i < n; i++) {
         // US-079b0 (37.16.1 item 1): a hidden voxel entity renders nothing.
         if (ents[i].components.voxel.hidden === true) continue;
@@ -283,7 +285,7 @@ export class VoxelPool {
     const bit = this.cap === MAX_VOX_INSTANCES_MESH ? 2 : 1;
     if (!(this._collectWarned & bit)) {
       this._collectWarned |= bit;
-      warnOnce(this, `VoxelPool.collect: ${n} voxel entities exceed cap (${this.cap}); only the nearest ${this.cap} render`);
+      warnOnce(this, `VoxelPool.collect: ${n} voxel entities exceed cap (${ecap}); only the nearest ${ecap} render`);
     }
     const cx = cam ? lodCentreX(cam) : 0, cy = cam ? lodCentreY(cam) : 0, cz = cam ? lodCentreZ(cam) : 0;
     const idx = this._nearIdx, dist = this._nearDist;
@@ -296,7 +298,7 @@ export class VoxelPool {
       const t = ents[i].transform;
       const dx = t.x - cx, dy = t.y - cy, dz = t.z - cz;
       const d2 = dx * dx + dy * dy + dz * dz;
-      if (count < this.cap) {
+      if (count < ecap) {
         let j = count - 1;
         while (j >= 0 && dist[j] > d2) { dist[j + 1] = dist[j]; idx[j + 1] = idx[j]; j--; }
         dist[j + 1] = d2; idx[j + 1] = i;

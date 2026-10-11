@@ -44,7 +44,7 @@ try {
   while (Date.now() - t0 < 40000) {
     // The headless sim never runs (no pointer lock + wake sequence) and main.js never moves the render camera, so step the fauna
     // through the dev hook and call its feed against the real game voxel pool for four view directions (= what the frame does).
-    await evaluate(cdp, '(()=>{const l=window.__debug.look, W=window.__debug.wildRaw; if(l) l.locked=true; if(W&&W.w){ for(let i=0;i<120;i++) W.w.step(1/60,1460,1035,false,0); if(W.pool){ let best=0; for(const yaw of [0,90,180,270]){ const n=W.w.feed(W.pool,{x:1460,y:1035,yawDeg:yaw}); if(n>best) best=n; } window.__wildFeedBest=best; } }})()');
+    await evaluate(cdp, '(()=>{const l=window.__debug.look, W=window.__debug.wildRaw; if(l) l.locked=true; if(W&&W.w){ for(let i=0;i<120;i++) W.w.step(1/60,1460,1035,false,0); if(W.pool){ let best=0; for(const yaw of [0,90,180,270]){ const n=W.w.feed(W.pool,{x:1460,y:1035,yawDeg:yaw}); if(n>best) best=n; } if(best===0){ const f=W.w.fauna; let bs=null,bd=1e9; for(const s of f.slots){ if(!s.alive) continue; const d=Math.hypot(s.x-1460,s.y-1035); if(d<bd){bd=d;bs=s;} } if(bs){ const yaw=Math.atan2(bs.x-1460,-(bs.y-1035))*180/Math.PI; const n=W.w.feed(W.pool,{x:bs.x-(bs.x-1460)/bd*10,y:bs.y-(bs.y-1035)/bd*10,yawDeg:yaw}); if(n>best) best=n; } } /* WILD-05: animals spawn 35-120 m out and idle, so also look at the nearest one from 10 m (what a walking player does) */ window.__wildFeedBest=best; } }})()');
     await pause(500);
     const w = await evaluate(cdp, 'JSON.stringify(window.__debug.wild)');
     const o = w && JSON.parse(w);

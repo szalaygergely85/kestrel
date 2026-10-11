@@ -1468,7 +1468,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         character: window.__charKit ? { // EQ-03/04: lazy preview + char cache, built on the first Character-tab open
           equipmentOf: () => (playerHandle && playerHandle.data.components.equipment) || null,
           getLook: () => lookOrDefault(window.__charKit, saveRelay && saveRelay.look),
-          charCache: createCharCache(window.__charKit, 4),
+          charCache: createCharCache(window.__charKit, 4), kit: window.__charKit,
           createPreview: () => createModelPreview(assets),
           onGearChanged: () => { if (hands && playerHandle) hands.step(playerHandle.data, false, false, false); },
         } : undefined,
