@@ -369,15 +369,16 @@
     var ids = Object.keys(fns); if (ids.length > 16) throw new Error('geo: > 16 fields');
     this.x0 = world.x0; this.y0 = world.y0; this.cell = 16;
     this.w = Math.ceil((world.x1 - world.x0) / 16) + 1; this.h = Math.ceil((world.y1 - world.y0) / 16) + 1;
-    this.grids = {}; this.ids = ids;
-    for (var k = 0; k < ids.length; k++) {
-      var g = new Float32Array(this.w * this.h), fn = fns[ids[k]];
-      for (var j = 0; j < this.h; j++) for (var i = 0; i < this.w; i++) g[i + j * this.w] = fn(this.x0 + i * 16, this.y0 + j * 16);
-      this.grids[ids[k]] = g;
-    }
+    this.grids = {}; this.ids = ids; this.fns = fns;      // MAP-04: grids are built lazily on first sdf(id) (or warm()), not at load
   }
+  GeoFields.prototype.build = function (id) {
+    var g = new Float32Array(this.w * this.h), fn = this.fns[id];
+    for (var j = 0; j < this.h; j++) for (var i = 0; i < this.w; i++) g[i + j * this.w] = fn(this.x0 + i * 16, this.y0 + j * 16);
+    return (this.grids[id] = g);
+  };
+  GeoFields.prototype.warm = function () { for (var k = 0; k < this.ids.length; k++) if (!this.grids[this.ids[k]]) this.build(this.ids[k]); };
   GeoFields.prototype.sdf = function (id, x, y) {   // bilinear, clamped at the grid edge; 0 alloc
-    var g = this.grids[id], fx = (x - this.x0) / 16, fy = (y - this.y0) / 16, W = this.w;
+    var g = this.grids[id] || this.build(id), fx = (x - this.x0) / 16, fy = (y - this.y0) / 16, W = this.w;
     fx = fx < 0 ? 0 : fx > W - 1.001 ? W - 1.001 : fx; fy = fy < 0 ? 0 : fy > this.h - 1.001 ? this.h - 1.001 : fy;
     var i = fx | 0, j = fy | 0, u = fx - i, v = fy - j, q = i + j * W;
     var a = g[q], b = g[q + 1], c = g[q + W], d = g[q + W + 1];
@@ -517,11 +518,14 @@
     if (hxp === undefined) { hx = (heightAt(x + e, y) - heightAt(x - e, y)) / (2 * e); hy = (heightAt(x, y + e) - heightAt(x, y - e)) / (2 * e); }
     else { hx = (hxp - hxm) / (2 * e); hy = (hyp - hym) / (2 * e); }
     var slope = Math.sqrt(hx * hx + hy * hy), dh = Math.hypot(x - T.x, y - T.y), F = R.forest, K = R.rock;
-    if (slope > K.slope || (dh > K.minHomeDist && fbm(x / K.scale, y / K.scale, s + 29, 2, 0.5, 2) > K.threshold)) return 3;
+    var rockHit = slope > K.slope || (dh > K.minHomeDist && fbm(x / K.scale, y / K.scale, s + 29, 2, 0.5, 2) > K.threshold);
+    var geoOn = GEO_N !== 0 && !inKeep(x, y);
+    if (rockHit && !geoOn) return 3;
+    if (rockHit) return geoType(3, x, y, heightAt(x, y), slope);   // MAP-02/03: sea/snow layers may override rock noise
     var base = 0;
     if (fbm(x / F.scale + 17, y / F.scale - 9, s + 13, F.octaves, 0.5, 2) > F.threshold && slope < F.maxSlope &&
         dr > F.riverClear && pathDist(x, y) > F.pathClear && dh > F.homeClear) base = 1;
-    if (GEO_N !== 0 && !inKeep(x, y)) return geoType(base, x, y, heightAt(x, y), slope);
+    if (geoOn) return geoType(base, x, y, heightAt(x, y), slope);
     return base;
   }
 

@@ -46,7 +46,13 @@
     river: { source: { name: 'Highspring tarn (P)', x: 1193, y: 130 }, mouth: { x: 1180, y: 1725 },
              estuaryWiden: { y0: 1450, y1: 1730, extra: 35 },
              bedNorth: [[100, 45], [300, -20], [420, -56], [600, -60], [760, -72]],
-             bedSouth: [[1300, -92], [1500, -95], [1730, -99]], bedWidth: 40 },
+             bedSouth: [[1300, -92], [1500, -95], [1730, -99]], bedWidth: 40,
+             // MAP-04: one polyline source -> mouth, [y, bedZ, halfWidth] (x = x_r(y)); bedZ only carves (min with the ground), halfWidth
+             // is the water band (type 2). Outside the keep only; blended in over `fade` m from the keep edge (ford y 1068 untouched).
+             // The bed falls monotonically; it ends at seaLevel - 1.5 = the sea floor at the shoreline (coast layer), so no step at the mouth.
+             poly: [[100, 45, 10], [300, -20, 10], [420, -56, 10], [600, -60, 10], [760, -72, 10], [832, -82, 10],
+                    [1344, -92, 10], [1420, -95, 10], [1470, -96.6, 14], [1600, -97, 24], [1725, -97.5, 42], [1760, -97.6, 46]],
+             fade: 128, bank: 0.4, bankW: 60, corridor: [880, 100, 1360, 1760] },
 
     lake: { id: 'glasswater', name: 'Glasswater (P)', x: 1235, y: 505, rx: 165, ry: 90, rot: 0.2, surface: -58, depth: 10, shore: 0.3 },
     marsh: { id: 'reedmire', name: 'the Reedmire (P)', x: 1110, y: 1560, rx: 230, ry: 140, rot: 0.55, flatH: 0.8, blend: 0.4,
@@ -286,7 +292,130 @@
   // far = ASSETS.levels.overworld_far.util
   function installBiomes(far) { return far.setGeoBiomes(G.biomes, biomeAreas()); }
 
-  G.util = { biomeAreas: biomeAreas, installBiomes: installBiomes, geoHeight: geoHeight, biomeAt: biomeAt, mask: mask, coastSD: coastSD, regionAt: regionAt, riverHalfWidth: riverHalfWidth,
+  // ---- MAP-02/03/05 (arch 38.42): the geography as composer layers (height + type), installed by installGeo(far) ----
+  // Same maths as geoHeight() above, split per feature in geoHeight's own order (tilt/ridges/peaks/gate -> lake -> marsh -> coast; the
+  // river bed is MAP-04's). The composer skips the keep rect by branch; outside it each layer blends in with mask(). With mask == 1
+  // (>= 150 m outside the keep) a chain of layers equals geoHeight exactly (up to the 16 m GeoFields bilinear on coast/ridge distance).
+  var WORLD_RECT = [0, 0, 4096, 4096];
+  // Field builders run once per 16 m node. The coast sd + beach flag come from ONE alloc-free pass (the first field fn fills both tables;
+  // GeoFields visits the nodes of one id at a time, in order, so the second reads the table by node index).
+  function geoFieldFns() {
+    var world = { x0: 0, y0: 0, x1: 4096, y1: 4096 }, W = Math.ceil((world.x1 - world.x0) / 16) + 1, H = W;
+    var sdT = null, kindT = null;
+    function fillCoast() {
+      var P = G.coast.pts, K = G.coast.kinds, n = P.length;
+      sdT = new Float32Array(W * H); kindT = new Uint8Array(W * H);
+      for (var j = 0; j < H; j++) for (var i = 0; i < W; i++) {
+        var x = world.x0 + i * 16, y = world.y0 + j * 16, inside = false, best = 1e18, kd = 0;
+        for (var a = 0, b = n - 1; a < n; b = a++) {
+          var xi = P[a][0], yi = P[a][1], xj = P[b][0], yj = P[b][1];
+          if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+          var dx = xi - xj, dy = yi - yj, t = ((x - xj) * dx + (y - yj) * dy) / (dx * dx + dy * dy); t = t < 0 ? 0 : t > 1 ? 1 : t;
+          var qx = xj + dx * t - x, qy = yj + dy * t - y, d = qx * qx + qy * qy;
+          if (d < best) { best = d; kd = K[b] === 'beach' ? 1 : 0; }
+        }
+        best = Math.sqrt(best); sdT[i + j * W] = inside ? -best : best; kindT[i + j * W] = kd;
+      }
+    }
+    var f = {
+      coast: function (x, y) { if (sdT === null) fillCoast(); return sdT[(x / 16) + (y / 16) * W]; },
+      beachK: function (x, y) { if (sdT === null) fillCoast(); return kindT[(x / 16) + (y / 16) * W]; }
+    };
+    G.ranges.forEach(function (R) { f[R.id] = function (x, y) { return lineDist(R.pts, x, y); }; });
+    return f;
+  }
+  function interp3(p, y, k) { if (y <= p[0][0]) return p[0][k]; for (var i = 1; i < p.length; i++) if (y <= p[i][0]) { var t = (y - p[i - 1][0]) / (p[i][0] - p[i - 1][0]); return p[i - 1][k] + t * (p[i][k] - p[i - 1][k]); } return p[p.length - 1][k]; }
+  // 0 at the keep's N/S edge, 1 at `fade` m outside it (the keep rect itself is skipped by branch in the composer)
+  function riverFade(y) { var K = root.ASSETS.levels.overworld_far.geo.keep, d = y < K.y0 ? K.y0 - y : y >= K.y1 ? y - K.y1 : 0; return smooth(0, G.river.fade, d); }
+  function geoLayers(U, rockSlope) {
+    var C = G.coast, L = G.lake, M = G.marsh, T = G.southTilt, sea = G.seaLevel;
+    function bbox(o, k) { var r = Math.max(o.rx, o.ry) * k; return [o.x - r, o.y - r, o.x + r, o.y + r]; }
+    return [
+      { id: 'ridges', rect: WORLD_RECT, heightFn: function (h0, x, y, F) {       // MAP-03: southern tilt, ranges, peaks, Sealed Gate pass
+          var m = mask(x, y); if (m <= 0) return h0;
+          var h = h0 - T.drop * smooth(T.y0, T.y1, y), i, e, dr = Math.abs(x - U.riverX(y));
+          for (i = 0; i < G.ranges.length; i++) {
+            var R = G.ranges[i], d = F.sdf(R.id, x, y), f = Math.exp(-Math.pow(d / R.w, 2));
+            if (f < 0.002) continue;
+            var n = U.fbm(x / R.ridged.scale, y / R.ridged.scale, G.seed + R.seedOff, 4, 0.5, 2), rn = 1 - Math.abs(2 * n - 1);
+            var add = R.h * f + R.ridged.amp * rn * rn * Math.exp(-Math.pow(d / (R.w * 0.7), 2));
+            if (R.gorge) add *= 1 - (1 - R.gorge.keep) * Math.exp(-Math.pow(dr / R.gorge.width, 2));
+            h += add;
+          }
+          for (i = 0; i < G.peaks.length; i++) { var p = G.peaks[i]; h += p.h * Math.exp(-Math.pow(Math.hypot(x - p.x, y - p.y) / p.r, 2)); }
+          e = ell(G.gate.pass, x, y); if (e < 1) h += (G.gate.pass.floor - h) * smooth(1, 0.6, e);
+          return h0 + m * (h - h0);
+        } },
+      { id: 'lake', rect: bbox(L, 1 + L.shore), heightFn: function (h, x, y) {   // MAP-05: Glasswater bowl + shore lip
+          var e = ell(L, x, y); if (e >= 1 + L.shore) return h;
+          var m = mask(x, y); if (m <= 0) return h;
+          var hn = e < 1 ? Math.min(h, L.surface - L.depth * (1 - e * e)) : h + (L.surface + 0.8 - h) * smooth(1 + L.shore, 1, e);
+          return h + m * (hn - h);
+        } },
+      { id: 'marsh', rect: bbox(M, 1 + M.blend), heightFn: function (h, x, y) {   // MAP-05: Reedmire, low flat wet ground
+          var e = ell(M, x, y); if (e >= 1 + M.blend) return h;
+          var m = mask(x, y); if (m <= 0) return h;
+          var flat = sea + M.flatH + 0.6 * (U.fbm(x / 30, y / 30, G.seed + 51, 2, 0.5, 2) - 0.5);
+          return h + m * (h + (flat - h) * smooth(1 + M.blend, 1, e) - h);
+        } },
+      { id: 'coast', rect: [0, 1420 - C.cliffBack - 10, 4096, 4096], heightFn: function (h, x, y, F) {   // MAP-02: sea floor, beach band, cliffs
+          var sd = F.sdf('coast', x, y);
+          if (sd >= C.cliffBack && sd >= C.beachWidth + 40) return h;
+          var m = mask(x, y); if (m <= 0) return h;
+          var hn = h;
+          if (sd < 0) hn = sea - Math.min(C.seabedMax, 1.5 + (-sd) * C.seabedSlope);
+          else {
+            if (hn < sea + 0.6) hn = sea + 0.6;
+            if (F.sdf('beachK', x, y) > 0.5) {
+              var bh = sea + C.beachH + C.duneH * Math.exp(-Math.pow((sd - C.duneAt) / 25, 2)) * 2 * U.fbm(x / 35, y / 35, G.seed + 61, 2, 0.5, 2);
+              hn = bh + (hn - bh) * smooth(0, C.beachWidth, sd);
+            } else {
+              var top = hn + Math.max(0, sea + C.cliffH - hn) * smooth(C.cliffBack, 0, sd);
+              hn = (sea - 3) + (top - sea + 3) * smooth(0, C.cliffWidth, sd);
+            }
+          }
+          return h + m * (hn - h);
+        },
+        typeFn: function (t, x, y, h, slope, F) {                       // sea 2, beach sand 5, cliff rock 3
+          var sd = F.sdf('coast', x, y);
+          if (sd < 0) return 2;
+          if (F.sdf('beachK', x, y) > 0.5) return sd < C.beachWidth ? 5 : t;
+          return sd < 18 ? 3 : t;
+        } },
+      { id: 'river', rect: G.river.corridor, heightFn: function (h, x, y) {   // MAP-04: bed profile + width ramp, carves after sea/lake/marsh
+          var Rv = G.river, f = riverFade(y); if (f <= 0) return h;
+          var dr = Math.abs(x - U.riverX(y)), hw = interp3(Rv.poly, y, 2);
+          var hb = interp3(Rv.poly, y, 1) + Rv.bank * Math.max(0, dr - hw);   // flat bed under the water band, banks rise at `bank` m/m
+          if (hb >= h) return h;
+          var w = smooth(hw + Rv.bankW, hw + Rv.bankW * 0.5, dr) * f;    // the bank reaches only `bankW` m beyond the water band
+          return h + (hb - h) * w;
+        },
+        typeFn: function (t, x, y, h) {                                 // the widened estuary + every cell the sea rect floods (h < seaLevel) is water
+          if (y < 1420 || riverFade(y) <= 0) return t;
+          return (h < sea || Math.abs(x - U.riverX(y)) < interp3(G.river.poly, y, 2)) ? 2 : t;
+        } },
+      { id: 'terrainTypes', rect: WORLD_RECT, typeFn: function (t, x, y, h, slope) {   // lake/marsh/snow/alpine/flowers
+          if (t === 2) return 2;                                          // sea / river water is never repainted (marsh, snow)
+          var e = ell(L, x, y);
+          if (e < 1) return 2;
+          if (e < 1 + L.shore * 0.6) return 5;
+          if (ell(M, x, y) < 1) return U.fbm(x / M.pool.scale, y / M.pool.scale, G.seed + 53, 2, 0.5, 2) > M.pool.threshold ? 7 : 8;
+          if (h > G.snowLine + 25 * (U.fbm(x / 60, y / 60, G.seed + 81, 2, 0.5, 2) - 0.5) && slope <= rockSlope) return 6;   // steep faces stay rock
+          if (t !== 0) return t;
+          if (h > G.alpineLine) return 10;
+          var fl = regionAt(x, y).flowers || 0.62;
+          return U.fbm(x / 90, y / 90, G.seed + 41, 3, 0.5, 2) > fl ? 9 : t;
+        } }
+    ];
+  }
+  // far = ASSETS.levels.overworld_far.util. Layers + GeoFields (coast, ranges) + biomes. Call once, before any bake.
+  function installGeo(far) {
+    var rockSlope = root.ASSETS.levels.overworld_far.recipe.rock.slope;
+    far.setGeoLayers(geoLayers(far, rockSlope), geoFieldFns());
+    return installBiomes(far);
+  }
+
+  G.util = { biomeAreas: biomeAreas, installBiomes: installBiomes, installGeo: installGeo, geoLayers: geoLayers, geoFieldFns: geoFieldFns, geoHeight: geoHeight, biomeAt: biomeAt, mask: mask, coastSD: coastSD, regionAt: regionAt, riverHalfWidth: riverHalfWidth,
              wallX: function (y) { return G.wall.x0 + G.wall.amp * Math.sin(y / G.wall.period); }, ell: ell, lineDist: lineDist };
   root.ASSETS.levels.world_geo = G;
 })();
