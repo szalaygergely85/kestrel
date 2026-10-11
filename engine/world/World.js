@@ -1402,7 +1402,7 @@ export class World {
     const wt = this.water;
     const i = wt.find(x, y);
     if (i < 0) return false;
-    const z = wt.z[i];
+    const z = wt.zAt(i, x, y); // rect/circle: wt.z[i]; river: local z(s)
     const h = waveHeight(wt, i, x, y, wt.tick);
     const surfaceZ = z + h;
     const fz = this.physicsMode === 'mesh' ? this.supportAt(x, y, z + 0.01, false, null).floorH : this.floorAt(x, y);
