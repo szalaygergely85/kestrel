@@ -36,9 +36,10 @@ try {
   if (!r.wolves) console.log('wolf: SKIP (no wolf1..5 anchors in the world yet - MAP-26)');
   else { assert.equal(r.hp, 3); assert.ok(r.maxTok <= 1, 'token shared'); console.log(`wolf: PASS (${r.wolves} wolves, max attackers ${r.maxTok})`); }
   assert.deepEqual(errors, [], 'console errors: ' + JSON.stringify(errors));
+  globalThis.__wolfOk = true;
 } finally {
   try { cdp && cdp.close && cdp.close(); } catch {}
   if (browser) killTree(browser);
   killTree(server);
-  setTimeout(() => process.exit(process.exitCode || 0), 3000).unref(); // never hang on an open CDP socket (batch waited 40 min)
+  setTimeout(() => process.exit(globalThis.__wolfOk ? 0 : 1), 3000).unref(); // never hang on an open CDP socket (batch waited 40 min)
 }
