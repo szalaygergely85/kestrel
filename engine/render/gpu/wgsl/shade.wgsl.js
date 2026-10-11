@@ -31,7 +31,7 @@ import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // 
 import { SKY_GLOW_WGSL } from '../../skyGlow.js';
 import { FOG_SHAPE_WGSL } from '../../fogShape.js';
 import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
-import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, PATCH_CELL } from '../../terrainShade.js';
+import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, PATCH_CELL, CALM_AT0, CALM_SPAN, FAR_GLYPH_CELL, GLINT_RATE } from '../../terrainShade.js';
 
 
 
@@ -85,18 +85,12 @@ struct TerrainOut { fr: f32, fg: f32, fb: f32, br: f32, bg: f32, bb: f32, glyph:
 
 ${SKYLINE_FOG_WGSL}
 fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceMode: i32, z: f32) -> TerrainOut {
-  // 23.4 near-detail: hash cell 2 m inside the near-handover band, else 8 m. BUG-FP-002: hashCell < 0 = per-cell mode.
-  var cellSz: f32;
-  if (su.hashCell < 0.0) {
-    if (su.nearDetailOn != 0 && !(t < su.handover.y)) { cellSz = 8.0; }
-    else { cellSz = clamp(exp2(ceil(log2(max(t * -su.hashCell, 1e-6)))), 0.125, 2.0); }
-  } else {
-    if (su.hashCell > 0.0) { cellSz = su.hashCell; }
-    else { cellSz = select(8.0, 2.0, su.nearDetailOn != 0 && t < su.handover.y); }
-  }
-  let cx = i32(floor(u / cellSz)); let cy = i32(floor(v / cellSz));
-  let pcx = i32(floor(u / ${PATCH_CELL.toFixed(4)})); let pcy = i32(floor(v / ${PATCH_CELL.toFixed(4)})); // OB-054: fixed world cell for the colour pick
-  let hA = hashFast(pcx, pcy, typeId);
+  // OB-067: glyph/glint/features keyed on the fixed world cell (twin: terrainShade.js); far calm = coarse cell + no tier dither.
+  let pcx = i32(floor(u / ${PATCH_CELL.toFixed(4)})); let pcy = i32(floor(v / ${PATCH_CELL.toFixed(4)}));
+  let calm = t > ${CALM_AT0.toFixed(4)} + ${CALM_SPAN.toFixed(4)} * hashFast(pcx, pcy, 11);
+  var cx = pcx; var cy = pcy;
+  if (calm) { cx = i32(floor(u / ${FAR_GLYPH_CELL.toFixed(4)})); cy = i32(floor(v / ${FAR_GLYPH_CELL.toFixed(4)})); }
+  let hA = select(hashFast(pcx, pcy, typeId), 0.5, calm);
   let hB = hashFast(cx, cy, 7);
 
   // S8-B2-14b wetness: darkens the lit term entering the tier/gain pick, same WET_DARK as detailShade.js/shadeCore
@@ -112,6 +106,7 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
     bEff = bWet + (hashFast(pcx, pcy, 10) * 2.0 - 1.0) * 0.08 * (1.0 - q * q * (3.0 - 2.0 * q));
   }
 
+  let closeG = close && t < su.closeBand * (0.6 + 0.4 * hashFast(pcx, pcy, 12));
   var tier = 2;
   if (bEff < 0.45) { tier = 0; } else if (bEff < 0.8) { tier = 1; }
   var ii = tier + (i32(floor(hA * 3.0)) - 1);
@@ -133,13 +128,13 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
   if (t < su.bandNear) { bandIdx = 0; } else if (t < su.bandMid) { bandIdx = 1; }
   // 23.4 near-detail: close wins over the near/mid/far tier (TLOOK texel 7, fixed).
   var gT: vec4f;
-  if (close) { gT = textureLoad(uTlook, vec2i(7, base), 0); } else { gT = textureLoad(uTlook, vec2i(4 + bandIdx, base), 0); }
+  if (closeG) { gT = textureLoad(uTlook, vec2i(7, base), 0); } else { gT = textureLoad(uTlook, vec2i(4 + bandIdx, base), 0); }
   let packedX = i32(gT.x); let packedCount = i32(gT.y);
   var code = pickCodeFromPacked(packedX, packedCount, i32(hB * f32(packedCount)));
 
   let t3 = textureLoad(uTlook, vec2i(3, base), 0);
   if (t3.y > 0.5) {
-    let g = hashFast(cx, cy, i32(floor(timeSec * 1.5)));
+    let g = hashFast(cx, cy, i32(floor(timeSec * ${GLINT_RATE.toFixed(4)})));
     if (g > 0.5) {
       let alt = pickCodeFromPacked(packedX, packedCount, imod(i32(hB * f32(packedCount)) + 1, max(1, packedCount)));
       code = alt;
@@ -151,7 +146,7 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
 
   // 23.4 close-band features (wildflower/pebble): up to MAX_FEATURES_PER_TYPE slots packed into TLOOK texels 8-15; fi (texel .w
   // of the "A" slot) is the feature's index in the FLAT list the JS oracle hashes with the SAME salt (20+fi).
-  if (close) {
+  if (closeG) {
     for (var slot = 0; slot < MAX_FEATURES_PER_TYPE; slot++) {
       let fa = textureLoad(uTlook, vec2i(8 + slot * 2, base), 0);
       let fchance = fa.x;

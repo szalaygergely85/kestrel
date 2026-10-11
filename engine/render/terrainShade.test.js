@@ -364,5 +364,51 @@ export function patchColourStable(shade, closeBand) {
   check('light.uniform ignores the cloud byte (cF stays 1)', tUniform.fg.every((v, i) => v === t0.fg[i]));
 }
 
+
+// OB-067: GLYPH and colour of a world point identical from any camera distance 2..40 m; slow walk flips < 5 % of glyphs 3..30 m ahead.
+export function glyphStable(shade) {
+  const c = { ...ctx, handover: [130, 170], fog: { ...ctx.fog, start: 1e6, full: 2e6 }, hashCell: -0.02 };
+  let bad = 0, n = 0;
+  for (let i = 0; i < 200; i++) {
+    const u = 11.37 + i * 0.913, v = 3.21 + i * 0.571, b = [0.3, 0.6, 0.95][i % 3], ty = i % 2;
+    const ref = shade(2, ty, b, u, v, 0, c, out()), g0 = ref.glyph, r0 = [ref.fg[0], ref.fg[1], ref.fg[2], ref.bg[0]];
+    for (let t = 2.5; t <= 40; t *= 1.37) {
+      const o = shade(t, ty, b, u, v, 0, c, out()); n++;
+      if (o.glyph !== g0 || o.fg[0] !== r0[0] || o.fg[1] !== r0[1] || o.fg[2] !== r0[2] || o.bg[0] !== r0[3]) bad++;
+    }
+  }
+  return { bad, n };
+}
+export function slowWalkFlips(shade) {
+  const c = { ...ctx, handover: [130, 170], closeBand: 6, fog: { ...ctx.fog, start: 1e6, full: 2e6 }, hashCell: -0.02 };
+  let flips = 0, n = 0;
+  for (let i = 0; i < 400; i++) { // point at forward distance d from the eye; eye then moves 1 m closer
+    const d = 3 + (i / 400) * 27, u = 100 + d, v = 50 + (i % 7) * 0.37;
+    const a = shade(d, 0, 0.6, u, v, 0, c, out()), bb = shade(d - 1, 0, 0.6, u, v, 0, c, out()); n++;
+    if (a.glyph !== bb.glyph) flips++;
+  }
+  return { flips, n };
+}
+{
+  const r = glyphStable(shadeTerrain);
+  check('OB-067 glyph + colour identical across camera distance 2..40 m (' + r.bad + '/' + r.n + ' changed)', r.bad === 0);
+  const w = slowWalkFlips(shadeTerrain);
+  check('OB-067 walking 1 m flips < 5 % of glyphs 3..30 m ahead (' + w.flips + '/' + w.n + ')', w.flips / w.n < 0.05);
+}
+
+// OB-067 / gpucompare world_m1: WGSL gets u,v as f32. Points within 1e-4 m of a cell edge at x,y ~ 1000-1500: the JS twin must pick the same
+// cell as an f32 (Math.fround) emulation of the GPU, i.e. f64 input noise below f32 ulp must not flip the cell.
+{
+  const c = { ...ctx, handover: [130, 170], fog: { ...ctx.fog, start: 1e6, full: 2e6 }, hashCell: -0.02 };
+  let bad = 0, n = 0;
+  for (let i = 0; i < 400; i++) {
+    const e = 1000 + (i % 40) * 12 + Math.floor(i / 40), f = 1000 + (i * 7 % 40) * 12;
+    const uf = Math.fround(e + 1e-5 * ((i % 5) - 2)), vf = Math.fround(f + 1e-5 * ((i % 3) - 1));
+    const a = shadeTerrain(5, 0, 0.6, uf, vf, 0, c, out()), g = shadeTerrain(5, 0, 0.6, uf + 3e-5, vf - 3e-5, 0, c, out()); n++;
+    const b = shadeTerrain(5, 0, 0.6, Math.fround(uf + 3e-5), Math.fround(vf - 3e-5), 0, c, out());
+    if (g.glyph !== b.glyph || g.fg[0] !== b.fg[0] || g.bg[0] !== b.bg[0]) bad++;
+  }
+  check('OB-067 f64 u,v vs f32-rounded u,v pick the same cell near edges at x,y~1000-1500 (' + bad + '/' + n + ')', bad === 0);
+}
 console.log(`terrainShade.test.js: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

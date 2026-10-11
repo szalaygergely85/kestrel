@@ -597,3 +597,9 @@ Tests: interaction.test.js 48 pass (+7 note-height cases; 2 point-model expectat
 - `interaction.js`: cone 40 -> 22 deg h, VERT_RATIO 1.6 (= 35 deg v), hysteresis +15 -> +8, near widening range 0.9 -> 0.7 m, aim point must be within 60 deg of view dir. Full-height segment aim unchanged.
 - Tests: new real-tower case (tower.level.json + world origin) asserts no target at eye z 6.0..7.6 and a prompt when facing the page; OB-052/052b cases kept but angles scaled (39/41 -> 21/24, 30 -> 20, hyst 36/50/60 -> 20/28/34, note yaw +-25 -> +-18; pitch -40..+15 at yaw 0 unchanged and green).
 - `verify-interact-aim.mjs` thresholds loosened (rows >0.3, fraction 0.3..0.8), NOT run (browser). Standing figure: not identified (Node only).
+
+### OB-067 ground glyph world-anchored + far calm (38.50 OB-054b/c, kestrel-5, Node only, arch-review)
+- Glyph (hB), glint, close features now keyed on the fixed 1 m world cell (no distance-following cellSz); close glyph set/features hand over at a per-patch 0.6..1.0 x closeBand; glint re-rolls every 10 s (GLINT_RATE 0.1).
+- Far calm: past a per-patch 48..80 m the tier dither is off (hA 0.5) and the glyph uses a coarse 4 m cell (CALM_AT0/CALM_SPAN/FAR_GLYPH_CELL in terrainShade.js, same in WGSL). Not designer-reauthored glyph set (c's TLOOK part left).
+- Cell index is Math.fround(u) first in the JS twin (WGSL gets f32 u,v) for the gpucompare world_m1 waystoneDown tie; GPU u,v input noise itself unfixed.
+- Tests: glyph+colour identical 2..40 m (old code 678/1800 changed), slow walk 1 m (old 28/400 flips, now <5 %), f32-edge test; SHADE_WGSL pin 40766 -> 40573. gpucompare: all terrain rows change (glyph/glint/features); watch world_m1.

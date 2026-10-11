@@ -81,6 +81,10 @@ function pickCodeFromPacked(x, count, idx) {
 // OB-054: patch COLOUR (tier pick hA + close brightness jitter) is keyed on this fixed world cell (m), never on the
 // distance-following `cellSz`, so a point's colour cannot re-roll when the camera moves. Glyph/feature/glint keep `cellSz`. WGSL twin: PATCH_CELL.
 export const PATCH_CELL = 1.0;
+// OB-067 (38.50 b/c): glyph, glint and close features are ALSO keyed on the fixed world cell (no distance-following cell), so
+// nothing re-rolls while walking. Far calm: each patch drops its tier dither and switches to a coarse FAR_GLYPH_CELL glyph once
+// the camera is further than its own CALM_AT0 + CALM_SPAN*h (m, spread per patch so there is no ring); glint re-rolls every 1/GLINT_RATE s.
+export const CALM_AT0 = 48, CALM_SPAN = 32, FAR_GLYPH_CELL = 4.0, GLINT_RATE = 0.1;
 export function perCellHashSize(t, k, handover) {
   if (handover && !(t < handover[1])) return 8;
   return Math.min(2, Math.max(0.125, Math.pow(2, Math.ceil(Math.log2(Math.max(t * k, 1e-6))))));
@@ -116,9 +120,11 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   const hk = ctx.hashCell < 0 ? -ctx.hashCell : 0;
   const cellSz = hk > 0 ? perCellHashSize(t, hk, ctx.handover)
     : ctx.hashCell > 0 ? ctx.hashCell : (ctx.handover && t < ctx.handover[1] ? 2 : 8);
-  const cx = Math.floor(u / cellSz), cy = Math.floor(v / cellSz);
-  const pcx = Math.floor(u / PATCH_CELL), pcy = Math.floor(v / PATCH_CELL);
-  const hA = hashFast01(pcx, pcy, type);
+  // f32-robust cell index (WGSL receives u,v as f32): round to f32 first so both twins floor the same value (PATCH_CELL = 1.0 divides exactly)
+  const pcx = Math.floor(Math.fround(u) / PATCH_CELL), pcy = Math.floor(Math.fround(v) / PATCH_CELL);
+  const calm = t > CALM_AT0 + CALM_SPAN * hashFast01(pcx, pcy, 11);   // OB-067 far calm (per-patch threshold, WGSL twin: same)
+  const cx = calm ? Math.floor(Math.fround(u) / FAR_GLYPH_CELL) : pcx, cy = calm ? Math.floor(Math.fround(v) / FAR_GLYPH_CELL) : pcy;
+  const hA = calm ? 0.5 : hashFast01(pcx, pcy, type);
   const hB = hashFast01(cx, cy, 7);
 
   // S8-B2-14b wetness (follow-up to S8-B2-14): `ctx.shading.wetness` 0..1
@@ -133,6 +139,8 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   // picked below (TLOOK texel 7, fixed) and gets a +-0.08 brightness jitter
   // (own hash salt 10, per-2 m-cell - "shading only, heightAt stays smooth").
   const close = ctx.closeBand != null && t < ctx.closeBand;
+  // OB-067: the close glyph set / features hand over to the band set at a per-patch distance 0.6..1.0 x closeBand (each point switches once, no ring)
+  const closeG = close && t < ctx.closeBand * (0.6 + 0.4 * hashFast01(pcx, pcy, 12));
   // OB-054: jitter amplitude fades smoothstep to 0 over closeBand/2..closeBand (no brightness step at the band edge). WGSL twin: same expression.
   let bEff = bWet;
   if (close) {
@@ -154,14 +162,14 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   let br = fr * 0.3, bg = fg * 0.3, bb = fb * 0.3;
 
   const bandIdx = t < ctx.bands.near ? 0 : t < ctx.bands.mid ? 1 : 2;
-  const gOff = close ? base + 7 * 4 : base + (4 + bandIdx) * 4;
+  const gOff = closeG ? base + 7 * 4 : base + (4 + bandIdx) * 4;
   const packedX = TL[gOff], packedCount = TL[gOff + 1];
   let code = pickCodeFromPacked(packedX, packedCount, Math.floor(hB * packedCount));
 
   // Water glint (item 5): timeSec-keyed, still world-keyed via (cx, cy).
   const albedo = TL[base + 3 * 4], glintFlag = TL[base + 3 * 4 + 1];
   if (glintFlag) {
-    const g = hashFast01(cx, cy, Math.floor(timeSec * 1.5) | 0);
+    const g = hashFast01(cx, cy, Math.floor(timeSec * GLINT_RATE) | 0);
     if (g > 0.5) {
       const alt = pickCodeFromPacked(packedX, packedCount, (Math.floor(hB * packedCount) + 1) % Math.max(1, packedCount));
       code = alt;
@@ -180,7 +188,7 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   // JS oracle reads the same data straight off `recipe.nearLOD.features`
   // instead (no GLSL exists yet to port to - S5 designs the real FEAT
   // texture layout against this same recipe list).
-  if (close && ctx.features) {
+  if (closeG && ctx.features) {
     for (let fi = 0; fi < ctx.features.length; fi++) {
       const feat = ctx.features[fi];
       if (feat.typeId !== type) continue;
