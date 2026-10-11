@@ -9,6 +9,8 @@ import fs from 'node:fs';
 import '../design/palette.js';
 import '../design/detail-pass.js';
 import '../design/levels/overworld_far.js';
+import '../design/levels/world_geo.js'; // OB-018: snap props to the SAME ground the game shows (geography + river carving)
+globalThis.ASSETS.levels.world_geo.util.installGeo(globalThis.ASSETS.levels.overworld_far.util);
 for (const m of ['lantern', 'lever', 'voxel_props', 'voxel_tower', 'voxel_world', 'boulder', 'rubble', 'wreckage', 'relay', 'sword', 'voxel_beast', 'chest', 'm3_props', 'far_tower', 'ferrum_lights', 'title', 'voxel_bear', 'voxel_wildlife', 'voxel_tower_crown']) { try { await import(`../design/models/${m}.js`); } catch { /* optional */ } }
 import { World, stringifyContent } from '../engine/index.js';
 import { plantScaleFor } from './plant-scale.mjs';
