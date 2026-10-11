@@ -28,7 +28,7 @@ export function createBurlEscort(o) {
   function goHome() {
     setPhase(PHASE_BACK); st['burl.home'] = true; st['burl.departing'] = false;
     walk.place('follow', 0); if (t0) t0.yawDeg = homeYaw;
-    if (o.restore) o.restore();
+    if (o.restore) { if (world.removeInteractable) world.removeInteractable('npc.' + id); talkRec = null; o.restore(); } // the lead walk keeps the talk record alive: drop it so restore() cannot register a duplicate key
     questFlag('burl.home');
   }
   // sq.burl.walk: o.leadStatus() = questBook status of the errand (2 active, 3 ready, 4 done); needs components.walks.toBend (data)
@@ -37,6 +37,15 @@ export function createBurlEscort(o) {
   const lead = () => walk.start('toBend', { lead: true, waitFar: LEAD_WAIT_M, resumeNear: LEAD_RESUME_M, fromWp: st['burl.lwp'] | 0, onArrive: atBend });
   function atBend() { st['burl.lwp'] = walk.wp; setPhase(PHASE_BEND); questFlag(BEND_FLAG, true); }
   const homeXY = () => { const w = world.get(id), p = w && w.data.components && w.data.components.walks && w.data.components.walks.follow; return p ? p[0] : null; };
+  // The [E] Talk interactable is registered once (dialogueCtl.addNpc) at the spot Burl stood then; while he walks (follow / lead to the Bend) it must
+  // follow him, or the Bend hand-in ("Talk to Burl at the Bend Relay") has nothing to press. Interactables read x/y/z live (interaction.js).
+  let talkRec = null;
+  function syncTalk() {
+    const key = 'npc.' + id, L = world.interactables;
+    if (!t0 || !L) return;
+    if (!talkRec || talkRec.key !== key || L.indexOf(talkRec) < 0) { talkRec = null; for (let i = 0; i < L.length; i++) if (L[i].key === key) { talkRec = L[i]; break; } }
+    if (talkRec) { talkRec.x = t0.x; talkRec.y = t0.y; talkRec.z = t0.z + 1; }
+  }
   const api = {
     get phase() { return phase(); },
     /** true while Burl is on a walk (npcBear's turn-to-player stays paused). */
@@ -53,6 +62,7 @@ export function createBurlEscort(o) {
     /** Fixed step. (px,py) = player; hold = a dialogue/menu/note is open (AUD-06): no walking, no barks. */
     step(dt, px, py, hold) {
       if (hold) return;
+      syncTalk();
       const p = phase();
       if (p === PHASE_HOME) {
         if (st['burl.follow']) { setPhase(PHASE_WALK); st['burl.wp'] = 0; follow(); return; }

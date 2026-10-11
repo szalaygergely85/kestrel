@@ -145,4 +145,12 @@ console.log('burlEscort QL-05 home switch ok');
   run(c4, 0.1, 0); run(c4, 3, 10); assert.equal(c4.e.phase, 6); qs4.v = 1; run(c4, 0.1, 10);
   assert.equal(c4.e.phase, 5); assert.equal(c4.ent.transform.x, 0);
 }
+// ch12 run E4/E5: Burl's [E] Talk interactable follows him while he walks (the Bend hand-in needs it)
+{
+  const c = mk({ 'burl.follow': true }), rec = { key: 'npc.bear', x: 0, y: 0, z: 1 };
+  c.world.interactables = [rec];
+  run(c, 6, follow(c));
+  assert.ok(c.ent.transform.x > 3, 'Burl walked');
+  assert.ok(Math.abs(rec.x - c.ent.transform.x) < 0.2 && Math.abs(rec.y - c.ent.transform.y) < 0.2, 'talk interactable follows Burl');
+}
 console.log('burlEscort M4 lead-to-Bend ok');

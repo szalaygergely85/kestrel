@@ -7,14 +7,14 @@
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
+    {"node": "rook.call.ready.1", "requires": "s.mq.bend.call.ready"},
+    {"node": "rook.call.active", "requires": "s.mq.bend.call.active"},
+    {"node": "rook.mirror.active", "requires": "s.mq.ford.mirror.active"},
+    {"node": "rook.ford.1", "requires": "s.mq.ford.mirror.available"},
     {"node": "rook.ford.repeat2", "requires": "s.mq.smoke.done"},
     {"node": "rook.ford.repeat", "requires": "rook.mirror.told"},
     {"node": "rook.mirror.done.1", "requires": "s.waystone.ws_ford.woken"},
-    {"node": "rook.mirror.active", "requires": "s.mq.ford.mirror.active"},
-    {"node": "rook.ford.1", "requires": "s.mq.ford.mirror.available"},
     {"node": "rook.repeat", "requires": "s.mq.bend.call.done"},
-    {"node": "rook.call.ready.1", "requires": "s.mq.bend.call.ready"},
-    {"node": "rook.call.active", "requires": "s.mq.bend.call.active"},
     {"node": "rook.meet.1"}
   ],
   "nodes": {

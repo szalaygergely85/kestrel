@@ -47,11 +47,12 @@ const LIB = `(() => { const D = window.__debug, w = D.world, p = D.playerHandle.
     async goTrig(id) { const r = T.trig(id); if (!r) throw new Error('no trigger ' + id); await T.tp(r.x, r.y); await sl(500); return r; },
     // advance the open dialogue box: press lines, choose the first choice matching one of prefs (regex strings) else the first
     async dlg(prefs = []) { const r = D.dialogue.runner, log = []; for (let n = 0; n < 400 && D.dialogue.open; n++) {
+        if (r.state === 'typing') (window.__lines = window.__lines || []).push(String(r.line).slice(0, 30));
         if (r.state === 'choosing') { const ch = []; for (let i = 0; i < r.choiceCount; i++) ch.push(String(r.choiceText(i))); let k = 0;
           out: for (const q of prefs) for (let i = 0; i < ch.length; i++) if (new RegExp(q, 'i').test(ch[i])) { k = i; break out; }
           log.push('[' + ch.join(' | ') + '] -> ' + k); r.selected = k; r.choose(); } else r.press();
         await sl(50); } await sl(300); return log; },
-    snap() { const q = book().toSave(), st = {}; for (const k of Object.keys(w.state)) if (!/^(clock\\.|quest\\.wakeT|quest\\.endT|hints\\.|ui\\.)/.test(k)) st[k] = w.state[k];
+    snap() { const q = book().toSave(), st = {}, pd = D.playerHandle.data, t = pd.transform, c = pd.components; /* live handles: Continue rebuilds the player */ for (const k of Object.keys(w.state)) if (!/^(clock\\.|quest\\.wakeT|quest\\.endT|hints\\.|ui\\.)/.test(k)) st[k] = w.state[k];
       const quests = {}; for (const id of Object.keys(q.quests)) { const e = q.quests[id]; quests[id] = { a: e.accepted, h: e.handedIn, g: e.given || [], done: e.quest.completed }; }
       return JSON.parse(JSON.stringify({ pos: [t.x, t.y, t.z], hp: c.health.hp, max: c.health.max, inventory: c.inventory.slots, equipment: c.equipment, quickbar: c.quickbar, main: { done: q.quest.completed, flags: q.quest.flags }, quests, tracked: book().tracked(), state: st, dead: D.saveRelay.deadBeasts, chests: D.saveRelay.openedChests })); } };
   return true; })()`;
@@ -75,7 +76,7 @@ async function talk(id, prefs = []) {
   await evA(`__t.goNpc(${JSON.stringify(id)})`); await pause(300);
   let open = await ev('__t.D.dialogue.open');
   for (let i = 0; i < 3 && !open; i++) { if (i > 0) { await evA(`__t.goNpc(${JSON.stringify(id)}, ${[1.2, -1.2, 2.2][i]})`); await pause(200); } await pressE(1); open = await ev('__t.D.dialogue.open'); }
-  if (!open) { const d = await evA(`(async () => { const D = __t.D, w = __t.w, t = D.playerHandle.data.transform, b = w.get(${JSON.stringify(id)}).data.transform, nr = await import('/game/js/quest/noteRead.js'); return JSON.stringify({ note: nr.isNoteOpen(), notice: D.notice.active, ui: D.uiLocked, ist: w.interaction.targetKey, ix: !!__t.ix('npc.${id}'), dist: Math.hypot(t.x - b.x, t.y - b.y), dz: t.z - b.z, lock: D.look.locked, wake: D.wakeOut.inputLocked }); })()`); throw new Error('E did not open the dialogue with ' + id + ' ' + d); }
+  if (!open) { const d = await evA(`(async () => { const D = __t.D, w = __t.w, t = D.playerHandle.data.transform, b = w.get(${JSON.stringify(id)}).data.transform, nr = await import('/game/js/quest/noteRead.js'); return JSON.stringify({ note: nr.isNoteOpen(), notice: D.notice.active, ui: D.uiLocked, ist: w.interaction.targetKey, ix: !!__t.ix('npc.${id}'), ixAt: (() => { const r = __t.ix('npc.${id}'); return r && [r.x, r.y, r.z, r.radius]; })(), ent: [b.x, b.y, b.z], me: [t.x, t.y, t.z], dist: Math.hypot(t.x - b.x, t.y - b.y), dz: t.z - b.z, lock: D.look.locked, wake: D.wakeOut.inputLocked }); })()`); throw new Error('E did not open the dialogue with ' + id + ' ' + d); }
   const lg = await evA(`__t.dlg(${JSON.stringify(prefs)})`); lastLog = JSON.stringify(lg).slice(0, 300); return lg;
 }
 let lastLog = '';
@@ -215,7 +216,7 @@ try {
   });
   await beat('13 mirror: Rook gives mq.ford.mirror, take relay.mirror from the nest', async () => {
     const acc = await giverStep('rook', 2, 'mq.ford.mirror', ['mirror|glass|yes|ok|will|fetch']); // the nest pickup is next to Rook: an [E] during the talk may already take the mirror
-    if (!acc) return { ok: false, why: 'mq.ford.mirror not accepted ' + await state('mq.ford.mirror') + ' mirror in pack=' + await ev("__t.has('relay.mirror')") + ' log ' + lastLog };
+    if (!acc) return { ok: false, why: 'mq.ford.mirror not accepted ' + await state('mq.ford.mirror') + ' lines=' + await ev('JSON.stringify((window.__lines||[]).slice(-8))') + ' st=' + await ev("JSON.stringify(Object.keys(__t.w.state).filter((k) => /^mq\.ford|glass|bend.call/.test(k)))") + ' mirror in pack=' + await ev("__t.has('relay.mirror')") + ' log ' + lastLog };
     if (!(await ev("__t.has('relay.mirror') > 0"))) await goIx('qp.nest', 0.9); const has = await waitFor(async () => { if (await ev("__t.has('relay.mirror') > 0")) return true; await pressE(1); return false; }, 6000, 100);
     return { ok: has, why: `mirror=${has} ${await state('mq.ford.mirror')}` };
   });
@@ -242,7 +243,7 @@ try {
     for (let i = 1; i <= 6; i++) { await goIx('qp.berry' + i, 0.7); await pressE(1); }
   });
   await errand('E1 explore', 'sq.burl.tower', 'burl', async () => { for (const a of await areasOf('sq.burl.tower')) await goTrig(a); await pause(500); });
-  await errand('E3 talk (ask Burl for Rook)', 'sq.fc.ask', 'rook', async () => { await talk('bear', ['ok|yes|bear|crow|ask']); });
+  await errand('E3 talk (ask Burl for Rook)', 'sq.fc.ask', 'rook', async () => { await talk('bear', ['not yet|later|another', 'bear|crow|ask']); /* decline Burl's walk offer: accepting it makes him lead away (E5 does that) */ });
   await errand('E4 deliver a brass scrap from Rook to Burl', 'sq.rook.gift', 'rook', async () => { await goIx('qp.brass1', 0.7); await pressE(1); }, 'burl');
   await errand('E5 escort Burl to the Bend relay', 'sq.burl.walk', 'burl', async () => {
     for (let i = 0; i < 120; i++) {
@@ -282,6 +283,9 @@ try {
     await ev("(() => { const h = __debug.menuHost, m = h.menu; for (let n = 0; n < 6 && m.snapshot().rows[m.snapshot().selected].id !== 'continue'; n++) m.handleKey('ArrowDown'); m.handleKey('Enter'); h.consume(); return JSON.stringify(m.snapshot().rows.map((r) => r.id + ':' + r.enabled)); })()"); 
     if (!(await waitFor(() => ev('!__debug.menuHost || !__debug.menuHost.active'), 15000))) return { ok: false, why: 'Continue did not close the menu' };
     await waitFor(() => ev('typeof __debug !== "undefined" && !!(__debug.playerHandle && __debug.playerHandle.data.components.health && __debug.saveRelay)'), 20000); await waitFor(() => ev('!!(__debug.saveRelay.quest && __debug.saveRelay.quest.book)'), 20000); await pause(2500); await ev(LIB);
+    // the quest book / save relay finish after the player exists: retry until snap() stops throwing
+    const ready = await waitFor(() => ev('(() => { try { __t.snap(); window.__snapErr = null; return true; } catch (e) { window.__snapErr = String(e && e.stack || e).slice(0, 300); return false; } })()'), 20000, 500);
+    if (!ready) return { ok: false, why: 'snap never ready: ' + await ev('window.__snapErr') };
     const after = await ev('__t.snap()');
     const canon = (v) => (v && typeof v === 'object') ? (Array.isArray(v) ? v.map(canon) : Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]))) : v;
     const diffs = [];

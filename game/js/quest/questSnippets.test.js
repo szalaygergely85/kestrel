@@ -79,6 +79,15 @@ for (const npc of npcs) {
 }
 assert.ok(n >= 30, 'quests covered: ' + n);
 
+// 4b. ch12 run beat 13: generated Rook errands never hide his main-quest hand-in / offer entries (call.ready/active, mirror.active/available)
+{
+  const gr = generateAll({ rook }, defs, snip).rook, at = (n) => gr.entry.findIndex((e) => e.node === n);
+  const firstGen = gr.entry.findIndex((e) => /^q\./.test(e.requires || ''));
+  assert.ok(firstGen > 0, 'rook has generated errand rows');
+  for (const n of ['rook.call.ready.1', 'rook.call.active', 'rook.mirror.active', 'rook.ford.1']) assert.ok(at(n) >= 0 && at(n) < firstGen, n + ' precedes the errands');
+  assert.ok(at('rook.ford.repeat2') > firstGen, 'repeat chatter comes after the errands');
+}
+
 // 5. deterministic / idempotent output
 assert.equal(JSON.stringify(generateAll({ bear, rook }, defs, snip)), JSON.stringify(generateAll({ bear, rook }, defs, snip)));
 console.log('questSnippets.test.js: OK (' + n + ' quests, ' + npcs.length + ' givers)');
