@@ -39,17 +39,20 @@ const LIB = `(() => { const D = window.__debug, w = D.world, p = D.playerHandle.
     async goIx(k, off = 0.9, from) { const r = T.ix(k); if (!r) throw new Error('no interactable ' + k);
       if (from) { const dx = r.x - from.x, dy = r.y - from.y, n = Math.hypot(dx, dy) || 1; await T.tp(r.x - dx / n * off, r.y - dy / n * off, 0.3, from.z); } else await T.tp(r.x - off, r.y); T.face(T.ix(k)); await sl(150); return r; },
     // npc interactable records keep the spawn spot: stand next to the entity itself and aim at it
-    async goNpc(id, off = 1.2) { const e = w.get(id).data.transform; await T.tp(e.x - off, e.y); T.face({ x: e.x, y: e.y, z: e.z + 1.2 }); await sl(150); return true; },
+    async goNpc(id, off = 1.2) { const e = w.get(id).data.transform; for (let n = 0, px = e.x, py = e.y; n < 20; n++) { await sl(500); if (Math.hypot(e.x - px, e.y - py) < 0.02) break; px = e.x; py = e.y; } // let a walking npc settle first
+      const g0 = w.floorAt(e.x - off, e.y); // Rook stands on a roof deck: when the floor lookup disagrees with the NPC's z, stand at the NPC's own level
+      if (g0 == null || Math.abs(g0 - e.z) > 0.15) await T.tp(e.x - off, e.y, 0.3, e.z + 0.3); else await T.tp(e.x - off, e.y); T.face({ x: e.x, y: e.y, z: e.z + 1.2 }); await sl(150); return true; },
     async marker(id) { const { localToWorld } = await import('/engine/core/transform.js'); const o = { x: 0, y: 0, z: 0 };
       for (const st of w.structures) { const m = st.level && st.level.def && st.level.def.markers && st.level.def.markers[id]; if (m) { localToWorld(st.frame, m.x, m.y, m.z || 0, o); return { x: o.x, y: o.y, z: o.z }; } } return null; },
     async goTrig(id) { const r = T.trig(id); if (!r) throw new Error('no trigger ' + id); await T.tp(r.x, r.y); await sl(500); return r; },
     // advance the open dialogue box: press lines, choose the first choice matching one of prefs (regex strings) else the first
     async dlg(prefs = []) { const r = D.dialogue.runner, log = []; for (let n = 0; n < 400 && D.dialogue.open; n++) {
+        if (r.state === 'typing') (window.__lines = window.__lines || []).push(String(r.line).slice(0, 30));
         if (r.state === 'choosing') { const ch = []; for (let i = 0; i < r.choiceCount; i++) ch.push(String(r.choiceText(i))); let k = 0;
           out: for (const q of prefs) for (let i = 0; i < ch.length; i++) if (new RegExp(q, 'i').test(ch[i])) { k = i; break out; }
           log.push('[' + ch.join(' | ') + '] -> ' + k); r.selected = k; r.choose(); } else r.press();
         await sl(50); } await sl(300); return log; },
-    snap() { const q = book().toSave(), st = {}; for (const k of Object.keys(w.state)) if (!/^(clock\\.|quest\\.wakeT|quest\\.endT|hints\\.|ui\\.)/.test(k)) st[k] = w.state[k];
+    snap() { const q = book().toSave(), st = {}, pd = D.playerHandle.data, t = pd.transform, c = pd.components; /* live handles: Continue rebuilds the player */ for (const k of Object.keys(w.state)) if (!/^(clock\\.|quest\\.wakeT|quest\\.endT|hints\\.|ui\\.)/.test(k)) st[k] = w.state[k];
       const quests = {}; for (const id of Object.keys(q.quests)) { const e = q.quests[id]; quests[id] = { a: e.accepted, h: e.handedIn, g: e.given || [], done: e.quest.completed }; }
       return JSON.parse(JSON.stringify({ pos: [t.x, t.y, t.z], hp: c.health.hp, max: c.health.max, inventory: c.inventory.slots, equipment: c.equipment, quickbar: c.quickbar, main: { done: q.quest.completed, flags: q.quest.flags }, quests, tracked: book().tracked(), state: st, dead: D.saveRelay.deadBeasts, chests: D.saveRelay.openedChests })); } };
   return true; })()`;
@@ -72,28 +75,29 @@ async function talk(id, prefs = []) {
   await ev('(() => { for (let k = 0; k < 4; k++) __t.D.notice.update(10, false); return true; })()'); // capture-like page never advances the notice timer
   await evA(`__t.goNpc(${JSON.stringify(id)})`); await pause(300);
   let open = await ev('__t.D.dialogue.open');
-  for (let i = 0; i < 3 && !open; i++) { await pressE(1); open = await ev('__t.D.dialogue.open'); }
-  if (!open) { const d = await evA(`(async () => { const D = __t.D, w = __t.w, t = D.playerHandle.data.transform, b = w.get(${JSON.stringify(id)}).data.transform, nr = await import('/game/js/quest/noteRead.js'); return JSON.stringify({ note: nr.isNoteOpen(), notice: D.notice.active, ui: D.uiLocked, ist: w.interaction.targetKey, ix: !!__t.ix('npc.${id}'), dist: Math.hypot(t.x - b.x, t.y - b.y), dz: t.z - b.z, lock: D.look.locked, wake: D.wakeOut.inputLocked }); })()`); throw new Error('E did not open the dialogue with ' + id + ' ' + d); }
-  return evA(`__t.dlg(${JSON.stringify(prefs)})`);
+  for (let i = 0; i < 3 && !open; i++) { if (i > 0) { await evA(`__t.goNpc(${JSON.stringify(id)}, ${[1.2, -1.2, 2.2][i]})`); await pause(200); } await pressE(1); open = await ev('__t.D.dialogue.open'); }
+  if (!open) { const d = await evA(`(async () => { const D = __t.D, w = __t.w, t = D.playerHandle.data.transform, b = w.get(${JSON.stringify(id)}).data.transform, nr = await import('/game/js/quest/noteRead.js'); return JSON.stringify({ note: nr.isNoteOpen(), notice: D.notice.active, ui: D.uiLocked, ist: w.interaction.targetKey, ix: !!__t.ix('npc.${id}'), ixAt: (() => { const r = __t.ix('npc.${id}'); return r && [r.x, r.y, r.z, r.radius]; })(), ent: [b.x, b.y, b.z], me: [t.x, t.y, t.z], dist: Math.hypot(t.x - b.x, t.y - b.y), dz: t.z - b.z, lock: D.look.locked, wake: D.wakeOut.inputLocked }); })()`); throw new Error('E did not open the dialogue with ' + id + ' ' + d); }
+  const lg = await evA(`__t.dlg(${JSON.stringify(prefs)})`); lastLog = JSON.stringify(lg).slice(0, 300); return lg;
 }
+let lastLog = '';
 // errand giver: talk (npc) or inspect/touch ([E]) until the quest reaches `want`; site -> interactable key
 const GIVER = { burl: 'npc.bear', rook: 'npc.rook', post: 'qi.post', notePost: 'qi.notePost', relayBend: 'relay.ws_roadBend', relayFord: 'relay.ws_ford' };
-const YES = ['ok|yes|will|take|accept|sure|done|here|ready|deliver|thanks'];
+const YES = ['ok|yes|will|do it|i.ll|take|accept|sure|done|here|ready|deliver|thanks'];
 async function giverStep(site, want, id, prefs = YES) {
   const k = GIVER[site];
-  for (let i = 0; i < 4; i++) {
-    if ((await stOf(id)) === want) return true;
+  for (let i = 0; i < 9; i++) { // a giver offers one available errand per talk
+    if ((await stOf(id)) >= want) return true;
     if (k.startsWith('npc.')) await talk(k.slice(4), prefs); else { await goIx(k); await pressE(1); if (await ev('__t.D.dialogue.open')) await evA('__t.dlg([])'); }
   }
-  return (await stOf(id)) === want;
+  return (await stOf(id)) >= want;
 }
 const tpA = (x, y) => evA(`(async () => { await __t.tp(${x}, ${y}); return true; })()`);
 const emitHit = (target) => ev(`(() => { __t.D.engine.events.emit('combat:hit', { target: ${JSON.stringify(target)}, damage: 999, source: 'player', cause: 'sword' }); return true; })()`);
 async function waitFor(fn, ms, step = 400) { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await fn()) return true; await pause(step); } return false; }
 const flag = (k) => ev(`__t.flag(${JSON.stringify(k)})`);
 
-async function open() {
-  await cdp.send('Page.navigate', { url });
+async function open(u = url) {
+  await cdp.send('Page.navigate', { url: u });
   let ready = false;
   for (let i = 0; i < 200; i++) { await pause(300); if (await ev('!!(window.__debug && window.__debug.world && window.__debug.playerHandle && window.__debug.saveRelay && window.__debug.relayWake && window.__debug.dialogue && window.__debug.playerHandle.data.components.health)')) { ready = true; break; } }
   if (!ready) throw new Error('game never ready: ' + JSON.stringify(errors) + ' ' + await ev("JSON.stringify(Object.keys(window.__debug.playerHandle.data.components))"));
@@ -211,15 +215,16 @@ try {
     return { ok, why: await state('mq.river.road', 'mq.ford.stones', 'mq.ford.mirror') };
   });
   await beat('13 mirror: Rook gives mq.ford.mirror, take relay.mirror from the nest', async () => {
-    await giverStep('rook', 2, 'mq.ford.mirror', ['mirror|glass|yes|ok|will|fetch']);
-    await goIx('qp.nest', 0.9); const has = await waitFor(async () => { if (await ev("__t.has('relay.mirror') > 0")) return true; await pressE(1); return false; }, 6000, 100);
+    const acc = await giverStep('rook', 2, 'mq.ford.mirror', ['mirror|glass|yes|ok|will|fetch']); // the nest pickup is next to Rook: an [E] during the talk may already take the mirror
+    if (!acc) return { ok: false, why: 'mq.ford.mirror not accepted ' + await state('mq.ford.mirror') + ' lines=' + await ev('JSON.stringify((window.__lines||[]).slice(-8))') + ' st=' + await ev("JSON.stringify(Object.keys(__t.w.state).filter((k) => /^mq\.ford|glass|bend.call/.test(k)))") + ' mirror in pack=' + await ev("__t.has('relay.mirror')") + ' log ' + lastLog };
+    if (!(await ev("__t.has('relay.mirror') > 0"))) await goIx('qp.nest', 0.9); const has = await waitFor(async () => { if (await ev("__t.has('relay.mirror') > 0")) return true; await pressE(1); return false; }, 6000, 100);
     return { ok: has, why: `mirror=${has} ${await state('mq.ford.mirror')}` };
   });
   await beat('14 Ford relay wakes -> mq.ford.mirror done', async () => {
     await goIx('relay.ws_ford', 1.2); await pressE(1);
     const woken = await waitFor(() => flag('waystone.ws_ford.woken'), 15000);
     const ok = woken && await waitFor(() => done('mq.ford.mirror'), 6000);
-    return { ok, why: `woken=${woken} ${await state('mq.ford.mirror')}` };
+    return { ok, why: `woken=${woken} ${await state('mq.ford.mirror')} log ${lastLog}` };
   });
 
   // ===== errands: one per template kind (quest book status) =====
@@ -228,20 +233,18 @@ try {
     for (const [id, n] of [['arrow', 12], ['potion.hp', 2], ['bow', 1]]) if (!__t.has(id)) inv.addItem(inventory, defs, id, n); // test hook: the bow / arrows / potion come from loot later in the game
     qbm.ensureQuickbar(p); qbm.assign(p, defs, 5, 'potion.hp'); return true; })()`.replace(/^/, '')).catch(() => {});
   const errand = async (name, id, site, work, turnSite = site) => beat(name + ' (' + id + ')', async () => {
-    if (!(await giverStep(site, 2, id))) return { ok: false, why: 'not accepted: ' + await state(id) };
+    if (!(await giverStep(site, 2, id))) return { ok: false, why: 'not accepted: ' + await state(id) + ' log ' + lastLog };
     await work();
     if (!(await giverStep(turnSite, 4, id))) return { ok: false, why: 'not handed in: ' + await state(id) };
     return true;
   });
-  const areasOf = (id) => ev(`(() => { const b = __t.D.saveRelay.quest.book; for (let i = 1; i < b.count; i++) if (b.def(i).id === ${JSON.stringify(id)}) return b.def(i).objectives.filter((o) => o.when.type === 'area').map((o) => o.when.id); return []; })()`);
-  await errand('E1 explore', 'sq.burl.tower', 'burl', async () => { for (const a of await areasOf('sq.burl.tower')) await goTrig(a); await pause(500); });
+  const areasOf = (id) => evA(`(async () => { const A = (await (await fetch('/content/quests/areas.json')).json()).areas, b = __t.D.saveRelay.quest.book; for (let i = 1; i < b.count; i++) if (b.def(i).id === ${JSON.stringify(id)}) return b.def(i).objectives.filter((o) => o.when.type === 'area').map((o) => (A[o.when.id] && A[o.when.id].trigger) || o.when.id); return []; })()`);
   await errand('E2 collect + deliver six blue berries', 'sq.burl.blue', 'burl', async () => {
     for (let i = 1; i <= 6; i++) { await goIx('qp.berry' + i, 0.7); await pressE(1); }
   });
-  await errand('E3 talk (ask Burl for Rook)', 'sq.fc.ask', 'rook', async () => { await talk('bear', ['ok|yes|bear|crow|ask']); });
-  await errand('E4 deliver three arrows to the note post', 'sq.post.spare', 'post', async () => {
-    await goIx('qi.notePost'); await pressE(1); if (await ev('__t.D.dialogue.open')) await evA('__t.dlg([])');
-  });
+  await errand('E1 explore', 'sq.burl.tower', 'burl', async () => { for (const a of await areasOf('sq.burl.tower')) await goTrig(a); await pause(500); });
+  await errand('E3 talk (ask Burl for Rook)', 'sq.fc.ask', 'rook', async () => { await talk('bear', ['not yet|later|another', 'bear|crow|ask']); /* decline Burl's walk offer: accepting it makes him lead away (E5 does that) */ });
+  await errand('E4 deliver a brass scrap from Rook to Burl', 'sq.rook.gift', 'rook', async () => { await goIx('qp.brass1', 0.7); await pressE(1); }, 'burl');
   await errand('E5 escort Burl to the Bend relay', 'sq.burl.walk', 'burl', async () => {
     for (let i = 0; i < 120; i++) {
       if (await flag('escort.bear.relayBend') || (await ev("__t.w.state['burl.phase']")) === 7) break;
@@ -273,7 +276,16 @@ try {
     return { ok: len > 0, why: 'slot bytes ' + len };
   });
   await beat('AC3b Continue restores position, hearts, items, gear, quick bar, quests, flags', async () => {
-    warns.length = 0; await open();
+    warns.length = 0;
+    // voxelbench=0 is a capture-like page (no title menu): reload on the normal page and press Continue on the title card
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=1&backend=webgpu` });
+    if (!(await waitFor(() => ev('typeof __debug !== "undefined" && !!(__debug.menuHost && __debug.menuHost.active)'), 15000))) return { ok: false, why: 'title menu never showed' };
+    await ev("(() => { const h = __debug.menuHost, m = h.menu; for (let n = 0; n < 6 && m.snapshot().rows[m.snapshot().selected].id !== 'continue'; n++) m.handleKey('ArrowDown'); m.handleKey('Enter'); h.consume(); return JSON.stringify(m.snapshot().rows.map((r) => r.id + ':' + r.enabled)); })()"); 
+    if (!(await waitFor(() => ev('!__debug.menuHost || !__debug.menuHost.active'), 15000))) return { ok: false, why: 'Continue did not close the menu' };
+    await waitFor(() => ev('typeof __debug !== "undefined" && !!(__debug.playerHandle && __debug.playerHandle.data.components.health && __debug.saveRelay)'), 20000); await waitFor(() => ev('!!(__debug.saveRelay.quest && __debug.saveRelay.quest.book)'), 20000); await pause(2500); await ev(LIB);
+    // the quest book / save relay finish after the player exists: retry until snap() stops throwing
+    const ready = await waitFor(() => ev('(() => { try { __t.snap(); window.__snapErr = null; return true; } catch (e) { window.__snapErr = String(e && e.stack || e).slice(0, 300); return false; } })()'), 20000, 500);
+    if (!ready) return { ok: false, why: 'snap never ready: ' + await ev('window.__snapErr') };
     const after = await ev('__t.snap()');
     const canon = (v) => (v && typeof v === 'object') ? (Array.isArray(v) ? v.map(canon) : Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]))) : v;
     const diffs = [];

@@ -99,7 +99,8 @@ export function generateForNpc(raw, npcId, defs, snippets, opts = {}) {
 }
 
 /** Where generated routes go when a dialogue needs a fixed anchor: Burl's errands sit before his home greeting. */
-export const ANCHORS = { bear: 'bear.home.again' };
+// rook: Rook's main-quest hand-in/offer entries (call.ready/active, mirror.active/available) come first so an errand can never hide them (ch12 run beat 13); errands precede his repeat chatter.
+export const ANCHORS = { bear: 'bear.home.again', rook: 'rook.ford.repeat2' };
 
 /** raws = {npcId: rawDialogue} -> same keys with generated routes. */
 export function generateAll(raws, defs, snippets) {
