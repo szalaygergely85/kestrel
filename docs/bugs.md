@@ -8,6 +8,7 @@ Newest at the top of each table. Keep one line per bug; details go in the commit
 
 | ID | Date | Owner report (short) | Where / notes | Status |
 |---|---|---|---|---|
+| OB-025 | 2026-10-11 | Character creator (tools/chargen) human still not good: wants a proper, detailed, more realistic human like the bear - bigger model / finer voxels | Owner asked for the fable designer. Human kit: design/chargen/human_kit.js + content/chargen/human.charkit.json (shells, paints, gear). | open - fable designer |
 | OB-024 | 2026-10-11 | "What is this?" - wooden arch frame with a roof, crow on top, near the crossroads | Rook's nest ruin (MAP-23, ~975,1058): Medieval-kit arches + half roof + stair pile, nest + chest + Rook on the roof. Reads as scaffolding, not a ruined house. Proposal: rebuild as a broken STONE house (walls with gaps, fallen roof beams, rubble), same climb + roof. | open - owner to decide |
 | OB-023 | 2026-10-11 | Mushroom (big shelf fungus) lies in the middle of the road; should grow on a trunk | Red caps cap1..5 (MAP-25, Laetiporus scaled 2.2) placed on the east bank edge without checking road/trees. Fix: place them on tree trunks / stumps / logs, off the road, sensible size. Caps on tree trunks, scale 1.0, >= 6 m off the road (test). | fixed - verify |
 | OB-022 | 2026-10-11 | Dialogue: every short sentence needs its own E press - boring. Make lines shorter and GROUP consecutive lines of the same speaker into one box | Dialogue runner/box (game/js/quest/dialogue*). | open - in progress |
