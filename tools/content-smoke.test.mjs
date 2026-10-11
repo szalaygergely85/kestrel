@@ -57,6 +57,7 @@ import '../design/models/voxel_tower_crown.js'; // CH1-D1b towerCrown (world_m1 
 import '../design/models/sword.js'; // US-078c: content/levels/tower.level.json prop "sword"
 import '../design/models/voxel_beast.js'; // US-079a: content/worlds/world_m1.world.json entities "boar1"/"boar2"
 import '../design/models/voxel_bear.js'; // NPC-BEAR-01: content/worlds/world_m1.world.json entity "bear"
+import '../design/models/voxel_wildlife.js'; // QL-06: ASSETS.models.crow (world_m1 entity "rook")
 import '../design/models/m3_props.js'; // US-078d: content/levels/tower.level.json prop "practiceTarget"
 import '../design/models/far_tower.js';
 import '../design/models/ferrum_lights.js';
