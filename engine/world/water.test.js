@@ -116,8 +116,8 @@ const out = { surfaceZ: 0, depth: 0, region: '', index: -1, look: 0 };
   ok('validation: duplicate id names it', !!dup && dup.includes('"d"'), String(dup));
   const many = [];
   for (let i = 0; i <= WATER_MAX; i++) many.push(rect('r' + i, [i, 0, i + 0.5, 1], 0));
-  ok('validation: more than 32 regions throws', !!threw(() => collectWaterDefs({ water: many }, [])));
-  ok('32 regions are fine', !threw(() => collectWaterDefs({ water: many.slice(0, WATER_MAX) }, [])));
+  ok('validation: more than WATER_MAX regions throws', !!threw(() => collectWaterDefs({ water: many }, [])));
+  ok('WATER_MAX regions are fine', !threw(() => collectWaterDefs({ water: many.slice(0, WATER_MAX) }, [])));
 }
 
 // ---- World.load: world block + level block (frame offset, yawSteps), mesh and grid floors, serialize ----
