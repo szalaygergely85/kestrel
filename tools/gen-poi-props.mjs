@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import '../design/palette.js';
 import '../design/detail-pass.js';
 import '../design/levels/overworld_far.js';
-for (const m of ['lantern', 'lever', 'voxel_props', 'voxel_tower', 'voxel_world', 'boulder', 'rubble', 'wreckage', 'relay', 'sword', 'voxel_beast', 'm3_props', 'far_tower', 'ferrum_lights', 'title', 'voxel_bear', 'voxel_tower_crown']) { try { await import(`../design/models/${m}.js`); } catch { /* optional */ } }
+for (const m of ['lantern', 'lever', 'voxel_props', 'voxel_tower', 'voxel_world', 'boulder', 'rubble', 'wreckage', 'relay', 'sword', 'voxel_beast', 'chest', 'm3_props', 'far_tower', 'ferrum_lights', 'title', 'voxel_bear', 'voxel_tower_crown']) { try { await import(`../design/models/${m}.js`); } catch { /* optional */ } }
 import { World, stringifyContent } from '../engine/index.js';
 import { plantScaleFor } from './plant-scale.mjs';
 import { loadTestAssets } from './testing/content-node.mjs';
@@ -94,18 +94,20 @@ const PX = RC[0] - 4.3, stepTops = [], stepYs = [];
 }
 { rubble(PX - 2.1, stepYs[0] - 0.4, 30, 2); rubble(PX - 2.3, stepYs[2], 120, 3); rubble(PX + 2.2, stepYs[1], 75, 4); } // beside the pile, never on the approach line
 const nestZ = +(DECK + 0.05).toFixed(2);
+const CHEST = { voxel: { anim: 'closed', loop: false, model: 'chestSmall' } };
 const ruinEnts = [
   { id: 'nest', type: 'prop', x: RC[0] - 1, y: RC[1] - 1.6, z: nestZ, note: 'MAP-23 Rook nest anchor on the ruin roof (QL-16 relay.mirror pickup; QL-D1 nest sprite pending). Roof deck z ' + DECK },
-  { id: 'chestRook', type: 'prop', x: RC[0] + 1.6, y: RC[1] - 1.6, z: nestZ, note: 'MAP-23 chest anchor on the ruin roof (QL-16 River Boots chest; no chest content yet, chestHook defs [])' },
+  { id: 'chestRook', type: 'prop', x: RC[0] + 1.6, y: RC[1] - 1.6, z: nestZ, yawDeg: 180, components: CHEST, note: 'MAP-23 chest on the ruin roof (EQ-10: arrows 15 + a sturdy gear roll; table in chestDefs.js)' },
 ];
 // ---- MAP-25 loot spots + red caps + smoke anchors. Anchors are bare props (QL-18/QL-17 wire the content); caps are Quaternius mushrooms.
 const free = (x, y) => T.groundTypeAt(x, y) !== WATER && T.groundTypeAt(x + 1, y) !== WATER && T.groundTypeAt(x, y + 1) !== WATER;
-const anchor = (id, x, y, note) => { world.ensureBandFor(x, y); ruinEnts.push({ id, type: 'prop', x, y, z: 'ground', note }); };
+// EQ-10: chest anchors carry the chest voxel model (closed clip) + yaw 180 (front = +y, towards the approach); contents: game/js/quest/sim/chestDefs.js
+const anchor = (id, x, y, note) => { world.ensureBandFor(x, y); ruinEnts.push({ id, type: 'prop', x, y, z: 'ground', ...(id.startsWith('chest') ? { yawDeg: 180, components: CHEST } : {}), note }); };
 anchor('chestMeadow', 1384, 1062, 'MAP-25 heart-piece chest 1 (meadow grove, N of the road near fenceMeadow)');
 anchor('chestBend', 1268, 1014, 'MAP-25 heart-piece chest 2 (Bend Relay ridge, ~20 m NNE of relayBend)');
 { // chest 3 on a 1 m stair-block platform behind the ford Wall_Arch ruin (989.57,1092.29)
   const px = 986.2, py = 1094.6; put('Stairs_Exterior_Straight', px, py, 0, { ext: 1.0 });
-  ruinEnts.push({ id: 'chestCrossroads', type: 'prop', x: px, y: py, z: +(low(px, py, 1.0) - 0.04 + 1.0).toFixed(2), note: 'MAP-25 heart-piece chest 3 (crossroads ruin, on a 1 m stair-block platform behind the Wall_Arch)' });
+  ruinEnts.push({ id: 'chestCrossroads', type: 'prop', yawDeg: 180, components: CHEST, x: px, y: py, z: +(low(px, py, 1.0) - 0.04 + 1.0).toFixed(2), note: 'MAP-25 heart-piece chest 3 (crossroads ruin, on a 1 m stair-block platform behind the Wall_Arch)' });
 }
 { const hx = 930, hy = 968; world.ensureBandFor(hx, hy); put('Rock_Medium_1', hx + 1.5, hy + 1.2, 40, { ext: 1.2 }); put('Rock_Medium_2', hx - 1.8, hy + 1.0, 200, { ext: 1.2 });
   ruinEnts.push({ id: 'hiddenScrawl', type: 'prop', x: hx - 0.5, y: hy + 5, z: 'ground', components: { inspect: { text: 'scrawl.hiddenChest' } }, note: 'MAP-25 scrawl on the footpath north (text key scrawl.hiddenChest, writer QL-W1)' });

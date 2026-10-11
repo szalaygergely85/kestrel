@@ -111,4 +111,28 @@ if (typeof global.gc === 'function') {
   global.gc(); assert.ok(process.memoryUsage().heapUsed - before < 65536, 'idle hook does not allocate per tick');
 }
 
+// EQ-10: defs [] -> the hook builds chests from the world's chest* anchors; 'gear:got' opens the item-get card.
+{
+  const playerData = { transform: { x: 0, y: 0, z: 0 }, components: {} };
+  const inv = ensureInventory(playerData, { pack: [], left: null, right: null });
+  const ents = { chestMeadow: { transform: { x: 5, y: 5, z: 0, yawDeg: 180 } } };
+  const handlers = new Map();
+  const events = { emit(n, p) { for (const f of handlers.get(n) || []) f(p); }, on(n, f) { (handlers.get(n) || handlers.set(n, []).get(n)).push(f); return () => {}; } };
+  const world = { entity: (id) => ents[id] || null, get: () => ({ play() {} }) };
+  const hook = createChestHook({ defs: [], items: A.items, style: A.uiStyle.itemGetCard, rgb, seed: 3 });
+  hook.onBoot({ world, player: playerData, events, inventory: inv, state: { interactPressed: false, playerYawDeg: 0 } });
+  assert.equal(hook.card.isOpen, false);
+  events.emit('gear:got', { id: 'gear.body.jerkin.sturdy', n: 1 });
+  assert.equal(hook.card.isOpen, true, 'gear:got opens the item-get card');
+  assert.equal(hook.card.snapshot().id, 'gear.body.jerkin.sturdy');
+  // anchors drive a chest: standing in front (+y of it), facing it, E opens it and the heart piece lands in the pack
+  const st = { interactPressed: true, playerYawDeg: 0 };
+  playerData.transform.x = 5; playerData.transform.y = 6; // front is +y (yaw 180)
+  st.playerYawDeg = 0; // forwardOf(0) = (0, -1): looking at the chest from its front
+  const hook2 = createChestHook({ defs: [], items: A.items, style: A.uiStyle.itemGetCard, rgb, seed: 3 });
+  hook2.onBoot({ world, player: playerData, events, inventory: inv, state: st });
+  hook2.onTick(1 / 60); hook2.onTick(1);
+  assert.equal(countOf(inv, 'heart.piece'), 1, 'anchor chest opened from the world entity');
+}
+
 console.log('chestHook: interact opens once, item added once, clip driven, save-relay/seam events forwarded, restored-open, card dismiss, no-defs, idle GC PASS');
