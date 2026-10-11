@@ -1,51 +1,258 @@
 {
   "version": 1,
   "region": "ch3",
-  "band": [5, 10],
+  "band": [
+    5,
+    10
+  ],
   "quests": [
     {
       "id": "mq.ow.path",
       "title": "Cookfire Smoke",
       "main": true,
-      "steps": [{ "template": "explore", "params": { "areas": ["owPath"] }, "objText": "Follow the track toward the smoke" }],
-      "requires": [{ "quest": "mq.smoke", "step": "north" }],
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "owPath"
+            ]
+          },
+          "objText": "Follow the track toward the smoke"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.smoke",
+          "step": "north"
+        }
+      ],
       "abandonable": false
     },
     {
       "id": "mq.ow.fence",
       "title": "Wolves at the Fence",
       "main": true,
-      "steps": [{ "template": "kill", "params": { "ids": ["wolf1", "wolf2", "wolf3", "wolf4", "wolf5"], "count": 5 }, "objText": "Drive the wolves from the goose pen" }],
-      "requires": [{ "quest": "mq.ow.path", "step": "explore" }],
+      "steps": [
+        {
+          "template": "kill",
+          "params": {
+            "ids": [
+              "wolf1",
+              "wolf2",
+              "wolf3",
+              "wolf4",
+              "wolf5"
+            ],
+            "count": 5
+          },
+          "objText": "Drive the wolves from the goose pen"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.ow.path",
+          "step": "explore"
+        }
+      ],
       "abandonable": false
     },
     {
       "id": "sq.hw.piers",
       "title": "The Pulled Bridge",
       "site": "pierStone",
-      "objectives": [{ "id": "read", "text": "Read the stone north of the road", "when": { "type": "flag", "id": "lore.pierStone.read", "equals": true } }],
-      "opensAfter": ["mq.ford.mirror"],
-      "reward": { "items": [{ "id": "arrow", "n": 10 }] },
+      "objectives": [
+        {
+          "id": "read",
+          "text": "Read the stone north of the road",
+          "when": {
+            "type": "flag",
+            "id": "lore.pierStone.read",
+            "equals": true
+          }
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
       "lines": {
-        "offer": ["A tall stone by the track. Cut square, set on end.", "Marks on one face. Too worn to read from here."],
-        "active": ["The stone by the track. Read it up close."],
-        "ready": ["Bridge stone. Pulled down from the west bank.", "Behind it, in the grass, ten arrows tied with twine."],
-        "done": ["The stone stands. The river runs where the bridge was."]
+        "offer": [
+          "A tall stone by the track. Cut square, set on end.",
+          "Marks on one face. Too worn to read from here."
+        ],
+        "active": [
+          "The stone by the track. Read it up close."
+        ],
+        "ready": [
+          "Bridge stone. Pulled down from the west bank.",
+          "Behind it, in the grass, ten arrows tied with twine."
+        ],
+        "done": [
+          "The stone stands. The river runs where the bridge was."
+        ]
       }
     },
     {
       "id": "sq.fc.sign",
       "title": "The West Arm",
       "site": "post",
-      "steps": [{ "template": "fetch", "params": { "item": "signArm" }, "objText": "Find the sign arm in the shallows" }],
-      "opensAfter": ["mq.ford.mirror"],
-      "reward": { "items": [{ "id": "arrow", "n": 10 }] },
+      "steps": [
+        {
+          "template": "fetch",
+          "params": {
+            "item": "signArm"
+          },
+          "objText": "Find the sign arm in the shallows"
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
       "returnText": "Bring the sign arm to the ford post",
       "lines": {
-        "offer": ["A tag on the basket: THE WEST ARM OF THE SIGN FELL.", "IN THE SHALLOWS BY THE FORD. BRING IT BACK."],
-        "active": ["The tag: WEST ARM. IN THE SHALLOWS."],
-        "ready": ["You lay the arm in the basket. The wood is river-black.", "Under it, tied with twine: ten arrows."],
-        "done": ["The tag: WEST POINTS WEST AGAIN. THANK YOU."]
+        "offer": [
+          "A tag on the basket: THE WEST ARM OF THE SIGN FELL.",
+          "IN THE SHALLOWS BY THE FORD. BRING IT BACK."
+        ],
+        "active": [
+          "The tag: WEST ARM. IN THE SHALLOWS."
+        ],
+        "ready": [
+          "You lay the arm in the basket. The wood is river-black.",
+          "Under it, tied with twine: ten arrows."
+        ],
+        "done": [
+          "The tag: WEST POINTS WEST AGAIN. THANK YOU."
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.wolves",
+      "title": "Wolf Bounty",
+      "site": "owBoard",
+      "steps": [
+        {
+          "template": "kill",
+          "params": {
+            "ids": [
+              "wolf1",
+              "wolf2",
+              "wolf3",
+              "wolf4",
+              "wolf5"
+            ],
+            "count": 3
+          },
+          "objText": "Cull three wolves at the goose pen"
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          },
+          {
+            "id": "potion.hp",
+            "n": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.boars",
+      "title": "Boar Bounty",
+      "site": "owBoard",
+      "steps": [
+        {
+          "template": "kill",
+          "params": {
+            "ids": [
+              "boarF1",
+              "boarF2"
+            ],
+            "count": 2
+          },
+          "objText": "Cull two boars on the west bank"
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "table": "gear.t2"
+      }
+    },
+    {
+      "id": "sq.ow.parcel",
+      "title": "Parcel for the Forge",
+      "site": "owBoard",
+      "steps": [
+        {
+          "template": "deliver",
+          "params": {
+            "item": "packet",
+            "to": "owForge"
+          },
+          "objText": "Leave the packet at the forge"
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.ford",
+      "title": "Scout the Far Bank",
+      "site": "pierStone",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "fordWest"
+            ]
+          },
+          "objText": "Cross the ford to the west bank"
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 15
+          }
+        ]
       }
     }
   ]

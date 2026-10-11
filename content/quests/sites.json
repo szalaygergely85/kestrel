@@ -27,6 +27,12 @@
     },
     "pierStone": {
       "entity": "pierStone"
+    },
+    "owBoard": {
+      "entity": "owBoard"
+    },
+    "owForge": {
+      "entity": "owForge"
     }
   }
 }
