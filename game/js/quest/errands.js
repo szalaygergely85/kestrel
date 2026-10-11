@@ -27,7 +27,7 @@ export function isWorn(eq, id) {
 }
 
 /** OB-054b: short plain noun for an interactable's prompt. Table first (ids whose camelCase split reads badly), else the id split into words. */
-const LABELS = { post: 'basket', notePost: 'note post', noteKeepLight: 'pinned page' };
+const LABELS = { post: 'trade basket', notePost: 'notice post', gondola: 'wrecked airship', packet: 'cloth packet', noteKeepLight: 'pinned note', noteSteelHush: 'pinned note', noteLeave: 'pinned note' }; // OB-058 writer names (docs/story.md)
 export function labelOf(id) { return LABELS[id] || String(id).replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase(); }
 /** '[E] <Verb> <name>' capped at 28 chars (name trimmed, never a bare verb). */
 export function promptFor(verb, name) { return ('[E] ' + verb + ' ' + name).slice(0, 28).trim(); }
