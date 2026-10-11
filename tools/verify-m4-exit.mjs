@@ -41,7 +41,7 @@ try {
     await cdp.send('Page.navigate', { url });
     let ready = false;
     for (let i = 0; i < 200; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.world && window.__debug.playerHandle && window.__debug.saveRelay && window.__debug.relayWake && window.__debug.playerHandle.data.components.health)')) { ready = true; break; } }
-    assert.ok(ready, 'game never ready: ' + JSON.stringify(errors));
+    assert.ok(ready, 'game never ready: ' + JSON.stringify(errors) + ' ' + await evaluate(cdp, "JSON.stringify(Object.fromEntries(['world','playerHandle','saveRelay','relayWake'].map(k=>[k,!!(window.__debug&&window.__debug[k])])))"));
     await pause(1500); // let the sim run a few frames (questPickups installs book.packOps)
   }
 
@@ -60,6 +60,7 @@ try {
     c.health.hp = Math.max(1, c.health.max - 10);
     w.state['aether.attuned'] = true; w.state['clock.hour'] = 13.5; w.state['m4.marker'] = 'kept';
     D.relayWake.interact('ws_roadBend'); for (let i = 0; i < 180; i++) D.relayWake.step(1 / 60, null); // wake the relay
+    D.saveRelay.quest.feed({ type: 'flag:set', key: 'wake', value: true }); // the played wake completes the first objective (as game/js/m4Exit.test.js)
     const book = D.saveRelay.quest.book, gi = D.saveRelay.quest.book.def; let n = 0;
     for (let i = 1; i < book.count; i++) if (book.def(i).id === 'tower.blade') { book.def(i).giveOnAccept = [{ id: 'potion.hp', n: 1 }]; n = i; } // exercise the given-items path on a gate-free quest
     if (!book.accept('tower.blade')) throw new Error('tower.blade not acceptable');
@@ -79,10 +80,11 @@ try {
   const after = await evaluate(cdp, SNAP);
   const near = (a, b, e) => Math.abs(a - b) <= e;
   const diffs = [];
-  const eq = (name, a, b) => { if (JSON.stringify(a) !== JSON.stringify(b)) diffs.push({ name, before: a, after: b }); };
+  const canon = (v) => (v && typeof v === 'object') ? (Array.isArray(v) ? v.map(canon) : Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]))) : v; // key order after a load is not part of the snapshot
+  const eq = (name, a, b) => { if (JSON.stringify(canon(a)) !== JSON.stringify(canon(b))) diffs.push({ name, before: a, after: b }); };
   if (!before.pos.every((v, i) => near(v, after.pos[i], 0.05))) diffs.push({ name: 'pos', before: before.pos, after: after.pos });
   eq('hp', before.hp, after.hp); eq('max', before.max, after.max);
-  eq('inventory', before.inventory, after.inventory); eq('equipment', before.equipment, after.equipment); eq('quickbar', before.quickbar, after.quickbar);
+  eq('inventory.slots', before.inventory.slots, after.inventory.slots); /* left/right are derived from equipment by syncHands */ eq('equipment', before.equipment, after.equipment); eq('quickbar', before.quickbar, after.quickbar);
   eq('main.completed', before.main.completed, after.main.completed); eq('quests', before.quests, after.quests); eq('tracked', before.tracked, after.tracked);
   eq('dead', before.dead, after.dead); eq('chests', before.chests, after.chests);
   for (const k of Object.keys(before.state)) if (k !== 'clock.hour') eq('state.' + k, before.state[k], after.state[k]);

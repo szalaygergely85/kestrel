@@ -1072,12 +1072,11 @@ async function runGame(mode, cinematic = null) {
     if (toasts && T[res]) toasts.say(T[res], [226, 214, 176]);
   };
   const qbPlayOk = () => !!(vitals && !vitals.dead) && !wakeOut.inputLocked && !isMapOpen() && !isSettingsOpen() && !qbBlocked && !(invView && invView.isOpen) && !vLocked();
-  const qbDrink = () => { if (quickbar && playerHandle) qbToast(quickbar.drink(playerHandle.data)); };
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
   let equipPlay = null, shieldSim = null, arrowSim = null; // EQ-07/09: rebuilt on every 'world:loaded'
-  let quickbar = null, qbView = null, qbTick = 0, qbBlocked = false; const POTION_KEY = 'KeyH'; // EQ-12 + D-068: sim rebuilt per world, view per page; H drinks (takes over the old swap-hands key)
+  let quickbar = null, qbView = null, qbTick = 0, qbBlocked = false; // EQ-12: sim rebuilt per world, view per page
   let fireball = null, fbTargets = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
   // US-091b: pack-screen mouse. Hover -> UI cell under the pointer; a click while open must not re-lock the pointer
   // (PlayerLook's own canvas click handler), so a capture listener on window swallows it first.
@@ -1109,14 +1108,6 @@ async function runGame(mode, cinematic = null) {
     else if (res.kind === 'refuse') toasts.say(res.slot < HAND_SLOTS ? 'That does not fit this hand' : 'Cannot be placed on the quick bar', [220, 110, 60]);
   });
   window.addEventListener('click', (e) => { if (invView && invView.isOpen) e.stopPropagation(); }, true);
-  // D-068: the potion HUD button is clickable whenever the pointer is free (a click while the pointer is locked is an attack)
-  const potionClick = (e) => {
-    if (!qbView || !quickbar || !ui || !playerHandle || (look && look.locked) || (invView && invView.isOpen) || mode !== 'world' || !qbPlayOk()) return false;
-    const r = canvas.getBoundingClientRect();
-    return qbView.hitPotion(Math.floor((e.clientX - r.left) / r.width * ui.cols), Math.floor((e.clientY - r.top) / r.height * ui.rows));
-  };
-  canvas.addEventListener('mousedown', (e) => { if (potionClick(e)) qbDrink(); });
-  window.addEventListener('click', (e) => { if (potionClick(e)) e.stopPropagation(); }, true);
   // US-090w: title menu pointer - hover selects, click activates; the click never reaches PlayerLook's pointer-lock handler.
   const menuCell = (e) => { const r = canvas.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / r.width * ui.cols), Math.floor((e.clientY - r.top) / r.height * ui.rows)]; };
   canvas.addEventListener('mousemove', (e) => {
@@ -1893,7 +1884,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (hands) {
         // HANDS-01b (37.8a): the router turns LMB/RMB + the gate into one `down` per item; every item sim is stepped
         // every step (down = false when it is in no hand).
-        if (!uiLocked && !paused && !ending && !vLocked() && input.pressed(gameKeys.swapHands) && gameKeys.swapHands !== POTION_KEY) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
+        if (!uiLocked && !paused && !ending && !vLocked() && input.pressed(gameKeys.swapHands)) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
         if (itemDefs) stepEquipment(playerHandle.data, itemDefs); // EQ-02: hands are derived (right = main/ranged, left = off)
         const gateOpen = look.locked && !uiLocked && !ending && !paused && !vLocked();
         // EQ-07 (settles the EQ-02 'crossed' note): hands.step(player, rawLeftHand, rawRightHand): the LEFT hand (shield) follows RMB,
@@ -1917,7 +1908,6 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           if (qbPlayOk()) {
             const choosing = !!(dialogueCtl && dialogueCtl.open && dialogueCtl.runner.state === 'choosing');
             if (!choosing) for (let n = 0; n < 4; n++) if (input.pressed('Digit' + (n + 1))) { qbToast(quickbar.press(pl, n)); break; }
-            if (input.pressed(POTION_KEY)) qbDrink();
           }
         }
         if (fireball) { // SPELL-01a: aim = unit 3D look vector (pitch > 0 = up); trig stays here, outside sim/
@@ -2274,10 +2264,9 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
             if (eqH && eqH.set === 'ranged' && eqH.ranged !== null) drawArrowCount(ui, assets.uiStyle.vitals, eqH.quiver ? eqH.quiver.n : 0, hudOn);
             if (hudOn) drawBlockSpark(ui, ui.cols, ui.rows, (fb.timeSec - blockSparkAt) * 1000);
           }
-          if (qbView && quickbar && playerHandle) { // EQ-12 + D-068: quick bar bottom-centre + the potion button by the hearts (not in menus / cinematics)
+          if (qbView && quickbar && playerHandle) { // EQ-12 + D-068: quick bar bottom-centre (OB-011: no potion HUD button; not in menus / cinematics)
             const qbOn = !vitals.dead && !wakeOut.inputLocked && !isMapOpen() && !isSettingsOpen() && !(invView && invView.isOpen) && !cinematic;
             qbView.drawBar(ui, playerHandle.data, quickbar.st, qbOn);
-            qbView.drawPotion(ui, assets.uiStyle.vitals, playerHandle.data, quickbar.st, 'H', qbOn);
           }
           hurtFx.draw(ui); // HURT-FX-01
           deathFlow.draw(ui, ui.cols, ui.rows); // DEATH-FLOW-01
