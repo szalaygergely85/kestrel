@@ -96,6 +96,7 @@ import { wireTelegraphs, telegraphsEnabled } from './fx/telegraphWire.js'; // TE
 import { stepCombatHint } from './quest/combatHint.js'; // COMBAT-HINT-01
 import { createWild } from './wild/wildEnv.js'; // WILD-06: ambient rabbits + deer
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
+import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
 import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
 import { createBeastAnim } from './quest/beastAnim.js'; // ANIM-STATE-WIRE-01
@@ -1375,6 +1376,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       }
       if (beasts) beasts.dispose();
       if (params.get('bench') === 'combat' || (benchActive && params.get('enemies') === '4')) ensureBenchBoars(world); // COMBAT-BENCH-01
+      ensureWolves(world); // WOLF-01: turns MAP-26 anchors wolf1..5 into wolf beasts (no-op while they are absent)
       beasts = createBeastSim(world, { nav: worldDef.nav && buildBeastNav(world, worldDef.nav), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events });
       if (telegraphWire) telegraphWire.dispose(); // TELEGRAPH-WIRE-01 part 1
       telegraphWire = wireTelegraphs(engine.events, world, beasts, telegraphsEnabled(params, isCaptureOrBench));
