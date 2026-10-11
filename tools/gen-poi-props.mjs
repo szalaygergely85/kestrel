@@ -122,8 +122,8 @@ anchor('chestBend', 1268, 1014, 'MAP-25 heart-piece chest 2 (Bend Relay ridge, ~
     ruinEnts.push({ id: 'cap' + k, type: 'prop', x: +px.toFixed(1), y, z: 'ground', components: { questPickup: { item: 'redcap', n: 1 }, sprite: { model: 'pickupRedCap', anim: 'idle', frame: 0 } }, note: 'MAP-25 red-cap pickup ' + k + ' (east bank edge, mushroom mesh stays as decoration; M4 pickupRedCap sprite, questPickup item redcap; QL-18 sq.rook.caps)' });
   } }
 // M4: smokeColumn far billboard (design/models/m3_props.js settings: unlit, far fog, minCells 3x6, detailRows 14); z 'ground' like the other props
-// OB-020 (owner: the billboard smoke looked very bad): smoke1..3 are bare anchors again until a real particle smoke exists.
-[[958, 1004], [951, 1008], [962, 1000]].forEach(([x, y], i) => { world.ensureBandFor(x, y); ruinEnts.push({ id: 'smoke' + (i + 1), type: 'prop', x, y, z: 'ground', note: 'MAP-25 smoke anchor ' + (i + 1) + ' (north of northLook); visual pending (OB-020: particle smoke, not a billboard)' }); });
+// OB-020 (owner: the billboard smoke looked very bad): smoke1..3 carry a thin particle plume (preset farSmoke, game ASSETS.particles) via components.emitters.
+[[958, 1004], [951, 1008], [962, 1000]].forEach(([x, y], i) => { world.ensureBandFor(x, y); ruinEnts.push({ id: 'smoke' + (i + 1), type: 'prop', x, y, z: 'ground', components: { emitters: [{ preset: 'farSmoke', offset: { up: 0.5 }, on: true }] }, note: 'MAP-25 smoke anchor ' + (i + 1) + ' (north of northLook); OB-020 particle plume (farSmoke), not a billboard' }); });
 console.log('ruin: wall top', ROOFZ, 'deck', DECK, 'steps tops', stepTops.join(','), 'base', base.toFixed(2));
 // ---- MAP-24 straw-man field: note post (crate + upright board) and 3 practiceTarget entities 13-23 m away
 const NOTE = [966, 1086];
