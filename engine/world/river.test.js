@@ -35,6 +35,8 @@ const fl = [0, 0];
   w.waterAt(50, 2, out); const l1 = rv.loc[L_LAT];
   w.waterAt(50, -2, out); const l2 = rv.loc[L_LAT];
   ok('river: signed lat (+ left of flow)', near(l1, 2) && near(l2, -2));
+  ok('river: no end caps (1 m past each end dry, 1 m inside wet)',
+    !w.waterAt(-1, 0, out) && !w.waterAt(101, 0, out) && w.waterAt(1, 0, out) && w.waterAt(99, 0, out));
 }
 { // curved: walk the compiled centre-line and probe +-hw
   const w = bare([curved]); const rv = w.water.rivers[0];

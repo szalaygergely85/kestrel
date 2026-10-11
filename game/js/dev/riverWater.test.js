@@ -29,15 +29,13 @@ for (let y = 832; y < 1420; y += 2) {
   const x = U.riverX(y); n++;
   if (!world.riverAt(x, y, o)) { miss++; ok('former river sample covered by the river shape y=' + y, false); continue; }
   const bed = bedC(y);
-  if (o.z < bed - 0.01) { dry++; if (y < 860) dryBad++; }                                   // surface below the bed = a hole in the river
+  if (o.z < bed - 0.01) { dry++; if (y < 1070 || y > 1082 || o.z < bed - 0.1) dryBad++; }   // RIVER-04 arch: only the authored ford bar south of the stones (<= 0.1 m)                                   // surface below the bed = a hole in the river
   const d = o.z - bed; if (process.env.DBG && (d > 1 || d < -0.01)) console.log(y, d.toFixed(2)); worstDeep = Math.max(worstDeep, d); if (d > 1.0) { deep++; if (y >= 1058) deepBad++; }
   for (const side of [-1, 1]) { const bx = x + side * (o.hw + 3); world.ensureBandFor(bx, y); if (T.groundAt(bx, y) < o.z - 0.05) floating++; } // dry banks stay above the surface
 }
 ok('every former river sample (y 832..1420) is in the river shape', miss === 0, miss);
-console.log(`WARN riverWater: ${dry}/${n} centre samples have the surface below the bed (dry): the far-terrain bed rises ~3 m downstream of the ford (y 1090-1350) while z must not rise - ASK ARCHITECT (MAP-04 bed carve not in this terrain?)`);
-ok('dry reach is the known ford-downstream hump only (y > 1080 or < 860)', dryBad === 0, dryBad);
-console.log(`WARN riverWater: ${deep} centre samples deeper than 1.0 m (wall) worst ${worstDeep.toFixed(2)} m (the pool upstream of the ford y 960-1016, ford z is fixed)`);
-ok('deep (wall) samples only upstream of the ford pool (y < 1058) and <= 40 samples', deepBad === 0 && deep <= 40, `${deepBad} / ${deep}`);
+ok('no dry river except the ford bar (y 1070-1082, <= 0.1 m; arch 38.45 RIVER-04 resolution)', dryBad === 0 && dry <= 6, `${dryBad} / ${dry}`);
+ok('deep (wall) samples only in the deliberate ford pool (y < 1058) and <= 40 samples', deepBad === 0 && deep <= 40, `${deepBad} / ${deep}`);
 ok('no floating water on dry banks (<= 8)', floating <= 8, floating);
 // z monotone non-increasing along each river, slope <= 0.6
 for (const rv of W.rivers) { let bad = 0; for (let i = 1; i < rv.n; i++) if (rv.z[i] > rv.z[i - 1] + 0.01) bad++; ok('z non-increasing ' + rv.id, bad === 0, bad); }
