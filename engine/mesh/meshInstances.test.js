@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import { World } from '../world/World.js';
 import { meshFromJSON } from './MeshData.js';
-import { DrawList, DRAW_INSTANCED, DRAW_FLAG_ONE_PART, instancedRanges, MeshDrawCache, LevelMeshCache, addMeshStructures } from './DrawList.js';
+import { DrawList, DRAW_INSTANCED, DRAW_FLAG_ONE_PART, DRAW_FLAG_NO_CULL, DRAW_FLAG_TWO_SIDED, instancedRanges, MeshDrawCache, LevelMeshCache, addMeshStructures } from './DrawList.js';
 import { InstanceGroups, writeUnitInstance, compactGroup, resolveGroupLod1 } from './instances.js';
 import { rasterDrawList, createRasterTarget } from './rasterJS.js';
 import { frustumPlanes } from './culling.js';
@@ -184,6 +184,21 @@ shadowSunMatrix(dirFromAzEl(135, 40, new Float64Array(3)), new Float64Array(3), 
     ig.addToDrawList(l, null, null, 30, vpSel, ROWS, { cache: new MeshDrawCache(), idFor });
     ok('near -> LOD0, far -> LOD1 (1 each)', g.drawCount[0] === 1 && g.drawCount[1] === 1, `${g.drawCount[0]} ${g.drawCount[1]}`);
     ok('2 DRAW_INSTANCED items, different meshes (LOD0 draw != LOD1 draw)', l.count === 2 && l.items[0].mesh !== l.items[1].mesh);
+  }
+  // 7a2. OB-061: LOD1 of a masked LOD0 (opaque leaf cards) draws two-sided (NO_CULL) so its normals flip to the viewer like LOD0's;
+  // a plain (unmasked) LOD0 keeps culling. Pre-fix the LOD1 item carried only ONE_PART (cull on -> half the cards, back to the sun, navy).
+  {
+    const vpSel = new Float64Array(16); vpSel[5] = 1; vpSel[7] = 1; vpSel[15] = 1;
+    for (const masked of [true, false]) {
+      const ig = new InstanceGroups(); ig.bindMeshResolver(resolver);
+      const g = ig.meshGroup(masked ? { ...lodOak, maskRanges: new Int32Array(5) } : lodOak, 1); g.lodCells = 8;
+      writeUnitInstance(g.ib, g.count++, 0, 3000, 0, 0, 0xA001, 0);
+      const l = new DrawList(); l.begin();
+      ig.addToDrawList(l, null, null, 31, vpSel, ROWS, { cache: new MeshDrawCache(), idFor });
+      const it = l.items[0];
+      ok(`far instance is LOD1 (masked LOD0=${masked})`, g.drawCount[1] === 1 && l.count === 1);
+      ok(`LOD1 NO_CULL iff LOD0 masked (masked=${masked})`, ((it.flags & (DRAW_FLAG_NO_CULL | DRAW_FLAG_TWO_SIDED)) === (DRAW_FLAG_NO_CULL | DRAW_FLAG_TWO_SIDED)) === masked && ((it.flags & DRAW_FLAG_TWO_SIDED) !== 0) === masked, String(it.flags));
+    }
   }
   // 7b. resolveGroupLod1: no `lods` -> null forever; unloaded (lazy) LOD1 -> null (LOD0 fallback) until it reports ready.
   {

@@ -24,7 +24,7 @@ import { packNormalOct, unpackNormalOct } from '../voxel/octNormal.js';
 import {
   flatKind, flatFace, flatMat, AO_NONE, AO_WALL, AO_PLANE, AUX_STRIDE, FLAT_STRIDE,
 } from './MeshData.js';
-import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS, DRAW_FLAG_ONE_PART, DRAW_FLAG_NO_CULL, instancedRanges } from './DrawList.js';
+import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS, DRAW_FLAG_ONE_PART, DRAW_FLAG_NO_CULL, DRAW_FLAG_TWO_SIDED, instancedRanges } from './DrawList.js';
 import { MaskAtlas } from '../render/MaskAtlas.js';
 import { INST_FLAG_SWAY, swayOffset, windSwayOn } from './sway.js';
 import { ditherKeep } from './lodDither.js';
@@ -163,6 +163,7 @@ let _mW = -1, _mX0 = 0, _mY0 = 0, _mH = 0, _mCut = 0;
 let _swayOn = false, _swayBx = 0, _swayBy = 0, _swayBz = 0, _swayT = 0, _swayF = /** @type {import('./sway.js').SwayWind|null} */ (null);
 const _swayD = { x: 0, y: 0 };
 let _dither = 0; // S8-B2-07: (flags >>> 16) & 0x7ff of the instance being rasterised (0 = not dithered; lodDither.js)
+let _twoSided = false; // OB-061: DRAW_FLAG_TWO_SIDED instanced item (LOD1 leaf cards of a masked LOD0)
 let _noCull = false; // MESH-INST-02: DRAW_FLAG_NO_CULL instanced item (open mesh): no back-face cull
 let _team = 0; // team index of the instance being rasterised (0 outside DRAW_INSTANCED)
 /** Per-triangle constant fragment data, reused every triangle (no per-call allocation). */
@@ -577,7 +578,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.biasFlag = item.flags & DRAW_FLAG_DEPTH_BIAS;
       _info.cullBack = false;
     } else {
-      _info.twoSided = _mW >= 0; // ALPHA-01b (37.17 item 4): masked ranges flip N on back faces like cloth
+      _info.twoSided = _mW >= 0 || _twoSided; // ALPHA-01b (37.17 item 4): masked ranges flip N on back faces like cloth; OB-061: so do DRAW_FLAG_TWO_SIDED items (GPU flips on !front_facing everywhere)
       v0 = t * 3; v1 = t * 3 + 1; v2 = t * 3 + 2;
       const flat0 = mesh.flat[v0 * FLAT_STRIDE];
       const flat1 = mesh.flat[v0 * FLAT_STRIDE + 1];
@@ -625,6 +626,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
 function rasterInstanced(mesh, item, target, ctx) {
   const ranges = instancedRanges(item); // 38.9: ONE_PART = whole mesh as one range
   _noCull = (item.flags & DRAW_FLAG_NO_CULL) !== 0;
+  _twoSided = (item.flags & DRAW_FLAG_TWO_SIDED) !== 0;
   const onePart = !!(item.flags & DRAW_FLAG_ONE_PART); // ALPHA-01f (a): the synthetic single range has no per-range mask
   const ib = item.instBuf;
   if (!ib) return;
@@ -672,7 +674,7 @@ function rasterInstanced(mesh, item, target, ctx) {
     }
   }
   _mW = -1; // ALPHA-01f(a): leave the module mask state clean for whatever draws next (mirrors rasterDrawList's static-masked reset)
-  _team = 0; _swayOn = false; _dither = 0; _noCull = false;
+  _team = 0; _swayOn = false; _dither = 0; _noCull = false; _twoSided = false;
 }
 
 /**

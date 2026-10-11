@@ -42,6 +42,8 @@ export const DRAW_FLAG_DEPTH_BIAS = 1;
 export const DRAW_FLAG_ONE_PART = 2;
 /** MESH-INST-02: DRAW_INSTANCED item of an "open" (thin / one-sided: grass cards, walls, bushes) mesh: both twins draw it WITHOUT back-face culling, like the single placed-mesh draw (the instanced path culls back faces otherwise). */
 export const DRAW_FLAG_NO_CULL = 4;
+/** OB-061: DRAW_INSTANCED item (always with NO_CULL) whose opaque cards must shade two-sided: the JS twin flips N on back faces like a masked range (the GPU flips on !front_facing for every item already). */
+export const DRAW_FLAG_TWO_SIDED = 8;
 
 /** MESH-INST-02: placed-mesh object ids live in [0xA000, 0xA000 + MESH_ID_SPAN) (0xFF00..0xFFFF stay free for viewmodel handles); the old `0xA000 | si` overflowed into 0xB000.. at 4096 structures. Identical to the old value for si < 4096. */
 export const MESH_ID_BASE = 0xA000;
