@@ -112,7 +112,7 @@ function defineAllPresets(p) {
   applyPropEmitters(world);
   const ee = createEntityEmitters(world, particles, null, (key) => particles.defIdOf(key));
   ee.sync();
-  ok('entityEmitters discovers the 2 burner emitters + the 3 OB-020 farSmoke plumes + the 2 OB-031 chimney smokes (Rook ruin, trade post) with no engine change', ee.count === 7, ee.count);
+  ok('entityEmitters discovers the 2 burner emitters + the 3 OB-020 farSmoke plumes + the 2 OB-031 chimney smokes (Rook ruin, trade post) + the 4 MAP-26 Outwall chimney smokes with no engine change', ee.count === 11, ee.count);
   for (let i = 0; i < 5; i++) particles.step();
   ok('the embers emitter is live (spawning) after a few steps', particles.stats.spawned > 0, particles.stats.spawned);
   ee.dispose();
