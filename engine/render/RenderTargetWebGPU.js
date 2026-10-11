@@ -79,10 +79,10 @@ export class RenderTargetWebGPU {
   }
 
   /** Rasterizes the glyph strip at the current cell size into a (re)created linear rgba8 atlas texture. @returns {any} */
-  _buildAtlas(old, m) {
+  _buildAtlas(old, m, filter = 'linear') {
     const ac = rasterizeGlyphAtlas(this._atlasCanvas, this._atlasCtx, m);
     if (old) this.device.dispose(old);
-    const tex = this.device.createTexture({ format: 'rgba8', width: ac.width, height: ac.height, filter: 'linear' });
+    const tex = this.device.createTexture({ format: 'rgba8', width: ac.width, height: ac.height, filter });
     this.device.writeTexture(tex, glyphAtlasPixels(ac, this._atlasCtx));
     return tex;
   }
@@ -95,9 +95,19 @@ export class RenderTargetWebGPU {
   _rebuildUiAtlas() {
     const ui = this._uiLayer;
     if (!ui) return;
-    this._uiAtlasTex = this._buildAtlas(this._uiAtlasTex, {
-      pxCellW: this.pxCellW * ui.sx, pxCellH: this.pxCellH * ui.sy, fontPx: this.fontSize * ui.sy, ascent: this.glyphAscent * ui.sy,
-    });
+    // OB-021: the UI cell is pxCell * ui.sx/sy, non-integer at 560x210 (3.5 x 3 px rows = 10.5): the old fractional atlas
+    // truncated its canvas height (clipped descenders) and was bilinear-resampled (blurry). Round up to whole texels, scale the
+    // font/ascent with the rounded cell, sample the atlas nearest. At integer ratios (<= 480x180) the numbers are unchanged.
+    const w = Math.max(1, Math.ceil(this.pxCellW * ui.sx - 1e-6)), h = Math.max(1, Math.ceil(this.pxCellH * ui.sy - 1e-6));
+    const kx = w / (this.pxCellW * ui.sx), ky = h / (this.pxCellH * ui.sy);
+    let m = { pxCellW: w, pxCellH: h, fontPx: this.fontSize * ui.sy * ky, ascent: this.glyphAscent * ui.sy * ky };
+    if (w !== this.pxCellW * ui.sx || h !== this.pxCellH * ui.sy) {
+      // The scene cell (2x3 px at 560x210) is clamped to the budget so its ascent == the cell height: scaled up, the
+      // descenders have no room (cut off). Fractional ratio -> fit the font to the rounded UI cell with real metrics.
+      const b = computeCellBox(this._measureCtx, 1, 1, w, h, Infinity, true);
+      m = { pxCellW: w, pxCellH: h, fontPx: b.fontPx, ascent: b.glyphAscent };
+    }
+    this._uiAtlasTex = this._buildAtlas(this._uiAtlasTex, m, 'nearest');
   }
 
   _buildUiTextures() {
