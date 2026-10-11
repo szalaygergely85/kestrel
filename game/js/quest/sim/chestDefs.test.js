@@ -14,7 +14,7 @@ const byId = new Map(world.entities.map((e) => [e.id, e]));
 const fake = { entity: (id) => { const e = byId.get(id); return e && { transform: { x: e.x, y: e.y, z: typeof e.z === 'number' ? e.z : 0, yawDeg: e.yawDeg || 0 } }; } };
 
 const defs = buildChestDefs(fake);
-assert.deepEqual(defs.map((d) => d.id).sort(), Object.keys(CHEST_TABLES).sort(), 'all five anchors become chests');
+assert.deepEqual(defs.map((d) => d.id).sort(), Object.keys(CHEST_TABLES).sort(), 'all anchors become chests');
 for (const d of defs) {
   assert.equal(byId.get(d.id).components.voxel.model, 'chestSmall', d.id + ' carries the chest model');
   if (!d.id.startsWith('secret')) assert.ok(Math.abs(d.frontY - 1) < 1e-9 && Math.abs(d.frontX) < 1e-9, 'yaw 180 -> front +y');
@@ -52,5 +52,9 @@ assert.ok(slots.size > 1, 'hidden chest slot varies with the seed: ' + [...slots
 let gearN = 0; const N = 400;
 for (let s = 1; s <= N; s++) { const r = openAll(s); for (const id of ['secretRook', 'secretBend', 'secretField', 'secretBank']) { assert.ok(r[id].includes('arrowx4'), id + ': 4 arrows'); if (r[id].some((x) => x.startsWith('gear.'))) gearN++; } }
 assert.ok(gearN / (N * 4) > 0.05 && gearN / (N * 4) < 0.11, 'secret gear chance ~8 %: ' + gearN / (N * 4));
+// US-104b: the 3 Outwall chests = 4 arrows + ~8 % gear, always 'fine' (T3)
+let owN = 0;
+for (let s = 1; s <= N; s++) { const r = openAll(s); for (const id of ['secretOw1', 'secretOw2', 'secretOw3']) { assert.ok(r[id].includes('arrowx4'), id + ': 4 arrows'); for (const x of r[id]) if (x.startsWith('gear.')) { owN++; assert.equal(items[x.replace(/x1$/, '')].equip.tier, 'fine', id + ': T3 gear is fine'); } } }
+assert.ok(owN / (N * 3) > 0.04 && owN / (N * 3) < 0.12, 'outwall gear chance ~8 %: ' + owN / (N * 3));
 void c; void countOf;
 console.log('chestDefs.test: ALL PASS');
