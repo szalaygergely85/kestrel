@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { validateEditorGroups } from './editor/treeGroups.js';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 // CHARGEN-15 (38.33): `char.<id>` models come from the add-on packages in content/packages/index.json (registered at boot, not in ASSETS.models).
@@ -286,6 +287,7 @@ export function validateContent(ASSETS, opts = {}) {
   };
   for (const [id, world] of Object.entries(worlds)) {
     for (const entity of world.entities || []) checkMeshEntity(entity, `worlds.${id}.entities[${entity.id}]`);
+    for (const msg of validateEditorGroups(world.editorGroups)) check(false, `worlds.${id}.editorGroups`, msg); // OB-028
   }
   for (const [id, chunk] of Object.entries(ASSETS?.chunks || {})) {
     for (const entity of chunk.entities || []) checkMeshEntity(entity, `chunks.${id}.entities[${entity.id}]`);
