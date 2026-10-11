@@ -1560,7 +1560,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           // reveal (mapFog.js's `reveal`, never touches the pencil route) of each marker's own cell, not the
           // player-visit feed (mapFogHook.js's per-tick `visit`) that gates the surrounding terrain.
           if (mapFogHook && mapFogHook.fog) for (const m of markers) mapFogHook.fog.reveal(m.x, m.y);
-          chartOptions = { chart: chartData, markers, fog: mapFogHook ? mapFogHook.fog : null, travel: !waystoneWire ? null : { list: () => { const ws = waystoneWire.sim; if (!ws) return []; const l = []; const n = ws.list(l); const out = []; for (let i = 0; i < n; i++) out.push({ id: l[i].id, name: l[i].label, order: l[i].order, touched: l[i].touched, woken: true, x: l[i].x, y: l[i].y }); return out; } } };
+          chartOptions = { chart: chartData, markers, geo: (window.ASSETS.levels.world_geo && params.get('geo') !== '0') ? { G: window.ASSETS.levels.world_geo, U: window.ASSETS.levels.overworld_far.util } : null, /* MAP-28 */ fog: mapFogHook ? mapFogHook.fog : null, travel: !waystoneWire ? null : { list: () => { const ws = waystoneWire.sim; if (!ws) return []; const l = []; const n = ws.list(l); const out = []; for (let i = 0; i < n; i++) out.push({ id: l[i].id, name: l[i].label, order: l[i].order, touched: l[i].touched, woken: true, x: l[i].x, y: l[i].y }); return out; } } };
         }
         try {
           initMapCard(assets, ui.cols, ui.rows, chartOptions);
