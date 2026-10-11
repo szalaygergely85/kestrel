@@ -45,6 +45,8 @@ function ensureScratch(body, cfg) {
   if (typeof body.jumpHeldPrev !== 'boolean') body.jumpHeldPrev = false;
   if (typeof body.peakZ !== 'number') body.peakZ = 0;
   if (typeof body.speedScale !== 'number') body.speedScale = 1; // US-013: <1 while pushing a roller
+  if (typeof body.pushX !== 'number') body.pushX = 0; // 38.45: external horizontal push (m/s, e.g. river current); added to the move only, never to vx/vy; the caller resets it
+  if (typeof body.pushY !== 'number') body.pushY = 0;
   if (typeof body.prevX !== 'number') body.prevX = 0;
   if (typeof body.prevY !== 'number') body.prevY = 0;
   if (typeof body.sliding !== 'boolean') body.sliding = false; // US-026a slope rule (23.3)
@@ -151,11 +153,11 @@ export function integrate(entity, dt, controls, world, cfg) {
   // ---- 4. Resolve horizontal movement against the grid --------------------
   const moved = world.physicsMode === 'mesh'
     ? world.collideCircle(
-      t.x, t.y, body.vx * dt, body.vy * dt,
+      t.x, t.y, (body.vx + body.pushX) * dt, (body.vy + body.pushY) * dt,
       body.radius, t.z, body.grounded, body._collideOpts, body._move
     )
     : moveCapsule(
-      world, t.x, t.y, body.vx * dt, body.vy * dt,
+      world, t.x, t.y, (body.vx + body.pushX) * dt, (body.vy + body.pushY) * dt,
       body.radius, t.z, body.grounded, body._collideOpts, body._move
     );
   t.x = moved.x;

@@ -258,6 +258,7 @@ export { laneCells, laneAlpha, LANE_CELL_M, LANE_ALPHA_MAX } from './fx/chargeLa
 
 // ---- US-055a1 water regions + query (architecture.md 32.2; the query is `World#waterAt`) ----
 export { createWater, collectWaterDefs, WATER_MAX } from './world/water.js';
+export { L_LAT, L_TX, L_TY } from './world/river.js'; // RIVER-01b: riverLocate scratch indices (game wading reads the bank side + tangent)
 export { createWaterfalls, collectWaterfallDefs } from './world/waterfalls.js';
 
 // DECAL-01: wall-text bindings over the shared overlay layer.
