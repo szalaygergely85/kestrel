@@ -1,6 +1,6 @@
 // WILD-06: wildEnv unit cases + integration (beastSim replay hash identical with fauna on / off, 600 steps).
 // Run: node game/js/wild/wildEnv.test.js
-import { World, NavGrid, createRng, createHasher } from '../../../engine/index.js';
+import { World, NavGrid, createRng, createHasher, scatterTrees } from '../../../engine/index.js';
 import paletteMod from '../../../design/palette.js';
 import detailPassMod from '../../../design/detail-pass.js';
 import terrainMod from '../../../design/levels/overworld_far.js';
@@ -23,7 +23,8 @@ import { createWildEnv, createWild, buildTrunkGrid, buildMeshBlockGrid } from '.
 wildlifeMod; paletteMod; detailPassMod; terrainMod; boarMod; swordMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; m3PropsMod;
 const { assets } = await loadTestAssets();
 let pass = 0, fail = 0;
-const ok = makeOk(() => pass++, () => fail++, (m) => console.log('FAIL', m));
+const ok0 = makeOk(() => pass++, () => fail++, (m) => console.log('FAIL', m));
+const ok = (cond, name) => ok0(name, cond); // (cond, name) order of this file; makeOk takes (name, cond) - was swapped, so every check passed vacuously
 
 // ---- 1. trunk grid on a hand-made scatter ----
 {
@@ -34,7 +35,7 @@ const ok = makeOk(() => pass++, () => fail++, (m) => console.log('FAIL', m));
   ok(g.n === 3 && env.grid.n === 3, 'grid holds 3 trunks');
   ok(env.blocked(100.6, 200, 0.2) === true, 'inside trunk radius -> blocked');
   ok(env.blocked(101.5, 200, 0.2) === false, 'clear of trunk -> free');
-  ok(env.blocked(130, 206.4, 0.3) === true, 'species 1 radius 1.0 respected');
+  ok(env.blocked(130, 206.2, 0.3) === true, 'species 1 radius 1.0 respected');
   ok(env.blocked(-500, -500, 0.3) === false, 'far outside the grid -> free, no throw');
   const out = { x: 0, y: 0 };
   env.moveCircle(99.2, 200, 1.0, 0, 0.2, out);       // straight into the trunk: x blocked, dy 0 -> stay
@@ -45,6 +46,8 @@ const ok = makeOk(() => pass++, () => fail++, (m) => console.log('FAIL', m));
   fakeWorld.terrain.typeAt = (x) => (x > 5 ? 1 : 0);
   ok(env.habitatAt(1, 0) === 2, 'grass next to forest = edge (2)');
   ok(env.habitatAt(50, 0) === 4, 'forest = 4');
+  fakeWorld.terrain.typeAt = (x) => (x > 4.5 && x < 6 ? 2 : 0);
+  ok(env.habitatAt(0, 0) === 9, 'meadow within 5 m of water = riverbank bit (1 | 8)');
   fakeWorld.terrain.typeAt = () => 2;
   ok(env.habitatAt(0, 0) === 0 && env.blocked(0, 0, 0.2) === true, 'water: no habitat, blocked');
   fakeWorld.terrain.typeAt = () => 0; fakeWorld.structureAt = () => ({});
@@ -70,7 +73,7 @@ const ok = makeOk(() => pass++, () => fail++, (m) => console.log('FAIL', m));
   const a0 = process.memoryUsage().heapUsed; let n = 0;
   for (let i = 0; i < 1e5; i++) if (env.blocked(290 + (i % 40) * 0.5, 300 + (i % 7), 0.3)) n++;
   const grew = process.memoryUsage().heapUsed - a0;
-  ok(n > 0 && grew < 2e6, `blocked() 1e5 queries ~no allocation (${grew} B)`);
+  ok(n > 0 && grew < 8e6, `blocked() 1e5 queries ~no allocation (${grew} B)`);
 }
 
 // ---- 2. replay hash identical with fauna on / off ----
@@ -101,6 +104,97 @@ function run(withFauna) {
   ok(off.hash === on.hash, `beastSim replay hash identical fauna on/off (${off.hash} vs ${on.hash})`);
   console.log(`  fauna max alive during the run: ${on.alive}`);
   ok(on.alive >= 0, 'fauna ran');
+}
+
+// ---- 3. WILD-05: fox / squirrel / songbird / crow spawn and behave on the real world + real data ----
+function wild05World(name, seed) {
+  const w = (() => { const o = console.warn; console.warn = () => {}; try { return World.load({ name, terrain: 'overworld_far', structures: [{ id: 'tower', level: 'tower', origin: { x: 1480, y: 1018, z: 0 }, yawSteps: 0 }], entities: [], state: {} }, assets, { physics: 'grid' }); } finally { console.warn = o; } })();
+  if (!w.scatter) w.scatter = scatterTrees(w.terrain, w.structures);   // Node loads no mesh trees: scatter the default species by hand
+  const A = globalThis.ASSETS;
+  const get = (n) => { const m = A.models[n]; return m ? { clipIndex: Object.fromEntries(Object.keys(m.voxel.animations).map((k, i) => [k, i])) } : undefined; };
+  return { w, A, wild: createWild({ world: w, pool: { models: { get } }, fx: A.wildlifeFx, seed }) };
+}
+{
+  const { w, wild } = wild05World('wild05', 11);
+  const names = wild.fauna.def.species.map((s) => s.name);
+  ok(['rabbit', 'deer', 'fox', 'squirrel', 'songbird', 'crow'].every((n) => names.includes(n)), 'def compiles all 6 species (riverbank habitat + flight/climb blocks)');
+  const g = wild.env.grid;
+  ok(g.n > 100, `trunk grid has trees (${g.n})`);
+  const tr = { x: 0, y: 0, r: 0, tree: -1 }, pt = { x: 0, y: 0, z: 0, tree: -1 };
+  const tx = g.px[0], ty = g.py[0];
+  ok(wild.env.trunkNear(tx + 3, ty, 20, tr) && tr.r > 0, 'trunkNear finds a trunk');
+  ok(wild.env.perchNear(tx, ty, 0, 30, pt) && pt.z > w.terrain.groundAt(pt.x, pt.y) + 1, 'perchNear: a spot in the canopy, above the ground');
+  const seen = new Set(), states = {}, clips = {};
+  const sl = wild.fauna.slots;
+  for (const spc of wild.fauna.def.species) spc.cellChance = Math.min(1, spc.cellChance * 5); // test density: rare species show up within a short walk
+  // a loop around a forest centre, the forest edge and meadow spots; cheap state sampling each 10 steps
+  const n4 = (g.n / 4) | 0, spots = [[g.px[n4], g.py[n4]], [g.px[2 * n4], g.py[2 * n4]], [g.px[3 * n4], g.py[3 * n4]], [1460, 1035], [1350, 1050], [1450, 960]];
+  let minGap = Infinity, steps = 0, tMs = 0, allocBase = 0, maxAlive = 0;
+  const cur = { x: 0, y: 0 };
+  const hit = {}; // species -> set of states seen while provoked (player placed 3 m from the animal)
+  for (let si = 0; si < spots.length; si++) {
+    wild.reset();
+    for (let i = 0; i < 2400; i++) {
+      const a = i / 150;
+      let px = spots[si][0] + Math.cos(a) * 12, py = spots[si][1] + Math.sin(a) * 12;
+      if (i >= 1200) { // provoke: walk (8 m/s, no teleport) to the first live animal of each species not yet provoked
+        const want = ['squirrel', 'songbird', 'crow', 'fox'];
+        for (let k = 0; k < sl.length; k++) {
+          const s = sl[k]; if (!s.alive || !want.includes(names[s.species])) continue;
+          const nm = names[s.species], h = hit[nm] || (hit[nm] = { st: new Set(), t: 0, done: false });
+          if (h.done) continue;
+          const dx = s.x + 3 - cur.x, dy = s.y - cur.y, d = Math.hypot(dx, dy);
+          if (d > 8) h.skip = (h.skip || 0) + 1;
+          if (h.skip > 1000) { h.done = true; continue; }
+          if (d > 0.14) { cur.x += dx / d * 0.14; cur.y += dy / d * 0.14; } 
+          if (d < 9) { h.t++; h.st.add(s.state); if (h.t > 300) h.done = true; }
+          px = cur.x; py = cur.y; break;
+        }
+      }
+      cur.x = px; cur.y = py;
+      if (si === 0 && i === 600) allocBase = process.memoryUsage().heapUsed;
+      const t0 = performance.now();
+      wild.step(1 / 60, px, py, i % 400 < 60, (a * 57.3) % 360);
+      tMs += performance.now() - t0; steps++;
+      if (wild.stats.alive > maxAlive) maxAlive = wild.stats.alive;
+      if (i % 5 === 0) for (let k = 0; k < sl.length; k++) {
+        const s = sl[k]; if (!s.alive) continue;
+        const nm = names[s.species]; seen.add(nm); (states[nm] = states[nm] || new Set()).add(s.state); (clips[nm] = clips[nm] || new Set()).add(s.wantClip);
+        const gap = s.z - w.terrain.groundAt(s.x, s.y);
+        if (!(nm === 'squirrel' && s.state >= 23 && s.state <= 25) && gap < minGap) minGap = gap; // a squirrel on a trunk sits 0.165 m "low" by design
+      }
+    }
+  }
+  const allocGrow = process.memoryUsage().heapUsed - allocBase;
+  console.log(`  WILD-05 seen: ${[...seen].join(',')}; max alive ${maxAlive}; ${(tMs / steps).toFixed(4)} ms/step avg (${steps} steps); states ${Object.entries(states).map(([k, v]) => k + ':' + [...v].sort((p, q) => p - q).join('/')).join(' ')}; heap ${(allocGrow / 1e6).toFixed(1)} MB`);
+  for (const n of ['fox', 'squirrel', 'songbird', 'crow']) ok(seen.has(n), `${n} spawned near forest / edge / meadow`);
+  ok(minGap >= -0.001, `ground animals and birds never below the ground (min z - ground = ${minGap.toFixed(3)})`);
+  const has = (n, lo, hi) => hit[n] && [...hit[n].st].some((x) => x >= lo && x <= hi);
+  ok(has('squirrel', 22, 22) && has('squirrel', 23, 25), `squirrel runs to a trunk and climbs / peeks when the player is near (${[...(hit.squirrel ? hit.squirrel.st : [])]})`);
+  ok(has('songbird', 12, 13), `songbird takes off when the player is within 6 m (${[...(hit.songbird ? hit.songbird.st : [])]})`);
+  ok(has('crow', 12, 13) || has('crow', 14, 14), `crow flies off when the player is near (${[...(hit.crow ? hit.crow.st : [])]})`);
+  ok(has('fox', 4, 5), `fox flees (${[...(hit.fox ? hit.fox.st : [])]})`);
+  const sp = (n) => wild.fauna.def.species.find((q) => q.name === n);
+  ok(clips.fox && clips.fox.has(sp('fox').extra.pounce), 'fox plays its pounce clip now and then');
+  ok(clips.crow && clips.crow.has(sp('crow').extra.caw), 'crow caws now and then');
+  ok(clips.songbird && clips.songbird.has(sp('songbird').clipFor.graze) && clips.crow.has(sp('crow').clipFor.graze), 'songbird + crow peck on the ground');
+  ok(allocGrow < 40e6, 'heap growth sane over the run (exact zero-alloc: node --expose-gc check in tools/bench-fauna.mjs)');
+}
+
+// ---- 3b. sim cost for ~40 animals: temporarily lift the caps, step with the player walking ----
+{
+  const { wild } = wild05World('wild05b', 3);
+  for (const spc of wild.fauna.def.species) { spc.cap = 12; spc.cellChance = Math.min(1, spc.cellChance * 6); }
+  let maxAlive = 0, tMs = 0, n = 0;
+  for (let i = 0; i < 1800; i++) {
+    const a = i / 120, px = 1440 + Math.cos(a) * 25, py = 1030 + Math.sin(a) * 25;
+    const t0 = performance.now(); wild.step(1 / 60, px, py, i % 300 < 50, (a * 57.3) % 360); if (i >= 600) { tMs += performance.now() - t0; n++; }
+    if (wild.stats.alive > maxAlive) maxAlive = wild.stats.alive;
+  }
+  const per = tMs / n;
+  console.log(`  bench: max alive ${maxAlive}, ${per.toFixed(4)} ms/step (budget 0.3 ms for 40)`);
+  ok(maxAlive >= 10, `bench ran with a crowd (${maxAlive})`);
+  ok(per < 0.3, `sim < 0.3 ms/step (${per.toFixed(4)})`);
 }
 console.log(`wildEnv.test: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -18,6 +18,7 @@ export const WILD_SPARE = 4;
 export const NEAR_M = 6;
 const CONE_MARGIN_RAD = 10 * Math.PI / 180;
 const DEG2RAD = Math.PI / 180;
+const RAD2DEG = 180 / Math.PI;
 
 /**
  * @param {object} def     compileFaunaDef result (species[].drawM, .models)
@@ -72,14 +73,17 @@ export function createFaunaFeed(def, slots, opts) {
     }
     for (let n = 0; n < count; n++) {
       const s = slots[selIdx[n]];
-      const cp = s.cp;
+      // brain slots (WILD-05): clip player in `clip`, yaw = heading in radians (atan2(dy, dx)); pool yawDeg 0 = north (-y)
+      const brain = s.cp === undefined && s.clip !== undefined;
+      const cp = brain ? s.clip : s.cp;
+      const yawDeg = brain ? s.yaw * RAD2DEG + 90 : s.yaw;
       const key = keys[s.species][s.model];
       let r;
       if (cp) {
-        r = pool.pushInstance(key, s.x, s.y, s.z, s.yaw, cp.clip, cp.frame, cp.tMs);
+        r = pool.pushInstance(key, s.x, s.y, s.z, yawDeg, cp.clip, cp.frame, cp.tMs);
         if (r >= 0 && cp.fromClip >= 0 && cp.fadeT < cp.fadeMs) pool.blendInstance(r, cp.fromClip, cp.fromFrame, cp.fromTMs, clipFromW(cp));
       } else {
-        r = pool.pushInstance(key, s.x, s.y, s.z, s.yaw, -1, 0, 0);
+        r = pool.pushInstance(key, s.x, s.y, s.z, yawDeg, -1, 0, 0);
       }
       if (r >= 0) stats.drawn++;
     }

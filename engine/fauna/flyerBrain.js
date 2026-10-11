@@ -17,6 +17,7 @@ export const PERCH_MIN_M = 30, PERCH_MAX_M = 70, PERCH_FARTHER_M = 15;
 export const LAND_M = 1.5;
 const DECISION_PERIOD = 6;       // 10 Hz
 const TAKEOFF_S = 0.35;
+const CAW_S = 1.0;               // length of a caw (extra.caw), the bird stands still
 const FAR_M = 80;                // fly-out distance for the no-perch case
 const DEG = Math.PI / 180;
 const TWO_PI = 6.283185307179586;
@@ -30,6 +31,7 @@ export function extendFlyerSlot(slot) {
   slot.p0x = 0; slot.p0y = 0; slot.p0z = 0; slot.cx = 0; slot.cy = 0; slot.cz = 0;
   slot.p1x = 0; slot.p1y = 0; slot.p1z = 0; slot.u = 0; slot.len = 1; slot.fspd = 6;
   slot.hopX = 0; slot.hopY = 0; slot.hopT = 0; slot.goalYaw = 0;
+  slot.cawT = 0; slot.cawLeft = 0;
   return slot;
 }
 
@@ -40,7 +42,10 @@ export function initFlyerBird(slot, sp, pm, env) {
   slot.thinkDt = 0; slot.fresh = true; slot.dPlayer = 0; slot.despawnReq = false; slot.tree = -1;
   slot.delayT = 0; slot.noPerch = false; slot.started = false; slot.u = 0; slot.hopT = 0; slot.goalYaw = slot.yaw;
   slot.fx = Math.cos(slot.yaw); slot.fy = Math.sin(slot.yaw);
-  if (env.perchNear && env.perchNear(slot.x, slot.y, 0, sp.perchSpawnM || 25, _pt)) {
+  slot.cawLeft = 0; slot.cawT = sp.times.cawEveryS ? sp.times.cawEveryS[0] + (sp.times.cawEveryS[1] - sp.times.cawEveryS[0]) * ((slot.id * 7 % 10) / 10) : 0;
+  // sp.groundStart (0..1, game tuning): that share of the birds (by slot / group hash) starts on the ground, not perched
+  const onGround = sp.groundStart > 0 && ((slot.id * 37 + slot.group * 11) % 100) / 100 < sp.groundStart;
+  if (!onGround && env.perchNear && env.perchNear(slot.x, slot.y, 0, sp.perchSpawnM || 25, _pt)) {
     slot.x = _pt.x; slot.y = _pt.y; slot.z = _pt.z; slot.tree = _pt.tree;
     enter(slot, sp, FS_PERCH);
   } else {
@@ -58,8 +63,11 @@ function setClip(slot, sp, idx, loop) {
 function enter(slot, sp, st) {
   slot.state = st; slot.stateT = 0;
   if (st === FS_PERCH) { slot.speed = 0; setClip(slot, sp, sp.clipFor.idle, true); }
-  else if (st === FS_HOP) { slot.hopT = 0; setClip(slot, sp, sp.clipFor.idle, true); }
+  else if (st === FS_HOP) { slot.hopT = 0; setClip(slot, sp, pauseClip(sp), true); }
 }
+
+/** Ground pause clip: peck when the species has one, else the idle / perch pose. */
+function pauseClip(sp) { return sp.clipFor.graze !== undefined ? sp.clipFor.graze : sp.clipFor.idle; }
 
 /** Looks for a perch 30-70 m away that is >= 15 m farther from the player than the bird now. Fills _pt. */
 function pickPerch(slot, ctx) {
@@ -102,6 +110,7 @@ function setupFlight(slot, sp, ctx, tx, ty, tz, noPerch, delay) {
 
 /** The bird that notices the player takes off and drags its whole flock (same group) to the same tree. */
 function startFlight(slot, sp, ctx) {
+  slot.cawLeft = 0;
   const rng = ctx.rng, pl = ctx.player;
   const found = pickPerch(slot, ctx);
   let tx, ty, tz = 0;
@@ -142,8 +151,17 @@ export function flyerStep(slot, sp, ctx) {
     }
   }
 
-  if (st === FS_HOP) { // ground forage: short hops inside a small radius around home
-    const env = ctx.env, hopV = sp.speeds.hop || 1.2;
+  if ((st === FS_PERCH || st === FS_HOP) && sp.extra.caw !== undefined && sp.times.cawEveryS) { // WILD-05: crow caw now and then
+    if (slot.cawLeft > 0) { slot.cawLeft -= dt; if (slot.cawLeft <= 0) slot.wantClip = -1; } // -1: the state below re-sets its clip
+    else if ((slot.cawT -= dt) <= 0) {
+      slot.cawT = sp.times.cawEveryS[0] + (sp.times.cawEveryS[1] - sp.times.cawEveryS[0]) * ctx.rng.nextFloat();
+      slot.cawLeft = CAW_S; slot.speed = 0; setClip(slot, sp, sp.extra.caw, false);
+    }
+  } else slot.cawLeft = 0;
+  if (slot.cawLeft > 0) { /* cawing: stand still */ }
+  else if (st === FS_PERCH && slot.wantClip < 0) setClip(slot, sp, sp.clipFor.idle, true);
+  else if (st === FS_HOP) { // ground forage: short hops inside a small radius around home
+    const env = ctx.env, hopV = sp.speeds.hop || sp.speeds.wander || 1.2;
     if (slot.hopT <= 0) {
       const a = ctx.rng.nextFloat() * TWO_PI, r = (sp.times.hopM || 3) * ctx.rng.nextFloat();
       slot.hopX = slot.homeX + Math.cos(a) * r; slot.hopY = slot.homeY + Math.sin(a) * r;
@@ -157,7 +175,7 @@ export function flyerStep(slot, sp, ctx) {
       slot.x += (wx / wd) * step; slot.y += (wy / wd) * step;
       slot.yaw = slot.goalYaw; slot.speed = hopV;
       setClip(slot, sp, sp.clipFor.move, true);
-    } else { slot.speed = 0; setClip(slot, sp, sp.clipFor.idle, true); }
+    } else { slot.speed = 0; setClip(slot, sp, pauseClip(sp), true); } // pause = peck
     slot.z = env.groundAt(slot.x, slot.y);
   } else if (st === FS_TAKEOFF) {
     if (slot.delayT > 0) slot.delayT -= dt;
