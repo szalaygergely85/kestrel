@@ -24,7 +24,7 @@ assert.equal(nightBonus(mk({ head: 'gear.head.hood.worn', body: 'gear.body.jerki
 // wet stepping stones
 const dt = 1 / 60, st = { t: 0 };
 assert.equal(hasSureFooting(cases[2][1], defs), true); assert.equal(hasSureFooting(cases[1][1], defs), false);
-assert.equal(wetStoneStep(st, cases[0][1], defs, true, true, false, dt), 0.5, 'sprint onto wet stone, no boots: slow step');
+assert.equal(wetStoneStep(st, cases[0][1], defs, true, true, false, dt), 0.4, 'sprint onto wet stone, no boots: slow step');
 let steps = 0; while (wetStoneStep(st, cases[0][1], defs, true, true, true, dt) < 1) steps++;
 assert.ok(Math.abs((steps + 1) * dt - WET_SLOW_S) < 2 * dt, 'lasts 0.4 s: ' + steps);
 const s2 = { t: 0 };

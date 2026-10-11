@@ -94,6 +94,8 @@ import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
 import { wireTelegraphs, telegraphsEnabled } from './fx/telegraphWire.js'; // TELEGRAPH-WIRE-01 (lane B1)
 import { stepCombatHint } from './quest/combatHint.js'; // COMBAT-HINT-01
+import { createRegionBanner } from './quest/regionBanner.js'; // REGION-01: region-entry banner
+import { stepActionHints, resetActionHints } from './quest/actionHints.js'; // FS-01
 import { createWild } from './wild/wildEnv.js'; // WILD-06: ambient rabbits + deer
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
@@ -105,7 +107,7 @@ import { createVitals } from './quest/sim/vitals.js'; // US-080a1/a2 (architectu
 import { createTargeting } from './quest/targeting.js'; // US-128b (architecture.md 29.2)
 import { stepTargetingInput } from './quest/targetingInput.js';
 import { SWORD_CFG } from './quest/swordConfig.js'; // US-078d (architecture.md 30.1 + D-034 amendment)
-import { createSwordSim } from './quest/sim/sword.js';
+import { createSwordSim, ST_LIGHT, ST_HARD } from './quest/sim/sword.js';
 import { presentSword } from './quest/swordView.js';
 import { loadSpellHandView, presentSpellHand, SPELL_HAND_ITEM } from './quest/spellHandView.js'; // HANDS-01c (37.8a)
 import { loadHandFireView, presentHandFire, bindHandFx, stepHandFx, setHandFlame, pushHandFlame } from './quest/handFireView.js'; // HAND-WIRE-01: realistic hand + always-on fire
@@ -1162,6 +1164,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   engine.events.on('combat:hit', (p) => errands.hit(p));
   gameHooks.register({ onEvent: (name, d) => errands.onEvent(name, d) });
   window.__debug.errands = errands; let errandTick = 0;
+  let regionBanner = null, regionBannerWorld = null, regionBannerBlocked = false; // REGION-01
   let crystal = null, barks = null, chapterCard = null, chapterCard2 = null, ch1Hidden = true;
   let burlReopen = false; // PO-CH1-07 latch
   let escort = null; // CH1-07 Burl escort (rebuilt per world, saves live only)
@@ -1248,6 +1251,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   const wakeOut = { blackA: 1, blinkOpen: 0, eyeH: 0, inputLocked: true, titleState: 'none', titleA: 0, wakeDoneAtSec: 0, titleDoneAtSec: 0 };
   const wakeCfg = { blackSec: 1.0, riseSec: 1.2, blinkCurve: [[0, 0], [1.5, 1]], titleIn: 1, titleHold: 3, titleOut: 1, startEyeH: 0.3, bodyEyeH: 1.6 };
   let questUiActive = false;
+  const actionSig = { invOpen: false, journalOpen: false, swing: false, block: false, shot: false, swap: false, slotKey: false, questAccepted: false }; // FS-01
+  let actSwapT = 0, actShotTick = 0;
   const hintSignals = { walking: false, pointerUnlocked: false, moveOrLook: false, run: false, jump: false, pointerLocked: false, mPressed: false };
   let prevLookYaw = null, prevLookPitch = null; // US-015: "move or look input" done-predicate for the WASD/mouse hint
 
@@ -1492,6 +1497,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         saveRelay.quest.onSection = (title) => { if (tv && msg) tv.say('Quest complete: ' + title, msg.fg); const ws = world.state; if (chapterCard && saveRelay.quest.done && ws['waystone.waystone.woken'] && ws['waystone.ws_roadBend.woken']) chapterCard.trigger(); /* PO-CH1-08: card only after the meadow stone AND the relay */ }; // CH1-02: live section completion only
         saveRelay.quest.book.onChange = (name, id) => {
           gameHooks.emitSimple(name, id);
+          if (name === 'quest:accepted') actionSig.questAccepted = true; // FS-01: first accepted quest -> [J] Journal hint
           if (name === 'quest:ready' && id === 'burl.boars' && crystal) crystal.check('ready'); // CH1-03
           if (name === 'quest:ready' && id === 'burl.boars' && dialogueCtl && dialogueCtl.open) burlReopen = true; // PO-CH1-07: boars were already dead when accepted -> Burl speaks again (the hand-in) once this box closes
           if (name === 'quest:done' && id === 'mq.smoke' && chapterCard2) chapterCard2.trigger(); // QL-17: Ch2 end card + journalCh2
@@ -1611,7 +1617,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           console.warn('[map] chart card init failed, falling back to the plain card:', e && e.message);
           initMapCard(assets, ui.cols, ui.rows);
         }
-        resetHints();
+        resetHints(); resetActionHints(); if (regionBanner) regionBanner.reset(); // REGION-01
       }
       // US-017 tester fix pass 2 (BUG-2): `window.__debug.world/playerHandle/look`
       // used to be set once, right after the FIRST `engine.run(...)` call
@@ -1889,6 +1895,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         const pc = playerHandle.data.components, pt = playerHandle.data.transform;
         const m = wetStones.step(pc.equipment, itemDefs, controls.run && (controls.forward !== 0 || controls.strafe !== 0), pt.x, pt.y, dt);
         if (m < 1) { controls.forward *= m; controls.strafe *= m; }
+        if (wetStones.state && wetStones.state.fresh) wadeFx.arrowHit(pt.x, pt.y, pt.z, fb ? fb.timeSec : 0); // QL-19b: splash + ring on the slip step (US-055a fx)
       }
       integrate(playerHandle.data, dt, controls, engine.world, engine.physics);
       if (wading) wading.after(playerHandle.data);
@@ -2037,7 +2044,22 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         hintSignals.jump = input.pressed(gameKeys.jump);
         hintSignals.pointerLocked = look.locked;
         hintSignals.mPressed = mPressedEdge;
+        { // FS-01: M4 action hints; done-actions read from the live sims (swing/block/shot/swap/slot key/windows)
+          actionSig.invOpen = !!(invView && invView.isOpen); actionSig.journalOpen = qlIsOpen();
+          actionSig.swing = !!(sword && sword.state >= ST_LIGHT && sword.state <= ST_HARD);
+          actionSig.block = !!(shieldSim && shieldSim.raised);
+          const shotT = equipPlay ? equipPlay.bow.shotTick : 0; actionSig.shot = shotT > -1e8 && shotT !== actShotTick; actShotTick = shotT;
+          const swT = equipPlay ? equipPlay.swapT : 0; actionSig.swap = swT > 0 && actSwapT === 0; actSwapT = swT;
+          actionSig.slotKey = false; for (let n = 0; n < 4; n++) if (input.pressed('Digit' + (n + 1))) { actionSig.slotKey = true; break; }
+          if (playerHandle) stepActionHints(engine.world, assets.uiStyle, controlBindings, playerHandle.data, itemDefs || {}, actionSig);
+          actionSig.questAccepted = false;
+        }
         stepHints(engine.world, assets.uiStyle, dt, hintSignals); // reused object (7.6 item 9: no per-step allocation)
+        { // REGION-01: banner on region entry (queued while a panel / dialogue / note / travel fade is up)
+          const rbA = window.ASSETS.uiRegionBanner, geo = window.ASSETS.levels && window.ASSETS.levels.world_geo;
+          if (rbA && geo && (!regionBanner || regionBannerWorld !== engine.world)) { regionBannerWorld = engine.world; regionBanner = createRegionBanner({ style: rbA.style, names: rbA.names, regions: geo.regions, state: engine.world.state, colors: assets.palette.colors }); }
+          if (regionBanner) { const rt0 = playerHandle.data.transform; regionBannerBlocked = uiLocked || (!!dialogueCtl && dialogueCtl.open) || isNoteOpen() || notice.active; regionBanner.step(dt, rt0.x, rt0.y, regionBannerBlocked); }
+        }
         prevLookYaw = look.yawDeg; prevLookPitch = look.pitchDeg;
       }
       // US-089w/US-096w: world facts -> quest events, play clock, autosave (60 s, waystone). Not while dead/ending/waking.
@@ -2280,6 +2302,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (questUiActive && !ending) {
         if ((!isCaptureOrBench || params.get('save') === '1') && !wakeOut.inputLocked) { gameHooks.drawHud(ui); if (relayWake) relayWake.drawHud(ui); } // D-050 seam: today the quest relay's TEMPORARY objective line, top-left
         drawHints(ui, assets.uiStyle, fadeLut);
+        if (regionBanner && !regionBannerBlocked) regionBanner.draw(ui); // REGION-01: top-centre, clear of the prompt (below the cross) and the bottom-left hints
         // 17.4: an eyelid over the 3D view, not UI text. BUG-WEBGPU-EYELID-01: once the WebGPU frame is complete its presenter shows the sprite-pass
         // output, so CPU scene-cell writes never appear -> draw the lid on the UI layer there (an opaque full-row overlay); else in the scene grid.
         if (!(menuHost && menuHost.active)) drawEyelid(wgActive && wgPipeline.frameComplete ? ui : rt, assets.uiStyle, wakeOut.blinkOpen);

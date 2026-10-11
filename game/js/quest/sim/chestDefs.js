@@ -6,7 +6,10 @@ import { forwardOf } from '../../../../engine/index.js';
 import { CHEST_DEFAULTS as C } from './lootConfig.js';
 
 const HEART = { fixed: [{ item: 'heart.piece', n: 1 }], weighted: [] };
+// US-104a: the Ch1-2 hidden chests use the loot.json `chest` source: 4 arrows always, a gear roll with chance 0.08 (tier from the band: Ch1-2 = band 1-2 = T1, the plain weighted roll).
+export const SECRET_TABLE = { fixed: [{ item: 'arrow', n: 4 }], weighted: [], gear: { chance: 0.08 } };
 export const CHEST_TABLES = {
+  secretRook: SECRET_TABLE, secretBend: SECRET_TABLE, secretField: SECRET_TABLE, secretBank: SECRET_TABLE,
   chestMeadow: HEART,
   chestBend: HEART,
   chestCrossroads: HEART,

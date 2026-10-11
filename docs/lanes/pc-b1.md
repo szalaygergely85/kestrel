@@ -612,3 +612,20 @@ EQ-23 (kestrel-4, eq-23, Node-only): leftover stacks drop at the player's feet. 
 - 051a: uiLayer.setCellScaled + UI_SCALE2_BIT, textDraw.drawTextScaled (1x fallback), engine/ui/uiScale.js (scaledFrac), present.wgsl.js (raw&127u, quadrant frac), RenderTargetCanvas2D raster + rare-merge degrade. Tests: uiLayer/uiScale/textDraw(new, incl. Canvas2D raster = 1x mask upsampled)/wgsl index string test, all PASS + check-deps.
 - 051b: crosshair.js `style.prompt.scale===2` path (even origin, rows py/py+1), crosshair.test.js cases, tools/verify-prompt-scale.mjs {port} (not run; uses __debug.getUi()).
 - NEEDS B1-main: in game/js/main.js uiStyle prompt entry (~l.413) add `scale: 2` -> `prompt: { color: P.colors[P.ui.prompt], keyColor: P.colors[P.ui.promptKey], plateBg: '#0a0b10', scale: 2 },`. Then main session runs `node tools/verify-prompt-scale.mjs 95xx` once and an eyeball of the WGSL UI pass (untested on a real GPU).
+
+## FS-01 M4 action hints (kestrel-1, Node only)
+- New `game/js/quest/actionHints.js` (+ `.test.js`): 7 rows `act*` in `uiStyle.hints` (title.js, `fmt` with {action} slots filled from the live bindings via `relabelHint` in hints.js); main.js feeds `actionSig` after stepHints' signals and calls `resetActionHints()` with `resetHints()`.
+- AC1-3 pass as Node tests (`node tools/run-tests.mjs --filter actionHints,hints,combatHint,bindings,check-deps`: 6/6 PASS; --check ok on main/actionHints/hints).
+- AC4 NOT run (no browser): `node tools/verify-action-hints.mjs 9500` (drives hints via __debug.playerHandle state, stills `docs/test-reports/captures/action-hints-*.png`; owner look: none overlaps OB-051 prompt). Script unrun, item ids/state hooks unverified in a browser.
+- Limits: Q-swap done = swapT start; potion/pickup hints are edge-based (starting kit seeded as baseline); `[1-4]` is literal (digits not in bindings table).
+
+## M4-C2 Ch1-2 run + gap report (kestrel-1, Node only, branch m4c2-run)
+- `tools/verify-ch12-run.mjs` already existed (f77ce6ba, 23/24 beats). Added: per-beat stills + `docs/test-reports/m4-c2/report.md` (AC5), 5 s guidance-gap sampler (AC4: tracked HUD / `compassRetarget()` / ! ? giver within 30 m), AC1 quest table (m1 + legacy + ch12 pack ids, last objective of any open one), AC3 diff via `compareSnaps`; exit 1 on any beat FAIL or AC1/AC3 fail. No main.js change.
+- Pure parts in `tools/verify-ch12-lib.mjs` (+ `verify-ch12-run.test.mjs`): `node tools/run-tests.mjs --filter verify-ch12` PASS; `node --check` ok. Browser NOT run.
+- Main session runs once: `node tools/verify-ch12-run.mjs 9560` (then read the report; unverified: sampler vs. page busy, `__debug.compassRetarget`/`invView` hooks, still count). Caveat: the script teleports, so gap "where" = spot of each beat, not a walked route; the original ch12run.js was not needed.
+
+## REGION-01 region-entry banner (kestrel-1, Node only, branch region-01)
+- New `game/js/quest/regionBanner.js` (+ test, 40 asserts: once per entry, +-3 m jitter 20 s, 10 min rule, queue while blocked, nameless regions, save round trip, 0 alloc), `design/ui-region-banner.js` (style + names, classic script, palette key `gold`), `engine/index.js` exports `drawTextScaled`, main.js wired (step after stepHints, draw after drawHints; blocked = uiLocked/dialogue/note/notice incl. travel fade), index.html script tag. Seen-set `region.seen` in world.state.
+- Names (MAP-27) per region; nameless (show nothing): roadWest, outwall. Gap: the spec's "tower -> meadow" has no meadow region (tower rect holds the meadow) so the still crosses roadWest -> ford ("The Crossroads"); fade is fg-only on an opaque plate (scaled path has no glyph-only cell).
+- Main session runs once: `node tools/verify-region-banner.mjs 9560` (stills in docs/test-reports/region01/, 640x360 and 1680x630; 240x90/560x210 grids not forced). Unverified in browser: `uiLocked`/`notice` scope at the step site, banner look.
+- Tests: `node tools/run-tests.mjs --filter regionBanner,hints,check-deps` PASS.
