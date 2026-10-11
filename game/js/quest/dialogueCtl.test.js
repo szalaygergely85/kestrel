@@ -172,3 +172,18 @@ console.log('dialogueCtl s. route ok');
   f.press('Digit2'); c.step(DT, f.input, true);
   assert.notEqual(c.runner.state, 'choosing', 'digit picks and confirms');
 }
+
+// EQ-12 AC4: while a choice list is open the digit belongs to the dialogue (its pick eats the edge, so the quick bar never sees it);
+// with no dialogue open the same edge stays for the bar.
+{
+  const f = fake(), c = mk(f);
+  f.input.consumePressed = () => f.keys.clear();
+  c.openFor('bear'); run(c, f, 1);
+  f.press('KeyE'); c.step(DT, f.input, true); f.press('Enter'); c.step(DT, f.input, true);
+  f.press('KeyE'); c.step(DT, f.input, true); f.press('KeyE'); c.step(DT, f.input, true); f.press('KeyE'); c.step(DT, f.input, true);
+  assert.equal(c.runner.state, 'choosing');
+  f.press('Digit2'); c.step(DT, f.input, true);
+  assert.equal(f.input.pressed('Digit2'), false, 'AC4: the dialogue ate the digit edge (the bar gets nothing)');
+  c.close(); f.press('Digit2'); c.step(DT, f.input, true);
+  assert.equal(f.input.pressed('Digit2'), true, 'AC4: no dialogue open -> the edge stays for the quick bar');
+}

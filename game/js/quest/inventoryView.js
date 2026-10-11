@@ -30,6 +30,7 @@ const F_ASSIGN = 1, F_CLEARED = 2, F_USE = 3, F_REFUSE = 4;
  * @param {object} [o.character] EQ-03: options for characterView (equipmentOf, createPreview, charCache, getLook, onGearChanged); absent = no Character tab
  * @param {boolean} [o.characterKey] false when `C` belongs to something else (crafting); Tab / I still switch tabs
  */
+const DIGIT_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4'];
 export function createInventoryView(o) {
   const S = o.style, C = S.rgb, defs = o.items.defs, keyMap = o.items.keys;
   const P = S.panel;
@@ -307,6 +308,18 @@ export function createInventoryView(o) {
         setTab(click >= 0 ? click : kTab ? 1 - tab : kI ? 0 : 1);
         if (input.consumePressed) input.consumePressed();
         return;
+      }
+      // EQ-12: 1-4 while an item is hovered / selected (Items or Character tab) assigns it to that quick-bar slot
+      if (o.quickbar) {
+        for (let n = 0; n < 4; n++) {
+          if (!input.pressed(DIGIT_CODES[n])) continue;
+          const qid = tab === 1 ? cv.hoveredId : selectedId();
+          if (!qid) { say('Select an item first', C.uiDim); }
+          else if (o.quickbar.assign(n, qid)) say('Quick slot ' + (n + 1) + ': ' + (defs[qid] ? defs[qid].name : qid), C.heroGreen);
+          else say('Cannot be placed on the quick bar', C.ember);
+          if (input.consumePressed) input.consumePressed();
+          return;
+        }
       }
       if (tab === 1) {
         cv.step(dt, input);
