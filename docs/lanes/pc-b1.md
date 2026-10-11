@@ -552,3 +552,8 @@ B1 2026-10-11 (QL-09/10/11/12, kestrel-4) -> po-review: ch12 pack.json +4 quests
 ### QL-19 remainder (kestrel-1, riverboots): passives wired
 - Night cloak was already wired (main.js vitals `defenceBonus` -> `nightBonus`, clockHour). River Boots wet-stone now wired: new `game/js/quest/sim/wetStones.js` (stones = structures `wet:true` or id `fordS<n>`, r 1.1 m, flat arrays, 0 alloc) + `wetStones.step` before `integrate` in main.js (scales controls x0.5 for 0.4 s on a sprint onto a stone without boots).
 - Test `wetStones.test.js` (tagging in world_m1, slow/boots/walk cases, wiring grep). Suites 113/113 PASS, quest-sim 52/52 OK. Not browser-checked.
+
+### OB-042 follow-up (kestrel-1, riverboots): pack-full leftovers shown
+- `questPickups.grantReward` now emits `inventory:full {id, n}` for leftovers (same patch as main repo 12a530f2, merges cleanly). `quest/toastView.js` onFull: a named event ({id, n}) shows "Pack full - <Item name> x<n> not added" (message colour, via `say`); id-only loot/chest events keep the generic "Pack full".
+- No world drop: `spawnItemDrop` is gear-only (amount 1, sink in loot.js, 'pickupGear' sprite, MAX_DROPS cap), so leftover stacks are still lost; notice only.
+- Tests: toastView.test.js (named + generic), questCollect.test.js (partial grant). Suites 113/113, quest-sim 52/52, main.js check OK. Not browser-checked.
