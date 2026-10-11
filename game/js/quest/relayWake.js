@@ -20,6 +20,7 @@ const TOAST_SEC = 4, TOAST_Y = 6, FG = [236, 226, 190], BG = [10, 11, 16];
 const DEAD = 0, WAKING = 1, AWAKE = 2;
 const WAKE_MAX_EXTRA = 3; // s after light-on + grow before a stuck wake is forced awake
 
+const FORD_WS = 'ws_ford', FLAG_MIRROR = 'mq.ford.mirror.glass'; // set by errands.mainSync while relay.mirror is in the pack
 const woken = (wsId) => 'waystone.' + wsId + '.woken';
 
 /** Seconds from the start of `wake` to the light switching on (voxel event glowOn, else relay wakeLightFrame / fps, else 0.25). */
@@ -89,6 +90,7 @@ export function createRelayWake(o) {
       if (!r || r.phase === WAKING) return false;
       if (r.phase === AWAKE) { touch(r); return true; }
       if (!world.state[FLAG_ATTUNED] || (r.stone && !world.state[FLAG_STONE_TOLD]) || (!r.stone && !world.state[woken('waystone')])) { hint.left = TOAST_SEC; return false; } // gate: the crystal wakes stones
+      if (r.wsId === FORD_WS && !world.state[FLAG_MIRROR]) { hint.left = TOAST_SEC; return false; } // mq.ford.mirror: the mount is empty until the player holds relay.mirror
       const h = world.get(r.entId);
       if (h) h.play('wake');
       hum();
