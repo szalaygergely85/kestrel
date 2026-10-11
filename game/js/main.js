@@ -26,7 +26,7 @@ import {
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim,
   loadContentPack, createRng, prebuildTerrainMesh, hitSparks,
-  forwardOf, DEG2RAD, hexToRgb, resolveWaterLooks, createEntityEmitters, AO_DEFAULTS,
+  forwardOf, DEG2RAD, hexToRgb, resolveWaterLooks, createEntityEmitters, AO_DEFAULTS, compileDialogue,
 } from '../../engine/index.js';
 // US-047 (architecture.md section 5): pass internals + parity tooling +
 // "may change" glue now live in engine/dev.js - main.js's dev-mode code
@@ -87,6 +87,7 @@ import { parseOccl, createHzbInvalidator } from './occlGate.js'; // OCCL-MAIN-01
 import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
 import { createQuestPickups } from './questPickups.js'; // QUESTS-01
 import { setInspectSink, wrapText } from './quest/questInspect.js'; // QL-04
+import { createErrands, gateOnMeet, patchBearDialogue, isWorn, bannerLines } from './quest/errands.js'; // QL-WIRE: Ch1-2 errands
 import { createHeartHook } from './heartHook.js'; // QL-08: heart pieces -> max HP
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
@@ -465,8 +466,12 @@ function areaTrigger(w, id) {
 let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the content manifest)
 {
   // AUD2-09: per-file loads; a missing file is logged by name and shown on screen (no silent quest-less game)
-  const qb = await loadQuestFiles((u) => fetch(u).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }), { wantBarks: saveEnabled });
+  const qb = await loadQuestFiles((u) => fetch(u).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }), { wantBarks: saveEnabled, items: itemDefs ? Object.values(itemDefs).map((d) => ({ id: d.id, slot: d.equip && d.equip.slot, tier: d.equip && d.equip.tier })) : [] }); // QL-WIRE: EQ-13 gear rewards resolve against the design item defs
   bearBarks = qb.bearBarks;
+  if (qb.giverDefs) { // QL-WIRE: errands open after Burl's first greeting; his errand lines become dialogue routes
+    qb.giverDefs = gateOnMeet(qb.giverDefs);
+    try { const raw = await fetch('../content/dialogue/bear.dialogue.json').then((r) => r.json()); if (bundle.dialogues && bundle.dialogues.bear) bundle.dialogues.bear = compileDialogue(patchBearDialogue(raw, qb.giverDefs)); } catch (e) { console.warn('[QL-WIRE] errand dialogue off:', e && e.message); }
+  }
   window.__debug = window.__debug || {}; window.__debug.bootErrors = qb.errors;
   if (qb.errors.length) showBootErrors(document, qb.errors);
   if (qb.questDef && qb.giverDefs && qb.charKit) { try {
@@ -573,7 +578,7 @@ const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
 if (chestHook) gameHooks.register(chestHook);
 if (chestHook) gameHooks.register(createHeartHook({ getCard: () => chestHook.card })); // QL-08
 // QUESTS-01: generic world pickup prop + pack counts for collect/deliver objectives + hand-in reward grant (game/js/questPickups.js)
-const questPickups = (itemDefs && saveRelay) ? createQuestPickups({ getBook: () => saveRelay.quest.book, feed: (e) => saveRelay.quest.feed(e), defs: itemDefs }) : null;
+const questPickups = (itemDefs && saveRelay) ? createQuestPickups({ getBook: () => saveRelay.quest.book, feed: (e) => saveRelay.quest.feed(e), defs: itemDefs, isWorn }) : null; // QL-WIRE: requireEquipped hand-ins
 if (questPickups) gameHooks.register(questPickups);
 // US-090w: title menu before play. Off for `?title=0`, capture/bench/compare/cinematic pages, `?capture=1`, `?at=`/`?pose=` dev poses and bare `?level=` rooms.
 const menuWanted = params.get('title') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !params.has('at') && !params.has('pose') && !params.get('level') && !params.get('cinematic');
@@ -1046,8 +1051,8 @@ async function runGame(mode, cinematic = null) {
     else if (kind === 'area') {
       if (id === 'breach') { if (!compassBreach) compassBreach = compassFindMarker(w, 'breach'); if (!compassBreach) return false; out.x = compassBreach.x; out.y = compassBreach.y; out.z = compassBreach.z; return true; }
       if (id === 'waystone') e = w.get('endMarker');
-      else if (id === 'towerDoor' || id === 'roadWest' || id === 'bendRelay') { // CH1-02: area-only world triggers
-        const tr = areaTrigger(w, id); if (!tr) return false;
+      else if (id === 'towerDoor' || id === 'roadWest' || id === 'bendRelay' || id === 'riverBank' || id === 'fordWest' || id === 'northLook' || id === 'crossroads' || id === 'hintStone') { // CH1-02 + QL-WIRE: area-only world triggers (hintStone = the hillPath circle)
+        const tr = areaTrigger(w, id === 'hintStone' ? 'hillPath' : id); if (!tr) return false;
         out.x = tr.x; out.y = tr.y; out.z = NaN; return true;
       }
     }
@@ -1110,10 +1115,17 @@ async function runGame(mode, cinematic = null) {
   let relayWake = null; // WS1-06b: rebuilt on every 'world:loaded'
   // CH1-MOUNT (38.37): notice banner (page lifetime) + crystal grant / barks / chapter card (rebuilt per world; only when saves are live = never in capture/bench/compare/?at=)
   const notice = createNoticeView();
-setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accept or hand in, show its short text (banner, never locks)
+const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop: accept or hand in, show its short text (banner, never locks)
   const b = saveRelay && saveRelay.quest.book, r = b && b.inspect(id); if (!r) return;
-  const d = b.def(b.index(r.id)); notice.push(String(d.title || r.id).slice(0, 30), wrapText(r.text || (r.action === 'handin' ? 'Done.' : r.action === 'accept' ? 'Quest accepted.' : 'Not yet.')));
-});
+  const d = b.def(b.index(r.id)); // QL-WIRE: the writer's def.lines (offer / ready / active) win over the short giver text
+  notice.push(String(d.title || r.id).slice(0, 30), bannerLines(d, r.action, wrapText) || wrapText(r.text || (r.action === 'handin' ? 'Done.' : r.action === 'accept' ? 'Quest accepted.' : 'Not yet.')));
+};
+  // QL-WIRE: Ch1-2 errands: object givers (post / notePost / relays), talk.<site>, target1..3.hit (sword + arrow = combat:hit), escort flag
+  const errands = createErrands({ getBook: () => (saveRelay ? saveRelay.quest.book : null), questFlag: (k, v) => saveRelay.quest.questFlag(k, v), inspect: inspectObject });
+  setInspectSink((id) => errands.inspected(id));
+  engine.events.on('combat:hit', (p) => errands.hit(p));
+  gameHooks.register({ onEvent: (name, d) => errands.onEvent(name, d) });
+  window.__debug.errands = errands; let errandTick = 0;
   let crystal = null, barks = null, chapterCard = null, ch1Hidden = true;
   let burlReopen = false; // PO-CH1-07 latch
   let escort = null; // CH1-07 Burl escort (rebuilt per world, saves live only)
@@ -1400,11 +1412,14 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
         jawOpenDeg: window.ASSETS.bearFx && window.ASSETS.bearFx.talk ? window.ASSETS.bearFx.talk.jawMaxDeg : undefined, // jaw hinge: rx opens, 0..jawMaxDeg (voxel_bear.js header)
         book: () => (saveRelay ? saveRelay.quest.book : null), // QG-03: `q.*` dialogue keys -> quest book
         questFlag: saveRelay ? (k) => saveRelay.quest.questFlag(k) : undefined, // CH1-06: `s.*` dialogue keys
+        onTalk: (npcId) => errands.talked(npcId), // QL-WIRE: talk.<site> flag for 'talk' errands
         onFlag: (k, v) => { if (k.charCodeAt(0) !== 113 || k.charCodeAt(1) !== 46) gameHooks.emitSimple('flag:set', 'dlg.' + k, v); } });
       setDialogueApi(dialogueCtl);
+      errands.load(world); // QL-WIRE: [E] Inspect on post / notePost
       bearTurn = createNpcTurn(world, 'bear'); // NPC-BEAR-01: null when the world has no bear
       compassWorld = world; compassBreach = null; compassBookVer = -1; compassTick = 0; // COMPASS-02: re-resolve against the new world
       if (bearTurn) dialogueCtl.addNpc('bear');
+      dialogueCtl.addNpc('rook'); // Rook the crow: no-op until the entity exists in the world
       crystal = barks = chapterCard = escort = null;
       if (bearTurn) bearTurn.paused = false;
       if (saveEnabled && saveRelay) { // CH1-MOUNT: all three need the quest relay (flags + book)
@@ -1898,6 +1913,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
         sword.step(playerHandle.data, swordFwd[0], swordFwd[1], hands ? (equipPlay ? equipPlay.swordDown : hands.downOf('sword')) : false); // EQ-07: no swing while the shield is raised
       }
       if (practiceTarget) practiceTarget.step();
+      if (++errandTick % 64 === 0) errands.escortTick(); // QL-WIRE
       if (vitals) {
         const wasDead = vitals.dead;
         vitals.step(playerHandle.data, input.pressed(gameKeys.interact) || (deathFlow.active && deathRespawnDue)); // US-080a1 (30.2); DEATH-FLOW-01: fade end = virtual [E]
