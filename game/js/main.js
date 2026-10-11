@@ -113,6 +113,7 @@ import { createFireballSim } from './quest/sim/fireball.js'; // SPELL-01a (37.14
 import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.14 view)
 import { createShieldSim } from './quest/sim/shield.js'; // EQ-07 (38.41 a)
 import { createArrowSim } from './quest/sim/arrows.js'; // EQ-09 (38.41 b)
+import { createWading } from './quest/sim/wading.js'; // RIVER-04 (38.45 (3)): river wading around the player's integrate
 import { BOW_CFG } from './quest/bowConfig.js'; // EQ-09
 import { createQuickbar, ensureQuickbar, autoFill, assign as qbAssign, clearSlot as qbClear, syncHandSlots, HAND_SLOTS } from './quest/sim/quickbar.js'; // EQ-12 + QB-6
 import { createQuickbarDrag } from './quest/quickbarDrag.js'; // QB-6: drag and drop onto the bar while the menu is open
@@ -1075,6 +1076,7 @@ async function runGame(mode, cinematic = null) {
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
+  let wading = null; // RIVER-04: rebuilt on every 'world:loaded' (beasts keep their own nav block, depth >= 0.6: not wired here)
   let equipPlay = null, shieldSim = null, arrowSim = null; // EQ-07/09: rebuilt on every 'world:loaded'
   let quickbar = null, qbView = null, qbTick = 0, qbBlocked = false; // EQ-12: sim rebuilt per world, view per page
   let fireball = null, fbTargets = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
@@ -1375,6 +1377,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // EQ-07/09 (38.41): shield sim + arrow sim + the routing glue; shield/bow items get no-op sims so the router arms them (RMB -> left hand, LMB -> right hand)
       shieldSim = createShieldSim();
       arrowSim = createArrowSim(world, engine.events, BOW_CFG, fbTargets);
+      wading = createWading(world);
       if (itemDefs) registerGearItems(hands, itemDefs, () => createStubItemSim());
       equipPlay = createEquipPlay({ hands, shield: shieldSim, arrows: arrowSim, defs: itemDefs || {}, bowCfg: BOW_CFG, swordDamage: SWORD_CFG.light.damage,
         say: (t) => { if (toasts) toasts.say(t, [226, 214, 176]); } });
@@ -1856,7 +1859,9 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       lap(SEC.input);
       stepSectorAnims(engine.world, dt);
       engine.world.water.step(); // US-143a (35.2): wave clock tick, before `integrate` per the Q13 instruction
+      if (wading) wading.before(playerHandle.data, playerHandle.data.components.body.speedScale); // RIVER-04: slowdown + current push (river water only)
       integrate(playerHandle.data, dt, controls, engine.world, engine.physics);
+      if (wading) wading.after(playerHandle.data); // deep water (> 1.0 m) is a wall (D-064)
       // CLOTH-1b3/1b5 (33.5): the player capsule pushes cloth; sleep-by-distance reads the eye (presentation-only,
       // never hashed/saved - cloths.js's own doc comment). Approx eye = feet + eyeH (good enough for a sleep radius).
       {

@@ -1,8 +1,11 @@
 #!/usr/bin/env node
-// tools/gen-river-water.mjs - OB-019: real water surface for the river (The Braid) from the keep north edge to the sea.
-// Chain of flat rect water regions `river_NN` (engine water.js has only flat rect/circle), cut where the bed slope would
-// make a step > STEP m, z = highest centre-bed ground of the segment + DEPTH, flow along the river. The ford region
-// (y 1058-1080) stays as authored; river rects stop at its edges. Rewrites the `river_*` entries of the world json (canonical form).
+// tools/gen-river-water.mjs v2 - RIVER-04 / OB-019 (docs/architecture.md 38.45 (4)): the Braid as `river` water shapes.
+// Replaces the 49 flat `river_NN` rects. Emits two `river` shapes along x = riverX(y), halfW = interp3(G.river.poly, y, 2):
+//   braid_upper  source y 100 -> y 396 (north of the Glasswater dam shelf at -57.2), braid_outlet  lake rect edge y 544 -> the cliff lip y 600 (clip: glasswater),
+//   braid  below the lake-outlet cliff y 620 -> past the mouth (clip: sea from y 1420). The 13 m drop y 604-616 has no water (no waterfall sheet yet).
+// z = lowest ground over the inner 60 % of the cross-section + DEPTH (0.4 m: wadeable almost everywhere, D-064 owner rule), then
+//   <= lowest bank ground (+-halfW) - 0.1, = lake z inside Glasswater, = ford z over the ford, easing to the sea z at the clip, running-min downstream.
+// The ford region keeps its `block` (draw:false: the river shape draws there). Rewrites the water list of the world json (canonical form).
 //   node tools/gen-river-water.mjs [--dry-run]
 import fs from 'node:fs';
 import '../design/palette.js';
@@ -14,43 +17,74 @@ for (const m of ['lantern', 'lever', 'voxel_props', 'voxel_tower', 'voxel_world'
 import { World, stringifyContent } from '../engine/index.js';
 import { loadTestAssets } from './testing/content-node.mjs';
 
-export const RIVER = { y0: 832, y1: 1446, fordY0: 1058, fordY1: 1080, depth: 0.3, step: 0.35, minLen: 8, maxLen: 24, margin: 13, flowSpeed: 0.9, seaZ: -96 };
+export const RIVER = { y0: 100, upEnd: 396, lakeOut: 544, shelfEnd: 600, cliffEnd: 620, yEnd: 1424, step: 8, depth: 0.4, bankGap: 0.1, fordY0: 1058, fordY1: 1088, fordZ: -90.04,
+  lakeZ: -58, seaZ: -96, seaEaseY: 1360 };
 const FILE = 'content/worlds/world_m1.world.json';
 const dry = process.argv.includes('--dry-run');
-const U = globalThis.ASSETS.levels.overworld_far.util;
+const U = globalThis.ASSETS.levels.overworld_far.util, G = globalThis.ASSETS.levels.world_geo;
 const data = JSON.parse(fs.readFileSync(FILE, 'utf8'));
+data.water = data.water.filter((w) => !/^river_\d+$/.test(w.id) && !/^braid/.test(w.id)); // idempotent: load the terrain without our own water
 const { assets } = await loadTestAssets();
 const world = World.load(data, assets, { physics: 'mesh' });
-const T = world.terrain;
-const bed = (y) => { const xc = U.riverX(y); world.ensureBandFor(xc, y); let m = 1e9; for (let dx = -6; dx <= 6; dx += 2) m = Math.min(m, T.groundAt(xc + dx, y)); return m; };
+const T = world.terrain, R = RIVER;
+const interp3 = (p, y, k) => { if (y <= p[0][0]) return p[0][k]; for (let i = 1; i < p.length; i++) if (y <= p[i][0]) { const t = (y - p[i - 1][0]) / (p[i][0] - p[i - 1][0]); return p[i - 1][k] + t * (p[i][k] - p[i - 1][k]); } return p[p.length - 1][k]; };
+const ground = (x, y) => { world.ensureBandFor(x, y); return T.groundAt(x, y); };
 
-const segs = [];
-const R = RIVER;
-for (const [a, b] of [[R.y0, R.fordY0], [R.fordY1, R.y1]]) {
-  let y = a;
-  while (y < b - 0.01) {
-    // longest segment whose bed drop (from its start) stays under STEP, within [minLen, maxLen]
-    let L = R.minLen;
-    while (L < R.maxLen && y + L + 2 <= b && Math.abs(bed(y) - bed(Math.min(b, y + L + 2))) <= R.step) L += 2;
-    let ye = Math.min(b, y + L);
-    if (b - ye < R.minLen) ye = b; // no sliver at the end
-    segs.push([y, ye]); y = ye;
-  }
+const ys = (a, b) => { const o = []; for (let y = a; y < b - 1e-6; y += R.step) o.push(y); o.push(b); return o; };
+/** Vertices {x, y, hw, z} with z raw = bed + depth, bank-capped. */
+function raw(list) {
+  return list.map((y) => {
+    const x = U.riverX(y), hw = +interp3(G.river.poly, y, 2).toFixed(2);
+    let bed = 1e9;
+    for (let k = -2; k <= 2; k++) bed = Math.min(bed, ground(x + k * 0.3 * hw, y));
+    const bank = Math.min(ground(x - hw, y), ground(x + hw, y));
+    return { x: +x.toFixed(2), y, hw, z: bed + R.depth, bank, pin: false };
+  });
 }
-const out = segs.map(([ya, yb], i) => {
-  let xmin = 1e9, xmax = -1e9;
-  for (let y = ya; y <= yb + 1e-6; y += 2) { const x = U.riverX(y); xmin = Math.min(xmin, x); xmax = Math.max(xmax, x); }
-  const depth = yb >= 1420 ? Math.max(0.02, R.depth * (R.y1 - yb) / (R.y1 - 1420)) : R.depth; // taper into the sea level at the mouth
-  let bmax = -1e9; for (let y = ya; y <= yb + 1e-6; y += 2) bmax = Math.max(bmax, bed(y)); // highest bed of the segment: no dry hole at its upstream end
-  const z = Math.max(R.seaZ, +(bmax + depth).toFixed(2));
-  const dxdy = (U.riverX(yb) - U.riverX(ya)) / (yb - ya), n = Math.hypot(dxdy, 1);
-  const f = (v) => +(v * R.flowSpeed).toFixed(3);
-  return { id: `river_${String(i + 1).padStart(2, '0')}`, look: 'water', rect: [+(xmin - R.margin).toFixed(1), ya, +(xmax + R.margin).toFixed(1), yb], shape: 'rect', z, flow: [f(dxdy / n), f(1 / n)] };
-});
-if (dry) { console.log(out.length + ' regions'); out.forEach((o) => console.log(o.id, JSON.stringify(o.rect), o.z)); process.exit(0); }
-data.water = data.water.filter((w) => !/^river_d+$/.test(w.id));
-const si = data.water.findIndex((w) => w.id === 'sea');
-if (si < 0) throw new Error('sea region not found');
-data.water.splice(si, 0, ...out);
-fs.writeFileSync(FILE, stringifyContent(data), 'utf8');
-console.log(`gen-river-water: ${out.length} regions river_01..river_${out.length}`);
+const up = raw(ys(R.y0, R.upEnd)), shelf = raw(ys(R.lakeOut, R.shelfEnd)), down = raw(ys(R.cliffEnd, R.yEnd));
+shelf[0].z = R.lakeZ; shelf[0].pin = true;                                        // leaves the Glasswater rect at the lake surface (the rect draws inside)
+for (const v of down) if (v.y >= R.fordY0 && v.y <= R.fordY1) { v.z = R.fordZ; v.pin = true; } // flat over the ford region (ties go to the river: it comes first in the list)
+// per river: least-squares NON-INCREASING fit (PAVA) of bed + depth, so one pit in the ground does not drag the whole reach down; pinned vertices
+// (lake edge, ford) weigh 1000. Then the bank cap and a final running-min (z must never rise), pre-ford >= ford z.
+function isoDec(v, w) {
+  const bz = [], bw = [], bn = [];                     // blocks: mean, weight, count
+  for (let i = 0; i < v.length; i++) {
+    bz.push(v[i]); bw.push(w[i]); bn.push(1);
+    while (bz.length > 1 && bz[bz.length - 2] < bz[bz.length - 1]) { // a rise: merge the last two blocks
+      const k = bz.length - 1, W2 = bw[k - 1] + bw[k];
+      bz[k - 1] = (bz[k - 1] * bw[k - 1] + bz[k] * bw[k]) / W2; bw[k - 1] = W2; bn[k - 1] += bn[k]; bz.pop(); bw.pop(); bn.pop();
+    }
+  }
+  const o = []; for (let k = 0; k < bz.length; k++) for (let j = 0; j < bn[k]; j++) o.push(bz[k]);
+  return o;
+}
+for (const list of [up, shelf, down]) {
+  const w = list.map((v) => (v.pin ? 1000 : 1));
+  const f = isoDec(list.map((v) => v.z), w);
+  let zm = Infinity;
+  list.forEach((v, i) => { const nearFord = v.y > R.fordY0 - 24 && v.y < R.fordY1 + 24; // the authored ford bar sits above its banks: no bank cap there
+    zm = Math.min(zm, nearFord ? f[i] : Math.min(f[i], v.bank - R.bankGap)); v.z = v.pin ? v.z : zm; });
+}
+for (const v of down) if (v.y < R.fordY0) v.z = Math.max(v.z, R.fordZ); // upstream of the ford never below the ford z (non-increasing kept)
+{ // ease to the sea z at the mouth clip (y 1420)
+  const e = down.find((v) => v.y >= R.seaEaseY);
+  for (const v of down) if (v.y >= R.seaEaseY) v.z = Math.min(v.z, e.z + (R.seaZ - e.z) * (v.y - R.seaEaseY) / (R.yEnd - R.seaEaseY));
+}
+const all = [up, shelf, down];
+let worst = 0; for (const l of all) for (let i = 1; i < l.length; i++) worst = Math.max(worst, (l[i - 1].z - l[i].z) / Math.hypot(l[i].x - l[i - 1].x, l[i].y - l[i - 1].y));
+const path = (l) => l.map((v) => [v.x, v.y, +v.z.toFixed(3), v.hw]);
+const rivers = [
+  { id: 'braid_upper', shape: 'river', look: 'river', path: path(up) },
+  { id: 'braid_outlet', shape: 'river', look: 'river', path: path(shelf), clip: ['glasswater'] },
+  { id: 'braid', shape: 'river', look: 'river', path: path(down), clip: ['sea'] },
+];
+if (dry) { console.log(`${up.length}+${shelf.length}+${down.length} verts, worst slope ${worst.toFixed(3)}`); for (const r of rivers) console.log(r.id, JSON.stringify(r.path.filter((_, i) => i % 12 === 0))); process.exit(0); }
+const out = JSON.parse(fs.readFileSync(FILE, 'utf8'));
+out.water = out.water.filter((w) => !/^river_\d+$/.test(w.id) && !/^braid/.test(w.id));
+const fi = out.water.findIndex((w) => w.id === 'ford');
+if (fi < 0) throw new Error('ford region not found');
+out.water[fi].draw = false;                                   // physics / block only: the river shape draws the surface here
+out.water[fi].note = 'WS2-07 / RIVER-04: stepping-stone ford block (draw:false: the river shape draws the water); no swimming: D-064';
+out.water.splice(fi, 0, ...rivers);                           // lower index than ford/sea/glasswater: wins z ties
+fs.writeFileSync(FILE, stringifyContent(out), 'utf8');
+console.log(`gen-river-water v2: ${up.length}+${shelf.length}+${down.length} verts, worst slope ${worst.toFixed(3)}`);
