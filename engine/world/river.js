@@ -147,16 +147,18 @@ export function riverLocate(rv, x, y) {
   const cx = Math.floor((x - rv.gx0) / RIVER_CELL), cy = Math.floor((y - rv.gy0) / RIVER_CELL);
   if (cx < 0 || cy < 0 || cx >= rv.gw || cy >= rv.gh) return false;
   const c = cy * rv.gw + cx, X = rv.x, Y = rv.y;
-  let best = -1, bd = Infinity, bt = 0, bcross = 0;
+  let best = -1, bd = Infinity, bt = 0, bcross = 0, braw = 0;
   for (let k = rv.cellStart[c], e = rv.cellStart[c + 1]; k < e; k++) {
     const i = rv.segIdx[k];
     const sx = X[i + 1] - X[i], sy = Y[i + 1] - Y[i], px = x - X[i], py = y - Y[i];
-    let t = (px * sx + py * sy) / (sx * sx + sy * sy);
-    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const raw = (px * sx + py * sy) / (sx * sx + sy * sy);
+    const t = raw < 0 ? 0 : raw > 1 ? 1 : raw;
     const ex = px - sx * t, ey = py - sy * t, d = ex * ex + ey * ey;
-    if (d < bd || (d === bd && i < best)) { bd = d; best = i; bt = t; bcross = sx * py - sy * px; }
+    if (d < bd || (d === bd && i < best)) { bd = d; best = i; bt = t; braw = raw; bcross = sx * py - sy * px; }
   }
   if (best < 0) return false;
+  // no round end caps: past the first/last point the river ends (waterfall foot, lake joins)
+  if ((best === 0 && braw < 0) || (best === rv.n - 2 && braw > 1)) return false;
   const i = best, u = 1 - bt;
   const lat = bcross >= 0 ? Math.sqrt(bd) : -Math.sqrt(bd);
   const hw = rv.hw[i] * u + rv.hw[i + 1] * bt;

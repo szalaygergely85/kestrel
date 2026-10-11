@@ -5,9 +5,7 @@
 //                           slide along it (keep X or Y), else restore the previous position. A body spawned/dropped into deep water is pushed
 //                           toward the nearer bank at 2 m/s; after 3 s `body.wadeRescue` turns true (the OB-016 void rescue reads it).
 // Only `river` shapes (water kind 3) wade; rect/circle regions keep today's behaviour (world blocks / sea). Rule 15: no random/trig, 0 alloc.
-import { L_LAT, L_TX, L_TY } from '../../../../engine/index.js';
-
-const KIND_RIVER = 3; // engine/world/water.js region kind
+const kindScratch = { lat: 0, hw: 0, tx: 0, ty: 0, v: 0, z: 0 };
 export const WADE_CFG = Object.freeze({ deepM: 1.0, fullM: 0.9, slow: 0.5, pushK: 0.7, pushMax: 3, bankPush: 2, rescueSteps: 180 });
 
 /**
@@ -16,10 +14,11 @@ export const WADE_CFG = Object.freeze({ deepM: 1.0, fullM: 0.9, slow: 0.5, pushK
  */
 export function riverWaterAt(world, x, y, out) {
   if (typeof world.waterAt !== 'function' || !world.waterAt(x, y, out)) return false;
-  return world.water.kind[out.index] === KIND_RIVER;
+  return world.riverAt(x, y, kindScratch); // river-kind only (World#riverAt)
 }
 
 export function createWading(world, cfg = WADE_CFG) {
+  const rb = { lat: 0, hw: 0, tx: 0, ty: 0, v: 0, z: 0 };
   const w = { surfaceZ: 0, flatZ: 0, depth: 0, region: '', index: -1, look: 0 };
   const flow = [0, 0];
   const mesh = world.physicsMode === 'mesh';
@@ -45,9 +44,9 @@ export function createWading(world, cfg = WADE_CFG) {
       const k = imm <= 0 ? 0 : imm >= cfg.fullM ? 1 : imm / cfg.fullM;
       body.speedScale = Math.min(other, 1 - cfg.slow * k);
       if (imm > cfg.deepM) { // dropped into deep water: shove toward the nearer bank, rescue after 3 s
-        const rv = world.water.rivers[world.water.riv[w.index]], loc = rv.loc;
-        const side = loc[L_LAT] >= 0 ? 1 : -1; // + = left of flow; left normal = (-ty, tx); toward the bank = side * left
-        body.pushX = -loc[L_TY] * side * cfg.bankPush; body.pushY = loc[L_TX] * side * cfg.bankPush;
+        world.riverAt(t.x, t.y, rb);
+        const side = rb.lat >= 0 ? 1 : -1; // + = left of flow; left normal = (-ty, tx); toward the bank = side * left
+        body.pushX = -rb.ty * side * cfg.bankPush; body.pushY = rb.tx * side * cfg.bankPush;
         if (++body.wadeDeep > cfg.rescueSteps) body.wadeRescue = true;
         return;
       }

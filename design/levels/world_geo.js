@@ -50,9 +50,14 @@
              // MAP-04: one polyline source -> mouth, [y, bedZ, halfWidth] (x = x_r(y)); bedZ only carves (min with the ground), halfWidth
              // is the water band (type 2). Outside the keep only; blended in over `fade` m from the keep edge (ford y 1068 untouched).
              // The bed falls monotonically; it ends at seaLevel - 1.5 = the sea floor at the shoreline (coast layer), so no step at the mouth.
-             poly: [[100, 45, 10], [300, -20, 10], [420, -56, 10], [600, -60, 10], [760, -72, 10], [832, -82, 10],
+             // RIVER-04: 100-300 under the source-reach humps (y 126, 198); 372-400 = the inlet hollow below lake z (ribbon widened, no floating edge);
+             // 352-540 = a channel through the Glasswater dam shelf at lake z - 0.4 (the river enters the lake); 600 = the outlet lip,
+             // 603/605 = a vertical notch at the outlet cliff (waterfall `braidFalls` lip y 603.5, ~17 m into a plunge reach at -77); 628-760 below the old -75 hump.
+             poly: [[100, -10, 10], [128, -13.3, 10], [174, -25.6, 10], [204, -26.0, 10], [232, -27.2, 10], [300, -45.6, 10], [352, -57.6, 10], [362, -58.4, 22],
+                    [412, -58.4, 22], [424, -58.4, 10], [540, -58.6, 10], [600, -60, 10], [603, -60.2, 10], [605, -77, 10], [628, -77.1, 10],
+                    [700, -77.4, 10], [760, -78.4, 10], [832, -83, 10],
                     [1344, -92, 10], [1420, -95, 10], [1470, -96.6, 14], [1600, -97, 24], [1725, -97.5, 42], [1760, -97.6, 46]],
-             fade: 128, bank: 0.4, bankW: 60, corridor: [880, 100, 1360, 1760] },
+             fade: 128, bank: 0.4, bankW: 60, inset: 2, corridor: [880, 100, 1360, 1760] },
 
     lake: { id: 'glasswater', name: 'Glasswater (P)', x: 1235, y: 505, rx: 165, ry: 90, rot: 0.2, surface: -58, depth: 10, shore: 0.3,
             // water region rect (content/worlds/world_m1.world.json 'glasswater'): the open water. The rest of the ellipse is a shore shelf at surface+0.8
@@ -401,8 +406,10 @@
         } },
       { id: 'river', rect: G.river.corridor, heightFn: function (h, x, y) {   // MAP-04: bed profile + width ramp, carves after sea/lake/marsh
           var Rv = G.river, f = riverFade(y); if (f <= 0) return h;
-          var dr = Math.abs(x - U.riverX(y)), hw = interp3(Rv.poly, y, 2);
-          var hb = interp3(Rv.poly, y, 1) + Rv.bank * Math.max(0, dr - hw);   // flat bed under the water band, banks rise at `bank` m/m
+          var xr = U.riverX(y), dr = Math.abs(x - xr);
+          var ys = y + (x - xr) * (U.riverX(y + 1) - U.riverX(y - 1)) * 0.5;   // RIVER-04: bed cross-sections perpendicular to the flow (the outlet notch meets the waterfall lip)
+          var hw = interp3(Rv.poly, ys, 2);
+          var hb = interp3(Rv.poly, ys, 1) + Rv.bank * Math.max(0, dr - hw + Rv.inset);   // flat bed under the water band (inset: the shore lies inside the ribbon), banks rise at `bank` m/m
           if (hb >= h) return h;
           var w = smooth(hw + Rv.bankW, hw + Rv.bankW * 0.5, dr) * f;    // the bank reaches only `bankW` m beyond the water band
           return h + (hb - h) * w;

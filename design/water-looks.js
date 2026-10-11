@@ -101,5 +101,20 @@
       bands: '-~,', glintCos: 0.995, crestK: 0.8,
       streak: '-', streakLen: 0.8, streakW: 0.4, streakK: 0.85,
     },
+    // RIVER-04 (38.45): the Braid. Shallow, clear, cold green-blue (wadeable ~0.4 m: the bed shows through), fast streaks, white rapids.
+    river: {
+      ramp: '~-~=-~',
+      shallow: [116, 172, 170],   // #74acaa clear cold shallows
+      deep: [22, 58, 82],         // #163a52
+      opaqueAt: 1.2, seeThrough: 0.45,
+      glint: [232, 244, 242],
+      waveHz: 1.2, bgK: 0.45,
+      cellM: 0.22, glintP: 0.035, drift: 0.2, tintDepth: 1.0, shoreW: 0.5,
+      rim: [206, 226, 222],       // #cee2de froth
+      foamRamp: '*o.', foamDepth: 0.3, foamFar: 60,
+      bands: '-~=~', glintCos: 0.985, crestK: 0.6,
+      streak: '-', streakLen: 1.4, streakW: 0.3, streakK: 0.8,
+      shoreFade: 0.15, streakT: 0.8, rapidFoam: 0.7, riverFarM: 1200,
+    },
   };
 })(typeof window !== 'undefined' ? window : globalThis);
