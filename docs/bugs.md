@@ -8,6 +8,8 @@ Newest at the top of each table. Keep one line per bug; details go in the commit
 
 | ID | Date | Owner report (short) | Where / notes | Status |
 |---|---|---|---|---|
+| OB-022 | 2026-10-11 | Dialogue: every short sentence needs its own E press - boring. Make lines shorter and GROUP consecutive lines of the same speaker into one box | Dialogue runner/box (game/js/quest/dialogue*). | open - in progress |
+| OB-021 | 2026-10-11 | At 560x210 the text (settings menu) becomes blurry | UI layer at the top grid size: non-integer cell scaling / canvas resampling. | open - in progress |
 | OB-020 | 2026-10-11 | Smoke north of the ford looks very bad (huge flat grey pillars) | The smokeColumn billboards (6x28 m sprites) removed at once; anchors kept. Proper smoke = thin rising particle plumes (existing particle system), owner to see it before it ships. Particle plumes (farSmoke) on smoke1..3; screenshot docs/test-reports/ob020-smoke-northlook.png. | fixed - verify |
 | OB-019 | 2026-10-11 | River looks strange at the ford: flat blue ground, no water shader, no water physics; stepping stones look like smudges | Only a 34x22 m `ford` water region exists (1012-1046 x 1058-1080); the rest of the river is ground painted with the water colour (type 2) with no water surface. 49 stepped water regions (gen-river-water.mjs) from y 832 to the mouth; limits: 8 nearest drawn, steep mountain part not covered. | fixed - verify |
 | OB-018 | 2026-10-11 | A wooden post + table-like structure floats in the air in the forest ("any purpose?") | Likely the crossroads trade post/signpost (MAP-22, ~990-1000,1060): props were ground-snapped BEFORE the geography + river carving (MAP-02..05, MAP-04) changed the ground there. | open - checking |
