@@ -6,8 +6,9 @@
 //
 // `style` shape (game/js/main.js builds it from the palette):
 //   { crosshair: { dim: '#rrggbb', active: '#rrggbb' },
-//     prompt: { color: '#rrggbb', keyColor: '#rrggbb', plateBg: '#rrggbb' } }
-import { drawText } from '../render/textDraw.js';
+//     prompt: { color: '#rrggbb', keyColor: '#rrggbb', plateBg: '#rrggbb', scale?: 1|2 } }
+// OB-051: prompt.scale 2 draws the prompt as 2x2-cell glyphs (UiLayer.setCellScaled, 38.48).
+import { drawText, drawTextScaled } from '../render/textDraw.js';
 
 // UI-XHAIR-01: the crosshair is now an OPEN cross drawn with glyph-only cells
 // (see uiLayer.js `setGlyph` - the scene's background shows through around the
@@ -56,9 +57,13 @@ export function drawCrosshair(rt, style, state) {
   if (!active || !state.prompt) return;
 
   const text = state.prompt; // e.g. "[E] Take lamp"
-  const py = cy + PROMPT_ROW_GAP;
-  const px = cx - (text.length >> 1);
-  if (style.prompt.plateBg) {
+  const scaled2 = style.prompt.scale === 2 && typeof rt.setCellScaled === 'function';
+  // scale 2: block rows py/py+1 start below the 3x3 cross (cy+1), even origin, width 2*len centred on cx
+  const py = scaled2 ? (cy + PROMPT_ROW_GAP + 1) & ~1 : cy + PROMPT_ROW_GAP;
+  const px = scaled2 ? (cx - text.length) & ~1 : cx - (text.length >> 1);
+  const draw = scaled2 ? drawTextScaled : drawText;
+  const step = scaled2 ? 2 : 1;
+  if (style.prompt.plateBg && !scaled2) {
     for (let i = 0; i < text.length; i++) {
       const x = px + i;
       if (x < 0 || x >= rt.cols || py < 0 || py >= rt.rows) continue;
@@ -74,9 +79,9 @@ export function drawCrosshair(rt, style, state) {
     cachedRestText = keyEnd > 0 ? text.slice(keyEnd) : text;
   }
   if (cachedKeyText) {
-    drawText(rt, px, py, cachedKeyText, style.prompt.keyColor, style.prompt.plateBg);
-    drawText(rt, px + cachedKeyText.length, py, cachedRestText, style.prompt.color, style.prompt.plateBg);
+    draw(rt, px, py, cachedKeyText, style.prompt.keyColor, style.prompt.plateBg);
+    draw(rt, px + step * cachedKeyText.length, py, cachedRestText, style.prompt.color, style.prompt.plateBg);
   } else {
-    drawText(rt, px, py, cachedRestText, style.prompt.color, style.prompt.plateBg);
+    draw(rt, px, py, cachedRestText, style.prompt.color, style.prompt.plateBg);
   }
 }
