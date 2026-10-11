@@ -10,7 +10,7 @@
 // the architecture note's "Reason").
 //
 // 1 particle = 1 cell by default; an emitter def `sizeM` (world diameter, m) grows the footprint with
-// proximity to 1..3 x 1..3 cells (odd sizes centred, 2 -> anchor + right/down). Same glyph/colour/depth rule per cell.
+// proximity to 1..MAX_FOOT cells per side (perspective, centred; 1 cell = far floor; >=3x3 drawn as an ellipse). Same glyph/colour/depth rule per cell.
 //
 // `build()` is called once per rendered frame, after `engine.particles.step()`:
 //   1. clears the cells touched LAST frame (tracks which rows that wiped);
@@ -35,6 +35,7 @@ function partEmpty8() { return new Uint8Array(0); }
 function partEmptyF() { return new Float32Array(0); }
 function partEmptyI() { return new Int32Array(0); }
 
+const MAX_FOOT = 12; // max screen footprint of one sized particle (cells per side)
 const _ps = { depth: 0, fogDepth: 0, colCenter: 0, feetRow: 0, rowsOnScreen: 0 };
 const _lightScratch = new Float64Array(3);
 const _fog3 = new Float64Array(3);
@@ -157,7 +158,8 @@ export function createParticleLayer() {
         const glyphBase = d * MAX_RAMP;
         const code = defGlyphs[glyphBase + ri];
         if (code === 32) continue; // ' ' = invisible step
-        const sizeM = defRec[o + D.SIZE_M];
+        // sizeM -> sizeEndM with age: a puff that grows as it rises (smoke). Constant when sizeEndM is unset.
+        const sizeM = defRec[o + D.SIZE_M] + (defRec[o + D.SIZE_END_M] - defRec[o + D.SIZE_M]) * (age[i] / life[i]);
         // sizeM > 0: worldH = sizeM makes rowsOnScreen the projected diameter in rows (aspect baked into planeDistY).
         if (!projectSprite(cb, cam, px[i], py[i], pz[i], sizeM, _ps)) continue;
         // Compare at layer (f32) precision, like overlay's `put` - so two
@@ -170,10 +172,11 @@ export function createParticleLayer() {
         if (sizeM > 0) {
           nx = Math.round(sizeM * cols / (2 * cb.tanHalfHFov * _ps.depth));
           ny = Math.round(_ps.rowsOnScreen);
-          nx = nx < 1 ? 1 : nx > 3 ? 3 : nx;
-          ny = ny < 1 ? 1 : ny > 3 ? 3 : ny;
+          nx = nx < 1 ? 1 : nx > MAX_FOOT ? MAX_FOOT : nx; // 1 = far floor (min-cell rule)
+          ny = ny < 1 ? 1 : ny > MAX_FOOT ? MAX_FOOT : ny;
         }
-        const x0 = nx === 3 ? c - 1 : c, y0 = ny === 3 ? r - 1 : r;
+        const x0 = c - ((nx - 1) >> 1), y0 = r - ((ny - 1) >> 1);
+        const hx = nx * 0.5, hy = ny * 0.5, round = nx >= 3 && ny >= 3; // puffs >= 3x3 are ellipses, not boxes
         if (x0 >= cols || x0 + nx <= 0 || y0 >= rows || y0 + ny <= 0) continue;
 
         const colorBase = (d * MAX_RAMP + ri) * 3;
@@ -195,6 +198,10 @@ export function createParticleLayer() {
           if (yy < 0 || yy >= rows) continue;
           for (let xx = x0; xx < x0 + nx; xx++) {
             if (xx < 0 || xx >= cols) continue;
+            if (round) {
+              const ex = (xx - x0 + 0.5 - hx) / hx, ey = (yy - y0 + 0.5 - hy) / hy;
+              if (ex * ex + ey * ey > 1) continue;
+            }
             const idx = yy * cols + xx;
             const cur = partZ[idx];
             if (cur !== 0) {
