@@ -8,6 +8,14 @@ Newest at the top of each table. Keep one line per bug; details go in the commit
 
 | ID | Date | Owner report (short) | Where / notes | Status |
 |---|---|---|---|---|
+| OB-038 | 2026-10-11 | Design walk: west bank (crossroads, straw field, ruin) almost bare; trade post does not read | framing tree clumps (TwistedTree_3/5), hedge, fence, awning (M); report docs/test-reports/design-walk-2026-10-11.md | open |
+| OB-037 | 2026-10-11 | Design walk: river banks bare | tall-grass/reed strips, ferns + rocks at the stepping stones (S/M); report docs/test-reports/design-walk-2026-10-11.md | open |
+| OB-036 | 2026-10-11 | Design walk: Rook's nest shows the gear pickup sprite | ring of small Roof_Log + grass meshes on the roof (S); report docs/test-reports/design-walk-2026-10-11.md | open |
+| OB-035 | 2026-10-11 | Design walk: knot post / note post / signpost are a crate with fence pieces on top | upright Prop_Support + one plank sign (S); report docs/test-reports/design-walk-2026-10-11.md | open |
+| OB-034 | 2026-10-11 | Design walk: copy-stamped roadside clusters (same 5-piece cluster, same tree trio, same rotations) | re-roll yaw/scale per section in gen-roadside (S); report docs/test-reports/design-walk-2026-10-11.md | open |
+| OB-033 | 2026-10-11 | Design walk: only boars placed, none at Road West/Bend; rabbits/songbirds only at the edge of draw distance; 12 shared pool slots | wary boar groups at the Bend, deer at the river, longer draw distances (S/M); report docs/test-reports/design-walk-2026-10-11.md | open |
+| OB-032 | 2026-10-11 | Design walk: birds/squirrels never use the ~250 placed roadside trees | add placed tree meshes to the wildEnv trunk grid (M); report docs/test-reports/design-walk-2026-10-11.md | open |
+| OB-031 | 2026-10-11 | Design walk: dusk has no outdoor light or smoke (Bend lamps unlit, relays/waystone dark, chimneys no smoke) | existing lanternHook light + smoke emitter presets (S); report docs/test-reports/design-walk-2026-10-11.md | open |
 | OB-030 | 2026-10-11 | (from OB-027) closing the editor lost all unsaved changes | Add autosave of the open doc to browser storage every few seconds + a "restore unsaved changes?" prompt on next open, and a leave-page warning. | fixed - verify (autosave + restore banner; direct save after the 8000 server restarts) |
 | OB-029 | 2026-10-11 | Editor: be able to DELETE assets that are not needed | Asset browser in tools/editor: delete an asset (mesh/model) that nothing references; warn + list users if it is still placed; removes the file + manifest entry on save. Licensed local packs (content/local, quaternius) only from the local folder, never committed. | fixed - verify (unused filter + delete; pending-deletes list applied by the main session) |
 | OB-028 | 2026-10-11 | Editor: scene tree needs groups, and groups foldable | tools/editor scene tree panel. | fixed - verify (foldable groups + user groups) |
