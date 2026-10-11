@@ -22,16 +22,18 @@ function bladeFromMain(def, main, boars) {
 export function validateGiverQuest(def) {
   validateQuestDefinition(def);
   if (!QUEST_ID.test(def.id)) throw new Error('quest: invalid giver quest id');
-  if (!def.giver || typeof def.giver.npc !== 'string' || !def.giver.npc) throw new Error('quest: giver.npc required');
-  if (def.giver.turnIn !== undefined && (typeof def.giver.turnIn !== 'string' || !def.giver.turnIn)) throw new Error('quest: invalid giver.turnIn');
+  if (def.giver === undefined) { // QL-T1: giverless area quest (objects/areas as objectives): starts when `requires` is met, ends with its last objective
+    if (def.objectives.some(o => o.when.type === 'deliver') || def.giveOnAccept !== undefined || def.reward !== undefined) throw new Error('quest: giverless quest cannot deliver, give or reward');
+  } else if (typeof def.giver.npc !== 'string' || !def.giver.npc) throw new Error('quest: giver.npc required');
+  if (def.giver && def.giver.turnIn !== undefined && (typeof def.giver.turnIn !== 'string' || !def.giver.turnIn)) throw new Error('quest: invalid giver.turnIn');
   if (def.requires !== undefined) {
     if (!Array.isArray(def.requires)) throw new Error('quest: requires must be an array');
     for (const r of def.requires) if (!r || (typeof r.flag === 'string' ? !r.flag : typeof r.quest !== 'string' || (r.done !== true && typeof r.step !== 'string'))) throw new Error('quest: invalid requires entry'); // QL-05: {flag} = main quest flag set (Burl home)
   }
-  for (const o of def.objectives) if (o.when.type === 'deliver' && o.when.to !== (def.giver.turnIn || def.giver.npc)) throw new Error('quest: deliver.to must be the hand-in npc (giver.turnIn or giver.npc)');
+  for (const o of def.objectives) if (def.giver && o.when.type === 'deliver' && o.when.to !== (def.giver.turnIn || def.giver.npc)) throw new Error('quest: deliver.to must be the hand-in npc (giver.turnIn or giver.npc)');
   if (def.abandonable !== undefined && typeof def.abandonable !== 'boolean') throw new Error('quest: invalid abandonable');
   if (def.returnText !== undefined && typeof def.returnText !== 'string') throw new Error('quest: invalid returnText');
-  for (const k of ['entity', 'turnInEntity', 'text', 'turnInText', 'refuseText']) if (def.giver[k] !== undefined && (typeof def.giver[k] !== 'string' || !def.giver[k])) throw new Error('quest: invalid giver.' + k); // QL-04: object givers (inspect props)
+  if (def.giver) for (const k of ['entity', 'turnInEntity', 'text', 'turnInText', 'refuseText']) if (def.giver[k] !== undefined && (typeof def.giver[k] !== 'string' || !def.giver[k])) throw new Error('quest: invalid giver.' + k); // QL-04: object givers (inspect props)
   if (def.giveOnAccept !== undefined) {
     if (!Array.isArray(def.giveOnAccept)) throw new Error('quest: invalid giveOnAccept');
     for (const it of def.giveOnAccept) if (!it || typeof it.id !== 'string' || !Number.isInteger(it.n) || it.n < 1) throw new Error('quest: invalid giveOnAccept item');
@@ -56,7 +58,8 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     if (ids.has(def.id)) throw new Error('quest: duplicate quest id ' + def.id);
     ids.add(def.id);
     const s = saved?.quests?.[def.id];
-    const e = { def, giver: def.giver.npc, turnIn: def.giver.turnIn || def.giver.npc, state: createQuest(def, s ? s.quest : null), accepted: !!(s && s.accepted === true), handedIn: !!(s && s.handedIn === true), seq: 0, prev: 0, given: Array.isArray(s && s.given) ? s.given.filter(g => g && typeof g.id === 'string' && Number.isInteger(g.n) && g.n > 0) : [] };
+    const auto = !def.giver; // QL-T1: giverless
+    const e = { def, auto, giver: auto ? null : def.giver.npc, turnIn: auto ? null : def.giver.turnIn || def.giver.npc, state: createQuest(def, s ? s.quest : null), accepted: !!(s && s.accepted === true), handedIn: !!(s && s.handedIn === true), seq: 0, prev: 0, given: Array.isArray(s && s.given) ? s.given.filter(g => g && typeof g.id === 'string' && Number.isInteger(g.n) && g.n > 0) : [] };
     if (e.accepted) e.seq = ++seqCounter; // restore: array order stands in for accept order
     entries.push(e);
   }
@@ -92,6 +95,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   function statusOf(i) {
     const e = entries[i];
     if (i === 0) return e.state.completed.length >= e.def.objectives.length ? DONE : ACTIVE;
+    if (e.auto) return !met(i) ? UNAVAILABLE : e.state.completed.length < e.def.objectives.length ? ACTIVE : DONE; // QL-T1: no accept / hand-in step
     if (e.handedIn) return DONE;
     if (!e.accepted) return met(i) ? AVAILABLE : UNAVAILABLE; // an accepted quest never goes back to unavailable (old saves)
     return e.state.completed.length < e.def.objectives.length ? ACTIVE : READY;
@@ -102,6 +106,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     for (let i = 1; i < n; i++) {
       const s = statusOf(i), e = entries[i];
       if (s === READY && e.prev !== READY) emit('quest:ready', e.def.id);
+      if (e.auto && s === DONE && e.prev !== DONE) { book.lastReward = NO_REWARD; emit('quest:done', e.def.id); }
       e.prev = s;
     }
   }
@@ -191,6 +196,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   book.entityFor = function entityFor(id) {
     for (let i = 1; i < n; i++) {
       const g = entries[i].def.giver;
+      if (!g) continue;
       if (g.npc === id && g.entity) return g.entity;
       if (entries[i].turnIn === id && g.turnInEntity) return g.turnInEntity;
     }

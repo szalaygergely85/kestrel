@@ -1,5 +1,6 @@
 // US-096a: event-driven plain save data. No world/DOM, clocks or random sources.
-const safeId = value => typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_.-]*$/.test(value) && !['constructor','prototype','__proto__'].includes(value);
+const BAD_IDS = new Set(['constructor','prototype','__proto__']);
+const safeId = value => typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_.-]*$/.test(value) && !BAD_IDS.has(value);
 const scalar = value => value === null || ['boolean','string'].includes(typeof value) || typeof value === 'number' && Number.isFinite(value);
 const requireId = value => { if (!safeId(value)) throw new Error('quest: invalid id'); };
 
@@ -71,8 +72,9 @@ export function createQuest(def, saved = null) {
 }
 
 /** Known malformed events throw before mutation; unrelated event types are ignored. */
+const EVENT_TYPES = new Set(['flag:set','item:got','beast:died','area:entered','item:count']); // hoisted: no per-call array (QL-T1, 0 alloc per step)
 export function applyQuestEvent(state, event, def) {
-  if (!event || !['flag:set','item:got','beast:died','area:entered','item:count'].includes(event.type)) return false;
+  if (!event || !EVENT_TYPES.has(event.type)) return false;
   const id = event.type === 'flag:set' ? event.key : event.id;
   requireId(id);
   let changed = false;

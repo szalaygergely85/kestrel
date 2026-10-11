@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "packs": [],
+  "legacy": ["m1", "tower.blade", "burl.boars", "mq.river.road", "mq.ford.stones"]
+}
