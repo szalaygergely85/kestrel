@@ -587,3 +587,9 @@ Tests: interaction.test.js 48 pass (+7 note-height cases; 2 point-model expectat
 - Fix (both twins, `terrainShade.js` + `shade.wgsl.js`): `PATCH_CELL = 1 m` fixed world cell keys hA and the jitter; jitter amplitude fades smoothstep to 0 over closeBand/2..closeBand. Glyph (hB), glint, features still use `cellSz` (glyph flips remain: 38.50 b/c).
 - Test: `terrainShade.test.js` patch colour identical 2..40 m (old code: 1161/1800 changed), close-band continuity; SHADE_WGSL length pin 40434 -> 40766. Suites terrain/shade/wgsl/check-deps green.
 - gpucompare: expect terrain rows to change (colour/brightness of every terrain cell, near ground most). 38.50 OB-054a walk metric NOT written (not asked beyond spec; left).
+
+### OB-063 interaction aim re-balanced (kestrel-3, Node only, arch-review)
+- Owner pose (1489.5,1026.33,6.0) yaw 264 pitch -30 hit noteSteelHush (~1.2 m, 25 deg off in yaw, pitch inside its 0.8 m segment): the 40 deg / 55 deg gate was too wide.
+- `interaction.js`: cone 40 -> 22 deg h, VERT_RATIO 1.6 (= 35 deg v), hysteresis +15 -> +8, near widening range 0.9 -> 0.7 m, aim point must be within 60 deg of view dir. Full-height segment aim unchanged.
+- Tests: new real-tower case (tower.level.json + world origin) asserts no target at eye z 6.0..7.6 and a prompt when facing the page; OB-052/052b cases kept but angles scaled (39/41 -> 21/24, 30 -> 20, hyst 36/50/60 -> 20/28/34, note yaw +-25 -> +-18; pitch -40..+15 at yaw 0 unchanged and green).
+- `verify-interact-aim.mjs` thresholds loosened (rows >0.3, fraction 0.3..0.8), NOT run (browser). Standing figure: not identified (Node only).

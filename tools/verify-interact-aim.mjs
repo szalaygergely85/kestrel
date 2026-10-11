@@ -51,8 +51,9 @@ try {
   })()`));
   console.log(JSON.stringify(r));
   assert.ok(!r.err, r.err);
-  assert.ok(r.byPitch['5'] > 0.5 && r.byPitch['10'] > 0.5, 'pitch +5/+10 rows must be > 0.5: ' + JSON.stringify(r.byPitch));
-  assert.ok(r.fraction >= 0.6, 'prompt fraction too low: ' + r.fraction);
+  assert.ok(r.byPitch['5'] > 0.3 && r.byPitch['10'] > 0.3, 'pitch +5/+10 rows must be > 0.3 (OB-063: 22 deg cone): ' + JSON.stringify(r.byPitch));
+  assert.ok(r.fraction >= 0.3 && r.fraction <= 0.8, // OB-063: tighter gate (22 h / 35 v), not a free-for-all
+     'prompt fraction too low: ' + r.fraction);
   console.log('Interact aim sweep PASS');
 } finally {
   cdp?.close(); if (browser?.pid) killTree(browser.pid); if (server.pid) killTree(server.pid);

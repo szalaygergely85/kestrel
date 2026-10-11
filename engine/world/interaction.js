@@ -30,15 +30,16 @@ import { gridLocal } from './gridLocal.js';
 /** @typedef {{targetKey:string|null, prompt:string, dist:number, angleDeg:number}} InteractionState */
 
 const DEFAULT_REACH = 1.8;
-const DEFAULT_CONE_DEG = 40; // OB-052: forgiving aim (was 20)
-export const HYST_CONE_DEG = 15; // the current target survives this far outside the cone
+const DEFAULT_CONE_DEG = 22; // OB-052: forgiving aim (was 20); OB-063: 40 was too wide (owner saw a prompt 25 deg off), now 22 h / 35 v
+export const HYST_CONE_DEG = 8;  // the current target survives this far outside the cone
 export const HYST_REACH = 0.3;   // ...and this much beyond reach
 const DIST_WEIGHT = 15;          // score = angleDeg + dist * 15: 1 m of distance costs 15 deg of aim
 const KEEP_BONUS = 5;            // a challenger must beat the current target's score by 5 to replace it
-export const DEFAULT_NEAR_DIST = 0.9; // DOOR-CLOSE-01: inside this range the cone widens
+export const DEFAULT_NEAR_DIST = 0.7; // DOOR-CLOSE-01: inside this range the cone widens
 export const DEFAULT_NEAR_CONE_DEG = 70;
 const DEFAULT_HEIGHT = 0.8;       // OB-052b: vertical extent of an interactable (rec.height overrides)
-const VERT_RATIO = 1.375;        // vertical tolerance = 55/40 of the horizontal one
+const VERT_RATIO = 1.6;          // vertical tolerance = 35/22 of the horizontal one (OB-063)
+const MIN_COS_VIEW = 0.5;        // OB-063: the aim point must lie in front, within 60 deg of the view direction
 const LOS_STEP = 0.1;
 const LOS_MAX_SAMPLES = 20;
 const losGrid = { x: 0, y: 0, z: 0 }; // gridLocal scratch (rule 9)
@@ -155,6 +156,7 @@ export function findInteractTarget(world, eye, cfg, out) {
     const angleDeg = Math.acos(cosAngle) * 180 / Math.PI;
     // Elliptical gate on the yaw/pitch components: horizontal = cone, vertical = cone * VERT_RATIO.
     // DOOR-CLOSE-01: within nearDist the cone widens to nearConeDeg.
+    if (cosAngle < MIN_COS_VIEW) continue;
     const lim = (dist < nearDist && coneDeg < nearConeDeg ? nearConeDeg : coneDeg) + (isPrev ? HYST_CONE_DEG : 0);
     let dyawDeg = 0;
     if (hd > 1e-6) {
