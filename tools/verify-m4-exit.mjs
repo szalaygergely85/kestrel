@@ -10,7 +10,7 @@ import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, c
 
 const port = Number(process.argv[2] || 9725);
 validatePort(port);
-if (port < 9725 || port + 1 > 9799) throw new Error('this check uses ports 9725-9799 (next port is CDP)');
+if (port < 9500 || port + 1 > 9999) throw new Error('this check uses PC-B ports 9500-9999 (next port is CDP)');
 const backend = process.argv[3] || 'webgpu';
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-m4-exit-'));
 const server = spawn('python', ['-c', 'import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()', String(port)], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
