@@ -1,16 +1,16 @@
 // OB-052: headless sweep of interaction targeting near the start note. Stands 1.2 m from the interactable nearest the
 // spawn (prefers a note), sweeps pitch -40..+20 (step 5) and yaw +-30 around the bearing to it (step 5) and reports the
 // fraction of poses that still yield a prompt via the real engine findInteractTarget (no input/sim needed).
-// Run: node tools/verify-interact-aim.mjs <port>   (PC-B lane B2 ports 9650-9724; the CDP port is port+1)
+// Run: node tools/verify-interact-aim.mjs <port>   (PC-B lane B2 any validatePort range; the CDP port is port+1)
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
-import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, killTree } from './capture-browser.mjs';
+import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, evaluateAsync, killTree } from './capture-browser.mjs';
 
 const port = Number(process.argv[2] || 9660);
 validatePort(port);
-if (port < 9650 || port + 1 > 9724) throw new Error('lane B2 range is 9650-9724 (next port is CDP)');
+if (port + 1 > 9999) throw new Error('CDP port is port+1');
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-aim-'));
 const server = spawn('python', ['-c', 'import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()', String(port)], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -23,11 +23,11 @@ try {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 640, height: 360, deviceScaleFactor: 1, mobile: false });
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1` });
   let ready = false;
-  for (let i = 0; i < 150; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.engine && window.__debug.engine.world && window.__debug.playerHandle)')) { ready = true; break; } }
+  for (let i = 0; i < 150; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.world && window.__debug.playerHandle)')) { ready = true; break; } }
   assert.ok(ready, 'world never loaded');
-  const r = JSON.parse(await evaluate(cdp, `(async () => {
+  const r = JSON.parse(await evaluateAsync(cdp, `(async () => {
     const { findInteractTarget } = await import('/engine/index.js');
-    const w = window.__debug.engine.world, p = window.__debug.playerHandle.data.transform;
+    const w = window.__debug.world, p = window.__debug.playerHandle.data.transform;
     const list = w.interactables.filter((r) => r.prompt);
     const d2 = (r) => (r.x - p.x) ** 2 + (r.y - p.y) ** 2;
     const notes = list.filter((r) => /note|read/i.test(r.prompt + r.name));
