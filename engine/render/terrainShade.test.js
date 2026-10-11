@@ -268,6 +268,37 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
   check('hashCell 0 == explicit 2/8 m path (unchanged)', ok0);
 }
 
+
+// OB-054: patch colour is world-anchored - identical for a world point from any camera distance 2..40 m (cell hash follows distance, colour must not).
+export function patchColourStable(shade, closeBand) {
+  const H = [130, 170];
+  const c = { ...ctx, handover: H, closeBand, fog: { ...ctx.fog, start: 1e6, full: 2e6 }, hashCell: -0.02 };
+  let bad = 0, n = 0;
+  for (let i = 0; i < 200; i++) {
+    const u = 11.37 + i * 0.913, v = 3.21 + i * 0.571, b = [0.3, 0.6, 0.95][i % 3];
+    const ref = shade(2, 0, b, u, v, 0, c, out());
+    const r0 = [ref.fg[0], ref.fg[1], ref.fg[2], ref.bg[0], ref.bg[1], ref.bg[2]];
+    for (let t = 2.5; t <= 40; t *= 1.37) {
+      const o = shade(t, 0, b, u, v, 0, c, out()); n++;
+      if (o.fg[0] !== r0[0] || o.fg[1] !== r0[1] || o.fg[2] !== r0[2] || o.bg[0] !== r0[3]) bad++;
+    }
+  }
+  return { bad, n };
+}
+{
+  const r = patchColourStable(shadeTerrain, undefined);
+  check('OB-054 patch colour identical across camera distance 2..40 m (' + r.bad + '/' + r.n + ' changed)', r.bad === 0);
+  // close band: brightness jitter amplitude fades smoothly (no re-roll, no step): 0.05 m of camera motion moves fg by <= 2 bytes
+  const cc = { ...ctx, handover: [130, 170], closeBand: 6, fog: { ...ctx.fog, start: 1e6, full: 2e6 }, hashCell: -0.02 };
+  let worst = 0;
+  for (let i = 0; i < 200; i++) for (let t = 1; t < 9; t += 0.05) {
+    const u = 11.37 + i * 0.913, v = 3.21 + i * 0.571;
+    const a = shadeTerrain(t, 0, 0.6, u, v, 0, cc, out()), c = shadeTerrain(t + 0.05, 0, 0.6, u, v, 0, cc, out());
+    worst = Math.max(worst, Math.abs(a.fg[1] - c.fg[1]));
+  }
+  check('OB-054 close-band colour continuous in t (worst step ' + worst + ' bytes)', worst <= 2);
+}
+
 // ---- S8-B2-12b (38.13): shadeTerrainCells scales the terrain analytic sun term by cF = 1 - light.cloudQ[i]/255 ----
 // A self-contained synthetic recipe/palette (no `design/` import, same pattern as TerrainTextures.test.js's stub)
 // so this exercises the REAL `shadeTerrainCells` cell loop (not the low-level `shadeTerrain` the rest of this file
