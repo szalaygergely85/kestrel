@@ -57,6 +57,7 @@ export function createDialogueCtl(opt) {
   const jaw = createJawSync({ maxDeg: opt.jawOpenDeg }); // opt.jawOpenDeg = model def's jawOpenDeg, else fallback
   let jawComp = null;     // voxel component of the NPC whose jaw we drive
   const runner = createDialogueRunner({
+    pageLines: opt.pageLines, pageChars: opt.pageChars, // OB-022 grouping (defaults in the runner; tests may pass pageLines:1 for one line per page)
     cps: opt.cps || view.cps, // typing speed: explicit opt, else the style's typeOn.cps (28)
     onEvent(name) {
       if (name === 'node') { pendingClip = runner.clip; oneShot = false; lastBase = null; } // a new node cuts the old one-shot

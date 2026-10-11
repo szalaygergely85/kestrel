@@ -23,7 +23,7 @@ const mkFlags = () => { const s = new Set(); return { s, has: (k) => s.has(k), s
 // Run one conversation: at a choice node pick index `pick`. Returns the spoken lines (with speaker), clips seen, flags.
 function walk(flags, pick) {
   const clips = [], said = [], events = [];
-  const r = createDialogueRunner({ onEvent: (n, a) => events.push(n + ':' + a) });
+  const r = createDialogueRunner({ pageLines: 1, onEvent: (n, a) => events.push(n + ":" + a) });
   r.open(comp, flags);
   for (let guard = 0; guard < 100 && r.state !== 'ended'; guard++) {
     if (r.state === 'typing') { if (r.clip) clips.push(r.clip); said.push(r.speakerLabel + ': ' + r.line); r.press(); }
@@ -71,7 +71,7 @@ const you = (t) => 'YOU: ' + t;
   ok('6 active: two lines, no flags', w.said.length === 2 && w.said[0] === burl('Still hearing those greedy snouts.') && f.s.size === 2); }
 // 7 available: accept / later
 { const f = mk('q.burl.boars.available', 'bear.talked'); const w = walk(f, 0);
-  ok('7 available accept: 10 offer lines + 2 accepted, sets q.burl.boars.accept', w.said.length === 12 && f.s.has('q.burl.boars.accept') && lastOf(w) === burl('Mind their tusks, sky-cub.'), w.said.length);
+  ok('7 available accept: 9 offer lines + 2 accepted, sets q.burl.boars.accept', w.said.length === 11 && f.s.has('q.burl.boars.accept') && lastOf(w) === burl('Mind their tusks, sky-cub.'), w.said.length);
   const g = mk('q.burl.boars.available'); const w2 = walk(g, 1);
   ok('7 available later: kept later line (laugh), no accept flag', lastOf(w2) === burl('Then sit a while. The boars will still be rude.') && !g.s.has('q.burl.boars.accept') && w2.clips.includes('laugh'));
   const h = mk('q.burl.boars.available'); const r = createDialogueRunner({}); r.open(comp, h); r.press(); r.close();
@@ -84,10 +84,10 @@ const R = 'q.tower.blade.ready';
 {
   const f = mk(R); const w = walk(f, 0); // meet choice 0 (crash), offer choice 0 (accept)
   ok('9 fresh: opens with the quote, 10 meet lines then the crash exchange', first(w) === burl('Quite a fall you took, sky-cub.') && w.said[9] === burl('but a bear with words troubles you?') && w.said[10] === burl('Hard to miss a burning sky-boat.') && w.said[13] === burl('Not much of one now.'), w.said.slice(8, 14).join('|'));
-  ok('9 fresh crash+accept: 10 + 4 + 10 + 2 = 26 lines; talked + accept set', w.said.length === 26 && f.s.has('bear.talked') && f.s.has('q.burl.boars.accept'), w.said.length);
+  ok('9 fresh crash+accept: 10 + 4 + 9 + 2 = 25 lines; talked + accept set', w.said.length === 25 && f.s.has('bear.talked') && f.s.has('q.burl.boars.accept'), w.said.length);
   ok('9 fresh: wave clip on the first line', w.clips[0] === 'wave');
   const g = mk(R); const w2 = walk(g, 1); // meet choice 1 (west) skips the crash lines; offer choice 1 (Not yet)
-  ok('9 fresh west+later: no crash lines (10 + 10 + 1 = 21), talked set, no accept, blade handed in', !w2.said.includes(burl('Hard to miss a burning sky-boat.')) && w2.said.length === 21 && g.s.has('bear.talked') && g.s.has('q.tower.blade.handin') && !g.s.has('q.burl.boars.accept'), w2.said.length);
+  ok('9 fresh west+later: no crash lines (10 + 9 + 1 = 20), talked set, no accept, blade handed in', !w2.said.includes(burl('Hard to miss a burning sky-boat.')) && w2.said.length === 20 && g.s.has('bear.talked') && g.s.has('q.tower.blade.handin') && !g.s.has('q.burl.boars.accept'), w2.said.length);
   const h = mk(R); const r = createDialogueRunner({}); r.open(comp, h); r.press(); r.press(); r.close();
   ok('9 Esc halfway through the meet: nothing set', h.s.size === 1 && !h.s.has('q.tower.blade.handin'));
 }

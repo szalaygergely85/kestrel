@@ -20,7 +20,7 @@ function setup(relay) {
   const handle = { data: { transform: { x: 0, y: 0, z: 0 }, components: { voxel: comp, dialogue: 'bear' } }, play() { return this; } };
   const world = { state, get: (id) => (id === 'bear' ? handle : null), addInteractable: (s) => s };
   const flagsOut = [];
-  const ctl = createDialogueCtl({ world, dialogues, book: () => relay.book, onFlag: (k) => flagsOut.push(k) });
+  const ctl = createDialogueCtl({ pageLines: 1, world, dialogues, book: () => relay.book, onFlag: (k) => flagsOut.push(k) });
   const input = { pressed: (c) => keys.has(c) };
   const tick = (...k) => { keys.clear(); k.forEach((c) => keys.add(c)); ctl.step(1 / 60, input, true); };
   // Talk: confirm every line; at a choice move down `pick` times, then confirm. `esc` = Escape at that step. Returns the spoken lines.
