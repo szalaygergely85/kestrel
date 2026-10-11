@@ -34,7 +34,7 @@ try {
     for(let k=0;k<1800;k++){b.step(t.x,t.y,t.z);let n=0;for(const i of w){const s=b.state[i];if(s===3||s===4)n++;}if(n>maxTok)maxTok=n;}
     return JSON.stringify({wolves:w.length,hp:b.entities[w[0]].components.health.max,maxTok});})()`));
   if (!r.wolves) console.log('wolf: SKIP (no wolf1..5 anchors in the world yet - MAP-26)');
-  else { assert.equal(r.hp, 3); assert.ok(r.maxTok <= 1, 'token shared'); console.log(`wolf: PASS (${r.wolves} wolves, max attackers ${r.maxTok})`); }
+  else { assert.ok(r.hp >= 3, 'wolf hp ' + r.hp + ' (base 3, US-129a band multiplier at the Outwall)'); assert.ok(r.maxTok <= 1, 'token shared'); console.log(`wolf: PASS (${r.wolves} wolves, max attackers ${r.maxTok})`); }
   assert.deepEqual(errors, [], 'console errors: ' + JSON.stringify(errors));
   globalThis.__wolfOk = true;
 } finally {
