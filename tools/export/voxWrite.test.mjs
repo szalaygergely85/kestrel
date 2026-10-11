@@ -26,7 +26,7 @@ ok('axis 256 is allowed', !throws(() => writeVoxSingle({ size: [256, 1, 1], voxe
 
 // character grid: one shape per bone, nTRN named
 const kit = loadKit(), rgbOf = paletteRgbOf();
-const grid = composeCharacter(kit, kit.defaults);
+const grid = composeCharacter(kit, { ...kit.defaults, res: { body: 1, head: 1 } }); // OB-069: defaults now carry the fine head; the .vox grid test pins res 1/1
 const bytes = exportVoxGrid(grid, { rgbOf });
 const vox = parseVox(bytes);
 const nTrn = [...vox.scene.nodes.values()].filter((n) => n.type === 'nTRN' && n.attribs._name);
