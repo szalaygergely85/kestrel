@@ -45,6 +45,8 @@ export function createVitals(world, events, cfg, hooks) {
   let eyeHStart = 1.6;     // standing eyeH captured the instant death starts, for eyeH()'s sink lerp
   let lastSafe = null;     // VOID-RESPAWN-01: the last grounded, not-falling spot {x,y,z,yawDeg,tick}
   let tick = 0;
+  let hpSince = 0;        // OB-077: steps since the last damage taken (reset by applyDamage/respawn)
+  let hpAcc = 0;          // OB-077: steps accumulated toward the next +1 hp
 
   const sim = {
     dead: false,
@@ -78,6 +80,7 @@ export function createVitals(world, events, cfg, hooks) {
     health.hp = Math.max(0, health.hp - n);
     health.invuln = cfg.invulnSteps;
     sim.hurtTick = tick;
+    hpSince = 0; hpAcc = 0; // OB-077: any hit stops regen and restarts the delay
     if (player && typeof dirX === 'number' && typeof dirY === 'number') {
       const body = player.components && player.components.body;
       if (body) {
@@ -175,6 +178,7 @@ export function createVitals(world, events, cfg, hooks) {
     health.invuln = cfg.invulnSteps;
     if (mana) mana.mp = mana.max; // US-080b: full mana on respawn, per the US-080 AC
     sim.dead = false;
+    hpSince = 0; hpAcc = 0;
     sim.deathStep = 0;
     sim.cardReady = false;
     lastSafe = null; // the save point may be >voidFallM below the old safe spot
@@ -219,6 +223,16 @@ export function createVitals(world, events, cfg, hooks) {
         health.invuln = cfg.invulnSteps; // no damage, just the invuln window
       }
       if (health.hp === 0) enterDead();
+      else {
+        // OB-077 hp regen: after hpRegenDelaySteps without damage, +1 hp every hpRegenSteps; held while a hostile beast
+        // is aggro'd within hpRegenCombatR (h.beasts.aggroNear, beastSim). Integer steps only (deterministic).
+        hpSince++;
+        if (hpSince >= cfg.hpRegenDelaySteps && health.hp < health.max
+            && !(h.beasts && typeof h.beasts.aggroNear === 'function' && player.transform && h.beasts.aggroNear(player.transform.x, player.transform.y, cfg.hpRegenCombatR))) {
+          hpAcc++;
+          if (hpAcc >= cfg.hpRegenSteps) { health.hp = Math.min(health.max, health.hp + 1); hpAcc = 0; }
+        } else hpAcc = 0;
+      }
       // US-080b mana regen: paused `pause` steps after any spend, else +1 mp every `manaRegenSteps` steps.
       if (mana.pause > 0) mana.pause--;
       else {
@@ -250,6 +264,8 @@ export function createVitals(world, events, cfg, hooks) {
     hh.u32(mana ? mana.mp : 0);
     hh.u32(mana ? mana.pause : 0);
     hh.u32(mana ? mana.regen : 0);
+    hh.u32(hpSince); // OB-077
+    hh.u32(hpAcc);
   };
 
   // ---- dev (`?debug=1`, game side: main.js binds a free key to each of these - not this file's job) ----

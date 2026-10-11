@@ -24,4 +24,9 @@ export const VITALS_DEFAULTS = Object.freeze({
   maxMp: 20,             // mp, max MP
   manaRegenSteps: 120,   // steps, +1 mp every this many steps while not paused (2 s @ 60 Hz)
   manaPauseSteps: 180,   // steps, regen pause after any spendMana (3 s @ 60 Hz)
+
+  // ---- OB-077 (hp regen out of combat) ----
+  hpRegenDelaySteps: 480, // steps since the last damage taken before regen starts (8 s @ 60 Hz)
+  hpRegenSteps: 120,      // steps, +1 hp every this many steps once started (2 s @ 60 Hz)
+  hpRegenCombatR: 15,     // m, no regen while a hostile beast is aggro'd (notice..flinch) within this radius
 });
