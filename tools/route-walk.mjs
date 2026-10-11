@@ -458,3 +458,28 @@ else {
   console.log(`probe geo walk (16 headings x 200 s, vitals on): ${bad.length ? 'FAIL' : 'PASS'} worst step ${worst.toFixed(2)} m${bad.length ? NL + bad.join(NL) : ''}`);
   if (bad.length) process.exitCode = 1;
 }
+
+// MAP-09: the Sealed Gate is CLOSED. Geography installed (above). From the pass floor west of the gate, run east into the gatehouse door, the
+// two towers and the curtain wall for 20 s each (also running + jumping): the player must never get past the wall line x=240 (west face ~239.2).
+{
+  // world_m1's play bounds do not reach the West Fells yet: widen a COPY with a disc round the gate so only the colliders can stop the player
+  const wd = JSON.parse(JSON.stringify(assets.world('world_m1'))); wd.bounds.parts.push({ shape: 'circle', x: 240, y: 840, r: 150 });
+  const sim = setup('mesh'); sim.world = World.load(wd, assets, { physics: 'mesh', events: new Events() }); sim.stream = true;
+  const t = sim.player.transform, b = sim.player.components.body;
+  const run = (yaw, y0, jump) => {
+    sim.world.ensureBandFor(205, y0); t.x = 205; t.y = y0; t.z = sim.world.floorAt(205, y0) ?? 0; b.vx = b.vy = b.vz = 0; b.fallDistance = 0; b.grounded = true;
+    sim.controls.yawDeg = yaw; sim.controls.forward = 1; sim.controls.run = true;
+    let maxX = t.x;
+    for (let i = 0; i < 1200; i++) { sim.controls.jump = jump && i % 40 === 0; stepOnce(sim); maxX = Math.max(maxX, t.x); }
+    sim.controls.jump = false;
+    return maxX;
+  };
+  let eastYaw = 0; { const probe = [0, 90, 180, 270].map((y) => [y, run(y, 840, false)]); eastYaw = probe.sort((a, c) => c[1] - a[1])[0][0]; }
+  const res = [];
+  for (const y0 of [796, 802, 808, 816, 824, 832, 836, 840, 844, 848, 856, 864, 872, 880, 886]) if ((sim.world.ensureBandFor(205, y0), sim.world.floorAt(205, y0)) < -20) res.push([y0, run(eastYaw, y0, false), run(eastYaw, y0, true)]);
+  for (const r of res) if (r[1] > 239.6 || r[2] > 239.6) console.log("  breach y0", r[0], "run", r[1].toFixed(1), "jump", r[2].toFixed(1));
+  const worst = Math.max(...res.flat().filter((_, i) => i % 3 !== 0));
+  const openWest = run(eastYaw, 840, false) < 240;
+  console.log(`probe sealed gate blocks (every start on the pass floor y 808..872 (door y840, towers), run + jump, 20 s, yaw ${eastYaw}): ${worst < 239.6 && openWest ? 'PASS' : 'FAIL'} east-most x ${worst.toFixed(2)} (wall west face ~239.2)`);
+  if (!(worst < 239.6 && openWest)) process.exitCode = 1;
+}
