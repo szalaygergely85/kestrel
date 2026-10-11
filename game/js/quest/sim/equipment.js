@@ -135,10 +135,10 @@ export function applyDefence(n, points) {
   return r < 1 ? 1 : r;
 }
 
-/** Derives inventory.left/right: right = main (or ranged with the bow set out), left = off (null with the bow). */
+/** Derives inventory.left/right (OB-017): LEFT = main hand (main, or ranged with the bow set out), RIGHT = off hand (null with the bow). */
 export function syncHands(inv, eq) {
-  if (eq.set === 'ranged' && eq.ranged !== null) { inv.right = eq.ranged; inv.left = null; }
-  else { inv.right = eq.main; inv.left = eq.off; }
+  if (eq.set === 'ranged' && eq.ranged !== null) { inv.left = eq.ranged; inv.right = null; }
+  else { inv.left = eq.main; inv.right = eq.off; }
 }
 
 /** A weapon entering the pack (sword taken in the tower) goes straight to an empty `main`. */

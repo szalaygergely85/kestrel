@@ -1597,7 +1597,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       window.__debug.playerHandle = playerHandle;
       window.__debug.look = look;
       window.__debug.beasts = beasts; window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; window.__debug.getUi = () => ui; // HANDS-01b: test hooks; EQ-04: verify-equip-play reads the UI cells of the Character view box
-      window.__debug.equipPlay = equipPlay; window.__debug.quickbar = quickbar; window.__debug.shieldSim = shieldSim; window.__debug.arrowSim = arrowSim; window.__debug.vitals = vitals; window.__debug.wakeOut = wakeOut; // EQ-07/09: tools/verify-equip-play.mjs hooks
+      window.__debug.equipPlay = equipPlay; window.__debug.quickbar = quickbar; window.__debug.vmHandles = { sword: swordVmH && swordVmH.h, shield: shieldVmH && shieldVmH.h, bow: bowVmH && bowVmH.h }; window.__debug.shieldSim = shieldSim; window.__debug.arrowSim = arrowSim; window.__debug.vitals = vitals; window.__debug.wakeOut = wakeOut; // EQ-07/09: tools/verify-equip-play.mjs hooks
       window.__debug.isMapOpen = isMapOpen; window.__debug.getMapPanel = getMapPanel; window.__debug.getMapChart = getMapChart; window.__debug.questBook = () => (saveRelay ? saveRelay.quest.book : null); window.__debug.questLogOpen = qlIsOpen; window.__debug.gameHooks = gameHooks; window.__debug.travel = travel; window.__debug.travelTo = (id) => travel.request(id, true); window.__debug.waystoneSim = () => (waystoneWire ? waystoneWire.sim : null); // QG-04/05: tools/verify-quest-ui.mjs hooks
       // S8-B1-15: test hook (tools/verify-map-wire.mjs)
     });
@@ -1885,12 +1885,12 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         // HANDS-01b (37.8a): the router turns LMB/RMB + the gate into one `down` per item; every item sim is stepped
         // every step (down = false when it is in no hand).
         if (!uiLocked && !paused && !ending && !vLocked() && input.pressed(gameKeys.swapHands)) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
-        if (itemDefs) stepEquipment(playerHandle.data, itemDefs); // EQ-02: hands are derived (right = main/ranged, left = off)
+        if (itemDefs) stepEquipment(playerHandle.data, itemDefs); // EQ-02/OB-017: hands are derived (left = main/ranged, right = off)
         const gateOpen = look.locked && !uiLocked && !ending && !paused && !vLocked();
-        // EQ-07 (settles the EQ-02 'crossed' note): hands.step(player, rawLeftHand, rawRightHand): the LEFT hand (shield) follows RMB,
-        // the RIGHT hand (main sword / bow) follows LMB. Q swaps the weapon set (0.3 s, buttons held back only for that time).
+        // OB-017: hands.step(player, rawLeftHand, rawRightHand): the LEFT hand (main sword / bow) follows LMB,
+        // the RIGHT hand (off: shield) follows RMB. Q swaps the weapon set (0.3 s, buttons held back only for that time).
         const swapHeld = equipPlay ? equipPlay.pre(playerHandle.data, input.pressed(gameKeys.swapSet), gateOpen) : false;
-        hands.step(playerHandle.data, !swapHeld && (input.isDown(gameKeys.useRight) || input.pressed(gameKeys.useRight)), !swapHeld && (input.isDown(gameKeys.useLeft) || input.pressed(gameKeys.useLeft)), gateOpen);
+        hands.step(playerHandle.data, !swapHeld && (input.isDown(gameKeys.useLeft) || input.pressed(gameKeys.useLeft)), !swapHeld && (input.isDown(gameKeys.useRight) || input.pressed(gameKeys.useRight)), gateOpen);
         if (equipPlay) { // EQ-07/09: shield raise/block, bow draw/shoot, arrows + pick-up (look vector: trig stays here)
           forwardOf(look.yawDeg, swordFwd);
           const pr2 = look.pitchDeg * DEG2RAD, cp2 = Math.cos(pr2), pt2 = playerHandle.data.transform, pb2 = playerHandle.data.components.body;
@@ -2037,7 +2037,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   }
 
   // Reused every frame (architecture.md section 9: no per-frame objects).
-  const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
+  const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 }; window.__debug.cam = cam; // OB-017: verify-equip-play reads the eye
   // US-006: reused per-frame scratch for `syncEntityLights`'s
   // `attachedLightPos` output (architecture.md 9 - no per-frame allocation).
   const lightSyncPos = new Float64Array(3);
@@ -2194,7 +2194,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         const spellMoving = !!sbody && sbody.grounded && (controls.forward !== 0 || controls.strafe !== 0);
         (handFxOn ? presentHandFire : presentSpellHand)(spellVmH, hands && !cinematic ? hands.handOf(SPELL_HAND_ITEM) : null, simTime, simTime, spellMoving, fireball);
       }
-      if (equipPlay && !cinematic) { // EQ-07/09: first-person shield / bow (left arm) + the arrow instances
+      if (equipPlay && !cinematic) { // EQ-07/09: first-person shield (right arm) / bow (left arm) + the arrow instances
         const eq7 = playerHandle.data.components.equipment, b7 = playerHandle.data.components.body;
         const mv7 = !!b7 && b7.grounded && (controls.forward !== 0 || controls.strafe !== 0);
         const tk7 = vitals ? vitals.tick : 0;

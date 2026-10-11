@@ -1,7 +1,7 @@
 // game/js/quest/equipPlay.js (EQ-07 + EQ-09, architecture 38.41). Glue between the input, the equipment component, the shield
 // sim (EQ-06), the bow draw and the arrow sim (EQ-08). Buttons (owner default, equipment epic OQ2): LMB = main hand
 // (sword attack / bow draw, release shoots), hold RMB = raise the shield, Q = swap weapon set (0.3 s, never locks the player).
-// hands.step(player, rawLeftHand, rawRightHand, gate): the LEFT hand (shield) follows RMB, the RIGHT hand (sword / bow) LMB.
+// hands.step(player, rawLeftHand, rawRightHand, gate): the LEFT hand (main: sword / bow) follows LMB, the RIGHT hand (off: shield) RMB (OB-017).
 // No Math.random, no trig (the host passes the unit look vector), no allocation per step.
 import { swapSet } from './sim/equipment.js';
 import { createBowDraw, BOW_SHOT, BOW_DRY } from './sim/bowDraw.js';
