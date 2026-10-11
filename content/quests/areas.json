@@ -86,6 +86,10 @@
       "world": "world_m1",
       "trigger": "shrine"
     },
+    "owPath": {
+      "world": "world_m1",
+      "trigger": "owPath"
+    },
     "jetty": {
       "world": "world_m1",
       "trigger": "jetty"

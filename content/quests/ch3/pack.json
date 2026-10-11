@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "region": "ch3",
+  "band": [5, 10],
+  "quests": [
+    {
+      "id": "mq.ow.path",
+      "title": "The Outwall Track",
+      "main": true,
+      "steps": [{ "template": "explore", "params": { "areas": ["owPath"] }, "objText": "Follow the track to the Outwall" }],
+      "opensAfter": ["mq.smoke"],
+      "abandonable": false
+    },
+    {
+      "id": "mq.ow.fence",
+      "title": "Wolves at the Fence",
+      "main": true,
+      "steps": [{ "template": "kill", "params": { "ids": ["wolf1", "wolf2", "wolf3", "wolf4", "wolf5"], "count": 5 }, "objText": "Drive off the wolves at the pen" }],
+      "opensAfter": ["mq.ow.path"],
+      "abandonable": false
+    },
+    {
+      "id": "sq.hw.piers",
+      "title": "The Standing Stone",
+      "site": "pierStone",
+      "objectives": [{ "id": "read", "text": "Read the stone north of the road", "when": { "type": "flag", "id": "lore.pierStone.read", "equals": true } }],
+      "opensAfter": ["mq.ford.mirror"],
+      "reward": { "items": [{ "id": "arrow", "n": 10 }] },
+      "lines": { "offer": ["NEEDS WRITER: sq.hw.piers offer"], "active": ["NEEDS WRITER: sq.hw.piers active"], "ready": ["NEEDS WRITER: sq.hw.piers ready"], "done": ["NEEDS WRITER: sq.hw.piers done"] }
+    },
+    {
+      "id": "sq.fc.sign",
+      "title": "The Lost Sign Arm",
+      "site": "post",
+      "steps": [{ "template": "fetch", "params": { "item": "signArm" }, "objText": "Find the sign arm in the shallows" }],
+      "opensAfter": ["mq.ford.mirror"],
+      "reward": { "items": [{ "id": "arrow", "n": 10 }] },
+      "returnText": "Bring the sign arm to the signpost",
+      "lines": {
+        "offer": ["NEEDS WRITER: sq.fc.sign offer"],
+        "active": ["NEEDS WRITER: sq.fc.sign active"],
+        "ready": ["NEEDS WRITER: sq.fc.sign ready"],
+        "done": ["NEEDS WRITER: sq.fc.sign done"]
+      }
+    }
+  ]
+}

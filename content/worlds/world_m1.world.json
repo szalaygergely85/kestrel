@@ -2133,7 +2133,8 @@
     {"id": "well", "note": "QL-B2 area-only zone: the dry well", "r": 5, "shape": "circle", "x": 994, "y": 1051.5},
     {"id": "shrine", "note": "QL-B2 area-only zone: the fallen wayside shrine", "r": 5, "shape": "circle", "x": 1005, "y": 1046},
     {"id": "jetty", "note": "QL-B2 area-only zone: the rotten jetty at the ford", "r": 5, "shape": "circle", "x": 1043, "y": 1058},
-    {"id": "crossroads", "note": "MAP-22 area-only zone: the road-end junction west of the ford (signpost, trade post, footpath north)", "r": 14, "shape": "circle", "x": 990, "y": 1062}
+    {"id": "crossroads", "note": "MAP-22 area-only zone: the road-end junction west of the ford (signpost, trade post, footpath north)", "r": 14, "shape": "circle", "x": 990, "y": 1062},
+    {"id": "owPath", "note": "QL-21 area-only zone: Outwall south-east gate (owGate), mq.ow.path", "r": 10, "shape": "circle", "x": 942, "y": 925.33}
   ],
   "nav": {
     "area": {"h": 192, "w": 192, "x0": 1400, "y0": 928},

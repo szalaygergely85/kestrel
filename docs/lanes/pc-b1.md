@@ -557,3 +557,7 @@ B1 2026-10-11 (QL-09/10/11/12, kestrel-4) -> po-review: ch12 pack.json +4 quests
 - `questPickups.grantReward` now emits `inventory:full {id, n}` for leftovers (same patch as main repo 12a530f2, merges cleanly). `quest/toastView.js` onFull: a named event ({id, n}) shows "Pack full - <Item name> x<n> not added" (message colour, via `say`); id-only loot/chest events keep the generic "Pack full".
 - No world drop: `spawnItemDrop` is gear-only (amount 1, sink in loot.js, 'pickupGear' sprite, MAX_DROPS cap), so leftover stacks are still lost; notice only.
 - Tests: toastView.test.js (named + generic), questCollect.test.js (partial grant). Suites 113/113, quest-sim 52/52, main.js check OK. Not browser-checked.
+
+QL-21 (kestrel-5, branch ql-21, uncommitted): content/quests/ch3/pack.json (mq.ow.path, mq.ow.fence kill wolf1..5, sq.hw.piers, sq.fc.sign) + index.json "ch3" + areas.json/world_m1 trigger `owPath` (r10 at owGate 942,925.33) + sites.json `pierStone` + errands.js flag lore.pierStone.read.
+Open until MAP-26 (kestrel-4) + WOLF-01 merge: validate-content 9 findings = wolf1..5 not beasts (WOLF-01), signArm item def (MAP-26 items.js), site pierStone entity, owPath outside walk bounds (MAP-11 polygon); quest-sim 54 OK, mq.ow.path/fence FAIL "never opened" only because owPath unreachable. Merge: world_m1 triggers array touched at the end (kestrel-4 also edits the file).
+Texts: NEEDS WRITER for titles/lines (objectives plain, <= 38 chars); no AC2 chain Node test written (needs MAP-26 data).
