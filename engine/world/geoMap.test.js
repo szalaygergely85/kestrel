@@ -1,4 +1,4 @@
-// MAP-02/03/05 (arch 38.42): sea + beach + coast, ridges/peaks + snow, lake + marsh as composer layers from design/levels/world_geo.js.
+// MAP-02/03/04/05 (arch 38.42): sea + beach + coast, ridges/peaks + snow, lake + marsh as composer layers from design/levels/world_geo.js.
 // Run: node engine/world/geoMap.test.js
 import { createHash } from 'node:crypto';
 import { makeOk } from '../test/assert.js';
@@ -60,10 +60,32 @@ ok('steep rock stays rock above snow (some rock cell > snow line)', (() => { for
 { const x = G.lake.x, y = G.lake.y, h = util.heightAt(x, y), r = ref(x, y);
   ok(`lake centre h ${h.toFixed(2)} = geo ${r.toFixed(2)}, below surface ${G.lake.surface}, water`, near(h, r, 0.2) && h < G.lake.surface && util.typeAt(x, y) === 2); }
 { let reeds = 0, fen = 0, n = 0, hOk = true;
-  for (const [x, y] of mpts) { n++; const t = util.typeAt(x, y); if (t === 7) reeds++; else if (t === 8) fen++; else if (t === 2) n--; if (Math.abs(util.heightAt(x, y) - ref(x, y)) > 0.3) hOk = false; }
+  for (const [x, y] of mpts) { n++; const t = util.typeAt(x, y); if (t === 7) reeds++; else if (t === 8) fen++; else if (t === 2) n--; if (Math.abs(x - util.riverX(y)) > 90 && Math.abs(util.heightAt(x, y) - ref(x, y)) > 0.3) hOk = false;/* MAP-04: the river bed cuts the marsh edge */ }
   ok(`marsh types reeds ${reeds} / fen ${fen} of ${n}`, reeds + fen === n && fen > 0 && reeds > 0);
   ok('marsh heights match geo and are low-flat', hOk && util.heightAt(G.marsh.x, G.marsh.y) < G.seaLevel + 3); }
 // outside a hard keep edge: continuous across the layer fade (no jump over 2 m)
 { let worst = 0; for (let y = 1000; y < 1100; y += 20) for (let x = 690; x < 720; x += 2) worst = Math.max(worst, Math.abs(util.heightAt(x + 2, y) - util.heightAt(x, y))); ok(`west keep edge continuous (worst dh ${worst.toFixed(2)})`, worst < 1.5); }
+// ---- MAP-04: the river as one polyline source -> ford -> mouth ----
+{ const xr = util.riverX;
+  ok(`ford: x_r(1068) = ${xr(1068).toFixed(1)} (~1029), unchanged`, Math.abs(xr(1068) - 1029) < 1);
+  // bed monotone: centre-line minimum over each 100 m stretch never rises going downstream (outside the lake bowl, y 400..620)
+  const bed = (y) => { let m = 1e9; for (let d = -3; d <= 3; d += 1) m = Math.min(m, util.heightAt(xr(y) + d, y)); return m; };
+  let rise = 0; for (let y = 700; y < 1740; y += 20) rise = Math.max(rise, bed(y + 20) - bed(y)); ok(`bed falls downstream south of the lake (worst rise ${rise.toFixed(2)} m / 20 m)`, rise < 2.6);
+  // keep-edge continuity (|dh| < 0.05 per 2 m along the river, y 832 and 1344 edges)
+  let worst = 0; for (const e of [832, 1344]) for (let y = e - 40; y < e + 40; y += 2) worst = Math.max(worst, Math.abs(util.heightAt(xr(y), y) - util.heightAt(xr(y + 2) , y + 2)) - 0);
+  ok(`river bed continuous across the keep edges (worst step ${worst.toFixed(2)} m / 2 m)`, worst < 1.5);
+  // width ramp: water band (type 2) wide at the mouth, 20 m in the middle
+  const wid = (y) => { let n = 0; for (let x = xr(y) - 70; x <= xr(y) + 70; x += 1) if (util.typeAt(x, y) === 2) n++; return n; };
+  ok(`width ramp mid ${wid(1400)} m -> mouth ${wid(1700)} m`, wid(1700) > wid(1400) + 30 && wid(1700) > 70);
+  // mouth meets the sea: river bed at the shoreline equals the sea floor there (no step), no dry water-typed gap
+  let mouth = null; for (let y = 1700; y < 1790 && !mouth; y += 1) if (G.util.coastSD(xr(y), y).sd < 0) mouth = y;
+  const hb = util.heightAt(xr(mouth - 6), mouth - 6), hs = util.heightAt(xr(mouth + 6), mouth + 6);
+  ok(`mouth: bed ${hb.toFixed(2)} -> sea floor ${hs.toFixed(2)} (step < 0.6) at sea level ${G.seaLevel}`, Math.abs(hb - hs) < 0.6 && hb < G.seaLevel && hs < G.seaLevel);
+  // the sea rect floods exactly the water-typed cells: no non-water land cell below sea level in the estuary corridor
+  let dry = 0, wet = 0; for (let y = 1420; y < 1760; y += 2) for (let x = 900; x < 1500; x += 2) { if (G.util.coastSD(x, y).sd <= 0 || util.heightAt(x, y) >= G.seaLevel) continue; if (util.typeAt(x, y) === 2) wet++; else dry++; }
+  ok(`sea rect floods only water cells (${wet} water, ${dry} non-water below ${G.seaLevel})`, dry === 0 && wet > 0);
+  // east/west near bands (keep) still byte-identical after the river layer
+  ok('river layer: keep bands byte-identical', hashOf(east()) === h0.e && hashOf(west()) === h0.w);
+}
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -46,7 +46,13 @@
     river: { source: { name: 'Highspring tarn (P)', x: 1193, y: 130 }, mouth: { x: 1180, y: 1725 },
              estuaryWiden: { y0: 1450, y1: 1730, extra: 35 },
              bedNorth: [[100, 45], [300, -20], [420, -56], [600, -60], [760, -72]],
-             bedSouth: [[1300, -92], [1500, -95], [1730, -99]], bedWidth: 40 },
+             bedSouth: [[1300, -92], [1500, -95], [1730, -99]], bedWidth: 40,
+             // MAP-04: one polyline source -> mouth, [y, bedZ, halfWidth] (x = x_r(y)); bedZ only carves (min with the ground), halfWidth
+             // is the water band (type 2). Outside the keep only; blended in over `fade` m from the keep edge (ford y 1068 untouched).
+             // The bed falls monotonically; it ends at seaLevel - 1.5 = the sea floor at the shoreline (coast layer), so no step at the mouth.
+             poly: [[100, 45, 10], [300, -20, 10], [420, -56, 10], [600, -60, 10], [760, -72, 10], [832, -82, 10],
+                    [1344, -92, 10], [1420, -95, 10], [1470, -96.6, 14], [1600, -97, 24], [1725, -97.5, 42], [1760, -97.6, 46]],
+             fade: 128, bank: 0.4, bankW: 60, corridor: [880, 100, 1360, 1760] },
 
     lake: { id: 'glasswater', name: 'Glasswater (P)', x: 1235, y: 505, rx: 165, ry: 90, rot: 0.2, surface: -58, depth: 10, shore: 0.3 },
     marsh: { id: 'reedmire', name: 'the Reedmire (P)', x: 1110, y: 1560, rx: 230, ry: 140, rot: 0.55, flatH: 0.8, blend: 0.4,
@@ -313,11 +319,14 @@
     }
     var f = {
       coast: function (x, y) { if (sdT === null) fillCoast(); return sdT[(x / 16) + (y / 16) * W]; },
-      beachK: function (x, y) { return kindT[(x / 16) + (y / 16) * W]; }
+      beachK: function (x, y) { if (sdT === null) fillCoast(); return kindT[(x / 16) + (y / 16) * W]; }
     };
     G.ranges.forEach(function (R) { f[R.id] = function (x, y) { return lineDist(R.pts, x, y); }; });
     return f;
   }
+  function interp3(p, y, k) { if (y <= p[0][0]) return p[0][k]; for (var i = 1; i < p.length; i++) if (y <= p[i][0]) { var t = (y - p[i - 1][0]) / (p[i][0] - p[i - 1][0]); return p[i - 1][k] + t * (p[i][k] - p[i - 1][k]); } return p[p.length - 1][k]; }
+  // 0 at the keep's N/S edge, 1 at `fade` m outside it (the keep rect itself is skipped by branch in the composer)
+  function riverFade(y) { var K = root.ASSETS.levels.overworld_far.geo.keep, d = y < K.y0 ? K.y0 - y : y >= K.y1 ? y - K.y1 : 0; return smooth(0, G.river.fade, d); }
   function geoLayers(U, rockSlope) {
     var C = G.coast, L = G.lake, M = G.marsh, T = G.southTilt, sea = G.seaLevel;
     function bbox(o, k) { var r = Math.max(o.rx, o.ry) * k; return [o.x - r, o.y - r, o.x + r, o.y + r]; }
@@ -373,7 +382,20 @@
           if (F.sdf('beachK', x, y) > 0.5) return sd < C.beachWidth ? 5 : t;
           return sd < 18 ? 3 : t;
         } },
+      { id: 'river', rect: G.river.corridor, heightFn: function (h, x, y) {   // MAP-04: bed profile + width ramp, carves after sea/lake/marsh
+          var Rv = G.river, f = riverFade(y); if (f <= 0) return h;
+          var dr = Math.abs(x - U.riverX(y)), hw = interp3(Rv.poly, y, 2);
+          var hb = interp3(Rv.poly, y, 1) + Rv.bank * Math.max(0, dr - hw);   // flat bed under the water band, banks rise at `bank` m/m
+          if (hb >= h) return h;
+          var w = smooth(hw + Rv.bankW, hw + Rv.bankW * 0.5, dr) * f;    // the bank reaches only `bankW` m beyond the water band
+          return h + (hb - h) * w;
+        },
+        typeFn: function (t, x, y, h) {                                 // the widened estuary + every cell the sea rect floods (h < seaLevel) is water
+          if (y < 1420 || riverFade(y) <= 0) return t;
+          return (h < sea || Math.abs(x - U.riverX(y)) < interp3(G.river.poly, y, 2)) ? 2 : t;
+        } },
       { id: 'terrainTypes', rect: WORLD_RECT, typeFn: function (t, x, y, h, slope) {   // lake/marsh/snow/alpine/flowers
+          if (t === 2) return 2;                                          // sea / river water is never repainted (marsh, snow)
           var e = ell(L, x, y);
           if (e < 1) return 2;
           if (e < 1 + L.shore * 0.6) return 5;

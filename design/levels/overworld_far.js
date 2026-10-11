@@ -369,15 +369,16 @@
     var ids = Object.keys(fns); if (ids.length > 16) throw new Error('geo: > 16 fields');
     this.x0 = world.x0; this.y0 = world.y0; this.cell = 16;
     this.w = Math.ceil((world.x1 - world.x0) / 16) + 1; this.h = Math.ceil((world.y1 - world.y0) / 16) + 1;
-    this.grids = {}; this.ids = ids;
-    for (var k = 0; k < ids.length; k++) {
-      var g = new Float32Array(this.w * this.h), fn = fns[ids[k]];
-      for (var j = 0; j < this.h; j++) for (var i = 0; i < this.w; i++) g[i + j * this.w] = fn(this.x0 + i * 16, this.y0 + j * 16);
-      this.grids[ids[k]] = g;
-    }
+    this.grids = {}; this.ids = ids; this.fns = fns;      // MAP-04: grids are built lazily on first sdf(id) (or warm()), not at load
   }
+  GeoFields.prototype.build = function (id) {
+    var g = new Float32Array(this.w * this.h), fn = this.fns[id];
+    for (var j = 0; j < this.h; j++) for (var i = 0; i < this.w; i++) g[i + j * this.w] = fn(this.x0 + i * 16, this.y0 + j * 16);
+    return (this.grids[id] = g);
+  };
+  GeoFields.prototype.warm = function () { for (var k = 0; k < this.ids.length; k++) if (!this.grids[this.ids[k]]) this.build(this.ids[k]); };
   GeoFields.prototype.sdf = function (id, x, y) {   // bilinear, clamped at the grid edge; 0 alloc
-    var g = this.grids[id], fx = (x - this.x0) / 16, fy = (y - this.y0) / 16, W = this.w;
+    var g = this.grids[id] || this.build(id), fx = (x - this.x0) / 16, fy = (y - this.y0) / 16, W = this.w;
     fx = fx < 0 ? 0 : fx > W - 1.001 ? W - 1.001 : fx; fy = fy < 0 ? 0 : fy > this.h - 1.001 ? this.h - 1.001 : fy;
     var i = fx | 0, j = fy | 0, u = fx - i, v = fy - j, q = i + j * W;
     var a = g[q], b = g[q + 1], c = g[q + W], d = g[q + W + 1];
