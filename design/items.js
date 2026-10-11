@@ -249,6 +249,14 @@
     icon: icon(['=---=', '  |  ', '  |  '],
                ['bbbbb', '  b  ', '  b  '])
   };
+  defs.barleySheaf = {
+    id: 'barleySheaf', name: 'Barley Sheaf', kind: 'material', stackMax: 1, hand: false, inPack: true,
+    desc: 'A tied sheaf from the barley gate.',
+    use: { none: 'Material - quest errand (sq.ow.barley, QL-22b pickup)' },
+    glyph: { ch: '#', c: 'goreRed' },
+    icon: icon([' .|. ', ' ||| ', '=====' ],
+               [' bbb ', ' bbb ', 'bbbbb'])
+  };
   defs['heart.piece'] = {
     id: 'heart.piece', name: 'Heart Piece', kind: 'upgrade', stackMax: 3, hand: false, inPack: true,
     desc: 'A warm red stone. Four make a heart.',
