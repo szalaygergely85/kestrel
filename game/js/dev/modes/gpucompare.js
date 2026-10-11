@@ -1,7 +1,7 @@
 import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   meshFromJSON, meshFromBin, composeCharacter, meshCharacter, collapseRig, riggedModelDef, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
-  bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
+  bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks, sunPathFrom, applySunPair, blendLook,
 } from '../../../../engine/index.js';
 import {
   runGpuCompare, compareCells, meshCellCap, compareGeometry, compareLight, describeCellNormals, poisonAllCells, unpackReadback,
@@ -199,6 +199,15 @@ function buildCompareRuns(ctx) {
       name: `world_m1: meadowSkyline yaw ${yawDeg} (${what})`,
       cam: { x: 1460, y: 1030, z: (worldM1.terrain ? worldM1.terrain.groundAt(1460, 1030) : 0) + engine.physics.eyeHeight, yawDeg, pitchDeg: 0 }, real: true })),
   ];
+
+  // DN-04b (38.39): frozen dusk 19.5 h and night 23 h rows (world_m1). Lit Bend lamps (rsLamp1/2 at 1280,1052 / 1246,1053.5) and the tower, so the
+  // point lights, the moon switch (night), the live sky LUT and the night floor all run through the same JS-vs-GPU parity as the 8 h rows.
+  for (const [hour, tag] of [[19.5, 'dusk 19.5 h'], [23, 'night 23 h']]) {
+    for (const [what, x, y, yawDeg, pitchDeg] of [['Bend lamps', 1268, 1040, 135, -2], ['tower', 1470, 1025, 90, 8]]) {
+      runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: ${tag} ${what} (DN-04b)`, hour,
+        cam: { x, y, z: (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0) + engine.physics.eyeHeight, yawDeg, pitchDeg }, real: true });
+    }
+  }
 
   // US-078a: the view model's held sword (`voxelModels.swordHeld`) is not in ASSETS.models yet (game wiring = US-078d);
   // register a mesh-only copy for this harness so the pool packs it (kept out of the DDA atlas: existing poses unchanged).
@@ -823,6 +832,26 @@ function applySunOverride(world, lights, sun) {
   };
 }
 
+/**
+ * DN-04b: pins the day/night clock to `hour` for one pose (what main.js's clock driver does per step): moon/sun pair on the light set + world.sun,
+ * the blended look (`P.liveLook`) and the LightSet ambient. Returns the restore closure (liveLook cleared = frozen path, sun + ambient back).
+ */
+function applyHourOverride(world, lights, P, hour, on) {
+  const oldSun = world.sun, oldSource = world.sunSource, hadSource = 'sunSource' in world;
+  const old = lights ? { elevation: lights.sun.elevation, azimuth: lights.sun.azimuth, on: lights.sun.on, amb: Array.from(lights.ambient) } : null;
+  const path = sunPathFrom(world.sun || P.lights.sun);
+  world.sunSource = null;
+  applySunPair(world, lights, hour, hour, path, on);
+  const L = blendLook(P, hour, P.daySchedule);
+  if (lights) { const hu = P.hue[L.ambient]; for (let i = 0; i < 3; i++) lights.ambient[i] = hu[i] * L.ambientI; }
+  return () => {
+    world.sun = oldSun;
+    if (hadSource) world.sunSource = oldSource; else delete world.sunSource;
+    delete P.liveLook; P.liveLookVersion = (P.liveLookVersion | 0) + 1; // back to the frozen look; the version bump re-bakes the sky LUT
+    if (lights && old) { lights.setSun({ elevation: old.elevation, azimuth: old.azimuth, on: old.on }); for (let i = 0; i < 3; i++) lights.ambient[i] = old.amb[i]; }
+  };
+}
+
 async function runGpuCompareSceneMode(ctx) {
   const {
     wgPipeline, rt, assets, matTable, detailPass, depthBuffer, gbuf, overlay, sprites, engine,
@@ -897,10 +926,11 @@ async function runGpuCompareSceneMode(ctx) {
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert, vmAssert, decalAssert, timeSec: poseTime } of poseRuns) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, instAssert, vmAssert, decalAssert, timeSec: poseTime } of poseRuns) {
     if (restoreSun) { restoreSun(); restoreSun = null; }
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
+    else if (Number.isFinite(poseHour)) restoreSun = applyHourOverride(world, lights, assets.palette, poseHour, ctx.sunEnabled); // DN-04b
     // US-053b (32.1): cleared before EVERY pose (not just the ones that never touch
     // particles) - only the `particles` pose's own `before()` hook repopulates it, so a
     // pose that runs after it never inherits stray live particles from a previous pose.

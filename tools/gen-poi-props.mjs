@@ -19,7 +19,7 @@ import { loadTestAssets } from './testing/content-node.mjs';
 const dry = process.argv.includes('--dry-run');
 const FILE = 'content/worlds/world_m1.world.json', AREAS = 'content/quests/areas.json';
 const data = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-const poiRe = /^poi\d+$/, ENT_IDS = ['post', 'notePost', 'target1', 'target2', 'target3', 'nest', 'rook', 'chestRook', 'chestMeadow', 'chestBend', 'chestCrossroads', 'chestHidden', 'hiddenScrawl', 'knot', 'boarF1', 'boarF2', 'cap1', 'cap2', 'cap3', 'cap4', 'cap5', 'smoke1', 'smoke2', 'smoke3', 'smokeRuin', 'tradeLamp'];
+const poiRe = /^poi\d+$/, ENT_IDS = ['post', 'notePost', 'target1', 'target2', 'target3', 'nest', 'rook', 'chestRook', 'chestMeadow', 'chestBend', 'chestCrossroads', 'chestHidden', 'hiddenScrawl', 'knot', 'boarF1', 'boarF2', 'cap1', 'cap2', 'cap3', 'cap4', 'cap5', 'smoke1', 'smoke2', 'smoke3', 'smokeRuin', 'tradeLamp', 'gondola', 'packet', 'brass1', 'brass2', 'brass3', 'brass4', 'chestBoots', 'fordMark'];
 data.structures = data.structures.filter((s) => !poiRe.test(s.id));
 data.entities = data.entities.filter((e) => !ENT_IDS.includes(e.id));
 const { assets } = await loadTestAssets();
@@ -131,7 +131,8 @@ const nestZ = +(DECK + 0.05).toFixed(2);
 const CHEST = { voxel: { anim: 'closed', loop: false, model: 'chestSmall' } };
 const ruinEnts = [
   { id: 'nest', type: 'prop', x: RC[0] - 0.9, y: RC[1] - 1.6, z: +(nestZ + 0.5).toFixed(2), components: { questPickup: { item: 'relay.mirror', n: 1 }, sprite: { model: 'pickupGear', anim: 'idle', frame: 0 } }, note: 'QL-16: relay.mirror questPickup (taken stays taken; pickupGear sprite until a mirror sprite exists). ' + 'MAP-23 Rook nest anchor on the ruin roof (QL-16 relay.mirror pickup; QL-D1 nest sprite pending). Roof deck z ' + DECK },
-  { id: 'rook', type: 'npc', x: RC[0] - 0.1, y: RC[1] - 1.6, z: nestZ, yawDeg: 90, scale: 1.6, components: { collider: { h: 0.7, kinematic: true, r: 0.3 }, dialogue: 'rook', voxel: { anim: 'perch', loop: true, model: 'crow' } }, note: 'QL-06 Rook the talking crow (crow model x1.6) on the nest of the ruin roof; [E] Talk via the dialogue component' },
+  { id: 'chestBoots', type: 'prop', x: RC[0] + 0.7, y: RC[1] - 1.6, z: nestZ, yawDeg: 180, components: CHEST, note: 'QL-16 River Boots chest on the ruin roof beside the nest (table chestDefs.js: gear.feet.riverBoots)' },
+  { id: 'rook', type: 'npc', x: RC[0] - 0.1, y: RC[1] - 1.6, z: nestZ, yawDeg: 90, scale: 1.6, components: { dialogue: 'rook', voxel: { anim: 'perch', loop: true, model: 'crow' } }, note: 'OB-044: no collider (a perched crow must not block the 1 m deck). QL-06 Rook the talking crow (crow model x1.6) on the nest of the ruin roof; [E] Talk via the dialogue component' },
   { id: 'chestRook', type: 'prop', x: RC[0] - 2.4, y: RC[1] - 1.6, z: nestZ, yawDeg: 180, components: CHEST, note: 'MAP-23 chest on the ruin roof (EQ-10: arrows 15 + a sturdy gear roll; table in chestDefs.js)' },
 ];
 // ---- MAP-25 loot spots + red caps + smoke anchors. Anchors are bare props (QL-18/QL-17 wire the content); caps are Quaternius mushrooms.
@@ -180,11 +181,20 @@ const KNOT = [1264.2, 1031.6];
 world.ensureBandFor(KNOT[0], KNOT[1]);
 markerPost(KNOT[0], KNOT[1], 70, 70, 0.55);
 ruinEnts.push({ id: 'knot', type: 'prop', x: KNOT[0], y: KNOT[1], z: 'ground', components: { inspect: { text: 'note.knot' } }, note: 'QL-07 knotted marker post beside the Bend Relay: inspect sets lore.knot.read (mq.bend.call); text note.knot (story.md QL-W1)' });
+// ---- QL-17 ford mark: inspect prop on the Ford Relay base (relay 992,1079): [E] Look at the mark sets lore.fordMark.read (mq.smoke)
+world.ensureBandFor(993.6, 1077.4);
+ruinEnts.push({ id: 'fordMark', type: 'prop', x: 993.6, y: 1077.4, z: 'ground', components: { inspect: { text: 'note.fordMark' } }, note: 'QL-17 mark cut in the Ford Relay base (three rings and a line); inspect sets lore.fordMark.read; text note.fordMark (story.md QL-W1)' });
 // ---- QL-16 two wary ford boars (DRESS-01 pattern, not in the burl.boars quest), on dry ground near the ford relay (992,1079)
 [['boarF1', 958, 1078], ['boarF2', 962, 1081]].forEach(([id, x, y]) => { world.ensureBandFor(x, y); if (!free(x, y)) throw new Error(id + ' in water');
   ruinEnts.push({ id, type: 'beast', x, y, z: 'ground', components: { brain: { home: [x, y], kind: 'beast', temperament: 'wary' }, targetable: { height: 0.7, radius: 0.45 }, voxel: { anim: 'idle', loop: true, model: 'boarPlaceholder' } }, note: 'QL-16 wary boar grazing near the ford (DRESS-01 pattern); NOT in the burl.boars quest' }); });
 ruinEnts.push({ id: 'smokeRuin', type: 'prop', x: chimney.origin.x, y: chimney.origin.y, z: +(chimney.origin.z + 3.05).toFixed(2), components: { emitters: [{ preset: 'smoke', offset: { up: 0.1 }, on: true }] }, note: 'OB-031: smoke from the standing chimney of the Rook ruin (existing emitter preset smoke)' });
 ruinEnts.push({ id: 'tradeLamp', type: 'prop', x: +TP_LAMP.x.toFixed(2), y: +TP_LAMP.y.toFixed(2), z: +(low(TP_LAMP.x, TP_LAMP.y, 0.4) + 1.12).toFixed(2), components: { light: { preset: 'lanternHook', on: true, offset: { down: -0.35 } }, voxel: { anim: 'lit', loop: true, model: 'floorLantern' } }, note: 'OB-031: brass lamp on the trade post counter (existing floorLantern + lanternHook light)' });
+// ---- M4 story quests (QL-09/11/12): gondola inspect giver (tower ground floor, sq.wreck.plate), oilcloth packet at the Bend Relay base
+// (sq.packet), brass scraps brass1..4 (sq.rook.shiny; QL-11 spots). Anchors only: the gondola is the existing wreck dressing, the rest reuses the pickupGear sprite.
+ruinEnts.push({ id: 'gondola', type: 'prop', x: 1496, y: 1024, z: 0, components: { inspect: { text: 'prompt.gondola' } }, note: 'QL-09 Kestrel gondola on the tower ground floor: inspect giver of sq.wreck.plate (fetch boar.hide -> Brass Buckler)' });
+ruinEnts.push({ id: 'packet', type: 'prop', x: 1260.6, y: 1034.8, z: 'ground', components: { sprite: { anim: 'idle', frame: 0, model: 'pickupGear' } }, note: 'QL-12 oilcloth packet by the Bend Relay base: inspect = accept sq.packet (item packet, deliver to the post)' });
+[[1490, 1010], [1465, 1047], [1405, 1040], [1300, 1048]].forEach(([x, y], i) => { world.ensureBandFor(x, y);
+  ruinEnts.push({ id: 'brass' + (i + 1), type: 'prop', x, y, z: 'ground', components: { questPickup: { item: 'brass.scrap', n: 1 }, sprite: { anim: 'idle', frame: 0, model: 'pickupGear' } }, note: `QL-11 brass scrap ${i + 1} of 4 (sq.rook.shiny; E Pick, stays taken)` }); });
 const ents = [...ruinEnts, 
   { id: 'post', type: 'prop', x: +basket.x.toFixed(2), y: +basket.y.toFixed(2), z: 'ground', components: { inspect: { text: 'post.basket' } }, note: 'MAP-22 trade post basket crate: inspect anchor (sq.packet delivers here, 20 arrows in the basket)' },
   { id: 'notePost', type: 'prop', x: NOTE[0], y: NOTE[1], z: 'ground', components: { inspect: { text: 'note.straw' } }, note: 'MAP-24 note post of the straw-man field (QL-13 sq.straw giver)' },

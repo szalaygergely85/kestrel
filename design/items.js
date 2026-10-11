@@ -290,6 +290,23 @@
     icon: icon([' ._/|', '/%o=/', "`~-' "],
                [' ABAB', 'BvVBJ', 'JvjJ '])
   };
+  // M4 story quests (QL-10 sq.honey, QL-12 sq.packet): two quest carry items, no use.
+  defs.honeycomb = {
+    id: 'honeycomb', name: 'Honeycomb', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'Sticky gold. It is for the crow.',
+    use: { none: 'Quest item - bring it to Rook (sq.honey)' },
+    glyph: { ch: '%', c: 'brass' },
+    icon: icon([' ._. ', '(%o%)', " '-' "],
+               [' AAA ', 'AJAJA', ' AAA '])
+  };
+  defs.packet = {
+    id: 'packet', name: 'Cloth Packet', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'Tied with twine. FOR THE FORD POST.',
+    use: { none: 'Quest item - leave it at the trade post (sq.packet)' },
+    glyph: { ch: '=', c: 'brass' },
+    icon: icon(['.---.', '|=+=|', "'---'"],
+               ['hhhhh', 'hAfAh', 'hhhhh'])
+  };
   // CH1-D2 (architecture.md 38.37 item 3): the crystal the boars were rooting for. Name + desc = docs/story.md CH1-W3
   // (item.aetherCrystal.*; the in-world name avoids "aether"). stackMax 1. The inventory has NO key-item / no-drop tag
   // today (game/js/quest/sim/inventory.js), so this is a plain item of kind 'key'; the real gate is the flag
@@ -435,8 +452,17 @@
         icon: icon(b.rows, fg),
         equip: { slot: b.slot, tier: tier, def: (ti + 1) * (b.slot === 'body' ? 2 : 1), shell: b.shell }
       };
+      if (b.slot === 'cloak') defs[id].equip.passive = { nightDef: 0.1 }; // QL-19: +10 % damage reduction at night (clock 21-05), inside the 0.6 cap
     });
   });
+  // QL-16/QL-19: River Boots (mq.ford.mirror chest by Rook's nest). `unique` keeps it OUT of the random gear rolls (loot.js gearIdFor skips it).
+  defs['gear.feet.riverBoots'] = {
+    id: 'gear.feet.riverBoots', name: 'River Boots', kind: 'gear', stackMax: 1, hand: false, inPack: true, unique: true,
+    desc: 'Greased leather. Sure on wet stones.',
+    glyph: { ch: 'L', c: 'verdigris' },
+    icon: icon(['     ', '|_| |', '|_|_|'], ['     ', 'vvv v', 'vvvvv']),
+    equip: { slot: 'feet', tier: 'sturdy', def: 2, shell: 'feet', passive: { wetStone: true } } // QL-19: no stumble on wet stepping stones
+  };
   defs.arrow = {
     id: 'arrow', name: 'Arrow', kind: 'ammo', stackMax: 30, hand: false, inPack: true,
     desc: 'Yew shaft, iron head.',

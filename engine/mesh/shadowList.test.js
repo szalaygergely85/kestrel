@@ -4,7 +4,8 @@
 import { readMeshJSON } from '../test/meshFile.test.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { DrawList, DRAW_STATIC, LevelMeshCache, MeshDrawCache, addStructures, MAX_DRAW_ITEMS } from './DrawList.js';
+import { DrawList, DRAW_STATIC, LevelMeshCache, MeshDrawCache, addStructures } from './DrawList.js';
+import { MAX_SHADOW_ITEMS } from './shadowList.js';
 import { buildShadowList, createShadowList, shadowWorldZ, trimShadowList } from './shadowList.js';
 import { frustumPlanes } from './culling.js';
 import { projTerms, shearProjection } from '../render/projection.js';
@@ -80,7 +81,7 @@ function cameraPlanes() {
   const sm = createSunShadowMatrix();
   shadowSunMatrix(sunDir, [0, 0, 0], OPTS, { min: 0, max: 0 }, sm);
   // Fill up with fake extras via the builder's own feed: 8 structures x 1 mesh = 8 items; shrink the cap by pushing manually is not
-  // possible, so check ordering/determinism instead and that count never exceeds MAX_DRAW_ITEMS.
+  // possible, so check ordering/determinism instead and that count never exceeds MAX_SHADOW_ITEMS.
   const src = { centre: { x: 0, y: 0, z: 0 }, cache };
   const n1 = buildShadowList(sl, null, world, sm.planes, src);
   const ids1 = [];
@@ -89,7 +90,7 @@ function cameraPlanes() {
   const ids2 = [];
   for (let i = 0; i < sl.count; i++) ids2.push(sl.items[i].objectId);
   ok('deterministic across rebuilds', n1 === n2 && ids1.join() === ids2.join(), `${ids1} / ${ids2}`);
-  ok('never exceeds MAX_DRAW_ITEMS', n1 <= MAX_DRAW_ITEMS);
+  ok('never exceeds MAX_SHADOW_ITEMS', n1 <= MAX_SHADOW_ITEMS);
   ok('near -> far order kept (structSeq ascending by distance)', ids1.join() === '0,1,2,3,4,5,6,7', ids1.join());
 }
 
@@ -97,7 +98,7 @@ function cameraPlanes() {
 {
   const l = new DrawList(400);
   l.begin();
-  for (let i = 0; i < MAX_DRAW_ITEMS + 5; i++) {
+  for (let i = 0; i < MAX_SHADOW_ITEMS + 5; i++) {
     const it = l.push(null, DRAW_STATIC);
     it.objectId = i;
     const x = i === 10 ? 5000 : i; // item 10 is by far the farthest
@@ -106,7 +107,7 @@ function cameraPlanes() {
   trimShadowList(l, 0, 0);
   const ids = new Set();
   for (let i = 0; i < l.count; i++) ids.add(l.items[i].objectId);
-  ok('trim keeps MAX_DRAW_ITEMS', l.count === MAX_DRAW_ITEMS, 'count=' + l.count);
+  ok('trim keeps MAX_SHADOW_ITEMS', l.count === MAX_SHADOW_ITEMS, 'count=' + l.count);
   ok('trim drops the farthest first (item 10, then ids 257..260)', !ids.has(10) && !ids.has(257) && !ids.has(258) && !ids.has(259) && !ids.has(260) && ids.has(256) && ids.has(9));
   ok('trim keeps relative order', (() => { let prev = -1; for (let i = 0; i < l.count; i++) { if (l.items[i].objectId < prev) return false; prev = l.items[i].objectId; } return true; })());
 }

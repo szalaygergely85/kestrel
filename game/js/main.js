@@ -108,7 +108,7 @@ import { createSwordSim } from './quest/sim/sword.js';
 import { presentSword } from './quest/swordView.js';
 import { loadSpellHandView, presentSpellHand, SPELL_HAND_ITEM } from './quest/spellHandView.js'; // HANDS-01c (37.8a)
 import { loadHandFireView, presentHandFire, bindHandFx, stepHandFx, setHandFlame, pushHandFlame } from './quest/handFireView.js'; // HAND-WIRE-01: realistic hand + always-on fire
-import { migrateEquipment, stepEquipment, defenceOf } from './quest/sim/equipment.js'; // EQ-02
+import { migrateEquipment, stepEquipment, defenceOf, nightBonus } from './quest/sim/equipment.js'; // EQ-02
 import { createHands } from './quest/sim/hands.js'; // HANDS-01b (37.8a)
 import { createFireballSim } from './quest/sim/fireball.js'; // SPELL-01a (37.14)
 import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.14 view)
@@ -140,7 +140,7 @@ import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; /
 import { parseGlow } from './glowOpt.js'; // EMIS-03/04: bleed + halo knob
 import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
 import { PHYSICS } from '../../engine/index.js';
-import { meshFeedStats, MAX_MESH_DRAWS } from '../../engine/index.js'; // OB-039: F3 mesh draw cap line
+import { meshFeedStats, MAX_MESH_DRAWS, MAX_DRAW_ITEMS } from '../../engine/index.js'; // OB-039: F3 mesh draw cap line
 import { createModelPreview, createCharCache } from '../../engine/index.js'; // EQ-03/04: Character tab model preview
 import { drawArrowCount, drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
@@ -153,7 +153,7 @@ import { createCrystalGrant } from './quest/crystal.js'; // CH1-MOUNT: CH1-03 ae
 import { createNpcWalk } from './quest/npcWalk.js'; // CH1-07
 import { createBurlEscort } from './quest/burlEscort.js'; // CH1-07
 import { createBarks } from './quest/barks.js'; // CH1-MOUNT: CH1-06 bark one-liners (Burl)
-import { createChapterCard } from './quest/chapterCard.js'; // CH1-MOUNT: CH1-09 chapter end card
+import { createChapterCard, CHAPTER2_TEXT, FLAG_DONE_CH2 } from './quest/chapterCard.js'; // CH1-MOUNT: CH1-09 chapter end card
 import { createNoticeView } from './ui/noticeView.js'; // CH1-MOUNT: CH1-04a notice banner
 import { createNpcTurn } from './quest/npcBear.js'; // NPC-BEAR-01 (38.28): turn-to-player
 import { LOOT_TABLE, LOOT_SEED_SALT } from './quest/sim/lootConfig.js';
@@ -1153,7 +1153,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   engine.events.on('combat:hit', (p) => errands.hit(p));
   gameHooks.register({ onEvent: (name, d) => errands.onEvent(name, d) });
   window.__debug.errands = errands; let errandTick = 0;
-  let crystal = null, barks = null, chapterCard = null, ch1Hidden = true;
+  let crystal = null, barks = null, chapterCard = null, chapterCard2 = null, ch1Hidden = true;
   let burlReopen = false; // PO-CH1-07 latch
   let escort = null; // CH1-07 Burl escort (rebuilt per world, saves live only)
   window.__debug.notice = notice; window.__debug.ch1Hidden = () => ch1Hidden; // tools/verify-relay-wake.mjs
@@ -1405,6 +1405,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       hurtFx.reset();
       vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting, block: shieldSim, // EQ-07: hooks.block = the shield sim
         defence: () => { const c = playerHandle && playerHandle.data.components; return c && c.equipment && itemDefs ? defenceOf(c.equipment, itemDefs) : 0; }, // EQ-02
+        defenceBonus: () => { const c = playerHandle && playerHandle.data.components; return c && c.equipment && itemDefs ? nightBonus(c.equipment, itemDefs, clockHour(world.state, clockCfg)) : 0; }, // QL-19: night cloak +10 %
         respawnPose: () => { hzb.invalidate('respawn'); const rp = gameHooks.respawn(); ensureBand(world, rp); return rp; }, // WS2-05: band for the respawn pose // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
         onDied: (t) => { gameHooks.emitSimple('player:died', t.x, t.y, t.z); deathFlow.died(performance.now()); },
         syncFacing: (t) => {
@@ -1448,7 +1449,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       compassWorld = world; compassBreach = null; compassBookVer = -1; compassTick = 0; // COMPASS-02: re-resolve against the new world
       if (bearTurn) dialogueCtl.addNpc('bear');
       dialogueCtl.addNpc('rook'); // Rook the crow: no-op until the entity exists in the world
-      crystal = barks = chapterCard = escort = null;
+      crystal = barks = chapterCard = chapterCard2 = escort = null;
       if (bearTurn) bearTurn.paused = false;
       if (saveEnabled && saveRelay) { // CH1-MOUNT: all three need the quest relay (flags + book)
         const rq = saveRelay.quest, tmsg = () => window.ASSETS.items && window.ASSETS.items.toast && window.ASSETS.items.toast.messages && window.ASSETS.items.toast.messages.packFull;
@@ -1470,6 +1471,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         }
         window.__debug.escort = escort; // tools/verify-ch1-mount.mjs
         chapterCard = createChapterCard({ world, openNote: (id) => noteRead({ world, def: { noteId: id } }), isNoteOpen, setFlag: (k, v) => rq.questFlag(k, v) });
+        chapterCard2 = createChapterCard({ world, openNote: (id) => noteRead({ world, def: { noteId: id } }), isNoteOpen, setFlag: (k, v) => rq.questFlag(k, v), text: CHAPTER2_TEXT, flagDone: FLAG_DONE_CH2, flagNext: 'chapter.next', nextVal: 'ch3' }); // QL-17: Ch2 card after mq.smoke
       }
       if (toasts) toasts.dispose();
       toasts = itemDefs ? createToastView(engine.events, window.ASSETS.items.toast, itemDefs, assets.palette.rgb) : null;
@@ -1481,6 +1483,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           gameHooks.emitSimple(name, id);
           if (name === 'quest:ready' && id === 'burl.boars' && crystal) crystal.check('ready'); // CH1-03
           if (name === 'quest:ready' && id === 'burl.boars' && dialogueCtl && dialogueCtl.open) burlReopen = true; // PO-CH1-07: boars were already dead when accepted -> Burl speaks again (the hand-in) once this box closes
+          if (name === 'quest:done' && id === 'mq.smoke' && chapterCard2) chapterCard2.trigger(); // QL-17: Ch2 end card + journalCh2
           if (name === 'quest:done' && questPickups) questPickups.grantReward(saveRelay.quest.book.lastReward); // QUESTS-01: hand-in reward -> pack (+ toast)
           if (tv && msg) { const bk = saveRelay.quest.book, qt = (bk.def(bk.index(id)) || {}).title; if (name === 'quest:accepted') tv.say('Quest accepted: ' + qt, msg.fg); else if (name === 'quest:done') tv.say('Quest complete: ' + qt, msg.fg); }
         };
@@ -1771,7 +1774,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       } else if (gameKeys.questLog && input.pressed(gameKeys.questLog) && !invOpen0 && !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look && look.locked
         && !(vitals && (vitals.dead || vLocked())) && !(questUiActive && wakeOut.inputLocked) && !(dialogueCtl && dialogueCtl.open)) {
         const bk = saveRelay.quest.book;
-        if (!qlView || qlBook !== bk) { qlBook = bk; qlView = createQuestLogScreen(bk, { style: window.ASSETS.uiStyle && window.ASSETS.uiStyle.menu, giverName: (id) => (id === 'bear' ? 'Burl' : id), onJournal: () => noteRead({ world: engine.world, def: { noteId: 'journalCh1' } }) }); }
+        if (!qlView || qlBook !== bk) { qlBook = bk; qlView = createQuestLogScreen(bk, { style: window.ASSETS.uiStyle && window.ASSETS.uiStyle.menu, giverName: (id) => (id === 'bear' ? 'Burl' : id), onJournal: () => noteRead({ world: engine.world, def: { noteId: engine.world.state['chapter.ch2.done'] ? 'journalCh2' : 'journalCh1' } }) }); }
         qlWasLocked = look.locked; qlView.open(); input.consumePressed();
       }
     }
@@ -1805,7 +1808,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || invOpen || cardOpen || vLocked(); // DIALOGUE-LOCK-01: note panel + chapter card no longer lock
     titleMenuActive = !!(menuHost && menuHost.active);
     ch1Hidden = isCaptureOrBench || !saveEnabled || titleMenuActive || ending || invOpen || cardOpen || isMapOpen() || isSettingsOpen() || isNoteOpen() || qlIsOpen() || !!(dialogueCtl && dialogueCtl.open) || !!(vitals && vitals.dead); // CH1-MOUNT: notices/barks hidden under any menu/dialogue
-    notice.update(dt, ch1Hidden); if (chapterCard && !ending) chapterCard.update(dt); // CH1-04a / CH1-09
+    notice.update(dt, ch1Hidden); if (chapterCard && !ending) chapterCard.update(dt); if (chapterCard2 && !ending) chapterCard2.update(dt); // CH1-04a / CH1-09
     const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen }) || ((invOpen || cardOpen) && !ending)));
     { // COMPASS-02 (D-061): retarget on book change + ~2 Hz, step the needle, hide rule (menus/pack/log/map/dialogue/death/title/capture modes/ending)
       const bk = saveRelay && saveRelay.quest.book;
@@ -2237,7 +2240,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (invView) invView.pushDim(sceneDim); // US-091b
       if (craftView) craftView.pushDim(sceneDim); // MAIN-WIRE-01
       if (chestHook) chestHook.card.pushDim(sceneDim); // S8-B1-04
-      if (chapterCard) chapterCard.pushDim(sceneDim); // CH1-09
+      if (chapterCard) chapterCard.pushDim(sceneDim); if (chapterCard2) chapterCard2.pushDim(sceneDim); // CH1-09
       pushNoteDim(sceneDim); // READ-01: whole-scene x 0.35 while a note is open (no-op otherwise), before applySceneDim/setSceneDim below
       if (questUiActive && !ending) {
         const mapPanel = getMapPanel();
@@ -2304,7 +2307,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (dialogueCtl) dialogueCtl.draw(ui, fb.timeSec); // DIALOGUE-01b2
       if (barks && !ch1Hidden) barks.draw(ui, fb.timeSec); // CH1-06
       notice.draw(ui, ch1Hidden); // CH1-04a
-      if (chapterCard) chapterCard.draw(ui); // CH1-09
+      if (chapterCard) chapterCard.draw(ui); if (chapterCard2) chapterCard2.draw(ui); // CH1-09
       if (invView) invView.draw(ui); // US-091b: the pack screen, over HUD + toast
       if (invView && invView.isOpen && qbView && quickbar && playerHandle) { // QB-6: the bar inside the menu = the drag-and-drop target; the dragged icon rides the pointer
         syncHandSlots(playerHandle.data); qbView.drawBar(ui, playerHandle.data, quickbar.st, true);
@@ -2394,7 +2397,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         extra += `\nworld (${t.x.toFixed(2)}, ${t.y.toFixed(2)}, ${t.z.toFixed(2)}) yaw ${look.yawDeg.toFixed(0)} pitch ${look.pitchDeg.toFixed(0)}` +
           `${look.locked ? '' : ' [unlocked]'}  grounded: ${grounded}\nstructure: ${struct ? struct.id : '(none)'} sector: '${sectorCh}'${sector ? '' : ' (outside)'}\n${terrainInfo}`;
       }
-      extra += `\nmesh singles ${meshFeedStats.kept}/${meshFeedStats.requested} (cap ${MAX_MESH_DRAWS})${meshFeedStats.dropped ? '  DROPPED ' + meshFeedStats.dropped : ''}`; // OB-039
+      extra += `\nmesh singles ${meshFeedStats.kept}/${meshFeedStats.requested} (cap ${MAX_MESH_DRAWS})${meshFeedStats.dropped ? '  DROPPED ' + meshFeedStats.dropped : ''}  draws ${meshFeedStats.drawItems}/${MAX_DRAW_ITEMS}${meshFeedStats.overflow || meshFeedStats.groupsDropped || meshFeedStats.instDropped ? `  OVERFLOW ${meshFeedStats.overflow} grp ${meshFeedStats.groupsDropped} inst ${meshFeedStats.instDropped}` : ''}`; // OB-039
       if (bootPrinted) extra += '\nboot: ' + bootSummary();
       overlay.update(engine.loop.fps, engine.loop.frameMs, extra);
     }

@@ -18,6 +18,12 @@
     },
     "rook": {
       "entity": "rook"
+    },
+    "gondola": {
+      "entity": "gondola"
+    },
+    "packet": {
+      "entity": "packet"
     }
   }
 }

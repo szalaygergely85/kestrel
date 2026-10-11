@@ -274,10 +274,11 @@ function routeRun(physics, { reload = false } = {}) {
     const cols = [...new Set(wd.structures.filter((q) => /^poi[0-9]+$/.test(q.id) && q.mesh === 'quaternius/Stairs_Exterior_Straight' && Math.abs(q.origin.x - 970.7) < 0.5 && q.origin.y < 1075).map((q) => q.origin.y))].sort((p, q) => q - p); // pile columns, south end (start) first
     const PX = wd.structures.find((q) => q.mesh === 'quaternius/Stairs_Exterior_Straight' && /^poi/.test(q.id)).origin.x;
     const nest = wd.entities.find((e) => e.id === 'nest'), up = cols.map((y) => ({ x: PX, y, jump: true }));
-    const rk = runLeg(sim, 'R1 Rook ruin climb (steps -> roof -> nest -> down)', [{ x: 1001, y: 1064 }, { x: 994, y: 1064 }, { x: 990, y: 1067 }, { x: 980, y: 1071 }, { x: 975.5, y: cols[0] + 2.2 }, { x: PX, y: cols[0] + 2.2 }, ...up, { x: nest.x, y: nest.y }, { x: nest.x + 1.6, y: nest.y }, ...up.slice().reverse().map((w) => ({ x: w.x, y: w.y })), { x: PX, y: cols[0] + 2.2 }, { x: 975.5, y: cols[0] + 2.2 }, { x: 980, y: 1071 }, { x: 990, y: 1067 }, { x: 994, y: 1058 }, { x: 1001, y: 1064 }, { x: 1008, y: 1069 }], { maxWpSteps: 1500 });
+    const rk = runLeg(sim, 'R1 Rook ruin climb (steps -> roof -> nest -> down)', [{ x: 1001, y: 1064 }, { x: 994, y: 1064 }, { x: 990, y: 1067 }, { x: 980, y: 1071 }, { x: 975.5, y: cols[0] + 2.2 }, { x: PX, y: cols[0] + 2.2 }, ...up, { x: nest.x, y: nest.y }, { x: wd.entities.find((e) => e.id === "chestBoots").x - 0.5, y: nest.y }, { x: nest.x, y: nest.y }, { x: wd.entities.find((e) => e.id === "chestRook").x + 0.5, y: nest.y }, { x: nest.x, y: nest.y }, ...up.slice().reverse().map((w) => ({ x: w.x, y: w.y })), { x: PX, y: cols[0] + 2.2 }, { x: 975.5, y: cols[0] + 2.2 }, { x: 980, y: 1071 }, { x: 990, y: 1067 }, { x: 994, y: 1058 }, { x: 1001, y: 1064 }, { x: 1008, y: 1069 }], { maxWpSteps: 1500 });
     rk.completed = rk.completed && !rk.fell && cols.length >= 3;
     info.roofZ = Math.max(...rk.trace.filter((_, i) => i % 3 === 2)); info.roofCols = cols.length;
     if (sim.physics === 'mesh') rk.completed = rk.completed && info.roofZ >= nest.z - 0.6; // the grid has no mesh colliders: there it only has to walk the line without a stuck spot
+    if (!rk.completed) process.exitCode = 1; // OB-044: a failing R1 fails the whole route-walk
     legs.push(rk);
   }
   const back = runLeg(sim, '9c ford -> back over the stones -> bend', [{ x: 1008, y: 1069 }, ...W2E, { x: 1046, y: 1069 }, { x: 1090, y: 1070 }, { x: 1180, y: 1062 }, { x: 1260, y: 1045 }, { x: 1310, y: 1048 }], { maxWpSteps: 1500 });
@@ -482,4 +483,15 @@ else {
   const openWest = run(eastYaw, 840, false) < 240;
   console.log(`probe sealed gate blocks (every start on the pass floor y 808..872 (door y840, towers), run + jump, 20 s, yaw ${eastYaw}): ${worst < 239.6 && openWest ? 'PASS' : 'FAIL'} east-most x ${worst.toFixed(2)} (wall west face ~239.2)`);
   if (!(worst < 239.6 && openWest)) process.exitCode = 1;
+}
+
+// MAP-14 / M4-C3 leg 10: the long `?grid=1` walk (tower -> bend -> ford -> crossroads -> outwall bound -> lake edge -> back to the tower), run
+// in its own process (tools/verify-grid-walk.mjs builds the grid world variant). Prints the swap list, band:late, max swap ms; fails on a stuck
+// waypoint, a fall, band:late > 0 or a swap frame > 16 ms.
+{
+  const { spawnSync } = await import('node:child_process');
+  const r = spawnSync(process.execPath, ['--no-warnings', new URL('./verify-grid-walk.mjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')], { encoding: 'utf8' });
+  console.log('leg 10 long grid walk (?grid=1 semantics, tools/verify-grid-walk.mjs):');
+  for (const l of (r.stdout || '').split('\n').filter(Boolean)) console.log('  ' + l);
+  if (r.status !== 0) { console.log('leg 10: FAIL'); process.exitCode = 1; } else console.log('leg 10: PASS');
 }

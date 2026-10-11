@@ -55,6 +55,7 @@
     displayName: 'Ferrum',
     desc: 'Ferrum on the eastern horizon: warm amber pinpoints over a faint wall-and-tiers silhouette, the Crown lamps brightest on top.',
     size: { w: 36, h: 4 }, anchor: { x: 18, y: 3 },   // anchor = bottom-centre cell; sits at (bearingDeg, elevDeg) of the entity
+    world: { w: 640, h: 71 },                            // MAP-08: world billboard size (m) of the `ferrumGlow` entity behind the baked far Ferrum
     directions: ['S'], billboard: true, horizon: true,
     keys: {
       s: { c: 'ferrumSil' },                              // silhouette: unlit (light = 1), takes the entity's fixed fog
