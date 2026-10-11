@@ -5,6 +5,8 @@
 export const PHASE_HOME = 0, PHASE_WALK = 1, PHASE_STONE = 2, PHASE_DEPART = 3, PHASE_GONE = 4, PHASE_BACK = 5; // 5 = QL-05: back on her berry slope (errand giver)
 export const HOME_FAR_M = 40; // QL-05: Burl reappears at home only when the player is at least this far away (never pops in sight)
 export const WAIT_BARK_M = 12, WAIT_BARK_COOL_S = 20; // PO-CH1-14: player runs ahead of Burl during the walk
+// M4 (sq.burl.walk): 6 = leading the player along walks.toBend, 7 = waiting at the Bend relay until hand-in (then she goes home out of sight)
+export const PHASE_LEAD = 6, PHASE_BEND = 7, LEAD_WAIT_M = 14, LEAD_RESUME_M = 8, BEND_FLAG = 'escort.bear.relayBend';
 export const CALL_NEAR_M = 14, TALK_NEAR_M = 4, TALK_REARM_M = 7;
 
 /**
@@ -29,6 +31,11 @@ export function createBurlEscort(o) {
     if (o.restore) o.restore();
     questFlag('burl.home');
   }
+  // sq.burl.walk: o.leadStatus() = questBook status of the errand (2 active, 3 ready, 4 done); needs components.walks.toBend (data)
+  const hasLead = () => { const w = world.get(id), c = w && w.data.components; return !!(c && c.walks && c.walks.toBend); };
+  const leadStatus = () => (o.leadStatus ? o.leadStatus() : -1);
+  const lead = () => walk.start('toBend', { lead: true, waitFar: LEAD_WAIT_M, resumeNear: LEAD_RESUME_M, fromWp: st['burl.lwp'] | 0, onArrive: atBend });
+  function atBend() { st['burl.lwp'] = walk.wp; setPhase(PHASE_BEND); questFlag(BEND_FLAG, true); }
   const homeXY = () => { const w = world.get(id), p = w && w.data.components && w.data.components.walks && w.data.components.walks.follow; return p ? p[0] : null; };
   const api = {
     get phase() { return phase(); },
@@ -39,6 +46,8 @@ export function createBurlEscort(o) {
       const p = phase();
       if (p === PHASE_WALK) follow();                       // mid-walk: stands at burl.wp, resumes when the player is near
       else if (p === PHASE_STONE) walk.place('follow');     // at the end of the walk
+      else if (p === PHASE_LEAD) { if (leadStatus() >= 2 && leadStatus() <= 3) lead(); else goHome(); } // resumes where she stood
+      else if (p === PHASE_BEND) { if (leadStatus() >= 2 && leadStatus() <= 3) walk.place('toBend'); else goHome(); }
       else if (p === PHASE_DEPART || p === PHASE_GONE || p === PHASE_BACK) goHome(); // departure is not replayed; a fresh load puts her home (QL-05)
     },
     /** Fixed step. (px,py) = player; hold = a dialogue/menu/note is open (AUD-06): no walking, no barks. */
@@ -77,6 +86,23 @@ export function createBurlEscort(o) {
           const dx = px - o.x(), dy = py - o.y(), d2 = dx * dx + dy * dy;
           if (!talkLatch && !open && d2 <= TALK_NEAR_M * TALK_NEAR_M) { talkLatch = true; o.requestOpen(id); }
           else if (talkLatch && d2 > TALK_REARM_M * TALK_REARM_M) talkLatch = false;
+        }
+      } else if (p === PHASE_BACK) { // home on her slope: sq.burl.walk accepted -> she leads (starts once the accept dialogue is closed)
+        if (leadStatus() === 2 && hasLead() && !st[BEND_FLAG]) { st['burl.lwp'] = 0; setPhase(PHASE_LEAD); lead(); }
+      } else if (p === PHASE_LEAD) {
+        if (leadStatus() < 2 || leadStatus() > 3) { goHome(); return; } // abandoned
+        walk.step(dt, px, py);
+        st['burl.lwp'] = walk.wp;
+        if (waitCool > 0) waitCool -= dt;
+        if (o.barks && waitCool <= 0) {
+          const dx = px - o.x(), dy = py - o.y();
+          if (dx * dx + dy * dy > WAIT_BARK_M * WAIT_BARK_M && o.barks.play('bear.wait', id, true)) waitCool = WAIT_BARK_COOL_S;
+        }
+      } else if (p === PHASE_BEND) { // handed in (or abandoned) and the player has left -> home, never popping in sight
+        const ls = leadStatus();
+        if (ls !== 2 && ls !== 3) {
+          const dx = px - o.x(), dy = py - o.y(), h = homeXY();
+          if (dx * dx + dy * dy >= HOME_FAR_M * HOME_FAR_M && (!h || (px - h[0]) ** 2 + (py - h[1]) ** 2 >= HOME_FAR_M * HOME_FAR_M)) { st[BEND_FLAG] = false; goHome(); }
         }
       } else if (p === PHASE_DEPART) {
         walk.step(dt, px, py);

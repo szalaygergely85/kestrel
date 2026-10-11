@@ -1437,7 +1437,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           const bt = world.get('bear').data.transform;
           escort = createBurlEscort({ world, walk: bw, questFlag: (k) => rq.questFlag(k), barks, id: 'bear', x: () => bt.x, y: () => bt.y,
             dialogueOpen: () => dialogueCtl.open, afterLeave: () => rq.state.completed.includes('leave'), requestOpen: nearTalk, noticeBusy: () => notice.active,
-            restore: () => dialogueCtl.addNpc('bear'), hideSafe: true }); // QL-05: Burl's home switch re-adds her [E] Talk
+            restore: () => dialogueCtl.addNpc('bear'), hideSafe: true, leadStatus: () => rq.book.statusOf('sq.burl.walk') }); // sq.burl.walk: Burl leads along walks.toBend // QL-05: Burl's home switch re-adds her [E] Talk
           escort.load();
         }
         window.__debug.escort = escort; // tools/verify-ch1-mount.mjs

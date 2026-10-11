@@ -42,7 +42,7 @@ export function patchBearDialogue(raw, defs) {
     const act = L.active && L.active.length ? L.active : [last];
     nodes[k + '.accepted'] = mk(act, { end: true });
     nodes[k + '.active'] = mk(act, { end: true });
-    nodes[k + '.ready'] = mk(L.ready && L.ready.length ? L.ready : ['Well done.'], { end: true, setFlag: 'q.' + d.id + '.handin' });
+    nodes[k + '.ready'] = mk([...(L.ready && L.ready.length ? L.ready : ['Well done.']), ...(L.done || [])], { end: true, setFlag: 'q.' + d.id + '.handin' });
     ready.push({ node: k + '.ready', requires: 'q.' + d.id + '.ready' });
     offer.push({ node: k + '.offer.1', requires: 'q.' + d.id + '.available' });
     active.push({ node: k + '.active', requires: 'q.' + d.id + '.active' });
@@ -61,9 +61,9 @@ export function isWorn(eq, id) {
 }
 
 /** Banner rows for an object inspect result: the writer's lines for the action, else null (caller keeps def.giver text). */
-export function bannerLines(def, action, wrap, maxRows = 8) {
+export function bannerLines(def, action, wrap, maxRows = 10) {
   const L = def && def.lines; if (!L) return null;
-  const set = action === 'accept' ? L.offer : action === 'handin' ? L.ready : action === 'refuse' ? L.active : null;
+  const set = action === 'accept' ? L.offer : action === 'handin' ? (L.ready || L.done ? [...(L.ready || []), ...(L.done || [])] : null) : action === 'refuse' ? L.active : null;
   if (!Array.isArray(set) || !set.length) return null;
   const rows = []; for (const l of set) for (const r of wrap(l)) rows.push(r);
   return rows.slice(0, maxRows);
@@ -133,6 +133,7 @@ export function createErrands({ getBook, questFlag, inspect }) {
       if (!world || status('sq.burl.walk') !== ACTIVE) return false;
       const b = world.get('bear'), r = world.get('relayBend'), bt = b && b.data && b.data.transform, rt = r && r.data && r.data.transform;
       if (!bt || !rt) return false;
+      if (b.data.components && b.data.components.walks && b.data.components.walks.toBend) return false; // M4: burlEscort leads him there and fires the flag on arrival
       const dx = bt.x - rt.x, dy = bt.y - rt.y;
       if (dx * dx + dy * dy > ESCORT_R * ESCORT_R) return false;
       questFlag('escort.bear.relayBend', true); return true;

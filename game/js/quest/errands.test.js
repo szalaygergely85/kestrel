@@ -139,6 +139,18 @@ if (book.statusOf('sq.burl.walk') === ACTIVE) {
   assert.equal(er.escortTick(), true); assert.equal(flags['escort.bear.relayBend'], true);
 }
 
+// 6b. M4: with a walks.toBend path the walk fires the flag on arrival (escortTick stays quiet); content has the path; writer `done` lines are spoken on hand-in
+{
+  const hold = ents.bear.components; hold.walks = { toBend: [[1471, 1029], [1262, 1033]] };
+  delete flags['escort.bear.relayBend']; assert.equal(er.escortTick(), false, 'walk fires the flag, not the proximity tick'); delete hold.walks;
+  const bw = rd('content/worlds/world_m1.world.json').entities.find((e) => e.id === 'bear').components.walks.toBend;
+  assert.ok(bw.length >= 30 && bw.every((p, i) => i === 0 || Math.hypot(p[0] - bw[i - 1][0], p[1] - bw[i - 1][1]) <= 8.01), 'toBend polyline <= 8 m steps');
+  assert.ok(Math.hypot(bw[0][0] - 1471, bw[0][1] - 1029.1) < 1 && Math.hypot(bw[bw.length - 1][0] - 1262, bw[bw.length - 1][1] - 1033) < 8, 'home -> Bend');
+  const wk = defs.find((d) => d.id === 'sq.burl.walk'), ri = patched.nodes['bear.err.' + burlErrands.indexOf(wk) + '.ready'];
+  assert.ok(wk.lines.done.length && ri.lines.includes(wk.lines.done[0]) && ri.lines.length === wk.lines.ready.length + wk.lines.done.length, 'done line follows ready on hand-in');
+  assert.ok(bannerLines(wk, 'handin', wrapText).join(' ').includes(wk.lines.done[0].split(' ')[0]), 'banner has the done line');
+}
+
 // 7. content: the hint stone is a plain area circle now (the terrain-shaped once-only zone could not fire reliably)
 const w = rd('content/worlds/world_m1.world.json'), areas = rd('content/quests/areas.json');
 const trig = w.triggers.find((t) => t.id === areas.areas.hintStone.trigger);
