@@ -6,7 +6,8 @@ import { loadQuestFiles } from '../questBoot.js';
 import { createQuestBook, AVAILABLE, ACTIVE, READY } from './sim/questBook.js';
 import { compileDialogue, createDialogueRunner } from '../../../engine/index.js';
 import { loadDesignAssets } from '../../../tools/validate-content.mjs';
-import { createErrands, gateOnMeet, patchBearDialogue, isWorn, bannerLines, siteOf } from './errands.js';
+import { createErrands, gateOnMeet, isWorn, bannerLines, siteOf } from './errands.js';
+import { generateForNpc, ANCHORS } from './questSnippets.js';
 import { wrapText } from './questInspect.js';
 
 const ROOT = new URL('../../../', import.meta.url);
@@ -41,8 +42,8 @@ assert.equal(book.statusOf('sq.burl.stone'), AVAILABLE);
 
 // 2. Burl's dialogue: compiled, every errand reachable through its q.<id>.* routes; accept / hand-in act on the real book
 const raw = rd('content/dialogue/bear.dialogue.json');
-const patched = patchBearDialogue(raw, defs);
-assert.ok(patched !== raw && raw.entry.length < patched.entry.length && !raw.nodes['bear.err.0.offer.1'], 'input untouched');
+const patched = generateForNpc(raw, 'bear', defs, rd('content/dialogue/quest-snippets.json'), { before: ANCHORS.bear });
+assert.ok(patched !== raw && raw.entry.length < patched.entry.length && !raw.nodes['qs.sq.burl.stone.offer.1'], 'input untouched');
 const dlg = compileDialogue(patched);
 const burlErrands = defs.filter((d) => d.giver && d.giver.npc === 'bear' && d.lines && !d.main && d.region === 'ch12');
 assert.ok(burlErrands.length >= 11, 'Burl errands: ' + burlErrands.length);
@@ -69,8 +70,8 @@ const again = talkBurl(0); assert.ok(again.length, 'next talk offers the next er
 // the routes themselves (compile gate): ready < offer < active, each errand has all three
 const ent = patched.entry.map((e) => e.requires || '');
 for (const d of burlErrands) for (const s of ['ready', 'available', 'active']) assert.ok(ent.includes('q.' + d.id + '.' + s), d.id + ' ' + s);
-assert.ok(patched.entry.findIndex((e) => e.node === 'bear.err.0.ready') < patched.entry.findIndex((e) => e.node === 'bear.err.0.offer.1'));
-assert.ok(patched.entry.findIndex((e) => e.node === 'bear.err.0.active') < patched.entry.findIndex((e) => e.node === 'bear.home.again'));
+assert.ok(patched.entry.findIndex((e) => e.node === 'qs.' + burlErrands[0].id + '.ready') < patched.entry.findIndex((e) => e.node === 'qs.' + burlErrands[0].id + '.offer.1'));
+assert.ok(patched.entry.findIndex((e) => e.node === 'qs.' + burlErrands[0].id + '.active') < patched.entry.findIndex((e) => e.node === 'bear.home.again'));
 
 // 3. object givers on a fake world: post / notePost get [E] Inspect, relays map by waystone id, entity without transform skipped
 const ents = {
@@ -146,7 +147,7 @@ if (book.statusOf('sq.burl.walk') === ACTIVE) {
   const bw = rd('content/worlds/world_m1.world.json').entities.find((e) => e.id === 'bear').components.walks.toBend;
   assert.ok(bw.length >= 30 && bw.every((p, i) => i === 0 || Math.hypot(p[0] - bw[i - 1][0], p[1] - bw[i - 1][1]) <= 8.01), 'toBend polyline <= 8 m steps');
   assert.ok(Math.hypot(bw[0][0] - 1471, bw[0][1] - 1029.1) < 1 && Math.hypot(bw[bw.length - 1][0] - 1262, bw[bw.length - 1][1] - 1033) < 8, 'home -> Bend');
-  const wk = defs.find((d) => d.id === 'sq.burl.walk'), ri = patched.nodes['bear.err.' + burlErrands.indexOf(wk) + '.ready'];
+  const wk = defs.find((d) => d.id === 'sq.burl.walk'), ri = patched.nodes['qs.' + wk.id + '.ready'];
   assert.ok(wk.lines.done.length && ri.lines.includes(wk.lines.done[0]) && ri.lines.length === wk.lines.ready.length + wk.lines.done.length, 'done line follows ready on hand-in');
   assert.ok(bannerLines(wk, 'handin', wrapText).join(' ').includes(wk.lines.done[0].split(' ')[0]), 'banner has the done line');
 }

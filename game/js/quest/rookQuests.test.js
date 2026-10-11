@@ -23,7 +23,7 @@ book.packOps = { count: (id) => pack.get(id) || 0, remove() {}, add: (id, n) => 
 const questFlag = (k, v = true) => { state[k] = v; book.feed({ type: 'flag:set', key: k, value: v }); };
 const world = { state, get: () => null, interactables: [], addInteractable() {} };
 const notes = [];
-const er = createErrands({ getBook: () => book, questFlag, inspect() {}, note: (t, l) => notes.push([t, l]) });
+const er = createErrands({ getBook: () => book, questFlag, inspect() {}, note: (t, l) => notes.push([t, l]), texts: JSON.parse(readFileSync(new URL('../../../content/dialogue/inspect.json', import.meta.url), 'utf8')) });
 er.load(world);
 
 // Rook's real dialogue, driven by the bridge flags
