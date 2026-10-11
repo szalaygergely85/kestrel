@@ -38,7 +38,7 @@
       "lines": ["A stone niche on its back. The pillar leans west.", "Three rings cut in the base, worn soft.", "The same mark as the relays.", "In the niche, a cup of rainwater. Fresh."]
     },
     "inspect.woodpile": {
-      "prompt": "[E] Look at the stack",
+      "prompt": "[E] Look at the woodpile",
       "title": "A woodcutter's stack",
       "lines": ["Split logs, stacked bark-up against the rain.", "Grey with age. Moss along the top row.", "A tally cut in the end post stops mid-row.", "Ash on the top logs. Blown from the tower."]
     },

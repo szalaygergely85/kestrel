@@ -2147,7 +2147,7 @@
       },
       "abandonable": true,
       "band": 2,
-      "returnText": "Bring the hide to the gondola",
+      "returnText": "Bring the hide to the wrecked airship",
       "lines": {
         "offer": [
           "The side plate hangs by one rivet.",
@@ -2161,7 +2161,7 @@
           "Hold right mouse to block."
         ],
         "done": [
-          "The gondola creaks. The plate is yours now."
+          "The wreck creaks. The plate is yours now."
         ]
       }
     },

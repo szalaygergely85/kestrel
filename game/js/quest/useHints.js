@@ -5,7 +5,7 @@ export const HINT_REACH = 3;      // m from the eye
 export const HINT_CAP = 6;
 export const PULSE_PERIOD = 1.6;  // s
 export const ALPHA_MIN = 0.25, ALPHA_MAX = 0.45;
-export const HINT_GLYPH = '·'; // middle dot (the font already has it: used by HUD separators)
+export const HINT_GLYPH = '*'; // printable ASCII only: CellBuffer.setCell maps codes outside 32..126 to glyph 0 (space) -> '·' (183) was invisible
 export const ALPHA_STEPS = 6;
 
 /** Pulse alpha at time t (s): smooth 0.25..0.45 over PULSE_PERIOD. */

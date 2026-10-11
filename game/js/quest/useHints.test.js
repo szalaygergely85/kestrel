@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { selectHints, createHintSet, pulseAlpha, pulseStep, buildHintColors, HINT_CAP, ALPHA_MIN, ALPHA_MAX, ALPHA_STEPS } from './useHints.js';
+import { selectHints, createHintSet, pulseAlpha, pulseStep, buildHintColors, HINT_CAP, ALPHA_MIN, ALPHA_MAX, ALPHA_STEPS, HINT_GLYPH } from './useHints.js';
 
 // fake projection: col = x*10, row = y*10, depth = 1 (x<0 => behind)
 const project = (x, y, z, o) => { o[0] = x * 10; o[1] = y * 10; o[2] = x < 0 ? -1 : 1; return o; };
@@ -39,4 +39,7 @@ assert.ok(Math.abs(lo - ALPHA_MIN) < 1e-3 && Math.abs(hi - ALPHA_MAX) < 1e-3);
 assert.ok(Math.abs(pulseAlpha(0) - pulseAlpha(1.6)) < 1e-9, 'period 1.6 s');
 const cols = buildHintColors('#ffd24a'); assert.equal(cols.length, ALPHA_STEPS); assert.ok(cols.every((c) => /^#[0-9a-f]{6}$/.test(c)));
 assert.ok(cols[0] < cols[ALPHA_STEPS - 1]);
+// INT-HL-01 reject: glyph must survive CellBuffer.setCell (code 32..126 -> index code-32, never 0 = space)
+const gcode = HINT_GLYPH.charCodeAt(0), gidx = gcode < 32 || gcode > 126 ? 0 : gcode - 32;
+assert.equal(HINT_GLYPH.length, 1); assert.ok(gcode >= 33 && gcode <= 126 && gidx !== 0, 'hint glyph is visible printable ASCII');
 console.log('useHints.test OK');
