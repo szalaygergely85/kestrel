@@ -1685,7 +1685,7 @@
         times: { idle: [4, 12], graze: [4, 12], alert: [1, 3], perchS: [8, 30], cawEveryS: [6, 20] },
         blendMs: 120,
         groupSize: [1, 3],
-        spawn: { kind: 'flyer', habitats: ['meadow', 'edge'], cellChance: 0.08, spawnMinM: 40, spawnMaxM: 90, despawnM: 112, drawM: 45, cap: 3 },
+        spawn: { kind: 'flyer', habitats: ['meadow', 'edge', 'riverbank'], cellChance: 0.08, spawnMinM: 40, spawnMaxM: 90, despawnM: 112, drawM: 45, cap: 3 },
         perchFrom: 'songbird',                         // same perchByModel table (the crow sits a little higher: + 0.5 m z)
         habitat: 'meadows, field edges and riverbanks; walks and pecks in the open, perches on tall trees',
         note: 'Rook (the talking crow of the quest line) = this model placed as an NPC: perch + tilt while idle, talk while ' +
