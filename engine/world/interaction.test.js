@@ -94,18 +94,18 @@ function recAtAngle(id, angleFromNorthDeg, dist, extra = {}) {
 const EYE_NORTH = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
 
 // ---------------------------------------------------------------------------
-// 1. Cone: 39 deg is a hit, 41 deg is a miss (default coneDeg = 40, OB-052).
+// 1. Cone: 21 deg is a hit, 24 deg is a miss (default coneDeg = 22, OB-063).
 // ---------------------------------------------------------------------------
 {
   const w = makeWorld();
   const out = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
-  w.interactables = [recAtAngle('a19', 39, 1.0)];
+  w.interactables = [recAtAngle('a19', 21, 1.0)];
   findInteractTarget(w, EYE_NORTH, null, out);
-  ok('39 deg inside the 40 deg cone: a hit', out.targetKey === 's.a19', JSON.stringify(out));
+  ok('21 deg inside the 22 deg cone: a hit', out.targetKey === 's.a19', JSON.stringify(out));
 
-  w.interactables = [recAtAngle('a21', 41, 1.0)];
+  w.interactables = [recAtAngle('a21', 24, 1.0)];
   findInteractTarget(w, EYE_NORTH, null, out);
-  ok('41 deg outside the 40 deg cone: a miss', out.targetKey === null, JSON.stringify(out));
+  ok('24 deg outside the 22 deg cone: a miss', out.targetKey === null, JSON.stringify(out));
 }
 
 // ---------------------------------------------------------------------------
@@ -310,22 +310,22 @@ const EYE_NORTH = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
   const w = makeWorld();
   const fresh = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   let out = fresh();
-  w.interactables = [recAtAngle('o30', 30, 1.5)];
+  w.interactables = [recAtAngle('o30', 20, 1.5)];
   findInteractTarget(w, EYE_NORTH, null, out);
-  ok('30 deg off-axis at 1.5 m is targeted', out.targetKey === 's.o30', JSON.stringify(out));
+  ok('20 deg off-axis at 1.5 m is targeted', out.targetKey === 's.o30', JSON.stringify(out));
 
-  // hysteresis: 46 deg is outside the 40 cone but inside 40+15 -> a held target stays, a fresh one is not picked
-  w.interactables = [recAtAngle('h', 36, 1.0)];
+  // hysteresis (OB-063: 22 cone + 8): 28 deg is outside the cone but inside 22+8 -> a held target stays, a fresh one is not picked
+  w.interactables = [recAtAngle('h', 20, 1.0)];
   out = fresh(); findInteractTarget(w, EYE_NORTH, null, out);
-  ok('hyst: acquired at 36 deg', out.targetKey === 's.h');
-  w.interactables = [recAtAngle('h', 50, 1.0)];
+  ok('hyst: acquired at 20 deg', out.targetKey === 's.h');
+  w.interactables = [recAtAngle('h', 28, 1.0)];
   findInteractTarget(w, EYE_NORTH, null, out);
-  ok('hyst: 50 deg keeps the held target', out.targetKey === 's.h');
+  ok('hyst: 28 deg keeps the held target', out.targetKey === 's.h');
   out = fresh(); findInteractTarget(w, EYE_NORTH, null, out);
-  ok('hyst: 50 deg is not acquired fresh', out.targetKey === null);
-  w.interactables = [recAtAngle('h', 60, 1.0)];
+  ok('hyst: 28 deg is not acquired fresh', out.targetKey === null);
+  w.interactables = [recAtAngle('h', 34, 1.0)];
   out.targetKey = 's.h'; findInteractTarget(w, EYE_NORTH, null, out);
-  ok('hyst: 60 deg (beyond cone+15) drops it', out.targetKey === null);
+  ok('hyst: 34 deg (beyond cone+8) drops it', out.targetKey === null);
   w.interactables = [recAtAngle('h', 0, 2.0)];
   out.targetKey = 's.h'; findInteractTarget(w, EYE_NORTH, { reach: 2.0 }, out);
   ok('hyst: 2.0 m held at reach 2.0', out.targetKey === 's.h');
@@ -343,7 +343,7 @@ const EYE_NORTH = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
   w.interactables = [recAtAngle('a', 10, 1.0), recAtAngle('b', 8, 1.0)];
   out = fresh(); out.targetKey = 's.a'; findInteractTarget(w, EYE_NORTH, null, out);
   ok('hyst: marginally better challenger does not steal', out.targetKey === 's.a');
-  w.interactables = [recAtAngle('a', 30, 1.0), recAtAngle('b', 2, 1.0)];
+  w.interactables = [recAtAngle('a', 28, 1.0), recAtAngle('b', 2, 1.0)];
   out.targetKey = 's.a'; findInteractTarget(w, EYE_NORTH, null, out);
   ok('hyst: clearly better challenger replaces', out.targetKey === 's.b');
 
@@ -384,12 +384,44 @@ const EYE_NORTH = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
   for (let p = -40; p <= 15; p += 5) if (!hit(0, p)) { allPitch = false; ok('note: pitch ' + p + ' targeted', false); }
   ok('note: pitch -40..+15 at yaw 0 all targeted', allPitch);
   let allYaw = true;
-  for (const pitch of [0, 10]) for (const yaw of [-25, 25]) if (!hit(yaw, pitch)) { allYaw = false; ok('note: yaw ' + yaw + ' pitch ' + pitch, false); }
-  ok('note: yaw +-25 at pitch 0 and +10 targeted', allYaw);
+  for (const pitch of [0, 10]) for (const yaw of [-18, 18]) if (!hit(yaw, pitch)) { allYaw = false; ok('note: yaw ' + yaw + ' pitch ' + pitch, false); }
+  ok('note: yaw +-18 at pitch 0 and +10 targeted', allYaw);
   ok('note: yaw 60 not targeted', !hit(60, 0) && !hit(-60, 10));
   ok('note: beyond reach not targeted', !hit(0, 0, { ...mkN(0), y: -2.5 }));
   w._blockCell(0, -1);
   ok('note: LOS still blocks', !hit(0, 0, { ...mkN(0), y: -1.5 }));
+}
+
+
+// OB-063: owner pose on the tower summit (1489.50, 1026.33, 6.00) yaw 264 pitch -30 - looking at a figure, not at a note: no prompt.
+// Real tower content: interactable positions from tower.level.json + the world origin (1480, 1018) from world_m1.world.json.
+{
+  const { readFileSync } = await import('node:fs');
+  const lvl = JSON.parse(readFileSync(new URL('../../content/levels/tower.level.json', import.meta.url), 'utf8'));
+  const wj = JSON.parse(readFileSync(new URL('../../content/worlds/world_m1.world.json', import.meta.url), 'utf8'));
+  const org = wj.structures.find((s) => s.id === 'tower').origin;
+  const w = makeWorld();
+  w._setStructures([{ origin: { x: 0, y: 0, z: 0 }, bbox: { x0: -1e6, x1: 1e6, y0: -1e6, y1: 1e6 },
+    level: { sectorAt: () => ({ solid: false, floorH: 0, ceilH: 'sky' }) } }]);
+  w.interactables = lvl.interactables.filter((r) => r.prompt && typeof r.x === 'number').map((r) => ({
+    key: 't.' + r.id, structId: 't', id: r.id, name: r.id, prompt: r.prompt, x: org.x + r.x, y: org.y + r.y, z: (org.z || 0) + (r.z || 0),
+    radius: r.radius ?? 1.8, once: false, requires: null, propId: null, usedKey: null }));
+  ok('OB-063 fixture: tower notes loaded', w.interactables.some((r) => r.id === 'noteSteelHush'), String(w.interactables.length));
+  const o = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
+  let any = null;
+  for (const eyeZ of [6.0, 6.6, 7.0, 7.6]) {
+    o.targetKey = null;
+    findInteractTarget(w, { x: 1489.5, y: 1026.33, z: eyeZ, yawDeg: 264, pitchDeg: -30 }, null, o);
+    if (o.targetKey) any = eyeZ + ':' + o.targetKey;
+  }
+  ok('OB-063: owner pose yaw 264 pitch -30 gives no target (eye z 6.0..7.6)', any === null, String(any));
+  // positive control: face the steel-hush page from 1.2 m, slightly off in yaw/pitch, still prompts
+  const n = w.interactables.find((r) => r.id === 'noteSteelHush');
+  const brg = 239; // compass bearing from the owner spot to the note (approx)
+  const ex = n.x - 1.2 * Math.sin(brg * Math.PI / 180), ey = n.y + 1.2 * Math.cos(brg * Math.PI / 180);
+  const bearing = Math.atan2(n.x - ex, -(n.y - ey)) * 180 / Math.PI;
+  o.targetKey = null; findInteractTarget(w, { x: ex, y: ey, z: n.z + 0.6, yawDeg: bearing + 10, pitchDeg: -20 }, null, o);
+  ok('OB-063: facing the page from 1.2 m (yaw +10, pitch -20) still prompts', o.targetKey === 't.noteSteelHush', JSON.stringify(o));
 }
 
 console.log(`interaction.test.js: ${pass} passed, ${fail} failed`);
