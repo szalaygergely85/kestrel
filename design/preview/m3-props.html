@@ -74,7 +74,10 @@
 <h2>3. HP and MP pickups (billboards)</h2>
 <div class="note"><b>pickupHp</b> = a small stoppered flask sealed with red wax, crimson liquid glowing faintly, a twist of herb tied at the neck (field medicine, nothing magic).
   <b>pickupMp</b> = a leaning splinter of crystal with a cold blue light breathing inside (1.7 s) and motes drifting off it - no bottle, no teal: Wick has no word for it.
-  Liquid / glow keys are emissive, so both read on sunlit grass and in the dark tower. Hover + bob + the last-3-s blink are view-only (<code>pickupStyle</code>).</div>
+  Liquid / glow keys are emissive, so both read on sunlit grass and in the dark tower. Hover + bob + the last-3-s blink are view-only (<code>pickupStyle</code>).<br>
+  <b>M4:</b> <b>pickupGear</b> = an old riveted nasal helm with a leather chin strap (EQ-10 gear drop); clips = loot tier: <code>idle</code> worn (grey steel, brown band, rust),
+  <code>sturdy</code> (green-dyed band), <code>fine</code> (polished, brass band + rivets). <b>pickupRedCap</b> = a fly agaric + button cap (sq.rook.caps).
+  <b>smokeColumn</b> = the far smoke billboard for anchors smoke1..3 (glyph-only, 3 rising frames, full 5x12 + min 3x6, unlit, far fog cap 0.55).</div>
 <div class="row" id="pkBar"></div>
 <div id="pkHost"></div>
 
@@ -94,7 +97,7 @@
 
 <h2>6. Layers (top view per z, y0 = front row at the top) + JSON</h2>
 <div id="layers"></div>
-<div class="row"><select id="dumpSel"><option>practiceTarget</option><option>levelPatch</option><option>pickupHp</option><option>pickupMp</option><option>strawPuff</option><option>pickupStyle</option><option>vitals</option><option>m3Kit</option></select><button id="dumpBtn">dump</button></div>
+<div class="row"><select id="dumpSel"><option>practiceTarget</option><option>levelPatch</option><option>pickupHp</option><option>pickupMp</option><option>strawPuff</option><option>pickupGear</option><option>pickupRedCap</option><option>smokeColumn</option><option>pickupStyle</option><option>vitals</option><option>m3Kit</option></select><button id="dumpBtn">dump</button></div>
 <textarea id="dump" readonly></textarea>
 
 <script src="../palette.js"></script>
@@ -561,16 +564,22 @@ function buildPickups() {
   // near: the art itself, both tiers, every anim, on grass + on dark stone
   const h3 = document.createElement('h3'); h3.textContent = 'Art (1 art cell = 1 canvas cell; full tier, then half tier), on sunlit grass and dark stone'; host.appendChild(h3);
   const row = document.createElement('div'); row.className = 'row'; host.appendChild(row);
-  for (const name of ['pickupHp', 'pickupMp', 'strawPuff']) {
+  // M4 (v1.54): pickupGear (3 tier clips), pickupRedCap, smokeColumn (far billboard: full 5x12 + lods.min 3x6, on sky)
+  const NEAR = [['pickupHp', 'idle'], ['pickupMp', 'idle'], ['strawPuff', 'burst'],
+                ['pickupGear', 'idle'], ['pickupGear', 'sturdy'], ['pickupGear', 'fine'], ['pickupRedCap', 'idle'], ['smokeColumn', 'idle']];
+  for (const [name, anim] of NEAR) {
     const m = SPR[name];
+    if (!m) continue;
+    if (name === 'pickupGear' && anim === 'idle') { const br = document.createElement('div'); br.style.flexBasis = '100%'; row.appendChild(br); }
+    const small = m.lods.half || m.lods.min, smallName = m.lods.half ? 'half' : 'min';
     for (const half of [false, true]) {
-      for (const bgK of ['grass', 'flagDark']) {
-        const sz = half ? m.lods.half.size : m.size, cols = sz.w + 4, rows = sz.h + 2;
+      for (const bgK of (name === 'smokeColumn' ? ['sky', 'skyEve'] : ['grass', 'flagDark'])) {
+        const sz = half ? small.size : m.size, cols = sz.w + 4, rows = sz.h + 2;
         const grid = makeCanvas(cols, rows, half ? 12 : 14, half ? 18 : 21);
         const wrap = document.createElement('div'); wrap.appendChild(grid.cv);
-        const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = name + (half ? ' half' : ' full') + ' ' + sz.w + 'x' + sz.h + ' on ' + bgK; wrap.appendChild(cap);
+        const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = name + (anim !== 'idle' && anim !== 'burst' ? ' ' + anim : (name === 'pickupGear' ? ' idle (worn)' : '')) + (half ? ' ' + smallName : ' full') + ' ' + sz.w + 'x' + sz.h + ' on ' + bgK; wrap.appendChild(cap);
         row.appendChild(wrap);
-        pkNear.push({ grid, name, half, bgK, cols, rows });
+        pkNear.push({ grid, name, anim, half, small, bgK, cols, rows });
       }
     }
   }
@@ -590,6 +599,8 @@ function buildPickups() {
 }
 function nearBg(bgK) {
   if (bgK === 'grass') { gatherLight(0, 0, 1); U.shade(P.materials.grass, Lacc, 0.3, 0.3, 2, SH, { fog: null, z: 0 }); return [SH.bg[0], SH.bg[1], SH.bg[2]]; }
+  if (bgK === 'sky') return P.rgb.skyCyanMid || P.rgb.skyMid;
+  if (bgK === 'skyEve') return P.rgb.skyEveMid || P.rgb.skyDuskMid;
   return P.rgb.flagDark.map((v) => v * 0.45);
 }
 function renderPickups(now) {
@@ -604,8 +615,8 @@ function renderPickups(now) {
   for (const v of pkNear) {
     const m = SPR[v.name], n = v.cols * v.rows, B = newBuf(n), bg = nearBg(v.bgK);
     for (let i = 0; i < n; i++) { B.bg[i * 3] = bg[0]; B.bg[i * 3 + 1] = bg[1]; B.bg[i * 3 + 2] = bg[2]; }
-    const tier = { size: v.half ? m.lods.half.size : m.size, anchor: v.half ? m.lods.half.anchor : m.anchor, anims: v.half ? m.lods.half.animations : m.animations, scale: 1 };
-    const animName = m.animations.idle ? 'idle' : 'burst';
+    const tier = { size: v.half ? v.small.size : m.size, anchor: v.half ? v.small.anchor : m.anchor, anims: v.half ? v.small.animations : m.animations, scale: 1 };
+    const animName = v.anim;
     const e = animName === 'burst' ? (tA % 900) : tA;
     drawSprite(B, v.cols, v.rows, m, animName, e, 2 + tier.anchor.x, 1 + tier.anchor.y, tier, gatherLight(0, -0.7, 0.7));
     present(v.grid, B);
@@ -619,8 +630,14 @@ function renderPickups(now) {
     }
     const B = copyBuf(v.bg), L = spriteLight(cam.fh);
     const caps = [];
-    for (const [kind, x] of [['hp', -0.35], ['mp', 0.35]]) {
-      const S = PST[kind], m = SPR[S.model], ph = (kind === 'hp' ? 0 : 37 * 11) % S.bob.periodMs;
+    // M4: gear drop (hp hover/bob, the tier clip cycles worn -> sturdy -> fine every 3 s) + a red cap sitting on the ground
+    const gearAnim = ['idle', 'sturdy', 'fine'][Math.floor(tA / 3000) % 3];
+    const STY = { hp: PST.hp, mp: PST.mp, gear: Object.assign({}, PST.hp, { model: 'pickupGear', anim: gearAnim }),
+                  cap: { model: 'pickupRedCap', anim: 'idle', hoverM: 0, bob: { ampM: 0, periodMs: 1000 } } };
+    for (const [kind, x] of [['hp', -0.7], ['mp', -0.25], ['gear', 0.25], ['cap', 0.7]]) {
+      const S = STY[kind], m = SPR[S.model];
+      if (!m) continue;
+      const ph = (kind === 'hp' ? 0 : 37 * 11 * (kind === 'gear' ? 2 : 1)) % S.bob.periodMs;
       const collecting = collectE >= 0 && collectE < PST.collect.ms, gone = collectE >= PST.collect.ms;
       if (gone || (!vis && !collecting)) continue;
       const bob = collecting ? 0 : S.bob.ampM * Math.sin(2 * Math.PI * (tA + ph) / S.bob.periodMs);
@@ -631,7 +648,7 @@ function renderPickups(now) {
       const sp = cam.project([x, 0, 0]);
       if (sp) { const i = Math.round(sp.r) * spec.cc + Math.round(sp.c); if (i >= 0 && i < spec.cc * spec.cr) for (let q = 0; q < 3; q++) { B.bg[i * 3 + q] *= 0.55; B.fg[i * 3 + q] *= 0.55; } }
       drawSprite(B, spec.cc, spec.cr, m, collecting ? 'collect' : S.anim, collecting ? collectE : tA, pr.c, pr.r, tier, L);
-      caps.push(kind + ' ' + (tier.half ? 'half' : 'full') + ' x' + tier.scale.toFixed(2) + ' = ' + Math.round(tier.size.h * tier.scale) + ' rows');
+      caps.push(kind + (kind === 'gear' ? '(' + (S.anim === 'idle' ? 'worn' : S.anim) + ')' : '') + ' ' + (tier.half ? 'half' : 'full') + ' x' + tier.scale.toFixed(2) + ' = ' + Math.round(tier.size.h * tier.scale) + ' rows');
     }
     present(v.grid, B);
     v.cap.textContent = spec.cols + 'x' + spec.rows + ' at 5 m: ' + (caps.join(', ') || 'hidden (blink off / collected)') + ' | life ' + life + (life <= PST.blink.lastSteps ? ' (blinking)' : '');

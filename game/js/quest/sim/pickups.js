@@ -73,16 +73,17 @@ export function spawnDrop(world, kind, x, y, z) {
 
 /**
  * EQ-10: a gear drop = a world pickup of kind 'item' (`itemId`, amount 1). Same slot table, life and bob as the
- * orbs. Placeholder sprite: the herb flask (NEEDS designer: a 3x3 gear sprite, 'pickupGear').
+ * orbs. Sprite 'pickupGear' (design/models/m3_props.js; clips idle = worn, sturdy, fine).
  */
-export function spawnItemDrop(world, itemId, x, y, z) {
+const TIER_ANIM = { worn: 'idle', sturdy: 'sturdy', fine: 'fine' };
+export function spawnItemDrop(world, itemId, x, y, z, tier = 'worn') {
   let id;
   do { id = `pickup_${nextId++}`; } while (world.entity(id));
   const slot = findSlot(world);
   slots[slot] = id;
   world.spawn('pickup', { x, y, z, yawDeg: 0, pitchDeg: 0 }, {
     pickup: { kind: 'item', itemId, amount: 1, life: PICKUP_LIFE, baseZ: z },
-    sprite: { model: 'pickupHp', anim: 'idle', frame: 0 },
+    sprite: { model: 'pickupGear', anim: TIER_ANIM[tier] || 'idle', frame: 0 },
   }, id);
   return id;
 }

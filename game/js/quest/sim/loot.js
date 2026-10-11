@@ -135,7 +135,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table }) {
         col++;
       } else if (hit && r.pick && r.pick.gear) {
         const gid = rollGear(items, b, c);
-        if (gid) spawnItemDrop(world, gid, p.x, p.y, p.z);
+        if (gid) spawnItemDrop(world, gid, p.x, p.y, p.z, items && items[gid] && items[gid].equip ? items[gid].equip.tier : 'worn');
       }
     }
     const orbHit = rng.nextFloat() < table.orb.chance;
