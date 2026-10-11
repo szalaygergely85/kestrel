@@ -1,7 +1,7 @@
 // OB-062: river look rules (data + JS twin helpers): depth tint monotonic, soft shoreline alpha, streaks present, streak glyph distinct.
 // Run: node tools/ob062-river-look.test.mjs
 import '../design/water-looks.js';
-import { packWaterLook, packRiverLook, riverAlpha, riverStreakHit, WL_STRIDE } from '../engine/render/waterLook.js';
+import { packWaterLook, packRiverLook, riverAlpha, riverStreakHit, WL_STRIDE } from '../engine/dev.js';
 let fail = 0;
 const ok = (n, c) => { if (!c) fail++; console.log((c ? 'ok   ' : 'FAIL ') + n); };
 const L = globalThis.ASSETS.waterLooks.river;

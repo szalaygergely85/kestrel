@@ -67,3 +67,4 @@ export { buildWorldColliders } from './world/colliders.js';
 export { moveCircleMesh, probeSupport } from './physics/meshCollide.js';
 export { buildBvhFromMesh } from './physics/bvh.js';
 export { frameMatrix12 } from './mesh/DrawList.js';
+export { packWaterLook, packRiverLook, riverAlpha, riverStreakHit, WL_STRIDE } from './render/waterLook.js'; // OB-062 test (tools/ob062-river-look.test.mjs)
