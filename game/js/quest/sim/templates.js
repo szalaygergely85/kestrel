@@ -5,6 +5,7 @@ import { validateGiverQuest } from './questBook.js';
 export const TEMPLATES = Object.freeze(['collect', 'deliver', 'fetch', 'kill', 'talk', 'escort', 'explore']);
 const ID = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 const OBJ_MAX = 38;
+const TIER_NUM = { worn: 1, sturdy: 2, fine: 3 };
 
 /** FNV-1a 32 bit (same family as questHash); the gear pick is `slots[fnv1a(questId) % len]`. */
 export function fnv1a(str) {
@@ -71,14 +72,22 @@ function expandReward(src, ctx, band) {
   if (typeof r.table === 'string') { spec = ctx.rewards && ctx.rewards[r.table]; if (!spec) fail(src, 'unknown reward table ' + r.table); }
   const items = [];
   for (const it of spec.items || []) { if (!it || typeof it.id !== 'string' || !Number.isInteger(it.n) || it.n < 1) fail(src, 'invalid reward item'); items.push({ id: it.id, n: it.n }); }
+  // EQ-13: gear = fixed item id (string), {slot,tier} or {slots:[...],tier} (hash pick), or an array of those. tier = 1..3 or worn|sturdy|fine.
   if (spec.gear) {
-    const g = spec.gear, slots = g.slots;
-    if (!Array.isArray(slots) || !slots.length || !Number.isInteger(g.tier)) fail(src, 'invalid gear reward');
-    const slot = slots[fnv1a(src.id) % slots.length];
-    let best = null;
-    for (const it of ctx.items || []) if (it.slot === slot && it.tier === g.tier && (best === null || it.id < best)) best = it.id;
-    if (best === null) fail(src, 'no tier ' + g.tier + ' item for slot ' + slot);
-    items.push({ id: best, n: 1 });
+    for (const g of Array.isArray(spec.gear) ? spec.gear : [spec.gear]) {
+      if (typeof g === 'string') { needId(src, g, 'reward.gear'); items.push({ id: g, n: 1 }); continue; }
+      const slots = g && (g.slots || (g.slot ? [g.slot] : null));
+      if (!Array.isArray(slots) || !slots.length || !(Number.isInteger(g.tier) || TIER_NUM[g.tier])) fail(src, 'invalid gear reward');
+      const want = Number.isInteger(g.tier) ? g.tier : TIER_NUM[g.tier];
+      const slot = slots[fnv1a(src.id) % slots.length];
+      let best = null;
+      for (const it of ctx.items || []) {
+        const iTier = it.tier !== undefined ? it.tier : it.equip && it.equip.tier, iSlot = it.slot !== undefined ? it.slot : it.equip && it.equip.slot;
+        if (iSlot === slot && (iTier === want || TIER_NUM[iTier] === want) && (best === null || it.id < best)) best = it.id;
+      }
+      if (best === null) fail(src, 'no tier ' + g.tier + ' item for slot ' + slot);
+      items.push({ id: best, n: 1 });
+    }
   }
   return { items };
 }
@@ -123,12 +132,14 @@ export function expandQuest(src, ctx = {}) {
   def.objectives = objectives;
   if (extra.giveOnAccept) def.giveOnAccept = extra.giveOnAccept;
   if (extra.requireItem) def.requireItem = extra.requireItem;
+  if (Array.isArray(src.giveOnTalk) && src.giveOnTalk.length) def.giveOnTalk = structuredClone(src.giveOnTalk); // EQ-13: handed over when the quest is accepted at the giver
+  if (src.requireEquipped !== undefined) def.requireEquipped = Array.isArray(src.requireEquipped) ? [...src.requireEquipped] : [src.requireEquipped];
   if (Array.isArray(src.opensAfter) && src.opensAfter.length) def.requires = src.opensAfter.map(q => ({ quest: needId(src, q, 'opensAfter'), done: true }));
   else if (Array.isArray(src.requires)) def.requires = structuredClone(src.requires);
   const reward = expandReward(src, ctx, src.band ?? pack.band);
   if (reward) def.reward = reward;
   def.main = src.main === true;
-  def.abandonable = !def.main && !!def.giver;
+  def.abandonable = !def.main && !!def.giver && src.abandonable !== false;
   const band = src.band !== undefined ? src.band : pack.band;
   if (band !== undefined) def.band = band;
   if (pack.region !== undefined) def.region = pack.region;
