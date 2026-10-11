@@ -64,7 +64,7 @@ assert.deepEqual(draws, [{ count: 3, first: 0, instances: 1 }]);
 {
   const b = binds[0], u = b.uniforms, ui = new Int32Array(u.buffer), F = (n) => SPRITES_BLOCK.field(n).word;
   assert.equal(b.pipe, sp.pipe);
-  assert.deepEqual(b.textures, [gi, depth, edgeFg, edgeBg, sp.texSpr, sp.texAtlas, sp.texPal, sp.texFadeLut, sp.texFadeRamp, sp.texPart, sp.texPartZ]);
+  assert.deepEqual(b.textures, [gi, depth, edgeFg, edgeBg, sp.texSpr, sp.texAtlas, sp.texPal, sp.texFadeLut, sp.texFadeRamp, sp.texPart, sp.texPartZ, sp.texPartBg]);
   assert.equal(ui[F('count')], 1); assert.equal(u[F('sceneFade')], 0.5); assert.equal(u[F('fadeMinGain')], 0.25); assert.equal(ui[F('fadeRampLen')], 10);
   assert.equal(u[F('dimAll')], Math.fround(0.8)); assert.equal(ui[F('dimCount')], 2);
   assert.deepEqual([...u.slice(F('dimMul'), F('dimMul') + 4)], [0.4, 0.6, 0, 0].map(Math.fround));

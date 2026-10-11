@@ -21,7 +21,7 @@ export function defineWadeSplash(particles, look = {}) {
   const colors = Array.isArray(look.foam) && look.foam.length ? look.foam : DEFAULT_FOAM;
   return particles.defineEmitter(KEY, {
     life: [0.5, 0.7], speed: [1.2, 2.4], dir: [0, 0, 1], spreadDeg: 50, accelZ: -9.8,
-    maxLive: WADE_SPLASH.maxLive, glyphs: ".',", colors, sizeM: 0.12,
+    maxLive: WADE_SPLASH.maxLive, glyphs: ".',", colors, sizeM: 0.12, bgMix: 0.4,
   });
 }
 

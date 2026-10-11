@@ -78,6 +78,7 @@ export function createParticleLayer() {
     renderer: 'mesh',
     cols: 0, rows: 0,
     part: partEmpty8(), partZ: partEmptyF(),
+    partBg: partEmpty8(), // PART-VIS-01: per cell rgba8, rgb = fg colour * bgMix (premixed), a = round(bgMix*255); a = 0 -> bg untouched
     touched: partEmptyI(), // first `stats.cells` entries are valid (RE-07 precedent)
     minRow: 0, maxRow: -1, prevMinRow: 0, prevMaxRow: -1,
     minCol: 0, maxCol: -1, prevMinCol: 0, prevMaxCol: -1, // PARTICLE-UPLOAD-02: touched column span (upload rect)
@@ -89,6 +90,7 @@ export function createParticleLayer() {
       layer.cols = c; layer.rows = r;
       layer.part = new Uint8Array(c * r * 4);
       layer.partZ = new Float32Array(c * r);
+      layer.partBg = new Uint8Array(c * r * 4);
       // Worst case every live particle lands on a distinct cell - bounded by
       // the grid itself (never more than cols*rows distinct touched cells).
       layer.touched = new Int32Array(c * r);
@@ -107,7 +109,7 @@ export function createParticleLayer() {
      * @param {string} [renderer] 'dda' | 'mesh' (resolves cam.projection, as SpritePool.project)
      */
     build(ps, cam, rt, lights, world, palette, renderer = layer.renderer) {
-      const part = layer.part, partZ = layer.partZ, touched = layer.touched;
+      const part = layer.part, partZ = layer.partZ, partBg = layer.partBg, touched = layer.touched;
       // 1. Clear the cells touched LAST frame (track which rows that wiped).
       let pMin = rows, pMax = -1, cMin = cols, cMax = -1;
       const prevCount = layer.stats.cells;
@@ -193,6 +195,9 @@ export function createParticleLayer() {
           if (f > 0) { rr += (_fog3[0] - rr) * f; gg += (_fog3[1] - gg) * f; bb += (_fog3[2] - bb) * f; }
         }
         const br = toByte(rr), bg = toByte(gg), bbb = toByte(bb);
+        const mixA = toByte(defRec[o + D.BG_MIX] * 255); // 0 = no bg tint (default)
+        const mixK = mixA / 255;
+        const tr = toByte(br * mixK), tg = toByte(bg * mixK), tb = toByte(bbb * mixK);
         const gl = code < 32 || code > 126 ? 0 : code - 32; // CellBuffer glyphIdx convention (printable ASCII only)
         for (let yy = y0; yy < y0 + ny; yy++) {
           if (yy < 0 || yy >= rows) continue;
@@ -211,6 +216,7 @@ export function createParticleLayer() {
             }
             const o4 = idx * 4;
             part[o4] = br; part[o4 + 1] = bg; part[o4 + 2] = bbb; part[o4 + 3] = gl;
+            partBg[o4] = tr; partBg[o4 + 1] = tg; partBg[o4 + 2] = tb; partBg[o4 + 3] = mixA;
             partZ[idx] = depth;
             if (yy < minRow) minRow = yy;
             if (yy > maxRow) maxRow = yy;
