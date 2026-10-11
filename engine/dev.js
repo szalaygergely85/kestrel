@@ -36,6 +36,7 @@ export { createShadowParityRunner } from './render/gpu/shadowParity.js';
 export { runStableRow, compareStableRow } from './render/gpu/wg/stableCompare.js'; // US-073c: gpucompare `stable` row
 // ME-06 (27.15.5a item 6): compare harnesses settle the shared terrain mesh set before each pose.
 export { terrainMeshSetFor } from './mesh/terrainMesh.js';
+export { buildLevelMesh } from './mesh/levelMesh.js'; // OB-053: tools/coplanar-lint.mjs (level triangles)
 
 // ---- GPU/CPU sprite parity harness (?spritecompare=1, US-030c) -------------
 // Item 6b fix pass: moved from engine/index.js - its only real caller is
