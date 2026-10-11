@@ -48,7 +48,7 @@ function buildWorld(entities) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// 2. Despawn exactly at life 0 (step 1200): still live at step 1199, gone at step 1200.
+// 2. Despawn exactly at life 0 (step PICKUP_LIFE): still live at step 1199, gone at step 1200.
 // ---------------------------------------------------------------------------------------------------------------
 {
   resetPickups();
@@ -58,7 +58,7 @@ function buildWorld(entities) {
   for (let i = 0; i < PICKUP_LIFE - 1; i++) stepPickups(world, player);
   ok('still live 1 step before life reaches 0', !!world.entity(id), `step=${PICKUP_LIFE - 1}`);
   stepPickups(world, player);
-  ok('despawned exactly when life reaches 0 (step 1200)', !world.entity(id));
+  ok('despawned exactly when life reaches 0 (step PICKUP_LIFE)', !world.entity(id));
   ok('its slot is freed', liveDropIds().every((s) => s === null));
 }
 
@@ -291,6 +291,23 @@ for (const remaining of [PICKUP_LIFE, 5]) {
   inv3.slots[1] = { id: null, n: 0 };
   stepPickups(world3, { transform: { ...world3.entity(dr[0]).transform, z: 0 }, components: {} });
   ok('rest collected, drop gone', countOf(inv3, 'arrow') === 10 && !world3.entity(dr[0]));
+}
+
+
+// EQ-23b: an item sink returning the stored count (partial add into a nearly full pack) never duplicates items.
+{
+  resetPickups();
+  const { addItem } = await import('./inventory.js');
+  const { setItemPickupSink, setStackPickupSink, spawnItemDrop } = await import('./pickups.js'); setStackPickupSink(null);
+  const w = buildWorld([playerEntity(0, 0, 0)]);
+  const inv = { slots: Array.from({ length: SLOTS }, () => ({ id: 'rock', n: 1 })) }; inv.slots[0] = { id: 'gem', n: 3 }; const defs = { gem: { stackMax: 4, name: 'Gem' } };
+
+  setItemPickupSink((id, n) => addItem(inv, defs, id, n));
+  const did = spawnItemDrop(w, 'gem', 0, 0, 0); w.entity(did).components.pickup.amount = 3;
+  stepPickups(w, { transform: { x: 0, y: 0, z: 0 }, components: {} });
+  ok('partial add: pack 4, drop keeps 2, total 6 (no duplicate)', countOf(inv, 'gem') === 4 && w.entity(did).components.pickup.amount === 2);
+  setItemPickupSink(null);
+  ok('PICKUP_LIFE is 60 s', PICKUP_LIFE === 3600);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

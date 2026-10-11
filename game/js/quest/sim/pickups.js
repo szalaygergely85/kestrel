@@ -15,7 +15,7 @@
 // down) is evicted first (`world.remove`).
 
 export const PICKUP_AMOUNT = 10;   // hp or mp restored on collect
-export const PICKUP_LIFE = 1200;   // steps, 20 s @ 60 Hz - despawns when life reaches 0
+export const PICKUP_LIFE = 3600;   // steps, 60 s @ 60 Hz (EQ-23 AC) - despawns when life reaches 0
 export const COLLECT_RADIUS = 0.8; // m, 3D distance
 export const MAX_DROPS = 16;
 
@@ -149,10 +149,11 @@ export function stepPickups(world, player) {
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (dist <= COLLECT_RADIUS) {
       if (p.kind === 'item') {
-        if (p.amount > 1 && stackSink) { // EQ-23: partial fit takes what fits, the rest stays lying
-          const took = stackSink(p.itemId, p.amount);
-          if (took < p.amount) { p.amount -= took; continue; }
-        } else if (!itemSink || !itemSink(p.itemId, p.amount)) continue; // pack full: leave it lying (life keeps ticking)
+        // Sinks may return a boolean (all-or-nothing) or the count actually stored (partial fit): the rest stays lying.
+        let took = 0;
+        if (p.amount > 1 && stackSink) took = stackSink(p.itemId, p.amount);
+        else if (itemSink) { const r = itemSink(p.itemId, p.amount); took = r === true ? p.amount : r === false ? 0 : (r | 0); }
+        if (took < p.amount) { p.amount -= Math.max(0, took); continue; }
       } else if (p.kind === 'hp' && health) health.hp = Math.min(health.max, health.hp + p.amount);
       else if (p.kind === 'mp' && mana) mana.mp = Math.min(mana.max, mana.mp + p.amount);
       world.remove(id);

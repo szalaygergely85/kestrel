@@ -113,7 +113,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
     corpseItem: new Array(MAX_SLOTS * ITEMS_PER_CORPSE).fill(null), // item id per column (entry order: fixed, then give rolls)
     // Preallocated emit payloads (toastView builds its string from them, on the event).
     _added: { id: '', n: 0 },
-    _full: { id: '' },
+    _full: { id: "", n: 0, dropped: false },
   };
 
   function clearSlot(i) {
@@ -181,7 +181,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
     if (i < 0 || !world.state[flagKey[i]]) return false;
     const inv = inventoryOf();
     const o = i * ITEMS_PER_CORPSE;
-    let left = 0;
+    let left = 0, leftId = '';
     for (let k = 0; k < ITEMS_PER_CORPSE; k++) {
       const n = loot.corpseN[o + k];
       if (n <= 0) continue;
@@ -189,13 +189,15 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
       const added = inv ? addItem(inv, items, itemId, n) : 0;
       loot.corpseN[o + k] = n - added;
       left += n - added;
+      if (n - added > 0 && !leftId) { leftId = itemId; loot._full.n = n - added; }
       if (added > 0) {
         loot._added.id = itemId; loot._added.n = added;
         events.emit('inventory:added', loot._added);
       }
     }
     if (left > 0) {
-      loot._full.id = id;
+      // Corpse keeps the leftover and stays lootable (simpler than a drop; nothing is lost or duplicated).
+      loot._full.id = leftId; loot._full.dropped = false;
       events.emit('inventory:full', loot._full);
       return false;
     }
@@ -219,12 +221,14 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
   const gearGot = { id: '', n: 1 }; // event payload (reused)
   setItemPickupSink((itemId, n) => {
     const inv = inventoryOf();
-    if (!inv || addItem(inv, items, itemId, n) < n) return false;
-    loot._added.id = itemId; loot._added.n = n;
+    if (!inv) return 0;
+    const got = addItem(inv, items, itemId, n); // returns the count really stored: partial adds are reported, never duplicated
+    if (got <= 0) return 0;
+    loot._added.id = itemId; loot._added.n = got;
     events.emit('inventory:added', loot._added);
-    gearGot.id = itemId; gearGot.n = n;
+    gearGot.id = itemId; gearGot.n = got;
     events.emit('gear:got', gearGot); // chestHook shows the item-get card
-    return true;
+    return got;
   });
 
   /** Folds the corpse counts into a replay hash (no allocation). */
