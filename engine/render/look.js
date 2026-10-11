@@ -23,12 +23,13 @@
 //                    tint: F32(3) = rgb(shadowTint)/max (or [1,1,1] when shadowTint null),
 //                    tintK: number = shadowK, sunFromLook: boolean, terrainTintK: number },
 //     haze: null | { near: F32(3), far: F32(3), start, full, curve, max, bgK,
-//                    blank, thin0, thinK, edgeMax },
+//                    blank, thin0, thinK, edgeMax, skyline: null | {fogMax, fromZ, seaFogMax} },
 //     clouds: null | { lit: F32(3), shade: F32(3), ramp: string (resolved glyph ramp),
 //                    scale, bias, cover, puffK, wispCover, wispK, wind: F32(2),
 //                    litK, litDy, bodyK, seed },
 //   }
-import { AO_DEFAULTS } from './horizonAo.js'; // S8-B2-20b (pure module, no further imports)
+import { AO_DEFAULTS } from './horizonAo.js';
+import { skylineError } from './skyline.js'; // MAP-06a (pure module) // S8-B2-20b (pure module, no further imports)
 
 
 /**
@@ -146,6 +147,8 @@ export function resolveLook(P, key = P.defaultTime) {
       near: rgb3(P, h.near), far: rgb3(P, h.far),
       start: h.start, full: h.full, curve: h.curve, max: h.max, bgK: h.bgK,
       blank: h.blank, thin0: h.thin0, thinK: h.thinK, edgeMax: h.edgeMax,
+      // MAP-06a (38.42): optional far-terrain fog cap {fogMax, fromZ, seaFogMax}; null = off (today's fog)
+      skyline: h.skyline ? { fogMax: h.skyline.fogMax, fromZ: h.skyline.fromZ, seaFogMax: h.skyline.seaFogMax } : null,
     };
   }
 
@@ -232,6 +235,7 @@ export function validateLook(P, key, onWarn) {
     if (!(h.thin0 >= 0 && h.thin0 <= 1)) errors.push(`${path}.haze.thin0: must be in [0, 1], got ${h.thin0}`);
     if (!(h.thinK >= 0)) errors.push(`${path}.haze.thinK: must be >= 0, got ${h.thinK}`);
     if (!(h.edgeMax > 0 && h.edgeMax <= 1)) errors.push(`${path}.haze.edgeMax: must be in (0, 1], got ${h.edgeMax}`);
+    if (h.skyline !== undefined && h.skyline !== null) { const se = skylineError(h.skyline); if (se) errors.push(`${path}.haze.skyline: ${se}`); }
     const sky0 = td.sky && td.sky[0] && td.sky[0].c;
     if (sky0 && h.far !== sky0) warn(`${path}.haze.far ("${h.far}") !== sky[0].c ("${sky0}") - the horizon colour must equal the far haze (architecture.md 37.18)`);
   }

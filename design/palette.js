@@ -471,7 +471,8 @@
                  hemi:   { sky: 'ambientSky', skyI: 0.40, ground: 'bounceGrass', groundI: 0.12, shadowTint: null, shadowK: 0,
                            sunFromLook: true, terrainTintK: 0.6 },
                  haze:   { near: 'hazeWarm', far: 'skyCyanHorizon', start: 15, full: 700, curve: 0.65, max: 0.78,
-                           bgK: 0.9, blank: 1.01, thin0: 0.45, thinK: 1.0, edgeMax: 0.5 },
+                           bgK: 0.9, blank: 1.01, thin0: 0.45, thinK: 1.0, edgeMax: 0.5,
+                           skyline: { fogMax: 0.55, fromZ: 80, seaFogMax: 0.7 } }, // MAP-06a (38.42)
                  clouds: { lit: 'cloudWhite', shade: 'cloudShade', ramp: 'sky', scale: 1.6, bias: 0.12, cover: 0.5, puffK: 3.0,
                            wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3 } },
     evening:   { ambient: 'ambientEvening', ambientI: 0.30, sun: 'sunEvening', sunI: 0.95, sunElev: 12,
@@ -480,7 +481,8 @@
                  hemi:   { sky: 'ambientEvening', skyI: 0.30, ground: 'bounceEvening', groundI: 0.10, shadowTint: 'shadowPurple',
                            shadowK: 0.35, sunFromLook: true, terrainTintK: 0.6 },
                  haze:   { near: 'hazeEvening', far: 'skyEveHorizon', start: 10, full: 400, curve: 0.7, max: 0.6,
-                           bgK: 0.9, blank: 1.01, thin0: 0.45, thinK: 1.0, edgeMax: 0.5 },
+                           bgK: 0.9, blank: 1.01, thin0: 0.45, thinK: 1.0, edgeMax: 0.5,
+                           skyline: { fogMax: 0.55, fromZ: 80, seaFogMax: 0.7 } }, // MAP-06a (38.42)
                  clouds: { lit: 'cloudEve', shade: 'cloudEveShade', ramp: 'sky', scale: 1.6, bias: 0.12, cover: 0.5, puffK: 3.0,
                            wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3 } }
   };

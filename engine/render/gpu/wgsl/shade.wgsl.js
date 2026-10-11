@@ -30,6 +30,7 @@ import { VEG_TINT_WGSL } from '../../../mesh/vegTint.js'; // AUD-47
 import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // CLOUD_Q_SHIFT: S8-B2-12c (38.13)
 import { SKY_GLOW_WGSL } from '../../skyGlow.js';
 import { FOG_SHAPE_WGSL } from '../../fogShape.js';
+import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
 import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE } from '../../terrainShade.js';
 
 
@@ -61,6 +62,7 @@ export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'skyCam', type: 'vec4' }, // AUD-40, APPENDED: shear-mode sky ray = (dirX + planeX*cx, dirY + planeY*cx): dirX, dirY, planeX, planeY
   { name: 'fogView', type: 'vec4' }, // AUD-45, APPENDED: x = eye height (m), y = 1 when height fog + sun in-scatter are on (terrain worlds), z/w unused
   { name: 'skyGlowOn', type: 'vec4' }, // AUD-40 fix, APPENDED: x = 1 when sky glow + horizon haze apply (compositor gate: terrain world + timeOfDay palette), written every frame; DN-02 y = night glyph-luminance floor (liveLook.floorEff, 0 = off)
+  { name: 'skyline', type: 'vec4' }, // MAP-06b (38.42), APPENDED: far-terrain fog cap x fogMax (0 = off), y fromZ, z seaFogMax, w seaLevel
 ]);
 
 export const SHADE_TEXTURES = Object.freeze([
@@ -81,7 +83,8 @@ fn pickCodeFromPacked(x: i32, count: i32, idx: i32) -> i32 {
 
 struct TerrainOut { fr: f32, fg: f32, fb: f32, br: f32, bg: f32, bb: f32, glyph: i32 };
 
-fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceMode: i32) -> TerrainOut {
+${SKYLINE_FOG_WGSL}
+fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceMode: i32, z: f32) -> TerrainOut {
   // 23.4 near-detail: hash cell 2 m inside the near-handover band, else 8 m. BUG-FP-002: hashCell < 0 = per-cell mode.
   var cellSz: f32;
   if (su.hashCell < 0.0) {
@@ -179,6 +182,7 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
   var f = (t - su.terrainFogStart) / (su.terrainFogFull - su.terrainFogStart);
   f = clamp(f, 0.0, 1.0);
   f = pow(f, su.terrainFogCurve);
+  f = skylineFogF(f, t, typeId, z, su.skyline); // MAP-06b (38.42): far peaks / sea line fog cap (x = 0: unchanged)
   let fcr = su.terrainFogNearRGB.x + (su.terrainFogFarRGB.x - su.terrainFogNearRGB.x) * f;
   let fcg = su.terrainFogNearRGB.y + (su.terrainFogFarRGB.y - su.terrainFogNearRGB.y) * f;
   let fcb = su.terrainFogNearRGB.z + (su.terrainFogFarRGB.z - su.terrainFogNearRGB.z) * f;
@@ -646,7 +650,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
         if (giKind(giDn.y) == ${KIND_TERRAIN}u && i32(giMat(giDn.y)) == typeId && unpackNormalOct(giDn.z).z < FOREST_FACE_NZ) { faceModeT = 1; }
       }
     }
-    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceModeT);
+    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceModeT, bitcast<f32>(gaT.z));
     let frQ = floor(clamp(to.fr, 0.0, 255.0) + 0.5);
     let fgQ = floor(clamp(to.fg, 0.0, 255.0) + 0.5);
     let fbQ = floor(clamp(to.fb, 0.0, 255.0) + 0.5);

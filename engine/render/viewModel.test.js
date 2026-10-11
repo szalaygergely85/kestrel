@@ -247,7 +247,8 @@ function worldTipFromList(list) {
     }
   }
   ok('AO-less view-model draws write the neutral vao (1.0) on every written cell', vaoNeutral);
-  ok('one-handle matrices and raster remain byte-identical across 16 poses', hash.digest('hex') === 'b16abe27bfe1d16803e12d7d91ef9bf66bdec1982d7e94e733355cb6d0e20d1f');
+  // MAP-06b: re-pinned for PROJ_FAR 2000 -> 16000 (only zbuf bytes move; every other plane hash-identical, checked)
+  ok('one-handle matrices and raster remain byte-identical across 16 poses', hash.digest('hex') === 'dcb783c03f1f1a7406fc214ce7c080cbfcef7221761caa52a702bc183ef12926');
 }
 
 // ---- independent handles (TORCH-01a, 37.8) ------------------------------------------------------------------

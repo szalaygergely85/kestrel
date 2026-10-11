@@ -52,6 +52,23 @@ assert.ok(near > 100, 'near band was exercised');
 u.nearReady = 0; terrain.nearReady = false;
 for (let i = 0; i < 1000; i++) { const x = rand() * 160 - 16, y = rand() * 160 - 16; assert.equal(typeAt(x, y), oracle(x, y)); }
 
+// MAP-06b (38.42): off-grid inside a sea skirt rect = sea (2), else 0 - twin of TerrainMeshSet.typeAt's skirt branch.
+{
+  const us = { nearReady: 0, nearMap: { x: 0, y: 0, z: 1, w: 1 }, farMap: { x: 0, y: 0, z: mapCell, w: mapW },
+    skirtCount: 1, skirt: [{ x: -6000, y: mapW * mapCell, z: mapW * mapCell + 6000, w: mapW * mapCell + 6000 }] };
+  const ts = makeTypeAt({ near: { w: 1, h: 1, data: new Uint8Array(1) }, far: { w: mapW, data: farType } }, us);
+  const sk = (x, y) => { const r = us.skirt[0]; return x >= r.x && x < r.z && y >= r.y && y < r.w; };
+  let inSk = 0;
+  for (let i = 0; i < 3000; i++) {
+    const x = rand() * 400 - 200, y = rand() * 400 - 200, ix = Math.floor(x / mapCell), iy = Math.floor(y / mapCell);
+    const off = ix < 0 || iy < 0 || ix >= mapW || iy >= mapW;
+    const want = !off ? farType[iy * mapW + ix] : sk(x, y) ? 2 : 0;
+    if (off && sk(x, y)) inSk++;
+    assert.equal(ts(x, y), want, `skirt typeAt(${x},${y})`);
+  }
+  assert.ok(inSk > 200, 'skirt exercised');
+}
+
 // WS1-03: non-square near bands (wide 5x3 and tall 3x5 texels-of-cells), vs the oracle; every texel and its outside edge.
 for (const [bw, bh] of [[10, 6], [6, 10], [12, 4]]) {
   const nt = new Uint8Array(bw * bh).map(() => (rand() * 6) | 0);
@@ -70,7 +87,7 @@ for (const [bw, bh] of [[10, 6], [6, 10], [12, 4]]) {
 // Same-op-order string checks against the GLSL twin.
 const src = TERRAIN_RASTER_WGSL;
 assert.ok(src.includes('o.pos.y = -o.pos.y; o.pos.z = 0.5 * (o.pos.z + o.pos.w);'));
-assert.ok(src.includes('let dist = select(1.0 / v.pos.w, 0.05 + v.pos.z * (2000.0 - 0.05), u.projMode == 2u);'));
+assert.ok(src.includes('let dist = select(1.0 / v.pos.w, 0.05 + v.pos.z * (16000.0 - 0.05), u.projMode == 2u);'));
 assert.ok(src.includes('const PLANEID_TERRAIN: u32 = 0xFFFFFFFFu;')); // GL uint(-1)
 assert.ok(src.includes(`const KIND_TERRAIN: u32 = ${KIND_TERRAIN}u;`) && src.includes(`const FACE_PACKED: u32 = ${FACE_PACKED}u;`));
 assert.ok(src.includes('KIND_TERRAIN | (FACE_PACKED << 8u) | (u32(terrType) << 16u)'));

@@ -194,6 +194,10 @@ function buildCompareRuns(ctx) {
       cam: { x: 1446.63, y: 1024.64, z: 2.02 + engine.physics.eyeHeight, yawDeg: 227, pitchDeg: 1 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: ownerTreesB (1448.31, 1026.52) yaw 229 pitch 3',
       cam: { x: 1448.31, y: 1026.52, z: 2.08 + engine.physics.eyeHeight, yawDeg: 229, pitchDeg: 3 }, real: true },
+    // MAP-06b (38.42): meadowSkyline - far peaks (fog cap z > fromZ) west/north, the sea line + 6 km sea skirt south-west (seaFogMax)
+    ...[[270, 'west fells'], [0, 'north whitecombs'], [235, 'south-west sea line']].map(([yawDeg, what]) => ({ world: worldM1, lights: worldM1Lights,
+      name: `world_m1: meadowSkyline yaw ${yawDeg} (${what})`,
+      cam: { x: 1460, y: 1030, z: (worldM1.terrain ? worldM1.terrain.groundAt(1460, 1030) : 0) + engine.physics.eyeHeight, yawDeg, pitchDeg: 0 }, real: true })),
   ];
 
   // US-078a: the view model's held sword (`voxelModels.swordHeld`) is not in ASSETS.models yet (game wiring = US-078d);

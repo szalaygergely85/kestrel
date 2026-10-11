@@ -6,6 +6,10 @@ import { ORTHO_NEAR_WGSL, ORTHO_FAR_WGSL } from './common.wgsl.js';
 import { KIND_TERRAIN, FACE_PACKED } from '../../GBuffer.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { structMaskDecl, IN_STRUCT_FOOT_WGSL } from './structMask.wgsl.js';
+import { SKYLINE_SEA_TYPE } from '../../skyline.js';
+
+/** MAP-06b: max sea horizon skirts (one per grid side, terrainMesh.js buildSeaSkirts). */
+export const SKIRT_MAX = 4;
 
 export const TERRAIN_BLOCK = defineUniformBlock('TerrainU', [
   { name: 'model', type: 'mat4' }, { name: 'viewProj', type: 'mat4' }, { name: 'modelRel', type: 'mat4' }, // PREC-01a: chunk translation - O, clip only
@@ -15,6 +19,8 @@ export const TERRAIN_BLOCK = defineUniformBlock('TerrainU', [
   { name: 'projMode', type: 'u32' }, // US-068b1 (38.19): 2 = ortho (appended; earlier offsets unchanged)
   { name: 'structMask', type: 'vec4', count: MAX_STRUCTS }, // GS-01b: (row offset in uStructMask, hasMask, 0, 0) per structure (appended)
   { name: 'worldO', type: 'vec4' }, // OB-041: xy = render origin O (multiple of 16 m, exact in f32); vWorldRel = world - O is interpolated, O added back per fragment (appended; 0 = old absolute path)
+  { name: 'skirt', type: 'vec4', count: SKIRT_MAX }, // MAP-06b (38.42): sea horizon skirt rects (x0, y0, x1, y1), appended
+  { name: 'skirtCount', type: 'u32' },
 ]);
 /** Slot order of PipelineDesc.bindings.textures: 0 = uNearType, 1 = uFarType, 2 = uStructMask (GS-01b carve mask atlas; all r8ui). */
 export const TERRAIN_TEXTURES = Object.freeze(['uint', 'uint', 'uint']);
@@ -49,7 +55,10 @@ const PLANEID_TERRAIN: u32 = 0xFFFFFFFFu;
 fn farTypeNearest(x: f32, y: f32) -> i32 {
   let ix = i32(floor((x - u.farMap.x) / u.farMap.z)); let iy = i32(floor((y - u.farMap.y) / u.farMap.z));  // MAP-01b: far grid offset
   let W = i32(u.farMap.w);
-  if (ix < 0 || iy < 0 || ix >= W || iy >= W) { return 0; }
+  if (ix < 0 || iy < 0 || ix >= W || iy >= W) { // MAP-06b: off-grid inside a sea skirt = sea (TerrainMeshSet.typeAt twin)
+    for (var s = 0; s < i32(u.skirtCount); s++) { let r = u.skirt[s]; if (x >= r.x && x < r.z && y >= r.y && y < r.w) { return ${SKYLINE_SEA_TYPE}; } }
+    return 0;
+  }
   return i32(textureLoad(uFarType, vec2i(ix, iy), 0).r);
 }
 fn terrainTypeAt(x: f32, y: f32) -> i32 {

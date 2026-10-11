@@ -40,7 +40,7 @@ for (let i = 0; i < 1000; i++) {
 }
 for (const src of [RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL]) {
   assert.ok(src.includes('o.pos.y = -o.pos.y; o.pos.z = 0.5 * (o.pos.z + o.pos.w);'));
-  assert.ok(src.includes('let dist = select(1.0 / v.pos.w, 0.05 + v.pos.z * (2000.0 - 0.05), u.projMode == 2u);'));
+  assert.ok(src.includes('let dist = select(1.0 / v.pos.w, 0.05 + v.pos.z * (16000.0 - 0.05), u.projMode == 2u);'));
   assert.ok(src.includes('bitcast<u32>(v.vUV.x)'));
   assert.ok(!/\bround\s*\(|dpdx|dpdy|fwidth|frag_depth|textureSample|%/.test(src));
 }

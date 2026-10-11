@@ -12,6 +12,7 @@ import { packMaterialTable } from '../ShadeTextures.js';
 import { packTerrainTextures } from '../TerrainTextures.js';
 import { SKY_LUT_N } from '../wgsl/skyLut.js';
 import { sunFromWorld } from '../../lighting.js';
+import { skylineFor } from '../../terrainShade.js'; // MAP-06b: same record as the JS twin's ctx.skyline
 import { PROJ_HFOV_DEG } from '../../projection.js';
 import { orthoHashCell } from '../../projection.js'; // US-068b2
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
@@ -30,7 +31,7 @@ const S_N = S('n'), S_GPUSKY = S('gpuSky'), S_PROJ = S('projMode'), S_SUNMAP = S
 const S_SPARSE_ALT = S('fogSparseAlt'), S_HAZE_ALT = S('fogHazeAlt');
 const S_SPARSE_C0 = S('fogSparseCode0'), S_SPARSE_C1 = S('fogSparseCode1'), S_HAZE_C0 = S('fogHazeCode0'), S_HAZE_C1 = S('fogHazeCode1');
 const S_ETA = S('etA'), S_ETID = S('etId'), S_ETC = S('etC'); // 38.23 tint words
-const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK'), S_SKYCAM = S('skyCam'), S_FOGVIEW = S('fogView'), S_SKYGLOWON = S('skyGlowOn');
+const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK'), S_SKYCAM = S('skyCam'), S_FOGVIEW = S('fogView'), S_SKYGLOWON = S('skyGlowOn'), S_SKYLINE = S('skyline');
 /** 38.23: copy the tint table (fb.entityTints) into the ShadeU words: etA.x = count, etId (u32 view), etC rgb+k. Zero alloc; count 0 and cleared tail when absent. */
 export function writeEntityTints(su, su32, tints) {
   const n = tints && tints.count > 0 ? (tints.count > 8 ? 8 : tints.count) : 0;
@@ -252,6 +253,9 @@ export class WgShadePass {
       eu[E_PITCH_C] = q.uZ; eu[E_PITCH_C + 1] = q.tanHalfY; eu[E_PITCH_C + 2] = q.cosP; eu[E_PITCH_C + 3] = q.sinP;
       su[S_HASHCELL] = rp.ortho ? orthoHashCell(q, p.cols) : -(2 * q.tanHalfX / p.cols); // BUG-FP-002: per-cell mode on every pitched frame
     } else su[S_HASHCELL] = 0;
+    // MAP-06b (38.42): far-terrain fog cap, written every frame (cached record; x = 0 = off, the JS twin's ctx.skyline === null)
+    const skl = useScene && p._world.terrain && this.palette ? skylineFor(p._world.terrain, this.palette) : null;
+    su[S_SKYLINE] = skl ? skl.fogMax : 0; su[S_SKYLINE + 1] = skl ? skl.fromZ : 0; su[S_SKYLINE + 2] = skl ? skl.seaFogMax : 0; su[S_SKYLINE + 3] = skl ? skl.seaLevel : 0;
     if (useScene && lightCam) { su[S_HORIZON] = lightCam.horizonRow; su[S_PLANEDY] = lightCam.planeDistY; }
     if (useScene && p._world.terrain && this.palette) { // US-026a S5: the sun for the terrain look, per frame (a few trig calls)
       const sun = sunFromWorld(p._world, this.palette, this.sunScratch);

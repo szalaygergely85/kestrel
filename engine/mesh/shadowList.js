@@ -74,7 +74,7 @@ export function buildShadowList(list, cameraList, world, planes, src) {
     // camera turned (world_m1 has > 64 placements in range). Same set as the camera draws; the sun-plane cull decides.
     addMeshStructures(list, world, src.eye || c, src.meshCache, src.meshIdFor, src.fogFarM || 2000, true, b); // ME-14c2 (37.1 item 6)
   }
-  if (src.terrainSet) src.terrainSet.addToDrawList(list, c);
+  if (src.terrainSet) src.terrainSet.addToDrawList(list, c, true);
   const vp = src.voxelPool;
   if (vp && vp.list.length > 0 && src.voxelMeshCache) {
     addVoxelInstances(list, /** @type {any} */ (vp), src.voxelMeshCache, vp.partNamesFor);

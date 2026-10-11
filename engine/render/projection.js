@@ -19,8 +19,10 @@
 export const PROJ_HFOV_DEG = 75;
 /** Near clip distance, metres (27.5). */
 export const PROJ_NEAR = 0.05;
-/** Far clip distance, metres (27.5, `fogFull`). */
-export const PROJ_FAR = 2000;
+/** Far clip distance, metres. MAP-06b (38.42): 2000 -> 16000 so the GPU (hardware clip z <= w) keeps the 6 km sea horizon
+ *  skirt the JS raster draws (it has no far clip); must stay >= the far grid reach + `geo.seaSkirtM`. Perspective depth
+ *  precision is set by PROJ_NEAR, not by this; ortho linear depth spacing stays ~1 mm. */
+export const PROJ_FAR = 16000;
 
 /**
  * @typedef {Object} GridSpec

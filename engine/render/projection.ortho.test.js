@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {
   createPitchedTerms, pitchedTerms, screenRay, unprojectPitched, worldToCell,
-  projectPoint, resolveProjection, frameMatrix, pitchedFogScale,
+  projectPoint, resolveProjection, frameMatrix, pitchedFogScale, PROJ_NEAR, PROJ_FAR,
 } from './projection.js';
 
 let seed = 12345;
@@ -75,7 +75,7 @@ const mk = (yaw, pitch, halfH, extra) => ({ x: 0, y: 0, z: 0, yawDeg: yaw, pitch
   assert.equal(pitchedFogScale(t, 3), t.cosP);
   // depth NDC: vd = near -> -1, far -> +1
   const o = new Float64Array(3);
-  for (const [vd, z] of [[0.05, -1], [2000, 1]]) {
+  for (const [vd, z] of [[PROJ_NEAR, -1], [PROJ_FAR, 1]]) {
     unprojectPitched(t, 80, 25, vd, o);
     const Z = t.M[2] * o[0] + t.M[6] * o[1] + t.M[10] * o[2] + t.M[14];
     assert.ok(Math.abs(Z - z) < 1e-9, `ndc z at vd ${vd}`);

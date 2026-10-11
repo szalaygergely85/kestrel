@@ -33,7 +33,7 @@ const rnd = mulberry32(20260927);
 
 ok('PROJ_HFOV_DEG matches HFOV_DEG everywhere else', PROJ_HFOV_DEG === 75);
 ok('PROJ_NEAR is 5 cm', PROJ_NEAR === 0.05);
-ok('PROJ_FAR is fogFull 2000 m', PROJ_FAR === 2000);
+ok('PROJ_FAR is 16000 m (MAP-06b: >= far grid + 6 km sea skirt)', PROJ_FAR === 16000);
 
 // ---------------------------------------------------------------------------
 // Step 1: projTerms bit-identical to castScene (via ref.gbuf.cam.planeDistY)

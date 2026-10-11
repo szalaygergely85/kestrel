@@ -257,6 +257,43 @@ function buildFarTileMesh(terrain, desc) {
   return mesh;
 }
 
+// ---------------------------------------------------------------------------
+// Sea horizon skirt (MAP-06a, architecture.md 38.42 Skyline)
+// ---------------------------------------------------------------------------
+
+/**
+ * One flat quad per sea-side edge of the far grid ('n' | 's' | 'w' | 'e' in `recipe.geo.seaSides`), reaching
+ * `recipe.geo.seaSkirtM` metres out from the edge at `recipe.geo.seaLevel` (the strip is widened by the same amount along
+ * the edge so corners leave no gap). 4 verts + 2 tris per side, fixed layout, never excluded by the near band.
+ * `typeAt` reports sea (type 2) inside it. Returns [] when the recipe has no sea skirt (today's worlds).
+ * @returns {{mesh: Object, rect: {x0:number,y0:number,x1:number,y1:number}}[]}
+ */
+export function buildSeaSkirts(terrain) {
+  const geo = terrain.recipe && terrain.recipe.geo;
+  if (!geo || !(geo.seaSkirtM > 0) || !Number.isFinite(geo.seaLevel) || !Array.isArray(geo.seaSides)) return [];
+  const M = geo.seaSkirtM, z = geo.seaLevel, c = terrain.mapCell;
+  const gx0 = terrain.mapX0, gy0 = terrain.mapY0, gx1 = gx0 + terrain.mapW * c, gy1 = gy0 + terrain.mapH * c;
+  const out = [];
+  for (const side of geo.seaSides) {
+    let x0 = gx0 - M, x1 = gx1 + M, y0 = gy0 - M, y1 = gy1 + M;
+    if (side === 'n') y1 = gy0; else if (side === 's') y0 = gy1; else if (side === 'w') x1 = gx0; else if (side === 'e') x0 = gx1;
+    else throw new Error('terrainMesh: geo.seaSides entry must be n|s|w|e, got ' + side);
+    const pos = new Float32Array([x0, y0, z, x1, y0, z, x1, y1, z, x0, y1, z]);
+    const n = packNormalOct(0, 0, 1);
+    out.push({
+      rect: { x0, y0, x1, y1 },
+      mesh: {
+        version: /** @type {1} */ (1), id: 'terrain:skirt' + side, layout: /** @type {'terrain'} */ ('terrain'),
+        pos, uv: new Float32Array(0), nrm: new Uint32Array([n, n, n, n]), flat: new Uint32Array(0), aux: new Float32Array(0),
+        idx: new Uint32Array([0, 1, 2, 0, 2, 3]), triCount: 2,
+        bbox: new Float64Array([x0, y0, z, x1, y1, z]),
+        ranges: [{ start: 0, count: 2 }], matKeys: [], matsResolved: true, meshVersion: 1,
+      },
+    });
+  }
+  return out;
+}
+
 /** Sets far tile `mesh`'s LOD0 main quad `(qx, qy)` (tile-local, 0-based) real or degenerate (0,0,0 - zero area, `rasterFanTri`'s `A2 === 0` skips it for free). */
 function setFarMainQuad0(mesh, qx, qy, real) {
   const nc0 = mesh._lod0.cols.length;
@@ -421,6 +458,8 @@ function distToRectXY(cx, cy, x0, y0, x1, y1) {
  * (LOD0/LOD1, band-under quads carved out). See docs/architecture.md 27.15.5
  * for the full spec this is built against.
  */
+const EMPTY = Object.freeze([]);
+
 export class TerrainMeshSet {
   /**
    * @param {import('../world/Terrain.js').Terrain} terrain
@@ -485,6 +524,9 @@ export class TerrainMeshSet {
     // Far-tile scratch for _updateFarExclusion (avoids a per-call array literal).
     this._farOrder = new Int32Array(this._farTiles.length);
     this._farDist = new Float64Array(this._farTiles.length);
+
+    /** MAP-06a: sea horizon skirts ([] = none); drawn after the far tiles, not subject to `fogFullM` (they reach `geo.seaSkirtM`). */
+    this.skirts = buildSeaSkirts(terrain);
 
     this.pending = !!terrain.near; // a near band already present at construction still needs its first mesh build
   }
@@ -787,8 +829,9 @@ export class TerrainMeshSet {
    * skipped beyond `fogFullM`) into `list`.
    * @param {import('./DrawList.js').DrawList} list
    * @param {{x:number,y:number,z:number}} cam
+   * @param {boolean} [noSkirt] MAP-06a: sun-shadow list - the flat sea skirt (the lowest surface) never casts
    */
-  addToDrawList(list, cam) {
+  addToDrawList(list, cam, noSkirt) {
     const nNear = this._cw * this._ch;
     for (let i = 0; i < nNear; i++) {
       const mesh = this.near[i];
@@ -822,6 +865,13 @@ export class TerrainMeshSet {
       if (mesh.ranges[rangeIdx].count === 0) continue;
       pushTerrainItem(list, mesh, 0, 0, 0, 0x7000 | (this._farKey0 + k), rangeIdx);
     }
+    // MAP-06a: sea horizon skirts (<= 4), far to the camera's draw order end; culled only beyond their own reach
+    const sk = noSkirt ? EMPTY : this.skirts;
+    for (let s = 0; s < sk.length; s++) {
+      const r = sk[s].rect;
+      if (distToRectXY(rcx, rcy, r.x0, r.y0, r.x1, r.y1) > this.terrain.recipe.geo.seaSkirtM) continue;
+      pushTerrainItem(list, sk[s].mesh, 0, 0, 0, 0x7000 | (this._farKey0 + tiles.length + s));
+    }
   }
 
   /**
@@ -837,7 +887,11 @@ export class TerrainMeshSet {
       if (t !== null) return t;
     }
     const ix = Math.floor((x - terrain.mapX0) / terrain.mapCell), iy = Math.floor((y - terrain.mapY0) / terrain.mapCell);
-    if (ix < 0 || iy < 0 || ix >= terrain.mapW || iy >= terrain.mapH) return 0;
+    if (ix < 0 || iy < 0 || ix >= terrain.mapW || iy >= terrain.mapH) {
+      const sk = this.skirts; // MAP-06a: off-grid inside a sea skirt = sea (type 2); else grass as before
+      for (let s = 0; s < sk.length; s++) { const r = sk[s].rect; if (x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1) return 2; }
+      return 0;
+    }
     return terrain.farType[iy * terrain.mapW + ix];
   }
 }
