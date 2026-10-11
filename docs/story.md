@@ -1370,3 +1370,66 @@ PC-B, 2026-10-11. 18 side errands in `content/quests/ch12/pack.json`. Voices: Bu
 | sq.rook.gift | A Gift for the Bear | Give the brass scrap to Burl | Give Burl the brass scrap |
 
 Lines (offer / active / ready / done) are pasted in the pack rows; each <= 56 chars.
+
+## This side - look-at texts (2026-10-11)
+
+PC-B writer. Look-at notes for the props on this side of the river. Each one is a title plus 1-4 lines (title <= 28, lines <= 56, prompt <= 24), ASCII only, with no magic word and no names. They echo the errand lines already in `ch12/pack.json`: the cart is tipped and empty, the well is dry with no echo, the shrine pillar leans west, the stack is dry and old. Together they hint at four things without explaining them: the wreck, the Wall, the emptied homesteads and the relays.
+
+**Wiring (programmer, not writer):** nothing resolves `inspect.text` keys yet. The only live inspect texts are constants in `game/js/quest/errands.js` (`KNOT_*`, `GATE_*`), and `load()` adds interactables only for `knot` and `sealedGate`. The four `rsInspect*` anchors are not interactable yet. Paste these as a key -> {prompt, title, lines} table and add a generic `qi.<id>` for any entity with `components.inspect`.
+
+| key | where | text | chars |
+|---|---|---|---|
+| `prompt.wagon` | prompt | `[E] Look at the cart` | 20 |
+| `inspect.wagon.title` | note (`rsInspectWagon`) | `A cart off the road` | 19 |
+| `inspect.wagon` (1) | note | `Tipped on its side. The axle snapped clean.` | 43 |
+| `inspect.wagon` (2) | note | `Crates split open. Straw gone grey. Nothing in them.` | 52 |
+| `inspect.wagon` (3) | note | `The ruts run east, toward the Wall.` | 35 |
+| `inspect.wagon` (4) | note | `Nobody came back for it.` | 24 |
+| `prompt.well` | prompt | `[E] Look at the well` | 20 |
+| `inspect.well.title` | note (`rsInspectWell`) | `A dry well` | 10 |
+| `inspect.well` (1) | note | `Planks across the mouth. One brick gone.` | 40 |
+| `inspect.well` (2) | note | `You drop a pebble. No splash. No echo.` | 38 |
+| `inspect.well` (3) | note | `The bucket rope was cut, not rotted.` | 36 |
+| `inspect.well` (4) | note | `Someone did not want it used again.` | 36 |
+| `prompt.shrine` | prompt | `[E] Look at the shrine` | 22 |
+| `inspect.shrine.title` | note (`rsInspectShrine`) | `A fallen shrine` | 15 |
+| `inspect.shrine` (1) | note | `A stone niche on its back. The pillar leans west.` | 49 |
+| `inspect.shrine` (2) | note | `Three rings cut in the base, worn soft.` | 39 |
+| `inspect.shrine` (3) | note | `The same mark as the relays.` | 28 |
+| `inspect.shrine` (4) | note | `In the niche, a cup of rainwater. Fresh.` | 40 |
+| `prompt.woodpile` | prompt | `[E] Look at the stack` | 21 |
+| `inspect.woodpile.title` | note (`rsInspectWoodpile`) | `A woodcutter's stack` | 20 |
+| `inspect.woodpile` (1) | note | `Split logs, stacked bark-up against the rain.` | 46 |
+| `inspect.woodpile` (2) | note | `Grey with age. Moss along the top row.` | 38 |
+| `inspect.woodpile` (3) | note | `A tally cut in the end post stops mid-row.` | 43 |
+| `inspect.woodpile` (4) | note | `Ash on the top logs. Blown from the tower.` | 42 |
+| `note.sealedGate.again` (1) | note, 2nd+ look at `sealedGate` (before `hint.sealedGate`) | `Oil on the hinges. Fresh this season.` | 37 |
+| `note.sealedGate.again` (2) | note | `Whoever keeps the key keeps the gate.` | 37 |
+| `prompt.gateLamp` | prompt | `[E] Look at the lanterns` | 24 |
+| `inspect.gateLamp.title` | note (`sgLamp1..6`, optional) | `Lanterns at the gate` | 20 |
+| `inspect.gateLamp` (1) | note | `Floor lanterns, set in a row. Burning.` | 38 |
+| `inspect.gateLamp` (2) | note | `Out here, at the far end of the road.` | 37 |
+| `inspect.gateLamp` (3) | note | `Someone wants this gate found.` | 30 |
+| `prompt.lamp` | prompt | `[E] Look at the lamp` | 20 |
+| `inspect.roadLamp.title` | note (`rsLamp1`, `rsLamp2`, optional) | `A lamp on a crate` | 17 |
+| `inspect.roadLamp` (1) | note | `Brass, set on an old crate by the road.` | 39 |
+| `inspect.roadLamp` (2) | note | `It is lit. Nobody comes to light it.` | 36 |
+| `inspect.roadLamp` (3) | note | `The oil never seems to go down.` | 31 |
+| `inspect.tradeLamp.title` | note (`tradeLamp`, optional; prompt `prompt.lamp`) | `A lamp on the counter` | 21 |
+| `inspect.tradeLamp` (1) | note | `Brass, on the trade post counter. Lit.` | 38 |
+| `inspect.tradeLamp` (2) | note | `The flame is trimmed low and even.` | 34 |
+| `inspect.tradeLamp` (3) | note | `Skyworks neat. Out here.` | 24 |
+| `prompt.nest` | prompt | `[E] Look at the nest` | 20 |
+| `inspect.nest.title` | note (`nest`, optional) | `A crow's nest` | 13 |
+| `inspect.nest` (1) | note, glass still there | `Sticks, wire, a bootlace, a bent spoon.` | 40 |
+| `inspect.nest` (2) | note | `In the middle, a round glass. Kept, not lost.` | 45 |
+| `inspect.nest.empty` (1) | note, after `relay.mirror` is taken | `Sticks, wire, a bootlace, a bent spoon.` | 40 |
+| `inspect.nest.empty` (2) | note | `A round hollow where the glass sat.` | 35 |
+| `inspect.nest.empty` (3) | note | `Someone has already counted what is left.` | 42 |
+
+Notes:
+- The knot (`note.knot`) already has its text. It is unchanged.
+- The cut well rope, the stopped tally and the cart ruts running east hint that the homesteads were emptied on purpose and in a hurry. They do not say who did it or where the people went, so the reason stays open (it pairs with `sq.he.farm`'s "gate chained from outside"). The shrine's three rings are the `note.fordMark` mark.
+- On the lamps, "nobody comes to light it" and "the oil never seems to go down" are quiet wonder, with no magic word. "Trimmed low and even... skyworks neat" is a soft Maren echo (section 9.2): hope, not proof.
+- The nest is a `questPickup`. If a look-at would clash with the pickup prompt, drop `inspect.nest` and keep only `inspect.nest.empty`.
+- No `TODO-WRITER` or placeholder text was found in `content/quests/**`. All 18 QL-B2 rows have full lines. Animals get no barks.
