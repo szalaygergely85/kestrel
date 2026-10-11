@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import '../design/palette.js';
 import '../design/detail-pass.js';
 import '../design/chargen/human_kit.js';
-import { HUMANOID_PART_MAP, composeCharacter, meshCharacter, collapseRig } from '../engine/index.js';
+import { HUMANOID_PART_MAP, composeCharacter, meshCharacter, collapseRig, CHAR_GAME_MAX_QUADS } from '../engine/index.js';
 
 let passed = 0;
 const test = (name, fn) => { try { fn(); passed++; console.log(`ok - ${name}`); } catch (e) { console.error(`not ok - ${name}\n${e.stack}`); process.exitCode = 1; } };
@@ -159,6 +159,22 @@ test('OB-025: kit.clips idle (breath) + walk, 50 ms multiples, collapse to the 8
   assert.ok(scalp - chin + 1 >= 9 && scalp - chin + 1 <= 10, 'head rows ' + (scalp - chin + 1));
   let tip = 99; for (let z = 20; z <= 34; z++) for (let y = 0; y < B.size[1]; y++) for (let x = 0; x < B.size[0]; x++) { const k = D.at(x, y, z); if (k >= 0 && /Hand/.test(D.names[D.bone[k]])) tip = Math.min(tip, z); }
   assert.ok(tip >= 24 && tip <= 29, 'fingertips at z ' + tip);
+});
+test('OB-065: male chest is flat (no pec mounds in front of the Y -4 chest plane, z 48-56)', () => {
+  for (let z = 48; z <= 56; z++) for (let x = 11; x <= 25; x++) for (let y = 0; y <= 5; y++) {
+    const k = D.at(x, y, z);
+    assert.ok(k < 0 || !/Chest|Spine/.test(D.names[D.bone[k]]), 'chest voxel in front of the plane at ' + [x, y, z]);
+  }
+});
+test('OB-065: quads of the default / knight / Fen looks at res 1/1 and 1/2 vs CHAR_GAME_MAX_QUADS (measurement)', () => {
+  const looks = { default: kit.defaults, knight: kit.looks.knight, fen: kit.looks.fen };
+  const line = [];
+  for (const [n, lk] of Object.entries(looks)) for (const head of [1, 2]) {
+    const q = meshCharacter(composeCharacter(kit, { ...lk, res: { body: 1, head } })).mesh.quads;
+    line.push(`${n} 1/${head}: ${q}${q > CHAR_GAME_MAX_QUADS ? ' OVER' : ''}`);
+    if (n === 'default' && head === 1) assert.ok(q <= CHAR_GAME_MAX_QUADS, 'default look over the game cap: ' + q);
+  }
+  console.log('  quads (cap ' + CHAR_GAME_MAX_QUADS + '): ' + line.join(' | '));
 });
 test('deterministic: two builds give identical text', () => {
   assert.strictEqual(CK.stringifyKit(CK.buildHumanKit(P)), CK.stringifyKit(kit));

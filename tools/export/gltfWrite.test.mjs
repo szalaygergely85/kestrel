@@ -206,7 +206,7 @@ try { exportGlb(rigged, { rgbOf: () => null }); } catch { threw++; }
 ok('missing rgbOf / object partMap / missing colour throw', threw === 3);
 
 // golden: pinned hash of the default recipe, demo clips (changes only when the format intentionally changes)
-const GOLDEN = 'e8cfbe67581655233df30681fdd9fe4cecd0d2603a75f4285532b5dd2549670d'; // 2026-10-11: OB-025 human kit v4 (was 4e145d90...); update on an intended kit/format change
+const GOLDEN = '04daa61cc1444b867791d2dae8f2d3018464bb136983e2f8d0ec1ff262681802'; // 2026-10-11: OB-065 human kit v5 flat male chest + face (was e8cfbe67...); update on an intended kit/format change
 if (sha(glb) !== GOLDEN) console.log('golden sha256 now:', sha(glb));
 ok('real kit validates (array partMap)', validateKit(JSON.parse(JSON.stringify(kit)), globalThis.ASSETS.palette.materials).errors.length === 0);
 ok('golden SHA-256 of the default recipe (demo clips)', sha(glb) === GOLDEN);

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Kestrel - OB-025 preview: human kit, base m_avg v4 (realistic proportions) vs v3, default / knight / Fen outfits (design v1.59)</title>
+<title>Kestrel - OB-065 preview: human kit v5 (male chest, face) vs v4, default / knight / Fen outfits</title>
 <style>
   body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
   h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
@@ -29,7 +29,7 @@
 </style>
 </head>
 <body>
-<h1>Kestrel : OB-025 preview - base <code>m_avg</code> v4 (realistic proportions, sculpted body + face) - old v3 vs new v4 in section 0</h1>
+<h1>Kestrel : OB-065 preview - base <code>m_avg</code> v5 (flat male chest, face pass) - before (v4) vs after (v5) in section 0</h1>
 <div class="note">
   Kit = <code>content/chargen/human.charkit.json</code> (the only source), written by <code>node tools/chargen-build-kit.mjs</code> from
   <code>design/chargen/human_kit.js</code>. OB-025 (owner: "look how detailed the bear is ... a bigger model, a bit more realistic"): same
@@ -39,8 +39,11 @@
   sockets, nose bridge + tip, cheekbones, nostrils, philtrum, lips, chin, jaw, ears), 4-tone skin + blush / nails / veins, 3-tone hair in
   locks, a wavy full beard, and a REFINED 1.25 cm head (eye white-iris-white under a lid line, thin brows, two-row lips with corners, nostril
   openings, half-cell nose tip, ear hole, dimple). New kit.clips <code>idle</code> (breath) and <code>walk</code>.
-  "version" switches sections 1-4 between the new generator (v4) and the old JSON snapshot (v3, <code>design/chargen/human_kit_v3.charkit.json</code>:
-  write it once with <code>git show HEAD:content/chargen/human.charkit.json | Out-File -Encoding utf8 design/chargen/human_kit_v3.charkit.json</code>).
+  OB-065 (v5): flat male chest (no pec mounds, the shirt hangs straight), face pass (eyes beside the bridge, white - iris - white set
+  half a cell proud of the socket, lids, 2-row brows, nose bridge / wings / nostrils, upper lip - mouth line - lower lip, no pink cheeks).
+  "version" switches sections 1-4 between AFTER (the generator, v5) and BEFORE (v4: <code>design/chargen/human_kit_v4.charkit.json</code>,
+  written with <code>git show HEAD:content/chargen/human.charkit.json | Out-File -Encoding utf8 design/chargen/human_kit_v4.charkit.json</code>
+  BEFORE the kit JSON is rebuilt; until then the stale content JSON is used).
   Section 1 = lit mesh look (flat cubes, palette colours, key + sky light + shadows: roughly the exported <code>.glb</code> in three.js).
   Section 3 = in-game ASCII. Section 4 = rig + test poses (incl. the clip keys). Needs http: <code>python -m http.server</code> from the repo root.
   Tests: <code>node tools/chargen-kit.test.mjs</code>.
@@ -55,7 +58,7 @@
   <label>view turn <input type="range" id="yaw" min="-180" max="180" step="5" value="0"><span class="val" id="yawV"></span></label>
   <label>view pitch <input type="range" id="pitch" min="-10" max="60" step="1" value="8"><span class="val" id="pitchV"></span></label>
   <label><input type="checkbox" id="spin"> turntable</label>
-  <label>version <select id="ver"><option value="v4">v4 (new, generator)</option><option value="v3">v3 (old JSON snapshot)</option></select></label>
+  <label>version <select id="ver"><option value="v4">AFTER: v5 (OB-065, generator)</option><option value="v3">BEFORE: v4 (JSON snapshot)</option></select></label>
   <label>outfit <select id="outfit"><option value="default">default (kit.defaults)</option><option value="knight">knight (kit.looks.knight)</option><option value="fen">Fen (kit.looks.fen)</option><option value="bare">bare base</option></select></label>
   <label>eyes <select id="eyes"></select></label>
   <label>hair + brows <select id="hair"></select></label>
@@ -64,11 +67,13 @@
 <h2>Checks</h2>
 <div id="checks"><div class="info">building ...</div></div>
 
-<h2>0. Old vs new: v3 (JSON snapshot, before) vs v4 (generator, after) - default, knight, Fen, bare (skin tone = section 2 buttons, light = sliders)</h2>
+<h2>0. OB-065 before / after: v4 (BEFORE) vs v5 (AFTER, generator) - default, knight, Fen, bare (skin tone = section 2 buttons, light = sliders)</h2>
 <div class="note">
-  Each pair of rows = the same recipe on both kits: face front / 3/4 / profile / back, then body front / 3/4 / profile / back. The v4
-  rows add a "head 1.25 cm" close-up (the authored <code>detail.head["2"]</code> block = what the chargen tool shows at Head detail 2 and what
-  "save for the game" keeps). If the v3 row is missing, the snapshot file was not written yet (see the command above).
+  Each pair of rows = the same recipe on both kits: face front / 3/4 / profile / back (2.5 cm head), body front / 3/4 / profile / back,
+  then the "head 1.25 cm" close-ups (the authored <code>detail.head["2"]</code> block = the chargen tool at Head detail "Fine 1.25 cm" and what
+  "Save for game" keeps). Look at the "bare" rows for the chest (v5: flat male chest, no pec mounds) and the 1.25 cm rows for the face.
+  BEFORE = <code>design/chargen/human_kit_v4.charkit.json</code> if present, else <code>content/chargen/human.charkit.json</code> while it is
+  still the old (stale) kit. If the BEFORE row says "kit missing", write the snapshot (command in the checks).
 </div>
 <div id="compare"></div>
 
@@ -107,7 +112,7 @@
 
   // ------------------------------------------------------------------ kit (generator now; the JSON replaces it if present)
   var kitV4 = CK.buildHumanKit(P), kit = kitV4, kitV3 = null, genText = CK.stringifyKit(kitV4), jsonLine = ['info', 'INFO content/chargen/human.charkit.json: loading ...'];
-  var v3Line = ['info', 'INFO design/chargen/human_kit_v3.charkit.json (old kit for the compare): loading ...'];
+  var v3Line = ['info', 'INFO "before" kit (design/chargen/human_kit_v4.charkit.json or the stale content JSON): loading ...'];
   var D, S, NB, NAMES, BAABB, JOINTS, PARENT, FULLBOX, TONES, builtOutfit = null, builtKit = null, sheetRows = null;
   var ctl = { tone: 'medium', pose: 'rest', collapsed: false, rots: {}, outfit: 'default', ver: 'v4' };
   var GRIDS = {};
@@ -568,7 +573,7 @@
     var out = [], res = CK.checkKit(kit, P, DP), st = res.stats.bases.m_avg;
     lastStats = st;
     out.push(jsonLine); out.push(v3Line);
-    out.push(['info', 'INFO showing ' + (kit === kitV3 ? 'v3 (old snapshot)' : 'v4 (new)') + ' in sections 1-4; clips: ' + Object.keys(kit.clips || {}).join(', ')]);
+    out.push(['info', 'INFO showing ' + (kit === kitV3 ? 'BEFORE (v4)' : 'AFTER (v5 generator)') + ' in sections 1-4; clips: ' + Object.keys(kit.clips || {}).join(', ')]);
     out.push([res.errors.length ? 'fail' : 'pass', (res.errors.length ? 'FAIL ' : 'PASS ') + 'checkKit: ' + (res.errors.slice(0, 8).join(' ; ') || 'no errors')]);
     if (res.warnings.length) out.push(['warn', 'WARN ' + res.warnings.join(' ; ')]);
     out.push(['info', 'INFO m_avg base: ' + st.voxels + ' voxels, ' + st.quads + ' quads (per-bone greedy), ' +
@@ -615,18 +620,19 @@
         cmpRows[o] = {};
         ['v3', 'v4'].forEach(function (w) {
           var row = document.createElement('div'); row.className = 'row'; $('compare').appendChild(row);
-          var lab = document.createElement('div'); lab.className = 'tlabel'; lab.textContent = o + ' ' + (w === 'v3' ? 'v3 old' : 'v4 NEW'); row.appendChild(lab);
-          cmpRows[o][w] = CMP_VIEWS.map(function (a) { return a.face ? makeCanvas(row, 150, 150, o + ' ' + w + ' ' + a.cap) : makeCanvas(row, 110, 230, o + ' ' + w + ' ' + a.cap); });
-          if (w === 'v4') cmpRows[o].l2 = L2_VIEWS.map(function (a) { return makeCanvas(row, 150, 150, a[1]); });
-          else cmpRows[o].v3note = lab;
+          var tag = w === 'v3' ? 'BEFORE' : 'AFTER';
+          var lab = document.createElement('div'); lab.className = 'tlabel'; lab.textContent = o + ' ' + tag; row.appendChild(lab);
+          cmpRows[o][w] = CMP_VIEWS.map(function (a) { return a.face ? makeCanvas(row, 150, 150, o + ' ' + tag + ' ' + a.cap) : makeCanvas(row, 110, 230, o + ' ' + tag + ' ' + a.cap); });
+          cmpRows[o]['l2' + w] = L2_VIEWS.map(function (a) { return makeCanvas(row, 150, 150, tag + ' ' + a[1]); });
+          if (w === 'v3') cmpRows[o].v3note = lab;
         });
       });
     }
     CMP_OUTFITS.forEach(function (o) {
       ['v3', 'v4'].forEach(function (w) {
         var K = w === 'v3' ? kitV3 : kitV4, G = cmpGrids[w];
-        if (!K || !G) { cmpRows[o].v3note.textContent = o + ' v3: snapshot missing'; return; }
-        var rc = recipe(ctl.tone, o), col = colOf(charTable(rc)), FC = faceCentreOf(K), FV = w === 'v3' ? 30 : FACE_VIEW;
+        if (!K || !G) { cmpRows[o].v3note.textContent = o + ' BEFORE: kit missing'; return; }
+        var rc = recipe(ctl.tone, o), col = colOf(charTable(rc)), FC = faceCentreOf(K), FV = K.bases.m_avg.size[2] === 72 ? FACE_VIEW : 30;
         withGrid(G[o], function () {
           cmpRows[o][w].forEach(function (v, j) {
             var a = CMP_VIEWS[j];
@@ -634,11 +640,11 @@
             paintMesh(v.ctx, traceView(cam, null), col);
           });
         });
-        if (w === 'v4' && K.bases.m_avg.detail && K.bases.m_avg.detail.head) {
+        if (K.bases.m_avg.detail && K.bases.m_avg.detail.head && K.regions && K.regions.head) {
           var L2 = CK.decodeDetail(K, 'm_avg', 'head', 2), org = L2.origin;
           var c2 = [(FACE_C[0] - org[0]) * 2, (FACE_C[1] - org[1]) * 2, (FACE_C[2] - org[2]) * 2];
           withGrid(L2, function () {
-            cmpRows[o].l2.forEach(function (v, j) { paintMesh(v.ctx, traceView(orthoCam(c2, L2_VIEWS[j][0], 4, 150, 150, FACE_VIEW * 2), null), col); });
+            cmpRows[o]['l2' + w].forEach(function (v, j) { paintMesh(v.ctx, traceView(orthoCam(c2, L2_VIEWS[j][0], 4, 150, 150, FACE_VIEW * 2), null), col); });
           });
         }
       });
@@ -668,6 +674,16 @@
   renderAll();
   spin();
 
+  // OB-065 before / after: "before" = the v4 snapshot (preferred), else the content JSON while it is still stale
+  var OLD_SNAPSHOT = '../chargen/human_kit_v4.charkit.json', oldFromSnapshot = false;
+  function useOld(text, src, snap) {
+    var k = JSON.parse(text.replace(/^﻿/, ''));
+    if (!k.looks) k.looks = {};
+    if (!k.looks.knight) k.looks.knight = CK.knightLook();
+    kitV3 = k; oldFromSnapshot = oldFromSnapshot || snap; cmpGrids.v3 = null;
+    v3Line = ['pass', 'PASS "before" kit = ' + src + ' (' + k.name + ', ' + k.bases.m_avg.size.join('x') + '): section 0 compares it with the generator'];
+    runChecks(); renderAll();
+  }
   fetch('../../content/chargen/human.charkit.json', { cache: 'no-store' }).then(function (r) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.text();
@@ -675,25 +691,28 @@
     if (text === genText) {
       jsonLine = ['pass', 'PASS content/chargen/human.charkit.json equals the generator (showing the JSON)'];
       kitV4 = JSON.parse(text); if (kit !== kitV3) kit = kitV4; cmpGrids.v4 = null;
-    } else jsonLine = ['fail', 'FAIL content/chargen/human.charkit.json is stale: re-run node tools/chargen-build-kit.mjs (showing the generator)'];
+    } else {
+      jsonLine = ['fail', 'FAIL content/chargen/human.charkit.json is stale: re-run node tools/chargen-build-kit.mjs (showing the generator)'];
+      if (!oldFromSnapshot) useOld(text, 'content/chargen/human.charkit.json (stale JSON = the kit before this generator change)', false);
+    }
     runChecks(); renderAll();
   }).catch(function (e) {
     jsonLine = ['warn', 'WARN content/chargen/human.charkit.json not readable (' + e.message + '): run node tools/chargen-build-kit.mjs and serve over http (showing the generator)'];
     runChecks();
   });
   // the OLD kit for the compare (section 0 + "version" v3): a snapshot of the pre-OB-025 JSON
-  fetch('../chargen/human_kit_v3.charkit.json', { cache: 'no-store' }).then(function (r) {
+  fetch(OLD_SNAPSHOT, { cache: 'no-store' }).then(function (r) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.text();
   }).then(function (text) {
-    kitV3 = JSON.parse(text.replace(/^﻿/, ''));
-    if (!kitV3.looks) kitV3.looks = {};
-    if (!kitV3.looks.knight) kitV3.looks.knight = CK.knightLook();
-    v3Line = ['pass', 'PASS design/chargen/human_kit_v3.charkit.json loaded (' + kitV3.name + ', ' + kitV3.bases.m_avg.size.join('x') + '): section 0 compares it with v4'];
-    runChecks(); renderAll();
+    useOld(text, OLD_SNAPSHOT.replace('../', 'design/'), true);
   }).catch(function (e) {
-    v3Line = ['warn', 'WARN old kit snapshot design/chargen/human_kit_v3.charkit.json not readable (' + e.message + '): write it with git show HEAD:content/chargen/human.charkit.json | Out-File -Encoding utf8 design/chargen/human_kit_v3.charkit.json'];
-    runChecks();
+    if (!kitV3) {
+      v3Line = ['warn', 'WARN old kit snapshot ' + OLD_SNAPSHOT.replace('../', 'design/') + ' not readable (' + e.message + '): write it with ' +
+                'git show HEAD:content/chargen/human.charkit.json | Out-File -Encoding utf8 design/chargen/human_kit_v4.charkit.json ' +
+                '(until the kit JSON is rebuilt, the stale content JSON is used as "before")'];
+      runChecks();
+    }
   });
 })();
 </script>

@@ -35,6 +35,17 @@
  *     calf bulge, sole welt; the `heraldry` / `mended` decals (seams, trims, patches, laces, buckles) re-targeted.
  *   - rest pose: standing, arms down in a slight A (gap >= 3 cells from the torso below z 46), knees 3 cells apart.
  *
+ * v5 (OB-065, owner 2026-10-11 "this is a man, why it got tits?" / "face getting better, but not there yet"):
+ *   - male chest: the pec mounds are gone, the torso front is one flat plane (Y -4) from the collar bones to the belt
+ *     (straight waist, no hourglass), broad upper chest under the deltoids; the pec edge is a tint only. Shells are
+ *     grown from the base surface, so the shirt / tunic / mail / tabard / cloak follow it and hang straight.
+ *   - face L1: eyes beside the bridge (were 10 cm apart), lit glabella, cheekbones under the outer eye, no blush,
+ *     shadow under the nose, mouth line over the lower lip. Face L2 (1.25 cm) rebuilt: eyeballs half a cell proud of
+ *     the socket floor (white - iris - white, upper lid + lashes, lower lid), 2-row brows with a lid crease, a rising
+ *     nose bridge, nose wings + nostrils + columella + philtrum, upper lip / mouth line / lower lip / shadow under it,
+ *     a lit chin point. The game keeps the 1.25 cm head (GAME_SAFE_RES head 2); the body stays 2.5 cm (body detail
+ *     level 2 is not supported by the engine yet - CHARGEN-24 - and would not fit the 4096-quad game cap).
+ *
  * Bone boxes are axis-aligned and resolved FIRST-MATCH in skeleton order (38.29 item 3): Chest takes z 48-58 (ribcage,
  * shoulder tops, the lower neck rows 57-58), Neck is the z 59 ring, Jaw z 60-61 (lower lip + chin, full width),
  * Head z 62-71 (hair room), Shoulder = the deltoid caps X 8-16 z 55-58, UpperArm z 45-54, LowerArm z 35-44, Hand z 27-34.
@@ -178,14 +189,17 @@
     return ax === 2 ? 1 : 2;
   }
   // paint of the FRONT cell of each column, X -3..3 ('.' = no such column / plain skin)
+  // OB-065 (owner: "face getting better, but not there yet"): eyes moved in beside the bridge (X +-1 = 5 cm apart, was
+  // X +-2 = 10 cm, wide-set), lit glabella + forehead, cheekbones under the outer eye, NO pink cheek patches, a dark
+  // nose shadow under the tip, the mouth as a dark line (upper lip in shadow) over a lit lower lip.
   var FACE = {
     69: 'aaaaaaa', 68: 'aaaaaaa',
-    67: 'sallals',   // temples shaded, lit forehead
-    66: 'sbbabbs',   // brows on the ridge, glabella
-    65: 'seslses',   // eye sockets: iris in a shaded socket, lit bridge
-    64: 'laslsal',   // cheekbones lit, nose wings shaded, lit tip
-    63: 'fadsdaf',   // blush, nostrils, shadow under the septum
-    62: 'saasaas',   // cheek hollow, philtrum
+    67: 'salllas',   // temples shaded, lit forehead
+    66: 'sbblbbs',   // brows on the ridge, lit glabella
+    65: 'sseless',   // eye sockets: iris beside the lit bridge, shaded socket outside
+    64: 'alslsla',   // cheekbones lit (under the outer eye), shade beside the nose, lit tip
+    63: 'aasdsaa',   // shadow under the nose (septum deep, wings shaded) - no blush
+    62: 'sadddas',   // cheek hollow, upper lip in shadow = the mouth line
     61: 'sapppas',   // jaw sides, lower lip (Jaw)
     60: '.salas.'    // chin: lit point, shaded underside edges
   };
@@ -341,16 +355,21 @@
   // 6. BUILD THE BASE m_avg (rounded slices, anatomy zones of skin tone)
   // ===================================================================================================================
   // torso rows: [z0, z1, half width, front Y, back Y, corner radius]
+  // OB-065 (owner: "this is a man, why it got tits?"): a MALE torso - the two pec mounds in front of the chest (with the
+  // gap between them, lit tops and a shadow under them) are gone; the front is one flat plane from the collar bones to
+  // the belt (Y -4), so a shirt hangs straight from the shoulders. Broad upper chest under the deltoids (half 7 from z 53),
+  // a straight waist (half 6, no hourglass pinch, no hollow in front), the lumbar hollow stays at the back.
   var TORSO = [
     [33, 33, 7, -3, 3, 3],   // pelvis floor (crotch)
     [34, 36, 7, -4, 4, 3],   // pelvis + seat
     [37, 37, 7, -4, 3, 3],
     [38, 40, 6, -4, 3, 3],   // hip crest, lower belly
-    [41, 43, 5, -3, 2, 2],   // waist, lumbar hollow
-    [44, 44, 5, -3, 3, 2],
+    [41, 43, 6, -4, 2, 3],   // waist (straight in front), lumbar hollow at the back
+    [44, 44, 6, -4, 3, 3],
     [45, 47, 6, -4, 3, 3],   // lower ribs
     [48, 49, 6, -4, 4, 3],   // ribcage
-    [50, 54, 6, -4, 4, 3],   // chest (pecs in front, blades behind)
+    [50, 52, 6, -4, 4, 3],   // chest (flat front, shoulder blades behind)
+    [53, 54, 7, -4, 4, 3],   // broad upper chest under the deltoids
     [55, 56, 7, -4, 3, 3],   // upper chest, collar bones
     [57, 57, 6, -3, 3, 3],   // shoulder tops (trapezius)
     [58, 58, 3, -2, 3, 2]    // neck base
@@ -396,10 +415,7 @@
 
     // ---- torso
     TORSO.forEach(function (r) { for (z = r[0]; z <= r[1]; z++) slab(z, -r[2], r[2], r[3], r[4], r[5]); });
-    for (z = 50; z <= 53; z++) {                                                  // pecs: one cell in front of the chest plane
-      var pX0 = (z === 50 || z === 53) ? 2 : 1, pX1 = (z === 50 || z === 53) ? 4 : 5;
-      for (X = pX0; X <= pX1; X++) pp(X, -5, z, 'a');
-    }
+    // (OB-065: no pec mounds - the male chest is the flat TORSO front; the pec edge is only a tint, see skin zones)
     // ---- neck ring (z 57-59; 57-58 sit inside the torso slices)
     for (z = 57; z <= 59; z++) slab(z, -2, 2, -2, 2, 2);
     // ---- arms (both sides)
@@ -436,13 +452,12 @@
       // shoulder tops, collar bones, pec tops
       for (X = 7; X <= 9; X++) tintPair(X, -1, 57, 'l'), tintPair(X, 0, 57, 'l');
       for (X = 1; X <= 5; X++) tintPair(X, -4, 56, 'l');
-      for (X = 2; X <= 4; X++) tintPair(X, -5, 53, 'l');
-      for (X = 1; X <= 5; X++) tintPair(X, -4, 49, 's');                    // under the pecs
+      for (X = 3; X <= 5; X++) tintPair(X, -4, 51, 's');                    // flat pec edge (outer only, no centre line)
       // armpits (torso sides under the deltoids) + the core
       for (z = 50; z <= 53; z++) for (Y = -2; Y <= 2; Y++) tintPair(6, Y, z, 's');
       tintPair(6, 0, 52, 'd');
       // navel, spine groove, gluteal cleft, crotch shadow
-      tint(0, -3, 41, 'd');
+      tint(0, -4, 41, 'd');
       for (z = 41; z <= 47; z++) tint(0, headBackTorso(z), z, 'd');
       for (z = 48; z <= 54; z++) tint(0, 4, z, 'd');
       for (z = 34; z <= 36; z++) tint(0, 4, z, 'd');
@@ -531,32 +546,45 @@
         }); }); });
       }
       function inBox(q, x, y, z) { return x >= q[0] && x <= q[3] && y >= q[1] && y <= q[4] && z >= q[2] && z <= q[5]; }
+      // OB-065 face pass. Fine rows from the chin up: z60 lo carved (round chin) / z60 hi chin point / z61 lo shadow under
+      // the lip / z61 hi lower lip / z62 lo MOUTH LINE / z62 hi upper lip / z63 lo philtrum / z63 hi nostrils / z64 lo nose
+      // wings + tip underside / z64 hi lower lid + cheekbone / z65 lo EYE (white - iris - white) / z65 hi upper lid + lashes
+      // / z66 lo lid crease / z66 hi brow. Eye centres 3.1 cm off the midline (IPD 6.25 cm), eye 3.75 cm wide.
       [1, -1].forEach(function (s) {
         var inner = s > 0 ? 0 : 1, outer = 1 - inner;
-        // eyes: dark lid line over white - iris - white (3 fine cells = 3.75 cm), set in the socket plane (Y -3)
-        edit(2 * s, -3, 65, '*', 0, 1, 'd'); edit(s, -3, 65, outer, 0, 1, 'd');
-        edit(2 * s, -3, 65, inner, 0, 0, 'e'); edit(2 * s, -3, 65, outer, 0, 0, 'c'); edit(s, -3, 65, outer, 0, 0, 'c');
-        // brows: the upper half only, thicker at the inner end, the tail on the temple
-        edit(2 * s, -4, 66, '*', 0, 0, 'a'); edit(s, -4, 66, outer, 0, 0, 'a');
-        edit(3 * s, -3, 66, inner, 0, 1, 'b');
-        // nostril openings (upper half), nose wings
-        edit(s, -4, 63, '*', 0, 0, 'a'); edit(s, -4, 63, inner, 0, 1, 'd'); edit(s, -4, 63, outer, 0, 1, 's');
-        // softer blush, mouth corners, lips: upper lip = lower half of z 62, lower lip = upper half of z 61
-        edit(3 * s, -4, 63, '*', 0, 0, 'a');
-        edit(s, -4, 62, outer, 0, 0, 'd'); edit(s, -4, 61, outer, 0, 1, 'd');
-        edit(s, -4, 62, inner, 0, 0, 'p'); edit(s, -4, 62, '*', 0, 1, 'a');
-        edit(s, -4, 61, inner, 0, 1, 'p'); edit(s, -4, 61, '*', 0, 0, 'a');
+        // eyes: the eyeball sits half a cell in front of the socket floor (Y -4 back half, added - the L1 cell is empty),
+        // so the brow ridge above and the lower lid / cheek below stay half a cell in front of it
+        edit(s, -3, 65, '*', 0, '*', 's'); edit(2 * s, -3, 65, '*', 0, '*', 's');           // socket floor (hidden / outer corner)
+        edit(s, -4, 65, inner, 1, 0, 'c'); edit(s, -4, 65, outer, 1, 0, 'e'); edit(2 * s, -4, 65, inner, 1, 0, 'c');
+        edit(s, -4, 65, inner, 1, 1, 's'); edit(s, -4, 65, outer, 1, 1, 'd'); edit(2 * s, -4, 65, inner, 1, 1, 'd');   // upper lid, lashes over the iris
+        // lower lid + cheekbone highlight under the outer eye (top half of z 64), shade beside the nose
+        edit(s, -4, 64, inner, 0, 1, 's'); edit(s, -4, 64, outer, 0, 1, 'a');
+        edit(2 * s, -4, 64, inner, 0, '*', 'a'); edit(2 * s, -4, 64, outer, 0, 1, 'l'); edit(2 * s, -4, 64, outer, 0, 0, 'a');
+        edit(3 * s, -4, 64, inner, 0, 1, 'l');
+        // nose wings (alae) half a cell out beside the tip, the crease behind them, nostrils under them, philtrum ridges
+        edit(s, -5, 64, inner, 1, 0, 'a'); edit(s, -4, 64, outer, 0, 0, 's');
+        edit(s, -4, 63, inner, 0, 1, 'd'); edit(s, -4, 63, outer, 0, 1, 'a'); edit(s, -4, 63, '*', 0, 0, 'a');
+        // brows: the upper half, thick at the inner end (2 rows), the tail on the temple; lid crease under them
+        edit(s, -4, 66, '*', 0, 1, 'b'); edit(2 * s, -4, 66, '*', 0, 1, 'b'); edit(3 * s, -3, 66, inner, 0, 1, 'b');
+        edit(s, -4, 66, inner, 0, 0, 'b'); edit(s, -4, 66, outer, 0, 0, 'a'); edit(2 * s, -4, 66, '*', 0, 0, 'a');
+        edit(3 * s, -3, 66, inner, 0, 0, 's');
+        // mouth 5 cm wide: upper lip, the dark mouth line, lower lip, the shadow under it; soft shaded corners
+        edit(s, -4, 62, inner, 0, 1, 'p'); edit(s, -4, 62, outer, 0, 1, 'a');
+        edit(s, -4, 62, inner, 0, 0, 'd'); edit(s, -4, 62, outer, 0, 0, 's');
+        edit(s, -4, 61, inner, 0, 1, 'p'); edit(s, -4, 61, outer, 0, 1, 's');
+        edit(s, -4, 61, inner, 0, 0, 's'); edit(s, -4, 61, outer, 0, 0, 'a');
         // ears: lit helix rim on top, a small hole, a flushed lobe; rounder jaw corners
         edit(4 * s, 0, 65, '*', '*', 1, 'l'); edit(4 * s, 0, 64, '*', 1, '*', 's');
         for (var jy = -3; jy <= 1; jy++) edit(2 * s, jy, 60, outer, '*', 0, '.');
       });
-      edit(0, -4, 62, '*', 0, 0, 'p'); edit(0, -4, 62, '*', 0, 1, 's');          // upper lip centre, philtrum
-      edit(0, -4, 61, '*', 0, 1, 'p'); edit(0, -4, 61, '*', 0, 0, 's');          // lower lip centre, shadow under it
-      edit(0, -4, 63, '*', 0, 0, 'a');                                             // under the nose: shadow only at the top
-      edit(0, -6, 64, '*', 1, '*', 'l');                                           // nose tip half a cell further out
+      edit(0, -4, 66, '*', 0, '*', 'l');                                           // glabella
+      edit(0, -5, 65, '*', 1, 0, 'l');                                             // nose bridge rises toward the tip
+      edit(0, -6, 64, '*', 1, 1, 'l'); edit(0, -6, 64, '*', 1, 0, 'a');            // nose tip half a cell further out
       edit(0, -5, 64, '*', '*', 0, 'a');                                           // the underside of the tip
-      edit(0, -4, 60, '*', 0, 1, 's');                                             // chin dimple
-      edit(0, -4, 60, '*', 0, 0, 'l');
+      edit(0, -4, 63, '*', 0, 1, 's'); edit(0, -4, 63, '*', 0, 0, 's');            // columella between the nostrils, philtrum groove
+      edit(0, -4, 62, '*', 0, 1, 'p'); edit(0, -4, 62, '*', 0, 0, 'd');            // upper lip centre, mouth line
+      edit(0, -4, 61, '*', 0, 1, 'p'); edit(0, -4, 61, '*', 0, 0, 's');            // lower lip centre, shadow under it
+      edit(0, -4, 60, '*', 0, 1, 'l');                                             // chin point
       [-1, 0, 1].forEach(function (X) { edit(X, -4, 60, '*', 0, 0, '.'); });     // rounder chin bottom
     }
     var out = [];
@@ -920,7 +948,7 @@
       kind: 'charkit',
       schema: 1,
       id: KIT_ID,
-      name: 'Kestrel human kit v4 (OB-025)',
+      name: 'Kestrel human kit v5 (OB-065)',
       cellM: CELL,
       axes: 'cells; x = east (the character\'s right), y = south (the character faces north, -y), z = up; ' +
             'layers[z][y] = string of x; joints / anchors / mount positions are continuous cell coordinates',
@@ -1289,7 +1317,7 @@
   }
 
   var api = {
-    version: 4, KIT_ID: KIT_ID, knightLook: knightLook, fenLook: fenLook, CELL: CELL, SKELETON: SKELETON, PART_MAP: PART_MAP, MAX_PARTS: MAX_PARTS,
+    version: 5, KIT_ID: KIT_ID, knightLook: knightLook, fenLook: fenLook, CELL: CELL, SKELETON: SKELETON, PART_MAP: PART_MAP, MAX_PARTS: MAX_PARTS,
     STRETCH_BONES: STRETCH_BONES, ARM_STRETCH: ARM_STRETCH, DETAIL: DETAIL,
     buildHumanKit: buildHumanKit, stringifyKit: stringifyKit, decodeBase: decodeBase, resolveMat: resolveMat,
     countQuads: countQuads, checkKit: checkKit, decodeDetail: decodeDetail, downsample2: downsample2,
