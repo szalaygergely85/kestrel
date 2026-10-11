@@ -229,6 +229,14 @@ function routeRun(physics, { reload = false } = {}) {
   const relayD = Math.hypot(sim.player.transform.x - RELAY.x, sim.player.transform.y - RELAY.y);
   info.relayDist = relayD; l8.completed = l8.completed && relayD <= 3 && !l8.fell;
   legs.push(l8);
+  // M4 (sq.burl.walk): Burl's walks.toBend polyline (world_m1 bear entity) must be walkable by the player (corridor check): relay -> Burl's home -> back to the relay.
+  {
+    const wd = JSON.parse(readFileSync(new URL('../content/worlds/world_m1.world.json', import.meta.url), 'utf8'));
+    const tb = wd.entities.find((e) => e.id === 'bear').components.walks.toBend.map(([x, y]) => ({ x, y }));
+    const l8b = runLeg(sim, '8b Burl toBend path (relay -> home -> relay)', [...tb.slice(1).reverse().slice(1, -1), ...tb.slice(2)], { maxWpSteps: 600 });
+    info.toBendPts = tb.length; l8b.completed = l8b.completed && !l8b.fell && tb.length >= 30;
+    legs.push(l8b);
+  }
   // WS2-07 / 38.38 leg 9: bend relay -> road -> ford -> across the stepping stones -> relay #2 (ws_ford) -> bound probe -> back to the east.
   // The sim streams the near band like the game (streamBand per step, 2 ms budget): one swap each way, no band:late, no fall.
   const bandEv = []; let late = 0; sim.world.events = sim.world.events || new Events();
