@@ -35,9 +35,8 @@ ui.cells.clear(); p.components.inventory.slots[0].n = 0; v.drawBar(ui, p, { sipT
 assert.equal(at(X[2] + 5, y0 + 3) + at(X[2] + 6, y0 + 3), 'x0', 'gone stack shows x0');
 ui.cells.clear(); v.drawBar(ui, p, { sipT: 5, lastId: 'potion.hp' }, true);
 assert.equal(at(X[2], y0 + 1), '[', 'sipping potion is the active slot');
-// potion button next to the hearts
-ui.cells.clear(); p.components.inventory.slots[0].n = 2;
-v.drawPotion(ui, { layout: { x: 2, hpRow: 1, numberCol: 26 }, textBg: [0, 0, 0] }, p, { sipT: 0 }, 'H', true);
-assert.equal(at(2 + 26 + 8 + 6, 3), 'H', 'key hint right after the HP number'); assert.equal(at(42, 2) + at(43, 2), 'x2'); assert.equal(v.hitPotion(36, 1), true); assert.equal(v.hitPotion(10, 1), false);
-assert.equal(ui.cells.has('44,1'), false, 'no dark box: only glyph cells drawn');
+// OB-011: no potion HUD piece any more (the count lives on the bar slot)
+assert.equal(v.drawPotion, undefined); assert.equal(v.hitPotion, undefined);
+ui.cells.clear(); p.components.inventory.slots[0].n = 3; v.drawBar(ui, p, { sipT: 0 }, true);
+assert.equal(at(X[2] + 5, y0 + 3) + at(X[2] + 6, y0 + 3), 'x3', 'bar slot shows the stack count');
 console.log('quickbarView.test: ok');

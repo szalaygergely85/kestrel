@@ -1,11 +1,11 @@
-// game/js/quest/quickbarView.js (EQ-12 + owner D-068 + QB-6 redesign). Two HUD pieces, both drawn through `ui.setCellRGB` with a
+// game/js/quest/quickbarView.js (EQ-12 + owner D-068 + QB-6 redesign). The 6-slot bar is drawn through `ui.setCellRGB` with a
 // plate bg (readable on bright grass): the 6-slot quick bar bottom-centre ([L] [R] mouse-hand slots, then keys 1-4; also drawn
-// inside the pack / character menu as the drag-and-drop target) and the potion icon right after the HP bar.
+// inside the pack / character menu as the drag-and-drop target).
 // Slot = 7x4 cells: label top-left (L / R = mouse buttons on a blue-grey plate, digits gold), the 5x3 item icon, count bottom-right
 // (stacks only). Active hand item = gold tinted plate + bright [ ] brackets; empty slot = dim dotted corners; an item with
 // count 0 shows dimmed with `x0`. `slotAt` = hit test for the drag-and-drop; `drawGhost` = the item riding the pointer.
 // No allocation per frame after the first draw of an item (icon cells and count strings are cached).
-import { QB_SLOTS, HAND_SLOTS, POTION_ID } from './sim/quickbar.js';
+import { QB_SLOTS, HAND_SLOTS } from './sim/quickbar.js';
 
 export const SLOT_W = 7, SLOT_H = 4, SLOT_GAP = 1, GROUP_GAP = 2; // GROUP_GAP = extra gap between the hand pair and the keys
 const PLATE = [10, 11, 16], PLATE_ON = [64, 54, 24], GOLD = [236, 196, 92], DIM = [96, 92, 80], TEXT = [226, 214, 176], WARN = [200, 70, 60];
@@ -57,7 +57,6 @@ export function createQuickbarView(o) {
     return n;
   }
 
-  const rect = { x: 0, y: 0, w: 0, h: 0 };
   const view = {
     slotX(cols, i) { return ((cols - (QB_SLOTS * SLOT_W + (QB_SLOTS - 1) * SLOT_GAP + GROUP_GAP)) >> 1) + i * (SLOT_W + SLOT_GAP) + (i >= HAND_SLOTS ? GROUP_GAP : 0); },
     slotY(rows) { return rows - SLOT_H - 1; },
@@ -95,23 +94,6 @@ export function createQuickbarView(o) {
         put(ui, x, y, LABELS[i], hand ? HAND_TXT : id ? GOLD : DIM, bg);
       }
     },
-    /**
-     * Potion HUD icon on the HP row, directly after the HP number (no box): icon + count + key hint; greyed at 0. `style` = uiStyle.vitals.
-     * Only glyph cells are drawn (strip bg = style.textBg). `view.potionRect` holds its cell rect for the mouse test.
-     */
-    drawPotion(ui, style, player, sip, key, visible) {
-      if (!visible || !style || !style.layout || !player || !player.components) return;
-      const L = style.layout, x = L.x + L.numberCol + 8, y = L.hpRow;
-      rect.x = x; rect.y = y; rect.w = 9; rect.h = 3;
-      const n = countOfId(player.components.inventory, POTION_ID), has = n > 0, sipping = !!sip && sip.sipT > 0;
-      const bg = sipping ? PLATE_ON : (style.textBg || PLATE);
-      icon(ui, x, y, POTION_ID, !has, bg);
-      const s = cStr[n < 0 ? 0 : n > 99 ? 99 : n];
-      for (let k = 0; k < s.length; k++) put(ui, x + 6 + k, y + 1, s[k], has ? TEXT : WARN, bg);
-      put(ui, x + 6, y + 2, key, has ? GOLD : DIM, bg);
-    },
-    get potionRect() { return rect; },
-    hitPotion(cx, cy) { return rect.w > 0 && cx >= rect.x && cx < rect.x + rect.w && cy >= rect.y && cy < rect.y + rect.h; },
   };
   return view;
 }
