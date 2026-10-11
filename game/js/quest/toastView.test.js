@@ -117,9 +117,12 @@ const R0 = style.anchor.row;
   events.emit('inventory:full', { id: 'boar.meat', n: 3 });
   ui.clear(); view.draw(ui, 50);
   ok('named pack-full line', ui.row(R0).includes('Pack full - ' + defs['boar.meat'].name + ' x3 not added'), ui.row(R0).trim());
+  events.emit('inventory:full', { id: 'boar.meat', n: 2, dropped: true });
+  ui.clear(); view.draw(ui, 50.05);
+  ok('dropped leftover line', ui.row(R0 + 1).includes('x2 left on the ground'), ui.row(R0 + 1).trim());
   events.emit('inventory:full', { id: 'boar.meat' });
   ui.clear(); view.draw(ui, 50.1);
-  ok('id-only pack-full stays generic', ui.row(R0 + 1).trim() === 'Pack full', ui.row(R0 + 1).trim());
+  ok('id-only pack-full stays generic', ui.row(R0 + 2).trim() === 'Pack full', ui.row(R0 + 2).trim());
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

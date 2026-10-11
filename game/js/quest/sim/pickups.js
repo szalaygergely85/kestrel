@@ -92,6 +92,38 @@ export function spawnItemDrop(world, itemId, x, y, z, tier = 'worn') {
 let itemSink = null;
 export function setItemPickupSink(fn) { itemSink = fn; }
 
+/** EQ-23: stack sink (installed per world load by questPickups.js). (itemId, n) -> number actually put in the pack (0..n). */
+let stackSink = null;
+export function setStackPickupSink(fn) { stackSink = fn; }
+
+// 8 fixed ring offsets at 0.6 m (no trig: Rule 15). Drops of a full pack pick the first one not already occupied.
+const RING = [[0.6, 0], [0.424, 0.424], [0, 0.6], [-0.424, 0.424], [-0.6, 0], [-0.424, -0.424], [0, -0.6], [0.424, -0.424]];
+
+/**
+ * EQ-23: a leftover stack (pack full / partly full) lands at the player's feet as a world pickup {itemId, amount}.
+ * `questReward` drops never despawn; loot leftovers use the normal life. Same-id drops at the spot merge.
+ */
+export function spawnLeftoverDrop(world, itemId, n, x, y, z, questReward = false) {
+  let best = 0, bestD = -1;
+  for (let k = 0; k < RING.length; k++) {
+    const px = x + RING[k][0], py = y + RING[k][1];
+    let nearest = Infinity;
+    for (let i = 0; i < MAX_DROPS; i++) {
+      const e = slots[i] !== null ? world.entity(slots[i]) : null;
+      if (!e) continue;
+      const dx = e.transform.x - px, dy = e.transform.y - py, d = dx * dx + dy * dy;
+      if (d < nearest) nearest = d;
+    }
+    if (nearest > 0.09) { best = k; bestD = nearest; break; }
+    if (nearest > bestD) { bestD = nearest; best = k; }
+  }
+  const id = spawnItemDrop(world, itemId, x + RING[best][0], y + RING[best][1], z);
+  const p = world.entity(id).components.pickup;
+  p.amount = n;
+  if (questReward) p.questReward = true;
+  return id;
+}
+
 /**
  * Decrements every live drop's life (despawns at 0) and collects any drop within COLLECT_RADIUS of `player`,
  * applying `+amount` to the matching health/mana component (clamped to max).
@@ -110,14 +142,17 @@ export function stepPickups(world, player) {
     if (!e) { slots[i] = null; continue; }
     const p = e.components.pickup;
     if (!p) { slots[i] = null; continue; }
-    p.life--;
+    if (!p.questReward) p.life--;
     if (p.life <= 0) { world.remove(id); slots[i] = null; continue; }
     const t = e.transform;
     const dx = t.x - pt.x, dy = t.y - pt.y, dz = p.baseZ - pt.z;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (dist <= COLLECT_RADIUS) {
       if (p.kind === 'item') {
-        if (!itemSink || !itemSink(p.itemId, p.amount)) continue; // pack full: leave it lying (life keeps ticking)
+        if (p.amount > 1 && stackSink) { // EQ-23: partial fit takes what fits, the rest stays lying
+          const took = stackSink(p.itemId, p.amount);
+          if (took < p.amount) { p.amount -= took; continue; }
+        } else if (!itemSink || !itemSink(p.itemId, p.amount)) continue; // pack full: leave it lying (life keeps ticking)
       } else if (p.kind === 'hp' && health) health.hp = Math.min(health.max, health.hp + p.amount);
       else if (p.kind === 'mp' && mana) mana.mp = Math.min(mana.max, mana.mp + p.amount);
       world.remove(id);

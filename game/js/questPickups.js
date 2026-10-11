@@ -7,6 +7,7 @@
 //    so a `deliver` objective can check and remove the items at hand-in.
 //  - grantReward(reward): puts a hand-in reward ({items:[{id,n}]}) in the pack.
 import { addItem, removeItem, countOf } from './quest/sim/inventory.js';
+import { spawnLeftoverDrop, setStackPickupSink } from './quest/sim/pickups.js';
 
 export const REACH = 2.2, REACH_DZ = 3, POLL_STEPS = 10;
 
@@ -28,6 +29,13 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
   const hook = {
     onBoot(c) {
       ctx = c; props = []; tick = 0; ops = null;
+      // EQ-23: leftover stacks lying on the ground re-enter the pack through the normal path (partial fit allowed).
+      setStackPickupSink((id, n) => {
+        const inv = pack(); if (!inv) return 0;
+        const got = addItem(inv, defs, id, n);
+        if (got > 0 && c.events) c.events.emit('inventory:added', { id, n: got });
+        return got;
+      });
       c.world.forEachEntity((e, id) => {
         const q = e.components && e.components.questPickup; if (!q || !e.transform) return;
         props.push({ id, tr: e.transform, item: q.item, n: q.n || 1 });
@@ -64,7 +72,12 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
         const got = addItem(inv, defs, it.id, it.n);
         if (got > 0) { k++; if (ctx.events) ctx.events.emit('inventory:added', { id: it.id, n: got }); }
         // Never lose a reward silently (full pack / stackMax already held): report the leftover on the bus.
-        if (got < it.n && ctx.events) ctx.events.emit('inventory:full', { id: it.id, n: it.n - got });
+        if (got < it.n) {
+          // EQ-23: ... and put the leftover on the ground at the player's feet (never despawns).
+          const t = ctx.player && ctx.player.transform, canDrop = !!(t && ctx.world && ctx.world.spawn);
+          if (canDrop) spawnLeftoverDrop(ctx.world, it.id, it.n - got, t.x, t.y, t.z, true);
+          if (ctx.events) ctx.events.emit('inventory:full', { id: it.id, n: it.n - got, dropped: canDrop });
+        }
       }
       return k;
     },
