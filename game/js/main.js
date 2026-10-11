@@ -948,7 +948,7 @@ engine.events.on('grid:changed', ({ cols, rows }) => {
 
 // Internal hook for manual/automated smoke-testing in a console - not part
 // of the game's own UI.
-window.__debug = { input, overlay, rt, engine, gbuf, matTable, ambientL, depthBuffer, sprites, wgPipeline, hzb };
+window.__debug = { input, overlay, rt, engine, gbuf, matTable, ambientL, depthBuffer, sprites, wgPipeline, hzb, meshFeedStats };
 bridgeEngineEvents(engine.events, gameHooks); // beast:died / inventory:added -> seam events
 window.__debug.saveRelay = saveRelay; // US-089w: test hook (headless reload check)
 

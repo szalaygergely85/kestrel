@@ -84,6 +84,20 @@ ok('shadow feed leaves meshFeedStats alone', JSON.stringify(before) === JSON.str
   ok('batched feed: under the cap -> dropped 0, kept = requested', meshFeedStats.dropped === 0 && meshFeedStats.kept === meshFeedStats.requested && meshFeedStats.requested > 0, JSON.stringify(meshFeedStats));
 }
 
+// MESH-INST-02: masked + open (one-sided) repeated meshes now batch, so they no longer compete for the single slots
+{
+  const grass = meshFromJSON(readMeshJSON(new URL('../../content/meshes/quaternius/Grass_Common_Tall.mesh.json', import.meta.url)));
+  const w3 = mkWorld();
+  for (let i = 0; i < 150; i++) World.prototype.placeMesh.call(w3, grass, { x: ((i % 15) - 7) * 1.5, y: -6 - Math.floor(i / 15) * 2, z: 0 }, `g${i}`, 0);
+  const l = new DrawList(); l.begin();
+  const gs = new MeshGroupSet();
+  addMeshStructuresBatched(l, w3, cam, new MeshDrawCache(), idFor, 2000, gs, planes);
+  ok('150 open grass placements: 0 single requests (all batched), 1 instanced item', meshFeedStats.requested === 0 && meshFeedStats.dropped === 0 && gs.stats.members === 150 && l.count === 1, JSON.stringify(meshFeedStats) + ' items ' + l.count);
+  const l2 = new DrawList(); l2.begin();
+  addMeshStructuresBatched(l2, w3, cam, new MeshDrawCache(), idFor, 2000, null, planes);
+  ok('without groups the same scene wants 150 singles and drops over the cap', meshFeedStats.requested > MAX_MESH_DRAWS && meshFeedStats.dropped > 0, JSON.stringify(meshFeedStats));
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

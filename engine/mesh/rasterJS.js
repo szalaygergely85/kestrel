@@ -24,7 +24,7 @@ import { packNormalOct, unpackNormalOct } from '../voxel/octNormal.js';
 import {
   flatKind, flatFace, flatMat, AO_NONE, AO_WALL, AO_PLANE, AUX_STRIDE, FLAT_STRIDE,
 } from './MeshData.js';
-import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS, DRAW_FLAG_ONE_PART, instancedRanges } from './DrawList.js';
+import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS, DRAW_FLAG_ONE_PART, DRAW_FLAG_NO_CULL, instancedRanges } from './DrawList.js';
 import { MaskAtlas } from '../render/MaskAtlas.js';
 import { INST_FLAG_SWAY, swayOffset, windSwayOn } from './sway.js';
 import { ditherKeep } from './lodDither.js';
@@ -163,6 +163,7 @@ let _mW = -1, _mX0 = 0, _mY0 = 0, _mH = 0, _mCut = 0;
 let _swayOn = false, _swayBx = 0, _swayBy = 0, _swayBz = 0, _swayT = 0, _swayF = /** @type {import('./sway.js').SwayWind|null} */ (null);
 const _swayD = { x: 0, y: 0 };
 let _dither = 0; // S8-B2-07: (flags >>> 16) & 0x7ff of the instance being rasterised (0 = not dithered; lodDither.js)
+let _noCull = false; // MESH-INST-02: DRAW_FLAG_NO_CULL instanced item (open mesh): no back-face cull
 let _team = 0; // team index of the instance being rasterised (0 outside DRAW_INSTANCED)
 /** Per-triangle constant fragment data, reused every triangle (no per-call allocation). */
 const _info = {
@@ -594,7 +595,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.partAxisAligned = instAligned !== undefined ? instAligned : (isVoxelItem && (item.partFlags[partIdx] & 1) !== 0);
       _info.kind7Mat = null;
       _info.biasFlag = 0;
-      _info.cullBack = (isVoxelItem || instAligned !== undefined) && _mW < 0;
+      _info.cullBack = (isVoxelItem || instAligned !== undefined) && _mW < 0 && !_noCull;
     }
     if (ctx.depthBias) { // ME-15a: the shadow pass biases every caster
       _info.biasFlag = 1; _info.biasFactor = ctx.depthBias.factor; _info.biasUnits = ctx.depthBias.units;
@@ -619,6 +620,7 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
  */
 function rasterInstanced(mesh, item, target, ctx) {
   const ranges = instancedRanges(item); // 38.9: ONE_PART = whole mesh as one range
+  _noCull = (item.flags & DRAW_FLAG_NO_CULL) !== 0;
   const onePart = !!(item.flags & DRAW_FLAG_ONE_PART); // ALPHA-01f (a): the synthetic single range has no per-range mask
   const ib = item.instBuf;
   if (!ib) return;
@@ -666,7 +668,7 @@ function rasterInstanced(mesh, item, target, ctx) {
     }
   }
   _mW = -1; // ALPHA-01f(a): leave the module mask state clean for whatever draws next (mirrors rasterDrawList's static-masked reset)
-  _team = 0; _swayOn = false; _dither = 0;
+  _team = 0; _swayOn = false; _dither = 0; _noCull = false;
 }
 
 /**

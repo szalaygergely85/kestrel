@@ -12,7 +12,7 @@ import { ROOT, findBrowserBinary, waitForHttp, killTree, connectCdp, evaluate, e
 
 // Gate poses (roadBend, towerInterior, towerExterior, roadSouth ...) are GATE_POSES slugs of content/dev-poses.js (one table, re-exported by tools/bench-poses.js) -> `?pose=<slug>`.
 const POSES = { forest: 'at=1544.5,1201.3,-14.3,270,8' };
-const poseQuery = (n) => POSES[n] || `pose=${n}`;
+const poseQuery = (n) => POSES[n] || (n.startsWith('at=') ? n : `pose=${n}`);
 const JS_BUDGET_MS = 8, GPU_BUDGET_MS = 8, HEAP_FLAT_MB = 2; // WS1-08: JS <= 8 ms, GPU p95 <= 8 ms at ultra, heap flat
 const args = Object.fromEntries(process.argv.slice(2).map((v) => (/^--time=/.test(v) ? ['--time', v.slice(7)] : v)).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
 const port = Number(args.port || 9700);

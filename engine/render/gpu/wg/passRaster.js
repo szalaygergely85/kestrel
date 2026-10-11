@@ -4,7 +4,7 @@ import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_MASK_BLOCK, RASTER_MASK_WGSL, R
 import { TERRAIN_BLOCK, TERRAIN_RASTER_WGSL, TERRAIN_TEXTURES } from '../wgsl/terrainRaster.wgsl.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { StructMaskAtlas } from '../StructMaskAtlas.js';
-import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, MAX_DRAW_ITEMS } from '../../../mesh/DrawList.js';
+import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, DRAW_FLAG_NO_CULL, MAX_DRAW_ITEMS } from '../../../mesh/DrawList.js';
 import { MeshGroupSet, addMeshStructuresBatched } from '../../../mesh/meshGroups.js';
 import { instancedRanges } from '../../../mesh/DrawList.js';
 import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
@@ -88,7 +88,7 @@ export class WgRasterPass {
     this.pipes = [];
     // ME-20c-c (38.18): vertex AO. `vaoOn` = lights.ao.strength > 0 this frame (set in prepare); `(variant, ao)` pipelines are built lazily the first time an
     // entry with `aoBuffer` is drawn while on. Extra streams are preallocated (zero per-frame allocation).
-    this.vaoOn = false; this.aoPipes = { voxel: null, mirror: null, instance: null, instanceMask: null };
+    this.vaoOn = false; this.aoPipes = { voxel: null, mirror: null, instance: null, instanceMask: null, instanceOpen: null };
     this.aoExtra = [null]; this.maskExtraInstAo = [null, null];
     this.clothStreams = [null];
     // WG-4a: GPU cull of InstanceGroups batches (meshGroup + single-range voxel units). instances.js hands each supported group to `accept` instead of
@@ -120,6 +120,8 @@ export class WgRasterPass {
       this.voxelPipe = this._pipeline(RASTER_VOXEL_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back');
       this.mirrorPipe = this._pipeline(RASTER_VOXEL_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'ccw');
       this.instancePipe = this._pipeline(RASTER_INSTANCED_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true);
+      // MESH-INST-02: instanced open (thin / one-sided) mesh groups - same shader, no back-face cull (DRAW_FLAG_NO_CULL; JS twin: rasterInstanced _noCull)
+      this.instanceOpenPipe = this._pipeline(RASTER_INSTANCED_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'none', 'cw', true);
       // ALPHA-01f (b): instanced mesh-group masked draw - same state as instancePipe + the mask-uv extra stream (location 10) + texMask at slot 0
       this.instanceMaskPipe = this._pipeline(RASTER_INSTANCED_MASK_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'none', 'cw', true, [{ layout: MASK_UV_LAYOUT, strideBytes: MASK_UV_STRIDE_BYTES }], RASTER_INSTANCED_MASK_BLOCK, ['uint']);
       // Cloth: dynamic pos+oct normal (slot 0) + static uv (extra stream), two-sided (GL: CULL_FACE off, CCW = 'cw' after the clip-y flip).
@@ -204,6 +206,7 @@ export class WgRasterPass {
     if (k === 'voxel') pp = this._pipeline(rasterWgsl('voxel', opt), VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', false, ao);
     else if (k === 'mirror') pp = this._pipeline(rasterWgsl('voxel', opt), VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'ccw', false, ao);
     else if (k === 'instance') pp = this._pipeline(rasterWgsl('instanced', opt), VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true, ao);
+    else if (k === 'instanceOpen') pp = this._pipeline(rasterWgsl('instanced', opt), VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'none', 'cw', true, ao);
     else pp = this._pipeline(rasterWgsl('instancedMask', opt), VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'none', 'cw', true, // two-sided leaf cards (JS twin draws masked ranges two-sided)
       [{ layout: MASK_UV_LAYOUT, strideBytes: MASK_UV_STRIDE_BYTES }, ao[0]], RASTER_INSTANCED_MASK_BLOCK, ['uint']);
     return (this.aoPipes[k] = pp);
@@ -386,12 +389,12 @@ export class WgRasterPass {
     const b = this.bindDesc;
     const ao = this.vaoOn && entry.aoBuffer; // ME-20c-c: swap to the ao pipeline of the kind-9 variants; static/mask-less paths keep `pipe`
     if (ao) {
-      if (pipe === this.voxelPipe) pipe = this._aoPipe('voxel'); else if (pipe === this.mirrorPipe) pipe = this._aoPipe('mirror'); else if (pipe === this.instancePipe) pipe = this._aoPipe('instance');
+      if (pipe === this.voxelPipe) pipe = this._aoPipe('voxel'); else if (pipe === this.mirrorPipe) pipe = this._aoPipe('mirror'); else if (pipe === this.instancePipe) pipe = this._aoPipe('instance'); else if (pipe === this.instanceOpenPipe) pipe = this._aoPipe('instanceOpen');
     }
-    if (pipe === this.instancePipe || pipe === this.aoPipes.instance) b.uniforms = this.u;
+    if (pipe === this.instancePipe || pipe === this.aoPipes.instance || pipe === this.instanceOpenPipe || pipe === this.aoPipes.instanceOpen) b.uniforms = this.u;
     else b.uniforms = this.baseU;
     b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer || null; b.instanceBuffer = instanceBuffer;
-    if (pipe === this.aoPipes.voxel || pipe === this.aoPipes.mirror || pipe === this.aoPipes.instance) { this.aoExtra[0] = entry.aoBuffer; b.extraBuffers = this.aoExtra; } else b.extraBuffers = null;
+    if (pipe === this.aoPipes.voxel || pipe === this.aoPipes.mirror || pipe === this.aoPipes.instance || pipe === this.aoPipes.instanceOpen) { this.aoExtra[0] = entry.aoBuffer; b.extraBuffers = this.aoExtra; } else b.extraBuffers = null;
     this.device.bind(pipe, b); this.device.draw(count, first, instances);
   }
 
@@ -509,7 +512,7 @@ export class WgRasterPass {
             if (mr && this.maskReady && entry.uvMaskBuffer && mr[part * 5 + 2] >= 0) {
               this._instancedMaskedRange(entry, r, mr, part, buffer, item.instCount); instancedDraws++;
             } else {
-              this._draw(this.instancePipe, entry, r.count * 3, r.start * 3, buffer, item.instCount); instancedDraws++;
+              this._draw((item.flags & DRAW_FLAG_NO_CULL) ? this.instanceOpenPipe : this.instancePipe, entry, r.count * 3, r.start * 3, buffer, item.instCount); instancedDraws++;
             }
           }
         }

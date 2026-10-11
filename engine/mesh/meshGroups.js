@@ -22,13 +22,15 @@
 // and when any member's frame or object identity differs from the snapshot taken at build time (checked per feed).
 // Zero allocation per frame after a build.
 import { MAX_VOX_PARTS } from '../voxel/VoxelModel.js';
-import { addMeshStructures, placementMatrix12, DRAW_FLAG_ONE_PART } from './DrawList.js';
+import { addMeshStructures, placementMatrix12, meshObjectId, DRAW_FLAG_ONE_PART, DRAW_FLAG_NO_CULL } from './DrawList.js';
 import { INSTANCE_STRIDE, INST_OBJECT_ID, INST_FLAGS, makeInstanceGroup, createInstanceParts, groupRadius, touchInstances } from './instances.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
 import { lazyMeshVersion } from './lazyMesh.js';
 
 /** Total grouped instances per set (the GL path uploads at most MAX_INSTANCES_PER_FRAME = 4096 incl. vegetation). */
-export const MAX_GROUPED_INSTANCES = 1024;
+export const MAX_GROUPED_INSTANCES = 2048;
+/** Survivors pushed per frame (the WebGPU path throws past MAX_INSTANCES_PER_FRAME = 4096 incl. vegetation); later members are dropped past this. */
+export const MAX_GROUPED_KEPT = 1536;
 /** Minimum placements per mesh for a group (a lone prop keeps the single-draw path). */
 export const MIN_GROUP_SIZE = 2;
 
@@ -82,11 +84,14 @@ export function meshIsSolid(mesh) {
   return r;
 }
 
-/** @param {any} mesh @returns {boolean} meshes the instanced path can draw as one identity part set. */
+/** @param {any} mesh @returns {boolean} meshes the instanced path can draw as one identity part set (MESH-INST-02: masked and open meshes too). */
 function meshGroupable(mesh) {
-  if (mesh.layout !== 'static' || !mesh.ranges || mesh.ranges.length > MAX_VOX_PARTS || mesh.ranges.length < 1) return false;
-  for (let i = 0; i < mesh.ranges.length; i++) if (mesh.ranges[i].mask !== undefined) return false;
-  return meshIsSolid(mesh);
+  return mesh.layout === 'static' && !!mesh.ranges && mesh.ranges.length <= MAX_VOX_PARTS && mesh.ranges.length >= 1;
+}
+/** @param {any} mesh @returns {boolean} some range carries an alpha mask (needs per-range draws, no ONE_PART) */
+function meshHasMask(mesh) {
+  for (let i = 0; i < mesh.ranges.length; i++) if (mesh.ranges[i].mask !== undefined) return true;
+  return false;
 }
 
 export class MeshGroupSet {
@@ -179,6 +184,8 @@ export class MeshGroupSet {
       g.mesh = mesh; g.draw = draw; g.members = Int32Array.from(list);
       g.refs = new Array(n); g.steps = new Int32Array(n);
       g.count = n;
+      g.masked = meshHasMask(mesh); // per-range draws (mask atlas per range); never ONE_PART
+      g.open = !meshIsSolid(mesh);   // thin / one-sided: draw without back-face culling (what the single draw did)
       let maxScale = 1;
       // identity for every range index: both twins read `partMatrices[p]` per range (one voxel-style part per range)
       g.parts = createInstanceParts();
@@ -200,7 +207,7 @@ export class MeshGroupSet {
         f[o] = _m12[0]; f[o + 1] = _m12[1]; f[o + 2] = _m12[2]; f[o + 3] = _m12[9];
         f[o + 4] = _m12[3]; f[o + 5] = _m12[4]; f[o + 6] = _m12[5]; f[o + 7] = _m12[10];
         f[o + 8] = _m12[6]; f[o + 9] = _m12[7]; f[o + 10] = _m12[8]; f[o + 11] = _m12[11];
-        u[o + INST_OBJECT_ID] = (0xA000 | si) >>> 0;
+        u[o + INST_OBJECT_ID] = meshObjectId(si);
         u[o + INST_FLAGS] = 0; // not axis-aligned: the kind-9 face comes from the interpolated normal, as for single draws
         f[o + 14] = 0; f[o + 15] = 0;
         snap[w++] = s.frame.x; snap[w++] = s.frame.y; snap[w++] = s.frame.z; snap[w++] = s.frame.yawDeg || 0; snap[w++] = sk;
@@ -230,6 +237,7 @@ export class MeshGroupSet {
       let w = 0;
       for (let j = 0; j < mem.length; j++) {
         if (chosen[mem[j]] !== 1) continue;
+        if (kept + w >= MAX_GROUPED_KEPT) break;
         const o = j * INSTANCE_STRIDE;
         const tx = srcF[o + 3], ty = srcF[o + 7], tz = srcF[o + 11];
         if (planes && classifyAABB(planes, tx - R, ty - R, tz - R, tx + R, ty + R, tz + R) === CULL_OUT) continue;
@@ -239,7 +247,7 @@ export class MeshGroupSet {
       }
       g.drawCount[0] = w; touchInstances(g.drawIb[0]); // AUD-02: raw compaction writes -> version bump
       kept += w;
-      if (w > 0) { const it = list.addInstances(g.draw, g.parts, g.drawIb[0], w, R); if (it) it.flags |= DRAW_FLAG_ONE_PART; }
+      if (w > 0) { const it = list.addInstances(g.draw, g.parts, g.drawIb[0], w, R); if (it) it.flags |= (g.masked ? 0 : DRAW_FLAG_ONE_PART) | (g.open ? DRAW_FLAG_NO_CULL : 0); }
     }
     this.stats.kept = kept;
   }
