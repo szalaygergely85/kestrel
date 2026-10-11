@@ -17,7 +17,7 @@ const skySunScratch = { dirX: 0, dirY: 0, dirZ: 0, ambientI: 0, sunI: 0 };
 // _passRaster`) draws, so `?gpucompare=1&renderer=mesh` compares the GPU
 // mesh output against a JS mesh twin instead of the CPU DDA (27.7 item 2 can
 // only hold that way - see 27.15.5a item 6's "Oracle rule").
-import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths } from '../mesh/DrawList.js';
+import { DrawList, noteListOverflow, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths } from '../mesh/DrawList.js';
 import { MeshGroupSet, addMeshStructuresBatched } from '../mesh/meshGroups.js';
 import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget, clearRasterDepth } from '../mesh/rasterJS.js';
 import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
@@ -274,6 +274,7 @@ function renderWorldMesh(fb, world, cam) {
   // CLOTH-1b1 (33.5): cloth meshes after the voxel feed (JS twin only; the GPU pass draws them from CLOTH-1b2).
   if (world.cloths && world.cloths.count > 0) addCloths(list, world.cloths, meshFrustumPlanes, fb.matTable ? fb.matTable.idFor : undefined);
   meshCtx.team = fb.matTable ? fb.matTable.team : null;
+  noteListOverflow(list); // OB-043: F3 / tests (pre-cull items, refused pushes)
   list.cull(meshFrustumPlanes);
 
   const target = meshRasterTargetFor(cols, rows);

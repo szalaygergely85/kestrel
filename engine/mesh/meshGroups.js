@@ -22,15 +22,15 @@
 // and when any member's frame or object identity differs from the snapshot taken at build time (checked per feed).
 // Zero allocation per frame after a build.
 import { MAX_VOX_PARTS } from '../voxel/VoxelModel.js';
-import { addMeshStructures, placementMatrix12, meshObjectId, DRAW_FLAG_ONE_PART, DRAW_FLAG_NO_CULL } from './DrawList.js';
+import { addMeshStructures, placementMatrix12, meshObjectId, meshFeedStats, DRAW_FLAG_ONE_PART, DRAW_FLAG_NO_CULL, DRAW_TAIL_RESERVE } from './DrawList.js';
 import { INSTANCE_STRIDE, INST_OBJECT_ID, INST_FLAGS, makeInstanceGroup, createInstanceParts, groupRadius, touchInstances } from './instances.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
 import { lazyMeshVersion } from './lazyMesh.js';
 
-/** Total grouped instances per set (the GL path uploads at most MAX_INSTANCES_PER_FRAME = 4096 incl. vegetation). */
-export const MAX_GROUPED_INSTANCES = 2048;
-/** Survivors pushed per frame (the WebGPU path throws past MAX_INSTANCES_PER_FRAME = 4096 incl. vegetation); later members are dropped past this. */
-export const MAX_GROUPED_KEPT = 1536;
+/** Total grouped instances per set (OB-043, 38.46: 2048 -> 4096; build-time only: 2 x 64 B CPU rows per member + one GPU vertex buffer per group). */
+export const MAX_GROUPED_INSTANCES = 4096;
+/** Survivors pushed per frame (OB-043: 1536 -> 2048; DrawList MAX_LIST_INSTANCES = 4096 engine instances + this); later members are dropped past this. */
+export const MAX_GROUPED_KEPT = 2048;
 /** Minimum placements per mesh for a group (a lone prop keeps the single-draw path). */
 export const MIN_GROUP_SIZE = 2;
 
@@ -109,7 +109,9 @@ export class MeshGroupSet {
     /** @type {any} */ this._idFor = null;
     /** @type {any} */ this._cache = null;
     /** F3 stats: placements grouped / instances kept by the last `push`. */
-    this.stats = { groups: 0, members: 0, kept: 0, builds: 0 };
+    this.stats = { groups: 0, members: 0, kept: 0, builds: 0, groupsDropped: 0, instancesDropped: 0 };
+    /** OB-043 per-group scratch (sized at build): nearest survivor distance^2, sort order, take flag. */
+    this._gd = new Float64Array(0); this._go = new Int32Array(0); this._gt = new Uint8Array(0);
     /** @type {Float64Array} per member x,y,z,yawDeg,scale snapshot (5 each), concatenated over groups */
     this._snap = new Float64Array(0);
   }
@@ -217,6 +219,8 @@ export class MeshGroupSet {
       this.groups.push(g);
     }
     this._snap = snap;
+    const G = this.groups.length;
+    if (this._gd.length < G) { this._gd = new Float64Array(G); this._go = new Int32Array(G); this._gt = new Uint8Array(G); }
     this.stats.groups = this.groups.length;
     this.stats.members = total;
   }
@@ -225,16 +229,21 @@ export class MeshGroupSet {
    * One `DRAW_INSTANCED` item per group with >= 1 survivor. Survivors = members within draw distance
    * (`chosen`, uncapped) that are not outside the frustum; stable order,
    * 16 words copied through the u32 view (bit-exact). Zero allocation.
+   * OB-043 (38.46): at most `list.capacity - list.count - DRAW_TAIL_RESERVE` group items are pushed; past that the groups
+   * whose nearest survivor is farthest from `cam` (xy; ties: later group) are dropped whole and counted in `stats` and
+   * `meshFeedStats.groupsDropped`. Push order stays the build order (both twins identical). Zero allocation.
    * @param {import('./DrawList.js').DrawList} list
    * @param {Float64Array|null} planes - `frustumPlanes` output; null = keep all
+   * @param {{x:number,y:number}|null} [cam] - eye for the overflow ranking (null = origin)
    */
-  push(list, planes) {
-    const chosen = this.chosen;
-    let kept = 0;
-    for (let k = 0; k < this.groups.length; k++) {
+  push(list, planes, cam = null) {
+    const chosen = this.chosen, G = this.groups.length, gd = this._gd;
+    const cx = cam ? cam.x : 0, cy = cam ? cam.y : 0;
+    let kept = 0, live = 0;
+    for (let k = 0; k < G; k++) {
       const g = this.groups[k], mem = g.members, R = g._R;
       const srcF = g.ib.f32, srcU = g.ib.u32, dst = g.drawIb[0].u32;
-      let w = 0;
+      let w = 0, dmin = Infinity;
       for (let j = 0; j < mem.length; j++) {
         if (chosen[mem[j]] !== 1) continue;
         if (kept + w >= MAX_GROUPED_KEPT) break;
@@ -244,12 +253,40 @@ export class MeshGroupSet {
         const wo = w * INSTANCE_STRIDE;
         for (let c = 0; c < INSTANCE_STRIDE; c++) dst[wo + c] = srcU[o + c];
         w++;
+        const dx = tx - cx, dy = ty - cy, d2 = dx * dx + dy * dy;
+        if (d2 < dmin) dmin = d2;
       }
       g.drawCount[0] = w; touchInstances(g.drawIb[0]); // AUD-02: raw compaction writes -> version bump
       kept += w;
-      if (w > 0) { const it = list.addInstances(g.draw, g.parts, g.drawIb[0], w, R); if (it) it.flags |= (g.masked ? 0 : DRAW_FLAG_ONE_PART) | (g.open ? DRAW_FLAG_NO_CULL : 0); }
+      gd[k] = dmin;
+      if (w > 0) live++;
     }
-    this.stats.kept = kept;
+    // OB-043: group items over the budget -> keep the `budget` nearest (insertion sort of the live groups by (d2, k); overflow frames only)
+    const budget = Math.max(0, list.capacity - list.count - DRAW_TAIL_RESERVE), take = this._gt;
+    let groupsDropped = 0, instDropped = 0;
+    if (live > budget) {
+      const ord = this._go;
+      let n = 0;
+      for (let k = 0; k < G; k++) {
+        take[k] = 0;
+        if (this.groups[k].drawCount[0] <= 0) continue;
+        const dk = gd[k];
+        let j = n - 1;
+        while (j >= 0 && gd[ord[j]] > dk) { ord[j + 1] = ord[j]; j--; }
+        ord[j + 1] = k; n++;
+      }
+      for (let i = 0; i < budget; i++) take[ord[i]] = 1;
+      for (let i = budget; i < n; i++) { groupsDropped++; instDropped += this.groups[ord[i]].drawCount[0]; }
+    }
+    for (let k = 0; k < G; k++) {
+      const g = this.groups[k], w = g.drawCount[0];
+      if (w <= 0 || (live > budget && !take[k])) continue;
+      const it = list.addInstances(g.draw, g.parts, g.drawIb[0], w, g._R);
+      if (it) it.flags |= (g.masked ? 0 : DRAW_FLAG_ONE_PART) | (g.open ? DRAW_FLAG_NO_CULL : 0);
+    }
+    this.stats.kept = kept - instDropped;
+    this.stats.groupsDropped = groupsDropped; this.stats.instancesDropped = instDropped;
+    meshFeedStats.groupsDropped = groupsDropped;
   }
 }
 
@@ -269,6 +306,6 @@ export function addMeshStructuresBatched(list, world, cam, cache, idFor, fogFarM
   if (!groups) { addMeshStructures(list, world, cam, cache, idFor, fogFarM, false, null, null, planes); return; }
   groups.update(world, cache, idFor);
   addMeshStructures(list, world, cam, cache, idFor, fogFarM, false, null, groups, planes); // OB-039: frustum-aware single pick
-  groups.push(list, planes);
+  groups.push(list, planes, cam);
 }
 

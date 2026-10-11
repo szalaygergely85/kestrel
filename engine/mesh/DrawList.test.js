@@ -5,7 +5,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
-  DrawList, DRAW_STATIC, DRAW_INSTANCED, addStructures, LevelMeshCache,
+  DrawList, DRAW_STATIC, DRAW_INSTANCED, addStructures, LevelMeshCache, MAX_DRAW_ITEMS, DRAW_TAIL_RESERVE, MAX_LIST_INSTANCES,
 } from './DrawList.js';
 import { createInstanceBuffer, writeUnitInstance, createInstanceParts } from './instances.js';
 import { projTerms, shearProjection } from '../render/projection.js';
@@ -63,8 +63,10 @@ function makeQuadMesh(id) {
   for (let i = 0; i < 3; i++) list.push(mesh, DRAW_STATIC);
   ok('count at capacity', list.count === 4);
   let threw = false;
+  list.strict = true; // OB-043: only strict lists throw; the default (game) list drops + counts
   try { list.push(mesh, DRAW_STATIC); } catch (e) { threw = true; }
-  ok('push past capacity throws', threw);
+  list.strict = false;
+  ok('strict: push past capacity throws', threw);
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +254,36 @@ function makeQuadMesh(id) {
   global.gc();
   const grew = process.memoryUsage().heapUsed - before;
   ok('addInstances + cull: no significant heap growth over 1000 frames', grew < 64 * 1024, `grew=${grew}`);
+}
+
+// ---- OB-043: overflow never throws (game path), strict throws, instance cap per list ----
+{
+  const l = new DrawList(4); l.begin();
+  for (let i = 0; i < 7; i++) { const it = l.push(null, DRAW_STATIC); it.objectId = 100 + i; }
+  ok('OB-043: push past capacity: count stays at capacity, overflow counted', l.count === 4 && l.overflow === 3);
+  ok('OB-043: the first pushes are kept (push order = priority), the sink never enters items', l.items.slice(0, 4).map((x) => x.objectId).join() === '100,101,102,103' && !l.items.includes(l._sink));
+  l.begin(); ok('OB-043: begin() resets overflow', l.overflow === 0 && l.count === 0);
+  const s = new DrawList(1); s.strict = true; s.begin(); s.push(null, DRAW_STATIC);
+  let threw = false; try { s.push(null, DRAW_STATIC); } catch (e) { threw = /over capacity/.test(e.message); }
+  ok('OB-043: strict list still throws (tests / dev)', threw);
+  const parts = createInstanceParts(); parts.count = 1; parts.m[0] = parts.m[4] = parts.m[8] = 1;
+  const mesh = { triCount: 1, ranges: [{ start: 0, count: 1 }], bbox: new Float64Array([-1, -1, 0, 1, 1, 1]) };
+  const ib = createInstanceBuffer(MAX_LIST_INSTANCES);
+  const li = new DrawList(8); li.begin();
+  const a = li.addInstances(mesh, parts, ib, MAX_LIST_INSTANCES - 10);
+  const b = li.addInstances(mesh, parts, ib, 11);
+  const c = li.addInstances(mesh, parts, ib, 10);
+  ok('OB-043: addInstances past MAX_LIST_INSTANCES drops that item (null, counted), later fitting items still go in', !!a && b === null && !!c && li.count === 2 && li.instDropped === 11 && li.instTotal === MAX_LIST_INSTANCES);
+  const lf = new DrawList(1); lf.begin(); lf.push(null, DRAW_STATIC);
+  ok('OB-043: addInstances on a full list returns null, counts overflow', lf.addInstances(mesh, parts, ib, 2) === null && lf.overflow === 1 && lf.instTotal === 0);
+  ok('OB-043: MAX_DRAW_ITEMS 512, tail reserve < capacity', MAX_DRAW_ITEMS === 512 && DRAW_TAIL_RESERVE < MAX_DRAW_ITEMS);
+  const z = new DrawList(2);
+  const fr = () => { z.begin(); for (let i = 0; i < 6; i++) z.push(null, DRAW_STATIC); };
+  for (let i = 0; i < 50; i++) fr();
+  global.gc(); const h0 = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 2000; i++) fr();
+  global.gc();
+  ok('OB-043: overflowing pushes allocate nothing', process.memoryUsage().heapUsed - h0 < 32 * 1024);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

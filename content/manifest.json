@@ -134,7 +134,8 @@
     "meshes/quaternius/Corner_Exterior_Brick.mesh.json",
     "meshes/quaternius/WindowShutters_Thin_Flat_Closed.mesh.json",
     "meshes/quaternius/WindowShutters_Wide_Flat_Open.mesh.json",
-    "meshes/quaternius/Window_Roof_Wide.mesh.json"
+    "meshes/quaternius/Window_Roof_Wide.mesh.json",
+    "meshes/far/ferrum_far.mesh.json"
   ],
   "masks": [
     "masks/quaternius/Flowers.mask.json",
