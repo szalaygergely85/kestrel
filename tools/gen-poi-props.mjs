@@ -17,7 +17,7 @@ import { loadTestAssets } from './testing/content-node.mjs';
 const dry = process.argv.includes('--dry-run');
 const FILE = 'content/worlds/world_m1.world.json', AREAS = 'content/quests/areas.json';
 const data = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-const poiRe = /^poi\d+$/, ENT_IDS = ['post', 'notePost', 'target1', 'target2', 'target3'];
+const poiRe = /^poi\d+$/, ENT_IDS = ['post', 'notePost', 'target1', 'target2', 'target3', 'nest', 'chestRook', 'chestMeadow', 'chestBend', 'chestCrossroads', 'chestHidden', 'hiddenScrawl', 'cap1', 'cap2', 'cap3', 'cap4', 'cap5', 'smoke1', 'smoke2', 'smoke3'];
 data.structures = data.structures.filter((s) => !poiRe.test(s.id));
 data.entities = data.entities.filter((e) => !ENT_IDS.includes(e.id));
 const { assets } = await loadTestAssets();
@@ -29,7 +29,7 @@ const WATER = T.groundTypeAt(1028, 1068);
 const low = (x, y, e = 0.6) => Math.min(T.groundAt(x, y), T.groundAt(x + e, y), T.groundAt(x - e, y), T.groundAt(x, y + e), T.groundAt(x, y - e));
 // lowest ground of the footprint, slight sink; o.dz stacks on a lower piece; o.scale; o.collide:false; o.ext = footprint half size
 function put(mesh, x, y, yaw, o = {}) {
-  const st = { id: 'poi' + String(out.length).padStart(3, '0'), mesh: 'quaternius/' + mesh, origin: { x: +x.toFixed(2), y: +y.toFixed(2), z: +(low(x, y, o.ext ?? 0.6) - 0.04 + (o.dz ?? 0)).toFixed(2) }, yawDeg: ((Math.round(yaw) % 360) + 360) % 360 };
+  const st = { id: 'poi' + String(out.length).padStart(3, '0'), mesh: 'quaternius/' + mesh, origin: { x: +x.toFixed(2), y: +y.toFixed(2), z: o.z != null ? o.z : +(low(x, y, o.ext ?? 0.6) - 0.04 + (o.dz ?? 0)).toFixed(2) }, yawDeg: ((Math.round(yaw) % 360) + 360) % 360 };
   if (o.scale) st.scale = o.scale;
   if (o.collide === false) st.collide = false;
   if (o.noShadow) st.castShadow = false;
@@ -64,11 +64,65 @@ put('Prop_Crate', basket.x, basket.y, 20, { scale: 0.8, ext: 0.4 });
     put(['RockPath_Round_Small_1', 'RockPath_Round_Small_2', 'RockPath_Round_Small_3'][n % 3], x, y, (n * 53) % 360, { collide: false, noShadow: true, ext: 0.4 });
   }
 }
+// ---- MAP-23 Rook's nest ruin (975,1058): broken house of Wall_Arch walls (3 m), rubble gaps, no door, half roof (north half),
+// stair-block rubble steps up the east side to the roof deck; nest + boots-chest anchors on the roof. All solid (collide default true).
+const RC = [975, 1058];
+let base = 1e9; for (let dx = -3.5; dx <= 3.5; dx += 0.5) for (let dy = -3.5; dy <= 3.5; dy += 0.5) base = Math.min(base, T.groundAt(RC[0] + dx, RC[1] + dy));
+const WALLH = 3, ROOFZ = +(base + WALLH).toFixed(2), DECK = +(ROOFZ + 1.09).toFixed(2); // roof piece collider is a box z -0.16..1.09: deck top = ROOFZ + 1.09
+const wall = (x, y, yaw) => put('Wall_Arch', x, y, yaw, { ext: 1.0 });
+const rubble = (x, y, yaw, i) => put(['Wall_BottomCover', 'Prop_Brick1', 'Prop_Brick2', 'Prop_Brick3', 'Prop_Brick4'][i % 5], x, y, yaw, { ext: 0.3 });
+for (const dx of [-2, 0, 2]) wall(RC[0] + dx, RC[1] - 3, 0);                     // north wall: whole
+for (const dy of [-2, 0]) wall(RC[0] - 3, RC[1] + dy, 90);                       // west wall: two segments, SW corner fallen
+wall(RC[0] + 3, RC[1] + 2, 90);                                                  // east wall: south segment only; the NE is open (rubble steps come in there)
+for (const dx of [-2, 2]) wall(RC[0] + dx, RC[1] + 3, 0);                        // south wall: two segments, gap between (no door)
+[[-3, 2, 90], [3, 0, 90], [3, -2, 90], [0, 3, 0], [-3, 3.4, 20]].forEach(([dx, dy, yw], i) => put('Wall_BottomCover', RC[0] + dx, RC[1] + dy, yw, { ext: 1.0 }));
+[[-1.5, 1.5], [0.8, 0.4], [-0.6, -0.9], [2.1, 1.7], [1.4, 2.4], [-2.2, 0.6]].forEach(([dx, dy], i) => rubble(RC[0] + dx, RC[1] + dy, i * 71, 1 + i));
+// half roof (north half), absolute z so the three pieces stay level on the slope
+for (const dx of [-2.3, 0, 2.3]) put('Roof_Wooden_2x1', RC[0] + dx, RC[1] - 1.4, 0, { z: ROOFZ, ext: 0.3 });
+// rubble steps: a pile of 2 m stair-block columns running south from the west side of the roof (south of the road end, clear of the 9e line and of the world-bounds
+// edge in the north), each top <= 0.7 m above the previous (jump apex 1.05 m, step-up 0.45), first top ~0.7 m over its ground, the last (against the roof box) exactly DECK.
+const PX = RC[0] - 4.3, stepTops = [], stepYs = [];
+{
+  const Y = (n, i) => RC[1] - 2 + 2 * (n - 1 - i);
+  const N = Math.max(2, Math.ceil((DECK - (low(PX, Y(7, 0), 1.0) + 0.7)) / 0.7) + 1);
+  let top = low(PX, Y(N, 0), 1.0) + 0.7; const inc = (DECK - top) / (N - 1);
+  for (let i = 0; i < N; i++, top += inc) {
+    const y = Y(N, i), g = low(PX, y, 1.0) - 0.04, n = Math.max(1, Math.ceil(top - g - 0.05));
+    for (let k = 0; k < n; k++) put('Stairs_Exterior_Straight', PX, y, k % 2 ? 180 : 0, { z: +(top - 1 - (n - 1 - k) * Math.max(0.5, Math.min(1, (top - 1 - g) / Math.max(1, n - 1)))).toFixed(2), ext: 1.0 });
+    stepTops.push(+top.toFixed(2)); stepYs.push(+y.toFixed(1));
+  }
+}
+{ rubble(PX - 2.1, stepYs[0] - 0.4, 30, 2); rubble(PX - 2.3, stepYs[2], 120, 3); rubble(PX + 2.2, stepYs[1], 75, 4); } // beside the pile, never on the approach line
+const nestZ = +(DECK + 0.05).toFixed(2);
+const ruinEnts = [
+  { id: 'nest', type: 'prop', x: RC[0] - 1, y: RC[1] - 1.6, z: nestZ, note: 'MAP-23 Rook nest anchor on the ruin roof (QL-16 relay.mirror pickup; QL-D1 nest sprite pending). Roof deck z ' + DECK },
+  { id: 'chestRook', type: 'prop', x: RC[0] + 1.6, y: RC[1] - 1.6, z: nestZ, note: 'MAP-23 chest anchor on the ruin roof (QL-16 River Boots chest; no chest content yet, chestHook defs [])' },
+];
+// ---- MAP-25 loot spots + red caps + smoke anchors. Anchors are bare props (QL-18/QL-17 wire the content); caps are Quaternius mushrooms.
+const free = (x, y) => T.groundTypeAt(x, y) !== WATER && T.groundTypeAt(x + 1, y) !== WATER && T.groundTypeAt(x, y + 1) !== WATER;
+const anchor = (id, x, y, note) => { world.ensureBandFor(x, y); ruinEnts.push({ id, type: 'prop', x, y, z: 'ground', note }); };
+anchor('chestMeadow', 1384, 1062, 'MAP-25 heart-piece chest 1 (meadow grove, N of the road near fenceMeadow)');
+anchor('chestBend', 1268, 1014, 'MAP-25 heart-piece chest 2 (Bend Relay ridge, ~20 m NNE of relayBend)');
+{ // chest 3 on a 1 m stair-block platform behind the ford Wall_Arch ruin (989.57,1092.29)
+  const px = 986.2, py = 1094.6; put('Stairs_Exterior_Straight', px, py, 0, { ext: 1.0 });
+  ruinEnts.push({ id: 'chestCrossroads', type: 'prop', x: px, y: py, z: +(low(px, py, 1.0) - 0.04 + 1.0).toFixed(2), note: 'MAP-25 heart-piece chest 3 (crossroads ruin, on a 1 m stair-block platform behind the Wall_Arch)' });
+}
+{ const hx = 930, hy = 968; world.ensureBandFor(hx, hy); put('Rock_Medium_1', hx + 1.5, hy + 1.2, 40, { ext: 1.2 }); put('Rock_Medium_2', hx - 1.8, hy + 1.0, 200, { ext: 1.2 });
+  ruinEnts.push({ id: 'hiddenScrawl', type: 'prop', x: hx - 0.5, y: hy + 5, z: 'ground', components: { inspect: { text: 'scrawl.hiddenChest' } }, note: 'MAP-25 scrawl on the footpath north (text key scrawl.hiddenChest, writer QL-W1)' });
+  anchor('chestHidden', hx, hy, 'MAP-25 hidden chest (Wayfarer Tunic): between two rocks, behind scrawl.hiddenChest (hiddenScrawl, 5 m south)'); }
+{ let k = 0; const caps = ['Mushroom_Common', 'Mushroom_Laetiporus'];
+  for (const [x, y] of [[1056, 1038], [1062, 1052], [1058, 1070], [1068, 1086], [1054, 1096]]) {
+    world.ensureBandFor(x, y); let px = x; while (!free(px, y) && px < x + 30) px += 2;
+    k++; put(caps[k % 2], px, y, k * 67, { collide: false, noShadow: true, ext: 0.3, scale: 2.2 });
+    ruinEnts.push({ id: 'cap' + k, type: 'prop', x: +px.toFixed(1), y, z: 'ground', note: 'MAP-25 red-cap anchor ' + k + ' (east bank edge; QL-18 sq.rook.caps pickup)' });
+  } }
+[[958, 1004], [951, 1008], [962, 1000]].forEach(([x, y], i) => anchor('smoke' + (i + 1), x, y, 'MAP-25 smoke-column billboard anchor ' + (i + 1) + ' (far-only, north of northLook; QL-D1 smokeColumn sprite pending)'));
+console.log('ruin: wall top', ROOFZ, 'deck', DECK, 'steps tops', stepTops.join(','), 'base', base.toFixed(2));
 // ---- MAP-24 straw-man field: note post (crate + upright board) and 3 practiceTarget entities 13-23 m away
 const NOTE = [966, 1086];
 put('Prop_Crate', NOTE[0], NOTE[1], 0, { scale: 0.5, ext: 0.3 });
 put('Prop_WoodenFence_Single', NOTE[0], NOTE[1], 90, { dz: 0.53, scale: 0.55, ext: 0.3 });
-const ents = [
+const ents = [...ruinEnts, 
   { id: 'post', type: 'prop', x: +basket.x.toFixed(2), y: +basket.y.toFixed(2), z: 'ground', components: { inspect: { text: 'post.basket' } }, note: 'MAP-22 trade post basket crate: inspect anchor (sq.packet delivers here, 20 arrows in the basket)' },
   { id: 'notePost', type: 'prop', x: NOTE[0], y: NOTE[1], z: 'ground', components: { inspect: { text: 'note.straw' } }, note: 'MAP-24 note post of the straw-man field (QL-13 sq.straw giver)' },
 ];
