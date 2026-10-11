@@ -272,7 +272,7 @@ export class VoxelPool {
     if (world !== this._entWorld || world.renderVersion !== this._entVersion) this._rebuildEnts(world);
     const ents = this._ents;
     const n = ents.length;
-    const ecap = this.cap - this.reserve; // `reserve` slots stay free for pushInstance feeds (ambient fauna)
+    const ecap = Math.max(0, this.cap - this.reserve); // `reserve` slots stay free for pushInstance feeds (ambient fauna)
     if (n <= ecap) {
       for (let i = 0; i < n; i++) {
         // US-079b0 (37.16.1 item 1): a hidden voxel entity renders nothing.

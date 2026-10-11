@@ -1153,7 +1153,9 @@ async function runGpuCompareSceneMode(ctx) {
   overlay.el.style.font = '13px "Courier New", monospace';
   overlay.el.style.whiteSpace = 'pre';
   overlay.el.textContent = text;
-  window.__gpuCompare = { rows: rowsOut.concat(shadowRows, stableRows), ok: overallOk, infoRows };
+  const droppedFrames = (rt && rt.failedFrames) || 0; // FIX-RING: a dropped frame means the compare images are suspect
+  if (droppedFrames > 0) { overallOk = false; console.error(`[gpucompare] FAIL: ${droppedFrames} GPU frame(s) dropped`); }
+  window.__gpuCompare = { rows: rowsOut.concat(shadowRows, stableRows), ok: overallOk, infoRows, droppedFrames };
 }
 
 /**

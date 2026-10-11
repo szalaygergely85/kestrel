@@ -22,6 +22,8 @@ import { bootNow, span as bootSpan } from '../../../core/bootMarks.js'; // BOOT-
 
 /** Ring size (38.4): MAX_DRAW_ITEMS * 3 + 64 slots of 256 B. */
 // FIX-RING (owner crash 2026-10-11): 832 slots overflowed in the sun-shadow caster loop on the dressed world; 1 MB ring.
+/** FIX-PASS: how many passes carry an owner stack after an abort (bounded; then beginPass is allocation-free again). */
+export const TRACE_PASSES_AFTER_ABORT = 8;
 export const DEFAULT_RING_SLOTS = MAX_DRAW_ITEMS * 16 + 64;
 const ZERO4 = [0, 0, 0, 0];
 
@@ -91,6 +93,8 @@ export class GpuDeviceWebGPU {
     /** @type {any} */ this._encoder = null;
     /** @type {any} */ this._pass = null;
     /** FIX-PASS: capture an owner stack at every beginPass (off: allocation-free; abortPass turns it on). */ this.tracePasses = false;
+    /** FIX-PASS: passes still to be traced after an abort (bounded: tracePasses switches itself off again at 0). */ this._traceLeft = 0;
+    /** FIX-PASS: counters exposed through `stats` (see passStats). */ this.abortedPasses = 0;
     /** @type {string|null} */ this._passStack = null;
     /** @type {any} */ this._curPipeline = null;
     this._dyn = [0];
@@ -484,7 +488,10 @@ export class GpuDeviceWebGPU {
     this._pass = this._encoder.beginRenderPass(pd);
     this._curPipeline = null;
     this._boundTarget = target;
-    this._passStack = this.tracePasses ? new Error('pass opened here').stack : null; // FIX-PASS: owner stack, only once a stale pass was seen
+    if (this.tracePasses) { // FIX-PASS: owner stack only for the TRACE_PASSES_AFTER_ABORT passes after a stale pass was seen, then 0-alloc again
+      this._passStack = new Error('pass opened here').stack;
+      if (--this._traceLeft <= 0) { this._traceLeft = 0; this.tracePasses = false; }
+    } else this._passStack = null;
   }
 
   /** FIX-PASS: true while a render pass is open (between beginPass and endPass/abortPass). */
@@ -503,11 +510,21 @@ export class GpuDeviceWebGPU {
     if (this._passStack) owner += ' | opened at: ' + this._passStack;
     try { this._pass.end(); } catch (_) { /* an encoder already invalid: dropping the pass is all we can do */ }
     this._pass = null; this._curPipeline = null; this._boundTarget = null; this._passStack = null;
-    this.tracePasses = true;
-    this.abortedPasses = (this.abortedPasses || 0) + 1;
+    this.tracePasses = true; this._traceLeft = TRACE_PASSES_AFTER_ABORT;
+    this.abortedPasses++;
     if (reason) console.warn(`[GpuDeviceWebGPU] aborted open pass (${reason}): ${owner}`);
     return owner;
   }
+
+  /** FIX-RING: drop a failed frame - end any open pass, drop the encoder, reset the uniform ring. Never throws. */
+  resetFrame() {
+    this.abortPass();
+    this._encoder = null; 
+    this.uniformRing.reset();
+  }
+
+  /** FIX-PASS: copy the abort counter into a stats object (no allocation). */
+  writePassStats(stats) { stats.abortedPasses = this.abortedPasses; }
 
   /** @param {GpuHandle} pipeline @param {import('./GpuDevice.js').BindDesc} desc */
   bind(pipeline, desc) {

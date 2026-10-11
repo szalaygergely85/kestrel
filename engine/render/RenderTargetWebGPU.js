@@ -39,7 +39,7 @@ export class RenderTargetWebGPU {
     this.fontSize = 16;
     this.dpr = 1;
     this.ready = true;
-    this.stats = { gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN };
+    this.stats = { gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN, abortedPasses: 0, droppedFrames: 0 };
     this._warnedLost = false;
     this._uiLayer = null;
     this._clearOpts = { clear: true }; // hoisted: present() runs every frame
@@ -248,8 +248,8 @@ export class RenderTargetWebGPU {
       // ("uniform ring overflow" -> fatal). End the pass, submit what was recorded (resets the ring), drop this frame only.
       if (typeof d.abortPass === 'function') d.abortPass();
       d.timer.end();
-      try { d.submit(); } catch (_) { if (d.uniformRing) d.uniformRing.reset(); d._encoder = null; }
-      this.failedFrames = (this.failedFrames || 0) + 1;
+      try { d.submit(); } catch (_) { d.resetFrame(); }
+      this.failedFrames = (this.failedFrames || 0) + 1; this.stats.droppedFrames = this.failedFrames;
       if (this.failedFrames <= 3 || this.failedFrames % 600 === 0) console.error(`[RenderTargetWebGPU] frame dropped (${this.failedFrames}):`, e);
       return;
     }
@@ -257,6 +257,7 @@ export class RenderTargetWebGPU {
     d.timer.end();
     d.submit();
     if (d.timer.writeStats) d.timer.writeStats(this.stats);
+    if (d.writePassStats) d.writePassStats(this.stats);
   }
 }
 

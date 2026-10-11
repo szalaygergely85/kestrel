@@ -326,6 +326,17 @@ if (global.gc) {
   p.project(c, rt);
 }
 
+// FIX-BROWSER-3 nit: reserve >= cap clamps the entity cap to 0 (never negative)
+{
+  const p = new VoxelPool(); p.renderer = 'mesh'; p.bind(registry, table); p.reserve = p.cap + 10;
+  const ents = [{ components: { voxel: { model: 'bear' } }, transform: { x: 0, y: -3, z: 0, yawDeg: 0 } }];
+  const w = { renderVersion: 1, forEachEntity(fn) { for (const e of ents) fn(e); } };
+  const warn0 = console.warn; console.warn = () => {};
+  let threw = false; try { p.collect(w, { x: 0, y: 1, z: 1, yawDeg: 0, pitchDeg: 0 }); } catch (_) { threw = true; }
+  console.warn = warn0;
+  ok('reserve > cap: no throw, no entity queued, no negative cap', !threw && p._rawCount === 0);
+}
+
 console.log(`${pass} pass, ${fail} fail`);
 if (fail) { console.log('FAILURES:\n' + failures.map((f) => '  ' + f).join('\n')); process.exit(1); }
 console.log('ALL PASS');
