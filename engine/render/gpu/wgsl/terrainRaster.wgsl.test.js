@@ -75,7 +75,7 @@ assert.ok(src.includes('const PLANEID_TERRAIN: u32 = 0xFFFFFFFFu;')); // GL uint
 assert.ok(src.includes(`const KIND_TERRAIN: u32 = ${KIND_TERRAIN}u;`) && src.includes(`const FACE_PACKED: u32 = ${FACE_PACKED}u;`));
 assert.ok(src.includes('KIND_TERRAIN | (FACE_PACKED << 8u) | (u32(terrType) << 16u)'));
 assert.ok(src.includes('bitcast<u32>(1.0e30f)'));
-assert.ok(/x >= b\.x && wp\.x < b\.z && wp\.y >= b\.y && wp\.y < b\.w\)/.test(src) && src.includes('if (inStructFoot(v.vWorldPos)) { discard; }'), 'half-open footprint carve (GS-01b: bbox then mask lookup, shared fn)');
+assert.ok(/x >= b\.x && wp\.x < b\.z && wp\.y >= b\.y && wp\.y < b\.w\)/.test(src) && src.includes('if (inStructFoot(wp)) { discard; }'), 'half-open footprint carve (GS-01b: bbox then mask lookup, shared fn)');
 assert.ok(TERRAIN_RASTER_FRAG_SRC.includes('vWorldPos.x >= b.x && vWorldPos.x < b.z') && TERRAIN_VERT_SRC.includes('unpackNormalOct(aNrmBits)'));
 assert.ok(!/\bround\s*\(|dpdx|dpdy|fwidth|frag_depth|textureSample|%/.test(src));
 assert.ok(src.includes(`for (var i = 0; i < ${MAX_STRUCTS}; i++)`));
@@ -84,8 +84,25 @@ assert.ok(src.includes('@group(0) @binding(2) var uStructMask: texture_2d<u32>;'
 assert.ok(src.includes('@group(0) @binding(0) var uNearType: texture_2d<u32>;') && src.includes('@group(0) @binding(1) var uFarType: texture_2d<u32>;'));
 assert.ok(WGSL_MODULES.some((m) => m.name === 'rasterTerrain' && m.code === TERRAIN_RASTER_WGSL));
 assert.equal(TERRAIN_BLOCK.sizeBytes % 16, 0);
-// PREC-01a (37.9 step 6): clip from the rebased modelRel, vWorldPos still from the absolute model (kind-7 GA.xy = world metres).
+// PREC-01a (37.9 step 6): clip from the rebased modelRel; GA.xy = absolute world metres.
 assert.ok(TERRAIN_RASTER_WGSL.includes('o.pos = u.viewProj * (u.modelRel * vec4f(a.aPos, 1.0));'));
-assert.ok(TERRAIN_RASTER_WGSL.includes('let worldPos = u.model * vec4f(a.aPos, 1.0);') && TERRAIN_RASTER_WGSL.includes('o.vWorldPos = worldPos.xyz;'));
+// OB-041: the varying is world - O (O = worldO.xy, multiple of 16 m); O is added back once per fragment, so GA.xy/type/carve use
+// one f32 rounding of a ~1e-6 m-accurate value (absolute interpolation at |x| ~ 1500 m erred by 2-3 ulp = 3e-4 m and flipped
+// 0.125 m terrain hash cells vs the JS twin's f64 hit -> Float32 gbuf.u).
+assert.ok(TERRAIN_RASTER_WGSL.includes('let worldPos = u.model * vec4f(a.aPos, 1.0);') && TERRAIN_RASTER_WGSL.includes('o.vWorldRel = vec3f(worldPos.x - u.worldO.x, worldPos.y - u.worldO.y, worldPos.z);'));
+assert.ok(TERRAIN_RASTER_WGSL.includes('let wp = vec3f(v.vWorldRel.x + u.worldO.x, v.vWorldRel.y + u.worldO.y, v.vWorldRel.z);') && !TERRAIN_RASTER_WGSL.includes('vWorldPos'));
+assert.ok(TERRAIN_BLOCK.field('worldO').word * 4 >= TERRAIN_BLOCK.field('structMask').word * 4 + 16, 'worldO appended after structMask (earlier offsets unchanged)');
+{ // OB-041 numeric probe: f32 barycentric interpolation of absolute vs O-relative positions near x = 1461 (O = 1456)
+  const f = Math.fround, O = 1456; let absBad = 0, relBad = 0, n = 0;
+  for (let k = 0; k < 4000; k++) {
+    const x0 = 1460 + (k % 7) * 0.5, x1 = x0 + 0.5, x2 = x0, b1 = ((k * 7919) % 1000) / 1000, b2 = (1 - b1) * (((k * 104729) % 997) / 997), b0 = 1 - b1 - b2;
+    const exact = b0 * x0 + b1 * x1 + b2 * x2, js = f(exact), cell = Math.floor(js / 0.125);
+    const abs = f(f(f(f(b0) * f(x0)) + f(f(b1) * f(x1))) + f(f(b2) * f(x2)));
+    const r = f(f(f(f(b0) * f(x0 - O)) + f(f(b1) * f(x1 - O))) + f(f(b2) * f(x2 - O))), rel = f(r + O);
+    n++; if (Math.abs(abs - js) > 0) absBad++; if (Math.abs(rel - js) > 0) relBad++;
+    if (Math.floor(rel / 0.125) !== cell && Math.abs(exact / 0.125 - Math.round(exact / 0.125)) > 1e-4) relBad += 1000; // never a hash-cell flip away from a true tie
+  }
+  assert.ok(relBad * 4 < absBad && relBad < n * 0.02, `rel+O interpolation matches the f32-rounded f64 hit far more often (rel ${relBad} vs abs ${absBad} of ${n} ulp mismatches)`);
+}
 assert.ok(!/origin/.test(TERRAIN_RASTER_WGSL));
 console.log('terrainRaster.wgsl.test.js: 6000 type-lookup probes (near ' + near + ') and shader/layout checks passed. block ' + TERRAIN_BLOCK.sizeBytes + ' B');

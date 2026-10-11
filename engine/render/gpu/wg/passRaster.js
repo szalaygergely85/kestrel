@@ -35,6 +35,7 @@ const ORIGIN = RASTER_BLOCK.field('origin').word, T_MODEL_REL = TERRAIN_BLOCK.fi
 const WIND = RASTER_BLOCK.field('wind').word, WIND_T = RASTER_BLOCK.field('windT').word, WIND_K = RASTER_BLOCK.field('windK').word;
 const T_MODEL = TERRAIN_BLOCK.field('model').word, T_VIEW = TERRAIN_BLOCK.field('viewProj').word;
 const T_NEAR = TERRAIN_BLOCK.field('nearMap').word, T_FAR = TERRAIN_BLOCK.field('farMap').word, T_FOOT = TERRAIN_BLOCK.field('structFoot').word, T_MASK = TERRAIN_BLOCK.field('structMask').word;
+const T_ORIGIN = TERRAIN_BLOCK.field('worldO').word; // OB-041
 const T_OBJECT = TERRAIN_BLOCK.field('objectId').word, T_READY = TERRAIN_BLOCK.field('nearReady').word, T_COUNT = TERRAIN_BLOCK.field('structCount').word;
 /**
  * PREC-01b (37.9 step 6) switch. true = terrain clip is camera-relative too (viewRel + modelRel = model - O). Measured 2026-10-08: with it ON the PASS row
@@ -292,6 +293,7 @@ export class WgRasterPass {
     this.tbits[T_COUNT] = n;
     this.structMasks.sync(structs, tu, T_MASK); this.terrainTex[2].texture = this.structMasks.tex; // GS-01b: carve masks (same box order as above)
     this.tbits[T_PROJ] = this.ortho ? 2 : 0; // US-068b2
+    tu[T_ORIGIN] = this.ox; tu[T_ORIGIN + 1] = this.oy; // OB-041: vWorldRel origin (same O as the mesh raster; set in prepare() before this call)
   }
 
   _terrain(list) {
