@@ -94,6 +94,7 @@ import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
 import { wireTelegraphs, telegraphsEnabled } from './fx/telegraphWire.js'; // TELEGRAPH-WIRE-01 (lane B1)
 import { stepCombatHint } from './quest/combatHint.js'; // COMBAT-HINT-01
+import { createRegionBanner } from './quest/regionBanner.js'; // REGION-01: region-entry banner
 import { stepActionHints, resetActionHints } from './quest/actionHints.js'; // FS-01
 import { createWild } from './wild/wildEnv.js'; // WILD-06: ambient rabbits + deer
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
@@ -1163,6 +1164,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   engine.events.on('combat:hit', (p) => errands.hit(p));
   gameHooks.register({ onEvent: (name, d) => errands.onEvent(name, d) });
   window.__debug.errands = errands; let errandTick = 0;
+  let regionBanner = null, regionBannerWorld = null, regionBannerBlocked = false; // REGION-01
   let crystal = null, barks = null, chapterCard = null, chapterCard2 = null, ch1Hidden = true;
   let burlReopen = false; // PO-CH1-07 latch
   let escort = null; // CH1-07 Burl escort (rebuilt per world, saves live only)
@@ -1615,7 +1617,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           console.warn('[map] chart card init failed, falling back to the plain card:', e && e.message);
           initMapCard(assets, ui.cols, ui.rows);
         }
-        resetHints(); resetActionHints();
+        resetHints(); resetActionHints(); if (regionBanner) regionBanner.reset(); // REGION-01
       }
       // US-017 tester fix pass 2 (BUG-2): `window.__debug.world/playerHandle/look`
       // used to be set once, right after the FIRST `engine.run(...)` call
@@ -2052,6 +2054,11 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           actionSig.questAccepted = false;
         }
         stepHints(engine.world, assets.uiStyle, dt, hintSignals); // reused object (7.6 item 9: no per-step allocation)
+        { // REGION-01: banner on region entry (queued while a panel / dialogue / note / travel fade is up)
+          const rbA = window.ASSETS.uiRegionBanner, geo = window.ASSETS.levels && window.ASSETS.levels.world_geo;
+          if (rbA && geo && (!regionBanner || regionBannerWorld !== engine.world)) { regionBannerWorld = engine.world; regionBanner = createRegionBanner({ style: rbA.style, names: rbA.names, regions: geo.regions, state: engine.world.state, colors: assets.palette.colors }); }
+          if (regionBanner) { const rt0 = playerHandle.data.transform; regionBannerBlocked = uiLocked || (!!dialogueCtl && dialogueCtl.open) || isNoteOpen() || notice.active; regionBanner.step(dt, rt0.x, rt0.y, regionBannerBlocked); }
+        }
         prevLookYaw = look.yawDeg; prevLookPitch = look.pitchDeg;
       }
       // US-089w/US-096w: world facts -> quest events, play clock, autosave (60 s, waystone). Not while dead/ending/waking.
@@ -2294,6 +2301,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (questUiActive && !ending) {
         if ((!isCaptureOrBench || params.get('save') === '1') && !wakeOut.inputLocked) { gameHooks.drawHud(ui); if (relayWake) relayWake.drawHud(ui); } // D-050 seam: today the quest relay's TEMPORARY objective line, top-left
         drawHints(ui, assets.uiStyle, fadeLut);
+        if (regionBanner && !regionBannerBlocked) regionBanner.draw(ui); // REGION-01: top-centre, clear of the prompt (below the cross) and the bottom-left hints
         // 17.4: an eyelid over the 3D view, not UI text. BUG-WEBGPU-EYELID-01: once the WebGPU frame is complete its presenter shows the sprite-pass
         // output, so CPU scene-cell writes never appear -> draw the lid on the UI layer there (an opaque full-row overlay); else in the scene grid.
         if (!(menuHost && menuHost.active)) drawEyelid(wgActive && wgPipeline.frameComplete ? ui : rt, assets.uiStyle, wakeOut.blinkOpen);

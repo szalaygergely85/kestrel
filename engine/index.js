@@ -60,7 +60,7 @@ export { packTerrainTextures, TLOOK_WIDTH } from './render/gpu/TerrainTextures.j
 export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
 // ---- US-030c GPU sprite pass + atlas + parity harness ----------------------
 export { buildSpriteAtlas } from './render/gpu/spritesAtlas.js';
-export { drawText } from './render/textDraw.js';
+export { drawText, drawTextScaled } from './render/textDraw.js';
 // US-047: runShadeTest/runDetailShadeTest (shading parity harness) moved to
 // engine/dev.js. Item 6b fix pass (docs/backlog.md): runSpriteCompare's only
 // real caller is game/js/dev/spriteDev.js (a dev-only parity mode), so it
