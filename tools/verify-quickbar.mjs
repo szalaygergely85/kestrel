@@ -1,4 +1,4 @@
-// EQ-12 + D-068: headless quick-bar check. Keys 1/3 swap sword/bow set, 2 toggles the shield, 4 drinks the assigned potion (+2 hearts, 0.6 s sip, movement
+// EQ-12 + D-068: headless quick-bar check. QB-6 bar = [LMB][RMB][1][2][3][4]: key 3 swaps the bow into LMB, 1 (sword on a key) swaps back, 2 toggles the shield, 4 drinks the assigned potion (+2 hearts, 0.6 s sip, movement
 // never locked), H drinks from the HUD button, an empty stack toasts instead. Reuses capture-browser.mjs helpers; PC-B ports 9500-9574.
 // Run ONCE: node tools/verify-quickbar.mjs {port}   (e.g. node tools/verify-quickbar.mjs 9520)
 // The dialogue/digit routing (AC4) is covered in Node by game/js/quest/dialogueCtl.test.js.
@@ -36,7 +36,7 @@ try {
   const S = `(() => { const c = window.__debug.playerHandle.data.components, n = c.inventory.slots.reduce((a, s) => a + (s.id === 'potion.hp' ? s.n : 0), 0); return { set: c.equipment.set, off: c.equipment.off, hp: c.health.hp, max: c.health.max, potions: n, sipping: window.__debug.quickbar.sipping, bar: c.quickbar.slice() }; })()`;
   await ev(`(() => { const c = window.__debug.playerHandle.data.components, eq = c.equipment; eq.main = 'sword'; eq.off = null; eq.ranged = 'bow'; eq.quiver = { id: 'arrow', n: 5 }; eq.set = 'melee';
     c.inventory.slots.forEach((s) => { s.id = null; s.n = 0; }); c.inventory.slots[0].id = 'shield'; c.inventory.slots[0].n = 1; c.inventory.slots[1].id = 'potion.hp'; c.inventory.slots[1].n = 2;
-    c.quickbar = ['sword', 'shield', 'bow', 'potion.hp']; c.health.hp = 5; return true; })()`);
+    c.quickbar = [null, null, 'sword', 'shield', 'bow', 'potion.hp']; c.health.hp = 5; return true; })()`);
   await pause(300);
   await key('Digit3', '3'); await pause(200);
   const a = await ev(S); assert.equal(a.set, 'ranged', 'key 3 = bow set');
@@ -53,7 +53,7 @@ try {
   const f = await ev(S); assert.equal(f.hp, 23, 'H drinks from the HUD button'); assert.equal(f.potions, 0);
   await pause(900); await ev(`(() => { window.__debug.playerHandle.data.components.health.hp = 3; return true; })()`);
   await key('KeyH', 'h'); await pause(150);
-  const g = await ev(S); assert.equal(g.hp, 3, 'no potions: nothing happens (toast)'); assert.equal(g.bar[3], 'potion.hp', 'empty stack keeps its slot');
+  const g = await ev(S); assert.equal(g.hp, 3, 'no potions: nothing happens (toast)'); assert.equal(g.bar[5], 'potion.hp', 'empty stack keeps its slot');
   console.log(JSON.stringify({ a, b, c2, d, e, f, g, errors: errors.length }));
   assert.deepEqual(errors, []);
   console.log('Quickbar: 1-4 per kind, potion sip (movement free), H button, empty toast PASS');

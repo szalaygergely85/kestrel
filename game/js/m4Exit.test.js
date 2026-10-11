@@ -51,7 +51,7 @@ const inv = ensureInventory(pA.data, { pack: [{ id: 'sword', n: 1 }], left: 'swo
 for (const [id, n] of [['shield', 1], ['bow', 1], ['arrow', 12], ['potion.hp', 2]]) assert.equal(addItem(inv, defs, id, n), n, id);
 const eq = ensureEquipment(pA.data);
 for (const id of ['sword', 'shield']) assert.ok(equip(inv, eq, defs, id), 'equip ' + id);
-const bar = ensureQuickbar(pA.data); assign(pA.data, defs, 3, 'potion.hp');
+const bar = ensureQuickbar(pA.data); assign(pA.data, defs, 5, 'potion.hp'); // QB-6: slot 5 = key 4
 assert.ok(bar.includes('potion.hp'));
 const A = createSaveRelay({ storage, questDef, giverDefs, defaultLook: look });
 A.onWorldLoaded();
@@ -100,7 +100,7 @@ assert.equal(strip(mem.get(KEY)), strip(text1), 'save -> load -> save is byte-st
   const wo = O.load(assets, {}); assert.ok(wo, 'old-shape save loads'); O.onWorldLoaded();
   const po = wo.get('player').data; assert.equal(po.transform.x, 410.5); assert.equal(po.components.health.max, 40);
   assert.equal(ensureEquipment(po).main, null, 'missing equipment -> empty set (migrateEquipment/autoEquip fill later)');
-  assert.ok(Array.isArray(ensureQuickbar(po)) && ensureQuickbar(po).length === 4);
+  assert.ok(Array.isArray(ensureQuickbar(po)) && ensureQuickbar(po).length === 6);
   assert.equal(O.look, look, 'missing look -> kit default');
   assert.equal(wo.state['hearts.pieces'], 4);
 }

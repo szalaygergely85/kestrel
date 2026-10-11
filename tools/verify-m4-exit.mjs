@@ -55,7 +55,7 @@ try {
     const inventory = inv.ensureInventory(p, null);
     for (const id of ['sword', 'shield', 'bow', 'arrow', 'potion.hp']) inv.addItem(inventory, defs, id, id === 'arrow' ? 12 : 1);
     const eq = eqm.ensureEquipment(p); for (const id of ['sword', 'shield']) eqm.equip(inventory, eq, defs, id);
-    qbm.ensureQuickbar(p); qbm.assign(p, defs, 3, 'potion.hp');
+    qbm.ensureQuickbar(p); qbm.assign(p, defs, 5, 'potion.hp');
     for (let k = 0; k < 4; k++) { inv.addItem(inventory, defs, 'heart.piece', 1); hp.collect(inventory, c.health, w.state); } // 4 pieces = +1 heart
     c.health.hp = Math.max(1, c.health.max - 10);
     w.state['aether.attuned'] = true; w.state['clock.hour'] = 13.5; w.state['m4.marker'] = 'kept';

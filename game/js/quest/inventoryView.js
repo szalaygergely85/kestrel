@@ -99,6 +99,7 @@ export function createInventoryView(o) {
   const slotFlash = { idx: -1, kind: 0, until: 0 };
 
   const inv = () => o.inventoryOf();
+  let ptrHit = false; // the last pointer cell was over a pack cell / hand box (Items tab)
 
   function selectedId() {
     const v = inv();
@@ -279,8 +280,10 @@ export function createInventoryView(o) {
       if (!isOpen || (px === pxLast && py === pyLast)) return;
       pxLast = px; pyLast = py;
       if (tab === 1) { cv.setPointer(px - ox, py - oy); return; }
-      hitTest(px, py);
+      ptrHit = hitTest(px, py);
     },
+    /** QB-6 drag source: the item under the mouse (Character node / pack cell / hand box), or null */
+    get hoverItemId() { return !isOpen ? null : tab === 1 ? (cv.hoveredId || null) : ptrHit ? selectedId() : null; },
 
     /**
      * One fixed update. `canOpen`: main.js says nothing else owns the screen (not ending / note / map / dead).

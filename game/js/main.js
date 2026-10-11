@@ -114,7 +114,8 @@ import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.1
 import { createShieldSim } from './quest/sim/shield.js'; // EQ-07 (38.41 a)
 import { createArrowSim } from './quest/sim/arrows.js'; // EQ-09 (38.41 b)
 import { BOW_CFG } from './quest/bowConfig.js'; // EQ-09
-import { createQuickbar, ensureQuickbar, autoFill, assign as qbAssign } from './quest/sim/quickbar.js'; // EQ-12
+import { createQuickbar, ensureQuickbar, autoFill, assign as qbAssign, clearSlot as qbClear, syncHandSlots, HAND_SLOTS } from './quest/sim/quickbar.js'; // EQ-12 + QB-6
+import { createQuickbarDrag } from './quest/quickbarDrag.js'; // QB-6: drag and drop onto the bar while the menu is open
 import { createQuickbarView } from './quest/quickbarView.js'; // EQ-12 + D-068
 import { createEquipPlay, registerGearItems } from './quest/equipPlay.js'; // EQ-07/09: LMB/RMB/Q routing, bow draw, pick-up
 import { createStubItemSim } from './quest/sim/hands.js'; // EQ-07: no-op sims so the router arms shield / bow
@@ -1083,7 +1084,29 @@ async function runGame(mode, cinematic = null) {
   canvas.addEventListener('mousemove', (e) => {
     if (!invView || !invView.isOpen || !ui) return;
     const r = canvas.getBoundingClientRect();
-    invView.setPointer(Math.floor((e.clientX - r.left) / r.width * ui.cols), Math.floor((e.clientY - r.top) / r.height * ui.rows));
+    const cx = Math.floor((e.clientX - r.left) / r.width * ui.cols), cy = Math.floor((e.clientY - r.top) / r.height * ui.rows);
+    invView.setPointer(cx, cy); qbDrag.move(cx, cy);
+  });
+  // QB-6: drag and drop onto the quick bar (drawn inside the menu). Press picks up the item under the pointer (or a bar slot), release drops.
+  const qbCell = (e) => { const r = canvas.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / r.width * ui.cols), Math.floor((e.clientY - r.top) / r.height * ui.rows)]; };
+  const qbDrag = createQuickbarDrag({
+    slotAt: (cx, cy) => (qbView && ui ? qbView.slotAt(ui, cx, cy) : -1),
+    idAt: (s) => { const q = playerHandle && playerHandle.data.components.quickbar; return q ? q[s] || null : null; },
+    assign: (s, id) => !!playerHandle && itemDefs && qbAssign(playerHandle.data, itemDefs, s, id),
+    clear: (s) => !!playerHandle && itemDefs && qbClear(playerHandle.data, s, itemDefs),
+  });
+  canvas.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || !invView || !invView.isOpen || !ui) { qbDrag.cancel(); return; }
+    const c = qbCell(e); invView.setPointer(c[0], c[1]); qbDrag.down(c[0], c[1], invView.hoverItemId);
+  });
+  window.addEventListener('mouseup', (e) => {
+    if (e.button !== 0 || !qbDrag.active) return;
+    const c = ui ? qbCell(e) : [0, 0], res = qbDrag.up(c[0], c[1]);
+    if (!res || !toasts) return;
+    const nm = itemDefs && itemDefs[res.id] ? itemDefs[res.id].name : res.id, SL = ['Left mouse', 'Right mouse', 'Key 1', 'Key 2', 'Key 3', 'Key 4'];
+    if (res.kind === 'assign') toasts.say(SL[res.slot] + ': ' + nm, [120, 200, 120]);
+    else if (res.kind === 'clear') toasts.say(SL[res.slot] + ' cleared', [226, 214, 176]);
+    else if (res.kind === 'refuse') toasts.say(res.slot < HAND_SLOTS ? 'That does not fit this hand' : 'Cannot be placed on the quick bar', [220, 110, 60]);
   });
   window.addEventListener('click', (e) => { if (invView && invView.isOpen) e.stopPropagation(); }, true);
   // D-068: the potion HUD button is clickable whenever the pointer is free (a click while the pointer is locked is an attack)
@@ -1463,7 +1486,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
         healthOf: () => (playerHandle && playerHandle.data.components.health) || null,
         onHandsChanged: () => { if (hands && playerHandle) hands.step(playerHandle.data, false, false, false); }, // router sees the change now (cancel + setHand + hands:changed)
-        quickbar: itemDefs ? { assign: (n, id) => !!playerHandle && qbAssign(playerHandle.data, itemDefs, n, id) } : undefined, // EQ-12: 1-4 over an item in the Items / Character tab
+        quickbar: itemDefs ? { assign: (n, id) => !!playerHandle && qbAssign(playerHandle.data, itemDefs, n + HAND_SLOTS, id) } : undefined, // EQ-12: 1-4 over an item in the Items / Character tab (key n = bar slot n + 2)
         characterKey: params.get('craft') !== '1', // EQ-03: C opens the Character tab (the crafting list keeps C under ?craft=1)
         character: window.__charKit ? { // EQ-03/04: lazy preview + char cache, built on the first Character-tab open
           equipmentOf: () => (playerHandle && playerHandle.data.components.equipment) || null,
@@ -1889,8 +1912,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         }
         if (quickbar) { // EQ-12 AC3/AC4 + D-068: keys 1-4 act per item kind, H drinks a red draught. While a dialogue choice list is open the digits belong to
           // the dialogue (its own pick consumes the edge; out-of-range digits are held back too). Sip = 0.6 s, never locks movement.
-          const pl = playerHandle.data; ensureQuickbar(pl); quickbar.step(); qbBlocked = ending || paused;
-          if ((++qbTick % 30) === 0) autoFill(pl);
+          const pl = playerHandle.data; ensureQuickbar(pl, itemDefs); quickbar.step(); qbBlocked = ending || paused;
+          if ((++qbTick % 30) === 0) autoFill(pl, itemDefs);
           if (qbPlayOk()) {
             const choosing = !!(dialogueCtl && dialogueCtl.open && dialogueCtl.runner.state === 'choosing');
             if (!choosing) for (let n = 0; n < 4; n++) if (input.pressed('Digit' + (n + 1))) { qbToast(quickbar.press(pl, n)); break; }
@@ -2278,6 +2301,10 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       notice.draw(ui, ch1Hidden); // CH1-04a
       if (chapterCard) chapterCard.draw(ui); // CH1-09
       if (invView) invView.draw(ui); // US-091b: the pack screen, over HUD + toast
+      if (invView && invView.isOpen && qbView && quickbar && playerHandle) { // QB-6: the bar inside the menu = the drag-and-drop target; the dragged icon rides the pointer
+        syncHandSlots(playerHandle.data); qbView.drawBar(ui, playerHandle.data, quickbar.st, true);
+        qbView.drawGhost(ui, qbDrag.ghostId, qbDrag.st.x, qbDrag.st.y);
+      }
       if (craftView) craftView.draw(ui); // MAIN-WIRE-01
       if (qlIsOpen()) qlView.draw(ui); // QG-05
       // US-080a1/a2 (30.2): death fade (CPU path, same gating as the end-card
