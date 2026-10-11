@@ -154,7 +154,7 @@ export function climberStep(slot, sp, ctx) {
         slot.x = slot.tx + Math.cos(slot.bearing) * (slot.tr + 0.7); slot.y = slot.ty + Math.sin(slot.bearing) * (slot.tr + 0.7);
         slot.homeX = slot.x; slot.homeY = slot.y; slot.yaw = slot.bearing;
         if (env.blocked(slot.x, slot.y, sp.bodyR)) { slot.x = slot.tx + Math.cos(slot.bearing) * (slot.tr + 0.2); slot.y = slot.ty + Math.sin(slot.bearing) * (slot.tr + 0.2); }
-        slot.speed = 0; slot.clip.rate = 1; enter(slot, sp, ctx, CS_FORAGE);
+        slot.speed = 0; slot.clip.rate = 1; slot.z = env.groundAt(slot.x, slot.y); enter(slot, sp, ctx, CS_FORAGE); // z at the new foot spot (not the trunk-side lift)
       }
     }
     if (slot.state === CS_CLIMB || slot.state === CS_DESCEND || slot.state === CS_PEEK) {

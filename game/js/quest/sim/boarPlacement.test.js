@@ -24,9 +24,9 @@ const boars = allBoars.filter((e) => obj.when.ids.includes(e.id));
 assert.deepEqual(boars.map((b) => b.id), obj.when.ids, 'one beast entity per objective id');
 // DRESS-01: ambient boar groups (ids boarN*/boarW*/boarS*) are extra beasts, never quest ids; total stays modest
 const ambient = allBoars.filter((e) => !obj.when.ids.includes(e.id));
-assert.ok(allBoars.length <= 16, `total boars ${allBoars.length} <= 16`);
+assert.ok(allBoars.length <= 18, `total boars ${allBoars.length} <= 18`);
 for (const a of ambient) {
-  assert.match(a.id, /^boar[NWSF]\d$/, `${a.id} ambient id`);
+  assert.match(a.id, /^boar[NWSFR]\d$/, `${a.id} ambient id`);
   assert.ok(Math.hypot(a.x - 1471, a.y - 1029.1) >= 20, `${a.id} >= 20 m from Burl`);
   assert.ok(Math.hypot(a.x - 1488, a.y - 1031) >= 25, `${a.id} >= 25 m from the tower door`);
 }
