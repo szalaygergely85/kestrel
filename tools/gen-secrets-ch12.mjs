@@ -23,7 +23,7 @@ const SEED = argN('--seed', 20261012), dry = argv.includes('--dry-run');
 const FILE = 'content/worlds/world_m1.world.json';
 export const SECRET_IDS = ['secretRook', 'secretBend', 'secretField', 'secretBank'];
 export const PATH = [[1480, 1025], [1420, 1032], [1350, 1050], [1260, 1045], [1180, 1062], [1090, 1070], [1000, 1066], [985, 1040]]; // road centre (as gen-road-props.mjs) + the ford track to owPathPost (985,1040), so the Rook zone has a road
-const LINES = [ // route-walk legs + Burl's walks + the 9b bound probe west of the ford (as gen-road-props.mjs)
+export const LINES = [ // route-walk legs + Burl's walks + the 9b bound probe west of the ford (as gen-road-props.mjs)
   [[1485.5, 1025.5], [1470, 1029], [1428, 1040]], [[1420, 1032], [1350, 1050], [1270, 1042], [1263, 1034]],
   [[1260, 1045], [1180, 1062], [1090, 1070], [1046, 1069], [1010, 1070], [993, 1077]], [[1310, 1048], [1260, 1045]],
   [[1471, 1029.1], [1462, 1031], [1452, 1034], [1443, 1037], [1436, 1040], [1431.5, 1041.5], [1426, 1034], [1418, 1026], [1410, 1018], [1404, 1010]],
@@ -52,9 +52,12 @@ const partOver = (p, x, y, rad) => {
 };
 
 let assetsP = null;
-export async function buildSecrets(data0, seed = SEED) {
+// cfg (US-104b): { ids, zones, path, lines, tag } = another region's chests (default = the US-104a Ch1-2 set, output unchanged).
+export async function buildSecrets(data0, seed = SEED, cfg = {}) {
+  const IDS = cfg.ids || SECRET_IDS, ZN = cfg.zones || ZONES, ROAD = cfg.path || PATH, LN = cfg.lines || LINES, TAG = cfg.tag || 'US-104a Ch1-2 hidden chest';
   const data = JSON.parse(JSON.stringify(data0));
-  data.entities = data.entities.filter((e) => !SECRET_IDS.includes(e.id));
+  const at = data.entities.findIndex((e) => IDS.includes(e.id)); // re-insert where the old ones were (stable order next to other generators' chests)
+  data.entities = data.entities.filter((e) => !IDS.includes(e.id));
   const { assets } = await (assetsP ??= loadTestAssets()); // once per process (a second load would double-register the levels)
   const world = World.load(data, assets, { physics: 'mesh' });
   const T = world.terrain;
@@ -92,12 +95,12 @@ export async function buildSecrets(data0, seed = SEED) {
   }
   const R = rng(seed), out = [], log = [], why = {};
   const no = (k) => { why[k] = (why[k] || 0) + 1; return false; };
-  for (const z of ZONES) {
+  for (const z of ZN) {
     let done = null;
     for (let i = 0; i < 4000 && !done; i++) {
       const a = R() * 2 * Math.PI, d = Math.sqrt(R()) * z.r, x = +(z.c[0] + Math.cos(a) * d).toFixed(1), y = +(z.c[1] + Math.sin(a) * d).toFixed(1);
-      const road = segNear(x, y, PATH); if (road.d < 8 || road.d > 25) { no('roadDist'); continue; }
-      if (LINES.some((P) => segNear(x, y, P).d < 8)) { no('line'); continue; }
+      const road = segNear(x, y, ROAD); if (road.d < 8 || road.d > 25) { no('roadDist'); continue; }
+      if (LN.some((P) => segNear(x, y, P).d < 8)) { no('line'); continue; }
       if (marks.some(([mx, my, md]) => Math.hypot(mx - x, my - y) < md)) { no('mark'); continue; }
       if (!inBounds(x, y) || !free(x, y) || T.groundTypeAt(x, y) === TYPE_PATH) { no('ground/bounds'); continue; }
       const g = gz(x, y); let flat = true; for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (Math.abs(gz(x + ox, y + oy) - g) > 0.35) flat = false; if (!flat) { no('flat'); continue; }
@@ -110,10 +113,10 @@ export async function buildSecrets(data0, seed = SEED) {
     }
     if (!done) throw new Error('no spot for ' + z.id + ' ' + JSON.stringify(why));
     marks.push([done.x, done.y, 3]);
-    out.push({ id: z.id, type: 'prop', x: done.x, y: done.y, yawDeg: done.yaw, z: 'ground', components: CHEST, note: `US-104a Ch1-2 hidden chest (${z.note}); ${done.road.d.toFixed(1)} m from the road at (${done.road.x.toFixed(1)}, ${done.road.y.toFixed(1)}); table SECRET_TABLE in chestDefs.js` });
+    out.push({ id: z.id, type: 'prop', x: done.x, y: done.y, yawDeg: done.yaw, z: 'ground', components: CHEST, note: `${TAG} (${z.note}); ${done.road.d.toFixed(1)} m from the road at (${done.road.x.toFixed(1)}, ${done.road.y.toFixed(1)}); table ${cfg.table || 'SECRET_TABLE'} in chestDefs.js` });
     log.push({ id: z.id, x: done.x, y: done.y, roadDist: +done.road.d.toFixed(1), roadPoint: [+done.road.x.toFixed(1), +done.road.y.toFixed(1)] });
   }
-  data.entities.push(...out);
+  if (at >= 0) data.entities.splice(at, 0, ...out); else data.entities.push(...out);
   return { data, log };
 }
 
