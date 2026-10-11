@@ -16,7 +16,7 @@ import { MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
 import { lodBandFrac, lodDitherBits } from './lodDither.js';
 import { requestMeshForGroup } from './lazyMesh.js';
-import { DRAW_FLAG_ONE_PART } from './DrawList.js'; // runtime use only (DrawList imports groupRadius from here)
+import { DRAW_FLAG_ONE_PART, DRAW_FLAG_NO_CULL, DRAW_FLAG_TWO_SIDED } from './DrawList.js'; // runtime use only (DrawList imports groupRadius from here)
 
 /** Words / bytes per instance. */
 export const INSTANCE_STRIDE = 16;
@@ -504,7 +504,14 @@ export class InstanceGroups {
         // `onePart` guard then drops per-range masking) - only opaque-only groups get it; a masked group keeps its real
         // mesh.ranges so passRaster.js's instanced-masked draw sees each range's mask rect (JS-twin parity, ALPHA-01f a).
         if (g.drawCount[0] > 0) { const it = list.addInstances(draw, g.parts, g.drawIb[0], g.drawCount[0], g._R); if (it && !meshIsMasked(g.mesh)) it.flags |= DRAW_FLAG_ONE_PART; }
-        if (draw1 && g.drawCount[1] > 0) { const it1 = list.addInstances(draw1, g.parts, g.drawIb[1], g.drawCount[1], g._R); if (it1 && !meshIsMasked(lod1Mesh)) it1.flags |= DRAW_FLAG_ONE_PART; }
+        if (draw1 && g.drawCount[1] > 0) {
+          const it1 = list.addInstances(draw1, g.parts, g.drawIb[1], g.drawCount[1], g._R);
+          if (it1 && !meshIsMasked(lod1Mesh)) it1.flags |= DRAW_FLAG_ONE_PART;
+          // OB-061: LOD1 leaf cards import opaque (no mask) while LOD0 is masked = two-sided (normal flipped to the viewer). Back-face culling
+          // left only the cards whose stored normal faces the eye (about half pointing away from the sun = ambient-only navy blobs),
+          // so draw LOD1 of a masked LOD0 without cull; both twins then flip N on back faces like LOD0 (rasterJS _twoSided).
+          if (it1 && meshIsMasked(g.mesh) && !meshIsMasked(lod1Mesh)) it1.flags |= DRAW_FLAG_NO_CULL | DRAW_FLAG_TWO_SIDED;
+        }
         continue;
       }
       if (!pool) continue;
