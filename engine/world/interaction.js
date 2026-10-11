@@ -37,6 +37,8 @@ const DIST_WEIGHT = 15;          // score = angleDeg + dist * 15: 1 m of distanc
 const KEEP_BONUS = 5;            // a challenger must beat the current target's score by 5 to replace it
 export const DEFAULT_NEAR_DIST = 0.9; // DOOR-CLOSE-01: inside this range the cone widens
 export const DEFAULT_NEAR_CONE_DEG = 70;
+const DEFAULT_HEIGHT = 0.8;       // OB-052b: vertical extent of an interactable (rec.height overrides)
+const VERT_RATIO = 1.375;        // vertical tolerance = 55/40 of the horizontal one
 const LOS_STEP = 0.1;
 const LOS_MAX_SAMPLES = 20;
 const losGrid = { x: 0, y: 0, z: 0 }; // gridLocal scratch (rule 9)
@@ -138,14 +140,33 @@ export function findInteractTarget(world, eye, cfg, out) {
     const maxReach = (rec.radius < reach ? rec.radius : reach) + (isPrev ? HYST_REACH : 0);
     if (dist > maxReach) continue;
 
-    let cosAngle = dist < 1e-9 ? 1 : (dx * vx + dy * vy + dz * vz) / dist;
+    // OB-052b: aim at the object's vertical extent, not one point. Closest point on the vertical segment
+    // [rec.z - h/2, rec.z + h/2] to the view ray (line-line closest approach, clamped), so looking a bit up/down still hits.
+    const hh = (typeof rec.height === 'number' ? rec.height : DEFAULT_HEIGHT) * 0.5;
+    const dot = dx * vx + dy * vy + dz * vz;
+    const denom = 1 - vz * vz;
+    let s = denom > 1e-6 ? (vz * dot - dz) / denom : 0;
+    if (s > hh) s = hh; else if (s < -hh) s = -hh;
+    const az = dz + s; // aim point (relative to the eye)
+    const hd = Math.sqrt(dx * dx + dy * dy);
+    const aimDist = Math.sqrt(hd * hd + az * az);
+    let cosAngle = aimDist < 1e-9 ? 1 : (dx * vx + dy * vy + az * vz) / aimDist;
     if (cosAngle > 1) cosAngle = 1; else if (cosAngle < -1) cosAngle = -1;
     const angleDeg = Math.acos(cosAngle) * 180 / Math.PI;
-    // DOOR-CLOSE-01 (owner: too close to the door -> cannot open): within arm's length the aim point sits steeply off the
-    // view ray (looking down / sideways at a big object), so the cone widens to 70 deg below nearDist.
-    if (angleDeg > (dist < nearDist && coneDeg < nearConeDeg ? nearConeDeg : coneDeg) + (isPrev ? HYST_CONE_DEG : 0)) continue;
+    // Elliptical gate on the yaw/pitch components: horizontal = cone, vertical = cone * VERT_RATIO.
+    // DOOR-CLOSE-01: within nearDist the cone widens to nearConeDeg.
+    const lim = (dist < nearDist && coneDeg < nearConeDeg ? nearConeDeg : coneDeg) + (isPrev ? HYST_CONE_DEG : 0);
+    let dyawDeg = 0;
+    if (hd > 1e-6) {
+      dyawDeg = Math.atan2(dx, -dy) * 180 / Math.PI - eye.yawDeg;
+      dyawDeg -= 360 * Math.round(dyawDeg / 360);
+    }
+    const dpitchDeg = Math.atan2(az, hd) * 180 / Math.PI - eye.pitchDeg;
+    const ey2 = dpitchDeg / (lim * VERT_RATIO), ex2 = dyawDeg / lim;
+    if (ex2 * ex2 + ey2 * ey2 > 1) continue;
 
-    if (!hasLineOfSight(world, eye.x, eye.y, eye.z, rec.x, rec.y, rec.z)) continue;
+    if (!hasLineOfSight(world, eye.x, eye.y, eye.z, rec.x, rec.y, eye.z + az) &&
+        !hasLineOfSight(world, eye.x, eye.y, eye.z, rec.x, rec.y, rec.z)) continue;
 
     const score = angleDeg + dist * DIST_WEIGHT - (isPrev ? KEEP_BONUS : 0);
     if (score < bestScore - 1e-9) {

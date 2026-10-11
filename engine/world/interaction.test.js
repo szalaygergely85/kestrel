@@ -365,9 +365,31 @@ const EYE_NORTH = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
   };
   ok('pitch -40: foot-height object targeted', hits(-40, 0.3));
   ok('pitch -20: foot-height object targeted', hits(-20, 0.3));
-  ok('pitch 0: foot-height object (48 deg below) not targeted', !hits(0, 0.3));
+  // OB-052b: expectation changed from the point model (z 0.3 is now a 0.8 m tall object reaching up to 0.7)
+  ok('pitch 0: object far below (z -1.0, top 61 deg below) not targeted', !hits(0, -1.0));
   ok('pitch +20: head-height object targeted', hits(20, 2.2));
-  ok('pitch -40: head-height object not targeted', !hits(-40, 2.2));
+  ok('pitch -40: object far above (z 3.4) not targeted', !hits(-40, 3.4));
+}
+
+
+// OB-052b: note-height object (z 1.0, 0.8 m tall), eye 1.6 m, 1.2 m ahead: forgiving vertical + horizontal aim.
+{
+  const w = makeWorld();
+  const mkN = (dxm) => ({ key: 's.n', structId: 's', name: 'n', prompt: 'Read', x: dxm, y: -1.2, z: 1.0, radius: 3, once: false, requires: null, propId: null, usedKey: null });
+  const hit = (yaw, pitch, rec = mkN(0)) => {
+    w.interactables = [rec]; const o = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
+    findInteractTarget(w, { x: 0, y: 0, z: 1.6, yawDeg: yaw, pitchDeg: pitch }, null, o); return o.targetKey === 's.n';
+  };
+  let allPitch = true;
+  for (let p = -40; p <= 15; p += 5) if (!hit(0, p)) { allPitch = false; ok('note: pitch ' + p + ' targeted', false); }
+  ok('note: pitch -40..+15 at yaw 0 all targeted', allPitch);
+  let allYaw = true;
+  for (const pitch of [0, 10]) for (const yaw of [-25, 25]) if (!hit(yaw, pitch)) { allYaw = false; ok('note: yaw ' + yaw + ' pitch ' + pitch, false); }
+  ok('note: yaw +-25 at pitch 0 and +10 targeted', allYaw);
+  ok('note: yaw 60 not targeted', !hit(60, 0) && !hit(-60, 10));
+  ok('note: beyond reach not targeted', !hit(0, 0, { ...mkN(0), y: -2.5 }));
+  w._blockCell(0, -1);
+  ok('note: LOS still blocks', !hit(0, 0, { ...mkN(0), y: -1.5 }));
 }
 
 console.log(`interaction.test.js: ${pass} passed, ${fail} failed`);
