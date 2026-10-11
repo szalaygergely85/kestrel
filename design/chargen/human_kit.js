@@ -64,6 +64,15 @@
  *   - head: the skull narrows at z 68 (X +-3 only at Y 0..1) under the hair; the forehead keeps z 68 bare so the hairline
  *     sits at z 69 (3 rows brow to hair); the v5 face (L1 + the 1.25 cm L2 pass) is untouched.
  *
+ * v7 (OB-078, owner on the v6 1.25 cm head: flat face plane, spike nose, no jaw line, small occiput, square box, thin
+ * neck, sad / cross-eyed brows, flat mouth) - HEAD pass, L1 + L2, body unchanged:
+ *   - L1 profile table HEAD_PROFILE: face plane at Y -3 with the brow ridge, cheekbones and chin at -4, the nose a 3-row
+ *     slope to a -5 tip with wings, forehead sloping back, occiput bulging to Y 4 and rounding into the crown, the jaw
+ *     line angling from under the ear to a chin 2 cells in front of the throat; neck ring 7 x 6 (Neck box X +-3).
+ *   - L2: level one-row brows, eyes looking straight (iris 3.1 cm off the midline between two whites, one lash cell),
+ *     rounded nose tip + half-cell wings with nostrils, a thin mouth line over a full lower lip half a cell proud,
+ *     chin / jaw / ear-lobe / forehead / occiput corners carved round.
+ *
  * Bone boxes are axis-aligned and resolved FIRST-MATCH in skeleton order (38.29 item 3): Chest takes z 48-58 (ribcage,
  * shoulder tops, the lower neck rows 57-58), Neck is the z 59 ring, Jaw z 60-61 (lower lip + chin, full width),
  * Head z 62-71 (hair room), Shoulder = the deltoid caps X 8-16 z 55-58, UpperArm z 45-54, LowerArm z 35-44, Hand z 27-34.
@@ -177,48 +186,37 @@
   // ===================================================================================================================
   // 4. HEAD (centred cells; z 60-69), ears at X +-4, built as a profile
   // ===================================================================================================================
-  function headHalf(z) {
-    if (z === 69) return 2;
-    if (z >= 61 && z <= 68) return 3;
-    if (z === 60) return 2;
-    return -1;
-  }
-  // front-most Y per column (X, z)
-  function headFront(X, z) {
-    var ax = Math.abs(X), h = headHalf(z);
-    if (h < 0 || ax > h) return null;
-    if (z === 69) return ax === 2 ? 0 : -1;
-    if (z === 68) return ax === 3 ? 0 : ax === 2 ? -2 : -3;       // OB-071: the skull narrows toward the crown
-    if (z === 67 || z === 66) return ax === 3 ? -3 : -4;          // forehead + brow ridge, temples set back
-    if (z === 65) return X === 0 ? -4 : -3;                        // eye sockets recessed, nose bridge out
-    if (z === 64) return X === 0 ? -5 : -4;                        // nose tip one cell out, cheekbones
-    if (z === 63) return -4;                                       // nostrils, cheeks
-    if (z === 62 || z === 61) return ax === 3 ? -3 : -4;           // cheek hollow, lips
-    return ax === 2 ? -3 : -4;                                     // chin (z 60)
-  }
-  // back-most Y per column
-  function headBack(X, z) {
-    var ax = Math.abs(X);
-    if (z === 69) return ax === 2 ? 1 : 2;
-    if (z === 68) return ax === 3 ? 1 : ax === 2 ? 2 : 3;        // OB-071: rounder parietal
-    if (z === 67) return ax === 3 ? 2 : 3;
-    if (z >= 63 && z <= 66) return ax <= 1 ? 4 : 3;                // occiput
-    if (z === 62) return ax === 3 ? 2 : 3;
-    if (z === 61) return 2;
-    return ax === 2 ? 1 : 2;
-  }
+  // OB-078 head profile (owner: flat face plane, spike nose, no jaw line, small flat occiput, square box, thin neck):
+  // per row z, the [front Y, back Y] of the columns ax 0, 1, 2, 3 (null = no column). The face plane (sockets, cheeks,
+  // lips) sits at Y -3; the brow ridge, cheekbones (ax 2) and chin come forward to -4; the nose is a slope from the
+  // bridge (-4 at z 65) over -5 (z 64) to a tip at -5 (z 63, rounded at L2) with wings at ax 1; the forehead slopes
+  // back (-4 -> -3 -> -1); the occiput bulges to Y 4 over z 65-67 and rounds in to 3 / 2 / 1 toward the crown; the jaw
+  // line angles from under the ear (ax 3: Y -1..2 at z 62, 0..1 at z 61) to a chin that ends at Y -1 (the neck ring
+  // behind it is at Y -2..3, so the chin sits 2 cells in front of the throat and the jaw meets the neck at an angle).
+  var HEAD_PROFILE = {
+    69: [[-1, 2], [-1, 2], [0, 1], null],
+    68: [[-3, 3], [-3, 3], [-2, 2], [0, 1]],
+    67: [[-4, 4], [-4, 4], [-3, 3], [-2, 2]],
+    66: [[-4, 4], [-4, 4], [-4, 3], [-3, 2]],       // brow ridge
+    65: [[-4, 4], [-3, 4], [-3, 3], [-3, 2]],       // eye sockets recessed, nose bridge out
+    64: [[-5, 3], [-4, 3], [-4, 3], [-3, 2]],       // nose slope, cheekbones at ax 2
+    63: [[-5, 3], [-4, 3], [-3, 3], [-3, 2]],       // nose tip + wings, cheeks
+    62: [[-3, 3], [-3, 3], [-3, 3], [-1, 2]],       // upper lip, cheek hollow, jaw angle under the ear
+    61: [[-3, 2], [-3, 2], [-3, 2], [0, 1]],        // lower lip, jaw line
+    60: [[-4, -1], [-4, -1], [-3, 0], null]         // chin forward of the neck, jaw bottom
+  };
+  function headCol(X, z) { var p = HEAD_PROFILE[z], ax = Math.abs(X); return p && ax <= 3 ? p[ax] : null; }
+  function headFront(X, z) { var c = headCol(X, z); return c ? c[0] : null; }   // front-most Y per column (null = none)
+  function headBack(X, z) { var c = headCol(X, z); return c ? c[1] : 0; }       // back-most Y per column
   // paint of the FRONT cell of each column, X -3..3 ('.' = no such column / plain skin)
-  // OB-065 (owner: "face getting better, but not there yet"): eyes moved in beside the bridge (X +-1 = 5 cm apart, was
-  // X +-2 = 10 cm, wide-set), lit glabella + forehead, cheekbones under the outer eye, NO pink cheek patches, a dark
-  // nose shadow under the tip, the mouth as a dark line (upper lip in shadow) over a lit lower lip.
   var FACE = {
-    69: 'aaaaaaa', 68: 'aaaaaaa',
+    69: 'aaaaaaa', 68: 'aalllaa',
     67: 'salllas',   // temples shaded, lit forehead
-    66: 'sbblbbs',   // brows on the ridge, lit glabella
-    65: 'sseless',   // eye sockets: iris beside the lit bridge, shaded socket outside
-    64: 'alslsla',   // cheekbones lit (under the outer eye), shade beside the nose, lit tip
-    63: 'aasdsaa',   // shadow under the nose (septum deep, wings shaded) - no blush
-    62: 'sadddas',   // cheek hollow, upper lip in shadow = the mouth line
+    66: 'sbblbbs',   // level brows on the ridge, lit glabella
+    65: 'sseless',   // eye sockets: iris beside the lit bridge, shaded socket outside (L2 repaints the eye)
+    64: 'alslsla',   // cheekbones lit (under the outer eye), shade beside the nose, lit nose
+    63: 'aasasaa',   // nose wings shaded, the tip plain (L2 rounds it), cheeks
+    62: 'sadddas',   // cheek hollow, the mouth line (upper lip in shadow)
     61: 'sapppas',   // jaw sides, lower lip (Jaw)
     60: '.salas.'    // chin: lit point, shaded underside edges
   };
@@ -229,7 +227,7 @@
     if (ax === 4) return (z >= 63 && z <= 65) ? (EAR[Y + ',' + z] || null) : null;
     f = headFront(X, z);
     if (f === null || Y < f || Y > headBack(X, z)) return null;
-    if ((z === 61 || z === 62) && Y === -3 && ax <= 1) return 'd';     // mouth interior behind the lips
+    if ((z === 61 || z === 62) && Y === -2 && ax <= 1) return 'd';     // mouth interior behind the lips (plane Y -3)
     if (Y === f && FACE[z]) { c = FACE[z].charAt(X + 3); return c === '.' ? 'a' : c; }
     return 'a';
   }
@@ -338,7 +336,7 @@
     Hips:  { joint: [0, 0.5, 34.0],  box: [-7, 7, -10, 9, 33, 40] },
     Spine: { joint: [0, 0.0, 41.0],  box: [-7, 7, -10, 9, 41, 47] },
     Chest: { joint: [0, 0.0, 48.0],  box: [-7, 7, -10, 9, 48, 58] },
-    Neck:  { joint: [0, 0.5, 59.0],  box: [-2, 2, -2, 3, 59, 59] },   // OB-071: nape at Y 3
+    Neck:  { joint: [0, 0.5, 59.0],  box: [-3, 3, -2, 3, 59, 59] },   // OB-071/078: 7 x 6 neck ring, nape at Y 3
     Head:  { joint: [0, 0.5, 61.0],  box: [-5, 5, -10, 9, 62, 71] },
     Jaw:   { joint: [0, 1.5, 62.0],  box: [-4, 4, -10, 9, 60, 61] }
   };
@@ -388,7 +386,7 @@
     [50, 55, 7, -4, 4, 3, 2],     // chest: flat pec plane in front, round sides, round back
     [56, 56, 7, -4, 4, 2.5, 2],   // upper chest, collar bones (the deltoid caps sit beside it)
     [57, 57, 5, -3, 3, 2, 2],     // trapezius slope toward the acromions
-    [58, 58, 3, -2, 3, 2, 2]      // neck base
+    [58, 58, 4, -2, 3, 2, 2]      // neck base (sternocleidomastoids widening into the trapezius)
   ];
   // one-side limb slices (right side, X >= 0): [z0, z1, X0, X1, Y0, Y1, r] (rounded rectangles, r 2 cuts the corners)
   var ARM = [
@@ -445,8 +443,8 @@
     // ---- torso: oval slices (OB-071)
     TORSO.forEach(function (r) { for (z = r[0]; z <= r[1]; z++) oval(z, r[2], r[3], r[4], r[5], r[6]); });
     // (OB-065: no pec mounds - the male chest is the flat TORSO front; the pec edge is only a tint, see skin zones)
-    // ---- neck ring (z 57-59; 57-58 sit inside the torso slices): 5 wide, 6 deep (nape at Y 3), corners cut
-    for (z = 57; z <= 59; z++) slab(z, -2, 2, -2, 3, 2);
+    // ---- neck ring (z 57-59; 57-58 sit inside the torso slices): 7 wide, 6 deep (nape at Y 3), corners cut (OB-078)
+    for (z = 57; z <= 59; z++) slab(z, -3, 3, -2, 3, 2);
     // ---- arms (both sides)
     ARM.forEach(function (r) { for (z = r[0]; z <= r[1]; z++) slabPair(z, r[2], r[3], r[4], r[5], r[6]); });
     pp(12, 2, 45);                                                                // elbow point (olecranon) behind the joint
@@ -583,42 +581,50 @@
       // the lip / z61 hi lower lip / z62 lo MOUTH LINE / z62 hi upper lip / z63 lo philtrum / z63 hi nostrils / z64 lo nose
       // wings + tip underside / z64 hi lower lid + cheekbone / z65 lo EYE (white - iris - white) / z65 hi upper lid + lashes
       // / z66 lo lid crease / z66 hi brow. Eye centres 3.1 cm off the midline (IPD 6.25 cm), eye 3.75 cm wide.
+      // OB-078 face pass on the Y -3 plane (HEAD_PROFILE). Expression: neutral, calm - level one-row brows, eyes looking
+      // straight ahead (iris 3.1 cm off the midline, white either side), a relaxed mouth = a thin dark line over a full
+      // lower lip. Fine rows: z60 lo carved (round chin) / z60 hi chin point / z61 lo shadow under the lip / z61 hi LOWER
+      // LIP half a cell proud / z62 lo MOUTH LINE / z62 hi philtrum / z63 lo nostrils + columella / z63 hi wings, tip /
+      // z64 hi lower lid + cheekbone / z65 lo EYE / z65 hi upper lid / z66 lo lid skin / z66 hi BROW.
       [1, -1].forEach(function (s) {
         var inner = s > 0 ? 0 : 1, outer = 1 - inner;
-        // eyes: the eyeball sits half a cell in front of the socket floor (Y -4 back half, added - the L1 cell is empty),
-        // so the brow ridge above and the lower lid / cheek below stay half a cell in front of it
-        edit(s, -3, 65, '*', 0, '*', 's'); edit(2 * s, -3, 65, '*', 0, '*', 's');           // socket floor (hidden / outer corner)
-        edit(s, -4, 65, inner, 1, 0, 'c'); edit(s, -4, 65, outer, 1, 0, 'e'); edit(2 * s, -4, 65, inner, 1, 0, 'c');
-        edit(s, -4, 65, inner, 1, 1, 's'); edit(s, -4, 65, outer, 1, 1, 'd'); edit(2 * s, -4, 65, inner, 1, 1, 'd');   // upper lid, lashes over the iris
-        // lower lid + cheekbone highlight under the outer eye (top half of z 64), shade beside the nose
-        edit(s, -4, 64, inner, 0, 1, 's'); edit(s, -4, 64, outer, 0, 1, 'a');
-        edit(2 * s, -4, 64, inner, 0, '*', 'a'); edit(2 * s, -4, 64, outer, 0, 1, 'l'); edit(2 * s, -4, 64, outer, 0, 0, 'a');
-        edit(3 * s, -4, 64, inner, 0, 1, 'l');
-        // nose wings (alae) half a cell out beside the tip, the crease behind them, nostrils under them, philtrum ridges
-        edit(s, -5, 64, inner, 1, 0, 'a'); edit(s, -4, 64, outer, 0, 0, 's');
-        edit(s, -4, 63, inner, 0, 1, 'd'); edit(s, -4, 63, outer, 0, 1, 'a'); edit(s, -4, 63, '*', 0, 0, 'a');
-        // brows: the upper half, thick at the inner end (2 rows), the tail on the temple; lid crease under them
+        // brows: level, one fine row (the upper half of z 66) from beside the glabella to the temple; lid skin under them
         edit(s, -4, 66, '*', 0, 1, 'b'); edit(2 * s, -4, 66, '*', 0, 1, 'b'); edit(3 * s, -3, 66, inner, 0, 1, 'b');
-        edit(s, -4, 66, inner, 0, 0, 'b'); edit(s, -4, 66, outer, 0, 0, 'a'); edit(2 * s, -4, 66, '*', 0, 0, 'a');
-        edit(3 * s, -3, 66, inner, 0, 0, 's');
-        // mouth 5 cm wide: upper lip, the dark mouth line, lower lip, the shadow under it; soft shaded corners
-        edit(s, -4, 62, inner, 0, 1, 'p'); edit(s, -4, 62, outer, 0, 1, 'a');
-        edit(s, -4, 62, inner, 0, 0, 'd'); edit(s, -4, 62, outer, 0, 0, 's');
-        edit(s, -4, 61, inner, 0, 1, 'p'); edit(s, -4, 61, outer, 0, 1, 's');
-        edit(s, -4, 61, inner, 0, 0, 's'); edit(s, -4, 61, outer, 0, 0, 'a');
-        // ears: lit helix rim on top, a small hole, a flushed lobe; rounder jaw corners
-        edit(4 * s, 0, 65, '*', '*', 1, 'l'); edit(4 * s, 0, 64, '*', 1, '*', 's');
-        for (var jy = -3; jy <= 1; jy++) edit(2 * s, jy, 60, outer, '*', 0, '.');
+        edit(s, -4, 66, '*', 0, 0, 'a'); edit(2 * s, -4, 66, '*', 0, 0, 'a'); edit(3 * s, -3, 66, '*', 0, 0, 's');
+        // eyes: the eyeball sits half a cell in front of the socket floor (Y -4 back half, added - the L1 cell is empty);
+        // from the nose outward: socket skin, white, IRIS, white; the upper lid over it with one dark lash cell over the iris
+        edit(s, -3, 65, '*', 0, '*', 's'); edit(2 * s, -3, 65, '*', 0, '*', 's');
+        edit(s, -4, 65, inner, 1, 0, 's'); edit(s, -4, 65, outer, 1, 0, 'c'); edit(2 * s, -4, 65, inner, 1, 0, 'e'); edit(2 * s, -4, 65, outer, 1, 0, 'c');
+        edit(s, -4, 65, '*', 1, 1, 's'); edit(2 * s, -4, 65, inner, 1, 1, 'd'); edit(2 * s, -4, 65, outer, 1, 1, 's');
+        // lower lid (shade beside the nose) + the cheekbone highlight under the outer eye, on the upper half of z 64
+        edit(s, -4, 64, '*', 0, 1, 's'); edit(2 * s, -4, 64, inner, 0, 1, 'a'); edit(2 * s, -4, 64, outer, 0, 1, 'l'); edit(3 * s, -3, 64, '*', 0, 1, 'l');
+        edit(2 * s, -4, 64, '*', 0, 0, 'a');
+        // nose wings: half a cell wide (the outer half carved), a nostril under each
+        edit(s, -4, 63, outer, '*', '*', '.'); edit(s, -4, 63, inner, 0, 1, 'a'); edit(s, -4, 63, inner, 0, 0, 'd');
+        // mouth 5 cm wide: a thin dark line (z 62 lower half) with soft corners, the lower lip half a cell proud (added at
+        // Y -4, back half), a shadow under it
+        edit(s, -3, 62, '*', 0, 1, 'a'); edit(s, -3, 62, inner, 0, 0, 'd'); edit(s, -3, 62, outer, 0, 0, 's');
+        edit(s, -4, 61, inner, 1, 1, 'p'); edit(s, -3, 61, '*', 0, 1, 'p'); edit(s, -3, 61, '*', 0, 0, 's');
+        // ears: lit helix rim on top, a hole behind the front half, the lobe rounded; jaw: the lower-outer quarters of the
+        // jaw cells rounded off (chin sides, the jaw angle under the ear)
+        edit(4 * s, 0, 65, '*', '*', 1, 'l'); edit(4 * s, 1, 65, '*', '*', 1, 'l'); edit(4 * s, 0, 64, '*', 1, '*', 's');
+        edit(4 * s, 0, 63, outer, 0, 0, '.');
+        for (var jy = -3; jy <= 0; jy++) edit(2 * s, jy, 60, outer, '*', 0, '.');
+        edit(3 * s, 0, 61, outer, '*', 0, '.'); edit(3 * s, 1, 61, outer, '*', 0, '.'); edit(3 * s, -1, 62, outer, 0, 0, '.');
       });
       edit(0, -4, 66, '*', 0, '*', 'l');                                           // glabella
       edit(0, -5, 65, '*', 1, 0, 'l');                                             // nose bridge rises toward the tip
-      edit(0, -6, 64, '*', 1, 1, 'l'); edit(0, -6, 64, '*', 1, 0, 'a');            // nose tip half a cell further out
-      edit(0, -5, 64, '*', '*', 0, 'a');                                           // the underside of the tip
-      edit(0, -4, 63, '*', 0, 1, 's'); edit(0, -4, 63, '*', 0, 0, 's');            // columella between the nostrils, philtrum groove
-      edit(0, -4, 62, '*', 0, 1, 'p'); edit(0, -4, 62, '*', 0, 0, 'd');            // upper lip centre, mouth line
-      edit(0, -4, 61, '*', 0, 1, 'p'); edit(0, -4, 61, '*', 0, 0, 's');            // lower lip centre, shadow under it
+      edit(0, -5, 64, '*', 0, 1, 'l'); edit(0, -5, 64, '*', 0, 0, 'a');            // the nose ridge
+      edit(0, -5, 63, '*', 0, 0, '.'); edit(0, -5, 63, '*', 0, 1, 'l'); edit(0, -5, 63, '*', 1, 0, 's');   // rounded tip: lower front carved, underside shaded
+      edit(0, -4, 63, '*', 0, 1, 'a'); edit(0, -4, 63, '*', 0, 0, 's');            // columella between the nostrils
+      edit(0, -3, 62, '*', 0, 1, 's'); edit(0, -3, 62, '*', 0, 0, 'd');            // philtrum groove, mouth line centre
+      edit(0, -4, 61, '*', 1, 1, 'p'); edit(0, -3, 61, '*', 0, 1, 'p'); edit(0, -3, 61, '*', 0, 0, 's');   // lower lip centre (proud), shadow under it
       edit(0, -4, 60, '*', 0, 1, 'l');                                             // chin point
-      [-1, 0, 1].forEach(function (X) { edit(X, -4, 60, '*', 0, 0, '.'); });     // rounder chin bottom
+      [-1, 0, 1].forEach(function (X) {
+        edit(X, -4, 60, '*', 0, 0, '.');                                           // rounder chin bottom
+        edit(X, -4, 67, '*', 0, 1, '.'); edit(X, -3, 68, '*', 0, 1, '.');          // forehead slopes back
+        edit(X, 3, 68, '*', 1, 1, '.'); edit(X, 2, 69, '*', 1, 1, '.');            // occiput rounds into the crown
+      });
     }
     var out = [];
     for (fz = 0; fz < Dz; fz++) {
@@ -632,8 +638,8 @@
     }
     return out;
   }
-  // the chin carve above removes the FRONT lower half of the chin cells, but `edit(2s, '*', 60, ...)` carves the outer
-  // lower half of the jaw edge columns at every Y - both keep every remaining fine cell inside the Jaw box.
+  // every carve above (chin bottom, jaw quarters, nose tip, forehead, occiput, ear lobe) only removes fine cells of Head /
+  // Jaw level-1 cells; every add (eyeballs, bridge, lower lip) lands on an empty level-1 cell inside the Head / Jaw box.
 
   // 38.34 downsample2 (preview / check twin of engine/chargen/downsample.js)
   function downsample2(layers, size, slots) {
@@ -981,7 +987,7 @@
       kind: 'charkit',
       schema: 1,
       id: KIT_ID,
-      name: 'Kestrel human kit v6 (OB-071 shape pass)',
+      name: 'Kestrel human kit v7 (OB-078 head pass)',
       cellM: CELL,
       axes: 'cells; x = east (the character\'s right), y = south (the character faces north, -y), z = up; ' +
             'layers[z][y] = string of x; joints / anchors / mount positions are continuous cell coordinates',
@@ -1351,7 +1357,7 @@
   }
 
   var api = {
-    version: 6, KIT_ID: KIT_ID, knightLook: knightLook, fenLook: fenLook, CELL: CELL, SKELETON: SKELETON, PART_MAP: PART_MAP, MAX_PARTS: MAX_PARTS,
+    version: 7, KIT_ID: KIT_ID, knightLook: knightLook, fenLook: fenLook, CELL: CELL, SKELETON: SKELETON, PART_MAP: PART_MAP, MAX_PARTS: MAX_PARTS,
     STRETCH_BONES: STRETCH_BONES, ARM_STRETCH: ARM_STRETCH, DETAIL: DETAIL,
     buildHumanKit: buildHumanKit, stringifyKit: stringifyKit, decodeBase: decodeBase, resolveMat: resolveMat,
     countQuads: countQuads, checkKit: checkKit, decodeDetail: decodeDetail, downsample2: downsample2,
