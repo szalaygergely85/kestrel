@@ -40,4 +40,5 @@ try {
   try { cdp && cdp.close && cdp.close(); } catch {}
   if (browser) killTree(browser);
   killTree(server);
+  setTimeout(() => process.exit(process.exitCode || 0), 3000).unref(); // never hang on an open CDP socket (batch waited 40 min)
 }

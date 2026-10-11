@@ -547,7 +547,7 @@ function buildCompareRuns(ctx) {
       wadeSplashAt(engine.particles, fx, fy, z, 1);
       wadeRipples.add(fx, fy, 0.8, 9.8); wadeRipples.add(fx, fy, 0.6, 9.5); wadeRipples.add(fx, fy, 0.4, 9.2);
       for (let i = 0; i < 12; i++) engine.particles.step();
-      fbCompare.ripples = wadeRipples;
+      ctx.compareRipples = wadeRipples; // read by runGpuCompareSceneMode (fbCompare lives there)
     } });
   const steepPts = Array.from({ length: 9 }, (_, i) => [waterEye.x + 6 - 10 * i, waterEye.y + 3 * Math.sin(i * 0.6)]);
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: riverSteep (RIVER-03, 0.2 m/m slope, rapids foam, flow streaks stretch, tick 600, t 10 s)',
@@ -957,7 +957,9 @@ async function runGpuCompareSceneMode(ctx) {
     resetInstances();
     if (world.terrain) while (terrainMeshSetFor(world.terrain).step(1000));
     if (real) {
+      ctx.compareRipples = null;
       if (before) before();
+      if (ctx.compareRipples) fbCompare.ripples = ctx.compareRipples;
       compareVoxelPool.collect(world, cam);
     } else {
       compareVoxelPool.beginFrame();
