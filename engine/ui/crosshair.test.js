@@ -96,6 +96,36 @@ const style = {
   ok('prompt: crosshair stays glyph-only (128)', bgAlphaAt(ui, cx, cy) === GLYPH_BG_ALPHA);
 }
 
+// ---- OB-051: prompt.scale 2 ----
+{
+  const text = '[E] Take lamp';
+  const s2 = { ...style, prompt: { ...style.prompt, scale: 2 } };
+  const ui = createUiLayer({ cols: 160, rows: 60 });
+  drawCrosshair(ui, s2, { targetKey: 'E', prompt: text });
+  const cx = ui.cols >> 1, cy = ui.rows >> 1;
+  const px = (cx - text.length) & ~1, py = (cy + 3) & ~1;
+  ok('scale2: even origin', px % 2 === 0 && py % 2 === 0);
+  let rowCells = 0, flagged = 0, minX = 999, maxX = -1, onlyRows = true;
+  for (let y = 0; y < ui.rows; y++) for (let x = 0; x < ui.cols; x++) {
+    if (!maskAt(ui, x, y) || bgAlphaAt(ui, x, y) === GLYPH_BG_ALPHA) continue;
+    if (y !== py && y !== py + 1) onlyRows = false;
+    rowCells++; if (ui.cells.fg[(y * ui.cols + x) * 4 + 3] & 128) flagged++;
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+  }
+  ok('scale2: opaque cells only on rows py,py+1', onlyRows);
+  ok('scale2: width 2*len, all flagged', rowCells === 2 * 2 * text.length && flagged === rowCells && minX === px && maxX === px + 2 * text.length - 1);
+  ok('scale2: never overlaps cross cell', py > cy + 1 && bgAlphaAt(ui, cx, cy) === GLYPH_BG_ALPHA);
+  ok('scale2: key colour on first block', fgAt(ui, px, py)[0] === 255 && fgAt(ui, px + 6, py)[0] === 0xcc);
+  // scale 1 / absent stays exactly as before; a plain RT falls back to 1x
+  const ui1 = createUiLayer({ cols: 160, rows: 60 });
+  drawCrosshair(ui1, { ...style, prompt: { ...style.prompt, scale: 1 } }, { targetKey: 'E', prompt: text });
+  const p1 = cx - (text.length >> 1);
+  ok('scale1: unchanged layout (cy+2, no flag)', maskAt(ui1, p1, cy + 2) === 1 && (ui1.cells.fg[((cy + 2) * ui1.cols + p1) * 4 + 3] & 128) === 0);
+  const cb = new CellBuffer(160, 60);
+  drawCrosshair(Object.assign(cb, { setGlyph() {} }), s2, { targetKey: 'E', prompt: text });
+  ok('scale2 on non-UI rt falls back to 1x', cb.mask[(cy + 2) * 160 + p1] === 1);
+}
+
 // ---- Canvas2D present path: glyph-only keeps the scene bg, opaque replaces ----
 {
   const ui = createUiLayer({ cols: 160, rows: 60 });

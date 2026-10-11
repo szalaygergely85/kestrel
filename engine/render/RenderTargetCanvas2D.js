@@ -211,7 +211,9 @@ export class RenderTargetCanvas2D {
         const x0 = Math.round(ux * sx), x1 = Math.min(this.cols, Math.round((ux + 1) * sx));
         const fi = ui_i * 4;
         const glyphOnly = src.bg[fi + 3] === GLYPH_BG_ALPHA;
-        const gIdx = src.glyphIdx[ui_i];
+        // OB-051 degrade: a scaled block shows its glyph only in the even/even cell, space in the others
+        const scaledCell = (src.fg[fi + 3] & 128) !== 0;
+        const gIdx = scaledCell && ((ux & 1) || (uy & 1)) ? 0 : src.glyphIdx[ui_i];
         const fr = src.fg[fi], fg1 = src.fg[fi + 1], fb = src.fg[fi + 2];
         const br = src.bg[fi], bgc = src.bg[fi + 1], bb = src.bg[fi + 2];
         for (let cy = y0; cy < y1; cy++) {
@@ -267,14 +269,17 @@ export class RenderTargetCanvas2D {
         }
 
         const mask = this._buildGlyphMask(gIdx);
+        const scaled = (fgArr[fi + 3] & 128) !== 0; // OB-051: 2x2 block cell; quadrant = cell parity
+        const qx = cx & 1, qy = cy & 1;
         const fr = fgArr[fi], fgg = fgArr[fi + 1], fb = fgArr[fi + 2];
         const fgWord = (255 << 24) | (fb << 16) | (fgg << 8) | fr;
 
         for (let j = 0; j < pxCellH; j++) {
           let idx = rowBase + j * canvasW;
           let mi = j * pxCellW;
+          const mrow = scaled ? ((qy * pxCellH + j) >> 1) * pxCellW : 0;
           for (let k = 0; k < pxCellW; k++) {
-            const a = mask[mi];
+            const a = scaled ? mask[mrow + ((qx * pxCellW + k) >> 1)] : mask[mi];
             if (a === 0) {
               pixels[idx] = bgWord;
             } else if (a === 255) {

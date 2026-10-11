@@ -25,6 +25,7 @@ assert.strictEqual(PRESENT_TEXTURES.length, 3);
 assert.deepStrictEqual(PRESENT_TEXTURES, ['float', 'float', 'filtered']);
 assert.ok(/const GLYPH_COUNT: f32 = 95\.0;/.test(PRESENT_WGSL), 'constant interpolated from glyphAtlas');
 assert.ok(!/1\.0 - /.test(PRESENT_WGSL.split('fn fs_main')[1].split('let atlasUv')[0]), 'no GL row flip');
+assert.ok(/raw & 127u/.test(PRESENT_WGSL) && /\* 0\.5, scaled\)/.test(PRESENT_WGSL), 'OB-051 scaled-cell lines');
 assert.strictEqual(PRESENT_BLOCK.sizeBytes, 32);
 assert.deepStrictEqual([PRESENT_BLOCK.field('grid').word, PRESENT_BLOCK.field('size').word, PRESENT_BLOCK.field('layer').word], [0, 2, 4]);
 // WG-2a debug module (38.5): registered, entry points, integer textures via textureLoad only, no GLSL leftovers

@@ -14,3 +14,11 @@ export function drawText(rt, x, y, text, fg, bg) {
     rt.setCell(cx, y, text[i], fg, bg);
   }
 }
+
+// OB-051 (architecture.md 38.48): 2x text. Char i occupies the 2x2 block at
+// (x + 2*i, y) (origin snapped to even by the layer). Only a UiLayer has
+// setCellScaled; any other target (scene RT) falls back to plain 1x drawText.
+export function drawTextScaled(rt, x, y, text, fg, bg) {
+  if (typeof rt.setCellScaled !== 'function') { drawText(rt, x, y, text, fg, bg); return; }
+  for (let i = 0; i < text.length; i++) rt.setCellScaled(x + 2 * i, y, text[i], fg, bg);
+}
