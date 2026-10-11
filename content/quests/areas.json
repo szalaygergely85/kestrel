@@ -40,7 +40,7 @@
     },
     "hintStone": {
       "world": "world_m1",
-      "trigger": "hintStone"
+      "trigger": "hillPath"
     }
   }
 }
