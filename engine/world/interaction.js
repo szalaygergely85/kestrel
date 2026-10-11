@@ -30,7 +30,11 @@ import { gridLocal } from './gridLocal.js';
 /** @typedef {{targetKey:string|null, prompt:string, dist:number, angleDeg:number}} InteractionState */
 
 const DEFAULT_REACH = 1.8;
-const DEFAULT_CONE_DEG = 20;
+const DEFAULT_CONE_DEG = 40; // OB-052: forgiving aim (was 20)
+export const HYST_CONE_DEG = 15; // the current target survives this far outside the cone
+export const HYST_REACH = 0.3;   // ...and this much beyond reach
+const DIST_WEIGHT = 15;          // score = angleDeg + dist * 15: 1 m of distance costs 15 deg of aim
+const KEEP_BONUS = 5;            // a challenger must beat the current target's score by 5 to replace it
 export const DEFAULT_NEAR_DIST = 0.9; // DOOR-CLOSE-01: inside this range the cone widens
 export const DEFAULT_NEAR_CONE_DEG = 70;
 const LOS_STEP = 0.1;
@@ -96,8 +100,9 @@ export function hasLineOfSight(world, ax, ay, az, bx, by, bz) {
 /**
  * Finds the interaction target (a candidate is: not used, `requires` met,
  * `|p - eye| <= min(rec.radius, reach)`, `angle(viewDir, p - eye) <= coneDeg`,
- * has line of sight). Winner: smallest angle, then smaller distance, then
- * array order. Fills and returns `out` - never allocates. Reads `rec.x/y/z`
+ * has line of sight). Winner (OB-052): lowest score = angleDeg + 15 * dist, then
+ * array order. Hysteresis: the previous target (`out.targetKey` on entry) keeps
+ * a 5 point bonus and a wider gate (cone + 15 deg, reach + 0.3 m). Fills and returns `out` - never allocates. Reads `rec.x/y/z`
  * LIVE (a runtime rec may be moved by its owner after add, US-079b0).
  * @param {import('./World.js').World} world
  * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number}} eye
@@ -120,7 +125,8 @@ export function findInteractTarget(world, eye, cfg, out) {
   const vz = Math.sin(pitchRad);
 
   const list = world.interactables;
-  let bestIdx = -1, bestAngle = Infinity, bestDist = Infinity;
+  const prevKey = out.targetKey;
+  let bestIdx = -1, bestAngle = Infinity, bestDist = Infinity, bestScore = Infinity;
   for (let i = 0; i < list.length; i++) {
     const rec = list[i];
     if (rec.usedKey && world.state[rec.usedKey]) continue;
@@ -128,7 +134,8 @@ export function findInteractTarget(world, eye, cfg, out) {
 
     const dx = rec.x - eye.x, dy = rec.y - eye.y, dz = rec.z - eye.z;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    const maxReach = rec.radius < reach ? rec.radius : reach;
+    const isPrev = prevKey !== null && rec.key === prevKey;
+    const maxReach = (rec.radius < reach ? rec.radius : reach) + (isPrev ? HYST_REACH : 0);
     if (dist > maxReach) continue;
 
     let cosAngle = dist < 1e-9 ? 1 : (dx * vx + dy * vy + dz * vz) / dist;
@@ -136,11 +143,13 @@ export function findInteractTarget(world, eye, cfg, out) {
     const angleDeg = Math.acos(cosAngle) * 180 / Math.PI;
     // DOOR-CLOSE-01 (owner: too close to the door -> cannot open): within arm's length the aim point sits steeply off the
     // view ray (looking down / sideways at a big object), so the cone widens to 70 deg below nearDist.
-    if (angleDeg > (dist < nearDist && coneDeg < nearConeDeg ? nearConeDeg : coneDeg)) continue;
+    if (angleDeg > (dist < nearDist && coneDeg < nearConeDeg ? nearConeDeg : coneDeg) + (isPrev ? HYST_CONE_DEG : 0)) continue;
 
     if (!hasLineOfSight(world, eye.x, eye.y, eye.z, rec.x, rec.y, rec.z)) continue;
 
-    if (angleDeg < bestAngle - 1e-9 || (angleDeg <= bestAngle + 1e-9 && dist < bestDist)) {
+    const score = angleDeg + dist * DIST_WEIGHT - (isPrev ? KEEP_BONUS : 0);
+    if (score < bestScore - 1e-9) {
+      bestScore = score;
       bestAngle = angleDeg;
       bestDist = dist;
       bestIdx = i;
