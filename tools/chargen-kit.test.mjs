@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import '../design/palette.js';
 import '../design/detail-pass.js';
 import '../design/chargen/human_kit.js';
-import { HUMANOID_PART_MAP, composeCharacter } from '../engine/index.js';
+import { HUMANOID_PART_MAP, composeCharacter, meshCharacter, collapseRig } from '../engine/index.js';
 
 let passed = 0;
 const test = (name, fn) => { try { fn(); passed++; console.log(`ok - ${name}`); } catch (e) { console.error(`not ok - ${name}\n${e.stack}`); process.exitCode = 1; } };
@@ -38,19 +38,19 @@ test('skeleton: 22 humanoid bones, parents first; partMap = engine array form, e
 test('partMap equals engine HUMANOID_PART_MAP', () => {
   assert.deepStrictEqual(JSON.parse(JSON.stringify(kit.partMap)), JSON.parse(JSON.stringify(HUMANOID_PART_MAP)));
 });
-test('size: 1.75 m tall, ~70 rows, shoulders + upper arms (slight A) 0.42-0.55 m, grid about 36x20x76', () => {
+test('size: 1.75 m tall, ~70 rows, shoulders over the deltoids 0.42-0.55 m, grid about 36x20x76', () => {
   const st = res.stats.bases.m_avg;
   assert.strictEqual(st.heightM, 1.75);
   assert.ok(B.size[0] <= 40 && B.size[1] <= 20 && B.size[2] <= 76, B.size.join('x'));
-  // shoulder width: widest row between z 49 and 51 (CHARGEN-26: shoulders at z 50 under the bigger head; was z 52-57)
+  // shoulder width: widest row between z 55 and 58 (OB-025 v4: realistic proportions, deltoids at z 55-57; was z 49-51)
   let w = 0;
-  for (let z = 49; z <= 51; z++) { let lo = 99, hi = -1; for (let y = 0; y < B.size[1]; y++) for (let x = 0; x < B.size[0]; x++) { const k = D.at(x, y, z); if (k >= 0) { lo = Math.min(lo, x); hi = Math.max(hi, x); } } w = Math.max(w, hi - lo + 1); }
+  for (let z = 55; z <= 58; z++) { let lo = 99, hi = -1; for (let y = 0; y < B.size[1]; y++) for (let x = 0; x < B.size[0]; x++) { const k = D.at(x, y, z); if (k >= 0) { lo = Math.min(lo, x); hi = Math.max(hi, x); } } w = Math.max(w, hi - lo + 1); }
   assert.ok(w * kit.cellM >= 0.42 && w * kit.cellM <= 0.55, 'shoulders ' + w * kit.cellM);
 });
 test('rest pose gaps: thighs >= 2 cells apart (crotch to knee), arm-torso >= 3 cells from z 46 down to the hands', () => {
   const S = B.size, cx = 18;
-  // CHARGEN-26: shorter legs, crotch at z 28 (was 34), so the thigh gap is checked over z 20-27 (was 20-33)
-  for (let z = 20; z <= 27; z++) for (let y = 0; y < S[1]; y++) for (let x = cx - 1; x <= cx + 1; x++) assert.ok(D.at(x, y, z) < 0, 'thigh gap at ' + [x, y, z]);
+  // OB-025 v4: knee z 20, crotch z 33, so the thigh gap is checked over z 20-32 (was 20-27)
+  for (let z = 20; z <= 32; z++) for (let y = 0; y < S[1]; y++) for (let x = cx - 1; x <= cx + 1; x++) assert.ok(D.at(x, y, z) < 0, 'thigh gap at ' + [x, y, z]);
   // Hands rest by the thigh (designer CHARGEN-01: 'palm faces the thigh'; owner Q2 pending) - the >= 3 gap applies to the arm bones only.
   const isArm = (k) => /Arm/.test(D.names[D.bone[k]]);
   const isHand = (k) => /Hand/.test(D.names[D.bone[k]]);
@@ -143,6 +143,22 @@ test('CHARGEN-26 knight look: validates, engine composeCharacter = composePrevie
   for (const c of ['q', 'r', 'R', 'y', 'k', '9', 'g']) assert.ok(seen[c], 'knight shows slot char ' + c);
   for (const h of [-4, 4]) composeCharacter(kit, { ...kn, height: h });
   composeCharacter(kit, { ...kn, res: { body: 1, head: 2 } });
+});
+test('OB-025: kit.clips idle (breath) + walk, 50 ms multiples, collapse to the 8-part rig; head L2 refined but same bone boxes', () => {
+  assert.ok(kit.clips.idle && kit.clips.walk, 'idle + walk clips');
+  for (const n in kit.clips) { assert.strictEqual(kit.clips[n].duration % 50, 0, n); assert.ok(kit.clips[n].keys.length >= 2, n); }
+  const pr = collapseRig(meshCharacter(composeCharacter(kit, kit.defaults)), kit.partMap);
+  assert.ok(pr.clips.idle.frames.length === kit.clips.idle.duration / 50 && pr.clips.walk.frames.length === kit.clips.walk.duration / 50);
+  const d2 = res.stats.bases.m_avg.detail.head2;
+  assert.ok(d2 && d2.voxels > 0 && d2.quads > 0, 'head L2 authored');
+  // the proportions the owner asked for: head (chin z 60 .. scalp z 69) 10 rows = 0.25 m on 1.75 m (7 heads), fingertips at mid-thigh
+  let chin = 99, scalp = -1;
+  for (let z = 50; z < B.size[2]; z++) for (let y = 0; y < B.size[1]; y++) for (let x = 14; x <= 22; x++) {
+    const k = D.at(x, y, z); if (k >= 0 && /Head|Jaw/.test(D.names[D.bone[k]])) { chin = Math.min(chin, z); scalp = Math.max(scalp, z); }
+  }
+  assert.ok(scalp - chin + 1 >= 9 && scalp - chin + 1 <= 10, 'head rows ' + (scalp - chin + 1));
+  let tip = 99; for (let z = 20; z <= 34; z++) for (let y = 0; y < B.size[1]; y++) for (let x = 0; x < B.size[0]; x++) { const k = D.at(x, y, z); if (k >= 0 && /Hand/.test(D.names[D.bone[k]])) tip = Math.min(tip, z); }
+  assert.ok(tip >= 24 && tip <= 29, 'fingertips at z ' + tip);
 });
 test('deterministic: two builds give identical text', () => {
   assert.strictEqual(CK.stringifyKit(CK.buildHumanKit(P)), CK.stringifyKit(kit));

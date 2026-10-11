@@ -168,7 +168,8 @@ const count = (a) => a.reduce((n, v) => n + (v ? 1 : 0), 0);
   const rc = randomRecipe(kit, 3);
   const quads = (res, h) => meshCharacter(composeCharacter(kit, { ...rc, height: h, res })).mesh.quads;
   const q11 = quads({ body: 1, head: 1 }, 0), q12 = quads({ body: 1, head: 2 }, 0), q14 = quads({ body: 1, head: 4 }, 0);
-  ok('quad counts: nearest-upsampled head keeps the greedy quad count at every level', q11 === q12 && q12 === q14, `${q11} ${q12} ${q14}`);
+  // v4 kit: the real head/hair cells carry authored L1 detail beyond the head box, so L1 may differ from the test-made nearest-upsampled L2/L4
+ok('quad counts: nearest-upsampled head levels (2, 4) keep the same greedy count; every level <= CHAR_GAME_MAX_QUADS', q12 === q14 && Math.max(q11, q12, q14) <= CHAR_GAME_MAX_QUADS, `${q11} ${q12} ${q14}`);
   ok('GAME_SAFE_RES stays under CHAR_GAME_MAX_QUADS', quads(GAME_SAFE_RES, 0) <= CHAR_GAME_MAX_QUADS && q12 <= CHAR_GAME_MAX_QUADS, `${q12}`);
   ok('worst combination under MESH_ONLY_MAX_QUADS 32768', q14 < 32768, `${q14}`);
   for (const h of [-2, 3]) { const a = composeCharacter(kit, { ...rc, height: h, res: { body: 1, head: 2 } }); ok(`real kit height ${h} composes with a head block`, a.blocks.length === 1 && a.blocks[0].origin[2] >= 0); }
