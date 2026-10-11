@@ -136,7 +136,7 @@ export function applyDefence(n, points, bonus = 0) {
 }
 
 // ---- QL-19 passives: `defs[id].equip.passive` = {nightDef?: number, wetStone?: true}. Pure, no allocation. ----
-export const NIGHT_FROM = 21, NIGHT_TO = 5, WET_SLOW_S = 0.4, WET_SLOW_MUL = 0.5;
+export const NIGHT_FROM = 21, NIGHT_TO = 5, WET_SLOW_S = 0.4, WET_SLOW_MUL = 0.4;
 /** Night = clock hour in [21, 24) or [0, 5). */
 export function isNight(hour) { return hour >= NIGHT_FROM || hour < NIGHT_TO; }
 /** Extra damage reduction (0.1 for a worn cloak) from the worn pieces' `nightDef` passive, only at night. Stays inside DEF_CAP via reductionOf. */
@@ -157,7 +157,7 @@ export function hasSureFooting(eq, defs) {
   return !!(d && d.equip && d.equip.passive && d.equip.passive.wetStone);
 }
 /**
- * Wet stepping stone rule: a SPRINT onto a `wet` stone without sure footing gives a 0.4 s slow step (speed x0.5).
+ * Wet stepping stone rule: a SPRINT onto a `wet` stone without sure footing gives a 0.4 s slow step (speed x0.4).
  * `st` = {t} persistent per player; call once per step with the step's facts. Returns the speed multiplier (1 = none).
  */
 export function wetStoneStep(st, eq, defs, sprinting, onWetStone, wasOnWetStone, dt) {

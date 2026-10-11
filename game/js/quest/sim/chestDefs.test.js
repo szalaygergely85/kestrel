@@ -17,7 +17,7 @@ const defs = buildChestDefs(fake);
 assert.deepEqual(defs.map((d) => d.id).sort(), Object.keys(CHEST_TABLES).sort(), 'all five anchors become chests');
 for (const d of defs) {
   assert.equal(byId.get(d.id).components.voxel.model, 'chestSmall', d.id + ' carries the chest model');
-  assert.ok(Math.abs(d.frontY - 1) < 1e-9 && Math.abs(d.frontX) < 1e-9, 'yaw 180 -> front +y');
+  if (!d.id.startsWith('secret')) assert.ok(Math.abs(d.frontY - 1) < 1e-9 && Math.abs(d.frontX) < 1e-9, 'yaw 180 -> front +y');
 }
 
 function openAll(seed) {
@@ -27,7 +27,7 @@ function openAll(seed) {
     const inv = ensureInventory(player, { pack: [], left: null, right: null });
     const events = { emit() {} };
     const sim = createChests([d], { items, inventoryOf: () => inv, events, seed });
-    const pose = { x: d.x, y: d.y + 1.0, z: d.z, forwardX: 0, forwardY: -1 }; // in front (+y), facing the chest
+    const pose = { x: d.x + d.frontX, y: d.y + d.frontY, z: d.z, forwardX: -d.frontX, forwardY: -d.frontY }; // 1 m in front of the chest, facing it
     assert.equal(sim.open(d.id, pose), true, d.id + ' opens');
     sim.step(1);
     assert.equal(sim.stateOf(d.id), 'open');
@@ -48,5 +48,9 @@ assert.equal(items[a.chestHidden[0].replace(/x1$/, '')].equip.tier, 'fine', 'hid
 const slots = new Set();
 for (let s = 1; s <= 12; s++) slots.add(items[openAll(s).chestHidden[0].replace(/x1$/, '')].equip.slot);
 assert.ok(slots.size > 1, 'hidden chest slot varies with the seed: ' + [...slots]);
+// US-104a: the 4 secret chests = 4 arrows always + a gear roll with chance 0.08 (over many seeds ~8 %)
+let gearN = 0; const N = 400;
+for (let s = 1; s <= N; s++) { const r = openAll(s); for (const id of ['secretRook', 'secretBend', 'secretField', 'secretBank']) { assert.ok(r[id].includes('arrowx4'), id + ': 4 arrows'); if (r[id].some((x) => x.startsWith('gear.'))) gearN++; } }
+assert.ok(gearN / (N * 4) > 0.05 && gearN / (N * 4) < 0.11, 'secret gear chance ~8 %: ' + gearN / (N * 4));
 void c; void countOf;
 console.log('chestDefs.test: ALL PASS');

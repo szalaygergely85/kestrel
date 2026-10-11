@@ -69,7 +69,7 @@ for (const cy of cols) {
   for (const d of [-2, 2]) merlon(X0, Y0 + d, base + GATE_COURSES * H, 90);
   const HALF = 0.655 * S, LS = 2.6;                          // opening half width 2.62 m; leaf 1.07 m * 2.6 = 2.78 m
   put('Door_1_Round', X0, Y0 - HALF, base - 0.08, 90, { scale: LS });
-  put('Door_1_Round', X0 - 0.12, Y0 + HALF, base - 0.08, 270, { scale: LS });
+  put('Door_1_Round', X0 - 0.12, Y0 + HALF, base - 0.04, 270, { scale: LS });
   for (const d of [-1.32, 1.32]) put('Prop_MetalFence_Simple', X0 - 0.06, Y0 + d, base + 2.35 * LS + 0.05, 90, { scale: 1.35 });
 }
 // ---- towers
@@ -78,11 +78,11 @@ for (const cy of TOWER_Y) {
   for (let k = 0; k < TOWER_COURSES; k++) {
     const z = base + k * H;
     for (const dy of [-4, 4]) { wallAt('Wall_UnevenBrick_Straight', cy + dy, X0 - 8, z, { alongY: true }); wallAt('Wall_UnevenBrick_Straight', cy + dy, X0 + 8, z, { alongY: true }); }
-    for (const dx of [-4, 4]) { wallAt('Wall_UnevenBrick_Straight', X0 + dx, cy - 8, z, {}); wallAt('Wall_UnevenBrick_Straight', X0 + dx, cy + 8, z, {}); }
+    for (const dx of [-4, 4]) { wallAt('Wall_UnevenBrick_Straight', X0 + dx, cy - 8, z + 0.04, {}); wallAt('Wall_UnevenBrick_Straight', X0 + dx, cy + 8, z + 0.04, {}); } // +4 cm: x-runs meet y-runs at the corners; no coplanar tops (OB-053b)
     for (const sx of [-8, 8]) for (const sy of [-8, 8]) put('Corner_Exterior_Brick', X0 + sx + 0.3, cy + sy + 0.3, z, 0, { scale: S });
   }
   const top = base + TOWER_COURSES * H;
-  for (const dx of [-4, 4]) for (const dy of [-4, 4]) put('Floor_UnevenBrick', X0 + dx, cy + dy, top - 0.05, 0, { scale: S, collide: false });
+  for (const dx of [-4, 4]) for (const dy of [-4, 4]) put('Floor_UnevenBrick', X0 + dx, cy + dy, top + 0.04, 0, { scale: S, collide: false });
   for (const dx of [-4, 4]) for (const e of [-8, 8]) { merlon(X0 + dx - 2, cy + e, top, 0); merlon(X0 + dx + 2, cy + e, top, 0); }
   for (const dy of [-4, 4]) for (const e of [-8, 8]) { merlon(X0 + e, cy + dy - 2, top, 90); merlon(X0 + e, cy + dy + 2, top, 90); }
 }

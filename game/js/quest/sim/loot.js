@@ -278,10 +278,14 @@ function buildChestLoot(events, {items, table, rng, inventoryOf}) {
     }
   }
   if (table.gear) {
+    // US-104a: optional gear.chance (the loot.json chest source: 0.08) = one extra leading draw; without it the stream is unchanged (EQ-10 chests).
+    const hit = table.gear.chance === undefined || rng.nextFloat() < table.gear.chance;
     const b = rng.nextFloat(), c = rng.nextFloat();
-    const gid = rollGear(items, b, c, undefined, undefined, table.gear.tier || null);
-    if (!gid) throw new Error('chest loot: no gear def for the roll');
-    add({item: gid, n: 1});
+    if (hit) {
+      const gid = rollGear(items, b, c, undefined, undefined, table.gear.tier || null);
+      if (!gid) throw new Error('chest loot: no gear def for the roll');
+      add({item: gid, n: 1});
+    }
   }
   if (table.weapon) { // EQ-20: one weapon roll (1 draw, after the gear roll); tier fixed (default sturdy)
     const wid = rollChestWeapon(items, table.weapon, rng.nextFloat());
