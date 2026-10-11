@@ -33,3 +33,16 @@ export function skylineFogF(f, t, type, z, S) {
   if (type === SKYLINE_SEA_TYPE) return z <= S.seaLevel + SKYLINE_SEA_EPS && f > S.seaFogMax ? S.seaFogMax : f;
   return z > S.fromZ && f > S.fogMax ? S.fogMax : f;
 }
+
+/**
+ * MAP-06b: WGSL twin of `skylineFogF` (spliced into shade.wgsl.js TERRAIN_SHADE_WGSL). `S` = ShadeU.skyline:
+ * x fogMax (0 = off, the JS `S === null`), y fromZ, z seaFogMax, w seaLevel. `z` = the texel's world height (GA.z of a
+ * kind-7 cell = the interpolated surface z; the JS twin reads gbuf.z, the same value).
+ */
+export const SKYLINE_FOG_WGSL = `
+fn skylineFogF(f: f32, t: f32, typeId: i32, z: f32, S: vec4f) -> f32 {
+  if (S.x <= 0.0 || t < ${SKYLINE_FROM_T.toFixed(1)}) { return f; }
+  if (typeId == ${SKYLINE_SEA_TYPE}) { return select(f, S.z, z <= S.w + ${SKYLINE_SEA_EPS.toFixed(1)} && f > S.z); }
+  return select(f, S.x, z > S.y && f > S.x);
+}
+`;

@@ -1,7 +1,7 @@
 // WG-2b/2c: device-only mesh + terrain raster (kind 7, ME-06 twin); cell shading stays on the CPU until WG-3c.
 import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, MASK_UV_LAYOUT, MASK_UV_STRIDE_BYTES, VAO_LAYOUT, VAO_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from '../MeshBuffers.js';
 import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_MASK_BLOCK, RASTER_MASK_WGSL, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL, RASTER_INSTANCED_MASK_BLOCK, RASTER_INSTANCED_MASK_WGSL, RASTER_FLAG_VAO, rasterWgsl } from '../wgsl/raster.wgsl.js';
-import { TERRAIN_BLOCK, TERRAIN_RASTER_WGSL, TERRAIN_TEXTURES } from '../wgsl/terrainRaster.wgsl.js';
+import { TERRAIN_BLOCK, TERRAIN_RASTER_WGSL, TERRAIN_TEXTURES, SKIRT_MAX } from '../wgsl/terrainRaster.wgsl.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { StructMaskAtlas } from '../StructMaskAtlas.js';
 import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, MAX_DRAW_ITEMS } from '../../../mesh/DrawList.js';
@@ -35,6 +35,7 @@ const ORIGIN = RASTER_BLOCK.field('origin').word, T_MODEL_REL = TERRAIN_BLOCK.fi
 const WIND = RASTER_BLOCK.field('wind').word, WIND_T = RASTER_BLOCK.field('windT').word, WIND_K = RASTER_BLOCK.field('windK').word;
 const T_MODEL = TERRAIN_BLOCK.field('model').word, T_VIEW = TERRAIN_BLOCK.field('viewProj').word;
 const T_NEAR = TERRAIN_BLOCK.field('nearMap').word, T_FAR = TERRAIN_BLOCK.field('farMap').word, T_FOOT = TERRAIN_BLOCK.field('structFoot').word, T_MASK = TERRAIN_BLOCK.field('structMask').word;
+const T_SKIRT = TERRAIN_BLOCK.field('skirt').word, T_SKIRT_N = TERRAIN_BLOCK.field('skirtCount').word; // MAP-06b
 const T_OBJECT = TERRAIN_BLOCK.field('objectId').word, T_READY = TERRAIN_BLOCK.field('nearReady').word, T_COUNT = TERRAIN_BLOCK.field('structCount').word;
 /**
  * PREC-01b (37.9 step 6) switch. true = terrain clip is camera-relative too (viewRel + modelRel = model - O). Measured 2026-10-08: with it ON the PASS row
@@ -291,6 +292,13 @@ export class WgRasterPass {
     this.tbits[T_PROJ] = this.ortho ? 2 : 0; // US-068b2
   }
 
+  /** MAP-06b (38.42): the set's sea skirt rects for the off-grid typeAt (<= SKIRT_MAX; 0 on worlds without a sea). */
+  _skirtUniforms(set) {
+    const sk = set.skirts || NO_STRUCTURES, tu = this.tu, nSk = sk.length < SKIRT_MAX ? sk.length : SKIRT_MAX;
+    for (let s = 0; s < nSk; s++) { const r = sk[s].rect, o = T_SKIRT + s * 4; tu[o] = r.x0; tu[o + 1] = r.y0; tu[o + 2] = r.x1; tu[o + 3] = r.y1; }
+    this.tbits[T_SKIRT_N] = nSk;
+  }
+
   _terrain(list) {
     let draws = 0;
     const b = this.terrainBind, tu = this.tu;
@@ -347,6 +355,7 @@ export class WgRasterPass {
       this._terrainTextures(world); this._terrainUniforms(world);
       const set = terrainMeshSetFor(world.terrain); if (!p.terrainStepExternal) set.step(2); // AUD-34: the host may step it at frame start (shared budget with bakeFarStep)
       set.addToDrawList(list, cam);
+      this._skirtUniforms(set);
     }
     const pool = p._voxelPool;
     if (pool) { pool.project(cam, p.rt, 'mesh'); if (pool.list.length) addVoxelInstances(list, pool, sharedVoxelMeshCache, pool.partNamesFor); }

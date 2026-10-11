@@ -1,0 +1,30 @@
+diff --git a/design/palette.js b/design/palette.js
+index 1d06de97..1e58888a 100644
+--- a/design/palette.js
++++ b/design/palette.js
+@@ -26,6 +26,7 @@
+   var colors = {
+     // --- light sources (GDD 7.3) ---
+     ambient:        '#2a3550', // cool blue fill, never fully black
++    ambientMorning: '#7a8294', // LOOK-TOWER-OUT-01: outdoor shadow fill, soft blue-grey (the old ambient normalised to a saturated blue 0.52/0.66/1.0)
+     sun:            '#fff2d0', // warm white morning sun
+     torch:          '#ff9a3c', // brazier fire light
+     lantern:        '#ffd27a', // carried lantern, amber
+@@ -125,7 +126,7 @@
+     stoneDeep:      '#655d52',
+     // MESH-TONE-AMP-01: per-block tones within +-10 RGB of their base (same hue), replace the cool/warm/deep flip
+     stoneMidHi:     '#948978', stoneMidLo: '#807564',
+-    rockHi:         '#94969a', rockLo:     '#808286',
++    rockHi:         '#a0a2a6', rockLo:     '#707276', // LOOK-TOWER-OUT-01: was +-10 (#94969a/#808286), too flat on the big spur
+     rubbleHi:       '#877e70', rubbleLo:   '#736a5c',
+     flagHi:         '#847c70', flagLo:     '#70685c',
+     flagWarm:       '#8c7e68', // per-slab floor tones (with flagstone, flagDark)
+@@ -363,7 +364,7 @@
+   // 4. LIGHTS  (GDD 7.3 values; hue = color normalised to max channel 1)
+   // ---------------------------------------------------------------------------
+   var lights = {
+-    ambient: { color: 'ambient', intensity: 0.12 },
++    ambient: { color: 'ambientMorning', intensity: 0.26 },
+     sun:     { color: 'sun', intensity: 1.0, type: 'directional',
+                elevation: 60, azimuth: 112.5 },           // compass deg, 0 = N, clockwise; ESE; light comes FROM here
+     torch:   { color: 'torch', intensity: 1.0, type: 'point', radius: 6, falloff: 'smooth',

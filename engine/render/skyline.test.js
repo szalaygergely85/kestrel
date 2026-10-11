@@ -1,10 +1,10 @@
 // MAP-06a (architecture.md 38.42 Skyline) JS-twin tests: the look's haze.skyline fog cap, the sea horizon skirt, shadow casters.
 // Perspective raster has no far clip (rasterJS outcode tests only w < PROJ_NEAR; depth = 1/w), so 6 km needs no change in the JS twin;
-// PROJ_FAR (2000) only feeds ortho depth + the WGSL ortho literal (MAP-06b).
+// PROJ_FAR (16000 since MAP-06b) is the GPU far clip for perspective + ortho depth; the JS raster has no far clip.
 // Run: node engine/render/skyline.test.js
 import { skylineFogF, skylineError, SKYLINE_FROM_T } from './skyline.js';
 import { resolveLook, validateLook } from './look.js';
-import { shadeTerrainCells, farHeightAt } from './terrainShade.js';
+import { shadeTerrainCells } from './terrainShade.js';
 import { Terrain } from '../world/Terrain.js';
 import { TerrainMeshSet, buildSeaSkirts } from '../mesh/terrainMesh.js';
 import { DrawList } from '../mesh/DrawList.js';
@@ -70,9 +70,9 @@ function recipeFor(geo) {
 }
 const GEO = { seaLevel: -96, seaSides: ['s'], seaSkirtM: 6000 };
 const world = { sun: { azimuth: 90, elevation: 60 } };
-function shadeAt(terrain, palette, u, v, type, t) {
+function shadeAt(terrain, palette, u, v, type, t, z) {
   const gbuf = new GBuffer(1, 1);
-  gbuf.kind[0] = KIND_TERRAIN; gbuf.mat[0] = type; gbuf.u[0] = u; gbuf.v[0] = v;
+  gbuf.kind[0] = KIND_TERRAIN; gbuf.mat[0] = type; gbuf.u[0] = u; gbuf.v[0] = v; gbuf.z[0] = z;
   new Uint32Array(gbuf.aoD.buffer)[0] = packNormalOct(0, 0, 1);
   const fb = { rt: new CellBuffer(1, 1), gbuf, palette, matTable: null, depth: { depth: Float32Array.of(t) }, light: null };
   shadeTerrainCells(fb, terrain, world, 0, 0);
@@ -82,15 +82,16 @@ function shadeAt(terrain, palette, u, v, type, t) {
   const tGeo = new Terrain(recipeFor(GEO)); tGeo.bakeFarSync();
   const tPlain = new Terrain(recipeFor(null)); tPlain.bakeFarSync();
   const P = pal(SK), Pno = pal(undefined);
-  ok('farHeightAt: peak / sea / off-grid = sea level', farHeightAt(tGeo, 4, 4, -96) === 200 && farHeightAt(tGeo, 60, 4, -96) === -96 && farHeightAt(tGeo, 4, 9999, -96) === -96);
-  const a = shadeAt(tGeo, P, 4, 4, 0, 1200), b = shadeAt(tGeo, Pno, 4, 4, 0, 1200);
+  const a = shadeAt(tGeo, P, 4, 4, 0, 1200, 200), b = shadeAt(tGeo, Pno, 4, 4, 0, 1200, 200);
   ok('far peak: skyline look changes the colour', a.fg.join() !== b.fg.join());
   ok('far peak: gbuf.fogF stays the uncapped terrain fog', a.fogF === b.fogF);
-  const c = shadeAt(tGeo, P, 60, 4, 2, 1000), d = shadeAt(tGeo, Pno, 60, 4, 2, 1000);
+  const c = shadeAt(tGeo, P, 60, 4, 2, 1000, -96), d = shadeAt(tGeo, Pno, 60, 4, 2, 1000, -96);
   ok('far sea line: colour changes', c.fg.join() !== d.fg.join());
-  const e = shadeAt(tGeo, P, 4, 4, 0, 100), f = shadeAt(tGeo, Pno, 4, 4, 0, 100);
+  const lo = shadeAt(tGeo, P, 4, 4, 0, 1200, 20), lo2 = shadeAt(tGeo, Pno, 4, 4, 0, 1200, 20);
+  ok('far texel below fromZ (gbuf.z 20): no cap', lo.fg.join() === lo2.fg.join() && lo.bg.join() === lo2.bg.join());
+  const e = shadeAt(tGeo, P, 4, 4, 0, 100, 200), f = shadeAt(tGeo, Pno, 4, 4, 0, 100, 200);
   ok('near texel identical with/without skyline', e.fg.join() === f.fg.join() && e.bg.join() === f.bg.join());
-  const g = shadeAt(tPlain, P, 4, 4, 0, 1200), h = shadeAt(tPlain, Pno, 4, 4, 0, 1200);
+  const g = shadeAt(tPlain, P, 4, 4, 0, 1200, 200), h = shadeAt(tPlain, Pno, 4, 4, 0, 1200, 200);
   ok('recipe without geo.seaLevel: skyline look inert', g.fg.join() === h.fg.join() && g.bg.join() === h.bg.join());
 }
 
