@@ -253,6 +253,10 @@ function routeRun(physics, { reload = false } = {}) {
   let maxWx = -Infinity; for (let i = 0; i < wade.trace.length; i += 3) maxWx = Math.max(maxWx, wade.trace[i]);
   info.wadeMaxX = maxWx; info.wadeBlocked = wade.completed && maxWx < 1017 && maxWx > 1005; wade.completed = sim.physics === 'mesh' ? info.wadeBlocked : true;
   legs.push(wade);
+  // MAP-22/24 crossroads probe: east bank -> trade post front -> signpost -> up the footpath stones -> back -> straw-man field (targets) -> back to the stones. No stuck spot, no fall.
+  const xr = runLeg(sim, '9e crossroads (post, sign, footpath, straw field)', [{ x: 1008, y: 1069 }, { x: 1001, y: 1064 }, { x: 994, y: 1058 }, { x: 986, y: 1053 }, { x: 980, y: 1048 }, { x: 986, y: 1053 }, { x: 994, y: 1058 }, { x: 994, y: 1064 }, { x: 984, y: 1086 }, { x: 975, y: 1093 }, { x: 984, y: 1086 }, { x: 998, y: 1075 }, { x: 1008, y: 1069 }], { maxWpSteps: 1500 });
+  xr.completed = xr.completed && !xr.fell;
+  legs.push(xr);
   const back = runLeg(sim, '9c ford -> back over the stones -> bend', [{ x: 1008, y: 1069 }, ...W2E, { x: 1046, y: 1069 }, { x: 1090, y: 1070 }, { x: 1180, y: 1062 }, { x: 1260, y: 1045 }, { x: 1310, y: 1048 }], { maxWpSteps: 1500 });
   back.completed = back.completed && !back.fell;
   legs.push(back);
@@ -397,7 +401,7 @@ else {
   for (const [i, nm] of ['grid', 'mesh'].entries()) console.log(`probe grass ring walkable (${nm}, ${RP[i].cells} cells, ${RP[i].pts} points): ${RP[i].cells > 0 && RP[i].bad.length === 0 ? 'PASS' : 'FAIL'} minDz ${f(RP[i].minDz)}${RP[i].bad.length ? NL + RP[i].bad.slice(0, 8).join(NL) : ''}`);
   console.log(`probe door closed blocks / open lets through (mesh; grid has no prop colliders): ${DC[1].ok ? 'PASS' : 'FAIL'} ${JSON.stringify(DC[1])}`);
   console.log(`max fall distance (7c down->door->outside) grid/mesh: ${f(G.legs.find((l) => l.name.startsWith('7c')).maxFall)}/${f(M.legs.find((l) => l.name.startsWith('7c')).maxFall)} (limit 3.5)`);
-  { const stones = M.info.stoneLift.every((d) => d >= 0.09), wadeOk = M.info.wadeBlocked; const L = (R) => R.legs.filter((l) => /^9/.test(l.name)); const ok = [G, M].every((R) => L(R).length === 4 && L(R).every((l) => l.completed && !l.fell) && R.info.bandLate === 0 && R.info.bands === 'east>west,west>east');
+  { const stones = M.info.stoneLift.every((d) => d >= 0.09), wadeOk = M.info.wadeBlocked; const L = (R) => R.legs.filter((l) => /^9/.test(l.name)); const ok = [G, M].every((R) => L(R).length === 5 && L(R).every((l) => l.completed && !l.fell) && R.info.bandLate === 0 && R.info.bands === 'east>west,west>east');
     console.log(`leg 9 ford (grid+mesh): ${ok && stones ? 'PASS' : 'FAIL'} swaps ${M.info.bands} band:late ${M.info.bandLate} max swap ${M.info.maxSwapMs} ms, relay2 ${f(M.info.relay2Dist)} m, west bound minX ${f(M.info.boundMinX)}`);
     console.log(`probe ford stones walk-on (mesh): ${stones ? 'PASS' : 'FAIL'} lift over slab base ${JSON.stringify(M.info.stoneLift)}`);
     console.log(`probe ford water blocks wading (grid n/a: no mesh colliders / mesh): ${wadeOk ? 'PASS' : 'FAIL'} east-most x ${f(M.info.wadeMaxX)} (wall at 1016)`); }
