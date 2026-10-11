@@ -8,17 +8,21 @@ export const LOOT_PROMPT = {
 };
 
 /**
- * The boar table. Roll order is fixed and always 5 draws (37.16.3): one per `entries` row (in order), then
- * the orb chance, then the orb kind (`int(kinds.length)`), so the stream shape never depends on the results.
- * `entries` stay in the corpse (index = the `corpseN` column); the orb goes on the ground (`spawnDrop`).
+ * EQ-10: the boar table, mirrors content/items/loot.json `sources.boar` (a test keeps the two equal) + the old hp/mp orb.
+ * Per death: for every `rolls` row exactly 3 draws (chance, b, c) in order, whatever the result (stream shape fixed
+ * per table), then the 2 orb draws. A `pick.gear` hit turns b into the tier (cumulative `tiers`) and c into the
+ * slot (uniform over `slots`); a `give` hit turns b into n in min..max. `fixed` always drops. Gear never goes into the
+ * corpse: it spawns as a world pickup (pickups.js spawnItemDrop). Corpse entries = fixed + give rolls (<= MAX_ENTRIES).
  */
+export const LOOT_TIERS = { worn: 0.7, sturdy: 0.25, fine: 0.05 };
+export const LOOT_SLOTS = ['head', 'body', 'cloak', 'hands', 'belt', 'legs', 'feet'];
 export const LOOT_TABLE = {
   boar: {
-    entries: [
-      { item: 'boar.meat', chance: 1.00, n: 1 },
-      { item: 'boar.hide', chance: 0.60, n: 1 },
-      { item: 'boar.tusk', chance: 0.25, n: 1 },
+    rolls: [
+      { chance: 0.04, pick: { gear: true } },
+      { chance: 0.2, give: { item: 'arrow', min: 3, max: 5 } },
     ],
+    fixed: [{ item: 'boar.meat', n: 1 }],
     orb: { chance: 0.50, kinds: ['hp', 'mp'] },
   },
 };
