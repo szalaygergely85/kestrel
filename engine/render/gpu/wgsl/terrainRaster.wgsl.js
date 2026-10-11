@@ -14,6 +14,7 @@ export const TERRAIN_BLOCK = defineUniformBlock('TerrainU', [
   { name: 'objectId', type: 'u32' }, { name: 'nearReady', type: 'u32' }, { name: 'structCount', type: 'u32' },
   { name: 'projMode', type: 'u32' }, // US-068b1 (38.19): 2 = ortho (appended; earlier offsets unchanged)
   { name: 'structMask', type: 'vec4', count: MAX_STRUCTS }, // GS-01b: (row offset in uStructMask, hasMask, 0, 0) per structure (appended)
+  { name: 'worldO', type: 'vec4' }, // OB-041: xy = render origin O (multiple of 16 m, exact in f32); vWorldRel = world - O is interpolated, O added back per fragment (appended; 0 = old absolute path)
 ]);
 /** Slot order of PipelineDesc.bindings.textures: 0 = uNearType, 1 = uFarType, 2 = uStructMask (GS-01b carve mask atlas; all r8ui). */
 export const TERRAIN_TEXTURES = Object.freeze(['uint', 'uint', 'uint']);
@@ -30,15 +31,15 @@ struct VertexIn {
 };
 struct VertexOut {
   @builtin(position) pos: vec4f,
-  @location(0) vWorldPos: vec3f,
+  @location(0) vWorldRel: vec3f, // OB-041: world - (O.x, O.y, 0); small magnitudes near the eye -> ~1e-6 m interpolation error instead of ~3e-4 m at |x| ~ 1500
   @location(1) vNormal: vec3f,
 };
 @vertex fn vs_main(a: VertexIn) -> VertexOut {
   var o: VertexOut;
   let worldPos = u.model * vec4f(a.aPos, 1.0);
-  o.pos = u.viewProj * (u.modelRel * vec4f(a.aPos, 1.0)); // PREC-01a: camera-relative clip; vWorldPos below stays absolute (kind 7 GA.xy = world metres)
+  o.pos = u.viewProj * (u.modelRel * vec4f(a.aPos, 1.0)); // PREC-01a: camera-relative clip; GA.xy below stays absolute world metres (OB-041: rebuilt per fragment from vWorldRel + O)
   o.pos.y = -o.pos.y; o.pos.z = 0.5 * (o.pos.z + o.pos.w);
-  o.vWorldPos = worldPos.xyz;
+  o.vWorldRel = vec3f(worldPos.x - u.worldO.x, worldPos.y - u.worldO.y, worldPos.z); // exact: both terms on the vertex grid / multiples of 16
   o.vNormal = unpackNormalOct(a.aNrmBits);
   return o;
 }
@@ -64,12 +65,13 @@ ${IN_STRUCT_FOOT_WGSL}
 struct FragmentOut { @location(0) GI: vec4u, @location(1) GA: vec4u, @location(2) Depth: u32, };
 @fragment fn fs_main(v: VertexOut) -> FragmentOut {
   var out: FragmentOut;
-  if (inStructFoot(v.vWorldPos)) { discard; } // bbox, then the GS-01b mask lookup
+  let wp = vec3f(v.vWorldRel.x + u.worldO.x, v.vWorldRel.y + u.worldO.y, v.vWorldRel.z); // OB-041: one rounding to absolute f32 (JS twin: f64 hit -> Float32 gbuf.u/v)
+  if (inStructFoot(wp)) { discard; } // bbox, then the GS-01b mask lookup
   let N = normalize(v.vNormal);
-  let terrType = terrainTypeAt(v.vWorldPos.x, v.vWorldPos.y);
+  let terrType = terrainTypeAt(wp.x, wp.y);
   let dist = select(1.0 / v.pos.w, ${ORTHO_NEAR_WGSL} + v.pos.z * (${ORTHO_FAR_WGSL} - ${ORTHO_NEAR_WGSL}), u.projMode == 2u); // 38.19 ortho: w = 1, depth = linear z
   out.GI = vec4u(PLANEID_TERRAIN, KIND_TERRAIN | (FACE_PACKED << 8u) | (u32(terrType) << 16u), packNormalOct(N), u.objectId);
-  out.GA = vec4u(bitcast<u32>(v.vWorldPos.x), bitcast<u32>(v.vWorldPos.y), bitcast<u32>(v.vWorldPos.z), bitcast<u32>(1.0e30f));
+  out.GA = vec4u(bitcast<u32>(wp.x), bitcast<u32>(wp.y), bitcast<u32>(wp.z), bitcast<u32>(1.0e30f));
   out.Depth = bitcast<u32>(dist);
   return out;
 }
