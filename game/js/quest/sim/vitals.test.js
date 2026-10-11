@@ -100,8 +100,9 @@ function fallCase(dist) {
   vitals.step(player, false);
   return vitals.hp;
 }
-ok('5.9 m fall: no damage', fallCase(5.9) === CFG.maxHp, `hp=${fallCase(5.9)}`);
-ok('exactly 6.0 m fall: no damage (threshold is strictly >)', fallCase(6.0) === CFG.maxHp, `hp=${fallCase(6.0)}`);
+ok('3.9 m fall: no damage', fallCase(3.9) === CFG.maxHp, `hp=${fallCase(3.9)}`);
+ok('exactly 4.0 m fall: no damage (threshold is strictly >; owner 2026-10-11: 4 m)', fallCase(4.0) === CFG.maxHp, `hp=${fallCase(4.0)}`);
+ok('4.1 m fall: 5 damage', fallCase(4.1) === CFG.maxHp - 5, `hp=${fallCase(4.1)}`);
 ok('6.1 m fall: 5 damage', fallCase(6.1) === CFG.maxHp - 5, `hp=${fallCase(6.1)}`);
 ok('exactly 10.0 m fall: still only the 5-damage tier', fallCase(10.0) === CFG.maxHp - 5, `hp=${fallCase(10.0)}`);
 ok('10.1 m fall: 10 damage', fallCase(10.1) === CFG.maxHp - 10, `hp=${fallCase(10.1)}`);
