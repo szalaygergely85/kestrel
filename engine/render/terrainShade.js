@@ -78,6 +78,9 @@ function pickCodeFromPacked(x, count, idx) {
  * Power of two clamped 0.125..2; 8 m once past the handover's far edge (near band absent). GLSL twin: terrain.frag.js.
  * @param {number} t @param {number} k @param {number[]} [handover]
  */
+// OB-054: patch COLOUR (tier pick hA + close brightness jitter) is keyed on this fixed world cell (m), never on the
+// distance-following `cellSz`, so a point's colour cannot re-roll when the camera moves. Glyph/feature/glint keep `cellSz`. WGSL twin: PATCH_CELL.
+export const PATCH_CELL = 1.0;
 export function perCellHashSize(t, k, handover) {
   if (handover && !(t < handover[1])) return 8;
   return Math.min(2, Math.max(0.125, Math.pow(2, Math.ceil(Math.log2(Math.max(t * k, 1e-6))))));
@@ -114,7 +117,8 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   const cellSz = hk > 0 ? perCellHashSize(t, hk, ctx.handover)
     : ctx.hashCell > 0 ? ctx.hashCell : (ctx.handover && t < ctx.handover[1] ? 2 : 8);
   const cx = Math.floor(u / cellSz), cy = Math.floor(v / cellSz);
-  const hA = hashFast01(cx, cy, type);
+  const pcx = Math.floor(u / PATCH_CELL), pcy = Math.floor(v / PATCH_CELL);
+  const hA = hashFast01(pcx, pcy, type);
   const hB = hashFast01(cx, cy, 7);
 
   // S8-B2-14b wetness (follow-up to S8-B2-14): `ctx.shading.wetness` 0..1
@@ -129,7 +133,12 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   // picked below (TLOOK texel 7, fixed) and gets a +-0.08 brightness jitter
   // (own hash salt 10, per-2 m-cell - "shading only, heightAt stays smooth").
   const close = ctx.closeBand != null && t < ctx.closeBand;
-  const bEff = close ? bWet + (hashFast01(cx, cy, 10) * 2 - 1) * 0.08 : bWet;
+  // OB-054: jitter amplitude fades smoothstep to 0 over closeBand/2..closeBand (no brightness step at the band edge). WGSL twin: same expression.
+  let bEff = bWet;
+  if (close) {
+    const q = Math.min(1, Math.max(0, (t - ctx.closeBand * 0.5) / (ctx.closeBand * 0.5)));
+    bEff = bWet + (hashFast01(pcx, pcy, 10) * 2 - 1) * 0.08 * (1 - q * q * (3 - 2 * q));
+  }
 
   const tier = bEff < 0.45 ? 0 : bEff < 0.8 ? 1 : 2;
   let i = tier + (Math.floor(hA * 3) - 1);

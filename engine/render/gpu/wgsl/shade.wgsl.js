@@ -31,7 +31,7 @@ import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // 
 import { SKY_GLOW_WGSL } from '../../skyGlow.js';
 import { FOG_SHAPE_WGSL } from '../../fogShape.js';
 import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
-import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE } from '../../terrainShade.js';
+import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, PATCH_CELL } from '../../terrainShade.js';
 
 
 
@@ -95,7 +95,8 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
     else { cellSz = select(8.0, 2.0, su.nearDetailOn != 0 && t < su.handover.y); }
   }
   let cx = i32(floor(u / cellSz)); let cy = i32(floor(v / cellSz));
-  let hA = hashFast(cx, cy, typeId);
+  let pcx = i32(floor(u / ${PATCH_CELL.toFixed(4)})); let pcy = i32(floor(v / ${PATCH_CELL.toFixed(4)})); // OB-054: fixed world cell for the colour pick
+  let hA = hashFast(pcx, pcy, typeId);
   let hB = hashFast(cx, cy, 7);
 
   // S8-B2-14b wetness: darkens the lit term entering the tier/gain pick, same WET_DARK as detailShade.js/shadeCore
@@ -106,7 +107,10 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
   // 23.4 near-detail: close (< closeBand) gets a +-0.08 brightness jitter (own hash salt 10, per-cell).
   let close = su.nearDetailOn != 0 && t < su.closeBand;
   var bEff = bWet;
-  if (close) { bEff = bWet + (hashFast(cx, cy, 10) * 2.0 - 1.0) * 0.08; }
+  if (close) { // OB-054: jitter fades smoothstep to 0 over closeBand/2..closeBand (twin: terrainShade.js)
+    let q = clamp((t - su.closeBand * 0.5) / (su.closeBand * 0.5), 0.0, 1.0);
+    bEff = bWet + (hashFast(pcx, pcy, 10) * 2.0 - 1.0) * 0.08 * (1.0 - q * q * (3.0 - 2.0 * q));
+  }
 
   var tier = 2;
   if (bEff < 0.45) { tier = 0; } else if (bEff < 0.8) { tier = 1; }
