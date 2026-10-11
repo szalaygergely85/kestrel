@@ -1194,3 +1194,152 @@ The Crown chart prints nothing beyond the Wall, so every name here is what ends 
 | village (stage 3) | `map.label.outwallSmoke` | `Cookfire Smoke` | 14 | Until M3 names the village (GDD 3: unnamed in M1/M2); never show "Outwall" before that. |
 
 Owner question OQ-MAP-1 (the (P) names) still applies to all names above; none of them is canon until approved.
+
+## Ch1-2 errands (QL-B1)
+
+PC-B writer, 2026-10-11. Text for the 21 side errands in `content/quests/ch12/pack.json` (pasted there already: `title`, step `objText`, `returnText`, `lines.{offer,active,ready,done}` per architecture 38.44). ASCII only. Limits: title <= 28, HUD objective / returnText <= 38, lines <= 56. `ready` plays at the hand-in site (`turnIn`, else the giver); the other three at the giver.
+
+Voices: **Burl** (she) warm, slow, "sky-cub". **Relays** a clockwork ticker in caps: TICK, HELD, LOGGED, LINE HOLDS. It never explains itself, never names a builder or the signal, and reads the same whether the relay is lit or still dark (the Ford Relay can be talked to before its glass returns). **Post / note post** are written tags and what the player sees; the hand is fresh and unsigned (same hand as `note.post`'s TAKEN tag), naming nobody.
+
+Title changes: `sq.burl.hint` "The Writing Stone" -> `The Hill Path` (no writing stone exists; zone `hintStone` is the hillside below the tower door, terrain-shaped). `sq.fc.smoke` "Smoke Watch" -> `North Watch` (keeps the smoke reveal for `mq.smoke` / `bark.wick.smoke`). `sq.fc.cross` "The Crossroads Arm" -> `The Crossroads Report`. Others kept.
+
+Straw reward is 20 arrows (no Big Quiver). Replaces in "Side quest texts": `note.straw` (2) -> `The bundle under the post is for whoever can.` (45); `toast.straw.done` -> `Three hits. The bundle is yours.` (32). `item.quiver` is unused.
+
+| key | who | text |
+|---|---|---|
+| **sq.tm.nub** title | | `Where's Nub?` |
+| obj 1 / 2 / 3 | HUD | `Look for small tracks by the stone` / `Follow the tracks to the tower door` / `Follow the wet prints down the road` |
+| return | HUD | `Tell Burl where the tracks went` |
+| offer | BURL | `Have you seen my Nub? Small. Round. Never listens.` / `He was by the waystone at sunup. Then he wasn't.` / `Take this. A hunter left it on my slope, long ago.` / `A bow sees further than a bear. Find his tracks.` (bow + 10 arrows given here; `toast.bow`) |
+| active | BURL | `Small tracks, sky-cub. Smaller than mine. Follow them.` |
+| ready | BURL | `Down the road west? All that way, on those legs.` / `...Smell that? Wet cub. He came home behind you.` / `He followed your tracks while you followed his.` / `For your trouble. It was in his mouth. Still warm.` |
+| done | BURL | `Nub sleeps. Sleeps! First time in three days.` |
+| **sq.burl.boars.n** title | | `The North Boars` |
+| obj / return | HUD | `Drive off the three north boars` / `Tell Burl the north is quiet` |
+| offer | BURL | `More boars, sky-cub. Three, up by the north trees.` / `They smelled the empty slope and came back for it.` |
+| active | BURL | `Three. North trees. Listen for the chewing.` |
+| ready | BURL | `Quiet up north. I can hear the bees again.` / `Here. Red, and bitter. It mends what tusks tear.` |
+| done | BURL | `North is quiet. West, though. Hear that?` |
+| **sq.burl.boars.w** title | | `The West Boars` |
+| obj / return | HUD | `Drive off the two west boars` / `Tell Burl the west is quiet` |
+| offer | BURL | `Two more, down the west side. Young ones, loud.` / `Young is not slow. Mind your feet.` |
+| active | BURL | `Two, west side. Loud. You won't miss them.` |
+| ready | BURL | `West is quiet. Only two, and so much noise.` / `Sticks with feathers. Hunters lose them everywhere.` |
+| done | BURL | `West is quiet. The south slope still grunts.` |
+| **sq.burl.boars.s** title | | `The South Boars` |
+| obj / return | HUD | `Drive off the three south boars` / `Tell Burl the south is quiet` |
+| offer | BURL | `Last of them. Three, on the south slope, by the rocks.` / `The big one leads. Don't let him get behind you.` |
+| active | BURL | `South slope, by the rocks. Mind the big one.` |
+| ready | BURL | `All of them! The whole slope is mine again.` / `A walker left this by the rocks. It fits you better.` |
+| done | BURL | `No boars. Just bees, and berries, and a sky-cub.` |
+| **sq.burl.meat** title | | `Meat for Winter` |
+| obj / return | HUD | `Bring Burl a piece of boar meat` / `Give Burl the boar meat` |
+| offer | BURL | `Berries are summer food. Winter wants fat.` / `Those boars owe me. Bring me a haunch, sky-cub.` |
+| active | BURL | `A haunch. Boar. You know where they grunt.` |
+| ready | BURL | `Mm. Still warm. The boars pay their rent at last.` / `Trade you. It's bitter, but it mends.` |
+| done | BURL | `One haunch. Winter is long, sky-cub. But it's a start.` |
+| **sq.burl.stone** title | | `Check on the Stone` |
+| obj / return | HUD | `Go and look at the waystone` / `Tell Burl the stone hums` |
+| offer | BURL | `The stone by the meadow hums at night now.` / `I don't go near it. Old habit. Go see it for me?` |
+| active | BURL | `The stone. Put your paw on it. Your hand. Whichever.` |
+| ready | BURL | `Warm, and humming. Like a hive in the ground.` / `I'll sleep near it, then. Here. Feathered sticks.` |
+| done | BURL | `The stone hums. I hum back. Nobody minds.` |
+| **sq.burl.hint** title | | `The Hill Path` |
+| obj / return | HUD | `Walk the hill path below the tower` / `Tell Burl the hill path is clear` |
+| offer | BURL | `The path down from your tower. The boars dug at it.` / `Walk it for me. Tell me if it still holds a foot.` |
+| active | BURL | `The hill path, under your tower. Walk it.` |
+| ready | BURL | `Holds, does it? Good. Old legs like a sure path.` / `A red one. For the bruises you didn't tell me about.` |
+| done | BURL | `Path holds, stone hums. Good hill, this.` |
+| **sq.burl.tower** title | | `Look at the Tower Door` |
+| obj / return | HUD | `Look at the tower door` / `Tell Burl about the door` |
+| offer | BURL | `You came out of the tower by its old door.` / `Something scratches at it at night. Go and look?` |
+| active | BURL | `The tower door. Look low down, for the scratches.` |
+| ready | BURL | `Claw marks, low down? Badgers. Rude, but not boars.` / `Feathered sticks. You use them better than I do.` |
+| done | BURL | `Badgers at the door. You could do worse for neighbours.` |
+| **sq.burl.scout** title | | `Scout the River` |
+| obj 1 / 2 / return | HUD | `Walk down to the river bank` / `Find the stones at the ford` / `Tell Burl about the river` |
+| offer | BURL | `West, past the bend, there's a river. Loud water.` / `I haven't seen it since I was a cub. Is it still there?` |
+| active | BURL | `The river. West. You'll hear it before you see it.` |
+| ready | BURL | `Still there. Still loud. Good. Some things should stay.` / `Someone left this on my slope once. It fits a walker.` |
+| done | BURL | `Loud water, stones to cross. Don't fall in, sky-cub.` |
+| **sq.burl.ask** title | | `Word from the Crossroads` |
+| obj / return | HUD | `Read the note post at the crossroads` / `Tell Burl what the post says` |
+| offer | BURL | `Birds say there's a post at the crossroads. With paper.` / `I can't read, sky-cub. Go and read it for me?` |
+| active | BURL | `The post at the crossroads. Read it, then tell me.` |
+| ready | BURL | `Straw men, and arrows? Someone out there practises.` / `Practising means staying. Here, sky-cub. A red one.` |
+| done | BURL | `Someone at the crossroads. I hope they like berries.` |
+| **sq.burl.walk** title | | `Walk Burl to the Bend` |
+| obj / return | HUD | `Walk with Burl to the Bend Relay` / `Talk to Burl at the Bend Relay` |
+| offer | BURL | `The bend stone blinks now, you say. I want to see it.` / `Old legs. Walk slow with me?` |
+| active | BURL | `Slow, sky-cub. Bears don't hurry. Bears arrive.` |
+| ready | BURL | `There. Blink, blink, blink. Like it's calling someone.` / `Thank you for the slow walk. Sticks, for your bow.` |
+| done | BURL | `I'll sit here a while. Then the long way home.` |
+| **sq.burl.parcel** title | | `Meat for the Basket` |
+| obj / return | HUD | `Leave the meat in the post basket` / `Put the meat in the trade post basket` |
+| offer | BURL | `There's a basket on a post, by the crossroads.` / `Whoever fills it feeds whoever comes. Take this meat.` / `Two haunches. I have more than one bear needs.` |
+| active | BURL | `Two haunches, in the basket. Don't eat them on the way.` |
+| ready | post (written) | `You lay the meat in the basket, under the tag:` / `TAKEN. LEAVE WHAT YOU CAN SPARE.` / `Beneath it, a bundle of arrows. Twine. Fresh knots.` |
+| done | BURL | `Fed someone, did we? Good. The slope can spare it.` |
+| **sq.post.spare** title | | `Leave What You Can Spare` |
+| obj / return | HUD | `Carry three arrows to the note post` / `Leave the arrows at the note post` |
+| offer | post (written) | `A second tag, tied under the first:` / `THREE ARROWS TO THE NOTE POST. FOR PRACTICE.` / `Three arrows lie beside it, set apart.` |
+| active | post | `The tag sways: THREE ARROWS TO THE NOTE POST.` |
+| ready | note post | `A clip on the post. You leave the three arrows in it.` / `In the clip already: a red draught, stoppered.` |
+| done | post | `The basket waits. The tags turn in the wind.` |
+| **sq.straw** title | | `Three Straw Men` |
+| obj 1 / 2 / 3 | HUD | `Hit the first straw man` / `Hit the second straw man` / `Hit the third straw man` |
+| return | HUD | `Take the bundle from the note post` |
+| offer | note post | `Three straw men. Three arrows. Three hits.` / `The bundle under the post is for whoever can.` |
+| active | note post | `Three straw men. Three hits. The bundle waits.` |
+| ready | note post | `Three hits. Under the post, a bundle of arrows.` / `Twenty, tied with twine. Fresh knots.` |
+| done | note post | `A new line on the tally. Yours, this time.` |
+| **sq.rb.shield** title | | `Left at the Bend` |
+| obj / return | HUD | `Wear the buckler to the ford` / `Show the buckler at the Ford Relay` |
+| offer | BEND RELAY | `TICK. TICK-TICK. A drawer slides out of the mount.` / `HELD: ONE BUCKLER. LEFT FOR THE NEXT WALKER.` / `NO NAME. CARRY IT WORN. SHOW THE FORD.` (buckler given here; `toast.buckler`) |
+| active | BEND RELAY | `TICK. BUCKLER WORN? FORD. WEST.` |
+| ready | FORD RELAY | `TICK. BUCKLER SEEN. CARRIER LOGGED.` / `KEEP IT. ONE DRAUGHT, HELD FOR YOU.` |
+| done | BEND RELAY | `TICK. CARRIER LOGGED AT THE FORD. LINE HOLDS.` |
+| **sq.rb.regards** title | | `Word for Burl` |
+| obj / return | HUD | `Carry the relay's word to Burl` / `Go back to the Bend Relay` |
+| offer | BEND RELAY | `TICK. BEAR ON THE SLOPE. KNOWN.` / `MESSAGE: ROAD CLEAR. LIGHT HOLDS. CARRY IT.` |
+| active | BEND RELAY | `TICK. MESSAGE FOR THE BEAR. NOT YET CARRIED.` |
+| ready | BEND RELAY | `TICK. MESSAGE CARRIED. LOGGED.` / `FIVE ARROWS, HELD FOR YOU.` |
+| done | BEND RELAY | `TICK. LINE QUIET. ALL WELL.` |
+| `burl.regards.heard` (needs a Burl node on `talk.burl`; not in the pack schema) | BURL | `The stone sends word? Hm. Tell it the bear says hello.` |
+| **sq.rb.road** title | | `Down the Road West` |
+| obj 1 / 2 / return | HUD | `Walk back along the road` / `Come back to the Bend Relay` / `Report to the Bend Relay` |
+| offer | BEND RELAY | `TICK. ROAD CHECK DUE. LAST CHECK: LONG AGO.` / `WALK TO THE OLD TURN. RETURN. REPORT.` |
+| active | BEND RELAY | `TICK. ROAD CHECK OPEN. WALK. RETURN.` |
+| ready | BEND RELAY | `TICK. ROAD CHECKED. LOGGED.` / `FIVE ARROWS, HELD FOR YOU.` |
+| done | BEND RELAY | `TICK. NEXT ROAD CHECK: LONG FROM NOW.` |
+| **sq.fc.ford** title | | `Wet Boots` |
+| obj 1 / 2 / return | HUD | `Walk down to the river bank` / `Cross to the west bank` / `Report to the Ford Relay` |
+| offer | FORD RELAY | `TICK. FORD STONES: UNCHECKED.` / `CROSS. COUNT THE STONES. RETURN.` |
+| active | FORD RELAY | `TICK. FORD UNCHECKED. CROSS. RETURN.` |
+| ready | FORD RELAY | `TICK. FORD CROSSED. WALKER WET.` / `DRY BOOTS, HELD FOR YOU. TAKE THEM.` |
+| done | FORD RELAY | `TICK. FORD CHECKED. MIND THE MOSS.` |
+| **sq.fc.smoke** title | | `North Watch` |
+| obj / return | HUD | `Climb to the lookout north of the ford` / `Report to the Ford Relay` |
+| offer | FORD RELAY | `TICK. NORTH WATCH DUE. NO WATCHER.` / `CLIMB. LOOK NORTH. RETURN. REPORT.` |
+| active | FORD RELAY | `TICK. NORTH WATCH OPEN. CLIMB. LOOK.` |
+| ready | FORD RELAY | `TICK. NORTH WATCH DONE. LOGGED.` / `TEN ARROWS, HELD FOR YOU.` |
+| done | FORD RELAY | `TICK. NORTH WATCH LOGGED. LINE HOLDS.` |
+| **sq.fc.cross** title | | `The Crossroads Report` |
+| obj / return | HUD | `Walk the west road to the crossroads` / `Report to the Ford Relay` |
+| offer | FORD RELAY | `TICK. CROSSROADS: NO REPORT IN YEARS.` / `WALK THERE. RETURN. REPORT.` |
+| active | FORD RELAY | `TICK. CROSSROADS REPORT OPEN.` |
+| ready | FORD RELAY | `TICK. CROSSROADS REPORTED. LOGGED.` / `ONE DRAUGHT, HELD FOR YOU.` |
+| done | FORD RELAY | `TICK. ALL ROADS REPORTED. ALMOST.` |
+| **sq.fc.again** title | | `Back Across` |
+| obj / return | HUD | `Come back to the river bank` / `Report to the Ford Relay` |
+| offer | FORD RELAY | `TICK. FORD CHECK, RETURN LEG. DUE.` / `CROSS BACK. RETURN. REPORT.` |
+| active | FORD RELAY | `TICK. RETURN LEG OPEN. CROSS BACK.` |
+| ready | FORD RELAY | `TICK. BOTH LEGS LOGGED. FORD SOUND.` / `TEN ARROWS, HELD FOR YOU.` |
+| done | FORD RELAY | `TICK. FORD SOUND. WALKER SOUND. LINE HOLDS.` |
+
+Notes:
+- Nub never appears (no entity): he "came home behind you", so the quest needs no cub on screen. Nub is still on the roadmap's owner-OK list (quest-roadmap 2b); if the owner drops him, swap the name for "my cub" in five lines.
+- `sq.burl.tower`: low claw marks are badgers. Nothing is behind the door (D-065, no dungeon).
+- The buckler at the Bend is "left for the next walker, no name": the same unsigned kindness as the TAKEN tag. It does not say who.
+- `sq.rb.road` area `roadWest` lies back toward the tower (m1 chain order), so the HUD says "back along the road", not "west"; the title is kept.
+- Design flag: zone `hintStone` is terrain-shaped and `once`; if `used.world.hintStone` is already set, `sq.burl.hint` may never fire or complete at once. PO/architect to check.

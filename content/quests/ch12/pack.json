@@ -18,7 +18,7 @@
               "waystone"
             ]
           },
-          "objText": "Check the tracks by the stone"
+          "objText": "Look for small tracks by the stone"
         },
         {
           "template": "explore",
@@ -27,7 +27,7 @@
               "towerDoor"
             ]
           },
-          "objText": "Follow them to the tower door"
+          "objText": "Follow the tracks to the tower door"
         },
         {
           "template": "explore",
@@ -36,7 +36,7 @@
               "roadWest"
             ]
           },
-          "objText": "Follow the prints down the road"
+          "objText": "Follow the wet prints down the road"
         }
       ],
       "requires": [
@@ -68,7 +68,27 @@
       ],
       "abandonable": false,
       "band": 1,
-      "returnText": "Tell Burl what you found"
+      "returnText": "Tell Burl where the tracks went",
+      "lines": {
+        "offer": [
+          "Have you seen my Nub? Small. Round. Never listens.",
+          "He was by the waystone at sunup. Then he wasn't.",
+          "Take this. A hunter left it on my slope, long ago.",
+          "A bow sees further than a bear. Find his tracks."
+        ],
+        "active": [
+          "Small tracks, sky-cub. Smaller than mine. Follow them."
+        ],
+        "ready": [
+          "Down the road west? All that way, on those legs.",
+          "...Smell that? Wet cub. He came home behind you.",
+          "He followed your tracks while you followed his.",
+          "For your trouble. It was in his mouth. Still warm."
+        ],
+        "done": [
+          "Nub sleeps. Sleeps! First time in three days."
+        ]
+      }
     },
     {
       "id": "sq.burl.boars.n",
@@ -106,7 +126,23 @@
         ]
       },
       "band": 1,
-      "returnText": "Tell Burl the north is quiet"
+      "returnText": "Tell Burl the north is quiet",
+      "lines": {
+        "offer": [
+          "More boars, sky-cub. Three, up by the north trees.",
+          "They smelled the empty slope and came back for it."
+        ],
+        "active": [
+          "Three. North trees. Listen for the chewing."
+        ],
+        "ready": [
+          "Quiet up north. I can hear the bees again.",
+          "Here. Red, and bitter. It mends what tusks tear."
+        ],
+        "done": [
+          "North is quiet. West, though. Hear that?"
+        ]
+      }
     },
     {
       "id": "sq.burl.boars.w",
@@ -147,7 +183,23 @@
         ]
       },
       "band": 1,
-      "returnText": "Tell Burl the west is quiet"
+      "returnText": "Tell Burl the west is quiet",
+      "lines": {
+        "offer": [
+          "Two more, down the west side. Young ones, loud.",
+          "Young is not slow. Mind your feet."
+        ],
+        "active": [
+          "Two, west side. Loud. You won't miss them."
+        ],
+        "ready": [
+          "West is quiet. Only two, and so much noise.",
+          "Sticks with feathers. Hunters lose them everywhere."
+        ],
+        "done": [
+          "West is quiet. The south slope still grunts."
+        ]
+      }
     },
     {
       "id": "sq.burl.boars.s",
@@ -184,7 +236,23 @@
         "table": "gear.t1"
       },
       "band": 2,
-      "returnText": "Tell Burl the south is quiet"
+      "returnText": "Tell Burl the south is quiet",
+      "lines": {
+        "offer": [
+          "Last of them. Three, on the south slope, by the rocks.",
+          "The big one leads. Don't let him get behind you."
+        ],
+        "active": [
+          "South slope, by the rocks. Mind the big one."
+        ],
+        "ready": [
+          "All of them! The whole slope is mine again.",
+          "A walker left this by the rocks. It fits you better."
+        ],
+        "done": [
+          "No boars. Just bees, and berries, and a sky-cub."
+        ]
+      }
     },
     {
       "id": "sq.burl.meat",
@@ -217,7 +285,23 @@
         ]
       },
       "band": 1,
-      "returnText": "Take the boar meat to Burl"
+      "returnText": "Give Burl the boar meat",
+      "lines": {
+        "offer": [
+          "Berries are summer food. Winter wants fat.",
+          "Those boars owe me. Bring me a haunch, sky-cub."
+        ],
+        "active": [
+          "A haunch. Boar. You know where they grunt."
+        ],
+        "ready": [
+          "Mm. Still warm. The boars pay their rent at last.",
+          "Trade you. It's bitter, but it mends."
+        ],
+        "done": [
+          "One haunch. Winter is long, sky-cub. But it's a start."
+        ]
+      }
     },
     {
       "id": "sq.burl.stone",
@@ -231,7 +315,7 @@
               "waystone"
             ]
           },
-          "objText": "Go and see the waystone"
+          "objText": "Go and look at the waystone"
         }
       ],
       "requires": [
@@ -252,11 +336,27 @@
         ]
       },
       "band": 1,
-      "returnText": "Tell Burl the stone hums"
+      "returnText": "Tell Burl the stone hums",
+      "lines": {
+        "offer": [
+          "The stone by the meadow hums at night now.",
+          "I don't go near it. Old habit. Go see it for me?"
+        ],
+        "active": [
+          "The stone. Put your paw on it. Your hand. Whichever."
+        ],
+        "ready": [
+          "Warm, and humming. Like a hive in the ground.",
+          "I'll sleep near it, then. Here. Feathered sticks."
+        ],
+        "done": [
+          "The stone hums. I hum back. Nobody minds."
+        ]
+      }
     },
     {
       "id": "sq.burl.hint",
-      "title": "The Writing Stone",
+      "title": "The Hill Path",
       "site": "burl",
       "steps": [
         {
@@ -266,7 +366,7 @@
               "hintStone"
             ]
           },
-          "objText": "Find the stone with writing on it"
+          "objText": "Walk the hill path below the tower"
         }
       ],
       "requires": [
@@ -291,7 +391,23 @@
         ]
       },
       "band": 1,
-      "returnText": "Tell Burl what the stone says"
+      "returnText": "Tell Burl the hill path is clear",
+      "lines": {
+        "offer": [
+          "The path down from your tower. The boars dug at it.",
+          "Walk it for me. Tell me if it still holds a foot."
+        ],
+        "active": [
+          "The hill path, under your tower. Walk it."
+        ],
+        "ready": [
+          "Holds, does it? Good. Old legs like a sure path.",
+          "A red one. For the bruises you didn't tell me about."
+        ],
+        "done": [
+          "Path holds, stone hums. Good hill, this."
+        ]
+      }
     },
     {
       "id": "sq.burl.tower",
@@ -326,7 +442,23 @@
         ]
       },
       "band": 1,
-      "returnText": "Tell Burl about the door"
+      "returnText": "Tell Burl about the door",
+      "lines": {
+        "offer": [
+          "You came out of the tower by its old door.",
+          "Something scratches at it at night. Go and look?"
+        ],
+        "active": [
+          "The tower door. Look low down, for the scratches."
+        ],
+        "ready": [
+          "Claw marks, low down? Badgers. Rude, but not boars.",
+          "Feathered sticks. You use them better than I do."
+        ],
+        "done": [
+          "Badgers at the door. You could do worse for neighbours."
+        ]
+      }
     },
     {
       "id": "sq.burl.scout",
@@ -349,7 +481,7 @@
               "fordWest"
             ]
           },
-          "objText": "Reach the ford"
+          "objText": "Find the stones at the ford"
         }
       ],
       "requires": [
@@ -375,7 +507,23 @@
         }
       },
       "band": 2,
-      "returnText": "Tell Burl about the river"
+      "returnText": "Tell Burl about the river",
+      "lines": {
+        "offer": [
+          "West, past the bend, there's a river. Loud water.",
+          "I haven't seen it since I was a cub. Is it still there?"
+        ],
+        "active": [
+          "The river. West. You'll hear it before you see it."
+        ],
+        "ready": [
+          "Still there. Still loud. Good. Some things should stay.",
+          "Someone left this on my slope once. It fits a walker."
+        ],
+        "done": [
+          "Loud water, stones to cross. Don't fall in, sky-cub."
+        ]
+      }
     },
     {
       "id": "sq.burl.ask",
@@ -412,7 +560,23 @@
         ]
       },
       "band": 4,
-      "returnText": "Tell Burl what the post says"
+      "returnText": "Tell Burl what the post says",
+      "lines": {
+        "offer": [
+          "Birds say there's a post at the crossroads. With paper.",
+          "I can't read, sky-cub. Go and read it for me?"
+        ],
+        "active": [
+          "The post at the crossroads. Read it, then tell me."
+        ],
+        "ready": [
+          "Straw men, and arrows? Someone out there practises.",
+          "Practising means staying. Here, sky-cub. A red one."
+        ],
+        "done": [
+          "Someone at the crossroads. I hope they like berries."
+        ]
+      }
     },
     {
       "id": "sq.burl.walk",
@@ -445,7 +609,24 @@
           }
         ]
       },
-      "band": 1
+      "band": 1,
+      "returnText": "Talk to Burl at the Bend Relay",
+      "lines": {
+        "offer": [
+          "The bend stone blinks now, you say. I want to see it.",
+          "Old legs. Walk slow with me?"
+        ],
+        "active": [
+          "Slow, sky-cub. Bears don't hurry. Bears arrive."
+        ],
+        "ready": [
+          "There. Blink, blink, blink. Like it's calling someone.",
+          "Thank you for the slow walk. Sticks, for your bow."
+        ],
+        "done": [
+          "I'll sit here a while. Then the long way home."
+        ]
+      }
     },
     {
       "id": "sq.burl.parcel",
@@ -483,7 +664,26 @@
           }
         ]
       },
-      "band": 2
+      "band": 2,
+      "returnText": "Put the meat in the trade post basket",
+      "lines": {
+        "offer": [
+          "There's a basket on a post, by the crossroads.",
+          "Whoever fills it feeds whoever comes. Take this meat.",
+          "Two haunches. I have more than one bear needs."
+        ],
+        "active": [
+          "Two haunches, in the basket. Don't eat them on the way."
+        ],
+        "ready": [
+          "You lay the meat in the basket, under the tag:",
+          "TAKEN. LEAVE WHAT YOU CAN SPARE.",
+          "Beneath it, a bundle of arrows. Twine. Fresh knots."
+        ],
+        "done": [
+          "Fed someone, did we? Good. The slope can spare it."
+        ]
+      }
     },
     {
       "id": "sq.post.spare",
@@ -497,7 +697,7 @@
             "count": 3,
             "to": "notePost"
           },
-          "objText": "Carry the arrows to the note post"
+          "objText": "Carry three arrows to the note post"
         }
       ],
       "requires": [
@@ -521,7 +721,25 @@
           }
         ]
       },
-      "band": 4
+      "band": 4,
+      "returnText": "Leave the arrows at the note post",
+      "lines": {
+        "offer": [
+          "A second tag, tied under the first:",
+          "THREE ARROWS TO THE NOTE POST. FOR PRACTICE.",
+          "Three arrows lie beside it, set apart."
+        ],
+        "active": [
+          "The tag sways: THREE ARROWS TO THE NOTE POST."
+        ],
+        "ready": [
+          "A clip on the post. You leave the three arrows in it.",
+          "In the clip already: a red draught, stoppered."
+        ],
+        "done": [
+          "The basket waits. The tags turn in the wind."
+        ]
+      }
     },
     {
       "id": "sq.straw",
@@ -572,7 +790,23 @@
           }
         }
       ],
-      "returnText": "Tell the note post it is done"
+      "returnText": "Take the bundle from the note post",
+      "lines": {
+        "offer": [
+          "Three straw men. Three arrows. Three hits.",
+          "The bundle under the post is for whoever can."
+        ],
+        "active": [
+          "Three straw men. Three hits. The bundle waits."
+        ],
+        "ready": [
+          "Three hits. Under the post, a bundle of arrows.",
+          "Twenty, tied with twine. Fresh knots."
+        ],
+        "done": [
+          "A new line on the tally. Yours, this time."
+        ]
+      }
     },
     {
       "id": "sq.rb.shield",
@@ -586,7 +820,7 @@
               "fordWest"
             ]
           },
-          "objText": "Carry the shield to the ford"
+          "objText": "Wear the buckler to the ford"
         }
       ],
       "requires": [
@@ -614,7 +848,25 @@
       ],
       "turnIn": "relayFord",
       "abandonable": false,
-      "band": 2
+      "band": 2,
+      "returnText": "Show the buckler at the Ford Relay",
+      "lines": {
+        "offer": [
+          "TICK. TICK-TICK. A drawer slides out of the mount.",
+          "HELD: ONE BUCKLER. LEFT FOR THE NEXT WALKER.",
+          "NO NAME. CARRY IT WORN. SHOW THE FORD."
+        ],
+        "active": [
+          "TICK. BUCKLER WORN? FORD. WEST."
+        ],
+        "ready": [
+          "TICK. BUCKLER SEEN. CARRIER LOGGED.",
+          "KEEP IT. ONE DRAUGHT, HELD FOR YOU."
+        ],
+        "done": [
+          "TICK. CARRIER LOGGED AT THE FORD. LINE HOLDS."
+        ]
+      }
     },
     {
       "id": "sq.rb.regards",
@@ -626,7 +878,7 @@
           "params": {
             "to": "burl"
           },
-          "objText": "Tell Burl the Bend relay is quiet"
+          "objText": "Carry the relay's word to Burl"
         }
       ],
       "requires": [
@@ -647,7 +899,24 @@
           }
         ]
       },
-      "band": 2
+      "band": 2,
+      "returnText": "Go back to the Bend Relay",
+      "lines": {
+        "offer": [
+          "TICK. BEAR ON THE SLOPE. KNOWN.",
+          "MESSAGE: ROAD CLEAR. LIGHT HOLDS. CARRY IT."
+        ],
+        "active": [
+          "TICK. MESSAGE FOR THE BEAR. NOT YET CARRIED."
+        ],
+        "ready": [
+          "TICK. MESSAGE CARRIED. LOGGED.",
+          "FIVE ARROWS, HELD FOR YOU."
+        ],
+        "done": [
+          "TICK. LINE QUIET. ALL WELL."
+        ]
+      }
     },
     {
       "id": "sq.rb.road",
@@ -661,7 +930,7 @@
               "roadWest"
             ]
           },
-          "objText": "Walk the road west"
+          "objText": "Walk back along the road"
         },
         {
           "template": "explore",
@@ -670,7 +939,7 @@
               "bendRelay"
             ]
           },
-          "objText": "Return to the Bend Relay"
+          "objText": "Come back to the Bend Relay"
         }
       ],
       "requires": [
@@ -691,7 +960,24 @@
           }
         ]
       },
-      "band": 2
+      "band": 2,
+      "returnText": "Report to the Bend Relay",
+      "lines": {
+        "offer": [
+          "TICK. ROAD CHECK DUE. LAST CHECK: LONG AGO.",
+          "WALK TO THE OLD TURN. RETURN. REPORT."
+        ],
+        "active": [
+          "TICK. ROAD CHECK OPEN. WALK. RETURN."
+        ],
+        "ready": [
+          "TICK. ROAD CHECKED. LOGGED.",
+          "FIVE ARROWS, HELD FOR YOU."
+        ],
+        "done": [
+          "TICK. NEXT ROAD CHECK: LONG FROM NOW."
+        ]
+      }
     },
     {
       "id": "sq.fc.ford",
@@ -729,11 +1015,28 @@
           "tier": 2
         }
       },
-      "band": 4
+      "band": 4,
+      "returnText": "Report to the Ford Relay",
+      "lines": {
+        "offer": [
+          "TICK. FORD STONES: UNCHECKED.",
+          "CROSS. COUNT THE STONES. RETURN."
+        ],
+        "active": [
+          "TICK. FORD UNCHECKED. CROSS. RETURN."
+        ],
+        "ready": [
+          "TICK. FORD CROSSED. WALKER WET.",
+          "DRY BOOTS, HELD FOR YOU. TAKE THEM."
+        ],
+        "done": [
+          "TICK. FORD CHECKED. MIND THE MOSS."
+        ]
+      }
     },
     {
       "id": "sq.fc.smoke",
-      "title": "Smoke Watch",
+      "title": "North Watch",
       "site": "relayFord",
       "steps": [
         {
@@ -743,7 +1046,7 @@
               "northLook"
             ]
           },
-          "objText": "Climb to the north look"
+          "objText": "Climb to the lookout north of the ford"
         }
       ],
       "requires": [
@@ -764,11 +1067,28 @@
           }
         ]
       },
-      "band": 5
+      "band": 5,
+      "returnText": "Report to the Ford Relay",
+      "lines": {
+        "offer": [
+          "TICK. NORTH WATCH DUE. NO WATCHER.",
+          "CLIMB. LOOK NORTH. RETURN. REPORT."
+        ],
+        "active": [
+          "TICK. NORTH WATCH OPEN. CLIMB. LOOK."
+        ],
+        "ready": [
+          "TICK. NORTH WATCH DONE. LOGGED.",
+          "TEN ARROWS, HELD FOR YOU."
+        ],
+        "done": [
+          "TICK. NORTH WATCH LOGGED. LINE HOLDS."
+        ]
+      }
     },
     {
       "id": "sq.fc.cross",
-      "title": "The Crossroads Arm",
+      "title": "The Crossroads Report",
       "site": "relayFord",
       "steps": [
         {
@@ -778,7 +1098,7 @@
               "crossroads"
             ]
           },
-          "objText": "Reach the crossroads"
+          "objText": "Walk the west road to the crossroads"
         }
       ],
       "requires": [
@@ -799,7 +1119,24 @@
           }
         ]
       },
-      "band": 5
+      "band": 5,
+      "returnText": "Report to the Ford Relay",
+      "lines": {
+        "offer": [
+          "TICK. CROSSROADS: NO REPORT IN YEARS.",
+          "WALK THERE. RETURN. REPORT."
+        ],
+        "active": [
+          "TICK. CROSSROADS REPORT OPEN."
+        ],
+        "ready": [
+          "TICK. CROSSROADS REPORTED. LOGGED.",
+          "ONE DRAUGHT, HELD FOR YOU."
+        ],
+        "done": [
+          "TICK. ALL ROADS REPORTED. ALMOST."
+        ]
+      }
     },
     {
       "id": "sq.fc.again",
@@ -834,7 +1171,24 @@
           }
         ]
       },
-      "band": 4
+      "band": 4,
+      "returnText": "Report to the Ford Relay",
+      "lines": {
+        "offer": [
+          "TICK. FORD CHECK, RETURN LEG. DUE.",
+          "CROSS BACK. RETURN. REPORT."
+        ],
+        "active": [
+          "TICK. RETURN LEG OPEN. CROSS BACK."
+        ],
+        "ready": [
+          "TICK. BOTH LEGS LOGGED. FORD SOUND.",
+          "TEN ARROWS, HELD FOR YOU."
+        ],
+        "done": [
+          "TICK. FORD SOUND. WALKER SOUND. LINE HOLDS."
+        ]
+      }
     }
   ]
 }
