@@ -971,7 +971,8 @@
         v: 1, kit: KIT_ID, base: 'm_avg', height: 0, age: 'adult', skin: 'medium', eyes: 'brown',
         hair: { id: 'short', ramp: 'darkbrown' }, beard: null,
         top: { id: 'shirt', ramp: 'undyed' }, legs: { id: 'trousers', ramp: 'walnut' }, feet: { id: 'boots', ramp: 'walnut' },
-        outer: { id: 'belt', ramp: 'walnut' }, hat: null
+        outer: { id: 'belt', ramp: 'walnut' }, hat: null,
+        res: { body: 1, head: 2 } // OB-069: fine 1.25 cm head by default (v5 face detail); GAME_SAFE_RES allows it
       },
       looks: { knight: knightLook(), fen: fenLook() }
     };

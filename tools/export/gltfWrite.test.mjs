@@ -147,7 +147,7 @@ const parentsIdx = rigged.bones.map((b) => (b.parent == null ? -1 : BONES.indexO
 let animMax = 0, animTimesOk = true, unitOk = true;
 const quat = new Float64Array(88), hipsP = [0, 0, 0];
 for (const anim of json.animations) {
-  const clip = DEMO_CLIPS[anim.name];
+  const clip = (rigged.clips && rigged.clips[anim.name]) || DEMO_CLIPS[anim.name]; // fine heads rescale Hips cells to the finest grid (mesh.js)
   const t0 = read(anim.samplers[0].input);
   const n = t0.length - 1;
   for (let i = 0; i < n; i++) if (!(t0[i + 1] > t0[i])) animTimesOk = false;
@@ -206,7 +206,7 @@ try { exportGlb(rigged, { rgbOf: () => null }); } catch { threw++; }
 ok('missing rgbOf / object partMap / missing colour throw', threw === 3);
 
 // golden: pinned hash of the default recipe, demo clips (changes only when the format intentionally changes)
-const GOLDEN = '04daa61cc1444b867791d2dae8f2d3018464bb136983e2f8d0ec1ff262681802'; // 2026-10-11: OB-065 human kit v5 flat male chest + face (was e8cfbe67...); update on an intended kit/format change
+const GOLDEN = '8b9fb402651d334175c36e2efafd8b8c2d7a1f67b1d43fe585f58ce19d31ffe2'; // 2026-10-11: OB-069 default head res 2 (was 04daa61c...); OB-065 human kit v5 flat male chest + face (was e8cfbe67...); update on an intended kit/format change
 if (sha(glb) !== GOLDEN) console.log('golden sha256 now:', sha(glb));
 ok('real kit validates (array partMap)', validateKit(JSON.parse(JSON.stringify(kit)), globalThis.ASSETS.palette.materials).errors.length === 0);
 ok('golden SHA-256 of the default recipe (demo clips)', sha(glb) === GOLDEN);
