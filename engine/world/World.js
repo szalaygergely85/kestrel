@@ -1754,8 +1754,42 @@ export class World {
       usedKey: null,
       structId: null,
     };
+    if (spec.pick) rec.pick = spec.pick; // OB-066: optional world AABB {x0,y0,z0,x1,y1,z1} the crosshair ray tests
+    if (typeof spec.height === 'number') rec.height = spec.height;
     list.push(rec);
     return rec;
+  }
+
+  /**
+   * OB-066: world AABB {x0,y0,z0,x1,y1,z1} of a prop's collider shapes (level `colliders` or the model's), for a
+   * crosshair pick volume; null when the prop has none. Static (read once at add time).
+   * @param {string} id entity id
+   */
+  propPickBox(id) {
+    const e = this.entity(id);
+    if (!e || e.type !== 'prop') return null;
+    const comp = e.components.voxel || e.components.sprite;
+    const sid = id.slice(0, id.indexOf('.')), pid = id.slice(id.indexOf('.') + 1);
+    const s = this.structures.find((q) => q.id === sid);
+    const p = s && s.level && s.level.def && (s.level.def.props || []).find((q) => q.id === pid);
+    const defs = p && Object.hasOwn(p, 'colliders') ? p.colliders : (comp && this.assets.model(comp.model).colliders);
+    if (!Array.isArray(defs) || !defs.length) return null;
+    const t = e.transform, sc = t.scale || 1, yaw = (t.yawDeg || 0) * Math.PI / 180, c = Math.cos(yaw), sn = Math.sin(yaw);
+    const r = { x0: Infinity, y0: Infinity, z0: Infinity, x1: -Infinity, y1: -Infinity, z1: -Infinity };
+    for (const d of defs) {
+      if (!d || !Array.isArray(d.c)) continue;
+      const box = d.type === 'box' && Array.isArray(d.half);
+      const a = (d.yawDeg || 0) * Math.PI / 180 + yaw;
+      const hx = box ? d.half[0] : d.r, hy = box ? d.half[1] : d.r, hz = box ? d.half[2] : d.h / 2;
+      const ex = (Math.abs(Math.cos(a - yaw)) * hx + Math.abs(Math.sin(a - yaw)) * hy), ey = (Math.abs(Math.sin(a - yaw)) * hx + Math.abs(Math.cos(a - yaw)) * hy);
+      // rotate the extents by the prop yaw (AABB of the rotated rectangle)
+      const wx = (Math.abs(c) * ex + Math.abs(sn) * ey) * sc, wy = (Math.abs(sn) * ex + Math.abs(c) * ey) * sc;
+      const cx = t.x + (c * d.c[0] - sn * d.c[1]) * sc, cy = t.y + (sn * d.c[0] + c * d.c[1]) * sc, cz = t.z + d.c[2] * sc;
+      if (cx - wx < r.x0) r.x0 = cx - wx; if (cx + wx > r.x1) r.x1 = cx + wx;
+      if (cy - wy < r.y0) r.y0 = cy - wy; if (cy + wy > r.y1) r.y1 = cy + wy;
+      if (cz - hz * sc < r.z0) r.z0 = cz - hz * sc; if (cz + hz * sc > r.z1) r.z1 = cz + hz * sc;
+    }
+    return r.x0 === Infinity ? null : r;
   }
 
   /**

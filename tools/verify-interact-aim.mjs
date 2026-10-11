@@ -1,4 +1,4 @@
-// OB-052: headless sweep of interaction targeting near the start note. Stands 1.2 m from the interactable nearest the
+// OB-052/OB-066: headless sweep of interaction targeting near the start note. Stands 1.2 m from the interactable nearest the
 // spawn (prefers a note), sweeps pitch -40..+20 (step 5) and yaw +-30 around the bearing to it (step 5) and reports the
 // fraction of poses that still yield a prompt via the real engine findInteractTarget (no input/sim needed).
 // Run: node tools/verify-interact-aim.mjs <port>   (PC-B lane B2 any validatePort range; the CDP port is port+1)
@@ -51,9 +51,10 @@ try {
   })()`));
   console.log(JSON.stringify(r));
   assert.ok(!r.err, r.err);
-  assert.ok(r.byPitch['5'] > 0.3 && r.byPitch['10'] > 0.3, 'pitch +5/+10 rows must be > 0.3 (OB-063: 22 deg cone): ' + JSON.stringify(r.byPitch));
-  assert.ok(r.fraction >= 0.3 && r.fraction <= 0.8, // OB-063: tighter gate (22 h / 35 v), not a free-for-all
-     'prompt fraction too low: ' + r.fraction);
+  // OB-066: crosshair ray model. The default pick box is 0.5 x 0.5 x 0.8 m (+0.15 m pad) centred on the note; the eye is 0.9 m
+  // above it at 1.2 m, so only downward pitches (about -15..-50) with yaw within ~+-19 deg hit: a small, non-empty fraction.
+  assert.ok(r.fraction > 0 && r.fraction <= 0.45, 'prompt fraction must be small but non-zero (ray model): ' + r.fraction);
+  assert.ok(r.byPitch['20'] === '0.00' && r.byPitch['10'] === '0.00', 'looking up at +10/+20 must never prompt: ' + JSON.stringify(r.byPitch));
   console.log('Interact aim sweep PASS');
 } finally {
   cdp?.close(); if (browser?.pid) killTree(browser.pid); if (server.pid) killTree(server.pid);

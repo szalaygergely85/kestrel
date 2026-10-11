@@ -93,7 +93,7 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
     addLook(w, id, d) {
       const key = 'qi.' + id, t = T[textOf.get(id)];
       if (w.interactables.some((r) => r.key === key)) return 0;
-      w.addInteractable({ key, name: 'quest.inspect', x: d.transform.x, y: d.transform.y, z: d.transform.z + 0.6, radius: t.radius || 2.4, prompt: t.prompt, def: { objectId: id } });
+      w.addInteractable({ key, name: 'quest.inspect', x: d.transform.x, y: d.transform.y, z: d.transform.z + 0.6, pick: (w.propPickBox && w.propPickBox(id)) || undefined, radius: t.radius || 2.4, prompt: t.prompt, def: { objectId: id } });
       return 1;
     },
     /** world:loaded: [E] Inspect on the object givers that have no dialogue and no relay touch of their own. */
@@ -111,7 +111,7 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
           if (c.dialogue) continue;
           const key = 'qi.' + id;
           if (w.interactables.some((r) => r.key === key)) continue;
-          w.addInteractable({ key, name: 'quest.inspect', x: d.transform.x, y: d.transform.y, z: d.transform.z + 0.6, radius: 2.4, prompt: promptFor('Inspect', labelOf(id)), def: { objectId: id } });
+          w.addInteractable({ key, name: 'quest.inspect', x: d.transform.x, y: d.transform.y, z: d.transform.z + 0.6, pick: (w.propPickBox && w.propPickBox(id)) || undefined, radius: 2.4, prompt: promptFor('Inspect', labelOf(id)), def: { objectId: id } });
           added++;
         }
       }
