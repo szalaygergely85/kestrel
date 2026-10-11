@@ -1472,3 +1472,32 @@ Notes:
 - The board is the `mq.ow.board` "Board of the Dead": Ferrum's FELL notices for the exiles. The cut line and the skyworks knot (same hitch as `note.knot`) are a soft Maren echo, not proof.
 - The pier stone says the bridge was pulled down on purpose, Crown stamp chiselled off, without saying who or why.
 - "West points west again" answers the shrine note's "IT WAS ALWAYS WEST" from the same unsigned hand.
+
+## Gear names - proposal (owner to approve)
+
+PC-B writer, 2026-10-11, for EQ-20 / EQ-21. Option A is the writer's pick. Names <= 14, desc <= 38, ASCII only. No new character names, no spell words (Spark/Gust/Ward avoided).
+
+**Armour tier prefixes** (replace `T4` / `T5` in `tierPrefix`, `design/items.js`). Prefix <= 7 chars, so the longest bases (Jerkin, Gloves) stay <= 14. One desc line per tier; the base name can lead it (e.g. `Riveted jerkin. Iron rivets...`) only if it still fits 38.
+
+| tier | A | B | desc (A / B) |
+|---|---|---|---|
+| tempered (4) | `Riveted` | `Banded` | `Iron rivets through boiled hide.` (32) / `Iron bands, laced tight. It holds.` (34) |
+| warden (5) | `Watch` | `Relay` | `Old watch make, from a fallen tower.` (36) / `Keeper's make, from a relay store.` (34) |
+
+Longest: `Riveted Jerkin` / `Riveted Gloves` 14, `Watch Jerkin` 12. "Watch" ties to Ruin Steel ("Old watch steel"): the old relay watch, older than the Wall.
+
+**Weapons** (`design/itemsWeapons.js`, ids `gear.<slot>.<base>.<tier>`)
+
+| id | A | B | desc |
+|---|---|---|---|
+| sword.sturdy | `Reforged Steel` (14) | `Outwall Blade` (13) | `Ruin steel, hammered true again.` (32) |
+| sword.fine | `Keeper's Edge` (13) | `Relay Edge` (10) | `A relay-keeper's blade. Still keen.` (35) |
+| bow.sturdy | `Braid Bow` (9) | `Exile's Bow` (11) | `River ash, cured in the ford mist.` (34) |
+| bow.fine | `Rigging Bow` (11) | `Skyworks Bow` (12) | `Strung with Kestrel rigging wire.` (33) |
+| shield.sturdy | `Oak Targe` (9) | `Palisade Board` (14) | `Oak boards, iron rim. Takes a blow.` (35) |
+| shield.fine | `Relay Brass` (11) | `Crown Plate` (11) | `Old relay brass. Older than the Wall.` (37) |
+
+Notes:
+- `Outwall Blade` only if the owner fixes "Outwall" as the village name (GDD 3: working name; Ch3 text still avoids it on screen). `Reforged Steel` follows GDD 3 "sword (ruin steel, then reforged at forges)" and fits the Outwall forge chest.
+- `Crown Plate` B desc instead: `Crown brass from the wreck. Light.` (34). The worn shield is already the gondola `Brass Buckler`, so A avoids a second wreck shield.
+- `Keeper's Edge` names no person: "the keeper" is the unnamed relay-keeper of the log.
