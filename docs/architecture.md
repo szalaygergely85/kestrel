@@ -5957,3 +5957,31 @@ Scope: OB-019 v2. Replaces the 49 flat `river_NN` rects (gen-river-water.mjs v1)
 - **Group overflow = farthest dropped.** `MeshGroupSet.push(list, planes, cam)` pushes at most `capacity - count - DRAW_TAIL_RESERVE` (192: terrain near/far/skirts, <= 48 voxels, instance groups, <= 16 cloths) group items; past that the groups whose nearest survivor is farthest from the eye (xy; ties: later group) are dropped whole. Counters: `meshFeedStats.{drawItems, overflow, instDropped, groupsDropped}` (`noteListOverflow(list)` before `cull` in both feeds), F3 line `draws N/512 [OVERFLOW ...]`.
 - **Measured (2026-10-11, rtx4060, ultra 480x180, perf-pose 1500 frames, 4 agents on the box):** roadBend GPU p95 2.32 / JS p95 8.00 ms, meadowDetail 4.39 / 7.50, fordDetail 3.68 / 7.90 - all PASS (<= 8). No per-frame cost added below the caps (one branch per push; the group sort runs only on overflow frames).
 - **Far-only content rule (MAP-08).** Skyline silhouettes are ONE baked static mesh per landmark, never hundreds of placements: `tools/gen-ferrum-far.mjs` bakes 262 slab/spire copies (Wall_UnevenBrick_Straight solid courses, Wall_Arch top course, Corner_Exterior_Brick spires; each source simplified once) into `content/meshes/far/ferrum_far` (5440 tris, 184 KB bin), placed once as `fr000` (`collide:false`, `castShadow:false`) = 1 single draw, 0 group slots; plus the `ferrumGlow` billboard (`ferrumLights.world` 640 x 71 m).
+
+### 38.47 US-055a wade splash + ripples (PC-B 5th agent, 2026-10-11; PC-A to ratify)
+
+**Decision: no new pool, no new WGSL.** Both halves already exist with GPU parity: droplets = the pooled CPU sim `engine/fx/particles.js` (cap 2048, 32.1; GPU draw via `particleLayer.js`, which both twins read, so parity is by construction, 38.15 "no GPU particles" stands); rings = `engine/fx/ripples.js` (cap 8) + the `waterComposite` JS/WGSL/GLSL twins (38.14). US-055a is a preset module (engine) + a game hook, the same pattern as `hitSparks.js` and `waterfallHooks.js`.
+
+**Engine: `engine/fx/wadeSplash.js`** (new, exported from `engine/index.js`; imports nothing but `./particles.js` constants if needed):
+```
+export const WADE_SPLASH = Object.freeze({ maxLive: 64, entryMin: 6, entryMax: 10, arrowN: 4, entrySpeed: 1.0 /* m/s */,
+  ringPeriodSteps: 24 /* 0.4 s */, ringAmp: 0.4 });
+defineWadeSplash(particles, look = {}) -> defId          // idempotent, key 'wadeSplash'; life [0.5, 0.7] s, speed [1.2, 2.4], dir [0,0,1],
+                                                         // spreadDeg 50, accelZ -9.8, maxLive 64, glyphs ". ' ,", colors = look.foam ramp
+                                                         // (caller passes the water look foam rgb; default a light blue-white ramp), sizeM 0.12
+wadeSplashAt(particles, x, y, z, speed01) -> void       // n = entryMin + round(speed01 * (entryMax-entryMin)); burstAt(id, x, y, z, n, 0, 0, 1)
+arrowSplashAt(particles, x, y, z) -> void               // burstAt(id, ..., WADE_SPLASH.arrowN, 0, 0, 1)
+```
+Cap 64 = the def's `maxLive` (per burst emitter) plus the hook never having more than 6 transient emitters alive (entries are edge-triggered, arrows rare); AC1 "pool cap 64" is tested as `particles.stats.live` from wadeSplash defs <= 64 under a 600-step worst case. Seeded: the particles' own RNG stream (rule 15), no Math.random.
+
+**Game: `game/js/quest/sim/wadeFx.js`** (new; `createWadeFx(particles, ripples, cfg = WADE_SPLASH)` -> `{ step(entity, timeSec), arrowHit(x, y, z, timeSec) }`), called in `main.js` right after `wading.after(...)`. Reads only `body.wadeImm` (set by `wading.before`), `body.vx/vy`, transform. Per step, zero alloc: (1) entry edge = `prevImm <= 0 && wadeImm > 0 && hypot(vx,vy) > entrySpeed` -> `wadeSplashAt` at the feet (z = surface = feet z + wadeImm) + `ripples.add(x, y, 0.8, t)`; (2) while `wadeImm > 0 && hypot > 0.3`, every `ringPeriodSteps` (integer tick counter, reset on entry) -> `ripples.add(x, y, ringAmp, t)`. `arrows.js` calls `arrowHit` where RIVER-01b starts an arrow floating. Engine never imports this file.
+
+**Ring timing vs the story.** Ripple constants are global (RIPPLE_SPEED 1.2 m/s, LIFE 2 s, draw threshold acc >= 0.2) and feed existing rows: do NOT change them. With `ringAmp` 0.4 a ring is visible until age 1.0 s, radius 0 -> 1.2 m (story asked 0.8 s; PO: accept 1.0 s). Ring budget: one ring / 0.4 s with a 2 s life = 5 live of cap 8; the entry ring can evict the oldest (by design).
+
+**gpucompare row `wadeSplash`** (game/js/dev/modes/gpucompare.js, after `riverFord`, same `riverPose('cmp.riverFord', ...)`): `before()` = `particles.clear()`, `defineWadeSplash`, `wadeSplashAt` at a ford point 3 m ahead of the camera with speed01 1, `ripples.add` x3 at ages 0.2/0.5/0.8 s (fixed timeSec), 12 particle steps, frozen; the row sets `fb.ripples` for this pose only and restores it in the existing per-pose reset (next to the `particles.clear()` at ~line 937). No other row changes (AC2).
+
+**Perf.** Hook: O(1) per step, 0 alloc. Sim: 64 live is ~0.003 ms/step (2048 = 0.105 ms, 38.15); layer build adds <= 64 projections. Composite: already paid by 38.14 (<= 8 rings). Budget: <= 0.05 ms/frame JS total at 64 live + 8 rings (AC1 bar 0.1 ms stands).
+
+**Tests (Node).** `engine/fx/wadeSplash.test.js`: idempotent define; burst counts 6/10/4; same seed -> same px/py/pz after 30 steps; all dead after 0.7 s (42 steps); 0 alloc over 10k bursts+steps; live <= 64. `game/js/quest/sim/wadeFx.test.js`: entry edge fires once (no re-fire while staying in), no splash below 1 m/s, ring every 24 steps while moving, none while standing, arrowHit = 4.
+
+**Particle visibility (OB-045 report: one fg glyph, no bg) -> separate story, not here.** Fixing it changes `particleLayer.js` + the sprites pass twins and the existing `particles` row for every emitter, so it is its own small engine step (proposed `PART-VIS-01`: optional def field `bgMix` 0..1 blending the particle colour into the cell bg, layer word gains bg, WGSL/JS twins + `particles` row re-baseline). US-055a stays visible without it by using `sizeM` 0.12 (2x2 cells near the camera) and the bright foam ramp; if AC3's still is still too faint, PO files PART-VIS-01 rather than widening this story.
