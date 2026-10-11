@@ -58,11 +58,15 @@ export function createModelPreview(baseAssets, opts = {}) {
     inputTarget: opts.inputTarget || document.createElement('div') });
   const rt = engine.renderTarget;
   const frame = createFrameRenderer({ engine, rt, pipeline: null, assets: facade, idleSkip: true });
+  frame.fb.skipSky = true; // only KIND_MODEL cells are copied: no sky shading (about 1 ms)
   const bg = opts.bg || [16, 20, 24];
 
   let world = null, subject = null, subjectKey = null, def = null, cam = null, bounds = null;
-  let version = 0, drawnVersion = -1, drawnYaw = NaN, drawnStep = -1, drawnRw = -1, drawnRh = -1;
-  let acc = 0, clipT = 0, hasClip = false, disposed = false, rendered = 0;
+  let version = 0, drawnVersion = -1, drawnStep = -1, drawnRw = -1, drawnRh = -1;
+  // Doubles live in a typed array (a double in a closure variable boxes a HeapNumber on every store): [acc, clipT, drawnYaw]
+  const T = new Float64Array(3); T[2] = NaN;
+  const stepOpts = { animate: false, dt: 0, present: false }; // reused: step() reads it synchronously
+  let hasClip = false, disposed = false, rendered = 0;
 
   function ensureWorld() {
     if (world) return;
@@ -108,7 +112,7 @@ export function createModelPreview(baseAssets, opts = {}) {
       }
       hasClip = !!(def.voxel.animations && def.voxel.animations.idle);
       if (hasClip) subject.play('idle', { loop: true });
-      cam = null; clipT = 0; version++;
+      cam = null; T[1] = 0; version++;
     },
     /**
      * Re-renders the stage only when yaw / model version / 50 ms clip step / rect changed (20 Hz cap), then ALWAYS copies the
@@ -117,18 +121,19 @@ export function createModelPreview(baseAssets, opts = {}) {
      */
     render(subj, dtSec, ui, rect) {
       if (disposed || !subject) return false;
-      acc += dtSec; clipT += dtSec;
+      T[0] += dtSec; T[1] += dtSec;
       const yaw = subj.yawDeg;
-      const step = hasClip ? (clipT * 20) | 0 : 0;
+      const step = hasClip ? (T[1] * 20) | 0 : 0;
       let did = false;
-      const changed = version !== drawnVersion || yaw !== drawnYaw || step !== drawnStep || rect.w !== drawnRw || rect.h !== drawnRh;
-      if (changed && (acc >= MIN_PERIOD || version !== drawnVersion)) { // new model: immediate; otherwise 20 Hz
+      const changed = version !== drawnVersion || yaw !== T[2] || step !== drawnStep || rect.w !== drawnRw || rect.h !== drawnRh;
+      if (changed && (T[0] >= MIN_PERIOD || version !== drawnVersion)) { // new model: immediate; otherwise 20 Hz
         if (!cam || rect.w !== drawnRw || rect.h !== drawnRh) cam = fitPreviewCamera(bounds, rect, rt, { x: CX, y: CY });
         subject.data.transform.yawDeg = yaw;
         world.renderVersion++;
         frame.markDirty();
-        frame.step(world, cam, { animate: hasClip, dt: acc, present: false });
-        drawnVersion = version; drawnYaw = yaw; drawnStep = step; drawnRw = rect.w; drawnRh = rect.h; acc = 0;
+        stepOpts.animate = hasClip; stepOpts.dt = T[0];
+        frame.step(world, cam, stepOpts);
+        drawnVersion = version; T[2] = yaw; drawnStep = step; drawnRw = rect.w; drawnRh = rect.h; T[0] = 0;
         rendered++; did = true;
       }
       copyCells(ui, rect);
