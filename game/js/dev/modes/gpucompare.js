@@ -594,6 +594,19 @@ function buildCompareRuns(ctx) {
       cam: { x, y, z: swayWindWorld.terrain.groundAt(x, y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: 30 },
       real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, timeSec: 7.3,
       before: () => engine.setWorld(swayWindWorld) });
+    // MAP-12 (arch 38.43): band GRID world, near band at zone g6_9 (cx0 12, cy0 9) - neither the east {8,7} nor the west {6,7} authored zone.
+    // Own world instance (terrainBand(s) replaced by terrainGrid, same bake bytes per cell): exercises near type re-upload + band origin at an arbitrary zone.
+    const gridDef = { ...assets.world('world_m1'), terrainGrid: { cx0: 0, cy0: 0, cx1: 32, cy1: 32, cw: 5, ch: 3, stepX: 2, stepY: 1, ox: 0, oy: 0 } };
+    delete gridDef.terrainBand; delete gridDef.terrainBands;
+    const GZ = { x: 1856, y: 1344 }; // inside zone g6_9 (x 1536..2176, y 1152..1536), >= 192 m from its x edges, 192 m from its y edges
+    const gridZoneWorld = loadCompareWorld(gridDef, { realTrees: true, physics: 'mesh', spawn: GZ });
+    gridZoneWorld.terrain.bakeFarSync();
+    if (gridZoneWorld.bandId !== 'g6_9') throw new Error('gridZone: expected band g6_9, got ' + gridZoneWorld.bandId);
+    const gridZoneLights = lightsEnabled ? buildLightSet(gridZoneWorld, assets.palette) : null;
+    runs.push({ world: gridZoneWorld, lights: gridZoneLights, name: 'world_m1: gridZone (MAP-12, band g6_9, near terrain at a generated zone)',
+      cam: { x: GZ.x, y: GZ.y, z: gridZoneWorld.terrain.groundAt(GZ.x, GZ.y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: 15 },
+      real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30,
+      before: () => engine.setWorld(gridZoneWorld) });
   }
 
   // ENV-01a2: existing comparison worlds retain detail off.

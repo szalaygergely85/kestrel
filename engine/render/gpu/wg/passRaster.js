@@ -103,7 +103,7 @@ export class WgRasterPass {
     this.terrainTex = [{ slot: 0, texture: null }, { slot: 1, texture: null }, { slot: 2, texture: null }]; // 2 = GS-01b carve mask atlas
     this.structMasks = null; // StructMaskAtlas, built with the terrain pipeline
     this.terrainBind = { uniforms: this.tu, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: null, textures: this.terrainTex };
-    this.nearTex = null; this.farTex = null; this.nearDims = [1, 1]; this.farDims = [1, 1]; this.nearVersion = -1; this.farVersion = -1; this.farWorld = null;
+    this.nearTex = null; this.farTex = null; this.nearDims = [1, 1]; this.farDims = [1, 1]; this.nearVersion = -1; this.farVersion = -1; this.farWorld = null; this.nearWorld = null;
     try {
       this.nearTex = device.createTexture({ format: 'r8ui', width: 1, height: 1 });
       this.farTex = device.createTexture({ format: 'r8ui', width: 1, height: 1 });
@@ -249,9 +249,9 @@ export class WgRasterPass {
       this.farTex = this._uploadType(this.farTex, this.farDims, terrain.mapW, terrain.mapH, terrain.farType);
       this.farVersion = terrain.farVersion; this.farWorld = world;
     }
-    if (terrain.nearReady && this.nearVersion !== terrain.near.version) {
+    if (terrain.nearReady && (this.nearVersion !== terrain.near.version || this.nearWorld !== world)) { // MAP-12: also on a new world (grid zones of two worlds can share a version number)
       this.nearTex = this._uploadType(this.nearTex, this.nearDims, terrain.near.w, terrain.near.h, terrain.near.type);
-      this.nearVersion = terrain.near.version;
+      this.nearVersion = terrain.near.version; this.nearWorld = world;
     }
     this.terrainTex[0].texture = this.nearTex; this.terrainTex[1].texture = this.farTex;
   }
