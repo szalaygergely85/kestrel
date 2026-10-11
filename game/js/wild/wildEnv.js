@@ -13,22 +13,50 @@ const TELEPORT_M = 25;                      // a one-step player jump this big =
 const nrm = { x: 0, y: 0, z: 1 };
 
 /** Static trunk bucket grid: 16 m cells, counting-sorted Int32 index arrays (built once at load). */
-export function buildTrunkGrid(scatter, trunkR) {
-  const n = scatter && scatter.count ? scatter.count : 0;
-  if (!n) return { n: 0, x0: 0, y0: 0, w: 0, h: 0, start: new Int32Array(1), idx: new Int32Array(0), px: null, py: null, pr: null, sp: null, src: scatter || null };
+/** `placed` (OB-032): optional [{x, y, r, ring}] hand-placed trees appended after the scatter ones (ring = perch ring, see placedTrees);
+ *  `ringOf`: per scatter species perch ring. g.rg[i] = perch ring of tree i (null = no ring data). */
+export function buildTrunkGrid(scatter, trunkR, placed, ringOf) {
+  const ns = scatter && scatter.count ? scatter.count : 0, np = placed ? placed.length : 0, n = ns + np;
+  if (!n) return { n: 0, x0: 0, y0: 0, w: 0, h: 0, start: new Int32Array(1), idx: new Int32Array(0), px: null, py: null, pr: null, sp: null, rg: null, src: scatter || null, nPlaced: 0 };
+  const px = np ? new Float64Array(n) : scatter.x, py = np ? new Float64Array(n) : scatter.y;
+  if (np) { for (let i = 0; i < ns; i++) { px[i] = scatter.x[i]; py[i] = scatter.y[i]; } for (let k = 0; k < np; k++) { px[ns + k] = placed[k].x; py[ns + k] = placed[k].y; } }
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (let i = 0; i < n; i++) { const x = scatter.x[i], y = scatter.y[i]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  for (let i = 0; i < n; i++) { const x = px[i], y = py[i]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
   const w = Math.floor((x1 - x0) / TRUNK_CELL_M) + 1, h = Math.floor((y1 - y0) / TRUNK_CELL_M) + 1;
   const cellOf = new Int32Array(n), start = new Int32Array(w * h + 1), idx = new Int32Array(n);
-  const pr = new Float64Array(n);
+  const pr = new Float64Array(n), rg = new Array(n).fill(null), sp = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
-    const c = Math.floor((scatter.y[i] - y0) / TRUNK_CELL_M) * w + Math.floor((scatter.x[i] - x0) / TRUNK_CELL_M);
-    cellOf[i] = c; start[c + 1]++; pr[i] = trunkR[scatter.species[i]] || 0.5;
+    const c = Math.floor((py[i] - y0) / TRUNK_CELL_M) * w + Math.floor((px[i] - x0) / TRUNK_CELL_M);
+    cellOf[i] = c; start[c + 1]++;
+    if (i < ns) { sp[i] = scatter.species[i]; pr[i] = trunkR[sp[i]] || 0.5; rg[i] = ringOf ? ringOf[sp[i]] || ringOf[0] || null : null; }
+    else { const t = placed[i - ns]; pr[i] = t.r; rg[i] = t.ring || null; }
   }
   for (let c = 0; c < w * h; c++) start[c + 1] += start[c];
   const fill = start.slice(0, w * h);
   for (let i = 0; i < n; i++) idx[fill[cellOf[i]]++] = i;
-  return { n, x0, y0, w, h, start, idx, px: scatter.x, py: scatter.y, pr, sp: scatter.species, src: scatter };
+  return { n, x0, y0, w, h, start, idx, px, py, pr, sp, rg, src: scatter, nPlaced: np };
+}
+
+const TREE_RE = /(?:^|\/)(CommonTree|Pine|TwistedTree|DeadTree|Birch|Tree)/i;
+/** OB-032: hand-placed tree structures (world.structures whose mesh id names a tree: roadside rs### rows, POI trees) -> trunk list.
+ *  Trunk radius from the mesh bbox (~0.1 x the mean crown width, 0.25..0.8 m, times placement scale); perch ring from the
+ *  species name + bbox height (dead trees: thin bare branches, high). Rebuilt when world.structVersion changes. */
+export function placedTrees(structures, rings) {
+  const out = [];
+  for (const s of structures || []) {
+    const m = s && s.mesh;
+    if (!m || typeof m !== 'object' || !s.origin || !m.bbox || !TREE_RE.test(String(m.id || ''))) continue;
+    const b = m.bbox, k = s.scale > 0 ? s.scale : 1, id = String(m.id).toLowerCase();
+    const wid = (b[3] - b[0] + (b[4] - b[1])) / 2 * k, hgt = (b[5] - b[2]) * k;
+    const r = Math.min(0.8, Math.max(0.25, 0.1 * wid));
+    const kind = id.includes('pine') ? 'Pine' : id.includes('birch') ? 'Birch' : 'Oak';
+    const dead = id.includes('deadtree');
+    const base = rings ? rings['forest' + kind + (r >= (kind === 'Pine' ? 0.38 : kind === 'Birch' ? 0.43 : 0.58) ? 'Large' : 'Small')] || rings.forestOakSmall : null;
+    if (!base) { out.push({ x: s.origin.x, y: s.origin.y, r, ring: null }); continue; }
+    const z0 = Math.min(Math.max(base.z[0], hgt * (dead ? 0.55 : 0.3)), hgt * 0.85), z1 = Math.min(Math.max(base.z[1], z0 + 0.8), hgt * 0.95);
+    out.push({ x: s.origin.x, y: s.origin.y, r, ring: { r: dead ? [0.3, 0.9] : base.r, z: [z0, Math.max(z1, z0 + 0.3)] } });
+  }
+  return out;
 }
 
 function trunkHit(g, x, y, r) {
@@ -106,11 +134,16 @@ export function createWildEnv(world, opts) {
     const sp = terr && terr.recipe && terr.recipe.recipe && terr.recipe.recipe.forest && terr.recipe.recipe.forest.trees && terr.recipe.recipe.forest.trees.species;
     trunkR = sp ? sp.map((s) => s.trunkR) : [];
   }
-  let grid = buildTrunkGrid(world.scatter, trunkR);
   const treeSp = terr && terr.recipe && terr.recipe.recipe && terr.recipe.recipe.forest && terr.recipe.recipe.forest.trees && terr.recipe.recipe.forest.trees.species;
   const rings = opts && opts.perchRings;                 // { forestOakSmall: { r: [a, b], z: [a, b] }, ... } (songbird.perchByModel)
   const ringOf = treeSp && rings ? treeSp.map((s) => perchRing(s, rings)) : [];
-  const _ensure = () => { if (world.scatter !== grid.src) { grid = buildTrunkGrid(world.scatter, trunkR); env.grid = grid; } }; // the near band re-bakes as the player moves
+  let placedVer = -1, placed = null;
+  const bake = () => { // scatter + hand-placed trees (OB-032), lazily: the scatter near band re-bakes as the player moves, placed trees when the structure list changes
+    if (world.structVersion !== placedVer || !placed) { placedVer = world.structVersion; placed = placedTrees(world.structures, rings); }
+    return buildTrunkGrid(world.scatter, trunkR, placed, ringOf);
+  };
+  let grid = bake();
+  const _ensure = () => { if (world.scatter !== grid.src || world.structVersion !== placedVer) { grid = bake(); env.grid = grid; } };
   const meshGrid = buildMeshBlockGrid(world.structures);
   function habitatAt(x, y) {
     if (world.structureAt(x, y)) return 0;
@@ -154,7 +187,7 @@ export function createWildEnv(world, opts) {
   function perchNear(x, y, minR, maxR, out) {
     _ensure();
     const g = grid;
-    if (!g.n || !ringOf.length) return false;
+    if (!g.n) return false;
     const cx0 = Math.floor((x - maxR - g.x0) / TRUNK_CELL_M), cx1 = Math.floor((x + maxR - g.x0) / TRUNK_CELL_M);
     const cy0 = Math.floor((y - maxR - g.y0) / TRUNK_CELL_M), cy1 = Math.floor((y + maxR - g.y0) / TRUNK_CELL_M);
     const lo = minR * minR, hi = maxR * maxR;
@@ -167,10 +200,10 @@ export function createWildEnv(world, opts) {
         const c = cy * g.w + cx;
         for (let k = g.start[c]; k < g.start[c + 1]; k++) {
           const i = g.idx[k], dx = g.px[i] - x, dy = g.py[i] - y, d2 = dx * dx + dy * dy;
-          if (d2 < lo || d2 > hi) continue;
+          if (d2 < lo || d2 > hi || !g.rg[i]) continue;
           if (pass === 0) { count++; continue; }
           if (n++ !== pick) continue;
-          const ring = ringOf[g.sp[i]] || ringOf[0];
+          const ring = g.rg[i];
           const h2 = (Math.imul(i + 1, 2654435761) ^ hsh) >>> 0, a = (h2 & 1023) / 1024 * 6.283185307179586, f = ((h2 >>> 10) & 1023) / 1023, f2 = ((h2 >>> 20) & 511) / 511;
           const r = g.pr[i] + ring.r[0] + (ring.r[1] - ring.r[0]) * f;
           out.x = g.px[i] + Math.cos(a) * r; out.y = g.py[i] + Math.sin(a) * r;

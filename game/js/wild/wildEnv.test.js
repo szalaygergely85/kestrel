@@ -18,7 +18,7 @@ import { makeOk } from '../../../engine/test/assert.js';
 import { buildBeastNav } from '../quest/sim/beastNav.js';
 import { createBeastSim } from '../quest/sim/beastSim.js';
 import wildlifeMod from '../../../design/models/voxel_wildlife.js'; // the real rabbit + deer data (sets ASSETS.models/wildlifeFx)
-import { createWildEnv, createWild, buildTrunkGrid, buildMeshBlockGrid } from './wildEnv.js';
+import { createWildEnv, createWild, buildTrunkGrid, buildMeshBlockGrid, placedTrees } from './wildEnv.js';
 
 wildlifeMod; paletteMod; detailPassMod; terrainMod; boarMod; swordMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; m3PropsMod;
 const { assets } = await loadTestAssets();
@@ -161,14 +161,14 @@ function wild05World(name, seed) {
         const s = sl[k]; if (!s.alive) continue;
         const nm = names[s.species]; seen.add(nm); (states[nm] = states[nm] || new Set()).add(s.state); (clips[nm] = clips[nm] || new Set()).add(s.wantClip);
         const gap = s.z - w.terrain.groundAt(s.x, s.y);
-        if (!(nm === 'squirrel' && s.state >= 23 && s.state <= 25) && gap < minGap) minGap = gap; // a squirrel on a trunk sits 0.165 m "low" by design
+        if (!(nm === "squirrel" && s.state >= 23 && s.state <= 25) && gap < minGap) { minGap = gap; globalThis.__mg = nm + " z" + s.z.toFixed(2) + " g" + w.terrain.groundAt(s.x, s.y).toFixed(2) + " ge" + wild.env.groundAt(s.x, s.y).toFixed(2) + " age" + s.age + " st" + s.state + " @" + s.x.toFixed(0) + "," + s.y.toFixed(0); } // a squirrel on a trunk sits 0.165 m "low" by design
       }
     }
   }
   const allocGrow = process.memoryUsage().heapUsed - allocBase;
   console.log(`  WILD-05 seen: ${[...seen].join(',')}; max alive ${maxAlive}; ${(tMs / steps).toFixed(4)} ms/step avg (${steps} steps); states ${Object.entries(states).map(([k, v]) => k + ':' + [...v].sort((p, q) => p - q).join('/')).join(' ')}; heap ${(allocGrow / 1e6).toFixed(1)} MB`);
   for (const n of ['fox', 'squirrel', 'songbird', 'crow']) ok(seen.has(n), `${n} spawned near forest / edge / meadow`);
-  ok(minGap >= -0.001, `ground animals and birds never below the ground (min z - ground = ${minGap.toFixed(3)})`);
+  ok(minGap >= -0.001, `ground animals and birds never below the ground (min z - ground = ${minGap.toFixed(3)} ${globalThis.__mg})`);
   const has = (n, lo, hi) => hit[n] && [...hit[n].st].some((x) => x >= lo && x <= hi);
   ok(has('squirrel', 22, 22) && has('squirrel', 23, 25), `squirrel runs to a trunk and climbs / peeks when the player is near (${[...(hit.squirrel ? hit.squirrel.st : [])]})`);
   ok(has('songbird', 12, 13), `songbird takes off when the player is within 6 m (${[...(hit.songbird ? hit.songbird.st : [])]})`);
@@ -195,6 +195,38 @@ function wild05World(name, seed) {
   console.log(`  bench: max alive ${maxAlive}, ${per.toFixed(4)} ms/step (budget 0.3 ms for 40)`);
   ok(maxAlive >= 10, `bench ran with a crowd (${maxAlive})`);
   ok(per < 0.3, `sim < 0.3 ms/step (${per.toFixed(4)})`);
+}
+// ---- 4. OB-032 / OB-033: placed trees feed the trunk grid + perches; deer at the river; spawn distances ----
+{
+  const tree = (id, x, y, bbox, scale) => ({ id: 'rs' + id, kind: 'mesh', mesh: { id: 'quaternius/' + id, bbox }, origin: { x, y, z: 0 }, scale, bbox: { x0: x - 2, y0: y - 2, x1: x + 2, y1: y + 2, z0: 0, z1: 9 } });
+  const structures = [
+    tree('CommonTree_4_LOD1', 500, 500, [-1.6, -1.7, -0.2, 2.0, 2.1, 8.9]),
+    tree('Pine_3_LOD1', 520, 500, [-1.2, -1.2, 0, 1.2, 1.2, 10]),
+    tree('DeadTree_1', 540, 500, [-0.8, -0.8, 0, 0.8, 0.8, 5]),
+    { id: 'rock', kind: 'mesh', mesh: { id: 'quaternius/Rock_Medium_1', bbox: [-1, -1, 0, 1, 1, 1] }, origin: { x: 560, y: 500, z: 0 }, bbox: { x0: 559, y0: 499, x1: 561, y1: 501, z0: 0, z1: 1 } },
+  ];
+  const pt = placedTrees(structures, null);
+  ok(pt.length === 3, `placedTrees picks the 3 tree meshes, not the rock (${pt.length})`);
+  const rings = { forestOakSmall: { r: [0.9, 2.1], z: [2.8, 4.0] }, forestOakLarge: { r: [1, 2.5], z: [3.3, 4.8] }, forestPineSmall: { r: [0.8, 1.6], z: [1.6, 3.0] }, forestPineLarge: { r: [0.9, 1.9], z: [1.9, 3.6] }, forestBirchSmall: { r: [0.8, 1.6], z: [2.9, 4.2] } };
+  const fw = { terrain: { typeAt: () => 0, groundAt: () => 7, groundNormalAt: (x, y, o) => { o.z = 1; return o; } }, structureAt: () => null, scatter: null, structures, structVersion: 1 };
+  const env = createWildEnv(fw, { trunkR: [], perchRings: rings });
+  ok(env.grid.n === 3 && env.grid.nPlaced === 3, 'placed trees are in the trunk grid with no scatter');
+  const tr = { x: 0, y: 0, r: 0, tree: -1 }, pp = { x: 0, y: 0, z: 0, tree: -1 };
+  ok(env.trunkNear(503, 500, 10, tr) && tr.x === 500 && tr.r >= 0.25 && tr.r <= 0.8, `trunkNear finds the placed oak (r ${tr.r.toFixed(2)} from the mesh bounds)`);
+  ok(env.perchNear(500, 500, 0, 4, pp) && Math.hypot(pp.x - 500, pp.y - 500) > tr.r && pp.z > 7 + 2.5 && pp.z < 7 + 8.9, `a bird perches on the placed oak (z ${pp.z.toFixed(2)})`);
+  ok(env.perchNear(540, 500, 0, 3, pp) && pp.z - 7 >= 2.7, 'dead tree: perch high on bare branches');
+  fw.structures = structures.concat([tree('CommonTree_1_LOD1', 600, 600, [-1, -1, 0, 1, 1, 6])]); fw.structVersion = 2;
+  ok(env.trunkNear(601, 600, 5, tr) && env.grid.nPlaced === 4, 'grid rebuilt lazily when the structure list changes');
+  const a0 = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 1e5; i++) env.perchNear(500 + (i % 50), 500, 0, 30, pp);
+  ok(process.memoryUsage().heapUsed - a0 < 8e6, 'perchNear with placed trees ~no allocation');
+}
+{
+  const { wild } = wild05World('ob033', 5);
+  const sp = (n) => wild.fauna.def.species.find((q) => q.name === n);
+  ok((sp('deer').habitatMask & 8) !== 0, 'deer may spawn at the riverbank (habitat bit 8)');
+  ok(sp('rabbit').spawnMinM <= 15 && sp('rabbit').spawnMaxM <= 60 && sp('rabbit').drawM >= 45, `rabbits spawn 15-60 m and are drawn from 45 m (${sp('rabbit').spawnMinM}-${sp('rabbit').spawnMaxM}, draw ${sp('rabbit').drawM})`);
+  ok(sp('songbird').spawnMinM <= 15 && sp('songbird').spawnMaxM <= 55 && sp('songbird').drawM >= 40, 'songbirds spawn 15-55 m, drawn from 40 m');
 }
 console.log(`wildEnv.test: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

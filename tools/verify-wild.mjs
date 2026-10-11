@@ -57,6 +57,11 @@ try {
   console.log('[3b] species seen near the meadow:', JSON.stringify(sp5));
   for (const n of ['fox', 'squirrel', 'songbird', 'crow']) if (!sp5[n]) console.log(`[warn] ${n} not alive at the sampled instants (rare species; unit test covers spawn)`);
   assert.ok(Object.keys(sp5).length >= 3, 'expected at least 3 species alive near the meadow: ' + JSON.stringify(sp5));
+  // OB-033: the Bend / Road West must not be empty - a fauna animal alive within 60 m of the player after a short walk, or a placed boar within 80 m
+  const bend = JSON.parse(await evaluate(cdp, '(()=>{const D=window.__debug,W=D.wildRaw; if(!W||!W.w) return "{}"; const out={}; for(const [x,y] of [[1263,1050],[1330,1060],[1376,1030]]){ W.w.reset(); let mx=0; for(let i=0;i<1800;i++){ W.w.step(1/60,x+Math.cos(i/90)*8,y+Math.sin(i/90)*8,false,0); } let near=0; for(const s of W.w.fauna.slots) if(s.alive && Math.hypot(s.x-x,s.y-y)<60){ near++; const n=W.w.fauna.def.species[s.species].name; out[n]=(out[n]||0)+1; } out["@"+x]=near; } let boars=0; try{ for(const e of D.world.entities.values?D.world.entities.values():D.world.entities){ if(e.type==="beast"&&Math.hypot(e.x-1330,e.y-1040)<80) boars++; } }catch(e){} out.boarsNearBend=boars; return JSON.stringify(out); })()') || '{}');
+  console.log('[3c] animals near the Bend / Road West:', JSON.stringify(bend));
+  const bendAnimals = Object.entries(bend).filter(([k]) => k[0] === '@').reduce((n, [, v]) => n + v, 0) + (bend.boarsNearBend || 0);
+  assert.ok(bendAnimals >= 1, 'expected at least one animal near the Bend: ' + JSON.stringify(bend));
   console.log(`[3/4] fauna alive ${alive}, drawn ${drawn} after ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 
   assert.equal(await evaluate(cdp, '!!window.__debug.rt.gpuActive'), true, 'rt.gpuActive is not true');
