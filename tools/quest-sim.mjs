@@ -1,6 +1,7 @@
 // QL-T2 (architecture 38.44 item 11): headless quest simulator. Runs every quest of the real content through the real
 // questBook on a fake world: talk -> accept -> feed the facts each objective needs -> hand in -> reward.
 // Usage: node tools/quest-sim.mjs [--json]    (exit 1 when any quest FAILs)
+import { staticReach } from './reach-check.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createQuestBook, AVAILABLE, READY, DONE, ACTIVE, STATUS_NAMES } from '../game/js/quest/sim/questBook.js';
 import { loadDesignAssets, loadQuestFiles, loadPackQuests } from './validate-content.mjs';
@@ -125,6 +126,7 @@ async function main() {
   const errors = [...files.errors, ...packs.errors];
   const w = worldFacts(assets);
   for (const a of Object.keys(files.areas?.areas || {})) w.areas.add(a);
+  for (const b of staticReach().bad) errors.push(`${b.kind} "${b.id}" at (${b.x}, ${b.y}) is outside the world walk bounds (unreachable on foot)`); // QL-B2 follow-up
   const defs = [...files.quests, ...packs.quests].map(q => q.def);
   const { rows, totals } = simulateQuests(defs, w);
   if (json) console.log(JSON.stringify({ rows, totals, errors }, null, 1));
