@@ -2,6 +2,7 @@ import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   meshFromJSON, meshFromBin, composeCharacter, meshCharacter, collapseRig, riggedModelDef, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks, sunPathFrom, applySunPair, blendLook,
+  createRipples, defineWadeSplash, wadeSplashAt,
 } from '../../../../engine/index.js';
 import {
   runGpuCompare, compareCells, meshCellCap, compareGeometry, compareLight, describeCellNormals, poisonAllCells, unpackReadback,
@@ -531,6 +532,23 @@ function buildCompareRuns(ctx) {
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: riverFord (RIVER-03, shallow reach, grazing, shore foam on the bank contour, tick 600, t 10 s)',
     cam: { x: waterEye.x + 6, y: waterEye.y + 5, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -4 }, real: true, meshOnly: true, sun: SUN_135_30, timeSec: 10,
     before: riverPose('cmp.riverFord', fordPts, 5, 0.01, 0.8) });
+  // US-055a (architecture.md 38.47): wade splash droplets (pooled particles) + 3 ripple rings at fixed ages, on the ford reach.
+  // Particles are cleared before every pose; fb.ripples is set only for this pose and reset next to that clear().
+  const wadeRipples = createRipples();
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: wadeSplash (US-055a, ford, 12 particle steps + rings at ages 0.2/0.5/0.8 s, t 10 s)',
+    cam: { x: waterEye.x + 6, y: waterEye.y + 5, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -4 }, real: true, meshOnly: true, sun: SUN_135_30, timeSec: 10,
+    before: () => {
+      riverPose('cmp.riverFord', fordPts, 5, 0.01, 0.8)();
+      const fw = forwardOf(250, [0, 0]); // 3 m ahead of the camera
+      const fx = waterEye.x + 6 + fw[0] * 3, fy = waterEye.y + 5 + fw[1] * 3;
+      engine.particles.clear(); wadeRipples.clear();
+      defineWadeSplash(engine.particles);
+      const z = groundZ(waterEye.x, waterEye.y) + 0.6;
+      wadeSplashAt(engine.particles, fx, fy, z, 1);
+      wadeRipples.add(fx, fy, 0.8, 9.8); wadeRipples.add(fx, fy, 0.6, 9.5); wadeRipples.add(fx, fy, 0.4, 9.2);
+      for (let i = 0; i < 12; i++) engine.particles.step();
+      fbCompare.ripples = wadeRipples;
+    } });
   const steepPts = Array.from({ length: 9 }, (_, i) => [waterEye.x + 6 - 10 * i, waterEye.y + 3 * Math.sin(i * 0.6)]);
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: riverSteep (RIVER-03, 0.2 m/m slope, rapids foam, flow streaks stretch, tick 600, t 10 s)',
     cam: { x: waterEye.x + 9, y: waterEye.y, z: groundZ(waterEye.x, waterEye.y) + 9, yawDeg: 270, pitchDeg: -22 }, real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, timeSec: 10,
@@ -935,6 +953,7 @@ async function runGpuCompareSceneMode(ctx) {
     // particles) - only the `particles` pose's own `before()` hook repopulates it, so a
     // pose that runs after it never inherits stray live particles from a previous pose.
     if (engine.particles) engine.particles.clear();
+    fbCompare.ripples = null; // US-055a: only the wadeSplash pose sets it
     resetInstances();
     if (world.terrain) while (terrainMeshSetFor(world.terrain).step(1000));
     if (real) {
