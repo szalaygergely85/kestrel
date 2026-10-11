@@ -615,3 +615,9 @@ B2 2026-10-11 (OB-061 dark mid-distance trees, kestrel-2 branch ob061-trees, unc
 - `coplanar-lint` exits 0 (same-tier 0). tower.level.json: prop `rubble2` (14.5,8.5,0.6) -> (14.5,8.53,0.55) (sweep of x/y/z; 5 cm sunk into the R cell, 3 cm shifted; gondola untouched).
 - level:tower x terrain: the 1 m2 is step 8 (cell 20,6; z 2.4, not terrainFloor -> terrain carved there by World.buildCarveMask, nothing drawn). The lint's terrain tier is `groundAt` (follows the level: step 8 -> 2.42 moved the "terrain" to 2.42), so a content edit cannot clear it: allow-listed in tools/coplanar-allow.json with the reason.
 - coplanar-lint.test.mjs now asserts 0 same-tier world pairs. `run-tests --filter coplanar,content,tower,route,check-deps` 23/23 PASS; validate-content OK. Not re-checked in a browser (Node only).
+
+### OB-067 ground glyph world-anchored + far calm (38.50 OB-054b/c, kestrel-5, Node only, arch-review)
+- Glyph (hB), glint, close features now keyed on the fixed 1 m world cell (no distance-following cellSz); close glyph set/features hand over at a per-patch 0.6..1.0 x closeBand; glint re-rolls every 10 s (GLINT_RATE 0.1).
+- Far calm: past a per-patch 48..80 m the tier dither is off (hA 0.5) and the glyph uses a coarse 4 m cell (CALM_AT0/CALM_SPAN/FAR_GLYPH_CELL in terrainShade.js, same in WGSL). Not designer-reauthored glyph set (c's TLOOK part left).
+- Cell index is Math.fround(u) first in the JS twin (WGSL gets f32 u,v) for the gpucompare world_m1 waystoneDown tie; GPU u,v input noise itself unfixed.
+- Tests: glyph+colour identical 2..40 m (old code 678/1800 changed), slow walk 1 m (old 28/400 flips, now <5 %), f32-edge test; SHADE_WGSL pin 40766 -> 40573. gpucompare: all terrain rows change (glyph/glint/features); watch world_m1.
