@@ -27,7 +27,7 @@ export function gearIdFor(items, slot, tier) {
     m = new Map();
     for (const id of Object.keys(items)) {
       const e = items[id].equip;
-      if (items[id].kind === 'gear' && e) m.set(e.slot + '|' + e.tier, id);
+      if (items[id].kind === 'gear' && e && !items[id].unique) m.set(e.slot + '|' + e.tier, id);
     }
     gearCache.set(items, m);
   }

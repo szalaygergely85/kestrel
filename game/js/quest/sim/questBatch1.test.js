@@ -60,6 +60,7 @@ function openGates(b) {
   for (const o of files.questDef.objectives) { const w = o.when; if (w.type === 'flag') b.feed({ type: 'flag:set', key: w.id, value: w.equals }); else if (w.type === 'area') b.feed({ type: 'area:entered', id: w.id }); else if (w.type === 'item') b.feed({ type: 'item:got', id: w.id }); else if (w.type === 'beasts') for (const id of w.ids.slice(0, w.count)) b.feed({ type: 'beast:died', id }); }
   for (const id of ['tower.blade', 'burl.boars']) { b.accept(id); gate(id); b.handIn(id); }
   gate('mq.river.road'); gate('mq.ford.stones');
+  b.accept('mq.bend.call'); gate('mq.bend.call'); b.handIn('mq.bend.call'); // M4 story quests (sq.honey / rook.shiny / packet) open after mq.bend.call is DONE
 }
 openGates(book);
 assert.ok(book.statusOf('mq.river.road') >= 0);

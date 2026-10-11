@@ -122,17 +122,48 @@ export function defenceOf(eq, defs) {
   return total;
 }
 
-/** Fraction of damage removed for `points` defence: 0.03 per point, capped at 0.6. */
-export function reductionOf(points) {
-  const f = points * DEF_PER_POINT;
+/** Fraction of damage removed for `points` defence (+ `bonus`, a passive such as the night cloak): 0.03 per point, capped at 0.6. */
+export function reductionOf(points, bonus = 0) {
+  const f = points * DEF_PER_POINT + bonus;
   return f > DEF_CAP ? DEF_CAP : f < 0 ? 0 : f;
 }
 
 /** Damage taken after defence: round(n * (1 - reduction)), at least 1 for any positive hit. */
-export function applyDefence(n, points) {
+export function applyDefence(n, points, bonus = 0) {
   if (!(n > 0)) return 0;
-  const r = Math.round(n * (1 - reductionOf(points)));
+  const r = Math.round(n * (1 - reductionOf(points, bonus)));
   return r < 1 ? 1 : r;
+}
+
+// ---- QL-19 passives: `defs[id].equip.passive` = {nightDef?: number, wetStone?: true}. Pure, no allocation. ----
+export const NIGHT_FROM = 21, NIGHT_TO = 5, WET_SLOW_S = 0.4, WET_SLOW_MUL = 0.5;
+/** Night = clock hour in [21, 24) or [0, 5). */
+export function isNight(hour) { return hour >= NIGHT_FROM || hour < NIGHT_TO; }
+/** Extra damage reduction (0.1 for a worn cloak) from the worn pieces' `nightDef` passive, only at night. Stays inside DEF_CAP via reductionOf. */
+export function nightBonus(eq, defs, hour) {
+  if (!isNight(hour)) return 0;
+  let b = 0;
+  for (let i = 0; i < EQUIP_SLOTS.length; i++) {
+    const id = eq[EQUIP_SLOTS[i]];
+    if (id === null || id === undefined || EQUIP_SLOTS[i] === 'quiver') continue;
+    const d = defs[id], p = d && d.equip && d.equip.passive;
+    if (p && p.nightDef > 0) b += p.nightDef;
+  }
+  return b;
+}
+/** True when a worn piece has the `wetStone` passive (River Boots): sure footing on wet stepping stones. */
+export function hasSureFooting(eq, defs) {
+  const id = eq.feet, d = id ? defs[id] : null;
+  return !!(d && d.equip && d.equip.passive && d.equip.passive.wetStone);
+}
+/**
+ * Wet stepping stone rule: a SPRINT onto a `wet` stone without sure footing gives a 0.4 s slow step (speed x0.5).
+ * `st` = {t} persistent per player; call once per step with the step's facts. Returns the speed multiplier (1 = none).
+ */
+export function wetStoneStep(st, eq, defs, sprinting, onWetStone, wasOnWetStone, dt) {
+  if (st.t > 0) st.t = st.t > dt ? st.t - dt : 0;
+  if (sprinting && onWetStone && !wasOnWetStone && !hasSureFooting(eq, defs)) st.t = WET_SLOW_S;
+  return st.t > 0 ? WET_SLOW_MUL : 1;
 }
 
 /** Derives inventory.left/right (OB-017): LEFT = main hand (main, or ranged with the bow set out), RIGHT = off hand (null with the bow). */

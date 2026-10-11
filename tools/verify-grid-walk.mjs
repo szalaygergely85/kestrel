@@ -47,7 +47,7 @@ const swaps = [], swapMs = []; let late = 0;
 world.events.on('world:band', (e) => { swaps.push(e.from + '>' + e.to); swapMs.push(world.lastSwapMs); });
 world.events.on('band:late', () => { late++; });
 
-function walk(name, wps, maxWp = 4000) {
+function walk(name, wps, maxWp = 4000, expectBlocked = false) {
   const tr = player.transform, rec = { name, ok: true, fell: false, steps: 0, stuck: null };
   for (let i = 0; i < wps.length && rec.ok; i++) {
     let best = Infinity, bestAt = 0, bias = 0, biasLeft = 0, tries = 0; // slope/prop slide-off: steer +-50/100 deg for 45 steps after 60 stalled steps (as route-walk detour)
@@ -68,16 +68,19 @@ function walk(name, wps, maxWp = 4000) {
     }
   }
   rec.end = { x: +tr.x.toFixed(1), y: +tr.y.toFixed(1) };
+  if (expectBlocked) { rec.ok = true; rec.stuck = null; } // bound probe: stopping at the bound or walking on to the far waypoint are both fine, only a fall (checked by the caller) fails
   return rec;
 }
 const legs = [
   walk('tower hillside -> waystone -> bend relay', [{ x: 1420, y: 1032 }, { x: 1350, y: 1050 }, { x: 1270, y: 1042 }]),
   walk('relay -> ford stones', [{ x: 1180, y: 1062 }, { x: 1090, y: 1070 }, { x: 1046, y: 1069 }, ...stones, { x: 1010, y: 1069 }]),
   walk('ford -> crossroads', [{ x: 998, y: 1064 }, { x: 994, y: 1058 }]),
-  walk('crossroads -> lake edge (Glasswater south shore)', [{ x: 1010, y: 900 }, { x: 1150, y: 760 }, { x: 1235, y: 600 }], 9000),
+  walk('crossroads -> outwall bound probe (west, no fall)', [{ x: 998, y: 1075 }, { x: 900, y: 1075 }], 2500, true),
+  walk('outwall -> lake edge (Glasswater south shore)', [{ x: 998, y: 1075 }, { x: 994, y: 1058 }, { x: 1010, y: 900 }, { x: 1150, y: 760 }, { x: 1237.5, y: 605 }], 9000),
+  walk('lake edge -> back to the tower (leg 10 return)', [{ x: 1150, y: 760 }, { x: 1010, y: 900 }, { x: 994, y: 1058 }, { x: 1010, y: 1069 }, ...stones.slice().reverse(), { x: 1090, y: 1070 }, { x: 1270, y: 1042 }, { x: 1420, y: 1032 }, { x: 1470, y: 1029 }], 9000),
 ];
 const res = { bandId: world.bandId, swaps, bandLate: late, maxSwapMs: +Math.max(0, ...swapMs).toFixed(2), legs };
-const ok = legs.every((l) => l.ok && !l.fell) && swaps.length >= 1 && late === 0;
+const ok = legs.every((l) => l.ok && !l.fell) && swaps.length >= 1 && late === 0 && res.maxSwapMs <= 16; // MAP-14: max swap frame <= 16 ms
 if (asJson) console.log(JSON.stringify({ ok, ...res })); else {
   for (const l of legs) console.log(`${l.ok && !l.fell ? 'ok  ' : 'FAIL'} ${l.name.padEnd(52)} steps ${String(l.steps).padStart(5)} end ${l.end.x},${l.end.y}${l.stuck ? ' stuck ' + JSON.stringify(l.stuck) : ''}${l.fell ? ' FELL' : ''}`);
   console.log(`grid walk: ${ok ? 'PASS' : 'FAIL'} swaps ${swaps.join(',') || '-'} band:late ${late} max swap ${res.maxSwapMs} ms final zone ${world.bandId}`);

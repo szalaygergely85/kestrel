@@ -6,10 +6,10 @@ import { MAX_STRUCTS } from '../WorldTextures.js';
 import { StructMaskAtlas } from '../StructMaskAtlas.js';
 import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, DRAW_FLAG_NO_CULL, MAX_DRAW_ITEMS } from '../../../mesh/DrawList.js';
 import { MeshGroupSet, addMeshStructuresBatched } from '../../../mesh/meshGroups.js';
-import { instancedRanges } from '../../../mesh/DrawList.js';
+import { instancedRanges, noteListOverflow, MAX_LIST_INSTANCES } from '../../../mesh/DrawList.js';
 import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../../mesh/voxelMesh.js';
-import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME } from '../../../mesh/instances.js';
+import { INSTANCE_BYTES } from '../../../mesh/instances.js';
 import { KIND_MODEL, FACE_PACKED } from '../../GBuffer.js';
 import { projTerms, shearProjection, pitchedTermsInto, createPitchedTerms, resolveProjection, viewProjAtOrigin } from '../../projection.js';
 import { frustumPlanes } from '../../../mesh/culling.js';
@@ -375,6 +375,7 @@ export class WgRasterPass {
       p.stats.instancesCulled = p._instances.stats.instancesCulled; p.stats.instancesLod1 = p._instances.stats.instancesLod1;
     }
     if (world.cloths && world.cloths.count) addCloths(list, world.cloths, this.planes, p._table ? p._table.idFor : undefined);
+    noteListOverflow(list); // OB-043
     list.cull(this.planes);
     this.vmList = p._viewModel ? p._viewModel.buildList(cam, this.pitched) : null;
     const team = p._table && p._table.team;
@@ -504,7 +505,7 @@ export class WgRasterPass {
           const item = list.items[i];
           if (item.type !== DRAW_INSTANCED || !item.mesh || !item.instBuf) continue;
           instances += item.instCount;
-          if (instances > MAX_INSTANCES_PER_FRAME) throw new Error(`instanced units over ${MAX_INSTANCES_PER_FRAME} per frame`);
+          if (instances > MAX_LIST_INSTANCES) break; // OB-043: unreachable (DrawList.addInstances caps the list); never throw mid-pass
           // AUD-02: upload only the used rows, and nothing when the buffer's version is unchanged (writers bump `ib.version`; a buffer without one always uploads)
           const ib = item.instBuf, cnt = item.instCount;
           let ent = this.instanceBuffers.get(ib);

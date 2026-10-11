@@ -11,6 +11,7 @@ export const CHEST_TABLES = {
   chestBend: HEART,
   chestCrossroads: HEART,
   chestRook: { fixed: [{ item: 'arrow', n: 15 }], weighted: [], gear: { tier: 'sturdy' } },
+  chestBoots: { fixed: [{ item: 'gear.feet.riverBoots', n: 1 }], weighted: [] }, // QL-16: River Boots (unique, never rolled)
   chestHidden: { fixed: [], weighted: [], gear: { tier: 'fine' } },
 };
 

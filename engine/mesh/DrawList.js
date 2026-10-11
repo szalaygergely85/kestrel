@@ -61,8 +61,19 @@ export function instancedRanges(item) {
   return item.mesh.ranges;
 }
 
-/** Preallocated `DrawList` capacity (27.8: <= 60 draws expected in phase 1). */
-export const MAX_DRAW_ITEMS = 256;
+/** Preallocated camera `DrawList` capacity, counted BEFORE `cull()` (OB-043, 38.46: 256 -> 512; roadBend pre-cull peak 214). */
+export const MAX_DRAW_ITEMS = 512;
+/**
+ * OB-043 (38.46): items the placed-mesh GROUP feed (meshGroups.push, the only feed that grows with content) leaves free for
+ * the feeds pushed after it (terrain near+far+skirts, voxel pool <= 48, unit/tree/scatter instance groups, cloths <= 16).
+ */
+export const DRAW_TAIL_RESERVE = 192;
+/**
+ * OB-043: instances per list (`addInstances` drops a whole item past this, counted in `instDropped`) = instances.js
+ * MAX_INSTANCES_PER_FRAME (4096: units + trees + scatter) + meshGroups MAX_GROUPED_KEPT (2048). A literal (instances.js imports
+ * this module: no top-level use of its bindings here); DrawList.test.js pins the sum.
+ */
+export const MAX_LIST_INSTANCES = 6144;
 
 /** Structures cast per frame - same cap as `compositor.js`'s `MAX_STRUCTS` (structSeq is a 3-bit field, arch 7.2). */
 const MAX_STRUCTS = 8;
@@ -145,9 +156,18 @@ export class DrawList {
     this.items = new Array(capacity);
     for (let i = 0; i < capacity; i++) this.items[i] = makeDrawItem();
     this.count = 0;
+    /** OB-043: pushes refused this frame (list full); they wrote into `_sink`, nothing draws them. */
+    this.overflow = 0;
+    /** OB-043: instances summed over this frame's DRAW_INSTANCED items, and instances refused past MAX_LIST_INSTANCES. */
+    this.instTotal = 0;
+    this.instDropped = 0;
+    /** OB-043: true = throw on overflow (tests / dev probes); false (default, the game path) = degrade: drop + count. */
+    this.strict = false;
+    /** @type {DrawItem} scratch target of refused pushes (never in `items`, never drawn) */
+    this._sink = makeDrawItem();
   }
 
-  begin() { this.count = 0; }
+  begin() { this.count = 0; this.overflow = 0; this.instTotal = 0; this.instDropped = 0; }
 
   /**
    * @param {import('./MeshData.js').MeshData|null} mesh
@@ -155,8 +175,11 @@ export class DrawList {
    * @returns {DrawItem} the next preallocated item, reset to identity/0
    */
   push(mesh, type) {
-    if (this.count >= this.capacity) throw new Error(`DrawList.push: over capacity (${this.capacity})`);
-    const item = this.items[this.count++];
+    let item;
+    if (this.count >= this.capacity) { // OB-043: never throw in the game path; later pushes (push order is the priority) are dropped
+      if (this.strict) throw new Error(`DrawList.push: over capacity (${this.capacity})`);
+      this.overflow++; item = this._sink;
+    } else item = this.items[this.count++];
     resetDrawItem(item);
     item.mesh = mesh;
     item.type = type;
@@ -174,11 +197,14 @@ export class DrawList {
    * @param {import('./instances.js').InstanceBuffer} ib
    * @param {number} count
    * @param {number} [Rin] - RE-15c: precomputed radius (max over both LOD meshes); default = groupRadius(mesh, parts)
-   * @returns {DrawItem|null} null when count <= 0
+   * @returns {DrawItem|null} null when count <= 0, the list is full or the item would pass MAX_LIST_INSTANCES (OB-043: counted, not drawn)
    */
   addInstances(mesh, parts, ib, count, Rin) {
     if (count <= 0) return null;
     if (count > ib.capacity) throw new Error(`DrawList.addInstances: count ${count} > buffer capacity ${ib.capacity}`);
+    if (this.instTotal + count > MAX_LIST_INSTANCES) { if (this.strict) throw new Error(`DrawList.addInstances: over ${MAX_LIST_INSTANCES} instances`); this.instDropped += count; return null; }
+    if (this.count >= this.capacity) { this.push(mesh, DRAW_INSTANCED); return null; } // counts the overflow (or throws when strict)
+    this.instTotal += count;
     const item = this.push(mesh, DRAW_INSTANCED);
     item.instBuf = ib;
     item.instCount = count;
@@ -424,7 +450,11 @@ export class MeshDrawCache {
  * kept = min(requested, MAX_MESH_DRAWS) chosen by smallest distance/radius (ties: lower structure index); dropped = requested - kept.
  * @type {{requested: number, kept: number, dropped: number, frustum: number}}
  */
-export const meshFeedStats = { requested: 0, kept: 0, dropped: 0, frustum: 0 };
+export const meshFeedStats = { requested: 0, kept: 0, dropped: 0, frustum: 0, groupsDropped: 0, overflow: 0, instDropped: 0, drawItems: 0 };
+/** OB-043: copies the camera list's overflow counters (pre-cull item count, refused pushes / instances) into `meshFeedStats` (F3). Call right before `list.cull`. @param {DrawList} list */
+export function noteListOverflow(list) {
+  meshFeedStats.drawItems = list.count; meshFeedStats.overflow = list.overflow; meshFeedStats.instDropped = list.instDropped;
+}
 
 const _mOrder = new Int32Array(MAX_MESH_DRAWS);
 const _mDist = new Float64Array(MAX_MESH_DRAWS);
