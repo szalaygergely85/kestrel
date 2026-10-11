@@ -94,18 +94,18 @@ function recAtAngle(id, angleFromNorthDeg, dist, extra = {}) {
 const EYE_NORTH = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
 
 // ---------------------------------------------------------------------------
-// 1. Cone: 19 deg is a hit, 21 deg is a miss (default coneDeg = 20).
+// 1. Cone: 39 deg is a hit, 41 deg is a miss (default coneDeg = 40, OB-052).
 // ---------------------------------------------------------------------------
 {
   const w = makeWorld();
   const out = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 };
-  w.interactables = [recAtAngle('a19', 19, 1.0)];
+  w.interactables = [recAtAngle('a19', 39, 1.0)];
   findInteractTarget(w, EYE_NORTH, null, out);
-  ok('19 deg inside the 20 deg cone: a hit', out.targetKey === 's.a19', JSON.stringify(out));
+  ok('39 deg inside the 40 deg cone: a hit', out.targetKey === 's.a19', JSON.stringify(out));
 
-  w.interactables = [recAtAngle('a21', 21, 1.0)];
+  w.interactables = [recAtAngle('a21', 41, 1.0)];
   findInteractTarget(w, EYE_NORTH, null, out);
-  ok('21 deg outside the 20 deg cone: a miss', out.targetKey === null, JSON.stringify(out));
+  ok('41 deg outside the 40 deg cone: a miss', out.targetKey === null, JSON.stringify(out));
 }
 
 // ---------------------------------------------------------------------------
@@ -303,6 +303,71 @@ const EYE_NORTH = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
   w.interactables = [recAtAngle('c', 50, 1.0)];
   findInteractTarget(w, EYE_NORTH, { nearDist: 1.5 }, out);
   ok('custom nearDist 1.5: 1.0 m / 50 deg picked', out.targetKey === 's.c');
+}
+
+// OB-052: forgiving targeting.
+{
+  const w = makeWorld();
+  const fresh = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
+  let out = fresh();
+  w.interactables = [recAtAngle('o30', 30, 1.5)];
+  findInteractTarget(w, EYE_NORTH, null, out);
+  ok('30 deg off-axis at 1.5 m is targeted', out.targetKey === 's.o30', JSON.stringify(out));
+
+  // hysteresis: 46 deg is outside the 40 cone but inside 40+15 -> a held target stays, a fresh one is not picked
+  w.interactables = [recAtAngle('h', 36, 1.0)];
+  out = fresh(); findInteractTarget(w, EYE_NORTH, null, out);
+  ok('hyst: acquired at 36 deg', out.targetKey === 's.h');
+  w.interactables = [recAtAngle('h', 50, 1.0)];
+  findInteractTarget(w, EYE_NORTH, null, out);
+  ok('hyst: 50 deg keeps the held target', out.targetKey === 's.h');
+  out = fresh(); findInteractTarget(w, EYE_NORTH, null, out);
+  ok('hyst: 50 deg is not acquired fresh', out.targetKey === null);
+  w.interactables = [recAtAngle('h', 60, 1.0)];
+  out.targetKey = 's.h'; findInteractTarget(w, EYE_NORTH, null, out);
+  ok('hyst: 60 deg (beyond cone+15) drops it', out.targetKey === null);
+  w.interactables = [recAtAngle('h', 0, 2.0)];
+  out.targetKey = 's.h'; findInteractTarget(w, EYE_NORTH, { reach: 2.0 }, out);
+  ok('hyst: 2.0 m held at reach 2.0', out.targetKey === 's.h');
+  w.interactables = [recAtAngle('h', 0, 2.2, { radius: 3 })];
+  out.targetKey = 's.h'; findInteractTarget(w, EYE_NORTH, { reach: 2.0 }, out);
+  ok('hyst: 2.2 m (reach+0.3 = 2.3) still held', out.targetKey === 's.h');
+  w.interactables = [recAtAngle('h', 0, 2.4, { radius: 3 })];
+  out.targetKey = 's.h'; findInteractTarget(w, EYE_NORTH, { reach: 2.0 }, out);
+  ok('hyst: 2.4 m beyond reach+0.3 dropped', out.targetKey === null);
+
+  // scoring: closer slightly-off-centre beats far dead-centre; a clearly better challenger replaces the held one, a marginal one does not
+  w.interactables = [recAtAngle('far', 0, 1.7), recAtAngle('close', 12, 0.7)];
+  out = fresh(); findInteractTarget(w, EYE_NORTH, null, out);
+  ok('score: close 12 deg beats far dead-centre', out.targetKey === 's.close', JSON.stringify(out));
+  w.interactables = [recAtAngle('a', 10, 1.0), recAtAngle('b', 8, 1.0)];
+  out = fresh(); out.targetKey = 's.a'; findInteractTarget(w, EYE_NORTH, null, out);
+  ok('hyst: marginally better challenger does not steal', out.targetKey === 's.a');
+  w.interactables = [recAtAngle('a', 30, 1.0), recAtAngle('b', 2, 1.0)];
+  out.targetKey = 's.a'; findInteractTarget(w, EYE_NORTH, null, out);
+  ok('hyst: clearly better challenger replaces', out.targetKey === 's.b');
+
+  // reach / LOS
+  w.interactables = [recAtAngle('r', 0, 2.2)];
+  out = fresh(); findInteractTarget(w, EYE_NORTH, null, out);
+  ok('nothing beyond reach', out.targetKey === null);
+  w.interactables = [recAtAngle('l', 0, 1.0)];
+  w._blockCell(0, -1); // the cell between (0,0) and (0,-1.0]
+  out = fresh(); findInteractTarget(w, EYE_NORTH, null, out);
+  ok('LOS still blocks', out.targetKey === null);
+
+  // pitch: eye at 1.6 m, objects at foot (0.3) and head (2.2) height, 1.2 m ahead
+  const w2 = makeWorld();
+  const mk = (z) => ({ ...recAtAngle('p', 0, 1.2), y: -1.2, z });
+  const hits = (pitch, z) => {
+    w2.interactables = [mk(z)]; const o = fresh();
+    findInteractTarget(w2, { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: pitch }, { reach: 2.5 }, o); return o.targetKey === 's.p';
+  };
+  ok('pitch -40: foot-height object targeted', hits(-40, 0.3));
+  ok('pitch -20: foot-height object targeted', hits(-20, 0.3));
+  ok('pitch 0: foot-height object (48 deg below) not targeted', !hits(0, 0.3));
+  ok('pitch +20: head-height object targeted', hits(20, 2.2));
+  ok('pitch -40: head-height object not targeted', !hits(-40, 2.2));
 }
 
 console.log(`interaction.test.js: ${pass} passed, ${fail} failed`);
