@@ -52,6 +52,8 @@ Two main sessions on two computers share the GitHub repo `origin` (github.com/sz
 - **Cross-track (owner, 2026-09-26):** while the two PCs don't run at the same time, PC-B may take PC-A-track items (including `engine/`) that PC-A puts in its queue; engine items end in `arch-review` for PC-A.
 - **Ports:** PC-A agents use 9000-9499, PC-B agents 9500-9999; 8000 is the owner's server on each PC. The `../game_project_test` worktree is per PC.
 
+- **Owner bug log (owner, 2026-10-11):** every bug/finding the owner reports gets an `OB-NNN` row in `docs/bugs.md` at once (before work starts); agent prompts, commits and lane entries cite it; status open -> fixed <commit> -> verified by the owner.
+
 ## Token budget rules (main session)
 - **architect**: use fable only for first reviews of core engine code (render/physics/world) and big tech notes. Re-reviews, questions and small stories use `model: opus`. For a re-review, spawn a fresh opus architect with only the diff + the prior verdict (resuming a long-context agent re-sends its whole transcript and cost ~200k for a 4-tool re-review). Resume only agents with short histories.
 - Every architect/PO prompt names the diff/commits and the exact doc sections to read, says "run probes only if something looks wrong", and asks for a short reply (verdict + required changes).

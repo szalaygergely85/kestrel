@@ -83,6 +83,20 @@
                'cinder', 'scorch', 'scorch'],
       emissive: false, emissiveFog: 0, sizeM: 0.25
     },
+    // --- farSmoke (OB-020 v3): billowing plume for the far "smoke means people" landmark. Puffs are born ~1.5 m wide and
+    // swell to ~7 m while they climb (sizeM -> sizeEndM), so from 25 m it is a soft cloud column and from 100+ m still a
+    // column (1-cell far floor). Dense `O` at the base thinning to `. '` at the top; emissive light grey (fog tints it).
+    // ~2.6 m/s climb, 9-11 s, 7 deg cone, leans with the wind. 4 puffs/s, 48 live per plume (cheap: <= 12x12 cells each).
+    farSmoke: {
+      rate: 4, burst: 0,
+      life: [9.0, 11.0], speed: [0.5, 1.0],
+      dir: [0, 0, 1], spreadDeg: 7, box: [0.4, 0.4, 0.05],
+      accelZ: 1.8, drag: 0.7, wind: 1,
+      maxLive: 48, killBelow: null,
+      glyphs:  "OOO%o;:~-'.",
+      colors: ['ashLight', 'ashLight', 'ashLight', 'ashLight', 'ash', 'ash', 'ash', 'ashLight'],
+      emissive: true, emissiveFog: 0.6, sizeM: 1.5, sizeEndM: 7
+    },
     // --- sparks: the sword-hit burst (burstAt, cone along the hit normal via setEmitterDir; default axis = up).
     // 10 sparks at 2.5-5 m/s in a wide 50 deg cone, real gravity, 0.3-0.4 s: a short bright spray that arcs down.
     // White-hot `*` -> `+` -> ember `'` `.`. Kill plane 1.5 m below the hit (the floor at sword height).

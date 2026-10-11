@@ -42,4 +42,20 @@ if(typeof global.gc==='function'){
   for(let i=0;i<10000;i++){drawn.step(0);drawn.draw(ui);}
   global.gc();assert.ok(process.memoryUsage().heapUsed-start<65536,'draw/step do not allocate per frame after warm-up');
 }
+// EQ-10: a gear drop shows the tier colour on the title and "Defence n" on the count row.
+{
+  const g=rig(true).view, gui=createUiLayer({cols:160});
+  for(const [id,tier,hex] of [['gear.body.jerkin.worn','worn','uiHint'],['gear.head.hood.sturdy','sturdy','heroGreen'],['gear.feet.boots.fine','fine','gold']]){
+    g.clear();g.push(id);g.step(0.3);g.draw(gui);
+    const ln=(y,x,n)=>{let o='';for(let i=0;i<n;i++)o+=String.fromCharCode(gui.cells.glyphIdx[y*gui.cols+x+i]+32);return o;};
+    const d=A.items.defs[id];
+    assert.ok(ln(P.y+7,P.x+15,20).startsWith('Defence '+d.equip.def),id+' Defence line: '+ln(P.y+7,P.x+15,20));
+    assert.ok(ln(P.y+6,P.x+15,20).startsWith('Gear - '+d.equip.slot),id+' kind line');
+    const tx=(P.w-(style.titleBar.decor[0]+d.name+style.titleBar.decor[1]).length>>1)+style.titleBar.decor[0].length;
+    const fgAt=(y,x)=>{const i=(y*gui.cols+x)*4;return [gui.cells.fg[i],gui.cells.fg[i+1],gui.cells.fg[i+2]];};
+    const want=[1,3,5].map(i=>parseInt(style.hex[hex].slice(i,i+2),16));
+    const got=fgAt(P.y+7,P.x+15);
+    assert.ok(got.every((v,k)=>Math.abs(v-want[k])<=2),tier+' count-row colour '+got+' vs '+want);
+  }
+}
 console.log('itemGetCard: guarded key, 1.5s timer, three-item order, pause/gaps, style drawing, clear and idle GC PASS');

@@ -65,7 +65,7 @@ const pa = json.accessors[prim.attributes.POSITION];
 let mmOk = true;
 for (let k = 0; k < 3; k++) { let lo = Infinity, hi = -Infinity; for (let i = k; i < pos.length; i += 3) { lo = Math.min(lo, pos[i]); hi = Math.max(hi, pos[i]); } if (lo !== pa.min[k] || hi !== pa.max[k]) mmOk = false; }
 ok('POSITION min/max exact', mmOk);
-ok('character is 1.75 m tall + default hair (Y up, <= 1.78 m) and > 0.4 m wide (D-059 restyle)', Math.abs(pa.max[1] - pa.min[1] - 1.75) < 0.03 && pa.min[1] >= -0.001 && pa.max[0] - pa.min[0] > 0.4, `${pa.min} ${pa.max}`);
+ok('character is 1.75 m tall + default hair (Y up, <= 1.82 m, OB-025 taller hair) and > 0.4 m wide (D-059 restyle)', pa.max[1] - pa.min[1] >= 1.74 && pa.max[1] - pa.min[1] <= 1.82 && pa.min[1] >= -0.001 && pa.max[0] - pa.min[0] > 0.4, `${pa.min} ${pa.max}`);
 ok('normals are unit axis vectors', (() => { for (let i = 0; i < nv; i++) { const l = Math.hypot(nrm[3 * i], nrm[3 * i + 1], nrm[3 * i + 2]); if (Math.abs(l - 1) > 1e-6) return false; } return true; })());
 
 // ---- winding: the right-handed geometric normal of every triangle equals the exported NORMAL (front face = CCW)
@@ -191,8 +191,11 @@ ok('same recipe gives the same bytes', sha(again) === sha(glb));
 const shuffled = {}; for (const k of Object.keys(recipe).reverse()) shuffled[k] = recipe[k];
 ok('recipe key order does not change the bytes', sha(buildGlb(kit, shuffled, { clips: DEMO_CLIPS }).glb) === sha(glb));
 const other = buildGlb(kit, { ...recipe, height: 2, skin: 'dark' }).glb;
+const glbJson = (b) => JSON.parse(new TextDecoder().decode(b.subarray(20, 20 + new DataView(b.buffer, b.byteOffset).getUint32(12, true))));
+const noClip = buildGlb(kit, recipe, { clips: {} }).glb;
 ok('another recipe gives other bytes', sha(other) !== sha(glb));
-ok('no-clip export has no animations key', !JSON.parse(new TextDecoder().decode(other.subarray(20, 20 + new DataView(other.buffer, other.byteOffset).getUint32(12, true)))).animations);
+ok('explicit empty clip set has no animations key', !glbJson(noClip).animations);
+ok('default export (kit v4 clips) contains idle + walk', (() => { const a = glbJson(buildGlb(kit, recipe).glb).animations || []; const n = a.map((x) => x.name); return n.includes('idle') && n.includes('walk'); })());
 ok('colorMode white is the default', sha(exportGlb(rigged, { rgbOf, recipe, partMap: kit.partMap, colorMode: 'white' })) === sha(glb));
 const rgbGlb = exportGlb(rigged, { rgbOf, recipe, partMap: kit.partMap, colorMode: 'rgb' });
 ok('colorMode rgb gives other bytes, linear palette COLOR_0', sha(rgbGlb) !== sha(glb));
@@ -203,7 +206,7 @@ try { exportGlb(rigged, { rgbOf: () => null }); } catch { threw++; }
 ok('missing rgbOf / object partMap / missing colour throw', threw === 3);
 
 // golden: pinned hash of the default recipe, demo clips (changes only when the format intentionally changes)
-const GOLDEN = '4e145d90149c3c02bfb8c10e25a34c0c29222cc2ba72837a18701d75a3ed71bb'; // 2026-10-10: CHARGEN-26c detail pass (was b5c9fb1a...); update on an intended kit/format change
+const GOLDEN = 'e8cfbe67581655233df30681fdd9fe4cecd0d2603a75f4285532b5dd2549670d'; // 2026-10-11: OB-025 human kit v4 (was 4e145d90...); update on an intended kit/format change
 if (sha(glb) !== GOLDEN) console.log('golden sha256 now:', sha(glb));
 ok('real kit validates (array partMap)', validateKit(JSON.parse(JSON.stringify(kit)), globalThis.ASSETS.palette.materials).errors.length === 0);
 ok('golden SHA-256 of the default recipe (demo clips)', sha(glb) === GOLDEN);

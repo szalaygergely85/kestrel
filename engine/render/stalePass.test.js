@@ -16,6 +16,7 @@ function mockDevice() {
     endPass() { if (!d._pass) throw new Error('no open pass'); d._pass = null; },
     abortPass() { if (!d._pass) return null; d._pass = null; d.aborted++; return 'target mock'; },
     bind(p) { if (p && p.gpu === null) throw new Error('pipeline still compiling'); },
+    resetFrame() { d._pass = null; d.resets = (d.resets || 0) + 1; },
     draw() {}, submit() { if (d._pass) throw new Error('submit: a pass is still open'); d.submits++; },
   };
   return d;
@@ -36,7 +37,7 @@ const quiet = (fn) => { const e = console.error, w = console.warn; const log = [
   ok('present aborts a pass the cell hook left open', d.aborted === 2 && d.submits === 2 && !d._pass, log.join('|'));
   rt._cellPass = null; rt._draw = () => { throw new Error('bind failed inside the present pass'); };
   let threw = false; try { quiet(() => rt.present()); } catch (_) { threw = true; }
-  ok('a throw inside the present pass drops the frame: no rethrow, pass + timer span ended, frame submitted (ring reset)', !threw && !d._pass && !d.timerOpen && d.submits === 3 && rt.failedFrames === 1);
+  ok('a throw inside the present pass drops the frame: no rethrow, pass + timer span ended, frame submitted (ring reset)', !threw && !d._pass && !d.timerOpen && d.submits === 3 && rt.failedFrames === 1 && rt.stats.droppedFrames === 1);
   rt._draw = () => {};
   quiet(() => rt.present());
   ok('the next present runs normally', d.submits === 4);

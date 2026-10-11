@@ -38,6 +38,12 @@ export function validateGiverQuest(def) {
     if (!Array.isArray(def.giveOnAccept)) throw new Error('quest: invalid giveOnAccept');
     for (const it of def.giveOnAccept) if (!it || typeof it.id !== 'string' || !Number.isInteger(it.n) || it.n < 1) throw new Error('quest: invalid giveOnAccept item');
   }
+  if (def.giveOnTalk !== undefined) { // EQ-13: same shape as giveOnAccept (given when the quest is accepted by talking to the giver)
+    if (!Array.isArray(def.giveOnTalk)) throw new Error('quest: invalid giveOnTalk');
+    for (const it of def.giveOnTalk) if (!it || typeof it.id !== 'string' || !Number.isInteger(it.n) || it.n < 1) throw new Error('quest: invalid giveOnTalk item');
+  }
+  if (def.requireItem !== undefined && (typeof def.requireItem !== 'string' || !def.requireItem)) throw new Error('quest: invalid requireItem');
+  if (def.requireEquipped !== undefined && (!Array.isArray(def.requireEquipped) || !def.requireEquipped.length || !def.requireEquipped.every(x => typeof x === 'string' && x))) throw new Error('quest: invalid requireEquipped');
   if (def.reward !== undefined) {
     if (!def.reward || !Array.isArray(def.reward.items)) throw new Error('quest: invalid reward');
     for (const it of def.reward.items) if (!it || typeof it.id !== 'string' || !Number.isInteger(it.n) || it.n < 1) throw new Error('quest: invalid reward item');
@@ -80,6 +86,28 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     for (const op of ACT_OPS) keys.set('q.' + id + '.' + op, { qi: i, op, act: true });
   }
 
+  // QL-T3 (38.44 item 9): fact -> listening quests (type -> id -> Int16Array) and quest -> dependents (opensAfter edges).
+  const listen = new Map(), deps = [];
+  for (let i = 0; i < n; i++) deps.push([]);
+  {
+    const tmp = new Map();
+    const add = (type, id, qi) => { let m = tmp.get(type); if (!m) tmp.set(type, m = new Map()); let l = m.get(id); if (!l) m.set(id, l = []); if (!l.includes(qi)) l.push(qi); };
+    for (let i = 1; i < n; i++) for (const o of entries[i].def.objectives) {
+      const w = o.when;
+      if (w.type === 'flag') add('flag:set', w.id, i);
+      else if (w.type === 'item') add('item:got', w.id, i);
+      else if (w.type === 'area') add('area:entered', w.id, i);
+      else if (w.type === 'beasts') for (const b of w.ids) add('beast:died', b, i);
+      else add('item:count', w.id, i); // collect / deliver
+    }
+    for (const [type, m] of tmp) { const out = new Map(); for (const [id, l] of m) out.set(id, Int16Array.from(l)); listen.set(type, out); }
+    requireSteps.forEach((r, j) => { for (const x of r) { const d = x.si === -2 ? deps[0] : deps[x.qi]; if (!d.includes(j)) d.push(j); } });
+  }
+  const mark = new Uint8Array(n), touched = new Int16Array(n);
+  let touchedN = 0;
+  const touch = i => { if (!mark[i]) { mark[i] = 1; touched[touchedN++] = i; } };
+  const touchWithDeps = i => { touch(i); const d = deps[i]; for (let k = 0; k < d.length; k++) touch(d[k]); };
+
   const book = { main: entries[0].state, version: 0, onChange: null, lastReward: null, count: n, packOps: null /* QUESTS-01: {count(id), remove(id, n), add?(id, n) -> n added} set by the game; deliver needs it */ };
   const packCounts = new Map(); // last absolute pack count per item id (runtime mirror of item:count, re-applied on abandon)
 
@@ -102,14 +130,22 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   }
   function emit(name, id) { if (book.onChange) book.onChange(name, id); }
   // Fire quest:ready on a transition into READY (after progress or accept).
-  function settle() {
-    for (let i = 1; i < n; i++) {
-      const s = statusOf(i), e = entries[i];
-      if (s === READY && e.prev !== READY) emit('quest:ready', e.def.id);
-      if (e.auto && s === DONE && e.prev !== DONE) { book.lastReward = NO_REWARD; emit('quest:done', e.def.id); }
-      e.prev = s;
-    }
+  function settleOne(i) {
+    if (i === 0) return;
+    const s = statusOf(i), e = entries[i];
+    if (s === READY && e.prev !== READY) emit('quest:ready', e.def.id);
+    if (e.auto && s === DONE && e.prev !== DONE) { book.lastReward = NO_REWARD; emit('quest:done', e.def.id); }
+    e.prev = s;
   }
+  function settle() { for (let i = 1; i < n; i++) settleOne(i); }
+  /** Settle only the touched quests (+ dependents), in index order (same emit order as the brute-force pass), then clear the list. */
+  function settleTouched() {
+    for (let a = 1; a < touchedN; a++) { const v = touched[a]; let b = a - 1; while (b >= 0 && touched[b] > v) { touched[b + 1] = touched[b]; b--; } touched[b + 1] = v; }
+    for (let k = 0; k < touchedN; k++) mark[touched[k]] = 0;
+    const cnt = touchedN; touchedN = 0;
+    for (let k = 0; k < cnt; k++) settleOne(touched[k]);
+  }
+  function settleQuest(i) { touchWithDeps(i); settleTouched(); }
   for (let i = 0; i < n; i++) entries[i].prev = statusOf(i);
 
   book.STATUS_NAMES = STATUS_NAMES;
@@ -122,6 +158,22 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   book.feed = function feed(event) {
     let changed = false;
     if (event && event.type === 'item:count' && typeof event.id === 'string' && Number.isInteger(event.n)) { if (event.n > 0) packCounts.set(event.id, event.n); else packCounts.delete(event.id); }
+    if (applyQuestEvent(entries[0].state, event, entries[0].def)) { changed = true; touchWithDeps(0); } // main always takes every fact (flags, ui.tracked)
+    const byType = event ? listen.get(event.type) : undefined;
+    if (byType !== undefined) {
+      const l = byType.get(event.type === 'flag:set' ? event.key : event.id);
+      if (l !== undefined) for (let k = 0; k < l.length; k++) {
+        const i = l[k];
+        if (applyQuestEvent(entries[i].state, event, entries[i].def)) { changed = true; touchWithDeps(i); }
+      }
+    }
+    if (changed) { book.version++; settleTouched(); }
+    return changed;
+  };
+  /** Reference implementation (tests): every quest sees every event, all statuses recomputed. */
+  book.feedBrute = function feedBrute(event) {
+    let changed = false;
+    if (event && event.type === 'item:count' && typeof event.id === 'string' && Number.isInteger(event.n)) { if (event.n > 0) packCounts.set(event.id, event.n); else packCounts.delete(event.id); }
     for (let i = 0; i < n; i++) if (applyQuestEvent(entries[i].state, event, entries[i].def)) changed = true;
     if (changed) { book.version++; settle(); }
     return changed;
@@ -132,9 +184,9 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     const e = entries[i];
     e.accepted = true; e.seq = ++seqCounter; book.version++;
     e.given = []; // QL-04: items handed over on accept (taken back on abandon)
-    if (e.def.giveOnAccept && book.packOps && book.packOps.add) for (const it of e.def.giveOnAccept) { const k = book.packOps.add(it.id, it.n); if (k > 0) e.given.push({ id: it.id, n: k }); }
+    if (book.packOps && book.packOps.add) for (const list of [e.def.giveOnAccept, e.def.giveOnTalk]) if (list) for (const it of list) { const k = book.packOps.add(it.id, it.n); if (k > 0) e.given.push({ id: it.id, n: k }); }
     emit('quest:accepted', id);
-    settle();
+    settleQuest(i);
     return true;
   };
   /** Returns the frozen reward ({items:[]} when none) or null unless the quest is ready. The game grants it. */
@@ -142,6 +194,9 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     const i = byId.get(id);
     if (i === undefined || i === 0 || statusOf(i) !== READY) return null;
     const e = entries[i];
+    // EQ-13: hand-in needs the item in the pack (requireItem, kept) and the gear worn (requireEquipped; packOps.equipped(id) is set by the game)
+    if (e.def.requireItem && (!book.packOps || book.packOps.count(e.def.requireItem) < 1)) return null;
+    if (e.def.requireEquipped && (!book.packOps || !book.packOps.equipped || !e.def.requireEquipped.every(id => book.packOps.equipped(id)))) return null;
     const dl = e.def.objectives.filter(o => o.when.type === 'deliver').map(o => o.when);
     if (dl.length) { // QUESTS-01: items must still be in the pack; they leave it at hand-in
       if (!book.packOps) return null;
@@ -153,6 +208,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     book.lastReward = reward;
     book.feed({ type: 'flag:set', key: 'quest.' + id + '.done', value: true });
     e.prev = DONE;
+    settleQuest(i); // dependents of this hand-in (requires {quest, done})
     emit('quest:done', id);
     return reward;
   };
@@ -169,11 +225,11 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     e.state = createQuest(e.def, null); e.accepted = false; e.seq = 0; e.prev = 0;
     if (e.given.length && book.packOps) for (const g of e.given) book.packOps.remove(g.id, Math.min(g.n, book.packOps.count(g.id))); // QL-03/04: given items go back
     e.given = [];
-    for (const [item, c] of packCounts) applyQuestEvent(e.state, { type: 'item:count', id: item, n: c }, e.def);
+    for (const [item, c] of packCounts) if (listen.get('item:count')?.has(item)) applyQuestEvent(e.state, { type: 'item:count', id: item, n: c }, e.def);
     book.version++;
     if (entries[0].state.flags['ui.tracked'] === id) book.feed({ type: 'flag:set', key: 'ui.tracked', value: '' });
     emit('quest:abandoned', id);
-    settle();
+    settleQuest(byId.get(id));
     return true;
   };
   /** Item ids the quests count in the pack (collect/deliver), for the game's pack poll. */

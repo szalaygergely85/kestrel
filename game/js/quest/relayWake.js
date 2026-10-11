@@ -20,6 +20,18 @@ const TOAST_SEC = 4, TOAST_Y = 6, FG = [236, 226, 190], BG = [10, 11, 16];
 const DEAD = 0, WAKING = 1, AWAKE = 2;
 const WAKE_MAX_EXTRA = 3; // s after light-on + grow before a stuck wake is forced awake
 
+// QL-07 (D-011 SOS): the Bend relay blinks 3 short + 3 long, 3 times, once after it first wakes (not replayed on reload).
+const BEND_WS = 'ws_roadBend', PULSE_CYCLES = 3, PULSE_GAP = 1.5, PULSE_OFF = 0.12;
+const PULSE_SEQ = [0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.75, 0.25, 0.75, 0.25, 0.75, 0.25]; // on, off, on, off ... (seconds)
+const PULSE_CYCLE = PULSE_SEQ.reduce((a, b) => a + b, 0) + PULSE_GAP;
+/** Light factor 0..1 at pulse time t (seconds since the relay became awake); -1 when the pulse is over. Pure, allocation-free. */
+export function pulseFactor(t) {
+  if (t >= PULSE_CYCLES * PULSE_CYCLE) return -1;
+  let u = t % PULSE_CYCLE;
+  for (let i = 0; i < PULSE_SEQ.length; i++) { if (u < PULSE_SEQ[i]) return i % 2 === 0 ? 1 : PULSE_OFF; u -= PULSE_SEQ[i]; }
+  return 1; // the gap between cycles: steady
+}
+const FORD_WS = 'ws_ford', FLAG_MIRROR = 'mq.ford.mirror.glass'; // set by errands.mainSync while relay.mirror is in the pack
 const woken = (wsId) => 'waystone.' + wsId + '.woken';
 
 /** Seconds from the start of `wake` to the light switching on (voxel event glowOn, else relay wakeLightFrame / fps, else 0.25). */
@@ -57,7 +69,7 @@ export function createRelayWake(o) {
       entId: e.id, wsId: w.id, stone, notice: typeof w.notice === 'string' ? w.notice : 'relay', phase: DEAD, t: 0, delay: lightDelay(model), lightOn: false, growDone: false,
       growDur: preset && preset.grow && typeof preset.grow.duration === 'number' ? preset.grow.duration : 1,
       target: preset && typeof preset.intensity === 'number' ? preset.intensity : null,
-      rec: null,
+      rec: null, pulseT: -1, wasAwake: false,
     };
     // Reload/restart: a woken relay comes back awake + light on, no hum.
     if (world.state[woken(r.wsId)]) {
@@ -89,6 +101,7 @@ export function createRelayWake(o) {
       if (!r || r.phase === WAKING) return false;
       if (r.phase === AWAKE) { touch(r); return true; }
       if (!world.state[FLAG_ATTUNED] || (r.stone && !world.state[FLAG_STONE_TOLD]) || (!r.stone && !world.state[woken('waystone')])) { hint.left = TOAST_SEC; return false; } // gate: the crystal wakes stones
+      if (r.wsId === FORD_WS && !world.state[FLAG_MIRROR]) { hint.left = TOAST_SEC; return false; } // mq.ford.mirror: the mount is empty until the player holds relay.mirror
       const h = world.get(r.entId);
       if (h) h.play('wake');
       hum();
@@ -112,6 +125,12 @@ export function createRelayWake(o) {
             const lh = lights.entityHandle.get(r.entId);
             if (lh !== undefined) { lights.baseIntensity[lh] = r.target; r.growDone = true; }
           }
+          if (r.wsId === BEND_WS && r.pulseT >= 0 && r.target !== null && lights) { // SOS blink
+            r.pulseT += dt;
+            const lh = lights.entityHandle.get(r.entId), f = pulseFactor(r.pulseT);
+            if (lh !== undefined) lights.baseIntensity[lh] = r.target * (f < 0 ? 1 : f);
+            if (f < 0) r.pulseT = -1;
+          }
           continue;
         }
         const h = world.get(r.entId), d = h && h.data, c = d && (d.components.voxel || d.components.sprite);
@@ -124,10 +143,10 @@ export function createRelayWake(o) {
           if (lh !== undefined) lights.baseIntensity[lh] = r.target * frac;
         }
         if (c && c.anim === 'wake' && c.playing === false && h) h.play('awake');
-        if (frac >= 1 && c && c.anim === 'awake') { r.phase = AWAKE; r.growDone = true; }
+        if (frac >= 1 && c && c.anim === 'awake') { r.phase = AWAKE; r.growDone = true; r.pulseT = 0; }
         else if (r.t > r.delay + r.growDur + WAKE_MAX_EXTRA) { // model without a `wake` clip: never stay WAKING (E would be dead)
           if (d && d.components.light) d.components.light.on = true;
-          r.lightOn = true; r.phase = AWAKE; if (h) h.play('awake');
+          r.lightOn = true; r.phase = AWAKE; r.pulseT = 0; if (h) h.play('awake');
         }
       }
     },

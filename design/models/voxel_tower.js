@@ -10,8 +10,8 @@
  * WHAT THIS FILE SETS
  *   ASSETS.voxelModels.boulder        mossy granite boulder, r 0.6 m                      16x16x16 @ 0.075 m
  *   ASSETS.voxelModels.rubble0..2     fallen cut blocks + pebbles (= models.rubble.variants[0..2], level `variant`)
- *   ASSETS.voxelModels.canvasHeap     the wake spot: a pale linen tarp draped over a crate, 2.0 x 0.9 x 0.44 m, rope hem,
- *                                     folded-back corner, hollow where Wick lay (ART-OWN-002 rework, v1.14)
+ *   ASSETS.voxelModels.canvasHeap     the wake spot: a crumpled heap of torn envelope canvas, 2.0 x 1.25 x 0.5 m, folds,
+ *                                     ragged / burnt edges, spar, rope ends, straw, hollow where Wick lay (OB-026 rework)
  *   ASSETS.voxelModels.gondola        the Kestrel's wicker-and-brass basket, 2.2 x 0.9 x 1.1 m, tilted 8 deg onto a stone
  *                                     chock (rim, ribs, corner posts, rope loops, sandbags, name board; v1.14)
  *   ASSETS.voxelModels.strut          bent brass gondola strut on the rubble, 0.9 x 0.2 x 0.5 m
@@ -110,7 +110,8 @@
     // v1.39 balloon fabric (owner 2026-10-06 "the balloon should look like cloth"): own keys, soft `fabricFace` glyphs
     A: 'balloon_light', a: 'balloon', n: 'balloon_dark',                                                  // ochre gores
     F: 'balloon_red_light', f: 'balloon_red', h: 'balloon_red_dark',                                      // red gores
-    S: 'tarp_light', s: 'tarp', t: 'tarp_dark'                                                            // wake-spot tarp
+    S: 'tarp_light', s: 'tarp', t: 'tarp_dark',                                                           // wake-spot tarp
+    Y: 'straw_light', y: 'straw'                                                                          // OB-026 straw (palette, US-078d)
   };
   function matsOf(G) {
     var used = {}, o = {}, k;
@@ -488,8 +489,27 @@
     'Voxel rubble 2: a small chunk with a sloped break (0.3 m high end), a little moss, pebbles.', ['rubble3']);
 
   // ===================================================================================================================
-  // 4. CANVAS HEAP (the wake spot)  32 x 14 x 7 @ 0.0625 m = 2.0 x 0.875 x 0.44 m, two static parts (west / east
-  //    halves: the box extent limit). ART-OWN-002 rework (v1.14): a spare LINEN TARP (near-white, cool - never the ochre
+  // 4. CANVAS HEAP (the wake spot)  32 x 20 x 8 @ 0.0625 m = 2.0 x 1.25 x 0.5 m, two static parts (west / east halves).
+  //    OB-026 rework (owner 2026-10-11: "unidentifiable dark striped slab"): a CRUMPLED HEAP OF TORN ENVELOPE CANVAS, the
+  //    piece Wick was lying on. Light weathered cloth so it catches the morning sun shaft; no dark fill, no seam stripes:
+  //      - outline: a torn panel, ragged per-voxel edge (frayed threads = tarp_light, the bright outline on the dark
+  //        flagstones), irregular lobes, a V rip into the north edge, the east end torn into two tongues, a torn-off NW
+  //        corner; one stretch of the ORIGINAL hem on the north side (rope boltrope + brass eyelets) says "envelope";
+  //      - west: the canvas bunched into a crumpled pile up to 0.44 m (dome + 5 swirled folds), sliding off it 5 long
+  //        rounded folds with real height (0.12..0.25 m) across the sheet and along both tongues;
+  //      - the hollow where Wick lay (start pose): pressed flat, a crumple ring of folds round it (same limits as before:
+  //        1 layer within 0.19 m, <= 0.19 m within 0.42 m);
+  //      - a scorch mark with a burnt-through hole on the NE tongue (canvas_burnt rim + scorched balloon_dark ring), the
+  //        torn east edges burnt, two dirt / water stains;
+  //      - a broken wooden spar (2 x 2 voxels) poking up out of the pile to the north-west with a splintered end, a snapped
+  //        stub on the floor by the south wall; 3 loose rope ends (one draped over the pile, two curling on the floor);
+  //      - straw from the old pallet scattered round the edges and on the sheet.
+  //    Top voxel: tarp_light on crests + torn edges, balloon_light (sand) on the flats, balloon (darker sand) in creases,
+  //    on stains and as the fill under the top (the fold flanks read as shaded sand, not as a dark slab).
+  //    BUDGET: the greedy mesh must stay <= 2000 triangles (engine/mesh/voxelMesh.test.js); `meshTris()` below counts it
+  //    the same way at load and steps the paint detail down (CH_LEVELS) until it fits; the count is in readability.tris.
+  //    --- superseded history (kept for reference) ---
+  //    ART-OWN-002 rework (v1.14): a spare LINEN TARP (near-white, cool - never the ochre
   //    envelope colour) thrown over a small crate and pulled across the floor:
   //      - west: the crate under it (0.31 x 0.375 m, lid 0.375 m) = a clear box shape, lit lid edges, one wrinkle on the
   //        lid, the cloth falling down the crate sides in 9 radial folds and flaring out on the floor;
@@ -519,45 +539,55 @@
     var d1 = s(a, b), d2 = s(b, c), d3 = s(c, a);
     return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
   }
-  function buildCanvasHeap() {
-    var SX = 32, SY = 14, SZ = 7, G = new Grid(SX, SY, SZ), H = [], F = [], x, y, z, h, px, py;
-    var CX0 = 3, CX1 = 8, CY0 = 4, CY1 = 10, LID = 6, CCX = 5.5, CCY = 7;       // crate (voxel edges) + lid layers
-    var P1 = [24, 13.5], P2 = [31.5, 7], PC = [25.07, 6.08];                       // fold line P1-P2, flap apex PC
-    var TENSION = [[8, 4, 14, 1.6], [8, 10, 14, 12.4], [19, 1.8, 23, 11.5]];
-    function tension(t) { if (segDist(t[0], t[1], t[2], t[3], px, py) < 0.75) h = Math.max(h, 2); }
-    // v1.39: the hem sags between two eyelets (eyelet columns x % 6 === 3): 3 of every 6 columns pull in by one voxel
-    function sag(x) { var m = ((x - 3) % 6 + 6) % 6; return Math.min(m, 6 - m) >= 2 ? 1 : 0; }
+  // OB-026 (owner 2026-10-11): the crumpled torn envelope canvas. `lvl` = paint detail step (0 = full; see CH_LEVELS).
+  function buildCanvasHeap(lvl) {
+    var SX = 32, SY = 20, SZ = 8, G = new Grid(SX, SY, SZ), H = [], x, y, z, h, px, py, i;
+    var SCX = 16, SCY = 13;                          // the start pose (= anchor) in voxel units
+    var PILE = [7.5, 9.5, 6.3];                      // the crumpled bunch: centre x, y, radius (voxels)
+    // long rounded folds [x0, y0, x1, y1, crest height (layers above the sheet), half width]
+    var FOLDS = [[10, 4.6, 27, 3.4, 3.2, 1.8],       // the north hem rucked up into one long fold
+                 [12, 15.6, 21, 17.4, 2.4, 1.5],     // south fold sliding off the pile
+                 [21, 8.2, 28.5, 6.6, 2.6, 1.4],     // twisted NE tongue
+                 [12.5, 8, 19, 10.2, 2.2, 1.2],      // a fold across the middle, toward the hollow
+                 [22, 14.6, 29.5, 15.6, 2.0, 1.3]];  // SE tongue
+    var BURN = [24.5, 6.2];                          // scorch centre (a burnt-through hole in it)
+    var STAINS = [[11.5, 13.2, 2.4, 1.5], [26.5, 16.2, 1.9, 1.1], [19.5, 5.2, 1.6, 0.9]];
+    function cloth(x, y) {
+      var px = x + 0.5, py = y + 0.5, ex = (px - 15.5) / 14.2, ey = (py - 10.3) / 8.9;
+      var r = Math.pow(ex * ex * ex * ex + ey * ey * ey * ey, 0.25), ang = Math.atan2(ey, ex);
+      r += 0.08 * Math.sin(3 * ang + 1.0) + 0.05 * Math.sin(5 * ang + 2.5) +
+           (lvl >= 5 ? 0 : 0.06) * (hash(x, y, 0, 51) - 0.5);                      // lobes + frayed edge
+      if (r >= 1) return false;
+      if (inTri([13, 0], [18, 0], [15.8, 4.6], px, py)) return false;              // V rip into the north edge
+      if (inTri([31, 8.6], [31, 12.6], [23.2, 10.9], px, py)) return false;        // the east end torn into two tongues
+      if (px + py < 6.5) return false;                                             // torn-off NW corner
+      if (Math.hypot(px - BURN[0], py - BURN[1]) < 1.0) return false;              // the burn hole
+      return true;
+    }
     for (y = 0; y < SY; y++) {
-      H.push([]); F.push([]);
+      H.push([]);
       for (x = 0; x < SX; x++) {
         px = x + 0.5; py = y + 0.5; h = 0;
-        var flap = false, yN = 1 + sag(x), yS = 12 - sag(x), inSheet = y >= yN && y <= yS;
-        if ((y === yN || y === yS || x === 0 || x === SX - 1) && x % 6 !== 3 && hash(x, y, 0, 24) < 0.22) inSheet = false;   // ragged hem
-        if (x + y < 3) inSheet = false;                                          // torn-off north-west corner
-        if ((px - 24) / 7.5 + (py - 7) / 6.5 > 1) inSheet = false;             // bare floor beyond the fold line
-        if (inSheet) {
-          var dx = Math.max(CX0 - px, 0, px - CX1), dy = Math.max(CY0 - py, 0, py - CY1), d = Math.sqrt(dx * dx + dy * dy);
-          if (d === 0) {                                                          // on the crate lid + one wrinkle
-            h = LID + (segDist(4, 5, 7, 9, px, py) < 0.6 ? 1 : 0);
-            if ((px < CX0 + 1 || px > CX1 - 1) && (py < CY0 + 1 || py > CY1 - 1)) h = LID - 1;   // rounded lid corners
-          } else {
-            var rip = Math.cos(9 * Math.atan2(py - CCY, px - CCX) + 0.6);       // 9 radial folds round the crate
-            if (d <= 1) h = 5 + (rip > 0.2 ? 1 : 0) - (rip < -0.5 ? 1 : 0);
-            else if (d <= 2) h = 3 + (rip > 0.3 ? 1 : 0);
-            else if (d <= 3) h = 2 + (rip > 0.5 ? 1 : 0);
-            else h = 1;
+        if (cloth(x, y)) {
+          h = 1;
+          var dp = Math.hypot(px - PILE[0], py - PILE[1]) / PILE[2];
+          if (dp < 1) {                                                            // the pile: dome + 5 swirled folds
+            var ang = Math.atan2(py - PILE[1], px - PILE[0]);
+            var dome = 6.0 * Math.pow(1 - dp * dp, 0.75);
+            var crumple = (lvl >= 4 ? 0 : 1.1) * Math.cos(5 * ang + 3.2 * dp + 0.4) * Math.min(1, dp * 2.5);
+            h = Math.max(h, Math.round(1 + dome + crumple));
           }
-          TENSION.forEach(tension);
-          if (inTri(P1, P2, PC, px, py)) {                                       // the turned-back double flap
-            flap = true;
-            h = Math.max(h, segDist(P1[0], P1[1], P2[0], P2[1], px, py) < 0.9 ? 3 : 2);
+          for (i = 0; i < FOLDS.length; i++) {                                     // rounded fold profiles
+            var f = FOLDS[i], d = segDist(f[0], f[1], f[2], f[3], px, py);
+            if (d < f[5]) h = Math.max(h, Math.round(1 + f[4] * (1 - (d / f[5]) * (d / f[5]))));
           }
-          var dc = Math.sqrt(Math.pow(px - 16, 2) + Math.pow(py - 7, 2));
-          if (dc > 3.2 && dc < 4.6 && hash(x, y, 1, 25) < 0.7) h = Math.max(h, 2); // crumple ring round the hollow
+          var dc = Math.hypot(px - SCX, py - SCY);
+          if (dc > 3.0 && dc < 4.4 && Math.cos(3 * Math.atan2(py - SCY, px - SCX) + 0.8) > -0.2) h = Math.max(h, 2);   // crumple ring
           if (dc < 6.8) h = Math.min(h, 3);                                        // <= 0.19 m within 0.42 m of the start pose
           if (dc < 3.0) h = 1;                                                     // the pressed hollow
+          h = Math.min(h, SZ - 1);
         }
-        H[y].push(h); F[y].push(flap);
+        H[y].push(h);
       }
     }
     function hAt(x, y) { return (x < 0 || y < 0 || x >= SX || y >= SY) ? 0 : H[y][x]; }
@@ -567,44 +597,145 @@
       px = x + 0.5; py = y + 0.5;
       var nb = [hAt(x - 1, y), hAt(x + 1, y), hAt(x, y - 1), hAt(x, y + 1)];
       var hmax = Math.max.apply(null, nb), hmin = Math.min.apply(null, nb), top;
-      if (F[y][x]) {
-        var dHem = Math.min(segDist(P1[0], P1[1], PC[0], PC[1], px, py), segDist(P2[0], P2[1], PC[0], PC[1], px, py));
-        if (Math.sqrt(Math.pow(px - PC[0], 2) + Math.pow(py - PC[1], 2)) < 1.0) top = 'H';   // corner eyelet, face up
-        else if (dHem < 0.8) top = 'r';                                           // the flap's boltrope
-        else if (segDist(P1[0], P1[1], P2[0], P2[1], px, py) < 0.9) top = 'S';   // the rolled fold edge
-        else top = 's';
-      } else if (hmin === 0) top = ((y <= 1 || y >= 12) && x % 6 === 3) ? 'H' : 'r';   // hem boltrope + eyelets
-      else if (n >= 3 && n >= hmax && n > hmin) top = 'S';                        // crests, lid shoulders
-      else if (n < hmax - 1) top = 't';                                           // fold valleys
-      else top = 's';
-      if (!F[y][x] && top === 's' && (y === 4 || y === 10)) top = 't';            // v1.39 sewn panel seams on the flats
-      if (!F[y][x] && hmin > 0 && x >= 19 && x <= 21 && y >= 8 && y <= 9 && n === 1) top = 'a';   // envelope-cloth repair patch
-      for (z = 0; z < n - 1; z++) G.set(x, y, z, 't');
+      var dB = Math.hypot(px - BURN[0], py - BURN[1]);
+      var burntEdge = dB < 1.8 || (px > 22.5 && py > 8 && py < 13.8);
+      if (hmin === 0) {                                                            // the outline
+        if (y <= 4 && x >= 18 && x <= 29 && hAt(x, y - 1) === 0) top = (x % 5 === 2) ? 'B' : 'r';   // original hem, tarnished eyelets
+        else if (burntEdge) top = 'z';                                             // burnt torn edge
+        else top = 'S';                                                            // frayed, sun-bleached threads
+      } else if (dB < 1.8) top = 'z';                                              // scorch: burnt rim of the hole
+      else if (dB < 2.7 && lvl < 3) top = 'n';                                     // scorched ring
+      else if (n >= (lvl >= 1 ? 3 : 2) && n >= hmax && n > hmin && lvl < 3) top = 'S';   // lit crests
+      else if (n <= hmax - 2 && lvl < 2) top = 'a';                                // creases
+      else top = 'A';                                                              // weathered sand flats
+      if (top === 'A' && lvl < 2) {
+        for (i = 0; i < STAINS.length; i++) {
+          var s = STAINS[i], ux = (px - s[0]) / s[2], uy = (py - s[1]) / s[3];
+          if (ux * ux + uy * uy < 1) top = 'a';                                    // dirt / water stains
+        }
+      }
+      for (z = 0; z < n - 1; z++) G.set(x, y, z, 'a');
       G.set(x, y, n - 1, top);
+    }
+    // a voxel on top of whatever is there (rope over the pile, straw on the sheet) or on the floor
+    function onTop(x, y, c) { if (x >= 0 && y >= 0 && x < SX && y < SY && hAt(x, y) < SZ) G.set(x, y, hAt(x, y), c); }
+    function onFloor(x, y, c) { if (x >= 0 && y >= 0 && x < SX && y < SY && !hAt(x, y)) G.set(x, y, 0, c); }
+    function polyline(pts, fn, c) {
+      var k, t, seen = {};
+      for (k = 0; k + 1 < pts.length; k++) {
+        var a = pts[k], b = pts[k + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]), steps = Math.ceil(L * 4);
+        for (t = 0; t <= steps; t++) {
+          var qx = Math.floor(a[0] + (b[0] - a[0]) * t / steps), qy = Math.floor(a[1] + (b[1] - a[1]) * t / steps);
+          if (!seen[qx + ',' + qy]) { seen[qx + ',' + qy] = 1; fn(qx, qy, c); }
+        }
+      }
+    }
+    // the broken spar: a 2 x 2 voxel wooden batten from inside the pile up to the north-west, splintered end
+    var SA = [9.0, 11.0, 2.0], SB = [1.8, 3.6, 7.4], t2;
+    for (t2 = 0; t2 <= 48; t2++) {
+      var u = t2 / 48, qx = SA[0] + (SB[0] - SA[0]) * u, qy = SA[1] + (SB[1] - SA[1]) * u, qz = Math.floor(SA[2] + (SB[2] - SA[2]) * u);
+      var bx0 = Math.floor(qx - 0.5), by0 = Math.floor(qy - 0.5), ox, oy;
+      for (ox = 0; ox < 2; ox++) for (oy = 0; oy < 2; oy++) {
+        if (u > 0.9 && hash(bx0 + ox, by0 + oy, qz, 61) < 0.55) continue;        // splintered end
+        if (G.get(bx0 + ox, by0 + oy, qz) === '.') G.set(bx0 + ox, by0 + oy, qz, 'w');
+      }
+    }
+    G.set(1, 2, 7, G.get(1, 2, 7) === '.' ? 'w' : G.get(1, 2, 7));               // one long splinter
+    // a snapped stub of the spar on the floor by the south wall (only where the floor is bare)
+    polyline([[23.5, 19.2], [30.9, 18.4]], function (x, y) { onFloor(x, y, 'w'); onFloor(x, y - 1, 'w'); });
+    // loose rope ends: one draped over the pile down to the floor, two curling out on the floor
+    polyline([[13.0, 5.4], [9.5, 6.6], [6.5, 7.4], [4.0, 9.2], [0.6, 10.6]], onTop, 'r');
+    polyline([[28.4, 6.4], [30.4, 5.0], [31.4, 2.6], [30.2, 0.4]], onFloor, 'r');
+    polyline([[3.2, 15.4], [1.3, 16.5], [0.5, 18.2], [2.4, 19.5]], onFloor, 'r');
+    // straw from the old pallet: tufts on the floor round the edges, a few stalks on the sheet (none near the hollow)
+    if (lvl < 3) {
+      [[0, 12, 'Y'], [0, 13, 'y'], [1, 13, 'Y'], [13, 19, 'Y'], [14, 19, 'y'], [15, 18, 'Y'], [22, 0, 'y'], [23, 0, 'Y'],
+       [31, 15, 'Y'], [30, 16, 'y'], [31, 16, 'y'], [9, 0, 'Y'], [10, 1, 'y'], [5, 19, 'Y'], [6, 19, 'y']].forEach(function (p) { onFloor(p[0], p[1], p[2]); });
+      [[22, 17, 'Y'], [23, 17, 'y'], [10, 15, 'Y'], [27, 12, 'Y']].forEach(function (p) {
+        if (Math.hypot(p[0] + 0.5 - SCX, p[1] + 0.5 - SCY) > 6.8) onTop(p[0], p[1], p[2]);
+      });
     }
     return G;
   }
-  var gCH = buildCanvasHeap();
+  // greedy face count exactly like engine/mesh/voxelMesh.js (per part box, outside the box = empty, 2 tris per rect)
+  function greedyCount(dA, dB, val) {
+    var vis = [], n = 0, a, b, k;
+    for (k = 0; k < dA * dB; k++) vis.push(0);
+    for (b = 0; b < dB; b++) for (a = 0; a < dA; a++) {
+      if (vis[b * dA + a]) continue;
+      var m = val(a, b);
+      if (m === 0) { vis[b * dA + a] = 1; continue; }
+      var aE = a + 1, bE = b + 1, ai, bb, stop = false;
+      while (aE < dA && !vis[b * dA + aE] && val(aE, b) === m) aE++;
+      while (bE < dB && !stop) {
+        for (ai = a; ai < aE; ai++) if (vis[bE * dA + ai] || val(ai, bE) !== m) { stop = true; break; }
+        if (!stop) bE++;
+      }
+      for (bb = b; bb < bE; bb++) for (ai = a; ai < aE; ai++) vis[bb * dA + ai] = 1;
+      n++;
+    }
+    return n;
+  }
+  function meshTris(G, boxes) {
+    var tris = 0;
+    boxes.forEach(function (B) {
+      function m(x, y, z) {
+        return (x < B[0] || y < B[1] || z < B[2] || x >= B[3] || y >= B[4] || z >= B[5]) ? 0 : (G.get(x, y, z) === '.' ? 0 : G.get(x, y, z));
+      }
+      var bx = B[3] - B[0], by = B[4] - B[1], bz = B[5] - B[2], L;
+      function face(dA, dB, at, dx, dy, dz) {
+        tris += 2 * greedyCount(dA, dB, function (a, b) {
+          var p = at(a, b), v = m(p[0], p[1], p[2]);
+          return v !== 0 && m(p[0] + dx, p[1] + dy, p[2] + dz) === 0 ? v : 0;
+        });
+      }
+      for (L = 0; L < bx; L++) (function (X) {
+        face(by, bz, function (a, b) { return [X, B[1] + a, B[2] + b]; }, -1, 0, 0);
+        face(by, bz, function (a, b) { return [X, B[1] + a, B[2] + b]; }, 1, 0, 0);
+      })(B[0] + L);
+      for (L = 0; L < by; L++) (function (Y) {
+        face(bx, bz, function (a, b) { return [B[0] + a, Y, B[2] + b]; }, 0, -1, 0);
+        face(bx, bz, function (a, b) { return [B[0] + a, Y, B[2] + b]; }, 0, 1, 0);
+      })(B[1] + L);
+      for (L = 0; L < bz; L++) (function (Z) {
+        face(bx, by, function (a, b) { return [B[0] + a, B[1] + b, Z]; }, 0, 0, 1);
+        face(bx, by, function (a, b) { return [B[0] + a, B[1] + b, Z]; }, 0, 0, -1);
+      })(B[2] + L);
+    });
+    return tris;
+  }
+  // CH_LEVELS: 0 full paint; 1 crests only on folds >= 3 layers; 2 + no crease / stain paint; 3 + no scorch ring, no
+  // crests, no straw; 4 + smooth pile (no swirl folds); 5 + no per-voxel fray on the outline. The first level whose
+  // mesh is <= CH_TRI_CAP is used (the voxelMesh.test.js cap is 2000).
+  var CH_BOXES = [[0, 0, 0, 16, 20, 8], [16, 0, 0, 32, 20, 8]], CH_TRI_CAP = 1900, chLvl = 0, gCH, chTris;
+  for (;;) {
+    gCH = buildCanvasHeap(chLvl); chTris = meshTris(gCH, CH_BOXES);
+    if (chTris <= CH_TRI_CAP || chLvl >= 5) break;
+    chLvl++;
+  }
   A.voxelModels.canvasHeap = {
     name: 'canvasHeap',
-    desc: 'Voxel canvas heap (the wake spot, ART-OWN-002 rework): a pale linen tarp thrown over a small crate at the west ' +
-          'end (box shape with cloth-rounded lid corners, radial folds down its sides), pulled across the floor with two ' +
-          'tension folds, a hem that sags between its brass eyelets (scalloped, ragged threads, a torn-off corner) with a ' +
-          'rope boltrope, two sewn panel seams, the south-east corner turned back over itself (double flap, rolled fold, ' +
-          'eyelet up), an ochre envelope-cloth repair patch, and a flat hollow in the middle where Wick lay. Soft fabric ' +
-          'glyphs (tarp_* materials, fabricFace, v1.39). Walk-over (no collision).',
+    desc: 'Voxel canvas heap (the wake spot, OB-026 rework): a crumpled heap of torn airship-envelope canvas. Light ' +
+          'weathered sand / off-white cloth bunched into a pile at the west end (0.44 m, swirled folds) with 5 long rounded ' +
+          'folds sliding across the sheet, ragged frayed edges, a V rip, the east end torn into two tongues, a stretch of ' +
+          'the original hem with rope boltrope + brass eyelets, a scorch mark with a burnt-through hole and burnt torn ' +
+          'edges, dirt stains, a broken wooden spar poking out of the pile (splintered), a snapped stub by the wall, 3 loose ' +
+          'rope ends, straw from the old pallet, and the pressed hollow where Wick lay. Walk-over (no collision).',
     voxel: {
-      version: 1, cellM: 0.0625, size: [32, 14, 7], anchor: [16, 7, 0], mats: matsOf(gCH), layers: gCH.layers(),
+      version: 1, cellM: 0.0625, size: [32, 20, 8], anchor: [16, 13, 0], mats: matsOf(gCH), layers: gCH.layers(),
       parts: {
-        west: { box: [0, 0, 0, 16, 14, 7], pivot: [8, 7, 0] },     // extent 37
-        east: { box: [16, 0, 0, 32, 14, 7], pivot: [24, 7, 0] }    // extent 37
+        west: { box: [0, 0, 0, 16, 20, 8], pivot: [8, 10, 0] },    // extent 44
+        east: { box: [16, 0, 0, 32, 20, 8], pivot: [24, 10, 0] }   // extent 44
       },
       animations: { idle: idle1() }
     },
     placement: { level: 'tower', prop: 'pallet', x: 17.0, y: 9.5, z: 0.0, facing: 0, levelEdit: false,
-                 note: 'world x 16.0..18.0, y 9.06..9.84 (south wall at y 10.0); the start eye (17.0, 9.5, 0.3) is 0.24 m above the hollow' },
-    readability: { note: 'At 2.2 m standing: 160x60 ~14 rows tall (the crate end), ~26 cols wide; the pale sheet + dark ' +
-                   'drape flanks + rope hem outline it. Linen vs the ochre / red envelope: different hue AND value.' }
+                 note: 'world x 16.0..18.0, y 8.69..9.94 (south wall at y 10.0; north part over the walk-over floor cells ' +
+                       '16..18,8); the start eye (17.0, 9.5, 0.3) is 0.24 m above the hollow' },
+    readability: { tris: chTris, paintLevel: chLvl,
+                   note: 'At 2.2 m standing: the bright frayed outline + sun-bleached crests on the dark flagstones, the ' +
+                   'pile with the spar sticking out at the west end, the burn hole on the NE tongue. Mesh ' + chTris +
+                   ' tris (paint level ' + chLvl + ', cap 2000).' }
   };
 
   // ===================================================================================================================

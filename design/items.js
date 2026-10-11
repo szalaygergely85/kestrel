@@ -230,6 +230,17 @@
     icon: icon([' .o. ', '(oQo)', '  |  '],
                [' qQq ', 'qQqQq', '  h  '])
   };
+  defs.redcap = {
+    id: 'redcap', name: 'Red Cap', kind: 'material', stackMax: 10, hand: false, inPack: true,
+    desc: 'East-bank mushroom. Rook wants some.',
+    use: { none: 'Material - quest errand (sq.rook.caps)' },
+    glyph: { ch: 'n', c: 'goreRed' },
+    //  .-.      red cap, white warts
+    // (o:o)
+    //  |=|      stem
+    icon: icon([' .-. ', '(obo)', ' |=| '],
+               [' rRr ', 'RbRbR', ' ffb '])
+  };
   defs['heart.piece'] = {
     id: 'heart.piece', name: 'Heart Piece', kind: 'upgrade', stackMax: 3, hand: false, inPack: true,
     desc: 'A warm red stone. Four make a heart.',
@@ -240,6 +251,22 @@
     //   v
     icon: icon(['(#v#)', ' \\#/ ', '  v  '],
                ['LPddd', ' Ldd ', '  d  '])
+  };
+  defs['relay.mirror'] = {
+    id: 'relay.mirror', name: 'Relay Glass', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'Round, silvered, scratched by claws.',
+    use: { none: 'Quest item - the Ford Relay needs it (mq.ford.mirror)' },
+    glyph: { ch: 'o', c: 'mirror' },
+    icon: icon([' .-. ', '( o )', " '-' "],
+               [' sss ', 's S s', ' sss '])
+  };
+  defs['chart.river'] = {
+    id: 'chart.river', name: 'River Chart', kind: 'upgrade', stackMax: 1, hand: false, inPack: true,
+    desc: 'Crow paper. A river is drawn on it.',
+    use: { none: 'Chart piece - the map card shows the ford (mq.bend.call)' },
+    glyph: { ch: '~', c: 'manaLight' },
+    icon: icon(['.---.', '|~~~|', "'---'"],
+               ['hhhhh', 'hqqqh', 'hhhhh'])
   };
   defs.cog = {
     id: 'cog', name: 'Brass Cog', kind: 'currency', stackMax: 99, hand: false, inPack: true,

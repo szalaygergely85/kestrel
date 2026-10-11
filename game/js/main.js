@@ -26,7 +26,7 @@ import {
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim,
   loadContentPack, createRng, prebuildTerrainMesh, hitSparks,
-  forwardOf, DEG2RAD, hexToRgb, resolveWaterLooks, createEntityEmitters, AO_DEFAULTS,
+  forwardOf, DEG2RAD, hexToRgb, resolveWaterLooks, createEntityEmitters, AO_DEFAULTS, compileDialogue,
 } from '../../engine/index.js';
 // US-047 (architecture.md section 5): pass internals + parity tooling +
 // "may change" glue now live in engine/dev.js - main.js's dev-mode code
@@ -78,6 +78,7 @@ import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-05
 import { createWaystoneTouch } from './waystoneTouch.js'; // WAYSTONE-TOUCH-01
 import { createWaystoneWire } from './quest/wire/waystone.js'; // WAYSTONE-01w
 import { createTravel } from './quest/travel.js'; // WS1-07b: map travel (fade, teleport, reset)
+import { ensureBand, bandReady, placeLoaded, gridEnabled, gridVariant } from './quest/bandPose.js'; // MAP-13: band at any pose + ?grid=1 variant
 import { createTitleMenuHost, withRelock } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { retintHand, lookOrDefault } from './quest/look/handLook.js'; // CHARGEN-16
@@ -86,6 +87,7 @@ import { parseOccl, createHzbInvalidator } from './occlGate.js'; // OCCL-MAIN-01
 import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
 import { createQuestPickups } from './questPickups.js'; // QUESTS-01
 import { setInspectSink, wrapText } from './quest/questInspect.js'; // QL-04
+import { createErrands, gateOnMeet, patchBearDialogue, isWorn, bannerLines } from './quest/errands.js'; // QL-WIRE: Ch1-2 errands
 import { createHeartHook } from './heartHook.js'; // QL-08: heart pieces -> max HP
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
@@ -111,7 +113,11 @@ import { createFireballSim } from './quest/sim/fireball.js'; // SPELL-01a (37.14
 import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.14 view)
 import { createShieldSim } from './quest/sim/shield.js'; // EQ-07 (38.41 a)
 import { createArrowSim } from './quest/sim/arrows.js'; // EQ-09 (38.41 b)
+import { createWading } from './quest/sim/wading.js'; // RIVER-04 (38.45 (3)): river wading around the player's integrate
 import { BOW_CFG } from './quest/bowConfig.js'; // EQ-09
+import { createQuickbar, ensureQuickbar, autoFill, assign as qbAssign, clearSlot as qbClear, syncHandSlots, HAND_SLOTS } from './quest/sim/quickbar.js'; // EQ-12 + QB-6
+import { createQuickbarDrag } from './quest/quickbarDrag.js'; // QB-6: drag and drop onto the bar while the menu is open
+import { createQuickbarView } from './quest/quickbarView.js'; // EQ-12 + D-068
 import { createEquipPlay, registerGearItems } from './quest/equipPlay.js'; // EQ-07/09: LMB/RMB/Q routing, bow draw, pick-up
 import { createStubItemSim } from './quest/sim/hands.js'; // EQ-07: no-op sims so the router arms shield / bow
 import { EQUIP_VIEW_MODELS, loadShieldView, presentShield, loadBowView, presentBow, drawBlockSpark, createArrowView } from './quest/equipView.js'; // EQ-07/09
@@ -133,6 +139,7 @@ import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; /
 import { parseGlow } from './glowOpt.js'; // EMIS-03/04: bleed + halo knob
 import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
 import { PHYSICS } from '../../engine/index.js';
+import { meshFeedStats, MAX_MESH_DRAWS } from '../../engine/index.js'; // OB-039: F3 mesh draw cap line
 import { createModelPreview, createCharCache } from '../../engine/index.js'; // EQ-03/04: Character tab model preview
 import { drawArrowCount, drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
@@ -462,8 +469,12 @@ function areaTrigger(w, id) {
 let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the content manifest)
 {
   // AUD2-09: per-file loads; a missing file is logged by name and shown on screen (no silent quest-less game)
-  const qb = await loadQuestFiles((u) => fetch(u).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }), { wantBarks: saveEnabled });
+  const qb = await loadQuestFiles((u) => fetch(u).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }), { wantBarks: saveEnabled, items: itemDefs ? Object.values(itemDefs).map((d) => ({ id: d.id, slot: d.equip && d.equip.slot, tier: d.equip && d.equip.tier })) : [] }); // QL-WIRE: EQ-13 gear rewards resolve against the design item defs
   bearBarks = qb.bearBarks;
+  if (qb.giverDefs) { // QL-WIRE: errands open after Burl's first greeting; his errand lines become dialogue routes
+    qb.giverDefs = gateOnMeet(qb.giverDefs);
+    try { const raw = await fetch('../content/dialogue/bear.dialogue.json').then((r) => r.json()); if (bundle.dialogues && bundle.dialogues.bear) bundle.dialogues.bear = compileDialogue(patchBearDialogue(raw, qb.giverDefs)); } catch (e) { console.warn('[QL-WIRE] errand dialogue off:', e && e.message); }
+  }
   window.__debug = window.__debug || {}; window.__debug.bootErrors = qb.errors;
   if (qb.errors.length) showBootErrors(document, qb.errors);
   if (qb.questDef && qb.giverDefs && qb.charKit) { try {
@@ -570,7 +581,7 @@ const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
 if (chestHook) gameHooks.register(chestHook);
 if (chestHook) gameHooks.register(createHeartHook({ getCard: () => chestHook.card })); // QL-08
 // QUESTS-01: generic world pickup prop + pack counts for collect/deliver objectives + hand-in reward grant (game/js/questPickups.js)
-const questPickups = (itemDefs && saveRelay) ? createQuestPickups({ getBook: () => saveRelay.quest.book, feed: (e) => saveRelay.quest.feed(e), defs: itemDefs }) : null;
+const questPickups = (itemDefs && saveRelay) ? createQuestPickups({ getBook: () => saveRelay.quest.book, feed: (e) => saveRelay.quest.feed(e), defs: itemDefs, isWorn }) : null; // QL-WIRE: requireEquipped hand-ins
 if (questPickups) gameHooks.register(questPickups);
 // US-090w: title menu before play. Off for `?title=0`, capture/bench/compare/cinematic pages, `?capture=1`, `?at=`/`?pose=` dev poses and bare `?level=` rooms.
 const menuWanted = params.get('title') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !params.has('at') && !params.has('pose') && !params.get('level') && !params.get('cinematic');
@@ -1043,9 +1054,9 @@ async function runGame(mode, cinematic = null) {
     else if (kind === 'area') {
       if (id === 'breach') { if (!compassBreach) compassBreach = compassFindMarker(w, 'breach'); if (!compassBreach) return false; out.x = compassBreach.x; out.y = compassBreach.y; out.z = compassBreach.z; return true; }
       if (id === 'waystone') e = w.get('endMarker');
-      else if (id === 'towerDoor' || id === 'roadWest' || id === 'bendRelay') { // CH1-02: area-only world triggers
-        const tr = areaTrigger(w, id); if (!tr) return false;
-        out.x = tr.x; out.y = tr.y; out.z = NaN; return true;
+      else { // QL-B2 follow-up: data-driven - any area id with an area-only world zone (key world.<id>; hintStone = hillPath) gets an arrow
+        const tr = areaTrigger(w, id === 'hintStone' ? 'hillPath' : id);
+        if (tr) { out.x = tr.x; out.y = tr.y; out.z = NaN; return true; }
       }
     }
     const t = e && e.data && e.data.transform; if (!t) return false;
@@ -1058,17 +1069,46 @@ async function runGame(mode, cinematic = null) {
     return null;
   }
   const vLocked = () => !!(vitals && vitals.inputLocked) || (travel && travel.inputLocked) || deathFlow.inputLocked; // DIALOGUE-LOCK-01 (owner: never lock during game): dialogue/notes/chapter card/notices no longer lock movement or look; only menus, death, travel fade and the intro wake do. // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
+  const qbToast = (res) => { // EQ-12: quick-bar / potion feedback (no menu, never locks)
+    const T = { none: 'No potions', full: 'Not hurt', refuse: 'Cannot use that now', empty: '' };
+    if (toasts && T[res]) toasts.say(T[res], [226, 214, 176]);
+  };
+  const qbPlayOk = () => !!(vitals && !vitals.dead) && !wakeOut.inputLocked && !isMapOpen() && !isSettingsOpen() && !qbBlocked && !(invView && invView.isOpen) && !vLocked();
   let targeting = null; // US-128b (29.2): rebuilt on every 'world:loaded', below
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
+  let wading = null; // RIVER-04: rebuilt on every 'world:loaded' (beasts keep their own nav block, depth >= 0.6: not wired here)
   let equipPlay = null, shieldSim = null, arrowSim = null; // EQ-07/09: rebuilt on every 'world:loaded'
+  let quickbar = null, qbView = null, qbTick = 0, qbBlocked = false; // EQ-12: sim rebuilt per world, view per page
   let fireball = null, fbTargets = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
   // US-091b: pack-screen mouse. Hover -> UI cell under the pointer; a click while open must not re-lock the pointer
   // (PlayerLook's own canvas click handler), so a capture listener on window swallows it first.
   canvas.addEventListener('mousemove', (e) => {
     if (!invView || !invView.isOpen || !ui) return;
     const r = canvas.getBoundingClientRect();
-    invView.setPointer(Math.floor((e.clientX - r.left) / r.width * ui.cols), Math.floor((e.clientY - r.top) / r.height * ui.rows));
+    const cx = Math.floor((e.clientX - r.left) / r.width * ui.cols), cy = Math.floor((e.clientY - r.top) / r.height * ui.rows);
+    invView.setPointer(cx, cy); qbDrag.move(cx, cy);
+  });
+  // QB-6: drag and drop onto the quick bar (drawn inside the menu). Press picks up the item under the pointer (or a bar slot), release drops.
+  const qbCell = (e) => { const r = canvas.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / r.width * ui.cols), Math.floor((e.clientY - r.top) / r.height * ui.rows)]; };
+  const qbDrag = createQuickbarDrag({
+    slotAt: (cx, cy) => (qbView && ui ? qbView.slotAt(ui, cx, cy) : -1),
+    idAt: (s) => { const q = playerHandle && playerHandle.data.components.quickbar; return q ? q[s] || null : null; },
+    assign: (s, id) => !!playerHandle && itemDefs && qbAssign(playerHandle.data, itemDefs, s, id),
+    clear: (s) => !!playerHandle && itemDefs && qbClear(playerHandle.data, s, itemDefs),
+  });
+  canvas.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || !invView || !invView.isOpen || !ui) { qbDrag.cancel(); return; }
+    const c = qbCell(e); invView.setPointer(c[0], c[1]); qbDrag.down(c[0], c[1], invView.hoverItemId);
+  });
+  window.addEventListener('mouseup', (e) => {
+    if (e.button !== 0 || !qbDrag.active) return;
+    const c = ui ? qbCell(e) : [0, 0], res = qbDrag.up(c[0], c[1]);
+    if (!res || !toasts) return;
+    const nm = itemDefs && itemDefs[res.id] ? itemDefs[res.id].name : res.id, SL = ['Left mouse', 'Right mouse', 'Key 1', 'Key 2', 'Key 3', 'Key 4'];
+    if (res.kind === 'assign') toasts.say(SL[res.slot] + ': ' + nm, [120, 200, 120]);
+    else if (res.kind === 'clear') toasts.say(SL[res.slot] + ' cleared', [226, 214, 176]);
+    else if (res.kind === 'refuse') toasts.say(res.slot < HAND_SLOTS ? 'That does not fit this hand' : 'Cannot be placed on the quick bar', [220, 110, 60]);
   });
   window.addEventListener('click', (e) => { if (invView && invView.isOpen) e.stopPropagation(); }, true);
   // US-090w: title menu pointer - hover selects, click activates; the click never reaches PlayerLook's pointer-lock handler.
@@ -1092,10 +1132,17 @@ async function runGame(mode, cinematic = null) {
   let relayWake = null; // WS1-06b: rebuilt on every 'world:loaded'
   // CH1-MOUNT (38.37): notice banner (page lifetime) + crystal grant / barks / chapter card (rebuilt per world; only when saves are live = never in capture/bench/compare/?at=)
   const notice = createNoticeView();
-setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accept or hand in, show its short text (banner, never locks)
+const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop: accept or hand in, show its short text (banner, never locks)
   const b = saveRelay && saveRelay.quest.book, r = b && b.inspect(id); if (!r) return;
-  const d = b.def(b.index(r.id)); notice.push(String(d.title || r.id).slice(0, 30), wrapText(r.text || (r.action === 'handin' ? 'Done.' : r.action === 'accept' ? 'Quest accepted.' : 'Not yet.')));
-});
+  const d = b.def(b.index(r.id)); // QL-WIRE: the writer's def.lines (offer / ready / active) win over the short giver text
+  notice.push(String(d.title || r.id).slice(0, 30), bannerLines(d, r.action, wrapText) || wrapText(r.text || (r.action === 'handin' ? 'Done.' : r.action === 'accept' ? 'Quest accepted.' : 'Not yet.')));
+};
+  // QL-WIRE: Ch1-2 errands: object givers (post / notePost / relays), talk.<site>, target1..3.hit (sword + arrow = combat:hit), escort flag
+  const errands = createErrands({ getBook: () => (saveRelay ? saveRelay.quest.book : null), questFlag: (k, v) => saveRelay.quest.questFlag(k, v), inspect: inspectObject, note: (t, l) => notice.push(t, l) });
+  setInspectSink((id) => errands.inspected(id));
+  engine.events.on('combat:hit', (p) => errands.hit(p));
+  gameHooks.register({ onEvent: (name, d) => errands.onEvent(name, d) });
+  window.__debug.errands = errands; let errandTick = 0;
   let crystal = null, barks = null, chapterCard = null, ch1Hidden = true;
   let burlReopen = false; // PO-CH1-07 latch
   let escort = null; // CH1-07 Burl escort (rebuilt per world, saves live only)
@@ -1170,13 +1217,13 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
       t.x = pose.x; t.y = pose.y; t.z = pose.z; t.yawDeg = pose.yawDeg; // anchor = a known-safe spot (the pose at the touch)
       if (b) { b.vx = 0; b.vy = 0; b.vz = 0; b.fallDistance = 0; }
       hzb.invalidate('travel');
-      if (engine.world.ensureBandFor) engine.world.ensureBandFor(pose.x, pose.y); // WS2-05 (38.38): band for the target while black
+      ensureBand(engine.world, pose); // WS2-05/MAP-13: band for the target (any grid zone) while black
       if (beasts) beasts.resetAll();
       if (targeting) targeting.clear();
       if (look) { look.clearLock(); look.yawDeg = t.yawDeg; look.pitchDeg = t.pitchDeg; }
       if (vitals) vitals.clearSafe();
     },
-    bandReady: () => !(engine.world.terrainBands && engine.world._bandPend >= 0), // WS2-05: fade-in waits for the band (ensureBandFor is synchronous, so true at once)
+    bandReady: () => bandReady(engine.world), // MAP-13: WS2-05: fade-in waits for the band (ensureBandFor is synchronous, so true at once)
     arrive: (id, pose) => { if (waystoneWire && waystoneWire.sim) waystoneWire.sim.touch(id, pose); }, // respawn point = target (heal + save)
   });
   const wakeOut = { blackA: 1, blinkOpen: 0, eyeH: 0, inputLocked: true, titleState: 'none', titleA: 0, wakeDoneAtSec: 0, titleDoneAtSec: 0 };
@@ -1201,7 +1248,10 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
         entities: [{ id: 'player', type: 'player', spawn: { structure: levelParam, from: 'start' } }],
         state: {},
       }
-      : assets.world(params.get('world') || 'world_m1'); // US-034 (24.11): the play-test handoff's `?world=` param
+      : (() => { // US-034 (24.11): the play-test handoff's `?world=` param
+        const wd = assets.world(params.get('world') || 'world_m1');
+        return gridEnabled(params) && wd.terrainBands ? gridVariant(wd, window.ASSETS.levels.world_geo) : wd; // MAP-13: ?grid=1 (default OFF) = terrainGrid + polygon bounds; shipped json untouched
+      })();
 
     // US-017 (7.4 "Restart / world swap"): every runtime rebuild this block
     // used to do ONCE, inline, now happens on `'world:loaded'` - emitted by
@@ -1328,9 +1378,11 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
       // EQ-07/09 (38.41): shield sim + arrow sim + the routing glue; shield/bow items get no-op sims so the router arms them (RMB -> left hand, LMB -> right hand)
       shieldSim = createShieldSim();
       arrowSim = createArrowSim(world, engine.events, BOW_CFG, fbTargets);
+      wading = createWading(world);
       if (itemDefs) registerGearItems(hands, itemDefs, () => createStubItemSim());
       equipPlay = createEquipPlay({ hands, shield: shieldSim, arrows: arrowSim, defs: itemDefs || {}, bowCfg: BOW_CFG, swordDamage: SWORD_CFG.light.damage,
         say: (t) => { if (toasts) toasts.say(t, [226, 214, 176]); } });
+      quickbar = itemDefs ? createQuickbar(itemDefs) : null; qbTick = 0; // EQ-12: sip timer lives per world
       if (fbView) fbView.bind(fireball, lightSet); // SPELL-01b: 4 flight + 2 flash + 1 ember light, never removed
       if (practiceTarget) practiceTarget.dispose();
       practiceTarget = createPracticeTarget(world, engine.events, SWORD_CFG); // US-078d (30.1)
@@ -1343,7 +1395,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
       hurtFx.reset();
       vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting, block: shieldSim, // EQ-07: hooks.block = the shield sim
         defence: () => { const c = playerHandle && playerHandle.data.components; return c && c.equipment && itemDefs ? defenceOf(c.equipment, itemDefs) : 0; }, // EQ-02
-        respawnPose: () => { hzb.invalidate('respawn'); const rp = gameHooks.respawn(); if (rp && world.ensureBandFor) world.ensureBandFor(rp.x, rp.y); return rp; }, // WS2-05: band for the respawn pose // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
+        respawnPose: () => { hzb.invalidate('respawn'); const rp = gameHooks.respawn(); ensureBand(world, rp); return rp; }, // WS2-05: band for the respawn pose // seam onRespawn(): first non-null {x,y,z,yawDeg} wins
         onDied: (t) => { gameHooks.emitSimple('player:died', t.x, t.y, t.z); deathFlow.died(performance.now()); },
         syncFacing: (t) => {
           if (!look) return;
@@ -1378,11 +1430,14 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
         jawOpenDeg: window.ASSETS.bearFx && window.ASSETS.bearFx.talk ? window.ASSETS.bearFx.talk.jawMaxDeg : undefined, // jaw hinge: rx opens, 0..jawMaxDeg (voxel_bear.js header)
         book: () => (saveRelay ? saveRelay.quest.book : null), // QG-03: `q.*` dialogue keys -> quest book
         questFlag: saveRelay ? (k) => saveRelay.quest.questFlag(k) : undefined, // CH1-06: `s.*` dialogue keys
+        onTalk: (npcId) => errands.talked(npcId), // QL-WIRE: talk.<site> flag for 'talk' errands
         onFlag: (k, v) => { if (k.charCodeAt(0) !== 113 || k.charCodeAt(1) !== 46) gameHooks.emitSimple('flag:set', 'dlg.' + k, v); } });
       setDialogueApi(dialogueCtl);
+      errands.load(world); // QL-WIRE: [E] Inspect on post / notePost
       bearTurn = createNpcTurn(world, 'bear'); // NPC-BEAR-01: null when the world has no bear
       compassWorld = world; compassBreach = null; compassBookVer = -1; compassTick = 0; // COMPASS-02: re-resolve against the new world
       if (bearTurn) dialogueCtl.addNpc('bear');
+      dialogueCtl.addNpc('rook'); // Rook the crow: no-op until the entity exists in the world
       crystal = barks = chapterCard = escort = null;
       if (bearTurn) bearTurn.paused = false;
       if (saveEnabled && saveRelay) { // CH1-MOUNT: all three need the quest relay (flags + book)
@@ -1400,7 +1455,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
           const bt = world.get('bear').data.transform;
           escort = createBurlEscort({ world, walk: bw, questFlag: (k) => rq.questFlag(k), barks, id: 'bear', x: () => bt.x, y: () => bt.y,
             dialogueOpen: () => dialogueCtl.open, afterLeave: () => rq.state.completed.includes('leave'), requestOpen: nearTalk, noticeBusy: () => notice.active,
-            restore: () => dialogueCtl.addNpc('bear'), hideSafe: true }); // QL-05: Burl's home switch re-adds her [E] Talk
+            restore: () => dialogueCtl.addNpc('bear'), hideSafe: true, leadStatus: () => rq.book.statusOf('sq.burl.walk') }); // sq.burl.walk: Burl leads along walks.toBend // QL-05: Burl's home switch re-adds her [E] Talk
           escort.load();
         }
         window.__debug.escort = escort; // tools/verify-ch1-mount.mjs
@@ -1408,6 +1463,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
       }
       if (toasts) toasts.dispose();
       toasts = itemDefs ? createToastView(engine.events, window.ASSETS.items.toast, itemDefs, assets.palette.rgb) : null;
+      qbView = itemDefs ? createQuickbarView({ defs: itemDefs, keys: window.ASSETS.items.keys, rgb: assets.palette.rgb }) : null; // EQ-12
       if (saveRelay) { // QG-03: book events -> seam + toasts (the reward, if any, is granted from book.lastReward; Burl's quest has none - owner pick)
         const tv = toasts, msg = window.ASSETS.items.toast && window.ASSETS.items.toast.messages && window.ASSETS.items.toast.messages.packFull;
         saveRelay.quest.onSection = (title) => { if (tv && msg) tv.say('Quest complete: ' + title, msg.fg); const ws = world.state; if (chapterCard && saveRelay.quest.done && ws['waystone.waystone.woken'] && ws['waystone.ws_roadBend.woken']) chapterCard.trigger(); /* PO-CH1-08: card only after the meadow stone AND the relay */ }; // CH1-02: live section completion only
@@ -1425,11 +1481,12 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
         inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
         healthOf: () => (playerHandle && playerHandle.data.components.health) || null,
         onHandsChanged: () => { if (hands && playerHandle) hands.step(playerHandle.data, false, false, false); }, // router sees the change now (cancel + setHand + hands:changed)
+        quickbar: itemDefs ? { assign: (n, id) => !!playerHandle && qbAssign(playerHandle.data, itemDefs, n + HAND_SLOTS, id) } : undefined, // EQ-12: 1-4 over an item in the Items / Character tab (key n = bar slot n + 2)
         characterKey: params.get('craft') !== '1', // EQ-03: C opens the Character tab (the crafting list keeps C under ?craft=1)
         character: window.__charKit ? { // EQ-03/04: lazy preview + char cache, built on the first Character-tab open
           equipmentOf: () => (playerHandle && playerHandle.data.components.equipment) || null,
           getLook: () => lookOrDefault(window.__charKit, saveRelay && saveRelay.look),
-          charCache: createCharCache(window.__charKit, 4),
+          charCache: createCharCache(window.__charKit, 4), kit: window.__charKit,
           createPreview: () => createModelPreview(assets),
           onGearChanged: () => { if (hands && playerHandle) hands.step(playerHandle.data, false, false, false); },
         } : undefined,
@@ -1465,7 +1522,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
         Object.assign(startT, { x: atParts[0], y: atParts[1], z: atParts[2], yawDeg: atParts[3] || 0, pitchDeg: atParts[4] || 0 });
         playerHandle.data.components.body.peakZ = startT.z;
       }
-      if (world.ensureBandFor) world.ensureBandFor(startT.x, startT.y); // WS2-05: band for the start/saved pose (no-op without terrainBands)
+      placeLoaded(world, startT, () => gameHooks.respawn()); // WS2-05/MAP-13: saved pose outside a polygon bound -> last relay; band for the final pose (no-op without bands)
       hzb.invalidate('world-load'); // new world / restart / title New+Continue / ?at / ?pose: the start pose is a camera cut
       const waterfallView = worldDef.name === 'waterfall_test' && waterfallPreset?.views[params.get('waterfallview')];
       if (waterfallView) {
@@ -1521,7 +1578,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
           // reveal (mapFog.js's `reveal`, never touches the pencil route) of each marker's own cell, not the
           // player-visit feed (mapFogHook.js's per-tick `visit`) that gates the surrounding terrain.
           if (mapFogHook && mapFogHook.fog) for (const m of markers) mapFogHook.fog.reveal(m.x, m.y);
-          chartOptions = { chart: chartData, markers, fog: mapFogHook ? mapFogHook.fog : null, travel: !waystoneWire ? null : { list: () => { const ws = waystoneWire.sim; if (!ws) return []; const l = []; const n = ws.list(l); const out = []; for (let i = 0; i < n; i++) out.push({ id: l[i].id, name: l[i].label, order: l[i].order, touched: l[i].touched, woken: true, x: l[i].x, y: l[i].y }); return out; } } };
+          chartOptions = { chart: chartData, markers, geo: (window.ASSETS.levels.world_geo && params.get('geo') !== '0') ? { G: window.ASSETS.levels.world_geo, U: window.ASSETS.levels.overworld_far.util } : null, /* MAP-28 */ fog: mapFogHook ? mapFogHook.fog : null, travel: !waystoneWire ? null : { list: () => { const ws = waystoneWire.sim; if (!ws) return []; const l = []; const n = ws.list(l); const out = []; for (let i = 0; i < n; i++) out.push({ id: l[i].id, name: l[i].label, order: l[i].order, touched: l[i].touched, woken: true, x: l[i].x, y: l[i].y }); return out; } } };
         }
         try {
           initMapCard(assets, ui.cols, ui.rows, chartOptions);
@@ -1544,7 +1601,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
       window.__debug.playerHandle = playerHandle;
       window.__debug.look = look;
       window.__debug.beasts = beasts; window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; window.__debug.getUi = () => ui; // HANDS-01b: test hooks; EQ-04: verify-equip-play reads the UI cells of the Character view box
-      window.__debug.equipPlay = equipPlay; window.__debug.shieldSim = shieldSim; window.__debug.arrowSim = arrowSim; window.__debug.vitals = vitals; window.__debug.wakeOut = wakeOut; // EQ-07/09: tools/verify-equip-play.mjs hooks
+      window.__debug.equipPlay = equipPlay; window.__debug.quickbar = quickbar; window.__debug.vmHandles = { sword: swordVmH && swordVmH.h, shield: shieldVmH && shieldVmH.h, bow: bowVmH && bowVmH.h }; window.__debug.shieldSim = shieldSim; window.__debug.arrowSim = arrowSim; window.__debug.vitals = vitals; window.__debug.wakeOut = wakeOut; // EQ-07/09: tools/verify-equip-play.mjs hooks
       window.__debug.isMapOpen = isMapOpen; window.__debug.getMapPanel = getMapPanel; window.__debug.getMapChart = getMapChart; window.__debug.questBook = () => (saveRelay ? saveRelay.quest.book : null); window.__debug.questLogOpen = qlIsOpen; window.__debug.gameHooks = gameHooks; window.__debug.travel = travel; window.__debug.travelTo = (id) => travel.request(id, true); window.__debug.waystoneSim = () => (waystoneWire ? waystoneWire.sim : null); // QG-04/05: tools/verify-quest-ui.mjs hooks
       // S8-B1-15: test hook (tools/verify-map-wire.mjs)
     });
@@ -1803,7 +1860,9 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
       lap(SEC.input);
       stepSectorAnims(engine.world, dt);
       engine.world.water.step(); // US-143a (35.2): wave clock tick, before `integrate` per the Q13 instruction
+      if (wading) wading.before(playerHandle.data, playerHandle.data.components.body.speedScale); // RIVER-04: slowdown + current push (river water only)
       integrate(playerHandle.data, dt, controls, engine.world, engine.physics);
+      if (wading) wading.after(playerHandle.data); // deep water (> 1.0 m) is a wall (D-064)
       // CLOTH-1b3/1b5 (33.5): the player capsule pushes cloth; sleep-by-distance reads the eye (presentation-only,
       // never hashed/saved - cloths.js's own doc comment). Approx eye = feet + eyeH (good enough for a sleep radius).
       {
@@ -1832,12 +1891,12 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
         // HANDS-01b (37.8a): the router turns LMB/RMB + the gate into one `down` per item; every item sim is stepped
         // every step (down = false when it is in no hand).
         if (!uiLocked && !paused && !ending && !vLocked() && input.pressed(gameKeys.swapHands)) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
-        if (itemDefs) stepEquipment(playerHandle.data, itemDefs); // EQ-02: hands are derived (right = main/ranged, left = off)
+        if (itemDefs) stepEquipment(playerHandle.data, itemDefs); // EQ-02/OB-017: hands are derived (left = main/ranged, right = off)
         const gateOpen = look.locked && !uiLocked && !ending && !paused && !vLocked();
-        // EQ-07 (settles the EQ-02 'crossed' note): hands.step(player, rawLeftHand, rawRightHand): the LEFT hand (shield) follows RMB,
-        // the RIGHT hand (main sword / bow) follows LMB. Q swaps the weapon set (0.3 s, buttons held back only for that time).
+        // OB-017: hands.step(player, rawLeftHand, rawRightHand): the LEFT hand (main sword / bow) follows LMB,
+        // the RIGHT hand (off: shield) follows RMB. Q swaps the weapon set (0.3 s, buttons held back only for that time).
         const swapHeld = equipPlay ? equipPlay.pre(playerHandle.data, input.pressed(gameKeys.swapSet), gateOpen) : false;
-        hands.step(playerHandle.data, !swapHeld && (input.isDown(gameKeys.useRight) || input.pressed(gameKeys.useRight)), !swapHeld && (input.isDown(gameKeys.useLeft) || input.pressed(gameKeys.useLeft)), gateOpen);
+        hands.step(playerHandle.data, !swapHeld && (input.isDown(gameKeys.useLeft) || input.pressed(gameKeys.useLeft)), !swapHeld && (input.isDown(gameKeys.useRight) || input.pressed(gameKeys.useRight)), gateOpen);
         if (equipPlay) { // EQ-07/09: shield raise/block, bow draw/shoot, arrows + pick-up (look vector: trig stays here)
           forwardOf(look.yawDeg, swordFwd);
           const pr2 = look.pitchDeg * DEG2RAD, cp2 = Math.cos(pr2), pt2 = playerHandle.data.transform, pb2 = playerHandle.data.components.body;
@@ -1847,6 +1906,15 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
           const shotBefore = equipPlay.bow.shotTick;
           equipPlay.post(playerHandle.data, eqCtx);
           if (equipPlay.bow.shotTick !== shotBefore) playBowShot();
+        }
+        if (quickbar) { // EQ-12 AC3/AC4 + D-068: keys 1-4 act per item kind, H drinks a red draught. While a dialogue choice list is open the digits belong to
+          // the dialogue (its own pick consumes the edge; out-of-range digits are held back too). Sip = 0.6 s, never locks movement.
+          const pl = playerHandle.data; ensureQuickbar(pl, itemDefs); quickbar.step(); qbBlocked = ending || paused;
+          if ((++qbTick % 30) === 0) autoFill(pl, itemDefs);
+          if (qbPlayOk()) {
+            const choosing = !!(dialogueCtl && dialogueCtl.open && dialogueCtl.runner.state === 'choosing');
+            if (!choosing) for (let n = 0; n < 4; n++) if (input.pressed('Digit' + (n + 1))) { qbToast(quickbar.press(pl, n)); break; }
+          }
         }
         if (fireball) { // SPELL-01a: aim = unit 3D look vector (pitch > 0 = up); trig stays here, outside sim/
           forwardOf(look.yawDeg, swordFwd);
@@ -1864,6 +1932,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
         sword.step(playerHandle.data, swordFwd[0], swordFwd[1], hands ? (equipPlay ? equipPlay.swordDown : hands.downOf('sword')) : false); // EQ-07: no swing while the shield is raised
       }
       if (practiceTarget) practiceTarget.step();
+      if (++errandTick % 64 === 0) errands.escortTick(); // QL-WIRE
       if (vitals) {
         const wasDead = vitals.dead;
         vitals.step(playerHandle.data, input.pressed(gameKeys.interact) || (deathFlow.active && deathRespawnDue)); // US-080a1 (30.2); DEATH-FLOW-01: fade end = virtual [E]
@@ -1974,7 +2043,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
   }
 
   // Reused every frame (architecture.md section 9: no per-frame objects).
-  const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };
+  const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 }; window.__debug.cam = cam; // OB-017: verify-equip-play reads the eye
   // US-006: reused per-frame scratch for `syncEntityLights`'s
   // `attachedLightPos` output (architecture.md 9 - no per-frame allocation).
   const lightSyncPos = new Float64Array(3);
@@ -2131,7 +2200,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
         const spellMoving = !!sbody && sbody.grounded && (controls.forward !== 0 || controls.strafe !== 0);
         (handFxOn ? presentHandFire : presentSpellHand)(spellVmH, hands && !cinematic ? hands.handOf(SPELL_HAND_ITEM) : null, simTime, simTime, spellMoving, fireball);
       }
-      if (equipPlay && !cinematic) { // EQ-07/09: first-person shield / bow (left arm) + the arrow instances
+      if (equipPlay && !cinematic) { // EQ-07/09: first-person shield (right arm) / bow (left arm) + the arrow instances
         const eq7 = playerHandle.data.components.equipment, b7 = playerHandle.data.components.body;
         const mv7 = !!b7 && b7.grounded && (controls.forward !== 0 || controls.strafe !== 0);
         const tk7 = vitals ? vitals.tick : 0;
@@ -2201,6 +2270,10 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
             if (eqH && eqH.set === 'ranged' && eqH.ranged !== null) drawArrowCount(ui, assets.uiStyle.vitals, eqH.quiver ? eqH.quiver.n : 0, hudOn);
             if (hudOn) drawBlockSpark(ui, ui.cols, ui.rows, (fb.timeSec - blockSparkAt) * 1000);
           }
+          if (qbView && quickbar && playerHandle) { // EQ-12 + D-068: quick bar bottom-centre (OB-011: no potion HUD button; not in menus / cinematics)
+            const qbOn = !vitals.dead && !wakeOut.inputLocked && !isMapOpen() && !isSettingsOpen() && !(invView && invView.isOpen) && !cinematic;
+            qbView.drawBar(ui, playerHandle.data, quickbar.st, qbOn);
+          }
           hurtFx.draw(ui); // HURT-FX-01
           deathFlow.draw(ui, ui.cols, ui.rows); // DEATH-FLOW-01
           presentPickups(engine.world, assets.pickupStyle, fb.timeSec); // US-080b
@@ -2223,6 +2296,10 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
       notice.draw(ui, ch1Hidden); // CH1-04a
       if (chapterCard) chapterCard.draw(ui); // CH1-09
       if (invView) invView.draw(ui); // US-091b: the pack screen, over HUD + toast
+      if (invView && invView.isOpen && qbView && quickbar && playerHandle) { // QB-6: the bar inside the menu = the drag-and-drop target; the dragged icon rides the pointer
+        syncHandSlots(playerHandle.data); qbView.drawBar(ui, playerHandle.data, quickbar.st, true);
+        qbView.drawGhost(ui, qbDrag.ghostId, qbDrag.st.x, qbDrag.st.y);
+      }
       if (craftView) craftView.draw(ui); // MAIN-WIRE-01
       if (qlIsOpen()) qlView.draw(ui); // QG-05
       // US-080a1/a2 (30.2): death fade (CPU path, same gating as the end-card
@@ -2307,6 +2384,7 @@ setInspectSink((id) => { // QL-04: inspect an object giver / hand-in prop: accep
         extra += `\nworld (${t.x.toFixed(2)}, ${t.y.toFixed(2)}, ${t.z.toFixed(2)}) yaw ${look.yawDeg.toFixed(0)} pitch ${look.pitchDeg.toFixed(0)}` +
           `${look.locked ? '' : ' [unlocked]'}  grounded: ${grounded}\nstructure: ${struct ? struct.id : '(none)'} sector: '${sectorCh}'${sector ? '' : ' (outside)'}\n${terrainInfo}`;
       }
+      extra += `\nmesh singles ${meshFeedStats.kept}/${meshFeedStats.requested} (cap ${MAX_MESH_DRAWS})${meshFeedStats.dropped ? '  DROPPED ' + meshFeedStats.dropped : ''}`; // OB-039
       if (bootPrinted) extra += '\nboot: ' + bootSummary();
       overlay.update(engine.loop.fps, engine.loop.frameMs, extra);
     }

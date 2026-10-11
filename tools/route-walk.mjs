@@ -16,6 +16,9 @@ import {
 import paletteMod from '../design/palette.js';
 import detailPassMod from '../design/detail-pass.js';
 import terrainDef from '../design/levels/overworld_far.js';
+import geoMod from '../design/levels/world_geo.js';
+import { createVitals } from '../game/js/quest/sim/vitals.js';
+import { VITALS_DEFAULTS } from '../game/js/quest/sim/vitalsConfig.js';
 import lanternMod from '../design/models/lantern.js';
 import leverMod from '../design/models/lever.js';
 import voxelPropsMod from '../design/models/voxel_props.js';
@@ -34,7 +37,7 @@ import { loadTestAssets } from './testing/content-node.mjs';
 import { registerQuestBehaviours } from '../game/js/quest/index.js';
 
 globalThis.window = globalThis.window || globalThis;
-paletteMod; terrainDef; lanternMod; leverMod; voxelPropsMod; boulderMod; rubbleMod; wreckageMod; relayMod;
+paletteMod; terrainDef; geoMod; lanternMod; leverMod; voxelPropsMod; boulderMod; rubbleMod; wreckageMod; relayMod;
 detailPassMod; swordMod; m3PropsMod;
 farTowerMod; ferrumLightsMod; titleMod; voxelWorldMod;
 const { assets } = await loadTestAssets();
@@ -229,6 +232,14 @@ function routeRun(physics, { reload = false } = {}) {
   const relayD = Math.hypot(sim.player.transform.x - RELAY.x, sim.player.transform.y - RELAY.y);
   info.relayDist = relayD; l8.completed = l8.completed && relayD <= 3 && !l8.fell;
   legs.push(l8);
+  // M4 (sq.burl.walk): Burl's walks.toBend polyline (world_m1 bear entity) must be walkable by the player (corridor check): relay -> Burl's home -> back to the relay.
+  {
+    const wd = JSON.parse(readFileSync(new URL('../content/worlds/world_m1.world.json', import.meta.url), 'utf8'));
+    const tb = wd.entities.find((e) => e.id === 'bear').components.walks.toBend.map(([x, y]) => ({ x, y }));
+    const l8b = runLeg(sim, '8b Burl toBend path (relay -> home -> relay)', [...tb.slice(1).reverse().slice(1, -1), ...tb.slice(2)], { maxWpSteps: 600 });
+    info.toBendPts = tb.length; l8b.completed = l8b.completed && !l8b.fell && tb.length >= 30;
+    legs.push(l8b);
+  }
   // WS2-07 / 38.38 leg 9: bend relay -> road -> ford -> across the stepping stones -> relay #2 (ws_ford) -> bound probe -> back to the east.
   // The sim streams the near band like the game (streamBand per step, 2 ms budget): one swap each way, no band:late, no fall.
   const bandEv = []; let late = 0; sim.world.events = sim.world.events || new Events();
@@ -257,6 +268,18 @@ function routeRun(physics, { reload = false } = {}) {
   const xr = runLeg(sim, '9e crossroads (post, sign, footpath, straw field)', [{ x: 1008, y: 1069 }, { x: 1001, y: 1064 }, { x: 994, y: 1058 }, { x: 986, y: 1053 }, { x: 980, y: 1048 }, { x: 986, y: 1053 }, { x: 994, y: 1058 }, { x: 994, y: 1064 }, { x: 984, y: 1086 }, { x: 975, y: 1093 }, { x: 984, y: 1086 }, { x: 998, y: 1075 }, { x: 1008, y: 1069 }], { maxWpSteps: 1500 });
   xr.completed = xr.completed && !xr.fell;
   legs.push(xr);
+  // MAP-23: Rook's nest ruin climb. Up the rubble stair-block columns (jump per column, east -> west), onto the roof deck to the nest anchor and back down + out. Roof deck z ~ nest.z - 0.2.
+  {
+    const wd = JSON.parse(readFileSync(new URL('../content/worlds/world_m1.world.json', import.meta.url), 'utf8'));
+    const cols = [...new Set(wd.structures.filter((q) => /^poi[0-9]+$/.test(q.id) && q.mesh === 'quaternius/Stairs_Exterior_Straight' && Math.abs(q.origin.x - 970.7) < 0.5 && q.origin.y < 1075).map((q) => q.origin.y))].sort((p, q) => q - p); // pile columns, south end (start) first
+    const PX = wd.structures.find((q) => q.mesh === 'quaternius/Stairs_Exterior_Straight' && /^poi/.test(q.id)).origin.x;
+    const nest = wd.entities.find((e) => e.id === 'nest'), up = cols.map((y) => ({ x: PX, y, jump: true }));
+    const rk = runLeg(sim, 'R1 Rook ruin climb (steps -> roof -> nest -> down)', [{ x: 1001, y: 1064 }, { x: 994, y: 1064 }, { x: 990, y: 1067 }, { x: 980, y: 1071 }, { x: 975.5, y: cols[0] + 2.2 }, { x: PX, y: cols[0] + 2.2 }, ...up, { x: nest.x, y: nest.y }, { x: nest.x + 1.6, y: nest.y }, ...up.slice().reverse().map((w) => ({ x: w.x, y: w.y })), { x: PX, y: cols[0] + 2.2 }, { x: 975.5, y: cols[0] + 2.2 }, { x: 980, y: 1071 }, { x: 990, y: 1067 }, { x: 994, y: 1058 }, { x: 1001, y: 1064 }, { x: 1008, y: 1069 }], { maxWpSteps: 1500 });
+    rk.completed = rk.completed && !rk.fell && cols.length >= 3;
+    info.roofZ = Math.max(...rk.trace.filter((_, i) => i % 3 === 2)); info.roofCols = cols.length;
+    if (sim.physics === 'mesh') rk.completed = rk.completed && info.roofZ >= nest.z - 0.6; // the grid has no mesh colliders: there it only has to walk the line without a stuck spot
+    legs.push(rk);
+  }
   const back = runLeg(sim, '9c ford -> back over the stones -> bend', [{ x: 1008, y: 1069 }, ...W2E, { x: 1046, y: 1069 }, { x: 1090, y: 1070 }, { x: 1180, y: 1062 }, { x: 1260, y: 1045 }, { x: 1310, y: 1048 }], { maxWpSteps: 1500 });
   back.completed = back.completed && !back.fell;
   legs.push(back);
@@ -409,4 +432,54 @@ else {
   console.log('jump grid:', JSON.stringify(JG));
   console.log('jump mesh:', JSON.stringify(JM));
   console.log(`sim ms/step p50 p95 max  grid: ${pct(G.ms, 0.5).toFixed(4)} ${pct(G.ms, 0.95).toFixed(4)} ${Math.max(...G.ms).toFixed(4)}   mesh: ${pct(M.ms, 0.5).toFixed(4)} ${pct(M.ms, 0.95).toFixed(4)} ${Math.max(...M.ms).toFixed(4)}`);
+}
+
+// TELEPORT-BUG (2026-10-11): geography installed (as main.js does: installGeo before World.load) + the real vitals sim (void rule, fall damage,
+// death/respawn). From the tower meadow walk 16 headings for 200 s: no pose jump > 5 m per step, no hp loss, never dead (a respawn / void
+// teleport / bound snap-back would show as a jump). Runs LAST: installGeo mutates the shared terrain recipe.
+{
+  geoMod; globalThis.ASSETS.levels.world_geo.util.installGeo(globalThis.ASSETS.levels.overworld_far.util);
+  const sim = setup('mesh'); sim.stream = true;
+  const t = sim.player.transform, b = sim.player.components.body;
+  const vit = createVitals(sim.world, sim.world.events, VITALS_DEFAULTS, {});
+  const bad = []; let worst = 0;
+  for (let k = 0; k < 16; k++) {
+    sim.world.ensureBandFor(1470, 1029); t.x = 1470; t.y = 1029; t.z = sim.world.floorAt(1470, 1029) ?? 0; b.vx = b.vy = b.vz = 0; b.fallDistance = 0; b.grounded = true;
+    sim.controls.yawDeg = k * 22.5; sim.controls.forward = 1; sim.controls.run = true;
+    let px = t.x, py = t.y, pz = t.z;
+    for (let i = 0; i < 12000; i++) {
+      stepOnce(sim); vit.step(sim.player, false);
+      const d = Math.hypot(t.x - px, t.y - py, t.z - pz); worst = Math.max(worst, d);
+      if (d > 5) { bad.push(`heading ${k * 22.5} step ${i}: jump ${d.toFixed(1)} m (${px.toFixed(0)},${py.toFixed(0)},${pz.toFixed(1)}) -> (${t.x.toFixed(0)},${t.y.toFixed(0)},${t.z.toFixed(1)})`); break; }
+      if (vit.dead || sim.player.components.health.hp < sim.player.components.health.max) { bad.push(`heading ${k * 22.5} step ${i}: hp ${sim.player.components.health.hp} dead ${vit.dead}`); break; }
+      px = t.x; py = t.y; pz = t.z;
+    }
+  }
+  console.log(`probe geo walk (16 headings x 200 s, vitals on): ${bad.length ? 'FAIL' : 'PASS'} worst step ${worst.toFixed(2)} m${bad.length ? NL + bad.join(NL) : ''}`);
+  if (bad.length) process.exitCode = 1;
+}
+
+// MAP-09: the Sealed Gate is CLOSED. Geography installed (above). From the pass floor west of the gate, run east into the gatehouse door, the
+// two towers and the curtain wall for 20 s each (also running + jumping): the player must never get past the wall line x=240 (west face ~239.2).
+{
+  // world_m1's play bounds do not reach the West Fells yet: widen a COPY with a disc round the gate so only the colliders can stop the player
+  const wd = JSON.parse(JSON.stringify(assets.world('world_m1'))); wd.bounds.parts.push({ shape: 'circle', x: 240, y: 840, r: 150 });
+  const sim = setup('mesh'); sim.world = World.load(wd, assets, { physics: 'mesh', events: new Events() }); sim.stream = true;
+  const t = sim.player.transform, b = sim.player.components.body;
+  const run = (yaw, y0, jump) => {
+    sim.world.ensureBandFor(205, y0); t.x = 205; t.y = y0; t.z = sim.world.floorAt(205, y0) ?? 0; b.vx = b.vy = b.vz = 0; b.fallDistance = 0; b.grounded = true;
+    sim.controls.yawDeg = yaw; sim.controls.forward = 1; sim.controls.run = true;
+    let maxX = t.x;
+    for (let i = 0; i < 1200; i++) { sim.controls.jump = jump && i % 40 === 0; stepOnce(sim); maxX = Math.max(maxX, t.x); }
+    sim.controls.jump = false;
+    return maxX;
+  };
+  let eastYaw = 0; { const probe = [0, 90, 180, 270].map((y) => [y, run(y, 840, false)]); eastYaw = probe.sort((a, c) => c[1] - a[1])[0][0]; }
+  const res = [];
+  for (const y0 of [796, 802, 808, 816, 824, 832, 836, 840, 844, 848, 856, 864, 872, 880, 886]) if ((sim.world.ensureBandFor(205, y0), sim.world.floorAt(205, y0)) < -20) res.push([y0, run(eastYaw, y0, false), run(eastYaw, y0, true)]);
+  for (const r of res) if (r[1] > 239.6 || r[2] > 239.6) console.log("  breach y0", r[0], "run", r[1].toFixed(1), "jump", r[2].toFixed(1));
+  const worst = Math.max(...res.flat().filter((_, i) => i % 3 !== 0));
+  const openWest = run(eastYaw, 840, false) < 240;
+  console.log(`probe sealed gate blocks (every start on the pass floor y 808..872 (door y840, towers), run + jump, 20 s, yaw ${eastYaw}): ${worst < 239.6 && openWest ? 'PASS' : 'FAIL'} east-most x ${worst.toFixed(2)} (wall west face ~239.2)`);
+  if (!(worst < 239.6 && openWest)) process.exitCode = 1;
 }

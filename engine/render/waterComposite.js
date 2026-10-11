@@ -26,11 +26,11 @@ import { lastWaterSelection } from './water.js';
 import { SKY_LUT_N } from './gpu/wgsl/skyLut.js';
 import { skyLutFromPalette, waterReflectAt, waterReflectMix } from './waterReflect.js';
 import {
-  WL_STRIDE, WL_SLOTS, WFOG_LEN, RIPPLE_SLOTS, RIPPLE_ACC_MIN, DEFAULT_RIPPLE_GLYPH, DEFAULT_RIPPLE_GAIN,
-  fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit, waterSurfaceHash, waterEdgeDistance, waterfallHash, rippleAccAt,
+  WL_STRIDE, WL_TABLE_SLOTS, WFOG_LEN, RIPPLE_SLOTS, RIPPLE_ACC_MIN, DEFAULT_RIPPLE_GLYPH, DEFAULT_RIPPLE_GAIN,
+  fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit, riverStreakHit, riverAlpha, waterSurfaceHash, waterEdgeDistance, waterfallHash, rippleAccAt,
 } from './waterLook.js';
 
-const _table = new Float32Array(WL_SLOTS * WL_STRIDE);
+const _table = new Float32Array(WL_TABLE_SLOTS * WL_STRIDE); // 12 GPU slots + river slots 12..13 (38.45, JS twin)
 const _fog = new Float32Array(WFOG_LEN);
 const _rip = new Float32Array(RIPPLE_SLOTS * 4); // S8-B2-13b (38.14): 8 rings x (x, y, age, amp)
 const _p = new Float64Array(3);
@@ -86,7 +86,7 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     if (isSky !== skyPass) continue;
     const dW = wDepth[i], raw = isSky ? Infinity : depth[i];
     if (!(dW < raw)) continue;
-    const slot = wObj[i] & 15, lb = slot * WL_STRIDE, sheet = (wObj[i] & 32) !== 0;
+    const slot = wObj[i] & 15, lb = slot * WL_STRIDE, sheet = (wObj[i] & 32) !== 0, ribbon = (wObj[i] & 64) !== 0;
     const opaqueAt = _table[lb + 3], seeThrough = _table[lb + 7], bgK = _table[lb + 13];
     let a = sheet ? _table[lb + 55] : isSky ? 1 : (raw - dW) / opaqueAt;
     a = a < 0 ? 0 : a > 1 ? 1 : a;
@@ -97,6 +97,14 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     if (!isSky) {
       if (pitched) unprojectPitched(pterms, col, row, raw, _floorP); else unprojectCell(terms, col, row, raw, _floorP);
       column = Math.max(0, _p[2] - _floorP[2]);
+    }
+    // OB-019 RIVER-02 (38.45): ribbon texel word = slot | back<<4 | 1<<6 | rapidQ<<8 | e*1000<<16; alpha feather by edge distance and column.
+    let rE = 0, rRapid = 0;
+    if (ribbon) {
+      const rw = wObj[i];
+      rE = (rw >>> 16) * 0.001; rRapid = ((rw >>> 8) & 255) * (1 / 255);
+      const fe = _table[lb + 30], fs = _table[lb + 31];
+      a = riverAlpha(a, rE, column, fe, fs);
     }
     const tint = isSky ? a : Math.min(column / _table[lb + 38], 1);
     // S8-B2-12b (38.13): cloud-darkening byte (`light.cloudQ[i]`, the JS-side copy of the floor cell's LIGHT.w bits
@@ -115,7 +123,11 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     if (opaque) {
       const h = waterSurfaceHash(_table, lb, _p[0], _p[1]);
       glyph = _table[lb + 16 + (h % (_table[lb + 12] | 0))];
-      if (flowStreakHit(_table, lb, _p[0], _p[1])) glyph = _table[lb + 24]; // US-141a (35.4): flowing water streaks
+      if (ribbon ? riverStreakHit(_table, lb, wt.z[i], rE) : flowStreakHit(_table, lb, _p[0], _p[1])) glyph = _table[lb + 24]; // US-141a (35.4) / 38.45: flowing water streaks
+      if (ribbon && rRapid > 0 && (h >>> 8) * (1 / 16777216) < rRapid * _table[lb + 33]) { // rapids: foam glyph + rim tint
+        glyph = _table[lb + 44];
+        wr += (_table[lb + 48] - wr) * 0.5; wg += (_table[lb + 49] - wg) * 0.5; wb += (_table[lb + 50] - wb) * 0.5;
+      }
       if ((h >>> 8) * (1 / 16777216) > 1 - _table[lb + 15]) {
         wr += (_table[lb + 8] - wr) * 0.5; wg += (_table[lb + 9] - wg) * 0.5; wb += (_table[lb + 10] - wb) * 0.5;
       }
@@ -145,7 +157,7 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
       if ((h >>> 8) * (1 / 16777216) > 0.92) { wr = _table[lb + 8]; wg = _table[lb + 9]; wb = _table[lb + 10]; }
     }
     const e = waterEdgeDistance(_table, lb, _p[0], _p[1]);
-    const shoreS = Math.max(0, Math.min(column / _table[lb + 52], e / _table[lb + 39]));
+    const shoreS = ribbon ? Math.max(0, Math.min(column / _table[lb + 52], 1)) : Math.max(0, Math.min(column / _table[lb + 52], e / _table[lb + 39]));
     const shore = !sheet && !isSky && shoreS < 1 && dW < _table[lb + 53];
     if (shore) {
       const nFoam = _table[lb + 47] | 0;

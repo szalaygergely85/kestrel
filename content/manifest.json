@@ -6,6 +6,7 @@
   "files": [
     "worlds/world_m1.world.json",
     "dialogue/bear.dialogue.json",
+    "dialogue/rook.dialogue.json",
     "levels/tower.level.json",
     "levels/test_room.level.json",
     "levels/waterfall_cliff.level.json",
@@ -112,6 +113,8 @@
     "meshes/quaternius/Prop_MetalFence_Simple.mesh.json",
     "meshes/quaternius/Prop_Support.mesh.json",
     "meshes/quaternius/Prop_Vine1.mesh.json",
+    "meshes/quaternius/Prop_Vine2.mesh.json",
+    "meshes/quaternius/Prop_Vine5.mesh.json",
     "meshes/quaternius/Prop_Wagon.mesh.json",
     "meshes/quaternius/Prop_WoodenFence_Extension1.mesh.json",
     "meshes/quaternius/Prop_WoodenFence_Extension2.mesh.json",
@@ -125,6 +128,10 @@
     "meshes/quaternius/Stair_Interior_Solid.mesh.json",
     "meshes/quaternius/Wall_Arch.mesh.json",
     "meshes/quaternius/Wall_BottomCover.mesh.json",
+    "meshes/quaternius/Wall_UnevenBrick_Straight.mesh.json",
+    "meshes/quaternius/Wall_UnevenBrick_Door_Round.mesh.json",
+    "meshes/quaternius/Wall_UnevenBrick_Window_Wide_Round.mesh.json",
+    "meshes/quaternius/Corner_Exterior_Brick.mesh.json",
     "meshes/quaternius/WindowShutters_Thin_Flat_Closed.mesh.json",
     "meshes/quaternius/WindowShutters_Wide_Flat_Open.mesh.json",
     "meshes/quaternius/Window_Roof_Wide.mesh.json"

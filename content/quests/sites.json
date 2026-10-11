@@ -1,1 +1,23 @@
-{ "version": 1, "sites": {} }
+{
+  "version": 1,
+  "sites": {
+    "burl": {
+      "entity": "bear"
+    },
+    "post": {
+      "entity": "post"
+    },
+    "notePost": {
+      "entity": "notePost"
+    },
+    "relayBend": {
+      "entity": "relayBend"
+    },
+    "relayFord": {
+      "entity": "relayFord"
+    },
+    "rook": {
+      "entity": "rook"
+    }
+  }
+}

@@ -1,5 +1,6 @@
 // S8-C-07: cached item-get card. Host owns input routing/pause and calls step even while gameplay is paused.
 // Formatting happens at create/push; draw/step reuse the queue, layout, colours and payload-free state.
+const TIER_KEY={worn:'uiHint',sturdy:'heroGreen',fine:'gold'}; // keys of uiStyle.itemGetCard.hex
 export function createItemGetCard(adapter, {style:S, items, rgb, reduceMotion=false, dev=false}) {
   const reduced=()=>typeof reduceMotion==='function'?!!reduceMotion():!!reduceMotion; // bool or live getter
   const T=S.timing, P=S.panel, F=S.frame, B=S.iconBox, info=Object.create(null), queue=[];
@@ -23,8 +24,10 @@ export function createItemGetCard(adapter, {style:S, items, rgb, reduceMotion=fa
       const ch=d.icon.glyphs[y].charCodeAt(x), key=items.keys[d.icon.fg[y][x]];
       if(ch!==32)cells.push({x,y,ch,fg:rgb[key.c]});
     }
-    info[id]={def:d,cells,title:S.titleBar.decor[0]+d.name+S.titleBar.decor[1],
-      kind:(S.kind.text[d.kind] || d.kind)+(d.hand ? S.kind.handSuffix : ''),desc:d.desc.slice(0,S.desc.w)};
+    // EQ-10: gear shows its tier colour (worn grey / sturdy green / fine gold, = characterView) and "Defence n".
+    const eq=d.kind==='gear'&&d.equip ? d.equip : null, tierKey=eq ? TIER_KEY[eq.tier] : null;
+    info[id]={def:d,tierKey:tierKey&&colours[tierKey] ? tierKey : null,defLine:eq ? 'Defence '+eq.def : '',cells,title:S.titleBar.decor[0]+d.name+S.titleBar.decor[1],
+      kind:(eq ? 'Gear - '+eq.slot : S.kind.text[d.kind] || d.kind)+(d.hand ? S.kind.handSuffix : ''),desc:d.desc.slice(0,S.desc.w)};
   }
   let phase='idle', age=0, index=0, target=null, opacity=1;
   function paused(value){if(adapter?.setPaused)adapter.setPaused(value);}
@@ -46,8 +49,8 @@ export function createItemGetCard(adapter, {style:S, items, rgb, reduceMotion=fa
       if(!info[id] || !Number.isSafeInteger(n) || n<1 || !Number.isSafeInteger(count) || count<0)throw new Error('item card: invalid reward');
       const inf=info[id], progress=S.count.progress[id];
       queue.push({id,n,info:inf,countLine:packFull ? S.count.full.text : progress ? progress.format.replace('{n}',String(count))
-        : inf.def.stackMax>1 && count>=2 ? S.count.format.replace('{n}',String(count)) : '',
-        countFg:packFull ? fullFg : colours[progress ? progress.fg : S.count.fg],queueLine:''});
+        : inf.def.stackMax>1 && count>=2 ? S.count.format.replace('{n}',String(count)) : inf.defLine,
+        countFg:packFull ? fullFg : colours[progress ? progress.fg : inf.defLine&&inf.tierKey ? inf.tierKey : S.count.fg],queueLine:''});
       for(let i=0;i<queue.length;i++)queue[i].queueLine=queue.length>1 ? S.footer.queue.format.replace('{i}',String(i+1)).replace('{n}',String(queue.length)) : '';
       if(phase==='idle'){phase='show';age=0;index=0;paused(true);}
     },
@@ -86,7 +89,7 @@ export function createItemGetCard(adapter, {style:S, items, rgb, reduceMotion=fa
       const title=S.titleBar;
       for(let x=title.from;x<=title.to;x++)put(x,title.row,32,colours[title.fg],colours[title.bg]);
       const tx=(P.w-inf.title.length)>>1;
-      text(tx,title.row,inf.title,colours[age<title.pop.sec&&phase==='show' ? title.pop.fg : title.fg],colours[title.bg]);
+      text(tx,title.row,inf.title,colours[age<title.pop.sec&&phase==='show' ? title.pop.fg : inf.tierKey||title.fg],colours[title.bg]);
       text(tx,title.row,title.decor[0],colours[title.decorFg],colours[title.bg]);
       text(tx+title.decor[0].length+inf.def.name.length,title.row,title.decor[1],colours[title.decorFg],colours[title.bg]);
       for(let x=S.separator.from;x<=S.separator.to;x++)put(x,S.separator.row,S.separator.glyph.charCodeAt(0),colours[S.separator.fg],plate);

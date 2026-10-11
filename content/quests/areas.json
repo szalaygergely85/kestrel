@@ -37,6 +37,58 @@
     "crossroads": {
       "world": "world_m1",
       "trigger": "crossroads"
+    },
+    "hintStone": {
+      "world": "world_m1",
+      "trigger": "hillPath"
+    },
+    "fenceGap": {
+      "world": "world_m1",
+      "trigger": "fenceGap"
+    },
+    "woodpile": {
+      "world": "world_m1",
+      "trigger": "woodpile"
+    },
+    "wagon": {
+      "world": "world_m1",
+      "trigger": "wagon"
+    },
+    "lamps": {
+      "world": "world_m1",
+      "trigger": "lamps"
+    },
+    "forestEdge": {
+      "world": "world_m1",
+      "trigger": "forestEdge"
+    },
+    "wallow": {
+      "world": "world_m1",
+      "trigger": "wallow"
+    },
+    "farmGate": {
+      "world": "world_m1",
+      "trigger": "farmGate"
+    },
+    "beeFarm": {
+      "world": "world_m1",
+      "trigger": "beeFarm"
+    },
+    "standStones": {
+      "world": "world_m1",
+      "trigger": "standStones"
+    },
+    "well": {
+      "world": "world_m1",
+      "trigger": "well"
+    },
+    "shrine": {
+      "world": "world_m1",
+      "trigger": "shrine"
+    },
+    "jetty": {
+      "world": "world_m1",
+      "trigger": "jetty"
     }
   }
 }

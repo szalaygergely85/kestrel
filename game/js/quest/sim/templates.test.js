@@ -53,6 +53,7 @@ for (const t of TEMPLATES) {
   if (t === 'deliver') { assert.equal(pack0.get('letter'), 1, 'accept gives the item'); assert.equal(book.statusOf(def.id), ACTIVE); book.feed({ type: 'item:count', id: 'letter', n: 1 }); }
   for (const e of feeds[t]) book.feed(e);
   assert.equal(book.statusOf(def.id), READY, t);
+  if (t === 'fetch') { assert.equal(book.handIn(def.id), null, 'EQ-13: requireItem, no ring in the pack, no hand-in'); pack0.set('ring', 1); }
   const reward = book.handIn(def.id);
   assert.ok(reward && reward.items.length === 2 && reward.items[0].id === 'arrow', t);
   assert.equal(book.statusOf(def.id), DONE);

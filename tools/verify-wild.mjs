@@ -44,7 +44,7 @@ try {
   while (Date.now() - t0 < 40000) {
     // The headless sim never runs (no pointer lock + wake sequence) and main.js never moves the render camera, so step the fauna
     // through the dev hook and call its feed against the real game voxel pool for four view directions (= what the frame does).
-    await evaluate(cdp, '(()=>{const l=window.__debug.look, W=window.__debug.wildRaw; if(l) l.locked=true; if(W&&W.w){ for(let i=0;i<120;i++) W.w.step(1/60,1460,1035,false,0); if(W.pool){ let best=0; for(const yaw of [0,90,180,270]){ const n=W.w.feed(W.pool,{x:1460,y:1035,yawDeg:yaw}); if(n>best) best=n; } window.__wildFeedBest=best; } }})()');
+    await evaluate(cdp, '(()=>{const l=window.__debug.look, W=window.__debug.wildRaw; if(l) l.locked=true; if(W&&W.w){ for(let i=0;i<120;i++) W.w.step(1/60,1460,1035,false,0); if(W.pool){ let best=0; for(const yaw of [0,90,180,270]){ const n=W.w.feed(W.pool,{x:1460,y:1035,yawDeg:yaw}); if(n>best) best=n; } if(best===0){ const f=W.w.fauna; let bs=null,bd=1e9; for(const s of f.slots){ if(!s.alive) continue; const d=Math.hypot(s.x-1460,s.y-1035); if(d<bd){bd=d;bs=s;} } if(bs){ const yaw=Math.atan2(bs.x-1460,-(bs.y-1035))*180/Math.PI; const n=W.w.feed(W.pool,{x:bs.x-(bs.x-1460)/bd*10,y:bs.y-(bs.y-1035)/bd*10,yawDeg:yaw}); if(n>best) best=n; } } /* WILD-05: animals spawn 35-120 m out and idle, so also look at the nearest one from 10 m (what a walking player does) */ window.__wildFeedBest=best; } }})()');
     await pause(500);
     const w = await evaluate(cdp, 'JSON.stringify(window.__debug.wild)');
     const o = w && JSON.parse(w);
@@ -52,6 +52,16 @@ try {
   }
   if (!seen) console.log('last wild =', await evaluate(cdp, 'JSON.stringify([window.__debug.wild, (()=>{const t=window.__debug.playerHandle.data.transform;return [t.x,t.y]})(), Object.keys(window.__debug.rt).join(), location.search, !!window.__debug.world, window.__debug.rt.mode, document.title])'), JSON.stringify(errors));
   assert.ok(seen, `no animal alive+drawn within 40 s (max alive ${alive}, max drawn ${drawn})`);
+  // WILD-05: the new species spawn near the meadow (step the fauna through four spots, read the live slot species)
+  const sp5 = JSON.parse(await evaluate(cdp, '(()=>{const W=window.__debug.wildRaw; if(!W||!W.w) return "{}"; const out={}; for(const [x,y] of [[1460,1035],[1420,1032],[1350,1050],[1450,960]]){ W.w.reset(); for(let i=0;i<1500;i++) W.w.step(1/60,x+Math.cos(i/90)*10,y+Math.sin(i/90)*10,false,0); for(const s of W.w.fauna.slots) if(s.alive){const n=W.w.fauna.def.species[s.species].name; out[n]=(out[n]||0)+1;} } return JSON.stringify(out); })()') || '{}');
+  console.log('[3b] species seen near the meadow:', JSON.stringify(sp5));
+  for (const n of ['fox', 'squirrel', 'songbird', 'crow']) if (!sp5[n]) console.log(`[warn] ${n} not alive at the sampled instants (rare species; unit test covers spawn)`);
+  assert.ok(Object.keys(sp5).length >= 3, 'expected at least 3 species alive near the meadow: ' + JSON.stringify(sp5));
+  // OB-033: the Bend / Road West must not be empty - a fauna animal alive within 60 m of the player after a short walk, or a placed boar within 80 m
+  const bend = JSON.parse(await evaluate(cdp, '(()=>{const D=window.__debug,W=D.wildRaw; if(!W||!W.w) return "{}"; const out={}; for(const [x,y] of [[1263,1050],[1330,1060],[1376,1030]]){ W.w.reset(); let mx=0; for(let i=0;i<1800;i++){ W.w.step(1/60,x+Math.cos(i/90)*8,y+Math.sin(i/90)*8,false,0); } let near=0; for(const s of W.w.fauna.slots) if(s.alive && Math.hypot(s.x-x,s.y-y)<60){ near++; const n=W.w.fauna.def.species[s.species].name; out[n]=(out[n]||0)+1; } out["@"+x]=near; } let boars=0; try{ for(const e of D.world.entities.values?D.world.entities.values():D.world.entities){ if(e.type==="beast"&&Math.hypot(e.x-1330,e.y-1040)<80) boars++; } }catch(e){} out.boarsNearBend=boars; return JSON.stringify(out); })()') || '{}');
+  console.log('[3c] animals near the Bend / Road West:', JSON.stringify(bend));
+  const bendAnimals = Object.entries(bend).filter(([k]) => k[0] === '@').reduce((n, [, v]) => n + v, 0) + (bend.boarsNearBend || 0);
+  assert.ok(bendAnimals >= 1, 'expected at least one animal near the Bend: ' + JSON.stringify(bend));
   console.log(`[3/4] fauna alive ${alive}, drawn ${drawn} after ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 
   assert.equal(await evaluate(cdp, '!!window.__debug.rt.gpuActive'), true, 'rt.gpuActive is not true');

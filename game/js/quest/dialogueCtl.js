@@ -26,6 +26,9 @@ export function npcTalk(ctx) {
  *   cps?:number, questFlag?:(key:string)=>void, onFlag?:(key:string,v:boolean)=>void, onTalk?:(npcId:string)=>void}} opt
  *   dialogues = bundle.dialogues (compiled). events: listens to 'combat:hit' on the player (damage closes).
  */
+/** QL-06: models whose idle/listen clips have other names (Rook the crow: perch / tilt; talk is shared). */
+const NPC_CLIP_ALIAS = { crow: { idle: 'perch', listen: 'perch' } };
+
 export function createDialogueCtl(opt) {
   const { world, dialogues } = opt;
   const view = createDialogueView({ style: opt.style, palette: opt.palette }); // palette: ASSETS.palette (default globalThis.ASSETS.palette)
@@ -54,6 +57,7 @@ export function createDialogueCtl(opt) {
   const jaw = createJawSync({ maxDeg: opt.jawOpenDeg }); // opt.jawOpenDeg = model def's jawOpenDeg, else fallback
   let jawComp = null;     // voxel component of the NPC whose jaw we drive
   const runner = createDialogueRunner({
+    pageLines: opt.pageLines, pageChars: opt.pageChars, // OB-022 grouping (defaults in the runner; tests may pass pageLines:1 for one line per page)
     cps: opt.cps || view.cps, // typing speed: explicit opt, else the style's typeOn.cps (28)
     onEvent(name) {
       if (name === 'node') { pendingClip = runner.clip; oneShot = false; lastBase = null; } // a new node cuts the old one-shot
@@ -178,6 +182,8 @@ export function createDialogueCtl(opt) {
     _play(clip, once) {
       const h = world.get(npcId);
       if (!h) return;
+      const vc = h.data && h.data.components && h.data.components.voxel, al = vc && NPC_CLIP_ALIAS[vc.model];
+      if (al && al[clip]) clip = al[clip]; // QL-06: the crow has perch/tilt, not idle/listen
       if (once) h.play(clip, { loop: false, restart: true }); else h.play(clip);
     },
 

@@ -23,6 +23,7 @@ import { pointBlocked } from './interaction.js';
 import { createWind } from './wind.js';
 import { createClothSystem, collectClothDefs } from './cloths.js';
 import { createWater, collectWaterDefs, SEA_STATES } from './water.js';
+import { riverLocate, L_LAT, L_HW, L_TX, L_TY, L_V, L_Z } from './river.js';
 import { createWaterfalls, collectWaterfallDefs } from './waterfalls.js';
 import { waveHeight } from './waves.js';
 import { editLayerFromJSON } from './terrainEdits.js';
@@ -954,11 +955,20 @@ export class World {
   /** World (x, y) -> the placed structure's baked grid; see `gridLocal.js`. */
   static gridLocal(placed, x, y, out) { return gridLocal(placed, x, y, out); }
 
-  /** Bbox test first (structures.length is tiny), then the level's own footprint. */
+  /** Grid-level structures only (kind !== 'mesh'). PERF-2026-10-11: 370+ mesh structures made the linear scan below dominate the sun DDA. Cached per (array identity, length). */
+  _gridStructures() {
+    const a = this.structures;
+    if (this._gsSrc !== a || this._gsLen !== a.length) {
+      this._gs = a.filter((s) => s.kind !== 'mesh'); this._gsSrc = a; this._gsLen = a.length;
+    }
+    return this._gs;
+  }
+
+  /** Bbox test first (grid-level structures only, see _gridStructures), then the level's own footprint. */
   structureAt(x, y) {
-    for (let i = 0; i < this.structures.length; i++) {
-      const s = this.structures[i];
-      if (s.kind === 'mesh') continue;
+    const gs = this._gridStructures();
+    for (let i = 0; i < gs.length; i++) {
+      const s = gs[i];
       const b = s.bbox;
       if (x >= b.x0 && x < b.x1 && y >= b.y0 && y < b.y1) return s;
     }
@@ -1402,7 +1412,7 @@ export class World {
     const wt = this.water;
     const i = wt.find(x, y);
     if (i < 0) return false;
-    const z = wt.z[i];
+    const z = wt.zAt(i, x, y); // rect/circle: wt.z[i]; river: local z(s)
     const h = waveHeight(wt, i, x, y, wt.tick);
     const surfaceZ = z + h;
     const fz = this.physicsMode === 'mesh' ? this.supportAt(x, y, z + 0.01, false, null).floorH : this.floorAt(x, y);
@@ -1427,6 +1437,21 @@ export class World {
     const i = wt.find(x, y);
     if (i < 0) { out[0] = 0; out[1] = 0; return false; }
     wt.flowInto(i, x, y, out);
+    return true;
+  }
+
+  /**
+   * RIVER-04 (38.45): the river water at (x, y) as plain numbers, so game code never reads the river scratch (rv.loc, L_* indices).
+   * Fills out {lat (signed, + = left of flow), hw, tx, ty, v, z} and returns true iff the highest water region there is a river. Zero allocation.
+   * @param {number} x @param {number} y @param {{lat:number,hw:number,tx:number,ty:number,v:number,z:number}} out @returns {boolean}
+   */
+  riverAt(x, y, out) {
+    const wt = this.water, i = wt.find(x, y);
+    if (i < 0 || wt.kind[i] !== 3) return false;
+    const rv = wt.rivers[wt.riv[i]];
+    riverLocate(rv, x, y);
+    const l = rv.loc;
+    out.lat = l[L_LAT]; out.hw = l[L_HW]; out.tx = l[L_TX]; out.ty = l[L_TY]; out.v = l[L_V]; out.z = l[L_Z];
     return true;
   }
 

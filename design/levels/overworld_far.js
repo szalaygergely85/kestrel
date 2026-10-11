@@ -59,7 +59,12 @@
       hill2:   { height: 58, radius: 170, note: 'hill crown under the far tower' },
       rolling: { scale: 520, octaves: 5, gain: 0.5, lacunarity: 2, amp: 34, flatNearHome: 150, flatNearTower2: 120 },
       river:   { base: 1120, a1: 110, p1: 260, a2: 45, p2: 95, ph2: 1.3, halfWidth: 10, carve: 2.0, carveEdge: [14, 8],
-                 note: 'x_r(y) = base + a1 sin(y/p1) + a2 sin(y/p2 + ph2). Bed carved smoothly: carve * smoothstep(|x-x_r| 14 -> 8 m); water where |x-x_r| < halfWidth' },
+                 note: 'x_r(y) = base + a1 sin(y/p1) + a2 sin(y/p2 + ph2). Bed carved smoothly: carve * smoothstep(|x-x_r| 14 -> 8 m); water where |x-x_r| < halfWidth',
+                 // RIVER-04 (arch 38.45 resolution): the recipe valley RISES ~3 m downstream of the ford inside the keep (where the MAP-04 layer is
+                 // branched out), so a falling river could not lie on it. bedLine = a monotone channel: h = min(h, bed(y) + lift + bank * max(0, |x-x_r| - flatW)),
+                 // bed linear in y between pts, lift 0 inside and `lift` m at both ends over `ramp` m (continuous, carve-only). Starts south of the ford
+                 // stone lane (y 1069.6): ford, stones and every authored structure (all at y <= 1088, |dr| >= 13.8 m there) keep their ground.
+                 bedLine: { pts: [[1070, -90.45], [1100, -90.6], [1350, -91.0], [1376, -91.1], [1420, -91.3]], flatW: 8, bank: 0.45, ramp: 8, lift: 50, reach: 40 } },
       valley:  { depth: 22, width: 160 },
       ridge:   { height: 30, x0: 700, x1: 150, scale: 300 },
       path:    { halfWidth: 3.0, points: [[1480, 1025], [1420, 1032], [1350, 1050], [1260, 1045], [1180, 1062], [1090, 1070], [1000, 1066]] },
@@ -319,6 +324,16 @@
     var ridge = R.ridge.height * smooth(R.ridge.x0, R.ridge.x1, x) * (0.6 + 0.4 * fbm(x / R.ridge.scale, y / R.ridge.scale, s + 7, 3, 0.5, 2));
     var carve = R.river.carve * smooth(R.river.carveEdge[0], R.river.carveEdge[1], dr);
     var hh = home + hill2 + roll + valley + ridge - carve;
+    var BL = R.river.bedLine;
+    if (BL !== undefined && dr < BL.reach) {
+      var bp = BL.pts, by0 = bp[0][0], by1 = bp[bp.length - 1][0];
+      if (y > by0 && y < by1) {
+        var bi = 1; while (bp[bi][0] < y) bi++;
+        var bz = bp[bi - 1][1] + (y - bp[bi - 1][0]) / (bp[bi][0] - bp[bi - 1][0]) * (bp[bi][1] - bp[bi - 1][1]);
+        var hb = bz + BL.lift * (1 - smooth(by0, by0 + BL.ramp, y) + smooth(by1 - BL.ramp, by1, y)) + BL.bank * Math.max(0, dr - BL.flatW);
+        if (hb < hh) hh = hb;
+      }
+    }
     if (GEO_N !== 0) hh = geoHeight(hh, x, y);
     return hh;
   }

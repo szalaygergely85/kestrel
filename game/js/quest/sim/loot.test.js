@@ -23,9 +23,10 @@ import itemsMod from '../../../../design/items.js'; // classic script: side effe
 import { buildBeastNav } from './beastNav.js';
 import { createBeastSim, STATE_CORPSE, STATE_SINK, STATE_GONE } from './beastSim.js';
 import { ensureInventory, addItem, countOf } from './inventory.js';
-import { resetPickups } from './pickups.js';
-import { createLoot, setLootApi } from './loot.js';
-import { LOOT_TABLE, LOOT_PROMPT, LOOT_SEED_SALT } from './lootConfig.js';
+import { readFileSync } from 'node:fs';
+import { resetPickups, spawnItemDrop, stepPickups } from './pickups.js';
+import { createLoot, setLootApi, rollGear, gearIdFor } from './loot.js';
+import { LOOT_TABLE, LOOT_PROMPT, LOOT_SEED_SALT, LOOT_TIERS, LOOT_SLOTS } from './lootConfig.js';
 import '../index.js'; // registers `beast.loot`
 
 const { assets } = await loadTestAssets();
@@ -124,14 +125,16 @@ function eyeAtBody(env, id = 'boar1') {
 const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
 
 // ---------------------------------------------------------------------------------------------------------------
-// 1. Config agrees with the designer's table (items.js loot.boar), and the prompt text.
+// 1. Config agrees with content/items/loot.json (EQ-11), and the prompt text.
 // ---------------------------------------------------------------------------------------------------------------
 {
-  const d = globalThis.ASSETS.items.loot.boar;
-  ok('lootConfig entries match design/items.js loot.boar (item, chance, n)',
-    TABLE.entries.every((e, k) => e.item === d.entries[k].item && e.chance === d.entries[k].chance && e.n === d.entries[k].n));
-  ok('orb chance + kinds match the designer groundDrop', TABLE.orb.chance === d.groundDrop.chance && TABLE.orb.kinds.join() === d.groundDrop.kinds.join());
+  const j = JSON.parse(readFileSync(new URL('../../../../content/items/loot.json', import.meta.url), 'utf8'));
+  ok('lootConfig boar rolls + fixed == loot.json sources.boar', JSON.stringify(TABLE.rolls) === JSON.stringify(j.sources.boar.rolls) && JSON.stringify(TABLE.fixed) === JSON.stringify(j.sources.boar.fixed.map((f) => ({ item: f.item, n: f.n }))));
+  ok('lootConfig tiers + slots == loot.json', JSON.stringify(LOOT_TIERS) === JSON.stringify(j.tiers) && LOOT_SLOTS.join() === j.slots.join());
+  ok('materials are not dropped (no hide / tusk / scrap in the boar table)', !JSON.stringify(TABLE).match(/hide|tusk|scrap/));
   ok('prompt is "[E] Loot boar"', LOOT_PROMPT.boar === '[E] Loot boar');
+  ok('gearIdFor: every (tier, slot) maps to a gear def of that tier + slot', ['worn', 'sturdy', 'fine'].every((t) => LOOT_SLOTS.every((sl) => { const d = defs[gearIdFor(defs, sl, t)]; return d && d.equip.slot === sl && d.equip.tier === t; })));
+  ok('rollGear: tier cuts 0.69 worn / 0.71 sturdy / 0.96 fine', ['0.69', '0.71', '0.96'].map((b) => defs[rollGear(defs, +b, 0)].equip.tier).join() === 'worn,sturdy,fine');
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -154,47 +157,43 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// 3. Seeded table: the exact sequence for seed 1, and ~100/60/25/50 % over 1000 deaths.
+// 3. Seeded table (EQ-10): 0..4 entries; meat 100 %, arrows ~20 % x3-5, gear ~4 % as a world pickup (10k kills).
 // ---------------------------------------------------------------------------------------------------------------
 {
   const env = fresh({ seed: 1 });
-  const N = 1000;
-  const hits = [0, 0, 0, 0];
-  const seq = [];
+  const N = 10000;
+  let gear = 0, arrows = 0, meat = 0, maxEntries = 0, arrowMin = 99, arrowMax = 0;
+  const seq = [], tiers = { worn: 0, sturdy: 0, fine: 0 };
+  const gearIds = () => { const r = []; env.world.forEachEntity((e) => { const p = e.components && e.components.pickup; if (p && p.kind === 'item') r.push(p.itemId); }); return r; };
   for (let d = 0; d < N; d++) {
-    const before = pickupCount(env.world);
     kill(env);
-    const orb = pickupCount(env.world) > before ? 1 : 0;
-    const row = [env.loot.countOf('boar1', 0), env.loot.countOf('boar1', 1), env.loot.countOf('boar1', 2), orb];
-    for (let k = 0; k < 4; k++) hits[k] += row[k];
-    if (d < 8) seq.push(row.join(''));
+    const g = gearIds();
+    gear += g.length; for (const id of g) tiers[defs[id].equip.tier]++;
+    const m = env.loot.countOf('boar1', 0), a = env.loot.countOf('boar1', 1);
+    meat += m; if (a > 0) { arrows++; arrowMin = Math.min(arrowMin, a); arrowMax = Math.max(arrowMax, a); }
+    let entries = 0; for (let k = 0; k < 4; k++) if (env.loot.countOf('boar1', k) > 0) entries++;
+    maxEntries = Math.max(maxEntries, entries + g.length);
+    if (d < 6) seq.push(m + ':' + a + ':' + (g[0] || '-'));
     env.world.forEachEntity((e, id) => { if (e.components && e.components.pickup) env.world.remove(id); });
     resetPickups(env.world);
     env.beasts.resetAll();
   }
-  const pct = hits.map((h) => h / N);
-  ok('meat 100 %', pct[0] === 1, pct[0]);
-  ok('hide ~60 %', Math.abs(pct[1] - 0.60) < 0.05, pct[1]);
-  ok('tusk ~25 %', Math.abs(pct[2] - 0.25) < 0.05, pct[2]);
-  ok('orb ~50 %', Math.abs(pct[3] - 0.50) < 0.05, pct[3]);
-  // meat hide tusk orb, the first 8 deaths for seed 1 (regression snapshot of the 5-draw stream).
-  const SEED1 = ['1101', '1111', '1100', '1100', '1101', '1000', '1100', '1000'];
-  ok('exact roll sequence for seed 1', seq.join(' ') === SEED1.join(' '), seq.join(' '));
-
-  // Always 5 draws (37.16.3): a mirror stream doing exactly 5 draws per death reproduces all 1000 rolls.
+  ok('meat 100 %', meat === N, meat);
+  ok('arrows ~20 % (+-1.5)', Math.abs(arrows / N - 0.2) < 0.015, arrows / N);
+  ok('arrows n in 3..5', arrowMin >= 3 && arrowMax <= 5, arrowMin + '..' + arrowMax);
+  ok('gear ~4 % (+-0.5)', Math.abs(gear / N - 0.04) < 0.005, gear / N);
+  ok('gear tiers ~70/25/5 (+-5 pts)', Math.abs(tiers.worn / gear - 0.7) < 0.05 && Math.abs(tiers.sturdy / gear - 0.25) < 0.05 && Math.abs(tiers.fine / gear - 0.05) < 0.03, JSON.stringify(tiers));
+  ok('at most 4 entries per kill', maxEntries <= 4, maxEntries);
+  // Determinism: a mirror stream (3 draws per roll row, then 2 orb draws) reproduces the first rolls exactly.
   const m = createRng((1 ^ LOOT_SEED_SALT) >>> 0);
-  let mirrorOk = true;
-  for (let d = 0; d < N && mirrorOk; d++) {
-    const row = [m.nextFloat() < 1 ? 1 : 0, m.nextFloat() < 0.6 ? 1 : 0, m.nextFloat() < 0.25 ? 1 : 0, m.nextFloat() < 0.5 ? 1 : 0];
-    m.int(2);
-    if (d < 8 && row.join('') !== seq[d]) mirrorOk = false;
+  const mirror = [];
+  for (let d = 0; d < 6; d++) {
+    const g1 = m.nextFloat() < 0.04, gb = m.nextFloat(), gc = m.nextFloat();
+    const a1 = m.nextFloat() < 0.2, ab = m.nextFloat(); m.nextFloat();
+    m.nextFloat(); m.int(2);
+    mirror.push('1:' + (a1 ? 3 + Math.min(2, Math.floor(ab * 3)) : 0) + ':' + (g1 ? rollGear(defs, gb, gc) : '-'));
   }
-  ok('5-draw mirror stream matches the first rolls', mirrorOk);
-  ok('mirror totals match 1000 rolls', (() => {
-    const r = createRng((1 ^ LOOT_SEED_SALT) >>> 0); const t = [0, 0, 0, 0];
-    for (let d = 0; d < N; d++) { t[0] += r.nextFloat() < 1; t[1] += r.nextFloat() < 0.6; t[2] += r.nextFloat() < 0.25; t[3] += r.nextFloat() < 0.5; r.int(2); }
-    return t.join() === hits.join();
-  })(), hits.join());
+  ok('first 6 rolls for seed 1 match the mirror stream', mirror.join(' ') === seq.join(' '), seq.join(' ') + ' / ' + mirror.join(' '));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -203,15 +202,17 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
 {
   const env = fresh();
   kill(env);
-  const want = [0, 1, 2].map((k) => env.loot.countOf('boar1', k));
+  const want = [0, 1, 2, 3].map((k) => env.loot.countOf('boar1', k));
+  const wantIds = [0, 1, 2, 3].map((k) => env.loot.itemOf('boar1', k));
   updateInteraction(env.world, {}, eyeAtBody(env), true);
   const inv = env.player.components.inventory;
-  ok('E moves meat/hide/tusk into the pack',
-    countOf(inv, 'boar.meat') === want[0] && countOf(inv, 'boar.hide') === want[1] && countOf(inv, 'boar.tusk') === want[2], want.join());
-  const expectLog = TABLE.entries.filter((e, k) => want[k] > 0).map((e, k) => `+1 ${e.item}`);
+  ok('E moves meat (+ arrows) into the pack',
+    countOf(inv, 'boar.meat') === want[0] && countOf(inv, 'arrow') === want[1], want.join());
+  const expectLog = want.map((n, k) => (n > 0 ? `+${n} ${wantIds[k]}` : null)).filter(Boolean);
   ok('one inventory:added per kind that moved, in order', env.events.log.join('|') === expectLog.join('|'), env.events.log.join('|'));
   ok('flag cleared after an emptied corpse', !env.world.state['loot.boar1']);
   ok('corpse counts zeroed', want.every((_, k) => env.loot.countOf('boar1', k) === 0));
+  ok('corpse has no gear / material columns', wantIds.every((id) => id === null || id === 'boar.meat' || id === 'arrow'));
   env.step(24);
   ok('emptied corpse sinks at CORPSE entry (despawnCorpse)', env.beasts.state[0] === STATE_SINK, env.beasts.state[0]);
   env.step(31);
@@ -238,7 +239,7 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   ok('full pack: corpse does not sink', env.beasts.state[0] === STATE_CORPSE);
   // free exactly one slot: meat fits, the rest (if any) still does not
   inv.slots[0].id = null; inv.slots[0].n = 0;
-  const extra = env.loot.countOf('boar1', 1) + env.loot.countOf('boar1', 2);
+  const extra = env.loot.countOf('boar1', 1) + env.loot.countOf('boar1', 2) + env.loot.countOf('boar1', 3);
   env.events.log.length = 0;
   const emptied = env.loot.lootBoar('boar1');
   ok('one free slot: meat goes in', countOf(inv, 'boar.meat') === 1);
@@ -318,6 +319,32 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   } else {
     console.log('(skip) zero-allocation heap check needs --expose-gc');
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// 9. Gear drop = world pickup -> pack + 'gear:got' (the item-get card); pack full leaves it lying.
+// ---------------------------------------------------------------------------------------------------------------
+{
+  const env = fresh();
+  const got = [];
+  env.events.on('gear:got', (p) => got.push(p.id + ':' + p.n));
+  const t = env.player.transform;
+  const gid = 'gear.body.jerkin.sturdy';
+  const id = spawnItemDrop(env.world, gid, t.x + 5, t.y, t.z);
+  stepPickups(env.world, env.player);
+  ok('far gear pickup is not collected', env.world.entity(id) && countOf(env.player.components.inventory, gid) === 0);
+  const id2 = spawnItemDrop(env.world, gid, t.x, t.y, t.z);
+  stepPickups(env.world, env.player);
+  ok('near gear pickup -> pack, entity removed, gear:got once', countOf(env.player.components.inventory, gid) === 1 && !env.world.entity(id2) && got.join() === gid + ':1', got.join());
+  ok('inventory:added logged for the gear', env.events.log.includes('+1 ' + gid), env.events.log.join('|'));
+  const inv = env.player.components.inventory;
+  for (let i = 0; i < inv.slots.length; i++) { inv.slots[i].id = 'sword'; inv.slots[i].n = 1; }
+  const id3 = spawnItemDrop(env.world, gid, t.x, t.y, t.z);
+  stepPickups(env.world, env.player);
+  ok('pack full: the gear drop stays on the ground', !!env.world.entity(id3) && got.length === 1);
+  env.loot.dispose();
+  stepPickups(env.world, env.player);
+  ok('dispose uninstalls the item sink', !!env.world.entity(id3));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

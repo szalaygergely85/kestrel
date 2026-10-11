@@ -374,6 +374,21 @@ function scriptedRun() {
   ok('a normal drop below 30 m does not teleport', player.transform.z === 5);
 }
 
+// ---- OB-016: walking down a long slope (fallDistance flickering > 0 between step-downs) never snaps back ----
+{
+  const world = buildWorld([playerEntity(1497, 1028, 2.4)]);
+  const vitals = createVitals(world, makeEvents(), CFG, {});
+  const player = world.get('player').data, t = player.transform, b = player.components.body;
+  vitals.step(player, false);
+  let snapped = false;
+  for (let i = 0; i < 2400; i++) { // ~40 s walking west and 40 m down: grounded each step, small fallDistance left from step-downs
+    t.x -= 0.1; t.z -= 0.0175; b.grounded = true; b.fallDistance = 0.02;
+    vitals.step(player, false);
+    if (t.x > 1497 - (i + 1) * 0.1 + 1) { snapped = true; break; }
+  }
+  ok('OB-016: a 40 m walk downhill on ground never teleports back', !snapped && t.z < 2.4 - 40, `x=${t.x} z=${t.z}`);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

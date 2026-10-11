@@ -486,7 +486,168 @@
     lods: { half: { size: { w: 3, h: 3 }, anchor: { x: 1, y: 2 }, animations: { idle: { durations: [1000], loop: true, frames: [frame(
       ['o o', '\\|/', ' | '], ['O m', 'fsf', ' s '])] } } } }
   };
-  A.m3Sprites = { pickupHp: pickupHp, pickupMp: pickupMp, strawPuff: strawPuff, berrySprig: berrySprig };
+  // -------------------------------------------------------------------------------------------------------------------
+  // M4 (EQ-10 / QL-D1, v1.54): pickupGear, pickupRedCap, smokeColumn. Every colour key already exists in palette.colors.
+  // -------------------------------------------------------------------------------------------------------------------
+  // Fill a colour row from a glyph row: every non-space glyph gets the row's key unless `over` names its own key.
+  function keyRow(glyphs, base, over) {
+    var out = '', i, ch;
+    for (i = 0; i < glyphs.length; i++) {
+      ch = glyphs.charAt(i);
+      out += ch === ' ' ? ' ' : (over && over.charAt(i) !== ' ' && over.charAt(i) !== '' ? over.charAt(i) : base);
+    }
+    return out;
+  }
+  // pickupGear: an old nasal helm of the watch (spangenhelm: riveted dome with a raised centre ridge, brow band,
+  // cheek plates either side of the nasal bar, leather chin strap hanging under it). Steel + leather, lit (not
+  // emissive) except the glint. The sprite pool has no per-entity tint, so the 3 loot tiers are 3 CLIPS of the same
+  // shape: `idle` = worn (grey steel, brown leather band, a rust spot), `sturdy` = green-dyed leather band (ivy),
+  // `fine` = polished steel with a brass band, brass rivets and crest knob. Matches characterView tierFg
+  // (worn uiHint / sturdy heroGreen / fine gold) by hue, kept natural (ivy / brass, never the UI colours).
+  var GEAR_KEYS = {
+    H: { c: 'ironLight' },             // lit steel (dome left, nasal, ridge)
+    h: { c: 'iron' },                  // steel
+    d: { c: 'ironDark' },              // steel, shadow side
+    M: { c: 'mirror' },                // polished steel highlight (fine)
+    u: { c: 'rust' },                  // rust spot (worn)
+    o: { c: 'ironLight' },             // iron rivet
+    B: { c: 'wood' },                  // worn: brown leather band
+    b: { c: 'woodDark' },
+    G: { c: 'ivy' },                   // sturdy: green-dyed leather band
+    g: { c: 'ivyDark' },
+    Y: { c: 'brass' },                 // fine: brass band / crest knob
+    y: { c: 'brassDark' },
+    O: { c: 'brassHot' },              // fine: brass rivet
+    L: { c: 'ropeDark' },              // leather chin strap
+    W: { c: 'white', e: true },        // glint (emissive, 90 ms)
+    P: { c: 'mirror', e: true, fill: false }   // collect pop
+  };
+  //                 0          1          2          3          4          5
+  var GEAR_GL = ['  _n_  ', " /'o#\\ ", '(:#|#%)', '[=o=o=]', ' (/|\\) ', "  `-'  "];
+  function gearFrames(t, glint) {   // t = 'worn' | 'sturdy' | 'fine'; glint 0 = none, 1 = on the dome, 2 = on the brow
+    var band = t === 'worn' ? 'B' : (t === 'sturdy' ? 'G' : 'Y'), bandD = band.toLowerCase(), riv = t === 'fine' ? 'O' : 'o';
+    var hi = t === 'fine' ? 'M' : 'H', gl = GEAR_GL.slice();
+    var fg = [
+      '  h' + (t === 'fine' ? 'Y' : 'H') + 'h  ',
+      ' ' + hi + hi + (t === 'worn' ? 'u' : riv) + 'hd ',
+      hi + hi + 'h' + hi + 'h' + (t === 'worn' ? 'u' : 'd') + 'd',
+      band + band + riv + band + riv + bandD + bandD,
+      ' hhHdd ',
+      '  LLL  '
+    ];
+    if (glint === 1) { gl[1] = " /*o#\\ "; fg[1] = ' ' + hi + 'W' + fg[1].substr(3); }
+    if (glint === 2) { gl[3] = '[=o=o*]'; fg[3] = fg[3].substr(0, 5) + 'W' + fg[3].substr(6); }
+    return frame(gl, fg);
+  }
+  function gearHalf(t, glint) {
+    var band = t === 'worn' ? 'B' : (t === 'sturdy' ? 'G' : 'Y'), hi = t === 'fine' ? 'M' : 'H';
+    return frame([glint ? '/*\\' : '/#\\', '[=]', '/|\\'], [hi + (glint ? 'W' : 'h') + 'd', band + band + band.toLowerCase(), 'hHd']);
+  }
+  var GEAR_DUR = [1500, 90, 90];
+  function gearAnims(half) {
+    var out = {}, tiers = { idle: 'worn', sturdy: 'sturdy', fine: 'fine' }, k, t;
+    for (k in tiers) {
+      t = tiers[k];
+      out[k] = { durations: GEAR_DUR, loop: true, frames: half ? [gearHalf(t, 0), gearHalf(t, 1), gearHalf(t, 0)]
+        : [gearFrames(t, 0), gearFrames(t, 1), gearFrames(t, 2)] };
+    }
+    out.collect = { durations: [50, 50, 50], loop: false, frames: half ? popFrames(3, 3, 'P', 'H') : popFrames(7, 6, 'P', 'H') };
+    return out;
+  }
+  var pickupGear = {
+    name: 'pickupGear', displayName: 'gear', billboard: true, directions: ['S'],
+    desc: 'EQ-10 gear world drop: an old riveted nasal helm with a leather chin strap. Clips = loot tier: idle (worn: grey ' +
+          'steel, brown leather band, rust), sturdy (green-dyed band), fine (polished, brass band + rivets + knob). A white ' +
+          'glint runs dome -> brow every 1.7 s. 0.26 m tall: ~6.8 rows at 4 m on 240x90 (full tier, scale ~1.1).',
+    size: { w: 7, h: 6 }, anchor: { x: 3, y: 5 }, world: { w: 0.30, h: 0.26 },
+    keys: GEAR_KEYS, outline: { k: 0.4 },
+    tierClips: { worn: 'idle', sturdy: 'sturdy', fine: 'fine' },
+    animations: gearAnims(false),
+    lods: { half: { size: { w: 3, h: 3 }, anchor: { x: 1, y: 2 }, animations: gearAnims(true) } }
+  };
+  // pickupRedCap: a fly agaric (Amanita muscaria) with a small button cap beside it: red cap with white warts, pale
+  // gills under the rim, a white stem with its ring, moss at the foot. Lit, not emissive; a dew drop catches the light.
+  var CAP_KEYS = {
+    R: { c: 'goreRedLight' },   // cap, lit top
+    r: { c: 'goreRed' },        // cap
+    D: { c: 'goreRedDark' },    // cap, shadow rim
+    w: { c: 'linenLight' },     // white warts + ring
+    g: { c: 'petalWhiteDark' }, // gills under the cap
+    s: { c: 'linen' },          // stem
+    S: { c: 'linenDark' },      // stem shadow
+    m: { c: 'moss' },           // moss / grass at the foot
+    W: { c: 'white', e: true }, // dew glint
+    P: { c: 'linenLight', e: true, fill: false }
+  };
+  //               0          1          2          3          4
+  var CAP_GL = [' _.-._ ', '/o:.O;\\', "`-===-'", '  |=| n', " '|_|'|"];
+  var CAP_FG = [' RRRrr ', 'RwrrwrD', 'DgggggD', '  sws r', ' msSsmS'];
+  function capFrame(glint) {
+    var gl = CAP_GL.slice(), fg = CAP_FG.slice();
+    if (glint) { gl[1] = '/o:*O;\\'; fg[1] = 'RwrWwrD'; }
+    return frame(gl, fg);
+  }
+  function capHalf(glint) { return frame(['/' + (glint ? '*' : 'o') + '\\', "`-'", ' | '], ['R' + (glint ? 'W' : 'w') + 'D', 'DgD', ' s ']); }
+  var pickupRedCap = {
+    name: 'pickupRedCap', displayName: 'red cap', billboard: true, directions: ['S'],
+    desc: 'QL-D1 sq.rook.caps pickup (cap1..5): a fly agaric, red cap with white warts, pale gills, ringed white stem, a ' +
+          'small button cap beside it. Lit; a dew drop glints every 2 s. 0.20 m tall: ~5 rows at 4 m on 240x90.',
+    size: { w: 7, h: 5 }, anchor: { x: 3, y: 4 }, world: { w: 0.28, h: 0.20 },
+    keys: CAP_KEYS, outline: { k: 0.4 },
+    animations: {
+      idle:    { durations: [2000, 110], loop: true, frames: [capFrame(false), capFrame(true)] },
+      collect: { durations: [50, 50, 50], loop: false, frames: popFrames(7, 5, 'P', 'r') }
+    },
+    lods: { half: { size: { w: 3, h: 3 }, anchor: { x: 1, y: 2 }, animations: {
+      idle:    { durations: [2000, 110], loop: true, frames: [capHalf(false), capHalf(true)] },
+      collect: { durations: [50, 50, 50], loop: false, frames: popFrames(3, 3, 'P', 'r') }
+    } } }
+  };
+  // smokeColumn: a thin chimney / cook-fire smoke column seen far off above the trees north of northLook (anchors
+  // smoke1..3; no village built). Rises straight, puffs drift up one row per frame (3 frames, 1.35 s), then leans east
+  // and breaks into wisps at the top. Glyph-only (fill: false) so the sky shows through; denser ash grey at the foot,
+  // pale steam-white higher up, steamDim where it dissolves. Billboard defaults like farTower (unlit, far fog).
+  var SMOKE_KEYS = {
+    a: { c: 'ash', fill: false },          // dense foot (closest to the fire)
+    L: { c: 'ashLight', fill: false },     // lower column
+    w: { c: 'steam', fill: false },        // upper column (sunlit white-grey)
+    d: { c: 'steamDim', fill: false }      // dissolving top wisps
+  };
+  var SMOKE_MID = ['  (  ', '  ;) ', ' (:  '];       // the rising-puff cycle, rows 3..9
+  var SMOKE_TOP = [['   .\'', '  .~-', ' (~\' '], ['  \' .', '   ~-', '  (~\''], ['   \'.', '  -~\'', ' .(~ ']];
+  var SMOKE_ROWKEY = ['d', 'd', 'w', 'w', 'w', 'w', 'L', 'L', 'L', 'a', 'a', 'a'];
+  function smokeFrame(f) {
+    var gl = SMOKE_TOP[f].slice(), fg = [], r;
+    for (r = 3; r <= 9; r++) gl.push(SMOKE_MID[(r + f) % 3]);
+    gl.push('  :  ', '  |  ');
+    for (r = 0; r < 12; r++) fg.push(keyRow(gl[r], SMOKE_ROWKEY[r]));
+    return frame(gl, fg);
+  }
+  var SMOKE_MIN_MID = [' ( ', ' ;)', '(: '];
+  var SMOKE_MIN_TOP = [" .'", "  ~", " '."];
+  var SMOKE_MIN_KEY = ['d', 'w', 'w', 'L', 'a', 'a'];
+  function smokeMin(f) {
+    var gl = [SMOKE_MIN_TOP[f]], fg = [], r;
+    for (r = 1; r <= 4; r++) gl.push(SMOKE_MIN_MID[(r + f) % 3]);
+    gl.push(' | ');
+    for (r = 0; r < 6; r++) fg.push(keyRow(gl[r], SMOKE_MIN_KEY[r]));
+    return frame(gl, fg);
+  }
+  var SMOKE_DUR = [450, 450, 450];
+  var smokeColumn = {
+    name: 'smokeColumn', displayName: 'smoke', billboard: true, directions: ['S'],
+    desc: 'QL-D1 / QL-17 far smoke column (anchors smoke1..3 north of northLook): thin, grey-white, rising, leaning east ' +
+          'at the top. Far-only scenery: place 150-400 m away, never walk-up close.',
+    size: { w: 5, h: 12 }, anchor: { x: 2, y: 11 }, world: { w: 6, h: 28 },
+    keys: SMOKE_KEYS,
+    animations: { idle: { durations: SMOKE_DUR, loop: true, frames: [smokeFrame(0), smokeFrame(1), smokeFrame(2)] } },
+    lods: { min: { size: { w: 3, h: 6 }, anchor: { x: 1, y: 5 }, animations: {
+      idle: { durations: SMOKE_DUR, loop: true, frames: [smokeMin(0), smokeMin(1), smokeMin(2)] } } } },
+    // Billboard entity defaults (README 4.1, as farTower): copy onto the entity's `billboard` component.
+    unlit: true, fogModel: 'far', fogMax: 0.55, minCells: { w: 3, h: 6 }, detailRows: 14
+  };
+  A.m3Sprites = { pickupHp: pickupHp, pickupMp: pickupMp, strawPuff: strawPuff, berrySprig: berrySprig,
+                  pickupGear: pickupGear, pickupRedCap: pickupRedCap, smokeColumn: smokeColumn };
 
   // View-only pickup behaviour (presentPickups, architecture 30.2 US-080b: "the bob and the last-180-step blink are
   // view-only, no sim state"). Steps are the 60 Hz sim steps.

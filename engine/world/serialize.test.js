@@ -87,6 +87,13 @@ ok('serialize writes world.horizon back unchanged', JSON.stringify(s1.horizon) =
 ok('deserialize gives w2 the same horizon content', JSON.stringify(w2.horizon) === JSON.stringify(world.horizon));
 ok('deserialized horizon is its own array (content not state, not shared with the source world)', w2.horizon !== world.horizon);
 
+// MAP-11 nit: a polygon bounds round-trips as a deep copy (cloneBounds copies pts once)
+{
+  const sb = serialize(world); const had = world.bounds;
+  if (had && Array.isArray(had.pts)) ok('serialize: polygon bounds pts are a copy with equal content', sb.bounds.pts !== had.pts && JSON.stringify(sb.bounds.pts) === JSON.stringify(had.pts));
+  else ok('serialize: bounds absent or non-polygon in this fixture (cloneBounds covered by mapBounds.test.js)', true);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

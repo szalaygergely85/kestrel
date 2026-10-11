@@ -34,7 +34,13 @@ import {
   createAssetFoldersState, parseAssetFolders, serializeAssetFolders, listUserFolders,
   createUserFolder, renameUserFolder, deleteUserFolder, moveAssetToFolder, groupAssetFolders,
 } from './panel.js';
+import {
+  itemKey, buildTreeGroups, parseFold, serializeFold, toggleFold, addUserGroup, removeFromUserGroups,
+  pruneUserGroups, writeUserGroups, readUserGroups, revealKeys,
+} from './treeGroups.js';
+import { findUnusedAssets, planAssetDelete, serializePendingDeletes } from './assetRefs.js';
 import { nextScale, fineScale, clampScale } from './scale.js';
+import { applySnapshot, snapshotDiffers, formatAge, startAutosave, getSnapshot, clearSnapshot } from './autosave.js';
 import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits } from './io.js';
 import {
   BRUSH_OPS, PAINT_TYPES, effectiveStrength, beginStroke, endStroke, isTerrainRecord, applyTerrainSide, rectToWorld, ringPoints,
@@ -1063,48 +1069,70 @@ treeChipsEl.querySelectorAll('.tree-chip').forEach((chip) => {
   });
 });
 
+// OB-028: category groups + user groups, foldable (fold state in localStorage, try/catch).
+const FOLD_KEY = 'kestrel.editor.treeFolds';
+let treeClosed = new Set();
+try { treeClosed = parseFold(localStorage.getItem(FOLD_KEY) || '[]'); } catch (_) { /* storage blocked */ }
+function persistFold() { try { localStorage.setItem(FOLD_KEY, serializeFold(treeClosed)); } catch (_) { /* ignore */ } }
+let lastRevealSig = '';
+const worldFileForGroups = () => doc.files.get(fileKey('world', doc.worldId));
+
+function foldHeader(key, title, count, open, cls) {
+  const h = document.createElement('div');
+  h.className = `tree-cat-header ${cls}`;
+  h.dataset.groupKey = key;
+  const arrow = document.createElement('span');
+  arrow.textContent = open ? '▾' : '▸';
+  const t = document.createElement('span');
+  t.textContent = title;
+  const c = document.createElement('span');
+  c.className = 'tree-cat-count';
+  c.textContent = String(count);
+  h.append(arrow, t, c);
+  h.addEventListener('click', () => { treeClosed = toggleFold(treeClosed, key); persistFold(); renderOutliner(); });
+  return h;
+}
+
 function renderOutliner() {
   outlinerEl.textContent = '';
-  const allItems = listOutlinerItems(doc, world); // CO-7: attaches structId per level-owned item
+  const realItems = listOutlinerItems(doc, world); // CO-7: attaches structId per level-owned item
+  const levelRows = (world.structures || []).filter((st) => st.level).map((st) => ({ fileId: fileKey('world', doc.worldId), collection: 'levels', id: st.id, item: st, structId: null }));
+  const allItems = realItems.concat(levelRows);
 
-  const counts = { all: allItems.length, entities: 0, props: 0, lights: 0, triggers: 0, interactables: 0 };
-  for (const o of allItems) counts[o.collection] = (counts[o.collection] || 0) + 1;
+  const counts = { all: realItems.length, entities: 0, props: 0, lights: 0, triggers: 0, interactables: 0 };
+  for (const o of realItems) counts[o.collection] = (counts[o.collection] || 0) + 1;
   treeChipsEl.querySelectorAll('.tree-chip').forEach((chip) => {
     const key = chip.dataset.filter;
     chip.textContent = `${TREE_CHIP_LABELS[key]} (${counts[key] || 0})`;
   });
 
-  const q = treeSearch.trim().toLowerCase();
-  const filtered = allItems.filter((o) => {
-    if (treeFilter !== 'all' && o.collection !== treeFilter) return false;
-    if (q && !o.id.toLowerCase().includes(q)) return false;
-    return true;
-  });
-
-  if (!filtered.length) {
+  const wf = worldFileForGroups();
+  const userGroups = pruneUserGroups(readUserGroups(wf && wf.def), allItems.map(itemKey));
+  // Selection from the 3D view: open (and persistently unfold) the group of the newly selected row.
+  const sig = sel.items.map((it) => `${it.fileId}|${it.collection}|${it.id}`).join(',');
+  if (sig !== lastRevealSig) {
+    lastRevealSig = sig;
+    const first = sel.items[0] && allItems.find((o) => o.fileId === sel.items[0].fileId && o.collection === sel.items[0].collection && o.id === sel.items[0].id);
+    if (first) { for (const k of revealKeys(allItems, first, userGroups)) treeClosed.delete(k); persistFold(); }
+  }
+  const groups = buildTreeGroups(allItems, { userGroups, query: treeSearch, filter: treeFilter, closed: treeClosed });
+  if (!groups.length) {
     const empty = document.createElement('div');
     empty.className = 'tree-empty';
-    empty.textContent = allItems.length ? '(no match)' : '(no props/lights/interactables/entities)';
+    empty.textContent = realItems.length ? '(no match)' : '(no props/lights/interactables/entities)';
     outlinerEl.appendChild(empty);
     return;
   }
-
-  // Group by fileId (a level or the world file) so the tree reads as
-  // structure -> its props/lights/... , with `├─`/`└─` branch glyphs
-  // (design/editor-ui.md 4) - purely a visual grouping, same flat
-  // `listOutlinerItems` data and the same `selectItem` click path as before.
-  const groups = new Map();
-  for (const o of filtered) {
-    const group = o.collection === 'structures' ? `${o.fileId} / Meshes` : o.fileId;
-    if (!groups.has(group)) groups.set(group, []);
-    groups.get(group).push(o);
-  }
-  for (const [fileId, items] of groups) {
-    const header = document.createElement('div');
-    header.className = 'tree-group-header';
-    header.textContent = fileId;
-    outlinerEl.appendChild(header);
-    items.forEach((o, i) => {
+  for (const g of groups) {
+    outlinerEl.appendChild(foldHeader(g.key, (g.user ? '★ ' : '') + g.title, g.count, g.open, g.user ? 'user' : 'cat'));
+    if (!g.open) continue;
+    for (const sub of g.subs) {
+      if (sub.title) {
+        outlinerEl.appendChild(foldHeader(sub.key, sub.title, sub.count, sub.open, 'sub'));
+        if (!sub.open) continue;
+      }
+      const items = sub.items;
+      items.forEach((o, i) => {
       const item = { fileId: o.fileId, collection: o.collection, id: o.id };
       const row = document.createElement('div');
       row.className = 'tree-row';
@@ -1149,13 +1177,44 @@ function renderOutliner() {
       lockBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleItemLocked(item); });
       icons.appendChild(eyeBtn);
       icons.appendChild(lockBtn);
-      if (o.collection !== 'structures') row.appendChild(icons);
-      row.addEventListener('click', (e) => selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }, e.shiftKey || e.ctrlKey, e.altKey));
-      row.addEventListener('dblclick', () => { selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }); teleportToSelection(); });
+      if (o.collection !== 'structures' && o.collection !== 'levels') row.appendChild(icons);
+      if (o.collection === 'levels') row.classList.add('row-locked');
+      else row.addEventListener('click', (e) => selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }, e.shiftKey || e.ctrlKey, e.altKey));
+      if (o.collection !== 'levels') row.addEventListener('dblclick', () => { selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }); teleportToSelection(); });
       outlinerEl.appendChild(row);
-    });
+      });
+    }
   }
+  const selRow = outlinerEl.querySelector('.tree-row.selected');
+  if (selRow && selRow.scrollIntoView) selRow.scrollIntoView({ block: 'nearest' });
 }
+
+document.getElementById('tree-group-btn').addEventListener('click', () => {
+  const keys = sel.items.map((it) => itemKey(it));
+  if (!keys.length) { flash('group: select items first'); return; }
+  const name = (window.prompt('Group name', 'Group') || '').trim();
+  if (!name) return;
+  const wf = worldFileForGroups();
+  if (!wf) { flash('group: no world file'); return; }
+  writeUserGroups(wf.def, addUserGroup(readUserGroups(wf.def), name, keys));
+  wf.dirty = true;
+  treeClosed.delete(`user:${name}`);
+  refreshIoStatus();
+  renderOutliner();
+  flash(`grouped ${keys.length} as "${name}" (saved with the world)`);
+});
+document.getElementById('tree-ungroup-btn').addEventListener('click', () => {
+  const wf = worldFileForGroups();
+  if (!wf) return;
+  const before = readUserGroups(wf.def), keys = sel.items.map((it) => itemKey(it));
+  const next = removeFromUserGroups(before, keys);
+  if (JSON.stringify(next) === JSON.stringify(before)) { flash('ungroup: selection is in no group'); return; }
+  writeUserGroups(wf.def, next);
+  wf.dirty = true;
+  refreshIoStatus();
+  renderOutliner();
+  flash('ungrouped');
+});
 renderOutliner();
 renderProperties();
 
@@ -1446,6 +1505,11 @@ function buildAssetRow(key, priority = false) {
     row.dataset.meshKey = meshKey;
     row.classList.add('mesh-asset-row');
     row.title = `Mesh: ${meshKey} (${assets.mesh(meshKey).triCount.toLocaleString()} triangles)`;
+    const del = document.createElement('button');
+    del.type = 'button'; del.className = 'asset-del-btn'; del.title = 'Delete this mesh asset (scans references first)'; del.textContent = '✕';
+    del.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    del.addEventListener('click', (e) => { e.stopPropagation(); deleteMeshAsset(meshKey); });
+    row.appendChild(del);
   }
   // mousedown (not click): same reasoning as the US-063 model-picker rows -
   // fires before the search input's blur / the canvas's own mousedown
@@ -1529,10 +1593,85 @@ function buildFolderSection(folderName, keys) {
   return section;
 }
 
+// ---- OB-029: delete assets (reference scan, pending-deletes file) ----------
+const assetsUnusedChk = document.getElementById('assets-unused-chk');
+const pendingDeletes = new Map(); // mesh key -> plan; written to content/.pending-deletes.json
+let packageSources = {}; // best effort: content/packages/*.json, fetched on first use
+async function loadPackageSources() {
+  try {
+    const idx = await (await fetch('../../content/packages/index.json', { cache: 'no-store' })).json();
+    packageSources['package/index'] = idx;
+    for (const p of idx.packages || []) {
+      const name = typeof p === 'string' ? p : p && (p.file || p.path || p.id);
+      if (!name) continue;
+      try { packageSources[`package/${name}`] = await (await fetch(`../../content/packages/${name}`, { cache: 'no-store' })).json(); } catch (_) { /* skip */ }
+    }
+  } catch (_) { /* packages optional */ }
+}
+function buildAssetSources() {
+  const src = { ...packageSources };
+  for (const [k, f] of doc.files) src[k] = f.def;
+  for (const k of assets.keys('model')) { try { src[`model/${k}`] = assets.model(k); } catch (_) { /* skip */ } }
+  return src;
+}
+async function writePendingDeletes() {
+  const text = serializePendingDeletes([...pendingDeletes.values()]);
+  const name = '.pending-deletes.json';
+  try {
+    if (typeof window.showSaveFilePicker === 'function') {
+      const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'Pending deletes', accept: { 'application/json': ['.json'] } }] });
+      const w = await h.createWritable(); await w.write(text); await w.close();
+    } else {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+    flash('pending deletes written: save it as content/.pending-deletes.json (the main session applies it)');
+  } catch (e) { flash(e && e.name === 'AbortError' ? 'pending deletes: cancelled' : `pending deletes failed: ${e && e.message}`); }
+}
+async function deleteMeshAsset(key) {
+  const plan = planAssetDelete('mesh', key, buildAssetSources());
+  if (!plan.ok && !plan.refs.length) { flash(`cannot delete "${key}": ${plan.reason}`); return; }
+  if (!plan.ok) {
+    const list = plan.refs.slice(0, 12).map((r) => `${r.source} ${r.path}`).join(', ');
+    const removable = plan.refs.every((r) => /^(world|level)\//.test(r.source) && /^(structures|entities|props)\[\d+\]\./.test(r.path));
+    if (!removable) { window.alert(`"${key}" is still used by:
+${list}
+
+Remove those users first (some are not editor placements).`); return; }
+    if (!window.confirm(`"${key}" is used by ${plan.refs.length} placement(s):
+${list}
+
+Delete all those placements AND the asset?`)) return;
+    const byFile = new Map();
+    for (const r of plan.refs) {
+      const m = /^(\w+)\[(\d+)\]/.exec(r.path);
+      if (!byFile.has(r.source)) byFile.set(r.source, []);
+      byFile.get(r.source).push([m[1], Number(m[2])]);
+    }
+    const recs = [];
+    for (const [fileId, list2] of byFile) {
+      const file = doc.files.get(fileId);
+      for (const [coll, idx] of [...new Set(list2.map((x) => x.join(':')))].map((x) => x.split(':')).sort((a, b) => b[1] - a[1])) {
+        recs.push(makeDeleteRecord(fileId, coll, file.def[coll][idx], Number(idx)));
+      }
+    }
+    for (const rec of recs) commit(rec);
+  } else if (!window.confirm(`Delete mesh asset "${key}"? Nothing references it. Its files are queued for deletion.`)) return;
+  pendingDeletes.set(key, { ...plan, files: plan.files, manifest: plan.manifest });
+  renderAssetsList(assetsSearchInput.value);
+  await writePendingDeletes();
+}
+assetsUnusedChk.addEventListener('change', async () => { await loadPackageSources(); renderAssetsList(assetsSearchInput.value); });
+
 function renderAssetsList(query) {
   assetsListEl.textContent = '';
-  const keys = filterModelKeys(listPlaceableModels(assets), query || '');
-  const meshGroups = listMeshAssetGroups(assets, query || '');
+  const showUnused = assetsUnusedChk.checked;
+  const keys = showUnused ? [] : filterModelKeys(listPlaceableModels(assets), query || '');
+  let meshGroups = listMeshAssetGroups(assets, query || '');
+  // OB-029: hide meshes queued for deletion; "unused" keeps only meshes nothing references.
+  const unusedSet = showUnused ? new Set(findUnusedAssets(assets.keys('mesh'), buildAssetSources())) : null;
+  meshGroups = meshGroups.map((g) => ({ pack: g.pack, keys: g.keys.filter((k) => !pendingDeletes.has(k) && (!unusedSet || unusedSet.has(k))) })).filter((g) => g.keys.length);
   if (!keys.length && !meshGroups.length) {
     const empty = document.createElement('div');
     empty.className = 'asset-empty';
@@ -1659,6 +1798,7 @@ async function doSave() {
     const saved = await saveAll(doc);
     if (tb.dirty && tb.layer) { await saveTerrainEdits(tb, { forceDownload: !!doc.readOnly }); saved.push(`terrainEdits/${tb.key}`); }
     flash(saved.length ? `saved: ${saved.join(', ')}` : 'save: nothing dirty');
+    if (!anyDirty(doc) && !tb.dirty) autosaver.flush(); // clears the OB-030 autosave record
   } catch (e) {
     flash(`save failed: ${e && e.message ? e.message : e}`);
   }
@@ -1698,6 +1838,27 @@ playtestBtn.addEventListener('click', doPlaytest);
 window.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && ['KeyS','KeyP','KeyD','KeyG'].includes(e.code) && editorKeysActive()) e.preventDefault();
 });
+
+// OB-030: autosave dirty files to IndexedDB every 5 s + on hide; offer restore on open.
+const autosaver = startAutosave(() => doc);
+(async function offerRestore() {
+  let snap = null;
+  try { snap = await getSnapshot(doc.worldId); } catch (e) { return; }
+  if (!snap || !snapshotDiffers(doc, snap).length) return;
+  const bar = document.createElement('div');
+  bar.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:9999;background:#222;color:#fd8;border:1px solid #fd8;padding:8px 12px;font:13px monospace;display:flex;gap:10px;align-items:center';
+  const txt = document.createElement('span');
+  txt.textContent = `Restore unsaved changes from ${new Date(snap.savedAt).toLocaleTimeString()} (${formatAge(snap.savedAt)})?`;
+  const mk = (label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ed-btn'; b.textContent = label; b.onclick = () => { bar.remove(); fn(); }; return b; };
+  bar.append(txt,
+    mk('Restore', () => {
+      const keys = applySnapshot(doc, assets, snap);
+      undoStack.clear(); sel = replaceSelection(); rebuild(); refreshIcons(); refreshIoStatus();
+      flash(`restored unsaved changes: ${keys.join(', ')}`);
+    }),
+    mk('Discard', () => { clearSnapshot(doc.worldId).catch(() => {}); }));
+  document.body.appendChild(bar);
+})();
 
 // 24.10: "beforeunload warns while any file is dirty".
 window.addEventListener('beforeunload', (e) => {

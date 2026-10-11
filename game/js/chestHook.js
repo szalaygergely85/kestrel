@@ -24,6 +24,7 @@
 import { createChests } from './quest/sim/chest.js';
 import { createItemGetCard } from './ui/itemGetCard.js';
 import { countOf } from './quest/sim/inventory.js';
+import { buildChestDefs } from './quest/sim/chestDefs.js';
 import { forwardOf } from '../../engine/index.js';
 
 export const CLIP_FOR = { closed: 'closed', opening: 'open', open: 'opened' }; // ASSETS.chestFx.clipFor (design/models/chest.js)
@@ -42,7 +43,7 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
   const card = createItemGetCard(null, { style, items, rgb, reduceMotion });
   const itemDefs = items.defs;
   const fwdScratch = [0, 0], pose = { x: 0, y: 0, z: 0, forwardX: 0, forwardY: 0 }; // reused (rule 9)
-  let sim = null, ctx = null, lastAnim = null;
+  let offGear = null, sim = null, ctx = null, lastAnim = null, active = defs; // EQ-10: `active` = defs, or the world's chest* anchors when defs is []
 
   // The chest sim's PRIVATE event sink: pushes the card directly (so boar loot - which shares `ctx.events` - never
   // opens it), then forwards the same event onto the shared bus for saveRelay (`chest:opened`) and the seam's
@@ -62,7 +63,10 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
     onBoot(c) {
       ctx = c;
       lastAnim = new Map();
-      sim = defs.length ? createChests(defs, {
+      active = defs.length ? defs : (c.world && typeof c.world.entity === 'function' ? buildChestDefs(c.world) : []);
+      if (offGear) offGear();
+      offGear = c.events && c.events.on ? c.events.on('gear:got', (p) => card.push(p.id, p.n, { count: p.n })) : null; // loot.js gear pickup
+      sim = active.length ? createChests(active, {
         items: itemDefs, inventoryOf: () => ctx.inventory, events,
         openedChests: openedChestsOf ? openedChestsOf() : [], seed,
       }) : null;
@@ -80,10 +84,10 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
         forwardOf(st.playerYawDeg || 0, fwdScratch);
         const t = ctx.player.transform;
         pose.x = t.x; pose.y = t.y; pose.z = t.z; pose.forwardX = fwdScratch[0]; pose.forwardY = fwdScratch[1];
-        for (let i = 0; i < defs.length; i++) if (sim.canOpen(defs[i].id, pose)) { sim.open(defs[i].id, pose); break; }
+        for (let i = 0; i < active.length; i++) if (sim.canOpen(active[i].id, pose)) { sim.open(active[i].id, pose); break; }
       }
-      for (let i = 0; i < defs.length; i++) {
-        const d = defs[i];
+      for (let i = 0; i < active.length; i++) {
+        const d = active[i];
         if (!d.propId) continue;
         const clip = CLIP_FOR[sim.stateOf(d.id)];
         if (!clip || lastAnim.get(d.id) === clip) continue;

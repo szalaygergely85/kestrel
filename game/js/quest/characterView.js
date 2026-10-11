@@ -80,7 +80,7 @@ export function createCharacterView(o) {
     if (!o.createPreview || !o.charCache || !o.getLook) return;
     try {
       if (!preview) preview = o.createPreview();
-      const def = o.charCache.get(gearRecipe(o.getLook(), eq(), defs));
+      const def = o.charCache.get(gearRecipe(o.getLook(), eq(), defs, o.kit));
       if (def !== curDef) { preview.setModel('char.preview', def); curDef = def; }
       previewOk = true;
     } catch (e) { previewOk = false; if (typeof console !== 'undefined') console.warn('[character] preview off:', e && e.message); }
@@ -138,6 +138,8 @@ export function createCharacterView(o) {
   const view = {
     get isOpen() { return isOpen; },
     get cursor() { return cur; },
+    /** EQ-12: item id under the cursor (worn piece or pack item), null on the model view / an empty cell */
+    get hoveredId() { return idAt(nodes[cur]); },
     get nodes() { return nodes; },
     get yawDeg() { return yaw.yawDeg; },
     get previewOk() { return previewOk; },

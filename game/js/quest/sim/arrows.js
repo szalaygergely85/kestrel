@@ -4,6 +4,7 @@
 // Rule 15 (sim/**): no Math.random, no trig, integer step counters, zero allocation in `step`. Transient: not saved.
 import { SIM_STEP } from '../../../../engine/index.js';
 import { addItem } from './inventory.js';
+import { riverWaterAt } from './wading.js';
 import { sweepSegment, TARGET_HIT, NO_HIT } from './sweep.js';
 
 /** Arrow damage from the sword damage and the draw (0..1): round(sword * (1 + 2*draw)), min 1. */
@@ -21,7 +22,13 @@ export function arrowDamage(swordDamage, draw) {
 export function createArrowSim(world, events, cfg, targets) {
   const dt = SIM_STEP;
   const NF = cfg.maxFlying, NS = cfg.maxStuck;
-  let serialNo = 0, tick = 0, flyingCount = 0, stuckCount = 0;
+  let serialNo = 0, tick = 0, flyingCount = 0, stuckCount = 0, floatCount = 0;
+  const NW = cfg.maxFloat | 0;
+  // RIVER-01b (38.45): arrows that land in river water float and drift with the current for cfg.floatSteps, then vanish
+  // (at the bank, where water ends, they stick). Rect/circle water keeps today's behaviour.
+  const floaters = { n: NW, alive: new Uint8Array(NW), age: new Int32Array(NW), x: new Float64Array(NW), y: new Float64Array(NW), z: new Float64Array(NW) };
+  const wq = { surfaceZ: 0, flatZ: 0, depth: 0, region: '', index: -1, look: 0 };
+  const fv = [0, 0];
 
   const flying = {
     n: NF, alive: new Uint8Array(NF), age: new Int32Array(NF), damage: new Float64Array(NF),
@@ -47,11 +54,21 @@ export function createArrowSim(world, events, cfg, targets) {
     stuck.pickable[k] = ((Math.imul(sn, 2654435761) >>> 0) % 100) < cfg.survivePct ? 1 : 0;
     stuck.x[k] = x; stuck.y[k] = y; stuck.z[k] = z; stuck.dx[k] = dx; stuck.dy[k] = dy; stuck.dz[k] = dz;
   }
+  /** Put the arrow at (x, y, z) onto the river surface if that point is under it. true = became a floater. */
+  function tryFloat(x, y, z) {
+    if (NW === 0 || floatCount >= NW || !riverWaterAt(world, x, y, wq) || z > wq.surfaceZ + 0.02) return false;
+    let k = 0;
+    while (floaters.alive[k] === 1) k++;
+    floaters.alive[k] = 1; floaters.age[k] = 0; floaters.x[k] = x; floaters.y[k] = y; floaters.z[k] = wq.surfaceZ - cfg.floatDraft;
+    floatCount++;
+    return true;
+  }
   function kill(s) { flying.alive[s] = 0; flyingCount--; }
   function freeStuck(k) { stuck.alive[k] = 0; stuckCount--; }
 
   const sim = {
-    flying, stuck,
+    flying, stuck, floaters,
+    get floatCount() { return floatCount; },
     get flyingCount() { return flyingCount; },
     get stuckCount() { return stuckCount; },
     get tick() { return tick; },
@@ -87,6 +104,7 @@ export function createArrowSim(world, events, cfg, targets) {
           const vx = flying.vx[s], vy = flying.vy[s], vz = flying.vz[s];
           const nx = x + vx * dt, ny = y + vy * dt, nz = z + vz * dt;
           sweepSegment(world, targets, cfg.hitPad, x, y, z, nx, ny, nz, hit);
+          if (hit.kind !== TARGET_HIT && (hit.kind === NO_HIT ? tryFloat(nx, ny, nz) : tryFloat(hit.x, hit.y, hit.z))) { kill(s); continue; }
           if (hit.kind === NO_HIT) { flying.x[s] = nx; flying.y[s] = ny; flying.z[s] = nz; continue; }
           const sp = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1;
           const dx = vx / sp, dy = vy / sp, dz = vz / sp;
@@ -103,6 +121,18 @@ export function createArrowSim(world, events, cfg, targets) {
             kill(s);
             stickAt(hx, hy, hz, dx, dy, dz);
           }
+        }
+      }
+      if (floatCount > 0) {
+        for (let k = 0; k < NW; k++) {
+          if (floaters.alive[k] === 0) continue;
+          if (++floaters.age[k] > cfg.floatSteps) { floaters.alive[k] = 0; floatCount--; continue; }
+          const x = floaters.x[k] + 0, y = floaters.y[k];
+          if (!riverWaterAt(world, x, y, wq)) { floaters.alive[k] = 0; floatCount--; stickAt(x, y, floaters.z[k], 0, 0, -1); continue; }
+          world.flowAt(x, y, fv);
+          const nx = x + fv[0] * dt, ny = y + fv[1] * dt;
+          if (riverWaterAt(world, nx, ny, wq)) { floaters.x[k] = nx; floaters.y[k] = ny; floaters.z[k] = wq.surfaceZ - cfg.floatDraft; }
+          else { floaters.alive[k] = 0; floatCount--; stickAt(x, y, floaters.z[k], 0, 0, -1); } // reached the bank: stays
         }
       }
       if (stuckCount > 0) {

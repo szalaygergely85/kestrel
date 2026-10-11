@@ -1,7 +1,7 @@
 // burlEscort.test.js (CH1-07): phases 0-4, wait/resume, barks once, load per phase, auto-open, 0 alloc.
 import assert from 'node:assert/strict';
 import { createNpcWalk } from './npcWalk.js';
-import { createBurlEscort, CALL_NEAR_M, HOME_FAR_M } from './burlEscort.js';
+import { createBurlEscort, CALL_NEAR_M, HOME_FAR_M, BEND_FLAG } from './burlEscort.js';
 
 const DT = 1 / 60;
 function mk(state0 = {}, o = {}) {
@@ -110,3 +110,39 @@ console.log('burlEscort ALL PASS');
   assert.ok(c.state['burl.home'] && !c.state['burl.departing'] && c.flags.includes('burl.home'));
 }
 console.log('burlEscort QL-05 home switch ok');
+
+// M4 sq.burl.walk: accepted (status 2) at home -> she leads along walks.toBend, waits when the player is > 14 m behind, fires the flag on arrival
+{
+  const qs = { v: 5 };
+  const c = mk({ 'burl.phase': 5, 'burl.home': true }, { leadStatus: () => qs.v });
+  c.ent.components.walks.toBend = [[0, 0], [8, 0], [16, 0], [24, 0], [32, 0], [40, 0], [48, 0]];
+  run(c, 0.5, 0); assert.equal(c.e.phase, 5, 'quest not accepted: stays home');
+  qs.v = 2; c.st.dialogueOpen = false;
+  run(c, 0.1, 0); assert.equal(c.e.phase, 6); assert.ok(c.e.busy);
+  run(c, 20, 0); // player stands at home: Burl stops ahead (WAIT 14 m) and idles
+  assert.ok(c.walk.waiting && c.ent.transform.x > 8 && c.ent.transform.x < 20 && c.e.phase === 6, 'waits ' + c.ent.transform.x);
+  assert.equal(c.ent.components.voxel.anim, 'idle');
+  assert.ok(!c.flags.includes(BEND_FLAG));
+  const px = () => c.ent.transform.x - 3; // the player follows
+  run(c, 1, px); assert.equal(c.ent.components.voxel.anim, 'walk');
+  run(c, 60, px);
+  assert.equal(c.e.phase, 7); assert.ok(c.flags.includes(BEND_FLAG), 'arrival flag'); assert.equal(c.ent.transform.x, 48);
+  // hand-in not done (status 3 ready): she stays at the Bend even with the player far away
+  qs.v = 3; run(c, 2, 500); assert.equal(c.e.phase, 7);
+  // save/load mid-walk resumes; load at the Bend places her there
+  const c2 = mk({ 'burl.phase': 6, 'burl.lwp': 3 }, { leadStatus: () => 2 });
+  c2.ent.components.walks.toBend = c.ent.components.walks.toBend; c2.e.load();
+  assert.ok(c2.walk.active && c2.ent.transform.x >= 24, 'resumes at wp 3: ' + c2.ent.transform.x);
+  const c3 = mk({ 'burl.phase': 7 }, { leadStatus: () => 3 });
+  c3.ent.components.walks.toBend = c.ent.components.walks.toBend; c3.e.load(); assert.equal(c3.ent.transform.x, 48); assert.equal(c3.e.phase, 7);
+  // hand-in done: she stays while the player is near, goes home (pop-in safe) once the player is >= HOME_FAR_M from the Bend and from home
+  qs.v = 4; c.ent.components.walks.follow = [[0, 0], [10, 0]];
+  run(c, 2, 49); assert.equal(c.e.phase, 7, 'player near: sits there');
+  run(c, 1, 48, HOME_FAR_M + 5); assert.equal(c.e.phase, 5, 'player left: home'); assert.equal(c.ent.transform.x, 0);
+  // abandoned mid-walk: back home at once
+  const c4 = mk({ 'burl.phase': 5 }, { leadStatus: () => qs4.v }), qs4 = { v: 2 };
+  c4.ent.components.walks.toBend = [[0, 0], [8, 0], [16, 0]];
+  run(c4, 0.1, 0); run(c4, 3, 10); assert.equal(c4.e.phase, 6); qs4.v = 1; run(c4, 0.1, 10);
+  assert.equal(c4.e.phase, 5); assert.equal(c4.ent.transform.x, 0);
+}
+console.log('burlEscort M4 lead-to-Bend ok');

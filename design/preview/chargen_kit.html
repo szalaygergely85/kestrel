@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Kestrel - CHARGEN-26 preview: human kit, base m_avg v3 (bearded-knight style) + default and knight outfits (design v1.58)</title>
+<title>Kestrel - OB-025 preview: human kit, base m_avg v4 (realistic proportions) vs v3, default / knight / Fen outfits (design v1.59)</title>
 <style>
   body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
   h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
@@ -29,18 +29,20 @@
 </style>
 </head>
 <body>
-<h1>Kestrel : CHARGEN-26c preview - base <code>m_avg</code> v3, bearded-knight style (D-063) - second detail pass, before / after in section 0</h1>
+<h1>Kestrel : OB-025 preview - base <code>m_avg</code> v4 (realistic proportions, sculpted body + face) - old v3 vs new v4 in section 0</h1>
 <div class="note">
   Kit = <code>content/chargen/human.charkit.json</code> (the only source), written by <code>node tools/chargen-build-kit.mjs</code> from
-  <code>design/chargen/human_kit.js</code>. D-063: the owner's bearded-knight reference for ALL characters (no wings, no halo), plus "look the
-  face from the side, not flat". 1.75 m (70 rows of 2.5 cm + hair), BIG head ~1/4 (17 rows + hair) with a face that has depth in profile:
-  forehead sloping back, brow ridge one cell out with heavy angled brows, narrow eyes set in (white, light highlight, dark pupil, iris),
-  cheekbones out, nose 2 cells out (bridge, lit ridge, shaded side), lips out with a mouth line, chin forward, ears set back, rounded back of
-  the head. Chunky limbs, shorter legs, block hands. Default look (kit.defaults) = short hair, linen shirt, trousers, boots, belt.
-  Knight look (kit.looks.knight) = black hair + full beard, chainmail sleeves / legs (two-grey checker), white tabard with a red-and-gold cross,
-  red hem / split trim and a red sash, dark boots + gloves. The "outfit" control switches the turntable / angle / ASCII / rig views.
+  <code>design/chargen/human_kit.js</code>. OB-025 (owner: "look how detailed the bear is ... a bigger model, a bit more realistic"): same
+  37 x 20 x 72 grid, 1.75 m, but adult proportions - head 10 rows (7 heads), shoulders 21 cells over the deltoids, legs half the height,
+  elbows at the waist, fingertips at mid-thigh - every slice a rounded, tapering cross-section (deltoids, biceps, forearm swell, thin wrist,
+  pecs, shoulder blades, lumbar hollow, seat, thigh / knee / calf / ankle, heel + toes), a profile-built face (brow ridge, recessed eye
+  sockets, nose bridge + tip, cheekbones, nostrils, philtrum, lips, chin, jaw, ears), 4-tone skin + blush / nails / veins, 3-tone hair in
+  locks, a wavy full beard, and a REFINED 1.25 cm head (eye white-iris-white under a lid line, thin brows, two-row lips with corners, nostril
+  openings, half-cell nose tip, ear hole, dimple). New kit.clips <code>idle</code> (breath) and <code>walk</code>.
+  "version" switches sections 1-4 between the new generator (v4) and the old JSON snapshot (v3, <code>design/chargen/human_kit_v3.charkit.json</code>:
+  write it once with <code>git show HEAD:content/chargen/human.charkit.json | Out-File -Encoding utf8 design/chargen/human_kit_v3.charkit.json</code>).
   Section 1 = lit mesh look (flat cubes, palette colours, key + sky light + shadows: roughly the exported <code>.glb</code> in three.js).
-  Section 3 = in-game ASCII. Section 4 = rig + test poses. Needs http for the JSON check: <code>python -m http.server</code> from the repo root.
+  Section 3 = in-game ASCII. Section 4 = rig + test poses (incl. the clip keys). Needs http: <code>python -m http.server</code> from the repo root.
   Tests: <code>node tools/chargen-kit.test.mjs</code>.
 </div>
 <div id="fatal" class="fail"></div>
@@ -53,7 +55,8 @@
   <label>view turn <input type="range" id="yaw" min="-180" max="180" step="5" value="0"><span class="val" id="yawV"></span></label>
   <label>view pitch <input type="range" id="pitch" min="-10" max="60" step="1" value="8"><span class="val" id="pitchV"></span></label>
   <label><input type="checkbox" id="spin"> turntable</label>
-  <label>outfit <select id="outfit"><option value="default">default (kit.defaults)</option><option value="knight">knight (kit.looks.knight)</option><option value="bare">bare base</option></select></label>
+  <label>version <select id="ver"><option value="v4">v4 (new, generator)</option><option value="v3">v3 (old JSON snapshot)</option></select></label>
+  <label>outfit <select id="outfit"><option value="default">default (kit.defaults)</option><option value="knight">knight (kit.looks.knight)</option><option value="fen">Fen (kit.looks.fen)</option><option value="bare">bare base</option></select></label>
   <label>eyes <select id="eyes"></select></label>
   <label>hair + brows <select id="hair"></select></label>
 </div>
@@ -61,15 +64,11 @@
 <h2>Checks</h2>
 <div id="checks"><div class="info">building ...</div></div>
 
-<h2>0. Detail compare: CHARGEN-26b (before) vs CHARGEN-26c (after) - default, knight, Fen (skin tone = section 2 buttons, light = sliders)</h2>
+<h2>0. Old vs new: v3 (JSON snapshot, before) vs v4 (generator, after) - default, knight, Fen, bare (skin tone = section 2 buttons, light = sliders)</h2>
 <div class="note">
-  26c (owner "my issue with the model is the details... you can still add more"): face - lit forehead, brow tails thinning out, dark
-  outer lash flicks, ruddy cheeks + lit cheek tops, shaded nose wings, nasolabial folds, jaw-line shade, lit ear rim; hair cut into
-  waving 3-cell locks of alternating light / base tone with dark gaps and dark tips low down; beard in wavy strands with lit cheek strands
-  and a moustache split at the philtrum; relief - knuckle bumps, a rolled shirt cuff, a boot lacing ridge, a sole welt; knight decal -
-  red armhole trim, dotted side + back seams, glove knuckles; Fen decal - criss-cross laces, upper band over a dark sole, iron belt
-  buckle, collar band + neck slit, sleeve hems, shoulder seams, knee creases. Same grid (37 x 20 x 72), rig, height and slots.
-  The default outfit's shells paint ONE colour each, so its seams / buckle read only as relief (engine ask in design/README.md 25).
+  Each pair of rows = the same recipe on both kits: face front / 3/4 / profile / back, then body front / 3/4 / profile / back. The v4
+  rows add a "head 1.25 cm" close-up (the authored <code>detail.head["2"]</code> block = what the chargen tool shows at Head detail 2 and what
+  "save for the game" keeps). If the v3 row is missing, the snapshot file was not written yet (see the command above).
 </div>
 <div id="compare"></div>
 
@@ -107,15 +106,20 @@
   var FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
 
   // ------------------------------------------------------------------ kit (generator now; the JSON replaces it if present)
-  var kit = CK.buildHumanKit(P), genText = CK.stringifyKit(kit), jsonLine = ['info', 'INFO content/chargen/human.charkit.json: loading ...'];
-  var D, S, NB, NAMES, BAABB, JOINTS, PARENT, FULLBOX, TONES, builtOutfit = null;
-  var ctl = { tone: 'medium', pose: 'rest', collapsed: false, rots: {}, outfit: 'default' };
+  var kitV4 = CK.buildHumanKit(P), kit = kitV4, kitV3 = null, genText = CK.stringifyKit(kitV4), jsonLine = ['info', 'INFO content/chargen/human.charkit.json: loading ...'];
+  var v3Line = ['info', 'INFO design/chargen/human_kit_v3.charkit.json (old kit for the compare): loading ...'];
+  var D, S, NB, NAMES, BAABB, JOINTS, PARENT, FULLBOX, TONES, builtOutfit = null, builtKit = null, sheetRows = null;
+  var ctl = { tone: 'medium', pose: 'rest', collapsed: false, rots: {}, outfit: 'default', ver: 'v4' };
   var GRIDS = {};
-  function lookOf(o) { return o === 'knight' ? kit.looks.knight : kit.defaults; }
+  function lookOfKit(K, o) { return o === 'knight' ? K.looks.knight : o === 'fen' ? (K.looks.fen || CK.fenLook()) : K.defaults; }
+  function lookOf(o) { return lookOfKit(kit, o); }
+  function gridsOf(K) {
+    return { 'default': CK.composePreview(K, 'm_avg', K.defaults), knight: CK.composePreview(K, 'm_avg', K.looks.knight),
+             fen: CK.composePreview(K, 'm_avg', lookOfKit(K, 'fen')), bare: CK.decodeBase(K, 'm_avg') };
+  }
   function setup() {
-    builtOutfit = ctl.outfit;
-    GRIDS = { 'default': CK.composePreview(kit, 'm_avg', kit.defaults), knight: CK.composePreview(kit, 'm_avg', kit.looks.knight),
-              bare: CK.decodeBase(kit, 'm_avg') };
+    builtOutfit = ctl.outfit; builtKit = kit;
+    GRIDS = gridsOf(kit);
     D = GRIDS[ctl.outfit] || GRIDS['default'];
     S = D.size; NAMES = D.names; NB = NAMES.length; FULLBOX = [0, 0, 0, S[0], S[1], S[2]];
     BAABB = NAMES.map(function () { return [1e9, 1e9, 1e9, -1e9, -1e9, -1e9]; });
@@ -137,6 +141,9 @@
   function readCtl() {
     ['az', 'el', 'int', 'amb', 'yaw', 'pitch'].forEach(function (k) { ctl[k] = +$(k).value; $(k + 'V').textContent = ctl[k]; });
     ctl.eyes = $('eyes').value; ctl.hair = $('hair').value; ctl.spin = $('spin').checked; ctl.outfit = $('outfit').value;
+    ctl.ver = $('ver').value;
+    var want = ctl.ver === 'v3' && kitV3 ? kitV3 : kitV4;
+    if (want !== kit) { kit = want; sheetRows = null; $('sheet').innerHTML = ''; }
   }
   $('hair').value = 'black';
   readCtl();
@@ -274,7 +281,7 @@
       project: function (Pt) { var q = [Pt[0] - pos[0], Pt[1] - pos[1], Pt[2] - pos[2]]; return [dot(q, right) / pw + W / 2, H / 2 - dot(q, up) / ph]; }
     };
   }
-  var BODY_C = [18.5, 10.5, 36], FACE_C = [18.5, 9.5, 60.5], FACE_VIEW = 24;
+  var BODY_C = [18.5, 10.5, 36], FACE_C = [18.5, 9.5, 64.5], FACE_VIEW = 18;   // v4: face centre at the nose (z 64.5), 0.45 m window
 
   // ------------------------------------------------------------------ trace once, shade per colour table
   function traceView(cam, pose) {
@@ -302,7 +309,7 @@
         if (HIT.face === 0) { B.u[i] = HIT.py * cm; B.v[i] = HIT.pz * cm; }
         else if (HIT.face === 1) { B.u[i] = HIT.px * cm; B.v[i] = HIT.pz * cm; }
         else { B.u[i] = HIT.px * cm; B.v[i] = HIT.py * cm; }
-      } else if (tg < Infinity) {
+      } else if (tg < Infinity && !noGround) {
         var gx = O[0] + d[0] * tg, gy = O[1] + d[1] * tg;
         if (Math.hypot(gx - 18.5, gy - 10.5) < 30) {
           B.kind[i] = 1; B.depth[i] = tg; B.u[i] = gx * 0.025; B.v[i] = gy * 0.025;
@@ -312,7 +319,13 @@
     }
     return B;
   }
-  var SKY = [0.60, 0.66, 0.80], BOUNCE = [0.45, 0.38, 0.30];
+  var SKY = [0.60, 0.66, 0.80], BOUNCE = [0.45, 0.38, 0.30], noGround = false;
+  // render a grid other than the current outfit grid (the v3 kit, the 1.25 cm head block) through the same tracer
+  function withGrid(grid, fn) {
+    var keepD = D, keepS = S, keepBox = FULLBOX, keepNG = noGround;
+    D = grid; S = grid.size; FULLBOX = [0, 0, 0, S[0], S[1], S[2]]; noGround = !!grid.k;
+    try { fn(); } finally { D = keepD; S = keepS; FULLBOX = keepBox; noGround = keepNG; }
+  }
   function paintMesh(ctx, B, colorOfK) {
     var cam = B.cam, img = ctx.createImageData(cam.W, cam.H), px = img.data, n = cam.W * cam.H;
     for (var i = 0; i < n; i++) {
@@ -339,7 +352,7 @@
   function colOf(tab) { return function (k) { var t = tab[D.ch[k]]; return t ? t.rgb : [255, 0, 255]; }; }
 
   // ------------------------------------------------------------------ section 1: sheet (5 tones x front / 3/4 / profile, body + face)
-  var SHEET_ANG = [[0, 'front'], [-35, '3/4'], [-90, 'profile']], sheetRows = null;
+  var SHEET_ANG = [[0, 'front'], [-35, '3/4'], [-90, 'profile']];
   function renderSheet() {
     if (!sheetRows) {
       sheetRows = TONES.map(function (t) {
@@ -461,6 +474,12 @@
     'look + nod': { Neck: [8, 0, 18], Head: [10, 0, 20] },
     'reach forward': { RightUpperArm: [-80, 0, 0], RightLowerArm: [-20, 0, 0], LeftUpperArm: [-35, 0, 0], LeftLowerArm: [-60, 0, 0], Chest: [-6, 0, 0] }
   };
+  // OB-025: the kit clips' keys as poses (idle = breath top, walk = both contact keys)
+  (function () {
+    var cl = kitV4.clips || {};
+    if (cl.idle) POSES['clip idle (breath, t 2 s)'] = cl.idle.keys[2].rot;
+    if (cl.walk) { POSES['clip walk (t 0)'] = cl.walk.keys[0].rot; POSES['clip walk (t 0.4 s)'] = cl.walk.keys[2].rot; }
+  })();
   Object.keys(POSES).forEach(function (pn) {
     var b = document.createElement('button'); b.textContent = pn; if (pn === 'rest') b.classList.add('on');
     b.onclick = function () {
@@ -520,7 +539,7 @@
       return '<span class="sw" style="background:rgb(' + PART_RGB[i].map(Math.round).join(',') + ')"></span>' + p + ' (' + kit.partMap[i].bones.join(', ') + ')';
     }) : NAMES.map(function (n, i) {
       return '<span class="sw" style="background:rgb(' + BONE_RGB[i].map(Math.round).join(',') + ')"></span>' + n + (st ? ' ' + st.perBone[n] : '');
-    })).join(' &nbsp; ') + '<br>Test poses only check the boxes and pivots (no clips in the kit). Waist / knee seams are rigid by design (one bone per voxel). ' +
+    })).join(' &nbsp; ') + '<br>Test poses check the boxes and pivots; the "clip" poses are the key frames of kit.clips idle / walk (OB-025). Waist / knee seams are rigid by design (one bone per voxel). ' +
       'Shell voxels grown by thick clothes (boots, belt) take the bone they grew from; hair is on the Head bone.';
   }
 
@@ -548,7 +567,8 @@
   function runChecks() {
     var out = [], res = CK.checkKit(kit, P, DP), st = res.stats.bases.m_avg;
     lastStats = st;
-    out.push(jsonLine);
+    out.push(jsonLine); out.push(v3Line);
+    out.push(['info', 'INFO showing ' + (kit === kitV3 ? 'v3 (old snapshot)' : 'v4 (new)') + ' in sections 1-4; clips: ' + Object.keys(kit.clips || {}).join(', ')]);
     out.push([res.errors.length ? 'fail' : 'pass', (res.errors.length ? 'FAIL ' : 'PASS ') + 'checkKit: ' + (res.errors.slice(0, 8).join(' ; ') || 'no errors')]);
     if (res.warnings.length) out.push(['warn', 'WARN ' + res.warnings.join(' ; ')]);
     out.push(['info', 'INFO m_avg base: ' + st.voxels + ' voxels, ' + st.quads + ' quads (per-bone greedy), ' +
@@ -568,8 +588,8 @@
     out.push(['info', 'INFO bones: ' + NAMES.map(function (n) { return n + ' ' + st.perBone[n]; }).join(', ')]);
     if (st.detail && st.detail.head2) {
       var hd = st.detail.head2;
-      out.push([hd.downsampleDiff === 0 ? 'pass' : 'warn', (hd.downsampleDiff === 0 ? 'PASS ' : 'WARN ') + 'head L2 (1.25 cm option) = straight 2x upsample of the head: ' + hd.size.join('x') + ' block, ' +
-                hd.voxels + ' voxels, ' + hd.quads + ' quads; downsample2 vs level 1: ' + hd.downsampleDiff + ' cells differ (expected 0)']);
+      out.push(['info', 'INFO head L2 (1.25 cm, authored = 2x upsample + refinements): ' + hd.size.join('x') + ' block, ' +
+                hd.voxels + ' voxels, ' + hd.quads + ' quads; downsample2 vs level 1: ' + hd.downsampleDiff + ' cells differ (the refinements; level 1 is authored and wins)']);
     }
     var newK = P.chargen.newMaterials.length, missV2 = P.chargen.newMaterials.filter(function (r) { return !DP || !DP.materials[r.key]; }).length;
     out.push([missV2 ? 'fail' : 'pass', (missV2 ? 'FAIL ' : 'PASS ') + 'palette.chargen: ' + newK + ' appended keys (colour + v1 material + v2 detail-pass record), missing v2: ' + missV2]);
@@ -579,49 +599,56 @@
     out.forEach(function (o) { var d = document.createElement('div'); d.className = o[0]; d.textContent = o[1]; host.appendChild(d); });
   }
 
-  // ------------------------------------------------------------------ section 0: 26b vs 26c compare (same recipes, both kits)
-  var kitB = CK.buildHumanKit(P, { legacy26b: true }), cmpKit = null, CMP = null, cmpRows = null;
+  // ------------------------------------------------------------------ section 0: v3 (JSON snapshot) vs v4 (generator) compare
+  var CMP_OUTFITS = ['default', 'knight', 'fen', 'bare'], cmpRows = null, cmpGrids = { v3: null, v4: null };
   var CMP_VIEWS = [{ face: 1, yaw: 0, cap: 'face front' }, { face: 1, yaw: -35, cap: 'face 3/4' }, { face: 1, yaw: -90, cap: 'face profile' },
-                   { face: 1, yaw: 180, cap: 'head back' }, { yaw: 0, cap: 'front' }, { yaw: -35, cap: '3/4' }, { yaw: 180, cap: 'back' }];
+                   { face: 1, yaw: 180, cap: 'head back' }, { yaw: 0, cap: 'front' }, { yaw: -35, cap: '3/4' }, { yaw: -90, cap: 'profile' }, { yaw: 180, cap: 'back' }];
+  var L2_VIEWS = [[0, 'head 1.25 cm front'], [-35, 'head 1.25 cm 3/4'], [-90, 'head 1.25 cm profile']];
+  // face centre of the v3 kit (big head, chin z 53): keep its own close-up centre so the old face is framed too
+  function faceCentreOf(K) { var b = K.bases.m_avg.bones.Head.box, j = K.bases.m_avg.bones.Jaw.box; var z0 = Math.min(b[2], j[2]); return [18.5, 9.5, (z0 + b[5] - 2) / 2 + 0.5]; }
   function renderCompare() {
-    if (cmpKit !== kit) {
-      cmpKit = kit;
-      CMP = ['default', 'knight'].map(function (o) {
-        var look = lookOf(o);
-        return { o: o, before: CK.composePreview(kitB, 'm_avg', look), after: CK.composePreview(kit, 'm_avg', look) };
-      });
-    }
+    if (!cmpGrids.v4) cmpGrids.v4 = gridsOf(kitV4);
+    if (!cmpGrids.v3 && kitV3) cmpGrids.v3 = gridsOf(kitV3);
     if (!cmpRows) {
-      cmpRows = CMP.map(function (c) {
-        var r = {};
-        ['before', 'after'].forEach(function (w) {
+      cmpRows = {};
+      CMP_OUTFITS.forEach(function (o) {
+        cmpRows[o] = {};
+        ['v3', 'v4'].forEach(function (w) {
           var row = document.createElement('div'); row.className = 'row'; $('compare').appendChild(row);
-          var lab = document.createElement('div'); lab.className = 'tlabel'; lab.textContent = c.o + ' ' + (w === 'before' ? '26b' : '26c'); row.appendChild(lab);
-          r[w] = CMP_VIEWS.map(function (a) { return a.face ? makeCanvas(row, 170, 170, c.o + ' ' + w + ' ' + a.cap) : makeCanvas(row, 120, 250, c.o + ' ' + w + ' ' + a.cap); });
+          var lab = document.createElement('div'); lab.className = 'tlabel'; lab.textContent = o + ' ' + (w === 'v3' ? 'v3 old' : 'v4 NEW'); row.appendChild(lab);
+          cmpRows[o][w] = CMP_VIEWS.map(function (a) { return a.face ? makeCanvas(row, 150, 150, o + ' ' + w + ' ' + a.cap) : makeCanvas(row, 110, 230, o + ' ' + w + ' ' + a.cap); });
+          if (w === 'v4') cmpRows[o].l2 = L2_VIEWS.map(function (a) { return makeCanvas(row, 150, 150, a[1]); });
+          else cmpRows[o].v3note = lab;
         });
-        return r;
       });
     }
-    var keep = D;
-    try {
-      CMP.forEach(function (c, i) {
-        var col = colOf(charTable(recipe(ctl.tone, c.o)));
-        ['before', 'after'].forEach(function (w) {
-          D = c[w];
-          cmpRows[i][w].forEach(function (v, j) {
+    CMP_OUTFITS.forEach(function (o) {
+      ['v3', 'v4'].forEach(function (w) {
+        var K = w === 'v3' ? kitV3 : kitV4, G = cmpGrids[w];
+        if (!K || !G) { cmpRows[o].v3note.textContent = o + ' v3: snapshot missing'; return; }
+        var rc = recipe(ctl.tone, o), col = colOf(charTable(rc)), FC = faceCentreOf(K), FV = w === 'v3' ? 30 : FACE_VIEW;
+        withGrid(G[o], function () {
+          cmpRows[o][w].forEach(function (v, j) {
             var a = CMP_VIEWS[j];
-            var cam = a.face ? orthoCam(FACE_C, a.yaw, 4, 170, 170, FACE_VIEW) : orthoCam(BODY_C, a.yaw, ctl.pitch, 120, 250, 76);
+            var cam = a.face ? orthoCam(FC, a.yaw, 4, 150, 150, FV) : orthoCam(BODY_C, a.yaw, ctl.pitch, 110, 230, 76);
             paintMesh(v.ctx, traceView(cam, null), col);
           });
         });
+        if (w === 'v4' && K.bases.m_avg.detail && K.bases.m_avg.detail.head) {
+          var L2 = CK.decodeDetail(K, 'm_avg', 'head', 2), org = L2.origin;
+          var c2 = [(FACE_C[0] - org[0]) * 2, (FACE_C[1] - org[1]) * 2, (FACE_C[2] - org[2]) * 2];
+          withGrid(L2, function () {
+            cmpRows[o].l2.forEach(function (v, j) { paintMesh(v.ctx, traceView(orthoCam(c2, L2_VIEWS[j][0], 4, 150, 150, FACE_VIEW * 2), null), col); });
+          });
+        }
       });
-    } finally { D = keep; }
+    });
   }
 
   // ------------------------------------------------------------------ main
   function renderAll() {
     try {
-      if (ctl.outfit !== builtOutfit) setup();
+      if (ctl.outfit !== builtOutfit || kit !== builtKit) setup();
       renderCompare(); renderSheet(); renderTones(); renderAngles(); renderAscii(); renderRig();
     } catch (e) { $('fatal').textContent = 'render threw: ' + e.message; console.error(e); }
   }
@@ -647,11 +674,25 @@
   }).then(function (text) {
     if (text === genText) {
       jsonLine = ['pass', 'PASS content/chargen/human.charkit.json equals the generator (showing the JSON)'];
-      kit = JSON.parse(text); setup();
+      kitV4 = JSON.parse(text); if (kit !== kitV3) kit = kitV4; cmpGrids.v4 = null;
     } else jsonLine = ['fail', 'FAIL content/chargen/human.charkit.json is stale: re-run node tools/chargen-build-kit.mjs (showing the generator)'];
     runChecks(); renderAll();
   }).catch(function (e) {
     jsonLine = ['warn', 'WARN content/chargen/human.charkit.json not readable (' + e.message + '): run node tools/chargen-build-kit.mjs and serve over http (showing the generator)'];
+    runChecks();
+  });
+  // the OLD kit for the compare (section 0 + "version" v3): a snapshot of the pre-OB-025 JSON
+  fetch('../chargen/human_kit_v3.charkit.json', { cache: 'no-store' }).then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.text();
+  }).then(function (text) {
+    kitV3 = JSON.parse(text.replace(/^﻿/, ''));
+    if (!kitV3.looks) kitV3.looks = {};
+    if (!kitV3.looks.knight) kitV3.looks.knight = CK.knightLook();
+    v3Line = ['pass', 'PASS design/chargen/human_kit_v3.charkit.json loaded (' + kitV3.name + ', ' + kitV3.bases.m_avg.size.join('x') + '): section 0 compares it with v4'];
+    runChecks(); renderAll();
+  }).catch(function (e) {
+    v3Line = ['warn', 'WARN old kit snapshot design/chargen/human_kit_v3.charkit.json not readable (' + e.message + '): write it with git show HEAD:content/chargen/human.charkit.json | Out-File -Encoding utf8 design/chargen/human_kit_v3.charkit.json'];
     runChecks();
   });
 })();

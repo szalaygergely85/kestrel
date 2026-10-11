@@ -1,5 +1,15 @@
 {
   "version": 1,
-  "packs": [],
-  "legacy": ["m1", "tower.blade", "burl.boars", "mq.river.road", "mq.ford.stones"]
+  "packs": [
+    "ch12"
+  ],
+  "legacy": [
+    "m1",
+    "tower.blade",
+    "burl.boars",
+    "mq.river.road",
+    "mq.ford.stones",
+    "mq.bend.call",
+    "mq.ford.mirror"
+  ]
 }

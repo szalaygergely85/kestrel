@@ -493,6 +493,36 @@ function buildCompareRuns(ctx) {
     cam: { x: riverC.x + 1.5, y: riverC.y, z: groundZ(riverC.x, riverC.y) + 16, yawDeg: 270, pitchDeg: -75 }, real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, timeSec: 10,
     before: waterPose([{ id: 'cmp.radial', shape: 'circle', c: [poolC.x, poolC.y], r: 7, z: groundZ(poolC.x, poolC.y) + 0.9, look: 'water', flow: [1, 0], flowRadial: 2 }]) });
 
+  // RIVER-03 (architecture.md 38.45, OB-019): river ribbon rows on worldM1 (installed like the water poses above: a `river` water def, tick 600,
+  // t = 10 s). Path z = highest ground along the path + 0.6 minus a constant slope (monotone, so it validates); the terrain cuts the flat
+  // cross-section. riverBend: S-bend 300 m long, camera over the head (LOD0 near, LOD1 far, both in view). riverFord: shallow short reach,
+  // grazing (shore foam where stones / banks poke through). riverSteep: 0.2 m/m slope, rapids (rapidQ > 0), looking down the fall line.
+  const riverPath = (pts, hw, slope, speed) => {
+    let zTop = -Infinity;
+    for (const [x, y] of pts) zTop = Math.max(zTop, groundZ(x, y));
+    let s = 0;
+    return pts.map(([x, y], i) => {
+      if (i) s += Math.hypot(x - pts[i - 1][0], y - pts[i - 1][1]);
+      return [x, y, zTop + 0.6 - slope * s, hw, speed];
+    });
+  };
+  const riverPose = (id, pts, hw, slope, speed) => () => {
+    worldM1.water = createWater(collectWaterDefs({ water: [{ id, shape: 'river', path: riverPath(pts, hw, slope, speed), look: 'water', feather: 1.5 }] }, []));
+    worldM1.water.setTickForTest(600);
+  };
+  const bendPts = Array.from({ length: 16 }, (_, i) => [waterEye.x + 6 - 20 * i, waterEye.y + 10 * Math.sin(i * 0.7)]);
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: riverBend (RIVER-03, 300 m S-bend, LOD0 + LOD1, tick 600, t 10 s, sun az 135 el 30)',
+    cam: { x: waterEye.x + 8, y: waterEye.y, z: groundZ(waterEye.x, waterEye.y) + 14, yawDeg: 270, pitchDeg: -16 }, real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, timeSec: 10,
+    before: riverPose('cmp.riverBend', bendPts, 4, 0.05, 1.5) });
+  const fordPts = Array.from({ length: 8 }, (_, i) => [waterEye.x + 4 - 10 * i, waterEye.y + 1.5 * Math.sin(i)]);
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: riverFord (RIVER-03, shallow reach, grazing, shore foam on the bank contour, tick 600, t 10 s)',
+    cam: { x: waterEye.x + 6, y: waterEye.y + 5, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -4 }, real: true, meshOnly: true, sun: SUN_135_30, timeSec: 10,
+    before: riverPose('cmp.riverFord', fordPts, 5, 0.01, 0.8) });
+  const steepPts = Array.from({ length: 9 }, (_, i) => [waterEye.x + 6 - 10 * i, waterEye.y + 3 * Math.sin(i * 0.6)]);
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: riverSteep (RIVER-03, 0.2 m/m slope, rapids foam, flow streaks stretch, tick 600, t 10 s)',
+    cam: { x: waterEye.x + 9, y: waterEye.y, z: groundZ(waterEye.x, waterEye.y) + 9, yawDeg: 270, pitchDeg: -22 }, real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, timeSec: 10,
+    before: riverPose('cmp.riverSteep', steepPts, 3, 0.2, 3) });
+
   // US-078a (architecture.md 30.1): view-model poses (mesh-only): the held sword in the tower interior (crash room), rest
   // (idle t=0) and swingLR t=160, at pitch 0 and +30 (the d*tanPitch term keeps the sword in the lower right at any pitch).
   // `resetInstances` hides the layer before every pose; `before` shows it.
@@ -1153,7 +1183,9 @@ async function runGpuCompareSceneMode(ctx) {
   overlay.el.style.font = '13px "Courier New", monospace';
   overlay.el.style.whiteSpace = 'pre';
   overlay.el.textContent = text;
-  window.__gpuCompare = { rows: rowsOut.concat(shadowRows, stableRows), ok: overallOk, infoRows };
+  const droppedFrames = (rt && rt.failedFrames) || 0; // FIX-RING: a dropped frame means the compare images are suspect
+  if (droppedFrames > 0) { overallOk = false; console.error(`[gpucompare] FAIL: ${droppedFrames} GPU frame(s) dropped`); }
+  window.__gpuCompare = { rows: rowsOut.concat(shadowRows, stableRows), ok: overallOk, infoRows, droppedFrames };
 }
 
 /**

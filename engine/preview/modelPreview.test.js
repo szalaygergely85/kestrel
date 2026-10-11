@@ -96,12 +96,15 @@ t('0 allocation over 200 renders', () => {
   const run = (k) => { for (let i = 0; i < k; i++) { y = (y + 7) % 360; prev.render({ yawDeg: y }, 0.06, ui, rect); } };
   const subj2 = { yawDeg: 0 };
   const run2 = (k) => { for (let i = 0; i < k; i++) { y = (y + 7) % 360; subj2.yawDeg = y; prev.render(subj2, 0.06, ui, rect); } };
-  run2(60); global.gc();
-  const h0 = process.memoryUsage().heapUsed;
-  run2(200); global.gc();
-  const grown = process.memoryUsage().heapUsed - h0;
-  console.log(`  alloc over 200 renders: ${grown} B`);
-  assert.ok(grown < 400000, `grown ${grown}`); // < 2 KB/render incl. gc noise; real per-frame allocs would be MBs
+  run2(500); global.gc(); // long warm-up: JIT tiering allocates during the first few hundred renders
+  let best = Infinity;
+  for (let w = 0; w < 3; w++) { // best of 3 windows (heapUsed has +-few KB gc noise)
+    const h0 = process.memoryUsage().heapUsed;
+    run2(200); global.gc();
+    best = Math.min(best, process.memoryUsage().heapUsed - h0);
+  }
+  console.log(`  alloc over 200 renders: ${best} B (${(best / 200).toFixed(0)} B/render)`);
+  assert.ok(best < 64 * 200, `${best} B over 200 renders (38.40 item 8: < 64 B/render)`);
 });
 t('timing: stage frame and per-rAF cost while rotating (60 rAF/s, 20 Hz cap)', () => {
   const subj2 = { yawDeg: 0 }, stage = [], raf = [];
@@ -112,9 +115,9 @@ t('timing: stage frame and per-rAF cost while rotating (60 rAF/s, 20 Hz cap)', (
   }
   stage.sort((a, b) => a - b); raf.sort((a, b) => a - b);
   const q = (a, f) => a[Math.min(a.length - 1, (a.length * f) | 0)];
-  console.log(`  stage frame median ${q(stage, 0.5).toFixed(1)} ms (budget 6, OPEN); per-rAF median ${q(raf, 0.5).toFixed(2)} ms, mean ${(raf.reduce((x, y) => x + y, 0) / raf.length).toFixed(1)} ms, p95 ${q(raf, 0.95).toFixed(1)} ms (budget 4 / 10)`);
+  console.log(`  stage frame median ${q(stage, 0.5).toFixed(1)} ms (budget 6 missed, proposed 12); per-rAF median ${q(raf, 0.5).toFixed(2)} ms, mean ${(raf.reduce((x, y) => x + y, 0) / raf.length).toFixed(1)} ms, p95 ${q(raf, 0.95).toFixed(1)} ms (budget 4 / 10)`);
   assert.ok(q(raf, 0.5) <= 4, 'per-rAF median');
-  assert.ok(q(stage, 0.5) <= 30, 'stage frame sanity guard (the 6 ms budget is an open item, see lane note)');
+  assert.ok(q(stage, 0.5) <= 16, 'stage frame median vs proposed 12 ms budget (+ load margin); 6 ms missed, see lane note');
 });
 t('setModel replaces the model and bumps the version', () => {
   const v = prev.version;

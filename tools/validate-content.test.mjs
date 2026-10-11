@@ -532,6 +532,28 @@ for (const [name, breakFixture, finding] of areaCases) {
   ok('QL-02 unknown required step', hasFinding(run((f) => { f.quests.push(gq('sq.a', { requires: [{ quest: 'm1', step: 'zz' }] })); }), ['no step "zz"']));
   ok('QL-02 requires cycle', hasFinding(run((f) => { f.quests.push(gq('sq.a', { requires: [{ quest: 'sq.b', done: true }] }), gq('sq.b', { requires: [{ quest: 'sq.a', done: true }] })); }), ['cycle']));
 }
+// QL-T2: site placement, reachability, gate key.
+{
+  const gq = (id, extra = {}) => ({ path: id + '.quest.json', def: { version: 1, id, objectives: [{ id: 'o', text: 'Go', when: { type: 'flag', id: 'f', equals: true } }], ...extra } });
+  const run = (mut, sites = { s1: { entity: 'boar1' } }) => {
+    const f = questFixture();
+    f.a.items.defs['key.gate'] = { id: 'key.gate', name: 'Gate key', desc: 'Opens the gate.' };
+    mut(f);
+    return validateContent(f.a, { quests: f.quests, areas: f.areas, sites });
+  };
+  const gate = { reward: { items: [{ id: 'key.gate', n: 1 }] } };
+  ok('QL-T2 valid site passes', run((f) => { f.quests.push(gq('sq.a', { site: 's1', giver: { npc: 'boar1' } })); }).errors.length === 0);
+  ok('QL-T2 unknown site', hasFinding(run((f) => { f.quests.push(gq('sq.a', { site: 'zz', giver: { npc: 'boar1' } })); }).errors, ['sq.a.quest.json.site', 'zz']));
+  ok('QL-T2 site entity not placed', hasFinding(run((f) => { f.quests.push(gq('sq.a', { site: 's1', giver: { npc: 'boar1' } })); }, { s1: { entity: 'ghost' } }).errors, ['entity "ghost"', 'not placed']));
+  ok('QL-T2 unreachable (cycle) quest', hasFinding(run((f) => { f.quests.push(gq('sq.a', { requires: [{ quest: 'sq.b', done: true }] }), gq('sq.b', { requires: [{ quest: 'sq.a', done: true }] })); }).errors, ['not reachable', 'sq.a']));
+  ok('QL-T2 chain from the start is reachable', !hasFinding(run((f) => { f.quests.push(gq('sq.a', { requires: [{ quest: 'm1', step: 'lamp' }] }), gq('sq.b', { requires: [{ quest: 'sq.a', done: true }] })); }).errors, ['not reachable']));
+  ok('QL-T2 no gate key -> info, no error', (() => { const r = run(() => {}); return r.errors.length === 0 && r.infos.includes('gate key not assigned yet'); })());
+  ok('QL-T2 gate key by the last main quest passes', (() => { const r = run((f) => { f.quests.push(gq('mq.a', { main: true, ...gate })); }); return r.errors.length === 0 && r.infos.length === 0; })());
+  ok('QL-T2 gate key by a side quest', hasFinding(run((f) => { f.quests.push(gq('sq.a', gate)); }).errors, ['key.gate', 'last main quest']));
+  ok('QL-T2 gate key by a non-last main quest', hasFinding(run((f) => { f.quests.push(gq('mq.a', { main: true, ...gate }), gq('mq.b', { main: true, requires: [{ quest: 'mq.a', done: true }] })); }).errors, ['key.gate', 'last main quest', 'mq.b']));
+  ok('QL-T2 gate key given twice', hasFinding(run((f) => { f.quests.push(gq('mq.a', { main: true, ...gate }), gq('mq.b', { main: true, ...gate })); }).errors, ['exactly once']));
+  ok('QL-T2 unknown gear/reward item id', hasFinding(run((f) => { f.quests.push(gq('sq.a', { reward: { items: [{ id: 'gear.nope', n: 1 }] } })); }).errors, ['reward.items[0].id', 'gear.nope']));
+}
 {
   const dir = mkdtempSync(join(tmpdir(), 'kestrel-quest-lint-'));
   try {

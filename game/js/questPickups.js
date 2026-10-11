@@ -11,7 +11,7 @@ import { addItem, removeItem, countOf } from './quest/sim/inventory.js';
 export const REACH = 2.2, REACH_DZ = 3, POLL_STEPS = 10;
 
 /** @param {{getBook: () => any, feed: (e:any) => any, defs: Record<string, any>}} o */
-export function createQuestPickups({ getBook, feed, defs }) {
+export function createQuestPickups({ getBook, feed, defs, isWorn }) {
   let ctx = null, props = [], tick = 0, ops = null, opsInv = null;
 
   function pack() { return (ctx && ctx.inventory) || null; }
@@ -19,7 +19,8 @@ export function createQuestPickups({ getBook, feed, defs }) {
     const book = getBook(), inv = pack();
     if (!book || !inv) return;
     if (!ops || opsInv !== inv) { opsInv = inv; ops = { count: (id) => countOf(inv, id), remove: (id, n) => removeItem(inv, id, n),
-      add: (id, n) => { const k = addItem(inv, defs, id, n); if (k > 0 && ctx && ctx.events) ctx.events.emit('inventory:added', { id, n: k }); return k; } }; } // QL-04: add = giveOnAccept
+      add: (id, n) => { const k = addItem(inv, defs, id, n); if (k > 0 && ctx && ctx.events) ctx.events.emit('inventory:added', { id, n: k }); return k; }, // QL-04: add = giveOnAccept
+      equipped: (id) => !!(isWorn && ctx && ctx.player && isWorn(ctx.player.components && ctx.player.components.equipment, id)) }; } // QL-WIRE: EQ-13 requireEquipped
     if (book.packOps !== ops) book.packOps = ops;
     for (const id of book.countedItems()) feed({ type: 'item:count', id, n: countOf(inv, id) });
   }

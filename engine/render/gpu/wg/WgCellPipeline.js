@@ -540,7 +540,8 @@ export class WgCellPipeline {
     } catch (e) {
       // FIX-PASS (owner: "fix, not disable"): end the pass, skip glow THIS frame only; logged for the first few failures
       this._abortOpenPass('glow'); this._glowRan = false;
-      if ((this._glowFails = (this._glowFails || 0) + 1) <= 3) console.warn('[WgCellPipeline] glow pass failed this frame (stays on):', e);
+      const n = this._glowFails = (this._glowFails || 0) + 1; if (this.rt && this.rt.stats) this.rt.stats.glowFails = n; // counted in rt.stats; re-logged every 600th failure
+      if (n <= 3 || n % 600 === 0) console.warn('[WgCellPipeline] glow pass failed this frame (stays on):', e);
     }
   }
 

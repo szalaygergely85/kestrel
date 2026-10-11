@@ -199,6 +199,16 @@
     .tree-row.row-hidden .tree-label { color: var(--ed-fg-dim); font-style: italic; }
     .tree-row.row-locked .tree-label { color: var(--ed-fg-dim); }
 
+    /* OB-028: foldable scene-tree groups + Group/Ungroup row; OB-029: asset delete / unused filter */
+    .tree-cat-header { display: flex; align-items: center; gap: 4px; color: var(--ed-fg-dim); font-size: 10px; padding: 3px 4px; text-transform: uppercase; letter-spacing: 0.02em; cursor: pointer; user-select: none; }
+    .tree-cat-header:hover { color: var(--ed-fg-hi); }
+    .tree-cat-header.user { color: var(--ed-amber); }
+    .tree-cat-header.sub { padding-left: 14px; text-transform: none; }
+    .tree-cat-count { margin-left: auto; color: var(--ed-fg-ghost); }
+    #tree-actions { flex: 0 0 auto; display: flex; gap: 4px; padding: 4px; border-bottom: 1px solid var(--ed-line); }
+    .asset-del-btn { margin-left: auto; background: none; border: none; color: var(--ed-fg-ghost); cursor: pointer; font: 11px var(--ed-font-mono); }
+    .asset-del-btn:hover { color: var(--ed-amber); }
+    #assets-unused-label { font-size: 10px; color: var(--ed-fg-dim); display: flex; align-items: center; gap: 3px; }
     /* scene tree */
     #tree-search-row, #assets-search-row { flex: 0 0 auto; padding: 4px; border-bottom: 1px solid var(--ed-line); }
     #tree-search-input, #assets-search-input {
@@ -431,7 +441,7 @@
       </div>
       <button type="button" id="snap-btn" class="ed-btn" title="Cycle snap ([ ])"># Snap 0.25m</button>
       <div class="ed-sep"></div>
-      <button type="button" id="save-btn" class="ed-btn">S Save (Ctrl+S)</button>
+      <button type="button" id="save-btn" class="ed-btn">S Save all (Ctrl+S)</button>
       <button type="button" id="load-btn" class="ed-btn">L Load...</button>
       <div class="ed-spacer"></div>
       <!-- US-067: the currently-armed Assets-tab model (see main.js armModelPlacement) - empty while nothing is armed. -->
@@ -462,6 +472,10 @@
             <button type="button" class="tree-chip" data-filter="triggers">TRIGGERS (0)</button>
             <button type="button" class="tree-chip" data-filter="interactables">INTERACT (0)</button>
           </div>
+          <div id="tree-actions">
+            <button type="button" id="tree-group-btn" class="ed-btn" title="Group the selected items under a name (editor metadata, saved with the world)">Group</button>
+            <button type="button" id="tree-ungroup-btn" class="ed-btn" title="Remove the selected items from their user group">Ungroup</button>
+          </div>
           <div id="outliner">(loading...)</div>
         </div>
         <!-- US-067: Assets tab - every placeable model, an ASCII thumbnail
@@ -477,6 +491,7 @@
                  design/palette.js materials (tools/voxAutoMap.js) and
                  register it as a new model (AssetRegistry.add) - no CLI, no
                  hand-written map.json. -->
+            <label id="assets-unused-label" title="Show only meshes nothing references (delete candidates)"><input type="checkbox" id="assets-unused-chk" /> unused</label>
             <button type="button" id="assets-import-vox-btn" class="ed-btn" title="Import a MagicaVoxel .vox file as a new model">Import .vox</button>
           </div>
           <!-- ED-FOLDERS-01: create a user folder (the input is shown only while

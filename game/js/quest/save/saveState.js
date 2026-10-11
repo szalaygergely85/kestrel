@@ -2,6 +2,7 @@
 import { serialize, deserialize } from '../../../../engine/index.js';
 import { createQuest } from '../sim/quest.js';
 import { migrateQuestSave } from '../sim/questBook.js';
+import { toQuestSaveV2, fromQuestSaveV2, validateQuestSaveV2 } from '../sim/questSaveV2.js';
 
 export const SAVE_VERSION = 1;
 export const SAVE_SLOTS = 3;
@@ -77,7 +78,8 @@ export function validateSave(save) {
   if (save.game.quests !== undefined) { // QG-02: optional {<id>:{quest,accepted,handedIn}}; absent = old save
     const q = save.game.quests;
     if (!q || typeof q !== 'object' || Array.isArray(q)) throw new Error('save: invalid quests');
-    for (const id of Object.keys(q)) {
+    if (q.v === 2) validateQuestSaveV2(q); // QL-T3: compact v2; the v1 map below is still accepted on read
+    else for (const id of Object.keys(q)) {
       const e = q[id];
       if (!validId(id) || !e || typeof e.accepted !== 'boolean' || typeof e.handedIn !== 'boolean' || !e.quest || e.quest.questVersion !== 1 || e.quest.questId !== id) throw new Error('save: invalid quests');
     }
@@ -93,13 +95,17 @@ export function collectSave(world, { quest = null, questDef = null, quests = nul
   const save = { saveVersion:SAVE_VERSION, world:serialize(world),
     game:{quest:quest ? createQuest(questDef,quest) : null,openedChests:ids(openedChests),deadBeasts:ids(deadBeasts)},
     meta: savedAt === undefined ? {playerName,place,playTimeSec} : {playerName,place,playTimeSec,savedAt} }; // SAVE-TIME-01: ms epoch; optional on read (old saves sort oldest)
-  if (quests) { // QG-02: each entry re-validated through createQuest against its giver def
-    const out = {};
-    for (const id of Object.keys(quests)) {
-      const def = giverDefs.find(d => d.id === id); if (!def) throw new Error('save: giver quest definition required');
-      out[id] = { quest: createQuest(def, quests[id].quest), accepted: quests[id].accepted === true, handedIn: quests[id].handedIn === true };
+  if (quests) { // QG-02: each entry re-validated through createQuest against its giver def; QL-T3: written as compact v2
+    if (quests.v === 2) save.game.quests = validateQuestSaveV2(quests);
+    else {
+      const out = {};
+      for (const id of Object.keys(quests)) {
+        const def = giverDefs.find(d => d.id === id); if (!def) throw new Error('save: giver quest definition required');
+        out[id] = { quest: createQuest(def, quests[id].quest), accepted: quests[id].accepted === true, handedIn: quests[id].handedIn === true };
+        if (Array.isArray(quests[id].given) && quests[id].given.length) out[id].given = quests[id].given.map(g => ({ id: g.id, n: g.n })); // M4 exit: giveOnAccept/giveOnTalk items survive (abandon returns them)
+      }
+      save.game.quests = toQuestSaveV2(out, giverDefs, quest && quest.flags ? quest.flags['ui.tracked'] : null);
     }
-    save.game.quests = out;
   }
   if (look !== undefined && look !== null) save.player = { look }; // CHARGEN-16: absent = old-save shape
   validateSave(save);
@@ -115,11 +121,13 @@ export function applySave(save, assets, { questDef = null, giverDefs = null, wor
   // QG-02: giver defs given -> migrate old saves and re-validate; else return the stored map as-is (null when absent).
   let quests = save.game.quests ? canonical(save.game.quests) : null;
   if (giverDefs) {
-    const raw = migrateQuestSave(save.game, { main: questDef, givers: giverDefs });
+    const gq = save.game.quests;
+    const raw = gq && gq.v === 2 ? fromQuestSaveV2(gq, giverDefs, ids(save.game.deadBeasts)) : migrateQuestSave(save.game, { main: questDef, givers: giverDefs }); // QL-T3: v2 replays dead beasts; v1 map migrates on read
     quests = raw ? {} : null;
     if (raw) for (const id of Object.keys(raw)) {
       const def = giverDefs.find(d => d.id === id); if (!def) throw new Error('save: unknown giver quest ' + id);
       quests[id] = { quest: createQuest(def, raw[id].quest), accepted: raw[id].accepted === true, handedIn: raw[id].handedIn === true };
+      if (Array.isArray(raw[id].given) && raw[id].given.length) quests[id].given = raw[id].given.map(g => ({ id: g.id, n: g.n }));
     }
   }
   return { world,quest,quests,openedChests:ids(save.game.openedChests),deadBeasts:ids(save.game.deadBeasts),look:save.player && save.player.look ? canonical(save.player.look) : defaultLook,meta:canonical(save.meta) };

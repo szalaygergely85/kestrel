@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "mq.ford.mirror",
+  "title": "The Missing Glass",
+  "giver": { "npc": "rook" },
+  "main": true,
+  "requires": [{ "quest": "mq.bend.call", "done": true }, { "quest": "mq.ford.stones", "step": "fordWest" }],
+  "objectives": [
+    { "id": "glass", "text": "Take the glass from Rook's nest", "when": { "type": "item", "id": "relay.mirror" } },
+    { "id": "wake", "text": "Wake the Ford Relay", "when": { "type": "flag", "id": "waystone.ws_ford.woken", "equals": true } }
+  ],
+  "abandonable": false
+}

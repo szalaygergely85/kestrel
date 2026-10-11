@@ -127,7 +127,7 @@ export function compileDialogue(def) {
  * The runner. `state`: 'idle' | 'typing' | 'waiting' | 'choosing' | 'ended'.
  * `onEvent(name, arg)` names: 'open' (dialogue id), 'node' (node id), 'flag' (flag key), 'end' / 'close' (dialogue id).
  */
-export function createDialogueRunner({ cps = 30, holdSec = 0.12, onEvent } = {}) {
+export function createDialogueRunner({ cps = 30, holdSec = 0.12, onEvent, pageChars = 200, pageLines = 4 } = {}) {
   const stepSec = 1 / cps;
   let comp = null, flags = null, node = null, lineIdx = 0, budget = 0, hold = 0;
   const emit = (n, a) => { if (onEvent) onEvent(n, a); };
@@ -142,16 +142,34 @@ export function createDialogueRunner({ cps = 30, holdSec = 0.12, onEvent } = {})
     startLine(0);
   }
 
+  // OB-022: a page groups consecutive lines of the same speaker (up to pageLines lines / pageChars chars),
+  // also across plain `next` links; a clip node, a speaker change or a choice node starts a new page.
+  // lineIdx = index of the first line NOT on the page (in the current `node`).
   function startLine(i) {
+    let text = node.lines[i], count = 1;
+    i++;
+    for (;;) {
+      if (i < node.lines.length) {
+        const l = node.lines[i];
+        if (count >= pageLines || text.length + 1 + l.length > pageChars) break;
+        text += ' ' + l; count++; i++; continue;
+      }
+      if (node.kind !== NEXT) break;
+      const nx = comp.nodes[node.next];
+      if (nx.speaker !== node.speaker || nx.clip !== null || nx.kind === CHOICES) break;
+      if (count >= pageLines || text.length + 1 + nx.lines[0].length > pageChars) break;
+      node = nx; i = 0; // absorbed: its flag still fires, no new 'node' clip event
+      if (node.setFlag !== null) { flags.set(node.setFlag); emit('flag', node.setFlag); }
+    }
     lineIdx = i;
-    r.line = node.lines[i];
+    r.line = text;
     r.visibleChars = 0; budget = 0; hold = 0;
     r.choiceCount = 0; r.selected = 0;
     r.state = 'typing';
   }
 
   function lineDone() {
-    if (lineIdx + 1 >= node.lines.length && node.kind === CHOICES) { r.state = 'choosing'; r.choiceCount = node.choices.length; r.selected = 0; }
+    if (lineIdx >= node.lines.length && node.kind === CHOICES) { r.state = 'choosing'; r.choiceCount = node.choices.length; r.selected = 0; }
     else r.state = 'waiting';
   }
 
@@ -197,7 +215,7 @@ export function createDialogueRunner({ cps = 30, holdSec = 0.12, onEvent } = {})
     press() {
       if (r.state === 'typing') { r.visibleChars = r.line.length; lineDone(); return; }
       if (r.state !== 'waiting') return;
-      if (lineIdx + 1 < node.lines.length) { startLine(lineIdx + 1); return; }
+      if (lineIdx < node.lines.length) { startLine(lineIdx); return; }
       if (node.kind === NEXT) enter(node.next);
       else finish('end'); // kind END
     },

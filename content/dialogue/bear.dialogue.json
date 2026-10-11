@@ -95,8 +95,7 @@
     "bear.q.offer.5": {"choices": [{"next": "bear.q.accepted", "setFlag": "q.burl.boars.accept", "text": "I'll clear the path."}, {"next": "bear.q.later", "text": "Not yet."}], "lines": [
       "Ah. The far light.",
       "There is an old Waystone past the trees.",
-      "Might help you find your way.",
-      "But first, those boars need moving."
+      "Might guide you. But first, those boars need moving."
     ], "speaker": "burl"},
     "bear.q.accepted": {"end": true, "lines": [
       "Five ought to convince the others.",
@@ -169,9 +168,9 @@
     ], "next": "bear.stone.7", "speaker": "you"},
     "bear.stone.7": {"lines": [
       "Your head, for a start.",
-      "These stones remember those who wake them.",
+      "These stones remember who wakes them.",
       "If you fall, their light calls you home.",
-      "They remember your journey too.",
+      "They remember your journey.",
       "And when you wake another stone,",
       "you can travel between them."
     ], "next": "bear.stone.8", "speaker": "burl"},
@@ -205,7 +204,7 @@
       "Not everything needs them.",
       "Well done, sky-cub.",
       "The next stone lies west, by the road bend.",
-      "Follow the old road and your little chart."
+      "Follow the old road and your chart."
     ], "next": "bear.woken.5", "speaker": "burl"},
     "bear.woken.5": {"lines": [
       "You're not coming?"

@@ -1,5 +1,4 @@
-// game/js/quest/equipView.js (EQ-07 + EQ-09, architecture 38.41 items 4 and 9). First-person shield + bow view models on the
-// LEFT hand, the block spark, and the flying / stuck arrow instances. Presentation only: it reads the sims, never writes them.
+// game/js/quest/equipView.js (EQ-07 + EQ-09, architecture 38.41 items 4 and 9). First-person bow (LEFT = main hand) + shield (RIGHT = off hand, mirrored) view models, the block spark, and the flying / stuck arrow instances. Presentation only: it reads the sims, never writes them.
 // Authored defs: design/models/equipment.js (viewModels.shield / viewModels.bow). No allocation per frame.
 import { writeUnitInstance, yawFromDelta } from '../../../engine/index.js';
 
@@ -11,7 +10,7 @@ function dur(def, name) { const k = def.clips[name].keys; return k[k.length - 1]
 
 export function loadShieldView(vm, def, pool) {
   const h = vm.load('shield', def, pool);
-  vm.setHand(h, 'left'); vm.hide(h);
+  vm.setHand(h, 'right'); vm.hide(h); // OB-017: off hand = RIGHT; the authored-left model is mirrored by the engine
   const c = (n) => vm.clipId(h, n);
   return { vm, h, def, clip: { idle: c('idle'), raise: c('raise'), blocked: c('blocked') }, raiseMs: dur(def, 'raise'), blockMs: dur(def, 'blocked'), lastBlock: -1 };
 }
@@ -66,12 +65,12 @@ export function presentBow(v, show, bow, swapFrac, nowTick, simTime, moving) {
   vm.setBob(simTime, bob, h);
 }
 
-/** Block spark: a 5x3 glyph burst low-left of the crosshair for 12 frames after a block. `ui.setCellRGB(x,y,code,fg..,bg..)`. */
+/** Block spark: a 5x3 glyph burst low-right of the crosshair (shield side, OB-017) for 12 frames after a block. `ui.setCellRGB(x,y,code,fg..,bg..)`. */
 const SPARK = [['  |  ', '-=*=-', '  |  '], ["\\ ' /", '- + -', '/ . \\'], ['.   \'', '     ', '\'   .']];
 export function drawBlockSpark(ui, cols, rows, ageMs) {
   if (ageMs < 0 || ageMs >= 140) return;
   const f = SPARK[ageMs < 40 ? 0 : ageMs < 90 ? 1 : 2];
-  const cx = (cols * 0.34) | 0, cy = (rows * 0.62) | 0;
+  const cx = (cols * 0.66) | 0, cy = (rows * 0.62) | 0;
   for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) {
     const ch = f[r][c]; if (ch === ' ') continue;
     ui.setCellRGB(cx - 2 + c, cy - 1 + r, ch.charCodeAt(0) - 32, 255, ageMs < 40 ? 255 : 200, ageMs < 40 ? 255 : 120, 0, 0, 0);

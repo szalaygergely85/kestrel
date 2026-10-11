@@ -11,6 +11,9 @@ export const BOW_CFG = Object.freeze({
   survivePct: 70,      // % of stuck arrows that can be picked up again
   maxFlying: 8,
   maxStuck: 16,
+  maxFloat: 8,         // RIVER-01b: arrows floating on river water
+  floatSteps: 480,     // 8 s afloat, then the arrow is gone
+  floatDraft: 0.02,    // m the floating arrow sits below the surface
   hitPad: 0.05,        // m added to a target cylinder
   stuckBack: 0.05,     // m the stuck arrow sits in front of the surface
 });

@@ -72,6 +72,27 @@ export function spawnDrop(world, kind, x, y, z) {
 }
 
 /**
+ * EQ-10: a gear drop = a world pickup of kind 'item' (`itemId`, amount 1). Same slot table, life and bob as the
+ * orbs. Sprite 'pickupGear' (design/models/m3_props.js; clips idle = worn, sturdy, fine).
+ */
+const TIER_ANIM = { worn: 'idle', sturdy: 'sturdy', fine: 'fine' };
+export function spawnItemDrop(world, itemId, x, y, z, tier = 'worn') {
+  let id;
+  do { id = `pickup_${nextId++}`; } while (world.entity(id));
+  const slot = findSlot(world);
+  slots[slot] = id;
+  world.spawn('pickup', { x, y, z, yawDeg: 0, pitchDeg: 0 }, {
+    pickup: { kind: 'item', itemId, amount: 1, life: PICKUP_LIFE, baseZ: z },
+    sprite: { model: 'pickupGear', anim: TIER_ANIM[tier] || 'idle', frame: 0 },
+  }, id);
+  return id;
+}
+
+/** EQ-10: loot.js installs (per world load) the function that moves a collected item drop into the pack. Returns false = pack full, drop stays. */
+let itemSink = null;
+export function setItemPickupSink(fn) { itemSink = fn; }
+
+/**
  * Decrements every live drop's life (despawns at 0) and collects any drop within COLLECT_RADIUS of `player`,
  * applying `+amount` to the matching health/mana component (clamped to max).
  * @param {import('../../../../engine/index.js').World} world
@@ -95,7 +116,9 @@ export function stepPickups(world, player) {
     const dx = t.x - pt.x, dy = t.y - pt.y, dz = p.baseZ - pt.z;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (dist <= COLLECT_RADIUS) {
-      if (p.kind === 'hp' && health) health.hp = Math.min(health.max, health.hp + p.amount);
+      if (p.kind === 'item') {
+        if (!itemSink || !itemSink(p.itemId, p.amount)) continue; // pack full: leave it lying (life keeps ticking)
+      } else if (p.kind === 'hp' && health) health.hp = Math.min(health.max, health.hp + p.amount);
       else if (p.kind === 'mp' && mana) mana.mp = Math.min(mana.max, mana.mp + p.amount);
       world.remove(id);
       slots[i] = null;

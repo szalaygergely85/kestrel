@@ -54,12 +54,13 @@ export const KEY_ORDER = {
   mask: ['kind', 'schema', 'id', 'w', 'h', 'cutoffDefault', 'data'],
   mesh: [...ENVELOPE_KEYS, 'version', 'layout', 'bin', 'pos', 'uv', 'uvMask', 'nrm', 'flat', 'aux', 'idx', 'triCount', 'bbox', 'ranges', 'matKeys', 'mats', 'matsResolved', 'meshVersion', 'collide', 'collider', 'colliderB64', 'castShadow', 'colliderParts'],
   level: [...ENVELOPE_KEYS, 'name', 'title', 'version', 'cellSize', 'size', 'rows', 'legend', 'layers', 'tilt', 'start', 'sun', 'ambient', 'lights', 'props', 'interactables', 'triggers', 'markers', 'route', 'routeNotes'],
+  // OB-028: `editorGroups` ([{name, ids}]) is editor-only scene-tree metadata; the game ignores it.
   // US-026a (architecture.md 23.2): `bounds`/`triggers` are additive
   // optional keys - schema stays 1, a world file without them still loads.
   // CO-8 (docs/coordinates.md section 8): `sun` is a world property (moved
   // out of the level file in this same content commit) - additive, schema
   // stays 1.
-  world: [...ENVELOPE_KEYS, 'name', 'version', 'title', 'terrain', 'time', 'sun', 'structures', 'entities', 'horizon', 'state', 'bounds', 'triggers'],
+  world: [...ENVELOPE_KEYS, 'name', 'version', 'title', 'terrain', 'time', 'sun', 'structures', 'entities', 'horizon', 'state', 'bounds', 'triggers', 'editorGroups'],
   // CO-5 (docs/coordinates.md section 8): `WorldState` (engine/world/
   // serialize.js), not a content file - `stringifySave` tags it
   // `kind: 'save'` only to select this order, it is not an envelope key.

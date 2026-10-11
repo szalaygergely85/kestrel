@@ -1,6 +1,13 @@
 // US-096a: event-driven plain save data. No world/DOM, clocks or random sources.
 const BAD_IDS = new Set(['constructor','prototype','__proto__']);
-const safeId = value => typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_.-]*$/.test(value) && !BAD_IDS.has(value);
+const GOOD_IDS = new Set(); // QL-T3: ids seen valid skip the regex (its match bookkeeping allocated ~4 B per call); bounded
+const safeId = value => {
+  if (typeof value !== 'string') return false;
+  if (GOOD_IDS.has(value)) return true;
+  if (!/^[A-Za-z][A-Za-z0-9_.-]*$/.test(value) || BAD_IDS.has(value)) return false;
+  if (GOOD_IDS.size < 8192) GOOD_IDS.add(value);
+  return true;
+};
 const scalar = value => value === null || ['boolean','string'].includes(typeof value) || typeof value === 'number' && Number.isFinite(value);
 const requireId = value => { if (!safeId(value)) throw new Error('quest: invalid id'); };
 

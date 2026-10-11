@@ -10,13 +10,42 @@
 // the whole page). The corpse counts are runtime-only: boars always come back alive on a load (37.16.2), so a stale
 // `loot.*` flag from a save is deleted at create rather than restored.
 import { addItem } from './inventory.js';
-import { spawnDrop } from './pickups.js';
-import { LOOT_PROMPT } from './lootConfig.js';
+import { spawnDrop, spawnItemDrop, setItemPickupSink } from './pickups.js';
+import { LOOT_PROMPT, LOOT_TIERS, LOOT_SLOTS } from './lootConfig.js';
 
-const ITEMS_PER_CORPSE = 3; // meat, hide, tusk (the `entries` columns)
+// EQ-10: 0..4 rolled entries per corpse (table.fixed + the `give` rolls). Gear is a world pickup, never a column.
+const ITEMS_PER_CORPSE = 4;
 const MAX_SLOTS = 16;       // beastSim MAX_BEASTS
 const CORPSE_LIFT = 0.35;   // m above the death z: the interactable sits on the body, not in the ground (37.16.3)
 const LOOT_RADIUS = 1.8;
+
+const gearCache = new WeakMap();
+/** Gear item id for (slot, tier): the def with `equip.slot/tier` (one base per slot today). Cached per defs object. */
+export function gearIdFor(items, slot, tier) {
+  let m = gearCache.get(items);
+  if (!m) {
+    m = new Map();
+    for (const id of Object.keys(items)) {
+      const e = items[id].equip;
+      if (items[id].kind === 'gear' && e) m.set(e.slot + '|' + e.tier, id);
+    }
+    gearCache.set(items, m);
+  }
+  return m.get(slot + '|' + tier) || null;
+}
+
+/** Tier from a uniform draw `b` (cumulative weights, document order), slot from `c` (uniform). Returns the gear id. */
+export function rollGear(items, b, c, tiers = LOOT_TIERS, slots = LOOT_SLOTS, forceTier = null) {
+  let tier = forceTier;
+  if (!tier) {
+    const names = Object.keys(tiers);
+    let acc = 0;
+    tier = names[names.length - 1];
+    for (const t of names) { acc += tiers[t]; if (b < acc) { tier = t; break; } }
+  }
+  const slot = slots[Math.min(slots.length - 1, Math.floor(c * slots.length))];
+  return gearIdFor(items, slot, tier);
+}
 
 /**
  * Module-level handle for the `beast.loot` behaviour (quest/index.js). main.js sets it on every load; `null` when
@@ -56,8 +85,9 @@ export function createLoot(world, events, opts) {
 function buildLoot(world, events, { items, beasts, rng, inventoryOf, table }) {
   const count = beasts.count;
   const ids = beasts.ids;
-  const entries = table.entries;
-  if (entries.length !== ITEMS_PER_CORPSE) throw new Error(`createLoot: table needs ${ITEMS_PER_CORPSE} entries, got ${entries.length}`);
+  const fixed = table.fixed, rolls = table.rolls;
+  const giveRolls = rolls.filter((r) => r.give);
+  if (fixed.length + giveRolls.length > ITEMS_PER_CORPSE) throw new Error(`createLoot: table has more than ${ITEMS_PER_CORPSE} corpse entries`);
 
   // 37.16.3 "At create: delete any stale loot.* flag from a save". Create-time only (Object.keys allocates).
   for (const k of Object.keys(world.state)) if (k.startsWith('loot.')) delete world.state[k];
@@ -77,6 +107,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table }) {
   const loot = {
     count,
     corpseN: new Int8Array(MAX_SLOTS * ITEMS_PER_CORPSE),
+    corpseItem: new Array(MAX_SLOTS * ITEMS_PER_CORPSE).fill(null), // item id per column (entry order: fixed, then give rolls)
     // Preallocated emit payloads (toastView builds its string from them, on the event).
     _added: { id: '', n: 0 },
     _full: { id: '' },
@@ -85,17 +116,27 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table }) {
   function clearSlot(i) {
     delete world.state[flagKey[i]];
     const o = i * ITEMS_PER_CORPSE;
-    for (let k = 0; k < ITEMS_PER_CORPSE; k++) loot.corpseN[o + k] = 0;
+    for (let k = 0; k < ITEMS_PER_CORPSE; k++) { loot.corpseN[o + k] = 0; loot.corpseItem[o + k] = null; }
   }
 
-  // Roll at death (37.16.3): always 5 draws in a fixed order, whatever the results.
+  // Roll at death: 3 draws per `rolls` row (chance, b, c) in order, then the 2 orb draws. Fixed rows always drop.
   function onDied(p) {
     const i = beasts.slotOf(p.id);
     if (i < 0) return;
     const o = i * ITEMS_PER_CORPSE;
-    for (let k = 0; k < ITEMS_PER_CORPSE; k++) {
-      const e = entries[k];
-      loot.corpseN[o + k] = rng.nextFloat() < e.chance ? e.n : 0;
+    let col = 0;
+    for (let k = 0; k < fixed.length; k++, col++) { loot.corpseItem[o + col] = fixed[k].item; loot.corpseN[o + col] = fixed[k].n; }
+    for (let k = 0; k < rolls.length; k++) {
+      const r = rolls[k];
+      const hit = rng.nextFloat() < r.chance, b = rng.nextFloat(), c = rng.nextFloat();
+      if (r.give) {
+        loot.corpseItem[o + col] = r.give.item;
+        loot.corpseN[o + col] = hit ? r.give.min + Math.min(r.give.max - r.give.min, Math.floor(b * (r.give.max - r.give.min + 1))) : 0;
+        col++;
+      } else if (hit && r.pick && r.pick.gear) {
+        const gid = rollGear(items, b, c);
+        if (gid) spawnItemDrop(world, gid, p.x, p.y, p.z, items && items[gid] && items[gid].equip ? items[gid].equip.tier : 'worn');
+      }
     }
     const orbHit = rng.nextFloat() < table.orb.chance;
     const orbKind = table.orb.kinds[rng.int(table.orb.kinds.length)];
@@ -135,7 +176,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table }) {
     for (let k = 0; k < ITEMS_PER_CORPSE; k++) {
       const n = loot.corpseN[o + k];
       if (n <= 0) continue;
-      const itemId = entries[k].item;
+      const itemId = loot.corpseItem[o + k];
       const added = inv ? addItem(inv, items, itemId, n) : 0;
       loot.corpseN[o + k] = n - added;
       left += n - added;
@@ -159,6 +200,23 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table }) {
     const i = beasts.slotOf(id);
     return i < 0 ? -1 : loot.corpseN[i * ITEMS_PER_CORPSE + k];
   };
+  /** Item id in column `k` for beast `id` (null = empty / untracked). Test hook. */
+  loot.itemOf = function itemOf(id, k) {
+    const i = beasts.slotOf(id);
+    return i < 0 ? null : loot.corpseItem[i * ITEMS_PER_CORPSE + k];
+  };
+
+  // Gear pickups: stepPickups hands a collected 'item' drop here; pack full -> false (drop stays).
+  const gearGot = { id: '', n: 1 }; // event payload (reused)
+  setItemPickupSink((itemId, n) => {
+    const inv = inventoryOf();
+    if (!inv || addItem(inv, items, itemId, n) < n) return false;
+    loot._added.id = itemId; loot._added.n = n;
+    events.emit('inventory:added', loot._added);
+    gearGot.id = itemId; gearGot.n = n;
+    events.emit('gear:got', gearGot); // chestHook shows the item-get card
+    return true;
+  });
 
   /** Folds the corpse counts into a replay hash (no allocation). */
   loot.hashInto = function hashInto(h) {
@@ -168,6 +226,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table }) {
   /** Drops the event listeners and this load's interactables (the next load re-adds its own). */
   loot.dispose = function dispose() {
     for (const off of offs) off();
+    setItemPickupSink(null);
     for (let i = 0; i < count; i++) world.removeInteractable(flagKey[i]);
   };
 
@@ -178,6 +237,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table }) {
 // A table contains fixed [{item,n}] plus one optional weighted pick [{item,n,weight}].
 // Roll once at create with a chest-owned stream. claim is all-or-nothing so openedChests is sufficient to save it.
 function buildChestLoot(events, {items, table, rng, inventoryOf}) {
+  // EQ-10: optional table.gear = {tier?} -> one gear roll at create (2 draws, after the weighted pick); tier fixed or rolled.
   if (!table || !Array.isArray(table.fixed) || !Array.isArray(table.weighted)) throw new Error('chest loot: invalid table');
   const ids = [], counts = [], caps = [];
   let weight = 0, claimed = false;
@@ -189,7 +249,7 @@ function buildChestLoot(events, {items, table, rng, inventoryOf}) {
   }
   for (const row of table.fixed) validate(row, false);
   for (const row of table.weighted) { validate(row, true); weight += row.weight; }
-  if (!Number.isFinite(weight) || !table.fixed.length && !table.weighted.length) throw new Error('chest loot: empty or overflowing table');
+  if (!Number.isFinite(weight) || !table.fixed.length && !table.weighted.length && !table.gear) throw new Error('chest loot: empty or overflowing table');
   function add(row) {
     let i = ids.indexOf(row.item);
     if (i < 0) { i = ids.length; ids.push(row.item); counts.push(0); caps.push(items[row.item].stackMax); }
@@ -203,6 +263,12 @@ function buildChestLoot(events, {items, table, rng, inventoryOf}) {
       const row = table.weighted[i]; pick -= row.weight;
       if (pick < 0 || i === table.weighted.length - 1) { add(row); break; }
     }
+  }
+  if (table.gear) {
+    const b = rng.nextFloat(), c = rng.nextFloat();
+    const gid = rollGear(items, b, c, undefined, undefined, table.gear.tier || null);
+    if (!gid) throw new Error('chest loot: no gear def for the roll');
+    add({item: gid, n: 1});
   }
   const added = {id:'', n:0};
   function fits(inv) {

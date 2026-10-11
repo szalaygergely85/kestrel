@@ -1,7 +1,7 @@
 // engine/render/gpu/device/GpuDeviceWebGPU.test.js - WG-1b2. Pure/mock tests (no adapter):
 //   node engine/render/gpu/device/GpuDeviceWebGPU.test.js
 import { textureFormatFor, depthFormatFor, vertexFormatFor, padTo256, depadRows, readbackLayout } from './webgpuFormats.js';
-import { GpuDeviceWebGPU } from './GpuDeviceWebGPU.js';
+import { GpuDeviceWebGPU, TRACE_PASSES_AFTER_ABORT } from './GpuDeviceWebGPU.js';
 import { createGpuDevice, selfTestDevice } from './createGpuDevice.js';
 import { GPU_DEVICE_METHODS } from './GpuDevice.js';
 import { makeOk } from '../../../test/assert.js';

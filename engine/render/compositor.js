@@ -413,7 +413,7 @@ export function renderWorld(fb, world, cam) {
     if (fb.detailPass) edgePass(fb.gbuf, fb.depth.depth, fb.rt, fb.detailPass.edges, fb.waterMask || null, fb.matTable ? fb.matTable.soft : null);
   }
 
-  fillSky(fb, cam, world && world.terrain && fb.palette && fb.palette.timeOfDay ? sunFromWorld(world, fb.palette, skySunScratch) : null); // AUD-40
+  if (!fb.skipSky) fillSky(fb, cam, world && world.terrain && fb.palette && fb.palette.timeOfDay ? sunFromWorld(world, fb.palette, skySunScratch) : null); // AUD-40
   if (meshWater && fb.gbuf) waterCompositeJS(fb, world, meshTerms, meshPitchTerms, meshPitched, true); // sky cells (water to the horizon)
 
   // (US-017 ARCH CHANGES #1 item 2, 7.4 "Fade") CPU scene fade moved OUT of

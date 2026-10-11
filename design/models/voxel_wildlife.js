@@ -1566,7 +1566,7 @@
         blendMs: 120,
         groupSize: [1, 3],
         kind: 'ground',
-        spawn: { kind: 'ground', habitats: ['meadow', 'edge'], cellChance: 0.35, spawnMinM: 35, spawnMaxM: 60, despawnM: 75, drawM: 35, cap: 10 },
+        spawn: { kind: 'ground', habitats: ['meadow', 'edge'], cellChance: 0.35, spawnMinM: 15, spawnMaxM: 60, despawnM: 75, drawM: 45, cap: 10 },
         habitat: 'meadow edges, path verges, forest clearings; never deep forest',
         note: 'Gait rate = speed / tunedMps clamped to `rate`: the hop keeps its planted feet still at 0.6 m/s; the run ' +
               'touches the ground for only 50 ms per foot, so it can play at 1.0-1.6x for any flee speed (foot slip is ' +
@@ -1589,7 +1589,7 @@
         groupSize: [1, 4],
         buckChance: 0.3,
         kind: 'ground',
-        spawn: { kind: 'ground', habitats: ['edge', 'meadow', 'forest'], cellChance: 0.15, spawnMinM: 45, spawnMaxM: 120, despawnM: 150, drawM: 90, cap: 6 },
+        spawn: { kind: 'ground', habitats: ['edge', 'meadow', 'forest', 'riverbank'], cellChance: 0.15, spawnMinM: 35, spawnMaxM: 120, despawnM: 150, drawM: 90, cap: 6 },
         habitat: 'forest edges and clearings, meadows at the forest line',
         note: 'Gait rate = speed / tunedMps clamped to `rate`. alert = head up, frozen, a forefoot stamp; then flee ' +
               '(gallop, tail up = white rump flag) or back to graze / idle. Trot = the first second of a flee or a ' +
@@ -1654,7 +1654,7 @@
         blendMs: 80,
         groupSize: [1, 4],
         variantChance: { robin: 0.5, finch: 0.5 },
-        spawn: { kind: 'flyer', habitats: ['forest', 'edge', 'meadow'], cellChance: 0.4, spawnMinM: 30, spawnMaxM: 70, despawnM: 87, drawM: 30, cap: 14 },
+        spawn: { kind: 'flyer', habitats: ['forest', 'edge', 'meadow'], cellChance: 0.4, spawnMinM: 15, spawnMaxM: 55, despawnM: 87, drawM: 40, cap: 14 },
         // perch ring per forest tree model: r = metres from the trunk axis, z = metres over the tree base. DERIVED from
         // ASSETS.forestTrees trunk numbers (trunkR, trunkH = lowest canopy next to the trunk) + the lower canopy, not
         // ray-measured on the meshes yet: re-check on preview/forest.html (WILD-D3 follow-up).
@@ -1685,7 +1685,7 @@
         times: { idle: [4, 12], graze: [4, 12], alert: [1, 3], perchS: [8, 30], cawEveryS: [6, 20] },
         blendMs: 120,
         groupSize: [1, 3],
-        spawn: { kind: 'flyer', habitats: ['meadow', 'edge'], cellChance: 0.08, spawnMinM: 40, spawnMaxM: 90, despawnM: 112, drawM: 45, cap: 3 },
+        spawn: { kind: 'flyer', habitats: ['meadow', 'edge', 'riverbank'], cellChance: 0.08, spawnMinM: 40, spawnMaxM: 90, despawnM: 112, drawM: 45, cap: 3 },
         perchFrom: 'songbird',                         // same perchByModel table (the crow sits a little higher: + 0.5 m z)
         habitat: 'meadows, field edges and riverbanks; walks and pecks in the open, perches on tall trees',
         note: 'Rook (the talking crow of the quest line) = this model placed as an NPC: perch + tilt while idle, talk while ' +
