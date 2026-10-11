@@ -30,7 +30,7 @@ ok(soup.src.length > 100000, 'world soup loaded');
 ok(pairs.filter((p) => near(p, TOWER_SPOT, 8)).length === 0, 'tower spot: 0 coplanar pairs');
 ok(pairs.every((p) => !soup.srcs[p.sa].level && !soup.srcs[p.sb].level), 'no level mesh (grid faces) is coplanar with anything in the world');
 // OB-053b: the generators (sealed gate, outwall) are clean; the budget covers the known leftovers (poi/rs prop clutter, see docs/lanes/pc-b2.md)
-const WORLD_MAX = 117;
-ok(pairs.filter((p) => /^(sg|ow)[0-9]+[(]/.test(soup.srcs[p.sa].name) && /^(sg|ow)[0-9]+[(]/.test(soup.srcs[p.sb].name)).length <= 1, "sealed gate + outwall: <= 1 coplanar pair (ow175 wall x ow183 roof)");
+const WORLD_MAX = 0;
+ok(pairs.filter((p) => /^(sg|ow)[0-9]+[(]/.test(soup.srcs[p.sa].name) && /^(sg|ow)[0-9]+[(]/.test(soup.srcs[p.sb].name)).length === 0, "sealed gate + outwall: 0 coplanar pairs");
 ok(pairs.length <= WORLD_MAX, `world coplanar pairs ${pairs.length} <= ${WORLD_MAX}`);
 console.log(`coplanar-lint.test: ${checks} checks OK (${pairs.length} world pair(s))`);

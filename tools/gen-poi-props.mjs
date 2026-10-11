@@ -6,6 +6,7 @@
 // Usage: node tools/gen-poi-props.mjs [--dry-run]
 globalThis.window = globalThis.window || globalThis;
 import fs from 'node:fs';
+import { applyNudges } from './coplanar-nudge.mjs';
 import '../design/palette.js';
 import '../design/detail-pass.js';
 import '../design/levels/overworld_far.js';
@@ -63,7 +64,7 @@ const AWN_Z = 2.12;
 for (const lx of [-1.2, 1.2]) { const [ox, oy] = rot(TPY, lx, -0.9); const c = put('Prop_Crate', TP[0] + ox, TP[1] + oy, TPY + lx * 7, { ext: 0.5 }); put('Prop_Crate', TP[0] + ox, TP[1] + oy, TPY - lx * 9, { ext: 0.5, dz: 1.06, free: true }); }
 { const [ox, oy] = rot(TPY, 0, 0.55); put('Roof_Wooden_2x1', TP[0] + ox, TP[1] + oy, TPY, { dz: AWN_Z, ext: 0.5, collide: false }); }
 for (const lx of [-0.8, 0.8]) { const [ox, oy] = rot(TPY, lx, 0.2); put('Prop_Crate', TP[0] + ox, TP[1] + oy, TPY, { ext: 0.4 }); }
-{ const [ox, oy] = rot(TPY, 0, 0.2); put('Floor_WoodDark_Half1', TP[0] + ox, TP[1] + oy, TPY + 90, { dz: 1.07, collide: false, ext: 0.3 }); }
+{ const [ox, oy] = rot(TPY, 0, 0.2); put('Floor_WoodDark_Half1', TP[0] + ox, TP[1] + oy, TPY + 90, { dz: 1.14, collide: false, ext: 0.3 }); }
 const [lampx, lampy] = rot(TPY, -0.5, 0.2), TP_LAMP = { x: TP[0] + lampx, y: TP[1] + lampy };
 const [bx, by] = rot(TPY, 2.3, 0.3), basket = { x: TP[0] + bx, y: TP[1] + by };
 put('Prop_Crate', basket.x, basket.y, 20, { scale: 0.8, ext: 0.4 });
@@ -113,7 +114,7 @@ const PX = RC[0] - 4.3, stepTops = [], stepYs = [];
   let top = low(PX, Y(N, 0), 1.0) + 0.7; const inc = (DECK - top) / (N - 1);
   for (let i = 0; i < N; i++, top += inc) {
     const y = Y(N, i), g = low(PX, y, 1.0) - 0.04, n = Math.max(1, Math.ceil(top - g - 0.05));
-    for (let k = 0; k < n; k++) put('Stairs_Exterior_Straight', PX, y, k % 2 ? 180 : 0, { z: +(top - 1 - (n - 1 - k) * Math.max(0.5, Math.min(1, (top - 1 - g) / Math.max(1, n - 1))) + (k % 4) * 0.03).toFixed(2), ext: 1.0 }); // +0..9 cm per step: stacked stair meshes share tread planes otherwise (OB-053b)
+    for (let k = 0; k < n; k++) put('Stairs_Exterior_Straight', PX + ((i + k) % 4) * 0.03, y, k % 2 ? 180 : 0, { z: +(top - 1 - (n - 1 - k) * Math.max(0.5, Math.min(1, (top - 1 - g) / Math.max(1, n - 1))) + ((k * 5 + i * 3) % 7) * 0.012).toFixed(2), ext: 1.0 }); // +0..9 cm per step: stacked stair meshes share tread planes otherwise (OB-053b)
     stepTops.push(+top.toFixed(2)); stepYs.push(+y.toFixed(1));
   }
 }
@@ -205,7 +206,7 @@ const ents = [...ruinEnts,
   note: `MAP-24 straw target ${i + 1} (hit volume id target${i + 1}, ${Math.hypot(x - NOTE[0], y - NOTE[1]).toFixed(0)} m from the note post; QL-13 flag target${i + 1}.hit)`,
 }));
 data.entities.splice(data.entities.findIndex((e) => e.id === 'berry6') + 1, 0, ...ents);
-data.structures.splice(data.structures.findIndex((s) => s.id === 'burlBush') + 1, 0, ...out);
+data.structures.splice(data.structures.findIndex((s) => s.id === 'burlBush') + 1, 0, ...applyNudges(out));
 data.triggers = data.triggers.filter((t) => t.id !== 'crossroads');
 data.triggers.push({ id: 'crossroads', note: 'MAP-22 area-only zone: the road-end junction west of the ford (signpost, trade post, footpath north)', r: 14, shape: 'circle', x: 990, y: 1062 });
 console.log(`poi: ${out.length} meshes, ${ents.length} entities`, ents.map((e) => `${e.id}@${e.x},${e.y}`).join(' '));

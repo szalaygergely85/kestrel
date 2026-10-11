@@ -8,6 +8,7 @@
 // Usage: node tools/gen-outwall.mjs [--dry-run]
 globalThis.window = globalThis.window || globalThis;
 import fs from 'node:fs';
+import { applyNudges } from './coplanar-nudge.mjs';
 import '../design/palette.js';
 import '../design/detail-pass.js';
 import '../design/levels/overworld_far.js';
@@ -176,6 +177,6 @@ ents.push(ground('signArm', 985, 1062, { components: { questPickup: { item: 'sig
 const wolves = [[150, 12], [200, 15], [250, 10], [310, 18], [100, 14]];
 wolves.forEach(([a, d], i) => ents.push(wolfBeast('wolf' + (i + 1), +(860 + Math.cos(a * Math.PI / 180) * d).toFixed(1), +(990 + Math.sin(a * Math.PI / 180) * d).toFixed(1), { note: `MAP-26 wolf spawn anchor ${i + 1} (${d} m from gooseFarm; WOLF-01 pack home)` })));
 smokes.forEach((s, i) => ents.push({ id: 'owSmoke' + (i + 1), type: 'prop', x: +s.x.toFixed(2), y: +s.y.toFixed(2), z: +s.z.toFixed(2), components: { emitters: [{ offset: { up: 0.1 }, on: true, preset: 'smoke' }] }, note: 'MAP-26 chimney smoke (existing emitter preset smoke) on an Outwall chimney' }));
-data.structures.push(...out); data.entities.push(...ents);
+data.structures.push(...applyNudges(out)); data.entities.push(...ents);
 console.log(`outwall: ${out.length} meshes (${tn} track stones), ${ents.length} entities, ${smokes.length} smokes, ground at relay ${gz(912, 952).toFixed(2)}`);
 if (!dry) { fs.writeFileSync(FILE, stringifyContent(data), 'utf8'); console.log('wrote', FILE); }

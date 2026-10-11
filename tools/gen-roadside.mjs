@@ -8,6 +8,7 @@
 // Usage: node tools/gen-roadside.mjs [--dry-run]
 globalThis.window = globalThis.window || globalThis;
 import fs from 'node:fs';
+import { applyNudges } from './coplanar-nudge.mjs';
 import '../design/palette.js';
 import '../design/detail-pass.js';
 import '../design/levels/overworld_far.js';
@@ -81,7 +82,7 @@ put('Prop_Support', 1349, 1054.6, 155, { ext: 0.4, collide: false, dz: -1.21 });
   put('Prop_WoodenFence_Extension1', 1379.3, Y(1379.3) - 0.2, 352, { ext: 0.9 }); }
 // 3. dry well at the crossroads, north of the trade post: ring of stone blocks, half-covered with planks, one block fallen aside
 { const C = [994, 1051.5];
-  for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3 + 0.3; put('Stairs_Exterior_Straight', C[0] + Math.cos(a) * 0.95, C[1] + Math.sin(a) * 0.95, a * 180 / Math.PI + 90, { scale: 0.5, ext: 0.5 }); }
+  for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3 + 0.3; put('Stairs_Exterior_Straight', C[0] + Math.cos(a) * 0.95, C[1] + Math.sin(a) * 0.95, a * 180 / Math.PI + 90, { scale: 0.5, ext: 0.5, zlift: (k % 3) * 0.03 }); }
   put('Floor_WoodDark_Half1', C[0] + 0.1, C[1], 20, { collide: false, noShadow: true, ext: 0.6, dz: 0.5, scale: 0.8, free: true });
   put('Stairs_Exterior_Straight', C[0] + 2.1, C[1] + 1.2, 40, { scale: 0.45, ext: 0.5 });
   put('Prop_Brick4', C[0] + 1.4, C[1] - 1.5, 80, { collide: false, ext: 0.2, free: true }); put('Prop_Brick1', C[0] - 1.6, C[1] + 1.4, 10, { collide: false, ext: 0.2, free: true }); }
@@ -241,6 +242,6 @@ if (bad.length) { console.error('PLACEMENT PROBLEMS:\n' + bad.join('\n')); if (!
 // errands.js turns any dialogue-less giver entity into a [E] Inspect interactable). Text keys are data only (no writer text yet).
 for (const [id, x, y, what] of [['rsInspectWagon', 1347, 1058, 'abandoned cart'], ['rsInspectWell', 994, 1051.5, 'dry well'], ['rsInspectShrine', 1005, 1046, 'collapsed wayside shrine'], ['rsInspectWoodpile', 1461.4, 1016.2, "woodcutter's corner"]])
   ents.push({ id, type: 'prop', x, y, z: 'ground', components: { inspect: { text: 'inspect.' + id.slice(9).toLowerCase() } }, note: 'QL-B2 follow-up inspect anchor: ' + what + ' (gen-roadside.mjs)' });
-data.structures.push(...out); data.entities.push(...ents);
+data.structures.push(...applyNudges(out)); data.entities.push(...ents);
 console.log(`roadside: ${out.length} meshes, ${ents.length} entities`);
 if (!dry) { fs.writeFileSync(FILE, stringifyContent(data), 'utf8'); console.log('wrote', FILE); }
