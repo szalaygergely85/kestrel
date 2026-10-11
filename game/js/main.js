@@ -20,6 +20,7 @@ import {
   WG_PASS_NAMES,
   VoxelPool, bindDecals, drawDecals,
   PITCH_CLAMP_PITCHED_DEG,
+  createPitchedTerms, pitchedTermsInto, worldToCell, resolveProjection, hasLineOfSight, // INT-HL-01
   ambientL, World, repackMaterials,
   updateInteraction, drawCrosshair,
   buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, applySunPair, setWorldSun, blendLook,
@@ -181,6 +182,7 @@ import { createSpriteSystem, spawnTestSprites } from './dev/spriteDev.js';
 // ---- end US-030c ----
 // ---- US-010: quest behaviours (registered by name before any World loads) ----
 import { validateBehaviours, createRipples, defineWadeSplash, createEntityTintTable, fillEntityTints, localToWorld } from '../../engine/index.js';
+import { selectHints, createHintSet, pulseStep, buildHintColors, HINT_GLYPH } from './quest/useHints.js'; // INT-HL-01
 import './quest/index.js';
 import { parseDemo, filterDemoParams, demoStorage, blockFKeys, createEndCard, drawDemoBuildLine } from './demoMode.js';
 // ---- end US-010 ----
@@ -410,6 +412,10 @@ if (itemDefs) validateItemDefs(itemDefs);
 // exist yet (that's US-015's art), so this is the game's own small style
 // object; `drawCrosshair` itself only ever reads `style`, never `ASSETS`.
 const P = assets.palette;
+// INT-HL-01: faint use-hint markers (colour table from the prompt key colour; scratch reused every frame)
+const useHintColors = buildHintColors(P.colors[P.ui.promptKey]), useHintSet = createHintSet(), useHintTerms = createPitchedTerms(), useHintGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
+const useHintProject = (x, y, z, o) => worldToCell(useHintTerms, x, y, z, o);
+const useHintLos = (ax, ay, az, bx, by, bz) => hasLineOfSight(engine.world, ax, ay, az, bx, by, bz);
 const crosshairStyle = {
   crosshair: { dim: P.colors[P.ui.crosshair], active: P.colors[P.ui.crosshairActive] },
   // plateBg: same dark plate as the item toast (design/items.js plate [10,11,16]); without it drawText's bg falls back to opaque white
@@ -2303,6 +2309,17 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // scene (`rt`), so every one of these reads at the same physical size
       // regardless of `?grid=`.
       if (!ending && !uiLockedNow && !cinematic && !isWaterfallPreview) drawCrosshair(ui, crosshairStyle, engine.world.interaction);
+      useHintSet.n = 0; // INT-HL-01: hidden in dialogue/notes/menus/map/travel/title/death/cinematic; targeted object shows its prompt instead
+      if (!ending && !uiLockedNow && !cinematic && !isWaterfallPreview && playerHandle && mode === 'world' && look && look.locked && !isNoteOpen() && !isSettingsOpen() && !(dialogueCtl && dialogueCtl.open)
+        && !(vitals && vitals.dead) && !deathFlow.active && !wakeOut.inputLocked && !(travel && travel.inputLocked) && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen() && !(menuHost && menuHost.active)
+        && resolveProjection(cam, 'mesh') === 'pitched') {
+        useHintGrid.cols = rt.cols; useHintGrid.rows = rt.rows; useHintGrid.pxCellW = rt.pxCellW || 1; useHintGrid.pxCellH = rt.pxCellH || 1;
+        pitchedTermsInto(useHintTerms, cam, useHintGrid);
+        selectHints(engine.world, cam, engine.world.interaction.targetKey, useHintProject, useHintGrid, useHintLos, useHintSet);
+        const hc = useHintColors[pulseStep(fb.timeSec)];
+        for (let i = 0; i < useHintSet.n; i++) ui.setGlyph(Math.floor(useHintSet.col[i] / ui.sx), Math.floor(useHintSet.row[i] / ui.sy), HINT_GLYPH, hc);
+      }
+      if (window.__debug) window.__debug.useHints = useHintSet; // tools/verify-use-hints.mjs
       if (questUiActive && !ending) {
         if ((!isCaptureOrBench || params.get('save') === '1') && !wakeOut.inputLocked) { gameHooks.drawHud(ui); if (relayWake) relayWake.drawHud(ui); } // D-050 seam: today the quest relay's TEMPORARY objective line, top-left
         drawHints(ui, assets.uiStyle, fadeLut);
