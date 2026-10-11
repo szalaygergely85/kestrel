@@ -112,6 +112,16 @@ const R0 = style.anchor.row;
   }
 }
 
+{ // OB-042: a named inventory:full ({id, n}) says what was not added; an id-only one stays the generic line
+  const events = makeEvents(), view = createToastView(events, style, defs, rgb), ui = makeUi();
+  events.emit('inventory:full', { id: 'boar.meat', n: 3 });
+  ui.clear(); view.draw(ui, 50);
+  ok('named pack-full line', ui.row(R0).includes('Pack full - ' + defs['boar.meat'].name + ' x3 not added'), ui.row(R0).trim());
+  events.emit('inventory:full', { id: 'boar.meat' });
+  ui.clear(); view.draw(ui, 50.1);
+  ok('id-only pack-full stays generic', ui.row(R0 + 1).trim() === 'Pack full', ui.row(R0 + 1).trim());
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

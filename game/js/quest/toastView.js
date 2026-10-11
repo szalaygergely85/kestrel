@@ -56,8 +56,11 @@ export function createToastView(events, style, defs, rgb) {
     L.born = -1;
   }
 
-  function onFull() {
+  function onFull(p) {
     const msg = style.messages.packFull;
+    // OB-042: a hand-in reward leftover carries {id, n}: name it. (Loot/chest events carry only an id: generic line.)
+    const def = p && p.n > 0 ? defs[p.id] : null;
+    if (def) { say(msg.text + ' - ' + def.name + ' x' + p.n + ' not added', msg.fg); return; }
     let L = findLine(2, 'packFull');
     if (!L) {
       L = nextLine();

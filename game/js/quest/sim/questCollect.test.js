@@ -72,6 +72,12 @@ for (let i = 2; i <= 6; i++) { ctx.player.transform.x = 10 * i; qp.onTick(); }
 for (let i = 0; i < 10; i++) qp.onTick();
 assert.equal(countOf(inv2, 'berry.blue'), 6); assert.equal(bk.statusOf(def.id), READY);
 assert.equal(qp.grantReward({ items: [{ id: 'gear.cloak.cloak.worn', n: 1 }] }), 1); assert.equal(countOf(inv2, 'gear.cloak.cloak.worn'), 1);
+// OB-042: a reward that only partly fits (pack cannot take all of it) reports the leftover on the bus
+emitted.length = 0; ctx.events.emit = (n, p) => emitted.push(n + ':' + p.id + ':' + p.n);
+const big = qp.grantReward({ items: [{ id: 'berry.blue', n: 1000 }] }); const got = countOf(inv2, 'berry.blue') - 6;
+assert.ok(big === 1 && got > 0 && got < 1000, 'partial grant'); assert.deepEqual(emitted, ['inventory:added:berry.blue:' + got, 'inventory:full:berry.blue:' + (1000 - got)]);
+removeItem(inv2, 'berry.blue', got);
+ctx.events.emit = (n, p) => emitted.push(n + ':' + p.id);
 const r = bk.handIn(def.id); assert.ok(r && countOf(inv2, 'berry.blue') === 0, 'hook installed packOps');
 qp.onBoot({ ...ctx, state: { interactPressed: true } }); // reload: removed sprigs are not entities any more
 assert.equal(qp.props.length, 0);

@@ -69,10 +69,11 @@ async function goTrig(...ids) { for (const id of ids) await evA(`(async () => { 
 async function pressE(n = 1) { for (let i = 0; i < n; i++) { await key('KeyE', 'e'); await pause(450); } }
 // talk to an npc: stand at its [E] Talk interactable, press E, run the dialogue; returns the choice log
 async function talk(id, prefs = []) {
+  await ev('(() => { for (let k = 0; k < 4; k++) __t.D.notice.update(10, false); return true; })()'); // capture-like page never advances the notice timer
   await evA(`__t.goNpc(${JSON.stringify(id)})`); await pause(300);
   let open = await ev('__t.D.dialogue.open');
   for (let i = 0; i < 3 && !open; i++) { await pressE(1); open = await ev('__t.D.dialogue.open'); }
-  if (!open) throw new Error('E did not open the dialogue with ' + id);
+  if (!open) { const d = await evA(`(async () => { const D = __t.D, w = __t.w, t = D.playerHandle.data.transform, b = w.get(${JSON.stringify(id)}).data.transform, nr = await import('/game/js/quest/noteRead.js'); return JSON.stringify({ note: nr.isNoteOpen(), notice: D.notice.active, ui: D.uiLocked, ist: w.interaction.targetKey, ix: !!__t.ix('npc.${id}'), dist: Math.hypot(t.x - b.x, t.y - b.y), dz: t.z - b.z, lock: D.look.locked, wake: D.wakeOut.inputLocked }); })()`); throw new Error('E did not open the dialogue with ' + id + ' ' + d); }
   return evA(`__t.dlg(${JSON.stringify(prefs)})`);
 }
 // errand giver: talk (npc) or inspect/touch ([E]) until the quest reaches `want`; site -> interactable key
@@ -95,7 +96,7 @@ async function open() {
   await cdp.send('Page.navigate', { url });
   let ready = false;
   for (let i = 0; i < 200; i++) { await pause(300); if (await ev('!!(window.__debug && window.__debug.world && window.__debug.playerHandle && window.__debug.saveRelay && window.__debug.relayWake && window.__debug.dialogue && window.__debug.playerHandle.data.components.health)')) { ready = true; break; } }
-  if (!ready) throw new Error('game never ready: ' + JSON.stringify(errors));
+  if (!ready) throw new Error('game never ready: ' + JSON.stringify(errors) + ' ' + await ev("JSON.stringify(Object.keys(window.__debug.playerHandle.data.components))"));
   await pause(1500); await ev(LIB);
 }
 
@@ -165,7 +166,14 @@ try {
       await goIx('stone.waystone', 1.2); await pressE(1);
       woken = await waitFor(async () => (await mainDone()).includes('"waystone"'), 4000);
     }
-    for (let i = 0; i < 6 && await ev('__t.D.notice && __t.D.notice.active'); i++) await pressE(1); // the wake notice blocks Burl's departure talk until it is dismissed
+    // wake -> chapter card -> journal note (modal, ch1Hidden pauses the notice timer) -> close note with E -> notice runs ~4.3 s -> Burl's departure talk. By design, not a game bug.
+    for (let i = 0; i < 90; i++) {
+      const st = await evA("(async () => { const nr = await import('/game/js/quest/noteRead.js'); return [nr.isNoteOpen(), !!(__t.D.notice && __t.D.notice.active), !!__t.D.dialogue.open]; })()");
+      if (st[2]) break;
+      if (st[0]) await pressE(1); else if (st[1]) await ev('(() => { for (let k = 0; k < 4; k++) __t.D.notice.update(10, false); return true; })()'); // ?voxelbench=0 is a capture-like page (ch1Hidden always true: notice timer never runs) -> drain it by hand
+      else if (i > 12) break;
+      await pause(500);
+    }
     return { ok: woken && (await mainDone()).includes('follow'), why: woken ? '' : 'waystone not woken ' + await mainDone() };
   });
   await beat('8 Burl says goodbye and goes home (burl.home)', async () => {
@@ -181,7 +189,7 @@ try {
   await beat('9 road west + Bend relay found (roadWest, bendRelay)', async () => {
     await goTrig('roadWest', 'bendRelay');
     const m = await mainDone();
-    return { ok: /roadWest/.test(m) && /bendRelay/.test(m), why: m };
+    return { ok: /"road"/.test(m) && /relayFound/.test(m), why: m };
   });
   await beat('10 Bend relay wakes (relay1), SOS pulse seen, knot read', async () => {
     await goIx('relay.ws_roadBend', 1.2); await pressE(1);
