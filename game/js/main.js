@@ -139,6 +139,7 @@ import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; /
 import { parseGlow } from './glowOpt.js'; // EMIS-03/04: bleed + halo knob
 import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
 import { PHYSICS } from '../../engine/index.js';
+import { meshFeedStats, MAX_MESH_DRAWS } from '../../engine/index.js'; // OB-039: F3 mesh draw cap line
 import { createModelPreview, createCharCache } from '../../engine/index.js'; // EQ-03/04: Character tab model preview
 import { drawArrowCount, drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
@@ -2383,6 +2384,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         extra += `\nworld (${t.x.toFixed(2)}, ${t.y.toFixed(2)}, ${t.z.toFixed(2)}) yaw ${look.yawDeg.toFixed(0)} pitch ${look.pitchDeg.toFixed(0)}` +
           `${look.locked ? '' : ' [unlocked]'}  grounded: ${grounded}\nstructure: ${struct ? struct.id : '(none)'} sector: '${sectorCh}'${sector ? '' : ' (outside)'}\n${terrainInfo}`;
       }
+      extra += `\nmesh singles ${meshFeedStats.kept}/${meshFeedStats.requested} (cap ${MAX_MESH_DRAWS})${meshFeedStats.dropped ? '  DROPPED ' + meshFeedStats.dropped : ''}`; // OB-039
       if (bootPrinted) extra += '\nboot: ' + bootSummary();
       overlay.update(engine.loop.fps, engine.loop.frameMs, extra);
     }

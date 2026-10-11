@@ -410,6 +410,14 @@ export class MeshDrawCache {
   }
 }
 
+/**
+ * OB-039: last camera-feed `addMeshStructures` call (both the GL/JS compositor and the WebGPU raster feed write it; shadow feeds
+ * do not). requested = single (ungrouped, loaded) placements within fogFarM and inside the frustum (when planes were given);
+ * kept = min(requested, MAX_MESH_DRAWS) chosen by smallest distance/radius (ties: lower structure index); dropped = requested - kept.
+ * @type {{requested: number, kept: number, dropped: number, frustum: number}}
+ */
+export const meshFeedStats = { requested: 0, kept: 0, dropped: 0, frustum: 0 };
+
 const _mOrder = new Int32Array(MAX_MESH_DRAWS);
 const _mDist = new Float64Array(MAX_MESH_DRAWS);
 const _mKey = new Float64Array(MAX_MESH_DRAWS);
@@ -432,8 +440,11 @@ function rankKey(b, d) {
  * @param {boolean} [shadowOnly] - MESH-SHADOW-01: skip placements with `castShadow === false` (the sun shadow feed)
  * @param {any} [budget] - MESH-SHADOW-02 shadow budget {eye, cutM, cap}
  * @param {{has: (si: number) => boolean, chosen: Uint8Array}|null} [groups] - MESH-INST-01 (meshGroups.js): grouped placements take part in the same nearest-MAX_MESH_DRAWS selection but are only marked in `groups.chosen`, not pushed
+ * @param {Float64Array|null} [planes] - OB-039: camera frustum planes (`frustumPlanes`). Singles fully outside are skipped BEFORE
+ *   the cap ranking (the later `list.cull` would drop them anyway, same `classifyAABB` on the same bbox), so the MAX_MESH_DRAWS
+ *   slots go to on-screen props only. Camera feed only; ignored when `shadowOnly`. null = old frustum-blind pick.
  */
-export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shadowOnly = false, budget = null, groups = null) {
+export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shadowOnly = false, budget = null, groups = null, planes = null) {
   const structs = world.structures;
   // MESH-SHADOW-02 (37.19 opt 1): shadow-only budget {eye, cutM, cap}: distance measured from the EYE (not the shadow box
   // centre), props beyond cutM dropped, at most `cap` nearest kept (ties: lower structure index = lower object id).
@@ -441,7 +452,8 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
   const maxKeep = bEye ? Math.min(MAX_MESH_DRAWS, budget.cap) : MAX_MESH_DRAWS;
   if (groups) groups.chosen.fill(0);
   if (!shadowOnly) { setLazyView(lodCentreX(cam), lodCentreY(cam), fogFarM); pumpLazyMeshes(); } // MESH-LOAD-01: decode queued payloads (<= 2 / 4 ms), remember the eye for scatter groups
-  let count = 0;
+  const fr = shadowOnly ? null : planes;
+  let count = 0, requested = 0;
   for (let i = 0; i < structs.length; i++) {
     if (structs[i].kind !== 'mesh') continue;
     if (shadowOnly && structs[i].castShadow === false) continue; // MESH-SHADOW-01
@@ -453,7 +465,10 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
     }
     if (d > fogFarM || (bEye && d > bCut)) continue;
     if (groups && groups.has(i)) { groups.chosen[i] = 1; continue; } // BUG-MESH-MISSING-01: instanced groups are not capped (cheap); only the frustum cull in push() thins them
-    const key = rankKey(structs[i].bbox, d);
+    const bb = structs[i].bbox;
+    if (fr && classifyAABB(fr, bb.x0, bb.y0, bb.z0, bb.x1, bb.y1, bb.z1) === CULL_OUT) continue; // OB-039: off-screen singles never take a slot
+    requested++;
+    const key = rankKey(bb, d);
     if (count < maxKeep) {
       _mOrder[count] = i; _mDist[count] = d; _mKey[count] = key; count++;
     } else if (maxKeep > 0) {
@@ -467,6 +482,9 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
     let j = i - 1;
     while (j >= 0 && _mDist[j] > di) { _mOrder[j + 1] = _mOrder[j]; _mDist[j + 1] = _mDist[j]; j--; }
     _mOrder[j + 1] = oi; _mDist[j + 1] = di;
+  }
+  if (!shadowOnly) { // OB-039: F3 / tests - single placed-mesh draws wanted vs kept by the cap (camera feed only)
+    meshFeedStats.requested = requested; meshFeedStats.kept = count; meshFeedStats.dropped = requested - count; meshFeedStats.frustum = fr ? 1 : 0;
   }
   for (let k = 0; k < count; k++) {
     const si = _mOrder[k];

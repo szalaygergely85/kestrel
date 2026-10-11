@@ -258,9 +258,9 @@ export class MeshGroupSet {
  * @param {Float64Array|null} planes - camera frustum planes (the group compaction cull)
  */
 export function addMeshStructuresBatched(list, world, cam, cache, idFor, fogFarM, groups, planes) {
-  if (!groups) { addMeshStructures(list, world, cam, cache, idFor, fogFarM); return; }
+  if (!groups) { addMeshStructures(list, world, cam, cache, idFor, fogFarM, false, null, null, planes); return; }
   groups.update(world, cache, idFor);
-  addMeshStructures(list, world, cam, cache, idFor, fogFarM, false, null, groups);
+  addMeshStructures(list, world, cam, cache, idFor, fogFarM, false, null, groups, planes); // OB-039: frustum-aware single pick
   groups.push(list, planes);
 }
 
