@@ -10,7 +10,9 @@
 // from `world.supportAt` (the beast always stands on the ground/mesh, no vertical physics).
 import { createAStar, findPath, smoothPath, createSteer, PHYSICS, SIM_STEP } from '../../../../engine/index.js';
 import { BEAST_DEFAULTS, toSteps } from './beastConfig.js';
+import { tierMult } from './band.js';
 import { canSee } from './sight.js';
+import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } from './wolfBrain.js'; // WOLF-01
 import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from '../../../../engine/index.js';
 
 export const MAX_BEASTS = 16;
@@ -63,6 +65,7 @@ const SCRAPE_FORE_M = 0.45;
  */
 export function createBeastSim(world, opts) {
   const { nav, rng, events } = opts;
+  const band = opts.band || null; // US-129a: optional createBand() result; absent = every beast tier 1 (x1)
   const cfg = opts.cfg ? { ...BEAST_DEFAULTS, ...opts.cfg } : BEAST_DEFAULTS;
 
   /** @type {any[]} plain entity data objects, gathered once (rule 15: no Map iteration inside step()). */
@@ -129,6 +132,8 @@ export function createBeastSim(world, opts) {
     entities: beastEntities.slice(0, count),
     ids: beastEntities.slice(0, count).map((e) => e.id),
 
+    spdMul: new Float64Array(MAX_BEASTS).fill(1), // US-129a: per-slot tier speed multiplier (set once at create)
+    tier: new Uint8Array(MAX_BEASTS),
     state: new Uint8Array(MAX_BEASTS),
     timer: new Int32Array(MAX_BEASTS),
     unseen: new Int32Array(MAX_BEASTS), // also reused as the charge wall-slow streak counter (charge never needs "unseen")
@@ -158,6 +163,10 @@ export function createBeastSim(world, opts) {
     despawnReq: new Uint8Array(MAX_BEASTS),  // US-079b: looted -> sink at the next CORPSE entry
     cause: new Uint8Array(MAX_BEASTS),       // US-079b: 0 sword, 1 fire (indexes CAUSE_STR)
     knockV: new Float64Array(MAX_BEASTS),    // US-079b: per-slot stagger clamp speed (replaces shared cfg.staggerKnock)
+    wolf: new Uint8Array(MAX_BEASTS),        // WOLF-01: brain.species==='wolf' (per-slot cfg below, pack token, circle, flee)
+    fleeing: new Uint8Array(MAX_BEASTS),     // WOLF-01: STATE_RETURN that runs away from the player first
+    scfg: [], ssteps: [],                    // WOLF-01: per-slot cfg / cfgSteps (the shared objects for boars)
+    _px: 0, _py: 0, _tmp: { x: 0, y: 0 },
     waiting: new Uint8Array(MAX_BEASTS),     // US-079c: CHASE boar holding while another boar is the charger (derived, not saved)
 
     tick: 0,
@@ -188,6 +197,12 @@ export function createBeastSim(world, opts) {
     const home = (e.components.brain && e.components.brain.home) || [e.transform.x, e.transform.y];
     sim.homeX[i] = home[0];
     sim.homeY[i] = home[1];
+    if (isWolfEntity(e)) { // WOLF-01: wolf slot = boar defaults + overrides, own step counts
+      sim.wolf[i] = 1;
+      const wc = { ...cfg, ...wolfOverrides(cfg) };
+      sim.scfg.push(wc);
+      sim.ssteps.push({ ...sim.cfgSteps, windup: toSteps(wc.windupSec), chargeMax: toSteps(wc.chargeMaxSec), recover: toSteps(wc.recoverSec), recoverWall: toSteps(wc.recoverWallSec) });
+    } else { sim.scfg.push(cfg); sim.ssteps.push(sim.cfgSteps); }
     sim.wary[i] = e.components.brain && e.components.brain.temperament === 'wary' ? 1 : 0;
     sim.homeZ[i] = e.transform.z; // US-079b ARCH: the authored spawn z (restored on resetAll)
     sim.fx[i] = 0; sim.fy[i] = -1; // facing north by default
@@ -196,7 +211,14 @@ export function createBeastSim(world, opts) {
     sim.hurtT[i] = 9999; // US-079b: "never damaged" sentinel - the view shows `hurt` only while hurtT < 10
     // US-079b (37.16.2): a FRESH health component on create, overwriting any serialized one - boars always come
     // back alive on load/restart. US-128's bar / sword.js's dead skip / targeting.isAlive all read this.
-    e.components.health = { hp: cfg.hp, max: cfg.hp, invuln: 0 };
+    // US-129a: tier from `components.brain.tier` (placed override) or the zone band; multipliers applied ONCE here from the
+    // base cfg, so a respawn (resetAll restores hp = max) never stacks.
+    const br = e.components.brain;
+    const tier = band ? band.beastTierAt(e.transform.x, e.transform.y, br && br.tier) : ((br && br.tier >= 1 && br.tier <= 3) ? br.tier | 0 : 1);
+    const m = tierMult(tier);
+    sim.tier[i] = tier; sim.spdMul[i] = m.speed; sim._hitPayload[i].damage = m.damage;
+    const maxHp = Math.round(sim.scfg[i].hp * m.hp);
+    e.components.health = { hp: maxHp, max: maxHp, invuln: 0 };
     steer.addAgent(e.transform.x, e.transform.y, cfg.radius, 0, DEFAULT_ACCEL);
   }
 
@@ -258,6 +280,7 @@ export function createBeastSim(world, opts) {
 
 function stepSim(sim, px, py, pz) {
   const n = sim.count;
+  sim._px = px; sim._py = py;
   // US-079b (37.16.2): `beast:died` goes out at the START of the step after the kill (exactly once), so the sword
   // is never mid-iteration when a loot spawn would rebuild its target list.
   for (let i = 0; i < n; i++) emitPendingDied(sim, i);
@@ -394,9 +417,11 @@ function checkChaseExit(sim, i, px, py) {
   const d2 = dx * dx + dy * dy;
   const lm = sim._lagents[i].leashMode; // leash/give-up wins over everything (even a boar in windup range)
   if (lm === LEASH_RETURN || lm === LEASH_GIVEUP) { sim.waiting[i] = 0; enterReturn(sim, i); return; }
-  if (d2 <= cfg.windupR * cfg.windupR && sim.seen[i]) {
+  if (sim.wolf[i] && shouldFlee(sim, i)) { enterFlee(sim, i, px, py); return; } // WOLF-01
+  const wr = sim.scfg[i].windupR;
+  if (d2 <= wr * wr && sim.seen[i]) {
     // US-079c: only one boar winds up/charges at a time - the first eligible (lowest slot) wins; the rest hold.
-    if (hasActiveCharger(sim)) sim.waiting[i] = 1;
+    if (hasActiveCharger(sim, i)) sim.waiting[i] = 1;
     else { sim.waiting[i] = 0; enterWindup(sim, i); }
     return;
   }
@@ -405,8 +430,9 @@ function checkChaseExit(sim, i, px, py) {
 }
 
 /** US-079c: true while any slot is in WINDUP or CHARGE (the single active charger). */
-function hasActiveCharger(sim) {
+function hasActiveCharger(sim, me) {
   for (let k = 0; k < sim.count; k++) {
+    if (k === me || sim.wolf[k] !== sim.wolf[me]) continue; // WOLF-01: the token is per species (wolves never block boars)
     if (sim.state[k] === STATE_WINDUP || sim.state[k] === STATE_CHARGE) return true;
   }
   return false;
@@ -416,8 +442,8 @@ function windupStep(sim, i, px, py) {
   void px; void py;
   sim.timer[i]--;
   // US-079c: kick a dust burst at the forefeet at 150/300/450 ms into the windup (boarFx.scrape.kickSteps).
-  const elapsed = sim.cfgSteps.windup - sim.timer[i];
-  if (elapsed === SCRAPE_KICKS[0] || elapsed === SCRAPE_KICKS[1] || elapsed === SCRAPE_KICKS[2]) emitScrape(sim, i);
+  const elapsed = sim.ssteps[i].windup - sim.timer[i];
+  if (!sim.wolf[i] && elapsed === SCRAPE_KICKS[0] || elapsed === SCRAPE_KICKS[1] || elapsed === SCRAPE_KICKS[2]) emitScrape(sim, i);
   if (sim.timer[i] <= 0) enterCharge(sim, i, px, py);
 }
 
@@ -447,6 +473,11 @@ function recoverStep(sim, i, px, py) {
 }
 
 function returnStep(sim, i, px, py) {
+  if (sim.fleeing[i]) { // WOLF-01: keep running until 30 m from where it started / from the player, then walk home
+    const dx = px - sim.steer.x[i], dy = py - sim.steer.y[i], gx = sim.goalX[i] - sim.steer.x[i], gy = sim.goalY[i] - sim.steer.y[i];
+    if (dx * dx + dy * dy >= WOLF_TUNING.fleeM * WOLF_TUNING.fleeM || gx * gx + gy * gy <= 1) { sim.fleeing[i] = 0; enterReturn(sim, i); }
+    return;
+  }
   if (sim._lagents[i].leashMode !== LEASH_GIVEUP && noticedOf(sim, i, px, py)) { enterNotice(sim, i); return; }
   const dx = sim.homeX[i] - sim.steer.x[i], dy = sim.homeY[i] - sim.steer.y[i];
   if (dx * dx + dy * dy <= sim.cfg.homeArriveR * sim.cfg.homeArriveR) enterWander(sim, i);
@@ -471,7 +502,7 @@ function enterChase(sim, i) {
 function enterWindup(sim, i) {
   sim.state[i] = STATE_WINDUP;
   sim.waiting[i] = 0; // US-079c: it is the charger now, not a waiter
-  sim.timer[i] = sim.cfgSteps.windup;
+  sim.timer[i] = sim.ssteps[i].windup;
 }
 
 function enterCharge(sim, i, px, py) {
@@ -481,14 +512,14 @@ function enterCharge(sim, i, px, py) {
   sim.cdx[i] = d > 1e-9 ? dx / d : sim.fx[i];
   sim.cdy[i] = d > 1e-9 ? dy / d : sim.fy[i];
   sim.state[i] = STATE_CHARGE;
-  sim.timer[i] = sim.cfgSteps.chargeMax;
+  sim.timer[i] = sim.ssteps[i].chargeMax;
   sim.unseen[i] = 0; // reused as the wall-slow streak counter for the duration of the charge
-  steer.accel[i] = CHARGE_ACCEL;
+  steer.accel[i] = CHARGE_ACCEL * (sim.scfg[i].charge / sim.cfg.charge); // WOLF-01: faster leap -> proportionally harder start (ratio 1 for boars)
 }
 
 function enterRecover(sim, i, wall) {
   sim.state[i] = STATE_RECOVER;
-  sim.timer[i] = wall ? sim.cfgSteps.recoverWall : sim.cfgSteps.recover;
+  sim.timer[i] = wall ? sim.ssteps[i].recoverWall : sim.ssteps[i].recover;
   sim.steer.accel[i] = DEFAULT_ACCEL;
 }
 
@@ -522,6 +553,7 @@ function enterBlocked(sim, i, awayX, awayY) {
 
 function enterReturn(sim, i) {
   sim.state[i] = STATE_RETURN;
+  sim.fleeing[i] = 0;
   sim._ldef.homeX = sim.homeX[i]; sim._ldef.homeY = sim.homeY[i];
   const rt = returnTarget(sim._ldef, sim._lret);
   sim.goalX[i] = rt.x; sim.goalY[i] = rt.y;
@@ -529,7 +561,39 @@ function enterReturn(sim, i) {
   sim.pathReq[i] = 0;
 }
 
+/** WOLF-01: a wolf with no other living wolf within packR. */
+function isLone(sim, i) {
+  const st = sim.steer, r2 = WOLF_TUNING.packR * WOLF_TUNING.packR;
+  for (let k = 0; k < sim.count; k++) {
+    if (k === i || !sim.wolf[k] || sim.state[k] >= FIRST_DEAD_STATE) continue;
+    const dx = st.x[k] - st.x[i], dy = st.y[k] - st.y[i];
+    if (dx * dx + dy * dy <= r2) return false;
+  }
+  return true;
+}
+function shouldFlee(sim, i) {
+  const h = sim.entities[i].components.health;
+  return h.hp > 0 && h.hp < h.max * WOLF_TUNING.fleeHpFrac && isLone(sim, i);
+}
+/** WOLF-01: run WOLF_TUNING.fleeM straight away from the player (falls back to going home if that spot is a wall). */
+function enterFlee(sim, i, px, py) {
+  const steer = sim.steer, t = sim._tmp, S = 0.7071067811865476;
+  awayTarget(steer.x[i], steer.y[i], px, py, WOLF_TUNING.fleeM, t);
+  // try straight away, then +-45 deg (vector rotation, no trig), then half distance; else just go home
+  const ax = t.x - steer.x[i], ay = t.y - steer.y[i];
+  let found = false, gx = 0, gy = 0;
+  for (let k = 0; k < 6 && !found; k++) {
+    const sc = k < 3 ? 1 : 0.5, rx = k % 3 === 0 ? ax : (k % 3 === 1 ? (ax - ay) * S : (ax + ay) * S), ry = k % 3 === 0 ? ay : (k % 3 === 1 ? (ax + ay) * S : (ay - ax) * S);
+    gx = steer.x[i] + rx * sc; gy = steer.y[i] + ry * sc;
+    found = walkable(sim.grid, gx, gy);
+  }
+  enterReturn(sim, i);
+  if (!found) return;
+  sim.fleeing[i] = 1; sim.goalX[i] = gx; sim.goalY[i] = gy;
+}
+
 function enterWander(sim, i) {
+  sim.fleeing[i] = 0;
   sim.state[i] = STATE_WANDER;
   sim.provoked[i] = 0;
   sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
@@ -711,8 +775,20 @@ function setSteerTarget(sim, i) {
   if (st === STATE_CHARGE) {
     const wx = steer.x[i] + sim.cdx[i] * 20, wy = steer.y[i] + sim.cdy[i] * 20;
     steer.setWaypoint(i, wx, wy, 0);
-    steer.maxSpeed[i] = cfg.charge;
+    steer.maxSpeed[i] = sim.scfg[i].charge * sim.spdMul[i];
     return;
+  }
+
+  if (sim.wolf[i]) { // WOLF-01: retreat after the leap, circle while another wolf holds the token
+    const wc = sim.scfg[i], tmp = sim._tmp;
+    if (st === STATE_RECOVER) {
+      awayTarget(steer.x[i], steer.y[i], sim._px, sim._py, WOLF_TUNING.retreatM, tmp);
+      steer.setWaypoint(i, tmp.x, tmp.y, 0); steer.maxSpeed[i] = wc.chase; return;
+    }
+    if (st === STATE_CHASE && sim.waiting[i]) {
+      circleTarget(steer.x[i], steer.y[i], sim._px, sim._py, (WOLF_TUNING.circleMin + WOLF_TUNING.circleMax) / 2, (i & 1) ? 1 : -1, tmp);
+      steer.setWaypoint(i, tmp.x, tmp.y, 0); steer.maxSpeed[i] = wc.chase * WOLF_TUNING.circleSpeedMul; return;
+    }
   }
 
   // US-078d amendment + US-079b: waypoint = own position (arrive 0), maxSpeed = knockV (per-slot, replaces the
@@ -738,7 +814,7 @@ function setSteerTarget(sim, i) {
     const wx = sim.pathLen[i] > 0 ? sim.path[base + idx * 2] : steer.x[i];
     const wy = sim.pathLen[i] > 0 ? sim.path[base + idx * 2 + 1] : steer.y[i];
     steer.setWaypoint(i, wx, wy, WAYPOINT_ARRIVE);
-    speed = st === STATE_CHASE ? cfg.chase : (st === STATE_RETURN ? cfg.returnSpeed : cfg.walk);
+    speed = (st === STATE_CHASE ? sim.scfg[i].chase : (st === STATE_RETURN ? (sim.fleeing[i] ? sim.scfg[i].chase : cfg.returnSpeed) : sim.scfg[i].walk)) * sim.spdMul[i];
   } else {
     steer.setWaypoint(i, steer.x[i], steer.y[i], 0);
   }
@@ -804,8 +880,8 @@ function chargePost(sim, i, px, py) {
   const steer = sim.steer;
   const dx = steer.x[i] - sim.prevX[i], dy = steer.y[i] - sim.prevY[i];
   const moved2 = dx * dx + dy * dy;
-  const chargeStep = sim.cfgSteps.chargeMax - sim.timer[i];
-  const thresh = WALL_SPEED_FRAC * sim.cfg.charge * SIM_STEP;
+  const chargeStep = sim.ssteps[i].chargeMax - sim.timer[i];
+  const thresh = WALL_SPEED_FRAC * sim.scfg[i].charge * SIM_STEP;
   if (chargeStep >= 4) {
     if (moved2 < thresh * thresh) {
       sim.unseen[i]++;
@@ -980,7 +1056,7 @@ function resetAllSim(sim) {
     sim.state[i] = STATE_WANDER;
     sim.timer[i] = sim.cfgSteps.pauseMin;
     sim.unseen[i] = 0; sim.repathT[i] = 0; sim.seen[i] = 0; sim.pathReq[i] = 0;
-    sim.waiting[i] = 0; // US-079c
+    sim.waiting[i] = 0; sim.fleeing[i] = 0; // US-079c / WOLF-01
     sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
     sim.entities[i].transform.x = sim.homeX[i];
     sim.entities[i].transform.y = sim.homeY[i];

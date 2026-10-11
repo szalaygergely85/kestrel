@@ -18,8 +18,9 @@ export function arrowDamage(swordDamage, draw) {
  * @param {{emit:Function}} events
  * @param {typeof import('../bowConfig.js').BOW_CFG} cfg
  * @param {ReturnType<typeof import('./targetables.js').createTargetables>} targets
+ * @param {((x:number,y:number,z:number)=>void)|null} [onWaterHit] US-055a: called where an arrow lands in river water (splash fx)
  */
-export function createArrowSim(world, events, cfg, targets) {
+export function createArrowSim(world, events, cfg, targets, onWaterHit = null) {
   const dt = SIM_STEP;
   const NF = cfg.maxFlying, NS = cfg.maxStuck;
   let serialNo = 0, tick = 0, flyingCount = 0, stuckCount = 0, floatCount = 0;
@@ -61,6 +62,7 @@ export function createArrowSim(world, events, cfg, targets) {
     while (floaters.alive[k] === 1) k++;
     floaters.alive[k] = 1; floaters.age[k] = 0; floaters.x[k] = x; floaters.y[k] = y; floaters.z[k] = wq.surfaceZ - cfg.floatDraft;
     floatCount++;
+    if (onWaterHit) onWaterHit(x, y, wq.surfaceZ);
     return true;
   }
   function kill(s) { flying.alive[s] = 0; flyingCount--; }

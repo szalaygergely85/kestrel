@@ -11,6 +11,7 @@
 // `loot.*` flag from a save is deleted at create rather than restored.
 import { addItem } from './inventory.js';
 import { spawnDrop, spawnItemDrop, setItemPickupSink } from './pickups.js';
+import { BAND_TABLE } from './band.js';
 import { LOOT_PROMPT, LOOT_TIERS, LOOT_SLOTS } from './lootConfig.js';
 
 // EQ-10: 0..4 rolled entries per corpse (table.fixed + the `give` rolls). Gear is a world pickup, never a column.
@@ -82,7 +83,7 @@ export function createLoot(world, events, opts) {
   return buildLoot(world, events, opts);
 }
 
-function buildLoot(world, events, { items, beasts, rng, inventoryOf, table }) {
+function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band }) {
   const count = beasts.count;
   const ids = beasts.ids;
   const fixed = table.fixed, rolls = table.rolls;
@@ -134,7 +135,9 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table }) {
         loot.corpseN[o + col] = hit ? r.give.min + Math.min(r.give.max - r.give.min, Math.floor(b * (r.give.max - r.give.min + 1))) : 0;
         col++;
       } else if (hit && r.pick && r.pick.gear) {
-        const gid = rollGear(items, b, c);
+        // US-129a: gear tier from the zone band (T1 = today's weighted roll, so the meadow is unchanged); same draws either way.
+        const forced = band ? BAND_TABLE.gearItemTier[band.gearTierAt(p.x, p.y)] : null;
+        const gid = rollGear(items, b, c, undefined, undefined, forced);
         if (gid) spawnItemDrop(world, gid, p.x, p.y, p.z, items && items[gid] && items[gid].equip ? items[gid].equip.tier : 'worn');
       }
     }
