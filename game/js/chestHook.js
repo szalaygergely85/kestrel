@@ -39,9 +39,13 @@ export const CLIP_FOR = { closed: 'closed', opening: 'open', open: 'opened' }; /
  * @returns {{card: any, onBoot: Function, onTick: Function, drawHud: Function}} a gameHooks handler set, plus
  *   `card` (test/dev access to the mounted item-get card view).
  */
-export function createChestHook({ defs, items, style, rgb, openedChestsOf = null, seed = 1, reduceMotion = false }) {
+export function createChestHook({ defs, items, style, rgb, openedChestsOf = null, seed = 1, reduceMotion = false, notify = null }) {
   const card = createItemGetCard(null, { style, items, rgb, reduceMotion });
   const itemDefs = items.defs;
+  // OB-075: with `notify` (main.js: toasts.say) chest / gear pickups show a one-line "Looted: Leggings" / "Looted: 2 Potions" toast, no pause, no card.
+  // Without it (Node fixtures) the old item-get card is used. The heart-piece card (heartHook.js, a story beat) is kept.
+  const lootedLine = (id, n) => { const d = itemDefs[id], nm = d && d.name ? d.name : id; return 'Looted: ' + (n > 1 ? n + ' ' + nm + (/s$/i.test(nm) ? '' : 's') : nm); };
+  const gotLoot = (id, n, extra) => { if (notify && id !== 'heart.piece') notify(lootedLine(id, n)); else card.push(id, n, extra); };
   const fwdScratch = [0, 0], pose = { x: 0, y: 0, z: 0, forwardX: 0, forwardY: 0 }; // reused (rule 9)
   let offGear = null, sim = null, ctx = null, lastAnim = null, active = defs; // EQ-10: `active` = defs, or the world's chest* anchors when defs is []
 
@@ -52,7 +56,7 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
     emit(name, p) {
       if (name === 'inventory:added') {
         const count = ctx.inventory ? countOf(ctx.inventory, p.id) : p.n;
-        card.push(p.id, p.n, { count });
+        gotLoot(p.id, p.n, { count });
       } // card.push looks the id up in `items.defs` itself (itemGetCard.js)
       if (ctx.events) ctx.events.emit(name, p);
     },
@@ -65,7 +69,7 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
       lastAnim = new Map();
       active = defs.length ? defs : (c.world && typeof c.world.entity === 'function' ? buildChestDefs(c.world) : []);
       if (offGear) offGear();
-      offGear = c.events && c.events.on ? c.events.on('gear:got', (p) => card.push(p.id, p.n, { count: p.n })) : null; // loot.js gear pickup
+      offGear = c.events && c.events.on ? c.events.on('gear:got', (p) => gotLoot(p.id, p.n, { count: p.n })) : null; // loot.js gear pickup
       sim = active.length ? createChests(active, {
         items: itemDefs, inventoryOf: () => ctx.inventory, events,
         openedChests: openedChestsOf ? openedChestsOf() : [], seed,

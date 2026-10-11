@@ -135,4 +135,23 @@ if (typeof global.gc === 'function') {
   assert.equal(countOf(inv, 'heart.piece'), 1, 'anchor chest opened from the world entity');
 }
 
+// OB-075: with `notify` (main.js toasts.say) chest + gear loot is a one-line toast, never the item-get card.
+{
+  const msgs = [];
+  const playerData = { transform: { x: 0, y: -1, z: 0 }, components: {} };
+  const inv = ensureInventory(playerData, { pack: [], left: null, right: null });
+  const handlers = new Map();
+  const events = { emit(n, p) { for (const f of handlers.get(n) || []) f(p); }, on(n, f) { (handlers.get(n) || handlers.set(n, []).get(n)).push(f); return () => {}; } };
+  const world = { get: () => ({ play() {} }) };
+  const st = { interactPressed: true, playerYawDeg: 180 };
+  const hook = createChestHook({ defs: [def], items: A.items, style: A.uiStyle.itemGetCard, rgb, seed: 7, notify: (t) => msgs.push(t) });
+  hook.onBoot({ world, player: playerData, events, inventory: inv, state: st });
+  hook.onTick(1 / 60); st.interactPressed = false; hook.onTick(C.openSeconds + 0.01);
+  assert.equal(hook.card.isOpen, false, 'OB-075: chest loot opens no card');
+  assert.equal(msgs.length, 1); assert.match(msgs[0], /^Looted: 2 /, 'chest loot toast "Looted: 2 <name>"');
+  events.emit('gear:got', { id: 'gear.body.jerkin.sturdy', n: 1 });
+  assert.equal(hook.card.isOpen, false, 'OB-075: gear pickup opens no card');
+  assert.match(msgs[1], /^Looted: \S/); assert.ok(!/^Looted: 1 /.test(msgs[1]), 'single item has no count');
+}
+
 console.log('chestHook: interact opens once, item added once, clip driven, save-relay/seam events forwarded, restored-open, card dismiss, no-defs, idle GC PASS');

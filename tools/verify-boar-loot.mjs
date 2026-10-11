@@ -39,6 +39,17 @@ try {
   await pause(500);
   const afterLoot = await evaluate(cdp, total);
   assert.ok(afterLoot >= before + 1, 'meat in the pack after loot: ' + afterLoot);
+  // OB-074/075/076 (written, not run headless): potion stays in the corpse; no item card; a sword hit lands on a boar past the 16th targetable.
+  const noOrbGround = await evaluate(cdp, `(()=>{let n=0;__debug.world.forEachEntity((e)=>{const p=e.components&&e.components.pickup;if(p&&p.kind!=='item')n++;});return n;})()`);
+  assert.equal(noOrbGround, 0, 'OB-074: no hp/mp orb on the ground after the kill');
+  assert.equal(await evaluate(cdp, '!!(window.__debug.chestHook && window.__debug.chestHook.card.isOpen)'), false, 'OB-075: no item card after loot');
+  const lastId = await evaluate(cdp, '__debug.beasts.ids[__debug.beasts.ids.length-1]'); // a late boar (index > 15) used to be unhittable
+  await evaluate(cdp, `(()=>{const b=__debug.world.get(${JSON.stringify(lastId)}).data.transform,p=__debug.playerHandle.data.transform;p.x=b.x;p.y=b.y-1.2;p.z=b.z;__debug.look.yawDeg=0;return 1;})()`);
+  const hp0 = await evaluate(cdp, `__debug.world.get(${JSON.stringify(lastId)}).data.components.health.hp`);
+  await evaluate(cdp, "(window.__debug.input||{}).isDown=(c)=>c==='Mouse0'"); // locked LMB held (look.locked is forced true above)
+  await pause(1500);
+  const hp1 = await evaluate(cdp, `__debug.world.get(${JSON.stringify(lastId)}).data.components.health.hp`);
+  assert.ok(hp1 < hp0, 'OB-076: locked LMB sword swing damages the last boar: ' + hp0 + ' -> ' + hp1);
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ before, afterKill, afterLoot }), 'OB-064 boar loot: pack unchanged on kill, filled only after loot PASS');
 } finally {

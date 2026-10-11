@@ -13,7 +13,7 @@ import {
   forwardOf, yawFromDelta, shortestArcDeg, DEG2RAD, PHYSICS, SIM_STEP, HFOV_DEG,
 } from '../../../engine/index.js';
 
-const MAX_TARGETS_HARD_CAP = 16; // 29.2 cfg default `maxTargets: 16`; also the Int32Array(16) rank buffer size
+const MAX_TARGETS_HARD_CAP = 64; // OB-076: was 16
 
 const DEFAULTS = Object.freeze({
   range: 15,
@@ -21,7 +21,7 @@ const DEFAULTS = Object.freeze({
   losLostSec: 1.0,
   fadeSec: 0.2,
   noTargetSec: 0.3,
-  maxTargets: 16,
+  maxTargets: 64,
   losEvery: 6,
   hfovDeg: HFOV_DEG,
 });

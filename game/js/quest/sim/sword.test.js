@@ -624,5 +624,18 @@ if (typeof global.gc === 'function') {
     hits.length === 1 && hits[0].cause === 'sword' && hits[0].knock === 0, `hits=${JSON.stringify(hits)}`);
 }
 
+// OB-076: the world has 26+ targetables (18 boars, 5 wolves, 3 targets); the sim used to track only the first 16, so the rest were invincible.
+{
+  const p = player();
+  const ents = [p];
+  for (let i = 0; i < 25; i++) ents.push(target('far' + i, 100 + i * 5, 100, 0));
+  ents.push(target('boar26', 0, 1.2, 0)); // the 26th targetable, 1.2 m in front
+  const { sim, hits } = freshSim(ents);
+  tapLight(sim, p);
+  let guard = 0;
+  while (sim.state === ST_LIGHT && guard++ < 30) sim.step(p, ...FWD, false);
+  ok('OB-076: the 26th targetable in the list can be hit', hits.length === 1 && hits[0].target === 'boar26', `hits=${JSON.stringify(hits)}`);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { console.log(failures.join('\n')); process.exitCode = 1; } else console.log('ALL PASS');

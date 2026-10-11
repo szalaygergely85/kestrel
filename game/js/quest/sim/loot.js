@@ -10,7 +10,7 @@
 // the whole page). The corpse counts are runtime-only: boars always come back alive on a load (37.16.2), so a stale
 // `loot.*` flag from a save is deleted at create rather than restored.
 import { addItem } from './inventory.js';
-import { spawnDrop, spawnItemDrop, setItemPickupSink } from './pickups.js';
+import { spawnItemDrop, setItemPickupSink, PICKUP_AMOUNT } from './pickups.js';
 import { BAND_TABLE } from './band.js';
 import { LOOT_PROMPT, LOOT_TIERS, LOOT_SLOTS } from './lootConfig.js';
 import { rollWolfWeapon, rollChestWeapon, weaponRng } from './weaponLoot.js'; // EQ-20
@@ -112,15 +112,17 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
     corpseN: new Int8Array(MAX_SLOTS * ITEMS_PER_CORPSE),
     gearHeld: new Array(MAX_SLOTS).fill(null), // OB-064: rolled gear id / tier waits IN the corpse; the drop spawns at E
     gearTier: new Array(MAX_SLOTS).fill('worn'),
+    orbHeld: new Array(MAX_SLOTS).fill(null), // OB-074: the hp/mp potion waits IN the corpse ('hp'|'mp'); applied on E, never a ground pickup
     corpseItem: new Array(MAX_SLOTS * ITEMS_PER_CORPSE).fill(null), // item id per column (entry order: fixed, then give rolls)
     // Preallocated emit payloads (toastView builds its string from them, on the event).
     _added: { id: '', n: 0 },
+    _orb: { kind: '' },
     _full: { id: "", n: 0, dropped: false },
   };
 
   function clearSlot(i) {
     delete world.state[flagKey[i]];
-    loot.gearHeld[i] = null;
+    loot.gearHeld[i] = null; loot.orbHeld[i] = null;
     const o = i * ITEMS_PER_CORPSE;
     for (let k = 0; k < ITEMS_PER_CORPSE; k++) { loot.corpseN[o + k] = 0; loot.corpseItem[o + k] = null; }
   }
@@ -152,7 +154,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
     }
     const orbHit = rng.nextFloat() < table.orb.chance;
     const orbKind = table.orb.kinds[rng.int(table.orb.kinds.length)];
-    if (orbHit) spawnDrop(world, orbKind, p.x, p.y, p.z);
+    if (orbHit) loot.orbHeld[i] = orbKind; // OB-074: held in the corpse until E
     const rec = recs[i];
     rec.x = p.x; rec.y = p.y; rec.z = p.z + CORPSE_LIFT;
     world.state[flagKey[i]] = true;
@@ -204,6 +206,14 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
       const t = recs[i];
       spawnItemDrop(world, gh, t.x, t.y, t.z - CORPSE_LIFT, loot.gearTier[i]);
     }
+    const orb = loot.orbHeld[i]; // OB-074: the potion is given on E (restores PICKUP_AMOUNT hp/mp to the player now)
+    if (orb) {
+      loot.orbHeld[i] = null;
+      const pe = world.entity('player'), pc = pe && pe.components;
+      if (pc && orb === 'hp' && pc.health) pc.health.hp = Math.min(pc.health.max, pc.health.hp + PICKUP_AMOUNT);
+      else if (pc && orb === 'mp' && pc.mana) pc.mana.mp = Math.min(pc.mana.max, pc.mana.mp + PICKUP_AMOUNT);
+      loot._orb.kind = orb; events.emit('loot:orb', loot._orb);
+    }
     if (left > 0) {
       // Corpse keeps the leftover and stays lootable (simpler than a drop; nothing is lost or duplicated).
       loot._full.id = leftId; loot._full.dropped = false;
@@ -224,6 +234,11 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
   loot.gearOf = function gearOf(id) {
     const i = beasts.slotOf(id);
     return i < 0 ? null : loot.gearHeld[i];
+  };
+  /** Potion kind ('hp'|'mp') still held by the corpse of beast `id` (OB-074), or null. Test/debug hook. */
+  loot.orbOf = function orbOf(id) {
+    const i = beasts.slotOf(id);
+    return i < 0 ? null : loot.orbHeld[i];
   };
   /** Item id in column `k` for beast `id` (null = empty / untracked). Test hook. */
   loot.itemOf = function itemOf(id, k) {

@@ -603,6 +603,7 @@ const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
   ? createChestHook({
     defs: [], items: window.ASSETS.items, style: assets.uiStyle.itemGetCard, rgb: assets.palette.rgb,
     openedChestsOf: () => (saveRelay ? saveRelay.openedChests : []), reduceMotion: isReduceMotion,
+    notify: (t) => { if (toasts) toasts.say(t, [226, 214, 176]); }, // OB-075: chest / gear loot = a toast line, not the item-get card
   })
   : null;
 if (chestHook) gameHooks.register(chestHook);
@@ -965,7 +966,7 @@ engine.events.on('grid:changed', ({ cols, rows }) => {
 
 // Internal hook for manual/automated smoke-testing in a console - not part
 // of the game's own UI.
-window.__debug = { input, overlay, rt, engine, gbuf, matTable, ambientL, depthBuffer, sprites, wgPipeline, hzb, meshFeedStats };
+window.__debug = { chestHook, input, overlay, rt, engine, gbuf, matTable, ambientL, depthBuffer, sprites, wgPipeline, hzb, meshFeedStats };
 bridgeEngineEvents(engine.events, gameHooks); // beast:died / inventory:added -> seam events
 window.__debug.saveRelay = saveRelay; // US-089w: test hook (headless reload check)
 

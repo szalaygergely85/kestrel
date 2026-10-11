@@ -434,6 +434,27 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   ok('OB-064: some gear rolled; gear reaches the pack only after E', gearKills > 3 && gearInPackAfterLoot === gearKills, gearKills + '/' + gearInPackAfterLoot);
 }
 
+// OB-074: the hp/mp potion (orb) stays in the corpse until E; no ground pickup at the kill.
+{
+  const env = fresh({ seed: 7 });
+  let orbs = 0, onGround = 0, appliedOnE = 0;
+  const hp = env.player.components.health;
+  for (let d = 0; d < 300; d++) {
+    if (hp) hp.hp = 1;
+    kill(env);
+    let ground = 0; env.world.forEachEntity((e) => { if (e.components && e.components.pickup && e.components.pickup.kind !== 'item') ground++; });
+    onGround += ground;
+    const o = env.loot.orbOf('boar1');
+    env.loot.lootBoar('boar1');
+    if (o) { orbs++; if (o === 'mp' || !hp || hp.hp > 1) appliedOnE++; }
+    env.world.forEachEntity((e, id) => { if (e.components && e.components.pickup) env.world.remove(id); });
+    resetPickups(env.world);
+    env.beasts.resetAll();
+  }
+  ok('OB-074: no hp/mp orb pickup on the ground after a kill (300 kills)', onGround === 0, onGround);
+  ok('OB-074: orbs were rolled and given on E', orbs > 50 && appliedOnE === orbs, orbs + '/' + appliedOnE);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
