@@ -16,6 +16,9 @@ import {
 import paletteMod from '../design/palette.js';
 import detailPassMod from '../design/detail-pass.js';
 import terrainDef from '../design/levels/overworld_far.js';
+import geoMod from '../design/levels/world_geo.js';
+import { createVitals } from '../game/js/quest/sim/vitals.js';
+import { VITALS_DEFAULTS } from '../game/js/quest/sim/vitalsConfig.js';
 import lanternMod from '../design/models/lantern.js';
 import leverMod from '../design/models/lever.js';
 import voxelPropsMod from '../design/models/voxel_props.js';
@@ -34,7 +37,7 @@ import { loadTestAssets } from './testing/content-node.mjs';
 import { registerQuestBehaviours } from '../game/js/quest/index.js';
 
 globalThis.window = globalThis.window || globalThis;
-paletteMod; terrainDef; lanternMod; leverMod; voxelPropsMod; boulderMod; rubbleMod; wreckageMod; relayMod;
+paletteMod; terrainDef; geoMod; lanternMod; leverMod; voxelPropsMod; boulderMod; rubbleMod; wreckageMod; relayMod;
 detailPassMod; swordMod; m3PropsMod;
 farTowerMod; ferrumLightsMod; titleMod; voxelWorldMod;
 const { assets } = await loadTestAssets();
@@ -429,4 +432,29 @@ else {
   console.log('jump grid:', JSON.stringify(JG));
   console.log('jump mesh:', JSON.stringify(JM));
   console.log(`sim ms/step p50 p95 max  grid: ${pct(G.ms, 0.5).toFixed(4)} ${pct(G.ms, 0.95).toFixed(4)} ${Math.max(...G.ms).toFixed(4)}   mesh: ${pct(M.ms, 0.5).toFixed(4)} ${pct(M.ms, 0.95).toFixed(4)} ${Math.max(...M.ms).toFixed(4)}`);
+}
+
+// TELEPORT-BUG (2026-10-11): geography installed (as main.js does: installGeo before World.load) + the real vitals sim (void rule, fall damage,
+// death/respawn). From the tower meadow walk 16 headings for 200 s: no pose jump > 5 m per step, no hp loss, never dead (a respawn / void
+// teleport / bound snap-back would show as a jump). Runs LAST: installGeo mutates the shared terrain recipe.
+{
+  geoMod; globalThis.ASSETS.levels.world_geo.util.installGeo(globalThis.ASSETS.levels.overworld_far.util);
+  const sim = setup('mesh'); sim.stream = true;
+  const t = sim.player.transform, b = sim.player.components.body;
+  const vit = createVitals(sim.world, sim.world.events, VITALS_DEFAULTS, {});
+  const bad = []; let worst = 0;
+  for (let k = 0; k < 16; k++) {
+    sim.world.ensureBandFor(1470, 1029); t.x = 1470; t.y = 1029; t.z = sim.world.floorAt(1470, 1029) ?? 0; b.vx = b.vy = b.vz = 0; b.fallDistance = 0; b.grounded = true;
+    sim.controls.yawDeg = k * 22.5; sim.controls.forward = 1; sim.controls.run = true;
+    let px = t.x, py = t.y, pz = t.z;
+    for (let i = 0; i < 12000; i++) {
+      stepOnce(sim); vit.step(sim.player, false);
+      const d = Math.hypot(t.x - px, t.y - py, t.z - pz); worst = Math.max(worst, d);
+      if (d > 5) { bad.push(`heading ${k * 22.5} step ${i}: jump ${d.toFixed(1)} m (${px.toFixed(0)},${py.toFixed(0)},${pz.toFixed(1)}) -> (${t.x.toFixed(0)},${t.y.toFixed(0)},${t.z.toFixed(1)})`); break; }
+      if (vit.dead || sim.player.components.health.hp < sim.player.components.health.max) { bad.push(`heading ${k * 22.5} step ${i}: hp ${sim.player.components.health.hp} dead ${vit.dead}`); break; }
+      px = t.x; py = t.y; pz = t.z;
+    }
+  }
+  console.log(`probe geo walk (16 headings x 200 s, vitals on): ${bad.length ? 'FAIL' : 'PASS'} worst step ${worst.toFixed(2)} m${bad.length ? NL + bad.join(NL) : ''}`);
+  if (bad.length) process.exitCode = 1;
 }
