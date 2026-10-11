@@ -1188,8 +1188,6 @@
     {"id": "poi074", "mesh": "quaternius/Roof_Wooden_2x1", "origin": {"x": 972.7, "y": 1056.6, "z": -84.21}, "yawDeg": 0},
     {"id": "poi075", "mesh": "quaternius/Roof_Wooden_2x1", "origin": {"x": 975, "y": 1056.6, "z": -84.21}, "yawDeg": 0},
     {"id": "poi076", "collide": false, "mesh": "quaternius/Roof_Wooden_2x1", "origin": {"x": 980.2, "y": 1057.4, "z": -87.28}, "yawDeg": 160},
-    {"id": "poi077", "mesh": "quaternius/Roof_Support2", "origin": {"x": 977, "y": 1057.8, "z": -84.81}, "scale": 2, "yawDeg": 90},
-    {"id": "poi078", "collide": false, "mesh": "quaternius/Roof_Support2", "origin": {"x": 973.2, "y": 1059.4, "z": -86.28}, "scale": 2, "yawDeg": 20},
     {"id": "poi079", "mesh": "quaternius/Stairs_Exterior_Straight", "origin": {"x": 970.7, "y": 1062, "z": -86.49}, "yawDeg": 0},
     {"id": "poi080", "mesh": "quaternius/Stairs_Exterior_Straight", "origin": {"x": 970.73, "y": 1060, "z": -86.35}, "yawDeg": 0},
     {"id": "poi081", "mesh": "quaternius/Stairs_Exterior_Straight", "origin": {"x": 970.76, "y": 1060, "z": -85.69}, "yawDeg": 180},
