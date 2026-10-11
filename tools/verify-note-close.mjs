@@ -45,6 +45,15 @@ try {
     assert.equal(d.open, false, 'Esc closes the dialogue');
     console.log('PASS dialogue Esc', JSON.stringify(d), '(pause/grace informational headless)');
   } else console.log('SKIP dialogue (bear not openable here)');
+  // OB-068: Esc in the pause menu = Resume (menu hidden, world not paused-looking, no auto re-open); a second Esc opens pause again.
+  await evaluate(cdp, 'window.__debug.look.locked = false'); await pause(600); // lock stub is refused in headless: stays unlocked
+  assert.equal(await evaluate(cdp, '!!__debug.pauseUp()'), true, 'pause menu up while unlocked');
+  await key('Escape', 'Escape');
+  assert.equal(await evaluate(cdp, '!!__debug.pauseUp()'), false, 'Esc in pause menu resumes (menu hidden)');
+  await pause(600); assert.equal(await evaluate(cdp, '!!__debug.pauseUp()'), false, 'resumed state sticks while unlocked');
+  await key('Escape', 'Escape');
+  assert.equal(await evaluate(cdp, '!!__debug.pauseUp()'), true, 'second Esc opens pause again');
+  console.log('PASS pause Esc resume');
   console.log('ALL PASS');
 } finally {
   cdp?.close(); if (browser?.pid) killTree(browser.pid); if (server.pid) killTree(server.pid);

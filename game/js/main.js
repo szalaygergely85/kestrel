@@ -46,6 +46,7 @@ import { prefetchLazyMeshesAtBoot } from './bootPrefetchHook.js'; // MESH-LOAD-0
 import { parseCloudShadowFlag, devCloudShadow, parseAoStrength } from './cloudParam.js'; // S8-B2-12a/S8-B2-20 NEEDS B1 item (2)/(1): `?cloudshadow=1`/`?ao=<0..1>` parse
 import { MODES } from './dev/modes/index.js';
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
+import { createPauseResume } from './quest/pauseResume.js'; // OB-068
 import { createPauseMenu, PAUSE_KEYS } from './ui/pauseMenu.js'; // PAUSE-MENU-01 (D-053): replaces the old 'Click to resume' overlay
 // CHARGEN-17 parked (owner 2026-10-10): import { createCharCreate } from './ui/charCreate.js';
 import { createCreditsView } from './ui/creditsView.js'; // CREDITS-MOUNT-01
@@ -1139,6 +1140,7 @@ async function runGame(mode, cinematic = null) {
     else if (pauseMenu && pauseUp()) { const c = menuCell(e); pauseMenu.handlePointer(c[0], c[1], false); }
   });
   window.addEventListener('click', (e) => {
+    if (pauseResume.active) pauseResume.click(); // OB-068
     if ((!menuHost || !menuHost.active) && pauseMenu && pauseUp()) { // PAUSE-MENU-01: a click never re-locks by itself; only the Resume row does
       e.stopPropagation(); const c = menuCell(e); pauseMenu.handlePointer(c[0], c[1], true); return;
     }
@@ -1181,9 +1183,10 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   let menuHost = null; // US-090w: title menu host while it is up (null = no menu / already closed)
   let pauseMenu = null; // PAUSE-MENU-01: built once with the world, shown while the pointer is unlocked in play
   let pauseWas = false;
+  const pauseResume = createPauseResume(() => { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); }); // OB-068: Esc in the pause menu resumes
   // True while the pause menu is the thing on screen (same gate the old overlay used, minus Settings which owns the screen).
   function pauseUp() {
-    return mode === 'world' && !!look && !look.locked && !isMapOpen() && !isNoteOpen() && !isNoteEscGrace() && !(dialogueCtl && dialogueCtl.escGrace.active) && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen() // OB-049: Esc closes the note only
+    return mode === 'world' && !!look && !look.locked && !pauseResume.active && !isMapOpen() && !isNoteOpen() && !isNoteEscGrace() && !(dialogueCtl && dialogueCtl.escGrace.active) && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen() // OB-049: Esc closes the note only
       && !cinematic && !isWaterfallPreview && !(menuHost && menuHost.active) && !isSettingsOpen();
   }
   // QG-05: quest log (J). Built lazily per book (reset() replaces the book); pauses like the pack via qlOpen in invOpen.
@@ -1816,17 +1819,18 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     // S is also WASD "move backward", so this must never trigger in play.
     // PAUSE-MENU-01: the pause menu owns W/S/Enter while it is up (S no longer opens Settings; the Settings row does).
     if (pauseMenu) {
+      pauseResume.tick(!!(look && look.locked), input); // OB-068
       const up = pauseUp();
       if (up && !pauseWas) pauseMenu.reset();
       pauseWas = up;
-      if (up) { for (const code of PAUSE_KEYS) if (input.pressed(code) && pauseMenu.handleKey(code)) { input.consumePressed(); break; } }
+      if (up) { for (const code of PAUSE_KEYS) if (input.pressed(code)) { if (pauseMenu.handleKey(code)) { input.consumePressed(); break; } if (code === 'Escape') { pauseResume.resume(); input.consumePressed(); break; } } } // OB-068: Esc on the main page = Resume
     }
     updateSettings(dt, input, { assets, engine, look, canOpen: false });
     uiLocked = uiLocked || isMapOpen() || isSettingsOpen() || invOpen || cardOpen || vLocked(); // DIALOGUE-LOCK-01: note panel + chapter card no longer lock
     titleMenuActive = !!(menuHost && menuHost.active);
     ch1Hidden = isCaptureOrBench || !saveEnabled || titleMenuActive || ending || invOpen || cardOpen || isMapOpen() || isSettingsOpen() || isNoteOpen() || qlIsOpen() || !!(dialogueCtl && dialogueCtl.open) || !!(vitals && vitals.dead); // CH1-MOUNT: notices/barks hidden under any menu/dialogue
     notice.update(dt, ch1Hidden); if (chapterCard && !ending) chapterCard.update(dt); if (chapterCard2 && !ending) chapterCard2.update(dt); // CH1-04a / CH1-09
-    const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen: () => isMapOpen() || isNoteEscGrace() || !!(dialogueCtl && dialogueCtl.escGrace.active) }) || ((invOpen || cardOpen) && !ending)));
+    const paused = deviceLostFrozen || (mode === 'world' && !isCaptureOrBench && (isPaused({ ending, look, isMapOpen: () => isMapOpen() || pauseResume.active || isNoteEscGrace() || !!(dialogueCtl && dialogueCtl.escGrace.active) }) || ((invOpen || cardOpen) && !ending)));
     { // COMPASS-02 (D-061): retarget on book change + ~2 Hz, step the needle, hide rule (menus/pack/log/map/dialogue/death/title/capture modes/ending)
       const bk = saveRelay && saveRelay.quest.book;
       compassHide = !(mode === 'world' && playerHandle && bk && questUiActive) || ending || paused || isCaptureOrBench || uiLocked || titleMenuActive || isSettingsOpen() || isNoteOpen()
