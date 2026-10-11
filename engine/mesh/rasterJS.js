@@ -729,6 +729,7 @@ function waterOutcode(buf, off) {
  * @param {RasterTarget} target @param {any} ctx
  */
 function rasterWaterSlot(sel, slot, target, ctx) {
+  if (sel.u[slot * WATER_U_STRIDE + U_KIND] === 3) { rasterRiverSlot(sel, slot, target, ctx); return; } // OB-019 RIVER-02 (38.45)
   const sheet = sel.sheets && sel.sheets[slot];
   const cm = sheet ? sheet.mesh : getClipmap(), M = ctx.M, u = sel.u, ub = slot * WATER_U_STRIDE;
   const verts = cm.verts, index = cm.index;
@@ -768,6 +769,133 @@ function rasterWaterSlot(sel, slot, target, ctx) {
       }
       if (curCount < 3) continue;
       for (let k = 1; k < curCount - 1; k++) rasterWaterTri(curBuf, 0, k * STRIDE, (k + 1) * STRIDE, target, ctx, sel, ub);
+    }
+  }
+}
+
+/**
+ * OB-019 RIVER-02 (38.45 (2)): one river ribbon slot. Vertices: lx, ly (local to the river origin; the slot uniform shape.xy =
+ * origin - O), z, tau, e, nx, ny, rapid; the draw runs are the selection's <= 8 (first, count) index ranges (chunk LOD).
+ * Attributes ride in the fan-vertex slots 7..11 = tau, e, rapid, nx, ny; world xy in 4..5.
+ */
+function rasterRiverSlot(sel, slot, target, ctx) {
+  const k = slot - 12, mesh = sel.riverMesh[k], M = ctx.M, u = sel.u, ub = slot * WATER_U_STRIDE;
+  if (!mesh) return;
+  const verts = mesh.verts, index = mesh.index;
+  const bx = sel.O[0] + u[ub + U_SHAPE], by = sel.O[1] + u[ub + U_SHAPE + 1];
+  const ro = k * 17, nRuns = sel.riverRuns[ro];
+  for (let r = 0; r < nRuns; r++) {
+    const first = sel.riverRuns[ro + 1 + r * 2], end = first + sel.riverRuns[ro + 2 + r * 2];
+    for (let t = first; t < end; t += 3) {
+      for (let c = 0; c < 3; c++) {
+        const vi = index[t + c] * 8, o = c * STRIDE;
+        const wx = bx + verts[vi], wy = by + verts[vi + 1], wz = verts[vi + 2];
+        _bufA[o] = M[0] * wx + M[4] * wy + M[8] * wz + M[12];
+        _bufA[o + 1] = M[1] * wx + M[5] * wy + M[9] * wz + M[13];
+        _bufA[o + 2] = M[2] * wx + M[6] * wy + M[10] * wz + M[14];
+        _bufA[o + 3] = M[3] * wx + M[7] * wy + M[11] * wz + M[15];
+        _bufA[o + 4] = wx; _bufA[o + 5] = wy; _bufA[o + 6] = wz;
+        _bufA[o + 7] = verts[vi + 3]; _bufA[o + 8] = verts[vi + 4]; _bufA[o + 9] = verts[vi + 7]; _bufA[o + 10] = verts[vi + 5]; _bufA[o + 11] = verts[vi + 6];
+      }
+      const c0 = waterOutcode(_bufA, 0), c1 = waterOutcode(_bufA, STRIDE), c2 = waterOutcode(_bufA, 2 * STRIDE);
+      if (c0 & c1 & c2) continue;
+      if ((c0 | c1 | c2) === 0) { rasterRiverTri(_bufA, 0, STRIDE, 2 * STRIDE, target, ctx, sel, slot); continue; }
+      let curBuf = _bufA, curCount = 3, otherBuf = _bufB;
+      for (let p = 0; p < 5 && curCount > 0; p++) {
+        const outCount = clipAgainstPlane(curBuf, curCount, otherBuf, p);
+        const tmp = curBuf; curBuf = otherBuf; otherBuf = tmp;
+        curCount = outCount;
+      }
+      if (curCount < 3) continue;
+      for (let q = 1; q < curCount - 1; q++) rasterRiverTri(curBuf, 0, q * STRIDE, (q + 1) * STRIDE, target, ctx, sel, slot);
+    }
+  }
+}
+
+/** Is world point (x, y) inside water region ri (rect half-open, circle inclusive; same rules as waterAt)? Rivers never clip. */
+function inClipRegion(wt, ri, x, y) {
+  if (ri < 0 || x < wt.x0[ri] || y < wt.y0[ri]) return false;
+  if (wt.kind[ri] === 1) {
+    if (x > wt.x1[ri] || y > wt.y1[ri]) return false;
+    const dx = x - wt.cx[ri], dy = y - wt.cy[ri];
+    return dx * dx + dy * dy <= wt.r2[ri];
+  }
+  return wt.kind[ri] === 0 && x < wt.x1[ri] && y < wt.y1[ri];
+}
+
+/**
+ * Ribbon fragment stage (38.45 (2)): same coverage / top-left / depth rules as rasterWaterTri; discard inside a clip region
+ * (the lake / sea draws there), then the occluder. Texel: kind 1, depth vD, nrm = oct(normalize(nx, ny, 1)), z = tau,
+ * objectId = slot | back << 4 | 1 << 6 | rapidQ << 8 | min(65535, round(e * 1000)) << 16.
+ */
+function rasterRiverTri(buf, o0, o1, o2, target, ctx, sel, slot) {
+  const ortho = ctx.ortho === true || ctx.ortho === 1;
+  const w0 = buf[o0 + 3], w1 = buf[o1 + 3], w2 = buf[o2 + 3];
+  const W = target.W, H = target.H;
+  const X0 = (W / 2) * (buf[o0] / w0) + W / 2, Y0 = (H / 2) * (buf[o0 + 1] / w0) + H / 2;
+  const X1 = (W / 2) * (buf[o1] / w1) + W / 2, Y1 = (H / 2) * (buf[o1 + 1] / w1) + H / 2;
+  const X2 = (W / 2) * (buf[o2] / w2) + W / 2, Y2 = (H / 2) * (buf[o2 + 1] / w2) + H / 2;
+  const zn0 = buf[o0 + 2] / w0, iw0 = 1 / w0;
+  let zn1 = buf[o1 + 2] / w1, zn2 = buf[o2 + 2] / w2, iw1 = 1 / w1, iw2 = 1 / w2;
+  let Xs0, Ys0, Xs1, Ys1, Xs2, Ys2;
+  if (ctx.snap === false) {
+    Xs0 = X0 * SUBPIX; Ys0 = Y0 * SUBPIX; Xs1 = X1 * SUBPIX; Ys1 = Y1 * SUBPIX; Xs2 = X2 * SUBPIX; Ys2 = Y2 * SUBPIX;
+  } else {
+    Xs0 = Math.round(X0 * SUBPIX); Ys0 = Math.round(Y0 * SUBPIX);
+    Xs1 = Math.round(X1 * SUBPIX); Ys1 = Math.round(Y1 * SUBPIX);
+    Xs2 = Math.round(X2 * SUBPIX); Ys2 = Math.round(Y2 * SUBPIX);
+  }
+  let A2 = (Xs1 - Xs0) * (Ys2 - Ys0) - (Ys1 - Ys0) * (Xs2 - Xs0);
+  if (A2 === 0) return;
+  const back = A2 < 0 ? 1 : 0;
+  if (A2 < 0) { // swap vertices 1 and 2 (attributes are read through the offsets)
+    let t;
+    t = Xs1; Xs1 = Xs2; Xs2 = t; t = Ys1; Ys1 = Ys2; Ys2 = t;
+    t = zn1; zn1 = zn2; zn2 = t; t = iw1; iw1 = iw2; iw2 = t; t = o1; o1 = o2; o2 = t;
+    A2 = -A2;
+  }
+  const topLeft01 = (Ys1 === Ys0 && Xs1 > Xs0) || Ys1 < Ys0;
+  const topLeft12 = (Ys2 === Ys1 && Xs2 > Xs1) || Ys2 < Ys1;
+  const topLeft20 = (Ys0 === Ys2 && Xs0 > Xs2) || Ys0 < Ys2;
+  const minX = Math.min(Xs0, Xs1, Xs2), maxX = Math.max(Xs0, Xs1, Xs2);
+  const minY = Math.min(Ys0, Ys1, Ys2), maxY = Math.max(Ys0, Ys1, Ys2);
+  const pxMin = Math.max(0, Math.ceil((minX - 128) / 256)), pxMax = Math.min(W - 1, Math.floor((maxX - 128) / 256));
+  const pyMin = Math.max(0, Math.ceil((minY - 128) / 256)), pyMax = Math.min(H - 1, Math.floor((maxY - 128) / 256));
+  if (pxMin > pxMax || pyMin > pyMax) return;
+  const sceneDepth = ctx.sceneDepth, wr = target.writes, wt = sel.wtab;
+  const cl0 = sel.clip[(slot - 12) * 2], cl1 = sel.clip[(slot - 12) * 2 + 1];
+  for (let py = pyMin; py <= pyMax; py++) {
+    const Py = py * 256 + 128, rowBase = py * W;
+    for (let px = pxMin; px <= pxMax; px++) {
+      const Px = px * 256 + 128;
+      const e12 = (Xs2 - Xs1) * (Py - Ys1) - (Ys2 - Ys1) * (Px - Xs1);
+      const e20 = (Xs0 - Xs2) * (Py - Ys2) - (Ys0 - Ys2) * (Px - Xs2);
+      const e01 = (Xs1 - Xs0) * (Py - Ys0) - (Ys1 - Ys0) * (Px - Xs0);
+      if (!((e12 > 0 || (e12 === 0 && topLeft12)) && (e20 > 0 || (e20 === 0 && topLeft20)) && (e01 > 0 || (e01 === 0 && topLeft01)))) continue;
+      const idx = rowBase + px;
+      if (wr) wr[idx]++;
+      const l0 = e12 / A2, l1 = e20 / A2, l2 = e01 / A2;
+      const zn = l0 * zn0 + l1 * zn1 + l2 * zn2;
+      if (zn > 1 || !(zn < target.zbuf[idx])) continue;
+      const q = l0 * iw0 + l1 * iw1 + l2 * iw2, invq = 1 / q;
+      const vD = ortho ? PROJ_NEAR + (0.5 * (zn + 1)) * (PROJ_FAR - PROJ_NEAR) : invq;
+      const a0 = l0 * iw0 * invq, a1 = l1 * iw1 * invq, a2 = l2 * iw2 * invq; // perspective-correct weights
+      if (wt && (cl0 >= 0 || cl1 >= 0)) {
+        const wx = a0 * buf[o0 + 4] + a1 * buf[o1 + 4] + a2 * buf[o2 + 4], wy = a0 * buf[o0 + 5] + a1 * buf[o1 + 5] + a2 * buf[o2 + 5];
+        if (inClipRegion(wt, cl0, wx, wy) || inClipRegion(wt, cl1, wx, wy)) continue;
+      }
+      if (sceneDepth && !(vD < sceneDepth[idx])) continue;
+      const tau = a0 * buf[o0 + 7] + a1 * buf[o1 + 7] + a2 * buf[o2 + 7];
+      const e = a0 * buf[o0 + 8] + a1 * buf[o1 + 8] + a2 * buf[o2 + 8];
+      const rapid = a0 * buf[o0 + 9] + a1 * buf[o1 + 9] + a2 * buf[o2 + 9];
+      const nx = a0 * buf[o0 + 10] + a1 * buf[o1 + 10] + a2 * buf[o2 + 10], ny = a0 * buf[o0 + 11] + a1 * buf[o1 + 11] + a2 * buf[o2 + 11];
+      const rq = Math.min(255, Math.max(0, Math.floor(rapid * 255 + 0.5))), eq = Math.min(65535, Math.max(0, Math.floor(e * 1000 + 0.5)));
+      target.kind[idx] = 1;
+      target.depth[idx] = vD;
+      target.nrm[idx] = packNormalOct(nx, ny, 1);
+      target.z[idx] = tau;
+      target.objectId[idx] = ((slot & 15) | (back << 4) | 64 | (rq << 8) | (eq << 16)) >>> 0;
+      target.zbuf[idx] = zn;
     }
   }
 }

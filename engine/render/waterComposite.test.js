@@ -274,7 +274,7 @@ function expectedHash(px, py, L, time = 0) {
   ok('drift: the map moves over 1s even when waveHz is zero', changed > 0 && out[37] === 0);
   fillWaterSlotTable(selection, world, resolveWaterLooks({ water: { drift: 0.125, cellM: 0.25, waveHz: 2 } }), out, 1000000000.25);
   ok('phase: long-running clocks fold in f64 before f32 packing', out[36] === 256.125 && out[37] === 0.5);
-  ok('slot table: 56-float stride reserves the shape/shore fields', WL_STRIDE === 56 && lastWaterSlotTable().length === 12 * 56);
+  ok('slot table: 56-float stride reserves the shape/shore fields', WL_STRIDE === 56 && lastWaterSlotTable().length === 14 * 56);
   const boundaryY = 1045.5, boundaryX = (500 * 0.25 - boundaryY * 0.4794) / 0.8776;
   const still = packWaterLook('still', { drift: 0, waveHz: 0 });
   ok('hash precision: sub-f32 offsets at a lattice boundary cannot flip a glint',
