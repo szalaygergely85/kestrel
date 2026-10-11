@@ -104,36 +104,34 @@ Level viewer + object placer in `tools/editor/`, a second client of `engine/inde
 - Release: US-112 itch.io browser demo (M1 + walk-out + combat slice) at the M3 exit.
 **Exit test:** a stranger plays wake -> tower -> breach -> takes the sword -> beats 2 beasts -> waystone without instructions (may die and respawn); the owner calls combat "readable and satisfying" at 240x90 (telegraphs visible, hits land, no unfair damage); `?bench=1` inside budget with 4 enemies active; tester PASS on US-078/079/080.
 
-## Milestone 4 – "Keys and Relays" (the adventure loop) — status: planned (2026-09-26 re-plan)
-**Goal:** the player can save and continue, collects items, and a first small dungeon gives a tool that opens a new part of the world.
+## Milestone 4 – "Keys and Relays" (the adventure loop) — status: in progress (2026-10-11; rewritten to D-064..D-068)
+**Goal:** the player saves and continues, dresses and arms Wick (sword, shield + block, bow + arrows), and plays the first two chapters as a chain of main + side quests in the open world. No dungeon (D-065), no magic (fireball/MP kept behind `?magic=1` for later).
+**Already done:** save/continue (US-089/090), inventory + pack (US-091/092), equipment data + slots (EQ-01/02), shield + bow (EQ-06..09), heart pieces (QL-08), J journal (US-096), quest templates + giver '!' / '?' flow (QL-01), day/night (2 h day, D-064), world map geography (MAP-00..07, approved D-067).
 **Epics:**
-- EP-SAVE: CO-5 format (M2) -> US-089 save/load runtime (woken relay = save point + autosave), US-090 title menu with New / Continue / 3 save slots.
-- EP-ITEMS: US-091 inventory + item data + equip screen, US-092 chests + pickups + item-get card, US-093 first tool item that opens an area, US-095 heart vessels + gear levels (no XP, D-020).
-- EP-DUNGEON: US-094 first small dungeon (3-5 rooms, one puzzle chain, small key, mini-boss, tool as reward).
-- EP-QUEST: US-096 quest flags/objectives + journal, US-097 chart with live position + woken relays.
-- EP-MAP (2026-09-30, RE carry-over): US-130 map exploration (the chart reveals areas the player has seen, and dungeon maps fill in room by room, using RE-11 `Visibility` + RE-11b saves), US-131 overworld minimap (RE-13, optional, owner question).
-- EP-WORLD part 2: US-026b finished (streaming), US-098 day/night cycle, US-054 cuttable tree (needs the M3 sword).
-- Content speed-up: US-075 MCP server, US-076 editor AI chat, US-077 text-authored mesh shapes, ME-18 editor on meshes.
-**Exit test:** a fresh player starts a new game, rests at a relay, quits, presses Continue and gets the same position, hearts, items and flags (byte-stable save round trip, M3 saves migrate); clears the dungeon in <= 20 min without a guide; uses the tool to enter an area that was blocked before.
+- EP-EQUIP: EQ-03 Items | Character window (I / C / Tab), EQ-04 lit player model in the view box, EQ-05 dressable gear (visible shells, cached), EQ-10/11 gear drops at low % (boar 4 %, container 3 %, chest 8 %; no crafting materials), EQ-13 quest rewards give gear, EQ-14 owner walk. Quick bar 1-4 for weapon/ammo/potion slots; potions on an always-visible HUD button with count (D-068); the quick bar and potion button are stories to be cut from EQ-03/07 by the PO.
+- EP-QUEST: QL-01..07 quest pipeline + Burl/Rook talking animals, QL-09..13 side errands (pick up, deliver, fetch, shoot targets), QL-14..18 chapter two chain (river road, ford stones, mirror, smoke, caps + heart pieces), QL-19 gear passives, QL-20 owner walk Ch1-2. Quest templates scale toward ~100 quests (main + side) before release, data-driven (QL-02 lint, validate-content).
+- EP-MAP (D-067): MAP-01..07 sea, mountains, river, lake/marsh, skyline; MAP-10..14 band grid, polygon bounds, travel at any pose, long-walk gate; MAP-20..26 Ch1-2 landmarks and loot spots; MAP-27/28 place names + chart that reveals by chart pieces; US-130 map exploration. The enclosed world: river spine, sea + Long Strand beaches south, mountains on the other sides; Sealed Gate in the fourth-side mountains stays locked (Part II after release, key = last quest's reward, not built for 1.0).
+- EP-DIFFICULTY: zone level bands (no XP, D-020): this side of the river = levels 1-5, across the river = 5-10 (enemy strength + gear tiers); river crossings are the gateways.
+- EP-WORLD part 2: US-026b streaming, US-054 cuttable tree.
+- Rule for all epics: the player is never locked except menus, the death screen, the travel fade and the short intro wake-up (D-064).
+**Exit test:** a fresh player starts a new game, plays Ch1-2 (all main beats + errands) without a guide, finds and wears gear that shows on Wick, blocks with the shield and kills a beast with the bow, quits, presses Continue and gets the same position, hearts, items, equipment and quest flags (byte-stable save round trip); owner walks QL-20 and EQ-14 and calls the loop "playable".
 
-## Milestone 5 – "The Relay Line" (chapter two) — status: planned (was M3 before the re-plan)
-**Goal:** meet talking animals and the exiles, learn the first spell, wake three relays across a new region.
+## Milestone 5 – "The Relay Line" (across the river, ~100 quests) — status: planned (rewritten 2026-10-11, D-065..D-068)
+**Goal:** cross the river into levels 5-10, meet the villages and the new characters, and grow the quest list to about 100 (main + side) with the last quest handing over the Sealed Gate key.
 **Epics:**
-- EP-DIALOGUE: US-042 dialogue system + first talking animal (may be pulled into M4 if cheap).
-- EP-NPC: US-099 exile village "Outwall" (D-013: final name decided here) with 3-5 NPCs, idle routines, navigation (US-084/085).
-- EP-REGION: US-100 chapter-two region with 3 dead relays (terrain overrides as data), US-104 secrets + collectibles pass.
-- EP-MAGIC: US-101 artificer's gauntlet + Spark (first spell, the moment of belief).
-- EP-ENEMY 2: US-102 clockwork sentinel; US-103 ranged tool (bow or crossbow, unless it is the M4 tool).
-- EP-PHYS part 2 (D-018): US-055 water + splash + floating props (US-054 moved to M4). The whole US-051..055 epic is done before M6.
-- US-105 the Signal Source dungeon + boss (was M4; ships in 1.0 or after, owner question 5).
-- Steam "Coming Soon" page once M5 is playable (D-012 said M3; moved).
-**Exit test:** a stranger plays chapters one and two (about 60-90 min) without a guide; exiles are the first to say "Wick" (D-013); streaming holds the frame budget across the whole region; writer signs off all dialogue.
+- EP-DIALOGUE/NPC: US-042 dialogue, US-099 Outwall (ws_outwall, MAP-26, no dungeon) and the second village Gullhaven, the 12 new characters (quest-roadmap.md 2b, owner names open), idle routines, navigation (US-084/085), writer signs off all text.
+- EP-QUEST 2: quest templates (fetch, deliver, hunt, escort-free errands, shoot targets) fed by data only; QL-2x+ batches by region until ~100 quests; main line along the relays to the final quest (Sealed Gate key; the gate itself stays locked, Part II after release).
+- EP-REGION: MAP-10..14 band grid across the whole 17-region map, MAP-26+ sites (74 in world_geo), US-104 secrets + collectibles, heart pieces and gear tiers 3-5 for levels 5-10.
+- EP-ENEMY 2: new beast families per region band (levels 5-10) with colour tiers (US-129), US-102 clockwork sentinel; ranged/shield enemies test block and bow.
+- EP-PHYS part 2 (D-018): US-055 water + splash + floating props; whole US-051..055 epic before M6.
+- Magic stays off (D-065); reopening it is an owner decision. Steam "Coming Soon" page once M5 is playable.
+**Exit test:** a stranger plays both sides of the river (about 4-6 h) without a guide, reaching the last quest and the locked gate; about 100 quests on the template pipeline pass validate-content; streaming and band swaps hold the frame budget over the whole map; level bands feel fair at 1-5 and 5-10; writer signs off all dialogue.
 
 ## Milestone 6 – "Polish & Release" — status: planned
 **Goal:** a release-quality build on web and Steam (Windows, Linux/Steam Deck), playable with keyboard/mouse or gamepad only.
 **Epics:**
 - EP-INPUT 2: US-107 gamepad (Steam Deck layout + UI navigation), US-108 key remapping in Settings.
-- EP-AUDIO (owner deferred sound to M6): US-020 rest + US-020d, US-109 music (exploration / combat / relay stingers).
+- EP-AUDIO (owner deferred sound to M6): US-020 rest + US-020d, US-109 music (exploration / combat / relay stingers, day/night variants).
 - EP-POLISH: US-053 particles (if not done in M3), US-110 accessibility (cell size, colourblind palettes, hold/toggle options, visual cues for sounds), US-111 performance + Steam Deck pass, US-106 crash intro (owner idea D-020), US-118 localisation-ready strings.
 - EP-RELEASE: US-043 Steam (Electron in `desktop/`, `steamworks.js` behind the platform adapter, store assets rendered in-engine, writer store text, $100 Steam Direct fee), itch.io build updated.
 Order: itch.io demo (end of M3) -> Steam Coming Soon (M5) -> launch (end of M6).
