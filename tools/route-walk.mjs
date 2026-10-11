@@ -288,6 +288,22 @@ function routeRun(physics, { reload = false } = {}) {
   info.stoneLift = []; for (const st of dataStones) { let bd = 1e9, bz = 0; for (let i = 0; i < l9.trace.length; i += 3) { const d = Math.hypot(l9.trace[i] - st.x, l9.trace[i + 1] - st.y); if (d < bd) { bd = d; bz = l9.trace[i + 2]; } } info.stoneLift.push(+(bz - st.z).toFixed(2)); }
   info.bands = bandEv.join(','); info.bandLate = late; info.maxSwapMs = +sim.world.lastSwapMs.toFixed(2);
   l9.completed = l9.completed && bandEv.length === 2 && bandEv[0] === 'east>west' && bandEv[1] === 'west>east' && late === 0;
+  // MAP-26 leg 10o: ford west bank -> owPathPost -> track -> owGate -> plaza (relay) -> out the gate, round the palisade to the goose farm -> pen -> back to the ford.
+  // Same streamed sim; band:late counted for this leg alone. Mesh run: the palisade, the shells and the forge must not trap the player; grid run: line only.
+  {
+    const lateBefore = late, t = sim.player.transform, b = sim.player.components.body;
+    sim.world.ensureBandFor(1000, 1069); t.x = 1000; t.y = 1069; t.z = sim.world.floorAt(1000, 1069) ?? 0; b.vx = b.vy = b.vz = 0; b.fallDistance = 0; b.grounded = true;
+    const GATE = { x: 942, y: 925.3 }, RELAY3 = { x: 912, y: 952 };
+    const inward = [{ x: 1010, y: 1066 }, { x: 1010.5, y: 1049 }, { x: 1011.5, y: 1041 }, { x: 1013.5, y: 1035 }, { x: 1004, y: 1031 }, { x: 992, y: 1033 }, { x: 988, y: 1038 }, { x: 978, y: 1010 }, { x: 966, y: 985 }, { x: 956, y: 962 }, { x: 954, y: 940 }, { x: 950, y: 927 }, { x: 944, y: GATE.y }, { x: 935, y: 926.5 }, { x: 920, y: 927 }, { x: 905, y: 927 }, { x: 903, y: 940 }, { x: 905, y: 948 }, { x: 910.5, y: 950.5 }];
+    const outward = [{ x: 905, y: 940 }, { x: 905, y: 927 }, { x: 935, y: 926.5 }, { x: 946, y: 925.5 }, { x: 952, y: 915 }, { x: 930, y: 912 }, { x: 890, y: 912 }, { x: 865, y: 925 }, { x: 852, y: 955 }, { x: 855, y: 978 }, { x: 874, y: 990 }, { x: 862, y: 990 }];
+    const back2 = [{ x: 874, y: 990 }, { x: 855, y: 978 }, { x: 852, y: 955 }, { x: 865, y: 925 }, { x: 890, y: 912 }, { x: 930, y: 912 }, { x: 952, y: 915 }, { x: 956, y: 962 }, { x: 966, y: 985 }, { x: 988, y: 1038 }, { x: 992, y: 1033 }, { x: 1004, y: 1031 }, { x: 1013.5, y: 1035 }, { x: 1011.5, y: 1041 }, { x: 1010.5, y: 1049 }, { x: 1010, y: 1066 }, { x: 1000, y: 1069 }];
+    const ow = runLeg(sim, '10o Outwall (path post, gate, plaza, goose farm, back)', [...inward, ...outward, ...back2], { maxWpSteps: 2500 });
+    let near = Infinity; for (let i = 0; i < ow.trace.length; i += 3) near = Math.min(near, Math.hypot(ow.trace[i] - RELAY3.x, ow.trace[i + 1] - RELAY3.y));
+    info.owLate = late - lateBefore; info.owRelayDist = near;
+    ow.completed = ow.completed && !ow.fell && info.owLate === 0 && near <= 3.5;
+    if (!ow.completed) process.exitCode = 1;
+    legs.push(ow);
+  }
   sim.stream = false;
   return { legs, info, ms: sim.ms, sim };
 }
@@ -396,6 +412,19 @@ const reloadSame = MR.legs.every((l, i) => l.completed === M.legs[i].completed &
 const RP = [ringProbe('grid'), ringProbe('mesh')];
 const DC = [doorClosedProbe('grid'), doorClosedProbe('mesh')], CL = clearance();
 const NL = '\n    ';
+{ // MAP-26: --leg <name> prints only the legs whose name contains <name> (grid + mesh) and exits non-zero if one fails
+  const li = process.argv.indexOf('--leg');
+  if (li > 0) {
+    const key = process.argv[li + 1]; let bad = 0, n = 0;
+    for (const [nm, R] of [['grid', G], ['mesh', M]]) for (const l of R.legs.filter((q) => q.name.toLowerCase().includes(key.toLowerCase()))) {
+      n++;
+      console.log('leg ' + l.name + ' [' + nm + ']: ' + (l.completed && !l.fell ? 'PASS' : 'FAIL') + ' steps ' + l.steps + ' fell ' + l.fell + ' end (' + l.end.x.toFixed(1) + ',' + l.end.y.toFixed(1) + ',' + l.end.z.toFixed(2) + ') ' + (l.stuckAt ? 'stuck wp' + l.stuckAt.wp + ' @(' + l.stuckAt.x.toFixed(1) + ',' + l.stuckAt.y.toFixed(1) + ',' + l.stuckAt.z.toFixed(2) + ')' : ''));
+      if (!l.completed || l.fell) bad++;
+    }
+    console.log('band:late ' + G.info.owLate + '/' + M.info.owLate + ', closest to relay ' + (M.info.owRelayDist ?? NaN).toFixed(2) + ' m');
+    await new Promise((res) => process.stdout.write('', res)); process.exit(bad || !n ? 1 : 0);
+  }
+}
 const asJson = process.argv.includes('--json');
 const f = (n) => (n == null ? '-' : n.toFixed(2));
 const rows = [];
@@ -464,7 +493,7 @@ else {
 // two towers and the curtain wall for 20 s each (also running + jumping): the player must never get past the wall line x=240 (west face ~239.2).
 {
   // world_m1's play bounds do not reach the West Fells yet: widen a COPY with a disc round the gate so only the colliders can stop the player
-  const wd = JSON.parse(JSON.stringify(assets.world('world_m1'))); wd.bounds.parts.push({ shape: 'circle', x: 240, y: 840, r: 150 });
+  const wd = JSON.parse(JSON.stringify(assets.world('world_m1'))); wd.bounds.parts.splice(-1, 1, { shape: 'circle', x: 240, y: 840, r: 150 }); /* MAP-26: bounds are at the 8-part cap, replace the Outwall disc in this copy */
   const sim = setup('mesh'); sim.world = World.load(wd, assets, { physics: 'mesh', events: new Events() }); sim.stream = true;
   const t = sim.player.transform, b = sim.player.components.body;
   const run = (yaw, y0, jump) => {

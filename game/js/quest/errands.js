@@ -121,6 +121,7 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
       const f = 'talk.' + siteOf(id);
       if (wants(f)) questFlag(f, true);
       if (id === 'fordMark') questFlag('lore.fordMark.read', true); // mq.smoke: the mark cut in the Ford Relay base
+      if (id === 'pierStone') questFlag('lore.pierStone.read', true); // sq.hw.piers (QL-21)
       if (id === 'knot' || id === 'relayKnot') questFlag('lore.knot.read', true); // mq.bend.call: inspect prop on the relay mount
       const t = T[textOf.get(id) || Object.keys(T).find((k) => (T[k].entities || []).includes(id)) || (id === 'relayKnot' ? 'note.knot' : '')];
       if (t && note) { // banner only, never locks; 2nd+ look shows the `again` variant, the gate keeps its locked hint

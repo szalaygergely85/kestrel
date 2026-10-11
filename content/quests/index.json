@@ -1,7 +1,8 @@
 {
   "version": 1,
   "packs": [
-    "ch12"
+    "ch12",
+    "ch3"
   ],
   "legacy": [
     "m1",

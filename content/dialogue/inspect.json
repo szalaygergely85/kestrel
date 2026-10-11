@@ -72,6 +72,16 @@
       "title": "A mark cut in the base",
       "lines": ["Three rings and a line through them.", "The same mark as the stones under the Wards.", "The ones that hum."],
       "entities": ["fordMark"]
+    },
+    "note.owBoard": {
+      "prompt": "[E] Read the board",
+      "title": "Notices, nailed up",
+      "lines": ["Crown notices, printed in Ferrum. Rain-soft.", "FELL BEYOND THE WALL. Name after name.", "Carried out here and nailed up, one by one.", "One line cut away. On the nail, a skyworks knot."]
+    },
+    "note.pierStone": {
+      "prompt": "[E] Read the stone",
+      "title": "A standing stone",
+      "lines": ["A dressed block, set on end beside the track.", "Old mortar on one face. Once part of a bridge pier.", "A Crown stamp, half chiselled away.", "The bridge was pulled down. Not by the river."]
     }
   }
 }
