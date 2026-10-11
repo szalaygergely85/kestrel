@@ -113,7 +113,7 @@ const PX = RC[0] - 4.3, stepTops = [], stepYs = [];
   let top = low(PX, Y(N, 0), 1.0) + 0.7; const inc = (DECK - top) / (N - 1);
   for (let i = 0; i < N; i++, top += inc) {
     const y = Y(N, i), g = low(PX, y, 1.0) - 0.04, n = Math.max(1, Math.ceil(top - g - 0.05));
-    for (let k = 0; k < n; k++) put('Stairs_Exterior_Straight', PX, y, k % 2 ? 180 : 0, { z: +(top - 1 - (n - 1 - k) * Math.max(0.5, Math.min(1, (top - 1 - g) / Math.max(1, n - 1)))).toFixed(2), ext: 1.0 });
+    for (let k = 0; k < n; k++) put('Stairs_Exterior_Straight', PX, y, k % 2 ? 180 : 0, { z: +(top - 1 - (n - 1 - k) * Math.max(0.5, Math.min(1, (top - 1 - g) / Math.max(1, n - 1))) + (k % 4) * 0.03).toFixed(2), ext: 1.0 }); // +0..9 cm per step: stacked stair meshes share tread planes otherwise (OB-053b)
     stepTops.push(+top.toFixed(2)); stepYs.push(+y.toFixed(1));
   }
 }

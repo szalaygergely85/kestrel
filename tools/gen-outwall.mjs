@@ -67,7 +67,7 @@ for (let k = 0; k < 9; k++) {
 
 // ---- house shells: 4 x 3 wall modules (scale 1.25 -> 2.5 m, 3.9 m high), gable roof, one door, one window, chimney on the gable end
 const WS = 1.25, WM = 2 * WS, WH = 3.12269 * WS, TH = 0.11 * WS, RS = 2.5;
-const wallRun = (mesh, along, c, z, alongY, o = {}) => (alongY ? put(mesh, c + TH, along, z, 90, { scale: WS, ...o }) : put(mesh, along, c - TH, z, 0, { scale: WS, ...o }));
+const wallRun = (mesh, along, c, z, alongY, o = {}) => (alongY ? put(mesh, c + TH, along, z, 90, { scale: WS, ...o }) : put(mesh, along, c - TH, z + 0.04, 0, { scale: WS, ...o })); // x-runs +4 cm so corner tops/ends are not coplanar with y-runs (OB-053b)
 function shell(cx, cy, nx, ny, doorSide, opts = {}) {
   const W = nx * WM, D = ny * WM, g0 = lowest([[cx - W / 2, cy - D / 2], [cx + W / 2, cy - D / 2], [cx - W / 2, cy + D / 2], [cx + W / 2, cy + D / 2]]) - 0.05;
   // sides: S (y-), N (y+) run along x; W (x-), E (x+) run along y
@@ -86,11 +86,12 @@ function shell(cx, cy, nx, ny, doorSide, opts = {}) {
   const rStep = span / rn, rz = g0 + WH + 0.16 * RS - 0.05;
   for (let i = 0; i < rn; i++) {
     const x = cx - span / 2 + rStep / 2 + i * rStep;
-    put('Roof_Wooden_2x1', x, cy, rz, 0, { scale: RS, collide: false });
-    put('Roof_Wooden_2x1', x, cy, rz, 180, { scale: RS, collide: false });
+    const rzi = rz + (i % 2) * 0.04;                       // alternate tiles +4 cm: neighbours overlap, no coplanar shingles (OB-053b)
+    put('Roof_Wooden_2x1', x, cy + (i % 2) * 0.04, rzi, 0, { scale: RS, collide: false });
+    put('Roof_Wooden_2x1', x, cy + (i % 2) * 0.04, rzi, 180, { scale: RS, collide: false });
   }
   // chimney beside the east gable
-  const chx = cx + W / 2 + 0.45, chy = cy + 0.4, cg = gz(chx, chy) - 0.2, CHS = 2.25;
+  const chx = cx + W / 2 + 0.6, chy = cy + 0.5, cg = gz(chx, chy) - 0.2, CHS = 2.3;
   put('Prop_Chimney2', chx, chy, cg, 0, { scale: CHS });
   return { chx, chy, top: cg + 3 * CHS, g0 };
 }
@@ -122,7 +123,7 @@ for (let s = 0; s < track.length - 1; s++) {
   const [x0, y0] = track[s], [x1, y1] = track[s + 1], len = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.round(len / 2.1));
   for (let i = 0; i < n; i++) {
     const f = i / n, x = x0 + (x1 - x0) * f + (rng() - 0.5) * 0.8, y = y0 + (y1 - y0) * f + (rng() - 0.5) * 0.8;
-    put('RockPath_Round_Wide', x, y, gz(x, y) + 0.02, rng() * 360, { scale: 0.9 + rng() * 0.25, collide: false, noShadow: true }); tn++;
+    put('RockPath_Round_Wide', x, y, gz(x, y) + 0.02 + (tn % 3) * 0.03, rng() * 360, { scale: 0.9 + rng() * 0.25, collide: false, noShadow: true }); tn++;
   }
 }
 // plaza stones from the gate to the relay

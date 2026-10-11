@@ -4,8 +4,8 @@
 // and every placed mesh (world `structures[]` with a `mesh`, scale + yawDeg + origin). Alpha-cutout ranges (foliage
 // cards) are skipped. Read-only; Node only.
 //   node tools/coplanar-lint.mjs [--at x,y,z] [--radius 8] [--eps 0.02] [--min-area 0.002] [--limit 40] [--json]
-//     [--self-meshes] [--world world_m1]
-// Exit 0 always (it is a report); tools/coplanar-lint.test.mjs checks the maths and the tower spot.
+//     [--self-meshes] [--world world_m1] [--max N]
+// Exit 0 (a report) unless --max N is given and the world has more than N pairs (then 1); tools/coplanar-lint.test.mjs checks the maths and the tower spot.
 import { pathToFileURL } from 'node:url';
 import { loadTestAssets } from './testing/content-node.mjs';
 import { loadLevel } from '../engine/index.js';
@@ -180,6 +180,8 @@ async function main() {
   const soup = await worldSoup(arg('world', 'world_m1'));
   const pairs = findCoplanar(soup, opts);
   const sum = summarize(soup, pairs);
+  const max = arg('max') != null ? +arg('max') : null;   // --max N: exit 1 when the world has more than N pairs (regression gate, OB-053b)
+  if (max != null && pairs.length > max) process.exitCode = 1;
   if (args.includes('--json')) { console.log(JSON.stringify({ at, radius, tris: soup.src.length, pairs: pairs.length, spot: pairs.filter((p) => near(p, at, radius)).length, bySrc: sum.bySrc.slice(0, limit), byCell: sum.byCell.slice(0, limit) })); return; }
   const spot = pairs.filter((p) => near(p, at, radius));
   console.log(`SPOT (${at.x}, ${at.y}, ${at.z}) r=${radius}: ${spot.length} coplanar overlapping pair(s)`);
