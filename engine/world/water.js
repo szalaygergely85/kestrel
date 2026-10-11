@@ -5,7 +5,7 @@
 import { localToWorld, localDirToWorld } from '../core/transform.js';
 import { buildWaveTables, createWaveClock } from './waves.js';
 
-export const WATER_MAX = 32;
+export const WATER_MAX = 96; // OB-019: was 32 -> river chain (tools/gen-river-water.mjs) needs ~50 rect regions
 // S8-B2-13b (38.14, the note of record): splash ripples live in the pure `engine/fx/ripples.js` ring buffer, not
 // here - this table is immutable region CONTENT built by World.load, and render never holds gameplay-fed state.
 /** Max flow speed (m/s) of a region's `flow` / `flowRadial` (US-141a, architecture.md 35.1). */
