@@ -6,6 +6,7 @@
 // (timing, gating, the `M` binding) the panel itself knows nothing about.
 import { buildPanelArt, createPanel, hexToRgb, drawPanel } from '../../../engine/index.js';
 import { request as requestHint } from './hints.js';
+import { buildWorldOverlay, AREAS, KINDS } from './mapWorld.js';
 
 let art = null;   // PanelArt, built once (palette/model are load-time constants)
 let panel = null; // runtime Panel, rebuilt every 'world:loaded' (7.6 item 6)
@@ -22,12 +23,16 @@ export const CHART_GLYPHS = Object.freeze({
   quest: { glyph: '!', color: 'gold' }, questReady: { glyph: '?', color: 'gold' }, // QG-04: giver markers (dynamic, setQuestMarkers)
   player: { glyph: '^', color: 'gold' }, edge: { glyph: '+', color: 'chartEdge' },
   route: { glyph: '*', color: 'pencil' }, print: { glyph: 'N', color: 'chartInk' },
+  // MAP-28 world overlay (only used when createChartCard gets `geo`)
+  sea: { glyph: '~', color: 'aetherDim' }, beach: { glyph: ',', color: 'pencil' }, river: { glyph: '~', color: 'aether' },
+  lake: { glyph: '~', color: 'aether' }, marsh: { glyph: '"', color: 'pencil' }, mountain: { glyph: 'A', color: 'chartInk' },
+  forest: { glyph: 'T', color: 'pencil' }, cliff: { glyph: '%', color: 'chartInk' }, gate: { glyph: '#', color: 'ferrum' }, wall: { glyph: '#', color: 'ferrum' },
 });
 
 /** Load-time raster of the baked semantic planes. Pose updates touch two cells,
  * retaining the marker underneath; no per-frame lists, strings or allocations.
  */
-export function createChartCard(chart, palette, { markers = [], glyphs = CHART_GLYPHS, width = 96, rows = 40, fog = null, travel = null, travelHeader = 'Travel: press a number' } = {}) {
+export function createChartCard(chart, palette, { markers = [], glyphs = CHART_GLYPHS, width = 96, rows = 40, fog = null, geo = null, travel = null, travelHeader = 'Travel: press a number' } = {}) {
   const bounds = chart?.bounds;
   if (chart?.chartVersion !== 1 || !Number.isInteger(chart.width) || chart.width < 1
     || !Number.isInteger(chart.rows) || chart.rows < 1 || chart.width * chart.rows > 524288
@@ -40,8 +45,8 @@ export function createChartCard(chart, palette, { markers = [], glyphs = CHART_G
     || !Number.isInteger(width) || width < 16 || width > 128 || !Number.isInteger(rows) || rows < 8 || rows > 52)
     throw new Error('chart: invalid planes, bounds or card size');
   const colors = {}, codes = {};
-  for (const key of [...chart.categories, 'relay', 'waystone', 'quest', 'questReady', 'player', 'edge', 'route', 'print']) {
-    const token = glyphs[key];
+  for (const key of [...chart.categories, 'relay', 'waystone', 'quest', 'questReady', 'player', 'edge', 'route', 'print', ...(geo ? KINDS.slice(1) : [])]) {
+    const token = glyphs[key] || (geo && CHART_GLYPHS[key]);
     if (!token || typeof token.glyph !== 'string' || !/^[!-~]$/.test(token.glyph)
       || !/^#[0-9a-f]{6}$/i.test(palette.colors[token.color] || '')) throw new Error('chart: invalid glyph/colour');
     codes[key] = token.glyph.charCodeAt(0); colors[key] = hexToRgb(palette.colors[token.color]);
@@ -69,6 +74,14 @@ export function createChartCard(chart, palette, { markers = [], glyphs = CHART_G
     const category = chart.categories[chart.glyphs[sy].charCodeAt(sx)-48];
     put(i,codes[category],colors[category],0.65+0.35*parseInt(chart.shades[sy][sx],16)/15);
   }
+  // MAP-28: world_geo terrain over the baked plane (roads/structures of the play data stay); precomputed once here
+  const ov = geo ? buildWorldOverlay(geo.G, geo.U, bounds, innerW, innerH) : null;
+  if (ov) for (let y = 0; y < innerH; y++) for (let x = 0; x < innerW; x++) {
+    const k = KINDS[ov.kind[y*innerW+x]]; if (!k) continue;
+    const i = (y+1)*w+x+1, base = chart.categories[chart.glyphs[Math.min(chart.rows-1,Math.floor((y+.5)*chart.rows/innerH))].charCodeAt(Math.min(chart.width-1,Math.floor((x+.5)*chart.width/innerW)))-48];
+    if (base === 'road' || base === 'structure') continue;
+    put(i, codes[k], colors[k], 0.85);
+  }
   const x0 = bounds.x0, y0 = bounds.y0, spanX = bounds.x1-x0, spanY = bounds.y1-y0;
   if(fog && (fog.bounds?.x0!==x0||fog.bounds?.y0!==y0||fog.bounds?.x1!==bounds.x1||fog.bounds?.y1!==bounds.y1))
     throw new Error('chart: incompatible fog bounds');
@@ -89,10 +102,21 @@ export function createChartCard(chart, palette, { markers = [], glyphs = CHART_G
   const baseMarker = markerCells.slice(); // markerCells without digits/quest (restore)
   const qCells = []; // cells currently holding a quest marker
   let fogRevision = -1;
+  // chart pieces: card-cell mask of the areas whose `chart.<id>` flag is set; labels drawn only where fully unfogged
+  const pieceMask = new Uint8Array(w*h), labelColor = hexToRgb(palette.colors.uiText || palette.colors[glyphs.print.color]);
+  function drawLabels(visible) {
+    if (!ov) return;
+    for (const L of ov.labels) {
+      let ok = L.cells[0] >= 0;
+      for (let k = 0; ok && k < L.cells.length; k++) { const c = L.cells[k], i = (Math.floor(c/innerW)+1)*w + c%innerW + 1; ok = !markerCells[i] && visible(i); }
+      if (!ok) continue;
+      for (let k = 0; k < L.cells.length; k++) { const c = L.cells[k]; put((Math.floor(c/innerW)+1)*w + c%innerW + 1, L.text.charCodeAt(k), labelColor); }
+    }
+  }
   let previous = -1;
   function revealed(i){
     const x=i%w,y=Math.floor(i/w);
-    return fog.isExplored(x0+(x-1+.5)*spanX/innerW,y0+(y-1+.5)*spanY/innerH);
+    return pieceMask[i]===1||fog.isExplored(x0+(x-1+.5)*spanX/innerW,y0+(y-1+.5)*spanY/innerH);
   }
   function refreshFog(){
     if(!fog||fogRevision===fog.revision)return;
@@ -117,10 +141,23 @@ export function createChartCard(chart, palette, { markers = [], glyphs = CHART_G
     for(let x=0;x<text.length;x++){
       const i=row*w+start+x;if(!revealed(i))put(i,text.charCodeAt(x),colors.print);
     }
+    drawLabels(revealed);
     baseCodes.set(chartArt.codes);baseRgb.set(chartArt.rgb);
     previous=-1;fogRevision=fog.revision;
   }
+  if (!fog) { drawLabels(() => true); baseCodes.set(chartArt.codes); baseRgb.set(chartArt.rgb); plainCodes.set(baseCodes); plainRgb.set(baseRgb); }
   refreshFog();
+  /** MAP-28: has(id) -> bool for each area id (flag `chart.<id>`); unfogs the flagged areas whole. Allocation-free. */
+  function setChartPieces(has) {
+    if (!ov) return false;
+    pieceMask.fill(0);
+    for (let a = 0; a < AREAS.length; a++) if (has(AREAS[a])) {
+      const cs = ov.areaCells[a];
+      for (let k = 0; k < cs.length; k++) pieceMask[(Math.floor(cs[k]/innerW)+1)*w + cs[k]%innerW + 1] = 1;
+    }
+    if (fog) { fogRevision = -1; previous = -1; refreshFog(); }
+    return true;
+  }
   /** QG-04: replace the dynamic quest markers; list = [{kind:'quest'|'questReady', x, y}]. Off-map entries are skipped. */
   function setQuestMarkers(list) {
     const tc = fog ? fullCodes : baseCodes, tr = fog ? fullRgb : baseRgb;
@@ -196,7 +233,7 @@ export function createChartCard(chart, palette, { markers = [], glyphs = CHART_G
   const arrows = [94,62,118,60]; // yaw 0 north (-y), 90 east, 180 south, 270 west
   const position = { x: -1, y: -1, code: 0 };
   return {
-    art: chartArt, position, fog, setQuestMarkers, setMarker, setTravelPoints, refreshTravel, travelIdFor, onTravel: null,
+    art: chartArt, position, fog, overlay: ov, setChartPieces, setQuestMarkers, setMarker, setTravelPoints, refreshTravel, travelIdFor, onTravel: null,
     get travelLine() { return travelLine; },
     updatePose(x,y,yawDeg) {
       refreshFog();
@@ -316,7 +353,7 @@ export function stepMapCard(world, assets, dt, input, wakeT, titleDoneAtSec, loc
   if (panel.state === 'closed') {
     if (input.pressed('KeyM')) {
       input.consumePressed();
-      if (chartView) chartView.refreshTravel();
+      if (chartView) { chartView.refreshTravel(); chartView.setChartPieces((id) => !!world.state['chart.' + id]); } // MAP-28: flag `chart.<id>`
       panel.open();
       world.state['ui.mapCard.opened'] = true;
     }
