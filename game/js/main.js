@@ -1895,6 +1895,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         const pc = playerHandle.data.components, pt = playerHandle.data.transform;
         const m = wetStones.step(pc.equipment, itemDefs, controls.run && (controls.forward !== 0 || controls.strafe !== 0), pt.x, pt.y, dt);
         if (m < 1) { controls.forward *= m; controls.strafe *= m; }
+        if (wetStones.state && wetStones.state.fresh) wadeFx.arrowHit(pt.x, pt.y, pt.z, fb ? fb.timeSec : 0); // QL-19b: splash + ring on the slip step (US-055a fx)
       }
       integrate(playerHandle.data, dt, controls, engine.world, engine.physics);
       if (wading) wading.after(playerHandle.data);
