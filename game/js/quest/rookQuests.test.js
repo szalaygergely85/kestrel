@@ -22,7 +22,8 @@ const book = createQuestBook(files.questDef, files.giverDefs, null);
 book.packOps = { count: (id) => pack.get(id) || 0, remove() {}, add: (id, n) => { pack.set(id, (pack.get(id) || 0) + n); return n; }, equipped: () => false };
 const questFlag = (k, v = true) => { state[k] = v; book.feed({ type: 'flag:set', key: k, value: v }); };
 const world = { state, get: () => null, interactables: [], addInteractable() {} };
-const er = createErrands({ getBook: () => book, questFlag, inspect() {} });
+const notes = [];
+const er = createErrands({ getBook: () => book, questFlag, inspect() {}, note: (t, l) => notes.push([t, l]) });
 er.load(world);
 
 // Rook's real dialogue, driven by the bridge flags
@@ -47,7 +48,7 @@ er.mainSync(0); assert.equal(st('mq.bend.call'), 1); assert.ok(state['mq.bend.ca
 er.mainSync(3); assert.ok(!state['relay.bend.pulseSeen']); er.mainSync(1.5); assert.ok(state['relay.bend.pulseSeen'], 'pulse seen');
 const meet = talk(); assert.equal(meet.length, 8); assert.equal(st('mq.bend.call'), 2, 'accepted via dialogue'); assert.ok(state['mq.bend.call.active']);
 assert.match(talk()[0], /Count the blinks/);
-er.inspected('knot'); er.mainSync(0);
+er.inspected('knot'); er.mainSync(0); assert.equal(notes.length, 1); assert.equal(notes[0][0], 'A knot on the brass');
 assert.equal(st('mq.bend.call'), 3); assert.ok(state['mq.bend.call.ready']);
 const ready = talk(); assert.equal(ready.length, 6);
 assert.equal(st('mq.bend.call'), 4, 'handed in via dialogue'); assert.deepEqual(book.lastReward.items, [{ id: 'chart.river', n: 1 }]);
@@ -65,4 +66,15 @@ assert.ok(state['mq.ford.mirror.glass'], 'gate flag follows the pack');
 questFlag('waystone.ws_ford.woken'); er.mainSync(0);
 assert.equal(st('mq.ford.mirror'), 4, 'auto handed in'); assert.ok(state['mq.ford.mirror.done']);
 assert.equal(talk().length, 2); // rook.mirror.done
+
+// QL-07/16 real content: knot + nest pickup entities exist, and the SOS pulse is 3 cycles of 3 short + 3 long
+const wd = rd('content/worlds/world_m1.world.json'), ent = (id) => wd.entities.find((e) => e.id === id);
+assert.deepEqual(ent('nest').components.questPickup, { item: 'relay.mirror', n: 1 }); assert.ok(ent('nest').components.sprite);
+assert.equal(ent('knot').components.inspect.text, 'note.knot');
+assert.equal(wd.entities.filter((e) => /^boarF\d$/.test(e.id) && e.components.brain.temperament === 'wary').length, 2);
+const { pulseFactor } = await import('./relayWake.js');
+const on = (t) => pulseFactor(t) === 1; assert.ok(on(0.1) && !on(0.3) && on(0.6) && on(1.6) && !on(2.3) && on(2.6));
+assert.equal(pulseFactor(18.1), -1); assert.ok(pulseFactor(17) === 1 || pulseFactor(17) < 1);
+let blinks = 0, prev = false; for (let t = 0; t < 18; t += 0.05) { const o = pulseFactor(t) === 1; if (o && !prev) blinks++; prev = o; }
+assert.ok(blinks >= 18, 'at least 6 blinks x 3 cycles: ' + blinks);
 console.log('rookQuests: PASS');

@@ -74,13 +74,14 @@ const TARGET_RE = /^target([123])$/;
 const ESCORT_R = 14;
 const MQ = ['mq.bend.call', 'mq.ford.mirror']; // Rook's main quests (world.state keys 'mq.<id>.*' = dialogue 's.mq.<id>.*')
 const MQ_AUTO = new Set(['mq.ford.mirror']); // no hand-in line: handed in as soon as READY
+const KNOT_TITLE = 'A knot on the brass', KNOT_LINES = ['A skyworks hitch. Lamp-trimmers tie it.', 'Pulled tight. Weathered grey. Years old.']; // story.md note.knot
 const PULSE_DELAY = 4; // seconds after the Bend relay wakes (questline: flag relay.bend.pulseSeen)
 const ACTIVE = 2; // questBook statusOf: 0 unavailable, 1 available, 2 active, 3 ready, 4 done
 /**
  * @param {{getBook:()=>any, questFlag:(k:string,v?:any)=>any, inspect:(id:string)=>void}} o
  *   inspect(objectId) = main's QL-04 sink (book.inspect + banner). questFlag = world.state + book.feed.
  */
-export function createErrands({ getBook, questFlag, inspect }) {
+export function createErrands({ getBook, questFlag, inspect, note }) {
   let world = null, relayEnt = new Map(), pulseT = -1;
   const status = (id) => { const b = getBook(); return b ? b.statusOf(id) : -1; };
 
@@ -113,6 +114,12 @@ export function createErrands({ getBook, questFlag, inspect }) {
           added++;
         }
       }
+      // QL-07: the knot on the Bend relay mount (entity `knot`, inspect text note.knot) -> lore.knot.read
+      const kd = w.get('knot'), kt = kd && kd.data && kd.data.transform;
+      if (kt && !w.interactables.some((r) => r.key === 'qi.knot')) {
+        w.addInteractable({ key: 'qi.knot', name: 'quest.inspect', x: kt.x, y: kt.y, z: kt.z + 0.6, radius: 2.4, prompt: '[E] Look at the knot', def: { objectId: 'knot' } });
+        added++;
+      }
       return added;
     },
     /** gameHooks event: touching an awake relay inspects its errands. */
@@ -123,7 +130,7 @@ export function createErrands({ getBook, questFlag, inspect }) {
     inspected(id) {
       const f = 'talk.' + siteOf(id);
       if (wants(f)) questFlag(f, true);
-      if (id === 'knot' || id === 'relayKnot') questFlag('lore.knot.read', true); // mq.bend.call: inspect prop on the relay mount
+      if (id === 'knot' || id === 'relayKnot') { questFlag('lore.knot.read', true); if (note) note(KNOT_TITLE, KNOT_LINES); } // mq.bend.call: inspect prop on the relay mount
       inspect(id);
     },
     /** dialogueCtl.onTalk(npcId): talk flag only (the dialogue itself drives accept / hand-in). */

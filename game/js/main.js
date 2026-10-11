@@ -1135,7 +1135,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   notice.push(String(d.title || r.id).slice(0, 30), bannerLines(d, r.action, wrapText) || wrapText(r.text || (r.action === 'handin' ? 'Done.' : r.action === 'accept' ? 'Quest accepted.' : 'Not yet.')));
 };
   // QL-WIRE: Ch1-2 errands: object givers (post / notePost / relays), talk.<site>, target1..3.hit (sword + arrow = combat:hit), escort flag
-  const errands = createErrands({ getBook: () => (saveRelay ? saveRelay.quest.book : null), questFlag: (k, v) => saveRelay.quest.questFlag(k, v), inspect: inspectObject });
+  const errands = createErrands({ getBook: () => (saveRelay ? saveRelay.quest.book : null), questFlag: (k, v) => saveRelay.quest.questFlag(k, v), inspect: inspectObject, note: (t, l) => notice.push(t, l) });
   setInspectSink((id) => errands.inspected(id));
   engine.events.on('combat:hit', (p) => errands.hit(p));
   gameHooks.register({ onEvent: (name, d) => errands.onEvent(name, d) });
