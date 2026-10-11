@@ -18,7 +18,7 @@ const p = createParticles();
 let threw = null;
 try { p.defineEmitter('farSmoke', def); } catch (e) { threw = e; }
 ok('farSmoke defineEmitter ok', threw === null, threw && threw.message);
-ok('plume is thin and capped (sizeM <= 1, maxLive <= 64, rate <= 8)', def.sizeM > 0 && def.sizeM <= 2 && def.maxLive <= 64 && def.rate <= 8);
+ok('plume billows (sizeM 1..2 -> sizeEndM 5..12, maxLive <= 64, rate <= 8)', def.sizeM >= 1 && def.sizeM <= 2 && def.sizeEndM >= 5 && def.sizeEndM <= 12 && def.maxLive <= 64 && def.rate <= 8);
 ok('plume drifts with the wind and rises', def.wind === 1 && def.accelZ > 0);
 
 const world = JSON.parse(fs.readFileSync('content/worlds/world_m1.world.json', 'utf8'));
