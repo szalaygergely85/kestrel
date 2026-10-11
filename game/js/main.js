@@ -1844,7 +1844,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // US-015 (7.6 item 5): while locked, PlayerLook still drains the raw
       // mouse delta every step (so nothing pent up snaps the camera once
       // input unlocks) but its result is simply discarded, not applied.
-      if (uiLocked) input.consumeMouseDelta();
+      if (uiLocked || isNoteOpen()) input.consumeMouseDelta(); // OB-057: reading a note freezes the view
       else look.update(dt);
     }
     // US-062: real pause - freeze player/physics/quest/animations/triggers
@@ -1860,7 +1860,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     }
     if (mode === 'world' && playerHandle && !paused) {
       if (clockDriver && !titleMenuActive) { const w = engine.world; tickClock(w.state, dt, clockCfg); clockDriver.update(w.state[CLOCK_KEY]); } // DN-03: stops on title/pause (this block), runs through respawn/restart/travel
-      if (ending || uiLocked || vLocked()) {
+      if (ending || uiLocked || vLocked() || isNoteOpen()) { // OB-057 (owner): no movement while a note is open
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {
         controls.forward = (input.isDown(gameKeys.forward) ? 1 : 0) - (input.isDown(gameKeys.backward) ? 1 : 0);

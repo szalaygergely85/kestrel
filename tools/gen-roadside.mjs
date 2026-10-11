@@ -242,6 +242,6 @@ if (bad.length) { console.error('PLACEMENT PROBLEMS:\n' + bad.join('\n')); if (!
 // errands.js turns any dialogue-less giver entity into a [E] Inspect interactable). Text keys are data only (no writer text yet).
 for (const [id, x, y, what] of [['rsInspectWagon', 1347, 1058, 'abandoned cart'], ['rsInspectWell', 994, 1051.5, 'dry well'], ['rsInspectShrine', 1005, 1046, 'collapsed wayside shrine'], ['rsInspectWoodpile', 1461.4, 1016.2, "woodcutter's corner"]])
   ents.push({ id, type: 'prop', x, y, z: 'ground', components: { inspect: { text: 'inspect.' + id.slice(9).toLowerCase() } }, note: 'QL-B2 follow-up inspect anchor: ' + what + ' (gen-roadside.mjs)' });
-data.structures.push(...applyNudges(out)); data.entities.push(...ents);
+data.structures.push(...applyNudges(out).filter((s) => !/Prop_Vine/.test(s.mesh))); // OB-047 (owner): no hanging vines (floated as green blobs); kept in the stream so ids/RNG stay stable data.entities.push(...ents);
 console.log(`roadside: ${out.length} meshes, ${ents.length} entities`);
 if (!dry) { fs.writeFileSync(FILE, stringifyContent(data), 'utf8'); console.log('wrote', FILE); }

@@ -10,7 +10,7 @@
 // into a module-level "open this note" request plus the optional persistent
 // read mark (`world.state['notes.<noteId>.read'] = true`, uiStyle.note.open
 // .state - nothing reads it yet, but world.state serializes so it survives a
-// save/load). The actual per-frame fade + `[E]`/`[Esc]` close + the paper
+// save/load). The actual per-frame fade + E / Esc close + the paper
 // panel draw live here too (called from main.js's fixed step / render loop,
 // next to the other quest UI gates), so the note panel knows no `ASSETS` of
 // its own - main.js hands it `notes` (ASSETS.notes) + `uiStyle` (ASSETS
@@ -44,7 +44,8 @@ let sceneMul = 0.35;      // uiStyle.note.sceneDim.bgMul (whole scene while open
 // changes (or after a reset).
 let noteRender = null; // { id, rows, h, panelX, panelY, titleLine, footerLine, textLines, titleX, footerStartX }
 
-export const FOOTER_TEXT = '<< CLOSE >>'; // OB-048a: clickable close line (owner: never print an Esc hint; E / Esc / click all close)
+const WALK_AWAY_ON = false;
+export const FOOTER_TEXT = '[E] Close'; // OB-056: say the key (was '<< CLOSE >>'); OB-048a: clickable close line (owner: never print an Esc hint; E / Esc / click all close)
 export const WALK_AWAY_MARGIN = 0.5; // OB-048b: note closes past min(radius, interact reach 1.8) + this (m)
 const INTERACT_REACH = 1.8; // engine/world/interaction.js DEFAULT_REACH
 let srcX = 0, srcY = 0, srcZ = 0, srcLimit = -1; // source interactable pos + close distance (-1 = no source: no walk-away)
@@ -120,7 +121,7 @@ export function noteRead(ctx) {
   noteId = id;
   noteState = 'opening';
   noteA = 0;
-  if (typeof def.x === 'number' && typeof def.y === 'number') { // OB-048b: remember the source for the walk-away close
+  if (WALK_AWAY_ON && typeof def.x === 'number' && typeof def.y === 'number') { // OB-048b walk-away: OFF (OB-055 def x/y are level-local vs the world eye -> closed at once; OB-057 freezes movement instead) // OB-048b: remember the source for the walk-away close
     srcX = def.x; srcY = def.y; srcZ = typeof def.z === 'number' ? def.z : 0;
     const r = (typeof def.radius === 'number' && def.radius < INTERACT_REACH) ? def.radius : INTERACT_REACH;
     srcLimit = r + WALK_AWAY_MARGIN;

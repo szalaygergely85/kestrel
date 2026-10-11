@@ -165,7 +165,7 @@ fixVine();
 const full = JSON.parse(text);
 full.structures = full.structures.filter((s) => !idRe.test(s.id));
 const last = full.structures.findLastIndex((s) => /^road[SLWN]\d+$/.test(s.id));
-full.structures.splice(last + 1, 0, ...out);
+full.structures.splice(last + 1, 0, ...out.filter((s) => !/Prop_Vine/.test(s.mesh))); // OB-047 (owner): no hanging vines; kept in the stream so ids/RNG stay stable
 const res = stringifyContent(full);
 console.log(`${PREFIX}: ${out.length} props (seed ${SEED}; ground types path ${TYPE_PATH} water ${TYPE_WATER})\n` + log.join('\n'));
 if (!dry) { fs.writeFileSync(FILE, res, 'utf8'); console.log('wrote', FILE, (res.length / 1024).toFixed(1) + ' KB'); }
