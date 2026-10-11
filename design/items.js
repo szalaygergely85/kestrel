@@ -581,5 +581,6 @@
   defs.shield.icon = A.items.eqIcons.shield; defs.shield.glyph = { ch: 'O', c: 'wood' };
   defs.bow.icon = A.items.eqIcons.bow;
 
+  if (typeof module === 'object' && module && module.exports && typeof require === 'function') require('./itemsWeapons.js'); // EQ-20 (browser: own script tag)
   if (typeof module === 'object' && module && module.exports) module.exports = { items: A.items, lootSprites: A.lootSprites };
 })(typeof window !== 'undefined' ? window : globalThis);

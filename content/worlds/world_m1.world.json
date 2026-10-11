@@ -2399,6 +2399,7 @@
     {"id": "owGate", "note": "MAP-26 anchor owGate: south-east gate gap of the Outwall palisade (quest area owPath r10, QL-21)", "type": "prop", "x": 942, "y": 925.33, "z": "ground"},
     {"id": "owBoard", "components": {"inspect": {"text": "note.owBoard"}}, "note": "MAP-26 anchor owBoard: notice board on the Outwall plaza (text note.owBoard = NEEDS WRITER)", "type": "prop", "x": 921, "y": 945, "z": "ground"},
     {"id": "owForge", "note": "MAP-26 anchor owForge: forge shell south of the plaza (open front, hearth smoke)", "type": "prop", "x": 912, "y": 935, "z": "ground"},
+    {"id": "chestForge", "components": {"voxel": {"anim": "closed", "loop": false, "model": "chestSmall"}}, "note": "EQ-20 Outwall forge chest (gear.main.sword.sturdy; table chestDefs.js), beside the forge anchor owForge", "type": "prop", "x": 915, "y": 933, "yawDeg": 180, "z": "ground"},
     {"id": "owPathPost", "note": "MAP-26 anchor owPathPost: cairn at the start of the Outwall track north-west of the ford (QL-21)", "type": "prop", "x": 985, "y": 1040, "z": "ground"},
     {"id": "gooseFarm", "note": "MAP-26 anchor gooseFarm: centre of the goose pen (QL-21 mq.ow.fence area, 5 wolves)", "type": "prop", "x": 860, "y": 990, "z": "ground"},
     {"id": "barleyGate", "note": "MAP-26 anchor barleyGate: gate of the barley farm south-east of the settlement", "type": "prop", "x": 975, "y": 900, "z": "ground"},

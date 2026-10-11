@@ -6,6 +6,7 @@
 import { swapSet } from './sim/equipment.js';
 import { createBowDraw, BOW_SHOT, BOW_DRY } from './sim/bowDraw.js';
 import { arrowDamage } from './sim/arrows.js';
+import { refreshWeaponMods, weaponMods } from './sim/weaponStats.js'; // EQ-20
 
 export const SWAP_STEPS = 18;       // 0.3 s lower/raise
 export const PICKUP_RADIUS = 1.1;   // walk-over reach (m)
@@ -16,7 +17,7 @@ const EYE_FWD = 0.5;                // arrows leave 0.5 m in front of the eye
 export function registerGearItems(hands, defs, stub) {
   for (const id of Object.keys(defs)) {
     const e = defs[id].equip;
-    if (e && (e.slot === 'off' || e.slot === 'ranged')) hands.register(id, stub());
+    if (e && (e.slot === 'off' || e.slot === 'ranged' || (e.slot === 'main' && id !== 'sword'))) hands.register(id, stub()); // EQ-20: main-slot tier swords are armed by id too
   }
 }
 
@@ -49,21 +50,23 @@ export function createEquipPlay(o) {
     /** After hands.step. c = {gate, fx, fy, fz (unit look), ex, ey, ez (eye), px, py, pz (feet), interact} */
     post(player, c) {
       const comp = player.components, eq = comp && comp.equipment;
-      if (!eq) { shield.step(false, false, c.fx, c.fy); api.swordDown = hands.downOf('sword'); arrows.step(); return; }
+      if (!eq) { refreshWeaponMods(null, defs); shield.step(false, false, c.fx, c.fy); api.swordDown = hands.downOf('sword'); arrows.step(); return; }
+      refreshWeaponMods(eq, defs); // EQ-20: tier multipliers of what is equipped
+      bow.setDrawMul(weaponMods.drawMul);
       const melee = eq.set === 'melee';
       const hasShield = melee && eq.off !== null && swapT === 0;
       const sDown = hasShield && c.gate && eq.off !== null && hands.downOf(eq.off);
       // unit 2D look for the block arc (fz tilts the vector; renormalise the horizontal part)
       const h = Math.sqrt(c.fx * c.fx + c.fy * c.fy) || 1;
       shield.step(sDown, hasShield, c.fx / h, c.fy / h);
-      api.swordDown = melee && swapT === 0 && !shield.raised && hands.downOf('sword');
+      api.swordDown = melee && swapT === 0 && !shield.raised && hands.downOf(eq.main !== null && eq.main !== undefined ? eq.main : 'sword');
 
       const ranged = eq.set === 'ranged' && eq.ranged !== null && swapT === 0;
       if (!c.gate || swapT > 0) bow.cancel();
       const bDown = ranged && c.gate && hands.downOf(eq.ranged);
       const ev = bow.step(bDown, ranged && c.gate, eq.quiver ? eq.quiver.n : 0);
       if (ev === BOW_SHOT) {
-        const dmg = arrowDamage(o.swordDamage, bow.shotFrac);
+        const dmg = arrowDamage(o.swordDamage * weaponMods.bowDmgMul, bow.shotFrac);
         arrows.shoot(eq, c.ex + c.fx * EYE_FWD, c.ey + c.fy * EYE_FWD, c.ez + c.fz * EYE_FWD, c.fx, c.fy, c.fz, bow.shotFrac, dmg);
       } else if (ev === BOW_DRY) o.say('No arrows');
 

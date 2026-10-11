@@ -154,6 +154,7 @@ const unaccountedFor = allJsonFiles.filter((rel) => {
   if (rel.endsWith('.barks.json')) return false; // CH1-05/CH1-06 bark lines, fetched by main.js (no loadPack kind), checked by validate-content.mjs
   if (rel === 'items/loot.json') return false; // EQ-11 data only, schema/refs checked by validate-content.mjs
   if (rel === 'items/recipes.json') return false; // RECIPES-01 data only, schema/refs checked by validate-content.mjs
+  if (rel === 'loot/weapons.json') return false; // EQ-20 data only, mirrored + checked by game/js/quest/sim/weaponTiers.test.js
   if (rel === 'chart/world_m1.chart.json') return false; // MAP-01b baked data, validated/freshness-checked by bake-chart.test.mjs
   if (rel.startsWith('vox/') && rel.endsWith('.map.json')) return false;
   if (rel.startsWith('meshes/') && rel.endsWith('.mesh.json')) return false;
