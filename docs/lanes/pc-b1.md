@@ -440,3 +440,6 @@ Gates: worldClock.test (5760 steps/day, wrap, round trip), main.js --check, chec
   Behaviour change: Enter on a list row now opens the detail (it used to close); Done main + onJournal still hands off to the journal. Open: main.js may still move the player on A/D/E while the log is open (not checked; keys are consumed via input.consumePressed only).
 
 - text-wire (kestrel-4, 2026-10-11): notes.js note.leave/note.steelHush reworded per QL-W1; wake.js drawEyelid now resolves palette NAME edgeColor to hex (resolveHex, +test); bear.home / Sealed Gate texts NOT wired: no slot exists (no burl.home dialogue node in content/dialogue). Suites + validate-content pass.
+
+- merge QL-J + QL-03/01 (kestrel-4, 2026-10-11): questLog.js resolved (committed f56b64b9): tabs MAIN|SIDE each with Offered/Active/Done; T track + X abandon on selected row in list and detail; detail shows [T] state and "Talk to" for offered. questLine.test.js now switches to SIDE tab (KeyD).
+  bear.home wired (uncommitted): 2 writer lines + setFlag s.burl.home.met; new node bear.home.again ("Sit a while...") via entry s.burl.home.met; bearDialogue.test.js counts updated. Not wired: flow into blue.offer. Suites + validate-content pass.
