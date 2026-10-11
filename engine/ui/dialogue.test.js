@@ -58,7 +58,7 @@ ok('compile: frozen, int node indices', Object.isFrozen(comp) && Object.isFrozen
 { let threw = false; try { compileDialogue({}); } catch (e) { threw = true; } ok('compile throws on an invalid file', threw); }
 
 // ---- runner -------------------------------------------------------------------
-const mk = (opts) => { const ev = []; const r = createDialogueRunner(Object.assign({ onEvent: (n, a) => ev.push(n + ':' + a) }, opts)); return { r, ev }; };
+const mk = (opts) => { const ev = []; const r = createDialogueRunner(Object.assign({ pageLines: 1, onEvent: (n, a) => ev.push(n + ":" + a) }, opts)); return { r, ev }; };
 {
   const { r, ev } = mk({ cps: 10, holdSec: 0.5 });
   const f = mkFlags();
@@ -178,6 +178,37 @@ const msgs = (e) => (e.errors || [e]).map((x) => `${x.field}: ${x.message}`).joi
   const camel = def(); camel.id = 'bearTalk';
   const e3 = await load({ 'c.dialogue.json': camel }, ['c.dialogue.json']);
   ok('loadPack: camelCase dialogue id refused', e3 instanceof Error && /bad or missing id/.test(msgs(e3)), msgs(e3));
+}
+
+// ---- OB-022 grouping: same speaker merges into one page, E count drops -----------
+{
+  const g = def();
+  g.nodes.hello.clip = undefined; delete g.nodes.hello.clip;
+  g.nodes.hello.next = 'more';
+  g.nodes.more = { speaker: 'bear', lines: ['Third.'], setFlag: 'moreSeen', next: 'ask' };
+  const c = compileDialogue(g);
+  const run = (opts, pre) => { const r = createDialogueRunner(opts), f = mkFlags(); r.open(c, f); const pages = []; let presses = 0;
+    for (let i = 0; i < 40 && r.state !== 'ended'; i++) {
+      if (r.state === 'typing' || r.state === 'waiting') { if (r.state === 'typing') pages.push(r.speakerLabel + ': ' + r.line); r.press(); presses++; }
+      else if (r.state === 'choosing') { pages.push('CHOICES'); r.selected = 0; r.choose(); }
+    } return { pages, presses, f }; };
+  const one = run({ pageLines: 1 }), grp = run({});
+  ok('group: ungrouped = one press per line', one.presses > grp.presses && one.pages.filter((p) => p.startsWith('Burl')).length === 4, one.pages.join('|'));
+  ok('group: lines of one speaker (across next) merge into one page', grp.pages[0] === 'Burl: Hi, you. Second line Third.', grp.pages.join('|'));
+  ok('group: absorbed node flag still fires', grp.f.s.has('moreSeen'));
+  ok('group: speaker change splits (YOU page), choices split, then reply', grp.pages[1] === 'You: Well?' && grp.pages[2] === 'CHOICES' && grp.pages[3] === 'Burl: Thanks', grp.pages.join('|'));
+  const split = run({ pageChars: 20 });
+  ok('group: page overflow splits', split.pages[0] === 'Burl: Hi, you. Second line' && split.pages[1] === 'Burl: Third.', split.pages.join('|'));
+  const cap = run({ pageLines: 2 });
+  ok('group: pageLines cap splits', cap.pages[0] === 'Burl: Hi, you. Second line' && cap.pages[1] === 'Burl: Third.', cap.pages.join('|'));
+  // typewriter: first E completes the whole page, second E advances
+  const r = createDialogueRunner({}), f = mkFlags(); r.open(c, f);
+  r.press(); ok('group: E once completes the reveal', r.state === 'waiting' && r.visibleChars === r.line.length);
+  r.press(); ok('group: E again advances', r.speakerLabel === 'You');
+  // clip node is never absorbed
+  const k = def(); k.nodes.hello.next = 'more'; k.nodes.more = { speaker: 'bear', lines: ['Clip.'], clip: 'nod', next: 'ask' };
+  const rk = createDialogueRunner({}); rk.open(compileDialogue(k), mkFlags());
+  ok('group: a clip node starts a new page', rk.line === 'Hi, you. Second line');
 }
 
 console.log(`${pass} pass, ${fail} fail`);

@@ -19,7 +19,7 @@ ok('loads (frozen), no warnings (all nodes reachable)', !!comp && Object.isFroze
 const mk = (...have) => { const s = new Set(have); return { s, has: (k) => s.has(k), set: (k) => s.add(k) }; };
 function walk(f) {
   const said = [], clips = [];
-  const r = createDialogueRunner({});
+  const r = createDialogueRunner({ pageLines: 1 });
   r.open(comp, f);
   for (let g = 0; g < 60 && r.state !== 'ended'; g++) {
     if (r.state === 'typing') { if (r.clip) clips.push(r.clip); said.push(r.speakerLabel + ': ' + r.line); r.press(); }
