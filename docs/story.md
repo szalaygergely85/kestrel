@@ -1433,3 +1433,7 @@ Notes:
 - On the lamps, "nobody comes to light it" and "the oil never seems to go down" are quiet wonder, with no magic word. "Trimmed low and even... skyworks neat" is a soft Maren echo (section 9.2): hope, not proof.
 - The nest is a `questPickup`. If a look-at would clash with the pickup prompt, drop `inspect.nest` and keep only `inspect.nest.empty`.
 - No `TODO-WRITER` or placeholder text was found in `content/quests/**`. All 18 QL-B2 rows have full lines. Animals get no barks.
+
+## M4 story quests (QL-09..12 text, programmer)
+
+Built from the QL-W lines above (no new voices). Quest rows in `content/quests/ch12/pack.json`: `sq.wreck.plate` (giver object `gondola`, fetch `boar.hide`, Brass Buckler), `sq.honey` (Burl -> Rook, `honeycomb`, 10 arrows + Rook's Hood = `gear.head.hood.worn`), `sq.rook.shiny` (Rook, 4 `brass.scrap` pickups brass1..4, Hunter's Bow + 10 arrows), `sq.packet` (giver object `packet`, deliver `packet` to the post, 20 arrows). New item texts: `honeycomb` "Honeycomb" / `Sticky gold. It is for the crow.`; `packet` "Cloth Packet" / `Tied with twine. FOR THE FORD POST.` Lines not in the tables above: `sq.wreck.plate` active `A plate and a strap. Boar hide would do.` / done `The gondola creaks. The plate is yours now.`; `sq.honey` active `The comb is for the crow. Do not lick it.` / done `Square with the crow. Good. I hate owing.`; `sq.rook.shiny` done `Shiny things. I keep them. You keep the bow.`; `sq.packet` active `The packet. The ford post, by the crossroads.` / done `The basket waits. The tags turn in the wind.`

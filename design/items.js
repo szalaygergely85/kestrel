@@ -290,6 +290,23 @@
     icon: icon([' ._/|', '/%o=/', "`~-' "],
                [' ABAB', 'BvVBJ', 'JvjJ '])
   };
+  // M4 story quests (QL-10 sq.honey, QL-12 sq.packet): two quest carry items, no use.
+  defs.honeycomb = {
+    id: 'honeycomb', name: 'Honeycomb', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'Sticky gold. It is for the crow.',
+    use: { none: 'Quest item - bring it to Rook (sq.honey)' },
+    glyph: { ch: '%', c: 'brass' },
+    icon: icon([' ._. ', '(%o%)', " '-' "],
+               [' AAA ', 'AJAJA', ' AAA '])
+  };
+  defs.packet = {
+    id: 'packet', name: 'Cloth Packet', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'Tied with twine. FOR THE FORD POST.',
+    use: { none: 'Quest item - leave it at the trade post (sq.packet)' },
+    glyph: { ch: '=', c: 'brass' },
+    icon: icon(['.---.', '|=+=|', "'---'"],
+               ['hhhhh', 'hAfAh', 'hhhhh'])
+  };
   // CH1-D2 (architecture.md 38.37 item 3): the crystal the boars were rooting for. Name + desc = docs/story.md CH1-W3
   // (item.aetherCrystal.*; the in-world name avoids "aether"). stackMax 1. The inventory has NO key-item / no-drop tag
   // today (game/js/quest/sim/inventory.js), so this is a plain item of kind 'key'; the real gate is the flag

@@ -2117,6 +2117,199 @@
           "The brass shines by my bed. Tell the crow so."
         ]
       }
+    },
+    {
+      "id": "sq.wreck.plate",
+      "title": "Gondola Plate",
+      "site": "gondola",
+      "steps": [
+        {
+          "template": "fetch",
+          "params": {
+            "item": "boar.hide"
+          },
+          "objText": "Find hide for a strap"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "shield",
+            "n": 1
+          }
+        ]
+      },
+      "abandonable": true,
+      "band": 2,
+      "returnText": "Bring the hide to the gondola",
+      "lines": {
+        "offer": [
+          "The side plate hangs by one rivet.",
+          "Bent round. Light. A strap would hold it."
+        ],
+        "active": [
+          "A plate and a strap. Boar hide would do."
+        ],
+        "ready": [
+          "Hide strap, brass plate. A buckler now.",
+          "Hold right mouse to block."
+        ],
+        "done": [
+          "The gondola creaks. The plate is yours now."
+        ]
+      }
+    },
+    {
+      "id": "sq.honey",
+      "title": "Honey for a Crow",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "deliver",
+          "params": {
+            "item": "honeycomb",
+            "to": "rook"
+          },
+          "objText": "Bring Burl's honeycomb to Rook"
+        }
+      ],
+      "opensAfter": [
+        "mq.bend.call"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          },
+          {
+            "id": "gear.head.hood.worn",
+            "n": 1
+          }
+        ]
+      },
+      "abandonable": true,
+      "band": 3,
+      "returnText": "Bring Burl's honeycomb to Rook",
+      "lines": {
+        "offer": [
+          "That crow on the old stone. Loud thing.",
+          "Take it this comb. Tell it we're square."
+        ],
+        "active": [
+          "The comb is for the crow. Do not lick it."
+        ],
+        "ready": [
+          "Sticky. From the bear? Hm. Square, then.",
+          "Sticks with feathers. Hunters lose them.",
+          "And this. On a branch. Fits a fell-bird."
+        ],
+        "done": [
+          "Square with the crow. Good. I hate owing."
+        ]
+      }
+    },
+    {
+      "id": "sq.rook.shiny",
+      "title": "Shiny Things",
+      "site": "rook",
+      "steps": [
+        {
+          "template": "collect",
+          "params": {
+            "item": "brass.scrap",
+            "count": 4
+          },
+          "objText": "Find four brass scraps"
+        }
+      ],
+      "opensAfter": [
+        "mq.bend.call"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "bow",
+            "n": 1
+          },
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
+      "abandonable": true,
+      "band": 3,
+      "returnText": "Bring the brass to Rook",
+      "lines": {
+        "offer": [
+          "Your sky-boat dropped shinies. Everywhere.",
+          "Four brass bits. Bring them. I trade fair."
+        ],
+        "active": [
+          "Four brass bits. Your sky-boat sheds them."
+        ],
+        "ready": [
+          "One, two, three, four. Good count.",
+          "A bow, from the river. Not shiny. Yours."
+        ],
+        "done": [
+          "Shiny things. I keep them. You keep the bow."
+        ]
+      }
+    },
+    {
+      "id": "sq.packet",
+      "title": "The Oilcloth Packet",
+      "site": "packet",
+      "steps": [
+        {
+          "template": "deliver",
+          "params": {
+            "item": "packet",
+            "to": "post"
+          },
+          "objText": "Leave the packet at the ford post"
+        }
+      ],
+      "opensAfter": [
+        "mq.bend.call"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 20
+          }
+        ]
+      },
+      "abandonable": true,
+      "band": 3,
+      "returnText": "Leave the packet at the ford post",
+      "lines": {
+        "offer": [
+          "Oilcloth, tied with twine.",
+          "Stitched on the cloth: FOR THE FORD POST.",
+          "It has waited here a long time."
+        ],
+        "active": [
+          "The packet. The ford post, by the crossroads."
+        ],
+        "ready": [
+          "A basket on a post. Arrows inside, and a tag:",
+          "TAKEN. LEAVE WHAT YOU CAN SPARE.",
+          "Packet left. Arrows taken. Fair trade."
+        ],
+        "done": [
+          "The basket waits. The tags turn in the wind."
+        ]
+      }
     }
   ]
 }
