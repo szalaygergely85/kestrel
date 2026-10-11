@@ -683,6 +683,10 @@ export function validateContent(ASSETS, opts = {}) {
     for (const key of ['npc', 'turnIn']) if (def.giver?.[key] !== undefined) check(actorIds.has(def.giver[key]), `${path}.giver.${key}`, `"${def.giver[key]}" is no world entity or level prop`);
     for (const objective of def.objectives) if (objective.when?.type === 'deliver') check(actorIds.has(objective.when.to), `${path}.objectives[${objective.id}].when.to`, `hand-in "${objective.when.to}" is no world entity or level prop`);
     for (const [i, r] of (def.reward?.items || []).entries()) check(itemIds.has(r.id), `${path}.reward.items[${i}].id`, `reward item "${r.id}" not found in item defs`);
+    // EQ-13: given / required items exist; requireEquipped names wearable gear (equip slot) or held items.
+    for (const key of ['giveOnAccept', 'giveOnTalk']) for (const [i, r] of (def[key] || []).entries()) check(itemIds.has(r.id), `${path}.${key}[${i}].id`, `item "${r.id}" not found in item defs`);
+    if (def.requireItem !== undefined) check(itemIds.has(def.requireItem), `${path}.requireItem`, `item "${def.requireItem}" not found in item defs`);
+    for (const id of def.requireEquipped || []) check(itemIds.has(id) && !!itemDefs[id]?.equip, `${path}.requireEquipped`, `"${id}" is no equippable item`);
   }
   // QL-02: requires point at known quests/steps and form no cycle.
   const byQuestId = new Map(quests.map(q => [q.def?.id, q]));
@@ -1064,6 +1068,23 @@ export function loadQuestFiles(dir) {
   return { quests, errors, areas, areaPath };
 }
 
+/** QL-B1: content/quests/index.json packs -> expanded giver defs (sites.json + rewards.json + item defs), validated like plain quest files. */
+export async function loadPackQuests(dir, itemDefs = {}) {
+  const quests = [], errors = [];
+  const read = (f) => JSON.parse(readFileSync(`${dir}/${f}`, 'utf8'));
+  let index; try { index = read('index.json'); } catch (e) { return { quests, errors }; }
+  if (!Array.isArray(index.packs) || !index.packs.length) return { quests, errors };
+  const { expandAll } = await import('../game/js/quest/sim/templates.js');
+  try {
+    const packs = index.packs.map(p => read(`${p}/pack.json`));
+    const items = Object.values(itemDefs).map(d => ({ id: d.id, slot: d.equip?.slot, tier: d.equip?.tier }));
+    const ex = expandAll(packs, { sites: read('sites.json').sites, rewards: read('rewards.json').tables, items, strictText: true });
+    for (const e of ex.errors) errors.push(`pack:${e.region}:${e.id}: ${e.message}`);
+    for (const def of ex.defs) quests.push({ path: `pack:${def.id}`, def });
+  } catch (e) { errors.push(`content/quests packs: ${e.message}`); }
+  return { quests, errors };
+}
+
 export function loadRecipeFile(path) {
   try { return { recipeFile: JSON.parse(readFileSync(path, 'utf8')), recipePath: path, errors: [] }; }
   catch (e) { return { recipeFile: null, recipePath: path, errors: [`${path}: recipe JSON read/parse failed: ${e.message}`] }; }
@@ -1082,6 +1103,8 @@ async function main() {
   const questFiles = loadQuestFiles(fileURLToPath(new URL('../content/quests', import.meta.url)));
   const recipeFile = loadRecipeFile(fileURLToPath(new URL('../content/items/recipes.json', import.meta.url)));
   const lootFile = loadLootFile(fileURLToPath(new URL('../content/items/loot.json', import.meta.url)));
+  const packQuests = await loadPackQuests(fileURLToPath(new URL('../content/quests', import.meta.url)), ASSETS?.items?.defs);
+  questFiles.quests.push(...packQuests.quests); questFiles.errors.push(...packQuests.errors);
   const { errors: allErrors, warnings, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, dialogueFilesDir, quests: questFiles.quests, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile, ...lootFile });
   allErrors.push(...questFiles.errors);
   allErrors.push(...lootFile.errors);

@@ -38,6 +38,12 @@ export function validateGiverQuest(def) {
     if (!Array.isArray(def.giveOnAccept)) throw new Error('quest: invalid giveOnAccept');
     for (const it of def.giveOnAccept) if (!it || typeof it.id !== 'string' || !Number.isInteger(it.n) || it.n < 1) throw new Error('quest: invalid giveOnAccept item');
   }
+  if (def.giveOnTalk !== undefined) { // EQ-13: same shape as giveOnAccept (given when the quest is accepted by talking to the giver)
+    if (!Array.isArray(def.giveOnTalk)) throw new Error('quest: invalid giveOnTalk');
+    for (const it of def.giveOnTalk) if (!it || typeof it.id !== 'string' || !Number.isInteger(it.n) || it.n < 1) throw new Error('quest: invalid giveOnTalk item');
+  }
+  if (def.requireItem !== undefined && (typeof def.requireItem !== 'string' || !def.requireItem)) throw new Error('quest: invalid requireItem');
+  if (def.requireEquipped !== undefined && (!Array.isArray(def.requireEquipped) || !def.requireEquipped.length || !def.requireEquipped.every(x => typeof x === 'string' && x))) throw new Error('quest: invalid requireEquipped');
   if (def.reward !== undefined) {
     if (!def.reward || !Array.isArray(def.reward.items)) throw new Error('quest: invalid reward');
     for (const it of def.reward.items) if (!it || typeof it.id !== 'string' || !Number.isInteger(it.n) || it.n < 1) throw new Error('quest: invalid reward item');
@@ -132,7 +138,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     const e = entries[i];
     e.accepted = true; e.seq = ++seqCounter; book.version++;
     e.given = []; // QL-04: items handed over on accept (taken back on abandon)
-    if (e.def.giveOnAccept && book.packOps && book.packOps.add) for (const it of e.def.giveOnAccept) { const k = book.packOps.add(it.id, it.n); if (k > 0) e.given.push({ id: it.id, n: k }); }
+    if (book.packOps && book.packOps.add) for (const list of [e.def.giveOnAccept, e.def.giveOnTalk]) if (list) for (const it of list) { const k = book.packOps.add(it.id, it.n); if (k > 0) e.given.push({ id: it.id, n: k }); }
     emit('quest:accepted', id);
     settle();
     return true;
@@ -142,6 +148,9 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     const i = byId.get(id);
     if (i === undefined || i === 0 || statusOf(i) !== READY) return null;
     const e = entries[i];
+    // EQ-13: hand-in needs the item in the pack (requireItem, kept) and the gear worn (requireEquipped; packOps.equipped(id) is set by the game)
+    if (e.def.requireItem && (!book.packOps || book.packOps.count(e.def.requireItem) < 1)) return null;
+    if (e.def.requireEquipped && (!book.packOps || !book.packOps.equipped || !e.def.requireEquipped.every(id => book.packOps.equipped(id)))) return null;
     const dl = e.def.objectives.filter(o => o.when.type === 'deliver').map(o => o.when);
     if (dl.length) { // QUESTS-01: items must still be in the pack; they leave it at hand-in
       if (!book.packOps) return null;

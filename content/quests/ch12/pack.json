@@ -1,0 +1,840 @@
+{
+  "version": 1,
+  "region": "ch12",
+  "band": [
+    1,
+    5
+  ],
+  "quests": [
+    {
+      "id": "sq.tm.nub",
+      "title": "Where's Nub?",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "waystone"
+            ]
+          },
+          "objText": "Check the tracks by the stone"
+        },
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "towerDoor"
+            ]
+          },
+          "objText": "Follow them to the tower door"
+        },
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "roadWest"
+            ]
+          },
+          "objText": "Follow the prints down the road"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "heart.piece",
+            "n": 1
+          }
+        ]
+      },
+      "giveOnTalk": [
+        {
+          "id": "bow",
+          "n": 1
+        },
+        {
+          "id": "arrow",
+          "n": 10
+        }
+      ],
+      "abandonable": false,
+      "band": 1,
+      "returnText": "Tell Burl what you found"
+    },
+    {
+      "id": "sq.burl.boars.n",
+      "title": "The North Boars",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "kill",
+          "params": {
+            "ids": [
+              "boarN1",
+              "boarN2",
+              "boarN3"
+            ],
+            "count": 3
+          },
+          "objText": "Drive off the three north boars"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 1
+          }
+        ]
+      },
+      "band": 1,
+      "returnText": "Tell Burl the north is quiet"
+    },
+    {
+      "id": "sq.burl.boars.w",
+      "title": "The West Boars",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "kill",
+          "params": {
+            "ids": [
+              "boarW1",
+              "boarW2"
+            ],
+            "count": 2
+          },
+          "objText": "Drive off the two west boars"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        },
+        {
+          "quest": "sq.burl.boars.n",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
+      "band": 1,
+      "returnText": "Tell Burl the west is quiet"
+    },
+    {
+      "id": "sq.burl.boars.s",
+      "title": "The South Boars",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "kill",
+          "params": {
+            "ids": [
+              "boarS1",
+              "boarS2",
+              "boarS3"
+            ],
+            "count": 3
+          },
+          "objText": "Drive off the three south boars"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        },
+        {
+          "quest": "sq.burl.boars.w",
+          "done": true
+        }
+      ],
+      "reward": {
+        "table": "gear.t1"
+      },
+      "band": 2,
+      "returnText": "Tell Burl the south is quiet"
+    },
+    {
+      "id": "sq.burl.meat",
+      "title": "Meat for Winter",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "fetch",
+          "params": {
+            "item": "boar.meat"
+          },
+          "objText": "Bring Burl a piece of boar meat"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 1
+          }
+        ]
+      },
+      "band": 1,
+      "returnText": "Take the boar meat to Burl"
+    },
+    {
+      "id": "sq.burl.stone",
+      "title": "Check on the Stone",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "waystone"
+            ]
+          },
+          "objText": "Go and see the waystone"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 5
+          }
+        ]
+      },
+      "band": 1,
+      "returnText": "Tell Burl the stone hums"
+    },
+    {
+      "id": "sq.burl.hint",
+      "title": "The Writing Stone",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "hintStone"
+            ]
+          },
+          "objText": "Find the stone with writing on it"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        },
+        {
+          "quest": "sq.burl.stone",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 1
+          }
+        ]
+      },
+      "band": 1,
+      "returnText": "Tell Burl what the stone says"
+    },
+    {
+      "id": "sq.burl.tower",
+      "title": "Look at the Tower Door",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "towerDoor"
+            ]
+          },
+          "objText": "Look at the tower door"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 5
+          }
+        ]
+      },
+      "band": 1,
+      "returnText": "Tell Burl about the door"
+    },
+    {
+      "id": "sq.burl.scout",
+      "title": "Scout the River",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "riverBank"
+            ]
+          },
+          "objText": "Walk down to the river bank"
+        },
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "fordWest"
+            ]
+          },
+          "objText": "Reach the ford"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        },
+        {
+          "quest": "sq.burl.boars.s",
+          "done": true
+        }
+      ],
+      "reward": {
+        "gear": {
+          "slots": [
+            "body",
+            "legs"
+          ],
+          "tier": 1
+        }
+      },
+      "band": 2,
+      "returnText": "Tell Burl about the river"
+    },
+    {
+      "id": "sq.burl.ask",
+      "title": "Word from the Crossroads",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "talk",
+          "params": {
+            "to": "notePost"
+          },
+          "objText": "Read the note post at the crossroads"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        },
+        {
+          "quest": "sq.burl.scout",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 1
+          }
+        ]
+      },
+      "band": 4,
+      "returnText": "Tell Burl what the post says"
+    },
+    {
+      "id": "sq.burl.walk",
+      "title": "Walk Burl to the Bend",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "escort",
+          "params": {
+            "npc": "bear",
+            "to": "relayBend"
+          },
+          "objText": "Walk with Burl to the Bend Relay"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
+      "band": 1
+    },
+    {
+      "id": "sq.burl.parcel",
+      "title": "Meat for the Basket",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "deliver",
+          "params": {
+            "item": "boar.meat",
+            "count": 2,
+            "to": "post"
+          },
+          "objText": "Leave the meat in the post basket"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        },
+        {
+          "quest": "sq.burl.meat",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 20
+          }
+        ]
+      },
+      "band": 2
+    },
+    {
+      "id": "sq.post.spare",
+      "title": "Leave What You Can Spare",
+      "site": "post",
+      "steps": [
+        {
+          "template": "deliver",
+          "params": {
+            "item": "arrow",
+            "count": 3,
+            "to": "notePost"
+          },
+          "objText": "Carry the arrows to the note post"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "burl.boars",
+          "done": true
+        },
+        {
+          "flag": "burl.home"
+        },
+        {
+          "quest": "sq.burl.parcel",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 1
+          }
+        ]
+      },
+      "band": 4
+    },
+    {
+      "id": "sq.straw",
+      "title": "Three Straw Men",
+      "site": "notePost",
+      "requires": [
+        {
+          "quest": "sq.tm.nub",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 20
+          }
+        ]
+      },
+      "band": 5,
+      "turnIn": "notePost",
+      "objectives": [
+        {
+          "id": "t1",
+          "text": "Hit the first straw man",
+          "when": {
+            "type": "flag",
+            "id": "target1.hit",
+            "equals": true
+          }
+        },
+        {
+          "id": "t2",
+          "text": "Hit the second straw man",
+          "when": {
+            "type": "flag",
+            "id": "target2.hit",
+            "equals": true
+          }
+        },
+        {
+          "id": "t3",
+          "text": "Hit the third straw man",
+          "when": {
+            "type": "flag",
+            "id": "target3.hit",
+            "equals": true
+          }
+        }
+      ],
+      "returnText": "Tell the note post it is done"
+    },
+    {
+      "id": "sq.rb.shield",
+      "title": "Left at the Bend",
+      "site": "relayBend",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "fordWest"
+            ]
+          },
+          "objText": "Carry the shield to the ford"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "m1",
+          "step": "relay1"
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 1
+          }
+        ]
+      },
+      "giveOnTalk": [
+        {
+          "id": "shield",
+          "n": 1
+        }
+      ],
+      "requireEquipped": [
+        "shield"
+      ],
+      "turnIn": "relayFord",
+      "abandonable": false,
+      "band": 2
+    },
+    {
+      "id": "sq.rb.regards",
+      "title": "Word for Burl",
+      "site": "relayBend",
+      "steps": [
+        {
+          "template": "talk",
+          "params": {
+            "to": "burl"
+          },
+          "objText": "Tell Burl the Bend relay is quiet"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "m1",
+          "step": "relay1"
+        },
+        {
+          "quest": "sq.rb.shield",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 5
+          }
+        ]
+      },
+      "band": 2
+    },
+    {
+      "id": "sq.rb.road",
+      "title": "Down the Road West",
+      "site": "relayBend",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "roadWest"
+            ]
+          },
+          "objText": "Walk the road west"
+        },
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "bendRelay"
+            ]
+          },
+          "objText": "Return to the Bend Relay"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "m1",
+          "step": "relay1"
+        },
+        {
+          "quest": "sq.rb.shield",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 5
+          }
+        ]
+      },
+      "band": 2
+    },
+    {
+      "id": "sq.fc.ford",
+      "title": "Wet Boots",
+      "site": "relayFord",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "riverBank"
+            ]
+          },
+          "objText": "Walk down to the river bank"
+        },
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "fordWest"
+            ]
+          },
+          "objText": "Cross to the west bank"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.river.road",
+          "step": "riverBank"
+        }
+      ],
+      "reward": {
+        "gear": {
+          "slot": "feet",
+          "tier": 2
+        }
+      },
+      "band": 4
+    },
+    {
+      "id": "sq.fc.smoke",
+      "title": "Smoke Watch",
+      "site": "relayFord",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "northLook"
+            ]
+          },
+          "objText": "Climb to the north look"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.river.road",
+          "step": "riverBank"
+        },
+        {
+          "quest": "sq.fc.ford",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
+      "band": 5
+    },
+    {
+      "id": "sq.fc.cross",
+      "title": "The Crossroads Arm",
+      "site": "relayFord",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "crossroads"
+            ]
+          },
+          "objText": "Reach the crossroads"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.river.road",
+          "step": "riverBank"
+        },
+        {
+          "quest": "sq.fc.smoke",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 1
+          }
+        ]
+      },
+      "band": 5
+    },
+    {
+      "id": "sq.fc.again",
+      "title": "Back Across",
+      "site": "relayFord",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "riverBank"
+            ]
+          },
+          "objText": "Come back to the river bank"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.river.road",
+          "step": "riverBank"
+        },
+        {
+          "quest": "sq.fc.cross",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
+      "band": 4
+    }
+  ]
+}

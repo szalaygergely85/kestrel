@@ -37,6 +37,10 @@
     "crossroads": {
       "world": "world_m1",
       "trigger": "crossroads"
+    },
+    "hintStone": {
+      "world": "world_m1",
+      "trigger": "hintStone"
     }
   }
 }
