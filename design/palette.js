@@ -1532,6 +1532,21 @@
   materials.fur_fox_light = fabricMat('WILDLIFE (EP-WILD v1.58). Fox lower flanks and muzzle bridge, squirrel tail fringe: pale orange.', 'furFoxLight', 0.90, 0.16,
     { a: { shade: 1.00 }, s: { shade: 0.92, tint: 'furFox', amount: 0.3 } },
     ['aaaa', 'asaa', 'aaaa', 'aaas']);
+  // WOLF-D1 (v1.60, design/models/voxel_wolf.js): grey wolf coat. Grizzled grey-brown back, a darker saddle / guard-hair
+  // cape, pale buff-grey legs, belly and cheeks (the throat / muzzle-side white reuses fur_cream). Appended last so no
+  // colour / material id moves; v2 records in detail-pass.js.
+  colors.furWolf = '#7c7466';       // grizzled grey-brown flanks, head, outer legs
+  colors.furWolfDark = '#3f3a34';   // saddle, dorsal cape, ear backs, tail tip, the muzzle-top stripe
+  colors.furWolfLight = '#b3aa98';  // pale buff-grey lower flanks, inner legs, belly, brows
+  materials.fur_wolf = fabricMat('WILDLIFE (WOLF-D1 v1.60). Grey wolf flanks and head: grizzled grey-brown, dark guard-hair ticks.', 'furWolf', 0.86, 0.15,
+    { a: { shade: 1.00 }, t: { shade: 0.84, tint: 'furWolfDark', amount: 0.4, glyph: "'" }, l: { shade: 1.07, tint: 'furWolfLight', amount: 0.3 } },
+    ['atal', 'aaaa', 'laat', 'ataa']);
+  materials.fur_wolf_dark = fabricMat('WILDLIFE (WOLF-D1 v1.60). Wolf saddle, dorsal cape, ear backs, tail tip: near-black grey.', 'furWolfDark', 0.72, 0.13,
+    { a: { shade: 1.00 }, h: { shade: 1.12, tint: 'furWolf', amount: 0.35, glyph: "'" } },
+    ['ahaa', 'aaaa', 'aaha', 'aaaa']);
+  materials.fur_wolf_light = fabricMat('WILDLIFE (WOLF-D1 v1.60). Wolf legs, belly, lower flanks, brows: pale buff-grey.', 'furWolfLight', 0.90, 0.16,
+    { a: { shade: 1.00 }, s: { shade: 0.90, tint: 'furWolf', amount: 0.35 } },
+    ['aaaa', 'asaa', 'aaaa', 'aaas']);
 
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)
