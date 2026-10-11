@@ -241,6 +241,22 @@
     icon: icon(['(#v#)', ' \\#/ ', '  v  '],
                ['LPddd', ' Ldd ', '  d  '])
   };
+  defs['relay.mirror'] = {
+    id: 'relay.mirror', name: 'Relay Glass', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'Round, silvered, scratched by claws.',
+    use: { none: 'Quest item - the Ford Relay needs it (mq.ford.mirror)' },
+    glyph: { ch: 'o', c: 'mirror' },
+    icon: icon([' .-. ', '( o )', " '-' "],
+               [' sss ', 's S s', ' sss '])
+  };
+  defs['chart.river'] = {
+    id: 'chart.river', name: 'River Chart', kind: 'upgrade', stackMax: 1, hand: false, inPack: true,
+    desc: 'Crow paper. A river is drawn on it.',
+    use: { none: 'Chart piece - the map card shows the ford (mq.bend.call)' },
+    glyph: { ch: '~', c: 'manaLight' },
+    icon: icon(['.---.', '|~~~|', "'---'"],
+               ['hhhhh', 'hqqqh', 'hhhhh'])
+  };
   defs.cog = {
     id: 'cog', name: 'Brass Cog', kind: 'currency', stackMax: 99, hand: false, inPack: true,
     desc: "Ferrum's small change. Worth a trade.",

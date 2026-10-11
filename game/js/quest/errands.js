@@ -4,6 +4,7 @@
 //  - isWorn: book.packOps.equipped(id) from components.equipment.
 //  - createErrands: inspect hook for object givers (post / notePost; relays via their relay.wake touch), talk.<site> flags,
 //    target1..3.hit (sword + arrow both emit combat:hit {target}), escort.bear.relayBend.
+//  - mainSync (Rook's main quests): book status <-> the `s.mq.<id>.{available,active,ready,done}` flags his dialogue reads; `.accept` / `.handin` flags -> book.accept / handIn.
 // No render / engine code; pure functions + a small stateful object, tested in errands.test.js.
 
 const BURL_ENTITY = 'bear';
@@ -71,13 +72,16 @@ export function bannerLines(def, action, wrap, maxRows = 10) {
 
 const TARGET_RE = /^target([123])$/;
 const ESCORT_R = 14;
+const MQ = ['mq.bend.call', 'mq.ford.mirror']; // Rook's main quests (world.state keys 'mq.<id>.*' = dialogue 's.mq.<id>.*')
+const MQ_AUTO = new Set(['mq.ford.mirror']); // no hand-in line: handed in as soon as READY
+const PULSE_DELAY = 4; // seconds after the Bend relay wakes (questline: flag relay.bend.pulseSeen)
 const ACTIVE = 2; // questBook statusOf: 0 unavailable, 1 available, 2 active, 3 ready, 4 done
 /**
  * @param {{getBook:()=>any, questFlag:(k:string,v?:any)=>any, inspect:(id:string)=>void}} o
  *   inspect(objectId) = main's QL-04 sink (book.inspect + banner). questFlag = world.state + book.feed.
  */
 export function createErrands({ getBook, questFlag, inspect }) {
-  let world = null, relayEnt = new Map();
+  let world = null, relayEnt = new Map(), pulseT = -1;
   const status = (id) => { const b = getBook(); return b ? b.statusOf(id) : -1; };
 
   /** An ACTIVE quest has a flag objective `key`. */
@@ -119,17 +123,43 @@ export function createErrands({ getBook, questFlag, inspect }) {
     inspected(id) {
       const f = 'talk.' + siteOf(id);
       if (wants(f)) questFlag(f, true);
+      if (id === 'knot' || id === 'relayKnot') questFlag('lore.knot.read', true); // mq.bend.call: inspect prop on the relay mount
       inspect(id);
     },
     /** dialogueCtl.onTalk(npcId): talk flag only (the dialogue itself drives accept / hand-in). */
-    talked(id) { const f = 'talk.' + siteOf(id); if (wants(f)) questFlag(f, true); },
+    talked(id) { const f = 'talk.' + siteOf(id); if (wants(f)) questFlag(f, true); api.mainSync(0); },
     /** combat:hit {target}: straw men (sword or arrow) while sq.straw is active. */
     hit(p) {
       const m = p && typeof p.target === 'string' ? TARGET_RE.exec(p.target) : null;
       if (m && status('sq.straw') === ACTIVE) questFlag('target' + m[1] + '.hit', true);
     },
+    /**
+     * Rook's main quests: publish book status as world.state flags, consume the dialogue's accept / handin flags,
+     * set relay.bend.pulseSeen (PULSE_DELAY s after the Bend relay wakes; dt = seconds since the last call) and the Ford
+     * relay's glass flag (mq.ford.mirror.glass) while relay.mirror is in the pack. Returns true when something changed.
+     */
+    mainSync(dt = 0) {
+      const b = getBook(); if (!b || !world || !world.state) return false;
+      const st = world.state; let ch = false;
+      const put = (k, v) => { if (!!st[k] !== v) { if (v) st[k] = true; else delete st[k]; ch = true; } };
+      if (st['waystone.ws_roadBend.woken'] && !st['relay.bend.pulseSeen']) {
+        pulseT = pulseT < 0 ? 0 : pulseT + dt;
+        if (pulseT >= PULSE_DELAY) { questFlag('relay.bend.pulseSeen', true); ch = true; }
+      }
+      put('mq.ford.mirror.glass', !!(b.packOps && b.packOps.count('relay.mirror') > 0));
+      for (const id of MQ) {
+        const k = 'mq.' + id.slice(3) + '.';
+        if (st[k + 'accept']) { if (b.statusOf(id) !== 1 || b.accept(id)) { delete st[k + 'accept']; ch = true; } }
+        if (st[k + 'handin']) { if (b.statusOf(id) !== 3 || b.handIn(id)) { delete st[k + 'handin']; ch = true; } }
+        if (MQ_AUTO.has(id) && b.statusOf(id) === 3 && b.handIn(id)) ch = true;
+        const s = b.statusOf(id);
+        put(k + 'available', s === 1); put(k + 'active', s === 2 || s === 3); put(k + 'ready', s === 3); put(k + 'done', s === 4);
+      }
+      return ch;
+    },
     /** ~1 Hz: Burl within ESCORT_R of the Bend relay while sq.burl.walk is active (he needs a walk path to get there: content). */
     escortTick() {
+      api.mainSync(1.067); // ~64 frames at 60 Hz
       if (!world || status('sq.burl.walk') !== ACTIVE) return false;
       const b = world.get('bear'), r = world.get('relayBend'), bt = b && b.data && b.data.transform, rt = r && r.data && r.data.transform;
       if (!bt || !rt) return false;
