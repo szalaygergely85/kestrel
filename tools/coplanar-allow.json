@@ -1,0 +1,1 @@
+{"note": "OB-053b: same-tier coplanar pairs the lint ignores, as sorted 'nameA  x  nameB' strings (two spaces around x). Keep empty: fix the content instead.", "pairs": []}

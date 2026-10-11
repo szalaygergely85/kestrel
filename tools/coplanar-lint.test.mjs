@@ -1,6 +1,6 @@
 // tools/coplanar-lint.test.mjs (OB-053): synthetic coplanar/offset/facing cases + the tower spot on the real world.
 import assert from 'node:assert/strict';
-import { newSoup, addMesh, findCoplanar, worldSoup, near, TOWER_SPOT } from './coplanar-lint.mjs';
+import { newSoup, addMesh, findCoplanar, worldSoup, near, TOWER_SPOT, classify, loadAllow, addTerrainUnder } from './coplanar-lint.mjs';
 
 let checks = 0; const ok = (c, m) => { assert.ok(c, m); checks++; };
 // one unit quad (2 tris) in the z=0 plane, CCW seen from +z; `flip` reverses the facing
@@ -34,3 +34,34 @@ const WORLD_MAX = 0;
 ok(pairs.filter((p) => /^(sg|ow)[0-9]+[(]/.test(soup.srcs[p.sa].name) && /^(sg|ow)[0-9]+[(]/.test(soup.srcs[p.sb].name)).length === 0, "sealed gate + outwall: 0 coplanar pairs");
 ok(pairs.length <= WORLD_MAX, `world coplanar pairs ${pairs.length} <= ${WORLD_MAX}`);
 console.log(`coplanar-lint.test: ${checks} checks OK (${pairs.length} world pair(s))`);
+
+// OB-053b: tiers (terrain/level 0, placed mesh 1, voxel prop 2). Synthetic: a voxel-prop face coplanar with a level floor is cross-tier (info).
+{
+  const T = (tier, level) => ({ tier, level: !!level });
+  const mk = (...a) => { const s = newSoup(); a.forEach(([m, p, lvl], i) => addMesh(s, m, 'm' + i, p, lvl)); return s; };
+  const s1 = mk([quad(), {}, true], [quad(), { tier: 2 }]);
+  const c1 = classify(s1, findCoplanar(s1));
+  ok(c1.cross.length >= 1 && c1.same.length === 0 && c1.byTier['0/2'] >= 1, 'voxel prop face coplanar with a level floor: cross-tier (info, exit 0)');
+  const s2 = mk([quad(), {}], [quad(), { origin: { x: 0.5, y: 0.5, z: 0.01 } }]);
+  const c2 = classify(s2, findCoplanar(s2));
+  ok(c2.same.length >= 1, 'two placed meshes (both tier 1) tie: same-tier pair (fails)');
+  const s3 = mk([quad(), { tier: 2 }], [quad(), { tier: 2 }]);
+  const c3 = classify(s3, findCoplanar(s3), [[...new Set(findCoplanar(s3).map((p) => 'm0  x  m1'))][0]]);
+  ok(c3.same.length === 0 && c3.allowed.length >= 1, 'allow-listed same-tier pair is not a failure');
+  // terrain tier 0 vs placed mesh tier 1: cross-tier
+  const s4 = mk([quad(), {}]); const nT = addTerrainUnder(s4, () => 0, 1);
+  const c4 = classify(s4, findCoplanar(s4));
+  ok(nT > 0 && c4.same.length === 0 && c4.cross.length >= 1, 'terrain under a mesh floor: cross-tier');
+}
+
+// OB-053b: the tower spot with voxel props + terrain lists the envelopeHeap x level floor pair (cross-tier, tiers resolve it).
+{
+  const full = await worldSoup('world_m1', { full: true });
+  const fp = findCoplanar(full);
+  const cls = classify(full, fp, await loadAllow());
+  const heap = fp.filter((p) => near(p, TOWER_SPOT, 8) && /envelopeHeap/.test(full.srcs[p.sa].name + full.srcs[p.sb].name) && (full.srcs[p.sa].level || full.srcs[p.sb].level));
+  ok(heap.length >= 1, 'tower spot: envelopeHeap x level floor pair found');
+  ok(heap.every((p) => p.tiers[0] !== p.tiers[1]), 'envelopeHeap x floor is cross-tier (0 vs 2)');
+  ok(full.voxelTris > 1000 && full.terrainTris > 0, 'voxel + terrain sources loaded');
+  console.log(`coplanar-lint.test (full): ${fp.length} pairs, same-tier ${cls.same.length}, cross-tier ${cls.cross.length}, by tier ${JSON.stringify(cls.byTier)}`);
+}
