@@ -34,6 +34,9 @@ export const WATER_FALL_SALT = 61;
 export const FLOW_MIN = 0.05;
 /** Waterfall sheets later take slots 8..11 (35.3). */
 export const WL_SLOTS = 12;
+/** OB-019 RIVER-02 (38.45): JS-twin slot table size = 12 + river slots 12..13. The GPU uniform stays WL_SLOTS (12) until RIVER-03 ports the WGSL. */
+export const WL_TABLE_SLOTS = 14;
+export const RIVER_SLOT0 = 12;
 /** Ripple ring slots in `WaterCompositeU.ripple` (S8-B2-13b, 38.14): `array<vec4f, 8>`, matches `createRipples()`'s default cap. */
 export const RIPPLE_SLOTS = 8;
 /** Splash-ripple accumulated-strength threshold (S8-B2-13b, 38.14): below this, no ring shows (both twins). */
@@ -50,6 +53,7 @@ export const DEFAULT_WATER_LOOK = Object.freeze({
   foamRamp: '*o.', foamDepth: 0.3, foamFar: 40,
   fallRamp: "|:'", fallSpeed: 8, highlight: [235, 245, 255], sheetAlpha: 0.75,
   streak: '-', streakLen: 1.0, streakW: 0.35, streakK: 0.7, // US-141a (35.4)
+  shoreFade: 0.15, streakT: 0.8, rapidFoam: 0.6, riverFarM: 1200, // 38.45 river-only keys (packRiverLook)
 });
 
 function bad(name, msg) { throw new Error(`waterLook "${name}": ${msg}`); }
@@ -116,15 +120,29 @@ export function packWaterLook(name, look, sheet = false) {
  * @property {Map<string, Float32Array>} byName - packed rows by look name
  * @property {Map<string, Float32Array>} fallByName - sheet look rows
  * @property {Float32Array} fallFallback - default sheet look
+ * @property {Map<string, Float32Array>} riverByName - river-only keys by look name (packRiverLook)
+ * @property {Float32Array} riverFallback - default river-only keys
  * @property {Float32Array} fallback - the packed engine default (any region whose look name is not in `byName`)
  */
 
+/**
+ * River-only look keys (38.45) as a 4-float row: [shoreFade (m of column below which alpha fades), streakT (s per streak cell),
+ * rapidFoam (foam glyph probability at full rapid), riverFarM (cull distance)]. Load-time only.
+ * @param {string} name @param {any} look @returns {Float32Array}
+ */
+export function packRiverLook(name, look) {
+  const L = { ...DEFAULT_WATER_LOOK, ...(look || {}) };
+  for (const key of ['shoreFade', 'streakT', 'riverFarM']) if (typeof L[key] !== 'number' || !Number.isFinite(L[key]) || !(L[key] > 0)) bad(name, `"${key}" must be finite and > 0`);
+  if (!(L.rapidFoam >= 0 && L.rapidFoam <= 1)) bad(name, '"rapidFoam" must be 0..1');
+  return Float32Array.of(L.shoreFade, L.streakT, L.rapidFoam, L.riverFarM);
+}
+
 /** Resolves the designer table (`{name: look}`, may be absent) once. @param {Record<string, any>|null|undefined} table @returns {WaterLooks} */
 export function resolveWaterLooks(table) {
-  const byName = new Map(), fallByName = new Map();
+  const byName = new Map(), fallByName = new Map(), riverByName = new Map();
   const names = table ? Object.keys(table) : [];
-  for (const n of names) { byName.set(n, packWaterLook(n, table[n])); fallByName.set(n, packWaterLook(n, table[n], true)); }
-  return { byName, fallByName, fallback: packWaterLook('(default)', null), fallFallback: packWaterLook('(default)', null, true) };
+  for (const n of names) { byName.set(n, packWaterLook(n, table[n])); fallByName.set(n, packWaterLook(n, table[n], true)); riverByName.set(n, packRiverLook(n, table[n])); }
+  return { byName, fallByName, riverByName, fallback: packWaterLook('(default)', null), fallFallback: packWaterLook('(default)', null, true), riverFallback: packRiverLook('(default)', null) };
 }
 
 const _defaultLooks = resolveWaterLooks(null);
@@ -165,6 +183,19 @@ export function fillWaterSlotTable(sel, world, looks, out, timeSec = 0) {
         out[b + 28] = fx / m; out[b + 29] = fy / m; out[b + 30] = m; out[b + 31] = (m * timeSec) % period; out[b + 32] = 1;
       }
     }
+  }
+  // 38.45: river slots 12..13 (JS twin only; `out` must hold WL_TABLE_SLOTS rows). Row = the surface look + the flow block 28..35 repurposed:
+  // 28 o = (t / streakT) mod 1024 (f64 fold), 29 streakT, 30 feather, 31 shoreFade, 32 mode 3, 33 rapidFoam; 51 shapeKind 3.
+  const rc = out.length >= WL_TABLE_SLOTS * WL_STRIDE ? (sel.riverCount || 0) : 0;
+  for (let k = 0; k < rc; k++) {
+    const s = RIVER_SLOT0 + k, b = s * WL_STRIDE, ri = sel.region[s];
+    const name = wt.lookNames[wt.look[ri]], rl = looks.riverByName.get(name) || looks.riverFallback;
+    out.set(looks.byName.get(name) || looks.fallback, b);
+    out[b + 51] = 3;
+    out[b + 36] = (out[b + 36] / out[b + 14] * timeSec) % 1024;
+    out[b + 37] = (timeSec * out[b + 11]) % 1024;
+    out[b + 28] = (timeSec / rl[1]) % 1024; out[b + 29] = rl[1]; out[b + 30] = wt.rivers[wt.riv[ri]].feather; out[b + 31] = rl[0];
+    out[b + 32] = 3; out[b + 33] = rl[2]; out[b + 34] = 0; out[b + 35] = 0;
   }
   for (let k = 0; k < (sel.sheetCount || 0); k++) {
     const s = 8 + k, fall = sel.sheets[s], b = s * WL_STRIDE;
@@ -291,4 +322,22 @@ export function flowStreakHit(t, lb, px, py) {
   }
   const ia = Math.floor((a - o) / L);
   return (hashFastU(ia & 1023, ib & 1023, WATER_FLOW_SALT) >>> 8) * (1 / 16777216) > t[lb + 27];
+}
+
+/**
+ * River flow streak (38.45; replaces 35.4 for kind 3): a MATERIAL coordinate, so the pattern moves at the local flow speed and
+ * stretches in rapids. `tau` = seconds of travel from the river head, `e` = distance from the outer ribbon edge, `o` = row[28].
+ * @param {Float32Array} t @param {number} lb @param {number} tau @param {number} e
+ */
+export function riverStreakHit(t, lb, tau, e) {
+  const ia = Math.floor(tau / t[lb + 29] - t[lb + 28]), ib = Math.floor(e / t[lb + 26]);
+  return (hashFastU(ia & 1023, ib & 1023, WATER_FLOW_SALT) >>> 8) * (1 / 16777216) > t[lb + 27];
+}
+
+/**
+ * River ribbon alpha (38.45): the depth alpha `a` times the edge feather clamp(e / feather) and the shore fade clamp(col / shoreFade).
+ * 0 at e = 0 (outer ribbon edge) and at col = 0 (the bank contour); feather 0 disables the edge term.
+ */
+export function riverAlpha(a, e, col, feather, shoreFade) {
+  return a * (feather > 0 ? Math.min(1, e / feather) : 1) * Math.min(1, col / shoreFade);
 }
