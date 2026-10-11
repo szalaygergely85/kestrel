@@ -10,6 +10,7 @@
 // from `world.supportAt` (the beast always stands on the ground/mesh, no vertical physics).
 import { createAStar, findPath, smoothPath, createSteer, PHYSICS, SIM_STEP } from '../../../../engine/index.js';
 import { BEAST_DEFAULTS, toSteps } from './beastConfig.js';
+import { tierMult } from './band.js';
 import { canSee } from './sight.js';
 import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from '../../../../engine/index.js';
 
@@ -63,6 +64,7 @@ const SCRAPE_FORE_M = 0.45;
  */
 export function createBeastSim(world, opts) {
   const { nav, rng, events } = opts;
+  const band = opts.band || null; // US-129a: optional createBand() result; absent = every beast tier 1 (x1)
   const cfg = opts.cfg ? { ...BEAST_DEFAULTS, ...opts.cfg } : BEAST_DEFAULTS;
 
   /** @type {any[]} plain entity data objects, gathered once (rule 15: no Map iteration inside step()). */
@@ -129,6 +131,8 @@ export function createBeastSim(world, opts) {
     entities: beastEntities.slice(0, count),
     ids: beastEntities.slice(0, count).map((e) => e.id),
 
+    spdMul: new Float64Array(MAX_BEASTS).fill(1), // US-129a: per-slot tier speed multiplier (set once at create)
+    tier: new Uint8Array(MAX_BEASTS),
     state: new Uint8Array(MAX_BEASTS),
     timer: new Int32Array(MAX_BEASTS),
     unseen: new Int32Array(MAX_BEASTS), // also reused as the charge wall-slow streak counter (charge never needs "unseen")
@@ -196,7 +200,14 @@ export function createBeastSim(world, opts) {
     sim.hurtT[i] = 9999; // US-079b: "never damaged" sentinel - the view shows `hurt` only while hurtT < 10
     // US-079b (37.16.2): a FRESH health component on create, overwriting any serialized one - boars always come
     // back alive on load/restart. US-128's bar / sword.js's dead skip / targeting.isAlive all read this.
-    e.components.health = { hp: cfg.hp, max: cfg.hp, invuln: 0 };
+    // US-129a: tier from `components.brain.tier` (placed override) or the zone band; multipliers applied ONCE here from the
+    // base cfg, so a respawn (resetAll restores hp = max) never stacks.
+    const br = e.components.brain;
+    const tier = band ? band.beastTierAt(e.transform.x, e.transform.y, br && br.tier) : ((br && br.tier >= 1 && br.tier <= 3) ? br.tier | 0 : 1);
+    const m = tierMult(tier);
+    sim.tier[i] = tier; sim.spdMul[i] = m.speed; sim._hitPayload[i].damage = m.damage;
+    const maxHp = Math.round(cfg.hp * m.hp);
+    e.components.health = { hp: maxHp, max: maxHp, invuln: 0 };
     steer.addAgent(e.transform.x, e.transform.y, cfg.radius, 0, DEFAULT_ACCEL);
   }
 
@@ -711,7 +722,7 @@ function setSteerTarget(sim, i) {
   if (st === STATE_CHARGE) {
     const wx = steer.x[i] + sim.cdx[i] * 20, wy = steer.y[i] + sim.cdy[i] * 20;
     steer.setWaypoint(i, wx, wy, 0);
-    steer.maxSpeed[i] = cfg.charge;
+    steer.maxSpeed[i] = cfg.charge * sim.spdMul[i];
     return;
   }
 
@@ -738,7 +749,7 @@ function setSteerTarget(sim, i) {
     const wx = sim.pathLen[i] > 0 ? sim.path[base + idx * 2] : steer.x[i];
     const wy = sim.pathLen[i] > 0 ? sim.path[base + idx * 2 + 1] : steer.y[i];
     steer.setWaypoint(i, wx, wy, WAYPOINT_ARRIVE);
-    speed = st === STATE_CHASE ? cfg.chase : (st === STATE_RETURN ? cfg.returnSpeed : cfg.walk);
+    speed = (st === STATE_CHASE ? cfg.chase : (st === STATE_RETURN ? cfg.returnSpeed : cfg.walk)) * sim.spdMul[i];
   } else {
     steer.setWaypoint(i, steer.x[i], steer.y[i], 0);
   }

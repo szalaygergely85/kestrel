@@ -557,3 +557,7 @@ B1 2026-10-11 (QL-09/10/11/12, kestrel-4) -> po-review: ch12 pack.json +4 quests
 - `questPickups.grantReward` now emits `inventory:full {id, n}` for leftovers (same patch as main repo 12a530f2, merges cleanly). `quest/toastView.js` onFull: a named event ({id, n}) shows "Pack full - <Item name> x<n> not added" (message colour, via `say`); id-only loot/chest events keep the generic "Pack full".
 - No world drop: `spawnItemDrop` is gear-only (amount 1, sink in loot.js, 'pickupGear' sprite, MAX_DROPS cap), so leftover stacks are still lost; notice only.
 - Tests: toastView.test.js (named + generic), questCollect.test.js (partial grant). Suites 113/113, quest-sim 52/52, main.js check OK. Not browser-checked.
+
+### US-129a zone band -> tier stats (kestrel-3, po-review)
+- New `game/js/quest/sim/band.js` (+ band.test.js, `content/beasts/tiers.json` mirrored by a test): `createBand(world_geo.regions)` -> `bandAt/beastTierAt/gearTierAt` (8 m grid, 0 alloc; band = low end of region `lv`, heartland `lvWest` west of x=1100). `beastSim` opts.band (optional) applies hp/damage/speed once at create (no stacking on respawn; `brain.tier` overrides); `loot.js` opts.band forces gear tier (T1 = unchanged weighted roll; only worn/sturdy/fine defs exist, so T3-T5 -> fine, T2 -> sturdy). loot.test: Outwall 10k all fine, meadow == no band.
+- NEEDS B1-main: pass `band: createBand(ASSETS.levels.world_geo.regions)` (import from ./quest/sim/band.js) to createBeastSim (main.js:1378) and createLoot (main.js:1434); until then the sim runs tier 1 / today's loot.

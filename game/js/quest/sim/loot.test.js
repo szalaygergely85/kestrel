@@ -75,7 +75,7 @@ function makeEvents() {
 }
 
 /** World + beast sim + loot, the player standing far away with an empty pack. */
-function fresh({ seed = 1, state = {}, boars = [['boar1', BX, BY]] } = {}) {
+function fresh({ seed = 1, state = {}, boars = [['boar1', BX, BY]], band = null } = {}) {
   const orig = console.warn; console.warn = () => {};
   const world = World.load({
     name: 'lootTest', terrain: 'overworld_far',
@@ -94,7 +94,7 @@ function fresh({ seed = 1, state = {}, boars = [['boar1', BX, BY]] } = {}) {
   const beasts = createBeastSim(world, { nav: buildBeastNav(world, NAV_CFG), rng: createRng(seed), events });
   const loot = createLoot(world, events, {
     items: defs, beasts, table: TABLE, rng: createRng((seed ^ LOOT_SEED_SALT) >>> 0),
-    inventoryOf: () => player.components.inventory,
+    inventoryOf: () => player.components.inventory, band,
   });
   setLootApi(loot);
   const step = (n = 1) => { const t = player.transform; for (let i = 0; i < n; i++) beasts.step(t.x, t.y, t.z); };
@@ -194,6 +194,27 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
     mirror.push('1:' + (a1 ? 3 + Math.min(2, Math.floor(ab * 3)) : 0) + ':' + (g1 ? rollGear(defs, gb, gc) : '-'));
   }
   ok('first 6 rolls for seed 1 match the mirror stream', mirror.join(' ') === seq.join(' '), seq.join(' ') + ' / ' + mirror.join(' '));
+}
+
+// US-129a AC2: gear tier from the zone band. Outwall (band 5 = T3) -> fine only; meadow (T1) rolls == no band (golden).
+{
+  await import('../../../../design/levels/world_geo.js');
+  const { createBand } = await import('./band.js');
+  const real = createBand(globalThis.ASSETS.levels.world_geo.regions);
+  const outwall = { gearTierAt: () => real.gearTierAt(905, 940) };
+  const gearIds = (env) => { const r = []; env.world.forEachEntity((e) => { const p = e.components && e.components.pickup; if (p && p.kind === 'item') r.push(p.itemId); }); return r; };
+  const run = (band, N) => {
+    const env = fresh({ seed: 1, band }); const out = [];
+    for (let d = 0; d < N; d++) {
+      kill(env); out.push(gearIds(env).map((id) => defs[id].equip.tier).join('+') + '/' + env.loot.countOf('boar1', 0) + env.loot.countOf('boar1', 1));
+      env.world.forEachEntity((e, id) => { if (e.components && e.components.pickup) env.world.remove(id); });
+      resetPickups(env.world); env.beasts.resetAll();
+    }
+    return out;
+  };
+  const o = run(outwall, 10000).join('|').split('|').map((x) => x.split('/')[0]).filter(Boolean);
+  ok('Outwall 10k kills: gear drops exist, all T3 (fine)', o.length > 300 && o.every((t) => t === 'fine'), o.length);
+  ok('meadow band (T1) rolls identical to no band', run(real, 1500).join() === run(null, 1500).join());
 }
 
 // ---------------------------------------------------------------------------------------------------------------
