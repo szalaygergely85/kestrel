@@ -331,8 +331,8 @@
     model: 'wolf',
     clipFor: {
       state: { idle: 'idle', wander: 'walk', stalk: 'walk', circle: 'walk', return: 'walk', notice: 'idle',
-               chase: 'run', flee: 'run', telegraph: 'crouch', windup: 'crouch', lunge: 'leap', leap: 'leap',
-               bite: 'bite', recover: 'idle', stagger: 'flinch' },
+               chase: 'run', flee: 'run', telegraph: 'crouch', windup: 'crouch', lunge: 'leap', leap: 'leap', charge: 'leap',
+               bite: 'bite', recover: 'run', stagger: 'flinch' },
       hurt: 'hurt', flinch: 'flinch', die: 'die', dead: 'dead', sink: 'sink',
       note: 'wolfBrain state names may differ: map them here. The boar view keeps working through the aliases ' +
             'windup = crouch, charge = run (beastView STATE_CLIPS / beastAnim BEAST_ANIM_DEF)'
