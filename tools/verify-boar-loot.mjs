@@ -44,7 +44,10 @@ try {
   const noOrbGround = await evaluate(cdp, `(()=>{let n=0;__debug.world.forEachEntity((e)=>{const p=e.components&&e.components.pickup;if(p&&p.kind!=='item')n++;});return n;})()`);
   assert.equal(noOrbGround, 0, 'OB-074: no hp/mp orb on the ground after the kill');
   assert.equal(await evaluate(cdp, '!!(window.__debug.chestHook && window.__debug.chestHook.card.isOpen)'), false, 'OB-075: no item card after loot');
-  const lastId = await evaluate(cdp, '__debug.beasts.ids[__debug.beasts.ids.length-1]'); // a late boar (index > 15) used to be unhittable
+  // a late boar (index > 15) used to be unhittable. BEAR-NAV-01: the last slots are now live black bears (they aggro and close in), so take the last BOAR
+  let lastId = await evaluate(cdp, `(()=>{const ids=__debug.beasts.ids;for(let i=ids.length-1;i>=0;i--){const e=__debug.world.entity(ids[i]),br=e&&e.components&&e.components.brain;if(br&&br.species!=='bear'&&br.species!=='wolf')return i>15?ids[i]:null;}return null;})()`);
+  if (process.env.BOAR_ID) lastId = process.env.BOAR_ID;
+  assert.ok(lastId, 'OB-076: a boar sits past the 16th targetable slot');
   // The far boar's terrain streams in only when the player is near: go to its x,y just above the terrain, let it settle, then stand 1.2 m south of it facing +y (compass yaw 180).
   await evaluate(cdp, `(()=>{const w=__debug.world,b=w.get(${JSON.stringify(lastId)}).data.transform,p=__debug.playerHandle.data.transform,g=w.heightAt?w.heightAt(b.x,b.y):0;p.x=b.x;p.y=b.y-1.2;p.z=(g==null?0:g)+1;__debug.look.yawDeg=180;__debug.look.pitchDeg=0;return 1;})()`);
   await pause(2000);
@@ -57,6 +60,7 @@ try {
   await evaluate(cdp, "document.querySelector('canvas').dispatchEvent(new MouseEvent('mousedown',{button:0,bubbles:true}))");
   await pause(1500);
   await evaluate(cdp, "document.querySelector('canvas').dispatchEvent(new MouseEvent('mouseup',{button:0,bubbles:true}))");
+  await pause(1000); // the strike lands after the release (a 1.5 s hold is a charged swing)
   const dbg = await evaluate(cdp, `JSON.stringify((()=>{const d=__debug,c=d.playerHandle.data.components,p=d.playerHandle.data.transform,b=d.world.get(${JSON.stringify(lastId)}).data;return {left:c.inventory.left,set:c.equipment.set,down:d.hands&&d.hands.downOf&&d.hands.downOf('sword'),locked:d.look.locked,paused:!!(d.isPaused&&d.isPaused()),uiLocked:d.uiLocked,mouse0:d.input&&d.input.isDown('Mouse0'),p:[p.x,p.y,p.z],b:[b.transform.x,b.transform.y,b.transform.z],hp:b.components.health}})())`); console.log('dbg', dbg);
   const hp1 = await evaluate(cdp, `__debug.world.get(${JSON.stringify(lastId)}).data.components.health.hp`);
   assert.ok(hp1 < hp0, 'OB-076: locked LMB sword swing damages the last boar: ' + hp0 + ' -> ' + hp1);
