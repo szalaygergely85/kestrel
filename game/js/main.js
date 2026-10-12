@@ -1242,7 +1242,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   }
   // QG-05: quest log (J). Built lazily per book (reset() replaces the book); pauses like the pack via qlOpen in invOpen.
   let qlView = null, qlBook = null, qlWasLocked = false, mapQmChart = null, mapQmVer = -1;
-  const qlIsOpen = () => !!(qlView && qlView.isOpen());
+  const qlIsOpen = () => !!(qlView && qlView.isOpen()); window.__debug.questLogSnapshot = () => (qlView ? qlView.snapshot() : null); // OB-097: tools/verify-journal.mjs
   // QG-04: giver '!'/'?' on the M card, rebuilt only when the card is open and book.version / the chart changed
   function syncMapQuestMarks() {
     const c = getMapChart(), b = saveRelay && saveRelay.quest.book;

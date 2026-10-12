@@ -29,7 +29,7 @@ function site(src, ctx, name) {
 function expandStep(src, step, ctx, key, extra) {
   const p = step.params || step, t = step.template;
   const text = (def) => (typeof step.objText === 'string' && step.objText ? step.objText : def).slice(0, 200);
-  const o = (suffix, txt, when) => ({ id: key + suffix, text: txt, when });
+  const o = (suffix, txt, when) => (typeof step.journal === 'string' && step.journal ? { id: key + suffix, text: txt, journal: step.journal.slice(0, 240), when } : { id: key + suffix, text: txt, when }); // OB-097: optional journal summary
   switch (t) {
     case 'collect': { // ids = ONE pack-counted item id (QL-01 counts it via item:count); count = how many
       const ids = p.ids || (p.item ? [p.item] : null); needIds(src, ids, 'collect.ids');

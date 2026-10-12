@@ -673,6 +673,7 @@ export function validateContent(ASSETS, opts = {}) {
     for (const objective of def.objectives) {
       const base = `${path}.objectives[${objective.id}]`;
       inlineText(objective.text, `${base}.text`);
+      if (objective.journal !== undefined) { inlineText(objective.journal, `${base}.journal`); check(objective.journal.length <= 240, `${base}.journal`, 'journal over 240 chars'); } // OB-097
       if (typeof objective.text === 'string') check(objective.text.length <= MAX_OBJECTIVE_TEXT, `${base}.text`, `objective text is ${objective.text.length} chars, expected <= ${MAX_OBJECTIVE_TEXT}`);
       if (objective.when.type === 'area') {
         check(Object.hasOwn(areas, objective.when.id), `${base}.when.id`, `area "${objective.when.id}" not found in ${areaPath}`);

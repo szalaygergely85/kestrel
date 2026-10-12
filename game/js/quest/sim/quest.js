@@ -17,6 +17,7 @@ export function validateQuestDefinition(def) {
   for (const objective of def.objectives) {
     requireId(objective.id);
     if (seen.has(objective.id) || typeof objective.text !== 'string') throw new Error('quest: duplicate objective or invalid text');
+    if (objective.journal !== undefined && (typeof objective.journal !== 'string' || !objective.journal || objective.journal.length > 240)) throw new Error('quest: invalid objective journal'); // OB-097
     seen.add(objective.id);
     const when = objective.when;
     if (!when || !['flag','item','area','beasts','collect','deliver'].includes(when.type)) throw new Error('quest: invalid condition');
@@ -105,7 +106,7 @@ export function applyQuestEvent(state, event, def) {
 export function questObjectives(state, def, out = []) {
   for (let i=0;i<def.objectives.length;i++) {
     const objective = def.objectives[i], row = out[i] || (out[i] = {});
-    row.id = objective.id; row.text = objective.text;
+    row.id = objective.id; row.text = objective.text; row.journal = objective.journal;
     row.status = i<state.completed.length ? 'complete' : i===state.completed.length ? 'active' : 'locked';
     row.progress = Math.min(progress(state,objective.when),objective.when.count ?? 1);
     row.target = objective.when.count ?? 1;

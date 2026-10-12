@@ -8,13 +8,13 @@ const calls = [];
 const log = createQuestLogScreen(mk(4), { onJournal: i => calls.push(i) });
 log.open(); const ui = createUiLayer({ cols: 160 }); log.draw(ui);
 let s = log.snapshot();
-assert.ok(s.lines.some(l => l.startsWith('Beyond the Wall')), 'done main listed as Beyond the Wall: ' + s.lines);
-assert.ok(!s.lines.some(l => l.includes('A Blade')), 'old title replaced');
-log.open(); // MAIN tab: the done main quest is the only row
-assert.equal(log.snapshot().lines.filter(l => l.startsWith('Beyond')).length, 1);
+assert.ok(s.left.includes('Beyond the Wall'), 'done main listed as Beyond the Wall: ' + s.left);
+assert.ok(!s.left.some(l => l.includes('A Blade')), 'old title replaced');
+assert.equal(s.left[s.left.length - 1], 'Beyond the Wall', 'done listed after active');
+log.handleKey('KeyS'); // select the done main row
 assert.ok(log.handleKey('Enter')); assert.deepEqual(calls, [0], 'journal callback'); assert.equal(log.isOpen(), false);
-// without callback / not done: Enter opens the detail view (no close, no journal)
-const plain = createQuestLogScreen(mk(4)); plain.open(); plain.handleKey('Enter'); assert.equal(plain.isOpen(), true); assert.equal(plain.snapshot().detail, true);
-const active = createQuestLogScreen(mk(2), { onJournal: i => calls.push(99) }); active.open(); active.handleKey('Enter'); assert.deepEqual(calls, [0]); active.handleKey('Escape'); assert.equal(active.snapshot().detail, false);
-assert.ok(active.snapshot().lines.some(l => l.startsWith('A Blade in the Ashes')), 'active main keeps its title');
+// without callback / not done: Enter does nothing, stays open
+const plain = createQuestLogScreen(mk(4)); plain.open(); plain.handleKey('KeyS'); plain.handleKey('Enter'); assert.equal(plain.isOpen(), true);
+const active = createQuestLogScreen(mk(2), { onJournal: i => calls.push(99) }); active.open(); active.handleKey('Enter'); assert.deepEqual(calls, [0]);
+assert.ok(active.snapshot().left.some(l => l.startsWith('A Blade in the Ashes')), 'active main keeps its title');
 console.log('questLogJournal: Done row title, Enter hand-off, no hand-off when active/no callback PASS');

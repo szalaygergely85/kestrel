@@ -42,118 +42,116 @@ export function createQuestLog(def, {hudWidth=60,width=72,fg='#e8e2d0',bg='#0a0b
     snapshot:()=>rows.map(row=>({...row}))};
 }
 
-// QG-05 (D-058, 38.35 item 8): quest log SCREEN over the quest book, in the pause/title menu skin (uiStyle.menu).
-// Rows (strings) are rebuilt only on open, key input and a changed book.version; draw() never formats or allocates.
+// QG-05 / OB-097 (D-058): quest journal SCREEN over the quest book, in the pause/title menu skin (uiStyle.menu).
+// TWO panes: LEFT = quest names (main first, then active, offered, done dimmed), RIGHT = details of the selected quest
+// (title, story summary from the active objective's `journal`, objectives with counts). Strings are rebuilt only on open,
+// key input and a changed book.version; draw() never formats or allocates.
 export const QUEST_LOG_KEYS = ['ArrowUp', 'ArrowDown', 'KeyW', 'KeyS', 'ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'Tab', 'KeyE', 'Backspace', 'Enter', 'KeyJ', 'Escape', 'KeyX', 'KeyT'];
-export const QUEST_LOG_TEXT = Object.freeze({ header: 'PENCIL NOTES', empty: 'Nothing yet. Not nothing.', active: 'Active', abandon: '[X] Abandon quest', track: '[T] Track this quest', tracked: '[T] Tracked (compass + objective)', offered: 'Offered', talkTo: 'Talk to ', abandonSure: '[X] again to abandon (progress resets)', done: 'Done', main: '(main)', footer: 'W/S select  E open  A/D main/side', footerDetail: 'E back  J close', giver: 'Given by: ', reward: 'Reward: ', tabs: ['[ MAIN ]    SIDE  ', '  MAIN    [ SIDE ]'] });
-const AVAILABLE = 1, READY = 3, DONE = 4, LIST_TOP = 6, LIST_ROWS = 14;
+export const QUEST_LOG_TEXT = Object.freeze({ header: 'PENCIL NOTES', empty: 'Nothing yet. Not nothing.', paneL: 'QUESTS', abandon: '[X] Abandon quest', track: '[T] Track this quest', tracked: '[T] Tracked (compass + objective)', talkTo: 'Talk to ', abandonSure: '[X] again to abandon (progress resets)', finished: 'All done. Nothing left to do here.', footer: 'W/S select  T track  X abandon  J close', footerDone: 'W/S select  Enter re-read  J close', giver: 'Given by: ', reward: 'Reward: ', objectives: 'Objectives' });
+const AVAILABLE = 1, READY = 3, DONE = 4, LIST_TOP = 6, LIST_ROWS = 14, LEFT_X = 4, LEFT_W = 22, DIV_X = 27, RIGHT_X = 29, RIGHT_W = 40;
+
+/** Word wrap into at most `max` lines of `w` chars (last line ellipsised). Rebuild-time only. */
+function wrap(text, w, max) {
+  const out = []; let cur = '';
+  for (const word of text.split(' ')) {
+    if (cur && cur.length + 1 + word.length > w) { out.push(cur); cur = word; } else cur = cur ? cur + ' ' + word : word;
+  }
+  if (cur) out.push(cur);
+  if (out.length > max) { out.length = max; out[max - 1] += '...'; }
+  return out.map(l => clipped(l, w));
+}
 
 /**
  * @param {any} book createQuestBook() result
  * @param {{style?:any, text?:Partial<typeof QUEST_LOG_TEXT>, width?:number, doneTitle?:string, onJournal?:(questIndex:number)=>void}} o
  * CH1-09: a DONE main quest (index 0) is listed as `doneTitle` ("Beyond the Wall"); Enter on it closes the log and calls
- * `onJournal(0)` (main.js re-opens the chapter journal). Without `onJournal`, Enter just closes like before.
+ * `onJournal(0)` (main.js re-opens the chapter journal). Without `onJournal`, Enter does nothing.
  */
 export function createQuestLogScreen(book, { style = null, text = {}, width = 72, doneTitle = 'Beyond the Wall', onJournal = null, giverName = (id) => id } = {}) {
-  const T = { ...QUEST_LOG_TEXT, ...text }, W = width - 8;
+  const T = { ...QUEST_LOG_TEXT, ...text };
   const colour = key => (style && (style.hex[key] || style.bg[key])) || '#e8e2d0';
   const fg = style ? colour(style.row.normal.fg) : '#e8e2d0', bg = style ? style.bg.plate : '#0a0b10';
   const heading = T.header;
   const titleText = style ? style.title.decor[0] + heading.split('').join(' '.repeat(style.title.letterSpace)) + style.title.decor[1] : heading;
   const bounds = { x: 0, y: 0, w: width, h: 24 };
   const scratch = [];
-  let open = false, built = -1, sel = 0, top = 0, quests = [], lines = [], sure = false, tab = 0, detail = false; // tab 0=MAIN 1=SIDE; detail = quest detail view // sure: X pressed once (QUESTS-01 abandon)
+  let open = false, built = -1, sel = 0, top = 0, quests = [], names = [], doneFrom = 0, right = [], sure = false;
 
-  /** MAIN = the chapter quest (index 0), `mq.*` ids, or def.kind === 'main'; everything else is SIDE. */
+  /** MAIN = the chapter quest (index 0), `mq.*` ids, or def.kind === 'main'. */
   const isMain = i => { const d = book.def(i); return i === 0 || d.kind === 'main' || (typeof d.id === 'string' && d.id.startsWith('mq.')); };
-  /** quests = selectable quest indices of the current tab: Active (main first, then newest = highest index) then Done. */
+  const cnt = (row) => '  ' + row.progress + '/' + row.target;
   function rebuild() {
-    built = book.version; quests = [];
-    const n = book.count, done = [];
-    for (let i = 0; i < n; i++) { const s = book.status(i); if ((s === 2 || s === READY) && isMain(i) === (tab === 0)) quests.push(i); }
-    quests.sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : b - a));
-    const nActive = quests.length, offered = [];
-    for (let i = n - 1; i > 0; i--) if (book.status(i) === AVAILABLE && isMain(i) === (tab === 0)) offered.push(i); // QL-03: offered = unlocked but not accepted
-    for (const i of offered) quests.push(i);
-    const nOffered = nActive + offered.length;
-    for (let i = n - 1; i >= 0; i--) if (book.status(i) === DONE && isMain(i) === (tab === 0)) done.push(i);
+    built = book.version; quests = []; names = [];
+    const n = book.count, act = [], mainAct = [], off = [], done = [];
+    for (let i = 0; i < n; i++) { const s = book.status(i); if (s === 2 || s === READY) (isMain(i) ? mainAct : act).push(i); }
+    mainAct.sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : b - a)); act.sort((a, b) => b - a);
+    for (let i = n - 1; i > 0; i--) if (book.status(i) === AVAILABLE) off.push(i); // unlocked, not accepted
+    for (let i = n - 1; i >= 0; i--) if (book.status(i) === DONE) done.push(i);
+    for (const i of mainAct) quests.push(i);
+    for (const i of act) quests.push(i);
+    for (const i of off) quests.push(i);
+    doneFrom = quests.length;
     for (const i of done) quests.push(i);
+    for (let k = 0; k < quests.length; k++) { const i = quests[k], d = book.def(i); names.push(clipped(ascii((k >= doneFrom && i === 0 && doneTitle) || d.title || d.id), LEFT_W)); }
     if (sel >= quests.length) sel = Math.max(0, quests.length - 1);
-    lines = []; let selLine = 0, lastHeader = '';
-    if (detail && quests[sel] === undefined) detail = false;
-    if (detail) {
-      const i = quests[sel], def = book.def(i), s = book.status(i);
-      lines.push({ kind: 'head', text: ascii(def.title || def.id) + (s === DONE ? ' (' + T.done + ')' : '') });
-      if (def.giver && def.giver.npc) lines.push({ kind: 'head', text: T.giver + ascii(def.giver.npc) });
-      if (s === READY && def.returnText) lines.push({ kind: 'return', text: '> ' + clipped(ascii(def.returnText), W - 8) });
-      if (s === AVAILABLE) lines.push({ kind: 'return', text: '> ' + clipped(T.talkTo + ascii(String(giverName(book.giverOf ? book.giverOf(i) : ''))), W - 8) });
-      if (i > 0 && (s === 2 || s === READY) && book.track) lines.push({ kind: 'return', text: '  ' + (book.tracked() === i ? T.tracked : T.track) });
-      const rows = book.objectives(i, scratch);
+    if (sel < top) top = sel;
+    if (sel >= top + LIST_ROWS) top = sel - LIST_ROWS + 1;
+    if (quests.length <= LIST_ROWS || top < 0) top = 0;
+    right = [];
+    if (quests[sel] === undefined) return;
+    const i = quests[sel], def = book.def(i), s = book.status(i), isDone = s === DONE;
+    right.push({ kind: 'head', text: clipped(ascii((isDone && i === 0 && doneTitle) || def.title || def.id), RIGHT_W) });
+    if (def.giver && def.giver.npc) right.push({ kind: 'dim', text: clipped(T.giver + ascii(String(giverName(def.giver.npc))), RIGHT_W) });
+    const rows = book.objectives(i, scratch);
+    // story summary: the active step's `journal` (fallback: its objective text); READY -> returnText; AVAILABLE -> talk to the giver
+    let summary = '';
+    if (s === AVAILABLE) summary = T.talkTo + String(giverName(book.giverOf ? book.giverOf(i) : ''));
+    else if (s === READY) summary = def.returnText || T.finished;
+    else if (isDone) summary = T.finished;
+    else for (let r = 0; r < rows.length; r++) if (rows[r].status === 'active') { summary = rows[r].journal || rows[r].text; break; }
+    for (const l of wrap(ascii(summary), RIGHT_W, 3)) right.push({ kind: 'text', text: l });
+    right.push({ kind: 'blank', text: '' });
+    if (s !== AVAILABLE) {
+      right.push({ kind: 'head', text: T.objectives });
       for (let r = 0; r < rows.length; r++) {
-        const row = rows[r], mark = row.status === 'complete' ? '[x] ' : row.status === 'active' ? '[>] ' : '[ ] ';
-        lines.push({ kind: 'step', status: row.status, text: '  ' + clipped(mark + ascii(row.text) + (row.target > 1 ? ' ' + row.progress + '/' + row.target : ''), W - 8) });
-      }
-      if (def.reward && def.reward.items && def.reward.items.length) lines.push({ kind: 'head', text: clipped(T.reward + def.reward.items.map(it => ascii(it.id) + (it.n > 1 ? ' x' + it.n : '')).join(', '), W - 4) });
-      if (book.canAbandon && book.canAbandon(def.id)) lines.push({ kind: 'return', text: '  ' + (sure ? T.abandonSure : T.abandon) });
-      top = 0; return;
-    }
-    for (let k = 0; k < quests.length; k++) {
-      const i = quests[k], isOffered = k >= nActive && k < nOffered, isDone = k >= nOffered, head = isDone ? T.done : isOffered ? T.offered : T.active;
-      if (head !== lastHeader) { lines.push({ kind: 'head', text: head }); lastHeader = head; }
-      const def = book.def(i), s = book.status(i);
-      if (k === sel) selLine = lines.length;
-      lines.push({ kind: 'quest', k, text: ascii((isDone && i === 0 && doneTitle) || def.title || def.id) + (i === 0 ? ' ' + T.main : ''), done: isDone });
-      if (k !== sel) continue;
-      if (isOffered) { lines.push({ kind: 'return', text: '  > ' + clipped(T.talkTo + ascii(String(giverName(book.giverOf ? book.giverOf(i) : '')) ), W - 8) }); continue; }
-      if (i > 0 && !isDone && book.track) lines.push({ kind: 'return', text: '  ' + (book.tracked() === i ? T.tracked : T.track) });
-      if (s === READY && def.returnText) lines.push({ kind: 'return', text: '  > ' + clipped(ascii(def.returnText), W - 8) });
-      if (book.canAbandon && book.canAbandon(def.id)) lines.push({ kind: 'return', text: '  ' + (sure ? T.abandonSure : T.abandon) });
-      const rows = book.objectives(i, scratch);
-      for (let r = 0; r < rows.length; r++) {
-        const row = rows[r], mark = row.status === 'complete' ? '[x] ' : row.status === 'active' ? '[>] ' : '[ ] ';
-        lines.push({ kind: 'step', status: row.status, text: '  ' + clipped(mark + ascii(row.text) + (row.target > 1 ? ' ' + row.progress + '/' + row.target : ''), W - 8) });
+        const row = rows[r], mark = row.status === 'complete' ? '[x] ' : row.status === 'active' ? '[>] ' : '[ ] ', c = cnt(row);
+        right.push({ kind: 'step', status: row.status, text: clipped(mark + ascii(row.text), RIGHT_W - c.length) + c });
       }
     }
-    if (selLine < top) top = selLine;
-    if (selLine >= top + LIST_ROWS) top = selLine - LIST_ROWS + 1;
-    if (top < 0 || lines.length <= LIST_ROWS) top = 0;
+    if (def.reward && def.reward.items && def.reward.items.length) right.push({ kind: 'dim', text: clipped(T.reward + def.reward.items.map(it => ascii(it.id) + (it.n > 1 ? ' x' + it.n : '')).join(', '), RIGHT_W) });
+    if (i > 0 && !isDone && s !== AVAILABLE && book.track) right.push({ kind: 'head', text: book.tracked() === i ? T.tracked : T.track });
+    if (book.canAbandon && book.canAbandon(def.id)) right.push({ kind: 'head', text: sure ? T.abandonSure : T.abandon });
   }
-  function show() { open = true; sure = false; sel = 0; top = 0; tab = 0; detail = false; rebuild(); }
+  function show() { open = true; sure = false; sel = 0; top = 0; rebuild(); }
   function close() { open = false; }
-  /** Returns true when the key was consumed. Enter/J/Esc close; W/S move (wraps). */
+  /** Mouse: grid cell coords; selects the clicked quest name. True when consumed. */
+  function handleClick(cx, cy) {
+    if (!open) return false;
+    const r = cy - bounds.y - LIST_TOP, c = cx - bounds.x, k = top + r;
+    if (r >= 0 && r < LIST_ROWS && c >= LEFT_X - 2 && c < DIV_X && k < quests.length) { sure = false; sel = k; rebuild(); return true; }
+    return false;
+  }
+  /** Returns true when the key was consumed. Enter on the done main quest hands off to the journal; J/Esc close; W/S move (wraps). */
   function handleKey(code) {
     if (!open) return false;
-    if (code === 'Enter' && !detail && onJournal && quests[sel] === 0 && book.status(0) === DONE) { close(); onJournal(0); return true; }
-    if (code === 'Escape' || code === 'Backspace' || code === 'KeyJ') { // detail -> list -> close
-      sure = false;
-      if (detail) { detail = false; rebuild(); } else close();
-      return true;
-    }
-    if (code === 'Enter' || code === 'KeyE') { // open the selected quest / back out of the detail view
-      sure = false;
-      if (detail) detail = false; else if (quests[sel] !== undefined) detail = true; else return true;
-      rebuild(); return true;
-    }
-    if (code === 'ArrowLeft' || code === 'ArrowRight' || code === 'KeyA' || code === 'KeyD' || code === 'Tab') {
-      sure = false;
-      if (detail) return true;
-      tab = tab ? 0 : 1; sel = 0; top = 0; rebuild(); return true;
-    }
+    if (code === 'Enter' && onJournal && quests[sel] === 0 && book.status(0) === DONE) { close(); onJournal(0); return true; }
+    if (code === 'Escape' || code === 'Backspace' || code === 'KeyJ') { sure = false; close(); return true; }
+    if (code === 'Enter' || code === 'KeyE' || code === 'ArrowLeft' || code === 'ArrowRight' || code === 'KeyA' || code === 'KeyD' || code === 'Tab') { sure = false; return true; }
     if (code === 'KeyX') { // QUESTS-01: two presses abandon the selected quest (only `abandonable` ones)
       const id = quests[sel] !== undefined ? book.def(quests[sel]).id : null;
       if (!id || !book.canAbandon || !book.canAbandon(id)) return true;
       if (!sure) { sure = true; rebuild(); return true; }
       sure = false; book.abandon(id); rebuild(); return true;
     }
-    if (code === 'KeyT') { // QL-03: pin the selected active side quest as THE tracked one (HUD objective + compass); again = back to newest
+    if (code === 'KeyT') { // QL-03: pin the selected active side quest as THE tracked one; again = back to newest
       const i = quests[sel];
       if (i > 0 && (book.status(i) === 2 || book.status(i) === READY) && book.track) { sure = false; book.track(book.tracked() === i ? null : book.def(i).id); rebuild(); }
       return true;
     }
-    sure = false;
     const d = code === 'ArrowUp' || code === 'KeyW' ? -1 : code === 'ArrowDown' || code === 'KeyS' ? 1 : 0;
+    sure = false;
     if (!d) return false;
-    if (!detail && quests.length > 1) { sel = (sel + d + quests.length) % quests.length; rebuild(); }
+    if (quests.length > 1) { sel = (sel + d + quests.length) % quests.length; rebuild(); }
     return true;
   }
   function draw(ui) {
@@ -175,25 +173,28 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     }
     drawText(ui, bounds.x + (style ? Math.floor((bounds.w - titleText.length) / 2) : 3), bounds.y + 2, titleText, style ? colour(style.title.fg) : fg, bg);
     const dim = style ? colour(style.row.disabled.fg) : fg, head = style ? colour(style.sectionLabel.newGame.fg) : fg;
-    if (!detail) drawText(ui, bounds.x + 4, bounds.y + LIST_TOP - 1, T.tabs[tab], head, bg);
-    drawText(ui, bounds.x + 4, bounds.y + bounds.h - 3, detail ? T.footerDetail : T.footer, dim, bg);
-    if (!lines.length) { drawText(ui, bounds.x + 4, bounds.y + LIST_TOP + 1, T.empty, fg, bg); return bounds; }
+    const doneSel = quests[sel] === 0 && book.status(0) === DONE && !!onJournal;
+    drawText(ui, bounds.x + 4, bounds.y + bounds.h - 3, doneSel ? T.footerDone : T.footer, dim, bg);
+    if (!quests.length) { drawText(ui, bounds.x + 4, bounds.y + LIST_TOP + 1, T.empty, fg, bg); return bounds; }
+    const div = style ? colour('brassShadow') : fg;
+    for (let y = bounds.y + LIST_TOP - 1; y < bounds.y + LIST_TOP + LIST_ROWS; y++) ui.setCell(bounds.x + DIV_X, y, '|', div, bg);
+    drawText(ui, bounds.x + LEFT_X, bounds.y + LIST_TOP - 1, T.paneL, head, bg);
     const focusSt = style?.row.focus, normSt = style?.row.normal;
-    for (let r = 0; r < LIST_ROWS; r++) {
-      const ln = lines[top + r]; if (!ln) break;
-      const y = bounds.y + LIST_TOP + r;
-      if (ln.kind === 'head') { drawText(ui, bounds.x + 4, y, ln.text, head, bg); continue; }
-      if (ln.kind === 'quest') {
-        const focus = ln.k === sel, ink = style ? colour(focus ? focusSt.fg : ln.done ? style.row.disabled.fg : normSt.fg) : fg, back = style && focus ? style.bg[focusSt.bg] : bg;
-        if (focus && style) for (let x = style.row.bandFrom; x <= style.row.bandTo; x++) ui.setCell(bounds.x + x, y, ' ', ink, back);
-        drawText(ui, bounds.x + 4, y, ln.text, ink, back);
-        if (focus) ui.setCell(bounds.x + 2, y, style ? focusSt.marker : '>', style ? colour(focusSt.markerFg) : fg, back);
-        continue;
-      }
-      const ink = ln.kind === 'return' ? head : ln.status === 'complete' ? dim : fg;
-      drawText(ui, bounds.x + 4, y, ln.text, ink, bg);
+    for (let r = 0; r < LIST_ROWS; r++) { // LEFT pane
+      const k = top + r; if (k >= quests.length) break;
+      const y = bounds.y + LIST_TOP + r, focus = k === sel, isDone = k >= doneFrom;
+      const ink = style ? colour(focus ? focusSt.fg : isDone ? style.row.disabled.fg : normSt.fg) : fg, back = style && focus ? style.bg[focusSt.bg] : bg;
+      if (focus && style) for (let x = style.row.bandFrom; x < DIV_X; x++) ui.setCell(bounds.x + x, y, ' ', ink, back);
+      drawText(ui, bounds.x + LEFT_X, y, names[k], ink, back);
+      if (focus) ui.setCell(bounds.x + 2, y, style ? focusSt.marker : '>', style ? colour(focusSt.markerFg) : fg, back);
+    }
+    for (let r = 0; r < LIST_ROWS + 1; r++) { // RIGHT pane
+      const ln = right[r]; if (!ln) break;
+      const y = bounds.y + LIST_TOP - 1 + r;
+      if (ln.status === 'active' && style) { drawText(ui, bounds.x + RIGHT_X, y, ln.text, colour(focusSt.fg), style.bg[focusSt.bg]); continue; }
+      drawText(ui, bounds.x + RIGHT_X, y, ln.text, ln.kind === 'head' ? head : ln.kind === 'dim' || ln.status === 'complete' || ln.status === 'locked' ? dim : fg, bg);
     }
     return bounds;
   }
-  return { open: show, close, handleKey, draw, isOpen: () => open, snapshot: () => ({ open, sel, top, tab, detail, lines: lines.map(l => l.text) }) };
+  return { open: show, close, handleKey, handleClick, draw, isOpen: () => open, snapshot: () => ({ open, sel, top, left: names.slice(), doneFrom, right: right.map(l => l.text), lines: names.concat(right.map(l => l.text)) }) };
 }
