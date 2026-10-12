@@ -1251,6 +1251,34 @@
       grid: { u: 0.035, v: 0.035, stagger: 0, lines: false },
       face: { set: 'brassFace', mid: 'brassFace', far: 'brassFace' },
       lod: { mid: 12, far: 25, dither: 3 }, emissive: 0.45
+    },
+    // BEAR-D1 (D-069): black bear coat (palette.js v1 records of the same keys)
+    fur_bear: {
+      v1: 'fur_bear', seed: 1223,
+      desc: 'WILDLIFE (BEAR-D1). Black bear coat: near-black.',
+      albedo: 0.70, bgK: 0.13, detail: 32, jitter: 0.06,
+      tones: [['furBear', 4], ['furBearDark', 1], ['furBearSheen', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_bear_dark: {
+      v1: 'fur_bear_dark', seed: 1224,
+      desc: 'WILDLIFE (BEAR-D1). Black bear ridge, legs, paws, belly shadow.',
+      albedo: 0.62, bgK: 0.12, detail: 32, jitter: 0.05,
+      tones: [['furBearDark', 4], ['furBear', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_bear_sheen: {
+      v1: 'fur_bear_sheen', seed: 1225,
+      desc: 'WILDLIFE (BEAR-D1). Black bear lit guard-hair tips: blue-grey gloss.',
+      albedo: 0.84, bgK: 0.15, detail: 32, jitter: 0.05,
+      tones: [['furBearSheen', 4], ['furBear', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
     }
   };
 

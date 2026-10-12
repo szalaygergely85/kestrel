@@ -1547,6 +1547,19 @@
   materials.fur_wolf_light = fabricMat('WILDLIFE (WOLF-D1 v1.60). Wolf legs, belly, lower flanks, brows: pale buff-grey.', 'furWolfLight', 0.90, 0.16,
     { a: { shade: 1.00 }, s: { shade: 0.90, tint: 'furWolf', amount: 0.35 } },
     ['aaaa', 'asaa', 'aaaa', 'aaas']);
+  // BEAR-D1 (D-069): black bear coat (design/models/voxel_bear_black.js switches to these once palette + detail-pass both have them)
+  colors.furBear = '#2c2d33';       // near-black base coat
+  colors.furBearDark = '#17181c';   // dorsal ridge, partings, legs, paws, belly shadow
+  colors.furBearSheen = '#56606f';  // glossy blue-grey guard-hair tips on the lit hump / shoulders
+  materials.fur_bear = fabricMat('WILDLIFE (BEAR-D1). Black bear coat: near-black, faint blue-grey sheen ticks.', 'furBear', 0.70, 0.13,
+    { a: { shade: 1.00 }, t: { shade: 1.12, tint: 'furBearSheen', amount: 0.3, glyph: "'" }, d: { shade: 0.86, tint: 'furBearDark', amount: 0.4 } },
+    ['atad', 'aaaa', 'daat', 'aaaa']);
+  materials.fur_bear_dark = fabricMat('WILDLIFE (BEAR-D1). Black bear ridge, legs, paws, belly shadow: deepest black.', 'furBearDark', 0.62, 0.12,
+    { a: { shade: 1.00 }, h: { shade: 1.12, tint: 'furBear', amount: 0.35, glyph: "'" } },
+    ['ahaa', 'aaaa', 'aaha', 'aaaa']);
+  materials.fur_bear_sheen = fabricMat('WILDLIFE (BEAR-D1). Black bear lit guard-hair tips: blue-grey gloss.', 'furBearSheen', 0.84, 0.15,
+    { a: { shade: 1.00 }, s: { shade: 0.88, tint: 'furBear', amount: 0.4 } },
+    ['aaaa', 'asaa', 'aaaa', 'aaas']);
 
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)
