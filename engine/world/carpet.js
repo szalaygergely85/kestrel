@@ -64,6 +64,7 @@ export function validateCarpetConfig(cfg, typeNames) {
   return cfg;
 }
 
+const CLASS_ZERO_MIN_SPAN = 4; // m: a structure needs a bbox side >= this to blank class cells (OB-101)
 /**
  * Uint8 class grid of `classCellM` over the terrain's baked near band. 0 = none, else 1 + index of the first variant
  * whose `ground` has the cell's ground type name, whose `biomes` (if any) has `recipe.util.biomeAt(x, y)` and whose `areas` (if any)
@@ -113,6 +114,9 @@ export function buildCarpetClassMap(terrain, recipe, cfg, out, structures) {
     for (const s of structures) {
       const b = s && s.bbox;
       if (!b || !(isNum(b.x0) && isNum(b.y0) && isNum(b.x1) && isNum(b.y1))) continue;
+      // OB-101: small dressing (clumps, flowers, bushes, rocks; both spans < CLASS_ZERO_MIN_SPAN) is excluded by the 0.5 m density mask only: zeroing 2 m class cells grown
+      // by ~1.1 m around hundreds of them wiped the whole meadow (class map 99.5 % empty, no blades in play).
+      if (b.x1 - b.x0 < CLASS_ZERO_MIN_SPAN && b.y1 - b.y0 < CLASS_ZERO_MIN_SPAN) continue;
       // class cell i covers [x0 + i*cellM, x0 + (i+1)*cellM): overlap with the grown rect
       const i0 = Math.max(0, Math.floor((b.x0 - grow - res.x0) / cellM)), i1 = Math.min(w - 1, Math.floor((b.x1 + grow - res.x0) / cellM));
       const j0 = Math.max(0, Math.floor((b.y0 - grow - res.y0) / cellM)), j1 = Math.min(h - 1, Math.floor((b.y1 + grow - res.y0) / cellM));
