@@ -54,6 +54,7 @@ export { ambientL } from './render/sky.js';
 export { PROJ_HFOV_DEG as HFOV_DEG } from './render/projection.js';
 export { sunFromWorld } from './render/lighting.js';
 export { shadeTerrainCells } from './render/terrainShade.js';
+export { buildTuftAtlas, tuftLookup, tuftPlaneT, texelR, texelG, TUFT_ATLAS_DEFAULTS } from './render/tuftAtlas.js';
 export { sunFromHours, sunPathFrom, SUN_PATH_DEFAULT } from './core/sunPath.js';
 export { AO_DEFAULTS } from './render/horizonAo.js'; // host `?ao=` reads the engine defaults (B1 nit)
 export { swayOffset, packWindUniforms, windSwayOn, INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from './mesh/sway.js'; // S8-B2-06

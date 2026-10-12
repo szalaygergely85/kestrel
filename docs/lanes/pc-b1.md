@@ -813,3 +813,5 @@ Notes: ramp must already be RGB bytes 0..255 triplets in cfg.variants[].ramp (gr
 
 - MASK-e2 (kestrel-1, branch mask-e2, uncommitted): main.js loads `bundle.grassMasks.overworld_far` via grassMaskFromJSON -> `worldLoadOpts.carpet.mask` (only with `?carpet=1`, still OFF by default); recipe.carpet `cutGround: [path, water, rock]`.
   Meadow `areas` KEPT on all variants: the bake tool reads them (dropping breaks grass-mask-content test) and the class map needs them (tower/road poses want 0 % carpet). Test: carpet.world.test.js +6 checks (tower 0, road 0, meadow 1, soft edge 0.87/0.49/0.13/0). Suites + validate-content PASS; owner walk-check pending.
+- 2026-10-12 TUFT-01a part 1 (kestrel-3, tuft-atlas, uncommitted): new engine/render/tuftAtlas.js (+test, engine/index.js export, design/preview/tuft-atlas.html): buildTuftAtlas/tuftLookup/tuftPlaneT, int-only generator, sha pinned. Tests: tuftAtlas 23/23, check-deps PASS; plane solve vs bisection 10000 rays worst <1e-9.
+  Not done: part 2 (carpet.js tuftHit/ctx, WGSL, passCarpet, defaults) after MASK-c. Texel layout: row 0 = base, packed lookup r|g<<8.
