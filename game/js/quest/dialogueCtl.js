@@ -103,6 +103,7 @@ export function createDialogueCtl(opt) {
       return world.addInteractable({
         key: 'npc.' + id, name: 'npc.talk', x: t.x, y: t.y, z: t.z + (o.lift ?? 1), radius: o.radius ?? 2.2,
         prompt: o.prompt ?? ('[E] Talk to ' + (NPC_NAMES[id] || id)).slice(0, 28), def: { npcId: id },
+        bodyId: id, bodyR: o.bodyR ?? ((h.data.components.targetable && h.data.components.targetable.radius) || 0.45), bodyH: o.bodyH ?? ((h.data.components.targetable && h.data.components.targetable.height) || 1.9), // OB-084: [E] on the whole body
       });
     },
 

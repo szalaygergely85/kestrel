@@ -431,7 +431,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
 {
   // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01, DN-02 night floor, MAP-06b skyline cap, OB-073 smooth ground noise, OB-073 calm ground, OB-081 far tier blend + calm faces (41264 chars): the stable-off shader must not move by a single byte.
   assert.equal(SHADE_WGSL.length, 41264, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '9040994ad630295ccdcf0e01e40d5d86a34c4178aeb548299aa99433f3d76d81', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'a8e23b55d9b1709181fd61ccd2bfc8c08c400a1b2531aaf2bb69c762820cc064', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);

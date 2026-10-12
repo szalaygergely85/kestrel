@@ -342,5 +342,27 @@ const pick = (w, eye, cfg) => { const o = fresh(); findInteractTarget(w, eye, cf
   ok('OB-066: 30 deg off the page does not', pick(w, { x: bx, y: by, z: n.z + 0.6, yawDeg: bearing + 30, pitchDeg: pitchN }).targetKey === null);
 }
 
+{ // OB-084: [E] only when aimed, on the WHOLE body (live entity box), and not from inside a box while looking away
+  const w = makeWorld();
+  const boar = { id: 'boar1', transform: { x: 0, y: -2, z: 0 }, components: {} };
+  w.entity = (id) => (id === 'boar1' ? boar : null);
+  const rec = { key: 'loot.boar1', name: 'beast.loot', prompt: '[E] Loot', x: 0, y: -2, z: 0.3, radius: 3, once: false, requires: null,
+    propId: 'boar1', usedKey: null, bodyId: 'boar1', bodyR: 0.7, bodyH: 0.7 };
+  w.interactables = [rec];
+  const eye = (yaw, pitch, x = 0, y = 0) => pick(w, { x, y, z: 1.6, yawDeg: yaw, pitchDeg: pitch });
+  const pAt = (dx, dy, dz) => Math.atan2(dz, Math.hypot(dx, dy)) * 180 / Math.PI;
+  ok('OB-084: aiming at the body centre prompts', eye(0, pAt(0, 2, 0.35 - 1.6)).targetKey === 'loot.boar1');
+  ok('OB-084: aiming at the rump (0.6 m off the centre point) prompts', eye(Math.atan2(0.6, 2) * 180 / Math.PI, pAt(0.6, 2, 0.35 - 1.6)).targetKey === 'loot.boar1');
+  ok('OB-084: looking away does not prompt', eye(90, 0).targetKey === null && eye(180, -30).targetKey === null);
+  boar.transform.x = 1.2; // the box follows the live entity (still within the 1.8 m reach)
+  ok('OB-084: the pick box follows the entity', eye(Math.atan2(1.2, 2) * 180 / Math.PI, pAt(1.2, 2, 0.35 - 1.6)).targetKey === 'loot.boar1' && eye(-25, pAt(0, 2, -1.25)).targetKey === null);
+  // eye inside a big prop box: only when its centre is within 35 deg of the crosshair
+  const big = { key: 'qi.wagon', name: 'quest.inspect', prompt: '[E] Inspect wagon', x: 0, y: -1, z: 1, radius: 3, once: false, requires: null, propId: null, usedKey: null,
+    pick: { x0: -2, x1: 2, y0: -3, y1: 1, z0: 0, z1: 2 } };
+  w.interactables = [big];
+  ok('OB-084: inside a box, facing its centre prompts', eye(0, -10).targetKey === 'qi.wagon');
+  ok('OB-084: inside a box, facing away does not', eye(180, 0).targetKey === null && eye(90, 0).targetKey === null);
+}
+
 console.log(`interaction.test.js: ${pass} passed, ${fail} failed`);
 if (fail) { console.log('FAILURES:\n' + failures.join('\n')); process.exit(1); }
