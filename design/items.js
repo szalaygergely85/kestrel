@@ -74,6 +74,7 @@
     },
     'spell.fireball': {
       id: 'spell.fireball', name: 'Ember', kind: 'spell', stackMax: 1, hand: true, inPack: true,
+      equip: { slot: 'off', tier: 'worn', def: 0 }, // FB-01 fix: hands are derived from equipment (OB-017); without an off-slot the spell could never reach a hand
       desc: 'A coal that answers the hand.',
       glyph: { ch: '*', c: 'flameMid' },
       //  .^,      flame tips
