@@ -61,6 +61,7 @@ export class GBuffer {
     this.aoD = new Float32Array(n);
     // ME-20c (38.18): interpolated baked vertex AO (1 = open) of kind-9 cells; not cleared per frame (every kind-9 cell writes it, only kind 9 reads it)
     this.vao = new Float32Array(n);
+    this.grassX = new Uint32Array(n); // MASK-c: kind-10 packed word (tint | back-light | ground type | tier offset), see terrainShade.js GRASS_GX_*
     // 38.23: entity objectId (0 = none), copied from the raster target; read by the entity tint in shadeSurfaces
     this.objectId = new Uint32Array(n);
     this.fogF = new Float32Array(n);

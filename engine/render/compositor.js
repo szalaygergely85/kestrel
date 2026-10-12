@@ -378,7 +378,7 @@ export function renderWorld(fb, world, cam) {
     computeDerivatives(fb.gbuf, fb.depth.depth);
     // OB-073 D2c/D2e (38.52 item 8 + pitched amendment): carpet cells after resolve, before lighting. Perspective pitched frames only
     // (rays from meshPitchTerms = GPU rp.pitch); shear and ortho frames: no carpet, like the GPU pass. Off (no world.carpet / fb.carpet === false) = untouched frame.
-    if (world.carpet && fb.carpet !== false && meshPitched && !meshPitchTerms.ortho) { const cc = carpetCtxFor(world); if (cc) carpetCells(fb.gbuf, fb, cam, cc, fb.timeSec || 0, meshPitchTerms); }
+    if (world.carpet && fb.carpet !== false && meshPitched && !meshPitchTerms.ortho) { const cc = carpetCtxFor(world); if (cc) carpetCells(fb.gbuf, fb, cam, cc, fb.timeSec || 0, meshPitchTerms, fb.palette && fb.palette.timeOfDay ? sunFromWorld(world, fb.palette, skySunScratch) : null); }
     // US-006: `fb.lights` (a LightSet, built by main.js from the world's
     // `level.def.lights`) drives per-cell ambient+point-light shading;
     // `?lights=0` (fb.lights left null) keeps the US-028 uniform-ambient

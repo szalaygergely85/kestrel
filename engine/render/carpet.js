@@ -6,7 +6,7 @@
 //
 // The class/variant lookup is a plain data shape (D2a builds it in engine/world/carpet.js):
 //   carpet = { cfg: CarpetConfig, classMap: Uint8Array, x0, y0, w, h }   (classMap cell = cfg.classCellM, 0 = none, id 1..15 = cfg.variants[id-1])
-import { hashFast24, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX } from './terrainShade.js';
+import { hashFast24, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, groundTierOffset, GRASS_TINT_AMP, GRASS_GX_HAS } from './terrainShade.js';
 import { CARPET_DEFAULTS, TUFT_DEFAULT_P, TUFT_DEFAULT_MUL } from '../world/carpet.js';
 const INV_2_24 = 1 / 16777216; // 24-bit integer hash scaled at the call site: no double crosses a call (alloc rule)
 
@@ -29,7 +29,10 @@ export const W_JIT_LO = 0.7, W_JIT_RANGE = 0.6; // OB-096: blade half-width * (0
 const R_EX = 0, R_EY = 1, R_EZ = 2, R_DX = 3, R_DY = 4, R_DZ = 5, R_N2 = 6, R_T0 = 7, R_T1 = 8, R_TIME = 9;
 // ctx.inp: the call input of the alloc-free entry points (eye, dir, terrain hit distance, wind clock)
 export const IN_EX = 0, IN_EY = 1, IN_EZ = 2, IN_DX = 3, IN_DY = 4, IN_DZ = 5, IN_THIT = 6, IN_TIME = 7;
-const S_H = 2, S_VAR = 4, S_LX = 5, S_LY = 6, S_H01 = 9, S_Z = 10, S_TB = 11, S_N = 16;
+const S_H = 2, S_VAR = 4, S_LX = 5, S_LY = 6, S_H01 = 9, S_Z = 10, S_TB = 11, S_M = 12, S_RX = 13, S_RY = 14, S_FP = 15, S_N = 16;
+// MASK-c (38.52 amendment, OB-096 grass mask): density mask 0..1 (u8/255) sampled at the blade root, 4-tap bilerp on cell centres
+// x0 + (i + 0.5) * MASK_CELL; outside the mask window = no mask (m = 1). Below MASK_MIN no blade; the height scales with m.
+export const MASK_CELL = 0.5, MASK_MIN = 0.04;
 
 /**
  * Build the trace context (allocates once).
@@ -46,15 +49,18 @@ export function makeCarpetCtx(carpet, ground, wind) {
     classCellM: cfg.classCellM || D.classCellM, classJitterM: cfg.classJitterM == null ? D.classJitterM : cfg.classJitterM,
     gustM: cfg.gustM || D.gustM, travelM: cfg.travelM == null ? D.travelM : cfg.travelM,
     classMap: carpet.classMap, cx0: carpet.x0, cy0: carpet.y0, cw: carpet.w, ch: carpet.h,
+    mData: null, mx0: 0, my0: 0, mw: 0, mh: 0, gTint: new Float64Array(n).fill(0.6), // MASK-c: mask window (refreshed by carpetCtxFor)
     dens: new Float64Array(n), hMin: new Float64Array(n), hMax: new Float64Array(n), bw: new Float64Array(n), sway: new Float64Array(n), tuftP: new Float64Array(n), tuftMul: new Float64Array(n).fill(1),
     maxH: 0, wMax: 0, ground, wind: wind || null, fpK: 0, // fpK = groundFootprint hashCell arg (<0 = -k, >0 = fixed cell, 0 = default k)
     q: new Float64Array(8), inp: new Float64Array(8), r: new Float64Array(10), s: new Float64Array(S_N), keep: new Float64Array(S_N),
   };
   ctx.sway[0] = 1;
+  setCarpetMask(ctx, carpet.mask);
   const vs = cfg.variants || [];
   for (let i = 0; i < vs.length && i < MAX_VARIANTS; i++) {
     const v = vs[i], id = i + 1;
     ctx.dens[id] = v.density; ctx.hMin[id] = v.heightM[0]; ctx.hMax[id] = v.heightM[1];
+    ctx.gTint[id] = v.groundTint == null ? 0.6 : v.groundTint;
     ctx.bw[id] = v.bladeW || D.bladeW; ctx.sway[id] = v.swayGain == null ? D.swayGain : v.swayGain;
     ctx.tuftP[id] = v.tuft && v.tuft.p !== undefined ? v.tuft.p : TUFT_DEFAULT_P; ctx.tuftMul[id] = v.tuft && v.tuft.mul !== undefined ? v.tuft.mul : TUFT_DEFAULT_MUL;
     const wm = ctx.bw[id] * 0.5 * (W_JIT_LO + W_JIT_RANGE), hm = v.heightM[1] * (PATCH_LO + PATCH_RANGE) * ctx.tuftMul[id]; // OB-096: bounds include the variety factors
@@ -62,6 +68,25 @@ export function makeCarpetCtx(carpet, ground, wind) {
     if (hm > ctx.maxH) ctx.maxH = hm;
   }
   return ctx;
+}
+
+/** MASK-c: (re)bind the density mask result object ({data,x0,y0,w,h}) or null = no mask. Call again after every maskVersion change. */
+export function setCarpetMask(ctx, m) {
+  if (m && m.data) { ctx.mData = m.data; ctx.mx0 = m.x0; ctx.my0 = m.y0; ctx.mw = m.w; ctx.mh = m.h; } else { ctx.mData = null; ctx.mw = 0; ctx.mh = 0; }
+}
+
+/** MASK-c: mask value 0..1 at world q[0], q[1] -> ctx.s[S_M] (1 = no mask / outside the window). Keeps q. */
+function maskAt(ctx) {
+  const s = ctx.s, q = ctx.q;
+  s[S_M] = 1;
+  if (ctx.mData === null) return;
+  const fx = (q[0] - ctx.mx0) / MASK_CELL - 0.5, fy = (q[1] - ctx.my0) / MASK_CELL - 0.5;
+  if (fx < -0.5 || fy < -0.5 || fx > ctx.mw - 0.5 || fy > ctx.mh - 0.5) return; // outside the window
+  const x0 = Math.floor(fx) | 0, y0 = Math.floor(fy) | 0, u = fx - x0, v = fy - y0;
+  const xa = x0 < 0 ? 0 : x0, xb = x0 + 1 > ctx.mw - 1 ? ctx.mw - 1 : x0 + 1, ya = y0 < 0 ? 0 : y0, yb = y0 + 1 > ctx.mh - 1 ? ctx.mh - 1 : y0 + 1;
+  const d = ctx.mData, w = ctx.mw;
+  const a = d[ya * w + xa] * (1 / 255), b = d[ya * w + xb] * (1 / 255), c = d[yb * w + xa] * (1 / 255), e = d[yb * w + xb] * (1 / 255);
+  s[S_M] = a + (b - a) * u + (c - a) * v + (a - b - c + e) * u * v;
 }
 
 /** class map value at q[0], q[1] (world xy); outside the map = 0. */
@@ -113,12 +138,17 @@ function bladeHit(ctx, ix, iy) {
   q[0] = rx + ((hashFast24(ix, iy, seed + SALT_CJX) * INV_2_24) * 2 - 1) * cj; q[1] = ry + ((hashFast24(ix, iy, seed + SALT_CJY) * INV_2_24) * 2 - 1) * cj;
   const v = classAt(ctx);
   if (v === 0) return 0;
+  q[0] = rx; q[1] = ry;
+  maskAt(ctx); // MASK-c: after the variant pick, at the blade root
+  const mk = s[S_M];
+  if (mk < MASK_MIN) return 0;
   const rank = (hashFast24(ix, iy, seed + SALT_RANK) * INV_2_24);
   if (rank >= ctx.dens[v]) return 0;
   q[0] = rx / ctx.patchM; q[1] = ry / ctx.patchM;
   vnoise(ctx, seed + SALT_PATCH);
   let h = (ctx.hMin[v] + (ctx.hMax[v] - ctx.hMin[v]) * (hashFast24(ix, iy, seed + SALT_H) * INV_2_24)) * (PATCH_LO + PATCH_RANGE * q[2]);
   if ((hashFast24(ix, iy, seed + SALT_TUFT) * INV_2_24) < ctx.tuftP[v]) h *= ctx.tuftMul[v]; // OB-096: tall tufts
+  h *= mk; // MASK-c: height falls gradually with the mask (soft edge), density unchanged
   const w = ctx.bw[v] * 0.5 * (W_JIT_LO + W_JIT_RANGE * (hashFast24(ix, iy, seed + SALT_W) * INV_2_24));
   q[0] = rx; q[1] = ry;
   ctx.ground(q);
@@ -151,7 +181,7 @@ function bladeHit(ctx, ix, iy) {
   let f2 = (dXY / ctx.radiusM - FADE_R0) / (FADE_R1 - FADE_R0); f2 = f2 < 0 ? 0 : f2 > 1 ? 1 : f2;
   const fade = (1 - f1 * f1 * (3 - 2 * f1)) * (1 - f2 * f2 * (3 - 2 * f2));
   if (rank >= ctx.dens[v] * fade) return 0;
-  s[S_VAR] = v; s[S_H01] = sr / h; s[S_Z] = zr; s[S_H] = h; s[S_TB] = tc;
+  s[S_VAR] = v; s[S_H01] = sr / h; s[S_Z] = zr; s[S_H] = h; s[S_TB] = tc; s[S_RX] = rx; s[S_RY] = ry; s[S_FP] = fp;
   return 1;
 }
 
@@ -290,21 +320,24 @@ export function bladeAtCell(ctx, ix, iy, out) {
   const ry = (iy + 0.5 + ((hashFast24(ix, iy, seed + SALT_JY) * INV_2_24) * 2 - 1) * ROOT_JITTER) * c;
   const cj = ctx.classJitterM;
   q[0] = rx + ((hashFast24(ix, iy, seed + SALT_CJX) * INV_2_24) * 2 - 1) * cj; q[1] = ry + ((hashFast24(ix, iy, seed + SALT_CJY) * INV_2_24) * 2 - 1) * cj;
-  const v = classAt(ctx);
+  let v = classAt(ctx);
+  q[0] = rx; q[1] = ry; maskAt(ctx);
+  const mk = ctx.s[S_M];
+  if (mk < MASK_MIN) v = 0;
   out[0] = rx; out[1] = ry; out[3] = v;
   q[0] = rx / ctx.patchM; q[1] = ry / ctx.patchM;
   vnoise(ctx, seed + SALT_PATCH);
   out[2] = v === 0 ? 0 : (ctx.hMin[v] + (ctx.hMax[v] - ctx.hMin[v]) * (hashFast24(ix, iy, seed + SALT_H) * INV_2_24)) * (PATCH_LO + PATCH_RANGE * q[2])
-    * ((hashFast24(ix, iy, seed + SALT_TUFT) * INV_2_24) < ctx.tuftP[v] ? ctx.tuftMul[v] : 1);
+    * ((hashFast24(ix, iy, seed + SALT_TUFT) * INV_2_24) < ctx.tuftP[v] ? ctx.tuftMul[v] : 1) * mk;
 }
 
 // ---- OB-073 D2c (38.52 items 7-8): the carpet cell pass of the JS frame (after resolve, before lighting) --------
-import { KIND_GRASS, FACE_U } from './GBuffer.js';
+import { KIND_GRASS, KIND_TERRAIN, FACE_U } from './GBuffer.js';
 import { packNormalOct } from '../voxel/octNormal.js';
 import { STEP } from '../core/loop.js';
 
 export const SALT_TINT = 107;          // per-blade colour shift stream (cfg.seed + SALT_TINT)
-export const TINT_AMP = 0.08;          // ramp position shift +-0.08
+export const TINT_AMP = GRASS_TINT_AMP; // ramp position shift +-0.08 (terrainShade.js owns it: the shade decodes the tint byte)
 const _cellHit = makeCarpetHit();
 const _aoAlias = new WeakMap();
 const _worldCtx = new WeakMap();
@@ -340,7 +373,39 @@ export function carpetCtxFor(world) {
     _worldCtx.set(world, ctx);
   }
   ctx.classMap = c.classMap; ctx.cx0 = c.x0; ctx.cy0 = c.y0; ctx.cw = c.w; ctx.ch = c.h;
+  setCarpetMask(ctx, c.mask); // MASK-c: re-read after every change (ping-pong result object)
   return ctx;
+}
+
+/**
+ * Write the blade found by traceCarpetIn into cell i (shared by the shear and pitched loops). Normal slot: the TERRAIN normal under the blade
+ * (the cell's own, left unchanged) when the cell below is terrain, else the lean-tilted one (MASK-c: grass lit like the ground). gbuf.grassX =
+ * packed word (terrainShade.js GRASS_GX_*): tint byte | back-light byte << 8 | ground type << 16 | (tier offset + 1) << 24 | HAS. Twin: carpet.wgsl.js fs_main.
+ * `sun` = {dirX,dirY,dirZ} unit toward the sun or null (no back-light).
+ */
+function groundTierOffsetQ(ctx) { const q = ctx.q, s = ctx.s; q[0] = s[S_RX]; q[1] = s[S_RY]; q[2] = s[S_FP]; return groundTierOffset(q); }
+function writeBlade(gbuf, alias, ctx, out, i, sun) {
+  const s = ctx.s, inp = ctx.inp;
+  const under = gbuf.kind[i], mat0 = gbuf.mat[i];
+  gbuf.kind[i] = KIND_GRASS; gbuf.mat[i] = out.variant; gbuf.u[i] = out.h01; gbuf.v[i] = out.lean; gbuf.face[i] = FACE_U;
+  gbuf.z[i] = out.z;
+  let gx = 0;
+  if (under === KIND_TERRAIN && mat0 < 256) {
+    gx = GRASS_GX_HAS + (groundTierOffsetQ(ctx) + 1) * 16777216 + mat0 * 65536;
+  } else {
+    const lx = s[S_LX], ly = s[S_LY], inv = 1 / Math.sqrt(lx * lx + ly * ly + 1);
+    alias[i] = packNormalOct(lx * inv, ly * inv, inv);
+  }
+  let bl = 0;
+  if (sun !== null && sun !== undefined) {
+    const dx = inp[IN_DX], dy = inp[IN_DY], dz = inp[IN_DZ], il = 1 / Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const dd = (dx * sun.dirX + dy * sun.dirY + dz * sun.dirZ) * il; // > 0: the sun is behind the blade as seen from the eye
+    bl = dd < 0 ? 0 : dd > 1 ? 1 : dd;
+  }
+  const tb = hashFast24(out.ix, out.iy, ctx.seed + SALT_TINT) >> 16; // 0..255
+  gx += tb + Math.floor(bl * 255 + 0.5) * 256;
+  gbuf.grassX[i] = gx;
+  gbuf.vao[i] = (tb * (1 / 255) * 2 - 1) * TINT_AMP;
 }
 
 /**
@@ -352,18 +417,18 @@ export function carpetCtxFor(world) {
  * reads them). objectId / planeId stay those of the cell underneath (blades are never pickable). Zero alloc per frame.
  * @param {import('./GBuffer.js').GBuffer} gbuf  @param {{depth:{depth:Float32Array}}} fb
  * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number}} cam
- * @param {ReturnType<typeof makeCarpetCtx>} ctx  @param {number} timeSec
+ * @param {ReturnType<typeof makeCarpetCtx>} ctx  @param {number} timeSec  @param {{dirX:number,dirY:number,dirZ:number}|null} [sun] back-light direction
  * @returns {number} cells written
  */
-export function carpetCells(gbuf, fb, cam, ctx, timeSec, pt) {
+export function carpetCells(gbuf, fb, cam, ctx, timeSec, pt, sun) {
   const cols = gbuf.cols, rows = gbuf.rows, depth = fb.depth.depth, kind = gbuf.kind;
   let alias = _aoAlias.get(gbuf);
   if (!alias || alias.buffer !== gbuf.aoD.buffer) { alias = new Uint32Array(gbuf.aoD.buffer, gbuf.aoD.byteOffset, gbuf.aoD.length); _aoAlias.set(gbuf, alias); }
   const yawRad = cam.yawDeg * Math.PI / 180, dirX = Math.sin(yawRad), dirY = -Math.cos(yawRad);
   const tanH = gbuf.cam.tanHalfHFov, planeX = -dirY * tanH, planeY = dirX * tanH, planeDistY = gbuf.cam.planeDistY;
   const horizonRow = rows / 2 + Math.tan(cam.pitchDeg * Math.PI / 180) * planeDistY;
-  if (pt) return carpetCellsPitched(gbuf, fb, cam, ctx, timeSec, pt, alias);
-  const inp = ctx.inp, s = ctx.s, out = _cellHit, tintSalt = ctx.seed + SALT_TINT;
+  if (pt) return carpetCellsPitched(gbuf, fb, cam, ctx, timeSec, pt, alias, sun);
+  const inp = ctx.inp, out = _cellHit;
   inp[IN_EX] = cam.x; inp[IN_EY] = cam.y; inp[IN_EZ] = cam.z; inp[IN_TIME] = timeSec;
   ctx.q[0] = cam.x; ctx.q[1] = cam.y; ctx.ground(ctx.q);
   const eyeAbove = cam.z > ctx.q[2] + ctx.maxH; // rays level or upward from above the blade volume can never reach it
@@ -380,20 +445,16 @@ export function carpetCells(gbuf, fb, cam, ctx, timeSec, pt) {
       const cameraX = (2 * (x + 0.5)) / cols - 1;
       inp[IN_DX] = dirX + planeX * cameraX; inp[IN_DY] = dirY + planeY * cameraX; inp[IN_DZ] = slope; inp[IN_THIT] = d;
       if (traceCarpetIn(ctx, out) === 0) continue;
-      kind[i] = KIND_GRASS; gbuf.mat[i] = out.variant; gbuf.u[i] = out.h01; gbuf.v[i] = out.lean; gbuf.face[i] = FACE_U;
-      gbuf.z[i] = out.z; depth[i] = out.t;
-      const lx = s[S_LX], ly = s[S_LY], inv = 1 / Math.sqrt(lx * lx + ly * ly + 1);
-      alias[i] = packNormalOct(lx * inv, ly * inv, inv);
-      gbuf.vao[i] = ((hashFast24(out.ix, out.iy, tintSalt) * INV_2_24) * 2 - 1) * TINT_AMP;
+      writeBlade(gbuf, alias, ctx, out, i, sun); depth[i] = out.t;
       written++;
     }
   }
   return written;
 }
 
-function carpetCellsPitched(gbuf, fb, cam, ctx, timeSec, pt, alias) {
+function carpetCellsPitched(gbuf, fb, cam, ctx, timeSec, pt, alias, sun) {
   const cols = gbuf.cols, rows = gbuf.rows, depth = fb.depth.depth, kind = gbuf.kind;
-  const inp = ctx.inp, s = ctx.s, out = _cellHit, tintSalt = ctx.seed + SALT_TINT;
+  const inp = ctx.inp, out = _cellHit;
   inp[IN_EX] = cam.x; inp[IN_EY] = cam.y; inp[IN_EZ] = cam.z; inp[IN_TIME] = timeSec;
   ctx.q[0] = cam.x; ctx.q[1] = cam.y; ctx.ground(ctx.q);
   const eyeAbove = cam.z > ctx.q[2] + ctx.maxH;
@@ -413,11 +474,7 @@ function carpetCellsPitched(gbuf, fb, cam, ctx, timeSec, pt, alias) {
       const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
       inp[IN_DX] = dx / len; inp[IN_DY] = dy / len; inp[IN_DZ] = dz / len; inp[IN_THIT] = d * len;
       if (traceCarpetIn(ctx, out) === 0) continue;
-      kind[i] = KIND_GRASS; gbuf.mat[i] = out.variant; gbuf.u[i] = out.h01; gbuf.v[i] = out.lean; gbuf.face[i] = FACE_U;
-      gbuf.z[i] = out.z; depth[i] = out.t / len;
-      const lx = s[S_LX], ly = s[S_LY], inv = 1 / Math.sqrt(lx * lx + ly * ly + 1);
-      alias[i] = packNormalOct(lx * inv, ly * inv, inv);
-      gbuf.vao[i] = ((hashFast24(out.ix, out.iy, tintSalt) * INV_2_24) * 2 - 1) * TINT_AMP;
+      writeBlade(gbuf, alias, ctx, out, i, sun); depth[i] = out.t / len;
       written++;
     }
   }

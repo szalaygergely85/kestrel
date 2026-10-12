@@ -20,7 +20,7 @@ import { PASS_NAMES } from '../wg/WgCellPipeline.js';
 assert.ok(WGSL_MODULES.some((m) => m.name === 'carpet' && m.code === CARPET_WGSL), 'registered in WGSL_MODULES');
 assert.ok(!/%|\bround\s*\(|\bmod\s*\(|dpdx|dpdy|fwidth|textureSample|Math\.random|sin\s*\(|fract/.test(CARPET_WGSL), 'WGSL string rules');
 assert.ok(/fn fs_main\(@builtin\(position\) frag: vec4f\) -> FO/.test(CARPET_WGSL) && /@group\(1\) @binding\(0\) var<uniform> cu: CarpetU/.test(CARPET_WGSL));
-assert.deepEqual([...CARPET_TEXTURES], ['uint', 'uint', 'uint', 'uint', 'float']);
+assert.deepEqual([...CARPET_TEXTURES], ['uint', 'uint', 'uint', 'uint', 'float', 'uint']);
 assert.deepEqual([...CARPET_TARGETS], ['rgba32ui', 'rgba32ui', 'r32ui']);
 const lit = (v) => { const s = String(v); return /[.e]/.test(s) ? s : s + '.0'; };
 for (const n of ['ROOT_JITTER', 'LEAN_CAP', 'LEAN_PER_MS', 'PATCH_LO', 'PATCH_RANGE', 'GUST_LO', 'GUST_RANGE', 'FADE_FP0', 'FADE_FP1', 'FADE_R0', 'FADE_R1', 'WMAX_CELLS', 'W_JIT_LO', 'W_JIT_RANGE']) {
@@ -36,7 +36,7 @@ const w = (n) => CARPET_BLOCK.field(n).word;
 assert.deepEqual(['gridCols', 'seed', 'cellM', 'timeSec', 'fpK'].map(w), [0, 2, 8, 15, 23]);
 assert.deepEqual(['windP0', 'windP1', 'eye', 'pitchA', 'pitchB', 'pitchC', 'knots', 'vtab'].map(w), [24, 28, 32, 36, 40, 44, 48, 112]);
 assert.equal(CARPET_BLOCK.field('vtab').words, 16 * CARPET_VTAB_ROWS * 4);
-assert.equal(CARPET_BLOCK.sizeBytes, (112 + 128 + 4) * 4, '16 variants x 2 vec4 (32 B) + 16 knot vec4 + header + PREC-01a origin (ix0, iy0, orgX, orgY)');
+assert.equal(CARPET_BLOCK.sizeBytes, (112 + 128 + 16) * 4, '16 variants x 2 vec4 (32 B) + 16 knot vec4 + header + PREC-01a origin (ix0, iy0, orgX, orgY)');
 assert.ok(CARPET_BLOCK.sizeBytes <= 65536);
 
 // ---- (b) JS evaluation of the trace
@@ -55,7 +55,7 @@ function transliterate(src) {
 }
 const traceJs = transliterate(`${WIND_AT_WGSL}\n${CARPET_TRACE_WGSL}`);
 function makeTwin(cu, tex, K) {
-  const ext = { cu, hashFastU, classTexel: (i, j) => tex.cls[j * tex.cw + i], nearTexel: (i, j) => tex.near[j * tex.nw + i], windKnot: (i) => K[i], ...shims };
+  const ext = { cu, hashFastU, maskTexel: (i, j) => tex.mask[j * tex.mw + i] * (1 / 255), classTexel: (i, j) => tex.cls[j * tex.cw + i], nearTexel: (i, j) => tex.near[j * tex.nw + i], windKnot: (i) => K[i], ...shims };
   const names = Object.keys(ext);
   return new Function(...names, `${traceJs}
     return { run(ex, ey, ez, dx, dy, dz, th) { rEx = ex; rEy = ey; rEz = ez; rDx = dx; rDy = dy; rDz = dz; return traceCarpet(th); },
@@ -78,7 +78,10 @@ const cfg = { seed: 7, radiusM: 6, variants: [
   { name: 'meadow', ground: ['grass'], density: 0.9, heightM: [0.10, 0.22], ramp: ['a', 'b'] },
   { name: 'straw', ground: ['grassTall'], density: 0.8, heightM: [0.35, 0.55], bladeW: 0.07, swayGain: 1.5, ramp: ['a', 'b'] },
 ] };
-const carpet = { cfg, classMap, x0: X0, y0: X0, w: CW, h: CW };
+// MASK-c fixture: a 24x24 (0.5 m) mask window over x,y in [-6, 6) (the class map spans [-20, 20)): a zero patch, a gradient, the rest 150..255
+const MW = 24, MX0 = -6, maskData = new Uint8Array(MW * MW);
+for (let j = 0; j < MW; j++) for (let i = 0; i < MW; i++) maskData[j * MW + i] = i < 4 ? 0 : 150 + ((i * 7 + j * 13) % 106);
+const carpet = { cfg, classMap, x0: X0, y0: X0, w: CW, h: CW, mask: { data: maskData, x0: MX0, y0: MX0, w: MW, h: MW, cellM: 0.5 }, maskVersion: 1 };
 const nearH = { data: near, w: NW, h: NW, x0: X0, y0: X0, cell: NC };
 
 function rng(seed) { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; }; }
@@ -106,6 +109,7 @@ function parity(label, windDef, N) {
   const cu = {
     seed: iv[w('seed')], windOn: iv[w('windOn')], classW: iv[w('classW')], classHt: iv[w('classHt')], nearW: iv[w('nearW')], nearHt: iv[w('nearHt')],
     timeSec: 0, fpK: 0, windP0: v4(w('windP0')), windP1: v4(w('windP1')),
+    maskX0: MX0, maskY0: MX0, maskW: MW, maskHt: MW, maskOn: 1,
     vtab: Array.from({ length: 16 * CARPET_VTAB_ROWS }, (_, k) => v4(w('vtab') + k * 4)),
   };
   for (const n of ['cellM', 'radiusM', 'patchM', 'classCellM', 'classJitterM', 'gustM', 'travelM', 'classX0', 'classY0', 'nearX0', 'nearY0', 'nearCell', 'maxH', 'wMax']) cu[n] = f[w(n)];
@@ -114,7 +118,7 @@ function parity(label, windDef, N) {
   for (let v = 1; v <= 2; v++) { ctx.dens[v] = cu.vtab[v * 2].x; ctx.hMin[v] = cu.vtab[v * 2].y; ctx.hMax[v] = cu.vtab[v * 2].z; ctx.bw[v] = cu.vtab[v * 2].w; ctx.sway[v] = cu.vtab[v * 2 + 1].x; ctx.tuftP[v] = cu.vtab[v * 2 + 1].y; ctx.tuftMul[v] = cu.vtab[v * 2 + 1].z; }
   assert.equal(cu.vtab[0].x, 0, 'variant 0 = no carpet'); assert.equal(cu.vtab[1].x, 1, 'variant 0 sway 1');
   const K = p ? p.K : null;
-  const twin = makeTwin(cu, { cls: classMap, cw: CW, near, nw: NW }, K);
+  const twin = makeTwin(cu, { cls: classMap, cw: CW, near, nw: NW, mask: maskData, mw: MW }, K);
   const r = rng(12345), e = [-3, 3, 1.5], d = [0, 0, 0];
   let hits = 0, agree = 0, bad = 0, maxErr = 0;
   const stepsHist = { over: 0 };
@@ -138,6 +142,40 @@ function parity(label, windDef, N) {
   assert.ok(maxErr < 1e-6, `${label}: matched-hit fields within 1e-6 (${maxErr})`);
 }
 parity('calm', null, 3000);
+// ---- MASK-c: mask semantics (JS twin)
+{
+  const { traceCarpetBrute, bladeAtCell, setCarpetMask, MASK_MIN } = C;
+  const mk = (data, w, h, x0, y0) => ({ data, w, h, x0, y0, cellM: 0.5 });
+  const base = { cfg, classMap, x0: X0, y0: X0, w: CW, h: CW };
+  const c0 = makeCarpetCtx(base, groundQ, null), out4 = new Float64Array(4), out4m = new Float64Array(4);
+  // cell with a known meadow blade (west half): find one inside the future mask window, away from its border
+  let ci = 0, cj = 0, found = false; for (let j = -30; j < 30 && !found; j++) for (let i = -40; i < -5; i++) { bladeAtCell(c0, i, j, out4); if (out4[3] === 1 && out4[0] > -4.5 && out4[0] < -2 && out4[1] > -3 && out4[1] < 3) { ci = i; cj = j; found = true; break; } }
+  assert.ok(found && out4[3] === 1, 'fixture blade found');
+  const h0 = out4[2], rx = out4[0], ry = out4[1];
+  const uni = (val) => { const d = new Uint8Array(MW * MW).fill(val); return mk(d, MW, MW, MX0, MX0); };
+  setCarpetMask(c0, uni(0)); bladeAtCell(c0, ci, cj, out4m); assert.equal(out4m[3], 0, 'mask 0 -> no blade');
+  setCarpetMask(c0, uni(255)); bladeAtCell(c0, ci, cj, out4m); assert.ok(Math.abs(out4m[2] - h0) < 1e-12 && out4m[3] === 1, 'mask 1 -> unchanged');
+  setCarpetMask(c0, uni(128)); bladeAtCell(c0, ci, cj, out4m); assert.ok(Math.abs(out4m[2] - h0 * 128 / 255) < 1e-12, 'mask 0.5 -> half height (' + out4m[2] / h0 + ')');
+  setCarpetMask(c0, uni(8)); bladeAtCell(c0, ci, cj, out4m); assert.equal(out4m[3], 0, 'mask below ' + MASK_MIN + ' (8/255 = 0.031) -> no blade');
+  setCarpetMask(c0, mk(new Uint8Array(MW * MW), MW, MW, rx + 50, ry + 50)); bladeAtCell(c0, ci, cj, out4m); assert.ok(out4m[3] === 1 && Math.abs(out4m[2] - h0) < 1e-12, 'outside the window = no mask');
+  setCarpetMask(c0, null); bladeAtCell(c0, ci, cj, out4m); assert.ok(out4m[3] === 1 && Math.abs(out4m[2] - h0) < 1e-12, 'no mask object = no mask');
+  // bilerp on cell centres: a 2x2 mask, root at the exact centre of the 4 texels = their mean
+  const d2 = new Uint8Array([0, 255, 255, 0]); setCarpetMask(c0, mk(d2, 2, 2, Math.floor(rx), Math.floor(ry)));
+  const m2 = c0.mData; assert.ok(m2 === d2);
+  // DDA == brute force with the mask on (same blades win)
+  const cm = makeCarpetCtx(carpet, groundQ, null), cb = makeCarpetCtx(carpet, groundQ, null), oa = makeCarpetHit(), ob = makeCarpetHit();
+  const rr = rng(99), ee = [-3, 3, 1.5], dd = [0, 0, 0]; let nHit = 0, nBad = 0;
+  for (let n = 0; n < 1500; n++) {
+    const yaw = rr() * Math.PI * 2, pit = -(0.05 + rr() * 1.3);
+    dd[0] = Math.cos(pit) * Math.cos(yaw); dd[1] = Math.cos(pit) * Math.sin(yaw); dd[2] = Math.sin(pit);
+    const th = terrainT(ee, dd); if (!isFinite(th)) continue;
+    const a = C.traceCarpet(ee, dd, th, cm, 0, oa), b = traceCarpetBrute(ee, dd, th, cb, 0, ob);
+    if (a) nHit++;
+    if (a !== b || (a && (oa.ix !== ob.ix || oa.iy !== ob.iy))) nBad++;
+  }
+  assert.ok(nHit > 50, 'masked DDA hits ' + nHit); assert.equal(nBad, 0, 'masked DDA == brute force');
+  console.log('  MASK-c semantics ok (' + nHit + ' masked DDA hits, 0 brute-force mismatches)');
+}
 parity('wind 4 m/s', { dirDeg: 40, speed: 4, gust: { amp: 0.6, periodSec: 3, travel: 8 } }, 3000);
 
 // ---- (c) pass host on the mock device
@@ -151,7 +189,7 @@ parity('wind 4 m/s', { dirDeg: 40, speed: 4, gust: { amp: 0.6, periodSec: 3, tra
   assert.equal(cp.run(p, tgt), null, 'off (no carpet set): returns null and encodes nothing');
   assert.deepEqual(log, []);
   cp.setCarpet(carpet, nearH, 1);
-  assert.equal(cp.stats.classUploads, 1); assert.equal(cp.stats.nearUploads, 1);
+  assert.equal(cp.stats.classUploads, 1); assert.equal(cp.stats.nearUploads, 1); assert.equal(cp.stats.maskUploads, 1, 'mask uploaded once');
   log.length = 0;
   const v1 = cp.run(p, tgt);
   assert.deepEqual(log, ['beginPass', 'draw', 'endPass'], 'one fullscreen pass');
@@ -159,6 +197,9 @@ parity('wind 4 m/s', { dirDeg: 40, speed: 4, gust: { amp: 0.6, periodSec: 3, tra
   cp.setTime(1.5);
   for (let i = 0; i < 5; i++) { cp.setCarpet(carpet, nearH, 1); assert.equal(cp.run(p, tgt), v1, 'same alias object every frame'); }
   assert.equal(cp.stats.classUploads, 1, 'class map uploads only on a rebake (spy)');
+  assert.equal(cp.stats.maskUploads, 1, 'mask uploads only when maskVersion changes');
+  carpet.maskVersion = 2; cp.setCarpet(carpet, nearH, 1); assert.equal(cp.stats.maskUploads, 2, 'maskVersion bump = mask re-upload only');
+  assert.equal(cp.stats.classUploads, 1, 'class map untouched by a mask version bump');
   cp.setCarpet(carpet, nearH, 2);
   assert.equal(cp.stats.classUploads, 2, 'version bump = re-upload');
   p._rasterPass.ortho = true; assert.equal(cp.run(p, tgt), null, 'ortho: no carpet');

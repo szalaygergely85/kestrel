@@ -12,6 +12,7 @@
 import { CARPET_BLOCK, CARPET_WGSL, CARPET_TEXTURES, CARPET_TARGETS, CARPET_VTAB_ROWS, CARPET_KNOTS } from '../wgsl/carpet.wgsl.js';
 import { makeCarpetCtx, MAX_VARIANTS } from '../../carpet.js';
 import { CARPET_DEFAULTS } from '../../../world/carpet.js';
+import { sunFromWorld } from '../../lighting.js';
 
 const W = (n) => CARPET_BLOCK.field(n).word;
 const W_COLS = W('gridCols'), W_ROWS = W('gridRows'), W_SEED = W('seed'), W_WINDON = W('windOn');
@@ -21,7 +22,9 @@ const W_GUST = W('gustM'), W_TRAVEL = W('travelM'), W_TIME = W('timeSec'), W_CX0
 const W_NX0 = W('nearX0'), W_NY0 = W('nearY0'), W_NCELL = W('nearCell'), W_MAXH = W('maxH'), W_WMAX = W('wMax'), W_FPK = W('fpK');
 const W_WIND0 = W('windP0'), W_WIND1 = W('windP1'), W_EYE = W('eye'), W_PA = W('pitchA'), W_PB = W('pitchB'), W_PC = W('pitchC');
 const W_KNOTS = W('knots'), W_VTAB = W('vtab'), W_IX0 = W('ix0'), W_IY0 = W('iy0'), W_ORGX = W('orgX'), W_ORGY = W('orgY');
+const W_MX0 = W('maskX0'), W_MY0 = W('maskY0'), W_MW = W('maskW'), W_MH = W('maskHt'), W_MON = W('maskOn'), W_SUN = W('sun');
 const NOOP_GROUND = () => {};
+const ONE_MASK = new Uint8Array([255]);
 
 /**
  * Pure, Node-tested: the per-rebake part of the uniform block (config scalars + variant table). Variant id 0 = no carpet (density 0, sway 1).
@@ -67,10 +70,11 @@ export class WgCarpetPass {
     this.tex = CARPET_TEXTURES.map((_, slot) => ({ slot, texture: null }));
     this.bindDesc = { uniforms: this.u, textures: this.tex };
     this.texGI = null; this.texGA = null; this.texDepth = null; this.target = null;
-    this.texClass = null; this.texNear = null;
+    this.texClass = null; this.texNear = null; this.texMask = null; this._maskVer = NaN; this._maskObj = undefined; this._mW = 0; this._mH = 0;
+    this.sunScratch = {};
     this._carpet = null; this._nearH = null; this._version = NaN; this._dirty = false;
     this._view = null; this._viewFor = null;
-    this.stats = { classUploads: 0, nearUploads: 0, runs: 0 };
+    this.stats = { classUploads: 0, nearUploads: 0, maskUploads: 0, runs: 0 };
   }
 
   resize(cols, rows) {
@@ -94,6 +98,7 @@ export class WgCarpetPass {
       this._carpet = carpet; this._nearH = nearH; this._version = version;
       this._upload(carpet, nearH);
     }
+    this._syncMask(carpet);
     this.active = true;
   }
   setTime(sec) { this.timeSec = sec; }
@@ -101,6 +106,21 @@ export class WgCarpetPass {
   setWind(params) { this.windParams = params || null; }
   /** groundFootprint hashCell parameter (the shade pass's hashCell: <0 = -k, >0 fixed cell, 0 = default k). */
   setFootprintK(k) { this.fpK = k; }
+
+  /** MASK-c: upload the density mask (r8ui) ONLY when `carpet.maskVersion` (an int) or the result object changed; re-reads carpet.mask (ping-pong object, never cached by data). */
+  _syncMask(carpet) {
+    const ver = carpet.maskVersion | 0, m = carpet.mask || null;
+    if (ver === this._maskVer && m === this._maskObj && this.texMask) return;
+    this._maskVer = ver; this._maskObj = m;
+    const d = this.device, w = m ? m.w : 1, h = m ? m.h : 1;
+    if (!this.texMask || this._mW !== w || this._mH !== h) {
+      if (this.texMask) d.dispose(this.texMask);
+      this.texMask = d.createTexture({ format: 'r8ui', width: w, height: h }); this._mW = w; this._mH = h;
+    }
+    d.writeTexture(this.texMask, m ? m.data : ONE_MASK, { x: 0, y: 0, w, h }, 0); this.stats.maskUploads++;
+    const f = this.u, i = this.ui;
+    i[W_MON] = m ? 1 : 0; i[W_MW] = w; i[W_MH] = h; f[W_MX0] = m ? m.x0 : 0; f[W_MY0] = m ? m.y0 : 0;
+  }
 
   _upload(carpet, nearH) {
     const d = this.device;
@@ -115,6 +135,7 @@ export class WgCarpetPass {
     d.writeTexture(this.texClass, carpet.classMap, { x: 0, y: 0, w: carpet.w, h: carpet.h }, 0); this.stats.classUploads++;
     d.writeTexture(this.texNear, nearH.data, { x: 0, y: 0, w: nearH.w, h: nearH.h }, 0); this.stats.nearUploads++;
     packCarpetConfig(carpet, nearH, this.u, this.ui);
+    this._maskVer = NaN; // packCarpetConfig rewrote the block: re-apply the mask words
   }
 
   /**
@@ -124,12 +145,14 @@ export class WgCarpetPass {
   run(p, t) {
     this.ran = false;
     const rp = p._rasterPass, cam = p._cam;
-    if (!this.active || !cam || !rp || !rp.pitched || rp.ortho || !this.texClass || !this.texNear) return null; // perspective + pitched only (ortho: no carpet)
+    if (!this.active || !cam || !rp || !rp.pitched || rp.ortho || !this.texClass || !this.texNear || !this.texMask) return null; // perspective + pitched only (ortho: no carpet)
     if (p.cols !== this.cols || p.rows !== this.rows || !this.target) this.resize(p.cols, p.rows);
     const f = this.u, q = rp.pitch;
     this.ui[W_COLS] = this.cols; this.ui[W_ROWS] = this.rows;
     f[W_TIME] = this.timeSec; f[W_FPK] = this.fpK;
     packCarpetWind(this.windParams, f, this.ui);
+    // MASK-c back-light: sun direction toward the sun (w = on); no palette/world = off
+    if (p._world && p._palette && p._palette.timeOfDay) { const sn = sunFromWorld(p._world, p._palette, this.sunScratch); f[W_SUN] = sn.dirX; f[W_SUN + 1] = sn.dirY; f[W_SUN + 2] = sn.dirZ; f[W_SUN + 3] = 1; } else f[W_SUN + 3] = 0;
     // PREC-01a: lattice origin (i32 cell of the eye) and the eye relative to it, computed in f64 here
     const cm = f[W_CELL], ix0 = Math.floor(cam.x / cm), iy0 = Math.floor(cam.y / cm);
     this.ui[W_IX0] = ix0; this.ui[W_IY0] = iy0; f[W_ORGX] = ix0 * cm; f[W_ORGY] = iy0 * cm;
@@ -138,7 +161,7 @@ export class WgCarpetPass {
     f[W_PB] = q.rX; f[W_PB + 1] = q.rY; f[W_PB + 2] = q.uX; f[W_PB + 3] = q.uY;
     f[W_PC] = q.uZ; f[W_PC + 1] = q.tanHalfY; f[W_PC + 2] = 0; f[W_PC + 3] = 0;
     const tx = this.tex, d = this.device;
-    tx[0].texture = t.texGI; tx[1].texture = t.texGA; tx[2].texture = t.texDepth; tx[3].texture = this.texClass; tx[4].texture = this.texNear;
+    tx[0].texture = t.texGI; tx[1].texture = t.texGA; tx[2].texture = t.texDepth; tx[3].texture = this.texClass; tx[4].texture = this.texNear; tx[5].texture = this.texMask;
     d.beginPass(this.target); d.bind(this.pipe, this.bindDesc); d.draw(3); d.endPass();
     if (this._viewFor !== t) { this._view = Object.create(t); this._viewFor = t; }
     const v = this._view;
@@ -153,6 +176,6 @@ export class WgCarpetPass {
   }
   dispose() {
     this._freeTargets();
-    for (const k of ['texClass', 'texNear', 'pipe']) if (this[k]) { try { this.device.dispose(this[k]); } catch (_) { /* best effort */ } this[k] = null; }
+    for (const k of ['texClass', 'texNear', 'texMask', 'pipe']) if (this[k]) { try { this.device.dispose(this[k]); } catch (_) { /* best effort */ } this[k] = null; }
   }
 }

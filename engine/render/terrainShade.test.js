@@ -1,6 +1,6 @@
 // US-016 Node tests for `shadeTerrain` (docs/architecture.md 14.4 item 5,
 // near-detail extension 23.4).
-import { shadeTerrain, hashFast01, perCellHashSize, shadeTerrainCells } from './terrainShade.js';
+import { shadeTerrain, hashFast01, perCellHashSize, shadeTerrainCells, groundAlbedo, groundTierOffset, patchNoise, valueNoise, NOISE_CELLS, NOISE_SALT, PATCH_K, shadeGrass, grassTableFor, GRASS_GX_HAS, GRASS_BACKLIGHT_K } from './terrainShade.js';
 import { Terrain } from '../world/Terrain.js';
 import { GBuffer, KIND_TERRAIN } from './GBuffer.js';
 import { CellBuffer } from './CellBuffer.js';
@@ -422,6 +422,36 @@ export function patchShape(shade) {
   }
   console.log(`OB-081 tier step for +0.02 light: far worst ${worstFar}, near worst ${worstNear}`);
   check('OB-081: far ground (400 m) has no whole tier step for a +0.02 lighting change', worstFar < worstNear * 0.5);
+}
+
+// MASK-c: groundAlbedo = the calm TLOOK tier colour (WGSL twin: shade.wgsl.js grass base, run through compileFn in shade.wgsl.test.js shadeGrass);
+// groundTierOffset == shadeTerrain's `off`; back-light term of shadeGrass.
+{
+  const o3 = new Float64Array(3);
+  for (const ti of [0, 1, 2]) {
+    groundAlbedo(0, ti, ctx, o3);
+    const o = ti * 4;
+    check('MASK-c groundAlbedo tier ' + ti, Math.abs(o3[0] - ctx.tlook[o] * 255) < 1e-9 && Math.abs(o3[1] - ctx.tlook[o + 1] * 255) < 1e-9 && Math.abs(o3[2] - ctx.tlook[o + 2] * 255) < 1e-9);
+  }
+  const q = new Float64Array(3); let badT = 0;
+  for (let i = 0; i < 2000; i++) {
+    const u = (i * 7.31) % 300 - 150, v = (i * 3.17) % 300 - 150, fp = [0.01, 0.1, 0.5, 2, 6][i % 5];
+    q[0] = u; q[1] = v; q[2] = fp;
+    const fu = Math.fround(u), fv = Math.fround(v);
+    const v8 = valueNoise(fu * (1 / NOISE_CELLS[0]), fv * (1 / NOISE_CELLS[0]), NOISE_SALT);
+    let ref = Math.floor(patchNoise(fu, fv, fp, v8) * PATCH_K + 0.5); ref = ref < -1 ? -1 : ref > 1 ? 1 : ref;
+    if (groundTierOffset(q) !== ref) badT++;
+  }
+  check('MASK-c groundTierOffset == floor(patchNoise * K + 0.5) clamped (' + badT + ' differ)', badT === 0);
+  const tab = grassTableFor({ variants: [{ ramp: [[40, 80, 20], [120, 200, 60]] }] });
+  const gctx = { ...ctx, shading: { ...ctx.shading, floorLum: 0 } };
+  const lum = (o) => o.fg[0] + o.fg[1] + o.fg[2];
+  const base = shadeGrass(50, 1, 0.8, 0, 0, 0.8, tab, gctx, out(), 0, 1), bl = shadeGrass(50, 1, 0.8, 0, 0, 0.8, tab, gctx, out(), 255 * 256, 1);
+  check('MASK-c back-light brightens the upper blade', lum(bl) > lum(base));
+  check('MASK-c back-light off when sunI = 0', lum(shadeGrass(50, 1, 0.8, 0, 0, 0.8, tab, gctx, out(), 255 * 256, 0)) === lum(base));
+  check('MASK-c back-light zero at the blade base (h01 = 0)', lum(shadeGrass(50, 1, 0, 0, 0, 0.8, tab, gctx, out(), 255 * 256, 1)) === lum(shadeGrass(50, 1, 0, 0, 0, 0.8, tab, gctx, out(), 0, 1)));
+  check('MASK-c back-light capped (sunI 5 == sunI 1)', lum(shadeGrass(50, 1, 0.8, 0, 0, 0.8, tab, gctx, out(), 255 * 256, 5)) === lum(bl));
+  check('MASK-c back-light cap constant', GRASS_BACKLIGHT_K > 0 && GRASS_BACKLIGHT_K <= 0.5);
 }
 console.log(`terrainShade.test.js: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
