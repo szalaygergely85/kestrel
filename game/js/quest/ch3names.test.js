@@ -34,11 +34,11 @@ book.feed({ type: 'flag:set', key: 'lore.fordMark.read', value: true }); book.fe
 book.feed({ type: 'area:entered', id: 'owPath' });
 for (const id of ['wolf1', 'wolf2', 'wolf3', 'wolf4', 'wolf5']) book.feed({ type: 'beast:died', id });
 er.mainSync(0); assert.equal(st('mq.ow.names'), 1, 'names open after the fence');
-assert.match(talk('hesk')[0], /NEEDS WRITER hesk\.names\.1/);
+assert.match(talk('hesk')[0], /Hands where I can see them/);
 assert.equal(st('mq.ow.names'), 4, 'accept + talk + auto hand-in in ONE conversation');
 assert.ok(book.lastReward.items.some((i) => /^gear\./.test(i.id)), 'gear T3 reward');
 assert.equal(st('mq.ow.relay'), 1); talk('hesk'); assert.equal(st('mq.ow.relay'), 2, 'Hesk gives the relay job');
-assert.match(talk('dorrin')[0], /dorrin\.relay\.1/);
+assert.match(talk('dorrin')[0], /brass collar off the top/);
 book.packOps.add('relay.brass', 1); book.feed({ type: 'item:got', id: 'relay.brass' });
 questFlag('waystone.ws_outwall.woken'); er.mainSync(0);
 assert.equal(st('mq.ow.relay'), 4, 'relay done once the Outwall relay wakes'); assert.equal(st('mq.ow.board'), 1);

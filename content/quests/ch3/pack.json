@@ -68,7 +68,7 @@
           "params": {
             "to": "hesk"
           },
-          "objText": "Tell Hesk who you are"
+          "objText": "Speak to the woman at the gate"
         }
       ],
       "requires": [
@@ -80,7 +80,27 @@
       "reward": {
         "table": "gear.t3"
       },
-      "abandonable": false
+      "abandonable": false,
+      "lines": {
+        "offer": [
+          "Stop there. Hands where I can see them.",
+          "You came over the river. Nobody comes over the river.",
+          "Ferrum says we're dead. Who are you?"
+        ],
+        "active": [
+          "Well? A name. Or the river back the way you came."
+        ],
+        "ready": [
+          "You tell her your name. She turns it over, slowly.",
+          "Wick.",
+          "We watched you at the fence. The wolves, too.",
+          "I'm Hesk. Come in, Wick. Keep your blade low.",
+          "Here. Ferrum's dead don't let a guest go cold."
+        ],
+        "done": [
+          "Ferrum's dead are busy, Wick. Mind the geese."
+        ]
+      }
     },
     {
       "id": "mq.ow.relay",
@@ -91,7 +111,7 @@
       "objectives": [
         {
           "id": "talk",
-          "text": "Ask Dorrin about the brass",
+          "text": "Ask Dorrin at the forge",
           "when": {
             "type": "flag",
             "id": "talk.dorrin",
@@ -100,7 +120,7 @@
         },
         {
           "id": "brass",
-          "text": "Take the relay brass from the gate",
+          "text": "Take the brass off the barley gate",
           "when": {
             "type": "item",
             "id": "relay.brass"
@@ -108,7 +128,7 @@
         },
         {
           "id": "wake",
-          "text": "Wake the Outwall Relay",
+          "text": "Fit the collar to the village relay",
           "when": {
             "type": "flag",
             "id": "waystone.ws_outwall.woken",
@@ -122,7 +142,26 @@
           "done": true
         }
       ],
-      "abandonable": false
+      "abandonable": false,
+      "returnText": "Fit the collar to the village relay",
+      "lines": {
+        "offer": [
+          "The old relay in the yard. You came for it, I think.",
+          "We hear the call too. Nights. The stone here stays dark.",
+          "Something's missing from it. Ask Dorrin. At the forge.",
+          "He'll look at his boots. Let him. Then ask again."
+        ],
+        "active": [
+          "Barley farm. East. Brass collar. Go on."
+        ],
+        "ready": [
+          "The collar seats with a soft, sure click.",
+          "The bowl wakes teal and takes up the call."
+        ],
+        "done": [
+          "Lit. Years, and it took a stranger and a gate."
+        ]
+      }
     },
     {
       "id": "mq.ow.board",
@@ -133,7 +172,7 @@
       "objectives": [
         {
           "id": "read",
-          "text": "Read the board in the plaza",
+          "text": "Read the notices on the board",
           "when": {
             "type": "flag",
             "id": "lore.owBoard.read",
@@ -157,18 +196,25 @@
       },
       "lines": {
         "offer": [
-          "NEEDS WRITER mq.ow.board.offer.1",
-          "NEEDS WRITER mq.ow.board.offer.2"
+          "The board by the gate. Read it. That's who we are."
         ],
         "active": [
-          "NEEDS WRITER mq.ow.board.active.1"
+          "The board by the gate. Read it. That's who we are."
         ],
         "ready": [
-          "NEEDS WRITER mq.ow.board.ready.1",
-          "NEEDS WRITER mq.ow.board.ready.2"
+          "Crown notices, carried out past the Wall and nailed up.",
+          "FELL BEYOND THE WALL. HESK, OF THE TANNERS' STAIR.",
+          "FELL BEYOND THE WALL. DORRIN, FORGE HAND, LOW WARDS.",
+          "LOST TO THE HUSH. THE CROWN GRIEVES. SPEAK NO MORE.",
+          "Under each name, in charcoal: HERE.",
+          "One notice is cut. A strip gone, name and all, neatly.",
+          "Above the cut: FELL BEYOND THE WALL.",
+          "On the nail, a knot. A skyworks hitch, tied tight.",
+          "Your hands know it. You were taught it on the skyworks."
         ],
         "done": [
-          "NEEDS WRITER mq.ow.board.done.1"
+          "Pinned under the knot: a scrap of chart. Lines west.",
+          "You leave the knot where it is. The line runs west."
         ]
       },
       "abandonable": false
