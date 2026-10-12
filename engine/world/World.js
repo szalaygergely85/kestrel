@@ -26,6 +26,7 @@ import { createWater, collectWaterDefs, SEA_STATES } from './water.js';
 import { riverLocate, L_LAT, L_HW, L_TX, L_TY, L_V, L_Z } from './river.js';
 import { createWaterfalls, collectWaterfallDefs } from './waterfalls.js';
 import { waveHeight } from './waves.js';
+import { PlacementGrid } from './placementGrid.js';
 import { editLayerFromJSON } from './terrainEdits.js';
 
 // ED-TERRAIN-1a: the registry's edits-file body for a terrain key -> a layer (null = none / stub registry).
@@ -328,6 +329,7 @@ export class World {
     // own cells changed" (dirty-row `texSubImage2D` only, via
     // `packed.version`) - only `placeStructure` bumps this.
     this.structVersion = 0;
+    this.placementGrid = null; this._placementGridVersion = 0; // STREAM-01a: built at the end of load
     this.nextId = 0;
     this.state = {};
     // US-027a (architecture.md 21.8): `null` until `load()` sets it from
@@ -834,6 +836,9 @@ export class World {
     const missing = validateBehaviours(w);
     if (missing.length) console.warn(`[World] ${missing.length} behaviour(s) referenced by level data but not registered: ${missing.join(', ')}`);
 
+    w.placementGrid = new PlacementGrid(w.structures, def.streaming); // STREAM-01a (38.51): derived residency, never serialized
+    w._placementGridVersion = w.structVersion;
+
     if (w.events) w.events.emit('world:loaded', { world: w });
     return w;
   }
@@ -928,6 +933,7 @@ export class World {
     fillMeshBbox(s.bbox, s.mesh, f, k);
     if (k !== 1) s.scale = k; else delete s.scale;
     this._meshCollidersDirty = true;
+    if (this.placementGrid) this.placementGrid.dirty = true; // STREAM-01a
     this.renderVersion++;
     return true;
   }
@@ -944,6 +950,17 @@ export class World {
     if (i >= 0) {
       if (c) this.colliders[i] = c; else this.colliders.splice(i, 1);
     } else if (c) this.colliders.push(c);
+  }
+
+  /** STREAM-01a: the placement grid, rebuilt (allocates) when `structVersion` changed or `setMeshPlacement` marked it dirty. Cheap compare otherwise. */
+  refreshPlacementGrid() {
+    const g = this.placementGrid;
+    if (!g) return null;
+    if (g.dirty || this._placementGridVersion !== this.structVersion) {
+      this.placementGrid = new PlacementGrid(this.structures, g.opts);
+      this._placementGridVersion = this.structVersion;
+    }
+    return this.placementGrid;
   }
 
   /** Authored `Frame` of a placed structure by id (`null` if unknown). */
