@@ -47,6 +47,11 @@ const W = synth(), N = W.length;
   const far = new PlacementGrid(W, { minM: 1e6, farM: 1e6 });
   far.update(0, 0); ok(far.activeCount === N - 1, 'huge reach = everything active');
 }
+{ // NaN reach -> farM
+  const g = new PlacementGrid([{ kind: 'mesh', bbox: { x0: 0, y0: 0, z0: 0, x1: 0, y1: 0, z1: 0 } }, { kind: 'mesh', bbox: { x0: 5, y0: 5, z0: 0, x1: 9, y1: 9, z1: 2 } }], { reachPerM: Infinity });
+  const f2 = g.opts.farM * g.opts.farM;
+  ok(g.reach2[0] === f2 && g.reach2[1] === f2, `reachPerM Infinity -> reach2 = farM^2 (${g.reach2[0]}, ${g.reach2[1]})`);
+}
 { // AC1 hysteresis: +-3 m across a border 200 times -> no transitions beyond the first classify
   const g = new PlacementGrid(W);
   g.update(-500, 400);
@@ -116,6 +121,7 @@ const W = synth(), N = W.length;
   for (let k = 0; k < g.activeCount; k++) { const s = w.structures[g.activeList[k]].bbox;
     const dx = 1480 < s.x0 ? s.x0 - 1480 : 1480 > s.x1 ? 1480 - s.x1 : 0, dy = 1018 < s.y0 ? s.y0 - 1018 : 1018 > s.y1 ? 1018 - s.y1 : 0;
     if (dx * dx + dy * dy <= g.reach2[g.activeList[k]]) drawn++; }
+  ok(g.activeCount < n, `tower: active ${g.activeCount} < N ${n} (reach-class cells)`);
   ok(drawn < n, `tower: drawn ${drawn} < N ${n} (active cells hold ${g.activeCount})`);
   const c = w.colliders.find((x) => x.id === 'meshes:static');
   let bytes = 0;
