@@ -1893,7 +1893,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     { // COMPASS-02 (D-061): retarget on book change + ~2 Hz, step the needle, hide rule (menus/pack/log/map/dialogue/death/title/capture modes/ending)
       const bk = saveRelay && saveRelay.quest.book;
       compassHide = !(mode === 'world' && playerHandle && bk && questUiActive) || ending || paused || isCaptureOrBench || uiLocked || titleMenuActive || isSettingsOpen() || isNoteOpen()
-        || (dialogueCtl && dialogueCtl.open) || (vitals && vitals.dead) || deathFlow.active || (wakeOut && wakeOut.inputLocked);
+        || (dialogueCtl && dialogueCtl.open) || (vitals && vitals.dead) || deathFlow.phase !== 'idle' || (wakeOut && wakeOut.inputLocked); // phase, not .active (= the feature flag, always true)
       if (bk && (bk.version !== compassBookVer || ++compassTick >= 30)) { compassBookVer = bk.version; compassTick = 0; compass.target(bk, compassResolver); }
       if (playerHandle && look) { const pt = playerHandle.data.transform; compass.step(pt.x, pt.y, look.yawDeg, pt.z); }
     }
@@ -2368,7 +2368,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (!ending && !uiLockedNow && !cinematic && !isWaterfallPreview) drawCrosshair(ui, crosshairStyle, engine.world.interaction);
       useHintSet.n = 0; // INT-HL-01: hidden in dialogue/notes/menus/map/travel/title/death/cinematic; targeted object shows its prompt instead
       if (!ending && !uiLockedNow && !cinematic && !isWaterfallPreview && playerHandle && mode === 'world' && look && look.locked && !isNoteOpen() && !isSettingsOpen() && !(dialogueCtl && dialogueCtl.open)
-        && !(vitals && vitals.dead) && !deathFlow.active && !wakeOut.inputLocked && !(travel && travel.inputLocked) && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen() && !(menuHost && menuHost.active)
+        && !(vitals && vitals.dead) && deathFlow.phase === 'idle' && !wakeOut.inputLocked && !(travel && travel.inputLocked) && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen() && !(menuHost && menuHost.active)
         && resolveProjection(cam, 'mesh') === 'pitched') {
         useHintGrid.cols = rt.cols; useHintGrid.rows = rt.rows; useHintGrid.pxCellW = rt.pxCellW || 1; useHintGrid.pxCellH = rt.pxCellH || 1;
         pitchedTermsInto(useHintTerms, cam, useHintGrid);

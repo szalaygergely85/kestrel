@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
-import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, killTree } from './capture-browser.mjs';
+import { evaluateAsync, ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, killTree } from './capture-browser.mjs';
 
 const port = Number(process.argv[2] || 9500);
 validatePort(port);
@@ -24,17 +24,18 @@ try {
   let ready = false;
   for (let i = 0; i < 150; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.openNote && window.__debug.world && window.__debug.playerHandle && window.__debug.look)')) { ready = true; break; } }
   assert.ok(ready, 'game did not boot');
+  for (let i = 0; i < 120; i++) { if (!(await evaluate(cdp, 'window.__debug.wakeOut.inputLocked'))) break; await pause(500); } // intro wake-up locks input (and hides hints / blocks the sword)
   await evaluate(cdp, 'window.__debug.look.locked = true'); // headless has no pointer lock
   // first unused, requirement-free interactable whose name mentions "note" (tower notes); fall back to any
   const info = await evaluate(cdp, `(()=>{const w=__debug.world,l=w.interactables.filter(r=>!(r.usedKey&&w.state[r.usedKey])&&!r.requires);const r=l.find(r=>/note/i.test(r.name||r.key))||l[0];return r?{key:r.key,x:r.x,y:r.y,z:r.z}:null;})()`);
   assert.ok(info, 'no usable interactable in the world');
   // put the player 2 m south of it, looking 25 deg to the right of it
   // yaw = compass bearing player -> note (0 = N = -y, clockwise; same as engine/core/transform.js yawFromDelta) + offset; pitch looks at the note (eye ~1.6 m, positive = up)
-  const sx = info.x, sy = info.y + 2, sz = info.z - 0.8;
+  const sx = info.x - 1.6, sy = info.y, sz = info.z + 0.05; // inside the tower (the wake spot is 1.6 m west of the keeper note); interactable z = floor level
   const bearing = (Math.atan2(info.x - sx, -(info.y - sy)) * 180) / Math.PI;
   const pitch = (Math.atan2(info.z - (sz + 1.6), Math.hypot(info.x - sx, info.y - sy)) * 180) / Math.PI;
   const stand = (yawOff) => evaluate(cdp, `(()=>{const p=__debug.playerHandle.data.transform;p.x=${sx};p.y=${sy};p.z=${sz};__debug.look.yawDeg=${bearing + yawOff};__debug.look.pitchDeg=${pitch};return 1;})()`);
-  await stand(25); await pause(1500);
+  await stand(10); await pause(1500);
   const a = await evaluate(cdp, 'JSON.stringify({n:__debug.useHints.n,keys:Array.from(__debug.useHints.key).slice(0,__debug.useHints.n)})');
   console.log('off-axis', a);
   const A = JSON.parse(a); assert.ok(A.n >= 1 && A.n <= 6, 'markers shown off-axis (1..6)'); assert.ok(A.keys.includes(info.key), 'the note is marked');

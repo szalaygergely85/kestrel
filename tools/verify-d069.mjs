@@ -9,7 +9,7 @@ import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, c
 
 const port = Number(process.argv[2] || 9500);
 validatePort(port);
-if (port < 9500 || port + 1 > 9574) throw new Error('PC-B lane B1 range is 9500-9574 (next port is CDP)');
+if (port < 9500 || port + 1 > 9999) throw new Error('PC-B lane B1 range is 9500-9999 (next port is CDP)');
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-d069-'));
 const capDir = path.join(ROOT, 'docs', 'test-reports', 'captures'); mkdirSync(capDir, { recursive: true });
 const server = spawn('python', ['-c', 'import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()', String(port)], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
@@ -21,7 +21,7 @@ async function still(name) { const r = await cdp.send('Page.captureScreenshot', 
 const key = async (code, k) => { await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', code, key: k, text: k }); await pause(70); await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: k }); await pause(150); };
 const tele = (x, y, z) => ev(`(()=>{const p=__debug.playerHandle.data.transform;p.x=${x};p.y=${y};p.z=${z};return 1;})()`);
 const mouse = (type, button) => ev(`document.querySelector('canvas').dispatchEvent(new MouseEvent('${type}',{button:${button},bubbles:true}))`);
-const mp = () => ev('__debug.playerHandle.data.components.mana.mp');
+const mp = () => ev('__debug.vitals.mp'); // components.mana is created lazily; vitals.mp reads through
 const potions = () => ev(`__debug.playerHandle.data.components.inventory.slots.reduce((a,s)=>a+(s.id==='potion.mp'?s.n:0),0)`);
 // Count of non-empty glyph cells on one HUD row (uiStyle.vitals.layout hpRow 1 / mpRow 2); the HP row is the "UI is drawing" control.
 const barCells = (row) => ev(`(()=>{const u=__debug.getUi(),c=u.cells;let n=0;for(let x=0;x<40;x++)if(c.glyphIdx[${row}*u.cols+x]!==0)n++;return n;})()`);
@@ -63,6 +63,7 @@ try {
   let ready = false;
   for (let i = 0; i < 200; i++) { await pause(300); if (await ev('!!(window.__debug && window.__debug.playerHandle && window.__debug.fireball && window.__debug.beasts && window.__debug.questBook && window.__debug.questBook())')) { ready = true; break; } }
   if (!ready) { report('boot', false, errors); throw new Error('boot failed'); }
+  for (let i = 0; i < 120; i++) { if (!(await ev('window.__debug.wakeOut.inputLocked'))) break; await pause(500); } // intro wake-up locks input / hides the HUD
   await ev('__debug.look.locked = true'); // headless: no pointer lock would pause the sim
   await ev('(()=>{window.__mu=0;__debug.engine.events.on("magic.unlocked",()=>{window.__mu++;});return 1;})()');
   await pause(1500);

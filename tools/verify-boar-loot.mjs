@@ -8,7 +8,7 @@ import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, c
 
 const port = Number(process.argv[2] || 9500);
 validatePort(port);
-if (port < 9500 || port + 1 > 9574) throw new Error('PC-B lane B1 range is 9500-9574 (next port is CDP)');
+if (port < 9500 || port + 1 > 9999) throw new Error('PC-B lane B1 range is 9500-9999 (next port is CDP)');
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-boar-loot-'));
 const server = spawn('python', ['-c', 'import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()', String(port)], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -23,6 +23,7 @@ try {
   let ready = false;
   for (let i = 0; i < 200; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.loot && window.__debug.playerHandle)')) { ready = true; break; } }
   assert.ok(ready, 'boot: ' + JSON.stringify(errors));
+  for (let i = 0; i < 120; i++) { if (!(await evaluate(cdp, 'window.__debug.wakeOut.inputLocked'))) break; await pause(500); } // intro wake-up locks input (and hides hints / blocks the sword)
   await evaluate(cdp, '__debug.look.locked = true'); // headless: no pointer lock would pause the sim
   const total = '(()=>__debug.playerHandle.data.components.inventory.slots.reduce((a,s)=>a+(s.id?s.n:0),0))()';
   const id = await evaluate(cdp, '__debug.beasts.ids[0]');
@@ -44,15 +45,19 @@ try {
   assert.equal(noOrbGround, 0, 'OB-074: no hp/mp orb on the ground after the kill');
   assert.equal(await evaluate(cdp, '!!(window.__debug.chestHook && window.__debug.chestHook.card.isOpen)'), false, 'OB-075: no item card after loot');
   const lastId = await evaluate(cdp, '__debug.beasts.ids[__debug.beasts.ids.length-1]'); // a late boar (index > 15) used to be unhittable
-  await evaluate(cdp, `(()=>{const b=__debug.world.get(${JSON.stringify(lastId)}).data.transform,p=__debug.playerHandle.data.transform;p.x=b.x;p.y=b.y-1.2;p.z=b.z;__debug.look.yawDeg=180;__debug.look.pitchDeg=0;return 1;})()`); // player is at b.y-1.2 (north of the boar), compass yaw 180 = facing +y = the boar
+  // The far boar's terrain streams in only when the player is near: go to its x,y just above the terrain, let it settle, then stand 1.2 m south of it facing +y (compass yaw 180).
+  await evaluate(cdp, `(()=>{const w=__debug.world,b=w.get(${JSON.stringify(lastId)}).data.transform,p=__debug.playerHandle.data.transform,g=w.heightAt?w.heightAt(b.x,b.y):0;p.x=b.x;p.y=b.y-1.2;p.z=(g==null?0:g)+1;__debug.look.yawDeg=180;__debug.look.pitchDeg=0;return 1;})()`);
+  await pause(2000);
+  await evaluate(cdp, `(()=>{const b=__debug.world.get(${JSON.stringify(lastId)}).data.transform,p=__debug.playerHandle.data.transform;p.x=b.x;p.y=b.y-1.2;p.z=b.z;__debug.look.yawDeg=180;__debug.look.pitchDeg=0;return 1;})()`);
   // A fresh ?dev=1&title=0 game has no sword: wield it as the game does (equipment.main; stepEquipment derives inventory.left, hands router arms the sword sim).
-  await evaluate(cdp, `(()=>{const c=__debug.playerHandle.data.components;c.equipment.main='sword';c.equipment.set='melee';return 1;})()`);
+  await evaluate(cdp, `(()=>{const c=__debug.playerHandle.data.components;c.equipment.main='sword';c.equipment.set='melee';__debug.engine.world.state['tower.sword.taken']=true;return 1;})()`);
   await pause(300);
   const hp0 = await evaluate(cdp, `__debug.world.get(${JSON.stringify(lastId)}).data.components.health.hp`);
   // Real input path: engine Input listens for mousedown (button 0 = Mouse0 = useLeft); held while the sword sim swings.
   await evaluate(cdp, "document.querySelector('canvas').dispatchEvent(new MouseEvent('mousedown',{button:0,bubbles:true}))");
   await pause(1500);
   await evaluate(cdp, "document.querySelector('canvas').dispatchEvent(new MouseEvent('mouseup',{button:0,bubbles:true}))");
+  const dbg = await evaluate(cdp, `JSON.stringify((()=>{const d=__debug,c=d.playerHandle.data.components,p=d.playerHandle.data.transform,b=d.world.get(${JSON.stringify(lastId)}).data;return {left:c.inventory.left,set:c.equipment.set,down:d.hands&&d.hands.downOf&&d.hands.downOf('sword'),locked:d.look.locked,paused:!!(d.isPaused&&d.isPaused()),uiLocked:d.uiLocked,mouse0:d.input&&d.input.isDown('Mouse0'),p:[p.x,p.y,p.z],b:[b.transform.x,b.transform.y,b.transform.z],hp:b.components.health}})())`); console.log('dbg', dbg);
   const hp1 = await evaluate(cdp, `__debug.world.get(${JSON.stringify(lastId)}).data.components.health.hp`);
   assert.ok(hp1 < hp0, 'OB-076: locked LMB sword swing damages the last boar: ' + hp0 + ' -> ' + hp1);
   assert.deepEqual(errors, []);
