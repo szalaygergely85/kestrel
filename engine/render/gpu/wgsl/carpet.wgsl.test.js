@@ -21,7 +21,7 @@ assert.ok(WGSL_MODULES.some((m) => m.name === 'carpet' && m.code === CARPET_WGSL
 assert.ok(!/%|\bround\s*\(|\bmod\s*\(|dpdx|dpdy|fwidth|textureSample|Math\.random|sin\s*\(|fract/.test(CARPET_WGSL), 'WGSL string rules');
 assert.ok(/fn fs_main\(@builtin\(position\) frag: vec4f\) -> FO/.test(CARPET_WGSL) && /@group\(1\) @binding\(0\) var<uniform> cu: CarpetU/.test(CARPET_WGSL));
 assert.deepEqual([...CARPET_TEXTURES], ['uint', 'uint', 'uint', 'uint', 'float']);
-assert.deepEqual([...CARPET_TARGETS], ['rgba32uint', 'rgba32uint', 'r32uint']);
+assert.deepEqual([...CARPET_TARGETS], ['rgba32ui', 'rgba32ui', 'r32ui']);
 const lit = (v) => { const s = String(v); return /[.e]/.test(s) ? s : s + '.0'; };
 for (const n of ['ROOT_JITTER', 'LEAN_CAP', 'LEAN_PER_MS', 'PATCH_LO', 'PATCH_RANGE', 'GUST_LO', 'GUST_RANGE', 'FADE_FP0', 'FADE_FP1', 'FADE_R0', 'FADE_R1']) {
   assert.ok(CARPET_TRACE_WGSL.includes(`const ${n}: f32 = ${lit(C[n])};`), `${n} == carpet.js export`);
@@ -36,7 +36,7 @@ const w = (n) => CARPET_BLOCK.field(n).word;
 assert.deepEqual(['gridCols', 'seed', 'cellM', 'timeSec', 'fpK'].map(w), [0, 2, 8, 15, 23]);
 assert.deepEqual(['windP0', 'windP1', 'eye', 'pitchA', 'pitchB', 'pitchC', 'knots', 'vtab'].map(w), [24, 28, 32, 36, 40, 44, 48, 112]);
 assert.equal(CARPET_BLOCK.field('vtab').words, 16 * CARPET_VTAB_ROWS * 4);
-assert.equal(CARPET_BLOCK.sizeBytes, (112 + 128) * 4, '16 variants x 2 vec4 (32 B) + 16 knot vec4 + header');
+assert.equal(CARPET_BLOCK.sizeBytes, (112 + 128 + 4) * 4, '16 variants x 2 vec4 (32 B) + 16 knot vec4 + header + PREC-01a origin (ix0, iy0, orgX, orgY)');
 assert.ok(CARPET_BLOCK.sizeBytes <= 65536);
 
 // ---- (b) JS evaluation of the trace
@@ -124,7 +124,9 @@ function parity(label, windDef, N) {
     const tm = r() * 20, th = terrainT(e, d);
     cu.timeSec = tm; if (!isFinite(th)) continue;
     ctx.inp[IN_EX] = e[0]; ctx.inp[IN_EY] = e[1]; ctx.inp[IN_EZ] = e[2]; ctx.inp[IN_DX] = d[0]; ctx.inp[IN_DY] = d[1]; ctx.inp[IN_DZ] = d[2]; ctx.inp[IN_THIT] = th; ctx.inp[IN_TIME] = tm;
-    const a = traceCarpetIn(ctx, out), b = twin.run(e[0], e[1], e[2], d[0], d[1], d[2], th);
+    // PREC-01a: the twin gets the lattice origin and the eye relative to it (f64 here, like passCarpet.run)
+    cu.ix0 = Math.floor(e[0] / cu.cellM); cu.iy0 = Math.floor(e[1] / cu.cellM); cu.orgX = cu.ix0 * cu.cellM; cu.orgY = cu.iy0 * cu.cellM;
+    const a = traceCarpetIn(ctx, out), b = twin.run(e[0] - cu.orgX, e[1] - cu.orgY, e[2], d[0], d[1], d[2], th);
     if (out.steps > C.NMAX) stepsHist.over++;
     if (a) hits++;
     if (!!a === !!b) { agree++; if (a) { const k = twin.k(); maxErr = Math.max(maxErr, Math.abs(k.t - out.t), Math.abs(k.h01 - out.h01), Math.abs(k.z - out.z), k.v === out.variant ? 0 : 1);
