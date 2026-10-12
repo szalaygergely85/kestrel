@@ -10,14 +10,16 @@
 // Bindings: @group(0) 0 GI, 1 GA, 2 DEPTH (resolved, rgba32uint/rgba32uint/r32uint), 3 CLASS (r8uint, classCellM grid), 4 NEARH (r32float
 // near-band height, texel = baked cell, manual bilinear = util.gridHeight); @group(1) @binding(0) CarpetU. Targets: GI, GA, DEPTH.
 import { defineUniformBlock } from './uniformBlock.js';
-import { HASH_FAST_WGSL, CELL_RAY_PITCHED_WGSL, WIND_AT_WGSL, FULLSCREEN_VS_WGSL, OCT_NORMAL_WGSL } from './common.wgsl.js';
+import { HASH_FAST_WGSL, GBUF_UNPACK_WGSL, CELL_RAY_PITCHED_WGSL, WIND_AT_WGSL, FULLSCREEN_VS_WGSL, OCT_NORMAL_WGSL } from './common.wgsl.js';
 import {
   NMAX, ROOT_JITTER, LEAN_CAP, LEAN_PER_MS, PATCH_LO, PATCH_RANGE, GUST_LO, GUST_RANGE, FADE_FP0, FADE_FP1, FADE_R0, FADE_R1, RING,
-  SALT_JX, SALT_JY, SALT_RANK, SALT_H, SALT_TUFT, SALT_W, WMAX_CELLS, W_JIT_LO, W_JIT_RANGE, SALT_CJX, SALT_CJY, SALT_PATCH, SALT_GUST, MAX_VARIANTS, SALT_TINT, TINT_AMP,
+  SALT_JX, SALT_JY, SALT_RANK, SALT_H, SALT_TUFT, SALT_W, WMAX_CELLS, W_JIT_LO, W_JIT_RANGE, SALT_CJX, SALT_CJY, SALT_PATCH, SALT_GUST, MAX_VARIANTS, SALT_TINT, MASK_CELL, MASK_MIN,
 } from '../../carpet.js';
+import { NOISE_CELLS, NOISE_SALT, PATCH_K, GRASS_GX_HAS } from '../../terrainShade.js';
+import { TS_PATCH_NOISE_WGSL } from './shade.wgsl.js';
 import { FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX } from '../../terrainShade.js';
 
-import { KIND_GRASS, FACE_U } from '../../GBuffer.js';
+import { KIND_GRASS, KIND_TERRAIN, FACE_U } from '../../GBuffer.js';
 export { KIND_GRASS, FACE_U }; // one owner: GBuffer.js (D2c landed)
 export const CARPET_VTAB_ROWS = 2;          // vec4 rows per variant: (density, hMin, hMax, bladeW), (swayGain, tuftP, tuftMul, 0). Ramp/glyphs: D2e table
 export const CARPET_KNOTS = 16;             // 64 wind knots as 16 vec4
@@ -41,10 +43,13 @@ export const CARPET_BLOCK = defineUniformBlock('CarpetU', [
   // PREC-01a (D2e): lattice origin = floor(eye / cellM) as i32 + its world position; `eye` holds eye - origin (camera-relative, small), so the ray / DDA /
   // blade-vs-ray maths never sees a ~1500 m f32. World lookups (class, near height, noise, wind) add the origin back (grid-relative, accuracy ~1e-4 m is plenty).
   { name: 'ix0', type: 'i32' }, { name: 'iy0', type: 'i32' }, { name: 'orgX', type: 'f32' }, { name: 'orgY', type: 'f32' },
+  // MASK-c: density mask window (r8unorm texel i = world x0 + (i + 0.5) * MASK_CELL; maskOn 0 = no mask) and the sun for the back-light (xyz unit toward the sun, w = on)
+  { name: 'maskX0', type: 'f32' }, { name: 'maskY0', type: 'f32' }, { name: 'maskW', type: 'i32' }, { name: 'maskHt', type: 'i32' }, { name: 'maskOn', type: 'i32' },
+  { name: 'sun', type: 'vec4' },
 ]);
 
 /** sampled-texture kinds for the pipeline bindings, slot order */
-export const CARPET_TEXTURES = Object.freeze(['uint', 'uint', 'uint', 'uint', 'float']);
+export const CARPET_TEXTURES = Object.freeze(['uint', 'uint', 'uint', 'uint', 'float', 'uint']); // slot 5 = density mask (r8ui, value / 255)
 export const CARPET_TARGETS = Object.freeze(['rgba32ui', 'rgba32ui', 'r32ui']); // device format names (webgpuFormats.js), not the WebGPU ones
 
 // Pure trace: needs (defined by the including module) `cu` (CarpetU), hashFastU, classTexel(i,j)->u32, nearTexel(i,j)->f32, windKnot(i)->f32, windAt.
@@ -84,10 +89,26 @@ const BIG: f32 = 1.0e30; // JS Infinity
 var<private> rEx: f32; var<private> rEy: f32; var<private> rEz: f32;
 var<private> rDx: f32; var<private> rDy: f32; var<private> rDz: f32;
 var<private> rN2: f32; var<private> rT0: f32; var<private> rT1: f32;
-var<private> sLx: f32; var<private> sLy: f32; var<private> sH01: f32; var<private> sZ: f32; var<private> sTb: f32; var<private> sVar: u32; var<private> sTint: f32;
-var<private> kLx: f32; var<private> kLy: f32; var<private> kH01: f32; var<private> kZ: f32; var<private> kTb: f32; var<private> kVar: u32; var<private> kTint: f32;
+var<private> sLx: f32; var<private> sLy: f32; var<private> sH01: f32; var<private> sZ: f32; var<private> sTb: f32; var<private> sVar: u32; var<private> sTint: u32; var<private> sRx: f32; var<private> sRy: f32; var<private> sFp: f32;
+var<private> kLx: f32; var<private> kLy: f32; var<private> kH01: f32; var<private> kZ: f32; var<private> kTb: f32; var<private> kVar: u32; var<private> kTint: u32; var<private> kRx: f32; var<private> kRy: f32; var<private> kFp: f32;
+const MASK_CELL: f32 = ${f(MASK_CELL)};
+const MASK_MIN: f32 = ${f(MASK_MIN)};
 
 fn hash24(ix: i32, iy: i32, s: i32) -> f32 { return f32(hashFastU(ix, iy, s) >> 8u) * (1.0 / 16777216.0); }
+
+// MASK-c: density mask 0..1 at world (x, y): 4-tap bilerp of cell-centre texels (textureLoad, no sampler = twin of carpet.js maskAt); outside the window = 1 (no mask)
+fn maskAt(x: f32, y: f32) -> f32 {
+  if (cu.maskOn == 0) { return 1.0; }
+  let fx = (x - cu.maskX0) / MASK_CELL - 0.5;
+  let fy = (y - cu.maskY0) / MASK_CELL - 0.5;
+  if (fx < -0.5 || fy < -0.5 || fx > f32(cu.maskW) - 0.5 || fy > f32(cu.maskHt) - 0.5) { return 1.0; }
+  let x0 = i32(floor(fx)); let y0 = i32(floor(fy));
+  let u = fx - f32(x0); let v = fy - f32(y0);
+  let xa = max(x0, 0); let xb = min(x0 + 1, cu.maskW - 1);
+  let ya = max(y0, 0); let yb = min(y0 + 1, cu.maskHt - 1);
+  let a = maskTexel(xa, ya); let b = maskTexel(xb, ya); let c = maskTexel(xa, yb); let d = maskTexel(xb, yb);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
 
 fn classAt(x: f32, y: f32) -> u32 {
   let i = i32(floor((x - cu.classX0) / cu.classCellM));
@@ -140,6 +161,8 @@ fn bladeHit(ix: i32, iy: i32) -> bool {
   let cj = cu.classJitterM;
   let v = classAt(wxr + (hash24(ix, iy, seed + SALT_CJX) * 2.0 - 1.0) * cj, wyr + (hash24(ix, iy, seed + SALT_CJY) * 2.0 - 1.0) * cj);
   if (v == 0u) { return false; }
+  let mk = maskAt(wxr, wyr); // MASK-c: after the variant pick, at the blade root
+  if (mk < MASK_MIN) { return false; }
   let rank = hash24(ix, iy, seed + SALT_RANK);
   let row0 = cu.vtab[v * ${CARPET_VTAB_ROWS}u]; // density, hMin, hMax, bladeW; row1 = swayGain, tuftP, tuftMul
   if (rank >= row0.x) { return false; }
@@ -147,6 +170,7 @@ fn bladeHit(ix: i32, iy: i32) -> bool {
   let row1 = cu.vtab[v * ${CARPET_VTAB_ROWS}u + 1u]; // swayGain, tuftP, tuftMul
   var h = (row0.y + (row0.z - row0.y) * hash24(ix, iy, seed + SALT_H)) * (PATCH_LO + PATCH_RANGE * pn);
   if (hash24(ix, iy, seed + SALT_TUFT) < row1.y) { h = h * row1.z; }
+  h = h * mk; // MASK-c: height falls gradually with the mask, density unchanged
   let w = row0.w * 0.5 * (W_JIT_LO + W_JIT_RANGE * hash24(ix, iy, seed + SALT_W));
   let g = ground(wxr, wyr);
   leanRatio(wxr, wyr, v);
@@ -173,8 +197,8 @@ fn bladeHit(ix: i32, iy: i32) -> bool {
   let f2 = clamp((dXY / cu.radiusM - FADE_R0) / (FADE_R1 - FADE_R0), 0.0, 1.0);
   let fade = (1.0 - f1 * f1 * (3.0 - 2.0 * f1)) * (1.0 - f2 * f2 * (3.0 - 2.0 * f2));
   if (rank >= row0.x * fade) { return false; }
-  sTint = (hash24(ix, iy, seed + ${SALT_TINT}) * 2.0 - 1.0) * ${f(TINT_AMP)};
-  sVar = v; sH01 = sr / h; sZ = zr; sTb = tc; sLx = lx; sLy = ly;
+  sTint = hashFastU(ix, iy, seed + ${SALT_TINT}) >> 24u; // tint byte (twin: carpet.js writeBlade)
+  sVar = v; sH01 = sr / h; sZ = zr; sTb = tc; sLx = lx; sLy = ly; sRx = wxr; sRy = wyr; sFp = fp;
   return true;
 }
 
@@ -231,7 +255,7 @@ fn traceCarpet(tHit: f32) -> bool {
           let cr = ((f32(i) + 0.5) * c - rEx) * rDy - ((f32(j) + 0.5) * c - rEy) * rDx;
           if (cr > rej || cr < -rej) { continue; }
         }
-        if (bladeHit(i + cu.ix0, j + cu.iy0) && sTb < best) { best = sTb; kTb = sTb; kH01 = sH01; kZ = sZ; kVar = sVar; kTint = sTint; kLx = sLx; kLy = sLy; }
+        if (bladeHit(i + cu.ix0, j + cu.iy0) && sTb < best) { best = sTb; kTb = sTb; kH01 = sH01; kZ = sZ; kVar = sVar; kTint = sTint; kLx = sLx; kLy = sLy; kRx = sRx; kRy = sRy; kFp = sFp; }
       }
     }
     prevCi = ci; prevCj = cj;
@@ -247,17 +271,22 @@ export const CARPET_WGSL = `${CARPET_BLOCK.wgsl}
 @group(0) @binding(2) var uDepth: texture_2d<u32>;
 @group(0) @binding(3) var uClass: texture_2d<u32>;
 @group(0) @binding(4) var uNearH: texture_2d<f32>;
+@group(0) @binding(5) var uMask: texture_2d<u32>;
 @group(1) @binding(0) var<uniform> cu: CarpetU;
 ${HASH_FAST_WGSL}
+${GBUF_UNPACK_WGSL}
 ${WIND_AT_WGSL}
 ${CELL_RAY_PITCHED_WGSL}
 ${FULLSCREEN_VS_WGSL}
 ${OCT_NORMAL_WGSL}
 fn classTexel(i: i32, j: i32) -> u32 { return textureLoad(uClass, vec2i(i, j), 0).x; }
 fn nearTexel(i: i32, j: i32) -> f32 { return textureLoad(uNearH, vec2i(i, j), 0).x; }
+fn maskTexel(i: i32, j: i32) -> f32 { return f32(textureLoad(uMask, vec2i(i, j), 0).x) * (1.0 / 255.0); }
 fn windKnot(i: u32) -> f32 { return cu.knots[i >> 2u][i & 3u]; }
 const KIND_GRASS: u32 = ${KIND_GRASS}u;
 const FACE_U: u32 = ${FACE_U}u;
+const KIND_TERRAIN: u32 = ${KIND_TERRAIN}u;
+${TS_PATCH_NOISE_WGSL}
 ${CARPET_TRACE_WGSL}
 struct FO {
   @location(0) gi: vec4u,
@@ -284,9 +313,24 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   // screen right in xy = (dy, -dx) / |d_xy|; lean ratio / LEAN_CAP
   let inv = select(0.0, 1.0 / sqrt(rN2), rN2 > 1.0e-12);
   let lean = clamp((kLx * rDy - kLy * rDx) * inv / LEAN_CAP, -1.0, 1.0);
-  let invN = 1.0 / sqrt(kLx * kLx + kLy * kLy + 1.0);
-  o.gi = vec4u(gi.x, KIND_GRASS | (FACE_U << 8u) | (gi.y & 0xf000u) | (kVar << 16u), packNormalOct(vec3f(kLx * invN, kLy * invN, invN)), gi.w); // lean-tilted normal (twin: alias in carpetCells)
-  o.ga = vec4u(bitcast<u32>(kH01), bitcast<u32>(lean), bitcast<u32>(kZ), bitcast<u32>(kTint)); // GA.w = per-blade colour shift (twin: gbuf.vao)
+  // MASK-c (twin: carpet.js writeBlade): the terrain normal under the blade stays (lit like the ground); GA.w = packed word
+  // tint byte | back-light byte << 8 | ground type << 16 | (tier offset + 1) << 24 | HAS
+  var nrm = gi.z; var gx = 0u;
+  let mat0 = giMat(gi.y);
+  if ((gi.y & 0xffu) == KIND_TERRAIN && mat0 < 256u) {
+    let fu = kRx; let fv = kRy; // world root (f32)
+    let v8 = tsValueNoise(fu * ${(1 / NOISE_CELLS[0]).toFixed(4)}, fv * ${(1 / NOISE_CELLS[0]).toFixed(4)}, ${NOISE_SALT});
+    let offT = clamp(i32(floor(tsPatchNoise(fu, fv, kFp, v8) * ${PATCH_K.toFixed(4)} + 0.5)), -1, 1);
+    gx = ${GRASS_GX_HAS}u + (u32(offT + 1) << 24u) + (mat0 << 16u);
+  } else {
+    let invN = 1.0 / sqrt(kLx * kLx + kLy * kLy + 1.0);
+    nrm = packNormalOct(vec3f(kLx * invN, kLy * invN, invN));
+  }
+  var bl = 0.0;
+  if (cu.sun.w > 0.5) { bl = clamp(rDx * cu.sun.x + rDy * cu.sun.y + rDz * cu.sun.z, 0.0, 1.0); }
+  gx = gx + kTint + u32(floor(bl * 255.0 + 0.5)) * 256u;
+  o.gi = vec4u(gi.x, KIND_GRASS | (FACE_U << 8u) | (gi.y & 0xf000u) | (kVar << 16u), nrm, gi.w);
+  o.ga = vec4u(bitcast<u32>(kH01), bitcast<u32>(lean), bitcast<u32>(kZ), gx);
   o.depth = vec4u(bitcast<u32>(kTb / dirLen), 0u, 0u, 0u);
   return o;
 }

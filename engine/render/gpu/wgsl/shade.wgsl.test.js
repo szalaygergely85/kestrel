@@ -17,7 +17,7 @@ import { loadLevel } from '../../../world/Level.js';
 import { shadeCore, shadeDetailFast, wetGain, WET_DARK, levelFromThresholds as jsLevelFromThresholds } from '../../detailShade.js';
 import { SHADE_LEVEL_WGSL, SHADE_LEVEL_TARGETS } from './shade.wgsl.js';
 import { createHash } from 'node:crypto';
-import { shadeTerrain, hashFastU, hashFast01, shadeGrass, grassTableFor, packGrassTable } from '../../terrainShade.js';
+import { shadeTerrain, hashFastU, hashFast01, shadeGrass, grassTableFor, packGrassTable, GRASS_GX_HAS } from '../../terrainShade.js';
 import { blendLook } from '../../look.js';
 import { packMaterialTable, MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH, SET_F_WIDTH, MAX_LEVELS } from '../ShadeTextures.js';
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
@@ -285,14 +285,16 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
       baseG.samplePowLUT = compileFn(SHADE_WGSL, 'samplePowLUT', { ...baseG, textureLoad });
       baseG.smoothstepFast = compileFn(SHADE_WGSL, 'smoothstepFast', baseG);
       baseG.wetGain = compileFn(SHADE_WGSL, 'wetGain', baseG);
-      baseG.textureLoad = textureLoad;
+      baseG.textureLoad = textureLoad; baseG.uTlook = uTl;
       const sg = compileFn(SHADE_WGSL, 'shadeGrass', baseG);
-      const ctxG = { fog, shading: { ...shadingT, wetness: wet, floorLum: 0.05 } };
+      const ctxG = { fog, shading: { ...shadingT, wetness: wet, floorLum: 0.05 }, tlook, tlookWidth: TLOOK_WIDTH };
       for (let t = 0; t < 600; t++) {
         const variant = 1 + Math.floor(rand() * 2), tt = rand() < 0.5 ? rand() * 60 : rand() * 1700, b = rand() * 1.3, h01 = rand(), lean = rand() * 2 - 1, tint = (rand() * 2 - 1) * 0.08;
         const o = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3), level: 0 };
-        shadeGrass(tt, variant, h01, lean, tint, b, tab, ctxG, o);
-        const g = sg(tt, variant, h01, lean, tint, b), q = (x) => Math.floor(Math.min(255, Math.max(0, x)) + 0.5);
+        // MASK-c: packed word (tint | back-light << 8 | type << 16 | (tier offset + 1) << 24 | HAS) and the sun intensity (half of the draws carry ground + back-light)
+        const gx = t % 2 === 0 ? 0 : (rand() < 0.8 ? GRASS_GX_HAS : 0) + Math.floor(rand() * 3) * 16777216 + Math.floor(rand() * 4) * 65536 + Math.floor(rand() * 256) * 256, sunI = rand() * 1.5;
+        shadeGrass(tt, variant, h01, lean, tint, b, tab, ctxG, o, gx, sunI);
+        const g = sg(tt, variant, h01, lean, tint, b, gx, sunI), q = (x) => Math.floor(Math.min(255, Math.max(0, x)) + 0.5);
         nG++; if (g.glyph !== o.glyph || Math.abs(q(g.fr) - o.fg[0]) > 1 || Math.abs(q(g.fg) - o.fg[1]) > 1 || Math.abs(q(g.fb) - o.fg[2]) > 1 || Math.abs(q(g.br) - o.bg[0]) > 1) { bad++; if (bad < 6) console.error('grass', JSON.stringify({ variant, tt, b, h01, lean, tint }), JSON.stringify(g), o.glyph, Array.from(o.fg), Array.from(o.bg)); }
       }
     }
@@ -456,9 +458,10 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
 // --- US-073b (38.25): the stable-glyph level target. OFF = byte-identical to the pre-073b shader; ON = one extra r8ui target. ---
 {
   // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01, DN-02 night floor, MAP-06b skyline cap, OB-073 smooth ground noise, OB-073 calm ground, OB-081 far tier blend + calm faces (41264 chars): the stable-off shader must not move by a single byte.
+  // re-pinned 44782 -> 45683 by MASK-c (shadeGrass ground blend + back-light, packed GA.w word; TS_PATCH_NOISE_WGSL extracted verbatim)
   // re-pinned 41264 -> 44782 by OB-073-D2e (kind-10 shadeGrass + ShadeU.grass table + the kind-10 branch in fs_main; calm-ground code untouched, asserted by the terrain mutation probes above)
-  assert.equal(SHADE_WGSL.length, 44782, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'f4a86ff815c631528069c832a2a15b18b1727e209ddeaa8895fe880e8bee092b', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  assert.equal(SHADE_WGSL.length, 45683, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'cdcc906c4e1d30267d8ac214c3bbb4c00e33ab9786b1debdc2de6f7a771f3b67', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);
