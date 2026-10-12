@@ -257,6 +257,14 @@
     icon: icon([' .|. ', ' ||| ', '=====' ],
                [' bbb ', ' bbb ', 'bbbbb'])
   };
+  defs.parcel = {
+    id: 'parcel', name: 'Forge Parcel', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'Heavy for its size. FOR THE FORGE.',
+    use: { none: 'Quest item - leave it at the forge (sq.ow.parcel, QL-22 texts)' },
+    glyph: { ch: '=', c: 'brass' },
+    icon: icon(['.---.', '|=+=|', "'---'"],
+               ['hhhhh', 'hAfAh', 'hhhhh'])
+  };
   defs['heart.piece'] = {
     id: 'heart.piece', name: 'Heart Piece', kind: 'upgrade', stackMax: 3, hand: false, inPack: true,
     desc: 'A warm red stone. Four make a heart.',
