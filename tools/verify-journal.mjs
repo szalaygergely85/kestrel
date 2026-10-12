@@ -36,22 +36,24 @@ try {
   const key = async (code, k) => { for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, code, key: k, windowsVirtualKeyCode: k.toUpperCase().charCodeAt(0) }); };
   await ev('(()=>{const l=window.__debug.look; if(l) l.locked=true;})()');
   const feed = (e) => ev(`window.__debug.questBook().feed(${JSON.stringify(e)})`);
-  await feed({ type: 'flag:set', key: 'wake', value: true }); // first note read -> "climb up" step is active
+  await feed({ type: 'flag:set', key: 'wake', value: true });
+  await ev("window.__debug.questBook().accept('tower.blade')"); // note picked up -> quest 1 "Not Safe" active
   await key('KeyJ', 'j'); await pause(600);
   if (!(await ev('window.__debug.questLogOpen()'))) { console.log('WARN: J not testable headless (no pointer lock / frame loop) - owner walk checks it'); }
   else {
     const snap = async () => JSON.parse(await ev('JSON.stringify(window.__debug.questLogSnapshot())'));
     let s = await snap();
-    assert.ok(s.left.length >= 1, 'LEFT pane lists the main quest: ' + JSON.stringify(s.left));
-    assert.ok(s.right.some((l) => l.startsWith('You found a note')), 'RIGHT summary = active step journal: ' + JSON.stringify(s.right));
-    assert.ok(s.right.some((l) => /^\[x\] Get up from the wreck\s+1\/1$/.test(l)), 'done step checked: ' + JSON.stringify(s.right));
-    assert.ok(s.right.some((l) => /^\[>\] Climb to the top of the tower\s+0\/1$/.test(l)), 'active step highlighted: ' + JSON.stringify(s.right));
+    // OB-099: the giver quest "Not Safe" is listed (not the m1 chain); only done + current objectives; no count on go steps
+    assert.ok(s.left.includes('Not Safe'), 'LEFT pane lists the giver quest: ' + JSON.stringify(s.left));
+    assert.ok(s.right.join(' ').includes('A note pinned to the wall'), 'RIGHT summary = short description: ' + JSON.stringify(s.right));
+    assert.ok(s.right.some((l) => /^\[>\] Go up the tower$/.test(l)), 'active step, no count: ' + JSON.stringify(s.right));
+    assert.ok(!s.right.some((l) => /Sword|safe to go outside/.test(l)), 'no future objectives: ' + JSON.stringify(s.right));
     for (const l of s.right) assert.ok(l.length <= 40, 'right pane line fits: ' + l);
     await key('KeyJ', 'j'); await pause(300);
     await feed({ type: 'area:entered', id: 'breach' });
     await key('KeyJ', 'j'); await pause(600);
     s = await snap();
-    assert.ok(s.right.some((l) => l.startsWith('You found a note pinned to the wall. Climb up and take')), 'summary moved to the sword step: ' + JSON.stringify(s.right));
+    assert.ok(s.right.some((l) => /^\[>\] Sword\s+0\/1$/.test(l)), 'sword step appears with 0/1: ' + JSON.stringify(s.right));
     await key('KeyJ', 'j'); await pause(300);
     console.log('OB-097 journal: two panes, summary follows the active step, PASS');
   }

@@ -310,7 +310,8 @@ fn setRay(tHit: f32) -> i32 {
 // traceCarpetIn twin. Set rEx..rDz first. true on a hit: kTb (metric distance), kH01, kVar, kLx, kLy, kZ.
 fn traceCarpet(tHit: f32) -> bool {
   let steps = setRay(tHit);
-  if (steps == 0 || steps > NMAX) { return false; }
+  if (steps == 0) { return false; }
+  let nSteps = min(steps, NMAX); // OB-101: truncate far, never drop the whole ray
   let c = cu.cellM;
   let hxy = sqrt(rN2);
   var ix = i32(floor((rEx + rT0 * rDx) / c)); var iy = i32(floor((rEy + rT0 * rDy) / c));
@@ -323,7 +324,7 @@ fn traceCarpet(tHit: f32) -> bool {
   let windOn = cu.windOn != 0;
   let rej = ((0.7071 + cu.rootJit) * c + cu.wMax + LEAN_CAP * cu.maxH) * hxy;
   var prevCi = 1000000000; var prevCj = 1000000000;
-  for (var stp = 0; stp < steps; stp++) {
+  for (var stp = 0; stp < nSteps; stp++) {
     if (tEnter - margin > best) { break; }
     let tNext = select(ty, tx, tx < ty);
     var ci = ix; var cj = iy;

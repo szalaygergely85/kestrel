@@ -22,10 +22,10 @@ const L = grassMaskFromJSON(obj);
 ok(grassMaskAt(L, 1440, 1004) > 0.99, 'large north meadow centre ~1');
 ok(grassMaskAt(L, 1350, 1050) === 0, 'road = 0');
 ok(grassMaskAt(L, 1496, 1024) === 0, 'tower = 0');
-// soft value at the disc edge (1440,1004 r9): d = 0.75 m outside -> halfway down the 1.5 m feather
-const edge = grassMaskAt(L, 1440 + 9 + FEATHER_M / 2, 1004);
+// soft value at the disc edge (1360,1086 r8; OB-101: 1440,1004 is inside the huge tower field): d = 0.75 m outside -> halfway down the 1.5 m feather
+const edge = grassMaskAt(L, 1360 + 8 + FEATHER_M / 2, 1086);
 ok(edge > 0.2 && edge < 0.8, `soft edge value ${edge.toFixed(2)}`);
-ok(grassMaskAt(L, 1440 + 9 + FEATHER_M + 1, 1004) < 0.02, 'zero beyond the feather');
+ok(grassMaskAt(L, 1360 + 8 + FEATHER_M + 1, 1086) < 0.02, 'zero beyond the feather');
 
 // the content loader accepts the kind (manifest reduced to this one file) and exposes the raw object
 const { loadContentPack } = await import('../engine/index.js');

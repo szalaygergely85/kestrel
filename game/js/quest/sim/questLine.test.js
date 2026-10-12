@@ -39,8 +39,7 @@ b = createQuestBook(main, [{ ...blue, requires: undefined }, other]);
 const log = createQuestLogScreen(b, { giverName: (id) => (id === 'bear' ? 'Burl' : id) });
 log.open();
 let lines = log.snapshot().lines.join('\n');
-assert.ok(/The Blue Ones/.test(lines), lines); log.handleKey('KeyS'); // offered quest selected (OB-097: no tabs)
-assert.ok(/Talk to Burl/.test(lines) || (log.handleKey('KeyS'), /Talk to/.test(log.snapshot().lines.join('\n'))), 'offered row shows giver');
+assert.ok(!/The Blue Ones/.test(lines), 'OB-100: an offered (not accepted) quest is not listed: ' + lines);
 assert.ok(!/Esc/.test(lines));
 b.accept('sq.two'); log.open(); log.handleKey('KeyS');
 const act = log.snapshot().lines; assert.ok(act.some(l => /\[T\] Track this|\[T\] Tracked/.test(l)));

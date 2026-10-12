@@ -6,8 +6,8 @@
   "abandonable": true,
   "requires": [{ "quest": "burl.boars", "done": true }, { "flag": "burl.home" }],
   "objectives": [
-    { "id": "sprigs", "text": "Pick six blue sprigs", "when": { "type": "collect", "id": "berry.blue", "count": 6 } },
-    { "id": "bring", "text": "Bring the sprigs to Burl", "when": { "type": "deliver", "id": "berry.blue", "count": 6, "to": "bear" } }
+    { "id": "sprigs", "text": "Pick six blue sprigs", "journal": "Burl wants the blue sprigs that grow on her slope. Pick six of them.", "when": { "type": "collect", "id": "berry.blue", "count": 6 } },
+    { "id": "bring", "text": "Bring the sprigs to Burl", "journal": "You have six blue sprigs. Bring them back to Burl.", "when": { "type": "deliver", "id": "berry.blue", "count": 6, "to": "bear" } }
   ],
   "returnText": "Take the blue sprigs to Burl",
   "reward": { "items": [{ "id": "gear.cloak.cloak.worn", "n": 1 }] }

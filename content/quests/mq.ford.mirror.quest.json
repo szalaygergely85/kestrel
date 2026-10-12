@@ -6,8 +6,8 @@
   "main": true,
   "requires": [{ "quest": "mq.bend.call", "done": true }, { "quest": "mq.ford.stones", "step": "fordWest" }],
   "objectives": [
-    { "id": "glass", "text": "Take the glass from Rook's nest", "when": { "type": "item", "id": "relay.mirror" } },
-    { "id": "wake", "text": "Wake the Ford Relay", "when": { "type": "flag", "id": "waystone.ws_ford.woken", "equals": true } }
+    { "id": "glass", "text": "Take the glass from Rook's nest", "journal": "The Ford Relay is cold. Its glass is gone. Rook has it. Take it from the nest.", "when": { "type": "item", "id": "relay.mirror" } },
+    { "id": "wake", "text": "Wake the Ford Relay", "journal": "You have the glass back from the nest. Wake the Ford Relay.", "when": { "type": "flag", "id": "waystone.ws_ford.woken", "equals": true } }
   ],
   "abandonable": false
 }

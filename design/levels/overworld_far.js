@@ -159,7 +159,7 @@
         variants: [
           // dark lush river bank: ragged strips ~14 m off the river centre x_r(y) (water = centre +- 10), broken by gaps; the road +
           // ford lane (y ~1054-1080), the jetty (1043,1058) and the Outwall track (y ~1031-1035 west bank) stay clear.
-          { name: 'riverbank', ground: ['grass', 'flowers', 'reeds', 'fen'], density: 0.9, heightM: [0.2, 0.5], bladeW: 0.07, swayGain: 0.8,
+          { name: 'riverbank', ground: ['grass', 'flowers', 'reeds', 'fen'], density: 0.9, heightM: [0.25, 0.6], groundTint: 0.35, bladeW: 0.07, swayGain: 0.8,
             ramp: ['bladeBankBase', 'bladeBank', 'bladeBankTip'], glyphs: { base: ',', mid: '|', tip: '!', leanL: '\\', leanR: '/' },
             areas: [ { shape: 'capsule', ax: 1032.5, ay: 985, bx: 1034, by: 1019, r: 3.5 },   // east bank north, 41 m strip
                      { shape: 'capsule', ax: 1035, ay: 1028, bx: 1038.5, by: 1050, r: 4.5 },   // east bank below northLook
@@ -168,13 +168,13 @@
                      { shape: 'capsule', ax: 1004.4, ay: 988, bx: 1005.5, by: 1022, r: 3.5 },  // west bank north (ends 9 m before the track)
                      { shape: 'capsule', ax: 1018, ay: 1084, bx: 1024, by: 1108, r: 3.5 } ] }, // west bank south of the ford
           // tall dry-gold straw: the Outwall barley field north of its fence row (y 900, x 963..986; gate + pickups 975..979,900..904 clear)
-          { name: 'straw', ground: ['grass', 'flowers'], density: 0.75, heightM: [0.4, 0.9], bladeW: 0.05, swayGain: 1.2,
+          { name: 'straw', ground: ['grass', 'flowers'], density: 0.75, heightM: [0.4, 0.9], groundTint: 0.3, bladeW: 0.05, swayGain: 1.2,
             ramp: ['bladeStrawBase', 'bladeStraw', 'bladeStrawTip'], glyphs: { base: '|', mid: '|', tip: '"', leanL: '\\', leanR: '/' },
             areas: [ { shape: 'capsule', ax: 966, ay: 887, bx: 986, by: 885, r: 10 },          // main field ~40 x 20 m (south edge 3 m off the fence)
                      { shape: 'capsule', ax: 972, ay: 873, bx: 983, by: 875, r: 7 } ] },        // ragged north lobe
           // sparse grey-green, a broken ring OUTSIDE the palisade (square x 882..942, y 922..982), >= 3 m off the stakes and the
           // ring path (952,915)-(890,912)-(865,925)-(852,955)-(855,978)-(874,990) and the inward track (956,962)-(950,927)
-          { name: 'outwall', ground: ['grass', 'flowers', 'alpine'], density: 0.25, heightM: [0.1, 0.3], swayGain: 0.9,
+          { name: 'outwall', ground: ['grass', 'flowers', 'alpine'], density: 0.35, heightM: [0.12, 0.35], groundTint: 0.4, swayGain: 0.9,
             ramp: ['bladeWallBase', 'bladeWall', 'bladeWallTip'],
             areas: [ { shape: 'capsule', ax: 872, ay: 933, bx: 870, by: 961, r: 4.5 },         // west, between the stakes and the ring path
                      { shape: 'capsule', ax: 900, ay: 988, bx: 930, by: 991, r: 3 },           // north, along the back fence
@@ -183,8 +183,14 @@
                      { shape: 'capsule', ax: 900, ay: 904, bx: 918, by: 903, r: 3 } ] },        // south, beyond the ring path
           // short green meadow: patches on the open slopes of the tower hill and along the road meadows - NOT the hill path, the
           // tower (bbox 1480..1504 x 1018..1032) + 3 m, the groves (forest), the pond / flooded cellar, the bee farm or the standing stones
-          { name: 'meadow', ground: ['grass', 'flowers'], density: 0.6, heightM: [0.08, 0.25], ramp: ['bladeMeadowBase', 'bladeMeadow', 'bladeMeadowTip'],
-            areas: [ { shape: 'disc', x: 1440, y: 1004, r: 9 },                                 // LARGE north meadow (boarN, berries), 16 m off the road
+          { name: 'meadow', ground: ['grass', 'flowers'], density: 0.75, heightM: [0.15, 0.4], groundTint: 0.35, ramp: ['bladeMeadowBase', 'bladeMeadow', 'bladeMeadowTip'],
+            // OB-101 (owner 2026-10-12 'make a huge area around'): four big fields ring the tower/spawn (tower bbox 1480..1504 x 1018..1032
+            // + 3 m + 1.5 m feather stays bare); road/paths/pond/rock cut by cutGround, groves by the ground filter
+            areas: [ { shape: 'capsule', ax: 1450, ay: 1070, bx: 1535, by: 1070, r: 32 },       // OB-101 huge field, y 1038..1102
+                     { shape: 'capsule', ax: 1450, ay: 980, bx: 1535, by: 980, r: 32 },         // OB-101 huge field, y 948..1012
+                     { shape: 'capsule', ax: 1440, ay: 1000, bx: 1440, by: 1050, r: 34 },       // OB-101 huge field, x 1406..1474
+                     { shape: 'capsule', ax: 1545, ay: 1000, bx: 1545, by: 1050, r: 35 },       // OB-101 huge field, x 1510..1580
+                     { shape: 'disc', x: 1440, y: 1004, r: 9 },                                 // LARGE north meadow (boarN, berries), 16 m off the road
                      { shape: 'capsule', ax: 1404, ay: 1070, bx: 1416, by: 1063, r: 6 },        // LARGE SW slope field (boarS), 25 m off the road
                      { shape: 'disc', x: 1474, y: 1056, r: 4.5 },                               // medium, south flank below the path (groveSouth 11 m away)
                      { shape: 'disc', x: 1458, y: 1050, r: 1.5 },                               // small clump
