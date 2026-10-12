@@ -4,32 +4,39 @@
 // Absent chunk = 0 (unpainted). No layer at all (null/undefined) = 1 everywhere (today's behaviour).
 import { toB64, fromB64 } from './terrainEdits.js';
 
-/** @typedef {{cell:number, chunkSize:number, n:number, chunks: Map<string,Uint8Array>}} GrassMaskLayer */
+/** @typedef {{cell:number, chunkSize:number, n:number, chunks: Map<number,Uint8Array>}} GrassMaskLayer */
 
 /** @returns {GrassMaskLayer} */
 export function createGrassMask(cell = 0.5, chunkSize = 64) {
   if (!(cell > 0) || !(chunkSize > 0) || !Number.isInteger(chunkSize / cell)) {
     throw new Error(`grassMask: chunkSize ${chunkSize} must be a whole multiple of cell ${cell}`);
   }
-  return { cell, chunkSize, n: chunkSize / cell, chunks: new Map() };
+  return { cell, chunkSize, n: chunkSize / cell, chunks: new Map(), _lk: -1, _lc: null };
 }
 
-const mod = (a, n) => ((a % n) + n) % n;
+// Internal chunk key is a number (no string alloc per sample); string "cx,cy" only in the JSON.
+const OFF = 1 << 11, KS = 1 << 12; // Smi keys: +-2048 chunks (+-131 km at 64 m)
+const ckey = (cx, cy) => (cx + OFF) * KS + (cy + OFF);
 
-function chunkAt(layer, gi, gj, create) {
-  const n = layer.n, cx = Math.floor(gi / n), cy = Math.floor(gj / n), key = cx + ',' + cy;
+// layer._lk/_lc cache the last looked-up chunk key and chunk (maskAt hits the same chunk for its 4 samples).
+function chunkAt(layer, cx, cy, create) {
+  const key = ckey(cx, cy);
+  if (key === layer._lk && layer._lc) return layer._lc;
   let c = layer.chunks.get(key);
-  if (!c && create) { c = new Uint8Array(n * n); layer.chunks.set(key, c); }
+  if (!c && create) { c = new Uint8Array(layer.n * layer.n); layer.chunks.set(key, c); }
+  if (c) { layer._lk = key; layer._lc = c; }
   return c || null;
 }
 
 /** Raw u8 (0..255) of global lattice sample (gi,gj); 0 when the chunk is absent. */
 export function sampleAt(layer, gi, gj) {
-  const c = chunkAt(layer, gi, gj, false);
-  return c ? c[mod(gi, layer.n) + mod(gj, layer.n) * layer.n] : 0;
+  const n = layer.n, cx = Math.floor(gi / n), cy = Math.floor(gj / n);
+  const c = chunkAt(layer, cx, cy, false);
+  return c ? c[gi - cx * n + (gj - cy * n) * n] : 0;
 }
 export function setSample(layer, gi, gj, u8) {
-  chunkAt(layer, gi, gj, true)[mod(gi, layer.n) + mod(gj, layer.n) * layer.n] = u8 < 0 ? 0 : u8 > 255 ? 255 : Math.round(u8);
+  const n = layer.n, cx = Math.floor(gi / n), cy = Math.floor(gj / n);
+  chunkAt(layer, cx, cy, true)[gi - cx * n + (gj - cy * n) * n] = u8 < 0 ? 0 : u8 > 255 ? 255 : Math.round(u8);
 }
 
 /** Bilinear density 0..1 at world (x,y). No layer (null/undefined) = 1 everywhere. */
@@ -57,16 +64,18 @@ export function grassMaskFromJSON(obj) {
   for (const key of Object.keys(chunks)) {
     if (!KEY_RE.test(key)) throw new Error(`grassMask: bad chunk key "${key}"`);
     if (typeof chunks[key] !== 'string') throw new Error(`grassMask: chunk ${key} must be a base64 string`);
-    layer.chunks.set(key, fromB64(chunks[key], n2, `chunk ${key}`));
+    const p = key.indexOf(',');
+    layer.chunks.set(ckey(+key.slice(0, p), +key.slice(p + 1)), fromB64(chunks[key], n2, `chunk ${key}`));
   }
   return layer;
 }
 
 /** Deterministic plain object: chunks sorted by key, all-zero chunks dropped. */
 export function grassMaskToJSON(layer, id = '') {
-  const chunks = {};
-  for (const key of [...layer.chunks.keys()].sort()) {
-    const c = layer.chunks.get(key);
+  const chunks = {}, named = [];
+  for (const [k, c] of layer.chunks) named.push([`${Math.floor(k / KS) - OFF},${(k % KS) - OFF}`, c]);
+  named.sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0)); // same string order as before
+  for (const [key, c] of named) {
     let any = false;
     for (let i = 0; i < c.length; i++) if (c[i] !== 0) { any = true; break; }
     if (any) chunks[key] = toB64(c);
