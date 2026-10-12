@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
 import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, evaluateAsync, killTree } from './capture-browser.mjs';
-import { buildGapTable, compareSnaps, questVerdict, renderReport, SAMPLE_EVERY_S } from './verify-ch12-lib.mjs';
+import { buildGapTable, compareSnaps, questVerdict, renderReport, SAMPLE_EVERY_S, orderErrands, planQuest, pickupPatterns } from './verify-ch12-lib.mjs';
 
 /** short window around the first differing character of two JSON strings */
 const firstDiff = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; const w = (x) => x.slice(Math.max(0, i - 40), i + 80); return `@${i}/${a.length},${b.length} ${w(a)} -> ${w(b)}`; };
@@ -28,7 +28,7 @@ const evA = (js) => evaluateAsync(cdp, js);
 const OUT = path.join(ROOT, 'docs', 'test-reports', 'm4-c2'); mkdirSync(OUT, { recursive: true });
 const rdj = (p) => JSON.parse(readFileSync(path.join(ROOT, p), 'utf8'));
 const CH12_IDS = [...rdj('content/quests/index.json').legacy.filter((i) => i !== 'm1'), ...rdj('content/quests/ch12/pack.json').quests.map((q) => q.id)]; // m1 is the main quest
-const stills = []; const samples = []; let curBeat = 'start', quests = [], ac3Diffs = [], gearInfo = null, t0 = Date.now(), sampler = null;
+const stills = []; const samples = []; let forcedBy = {}, curBeat = 'start', quests = [], ac3Diffs = [], gearInfo = null, t0 = Date.now(), sampler = null;
 async function still(name) { try { const r = await cdp.send('Page.captureScreenshot', { format: 'png' }); const f = name.replace(/[^a-z0-9]+/gi, '-').slice(0, 40) + '.png'; writeFileSync(path.join(OUT, f), Buffer.from(r.data, 'base64')); return f; } catch (e) { return null; } }
 // one sample = tracked HUD objective? compass target? a ! / ? giver within 30 m? (compass hide flag ignored: capture-like pages hide it)
 const SAMPLE_FN = `(() => { const D = window.__debug, b = D.saveRelay.quest.book, t = D.playerHandle.data.transform, w = D.world, a = [], r = [], O = { x: 1480, y: 1018 }; b.giverMarks(a, r);
@@ -293,12 +293,53 @@ try {
     return { ok, why: ok ? '' : await state('sq.tm.nub', 'sq.straw') };
   });
 
+  // ===== E+ generic errand pass (M4-C2b): every Ch1-2 quest still not done, in dependency order (opensAfter / requires), accepted at its giver, objectives done by template =====
+  const areasJson = rdj('content/quests/areas.json').areas;
+  const forceLine = (id, why) => { (forcedBy[id] = forcedBy[id] || []).push(why); console.log('FORCED ' + id + ': ' + why); };
+  const packQuests = rdj('content/quests/ch12/pack.json').quests, packIds = new Set(packQuests.map((q) => q.id));
+  const legacyDefs = CH12_IDS.filter((i) => !packIds.has(i)).map((i) => { try { return rdj('content/quests/' + i + '.quest.json'); } catch (e) { return null; } }).filter(Boolean);
+  const NPC_OF = { burl: 'bear' }; // site name -> npc entity id for talk targets
+  const hasN = (item) => ev(`__t.has(${JSON.stringify(item)})`);
+  // pick up world items ([E] on qp./qi. interactables matching the item) until the pack holds `count`
+  async function gather(item, count) {
+    if ((await hasN(item)) >= count) return null;
+    const keys = await ev(`JSON.stringify(__t.w.interactables.map((r) => r.key).filter((k) => ${JSON.stringify(pickupPatterns(item))}.some((p) => new RegExp(p).test(k))))`);
+    for (const k of JSON.parse(keys)) { if ((await hasN(item)) >= count) break; await goIx(k, 0.7); await pressE(1); }
+    return (await hasN(item)) >= count ? null : `cannot get ${count} x ${item}: ${(await hasN(item))} in pack, pickups tried: ${keys.slice(0, 120)}`;
+  }
+  async function doStep(s) { // -> null when done, else the reason the script could not do it
+    switch (s.kind) {
+      case 'explore': for (const a of s.triggers) await goTrig(a); await pause(300); return null;
+      case 'kill': case 'hit': for (const id of (s.kind === 'hit' ? [s.target] : s.ids)) { const r = await ev(`(() => { const h = __t.w.get(${JSON.stringify(id)}); return h ? [h.data.transform.x, h.data.transform.y] : null; })()`); if (r) await tpA(r[0] - (s.kind === 'hit' ? 4 : 2), r[1]); await emitHit(id); await pause(300); } return null;
+      case 'collect': case 'fetch': return gather(s.item, s.count);
+      case 'deliver': return gather(s.item, s.count); // the hand-over itself happens in the turn-in step at the target site
+      case 'talk': if (NPC_OF[s.to] || GIVER[s.to]?.startsWith('npc.')) await talk(NPC_OF[s.to] || GIVER[s.to].slice(4), ['not yet|later|another', 'bear|crow|ask']); else if (GIVER[s.to]) { await goIx(GIVER[s.to]); await pressE(1); if (await ev('__t.D.dialogue.open')) await evA('__t.dlg([])'); } else return 'no way to talk to ' + s.to; return null;
+      case 'escort': for (let i = 0; i < 120; i++) { if (await flag('escort.' + s.npc + '.' + s.to) || (await ev("__t.w.state['burl.phase']")) === 7) break; const b = await ev(`(() => { const t = __t.w.get(${JSON.stringify(s.npc)}).data.transform; return [t.x, t.y]; })()`); await tpA(b[0] - 5, b[1]); await pause(1200); } return null;
+      case 'flag': if (s.ix && await ev(`!!__t.ix(${JSON.stringify(s.ix)})`)) { await goIx(s.ix, 0.9); await pressE(2); return null; } return 'pure flag ' + s.id + ' has no interactable to read';
+      default: return s.why || 'unknown step';
+    }
+  }
+  const plans = orderErrands([...legacyDefs, ...packQuests]).map((q) => planQuest(q, areasJson));
+  for (let pass = 0; pass < 2; pass++) for (const pl of plans) { // pass 2 picks up quests whose requirement (a flag / a later chain link) only opened during pass 1
+    if ((await stOf(pl.id)) === 4 || (pass > 0 && forcedBy[pl.id])) continue;
+    await beat('E+ ' + pl.id, async () => {
+      if (pl.site) { if (!GIVER[pl.site]) { forceLine(pl.id, 'giver site ' + pl.site + ' has no interactable mapping in the script'); return true; }
+        if (!(await giverStep(pl.site, 2, pl.id))) { if (pass > 0) forceLine(pl.id, 'not accepted at ' + pl.site + ': ' + await state(pl.id)); return true; } } // pass 0: maybe locked until a later chain link / flag, retried in pass 1
+      else if ((await stOf(pl.id)) === 0) { if (pass > 0) forceLine(pl.id, 'not available (no giver site): ' + await state(pl.id)); return true; }
+      if (pl.equip.length) { await ev(`(() => { const c = __t.D.playerHandle.data.components; c.equipment.off = ${JSON.stringify(pl.equip[0])}; return true; })()`); forceLine(pl.id, 'equipped ' + pl.equip.join('+') + ' by hand (requireEquipped); the real equip flow is not driven here'); }
+      for (const s of pl.steps) { const why = await doStep(s); if (why) { forceLine(pl.id, s.kind + ': ' + why); break; } }
+      if (pl.turnSite && !(await giverStep(pl.turnSite, 4, pl.id)) && !forcedBy[pl.id]) forceLine(pl.id, 'not handed in at ' + pl.turnSite + ': ' + await state(pl.id));
+      return true; // never a FAIL row here: whatever is left shows in the AC1 table and its Forced column
+    });
+  }
+
   // ===== AC1: every Ch1-2 quest done (m1 main + giver quests); lists the last objective of any that is not =====
   curBeat = 'AC1 quest table';
   quests = await ev(`(() => { const b = __t.D.saveRelay.quest.book, ids = ${JSON.stringify(CH12_IDS)}, N = ['unavailable', 'available', 'active', 'ready', 'done'], out = [];
     const last = (i) => { const d = b.def(i), c = b.questState(i).completed, o = d.objectives.find((x, k) => !(c.includes(x.id) || c.includes(k))); return o ? o.id + ' (' + o.when.type + ' ' + (o.when.id || (o.when.ids || []).join('+')) + ')' : '-'; };
     out.push({ id: 'm1', status: b.main.completed.length >= b.def(0).objectives.length ? 'done' : 'active', lastObjective: last(0) });
     for (let i = 1; i < b.count; i++) if (ids.includes(b.def(i).id)) out.push({ id: b.def(i).id, status: N[b.status(i)], lastObjective: last(i) }); return out; })()`);
+  for (const q of quests) if (forcedBy[q.id]) q.forced = forcedBy[q.id];
   await beat('AC1 all Ch1-2 beats + errands done', async () => { const v = questVerdict(quests); return { ok: v.ok, why: v.open.map((q) => `${q.id}=${q.status}@${q.lastObjective}`).join(', ') }; });
 
   // ===== AC2: gear shows on the player =====
@@ -346,7 +387,7 @@ try {
   try { // AC5 report (written even when the run failed part-way)
     const ac = { ac1: quests.length > 0 && questVerdict(quests).ok, ac2: !!(gearInfo && gearInfo.main === 'sword'), ac3: rows.some((r) => r.name.startsWith('AC3b')) && !!rows.find((r) => r.name.startsWith('AC3b')).ok };
     const beats = rows.filter((r) => /^\d/.test(r.name)).map((r, i) => ({ id: r.name + (r.ok ? '' : ' [FAIL]'), t: i, still: r.still }));
-    const md = renderReport({ date: new Date().toISOString().slice(0, 10), quests, beats, forced: rows.filter((r) => !r.ok).map((r) => r.name + ': ' + r.why), gaps: buildGapTable(samples, WALK ? { every: 1 } : undefined), ac, diffs: ac3Diffs, equipment: gearInfo,
+    const md = renderReport({ date: new Date().toISOString().slice(0, 10), quests, beats, forced: [...rows.filter((r) => !r.ok).map((r) => r.name + ': ' + r.why), ...Object.entries(forcedBy).flatMap(([id, l]) => l.map((w) => 'E+ ' + id + ': ' + w))], gaps: buildGapTable(samples, WALK ? { every: 1 } : undefined), ac, diffs: ac3Diffs, equipment: gearInfo,
       notes: [(WALK ? `--walk: ${samples.length} samples, one per walked game-second at ${WALK_SPEED} m/s straight-line (walls ignored, waits/dialogue not counted); gap rows split into main line vs errand (E1-E6) in the Line column. ` : '') + `${samples.length} samples every ${SAMPLE_EVERY_S} s of wall time; the script teleports between beats, so the "where" is the spot the player stood at while a beat ran (event = beat name)`, 'compass column = __debug.compassRetarget() has a target; giver = a ! / ? giver within 30 m', `console errors: ${errors.length}`] });
     writeFileSync(path.join(OUT, 'report.md'), md); console.log('report: docs/test-reports/m4-c2/report.md');
     if (!ac.ac1 || !ac.ac3) process.exitCode = 1; // AC1 / AC3 failure = non-zero
