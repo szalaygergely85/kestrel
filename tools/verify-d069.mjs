@@ -105,8 +105,13 @@ try {
   await ev(`__debug.questBook().handIn('sq.burl.fire')`);
   await pause(4000); // reward grant (quest:done) + MP fade
   // FB-HINT-01: hints.js is a FIFO with one hint on screen at a time (fadeIn 0.3 + timeout 8 + fadeOut 0.5 = 8.8 s), so fbCast can wait behind another hint; poll up to 20 s.
-  for (let i = 0; i < 40 && !(await hintSeen()); i++) await pause(500);
-  const f2 =await ev(`({flag:__debug.world.state['magic.fireball'],mu:window.__mu,done:__debug.questBook().statusOf('sq.burl.fire')})`);
+  // The headless player never moves/looks, so the start-up tutorial hints (move, look, stone, ...) each sit their full timeout
+  // ahead of fbCast. Play them off like a player would: markDone the hint on screen (same module instance as the game).
+  for (let i = 0; i < 40 && !(await hintSeen()); i++) {
+    await ev(`import('/game/js/quest/hints.js').then((h)=>{const id=h.currentHintId();if(id&&!id.startsWith('fb'))h.markDone(__debug.world,id);return id;})`);
+    await pause(500);
+  }
+  const f2 =await ev(`({flag:__debug.world.state['magic.fireball'],mu:window.__mu,done:__debug.questBook().statusOf('sq.burl.fire'),hs:__debug.world.state['hints.shown'],hd:__debug.world.state['hints.done'],wakeT:__debug.world.state['quest.wakeT'],hand:__debug.hands&&__debug.hands.handOf('spell.fireball')})`);
   const shown = await hintSeen(), pot1 = await potions(), mpCells1 = await barCells(mpRow);
   await still('2c-unlocked');
   report('2c hand-in: flag true, one magic.unlocked, MP bar drawn, fbCast hint, +1 potion.mp', f2.flag === true && f2.mu === 1 && f2.done === 4 && mpCells1 > 0 && shown && pot1 - pot0 === 1, { ...f2, hintShown: shown, mpCells: mpCells1, pot0, pot1 });
@@ -133,8 +138,10 @@ try {
   const far = []; for (let i = 0; i < 6; i++) { await pause(400); far.push(await bState()); }
   await still('4b-bear-15m');
   report('4b bear idle/wander at 15 m', far.every((s) => s === 0 || s === 6), { states: far });
-  await tele(bt.x + 10, bt.y, bt.z + 0.5);
-  const near = []; for (let i = 0; i < 10; i++) { await pause(400); near.push(await bState()); if (near[i] >= 1 && near[i] <= 5) break; }
+  // BEAR-NAV-01: sight is a cone (hearing only nearR), so stand 10 m IN FRONT of the bear, not at a fixed +x offset
+  const bf = await ev(`(()=>{const b=__debug.beasts,i=b.slotOf('blackBear1');const t=__debug.world.entity('blackBear1').transform;const l=Math.hypot(b.fx[i],b.fy[i])||1;return {x:t.x,y:t.y,z:t.z,fx:b.fx[i]/l,fy:b.fy[i]/l};})()`);
+  await tele(bf.x + 10 * bf.fx, bf.y + 10 * bf.fy, bf.z + 0.5);
+  const near = []; for (let i = 0; i < 20; i++) { await pause(400); near.push(await bState()); if (near[i] >= 1 && near[i] <= 5) break; }
   await still('4c-bear-10m');
   report('4c bear aggroes at 10 m', near.some((s) => s >= 1 && s <= 5), { states: near });
 
