@@ -110,7 +110,7 @@ try {
   report('2c hand-in: flag true, one magic.unlocked, MP bar drawn, fbCast hint, +1 potion.mp', f2.flag === true && f2.mu === 1 && f2.done === 4 && mpCells1 > 0 && shown && pot1 - pot0 === 1, { ...f2, hintShown: shown, mpCells: mpCells1, pot0, pot1 });
 
   // 3. cast works after unlock
-  await ev(`__debug.playerHandle.data.components.inventory.right='spell.fireball'`);
+  const handAfter = await ev(`(()=>{const i=__debug.playerHandle.data.components.inventory;return i.left+'/'+i.right;})()`); // unlock must put the spell into a free hand by itself
   await pause(300);
   const mpA = await mp();
   await mouse('mousedown', 2); await pause(250); await mouse('mouseup', 2);
@@ -119,7 +119,7 @@ try {
   await still('3-cast');
   await pause(300);
   const mpB = await mp();
-  report('3 cast after unlock: MP drops, projectile exists', mpB < mpA && (alive > 0 || castTick > 0), { mpA, mpB, alive, castTick });
+  report('3 cast after unlock: MP drops, projectile exists', mpB < mpA && (alive > 0 || castTick > 0), { mpA, mpB, alive, castTick, handAfter });
 
   // 4. black bears
   const bears = await ev(`['blackBear1','blackBear2','blackBear3'].map(id=>{const e=__debug.world.entity(id),c=e&&e.components;return {id,kind:c&&c.brain&&c.brain.kind,species:c&&c.brain&&c.brain.species,model:c&&c.voxel&&c.voxel.model,slot:__debug.beasts.slotOf(id)};})`);
