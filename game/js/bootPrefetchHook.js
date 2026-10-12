@@ -16,6 +16,29 @@ import { bootNow, bootSpan } from '../../engine/index.js';
  * same radius around the spawn so nothing just inside it has to load on the very first frames instead. */
 export const BOOT_PREFETCH_RADIUS_M = 2000 + 20;
 
+/** STREAM-01c (38.51): boot prefetch from the placement grid - every lazy mesh of an active or warm placement that is within its own
+ * `reach + warmM` of the spawn (the same per-placement rule the camera feed and `warmLazyMeshes` use), instead of the 2020 m radius. */
+async function prefetchGridMeshes(store, world, pos, also) {
+  const g = world.refreshPlacementGrid ? world.refreshPlacementGrid() : world.placementGrid;
+  let guard = 0;
+  g.update(pos.x, pos.y);
+  while (g._pending && guard++ < 1000) g.update(pos.x, pos.y); // drain the per-frame cap: boot has no frame budget
+  const want = new Set(), st = world.structures, warmM = g.opts.warmM;
+  const scan = (list, count) => {
+    for (let q = 0; q < count; q++) {
+      const i = list[q], m = st[i].mesh;
+      if (!m || !m.lazy || m.lazy.store !== store) continue;
+      const b = st[i].bbox;
+      const dx = Math.max(b.x0 - pos.x, 0, pos.x - b.x1), dy = Math.max(b.y0 - pos.y, 0, pos.y - b.y1), rw = Math.sqrt(g.reach2[i]) + warmM;
+      if (dx * dx + dy * dy <= rw * rw) want.add(m);
+    }
+  };
+  scan(g.activeList, g.activeCount); scan(g.warmList, g.warmCount);
+  for (const m of also) if (m && m.lazy && m.lazy.store === store) want.add(m);
+  await Promise.all([...want].map((m) => store.ensure(m).catch(() => null)));
+  return want.size;
+}
+
 /**
  * @param {{prefetchNear: (world: any, x: number, y: number, radiusM: number, opts?: {also?: any[]}) => Promise<number>}|null|undefined} store - `bundle.lazyMeshes`
  * @param {any} world - `engine.world` (placed structures + the optional `scatterMeshes` species array)
@@ -26,7 +49,9 @@ export async function prefetchLazyMeshesAtBoot(store, world, pos) {
   if (!store) return 0;
   const t0 = bootNow();
   const also = (world.scatterMeshes || []).filter(Boolean); // scatter species meshes (instances positioned per camera, not per-structure bbox)
-  const n = await store.prefetchNear(world, pos.x, pos.y, BOOT_PREFETCH_RADIUS_M, { also });
+  const n = world.streaming && world.streaming.enabled !== false && world.placementGrid && store.ensure
+    ? await prefetchGridMeshes(store, world, pos, also)
+    : await store.prefetchNear(world, pos.x, pos.y, BOOT_PREFETCH_RADIUS_M, { also });
   const ms = bootNow() - t0;
   bootSpan(`lazy meshes prefetched near spawn (${n})`, t0);
   console.info(`[boot] prefetchNear: ${n} lazy mesh${n === 1 ? '' : 'es'} near spawn in ${ms.toFixed(0)} ms`);

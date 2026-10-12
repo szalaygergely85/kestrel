@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { PlacementGrid } from './placementGrid.js';
 
 const self = fileURLToPath(import.meta.url);
+const SYN = { reachPerM: 400 }; // STREAM-01c: the synthetic 800 m world tests ring MECHANICS; the shipped default (734) makes it all-active
 let checks = 0, fails = 0;
 const ok = (c, m) => { checks++; if (!c) { fails++; console.log('FAIL', m); } };
 
@@ -22,7 +23,7 @@ function synth() {
 const snap = (g) => [Array.from(g.activeList.subarray(0, g.activeCount)).join(','), Array.from(g.warmList.subarray(0, g.warmCount)).join(',')].join('|');
 
 if (process.argv.includes('--alloc')) {
-  const g = new PlacementGrid(synth());
+  const g = new PlacementGrid(synth(), SYN);
   g.update(400, 400);
   for (let k = 0; k < 200; k++) g.update(400 + k * 4, 400 + (k % 7) * 9);
   { let x = 100; for (let k = 0; k < 20000; k++) { x += 5.5 * (k % 200 < 100 ? 1 : -1); g.update(x, 300 + (k % 13)); } } // warm-up JIT on the measured loop (200 was too short: ~25 KB of JIT noise)
@@ -38,13 +39,13 @@ if (process.argv.includes('--alloc')) {
 
 const W = synth(), N = W.length;
 { // AC5-lite + membership
-  const g = new PlacementGrid(W);
+  const g = new PlacementGrid(W, SYN);
   ok(g.memberCount === N - 1 && g.cellOf[5] === -1, 'non-mesh is not a member');
   g.update(0, 0);
   ok(g.activeCount > 0 && g.activeCount < N - 1, `near corner: some but not all active (${g.activeCount}/${N - 1})`);
   let asc = true; for (let i = 1; i < g.activeCount; i++) if (g.activeList[i] <= g.activeList[i - 1]) asc = false;
   ok(asc && !g.activeList.subarray(0, g.activeCount).includes(5), 'activeList ascending, structure indices');
-  const far = new PlacementGrid(W, { minM: 1e6, farM: 1e6 });
+  const far = new PlacementGrid(W, { ...SYN, minM: 1e6, farM: 1e6 });
   far.update(0, 0); ok(far.activeCount === N - 1, 'huge reach = everything active');
 }
 { // NaN reach -> farM
@@ -53,7 +54,7 @@ const W = synth(), N = W.length;
   ok(g.reach2[0] === f2 && g.reach2[1] === f2, `reachPerM Infinity -> reach2 = farM^2 (${g.reach2[0]}, ${g.reach2[1]})`);
 }
 { // AC1 hysteresis: +-3 m across a border 200 times -> no transitions beyond the first classify
-  const g = new PlacementGrid(W);
+  const g = new PlacementGrid(W, SYN);
   g.update(-500, 400);
   // find the x where the first cell enters active along +x (eye at y 400), then oscillate around it
   let bx = -500; while (g.activeCount === 0 && bx < 2000) { bx += 1; g.update(bx, 400); }
@@ -64,7 +65,7 @@ const W = synth(), N = W.length;
   ok(g.transitions === t0, `no extra transitions (${g.transitions - t0})`);
 }
 { // AC2 cap + drain + ring invariants
-  const g = new PlacementGrid(W, { maxCellsPerFrame: 3 });
+  const g = new PlacementGrid(W, { ...SYN, maxCellsPerFrame: 3 });
   g.update(0, 0);                           // first classify is uncapped
   let t = g.transitions;
   g.update(700, 700);                       // big jump: capped
@@ -79,7 +80,7 @@ const W = synth(), N = W.length;
     if (s === 0 && d <= r + o.warmM) valid = false;
   }
   ok(valid, 'drained state obeys the ring rules');
-  const f = new PlacementGrid(W, { maxCellsPerFrame: 3 }); f.update(700, 700); // fresh classify (first = uncapped)
+  const f = new PlacementGrid(W, { ...SYN, maxCellsPerFrame: 3 }); f.update(700, 700); // fresh classify (first = uncapped)
   // equal to a fresh classify for every cell outside the two hysteresis bands (inside them the state is history-dependent by design)
   let same = true, cmp = 0;
   for (let c = 0; c < g.cellCount; c++) {
@@ -91,7 +92,7 @@ const W = synth(), N = W.length;
   ok(same && cmp > g.cellCount / 2, `drained set equals a fresh classify outside the hysteresis bands (${cmp}/${g.cellCount} compared)`);
 }
 { // AC3 determinism
-  const run = () => { const g = new PlacementGrid(W); const out = [];
+  const run = () => { const g = new PlacementGrid(W, SYN); const out = [];
     for (let k = 0; k < 300; k++) { g.update(k * 3, 200 + 150 * Math.sin(k / 20)); if (k % 25 === 0) out.push(snap(g)); }
     return out.join('#'); };
   ok(run() === run(), 'same trace, same lists');

@@ -5,7 +5,7 @@
 // `warmList` (ascending structure indices) instead of 0..N. `update` allocates nothing after the build.
 
 export const PLACEMENT_GRID_DEFAULTS = Object.freeze({
-  cellM: 64, reachPerM: 400, minM: 160, farM: 2000, hystM: 16, warmM: 120, maxCellsPerFrame: 8,
+  cellM: 64, reachPerM: 734, minM: 160, farM: 2000, hystM: 16, warmM: 120, maxCellsPerFrame: 8, // STREAM-01c: reachPerM 734 = 1 cell at 480 cols / HFOV 75 (38.51's 400 popped ~1 m road pieces at 260-290 m)
 });
 
 const COLD = 0, WARM = 1, ACTIVE = 2;
