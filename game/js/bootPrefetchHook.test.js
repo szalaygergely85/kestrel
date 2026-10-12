@@ -60,3 +60,20 @@ assert.equal(nOff, 0, 'resolves 0 when lazy loading is off');
 assert.equal(calledWhenOff, false, 'never touches prefetchNear when there is no store');
 
 console.log('PASS bootPrefetchHook.test.js');
+
+// --- STREAM-01c: streaming on + placement grid -> prefetch the grid's active+warm meshes (per-placement reach + warmM), not the 2020 m radius ---
+{
+  const store = { ensured: [], ensure(m) { this.ensured.push(m.id); return Promise.resolve(m); }, prefetchNear() { throw new Error('radius path must not run'); } };
+  const mk = (id, x) => ({ id, lazy: { store } , _x: x });
+  const near = mk('near', 0), far = mk('far', 3000), warm = mk('warm', 0);
+  const st = [near, far, warm].map((m, i) => ({ kind: 'mesh', mesh: m, bbox: { x0: m._x, x1: m._x + 1, y0: 0, y1: 1 } }));
+  const grid = { opts: { warmM: 120 }, reach2: new Float32Array([160 * 160, 160 * 160, 160 * 160]), activeList: Int32Array.of(0, 1), activeCount: 2, warmList: Int32Array.of(2), warmCount: 1, _pending: false, update() {} };
+  const w = { structures: st, streaming: { enabled: true }, placementGrid: grid };
+  const n2 = await prefetchLazyMeshesAtBoot(store, w, { x: 0, y: 0 });
+  assert.equal(n2, 2, 'near (active) + warm; the far active-cell placement is outside its own reach');
+  assert.deepEqual(store.ensured.sort(), ['near', 'warm']);
+  // streaming off -> old radius path
+  let radius = null;
+  await prefetchLazyMeshesAtBoot({ ensure() {}, prefetchNear: (a, x, y, r) => { radius = r; return Promise.resolve(0); } }, { ...w, streaming: { enabled: false } }, { x: 0, y: 0 });
+  assert.equal(radius, BOOT_PREFETCH_RADIUS_M, '?stream=0 keeps the 2020 m radius');
+}
