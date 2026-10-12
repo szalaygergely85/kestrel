@@ -44,7 +44,7 @@ assert.equal(A.quest.objectiveText(), OBJ.breach);
 A.quest.poll(facts({ wakeDone: true, x: 120, y: 50, z: 6 }), breach); // too far
 assert.equal(A.quest.objectiveText(), OBJ.breach);
 A.quest.poll(facts({ wakeDone: true, x: 101, y: 51, z: 6.2 }), breach);
-assert.equal(A.quest.objectiveText(), OBJ.sword);
+assert.equal(A.quest.objectiveText(), OBJ.sword + ' 0/1');
 assert.deepEqual(toasts, [], 'no section toast mid-section');
 A.quest.poll(facts({ swordTaken: true }), breach);
 assert.deepEqual(toasts, [], 'q01 is silent (the giver quest owns the toast)');

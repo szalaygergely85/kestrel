@@ -103,6 +103,8 @@ export function applyQuestEvent(state, event, def) {
   return changed;
 }
 
+/** OB-099: only item (pick up / collect / deliver) and kill objectives show a count; go/talk/explore/flag steps never do. */
+export const whenCounted = when => when.type === 'item' || when.type === 'collect' || when.type === 'deliver' || when.type === 'beasts';
 export function questObjectives(state, def, out = []) {
   for (let i=0;i<def.objectives.length;i++) {
     const objective = def.objectives[i], row = out[i] || (out[i] = {});
@@ -110,6 +112,7 @@ export function questObjectives(state, def, out = []) {
     row.status = i<state.completed.length ? 'complete' : i===state.completed.length ? 'active' : 'locked';
     row.progress = Math.min(progress(state,objective.when),objective.when.count ?? 1);
     row.target = objective.when.count ?? 1;
+    row.counted = whenCounted(objective.when);
   }
   out.length = def.objectives.length;
   return out;

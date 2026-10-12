@@ -1,9 +1,10 @@
 // US-096w: bridges game events/facts into the lane-C quest sim (quest/sim/quest.js) and exposes the current
 // objective text for the HUD. Pure data + a small UI-layer draw; no world/engine imports, so it runs in Node.
-import { questObjectives } from './quest/sim/quest.js';
+import { questObjectives, whenCounted } from './quest/sim/quest.js';
 import { createQuestBook, READY } from './quest/sim/questBook.js'; // QG-03: the relay's m1 state IS book.main
 
 const BREACH_R2 = 3 * 3, BREACH_DZ = 2.5; // "reached the breach": within 3 m (xy) of the marker and 2.5 m in z
+const scratch = [];
 export const DONE_TEXT = 'The pencil line runs on.';
 const PLATE = [10, 11, 16], TEXT = [226, 214, 176], DIM = [140, 134, 112];
 
@@ -75,8 +76,15 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
     /** Current objective text (first not-complete objective) or the done line (writer: "The pencil line runs on."). */
     objectiveText() {
       const t = book.tracked(); // QG-03: an accepted giver quest owns the HUD line (its step, or its return line when ready)
-      if (t >= 0) { const d = book.def(t); return book.status(t) === READY && d.returnText ? d.returnText : d.objectives[Math.min(book.questState(t).completed.length, d.objectives.length - 1)].text; }
-      return state.completed.length < def.objectives.length ? def.objectives[state.completed.length].text : (def.doneText || DONE_TEXT);
+      // OB-099: current objective only; "n/m" suffix only for item / kill steps
+      if (t >= 0) {
+        const d = book.def(t); if (book.status(t) === READY && d.returnText) return d.returnText;
+        const k = Math.min(book.questState(t).completed.length, d.objectives.length - 1), o = d.objectives[k];
+        return whenCounted(o.when) ? o.text + ' ' + book.objectives(t, scratch)[k].progress + '/' + (o.when.count ?? 1) : o.text;
+      }
+      if (state.completed.length >= def.objectives.length) return def.doneText || DONE_TEXT;
+      const o = def.objectives[state.completed.length];
+      return whenCounted(o.when) ? o.text + ' ' + questObjectives(state, def, scratch)[state.completed.length].progress + '/' + (o.when.count ?? 1) : o.text;
     },
     /** Replace the quest (restore from a save, or a fresh run when `saved` is null). */
     reset(savedState = null, savedQuests = null) {

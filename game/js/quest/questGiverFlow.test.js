@@ -54,11 +54,11 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
   assert.equal(offer.at(-1), 'Mind their tusks, sky-cub.');
   assert.equal(r.book.statusOf('burl.boars'), 2, 'Accept -> active');
   assert.deepEqual(ev.filter((e) => e.endsWith('burl.boars')), ['quest:accepted:burl.boars']);
-  assert.equal(r.objectiveText(), 'Bring down the five wild boars', 'HUD follows the tracked quest');
+  assert.equal(r.objectiveText(), 'Kill boars 0/5', 'HUD follows the tracked quest (OB-099 count on kills)');
   assert.deepEqual(t.talk(), ['Still hearing those greedy snouts.', 'Five boars. No need to chase the whole herd.'], 'active -> reminder');
   kill(r, 4); assert.equal(r.book.statusOf('burl.boars'), 2);
   kill(r, 5); assert.equal(r.book.statusOf('burl.boars'), 3);
-  assert.equal(r.objectiveText(), 'Tell Burl the slope is quiet');
+  assert.equal(r.objectiveText(), 'Return to the bear');
   assert.ok(ev.includes('quest:ready:burl.boars'));
   assert.equal(r.state.completed.length, 4, 'm1 beasts still open before the hand-in');
   const handIn = t.talk(); // CH1-05: after-five lines, thanks (hand-in), then flows into the follow offer

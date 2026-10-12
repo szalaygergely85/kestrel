@@ -17,7 +17,7 @@ const worldJson = rd('content/worlds/world_m1.world.json');
 const obj = quest.objectives.find((o) => o.id === 'beasts');
 assert.equal(obj.when.count, 5, 'objective count is 5');
 assert.deepEqual(obj.when.ids, ['boar1', 'boar2', 'boar3', 'boar4', 'boar5']);
-assert.equal(obj.text, 'Bring down the five wild boars', 'writer text obj.beasts5');
+assert.equal(obj.text, 'Kill boars', 'writer text obj.beasts5');
 
 const allBoars = worldJson.entities.filter((e) => e.type === 'beast' && !(e.components && e.components.brain && e.components.brain.species === 'wolf' || e.components.brain.species === 'bear')); // WOLF-01: wolves are beasts too
 const boars = allBoars.filter((e) => obj.when.ids.includes(e.id));

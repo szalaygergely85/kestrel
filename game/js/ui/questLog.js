@@ -79,20 +79,35 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
 
   /** MAIN = the chapter quest (index 0), `mq.*` ids, or def.kind === 'main'. */
   const isMain = i => { const d = book.def(i); return i === 0 || d.kind === 'main' || (typeof d.id === 'string' && d.id.startsWith('mq.')); };
-  const cnt = (row) => '  ' + row.progress + '/' + row.target;
+  // OB-099: counts only on item / kill steps (row.counted); go / talk / explore steps show none
+  const cnt = (row) => (row.counted ? '  ' + row.progress + '/' + row.target : '');
+  /** OB-099: the m1 chain is NOT a quest of its own. While a step belongs to a `silent` section (covered by a giver quest) it is
+   * not listed; otherwise it is ONE small entry named after the current step's section (its short title). Returns the section or null. */
+  function mainSection(def, rows) {
+    if (!def.sections) return { title: def.title || def.id, id: undefined };
+    const k = rows.findIndex(r => r.status === 'active'); if (k < 0) return { title: def.title || def.id, id: undefined };
+    const sec = def.sections.find(x => x.id === def.objectives[k].section);
+    return sec && sec.silent ? null : { title: (sec && sec.title) || def.title, id: sec && sec.id };
+  }
+  const mainRows = [];
   function rebuild() {
     built = book.version; quests = []; names = [];
     const n = book.count, act = [], mainAct = [], off = [], done = [];
-    for (let i = 0; i < n; i++) { const s = book.status(i); if (s === 2 || s === READY) (isMain(i) ? mainAct : act).push(i); }
+    for (let i = 0; i < n; i++) {
+      const s = book.status(i);
+      if (i === 0 && s !== DONE && !mainSection(book.def(0), book.objectives(0, mainRows))) continue; // OB-099: covered by a giver quest
+      if (s === 2 || s === READY) (isMain(i) ? mainAct : act).push(i);
+    }
     mainAct.sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : b - a)); act.sort((a, b) => b - a);
     for (let i = n - 1; i > 0; i--) if (book.status(i) === AVAILABLE) off.push(i); // unlocked, not accepted
-    for (let i = n - 1; i >= 0; i--) if (book.status(i) === DONE) done.push(i);
+    if (book.status(0) === DONE) done.push(0); // OB-099: handed-in giver quests disappear; only the finished chapter row (CH1-09 re-read) stays
     for (const i of mainAct) quests.push(i);
     for (const i of act) quests.push(i);
     for (const i of off) quests.push(i);
     doneFrom = quests.length;
     for (const i of done) quests.push(i);
     for (let k = 0; k < quests.length; k++) { const i = quests[k], d = book.def(i); names.push(clipped(ascii((k >= doneFrom && i === 0 && doneTitle) || d.title || d.id), LEFT_W)); }
+    for (let k = 0; k < quests.length; k++) if (quests[k] === 0 && k < doneFrom) { const m = mainSection(book.def(0), book.objectives(0, mainRows)); if (m) names[k] = clipped(ascii(m.title), LEFT_W); }
     if (sel >= quests.length) sel = Math.max(0, quests.length - 1);
     if (sel < top) top = sel;
     if (sel >= top + LIST_ROWS) top = sel - LIST_ROWS + 1;
@@ -100,7 +115,8 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     right = [];
     if (quests[sel] === undefined) return;
     const i = quests[sel], def = book.def(i), s = book.status(i), isDone = s === DONE;
-    right.push({ kind: 'head', text: clipped(ascii((isDone && i === 0 && doneTitle) || def.title || def.id), RIGHT_W) });
+    const msec = i === 0 && !isDone ? mainSection(def, book.objectives(0, mainRows)) : null;
+    right.push({ kind: 'head', text: clipped(ascii((isDone && i === 0 && doneTitle) || (msec && msec.title) || def.title || def.id), RIGHT_W) });
     if (def.giver && def.giver.npc) right.push({ kind: 'dim', text: clipped(T.giver + ascii(String(giverName(def.giver.npc))), RIGHT_W) });
     const rows = book.objectives(i, scratch);
     // story summary: the active step's `journal` (fallback: its objective text); READY -> returnText; AVAILABLE -> talk to the giver
@@ -114,7 +130,10 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     if (s !== AVAILABLE) {
       right.push({ kind: 'head', text: T.objectives });
       for (let r = 0; r < rows.length; r++) {
-        const row = rows[r], mark = row.status === 'complete' ? '[x] ' : row.status === 'active' ? '[>] ' : '[ ] ', c = cnt(row);
+        const row = rows[r];
+        if (row.status === 'locked') continue; // OB-099: never show future objectives
+        if (msec && msec.id !== undefined && def.objectives[r].section !== msec.id) continue; // m1 entry: only the current step's section
+        const mark = row.status === 'complete' ? '[x] ' : row.status === 'active' ? '[>] ' : '[ ] ', c = cnt(row);
         right.push({ kind: 'step', status: row.status, text: clipped(mark + ascii(row.text), RIGHT_W - c.length) + c });
       }
     }
