@@ -155,20 +155,20 @@
         variants: [
           // dark lush river bank: both banks of the river through the ford stretch (x_r(y) sampled every 30 m; r = halfWidth 9.5 + 14 m)
           { name: 'riverbank', ground: ['grass', 'flowers', 'reeds', 'fen'], density: 0.9, heightM: [0.25, 0.45], bladeW: 0.07, swayGain: 0.8,
-            ramp: ['forestDark', 'grassDark', 'moss'], glyphs: { base: ',', mid: '|', tip: '!', leanL: '\\', leanR: '/' },
+            ramp: ['bladeBankBase', 'bladeBank', 'bladeBankTip'], glyphs: { base: ',', mid: '|', tip: '!', leanL: '\\', leanR: '/' },
             areas: [ { shape: 'capsule', ax: 1018.3, ay: 990, bx: 1019.8, by: 1020, r: 23.5 }, { shape: 'capsule', ax: 1019.8, ay: 1020, bx: 1024.5, by: 1050, r: 23.5 },
                      { shape: 'capsule', ax: 1024.5, ay: 1050, bx: 1031.3, by: 1080, r: 23.5 }, { shape: 'capsule', ax: 1031.3, ay: 1080, bx: 1038.9, by: 1110, r: 23.5 },
                      { shape: 'capsule', ax: 1038.9, ay: 1110, bx: 1046.1, by: 1140, r: 23.5 } ] },
           // tall dry-gold straw: the Outwall barley farm (world_geo POI 975,900)
           { name: 'straw', ground: ['grass', 'flowers'], density: 0.75, heightM: [0.35, 0.55], bladeW: 0.05, swayGain: 1.2,
-            ramp: ['strawDark', 'straw', 'strawLight'], glyphs: { base: '|', mid: '|', tip: '"', leanL: '\\', leanR: '/' },
+            ramp: ['bladeStrawBase', 'bladeStraw', 'bladeStrawTip'], glyphs: { base: '|', mid: '|', tip: '"', leanL: '\\', leanR: '/' },
             areas: [ { shape: 'disc', x: 975, y: 900, r: 30 } ] },
           // sparse grey-green near the Outwall palisade (gate 942,925, plaza 905,940)
           { name: 'outwall', ground: ['grass', 'flowers', 'alpine'], density: 0.25, heightM: [0.08, 0.18], swayGain: 0.9,
-            ramp: ['stoneDark', 'moss', 'stoneLight'],
+            ramp: ['bladeWallBase', 'bladeWall', 'bladeWallTip'],
             areas: [ { shape: 'disc', x: 912, y: 940, r: 70 } ] },
           // short green meadow: everything else that is grass (mean colour = turf, the grass ground type's mid colour)
-          { name: 'meadow', ground: ['grass', 'flowers'], density: 0.6, heightM: [0.10, 0.22], ramp: ['turfDark', 'turf', 'turfLight'] }
+          { name: 'meadow', ground: ['grass', 'flowers'], density: 0.6, heightM: [0.10, 0.22], ramp: ['bladeMeadowBase', 'bladeMeadow', 'bladeMeadowTip'] }
         ]
       },
       slopeEps: 2.0                                  // m: typeAt slope = central difference of heightAt at +-2 m

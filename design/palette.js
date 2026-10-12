@@ -1551,6 +1551,11 @@
   colors.furBear = '#2c2d33';       // near-black base coat
   colors.furBearDark = '#17181c';   // dorsal ridge, partings, legs, paws, belly shadow
   colors.furBearSheen = '#56606f';  // glossy blue-grey guard-hair tips on the lit hump / shoulders
+  // OB-073-D2f: grass carpet blade ramps (base -> mid -> tip) per field; recipe.carpet in design/levels/overworld_far.js
+  colors.bladeMeadowBase = '#46642c'; colors.bladeMeadow = '#6e9444'; colors.bladeMeadowTip = '#a8c468'; // short green meadow
+  colors.bladeStrawBase = '#7a6a34'; colors.bladeStraw = '#b89a50'; colors.bladeStrawTip = '#e0cc8a';    // tall dry-gold straw field
+  colors.bladeBankBase = '#1f3a20'; colors.bladeBank = '#34602e'; colors.bladeBankTip = '#5f8a3c';       // dark lush river bank
+  colors.bladeWallBase = '#4a5040'; colors.bladeWall = '#74806a'; colors.bladeWallTip = '#a4ac90';       // sparse grey-green near the Outwall
   materials.fur_bear = fabricMat('WILDLIFE (BEAR-D1). Black bear coat: near-black, faint blue-grey sheen ticks.', 'furBear', 0.70, 0.13,
     { a: { shade: 1.00 }, t: { shade: 1.12, tint: 'furBearSheen', amount: 0.3, glyph: "'" }, d: { shade: 0.86, tint: 'furBearDark', amount: 0.4 } },
     ['atad', 'aaaa', 'daat', 'aaaa']);

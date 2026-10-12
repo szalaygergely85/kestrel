@@ -1064,6 +1064,10 @@ async function runGame(mode, cinematic = null) {
   const worldLoadOpts = { physics,
     realTrees: renderer === 'mesh' && physics === 'mesh' && params.get('trees') !== '0',
     detail: renderer === 'mesh' && physics === 'mesh' && params.get('scatter') !== '0' }; // ENV-01a2: `?scatter=0` (not `?detail=0`, that is the US-028 v1-shading switch)
+  { // OB-073-D2f: the grass carpet (38.52), `?carpet=0` off; ramp palette keys -> 0..255 RGB triplets
+    const rcp = window.ASSETS.levels.overworld_far && window.ASSETS.levels.overworld_far.recipe && window.ASSETS.levels.overworld_far.recipe.carpet;
+    if (rcp && renderer === 'mesh' && params.get('carpet') !== '0') worldLoadOpts.carpet = { ...rcp, variants: rcp.variants.map((v) => ({ ...v, ramp: v.ramp.map((k) => Array.from(hexToRgb(assets.palette.colors[k]))) })) };
+  }
   if (params.get('debug') === '1' || params.get('f3') === '1') overlay.toggle(); // per CLAUDE.md `?debug=1`; ME-08c `?f3=1` = F3 pass times at start
   // US-020a: arms the (one-shot) first-gesture listeners only - creates
   // nothing yet, so there is no autoplay warning and no sound before input.
@@ -1333,6 +1337,10 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     // (architecture.md 7.4's "module-level game variables are reset only in
     // the 'world:loaded' handler" rule).
     engine.events.on('world:band', () => hzb.invalidate('band')); // WS2-05: near/far seam jumped -> cut the HZB + stable history
+    // OB-073-D2f: hand the GPU carpet pass the class map + near heights on every world load / band swap (version bump re-uploads)
+    let carpetVer = 0;
+    const pushCarpet = () => { const w = engine.world, nb = w && w.terrain && w.terrain.near; if (!wgPipeline || !wgPipeline.setCarpet) return; if (!w || !w.carpet || !nb) { wgPipeline.setCarpet(null, null, 0); return; } wgPipeline.setCarpet(w.carpet, { data: nb.hDraw, w: nb.w, h: nb.h, x0: nb.x0, y0: nb.y0, cell: nb.cell }, ++carpetVer); };
+    engine.events.on('world:loaded', () => pushCarpet()); engine.events.on('world:band', () => pushCarpet());
     engine.events.on('world:loaded', (evt) => {
       const world = evt.world;
       bootMark('world:loaded (world built, handler start)');
@@ -2235,6 +2243,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (cinematicHours) applySunHours(engine.world, lightSet, cam.hour, worldSunPath, sunEnabled);
       fb.timeSec = simTime;
       fbOn = fireballOn(engine.world, FEATURES); // FB-01: same-frame appearance after unlock
+      if (wgPipeline && wgPipeline.setCarpetFrame && engine.world && engine.world.carpet) { const wp = engine.world.wind && engine.world.wind.params; wgPipeline.setCarpetFrame(fb.timeSec, wp && wp.speed > 0 ? wp : null); } // OB-073-D2f: blade sway time + wind
       // Arch review 1 (US-017): `lightSet` is rebuilt by the 'world:loaded'
       // handler on every restart - rebind it here, or `fb.lights` would keep
       // pointing at the previous world's LightSet (beacon state etc.).
