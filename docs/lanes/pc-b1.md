@@ -791,3 +791,5 @@ Notes: ramp must already be RGB bytes 0..255 triplets in cfg.variants[].ramp (gr
   Texts: all placeholders "NEEDS WRITER <key>" (hesk.names.1-4, hesk.relay.1-3, hesk.relay.active.1, hesk.after.1, hesk.board.1, hesk.meet.1, dorrin.relay.1-3, dorrin.done.1, dorrin.meet.1, mq.ow.board lines offer/active/ready/done). story.md section did not exist yet. Left: paste writer text; owner browser check of NPC placement (938,930)/(909,938).
 
 - shade-alloc (kestrel-2): passShade.tint.test.js "zero alloc" was flaky, not a leak: the test never touches the kind-10 grass table (passShade only repacks it when the carpet cfg object changes; steady state is 3456 B / 20000 iters). Cause was JIT tier-up boxing; test now warms up 10x and takes the best of 5 gc-bracketed windows (8/8 runs PASS). No engine change.
+- 2026-10-12 world_m1 test fixes (kestrel-3): ob091-forest.mjs now keeps mdw rocks/pebbles inside the meadow box (inMeadow); restored the 23 mdw Rock_/Pebble rows it had removed (from fff74993~1) -> meadow-clear PASS.
+  Re-ran gen-secrets-ch12 + gen-secrets-outwall: only secretField + secretBank moved (nothing lost); both tests PASS; validate-content OK.

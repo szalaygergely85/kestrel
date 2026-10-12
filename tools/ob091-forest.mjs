@@ -18,6 +18,7 @@
 // Writes the preview data design/preview/ob091-forest.data.js (design/preview/ob091-forest.html draws before/after as dots).
 // Usage (repo root): node tools/ob091-forest.mjs [--dry-run]
 globalThis.window = globalThis.window || globalThis;
+import { MEADOW } from './gen-meadow-meshes.mjs';
 import fs from 'node:fs';
 import { PLANT_SCALE, plantScaleFor } from './plant-scale.mjs';
 import paletteMod from '../design/palette.js';
@@ -45,6 +46,7 @@ const dry = process.argv.includes('--dry-run');
 const FILE = 'content/worlds/world_m1.world.json', SPOTS = 'tools/ob091-forest.spots.json', DATA = 'design/preview/ob091-forest.data.js';
 const SCATTER_RE = /^(road[A-Z]\d+|mdw\d+)$/, ADD_RE = /^ob91[-_]\d+$/;
 const CLEAR = 4;
+const inMeadow = (x, y) => x >= MEADOW.x0 && x <= MEADOW.x1 && y >= MEADOW.y0 && y <= MEADOW.y1;
 
 // ---- geometry -------------------------------------------------------------------------------------------------------------------
 const text = fs.readFileSync(FILE, 'utf8');
@@ -165,7 +167,7 @@ for (const s of sc.slice().sort((a, b) => a.origin.x - b.origin.x)) {
   if (isTree(c) && isCapTree(s)) continue;
   if (c === 'flower') { if (d < 1.5) remove(s, 'corridor'); continue; }
   if (d < CLEAR + r) { remove(s, 'corridor'); continue; }
-  if (isRock(c)) { if (!keepRock.has(s.id)) remove(s, 'rock'); continue; }
+  if (isRock(c)) { if (!keepRock.has(s.id) && !inMeadow(x, y)) remove(s, 'rock'); continue; }   // meadow-clear: the meadow keeps its rocks + pebbles
   if (isTree(c)) {
     if (near(glade, x, y, 8)) { remove(s, 'glade'); continue; }
     if (near(log, x, y, 3.5)) { remove(s, 'log'); continue; }
