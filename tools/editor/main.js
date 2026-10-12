@@ -482,8 +482,8 @@ function attachGrass() {
   gb.key = world.terrainKey || world.id || 'world';
   let layer = world.grassMask || null;
   if (!layer && typeof ENG.createGrassMask === 'function') { layer = ENG.createGrassMask(0.5, 64); world.grassMask = layer; }
-  if (!layer || typeof ENG.setSample !== 'function') { gb.gm = null; return; }
-  if (!gb.gm || gb.gm.layer !== layer) gb.gm = GB.wrapLayer(layer, { sampleAt: ENG.sampleAt, setSample: ENG.setSample, grassMaskToJSON: ENG.grassMaskToJSON });
+  if (!layer || typeof ENG.setGrassSample !== 'function') { gb.gm = null; return; }
+  if (!gb.gm || gb.gm.layer !== layer) gb.gm = GB.wrapLayer(layer, { sampleAt: ENG.grassSampleAt, setSample: ENG.setGrassSample, grassMaskToJSON: ENG.grassMaskToJSON });
 }
 function updateGrassToolbar() {
   grassToolbarEl.classList.toggle('on', toolMode === 'grass');
