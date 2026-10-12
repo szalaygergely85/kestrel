@@ -18,3 +18,15 @@ Run: check-deps OK (1077 files, 57 old warnings). carpetCells / carpet / carpet.
 | ac28f60e Ch3 main line | ARCH OK with notes. The double `mainSync` in `talked` is fine (idempotent). In errands.js the chart-bridge array literal `['chart.river','chart.westFells']` is allocated on every call: hoist it to a module const. Like chart.river, the flag follows pack presence, so dropping a chart clears the map area. Confirm with the PO that this is intended. |
 
 Merge/push: OK. No ARCH CHANGES. Follow-ups: the gpuCompare kind-10 normal compare (D2e) and the magic.unlocked listener (D-069).
+
+## Re-review (post-12d) (PC-B architect, opus, D-066)
+
+Ran: passShade.tint.test.js (zero alloc 240 B / 20000 iters, pass), content-smoke.test.mjs (95/0).
+
+| Commit | Verdict |
+|---|---|
+| df62c694 12d notes | ARCH OK. nubFollow: all three `pick()` users (respawn l.42, trot l.72, wander l.91) read `p[0]/p[1]` at once into `place`/`goTo` scalars; nobody keeps the pair. errands `CHART_PIECES` is a module const. The `magic.unlocked` hook is registered once and reads the outer `let playerHandle` (main.js l.1081, reassigned at l.1420 on each load) and the module `itemDefs`, so it sees the current player after a restart. `world:scatter` -> pushCarpet closes the D2f note. The content-smoke `char.kit` allowance depends on the kit file existing, which is fine. |
+| bfe53fc6 tint alloc probe | ARCH OK with note. Still a real gate: a steady per-call alloc shows in every window, and >= ~7 B/iter (one boxed double per iter = 16 B -> 320 KB) still fails the 128 KB limit. Weak spot (also there before, a bit more likely with min-of-5): a very large per-iter garbage rate (> ~1 MB/window) can trigger a scavenge inside a window and hide itself. If this probe ever moves to a shared helper, also fail when `d < 0` or log the max window. No change needed now. |
+| 6369490e OB-091 meadow | ARCH OK. Tool-only: rocks inside the `MEADOW` box (imported from gen-meadow-meshes.mjs, its `main()` is guarded by an import.meta check, so the import has no side effects) are no longer removed. World json: 23 mdw rows restored plus secretField/secretBank re-placed; secretBend/secretRook are only context lines. Data only, no engine change. |
+
+No ARCH CHANGES. Push OK. The open follow-ups from 12d are unchanged: the gpuCompare kind-10 normal compare.
