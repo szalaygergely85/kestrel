@@ -164,6 +164,15 @@ assert.equal(world.state['quest.endT'], 0, 'live world untouched');
 const mem2 = new Map();
 const off = createSaveRelay({ storage: { getItem: (k) => mem2.get(k) ?? null, setItem: (k, v) => mem2.set(k, v), removeItem: (k) => mem2.delete(k) }, questDef, enabled: false });
 assert.equal(off.save(world), false); assert.equal(off.tick(999, world, true), false); assert.equal(off.load(assets, {}), null); assert.equal(mem2.size, 0);
+{ // OB-079: save is synchronous - the slot is in storage the moment save() (the pagehide path) returns
+  const m2 = new Map(), st2 = { getItem: (k) => (m2.has(k) ? m2.get(k) : null), setItem: (k, v) => m2.set(k, String(v)), removeItem: (k) => m2.delete(k) };
+  const S = createSaveRelay({ storage: st2, questDef, giverDefs });
+  const { createQuitSave } = await import('./quest/quitSave.js');
+  const q = createQuitSave({ canSave: () => true, titleActive: () => false, save: () => S.save(world) });
+  assert.equal(m2.size, 0);
+  assert.equal(q.onPageHide(), true);
+  assert.equal(m2.size, 1, 'slot written before onPageHide returned (no await/promise)');
+}
 assert.equal(createSaveRelay({ storage: null, questDef, giverDefs }).save(world), false);
 // corrupt slot -> no crash, no restore
 mem.set([...mem.keys()][0], '{bad'); assert.equal(createSaveRelay({ storage, questDef, giverDefs }).load(assets, {}), null);

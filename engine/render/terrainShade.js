@@ -82,12 +82,12 @@ function pickCodeFromPacked(x, count, idx) {
 // weights, NOISE_CELLS octaves, power-of-two cells so u*inv is exact in f32 and f64), thresholded into the tier colours with a
 // 0.25 m dither -> soft organic blobs, no square edges. Each octave fades out by the cell's ground footprint `fp` (mip-like band
 // limit: full when cell >= 3 fp, gone at 1.5 fp), so far ground calms down instead of strobing; nothing keys on a distance-sized cell.
-// Glyph: a fixed GLYPH_CELL world hash near the eye; each point switches ONCE (per-point threshold) to a glyph that follows the
+// Glyph: a calm per-point hash near the eye; each point switches ONCE (per-point threshold) to a glyph that follows the
 // noise contours when its footprint outgrows the cell. WGSL twin: TERRAIN_SHADE_WGSL (same constants).
 export const NOISE_CELLS = [8, 2, 0.5], NOISE_W = [0.2, 0.3, 0.5], NOISE_SALT = 40; // fine octave dominates near the feet (largest one-tier square ~1.5 m)
-export const GLYPH_CELL = 0.25, PATCH_K = 3.5, PATCH_DITHER = 0.5, FP_DEFAULT_K = 0.01, FP_ANISO_T = 8, FP_ANISO_MAX = 4;
-// FAR_GLYPH_CELL: background canopy face / trunk cell (>= bands.near only, unchanged from OB-067's calm cell); glint re-rolls every 1/GLINT_RATE s.
-export const FAR_GLYPH_CELL = 4.0, GLINT_RATE = 0.1;
+export const PATCH_K = 3.5, FP_DEFAULT_K = 0.01, FP_ANISO_T = 8, FP_ANISO_MAX = 4;
+// FAR_GLYPH_CELL: background canopy face / trunk cell (>= bands.near only, unchanged from OB-067's calm cell).
+export const FAR_GLYPH_CELL = 4.0; // OB-073 dead-code cleanup: GLYPH_CELL / PATCH_DITHER / GLINT_RATE / ctx.features removed (nothing read them)
 // OB-081: ground footprint (m) where the far tier-colour blend starts / is full (hard tiers below FP0).
 export const FAR_BLEND_FP0 = 2.0, FAR_BLEND_FP1 = 8.0; // OB-085: was 0.5 -> 2 m (~20-50 m): tier contours on rock slopes morphed while walking closer
 /** OB-073: ground footprint (m) of one screen cell at depth t; hashCell as in shadeTerrain (<0 = -k, >0 = fixed ortho cell, 0 = default k). */
@@ -326,7 +326,6 @@ export function makeTerrainShadeCtx(recipe, tlookPacked, palette) {
     // switch), both from `recipe.nearLOD` - never literal in engine code.
     closeBand: nearLOD && nearLOD.bands ? nearLOD.bands.close : undefined,
     handover: nearLOD && nearLOD.handover ? nearLOD.handover : undefined,
-    features: buildFeatures(recipe, palette),
   };
 }
 

@@ -46,6 +46,19 @@ const losGrid = { x: 0, y: 0, z: 0 }; // gridLocal scratch (rule 9)
  * on grid physics): true if the world point is inside solid / below the floor
  * / above a numeric ceiling. Pure, zero allocation.
  */
+/**
+ * OB-084: a level item on a prop picks on the prop's whole collider box. Resolved here (World.load after the props spawn,
+ * addInteractable, and whenever a prop moves via rebuildPropColliders), never inside findInteractTarget's hot loop.
+ */
+export function resolvePropPicks(world) {
+  const list = world.interactables;
+  if (!list || !world.propPickBox) return;
+  for (let i = 0; i < list.length; i++) {
+    const rec = list[i];
+    if (rec.propId && !rec.bodyId) rec.pick = world.propPickBox(rec.propId) || null;
+  }
+}
+
 export function pointBlocked(world, x, y, z) {
   const s = world.structureAt(x, y);
   let floorH, ceilH, solid;
@@ -131,8 +144,6 @@ export function findInteractTarget(world, eye, cfg, out) {
     const maxT = (rec.radius < reach ? rec.radius : reach) + (isPrev ? HYST_REACH : 0);
     const pad = PICK_PAD + (isPrev ? HYST_PAD : 0);
     let x0, y0, z0, x1, y1, z1;
-    // OB-084: a level item on a prop picks on the prop's whole collider body (resolved once, props are static)
-    if (rec.pick === undefined && rec.propId && !rec.bodyId) rec.pick = (world.propPickBox && world.propPickBox(rec.propId)) || null;
     const pk = rec.pick;
     const be = rec.bodyId ? world.entity(rec.bodyId) : null;
     if (pk) { x0 = pk.x0; y0 = pk.y0; z0 = pk.z0; x1 = pk.x1; y1 = pk.y1; z1 = pk.z1; }
