@@ -31,7 +31,7 @@ import { PROJ_HFOV_DEG as HFOV_DEG } from './projection.js';
 import { dirFromAzEl, localToWorld } from '../core/transform.js';
 import { sunFromHours } from '../core/sunPath.js';
 import { gridLocal } from '../world/gridLocal.js';
-import { FACE_PACKED, KIND_TERRAIN, KIND_MESH } from './GBuffer.js';
+import { FACE_PACKED, KIND_TERRAIN, KIND_MESH, KIND_GRASS } from './GBuffer.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 import { createPitchedTerms, pitchedTermsInto, unprojectPitched, resolveProjection, isPitchedFamily } from './projection.js';
 import { sunShadowTaps, sunShadowInfo } from './shadowSun.js';
@@ -1271,7 +1271,7 @@ export function lightSurfaces(fb, lights, cam, world) {
       // added analytically by the terrain shade pass instead (D-007, no
       // terrain shadow rays).
       lightP[0] = px; lightP[1] = py; lightP[2] = pz; lightN[0] = nx; lightN[1] = ny; lightN[2] = nz;
-      lightAtScratch(lights, world, evalScratch, idxList, idxCount, kind[i] === KIND_TERRAIN, sunMap);
+      lightAtScratch(lights, world, evalScratch, idxList, idxCount, kind[i] === KIND_TERRAIN || kind[i] === KIND_GRASS, sunMap); // OB-073 D2c: grass = terrain (sun term analytic in shade)
       const o = i * 3;
       rgb[o] = evalScratch[0]; rgb[o + 1] = evalScratch[1]; rgb[o + 2] = evalScratch[2];
       // US-007 (14.3 item 3, `LIGHT.w = sunlit | litCount << 8`, debug/
@@ -1285,7 +1285,7 @@ export function lightSurfaces(fb, lights, cam, world) {
 
       // S8-B2-20 (38.17): horizon AO, LAST operation on this cell's rgb (after points/sun/cloud). Uniform branch -
       // strength 0 runs none of this (bit-identical). Terrain excluded (D-007, analytic ambient in shade).
-      if (lights.ao && lights.ao.strength > 0 && kind[i] !== KIND_TERRAIN) {
+      if (lights.ao && lights.ao.strength > 0 && kind[i] !== KIND_TERRAIN && kind[i] !== KIND_GRASS) {
         const ao = lights.ao, aoR = ao.radiusM, aoB = ao.bias;
         litP3[0] = px; litP3[1] = py; litP3[2] = pz; // reuse: P is not read again for this cell after this point
         const rc = aoTapCells(aoR, planeDistY, depth[i], ao.maxCells);

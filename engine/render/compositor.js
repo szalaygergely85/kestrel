@@ -8,6 +8,7 @@ import { windSwayOn, sunWindClock } from '../mesh/sway.js';
 import { fogShapeCtx } from './fogShape.js';
 import { fillSky, ambientL, primeAmbientLight } from './sky.js';
 import { shadeTerrainCells } from './terrainShade.js';
+import { carpetCtxFor, carpetCells } from './carpet.js';
 import { computeDerivatives, shadeSurfaces } from './detailShade.js';
 import { edgePass } from './edgePass.js';
 import { lightSurfaces, sunFromWorld } from './lighting.js';
@@ -375,6 +376,8 @@ export function renderWorld(fb, world, cam) {
 
   if (fb.gbuf) {
     computeDerivatives(fb.gbuf, fb.depth.depth);
+    // OB-073 D2c (38.52 item 8): carpet cells after resolve, before lighting. Off (no world.carpet / fb.carpet === false / pitched) = untouched frame.
+    if (world.carpet && fb.carpet !== false && !meshPitched) { const cc = carpetCtxFor(world); if (cc) carpetCells(fb.gbuf, fb, cam, cc, fb.timeSec || 0); }
     // US-006: `fb.lights` (a LightSet, built by main.js from the world's
     // `level.def.lights`) drives per-cell ambient+point-light shading;
     // `?lights=0` (fb.lights left null) keeps the US-028 uniform-ambient

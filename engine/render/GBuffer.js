@@ -24,6 +24,9 @@ export const KIND_MODEL = 8;
 // ME-14c1 (37.1): imported glTF meshes (engine/mesh/gltf.js re-exports it).
 export const KIND_MESH = 9;
 
+// OB-073 D2c (38.52 item 7): near-field grass carpet blade cell. mat = variant id, u = h01, v = signed screen lean, face U.
+export const KIND_GRASS = 10;
+
 export const FACE_N = 1;
 export const FACE_E = 2;
 export const FACE_S = 3;
