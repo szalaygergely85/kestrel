@@ -236,7 +236,7 @@ try { exportFbx(rigged, { rgbOf, colorMode: 'x' }); } catch { threw++; }
 try { exportFbx(rigged, { rgbOf: () => null }); } catch { threw++; }
 ok('missing rgbOf / bad colorMode / missing colour throw', threw === 3);
 
-const GOLDEN = '3ab10bc9c561f8d227521e0c92f12c6c291e4770c954990125d35ff59be206e1'; // 2026-10-11: OB-065/069 kit v5 + fine head default (was bd669d7a...)
+const GOLDEN = '22d87983185416e16cee62c699a73823794c6f4c378139157c0eeb7bc30483d0'; // 2026-10-12: OB-083 kit v8 shapes (was 3ab10bc9...); 2026-10-11: OB-065/069 kit v5 + fine head default (was bd669d7a...)
 const got = sha(fbx);
 if (got !== GOLDEN) console.log('golden sha256 now:', got);
 ok('golden SHA-256 of the default recipe', got === GOLDEN);

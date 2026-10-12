@@ -24,5 +24,11 @@ export function tposeModel(model) {
       }
     }
   }
+  // OB-086 follow-up: centre the footprint (x right, y front) on the origin - Mixamo places the upload by its bbox, and the v8
+  // block feet (OB-083) pushed the old rest-pose centre 5 cm forward
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let o = 0; o < pos.length; o += 3) { const x = pos[o], y = pos[o + 1]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  for (let o = 0; o < pos.length; o += 3) { pos[o] -= cx; pos[o + 1] -= cy; }
   return { ...model, mesh: { ...mesh, pos, nrm } };
 }
