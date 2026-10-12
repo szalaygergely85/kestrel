@@ -269,7 +269,11 @@
       { id: 'actBlock', text: 'Hold [RMB] Block', keys: ['[RMB]'], fmt: 'Hold [{useRight}] Block', when: 'shield equipped', on: { type: 'poll' }, doneOn: 'first block raise' },
       { id: 'actDraw', text: 'Hold [LMB] Draw, release to shoot', keys: ['[LMB]'], fmt: 'Hold [{useLeft}] Draw, release to shoot', when: 'bow equipped', on: { type: 'poll' }, doneOn: 'first arrow shot' },
       { id: 'actSwap', text: '[Q] Swap weapon', keys: ['[Q]'], fmt: '[{swapSet}] Swap weapon', when: 'second weapon in the bar', on: { type: 'poll' }, doneOn: 'first swap' },
-      { id: 'actQuickbar', text: '[1-4] Use the quick bar', keys: ['[1-4]'], fmt: '[1-4] Use the quick bar', when: 'first potion picked up', on: { type: 'poll' }, doneOn: 'first slot key used' }
+      { id: 'actQuickbar', text: '[1-4] Use the quick bar', keys: ['[1-4]'], fmt: '[1-4] Use the quick bar', when: 'first potion picked up', on: { type: 'poll' }, doneOn: 'first slot key used' },
+      // FB-03 (writer story.md 'FB-02 Burl's fire' hint.fireball.*): once per save via game/js/quest/fireballHints.js; {fire} = the spell hand's real binding.
+      { id: 'fbCast', text: '[Hold LMB] charge fire. Let go: throw.', keys: ['[Hold LMB]'], fmt: '[Hold {fire}] charge fire. Let go: throw.', when: 'fireball unlocked', on: { type: 'poll' }, doneOn: 'timeout only' },
+      { id: 'fbCost', text: 'Each throw costs MP.', keys: [], fmt: 'Each throw costs MP.', when: 'right after fbCast', on: { type: 'poll' }, doneOn: 'timeout only' },
+      { id: 'fbNoMp', text: 'The fire fizzles. No MP left.', keys: [], fmt: 'The fire fizzles. No MP left.', when: 'first MP-short cast', on: { type: 'poll' }, doneOn: 'timeout only' }
     ],
     // story.md 5 narrative hints (writer), same hint style. `when` = the US-015 programmer AC wording; `on` = the same rule as data.
     // Zones: levelPatch.towerHints below (append to tower.js triggers[]). `skipIfState`: never shown if that world.state key is true.

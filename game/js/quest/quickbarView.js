@@ -74,14 +74,16 @@ export function createQuickbarView(o) {
       if (hot >= 0) { const x = view.slotX(ui.cols, hot), y = view.slotY(ui.rows); for (let c = 0; c < SLOT_W; c++) { put(ui, x + c, y, '-', GOLD, DRAG_BG); put(ui, x + c, y + SLOT_H - 1, '-', GOLD, DRAG_BG); } }
       icon(ui, cx - 2, cy - 1, id, false, DRAG_BG);
     },
-    /** @param {any} ui @param {any} player entity data @param {{lastId:string|null, sipT:number}} sip @param {boolean} visible */
-    drawBar(ui, player, sip, visible) {
+    /** @param {any} ui @param {any} player entity data @param {{lastId:string|null, sipT:number}} sip @param {boolean} visible
+     * @param {Object<string,boolean>} [locked] FB-03: ids still locked (spell.fireball, potion.mp): the spell hand box is hidden (drawn empty), a locked potion is drawn dimmed */
+    drawBar(ui, player, sip, visible, locked) {
       if (!visible || !player || !player.components || !Array.isArray(player.components.quickbar)) return;
       const qb = player.components.quickbar, eq = player.components.equipment, inv = player.components.inventory;
       const y = view.slotY(ui.rows), sipId = sip && sip.sipT > 0 ? sip.lastId : null;
       for (let i = 0; i < QB_SLOTS; i++) {
-        const x = view.slotX(ui.cols, i), id = qb[i], hand = i < HAND_SLOTS;
-        const on = !!id && isActive(id, eq, sipId), n = id ? countOfId(inv, id) : -1, dim = !!id && n === 0;
+        const x = view.slotX(ui.cols, i), hand = i < HAND_SLOTS, lk = !!(locked && qb[i] && locked[qb[i]]);
+        const id = lk && hand && defs[qb[i]] && defs[qb[i]].kind !== 'potion' ? null : qb[i]; // FB-03: locked spell hand box = an empty slot
+        const on = !!id && !lk && isActive(id, eq, sipId), n = id ? countOfId(inv, id) : -1, dim = !!id && (n === 0 || lk);
         const bg = hand ? (on ? HAND_ON : HAND_PLATE) : (on ? PLATE_ON : PLATE);
         for (let r = 0; r < SLOT_H; r++) for (let c = 0; c < SLOT_W; c++) put(ui, x + c, y + r, ' ', TEXT, bg);
         if (id) {
