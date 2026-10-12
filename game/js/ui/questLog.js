@@ -43,7 +43,7 @@ export function createQuestLog(def, {hudWidth=60,width=72,fg='#e8e2d0',bg='#0a0b
 }
 
 // QG-05 / OB-097 (D-058): quest journal SCREEN over the quest book, in the pause/title menu skin (uiStyle.menu).
-// TWO panes: LEFT = quest names (main first, then active, offered, done dimmed), RIGHT = details of the selected quest
+// TWO panes: LEFT = quest names (main first, then active; offered quests are NOT listed - OB-100; done dimmed), RIGHT = details of the selected quest
 // (title, story summary from the active objective's `journal`, objectives with counts). Strings are rebuilt only on open,
 // key input and a changed book.version; draw() never formats or allocates.
 export const QUEST_LOG_KEYS = ['ArrowUp', 'ArrowDown', 'KeyW', 'KeyS', 'ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'Tab', 'KeyE', 'Backspace', 'Enter', 'KeyJ', 'Escape', 'KeyX', 'KeyT'];
@@ -99,7 +99,7 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
       if (s === 2 || s === READY) (isMain(i) ? mainAct : act).push(i);
     }
     mainAct.sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : b - a)); act.sort((a, b) => b - a);
-    for (let i = n - 1; i > 0; i--) if (book.status(i) === AVAILABLE) off.push(i); // unlocked, not accepted
+    // OB-100 (owner): a quest shows only once it is picked up (accepted) - offered / unlocked quests are not listed
     if (book.status(0) === DONE) done.push(0); // OB-099: handed-in giver quests disappear; only the finished chapter row (CH1-09 re-read) stays
     for (const i of mainAct) quests.push(i);
     for (const i of act) quests.push(i);

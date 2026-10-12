@@ -14,7 +14,7 @@ log.open();
 let s = log.snapshot();
 const has = (re) => s.right.some(l => re.test(l)), upd = () => { log.draw(ui); s = log.snapshot(); };
 // OB-099: m1 is NOT a quest of its own. Its steps 1-4 are covered by the giver quests (silent sections) -> nothing listed yet
-assert.deepEqual(s.left, ['Not Safe'], 'wake step: m1 not listed, only the offered giver quest: ' + s.left);
+assert.deepEqual(s.left, [], 'wake step: nothing listed - m1 is covered and Not Safe is only offered until the note is read (OB-100): ' + s.left);
 assert.ok(!has(/Objectives|Go up the tower/), 'offered: no objectives yet: ' + s.right);
 book.feed({ type: 'flag:set', key: 'wake', value: true });
 // quest 1 "Not Safe": offered -> accepted (pick up the note)
@@ -33,9 +33,10 @@ book.feed({ type: 'area:entered', id: 'towerDoor' }); upd();
 assert.ok(s.right.some(l => l.includes('Talk to the bear')), 'ready -> return objective: ' + s.right);
 assert.ok(book.handIn('tower.blade')); upd();
 assert.ok(!s.left.includes('Not Safe') || s.left.indexOf('Not Safe') >= s.doneFrom, 'handed in: not in the active list');
-assert.deepEqual(s.left, ['Boars in the Woods'], 'handed-in quest disappears (m1 covered): ' + s.left);
-// quest 2: "Boars in the Woods"
+assert.deepEqual(s.left, [], 'handed-in quest disappears; the boar quest is only offered, so not listed yet (OB-100): ' + s.left);
+// quest 2: "Boars in the Woods" - listed once picked up
 assert.equal(book.accept('burl.boars'), true); upd();
+assert.deepEqual(s.left, ['Boars in the Woods'], 'accepted -> listed: ' + s.left);
 assert.ok(has(/^\[>\] Kill boars\s+0\/5$/), 'kill count: ' + s.right);
 for (const id of ['boar1', 'boar2', 'boar3']) book.feed({ type: 'beast:died', id });
 upd(); assert.ok(has(/^\[>\] Kill boars\s+3\/5$/), 'kills counted: ' + s.right);
