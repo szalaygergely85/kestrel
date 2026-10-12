@@ -12,11 +12,15 @@ const BURL_ENTITY = 'bear';
 const CHART_PIECES = ['chart.river', 'chart.westFells']; // MAP-28 / Ch3: chart-piece items -> world flag chart.<area> (review 12d: module const)
 export const siteOf = (entityId) => (entityId === BURL_ENTITY ? 'burl' : entityId);
 
-/** Returns defs where every {flag:'burl.home'} requirement is joined by {flag:'burl.home.met'} (defs may be frozen: copies, input untouched). */
+/** Returns defs where every {flag:'burl.home'} requirement - and every Burl-given errand (sq.*, giver.npc 'bear', e.g. sq.honey / sq.burl.fire, which
+ *  open after Rook's quests and have no burl.home flag) - is joined by {flag:'burl.home.met'}, so no errand offer pre-empts his `bear.home` greeting
+ *  (BURL-HOME-01). Defs may be frozen: copies, input untouched. */
 export function gateOnMeet(defs) {
   return defs.map((d) => {
-    if (!Array.isArray(d.requires) || !d.requires.some((r) => r && r.flag === 'burl.home') || d.requires.some((r) => r && r.flag === 'burl.home.met')) return d;
-    return { ...d, requires: [...d.requires, { flag: 'burl.home.met' }] };
+    const burlErrand = typeof d.id === 'string' && d.id.startsWith('sq.') && d.giver && d.giver.npc === BURL_ENTITY;
+    const req = Array.isArray(d.requires) ? d.requires : (burlErrand ? [] : null);
+    if (!req || !(burlErrand || req.some((r) => r && r.flag === 'burl.home')) || req.some((r) => r && r.flag === 'burl.home.met')) return d;
+    return { ...d, requires: [...req, { flag: 'burl.home.met' }] };
   });
 }
 
