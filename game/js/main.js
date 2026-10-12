@@ -102,6 +102,10 @@ import { stepActionHints, resetActionHints } from './quest/actionHints.js'; // F
 import { createWild } from './wild/wildEnv.js'; // WILD-06: ambient rabbits + deer
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
+import { ensureBears } from './quest/sim/bearBrain.js'; // BEAR-01 (D-069): black bears in Thornwood
+import { stepFireballHints, resetFireballHints } from './quest/fireballHints.js'; // FB-03
+import { startMpFade } from './quest/vitalsView.js'; // FB-03: MP bar fades in on unlock
+const fbS = { fbOn: false, hand: null, casting: false, manaFlashTick: 0 }; // FB-03: reused hint input
 import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
 import { createBeastAnim } from './quest/beastAnim.js'; // ANIM-STATE-WIRE-01
@@ -473,6 +477,7 @@ const wadeFx = createWadeFx(engine.particles, ripples); // US-055a: wade splash 
 defineWadeSplash(engine.particles, {});
 const worldBand = window.ASSETS.levels.world_geo ? createBand(window.ASSETS.levels.world_geo.regions) : null; // US-129a (null = tier 1)
 const wadeArrowHit = (x, y, z) => wadeFx.arrowHit(x, y, z, fb ? fb.timeSec : 0); // one closure, not per frame
+engine.events.on('magic.unlocked', () => startMpFade(fb ? fb.timeSec : 0)); // FB-03: the MP bar fades in (same clock drawVitals gets)
 // US-089w/US-096w: save relay (autosave 60 s + waystone, load at boot) and quest hook. `?save=0` off; capture/bench/compare/cinematic
 // pages and automated browsers never load or save unless `?save=1` forces it (the headless reload check does).
 const saveEnabled = params.get('save') !== '0' && (params.get('save') === '1' || !(isCaptureOrBench || params.get('capture') === '1' || params.has('at') || navigator.webdriver)); // `?at` = dev pose: never autosave it into slot 0
@@ -1428,6 +1433,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (beasts) beasts.dispose();
       if (params.get('bench') === 'combat' || (benchActive && params.get('enemies') === '4')) ensureBenchBoars(world); // COMBAT-BENCH-01
       ensureWolves(world); // WOLF-01: turns MAP-26 anchors wolf1..5 into wolf beasts (no-op while they are absent)
+      ensureBears(world); // BEAR-01: blackBear1..3 -> bear beasts
       beasts = createBeastSim(world, { nav: worldDef.nav && buildBeastNav(world, worldDef.nav), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand });
       if (telegraphWire) telegraphWire.dispose(); // TELEGRAPH-WIRE-01 part 1
       telegraphWire = wireTelegraphs(engine.events, world, beasts, telegraphsEnabled(params, isCaptureOrBench));
@@ -1659,7 +1665,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           console.warn('[map] chart card init failed, falling back to the plain card:', e && e.message);
           initMapCard(assets, ui.cols, ui.rows);
         }
-        resetHints(); resetActionHints(); if (regionBanner) regionBanner.reset(); // REGION-01
+        resetHints(); resetActionHints(); resetFireballHints(); if (regionBanner) regionBanner.reset(); // REGION-01
       }
       // US-017 tester fix pass 2 (BUG-2): `window.__debug.world/playerHandle/look`
       // used to be set once, right after the FIRST `engine.run(...)` call
@@ -2105,6 +2111,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           const swT = equipPlay ? equipPlay.swapT : 0; actionSig.swap = swT > 0 && actSwapT === 0; actSwapT = swT;
           actionSig.slotKey = false; for (let n = 0; n < 4; n++) if (input.pressed('Digit' + (n + 1))) { actionSig.slotKey = true; break; }
           if (playerHandle) stepActionHints(engine.world, assets.uiStyle, controlBindings, playerHandle.data, itemDefs || {}, actionSig);
+          if (hands && vitals) { fbS.fbOn = fbOn; fbS.hand = hands.handOf('spell.fireball'); fbS.casting = hands.downOf('spell.fireball'); fbS.manaFlashTick = vitals.manaFlashTick; stepFireballHints(engine.world, assets.uiStyle, controlBindings, fbS); } // FB-03
           actionSig.questAccepted = false;
         }
         stepHints(engine.world, assets.uiStyle, dt, hintSignals); // reused object (7.6 item 9: no per-step allocation)
@@ -2390,7 +2397,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           }
           if (qbView && quickbar && playerHandle) { // EQ-12 + D-068: quick bar bottom-centre (OB-011: no potion HUD button; not in menus / cinematics)
             const qbOn = !vitals.dead && !wakeOut.inputLocked && !isMapOpen() && !isSettingsOpen() && !(invView && invView.isOpen) && !cinematic;
-            qbView.drawBar(ui, playerHandle.data, quickbar.st, qbOn);
+            qbView.drawBar(ui, playerHandle.data, quickbar.st, qbOn, fbOn ? null : FB_LOCKED_IDS);
           }
           hurtFx.draw(ui); // HURT-FX-01
           deathFlow.draw(ui, ui.cols, ui.rows); // DEATH-FLOW-01
@@ -2415,7 +2422,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (chapterCard) chapterCard.draw(ui); if (chapterCard2) chapterCard2.draw(ui); // CH1-09
       if (invView) invView.draw(ui); // US-091b: the pack screen, over HUD + toast
       if (invView && invView.isOpen && qbView && quickbar && playerHandle) { // QB-6: the bar inside the menu = the drag-and-drop target; the dragged icon rides the pointer
-        syncHandSlots(playerHandle.data); qbView.drawBar(ui, playerHandle.data, quickbar.st, true);
+        syncHandSlots(playerHandle.data); qbView.drawBar(ui, playerHandle.data, quickbar.st, true, fbOn ? null : FB_LOCKED_IDS);
         qbView.drawGhost(ui, qbDrag.ghostId, qbDrag.st.x, qbDrag.st.y);
       }
       if (craftView) craftView.draw(ui); // MAIN-WIRE-01
