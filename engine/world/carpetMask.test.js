@@ -79,3 +79,16 @@ ok(w.carpet.maskVersion === 2 && w.carpet.mask.data === data0, 'band swap rebuil
 w.rebuildCarpetMask({ x0: 15, y0: 15, x1: 40, y1: 35 });
 ok(w.carpet.maskVersion === 3, 'rebuildCarpetMask(rect) bumps maskVersion');
 console.log(`carpetMask.test: ${checks} checks ok (full ${msFull.toFixed(1)} ms, rect ${msRect.toFixed(2)} ms)`);
+
+// MASK-a timing probe: near-band mask build with a real paint layer over the 192x192 m window (logs ms, no hard gate except a loose 250 ms)
+{
+  const { createGrassMask, setSample, maskAt } = await import('./grassMask.js');
+  const layer = createGrassMask();
+  for (let j = 0; j < 384; j++) for (let i = 0; i < 384; i++) setSample(layer, i, j, ((i >> 3) + (j >> 3)) & 1 ? 255 : 90);
+  const pf = (x, y) => maskAt(layer, x, y);
+  for (let r = 0; r < 3; r++) buildCarpetMask(t, cfg, pf, structs, scatter, null); // warm-up
+  let best = Infinity;
+  for (let r = 0; r < 5; r++) { const t0 = performance.now(); buildCarpetMask(t, cfg, pf, structs, scatter, null); best = Math.min(best, performance.now() - t0); }
+  console.log(`MASK-a probe: buildCarpetMask with paint layer, ${N}x${N} m: ${best.toFixed(1)} ms (best of 5, target < 60)`);
+  ok(best < 250, 'paint-layer mask build not pathological: ' + best);
+}

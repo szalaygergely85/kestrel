@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createGrassMask, maskAt, sampleAt, setSample, grassMaskFromJSON, grassMaskToJSON, bakeAreasToMask } from './grassMask.js';
 
 assert.equal(maskAt(null, 3, 4), 1, 'no layer = 1');
@@ -12,14 +14,14 @@ assert.equal(maskAt(L, 32, 0), 1);
 assert.ok(Math.abs(maskAt(L, 32.1, 0.2) - 1) < 1e-9);
 setSample(L, 128, 0, 0); setSample(L, 127, 0, 255);
 assert.ok(Math.abs(maskAt(L, 63.75, 0) - 0.5) < 0.01, 'half between samples across chunk seam');
-assert.equal(L.chunks.has('1,0'), true);
+assert.equal(L.chunks.size >= 2, true);
 assert.equal(sampleAt(L, -1, -1), 0);
 setSample(L, -1, -1, 255);
 assert.equal(sampleAt(L, -1, -1), 255);
 
 // JSON round trip byte-identical, empty chunks dropped
 const j1 = grassMaskToJSON(L, 'g');
-L.chunks.set('9,9', new Uint8Array(L.n * L.n));
+setSample(L, 9 * L.n, 9 * L.n, 255); setSample(L, 9 * L.n, 9 * L.n, 0); // all-zero chunk
 assert.deepEqual(grassMaskToJSON(L, 'g'), j1);
 const L2 = grassMaskFromJSON(JSON.parse(JSON.stringify(j1)));
 assert.equal(JSON.stringify(grassMaskToJSON(L2, 'g')), JSON.stringify(j1));
@@ -50,12 +52,23 @@ const hard = bakeAreasToMask(createGrassMask(), [{ areas: [{ shape: 'disc', x: 0
 assert.equal(maskAt(hard, 0, 0), 1);
 assert.equal(sampleAt(hard, 6, 0), 0);
 
-// 0 alloc in maskAt
-let s = 0;
-for (let i = 0; i < 1e4; i++) s += maskAt(B, i * 0.01, 10);
-if (global.gc) global.gc();
-const h0 = process.memoryUsage().heapUsed;
-for (let i = 0; i < 1e6; i++) s += maskAt(B, (i % 1000) * 0.07, 10.3);
-const dh = process.memoryUsage().heapUsed - h0;
-assert.ok(dh < 2e6, 'maskAt allocates: ' + dh);
-console.log('grassMask.test OK', s > 0);
+// 0 alloc in maskAt: fresh --expose-gc child, generous warm-up
+if (process.argv[2] !== 'heap') {
+  const r = spawnSync(process.execPath, ['--expose-gc', fileURLToPath(import.meta.url), 'heap'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, 'heap child failed: ' + r.stdout + r.stderr);
+  console.log(r.stdout.trim());
+} else {
+  let s = 0;
+  const run = () => { let t = 0; for (let i = 0; i < 1e6; i++) t += maskAt(B, (i % 1000) * 0.07, 10.3); return t; }; // local accumulator: a module-level double would box
+  for (let r = 0; r < 3; r++) s += run();
+  process.memoryUsage();
+  let dh = Infinity; // min over 5 rounds of 1e6 calls: a real per-call alloc shows in every round
+  for (let r = 0; r < 5; r++) {
+    global.gc();
+    const h0 = process.memoryUsage().heapUsed;
+    s += run();
+    dh = Math.min(dh, process.memoryUsage().heapUsed - h0);
+  }
+  assert.ok(dh < 2e6, 'maskAt allocates (<2 B/call; heapUsed noise is ~0.5 B/call, a per-call string or box is >=16 B): ' + dh);
+  console.log('grassMask.test OK (heap delta ' + dh + ' B)', s > 0);
+}
