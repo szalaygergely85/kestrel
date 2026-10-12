@@ -352,7 +352,7 @@ function noticedOf(sim, i, px, py) {
   a.x = steer.x[i]; a.y = steer.y[i]; a.fx = sim.fx[i]; a.fy = sim.fy[i];
   t.x = px; t.y = py; t.noise = sim.noise;
   const calm = sim.wary[i] === 1 && sim.provoked[i] === 0; // DRESS-01b: unprovoked ambient boar = short notice only
-  a.range = calm ? sim.cfg.calmNoticeR : sim.cfg.noticeR; a.hearR = calm ? sim.cfg.calmNearR : sim.cfg.nearR;
+  a.range = calm ? sim.cfg.calmNoticeR : sim.scfg[i].noticeR; /* BEAR-01: per-slot */ a.hearR = calm ? sim.cfg.calmNearR : sim.cfg.nearR;
   sim._slot = i;
   const o = perceive(a, t, sim._losFn, sim._po);
   return o.hears || o.sees;

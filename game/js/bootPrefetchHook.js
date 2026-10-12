@@ -22,7 +22,7 @@ async function prefetchGridMeshes(store, world, pos, also) {
   const g = world.refreshPlacementGrid ? world.refreshPlacementGrid() : world.placementGrid;
   let guard = 0;
   g.update(pos.x, pos.y);
-  while (g._pending && guard++ < 1000) g.update(pos.x, pos.y); // drain the per-frame cap: boot has no frame budget
+  while (g.pending && guard++ < 1000) g.update(pos.x, pos.y); // drain the per-frame cap: boot has no frame budget
   const want = new Set(), st = world.structures, warmM = g.opts.warmM;
   const scan = (list, count) => {
     for (let q = 0; q < count; q++) {
