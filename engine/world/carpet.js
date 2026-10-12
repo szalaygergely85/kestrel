@@ -2,7 +2,8 @@
 // never serialized, never hashed, never read by the sim. Pure JS, no render code (D2b+ consume the map).
 import { maskAt } from './grassMask.js';
 export const CARPET_MAX_VARIANTS = 15;
-export const CARPET_DEFAULTS = { cellM: 0.10, radiusM: 12, patchM: 6, classCellM: 2, classJitterM: 0.8, gustM: 5, travelM: 1.5, bladeW: 0.06, swayGain: 1 };
+// TUFT-01a: cellM 0.10 -> 0.35 (one tuft per cell); tuftR = tuft half-width / cellM (0.1..0.5)
+export const CARPET_DEFAULTS = { cellM: 0.35, radiusM: 12, patchM: 6, classCellM: 2, classJitterM: 0.8, gustM: 5, travelM: 1.5, bladeW: 0.06, swayGain: 1, tuftR: 0.45 };
 export const LEAN_CAP_M = 0.6, PATCH_MAX = 1.25; // OB-096: mirror LEAN_CAP / (PATCH_LO + PATCH_RANGE) of render/carpet.js (render imports these; no render import here)
 export const TUFT_DEFAULT_P = 0.06, TUFT_DEFAULT_MUL = 1.8;
 const ZERO_OK = ['classJitterM', 'travelM']; // 0 = no jitter / no travel is valid
@@ -31,6 +32,8 @@ export function validateCarpetConfig(cfg, typeNames) {
     if (ZERO_OK.indexOf(k) >= 0) { if (!(isNum(cfg[k]) && cfg[k] >= 0)) fail(k, 'must be a number >= 0'); }
     else if (!(isNum(cfg[k]) && cfg[k] > 0)) fail(k, 'must be a number > 0');
   }
+  if (cfg.tuftR !== undefined && !(isNum(cfg.tuftR) && cfg.tuftR >= 0.1 && cfg.tuftR <= 0.5)) fail('tuftR', 'must be a number 0.1..0.5');
+  if (cfg.tuftAtlas !== undefined && (!cfg.tuftAtlas || typeof cfg.tuftAtlas !== 'object')) fail('tuftAtlas', 'must be an object {n,w,h,blades,curl,widthTex}');
   if (cfg.cutGround !== undefined && (!Array.isArray(cfg.cutGround) || cfg.cutGround.some((n) => typeof n !== 'string' || !typeNames || typeNames.indexOf(n) < 0))) fail('cutGround', 'must be an array of known ground type names');
   if (cfg.mask != null && typeof cfg.mask !== 'function' && typeof cfg.mask.sample !== 'function' && !(cfg.mask.chunks instanceof Map)) fail('mask', 'must be null, a GrassMaskLayer, a function (x, y) => 0..1 or an object with sample(x, y)');
   const vs = cfg.variants;

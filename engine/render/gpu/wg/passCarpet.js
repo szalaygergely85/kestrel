@@ -22,6 +22,7 @@ const W_GUST = W('gustM'), W_TRAVEL = W('travelM'), W_TIME = W('timeSec'), W_CX0
 const W_NX0 = W('nearX0'), W_NY0 = W('nearY0'), W_NCELL = W('nearCell'), W_MAXH = W('maxH'), W_WMAX = W('wMax'), W_FPK = W('fpK');
 const W_WIND0 = W('windP0'), W_WIND1 = W('windP1'), W_EYE = W('eye'), W_PA = W('pitchA'), W_PB = W('pitchB'), W_PC = W('pitchC');
 const W_KNOTS = W('knots'), W_VTAB = W('vtab'), W_IX0 = W('ix0'), W_IY0 = W('iy0'), W_ORGX = W('orgX'), W_ORGY = W('orgY');
+const W_TUFTS = W('tufts'), W_AN = W('atlasN'), W_AW = W('atlasW'), W_AH = W('atlasH'), W_TR = W('tuftR'), W_RJ = W('rootJit');
 const W_MX0 = W('maskX0'), W_MY0 = W('maskY0'), W_MW = W('maskW'), W_MH = W('maskHt'), W_MON = W('maskOn'), W_SUN = W('sun');
 const NOOP_GROUND = () => {};
 const ONE_MASK = new Uint8Array([255]);
@@ -43,7 +44,9 @@ export function packCarpetConfig(carpet, nearH, f32, i32) {
     f32[o] = v === 0 ? 0 : ctx.dens[v]; f32[o + 1] = ctx.hMin[v]; f32[o + 2] = ctx.hMax[v]; f32[o + 3] = ctx.bw[v];
     f32[o + 4] = v === 0 ? 1 : ctx.sway[v]; f32[o + 5] = ctx.tuftP[v]; f32[o + 6] = ctx.tuftMul[v];
   }
+  i32[W_TUFTS] = ctx.tufts ? 1 : 0; i32[W_AN] = ctx.atlas.n; i32[W_AW] = ctx.atlas.w; i32[W_AH] = ctx.atlas.h; f32[W_TR] = ctx.tuftR; f32[W_RJ] = ctx.rootJit;
   void cfg; void D;
+  return ctx;
 }
 
 /** Pure, Node-tested: wind field params + knot table (engine/world/wind.js `field.params`: dirX, dirY, speed, amp, P, travel, K). null = calm. */
@@ -70,11 +73,11 @@ export class WgCarpetPass {
     this.tex = CARPET_TEXTURES.map((_, slot) => ({ slot, texture: null }));
     this.bindDesc = { uniforms: this.u, textures: this.tex };
     this.texGI = null; this.texGA = null; this.texDepth = null; this.target = null;
-    this.texClass = null; this.texNear = null; this.texMask = null; this._maskVer = NaN; this._maskObj = undefined; this._mW = 0; this._mH = 0;
+    this.texClass = null; this.texNear = null; this.texAtlas = null; this._atlasSig = ''; this.texMask = null; this._maskVer = NaN; this._maskObj = undefined; this._mW = 0; this._mH = 0;
     this.sunScratch = {};
     this._carpet = null; this._nearH = null; this._version = NaN; this._dirty = false;
     this._view = null; this._viewFor = null;
-    this.stats = { classUploads: 0, nearUploads: 0, maskUploads: 0, runs: 0 };
+    this.stats = { classUploads: 0, nearUploads: 0, maskUploads: 0, atlasUploads: 0, runs: 0 };
   }
 
   resize(cols, rows) {
@@ -134,7 +137,14 @@ export class WgCarpetPass {
     }
     d.writeTexture(this.texClass, carpet.classMap, { x: 0, y: 0, w: carpet.w, h: carpet.h }, 0); this.stats.classUploads++;
     d.writeTexture(this.texNear, nearH.data, { x: 0, y: 0, w: nearH.w, h: nearH.h }, 0); this.stats.nearUploads++;
-    packCarpetConfig(carpet, nearH, this.u, this.ui);
+    const ctx = packCarpetConfig(carpet, nearH, this.u, this.ui);
+    // TUFT-01b: the atlas bytes go up once (stacked shapes: width w, height n*h, rg8ui); re-upload only when the seed / atlas opts change
+    const at = ctx.atlas, sig = `${ctx.seed}|${JSON.stringify(carpet.cfg.tuftAtlas || null)}|${at.n}x${at.w}x${at.h}`;
+    if (!this.texAtlas || sig !== this._atlasSig) {
+      if (this.texAtlas) d.dispose(this.texAtlas);
+      this.texAtlas = d.createTexture({ format: 'rg8ui', width: at.w, height: at.n * at.h });
+      d.writeTexture(this.texAtlas, at.data, { x: 0, y: 0, w: at.w, h: at.n * at.h }, 0); this._atlasSig = sig; this.stats.atlasUploads++;
+    }
     this._maskVer = NaN; // packCarpetConfig rewrote the block: re-apply the mask words
   }
 
@@ -145,7 +155,7 @@ export class WgCarpetPass {
   run(p, t) {
     this.ran = false;
     const rp = p._rasterPass, cam = p._cam;
-    if (!this.active || !cam || !rp || !rp.pitched || rp.ortho || !this.texClass || !this.texNear || !this.texMask) return null; // perspective + pitched only (ortho: no carpet)
+    if (!this.active || !cam || !rp || !rp.pitched || rp.ortho || !this.texClass || !this.texNear || !this.texMask || !this.texAtlas) return null; // perspective + pitched only (ortho: no carpet)
     if (p.cols !== this.cols || p.rows !== this.rows || !this.target) this.resize(p.cols, p.rows);
     const f = this.u, q = rp.pitch;
     this.ui[W_COLS] = this.cols; this.ui[W_ROWS] = this.rows;
@@ -161,7 +171,7 @@ export class WgCarpetPass {
     f[W_PB] = q.rX; f[W_PB + 1] = q.rY; f[W_PB + 2] = q.uX; f[W_PB + 3] = q.uY;
     f[W_PC] = q.uZ; f[W_PC + 1] = q.tanHalfY; f[W_PC + 2] = 0; f[W_PC + 3] = 0;
     const tx = this.tex, d = this.device;
-    tx[0].texture = t.texGI; tx[1].texture = t.texGA; tx[2].texture = t.texDepth; tx[3].texture = this.texClass; tx[4].texture = this.texNear; tx[5].texture = this.texMask;
+    tx[0].texture = t.texGI; tx[1].texture = t.texGA; tx[2].texture = t.texDepth; tx[3].texture = this.texClass; tx[4].texture = this.texNear; tx[5].texture = this.texMask; tx[6].texture = this.texAtlas;
     d.beginPass(this.target); d.bind(this.pipe, this.bindDesc); d.draw(3); d.endPass();
     if (this._viewFor !== t) { this._view = Object.create(t); this._viewFor = t; }
     const v = this._view;
@@ -176,6 +186,6 @@ export class WgCarpetPass {
   }
   dispose() {
     this._freeTargets();
-    for (const k of ['texClass', 'texNear', 'texMask', 'pipe']) if (this[k]) { try { this.device.dispose(this[k]); } catch (_) { /* best effort */ } this[k] = null; }
+    for (const k of ['texClass', 'texNear', 'texMask', 'texAtlas', 'pipe']) if (this[k]) { try { this.device.dispose(this[k]); } catch (_) { /* best effort */ } this[k] = null; }
   }
 }

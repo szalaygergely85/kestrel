@@ -18,9 +18,10 @@ import { PASS_NAMES } from '../wg/WgCellPipeline.js';
 
 // ---- (a) source rules, constants, layout
 assert.ok(WGSL_MODULES.some((m) => m.name === 'carpet' && m.code === CARPET_WGSL), 'registered in WGSL_MODULES');
-assert.ok(!/%|\bround\s*\(|\bmod\s*\(|dpdx|dpdy|fwidth|textureSample|Math\.random|sin\s*\(|fract/.test(CARPET_WGSL), 'WGSL string rules');
+assert.ok(!/%|\bround\s*\(|\bmod\s*\(|dpdx|dpdy|fwidth|textureSample|Math\.random|fract/.test(CARPET_WGSL), 'WGSL string rules');
 assert.ok(/fn fs_main\(@builtin\(position\) frag: vec4f\) -> FO/.test(CARPET_WGSL) && /@group\(1\) @binding\(0\) var<uniform> cu: CarpetU/.test(CARPET_WGSL));
-assert.deepEqual([...CARPET_TEXTURES], ['uint', 'uint', 'uint', 'uint', 'float', 'uint']);
+assert.deepEqual([...CARPET_TEXTURES], ['uint', 'uint', 'uint', 'uint', 'float', 'uint', 'uint']); // slot 6 = tuft atlas
+// TUFT-01b: sin/cos allowed (one cos/sin of the tuft's plane angle; a few ULP differ GPU vs JS, only at hit edges)
 assert.deepEqual([...CARPET_TARGETS], ['rgba32ui', 'rgba32ui', 'r32ui']);
 const lit = (v) => { const s = String(v); return /[.e]/.test(s) ? s : s + '.0'; };
 for (const n of ['ROOT_JITTER', 'LEAN_CAP', 'LEAN_PER_MS', 'PATCH_LO', 'PATCH_RANGE', 'GUST_LO', 'GUST_RANGE', 'FADE_FP0', 'FADE_FP1', 'FADE_R0', 'FADE_R1', 'WMAX_CELLS', 'W_JIT_LO', 'W_JIT_RANGE']) {
@@ -36,7 +37,7 @@ const w = (n) => CARPET_BLOCK.field(n).word;
 assert.deepEqual(['gridCols', 'seed', 'cellM', 'timeSec', 'fpK'].map(w), [0, 2, 8, 15, 23]);
 assert.deepEqual(['windP0', 'windP1', 'eye', 'pitchA', 'pitchB', 'pitchC', 'knots', 'vtab'].map(w), [24, 28, 32, 36, 40, 44, 48, 112]);
 assert.equal(CARPET_BLOCK.field('vtab').words, 16 * CARPET_VTAB_ROWS * 4);
-assert.equal(CARPET_BLOCK.sizeBytes, (112 + 128 + 16) * 4, '16 variants x 2 vec4 (32 B) + 16 knot vec4 + header + PREC-01a origin (ix0, iy0, orgX, orgY)');
+assert.equal(CARPET_BLOCK.sizeBytes, (112 + 128 + 16 + 8) * 4, '16 variants x 2 vec4 (32 B) + 16 knot vec4 + header + PREC-01a origin (ix0, iy0, orgX, orgY)');
 assert.ok(CARPET_BLOCK.sizeBytes <= 65536);
 
 // ---- (b) JS evaluation of the trace
@@ -55,7 +56,7 @@ function transliterate(src) {
 }
 const traceJs = transliterate(`${WIND_AT_WGSL}\n${CARPET_TRACE_WGSL}`);
 function makeTwin(cu, tex, K) {
-  const ext = { cu, hashFastU, maskTexel: (i, j) => tex.mask[j * tex.mw + i] * (1 / 255), classTexel: (i, j) => tex.cls[j * tex.cw + i], nearTexel: (i, j) => tex.near[j * tex.nw + i], windKnot: (i) => K[i], ...shims };
+  const ext = { cu, hashFastU, maskTexel: (i, j) => tex.mask[j * tex.mw + i] * (1 / 255), classTexel: (i, j) => tex.cls[j * tex.cw + i], nearTexel: (i, j) => tex.near[j * tex.nw + i], windKnot: (i) => K[i], atlasTexel: (i, j) => { const o = (j * tex.aw + i) * 2; return { x: tex.atlas[o], y: tex.atlas[o + 1] }; }, cos: Math.cos, sin: Math.sin, ...shims };
   const names = Object.keys(ext);
   return new Function(...names, `${traceJs}
     return { run(ex, ey, ez, dx, dy, dz, th) { rEx = ex; rEy = ey; rEz = ez; rDx = dx; rDy = dy; rDz = dz; return traceCarpet(th); },
@@ -109,16 +110,18 @@ function parity(label, windDef, N) {
   const cu = {
     seed: iv[w('seed')], windOn: iv[w('windOn')], classW: iv[w('classW')], classHt: iv[w('classHt')], nearW: iv[w('nearW')], nearHt: iv[w('nearHt')],
     timeSec: 0, fpK: 0, windP0: v4(w('windP0')), windP1: v4(w('windP1')),
+    tufts: iv[w('tufts')], atlasN: iv[w('atlasN')], atlasW: iv[w('atlasW')], atlasH: iv[w('atlasH')], tuftR: f[w('tuftR')], rootJit: f[w('rootJit')],
     maskX0: MX0, maskY0: MX0, maskW: MW, maskHt: MW, maskOn: 1,
     vtab: Array.from({ length: 16 * CARPET_VTAB_ROWS }, (_, k) => v4(w('vtab') + k * 4)),
   };
   for (const n of ['cellM', 'radiusM', 'patchM', 'classCellM', 'classJitterM', 'gustM', 'travelM', 'classX0', 'classY0', 'nearX0', 'nearY0', 'nearCell', 'maxH', 'wMax']) cu[n] = f[w(n)];
   // f32-packed config vs the f64 JS ctx: make the JS ctx see the same numbers so the comparison is about the algorithm, not f32 rounding of 0.1
   for (const [k, n] of [['cellM', 'cellM'], ['radiusM', 'radiusM'], ['patchM', 'patchM'], ['classJitterM', 'classJitterM'], ['gustM', 'gustM'], ['travelM', 'travelM'], ['maxH', 'maxH'], ['wMax', 'wMax']]) ctx[k] = cu[n];
+  ctx.tuftR = cu.tuftR; assert.equal(cu.tufts, 1, 'tufts on by default'); assert.equal(ctx.rootJit, cu.rootJit);
   for (let v = 1; v <= 2; v++) { ctx.dens[v] = cu.vtab[v * 2].x; ctx.hMin[v] = cu.vtab[v * 2].y; ctx.hMax[v] = cu.vtab[v * 2].z; ctx.bw[v] = cu.vtab[v * 2].w; ctx.sway[v] = cu.vtab[v * 2 + 1].x; ctx.tuftP[v] = cu.vtab[v * 2 + 1].y; ctx.tuftMul[v] = cu.vtab[v * 2 + 1].z; }
   assert.equal(cu.vtab[0].x, 0, 'variant 0 = no carpet'); assert.equal(cu.vtab[1].x, 1, 'variant 0 sway 1');
   const K = p ? p.K : null;
-  const twin = makeTwin(cu, { cls: classMap, cw: CW, near, nw: NW, mask: maskData, mw: MW }, K);
+  const twin = makeTwin(cu, { cls: classMap, cw: CW, near, nw: NW, mask: maskData, mw: MW, atlas: ctx.atlas.data, aw: ctx.atlas.w }, K);
   const r = rng(12345), e = [-3, 3, 1.5], d = [0, 0, 0];
   let hits = 0, agree = 0, bad = 0, maxErr = 0;
   const stepsHist = { over: 0 };
