@@ -1715,3 +1715,170 @@ Notes:
 - The cut and the knot are a soft Maren echo (story section 9: the lamp "set down neatly"; she taught him the trade). They are not proof. No line names her, and none says who cut the strip. Hesk's `after` line says the cut came out with the notices, so nobody in the village did it. A stronger hook, if the manager wants one: read (7) `Above the cut: FELL BEYOND THE WALL. SKYW` (41). The writer advises against it for Ch3.
 - The chart scrap is unsigned pencil and is not Wick's "W." hand. Whose hand it is stays open (M4 reason, GDD 3). "Tanners' Stair" is a new Low Wards place name. It is minor and can be swapped.
 - No line says why the SOS calls or who sends it, and the "older than the Wall" reveal is kept for Ch4.
+
+## Journal summaries (OB-097)
+
+PC-B writer, 2026-10-12. These texts go in the right-hand details pane of the J journal. Each text is shown while its step is the **current** step: it says what has happened so far and what to do next, in the player's journal voice ("You ..."). Limits: 1-2 short sentences (a few use three very short ones), <= 110 chars, ASCII, no key names, lengths counted by hand.
+
+Name rules: no line says "Wick", including after the Hesk beat, because the journal voice is "you" (D-013). Up to `m1.beasts` she is "the bear" or "the old bear", and from `burl.boars` on she is "Burl", matching section "EP-QUEST: Burl's boars". The village is not named ("the village", "the palisade"), and the Ch3 relay is "the village relay", never "Outwall" (see "Ch3 opening").
+
+Objective ids: hand-written quests use their JSON ids. Pack quests built from `steps` get ids from `templates.js`: one step gives the template name (`explore`, `kill`, `talk`, `fetch`, `deliver`, `collect`, `escort`), and several steps give the name plus a number (`explore1`, `explore2`, ...). Fetch, deliver and collect hand-ins have no step of their own, so their journal text already names the return.
+
+### Main line
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| m1 | wake | `The Kestrel came down through a tower roof. Get up from the wreck and look around.` | 82 |
+| m1 | breach | `You are alive, and the wreck still smokes. Climb to the top of the tower.` | 73 |
+| m1 | sword | `You reached the top. Take up the ruin steel lying in the ashes.` | 63 |
+| m1 | leave | `You have the sword. Go down and out through the tower door.` | 59 |
+| m1 | beasts | `The old bear outside talks. Help her drive the wild boars from the woods.` | 73 |
+| m1 | follow | `The boars are gone, and the bear has a name: Burl. Follow her to where she leads.` | 81 |
+| m1 | waystone | `Burl brought you to an old stone in the meadow. It is dark. Wake it.` | 68 |
+| m1 | road | `The stone woke and glows. Take the road west, toward the next light.` | 68 |
+| m1 | relayFound | `The road bends ahead. Somewhere near it stands a dead relay. Find it.` | 69 |
+| m1 | relay1 | `You found the relay at the bend, cold and silent. Wake it.` | 58 |
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| tower.blade | breach | `You found a note pinned to the wall. Climb to the top of the tower.` | 67 |
+| tower.blade | sword | `The note spoke of a blade. It lies here in the ashes. Take it up.` | 66 |
+| tower.blade | leave | `You have the sword. Leave through the tower door and meet the bear outside.` | 75 |
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| burl.boars | beasts | `The bear is called Burl. Boars tear up her woods. Bring down all five.` | 70 |
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| mq.bend.call | pulse | `A crow named Rook talks too. Watch the Bend relay blink and count.` | 66 |
+| mq.bend.call | knot | `The relay blinks in threes, again and again. Look at the knot on its mount.` | 75 |
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| mq.river.road | riverBank | `Rook gave you a chart of the river. Follow the road west to the water.` | 70 |
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| mq.ford.stones | fordWest | `The river runs wide and loud. Cross on the stepping stones.` | 59 |
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| mq.ford.mirror | glass | `The Ford Relay is cold. Its glass is gone. Rook has it. Take it from the nest.` | 78 |
+| mq.ford.mirror | wake | `You have the glass back from the nest. Wake the Ford Relay.` | 56 |
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| mq.smoke | mark | `The Ford Relay hums again. Someone cut a mark into it. Look closer.` | 67 |
+| mq.smoke | north | `Smoke rises in the north. Follow the footpath toward it.` | 56 |
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| mq.ow.path | explore | `Cookfire smoke, so someone lives out here. Follow the track toward it.` | 70 |
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| mq.ow.fence | kill | `A palisade, and wolves at its goose pen. Drive them off.` | 56 |
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| mq.ow.names | talk | `The wolves are gone, and the gate opens a crack. Tell Hesk who you are.` | 71 |
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| mq.ow.relay | talk | `The village relay is dark. Part of it is missing. Ask Dorrin at the forge.` | 74 |
+| mq.ow.relay | brass | `Dorrin took the relay's brass collar for a gate. Pull it off the barley gate.` | 77 |
+| mq.ow.relay | wake | `You have the brass collar. Fit it to the village relay and wake it.` | 67 |
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| mq.ow.board | read | `The village relay burns teal. In the plaza stands a board of names. Read it.` | 76 |
+
+### Burl's errands (giver Burl)
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| sq.burl.blue | sprigs | `Burl wants the blue sprigs that grow on her slope. Pick six of them.` | 68 |
+| sq.burl.blue | bring | `You have six blue sprigs. Bring them back to Burl.` | 50 |
+| sq.tm.nub | explore1 | `Burl's cub Nub has wandered off again. Look for small tracks by the stone.` | 74 |
+| sq.tm.nub | explore2 | `Small tracks lead away from the stone. Follow them to the tower door.` | 69 |
+| sq.tm.nub | explore3 | `No Nub at the door, only wet prints. Follow them down the road.` | 63 |
+| sq.burl.boars.n | kill | `More boars dig in the north woods. Burl wants three of them driven off.` | 71 |
+| sq.burl.boars.w | kill | `Two boars root on the west side. Drive them off for Burl.` | 57 |
+| sq.burl.boars.s | kill | `The south woods have boars again. Drive off all three for Burl.` | 63 |
+| sq.burl.meat | fetch | `Winter is coming and Burl's den is bare. Bring her a piece of boar meat.` | 72 |
+| sq.burl.stone | explore | `Burl worries about the waystone. Go and see that it still glows.` | 64 |
+| sq.burl.hint | explore | `Burl knows a path along the hill below the tower. Walk it.` | 58 |
+| sq.burl.tower | explore | `Burl does not trust the tower. Go back and look at its door.` | 60 |
+| sq.burl.scout | explore1 | `Burl wants to know if the river is safe. Walk down to the bank.` | 63 |
+| sq.burl.scout | explore2 | `The bank is quiet. Find the stones where the river can be crossed.` | 66 |
+| sq.burl.ask | talk | `Burl asks what the crossroads post says. Go and read it.` | 56 |
+| sq.burl.walk | escort | `Burl wants to see the Bend Relay blink. Walk with her to it.` | 60 |
+| sq.burl.parcel | deliver | `Burl gave you two pieces of meat. Leave them in the post basket.` | 64 |
+| sq.tm.gap | explore | `Something got through the meadow fence. Look at the gap for Burl.` | 65 |
+| sq.tm.wood | explore | `Burl smelled something at the woodcutter's corner. Check the stack.` | 67 |
+| sq.tm.cart | explore | `An old cart sits by the road. Burl wants to know what is in it.` | 63 |
+| sq.he.farm | explore | `Burl remembers a farm by the river. Go and look at its gate.` | 60 |
+| sq.dw.bees | explore | `Bees drift past Burl's slope, heavy with pollen. Follow them home.` | 66 |
+| sq.dw.stones | explore | `Burl speaks of a ring of standing stones. Walk out and find it.` | 63 |
+| sq.honey | deliver | `Burl sent honeycomb for the crow. Bring it to Rook.` | 51 |
+| sq.burl.fire | collect | `Burl promised to show you fire. Find three red emberpods in Cinder Hollow.` | 74 |
+
+### Rook's errands (giver Rook)
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| sq.he.wallow | explore | `Rook saw boars rolling in mud. Look at the wallow south of the road.` | 68 |
+| sq.fc.caps | collect | `Rook wants red caps, the ones that grow on tree trunks. Pick five.` | 66 |
+| sq.fc.well | explore | `Rook heard something in the dry well north of the post. Look at it.` | 67 |
+| sq.fc.ask | talk | `Rook wants to know if bears eat crows. Go and ask Burl.` | 55 |
+| sq.rook.gift | deliver | `Rook sends a brass scrap to Burl, as a peace gift. Give it to her.` | 67 |
+| sq.rook.shiny | collect | `Rook loves shiny things. Find four brass scraps and bring them back.` | 68 |
+
+### Other side quests (Ch1-2)
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| sq.post.spare | deliver | `The post asks travellers to leave what they can. Carry three arrows to it.` | 74 |
+| sq.straw | t1 | `Three straw men stand by the note post. Hit the first with an arrow.` | 68 |
+| sq.straw | t2 | `One straw man hit. Now put an arrow in the second.` | 50 |
+| sq.straw | t3 | `Two down. One straw man still stands. Hit the third.` | 52 |
+| sq.rb.shield | explore | `Someone left a buckler at the Bend Relay. Wear it down to the ford.` | 67 |
+| sq.rb.regards | talk | `The relay has word for Burl. Carry it back to her slope.` | 56 |
+| sq.rb.road | explore1 | `Something on the road west needs a second look. Walk back along it.` | 67 |
+| sq.rb.road | explore2 | `You walked the road. Now come back to the Bend Relay.` | 53 |
+| sq.rb.lamps | explore | `Old lamps line the verge of the road. Walk along them.` | 54 |
+| sq.rb.rocks | explore | `Rocks pile up at the forest edge, too neat to be chance. Check them.` | 68 |
+| sq.rb.parcel | deliver | `You carry a brass scrap for the Ford Relay. Bring it there.` | 59 |
+| sq.fc.ford | explore1 | `Wet boots are the price of the far bank. Walk down to the river.` | 64 |
+| sq.fc.ford | explore2 | `You stand at the water's edge. Cross over to the west bank.` | 59 |
+| sq.fc.smoke | explore | `From the ford, a thread of smoke shows in the north. Climb the lookout.` | 71 |
+| sq.fc.cross | explore | `The west road leads to a crossroads. Walk it and see what is there.` | 67 |
+| sq.fc.again | explore | `You have been across. Come back to the river bank.` | 50 |
+| sq.fc.stores | kill | `Two boars broke into the stores at the post. Drive them off.` | 60 |
+| sq.fc.shrine | explore | `A shrine lies fallen by the note post. Go and look at it.` | 57 |
+| sq.fc.jetty | explore | `An old jetty runs out over the water. Walk out on its planks, carefully.` | 72 |
+| sq.fc.cog | deliver | `You carry a cog from the ford. Take it to the Bend Relay.` | 57 |
+| sq.wreck.plate | fetch | `A plate from the Kestrel's gondola would make a shield. Find hide for a strap.` | 78 |
+| sq.packet | deliver | `You found an oilcloth packet. Leave it at the ford post.` | 56 |
+
+### Other side quests (Ch3)
+
+| quest id | objective id | journal text | chars |
+|---|---|---|---|
+| sq.hw.piers | read | `A bridge once stood here. Only the piers are left. Read the stone north of the road.` | 84 |
+| sq.fc.sign | fetch | `The post sign has lost its west arm. Find it in the shallows.` | 61 |
+| sq.ow.wolves | kill | `Wolves still circle the goose pen. Drive three of them off.` | 59 |
+| sq.ow.boars | kill | `Boars raid the west bank. Drive two of them off.` | 48 |
+| sq.ow.parcel | deliver | `A parcel waits for the forge. Carry it there.` | 45 |
+| sq.ow.ford | explore | `Nobody here has scouted the far bank in a while. Cross the ford to it.` | 70 |
+| sq.ow.barley | fetch | `A sheaf is due from the barley gate. Fetch it.` | 46 |
+| sq.ow.range | t1 | `Three targets stand along the track. Hit the first.` | 51 |
+| sq.ow.range | t2 | `One target hit. Now the second.` | 31 |
+| sq.ow.range | t3 | `Two hit. One target left on the track. Hit the third.` | 53 |
+
+Notes:
+- `mq.ford.mirror`: the JSON has two objectives (`glass`, `wake`). The QL-W1 HUD table lists a third one, "Ask Rook about the cold relay". If that step is added, give it: `The Ford Relay is cold and dark. Ask Rook what happened to it.` (62).
+- `sq.wreck.plate` and `sq.rook.shiny` list a second HUD step (bring back) in QL-W1, but the pack builds a single `fetch` / `collect` objective. The texts above already point to the return.
+- `sq.honey`, `sq.fc.ask` and `sq.rook.gift` name Rook. They open only after `mq.bend.call`, where Rook gives his name.
+- Assumption: every `explore` step in these packs lists one area, so it builds one objective. If a step lists several areas, its ids get a further digit (`explore1` -> `explore1` + `1`, `2`, ...); reuse the same text for each of them.
