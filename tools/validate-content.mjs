@@ -94,6 +94,7 @@ const CLASSIC_SCRIPTS = [
   '../design/models/voxel_bear.js', // NPC-BEAR-01: ASSETS.models.bear (world_m1 entity "bear", content/dialogue/bear.dialogue.json clips), same load position as game/index.html.
   '../design/models/voxel_bear_black.js', // BEAR-D1: ASSETS.models.bearBlack (clones ASSETS.models.bear -> must follow voxel_bear.js). game/index.html tag: BEAR-01.
   '../design/models/voxel_bear_cub.js', // NUB-D1: ASSETS.models.bearCub (Nub, Burl's cub; stand-alone). Not in game/index.html / the world yet (placement = later story).
+  '../design/models/voxel_otter.js', // SKIP-D1: ASSETS.models.otter (Skip the otter; stand-alone). Not in game/index.html / the world yet (placement = later story).
   '../design/models/voxel_wildlife.js', // QL-06: ASSETS.models.crow (Rook, world_m1 entity "rook"), same load position as game/index.html.
   '../design/models/m3_props.js', // US-078d: the practice target pell (content/levels/tower.level.json prop "practiceTarget"), same load position as game/index.html.
   '../design/models/far_tower.js',
