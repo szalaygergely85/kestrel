@@ -429,9 +429,9 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
 
 // --- US-073b (38.25): the stable-glyph level target. OFF = byte-identical to the pre-073b shader; ON = one extra r8ui target. ---
 {
-  // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01, DN-02 night floor, MAP-06b skyline cap, OB-073 smooth ground noise (42233 chars): the stable-off shader must not move by a single byte.
-  assert.equal(SHADE_WGSL.length, 42233, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '763d0815802adf8ca1a31ee025693220e5620feeb5eb5e7c0f2f600b261a4f79', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01, DN-02 night floor, MAP-06b skyline cap, OB-073 smooth ground noise, OB-073 calm ground (40433 chars): the stable-off shader must not move by a single byte.
+  assert.equal(SHADE_WGSL.length, 40433, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '93b751d442e7622f90f150b008a724ff07f2c73408eb597870a13c5d8ed6f328', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);
@@ -445,9 +445,9 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   const stripped = SHADE_LEVEL_WGSL
     .replace('\n  @location(2) lvl: u32,', '').replace(' o.lvl = 255u;', '').replace('\n  var lvOut = 255u;', '')
     .replace('\n    lvOut = u32(levelFromThresholds(setIdPick, t0.z, gbAvg, su.cutoff));', '').replace(' lvOut = 255u;', '').replace(' o.lvl = lvOut;', '')
-    .replace(' o.lvl = select(255u, 254u, textureLoad(uTlook, vec2i(3, typeId), 0).y > 0.5);', '');
+    .replace(' o.lvl = 255u;', '');
   assert.equal(stripped, SHADE_WGSL, 'level variant == off shader + the 7 splices');
-  assert.ok(SHADE_LEVEL_WGSL.includes('o.lvl = select(255u, 254u, textureLoad(uTlook, vec2i(3, typeId), 0).y > 0.5);\n    return o;'), '38.25 C.1: terrain shimmer branch writes level 254');
+  assert.ok(SHADE_LEVEL_WGSL.includes('o.lvl = 255u;\n    return o;'), 'OB-073: terrain (no shimmer branch any more) writes level 255');
   // level value: WGSL levelFromThresholds (1 + index, 0 under the cutoff) == the JS twin over the real ramps
   const fns = core(SHADE_WGSL);
   let n = 0, nz = 0, bad = 0;

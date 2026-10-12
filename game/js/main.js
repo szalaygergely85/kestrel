@@ -440,7 +440,7 @@ const pointShadowOpt = parsePointShadows(params, resolvedQuality && resolvedQual
 const tCR = bootNow();
 const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgpu', onWebGpuMissing,
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
-  stable: params.get('stable') === '1' || params.get('gpucompare') === '1', // US-073c (38.25): temporal glyph stability, default OFF; ?gpucompare=1 builds it for the `stable` row (the pass stays off for every other row)
+  stable: params.get('stable') !== '0', // US-073c (38.25) + OB-073 D (owner 2026-10-12): temporal glyph stability, default ON (`?stable=0` off); ?gpucompare=1 builds it for the `stable` row (the pass stays off for every other row)
   shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.occl, pointShadows: pointShadowOpt.pointShadows, pointShadowLevel: pointShadowOpt.pointShadowLevel, glow: parseGlow(params, resolvedQuality && resolvedQuality.name), // EMIS-03/04: emissive bleed + halo (High/Ultra, ?emissive=); OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
   onCompileProgress: (done, total) => { bootStages.enter('pipelines'); if (bootCard) bootCard.setStageLines(bootStages.cardText()); if (bootProg) bootProg.count('compile', done, total); } }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
 bootSpan('createRenderer total (' + rendererInfo.label + ')', tCR);
@@ -900,7 +900,7 @@ const swordStyleIds = {
 sprites.pool.renderer = renderer; // review item 1: sprite rects follow the pitched scene
 const wgActive = !!(wgPipeline && wgPipeline.ready && rt.backend === 'webgpu'); // WG-2b: geometry-only WebGPU pipeline (CPU still shades)
 engine.events.on('combat:hit', (p) => { if (p && p.source === 'player') hitStop.trigger(p.heavy ? 'heavy' : 'light'); }); // HITSTOP-01
-const hzb = createHzbInvalidator(() => ((occlOpt.enabled || params.get('stable') === '1') && wgActive && wgPipeline.ready ? wgPipeline : null)); // OCCL-MAIN-01 (+ US-073c): cuts invalidate the HZB and the stable-pass history
+const hzb = createHzbInvalidator(() => ((occlOpt.enabled || params.get('stable') !== '0') && wgActive && wgPipeline.ready ? wgPipeline : null)); // OCCL-MAIN-01 (+ US-073c): cuts invalidate the HZB and the stable-pass history
 if (wgActive) { wgPipeline.bindVoxels(gameVoxelPool); wgPipeline.bindViewModel(engine.viewModel); }
 engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); // RE-06 (28.6)
 if (wgActive) wgPipeline.bindInstances(engine.instances);

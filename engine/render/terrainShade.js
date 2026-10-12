@@ -17,7 +17,7 @@ import { unpackNormalOct } from '../voxel/octNormal.js';
 import { clampByte } from '../core/math.js';
 import { sunFromWorld } from './lighting.js';
 import { WET_DARK, wetGain } from './detailShade.js';
-import { LEVEL_NONE, LEVEL_ANIM } from './temporalStable.js';
+import { LEVEL_NONE } from './temporalStable.js';
 import { skylineFogF } from './skyline.js';
 import { resolveLook } from './look.js';
 
@@ -160,13 +160,9 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   const fp = groundFootprint(t, ctx.hashCell || 0);
   const v8 = valueNoise(fu * (1 / NOISE_CELLS[0]), fv * (1 / NOISE_CELLS[0]), NOISE_SALT);
   const nP = patchNoise(fu, fv, fp, v8);
-  const gx = Math.floor(fu * (1 / GLYPH_CELL)), gy = Math.floor(fv * (1 / GLYPH_CELL));
-  const sw = hashFast01(gx, gy, 12);                      // per-point switch threshold (glyph near->far, close set -> band set)
-  const fpOk = fp < GLYPH_CELL * (0.35 + 0.4 * sw);
-  const dith = (hashFast01(gx, gy, 13) - 0.5) * PATCH_DITHER * octaveFade(GLYPH_CELL, fp);
-  let off = Math.floor(nP * PATCH_K + 0.5 + dith);
+  // OB-073 calm ground: colour tier only from the smooth noise (no per-cell dither dice); ONE glyph per type (no hash, no band/close/glint).
+  let off = Math.floor(nP * PATCH_K + 0.5);
   off = off < -1 ? -1 : off > 1 ? 1 : off;
-  const hF = v8 > 0.999 ? 0.999 : v8;                     // far glyph: unfaded 8 m noise (calm ~4 m regions, never changes with distance)
 
   // S8-B2-14b wetness (follow-up to S8-B2-14): `ctx.shading.wetness` 0..1
   // (absent = 0) darkens the lit term entering the tier/gain pick - same
@@ -180,10 +176,6 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   // picked below (TLOOK texel 7, fixed) and gets a +-0.08 brightness jitter
   // (own hash salt 10, per-2 m-cell - "shading only, heightAt stays smooth").
   const close = ctx.closeBand != null && t < ctx.closeBand;
-  // OB-073: close set + features + hashed glyph hand over to the band set ONCE per point (same sw for the distance and footprint tests)
-  const closeG = close && t < ctx.closeBand * (0.6 + 0.4 * sw) && fpOk;
-  const nearG = ctx.closeBand != null ? closeG : fpOk;
-  const hB = nearG ? hashFast01(gx, gy, 7) : hF;
   // OB-054: jitter amplitude fades smoothstep to 0 over closeBand/2..closeBand (no brightness step at the band edge). WGSL twin: same expression.
   let bEff = bWet;
   if (close) {
@@ -204,45 +196,10 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   fr *= gain; fg *= gain; fb *= gain;
   let br = fr * 0.3, bg = fg * 0.3, bb = fb * 0.3;
 
-  const bandIdx = t < ctx.bands.near ? 0 : t < ctx.bands.mid ? 1 : 2;
-  const gOff = closeG ? base + 7 * 4 : base + (4 + bandIdx) * 4;
+  // OB-073: the calm glyph = middle entry of the NEAR glyph set (TLOOK texel 4), same at every distance/time/point.
+  const gOff = base + 4 * 4;
   const packedX = TL[gOff], packedCount = TL[gOff + 1];
-  let code = pickCodeFromPacked(packedX, packedCount, Math.floor(hB * packedCount));
-
-  // Water glint (item 5): timeSec-keyed, still world-keyed via (cx, cy).
-  const albedo = TL[base + 3 * 4], glintFlag = TL[base + 3 * 4 + 1];
-  if (glintFlag) {
-    const g = hashFast01(gx, gy, Math.floor(timeSec * GLINT_RATE) | 0);
-    if (g > 0.5) {
-      const alt = pickCodeFromPacked(packedX, packedCount, (Math.floor(hB * packedCount) + 1) % Math.max(1, packedCount));
-      code = alt;
-      const lightOff = base + 2 * 4; // TLOOK[type][2] (the "light" colour) doubles as the glint tint
-      const lr = TL[lightOff] * 255 * gain, lg = TL[lightOff + 1] * 255 * gain, lb = TL[lightOff + 2] * 255 * gain;
-      fr += (lr - fr) * 0.35; fg += (lg - fg) * 0.35; fb += (lb - fb) * 0.35;
-    }
-  }
-
-  // 23.4 close-band features (wildflower/pebble): `ctx.features` is a flat
-  // list pre-resolved by `makeTerrainShadeCtx` to `{typeId, chance, code0,
-  // code1, fg:[r,g,b]}` (own hash salt per list index, 20+idx, so the
-  // wildflower/pebble dice never correlate with the tier/glyph hash above or
-  // with each other). Deviation flagged for architect review (S5): the doc's
-  // "small FEAT texel row per type" describes a GPU-uploadable packing; this
-  // JS oracle reads the same data straight off `recipe.nearLOD.features`
-  // instead (no GLSL exists yet to port to - S5 designs the real FEAT
-  // texture layout against this same recipe list).
-  if (closeG && ctx.features) {
-    for (let fi = 0; fi < ctx.features.length; fi++) {
-      const feat = ctx.features[fi];
-      if (feat.typeId !== type) continue;
-      const fh = hashFast01(gx, gy, 20 + fi); // OB-073: 0.25 m specks (was 1 m grey squares)
-      if (fh >= feat.chance) continue;
-      code = fh < feat.chance * 0.5 ? feat.code0 : feat.code1;
-      fr = feat.fg[0]; fg = feat.fg[1]; fb = feat.fg[2];
-      br = fr * 0.3; bg = fg * 0.3; bb = fb * 0.3;
-      break;
-    }
-  }
+  let code = pickCodeFromPacked(packedX, packedCount, packedCount >> 1);
 
   // ME-06b: background canopy FACE look (overworld_far nearLOD 'Surface vs
   // face' + 'Forest near LOD'): only for a type whose TLOOK row carries face
@@ -280,7 +237,7 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
 
   out.glyph = code;
   // 38.25 amendment C.1: stable-pass level byte of a terrain cell (twin of shade.wgsl's terrain splice): 254 = the shimmer branch (glyph can change next tick), else 255
-  out.level = glintFlag ? LEVEL_ANIM : LEVEL_NONE;
+  out.level = LEVEL_NONE; // OB-073: no shimmer branch any more
   out.fg[0] = toByte(fr); out.fg[1] = toByte(fg); out.fg[2] = toByte(fb);
   out.bg[0] = toByte(br); out.bg[1] = toByte(bg); out.bg[2] = toByte(bb);
   return out;

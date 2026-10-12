@@ -52,12 +52,23 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
   const o1 = shadeTerrain(100, 0, 0.9, 0, 0, 0, ctx, out());   // < 150 -> near band
   const o2 = shadeTerrain(300, 0, 0.9, 0, 0, 0, ctx, out());   // < 600 -> mid band
   const o3 = shadeTerrain(1000, 0, 0.9, 0, 0, 0, ctx, out());  // >= 600 -> far band
-  check('near band glyph is one of the near set', o1.glyph === 0 || o1.glyph === 1);
-  check('mid band glyph is the mid set code', o2.glyph === 2);
-  check('far band glyph is the far set code', o3.glyph === 3);
+  check('OB-073 calm ground: near glyph is the near set middle entry', o1.glyph === 1);
+  check('OB-073 calm ground: mid distance keeps the same glyph', o2.glyph === o1.glyph);
+  check('OB-073 calm ground: far distance (unfogged) keeps the same glyph', o3.glyph === o1.glyph);
+  // identical glyph at any world point / distance / time / brightness / close band for a fixed type
+  let same = true;
+  const cc = { ...ctx, closeBand: 40, handover: [130, 170], features: [{ typeId: 0, chance: 1, code0: 10, code1: 11, fg: [200, 150, 50] }] };
+  for (let k = 0; k < 400; k++) {
+    const o = shadeTerrain((k * 7.3) % 140 + 0.5, 0, 0.3 + (k % 7) * 0.1, k * 1.37 - 80, k * 0.91 + 5, k * 0.7, cc, out());
+    if (o.glyph !== o1.glyph) same = false;
+  }
+  check('OB-073 calm ground: glyph identical at 400 points/distances/times (close band + features ignored)', same);
+  let waterSame = true; const w0 = shadeTerrain(100, 1, 0.9, 8, 8, 0, ctx, out()).glyph;
+  for (let ts = 0; ts < 100; ts++) if (shadeTerrain(100, 1, 0.9, 8 + ts * 0.3, 8, ts, ctx, out()).glyph !== w0) waterSame = false;
+  check('OB-073 calm ground: water glyph never changes with time/point', waterSame);
 }
 
-// 38.25 amendment C.1: stable-pass level byte - 254 (animated, never hold) for the glint/shimmer branch whatever the roll, 255 otherwise.
+// 38.25 amendment C.1 / OB-073: stable-pass level byte - glint removed, so every terrain cell (incl. the old shimmer type) is 255.
 {
   let l254 = 0, l255 = 0, allWater = true, allGrass = true;
   for (let k = 0; k < 40; k++) {
@@ -65,8 +76,9 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
     if (w.level !== 254) allWater = false; if (g.level !== 255) allGrass = false;
     if (w.level === 254) l254++; if (g.level === 255) l255++;
   }
-  check('shimmer terrain type: level 254 for every roll', allWater && l254 === 40);
+  check('OB-073: old shimmer type no longer 254 (calm ground)', l254 === 0 && allWater === false);
   check('non-shimmer terrain: level 255', allGrass && l255 === 40);
+  check('OB-073: water level 255 too', shadeTerrain(200, 1, 0.7, 3, 4, 5, ctx, out()).level === 255);
 }
 
 // Deterministic: same inputs -> same glyph/colour (world-keyed hash).
@@ -95,15 +107,7 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
   check('heavy fog: glyph is space (0)', o.glyph === 0);
 }
 
-// Water glint only touches the glint-flagged type (1), never plain grass (0).
-{
-  let sawAlt = false;
-  for (let ts = 0; ts < 200; ts++) { // GLINT_RATE 0.1: 20 re-rolls
-    const o = shadeTerrain(100, 1, 0.9, 8, 8, ts, ctx, out());
-    if (o.glyph === 5) sawAlt = true;
-  }
-  check('water: glint can select the alternate glyph over enough timeSec samples', sawAlt);
-}
+// OB-073: water glint removed (covered by the calm-ground test above: water glyph never changes with time).
 
 // BUG-OWN-004 (row 25i): TLOOK colours are linear 0..1 (not 0..255 bytes) -
 // `shadeTerrain` must scale by 255 itself. Before the fix, near/well-lit
@@ -132,9 +136,9 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
 {
   const ctxClose = { ...ctx, closeBand: 40, handover: [130, 170] };
   const o = shadeTerrain(10, 0, 0.9, 0, 0, 0, ctxClose, out());
-  check('t < closeBand: glyph comes from the close set (single code 9)', o.glyph === 9);
+  check('OB-073: t < closeBand no longer switches to the close glyph set (9)', o.glyph !== 9);
   const o2 = shadeTerrain(100, 0, 0.9, 0, 0, 0, ctxClose, out());
-  check('t >= closeBand (still < near band): back to the near set', o2.glyph === 0 || o2.glyph === 1);
+  check('t >= closeBand (still < near band): same calm glyph as inside', o2.glyph === o.glyph);
 }
 
 // Brightness jitter (+-0.08) only applies inside the close band - same b,
@@ -176,7 +180,7 @@ function out() { return { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3)
     features: [{ typeId: 0, chance: 1, code0: 10, code1: 11, fg: [200, 150, 50] }],
   };
   const o = shadeTerrain(5, 0, 0.9, 3, 3, 0, ctxFeat, out());
-  check('feature with chance=1 always overrides the close glyph', o.glyph === 10 || o.glyph === 11);
+  check('OB-073: features (per-cell specks) removed, chance=1 does not override the glyph', o.glyph !== 10 && o.glyph !== 11);
   // A feature on a DIFFERENT type (1, water) never touches type 0.
   const ctxFeatOther = {
     ...ctx, closeBand: 40, handover: [130, 170],
