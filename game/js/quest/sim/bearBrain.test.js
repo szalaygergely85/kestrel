@@ -133,6 +133,18 @@ const gz = (w, x, y) => w.terrain.heightAt(x, y);
   ok('loot prompt placeholder', LOOT_PROMPT.bear === '[E] Loot bear');
 }
 
+// 1b. BEAR-01: sight reads the per-slot noticeR (not the shared cfg): a bear with noticeR 20 notices a player 16 m ahead,
+// the same player stays unnoticed by a boar (cfg noticeR 12) and by a bear whose noticeR is 12
+{
+  const noticed = (sim, d) => { const z = gz(sim.world, BX, BY - d); for (let t = 0; t < 30; t++) sim.step(BX, BY - d, z); return sim.state[0] !== STATE_WANDER && sim.state[0] !== 0; };
+  const b12 = mk().sim, b20 = mk().sim, boar = freshSim([beastEntity('b1', BX, BY)]).sim;
+  b20.scfg[0].noticeR = 20;
+  ok('bear noticeR 12 differs from boar-config sight when overridden', b20.scfg[0].noticeR !== boar.cfg.noticeR && b12.scfg[0].noticeR === 12);
+  ok('bear noticeR 20 notices at 16 m', noticed(b20, 16), String(b20.state[0]));
+  ok('bear noticeR 12 does not notice at 16 m', !noticed(b12, 16), String(b12.state[0]));
+  ok('boar (cfg noticeR 12) does not notice at 16 m', !noticed(boar, 16), String(boar.state[0]));
+}
+
 // 2. seeded fight: telegraph always >= 0.8 s before damage, straight charge, damage 2 per contact
 {
   const { sim, hits } = mk(7);
