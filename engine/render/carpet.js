@@ -56,7 +56,9 @@ export function makeCarpetCtx(carpet, ground, wind, atlas) {
     mData: null, mx0: 0, my0: 0, mw: 0, mh: 0, gTint: new Float64Array(n).fill(0.6), // MASK-c: mask window (refreshed by carpetCtxFor)
     dens: new Float64Array(n), hMin: new Float64Array(n), hMax: new Float64Array(n), bw: new Float64Array(n), sway: new Float64Array(n), tuftP: new Float64Array(n), tuftMul: new Float64Array(n).fill(1),
     tufts: cfg.tufts === undefined ? TUFTS : !!cfg.tufts, tuftR: cfg.tuftR || D.tuftR, atlas: null, rootJit: 0,
-    maxH: 0, wMax: 0, ground, wind: wind || null, fpK: 0, // fpK = groundFootprint hashCell arg (<0 = -k, >0 = fixed cell, 0 = default k)
+    maxH: 0, wMax: 0, ground, wind: wind || null, fpK: 0,
+    maxHNear: 0, tFade: Infinity, leanMaxR: LEAN_CAP, leanB: 0, leanOn: false, windMax: Infinity, bwMax: 0, swayMax: 0, hvMax: new Float64Array(n), // TUFT-PERF-01b: exact cull bounds (setCarpetBounds); windMax = peak world wind speed m/s (Infinity = unknown)
+    // fpK = groundFootprint hashCell arg (<0 = -k, >0 = fixed cell, 0 = default k)
     q: new Float64Array(8), inp: new Float64Array(8), r: new Float64Array(10), s: new Float64Array(S_N), keep: new Float64Array(S_N),
   };
   ctx.sway[0] = 1;
@@ -73,13 +75,44 @@ export function makeCarpetCtx(carpet, ground, wind, atlas) {
     const wm = (ctx.tufts ? ctx.tuftR * ctx.cellM : ctx.bw[id] * 0.5) * (W_JIT_LO + W_JIT_RANGE), hm = v.heightM[1] * (PATCH_LO + PATCH_RANGE) * ctx.tuftMul[id]; // OB-096: bounds include the variety factors
     if (wm > ctx.wMax) ctx.wMax = wm;
     if (hm > ctx.maxH) ctx.maxH = hm;
+    ctx.hvMax[id] = hm; if (ctx.bw[id] > ctx.bwMax) ctx.bwMax = ctx.bw[id]; if (ctx.sway[id] > ctx.swayMax) ctx.swayMax = ctx.sway[id];
   }
+  ctx.maxHNear = ctx.maxH; ctx.leanB = ctx.wind !== null ? LEAN_CAP * ctx.maxH : 0; ctx.leanOn = ctx.wind !== null && ctx.leanB > 0;
   return ctx;
 }
 
 /** MASK-c: (re)bind the density mask result object ({data,x0,y0,w,h}) or null = no mask. Call again after every maskVersion change. */
 export function setCarpetMask(ctx, m) {
   if (m && m.data) { ctx.mData = m.data; ctx.mx0 = m.x0; ctx.my0 = m.y0; ctx.mw = m.w; ctx.mh = m.h; } else { ctx.mData = null; ctx.mw = 0; ctx.mh = 0; }
+}
+
+/**
+ * TUFT-PERF-01b: per-frame exact cull bounds for an eye at (ex, ey); call once per frame / per eye (zero alloc), before the traces.
+ * tFade: smallest t where the footprint fade is exactly 0 (the trace never needs t beyond it). maxHNear: tallest blade of the class cells the
+ * trace can reach (<= maxH). leanMaxR: peak lean ratio from the wind bound ctx.windMax (0 when calm). Defaults (no call) = the old global bounds.
+ */
+export function setCarpetBounds(ctx, ex, ey) {
+  const SL = 1 + 1e-6; // slack so the clipped region is a superset of the fade > 0 region despite rounding
+  // tFade: fp(t) >= FADE_FP1 * (2 * widest half width) -> f1 = 1 -> fade = 0 -> rank >= 0 never hits
+  const thr = FADE_FP1 * ctx.bwMax * (ctx.tufts ? 1 : W_JIT_LO + W_JIT_RANGE) * SL, fpk = ctx.fpK;
+  if (fpk > 0) ctx.tFade = fpk >= thr ? 0 : Infinity;
+  else {
+    const k = fpk < 0 ? -fpk : FP_DEFAULT_K;
+    ctx.tFade = thr <= k * FP_ANISO_T ? thr / k : thr <= k * FP_ANISO_T * FP_ANISO_MAX * FP_ANISO_MAX ? Math.sqrt(thr * FP_ANISO_T / k) : thr / (k * FP_ANISO_MAX);
+  }
+  // leanMaxR
+  const lp = ctx.wind === null ? 0 : ctx.windMax * LEAN_PER_MS * ctx.swayMax * (GUST_LO + GUST_RANGE) * 1.0001;
+  ctx.leanMaxR = lp < LEAN_CAP ? lp : LEAN_CAP; // NaN / Infinity -> the cap
+  if (ctx.wind === null) ctx.leanMaxR = 0;
+  // maxHNear: scan the class cells within rW of the eye
+  const cc = ctx.classCellM, tr = ctx.radiusM < ctx.tFade ? ctx.radiusM : ctx.tFade;
+  const rW = tr + ctx.classJitterM + ctx.wMax + (0.7071 + ctx.rootJit + 3 * RING) * ctx.cellM + LEAN_CAP * ctx.maxH + cc;
+  let i0 = Math.floor((ex - rW - ctx.cx0) / cc), i1 = Math.floor((ex + rW - ctx.cx0) / cc), j0 = Math.floor((ey - rW - ctx.cy0) / cc), j1 = Math.floor((ey + rW - ctx.cy0) / cc);
+  if (i0 < 0) i0 = 0; if (j0 < 0) j0 = 0; if (i1 > ctx.cw - 1) i1 = ctx.cw - 1; if (j1 > ctx.ch - 1) j1 = ctx.ch - 1;
+  let hn = 0;
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const v = ctx.classMap[j * ctx.cw + i]; if (v <= MAX_VARIANTS && ctx.hvMax[v] > hn) hn = ctx.hvMax[v]; }
+  ctx.maxHNear = hn;
+  ctx.leanB = ctx.leanMaxR * hn; ctx.leanOn = ctx.wind !== null && ctx.leanB > 0;
 }
 
 /** MASK-c: mask value 0..1 at world q[0], q[1] -> ctx.s[S_M] (1 = no mask / outside the window). Keeps q. */
@@ -116,7 +149,7 @@ function vnoise(ctx, salt) {
 /** lean/h ratio of the blade rooted at q[0], q[1] (variant v selects swayGain) -> ctx.s[S_LX..S_LY]. Capped at LEAN_CAP. Keeps q[0..1]. */
 function leanRatio(ctx, v) {
   const s = ctx.s, q = ctx.q;
-  if (ctx.wind === null) { s[S_LX] = 0; s[S_LY] = 0; return; }
+  if (!ctx.leanOn) { s[S_LX] = 0; s[S_LY] = 0; return; }
   const x = q[0], y = q[1], timeSec = ctx.r[R_TIME];
   q[2] = timeSec;
   ctx.wind(q);
@@ -207,7 +240,7 @@ function tuftHit(ctx, ix, iy) {
   const cj = ctx.classJitterM;
   q[0] = rx + ((hashFast24(ix, iy, seed + SALT_CJX) * INV_2_24) * 2 - 1) * cj; q[1] = ry + ((hashFast24(ix, iy, seed + SALT_CJY) * INV_2_24) * 2 - 1) * cj;
   // exact root cull: the tuft reaches at most R_max (+ the lean cap at the tallest) from its root; returns 2 = not a candidate
-  const hxy = Math.sqrt(n2), cr = (rx - ex) * dy - (ry - ey) * dx, reach = (ctx.tuftR * c * (W_JIT_LO + W_JIT_RANGE) + (ctx.wind !== null ? LEAN_CAP * ctx.maxH : 0)) * hxy;
+  const hxy = Math.sqrt(n2), cr = (rx - ex) * dy - (ry - ey) * dx, reach = (ctx.tuftR * c * (W_JIT_LO + W_JIT_RANGE) + ctx.leanB) * hxy;
   if (cr > reach || cr < -reach) return 2;
   const v = classAt(ctx);
   if (v === 0) return 0;
@@ -226,7 +259,7 @@ function tuftHit(ctx, ix, iy) {
   q[0] = rx; q[1] = ry;
   leanRatio(ctx, v);
   const lx = s[S_LX], ly = s[S_LY];
-  if (ctx.wind !== null) { // second cull with this tuft's real lean reach (the first used the cap at the tallest height)
+  if (ctx.leanOn) { // second cull with this tuft's real lean reach (the first used the cap at the tallest height)
     const lr = Math.sqrt(lx * lx + ly * ly) * h, reach2 = (R + lr) * hxy;
     if (cr > reach2 || cr < -reach2) return 2;
   }
@@ -288,12 +321,18 @@ function setRay(ctx) {
   if (!(tHit > 0) || tHit === Infinity) return 0;
   q[0] = ex + tHit * dx; q[1] = ey + tHit * dy;
   ctx.ground(q);
-  const zTop = q[2] + ctx.maxH;
+  const gEnd = q[2], hn = ctx.maxHNear, zTop = gEnd + hn;
   let t0 = 0;
   if (dz < 0 && ez > zTop) t0 = (zTop - ez) / dz;
   const hxy = Math.sqrt(r[R_N2]);
   let t1 = tHit;
   if (hxy > 1e-9) { const tr = ctx.radiusM / hxy; if (tr < t1) t1 = tr; }
+  if (ctx.tFade < t1) t1 = ctx.tFade; // TUFT-PERF-01b: past tFade the fade is 0
+  if (dz > 0) { // ascending: above the blade layer for good (TUFT-PERF-01b)
+    q[0] = ex; q[1] = ey; ctx.ground(q);
+    const gTop = (gEnd > q[2] ? gEnd : q[2]) + hn, tc = (gTop - ez) / dz;
+    if (tc < t1) t1 = tc;
+  }
   if (t0 >= t1) return 0;
   r[R_T0] = t0; r[R_T1] = t1;
   const i0 = Math.floor((ex + t0 * dx) / c), j0 = Math.floor((ey + t0 * dy) / c);
@@ -309,7 +348,7 @@ export function loadInput(ctx, eye, dir, tHit, timeSec) {
 
 /** Fresh result record (allocate once, reuse). hit: 1/0; lean: signed screen lean -1..1 (+ = right). */
 export function makeCarpetHit() {
-  return { hit: 0, t: 0.5, h01: 0.5, variant: 0, lean: 0.5, z: 0.5, ix: 0, iy: 0, steps: 0, tests: 0 }; // non-Smi initial values keep the double fields in-place mutable
+  return { hit: 0, t: 0.5, h01: 0.5, variant: 0, lean: 0.5, z: 0.5, ix: 0, iy: 0, steps: 0, tests: 0, calls: 0, walked: 0 }; // non-Smi initial values keep the double fields in-place mutable
 }
 
 function setOut(out, ctx, ix, iy) {
@@ -328,12 +367,13 @@ function setOut(out, ctx, ix, iy) {
  */
 export function traceCarpet(eye, dir, tHit, ctx, timeSec, out) {
   loadInput(ctx, eye, dir, tHit, timeSec);
+  setCarpetBounds(ctx, eye[0], eye[1]);
   return traceCarpetIn(ctx, out);
 }
 
 /** Same trace with the input already in ctx.inp (IN_* slots). The per-cell loops use this: doubles passed as call arguments would be boxed (alloc). */
 export function traceCarpetIn(ctx, out) {
-  out.hit = 0; out.tests = 0;
+  out.hit = 0; out.tests = 0; out.calls = 0; out.walked = 0;
   const steps = setRay(ctx);
   out.steps = steps;
   if (steps === 0) return 0;
@@ -348,12 +388,13 @@ export function traceCarpetIn(ctx, out) {
   let ty = Math.abs(dy) > 1e-12 ? (((dy > 0 ? iy + 1 : iy) * c) - ey) / dy : Infinity;
   let best = Infinity, bi = 0, bj = 0, tEnter = t0;
   const margin = hxy > 1e-9 ? (RING + 1.5) * c / hxy : Infinity; // blades of later cells can still be nearer by this much
-  const windOn = ctx.wind !== null;
+  const windOn = ctx.leanOn;
   // a blade of cell (i, j) can only touch the ray if the cell centre is within this xy distance of the ray line
-  const rej = ((0.7071 + ctx.rootJit) * c + ctx.wMax + LEAN_CAP * ctx.maxH) * hxy; // scaled by |d_xy|: compared with the cross product
-  let prevCi = 1e9, prevCj = 1e9, tests = 0;
+  const rej = ((0.7071 + ctx.rootJit) * c + ctx.wMax + ctx.leanB) * hxy; // scaled by |d_xy|: compared with the cross product
+  let prevCi = 1e9, prevCj = 1e9, tests = 0, calls = 0;
   for (let step = 0; step < nSteps; step++) {
     if (tEnter - margin > best) break;
+    out.walked++;
     const tNext = tx < ty ? tx : ty;
     let ci = ix, cj = iy;
     if (windOn) { // shift the search cell upwind by the lean offset at the ray height (the lean field is smooth)
@@ -370,6 +411,7 @@ export function traceCarpetIn(ctx, out) {
     for (let j = cj - RING; j <= cj + RING; j++) for (let i = ci - RING; i <= ci + RING; i++) {
       if (i - prevCi <= RING && prevCi - i <= RING && j - prevCj <= RING && prevCj - j <= RING) continue; // tested in the previous step
       if (hxy > 1e-9) { const cr = ((i + 0.5) * c - ex) * dy - ((j + 0.5) * c - ey) * dx; if (cr > rej || cr < -rej) continue; }
+      calls++;
       const hr = cellHit(ctx, i, j);
       if (hr === 2) continue; // culled by the exact root distance (cheap, before any class/mask/ground work): not a test
       tests++;
@@ -378,7 +420,7 @@ export function traceCarpetIn(ctx, out) {
     prevCi = ci; prevCj = cj;
     if (tx < ty) { ix += sx; tEnter = tx; tx += ddx; } else { iy += sy; tEnter = ty; ty += ddy; }
   }
-  out.tests = tests;
+  out.tests = tests; out.calls = calls;
   if (best === Infinity) return 0;
   for (let k = 0; k < S_N; k++) bs[k] = keep[k];
   setOut(out, ctx, bi, bj);
@@ -391,6 +433,7 @@ export function traceCarpetIn(ctx, out) {
  */
 export function traceCarpetBrute(eye, dir, tHit, ctx, timeSec, out) {
   loadInput(ctx, eye, dir, tHit, timeSec);
+  setCarpetBounds(ctx, eye[0], eye[1]);
   out.hit = 0;
   const steps = setRay(ctx);
   out.steps = steps;
@@ -466,6 +509,7 @@ export function carpetCtxFor(world) {
     ctx = makeCarpetCtx(c, (q) => { q[2] = terrain.groundAt(q[0], q[1]); },
       (q) => { world.wind.sampleInto(q[0], q[1], 0, q[2] / STEP, _windTmp); q[3] = _windTmp[0]; q[4] = _windTmp[1]; });
     ctx.cfgRef = c.cfg;
+    const wp = world.wind && world.wind.params; ctx.windMax = wp ? wp.speed * (1 + wp.amp) : Infinity; // TUFT-PERF-01b lean bound (base field, like the GPU twin; zones are not bounded)
     _worldCtx.set(world, ctx);
   }
   ctx.classMap = c.classMap; ctx.cx0 = c.x0; ctx.cy0 = c.y0; ctx.cw = c.w; ctx.ch = c.h;
@@ -527,7 +571,8 @@ export function carpetCells(gbuf, fb, cam, ctx, timeSec, pt, sun) {
   const inp = ctx.inp, out = _cellHit;
   inp[IN_EX] = cam.x; inp[IN_EY] = cam.y; inp[IN_EZ] = cam.z; inp[IN_TIME] = timeSec;
   ctx.q[0] = cam.x; ctx.q[1] = cam.y; ctx.ground(ctx.q);
-  const eyeAbove = cam.z > ctx.q[2] + ctx.maxH; // rays level or upward from above the blade volume can never reach it
+  setCarpetBounds(ctx, cam.x, cam.y);
+  const eyeAbove = cam.z > ctx.q[2] + ctx.maxHNear; // rays level or upward from above the blade volume can never reach it
   let written = 0;
   for (let y = 0; y < rows; y++) {
     const slope = -(y - horizonRow) / planeDistY;
@@ -553,7 +598,8 @@ function carpetCellsPitched(gbuf, fb, cam, ctx, timeSec, pt, alias, sun) {
   const inp = ctx.inp, out = _cellHit;
   inp[IN_EX] = cam.x; inp[IN_EY] = cam.y; inp[IN_EZ] = cam.z; inp[IN_TIME] = timeSec;
   ctx.q[0] = cam.x; ctx.q[1] = cam.y; ctx.ground(ctx.q);
-  const eyeAbove = cam.z > ctx.q[2] + ctx.maxH;
+  setCarpetBounds(ctx, cam.x, cam.y);
+  const eyeAbove = cam.z > ctx.q[2] + ctx.maxHNear;
   let written = 0;
   for (let y = 0; y < rows; y++) {
     const b = (1 - (2 * y) / rows) * pt.tanHalfY;

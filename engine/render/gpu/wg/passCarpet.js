@@ -10,7 +10,7 @@
 // The class map (r8ui) and the near-band height (r32f) are uploaded ONLY when `version` changed (or the data object changed): never per frame.
 // Per frame only uniform words change (0 allocations). No timer slot is free (all 16 taken): the pass runs inside the light span.
 import { CARPET_BLOCK, CARPET_WGSL, CARPET_TEXTURES, CARPET_TARGETS, CARPET_VTAB_ROWS, CARPET_KNOTS } from '../wgsl/carpet.wgsl.js';
-import { makeCarpetCtx, MAX_VARIANTS } from '../../carpet.js';
+import { makeCarpetCtx, setCarpetBounds, MAX_VARIANTS } from '../../carpet.js';
 import { CARPET_DEFAULTS } from '../../../world/carpet.js';
 import { sunFromWorld } from '../../lighting.js';
 
@@ -19,7 +19,7 @@ const W_COLS = W('gridCols'), W_ROWS = W('gridRows'), W_SEED = W('seed'), W_WIND
 const W_CLW = W('classW'), W_CLH = W('classHt'), W_NW = W('nearW'), W_NH = W('nearHt');
 const W_CELL = W('cellM'), W_RAD = W('radiusM'), W_PATCH = W('patchM'), W_CCELL = W('classCellM'), W_CJIT = W('classJitterM');
 const W_GUST = W('gustM'), W_TRAVEL = W('travelM'), W_TIME = W('timeSec'), W_CX0 = W('classX0'), W_CY0 = W('classY0');
-const W_NX0 = W('nearX0'), W_NY0 = W('nearY0'), W_NCELL = W('nearCell'), W_MAXH = W('maxH'), W_WMAX = W('wMax'), W_FPK = W('fpK');
+const W_NX0 = W('nearX0'), W_NY0 = W('nearY0'), W_NCELL = W('nearCell'), W_MAXH = W('maxH'), W_WMAX = W('wMax'), W_FPK = W('fpK'), W_MAXHN = W('maxHNear'), W_TFADE = W('tFade'), W_LEANR = W('leanMaxR');
 const W_WIND0 = W('windP0'), W_WIND1 = W('windP1'), W_EYE = W('eye'), W_PA = W('pitchA'), W_PB = W('pitchB'), W_PC = W('pitchC');
 const W_KNOTS = W('knots'), W_VTAB = W('vtab'), W_IX0 = W('ix0'), W_IY0 = W('iy0'), W_ORGX = W('orgX'), W_ORGY = W('orgY');
 const W_TUFTS = W('tufts'), W_AN = W('atlasN'), W_AW = W('atlasW'), W_AH = W('atlasH'), W_TR = W('tuftR'), W_RJ = W('rootJit');
@@ -137,7 +137,7 @@ export class WgCarpetPass {
     }
     d.writeTexture(this.texClass, carpet.classMap, { x: 0, y: 0, w: carpet.w, h: carpet.h }, 0); this.stats.classUploads++;
     d.writeTexture(this.texNear, nearH.data, { x: 0, y: 0, w: nearH.w, h: nearH.h }, 0); this.stats.nearUploads++;
-    const ctx = packCarpetConfig(carpet, nearH, this.u, this.ui);
+    const ctx = packCarpetConfig(carpet, nearH, this.u, this.ui); this._bctx = ctx;
     // TUFT-01b: the atlas bytes go up once (stacked shapes: width w, height n*h, rg8ui); re-upload only when the seed / atlas opts change
     const at = ctx.atlas, sig = `${ctx.seed}|${JSON.stringify(carpet.cfg.tuftAtlas || null)}|${at.n}x${at.w}x${at.h}`;
     if (!this.texAtlas || sig !== this._atlasSig) {
@@ -161,6 +161,14 @@ export class WgCarpetPass {
     this.ui[W_COLS] = this.cols; this.ui[W_ROWS] = this.rows;
     f[W_TIME] = this.timeSec; f[W_FPK] = this.fpK;
     packCarpetWind(this.windParams, f, this.ui);
+    // TUFT-PERF-01b: exact cull bounds from the JS twin (same function), eye in world coordinates
+    const bc = this._bctx, wp = this.windParams;
+    if (bc) {
+      bc.fpK = this.fpK; bc.wind = wp ? NOOP_GROUND : null; bc.windMax = wp ? wp.speed * (1 + wp.amp) : 0;
+      setCarpetBounds(bc, cam.x, cam.y);
+      f[W_MAXHN] = bc.maxHNear; f[W_TFADE] = bc.tFade < 1e30 ? bc.tFade : 1e30; f[W_LEANR] = bc.leanMaxR;
+      this.ui[W_WINDON] = bc.leanOn ? 1 : 0;
+    } else { f[W_MAXHN] = f[W_MAXH]; f[W_TFADE] = 1e30; f[W_LEANR] = wp ? 0.6 : 0; }
     // MASK-c back-light: sun direction toward the sun (w = on); no palette/world = off
     if (p._world && p._palette && p._palette.timeOfDay) { const sn = sunFromWorld(p._world, p._palette, this.sunScratch); f[W_SUN] = sn.dirX; f[W_SUN + 1] = sn.dirY; f[W_SUN + 2] = sn.dirZ; f[W_SUN + 3] = 1; } else f[W_SUN + 3] = 0;
     // PREC-01a: lattice origin (i32 cell of the eye) and the eye relative to it, computed in f64 here

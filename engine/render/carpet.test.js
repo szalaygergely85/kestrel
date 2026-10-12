@@ -338,6 +338,66 @@ function dirOf(yawDeg, pitchDeg, out) {
   check(lo >= 0 && hi <= 1 && lo < 0.2 && hi > 0.8, `TUFT-01a h01 range ${lo.toFixed(2)}..${hi.toFixed(2)}`);
 }
 
+const GOLD_CALM = [1340636530, 3523949449, 1144344956], GOLD_WIND = [3165381766, 2244530883, 2258403597]; // pinned pre-01b (current code)
+// ---- TUFT-PERF-01b golden: FNV hash of (hit, t bits, ix, iy) over the AC2 240x90 grid (poses A + B), the OB-101 flat field and the AC5 random rays, calm + wind.
+// Pinned from the code BEFORE the exact culls (maxHNear / tFade / ascending clip / leanMaxR); every cull must leave it unchanged.
+{
+  const fb = new Float64Array(1), fu = new Uint32Array(fb.buffer);
+  let H = 0;
+  const mix = (v) => { H = Math.imul(H ^ (v | 0), 16777619) >>> 0; };
+  const mixHit = (h, o) => { mix(h ? 1 : 0); if (h) { fb[0] = o.t; mix(fu[0]); mix(fu[1]); mix(o.ix); mix(o.iy); } };
+  const goldenSets = (wind) => {
+    const res = [];
+    { // AC2 grid
+      const ctx = mk(12, wind), out = makeCarpetHit(), d = [0, 0, 0];
+      if (wind) ctx.windMax = 2; ctx.fpK = -1 / 240; H = 2166136261;
+      const COLS = 240, ROWS = 90, tanH = Math.tan(35 * Math.PI / 180), tanV = tanH * ROWS / COLS * 2;
+      for (const shift of [0, 0.1]) {
+        const A = [-5, -4 + shift, 1.6];
+        for (let cy = 0; cy < ROWS; cy++) for (let cx = 0; cx < COLS; cx++) {
+          const px = (cx + 0.5) / COLS * 2 - 1, py = 1 - (cy + 0.5) / ROWS * 2;
+          const x = Math.cos(0.38) + Math.sin(0.38) * py * tanV, y = -px * tanH, z = -Math.sin(0.38) + Math.cos(0.38) * py * tanV, l = Math.hypot(x, y, z);
+          d[0] = x / l; d[1] = y / l; d[2] = z / l;
+          mixHit(traceCarpet(A, d, terrainT(A, d), ctx, 0, out), out);
+        }
+      }
+      res.push(H);
+    }
+    { // OB-101 flat field, eye 1.7 m
+      const fm = new Uint8Array(400).fill(1), flat = (q) => { q[2] = 0; };
+      const fcfg = { seed: 7, radiusM: 12, variants: [
+        { name: 'meadow', ground: ['grass'], density: 0.75, heightM: [0.15, 0.4], ramp: ['a', 'b'] },
+        { name: 'straw', ground: ['grass'], density: 0.75, heightM: [0.4, 0.9], bladeW: 0.05, ramp: ['a', 'b'] }] };
+      const ctx = makeCarpetCtx({ cfg: fcfg, classMap: fm, x0: -20, y0: -20, w: 20, h: 20 }, flat, wind || null);
+      if (wind) ctx.windMax = 2; ctx.fpK = -1 / 240; H = 2166136261;
+      const out = makeCarpetHit(), e = [0, 0, 1.7], d = [0, 0, 0], r = rng(5);
+      for (const D of [3, 6, 9, 12]) for (let k = 0; k < 600; k++) {
+        const gx = D + (r() - 0.5) * 0.4, gy = (r() - 0.5) * 4, l = Math.hypot(Math.hypot(gx, gy), 1.7);
+        d[0] = gx / l; d[1] = gy / l; d[2] = -1.7 / l;
+        mixHit(traceCarpet(e, d, l, ctx, 0, out), out);
+      }
+      // ascending rays (trees / hills) and a high eye
+      for (let k = 0; k < 600; k++) { e[2] = 1.7 + (k % 3); dirOf(r() * 360, -10 + r() * 40, d); mixHit(traceCarpet(e, d, 3 + r() * 30, ctx, 0, out), out); }
+      res.push(H);
+    }
+    { // AC5 random rays
+      const ctx = mk(2.5, wind), out = makeCarpetHit(), d = [0, 0, 0], e = [0, 0, 0], rA = rng(11);
+      if (wind) ctx.windMax = 2; H = 2166136261;
+      for (let n = 0; n < 10000; n++) {
+        e[0] = -8 + rA() * 14; e[1] = 3 + rA() * 3; e[2] = 0.5 + rA() * 0.6; rA(); rA();
+        dirOf(rA() * 360, -90 + rA() * 75, d);
+        mixHit(traceCarpet(e, d, terrainT(e, d), ctx, n * 0.01, out), out);
+      }
+      res.push(H);
+    }
+    return res;
+  };
+  const GOLD = { calm: GOLD_CALM, wind: GOLD_WIND };
+  const got = { calm: goldenSets(null), wind: goldenSets(windOf(1.6, 1.2)) };
+  if (GOLD.calm === null) console.log('GOLDEN ' + JSON.stringify(got));
+  else for (const k of ['calm', 'wind']) check(JSON.stringify(got[k]) === JSON.stringify(GOLD[k]), `TUFT-PERF-01b golden hash ${k} (AC2 grid / OB-101 field / AC5 rays) ${got[k].join(' ')}`);
+}
+
 if (fails) { console.log(`carpet.test: ${fails} FAILED`); process.exit(1); }
 console.log('carpet.test: all passed');
 
