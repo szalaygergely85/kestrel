@@ -39,6 +39,7 @@ export { readZip, writeZip, crc32, checkZipPath, ZIP_LIMITS } from './content/zi
 
 // ---- world ----------------------------------------------------------------
 export { World, stepSectorAnims, PROP_SCALE_MIN, PROP_SCALE_MAX } from './world/World.js';
+export { validateCarpetConfig, buildCarpetClassMap, CARPET_MAX_VARIANTS, CARPET_DEFAULTS } from './world/carpet.js';
 export { scatterTrees, validateScatterConfig, scatterDetail, validateDetailConfig, hash2 } from './world/scatter.js';
 export { Terrain } from './world/Terrain.js';
 export { createEditLayer, editLayerFromJSON, editLayerToJSON, applyDab, editHeightAt, heightDelta, typePaint, sampleDh, sampleType, setSampleDh, setSampleType, NO_PAINT } from './world/terrainEdits.js'; // ED-TERRAIN-1a

@@ -6,6 +6,7 @@ import { validatePolygon, compilePolygon } from '../physics/bounds.js';
 import { makeGrid, zoneAt, zoneId, best as bandBest, pick as bandPick, marginX as bandMarginX, marginY as bandMarginY } from './bandGrid.js';
 import { loadLevel, isTerrainFloor } from './Level.js';
 import { Terrain } from './Terrain.js';
+import { validateCarpetConfig, buildCarpetClassMap } from './carpet.js';
 import { scatterTrees, scatterDetail, TreeScatterJob, DetailScatterJob } from './scatter.js';
 import { packLevel, updateAnimatedSector } from './packed.js';
 import { Entity } from '../entities/Entity.js';
@@ -269,6 +270,8 @@ export class World {
     this._kinCollider = null;
     this._kinSlot = new Map(); // CH1-E2: kinematic entity id -> prism slot in 'npcs:kinematic'
     this._groundSnap = []; // ED-TERRAIN-1b: [{id, x, y}] of `z: 'ground'` props/entities, re-snapped after a terrain stroke.
+    this.carpet = null; // OB-073-D2a: derived {cfg, classMap, x0, y0, w, h}, never serialized or hashed.
+    this._carpetCtx = null;
     this._detailCtx = null; // ED-TERRAIN-1b: {cfg, keepOut} the detail scatter was built with.
     // ME-11a (docs/architecture.md 27.18): 'grid' (default, unchanged
     // behaviour) or 'mesh'. Content, not state - never goes through
@@ -555,6 +558,10 @@ export class World {
     }
 
     if (w.terrain?.realTrees && w.terrain.nearReady) w.scatter = scatterTrees(w.terrain, w.structures);
+    if (opts.carpet && w.terrain) {
+      w._carpetCtx = { cfg: validateCarpetConfig(opts.carpet, w.terrain.typeNames), recipe: w.terrain.recipe };
+      w._rebuildCarpet();
+    }
     if (opts.detail === true && w.terrain?.nearReady && w.terrain.recipe.recipe?.detail) {
       const cfg = w.terrain.recipe.recipe.detail, keepOut = [];
       // Only registered authored positions: saved/live entities must never move the grass.
@@ -1220,6 +1227,7 @@ export class World {
     terrain._nearKey = nearBandKey(this, z.cx0, z.cy0, z.cw, z.ch) + `|realTrees:${terrain.realTrees}`;
     if (terrain.realTrees) this.scatter = j.scatter;
     if (this._detailCtx) this.detail = j.detailSet;
+    this._rebuildCarpet();
     if (this.physicsMode === 'mesh') {
       const put = (id, collider) => {
         const i = this.colliders.findIndex((c) => c.id === id);
@@ -1335,6 +1343,15 @@ export class World {
     return true;
   }
 
+  /** OB-073-D2a (38.52): (re)build the carpet class map for the current near band; reuses the buffer. */
+  _rebuildCarpet() {
+    const c = this._carpetCtx;
+    if (!c || !this.terrain?.nearReady) return;
+    const m = buildCarpetClassMap(this.terrain, c.recipe, c.cfg, this.carpet);
+    if (!this.carpet) this.carpet = { cfg: c.cfg, classMap: null, x0: 0, y0: 0, w: 0, h: 0 };
+    this.carpet.classMap = m.classMap; this.carpet.x0 = m.x0; this.carpet.y0 = m.y0; this.carpet.w = m.w; this.carpet.h = m.h;
+  }
+
   /**
    * ED-TERRAIN-1b (arch 37.12): the stroke-end rebuild after live terrain edits (`Terrain.rebakeRect` per dab).
    * Recomputes the exact height bounds, re-runs the tree and ground-detail scatter, replaces their trunk/detail
@@ -1349,6 +1366,7 @@ export class World {
     terrain.recomputeBounds();
     if (terrain.realTrees) this.scatter = scatterTrees(terrain, this.structures);
     if (this._detailCtx) this.detail = scatterDetail(terrain, this.structures, this._detailCtx.keepOut, this._detailCtx.cfg);
+    this._rebuildCarpet();
     if (this.physicsMode === 'mesh') {
       const put = (id, collider) => {
         const i = this.colliders.findIndex((c) => c.id === id);
