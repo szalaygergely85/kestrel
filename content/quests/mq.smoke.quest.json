@@ -5,8 +5,8 @@
   "main": true,
   "requires": [{ "quest": "mq.ford.mirror", "done": true }],
   "objectives": [
-    { "id": "mark", "text": "Look at the mark on the relay", "when": { "type": "flag", "id": "lore.fordMark.read", "equals": true } },
-    { "id": "north", "text": "Follow the footpath north", "when": { "type": "area", "id": "northLook" } }
+    { "id": "mark", "text": "Look at the mark on the relay", "journal": "The Ford Relay hums again. Someone cut a mark into it. Look closer.", "when": { "type": "flag", "id": "lore.fordMark.read", "equals": true } },
+    { "id": "north", "text": "Follow the footpath north", "journal": "Smoke rises in the north. Follow the footpath toward it.", "when": { "type": "area", "id": "northLook" } }
   ],
   "abandonable": false
 }

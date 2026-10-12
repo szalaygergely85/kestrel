@@ -111,7 +111,7 @@ export function expandQuest(src, ctx = {}) {
     if (!Array.isArray(src.objectives)) fail(src, 'template or objectives required');
     objectives = structuredClone(src.objectives);
   } else {
-    const steps = src.steps !== undefined ? src.steps : [{ template: src.template, params: src.params, objText: src.objText }];
+    const steps = src.steps !== undefined ? src.steps : [{ template: src.template, params: src.params, objText: src.objText, journal: src.journal }];
     if (!Array.isArray(steps) || !steps.length) fail(src, 'invalid steps');
     objectives = [];
     steps.forEach((st, i) => {

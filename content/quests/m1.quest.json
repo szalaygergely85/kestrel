@@ -11,15 +11,15 @@
     { "id": "q06", "title": "The Next Light" }
   ],
   "objectives": [
-    { "id": "wake", "section": "q01", "text": "Get up from the wreck", "journal": "You came to in the wreck of the tower. Everything hurts. Get up.", "when": { "type": "flag", "id": "wake", "equals": true } },
-    { "id": "breach", "section": "q01", "text": "Climb to the top of the tower", "journal": "You found a note pinned to the wall. Climb up to the breach at the top of the tower.", "when": { "type": "area", "id": "breach" } },
-    { "id": "sword", "section": "q01", "text": "Take up the ruin steel", "journal": "You found a note pinned to the wall. Climb up and take the sword.", "when": { "type": "item", "id": "sword" } },
-    { "id": "leave", "section": "q02", "text": "Leave through the tower door", "journal": "You have the sword. Meet the bear outside, through the tower door.", "when": { "type": "area", "id": "towerDoor" } },
-    { "id": "beasts", "section": "q03", "text": "Help Burl with the boars", "journal": "The bear says the slope is full of boars. Help Burl clear them.", "when": { "type": "flag", "id": "quest.burl.boars.done", "equals": true } },
-    { "id": "follow", "section": "q04", "text": "Follow the bear", "journal": "The boars are quiet. Burl wants you to follow him.", "when": { "type": "flag", "id": "burl.arrived", "equals": true } },
-    { "id": "waystone", "section": "q05", "text": "Wake the waystone", "journal": "Burl showed you an old waystone. Wake it.", "when": { "type": "flag", "id": "waystone.waystone.woken", "equals": true } },
-    { "id": "road", "section": "q06", "text": "Take the road west", "journal": "The waystone is awake. The road west is open.", "when": { "type": "area", "id": "roadWest" } },
-    { "id": "relayFound", "section": "q06", "text": "Find the dead relay at the bend", "journal": "Somewhere along the road a dead relay waits at the bend. Find it.", "when": { "type": "area", "id": "bendRelay" } },
-    { "id": "relay1", "section": "q06", "text": "Wake the relay", "journal": "You found the dead relay at the bend. Wake it.", "when": { "type": "flag", "id": "waystone.ws_roadBend.woken", "equals": true } }
+    { "id": "wake", "section": "q01", "text": "Get up from the wreck", "journal": "The Kestrel came down through a tower roof. Get up from the wreck and look around.", "when": { "type": "flag", "id": "wake", "equals": true } },
+    { "id": "breach", "section": "q01", "text": "Climb to the top of the tower", "journal": "You are alive, and the wreck still smokes. Climb to the top of the tower.", "when": { "type": "area", "id": "breach" } },
+    { "id": "sword", "section": "q01", "text": "Take up the ruin steel", "journal": "You reached the top. Take up the ruin steel lying in the ashes.", "when": { "type": "item", "id": "sword" } },
+    { "id": "leave", "section": "q02", "text": "Leave through the tower door", "journal": "You have the sword. Go down and out through the tower door.", "when": { "type": "area", "id": "towerDoor" } },
+    { "id": "beasts", "section": "q03", "text": "Help Burl with the boars", "journal": "The old bear outside talks. Help her drive the wild boars from the woods.", "when": { "type": "flag", "id": "quest.burl.boars.done", "equals": true } },
+    { "id": "follow", "section": "q04", "text": "Follow the bear", "journal": "The boars are gone, and the bear has a name: Burl. Follow her to where she leads.", "when": { "type": "flag", "id": "burl.arrived", "equals": true } },
+    { "id": "waystone", "section": "q05", "text": "Wake the waystone", "journal": "Burl brought you to an old stone in the meadow. It is dark. Wake it.", "when": { "type": "flag", "id": "waystone.waystone.woken", "equals": true } },
+    { "id": "road", "section": "q06", "text": "Take the road west", "journal": "The stone woke and glows. Take the road west, toward the next light.", "when": { "type": "area", "id": "roadWest" } },
+    { "id": "relayFound", "section": "q06", "text": "Find the dead relay at the bend", "journal": "The road bends ahead. Somewhere near it stands a dead relay. Find it.", "when": { "type": "area", "id": "bendRelay" } },
+    { "id": "relay1", "section": "q06", "text": "Wake the relay", "journal": "You found the relay at the bend, cold and silent. Wake it.", "when": { "type": "flag", "id": "waystone.ws_roadBend.woken", "equals": true } }
   ]
 }
