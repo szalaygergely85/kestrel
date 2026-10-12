@@ -48,6 +48,7 @@ export class WgCellPass {
     this.rBind = { uniforms: this.ru, textures: this.rTex };
     this.dBind = { uniforms: this.du, textures: this.dTex };
     this.terms = { tanHalfHFov: 0, planeDistY: 0 };
+    this.carpet = null; // OB-073-D2d: WgCarpetPass (set by the pipeline on setCarpet); null = never encoded
   }
 
   /** Test hook: forwards the bound MaterialTable + palette (the shade pass packs lazily, only when they change). */
@@ -93,9 +94,10 @@ export class WgCellPass {
     }
     // WG-3b: light (needs the camera + world; without them the frame has no lit content)
     if (sceneOk) {
+      let tl = t; // OB-073-D2d: carpet after resolve/deriv/water, before light (no free timer slot: it is counted in 'light')
       wgSpanBegin(p, WG_PASS_SLOT.light);
-      try { this.lightPass.run(p, t); } finally { wgSpanEnd(p); }
-      this.shaded = this.shadePass.run(p, t, this.lightPass.cam, wp); // WG-3c (+ water composite WG-3e)
+      try { const cp = this.carpet; if (cp && cp.active) tl = cp.run(p, t) || t; this.lightPass.run(p, tl); } finally { wgSpanEnd(p); }
+      this.shaded = this.shadePass.run(p, tl, this.lightPass.cam, wp); // WG-3c (+ water composite WG-3e)
     }
   }
 

@@ -14,6 +14,7 @@
 // result is observable through readbackCells() (`?gpucompare=1` / `=shade` cell rows).
 import { bootNow, span as bootSpan } from '../../../core/bootMarks.js'; // BOOT-SPEED-01
 import { allocWgTargets, freeWgTargets } from './targets.js';
+import { WgCarpetPass } from './passCarpet.js'; // OB-073-D2d
 import { WG_PASS_NAMES, WG_PASS_SLOT } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 import { DEBUG_BLOCK, DEBUG_WGSL, DEBUG_TEXTURES } from '../wgsl/debug.wgsl.js';
 import { WgRasterPass } from './passRaster.js';
@@ -27,7 +28,7 @@ import { WgGlowPass } from './passGlow.js'; // EMIS-03/04
 import { WgStablePass } from './passStable.js'; // US-073c (38.25)
 
 // Same list/order as GpuCellPipeline.PASS_NAMES (stats.passMs* line up with it).
-export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'light', 'shade', 'edge', 'shadow', 'water', 'wcomp']);
+export const PASS_NAMES = Object.freeze(['cast', 'terrain', 'voxel', 'resolve', 'carpet', 'light', 'shade', 'edge', 'shadow', 'water', 'wcomp']);
 // S8-B1-07: the REAL per-pass GPU timer (WG_PASS_NAMES/WG_PASS_SLOT, WebGpuTimer.js) - re-exported so main.js's F3 line can
 // import them from here like it already does PASS_NAMES/GpuCellPipeline. stats.wgPassMsP50/P95 line up with WG_PASS_NAMES.
 export { WG_PASS_NAMES, WG_PASS_SLOT };
@@ -97,6 +98,7 @@ export class WgCellPipeline {
     this._pipeDebug = null;
     this._rasterPass = null;
     this._cellPass = null;
+    /** @type {WgCarpetPass|null} */ this._carpetPass = null; // OB-073-D2d: created by setCarpet (non-null) only
     this._shadowPass = null;
     this._pointShadowPass = null; // ME-16e (38.22)
     this._pshFails = 0;           // consecutive point-shadow run failures (2 = disabled for the session)
@@ -141,6 +143,7 @@ export class WgCellPipeline {
       this._waterPass.resize(this.cols, this.rows, this.rays);
       bootSpan('pass water (ctor total)', tp); tp = bootNow();
       this._cellPass = new WgCellPass(this.device, this._shadowPass, this._waterPass, this.stableOpt ? { stable: true } : null);
+      if (this._carpetPass) this._cellPass.carpet = this._carpetPass;
       this._cellPass.lightPass.pointPass = this._pointShadowPass;
       bootSpan('pass cell (ctor total)', tp);
       if (this.stableOpt) { this._stablePass = new WgStablePass(this.device); this._stablePass.resize(this.cols, this.rows); this._stableOn = true; }
@@ -437,6 +440,17 @@ export class WgCellPipeline {
   /** S8-B2-10c: camera cut / teleport - the next frame's cull phase 1 runs with hzbOn 0 (no-op with occl off). */
   invalidateHzb() { if (this._rasterPass) this._rasterPass.invalidateHzb(); }
   /** US-073c: camera cut / teleport / world load - the next frame's stable pass copies fresh cells instead of blending history. No-op with stable off. */
+  /**
+   * OB-073-D2d: grass carpet (38.52). carpet = world.carpet or null (off: no pass object, nothing encoded); nearH = {data,w,h,x0,y0,cell}; version bumps on a
+   * rebake (class map / near band re-upload only then). Created on first use, so a carpet-less run never compiles the pipeline.
+   */
+  setCarpet(carpet, nearH, version) {
+    if (!carpet && !this._carpetPass) return;
+    if (!this._carpetPass) { this._carpetPass = new WgCarpetPass(this.device); if (this._cellPass) this._cellPass.carpet = this._carpetPass; }
+    this._carpetPass.setCarpet(carpet, nearH, version);
+  }
+  /** per frame: wind clock (s) and the wind field params (createWind(..).params or null) */
+  setCarpetFrame(timeSec, windParams) { const cp = this._carpetPass; if (cp) { cp.setTime(timeSec); cp.setWind(windParams); } }
   invalidateHistory() { if (this._stablePass) this._stablePass.invalidate(); }
   /** US-073c: runtime toggle (needs `opts.stable` at construction); enabling starts with invalid history. @param {boolean} on */
   setStable(on) { if (!this._stablePass) return; this._stableOn = !!on; this._stablePass.invalidate(); if (!on) this._stableRan = false; }
@@ -580,6 +594,7 @@ export class WgCellPipeline {
     this._pipeDebug = null;
     if (this._rasterPass) this._rasterPass.dispose();
     this._rasterPass = null;
+    if (this._carpetPass) { try { this._carpetPass.dispose(); } catch (_) { /* best effort */ } this._carpetPass = null; }
     if (this._cellPass) this._cellPass.dispose();
     this._cellPass = null;
     if (this._stablePass) this._stablePass.dispose();
