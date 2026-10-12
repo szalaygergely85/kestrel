@@ -52,12 +52,12 @@ for (const id of IDS) {
 { // parcel: owBoard -> owForge
   const { b, inv } = mk();
   ok(b.accept('sq.ow.parcel'), 'parcel accepted');
-  ok((inv.get('packet') || 0) === 1, 'accept gives the packet');
-  b.feed({ type: 'item:count', id: 'packet', n: 1 });
+  ok((inv.get('parcel') || 0) === 1, 'accept gives the parcel');
+  b.feed({ type: 'item:count', id: 'parcel', n: 1 });
   const g = get('sq.ow.parcel').giver;
   ok(g.npc === 'owBoard' && g.turnIn === 'owForge', 'board -> forge');
-  ok(b.statusOf('sq.ow.parcel') === READY, 'ready once the packet is in hand');
-  ok(!!b.handIn('sq.ow.parcel') && done(b, 'sq.ow.parcel') && (inv.get('packet') || 0) === 0, 'delivered, packet left the pack');
+  ok(b.statusOf('sq.ow.parcel') === READY, 'ready once the parcel is in hand');
+  ok(!!b.handIn('sq.ow.parcel') && done(b, 'sq.ow.parcel') && (inv.get('parcel') || 0) === 0, 'delivered, parcel left the pack');
 }
 { // explore the far bank
   const { b } = mk();
