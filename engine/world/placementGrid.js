@@ -57,6 +57,9 @@ export class PlacementGrid {
     this.cellMinX = new Float32Array(C).fill(Infinity); this.cellMinY = new Float32Array(C).fill(Infinity);
     this.cellMaxX = new Float32Array(C).fill(-Infinity); this.cellMaxY = new Float32Array(C).fill(-Infinity);
     this.cellReach = new Float32Array(C);
+    // per-reach-class cell counts (class 0..4 doubling from minM), for the 01a/01b log and the F3 line
+    this.classCells = new Int32Array(5);
+    for (const k of keyOf.keys()) this.classCells[k - 8 * Math.floor(k / 8)]++;
     this.memStart = new Int32Array(C + 1);
     for (let i = 0; i < n; i++) {
       const c = rawKey[i];
@@ -80,6 +83,9 @@ export class PlacementGrid {
     this._chgD = new Float32Array(C);
     this.memberCount = members;
   }
+
+  /** True once `update` ran at least once (a shadow-only feed on a never-updated grid must classify first). */
+  get evaluated() { return !this._first; }
 
   /** Approximate resident bytes of the grid (typed arrays). */
   get bytes() {
