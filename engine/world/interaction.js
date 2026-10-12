@@ -35,7 +35,8 @@ export const PICK_PAD = 0.15;    // OB-066: every pick volume is inflated by thi
 export const HYST_PAD = 0.1;     // ...and the held target's volume by this much more
 const DEFAULT_HALF_W = 0.25;     // default pick volume: 0.5 m wide,
 const DEFAULT_HEIGHT = 0.8;      // ...0.8 m tall (rec.height overrides), centred on rec.x/y/z
-const LOS_BACKOFF = 0.05;        // LOS is checked to just in front of the hit point (a note sits flush on a wall)
+const INSIDE_COS = Math.cos(35 * Math.PI / 180); // OB-084: eye inside a pick box -> the box centre must be within 35 deg of the crosshair
+const LOS_BACKOFF = 0.05;       // LOS is checked to just in front of the hit point (a note sits flush on a wall)
 const LOS_STEP = 0.1;
 const LOS_MAX_SAMPLES = 20;
 const losGrid = { x: 0, y: 0, z: 0 }; // gridLocal scratch (rule 9)
@@ -130,9 +131,15 @@ export function findInteractTarget(world, eye, cfg, out) {
     const maxT = (rec.radius < reach ? rec.radius : reach) + (isPrev ? HYST_REACH : 0);
     const pad = PICK_PAD + (isPrev ? HYST_PAD : 0);
     let x0, y0, z0, x1, y1, z1;
+    // OB-084: a level item on a prop picks on the prop's whole collider body (resolved once, props are static)
+    if (rec.pick === undefined && rec.propId && !rec.bodyId) rec.pick = (world.propPickBox && world.propPickBox(rec.propId)) || null;
     const pk = rec.pick;
+    const be = rec.bodyId ? world.entity(rec.bodyId) : null;
     if (pk) { x0 = pk.x0; y0 = pk.y0; z0 = pk.z0; x1 = pk.x1; y1 = pk.y1; z1 = pk.z1; }
-    else {
+    else if (be) { // OB-084: a moving body (NPC, corpse, pickup): a box around the LIVE entity, bodyR wide, bodyH tall from its feet
+      const bt = be.transform, br = rec.bodyR, bh = rec.bodyH;
+      x0 = bt.x - br; x1 = bt.x + br; y0 = bt.y - br; y1 = bt.y + br; z0 = bt.z; z1 = bt.z + bh;
+    } else {
       const hh = (typeof rec.height === 'number' ? rec.height : DEFAULT_HEIGHT) * 0.5;
       x0 = rec.x - DEFAULT_HALF_W; x1 = rec.x + DEFAULT_HALF_W;
       y0 = rec.y - DEFAULT_HALF_W; y1 = rec.y + DEFAULT_HALF_W;
@@ -152,6 +159,12 @@ export function findInteractTarget(world, eye, cfg, out) {
     if (v > -1e-9 && v < 1e-9) { if (o < z0 || o > z1) continue; }
     else { let t0 = (z0 - o) / v, t1 = (z1 - o) / v; if (t0 > t1) { const q = t0; t0 = t1; t1 = q; } if (t0 > tn) tn = t0; if (t1 < tf) tf = t1; if (tn > tf) continue; }
     if (tn >= bestT) continue;
+    // OB-084: the eye INSIDE the (padded) box hits in every direction -> only when the box centre is within INSIDE_CONE of the crosshair
+    if (tn === 0) {
+      const cx = (x0 + x1) * 0.5 - eye.x, cy = (y0 + y1) * 0.5 - eye.y, cz = (z0 + z1) * 0.5 - eye.z;
+      const cl = Math.sqrt(cx * cx + cy * cy + cz * cz);
+      if (cl > 1e-6 && (cx * vx + cy * vy + cz * vz) / cl < INSIDE_COS) continue;
+    }
 
     if (tn > LOS_BACKOFF) {
       const tl = tn - LOS_BACKOFF;

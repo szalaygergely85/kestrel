@@ -42,7 +42,7 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
         // QL-05: "[E] Pick" prompt (the take itself stays in onTick; the behaviour 'pickup.take' is a no-op that only shows the prompt)
         if (!c.world.addInteractable) return;
         c.world.removeInteractable('qp.' + id);
-        c.world.addInteractable({ key: 'qp.' + id, name: 'pickup.take', x: e.transform.x, y: e.transform.y, z: e.transform.z + 0.3, radius: REACH, prompt: ('[E] Pick up ' + String(q.item).replace(/[._]/g, ' ')).slice(0, 28), def: { pickupId: id } });
+        c.world.addInteractable({ key: 'qp.' + id, name: 'pickup.take', x: e.transform.x, y: e.transform.y, z: e.transform.z + 0.3, radius: REACH, prompt: ('[E] Pick up ' + String(q.item).replace(/[._]/g, ' ')).slice(0, 28), def: { pickupId: id }, bodyId: id, bodyR: 0.35, bodyH: 0.7 }); // OB-084: [E] on the whole item
       });
     },
     onTick() {

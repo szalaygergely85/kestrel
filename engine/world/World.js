@@ -1773,6 +1773,8 @@ export class World {
     };
     if (spec.pick) rec.pick = spec.pick; // OB-066: optional world AABB {x0,y0,z0,x1,y1,z1} the crosshair ray tests
     if (typeof spec.height === 'number') rec.height = spec.height;
+    // OB-084: `bodyId` = an entity whose live body (bodyR wide, bodyH tall from its feet) is the pick volume (NPC, corpse, pickup)
+    if (spec.bodyId) { rec.bodyId = spec.bodyId; rec.bodyR = typeof spec.bodyR === 'number' ? spec.bodyR : 0.4; rec.bodyH = typeof spec.bodyH === 'number' ? spec.bodyH : 1.8; }
     list.push(rec);
     return rec;
   }
