@@ -88,6 +88,14 @@
   still the old (stale) kit. If the BEFORE row says "kit missing", write the snapshot (command in the checks).
 </div>
 <div id="compare"></div>
+<h3>0b. OB-092 grip hands close-up (AFTER, generator): right hand front / outer side / inner side / top-down into the grip channel / 3/4, without and with the staff; left hand front + side</h3>
+<div class="note">
+  The fingers curl around an open 2 x 2 grip channel (X 12-13, Y -5..-4, z 27-34) in front of the back-of-hand block, thumb wrapped over
+  the front at z 32-33. White dot = the <code>hand_r</code> / <code>hand_l</code> anchor (must sit in the channel centre). "top-down" looks
+  straight down the channel: bare = you see through the hole; staff = the shaft fills it. Gloved looks (thick-1 shell) fill the hole in the
+  composer (no keep-out yet) - the held item still passes through.
+</div>
+<div id="hands"></div>
 
 <h2>1. All 5 skin tones: default outfit front / 3/4 / profile, knight outfit front / 3/4 / profile, knight face front / 3/4 / profile</h2>
 <div id="sheet"></div>
@@ -663,11 +671,43 @@
     });
   }
 
+  // ------------------------------------------------------------------ section 0b: OB-092 grip hands close-up
+  var HAND_VIEWS = [[0, 10, 'front'], [-90, 10, 'outer side'], [90, 10, 'inner side'], [0, 85, 'top-down'], [-35, 25, '3/4']];
+  var handRows = null, handGrids = null;
+  function staffLook(K) { var r = JSON.parse(JSON.stringify(K.defaults)); r.hat = { id: 'staff', ramp: 'walnut' }; return r; }
+  function renderHands() {
+    var K = kitV4, AN = K.bases.m_avg.anchors;
+    if (!handGrids) handGrids = { bare: CK.decodeBase(K, 'm_avg'), 'default': CK.composePreview(K, 'm_avg', K.defaults),
+                                  staff: CK.composePreview(K, 'm_avg', staffLook(K)) };
+    var ROWS = [['bare', 'hand_r', HAND_VIEWS], ['default', 'hand_r', HAND_VIEWS], ['staff', 'hand_r', HAND_VIEWS],
+                ['bare', 'hand_l', [[0, 10, 'front'], [90, 10, 'outer side'], [0, 85, 'top-down']]]];
+    if (!handRows) {
+      handRows = ROWS.map(function (R) {
+        var row = document.createElement('div'); row.className = 'row'; $('hands').appendChild(row);
+        var lab = document.createElement('div'); lab.className = 'tlabel'; lab.textContent = R[0] + ' ' + R[1]; row.appendChild(lab);
+        return R[2].map(function (v) { return makeCanvas(row, 150, 150, R[0] + ' ' + R[1] + ' ' + v[2]); });
+      });
+    }
+    ROWS.forEach(function (R, ri) {
+      var a = AN[R[1]], rc = recipe(ctl.tone, R[0] === 'staff' ? 'default' : R[0]);
+      if (R[0] === 'staff') rc.hat = { id: 'staff', ramp: 'walnut' };
+      var col = colOf(charTable(rc));
+      withGrid(handGrids[R[0]], function () {
+        handRows[ri].forEach(function (v, j) {
+          var V = R[2][j], cam = orthoCam([a[0], a[1], a[2]], V[0], V[1], 150, 150, 16);
+          paintMesh(v.ctx, traceView(cam, null), col);
+          var p = cam.project([a[0], a[1], a[2]]);
+          v.ctx.fillStyle = '#ffffff'; v.ctx.fillRect(p[0] - 2, p[1] - 2, 4, 4);
+        });
+      });
+    });
+  }
+
   // ------------------------------------------------------------------ main
   function renderAll() {
     try {
       if (ctl.outfit !== builtOutfit || kit !== builtKit) setup();
-      renderCompare(); renderSheet(); renderTones(); renderAngles(); renderAscii(); renderRig();
+      renderCompare(); renderHands(); renderSheet(); renderTones(); renderAngles(); renderAscii(); renderRig();
     } catch (e) { $('fatal').textContent = 'render threw: ' + e.message; console.error(e); }
   }
   var pend = 0;
