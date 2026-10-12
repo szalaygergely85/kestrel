@@ -30,7 +30,7 @@ let steps = 0, worst = 0;
 for (const [name, pts] of LEGS) {
   let peakRes = 0, peakMesh = 0, minRes = 1e9; const tally = (arr, n, set) => { for (let k = 0; k < n; k++) set.add(meshOf(arr[k])); };
   const walk = (x, y) => {
-    g.update(x, y); let guard = 0; while (g._pending && guard++ < 200) g.update(x + 1e-3 * guard, y); // drain the capped queue
+    g.update(x, y); let guard = 0; while (g.pending && guard++ < 200) g.update(x + 1e-3 * guard, y); // drain the capped queue
     steps++;
     const inAct = new Uint8Array(st.length); for (let k = 0; k < g.activeCount; k++) inAct[g.activeList[k]] = 1;
     for (let i = 0; i < st.length; i++) {

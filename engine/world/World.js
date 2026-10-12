@@ -1807,17 +1807,8 @@ export class World {
     return rec;
   }
 
-  /**
-   * OB-066: world AABB {x0,y0,z0,x1,y1,z1} of a prop's collider shapes (level `colliders` or the model's), for a
-   * crosshair pick volume; null when the prop has none. Static (read once at add time).
-   * @param {string} id entity id
-   */
-  /**
-   * OB-088: the prop's collider shapes as oriented world boxes [{cx,cy,cz,hx,hy,hz,c,s}] (cylinders as their square box,
-   * c/s = cos/sin of the shape's world yaw) for the crosshair pick; null when the prop has none. Static (read at add time).
-   * @param {string} id entity id
-   */
-  propPickShapes(id) {
+  /** Shared by propPickBox / propPickShapes: the prop entity + its collider defs (level override or the model's), or null. */
+  _propColliderDefs(id) {
     const e = this.entity(id);
     if (!e || e.type !== 'prop') return null;
     const comp = e.components.voxel || e.components.sprite;
@@ -1825,31 +1816,18 @@ export class World {
     const st = this.structures.find((q) => q.id === sid);
     const p = st && st.level && st.level.def && (st.level.def.props || []).find((q) => q.id === pid);
     const defs = p && Object.hasOwn(p, 'colliders') ? p.colliders : (comp && this.assets.model(comp.model).colliders);
-    if (!Array.isArray(defs) || !defs.length) return null;
-    const t = e.transform, sc = t.scale || 1, yaw = (t.yawDeg || 0) * Math.PI / 180, c = Math.cos(yaw), sn = Math.sin(yaw);
-    const out = [];
-    for (const d of defs) {
-      if (!d || !Array.isArray(d.c)) continue;
-      const box = d.type === 'box' && Array.isArray(d.half);
-      const a = (d.yawDeg || 0) * Math.PI / 180 + yaw;
-      out.push({
-        cx: t.x + (c * d.c[0] - sn * d.c[1]) * sc, cy: t.y + (sn * d.c[0] + c * d.c[1]) * sc, cz: t.z + d.c[2] * sc,
-        hx: (box ? d.half[0] : d.r) * sc, hy: (box ? d.half[1] : d.r) * sc, hz: (box ? d.half[2] : d.h / 2) * sc,
-        c: Math.cos(a), s: Math.sin(a),
-      });
-    }
-    return out.length ? out : null;
+    return Array.isArray(defs) && defs.length ? { e, defs } : null;
   }
 
+  /**
+   * OB-066: world AABB {x0,y0,z0,x1,y1,z1} of a prop's collider shapes (level `colliders` or the model's), for a
+   * crosshair pick volume; null when the prop has none. Static (read once at add time).
+   * @param {string} id entity id
+   */
   propPickBox(id) {
-    const e = this.entity(id);
-    if (!e || e.type !== 'prop') return null;
-    const comp = e.components.voxel || e.components.sprite;
-    const sid = id.slice(0, id.indexOf('.')), pid = id.slice(id.indexOf('.') + 1);
-    const s = this.structures.find((q) => q.id === sid);
-    const p = s && s.level && s.level.def && (s.level.def.props || []).find((q) => q.id === pid);
-    const defs = p && Object.hasOwn(p, 'colliders') ? p.colliders : (comp && this.assets.model(comp.model).colliders);
-    if (!Array.isArray(defs) || !defs.length) return null;
+    const q = this._propColliderDefs(id);
+    if (!q) return null;
+    const { e, defs } = q;
     const t = e.transform, sc = t.scale || 1, yaw = (t.yawDeg || 0) * Math.PI / 180, c = Math.cos(yaw), sn = Math.sin(yaw);
     const r = { x0: Infinity, y0: Infinity, z0: Infinity, x1: -Infinity, y1: -Infinity, z1: -Infinity };
     for (const d of defs) {
@@ -1866,6 +1844,30 @@ export class World {
       if (cz - hz * sc < r.z0) r.z0 = cz - hz * sc; if (cz + hz * sc > r.z1) r.z1 = cz + hz * sc;
     }
     return r.x0 === Infinity ? null : r;
+  }
+
+  /**
+   * OB-088: the prop's collider shapes as oriented world boxes [{cx,cy,cz,hx,hy,hz,c,s}] (cylinders as their square box,
+   * c/s = cos/sin of the shape's world yaw) for the crosshair pick; null when the prop has none. Static (read at add time).
+   * @param {string} id entity id
+   */
+  propPickShapes(id) {
+    const q = this._propColliderDefs(id);
+    if (!q) return null;
+    const { e, defs } = q;
+    const t = e.transform, sc = t.scale || 1, yaw = (t.yawDeg || 0) * Math.PI / 180, c = Math.cos(yaw), sn = Math.sin(yaw);
+    const out = [];
+    for (const d of defs) {
+      if (!d || !Array.isArray(d.c)) continue;
+      const box = d.type === 'box' && Array.isArray(d.half);
+      const a = (d.yawDeg || 0) * Math.PI / 180 + yaw;
+      out.push({
+        cx: t.x + (c * d.c[0] - sn * d.c[1]) * sc, cy: t.y + (sn * d.c[0] + c * d.c[1]) * sc, cz: t.z + d.c[2] * sc,
+        hx: (box ? d.half[0] : d.r) * sc, hy: (box ? d.half[1] : d.r) * sc, hz: (box ? d.half[2] : d.h / 2) * sc,
+        c: Math.cos(a), s: Math.sin(a),
+      });
+    }
+    return out.length ? out : null;
   }
 
   /**

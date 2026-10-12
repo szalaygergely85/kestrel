@@ -166,6 +166,7 @@ import { createDialogueCtl, setDialogueApi } from './quest/dialogueCtl.js'; // D
 import { createCrystalGrant } from './quest/crystal.js'; // CH1-MOUNT: CH1-03 aether crystal after the boars
 import { createNpcWalk } from './quest/npcWalk.js'; // CH1-07
 import { createBurlEscort } from './quest/burlEscort.js'; // CH1-07
+import { createNubFollow } from './quest/nubFollow.js'; // NUB-01: Burl's cub follows her
 import { createBarks } from './quest/barks.js'; // CH1-MOUNT: CH1-06 bark one-liners (Burl)
 import { createChapterCard, CHAPTER2_TEXT, FLAG_DONE_CH2 } from './quest/chapterCard.js'; // CH1-MOUNT: CH1-09 chapter end card
 import { createNoticeView } from './ui/noticeView.js'; // CH1-MOUNT: CH1-04a notice banner
@@ -1198,6 +1199,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   let crystal = null, barks = null, chapterCard = null, chapterCard2 = null, ch1Hidden = true;
   let burlReopen = false; // PO-CH1-07 latch
   let escort = null; // CH1-07 Burl escort (rebuilt per world, saves live only)
+  let nub = null; const nubWtmp = {}; // NUB-01: Nub's follow behaviour (rebuilt per world, never saved)
   window.__debug.notice = notice; window.__debug.ch1Hidden = () => ch1Hidden; // tools/verify-relay-wake.mjs
   engine.events.on('beast:died', (p) => { // crystal burst lands where the last boar fell
     if (!crystal || !p || typeof p.id !== 'string') return;
@@ -1523,6 +1525,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         if (bearBarks) barks = createBarks({ world, data: bearBarks, questFlag: (k) => rq.questFlag(k), dialogue: dialogueCtl, style: window.ASSETS.uiStyle.dialogue });
         // CH1-07 (38.37 item 5): Burl walks (follow -> stone, depart) + proximity talk; load rules per phase. Needs the bear entity.
         const rm = (id) => world.removeInteractable('npc.' + id), nearTalk = (id) => dialogueCtl.openFor(id);
+        nub = null; // NUB-01: rebuilt below with Burl's walk
         const bw = bearTurn ? createNpcWalk(world, 'bear', { barks, removeInteractable: rm }) : null;
         if (bw) {
           const bt = world.get('bear').data.transform;
@@ -1530,6 +1533,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
             dialogueOpen: () => dialogueCtl.open, afterLeave: () => rq.state.completed.includes('leave'), requestOpen: nearTalk, noticeBusy: () => notice.active,
             restore: () => dialogueCtl.addNpc('bear'), hideSafe: true, leadStatus: () => rq.book.statusOf('sq.burl.walk') }); // sq.burl.walk: Burl leads along walks.toBend // QL-05: Burl's home switch re-adds her [E] Talk
           escort.load();
+          const nubH = world.get('nub'); // NUB-01
+          nub = nubH ? createNubFollow({ handle: nubH, groundAt: (x, y) => (world.terrain ? world.terrain.groundAt(x, y) : bt.z), isWater: (x, y) => world.waterAt(x, y, nubWtmp), seed: 1, burl: { x: () => bt.x, y: () => bt.y, walking: () => bw.walking, hidden: () => bw.hidden } }) : null;
         }
         window.__debug.escort = escort; // tools/verify-ch1-mount.mjs
         chapterCard = createChapterCard({ world, openNote: (id) => noteRead({ world, def: { noteId: id } }), isNoteOpen, setFlag: (k, v) => rq.questFlag(k, v) });
@@ -1977,6 +1982,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); }
       if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); } // WILD-06: ambient only, never hashed
       if (escort) { const uiHold = uiLocked || !!(dialogueCtl && dialogueCtl.open); /* AUD-06 */ const pt = playerHandle.data.transform; if (escort) { if (burlReopen && !(dialogueCtl && (dialogueCtl.open || dialogueCtl._closing))) { burlReopen = false; const bh = engine.world.get('bear'), bt2 = bh && bh.data.transform; if (bt2 && (bt2.x - pt.x) ** 2 + (bt2.y - pt.y) ** 2 <= 36) dialogueCtl.openFor('bear'); } escort.step(dt, pt.x, pt.y, uiHold); if (bearTurn) bearTurn.paused = escort.busy; } } // CH1-07/08b: before the bear turn
+      if (nub) nub.step(dt); // NUB-01: same fixed step as the escort
       if (bearTurn) { const pt = playerHandle.data.transform; bearTurn.step(dt, pt.x, pt.y, !!(dialogueCtl && dialogueCtl.open)); } // NPC-BEAR-01 // US-079a (29.1)
       if (beasts && assets.uiStyle) stepCombatHint(engine.world, assets.uiStyle, beasts); // COMBAT-HINT-01: once-per-save first-fight hint (taken from lane C)
       if (telegraphWire) telegraphWire.step(performance.now());

@@ -23,7 +23,7 @@ export class PlacementGrid {
     this.transitions = 0;   // total ring changes applied (tests)
     this.lastX = 0; this.lastY = 0;
     this._first = true;     // first update classifies everything uncapped (no empty first frame)
-    this._pending = false;  // capped queue not drained yet: keep evaluating
+    this._pending = false;  // (public read: get pending) capped queue not drained yet: keep evaluating
 
     this.cellOf = new Int32Array(n).fill(-1); // structure index -> compact cell id (-1 = not a member)
     this.reach2 = new Float32Array(n);        // per-placement reach^2 (feeds compare d2 <= reach2)
@@ -99,6 +99,9 @@ export class PlacementGrid {
     const dy = ey < this.cellMinY[c] ? this.cellMinY[c] - ey : (ey > this.cellMaxY[c] ? ey - this.cellMaxY[c] : 0);
     return Math.sqrt(dx * dx + dy * dy);
   }
+
+  /** True while a capped queue is not drained yet (STREAM-01c: public read for boot/test drains). */
+  get pending() { return this._pending; }
 
   /**
    * Once per rendered frame. Returns true when the lists changed. O(1) while the eye stays within hystM/2 of the
