@@ -16,7 +16,7 @@
 //   sky / space-glyph destination: halo   bg = mix(bg, glow*255, a*haloBg) ; if a >= haloMin and the glyph is a space
 //        the glyph becomes HALO_RAMP[round(a*(n-1))] (a drawn glyph is never replaced)
 // Zero allocation: scalar loops only; the caller owns the output arrays. Passthrough cells (bg.a == 0) are copied.
-import { KIND_TERRAIN } from './GBuffer.js';
+import { KIND_TERRAIN, KIND_GRASS } from './GBuffer.js';
 
 export const GLOW_EMIS_MIN = 0.3;      // material emissive that counts as a light source (38.12: GLOW.w >= 0.3)
 export const GLOW_DEPTH_K = 0.12;      // depth gate width relative to the destination depth (38.12)
@@ -63,7 +63,7 @@ export function glowGather(x, y, cols, rows, kind, mat, depth, emis, fg, P, out)
       const j = yy * cols + xx;
       if (j === i) continue;
       const k = kind[j];
-      if (k === 0 || k === KIND_TERRAIN) continue; // terrain carries a terrain type in `mat`, not a material id
+      if (k === 0 || k === KIND_TERRAIN || k === KIND_GRASS) continue; // terrain carries a terrain type in `mat`, not a material id
       const e = emis[mat[j]];
       if (!(e >= GLOW_EMIS_MIN)) continue;
       let w = glowWeight(xx - x, yy - y, R);
@@ -95,7 +95,7 @@ export function glowFrame(g, cols, rows, emis, fgIn, bgIn, fgOut, bgOut, P) {
       for (let k = 0; k < 4; k++) { fgOut[o + k] = fgIn[o + k]; bgOut[o + k] = bgIn[o + k]; }
       if (bgIn[o + 3] === 0) continue;
       const kd = kind[i];
-      if (kd !== 0 && kd !== KIND_TERRAIN && emis[mat[i]] >= GLOW_EMIS_MIN) continue; // an emissive cell keeps its own colour
+      if (kd !== 0 && kd !== KIND_TERRAIN && kd !== KIND_GRASS && emis[mat[i]] >= GLOW_EMIS_MIN) continue; // an emissive cell keeps its own colour
       const sumW = glowGather(x, y, cols, rows, kind, mat, depth, emis, fgIn, P, col);
       if (sumW <= 0) continue;
       const a = sumW > 1 ? 1 : sumW;
