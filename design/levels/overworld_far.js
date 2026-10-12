@@ -145,30 +145,55 @@
         ]
       },
       // OB-073-D2f (arch 38.52 item 6): near-field grass carpet, world opt `carpet` (main.js resolves ramp keys -> RGB; ?carpet=0 off).
-      // First matching variant wins, so the area variants come before the catch-all meadow. Every pose we walk is inside geo.keep,
-      // where biomeAt = 0, so the fields are picked by `areas` (disc / capsule / rect, like detail.exclude). Ramps are base -> tip,
+      // OB-096 (owner: "don't put it everywhere, draw the areas by hand... different size"): NO catch-all - every variant lists
+      // hand-placed `areas` (disc / capsule / rect, like detail.exclude); outside them the ground stays bare (detail pass only).
+      // Rules used: off the road/tracks (route-walk legs, world_geo roads hw + >= 3 m), >= 3 m from walls/fences/ruins, never in
+      // the water, the tower and its crown clear; sizes mixed (clumps 2-4 m, patches 6-10 m, a few 15-25 m fields). Map: design/preview/carpet-areas.html.
+      // Areas do not overlap, so order only matters for the test's name list. Ramps are base -> tip,
       // existing muted keys for now; NEEDS MAIN palette keys (lane entry) then swap: meadow bladeMeadowBase/bladeMeadow/bladeMeadowTip,
       // straw bladeStrawBase/bladeStraw/bladeStrawTip, riverbank bladeBankBase/bladeBank/bladeBankTip, outwall bladeWallBase/bladeWall/bladeWallTip.
       // Technique reference: SMM Stylized Grass (MIT, SirMishMash), see docs/licences.md. Default glyphs: base ',' mid '|' tip "'" leanL '\' leanR '/'.
       carpet: {
         seed: 40731, cellM: 0.10, radiusM: 12, patchM: 6, classCellM: 2, classJitterM: 0.8, gustM: 5, travelM: 1.5, bladeW: 0.06,
         variants: [
-          // dark lush river bank: both banks of the river through the ford stretch (x_r(y) sampled every 30 m; r = halfWidth 9.5 + 14 m)
-          { name: 'riverbank', ground: ['grass', 'flowers', 'reeds', 'fen'], density: 0.9, heightM: [0.25, 0.45], bladeW: 0.07, swayGain: 0.8,
+          // dark lush river bank: ragged strips ~14 m off the river centre x_r(y) (water = centre +- 10), broken by gaps; the road +
+          // ford lane (y ~1054-1080), the jetty (1043,1058) and the Outwall track (y ~1031-1035 west bank) stay clear.
+          { name: 'riverbank', ground: ['grass', 'flowers', 'reeds', 'fen'], density: 0.9, heightM: [0.2, 0.5], bladeW: 0.07, swayGain: 0.8,
             ramp: ['bladeBankBase', 'bladeBank', 'bladeBankTip'], glyphs: { base: ',', mid: '|', tip: '!', leanL: '\\', leanR: '/' },
-            areas: [ { shape: 'capsule', ax: 1018.3, ay: 990, bx: 1019.8, by: 1020, r: 23.5 }, { shape: 'capsule', ax: 1019.8, ay: 1020, bx: 1024.5, by: 1050, r: 23.5 },
-                     { shape: 'capsule', ax: 1024.5, ay: 1050, bx: 1031.3, by: 1080, r: 23.5 }, { shape: 'capsule', ax: 1031.3, ay: 1080, bx: 1038.9, by: 1110, r: 23.5 },
-                     { shape: 'capsule', ax: 1038.9, ay: 1110, bx: 1046.1, by: 1140, r: 23.5 } ] },
-          // tall dry-gold straw: the Outwall barley farm (world_geo POI 975,900)
-          { name: 'straw', ground: ['grass', 'flowers'], density: 0.75, heightM: [0.35, 0.55], bladeW: 0.05, swayGain: 1.2,
+            areas: [ { shape: 'capsule', ax: 1032.5, ay: 985, bx: 1034, by: 1019, r: 3.5 },   // east bank north, 41 m strip
+                     { shape: 'capsule', ax: 1035, ay: 1028, bx: 1038.5, by: 1050, r: 4.5 },   // east bank below northLook
+                     { shape: 'capsule', ax: 1046, ay: 1082, bx: 1053, by: 1110, r: 5 },       // east bank south of the ford (secretBank 1054.5,1091 just outside)
+                     { shape: 'disc', x: 1058, y: 1125, r: 3 },                                // small clump further down
+                     { shape: 'capsule', ax: 1004.4, ay: 988, bx: 1005.5, by: 1022, r: 3.5 },  // west bank north (ends 9 m before the track)
+                     { shape: 'capsule', ax: 1018, ay: 1084, bx: 1024, by: 1108, r: 3.5 } ] }, // west bank south of the ford
+          // tall dry-gold straw: the Outwall barley field north of its fence row (y 900, x 963..986; gate + pickups 975..979,900..904 clear)
+          { name: 'straw', ground: ['grass', 'flowers'], density: 0.75, heightM: [0.4, 0.9], bladeW: 0.05, swayGain: 1.2,
             ramp: ['bladeStrawBase', 'bladeStraw', 'bladeStrawTip'], glyphs: { base: '|', mid: '|', tip: '"', leanL: '\\', leanR: '/' },
-            areas: [ { shape: 'disc', x: 975, y: 900, r: 30 } ] },
-          // sparse grey-green near the Outwall palisade (gate 942,925, plaza 905,940)
-          { name: 'outwall', ground: ['grass', 'flowers', 'alpine'], density: 0.25, heightM: [0.08, 0.18], swayGain: 0.9,
+            areas: [ { shape: 'capsule', ax: 966, ay: 887, bx: 986, by: 885, r: 10 },          // main field ~40 x 20 m (south edge 3 m off the fence)
+                     { shape: 'capsule', ax: 972, ay: 873, bx: 983, by: 875, r: 7 } ] },        // ragged north lobe
+          // sparse grey-green, a broken ring OUTSIDE the palisade (square x 882..942, y 922..982), >= 3 m off the stakes and the
+          // ring path (952,915)-(890,912)-(865,925)-(852,955)-(855,978)-(874,990) and the inward track (956,962)-(950,927)
+          { name: 'outwall', ground: ['grass', 'flowers', 'alpine'], density: 0.25, heightM: [0.1, 0.3], swayGain: 0.9,
             ramp: ['bladeWallBase', 'bladeWall', 'bladeWallTip'],
-            areas: [ { shape: 'disc', x: 912, y: 940, r: 70 } ] },
-          // short green meadow: everything else that is grass (mean colour = turf, the grass ground type's mid colour)
-          { name: 'meadow', ground: ['grass', 'flowers'], density: 0.6, heightM: [0.10, 0.22], ramp: ['bladeMeadowBase', 'bladeMeadow', 'bladeMeadowTip'] }
+            areas: [ { shape: 'capsule', ax: 872, ay: 933, bx: 870, by: 961, r: 4.5 },         // west, between the stakes and the ring path
+                     { shape: 'capsule', ax: 900, ay: 988, bx: 930, by: 991, r: 3 },           // north, along the back fence
+                     { shape: 'disc', x: 946, y: 993, r: 2.5 },                                 // NE clump
+                     { shape: 'disc', x: 966, y: 950, r: 4 },                                   // east of the inward track
+                     { shape: 'capsule', ax: 900, ay: 904, bx: 918, by: 903, r: 3 } ] },        // south, beyond the ring path
+          // short green meadow: patches on the open slopes of the tower hill and along the road meadows - NOT the hill path, the
+          // tower (bbox 1480..1504 x 1018..1032) + 3 m, the groves (forest), the pond / flooded cellar, the bee farm or the standing stones
+          { name: 'meadow', ground: ['grass', 'flowers'], density: 0.6, heightM: [0.08, 0.25], ramp: ['bladeMeadowBase', 'bladeMeadow', 'bladeMeadowTip'],
+            areas: [ { shape: 'disc', x: 1440, y: 1004, r: 9 },                                 // LARGE north meadow (boarN, berries), 16 m off the road
+                     { shape: 'capsule', ax: 1404, ay: 1070, bx: 1416, by: 1063, r: 6 },        // LARGE SW slope field (boarS), 25 m off the road
+                     { shape: 'disc', x: 1474, y: 1056, r: 4.5 },                               // medium, south flank below the path (groveSouth 11 m away)
+                     { shape: 'disc', x: 1458, y: 1050, r: 1.5 },                               // small clump
+                     { shape: 'disc', x: 1426, y: 1018, r: 2 },                                 // small clump above the road
+                     { shape: 'disc', x: 1470, y: 995, r: 3.5 },                                // medium, north of the woodpile (cellar 11 m away)
+                     { shape: 'disc', x: 1532, y: 1005, r: 4 },                                 // medium, east slope behind groveEast
+                     { shape: 'disc', x: 1360, y: 1086, r: 8 },                                 // LARGE field south of Road West (boarR)
+                     { shape: 'disc', x: 1295, y: 1022, r: 2 },                                 // small clump north of the Bend
+                     { shape: 'capsule', ax: 1244, ay: 1080, bx: 1256, by: 1075, r: 3 },        // medium strip south of the Bend lamps
+                     { shape: 'disc', x: 1110, y: 1095, r: 4 } ] }                              // medium, road meadow east of the ford
         ]
       },
       slopeEps: 2.0                                  // m: typeAt slope = central difference of heightAt at +-2 m
