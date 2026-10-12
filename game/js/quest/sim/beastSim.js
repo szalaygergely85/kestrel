@@ -12,6 +12,7 @@ import { createAStar, findPath, smoothPath, createSteer, PHYSICS, SIM_STEP } fro
 import { BEAST_DEFAULTS, toSteps } from './beastConfig.js';
 import { tierMult } from './band.js';
 import { canSee } from './sight.js';
+import { BEAR_TUNING, bearOverrides, isBearEntity } from './bearBrain.js'; // BEAR-01
 import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } from './wolfBrain.js'; // WOLF-01
 import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from '../../../../engine/index.js';
 
@@ -164,6 +165,7 @@ export function createBeastSim(world, opts) {
     cause: new Uint8Array(MAX_BEASTS),       // US-079b: 0 sword, 1 fire (indexes CAUSE_STR)
     knockV: new Float64Array(MAX_BEASTS),    // US-079b: per-slot stagger clamp speed (replaces shared cfg.staggerKnock)
     wolf: new Uint8Array(MAX_BEASTS),        // WOLF-01: brain.species==='wolf' (per-slot cfg below, pack token, circle, flee)
+    bear: new Uint8Array(MAX_BEASTS),        // BEAR-01: brain.species==='bear' (per-slot cfg, fixed 2-heart swipe, light hits don't cancel windup)
     fleeing: new Uint8Array(MAX_BEASTS),     // WOLF-01: STATE_RETURN that runs away from the player first
     scfg: [], ssteps: [],                    // WOLF-01: per-slot cfg / cfgSteps (the shared objects for boars)
     _px: 0, _py: 0, _tmp: { x: 0, y: 0 },
@@ -202,6 +204,11 @@ export function createBeastSim(world, opts) {
       const wc = { ...cfg, ...wolfOverrides(cfg) };
       sim.scfg.push(wc);
       sim.ssteps.push({ ...sim.cfgSteps, windup: toSteps(wc.windupSec), chargeMax: toSteps(wc.chargeMaxSec), recover: toSteps(wc.recoverSec), recoverWall: toSteps(wc.recoverWallSec) });
+    } else if (isBearEntity(e)) { // BEAR-01: bear slot = boar defaults + overrides
+      sim.bear[i] = 1;
+      const bc = { ...cfg, ...bearOverrides(cfg) };
+      sim.scfg.push(bc);
+      sim.ssteps.push({ ...sim.cfgSteps, windup: toSteps(bc.windupSec), chargeMax: toSteps(bc.chargeMaxSec), recover: toSteps(bc.recoverSec), recoverWall: toSteps(bc.recoverWallSec) });
     } else { sim.scfg.push(cfg); sim.ssteps.push(sim.cfgSteps); }
     sim.wary[i] = e.components.brain && e.components.brain.temperament === 'wary' ? 1 : 0;
     sim.homeZ[i] = e.transform.z; // US-079b ARCH: the authored spawn z (restored on resetAll)
@@ -216,7 +223,7 @@ export function createBeastSim(world, opts) {
     const br = e.components.brain;
     const tier = band ? band.beastTierAt(e.transform.x, e.transform.y, br && br.tier) : ((br && br.tier >= 1 && br.tier <= 3) ? br.tier | 0 : 1);
     const m = tierMult(tier);
-    sim.tier[i] = tier; sim.spdMul[i] = m.speed; sim._hitPayload[i].damage = m.damage;
+    sim.tier[i] = tier; sim.spdMul[i] = m.speed; sim._hitPayload[i].damage = sim.bear[i] ? BEAR_TUNING.swipeHearts : m.damage; // BEAR-01: swipe is a fixed 2 hearts
     const maxHp = Math.round(sim.scfg[i].hp * m.hp);
     e.components.health = { hp: maxHp, max: maxHp, invuln: 0 };
     steer.addAgent(e.transform.x, e.transform.y, cfg.radius, 0, DEFAULT_ACCEL);
@@ -318,7 +325,7 @@ function perceiveOne(sim, i, px, py, pz) {
   const steer = sim.steer, cfg = sim.cfg;
   const dx = px - steer.x[i], dy = py - steer.y[i];
   const d2 = dx * dx + dy * dy;
-  const loseR2 = cfg.loseR * cfg.loseR;
+  const loseR2 = sim.scfg[i].loseR * sim.scfg[i].loseR; // BEAR-01: per-slot (same as cfg for boars/wolves)
   if (d2 > loseR2) {
     sim.seen[i] = 0;
   } else if (sim.tick % cfg.losEvery === i % cfg.losEvery) {
@@ -360,7 +367,8 @@ function leashOne(sim, i, px, py) {
   if (ag.leashMode === LEASH_GIVEUP) return; // stays given-up until the beast is home (wander resets it)
   ag.x = sim.steer.x[i]; ag.y = sim.steer.y[i];
   def.homeX = sim.homeX[i]; def.homeY = sim.homeY[i];
-  def.leashR = sim.wary[i] === 1 && sim.provoked[i] === 0 ? sim.cfg.calmLeashR : sim.cfg.leashR;
+  def.aggroR = sim.scfg[i].loseR / sim.cfg.loseScale; // BEAR-01: per-slot (identical for boars/wolves)
+  def.leashR = sim.wary[i] === 1 && sim.provoked[i] === 0 ? sim.cfg.calmLeashR : sim.scfg[i].leashR;
   const t = sim._lt; t.x = px; t.y = py;
   leashState(ag, def, t, SIM_STEP);
 }
@@ -439,7 +447,8 @@ function checkChaseExit(sim, i, px, py) {
     return;
   }
   sim.waiting[i] = 0;
-  if (d2 > cfg.loseR * cfg.loseR || sim.unseen[i] >= sim.cfgSteps.loseSight) enterReturn(sim, i);
+  const lr = sim.scfg[i].loseR; // BEAR-01
+  if (d2 > lr * lr || sim.unseen[i] >= sim.cfgSteps.loseSight) enterReturn(sim, i);
 }
 
 /** US-079c: true while any slot is in WINDUP or CHARGE (the single active charger). */
@@ -626,8 +635,8 @@ function reactToHit(sim, i, p) {
     enterFlinch(sim, i); // fire with a tiny falloff (knock < 1) -> flinch
     return;
   }
-  if (st === STATE_WINDUP) { enterRecover(sim, i, false); return; } // AC: a light hit cancels the charge
-  if (st === STATE_CHARGE || st === STATE_STAGGER) return;          // D-034: only a hard hit stops a charge
+  if (st === STATE_WINDUP && !sim.bear[i]) { enterRecover(sim, i, false); return; } // AC: a light hit cancels the charge
+  if (st === STATE_CHARGE || st === STATE_STAGGER || (st === STATE_WINDUP && sim.bear[i])) return; // BEAR-01: an arrow doesn't break the bluff          // D-034: only a hard hit stops a charge
   enterFlinch(sim, i);
 }
 
