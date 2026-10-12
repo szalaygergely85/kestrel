@@ -1,6 +1,6 @@
 // node tools/verify-ch12-run.test.mjs - pure parts of the M4-C2 harness.
 import assert from 'node:assert/strict';
-import { buildGapTable, compareSnaps, questVerdict, renderReport } from './verify-ch12-lib.mjs';
+import { lineOf, buildGapTable, compareSnaps, questVerdict, renderReport } from './verify-ch12-lib.mjs';
 
 const S = (t, o = {}) => ({ t, x: t, y: 0, hour: 8, tracked: false, compass: false, giver: false, event: 'e' + t, ...o });
 
@@ -15,6 +15,18 @@ assert.equal(buildGapTable([0, 5, 10, 15, 20, 25].map((t) => S(t))).length, 0);
 assert.equal(buildGapTable([0, 5, 10, 15, 20, 25, 30].map((t) => S(t, { giver: t === 15 }))).length, 0);
 assert.equal(buildGapTable([0, 5, 10, 15, 20, 25, 30].map((t) => S(t))).length, 1);
 assert.equal(buildGapTable([]).length, 0);
+{ // --walk streams: 1 s apart, real durations; main vs errand gaps are separate rows
+  const W = (t, o = {}) => S(t, { event: '9 road west', ...o });
+  const g = buildGapTable(Array.from({ length: 41 }, (_, t) => W(t)), { every: 1 });
+  assert.equal(g.length, 1); assert.equal(g[0].lenS, 41); assert.equal(g[0].line, 'main');
+  assert.equal(buildGapTable(Array.from({ length: 30 }, (_, t) => W(t)), { every: 1 }).length, 0); // exactly 30 s is not > 30
+  for (const brk of ['tracked', 'compass', 'giver']) assert.equal(buildGapTable(Array.from({ length: 41 }, (_, t) => W(t, { [brk]: t === 20 })), { every: 1 }).length, 0, 'split by ' + brk + ' gives 2 x 20 s');
+  const m = Array.from({ length: 25 }, (_, t) => W(t)).concat(Array.from({ length: 25 }, (_, t) => W(25 + t, { event: 'E2 explore (sq.burl.tower)' })));
+  assert.equal(buildGapTable(m, { every: 1 }).length, 0, 'main 25 s + errand 25 s are not one 50 s gap');
+  const e = buildGapTable(Array.from({ length: 40 }, (_, t) => W(t, { event: 'E5 escort (sq.burl.walk)' })), { every: 1 });
+  assert.equal(e.length, 1); assert.equal(e[0].line, 'errand');
+  assert.equal(lineOf('1 wake in the tower'), 'main');
+}
 
 // save compare
 const snap = () => ({ pos: [1, 2, 3], hp: 20, max: 30, inventory: { slots: [{ id: 'sword', n: 1 }] }, equipment: { main: 'sword', off: null }, quickbar: [], main: { completed: ['wake'], flags: { a: 1, b: 2 } }, quests: { q: { accepted: true } }, tracked: 1, state: { 'clock.hour': 9, 'm4.x': 1 }, dead: ['boar1'], chests: [] });

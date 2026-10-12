@@ -5,16 +5,19 @@ export const SAMPLE_EVERY_S = 5, GAP_MIN_S = 30;
 
 /** AC4. samples: [{t (s), x, y, hour, tracked, compass, giver, event}] taken every SAMPLE_EVERY_S. A "blind" sample has no tracked HUD
  *  objective, no compass target and no ! / ? giver in view. One row per run of blind samples whose stretch is longer than GAP_MIN_S. */
+export const lineOf = (event) => (/^E\d/.test(String(event || '')) ? 'errand' : 'main'); // run.mjs names errand beats 'E1 ..'..'E6 ..'; everything else is the main line
+
 export function buildGapTable(samples, { every = SAMPLE_EVERY_S, minS = GAP_MIN_S } = {}) {
   const rows = []; let run = [];
   const flush = () => {
     if (run.length) {
       const len = run[run.length - 1].t - run[0].t + every;
-      if (len > minS) rows.push({ x: run[0].x, y: run[0].y, t: run[0].t, hour: run[0].hour, lenS: len, lastEvent: run[0].event || '(none)' });
+      if (len > minS) rows.push({ x: run[0].x, y: run[0].y, t: run[0].t, hour: run[0].hour, lenS: len, lastEvent: run[0].event || '(none)', line: lineOf(run[0].event) });
     }
     run = [];
   };
-  for (const s of samples) { if (!s.tracked && !s.compass && !s.giver) run.push(s); else flush(); }
+  // a run also ends where the line changes (main -> errand) so errand gaps are never merged into main-line gaps; samples may carry their own `line`
+  for (const s of samples) { if (!s.tracked && !s.compass && !s.giver) { if (run.length && (run[0].line || lineOf(run[0].event)) !== (s.line || lineOf(s.event))) flush(); run.push(s); } else flush(); }
   flush();
   return rows;
 }
@@ -60,7 +63,7 @@ export function renderReport(r) {
   for (const b of r.beats) L.push(`| ${cell(b.id)} | ${f1(b.t)} | ${b.still ? `![${cell(b.id)}](${b.still})` : '-'} |`);
   L.push('', '## Gear (AC2)', '', '```', JSON.stringify(r.equipment || null), '```', '');
   L.push(`## Guidance-gap table (AC4)`, '', `Sampled every ${SAMPLE_EVERY_S} s; a row = a stretch longer than ${GAP_MIN_S} s with no tracked HUD objective, no compass target and no ! / ? giver within view range.`, '');
-  if (r.gaps.length) { L.push('| Where (x,y) | Game time (s) | Hour | Length (s) | Last event |', '|---|---|---|---|---|'); for (const g of r.gaps) L.push(`| ${f1(g.x)}, ${f1(g.y)} | ${f1(g.t)} | ${f1(g.hour)} | ${f1(g.lenS)} | ${cell(g.lastEvent)} |`); } else L.push('No gaps.');
+  if (r.gaps.length) { L.push('| Where (x,y) | Game time (s) | Hour | Length (s) | Last event | Line |', '|---|---|---|---|---|---|'); for (const g of r.gaps) L.push(`| ${f1(g.x)}, ${f1(g.y)} | ${f1(g.t)} | ${f1(g.hour)} | ${f1(g.lenS)} | ${cell(g.lastEvent)} | ${g.line || 'main'} |`); } else L.push('No gaps.');
   L.push('', '## Save compare (AC3)', '');
   L.push(r.diffs.length ? '```\n' + JSON.stringify(r.diffs, null, 1).slice(0, 3000) + '\n```' : 'Identical after Continue.');
   if (r.notes && r.notes.length) { L.push('', '## Notes', ''); for (const n of r.notes) L.push(`- ${cell(n)}`); }

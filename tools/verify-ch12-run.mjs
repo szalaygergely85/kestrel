@@ -11,7 +11,10 @@ import { buildGapTable, compareSnaps, questVerdict, renderReport, SAMPLE_EVERY_S
 
 /** short window around the first differing character of two JSON strings */
 const firstDiff = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; const w = (x) => x.slice(Math.max(0, i - 40), i + 80); return `@${i}/${a.length},${b.length} ${w(a)} -> ${w(b)}`; };
-const port = Number(process.argv[2] || 9560);
+const WALK = process.argv.includes('--walk'); // CL-01 input: travel between beats on foot at WALK_SPEED, samples every game-second (see walkLib)
+const WALK_SPEED = 4; // m/s, about the player's walk speed
+const posArgs = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+const port = Number(posArgs[0] || 9560);
 validatePort(port);
 if (port < 9500 || port + 1 > 9999) throw new Error('PC-B port range is 9500-9999 (next port is CDP)');
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-ch12-'));
@@ -28,11 +31,20 @@ const CH12_IDS = [...rdj('content/quests/index.json').legacy.filter((i) => i !==
 const stills = []; const samples = []; let curBeat = 'start', quests = [], ac3Diffs = [], gearInfo = null, t0 = Date.now(), sampler = null;
 async function still(name) { try { const r = await cdp.send('Page.captureScreenshot', { format: 'png' }); const f = name.replace(/[^a-z0-9]+/gi, '-').slice(0, 40) + '.png'; writeFileSync(path.join(OUT, f), Buffer.from(r.data, 'base64')); return f; } catch (e) { return null; } }
 // one sample = tracked HUD objective? compass target? a ! / ? giver within 30 m? (compass hide flag ignored: capture-like pages hide it)
-const SAMPLE = `(() => { const D = window.__debug, b = D.saveRelay.quest.book, t = D.playerHandle.data.transform, w = D.world, a = [], r = [], O = { x: 1480, y: 1018 }; b.giverMarks(a, r);
+const SAMPLE_FN = `(() => { const D = window.__debug, b = D.saveRelay.quest.book, t = D.playerHandle.data.transform, w = D.world, a = [], r = [], O = { x: 1480, y: 1018 }; b.giverMarks(a, r);
   let giver = false; for (const id of a.concat(r)) { let e = null; try { e = w.get(id); } catch (e2) {} const p = e && e.data && e.data.transform; if (p && Math.hypot(p.x - t.x, p.y - t.y) < 30) giver = true; }
   let compass = false; try { compass = !!D.compassRetarget(); } catch (e) {}
-  return { x: t.x - O.x, y: t.y - O.y, hour: w.state['clock.hour'] || 0, tracked: b.tracked() >= 0, compass, giver }; })()`;
-function startSampler() { t0 = Date.now(); sampler = setInterval(async () => { try { const s = await evaluate(cdp, SAMPLE); if (s) samples.push({ ...s, t: (Date.now() - t0) / 1000, event: curBeat }); } catch (e) { /* page reloading */ } }, SAMPLE_EVERY_S * 1000); }
+  return { x: t.x - O.x, y: t.y - O.y, hour: w.state['clock.hour'] || 0, tracked: b.tracked() >= 0, compass, giver }; })`;
+const SAMPLE = `(${SAMPLE_FN})()`;
+// --walk: page-side T.tp becomes a straight-line walk at WALK_SPEED; every walked game-second pushes one sample (t = accumulated game time) into __walk.out, drained per beat.
+// Floor height follows floorAt; walls/doors are ignored (straight line), so lengths are a lower bound of real path time. Non-walking time (dialogue, waits) is not counted.
+const WALK_LIB = `(() => { const T = window.__t, D = T.D, p = D.playerHandle.data, t = p.transform, c = p.components, S = ${SAMPLE_FN}, tp0 = T.tp; window.__walk = { t: 0, out: [], ev: 'start' };
+  T.tp = async (x, y, dz = 0.6, zAbs) => { const x0 = t.x, y0 = t.y, d = Math.hypot(x - x0, y - y0), n = Math.floor(d / ${WALK_SPEED});
+    for (let i = 1; i <= n; i++) { const f = i / (d / ${WALK_SPEED}), px = x0 + (x - x0) * f, py = y0 + (y - y0) * f, g = T.w.floorAt(px, py); t.x = px; t.y = py; if (g != null) t.z = g + 0.6; c.body.vx = c.body.vy = c.body.vz = 0; D.vitals.clearSafe(); D.look.locked = true;
+      await T.sl(30); window.__walk.t += 1; window.__walk.out.push({ ...S(), t: window.__walk.t, event: window.__walk.ev }); }
+    window.__walk.t += (d - n * ${WALK_SPEED}) / ${WALK_SPEED}; return tp0(x, y, dz, zAbs); }; return true; })()`;
+async function drainWalk() { if (!WALK) return; const out = await ev('(() => { const o = window.__walk.out; window.__walk.out = []; return o; })()'); for (const s of out || []) samples.push(s); }
+function startSampler() { if (WALK) return; t0 = Date.now(); sampler = setInterval(async () => { try { const s = await evaluate(cdp, SAMPLE); if (s) samples.push({ ...s, t: (Date.now() - t0) / 1000, event: curBeat }); } catch (e) { /* page reloading */ } }, SAMPLE_EVERY_S * 1000); }
 const key = async (code, k) => { await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', code, key: k, text: k.length === 1 ? k : undefined }); await pause(70); await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: k }); await pause(120); };
 
 // ---- page-side helper library (window.__t) ----
@@ -74,9 +86,10 @@ const LIB = `(() => { const D = window.__debug, w = D.world, p = D.playerHandle.
 
 function rec(name, ok, why, still) { rows.push({ name, ok, why: why || '', still: still || null }); console.log((ok ? 'PASS ' : 'FAIL ') + name + (why ? '  - ' + why : '')); }
 async function beat(name, fn) {
-  curBeat = name;
+  curBeat = name; if (WALK) await ev(`(window.__walk.ev = ${JSON.stringify(name)}, true)`);
   try { const r = await fn(); const ok = r === true || r === undefined || !!r.ok; rec(name, ok, ok ? '' : r.why, await still('beat-' + String(rows.length + 1).padStart(2, '0') + '-' + name)); }
   catch (e) { rec(name, false, String(e && e.message || e).slice(0, 400)); }
+  try { await drainWalk(); } catch (e) { /* page reloading */ }
 }
 const stOf = (id) => ev(`__t.st(${JSON.stringify(id)})`);
 const NAMES = ['unavailable', 'available', 'active', 'ready', 'done'];
@@ -117,7 +130,7 @@ async function open(u = url) {
   let ready = false;
   for (let i = 0; i < 200; i++) { await pause(300); if (await ev('!!(window.__debug && window.__debug.world && window.__debug.playerHandle && window.__debug.saveRelay && window.__debug.relayWake && window.__debug.dialogue && window.__debug.playerHandle.data.components.health)')) { ready = true; break; } }
   if (!ready) throw new Error('game never ready: ' + JSON.stringify(errors) + ' ' + await ev("JSON.stringify(Object.keys(window.__debug.playerHandle.data.components))"));
-  await pause(1500); await ev(LIB);
+  await pause(1500); await ev(LIB); if (WALK) await ev(WALK_LIB);
 }
 
 try {
@@ -135,7 +148,7 @@ try {
   if (!(await ev("localStorage.getItem('kestrel.save.slot.0') === null"))) throw new Error('profile not fresh');
   startSampler();
 
-  if (process.argv[3]) { const { readFileSync } = await import('node:fs'); console.log(JSON.stringify(await evA(readFileSync(process.argv[3], 'utf8')), null, 1)); if (process.argv[4]) { await pressE(1); console.log(JSON.stringify(await evA(readFileSync(process.argv[4], 'utf8')), null, 1)); } throw new Error('probe done'); } // dev: run a snippet after the page is ready
+  if (posArgs[1]) { const { readFileSync } = await import('node:fs'); console.log(JSON.stringify(await evA(readFileSync(posArgs[1], 'utf8')), null, 1)); if (posArgs[2]) { await pressE(1); console.log(JSON.stringify(await evA(readFileSync(posArgs[2], 'utf8')), null, 1)); } throw new Error('probe done'); } // dev: run a snippet after the page is ready
   // ===== Chapter 1: the tower =====
   await beat('1 wake in the tower', async () => {
     await ev("(__t.w.state['quest.wakeT'] = 100, true)"); await pause(1500); await ev('(__t.D.playerHandle.data.components.body.eyeH = __t.D.engine.physics.eyeHeight, true)'); // as after a played wake (the rise ends at standing eye height); skip the played black/blink/title timeline (real time ~25 s)
@@ -332,8 +345,8 @@ try {
   try { // AC5 report (written even when the run failed part-way)
     const ac = { ac1: quests.length > 0 && questVerdict(quests).ok, ac2: !!(gearInfo && gearInfo.main === 'sword'), ac3: rows.some((r) => r.name.startsWith('AC3b')) && !!rows.find((r) => r.name.startsWith('AC3b')).ok };
     const beats = rows.filter((r) => /^\d/.test(r.name)).map((r, i) => ({ id: r.name + (r.ok ? '' : ' [FAIL]'), t: i, still: r.still }));
-    const md = renderReport({ date: new Date().toISOString().slice(0, 10), quests, beats, forced: rows.filter((r) => !r.ok).map((r) => r.name + ': ' + r.why), gaps: buildGapTable(samples), ac, diffs: ac3Diffs, equipment: gearInfo,
-      notes: [`${samples.length} samples every ${SAMPLE_EVERY_S} s of wall time; the script teleports between beats, so the "where" is the spot the player stood at while a beat ran (event = beat name)`, 'compass column = __debug.compassRetarget() has a target; giver = a ! / ? giver within 30 m', `console errors: ${errors.length}`] });
+    const md = renderReport({ date: new Date().toISOString().slice(0, 10), quests, beats, forced: rows.filter((r) => !r.ok).map((r) => r.name + ': ' + r.why), gaps: buildGapTable(samples, WALK ? { every: 1 } : undefined), ac, diffs: ac3Diffs, equipment: gearInfo,
+      notes: [(WALK ? `--walk: ${samples.length} samples, one per walked game-second at ${WALK_SPEED} m/s straight-line (walls ignored, waits/dialogue not counted); gap rows split into main line vs errand (E1-E6) in the Line column. ` : '') + `${samples.length} samples every ${SAMPLE_EVERY_S} s of wall time; the script teleports between beats, so the "where" is the spot the player stood at while a beat ran (event = beat name)`, 'compass column = __debug.compassRetarget() has a target; giver = a ! / ? giver within 30 m', `console errors: ${errors.length}`] });
     writeFileSync(path.join(OUT, 'report.md'), md); console.log('report: docs/test-reports/m4-c2/report.md');
     if (!ac.ac1 || !ac.ac3) process.exitCode = 1; // AC1 / AC3 failure = non-zero
   } catch (e) { console.error('report failed', e && e.message); process.exitCode = 1; }
