@@ -89,7 +89,9 @@ function expandReward(src, ctx, band) {
       items.push({ id: best, n: 1 });
     }
   }
-  return { items };
+  const out = { items };
+  if (Array.isArray(spec.unlock) && spec.unlock.length) out.unlock = spec.unlock.map(u => (typeof u === 'string' && u ? u : fail(src, 'invalid unlock reward'))); // FB-02: spell unlocks (only 'fireball' is dispatched by the game)
+  return out;
 }
 
 function deepFreeze(o) { if (o && typeof o === 'object') { for (const k of Object.keys(o)) deepFreeze(o[k]); Object.freeze(o); } return o; }

@@ -47,6 +47,7 @@ export function validateGiverQuest(def) {
   if (def.reward !== undefined) {
     if (!def.reward || !Array.isArray(def.reward.items)) throw new Error('quest: invalid reward');
     for (const it of def.reward.items) if (!it || typeof it.id !== 'string' || !Number.isInteger(it.n) || it.n < 1) throw new Error('quest: invalid reward item');
+    if (def.reward.unlock !== undefined && (!Array.isArray(def.reward.unlock) || def.reward.unlock.some(u => typeof u !== 'string'))) throw new Error('quest: invalid reward unlock'); // FB-02
   }
   return def;
 }

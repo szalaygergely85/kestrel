@@ -176,6 +176,7 @@ At the gate: "The key fits. Not yet." Part II opens after release (D-067), not b
 | sq.ls.crabs | Crab Beach | 4 | Skip | kill 6 | crabs took the dune camp (1350,1700) and Skip's sunning rock | gear T2 | sq.ls.shells |
 | sq.ls.wreck | The Old Gondola | 4 | hull (read), beach wreck (1680,1760) | explore | another Crown balloon, decades old, sand to the rails. Someone got out before. | heart piece, lore | sq.ls.crabs |
 | sq.ls.salt | Salt for a Bear | 4 | Burl, Gullhaven | fetch | a salt crust from the rocks under the lighthouse ruin (1865,1705), "for winter" | potion | sq.ew.lessons |
+| sq.burl.fire | Burl's Ember | 5 | Burl, berry slope | collect 3 | 3 emberpods at Cinder Hollow (TEMP ~1043,1044, near northLook) | mana potion + unlock fireball (FB-02, D-069) | sq.burl.blue (built stand-in; switch to sq.ls.salt when built) |
 
 ### AM the Ash Mile (band 3-4) - 2
 | id | title | band | giver / site | tmpl | hook | reward | after |
