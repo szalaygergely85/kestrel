@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OB-096 grass carpet - hand-placed areas (top-down)</title>
+<style>
+  body { background: #0b0d10; color: #c9d1d9; font: 13px/1.4 Consolas, monospace; margin: 16px; }
+  h1 { font-size: 16px; color: #e6edf3; margin: 0 0 6px; }
+  canvas { display: block; background: #12161b; border: 1px solid #222a33; margin-top: 8px; cursor: crosshair; }
+  .legend span { display: inline-block; margin-right: 14px; }
+  .sw { display: inline-block; width: 11px; height: 11px; margin-right: 4px; vertical-align: middle; border: 1px solid #fff3; }
+  #msg { color: #ff7b72; } #pos { color: #9fb3c8; margin-left: 12px; }
+  label { margin-left: 12px; }
+  table { border-collapse: collapse; margin-top: 8px; } td, th { border: 1px solid #222a33; padding: 2px 10px; text-align: right; } th { color: #9fb3c8; }
+</style>
+<script src="../palette.js"></script>
+<script src="../levels/overworld_far.js"></script>
+<script src="../levels/world_geo.js"></script>
+</head>
+<body>
+<h1>OB-096 - grass carpet areas, drawn by hand (top-down, north up). Grass grows ONLY inside the coloured shapes.</h1>
+<div id="msg"></div>
+<div class="legend">
+  <span><i class="sw" style="background:#5fbf4a"></i>meadow (0.08-0.25 m)</span><span><i class="sw" style="background:#e0b94a"></i>straw (0.4-0.9 m)</span>
+  <span><i class="sw" style="background:#2f8f6a"></i>riverbank (0.2-0.5 m)</span><span><i class="sw" style="background:#9aa88a"></i>outwall (0.1-0.3 m)</span>
+  <span><i class="sw" style="background:#2a5f9e"></i>water</span><span><i class="sw" style="background:#7a6448"></i>road / track</span>
+  <span><i class="sw" style="background:#f0c850"></i>route-walk legs</span><span><i class="sw" style="background:#3fb950"></i>tree</span>
+  <span><i class="sw" style="background:#8b949e"></i>rock</span><span><i class="sw" style="background:#ff7b72"></i>fence / wall / building</span>
+  <span><i class="sw" style="background:#d2a8ff"></i>entity</span><span><i class="sw" style="background:#fff"></i>test pose (r 12 m)</span>
+</div>
+<div>
+  view <select id="view">
+    <option value="all">whole walk (ford .. tower)</option><option value="tower">tower hill</option>
+    <option value="road">Road West + Bend</option><option value="ford">ford + river banks</option><option value="outwall">Outwall + barley</option>
+  </select>
+  <label><input type="checkbox" id="dots" checked> placements</label><label><input type="checkbox" id="labels" checked> sizes</label>
+  <label><input type="checkbox" id="poses" checked> test poses</label><span id="pos"></span>
+</div>
+<canvas id="c"></canvas>
+<table id="tb"></table>
+<script>
+const A = window.ASSETS || {}, far = A.levels && A.levels.overworld_far, geo = A.levels && A.levels.world_geo;
+const cfg = far && far.recipe && far.recipe.carpet;
+const VIEWS = { all: [840, 860, 1550, 1135], tower: [1380, 975, 1560, 1110], road: [1200, 990, 1400, 1110], ford: [960, 970, 1130, 1140], outwall: [835, 860, 1010, 1010] };
+const VCOL = { meadow: '#5fbf4a', straw: '#e0b94a', riverbank: '#2f8f6a', outwall: '#9aa88a' };
+// route-walk legs (tools/route-walk.mjs: tower walk-out, leg 8, leg 9 to the ford, Outwall inward/outward)
+const LEGS = [
+  [[1488, 1031], [1471, 1029.1], [1462, 1031], [1452, 1034], [1443, 1037], [1436, 1040], [1431.5, 1041.5], [1420, 1032]],
+  [[1420, 1032], [1350, 1050], [1270, 1042], [1263, 1034]],
+  [[1263, 1034], [1260, 1045], [1180, 1062], [1090, 1070], [1046, 1069], [1010, 1069], [998, 1075], [993, 1077]],
+  [[1008, 1069], [1001, 1064], [994, 1058], [986, 1053], [980, 1048]], [[994, 1064], [984, 1086], [975, 1093]],
+  [[1010, 1066], [1010.5, 1049], [1011.5, 1041], [1013.5, 1035], [1004, 1031], [992, 1033], [988, 1038], [978, 1010], [966, 985], [956, 962], [954, 940], [950, 927], [944, 925.3], [935, 926.5], [920, 927], [905, 927], [903, 940], [905, 948], [910.5, 950.5]],
+  [[905, 940], [905, 927], [935, 926.5], [946, 925.5], [952, 915], [930, 912], [890, 912], [865, 925], [852, 955], [855, 978], [874, 990], [862, 990]],
+];
+const POSES = [[1440, 1004, 'meadow'], [1050, 1096, 'riverbank'], [976, 882, 'straw'], [871, 947, 'outwall'], [1496, 1024, '0 % (tower)'], [1350, 1050, '0 % (road)']];
+let W = null;
+const cat = (m) => /Tree|Pine|Birch|Willow/i.test(m) ? 'tree' : /Rock|Pebble|Boulder|Stone/i.test(m) ? 'rock' : /Fence|Wall|Roof|Door|Floor|Stair|Column|Arch|House|Hut|Barn|Brick|Chimney|Palisade/i.test(m) ? 'build' : 'other';
+const DCOL = { tree: '#3fb950', rock: '#8b949e', build: '#ff7b72', other: '#59606a' };
+function areaM2(a) { return a.shape === 'disc' ? Math.PI * a.r * a.r : a.shape === 'rect' ? (a.x1 - a.x0) * (a.y1 - a.y0) : Math.PI * a.r * a.r + 2 * a.r * Math.hypot(a.bx - a.ax, a.by - a.ay); }
+function sizeM(a) { return a.shape === 'disc' ? `${2 * a.r} m` : a.shape === 'rect' ? `${a.x1 - a.x0}x${a.y1 - a.y0} m` : `${Math.round(Math.hypot(a.bx - a.ax, a.by - a.ay) + 2 * a.r)}x${2 * a.r} m`; }
+function draw() {
+  const [X0, Y0, X1, Y1] = VIEWS[document.getElementById('view').value];
+  const c = document.getElementById('c'), g = c.getContext('2d'), S = Math.max(1, Math.min(8, (window.innerWidth - 50) / (X1 - X0)));
+  c.width = (X1 - X0) * S; c.height = (Y1 - Y0) * S; c._v = [X0, Y0, S];
+  const P = (x, y) => [(x - X0) * S, (y - Y0) * S];
+  const line = (pts, w, col) => { g.strokeStyle = col; g.lineWidth = w; g.lineCap = g.lineJoin = 'round'; g.beginPath(); pts.forEach(([x, y], i) => { const [px, py] = P(x, y); i ? g.lineTo(px, py) : g.moveTo(px, py); }); g.stroke(); };
+  // grid 50 m
+  g.fillStyle = '#4a5560'; g.strokeStyle = '#1a2027'; g.lineWidth = 1;
+  for (let x = Math.ceil(X0 / 50) * 50; x < X1; x += 50) { const [px] = P(x, 0); g.beginPath(); g.moveTo(px, 0); g.lineTo(px, c.height); g.stroke(); g.fillText(x, px + 2, 10); }
+  for (let y = Math.ceil(Y0 / 50) * 50; y < Y1; y += 50) { const [, py] = P(0, y); g.beginPath(); g.moveTo(0, py); g.lineTo(c.width, py); g.stroke(); g.fillText(y, 2, py - 2); }
+  // water
+  if (W) for (const w of W.water || []) {
+    if (w.shape === 'river') for (let i = 1; i < w.path.length; i++) { const a = w.path[i - 1], b = w.path[i]; line([[a[0], a[1]], [b[0], b[1]]], 2 * b[3] * S, '#2a5f9e'); }
+    else if (w.shape === 'circle') { const [px, py] = P(w.c[0], w.c[1]); g.fillStyle = '#2a5f9e'; g.beginPath(); g.arc(px, py, w.r * S, 0, 7); g.fill(); }
+    else if (w.shape === 'rect' && w.draw !== false && w.id !== 'sea') { const [px, py] = P(w.rect[0], w.rect[1]); g.fillStyle = '#2a5f9e'; g.fillRect(px, py, (w.rect[2] - w.rect[0]) * S, (w.rect[3] - w.rect[1]) * S); }
+  }
+  // roads (world_geo, halfWidth) + route-walk legs
+  if (geo) for (const r of geo.roads) line(r.pts, Math.max(1, 2 * r.hw * S), 'rgba(122,100,72,0.85)');
+  for (const L of LEGS) line(L, 1.2, 'rgba(240,200,80,0.8)');
+  // tower bbox
+  { const [px, py] = P(1480, 1018); g.strokeStyle = '#ff7b72'; g.lineWidth = 2; g.strokeRect(px, py, 24 * S, 14 * S); g.fillStyle = '#ff7b72'; g.fillText('tower', px, py - 3); }
+  // carpet areas
+  const rows = [];
+  if (cfg) for (const v of cfg.variants) {
+    const col = VCOL[v.name] || '#ccc'; let m2 = 0;
+    for (const a of v.areas || []) {
+      m2 += areaM2(a); g.fillStyle = col + '88'; g.strokeStyle = col; g.lineWidth = 1.5; g.beginPath();
+      if (a.shape === 'disc') { const [px, py] = P(a.x, a.y); g.arc(px, py, a.r * S, 0, 7); g.fill(); g.stroke(); }
+      else if (a.shape === 'rect') { const [px, py] = P(a.x0, a.y0); g.rect(px, py, (a.x1 - a.x0) * S, (a.y1 - a.y0) * S); g.fill(); g.stroke(); }
+      else { line([[a.ax, a.ay], [a.bx, a.by]], 2 * a.r * S, col + '88'); }
+      if (document.getElementById('labels').checked) { const cx = a.shape === 'disc' ? a.x : a.shape === 'rect' ? (a.x0 + a.x1) / 2 : (a.ax + a.bx) / 2, cy = a.shape === 'disc' ? a.y : a.shape === 'rect' ? (a.y0 + a.y1) / 2 : (a.ay + a.by) / 2; const [px, py] = P(cx, cy); g.fillStyle = '#fff'; g.fillText(sizeM(a), px - 14, py + 4); }
+    }
+    rows.push([v.name, (v.areas || []).length, Math.round(m2), v.heightM.join(' - '), v.density]);
+  }
+  if (!cfg || cfg.variants.some((v) => !v.areas)) document.getElementById('msg').textContent = 'WARNING: a variant has no areas (catch-all) - it would grow everywhere.';
+  // placements + entities
+  if (W && document.getElementById('dots').checked) {
+    for (const p of W.structures || []) { if (!p.origin || !p.mesh) continue; const k = cat(p.mesh), [px, py] = P(p.origin.x, p.origin.y); if (px < -5 || py < -5 || px > c.width + 5 || py > c.height + 5) continue; g.fillStyle = DCOL[k]; g.fillRect(px - 1.5, py - 1.5, k === 'tree' ? 4 : 3, k === 'tree' ? 4 : 3); }
+    for (const e of W.entities || []) { if (typeof e.x !== 'number') continue; const [px, py] = P(e.x, e.y); g.fillStyle = '#d2a8ff'; g.beginPath(); g.arc(px, py, 2, 0, 7); g.fill(); }
+  }
+  if (document.getElementById('poses').checked) for (const [x, y, t] of POSES) { const [px, py] = P(x, y); g.strokeStyle = '#fff'; g.lineWidth = 1; g.setLineDash([4, 3]); g.beginPath(); g.arc(px, py, 12 * S, 0, 7); g.stroke(); g.setLineDash([]); g.fillStyle = '#fff'; g.fillText('test: ' + t, px + 4, py - 12 * S - 3); }
+  document.getElementById('tb').innerHTML = '<tr><th>variant</th><th>areas</th><th>m2 (approx)</th><th>height m</th><th>density</th></tr>' + rows.map((r) => '<tr>' + r.map((x, i) => i ? '<td>' + x + '</td>' : '<th>' + x + '</th>').join('') + '</tr>').join('');
+}
+document.getElementById('c').onmousemove = (ev) => { const v = ev.target._v; if (!v) return; const r = ev.target.getBoundingClientRect(); document.getElementById('pos').textContent = `x ${(v[0] + (ev.clientX - r.left) / v[2]).toFixed(1)}  y ${(v[1] + (ev.clientY - r.top) / v[2]).toFixed(1)}`; };
+for (const id of ['view', 'dots', 'labels', 'poses']) document.getElementById(id).onchange = draw;
+if (!cfg) document.getElementById('msg').textContent = 'overworld_far.js did not load (serve the repo root: python -m http.server).';
+draw();
+fetch('../../content/worlds/world_m1.world.json').then((r) => r.json()).then((j) => { W = j; draw(); })
+  .catch(() => { document.getElementById('msg').textContent = 'world_m1.world.json not loaded - open via http (python -m http.server from the repo root), not file://.'; });
+</script>
+</body>
+</html>

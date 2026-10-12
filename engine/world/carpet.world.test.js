@@ -1,5 +1,5 @@
 // OB-073-D2f: the real recipe.carpet on world_m1 (World.load, geo installed as main.js does). validateCarpetConfig passes,
-// and the class-map share per variant at 3 walk poses shows the intended field. Run: node engine/world/carpet.world.test.js
+// and the class-map share per variant at walk poses shows the intended field; OB-096: every variant hand-placed, tower + road bare. Run: node engine/world/carpet.world.test.js
 import { World } from './World.js';
 import { validateCarpetConfig } from './carpet.js';
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
@@ -37,17 +37,22 @@ let threw = null;
 try { validateCarpetConfig(cfg, world.terrain.typeNames); } catch (e) { threw = e.message; }
 ok('validateCarpetConfig OK on recipe.carpet' + (threw ? ` (${threw})` : ''), threw === null);
 ok('4 variants: riverbank, straw, outwall, meadow', cfg.variants.map((v) => v.name).join() === 'riverbank,straw,outwall,meadow');
+// OB-096: no catch-all variant any more - every variant is hand-placed
+ok('every variant has hand-placed areas (OB-096, no catch-all)', cfg.variants.every((v) => Array.isArray(v.areas) && v.areas.length > 0));
 ok('world.carpet built', !!(world.carpet && world.carpet.classMap && world.carpet.cfg === cfg));
 // the new optional `areas` key is checked and names the key
 let msg = '';
 try { validateCarpetConfig({ ...cfg, variants: [{ ...cfg.variants[0], areas: [{ shape: 'disc', x: 1 }] }] }, world.terrain.typeNames); } catch (e) { msg = e.message; }
 ok('bad area names carpet.variants[0].areas[0]', msg.includes('carpet.variants[0].areas[0]'));
 
-// AC2: share per variant inside the carpet radius at 3 poses.
+// AC2: share per variant inside the carpet radius at the poses (OB-096: hand-placed areas; want 'none' = 0 % carpet).
 const POSES = [
-  { name: 'meadow (near the tower)', x: 1470, y: 1035, want: 'meadow' },
-  { name: 'ford bank', x: 1040, y: 1062, want: 'riverbank' },
-  { name: 'Outwall (route-walk leg 10o, outside the gate)', x: 954, y: 940, want: 'outwall' },
+  { name: 'meadow (large north meadow below the tower)', x: 1440, y: 1004, want: 'meadow' },
+  { name: 'east river bank south of the ford', x: 1050, y: 1096, want: 'riverbank' },
+  { name: 'barley field (north of the barley fence)', x: 976, y: 882, want: 'straw' },
+  { name: 'Outwall (west, outside the palisade)', x: 871, y: 947, want: 'outwall' },
+  { name: 'tower interior', x: 1496, y: 1024, want: 'none' },
+  { name: 'road (route-walk leg 8 waypoint)', x: 1350, y: 1050, want: 'none' },
 ];
 const names = ['none', ...cfg.variants.map((v) => v.name)], R = cfg.radiusM || 12;
 const covers = (c, x, y) => c && x >= c.x0 && y >= c.y0 && x < c.x0 + c.w * c.cellM && y < c.y0 + c.h * c.cellM;
@@ -66,6 +71,7 @@ for (const p of POSES) {
     cnt[c.classMap[i + j * c.w]]++; n++;
   }
   console.log(`  ${p.name} (${p.x}, ${p.y}) r ${R} m, ${n} cells: ` + names.map((s, k) => `${s} ${(100 * cnt[k] / n).toFixed(1)}%`).join(', '));
+  if (p.want === 'none') { ok(`${p.name}: 0 % carpet (got ${(100 * (n - cnt[0]) / n).toFixed(1)}%)`, n > 0 && cnt[0] === n); continue; }
   let best = 1; for (let k = 2; k < names.length; k++) if (cnt[k] > cnt[best]) best = k;
   ok(`${p.name}: dominant variant is ${p.want} (got ${names[best]})`, names[best] === p.want && cnt[best] / n >= 0.2);
 }
