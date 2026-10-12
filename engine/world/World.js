@@ -19,7 +19,7 @@ import { gridLocal } from './gridLocal.js';
 import { buildWorldColliders, buildStaticMeshCollider, buildTrunkCollider, buildDetailCollider, buildPropCollider, buildKinematicCollider, moveKinematicPrism, refitDynCollider } from './colliders.js';
 import { cosSinDeg } from '../voxel/voxelPose.js';
 import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastColliders, FLOOR_NONE } from '../physics/meshCollide.js';
-import { pointBlocked } from './interaction.js';
+import { pointBlocked, resolvePropPicks } from './interaction.js';
 import { createWind } from './wind.js';
 import { createClothSystem, collectClothDefs } from './cloths.js';
 import { createWater, collectWaterDefs, SEA_STATES } from './water.js';
@@ -623,6 +623,7 @@ export class World {
           propId: it.prop ? `${s.id}.${it.prop}` : null,
           def: it,
           usedKey: it.once ? `used.${s.id}.${it.id}` : null,
+          pick: null, // OB-084: filled by resolvePropPicks (rebuildPropColliders) once the props exist
         });
       }
     }
@@ -1072,6 +1073,7 @@ export class World {
 
   /** PROP-COLLIDE-01: load/committed edit only; one BVH, never per drag frame. */
   rebuildPropColliders() {
+    resolvePropPicks(this); // OB-084: prop moved / spawned -> refresh the level items' pick boxes (never in the hot pick loop)
     if (this.physicsMode !== 'mesh') return;
     const shapes = [], kin = [], cs = new Float64Array(2);
     this._kinSlot = new Map();
@@ -1770,12 +1772,14 @@ export class World {
       once: false,
       usedKey: null,
       structId: null,
+      pick: null, // OB-084: always present (stable hidden class); the hot pick loop never adds it
     };
     if (spec.pick) rec.pick = spec.pick; // OB-066: optional world AABB {x0,y0,z0,x1,y1,z1} the crosshair ray tests
     if (typeof spec.height === 'number') rec.height = spec.height;
     // OB-084: `bodyId` = an entity whose live body (bodyR wide, bodyH tall from its feet) is the pick volume (NPC, corpse, pickup)
     if (spec.bodyId) { rec.bodyId = spec.bodyId; rec.bodyR = typeof spec.bodyR === 'number' ? spec.bodyR : 0.4; rec.bodyH = typeof spec.bodyH === 'number' ? spec.bodyH : 1.8; }
     list.push(rec);
+    if (rec.propId && !rec.bodyId && !rec.pick) rec.pick = this.propPickBox(rec.propId) || null; // OB-084: prop collider box, resolved once
     return rec;
   }
 

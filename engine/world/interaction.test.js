@@ -9,7 +9,7 @@
 // serialize round trip) needs the real engine + design assets, since
 // `world.state`/`components.light` round-tripping is `serialize.js`'s job,
 // not this story's.
-import { findInteractTarget, updateInteraction, hasLineOfSight } from './interaction.js';
+import { findInteractTarget, updateInteraction, hasLineOfSight, resolvePropPicks } from './interaction.js';
 import { World, serialize, deserialize } from '../index.js';
 import paletteMod from '../../design/palette.js';
 // US-027b: test_room moved to content/levels/test_room.level.json.
@@ -362,6 +362,21 @@ const pick = (w, eye, cfg) => { const o = fresh(); findInteractTarget(w, eye, cf
   w.interactables = [big];
   ok('OB-084: inside a box, facing its centre prompts', eye(0, -10).targetKey === 'qi.wagon');
   ok('OB-084: inside a box, facing away does not', eye(180, 0).targetKey === null && eye(90, 0).targetKey === null);
+}
+
+{ // OB-084: a level item on a prop picks anywhere on the prop's collider box (resolved outside the hot loop)
+  const w = makeWorld();
+  const box = { x0: -2, x1: 2, y0: -4, y1: -2, z0: 0, z1: 2 };
+  w.propPickBox = (id) => (id === 's.wagon' ? box : null);
+  const rec = { key: 's.wagonItem', structId: 's', id: 'wagonItem', name: 'x', prompt: '[E]', x: 0, y: -3, z: 1, radius: 5, once: false, requires: null, propId: 's.wagon', usedKey: null, pick: null };
+  w.interactables = [rec];
+  const eyeAt = (yaw) => pick(w, { x: 0, y: 0, z: 1, yawDeg: yaw, pitchDeg: 0 }, { reach: 5 }).targetKey;
+  ok('OB-084: unresolved pick -> only the 0.5 m default box (aiming at the wagon edge misses)', eyeAt(Math.atan2(1.8, 3) * 180 / Math.PI) === null);
+  resolvePropPicks(w);
+  ok('OB-084: resolved to the prop collider box', rec.pick === box);
+  ok('OB-084: aiming at the wagon edge (1.8 m off centre) now picks', eyeAt(Math.atan2(1.8, 3) * 180 / Math.PI) === 's.wagonItem');
+  ok('OB-084: the hot loop does not add or change pick', rec.pick === box && Object.keys(rec).includes('pick'));
+  box.x1 = 3; resolvePropPicks(w); ok('OB-084: re-resolve follows a moved prop', rec.pick === box);
 }
 
 console.log(`interaction.test.js: ${pass} passed, ${fail} failed`);

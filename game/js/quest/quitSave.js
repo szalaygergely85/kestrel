@@ -7,6 +7,7 @@
 export function createQuitSave({ canSave, titleActive, save }) {
   const run = () => {
     if (titleActive() || !canSave()) return false;
+    // OB-079: save() -> relay.save -> adapter.writeSlot is fully synchronous (localStorage setItem), so it finishes inside pagehide
     try { save(); } catch (e) { return false; } // never throw out of an unload handler
     return true;
   };
