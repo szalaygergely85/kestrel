@@ -20,7 +20,7 @@ const W_CELL = W('cellM'), W_RAD = W('radiusM'), W_PATCH = W('patchM'), W_CCELL 
 const W_GUST = W('gustM'), W_TRAVEL = W('travelM'), W_TIME = W('timeSec'), W_CX0 = W('classX0'), W_CY0 = W('classY0');
 const W_NX0 = W('nearX0'), W_NY0 = W('nearY0'), W_NCELL = W('nearCell'), W_MAXH = W('maxH'), W_WMAX = W('wMax'), W_FPK = W('fpK');
 const W_WIND0 = W('windP0'), W_WIND1 = W('windP1'), W_EYE = W('eye'), W_PA = W('pitchA'), W_PB = W('pitchB'), W_PC = W('pitchC');
-const W_KNOTS = W('knots'), W_VTAB = W('vtab');
+const W_KNOTS = W('knots'), W_VTAB = W('vtab'), W_IX0 = W('ix0'), W_IY0 = W('iy0'), W_ORGX = W('orgX'), W_ORGY = W('orgY');
 const NOOP_GROUND = () => {};
 
 /**
@@ -89,7 +89,7 @@ export class WgCarpetPass {
    * @param {number} version bump on every class-map / near-band rebake: the textures re-upload only then
    */
   setCarpet(carpet, nearH, version) {
-    if (!carpet || !nearH) { this.active = false; this._carpet = null; this._nearH = null; return; }
+    if (!carpet || !nearH) { this.active = false; this.ran = false; this._carpet = null; this._nearH = null; return; }
     if (this._carpet !== carpet || this._nearH !== nearH || this._version !== version || this._dirty) {
       this._carpet = carpet; this._nearH = nearH; this._version = version;
       this._upload(carpet, nearH);
@@ -112,8 +112,8 @@ export class WgCarpetPass {
       if (this.texNear) d.dispose(this.texNear);
       this.texNear = d.createTexture({ format: 'r32f', width: nearH.w, height: nearH.h }); this._nW = nearH.w; this._nH = nearH.h;
     }
-    d.writeTexture(this.texClass, carpet.classMap, { x: 0, y: 0, width: carpet.w, height: carpet.h }, 0); this.stats.classUploads++;
-    d.writeTexture(this.texNear, nearH.data, { x: 0, y: 0, width: nearH.w, height: nearH.h }, 0); this.stats.nearUploads++;
+    d.writeTexture(this.texClass, carpet.classMap, { x: 0, y: 0, w: carpet.w, h: carpet.h }, 0); this.stats.classUploads++;
+    d.writeTexture(this.texNear, nearH.data, { x: 0, y: 0, w: nearH.w, h: nearH.h }, 0); this.stats.nearUploads++;
     packCarpetConfig(carpet, nearH, this.u, this.ui);
   }
 
@@ -130,7 +130,10 @@ export class WgCarpetPass {
     this.ui[W_COLS] = this.cols; this.ui[W_ROWS] = this.rows;
     f[W_TIME] = this.timeSec; f[W_FPK] = this.fpK;
     packCarpetWind(this.windParams, f, this.ui);
-    f[W_EYE] = cam.x; f[W_EYE + 1] = cam.y; f[W_EYE + 2] = cam.z; f[W_EYE + 3] = 0;
+    // PREC-01a: lattice origin (i32 cell of the eye) and the eye relative to it, computed in f64 here
+    const cm = f[W_CELL], ix0 = Math.floor(cam.x / cm), iy0 = Math.floor(cam.y / cm);
+    this.ui[W_IX0] = ix0; this.ui[W_IY0] = iy0; f[W_ORGX] = ix0 * cm; f[W_ORGY] = iy0 * cm;
+    f[W_EYE] = cam.x - ix0 * cm; f[W_EYE + 1] = cam.y - iy0 * cm; f[W_EYE + 2] = cam.z; f[W_EYE + 3] = 0;
     f[W_PA] = q.fX; f[W_PA + 1] = q.fY; f[W_PA + 2] = q.fZ; f[W_PA + 3] = q.tanHalfX;
     f[W_PB] = q.rX; f[W_PB + 1] = q.rY; f[W_PB + 2] = q.uX; f[W_PB + 3] = q.uY;
     f[W_PC] = q.uZ; f[W_PC + 1] = q.tanHalfY; f[W_PC + 2] = 0; f[W_PC + 3] = 0;

@@ -191,5 +191,17 @@ function dirOf(yawDeg, pitchDeg, out) {
   check(calm === 0 && leanMax > 0.1 && leanMax <= 1.0000001, `wind: calm lean 0 (${calm} violations); 30 m/s max |lean| ${leanMax.toFixed(3)} <= 1 (cap)`);
 }
 
+// D2e: ramp validation (once, in carpetCtxFor) names the variant and the triplet
+{
+  const { validateRamps } = await import('./carpet.js');
+  let okPass = true; try { validateRamps({ variants: [{ ramp: [[0, 0, 0], [255, 255, 255]] }] }); } catch (e) { okPass = false; }
+  let named = 0, total = 0;
+  for (const bad of [[[0, 0, 0]], [[0, 0, 0], [1, 2]], [[0, 0, 0], [256, 0, 0]], [[0, 0, 0], [1.5, 0, 0]], [[0, 0, 0], ['a', 'b', 'c']], [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]]) {
+    total++; try { validateRamps({ variants: [{ ramp: [[1, 1, 1], [2, 2, 2]] }, { ramp: bad }] }); } catch (e) { if (/carpet\.variants\[1\]\.ramp/.test(e.message)) named++; }
+  }
+  check(okPass && named === total, `ramp validation: valid ramp passes, ${named}/${total} bad ramps throw naming carpet.variants[1].ramp`);
+}
+
 if (fails) { console.log(`carpet.test: ${fails} FAILED`); process.exit(1); }
 console.log('carpet.test: all passed');
+

@@ -2,7 +2,7 @@ import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   meshFromJSON, meshFromBin, composeCharacter, meshCharacter, collapseRig, riggedModelDef, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks, sunPathFrom, applySunPair, blendLook,
-  createRipples, defineWadeSplash, wadeSplashAt,
+  createRipples, defineWadeSplash, wadeSplashAt, validateCarpetConfig,
 } from '../../../../engine/index.js';
 import {
   runGpuCompare, compareCells, meshCellCap, compareGeometry, compareLight, describeCellNormals, poisonAllCells, unpackReadback,
@@ -283,6 +283,19 @@ function buildCompareRuns(ctx) {
   // per-cell `screenRay` sky elevation and the fog scale at a large |b*sinP| (the RTS poses are 100 % ground).
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: rtsHillSky15 (RE-02a pitched, sky + fog scale)',
     cam: rtsHillPose(-15), real: true, meshOnly: true });
+
+  // OB-073-D2e part 2 (38.52 + pitched amendment): the grass carpet ON, a PITCHED perspective first-person pose on the meadow south of the tower.
+  // `carpet: true`: before() installs a minimal 1-variant meadow carpet on worldM1 (World._rebuildCarpet = the real class-map build) and hands it to the
+  // WebGPU pipeline; the loop below removes it again before the next pose. Gate: kind-10 cell agreement >= 98 %, colour within the usual bars.
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: carpetMeadow (OB-073-D2e, pitched first person at (1470, 1035) over grass, carpet ON)',
+    cam: { x: 1470, y: 1035, z: (worldM1.terrain ? worldM1.terrain.groundAt(1470, 1035) : 0) + engine.physics.eyeHeight, yawDeg: 235, pitchDeg: -12 }, real: true, meshOnly: true, pitchedDefault: true, carpet: true,
+    before: () => {
+      const tr = worldM1.terrain;
+      worldM1._carpetCtx = { cfg: validateCarpetConfig({ seed: 11, radiusM: 12, variants: [
+        { name: 'meadow', ground: tr.typeNames.filter((n) => n.startsWith('grass')), density: 0.9, heightM: [0.15, 0.28], ramp: [[10, 40, 10], [60, 160, 40], [180, 230, 90]] },
+      ] }, tr.typeNames), recipe: tr.recipe };
+      worldM1._rebuildCarpet();
+    } });
 
   // US-068b3b (38.19 item 2): ortho ISO pose over the roadSouth area (look-at 20 m along the roadSouth view, yaw 240).
   // Eye = focus - 500 m*F (ORTHO_BACK_M), halfH 20 m. NEW row: JS twin (meshPitched path) vs WG under the pitched gate rules.
@@ -946,7 +959,8 @@ async function runGpuCompareSceneMode(ctx) {
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, instAssert, vmAssert, decalAssert, timeSec: poseTime } of poseRuns) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose } of poseRuns) {
+    if (world.carpet || world._carpetCtx) { world._carpetCtx = null; world.carpet = null; wg.setCarpet(null, null, 0); } // D2e: carpet poses only
     if (restoreSun) { restoreSun(); restoreSun = null; }
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
@@ -961,6 +975,11 @@ async function runGpuCompareSceneMode(ctx) {
     if (real) {
       ctx.compareRipples = null;
       if (before) before();
+      if (carpetPose) { // D2e: GPU side of the pose's carpet (calm wind unless the world has some)
+        const nb = world.terrain.near, wp = world.wind && world.wind.params;
+        wg.setCarpet(world.carpet, { data: nb.hDraw, w: nb.w, h: nb.h, x0: nb.x0, y0: nb.y0, cell: nb.cell }, 1);
+        wg.setCarpetFrame(poseTime || 0, wp && wp.speed > 0 ? wp : null);
+      }
       if (ctx.compareRipples) fbCompare.ripples = ctx.compareRipples;
       compareVoxelPool.collect(world, cam);
     } else {
@@ -1111,7 +1130,17 @@ async function runGpuCompareSceneMode(ctx) {
     }); // PREC-04b2: oracle ties before cmpCells (exclude mask)
     const maskOk = !maskPose || cmpGeom.kind9Cells > 0; // ALPHA-01c: the fixture must be in view on the JS twin (else a pass would be vacuous)
     if (maskPose) console.log(`[gpucompare] maskTies ${poseName}: ${cmpGeom.maskTies}/${cmpGeom.maskTiesMax} k9=${cmpGeom.kind9Cells} holes=${cmpGeom.holes}${cmpGeom.holes ? ' cells ' + cmpGeom.holeCells.join(',') : ''}${maskOk ? '' : ' FIXTURE NOT IN VIEW'}`);
-    const geomBaseOkG = cmpGeom.kindMatchPct >= 99.5 && cmpGeom.holes === 0 && cmpGeom.meshTiesOk && cmpGeom.texelTiesOk;
+    // D2e: kind-10 (carpet) cell agreement on a carpet pose; its kind bar is 98 % (blade edges), every other pose keeps 99.5 %
+    let carpetCov = null;
+    if (carpetPose) {
+      let both = 0, js = 0, gp = 0;
+      for (let i = 0; i < cols * rows; i++) { const a = gbuf.kind[i] === 10, b = (GI[i * 4 + 1] & 0xff) === 10; if (a) js++; if (b) gp++; if (a && b) both++; }
+      const agree = 100 * (1 - (js + gp - 2 * both) / (cols * rows));
+      carpetCov = { js, gp, both, agree, ok: js > 0 && gp > 0 && agree >= 98 };
+      console.log(`[gpucompare] carpetCoverage ${poseName}: kind10 js=${js} gpu=${gp} both=${both} cellAgree=${agree.toFixed(2)}% (>=98) ${carpetCov.ok ? 'OK' : 'FAIL'}`);
+    }
+    const kindBar = carpetPose ? 98 : 99.5;
+    const geomBaseOkG = cmpGeom.kindMatchPct >= kindBar && cmpGeom.holes === 0 && cmpGeom.meshTiesOk && cmpGeom.texelTiesOk;
     // geometry-only verdict (same terms as the geometry half of the mesh gate below); recorded on both backends so a WebGL2 run is the WG-2b baseline
     const geomOk = cmpGeom.pass || (geomBaseOkG && cmpGeom.geomViolCells <= 4 && cmpGeom.violNonK8 === 0 && cmpGeom.aoViol === 0);
     if (wg) {
@@ -1128,7 +1157,7 @@ async function runGpuCompareSceneMode(ctx) {
       if (gpuFg) {
         cmpCellsW = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.005, 64, false, cmpGeom.excludeMask);
         const cmpCellsMeshW = renderer === 'mesh' ? compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.01, meshCellCap(gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map'), true, cmpGeom.excludeMask) : null;
-        const geomBaseOkW = cmpGeom.kindMatchPct >= 99.5 && cmpGeom.holes === 0 && cmpGeom.meshTiesOk && cmpGeom.texelTiesOk;
+        const geomBaseOkW = cmpGeom.kindMatchPct >= kindBar && cmpGeom.holes === 0 && cmpGeom.meshTiesOk && cmpGeom.texelTiesOk;
         const meshColourOkW = renderer === 'mesh' && geomBaseOkW && cmpGeom.geomViolCells <= 4 && cmpGeom.violNonK8 === 0 && cmpGeom.aoViol === 0 &&
           cmpCellsW.glyphMatchPct >= 99.5 && cmpCellsW.poisonedSurvivors === 0 && cmpCellsMeshW.pass;
         const pitchedHashOkW = renderer === 'mesh' && cam && (cam.projection === 'pitched' || cam.projection === 'ortho' || pitchedDefault) && geomBaseOkW &&
@@ -1136,7 +1165,7 @@ async function runGpuCompareSceneMode(ctx) {
         cellsOkW = !!(cmpCellsW.pass || meshColourOkW || pitchedHashOkW);
       }
       const waterfallW = waterfallRow(poseName, waterBits, fbCompare.water, n, cols, rows);
-      const okW = maskOk && geomOk && k8OkW && instOkW && vmOkW && lightOkW && cellsOkW && (!waterfallW || waterfallW.pass);
+      const okW = maskOk && (!carpetCov || carpetCov.ok) && geomOk && k8OkW && instOkW && vmOkW && lightOkW && cellsOkW && (!waterfallW || waterfallW.pass);
       overallOk = overallOk && okW;
       console.log(`[gpucompare] ${okW ? 'PASS' : 'FAIL'} ${poseName} [webgpu geometry]: kind=${cmpGeom.kindMatchPct.toFixed(2)}% holes=${cmpGeom.holes} geomViolCells=${cmpGeom.geomViolCells} violNonK8=${cmpGeom.violNonK8} depthViol=${cmpGeom.depthViol} uvViol=${cmpGeom.uvViol} faceViol=${cmpGeom.faceViol} nrmViol=${cmpGeom.nrmViol} nrmMaxDeg=${cmpGeom.nrmMaxDeg} k8cpu=${cmpGeom.k8Cpu} k8gpu=${cmpGeom.k8Gpu} inst=${instOkW} vm=${vmOkW}(${vmItemsGpu}/${vmItemsJs}) cells=${cmpCellsW ? (cellsWait ? 'WAIT-' + cellsWait + '(glyph ' + cmpCellsW.glyphMatchPct.toFixed(2) + '%, fgOut ' + cmpCellsW.fgOutside + ')' : (cellsOkW ? 'OK' : 'MISMATCH') + '(glyph ' + cmpCellsW.glyphMatchPct.toFixed(2) + '%, fgOut ' + cmpCellsW.fgOutside + ', bgOut ' + cmpCellsW.bgOutside + ', fgMax ' + cmpCellsW.fgMax + ', bgMax ' + cmpCellsW.bgMax + ', outside ' + (cmpCellsW.outsideFrac * 100).toFixed(3) + '%, poisoned ' + cmpCellsW.poisonedSurvivors + ')') : 'n/a'} light=${cmpLightW ? (cmpLightW.pass ? 'OK' : lightWaits ? 'WAIT-WG3d' : 'MISMATCH') : 'n/a'}${cmpLightW ? `(sunlit ${cmpLightW.sunlitMismatch}, dLMax ${cmpLightW.dLMax.toFixed(4)}, dLViol ${cmpLightW.dLViol}, nMismatch ${cmpLightW.nMismatch})` : ''} stats=${JSON.stringify({ mesh: gpuPipeline.stats.meshDraws, voxel: gpuPipeline.stats.voxelDraws, vm: gpuPipeline.stats.vmDraws, inst: gpuPipeline.stats.instancedDraws, gpuCull: gpuPipeline.stats.gpuCullDraws || 0, cloth: gpuPipeline.stats.clothDraws })}`);
       rowsOut.push({ ...(waterfallW ? { waterfall: waterfallW } : {}), pose: poseName, cmpGeom, cmpLight: cmpLightW, cmpCells: cmpCellsW, cellsWait, lightWaits, ok: okW, geomOk, wg: true, k8Ok: k8OkW, instOk: instOkW, vmOk: vmOkW, ...(vmAssert ? { vmItemsGpu, vmItemsJs } : {}) });

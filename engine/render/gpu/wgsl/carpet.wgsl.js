@@ -38,11 +38,14 @@ export const CARPET_BLOCK = defineUniformBlock('CarpetU', [
   { name: 'pitchC', type: 'vec4' },   // U.z, tanHalfY, 0, 0
   { name: 'knots', type: 'vec4', count: CARPET_KNOTS },
   { name: 'vtab', type: 'vec4', count: (MAX_VARIANTS + 1) * CARPET_VTAB_ROWS },
+  // PREC-01a (D2e): lattice origin = floor(eye / cellM) as i32 + its world position; `eye` holds eye - origin (camera-relative, small), so the ray / DDA /
+  // blade-vs-ray maths never sees a ~1500 m f32. World lookups (class, near height, noise, wind) add the origin back (grid-relative, accuracy ~1e-4 m is plenty).
+  { name: 'ix0', type: 'i32' }, { name: 'iy0', type: 'i32' }, { name: 'orgX', type: 'f32' }, { name: 'orgY', type: 'f32' },
 ]);
 
 /** sampled-texture kinds for the pipeline bindings, slot order */
 export const CARPET_TEXTURES = Object.freeze(['uint', 'uint', 'uint', 'uint', 'float']);
-export const CARPET_TARGETS = Object.freeze(['rgba32uint', 'rgba32uint', 'r32uint']);
+export const CARPET_TARGETS = Object.freeze(['rgba32ui', 'rgba32ui', 'r32ui']); // device format names (webgpuFormats.js), not the WebGPU ones
 
 // Pure trace: needs (defined by the including module) `cu` (CarpetU), hashFastU, classTexel(i,j)->u32, nearTexel(i,j)->f32, windKnot(i)->f32, windAt.
 export const CARPET_TRACE_WGSL = `
@@ -124,19 +127,22 @@ fn leanRatio(x: f32, y: f32, v: u32) {
 // blade of lattice cell (ix, iy) vs the ray; true on a hit (tB, h01, z, variant, lean in sXxx)
 fn bladeHit(ix: i32, iy: i32) -> bool {
   let c = cu.cellM; let seed = cu.seed;
-  let rx = (f32(ix) + 0.5 + (hash24(ix, iy, seed + SALT_JX) * 2.0 - 1.0) * ROOT_JITTER) * c;
-  let ry = (f32(iy) + 0.5 + (hash24(ix, iy, seed + SALT_JY) * 2.0 - 1.0) * ROOT_JITTER) * c;
+  let jx = (hash24(ix, iy, seed + SALT_JX) * 2.0 - 1.0) * ROOT_JITTER;
+  let jy = (hash24(ix, iy, seed + SALT_JY) * 2.0 - 1.0) * ROOT_JITTER;
+  let rx = (f32(ix - cu.ix0) + 0.5 + jx) * c; // origin-relative root (ray maths)
+  let ry = (f32(iy - cu.iy0) + 0.5 + jy) * c;
+  let wxr = rx + cu.orgX; let wyr = ry + cu.orgY; // world root (lookups only)
   let cj = cu.classJitterM;
-  let v = classAt(rx + (hash24(ix, iy, seed + SALT_CJX) * 2.0 - 1.0) * cj, ry + (hash24(ix, iy, seed + SALT_CJY) * 2.0 - 1.0) * cj);
+  let v = classAt(wxr + (hash24(ix, iy, seed + SALT_CJX) * 2.0 - 1.0) * cj, wyr + (hash24(ix, iy, seed + SALT_CJY) * 2.0 - 1.0) * cj);
   if (v == 0u) { return false; }
   let rank = hash24(ix, iy, seed + SALT_RANK);
   let row0 = cu.vtab[v * ${CARPET_VTAB_ROWS}u]; // density, hMin, hMax, bladeW
   if (rank >= row0.x) { return false; }
-  let pn = vnoise(rx / cu.patchM, ry / cu.patchM, seed + SALT_PATCH);
+  let pn = vnoise(wxr / cu.patchM, wyr / cu.patchM, seed + SALT_PATCH);
   let h = (row0.y + (row0.z - row0.y) * hash24(ix, iy, seed + SALT_H)) * (PATCH_LO + PATCH_RANGE * pn);
   let w = row0.w * 0.5;
-  let g = ground(rx, ry);
-  leanRatio(rx, ry, v);
+  let g = ground(wxr, wyr);
+  leanRatio(wxr, wyr, v);
   let lx = sLx; let ly = sLy;
   var sh = 0.5 * h; var tc = 0.0;
   for (var k = 0; k < 3; k++) {
@@ -163,11 +169,12 @@ fn bladeHit(ix: i32, iy: i32) -> bool {
   return true;
 }
 
+// ix/iy/ci/cj/i/j in traceCarpet are origin-relative lattice indices (global = + cu.ix0/iy0); the ray eye rEx/rEy is eye - origin.
 // loads nothing: the ray globals are set by the caller; returns the lattice steps needed (0 = empty segment)
 fn setRay(tHit: f32) -> i32 {
   rN2 = rDx * rDx + rDy * rDy;
   if (!(tHit > 0.0) || tHit >= BIG) { return 0; }
-  let zTop = ground(rEx + tHit * rDx, rEy + tHit * rDy) + cu.maxH;
+  let zTop = ground(rEx + tHit * rDx + cu.orgX, rEy + tHit * rDy + cu.orgY) + cu.maxH;
   var t0 = 0.0;
   if (rDz < 0.0 && rEz > zTop) { t0 = (zTop - rEz) / rDz; }
   let hxy = sqrt(rN2);
@@ -176,7 +183,7 @@ fn setRay(tHit: f32) -> i32 {
   if (t0 >= t1) { return 0; }
   rT0 = t0; rT1 = t1;
   let c = cu.cellM;
-  let i0 = i32(floor((rEx + t0 * rDx) / c)); let j0 = i32(floor((rEy + t0 * rDy) / c));
+  let i0 = i32(floor((rEx + t0 * rDx) / c)); let j0 = i32(floor((rEy + t0 * rDy) / c)); // origin-relative lattice indices
   let i1 = i32(floor((rEx + t1 * rDx) / c)); let j1 = i32(floor((rEy + t1 * rDy) / c));
   return abs(i1 - i0) + abs(j1 - j0) + 1;
 }
@@ -204,8 +211,8 @@ fn traceCarpet(tHit: f32) -> bool {
     if (windOn) {
       let tm = 0.5 * (tEnter + select(rT1, tNext, tNext < rT1));
       let px = rEx + tm * rDx; let py = rEy + tm * rDy;
-      let sh = clamp(rEz + tm * rDz - ground(px, py), 0.0, cu.maxH);
-      leanRatio(px, py, 0u);
+      let sh = clamp(rEz + tm * rDz - ground(px + cu.orgX, py + cu.orgY), 0.0, cu.maxH);
+      leanRatio(px + cu.orgX, py + cu.orgY, 0u);
       ci = i32(floor((px - sLx * sh) / c)); cj = i32(floor((py - sLy * sh) / c));
     }
     for (var j = cj - RING; j <= cj + RING; j++) {
@@ -215,7 +222,7 @@ fn traceCarpet(tHit: f32) -> bool {
           let cr = ((f32(i) + 0.5) * c - rEx) * rDy - ((f32(j) + 0.5) * c - rEy) * rDx;
           if (cr > rej || cr < -rej) { continue; }
         }
-        if (bladeHit(i, j) && sTb < best) { best = sTb; kTb = sTb; kH01 = sH01; kZ = sZ; kVar = sVar; kTint = sTint; kLx = sLx; kLy = sLy; }
+        if (bladeHit(i + cu.ix0, j + cu.iy0) && sTb < best) { best = sTb; kTb = sTb; kH01 = sH01; kZ = sZ; kVar = sVar; kTint = sTint; kLx = sLx; kLy = sLy; }
       }
     }
     prevCi = ci; prevCj = cj;

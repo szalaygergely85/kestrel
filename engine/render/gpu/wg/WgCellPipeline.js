@@ -388,8 +388,9 @@ export class WgCellPipeline {
 
   /** Async twin of GpuCellPipeline.readbackGeometry: the RESOLVED cell-res set `{GI, GA, Depth}` (cols*rows, 4-wide Uint32Arrays; Depth channel 0 = f32 bits). */
   async readbackGeometry() {
-    const t = this._t;
-    if (!t) throw new Error('WgCellPipeline.readbackGeometry: no targets');
+    const t0 = this._t;
+    if (!t0) throw new Error('WgCellPipeline.readbackGeometry: no targets');
+    const cp = this._carpetPass, t = cp && cp.ran && cp.texGI ? cp : t0; // D2e: the carpet pass's scratch set holds the carpet-adjusted GI/GA/Depth of every cell
     const n = this.cols * this.rows;
     this._rbGI = this._rbGI && this._rbGI.length === 4 * n ? this._rbGI : new Uint32Array(4 * n);
     this._rbGA = this._rbGA && this._rbGA.length === 4 * n ? this._rbGA : new Uint32Array(4 * n);

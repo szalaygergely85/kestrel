@@ -302,6 +302,19 @@ const _aoAlias = new WeakMap();
 const _worldCtx = new WeakMap();
 const _windTmp = new Float64Array(3);
 
+/** D2e: every variant ramp is 2..4 RGB triplets of integers 0..255 (the shade table packs them as bytes); clear error otherwise. */
+export function validateRamps(cfg) {
+  const vs = (cfg && cfg.variants) || [];
+  for (let i = 0; i < vs.length; i++) {
+    const r = vs[i].ramp;
+    if (!Array.isArray(r) || r.length < 2 || r.length > 4) throw new Error(`carpet.variants[${i}].ramp: needs 2..4 RGB triplets (got ${Array.isArray(r) ? r.length : typeof r})`);
+    for (let k = 0; k < r.length; k++) {
+      const t = r[k];
+      if (!Array.isArray(t) || t.length !== 3 || !t.every((c) => Number.isInteger(c) && c >= 0 && c <= 255)) throw new Error(`carpet.variants[${i}].ramp[${k}]: must be [r, g, b] integers 0..255 (got ${JSON.stringify(t)})`);
+    }
+  }
+}
+
 /**
  * Frame trace context of a World's carpet (cached per world; the class map fields are refreshed every call, since a band
  * rebake may swap the array). Returns null when the world has no carpet / class map / terrain.
@@ -311,6 +324,7 @@ export function carpetCtxFor(world) {
   if (!c || !c.classMap || !world.terrain) return null;
   let ctx = _worldCtx.get(world);
   if (!ctx || ctx.cfgRef !== c.cfg) {
+    validateRamps(c.cfg);
     const terrain = world.terrain;
     ctx = makeCarpetCtx(c, (q) => { q[2] = terrain.groundAt(q[0], q[1]); },
       (q) => { world.wind.sampleInto(q[0], q[1], 0, q[2] / STEP, _windTmp); q[3] = _windTmp[0]; q[4] = _windTmp[1]; });
@@ -322,7 +336,9 @@ export function carpetCtxFor(world) {
 }
 
 /**
- * Write carpet cells into the G-buffer (shear projection only; the caller skips pitched frames). For every written cell
+ * Write carpet cells into the G-buffer. Shear frames: `pt` omitted. Perspective pitched frames (38.52 amendment): pass the frame's `meshPitchTerms`;
+ * the per-cell ray is the GPU's (cellDirPitched: a = (2(x+.5)/cols-1) tanHalfX, b = (1-2y/rows) tanHalfY), normalised, with the raster depth
+ * (distance along the non-unit dir) scaled by |dir| for the trace and back for the written depth. Ortho frames: caller skips. For every written cell
  * (any non-sky cell with a blade in front of its depth): kind = KIND_GRASS, mat = variant id, u = h01, v = signed screen lean,
  * face = U, z = world z, depth = blade distance; the lean-tilted normal is packed in aoD and the colour shift in vao (kind 10 only
  * reads them). objectId / planeId stay those of the cell underneath (blades are never pickable). Zero alloc per frame.
@@ -331,13 +347,14 @@ export function carpetCtxFor(world) {
  * @param {ReturnType<typeof makeCarpetCtx>} ctx  @param {number} timeSec
  * @returns {number} cells written
  */
-export function carpetCells(gbuf, fb, cam, ctx, timeSec) {
+export function carpetCells(gbuf, fb, cam, ctx, timeSec, pt) {
   const cols = gbuf.cols, rows = gbuf.rows, depth = fb.depth.depth, kind = gbuf.kind;
   let alias = _aoAlias.get(gbuf);
   if (!alias || alias.buffer !== gbuf.aoD.buffer) { alias = new Uint32Array(gbuf.aoD.buffer, gbuf.aoD.byteOffset, gbuf.aoD.length); _aoAlias.set(gbuf, alias); }
   const yawRad = cam.yawDeg * Math.PI / 180, dirX = Math.sin(yawRad), dirY = -Math.cos(yawRad);
   const tanH = gbuf.cam.tanHalfHFov, planeX = -dirY * tanH, planeY = dirX * tanH, planeDistY = gbuf.cam.planeDistY;
   const horizonRow = rows / 2 + Math.tan(cam.pitchDeg * Math.PI / 180) * planeDistY;
+  if (pt) return carpetCellsPitched(gbuf, fb, cam, ctx, timeSec, pt, alias);
   const inp = ctx.inp, s = ctx.s, out = _cellHit, tintSalt = ctx.seed + SALT_TINT;
   inp[IN_EX] = cam.x; inp[IN_EY] = cam.y; inp[IN_EZ] = cam.z; inp[IN_TIME] = timeSec;
   ctx.q[0] = cam.x; ctx.q[1] = cam.y; ctx.ground(ctx.q);
@@ -357,6 +374,39 @@ export function carpetCells(gbuf, fb, cam, ctx, timeSec) {
       if (traceCarpetIn(ctx, out) === 0) continue;
       kind[i] = KIND_GRASS; gbuf.mat[i] = out.variant; gbuf.u[i] = out.h01; gbuf.v[i] = out.lean; gbuf.face[i] = FACE_U;
       gbuf.z[i] = out.z; depth[i] = out.t;
+      const lx = s[S_LX], ly = s[S_LY], inv = 1 / Math.sqrt(lx * lx + ly * ly + 1);
+      alias[i] = packNormalOct(lx * inv, ly * inv, inv);
+      gbuf.vao[i] = ((hashFast24(out.ix, out.iy, tintSalt) * INV_2_24) * 2 - 1) * TINT_AMP;
+      written++;
+    }
+  }
+  return written;
+}
+
+function carpetCellsPitched(gbuf, fb, cam, ctx, timeSec, pt, alias) {
+  const cols = gbuf.cols, rows = gbuf.rows, depth = fb.depth.depth, kind = gbuf.kind;
+  const inp = ctx.inp, s = ctx.s, out = _cellHit, tintSalt = ctx.seed + SALT_TINT;
+  inp[IN_EX] = cam.x; inp[IN_EY] = cam.y; inp[IN_EZ] = cam.z; inp[IN_TIME] = timeSec;
+  ctx.q[0] = cam.x; ctx.q[1] = cam.y; ctx.ground(ctx.q);
+  const eyeAbove = cam.z > ctx.q[2] + ctx.maxH;
+  let written = 0;
+  for (let y = 0; y < rows; y++) {
+    const b = (1 - (2 * y) / rows) * pt.tanHalfY;
+    const dz = pt.fZ + b * pt.uZ;
+    if (dz >= 0 && eyeAbove) continue;
+    for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+      const k = kind[i];
+      if (k === 0 || k === KIND_GRASS) continue;
+      const d = depth[i];
+      if (!(d > 0) || d === Infinity) continue;
+      const a = ((2 * (x + 0.5)) / cols - 1) * pt.tanHalfX;
+      const dx = pt.fX + a * pt.rX + b * pt.uX, dy = pt.fY + a * pt.rY + b * pt.uY;
+      const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      inp[IN_DX] = dx / len; inp[IN_DY] = dy / len; inp[IN_DZ] = dz / len; inp[IN_THIT] = d * len;
+      if (traceCarpetIn(ctx, out) === 0) continue;
+      kind[i] = KIND_GRASS; gbuf.mat[i] = out.variant; gbuf.u[i] = out.h01; gbuf.v[i] = out.lean; gbuf.face[i] = FACE_U;
+      gbuf.z[i] = out.z; depth[i] = out.t / len;
       const lx = s[S_LX], ly = s[S_LY], inv = 1 / Math.sqrt(lx * lx + ly * ly + 1);
       alias[i] = packNormalOct(lx * inv, ly * inv, inv);
       gbuf.vao[i] = ((hashFast24(out.ix, out.iy, tintSalt) * INV_2_24) * 2 - 1) * TINT_AMP;
