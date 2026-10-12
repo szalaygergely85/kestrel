@@ -41,11 +41,14 @@ export class PlacementGrid {
       const b = s.bbox;
       const hx = (b.x1 - b.x0) * 0.5, hy = (b.y1 - b.y0) * 0.5, hz = (b.z1 - b.z0) * 0.5;
       const r = Math.sqrt(hx * hx + hy * hy + hz * hz);
-      const reach = Math.min(o.farM, Math.max(o.minM, r * o.reachPerM)); // Infinity*0 guard below
-      this.reach2[i] = (reach === reach) ? reach * reach : o.minM * o.minM;
+      let reach = Math.min(o.farM, Math.max(o.minM, r * o.reachPerM));
+      if (reach !== reach) reach = o.farM; // NaN (reachPerM Infinity * r 0): unknown size -> far, never near
+      this.reach2[i] = reach * reach;
       px0[i] = b.x0; py0[i] = b.y0; px1[i] = b.x1; py1[i] = b.y1;
       const cx = Math.floor(((b.x0 + b.x1) * 0.5) / cell), cy = Math.floor(((b.y0 + b.y1) * 0.5) / cell);
-      const k = cx * 65536 + cy; // |cy| < 32768 cells
+      // key = position AND reach class (0..4, doubling from minM) so one big mesh does not keep small props' cells active
+      const cls = Math.min(4, Math.max(0, Math.ceil(Math.log2(reach / o.minM))));
+      const k = (cx * 65536 + cy) * 8 + cls; // |cy| < 32768 cells
       let id = keyOf.get(k);
       if (id === undefined) { id = keyOf.size; keyOf.set(k, id); }
       rawKey[i] = id; members++;
@@ -113,8 +116,13 @@ export class PlacementGrid {
       else want = d <= r + o.warmM ? WARM : COLD;
       if (want !== cur) { this._want[c] = want; chg[nChg] = c; chgD[nChg] = d; nChg++; }
     }
-    let apply = this._first ? nChg : Math.min(nChg, o.maxCellsPerFrame);
+    const first = this._first;
+    let apply = first ? nChg : Math.min(nChg, o.maxCellsPerFrame);
     const total = apply;
+    if (first) { // uncapped: order is irrelevant, skip the O(C^2) nearest-first selection
+      for (let k = 0; k < nChg; k++) { st[chg[k]] = this._want[chg[k]]; this.transitions++; }
+      apply = 0;
+    }
     // nearest-entering first: selection of the smallest d, swap-remove (no allocation, <= maxCellsPerFrame passes)
     for (let k = 0; k < apply; k++) {
       let best = k;
@@ -122,7 +130,7 @@ export class PlacementGrid {
       const tc = chg[best], td = chgD[best]; chg[best] = chg[k]; chgD[best] = chgD[k]; chg[k] = tc; chgD[k] = td;
       st[tc] = this._want[tc]; this.transitions++;
     }
-    this._pending = nChg > apply;
+    this._pending = !first && nChg > apply;
     this._first = false;
     if (total === 0) return false;
     this._rebuildLists();
