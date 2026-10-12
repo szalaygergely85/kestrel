@@ -135,7 +135,7 @@ import { playShieldClank, playBowShot } from './audio/sfx.js'; // EQ-07/09
 import { createTargetables } from './quest/sim/targetables.js';
 import { FIREBALL_CFG } from './quest/spellConfig.js';
 import { featuresFromParams, fireballOn } from './quest/features.js'; // D-065: fireball off unless ?fireball=1
-import { START_DEMO, START_FULL } from './quest/startConfig.js';
+import { START_DEMO, START_FULL, startFor } from './quest/startConfig.js';
 import { createPracticeTarget, applyPropTargetables } from './quest/practiceTarget.js';
 import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js'; // US-053c
 import { createWaterfallHooks } from './quest/waterfallHooks.js';
@@ -1478,7 +1478,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // fireball is known from the start in the right hand; the sword is taken in the tower (swordTake.js
       // adds it to the pack + left hand), so the demo pack holds the fireball only. `?demo=0` = empty pack.
       // An old save whose sword flag is already set migrates: sword in the pack + left hand.
-      ensureInventory(playerHandle.data, params.get('demo') === '0' ? START_FULL : START_DEMO); // startConfig.js
+      ensureInventory(playerHandle.data, startFor(params.get('demo') !== '0', fireballOn(engine.world, FEATURES))); // startConfig.js (fireball locked -> empty right hand)
       if (world.state['tower.sword.taken'] && itemDefs) migrateSword(playerHandle.data.components.inventory, itemDefs);
       if (itemDefs) migrateEquipment(playerHandle.data, itemDefs); // EQ-02: old saves sword->main, shield->off (before initialState)
       // US-091a2 (37.16.3): corpse loot + toast. Own RNG stream (nav seed ^ salt) so the beast wander RNG is never
@@ -1681,6 +1681,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     // ME-11c (architecture.md 27.18): `?physics=mesh` opts into the mesh
     // collider path instead of the grid (default, unchanged when omitted).
     guardLoad(() => engine.loadWorld(worldDef, worldLoadOpts));
+    if (params.get('stream') === '0' && engine.world) engine.world.streaming.enabled = false; // STREAM-01b: `?stream=0` = all placements resident (def.streaming passes through World.load)
     // BUG-FP-001: on the mesh renderer the terrain mesh needs the far bake (streamed at 1 ms/frame = ~10-15 s) before
     // far tiles exist, so the ground stayed black after spawn. Bake + build the terrain mesh once at load, like rts-test.
     if (renderer === 'mesh' && engine.world.terrain) {
@@ -2505,6 +2506,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           `${look.locked ? '' : ' [unlocked]'}  grounded: ${grounded}\nstructure: ${struct ? struct.id : '(none)'} sector: '${sectorCh}'${sector ? '' : ' (outside)'}\n${terrainInfo}`;
       }
       extra += `\nmesh singles ${meshFeedStats.kept}/${meshFeedStats.requested} (cap ${MAX_MESH_DRAWS})${meshFeedStats.dropped ? '  DROPPED ' + meshFeedStats.dropped : ''}  draws ${meshFeedStats.drawItems}/${MAX_DRAW_ITEMS}${meshFeedStats.overflow || meshFeedStats.groupsDropped || meshFeedStats.instDropped ? `  OVERFLOW ${meshFeedStats.overflow} grp ${meshFeedStats.groupsDropped} inst ${meshFeedStats.instDropped}` : ''}`; // OB-039
+      { const g = engine.world && engine.world.placementGrid; if (g) extra += `
+stream act ${g.activeCount}/${g.memberCount} warm ${g.warmCount} cells ${g.cellCount}  cls ${Array.from(g.classCells).join('/')}${engine.world.streaming.enabled ? '' : '  [OFF]'}`; } // STREAM-01b
       if (bootPrinted) extra += '\nboot: ' + bootSummary();
       overlay.update(engine.loop.fps, engine.loop.frameMs, extra);
     }

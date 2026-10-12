@@ -1,4 +1,4 @@
-// FB-02: Burl's Ember (sq.burl.fire): pack def, collect 3 emberpods, hand-in grants `unlock:fireball` + 1 mana potion exactly once.
+// FB-02: Burl's Ember (sq.burl.fire, opens after Ch2 end beat mq.ford.mirror): pack def, collect 3 emberpods, hand-in grants `unlock:fireball` + 1 mana potion exactly once.
 import { fileURLToPath } from 'node:url';
 import { makeOk } from '../../../engine/test/assert.js';
 import { createQuestBook, DONE, ACTIVE, READY } from './sim/questBook.js';
@@ -25,13 +25,13 @@ const wj = JSON.parse(readFileSync(fileURLToPath(new URL('../../../content/world
 ok(wj.entities.filter(e => e.components?.questPickup?.item === 'emberpod').length === 3, '3 emberpod pickups in the world');
 
 // prereq gate + flow
-const pre = { ...get('sq.burl.blue') }; delete pre.requires;
+const pre = { ...get('mq.ford.mirror') }; delete pre.requires;
 const book = createQuestBook(get('m1'), [pre, d]);
 const inv = new Map();
 book.packOps = { count: id => inv.get(id) || 0, remove: (id, n) => inv.set(id, (inv.get(id) || 0) - n), add: (id, n) => { inv.set(id, (inv.get(id) || 0) + n); return n; }, equipped: () => true };
 const real = createQuestBook(get('m1'), all.filter(x => x.id !== 'm1'));
 ok(!real.accept('sq.burl.fire'), 'not offered before its prereq');
-ok(book.accept('sq.burl.blue') && book.accept('sq.burl.fire') !== undefined, 'accept (prereq stubbed)');
+ok(book.accept('mq.ford.mirror') && book.accept('sq.burl.fire') !== undefined, 'accept (prereq stubbed)');
 for (let i = 0; i < 3; i++) book.feed({ type: 'item:count', id: 'emberpod', n: i + 1 });
 ok(book.statusOf('sq.burl.fire') === READY, 'ready after 3 pods');
 const reward = book.handIn('sq.burl.fire');
