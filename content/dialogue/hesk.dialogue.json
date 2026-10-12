@@ -16,37 +16,40 @@
   ],
   "nodes": {
     "hesk.names.1": {"lines": [
-      "NEEDS WRITER hesk.names.1"
+      "Stop there. Hands where I can see them.",
+      "You came over the river. Nobody comes over the river."
     ], "next": "hesk.names.2", "speaker": "hesk"},
     "hesk.names.2": {"lines": [
-      "NEEDS WRITER hesk.names.2"
+      "Ferrum says we're dead. Who are you?"
     ], "next": "hesk.names.3", "speaker": "hesk"},
     "hesk.names.3": {"lines": [
-      "NEEDS WRITER hesk.names.3"
+      "Well? A name. Or the river back the way you came."
     ], "next": "hesk.names.4", "speaker": "hesk"},
     "hesk.names.4": {"end": true, "lines": [
-      "NEEDS WRITER hesk.names.4"
+      "Wick.",
+      "I'm Hesk. Come in, Wick. Keep your blade low."
     ], "setFlag": "s.mq.ow.names.accept", "speaker": "hesk"},
     "hesk.relay.1": {"lines": [
-      "NEEDS WRITER hesk.relay.1"
+      "The old relay in the yard. You came for it, I think.",
+      "We hear the call too. Nights. The stone here stays dark."
     ], "next": "hesk.relay.2", "speaker": "hesk"},
     "hesk.relay.2": {"lines": [
-      "NEEDS WRITER hesk.relay.2"
+      "Something's missing from it. Ask Dorrin. At the forge."
     ], "next": "hesk.relay.3", "speaker": "hesk"},
     "hesk.relay.3": {"end": true, "lines": [
-      "NEEDS WRITER hesk.relay.3"
+      "He'll look at his boots. Let him. Then ask again."
     ], "setFlag": "s.mq.ow.relay.accept", "speaker": "hesk"},
     "hesk.relay.active.1": {"end": true, "lines": [
-      "NEEDS WRITER hesk.relay.active.1"
+      "Dorrin. At the forge. Barley gate, then the relay."
     ], "speaker": "hesk"},
     "hesk.after.1": {"end": true, "lines": [
-      "NEEDS WRITER hesk.after.1"
+      "Ferrum's dead are busy, Wick. Mind the geese."
     ], "speaker": "hesk"},
     "hesk.board.1": {"end": true, "lines": [
-      "NEEDS WRITER hesk.board.1"
+      "The board by the gate. Read it. That's who we are."
     ], "speaker": "hesk"},
     "hesk.meet.1": {"end": true, "lines": [
-      "NEEDS WRITER hesk.meet.1"
+      "Keep your blade low, Wick."
     ], "speaker": "hesk"}
   }
 }

@@ -302,8 +302,8 @@
                ['hhhhh', 'hqqqh', 'hhhhh'])
   };
   defs['relay.brass'] = {
-    id: 'relay.brass', name: 'Relay Brass', kind: 'key', stackMax: 1, hand: false, inPack: true,
-    desc: 'Worn brass. It was a gate hinge.',
+    id: 'relay.brass', name: 'Relay Collar', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'A green brass collar, cut with glyphs.',
     use: { none: 'Quest item - the Outwall Relay needs it (mq.ow.relay)' },
     glyph: { ch: '=', c: 'brass' },
     icon: icon([' .=. ', '( o )', " '=' "],
