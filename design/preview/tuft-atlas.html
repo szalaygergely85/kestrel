@@ -1,0 +1,17 @@
+<!doctype html><meta charset="utf-8"><title>Tuft atlas</title>
+<style>body{background:#111;color:#ccc;font:13px monospace;margin:16px}canvas{image-rendering:pixelated;margin:6px;background:#000}</style>
+<h3>Tuft atlas: 8 shapes, 16x24 texels. Colour = r (height along the stroke: dark green base to yellow tip); row 0 at the bottom.</h3>
+<div id="o"></div>
+<script type="module">
+import { buildTuftAtlas } from '../../engine/render/tuftAtlas.js';
+const a = buildTuftAtlas(1), S = 14, o = document.getElementById('o');
+for (let k = 0; k < a.n; k++) {
+  const c = document.createElement('canvas'); c.width = a.w * S; c.height = a.h * S; const x = c.getContext('2d');
+  for (let r = 0; r < a.h; r++) for (let q = 0; q < a.w; q++) {
+    const i = ((k * a.h + r) * a.w + q) * 2, rv = a.data[i]; if (!rv) continue;
+    const f = (rv - 1) / 253; x.fillStyle = `rgb(${40 + 200 * f | 0},${110 + 120 * f | 0},${30})`;
+    x.fillRect(q * S, (a.h - 1 - r) * S, S, S);
+  }
+  o.appendChild(c);
+}
+</script>
