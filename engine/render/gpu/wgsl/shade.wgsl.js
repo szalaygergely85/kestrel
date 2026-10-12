@@ -31,7 +31,7 @@ import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // 
 import { SKY_GLOW_WGSL } from '../../skyGlow.js';
 import { FOG_SHAPE_WGSL } from '../../fogShape.js';
 import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
-import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, GLINT_RATE, NOISE_CELLS, NOISE_W, NOISE_SALT, GLYPH_CELL, PATCH_K, PATCH_DITHER, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX } from '../../terrainShade.js';
+import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX } from '../../terrainShade.js';
 
 
 
@@ -117,12 +117,8 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
   let fp = tsFootprint(t);
   let v8 = tsValueNoise(u * ${(1 / NOISE_CELLS[0]).toFixed(4)}, v * ${(1 / NOISE_CELLS[0]).toFixed(4)}, ${NOISE_SALT});
   let nP = tsPatchNoise(u, v, fp, v8);
-  let gx = i32(floor(u * ${(1 / GLYPH_CELL).toFixed(4)})); let gy = i32(floor(v * ${(1 / GLYPH_CELL).toFixed(4)}));
-  let sw = hashFast(gx, gy, 12);
-  let fpOk = fp < ${GLYPH_CELL.toFixed(4)} * (0.35 + 0.4 * sw);
-  let dith = (hashFast(gx, gy, 13) - 0.5) * ${PATCH_DITHER.toFixed(4)} * tsOctFade(${GLYPH_CELL.toFixed(4)}, fp);
-  let off = clamp(i32(floor(nP * ${PATCH_K.toFixed(4)} + 0.5 + dith)), -1, 1);
-  let hF = min(v8, 0.999);
+  // OB-073 calm ground: colour tier only from the smooth noise (no per-cell dither dice); ONE glyph per type (no hash, no band/close/glint).
+  let off = clamp(i32(floor(nP * ${PATCH_K.toFixed(4)} + 0.5)), -1, 1);
 
   // S8-B2-14b wetness: darkens the lit term entering the tier/gain pick, same WET_DARK as detailShade.js/shadeCore
   // (terrain has no emissive term to keep separate - the whole incoming b is the "lit term" here).
@@ -137,9 +133,6 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
     bEff = bWet + nP * 0.05 * (1.0 - q * q * (3.0 - 2.0 * q));
   }
 
-  let closeG = close && t < su.closeBand * (0.6 + 0.4 * sw) && fpOk;
-  let nearG = select(fpOk, closeG, su.nearDetailOn != 0);
-  let hB = select(hF, hashFast(gx, gy, 7), nearG);
   var tier = 2;
   if (bEff < 0.45) { tier = 0; } else if (bEff < 0.8) { tier = 1; }
   var ii = tier + off;
@@ -157,43 +150,12 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
   fr *= gain; fgc *= gain; fbc *= gain;
   var br = fr * 0.3; var bgc = fgc * 0.3; var bbc = fbc * 0.3;
 
-  var bandIdx = 2;
-  if (t < su.bandNear) { bandIdx = 0; } else if (t < su.bandMid) { bandIdx = 1; }
-  // 23.4 near-detail: close wins over the near/mid/far tier (TLOOK texel 7, fixed).
-  var gT: vec4f;
-  if (closeG) { gT = textureLoad(uTlook, vec2i(7, base), 0); } else { gT = textureLoad(uTlook, vec2i(4 + bandIdx, base), 0); }
+  // OB-073: the calm glyph = middle entry of the NEAR glyph set (TLOOK texel 4), same at every distance/time/point.
+  let gT = textureLoad(uTlook, vec2i(4, base), 0);
   let packedX = i32(gT.x); let packedCount = i32(gT.y);
-  var code = pickCodeFromPacked(packedX, packedCount, i32(hB * f32(packedCount)));
+  var code = pickCodeFromPacked(packedX, packedCount, packedCount >> 1u);
 
   let t3 = textureLoad(uTlook, vec2i(3, base), 0);
-  if (t3.y > 0.5) {
-    let g = hashFast(gx, gy, i32(floor(timeSec * ${GLINT_RATE.toFixed(4)})));
-    if (g > 0.5) {
-      let alt = pickCodeFromPacked(packedX, packedCount, imod(i32(hB * f32(packedCount)) + 1, max(1, packedCount)));
-      code = alt;
-      let lightC = textureLoad(uTlook, vec2i(2, base), 0);
-      let lr = lightC.r * 255.0 * gain; let lg = lightC.g * 255.0 * gain; let lb = lightC.b * 255.0 * gain;
-      fr += (lr - fr) * 0.35; fgc += (lg - fgc) * 0.35; fbc += (lb - fbc) * 0.35;
-    }
-  }
-
-  // 23.4 close-band features (wildflower/pebble): up to MAX_FEATURES_PER_TYPE slots packed into TLOOK texels 8-15; fi (texel .w
-  // of the "A" slot) is the feature's index in the FLAT list the JS oracle hashes with the SAME salt (20+fi).
-  if (closeG) {
-    for (var slot = 0; slot < MAX_FEATURES_PER_TYPE; slot++) {
-      let fa = textureLoad(uTlook, vec2i(8 + slot * 2, base), 0);
-      let fchance = fa.x;
-      if (fchance <= 0.0) { continue; }
-      let fi = i32(fa.w);
-      let fh = hashFast(gx, gy, 20 + fi);
-      if (fh >= fchance) { continue; }
-      code = select(i32(fa.z), i32(fa.y), fh < fchance * 0.5);
-      let fbCol = textureLoad(uTlook, vec2i(9 + slot * 2, base), 0);
-      fr = fbCol.x * 255.0; fgc = fbCol.y * 255.0; fbc = fbCol.z * 255.0;
-      br = fr * 0.3; bgc = fgc * 0.3; bbc = fbc * 0.3;
-      break;
-    }
-  }
 
   // ME-06b: background canopy FACE look: TLOOK texel 3 .z/.w = face glyphs + count (forest only), texel 16 = trunk colour.
   if (faceMode != 0 && t3.w > 0.5 && !close && t >= su.bandNear) {
@@ -245,8 +207,8 @@ function buildShadeWgsl(withLevel) {
     lvOut = u32(levelFromThresholds(setIdPick, t0.z, gbAvg, su.cutoff));`,
       stip: ' lvOut = 255u;',
       out: ' o.lvl = lvOut;',
-      // 38.25 amendment C.1: terrain with the shimmer flag (TLOOK texel 3 .y, the branch that re-rolls the glyph on a timer) = level 254 'animated, never hold'
-      terr: ' o.lvl = select(255u, 254u, textureLoad(uTlook, vec2i(3, typeId), 0).y > 0.5);',
+      // OB-073 calm ground: no shimmer branch any more (glint removed), terrain is always level 255 (twin: terrainShade.js LEVEL_NONE)
+      terr: ' o.lvl = 255u;',
     }
     : { field: '', init: '', vars: '', set: '', stip: '', out: '', terr: '' };
   return `
