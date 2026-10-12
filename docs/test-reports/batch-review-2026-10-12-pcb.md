@@ -27,6 +27,8 @@ Required before 01b:
 3. `placementGrid.js:116`: on the uncapped `_first` update (load, and every `refreshPlacementGrid` rebuild after an editor `setMeshPlacement`), skip the selection sort and apply all changes directly. The sort is O(C^2) and C grows about 5x with item 1.
 Note for 01b: feeds must read `world.refreshPlacementGrid()` each frame and never cache the grid object, because a rebuild replaces it.
 
+**Re-review 47019c76: ARCH OK.** (1) Cells are now keyed by `(cx*65536+cy)*8 + cls`, with cls 0..4, so keys are unique, and the tower asserts `activeCount < N` (1692/2288). (2) A NaN reach maps to `farM` before the class is computed, and a test covers it. (3) The first update applies all changes directly, `total` still triggers `_rebuildLists`, and `_pending` is false. Minor, not blocking: the per-class cell-count log was not added. Add it in 01b.
+
 ## 6d669585 OB-079 quitSave: ARCH OK
 - The module is pure, with the same `canSave` guard and title skip as autosave, and it never throws out of an unload handler. The test covers every branch. Game code only, no engine impact. Note: a save in `pagehide` must be synchronous (localStorage). Confirm `requestSave` does not defer to a later frame or a promise, or the save is lost on a real tab close.
 
