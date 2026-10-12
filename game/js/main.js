@@ -600,11 +600,12 @@ const mapFogHook = chartData ? createMapFogHook(chartData.bounds) : null;
 if (mapFogHook) gameHooks.register(mapFogHook);
 // S8-B1-04: chest sim (quest/sim/chest.js) + item-get card (ui/itemGetCard.js), wired through the seam only - see
 // game/js/chestHook.js. `defs: []` (NEEDS C: no content/chests/*.json / placement yet) - harmless no-op today.
+let lootToast = null; // OB-082: the toast view lives in the boot block below (let toasts); the chest hook reaches it through this
 const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
   ? createChestHook({
     defs: [], items: window.ASSETS.items, style: assets.uiStyle.itemGetCard, rgb: assets.palette.rgb,
     openedChestsOf: () => (saveRelay ? saveRelay.openedChests : []), reduceMotion: isReduceMotion,
-    notify: (t) => { if (toasts) toasts.say(t, [226, 214, 176]); }, // OB-075: chest / gear loot = a toast line, not the item-get card
+    notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); }, // OB-075 (+ OB-082: was a ReferenceError on every loot): chest / gear loot = a toast line, not the item-get card
   })
   : null;
 if (chestHook) gameHooks.register(chestHook);
@@ -1516,6 +1517,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       }
       if (toasts) toasts.dispose();
       toasts = itemDefs ? createToastView(engine.events, window.ASSETS.items.toast, itemDefs, assets.palette.rgb) : null;
+      lootToast = toasts; // OB-082
       qbView = itemDefs ? createQuickbarView({ defs: itemDefs, keys: window.ASSETS.items.keys, rgb: assets.palette.rgb }) : null; // EQ-12
       if (saveRelay) { // QG-03: book events -> seam + toasts (the reward, if any, is granted from book.lastReward; Burl's quest has none - owner pick)
         const tv = toasts, msg = window.ASSETS.items.toast && window.ASSETS.items.toast.messages && window.ASSETS.items.toast.messages.packFull;
