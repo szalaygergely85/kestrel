@@ -89,7 +89,7 @@ export const GLYPH_CELL = 0.25, PATCH_K = 3.5, PATCH_DITHER = 0.5, FP_DEFAULT_K 
 // FAR_GLYPH_CELL: background canopy face / trunk cell (>= bands.near only, unchanged from OB-067's calm cell); glint re-rolls every 1/GLINT_RATE s.
 export const FAR_GLYPH_CELL = 4.0, GLINT_RATE = 0.1;
 // OB-081: ground footprint (m) where the far tier-colour blend starts / is full (hard tiers below FP0).
-export const FAR_BLEND_FP0 = 0.5, FAR_BLEND_FP1 = 2.0;
+export const FAR_BLEND_FP0 = 2.0, FAR_BLEND_FP1 = 8.0; // OB-085: was 0.5 -> 2 m (~20-50 m): tier contours on rock slopes morphed while walking closer
 /** OB-073: ground footprint (m) of one screen cell at depth t; hashCell as in shadeTerrain (<0 = -k, >0 = fixed ortho cell, 0 = default k). */
 export function groundFootprint(t, hashCell) {
   if (hashCell > 0) return hashCell;
