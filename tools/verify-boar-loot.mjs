@@ -44,10 +44,15 @@ try {
   assert.equal(noOrbGround, 0, 'OB-074: no hp/mp orb on the ground after the kill');
   assert.equal(await evaluate(cdp, '!!(window.__debug.chestHook && window.__debug.chestHook.card.isOpen)'), false, 'OB-075: no item card after loot');
   const lastId = await evaluate(cdp, '__debug.beasts.ids[__debug.beasts.ids.length-1]'); // a late boar (index > 15) used to be unhittable
-  await evaluate(cdp, `(()=>{const b=__debug.world.get(${JSON.stringify(lastId)}).data.transform,p=__debug.playerHandle.data.transform;p.x=b.x;p.y=b.y-1.2;p.z=b.z;__debug.look.yawDeg=0;return 1;})()`);
+  await evaluate(cdp, `(()=>{const b=__debug.world.get(${JSON.stringify(lastId)}).data.transform,p=__debug.playerHandle.data.transform;p.x=b.x;p.y=b.y-1.2;p.z=b.z;__debug.look.yawDeg=180;__debug.look.pitchDeg=0;return 1;})()`); // player is at b.y-1.2 (north of the boar), compass yaw 180 = facing +y = the boar
+  // A fresh ?dev=1&title=0 game has no sword: wield it as the game does (equipment.main; stepEquipment derives inventory.left, hands router arms the sword sim).
+  await evaluate(cdp, `(()=>{const c=__debug.playerHandle.data.components;c.equipment.main='sword';c.equipment.set='melee';return 1;})()`);
+  await pause(300);
   const hp0 = await evaluate(cdp, `__debug.world.get(${JSON.stringify(lastId)}).data.components.health.hp`);
-  await evaluate(cdp, "(window.__debug.input||{}).isDown=(c)=>c==='Mouse0'"); // locked LMB held (look.locked is forced true above)
+  // Real input path: engine Input listens for mousedown (button 0 = Mouse0 = useLeft); held while the sword sim swings.
+  await evaluate(cdp, "document.querySelector('canvas').dispatchEvent(new MouseEvent('mousedown',{button:0,bubbles:true}))");
   await pause(1500);
+  await evaluate(cdp, "document.querySelector('canvas').dispatchEvent(new MouseEvent('mouseup',{button:0,bubbles:true}))");
   const hp1 = await evaluate(cdp, `__debug.world.get(${JSON.stringify(lastId)}).data.components.health.hp`);
   assert.ok(hp1 < hp0, 'OB-076: locked LMB sword swing damages the last boar: ' + hp0 + ' -> ' + hp1);
   assert.deepEqual(errors, []);

@@ -5,7 +5,7 @@ export const SAMPLE_EVERY_S = 5, GAP_MIN_S = 30;
 
 /** AC4. samples: [{t (s), x, y, hour, tracked, compass, giver, event}] taken every SAMPLE_EVERY_S. A "blind" sample has no tracked HUD
  *  objective, no compass target and no ! / ? giver in view. One row per run of blind samples whose stretch is longer than GAP_MIN_S. */
-export const lineOf = (event) => (/^E\d/.test(String(event || '')) ? 'errand' : 'main'); // run.mjs names errand beats 'E1 ..'..'E6 ..'; everything else is the main line
+export const lineOf = (event) => (/^(E\d|E\+)/.test(String(event || '')) ? 'errand' : 'main'); // run.mjs names errand beats 'E1 ..'..'E6 ..' and the generic pass 'E+ <id>'; everything else is the main line
 
 export function buildGapTable(samples, { every = SAMPLE_EVERY_S, minS = GAP_MIN_S } = {}) {
   const rows = []; let run = [];
@@ -68,4 +68,53 @@ export function renderReport(r) {
   L.push(r.diffs.length ? '```\n' + JSON.stringify(r.diffs, null, 1).slice(0, 3000) + '\n```' : 'Identical after Continue.');
   if (r.notes && r.notes.length) { L.push('', '## Notes', ''); for (const n of r.notes) L.push(`- ${cell(n)}`); }
   return L.join('\n') + '\n';
+}
+
+// ---- M4-C2b generic errand pass: order + template -> action plan (pure; the page-side doing lives in verify-ch12-run.mjs) ----
+
+/** quest ids a quest waits for (requires[].quest done, opensAfter); step-gates ({quest,step}) need no ordering (they open by themselves in the main line) */
+export const depsOf = (q) => [...(q.requires || []).filter((r) => r.quest && r.done).map((r) => r.quest), ...(q.opensAfter || [])];
+
+/** stable topological order (Kahn, input order breaks ties) so chains unlock: a quest comes after every dependency that is in the list. Cycles keep input order. */
+export function orderErrands(quests) {
+  const ids = new Set(quests.map((q) => q.id)), left = quests.slice(), out = [], placed = new Set();
+  while (left.length) {
+    const i = left.findIndex((q) => depsOf(q).every((d) => !ids.has(d) || placed.has(d)));
+    const [q] = left.splice(i < 0 ? 0 : i, 1); out.push(q); placed.add(q.id);
+  }
+  return out;
+}
+
+/** regex sources for the world pickup interactable keys ('qp.berry3', 'qi.post') an item / collect id may lie around as: full id, first and last dotted segment */
+export function pickupPatterns(item) { const seg = String(item).split('.'); return [...new Set([String(item), seg[0], seg[seg.length - 1]])].map((x) => '^q[pi]\\.' + x.replace(/[^a-z0-9]/gi, '\\$&')); }
+
+/** one action per objective: {kind: explore|kill|collect|fetch|deliver|talk|escort|hit|flag|unknown, ...}. areas: areas.json "areas" map (area id -> {trigger}) */
+export function stepsOf(q, areas = {}) {
+  const trig = (a) => (areas[a] && areas[a].trigger) || a;
+  if (q.steps) return q.steps.map((s) => {
+    const p = s.params || {};
+    switch (s.template) {
+      case 'explore': return { kind: 'explore', triggers: (p.areas || []).map(trig) };
+      case 'kill': return { kind: 'kill', ids: p.ids || [], count: p.count || (p.ids || []).length };
+      case 'collect': return { kind: 'collect', item: p.item || (p.ids || [])[0], count: p.count || 1 };
+      case 'fetch': return { kind: 'fetch', item: p.item, count: p.count || 1 };
+      case 'deliver': return { kind: 'deliver', item: p.item, count: p.count || 1, to: p.to };
+      case 'talk': return { kind: 'talk', to: p.to };
+      case 'escort': return { kind: 'escort', npc: p.npc, to: p.to };
+      default: return { kind: 'unknown', why: 'template ' + s.template };
+    }
+  });
+  return (q.objectives || []).map((o) => {
+    const w = o.when || {}, m = /^(target\d+)\.hit$/.exec(w.id || '');
+    if (w.type === 'area') return { kind: 'explore', triggers: [trig(w.id)] };
+    if (w.type === 'flag' && m) return { kind: 'hit', target: m[1] };
+    if (w.type === 'flag') { const f = /^lore\.(\w+)\.read$/.exec(w.id || ''); return { kind: 'flag', id: w.id, ix: f ? 'qi.' + f[1] : null }; }
+    return { kind: 'unknown', why: 'objective ' + w.type };
+  });
+}
+
+/** {id, site, turnSite, steps, equip} for the run loop. turnSite: last deliver -> its target, else turnIn, else the giver (null for site-less main quests). */
+export function planQuest(q, areas) {
+  const steps = stepsOf(q, areas), last = steps[steps.length - 1];
+  return { id: q.id, site: q.site || null, turnSite: last && last.kind === 'deliver' ? last.to : (q.turnIn || q.site || null), steps, equip: q.requireEquipped || [] };
 }

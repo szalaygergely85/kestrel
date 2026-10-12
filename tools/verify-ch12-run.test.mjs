@@ -1,6 +1,6 @@
 // node tools/verify-ch12-run.test.mjs - pure parts of the M4-C2 harness.
 import assert from 'node:assert/strict';
-import { lineOf, buildGapTable, compareSnaps, questVerdict, renderReport } from './verify-ch12-lib.mjs';
+import { lineOf, buildGapTable, compareSnaps, questVerdict, renderReport, depsOf, orderErrands, pickupPatterns, stepsOf, planQuest } from './verify-ch12-lib.mjs';
 
 const S = (t, o = {}) => ({ t, x: t, y: 0, hour: 8, tracked: false, compass: false, giver: false, event: 'e' + t, ...o });
 
@@ -48,3 +48,32 @@ assert.equal(questVerdict([{ id: 'a', status: 'done' }]).ok, true);
   for (const k of ['AC1 all Ch1-2 beats + errands done | FAIL', 'AC3 save / Continue byte-stable | PASS', '| 1, 2 | 35 | 8 | 40 | walk |', '![wake](wake.png)', 'a/b', 'Identical after Continue.', 'flag z']) assert.ok(md.includes(k), k);
 }
 console.log('verify-ch12 pure parts: PASS');
+
+// ---- M4-C2b generic errand pass ----
+{
+  assert.equal(lineOf('E+ sq.x'), 'errand'); assert.equal(lineOf('9 road'), 'main');
+  // chains unlock: deps first, input order otherwise, unknown deps ignored, cycle does not hang
+  const Q = (id, o = {}) => ({ id, ...o });
+  const o = orderErrands([Q('c', { requires: [{ quest: 'b', done: true }] }), Q('b', { requires: [{ quest: 'a', done: true }, { quest: 'zz', done: true }] }), Q('a'), Q('d', { opensAfter: ['c'] }), Q('e', { requires: [{ quest: 'm1', step: 'relay1' }] })]);
+  assert.deepEqual(o.map((q) => q.id), ['a', 'b', 'c', 'd', 'e']);
+  assert.deepEqual(depsOf(Q('x', { requires: [{ quest: 'm1', step: 's' }, { quest: 'y', done: true }, { flag: 'f' }], opensAfter: ['z'] })), ['y', 'z']);
+  assert.equal(orderErrands([Q('p', { opensAfter: ['q'] }), Q('q', { opensAfter: ['p'] })]).length, 2);
+}
+{ // template -> action
+  const areas = { northLook: { trigger: 'northLookT' } };
+  const s = stepsOf({ steps: [{ template: 'explore', params: { areas: ['northLook', 'roadWest'] } }, { template: 'kill', params: { ids: ['a', 'b'], count: 2 } }, { template: 'collect', params: { ids: ['redcap'], count: 5 } },
+    { template: 'collect', params: { item: 'brass.scrap', count: 4 } }, { template: 'fetch', params: { item: 'boar.meat' } }, { template: 'deliver', params: { item: 'arrow', count: 3, to: 'notePost' } }, { template: 'talk', params: { to: 'burl' } }, { template: 'escort', params: { npc: 'bear', to: 'relayBend' } }, { template: 'wat' }] }, areas);
+  assert.deepEqual(s.map((x) => x.kind), ['explore', 'kill', 'collect', 'collect', 'fetch', 'deliver', 'talk', 'escort', 'unknown']);
+  assert.deepEqual(s[0].triggers, ['northLookT', 'roadWest']); assert.equal(s[2].item, 'redcap'); assert.equal(s[2].count, 5); assert.equal(s[4].count, 1); assert.equal(s[5].to, 'notePost');
+  const o = stepsOf({ objectives: [{ when: { type: 'flag', id: 'target2.hit' } }, { when: { type: 'flag', id: 'lore.fordMark.read' } }, { when: { type: 'area', id: 'northLook' } }, { when: { type: 'item' } }] }, areas);
+  assert.deepEqual(o.map((x) => x.kind), ['hit', 'flag', 'explore', 'unknown']); assert.equal(o[0].target, 'target2'); assert.equal(o[1].ix, 'qi.fordMark'); assert.deepEqual(o[2].triggers, ['northLookT']);
+}
+{ // turn-in site: last deliver -> target; turnIn; giver; site-less main quest -> null
+  assert.equal(planQuest({ id: 'a', site: 'rook', steps: [{ template: 'deliver', params: { item: 'x', to: 'burl' } }] }).turnSite, 'burl');
+  assert.equal(planQuest({ id: 'b', site: 'notePost', turnIn: 'relayFord', steps: [{ template: 'explore', params: { areas: ['q'] } }] }).turnSite, 'relayFord');
+  assert.equal(planQuest({ id: 'c', site: 'burl', steps: [{ template: 'kill', params: { ids: ['k'] } }] }).turnSite, 'burl');
+  assert.equal(planQuest({ id: 'd', objectives: [] }).turnSite, null);
+  assert.deepEqual(planQuest({ id: 'e', site: 'relayBend', requireEquipped: ['shield'], steps: [] }).equip, ['shield']);
+  const re = pickupPatterns('brass.scrap').map((p) => new RegExp(p)); assert.ok(re.some((r) => r.test('qp.brass1'))); assert.ok(re.some((r) => r.test('qi.scrap2'))); assert.ok(!re.some((r) => r.test('qp.berry1')));
+}
+console.log('verify-ch12-run: errand plan ok');

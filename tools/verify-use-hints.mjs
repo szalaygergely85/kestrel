@@ -29,7 +29,11 @@ try {
   const info = await evaluate(cdp, `(()=>{const w=__debug.world,l=w.interactables.filter(r=>!(r.usedKey&&w.state[r.usedKey])&&!r.requires);const r=l.find(r=>/note/i.test(r.name||r.key))||l[0];return r?{key:r.key,x:r.x,y:r.y,z:r.z}:null;})()`);
   assert.ok(info, 'no usable interactable in the world');
   // put the player 2 m south of it, looking 25 deg to the right of it
-  const stand = (yawOff) => evaluate(cdp, `(()=>{const p=__debug.playerHandle.data.transform;p.x=${info.x};p.y=${info.y + 2};p.z=${info.z - 0.8};__debug.look.yawDeg=${yawOff};return 1;})()`);
+  // yaw = compass bearing player -> note (0 = N = -y, clockwise; same as engine/core/transform.js yawFromDelta) + offset; pitch looks at the note (eye ~1.6 m, positive = up)
+  const sx = info.x, sy = info.y + 2, sz = info.z - 0.8;
+  const bearing = (Math.atan2(info.x - sx, -(info.y - sy)) * 180) / Math.PI;
+  const pitch = (Math.atan2(info.z - (sz + 1.6), Math.hypot(info.x - sx, info.y - sy)) * 180) / Math.PI;
+  const stand = (yawOff) => evaluate(cdp, `(()=>{const p=__debug.playerHandle.data.transform;p.x=${sx};p.y=${sy};p.z=${sz};__debug.look.yawDeg=${bearing + yawOff};__debug.look.pitchDeg=${pitch};return 1;})()`);
   await stand(25); await pause(1500);
   const a = await evaluate(cdp, 'JSON.stringify({n:__debug.useHints.n,keys:Array.from(__debug.useHints.key).slice(0,__debug.useHints.n)})');
   console.log('off-axis', a);
