@@ -257,6 +257,14 @@
     icon: icon([' .|. ', ' ||| ', '=====' ],
                [' bbb ', ' bbb ', 'bbbbb'])
   };
+  defs.emberpod = {
+    id: 'emberpod', name: 'Emberpod', kind: 'material', stackMax: 3, hand: false, inPack: true,
+    desc: 'A dry red pod. Warm as a held coal.',
+    use: { none: 'Material - quest item (sq.burl.fire, FB-02; handed to Burl)' },
+    glyph: { ch: 'o', c: 'goreRed' },
+    icon: icon([' .-. ', '(ooo)', " '-' "],
+               [' rRr ', 'RoRoR', ' rRr '])
+  };
   defs.parcel = {
     id: 'parcel', name: 'Forge Parcel', kind: 'key', stackMax: 1, hand: false, inPack: true,
     desc: 'Heavy for its size. FOR THE FORGE.',
