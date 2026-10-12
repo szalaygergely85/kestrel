@@ -46,7 +46,7 @@
 
 <h2>Checks</h2>
 <div id="checks"><div class="info">loading engine modules ...</div></div>
-<h2>Missing clips (not invented - BEAR-D1 spec; needed by BEAR-01)</h2>
+<h2>Fight clips (BEAR-D2, all fours; needed by BEAR-01)</h2>
 <div id="missing"></div>
 
 <div id="sections"></div>
@@ -80,7 +80,7 @@ const matId = (k) => { let i = matKeys.indexOf(k); if (i < 0) { matKeys.push(k);
 const MODELS = ['bear', 'bearBlack'];
 const PMS = {};
 for (const k of MODELS) PMS[k] = packVoxelModel(A.models[k].voxel, matId);
-const CLIPS = Object.keys(A.models.bearBlack.voxel.animations);   // idle, walk, turn (shared by both bears)
+const CLIPS = Object.keys(A.models.bearBlack.voxel.animations);   // idle, walk, turn (shared) + BEAR-D2 fight clips (black only; Burl shows idle)
 let sel = CLIPS[0], selT0 = performance.now();
 
 // ------------------------------------------------------------------ controls
@@ -279,7 +279,7 @@ function frame() {
     const items = [];
     let key = sel + '|' + ver;
     v.models.forEach((m, i) => {
-      const PM = PMS[m], st = clipState(PM, sel, now - selT0);
+      const PM = PMS[m], st = clipState(PM, PM.clipIndex[sel] !== undefined ? sel : 'idle', now - selT0);
       computeVoxelPose(PM, { x: v.offs[i], y: 0, z: 0, yawDeg: v.dist ? 90 : 0, scale: 1, clip: st.clip, frame: st.frame, tMs: st.tMs }, v.poses[i]);
       items.push({ PM, pose: v.poses[i] });
       key += '|' + st.frame + '|' + Math.round(st.tMs);
@@ -311,9 +311,16 @@ function runChecks() {
   for (const [c, m] of out) { const d = document.createElement('div'); d.className = c; d.textContent = m; host.appendChild(d); }
   const mh = $('missing');
   for (const [k, why] of Object.entries(FX.missingClips)) { const d = document.createElement('div'); d.className = 'warn'; d.textContent = k + ': ' + why; mh.appendChild(d); }
-  const d = document.createElement('div'); d.className = 'info';
-  d.textContent = 'Owner question: the spec asks for a rear-up telegraph, but style-guide 0.2 says nothing stands up. Proposal: an all-fours bluff-charge tell (head low, ears back, front-paw stomp + huff). Not built until answered.';
-  mh.appendChild(d);
+  const DA = A.models.bearBlack.voxel.animations;
+  const info = (t, c) => { const d = document.createElement('div'); d.className = c || 'info'; d.textContent = t; mh.appendChild(d); };
+  if (!Object.keys(FX.missingClips).length) info('PASS no missing clips (BEAR-D2)', 'pass');
+  for (const k of ['charge', 'windup', 'swipe', 'hurt', 'flinch', 'die', 'dead']) {
+    const c = DA[k];
+    info(k + ': ' + c.frames.length + ' keys, ' + c.durations.reduce((a, b) => a + b, 0) + ' ms' + (c.loop ? ' loop' : ' once'));
+  }
+  info('windup = all-fours bluff tell (owner: no rear-up, style-guide 0.2): head low, ears back, weight back, stomps at ' +
+       FX.telegraph.stompMs.join(' / ') + ' ms. swipe hit key ' + FX.swipe.hitKey + ' (' + FX.swipe.hitMs.join('..') + ' ms). ' +
+       'die thud key ' + FX.death.thudKey + '. Burl has no fight clips: he plays idle while one is selected.');
 }
 try { runChecks(); } catch (err) { $('checks').innerHTML = '<div class="fail">checks threw: ' + err.message + '</div>'; console.error(err); }
 frame();

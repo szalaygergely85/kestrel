@@ -44,11 +44,44 @@ test('same rig as Burl: size, cellM, anchor, parts (boxes, pivots, parents), vox
   }));
 });
 
-test('clips: idle / walk / turn identical to Burl; no dialogue clips; beast clips listed as missing', () => {
-  assert.deepStrictEqual(Object.keys(DEF.animations).sort(), ['idle', 'turn', 'walk']);
+test('clips: idle / walk / turn identical to Burl; no dialogue clips; BEAR-D2 fight clips exist, none missing', () => {
+  assert.deepStrictEqual(Object.keys(DEF.animations).sort(),
+    ['charge', 'dead', 'die', 'flinch', 'hurt', 'idle', 'swipe', 'turn', 'walk', 'windup']);
   for (const k of ['idle', 'walk', 'turn']) assert.deepStrictEqual(DEF.animations[k], BURL.animations[k], k);
   for (const k of Object.values(FX.clipFor.state)) assert.ok(DEF.animations[k], 'clipFor ' + k);
-  for (const k of ['charge', 'windup', 'swipe', 'hurt', 'flinch', 'die', 'dead']) assert.ok(FX.missingClips[k], 'missing ' + k);
+  for (const k of ['hurt', 'flinch', 'die', 'dead']) assert.ok(DEF.animations[FX.clipFor[k]], 'clipFor.' + k);
+  assert.deepStrictEqual(FX.missingClips, {});
+});
+
+// BEAR-D2: frame counts, durations, loop flags, timing contracts (telegraph >= 0.8 s, swipe hit key), all on four legs
+const SPEC = { charge: [6, 400, true], windup: [7, 800, false], swipe: [6, 600, false], hurt: [2, 100, false],
+               flinch: [3, 250, false], die: [5, 500, false], dead: [1, 1000, true] };
+test('BEAR-D2 clips: frame counts, total ms, loop, durations multiples of 50, every part keyed', () => {
+  const parts = Object.keys(DEF.parts).sort();
+  for (const [k, [n, ms, loop]] of Object.entries(SPEC)) {
+    const c = DEF.animations[k];
+    assert.strictEqual(c.frames.length, n, k + ' frames'); assert.strictEqual(c.durations.length, n, k + ' durations');
+    assert.strictEqual(c.durations.reduce((a, b) => a + b, 0), ms, k + ' total ms');
+    assert.strictEqual(!!c.loop, loop, k + ' loop');
+    for (const d of c.durations) assert.strictEqual(d % 50, 0, k + ' duration ' + d);
+    c.frames.forEach((f, i) => assert.deepStrictEqual(Object.keys(f).sort(), parts, k + ' key ' + i));
+  }
+  assert.strictEqual(DEF.animations.hurt.interp, 'step');
+  assert.ok(FX.telegraph.ms >= 800 && FX.telegraph.clip === 'windup');
+  const sw = DEF.animations.swipe, hitStart = sw.durations.slice(0, FX.swipe.hitKey).reduce((a, b) => a + b, 0);
+  assert.strictEqual(hitStart, FX.swipe.hitMs[0], 'swipe hit key start');
+  assert.ok(sw.frames[FX.swipe.hitKey].armR.rot[0] <= -30, 'swipe: right paw raised + forward on the hit key');
+});
+test('owner rule 0.2: no rear-up (body pitch never nose-up past 8 deg), paws planted outside die / dead', () => {
+  for (const k of ['charge', 'windup', 'swipe', 'hurt', 'flinch']) {
+    for (const f of DEF.animations[k].frames) {
+      assert.ok(f.body.rot[0] >= -8, k + ' body rx ' + f.body.rot[0]);
+      for (const l of ['armL', 'armR', 'legL', 'legR']) assert.strictEqual(f[l].pos[1], -f.body.pos[1] || 0, k + ' ' + l + ' planted');
+    }
+  }
+  const d = DEF.animations.dead.frames[0];
+  assert.strictEqual(d.body.rot[1], 90, 'dead lies on its side');
+  assert.ok(d.body.pos[2] <= 0 && d.body.pos[2] >= -3, 'dead body z ' + d.body.pos[2]);
 });
 
 test('coat: whole-body value <= 0.6 x Burl (0.8 on interim mats), tan muzzle lighter than the coat, chest blaze present', () => {
@@ -61,12 +94,13 @@ test('coat: whole-body value <= 0.6 x Burl (0.8 on interim mats), tan muzzle lig
   assert.ok(blaze >= 6 && blaze <= 20, 'blaze cells ' + blaze);
 });
 
-test('engine mesher: LOD0 <= 3500 tris (same budget as Burl)', () => {
+test('engine mesher: LOD0 <= 3500 tris (same budget as Burl; BEAR-D2 adds clips only, no voxels); clips pack', () => {
   const ids = [];
   const PM = packVoxelModel(DEF, (k) => { let i = ids.indexOf(k); if (i < 0) { ids.push(k); i = ids.length - 1; } return i + 1; });
   const tris = buildVoxelMesh(PM, { id: 'bearBlack', partNames: Object.keys(DEF.parts) }).triCount;
   console.log(`  LOD0 ${tris} tris`);
   assert.ok(tris <= 3500, 'tris ' + tris);
+  for (const k of Object.keys(SPEC)) assert.ok(PM.clipIndex[k] !== undefined, 'packed clip ' + k);
 });
 
 console.log(`${passed} passed`);
