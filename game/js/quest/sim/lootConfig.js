@@ -5,6 +5,7 @@
 /** Corpse prompt text, `[E]` prefix included (crosshair.js highlights it). Writer placeholder (37.16.3). */
 export const LOOT_PROMPT = {
   boar: '[E] Loot boar',
+  bear: '[E] Loot bear', // BEAR-01 placeholder (writer); bears use the boar table (same kill/loot path)
 };
 
 /**

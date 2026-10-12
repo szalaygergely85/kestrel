@@ -103,7 +103,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
     const t = beasts.entities[i].transform;
     recs[i] = world.addInteractable({
       key: flagKey[i], name: 'beast.loot', x: t.x, y: t.y, z: t.z + CORPSE_LIFT, radius: LOOT_RADIUS,
-      prompt: LOOT_PROMPT.boar, requires: flagKey[i], propId: ids[i], def: { beastId: ids[i] },
+      prompt: (beasts.bear && beasts.bear[i]) ? LOOT_PROMPT.bear : LOOT_PROMPT.boar, requires: flagKey[i], propId: ids[i], def: { beastId: ids[i] },
       // OB-084: the whole lying corpse picks (longer than the standing radius, lower than the standing height)
       bodyId: ids[i], bodyR: ((beasts.entities[i].components.targetable && beasts.entities[i].components.targetable.radius) || 0.5) * 1.4, bodyH: ((beasts.entities[i].components.targetable && beasts.entities[i].components.targetable.height) || 1) * 0.7,
     });
