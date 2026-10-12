@@ -236,7 +236,7 @@ try { exportFbx(rigged, { rgbOf, colorMode: 'x' }); } catch { threw++; }
 try { exportFbx(rigged, { rgbOf: () => null }); } catch { threw++; }
 ok('missing rgbOf / bad colorMode / missing colour throw', threw === 3);
 
-const GOLDEN = '22d87983185416e16cee62c699a73823794c6f4c378139157c0eeb7bc30483d0'; // 2026-10-12: OB-083 kit v8 shapes (was 3ab10bc9...); 2026-10-11: OB-065/069 kit v5 + fine head default (was bd669d7a...)
+const GOLDEN = 'b7cd6990807479f3fe7fcf3e7b2408b75fcb20ec8e3df61fa52563d7637ef001'; // 2026-10-12: OB-092 grip hands (was 22d87983...); OB-083 kit v8 shapes (was 3ab10bc9...); 2026-10-11: OB-065/069 kit v5 + fine head default (was bd669d7a...)
 const got = sha(fbx);
 if (got !== GOLDEN) console.log('golden sha256 now:', got);
 ok('golden SHA-256 of the default recipe', got === GOLDEN);

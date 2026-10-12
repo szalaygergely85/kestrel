@@ -79,8 +79,9 @@
  *     (X +-6, Y -4..3) z 44-56, waist 11 x 7 only at z 41-43 (very little taper), hips 13 x 8, FLAT back at Y 3,
  *     SQUARE shoulders: the z 57 row runs straight out over the arm tops (shoulder line X -10..10 = 0.525 m), no slope.
  *   - arms = 4 x 4 square columns of one width (Y -2..1), stepping out 1 cell per joint (shoulder X 7-10 z 55-57,
- *     8-11, 9-12, 10-13, forearm 11-14 z 35-44); chunky fist block 4 x 4 (X 11-14) z 28-34 + fingertips z 27 (mid-thigh),
- *     the thumb a separate block in front (X 11-12, Y -3, z 31-33). Legs = straight square columns X 2-6 (3-cell gap):
+ *     8-11, 9-12, 10-13, forearm 11-14 z 35-44); chunky fist block 4 x 4 (X 11-14) z 28-34 + fingertips z 27 (mid-thigh);
+ *     OB-092 GRIP HANDS: in front of it the fingers curl around an open 2 x 2 grip channel (X 12-13, Y -5..-4, z 27-34,
+ *     open top + bottom), thumb wrapped over the front (z 32-33); hand_r / hand_l = the channel centre. Legs = straight square columns X 2-6 (3-cell gap):
  *     thigh 5 x 6 z 21-32, shin 5 x 5, no knee bulge; feet chunky blocks 5 x 11 (Y -7..3), toes forward, square heel.
  *   - head: boxier profile - flat back of the skull (Y 3 from z 62 to 69), a flat crown, square jaw corners (ax 3 at
  *     z 60-61), chin block; the L2 jaw / occiput rounding carves are dropped (the face pass stays).
@@ -453,10 +454,24 @@
     ARM.forEach(function (r) { for (z = r[0]; z <= r[1]; z++) slabPair(z, r[2], r[3], r[4], r[5], r[6]); });
     // ---- hands (OB-083): a chunky fist block as wide as the forearm (X 11-14, Y -2..1) z 28-34, the curled fingertips
     // z 27 (X 11-13, nails on the inner edge = mid-thigh), the thumb a separate block in front (X 11-12, Y -3, z 31-33)
+    // OB-092 grip hands: the fist block stays (back of the hand, X 11-14, Y -2..1, z 29-34), and in front of it the
+    // fingers now CURL AROUND an open 2 x 2 GRIP CHANNEL (X 12-13, Y -5..-4, open top to bottom, z 27-34) = the held-item
+    // axis (held items are placed upright at hand_r / hand_l, arch 5679): palm wall Y -3, outer knuckle side X 14, curled
+    // fingertips X 11 (palm / thigh side), four 1-cell fingers across the front Y -6 (z 28-31, tip row z 27), and the
+    // thumb wrapping over the front at z 32-33 (X 11-13, nail at the tip). hand_r / hand_l sit in the channel centre.
     for (z = 28; z <= 34; z++) slabPair(z, 11, 14, -2, 1, z === 28 ? 2 : 0);
-    for (Y = -2; Y <= 1; Y++) { pp(11, Y, 27, 'n'); pp(12, Y, 27); pp(13, Y, 27); }
-    for (z = 31; z <= 33; z++) { pp(11, -3, z); pp(12, -3, z); }
-    pp(11, -3, 31, 'n');
+    for (z = 28; z <= 34; z++) for (X = 11; X <= 14; X++) pp(X, -3, z);                     // palm wall
+    for (z = 28; z <= 33; z++) for (Y = -5; Y <= -4; Y++) pp(14, Y, z);                     // knuckle side (index root)
+    for (z = 28; z <= 31; z++) {                                                            // four curled fingers
+      for (Y = -5; Y <= -4; Y++) pp(11, Y, z, z === 30 ? 'n' : 'a');                        //   tips tucked in, nails
+      for (X = 11; X <= 14; X++) pp(X, -6, z, (z & 1) && X >= 12 && X <= 13 ? 's' : (X === 14 ? 'l' : 'a'));
+    }
+    pp(12, -6, 27); pp(13, -6, 27); pp(11, -5, 27); pp(11, -4, 27); pp(14, -5, 27); pp(14, -4, 27);   // little-finger curl
+    pp(12, -3, 27, 's'); pp(13, -3, 27, 's');
+    for (z = 32; z <= 33; z++) {                                                            // thumb wraps over the grip
+      for (Y = -5; Y <= -4; Y++) pp(11, Y, z);
+      for (X = 11; X <= 13; X++) pp(X, -6, z, z === 33 && X === 13 ? 'n' : (z === 32 ? 's' : 'l'));
+    }
     // ---- legs
     LEG.forEach(function (r) { for (z = r[0]; z <= r[1]; z++) slabPair(z, r[2], r[3], r[4], r[5], r[6]); });
     // ---- feet (OB-083): chunky blocks 5 x 11, toes forward (Y <= -4 = the Toes bone), square heel at Y 3; the instep
@@ -801,19 +816,11 @@
     });
     return decal(kit.bases.m_avg, 'heraldry', 'hat', S, paint);
   }
-  // the staff (hat slot, bone RightHand): 2 x 2 shaft X 12-13 / Y -5..-4 in front of the fist (z 31-33 wraps it)
+  // the staff (hat slot, bone RightHand): 2 x 2 shaft X 12-13 / Y -5..-4 = exactly the OB-092 grip channel of the right
+  // hand (z 27-34), so the shaft passes THROUGH the fist; the fingers / thumb are the base hand's (no ring here any more)
   var STAFF_BOX = { X0: 11, Y0: -6, z0: 0, w: 4, d: 4, h: 67 };
   function staffChar(X, Y, z) {
     var sh = X >= 12 && X <= 13 && Y >= -5 && Y <= -4;
-    if (z >= 31 && z <= 33 && !sh) {
-      var ring = Y === -6 || (X === 14 && Y >= -5) || (X === 11 && Y <= -4);
-      if (!ring) return null;
-      if (Y === -6 && (X === 11 || X === 14) && z !== 32) return null;
-      if (X === 11 && Y === -5 && z === 32) return 'n';
-      if (z === 31) return 's';
-      if (z === 33 && Y === -6) return X === 12 ? 'l' : 's';
-      return 'a';
-    }
     if (z >= 61 && z <= 64) {
       if ((X === 11 || X === 14) && (Y === -6 || Y === -3)) return null;
       if (z === 61) return 'j';
@@ -831,7 +838,8 @@
     if (z === 0) return 'r';
     if (z <= 2) return X === 13 && Y === -5 ? 'q' : 'r';
     if (z === 59 || z === 60) return 'U';
-    if ((z >= 34 && z <= 36) || (z >= 28 && z <= 30)) return (z & 1) ? 'm' : 'w';   // grip wrap above + below the fist
+    if ((z >= 35 && z <= 37) || (z >= 24 && z <= 26)) return (z & 1) ? 'm' : 'w';   // grip wrap just above + below the fist (OB-092)
+    if (z >= 27 && z <= 34) return 'w';                                            // the hidden grip inside the channel
     if (X === 13 && Y === -5) return z % 7 === 3 ? 'h' : 'H';
     if (X === 12 && Y === -4) return 'j';
     return z % 9 === 4 ? 'j' : 'h';
@@ -970,8 +978,8 @@
         head_top: mount(0, -0.5, 69.5),
         eyes: mount(0, -3.0, 65.5),
         mouth: mount(0, -4.0, 61.5),
-        hand_r: mount(12.5, -0.5, 31.5),
-        hand_l: mount(-12.5, -0.5, 31.5),
+        hand_r: mount(12.5, -4.5, 31.5),    // OB-092: centre of the grip channel (cells X 12-13, Y -5..-4, z 27-34)
+        hand_l: mount(-12.5, -4.5, 31.5),
         back: mount(0, 3.5, 50.0),
         belt: mount(0, -4.0, 38.5)
       },
