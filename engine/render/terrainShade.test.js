@@ -408,5 +408,20 @@ export function patchShape(shade) {
   }
   check('OB-067 f64 u,v vs f32-rounded u,v pick the same cell near edges at x,y~1000-1500 (' + bad + '/' + n + ')', bad === 0);
 }
+{ // OB-081: far ground blends tier colours (no whole-step jump for a tiny lighting change); near keeps hard tiers
+  const ctxF = { ...ctx, hashCell: -0.01 };
+  const lum = (o) => o.fg[0] + o.fg[1] + o.fg[2];
+  let worstFar = 0, worstNear = 0;
+  for (let k = 0; k < 200; k++) {
+    const u = 37 + k * 13.7, v = 91 + k * 7.3;
+    for (const b0 of [0.44, 0.79]) {
+      const fa = shadeTerrain(400, 0, b0, u, v, 0, ctxF, out()), fb = shadeTerrain(400, 0, b0 + 0.02, u, v, 0, ctxF, out());
+      const na = shadeTerrain(5, 0, b0, u, v, 0, ctxF, out()), nb = shadeTerrain(5, 0, b0 + 0.02, u, v, 0, ctxF, out());
+      worstFar = Math.max(worstFar, Math.abs(lum(fa) - lum(fb))); worstNear = Math.max(worstNear, Math.abs(lum(na) - lum(nb)));
+    }
+  }
+  console.log(`OB-081 tier step for +0.02 light: far worst ${worstFar}, near worst ${worstNear}`);
+  check('OB-081: far ground (400 m) has no whole tier step for a +0.02 lighting change', worstFar < worstNear * 0.5);
+}
 console.log(`terrainShade.test.js: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

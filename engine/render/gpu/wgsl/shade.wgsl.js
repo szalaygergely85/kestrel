@@ -31,7 +31,7 @@ import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // 
 import { SKY_GLOW_WGSL } from '../../skyGlow.js';
 import { FOG_SHAPE_WGSL } from '../../fogShape.js';
 import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
-import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX } from '../../terrainShade.js';
+import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, FAR_BLEND_FP0, FAR_BLEND_FP1, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX } from '../../terrainShade.js';
 
 
 
@@ -137,11 +137,18 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
   if (bEff < 0.45) { tier = 0; } else if (bEff < 0.8) { tier = 1; }
   var ii = tier + off;
   ii = clamp(ii, 0, 2);
+  // OB-081: far ground blends the tier colours continuously (twin: terrainShade.js FAR_BLEND_FP0/FP1); fw 0 = hard tiers.
+  let sc = clamp(0.5 + (bEff - 0.45) * ${(1 / 0.35).toFixed(10)} + f32(off), 0.0, 2.0);
+  var fw = clamp((fp - ${FAR_BLEND_FP0.toFixed(4)}) * ${(1 / (FAR_BLEND_FP1 - FAR_BLEND_FP0)).toFixed(10)}, 0.0, 1.0);
+  fw = fw * fw * (3.0 - 2.0 * fw);
+  let xf = f32(ii) + (sc - f32(ii)) * fw;
+  let i0 = i32(floor(xf)); let i1 = min(i0 + 1, 2); let fxb = xf - f32(i0);
 
   let base = typeId; // TLOOK row = type id (texel x = 0..6, see TerrainTextures.js)
-  let t0 = textureLoad(uTlook, vec2i(ii, base), 0);
+  let t0a = textureLoad(uTlook, vec2i(i0, base), 0);
+  let t0b = textureLoad(uTlook, vec2i(i1, base), 0);
   // TLOOK colours are linear 0..1 (GPU texel layout); bytes are 0..255 (BUG-OWN-004).
-  var fr = t0.r * 255.0; var fgc = t0.g * 255.0; var fbc = t0.b * 255.0;
+  var fr = (t0a.r + (t0b.r - t0a.r) * fxb) * 255.0; var fgc = (t0a.g + (t0b.g - t0a.g) * fxb) * 255.0; var fbc = (t0a.b + (t0b.b - t0a.b) * fxb) * 255.0;
   // gainOf(bEff, shading) port - same gain formula shadeCore uses.
   let bcc = max(bEff, 0.0);
   var gain = su.fgMin + (1.0 - su.fgMin) * samplePowLUT(min(bcc, 1.0));
@@ -161,9 +168,11 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
   if (faceMode != 0 && t3.w > 0.5 && !close && t >= su.bandNear) {
     let faceCount = i32(t3.w);
     let fx4 = i32(floor(u / ${FAR_GLYPH_CELL.toFixed(4)})); let fy4 = i32(floor(v / ${FAR_GLYPH_CELL.toFixed(4)}));
-    let trunk = faceMode == 2 && hashFast(fx4, fy4, ${FOREST_TRUNK_SALT}) < ${FOREST_TRUNK_CHANCE.toFixed(10)};
+    let fpH = select(select(${FP_DEFAULT_K.toFixed(4)}, -su.hashCell, su.hashCell < 0.0) * t, su.hashCell, su.hashCell > 0.0); // faces stand upright: cell WIDTH
+    let calm = fpH > ${(FAR_GLYPH_CELL * 0.5).toFixed(4)}; // OB-081: fixed face glyph + no trunks once a cell covers half a face cell
+    let trunk = !calm && faceMode == 2 && hashFast(fx4, fy4, ${FOREST_TRUNK_SALT}) < ${FOREST_TRUNK_CHANCE.toFixed(10)};
     if (trunk) { code = ${FOREST_TRUNK_CODE}; }
-    else { code = pickCodeFromPacked(i32(t3.z), faceCount, select(i32(hashFast(fx4, fy4, 7) * f32(faceCount)), faceCount - 1, faceMode == 2)); }
+    else { code = pickCodeFromPacked(i32(t3.z), faceCount, select(select(i32(hashFast(fx4, fy4, 7) * f32(faceCount)), faceCount >> 1u, calm), faceCount - 1, faceMode == 2)); }
     if (trunk) {
       let tc = textureLoad(uTlook, vec2i(16, base), 0);
       fr = tc.r * 255.0 * gain; fgc = tc.g * 255.0 * gain; fbc = tc.b * 255.0 * gain;

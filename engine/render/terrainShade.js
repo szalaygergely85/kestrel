@@ -88,6 +88,8 @@ export const NOISE_CELLS = [8, 2, 0.5], NOISE_W = [0.2, 0.3, 0.5], NOISE_SALT = 
 export const GLYPH_CELL = 0.25, PATCH_K = 3.5, PATCH_DITHER = 0.5, FP_DEFAULT_K = 0.01, FP_ANISO_T = 8, FP_ANISO_MAX = 4;
 // FAR_GLYPH_CELL: background canopy face / trunk cell (>= bands.near only, unchanged from OB-067's calm cell); glint re-rolls every 1/GLINT_RATE s.
 export const FAR_GLYPH_CELL = 4.0, GLINT_RATE = 0.1;
+// OB-081: ground footprint (m) where the far tier-colour blend starts / is full (hard tiers below FP0).
+export const FAR_BLEND_FP0 = 0.5, FAR_BLEND_FP1 = 2.0;
 /** OB-073: ground footprint (m) of one screen cell at depth t; hashCell as in shadeTerrain (<0 = -k, >0 = fixed ortho cell, 0 = default k). */
 export function groundFootprint(t, hashCell) {
   if (hashCell > 0) return hashCell;
@@ -186,11 +188,20 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   const tier = bEff < 0.45 ? 0 : bEff < 0.8 ? 1 : 2;
   let i = tier + off;
   if (i < 0) i = 0; else if (i > 2) i = 2;
+  // OB-081: far ground blends the tier colours continuously (sub-cell normal changes no longer flip a whole colour step
+  // near the horizon). farW 0 below FAR_BLEND_FP0 m footprint (hard tiers, bit-identical), 1 above FAR_BLEND_FP1.
+  let sc = 0.5 + (bEff - 0.45) * (1 / 0.35) + off;
+  sc = sc < 0 ? 0 : sc > 2 ? 2 : sc;
+  let fw = (fp - FAR_BLEND_FP0) * (1 / (FAR_BLEND_FP1 - FAR_BLEND_FP0));
+  fw = fw < 0 ? 0 : fw > 1 ? 1 : fw;
+  fw = fw * fw * (3 - 2 * fw);
+  const xf = i + (sc - i) * fw;
+  const i0 = Math.floor(xf), i1 = i0 < 2 ? i0 + 1 : 2, fx = xf - i0;
 
   const TL = ctx.tlook, W = ctx.tlookWidth, base = type * W * 4;
-  const colOff = base + i * 4;
+  const colOff = base + i0 * 4, colOff1 = base + i1 * 4;
   // TLOOK colours are linear 0..1 (GPU texel layout); bytes are 0..255 (BUG-OWN-004).
-  let fr = TL[colOff] * 255, fg = TL[colOff + 1] * 255, fb = TL[colOff + 2] * 255;
+  let fr = (TL[colOff] + (TL[colOff1] - TL[colOff]) * fx) * 255, fg = (TL[colOff + 1] + (TL[colOff1 + 1] - TL[colOff + 1]) * fx) * 255, fb = (TL[colOff + 2] + (TL[colOff1 + 2] - TL[colOff + 2]) * fx) * 255;
   let gain = gainOf(bEff, ctx.shading);
   gain = wetGain(gain, bEff, wet, ctx.shading.fgMaxGain);
   fr *= gain; fg *= gain; fb *= gain;
@@ -211,8 +222,11 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   if (faceMode !== 0 && faceCount > 0 && !close && t >= ctx.bands.near) {
     const faceX = TL[base + 3 * 4 + 2];
     const fx4 = Math.floor(fu / FAR_GLYPH_CELL), fy4 = Math.floor(fv / FAR_GLYPH_CELL);
-    const trunk = faceMode === 2 && hashFast01(fx4, fy4, FOREST_TRUNK_SALT) < FOREST_TRUNK_CHANCE;
-    code = trunk ? FOREST_TRUNK_CODE : pickCodeFromPacked(faceX, faceCount, faceMode === 2 ? faceCount - 1 : Math.floor(hashFast01(fx4, fy4, 7) * faceCount));
+    // OB-081: once a screen cell covers half a 4 m face cell the hash would re-roll every frame -> fixed face glyph, no trunks
+    const hc = ctx.hashCell || 0, fpH = hc > 0 ? hc : (hc < 0 ? -hc : FP_DEFAULT_K) * t; // faces stand upright: cell WIDTH, no depth stretch
+    const calm = fpH > FAR_GLYPH_CELL * 0.5;
+    const trunk = !calm && faceMode === 2 && hashFast01(fx4, fy4, FOREST_TRUNK_SALT) < FOREST_TRUNK_CHANCE;
+    code = trunk ? FOREST_TRUNK_CODE : pickCodeFromPacked(faceX, faceCount, faceMode === 2 ? faceCount - 1 : calm ? faceCount >> 1 : Math.floor(hashFast01(fx4, fy4, 7) * faceCount));
     if (trunk) {
       const tOff = base + 16 * 4;
       fr = TL[tOff] * 255 * gain; fg = TL[tOff + 1] * 255 * gain; fb = TL[tOff + 2] * 255 * gain;
