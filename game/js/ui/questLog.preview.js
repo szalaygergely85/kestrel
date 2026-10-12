@@ -12,8 +12,9 @@ const ui=createUiLayer({cols:160}); ui.bindScene(rt.cols,rt.rows); rt.setUiLayer
 const journalMode=new URLSearchParams(location.search).get('view')==='journal';
 const rd=async n=>(await fetch('../../../content/quests/'+n)).json();
 let book=null, screen=null, jStep=0;
-const jEvents=[{type:'flag:set',key:'wake',value:true},{type:'area:entered',id:'breach'},{type:'item:got',id:'sword'},{type:'area:entered',id:'towerDoor'},'accept:tower.blade','hand:tower.blade','accept:burl.boars',{type:'beast:died',id:'boar1'},{type:'beast:died',id:'boar2'},{type:'beast:died',id:'boar3'}];
-function jReset(){book=createQuestBook(def,[await0[0],await0[1]]);screen=createQuestLogScreen(book);screen.open();jStep=0;}
+// OB-099: quest 1 "Not Safe" (note -> Go up the tower -> Sword 0/1 -> safe to go outside -> Talk to the bear -> closed), then quest 2 (Kill boars 0/5 -> Return to the bear -> closed), then the small m1 entry.
+const jEvents=['accept:tower.blade',{type:'area:entered',id:'breach'},{type:'item:got',id:'sword'},{type:'area:entered',id:'towerDoor'},'hand:tower.blade','accept:burl.boars',{type:'beast:died',id:'boar1'},{type:'beast:died',id:'boar2'},{type:'beast:died',id:'boar3'},{type:'beast:died',id:'boar4'},{type:'beast:died',id:'boar5'},'hand:burl.boars',{type:'flag:set',key:'burl.arrived',value:true}];
+function jReset(){book=createQuestBook(def,[await0[0],await0[1]]);book.feed({type:'flag:set',key:'wake',value:true});screen=createQuestLogScreen(book);screen.open();jStep=0;}
 const await0=journalMode?[await rd('tower.blade.quest.json'),await rd('burl.boars.quest.json')]:[];
 function jNext(){const e=jEvents[jStep++];if(!e)return;if(typeof e==='string'){const [a,id]=e.split(':');if(a==='accept')book.accept(id);else book.handIn(id);}else book.feed(e);}
 if(journalMode){jReset();window.addEventListener('keydown',e=>{if(screen.handleKey(e.code))e.preventDefault();});}
