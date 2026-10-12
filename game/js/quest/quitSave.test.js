@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { createQuitSave } from './quitSave.js';
+let n = 0, title = false, can = true;
+const q = createQuitSave({ canSave: () => can, titleActive: () => title, save: () => { n++; } });
+assert.equal(q.onPageHide(), true); assert.equal(n, 1);
+assert.equal(q.onVisibility(true), true); assert.equal(n, 2);
+assert.equal(q.onVisibility(false), false); assert.equal(n, 2);
+title = true; assert.equal(q.onPageHide(), false);
+title = false; can = false; assert.equal(q.onVisibility(true), false); assert.equal(n, 2);
+can = true;
+assert.equal(createQuitSave({ canSave: () => true, titleActive: () => false, save: () => { throw new Error('x'); } }).onPageHide(), false);
+console.log('quitSave.test.js ok');

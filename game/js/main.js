@@ -84,6 +84,7 @@ import { ensureBand, bandReady, placeLoaded, gridEnabled, gridVariant } from './
 import { createTitleMenuHost, withRelock } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { retintHand, lookOrDefault } from './quest/look/handLook.js'; // CHARGEN-16
+import { createQuitSave } from './quest/quitSave.js'; // OB-079
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
 import { parseOccl, createHzbInvalidator } from './occlGate.js'; // OCCL-MAIN-01
 import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
@@ -2630,7 +2631,9 @@ window.addEventListener('resize', doResize);
 // Some environments report a 0x0 viewport for a moment while a tab is
 // hidden/unattached (see RenderTarget.resize's guard); re-check once it
 // becomes visible so the grid never gets stuck at a degenerate size.
+const quitSave = createQuitSave({ canSave: () => !!gameHooks.ctx.state.canSave, titleActive: () => titleMenuActive, save: () => { if (saveRelay && saveRelay.enabled && gameHooks.ctx.requestSave) gameHooks.ctx.requestSave(); } }); // OB-079: quit = save
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) doResize();
+  if (!document.hidden) doResize(); else quitSave.onVisibility(true);
 });
+window.addEventListener('pagehide', () => quitSave.onPageHide());
 window.addEventListener('pageshow', doResize);
