@@ -96,6 +96,7 @@ const CLASSIC_SCRIPTS = [
   '../design/models/voxel_bear_cub.js', // NUB-D1: ASSETS.models.bearCub (Nub, Burl's cub; stand-alone). Not in game/index.html / the world yet (placement = later story).
   '../design/models/voxel_otter.js', // SKIP-D1: ASSETS.models.otter (Skip the otter; stand-alone). Not in game/index.html / the world yet (placement = later story).
   '../design/models/voxel_goat.js', // CRAG-D1: ASSETS.models.goat + ASSETS.goatFx (Crag, the old goat of Signal Head; stand-alone). Not in game/index.html / the world yet.
+  '../design/models/voxel_tortoise.js', // SLATE-D1: ASSETS.models.tortoise + ASSETS.tortoiseFx (Slate, the ancient tortoise of the Glasswater islet; stand-alone). Not in game/index.html / the world yet.
   '../design/models/voxel_wildlife.js', // QL-06: ASSETS.models.crow (Rook, world_m1 entity "rook"), same load position as game/index.html.
   '../design/models/m3_props.js', // US-078d: the practice target pell (content/levels/tower.level.json prop "practiceTarget"), same load position as game/index.html.
   '../design/models/far_tower.js',
