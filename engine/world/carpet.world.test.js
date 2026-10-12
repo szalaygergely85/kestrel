@@ -78,6 +78,32 @@ for (const p of POSES) {
   ok(`${p.name}: dominant variant is ${p.want} (got ${names[best]})`, names[best] === p.want && cnt[best] / n >= 0.2);
 }
 
+// MASK-e2 (38.52 OB-096): the real recipe + the baked content paint layer -> final near-band mask (paint * (1 - stamps), cutGround)
+{
+  const { default: fs } = await import('node:fs');
+  const { grassMaskFromJSON } = await import('../index.js');
+  const gm = grassMaskFromJSON(JSON.parse(fs.readFileSync(new URL('../../content/grassmask/overworld_far.grassMask.json', import.meta.url), 'utf8')));
+  ok('recipe.carpet.cutGround names validate', Array.isArray(cfg.cutGround) && cfg.cutGround.length > 0);
+  const w2 = World.load(assets.world('world_m1'), assets, { carpet: { ...cfg, mask: gm } });
+  const at = (x, y) => { // final mask value 0..1 at (x, y), band built for it first
+    w2.ensureBandFor(x, y);
+    if (!w2.carpet.mask || !covers(w2.carpet.mask, x, y)) { w2.terrain.bakeNearBand(Math.floor(x / 128) - 1, Math.floor(y / 128) - 1, 3, 3); w2._rebuildCarpet(); }
+    while (w2._maskJob && w2.stepMaskJob && w2.stepMaskJob(1e9)) { /* finish a pending sliced build */ }
+    const m = w2.carpet.mask; if (!m) return -1;
+    const i = Math.floor((x - m.x0) / m.cellM), j = Math.floor((y - m.y0) / m.cellM);
+    return i < 0 || j < 0 || i >= m.w || j >= m.h ? -1 : m.data[i + j * m.w] / 255;
+  };
+  const mTower = at(1496, 1024), mRoad = at(1350, 1050), mMeadow = at(1440, 1004);
+  ok(`tower interior: 0 grass (${mTower})`, mTower === 0);
+  ok(`road: 0 grass (${mRoad})`, mRoad === 0);
+  ok(`meadow pose: grass (${mMeadow})`, mMeadow > 0.9);
+  w2.ensureBandFor(1440, 1004);
+  const edge = [0, 0.5, 1, 1.5, 2].map((d) => at(1440 + 9 + d, 1004));
+  console.log('  meadow edge (r 9 + 0..2 m):', edge.map((v) => v.toFixed(2)).join(' '));
+  ok('soft edge: a value strictly between 0 and 1 at the area border', edge.some((v) => v > 0.05 && v < 0.95));
+  ok('beyond the feather: 0', edge[4] < 0.02);
+}
+
 for (const f of failures) console.error('FAIL:', f);
 console.log(`carpet.world.test: ${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);
