@@ -38,7 +38,7 @@ export function packCarpetConfig(carpet, nearH, f32, i32) {
   for (let v = 0; v <= MAX_VARIANTS; v++) {
     const o = W_VTAB + v * CARPET_VTAB_ROWS * 4;
     f32[o] = v === 0 ? 0 : ctx.dens[v]; f32[o + 1] = ctx.hMin[v]; f32[o + 2] = ctx.hMax[v]; f32[o + 3] = ctx.bw[v];
-    f32[o + 4] = v === 0 ? 1 : ctx.sway[v];
+    f32[o + 4] = v === 0 ? 1 : ctx.sway[v]; f32[o + 5] = ctx.tuftP[v]; f32[o + 6] = ctx.tuftMul[v];
   }
   void cfg; void D;
 }

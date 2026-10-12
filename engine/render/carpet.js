@@ -7,7 +7,7 @@
 // The class/variant lookup is a plain data shape (D2a builds it in engine/world/carpet.js):
 //   carpet = { cfg: CarpetConfig, classMap: Uint8Array, x0, y0, w, h }   (classMap cell = cfg.classCellM, 0 = none, id 1..15 = cfg.variants[id-1])
 import { hashFast24, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX } from './terrainShade.js';
-import { CARPET_DEFAULTS } from '../world/carpet.js';
+import { CARPET_DEFAULTS, TUFT_DEFAULT_P, TUFT_DEFAULT_MUL } from '../world/carpet.js';
 const INV_2_24 = 1 / 16777216; // 24-bit integer hash scaled at the call site: no double crosses a call (alloc rule)
 
 export const NMAX = 24;                 // max lattice steps per trace; more = past the fade, draw nothing (never truncate)
@@ -21,8 +21,10 @@ export const FADE_FP0 = 0.5, FADE_FP1 = 1.0;       // fade = 1 - smoothstep(FP0,
 export const FADE_R0 = 0.8, FADE_R1 = 1.0;         // times 1 - smoothstep(R0, R1, dXY / radiusM)
 export const RING = 1;                  // lattice cells searched around the (lean-shifted) DDA cell: 3x3
 // salts added to cfg.seed (hash streams)
-export const SALT_JX = 101, SALT_JY = 102, SALT_RANK = 103, SALT_H = 104, SALT_CJX = 105, SALT_CJY = 106, SALT_PATCH = 110, SALT_GUST = 111;
+export const SALT_JX = 101, SALT_JY = 102, SALT_RANK = 103, SALT_H = 104, SALT_CJX = 105, SALT_CJY = 106, SALT_TUFT = 108, SALT_W = 109, SALT_PATCH = 110, SALT_GUST = 111;
 export const MAX_VARIANTS = 15;
+export const WMAX_CELLS = 1.25;         // OB-096: a hit blade is at most this many footprints (cells) wide on screen
+export const W_JIT_LO = 0.7, W_JIT_RANGE = 0.6; // OB-096: blade half-width * (0.7 + 0.6 * hash)
 // ctx.r: the ray under test; ctx.s: the blade under test; both Float64Array scratch
 const R_EX = 0, R_EY = 1, R_EZ = 2, R_DX = 3, R_DY = 4, R_DZ = 5, R_N2 = 6, R_T0 = 7, R_T1 = 8, R_TIME = 9;
 // ctx.inp: the call input of the alloc-free entry points (eye, dir, terrain hit distance, wind clock)
@@ -44,7 +46,7 @@ export function makeCarpetCtx(carpet, ground, wind) {
     classCellM: cfg.classCellM || D.classCellM, classJitterM: cfg.classJitterM == null ? D.classJitterM : cfg.classJitterM,
     gustM: cfg.gustM || D.gustM, travelM: cfg.travelM == null ? D.travelM : cfg.travelM,
     classMap: carpet.classMap, cx0: carpet.x0, cy0: carpet.y0, cw: carpet.w, ch: carpet.h,
-    dens: new Float64Array(n), hMin: new Float64Array(n), hMax: new Float64Array(n), bw: new Float64Array(n), sway: new Float64Array(n),
+    dens: new Float64Array(n), hMin: new Float64Array(n), hMax: new Float64Array(n), bw: new Float64Array(n), sway: new Float64Array(n), tuftP: new Float64Array(n), tuftMul: new Float64Array(n).fill(1),
     maxH: 0, wMax: 0, ground, wind: wind || null, fpK: 0, // fpK = groundFootprint hashCell arg (<0 = -k, >0 = fixed cell, 0 = default k)
     q: new Float64Array(8), inp: new Float64Array(8), r: new Float64Array(10), s: new Float64Array(S_N), keep: new Float64Array(S_N),
   };
@@ -54,8 +56,10 @@ export function makeCarpetCtx(carpet, ground, wind) {
     const v = vs[i], id = i + 1;
     ctx.dens[id] = v.density; ctx.hMin[id] = v.heightM[0]; ctx.hMax[id] = v.heightM[1];
     ctx.bw[id] = v.bladeW || D.bladeW; ctx.sway[id] = v.swayGain == null ? D.swayGain : v.swayGain;
-    if (ctx.bw[id] * 0.5 > ctx.wMax) ctx.wMax = ctx.bw[id] * 0.5;
-    if (v.heightM[1] * (PATCH_LO + PATCH_RANGE) > ctx.maxH) ctx.maxH = v.heightM[1] * (PATCH_LO + PATCH_RANGE);
+    ctx.tuftP[id] = v.tuft && v.tuft.p !== undefined ? v.tuft.p : TUFT_DEFAULT_P; ctx.tuftMul[id] = v.tuft && v.tuft.mul !== undefined ? v.tuft.mul : TUFT_DEFAULT_MUL;
+    const wm = ctx.bw[id] * 0.5 * (W_JIT_LO + W_JIT_RANGE), hm = v.heightM[1] * (PATCH_LO + PATCH_RANGE) * ctx.tuftMul[id]; // OB-096: bounds include the variety factors
+    if (wm > ctx.wMax) ctx.wMax = wm;
+    if (hm > ctx.maxH) ctx.maxH = hm;
   }
   return ctx;
 }
@@ -113,8 +117,9 @@ function bladeHit(ctx, ix, iy) {
   if (rank >= ctx.dens[v]) return 0;
   q[0] = rx / ctx.patchM; q[1] = ry / ctx.patchM;
   vnoise(ctx, seed + SALT_PATCH);
-  const h = (ctx.hMin[v] + (ctx.hMax[v] - ctx.hMin[v]) * (hashFast24(ix, iy, seed + SALT_H) * INV_2_24)) * (PATCH_LO + PATCH_RANGE * q[2]);
-  const w = ctx.bw[v] * 0.5;
+  let h = (ctx.hMin[v] + (ctx.hMax[v] - ctx.hMin[v]) * (hashFast24(ix, iy, seed + SALT_H) * INV_2_24)) * (PATCH_LO + PATCH_RANGE * q[2]);
+  if ((hashFast24(ix, iy, seed + SALT_TUFT) * INV_2_24) < ctx.tuftP[v]) h *= ctx.tuftMul[v]; // OB-096: tall tufts
+  const w = ctx.bw[v] * 0.5 * (W_JIT_LO + W_JIT_RANGE * (hashFast24(ix, iy, seed + SALT_W) * INV_2_24));
   q[0] = rx; q[1] = ry;
   ctx.ground(q);
   const g = q[2];
@@ -132,12 +137,14 @@ function bladeHit(ctx, ix, iy) {
   const zr = ez + tc * dz, sr = zr - g;
   if (sr < 0 || sr > h) return 0;
   const px = ex + tc * dx - (rx + lx * sr), py = ey + tc * dy - (ry + ly * sr);
-  if (px * px + py * py >= w * w) return 0;
-  // fade on the density threshold: one fixed disappearing distance per blade, no re-roll
+  // footprint first (OB-096): the lateral test caps the hit width at WMAX_CELLS footprints so near blades stay 1-cell columns
   const fpk = ctx.fpK;
   let fp;
   if (fpk > 0) fp = fpk; // = groundFootprint(t, hashCell) of terrainShade.js, inlined (no double through a call)
   else { const a = tc / FP_ANISO_T; fp = (fpk < 0 ? -fpk : FP_DEFAULT_K) * tc * (a < 1 ? 1 : a > FP_ANISO_MAX ? FP_ANISO_MAX : a); }
+  const wCap = WMAX_CELLS * 0.5 * fp, wHit = w < wCap ? w : wCap;
+  if (px * px + py * py >= wHit * wHit) return 0;
+  // fade on the density threshold: one fixed disappearing distance per blade, no re-roll (uses the true w)
   const dXY = tc * Math.sqrt(n2);
   // smoothstep(a, b, x) inlined by hand (a double-returning helper would be boxed once the inliner budget runs out)
   let f1 = (fp / (2 * w) - FADE_FP0) / (FADE_FP1 - FADE_FP0); f1 = f1 < 0 ? 0 : f1 > 1 ? 1 : f1;
@@ -287,7 +294,8 @@ export function bladeAtCell(ctx, ix, iy, out) {
   out[0] = rx; out[1] = ry; out[3] = v;
   q[0] = rx / ctx.patchM; q[1] = ry / ctx.patchM;
   vnoise(ctx, seed + SALT_PATCH);
-  out[2] = v === 0 ? 0 : (ctx.hMin[v] + (ctx.hMax[v] - ctx.hMin[v]) * (hashFast24(ix, iy, seed + SALT_H) * INV_2_24)) * (PATCH_LO + PATCH_RANGE * q[2]);
+  out[2] = v === 0 ? 0 : (ctx.hMin[v] + (ctx.hMax[v] - ctx.hMin[v]) * (hashFast24(ix, iy, seed + SALT_H) * INV_2_24)) * (PATCH_LO + PATCH_RANGE * q[2])
+    * ((hashFast24(ix, iy, seed + SALT_TUFT) * INV_2_24) < ctx.tuftP[v] ? ctx.tuftMul[v] : 1);
 }
 
 // ---- OB-073 D2c (38.52 items 7-8): the carpet cell pass of the JS frame (after resolve, before lighting) --------

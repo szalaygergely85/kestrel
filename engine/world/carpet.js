@@ -2,6 +2,8 @@
 // never serialized, never hashed, never read by the sim. Pure JS, no render code (D2b+ consume the map).
 export const CARPET_MAX_VARIANTS = 15;
 export const CARPET_DEFAULTS = { cellM: 0.10, radiusM: 12, patchM: 6, classCellM: 2, classJitterM: 0.8, gustM: 5, travelM: 1.5, bladeW: 0.06, swayGain: 1 };
+export const LEAN_CAP_M = 0.6, PATCH_MAX = 1.25; // OB-096: mirror LEAN_CAP / (PATCH_LO + PATCH_RANGE) of render/carpet.js (render imports these; no render import here)
+export const TUFT_DEFAULT_P = 0.06, TUFT_DEFAULT_MUL = 1.8;
 const ZERO_OK = ['classJitterM', 'travelM']; // 0 = no jitter / no travel is valid
 
 const fail = (key, msg) => { throw new Error(`carpet.${key}: ${msg}`); };
@@ -46,6 +48,11 @@ export function validateCarpetConfig(cfg, typeNames) {
       if (!Array.isArray(v.areas) || v.areas.length < 1) fail(`${p}.areas`, 'must be a non-empty array of shapes');
       v.areas.forEach((a, k) => { if (!areaOk(a)) fail(`${p}.areas[${k}]`, 'must be {shape:"disc",x,y,r} | {shape:"capsule",ax,ay,bx,by,r} | {shape:"rect",x0,y0,x1,y1}'); });
     }
+    if (v.tuft !== undefined) {
+      if (!v.tuft || typeof v.tuft !== 'object') fail(`${p}.tuft`, 'must be {p, mul}');
+      if (v.tuft.p !== undefined && !(isNum(v.tuft.p) && v.tuft.p >= 0 && v.tuft.p <= 1)) fail(`${p}.tuft.p`, 'must be a number 0..1');
+      if (v.tuft.mul !== undefined && !(isNum(v.tuft.mul) && v.tuft.mul >= 1)) fail(`${p}.tuft.mul`, 'must be a number >= 1');
+    }
     if (v.glyphs !== undefined) {
       if (!v.glyphs || typeof v.glyphs !== 'object') fail(`${p}.glyphs`, 'must be an object');
       for (const k of ['base', 'mid', 'tip', 'leanL', 'leanR']) if (v.glyphs[k] !== undefined && typeof v.glyphs[k] !== 'string') fail(`${p}.glyphs.${k}`, 'must be a string');
@@ -58,10 +65,12 @@ export function validateCarpetConfig(cfg, typeNames) {
  * Uint8 class grid of `classCellM` over the terrain's baked near band. 0 = none, else 1 + index of the first variant
  * whose `ground` has the cell's ground type name, whose `biomes` (if any) has `recipe.util.biomeAt(x, y)` and whose `areas` (if any)
  * contain the class-cell centre (D2f).
+ * OB-096 (38.52 amendment a): with `structures` (placed, each with world `bbox` x0,y0,x1,y1) every class cell overlapping a bbox grown by
+ * classJitterM + LEAN_CAP * maxH is zeroed: no blade is rooted in, under or leaning into a structure.
  * Deterministic (no Math.random). `out` (a previous result) is reused when the size matches, so a rebake allocates nothing big.
  * @returns {{classMap: Uint8Array, x0:number, y0:number, w:number, h:number, cellM:number}|null} null before `terrain.nearReady`
  */
-export function buildCarpetClassMap(terrain, recipe, cfg, out) {
+export function buildCarpetClassMap(terrain, recipe, cfg, out, structures) {
   const g = terrain && terrain.near;
   if (!g || !terrain.nearReady) return null;
   const cellM = cfg.classCellM || CARPET_DEFAULTS.classCellM;
@@ -92,6 +101,19 @@ export function buildCarpetClassMap(terrain, recipe, cfg, out) {
         }
       }
       map[i + j * w] = id;
+    }
+  }
+  if (structures && structures.length) {
+    let maxH = 0;
+    for (const v of vs) { const m = v.heightM[1] * PATCH_MAX * (v.tuft && v.tuft.mul !== undefined ? v.tuft.mul : TUFT_DEFAULT_MUL); if (m > maxH) maxH = m; }
+    const jit = cfg.classJitterM == null ? CARPET_DEFAULTS.classJitterM : cfg.classJitterM, grow = jit + LEAN_CAP_M * maxH;
+    for (const s of structures) {
+      const b = s && s.bbox;
+      if (!b || !(isNum(b.x0) && isNum(b.y0) && isNum(b.x1) && isNum(b.y1))) continue;
+      // class cell i covers [x0 + i*cellM, x0 + (i+1)*cellM): overlap with the grown rect
+      const i0 = Math.max(0, Math.floor((b.x0 - grow - res.x0) / cellM)), i1 = Math.min(w - 1, Math.floor((b.x1 + grow - res.x0) / cellM));
+      const j0 = Math.max(0, Math.floor((b.y0 - grow - res.y0) / cellM)), j1 = Math.min(h - 1, Math.floor((b.y1 + grow - res.y0) / cellM));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) map[i + j * w] = 0;
     }
   }
   return res;

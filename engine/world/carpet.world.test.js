@@ -1,7 +1,7 @@
 // OB-073-D2f: the real recipe.carpet on world_m1 (World.load, geo installed as main.js does). validateCarpetConfig passes,
 // and the class-map share per variant at 3 walk poses shows the intended field. Run: node engine/world/carpet.world.test.js
 import { World } from './World.js';
-import { validateCarpetConfig } from './carpet.js';
+import { validateCarpetConfig, buildCarpetClassMap } from './carpet.js';
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 import { makeOk } from '../test/assert.js';
 import paletteMod from '../../design/palette.js';
@@ -54,7 +54,9 @@ const covers = (c, x, y) => c && x >= c.x0 && y >= c.y0 && x < c.x0 + c.w * c.ce
 for (const p of POSES) {
   world.ensureBandFor(p.x, p.y);
   if (!covers(world.carpet, p.x, p.y)) { world.terrain.bakeNearBand(Math.floor(p.x / 128) - 1, Math.floor(p.y / 128) - 1, 3, 3); world._rebuildCarpet(); }
-  const c = world.carpet;
+  // OB-096: the share test is about the recipe fields, so it reads the map WITHOUT the structure mask (the mask empties cells near props/stones by design)
+  const c = buildCarpetClassMap(world.terrain, world._carpetCtx.recipe, cfg, null);
+  { const m = world.carpet; let nz = 0, nzAll = 0; for (let k = 0; k < c.classMap.length; k++) { if (c.classMap[k]) nzAll++; if (m.classMap[k]) nz++; } console.log(`  (info) ${p.name}: structure mask leaves ${nz} of ${nzAll} class cells in the whole band`); }
   ok(`${p.name}: carpet band covers the pose`, covers(c, p.x, p.y));
   if (!covers(c, p.x, p.y)) continue;
   const cnt = new Array(names.length).fill(0); let n = 0;

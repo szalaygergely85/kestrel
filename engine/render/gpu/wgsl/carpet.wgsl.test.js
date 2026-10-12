@@ -23,10 +23,10 @@ assert.ok(/fn fs_main\(@builtin\(position\) frag: vec4f\) -> FO/.test(CARPET_WGS
 assert.deepEqual([...CARPET_TEXTURES], ['uint', 'uint', 'uint', 'uint', 'float']);
 assert.deepEqual([...CARPET_TARGETS], ['rgba32ui', 'rgba32ui', 'r32ui']);
 const lit = (v) => { const s = String(v); return /[.e]/.test(s) ? s : s + '.0'; };
-for (const n of ['ROOT_JITTER', 'LEAN_CAP', 'LEAN_PER_MS', 'PATCH_LO', 'PATCH_RANGE', 'GUST_LO', 'GUST_RANGE', 'FADE_FP0', 'FADE_FP1', 'FADE_R0', 'FADE_R1']) {
+for (const n of ['ROOT_JITTER', 'LEAN_CAP', 'LEAN_PER_MS', 'PATCH_LO', 'PATCH_RANGE', 'GUST_LO', 'GUST_RANGE', 'FADE_FP0', 'FADE_FP1', 'FADE_R0', 'FADE_R1', 'WMAX_CELLS', 'W_JIT_LO', 'W_JIT_RANGE']) {
   assert.ok(CARPET_TRACE_WGSL.includes(`const ${n}: f32 = ${lit(C[n])};`), `${n} == carpet.js export`);
 }
-for (const n of ['NMAX', 'RING', 'SALT_JX', 'SALT_JY', 'SALT_RANK', 'SALT_H', 'SALT_CJX', 'SALT_CJY', 'SALT_PATCH', 'SALT_GUST']) {
+for (const n of ['NMAX', 'RING', 'SALT_JX', 'SALT_JY', 'SALT_RANK', 'SALT_H', 'SALT_TUFT', 'SALT_W', 'SALT_CJX', 'SALT_CJY', 'SALT_PATCH', 'SALT_GUST']) {
   assert.ok(CARPET_TRACE_WGSL.includes(`const ${n}: i32 = ${C[n]};`), `${n} == carpet.js export`);
 }
 assert.equal(KIND_GRASS, 10); assert.equal(FACE_U, GB.FACE_U);
@@ -111,7 +111,7 @@ function parity(label, windDef, N) {
   for (const n of ['cellM', 'radiusM', 'patchM', 'classCellM', 'classJitterM', 'gustM', 'travelM', 'classX0', 'classY0', 'nearX0', 'nearY0', 'nearCell', 'maxH', 'wMax']) cu[n] = f[w(n)];
   // f32-packed config vs the f64 JS ctx: make the JS ctx see the same numbers so the comparison is about the algorithm, not f32 rounding of 0.1
   for (const [k, n] of [['cellM', 'cellM'], ['radiusM', 'radiusM'], ['patchM', 'patchM'], ['classJitterM', 'classJitterM'], ['gustM', 'gustM'], ['travelM', 'travelM'], ['maxH', 'maxH'], ['wMax', 'wMax']]) ctx[k] = cu[n];
-  for (let v = 1; v <= 2; v++) { ctx.dens[v] = cu.vtab[v * 2].x; ctx.hMin[v] = cu.vtab[v * 2].y; ctx.hMax[v] = cu.vtab[v * 2].z; ctx.bw[v] = cu.vtab[v * 2].w; ctx.sway[v] = cu.vtab[v * 2 + 1].x; }
+  for (let v = 1; v <= 2; v++) { ctx.dens[v] = cu.vtab[v * 2].x; ctx.hMin[v] = cu.vtab[v * 2].y; ctx.hMax[v] = cu.vtab[v * 2].z; ctx.bw[v] = cu.vtab[v * 2].w; ctx.sway[v] = cu.vtab[v * 2 + 1].x; ctx.tuftP[v] = cu.vtab[v * 2 + 1].y; ctx.tuftMul[v] = cu.vtab[v * 2 + 1].z; }
   assert.equal(cu.vtab[0].x, 0, 'variant 0 = no carpet'); assert.equal(cu.vtab[1].x, 1, 'variant 0 sway 1');
   const K = p ? p.K : null;
   const twin = makeTwin(cu, { cls: classMap, cw: CW, near, nw: NW }, K);

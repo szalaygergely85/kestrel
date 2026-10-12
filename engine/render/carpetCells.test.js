@@ -74,7 +74,7 @@ check(n > 200, `AC2 carpet cells written (${n})`);
 // AC3: box behind the blades keeps its depth where no blade hit it, is hidden where one is
 {
   const fr2 = makeFrame(120, 60);
-  cast(fr2, { x0: 40, x1: 80, y0: 25, y1: 45, d: 6.0 });
+  cast(fr2, { x0: 20, x1: 100, y0: 40, y1: 60, d: 3.5 }); // OB-096: taller tufts raise maxH, so the old far box (d 6) now needs > NMAX lattice steps and draws nothing
   const d0 = fr2.fb.depth.depth.slice(), k0 = fr2.g.kind.slice();
   carpetCells(fr2.g, fr2.fb, cam, ctx, 0);
   let kept = 0, hidden = 0, bad = 0;
