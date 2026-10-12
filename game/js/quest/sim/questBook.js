@@ -67,7 +67,9 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     const s = saved?.quests?.[def.id];
     const auto = !def.giver; // QL-T1: giverless
     const e = { def, auto, giver: auto ? null : def.giver.npc, turnIn: auto ? null : def.giver.turnIn || def.giver.npc, state: createQuest(def, s ? s.quest : null), accepted: !!(s && s.accepted === true), handedIn: !!(s && s.handedIn === true), seq: 0, prev: 0, given: Array.isArray(s && s.given) ? s.given.filter(g => g && typeof g.id === 'string' && Number.isInteger(g.n) && g.n > 0) : [] };
-    if (e.accepted) e.seq = ++seqCounter; // restore: array order stands in for accept order
+    // OB-087: the saved accept order wins (the unpinned HUD track = most recently accepted must survive Continue); old saves: array order
+    if (e.accepted) e.seq = (s && Number.isInteger(s.seq) && s.seq > 0) ? s.seq : ++seqCounter;
+    if (e.seq > seqCounter) seqCounter = e.seq;
     entries.push(e);
   }
   const byId = new Map(); entries.forEach((e, i) => byId.set(e.def.id, i));
@@ -315,6 +317,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
       const e = entries[i];
       quests[e.def.id] = { quest: JSON.parse(stringifyQuest(e.state, e.def)), accepted: e.accepted, handedIn: e.handedIn };
       if (e.given.length) quests[e.def.id].given = e.given.map(g => ({ id: g.id, n: g.n })); // QL-04
+      if (e.accepted && e.seq > 0) quests[e.def.id].seq = e.seq; // OB-087: accept order
     }
     return { quest: JSON.parse(stringifyQuest(entries[0].state, entries[0].def)), quests };
   };

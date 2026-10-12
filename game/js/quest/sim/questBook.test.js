@@ -86,6 +86,10 @@ const hash = bk => { let x = 2166136261; const h = { u32: v => { x = Math.imul(x
 assert.equal(hash(r), hash(b));
 kill(r); assert.notEqual(hash(r), hash(b));
 assert.equal(createQuestBook(mainDef, [burl], JSON.parse(JSON.stringify(r.toSave()))).status(1), READY);
+// OB-087: the accept order (seq) survives save -> Continue (the unpinned HUD track = most recently accepted)
+assert.equal(saved.quests['burl.boars'].seq, 1, 'accept order is saved');
+{ const s7 = JSON.parse(JSON.stringify(saved)); s7.quests['burl.boars'].seq = 7; assert.equal(createQuestBook(mainDef, [burl], s7).toSave().quests['burl.boars'].seq, 7, 'saved accept order restored, not array order'); }
+{ const old0 = JSON.parse(JSON.stringify(saved)); delete old0.quests['burl.boars'].seq; assert.equal(createQuestBook(mainDef, [burl], old0).toSave().quests['burl.boars'].seq, 1, 'old saves fall back to array order'); }
 assert.throws(() => createQuestBook(mainDef, [burl, burl]), /duplicate/);
 assert.throws(() => createQuestBook(mainDef, [{ ...burl, requires: [{ quest: 'm1', step: 'zz' }] }]), /unknown step/);
 
