@@ -1,4 +1,4 @@
-import { KIND_TERRAIN, FACE_PACKED } from '../GBuffer.js';
+import { KIND_TERRAIN, KIND_GRASS, FACE_PACKED } from '../GBuffer.js';
 import { unpackNormalOct } from '../../voxel/octNormal.js';
 import { edgeRules } from '../edgePass.js';
 import { shadeDetailFast } from '../detailShade.js';
@@ -391,7 +391,8 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
       if (gbuf.face) {
         const gpuFace = (giBuf[i * 4 + 1] >>> 8) & 0xf; // bits 12-15 carry other flags
         if (gbuf.face[i] !== gpuFace) { if (!faceViol) faceSample = gbuf.face[i] * 256 + gpuFace; faceViol++; }
-        else if (gpuFace === FACE_PACKED && gbuf.aoD) {
+        else if ((gpuFace === FACE_PACKED || kind[i] === KIND_GRASS) && gbuf.aoD) {
+          // KIND_GRASS (10) cells carry face U but pack the normal like FACE_PACKED (aoD bits / GI.z).
           // Mesh path: the GPU normal is in GI.z; the JS twin keeps it in aoD's bits.
           const cb = gbufAoBits(gbuf, i), gb = giBuf[i * 4 + 2] >>> 0;
           if (cb !== gb) {
@@ -401,7 +402,7 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
             if (ang > nrmMaxDeg) nrmMaxDeg = ang;
             if (ang > 0.5) nrmViol++;
           }
-        } else if (gpuFace !== FACE_PACKED && gbuf.aoD) {
+        } else if (gpuFace !== FACE_PACKED && kind[i] !== KIND_GRASS && gbuf.aoD) {
           // FACE_PACKED cells hold normal bits (CPU: aoD, mesh GPU: GI.z) - skipped.
           // GPU writes 1e30 for "no AO" where the JS side writes Infinity.
           const ca = gbuf.aoD[i], ga0 = u32ToF32(gaBuf[i * 4 + 3]), ga = ga0 >= 1e29 ? Infinity : ga0;
