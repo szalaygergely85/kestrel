@@ -6,7 +6,7 @@ import { validatePolygon, compilePolygon } from '../physics/bounds.js';
 import { makeGrid, zoneAt, zoneId, best as bandBest, pick as bandPick, marginX as bandMarginX, marginY as bandMarginY } from './bandGrid.js';
 import { loadLevel, isTerrainFloor } from './Level.js';
 import { Terrain } from './Terrain.js';
-import { validateCarpetConfig, buildCarpetClassMap, buildCarpetMask } from './carpet.js';
+import { validateCarpetConfig, buildCarpetClassMap, buildCarpetMask, CarpetMaskJob } from './carpet.js';
 import { scatterTrees, scatterDetail, TreeScatterJob, DetailScatterJob } from './scatter.js';
 import { packLevel, updateAnimatedSector } from './packed.js';
 import { Entity } from '../entities/Entity.js';
@@ -287,7 +287,7 @@ export class World {
     // `null` (unbounded - every world before this story). Content, not
     // state; set once by `World.load` from `def.bounds`.
     this.bounds = null;
-    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.lastSwapMs = 0; this.bandId = null; // WS2-01/02
+    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandId = null; // WS2-01/02
     this.terrainGrid = null; this._gridPick = { i: 0, j: 0 }; // MAP-10 (38.43): generated zone grid; terrainBands = 2 reusable slot zones
     this.terrainBand = null; // WS1-02: authored near-band chunk rect or null (auto 3x3)
     // US-016 D-011 addendum (architecture.md 14.4 item 13): horizon
@@ -1231,7 +1231,7 @@ export class World {
     terrain._nearKey = nearBandKey(this, z.cx0, z.cy0, z.cw, z.ch) + `|realTrees:${terrain.realTrees}`;
     if (terrain.realTrees) this.scatter = j.scatter;
     if (this._detailCtx) this.detail = j.detailSet;
-    this._rebuildCarpet();
+    this._rebuildCarpet(true);
     if (this.physicsMode === 'mesh') {
       const put = (id, collider) => {
         const i = this.colliders.findIndex((c) => c.id === id);
@@ -1264,6 +1264,28 @@ export class World {
    * Zero allocation while idle.
    */
   streamBand(px, py, msBudget) {
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const r = this._streamBandCore(px, py, msBudget);
+    if (this._maskJob && r !== 2) { // MASK-b: leftover budget of this frame goes to the row-sliced near-band mask build (never in the swap frame)
+      const left = msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
+      if (left > 0) this.stepCarpetMask(left);
+    }
+    return r;
+  }
+
+  /** MASK-b: advance the pending sliced mask build; on completion swap front/back and bump `maskVersion`. @returns {boolean} still pending */
+  stepCarpetMask(msBudget) {
+    const j = this._maskJob;
+    if (!j) return false;
+    if (!j.step(msBudget)) return true;
+    this._maskJob = null;
+    const old = this.carpet.mask;
+    this.carpet.mask = j.result; this._maskBack = old || null;
+    this.carpet.maskVersion = (this.carpet.maskVersion | 0) + 1;
+    return false;
+  }
+
+  _streamBandCore(px, py, msBudget) {
     const zs = this.terrainBands, terrain = this.terrain;
     if (!zs || zs.length < 2 || !terrain || this._bandCur < 0) return 0;
     if (this.terrainGrid) return this._streamGrid(px, py, msBudget);
@@ -1348,13 +1370,16 @@ export class World {
   }
 
   /** OB-073-D2a (38.52): (re)build the carpet class map for the current near band; reuses the buffer. */
-  _rebuildCarpet() {
+  _rebuildCarpet(sliced) {
     const c = this._carpetCtx;
     if (!c || !this.terrain?.nearReady) return;
     const m = buildCarpetClassMap(this.terrain, c.recipe, c.cfg, this.carpet);
     if (!this.carpet) this.carpet = { cfg: c.cfg, classMap: null, x0: 0, y0: 0, w: 0, h: 0, cellM: 0 };
     this.carpet.classMap = m.classMap; this.carpet.x0 = m.x0; this.carpet.y0 = m.y0; this.carpet.w = m.w; this.carpet.h = m.h; this.carpet.cellM = m.cellM; // D2f: cellM was dropped
-    this.rebuildCarpetMask();
+    if (sliced && this.carpet.mask) { // band swap: old mask stays valid (own window) until the back buffer is complete
+      this._maskJob = new CarpetMaskJob(this.terrain, c.cfg, c.cfg.mask || null, this.structures, this.scatter, this._maskBack, undefined);
+      if (!this._maskJob.result) this._maskJob = null;
+    } else this.rebuildCarpetMask();
   }
 
   /**
@@ -1364,6 +1389,7 @@ export class World {
   rebuildCarpetMask(rect) {
     const c = this._carpetCtx;
     if (!c || !this.carpet || !this.terrain?.nearReady) return;
+    if (!rect) this._maskJob = null; // a sync full build supersedes a pending sliced one
     const m = buildCarpetMask(this.terrain, c.cfg, c.cfg.mask || null, this.structures, this.scatter, this.carpet.mask, rect);
     if (!m) return;
     this.carpet.mask = m;
