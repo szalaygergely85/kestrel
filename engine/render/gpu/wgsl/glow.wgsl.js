@@ -5,7 +5,7 @@
 // 3 BG (rgba8, a = 0 passthrough), 4 MATF (rgba32float, texel 1 .x = emissive); @group(1) @binding(0) = GlowU. Targets: 0 fg, 1 bg.
 import { defineUniformBlock } from './uniformBlock.js';
 import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL } from './common.wgsl.js';
-import { KIND_TERRAIN } from '../../GBuffer.js';
+import { KIND_TERRAIN, KIND_GRASS } from '../../GBuffer.js';
 import { GLOW_DEPTH_K, GLOW_DEPTH_EPS, GLOW_FG_K, GLOW_EMIS_MIN, HALO_GLYPHS } from '../../glow.js';
 
 export const GLOW_BLOCK = defineUniformBlock('GlowU', [
@@ -33,7 +33,7 @@ ${FULLSCREEN_VS_WGSL}
 
 fn depthAt(c: vec2i) -> f32 { return bitcast<f32>(textureLoad(uDepth, c, 0).x); }
 fn emisAt(kind: u32, y: u32) -> f32 {
-  if (kind == 0u || kind == ${KIND_TERRAIN}u) { return 0.0; } // terrain carries a terrain type in mat, not a material id
+  if (kind == 0u || kind == ${KIND_TERRAIN}u || kind == ${KIND_GRASS}u) { return 0.0; } // terrain carries a terrain type in mat, not a material id
   return textureLoad(uMatF, vec2i(1, i32(giMat(y))), 0).x;
 }
 fn rampAt(k: i32) -> f32 { return u.ramp[k >> 2u][k & 3]; }

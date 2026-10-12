@@ -26,7 +26,7 @@ assert.ok(EDGE_WGSL.includes('0x7f800000u') && /textureLoad\(uWater/.test(EDGE_W
 
 // ALPHA-01d string rules: the flag bit, the MAT_I bind, the soft gain uniform, and the soft gates
 assert.ok(F_SOFT_EDGE === 65536 && EDGE_WGSL.includes(`& ${F_SOFT_EDGE}) != 0`), 'F_SOFT_EDGE interpolated from ShadeTextures.js');
-assert.ok(/fn softMat\(k: u32, m: i32\) -> bool \{ return k != \d+u && \(textureLoad\(uMatI, vec2i\(0, m\), 0\)\.y &/.test(EDGE_WGSL), 'softMat reads MAT_I row m texel 0 .y');
+assert.ok(/fn softMat\(k: u32, m: i32\) -> bool \{ return k != \d+u && k != \d+u && \(textureLoad\(uMatI, vec2i\(0, m\), 0\)\.y &/.test(EDGE_WGSL), 'softMat reads MAT_I row m texel 0 .y');
 assert.ok(EDGE_WGSL.includes('if (si && softMat(nk, matAt(nc))) { return false; }') && EDGE_WGSL.includes('if (si) { return rule; }') && EDGE_WGSL.includes('gain = u.softGain'), 'soft gates');
 assert.equal(EDGE_BLOCK.field('softGain').word, 11, 'softGain replaces pad0 (layout unchanged)');
 

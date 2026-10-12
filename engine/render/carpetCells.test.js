@@ -17,7 +17,7 @@ const check = (ok, msg) => { console.log((ok ? '  ok   ' : '  FAIL ') + msg); if
 const W = 20, H = 20, X0 = -20, Y0 = -20;
 const classMap = new Uint8Array(W * H);
 for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) { const y = Y0 + j * 2 + 1; classMap[j * W + i] = y > -6 && y < -4 ? 0 : 1; }
-const cfg = { seed: 3, radiusM: 8, variants: [{ name: 'meadow', ground: ['grass'], density: 0.9, heightM: [0.15, 0.25], ramp: [[10, 40, 10], [60, 160, 40], [180, 230, 90]] }] };
+const cfg = { seed: 3, radiusM: 8, classJitterM: 0.3, variants: [{ name: 'meadow', ground: ['grass'], density: 0.9, heightM: [0.15, 0.25], ramp: [[10, 40, 10], [60, 160, 40], [180, 230, 90]] }] };
 const flat = (q) => { q[2] = 0; };
 const mkCtx = () => makeCarpetCtx({ cfg, classMap, x0: X0, y0: Y0, w: W, h: H }, flat, null);
 
@@ -98,7 +98,7 @@ check(n > 200, `AC2 carpet cells written (${n})`);
   shadeGrass(5, 1, 0.5, 0, 0, 0.9, tab, sctx, out); const gMid = out.glyph;
   shadeGrass(5, 1, 0.1, 0, 0, 0.9, tab, sctx, out); const gBase = out.glyph;
   shadeGrass(5, 1, 0.5, -0.6, 0, 0.9, tab, sctx, out); const gL = out.glyph;
-  check(gTip === 39 - 32 && gMid === 124 - 32 && gBase === 44 - 32 && gL === 47 - 32, 'glyphs: tip \' / mid | / base , / leanL /');
+  check(gTip === 39 - 32 && gMid === 124 - 32 && gBase === 44 - 32 && gL === 92 - 32, 'glyphs: tip \' / mid | / base , / leanL backslash');
 }
 // AC5: edge pass draws no outline on kind-10 cells
 {
@@ -120,7 +120,7 @@ for (const windy of [false, true]) {
   run(40, 0); global.gc();
   const h0 = process.memoryUsage().heapUsed; run(600, 1); const dh = process.memoryUsage().heapUsed - h0;
   console.log(`  (info) AC6 ${windy ? 'wind' : 'calm'}: ${(dh / 600).toFixed(0)} B/frame over 600 frames (cast() included, it allocates nothing)`);
-  check(dh / 600 < 4096, `AC6 ${windy ? 'wind' : 'calm'}: < 4 KB/frame (target 0)`);
+  check(dh / 600 < 2048, `AC6 ${windy ? 'wind' : 'calm'}: < 2 KB/frame (target 0)`);
 }
 console.log(fails ? `${fails} FAILED` : 'carpetCells: all ok');
 process.exit(fails ? 1 : 0);
