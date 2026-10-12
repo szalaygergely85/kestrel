@@ -184,7 +184,13 @@
           // short green meadow: patches on the open slopes of the tower hill and along the road meadows - NOT the hill path, the
           // tower (bbox 1480..1504 x 1018..1032) + 3 m, the groves (forest), the pond / flooded cellar, the bee farm or the standing stones
           { name: 'meadow', ground: ['grass', 'flowers'], density: 0.75, heightM: [0.15, 0.4], groundTint: 0.35, ramp: ['bladeMeadowBase', 'bladeMeadow', 'bladeMeadowTip'],
-            areas: [ { shape: 'disc', x: 1440, y: 1004, r: 9 },                                 // LARGE north meadow (boarN, berries), 16 m off the road
+            // OB-101 (owner 2026-10-12 'make a huge area around'): four big fields ring the tower/spawn (tower bbox 1480..1504 x 1018..1032
+            // + 3 m + 1.5 m feather stays bare); road/paths/pond/rock cut by cutGround, groves by the ground filter
+            areas: [ { shape: 'capsule', ax: 1450, ay: 1070, bx: 1535, by: 1070, r: 32 },       // OB-101 huge field, y 1038..1102
+                     { shape: 'capsule', ax: 1450, ay: 980, bx: 1535, by: 980, r: 32 },         // OB-101 huge field, y 948..1012
+                     { shape: 'capsule', ax: 1440, ay: 1000, bx: 1440, by: 1050, r: 34 },       // OB-101 huge field, x 1406..1474
+                     { shape: 'capsule', ax: 1545, ay: 1000, bx: 1545, by: 1050, r: 35 },       // OB-101 huge field, x 1510..1580
+                     { shape: 'disc', x: 1440, y: 1004, r: 9 },                                 // LARGE north meadow (boarN, berries), 16 m off the road
                      { shape: 'capsule', ax: 1404, ay: 1070, bx: 1416, by: 1063, r: 6 },        // LARGE SW slope field (boarS), 25 m off the road
                      { shape: 'disc', x: 1474, y: 1056, r: 4.5 },                               // medium, south flank below the path (groveSouth 11 m away)
                      { shape: 'disc', x: 1458, y: 1050, r: 1.5 },                               // small clump

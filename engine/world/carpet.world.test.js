@@ -97,9 +97,9 @@ for (const p of POSES) {
   ok(`tower interior: 0 grass (${mTower})`, mTower === 0);
   ok(`road: 0 grass (${mRoad})`, mRoad === 0);
   ok(`meadow pose: grass (${mMeadow})`, mMeadow > 0.9);
-  w2.ensureBandFor(1440, 1004);
-  const edge = [0, 0.5, 1, 1.5, 2].map((d) => at(1440 + 9 + d, 1004));
-  console.log('  meadow edge (r 9 + 0..2 m):', edge.map((v) => v.toFixed(2)).join(' '));
+  w2.ensureBandFor(1360, 1086); // OB-101: the north meadow is inside the huge tower field now -> edge of the Road West disc (1360,1086 r 8)
+  const edge = [0, 0.5, 1, 1.5, 2].map((d) => at(1360 + 8 + d, 1086));
+  console.log('  meadow edge (r 8 + 0..2 m):', edge.map((v) => v.toFixed(2)).join(' '));
   ok('soft edge: a value strictly between 0 and 1 at the area border', edge.some((v) => v > 0.05 && v < 0.95));
   ok('beyond the feather: 0', edge[4] < 0.02);
 }
