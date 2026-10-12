@@ -104,12 +104,12 @@
     // RIVER-04 (38.45): the Braid. Shallow, clear, cold green-blue (wadeable ~0.4 m: the bed shows through), fast streaks, white rapids.
     river: {
       ramp: '~-~~-~',
-      shallow: [100, 160, 160],   // OB-062: #64a0a0 (was #74acaa, read as a pale sheet) clear cold shallows
+      shallow: [58, 104, 118],    // OB-090: #3a6876 (was #64a0a0: the ford shallows read as a pale striped sheet) cold dim shallows
       deep: [12, 46, 62],         // OB-062: #0c2e3e darker green-blue channel (was #163a52)
       opaqueAt: 1.2, seeThrough: 0.45,
       glint: [232, 244, 242],
-      waveHz: 1.2, bgK: 0.45,
-      cellM: 0.22, glintP: 0.035, drift: 0.2, tintDepth: 0.7, shoreW: 0.9, // OB-062: tint reaches deep at 0.7 m, wider shore blend
+      waveHz: 1.2, bgK: 0.55,
+      cellM: 0.22, glintP: 0.035, drift: 0.2, tintDepth: 0.4, shoreW: 0.9, // OB-090: tintDepth 0.7 -> 0.4 (shallows reach the channel colour sooner) // OB-062: tint reaches deep at 0.7 m, wider shore blend
      
       rim: [206, 226, 222],       // #cee2de froth
       foamRamp: '*o.', foamDepth: 0.12, foamFar: 60, // OB-045: 0.3 -> 0.12 (a thin froth line at the waterline and rings at stones, not a pale shelf)

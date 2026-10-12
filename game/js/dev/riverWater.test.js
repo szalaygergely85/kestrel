@@ -36,13 +36,13 @@ for (let y = 832; y < 1420; y += 2) {
 ok('every former river sample (y 832..1420) is in the river shape', miss === 0, miss);
 ok('no dry river except the ford bar (y 1070-1082, <= 0.1 m; arch 38.45 RIVER-04 resolution)', dryBad === 0 && dry <= 6, `${dryBad} / ${dry}`);
 ok('deep (wall) samples only in the deliberate ford pool (y < 1058) and <= 40 samples', deepBad === 0 && deep <= 40, `${deepBad} / ${deep}`);
-ok('no floating water on dry banks (<= 8)', floating <= 8, floating);
+ok('no floating water on dry banks (<= 12; OB-090 ford +0.19 m)', floating <= 12, floating);
 // z monotone non-increasing along each river, slope <= 0.6
 for (const rv of W.rivers) { let bad = 0; for (let i = 1; i < rv.n; i++) if (rv.z[i] > rv.z[i - 1] + 0.01) bad++; ok('z non-increasing ' + rv.id, bad === 0, bad); }
 // the ford keeps its z and block, draws nothing; the river z over it is the ford z (<= 0.02) and the river wins the tie
 const fi = ids.indexOf('ford'); ok('ford z unchanged', W.z[fi] === -90.05, W.z[fi]); ok('ford draw:false', W.draw[fi] === 0);
 ok('ford keeps its block', !!data.water.find((w) => w.id === 'ford').block);
-for (const y of [1062, 1068, 1075]) { const x = U.riverX(y); world.riverAt(x, y, o); ok('river z at the ford y=' + y + ' within 0.02', Math.abs(o.z + 90.05) <= 0.02, o.z); ok('river region wins at the ford y=' + y, world.waterAt(x, y, wa) && W.kind[wa.index] === 3, wa.region); }
+for (const y of [1062, 1068, 1075]) { const x = U.riverX(y); world.riverAt(x, y, o); ok('river z at the ford y=' + y + ' within 0.02 of -89.85 (OB-090: 0.2 m over the bar)', Math.abs(o.z + 89.85) <= 0.02, o.z); ok('river region wins at the ford y=' + y, world.waterAt(x, y, wa) && W.kind[wa.index] === 3, wa.region); }
 // joints: Glasswater outlet, mouth meets the sea
 { const rv = W.rivers[W.riv[ids.indexOf('braid_outlet')]]; ok('outlet starts at the lake z (<= 0.02)', Math.abs(rv.z[0] - -58) <= 0.02, rv.z[0]); }
 { const rv = W.rivers[W.riv[ids.indexOf('braid')]]; ok('mouth meets the sea z (<= 0.02)', Math.abs(rv.z[rv.n - 1] - -96) <= 0.02, rv.z[rv.n - 1]); ok('mouth ribbon ends inside the sea rect', rv.y[rv.n - 1] >= 1420); ok('braid clips the sea', rv.clip.includes('sea')); }
