@@ -7,6 +7,8 @@
     "worlds/world_m1.world.json",
     "dialogue/bear.dialogue.json",
     "dialogue/rook.dialogue.json",
+    "dialogue/hesk.dialogue.json",
+    "dialogue/dorrin.dialogue.json",
     "levels/tower.level.json",
     "levels/test_room.level.json",
     "levels/waterfall_cliff.level.json",

@@ -30,6 +30,21 @@
         ],
         "tier": 2
       }
+    },
+    "gear.t3": {
+      "items": [],
+      "gear": {
+        "slots": [
+          "head",
+          "body",
+          "cloak",
+          "hands",
+          "belt",
+          "legs",
+          "feet"
+        ],
+        "tier": 3
+      }
     }
   }
 }

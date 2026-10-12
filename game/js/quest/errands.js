@@ -42,8 +42,8 @@ export function bannerLines(def, action, wrap, maxRows = 10) {
 }
 
 const ESCORT_R = 14;
-const MQ = ['mq.bend.call', 'mq.ford.mirror']; // Rook's main quests (world.state keys 'mq.<id>.*' = dialogue 's.mq.<id>.*')
-const MQ_AUTO = new Set(['mq.ford.mirror']); // no hand-in line: handed in as soon as READY
+const MQ = ['mq.bend.call', 'mq.ford.mirror', 'mq.ow.names', 'mq.ow.relay']; // + Ch3 (Hesk / Dorrin): names + relay run through the dialogue flags // Rook's main quests (world.state keys 'mq.<id>.*' = dialogue 's.mq.<id>.*')
+const MQ_AUTO = new Set(['mq.ford.mirror', 'mq.ow.names', 'mq.ow.relay']); // no hand-in line: handed in as soon as READY
 const PULSE_DELAY = 4; // seconds after the Bend relay wakes (questline: flag relay.bend.pulseSeen)
 const ACTIVE = 2; // questBook statusOf: 0 unavailable, 1 available, 2 active, 3 ready, 4 done
 /**
@@ -126,6 +126,7 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
       const f = 'talk.' + siteOf(id);
       if (wants(f)) questFlag(f, true);
       if (id === 'fordMark') questFlag('lore.fordMark.read', true); // mq.smoke: the mark cut in the Ford Relay base
+      if (id === 'owBoard') questFlag('lore.owBoard.read', true); // mq.ow.board (Ch3)
       if (id === 'pierStone') questFlag('lore.pierStone.read', true); // sq.hw.piers (QL-21)
       if (id === 'knot' || id === 'relayKnot') questFlag('lore.knot.read', true); // mq.bend.call: inspect prop on the relay mount
       const t = T[textOf.get(id) || Object.keys(T).find((k) => (T[k].entities || []).includes(id)) || (id === 'relayKnot' ? 'note.knot' : '')];
@@ -139,7 +140,7 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
       inspect(id);
     },
     /** dialogueCtl.onTalk(npcId): talk flag only (the dialogue itself drives accept / hand-in). */
-    talked(id) { const f = 'talk.' + siteOf(id); if (wants(f)) questFlag(f, true); api.mainSync(0); },
+    talked(id) { api.mainSync(0); const f = 'talk.' + siteOf(id); if (wants(f)) questFlag(f, true); api.mainSync(0); }, // 1st sync applies the dialogue's accept flag (Hesk: accept + talk in one conversation)
     /** combat:hit {target}: any target whose `<id>.hit` flag is an objective of an ACTIVE quest (sq.straw target1-3, sq.ow.range owTarget1-3, ...). */
     hit(p) {
       const t = p && typeof p.target === 'string' ? p.target : null;
@@ -159,6 +160,7 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
         if (pulseT >= PULSE_DELAY) { questFlag('relay.bend.pulseSeen', true); ch = true; }
       }
       if (nestWaiting.length && api.itemTaken(T[textOf.get(nestWaiting[0])].afterItem)) { for (const id of nestWaiting) { const h = world.get(id); if (h && h.data) api.addLook(world, id, h.data); } nestWaiting = []; ch = true; }
+      for (const cp of ['chart.river', 'chart.westFells']) put(cp, !!(b.packOps && b.packOps.count(cp) > 0)); // MAP-28: a chart piece in the pack = world flag chart.<area>
       put('mq.ford.mirror.glass', !!(b.packOps && b.packOps.count('relay.mirror') > 0));
       for (const id of MQ) {
         const k = 'mq.' + id.slice(3) + '.';

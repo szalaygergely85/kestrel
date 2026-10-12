@@ -1513,6 +1513,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       compassWorld = world; compassBreach = null; compassBookVer = -1; compassTick = 0; // COMPASS-02: re-resolve against the new world
       if (bearTurn) dialogueCtl.addNpc('bear');
       dialogueCtl.addNpc('rook'); // Rook the crow: no-op until the entity exists in the world
+      dialogueCtl.addNpc('hesk'); dialogueCtl.addNpc('dorrin'); // Ch3 Outwall NPCs (world_m1 entities, char.kit model registered at boot; both share the default kit look, no tint)
       crystal = barks = chapterCard = chapterCard2 = escort = null;
       if (bearTurn) bearTurn.paused = false;
       if (saveEnabled && saveRelay) { // CH1-MOUNT: all three need the quest relay (flags + book)

@@ -13,6 +13,7 @@ try {
     for (const a of pkg.manifest.assets || []) if (/^model\.(rigged|static)$/.test(a.type) && a.id) addonChars.add('char.' + a.id);
   }
 } catch { /* no index = no add-ons */ }
+addonChars.add('char.kit'); // OB-086: the default kit character is registered at boot by main.js (Ch3 Hesk / Dorrin use it)
 // tools/validate-content.mjs (US-058, docs/backlog.md row 30b).
 //
 // Cross-reference checker for the designer's design/ content pack: catches

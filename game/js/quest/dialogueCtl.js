@@ -10,7 +10,7 @@ import { createJawSync } from './jawSync.js';
 
 export const CLOSE_FAR_M = 6.5;
 const CONFIRM_KEYS = ['KeyE', 'Enter'];
-const NPC_NAMES = { bear: 'Burl', rook: 'Rook' }; // OB-054b: prompt names the NPC (id as fallback)
+const NPC_NAMES = { bear: 'Burl', rook: 'Rook', hesk: 'Hesk', dorrin: 'Dorrin' }; // OB-054b: prompt names the NPC (id as fallback)
 // DIALOGUE-LOCK-01 (PO REJECT): movement stays live, so W/S are NOT read here; choose with arrows / wheel / digits 1-4.
 const DIGIT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4'];
 
