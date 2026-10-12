@@ -813,3 +813,4 @@ Notes: ramp must already be RGB bytes 0..255 triplets in cfg.variants[].ramp (gr
 
 - MASK-e2 (kestrel-1, branch mask-e2, uncommitted): main.js loads `bundle.grassMasks.overworld_far` via grassMaskFromJSON -> `worldLoadOpts.carpet.mask` (only with `?carpet=1`, still OFF by default); recipe.carpet `cutGround: [path, water, rock]`.
   Meadow `areas` KEPT on all variants: the bake tool reads them (dropping breaks grass-mask-content test) and the class map needs them (tower/road poses want 0 % carpet). Test: carpet.world.test.js +6 checks (tower 0, road 0, meadow 1, soft edge 0.87/0.49/0.13/0). Suites + validate-content PASS; owner walk-check pending.
+- gpuCompare: kind-10 (KIND_GRASS) cells now compared as packed normals (nrmViol, <=0.5 deg), not AO (carpetMeadow aoViol 448 was a comparer bug); test in gpuCompare.test.js; gpucompare webgpu run: 0 fail, aoViol 0 on all poses.

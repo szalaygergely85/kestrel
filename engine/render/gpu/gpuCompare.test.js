@@ -2,6 +2,7 @@
 // Pure `compareCells` checks: edge-cell exclusion, tolerance edges 4 vs 5,
 // PASS/FAIL rule. Run: node engine/render/gpu/gpuCompare.test.js
 import { compareCells, meshCellCap, compareGeometry, compareLight, meshTiesCap } from './gpuCompare.js';
+import { packNormalOct } from '../../voxel/octNormal.js';
 import { FACE_E } from '../GBuffer.js';
 import { edgeRules } from '../edgePass.js';
 import { makeOk } from '../../test/assert.js';
