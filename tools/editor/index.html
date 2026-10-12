@@ -294,6 +294,11 @@
       display: none; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 6px; pointer-events: auto;
     }
     #terrain-toolbar.on { display: flex; }
+    #grass-toolbar { display: none; align-items: center; gap: 6px; flex-wrap: wrap; }
+    #grass-toolbar.on { display: flex; }
+    #grass-toolbar .gb-op.active { outline: 1px solid var(--ed-fg-hi); }
+    #grass-toolbar label { font-size: 11px; color: var(--ed-fg-dim); display: inline-flex; align-items: center; gap: 4px; }
+    #grass-toolbar input[type=range] { width: 90px; }
     #terrain-toolbar .tb-op.active { outline: 1px solid var(--ed-fg-hi); }
     #terrain-toolbar label { font-size: 11px; color: var(--ed-fg-dim); display: inline-flex; align-items: center; gap: 4px; }
     #terrain-toolbar input[type=range] { width: 90px; }
@@ -438,6 +443,7 @@
         <button type="button" class="ed-btn tool-mode-btn" data-mode="yaw" title="Yaw tool (LMB-drag)">&#8635; Yaw</button>
         <button type="button" class="ed-btn tool-mode-btn" data-mode="scale" title="Scale tool (LMB-drag)">&#8596; Scale</button>
         <button type="button" class="ed-btn tool-mode-btn" data-mode="terrain" title="Terrain brush (LMB-drag paints a stroke; Ctrl+Z undoes it)">^ Terrain</button>
+        <button type="button" class="ed-btn tool-mode-btn" data-mode="grass" title="Grass mask brush (LMB-drag paints/erases where the grass carpet grows; Ctrl+Z undoes it)">&quot; Grass</button>
       </div>
       <button type="button" id="snap-btn" class="ed-btn" title="Cycle snap ([ ])"># Snap 0.25m</button>
       <div class="ed-sep"></div>
@@ -526,6 +532,14 @@
           <label>Strength <input type="range" id="tb-strength" min="1" max="100" step="1" value="40" /><span id="tb-strength-val">40%</span></label>
           <button type="button" id="tb-save" class="ed-btn" title="Save content/terrain/&lt;key&gt;.edits.json (also saved by Ctrl+S)">Save terrain</button>
           <span id="tb-status" class="chip"></span>
+        </div>
+        <div id="grass-toolbar" class="ed-plate">
+          <button type="button" class="ed-btn gb-op" data-op="paint" title="Paint grass coverage">Paint</button>
+          <button type="button" class="ed-btn gb-op" data-op="erase" title="Erase grass coverage">Erase</button>
+          <label>Radius <input type="range" id="gb-radius" min="1" max="24" step="0.5" value="6" /><span>6 m</span></label>
+          <label>Strength <input type="range" id="gb-strength" min="1" max="100" step="1" value="40" /><span>40%</span></label>
+          <button type="button" id="gb-save" class="ed-btn" title="Save content/terrain/&lt;key&gt;.grassMask.json (also saved by Ctrl+S)">Save grass</button>
+          <span id="gb-status" class="chip"></span>
         </div>
         <div id="stats-plate" class="ed-plate">fps -</div>
       </div>
