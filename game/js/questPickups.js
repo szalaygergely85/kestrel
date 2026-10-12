@@ -7,6 +7,7 @@
 //    so a `deliver` objective can check and remove the items at hand-in.
 //  - grantReward(reward): puts a hand-in reward ({items:[{id,n}]}) in the pack.
 import { addItem, removeItem, countOf } from './quest/sim/inventory.js';
+import { unlockFireball } from './quest/features.js';
 import { spawnLeftoverDrop, setStackPickupSink } from './quest/sim/pickups.js';
 
 export const REACH = 2.2, REACH_DZ = 3, POLL_STEPS = 10;
@@ -68,6 +69,7 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
     grantReward(reward) {
       const inv = pack(); let k = 0;
       if (!inv || !reward || !reward.items) return 0;
+      if (reward.unlock && ctx.world && ctx.events && reward.unlock.includes('fireball')) unlockFireball(ctx.world, ctx.events); // FB-02: `unlock:fireball` reward; the flag writer is idempotent (once, never double-given)
       for (const it of reward.items) {
         const got = addItem(inv, defs, it.id, it.n);
         if (got > 0) { k++; if (ctx.events) ctx.events.emit('inventory:added', { id: it.id, n: got }); }

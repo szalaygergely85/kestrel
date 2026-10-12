@@ -2310,6 +2310,60 @@
           "The basket waits. The tags turn in the wind."
         ]
       }
+    },
+    {
+      "id": "sq.burl.fire",
+      "title": "Burl's Ember",
+      "site": "burl",
+      "steps": [
+        {
+          "template": "collect",
+          "params": {
+            "item": "emberpod",
+            "count": 3
+          },
+          "objText": "Find three emberpods in Cinder Hollow"
+        }
+      ],
+      "opensAfter": [
+        "sq.burl.blue"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.mp",
+            "n": 1
+          }
+        ],
+        "unlock": [
+          "fireball"
+        ]
+      },
+      "abandonable": false,
+      "band": 5,
+      "returnText": "Bring the emberpods to Burl",
+      "lines": {
+        "offer": [
+          "Salt in my larder, sky-cub. Now a thing for you.",
+          "Down in Cinder Hollow, red pods grow in the ash.",
+          "Bring me three. Warm ones. I'll show you fire."
+        ],
+        "active": [
+          "Three pods, sky-cub. Red, and warm to the paw.",
+          "Cinder Hollow. Follow the smell of old smoke."
+        ],
+        "ready": [
+          "Warm still. Good. Now watch, and don't blink.",
+          "She cracks a pod between two claws. A coal glows.",
+          "She breathes on it. It leaps and bursts on a stump.",
+          "That's fire, sky-cub. Close your fist on it. Throw.",
+          "It's for teeth and tusks. Not for bushes. Not mine.",
+          "Take this, for when your fire runs low."
+        ],
+        "done": [
+          "Feed your fire slow, sky-cub. It's always hungry."
+        ]
+      }
     }
   ]
 }
