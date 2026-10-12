@@ -6,7 +6,7 @@ import { validatePolygon, compilePolygon } from '../physics/bounds.js';
 import { makeGrid, zoneAt, zoneId, best as bandBest, pick as bandPick, marginX as bandMarginX, marginY as bandMarginY } from './bandGrid.js';
 import { loadLevel, isTerrainFloor } from './Level.js';
 import { Terrain } from './Terrain.js';
-import { validateCarpetConfig, buildCarpetClassMap } from './carpet.js';
+import { validateCarpetConfig, buildCarpetClassMap, buildCarpetMask } from './carpet.js';
 import { scatterTrees, scatterDetail, TreeScatterJob, DetailScatterJob } from './scatter.js';
 import { packLevel, updateAnimatedSector } from './packed.js';
 import { Entity } from '../entities/Entity.js';
@@ -1354,6 +1354,20 @@ export class World {
     const m = buildCarpetClassMap(this.terrain, c.recipe, c.cfg, this.carpet);
     if (!this.carpet) this.carpet = { cfg: c.cfg, classMap: null, x0: 0, y0: 0, w: 0, h: 0, cellM: 0 };
     this.carpet.classMap = m.classMap; this.carpet.x0 = m.x0; this.carpet.y0 = m.y0; this.carpet.w = m.w; this.carpet.h = m.h; this.carpet.cellM = m.cellM; // D2f: cellM was dropped
+    this.rebuildCarpetMask();
+  }
+
+  /**
+   * MASK-b (38.52 amendment): (re)build the near-band grass density mask (paint * (1 - stamps)); `rect` {x0,y0,x1,y1} metres
+   * limits it to an area (editor stroke end). Bumps `carpet.maskVersion`. Never per frame; buffers reused.
+   */
+  rebuildCarpetMask(rect) {
+    const c = this._carpetCtx;
+    if (!c || !this.carpet || !this.terrain?.nearReady) return;
+    const m = buildCarpetMask(this.terrain, c.cfg, c.cfg.mask || null, this.structures, this.scatter, this.carpet.mask, rect);
+    if (!m) return;
+    this.carpet.mask = m;
+    this.carpet.maskVersion = (this.carpet.maskVersion | 0) + 1;
   }
 
   /**
