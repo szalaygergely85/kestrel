@@ -9,6 +9,7 @@
 
 const BURL_ENTITY = 'bear';
 /** Quest-site name for an entity id (flag `talk.<site>`): Burl's entity is `bear`, every other site is its entity id. */
+const CHART_PIECES = ['chart.river', 'chart.westFells']; // MAP-28 / Ch3: chart-piece items -> world flag chart.<area> (review 12d: module const)
 export const siteOf = (entityId) => (entityId === BURL_ENTITY ? 'burl' : entityId);
 
 /** Returns defs where every {flag:'burl.home'} requirement is joined by {flag:'burl.home.met'} (defs may be frozen: copies, input untouched). */
@@ -160,7 +161,7 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
         if (pulseT >= PULSE_DELAY) { questFlag('relay.bend.pulseSeen', true); ch = true; }
       }
       if (nestWaiting.length && api.itemTaken(T[textOf.get(nestWaiting[0])].afterItem)) { for (const id of nestWaiting) { const h = world.get(id); if (h && h.data) api.addLook(world, id, h.data); } nestWaiting = []; ch = true; }
-      for (const cp of ['chart.river', 'chart.westFells']) put(cp, !!(b.packOps && b.packOps.count(cp) > 0)); // MAP-28: a chart piece in the pack = world flag chart.<area>
+      for (const cp of CHART_PIECES) put(cp, !!(b.packOps && b.packOps.count(cp) > 0)); // MAP-28: a chart piece in the pack = world flag chart.<area>
       put('mq.ford.mirror.glass', !!(b.packOps && b.packOps.count('relay.mirror') > 0));
       for (const id of MQ) {
         const k = 'mq.' + id.slice(3) + '.';

@@ -1340,7 +1340,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     // OB-073-D2f: hand the GPU carpet pass the class map + near heights on every world load / band swap (version bump re-uploads)
     let carpetVer = 0;
     const pushCarpet = (wIn) => { const w = wIn || engine.world, nb = w && w.terrain && w.terrain.near; if (!wgPipeline || !wgPipeline.setCarpet) return; if (!w || !w.carpet || !nb) { wgPipeline.setCarpet(null, null, 0); return; } wgPipeline.setCarpet(w.carpet, { data: nb.hDraw, w: nb.w, h: nb.h, x0: nb.x0, y0: nb.y0, cell: nb.cell }, ++carpetVer); };
-    engine.events.on('world:loaded', (e) => pushCarpet(e && e.world)); engine.events.on('world:band', () => pushCarpet()); // the event's world: engine.world is not swapped yet when world:loaded fires
+    engine.events.on('world:loaded', (e) => pushCarpet(e && e.world)); engine.events.on('world:band', () => pushCarpet()); engine.events.on('world:scatter', () => pushCarpet()); // review 12d: refreshTerrainScatter rebuilds the carpet too // the event's world: engine.world is not swapped yet when world:loaded fires
     engine.events.on('world:loaded', (evt) => {
       const world = evt.world;
       bootMark('world:loaded (world built, handler start)');
@@ -1495,7 +1495,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // adds it to the pack + left hand), so the demo pack holds the fireball only. `?demo=0` = empty pack.
       // An old save whose sword flag is already set migrates: sword in the pack + left hand.
       ensureInventory(playerHandle.data, startFor(params.get('demo') !== '0', fireballOn(engine.world, FEATURES))); // startConfig.js (fireball locked -> empty right hand)
-      engine.events.on('magic.unlocked', () => { const c = playerHandle && playerHandle.data.components; if (c && c.inventory && c.equipment && itemDefs && c.equipment.off === null && c.equipment.set !== 'ranged') equipItem(c.inventory, c.equipment, itemDefs, 'spell.fireball'); }); // FB-01/03 fix: the unlock puts the spell into the free off hand (RMB); hands are derived from equipment, so inventory.right alone never held it
+      if (!window.__fbEquipHooked) window.__fbEquipHooked = true, engine.events.on('magic.unlocked', () => { const c = playerHandle && playerHandle.data.components; if (c && c.inventory && c.equipment && itemDefs && c.equipment.off === null && c.equipment.set !== 'ranged') equipItem(c.inventory, c.equipment, itemDefs, 'spell.fireball'); }); // FB-01/03 fix: the unlock puts the spell into the free off hand (RMB); hands are derived from equipment, so inventory.right alone never held it
       if (world.state['tower.sword.taken'] && itemDefs) migrateSword(playerHandle.data.components.inventory, itemDefs);
       if (itemDefs) migrateEquipment(playerHandle.data, itemDefs); // EQ-02: old saves sword->main, shield->off (before initialState)
       // US-091a2 (37.16.3): corpse loot + toast. Own RNG stream (nav seed ^ salt) so the beast wander RNG is never

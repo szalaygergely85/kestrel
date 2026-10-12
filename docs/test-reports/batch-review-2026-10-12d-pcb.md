@@ -1,0 +1,20 @@
+# Batch review 2026-10-12d (PC-B architect, opus, D-066)
+
+Run: check-deps OK (1077 files, 57 old warnings). carpetCells / carpet / carpet.wgsl / shade.wgsl (shadeGrass twin probes) / carpet.world / questBook / ch3names tests pass. carpetCells alloc guard < 2 KB/frame calm + wind passes.
+
+| Commit | Verdict |
+|---|---|
+| f4b4fe84 OB-073-D2c | ARCH OK. Kind 10 lit as terrain (sun analytic, no horizon AO), skipped by edge/glow/soft; off = no branch taken. Note: the `import` lines in the middle of engine/render/carpet.js (~l.286) work (hoisted) but belong at the top of the file. |
+| b58fbbc1 D2d | ARCH OK. WGSL built from the JS constants, pass not encoded when off; 6000-ray parity test. |
+| 95b27b8d + 4b4b3d01 D2e | ARCH OK with notes. Twins match (hashFast24 tint in both, stable level, PREC-01a i32 origin computed in f64 on the CPU). Carpet runs only on pitched perspective frames in both twins (compositor.js gate `meshPitched && !ortho`). The loop's top-of-pose reset (`world.carpet = null; wg.setCarpet(null)`) keeps every other pose carpet-off; baseline +3 rows, 0 PASS->FAIL. **aoViol 448 is a bug in the comparer, not in the render**: kind 10 has face U, so gpuCompare.js:401-415 reads the JS `aoD` (which holds the packed normal bits for kind 10) as a float AO and compares it to GPU GA.w. Do not skip kind 10. Follow-up (small, before the next carpet change): in gpuCompare.js, treat `kind === 10` like FACE_PACKED there: JS aoD bits vs the GPU's GI.z normal, angle <= 0.5 deg goes into nrmViol; aoViol must then be 0 on carpetMeadow. |
+| d11ab7c3 D2f content + areas | ARCH OK. Areas validated, checked only during the class-map rebake (never per frame); the cellM fix in World._rebuildCarpet is correct. Note: `refreshTerrainScatter` (World.js ~l.1373) rebuilds the carpet but only emits `world:scatter`, so the GPU class texture goes stale there. Hook pushCarpet to `world:scatter` too. |
+| 446791ca + d4f38381 wiring | ARCH OK. The palette keys are resolved in game code (the engine gets RGB, no ASSETS in the engine). On a band swap `_rebuildCarpet` runs before `world:band` is emitted, so the upload is fresh. The per-frame `setCarpetFrame` is scalar and passes the existing params object (no alloc). Using the world:loaded event's world is the right fix. |
+| b935f94a OB-093 | ARCH OK. `deathFlow.phase` is the correct gate. |
+| e5a661e3 D-069 | ARCH OK with notes. (1) main.js:1498 registers the `magic.unlocked` listener inside the world:loaded handler, so a new one piles up on every restart/continue. They are idempotent (off === null), but register it once outside the handler or unsubscribe on reload. (2) Old saves with magic already unlocked keep the spell in the pack (no event fires again). It can now be equipped by hand thanks to slot 'off'; this is acceptable, but the PO should know. Bears moved: data only. |
+| 19110b05 + merge NUB-01 | ARCH OK with notes. Deterministic (seeded mulberry32, fixed dt, reads sim state only), not saved, by design. Note: `pick()` and the walking branch `[bx, by]` allocate a 2-array on every 60 Hz step while Burl walks. Use a module scratch pair (tiny, but it is a hot path). |
+| e13568a5 OB-087 | ARCH OK. Old saves fall back to array order. Edge case: a save that mixes seq/no-seq entries could produce a duplicate seq (fallback `++seqCounter` before a later saved max). Take the max over the saved seqs first if this matters. |
+| 66f5d6ee OB-092 grip hands | ARCH OK. Design/kit data plus re-pinned goldens only; the cub stays within the bear budget. |
+| fff74993 OB-091 forest | ARCH OK. World json scatter plus a tool only, existing meshes, no engine change. |
+| ac28f60e Ch3 main line | ARCH OK with notes. The double `mainSync` in `talked` is fine (idempotent). In errands.js the chart-bridge array literal `['chart.river','chart.westFells']` is allocated on every call: hoist it to a module const. Like chart.river, the flag follows pack presence, so dropping a chart clears the map area. Confirm with the PO that this is intended. |
+
+Merge/push: OK. No ARCH CHANGES. Follow-ups: the gpuCompare kind-10 normal compare (D2e) and the magic.unlocked listener (D-069).

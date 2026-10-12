@@ -227,6 +227,10 @@ for (const key of Object.keys(bundle.worlds)) {
  * billboard sub-model) - mirrors validate-content.mjs's resolveModel. */
 // CHARGEN-15 (38.33): `char.<id>` models come from the add-on packages in content/packages/index.json (registered at boot).
 const addonChars = new Set();
+// OB-086 / Ch3: `char.kit` is built at boot by game/js/main.js from content/chargen/human.charkit.json (composeCharacter ->
+// riggedModelDef), not a design model - world entities (hesk, dorrin) may use it as long as the kit file exists.
+{ const { existsSync } = await import('node:fs'); const kitUrl = new URL('../content/chargen/human.charkit.json', import.meta.url);
+  ok('char.kit source content/chargen/human.charkit.json exists', existsSync(kitUrl)); if (existsSync(kitUrl)) addonChars.add('char.kit'); }
 try {
   const pdir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'content', 'packages');
   const idx = JSON.parse(fs.readFileSync(path.join(pdir, 'index.json'), 'utf8'));

@@ -29,11 +29,12 @@ export function createNubFollow(o) {
   }
   function place(x, y) { t.x = x; t.y = y; t.z = o.groundAt(x, y); }
   // a dry spot 3-8 m from Burl (falls back to a ring walk, then to staying put)
+  const pickOut = [0, 0]; // review 12d: one reused pair (no array per 60 Hz step)
   function pick(rMin, rMax) {
     const bx = o.burl.x(), by = o.burl.y();
     for (let k = 0; k < 8; k++) {
       const a = rand() * Math.PI * 2, r = between(rMin, rMax), x = bx + Math.cos(a) * r, y = by + Math.sin(a) * r;
-      if (!water(x, y) && (k > 5 || dry(x, y))) return [x, y];
+      if (!water(x, y) && (k > 5 || dry(x, y))) { pickOut[0] = x; pickOut[1] = y; return pickOut; }
     }
     return null;
   }
@@ -68,7 +69,7 @@ export function createNubFollow(o) {
       // Burl on the move or Nub too far: trot back to her
       if ((o.burl.walking() && db > NEAR_MIN_M) || db > NEAR_MAX_M) {
         if (mode === 'lie') lieStage = 0;
-        const p = o.burl.walking() ? [bx, by] : pick(NEAR_MIN_M, NEAR_MIN_M + 1.5);
+        const p = o.burl.walking() ? (pickOut[0] = bx, pickOut[1] = by, pickOut) : pick(NEAR_MIN_M, NEAR_MIN_M + 1.5);
         if (p && (mode !== 'move' || speed !== TROT_SPEED || o.burl.walking())) goTo(p[0], p[1], TROT_SPEED);
       }
       if (mode === 'move') {
