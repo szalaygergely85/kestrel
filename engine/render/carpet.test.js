@@ -2,7 +2,7 @@
 // the class map is an in-test fixture with the 38.52 data shape (D2a builds the real one).
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { groundFootprint } from './terrainShade.js';
+import { groundFootprint, hashFast24 } from './terrainShade.js';
 import { NMAX, makeCarpetCtx, makeCarpetHit, traceCarpet, traceCarpetIn, loadInput, traceCarpetBrute, bladeAtCell, FADE_FP0, FADE_FP1, FADE_R0 } from './carpet.js';
 
 // AC6 needs gc(): re-spawn once with --expose-gc
@@ -81,7 +81,7 @@ function dirOf(yawDeg, pitchDeg, out) {
       hits++;
       bladeAtCell(ctx, out.ix, out.iy, b);
       const g = groundZ(b[0], b[1]);
-      if (Math.abs(out.h01 * b[2] - (out.z - g)) > 1e-6 || out.variant !== b[3]) bad++;
+      if (out.z - g < -1e-9 || out.z - g > b[2] + 1e-9 || out.variant !== b[3]) bad++; // TUFT-01a: h01 is the stroke fraction; z must sit inside the tuft
       const key = out.ix + ',' + out.iy, sig = b[0] + ',' + b[2] + ',' + b[3];
       if (seen.has(key) && seen.get(key) !== sig) mism++;
       seen.set(key, sig);
@@ -127,7 +127,7 @@ function dirOf(yawDeg, pitchDeg, out) {
     const h1 = traceCarpet(B, d, t, ctx, 0, out), h2 = traceCarpetBrute(B, d, t, ctx, 0, ref);
     n++; if (h1) hitsB++;
     if (h1 === h2 && (!h1 || (out.ix === ref.ix && out.iy === ref.iy))) same++;
-    if (h1) { bladeAtCell(ctx, out.ix, out.iy, bb); if (out.variant !== bb[3] || Math.abs(out.h01 * bb[2] - (out.z - groundZ(bb[0], bb[1]))) > 1e-6) reroll++; }
+    if (h1) { bladeAtCell(ctx, out.ix, out.iy, bb); { const zz = out.z - groundZ(bb[0], bb[1]); if (out.variant !== bb[3] || zz < -1e-9 || zz > bb[2] + 1e-9) reroll++; } }
   }
   check(hitsB > 20 && same === n && reroll === 0, `AC2b eye shift 0.1 m: DDA == brute at the new pose on ${same}/${n} sampled rays (${hitsB} hits), ${reroll} re-rolled blades`);
 }
@@ -174,6 +174,7 @@ function dirOf(yawDeg, pitchDeg, out) {
       if (a === bb && (!a || Math.abs(out.t - ref.t) < 1e-9)) agree++; else if (a && bb) tDiff++;
     }
     console.log(`  (info) AC5 ${name}: tests/cell mean ${(tSum / sSum).toFixed(2)}, worst trace ${tWorst.toFixed(2)} (3x3 undeduped = 9)`);
+    check(tSum / sSum <= (wind ? 3 : 2), `TUFT-01a: tests/cell mean ${(tSum / sSum).toFixed(2)} <= ${wind ? 3 : 2} (worst trace ${tWorst.toFixed(2)})`);
     check(hits > 300 && (n - agree) / n <= tol, `AC5 ${name}: ${hits} hits, DDA == brute on ${agree}/${n} rays (${tDiff} nearer-blade differences)`);
   }
 }
@@ -208,7 +209,7 @@ function dirOf(yawDeg, pitchDeg, out) {
   const allOne = new Uint8Array(W * H).fill(1);
   const cf = (v) => ({ seed: 11, radiusM: 8, classJitterM: 0, variants: [{ name: 'a', ground: ['grass'], density: 1, heightM: [0.2, 0.2], ramp: ['a', 'b'], ...v }] });
   const flat0 = (q) => { q[2] = 0; };
-  const mk1 = (v, cm) => makeCarpetCtx({ cfg: cf(v), classMap: cm || allOne, x0: X0, y0: Y0, w: W, h: H }, flat0, null);
+  const mk1 = (v, cm) => makeCarpetCtx({ cfg: { ...cf(v), ...(v && v.tufts !== undefined ? { tufts: v.tufts } : {}) }, classMap: cm || allOne, x0: X0, y0: Y0, w: W, h: H }, flat0, null);
   // (a) a cleared class area: rays looking down from inside it hit nothing; the same rays over the full map do hit
   const cleared = allOne.slice();
   for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) { const x = X0 + i * 2, y = Y0 + j * 2; if (x >= -6 && x < 6 && y >= -6 && y < 6) cleared[j * W + i] = 0; }
@@ -223,7 +224,7 @@ function dirOf(yawDeg, pitchDeg, out) {
   check(hitsC === 0 && hitsF > 20, `OB-096a: ${hitsC} hits inside a cleared class area (full map: ${hitsF})`);
   // (b) near blade (0.6 m): hit width <= WMAX_CELLS * 0.5 * fp, far blade keeps its true width
   // rays along -y: |ex - rootX| of every hit blade (axis vertical, no wind) is its lateral reach; it must stay <= 1.25 * 0.5 * fp(t) (true half-width >= 0.175)
-  const cW = mk1({ bladeW: 0.5, heightM: [0.3, 0.3] }), bb2 = new Float64Array(4), oh = makeCarpetHit(), ew = [0, 0, 0.1], dw = [0, -1, 0];
+  const cW = mk1({ bladeW: 0.5, heightM: [0.3, 0.3], tufts: false }) /* blade-mode regression (the WGSL twin) */, bb2 = new Float64Array(4), oh = makeCarpetHit(), ew = [0, 0, 0.1], dw = [0, -1, 0];
   cW.fpK = 0.05; // fixed footprint 0.05 m -> cap 0.03125 m, far below the true half-width
   let nearBad = 0, nearN = 0, ratioMax = 0;
   for (let n = 0; n < 20000; n++) {
@@ -244,6 +245,67 @@ function dirOf(yawDeg, pitchDeg, out) {
   const cN = mk1({ tuft: { p: 0, mul: 1 } });
   let tall0 = 0; for (let j = 0; j < 100; j++) for (let i = 0; i < 100; i++) { bladeAtCell(cN, i - 50, j - 50, ob); if (ob[2] > 0.26) tall0++; }
   check(tall0 === 0, 'OB-096c: tuft {p:0} gives no tall blade');
+}
+
+// ---- TUFT-01a (38.52 amendment, tuft atlas): per-stroke width cap, masked root, determinism, calm frames
+{
+  const allOne = new Uint8Array(W * H).fill(1);
+  const flat0 = (q) => { q[2] = 0; };
+  const cfT = { seed: 11, radiusM: 8, classJitterM: 0, variants: [{ name: 'a', ground: ['grass'], density: 1, heightM: [0.3, 0.3], bladeW: 0.5, ramp: ['a', 'b'] }] };
+  const mkT = (c, mask) => makeCarpetCtx({ cfg: c, classMap: allOne, x0: X0, y0: Y0, w: W, h: H, mask }, flat0, null);
+  // (a) near tuft (t = 0.5 m): the hit run across one stroke is <= 1.25 footprints. Rays run along plane 1's normal (so plane 2 is parallel
+  // and skipped), swept across the tuft along the plane tangent at a fixed height.
+  const cT = mkT(cfT); cT.fpK = 0.01;
+  const ob = new Float64Array(4), oh = makeCarpetHit(), eT = [0, 0, 0], dT = [0, 0, 0];
+  const step = 0.0005, fpM = 0.01, texM = 2 * cT.tuftR * cT.cellM * 1.3 / cT.atlas.w; // the cap decides by texel centre: the hit is quantised to whole texels (19.7 mm at R 0.157 m); near fp < texel => 1 texel per stroke
+  // NOTE (01b): a sub-texel cap needs a sign/offset bit in the atlas g byte; the spec formula is implemented as written
+  let runs = 0, worst = 0, tuftsHit = 0; const widths = [];
+  for (let n = 0; n < 40; n++) {
+    const ix = n * 3 - 60, iy = 5 + (n % 7);
+    bladeAtCell(cT, ix, iy, ob);
+    const ang = (hashFast24(ix, iy, cT.seed + 113) / 16777216) * Math.PI, cs = Math.cos(ang), sn = Math.sin(ang);
+    dT[0] = cs; dT[1] = sn; dT[2] = 0;
+    let run = 0, any = 0;
+    for (let sx = -0.3; sx <= 0.3; sx += step) {
+      eT[0] = ob[0] - cs * 0.5 - sn * sx; eT[1] = ob[1] - sn * 0.5 + cs * sx; eT[2] = 0.1;
+      const hit = traceCarpet(eT, dT, 2, cT, 0, oh) === 1 && oh.ix === ix && oh.iy === iy;
+      if (hit) { run++; any = 1; if (run * step > worst) worst = run * step; } else if (run > 0) { runs++; widths.push(run * step); run = 0; }
+    }
+    tuftsHit += any;
+  }
+  widths.sort((a, b) => a - b);
+  const med = widths[widths.length >> 1], p90 = widths[Math.floor(widths.length * 0.9)];
+  // single strokes are capped at 1.25 fp; strokes that touch at the fanned base merge into one run (reported, bounded by 3 strokes)
+  console.log(`  (info) TUFT-01a width: median ${(med * 1000).toFixed(1)} mm, p90 ${(p90 * 1000).toFixed(1)} mm, widest ${(worst * 1000).toFixed(1)} mm (fp ${fpM * 1000} mm)`);
+  check(tuftsHit >= 30 && runs > 40 && med <= Math.max(1.25 * fpM, texM) + 2 * step && p90 <= 3 * Math.max(1.25 * fpM, texM) + 2 * step, `TUFT-01a width: ${tuftsHit}/40 tufts hit, ${runs} stroke runs, median ${(med * 1000).toFixed(1)} mm <= max(1.25 fp, 1 texel = ${(texM * 1000).toFixed(1)} mm), p90 <= 3`);
+  // (b) masked root: a mask of 0 over the whole window -> no tuft at all; a half mask scales the height, never above the unmasked one
+  const zero = { data: new Uint8Array(64 * 64), x0: -16, y0: -16, w: 64, h: 64, cellM: 0.5 };
+  const cZ = mkT(cfT, zero), cN = mkT(cfT), rr = rng(21), eM = [0, 0, 0.5], dM = [0, 0, 0];
+  let hz = 0, hn = 0;
+  for (let n = 0; n < 6000; n++) {
+    eM[0] = -4 + rr() * 8; eM[1] = -4 + rr() * 8; dirOf(rr() * 360, -90 + rr() * 30, dM);
+    const t = 0.5 / -dM[2];
+    if (traceCarpet(eM, dM, t, cZ, 0, oh)) hz++;
+    if (traceCarpet(eM, dM, t, cN, 0, oh)) hn++;
+  }
+  check(hz === 0 && hn > 100, `TUFT-01a mask: ${hz} hits with an all-zero mask (unmasked ${hn})`);
+  // (c) determinism + calm frames bit-identical: two fresh contexts, different clock times, same output
+  const cD1 = mkT(cfT), cD2 = mkT(cfT), o1 = makeCarpetHit(), o2 = makeCarpetHit();
+  let diff = 0, hD = 0;
+  for (let n = 0; n < 12000; n++) {
+    eM[0] = -4 + rr() * 8; eM[1] = -4 + rr() * 8; dirOf(rr() * 360, -90 + rr() * 30, dM);
+    const t = 0.5 / -dM[2], a = traceCarpet(eM, dM, t, cD1, 0, o1), b = traceCarpet(eM, dM, t, cD2, n * 0.016, o2);
+    if (a) hD++;
+    if (a !== b || (a && (o1.t !== o2.t || o1.h01 !== o2.h01 || o1.ix !== o2.ix || o1.iy !== o2.iy || o1.z !== o2.z || o1.lean !== o2.lean))) diff++;
+  }
+  check(hD > 100 && diff === 0, `TUFT-01a determinism: ${hD} hits, ${diff} differences between fresh contexts / frame times (calm)`);
+  // (d) the stroke fraction is a real height fraction: r codes run 0..1 along the tuft
+  let lo = 1, hi = 0;
+  for (let n = 0; n < 6000; n++) {
+    eM[0] = -4 + rr() * 8; eM[1] = -4 + rr() * 8; dirOf(rr() * 360, -60 + rr() * 50, dM);
+    if (traceCarpet(eM, dM, 0.5 / -dM[2], cD1, 0, o1)) { if (o1.h01 < lo) lo = o1.h01; if (o1.h01 > hi) hi = o1.h01; }
+  }
+  check(lo >= 0 && hi <= 1 && lo < 0.2 && hi > 0.8, `TUFT-01a h01 range ${lo.toFixed(2)}..${hi.toFixed(2)}`);
 }
 
 if (fails) { console.log(`carpet.test: ${fails} FAILED`); process.exit(1); }

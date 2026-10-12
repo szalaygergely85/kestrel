@@ -8,11 +8,15 @@
 //   carpet = { cfg: CarpetConfig, classMap: Uint8Array, x0, y0, w, h }   (classMap cell = cfg.classCellM, 0 = none, id 1..15 = cfg.variants[id-1])
 import { hashFast24, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, groundTierOffset, GRASS_TINT_AMP, GRASS_GX_HAS } from './terrainShade.js';
 import { CARPET_DEFAULTS, TUFT_DEFAULT_P, TUFT_DEFAULT_MUL } from '../world/carpet.js';
+import { buildTuftAtlas } from './tuftAtlas.js';
 const INV_2_24 = 1 / 16777216; // 24-bit integer hash scaled at the call site: no double crosses a call (alloc rule)
 
 export const NMAX = 24;                 // max lattice steps per trace; more = past the fade, draw nothing (never truncate)
 export { CARPET_DEFAULTS };   // one owner: engine/world/carpet.js (D2a)
-export const ROOT_JITTER = 0.4;         // root offset +-0.4 cell
+export const ROOT_JITTER = 0.4;         // BLADE mode root offset +-0.4 cell (the WGSL twin still reads this until TUFT-01b)
+export const ROOT_JITTER_TUFT = 0.25;   // TUFT-01a: tuft root offset +-0.25 cell
+export const TUFTS = true;              // TUFT-01a: JS path draws tufts (38.52 tuft atlas). false = old single blades (what the WGSL twin still does until 01b); cfg.tufts overrides per carpet
+export const SALT_SHAPE = 112, SALT_ROT = 113;
 export const LEAN_CAP = 0.6;            // |lean| <= 0.6 * h (ratio lean/h)
 export const LEAN_PER_MS = 0.12;        // lean/h per m/s of world wind (before swayGain and gust)
 export const PATCH_LO = 0.75, PATCH_RANGE = 0.5;   // height * (0.75 + 0.5 * valueNoise)
@@ -40,7 +44,7 @@ export const MASK_CELL = 0.5, MASK_MIN = 0.04;
  * @param {(q:Float64Array)=>void} ground near-band height: reads q[0]=x, q[1]=y, writes q[2]=z
  * @param {((q:Float64Array)=>void)|null} wind world wind: reads q[0]=x, q[1]=y, q[2]=timeSec, writes q[3]=vx, q[4]=vy (m/s); null = calm
  */
-export function makeCarpetCtx(carpet, ground, wind) {
+export function makeCarpetCtx(carpet, ground, wind, atlas) {
   const cfg = carpet.cfg, D = CARPET_DEFAULTS;
   const n = MAX_VARIANTS + 1;
   const ctx = {
@@ -51,10 +55,13 @@ export function makeCarpetCtx(carpet, ground, wind) {
     classMap: carpet.classMap, cx0: carpet.x0, cy0: carpet.y0, cw: carpet.w, ch: carpet.h,
     mData: null, mx0: 0, my0: 0, mw: 0, mh: 0, gTint: new Float64Array(n).fill(0.6), // MASK-c: mask window (refreshed by carpetCtxFor)
     dens: new Float64Array(n), hMin: new Float64Array(n), hMax: new Float64Array(n), bw: new Float64Array(n), sway: new Float64Array(n), tuftP: new Float64Array(n), tuftMul: new Float64Array(n).fill(1),
+    tufts: cfg.tufts === undefined ? TUFTS : !!cfg.tufts, tuftR: cfg.tuftR || D.tuftR, atlas: null, rootJit: 0,
     maxH: 0, wMax: 0, ground, wind: wind || null, fpK: 0, // fpK = groundFootprint hashCell arg (<0 = -k, >0 = fixed cell, 0 = default k)
     q: new Float64Array(8), inp: new Float64Array(8), r: new Float64Array(10), s: new Float64Array(S_N), keep: new Float64Array(S_N),
   };
   ctx.sway[0] = 1;
+  ctx.atlas = atlas || buildTuftAtlas(ctx.seed, cfg.tuftAtlas || {});
+  ctx.rootJit = ctx.tufts ? ROOT_JITTER_TUFT : ROOT_JITTER;
   setCarpetMask(ctx, carpet.mask);
   const vs = cfg.variants || [];
   for (let i = 0; i < vs.length && i < MAX_VARIANTS; i++) {
@@ -63,7 +70,7 @@ export function makeCarpetCtx(carpet, ground, wind) {
     ctx.gTint[id] = v.groundTint == null ? 0.6 : v.groundTint;
     ctx.bw[id] = v.bladeW || D.bladeW; ctx.sway[id] = v.swayGain == null ? D.swayGain : v.swayGain;
     ctx.tuftP[id] = v.tuft && v.tuft.p !== undefined ? v.tuft.p : TUFT_DEFAULT_P; ctx.tuftMul[id] = v.tuft && v.tuft.mul !== undefined ? v.tuft.mul : TUFT_DEFAULT_MUL;
-    const wm = ctx.bw[id] * 0.5 * (W_JIT_LO + W_JIT_RANGE), hm = v.heightM[1] * (PATCH_LO + PATCH_RANGE) * ctx.tuftMul[id]; // OB-096: bounds include the variety factors
+    const wm = (ctx.tufts ? ctx.tuftR * ctx.cellM : ctx.bw[id] * 0.5) * (W_JIT_LO + W_JIT_RANGE), hm = v.heightM[1] * (PATCH_LO + PATCH_RANGE) * ctx.tuftMul[id]; // OB-096: bounds include the variety factors
     if (wm > ctx.wMax) ctx.wMax = wm;
     if (hm > ctx.maxH) ctx.maxH = hm;
   }
@@ -185,6 +192,91 @@ function bladeHit(ctx, ix, iy) {
   return 1;
 }
 
+const cellHit = (ctx, i, j) => ctx.tufts ? tuftHit(ctx, i, j) : bladeHit(ctx, i, j);
+
+/**
+ * TUFT-01a (38.52 amendment, tuft atlas): the tuft of lattice cell (ix, iy) vs the ray in ctx.r. Same pick chain as bladeHit
+ * (class, mask, rank, height); then 2 crossed vertical planes through the root, sheared by the lean, exact solve + one atlas texel each,
+ * the nearer plane hit wins. Returns 1 on a hit (S_TB, S_H01 = stroke height fraction, S_Z ...), else 0.
+ */
+function tuftHit(ctx, ix, iy) {
+  const r = ctx.r, ex = r[R_EX], ey = r[R_EY], ez = r[R_EZ], dx = r[R_DX], dy = r[R_DY], dz = r[R_DZ], n2 = r[R_N2], t0 = r[R_T0], t1 = r[R_T1];
+  const s = ctx.s, q = ctx.q, c = ctx.cellM, seed = ctx.seed, rj = ROOT_JITTER_TUFT;
+  const rx = (ix + 0.5 + ((hashFast24(ix, iy, seed + SALT_JX) * INV_2_24) * 2 - 1) * rj) * c;
+  const ry = (iy + 0.5 + ((hashFast24(ix, iy, seed + SALT_JY) * INV_2_24) * 2 - 1) * rj) * c;
+  const cj = ctx.classJitterM;
+  q[0] = rx + ((hashFast24(ix, iy, seed + SALT_CJX) * INV_2_24) * 2 - 1) * cj; q[1] = ry + ((hashFast24(ix, iy, seed + SALT_CJY) * INV_2_24) * 2 - 1) * cj;
+  // exact root cull: the tuft reaches at most R_max (+ the lean cap at the tallest) from its root; returns 2 = not a candidate
+  const hxy = Math.sqrt(n2), cr = (rx - ex) * dy - (ry - ey) * dx, reach = (ctx.tuftR * c * (W_JIT_LO + W_JIT_RANGE) + (ctx.wind !== null ? LEAN_CAP * ctx.maxH : 0)) * hxy;
+  if (cr > reach || cr < -reach) return 2;
+  const v = classAt(ctx);
+  if (v === 0) return 0;
+  q[0] = rx; q[1] = ry;
+  maskAt(ctx);
+  const mk = s[S_M];
+  if (mk < MASK_MIN) return 0;
+  const rank = (hashFast24(ix, iy, seed + SALT_RANK) * INV_2_24);
+  if (rank >= ctx.dens[v]) return 0;
+  q[0] = rx / ctx.patchM; q[1] = ry / ctx.patchM;
+  vnoise(ctx, seed + SALT_PATCH);
+  let h = (ctx.hMin[v] + (ctx.hMax[v] - ctx.hMin[v]) * (hashFast24(ix, iy, seed + SALT_H) * INV_2_24)) * (PATCH_LO + PATCH_RANGE * q[2]);
+  if ((hashFast24(ix, iy, seed + SALT_TUFT) * INV_2_24) < ctx.tuftP[v]) h *= ctx.tuftMul[v];
+  h *= mk;
+  const R = ctx.tuftR * c * (W_JIT_LO + W_JIT_RANGE * (hashFast24(ix, iy, seed + SALT_W) * INV_2_24));
+  q[0] = rx; q[1] = ry;
+  leanRatio(ctx, v);
+  const lx = s[S_LX], ly = s[S_LY];
+  if (ctx.wind !== null) { // second cull with this tuft's real lean reach (the first used the cap at the tallest height)
+    const lr = Math.sqrt(lx * lx + ly * ly) * h, reach2 = (R + lr) * hxy;
+    if (cr > reach2 || cr < -reach2) return 2;
+  }
+  q[0] = rx; q[1] = ry;
+  ctx.ground(q);
+  const g = q[2];
+  const atlas = ctx.atlas, ad = atlas.data, aw = atlas.w, ah = atlas.h;
+  const shape = hashFast24(ix, iy, seed + SALT_SHAPE) % atlas.n;
+  const ang = (hashFast24(ix, iy, seed + SALT_ROT) * INV_2_24) * Math.PI;
+  const cs = Math.cos(ang), sn = Math.sin(ang);
+  const wStroke = ctx.bw[v] * 0.5, texM = 2 * R / aw, lz = ez - g;
+  let bestT = Infinity, bestH01 = 0;
+  for (let pl = 0; pl < 2; pl++) {
+    const nx = pl === 0 ? cs : -sn, ny = pl === 0 ? sn : cs;     // plane normal; tangent = (-ny, nx)
+    const den = nx * (dx - lx * dz) + ny * (dy - ly * dz);       // = tuftAtlas.tuftPlaneT, inlined (no doubles through a call)
+    if (den < 1e-6 && den > -1e-6) continue;
+    const t = (nx * (rx + lx * lz - ex) + ny * (ry + ly * lz - ey)) / den;
+    if (t < t0 || t > t1 || t >= bestT) continue;
+    const sr = ez + t * dz - g;
+    if (sr < 0 || sr > h) continue;
+    const u = ((ex + t * dx - rx - lx * sr) * -ny + (ey + t * dy - ry - ly * sr) * nx) / R;
+    if (u < -1 || u > 1) continue;
+    let col = ((u * 0.5 + 0.5) * aw) | 0, row = ((sr / h) * ah) | 0;
+    if (col >= aw) col = aw - 1;
+    if (row >= ah) row = ah - 1;
+    const o = ((shape * ah + row) * aw + col) * 2, tr = ad[o];
+    if (tr === 0) continue;
+    const fpk = ctx.fpK;
+    let fp;
+    if (fpk > 0) fp = fpk;
+    else { const a = t / FP_ANISO_T; fp = (fpk < 0 ? -fpk : FP_DEFAULT_K) * t * (a < 1 ? 1 : a > FP_ANISO_MAX ? FP_ANISO_MAX : a); }
+    const wCap = WMAX_CELLS * 0.5 * fp, wHit = wStroke < wCap ? wStroke : wCap;   // per-stroke screen-width cap
+    if (ad[o + 1] * (1 / 32) * texM >= wHit) continue;
+    bestT = t; bestH01 = (tr - 1) * (1 / 253);
+  }
+  if (bestT === Infinity) return 0;
+  const tc = bestT, zr = ez + tc * dz;
+  const fpk = ctx.fpK;
+  let fp;
+  if (fpk > 0) fp = fpk;
+  else { const a = tc / FP_ANISO_T; fp = (fpk < 0 ? -fpk : FP_DEFAULT_K) * tc * (a < 1 ? 1 : a > FP_ANISO_MAX ? FP_ANISO_MAX : a); }
+  const dXY = tc * Math.sqrt(n2);
+  let f1 = (fp / (2 * wStroke) - FADE_FP0) / (FADE_FP1 - FADE_FP0); f1 = f1 < 0 ? 0 : f1 > 1 ? 1 : f1;
+  let f2 = (dXY / ctx.radiusM - FADE_R0) / (FADE_R1 - FADE_R0); f2 = f2 < 0 ? 0 : f2 > 1 ? 1 : f2;
+  const fade = (1 - f1 * f1 * (3 - 2 * f1)) * (1 - f2 * f2 * (3 - 2 * f2));
+  if (rank >= ctx.dens[v] * fade) return 0;
+  s[S_VAR] = v; s[S_H01] = bestH01; s[S_Z] = zr; s[S_H] = h; s[S_TB] = tc; s[S_RX] = rx; s[S_RY] = ry; s[S_FP] = fp;
+  return 1;
+}
+
 /**
  * Load the ray into ctx.r and find the segment [t0, t1] that can touch blades.
  * Returns the lattice steps it needs (0 = empty segment); the trace draws nothing when that exceeds NMAX.
@@ -257,7 +349,7 @@ export function traceCarpetIn(ctx, out) {
   const margin = hxy > 1e-9 ? (RING + 1.5) * c / hxy : Infinity; // blades of later cells can still be nearer by this much
   const windOn = ctx.wind !== null;
   // a blade of cell (i, j) can only touch the ray if the cell centre is within this xy distance of the ray line
-  const rej = ((0.7071 + ROOT_JITTER) * c + ctx.wMax + LEAN_CAP * ctx.maxH) * hxy; // scaled by |d_xy|: compared with the cross product
+  const rej = ((0.7071 + ctx.rootJit) * c + ctx.wMax + LEAN_CAP * ctx.maxH) * hxy; // scaled by |d_xy|: compared with the cross product
   let prevCi = 1e9, prevCj = 1e9, tests = 0;
   for (let step = 0; step < steps; step++) {
     if (tEnter - margin > best) break;
@@ -277,8 +369,10 @@ export function traceCarpetIn(ctx, out) {
     for (let j = cj - RING; j <= cj + RING; j++) for (let i = ci - RING; i <= ci + RING; i++) {
       if (i - prevCi <= RING && prevCi - i <= RING && j - prevCj <= RING && prevCj - j <= RING) continue; // tested in the previous step
       if (hxy > 1e-9) { const cr = ((i + 0.5) * c - ex) * dy - ((j + 0.5) * c - ey) * dx; if (cr > rej || cr < -rej) continue; }
+      const hr = cellHit(ctx, i, j);
+      if (hr === 2) continue; // culled by the exact root distance (cheap, before any class/mask/ground work): not a test
       tests++;
-      if (bladeHit(ctx, i, j) === 1 && bs[S_TB] < best) { best = bs[S_TB]; bi = i; bj = j; for (let k = 0; k < S_N; k++) keep[k] = bs[k]; }
+      if (hr === 1 && bs[S_TB] < best) { best = bs[S_TB]; bi = i; bj = j; for (let k = 0; k < S_N; k++) keep[k] = bs[k]; }
     }
     prevCi = ci; prevCj = cj;
     if (tx < ty) { ix += sx; tEnter = tx; tx += ddx; } else { iy += sy; tEnter = ty; ty += ddy; }
@@ -305,7 +399,7 @@ export function traceCarpetBrute(eye, dir, tHit, ctx, timeSec, out) {
   const i0 = Math.floor((ex - R) / c), i1 = Math.floor((ex + R) / c), j0 = Math.floor((ey - R) / c), j1 = Math.floor((ey + R) / c);
   let best = Infinity, bi = 0, bj = 0;
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-    if (bladeHit(ctx, i, j) === 1 && bs[S_TB] < best) { best = bs[S_TB]; bi = i; bj = j; for (let k = 0; k < S_N; k++) keep[k] = bs[k]; }
+    if (cellHit(ctx, i, j) === 1 && bs[S_TB] < best) { best = bs[S_TB]; bi = i; bj = j; for (let k = 0; k < S_N; k++) keep[k] = bs[k]; }
   }
   if (best === Infinity) return 0;
   for (let k = 0; k < S_N; k++) bs[k] = keep[k];
@@ -316,8 +410,9 @@ export function traceCarpetBrute(eye, dir, tHit, ctx, timeSec, out) {
 /** Blade identity of a lattice cell (no ray): out Float64Array(4) = rootX, rootY, height, variant (0 = none). */
 export function bladeAtCell(ctx, ix, iy, out) {
   const c = ctx.cellM, seed = ctx.seed, q = ctx.q;
-  const rx = (ix + 0.5 + ((hashFast24(ix, iy, seed + SALT_JX) * INV_2_24) * 2 - 1) * ROOT_JITTER) * c;
-  const ry = (iy + 0.5 + ((hashFast24(ix, iy, seed + SALT_JY) * INV_2_24) * 2 - 1) * ROOT_JITTER) * c;
+  const rj = ctx.rootJit;
+  const rx = (ix + 0.5 + ((hashFast24(ix, iy, seed + SALT_JX) * INV_2_24) * 2 - 1) * rj) * c;
+  const ry = (iy + 0.5 + ((hashFast24(ix, iy, seed + SALT_JY) * INV_2_24) * 2 - 1) * rj) * c;
   const cj = ctx.classJitterM;
   q[0] = rx + ((hashFast24(ix, iy, seed + SALT_CJX) * INV_2_24) * 2 - 1) * cj; q[1] = ry + ((hashFast24(ix, iy, seed + SALT_CJY) * INV_2_24) * 2 - 1) * cj;
   let v = classAt(ctx);

@@ -74,7 +74,7 @@ const gridH = (x, y) => { // design util.gridHeight (inside the grid)
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 };
 const groundQ = (q) => { q[2] = gridH(q[0], q[1]); };
-const cfg = { seed: 7, radiusM: 6, variants: [
+const cfg = { tufts: false, cellM: 0.1 /* TUFT-01a: WGSL twin still draws blades until 01b */, seed: 7, radiusM: 6, variants: [
   { name: 'meadow', ground: ['grass'], density: 0.9, heightM: [0.10, 0.22], ramp: ['a', 'b'] },
   { name: 'straw', ground: ['grassTall'], density: 0.8, heightM: [0.35, 0.55], bladeW: 0.07, swayGain: 1.5, ramp: ['a', 'b'] },
 ] };
