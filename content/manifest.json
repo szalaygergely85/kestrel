@@ -81,6 +81,7 @@
     "meshes/quaternius/TwistedTree_1.mesh.json",
     "meshes/quaternius/TwistedTree_1_LOD1.mesh.json",
     "terrain/overworld_far.edits.json",
+    "grassmask/overworld_far.grassMask.json",
     "meshes/quaternius/Fern_1.mesh.json",
     "meshes/quaternius/Clover_1.mesh.json",
     "meshes/quaternius/Clover_2.mesh.json",
