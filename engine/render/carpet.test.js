@@ -122,7 +122,7 @@ function dirOf(yawDeg, pitchDeg, out) {
   // AC2b: at pose B every DDA hit == brute-force hit (same lattice id), and no blade is re-rolled (hit identity == its lattice identity)
   const B = [-5, -4.1, 1.6], ref = makeCarpetHit(), bb = new Float64Array(4);
   let n = 0, same = 0, hitsB = 0, reroll = 0;
-  for (let cy = 1; cy < ROWS; cy += 7) for (let cx = 3; cx < COLS; cx += 7) {
+  for (let cy = 1; cy < ROWS; cy += 5) for (let cx = 3; cx < COLS; cx += 5) { // OB-096: stride 5 (narrower blades: fewer hits per sample)
     ray(cx, cy, d); const t = terrainT(B, d);
     const h1 = traceCarpet(B, d, t, ctx, 0, out), h2 = traceCarpetBrute(B, d, t, ctx, 0, ref);
     n++; if (h1) hitsB++;
@@ -200,6 +200,50 @@ function dirOf(yawDeg, pitchDeg, out) {
     total++; try { validateRamps({ variants: [{ ramp: [[1, 1, 1], [2, 2, 2]] }, { ramp: bad }] }); } catch (e) { if (/carpet\.variants\[1\]\.ramp/.test(e.message)) named++; }
   }
   check(okPass && named === total, `ramp validation: valid ramp passes, ${named}/${total} bad ramps throw naming carpet.variants[1].ramp`);
+}
+
+
+// ---- OB-096 (38.52 amendment): structure mask, near screen-width cap, tuft share, width variety
+{
+  const allOne = new Uint8Array(W * H).fill(1);
+  const cf = (v) => ({ seed: 11, radiusM: 8, classJitterM: 0, variants: [{ name: 'a', ground: ['grass'], density: 1, heightM: [0.2, 0.2], ramp: ['a', 'b'], ...v }] });
+  const flat0 = (q) => { q[2] = 0; };
+  const mk1 = (v, cm) => makeCarpetCtx({ cfg: cf(v), classMap: cm || allOne, x0: X0, y0: Y0, w: W, h: H }, flat0, null);
+  // (a) a cleared class area: rays looking down from inside it hit nothing; the same rays over the full map do hit
+  const cleared = allOne.slice();
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) { const x = X0 + i * 2, y = Y0 + j * 2; if (x >= -6 && x < 6 && y >= -6 && y < 6) cleared[j * W + i] = 0; }
+  const cA = mk1({}, cleared), cB = mk1({}), o1 = makeCarpetHit(), dd = [0, 0, 0], ee = [0, 0, 0.4], rr = rng(3);
+  let hitsC = 0, hitsF = 0;
+  for (let n = 0; n < 4000; n++) {
+    ee[0] = -3 + rr() * 6; ee[1] = -3 + rr() * 6; dirOf(rr() * 360, -90 + rr() * 20, dd); // short steep rays: they end inside the cleared 12 m square
+    const t = 0.4 / -dd[2];
+    if (traceCarpet(ee, dd, t, cA, 0, o1)) hitsC++;
+    if (traceCarpet(ee, dd, t, cB, 0, o1)) hitsF++;
+  }
+  check(hitsC === 0 && hitsF > 20, `OB-096a: ${hitsC} hits inside a cleared class area (full map: ${hitsF})`);
+  // (b) near blade (0.6 m): hit width <= WMAX_CELLS * 0.5 * fp, far blade keeps its true width
+  // rays along -y: |ex - rootX| of every hit blade (axis vertical, no wind) is its lateral reach; it must stay <= 1.25 * 0.5 * fp(t) (true half-width >= 0.175)
+  const cW = mk1({ bladeW: 0.5, heightM: [0.3, 0.3] }), bb2 = new Float64Array(4), oh = makeCarpetHit(), ew = [0, 0, 0.1], dw = [0, -1, 0];
+  cW.fpK = 0.05; // fixed footprint 0.05 m -> cap 0.03125 m, far below the true half-width
+  let nearBad = 0, nearN = 0, ratioMax = 0;
+  for (let n = 0; n < 20000; n++) {
+    ew[0] = -8 + rr() * 8; ew[1] = 3.6;
+    if (traceCarpet(ew, dw, 2, cW, 0, oh)) { // tHit 2 m: <= NMAX lattice steps
+      bladeAtCell(cW, oh.ix, oh.iy, bb2); nearN++;
+      const cap = 1.25 * 0.5 * groundFootprint(oh.t, cW.fpK), reach = Math.abs(ew[0] - bb2[0]);
+      if (reach > cap + 1e-6) nearBad++; if (reach / cap > ratioMax) ratioMax = reach / cap;
+    }
+  }
+  check(nearN > 500 && nearBad === 0 && ratioMax > 0.8, `OB-096b: ${nearN} near hits, ${nearBad} wider than 1.25 footprints (max reach/cap ${ratioMax.toFixed(2)}; uncapped half-width would be >= 0.175 m)`);
+  // (c) tuft share ~6 % over 10k lattice cells (heights 0.2 * patch 0.75..1.25: plain <= 0.25, tuft >= 0.27) and width variety 0.7..1.3
+  const cT = mk1({}), ob = new Float64Array(4);
+  let tall = 0, N10 = 0;
+  for (let j = 0; j < 100; j++) for (let i = 0; i < 100; i++) { bladeAtCell(cT, i - 50, j - 50, ob); N10++; if (ob[2] > 0.26) tall++; }
+  check(Math.abs(100 * tall / N10 - 6) <= 1.2, `OB-096c: tuft share ${(100 * tall / N10).toFixed(2)} % of ${N10} cells (6 +- 1.2)`);
+  check(cT.maxH >= 0.2 * 1.25 * 1.8 - 1e-9 && cT.wMax >= 0.03 * 1.3 - 1e-9, `OB-096c: maxH ${cT.maxH.toFixed(3)} / wMax ${cT.wMax.toFixed(4)} include tuftMul and the 1.3 width factor`);
+  const cN = mk1({ tuft: { p: 0, mul: 1 } });
+  let tall0 = 0; for (let j = 0; j < 100; j++) for (let i = 0; i < 100; i++) { bladeAtCell(cN, i - 50, j - 50, ob); if (ob[2] > 0.26) tall0++; }
+  check(tall0 === 0, 'OB-096c: tuft {p:0} gives no tall blade');
 }
 
 if (fails) { console.log(`carpet.test: ${fails} FAILED`); process.exit(1); }

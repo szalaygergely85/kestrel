@@ -13,13 +13,13 @@ import { defineUniformBlock } from './uniformBlock.js';
 import { HASH_FAST_WGSL, CELL_RAY_PITCHED_WGSL, WIND_AT_WGSL, FULLSCREEN_VS_WGSL, OCT_NORMAL_WGSL } from './common.wgsl.js';
 import {
   NMAX, ROOT_JITTER, LEAN_CAP, LEAN_PER_MS, PATCH_LO, PATCH_RANGE, GUST_LO, GUST_RANGE, FADE_FP0, FADE_FP1, FADE_R0, FADE_R1, RING,
-  SALT_JX, SALT_JY, SALT_RANK, SALT_H, SALT_CJX, SALT_CJY, SALT_PATCH, SALT_GUST, MAX_VARIANTS, SALT_TINT, TINT_AMP,
+  SALT_JX, SALT_JY, SALT_RANK, SALT_H, SALT_TUFT, SALT_W, WMAX_CELLS, W_JIT_LO, W_JIT_RANGE, SALT_CJX, SALT_CJY, SALT_PATCH, SALT_GUST, MAX_VARIANTS, SALT_TINT, TINT_AMP,
 } from '../../carpet.js';
 import { FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX } from '../../terrainShade.js';
 
 import { KIND_GRASS, FACE_U } from '../../GBuffer.js';
 export { KIND_GRASS, FACE_U }; // one owner: GBuffer.js (D2c landed)
-export const CARPET_VTAB_ROWS = 2;          // vec4 rows per variant: (density, hMin, hMax, bladeW), (swayGain, 0, 0, 0). Ramp/glyphs: D2e table
+export const CARPET_VTAB_ROWS = 2;          // vec4 rows per variant: (density, hMin, hMax, bladeW), (swayGain, tuftP, tuftMul, 0). Ramp/glyphs: D2e table
 export const CARPET_KNOTS = 16;             // 64 wind knots as 16 vec4
 const f = (v) => { const s = String(v); return /[.e]/.test(s) ? s : s + '.0'; }; // f32 literal text
 
@@ -70,6 +70,11 @@ const SALT_CJX: i32 = ${SALT_CJX};
 const SALT_CJY: i32 = ${SALT_CJY};
 const SALT_PATCH: i32 = ${SALT_PATCH};
 const SALT_GUST: i32 = ${SALT_GUST};
+const SALT_TUFT: i32 = ${SALT_TUFT};
+const SALT_W: i32 = ${SALT_W};
+const WMAX_CELLS: f32 = ${f(WMAX_CELLS)};
+const W_JIT_LO: f32 = ${f(W_JIT_LO)};
+const W_JIT_RANGE: f32 = ${f(W_JIT_RANGE)};
 const FP_DEFAULT_K: f32 = ${f(FP_DEFAULT_K)};
 const FP_ANISO_T: f32 = ${f(FP_ANISO_T)};
 const FP_ANISO_MAX: f32 = ${f(FP_ANISO_MAX)};
@@ -136,11 +141,13 @@ fn bladeHit(ix: i32, iy: i32) -> bool {
   let v = classAt(wxr + (hash24(ix, iy, seed + SALT_CJX) * 2.0 - 1.0) * cj, wyr + (hash24(ix, iy, seed + SALT_CJY) * 2.0 - 1.0) * cj);
   if (v == 0u) { return false; }
   let rank = hash24(ix, iy, seed + SALT_RANK);
-  let row0 = cu.vtab[v * ${CARPET_VTAB_ROWS}u]; // density, hMin, hMax, bladeW
+  let row0 = cu.vtab[v * ${CARPET_VTAB_ROWS}u]; // density, hMin, hMax, bladeW; row1 = swayGain, tuftP, tuftMul
   if (rank >= row0.x) { return false; }
   let pn = vnoise(wxr / cu.patchM, wyr / cu.patchM, seed + SALT_PATCH);
-  let h = (row0.y + (row0.z - row0.y) * hash24(ix, iy, seed + SALT_H)) * (PATCH_LO + PATCH_RANGE * pn);
-  let w = row0.w * 0.5;
+  let row1 = cu.vtab[v * ${CARPET_VTAB_ROWS}u + 1u]; // swayGain, tuftP, tuftMul
+  var h = (row0.y + (row0.z - row0.y) * hash24(ix, iy, seed + SALT_H)) * (PATCH_LO + PATCH_RANGE * pn);
+  if (hash24(ix, iy, seed + SALT_TUFT) < row1.y) { h = h * row1.z; }
+  let w = row0.w * 0.5 * (W_JIT_LO + W_JIT_RANGE * hash24(ix, iy, seed + SALT_W));
   let g = ground(wxr, wyr);
   leanRatio(wxr, wyr, v);
   let lx = sLx; let ly = sLy;
@@ -154,11 +161,13 @@ fn bladeHit(ix: i32, iy: i32) -> bool {
   let zr = rEz + tc * rDz; let sr = zr - g;
   if (sr < 0.0 || sr > h) { return false; }
   let px = rEx + tc * rDx - (rx + lx * sr); let py = rEy + tc * rDy - (ry + ly * sr);
-  if (px * px + py * py >= w * w) { return false; }
-  // fade on the density threshold (one fixed disappearing distance per blade)
+  // footprint first (OB-096): the lateral test caps the hit width at WMAX_CELLS footprints
   let fpk = cu.fpK;
   let a = tc / FP_ANISO_T;
   let fp = select(select(FP_DEFAULT_K, -fpk, fpk < 0.0) * tc * clamp(a, 1.0, FP_ANISO_MAX), fpk, fpk > 0.0);
+  let wCap = WMAX_CELLS * 0.5 * fp; let wHit = select(wCap, w, w < wCap);
+  if (px * px + py * py >= wHit * wHit) { return false; }
+  // fade on the density threshold (one fixed disappearing distance per blade, true w)
   let dXY = tc * sqrt(rN2);
   let f1 = clamp((fp / (2.0 * w) - FADE_FP0) / (FADE_FP1 - FADE_FP0), 0.0, 1.0);
   let f2 = clamp((dXY / cu.radiusM - FADE_R0) / (FADE_R1 - FADE_R0), 0.0, 1.0);

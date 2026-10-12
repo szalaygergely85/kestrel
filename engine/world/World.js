@@ -1351,7 +1351,7 @@ export class World {
   _rebuildCarpet() {
     const c = this._carpetCtx;
     if (!c || !this.terrain?.nearReady) return;
-    const m = buildCarpetClassMap(this.terrain, c.recipe, c.cfg, this.carpet);
+    const m = buildCarpetClassMap(this.terrain, c.recipe, c.cfg, this.carpet, this.structures);
     if (!this.carpet) this.carpet = { cfg: c.cfg, classMap: null, x0: 0, y0: 0, w: 0, h: 0, cellM: 0 };
     this.carpet.classMap = m.classMap; this.carpet.x0 = m.x0; this.carpet.y0 = m.y0; this.carpet.w = m.w; this.carpet.h = m.h; this.carpet.cellM = m.cellM; // D2f: cellM was dropped
     this.rebuildCarpetMask();

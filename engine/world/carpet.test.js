@@ -54,6 +54,23 @@ if (ms > 50) console.warn(`carpet: class map build ${ms.toFixed(1)} ms (> 50 ms 
 ok(c === a && c.classMap === a.classMap, 'out reused');
 ok(buildCarpetClassMap({ nearReady: false }, t.recipe, cfg) === null);
 
+
+// OB-096a: structures mask the class map (bbox grown by classJitterM + LEAN_CAP * maxH), a cell 3 m outside is unchanged
+{
+  const grow = 0.8 + 0.6 * 0.2 * 1.25 * 1.8; // default classJitterM + LEAN_CAP * (heightM max * patch max * tuft mul)
+  const m = buildCarpetClassMap(t, t.recipe, cfg, null, [{ bbox: { x0: 10, y0: 8, x1: 14, y1: 12, z0: 0, z1: 5 } }, { id: 'nobbox' }]);
+  const cell = (map, x, y) => map.classMap[Math.floor((x - map.x0) / map.cellM) + Math.floor((y - map.y0) / map.cellM) * map.w];
+  ok(a.classMap.length === m.classMap.length && cell(a, 12, 10) !== 0 && cell(m, 12, 10) === 0, 'cell under the bbox is cleared');
+  ok(cell(m, 14 + grow - 0.5, 10) === 0 && cell(m, 10 - grow + 0.5, 10) === 0, 'cell inside the grown rim is cleared');
+  ok(cell(m, 17.5, 10) === cell(a, 17.5, 10) && cell(m, 7, 10) === cell(a, 7, 10) && cell(m, 12, 15) === cell(a, 12, 15), 'cells >= 3 m outside are unchanged');
+  let diff = 0; for (let k = 0; k < m.classMap.length; k++) if (m.classMap[k] !== a.classMap[k]) diff++;
+  ok(diff > 0 && diff < 80, `only the footprint changes (${diff} cells)`);
+  const none = buildCarpetClassMap(t, t.recipe, cfg, null, []);
+  ok(Buffer.from(none.classMap).equals(Buffer.from(a.classMap)), 'no structures = unchanged map');
+  let threw = false; try { validateCarpetConfig({ ...cfg, variants: [V({ tuft: { p: 2 } })] }, t.typeNames); } catch (e) { threw = e.message.includes('tuft.p'); }
+  ok(threw, 'tuft.p out of range names the key');
+}
+
 // World hook + AC4 (serialize unchanged) + AC6 (rebuild reuses the buffer, follows a changed band)
 const w0 = new World(), w1 = new World();
 w1.terrain = t; w1._carpetCtx = { cfg, recipe: t.recipe };
