@@ -314,13 +314,13 @@ function runChecks() {
   const DA = A.models.bearBlack.voxel.animations;
   const info = (t, c) => { const d = document.createElement('div'); d.className = c || 'info'; d.textContent = t; mh.appendChild(d); };
   if (!Object.keys(FX.missingClips).length) info('PASS no missing clips (BEAR-D2)', 'pass');
-  for (const k of ['charge', 'windup', 'swipe', 'hurt', 'flinch', 'die', 'dead']) {
+  for (const k of ['charge', 'windup', 'swipe', 'hurt', 'flinch', 'die', 'dead', 'sink']) {
     const c = DA[k];
     info(k + ': ' + c.frames.length + ' keys, ' + c.durations.reduce((a, b) => a + b, 0) + ' ms' + (c.loop ? ' loop' : ' once'));
   }
   info('windup = all-fours bluff tell (owner: no rear-up, style-guide 0.2): head low, ears back, weight back, stomps at ' +
        FX.telegraph.stompMs.join(' / ') + ' ms. swipe hit key ' + FX.swipe.hitKey + ' (' + FX.swipe.hitMs.join('..') + ' ms). ' +
-       'die thud key ' + FX.death.thudKey + '. Burl has no fight clips: he plays idle while one is selected.');
+       'die thud key ' + FX.death.thudKey + '. sink = dead pose lowered ' + FX.death.sink.depthM + ' m (after death). Burl has no fight clips: he plays idle while one is selected.');
 }
 try { runChecks(); } catch (err) { $('checks').innerHTML = '<div class="fail">checks threw: ' + err.message + '</div>'; console.error(err); }
 frame();

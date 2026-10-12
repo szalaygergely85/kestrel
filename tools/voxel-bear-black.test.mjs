@@ -46,16 +46,16 @@ test('same rig as Burl: size, cellM, anchor, parts (boxes, pivots, parents), vox
 
 test('clips: idle / walk / turn identical to Burl; no dialogue clips; BEAR-D2 fight clips exist, none missing', () => {
   assert.deepStrictEqual(Object.keys(DEF.animations).sort(),
-    ['charge', 'dead', 'die', 'flinch', 'hurt', 'idle', 'swipe', 'turn', 'walk', 'windup']);
+    ['charge', 'dead', 'die', 'flinch', 'hurt', 'idle', 'sink', 'swipe', 'turn', 'walk', 'windup']);
   for (const k of ['idle', 'walk', 'turn']) assert.deepStrictEqual(DEF.animations[k], BURL.animations[k], k);
   for (const k of Object.values(FX.clipFor.state)) assert.ok(DEF.animations[k], 'clipFor ' + k);
-  for (const k of ['hurt', 'flinch', 'die', 'dead']) assert.ok(DEF.animations[FX.clipFor[k]], 'clipFor.' + k);
+  for (const k of ['hurt', 'flinch', 'die', 'dead', 'sink']) assert.ok(DEF.animations[FX.clipFor[k]], 'clipFor.' + k);
   assert.deepStrictEqual(FX.missingClips, {});
 });
 
 // BEAR-D2: frame counts, durations, loop flags, timing contracts (telegraph >= 0.8 s, swipe hit key), all on four legs
 const SPEC = { charge: [6, 400, true], windup: [7, 800, false], swipe: [6, 600, false], hurt: [2, 100, false],
-               flinch: [3, 250, false], die: [5, 500, false], dead: [1, 1000, true] };
+               flinch: [3, 250, false], die: [5, 500, false], dead: [1, 1000, true], sink: [2, 600, false] };
 test('BEAR-D2 clips: frame counts, total ms, loop, durations multiples of 50, every part keyed', () => {
   const parts = Object.keys(DEF.parts).sort();
   for (const [k, [n, ms, loop]] of Object.entries(SPEC)) {
@@ -82,6 +82,16 @@ test('owner rule 0.2: no rear-up (body pitch never nose-up past 8 deg), paws pla
   const d = DEF.animations.dead.frames[0];
   assert.strictEqual(d.body.rot[1], 90, 'dead lies on its side');
   assert.ok(d.body.pos[2] <= 0 && d.body.pos[2] >= -3, 'dead body z ' + d.body.pos[2]);
+});
+test('sink: wolf format [500, 100], key 0 = dead pose, key 1 = dead pose lowered depthM (only body z differs)', () => {
+  const s = DEF.animations.sink, d = DEF.animations.dead.frames[0];
+  assert.deepStrictEqual(s.durations, [500, 100]); assert.strictEqual(!!s.loop, false);
+  assert.deepStrictEqual(s.frames[0], d, 'sink starts from dead');
+  const drop = d.body.pos[2] - s.frames[1].body.pos[2];
+  assert.ok(Math.abs(drop * DEF.cellM - FX.death.sink.depthM) < 0.01, 'sink depth ' + drop * DEF.cellM);
+  const a = JSON.parse(JSON.stringify(s.frames[1])); a.body.pos[2] = d.body.pos[2];
+  assert.deepStrictEqual(a, d, 'only body z changes');
+  assert.strictEqual(FX.clipFor.sink, 'sink'); assert.strictEqual(FX.death.sink.steps, 30);
 });
 
 test('coat: whole-body value <= 0.6 x Burl (0.8 on interim mats), tan muzzle lighter than the coat, chest blaze present', () => {
