@@ -7,7 +7,7 @@ import { CARPET_WGSL, CARPET_TRACE_WGSL, CARPET_BLOCK, CARPET_TEXTURES, CARPET_T
 import { WGSL_MODULES } from './index.js';
 import { WIND_AT_WGSL } from './common.wgsl.js';
 import * as C from '../../carpet.js';
-import { makeCarpetCtx, makeCarpetHit, traceCarpetIn, IN_EX, IN_EY, IN_EZ, IN_DX, IN_DY, IN_DZ, IN_THIT, IN_TIME } from '../../carpet.js';
+import { makeCarpetCtx, makeCarpetHit, traceCarpetIn, setCarpetBounds, IN_EX, IN_EY, IN_EZ, IN_DX, IN_DY, IN_DZ, IN_THIT, IN_TIME } from '../../carpet.js';
 import { hashFastU, hashFast24 } from '../../terrainShade.js';
 import * as GB from '../../GBuffer.js';
 import { createWind } from '../../../world/wind.js';
@@ -34,10 +34,10 @@ assert.equal(KIND_GRASS, 10); assert.equal(FACE_U, GB.FACE_U);
 assert.equal(KIND_GRASS, GB.KIND_GRASS, 'KIND_GRASS == GBuffer.js');
 assert.ok(CARPET_WGSL.includes(`KIND_GRASS | (FACE_U << 8u)`) && /\(kVar << 16u\)/.test(CARPET_WGSL), 'GI.y packing: kind | face<<8 | mat<<16 (resolve.wgsl.js layout)');
 const w = (n) => CARPET_BLOCK.field(n).word;
-assert.deepEqual(['gridCols', 'seed', 'cellM', 'timeSec', 'fpK'].map(w), [0, 2, 8, 15, 23]);
-assert.deepEqual(['windP0', 'windP1', 'eye', 'pitchA', 'pitchB', 'pitchC', 'knots', 'vtab'].map(w), [24, 28, 32, 36, 40, 44, 48, 112]);
+assert.deepEqual(['gridCols', 'seed', 'cellM', 'timeSec', 'fpK', 'maxHNear', 'tFade', 'leanMaxR'].map(w), [0, 2, 8, 15, 23, 24, 25, 26]);
+assert.deepEqual(['windP0', 'windP1', 'eye', 'pitchA', 'pitchB', 'pitchC', 'knots', 'vtab'].map(w), [28, 32, 36, 40, 44, 48, 52, 116]); // TUFT-PERF-01b: +3 f32 +1 pad
 assert.equal(CARPET_BLOCK.field('vtab').words, 16 * CARPET_VTAB_ROWS * 4);
-assert.equal(CARPET_BLOCK.sizeBytes, (112 + 128 + 16 + 8) * 4, '16 variants x 2 vec4 (32 B) + 16 knot vec4 + header + PREC-01a origin (ix0, iy0, orgX, orgY)');
+assert.equal(CARPET_BLOCK.sizeBytes, (116 + 128 + 16 + 8) * 4, '16 variants x 2 vec4 (32 B) + 16 knot vec4 + header + PREC-01a origin (ix0, iy0, orgX, orgY)');
 assert.ok(CARPET_BLOCK.sizeBytes <= 65536);
 
 // ---- (b) JS evaluation of the trace
@@ -120,6 +120,11 @@ function parity(label, windDef, N) {
   ctx.tuftR = cu.tuftR; assert.equal(cu.tufts, 1, 'tufts on by default'); assert.equal(ctx.rootJit, cu.rootJit);
   for (let v = 1; v <= 2; v++) { ctx.dens[v] = cu.vtab[v * 2].x; ctx.hMin[v] = cu.vtab[v * 2].y; ctx.hMax[v] = cu.vtab[v * 2].z; ctx.bw[v] = cu.vtab[v * 2].w; ctx.sway[v] = cu.vtab[v * 2 + 1].x; ctx.tuftP[v] = cu.vtab[v * 2 + 1].y; ctx.tuftMul[v] = cu.vtab[v * 2 + 1].z; }
   assert.equal(cu.vtab[0].x, 0, 'variant 0 = no carpet'); assert.equal(cu.vtab[1].x, 1, 'variant 0 sway 1');
+  // TUFT-PERF-01b: the exact cull bounds from the JS function (f32-rounded like the packed words); windOn = lean on
+  ctx.windMax = p ? p.speed * (1 + p.amp) : 0; ctx.fpK = 0; setCarpetBounds(ctx, -3, 3);
+  for (const n of ['maxHNear', 'tFade', 'leanMaxR']) { ctx[n] = Math.fround(Math.min(ctx[n], 1e30)); cu[n] = ctx[n]; }
+  ctx.leanB = ctx.leanMaxR * ctx.maxHNear; ctx.leanOn = ctx.wind !== null && ctx.leanB > 0; cu.windOn = ctx.leanOn ? 1 : 0;
+  console.log(`  ${label}: maxHNear ${cu.maxHNear.toFixed(3)} (global ${cu.maxH.toFixed(3)}), tFade ${cu.tFade.toExponential(2)}, leanMaxR ${cu.leanMaxR.toFixed(3)}`);
   const K = p ? p.K : null;
   const twin = makeTwin(cu, { cls: classMap, cw: CW, near, nw: NW, mask: maskData, mw: MW, atlas: ctx.atlas.data, aw: ctx.atlas.w }, K);
   const r = rng(12345), e = [-3, 3, 1.5], d = [0, 0, 0];

@@ -32,6 +32,7 @@ export const CARPET_BLOCK = defineUniformBlock('CarpetU', [
   { name: 'classJitterM', type: 'f32' }, { name: 'gustM', type: 'f32' }, { name: 'travelM', type: 'f32' }, { name: 'timeSec', type: 'f32' },
   { name: 'classX0', type: 'f32' }, { name: 'classY0', type: 'f32' }, { name: 'nearX0', type: 'f32' }, { name: 'nearY0', type: 'f32' },
   { name: 'nearCell', type: 'f32' }, { name: 'maxH', type: 'f32' }, { name: 'wMax', type: 'f32' }, { name: 'fpK', type: 'f32' }, // fpK: <0 = -k, >0 fixed cell, 0 = default k (shade hashCell)
+  { name: 'maxHNear', type: 'f32' }, { name: 'tFade', type: 'f32' }, { name: 'leanMaxR', type: 'f32' }, // TUFT-PERF-01b exact culls (carpet.js setCarpetBounds, packed per frame by passCarpet); windOn = lean on (leanMaxR * maxHNear > 0)
   { name: 'windP0', type: 'vec4' },   // dirX, dirY, speed, amp
   { name: 'windP1', type: 'vec4' },   // period (ticks), travel, 0, 0
   { name: 'eye', type: 'vec4' },      // x, y, z, 0
@@ -167,7 +168,7 @@ fn tuftHit(ix: i32, iy: i32) -> i32 {
   let wxr = rx + cu.orgX; let wyr = ry + cu.orgY;
   let hxy = sqrt(rN2);
   let cr = (rx - rEx) * rDy - (ry - rEy) * rDx;
-  let reach = (cu.tuftR * c * (W_JIT_LO + W_JIT_RANGE) + select(0.0, LEAN_CAP * cu.maxH, cu.windOn != 0)) * hxy;
+  let reach = (cu.tuftR * c * (W_JIT_LO + W_JIT_RANGE) + cu.leanMaxR * cu.maxHNear) * hxy;
   if (cr > reach || cr < -reach) { return 2; }
   let cj = cu.classJitterM;
   let v = classAt(wxr + (hash24(ix, iy, seed + SALT_CJX) * 2.0 - 1.0) * cj, wyr + (hash24(ix, iy, seed + SALT_CJY) * 2.0 - 1.0) * cj);
@@ -293,12 +294,18 @@ fn bladeHit(ix: i32, iy: i32) -> bool {
 fn setRay(tHit: f32) -> i32 {
   rN2 = rDx * rDx + rDy * rDy;
   if (!(tHit > 0.0) || tHit >= BIG) { return 0; }
-  let zTop = ground(rEx + tHit * rDx + cu.orgX, rEy + tHit * rDy + cu.orgY) + cu.maxH;
+  let gEnd = ground(rEx + tHit * rDx + cu.orgX, rEy + tHit * rDy + cu.orgY);
+  let zTop = gEnd + cu.maxHNear;
   var t0 = 0.0;
   if (rDz < 0.0 && rEz > zTop) { t0 = (zTop - rEz) / rDz; }
   let hxy = sqrt(rN2);
   var t1 = tHit;
   if (hxy > 1.0e-9) { let tr = cu.radiusM / hxy; if (tr < t1) { t1 = tr; } }
+  t1 = min(t1, cu.tFade); // TUFT-PERF-01b: past tFade the fade is 0
+  if (rDz > 0.0) { // ascending: above the blade layer for good
+    let gTop = max(gEnd, ground(rEx + cu.orgX, rEy + cu.orgY)) + cu.maxHNear;
+    t1 = min(t1, (gTop - rEz) / rDz);
+  }
   if (t0 >= t1) { return 0; }
   rT0 = t0; rT1 = t1;
   let c = cu.cellM;
@@ -322,7 +329,7 @@ fn traceCarpet(tHit: f32) -> bool {
   var best = BIG; var tEnter = rT0;
   let margin = select(BIG, (f32(RING) + 1.5) * c / hxy, hxy > 1.0e-9);
   let windOn = cu.windOn != 0;
-  let rej = ((0.7071 + cu.rootJit) * c + cu.wMax + LEAN_CAP * cu.maxH) * hxy;
+  let rej = ((0.7071 + cu.rootJit) * c + cu.wMax + cu.leanMaxR * cu.maxHNear) * hxy;
   var prevCi = 1000000000; var prevCj = 1000000000;
   for (var stp = 0; stp < nSteps; stp++) {
     if (tEnter - margin > best) { break; }
