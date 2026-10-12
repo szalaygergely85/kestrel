@@ -1139,3 +1139,9 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - **River crossing (owner, 2026-10-11, OB-019 / RIVER-A1 open question):** "wade anywhere shallow" - the river stays shallow (~0.4 m) almost everywhere; the player can wade across (slower, current pushes); deep water (> 1.0 m) still blocks (no swimming, D-064); the ford stones are the easy way. Supersedes "cross only on the stones" from D-064.
 - **EQ-04 preview stage budget (PC-B main session, 2026-10-11, D-066; architect review follow-up):** the Character-tab model preview may take up to 12 ms per stage render (was 6 ms). It renders only while the menu is open (game paused), capped at 20 Hz (~2.5 ms mean per frame); the human kit v4 rasterization dominates. 0 alloc per render stays required.
 - **M4 scope (owner, 2026-10-11):** build the missing story quests QL-09..12, 16, 17, 19 and the Ferrum + Wall far silhouettes (MAP-08) inside M4 (not moved to M5); M4 closes when they pass quest-sim and the owner walk.
+
+## D-069 - Fireball from Burl at level 5; black bears; no cuttable tree (owner, 2026-10-12; recorded by the PC-B main session)
+- **Magic (reopens D-065 in part):** around **level 5** Burl gives the player the **fireball** (story beat + quest reward). Until then magic stays off. The existing fireball/MP code (`?magic=1`) is the base; PO writes the story row + ACs, writer the Burl lines, architect checks the unlock path (flag, save, HUD MP).
+- **BEAR-01 (sprint-4 Q1):** the first tougher beast is the **black bear** (realistic, 4 legs; recolour/variant of `design/models/voxel_bear.js`, not Burl's brown).
+- **US-054 cuttable tree (sprint-4 Q3): dropped** ("I don't want").
+- Still open: the 12 new characters (quest-roadmap.md 2b), US-102 sentinel (Q4), tier look (Q5), M4-C3 placement (Q6), barley/range givers.
