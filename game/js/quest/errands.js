@@ -28,6 +28,9 @@ export function isWorn(eq, id) {
 }
 
 /** OB-054b: short plain noun for an interactable's prompt. Table first (ids whose camelCase split reads badly), else the id split into words. */
+// OB-094: a giver whose site entity is an invisible marker picks on the VISIBLE prop's collider shapes instead (the marker 'gondola'
+// sits at the tower centre with no model; the wreck you see is the tower level prop 'tower.gondola')
+const PICK_PROP = { gondola: 'tower.gondola' };
 const LABELS = { post: 'trade basket', notePost: 'notice post', gondola: 'wrecked airship', packet: 'cloth packet', noteKeepLight: 'pinned note', noteSteelHush: 'pinned note', noteLeave: 'pinned note' }; // OB-058 writer names (docs/story.md)
 export function labelOf(id) { return LABELS[id] || String(id).replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase(); }
 /** '[E] <Verb> <name>' capped at 28 chars (name trimmed, never a bare verb). */
@@ -93,7 +96,7 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
     addLook(w, id, d) {
       const key = 'qi.' + id, t = T[textOf.get(id)];
       if (w.interactables.some((r) => r.key === key)) return 0;
-      w.addInteractable({ key, name: 'quest.inspect', x: d.transform.x, y: d.transform.y, z: d.transform.z + 0.6, pick: (w.propPickBox && w.propPickBox(id)) || undefined, pickShapes: (w.propPickShapes && w.propPickShapes(id)) || undefined, radius: t.radius || 2.4, prompt: t.prompt, def: { objectId: id } });
+      w.addInteractable({ key, name: 'quest.inspect', x: d.transform.x, y: d.transform.y, z: d.transform.z + 0.6, pick: (w.propPickBox && w.propPickBox(PICK_PROP[id] || id)) || undefined, pickShapes: (w.propPickShapes && w.propPickShapes(PICK_PROP[id] || id)) || undefined, radius: t.radius || 2.4, prompt: t.prompt, def: { objectId: id } });
       return 1;
     },
     /** world:loaded: [E] Inspect on the object givers that have no dialogue and no relay touch of their own. */
@@ -111,7 +114,7 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
           if (c.dialogue) continue;
           const key = 'qi.' + id;
           if (w.interactables.some((r) => r.key === key)) continue;
-          w.addInteractable({ key, name: 'quest.inspect', x: d.transform.x, y: d.transform.y, z: d.transform.z + 0.6, pick: (w.propPickBox && w.propPickBox(id)) || undefined, pickShapes: (w.propPickShapes && w.propPickShapes(id)) || undefined, radius: 2.4, prompt: promptFor('Inspect', labelOf(id)), def: { objectId: id } });
+          w.addInteractable({ key, name: 'quest.inspect', x: d.transform.x, y: d.transform.y, z: d.transform.z + 0.6, pick: (w.propPickBox && w.propPickBox(PICK_PROP[id] || id)) || undefined, pickShapes: (w.propPickShapes && w.propPickShapes(PICK_PROP[id] || id)) || undefined, radius: 2.4, prompt: promptFor('Inspect', labelOf(id)), def: { objectId: id } });
           added++;
         }
       }
