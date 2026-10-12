@@ -1598,3 +1598,38 @@ New item: `seedSack` "Seed Sack" (9) / `Barley seed. A crow has been at it.` (35
 | done | `The tag is gone. At the fence, a face, then none.` | 48 |
 
 The targets need a visible white mark (chalk or lime) so "white marks" matches what the player sees; if the design uses straw targets instead, read `three straw targets` (obj `Shoot the three straw targets`, 29). The watching from the fence follows `mq.ow.fence` (faces watch from it): the village tests the stranger before anyone speaks.
+
+## FB-02 Burl's fire
+
+PC-B writer, 2026-10-12. Quest `sq.burl.fire` (D-069 FB-02), giver Burl at her berry slope, prereq `sq.ls.salt`. Fetch 3, return, she shows the fire, no fight. Limits: title <= 24, HUD <= 38, lines <= 56, ASCII. Burl says "fire", never "magic". The fire is for beasts only (owner default), and she says so. The title replaces the working "Burl's Spark" (Spark stays the gauntlet's light verb) and matches the spell's item name `Ember` (`spell.fireball`), so the reward popup and the title agree.
+
+Collect site: **Cinder Hollow**, a lightning-burnt dip in band 5 where red pods grow in the ash (temporary name for the PO row; if the map puts the site elsewhere, swap the place name in obj/offer/remind and keep obj <= 38).
+
+New item: `emberpod` "Emberpod" (8) / `A dry red pod. Warm as a held coal.` (35). Quest item, count 3, removed at hand-in.
+
+| key (FB-02 key / pack field) | speaker | text | chars |
+|---|---|---|---|
+| `ql.burl.fire.title` / title | - | `Burl's Ember` | 12 |
+| `ql.burl.fire.obj1` / obj | HUD | `Find three emberpods in Cinder Hollow` | 37 |
+| `ql.burl.fire.obj2` / returnText | HUD | `Bring the emberpods to Burl` | 27 |
+| `burl.fire.offer` (1) / offer | BURL | `Salt in my larder, sky-cub. Now a thing for you.` | 48 |
+| `burl.fire.offer` (2) | BURL | `Down in Cinder Hollow, red pods grow in the ash.` | 48 |
+| `burl.fire.offer` (3) | BURL | `Bring me three. Warm ones. I'll show you fire.` | 46 |
+| `burl.fire.remind` (1) / active | BURL | `Three pods, sky-cub. Red, and warm to the paw.` | 46 |
+| `burl.fire.remind` (2) | BURL | `Cinder Hollow. Follow the smell of old smoke.` | 45 |
+| `burl.fire.turnin` (1) / ready | BURL | `Warm still. Good. Now watch, and don't blink.` | 45 |
+| `burl.fire.turnin` (2) (show) | narration | `She cracks a pod between two claws. A coal glows.` | 49 |
+| `burl.fire.turnin` (3) (show) | narration | `She breathes on it. It leaps and bursts on a stump.` | 51 |
+| `burl.fire.reward` (1) | BURL | `That's fire, sky-cub. Close your fist on it. Throw.` | 51 |
+| `burl.fire.reward` (2) | BURL | `It's for teeth and tusks. Not for bushes. Not mine.` | 51 |
+| `burl.fire.reward` (3) | BURL | `Take this, for when your fire runs low.` | 39 |
+| `burl.fire.done` / done | BURL | `Feed your fire slow, sky-cub. It's always hungry.` | 49 |
+| `hint.fireball.cast` (1) | HUD | `[Hold L] charge fire. Let go: throw.` | 36 |
+| `hint.fireball.cast` (2) | HUD | `Each throw costs MP.` | 20 |
+| `hint.fireball.nomp` | HUD | `The fire fizzles. No MP left.` | 29 |
+
+Notes:
+- Order at hand-in: turnin (1) Burl, (2)-(3) narration (the frame's name tag off, or shown as plain text like the QL-22 object lines), then reward (1)-(3); `unlock:fireball` + the mana potion fire after reward (1), so (3) "Take this" lands with the potion popup.
+- `hint.fireball.cast`: no fire key text exists in this file yet. `L` stands for the real binding label (FB-03: not hard-coded), written `[Hold {fist}]`. Line 1 stays <= 38 for a label of up to 3 chars (`LMB` gives 38).
+- reward (2) is the in-world reason the fire hurts only enemies and doesn't burn bushes (owner default). If bushes become burnable later, that line still holds as Burl's own rule.
+- "sky-cub" appears in 4 of the 9 Burl lines, as in her other errands.
