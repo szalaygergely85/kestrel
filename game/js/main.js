@@ -26,7 +26,7 @@ import {
   buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, applySunPair, setWorldSun, blendLook,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim,
-  loadContentPack, createRng, prebuildTerrainMesh, hitSparks,
+  loadContentPack, grassMaskFromJSON, createRng, prebuildTerrainMesh, hitSparks,
   forwardOf, DEG2RAD, hexToRgb, resolveWaterLooks, createEntityEmitters, AO_DEFAULTS, compileDialogue,
 } from '../../engine/index.js';
 // US-047 (architecture.md section 5): pass internals + parity tooling +
@@ -1067,6 +1067,9 @@ async function runGame(mode, cinematic = null) {
   { // OB-073-D2f: the grass carpet (38.52); OB-096 (owner: grass everywhere, square): OFF by default, `?carpet=1` on; ramp palette keys -> 0..255 RGB triplets
     const rcp = window.ASSETS.levels.overworld_far && window.ASSETS.levels.overworld_far.recipe && window.ASSETS.levels.overworld_far.recipe.carpet;
     if (rcp && renderer === 'mesh' && params.get('carpet') === '1') worldLoadOpts.carpet = { ...rcp, variants: rcp.variants.map((v) => ({ ...v, ramp: v.ramp.map((k) => Array.from(hexToRgb(assets.palette.colors[k]))) })) };
+    // MASK-e2 (38.52 OB-096): baked paint layer (content/grassmask/overworld_far.grassMask.json) = how much grass; World takes the layer directly
+    const gm = bundle.grassMasks && bundle.grassMasks.overworld_far;
+    if (worldLoadOpts.carpet && gm) worldLoadOpts.carpet.mask = grassMaskFromJSON(gm);
   }
   if (params.get('debug') === '1' || params.get('f3') === '1') overlay.toggle(); // per CLAUDE.md `?debug=1`; ME-08c `?f3=1` = F3 pass times at start
   // US-020a: arms the (one-shot) first-gesture listeners only - creates
