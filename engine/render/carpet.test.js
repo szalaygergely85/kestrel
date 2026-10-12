@@ -165,8 +165,11 @@ function dirOf(yawDeg, pitchDeg, out) {
   { // a grazing ray over dense meadow needs > NMAX steps: it is truncated and still hits the NEAREST blades (used to draw nothing)
     const g = [0, 0, 0], eg = [-8, -8, 0.2]; dirOf(40, -0.4, g);
     const tg = 0.2 / Math.sin(0.4 * Math.PI / 180), hxy = Math.hypot(g[0], g[1]);
-    const hg = traceCarpet(eg, g, tg, ctx, 0, out);
-    check(hg === 1 && out.steps > NMAX && out.t * hxy <= (NMAX + 3) * 0.1 * Math.SQRT2, `AC4 (OB-101) grazing ray: ${out.steps} steps > ${NMAX} -> hit at ${(out.t * hxy).toFixed(2)} m inside the walked cells`);
+    // TUFT-01a: cellM 0.35 needs only ~49 steps over the 12 m disc, so force fine cells here to exercise the truncation
+    const gctx = makeCarpetCtx({ cfg: { ...fcfg, cellM: 0.05 }, classMap: fm, x0: -20, y0: -20, w: FW, h: FH }, flat, null);
+    gctx.fpK = ctx.fpK;
+    const hg = traceCarpet(eg, g, tg, gctx, 0, out);
+    check(hg === 1 && out.steps > NMAX && out.t * hxy <= (NMAX + 3) * gctx.cellM * Math.SQRT2, `AC4 (OB-101) grazing ray: ${out.steps} steps > ${NMAX} -> hit at ${(out.t * hxy).toFixed(2)} m inside the walked cells`);
   }
   const rows = [];
   for (const D of [3, 6, 9]) {
