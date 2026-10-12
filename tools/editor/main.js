@@ -41,7 +41,9 @@ import {
 import { findUnusedAssets, planAssetDelete, serializePendingDeletes } from './assetRefs.js';
 import { nextScale, fineScale, clampScale } from './scale.js';
 import { applySnapshot, snapshotDiffers, formatAge, startAutosave, getSnapshot, clearSnapshot } from './autosave.js';
-import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits } from './io.js';
+import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits, saveGrassMask } from './io.js';
+import * as ENG from '../../engine/index.js';
+import * as GB from './grassBrush.js';
 import {
   BRUSH_OPS, PAINT_TYPES, effectiveStrength, beginStroke, endStroke, isTerrainRecord, applyTerrainSide, rectToWorld, ringPoints,
 } from './terrainBrush.js';
@@ -465,6 +467,94 @@ function drawTerrainCursor() {
   }
 }
 
+
+// ---- MASK-d: grass mask brush (docs/architecture.md 38.52 amendment (e)) ---------------------------------
+// Same stroke shape as the terrain brush; the paint layer is world.grassMask (else a fresh engine layer when the
+// engine exports createGrassMask). Stroke end / undo -> world.rebuildCarpetMask(rect) when the world has it.
+const gb = { op: 'paint', radius: 6, pct: 40, gm: null, key: null, handle: null, dirty: false, stroke: null, hover: null };
+const grassToolbarEl = document.getElementById('grass-toolbar');
+const gbRadiusEl = document.getElementById('gb-radius');
+const gbStrengthEl = document.getElementById('gb-strength');
+const gbStatusEl = document.getElementById('gb-status');
+
+function attachGrass() {
+  if (!world) { gb.gm = null; return; }
+  gb.key = world.terrainKey || world.id || 'world';
+  let layer = world.grassMask || null;
+  if (!layer && typeof ENG.createGrassMask === 'function') { layer = ENG.createGrassMask(0.5, 64); world.grassMask = layer; }
+  if (!layer || typeof ENG.setSample !== 'function') { gb.gm = null; return; }
+  if (!gb.gm || gb.gm.layer !== layer) gb.gm = GB.wrapLayer(layer, { sampleAt: ENG.sampleAt, setSample: ENG.setSample, grassMaskToJSON: ENG.grassMaskToJSON });
+}
+function updateGrassToolbar() {
+  grassToolbarEl.classList.toggle('on', toolMode === 'grass');
+  grassToolbarEl.querySelectorAll('.gb-op').forEach((b) => b.classList.toggle('active', b.dataset.op === gb.op));
+  gbRadiusEl.nextElementSibling.textContent = `${gb.radius} m`;
+  gbStrengthEl.nextElementSibling.textContent = `${gb.pct}%`;
+  if (toolMode === 'grass') { attachGrass(); gbStatusEl.textContent = gb.gm ? `grass mask "${gb.key}"` : 'grass mask layer not available in this engine build'; }
+  frame.markDirty();
+}
+gbRadiusEl.addEventListener('input', () => { gb.radius = Number(gbRadiusEl.value); updateGrassToolbar(); });
+gbStrengthEl.addEventListener('input', () => { gb.pct = Number(gbStrengthEl.value); updateGrassToolbar(); });
+grassToolbarEl.querySelectorAll('.gb-op').forEach((b) => b.addEventListener('click', () => {
+  if (GB.GRASS_OPS.includes(b.dataset.op)) { gb.op = b.dataset.op; updateGrassToolbar(); }
+}));
+document.getElementById('gb-save').addEventListener('click', async () => {
+  if (!gb.gm) { flash('grass: nothing to save'); return; }
+  try { await saveGrassMask(gb, { forceDownload: !!doc.readOnly }); flash(`saved: grassMask/${gb.key}`); } catch (e) { flash(`grass save failed: ${e && e.message ? e.message : e}`); }
+  refreshIoStatus();
+});
+
+function rebuildGrass(rect) { GB.rebuildCarpet(world, rect); world.renderVersion++; frame.markDirty(); }
+
+function grassStrokeStart(pt) {
+  attachGrass();
+  if (!gb.gm) { flash('grass: no paint layer (engine grassMask missing)'); return; }
+  gb.stroke = GB.beginStroke({ gm: gb.gm, key: gb.key }, { op: gb.op, radius: gb.radius, strength: GB.effectiveStrength(gb.pct), x: pt.x, y: pt.y });
+  grassStrokeMove(pt);
+}
+function grassStrokeMove(pt) {
+  const s = gb.stroke;
+  if (!s) return;
+  for (const [x, y] of s.points(pt.x, pt.y)) { const r = s.dab(x, y); if (r) rebuildGrass(r); }
+  frame.markDirty();
+}
+function grassStrokeEnd(cancel) {
+  const s = gb.stroke;
+  gb.stroke = null;
+  if (!s) return;
+  const rec = GB.endStroke({ gm: gb.gm, key: gb.key }, s);
+  if (!rec) return;
+  if (cancel) { GB.applyGrassSide(gb.gm, rec, 'before'); rebuildGrass(rec.rect); flash('grass: stroke cancelled'); return; }
+  undoStack.push(rec);
+  gb.dirty = true;
+  refreshIoStatus();
+  flash(`grass ${s.op}: ${s.dabs} dabs`);
+}
+function applyGrassRecordSide(rec, side) {
+  attachGrass();
+  if (!gb.gm) return;
+  rebuildGrass(GB.applyGrassSide(gb.gm, rec, side));
+  gb.dirty = true;
+  refreshIoStatus();
+}
+
+/** Cursor ring + tint of painted grass (green dots, brighter = more coverage) around the cursor. */
+function drawGrassCursor() {
+  if (toolMode !== 'grass' || !gb.hover || !world || !world.terrain) return;
+  const radius = gb.stroke ? gb.stroke.radius : gb.radius;
+  const put = (x, y, ch, hex) => {
+    const p = projectPoint(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, { x, y, z: world.terrain.heightAt(x, y) + 0.15 }, RENDERER);
+    if (!(p.depth > 0)) return;
+    const c = Math.round(p.col), r = Math.round(p.row);
+    if (c >= 0 && c < rt.cols && r >= 0 && r < rt.rows) overlayPlate.setCell(c, r, ch, hex, EDITOR_PLATE_BG);
+  };
+  if (gb.gm) {
+    for (const [x, y, v] of GB.paintedPoints(gb.gm, gb.hover.x, gb.hover.y, Math.max(12, radius * 2), 1.5)) put(x, y, '"', v > 0.66 ? '#3fbf3f' : v > 0.33 ? '#6fa04a' : '#8a8a4a');
+  }
+  const hex = gb.stroke ? '#ffd24a' : (gb.op === 'erase' ? '#ff7a7a' : '#7CFC7C');
+  for (const [x, y] of ringPoints(gb.hover.x, gb.hover.y, radius)) put(x, y, 'o', hex);
+}
+
 // ---- US-066: ribbon readouts (tool mode / snap / place toolbar) -----------
 function updateToolModeButtons() {
   toolModeGroupEl.querySelectorAll('.tool-mode-btn').forEach((btn) => {
@@ -476,6 +566,7 @@ toolModeGroupEl.querySelectorAll('.tool-mode-btn').forEach((btn) => {
     toolMode = btn.dataset.mode;
     updateToolModeButtons();
     updateTerrainToolbar();
+    updateGrassToolbar();
   });
 });
 updateToolModeButtons();
@@ -785,6 +876,7 @@ function applyAndSync(appliedRec) {
 function doUndo() {
   const rec = undoStack.undo();
   if (!rec) { flash('undo: nothing to undo'); return; }
+  if (GB.isGrassRecord(rec)) { applyGrassRecordSide(rec, 'before'); flash(`undo: ${rec.label}`); return; }
   if (isTerrainRecord(rec)) { applyTerrainRecordSide(rec, rec.before); flash(`undo: ${rec.label}`); return; }
   const inv = invert(rec);
   followRename(inv);
@@ -796,6 +888,7 @@ function doUndo() {
 function doRedo() {
   const rec = undoStack.redo();
   if (!rec) { flash('redo: nothing to redo'); return; }
+  if (GB.isGrassRecord(rec)) { applyGrassRecordSide(rec, 'after'); flash(`redo: ${rec.label}`); return; }
   if (isTerrainRecord(rec)) { applyTerrainRecordSide(rec, rec.after); flash(`redo: ${rec.label}`); return; }
   followRename(rec);
   applyEdit(doc, rec);
@@ -1784,7 +1877,7 @@ async function refreshIoStatus() {
   const gen = ++ioGeneration;
   const err = await validateDoc(doc, window.ASSETS, { reference: bundle });
   if (gen !== ioGeneration) return; // a newer edit landed while this was in flight
-  const dirty = anyDirty(doc) || tb.dirty;
+  const dirty = anyDirty(doc) || tb.dirty || gb.dirty;
   saveBtn.disabled = !!err;
   saveBtn.title = err ? err.message : '';
   ioStatusEl.textContent = err ? `invalid: ${err.message}` : (dirty ? 'unsaved changes' : 'saved');
@@ -1797,8 +1890,9 @@ async function doSave() {
   try {
     const saved = await saveAll(doc);
     if (tb.dirty && tb.layer) { await saveTerrainEdits(tb, { forceDownload: !!doc.readOnly }); saved.push(`terrainEdits/${tb.key}`); }
+    if (gb.dirty && gb.gm) { await saveGrassMask(gb, { forceDownload: !!doc.readOnly }); saved.push(`grassMask/${gb.key}`); }
     flash(saved.length ? `saved: ${saved.join(', ')}` : 'save: nothing dirty');
-    if (!anyDirty(doc) && !tb.dirty) autosaver.flush(); // clears the OB-030 autosave record
+    if (!anyDirty(doc) && !tb.dirty && !gb.dirty) autosaver.flush(); // clears the OB-030 autosave record
   } catch (e) {
     flash(`save failed: ${e && e.message ? e.message : e}`);
   }
@@ -1862,7 +1956,7 @@ const autosaver = startAutosave(() => doc);
 
 // 24.10: "beforeunload warns while any file is dirty".
 window.addEventListener('beforeunload', (e) => {
-  if (!anyDirty(doc) && !tb.dirty) return;
+  if (!anyDirty(doc) && !tb.dirty && !gb.dirty) return;
   e.preventDefault();
   e.returnValue = '';
 });
@@ -2038,6 +2132,13 @@ canvas.addEventListener('mousedown', async (e) => {
     if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
     if (hit.kind === 'terrain' && hit.world) { tb.hover = { x: hit.world.x, y: hit.world.y }; terrainStrokeStart(tb.hover); }
     else flash('terrain: click on the terrain');
+    return;
+  }
+  if (toolMode === 'grass') { // MASK-d: the grass brush owns the left button
+    const hit = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return;
+    if (hit.kind === 'terrain' && hit.world) { gb.hover = { x: hit.world.x, y: hit.world.y }; grassStrokeStart(gb.hover); }
+    else flash('grass: click on the terrain');
     return;
   }
 
@@ -2287,6 +2388,7 @@ window.addEventListener('mouseup', (e) => {
     return;
   }
   if (tb.stroke) { terrainStrokeEnd(false); return; }
+  if (gb.stroke) { grassStrokeEnd(false); return; }
   if (boxDrag) {
     const box=boxDrag;boxDrag=null;
     if (box.moved) {
@@ -2365,13 +2467,14 @@ window.addEventListener('mouseup', (e) => {
 
 // ED-TERRAIN-1c: cursor ring + stroke dabs follow the pointer over the terrain.
 canvas.addEventListener('mousemove', async (e) => {
-  if (toolMode !== 'terrain') return;
+  if (toolMode !== 'terrain' && toolMode !== 'grass') return;
   const { col, row } = computeMouseCell(e);
   const tok = hoverGuard.begin();
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
   const hit = await pickAt(col, row, pickCtx());
   if (hoverGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
   if (hit.kind === 'terrain' && hit.world) {
+    if (toolMode === 'grass') { gb.hover = { x: hit.world.x, y: hit.world.y }; if (gb.stroke) grassStrokeMove(gb.hover); frame.markDirty(); return; }
     tb.hover = { x: hit.world.x, y: hit.world.y };
     if (tb.stroke) terrainStrokeMove(tb.hover);
     frame.markDirty();
@@ -2613,6 +2716,7 @@ function drawOverlay(fb) {
   drawHoverOutline(overlayGlyph, hoverCol, hoverRow, '#7CFC7C');
   drawAssetGhost();
   drawTerrainCursor();
+  drawGrassCursor();
   if (helpOn) drawHelpOverlay();
   void fb;
 }
