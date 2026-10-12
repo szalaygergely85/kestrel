@@ -1,0 +1,64 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "dorrin",
+  "speakers": {
+    "dorrin": {
+      "label": "DORRIN"
+    },
+    "you": {
+      "label": "YOU",
+      "player": true
+    }
+  },
+  "entry": [
+    {
+      "node": "dorrin.done.1",
+      "requires": "s.mq.ow.relay.done"
+    },
+    {
+      "node": "dorrin.relay.1",
+      "requires": "s.mq.ow.relay.active"
+    },
+    {
+      "node": "dorrin.meet.1"
+    }
+  ],
+  "nodes": {
+    "dorrin.relay.1": {
+      "lines": [
+        "NEEDS WRITER dorrin.relay.1"
+      ],
+      "speaker": "dorrin",
+      "next": "dorrin.relay.2"
+    },
+    "dorrin.relay.2": {
+      "lines": [
+        "NEEDS WRITER dorrin.relay.2"
+      ],
+      "speaker": "dorrin",
+      "next": "dorrin.relay.3"
+    },
+    "dorrin.relay.3": {
+      "lines": [
+        "NEEDS WRITER dorrin.relay.3"
+      ],
+      "speaker": "dorrin",
+      "end": true
+    },
+    "dorrin.done.1": {
+      "lines": [
+        "NEEDS WRITER dorrin.done.1"
+      ],
+      "speaker": "dorrin",
+      "end": true
+    },
+    "dorrin.meet.1": {
+      "lines": [
+        "NEEDS WRITER dorrin.meet.1"
+      ],
+      "speaker": "dorrin",
+      "end": true
+    }
+  }
+}

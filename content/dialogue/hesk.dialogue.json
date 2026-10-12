@@ -1,0 +1,120 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "hesk",
+  "speakers": {
+    "hesk": {
+      "label": "HESK"
+    },
+    "you": {
+      "label": "YOU",
+      "player": true
+    }
+  },
+  "entry": [
+    {
+      "node": "hesk.board.1",
+      "requires": "s.mq.ow.relay.done"
+    },
+    {
+      "node": "hesk.relay.active.1",
+      "requires": "s.mq.ow.relay.active"
+    },
+    {
+      "node": "hesk.relay.1",
+      "requires": "s.mq.ow.relay.available"
+    },
+    {
+      "node": "hesk.after.1",
+      "requires": "s.mq.ow.names.done"
+    },
+    {
+      "node": "hesk.names.1",
+      "requires": "s.mq.ow.names.available"
+    },
+    {
+      "node": "hesk.meet.1"
+    }
+  ],
+  "nodes": {
+    "hesk.names.1": {
+      "lines": [
+        "NEEDS WRITER hesk.names.1"
+      ],
+      "speaker": "hesk",
+      "next": "hesk.names.2"
+    },
+    "hesk.names.2": {
+      "lines": [
+        "NEEDS WRITER hesk.names.2"
+      ],
+      "speaker": "hesk",
+      "next": "hesk.names.3"
+    },
+    "hesk.names.3": {
+      "lines": [
+        "NEEDS WRITER hesk.names.3"
+      ],
+      "speaker": "hesk",
+      "next": "hesk.names.4"
+    },
+    "hesk.names.4": {
+      "lines": [
+        "NEEDS WRITER hesk.names.4"
+      ],
+      "speaker": "hesk",
+      "end": true,
+      "setFlag": "s.mq.ow.names.accept"
+    },
+    "hesk.relay.1": {
+      "lines": [
+        "NEEDS WRITER hesk.relay.1"
+      ],
+      "speaker": "hesk",
+      "next": "hesk.relay.2"
+    },
+    "hesk.relay.2": {
+      "lines": [
+        "NEEDS WRITER hesk.relay.2"
+      ],
+      "speaker": "hesk",
+      "next": "hesk.relay.3"
+    },
+    "hesk.relay.3": {
+      "lines": [
+        "NEEDS WRITER hesk.relay.3"
+      ],
+      "speaker": "hesk",
+      "end": true,
+      "setFlag": "s.mq.ow.relay.accept"
+    },
+    "hesk.relay.active.1": {
+      "lines": [
+        "NEEDS WRITER hesk.relay.active.1"
+      ],
+      "speaker": "hesk",
+      "end": true
+    },
+    "hesk.after.1": {
+      "lines": [
+        "NEEDS WRITER hesk.after.1"
+      ],
+      "speaker": "hesk",
+      "end": true
+    },
+    "hesk.board.1": {
+      "lines": [
+        "NEEDS WRITER hesk.board.1"
+      ],
+      "speaker": "hesk",
+      "end": true
+    },
+    "hesk.meet.1": {
+      "lines": [
+        "NEEDS WRITER hesk.meet.1"
+      ],
+      "speaker": "hesk",
+      "end": true
+    }
+  }
+}

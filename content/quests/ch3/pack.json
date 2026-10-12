@@ -58,6 +58,122 @@
       "abandonable": false
     },
     {
+      "id": "mq.ow.names",
+      "title": "A Name at the Gate",
+      "main": true,
+      "site": "hesk",
+      "steps": [
+        {
+          "template": "talk",
+          "params": {
+            "to": "hesk"
+          },
+          "objText": "Tell Hesk who you are"
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.ow.fence",
+          "step": "kill"
+        }
+      ],
+      "reward": {
+        "table": "gear.t3"
+      },
+      "abandonable": false
+    },
+    {
+      "id": "mq.ow.relay",
+      "title": "The Village Relay",
+      "main": true,
+      "site": "hesk",
+      "band": 6,
+      "objectives": [
+        {
+          "id": "talk",
+          "text": "Ask Dorrin about the brass",
+          "when": {
+            "type": "flag",
+            "id": "talk.dorrin",
+            "equals": true
+          }
+        },
+        {
+          "id": "brass",
+          "text": "Take the relay brass from the gate",
+          "when": {
+            "type": "item",
+            "id": "relay.brass"
+          }
+        },
+        {
+          "id": "wake",
+          "text": "Wake the Outwall Relay",
+          "when": {
+            "type": "flag",
+            "id": "waystone.ws_outwall.woken",
+            "equals": true
+          }
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.ow.names",
+          "done": true
+        }
+      ],
+      "abandonable": false
+    },
+    {
+      "id": "mq.ow.board",
+      "title": "The Board of the Dead",
+      "main": true,
+      "site": "owBoard",
+      "band": 6,
+      "objectives": [
+        {
+          "id": "read",
+          "text": "Read the board in the plaza",
+          "when": {
+            "type": "flag",
+            "id": "lore.owBoard.read",
+            "equals": true
+          }
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.ow.relay",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "chart.westFells",
+            "n": 1
+          }
+        ]
+      },
+      "lines": {
+        "offer": [
+          "NEEDS WRITER mq.ow.board.offer.1",
+          "NEEDS WRITER mq.ow.board.offer.2"
+        ],
+        "active": [
+          "NEEDS WRITER mq.ow.board.active.1"
+        ],
+        "ready": [
+          "NEEDS WRITER mq.ow.board.ready.1",
+          "NEEDS WRITER mq.ow.board.ready.2"
+        ],
+        "done": [
+          "NEEDS WRITER mq.ow.board.done.1"
+        ]
+      },
+      "abandonable": false
+    },
+    {
       "id": "sq.hw.piers",
       "title": "The Pulled Bridge",
       "site": "pierStone",

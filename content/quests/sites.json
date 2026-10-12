@@ -33,6 +33,12 @@
     },
     "owForge": {
       "entity": "owForge"
+    },
+    "hesk": {
+      "entity": "hesk"
+    },
+    "dorrin": {
+      "entity": "dorrin"
     }
   }
 }

@@ -301,6 +301,22 @@
     icon: icon(['.---.', '|~~~|', "'---'"],
                ['hhhhh', 'hqqqh', 'hhhhh'])
   };
+  defs['relay.brass'] = {
+    id: 'relay.brass', name: 'Relay Brass', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'Worn brass. It was a gate hinge.',
+    use: { none: 'Quest item - the Outwall Relay needs it (mq.ow.relay)' },
+    glyph: { ch: '=', c: 'brass' },
+    icon: icon([' .=. ', '( o )', " '=' "],
+               [' AAA ', 'A J A', ' AAA '])
+  };
+  defs['chart.westFells'] = {
+    id: 'chart.westFells', name: 'West Chart', kind: 'upgrade', stackMax: 1, hand: false, inPack: true,
+    desc: 'Crow paper. The West Fells on it.',
+    use: { none: 'Chart piece - the map card shows the West Fells (mq.ow.board)' },
+    glyph: { ch: '^', c: 'manaLight' },
+    icon: icon(['.---.', '|^^^|', "'---'"],
+               ['hhhhh', 'hqqqh', 'hhhhh'])
+  };
   defs.cog = {
     id: 'cog', name: 'Brass Cog', kind: 'currency', stackMax: 99, hand: false, inPack: true,
     desc: "Ferrum's small change. Worth a trade.",
