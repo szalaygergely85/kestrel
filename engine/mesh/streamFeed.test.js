@@ -162,6 +162,46 @@ const poses = [[0, 0], [150, 20], [400, -30], [700, 60], [-90, 90]];
   ok(`AC1 world_m1 tower pose: bit-identical (${a.count} items)`, digest(a) === digest(b) && a.count > 0);
 }
 
+// ---- STREAM-01b review notes: (1) grid only ever classified from the camera eye; (2) one distance metric -------
+{
+  const sm = createSunShadowMatrix(), sunDir = dirFromAzEl(135, 40, new Float64Array(3));
+  const shadow = (w, cx, eye) => {
+    shadowSunMatrix(sunDir, new Float64Array([cx, 0, 0]), { ...SUN_SHADOW_DEFAULTS, res: 512, boxM: 400 }, { min: -1, max: 10 }, sm);
+    const l = createShadowList(); buildShadowList(l, null, w, sm.planes, { centre: { x: cx, y: 0, z: 0 }, cache: null, meshCache: new MeshDrawCache(), meshIdFor: idFor, eye });
+    return l;
+  };
+  const w = mkWorld({});
+  ok('review1: fresh grid not evaluated', !w.placementGrid.evaluated);
+  const a = shadow(w, 700, { x: 0, y: 0, z: 0 });
+  ok('review1: shadow feed on a fresh grid does not classify it', !w.placementGrid.evaluated);
+  w.streaming.enabled = false; const off = shadow(w, 700, { x: 0, y: 0, z: 0 }); w.streaming.enabled = true;
+  ok('review1: fresh-grid shadow feed = full list (== streaming off)', digest(a) === digest(off) && a.count > 0, `${a.count} vs ${off.count}`);
+  const cam = camAt(0, 0), pl = planesFor(cam);
+  const l = new DrawList(); l.begin(); addMeshStructures(l, w, cam, new MeshDrawCache(), idFor, 2000, false, null, null, pl);
+  ok('review1: camera feed classifies from its own eye', w.placementGrid.evaluated && w.placementGrid.lastX === 0);
+  const b1 = shadow(w, 700, { x: 0, y: 0, z: 0 }), b2 = shadow(w, 0, { x: 0, y: 0, z: 0 });
+  ok('review1: evaluated grid unchanged by shadow feeds', w.placementGrid.lastX === 0 && b1.count > 0 && b2.count > 0);
+}
+{
+  // (2) reach check and lazy warm check use the same grid xy distance: a lazy placement exactly warm is requested iff warmLazyMeshes agrees
+  const w = mkWorld({}, 60, 600), g = w.placementGrid, cam = camAt(0, 0);
+  const l = new DrawList(); l.begin(); addMeshStructures(l, w, cam, new MeshDrawCache(), idFor, 2000, false, null, null, null);
+  // an active placement: its reach check distance equals the grid metric (bbox xy), at a pose with z far above (hypot-3D must not leak in)
+  const camHigh = { ...camAt(0, 0), z: 500 };
+  const l2 = new DrawList(); l2.begin(); addMeshStructures(l2, w, camHigh, new MeshDrawCache(), idFor, 2000, false, null, null, null);
+  ok('review2: eye height does not change the streamed set (xy metric)', digest(l) === digest(l2) && l.count > 0);
+  // every drawn placement lies within its reach by the grid metric
+  let inReach = true;
+  for (let i = 0; i < l.count; i++) {
+    const id = l.items[i].objectId;
+    const si = w.structures.findIndex((s) => s.id === id || s.objectId === id);
+    if (si < 0) continue;
+    const b = w.structures[si].bbox, dx = Math.max(b.x0 - 0, 0, 0 - b.x1), dy = Math.max(b.y0, 0, -b.y1);
+    if (dx * dx + dy * dy > g.reach2[si] + 1e-3) inReach = false;
+  }
+  ok('review2: every drawn placement within grid reach (xy to AABB)', inReach);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

@@ -295,6 +295,11 @@ export class LevelMeshCache {
 const _order = new Int32Array(MAX_STRUCTS);
 const _distScratch = new Float64Array(MAX_STRUCTS);
 
+function bboxDistXY(ex, ey, b) {
+  const dx = ex < b.x0 ? b.x0 - ex : (ex > b.x1 ? ex - b.x1 : 0), dy = ey < b.y0 ? b.y0 - ey : (ey > b.y1 ? ey - b.y1 : 0);
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 function bboxDist(cam, bbox) {
   const camX = lodCentreX(cam), camY = lodCentreY(cam); // ortho: focus, not the far-back eye (US-068b3a)
   const cx = Math.min(Math.max(camX, bbox.x0), bbox.x1);
@@ -497,10 +502,15 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
   if (groups) { groups.chosen.fill(0); if (groups.hits) groups.hits.fill(0); }
   // STREAM-01b (38.51): residency grid. Re-fetched every frame (never cached: a structVersion change replaces the object); the camera
   // feed advances it, the shadow feed only reads the lists. Off (`world.streaming.enabled` false / no grid) = today's all-placements path.
-  const grid = world.streaming && world.streaming.enabled && world.refreshPlacementGrid ? world.refreshPlacementGrid() : null;
-  let gl = null, gr2 = null, gN = structs.length, warmM = 0;
+  let grid = world.streaming && world.streaming.enabled && world.refreshPlacementGrid ? world.refreshPlacementGrid() : null;
+  let gl = null, gr2 = null, gN = structs.length, warmM = 0, gx = 0, gy = 0;
   if (grid) {
-    if (!shadowOnly || !grid.evaluated) grid.update(lodCentreX(cam), lodCentreY(cam));
+    gx = lodCentreX(cam); gy = lodCentreY(cam);
+    if (!shadowOnly) grid.update(gx, gy);
+    else if (grid.evaluated) { gx = grid.lastX; gy = grid.lastY; } // shadow feed: reach checks use the grid's own (camera) eye, never the shadow camera
+    else grid = null; // fresh grid + shadow feed first: never classify from the shadow camera -> full list this frame
+  }
+  if (grid) {
     gl = grid.activeList; gr2 = grid.reach2; gN = grid.activeCount; warmM = grid.opts.warmM;
   }
   if (!shadowOnly) { setLazyView(lodCentreX(cam), lodCentreY(cam), fogFarM); pumpLazyMeshes(); } // MESH-LOAD-01: decode queued payloads (<= 2 / 4 ms), remember the eye for scatter groups
@@ -512,15 +522,15 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
     if (shadowOnly && structs[i].castShadow === false) continue; // MESH-SHADOW-01
     const d = bEye ? bboxDist(bEye, structs[i].bbox) : bboxDist(cam, structs[i].bbox);
     // per-placement warm radius (reach + warmM) with the grid, else the global load / hold radius
-    let rw2 = 0;
-    if (gl) { const rw = Math.sqrt(gr2[i]) + warmM; rw2 = rw * rw; }
-    if (!shadowOnly && structs[i].mesh.lazyOrigin && !structs[i].mesh.lazy && (gl ? d * d <= rw2 : d <= lazyHoldRadius())) touchMesh(structs[i].mesh); // S8-B2-03: LRU keep-alive inside loadM + 60 m
+    let rw2 = 0, dg = d; // dg: ONE metric for reach + warm = grid xy distance eye -> placement AABB (placementGrid.js)
+    if (gl) { dg = bboxDistXY(gx, gy, structs[i].bbox); const rw = Math.sqrt(gr2[i]) + warmM; rw2 = rw * rw; }
+    if (!shadowOnly && structs[i].mesh.lazyOrigin && !structs[i].mesh.lazy && (gl ? dg * dg <= rw2 : d <= lazyHoldRadius())) touchMesh(structs[i].mesh); // S8-B2-03: LRU keep-alive inside loadM + 60 m
     if (structs[i].mesh.lazy) { // MESH-LOAD-01: payload not loaded = draws nothing; ask for it when within draw distance + margin
-      if (!shadowOnly && (gl ? d * d <= rw2 : d <= fogFarM + LOAD_MARGIN_M)) requestMesh(structs[i].mesh);
+      if (!shadowOnly && (gl ? dg * dg <= rw2 : d <= fogFarM + LOAD_MARGIN_M)) requestMesh(structs[i].mesh);
       continue;
     }
     if (d > fogFarM || (bEye && d > bCut)) continue;
-    if (gl && d * d > gr2[i]) continue; // per-placement reach: small props stop before big ones
+    if (gl && dg * dg > gr2[i]) continue; // per-placement reach: small props stop before big ones
     if (groups && groups.has(i)) { groups.chosen[i] = 1; if (groups.hits) groups.hits[groups.slotOf[i]]++; continue; } // BUG-MESH-MISSING-01: instanced groups are not capped (cheap); only the frustum cull in push() thins them
     const bb = structs[i].bbox;
     if (fr && classifyAABB(fr, bb.x0, bb.y0, bb.z0, bb.x1, bb.y1, bb.z1) === CULL_OUT) continue; // OB-039: off-screen singles never take a slot
