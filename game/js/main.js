@@ -134,7 +134,7 @@ import { EQUIP_VIEW_MODELS, loadShieldView, presentShield, loadBowView, presentB
 import { playShieldClank, playBowShot } from './audio/sfx.js'; // EQ-07/09
 import { createTargetables } from './quest/sim/targetables.js';
 import { FIREBALL_CFG } from './quest/spellConfig.js';
-import { featuresFromParams } from './quest/features.js'; // D-065: fireball off unless ?fireball=1
+import { featuresFromParams, fireballOn } from './quest/features.js'; // D-065: fireball off unless ?fireball=1
 import { START_DEMO, START_FULL } from './quest/startConfig.js';
 import { createPracticeTarget, applyPropTargetables } from './quest/practiceTarget.js';
 import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js'; // US-053c
@@ -199,6 +199,8 @@ const saveStorage = () => (demo.on ? demoStorage(getSaveStorage()) : getSaveStor
 // param (the RenderTarget-internal cpu-fallback log is separate).
 // ME-19a: mesh GPU versus the rasterJS twin; one geometry-parity mode.
 const FEATURES = featuresFromParams(new URLSearchParams(window.location.search)); // not via filterDemoParams: dev flag
+let fbOn = false; // FB-01 (38.53): fireball usable (dev override or world.state['magic.fireball']); one live read per sim step + per present, never captured at boot
+const FB_LOCKED_IDS = { 'spell.fireball': 1, 'potion.mp': 1 }; // hidden/refused while locked
 const isGeometryCompare = (params.get('gpucompare') === '1' || params.get('gpucompare') === 'emissive');
 // ME-06 diagnostic: `&voxels=0` on either compare page empties the voxel
 // instance queue on both sides after each pose's feed, so a mesh-vs-oracle
@@ -1137,7 +1139,7 @@ async function runGame(mode, cinematic = null) {
   const qbDrag = createQuickbarDrag({
     slotAt: (cx, cy) => (qbView && ui ? qbView.slotAt(ui, cx, cy) : -1),
     idAt: (s) => { const q = playerHandle && playerHandle.data.components.quickbar; return q ? q[s] || null : null; },
-    assign: (s, id) => !!playerHandle && itemDefs && qbAssign(playerHandle.data, itemDefs, s, id),
+    assign: (s, id) => !!playerHandle && itemDefs && (fbOn || !FB_LOCKED_IDS[id]) && qbAssign(playerHandle.data, itemDefs, s, id),
     clear: (s) => !!playerHandle && itemDefs && qbClear(playerHandle.data, s, itemDefs),
   });
   canvas.addEventListener('mousedown', (e) => {
@@ -1436,7 +1438,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       hands.register('sword', sword);
       if (fbTargets) fbTargets.dispose();
       fbTargets = createTargetables(world, engine.events);
-      fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), enabled: FEATURES.fireball });
+      fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), isEnabled: () => fireballOn(world, FEATURES) });
       hands.register('spell.fireball', fireball);
       // EQ-07/09 (38.41): shield sim + arrow sim + the routing glue; shield/bow items get no-op sims so the router arms them (RMB -> left hand, LMB -> right hand)
       shieldSim = createShieldSim();
@@ -1548,9 +1550,10 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       invView = itemDefs && window.ASSETS.uiStyle.inventory ? createInventoryView({
         style: window.ASSETS.uiStyle.inventory, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
         inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
+        isSlotDisabled: (i) => { if (fbOn || !playerHandle) return false; const inv = playerHandle.data.components.inventory, sl = inv && inv.slots[i]; return !!(sl && sl.id && FB_LOCKED_IDS[sl.id]); }, // FB-01: spell + mana potion cells show as locked until unlocked (Items + Character tabs)
         healthOf: () => (playerHandle && playerHandle.data.components.health) || null,
         onHandsChanged: () => { if (hands && playerHandle) hands.step(playerHandle.data, false, false, false); }, // router sees the change now (cancel + setHand + hands:changed)
-        quickbar: itemDefs ? { assign: (n, id) => !!playerHandle && qbAssign(playerHandle.data, itemDefs, n + HAND_SLOTS, id) } : undefined, // EQ-12: 1-4 over an item in the Items / Character tab (key n = bar slot n + 2)
+        quickbar: itemDefs ? { assign: (n, id) => !!playerHandle && (fbOn || !FB_LOCKED_IDS[id]) && qbAssign(playerHandle.data, itemDefs, n + HAND_SLOTS, id) } : undefined, // EQ-12: 1-4 over an item in the Items / Character tab (key n = bar slot n + 2)
         characterKey: params.get('craft') !== '1', // EQ-03: C opens the Character tab (the crafting list keeps C under ?craft=1)
         character: window.__charKit ? { // EQ-03/04: lazy preview + char cache, built on the first Character-tab open
           equipmentOf: () => (playerHandle && playerHandle.data.components.equipment) || null,
@@ -1972,6 +1975,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (telegraphWire) telegraphWire.step(performance.now());
       // US-078d (30.1 + D-034 amendment): the sword steps after beasts.step, so a heavy-hit stagger acts from the
       // beast's NEXT step (deterministic, synchronous emit). `attackDown` is the amendment's exact gate expression.
+      fbOn = fireballOn(engine.world, FEATURES); // FB-01: one read per sim step
       if (hands) {
         // HANDS-01b (37.8a): the router turns LMB/RMB + the gate into one `down` per item; every item sim is stepped
         // every step (down = false when it is in no hand).
@@ -1998,15 +2002,15 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           if ((++qbTick % 30) === 0) autoFill(pl, itemDefs);
           if (qbPlayOk()) {
             const choosing = !!(dialogueCtl && dialogueCtl.open && dialogueCtl.runner.state === 'choosing');
-            if (!choosing) for (let n = 0; n < 4; n++) if (input.pressed('Digit' + (n + 1))) { qbToast(quickbar.press(pl, n)); break; }
+            if (!choosing) for (let n = 0; n < 4; n++) if (input.pressed('Digit' + (n + 1))) { qbToast(!fbOn && FB_LOCKED_IDS[pl.components.quickbar[n + HAND_SLOTS]] ? 'empty' : quickbar.press(pl, n)); break; } // FB-01: a locked mana potion key does nothing
           }
         }
         if (fireball) { // SPELL-01a: aim = unit 3D look vector (pitch > 0 = up); trig stays here, outside sim/
           forwardOf(look.yawDeg, swordFwd);
           const pr = look.pitchDeg * DEG2RAD, cp = Math.cos(pr);
-          fireball.step(playerHandle.data, hands.downOf('spell.fireball'), swordFwd[0], swordFwd[1], swordFwd[0] * cp, swordFwd[1] * cp, Math.sin(pr));
+          fireball.step(playerHandle.data, fbOn && hands.downOf('spell.fireball'), swordFwd[0], swordFwd[1], swordFwd[0] * cp, swordFwd[1] * cp, Math.sin(pr));
           if (fbView) fbView.stepFx(); // SPELL-01b: trail emitters + burst particles (sim side, hashed)
-          if (handFxOn && spellVmH && !cinematic) { // HAND-WIRE-02: hand embers / ignite / charge sparks, sim side
+          if (fbOn && handFxOn && spellVmH && !cinematic) { // HAND-WIRE-02 (FB-01: locked = no hand fire): hand embers / ignite / charge sparks, sim side
             const hp = playerHandle.data.transform, hb = playerHandle.data.components.body;
             stepHandFx(spellVmH, hands.handOf(SPELL_HAND_ITEM), fireball, hp.x, hp.y, hp.z + (hb && hb.eyeH ? hb.eyeH : 1.6), swordFwd[0], swordFwd[1], swordFwd[0] * cp, swordFwd[1] * cp, Math.sin(pr));
           }
@@ -2216,13 +2220,14 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (cinematic) evaluatePath(cinematic, simTime, cam);
       if (cinematicHours) applySunHours(engine.world, lightSet, cam.hour, worldSunPath, sunEnabled);
       fb.timeSec = simTime;
+      fbOn = fireballOn(engine.world, FEATURES); // FB-01: same-frame appearance after unlock
       // Arch review 1 (US-017): `lightSet` is rebuilt by the 'world:loaded'
       // handler on every restart - rebind it here, or `fb.lights` would keep
       // pointing at the previous world's LightSet (beacon state etc.).
       fb.lights = lightSet;
       if (fbView) { // SPELL-01b: ball/flash lights + the spell-hand coal glow, before lights.update below (glow = last frame's, 1 frame lag)
         fbView.present(alpha, cam);
-        const sh = hands && !cinematic && spellVmH ? hands.handOf(SPELL_HAND_ITEM) : null;
+        const sh = hands && !cinematic && fbOn && spellVmH ? hands.handOf(SPELL_HAND_ITEM) : null;
         if (sh) {
           _emberEye[0] = (sh === 'left' ? -1 : 1) * FIREBALL_CFG.castOffset.right; _emberEye[1] = -FIREBALL_CFG.castOffset.fwd; _emberEye[2] = -FIREBALL_CFG.castOffset.down;
           spellVmH.vm.eyeToWorld(cam, _emberEye, _emberWorld);
@@ -2298,7 +2303,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (spellVmH) {
         const sbody = playerHandle.data.components.body;
         const spellMoving = !!sbody && sbody.grounded && (controls.forward !== 0 || controls.strafe !== 0);
-        (handFxOn ? presentHandFire : presentSpellHand)(spellVmH, hands && !cinematic ? hands.handOf(SPELL_HAND_ITEM) : null, simTime, simTime, spellMoving, fireball);
+        (handFxOn ? presentHandFire : presentSpellHand)(spellVmH, hands && !cinematic && fbOn ? hands.handOf(SPELL_HAND_ITEM) : null, simTime, simTime, spellMoving, fireball);
       }
       if (equipPlay && !cinematic) { // EQ-07/09: first-person shield (right arm) / bow (left arm) + the arrow instances
         const eq7 = playerHandle.data.components.equipment, b7 = playerHandle.data.components.body;
@@ -2375,7 +2380,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         if (vitals) {
           // Q9 item 2c: hidden on the title (wakeOut.inputLocked covers the wake/title timeline) and map cards too,
           // not just while dead - the end card is already covered by the `!ending` gate around this whole block.
-          drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals, FEATURES.fireball);
+          drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals, fbOn);
           drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals, isReduceMotion());
           if (equipPlay) { // EQ-07/09: block spark + the arrow count next to the hearts while the bow set is out
             const eqH = engine.world.get('player').data.components.equipment, hudOn = !vitals.dead && !wakeOut.inputLocked && !isMapOpen();
