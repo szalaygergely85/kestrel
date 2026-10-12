@@ -91,7 +91,7 @@ export function validateSave(save) {
 
 /** OB-079 (M4-C2): runtime-only marker entities ('questMark_N', main.js markHandle) pop in at scale 0.05, which World.load rejects
  *  (min 0.25) - a save taken mid-pop made Continue fail silently (fresh world, no player health). They respawn on demand, so never persist them. */
-const TRANSIENT_ENTITY = /^questMark/;
+const TRANSIENT_ENTITY = /^(questMark|demo\.)/; // OB-086: demo.* = runtime show-off entities, never saved
 function dropTransient(worldState) {
   if (!worldState || !Array.isArray(worldState.entities)) return worldState;
   return { ...worldState, entities: worldState.entities.filter(e => !(e && typeof e.id === 'string' && TRANSIENT_ENTITY.test(e.id))) };

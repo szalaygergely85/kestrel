@@ -151,6 +151,7 @@ import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from '.
 import { PHYSICS } from '../../engine/index.js';
 import { meshFeedStats, MAX_MESH_DRAWS, MAX_DRAW_ITEMS } from '../../engine/index.js'; // OB-039: F3 mesh draw cap line
 import { createModelPreview, createCharCache } from '../../engine/index.js'; // EQ-03/04: Character tab model preview
+import { composeCharacter, meshCharacter, collapseRig, riggedModelDef } from '../../engine/index.js'; // OB-086: the kit character in the world
 import { drawArrowCount, drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
 import { ensureInventory, validateItemDefs, migrateSword, addItem } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
@@ -857,6 +858,17 @@ if (handDef && handDef.variants && handLookDef) {
   }
 }
 registerRiggedChars(assets, bundle.models); // RIG-03w: char.<id> from package .glb, before bind
+// OB-086 (owner 2026-10-12: "import 1 char into the game, i wanna see"): the default kit character (human kit v8 shapes) as a
+// world model, stood 2 m east of Burl on every world load (entity id demo.kitChar: never saved, see saveState TRANSIENT_ENTITY).
+if (window.__charKit && !assets.has('model', 'char.kit')) {
+  try { const K = window.__charKit; assets.add('model', 'char.kit', riggedModelDef(collapseRig(meshCharacter(composeCharacter(K, K.defaults)), K.partMap))); }
+  catch (e) { console.warn('[char.kit] ' + e.message); }
+}
+if (assets.has('model', 'char.kit')) engine.events.on('world:loaded', ({ world: kw }) => {
+  const b = kw.get('bear'), bt = b && b.data && b.data.transform; if (!bt || kw.get('demo.kitChar')) return;
+  const gz = kw.floorAt(bt.x + 2, bt.y);
+  kw.spawn('prop', { x: bt.x + 2, y: bt.y, z: gz == null ? bt.z : gz, yawDeg: 180, scale: 1 }, { voxel: { model: 'char.kit', anim: 'idle', loop: true } }, 'demo.kitChar');
+});
 const gameVoxelPool = new VoxelPool();
 gameVoxelPool.bind(assets, matTable);
 // RE-02b F1 + review: 'mesh' only when the mesh GpuCellPipeline is really active (CPU fallback renders shear).
