@@ -1145,3 +1145,4 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - **BEAR-01 (sprint-4 Q1):** the first tougher beast is the **black bear** (realistic, 4 legs; recolour/variant of `design/models/voxel_bear.js`, not Burl's brown).
 - **US-054 cuttable tree (sprint-4 Q3): dropped** ("I don't want").
 - Still open: the 12 new characters (quest-roadmap.md 2b), US-102 sentinel (Q4), tier look (Q5), M4-C3 placement (Q6), barley/range givers.
+- **12 new characters approved (owner, 2026-10-12: "ok all chars"):** Nub, Skip, Stilt, Slate, Crag, Hesk, Dorrin, Sorrel, Pell, Tam, Ama, Cobb as in docs/quest-roadmap.md 2b. Unblocks the Outwall NPCs, US-042/084/085 and the M5 main line. Models: designer, from existing meshes or recolours.
