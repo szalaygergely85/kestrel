@@ -103,8 +103,10 @@ try {
   await still('2b-pods-collected');
   report('2b three emberpods picked up, quest READY', pods.every((s) => s.endsWith(' picked')) && status === 3, { pods, status });
   await ev(`__debug.questBook().handIn('sq.burl.fire')`);
-  await pause(4000); // reward grant (quest:done) + MP fade + hint queue
-  const f2 = await ev(`({flag:__debug.world.state['magic.fireball'],mu:window.__mu,done:__debug.questBook().statusOf('sq.burl.fire')})`);
+  await pause(4000); // reward grant (quest:done) + MP fade
+  // FB-HINT-01: hints.js is a FIFO with one hint on screen at a time (fadeIn 0.3 + timeout 8 + fadeOut 0.5 = 8.8 s), so fbCast can wait behind another hint; poll up to 20 s.
+  for (let i = 0; i < 40 && !(await hintSeen()); i++) await pause(500);
+  const f2 =await ev(`({flag:__debug.world.state['magic.fireball'],mu:window.__mu,done:__debug.questBook().statusOf('sq.burl.fire')})`);
   const shown = await hintSeen(), pot1 = await potions(), mpCells1 = await barCells(mpRow);
   await still('2c-unlocked');
   report('2c hand-in: flag true, one magic.unlocked, MP bar drawn, fbCast hint, +1 potion.mp', f2.flag === true && f2.mu === 1 && f2.done === 4 && mpCells1 > 0 && shown && pot1 - pot0 === 1, { ...f2, hintShown: shown, mpCells: mpCells1, pot0, pot1 });

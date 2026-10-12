@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { World, AssetRegistry } from '../../../engine/index.js';
 import '../../../design/models/title.js';
-import { stepHints, resetHints, currentHintId, setPaletteColors } from './hints.js';
+import { stepHints, resetHints, request,currentHintId, setPaletteColors } from './hints.js';
 import { stepFireballHints, resetFireballHints, fireText } from './fireballHints.js';
 import { createBindings } from './input/bindings.js';
 import { collectSave, applySave } from './save/saveState.js';
@@ -30,6 +30,15 @@ s.manaFlashTick = 5; assert.deepEqual(settle(w), [], 'sword-style short mana (no
 s.manaFlashTick = 9; s.casting = true;
 assert.deepEqual(settle(w), ['fbNoMp'], 'first MP-short cast -> fizzle hint');
 s.manaFlashTick = 12; assert.deepEqual(settle(w), [], 'once only');
+// FB-HINT-01: another hint on screen at unlock delays fbCast by up to one full hint (<= 8.8 s), never drops it
+{
+  resetHints(); resetFireballHints(); s.fbOn = false;
+  const w3 = mkWorld(); request(w3, uiStyle, 'move'); run(w3, 0.1); assert.equal(currentHintId(), 'move');
+  s.fbOn = true; let t = 0, first = null;
+  for (; t < 12 && first !== 'fbCast'; t += 0.1) { run(w3); first = currentHintId(); }
+  assert.equal(first, 'fbCast', 'fbCast shown after the on-screen hint finished'); assert.ok(t < 9.5, 'within one hint lifetime (' + t.toFixed(1) + ' s)');
+  assert.equal(w3.state['hints.shown'].filter((x) => x === 'fbCast').length, 1, 'shown once');
+}
 // save round trip: shown ids survive
 const save = collectSave(w); resetHints(); resetFireballHints();
 const w2 = applySave(JSON.parse(JSON.stringify(save)), assets).world;
