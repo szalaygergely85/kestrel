@@ -1,7 +1,8 @@
 // OB-073-D2a (arch 38.52 item 6): near-field grass carpet config check + class map. Derived render data:
 // never serialized, never hashed, never read by the sim. Pure JS, no render code (D2b+ consume the map).
 export const CARPET_MAX_VARIANTS = 15;
-export const CARPET_DEFAULTS = { cellM: 0.10, radiusM: 12, patchM: 6, classCellM: 2, classJitterM: 0.8, gustM: 5, travelM: 1.5 };
+export const CARPET_DEFAULTS = { cellM: 0.10, radiusM: 12, patchM: 6, classCellM: 2, classJitterM: 0.8, gustM: 5, travelM: 1.5, bladeW: 0.06, swayGain: 1 };
+const ZERO_OK = ['classJitterM', 'travelM']; // 0 = no jitter / no travel is valid
 
 const fail = (key, msg) => { throw new Error(`carpet.${key}: ${msg}`); };
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -11,7 +12,9 @@ export function validateCarpetConfig(cfg, typeNames) {
   if (!cfg || typeof cfg !== 'object') fail('', 'config must be an object');
   if (!isNum(cfg.seed)) fail('seed', 'must be a finite number');
   for (const k of Object.keys(CARPET_DEFAULTS)) {
-    if (cfg[k] !== undefined && !(isNum(cfg[k]) && cfg[k] > 0)) fail(k, 'must be a number > 0');
+    if (cfg[k] === undefined) continue;
+    if (ZERO_OK.indexOf(k) >= 0) { if (!(isNum(cfg[k]) && cfg[k] >= 0)) fail(k, 'must be a number >= 0'); }
+    else if (!(isNum(cfg[k]) && cfg[k] > 0)) fail(k, 'must be a number > 0');
   }
   const vs = cfg.variants;
   if (!Array.isArray(vs) || vs.length < 1) fail('variants', 'must be a non-empty array');

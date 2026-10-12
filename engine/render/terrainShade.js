@@ -31,6 +31,10 @@ export function hashFastU(x, y, s) {
   h ^= h >>> 16;
   return h >>> 0;
 }
+/** hashFastU >>> 8 (24 bit, always a Smi: a non-inlined call returning the u32 itself would box it). hashFast01 = this * 2^-24. */
+export function hashFast24(x, y, s) {
+  return hashFastU(x, y, s) >>> 8;
+}
 export function hashFast01(x, y, s) {
   return (hashFastU(x, y, s) >>> 8) * (1 / 16777216);
 }

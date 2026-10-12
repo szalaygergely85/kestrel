@@ -6,10 +6,12 @@
 //
 // The class/variant lookup is a plain data shape (D2a builds it in engine/world/carpet.js):
 //   carpet = { cfg: CarpetConfig, classMap: Uint8Array, x0, y0, w, h }   (classMap cell = cfg.classCellM, 0 = none, id 1..15 = cfg.variants[id-1])
-import { hashFast01, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX } from './terrainShade.js';
+import { hashFast24, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX } from './terrainShade.js';
+import { CARPET_DEFAULTS } from '../world/carpet.js';
+const INV_2_24 = 1 / 16777216; // 24-bit integer hash scaled at the call site: no double crosses a call (alloc rule)
 
 export const NMAX = 24;                 // max lattice steps per trace; more = past the fade, draw nothing (never truncate)
-export const CARPET_DEFAULTS = Object.freeze({ cellM: 0.10, radiusM: 12, patchM: 3, classCellM: 2, classJitterM: 0.6, gustM: 4, travelM: 1, bladeW: 0.06, swayGain: 1 });
+export { CARPET_DEFAULTS };   // one owner: engine/world/carpet.js (D2a)
 export const ROOT_JITTER = 0.4;         // root offset +-0.4 cell
 export const LEAN_CAP = 0.6;            // |lean| <= 0.6 * h (ratio lean/h)
 export const LEAN_PER_MS = 0.12;        // lean/h per m/s of world wind (before swayGain and gust)
@@ -27,12 +29,6 @@ const R_EX = 0, R_EY = 1, R_EZ = 2, R_DX = 3, R_DY = 4, R_DZ = 5, R_N2 = 6, R_T0
 export const IN_EX = 0, IN_EY = 1, IN_EZ = 2, IN_DX = 3, IN_DY = 4, IN_DZ = 5, IN_THIT = 6, IN_TIME = 7;
 const S_H = 2, S_VAR = 4, S_LX = 5, S_LY = 6, S_H01 = 9, S_Z = 10, S_TB = 11, S_N = 16;
 
-function smooth(a, b, x) {
-  let s = (x - a) / (b - a);
-  s = s < 0 ? 0 : s > 1 ? 1 : s;
-  return s * s * (3 - 2 * s);
-}
-
 /**
  * Build the trace context (allocates once).
  * @param {{cfg:object, classMap:Uint8Array, x0:number, y0:number, w:number, h:number}} carpet 38.52 data shape
@@ -49,7 +45,7 @@ export function makeCarpetCtx(carpet, ground, wind) {
     gustM: cfg.gustM || D.gustM, travelM: cfg.travelM == null ? D.travelM : cfg.travelM,
     classMap: carpet.classMap, cx0: carpet.x0, cy0: carpet.y0, cw: carpet.w, ch: carpet.h,
     dens: new Float64Array(n), hMin: new Float64Array(n), hMax: new Float64Array(n), bw: new Float64Array(n), sway: new Float64Array(n),
-    maxH: 0, ground, wind: wind || null, fpK: 0, // fpK = groundFootprint hashCell arg (<0 = -k, >0 = fixed cell, 0 = default k)
+    maxH: 0, wMax: 0, ground, wind: wind || null, fpK: 0, // fpK = groundFootprint hashCell arg (<0 = -k, >0 = fixed cell, 0 = default k)
     q: new Float64Array(8), inp: new Float64Array(8), r: new Float64Array(10), s: new Float64Array(S_N), keep: new Float64Array(S_N),
   };
   ctx.sway[0] = 1;
@@ -58,6 +54,7 @@ export function makeCarpetCtx(carpet, ground, wind) {
     const v = vs[i], id = i + 1;
     ctx.dens[id] = v.density; ctx.hMin[id] = v.heightM[0]; ctx.hMax[id] = v.heightM[1];
     ctx.bw[id] = v.bladeW || D.bladeW; ctx.sway[id] = v.swayGain == null ? D.swayGain : v.swayGain;
+    if (ctx.bw[id] * 0.5 > ctx.wMax) ctx.wMax = ctx.bw[id] * 0.5;
     if (v.heightM[1] * (PATCH_LO + PATCH_RANGE) > ctx.maxH) ctx.maxH = v.heightM[1] * (PATCH_LO + PATCH_RANGE);
   }
   return ctx;
@@ -73,10 +70,10 @@ function classAt(ctx) {
 /** bilinear value noise (same maths as terrainShade.valueNoise) at lattice coords q[0], q[1] -> q[2]. */
 function vnoise(ctx, salt) {
   const q = ctx.q, x = q[0], y = q[1];
-  const ix = Math.floor(x), iy = Math.floor(y);
+  const ix = Math.floor(x) | 0, iy = Math.floor(y) | 0; // int32: a double argument to a non-inlined hash call would be boxed
   let fx = x - ix, fy = y - iy;
   fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
-  const a = hashFast01(ix, iy, salt), b = hashFast01(ix + 1, iy, salt), c = hashFast01(ix, iy + 1, salt), d = hashFast01(ix + 1, iy + 1, salt);
+  const a = (hashFast24(ix, iy, salt) * INV_2_24), b = (hashFast24(ix + 1, iy, salt) * INV_2_24), c = (hashFast24(ix, iy + 1, salt) * INV_2_24), d = (hashFast24(ix + 1, iy + 1, salt) * INV_2_24);
   q[2] = a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
 }
 
@@ -93,9 +90,9 @@ function leanRatio(ctx, v) {
   const ux = wx / m, uy = wy / m;
   q[0] = (x - ux * timeSec * ctx.travelM) / ctx.gustM; q[1] = (y - uy * timeSec * ctx.travelM) / ctx.gustM;
   vnoise(ctx, ctx.seed + SALT_GUST);
-  let r = m * LEAN_PER_MS * ctx.sway[v] * (GUST_LO + GUST_RANGE * q[2]);
-  if (r > LEAN_CAP) r = LEAN_CAP;
-  s[S_LX] = ux * r; s[S_LY] = uy * r;
+  s[S_LX] = m * LEAN_PER_MS * ctx.sway[v] * (GUST_LO + GUST_RANGE * q[2]); // scratch: the unclamped ratio
+  if (s[S_LX] > LEAN_CAP) s[S_LX] = LEAN_CAP;
+  s[S_LY] = uy * s[S_LX]; s[S_LX] = ux * s[S_LX];
   q[0] = x; q[1] = y;
 }
 
@@ -106,17 +103,17 @@ function leanRatio(ctx, v) {
 function bladeHit(ctx, ix, iy) {
   const r = ctx.r, ex = r[R_EX], ey = r[R_EY], ez = r[R_EZ], dx = r[R_DX], dy = r[R_DY], dz = r[R_DZ], n2 = r[R_N2], t0 = r[R_T0], t1 = r[R_T1];
   const s = ctx.s, q = ctx.q, c = ctx.cellM, seed = ctx.seed;
-  const rx = (ix + 0.5 + (hashFast01(ix, iy, seed + SALT_JX) * 2 - 1) * ROOT_JITTER) * c;
-  const ry = (iy + 0.5 + (hashFast01(ix, iy, seed + SALT_JY) * 2 - 1) * ROOT_JITTER) * c;
+  const rx = (ix + 0.5 + ((hashFast24(ix, iy, seed + SALT_JX) * INV_2_24) * 2 - 1) * ROOT_JITTER) * c;
+  const ry = (iy + 0.5 + ((hashFast24(ix, iy, seed + SALT_JY) * INV_2_24) * 2 - 1) * ROOT_JITTER) * c;
   const cj = ctx.classJitterM;
-  q[0] = rx + (hashFast01(ix, iy, seed + SALT_CJX) * 2 - 1) * cj; q[1] = ry + (hashFast01(ix, iy, seed + SALT_CJY) * 2 - 1) * cj;
+  q[0] = rx + ((hashFast24(ix, iy, seed + SALT_CJX) * INV_2_24) * 2 - 1) * cj; q[1] = ry + ((hashFast24(ix, iy, seed + SALT_CJY) * INV_2_24) * 2 - 1) * cj;
   const v = classAt(ctx);
   if (v === 0) return 0;
-  const rank = hashFast01(ix, iy, seed + SALT_RANK);
+  const rank = (hashFast24(ix, iy, seed + SALT_RANK) * INV_2_24);
   if (rank >= ctx.dens[v]) return 0;
   q[0] = rx / ctx.patchM; q[1] = ry / ctx.patchM;
   vnoise(ctx, seed + SALT_PATCH);
-  const h = (ctx.hMin[v] + (ctx.hMax[v] - ctx.hMin[v]) * hashFast01(ix, iy, seed + SALT_H)) * (PATCH_LO + PATCH_RANGE * q[2]);
+  const h = (ctx.hMin[v] + (ctx.hMax[v] - ctx.hMin[v]) * (hashFast24(ix, iy, seed + SALT_H) * INV_2_24)) * (PATCH_LO + PATCH_RANGE * q[2]);
   const w = ctx.bw[v] * 0.5;
   q[0] = rx; q[1] = ry;
   ctx.ground(q);
@@ -142,7 +139,10 @@ function bladeHit(ctx, ix, iy) {
   if (fpk > 0) fp = fpk; // = groundFootprint(t, hashCell) of terrainShade.js, inlined (no double through a call)
   else { const a = tc / FP_ANISO_T; fp = (fpk < 0 ? -fpk : FP_DEFAULT_K) * tc * (a < 1 ? 1 : a > FP_ANISO_MAX ? FP_ANISO_MAX : a); }
   const dXY = tc * Math.sqrt(n2);
-  const fade = (1 - smooth(FADE_FP0, FADE_FP1, fp / (2 * w))) * (1 - smooth(FADE_R0, FADE_R1, dXY / ctx.radiusM));
+  // smoothstep(a, b, x) inlined by hand (a double-returning helper would be boxed once the inliner budget runs out)
+  let f1 = (fp / (2 * w) - FADE_FP0) / (FADE_FP1 - FADE_FP0); f1 = f1 < 0 ? 0 : f1 > 1 ? 1 : f1;
+  let f2 = (dXY / ctx.radiusM - FADE_R0) / (FADE_R1 - FADE_R0); f2 = f2 < 0 ? 0 : f2 > 1 ? 1 : f2;
+  const fade = (1 - f1 * f1 * (3 - 2 * f1)) * (1 - f2 * f2 * (3 - 2 * f2));
   if (rank >= ctx.dens[v] * fade) return 0;
   s[S_VAR] = v; s[S_H01] = sr / h; s[S_Z] = zr; s[S_H] = h; s[S_TB] = tc;
   return 1;
@@ -180,7 +180,7 @@ export function loadInput(ctx, eye, dir, tHit, timeSec) {
 
 /** Fresh result record (allocate once, reuse). hit: 1/0; lean: signed screen lean -1..1 (+ = right). */
 export function makeCarpetHit() {
-  return { hit: 0, t: 0.5, h01: 0.5, variant: 0, lean: 0.5, z: 0.5, ix: 0, iy: 0, steps: 0 }; // non-Smi initial values keep the double fields in-place mutable
+  return { hit: 0, t: 0.5, h01: 0.5, variant: 0, lean: 0.5, z: 0.5, ix: 0, iy: 0, steps: 0, tests: 0 }; // non-Smi initial values keep the double fields in-place mutable
 }
 
 function setOut(out, ctx, ix, iy) {
@@ -204,14 +204,14 @@ export function traceCarpet(eye, dir, tHit, ctx, timeSec, out) {
 
 /** Same trace with the input already in ctx.inp (IN_* slots). The per-cell loops use this: doubles passed as call arguments would be boxed (alloc). */
 export function traceCarpetIn(ctx, out) {
-  out.hit = 0;
+  out.hit = 0; out.tests = 0;
   const steps = setRay(ctx);
   out.steps = steps;
   if (steps === 0 || steps > NMAX) return 0;
   const r = ctx.r, bs = ctx.s, keep = ctx.keep, q = ctx.q;
   const ex = r[R_EX], ey = r[R_EY], ez = r[R_EZ], dx = r[R_DX], dy = r[R_DY], dz = r[R_DZ], t0 = r[R_T0], t1 = r[R_T1], c = ctx.cellM;
   const hxy = Math.sqrt(r[R_N2]);
-  let ix = Math.floor((ex + t0 * dx) / c), iy = Math.floor((ey + t0 * dy) / c);
+  let ix = Math.floor((ex + t0 * dx) / c) | 0, iy = Math.floor((ey + t0 * dy) / c) | 0;
   const sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1;
   const ddx = Math.abs(dx) > 1e-12 ? c / Math.abs(dx) : Infinity, ddy = Math.abs(dy) > 1e-12 ? c / Math.abs(dy) : Infinity;
   let tx = Math.abs(dx) > 1e-12 ? (((dx > 0 ? ix + 1 : ix) * c) - ex) / dx : Infinity;
@@ -219,6 +219,9 @@ export function traceCarpetIn(ctx, out) {
   let best = Infinity, bi = 0, bj = 0, tEnter = t0;
   const margin = hxy > 1e-9 ? (RING + 1.5) * c / hxy : Infinity; // blades of later cells can still be nearer by this much
   const windOn = ctx.wind !== null;
+  // a blade of cell (i, j) can only touch the ray if the cell centre is within this xy distance of the ray line
+  const rej = ((0.7071 + ROOT_JITTER) * c + ctx.wMax + LEAN_CAP * ctx.maxH) * hxy; // scaled by |d_xy|: compared with the cross product
+  let prevCi = 1e9, prevCj = 1e9, tests = 0;
   for (let step = 0; step < steps; step++) {
     if (tEnter - margin > best) break;
     const tNext = tx < ty ? tx : ty;
@@ -232,13 +235,18 @@ export function traceCarpetIn(ctx, out) {
       if (sh < 0) sh = 0; else if (sh > ctx.maxH) sh = ctx.maxH;
       q[0] = px; q[1] = py;
       leanRatio(ctx, 0);
-      ci = Math.floor((px - bs[S_LX] * sh) / c); cj = Math.floor((py - bs[S_LY] * sh) / c);
+      ci = Math.floor((px - bs[S_LX] * sh) / c) | 0; cj = Math.floor((py - bs[S_LY] * sh) / c) | 0;
     }
     for (let j = cj - RING; j <= cj + RING; j++) for (let i = ci - RING; i <= ci + RING; i++) {
+      if (i - prevCi <= RING && prevCi - i <= RING && j - prevCj <= RING && prevCj - j <= RING) continue; // tested in the previous step
+      if (hxy > 1e-9) { const cr = ((i + 0.5) * c - ex) * dy - ((j + 0.5) * c - ey) * dx; if (cr > rej || cr < -rej) continue; }
+      tests++;
       if (bladeHit(ctx, i, j) === 1 && bs[S_TB] < best) { best = bs[S_TB]; bi = i; bj = j; for (let k = 0; k < S_N; k++) keep[k] = bs[k]; }
     }
+    prevCi = ci; prevCj = cj;
     if (tx < ty) { ix += sx; tEnter = tx; tx += ddx; } else { iy += sy; tEnter = ty; ty += ddy; }
   }
+  out.tests = tests;
   if (best === Infinity) return 0;
   for (let k = 0; k < S_N; k++) bs[k] = keep[k];
   setOut(out, ctx, bi, bj);
@@ -271,13 +279,13 @@ export function traceCarpetBrute(eye, dir, tHit, ctx, timeSec, out) {
 /** Blade identity of a lattice cell (no ray): out Float64Array(4) = rootX, rootY, height, variant (0 = none). */
 export function bladeAtCell(ctx, ix, iy, out) {
   const c = ctx.cellM, seed = ctx.seed, q = ctx.q;
-  const rx = (ix + 0.5 + (hashFast01(ix, iy, seed + SALT_JX) * 2 - 1) * ROOT_JITTER) * c;
-  const ry = (iy + 0.5 + (hashFast01(ix, iy, seed + SALT_JY) * 2 - 1) * ROOT_JITTER) * c;
+  const rx = (ix + 0.5 + ((hashFast24(ix, iy, seed + SALT_JX) * INV_2_24) * 2 - 1) * ROOT_JITTER) * c;
+  const ry = (iy + 0.5 + ((hashFast24(ix, iy, seed + SALT_JY) * INV_2_24) * 2 - 1) * ROOT_JITTER) * c;
   const cj = ctx.classJitterM;
-  q[0] = rx + (hashFast01(ix, iy, seed + SALT_CJX) * 2 - 1) * cj; q[1] = ry + (hashFast01(ix, iy, seed + SALT_CJY) * 2 - 1) * cj;
+  q[0] = rx + ((hashFast24(ix, iy, seed + SALT_CJX) * INV_2_24) * 2 - 1) * cj; q[1] = ry + ((hashFast24(ix, iy, seed + SALT_CJY) * INV_2_24) * 2 - 1) * cj;
   const v = classAt(ctx);
   out[0] = rx; out[1] = ry; out[3] = v;
   q[0] = rx / ctx.patchM; q[1] = ry / ctx.patchM;
   vnoise(ctx, seed + SALT_PATCH);
-  out[2] = v === 0 ? 0 : (ctx.hMin[v] + (ctx.hMax[v] - ctx.hMin[v]) * hashFast01(ix, iy, seed + SALT_H)) * (PATCH_LO + PATCH_RANGE * q[2]);
+  out[2] = v === 0 ? 0 : (ctx.hMin[v] + (ctx.hMax[v] - ctx.hMin[v]) * (hashFast24(ix, iy, seed + SALT_H) * INV_2_24)) * (PATCH_LO + PATCH_RANGE * q[2]);
 }
