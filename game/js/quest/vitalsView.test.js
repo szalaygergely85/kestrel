@@ -2,6 +2,7 @@
 import {
   cellCounts, lowPulseAmount, chipStageAt, raggedHash100, hurtEdgeStage, kickDeg, shortFlashOn,
   deathFadeAmount, computeDeathCardState, drawVitals, drawHurtEdge, drawDeathCard, resetVitalsView,
+  startMpFade, mpFadeAlpha, MP_FADE_SEC,
 } from './vitalsView.js';
 import { makeOk } from '../../../engine/test/assert.js';
 import { createVitals } from './sim/vitals.js';
@@ -353,6 +354,30 @@ function fakeWorld(hp, max, mp, mpMax) {
   step(10); draw(4999);
   ok('restart warning expires on its own clock', labelIs(normal));
   vitals.dispose();
+}
+
+// ---- FB-03: the MP bar fades in over 0.6 s after startMpFade; HP row untouched; never started = full ----
+{
+  resetVitalsView();
+  ok('no fade started: alpha 1', mpFadeAlpha(5) === 1);
+  startMpFade(10);
+  ok('fade length is 0.6 s', MP_FADE_SEC === 0.6);
+  ok('t0: alpha 0', mpFadeAlpha(10) === 0);
+  ok('t0+0.3: half', Math.abs(mpFadeAlpha(10.3) - 0.5) < 1e-9);
+  ok('t0+0.6: full', mpFadeAlpha(10.61) === 1 && mpFadeAlpha(99) === 1);
+  const w = fakeWorld(30, 30, 20, 20), full = fakeUi(), half = fakeUi(), none = fakeUi();
+  resetVitalsView(); drawVitals(full, w, style, 1, true, undefined, true); // no fade: reference colours
+  resetVitalsView(); startMpFade(10);
+  drawVitals(none, w, style, 10, true, undefined, true);
+  drawVitals(half, w, style, 10.3, true, undefined, true);
+  const lab = '2,2'; // mp label cell
+  ok('alpha 0: MP row not drawn', !none._cells.has(lab));
+  ok('alpha 0: HP row still drawn', none._cells.has('6,1'));
+  const f = full._cells.get(lab), h = half._cells.get(lab);
+  ok('half fade: label colour halved', f && h && h.r === ((f.r * 0.5) | 0) && h.g === ((f.g * 0.5) | 0) && h.gi === f.gi, JSON.stringify([f, h]));
+  const f1 = full._cells.get('6,1'), h1 = half._cells.get('6,1');
+  ok('half fade: HP row unchanged', f1.r === h1.r && f1.g === h1.g);
+  resetVitalsView();
 }
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

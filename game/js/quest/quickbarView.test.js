@@ -39,4 +39,21 @@ assert.equal(at(X[2], y0 + 1), '[', 'sipping potion is the active slot');
 assert.equal(v.drawPotion, undefined); assert.equal(v.hitPotion, undefined);
 ui.cells.clear(); p.components.inventory.slots[0].n = 3; v.drawBar(ui, p, { sipT: 0 }, true);
 assert.equal(at(X[2] + 5, y0 + 3) + at(X[2] + 6, y0 + 3), 'x3', 'bar slot shows the stack count');
+// FB-03: locked ids. The spell in a hand slot is hidden (empty dotted slot); a locked potion stays but dimmed (40%).
+{
+  const d2 = { ...defs, 'spell.fireball': { id: 'spell.fireball', kind: 'spell', icon: { glyphs: ['  *  ', ' *** ', '  *  '], fg: ['  Z  ', ' ZZZ ', '  Z  '] } }, 'potion.mp': { id: 'potion.mp', kind: 'potion', icon } };
+  const v2 = createQuickbarView({ defs: d2, keys, rgb });
+  const q = { components: { quickbar: ['sword', 'spell.fireball', 'potion.mp', null, null, null], equipment: { set: 'melee', main: 'sword', off: null, ranged: null },
+    inventory: { slots: [{ id: 'potion.mp', n: 2 }] } } };
+  const lockedIds = { 'spell.fireball': true, 'potion.mp': true };
+  const x1 = v2.slotX(ui.cols, 1), x2 = v2.slotX(ui.cols, 2), y = v2.slotY(ui.rows);
+  ui.cells.clear(); v2.drawBar(ui, q, { sipT: 0 }, true, lockedIds);
+  assert.equal(ui.cells.get((x1 + 3) + ',' + (y + 2)).ch, ' ', 'locked spell: icon not drawn (hand box hidden)');
+  assert.equal(at(x1, y + 3), '.', 'locked spell: empty-slot dotted corner');
+  const dimR = ui.cells.get((x2 + 3) + ',' + (y + 1)).fr;
+  ui.cells.clear(); v2.drawBar(ui, q, { sipT: 0 }, true, null);
+  const fullR = ui.cells.get((x2 + 3) + ',' + (y + 1)).fr;
+  assert.ok(dimR > 0 && dimR < fullR && dimR === ((fullR * 0.4) | 0), 'locked potion.mp: dimmed to 40% (' + dimR + ' vs ' + fullR + ')');
+  assert.equal(ui.cells.get((x1 + 3) + ',' + (y + 2)).ch !== ' ', true, 'unlocked: spell icon drawn');
+}
 console.log('quickbarView.test: ok');

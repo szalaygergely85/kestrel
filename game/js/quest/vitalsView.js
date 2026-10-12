@@ -67,7 +67,7 @@ function getBarState(key) {
 
 /** Test hook: clears all remembered bar/hurt/chip view state (a fresh "load"). */
 export function resetVitalsView() {
-  barState.clear();
+  barState.clear(); mpFadeStart = -1;
 }
 
 function writeChar(ui, x, y, ch, fg, bg) {
@@ -175,6 +175,15 @@ function drawBar(ui, key, value, max, style, def, row, simTime, flashAgeMs = Inf
  * @param {boolean} visible - false on title/map/end/death cards (caller's call)
  * @param {{tick:number, manaFlashTick?: number}} [vitals] - US-080b: the sim object, for the mana-short flash timing only
  */
+/** FB-03: the MP bar fades in over MP_FADE_SEC after startMpFade(simTime) (main.js calls it on 'magic.unlocked'); never started = fully shown. */
+export const MP_FADE_SEC = 0.6;
+let mpFadeStart = -1;
+export function startMpFade(simTime) { mpFadeStart = simTime; }
+export function mpFadeAlpha(simTime) { if (mpFadeStart < 0) return 1; const e = simTime - mpFadeStart; return e <= 0 ? 0 : e >= MP_FADE_SEC ? 1 : e / MP_FADE_SEC; }
+// ui wrapper that scales fg/bg toward black by `a` (same layout, so the heart row never moves); one reused object, no per-frame allocation
+const fadeUi = { ui: null, a: 1, get cols() { return this.ui.cols; }, get rows() { return this.ui.rows; },
+  setCellRGB(x, y, code, fr, fg, fb, br, bg, bb) { const a = this.a; this.ui.setCellRGB(x, y, code, (fr * a) | 0, (fg * a) | 0, (fb * a) | 0, (br * a) | 0, (bg * a) | 0, (bb * a) | 0); } };
+
 export function drawVitals(ui, world, style, simTime, visible, vitals, showMp = true) {
   if (!visible || !style) return;
   const handle = world.get('player');
@@ -189,7 +198,9 @@ export function drawVitals(ui, world, style, simTime, visible, vitals, showMp = 
     // BUG-MANA-001: both ticks share the vitals clock, which pauses and resets independently of simTime.
     const flashAgeMs = vitals && vitals.manaFlashTick > 0
       ? ((vitals.tick - vitals.manaFlashTick) / 60) * 1000 : Infinity;
-    drawBar(ui, 'mp', mana.mp, mana.max, style, style.mp, style.layout.mpRow, simTime, flashAgeMs);
+    const fa = mpFadeAlpha(simTime);
+    if (fa >= 1) drawBar(ui, 'mp', mana.mp, mana.max, style, style.mp, style.layout.mpRow, simTime, flashAgeMs);
+    else if (fa > 0) { fadeUi.ui = ui; fadeUi.a = fa; drawBar(fadeUi, 'mp', mana.mp, mana.max, style, style.mp, style.layout.mpRow, simTime, flashAgeMs); fadeUi.ui = null; }
   }
 }
 
