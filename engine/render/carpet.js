@@ -359,7 +359,7 @@ export function carpetCells(gbuf, fb, cam, ctx, timeSec) {
       gbuf.z[i] = out.z; depth[i] = out.t;
       const lx = s[S_LX], ly = s[S_LY], inv = 1 / Math.sqrt(lx * lx + ly * ly + 1);
       alias[i] = packNormalOct(lx * inv, ly * inv, inv);
-      gbuf.vao[i] = (hashFast01(out.ix, out.iy, tintSalt) * 2 - 1) * TINT_AMP;
+      gbuf.vao[i] = ((hashFast24(out.ix, out.iy, tintSalt) * INV_2_24) * 2 - 1) * TINT_AMP;
       written++;
     }
   }

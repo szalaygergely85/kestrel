@@ -30,7 +30,7 @@ for (const n of ['NMAX', 'RING', 'SALT_JX', 'SALT_JY', 'SALT_RANK', 'SALT_H', 'S
   assert.ok(CARPET_TRACE_WGSL.includes(`const ${n}: i32 = ${C[n]};`), `${n} == carpet.js export`);
 }
 assert.equal(KIND_GRASS, 10); assert.equal(FACE_U, GB.FACE_U);
-if ('KIND_GRASS' in GB) assert.equal(KIND_GRASS, GB.KIND_GRASS, 'KIND_GRASS == GBuffer.js (D2c landed)'); else console.log('  note: GBuffer.KIND_GRASS not present yet (D2c); constant = 10 per 38.52 item 7');
+assert.equal(KIND_GRASS, GB.KIND_GRASS, 'KIND_GRASS == GBuffer.js');
 assert.ok(CARPET_WGSL.includes(`KIND_GRASS | (FACE_U << 8u)`) && /\(kVar << 16u\)/.test(CARPET_WGSL), 'GI.y packing: kind | face<<8 | mat<<16 (resolve.wgsl.js layout)');
 const w = (n) => CARPET_BLOCK.field(n).word;
 assert.deepEqual(['gridCols', 'seed', 'cellM', 'timeSec', 'fpK'].map(w), [0, 2, 8, 15, 23]);

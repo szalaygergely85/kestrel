@@ -11,7 +11,7 @@ import { defineUniformBlock } from './uniformBlock.js';
 import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, CELL_RAY_WGSL, CELL_RAY_PITCHED_WGSL, FALLOFF_FAST_WGSL, OCT_NORMAL_WGSL, HASH_FAST_WGSL, CLOUD_SHADOW_WGSL, HORIZON_AO_WGSL } from './common.wgsl.js';
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_SUN_STEPS } from '../../lighting.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
-import { FACE_PACKED, KIND_TERRAIN, KIND_MESH } from '../../GBuffer.js';
+import { FACE_PACKED, KIND_TERRAIN, KIND_MESH, KIND_GRASS } from '../../GBuffer.js';
 import { SUN_N_SHIFT, CLOUD_Q_SHIFT } from '../../shadowSun.js';
 import { AO_MAX } from '../../horizonAo.js';
 import { PSH_NEAR } from '../../shadowPoint.js';
@@ -83,6 +83,7 @@ const SUN_N_SHIFT: u32 = ${SUN_N_SHIFT}u;
 // US-026a S5: kind 7 (terrain) is lit by the sun analytically in the terrain shade pass (D-007).
 const KIND_TERRAIN: i32 = ${KIND_TERRAIN};
 const KIND_MESH: i32 = ${KIND_MESH}; // ME-20c
+const KIND_GRASS: i32 = ${KIND_GRASS}; // OB-073 D2e: carpet blade = terrain for light (twin lighting.js: sun term analytic in shade, no AO, N = GI.z lean-tilted)
 // BUG-LIGHT-002: same epsilon as lighting.js VIS_FLOOR_EPS (float32 noise at exact vis-grid boundaries).
 const VIS_FLOOR_EPS: f32 = 1e-3;
 // S8-B2-12c (38.13): cloud-shadow darkening byte shift, bits 24..31 of LIGHT.w (free - gpucompare's decode only
@@ -312,7 +313,8 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
   let faceU = giFace(gi.y);
   // US-041a: face 7 (rotated voxel-model part) decodes its normal from GA.w's octahedral bits
   var N: vec3f;
-  if (kindU == u32(KIND_TERRAIN)) { N = unpackNormalOct(textureLoad(uGI, cell, 0).z); } // ME-06: terrain's packed normal lives in GI.z
+  let isTer = kindU == u32(KIND_TERRAIN) || kindU == u32(KIND_GRASS);
+  if (isTer) { N = unpackNormalOct(textureLoad(uGI, cell, 0).z); } // ME-06: terrain's packed normal lives in GI.z
   else if (faceU == u32(FACE_PACKED)) { N = unpackNormalOct(select(textureLoad(uGA, cell, 0).w, textureLoad(uGI, cell, 0).z, kindU == u32(KIND_MESH))); } // ME-20c: kind 9 GA.w may carry vertex AO; its packed normal is the same bits in GI.z
   else { N = faceNormal(faceU); }
 
@@ -349,7 +351,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
   var cloudBits: u32 = 0u;
   if (u.sunMode == 2) {
     // ME-15c: shadow-map sun. Terrain only gets n (shade scales its analytic sun term by n/4); sun off -> terrain n = 4.
-    let isT = kindU == u32(KIND_TERRAIN);
+    let isT = isTer;
     if (u.sunOn != 0) {
       // cov is computed once per cell here (before the ndotsun test below) - terrain is included, 12b's shade
       // consumer reads the same byte for its analytic sun term.
@@ -368,7 +370,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
     } else if (isT) {
       sunN = 4;
     }
-  } else if (u.sunOn != 0 && kindU != u32(KIND_TERRAIN)) {
+  } else if (u.sunOn != 0 && !isTer) {
     var cloudQ2: u32 = 0u;
     if (u.cloudA.w > 0.0) { cloudQ2 = cloudShadeQ(P, u.sunDir); }
     let ndotsun = dot(N, u.sunDir);
@@ -386,7 +388,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
 
   // S8-B2-20 (38.17): horizon AO, LAST operation on L, after points/sun/cloud. Uniform branch - strength 0 runs
   // none of this (bit-identical), and terrain (kind 7) is excluded (D-007, analytic ambient in shade).
-  if (u.aoStrength > 0.0 && kindU != u32(KIND_TERRAIN)) {
+  if (u.aoStrength > 0.0 && !isTer) {
     let rc = aoRc(u.aoP.x, u.planeDistY, dist, u.aoP.z);
     var occSum: f32 = 0.0;
     occSum += aoTapCell(cell.x - rc, cell.y, P, N);

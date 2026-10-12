@@ -24,14 +24,14 @@ export const MAX_SUB = 16; // 4x4, matches resolve.wgsl.js's cap
 import { SKY_LUT_N } from './skyLut.js';
 import { MAX_LEVELS } from '../ShadeTextures.js';
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
-import { KIND_TERRAIN, KIND_MODEL, KIND_MESH, FACE_PACKED } from '../../GBuffer.js';
+import { KIND_TERRAIN, KIND_MODEL, KIND_MESH, KIND_GRASS, FACE_PACKED } from '../../GBuffer.js';
 import { WET_DARK, WET_SPEC } from '../../detailShade.js';
 import { VEG_TINT_WGSL } from '../../../mesh/vegTint.js'; // AUD-47
 import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // CLOUD_Q_SHIFT: S8-B2-12c (38.13)
 import { SKY_GLOW_WGSL } from '../../skyGlow.js';
 import { FOG_SHAPE_WGSL } from '../../fogShape.js';
 import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
-import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, FAR_BLEND_FP0, FAR_BLEND_FP1, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX } from '../../terrainShade.js';
+import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, FAR_BLEND_FP0, FAR_BLEND_FP1, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, GRASS_AO_LO, GRASS_TIP_H, GRASS_BASE_H, GRASS_LEAN_G, GRASS_LEVELS, GRASS_ROWS } from '../../terrainShade.js';
 
 
 
@@ -63,6 +63,7 @@ export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'fogView', type: 'vec4' }, // AUD-45, APPENDED: x = eye height (m), y = 1 when height fog + sun in-scatter are on (terrain worlds), z/w unused
   { name: 'skyGlowOn', type: 'vec4' }, // AUD-40 fix, APPENDED: x = 1 when sky glow + horizon haze apply (compositor gate: terrain world + timeOfDay palette), written every frame; DN-02 y = night glyph-luminance floor (liveLook.floorEff, 0 = off)
   { name: 'skyline', type: 'vec4' }, // MAP-06b (38.42), APPENDED: far-terrain fog cap x fogMax (0 = off), y fromZ, z seaFogMax, w seaLevel
+  { name: 'grass', type: 'vec4', count: 80 }, // OB-073 D2e, APPENDED: carpet variant table, 16 variants x GRASS_ROWS vec4 (terrainShade.js packGrassTable); all 0 = no carpet
 ]);
 
 export const SHADE_TEXTURES = Object.freeze([
@@ -199,6 +200,39 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
   o.fr = fr; o.fg = fgc; o.fb = fbc; o.br = br; o.bg = bgc; o.bb = bbc; o.glyph = code;
   return o;
 }
+// OB-073 D2e: kind-10 carpet blade (twin: terrainShade.js shadeGrass). No skyline cap, glyph by h01 / lean, colour = ramp(h01 + tint).
+fn shadeGrass(t: f32, variant: i32, h01: f32, lean: f32, tint: f32, b: f32) -> TerrainOut {
+  var bE = b * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness);
+  if (su.skyGlowOn.y > 0.0 && bE < su.skyGlowOn.y) { bE = su.skyGlowOn.y; }
+  let bcc = max(bE, 0.0);
+  var gain = su.fgMin + (1.0 - su.fgMin) * samplePowLUT(min(bcc, 1.0));
+  if (bcc > 1.0) { gain = min(su.fgMaxGain, gain + (bcc - 1.0) * 0.5); }
+  gain = wetGain(gain, bE);
+  let x = clamp(h01 + tint, 0.0, 1.0);
+  let gb = variant * ${GRASS_ROWS};
+  let n = max(i32(su.grass[gb].w), 2);
+  let xf = x * f32(n - 1);
+  let i0 = min(i32(floor(xf)), n - 2);
+  let fx = xf - f32(i0);
+  let c0 = su.grass[gb + i0].xyz; let c1 = su.grass[gb + i0 + 1].xyz;
+  var fr = (c0.x + (c1.x - c0.x) * fx) * gain; var fgc = (c0.y + (c1.y - c0.y) * fx) * gain; var fbc = (c0.z + (c1.z - c0.z) * fx) * gain;
+  var br = fr * 0.3; var bgc = fgc * 0.3; var bbc = fbc * 0.3;
+  var code = i32(select(select(su.grass[gb + 2].w, su.grass[gb + 1].w, h01 < ${GRASS_BASE_H.toFixed(4)}), su.grass[gb + 3].w, h01 > ${GRASS_TIP_H.toFixed(4)}));
+  if (lean < -${GRASS_LEAN_G.toFixed(4)}) { code = i32(su.grass[gb + 4].x); } else if (lean > ${GRASS_LEAN_G.toFixed(4)}) { code = i32(su.grass[gb + 4].y); }
+  var f = (t - su.terrainFogStart) / (su.terrainFogFull - su.terrainFogStart);
+  f = clamp(f, 0.0, 1.0);
+  f = pow(f, su.terrainFogCurve);
+  let fcr = su.terrainFogNearRGB.x + (su.terrainFogFarRGB.x - su.terrainFogNearRGB.x) * f;
+  let fcg = su.terrainFogNearRGB.y + (su.terrainFogFarRGB.y - su.terrainFogNearRGB.y) * f;
+  let fcb = su.terrainFogNearRGB.z + (su.terrainFogFarRGB.z - su.terrainFogNearRGB.z) * f;
+  fr += (fcr - fr) * f; fgc += (fcg - fgc) * f; fbc += (fcb - fbc) * f;
+  let fBg = min(1.0, 1.1 * f);
+  br += (fcr - br) * fBg; bgc += (fcg - bgc) * fBg; bbc += (fcb - bbc) * fBg;
+  if (f > 0.85) { code = 0; }
+  var o: TerrainOut;
+  o.fr = fr; o.fg = fgc; o.fb = fbc; o.br = br; o.bg = bgc; o.bb = bbc; o.glyph = code;
+  return o;
+}
 `;
 
 // US-073b (38.25): the stable-glyph variant adds one r8uint target `lvl` (@location(2)) = the ramp level of the picked glyph (255 = none /
@@ -218,8 +252,9 @@ function buildShadeWgsl(withLevel) {
       out: ' o.lvl = lvOut;',
       // OB-073 calm ground: no shimmer branch any more (glint removed), terrain is always level 255 (twin: terrainShade.js LEVEL_NONE)
       terr: ' o.lvl = 255u;',
+      grass: ' o.lvl = gLv;', // OB-073 D2e: kind-10 stable level = ramp position bucket (twin: shadeGrass out.level)
     }
-    : { field: '', init: '', vars: '', set: '', stip: '', out: '', terr: '' };
+    : { field: '', init: '', vars: '', set: '', stip: '', out: '', terr: '', grass: '' };
   return `
 ${SHADE_BLOCK.wgsl}
 @group(0) @binding(0) var uGI: texture_2d<u32>;    // resolved: x = planeId, y = kind|face|mask|cov|mat, z = packed normal (terrain)
@@ -660,6 +695,30 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
     let fbQ = floor(clamp(to.fb, 0.0, 255.0) + 0.5);
     o.fg = vec4f(toByte01(frQ + LcT.x * 0.5 * 255.0), toByte01(fgQ + LcT.y * 0.5 * 255.0), toByte01(fbQ + LcT.z * 0.5 * 255.0), toByte01(f32(to.glyph)));
     o.bg = vec4f(toByte01(to.br), toByte01(to.bg), toByte01(to.bb), 1.0);${L.terr}
+    return o;
+  }
+
+  // OB-073 D2e: kind 10 (carpet blade): lit like terrain (GI.z = lean-tilted normal, GA.w = colour shift), AO mix(0.55, 1, h01) on the ambient.
+  if (kindU == ${KIND_GRASS}u) {
+    let gaG = textureLoad(uGA, cell, 0);
+    let hG = bitcast<f32>(gaG.x); let lnG = bitcast<f32>(gaG.y); let tnG = bitcast<f32>(gaG.w);
+    let NG = unpackNormalOct(textureLoad(uGI, cell, 0).z);
+    let ndotlG = NG.x * su.sunDir.x + NG.y * su.sunDir.y + NG.z * su.sunDir.z;
+    let lightG = textureLoad(uLightTex, cell, 0);
+    var sunFG = 1.0;
+    if (su.sunMapOn != 0) { sunFG = f32((lightG.w >> ${SUN_N_SHIFT}u) & ${SUN_N_MASK}u) * 0.25; }
+    let cFg = 1.0 - f32((lightG.w >> ${CLOUD_Q_SHIFT}u) & 255u) * (1.0 / 255.0);
+    let bG = su.ambientI * (${GRASS_AO_LO.toFixed(4)} + ${(1 - GRASS_AO_LO).toFixed(4)} * hG) + su.sunI * max(0.0, ndotlG) * sunFG * cFg;
+    let LcG = bitcast<vec3f>(lightG.xyz);
+    var distG = bitcast<f32>(textureLoad(uDepth, cell, 0).x);
+    if (su.projMode != 0) { distG *= fogScaleCell(cell.y, gridSize.y); }
+    let go = shadeGrass(distG, i32(giMat(gi.y)), hG, lnG, tnG, bG + max(LcG.x, max(LcG.y, LcG.z)));
+    let gLv = u32(floor(clamp(hG + tnG, 0.0, 1.0) * ${GRASS_LEVELS}));
+    let grQ = floor(clamp(go.fr, 0.0, 255.0) + 0.5);
+    let ggQ = floor(clamp(go.fg, 0.0, 255.0) + 0.5);
+    let gbQ = floor(clamp(go.fb, 0.0, 255.0) + 0.5);
+    o.fg = vec4f(toByte01(grQ + LcG.x * 0.5 * 255.0), toByte01(ggQ + LcG.y * 0.5 * 255.0), toByte01(gbQ + LcG.z * 0.5 * 255.0), toByte01(f32(go.glyph)));
+    o.bg = vec4f(toByte01(go.br), toByte01(go.bg), toByte01(go.bb), 1.0);${L.grass}
     return o;
   }
 

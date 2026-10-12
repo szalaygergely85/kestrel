@@ -265,7 +265,21 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
 // ---- OB-073 D2c (38.52 item 7): kind-10 grass carpet shade branch -----------------------------------------
 export const GRASS_AO_LO = 0.55;      // ambient AO = mix(0.55, 1, h01): dark blade base
 export const GRASS_TIP_H = 0.75, GRASS_BASE_H = 0.2, GRASS_LEAN_G = 0.35;
-const GRASS_GLYPHS = [',', '|', "'", '/', '\\']; // base, mid, tip, leanL, leanR (38.52 defaults)
+const GRASS_GLYPHS = [',', '|', "'", '\\', '/']; // base, mid, tip, leanL, leanR: v < 0 = tip leans screen-left = a backslash stroke (arch review 2026-10-12c)
+export const GRASS_LEVELS = 15.999;   // stable level byte of a kind-10 cell = floor(ramp position x * 15.999) = 0..15 (same in the grass shade WGSL)
+export const GRASS_ROWS = 5;          // vec4 rows per variant in the GPU table: ramp k=0..3 (rgb; row0.w = n, row1..3.w = base/mid/tip glyph code), row 4 = (leanL, leanR)
+/** Pack a grassTableFor() table into the GPU uniform layout (16 variants x GRASS_ROWS vec4) into `out` (Float32Array(80*4)); no alloc. */
+export function packGrassTable(tab, out) {
+  out.fill(0);
+  const nv = Math.min(15, tab.n.length - 1);
+  for (let id = 1; id <= nv; id++) {
+    const o = id * GRASS_ROWS * 4, n = tab.n[id];
+    for (let k = 0; k < 4; k++) for (let c = 0; c < 3; c++) out[o + k * 4 + c] = tab.ramp[id * 12 + Math.min(k, n - 1) * 3 + c];
+    out[o + 3] = n; out[o + 7] = tab.glyph[id * 5]; out[o + 11] = tab.glyph[id * 5 + 1]; out[o + 15] = tab.glyph[id * 5 + 2];
+    out[o + 16] = tab.glyph[id * 5 + 3]; out[o + 17] = tab.glyph[id * 5 + 4];
+  }
+  return out;
+}
 const _grassTabs = new WeakMap();
 /**
  * Per-variant shade table of a carpet config (built once per cfg, then cached): ramp = RGB bytes (0..255) base -> tip,
@@ -316,7 +330,7 @@ export function shadeGrass(t, variant, h01, lean, tint, b, tab, ctx, out) {
   const fBg = Math.min(1, 1.1 * f);
   br += (fcr - br) * fBg; bg += (fcg - bg) * fBg; bb += (fcb - bb) * fBg;
   if (f > 0.85) code = 0;
-  out.glyph = code; out.level = LEVEL_NONE;
+  out.glyph = code; out.level = Math.floor(x * GRASS_LEVELS); // D2e: stable level = ramp position bucket
   out.fg[0] = toByte(fr); out.fg[1] = toByte(fg); out.fg[2] = toByte(fb);
   out.bg[0] = toByte(br); out.bg[1] = toByte(bg); out.bg[2] = toByte(bb);
   return out;

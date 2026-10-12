@@ -10,16 +10,15 @@
 // Bindings: @group(0) 0 GI, 1 GA, 2 DEPTH (resolved, rgba32uint/rgba32uint/r32uint), 3 CLASS (r8uint, classCellM grid), 4 NEARH (r32float
 // near-band height, texel = baked cell, manual bilinear = util.gridHeight); @group(1) @binding(0) CarpetU. Targets: GI, GA, DEPTH.
 import { defineUniformBlock } from './uniformBlock.js';
-import { HASH_FAST_WGSL, CELL_RAY_PITCHED_WGSL, WIND_AT_WGSL, FULLSCREEN_VS_WGSL } from './common.wgsl.js';
+import { HASH_FAST_WGSL, CELL_RAY_PITCHED_WGSL, WIND_AT_WGSL, FULLSCREEN_VS_WGSL, OCT_NORMAL_WGSL } from './common.wgsl.js';
 import {
   NMAX, ROOT_JITTER, LEAN_CAP, LEAN_PER_MS, PATCH_LO, PATCH_RANGE, GUST_LO, GUST_RANGE, FADE_FP0, FADE_FP1, FADE_R0, FADE_R1, RING,
-  SALT_JX, SALT_JY, SALT_RANK, SALT_H, SALT_CJX, SALT_CJY, SALT_PATCH, SALT_GUST, MAX_VARIANTS,
+  SALT_JX, SALT_JY, SALT_RANK, SALT_H, SALT_CJX, SALT_CJY, SALT_PATCH, SALT_GUST, MAX_VARIANTS, SALT_TINT, TINT_AMP,
 } from '../../carpet.js';
 import { FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX } from '../../terrainShade.js';
 
-/** GBuffer.js gets KIND_GRASS in OB-073-D2c (the same value); carpet.wgsl.test.js asserts equality once it exists. */
-export const KIND_GRASS = 10;
-export const FACE_U = 5; // GBuffer.js FACE_U
+import { KIND_GRASS, FACE_U } from '../../GBuffer.js';
+export { KIND_GRASS, FACE_U }; // one owner: GBuffer.js (D2c landed)
 export const CARPET_VTAB_ROWS = 2;          // vec4 rows per variant: (density, hMin, hMax, bladeW), (swayGain, 0, 0, 0). Ramp/glyphs: D2e table
 export const CARPET_KNOTS = 16;             // 64 wind knots as 16 vec4
 const f = (v) => { const s = String(v); return /[.e]/.test(s) ? s : s + '.0'; }; // f32 literal text
@@ -77,8 +76,8 @@ const BIG: f32 = 1.0e30; // JS Infinity
 var<private> rEx: f32; var<private> rEy: f32; var<private> rEz: f32;
 var<private> rDx: f32; var<private> rDy: f32; var<private> rDz: f32;
 var<private> rN2: f32; var<private> rT0: f32; var<private> rT1: f32;
-var<private> sLx: f32; var<private> sLy: f32; var<private> sH01: f32; var<private> sZ: f32; var<private> sTb: f32; var<private> sVar: u32;
-var<private> kLx: f32; var<private> kLy: f32; var<private> kH01: f32; var<private> kZ: f32; var<private> kTb: f32; var<private> kVar: u32;
+var<private> sLx: f32; var<private> sLy: f32; var<private> sH01: f32; var<private> sZ: f32; var<private> sTb: f32; var<private> sVar: u32; var<private> sTint: f32;
+var<private> kLx: f32; var<private> kLy: f32; var<private> kH01: f32; var<private> kZ: f32; var<private> kTb: f32; var<private> kVar: u32; var<private> kTint: f32;
 
 fn hash24(ix: i32, iy: i32, s: i32) -> f32 { return f32(hashFastU(ix, iy, s) >> 8u) * (1.0 / 16777216.0); }
 
@@ -159,6 +158,7 @@ fn bladeHit(ix: i32, iy: i32) -> bool {
   let f2 = clamp((dXY / cu.radiusM - FADE_R0) / (FADE_R1 - FADE_R0), 0.0, 1.0);
   let fade = (1.0 - f1 * f1 * (3.0 - 2.0 * f1)) * (1.0 - f2 * f2 * (3.0 - 2.0 * f2));
   if (rank >= row0.x * fade) { return false; }
+  sTint = (hash24(ix, iy, seed + ${SALT_TINT}) * 2.0 - 1.0) * ${f(TINT_AMP)};
   sVar = v; sH01 = sr / h; sZ = zr; sTb = tc; sLx = lx; sLy = ly;
   return true;
 }
@@ -215,7 +215,7 @@ fn traceCarpet(tHit: f32) -> bool {
           let cr = ((f32(i) + 0.5) * c - rEx) * rDy - ((f32(j) + 0.5) * c - rEy) * rDx;
           if (cr > rej || cr < -rej) { continue; }
         }
-        if (bladeHit(i, j) && sTb < best) { best = sTb; kTb = sTb; kH01 = sH01; kZ = sZ; kVar = sVar; kLx = sLx; kLy = sLy; }
+        if (bladeHit(i, j) && sTb < best) { best = sTb; kTb = sTb; kH01 = sH01; kZ = sZ; kVar = sVar; kTint = sTint; kLx = sLx; kLy = sLy; }
       }
     }
     prevCi = ci; prevCj = cj;
@@ -236,6 +236,7 @@ ${HASH_FAST_WGSL}
 ${WIND_AT_WGSL}
 ${CELL_RAY_PITCHED_WGSL}
 ${FULLSCREEN_VS_WGSL}
+${OCT_NORMAL_WGSL}
 fn classTexel(i: i32, j: i32) -> u32 { return textureLoad(uClass, vec2i(i, j), 0).x; }
 fn nearTexel(i: i32, j: i32) -> f32 { return textureLoad(uNearH, vec2i(i, j), 0).x; }
 fn windKnot(i: u32) -> f32 { return cu.knots[i >> 2u][i & 3u]; }
@@ -267,8 +268,9 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   // screen right in xy = (dy, -dx) / |d_xy|; lean ratio / LEAN_CAP
   let inv = select(0.0, 1.0 / sqrt(rN2), rN2 > 1.0e-12);
   let lean = clamp((kLx * rDy - kLy * rDx) * inv / LEAN_CAP, -1.0, 1.0);
-  o.gi = vec4u(gi.x, KIND_GRASS | (FACE_U << 8u) | (gi.y & 0xf000u) | (kVar << 16u), gi.z, gi.w);
-  o.ga = vec4u(bitcast<u32>(kH01), bitcast<u32>(lean), bitcast<u32>(kZ), ga.w);
+  let invN = 1.0 / sqrt(kLx * kLx + kLy * kLy + 1.0);
+  o.gi = vec4u(gi.x, KIND_GRASS | (FACE_U << 8u) | (gi.y & 0xf000u) | (kVar << 16u), packNormalOct(vec3f(kLx * invN, kLy * invN, invN)), gi.w); // lean-tilted normal (twin: alias in carpetCells)
+  o.ga = vec4u(bitcast<u32>(kH01), bitcast<u32>(lean), bitcast<u32>(kZ), bitcast<u32>(kTint)); // GA.w = per-blade colour shift (twin: gbuf.vao)
   o.depth = vec4u(bitcast<u32>(kTb / dirLen), 0u, 0u, 0u);
   return o;
 }
