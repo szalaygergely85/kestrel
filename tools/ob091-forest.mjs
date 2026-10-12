@@ -13,7 +13,7 @@
 //    in the Rook ruin poi072, a small dead snag, mushrooms, ferns), a view opening toward the river (tree-free wedge from the road).
 //  5 never adds within the keep-outs (ford, stones, water, relays, waystone, breach, emberpods, bears, every entity) or near the route.
 // Cap trees (red-cap pickups cap1..5 stand at their feet) are never removed. Untouched rows keep their ids; removed rows are deleted;
-// added rows are ob91_### (removed and rebuilt on every run). Spot centres + the "before" snapshot are frozen in
+// added rows are ob91-### (a hyphen: an id ending _<n> counts as an editor-minted id and would trip the world's nextId check) (removed and rebuilt on every run). Spot centres + the "before" snapshot are frozen in
 // tools/ob091-forest.spots.json on the first run so later runs reproduce the same design.
 // Writes the preview data design/preview/ob091-forest.data.js (design/preview/ob091-forest.html draws before/after as dots).
 // Usage (repo root): node tools/ob091-forest.mjs [--dry-run]
@@ -43,7 +43,7 @@ void [paletteMod, detailPassMod, terrainDef, lanternMod, leverMod, voxelPropsMod
 
 const dry = process.argv.includes('--dry-run');
 const FILE = 'content/worlds/world_m1.world.json', SPOTS = 'tools/ob091-forest.spots.json', DATA = 'design/preview/ob091-forest.data.js';
-const SCATTER_RE = /^(road[A-Z]\d+|mdw\d+)$/, ADD_RE = /^ob91_\d+$/;
+const SCATTER_RE = /^(road[A-Z]\d+|mdw\d+)$/, ADD_RE = /^ob91[-_]\d+$/;
 const CLEAR = 4;
 
 // ---- geometry -------------------------------------------------------------------------------------------------------------------
@@ -197,7 +197,7 @@ const okAdd = (x, y, r, minD) => corridor(x, y) >= minD + r && !wet(x, y) && GT(
 const footZ = (x, y, e, mode) => { const zs = [G(x, y), G(x + e, y), G(x - e, y), G(x, y + e), G(x, y - e)]; return mode === 'min' ? Math.min(...zs) : Math.max(...zs); };
 function add(name, x, y, { scale, yawDeg = 0, minD = 2, lift = 0, zMode = 'max', shadow = false, collide } = {}) {
   const key = 'quaternius/' + name; if (!has(key)) return null;
-  const id = 'ob91_' + String(added.length).padStart(3, '0');
+  const id = 'ob91-' + String(added.length).padStart(3, '0');
   const sc0 = scale ?? (PLANT_SCALE[name] ? plantScaleFor(name, id) : 1), ext = extOf(key, sc0), r = (/Tree/.test(name) ? 0.45 : 0.65) * ext;
   if (!okAdd(x, y, r, minD)) return null;
   const st = { id, mesh: key, origin: { x: +x.toFixed(2), y: +y.toFixed(2), z: +(footZ(x, y, ext * 0.5, zMode) + lift).toFixed(2) }, yawDeg: ((Math.round(yawDeg) % 360) + 360) % 360 };
