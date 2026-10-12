@@ -9,7 +9,7 @@ import { MeshGroupSet, addMeshStructuresBatched } from '../../../mesh/meshGroups
 import { instancedRanges, noteListOverflow, MAX_LIST_INSTANCES } from '../../../mesh/DrawList.js';
 import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../../mesh/voxelMesh.js';
-import { INSTANCE_BYTES } from '../../../mesh/instances.js';
+import { INSTANCE_BYTES, meshIsMasked } from '../../../mesh/instances.js';
 import { KIND_MODEL, FACE_PACKED } from '../../GBuffer.js';
 import { projTerms, shearProjection, pitchedTermsInto, createPitchedTerms, resolveProjection, viewProjAtOrigin } from '../../projection.js';
 import { frustumPlanes } from '../../../mesh/culling.js';
@@ -190,8 +190,10 @@ export class WgRasterPass {
             this.device.bind(this._instMask(entry), bd); this.device.drawIndirect(e.argsBuffer, e.argsOffset);
           } else {
             b.uniforms = this.u; b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer || null; b.instanceBuffer = e.instanceBuffer;
-            if (this.vaoOn && entry.aoBuffer) { this.aoExtra[0] = entry.aoBuffer; b.extraBuffers = this.aoExtra; this.device.bind(this._aoPipe('instance'), b); }
-            else { b.extraBuffers = null; this.device.bind(this.instancePipe, b); } this.device.drawIndirect(e.argsBuffer, e.argsOffset);
+            // OB-089 (OB-061 on the GPU cull path): LOD1 of a masked LOD0 (opaque leaf cards) must draw WITHOUT back-face cull, like the CPU item's NO_CULL|TWO_SIDED.
+            const open = lod === 1 && !!e.group.mesh && meshIsMasked(e.group.mesh);
+            if (this.vaoOn && entry.aoBuffer) { this.aoExtra[0] = entry.aoBuffer; b.extraBuffers = this.aoExtra; this.device.bind(this._aoPipe(open ? 'instanceOpen' : 'instance'), b); }
+            else { b.extraBuffers = null; this.device.bind(open ? this.instanceOpenPipe : this.instancePipe, b); } this.device.drawIndirect(e.argsBuffer, e.argsOffset);
           }
           draws++;
         }
