@@ -333,6 +333,8 @@ export class World {
     // `packed.version`) - only `placeStructure` bumps this.
     this.structVersion = 0;
     this.placementGrid = null; this._placementGridVersion = 0; // STREAM-01a: built at the end of load
+    /** STREAM-01b: `enabled` false (`?stream=0`) = the feeds ignore the grid and run today's all-placements path. Not serialized. */
+    this.streaming = { enabled: true };
     this.nextId = 0;
     this.state = {};
     // US-027a (architecture.md 21.8): `null` until `load()` sets it from
@@ -846,6 +848,7 @@ export class World {
 
     w.placementGrid = new PlacementGrid(w.structures, def.streaming); // STREAM-01a (38.51): derived residency, never serialized
     w._placementGridVersion = w.structVersion;
+    if (def.streaming && def.streaming.enabled === false) w.streaming.enabled = false;
 
     if (w.events) w.events.emit('world:loaded', { world: w });
     return w;

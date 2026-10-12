@@ -71,7 +71,7 @@ export function buildShadowList(list, cameraList, world, planes, src) {
   addStructures(list, world, c, src.cache, src.fogFarM || 2000);
   if (src.meshCache && src.meshIdFor) {
     let b = null;
-    if (src.eye && src.meshCastM && src.meshCastM > 0) { b = _budget; b.eye = src.eye; b.cutM = src.meshCastM; b.cap = src.meshCastCap == null ? MAX_MESH_DRAWS : src.meshCastCap; } // MESH-SHADOW-02; no eye = old behaviour
+    if (src.eye && src.meshCastM && src.meshCastM > 0) { b = _budget; b.eye = src.eye; b.cutM = world.placementGrid && world.streaming && world.streaming.enabled ? Math.min(src.meshCastM, world.placementGrid.opts.minM) : src.meshCastM; b.cap = src.meshCastCap == null ? MAX_MESH_DRAWS : src.meshCastCap; } // MESH-SHADOW-02; no eye = old behaviour
     // SHADOW-ROT fix: the nearest-MAX_MESH_DRAWS (64) pick is ranked from the EYE (as the camera feed), never from the
     // yaw-dependent box centre (aheadM in front): ranking from the centre swapped out the props around the player when the
     // camera turned (world_m1 has > 64 placements in range). Same set as the camera draws; the sun-plane cull decides.

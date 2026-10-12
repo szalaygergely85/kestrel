@@ -22,7 +22,7 @@ import { cutoffByte } from '../render/MaskAtlas.js';
 import { localDirToWorld } from '../core/transform.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
 import { groupRadius } from './instances.js';
-import { setLazyView, pumpLazyMeshes, requestMesh, touchMesh, lazyHoldRadius, LOAD_MARGIN_M } from './lazyMesh.js';
+import { setLazyView, pumpLazyMeshes, requestMesh, touchMesh, lazyHoldRadius, warmLazyMeshes, LOAD_MARGIN_M } from './lazyMesh.js';
 import { createClothMesh, updateClothMesh } from './clothMesh.js';
 
 /** `DrawItem.type` values. */
@@ -494,21 +494,34 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
   // centre), props beyond cutM dropped, at most `cap` nearest kept (ties: lower structure index = lower object id).
   const bEye = shadowOnly && budget ? budget.eye : null, bCut = bEye ? budget.cutM : 0;
   const maxKeep = bEye ? Math.min(MAX_MESH_DRAWS, budget.cap) : MAX_MESH_DRAWS;
-  if (groups) groups.chosen.fill(0);
+  if (groups) { groups.chosen.fill(0); if (groups.hits) groups.hits.fill(0); }
+  // STREAM-01b (38.51): residency grid. Re-fetched every frame (never cached: a structVersion change replaces the object); the camera
+  // feed advances it, the shadow feed only reads the lists. Off (`world.streaming.enabled` false / no grid) = today's all-placements path.
+  const grid = world.streaming && world.streaming.enabled && world.refreshPlacementGrid ? world.refreshPlacementGrid() : null;
+  let gl = null, gr2 = null, gN = structs.length, warmM = 0;
+  if (grid) {
+    if (!shadowOnly || !grid.evaluated) grid.update(lodCentreX(cam), lodCentreY(cam));
+    gl = grid.activeList; gr2 = grid.reach2; gN = grid.activeCount; warmM = grid.opts.warmM;
+  }
   if (!shadowOnly) { setLazyView(lodCentreX(cam), lodCentreY(cam), fogFarM); pumpLazyMeshes(); } // MESH-LOAD-01: decode queued payloads (<= 2 / 4 ms), remember the eye for scatter groups
   const fr = shadowOnly ? null : planes;
   let count = 0, requested = 0;
-  for (let i = 0; i < structs.length; i++) {
+  for (let q = 0; q < gN; q++) {
+    const i = gl ? gl[q] : q; // grid: ascending active structure indices (same order as 0..N, so ranking ties are unchanged)
     if (structs[i].kind !== 'mesh') continue;
     if (shadowOnly && structs[i].castShadow === false) continue; // MESH-SHADOW-01
     const d = bEye ? bboxDist(bEye, structs[i].bbox) : bboxDist(cam, structs[i].bbox);
-    if (!shadowOnly && structs[i].mesh.lazyOrigin && !structs[i].mesh.lazy && d <= lazyHoldRadius()) touchMesh(structs[i].mesh); // S8-B2-03: LRU keep-alive inside loadM + 60 m
+    // per-placement warm radius (reach + warmM) with the grid, else the global load / hold radius
+    let rw2 = 0;
+    if (gl) { const rw = Math.sqrt(gr2[i]) + warmM; rw2 = rw * rw; }
+    if (!shadowOnly && structs[i].mesh.lazyOrigin && !structs[i].mesh.lazy && (gl ? d * d <= rw2 : d <= lazyHoldRadius())) touchMesh(structs[i].mesh); // S8-B2-03: LRU keep-alive inside loadM + 60 m
     if (structs[i].mesh.lazy) { // MESH-LOAD-01: payload not loaded = draws nothing; ask for it when within draw distance + margin
-      if (!shadowOnly && d <= fogFarM + LOAD_MARGIN_M) requestMesh(structs[i].mesh);
+      if (!shadowOnly && (gl ? d * d <= rw2 : d <= fogFarM + LOAD_MARGIN_M)) requestMesh(structs[i].mesh);
       continue;
     }
     if (d > fogFarM || (bEye && d > bCut)) continue;
-    if (groups && groups.has(i)) { groups.chosen[i] = 1; continue; } // BUG-MESH-MISSING-01: instanced groups are not capped (cheap); only the frustum cull in push() thins them
+    if (gl && d * d > gr2[i]) continue; // per-placement reach: small props stop before big ones
+    if (groups && groups.has(i)) { groups.chosen[i] = 1; if (groups.hits) groups.hits[groups.slotOf[i]]++; continue; } // BUG-MESH-MISSING-01: instanced groups are not capped (cheap); only the frustum cull in push() thins them
     const bb = structs[i].bbox;
     if (fr && classifyAABB(fr, bb.x0, bb.y0, bb.z0, bb.x1, bb.y1, bb.z1) === CULL_OUT) continue; // OB-039: off-screen singles never take a slot
     requested++;
@@ -527,6 +540,7 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
     while (j >= 0 && _mDist[j] > di) { _mOrder[j + 1] = _mOrder[j]; _mDist[j + 1] = _mDist[j]; j--; }
     _mOrder[j + 1] = oi; _mDist[j + 1] = di;
   }
+  if (grid && !shadowOnly) warmLazyMeshes(structs, grid, lodCentreX(cam), lodCentreY(cam)); // warm ring: decode before it becomes active
   if (!shadowOnly) { // OB-039: F3 / tests - single placed-mesh draws wanted vs kept by the cap (camera feed only)
     meshFeedStats.requested = requested; meshFeedStats.kept = count; meshFeedStats.dropped = requested - count; meshFeedStats.frustum = fr ? 1 : 0;
   }

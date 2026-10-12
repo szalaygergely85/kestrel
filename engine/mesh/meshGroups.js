@@ -25,7 +25,6 @@ import { MAX_VOX_PARTS } from '../voxel/VoxelModel.js';
 import { addMeshStructures, placementMatrix12, meshObjectId, meshFeedStats, DRAW_FLAG_ONE_PART, DRAW_FLAG_NO_CULL, DRAW_TAIL_RESERVE } from './DrawList.js';
 import { INSTANCE_STRIDE, INST_OBJECT_ID, INST_FLAGS, makeInstanceGroup, createInstanceParts, groupRadius, touchInstances } from './instances.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
-import { lazyMeshVersion } from './lazyMesh.js';
 
 /** Total grouped instances per set (OB-043, 38.46: 2048 -> 4096; build-time only: 2 x 64 B CPU rows per member + one GPU vertex buffer per group). */
 export const MAX_GROUPED_INSTANCES = 4096;
@@ -96,31 +95,34 @@ function meshHasMask(mesh) {
 
 export class MeshGroupSet {
   constructor() {
-    /** @type {any[]} one entry per group (see `_build`) */
+    /** @type {any[]} one entry per PRESENT group (compact view of `slots`, build order; see `_build`) */
     this.groups = [];
+    /** STREAM-01b (38.51): one fixed slot per distinct mesh (first-placement order; `g` null while a shell / not groupable). A lazy load or evict rebuilds only its own slot. @type {any[]} */
+    this.slots = [];
     /** @type {Uint8Array} structure index -> 1 when drawn by a group (this build) */
     this.grouped = new Uint8Array(0);
     /** @type {Uint8Array} structure index -> 1 when the feed's nearest-MAX_MESH_DRAWS selection picked it this frame (set by `addMeshStructures`) */
     this.chosen = new Uint8Array(0);
+    /** structure index -> slot index (-1 = none); `hits[slot]` = chosen members this frame (set by `addMeshStructures`, lets `push` skip untouched groups) */
+    this.slotOf = new Int32Array(0); this.hits = new Int32Array(0);
     /** @type {any} */ this._structs = null;
     this._len = -1;
     this._ver = -1;
-    this._lazyVer = -1; // MESH-LOAD-01: lazyMeshVersion() at the last build
+    this._rv = -1; // world.renderVersion at the last snapshot check
     /** @type {any} */ this._idFor = null;
     /** @type {any} */ this._cache = null;
-    /** F3 stats: placements grouped / instances kept by the last `push`. */
-    this.stats = { groups: 0, members: 0, kept: 0, builds: 0, groupsDropped: 0, instancesDropped: 0 };
+    /** F3 stats: placements grouped / instances kept by the last `push`; `builds` = full rebuilds, `groupBuilds` = single-slot (re)builds. */
+    this.stats = { groups: 0, members: 0, kept: 0, builds: 0, groupBuilds: 0, groupsDropped: 0, instancesDropped: 0 };
     /** OB-043 per-group scratch (sized at build): nearest survivor distance^2, sort order, take flag. */
     this._gd = new Float64Array(0); this._go = new Int32Array(0); this._gt = new Uint8Array(0);
-    /** @type {Float64Array} per member x,y,z,yawDeg,scale snapshot (5 each), concatenated over groups */
-    this._snap = new Float64Array(0);
   }
 
   /** @param {number} si structure index @returns {boolean} */
   has(si) { return si < this.grouped.length && this.grouped[si] === 1; }
 
   /**
-   * Rebuilds the groups when anything relevant changed. Allocates only on a rebuild.
+   * Rebuilds the groups when anything relevant changed. Allocates only on a rebuild (full) or when one mesh's payload loaded /
+   * was evicted (that mesh's slot only). Per frame: O(distinct meshes) lazy-state compares + (renderVersion changed only) the member snapshot check.
    * @param {import('../world/World.js').World} world
    * @param {import('./DrawList.js').MeshDrawCache} cache
    * @param {(key: string) => number} idFor
@@ -128,17 +130,26 @@ export class MeshGroupSet {
   update(world, cache, idFor) {
     const structs = world.structures;
     const ver = /** @type {any} */ (world).structVersion | 0;
-    let dirty = lazyMeshVersion() !== this._lazyVer || structs !== this._structs || structs.length !== this._len || ver !== this._ver || idFor !== this._idFor || cache !== this._cache;
-    if (!dirty) dirty = !this._snapshotValid(structs);
-    if (dirty) this._build(structs, ver, cache, idFor, world.maskAtlas || null);
+    const rv = /** @type {any} */ (world).renderVersion | 0;
+    let dirty = structs !== this._structs || structs.length !== this._len || ver !== this._ver || idFor !== this._idFor || cache !== this._cache;
+    if (!dirty && rv !== this._rv) { this._rv = rv; dirty = !this._snapshotValid(structs); }
+    if (dirty) { this._build(structs, ver, cache, idFor, world.maskAtlas || null); this._rv = rv; return; }
+    let relist = false;
+    for (let k = 0; k < this.slots.length; k++) {
+      const sl = this.slots[k];
+      if (!!sl.mesh.lazy === sl.wasLazy) continue;
+      sl.wasLazy = !!sl.mesh.lazy;
+      this._buildSlot(sl, structs, cache, idFor, world.maskAtlas || null);
+      relist = true;
+    }
+    if (relist) this._relist();
   }
 
   /** @param {any[]} structs */
   _snapshotValid(structs) {
-    const snap = this._snap;
-    let w = 0;
     for (let k = 0; k < this.groups.length; k++) {
-      const g = this.groups[k], mem = g.members;
+      const g = this.groups[k], mem = g.members, snap = g.snap;
+      let w = 0;
       for (let j = 0; j < mem.length; j++) {
         const s = structs[mem[j]];
         if (s !== g.refs[j]) return false;
@@ -153,76 +164,92 @@ export class MeshGroupSet {
 
   /** @param {any[]} structs @param {number} ver */
   _build(structs, ver, cache, idFor, atlas) {
-    this._lazyVer = lazyMeshVersion();
     this._structs = structs; this._len = structs.length; this._ver = ver; this._idFor = idFor; this._cache = cache;
     this.stats.builds++;
-    this.groups.length = 0;
-    if (this.grouped.length < structs.length) { this.grouped = new Uint8Array(structs.length + 64); this.chosen = new Uint8Array(structs.length + 64); }
-    else this.grouped.fill(0);
+    if (this.grouped.length < structs.length) {
+      this.grouped = new Uint8Array(structs.length + 64); this.chosen = new Uint8Array(structs.length + 64); this.slotOf = new Int32Array(structs.length + 64);
+    } else this.grouped.fill(0);
+    this.slotOf.fill(-1);
     /** @type {Map<any, number[]>} */
     const byMesh = new Map();
     for (let i = 0; i < structs.length; i++) {
       const s = structs[i];
-      if (!placementEligible(s)) continue;
+      if (s.kind !== 'mesh' || !s.mesh) continue;
       let l = byMesh.get(s.mesh);
       if (!l) { l = []; byMesh.set(s.mesh, l); }
       l.push(i);
     }
-    let total = 0, snapN = 0;
-    const picked = [];
+    this.slots.length = 0;
+    let total = 0;
     for (const [mesh, list] of byMesh) { // Map order = first placement order: deterministic
-      if (list.length < MIN_GROUP_SIZE || !meshGroupable(mesh)) continue;
-      if (total + list.length > MAX_GROUPED_INSTANCES) continue;
-      total += list.length; snapN += list.length;
-      picked.push([mesh, list]);
+      // the instance budget is decided here, once (a shell counts when it is big enough; its groupability is checked when it loads)
+      const allowed = list.length >= MIN_GROUP_SIZE && (!!mesh.lazy || meshGroupable(mesh)) && total + list.length <= MAX_GROUPED_INSTANCES;
+      if (allowed) total += list.length;
+      const sl = { index: this.slots.length, mesh, list: Int32Array.from(list), wasLazy: !!mesh.lazy, allowed, g: null };
+      for (let j = 0; j < list.length; j++) this.slotOf[list[j]] = sl.index;
+      this.slots.push(sl);
+      this._buildSlot(sl, structs, cache, idFor, atlas);
     }
-    const snap = new Float64Array(snapN * 5);
+    if (this.hits.length < this.slots.length) this.hits = new Int32Array(this.slots.length);
+    this._relist();
+  }
+
+  /** (Re)builds the group of ONE slot: instance rows, snapshot, grouped flags. Allocates; runs per full build and per lazy load / evict of this mesh. */
+  _buildSlot(sl, structs, cache, idFor, atlas) {
+    const mesh = sl.mesh, list = sl.list, n = list.length;
+    for (let j = 0; j < n; j++) this.grouped[list[j]] = 0;
+    sl.g = null;
+    if (!sl.allowed || mesh.lazy || !meshGroupable(mesh)) return;
+    this.stats.groupBuilds++;
+    const snap = new Float64Array(n * 5);
     let w = 0;
-    for (let p = 0; p < picked.length; p++) {
-      const [mesh, list] = picked[p];
-      const n = list.length;
-      const g = /** @type {any} */ (makeInstanceGroup(mesh.id || 'mesh', n));
-      const draw = cache.get(mesh, idFor, atlas);
-      g.mesh = mesh; g.draw = draw; g.members = Int32Array.from(list);
-      g.refs = new Array(n); g.steps = new Int32Array(n);
-      g.count = n;
-      g.masked = meshHasMask(mesh); // per-range draws (mask atlas per range); never ONE_PART
-      g.open = !meshIsSolid(mesh);   // thin / one-sided: draw without back-face culling (what the single draw did)
-      let maxScale = 1;
-      // identity for every range index: both twins read `partMatrices[p]` per range (one voxel-style part per range)
-      g.parts = createInstanceParts();
-      for (let r = 0; r < mesh.ranges.length; r++) {
-        const o = r * 12;
-        g.parts.m[o] = 1; g.parts.m[o + 4] = 1; g.parts.m[o + 8] = 1;
-        g.parts.flags[r] = 1;
-      }
-      g.parts.count = mesh.ranges.length;
-      const u = g.ib.u32, f = g.ib.f32;
-      for (let j = 0; j < n; j++) {
-        const si = list[j], s = structs[si];
-        this.grouped[si] = 1;
-        g.refs[j] = s; g.steps[j] = s.frame.yawSteps;
-        placementMatrix12(s, _m12);
-        const sk = s.scale === undefined ? 1 : s.scale;
-        if (sk > maxScale) maxScale = sk;
-        const o = j * INSTANCE_STRIDE;
-        f[o] = _m12[0]; f[o + 1] = _m12[1]; f[o + 2] = _m12[2]; f[o + 3] = _m12[9];
-        f[o + 4] = _m12[3]; f[o + 5] = _m12[4]; f[o + 6] = _m12[5]; f[o + 7] = _m12[10];
-        f[o + 8] = _m12[6]; f[o + 9] = _m12[7]; f[o + 10] = _m12[8]; f[o + 11] = _m12[11];
-        u[o + INST_OBJECT_ID] = meshObjectId(si);
-        u[o + INST_FLAGS] = 0; // not axis-aligned: the kind-9 face comes from the interpolated normal, as for single draws
-        f[o + 14] = 0; f[o + 15] = 0;
-        snap[w++] = s.frame.x; snap[w++] = s.frame.y; snap[w++] = s.frame.z; snap[w++] = s.frame.yawDeg || 0; snap[w++] = sk;
-      }
-      touchInstances(g.ib); // AUD-02: raw row writes above
-      g._R = groupRadius(draw, g.parts) * maxScale;
-      this.groups.push(g);
+    const g = /** @type {any} */ (makeInstanceGroup(mesh.id || 'mesh', n));
+    const draw = cache.get(mesh, idFor, atlas);
+    g.mesh = mesh; g.draw = draw; g.members = list; g.slot = sl.index; g.snap = snap;
+    g.refs = new Array(n); g.steps = new Int32Array(n);
+    g.count = n;
+    g.masked = meshHasMask(mesh); // per-range draws (mask atlas per range); never ONE_PART
+    g.open = !meshIsSolid(mesh);   // thin / one-sided: draw without back-face culling (what the single draw did)
+    let maxScale = 1;
+    // identity for every range index: both twins read `partMatrices[p]` per range (one voxel-style part per range)
+    g.parts = createInstanceParts();
+    for (let r = 0; r < mesh.ranges.length; r++) {
+      const o = r * 12;
+      g.parts.m[o] = 1; g.parts.m[o + 4] = 1; g.parts.m[o + 8] = 1;
+      g.parts.flags[r] = 1;
     }
-    this._snap = snap;
+    g.parts.count = mesh.ranges.length;
+    const u = g.ib.u32, f = g.ib.f32;
+    for (let j = 0; j < n; j++) {
+      const si = list[j], s = structs[si];
+      this.grouped[si] = 1;
+      g.refs[j] = s; g.steps[j] = s.frame.yawSteps;
+      placementMatrix12(s, _m12);
+      const sk = s.scale === undefined ? 1 : s.scale;
+      if (sk > maxScale) maxScale = sk;
+      const o = j * INSTANCE_STRIDE;
+      f[o] = _m12[0]; f[o + 1] = _m12[1]; f[o + 2] = _m12[2]; f[o + 3] = _m12[9];
+      f[o + 4] = _m12[3]; f[o + 5] = _m12[4]; f[o + 6] = _m12[5]; f[o + 7] = _m12[10];
+      f[o + 8] = _m12[6]; f[o + 9] = _m12[7]; f[o + 10] = _m12[8]; f[o + 11] = _m12[11];
+      u[o + INST_OBJECT_ID] = meshObjectId(si);
+      u[o + INST_FLAGS] = 0; // not axis-aligned: the kind-9 face comes from the interpolated normal, as for single draws
+      f[o + 14] = 0; f[o + 15] = 0;
+      snap[w++] = s.frame.x; snap[w++] = s.frame.y; snap[w++] = s.frame.z; snap[w++] = s.frame.yawDeg || 0; snap[w++] = sk;
+    }
+    touchInstances(g.ib); // AUD-02: raw row writes above
+    g._R = groupRadius(draw, g.parts) * maxScale;
+    sl.g = g;
+  }
+
+  /** Compact `groups` (present slots, slot order = old build order) and the push scratch. Pointer copies only; no group is rebuilt. */
+  _relist() {
+    this.groups.length = 0;
+    let members = 0;
+    for (let k = 0; k < this.slots.length; k++) { const g = this.slots[k].g; if (g) { this.groups.push(g); members += g.count; } }
     const G = this.groups.length;
     if (this._gd.length < G) { this._gd = new Float64Array(G); this._go = new Int32Array(G); this._gt = new Uint8Array(G); }
-    this.stats.groups = this.groups.length;
-    this.stats.members = total;
+    this.stats.groups = G;
+    this.stats.members = members;
   }
 
   /**
@@ -242,6 +269,7 @@ export class MeshGroupSet {
     let kept = 0, live = 0;
     for (let k = 0; k < G; k++) {
       const g = this.groups[k], mem = g.members, R = g._R;
+      if (this.hits[g.slot] === 0) { g.drawCount[0] = 0; gd[k] = Infinity; continue; } // STREAM-01b: no chosen member (all streamed out) -> nothing to compact
       const srcF = g.ib.f32, srcU = g.ib.u32, dst = g.drawIb[0].u32;
       let w = 0, dmin = Infinity;
       for (let j = 0; j < mem.length; j++) {
