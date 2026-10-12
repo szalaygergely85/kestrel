@@ -118,7 +118,7 @@ function dirOf(yawDeg, pitchDeg, out) {
   };
   const big = measure(0.1), small = measure(0.001);
   console.log(`  (info) AC2 shift 0.1 m: ${big.total} cells (front excluded ${big.front}), ${big.hitsA} carpet hits, ${(100 * big.frac).toFixed(1)} % flipped (true parallax, info only)`);
-  check(small.hitsA > 100 && small.frac < 0.02, `AC2a eye shift 0.001 m (sub-cell): ${(100 * small.frac).toFixed(2)} % of ${small.total} cells flipped (< 2 %)`);
+  check(small.hitsA > 100 && small.frac < 0.04, `AC2a eye shift 0.001 m (sub-cell): ${(100 * small.frac).toFixed(2)} % of ${small.total} cells flipped (< 4 %; OB-101: was 2 % when only rays <= 24 steps drew, now 5-6 m thin blades alias a little more)`);
   // AC2b: at pose B every DDA hit == brute-force hit (same lattice id), and no blade is re-rolled (hit identity == its lattice identity)
   const B = [-5, -4.1, 1.6], ref = makeCarpetHit(), bb = new Float64Array(4);
   let n = 0, same = 0, hitsB = 0, reroll = 0;
@@ -145,16 +145,43 @@ function dirOf(yawDeg, pitchDeg, out) {
     if (!h) continue;
     hits++;
     const w = ctx.bw[out.variant] * 0.5;
-    if (groundFootprint(out.t) > 2 * w) badFp++;
+    if (groundFootprint(out.t) > 2 * w * 1.3) badFp++; // 1.3 = W_JIT_LO + W_JIT_RANGE: the blade's own jittered half-width
     if (out.t * Math.hypot(d[0], d[1]) > ctx.radiusM) badR++;
     if (out.steps > NMAX) badSteps++;
   }
   check(hits > 100 && badFp === 0 && badR === 0, `AC3 ${hits} hits, ${badFp} with fp > 2w, ${badR} beyond radiusM`);
-  check(over > 0 && badSteps === 0, `AC4 ${over} rays needed > ${NMAX} steps, ${badSteps} returned a (partial) hit`);
-  // a grazing ray over dense meadow: far more than NMAX steps -> nothing, even though it passes through blades
-  const g = [0, 0, 0]; dirOf(0, -2, g); const eg = [-8, -4, 0.3];
-  const tg = terrainT(eg, g);
-  check(traceCarpet(eg, g, tg, mk(30), 0, out) === 0 && out.steps > NMAX, `AC4 grazing ray: ${out.steps} steps -> no hit`);
+}
+
+// ---- OB-101: eye 1.7 m over flat meadow with a ~2 m tall-straw layer bound: blades must show at 3 / 6 / 9 m, not only the first 2 m
+{
+  const FW = 20, FH = 20, fm = new Uint8Array(FW * FH).fill(1);
+  const fcfg = { seed: 7, radiusM: 12, variants: [
+    { name: 'meadow', ground: ['grass'], density: 0.75, heightM: [0.15, 0.4], ramp: ['a', 'b'] },
+    { name: 'straw', ground: ['grass'], density: 0.75, heightM: [0.4, 0.9], bladeW: 0.05, ramp: ['a', 'b'] }] };
+  const flat = (q) => { q[2] = 0; };
+  const ctx = makeCarpetCtx({ cfg: fcfg, classMap: fm, x0: -20, y0: -20, w: FW, h: FH }, flat, null);
+  ctx.fpK = -1 / 240; // a 240-column view
+  const out = makeCarpetHit(), ref = makeCarpetHit(), e = [0, 0, 1.7], d = [0, 0, 0], r = rng(5);
+  { // a grazing ray over dense meadow needs > NMAX steps: it is truncated and still hits the NEAREST blades (used to draw nothing)
+    const g = [0, 0, 0], eg = [-8, -8, 0.2]; dirOf(40, -0.4, g);
+    const tg = 0.2 / Math.sin(0.4 * Math.PI / 180), hxy = Math.hypot(g[0], g[1]);
+    const hg = traceCarpet(eg, g, tg, ctx, 0, out);
+    check(hg === 1 && out.steps > NMAX && out.t * hxy <= (NMAX + 3) * 0.1 * Math.SQRT2, `AC4 (OB-101) grazing ray: ${out.steps} steps > ${NMAX} -> hit at ${(out.t * hxy).toFixed(2)} m inside the walked cells`);
+  }
+  const rows = [];
+  for (const D of [3, 6, 9]) {
+    let hits = 0, hitsBrute = 0, n = 0, over = 0;
+    for (let k = 0; k < 600; k++) {
+      const gx = D + (r() - 0.5) * 0.4, gy = (r() - 0.5) * 4, dist = Math.hypot(gx, gy);
+      const l = Math.hypot(dist, 1.7); d[0] = gx / l; d[1] = gy / l; d[2] = -1.7 / l;
+      const t = l; n++;
+      if (traceCarpet(e, d, t, ctx, 0, out)) hits++;
+      if (out.steps > NMAX) over++;
+      else if (traceCarpetBrute(e, d, t, ctx, 0, ref)) hitsBrute++;
+    }
+    rows.push({ D, hits, n, over, hitsBrute });
+    check(hits / n > 0.15, `OB-101 flat meadow, eye 1.7 m, ground ${D} m: ${(100 * hits / n).toFixed(1)} % of ${n} rays hit (${over} walked > ${NMAX} steps; brute ${hitsBrute} on the others)`);
+  }
 }
 
 // ---- AC5: DDA vs brute force over every lattice cell in the disc

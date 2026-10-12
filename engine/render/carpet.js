@@ -10,7 +10,7 @@ import { hashFast24, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, groundTierOffset, G
 import { CARPET_DEFAULTS, TUFT_DEFAULT_P, TUFT_DEFAULT_MUL } from '../world/carpet.js';
 const INV_2_24 = 1 / 16777216; // 24-bit integer hash scaled at the call site: no double crosses a call (alloc rule)
 
-export const NMAX = 24;                 // max lattice steps per trace; more = past the fade, draw nothing (never truncate)
+export const NMAX = 128;                // OB-101: max lattice steps per trace. A longer segment is TRUNCATED from the far side (the nearest cells win anyway); it used to draw nothing, which cut the grass at ~2.4 m for an eye inside the tall-straw layer bound (maxH ~2 m)
 export { CARPET_DEFAULTS };   // one owner: engine/world/carpet.js (D2a)
 export const ROOT_JITTER = 0.4;         // root offset +-0.4 cell
 export const LEAN_CAP = 0.6;            // |lean| <= 0.6 * h (ratio lean/h)
@@ -187,7 +187,7 @@ function bladeHit(ctx, ix, iy) {
 
 /**
  * Load the ray into ctx.r and find the segment [t0, t1] that can touch blades.
- * Returns the lattice steps it needs (0 = empty segment); the trace draws nothing when that exceeds NMAX.
+ * Returns the lattice steps it needs (0 = empty segment); the trace walks min(steps, NMAX) of them, nearest first.
  */
 function setRay(ctx) {
   const r = ctx.r, q = ctx.q, c = ctx.cellM, inp = ctx.inp;
@@ -244,7 +244,8 @@ export function traceCarpetIn(ctx, out) {
   out.hit = 0; out.tests = 0;
   const steps = setRay(ctx);
   out.steps = steps;
-  if (steps === 0 || steps > NMAX) return 0;
+  if (steps === 0) return 0;
+  const nSteps = steps > NMAX ? NMAX : steps; // OB-101: truncate far, never drop the whole ray
   const r = ctx.r, bs = ctx.s, keep = ctx.keep, q = ctx.q;
   const ex = r[R_EX], ey = r[R_EY], ez = r[R_EZ], dx = r[R_DX], dy = r[R_DY], dz = r[R_DZ], t0 = r[R_T0], t1 = r[R_T1], c = ctx.cellM;
   const hxy = Math.sqrt(r[R_N2]);
@@ -259,7 +260,7 @@ export function traceCarpetIn(ctx, out) {
   // a blade of cell (i, j) can only touch the ray if the cell centre is within this xy distance of the ray line
   const rej = ((0.7071 + ROOT_JITTER) * c + ctx.wMax + LEAN_CAP * ctx.maxH) * hxy; // scaled by |d_xy|: compared with the cross product
   let prevCi = 1e9, prevCj = 1e9, tests = 0;
-  for (let step = 0; step < steps; step++) {
+  for (let step = 0; step < nSteps; step++) {
     if (tEnter - margin > best) break;
     const tNext = tx < ty ? tx : ty;
     let ci = ix, cj = iy;
@@ -291,7 +292,7 @@ export function traceCarpetIn(ctx, out) {
 }
 
 /**
- * Brute-force reference (every lattice cell within the eye disc) with the same NMAX rule and blade test.
+ * Brute-force reference (every lattice cell within the eye disc) with the same blade test (no step budget: compare only rays with steps <= NMAX).
  * Test/oracle only; far too slow for a frame.
  */
 export function traceCarpetBrute(eye, dir, tHit, ctx, timeSec, out) {
@@ -299,7 +300,7 @@ export function traceCarpetBrute(eye, dir, tHit, ctx, timeSec, out) {
   out.hit = 0;
   const steps = setRay(ctx);
   out.steps = steps;
-  if (steps === 0 || steps > NMAX) return 0;
+  if (steps === 0) return 0;
   const bs = ctx.s, keep = ctx.keep, c = ctx.cellM, ex = eye[0], ey = eye[1];
   const R = ctx.radiusM + c;
   const i0 = Math.floor((ex - R) / c), i1 = Math.floor((ex + R) / c), j0 = Math.floor((ey - R) / c), j1 = Math.floor((ey + R) / c);
