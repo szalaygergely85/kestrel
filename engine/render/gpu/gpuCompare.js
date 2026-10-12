@@ -386,8 +386,8 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
       const uvTol = (kind[i] === KIND_TERRAIN ? 0.01 : 1e-3) * Math.max(1, Math.abs(cpuDepth));
       if (Number.isFinite(cpuDepth) && (Math.abs(gpuU - u[i]) > uvTol || Math.abs(gpuV - v[i]) > uvTol)) {
         // OB-103a: a grass stroke hit on a grazing plane (f32 t error ~1e-5 m at 7 m) can land on the other side of an atlas texel boundary:
-        // same kind, same depth, only the picked texel (u = stroke height) differs. Counted as a capped tie, not a uv violation.
-        if (kind[i] === KIND_GRASS && gpuKind === KIND_GRASS && depthOk && planeId[i] === gpuPlaneId && Math.abs(gpuV - v[i]) <= uvTol) { grassTexelTies++; meshTieMask[i] = 1; }
+        // same kind, same stroke (depth within 1e-4 rel - ARCH CHANGES 8d1036a6; a different stroke stays a uvViol), only the picked texel (u = stroke height) differs. Counted as a capped tie, not a uv violation.
+        if (kind[i] === KIND_GRASS && gpuKind === KIND_GRASS && Math.abs(gpuDepth - cpuDepth) <= 1e-4 * Math.max(1, Math.abs(cpuDepth)) && planeId[i] === gpuPlaneId && Math.abs(gpuV - v[i]) <= uvTol) { grassTexelTies++; meshTieMask[i] = 1; }
         else uvViol++;
       }
       if (kind[i] === KIND_TERRAIN && Number.isFinite(cpuDepth)) { const e = Math.max(Math.abs(gpuU - u[i]), Math.abs(gpuV - v[i])); if (e > terrainUvMaxErr) { terrainUvMaxErr = e; terrainUvMaxAt = [x, y, u[i], v[i], gpuU, gpuV, cpuDepth, gpuDepth]; } }
