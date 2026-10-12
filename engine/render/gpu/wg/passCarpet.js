@@ -10,8 +10,9 @@
 // The class map (r8ui) and the near-band height (r32f) are uploaded ONLY when `version` changed (or the data object changed): never per frame.
 // Per frame only uniform words change (0 allocations). No timer slot is free (all 16 taken): the pass runs inside the light span.
 import { CARPET_BLOCK, CARPET_WGSL, CARPET_TEXTURES, CARPET_TARGETS, CARPET_VTAB_ROWS, CARPET_KNOTS } from '../wgsl/carpet.wgsl.js';
-import { makeCarpetCtx, setCarpetBounds, MAX_VARIANTS } from '../../carpet.js';
+import { makeCarpetCtx, setCarpetBounds, applyCarpetQuality, MAX_VARIANTS } from '../../carpet.js';
 import { CARPET_DEFAULTS } from '../../../world/carpet.js';
+import { footprintK } from '../../terrainShade.js';
 import { sunFromWorld } from '../../lighting.js';
 
 const W = (n) => CARPET_BLOCK.field(n).word;
@@ -22,7 +23,7 @@ const W_GUST = W('gustM'), W_TRAVEL = W('travelM'), W_TIME = W('timeSec'), W_CX0
 const W_NX0 = W('nearX0'), W_NY0 = W('nearY0'), W_NCELL = W('nearCell'), W_MAXH = W('maxH'), W_WMAX = W('wMax'), W_FPK = W('fpK'), W_MAXHN = W('maxHNear'), W_TFADE = W('tFade'), W_LEANR = W('leanMaxR');
 const W_WIND0 = W('windP0'), W_WIND1 = W('windP1'), W_EYE = W('eye'), W_PA = W('pitchA'), W_PB = W('pitchB'), W_PC = W('pitchC');
 const W_KNOTS = W('knots'), W_VTAB = W('vtab'), W_IX0 = W('ix0'), W_IY0 = W('iy0'), W_ORGX = W('orgX'), W_ORGY = W('orgY');
-const W_TUFTS = W('tufts'), W_AN = W('atlasN'), W_AW = W('atlasW'), W_AH = W('atlasH'), W_TR = W('tuftR'), W_RJ = W('rootJit');
+const W_TUFTS = W('tufts'), W_AN = W('atlasN'), W_AW = W('atlasW'), W_AH = W('atlasH'), W_TR = W('tuftR'), W_RJ = W('rootJit'), W_DSC = W('densScale'), W_MINW = W('minWCells'), W_FSTART = W('fadeStart');
 const W_MX0 = W('maskX0'), W_MY0 = W('maskY0'), W_MW = W('maskW'), W_MH = W('maskHt'), W_MON = W('maskOn'), W_SUN = W('sun');
 const NOOP_GROUND = () => {};
 const ONE_MASK = new Uint8Array([255]);
@@ -44,7 +45,7 @@ export function packCarpetConfig(carpet, nearH, f32, i32) {
     f32[o] = v === 0 ? 0 : ctx.dens[v]; f32[o + 1] = ctx.hMin[v]; f32[o + 2] = ctx.hMax[v]; f32[o + 3] = ctx.bw[v];
     f32[o + 4] = v === 0 ? 1 : ctx.sway[v]; f32[o + 5] = ctx.tuftP[v]; f32[o + 6] = ctx.tuftMul[v];
   }
-  i32[W_TUFTS] = ctx.tufts ? 1 : 0; i32[W_AN] = ctx.atlas.n; i32[W_AW] = ctx.atlas.w; i32[W_AH] = ctx.atlas.h; f32[W_TR] = ctx.tuftR; f32[W_RJ] = ctx.rootJit;
+  i32[W_TUFTS] = ctx.tufts ? 1 : 0; i32[W_AN] = ctx.atlas.n; i32[W_AW] = ctx.atlas.w; i32[W_AH] = ctx.atlas.h; f32[W_TR] = ctx.tuftR; f32[W_RJ] = ctx.rootJit; f32[W_DSC] = ctx.densScale; f32[W_MINW] = ctx.minWCells; f32[W_FSTART] = ctx.fadeStart;
   void cfg; void D;
   return ctx;
 }
@@ -159,12 +160,16 @@ export class WgCarpetPass {
     if (p.cols !== this.cols || p.rows !== this.rows || !this.target) this.resize(p.cols, p.rows);
     const f = this.u, q = rp.pitch;
     this.ui[W_COLS] = this.cols; this.ui[W_ROWS] = this.rows;
-    f[W_TIME] = this.timeSec; f[W_FPK] = this.fpK;
+    // OB-103: live footprint k of the real view (same value as the shade pass's hashCell); setFootprintK(k != 0) is a manual override (tests)
+    const fpk = this.fpK !== 0 ? this.fpK : -footprintK(q.tanHalfX, this.cols), qual = p._world ? p._world.carpetQuality : null;
+    if (qual && qual.on === false) return null;
+    f[W_TIME] = this.timeSec; f[W_FPK] = fpk;
     packCarpetWind(this.windParams, f, this.ui);
     // TUFT-PERF-01b: exact cull bounds from the JS twin (same function), eye in world coordinates
     const bc = this._bctx, wp = this.windParams;
     if (bc) {
-      bc.fpK = this.fpK; bc.wind = wp ? NOOP_GROUND : null; bc.windMax = wp ? wp.speed * (1 + wp.amp) : 0;
+      applyCarpetQuality(bc, qual); f[W_RAD] = bc.radiusM; f[W_DSC] = bc.densScale; f[W_MINW] = bc.minWCells;
+      bc.fpK = fpk; bc.wind = wp ? NOOP_GROUND : null; bc.windMax = wp ? wp.speed * (1 + wp.amp) : 0;
       setCarpetBounds(bc, cam.x, cam.y);
       f[W_MAXHN] = bc.maxHNear; f[W_TFADE] = bc.tFade < 1e30 ? bc.tFade : 1e30; f[W_LEANR] = bc.leanMaxR;
       this.ui[W_WINDON] = bc.leanOn ? 1 : 0;

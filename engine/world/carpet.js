@@ -33,6 +33,7 @@ export function validateCarpetConfig(cfg, typeNames) {
     else if (!(isNum(cfg[k]) && cfg[k] > 0)) fail(k, 'must be a number > 0');
   }
   if (cfg.tuftR !== undefined && !(isNum(cfg.tuftR) && cfg.tuftR >= 0.1 && cfg.tuftR <= 0.5)) fail('tuftR', 'must be a number 0.1..0.5');
+  if (cfg.fadeStart !== undefined && !(isNum(cfg.fadeStart) && cfg.fadeStart >= 0 && cfg.fadeStart <= 0.95)) fail('fadeStart', 'must be a number 0..0.95'); // OB-103
   if (cfg.tuftAtlas !== undefined && (!cfg.tuftAtlas || typeof cfg.tuftAtlas !== 'object')) fail('tuftAtlas', 'must be an object {n,w,h,blades,curl,widthTex}');
   if (cfg.cutGround !== undefined && (!Array.isArray(cfg.cutGround) || cfg.cutGround.some((n) => typeof n !== 'string' || !typeNames || typeNames.indexOf(n) < 0))) fail('cutGround', 'must be an array of known ground type names');
   if (cfg.mask != null && typeof cfg.mask !== 'function' && typeof cfg.mask.sample !== 'function' && !(cfg.mask.chunks instanceof Map)) fail('mask', 'must be null, a GrassMaskLayer, a function (x, y) => 0..1 or an object with sample(x, y)');
