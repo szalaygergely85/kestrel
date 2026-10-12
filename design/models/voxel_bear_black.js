@@ -38,6 +38,7 @@
  *   hurt    once 0.1 s  2 step keys: recoil, head up, bawl.     flinch once 0.25 s: fade + head shake -> rest.
  *   die     once 0.5 s  5 keys: bawl, buckle, slump onto the right side, overshoot + leg kick (thud key 3), settle.
  *   dead    held        lying on the right side, legs out (body pos z from the voxel grid so nothing sinks).
+ *   sink    once 0.5 s  [500, 100]: dead pose lowered 0.8 m into the ground (wolf format; beastView plays it after death).
  *   Presentation data for BEAR-01: ASSETS.blackBearFx (clipFor, telegraph, swipe, hurt, death).
  */
 (function (root) {
@@ -190,6 +191,11 @@
     [100, DEAD_O]
   ], false);
   anim.dead = clip([[1000, DEAD_O]], true);
+  // sink 0.5 s (wolf format [500, 100]: dead -> sunk, then held): the lying bear is ~1.1 m tall, so the body drops
+  // SINK_M = 0.8 m on top of the sim's sinkM 0.3 m entity drop -> fully under the ground before the entity is hidden
+  var SINK_M = 0.8, SUNK_O = clone(DEAD_O);
+  SUNK_O.b = DEAD_O.b.slice(); SUNK_O.b[5] = r2(DEAD_O.b[5] - SINK_M / SV.cellM);
+  anim.sink = clip([[500, DEAD_O], [100, SUNK_O]], false);
 
   var mounts = clone(SV.mounts);
   delete mounts.speech; delete mounts.interact;        // dialogue-only anchors
@@ -205,7 +211,7 @@
           'fours), recoloured: near-black coat with glossy lit guard-hair tips, darkest legs and dorsal ridge, tan muzzle ' +
           'and chin under a dark face, small pale chest blaze, dark claws, amber eyes. 8 parts; clips idle, walk, turn ' +
           '(Burl) + BEAR-D2 fight clips on all fours: charge (lope), windup (bluff stomp + huff), swipe, hurt, flinch, ' +
-          'die (slump to the right side), dead.',
+          'die (slump to the right side), dead, sink.',
     voxel: {
       version: 1,
       meshOnly: true,
@@ -230,9 +236,9 @@
       state: { wander: 'idle', idle: 'idle', move: 'walk', turn: 'turn', return: 'walk', notice: 'idle',
                chase: 'charge', windup: 'windup', telegraph: 'windup', charge: 'charge', swipe: 'swipe', attack: 'swipe',
                recover: 'idle', stagger: 'flinch' },
-      hurt: 'hurt', flinch: 'flinch', die: 'die', dead: 'dead',
+      hurt: 'hurt', flinch: 'flinch', die: 'die', dead: 'dead', sink: 'sink',
       note: 'boar clip names (beastView STATE_CLIPS / beastAnim BEAST_ANIM_DEF) work unchanged; `swipe` is new (BEAR-01 ' +
-            'plays it at the end of the charge when the player is in reach). No sink clip: the corpse is ~1.1 m tall.'
+            'plays it at the end of the charge when the player is in reach). sink: dead pose lowered 0.8 m in 0.5 s.'
     },
     speeds: { walk: 1.0, charge: 6.0, note: 'charge lope 0.4 s loop authored for ~6 m/s; scale the clip rate with speed' },
     // owner 2026-10-12 (style-guide 0.2): NO rear-up. The 0.8 s telegraph is the all-fours bluff tell.
@@ -250,7 +256,8 @@
       thudKey: 3, thudMs: 300,
       corpseCentre: { rightM: 0.15, fwdM: 0, upM: 0.45, note: 'rolled onto the right side about the trunk; the lying ' +
                       'bear spans about -0.6 .. +0.5 m right, 0 .. 1.1 m up (entity frame)' },
-      lootInteract: { prompt: '[E] Loot bear', radiusM: 1.8, aimUpM: 0.5 }
+      lootInteract: { prompt: '[E] Loot bear', radiusM: 1.8, aimUpM: 0.5 },
+      sink: { clip: 'sink', steps: 30, depthM: 0.8, note: 'clip depth; the sim adds its own sinkM entity drop' }
     },
     notice: { noticeUpM: 1.4, note: 'clears the hump (1.1 m)' },
     missingClips: {}           // BEAR-D2: every clip BEAR-01 needs exists now
