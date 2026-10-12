@@ -234,7 +234,7 @@ function tuftHit(ctx, ix, iy) {
   ctx.ground(q);
   const g = q[2];
   const atlas = ctx.atlas, ad = atlas.data, aw = atlas.w, ah = atlas.h;
-  const shape = hashFast24(ix, iy, seed + SALT_SHAPE) % atlas.n;
+  const shape = (hashFast24(ix, iy, seed + SALT_SHAPE) * atlas.n) >>> 24; // top bits (no '%': exact in u32 on the GPU twin too; hash < 2^24, n <= 255)
   const ang = (hashFast24(ix, iy, seed + SALT_ROT) * INV_2_24) * Math.PI;
   const cs = Math.cos(ang), sn = Math.sin(ang);
   const wStroke = ctx.bw[v] * 0.5, texM = 2 * R / aw, lz = ez - g;
