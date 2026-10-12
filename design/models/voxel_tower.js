@@ -111,7 +111,8 @@
     A: 'balloon_light', a: 'balloon', n: 'balloon_dark',                                                  // ochre gores
     F: 'balloon_red_light', f: 'balloon_red', h: 'balloon_red_dark',                                      // red gores
     S: 'tarp_light', s: 'tarp', t: 'tarp_dark',                                                           // wake-spot tarp
-    Y: 'straw_light', y: 'straw'                                                                          // OB-026 straw (palette, US-078d)
+    Y: 'straw_light', y: 'straw',                                                                         // OB-026 straw (palette, US-078d)
+    K: 'cloth.canvas'                                                                                     // OB-098: the drape's own cloth material
   };
   function matsOf(G) {
     var used = {}, o = {}, k;
@@ -1208,13 +1209,106 @@
   };
 
   // ===================================================================================================================
+  // 9b. ROPE TETHER (OB-098, owner 2026-10-12 "strange-looking ropes above the gondola"): replaces the flat billboard
+  //    ropes ropeA / ropeB. 4 x 16 x 28 @ 0.035 m = 0.14 x 0.56 x 0.98 m. Two hemp tethers TIED INTO THE HEM of the
+  //    cloth `stairwell.drape` (plane x 14.05, intact hem y 7.2..7.8, hem z 5.4 - 1.9 = 3.5):
+  //      part ropeA (y 0..8):  a gathered tuft of the drape canvas bound by a rope turn, then one rope (1 voxel =
+  //                            3.5 cm) hanging ~0.8 m in a slow S, an overhand knot two thirds down, a frayed tip
+  //                            (straw-pale fibres splaying out, every fibre voxel touches the strand).
+  //      part ropeB (y 8..16): two smaller canvas wraps 0.17 m apart with a rope SAGGING between them (U, 0.28 m deep)
+  //                            and a loose end off the south wrap, a stopper knot and a short tuft.
+  //    Wraps = `cloth.canvas` (K, the drape's own material, so the knot reads as the cloth bunched up), bindings and
+  //    rope = `rope` (r), fibres = `straw_light` / `straw` (Y / y). Anchor [0, 8, 28] = the cloth plane (x0 face),
+  //    the middle of the tethers, the TOP of the grid: place z = hem + 0.1 m (the wraps overlap the hem by 0.1 m, so a
+  //    hem that swings a little never shows a gap). Clip `sway` (= the billboard anim name): each part swings slowly
+  //    about its own wrap (pivot at hem height), out of phase. No collider (visual only; bottom ~2.65 m, overhead).
+  // ===================================================================================================================
+  function strand(G, pts, ch) {                       // 6-connected polyline through integer points (one axis per step)
+    var p = pts[0].slice(), i, q, a;
+    G.set(p[0], p[1], p[2], ch);
+    for (i = 1; i < pts.length; i++) {
+      q = pts[i];
+      while (p[0] !== q[0] || p[1] !== q[1] || p[2] !== q[2]) {
+        // step the axis with the largest remaining distance (z first on ties: ropes fall)
+        var d = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+        a = Math.abs(d[2]) >= Math.abs(d[1]) && Math.abs(d[2]) >= Math.abs(d[0]) ? 2 : (Math.abs(d[1]) >= Math.abs(d[0]) ? 1 : 0);
+        p[a] += d[a] > 0 ? 1 : -1;
+        if (!G.full(p[0], p[1], p[2]) || G.get(p[0], p[1], p[2]) === ch) G.set(p[0], p[1], p[2], ch);
+      }
+    }
+  }
+  function wrap(G, x0, x1, y0, y1, z0, z1, bindZ) {   // canvas bunched round the tie, corners rounded, one rope turn
+    var x, y, z, edgeX, edgeY;
+    for (z = z0; z < z1; z++) for (y = y0; y < y1; y++) for (x = x0; x < x1; x++) {
+      edgeX = x === x0 || x === x1 - 1; edgeY = y === y0 || y === y1 - 1;
+      if ((z === z0 || z === z1 - 1) && edgeX && edgeY) continue;                  // rounded corners
+      G.set(x, y, z, (z === bindZ && (edgeX || edgeY)) ? 'r' : 'K');               // the binding turn
+    }
+  }
+  function buildRopeTether() {
+    var G = new Grid(4, 16, 28);
+    // ---- part ropeA: tuft + wrap + S rope + overhand knot + frayed tip
+    G.set(0, 3, 27, 'K'); G.set(1, 3, 27, 'K'); G.set(0, 4, 27, 'K');               // the hem gathered up into the tie
+    wrap(G, 0, 3, 2, 5, 22, 27, 24);
+    strand(G, [[1, 3, 21], [1, 4, 17], [2, 4, 14]], 'r');                           // S-curve, drifting off the cloth
+    G.box(1, 4, 11, 3, 6, 14, 'r'); G.set(1, 5, 13, '.'); G.set(2, 4, 11, '.');     // overhand knot (lumpy, not a cube)
+    strand(G, [[2, 5, 10], [2, 5, 8], [1, 4, 5]], 'r');
+    G.set(1, 4, 4, 'y'); G.set(1, 3, 4, 'y'); G.set(1, 5, 4, 'y'); G.set(2, 4, 4, 'y');   // fray starts (cross)
+    G.set(1, 3, 3, 'Y'); G.set(1, 5, 3, 'Y'); G.set(2, 4, 3, 'Y');                  // fibres splay, each under a strand
+    G.set(1, 3, 2, 'Y'); G.set(1, 5, 2, 'y'); G.set(1, 5, 1, 'Y');                  // one long fibre
+    // ---- part ropeB: two wraps, a sagging rope between them, a loose end with a stopper knot
+    G.set(0, 9, 27, 'K'); G.set(0, 14, 27, 'K');
+    wrap(G, 0, 2, 8, 11, 23, 27, 24);
+    wrap(G, 0, 2, 13, 16, 23, 27, 24);
+    var sag = [], y, t;
+    for (y = 9; y <= 14; y++) { t = (y - 11.5) / 2.5; sag.push([1, y, 22 - Math.round(8 * (1 - t * t))]); }
+    strand(G, [[1, 9, 22]].concat(sag).concat([[1, 14, 22]]), 'r');
+    strand(G, [[1, 14, 22], [2, 14, 22], [2, 15, 17], [2, 15, 12], [2, 14, 10]], 'r');   // the loose end (own column)
+    G.box(1, 14, 8, 3, 16, 10, 'r'); G.set(1, 15, 8, '.');                          // stopper knot
+    G.set(2, 14, 7, 'y'); G.set(2, 14, 6, 'Y'); G.set(2, 15, 7, 'Y');               // short tuft
+    return G;
+  }
+  var gT = buildRopeTether();
+  A.voxelModels.ropeTether = {
+    name: 'ropeTether',
+    desc: 'Voxel rope tethers tied into the hem of the stairwell drape (OB-098): canvas bunched in rope-bound wraps, one ' +
+          'rope hanging in a slow S with an overhand knot and a frayed tip, one rope sagging between two wraps with a ' +
+          'knotted loose end. Hemp rope 3.5 cm, wraps in the drape\'s cloth.canvas; sways slowly. Visual only.',
+    voxel: {
+      version: 1, cellM: 0.035, size: [4, 16, 28], anchor: [0, 8, 28], mats: matsOf(gT), layers: gT.layers(),
+      parts: { ropeA: { box: [0, 0, 0, 4, 8, 28], pivot: [1.5, 3.5, 25] },          // extent 40
+               ropeB: { box: [0, 8, 0, 4, 16, 28], pivot: [1.5, 11.5, 25] } },       // extent 40
+      animations: {
+        sway: { loop: true, durations: [1600, 1300, 1700, 1200], frames: [
+          { ropeA: { rot: [0, 0, 0] },     ropeB: { rot: [0, 0, 0] } },
+          { ropeA: { rot: [3, 1.5, 0] },   ropeB: { rot: [-2, -1, 0] } },
+          { ropeA: { rot: [-2.5, 0.5, 0] }, ropeB: { rot: [2.5, 1.5, 0] } },
+          { ropeA: { rot: [1, -0.5, 0] },  ropeB: { rot: [-1, 0.5, 0] } }
+        ] }
+      }
+    },
+    placement: { level: 'tower', prop: 'ropeTether', x: 14.05, y: 7.5, z: 3.6, facing: 0, levelEdit: true,
+                 note: 'cloths stairwell.drape hem: plane x 14.05, intact hem y 7.2..7.8, z 3.5; z = hem + 0.1' },
+    readability: { note: 'Seen from the hall floor (14,7) 2-4 m away, eye 1.6 m: 160x60 ~1-2 rows per 3.5 cm voxel; the ' +
+                   'pale fray, the knots and the canvas wraps break the line so it reads as rope tied to the cloth.' }
+  };
+  // billboard host (the registry needs models.ropeTether; the game draws the voxel). Same sprite as rope variant 0.
+  if (A.models && A.models.rope && A.models.rope.variants && !A.models.ropeTether) {
+    var rb = A.models.rope.variants[0], ropeHost = {}, rk;
+    for (rk in rb) ropeHost[rk] = rb[rk];
+    ropeHost.name = 'ropeTether';
+    ropeHost.desc = 'OB-098 rope tethers on the drape hem; billboard fallback = rope variant 0, the game draws the voxel.';
+    A.models.ropeTether = ropeHost;
+  }
+
+  // ===================================================================================================================
   // 10. ATTACH (15.3 item 1), per model: only when every material key OF THAT MODEL is merged into palette.materials and
   //    detailPass.materials (a missing v2 record would switch the GPU path off, 15.3 item 6). Rubble goes onto the
   //    variant sub-models (the registry exposes them as rubble#0..2, the same objects).
   // ===================================================================================================================
   var TARGETS = { boulder: ['boulder'], rubble0: ['rubble', 0], rubble1: ['rubble', 1], rubble2: ['rubble', 2],
                   canvasHeap: ['canvasHeap'], gondola: ['gondola'], strut: ['strut'], envelopeHeap: ['envelopeHeap'],
-                  relay: ['relay'], burner: ['burner'] };
+                  relay: ['relay'], burner: ['burner'], ropeTether: ['ropeTether'] };
   A.voxelModels.batch2 = Object.keys(TARGETS);
   A.voxelModels.attachTower = function attachTower() {
     var P = A.palette, DP = A.detailPass, M = A.models, done = [], n, t, def, vox, k, ok;
