@@ -31,10 +31,10 @@ import { gridLocal } from './gridLocal.js';
 
 const DEFAULT_REACH = 1.8;
 export const HYST_REACH = 0.3;   // the held target survives this far beyond reach
-export const PICK_PAD = 0.15;    // OB-066: every pick volume is inflated by this (forgiving aim on small items)
-export const HYST_PAD = 0.1;     // ...and the held target's volume by this much more
-const DEFAULT_HALF_W = 0.25;     // default pick volume: 0.5 m wide,
-const DEFAULT_HEIGHT = 0.8;      // ...0.8 m tall (rec.height overrides), centred on rec.x/y/z
+export const PICK_PAD = 0.06;    // OB-066: every pick volume is inflated by this (OB-088: was 0.15 - a note prompted from the wall above it)
+export const HYST_PAD = 0.06;    // ...and the held target's volume by this much more (OB-088: was 0.1)
+const DEFAULT_HALF_W = 0.15;     // default pick volume: 0.3 m wide (OB-088: was 0.5; a wall note is flat paper - a deep box stuck out of the wall),
+const DEFAULT_HEIGHT = 0.4;      // ...0.4 m tall (OB-088: was 0.8; rec.height overrides), centred on rec.x/y/z
 const INSIDE_COS = Math.cos(35 * Math.PI / 180); // OB-084: eye inside a pick box -> the box centre must be within 35 deg of the crosshair
 const LOS_BACKOFF = 0.05;       // LOS is checked to just in front of the hit point (a note sits flush on a wall)
 const LOS_STEP = 0.1;
@@ -55,7 +55,7 @@ export function resolvePropPicks(world) {
   if (!list || !world.propPickBox) return;
   for (let i = 0; i < list.length; i++) {
     const rec = list[i];
-    if (rec.propId && !rec.bodyId) rec.pick = world.propPickBox(rec.propId) || null;
+    if (rec.propId && !rec.bodyId) { rec.pick = world.propPickBox(rec.propId) || null; rec.pickShapes = (world.propPickShapes && world.propPickShapes(rec.propId)) || null; }
   }
 }
 
@@ -108,6 +108,25 @@ export function hasLineOfSight(world, ax, ay, az, bx, by, bz) {
     if (pointBlocked(world, x, y, z)) return false;
   }
   return true;
+}
+
+/**
+ * OB-088: entry distance of the view ray into ONE oriented collider shape {cx,cy,cz,hx,hy,hz,c,s} (c/s = cos/sin of its yaw),
+ * inflated by `pad`; -1 = miss within maxT. The eye inside the shape gives 0. Allocation-free.
+ */
+function shapeEntry(sh, ex, ey, ez, vx, vy, vz, pad, maxT) {
+  const dx = ex - sh.cx, dy = ey - sh.cy, c = sh.c, s = sh.s;
+  const ox = c * dx + s * dy, oy = -s * dx + c * dy, oz = ez - sh.cz; // world -> shape local (rotate by -yaw about z)
+  const lx = c * vx + s * vy, ly = -s * vx + c * vy, lz = vz;
+  let tn = 0, tf = maxT;
+  const hx = sh.hx + pad, hy = sh.hy + pad, hz = sh.hz + pad;
+  if (lx > -1e-9 && lx < 1e-9) { if (ox < -hx || ox > hx) return -1; }
+  else { let t0 = (-hx - ox) / lx, t1 = (hx - ox) / lx; if (t0 > t1) { const q = t0; t0 = t1; t1 = q; } if (t0 > tn) tn = t0; if (t1 < tf) tf = t1; if (tn > tf) return -1; }
+  if (ly > -1e-9 && ly < 1e-9) { if (oy < -hy || oy > hy) return -1; }
+  else { let t0 = (-hy - oy) / ly, t1 = (hy - oy) / ly; if (t0 > t1) { const q = t0; t0 = t1; t1 = q; } if (t0 > tn) tn = t0; if (t1 < tf) tf = t1; if (tn > tf) return -1; }
+  if (lz > -1e-9 && lz < 1e-9) { if (oz < -hz || oz > hz) return -1; }
+  else { let t0 = (-hz - oz) / lz, t1 = (hz - oz) / lz; if (t0 > t1) { const q = t0; t0 = t1; t1 = q; } if (t0 > tn) tn = t0; if (t1 < tf) tf = t1; if (tn > tf) return -1; }
+  return tn;
 }
 
 /**
@@ -170,9 +189,22 @@ export function findInteractTarget(world, eye, cfg, out) {
     if (v > -1e-9 && v < 1e-9) { if (o < z0 || o > z1) continue; }
     else { let t0 = (z0 - o) / v, t1 = (z1 - o) / v; if (t0 > t1) { const q = t0; t0 = t1; t1 = q; } if (t0 > tn) tn = t0; if (t1 < tf) tf = t1; if (tn > tf) continue; }
     if (tn >= bestT) continue;
+    // OB-088: a prop with collider shapes picks on the shapes themselves (oriented boxes), not their union AABB (a rotated,
+    // many-piece wreck made a box far bigger than the object). The AABB above is only the broadphase.
+    let ccx = (x0 + x1) * 0.5, ccy = (y0 + y1) * 0.5, ccz = (z0 + z1) * 0.5;
+    const shapes = pk ? rec.pickShapes : null;
+    if (shapes) {
+      let best = -1;
+      for (let k = 0; k < shapes.length; k++) {
+        const sh = shapes[k], t = shapeEntry(sh, eye.x, eye.y, eye.z, vx, vy, vz, pad, maxT);
+        if (t >= 0 && (best < 0 || t < best)) { best = t; ccx = sh.cx; ccy = sh.cy; ccz = sh.cz; }
+      }
+      if (best < 0 || best >= bestT) continue;
+      tn = best;
+    }
     // OB-084: the eye INSIDE the (padded) box hits in every direction -> only when the box centre is within INSIDE_CONE of the crosshair
     if (tn === 0) {
-      const cx = (x0 + x1) * 0.5 - eye.x, cy = (y0 + y1) * 0.5 - eye.y, cz = (z0 + z1) * 0.5 - eye.z;
+      const cx = ccx - eye.x, cy = ccy - eye.y, cz = ccz - eye.z;
       const cl = Math.sqrt(cx * cx + cy * cy + cz * cz);
       if (cl > 1e-6 && (cx * vx + cy * vy + cz * vz) / cl < INSIDE_COS) continue;
     }

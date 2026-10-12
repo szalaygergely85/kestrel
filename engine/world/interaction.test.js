@@ -276,15 +276,16 @@ const pick = (w, eye, cfg) => { const o = fresh(); findInteractTarget(w, eye, cf
 }
 { // forgiveness + hysteresis + vertical extent
   const w = makeWorld();
-  // small note on a post at 1.2 m: 0.1 m wide pick (half 0.05); pad 0.15
+  // small note on a post at 1.2 m: 0.1 m wide pick (half 0.05); pad 0.06 (OB-088: was 0.15)
   const note = { ...recAtAngle('note', 0, 1.2), pick: { x0: -0.05, x1: 0.05, y0: -1.25, y1: -1.15, z0: -0.1, z1: 0.1 } };
   w.interactables = [note];
   const yawFor = (offM) => Math.atan2(offM, 1.2) * 180 / Math.PI;
-  ok('note: crosshair 0.1 m off its edge still targeted', pick(w, { ...EYE_NORTH, yawDeg: yawFor(0.15) }).targetKey === 's.note');
+  ok('note: crosshair 0.04 m off its edge still targeted', pick(w, { ...EYE_NORTH, yawDeg: yawFor(0.09) }).targetKey === 's.note');
+  ok('OB-088: crosshair 0.12 m off the edge not targeted', pick(w, { ...EYE_NORTH, yawDeg: yawFor(0.17) }).targetKey === null);
   ok('note: crosshair 0.3 m off the edge not targeted', pick(w, { ...EYE_NORTH, yawDeg: yawFor(0.35) }).targetKey === null);
   const o = fresh(); o.targetKey = 's.note';
-  findInteractTarget(w, { ...EYE_NORTH, yawDeg: yawFor(0.27) }, null, o);
-  ok('hyst: held target survives 0.22 m off the edge', o.targetKey === 's.note');
+  findInteractTarget(w, { ...EYE_NORTH, yawDeg: yawFor(0.15) }, null, o);
+  ok('hyst: held target survives 0.1 m off the edge', o.targetKey === 's.note');
   ok('hyst: ...but is not acquired fresh', pick(w, { ...EYE_NORTH, yawDeg: yawFor(0.27) }).targetKey === null);
   // vertical: default box 0.8 m tall centred on rec.z; eye 1.6, object z 1.0 at 1.2 m
   const mk = { key: 's.n', structId: 's', name: 'n', prompt: 'Read', x: 0, y: -1.2, z: 1.0, radius: 3, once: false, requires: null, propId: null, usedKey: null };
@@ -379,5 +380,17 @@ const pick = (w, eye, cfg) => { const o = fresh(); findInteractTarget(w, eye, cf
   box.x1 = 3; resolvePropPicks(w); ok('OB-084: re-resolve follows a moved prop', rec.pick === box);
 }
 
+{ // OB-088: a rotated two-piece prop picks on its PIECES, not on their union AABB
+  const w = makeWorld();
+  const c45 = Math.cos(Math.PI / 4), s45 = Math.sin(Math.PI / 4);
+  // two posts 2 m apart (the right one rotated 45 deg): their union AABB covers the empty gap between them
+  const shapes = [{ cx: -1, cy: -2, cz: 1.6, hx: 0.1, hy: 0.1, hz: 0.3, c: 1, s: 0 }, { cx: 1, cy: -2, cz: 1.6, hx: 0.1, hy: 0.1, hz: 0.3, c: c45, s: s45 }];
+  const rec = { key: 'qi.wreck', name: 'quest.inspect', prompt: '[E] Inspect wreck', x: 0, y: -2, z: 1.6, radius: 3, once: false, requires: null, propId: null, usedKey: null,
+    pick: { x0: -1.15, x1: 1.15, y0: -2.15, y1: -1.85, z0: 1.3, z1: 1.9 }, pickShapes: shapes };
+  w.interactables = [rec];
+  const at = (x, y) => pick(w, { x: 0, y: 0, z: 1.6, yawDeg: Math.atan2(x, -y) * 180 / Math.PI, pitchDeg: 0 }, { reach: 3 }).targetKey;
+  ok('OB-088: aiming at either post (one rotated) picks the prop', at(-1, -2) === 'qi.wreck' && at(1, -2) === 'qi.wreck' && at(1.12, -2) === 'qi.wreck');
+  ok('OB-088: aiming into the gap inside the union box does not', at(0, -2) === null && at(0.5, -2) === null);
+}
 console.log(`interaction.test.js: ${pass} passed, ${fail} failed`);
 if (fail) { console.log('FAILURES:\n' + failures.join('\n')); process.exit(1); }

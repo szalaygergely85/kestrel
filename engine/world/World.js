@@ -633,6 +633,7 @@ export class World {
           def: it,
           usedKey: it.once ? `used.${s.id}.${it.id}` : null,
           pick: null, // OB-084: filled by resolvePropPicks (rebuildPropColliders) once the props exist
+          pickShapes: null, // OB-088: the prop's oriented collider shapes (the ray tests these; pick = their union AABB = broadphase)
         });
       }
     }
@@ -1794,13 +1795,15 @@ export class World {
       usedKey: null,
       structId: null,
       pick: null, // OB-084: always present (stable hidden class); the hot pick loop never adds it
+      pickShapes: null, // OB-088
     };
     if (spec.pick) rec.pick = spec.pick; // OB-066: optional world AABB {x0,y0,z0,x1,y1,z1} the crosshair ray tests
     if (typeof spec.height === 'number') rec.height = spec.height;
     // OB-084: `bodyId` = an entity whose live body (bodyR wide, bodyH tall from its feet) is the pick volume (NPC, corpse, pickup)
     if (spec.bodyId) { rec.bodyId = spec.bodyId; rec.bodyR = typeof spec.bodyR === 'number' ? spec.bodyR : 0.4; rec.bodyH = typeof spec.bodyH === 'number' ? spec.bodyH : 1.8; }
     list.push(rec);
-    if (rec.propId && !rec.bodyId && !rec.pick) rec.pick = this.propPickBox(rec.propId) || null; // OB-084: prop collider box, resolved once
+    if (spec.pickShapes) rec.pickShapes = spec.pickShapes; // OB-088
+    if (rec.propId && !rec.bodyId && !rec.pick) { rec.pick = this.propPickBox(rec.propId) || null; rec.pickShapes = this.propPickShapes(rec.propId) || null; } // OB-084/088: prop collider box + shapes, resolved once
     return rec;
   }
 
@@ -1809,6 +1812,35 @@ export class World {
    * crosshair pick volume; null when the prop has none. Static (read once at add time).
    * @param {string} id entity id
    */
+  /**
+   * OB-088: the prop's collider shapes as oriented world boxes [{cx,cy,cz,hx,hy,hz,c,s}] (cylinders as their square box,
+   * c/s = cos/sin of the shape's world yaw) for the crosshair pick; null when the prop has none. Static (read at add time).
+   * @param {string} id entity id
+   */
+  propPickShapes(id) {
+    const e = this.entity(id);
+    if (!e || e.type !== 'prop') return null;
+    const comp = e.components.voxel || e.components.sprite;
+    const sid = id.slice(0, id.indexOf('.')), pid = id.slice(id.indexOf('.') + 1);
+    const st = this.structures.find((q) => q.id === sid);
+    const p = st && st.level && st.level.def && (st.level.def.props || []).find((q) => q.id === pid);
+    const defs = p && Object.hasOwn(p, 'colliders') ? p.colliders : (comp && this.assets.model(comp.model).colliders);
+    if (!Array.isArray(defs) || !defs.length) return null;
+    const t = e.transform, sc = t.scale || 1, yaw = (t.yawDeg || 0) * Math.PI / 180, c = Math.cos(yaw), sn = Math.sin(yaw);
+    const out = [];
+    for (const d of defs) {
+      if (!d || !Array.isArray(d.c)) continue;
+      const box = d.type === 'box' && Array.isArray(d.half);
+      const a = (d.yawDeg || 0) * Math.PI / 180 + yaw;
+      out.push({
+        cx: t.x + (c * d.c[0] - sn * d.c[1]) * sc, cy: t.y + (sn * d.c[0] + c * d.c[1]) * sc, cz: t.z + d.c[2] * sc,
+        hx: (box ? d.half[0] : d.r) * sc, hy: (box ? d.half[1] : d.r) * sc, hz: (box ? d.half[2] : d.h / 2) * sc,
+        c: Math.cos(a), s: Math.sin(a),
+      });
+    }
+    return out.length ? out : null;
+  }
+
   propPickBox(id) {
     const e = this.entity(id);
     if (!e || e.type !== 'prop') return null;
