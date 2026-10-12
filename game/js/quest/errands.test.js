@@ -157,3 +157,16 @@ const w = rd('content/worlds/world_m1.world.json'), areas = rd('content/quests/a
 const trig = w.triggers.find((t) => t.id === areas.areas.hintStone.trigger);
 assert.ok(trig && trig.shape === 'circle', 'hintStone area -> circle trigger ' + areas.areas.hintStone.trigger);
 console.log('errands.test.js: OK');
+
+// ERRAND-FLAG-01: {flag:'burl.home'} survives Ch1 -> Ch2 (the main book keeps one flag store); an errand stays unavailable only until Burl's first
+// home greeting sets burl.home.met (bear.home setFlag s.burl.home.met), whichever order the flags arrive in.
+for (const order of [['burl.home', 'burl.home.met'], ['burl.home.met', 'burl.home']]) {
+  const b = newBook(), f = (k) => b.feed({ type: 'flag:set', key: k, value: true });
+  for (const o of files.questDef.objectives) { const w = o.when; if (w.type === 'flag') f(w.id); else if (w.type === 'area') b.feed({ type: 'area:entered', id: w.id }); else if (w.type === 'beasts') for (const id of w.ids) b.feed({ type: 'beast:died', id }); }
+  for (const id of ['tower.blade', 'burl.boars']) { b.accept(id); for (const o of b.def(b.index(id)).objectives) { const w = o.when; if (w.type === 'beasts') for (const x of w.ids) b.feed({ type: 'beast:died', id: x }); else if (w.type === 'item') b.feed({ type: 'item:got', id: w.id }); else if (w.type === 'area') b.feed({ type: 'area:entered', id: w.id }); else if (w.type === 'flag') f(w.id); } b.handIn(id); }
+  // Ch2 main-quest activity (Rook's mq.bend.call) must not disturb the Ch1 flags
+  f('waystone.ws_roadBend.woken'); f('relay.bend.pulseSeen');
+  f(order[0]); assert.notEqual(b.statusOf('sq.burl.blue'), AVAILABLE, 'gated until both flags: ' + order[0]);
+  f(order[1]); assert.equal(b.statusOf('sq.burl.blue'), AVAILABLE, 'sq.burl.blue available after ' + order.join(' + '));
+}
+console.log('ERRAND-FLAG-01 ok');
