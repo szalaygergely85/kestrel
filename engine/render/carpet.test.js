@@ -60,12 +60,10 @@ function dirOf(yawDeg, pitchDeg, out) {
     for (let w = 0; w < 6; w++) run(w); // JIT warm-up
     global.gc();
     const h0 = process.memoryUsage().heapUsed;
-    run(0.5);
+    run(0.5); run(0.7); run(0.9); // 30k traces: the fixed cost of memoryUsage() itself (~90 kB) is spread out
     const dh = process.memoryUsage().heapUsed - h0;
-    // OPEN (ASK ARCHITECT): a minimal probe (1 variant, flat class map) allocates ~0 B/trace through traceCarpetIn, but this fixture
-    // (2 variants, sloped ground) shows ~100-170 B/trace of V8 boxing in the JIT'd blade test. Hard guard 400 B/trace until D2d decides.
-    console.log(`  (info) AC6 ${wind ? 'wind' : 'calm'}: ${(dh / 10000).toFixed(0)} B/trace over 10k traces (target 0)`);
-    check(dh < 400 * 10000, `AC6 guard ${wind ? 'wind' : 'calm'}: < 400 B/trace`);
+    console.log(`  (info) AC6 ${wind ? 'wind' : 'calm'}: ${(dh / 30000).toFixed(1)} B/trace over 30k traces (target < 8)`);
+    check(dh < 8 * 30000, `AC6 ${wind ? 'wind' : 'calm'}: < 8 B/trace (2-variant sloped fixture)`);
   }
 }
 
@@ -119,9 +117,19 @@ function dirOf(yawDeg, pitchDeg, out) {
     return { total, hitsA, front, frac: diff / total };
   };
   const big = measure(0.1), small = measure(0.001);
-  console.log(`  (info) AC2 shift 0.1 m: ${big.total} cells (front excluded ${big.front}), ${big.hitsA} carpet hits, ${(100 * big.frac).toFixed(1)} % flipped`);
-  console.log('  (info) AC2 NOTE: 0.1 m of sideways eye shift moves blades 8+ cells on screen at 3 m (true parallax), so any correct world-anchored carpet re-rolls coverage; the AC text (< 2 %) is checked at a sub-cell shift instead. ASK ARCHITECT.');
-  check(small.hitsA > 100 && small.frac < 0.02, `AC2 eye shift 0.001 m (sub-cell): ${(100 * small.frac).toFixed(2)} % of ${small.total} cells flipped (< 2 %)`);
+  console.log(`  (info) AC2 shift 0.1 m: ${big.total} cells (front excluded ${big.front}), ${big.hitsA} carpet hits, ${(100 * big.frac).toFixed(1)} % flipped (true parallax, info only)`);
+  check(small.hitsA > 100 && small.frac < 0.02, `AC2a eye shift 0.001 m (sub-cell): ${(100 * small.frac).toFixed(2)} % of ${small.total} cells flipped (< 2 %)`);
+  // AC2b: at pose B every DDA hit == brute-force hit (same lattice id), and no blade is re-rolled (hit identity == its lattice identity)
+  const B = [-5, -4.1, 1.6], ref = makeCarpetHit(), bb = new Float64Array(4);
+  let n = 0, same = 0, hitsB = 0, reroll = 0;
+  for (let cy = 1; cy < ROWS; cy += 7) for (let cx = 3; cx < COLS; cx += 7) {
+    ray(cx, cy, d); const t = terrainT(B, d);
+    const h1 = traceCarpet(B, d, t, ctx, 0, out), h2 = traceCarpetBrute(B, d, t, ctx, 0, ref);
+    n++; if (h1) hitsB++;
+    if (h1 === h2 && (!h1 || (out.ix === ref.ix && out.iy === ref.iy))) same++;
+    if (h1) { bladeAtCell(ctx, out.ix, out.iy, bb); if (out.variant !== bb[3] || Math.abs(out.h01 * bb[2] - (out.z - groundZ(bb[0], bb[1]))) > 1e-6) reroll++; }
+  }
+  check(hitsB > 20 && same === n && reroll === 0, `AC2b eye shift 0.1 m: DDA == brute at the new pose on ${same}/${n} sampled rays (${hitsB} hits), ${reroll} re-rolled blades`);
 }
 
 // ---- AC3 + AC4: no hit past fp > 2w or dXY > radius; never a partial trace past NMAX
@@ -154,7 +162,7 @@ function dirOf(yawDeg, pitchDeg, out) {
   const rngA = rng(11);
   for (const [name, wind, tol] of [['wind 0', null, 0], ['wind 2 m/s', windOf(1.6, 1.2), 0.02]]) {
     const ctx = mk(2.5, wind), out = makeCarpetHit(), ref = makeCarpetHit(), d = [0, 0, 0], e = [0, 0, 0];
-    let n = 0, agree = 0, hits = 0, tDiff = 0;
+    let n = 0, agree = 0, hits = 0, tDiff = 0, tSum = 0, tWorst = 0, sSum = 0;
     for (; n < 10000; n++) {
       e[0] = -9 + rngA() * 4; e[1] = 3 + rngA() * 3; e[2] = 0.5 + rngA() * 0.6; // meadow/straw boundary near x -1.. left side is meadow; both ctx share the map
       e[0] = -8 + rngA() * 14;
@@ -162,8 +170,10 @@ function dirOf(yawDeg, pitchDeg, out) {
       const t = terrainT(e, d), tm = n * 0.01;
       const a = traceCarpet(e, d, t, ctx, tm, out), bb = traceCarpetBrute(e, d, t, ctx, tm, ref);
       if (a) hits++;
+      if (out.steps > 0 && out.steps <= NMAX) { const pc = out.tests / out.steps; tSum += out.tests; sSum += out.steps; if (pc > tWorst) tWorst = pc; }
       if (a === bb && (!a || Math.abs(out.t - ref.t) < 1e-9)) agree++; else if (a && bb) tDiff++;
     }
+    console.log(`  (info) AC5 ${name}: tests/cell mean ${(tSum / sSum).toFixed(2)}, worst trace ${tWorst.toFixed(2)} (3x3 undeduped = 9)`);
     check(hits > 300 && (n - agree) / n <= tol, `AC5 ${name}: ${hits} hits, DDA == brute on ${agree}/${n} rays (${tDiff} nearer-blade differences)`);
   }
 }
