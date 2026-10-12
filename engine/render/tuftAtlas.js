@@ -19,35 +19,39 @@ export function buildTuftAtlas(seed = 1, opts = {}) {
   const curlK = Math.round((opts.curl ?? TUFT_ATLAS_DEFAULTS.curl) * 16) | 0;   // 16 = 1.0
   const widK = Math.round((opts.widthTex ?? TUFT_ATLAS_DEFAULTS.widthTex) * 16) | 0;
   const data = new Uint8Array(n * w * h * 2), strokes = new Uint8Array(n);
-  const sd = seed | 0, W16 = w * 16;
+  const sd = seed | 0, mid16 = (w * 16) >> 1, span = 5 * 16;                    // roots in the middle ~6 texels
   for (let k = 0; k < n; k++) {
     const hs = (a, b) => hashFast24(sd + k * 131 + a, b, SALT);
     const nb = bl[0] + hs(0, 0) % (bl[1] - bl[0] + 1);
     strokes[k] = nb;
-    const base = k * w * h * 2, slot = (W16 / nb) | 0;
+    const base = k * w * h * 2;
     for (let i = 0; i < nb; i++) {
       const hi = 10 + i * 7;
-      // centre-line origin: evenly spread slots + jitter, kept inside the tile
-      let x0 = (((i * W16 / nb) | 0) + (slot >> 1) + (((hs(hi, 1) % slot) - (slot >> 1)) >> 1)) | 0;
-      x0 = Math.max(24, Math.min(W16 - 24, x0));
-      // taller towards the middle, varied per blade (rows)
-      const mid = ((Math.abs(2 * i + 1 - nb) * 4 / nb) | 0);                        // 0 centre .. ~4 edge
-      const hb = Math.max(8, Math.min(h, 12 + (hs(hi, 2) % (h - 11)) - mid * 2));
-      const lean = (hs(hi, 3) % 97) - 48;                                           // total tip offset, 1/16 texel (+-3 texel)
-      const curl = (((hs(hi, 4) % 61) - 30) * curlK) >> 4;                          // quadratic bend, 1/16 texel
-      const wb = ((26 + (hs(hi, 5) % 14)) * widK) >> 4;                             // base half-width, 1/16 texel (~1.6-2.4)
-      for (let ry = 0; ry < hb && ry < h; ry++) {
-        const t = (((ry * 2 + 1) * 256) / (2 * hb)) | 0;                            // 0..255 stroke fraction (int)
-        const xc = x0 + ((lean * t) >> 8) + ((curl * ((t * t) >> 8)) >> 8);
-        // thicker at the base, tapering to a thin tip (never below 5/16 texel)
-        const hw = Math.max(5, (wb * (256 - t)) >> 8);
+      // root x (1/16 texel): fanned across the narrow base, small jitter
+      const rx = mid16 - (span >> 1) + ((i * span / (nb - 1)) | 0) + ((hs(hi, 1) % 17) - 8);
+      const side = rx < mid16 ? -1 : 1, out = Math.abs(rx - mid16);               // 0 .. ~40: outer blades have more
+      const hb = h * 10 / 24 + (hs(hi, 2) % ((h * 15 / 24 | 0) + 1)) | 0;          // 40-100 % of h rows
+      const hrows = Math.max(1, Math.min(h, hb));
+      // sideways lean in 1/16 texel: 0.12..0.6 of the blade height, outer blades lean more (outward), some inward
+      let lf = 20 + ((out * 280) / 48 | 0) + ((hs(hi, 3) % 61) - 30);              // per mille of height
+      lf = Math.max(-450, Math.min(450, lf));
+      const dir = (hs(hi, 6) % 8 === 0) ? -side : side;
+      const lean = (dir * lf * hrows * 16 / 1000) | 0;
+      const curl = (dir * ((hs(hi, 4) % 120) * curlK >> 4) * hrows * 16 / 1000) | 0; // tip curls outward
+      let pc = -1;
+      for (let ry = 0; ry < hrows; ry++) {
+        const t = (((ry * 2 + 1) * 256) / (2 * hrows)) | 0;                         // 0..255 stroke fraction (int)
+        const xc = rx + ((lean * t) >> 8) + ((curl * ((t * t) >> 8)) >> 8);
+        let col = xc >> 4; col = col < 0 ? 0 : col >= w ? w - 1 : col;
         const rv = 1 + ((253 * t + 128) >> 8);
-        for (let c = 0; c < w; c++) {
-          const d = Math.abs(c * 16 + 8 - xc);
-          if (d > hw) continue;
-          const o = base + (ry * w + c) * 2, g = Math.min(255, d * 2);
+        // run from the previous row's column to this one (keeps the stroke 8-connected for any slope)
+        const a0 = pc < 0 ? col : Math.min(pc, col), a1 = pc < 0 ? col : Math.max(pc, col);
+        const wide = ry === 0 && (i & 1) === 0 && widK >= 16 ? 1 : 0;                // 2 wide at the very base only
+        for (let c = a0; c <= a1 + wide && c < w; c++) {
+          const o = base + (ry * w + c) * 2, g = Math.min(255, Math.abs(c * 16 + 8 - xc) * 2);
           if (data[o] === 0 || g < data[o + 1]) { data[o] = rv; data[o + 1] = g; }  // nearer centre line wins
         }
+        pc = col;
       }
     }
   }

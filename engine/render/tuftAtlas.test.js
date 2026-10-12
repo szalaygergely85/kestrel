@@ -12,7 +12,7 @@ const sha = (d) => createHash('sha256').update(d).digest('hex');
 ok('byte-identical across two builds', Buffer.compare(Buffer.from(a.data), Buffer.from(b.data)) === 0);
 ok('different seed differs', sha(a.data) !== sha(c.data));
 ok('dims 8 x 16 x 24 x 2 bytes', a.n === 8 && a.w === 16 && a.h === 24 && a.data.length === 8 * 16 * 24 * 2);
-const PIN = 'eff04632cc06b6e7470a4263a13a4730d248901a4c7088ccfda5be10a5466f24';
+const PIN = '87881984af9a7c3dcb38d6ee6da2c1a14ade4f21a2f3ea7ed41b6010bfb3898c';
 ok('pinned sha (seed 1)', sha(a.data) === PIN, sha(a.data));
 
 for (let k = 0; k < a.n; k++) {
@@ -23,6 +23,16 @@ for (let k = 0; k < a.n; k++) {
     if (texelR(p)) { cov++; if (r === 0) baseRow++; if (r > 14) tipRow++; }
   }
   ok(`shape ${k}: coverage ${cov}, base row ${baseRow}, upper rows ${tipRow}`, cov > 40 && cov < 300 && baseRow >= 3 && tipRow >= 1);
+}
+// no detached pixels: every lit texel 8-connects (through lit texels) to a base-row texel; base row has gaps (not a block)
+for (let k = 0; k < a.n; k++) {
+  const W = a.w, H = a.h, lit = (r, c) => r >= 0 && r < H && c >= 0 && c < W && a.data[((k * H + r) * W + c) * 2] > 0;
+  const seen = new Uint8Array(W * H), st = []; let total = 0, reach = 0;
+  for (let c = 0; c < W; c++) if (lit(0, c)) { seen[c] = 1; st.push(0, c); }
+  while (st.length) { const c = st.pop(), r = st.pop(); reach++; for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) { const rr = r + dr, cc = c + dc; if (lit(rr, cc) && !seen[rr * W + cc]) { seen[rr * W + cc] = 1; st.push(rr, cc); } } }
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) if (lit(r, c)) total++;
+  let baseN = 0; for (let c = 0; c < W; c++) if (lit(0, c)) baseN++;
+  ok(`shape ${k}: no detached pixels (${reach}/${total}), base row ${baseN} texels in the middle`, reach === total && baseN <= 8 && !lit(0, 0) && !lit(0, W - 1));
 }
 { let mn = 255, mx = 0; for (let i = 0; i < a.data.length; i += 2) if (a.data[i]) { mn = Math.min(mn, a.data[i]); mx = Math.max(mx, a.data[i]); }
   ok('r range in 1..254', mn >= 1 && mx <= 254 && mx > 200, mn + '..' + mx); }
