@@ -15,22 +15,22 @@ function curve(c, t, floor) { // piecewise-linear [ms, v] curve, no allocation
 }
 
 export function createQuestMarks(hooks, host) {
-  const fx = host.fx, rec = new Map(), pos = { x: 0, y: 0, z: 0 }, src = { done: false, id: '', targets: null };
+  const fx = host.fx, rec = new Map(), pos = { x: 0, y: 0, z: 0, s: 1 }, src = { done: false, id: '', targets: null };
   const read = host.source ? () => { src.done = false; src.targets = null; host.source(src); return src; } : () => hooks.questObjective();
   const range2 = fx.visibleRangeM * fx.visibleRangeM;
   let tickNo = 0, ctxRef = null;
 
   function record(id) {
     let r = rec.get(id);
-    if (!r) { r = { id, h: null, st: ST_HIDDEN, t: 0, seen: 0, x: 0, y: 0, z: 0, ok: false }; rec.set(id, r); }
+    if (!r) { r = { id, h: null, st: ST_HIDDEN, t: 0, seen: 0, x: 0, y: 0, z: 0, s: 1, ok: false }; rec.set(id, r); }
     return r;
   }
   function start(r) {
-    r.ok = host.resolve(r.id, pos); if (!r.ok) return;
-    r.x = pos.x; r.y = pos.y; r.z = pos.z;
+    pos.s = 1; r.ok = host.resolve(r.id, pos); if (!r.ok) return;
+    r.x = pos.x; r.y = pos.y; r.z = pos.z; r.s = pos.s > 0 ? pos.s : 1; // OB-095: per-target size (resolve may set out.s; default 1)
     if (!r.h) r.h = host.create();
     r.h.setPos(r.x, r.y, r.z);
-    r.st = ST_POP; r.t = 0; r.h.anim = fx.clipFor.appear; r.h.hidden = false; r.h.scale = fx.popScale[0][1];
+    r.st = ST_POP; r.t = 0; r.h.anim = fx.clipFor.appear; r.h.hidden = false; r.h.scale = fx.popScale[0][1] * r.s;
   }
 
   return {
@@ -54,12 +54,13 @@ export function createQuestMarks(hooks, host) {
         if (r.seen !== tickNo && r.st !== ST_FADE) { r.st = ST_FADE; r.t = 0; h.anim = fx.clipFor.complete; }
         r.t += ms;
         // MARK-FOLLOW-01 (owner: the mark stayed behind when Burl walked): re-resolve the target every tick so marks follow moving NPCs (zero alloc: shared pos).
+        pos.s = 1;
         if (host.resolve(r.id, pos) && (pos.x !== r.x || pos.y !== r.y || pos.z !== r.z)) { r.x = pos.x; r.y = pos.y; r.z = pos.z; h.setPos(r.x, r.y, r.z); }
         if (r.st === ST_POP) {
-          h.scale = curve(fx.popScale, r.t, 0.05);
-          if (r.t >= fx.popMs) { r.st = ST_ACTIVE; h.scale = 1; h.anim = fx.clipFor.active; }
+          h.scale = curve(fx.popScale, r.t, 0.05) * r.s;
+          if (r.t >= fx.popMs) { r.st = ST_ACTIVE; h.scale = r.s; h.anim = fx.clipFor.active; }
         } else if (r.st === ST_FADE) {
-          h.scale = curve(fx.fadeScale, r.t, 0.05);
+          h.scale = curve(fx.fadeScale, r.t, 0.05) * r.s;
           if (r.t >= fx.fadeMs) { r.st = ST_HIDDEN; h.hidden = true; continue; }
         }
         if (pl) { const dx = pl.x - r.x, dy = pl.y - r.y, dz = pl.z - r.z; h.hidden = dx * dx + dy * dy + dz * dz > range2; }
