@@ -1,5 +1,6 @@
 // OB-073-D2a (arch 38.52 item 6): near-field grass carpet config check + class map. Derived render data:
 // never serialized, never hashed, never read by the sim. Pure JS, no render code (D2b+ consume the map).
+import { maskAt } from './grassMask.js';
 export const CARPET_MAX_VARIANTS = 15;
 export const CARPET_DEFAULTS = { cellM: 0.10, radiusM: 12, patchM: 6, classCellM: 2, classJitterM: 0.8, gustM: 5, travelM: 1.5, bladeW: 0.06, swayGain: 1 };
 export const LEAN_CAP_M = 0.6, PATCH_MAX = 1.25; // OB-096: mirror LEAN_CAP / (PATCH_LO + PATCH_RANGE) of render/carpet.js (render imports these; no render import here)
@@ -31,7 +32,7 @@ export function validateCarpetConfig(cfg, typeNames) {
     else if (!(isNum(cfg[k]) && cfg[k] > 0)) fail(k, 'must be a number > 0');
   }
   if (cfg.cutGround !== undefined && (!Array.isArray(cfg.cutGround) || cfg.cutGround.some((n) => typeof n !== 'string' || !typeNames || typeNames.indexOf(n) < 0))) fail('cutGround', 'must be an array of known ground type names');
-  if (cfg.mask != null && typeof cfg.mask !== 'function' && typeof cfg.mask.sample !== 'function') fail('mask', 'must be null, a function (x, y) => 0..1 or an object with sample(x, y)');
+  if (cfg.mask != null && typeof cfg.mask !== 'function' && typeof cfg.mask.sample !== 'function' && !(cfg.mask.chunks instanceof Map)) fail('mask', 'must be null, a GrassMaskLayer, a function (x, y) => 0..1 or an object with sample(x, y)');
   const vs = cfg.variants;
   if (!Array.isArray(vs) || vs.length < 1) fail('variants', 'must be a non-empty array');
   if (vs.length > CARPET_MAX_VARIANTS) fail('variants', `${vs.length} variants (max ${CARPET_MAX_VARIANTS})`);
@@ -147,91 +148,172 @@ function stampDisc(st, m, ci0, cj0, ci1, cj1, cx, cy, r) {
   }
 }
 
+/** Paint input -> (x, y) => 0..1 or null. Accepts a GrassMaskLayer (MASK-a, via maskAt), a function or `{sample}` (escape hatches). */
+function paintFn(paint) {
+  if (!paint) return null;
+  if (typeof paint === 'function') return paint;
+  if (paint.chunks instanceof Map) return (x, y) => maskAt(paint, x, y);
+  if (typeof paint.sample === 'function') return (x, y) => paint.sample(x, y);
+  return null;
+}
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+const ST_CLEAR = 0, ST_STAMP = 1, ST_DIL_H = 2, ST_DIL_V = 3, ST_BLUR_H = 4, ST_BLUR_V = 5, ST_DONE = 6;
+const ITEMS_PER_UNIT = 256, ROWS_PER_UNIT = 8;
+
+/**
+ * Resumable (row-sliced) mask build. `step(msBudget)` does work units (8 rows / 256 stamps) until the budget is spent;
+ * returns true when finished (`job.result` is then complete). Stages: clear+cutGround, stamps, dilate H, dilate V, blur H, blur V + paint.
+ * The sync `buildCarpetMask` runs the same job with an infinite budget, so sliced == sync bytes. 0 alloc per step.
+ */
+export class CarpetMaskJob {
+  constructor(terrain, cfg, paint, structures, scatter, out, rect) {
+    this.done = false; this.result = null; this.units = 0;
+    const g = terrain && terrain.near;
+    if (!g || !terrain.nearReady) { this.done = true; return; }
+    this.terrain = terrain; this.pf = paintFn(paint); this.structures = structures; this.scatter = scatter; this.g = g;
+    const cellM = CARPET_MASK_CELL;
+    const w = Math.floor(g.w * g.cell / cellM), h = Math.floor(g.h * g.cell / cellM);
+    const fresh = !(out && out.data && out.data.length === w * h && out._st);
+    const res = fresh ? { data: new Uint8Array(w * h), _st: new Uint8Array(w * h), _tmp: new Uint8Array(w * h), _cut: null, _cutSrc: null } : out;
+    const moved = res.x0 !== g.x0 || res.y0 !== g.y0;
+    res.x0 = g.x0; res.y0 = g.y0; res.w = w; res.h = h; res.cellM = cellM;
+    this.res = res; this.result = res;
+    const R = this.R = Math.max(1, Math.floor(CARPET_MASK_FEATHER / cellM)), P = 2 * R;
+    let oi0 = 0, oj0 = 0, oi1 = w, oj1 = h; // output cell window; working window = output + P pad
+    if (rect && !fresh && !moved) {
+      oi0 = Math.max(0, Math.floor((rect.x0 - g.x0) / cellM)); oj0 = Math.max(0, Math.floor((rect.y0 - g.y0) / cellM));
+      oi1 = Math.min(w, Math.floor((rect.x1 - g.x0) / cellM) + 1); oj1 = Math.min(h, Math.floor((rect.y1 - g.y0) / cellM) + 1);
+      if (oi1 <= oi0 || oj1 <= oj0) { this.done = true; return; }
+    }
+    this.oi0 = oi0; this.oj0 = oj0; this.oi1 = oi1; this.oj1 = oj1;
+    this.wi0 = Math.max(0, oi0 - P); this.wj0 = Math.max(0, oj0 - P); this.wi1 = Math.min(w, oi1 + P); this.wj1 = Math.min(h, oj1 + P);
+    if (cfg.cutGround && cfg.cutGround.length) {
+      const names = terrain.typeNames;
+      if (!res._cut || res._cut.length !== names.length || res._cutSrc !== cfg.cutGround) {
+        res._cut = new Uint8Array(names.length); res._cutSrc = cfg.cutGround;
+        for (let t = 0; t < names.length; t++) if (cfg.cutGround.indexOf(names[t]) >= 0) res._cut[t] = 1;
+      }
+      this.cut = res._cut;
+    } else this.cut = null;
+    this.stage = ST_CLEAR; this.row = this.wj0; this.item = 0;
+  }
+
+  /** Work for ~`msBudget` ms (Infinity = to the end). @returns {boolean} finished */
+  step(msBudget) {
+    if (this.done) return true;
+    const t0 = msBudget === Infinity ? 0 : now();
+    while (this.stage !== ST_DONE) {
+      this._unit(); this.units++;
+      if (this.stage !== ST_DONE && msBudget !== Infinity && now() - t0 >= msBudget) return false;
+    }
+    this.done = true;
+    return true;
+  }
+
+  /** One work unit; advances stage/row. */
+  _unit() {
+    const { res, g, R, wi0, wj0, wi1, wj1, oi0, oj0, oi1, oj1 } = this;
+    const w = res.w, cellM = res.cellM, st = res._st, tmp = res._tmp, data = res.data;
+    switch (this.stage) {
+      case ST_CLEAR: {
+        const end = Math.min(wj1, this.row + ROWS_PER_UNIT);
+        for (let j = this.row; j < end; j++) {
+          st.fill(0, wi0 + j * w, wi1 + j * w);
+          if (this.cut) {
+            const row = Math.floor(((j + 0.5) * cellM) / g.cell) * g.w;
+            for (let i = wi0; i < wi1; i++) if (this.cut[g.type[Math.floor(((i + 0.5) * cellM) / g.cell) + row]]) st[i + j * w] = 255;
+          }
+        }
+        this.row = end;
+        if (end >= wj1) { this.stage = ST_STAMP; this.item = 0; }
+        break;
+      }
+      case ST_STAMP: {
+        const wx0 = g.x0 + wi0 * cellM, wy0 = g.y0 + wj0 * cellM, wx1 = g.x0 + wi1 * cellM, wy1 = g.y0 + wj1 * cellM;
+        const S = this.structures, nS = S ? S.length : 0, sc = this.scatter, nT = sc && sc.count > 0 ? sc.count : 0;
+        if (this.item < nS) { // structures first, then trunks
+          const end = Math.min(nS, this.item + ITEMS_PER_UNIT);
+          for (let s = this.item; s < end; s++) {
+            const b = S[s].bbox;
+            if (!b || !(b.x1 >= wx0 && b.x0 <= wx1 && b.y1 >= wy0 && b.y0 <= wy1)) continue;
+            stampRect(st, res, wi0, wj0, wi1, wj1, b.x0, b.y0, b.x1, b.y1);
+          }
+          this.item = end;
+        } else if (this.item < nS + nT) {
+          const k0 = this.item - nS, end = Math.min(nT, k0 + ITEMS_PER_UNIT);
+          const tc = this.terrain.recipe && this.terrain.recipe.recipe && this.terrain.recipe.recipe.forest && this.terrain.recipe.recipe.forest.trees;
+          const sp = tc && tc.species;
+          for (let k = k0; k < end; k++) {
+            const x = sc.x[k], y = sc.y[k], r = (sp && sp[sc.species[k]] ? sp[sc.species[k]].trunkR : 0.3) + 0.3;
+            if (x + r < wx0 || x - r > wx1 || y + r < wy0 || y - r > wy1) continue;
+            stampDisc(st, res, wi0, wj0, wi1, wj1, x, y, r);
+          }
+          this.item = nS + end;
+        }
+        if (this.item >= nS + nT) { this.stage = ST_DIL_H; this.row = wj0; }
+        break;
+      }
+      case ST_DIL_H: { // dilate (max) by R: st -> tmp (H); reads clamp to the working window
+        const end = Math.min(wj1, this.row + ROWS_PER_UNIT);
+        for (let j = this.row; j < end; j++) for (let i = wi0; i < wi1; i++) {
+          let m = 0; const a = Math.max(wi0, i - R), b = Math.min(wi1 - 1, i + R);
+          for (let k = a; k <= b; k++) if (st[k + j * w] > m) m = st[k + j * w];
+          tmp[i + j * w] = m;
+        }
+        this.row = end; if (end >= wj1) { this.stage = ST_DIL_V; this.row = wj0; }
+        break;
+      }
+      case ST_DIL_V: { // tmp -> st (V)
+        const end = Math.min(wj1, this.row + ROWS_PER_UNIT);
+        for (let j = this.row; j < end; j++) for (let i = wi0; i < wi1; i++) {
+          let m = 0; const a = Math.max(wj0, j - R), b = Math.min(wj1 - 1, j + R);
+          for (let k = a; k <= b; k++) if (tmp[i + k * w] > m) m = tmp[i + k * w];
+          st[i + j * w] = m;
+        }
+        this.row = end; if (end >= wj1) { this.stage = ST_BLUR_H; this.row = wj0; }
+        break;
+      }
+      case ST_BLUR_H: { // box blur by R (n = 2R+1 taps; edge taps replicate the working-window edge): st -> tmp
+        const n = 2 * R + 1, end = Math.min(wj1, this.row + ROWS_PER_UNIT);
+        for (let j = this.row; j < end; j++) for (let i = wi0; i < wi1; i++) {
+          let sum = 0;
+          for (let k = i - R; k <= i + R; k++) sum += st[(k < wi0 ? wi0 : k >= wi1 ? wi1 - 1 : k) + j * w];
+          tmp[i + j * w] = ((sum + (n >> 1)) / n) | 0;
+        }
+        this.row = end; if (end >= wj1) { this.stage = ST_BLUR_V; this.row = oj0; }
+        break;
+      }
+      case ST_BLUR_V: { // V blur folded into the output, times the paint
+        const n = 2 * R + 1, pf = this.pf, end = Math.min(oj1, this.row + ROWS_PER_UNIT);
+        for (let j = this.row; j < end; j++) for (let i = oi0; i < oi1; i++) {
+          let sum = 0;
+          for (let k = j - R; k <= j + R; k++) sum += tmp[i + (k < wj0 ? wj0 : k >= wj1 ? wj1 - 1 : k) * w];
+          const s = ((sum + (n >> 1)) / n) | 0;
+          let p = 1;
+          if (pf) { p = pf(g.x0 + (i + 0.5) * cellM, g.y0 + (j + 0.5) * cellM); p = p < 0 ? 0 : p > 1 ? 1 : p; }
+          data[i + j * w] = Math.round(p * (255 - s));
+        }
+        this.row = end; if (end >= oj1) this.stage = ST_DONE;
+        break;
+      }
+      default: this.stage = ST_DONE;
+    }
+  }
+}
+
 /**
  * Near-band density mask 0..255 (= 0..1) over the class-map window, cell `CARPET_MASK_CELL`:
  * `m = paint * (1 - stamp)`. Stamps (no grass): every structure bbox (buildings, meshes), tree trunk discs (trunkR + 0.3 m)
  * and near-band cells whose ground type is in `cfg.cutGround`; the stamp is dilated (max) then box-blurred by the feather
- * so a stamp core stays exactly 0 and only its outside edge ramps. `paint` = null (1 everywhere), `(x,y)=>0..1` or `{sample(x,y)->0..1}`.
+ * so a stamp core stays exactly 0 and only its outside edge ramps. `paint` = null (1 everywhere), a GrassMaskLayer (MASK-a),
+ * `(x,y)=>0..1` or `{sample(x,y)->0..1}`.
  * `rect` ({x0,y0,x1,y1} metres) limits the work to that area (editor stroke end); omitted = whole window.
- * `out` (a previous result) is reused when the size matches: a repeat build allocates nothing.
+ * `out` (a previous result) is reused when the size matches: a repeat build allocates nothing. Synchronous; band swaps use `CarpetMaskJob`.
  * @returns {{data:Uint8Array,x0:number,y0:number,w:number,h:number,cellM:number}|null} null before `terrain.nearReady`
  */
 export function buildCarpetMask(terrain, cfg, paint, structures, scatter, out, rect) {
-  const g = terrain && terrain.near;
-  if (!g || !terrain.nearReady) return null;
-  const cellM = CARPET_MASK_CELL;
-  const w = Math.floor(g.w * g.cell / cellM), h = Math.floor(g.h * g.cell / cellM);
-  const fresh = !(out && out.data && out.data.length === w * h && out._st);
-  const res = fresh ? { data: new Uint8Array(w * h), _st: new Uint8Array(w * h), _tmp: new Uint8Array(w * h), _cut: null, _cutSrc: null } : out;
-  const moved = res.x0 !== g.x0 || res.y0 !== g.y0;
-  res.x0 = g.x0; res.y0 = g.y0; res.w = w; res.h = h; res.cellM = cellM;
-  const R = Math.max(1, Math.floor(CARPET_MASK_FEATHER / cellM)), P = 2 * R;
-  // output cell window [oi0,oi1)x[oj0,oj1); working window = output + P pad
-  let oi0 = 0, oj0 = 0, oi1 = w, oj1 = h;
-  if (rect && !fresh && !moved) {
-    oi0 = Math.max(0, Math.floor((rect.x0 - g.x0) / cellM)); oj0 = Math.max(0, Math.floor((rect.y0 - g.y0) / cellM));
-    oi1 = Math.min(w, Math.floor((rect.x1 - g.x0) / cellM) + 1); oj1 = Math.min(h, Math.floor((rect.y1 - g.y0) / cellM) + 1);
-    if (oi1 <= oi0 || oj1 <= oj0) return res;
-  }
-  const wi0 = Math.max(0, oi0 - P), wj0 = Math.max(0, oj0 - P), wi1 = Math.min(w, oi1 + P), wj1 = Math.min(h, oj1 + P);
-  const st = res._st, tmp = res._tmp, data = res.data;
-  for (let j = wj0; j < wj1; j++) st.fill(0, wi0 + j * w, wi1 + j * w);
-  // ground types in cfg.cutGround -> flag per baked type id
-  if (cfg.cutGround && cfg.cutGround.length) {
-    const names = terrain.typeNames;
-    if (!res._cut || res._cut.length !== names.length || res._cutSrc !== cfg.cutGround) {
-      res._cut = new Uint8Array(names.length); res._cutSrc = cfg.cutGround;
-      for (let t = 0; t < names.length; t++) if (cfg.cutGround.indexOf(names[t]) >= 0) res._cut[t] = 1;
-    }
-    const cut = res._cut;
-    for (let j = wj0; j < wj1; j++) {
-      const row = Math.floor(((j + 0.5) * cellM) / g.cell) * g.w;
-      for (let i = wi0; i < wi1; i++) {
-        if (cut[g.type[Math.floor(((i + 0.5) * cellM) / g.cell) + row]]) st[i + j * w] = 255;
-      }
-    }
-  }
-  const wx0 = g.x0 + wi0 * cellM, wy0 = g.y0 + wj0 * cellM, wx1 = g.x0 + wi1 * cellM, wy1 = g.y0 + wj1 * cellM;
-  if (structures) for (let s = 0; s < structures.length; s++) {
-    const b = structures[s].bbox;
-    if (!b || !(b.x1 >= wx0 && b.x0 <= wx1 && b.y1 >= wy0 && b.y0 <= wy1)) continue;
-    stampRect(st, res, wi0, wj0, wi1, wj1, b.x0, b.y0, b.x1, b.y1);
-  }
-  if (scatter && scatter.count > 0) {
-    const tc = terrain.recipe && terrain.recipe.recipe && terrain.recipe.recipe.forest && terrain.recipe.recipe.forest.trees;
-    const sp = tc && tc.species;
-    for (let k = 0; k < scatter.count; k++) {
-      const x = scatter.x[k], y = scatter.y[k], r = (sp && sp[scatter.species[k]] ? sp[scatter.species[k]].trunkR : 0.3) + 0.3;
-      if (x + r < wx0 || x - r > wx1 || y + r < wy0 || y - r > wy1) continue;
-      stampDisc(st, res, wi0, wj0, wi1, wj1, x, y, r);
-    }
-  }
-  // dilate (max) by R: st -> tmp (H), tmp -> st (V); reads clamp to the working window
-  for (let j = wj0; j < wj1; j++) for (let i = wi0; i < wi1; i++) {
-    let m = 0; const a = Math.max(wi0, i - R), b = Math.min(wi1 - 1, i + R);
-    for (let k = a; k <= b; k++) if (st[k + j * w] > m) m = st[k + j * w];
-    tmp[i + j * w] = m;
-  }
-  for (let j = wj0; j < wj1; j++) for (let i = wi0; i < wi1; i++) {
-    let m = 0; const a = Math.max(wj0, j - R), b = Math.min(wj1 - 1, j + R);
-    for (let k = a; k <= b; k++) if (tmp[i + k * w] > m) m = tmp[i + k * w];
-    st[i + j * w] = m;
-  }
-  // box blur by R (n = 2R+1 taps; edge taps replicate the working-window edge); H pass st -> tmp, V pass folded into the output
-  const n = 2 * R + 1;
-  for (let j = wj0; j < wj1; j++) for (let i = wi0; i < wi1; i++) {
-    let sum = 0;
-    for (let k = i - R; k <= i + R; k++) sum += st[(k < wi0 ? wi0 : k >= wi1 ? wi1 - 1 : k) + j * w];
-    tmp[i + j * w] = ((sum + (n >> 1)) / n) | 0;
-  }
-  const pf = typeof paint === 'function' ? paint : (paint && typeof paint.sample === 'function' ? (x, y) => paint.sample(x, y) : null), hasPaint = !!pf; // MASK-a plugs in as (x, y) => maskAt(layer, x, y)
-  for (let j = oj0; j < oj1; j++) for (let i = oi0; i < oi1; i++) {
-    let sum = 0;
-    for (let k = j - R; k <= j + R; k++) sum += tmp[i + (k < wj0 ? wj0 : k >= wj1 ? wj1 - 1 : k) * w];
-    const s = ((sum + (n >> 1)) / n) | 0;
-    let p = 1;
-    if (hasPaint) { p = pf(g.x0 + (i + 0.5) * cellM, g.y0 + (j + 0.5) * cellM); p = p < 0 ? 0 : p > 1 ? 1 : p; }
-    data[i + j * w] = Math.round(p * (255 - s));
-  }
-  return res;
+  const job = new CarpetMaskJob(terrain, cfg, paint, structures, scatter, out, rect);
+  if (!job.result) return null;
+  job.step(Infinity);
+  return job.result;
 }

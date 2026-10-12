@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import { Terrain } from './Terrain.js';
 import { World } from './World.js';
-import { validateCarpetConfig, buildCarpetMask } from './carpet.js';
+import { validateCarpetConfig, buildCarpetMask, CarpetMaskJob } from './carpet.js';
+import { createGrassMask, setSample, maskAt } from './grassMask.js';
 
 let checks = 0;
 const ok = (v, m) => { assert.ok(v, m); checks++; };
@@ -78,4 +79,45 @@ w._rebuildCarpet(); // band swap path
 ok(w.carpet.maskVersion === 2 && w.carpet.mask.data === data0, 'band swap rebuild bumps maskVersion, buffer reused');
 w.rebuildCarpetMask({ x0: 15, y0: 15, x1: 40, y1: 35 });
 ok(w.carpet.maskVersion === 3, 'rebuildCarpetMask(rect) bumps maskVersion');
+
+// ---- sliced build (band swap): same bytes as the sync build, budgeted steps, old mask valid until swap, layer paint input
+const layer = createGrassMask(0.5, 64);
+for (let i = 0; i < 400; i++) for (let j = 0; j < 100; j++) setSample(layer, i, j, ((i * 7 + j * 13) % 200) + 20);
+validateCarpetConfig({ ...cfg, mask: layer }, t.typeNames); checks++;
+const syncL = buildCarpetMask(t, cfg, layer, structs, scatter, null);
+const syncF = buildCarpetMask(t, cfg, (x, y) => maskAt(layer, x, y), structs, scatter, null);
+ok(Buffer.from(syncL.data).equals(Buffer.from(syncF.data)), 'GrassMaskLayer paint == function paint bytes');
+ok(syncL.data.some((v) => v > 0 && v < 255), 'layer paint changes the mask');
+const job = new CarpetMaskJob(t, cfg, layer, structs, scatter, null);
+let steps = 0, maxStepMs = 0;
+while (!job.step(0)) { steps++; if (steps > 100000) break; } // budget 0 = one work unit per call
+ok(job.done && steps > 20, 'sliced build takes many steps: ' + steps);
+ok(Buffer.from(job.result.data).equals(Buffer.from(syncL.data)), 'sliced build == sync build bytes');
+// per-step budget: each step with a 1 ms budget stays near it (unit granularity = 8 rows)
+const job2 = new CarpetMaskJob(t, cfg, layer, structs, scatter, null);
+let nSteps = 0, sumMs = 0;
+while (true) { const a = performance.now(); const d = job2.step(1); const dt = performance.now() - a; sumMs += dt; maxStepMs = Math.max(maxStepMs, dt); nSteps++; if (d) break; }
+if (maxStepMs > 4) console.warn(`carpetMask: slice step ${maxStepMs.toFixed(2)} ms for a 1 ms budget`);
+ok(sumMs / nSteps < 2 && maxStepMs < 25 && nSteps > 1, `slice step respects budget (avg ${(sumMs / nSteps).toFixed(2)}, max ${maxStepMs.toFixed(2)} ms, ${nSteps} steps)`);
+ok(Buffer.from(job2.result.data).equals(Buffer.from(syncL.data)), 'budgeted slices == sync bytes');
+// 0 alloc per step on a reused buffer
+if (global.gc) {
+  const back = job2.result; global.gc(); const h1 = process.memoryUsage().heapUsed;
+  for (let k = 0; k < 5; k++) { const jb = new CarpetMaskJob(t, cfg, null, structs, scatter, back); while (!jb.step(1)); }
+  global.gc(); ok(process.memoryUsage().heapUsed - h1 < 200000, 'sliced rebuild on reused back buffer ~0 alloc');
+}
+// World: band swap starts a job, front mask untouched (version/data) until stepCarpetMask completes it
+const w2 = new World(); w2.terrain = t; w2._carpetCtx = { cfg: { ...cfg, mask: layer }, recipe: t.recipe }; w2.structures = structs; w2.scatter = scatter;
+w2._rebuildCarpet();
+const front0 = w2.carpet.mask, snap0 = Buffer.from(front0.data), v0 = w2.carpet.maskVersion;
+structs.push({ bbox: { x0: 140, y0: 40, x1: 143, y1: 43 } });
+w2._rebuildCarpet(true);
+ok(w2._maskJob && w2.carpet.mask === front0 && w2.carpet.maskVersion === v0 && snap0.equals(Buffer.from(front0.data)), 'old mask stays valid and unchanged while the back build is pending');
+ok(w2.stepCarpetMask(0) === true && w2.carpet.mask === front0, 'one tiny step: still pending, no swap');
+while (w2.stepCarpetMask(1));
+ok(w2.carpet.mask !== front0 && w2.carpet.maskVersion === v0 + 1 && w2._maskBack === front0, 'swap + maskVersion++ at completion, old front becomes back');
+ok(Buffer.from(w2.carpet.mask.data).equals(Buffer.from(buildCarpetMask(t, cfg, layer, structs, scatter, null).data)), 'swapped mask == fresh sync build');
+w2._rebuildCarpet(true); while (w2.stepCarpetMask(1)); // second swap reuses buffers
+ok(w2.carpet.mask === front0 && w2._maskBack !== front0 && w2.carpet.maskVersion === v0 + 2, 'ping-pong reuses both buffers');
+w2._rebuildCarpet(true); w2.rebuildCarpetMask(); ok(!w2._maskJob, 'a sync full rebuild supersedes the pending job');
 console.log(`carpetMask.test: ${checks} checks ok (full ${msFull.toFixed(1)} ms, rect ${msRect.toFixed(2)} ms)`);
