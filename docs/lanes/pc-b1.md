@@ -789,3 +789,6 @@ Notes: ramp must already be RGB bytes 0..255 triplets in cfg.variants[].ramp (gr
 
 - Ch3 main line (slot 1, ch3-main): mq.ow.names / mq.ow.relay / mq.ow.board in content/quests/ch3/pack.json (+ sites hesk/dorrin, gear.t3 table, items relay.brass + chart.westFells, entities hesk/dorrin (char.kit, no tint possible) + relayBrass pickup in world_m1, dialogue hesk/dorrin + manifest, errands MQ/MQ_AUTO + chart.<area> flag bridge + owBoard read flag, validate-content allows char.kit). Test game/js/quest/ch3names.test.js; quest-sim 66/66, validate OK.
   Texts: all placeholders "NEEDS WRITER <key>" (hesk.names.1-4, hesk.relay.1-3, hesk.relay.active.1, hesk.after.1, hesk.board.1, hesk.meet.1, dorrin.relay.1-3, dorrin.done.1, dorrin.meet.1, mq.ow.board lines offer/active/ready/done). story.md section did not exist yet. Left: paste writer text; owner browser check of NPC placement (938,930)/(909,938).
+
+- 2026-10-12 world_m1 test fixes (kestrel-3): ob091-forest.mjs now keeps mdw rocks/pebbles inside the meadow box (inMeadow); restored the 23 mdw Rock_/Pebble rows it had removed (from fff74993~1) -> meadow-clear PASS.
+  Re-ran gen-secrets-ch12 + gen-secrets-outwall: only secretField + secretBank moved (nothing lost); both tests PASS; validate-content OK.
