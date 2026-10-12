@@ -1633,3 +1633,85 @@ Notes:
 - `hint.fireball.cast`: no fire key text exists in this file yet. `L` stands for the real binding label (FB-03: not hard-coded), written `[Hold {fist}]`. Line 1 stays <= 38 for a label of up to 3 chars (`LMB` gives 38).
 - reward (2) is the in-world reason the fire hurts only enemies and doesn't burn bushes (owner default). If bushes become burnable later, that line still holds as Burl's own rule.
 - "sky-cub" appears in 4 of the 9 Burl lines, as in her other errands.
+
+## Ch3 main line: names, relay, board
+
+PC-B writer, 2026-10-12. Rows `mq.ow.names`, `mq.ow.relay`, `mq.ow.board` in `content/quests/ch3/pack.json` (QL-B1 fields). Limits: title <= 24, HUD <= 38, lines <= 56, ASCII. Speaker labels: `HESK`, `DORRIN`, `-` = narration (name tag off). Hesk is a woman (quest-roadmap section 2). Both names still need the owner OK (quest-roadmap 2b); until then the labels can read `ELDER` / `SMITH`.
+
+Voices: **Hesk** is slow and wary, weighs each word, and gives short sentences with a pause in them. **Dorrin** is blunt and practical and doesn't look up. He admits the fault at once and doesn't dress it up.
+
+Name rule (D-013, GDD 3): Hesk is the first person to say "Wick". Wick's own answer is narration ("You tell her your name"), so the first time the name appears in speech, it comes from her. Every Hesk and Dorrin line after the beat may use it.
+
+**mq.ow.names** (giver Hesk, Outwall gate, talk; reward gear T3)
+
+| key | speaker | text | chars |
+|---|---|---|---|
+| title | - | `A Name at the Gate` | 18 |
+| obj | HUD | `Speak to the woman at the gate` | 30 |
+| offer (1) | HESK | `Stop there. Hands where I can see them.` | 39 |
+| offer (2) | HESK | `You came over the river. Nobody comes over the river.` | 53 |
+| offer (3) | HESK | `Ferrum says we're dead. Who are you?` | 36 |
+| active | HESK | `Well? A name. Or the river back the way you came.` | 49 |
+| ready (1) | - | `You tell her your name. She turns it over, slowly.` | 50 |
+| ready (2) | HESK | `Wick.` | 5 |
+| ready (3) | HESK | `We watched you at the fence. The wolves, too.` | 45 |
+| ready (4) | HESK | `I'm Hesk. Come in, Wick. Keep your blade low.` | 45 |
+| ready (5) | HESK | `Here. Ferrum's dead don't let a guest go cold.` | 46 |
+| ready (opt) | HESK | `We call it Outwall. Somebody had to call it something.` | 54 |
+| done | HESK | `Ferrum's dead are busy, Wick. Mind the geese.` | 45 |
+
+ready (2) is the name beat: one word, then a held beat (about 1 s, or a key press) before (3). The gear T3 popup fires after (5). The `opt` line names the village. Use it only if the owner fixes "Outwall" (GDD 3: it is a working name). Without it, the village stays unnamed and `Palisade Relay` stays as it is.
+
+**mq.ow.relay** (giver Hesk -> Dorrin at the forge -> barley gate (975,900) -> Outwall relay (912,952); reward travel Outwall)
+
+| key | speaker | text | chars |
+|---|---|---|---|
+| title | - | `The Village Relay` | 17 |
+| offer (1) | HESK | `The old relay in the yard. You came for it, I think.` | 52 |
+| offer (2) | HESK | `We hear the call too. Nights. The stone here stays dark.` | 56 |
+| offer (3) | HESK | `Something's missing from it. Ask Dorrin. At the forge.` | 54 |
+| offer (4) | HESK | `He'll look at his boots. Let him. Then ask again.` | 49 |
+| step 1 objText | HUD | `Ask Dorrin at the forge` | 23 |
+| step 1 talk (1) | DORRIN | `Relay. Aye. The brass collar off the top. That was me.` | 54 |
+| step 1 talk (2) | DORRIN | `Barley gate lost its hinge in the first winter.` | 47 |
+| step 1 talk (3) | DORRIN | `No iron to spare. That brass was just sitting there.` | 52 |
+| step 1 talk (4) | DORRIN | `Stone's been dark since. I knew. Didn't say.` | 44 |
+| step 1 talk (5) | DORRIN | `Barley farm, east. Pull the brass. I'll rope the gate.` | 54 |
+| step 2 objText | HUD | `Take the brass off the barley gate` | 34 |
+| step 2 active | DORRIN | `Barley farm. East. Brass collar. Go on.` | 39 |
+| step 2 take (1) | - | `The gate hangs on a collar of green brass. Old glyphs.` | 53 |
+| step 2 take (2) | - | `You work it free. The gate sags into the barley.` | 48 |
+| returnText | HUD | `Fit the collar to the village relay` | 35 |
+| ready (1) | - | `The collar seats with a soft, sure click.` | 42 |
+| ready (2) | - | `The bowl wakes teal and takes up the call.` | 42 |
+| done | HESK | `Lit. Years, and it took a stranger and a gate.` | 46 |
+| done (Dorrin, 1) | DORRIN | `Gate's on rope now. Holds fine. Should've done it then.` | 55 |
+| done (Dorrin, 2) | DORRIN | `Bring me that ruin steel some day. I owe you work.` | 50 |
+
+New item: `relayCollar` "Relay Collar" (12) / `A green brass collar, cut with glyphs.` (38). It is not called "Relay Brass", because that is the shield.fine name proposed in "Gear names". The quest item is removed at the relay. Travel Outwall uses the existing `Palisade Relay` title. Dorrin (2) sets up the later reforge ("sword: ruin steel, then reforged", GDD 3) and the cold forge (`sq.ow.forge`), and it promises nothing now. After step 2, the barley gate tag (`sq.ow.seed`) still hangs on the gate, which is now on rope.
+
+**mq.ow.board** (giver the board in Outwall, read; explore; reward chart piece west)
+
+| key | speaker | text | chars |
+|---|---|---|---|
+| title | - | `The Board of the Dead` | 21 |
+| hook | HESK | `The board by the gate. Read it. That's who we are.` | 50 |
+| obj | HUD | `Read the notices on the board` | 29 |
+| read (1) | - | `Crown notices, carried out past the Wall and nailed up.` | 55 |
+| read (2) | - | `FELL BEYOND THE WALL. HESK, OF THE TANNERS' STAIR.` | 50 |
+| read (3) | - | `FELL BEYOND THE WALL. DORRIN, FORGE HAND, LOW WARDS.` | 52 |
+| read (4) | - | `LOST TO THE HUSH. THE CROWN GRIEVES. SPEAK NO MORE.` | 51 |
+| read (5) | - | `Under each name, in charcoal: HERE.` | 35 |
+| read (6) | - | `One notice is cut. A strip gone, name and all, neatly.` | 54 |
+| read (7) | - | `Above the cut: FELL BEYOND THE WALL.` | 36 |
+| read (8) | - | `On the nail, a knot. A skyworks hitch, tied tight.` | 51 |
+| read (9) | - | `Your hands know it. You were taught it on the skyworks.` | 55 |
+| done (1) | - | `Pinned under the knot: a scrap of chart. Lines west.` | 52 |
+| done (2) | - | `You leave the knot where it is. The line runs west.` | 51 |
+| after | HESK | `That cut was there when the notices came out to us.` | 52 |
+
+Notes:
+- The board's `read` lines replace the 4-line QL-21 `note.owBoard` once this quest is live. They are the same board and the same facts, with more of them. The QL-22 errand notes stay nailed over the other FELL notices.
+- The cut and the knot are a soft Maren echo (story section 9: the lamp "set down neatly"; she taught him the trade). They are not proof. No line names her, and none says who cut the strip. Hesk's `after` line says the cut came out with the notices, so nobody in the village did it. A stronger hook, if the manager wants one: read (7) `Above the cut: FELL BEYOND THE WALL. SKYW` (41). The writer advises against it for Ch3.
+- The chart scrap is unsigned pencil and is not Wick's "W." hand. Whose hand it is stays open (M4 reason, GDD 3). "Tanners' Stair" is a new Low Wards place name. It is minor and can be swapped.
+- No line says why the SOS calls or who sends it, and the "older than the Wall" reveal is kept for Ch4.
