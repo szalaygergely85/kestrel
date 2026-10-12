@@ -279,6 +279,26 @@ console.log('passRaster.test.js (WG-4a): all checks passed.');
   console.log('passRaster.test.js (ALPHA-01f b): all checks passed.');
 }
 
+// OB-089 (OB-061 on the GPU cull path): LOD1 of a masked LOD0 tree group (opaque leaf cards) draws through the no-cull pipe; LOD0 and unmasked groups keep back-face culling.
+{
+  const m6 = makeMockGpuDevice(), dev = m6.device, bound = [];
+  dev.drawIndirect = () => bound.push(dev._activePipeline);
+  const ps = new WgRasterPass(dev, { gpuCull: false });
+  const vb = dev.createBuffer({ usage: 'vertex', bytes: 64 });
+  ps.buffers.getVoxel = () => ({ vertexBuffer: vb });
+  const parts = { m: new Float32Array(12), flags: new Uint32Array(1) };
+  const ent = (group, lod) => ({ group, lod, mesh: { ranges: [{ start: 0, count: 2 }] }, instanceBuffer: vb, argsBuffer: vb, argsOffset: 0, parts, active: true });
+  for (const [masked, expect] of [[true, [ 'instancePipe', 'instanceOpenPipe' ]], [false, ['instancePipe', 'instancePipe']]]) {
+    bound.length = 0;
+    const g = { mesh: { ranges: [{ start: 0, count: 2 }], maskRanges: masked ? new Int32Array([0, 0, 4, 4, 128]) : undefined } };
+    ps.gpuN = 1; ps.gpuGroups[0] = g; ps.gpuEntries[0] = [ent(g, 0), ent(g, 1)];
+    ps._cullDraw();
+    assert.deepEqual(bound.map((b) => (b === ps.instancePipe ? 'instancePipe' : b === ps.instanceOpenPipe ? 'instanceOpenPipe' : '?')), expect, `OB-089 masked LOD0=${masked}: [LOD0, LOD1] pipes`);
+  }
+  ps.dispose(); dev.dispose(vb);
+  console.log('passRaster.test.js (OB-089): all checks passed.');
+}
+
 // PREC-01a (37.9, WebGPU twin): camera-relative raster. view/planes stay absolute f64; every camera raster uniform carries view * T(O) and model - O.
 {
   const { frameMatrix } = await import('../../projection.js');
