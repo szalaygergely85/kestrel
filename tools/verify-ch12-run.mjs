@@ -38,12 +38,12 @@ const SAMPLE_FN = `(() => { const D = window.__debug, b = D.saveRelay.quest.book
 const SAMPLE = `(${SAMPLE_FN})()`;
 // --walk: page-side T.tp becomes a straight-line walk at WALK_SPEED; every walked game-second pushes one sample (t = accumulated game time) into __walk.out, drained per beat.
 // Floor height follows floorAt; walls/doors are ignored (straight line), so lengths are a lower bound of real path time. Non-walking time (dialogue, waits) is not counted.
-const WALK_LIB = `(() => { const T = window.__t, D = T.D, p = D.playerHandle.data, t = p.transform, c = p.components, S = ${SAMPLE_FN}, tp0 = T.tp; window.__walk = { t: 0, out: [], ev: 'start' };
-  T.tp = async (x, y, dz = 0.6, zAbs) => { const x0 = t.x, y0 = t.y, d = Math.hypot(x - x0, y - y0), n = Math.floor(d / ${WALK_SPEED});
+const WALK_LIB = `(() => { const T = window.__t, D = T.D, S = ${SAMPLE_FN}, tp0 = T.tp; window.__walk = { t: 0, out: [], ev: 'start' };
+  T.tp = async (x, y, dz = 0.6, zAbs) => { const p = D.playerHandle.data, t = p.transform, c = p.components, x0 = t.x, y0 = t.y, d = Math.hypot(x - x0, y - y0), n = Math.floor(d / ${WALK_SPEED});
     for (let i = 1; i <= n; i++) { const f = i / (d / ${WALK_SPEED}), px = x0 + (x - x0) * f, py = y0 + (y - y0) * f, g = T.w.floorAt(px, py); t.x = px; t.y = py; if (g != null) t.z = g + 0.6; c.body.vx = c.body.vy = c.body.vz = 0; D.vitals.clearSafe(); D.look.locked = true;
       await T.sl(30); window.__walk.t += 1; window.__walk.out.push({ ...S(), t: window.__walk.t, event: window.__walk.ev }); }
     window.__walk.t += (d - n * ${WALK_SPEED}) / ${WALK_SPEED}; return tp0(x, y, dz, zAbs); }; return true; })()`;
-async function drainWalk() { if (!WALK) return; const out = await ev('(() => { const o = window.__walk.out; window.__walk.out = []; return o; })()'); for (const s of out || []) samples.push(s); }
+async function drainWalk() { if (!WALK) return; const out = await ev('(() => { if (!window.__walk) return []; const o = window.__walk.out; window.__walk.out = []; return o; })()'); for (const s of out || []) samples.push(s); }
 function startSampler() { if (WALK) return; t0 = Date.now(); sampler = setInterval(async () => { try { const s = await evaluate(cdp, SAMPLE); if (s) samples.push({ ...s, t: (Date.now() - t0) / 1000, event: curBeat }); } catch (e) { /* page reloading */ } }, SAMPLE_EVERY_S * 1000); }
 const key = async (code, k) => { await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', code, key: k, text: k.length === 1 ? k : undefined }); await pause(70); await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: k }); await pause(120); };
 
@@ -86,7 +86,7 @@ const LIB = `(() => { const D = window.__debug, w = D.world, p = D.playerHandle.
 
 function rec(name, ok, why, still) { rows.push({ name, ok, why: why || '', still: still || null }); console.log((ok ? 'PASS ' : 'FAIL ') + name + (why ? '  - ' + why : '')); }
 async function beat(name, fn) {
-  curBeat = name; if (WALK) await ev(`(window.__walk.ev = ${JSON.stringify(name)}, true)`);
+  curBeat = name; if (WALK) await ev(`(window.__walk && (window.__walk.ev = ${JSON.stringify(name)}), true)`);
   try { const r = await fn(); const ok = r === true || r === undefined || !!r.ok; rec(name, ok, ok ? '' : r.why, await still('beat-' + String(rows.length + 1).padStart(2, '0') + '-' + name)); }
   catch (e) { rec(name, false, String(e && e.message || e).slice(0, 400)); }
   try { await drainWalk(); } catch (e) { /* page reloading */ }
@@ -233,7 +233,8 @@ try {
     const pulse = await waitFor(() => flag('relay.bend.pulseSeen'), 15000);
     await goIx('qi.knot', 0.9); await pressE(2);
     const knot = await waitFor(() => flag('lore.knot.read'), 4000);
-    return { ok: relay1 && pulse && knot, why: `relay1=${relay1} pulse=${pulse} knot=${knot}` };
+    const dbg = knot ? '' : ' ' + await evA(`(async () => { const D = __t.D, w = __t.w, t = D.playerHandle.data.transform, r = __t.ix('qi.knot'), nr = await import('/game/js/quest/noteRead.js'); return JSON.stringify({ p: [t.x, t.y, t.z].map((v) => +v.toFixed(2)), knot: r && [r.x, r.y, r.z].map((v) => +(+v).toFixed(2)), ist: w.interaction.targetKey, note: nr.isNoteOpen(), noteId: nr.getOpenNoteId(), notice: !!(D.notice && D.notice.active), dlg: !!D.dialogue.open, ui: D.uiLocked, hp: D.vitals && D.vitals.hp }); })()`);
+    return { ok: relay1 && pulse && knot, why: `relay1=${relay1} pulse=${pulse} knot=${knot}${dbg}` };
   });
   await beat('11 Rook: Bend call (mq.bend.call) accepted + handed in', async () => {
     const ok = await giverStep('rook', 4, 'mq.bend.call', ['call|pulse|knot|seen|yes|ok|read|report']);
