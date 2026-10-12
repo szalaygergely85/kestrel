@@ -3,7 +3,7 @@
 // module reads these instead of hard-coding shapes twice.
 
 /** Highest schema version this engine understands, per file kind. */
-export const LATEST_SCHEMA = { manifest: 1, level: 1, world: 1, mesh: 1, terrainEdits: 1, mask: 1, prefab: 1, dialogue: 1 };
+export const LATEST_SCHEMA = { manifest: 1, level: 1, world: 1, mesh: 1, terrainEdits: 1, grassMask: 1, mask: 1, prefab: 1, dialogue: 1 };
 
 /** Envelope keys every content file carries (21.2), first in `KEY_ORDER`. */
 export const ENVELOPE_KEYS = ['kind', 'schema', 'id', 'nextId'];
@@ -17,6 +17,7 @@ export const ENVELOPE_KEYS = ['kind', 'schema', 'id', 'nextId'];
 export const ID_COLLECTIONS = {
   mesh: [],
   terrainEdits: [],
+  grassMask: [],
   prefab: ['items'], // PREFAB-SEAM (38.11)
   dialogue: [], // DIALOGUE-01a1 (38.28): nodes keyed by id inside the file
   level: ['props', 'lights', 'interactables', 'triggers'],
@@ -73,6 +74,7 @@ export const KEY_ORDER = {
   prefab: [...ENVELOPE_KEYS, 'title', 'items'],
   dialogue: ['kind', 'schema', 'id', 'speakers', 'entry', 'nodes'], // DIALOGUE-01a1 (38.28)
   terrainEdits: ['kind', 'schema', 'id', 'cell', 'chunkSize', 'chunks'],
+  grassMask: ['kind', 'schema', 'id', 'cell', 'chunkSize', 'chunks'], // MASK-e1
   save: ['kind', 'version', 'world', 'contentVersion', 'terrain', 'structures', 'entities', 'state', 'nextId', 'time', 'removed', 'horizon', 'bounds', 'triggers', 'visibility'],
 };
 

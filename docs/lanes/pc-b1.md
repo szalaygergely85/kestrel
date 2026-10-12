@@ -798,3 +798,6 @@ Notes: ramp must already be RGB bytes 0..255 triplets in cfg.variants[].ramp (gr
   Main runs: node engine/world/carpet.world.test.js; node tools/run-tests.mjs --filter carpet,check-deps; node tools/validate-content.mjs (risk: ground type at the straw/outwall poses unverified - if < 20 % move the pose, not the areas).
 
 - MASK-a (OB-096 grass mask, branch mask-a): engine/world/grassMask.js (chunked u8 layer 0.5 m/64 m, bilinear maskAt, no layer = 1, JSON kind grassMask, bakeAreasToMask) + test; toB64/fromB64 now exported from terrainEdits.js; exported via engine/index.js. Content-loader kind NOT registered (MASK-e). Status: arch-review.
+
+- MASK-e1 (OB-096, 2026-10-12, kestrel-3 `mask-e1`): content kind `grassMask` registered (loadPack/schema/migrate; `bundle.grassMasks[id]` = raw object). `tools/bake-grass-mask.mjs` bakes all recipe.carpet variants' areas (feather 1.5 m) -> `content/grassmask/overworld_far.grassMask.json` (525 KB, in manifest.files). Test `tools/grass-mask-content.test.mjs` (canonical, round-trip, fresh-bake equal, meadow 1 / road 0 / tower 0 / soft edge).
+  Left: MASK-b/c, main.js wiring (`carpet.mask`), drop meadow `areas`, `cutGround`.
