@@ -42,6 +42,7 @@ function put(mesh, x, y, yaw, o = {}) {
 // plants the foot; a leaning stake, there is no upright post mesh and meshes take no pitch) with ONE fence plank nailed near its top as the sign.
 const BRACE_FOOT = 1.21, BRACE_TOP = 1.7;   // foot height above the origin, rise from foot to top
 function markerPost(x, y, yaw, plankYaw, plankScale = 0.5) {
+  return;   // OB-143 (owner): no crossed X-beam struts (Prop_Support) - they stood in the air on slopes; marker posts are no longer emitted
   put('Prop_Support', x, y, yaw, { dz: -BRACE_FOOT, ext: 0.3, collide: false });
   const [tx, ty] = rot(yaw, 0, -1.75);   // the high end of the strut lies at local y -1.75
   put('Prop_WoodenFence_Single', x + tx, y + ty, plankYaw, { dz: BRACE_TOP - 0.55, scale: plankScale, ext: 0.3, collide: false });

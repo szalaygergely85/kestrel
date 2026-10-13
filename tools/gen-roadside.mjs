@@ -68,7 +68,7 @@ put('Prop_Wagon', 1347, 1058, 28, { ext: 1.4, dz: -0.28 });
 put('Prop_Crate', 1344.2, 1055.4, 70, { ext: 0.5, scale: 0.8 }); put('Prop_Crate', 1351.8, 1059.9, 200, { ext: 0.5, scale: 0.65 });
 put('Prop_Crate', 1350.9, 1055.2, 120, { ext: 0.5, scale: 0.75 }); put('Prop_Crate', 1350.9, 1055.2, 155, { ext: 0.5, scale: 0.6, dz: 0.8, free: true });
 log(1337, 1055, 100, 0.25, { ext: 1.1 });
-put('Prop_Support', 1349, 1054.6, 155, { ext: 0.4, collide: false, dz: -1.21 });   // design walk: the brace's foot is 1.21 m above its origin (it floated); dz plants the foot, it leans on the wagon
+// OB-143: Prop_Support (X-beam strut) no longer emitted. // put('Prop_Support', 1349, 1054.6, 155, { ext: 0.4, collide: false, dz: -1.21 });   // design walk: the brace's foot is 1.21 m above its origin (it floated); dz plants the foot, it leans on the wagon
 // 2. fallen fence line + open gate at the meadow's north edge (x 1394..1378): three standing sections, a 2 m GAP, then two leaning/sagging
 // sections (sunk on one side) and a rail down in the grass; the gate leaf stands swung open
 { const Y = (x) => 1029.5 - (1394 - x) * 0.02;
