@@ -16,14 +16,14 @@
     1.84813
   ],
   "ranges": [
-    {"count": 105, "part": "Rock_Medium_2#0:moss_cap", "start": 0},
-    {"count": 53, "part": "Rock_Medium_2#0:rock_soft", "start": 105},
-    {"count": 86, "part": "Rock_Medium_2#0:rock", "start": 158}
+    {"count": 2, "part": "Rock_Medium_2#0:moss_cap", "start": 0},
+    {"count": 189, "part": "Rock_Medium_2#0:rock", "start": 2},
+    {"count": 53, "part": "Rock_Medium_2#0:rock_soft", "start": 191}
   ],
   "matKeys": [
     "moss_cap",
-    "rock_soft",
-    "rock"
+    "rock",
+    "rock_soft"
   ],
   "mats": {
     "moss_cap": "moss_cap",
