@@ -29,6 +29,7 @@ import { loadTestAssets } from './testing/content-node.mjs';
 import { gridVariant } from '../game/js/quest/bandPose.js'; // WM-06: --poses: whole-map poses on the default (WM-05 grid) world
 import { buildBeastNav } from '../game/js/quest/sim/beastNav.js';
 import { createBeastSim, MAX_BEASTS } from '../game/js/quest/sim/beastSim.js';
+const BENCH_BEASTS = 48; // GOB-08 worst case is fixed at 48 (MAX_BEASTS is 96 since WM-12)
 import { createRng } from '../engine/index.js';
 import { ROUTINES } from '../game/js/quest/outwallRoutines.js';
 import { lifeFromRoutines } from '../game/js/life/schedule.js';
@@ -118,7 +119,7 @@ async function build(assets, goblin = false, grid = false) {
     let seen = 0; world.forEachEntity((e) => { const b = e.components && e.components.brain; if (b && b.species === 'goblin' && b.role === 'thrower' && ++seen > THROWERS) b.role = 'melee'; });
   }
   const pad = found.filter((e) => !(e.components.brain.species === 'goblin'));
-  for (let n = found.length + goblinCount; n < MAX_BEASTS && pad.length; n++) {
+  for (let n = found.length + goblinCount; n < BENCH_BEASTS && pad.length; n++) {
     const src = pad[n % pad.length], t = src.transform;
     world.spawn(src.type, { ...t, x: t.x + 2 * n, y: t.y + 1 }, JSON.parse(JSON.stringify(src.components)), `benchBeast${n}`);
   }

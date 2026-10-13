@@ -197,9 +197,9 @@ const gz = (sim) => groundZ(sim.world, PX, PY);
   ok('woken goblin acts again', sim.state[0] !== st0 || Math.hypot(sim.steer.x[0] - x0, sim.steer.y[0] - y0) > 0.5);
 }
 
-// 6. 48 beasts: 0 alloc per step, MAX_BEASTS == 48
+// 6. 48 beasts: 0 alloc per step, MAX_BEASTS == 96 (this scenario still uses 48 slots)
 {
-  ok('MAX_BEASTS 48', MAX_BEASTS === 48);
+  ok('MAX_BEASTS 96 (WM-12, was 48)', MAX_BEASTS === 96);
   const ents = [];
   for (let k = 0; k < 40; k++) ents.push(gobEntity('g' + k, PX - 20 + (k % 8) * 5, PY - 30 + Math.floor(k / 8) * 4, 'melee'));
   for (let k = 0; k < 8; k++) ents.push(beastEntity('b' + k, PX + 20 + k * 2, PY + 20));
