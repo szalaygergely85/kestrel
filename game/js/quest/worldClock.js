@@ -42,3 +42,11 @@ export function createClockDriver(apply) {
     reset() { last = NaN; },
   };
 }
+
+/** `?time=` seed (DN-03). The state hour is what the villagers' schedules (LIFE-04) and the quest gates read, so it is seeded even when the
+ *  clock is frozen (`?pose=`/`?at=`/capture): before, a frozen clock only moved the sun and the NPCs followed the default start hour. */
+export function seedClockFromParam(state, timeHour) {
+  if (!Number.isFinite(timeHour)) return false;
+  state[CLOCK_KEY] = ((timeHour % 24) + 24) % 24;
+  return true;
+}

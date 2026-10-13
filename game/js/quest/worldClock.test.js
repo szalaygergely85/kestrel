@@ -36,3 +36,12 @@ check('stepHour grid', Math.abs(stepHour(8.0020) - 8) < 1e-9 && stepHour(8.0021)
 const fz = { [CLOCK_KEY]: 8 };
 check('frozen state untouched', fz[CLOCK_KEY] === 8 && STEP_HOURS === 1 / 480);
 if (fail) { console.error(fail + ' failed'); process.exit(1); } else console.log('worldClock.test: all pass');
+
+{ // ?time= seeds the state hour even for a frozen clock (the villagers' 23:00 sleep check read the default hour before)
+  const { seedClockFromParam } = await import('./worldClock.js');
+  const st = {};
+  if (!seedClockFromParam(st, 23) || clockHour(st) !== 23) throw new Error('seedClockFromParam(23)');
+  if (seedClockFromParam({}, NaN)) throw new Error('NaN seed');
+  if (seedClockFromParam(st, -1) !== true || clockHour(st) !== 23) throw new Error('wrap -1 -> 23');
+  console.log('seedClockFromParam ok');
+}

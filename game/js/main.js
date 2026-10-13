@@ -52,7 +52,7 @@ import { createPauseMenu, PAUSE_KEYS } from './ui/pauseMenu.js'; // PAUSE-MENU-0
 // CHARGEN-17 parked (owner 2026-10-10): import { createCharCreate } from './ui/charCreate.js';
 import { createCreditsView } from './ui/creditsView.js'; // CREDITS-MOUNT-01
 import { updateSettings, drawSettingsPanel, isSettingsOpen, openSettings, dimSceneRect } from './ui/settings.js'; // US-038b
-import { tickClock, clockHour, createClockDriver, CLOCK_KEY, CLOCK_DEFAULTS } from './quest/worldClock.js'; // DN-03: day/night clock (D-064)
+import { tickClock, clockHour, createClockDriver, seedClockFromParam, CLOCK_KEY, CLOCK_DEFAULTS } from './quest/worldClock.js'; // DN-03: day/night clock (D-064)
 import { isPaused, resetSimAccumulator, duckAudio, unduckAudio, installAutoPause } from './ui/pause.js'; // US-062
 // ---- US-020a: minimal procedural sound slice (game/js/audio/*, D-004) ----
 import { initAudio, setMuted, setVolume, toggleMute, isMuted } from './audio/synth.js';
@@ -1399,7 +1399,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       clockDriver = null;
       if (!clockFrozen && assets.palette.daySchedule) {
         // DN-03 (38.39 item 4/7): hour from world.state (restored by the save relay above); a forced step makes the first frame right.
-        if (Number.isFinite(timeHour) && !clockTimeApplied) world.state[CLOCK_KEY] = ((timeHour % 24) + 24) % 24;
+        if (!clockTimeApplied) seedClockFromParam(world.state, timeHour);
         clockTimeApplied = true;
         const P = assets.palette;
         // DN-02 (owner: shadows must not visibly move): the light/shadow sun (lightSet.sun) only follows the clock in 30 game-minute slots,
@@ -1417,7 +1417,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           if (lightSet) { const hu = P.hue[L.ambient]; lightSet.ambient[0] = hu[0] * L.ambientI; lightSet.ambient[1] = hu[1] * L.ambientI; lightSet.ambient[2] = hu[2] * L.ambientI; }
         });
         clockDriver.update(clockHour(world.state, clockCfg), true);
-      } else if (Number.isFinite(timeHour)) applySunHours(world, lightSet, timeHour, worldSunPath, sunEnabled);
+      } else if (Number.isFinite(timeHour)) { if (!clockTimeApplied) { seedClockFromParam(world.state, timeHour); clockTimeApplied = true; } applySunHours(world, lightSet, timeHour, worldSunPath, sunEnabled); } // frozen clock: the NPC schedules still read the ?time= hour
       // Architect review 1 item 7 (tech notes item 8): `?lights=8` test-only -
       // 7 synthetic extra lights (torch preset) spread 2-4 m around the
       // level's first light, so the tester can measure the "8 point lights"
