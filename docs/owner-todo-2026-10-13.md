@@ -30,6 +30,9 @@ When you report a problem: press F3, copy the `world (x, y, z) yaw pitch` line, 
 - [ ] **Swim numbers:** swim 1.8 m/s, fast swim 2.6 m/s; sea monster warns at 60 m from the shore, kills at 90 m. OK as a start? ->
 - [ ] **Wolf raids:** can a raid ever cost something permanent (e.g. a goose lost that changes a quest), or only flavour (architect default)? ->
 - [ ] **Dark trees test (OB-089):** compare http://localhost:8000/game/index.html?pose=roadSouth with http://localhost:8000/game/index.html?pose=roadSouth&shadows=off - do the far trees/buildings turn lit with shadows off? ->
+- [ ] **Goblins v1:** spear-throwers only for now (bow archers later)? ->
+- [ ] **Goblin camps:** 2 or 3 camps on the west bank? ->
+- [ ] **Camp respawn:** a cleared camp comes back after 3 game days (only when you are > 150 m away). OK? ->
 - [ ] **Backlog cleanup:** go for the janitor/PO pass on ~280 stale rows (report: docs/janitor/backlog-audit-2026-10-13.md)? ->
 
 ## 2. The two walks that close M4

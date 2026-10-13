@@ -6393,3 +6393,152 @@ The route stays as designed: the notch shape and the colliders are unchanged.
 **Order:** LIFE-01 -> 02 -> 03 -> 04 (Outwall alive); then 05 (chat); 06 -> 07 (the wild); 08 -> 09 (raids); 10 alongside 03. Lanes: k3 = 02 / 03 / 08, k2 = 05 / 07 / 10, k4 = 01 / 06 / 09, k1 = 04 + hooks.
 
 **Do not:** save villager positions or needs (they derive from the clock); let villagers die in raids; run A* for more than one request per step or give fauna a NavGrid; let fauna import game or beastSim (beasts are passed in only as threat points); use `Math.random` / wall clock / Map iteration in steps; make barks' once-flags for overheard chat; put species or villager names in engine code; add a new quest objective type for raids.
+
+### 38.57 Goblins (D-072) (PC-B architect opus 2026-10-13, owner-authorised, PC-A to ratify)
+**Layering.**
+- All goblin code is **game** code. There is **no engine change**: the torch light is the existing EMIS-01b derived light (38.12 (1)).
+- Rule 15 applies to `sim/**` and `game/js/life/**`: no `Math.random`, no trig, no clock, integer step timers, 0 alloc per step.
+
+**(1) Brain: a beastSim species, not a new state machine.**
+- **New file** `game/js/quest/sim/goblinBrain.js`, built like `wolfBrain.js`. It exports:
+  - `GOBLIN_MODEL = 'goblin'`, `GOBLIN_TORCH_MODEL = 'goblinTorch'`;
+  - `GOBLIN_TUNING`, `goblinOverrides(base)`;
+  - `isGoblinEntity(e)`: true for `brain.species === 'goblin'`. The role is `brain.role`, `'melee' | 'thrower'`;
+  - `ensureGoblins(world, ids)`.
+- **beastSim: attack tokens per group.**
+  - New `sim.group[i]` (Uint8): 0 = boar/bear, 1 = wolf, 2 = goblin.
+  - In `hasActiveCharger` it replaces the test `sim.wolf[k] !== sim.wolf[me]`. The function now counts token holders against `tokens` per group: boar/bear/wolf 1, goblin melee 2.
+  - Boar, bear and wolf behaviour and hashes stay bit-identical.
+- **beastSim: melee goblins.**
+  - They reuse the wolf branch of `setSteerTarget`: circle at 3-5 m while waiting, retreat after the strike. Gate that branch on a new `sim.packer[i]` flag (wolf or goblin melee) instead of `sim.wolf[i]`.
+  - Windup 0.5 s (clip `attack`, the raise).
+  - Charge = a 2.5 m lunge (0.3 s).
+  - Retreat 3 m. A damaging hit on a goblin also enters the retreat (this is "scatter when hurt").
+  - Flee: a lone goblin under 30 % HP flees. `fleeM` is per slot (goblin 20 m).
+- **Tuning:** hp 0.6x boar; chase 1.15x; walk 1.6 m/s; noticeR 16; leashR from the camp (see (3)). The tier multiplier comes from `band`, as today.
+- **Dormant slots:** new `sim.setDormant(slot, on)`.
+  - A dormant slot is skipped like GONE (no perceive, path, steer or post) but keeps its state.
+  - `goblinCamps.js` makes a camp dormant when it is > 160 m from the player and wakes it at < 140 m.
+- **MAX_BEASTS 32 -> 48** (26 slots are used today). Change `loot.js MAX_SLOTS` in the same commit.
+
+**(2) Throwers and the enemy projectile.**
+- **beastSim, role `thrower`** (new `sim.ranged[i]`):
+  - **In CHASE it keeps a distance band:**
+    - d > 14 m: path toward the player;
+    - d < 7 m: back off with `awayTarget`;
+    - otherwise: hold and face the player.
+  - **WINDUP** (0.6 s, clip `throw`) starts when all of these hold:
+    - it is in the band;
+    - `seen[i]` is set (cached LOS);
+    - its reload is done;
+    - fewer than 2 throwers of the group are in WINDUP.
+  - **At windup end** it emits ONE preallocated `beast:throw` with `{id, x, y, z, tx, ty, tz}`:
+    - `x, y, z` = the hand, at eyeZ + 0.4;
+    - `tx, ty, tz` = the player's chest at release, with no lead.
+  - Then it enters RECOVER (the reload, 2.0 s).
+  - beastSim never imports the projectile sim.
+- **Projectile = the arrow sim with an owner flag:** `createArrowSim(world, events, cfg, targets, onWaterHit, opts)` with `opts.owner = 'enemy'`.
+  - The default is `'player'`. Player mode stays bit-identical: every `arrows.test` is unchanged.
+  - **New calls:**
+    - `fireVel(x, y, z, vx, vy, vz, damage, srcId)`: a per-flying `src` slot feeds `payload.source`;
+    - the pure export `lobVelocity(x0, y0, z0, tx, ty, tz, speedH, g, out)`: t = dH / speedH, vz = dz/t + g t/2 (trig-free).
+  - **Targets:** `createPlayerTarget(world)`.
+    - Same SoA shape as targetables, count 1: player x, y, z; r 0.35; h 1.7; r = -1 while the player is dead.
+    - So goblins are never hit by their own spears.
+  - **Payload:** `{source: srcId, target: 'player', damage, ranged: 1, dirX, dirY}`, where dirX/dirY = the flight direction.
+  - **Config** `GOBLIN_SPEAR_CFG`:
+    - speedH 13 m/s;
+    - `survivePct 0` (never pickable);
+    - maxFlying 8, maxStuck 8, maxFloat 0;
+    - stuck spears last 10 s.
+  - **Blocked:** if `p.blocked === 1` after the emit, the spear drops (stuck at the hit point, pointing down) and `beast:spearBlocked` is emitted for the clank fx.
+- **vitals.onHit:**
+  - When `p.ranged === 1`, the hit direction is `(p.dirX, p.dirY)` (the flight direction), not thrower -> player.
+  - Both the EQ-06 arc test `sh.covers` and the knock use it.
+  - Damage = 1 heart x the tier damage, with `beastDamageScale` as today.
+- **Dodge:** there is no dodge move, so dodging = sidestepping. There is no aim lead, a 0.6 s telegraph and about 0.9 s of flight at 12 m.
+
+**(3) Camps** (`game/js/life/goblinCamps.js`, data `content/life/goblinCamps.json`)
+- **Def:** `{id, at: [x, y], props: [{model, at: [dx, dy], yaw}], members: [{id, role, at: [dx, dy]}], leashR: 25, respawnDays: 3}`.
+  - Each camp has 4-6 members.
+  - Props are existing meshes / voxel props only: the brazier as the camp fire, crates, logs. A missing tent is marked `NEEDS DESIGNER`; it does not block the step.
+- **Spawn:** members become goblin beast entities at world build, before `createBeastSim` (like `ensureWolves`). `home` = their spot; `leashR` = the camp's.
+- **Placement rule (tested):** every camp has `band.bandAt(at) >= 5` and `x < WEST_X` (the west bank).
+- **Cleared** (all members dead):
+  - set `life.camp.<id>.cleared = true` and `life.camp.<id>.day = dayIndex`;
+  - emit `life:camp:cleared`.
+- **Down and respawn:**
+  - On create / load / `resetAll`, a cleared camp's slots are put to GONE.
+  - They come back when `dayIndex - day >= respawnDays` and the player is > 150 m away.
+  - `cleared` stays true for quests. A second key, `life.camp.<id>.down`, drives the GONE state.
+- **Morale:** when half the members are dead, the rest flee once (`sim.flee(slot)`, a wrapper on `enterFlee`), then return to the camp.
+- **Saved:** only those three `world.state` keys. The goblins themselves reset on load, like all beasts.
+
+**(4) Night torch raids** (on LIFE-08: `raids.js`, `content/life/raids.json`)
+- **New raid-def keys:**
+  - `campId`: there is no raid while that camp is down;
+  - `torches: 0..3`.
+- **Pack:** the camp's members, by id.
+- **Torches:** at raid start the first `torches` members get `voxel.model = GOBLIN_TORCH_MODEL`. The model reverts at raid end, or when that member enters DYING.
+- **Light:**
+  - `goblinTorch` has an emissive flame part, so the voxel pool's `offerEmissive` derives a point light. No new light code.
+  - Ranking = intensity / distance, with the 1.25 hysteresis.
+  - Cap = `MAX_LIGHTS` (16 in lighting.js) minus the placed lights, so torches can never starve placed lights.
+  - At most 3 raid torches, plus the camp brazier.
+- **Unchanged from 38.56 (d):** villagers never die; the defended / lost events and the "defend" quest pipeline stay as they are.
+
+**(5) Loot and tiers**
+- **`LOOT_TABLE.goblin`:**
+  - fixed drops: none;
+  - rolls: `arrow` 2-4 (chance 0.3); `goblin.trinket` x1 (chance 0.25; a sell item, icon NEEDS DESIGNER);
+  - orb chance 0.4.
+- **Weapons:** `weapons.json sources.goblin {chance: 0.06, items: [main.sword, ranged.bow, off.shield]}`.
+  - The tier is forced by `BAND_TABLE.gearItemTier[gearTierAt]`: band 5-6 fine, 7-8 tempered, 9-10 warden.
+- **Table choice:** `loot.js` picks the table per slot by `sim.group`. The boar table is unchanged.
+- **Prompt:** `LOOT_PROMPT.goblin`.
+
+**(6) Budget**
+- Goblins use beast slots. Worst case: 3 camps x 6 + 1 raid = 18-24 live slots, but dormant camps cost almost nothing.
+- New `tools/bench-life.mjs` row: "48 beasts (20 goblins awake, 6 throwers, 8 spears flying)". Caps:
+  - beastSim goblin extras <= 0.1 ms mean;
+  - enemy projectiles <= 0.03 ms;
+  - 0 alloc.
+- Over the cap: lower the dormant radius first.
+
+**Model contract (designer)** - `design/models/voxel_goblin.js`:
+- **Models:**
+  - `goblin`;
+  - `goblinTorch`: the same rig plus a torch in the off hand, with an emissive flame voxel;
+  - `goblinSpear`: the flying / stuck spear.
+- **Clips:** `idle walk run attack throw hurt die dead sink carryTorch`.
+  - `carryTorch` = walk/run with the torch raised. `goblinTorch` uses it in place of walk/run.
+  - The `die` / `sink` frame timings must equal beastView's `DIE_DURATIONS` / `SINK_DURATIONS`.
+- **State -> clip map** (`goblinFx.clipFor.state`):
+  - wander -> walk;
+  - chase / recover -> run;
+  - windup -> `attack` (melee) or `throw` (thrower);
+  - charge -> attack;
+  - stagger -> hurt.
+  - In beastView, generalise `wolfClip` into an fx lookup by model.
+
+**Steps** (each <= 1 d; game; k1 = the only main.js editor)
+
+| Step | Slot | What |
+|---|---|---|
+| GOB-01 | k3 (after LIFE-08) | goblinBrain + beastSim `group` / tokens / `packer`, melee lunge + retreat, flee, `setDormant`, MAX_BEASTS 48 |
+| GOB-02 | k3 | thrower role: keep-distance band, throw windup, `beast:throw` |
+| GOB-03 | k2 | arrows enemy mode + `lobVelocity` + `createPlayerTarget` + vitals `ranged` direction |
+| GOB-04 | k4 | goblinCamps.js + json (cleared / down / respawn / dormant / morale) |
+| GOB-05 | k4 | goblin loot table + weapons.json source + per-group table choice in loot.js |
+| GOB-06 | k3 (after LIFE-08, GOB-04) | raids `campId` + `torches` model swap |
+| GOB-07 | k1 | beastView clip map + spear view + main.js wiring, one browser pass |
+| GOB-08 | k2 (after LIFE-10) | bench-life goblin row |
+
+**Do not:**
+- write a second beast state machine;
+- let beastSim import the arrow sim;
+- let enemy spears hit goblins or be picked up;
+- add a light API or a goblin light slot (use the emissive model);
+- save goblin positions;
+- place goblins east of WEST_X or below band 5;
+- change boar / wolf / bear numbers or hashes.
