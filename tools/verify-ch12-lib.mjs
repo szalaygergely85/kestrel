@@ -118,3 +118,14 @@ export function planQuest(q, areas) {
   const steps = stepsOf(q, areas), last = steps[steps.length - 1];
   return { id: q.id, site: q.site || null, turnSite: last && last.kind === 'deliver' ? last.to : (q.turnIn || q.site || null), steps, equip: q.requireEquipped || [] };
 }
+
+/** world pickup interactable keys for an item: key-pattern matches (pickupPatterns) + entities whose questPickup.item is the item ('qp.' + entity id, e.g. redcap -> qp.cap1). ents: [{id,item}], ixs: [{key}] */
+export function pickupKeys(item, ents = [], ixs = []) {
+  const res = pickupPatterns(item).map((p) => new RegExp(p)), out = [];
+  for (const r of ixs) if (/^q[pi]\./.test(r.key) && res.some((re) => re.test(r.key))) out.push(r.key);
+  for (const e of ents) if (e.item === item && !out.includes('qp.' + e.id)) out.push('qp.' + e.id);
+  return out;
+}
+
+/** item ids the loot tables always drop (`fixed` rows, e.g. boar.meat): obtainable by looting a corpse ([E] on a 'beast.loot' interactable) */
+export function lootFixedItems(loot) { const s = new Set(); for (const src of Object.values((loot && loot.sources) || {})) for (const f of src.fixed || []) s.add(f.item); return s; }

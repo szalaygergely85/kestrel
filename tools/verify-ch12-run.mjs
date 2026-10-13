@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
 import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, evaluateAsync, killTree } from './capture-browser.mjs';
-import { buildGapTable, compareSnaps, questVerdict, renderReport, SAMPLE_EVERY_S, orderErrands, planQuest, pickupPatterns } from './verify-ch12-lib.mjs';
+import { buildGapTable, compareSnaps, questVerdict, renderReport, SAMPLE_EVERY_S, orderErrands, planQuest, pickupPatterns, pickupKeys, lootFixedItems } from './verify-ch12-lib.mjs';
 
 /** short window around the first differing character of two JSON strings */
 const firstDiff = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; const w = (x) => x.slice(Math.max(0, i - 40), i + 80); return `@${i}/${a.length},${b.length} ${w(a)} -> ${w(b)}`; };
@@ -110,7 +110,7 @@ async function talk(id, prefs = []) {
 }
 let lastLog = '';
 // errand giver: talk (npc) or inspect/touch ([E]) until the quest reaches `want`; site -> interactable key
-const GIVER = { burl: 'npc.bear', rook: 'npc.rook', post: 'qi.post', notePost: 'qi.notePost', relayBend: 'relay.ws_roadBend', relayFord: 'relay.ws_ford' };
+const GIVER = { burl: 'npc.bear', rook: 'npc.rook', post: 'qi.post', notePost: 'qi.notePost', relayBend: 'relay.ws_roadBend', relayFord: 'relay.ws_ford', gondola: 'qi.gondola', packet: 'qi.packet' };
 const YES = ['ok|yes|will|do it|i.ll|take|accept|sure|done|here|ready|deliver|thanks'];
 async function giverStep(site, want, id, prefs = YES) {
   const k = GIVER[site];
@@ -299,11 +299,15 @@ try {
   const packQuests = rdj('content/quests/ch12/pack.json').quests, packIds = new Set(packQuests.map((q) => q.id));
   const legacyDefs = CH12_IDS.filter((i) => !packIds.has(i)).map((i) => { try { return rdj('content/quests/' + i + '.quest.json'); } catch (e) { return null; } }).filter(Boolean);
   const NPC_OF = { burl: 'bear' }; // site name -> npc entity id for talk targets
+  const lootItems = lootFixedItems(rdj('content/items/loot.json'));
   const hasN = (item) => ev(`__t.has(${JSON.stringify(item)})`);
   // pick up world items ([E] on qp./qi. interactables matching the item) until the pack holds `count`
   async function gather(item, count) {
     if ((await hasN(item)) >= count) return null;
-    const keys = await ev(`JSON.stringify(__t.w.interactables.map((r) => r.key).filter((k) => ${JSON.stringify(pickupPatterns(item))}.some((p) => new RegExp(p).test(k))))`);
+    // pickups: key-name match (qp.berry3) PLUS world entities carrying questPickup.item === item (qp.cap1 holds redcap); beast corpses ([E] Loot) when the item is a fixed loot drop
+    const ixs = JSON.parse(await ev(`JSON.stringify(__t.w.interactables.map((r) => ({ key: r.key, name: r.name })))`));
+    const ents = JSON.parse(await ev(`(() => { const o = []; __t.w.forEachEntity((e, id) => { const q = e.components && e.components.questPickup; if (q) o.push({ id, item: q.item }); }); return JSON.stringify(o); })()`));
+    const keys = JSON.stringify([...pickupKeys(item, ents, ixs), ...(lootItems.has(item) ? ixs.filter((r) => r.name === 'beast.loot').map((r) => r.key) : [])]);
     for (const k of JSON.parse(keys)) { if ((await hasN(item)) >= count) break; await goIx(k, 0.7); await pressE(1); }
     return (await hasN(item)) >= count ? null : `cannot get ${count} x ${item}: ${(await hasN(item))} in pack, pickups tried: ${keys.slice(0, 120)}`;
   }
@@ -360,7 +364,9 @@ try {
     warns.length = 0; clearInterval(sampler); sampler = null;
     // voxelbench=0 is a capture-like page (no title menu): reload on the normal page and press Continue on the title card
     await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=1&backend=webgpu` });
-    if (!(await waitFor(() => ev('typeof __debug !== "undefined" && !!(__debug.menuHost && __debug.menuHost.active)'), 15000))) return { ok: false, why: 'title menu never showed' };
+    // the page needs time to boot (assets + world) before the title host exists: wait for the world first, then for the menu; on failure say what the page does have
+    await waitFor(() => ev('typeof __debug !== "undefined" && !!(__debug.world && __debug.saveRelay)'), 60000);
+    if (!(await waitFor(() => ev('typeof __debug !== "undefined" && !!(__debug.menuHost && __debug.menuHost.active)'), 30000))) return { ok: false, why: 'title menu never showed: ' + await ev('JSON.stringify({ href: location.search, dbg: typeof __debug, host: typeof __debug !== "undefined" && !!__debug.menuHost, active: typeof __debug !== "undefined" && !!(__debug.menuHost && __debug.menuHost.active), world: typeof __debug !== "undefined" && !!__debug.world })') };
     await ev("(() => { const h = __debug.menuHost, m = h.menu; for (let n = 0; n < 6 && m.snapshot().rows[m.snapshot().selected].id !== 'continue'; n++) m.handleKey('ArrowDown'); m.handleKey('Enter'); h.consume(); return JSON.stringify(m.snapshot().rows.map((r) => r.id + ':' + r.enabled)); })()"); 
     if (!(await waitFor(() => ev('!__debug.menuHost || !__debug.menuHost.active'), 15000))) return { ok: false, why: 'Continue did not close the menu' };
     await waitFor(() => ev('typeof __debug !== "undefined" && !!(__debug.playerHandle && __debug.playerHandle.data.components.health && __debug.saveRelay)'), 20000); await waitFor(() => ev('!!(__debug.saveRelay.quest && __debug.saveRelay.quest.book)'), 20000); await pause(2500); await ev(LIB);
