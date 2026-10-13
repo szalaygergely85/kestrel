@@ -54,7 +54,6 @@ export class WgLightPass {
     this.bindDesc = { uniforms: this.lu, textures: this.tex };
     this.visBox = new Float32Array(4 * MAX_LIGHTS);
     this.timeBuf = new Float64Array(1);
-    this.cam = { posX: 0, posY: 0, eyeH: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, horizonRow: 0, planeDistY: 0 };
   }
 
   /** _computeCamBasis twin (scalars the light pass reads). */
@@ -65,11 +64,11 @@ export class WgLightPass {
     const screenAspect = (cols * (rt.pxCellW || 1)) / (rows * (rt.pxCellH || 1));
     const planeDistY = (rows / 2) * screenAspect / tanHalfHFov;
     const pitchRad = cam.pitchDeg * Math.PI / 180;
-    const cb = this.cam;
-    cb.posX = cam.x; cb.posY = cam.y; cb.eyeH = cam.z; cb.dirX = dirX; cb.dirY = dirY;
-    cb.planeX = -dirY * tanHalfHFov; cb.planeY = dirX * tanHalfHFov;
-    cb.horizonRow = rows / 2 + Math.tan(pitchRad) * planeDistY; cb.planeDistY = planeDistY;
-    return cb;
+    // straight into the uniform words: an object of doubles would box a HeapNumber per field per frame (arch 38.61 GATE-FLAKY-02b)
+    const lu = this.lu;
+    lu[W_POSX] = cam.x; lu[W_POSY] = cam.y; lu[W_EYEH] = cam.z; lu[W_DIRX] = dirX; lu[W_DIRY] = dirY;
+    lu[W_PLANEX] = -dirY * tanHalfHFov; lu[W_PLANEY] = dirX * tanHalfHFov;
+    lu[W_HORIZON] = rows / 2 + Math.tan(pitchRad) * planeDistY; lu[W_PLANEDY] = planeDistY;
   }
 
   // world atlas upload: full on a different World / structVersion bump, else only the dirty rows (GL twin _ensureWorldTextures)
@@ -172,11 +171,8 @@ export class WgLightPass {
     const fb = p._fb;
     this.timeBuf[0] = fb ? fb.timeSec : 0; if (this.timeBuf[0] !== this.timeBuf[0]) this.timeBuf[0] = 0; // no `||` phi on the double (it boxes a HeapNumber)
     this._uploadLightT(p._light);
-    const cb = this._camBasis(p._cam || NO_CAM, p.cols, p.rows, p.rt);
+    this._camBasis(p._cam || NO_CAM, p.cols, p.rows, p.rt);
     li[W_GRID_COLS] = p.cols; li[W_GRID_ROWS] = p.rows;
-    lu[W_POSX] = cb.posX; lu[W_POSY] = cb.posY; lu[W_EYEH] = cb.eyeH;
-    lu[W_DIRX] = cb.dirX; lu[W_DIRY] = cb.dirY; lu[W_PLANEX] = cb.planeX; lu[W_PLANEY] = cb.planeY;
-    lu[W_HORIZON] = cb.horizonRow; lu[W_PLANEDY] = cb.planeDistY;
     // WG-3d: sun shadow map (GL: mapOn = shadowActive && sun.on); the map texture is bound below, the dummy 1x1 otherwise
     const sh = this.shadowPass;
     let sunTex = this.texSunDummy;

@@ -291,7 +291,7 @@ export class World {
     // `null` (unbounded - every world before this story). Content, not
     // state; set once by `World.load` from `def.bounds`.
     this.bounds = null;
-    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.bandCache = new BandCache(); this._bandKeys = []; this._bandKeysC = []; this._evBand = { from: null, to: null, nav: null }; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandMisses = 0; this._ahead = null; this._zoneKeys = new Map(); this._pinKeys = null; this._aheadOrd = []; this._aheadRects = new Float64Array(4 * 64); this._aheadSrc = []; this._aheadPose = null; this.bandId = null; // WS2-01/02
+    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.bandCache = new BandCache(); this._bandKeys = []; this._bandKeysC = []; this._evBand = { from: null, to: null, nav: null }; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandMisses = 0; this._ahead = null; this._zoneKeys = new Map(); this._pinKeys = null; this._aheadOrd = []; this._aheadRects = new Float64Array(4 * 64); this._aheadSrc = []; this._aheadPose = null; this._aheadIdle = -1; this._aheadIdleVer = -1; this.bandId = null; // WS2-01/02
     this.aheadLateMax = 0; this.navLate = 0; this._navFill = null; this._navQ = null;
     this.nav = null; this.navTiles = null; // WM-03: live nav tile + {create,maxSlopeDeg,maxStepM,blockedTypes,typeCost} (see setNavTiles)
     this.terrainGrid = null; this._gridPick = { i: 0, j: 0 }; // MAP-10 (38.43): generated zone grid; terrainBands = 2 reusable slot zones
@@ -1279,6 +1279,13 @@ export class World {
     return this._pinKeys;
   }
 
+  /** True when bake-ahead has nothing to do (whole ring cached, no job, no nav work): streamBand then skips the timer reads (performance.now boxes a double). */
+  _aheadQuiet() {
+    if (this._bandCur < 0 || this._bandPend >= 0 || this._ahead || (this._navQ && (this._navFill || this._navQ.length))) return false;
+    const cur = this.terrainBands[this._bandCur];
+    return this._aheadIdle === cur.i * 4096 + cur.j && this._aheadIdleVer === this.bandCache.ver;
+  }
+
   /**
    * WM-02 (38.59 decision 2): idle bake-ahead for the grid. One job at a time, ring zone ahead in the movement heading first,
    * overlap copied from the cached neighbour with the largest overlap. Never touches the live band, never synchronous.
@@ -1295,17 +1302,19 @@ export class World {
       }
       return true;
     }
-    const lp = this._aheadPose || (this._aheadPose = { x: px, y: py, hx: 0, hy: 0 });
-    const dx = px - lp.x, dy = py - lp.y, d = Math.hypot(dx, dy);
-    if (d > 0.5) { lp.hx = lp.hx * 0.8 + (dx / d) * 0.2; lp.hy = lp.hy * 0.8 + (dy / d) * 0.2; lp.x = px; lp.y = py; } // smoothed heading
+    // smoothed heading in a Float64Array [x, y, hx, hy]: object double fields would box a HeapNumber per store, per frame (arch 38.61)
+    const lp = this._aheadPose || (this._aheadPose = Float64Array.of(px, py, 0, 0));
+    const dx = px - lp[0], dy = py - lp[1], d = Math.sqrt(dx * dx + dy * dy);
+    if (d > 0.5) { lp[2] = lp[2] * 0.8 + (dx / d) * 0.2; lp[3] = lp[3] * 0.8 + (dy / d) * 0.2; lp[0] = px; lp[1] = py; }
     const cur = this.terrainBands[this._bandCur], cache = this.bandCache;
     let a = this._ahead;
     if (a && (Math.abs(a.i - cur.i) > 1 || Math.abs(a.j - cur.j) > 1)) a = this._ahead = null; // left the ring: dropped
     if (!a) {
-      const ord = aheadOrder(g, cur.i, cur.j, lp.hx, lp.hy, px, py, this._aheadOrd);
+      if (this._aheadIdle === cur.i * 4096 + cur.j && this._aheadIdleVer === cache.ver) return false;
+      const ord = aheadOrder(g, cur.i, cur.j, lp[2], lp[3], px, py, this._aheadOrd);
       let pick = null;
       for (let k = 0; k < ord.length && !pick; k++) if (!cache.has(this._zoneKey(ord[k].i, ord[k].j))) pick = ord[k];
-      if (!pick) return false;
+      if (!pick) { this._aheadIdle = cur.i * 4096 + cur.j; this._aheadIdleVer = cache.ver; return false; } // whole ring cached: memo, the scan below is skipped until the zone or the cache changes
       const z = zoneAt(g, pick.i, pick.j, {}), cs = this.terrain.chunkSize, R = this._aheadRects, srcs = this._aheadSrc;
       let n = 0; // candidate overlap sources: live band + cached bundles
       const addSrc = (near) => { if (n >= 64) return; R[n * 4] = near.x0; R[n * 4 + 1] = near.y0; R[n * 4 + 2] = near.x0 + near.w * near.cell; R[n * 4 + 3] = near.y0 + near.h * near.cell; srcs[n++] = near; };
@@ -1419,9 +1428,11 @@ export class World {
    * Zero allocation while idle.
    */
   streamBand(px, py, msBudget) {
-    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    // timer reads box a double each: skipped while there is no leftover-budget work (bake-ahead quiet, no mask job)
+    const timed = !!this._maskJob || (!!this.terrainGrid && !this._aheadQuiet());
+    const t0 = timed ? (typeof performance !== 'undefined' ? performance.now() : Date.now()) : 0;
     const r = this._streamBandCore(px, py, msBudget);
-    if (r === 0 && this.terrainGrid) { // WM-02: idle -> bake-ahead with the leftover budget
+    if (r === 0 && timed && this.terrainGrid) { // WM-02: idle -> bake-ahead with the leftover budget
       const left = msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
       if (left > 0) this.bakeAhead(px, py, left);
     }

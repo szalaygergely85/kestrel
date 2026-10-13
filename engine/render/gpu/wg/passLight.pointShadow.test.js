@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { makeMockGpuDevice } from '../../../test/assert.js';
 import { WgLightPass } from './passLight.js';
+import { allocProbe, skipNote } from '../../../../tools/allocProbe.mjs';
 import { WgCellPipeline } from './WgCellPipeline.js';
 import { LIGHT_BLOCK } from '../wgsl/light.wgsl.js';
 import { WG_PASS_SLOT, WG_PASS_NAMES, FRAME_TIMER_SLOT } from '../device/WebGpuTimer.js';
@@ -62,18 +63,16 @@ const rtOf = (device) => ({ device, cols: 16, rows: 8, fgTex: device.createTextu
   assert.equal(q2._pointShadowPass, null, 'n 0 = off');
 }
 
-// zero alloc: the light pass has a small pre-existing baseline (cam basis math); the psh upload must add nothing to it (noisy JIT baseline: < 64 B/run over 2000 runs).
-// Absolute 16 KB gate for the whole pipeline (point shadows default on, idle) = WgCellPipeline.frameAlloc.test.js.
-if (typeof global.gc === 'function') {
-  const garbage = [];
-  for (const on of [false, true]) {
+// zero alloc (arch 38.61): the real run() call site, shared probe (warm-up, gc, min of 5 windows); off and on must both be 0 B/run.
+{
+  allocProbe((n) => { let s = 0; for (let i = 0; i < n; i++) s += i; return s; }); // prelude: first probe in a process pays one-off heap/IC settling
+  const res = [], order = [false, true];
+  for (const on of order) {
     const X = mk(); X.d.draw = () => {}; X.d.bind = () => {}; X.d.beginPass = () => {}; X.d.endPass = () => {};
     if (on) X.wl.pointPass = fakePass(X.d, [1, 1]);
-    for (let i = 0; i < 3000; i++) X.wl.run(X.p, X.t);
-    global.gc(); const h0 = process.memoryUsage().heapUsed;
-    for (let i = 0; i < 2000; i++) X.wl.run(X.p, X.t);
-    garbage.push(process.memoryUsage().heapUsed - h0);
+    res.push(allocProbe((n) => { for (let i = 0; i < n; i++) X.wl.run(X.p, X.t); }, { warm: 6 }));
   }
-  assert.ok(garbage[1] - garbage[0] < 128 * 1024, `psh upload adds garbage: off ${garbage[0]} B, on ${garbage[1]} B`);
+  if (skipNote(res[0], 'light pass run() alloc')) { /* no gc: SKIP, never PASS */ }
+  else assert.ok(res[0].bytes <= 512 && res[1].bytes <= 512, `light pass run() allocates: off ${res[0].bytes} B, on ${res[1].bytes} B per 20000 runs`);
 }
 console.log('passLight.pointShadow.test.js: all checks passed.');

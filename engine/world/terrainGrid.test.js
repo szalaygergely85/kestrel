@@ -1,5 +1,6 @@
 // engine/world/terrainGrid.test.js (MAP-10, arch 38.43): generated band grid - zone math, pick/hysteresis walk, World wiring.
 // Run: node --expose-gc engine/world/terrainGrid.test.js
+import { allocProbe, skipNote } from '../../tools/allocProbe.mjs';
 import { makeGrid, zoneAt, zoneId, pick } from './bandGrid.js';
 import { World } from './World.js';
 import { Terrain } from './Terrain.js';
@@ -27,7 +28,6 @@ let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 const { assets } = await loadTestAssets();
-const heapMB = () => { if (globalThis.gc) globalThis.gc(); return process.memoryUsage().heapUsed / 1048576; };
 const def0 = (() => { const d = JSON.parse(JSON.stringify(assets.world('world_m1'))); delete d.terrainBand; delete d.terrainBands; return d; })();
 const GRID = { cx0: 0, cy0: 0, cx1: 32, cy1: 32, cw: 5, ch: 3, stepX: 2, stepY: 1, ox: 0, oy: 0 };
 const A = { id: 'east', cx0: 8, cy0: 7, cw: 5, ch: 3 }, B = { id: 'west', cx0: 6, cy0: 7, cw: 5, ch: 3 };
@@ -79,11 +79,9 @@ const line = (x0, y0, x1, y1, n) => { const a = []; for (let k = 0; k <= n; k++)
   ok('world corner: nothing better, keep', pick(g, cur0, 10, 10, o) === 0 && o.i === 0 && o.j === 0);
   ok('zone centre: keep', pick(g, c, x0, y0, o) === 0);
   const cur1 = zoneAt(g, 5, 8, {});
-  for (let k = 0; k < 500; k++) pick(g, cur1, x0, y0, o);
-  const h0 = heapMB();
-  for (let k = 0; k < 10000; k++) pick(g, cur1, x0 + (k & 7), y0, o);
-  const d = heapMB() - h0;
-  if (globalThis.gc) ok('pick: 10k idle calls < 0.2 MB', d < 0.2, d.toFixed(3) + ' MB' + (globalThis.gc ? '' : ' (no --expose-gc)'));
+  allocProbe((n) => { let s = 0; for (let k = 0; k < n; k++) s += k; return s; }); // prelude: the first probe in a process pays one-off heap settling
+  const r = allocProbe((n) => { for (let k = 0; k < n; k++) pick(g, cur1, x0 + (k & 7), y0, o); }, { warm: 6 });
+  if (!skipNote(r, 'pick idle alloc')) ok('pick: idle calls 0 B (min of 5 windows)', r.bytes <= 512, r.bytes + ' B / ' + r.n);
 }
 
 // --- World wiring -------------------------------------------------------------------
@@ -120,11 +118,8 @@ ok('grid world: 2 slot zones only', gE.terrainBands.length === 2);
   ok('after walking: near band bytes == fresh bake of that zone', same(T.near, fresh.near));
   ok('ensureBandFor far west: swaps, same pose again false', w.ensureBandFor(900, 1000) === true && w.ensureBandFor(900, 1000) === false);
   const wi = mk({ terrainGrid: GRID }, { spawn: { x: 1344, y: 1088 } });
-  for (let n = 0; n < 200; n++) wi.streamBand(1344, 1088, 2);
-  const h0 = heapMB();
-  for (let n = 0; n < 10000; n++) wi.streamBand(1344 + (n & 7), 1088, 2);
-  const d = heapMB() - h0;
-  if (globalThis.gc) ok('idle streamBand (grid): 10k calls < 0.2 MB', d < 0.2, d.toFixed(3) + ' MB' + (globalThis.gc ? '' : ' (no --expose-gc)'));
+  const r = allocProbe((n) => { for (let k = 0; k < n; k++) wi.streamBand(1344 + (k & 7), 1088, 2); }, { warm: 6 });
+  if (!skipNote(r, 'idle streamBand alloc')) ok('idle streamBand (grid): calls 0 B (min of 5 windows)', r.bytes <= 512, r.bytes + ' B / ' + r.n);
 }
 
 console.log(`terrainGrid: ${pass} passed, ${fail} failed`);
