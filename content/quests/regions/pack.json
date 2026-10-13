@@ -1,311 +1,64 @@
 {
-  "version": 1,
-  "region": "regions",
   "band": [
     5,
     10
   ],
   "quests": [
-    {
-      "id": "sq.reg.glasswater",
-      "title": "NEEDS WRITER: glasswater",
-      "site": "relay_glasswater",
-      "steps": [
-        {
-          "template": "kill",
-          "params": {
-            "kind": "boar",
-            "count": 3
-          },
-          "objText": "Drive off 3 boars",
-          "journal": "NEEDS WRITER: glasswater errand journal (kill 3 boar)."
-        }
-      ],
-      "requires": [
-        {
-          "flag": "waystone.ws_glasswater.woken"
-        }
-      ],
-      "reward": {
-        "items": [
-          {
-            "id": "potion.hp",
-            "n": 2
-          }
-        ]
-      },
-      "returnText": "Back to the Glasswater relay"
-    },
-    {
-      "id": "sq.reg.northwood",
-      "title": "NEEDS WRITER: northwood",
-      "site": "relay_northwood",
-      "steps": [
-        {
-          "template": "kill",
-          "params": {
-            "kind": "wolf",
-            "count": 3
-          },
-          "objText": "Drive off 3 wolves",
-          "journal": "NEEDS WRITER: northwood errand journal (kill 3 wolf)."
-        }
-      ],
-      "requires": [
-        {
-          "flag": "waystone.ws_northwood.woken"
-        }
-      ],
-      "reward": {
-        "items": [
-          {
-            "id": "arrow",
-            "n": 15
-          }
-        ]
-      },
-      "returnText": "Back to the Northwood relay"
-    },
-    {
-      "id": "sq.reg.highPastures",
-      "title": "NEEDS WRITER: highPastures",
-      "site": "relay_highPastures",
-      "steps": [
-        {
-          "template": "kill",
-          "params": {
-            "kind": "bear",
-            "count": 2
-          },
-          "objText": "Drive off 2 bears",
-          "journal": "NEEDS WRITER: highPastures errand journal (kill 2 bear)."
-        }
-      ],
-      "requires": [
-        {
-          "flag": "waystone.ws_highPastures.woken"
-        }
-      ],
-      "reward": {
-        "items": [
-          {
-            "id": "potion.hp",
-            "n": 2
-          }
-        ]
-      },
-      "returnText": "Back to the Pasture relay"
-    },
-    {
-      "id": "sq.reg.ashMile",
-      "title": "NEEDS WRITER: ashMile",
-      "site": "relay_ashMile",
-      "steps": [
-        {
-          "template": "kill",
-          "params": {
-            "kind": "boar",
-            "count": 2
-          },
-          "objText": "Drive off 2 boars",
-          "journal": "NEEDS WRITER: ashMile errand journal (kill 2 boar)."
-        }
-      ],
-      "requires": [
-        {
-          "flag": "waystone.ws_ashMile.woken"
-        }
-      ],
-      "reward": {
-        "items": [
-          {
-            "id": "arrow",
-            "n": 15
-          }
-        ]
-      },
-      "returnText": "Back to the Ash Mile relay"
-    },
-    {
-      "id": "sq.reg.downs",
-      "title": "NEEDS WRITER: downs",
-      "site": "relay_downs",
-      "steps": [
-        {
-          "template": "kill",
-          "params": {
-            "kind": "boar",
-            "count": 4
-          },
-          "objText": "Drive off 4 boars",
-          "journal": "NEEDS WRITER: downs errand journal (kill 4 boar)."
-        }
-      ],
-      "requires": [
-        {
-          "flag": "waystone.ws_downs.woken"
-        }
-      ],
-      "reward": {
-        "items": [
-          {
-            "id": "potion.hp",
-            "n": 2
-          }
-        ]
-      },
-      "returnText": "Back to the Downs relay"
-    },
-    {
-      "id": "sq.reg.signalHill",
-      "title": "NEEDS WRITER: signalHill",
-      "site": "relay_signalHill",
-      "steps": [
-        {
-          "template": "kill",
-          "params": {
-            "kind": "wolf",
-            "count": 3
-          },
-          "objText": "Drive off 3 wolves",
-          "journal": "NEEDS WRITER: signalHill errand journal (kill 3 wolf)."
-        }
-      ],
-      "requires": [
-        {
-          "flag": "waystone.ws_signalHill.woken"
-        }
-      ],
-      "reward": {
-        "items": [
-          {
-            "id": "arrow",
-            "n": 20
-          }
-        ]
-      },
-      "returnText": "Back to the Signal Hill relay"
-    },
-    {
-      "id": "sq.reg.heath",
-      "title": "NEEDS WRITER: heath",
-      "site": "relay_heath",
-      "steps": [
-        {
-          "template": "kill",
-          "params": {
-            "kind": "boar",
-            "count": 3
-          },
-          "objText": "Drive off 3 boars",
-          "journal": "NEEDS WRITER: heath errand journal (kill 3 boar)."
-        }
-      ],
-      "requires": [
-        {
-          "flag": "waystone.ws_heath.woken"
-        }
-      ],
-      "reward": {
-        "items": [
-          {
-            "id": "potion.hp",
-            "n": 2
-          }
-        ]
-      },
-      "returnText": "Back to the Heath relay"
-    },
-    {
-      "id": "sq.reg.reedmire",
-      "title": "NEEDS WRITER: reedmire",
-      "site": "relay_reedmire",
-      "steps": [
-        {
-          "template": "kill",
-          "params": {
-            "kind": "boar",
-            "count": 3
-          },
-          "objText": "Drive off 3 boars",
-          "journal": "NEEDS WRITER: reedmire errand journal (kill 3 boar)."
-        }
-      ],
-      "requires": [
-        {
-          "flag": "waystone.ws_reedmire.woken"
-        }
-      ],
-      "reward": {
-        "items": [
-          {
-            "id": "arrow",
-            "n": 20
-          }
-        ]
-      },
-      "returnText": "Back to the Reedmire relay"
-    },
-    {
-      "id": "sq.reg.strand",
-      "title": "NEEDS WRITER: strand",
-      "site": "relay_strand",
-      "steps": [
-        {
-          "template": "deliver",
-          "params": {
-            "item": "arrow",
-            "count": 5,
-            "to": "relay_downs"
-          },
-          "objText": "Carry the arrows to the Downs relay",
-          "journal": "NEEDS WRITER: strand errand journal (carry arrows to the Downs relay)."
-        }
-      ],
-      "requires": [
-        {
-          "flag": "waystone.ws_strand.woken"
-        }
-      ],
-      "reward": {
-        "items": [
-          {
-            "id": "potion.hp",
-            "n": 2
-          }
-        ]
-      },
-      "returnText": "Back to the Strand relay"
-    },
-    {
-      "id": "sq.reg.whitecombs",
-      "title": "NEEDS WRITER: whitecombs",
-      "site": "relay_whitecombs",
-      "steps": [
-        {
-          "template": "kill",
-          "params": {
-            "kind": "bear",
-            "count": 2
-          },
-          "objText": "Drive off 2 bears",
-          "journal": "NEEDS WRITER: whitecombs errand journal (kill 2 bear)."
-        }
-      ],
-      "requires": [
-        {
-          "flag": "waystone.ws_whitecombs.woken"
-        }
-      ],
-      "reward": {
-        "items": [
-          {
-            "id": "potion.hp",
-            "n": 3
-          }
-        ]
-      },
-      "returnText": "Back to the Combfoot relay"
-    }
-  ]
+    {"id": "sq.reg.glasswater", "lines": {"done": [
+      "The water goes still. The bowl glows clear and steady."
+    ], "offer": [
+      "The bowl flickers: three boars, mud in the still water."
+    ]}, "requires": [{"flag": "waystone.ws_glasswater.woken"}], "returnText": "Back to the Glasswater relay", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_glasswater", "steps": [{"journal": "The Glasswater bowl showed boars churning the shallows. Drive off three, then come back to the light.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Tusks at the Water"},
+    {"id": "sq.reg.northwood", "lines": {"done": [
+      "The pines are quiet. The relay hums one long, even note."
+    ], "offer": [
+      "Teal shapes in the bowl: three wolves, low among the",
+      "pines."
+    ]}, "requires": [{"flag": "waystone.ws_northwood.woken"}], "returnText": "Back to the Northwood relay", "reward": {"items": [{"id": "arrow", "n": 15}]}, "site": "relay_northwood", "steps": [{"journal": "Northwood Relay showed three wolves circling its stones. Drive them off, then return to the relay.", "objText": "Drive off 3 wolves", "params": {"count": 3, "kind": "wolf"}, "template": "kill"}], "title": "Wolves Under the Pines"},
+    {"id": "sq.reg.highPastures", "lines": {"done": [
+      "The grass lies flat and still. The hum settles, warm."
+    ], "offer": [
+      "Wind moves in the bowl, and two heavy shapes move",
+      "through it."
+    ]}, "requires": [{"flag": "waystone.ws_highPastures.woken"}], "returnText": "Back to the Pasture relay", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_highPastures", "steps": [{"journal": "The Pasture Relay flickered with two bears in the high grass. Drive both off, then return.", "objText": "Drive off 2 bears", "params": {"count": 2, "kind": "bear"}, "template": "kill"}], "title": "Bears in the High Grass"},
+    {"id": "sq.reg.ashMile", "lines": {"done": [
+      "The ash settles. The bowl burns a little brighter."
+    ], "offer": [
+      "Grey light in the bowl: two boars, tusks deep in the",
+      "ash."
+    ]}, "requires": [{"flag": "waystone.ws_ashMile.woken"}], "returnText": "Back to the Ash Mile relay", "reward": {"items": [{"id": "arrow", "n": 15}]}, "site": "relay_ashMile", "steps": [{"journal": "Two boars root through the black ash near Ash Mile Relay. Drive them off and come back to the light.", "objText": "Drive off 2 boars", "params": {"count": 2, "kind": "boar"}, "template": "kill"}], "title": "Rooting in the Ash"},
+    {"id": "sq.reg.downs", "lines": {"done": [
+      "Four short pulses, then one long. The downs are quiet."
+    ], "offer": [
+      "Four short pulses. Four dark shapes on the long green."
+    ]}, "requires": [{"flag": "waystone.ws_downs.woken"}], "returnText": "Back to the Downs relay", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_downs", "steps": [{"journal": "The Downs Relay pulsed four times: four boars loose on the green. Drive them off, then return.", "objText": "Drive off 4 boars", "params": {"count": 4, "kind": "boar"}, "template": "kill"}], "title": "Four on the Downs"},
+    {"id": "sq.reg.signalHill", "lines": {"done": [
+      "The pattern runs clean again. The hill answers."
+    ], "offer": [
+      "The pattern breaks. Three wolves on the slope below."
+    ]}, "requires": [{"flag": "waystone.ws_signalHill.woken"}], "returnText": "Back to the Signal Hill relay", "reward": {"items": [{"id": "arrow", "n": 20}]}, "site": "relay_signalHill", "steps": [{"journal": "Wolves prowl Signal Hill and its relay stutters. Drive off three of them, then return to it.", "objText": "Drive off 3 wolves", "params": {"count": 3, "kind": "wolf"}, "template": "kill"}], "title": "The Hill Pack"},
+    {"id": "sq.reg.heath", "lines": {"done": [
+      "The heather springs back. The hum bends with it."
+    ], "offer": [
+      "The heather shakes in the bowl. Three boars, rooting."
+    ]}, "requires": [{"flag": "waystone.ws_heath.woken"}], "returnText": "Back to the Heath relay", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_heath", "steps": [{"journal": "Three boars are tearing up the heather by Heath Relay. Drive them off, then come back.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Boars in the Heather"},
+    {"id": "sq.reg.reedmire", "lines": {"done": [
+      "The reeds hiss and settle. The black water goes still."
+    ], "offer": [
+      "The reeds thrash in the bowl. Three boars, deep in the",
+      "mire."
+    ]}, "requires": [{"flag": "waystone.ws_reedmire.woken"}], "returnText": "Back to the Reedmire relay", "reward": {"items": [{"id": "arrow", "n": 20}]}, "site": "relay_reedmire", "steps": [{"journal": "Boars wallow in the black water near Reedmire Relay. Drive off three of them, then return.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Boars in the Reeds"},
+    {"id": "sq.reg.strand", "lines": {"done": [
+      "Far inland, the Downs light blinks back. The sea hums."
+    ], "offer": [
+      "The bowl draws five thin lines, all pointing inland."
+    ]}, "requires": [{"flag": "waystone.ws_strand.woken"}], "returnText": "Back to the Strand relay", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_strand", "steps": [{"journal": "The Strand light points inland, where the boars run. Carry five arrows to the Downs Relay.", "objText": "Carry the arrows to the Downs relay", "params": {"count": 5, "item": "arrow", "to": "relay_downs"}, "template": "deliver"}], "title": "Arrows for the Downs"},
+    {"id": "sq.reg.whitecombs", "lines": {"done": [
+      "The rock is clear. The bowl rings like cold glass."
+    ], "offer": [
+      "Snow light in the bowl. Two bears on the rock below it."
+    ]}, "requires": [{"flag": "waystone.ws_whitecombs.woken"}], "returnText": "Back to the Combfoot relay", "reward": {"items": [{"id": "potion.hp", "n": 3}]}, "site": "relay_whitecombs", "steps": [{"journal": "Two bears den on the bare rock below the Whitecombs. Drive them off and return to Combfoot Relay.", "objText": "Drive off 2 bears", "params": {"count": 2, "kind": "bear"}, "template": "kill"}], "title": "Bears Below the Snow"}
+  ],
+  "region": "regions",
+  "version": 1
 }
