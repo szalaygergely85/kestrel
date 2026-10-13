@@ -24,7 +24,7 @@ assert.deepEqual([...CARPET_TEXTURES], ['uint', 'uint', 'uint', 'uint', 'float',
 // TUFT-01b: sin/cos allowed (one cos/sin of the tuft's plane angle; a few ULP differ GPU vs JS, only at hit edges)
 assert.deepEqual([...CARPET_TARGETS], ['rgba32ui', 'rgba32ui', 'r32ui']);
 const lit = (v) => { const s = String(v); return /[.e]/.test(s) ? s : s + '.0'; };
-for (const n of ['ROOT_JITTER', 'LEAN_CAP', 'LEAN_PER_MS', 'PATCH_LO', 'PATCH_RANGE', 'GUST_LO', 'GUST_RANGE', 'FADE_FP0', 'FADE_FP1', 'FADE_R0', 'FADE_R1', 'WMAX_CELLS', 'W_JIT_LO', 'W_JIT_RANGE']) {
+for (const n of ['ROOT_JITTER', 'LEAN_CAP', 'LEAN_PER_MS', 'PATCH_LO', 'PATCH_RANGE', 'GUST_LO', 'GUST_RANGE', 'LOD_CUT', 'MINW_CELLS', 'WMAX_CELLS', 'W_JIT_LO', 'W_JIT_RANGE']) {
   assert.ok(CARPET_TRACE_WGSL.includes(`const ${n}: f32 = ${lit(C[n])};`), `${n} == carpet.js export`);
 }
 for (const n of ['NMAX', 'RING', 'SALT_JX', 'SALT_JY', 'SALT_RANK', 'SALT_H', 'SALT_TUFT', 'SALT_W', 'SALT_CJX', 'SALT_CJY', 'SALT_PATCH', 'SALT_GUST']) {
@@ -37,7 +37,7 @@ const w = (n) => CARPET_BLOCK.field(n).word;
 assert.deepEqual(['gridCols', 'seed', 'cellM', 'timeSec', 'fpK', 'maxHNear', 'tFade', 'leanMaxR'].map(w), [0, 2, 8, 15, 23, 24, 25, 26]);
 assert.deepEqual(['windP0', 'windP1', 'eye', 'pitchA', 'pitchB', 'pitchC', 'knots', 'vtab'].map(w), [28, 32, 36, 40, 44, 48, 52, 116]); // TUFT-PERF-01b: +3 f32 +1 pad
 assert.equal(CARPET_BLOCK.field('vtab').words, 16 * CARPET_VTAB_ROWS * 4);
-assert.equal(CARPET_BLOCK.sizeBytes, (116 + 128 + 16 + 8) * 4, '16 variants x 2 vec4 (32 B) + 16 knot vec4 + header + PREC-01a origin (ix0, iy0, orgX, orgY)');
+assert.equal(CARPET_BLOCK.sizeBytes, (116 + 128 + 16 + 8 + 4) * 4, '16 variants x 2 vec4 (32 B) + 16 knot vec4 + header + PREC-01a origin (ix0, iy0, orgX, orgY), OB-103 +3 f32 +1 pad');
 assert.ok(CARPET_BLOCK.sizeBytes <= 65536);
 
 // ---- (b) JS evaluation of the trace
@@ -114,9 +114,9 @@ function parity(label, windDef, N) {
     maskX0: MX0, maskY0: MX0, maskW: MW, maskHt: MW, maskOn: 1,
     vtab: Array.from({ length: 16 * CARPET_VTAB_ROWS }, (_, k) => v4(w('vtab') + k * 4)),
   };
-  for (const n of ['cellM', 'radiusM', 'patchM', 'classCellM', 'classJitterM', 'gustM', 'travelM', 'classX0', 'classY0', 'nearX0', 'nearY0', 'nearCell', 'maxH', 'wMax']) cu[n] = f[w(n)];
+  for (const n of ['cellM', 'radiusM', 'patchM', 'classCellM', 'classJitterM', 'gustM', 'travelM', 'classX0', 'classY0', 'nearX0', 'nearY0', 'nearCell', 'maxH', 'wMax', 'densScale', 'minWCells', 'fadeStart']) cu[n] = f[w(n)];
   // f32-packed config vs the f64 JS ctx: make the JS ctx see the same numbers so the comparison is about the algorithm, not f32 rounding of 0.1
-  for (const [k, n] of [['cellM', 'cellM'], ['radiusM', 'radiusM'], ['patchM', 'patchM'], ['classJitterM', 'classJitterM'], ['gustM', 'gustM'], ['travelM', 'travelM'], ['maxH', 'maxH'], ['wMax', 'wMax']]) ctx[k] = cu[n];
+  for (const [k, n] of [['cellM', 'cellM'], ['radiusM', 'radiusM'], ['patchM', 'patchM'], ['classJitterM', 'classJitterM'], ['gustM', 'gustM'], ['travelM', 'travelM'], ['maxH', 'maxH'], ['wMax', 'wMax'], ['densScale', 'densScale'], ['minWCells', 'minWCells'], ['fadeStart', 'fadeStart']]) ctx[k] = cu[n];
   ctx.tuftR = cu.tuftR; assert.equal(cu.tufts, 1, 'tufts on by default'); assert.equal(ctx.rootJit, cu.rootJit);
   for (let v = 1; v <= 2; v++) { ctx.dens[v] = cu.vtab[v * 2].x; ctx.hMin[v] = cu.vtab[v * 2].y; ctx.hMax[v] = cu.vtab[v * 2].z; ctx.bw[v] = cu.vtab[v * 2].w; ctx.sway[v] = cu.vtab[v * 2 + 1].x; ctx.tuftP[v] = cu.vtab[v * 2 + 1].y; ctx.tuftMul[v] = cu.vtab[v * 2 + 1].z; }
   assert.equal(cu.vtab[0].x, 0, 'variant 0 = no carpet'); assert.equal(cu.vtab[1].x, 1, 'variant 0 sway 1');

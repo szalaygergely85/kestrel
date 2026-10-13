@@ -12,7 +12,7 @@
 import { defineUniformBlock } from './uniformBlock.js';
 import { HASH_FAST_WGSL, GBUF_UNPACK_WGSL, CELL_RAY_PITCHED_WGSL, WIND_AT_WGSL, FULLSCREEN_VS_WGSL, OCT_NORMAL_WGSL } from './common.wgsl.js';
 import {
-  NMAX, ROOT_JITTER, LEAN_CAP, LEAN_PER_MS, PATCH_LO, PATCH_RANGE, GUST_LO, GUST_RANGE, FADE_FP0, FADE_FP1, FADE_R0, FADE_R1, RING,
+  NMAX, ROOT_JITTER, LEAN_CAP, LEAN_PER_MS, PATCH_LO, PATCH_RANGE, GUST_LO, GUST_RANGE, MINW_CELLS, LOD_CUT, RING,
   SALT_JX, SALT_JY, SALT_RANK, SALT_SHAPE, SALT_ROT, SALT_H, SALT_TUFT, SALT_W, WMAX_CELLS, W_JIT_LO, W_JIT_RANGE, SALT_CJX, SALT_CJY, SALT_PATCH, SALT_GUST, MAX_VARIANTS, SALT_TINT, MASK_CELL, MASK_MIN,
 } from '../../carpet.js';
 import { NOISE_CELLS, NOISE_SALT, PATCH_K, GRASS_GX_HAS } from '../../terrainShade.js';
@@ -50,6 +50,8 @@ export const CARPET_BLOCK = defineUniformBlock('CarpetU', [
   // TUFT-01b: tuft atlas (rg8uint, shape k = rows k*atlasH .. k*atlasH+atlasH-1). tufts 0 = single blades (old path)
   { name: 'tufts', type: 'i32' }, { name: 'atlasN', type: 'i32' }, { name: 'atlasW', type: 'i32' }, { name: 'atlasH', type: 'i32' },
   { name: 'tuftR', type: 'f32' }, { name: 'rootJit', type: 'f32' },
+  // OB-103: far grass: density scale + min on-screen stroke width (cells) from world.setCarpetQuality (radiusM above holds the scaled radius); fadeStart from content
+  { name: 'densScale', type: 'f32' }, { name: 'minWCells', type: 'f32' }, { name: 'fadeStart', type: 'f32' },
 ]);
 
 /** sampled-texture kinds for the pipeline bindings, slot order */
@@ -66,10 +68,7 @@ const PATCH_LO: f32 = ${f(PATCH_LO)};
 const PATCH_RANGE: f32 = ${f(PATCH_RANGE)};
 const GUST_LO: f32 = ${f(GUST_LO)};
 const GUST_RANGE: f32 = ${f(GUST_RANGE)};
-const FADE_FP0: f32 = ${f(FADE_FP0)};
-const FADE_FP1: f32 = ${f(FADE_FP1)};
-const FADE_R0: f32 = ${f(FADE_R0)};
-const FADE_R1: f32 = ${f(FADE_R1)};
+const LOD_CUT: f32 = ${f(LOD_CUT)};
 const RING: i32 = ${RING};
 const SALT_JX: i32 = ${SALT_JX};
 const SALT_JY: i32 = ${SALT_JY};
@@ -85,6 +84,7 @@ const SALT_SHAPE: i32 = ${SALT_SHAPE};
 const SALT_ROT: i32 = ${SALT_ROT};
 const PI: f32 = 3.14159265358979;
 const WMAX_CELLS: f32 = ${f(WMAX_CELLS)};
+const MINW_CELLS: f32 = ${f(MINW_CELLS)}; // default of cu.minWCells (JS carpet.js export; the uniform is what the shader reads)
 const W_JIT_LO: f32 = ${f(W_JIT_LO)};
 const W_JIT_RANGE: f32 = ${f(W_JIT_RANGE)};
 const FP_DEFAULT_K: f32 = ${f(FP_DEFAULT_K)};
@@ -177,7 +177,8 @@ fn tuftHit(ix: i32, iy: i32) -> i32 {
   if (mk < MASK_MIN) { return 0; }
   let rank = hash24(ix, iy, seed + SALT_RANK);
   let row0 = cu.vtab[v * ${CARPET_VTAB_ROWS}u];
-  if (rank >= row0.x) { return 0; }
+  let dens = min(1.0, row0.x * cu.densScale);
+  if (rank >= dens) { return 0; }
   let pn = vnoise(wxr / cu.patchM, wyr / cu.patchM, seed + SALT_PATCH);
   let row1 = cu.vtab[v * ${CARPET_VTAB_ROWS}u + 1u];
   var h = (row0.y + (row0.z - row0.y) * hash24(ix, iy, seed + SALT_H)) * (PATCH_LO + PATCH_RANGE * pn);
@@ -214,8 +215,10 @@ fn tuftHit(ix: i32, iy: i32) -> i32 {
     if (tx.x == 0u) { continue; }
     let fpk0 = cu.fpK; let a0 = t / FP_ANISO_T;
     let fp0 = select(select(FP_DEFAULT_K, -fpk0, fpk0 < 0.0) * t * clamp(a0, 1.0, FP_ANISO_MAX), fpk0, fpk0 > 0.0);
-    let wCap = WMAX_CELLS * 0.5 * fp0; let wHit = select(wCap, wStroke, wStroke < wCap);
+    let wCap = WMAX_CELLS * 0.5 * fp0; let wMin = cu.minWCells * 0.5 * fp0; let wHit = clamp(wStroke, wMin, wCap);
     if (f32(tx.y) * (1.0 / 32.0) * texM >= wHit) { continue; }
+    let lod = clamp(wMin / wStroke - 1.0, 0.0, 1.0);
+    if (f32(tx.x - 1u) * (1.0 / 253.0) < LOD_CUT * lod) { continue; }
     bestT = t; bestH01 = f32(tx.x - 1u) * (1.0 / 253.0);
   }
   if (bestT >= BIG) { return 0; }
@@ -223,10 +226,9 @@ fn tuftHit(ix: i32, iy: i32) -> i32 {
   let fpk = cu.fpK; let a = tc / FP_ANISO_T;
   let fp = select(select(FP_DEFAULT_K, -fpk, fpk < 0.0) * tc * clamp(a, 1.0, FP_ANISO_MAX), fpk, fpk > 0.0);
   let dXY = tc * hxy;
-  let f1 = clamp((fp / (2.0 * wStroke) - FADE_FP0) / (FADE_FP1 - FADE_FP0), 0.0, 1.0);
-  let f2 = clamp((dXY / cu.radiusM - FADE_R0) / (FADE_R1 - FADE_R0), 0.0, 1.0);
-  let fade = (1.0 - f1 * f1 * (3.0 - 2.0 * f1)) * (1.0 - f2 * f2 * (3.0 - 2.0 * f2));
-  if (rank >= row0.x * fade) { return 0; }
+  let f2 = clamp((dXY / cu.radiusM - cu.fadeStart) / (1.0 - cu.fadeStart), 0.0, 1.0);
+  let fade = 1.0 - f2 * f2 * (3.0 - 2.0 * f2);
+  if (rank >= dens * fade) { return 0; }
   sTint = hashFastU(ix, iy, seed + ${SALT_TINT}) >> 24u;
   sVar = v; sH01 = bestH01; sZ = zr; sTb = tc; sLx = lx; sLy = ly; sRx = wxr; sRy = wyr; sFp = fp;
   return 1;
@@ -252,7 +254,8 @@ fn bladeHit(ix: i32, iy: i32) -> bool {
   if (mk < MASK_MIN) { return false; }
   let rank = hash24(ix, iy, seed + SALT_RANK);
   let row0 = cu.vtab[v * ${CARPET_VTAB_ROWS}u]; // density, hMin, hMax, bladeW; row1 = swayGain, tuftP, tuftMul
-  if (rank >= row0.x) { return false; }
+  let dens = min(1.0, row0.x * cu.densScale);
+  if (rank >= dens) { return false; }
   let pn = vnoise(wxr / cu.patchM, wyr / cu.patchM, seed + SALT_PATCH);
   let row1 = cu.vtab[v * ${CARPET_VTAB_ROWS}u + 1u]; // swayGain, tuftP, tuftMul
   var h = (row0.y + (row0.z - row0.y) * hash24(ix, iy, seed + SALT_H)) * (PATCH_LO + PATCH_RANGE * pn);
@@ -276,14 +279,13 @@ fn bladeHit(ix: i32, iy: i32) -> bool {
   let fpk = cu.fpK;
   let a = tc / FP_ANISO_T;
   let fp = select(select(FP_DEFAULT_K, -fpk, fpk < 0.0) * tc * clamp(a, 1.0, FP_ANISO_MAX), fpk, fpk > 0.0);
-  let wCap = WMAX_CELLS * 0.5 * fp; let wHit = select(wCap, w, w < wCap);
+  let wCap = WMAX_CELLS * 0.5 * fp; let wMin = cu.minWCells * 0.5 * fp; let wHit = clamp(w, wMin, wCap);
   if (px * px + py * py >= wHit * wHit) { return false; }
   // fade on the density threshold (one fixed disappearing distance per blade, true w)
   let dXY = tc * sqrt(rN2);
-  let f1 = clamp((fp / (2.0 * w) - FADE_FP0) / (FADE_FP1 - FADE_FP0), 0.0, 1.0);
-  let f2 = clamp((dXY / cu.radiusM - FADE_R0) / (FADE_R1 - FADE_R0), 0.0, 1.0);
-  let fade = (1.0 - f1 * f1 * (3.0 - 2.0 * f1)) * (1.0 - f2 * f2 * (3.0 - 2.0 * f2));
-  if (rank >= row0.x * fade) { return false; }
+  let f2 = clamp((dXY / cu.radiusM - cu.fadeStart) / (1.0 - cu.fadeStart), 0.0, 1.0);
+  let fade = 1.0 - f2 * f2 * (3.0 - 2.0 * f2);
+  if (rank >= dens * fade) { return false; }
   sTint = hashFastU(ix, iy, seed + ${SALT_TINT}) >> 24u; // tint byte (twin: carpet.js writeBlade)
   sVar = v; sH01 = sr / h; sZ = zr; sTb = tc; sLx = lx; sLy = ly; sRx = wxr; sRy = wyr; sFp = fp;
   return true;

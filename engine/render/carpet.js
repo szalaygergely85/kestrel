@@ -6,7 +6,7 @@
 //
 // The class/variant lookup is a plain data shape (D2a builds it in engine/world/carpet.js):
 //   carpet = { cfg: CarpetConfig, classMap: Uint8Array, x0, y0, w, h }   (classMap cell = cfg.classCellM, 0 = none, id 1..15 = cfg.variants[id-1])
-import { hashFast24, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, groundTierOffset, GRASS_TINT_AMP, GRASS_GX_HAS } from './terrainShade.js';
+import { hashFast24, footprintK, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, groundTierOffset, GRASS_TINT_AMP, GRASS_GX_HAS } from './terrainShade.js';
 import { CARPET_DEFAULTS, TUFT_DEFAULT_P, TUFT_DEFAULT_MUL } from '../world/carpet.js';
 import { buildTuftAtlas } from './tuftAtlas.js';
 const INV_2_24 = 1 / 16777216; // 24-bit integer hash scaled at the call site: no double crosses a call (alloc rule)
@@ -21,8 +21,9 @@ export const LEAN_CAP = 0.6;            // |lean| <= 0.6 * h (ratio lean/h)
 export const LEAN_PER_MS = 0.12;        // lean/h per m/s of world wind (before swayGain and gust)
 export const PATCH_LO = 0.75, PATCH_RANGE = 0.5;   // height * (0.75 + 0.5 * valueNoise)
 export const GUST_LO = 0.6, GUST_RANGE = 0.4;      // lean * (0.6 + 0.4 * valueNoise)
-export const FADE_FP0 = 0.5, FADE_FP1 = 1.0;       // fade = 1 - smoothstep(FP0, FP1, fp / (2w))
-export const FADE_R0 = 0.8, FADE_R1 = 1.0;         // times 1 - smoothstep(R0, R1, dXY / radiusM)
+export const FADE_START_DEFAULT = 0.6;  // OB-103: fade = 1 - smoothstep(fadeStart, 1, dXY / radiusM); the footprint no longer removes grass
+export const MINW_CELLS = 0.85;         // OB-103: a far stroke is at least this many footprints (cells) wide on screen (default of uniform minWCells; < WMAX_CELLS)
+export const LOD_CUT = 0.35;            // OB-103: far LOD: a stroke texel hits only when its height fraction >= LOD_CUT * lod (strokes shortened from the base)
 export const RING = 1;                  // lattice cells searched around the (lean-shifted) DDA cell: 3x3
 // salts added to cfg.seed (hash streams)
 export const SALT_JX = 101, SALT_JY = 102, SALT_RANK = 103, SALT_H = 104, SALT_CJX = 105, SALT_CJY = 106, SALT_TUFT = 108, SALT_W = 109, SALT_PATCH = 110, SALT_GUST = 111;
@@ -49,7 +50,7 @@ export function makeCarpetCtx(carpet, ground, wind, atlas) {
   const n = MAX_VARIANTS + 1;
   const ctx = {
     seed: cfg.seed | 0,
-    cellM: cfg.cellM || D.cellM, radiusM: cfg.radiusM || D.radiusM, patchM: cfg.patchM || D.patchM,
+    cellM: cfg.cellM || D.cellM, radiusM: cfg.radiusM || D.radiusM, radiusBase: cfg.radiusM || D.radiusM, fadeStart: cfg.fadeStart == null ? FADE_START_DEFAULT : cfg.fadeStart, densScale: 1, minWCells: MINW_CELLS, patchM: cfg.patchM || D.patchM,
     classCellM: cfg.classCellM || D.classCellM, classJitterM: cfg.classJitterM == null ? D.classJitterM : cfg.classJitterM,
     gustM: cfg.gustM || D.gustM, travelM: cfg.travelM == null ? D.travelM : cfg.travelM,
     classMap: carpet.classMap, cx0: carpet.x0, cy0: carpet.y0, cw: carpet.w, ch: carpet.h,
@@ -81,6 +82,12 @@ export function makeCarpetCtx(carpet, ground, wind, atlas) {
   return ctx;
 }
 
+/** OB-103: apply the world quality knobs {radiusScale, densScale, minWCells} to a ctx (scaled radius = cfg radius * radiusScale). 0 alloc. */
+export function applyCarpetQuality(ctx, q) {
+  if (!q) { ctx.radiusM = ctx.radiusBase; ctx.densScale = 1; ctx.minWCells = MINW_CELLS; return; }
+  ctx.radiusM = ctx.radiusBase * q.radiusScale; ctx.densScale = q.densScale; ctx.minWCells = q.minWCells;
+}
+
 /** MASK-c: (re)bind the density mask result object ({data,x0,y0,w,h}) or null = no mask. Call again after every maskVersion change. */
 export function setCarpetMask(ctx, m) {
   if (m && m.data) { ctx.mData = m.data; ctx.mx0 = m.x0; ctx.my0 = m.y0; ctx.mw = m.w; ctx.mh = m.h; } else { ctx.mData = null; ctx.mw = 0; ctx.mh = 0; }
@@ -92,20 +99,14 @@ export function setCarpetMask(ctx, m) {
  * trace can reach (<= maxH). leanMaxR: peak lean ratio from the wind bound ctx.windMax (0 when calm). Defaults (no call) = the old global bounds.
  */
 export function setCarpetBounds(ctx, ex, ey) {
-  const SL = 1 + 1e-6; // slack so the clipped region is a superset of the fade > 0 region despite rounding
-  // tFade: fp(t) >= FADE_FP1 * (2 * widest half width) -> f1 = 1 -> fade = 0 -> rank >= 0 never hits
-  const thr = FADE_FP1 * ctx.bwMax * (ctx.tufts ? 1 : W_JIT_LO + W_JIT_RANGE) * SL, fpk = ctx.fpK;
-  if (fpk > 0) ctx.tFade = fpk >= thr ? 0 : Infinity;
-  else {
-    const k = fpk < 0 ? -fpk : FP_DEFAULT_K;
-    ctx.tFade = thr <= k * FP_ANISO_T ? thr / k : thr <= k * FP_ANISO_T * FP_ANISO_MAX * FP_ANISO_MAX ? Math.sqrt(thr * FP_ANISO_T / k) : thr / (k * FP_ANISO_MAX);
-  }
+  // OB-103: no footprint fade any more -> the radius clip (radiusM, already scaled) is the only far limit. tFade stays as a field (01c scissor).
+  ctx.tFade = Infinity;
   // leanMaxR
   const lp = ctx.wind === null ? 0 : ctx.windMax * LEAN_PER_MS * ctx.swayMax * (GUST_LO + GUST_RANGE) * 1.0001;
   ctx.leanMaxR = lp < LEAN_CAP ? lp : LEAN_CAP; // NaN / Infinity -> the cap
   if (ctx.wind === null) ctx.leanMaxR = 0;
   // maxHNear: scan the class cells within rW of the eye
-  const cc = ctx.classCellM, tr = ctx.radiusM < ctx.tFade ? ctx.radiusM : ctx.tFade;
+  const cc = ctx.classCellM, tr = ctx.radiusM;
   const rW = tr + ctx.classJitterM + ctx.wMax + (0.7071 + ctx.rootJit + 3 * RING) * ctx.cellM + LEAN_CAP * ctx.maxH + cc;
   let i0 = Math.floor((ex - rW - ctx.cx0) / cc), i1 = Math.floor((ex + rW - ctx.cx0) / cc), j0 = Math.floor((ey - rW - ctx.cy0) / cc), j1 = Math.floor((ey + rW - ctx.cy0) / cc);
   if (i0 < 0) i0 = 0; if (j0 < 0) j0 = 0; if (i1 > ctx.cw - 1) i1 = ctx.cw - 1; if (j1 > ctx.ch - 1) j1 = ctx.ch - 1;
@@ -183,7 +184,8 @@ function bladeHit(ctx, ix, iy) {
   const mk = s[S_M];
   if (mk < MASK_MIN) return 0;
   const rank = (hashFast24(ix, iy, seed + SALT_RANK) * INV_2_24);
-  if (rank >= ctx.dens[v]) return 0;
+  const dn0 = ctx.dens[v] * ctx.densScale, dens = dn0 > 1 ? 1 : dn0;
+  if (rank >= dens) return 0;
   q[0] = rx / ctx.patchM; q[1] = ry / ctx.patchM;
   vnoise(ctx, seed + SALT_PATCH);
   let h = (ctx.hMin[v] + (ctx.hMax[v] - ctx.hMin[v]) * (hashFast24(ix, iy, seed + SALT_H) * INV_2_24)) * (PATCH_LO + PATCH_RANGE * q[2]);
@@ -212,15 +214,14 @@ function bladeHit(ctx, ix, iy) {
   let fp;
   if (fpk > 0) fp = fpk; // = groundFootprint(t, hashCell) of terrainShade.js, inlined (no double through a call)
   else { const a = tc / FP_ANISO_T; fp = (fpk < 0 ? -fpk : FP_DEFAULT_K) * tc * (a < 1 ? 1 : a > FP_ANISO_MAX ? FP_ANISO_MAX : a); }
-  const wCap = WMAX_CELLS * 0.5 * fp, wHit = w < wCap ? w : wCap;
+  const wCap = WMAX_CELLS * 0.5 * fp, wMin = ctx.minWCells * 0.5 * fp, wHit = w < wMin ? wMin : w > wCap ? wCap : w; // OB-103: clamp(w, minW, maxW)
   if (px * px + py * py >= wHit * wHit) return 0;
   // fade on the density threshold: one fixed disappearing distance per blade, no re-roll (uses the true w)
   const dXY = tc * Math.sqrt(n2);
   // smoothstep(a, b, x) inlined by hand (a double-returning helper would be boxed once the inliner budget runs out)
-  let f1 = (fp / (2 * w) - FADE_FP0) / (FADE_FP1 - FADE_FP0); f1 = f1 < 0 ? 0 : f1 > 1 ? 1 : f1;
-  let f2 = (dXY / ctx.radiusM - FADE_R0) / (FADE_R1 - FADE_R0); f2 = f2 < 0 ? 0 : f2 > 1 ? 1 : f2;
-  const fade = (1 - f1 * f1 * (3 - 2 * f1)) * (1 - f2 * f2 * (3 - 2 * f2));
-  if (rank >= ctx.dens[v] * fade) return 0;
+  let f2 = (dXY / ctx.radiusM - ctx.fadeStart) / (1 - ctx.fadeStart); f2 = f2 < 0 ? 0 : f2 > 1 ? 1 : f2;
+  const fade = 1 - f2 * f2 * (3 - 2 * f2);
+  if (rank >= dens * fade) return 0;
   s[S_VAR] = v; s[S_H01] = sr / h; s[S_Z] = zr; s[S_H] = h; s[S_TB] = tc; s[S_RX] = rx; s[S_RY] = ry; s[S_FP] = fp;
   return 1;
 }
@@ -249,7 +250,8 @@ function tuftHit(ctx, ix, iy) {
   const mk = s[S_M];
   if (mk < MASK_MIN) return 0;
   const rank = (hashFast24(ix, iy, seed + SALT_RANK) * INV_2_24);
-  if (rank >= ctx.dens[v]) return 0;
+  const dn0 = ctx.dens[v] * ctx.densScale, dens = dn0 > 1 ? 1 : dn0;
+  if (rank >= dens) return 0;
   q[0] = rx / ctx.patchM; q[1] = ry / ctx.patchM;
   vnoise(ctx, seed + SALT_PATCH);
   let h = (ctx.hMin[v] + (ctx.hMax[v] - ctx.hMin[v]) * (hashFast24(ix, iy, seed + SALT_H) * INV_2_24)) * (PATCH_LO + PATCH_RANGE * q[2]);
@@ -291,8 +293,10 @@ function tuftHit(ctx, ix, iy) {
     let fp;
     if (fpk > 0) fp = fpk;
     else { const a = t / FP_ANISO_T; fp = (fpk < 0 ? -fpk : FP_DEFAULT_K) * t * (a < 1 ? 1 : a > FP_ANISO_MAX ? FP_ANISO_MAX : a); }
-    const wCap = WMAX_CELLS * 0.5 * fp, wHit = wStroke < wCap ? wStroke : wCap;   // per-stroke screen-width cap
+    const wCap = WMAX_CELLS * 0.5 * fp, wMin = ctx.minWCells * 0.5 * fp, wHit = wStroke < wMin ? wMin : wStroke > wCap ? wCap : wStroke;   // OB-103: per-stroke screen width clamp(w, minW, maxW)
     if (ad[o + 1] * (1 / 32) * texM >= wHit) continue;
+    let lod = wMin / wStroke - 1; lod = lod < 0 ? 0 : lod > 1 ? 1 : lod; // far LOD: cut the stroke base
+    if ((tr - 1) * (1 / 253) < LOD_CUT * lod) continue;
     bestT = t; bestH01 = (tr - 1) * (1 / 253);
   }
   if (bestT === Infinity) return 0;
@@ -302,10 +306,9 @@ function tuftHit(ctx, ix, iy) {
   if (fpk > 0) fp = fpk;
   else { const a = tc / FP_ANISO_T; fp = (fpk < 0 ? -fpk : FP_DEFAULT_K) * tc * (a < 1 ? 1 : a > FP_ANISO_MAX ? FP_ANISO_MAX : a); }
   const dXY = tc * Math.sqrt(n2);
-  let f1 = (fp / (2 * wStroke) - FADE_FP0) / (FADE_FP1 - FADE_FP0); f1 = f1 < 0 ? 0 : f1 > 1 ? 1 : f1;
-  let f2 = (dXY / ctx.radiusM - FADE_R0) / (FADE_R1 - FADE_R0); f2 = f2 < 0 ? 0 : f2 > 1 ? 1 : f2;
-  const fade = (1 - f1 * f1 * (3 - 2 * f1)) * (1 - f2 * f2 * (3 - 2 * f2));
-  if (rank >= ctx.dens[v] * fade) return 0;
+  let f2 = (dXY / ctx.radiusM - ctx.fadeStart) / (1 - ctx.fadeStart); f2 = f2 < 0 ? 0 : f2 > 1 ? 1 : f2;
+  const fade = 1 - f2 * f2 * (3 - 2 * f2);
+  if (rank >= dens * fade) return 0;
   s[S_VAR] = v; s[S_H01] = bestH01; s[S_Z] = zr; s[S_H] = h; s[S_TB] = tc; s[S_RX] = rx; s[S_RY] = ry; s[S_FP] = fp;
   return 1;
 }
@@ -512,6 +515,7 @@ export function carpetCtxFor(world) {
     const wp = world.wind && world.wind.params; ctx.windMax = wp ? wp.speed * (1 + wp.amp) : Infinity; // TUFT-PERF-01b lean bound (base field, like the GPU twin; zones are not bounded)
     _worldCtx.set(world, ctx);
   }
+  applyCarpetQuality(ctx, world.carpetQuality); // OB-103
   ctx.classMap = c.classMap; ctx.cx0 = c.x0; ctx.cy0 = c.y0; ctx.cw = c.w; ctx.ch = c.h;
   setCarpetMask(ctx, c.mask); // MASK-c: re-read after every change (ping-pong result object)
   return ctx;
@@ -598,6 +602,7 @@ function carpetCellsPitched(gbuf, fb, cam, ctx, timeSec, pt, alias, sun) {
   const inp = ctx.inp, out = _cellHit;
   inp[IN_EX] = cam.x; inp[IN_EY] = cam.y; inp[IN_EZ] = cam.z; inp[IN_TIME] = timeSec;
   ctx.q[0] = cam.x; ctx.q[1] = cam.y; ctx.ground(ctx.q);
+  ctx.fpK = -footprintK(pt.tanHalfX, cols); // OB-103: live footprint from the real view (same k as the shade pass's hashCell)
   setCarpetBounds(ctx, cam.x, cam.y);
   const eyeAbove = cam.z > ctx.q[2] + ctx.maxHNear;
   let written = 0;

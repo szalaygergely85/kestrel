@@ -272,6 +272,7 @@ export class World {
     this._groundSnap = []; // ED-TERRAIN-1b: [{id, x, y}] of `z: 'ground'` props/entities, re-snapped after a terrain stroke.
     this.carpet = null; // OB-073-D2a: derived {cfg, classMap, x0, y0, w, h}, never serialized or hashed.
     this._carpetCtx = null;
+    this.carpetQuality = { on: true, radiusScale: 1, densScale: 1, minWCells: 0.85 }; // OB-103: render quality knobs (setCarpetQuality); mutated in place, never serialized
     this._detailCtx = null; // ED-TERRAIN-1b: {cfg, keepOut} the detail scatter was built with.
     // ME-11a (docs/architecture.md 27.18): 'grid' (default, unchanged
     // behaviour) or 'mesh'. Content, not state - never goes through
@@ -1367,6 +1368,20 @@ export class World {
     terrain.nearBandStep(Infinity);
     this._publishBand(best, false);
     return true;
+  }
+
+  /**
+   * OB-103: far-grass quality knobs, applied by both carpet twins (preset values live in content, not here). Partial objects merge; throws on a bad value.
+   * @param {{on?:boolean, radiusScale?:number (0.25..2), densScale?:number (0..2), minWCells?:number (0.5..1.25)}} q
+   */
+  setCarpetQuality(q) {
+    const cq = this.carpetQuality, rng = (k, lo, hi) => { if (q[k] !== undefined && !(Number.isFinite(q[k]) && q[k] >= lo && q[k] <= hi)) throw new Error(`setCarpetQuality.${k}: must be a number ${lo}..${hi}`); };
+    if (q.on !== undefined && typeof q.on !== 'boolean') throw new Error('setCarpetQuality.on: must be a boolean');
+    rng('radiusScale', 0.25, 2); rng('densScale', 0, 2); rng('minWCells', 0.5, 1.25);
+    if (q.on !== undefined) cq.on = q.on;
+    if (q.radiusScale !== undefined) cq.radiusScale = q.radiusScale;
+    if (q.densScale !== undefined) cq.densScale = q.densScale;
+    if (q.minWCells !== undefined) cq.minWCells = q.minWCells;
   }
 
   /** OB-073-D2a (38.52): (re)build the carpet class map for the current near band; reuses the buffer. */

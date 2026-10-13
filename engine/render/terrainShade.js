@@ -94,6 +94,8 @@ export const PATCH_K = 3.5, FP_DEFAULT_K = 0.01, FP_ANISO_T = 8, FP_ANISO_MAX = 
 export const FAR_GLYPH_CELL = 4.0; // OB-073 dead-code cleanup: GLYPH_CELL / PATCH_DITHER / GLINT_RATE / ctx.features removed (nothing read them)
 // OB-081: ground footprint (m) where the far tier-colour blend starts / is full (hard tiers below FP0).
 export const FAR_BLEND_FP0 = 2.0, FAR_BLEND_FP1 = 8.0; // OB-085: was 0.5 -> 2 m (~20-50 m): tier contours on rock slopes morphed while walking closer
+/** OB-103: per-metre cell size k of a perspective view (groundFootprint hashCell = -k): 2 * tan(hfovX / 2) / cols. */
+export function footprintK(tanHalfX, cols) { return 2 * tanHalfX / cols; }
 /** OB-073: ground footprint (m) of one screen cell at depth t; hashCell as in shadeTerrain (<0 = -k, >0 = fixed ortho cell, 0 = default k). */
 export function groundFootprint(t, hashCell) {
   if (hashCell > 0) return hashCell;
