@@ -977,3 +977,8 @@ Not proven in a browser: if the next run still shows 0 cog/emberpod with free sl
 - 2026-10-13 PERF-R4 (D-075 step 3, kestrel-1, branch perf-r4): gfx-presets.json ultra+extreme lodScale 1.25 -> 1.0 and shadowQuality "ultra"; new shadow level 'ultra' in engine/render/shadowSun.js (SHADOW_LEVELS, resolveShadowLevel: res/meshCast as high, meshLod0M 16, instCastM 32). 'high' unchanged (25 / 48 defaults; gfxBoot still forces 32 for high). Added 'ultra' to SHADOW_CHOICES (gfxPresets.js) and the settings 'shadows' cycle (settings.js).
   Tests: gfxKnobs/gfxBoot/settingsFull updated (ultra 16/32, high 25/32, lodScale 1.0, saved ultra); `run-tests --filter gfx,shadow,settings` 16/16 PASS. No "shadow LOD1 always" knob exists - not done. Not run: gpucompare, bench-presets (`node tools/bench-presets.mjs 9575 --rays 4 --grid 480x180`), browser.
   Main session: gpucompare (expected no row change unless a pose runs at ultra) + bench at ultra for shadow ms; owner look at far shadows. -> arch-review
+
+### OB-113 beasts drop the potion into the pack (kestrel-1, branch ob113)
+- `loot.js` lootBoar: held `orbHeld` hp/mp now goes through `addItem` as `potion.hp` / `potion.mp` x1 (normal `inventory:added` toast); no instant heal, `loot:orb` no longer emitted. Pack full -> stays in orbHeld, counted into the existing `inventory:full` leftover path (nothing lost/duplicated). Rolls/rng draw order untouched; old saves/orbHeld values give the item.
+- `loot.test.js`: 300-kill orb->pack test (given === orbs, hp unchanged), full-pack test, log-order expectation. `--filter loot,inventory,pickups,goblin` 9/9 PASS. verify-boar-loot.mjs needs no change (ground-pickup check only).
+-> po-review

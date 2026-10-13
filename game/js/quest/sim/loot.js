@@ -218,13 +218,17 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
       const t = recs[i];
       spawnItemDrop(world, gh, t.x, t.y, t.z - CORPSE_LIFT, loot.gearTier[i]);
     }
-    const orb = loot.orbHeld[i]; // OB-074: the potion is given on E (restores PICKUP_AMOUNT hp/mp to the player now)
+    const orb = loot.orbHeld[i]; // OB-113: the potion goes INTO THE PACK like meat (hp -> potion.hp, mp -> potion.mp); no instant heal
     if (orb) {
-      loot.orbHeld[i] = null;
-      const pe = world.entity('player'), pc = pe && pe.components;
-      if (pc && orb === 'hp' && pc.health) pc.health.hp = Math.min(pc.health.max, pc.health.hp + PICKUP_AMOUNT);
-      else if (pc && orb === 'mp' && pc.mana) pc.mana.mp = Math.min(pc.mana.max, pc.mana.mp + PICKUP_AMOUNT);
-      loot._orb.kind = orb; events.emit('loot:orb', loot._orb);
+      const pid = orb === 'mp' ? 'potion.mp' : 'potion.hp';
+      const added = inv ? addItem(inv, items, pid, 1) : 0;
+      if (added > 0) {
+        loot.orbHeld[i] = null;
+        loot._added.id = pid; loot._added.n = added;
+        events.emit('inventory:added', loot._added);
+      } else { // pack full: the potion stays in the corpse (same inventory:full path as meat)
+        left += 1; if (!leftId) { leftId = pid; loot._full.n = 1; }
+      }
     }
     if (left > 0) {
       // Corpse keeps the leftover and stays lootable (simpler than a drop; nothing is lost or duplicated).
