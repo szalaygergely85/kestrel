@@ -32,6 +32,7 @@ export function validateCarpetConfig(cfg, typeNames) {
     if (ZERO_OK.indexOf(k) >= 0) { if (!(isNum(cfg[k]) && cfg[k] >= 0)) fail(k, 'must be a number >= 0'); }
     else if (!(isNum(cfg[k]) && cfg[k] > 0)) fail(k, 'must be a number > 0');
   }
+  if (cfg.underlay !== undefined && !(isNum(cfg.underlay) && cfg.underlay >= 0 && cfg.underlay <= 1)) fail('underlay', 'must be a number 0..1'); // OB-121b
   if (cfg.tuftR !== undefined && !(isNum(cfg.tuftR) && cfg.tuftR >= 0.1 && cfg.tuftR <= 0.5)) fail('tuftR', 'must be a number 0.1..0.5');
   if (cfg.fadeStart !== undefined && !(isNum(cfg.fadeStart) && cfg.fadeStart >= 0 && cfg.fadeStart <= 0.95)) fail('fadeStart', 'must be a number 0..0.95'); // OB-103
   if (cfg.tuftAtlas !== undefined && (!cfg.tuftAtlas || typeof cfg.tuftAtlas !== 'object')) fail('tuftAtlas', 'must be an object {n,w,h,blades,curl,widthTex}');
