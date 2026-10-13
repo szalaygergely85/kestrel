@@ -21,7 +21,7 @@ export const S_CUM16 = 0, S_LOD_CM = 1, S_MAX_CM = 2, S_FLAGS = 3, S_SCALE_MIN =
 export const SPECIES_WORDS = 6;
 export const SP_GRASS_LIKE = 1;
 export const MASK_PROB_MASK = 127, MASK_CARPET_BIT = 128;
-export const MAX_DIST_CM = 46000;     // d^2 stays exact in i32
+export const MAX_DIST_CM = 32000;     // 2*32000^2 < 2^31: with the per-axis reject every accepted d2 is exact in i32
 export const FADE_Q8_MIN = 205;       // fade factor 0.8 .. 0.996 (205 + hash8*51>>8) / 256
 export const FADE_Q8_SPAN = 51;
 export const DEFAULT_DENSITY_Q8 = 256;
@@ -121,8 +121,10 @@ export function decorCell(packed, layer, ix, iy, maskByte, eyeXcm, eyeYcm, fadeC
   const jqx = jitterCm(decorHash(ix, iy, seed, K_JX), jit), jqy = jitterCm(decorHash(ix, iy, seed, K_JY), jit);
   const xcm = Math.imul(ix, cell) + jqx, ycm = Math.imul(iy, cell) + jqy;
   const dx = xcm - eyeXcm, dy = ycm - eyeYcm;
-  const d2 = (Math.imul(dx, dx) + Math.imul(dy, dy)) | 0;
   const draw = w[o + L_DRAW_CM];
+  // reject each axis before squaring: |d| < draw <= MAX_DIST_CM keeps dx*dx + dy*dy < 2^31 (no i32 wrap)
+  if (dx >= draw || dx <= -draw || dy >= draw || dy <= -draw) return 0;
+  const d2 = Math.imul(dx, dx) + Math.imul(dy, dy);
   if (d2 >= Math.imul(draw, draw)) return 0;
   const sp = decorSpecies(w, o, decorHash(ix, iy, seed, K_SPECIES) >>> 16);
   const p = w[o + L_SPECIES_OFF] + sp * SPECIES_WORDS;
@@ -134,6 +136,7 @@ export function decorCell(packed, layer, ix, iy, maskByte, eyeXcm, eyeYcm, fadeC
   if (fadeLim > MAX_DIST_CM) fadeLim = MAX_DIST_CM; // keeps lim^2 exact in i32
   if (d2 >= Math.imul(fadeLim, fadeLim)) return 0;
   // carpet hand-off: grass-like species yield to the carpet inside radius + 2 m
+  if (carpetCutCm > MAX_DIST_CM) carpetCutCm = MAX_DIST_CM;
   if ((maskByte & MASK_CARPET_BIT) !== 0 && (w[p + S_FLAGS] & SP_GRASS_LIKE) !== 0 && d2 < Math.imul(carpetCutCm, carpetCutCm)) return 0;
   out[O_SPECIES] = sp; out[O_XCM] = xcm; out[O_YCM] = ycm; out[O_JQX] = jqx; out[O_JQY] = jqy;
   out[O_YAWQ] = decorHash(ix, iy, seed, K_YAW) >>> 24; out[O_SCALEQ] = decorHash(ix, iy, seed, K_SCALE) >>> 24; out[O_DIST2] = d2;
