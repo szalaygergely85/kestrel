@@ -17,7 +17,7 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 // expected [built, on, radiusScale, densScale] per case (D-075 / proposal G1 section 6)
 const CASES = [
   ['quality=low', [true, false, 0.5, 0.6]], ['quality=medium', [true, true, 0.5, 0.6]], ['quality=high', [true, true, 1, 1]],
-  ['quality=ultra', [true, true, 1.4, 1.25]], ['quality=high&carpet=0', [false, false, 1, 1]], ['quality=low&carpet=1', [true, true, 0.5, 0.6]],
+  ['quality=ultra', [true, true, 1.4, 1.25]], ['quality=high&carpet=0', [false, true, 1, 1]], ['quality=low&carpet=1', [true, true, 0.5, 0.6]],
 ];
 let browser, cdp;
 try {

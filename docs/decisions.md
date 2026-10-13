@@ -1182,3 +1182,10 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 
 ## D-076 - Open the whole map (owner, 2026-10-13; recorded by the PC-B main session)
 - Owner: "open the whole" -> **the whole map, all regions walkable** (supersedes D-073's "south corridor first" as the next map goal). Means the band grid + streaming across all 17 regions (MAP-10..14, STREAM-02+, band cache bake-ahead OB109-B4), bounds = the world edge (sea monster / mountains / Sealed Gate stay the real limits), nav + beasts + wildlife across the map, the frame budget held everywhere (M5 exit test). Architect plan first, then steps.
+
+## D-077 - Whole map answers, Tab, aspect, potions (owner, 2026-10-13; recorded by the PC-B main session)
+- Whole map (38.59): sea edge = coast + 110 m (the sea monster is the limit); the 10 empty regions are dressed by biome rules from existing meshes (WM-07), villages/camps later; terrain memory budget up to 40 MB (32 MB band cache).
+- Tab stays target-cycle; I and C open the inventory.
+- OB-117: Settings "Aspect ratio" option, picture fixed to the chosen ratio, default 16:9 (16:10, 21:9, 4:3, Fill window).
+- OB-113: beasts drop potions into the pack (corpse loot), not an instant heal.
+- OB-115 (main session call): kill objectives count any beast of the kind killed after accept.
