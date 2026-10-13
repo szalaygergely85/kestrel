@@ -71,6 +71,14 @@ function talkBurl(pick = 0) { // run the real dialogue runner to its end; return
   assert.equal(run.state, 'ended');
   return said;
 }
+// BURL-HOME-01: the very FIRST talk at home (burl.home set, met not yet) must play `bear.home` and set s.burl.home.met, even with Rook's quests done
+{ const b3 = newBook(); const f3 = (k) => b3.feed({ type: 'flag:set', key: k, value: true });
+  for (const o of files.questDef.objectives) { const w = o.when; if (w.type === 'flag') f3(w.id); else if (w.type === 'area') b3.feed({ type: 'area:entered', id: w.id }); else if (w.type === 'beasts') for (const id of w.ids) b3.feed({ type: 'beast:died', id }); }
+  f3('burl.home'); const st3 = { 'burl.home': true }, set3 = [], run3 = createDialogueRunner({}), spoken = [];
+  run3.open(dlg, { has: (k) => (k.startsWith('q.') ? b3.hasKey(k) : !!st3[k.replace(/^s./, '')]), set: (k) => { set3.push(k); } });
+  for (let g = 0; g < 40 && run3.state !== 'ended'; g++) { if (run3.line && spoken.at(-1) !== run3.line) spoken.push(run3.line); run3.press(); }
+  assert.ok(set3.includes('s.burl.home.met'), 'first home talk runs bear.home: ' + set3.join(',') + ' / ' + spoken.join('|'));
+}
 // Burl offers the first available errand (sq.tm.nub needs burl.boars done = yes) and accepts it by the choice
 const said = talkBurl(0);
 assert.ok(said.length >= 2 && flagsOut.some((k) => /^q.sq..*.accept$/.test(k)), 'offer + accept by talking: ' + flagsOut.join(','));

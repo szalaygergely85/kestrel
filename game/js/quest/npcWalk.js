@@ -49,7 +49,7 @@ export function createNpcWalk(world, id, ctx = {}) {
       const k = wp == null || wp >= poly.length ? poly.length - 1 : wp | 0;
       t.x = poly[k][0]; t.y = poly[k][1];
       if (k > 0) t.yawDeg = yawFromDelta(poly[k][0] - poly[k - 1][0], poly[k][1] - poly[k - 1][1]);
-      snap(); api.active = false; api.done = true; api.waiting = false;
+      snap(); api.active = false; api.done = true; api.waiting = false; api.hidden = false; // placed = visible again (goHome after hide)
       if (v) { setAnim('idle'); v.hidden = false; }
       return true;
     },
