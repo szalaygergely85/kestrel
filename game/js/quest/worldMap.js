@@ -34,7 +34,7 @@ function inPoly(P, x, y) {
 
 /** @param {Object} geo world_geo (bounds, coast, regions)  @param {Object} names region id -> approved name | null
  *  @param {Object} palette {colors}  @param {{getSeen:function():string[]|undefined, w:number, h:number, travel?:Object, travelHeader?:string}} o */
-export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel = null, travelHeader = 'Travel: press a number' }) {
+export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel = null, travelHeader = 'Travel: press a number', lockUnseen = false }) {
   const box = worldBox(geo), innerW = w - 2, innerH = h - 2, N = innerW * innerH, spanX = box.x1 - box.x0, spanY = box.y1 - box.y0;
   const col = (k, g = 1) => { const c = hexToRgb(palette.colors[k] || '#888888'); return [c[0] * g, c[1] * g, c[2] * g]; };
   const C = { edge: col('chartEdge', 0.8), land: col('pencil', 0.8), fog: col('chartInk', 0.28), sea: col('aetherDim', 0.7), bound: col('ferrum'),
@@ -58,7 +58,7 @@ export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel 
   // marker lists (world metres); statics = woken relays/waystones (persist), digits = current travel points, quest = giver marks
   const statics = [], staticKinds = [], dig = [], digIds = [], quest = [], questKinds = [];
   const labels = []; // flat [cellX, cellY, len, regionIdx] of the placed names (tests read these)
-  let travelLine = '', previous = -1, dirty = true;
+  let travelLine = '', previous = -1, dirty = true, sel = -1, noticeText = '', travelNames = [], travelBase = '';
   const position = { x: -1, y: -1, code: 0 };
 
   function compose() {
@@ -114,16 +114,29 @@ export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel 
     }
     compose();
   }
-  function setTravelPoints(list) {
-    dig.length = 0; digIds.length = 0;
-    const pts = [];
-    for (const p of list || []) if (p && p.touched !== false && p.woken !== false && index(p.x, p.y) >= 0) pts.push(p);
-    if (pts.some((p) => typeof p.order === 'number')) pts.sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+  // WMP-05: with lockUnseen, a point in a region not in region.seen gets no digit and cannot be selected.
+  const isLocked = (p) => (getSeen() || []).indexOf(regionIdAt(geo.regions, p.x, p.y)) < 0;
+  function buildTravelLine() {
     let text = '';
-    for (let k = 0; k < pts.length && k < 9; k++) { dig.push(pts[k].x, pts[k].y); digIds.push(pts[k].id); text += (k ? '  ' : '') + (k + 1) + ' ' + pts[k].name; }
-    travelLine = text ? travelHeader + '   ' + text : ''; if (travelLine.length > w - 4) travelLine = travelLine.slice(0, w - 4);
-    dirty = true; return digIds.length;
+    for (let k = 0; k < travelNames.length; k++) text += (k ? '  ' : '') + (k === sel ? '>' : '') + (k + 1) + ' ' + travelNames[k];
+    travelLine = noticeText || (text ? travelHeader + '   ' + text : '');
+    if (travelLine.length > w - 4) travelLine = travelLine.slice(0, w - 4);
+    dirty = true;
   }
+  function setTravelPoints(list) {
+    dig.length = 0; digIds.length = 0; travelNames.length = 0; sel = -1; noticeText = '';
+    const pts = [];
+    for (const p of list || []) if (p && p.touched !== false && p.woken !== false && index(p.x, p.y) >= 0 && !(lockUnseen && isLocked(p))) pts.push(p);
+    if (pts.some((p) => typeof p.order === 'number')) pts.sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+    for (let k = 0; k < pts.length && k < 9; k++) { dig.push(pts[k].x, pts[k].y); digIds.push(pts[k].id); travelNames.push(pts[k].name); }
+    buildTravelLine(); return digIds.length;
+  }
+  /** WMP-05: arrow keys move the highlight over the woken relays (wraps); first press from "none" picks the first (+1) or last (-1). */
+  function moveSelection(d) {
+    const n = digIds.length; if (!n) return -1;
+    sel = sel < 0 ? (d > 0 ? 0 : n - 1) : (sel + d + n) % n; noticeText = ''; buildTravelLine(); return sel;
+  }
+  function setNotice(text) { noticeText = text || ''; buildTravelLine(); }
   const arrows = [94, 62, 118, 60]; // yaw 0 north (-y), 90 east, 180 south, 270 west
   compose();
   return {
@@ -131,6 +144,7 @@ export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel 
     get travelLine() { return travelLine; },
     setMarker, setQuestMarkers, setTravelPoints, refreshTravel: () => (travel ? setTravelPoints(travel.list()) : 0),
     setChartPieces() { compose(); return true; }, // card opens: re-read region.seen + markers
+    moveSelection, setNotice, selectedId: () => (sel >= 0 ? digIds[sel] : null), get selected() { return sel; },
     travelIdFor: (k) => (k >= 1 && k <= digIds.length ? digIds[k - 1] : null),
     updatePose(x, y, yawDeg) { // 0 alloc: two cells
       if (dirty) compose();

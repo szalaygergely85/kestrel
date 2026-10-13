@@ -104,6 +104,7 @@ import { createRegionBanner } from './quest/regionBanner.js'; // REGION-01: regi
 import { stepActionHints, resetActionHints } from './quest/actionHints.js'; // FS-01
 import { createWild } from './wild/wildEnv.js'; // WILD-06: ambient rabbits + deer
 import { createGoblinWire } from './life/goblinWire.js'; // GOB-07b
+import { generateFarCamps } from './life/farCamps.js'; // WMP-02
 import { createLifeWire, prepareRaidDefs, createOutwallLife } from './life/lifeWire.js'; // LIFE-HOOKS-01: wolf raids wiring
 import { bootRegionalBeasts } from './quest/sim/regionalBeastsBoot.js'; // WM-12
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
@@ -1100,6 +1101,8 @@ async function runGame(mode, cinematic = null) {
   const entityTintTable = createEntityTintTable(); // TELEGRAPH-WIRE-01 part 2: one table, reused
   let telegraphWire = null; // TELEGRAPH-WIRE-01: rebuilt on 'world:loaded'
   let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
+  // WMP-05: map travel is refused in combat (aggro beast within 40 m or the hit-invuln window is up); same sim the hp-regen gate reads.
+  const mapTravelBlocked = () => { const t = playerHandle && playerHandle.data.transform; return !!((vitals && vitals.invuln > 0) || (beasts && t && beasts.aggroNear(t.x, t.y, 40))); };
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   let travel = null; // WS1-07b: created once below (after wakeOut)
@@ -1489,6 +1492,10 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       }
       const gridNav = world.terrainGrid && world.nav ? { grid: world.nav, astar: createAStar(world.nav) } : null;
       bootRegionalBeasts(world, window.ASSETS?.levels?.world_geo, params, isCaptureOrBench); // WM-12: regional herds, after World.load, before the sim
+      if (goblinWire && world.terrainGrid && gridEnabled(params)) { // WMP-02: far goblin camps, last in slot order (authored, regional, far camps)
+        const homes = []; world.forEachEntity((e) => { const b = e.components && e.components.brain; if (b && b.kind === 'beast' && b.home) homes.push([b.home[0], b.home[1]]); });
+        goblinWire.addFarCamps(generateFarCamps({ geo: window.ASSETS?.levels?.world_geo, terrain: world.terrain, seed: 12, avoid: homes }));
+      }
       beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null }); // LIFE-07: predators hunt the ambient fauna
       if (goblinWire) goblinWire.attach(beasts, { onClank: () => playShieldClank() }); // GOB-07b: camps + spear sim + view
       if (lifeWire) { lifeWire.dispose(); lifeWire = null; } // LIFE-08: night raids (content/life/raids.json), rebuilt with every beast sim
@@ -1728,11 +1735,11 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         }
         { // WM-10: the whole-map view is the default M card (?map=chart keeps the baked chart); region.seen drives fog + names
           const wg = window.ASSETS.levels.world_geo, rbN = window.ASSETS.uiRegionBanner;
-          if (wg && rbN && params.get('map') !== 'chart') chartOptions = Object.assign(chartOptions || { markers: [], travel: null }, { worldMap: { geo: wg, names: rbN.names, getSeen: () => world.state['region.seen'] } });
+          if (wg && rbN && params.get('map') !== 'chart') chartOptions = Object.assign(chartOptions || { markers: [], travel: null }, { worldMap: { geo: wg, lockUnseen: true, names: rbN.names, getSeen: () => world.state['region.seen'] } });
         }
         try {
           initMapCard(assets, ui.cols, ui.rows, chartOptions);
-          { const cv = getMapChart(); if (cv) cv.onTravel = (id) => travel.request(id); } // WS1-07b
+          { const cv = getMapChart(); if (cv) { cv.onTravel = (id) => travel.request(id); cv.travelBlocked = () => mapTravelBlocked(); } } // WS1-07b
         } catch (e) {
           console.warn('[map] chart card init failed, falling back to the plain card:', e && e.message);
           initMapCard(assets, ui.cols, ui.rows);
