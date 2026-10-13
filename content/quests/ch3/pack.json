@@ -570,6 +570,54 @@
         ]
       },
       "returnText": "Back to the board"
+    },
+    {
+      "id": "sq.ow.raid",
+      "title": "Defend the Farm",
+      "site": "owBoard",
+      "objectives": [
+        {
+          "id": "defend",
+          "text": "Defend the goose pen at night",
+          "when": {
+            "type": "flag",
+            "id": "life.raid.gooseFarm.defended",
+            "equals": true
+          },
+          "journal": "Wolves raid the goose pen by night. Wait there after dark, drive off the pack."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 2
+          },
+          {
+            "id": "arrow",
+            "n": 15
+          }
+        ]
+      },
+      "returnText": "Back to the board",
+      "lines": {
+        "offer": [
+          "A new note, the nail driven deep. The same caps hand:",
+          "WOLVES COME FOR THE GEESE AFTER DARK. STAND AT THE PEN."
+        ],
+        "active": [
+          "The folded note: AFTER DARK. GOOSE PEN. THE PACK."
+        ],
+        "ready": [
+          "On the nail now, tied with twine: two red vials, arrows."
+        ],
+        "done": [
+          "Chalk under the nail: GEESE COUNTED. ALL HERE. AGAIN."
+        ]
+      }
     }
   ]
 }

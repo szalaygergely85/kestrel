@@ -322,7 +322,7 @@ export class WgCullPass {
       // uniform block (f32 view; the u32 fields share its memory)
       if (planes) { for (let i = 0; i < 24; i++) f[PLANES + i] = planes[i]; }
       else { for (let i = 0; i < 6; i++) { const o = PLANES + i * 4; f[o] = 0; f[o + 1] = 0; f[o + 2] = 0; f[o + 3] = 1; } } // d = 1 >= 0: nothing is outside
-      const eye = fr.eye, md = fr.maxDistM;
+      const eye = fr.eye, md = g.maxDistM > 0 ? g.maxDistM : fr.maxDistM; // OB-089: per-group cut wins
       f[EYE] = eye ? eye.x : 0; f[EYE + 1] = eye ? eye.y : 0; f[EYE + 2] = eye ? eye.z : 0; f[EYE + 3] = eye && md > 0 ? md * md : 0;
       const vp = fr.viewProj;
       const lodOn = g.lodCells > 0 && !!vp && !!b.meshes1;
@@ -412,7 +412,7 @@ export class WgCullPass {
     const R = g._R;
     if (planes) { for (let i = 0; i < 24; i++) f[PLANES + i] = planes[i]; }
     else { for (let i = 0; i < 6; i++) { const o = PLANES + i * 4; f[o] = 0; f[o + 1] = 0; f[o + 2] = 0; f[o + 3] = 1; } }
-    const eye = fr.eye, md = fr.maxDistM;
+    const eye = fr.eye, md = g.maxDistM > 0 ? g.maxDistM : fr.maxDistM; // OB-089: per-group cut wins
     f[EYE] = eye ? eye.x : 0; f[EYE + 1] = eye ? eye.y : 0; f[EYE + 2] = eye ? eye.z : 0; f[EYE + 3] = eye && md > 0 ? md * md : 0;
     const vp = fr.viewProj;
     const lodOn = g.lodCells > 0 && !!vp && !!b.meshes1;

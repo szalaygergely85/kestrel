@@ -183,7 +183,7 @@ export { createUiLayer, clampUiCols, UI_GRID_ASPECT } from './ui/uiLayer.js';
 // Leaf module (engine/nav/**): never imports render/mesh/ui/world
 // (check-deps rule 14); World is passed into buildFromWorld duck-typed.
 export { NavGrid } from './nav/NavGrid.js';
-export { createAStar, findPath, smoothPath, pathCrossesRect } from './nav/astar.js';
+export { createAStar, findPath, smoothPath, pathCrossesRect, planPath } from './nav/astar.js';
 
 // ---- interaction (US-012) ------------------------------------------------------
 export { findInteractTarget, updateInteraction, hasLineOfSight } from './world/interaction.js';
@@ -277,3 +277,4 @@ export { compileFaunaDef } from './fauna/faunaDef.js';
 export { createFauna } from './fauna/fauna.js'; // WILD-06
 export { createFaunaFeed, WILD_DRAW_MAX } from './fauna/feed.js';
 export { createSpawner, FAUNA_MAX, CELL_M as FAUNA_CELL_M } from './fauna/spawner.js';
+export { makeUnderState, updateUnderState, UNDER_DEFAULT } from './render/underwater.js'; // SWIM-04c (38.54)

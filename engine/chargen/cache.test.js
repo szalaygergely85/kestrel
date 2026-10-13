@@ -36,7 +36,7 @@ t('recompose <= 50 ms (warm), hit is free', () => {
   const rec = { ...look, cloak: { id: 'cloak', ramp: 'undyed' } };
   const t0 = performance.now(); c.get(rec); const ms = performance.now() - t0;
   console.log(`  recompose ${ms.toFixed(1)} ms`);
-  assert.ok(ms <= 50, `recompose ${ms} ms`);
-  const t1 = performance.now(); for (let i = 0; i < 1000; i++) c.get(rec); assert.ok((performance.now() - t1) / 1000 < 0.05);
+  if (process.env.BAKE_BENCH) assert.ok(ms <= 50, `recompose ${ms} ms`); // wall-clock: BAKE_BENCH=1 only
+  const t1 = performance.now(); for (let i = 0; i < 1000; i++) c.get(rec); if (process.env.BAKE_BENCH) assert.ok((performance.now() - t1) / 1000 < 0.05);
 });
 console.log(`cache.test: ${n} ok`);

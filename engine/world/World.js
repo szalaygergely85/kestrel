@@ -175,7 +175,7 @@ function validateTerrainBand(b) {
 function validateTerrainBands(list, sw, single) {
   if (list == null) return null;
   if (single != null) throw new Error('World.load: terrainBand and terrainBands are mutually exclusive');
-  if (!Array.isArray(list) || list.length < 1 || list.length > 4) throw new Error('World.load: terrainBands must be an array of 1..4 zones');
+  if (!Array.isArray(list) || list.length < 1 || list.length > 6) throw new Error('World.load: terrainBands must be an array of 1..6 zones');
   const zones = [], ids = new Set();
   list.forEach((z, i) => {
     if (!z || typeof z !== 'object') throw new Error(`World.load: terrainBands[${i}] must be an object`);
@@ -199,7 +199,7 @@ function validateBounds(b) {
     return o;
   }
   if (b.shape === 'union') {
-    if (!Array.isArray(b.parts) || b.parts.length < 1 || b.parts.length > 8) throw new Error('World.load: bounds.parts must be an array of 1..8 parts');
+    if (!Array.isArray(b.parts) || b.parts.length < 1 || b.parts.length > 16) throw new Error('World.load: bounds.parts must be an array of 1..16 parts');
     const fin = (v) => typeof v === 'number' && isFinite(v);
     const parts = b.parts.map((p, i) => {
       const at = `bounds.parts[${i}]`;
@@ -1192,6 +1192,8 @@ export class World {
   _gridFill(k, i, j) { const z = this.terrainBands[k]; zoneAt(this.terrainGrid, i, j, z); z.id = zoneId(z.i, z.j); return z; }
 
   /** Drops a pending bake and its scatter job. */
+  /** WS2-05: index of the terrain band being baked, -1 when none. */
+  get bandPending() { return this._bandPend; }
   _cancelBand() { if (this._bandPend >= 0) { this.terrain.cancelNearBand(); this._bandPend = -1; } this._bandJob = null; }
 
   /**

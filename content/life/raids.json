@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "raids": [
+    {
+      "id": "gooseFarm",
+      "note": "LIFE-09 (architecture 38.56 d): wolf pack raids the goose pen. Gated by accepting sq.ow.raid at the Outwall board.",
+      "pack": ["wolf1", "wolf2", "wolf3", "wolf4", "wolf5"],
+      "target": "gooseFarm",
+      "from": 21,
+      "to": 5,
+      "chancePerNight": 0.35,
+      "requires": "q.sq.ow.raid.accept",
+      "cooldownDays": 2
+    },
+    {
+      "id": "goblinNorth",
+      "note": "GOB-06 (architecture 38.57 (4)): campNorth's goblins raid the goose pen at night with 3 torches. No raid while the camp is down. Runs after the wolf raid in the list, so the one-raid-at-a-time rule gives wolves priority.",
+      "campId": "campNorth",
+      "torches": 3,
+      "target": "gooseFarm",
+      "from": 22,
+      "to": 4,
+      "chancePerNight": 0.3,
+      "cooldownDays": 3
+    }
+  ]
+}

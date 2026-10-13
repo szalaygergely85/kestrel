@@ -82,6 +82,7 @@ export function bindScatterInstances(world, instances, previous = [], owner = nu
     // MESH-LOD-CELLS-01: per-species override (validated in scatter.js); mesh groups need a ready LOD1 mesh (`lods`) to use it
     if (sp.mesh !== undefined && sp.lodCells !== undefined) group.lodCells = sp.lodCells / knobs.lodScale;
     if (sp.lod0Cap !== undefined) group.lod0Cap = sp.lod0Cap;
+    { const md = sp.maxDistM ?? cfg.maxDistM; if (md > 0) group.maxDistM = md; } // OB-089: draw-distance cut (far forest tint takes over)
     for (let i = 0; i < scatter.count; i++) {
       if (scatter.species[i] !== s || (keep && !keep[i])) continue;
       writeUnitInstance(group.ib, group.count++, scatter.x[i], scatter.y[i], scatter.z[i],

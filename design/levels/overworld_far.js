@@ -31,13 +31,15 @@
     { model: 'forestPineSmall',  weight: 20, trunkR: 0.34, trunkH: 1.50, sway: true },   // 6.00 m (raw import, owner 2026-10-04)
     { model: 'forestPineLarge',  weight: 15, trunkR: 0.41, trunkH: 1.80, sway: true }    // 7.20 m (raw import, owner 2026-10-04)
   ];
+  // OB-089 (owner 2026-10-13, 'LOD for dark trees should be closer'): was 150 = LOD1 from ~9 m (rows 100, R 7.7 m: d = R*1.73*rows/lodCells). 50 holds the lit LOD0 to ~27 m.
+  var TREE_LODCELLS = 50;
   var TREE_SPECIES_MESH = (function () {
   var out = [];
   [[14, 0.5, 2.3], [14, 0.5, 2.8], [12, 0.5, 2.5], [10, 0.5, 5.0], [10, 0.45, 2.3]].forEach(function (t, i) {
-    out.push({ mesh: 'quaternius/CommonTree_' + (i + 1), weight: t[0], trunkR: t[1], trunkH: t[2], sway: true, lodCells: 150 });
+    out.push({ mesh: 'quaternius/CommonTree_' + (i + 1), weight: t[0], trunkR: t[1], trunkH: t[2], sway: true, lodCells: TREE_LODCELLS });
   });
   [[10, 0.45, 2.1], [10, 0.45, 1.1], [8, 0.45, 3.0], [6, 0.45, 2.4], [6, 0.35, 1.4]].forEach(function (t, i) {
-    out.push({ mesh: 'quaternius/Pine_' + (i + 1), weight: t[0], trunkR: t[1], trunkH: t[2], sway: true, lodCells: 150 });
+    out.push({ mesh: 'quaternius/Pine_' + (i + 1), weight: t[0], trunkR: t[1], trunkH: t[2], sway: true, lodCells: TREE_LODCELLS });
   });
   return out;
   })();
@@ -64,7 +66,7 @@
                  // branched out), so a falling river could not lie on it. bedLine = a monotone channel: h = min(h, bed(y) + lift + bank * max(0, |x-x_r| - flatW)),
                  // bed linear in y between pts, lift 0 inside and `lift` m at both ends over `ramp` m (continuous, carve-only). Starts south of the ford
                  // stone lane (y 1069.6): ford, stones and every authored structure (all at y <= 1088, |dr| >= 13.8 m there) keep their ground.
-                 bedLine: { pts: [[1070, -90.45], [1100, -90.6], [1350, -91.0], [1376, -91.1], [1420, -91.3]], flatW: 8, bank: 0.45, ramp: 8, lift: 50, reach: 40 } },
+                 bedLine: { pts: [[1060, -90.15], [1072, -90.2], [1088, -90.54], [1100, -90.6], [1350, -91.0], [1376, -91.1], [1420, -91.3]], flatW: 8, bank: 0.45, ramp: 8, lift: 50, reach: 40 } },
       valley:  { depth: 22, width: 160 },
       ridge:   { height: 30, x0: 700, x1: 150, scale: 300 },
       path:    { halfWidth: 3.0, points: [[1480, 1025], [1420, 1032], [1350, 1050], [1260, 1045], [1180, 1062], [1090, 1070], [1000, 1066]] },
@@ -77,6 +79,7 @@
                  // cellM 6.5 (not 6): the large oak's chunky voxel trunk needs trunkR 0.95.
                  trees: {
                    seed: 7349, cellM: 6.5, jitter: 1.5, fill: 0.72, maxTrees: 1500, lodCells: 6,
+                   maxDistM: 140, // OB-089: beyond this the far-terrain forest tint (bands.near 150) stands for trees; no navy silhouettes in front of it
                    species: TREE_SPECIES_MESH, speciesVoxel: TREE_SPECIES_VOXEL
                  } },
       rock:    { slope: 0.42, scale: 90, threshold: 0.78, minHomeDist: 60 },

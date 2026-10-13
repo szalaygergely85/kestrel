@@ -5,7 +5,7 @@
 // beginFrame/castSectors/.../fillSky sequence main.js used to write out by
 // hand for a single bare level (US-024).
 import { windSwayOn, sunWindClock } from '../mesh/sway.js';
-import { fogShapeCtx } from './fogShape.js';
+import { fogShapeCtx, meshOutdoorFog } from './fogShape.js';
 import { fillSky, ambientL, primeAmbientLight } from './sky.js';
 import { shadeTerrainCells } from './terrainShade.js';
 import { carpetCtxFor, carpetCells } from './carpet.js';
@@ -28,6 +28,7 @@ import { lodCentreX, lodCentreY } from '../core/camFocus.js';
 import { frustumPlanes } from '../mesh/culling.js';
 import { renderWaterJS } from './water.js';
 import { waterCompositeJS } from './waterComposite.js';
+import { updateUnderState, underwaterPass } from './underwater.js';
 // ME-15c (27.9a): JS twin of the GPU sun shadow pass (same list builder, matrix, polygon offset, depth-only raster).
 import { SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar } from './shadowSun.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../mesh/shadowList.js';
@@ -265,6 +266,7 @@ function renderWorldMesh(fb, world, cam) {
   if (fb.instances) {
     meshDrawArg.idFor = fb.matTable ? strictMatIdFor(fb.matTable) : null; // TREES-LP-b: kind-9 mesh groups
     meshDrawArg.maskAtlas = world.maskAtlas || null; // ALPHA-01f-fix2
+    fb.instances.eye = cam; // OB-089: per-group draw-distance cut
     fb.instances.addToDrawList(list, sharedVoxelMeshCache, meshFrustumPlanes, fb.frameNo, meshViewProj, rows, meshDrawArg);
     if (fb.loop && fb.loop.stats) {
       fb.loop.stats.instances = fb.instances.stats.instances;
@@ -403,13 +405,15 @@ export function renderWorld(fb, world, cam) {
     // AUD-45: height fog + sun in-scatter context for the CPU shade twin (same gate as the GPU: terrain world + time-of-day palette).
     const fsc = fogShapeCtx;
     fsc.on = !!(world.terrain && fb.palette && fb.palette.timeOfDay);
+    fsc.outdoor = fsc.on && meshOutdoorFog(world, cam, fb.palette); // OB-089
+    if (fsc.outdoor) { const fr = fb.palette.fog.far; fsc.tStart = fr.start; fsc.tFull = fr.full; fsc.tCurve = fr.curve || 1; fsc.tNear = fb.palette.rgb[fr.color]; fsc.tFar = fb.palette.rgb[fr.colorFar]; }
     if (fsc.on) {
       const fsun = sunFromWorld(world, fb.palette, skySunScratch);
       fsc.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fsc.terms = meshPitched ? meshPitchTerms : meshTerms; fsc.camZ = cam.z;
       fsc.sunX = fsun.dirX; fsc.sunY = fsun.dirY; fsc.sunZ = fsun.dirZ; fsc.sunI = fsun.sunI;
     }
     shadeSurfaces(fb, fb.gbuf, fb.matTable, fb.detailPass, fb.light);
-    fsc.on = false;
+    fsc.on = false; fsc.outdoor = false;
     shadeTerrainCells(fb, world.terrain, world, fb.timeSec || 0, meshHashCell);
     if (meshPitched) scaleDepthForShade(fb.depth.depth, fb.gbuf.cols, fb.gbuf.rows, false);
     // US-055a2b (35.3): water composite on the surface cells (raw depth), then the edge pass skips opaque-water cells.
@@ -420,6 +424,15 @@ export function renderWorld(fb, world, cam) {
 
   if (!fb.skipSky) fillSky(fb, cam, world && world.terrain && fb.palette && fb.palette.timeOfDay ? sunFromWorld(world, fb.palette, skySunScratch) : null); // AUD-40
   if (meshWater && fb.gbuf) waterCompositeJS(fb, world, meshTerms, meshPitchTerms, meshPitched, true); // sky cells (water to the horizon)
+  // SWIM-04b (38.54): underwater look, end of the shade chain (after sky). `fb.under` (makeUnderState) absent = untouched frame.
+  if (fb.under && fb.gbuf) {
+    updateUnderState(world, cam.x, cam.y, cam.z, fb.under);
+    if (fb.under.on) {
+      const fsc = fogShapeCtx; // reuse the fog ray context for per-cell view rays
+      fsc.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fsc.terms = meshPitched ? meshPitchTerms : meshTerms; fsc.camZ = cam.z;
+      underwaterPass(fb.rt, fb.gbuf, fb.depth.depth, cam.x, cam.y, cam.z, fb.timeSec || 0, fb.under);
+    }
+  }
 
   // (US-017 ARCH CHANGES #1 item 2, 7.4 "Fade") CPU scene fade moved OUT of
   // here to the call site right after `sprites.render(...)` (main.js) -

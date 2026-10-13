@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 // Golden: the codes main.js used before BINDINGS-WIRE-01.
 const GOLDEN = { forward: 'KeyW', backward: 'KeyS', left: 'KeyA', right: 'KeyD', run: 'ShiftLeft', run2: 'ShiftRight',
-  jump: 'Space', interact: 'KeyE', useLeft: 'Mouse0', useRight: 'Mouse2', swapHands: 'KeyH', swapSet: 'KeyQ', lockTarget: 'KeyR', map: 'KeyM', mute: 'KeyN', questLog: 'KeyJ' };
+  jump: 'Space', interact: 'KeyE', useLeft: 'Mouse0', useRight: 'Mouse2', swapHands: 'KeyH', swapSet: 'KeyQ', lockTarget: 'KeyR', map: 'KeyM', mute: 'KeyN', questLog: 'KeyJ', dive: 'ControlLeft' };
 const K = resolveGameKeys(createSafeBindings(null));
 assert.deepEqual({ ...K }, GOLDEN, 'default table resolves to today\'s keys');
 assert.ok(Object.isFrozen(K));

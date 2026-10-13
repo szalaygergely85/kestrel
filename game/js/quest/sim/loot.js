@@ -12,12 +12,12 @@
 import { addItem } from './inventory.js';
 import { spawnItemDrop, setItemPickupSink, PICKUP_AMOUNT } from './pickups.js';
 import { BAND_TABLE } from './band.js';
-import { LOOT_PROMPT, LOOT_TIERS, LOOT_SLOTS } from './lootConfig.js';
-import { rollWolfWeapon, rollChestWeapon, weaponRng } from './weaponLoot.js'; // EQ-20
+import { LOOT_PROMPT, LOOT_TABLE, LOOT_TIERS, LOOT_SLOTS } from './lootConfig.js';
+import { rollWolfWeapon, rollGoblinWeapon, rollChestWeapon, weaponRng } from './weaponLoot.js'; // EQ-20
 
 // EQ-10: 0..4 rolled entries per corpse (table.fixed + the `give` rolls). Gear is a world pickup, never a column.
 const ITEMS_PER_CORPSE = 4;
-const MAX_SLOTS = 32;       // beastSim MAX_BEASTS (keep equal)
+const MAX_SLOTS = 48;       // beastSim MAX_BEASTS (keep equal)
 const CORPSE_LIFT = 0.35;   // m above the death z: the interactable sits on the body, not in the ground (37.16.3)
 const LOOT_RADIUS = 1.8;
 
@@ -84,16 +84,20 @@ export function createLoot(world, events, opts) {
   return buildLoot(world, events, opts);
 }
 
-function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band }) {
+function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band, goblinTable = LOOT_TABLE.goblin }) {
   const count = beasts.count;
   const ids = beasts.ids;
-  const fixed = table.fixed, rolls = table.rolls;
-  const giveRolls = rolls.filter((r) => r.give);
-  if (fixed.length + giveRolls.length > ITEMS_PER_CORPSE) throw new Error(`createLoot: table has more than ${ITEMS_PER_CORPSE} corpse entries`);
+  for (const t of [table, goblinTable]) {
+    if (t.fixed.length + t.rolls.filter((r) => r.give).length > ITEMS_PER_CORPSE) throw new Error(`createLoot: table has more than ${ITEMS_PER_CORPSE} corpse entries`);
+  }
+  // GOB-05: the table is chosen per slot by sim.group (2 = goblin); every other group keeps the boar table (bit-identical).
+  const isGoblin = (i) => !!(beasts.group && beasts.group[i] === 2);
+  const tableFor = (i) => (isGoblin(i) ? goblinTable : table);
 
   // 37.16.3 "At create: delete any stale loot.* flag from a save". Create-time only (Object.keys allocates).
   for (const k of Object.keys(world.state)) if (k.startsWith('loot.')) delete world.state[k];
 
+  const grng = weaponRng(0x60B11 ^ count); // GOB-05: goblin weapon drops use their own stream too
   const wrng = weaponRng(0x5EA90 ^ count); // EQ-20: wolf weapon drops use their own stream (boar/chest streams stay untouched)
   /** @type {string[]} `loot.<id>` per slot, built once (no string concat on events). */
   const flagKey = ids.map((id) => 'loot.' + id);
@@ -103,7 +107,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
     const t = beasts.entities[i].transform;
     recs[i] = world.addInteractable({
       key: flagKey[i], name: 'beast.loot', x: t.x, y: t.y, z: t.z + CORPSE_LIFT, radius: LOOT_RADIUS,
-      prompt: (beasts.bear && beasts.bear[i]) ? LOOT_PROMPT.bear : LOOT_PROMPT.boar, requires: flagKey[i], propId: ids[i], def: { beastId: ids[i] },
+      prompt: isGoblin(i) ? LOOT_PROMPT.goblin : ((beasts.bear && beasts.bear[i]) ? LOOT_PROMPT.bear : LOOT_PROMPT.boar), requires: flagKey[i], propId: ids[i], def: { beastId: ids[i] },
       // OB-084: the whole lying corpse picks (longer than the standing radius, lower than the standing height)
       bodyId: ids[i], bodyR: ((beasts.entities[i].components.targetable && beasts.entities[i].components.targetable.radius) || 0.5) * 1.4, bodyH: ((beasts.entities[i].components.targetable && beasts.entities[i].components.targetable.height) || 1) * 0.7,
     });
@@ -134,6 +138,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
     const i = beasts.slotOf(p.id);
     if (i < 0) return;
     const o = i * ITEMS_PER_CORPSE;
+    const tb = tableFor(i), fixed = tb.fixed, rolls = tb.rolls;
     let col = 0;
     for (let k = 0; k < fixed.length; k++, col++) { loot.corpseItem[o + col] = fixed[k].item; loot.corpseN[o + col] = fixed[k].n; }
     for (let k = 0; k < rolls.length; k++) {
@@ -154,8 +159,13 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
       const wid = rollWolfWeapon(items, band ? band.bandAt(p.x, p.y) : 1, wrng(), wrng(), wrng());
       if (wid) { loot.gearHeld[i] = wid; loot.gearTier[i] = items[wid].equip.tier; }
     }
-    const orbHit = rng.nextFloat() < table.orb.chance;
-    const orbKind = table.orb.kinds[rng.int(table.orb.kinds.length)];
+    if (isGoblin(i)) { // GOB-05: tier forced by the zone band (5-6 fine, 7-8 tempered, 9-10 warden)
+      const forced = band ? BAND_TABLE.gearItemTier[band.gearTierAt(p.x, p.y)] : null;
+      const wid = rollGoblinWeapon(items, forced, grng(), grng());
+      if (wid) { loot.gearHeld[i] = wid; loot.gearTier[i] = items[wid].equip.tier; }
+    }
+    const orbHit = rng.nextFloat() < tb.orb.chance;
+    const orbKind = tb.orb.kinds[rng.int(tb.orb.kinds.length)];
     if (orbHit) loot.orbHeld[i] = orbKind; // OB-074: held in the corpse until E
     const rec = recs[i];
     rec.x = p.x; rec.y = p.y; rec.z = p.z + CORPSE_LIFT;

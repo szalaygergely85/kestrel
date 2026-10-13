@@ -62,4 +62,14 @@ const run = (b, sec) => { for (let i = 0; i < Math.round(sec * 60); i++) b.step(
   const d = process.memoryUsage().heapUsed - h0;
   assert.ok(d < 1000000, 'heap growth ' + d);
 }
+// repeat mode (LIFE-05): no once-flag, nothing saved, replayable; dropped while a bark is on screen; has()
+{
+  const { b, flags, state } = mk();
+  assert.equal(b.has('wick.relay'), true); assert.equal(b.has('nope'), false);
+  assert.equal(b.play('wick.relay', 'v1', true), true);
+  assert.equal(b.play('bear.walk1', 'v2', true), false, 'dropped while active');
+  run(b, BARK_LINE_SEC + 0.1); assert.equal(b.active, false);
+  assert.equal(b.play('wick.relay', 'v1', true), true, 'replayable');
+  assert.deepEqual(flags, []); assert.deepEqual(Object.keys(state), [], 'repeat mode writes no flag / save state');
+}
 console.log('barks.test.js ok');

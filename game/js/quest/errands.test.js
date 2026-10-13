@@ -40,6 +40,17 @@ for (const id of ['tower.blade', 'burl.boars']) { book.accept(id); for (const o 
 flag('burl.home.met');
 assert.equal(book.statusOf('sq.burl.stone'), AVAILABLE);
 
+// 1b. BURL-HOME-01: EVERY Burl errand (also sq.honey / sq.burl.fire, which open after Rook's quests and carry no burl.home flag) waits for burl.home.met -
+// else the first talk at home plays the offer instead of `bear.home` and the greeting (which sets met) never runs while that errand is open
+{ const burlSq = defs.filter((d) => d.id.startsWith('sq.') && d.giver && d.giver.npc === 'bear');
+  assert.ok(burlSq.length >= 15 && burlSq.some((d) => d.id === 'sq.burl.fire') && burlSq.some((d) => d.id === 'sq.honey'), 'Burl errands found');
+  for (const d of burlSq) assert.ok(d.requires.some((r) => r.flag === 'burl.home.met'), d.id + ' gated on burl.home.met');
+  const b2 = newBook(); const f2 = (k) => b2.feed({ type: 'flag:set', key: k, value: true });
+  for (const o of files.questDef.objectives) { const w = o.when; if (w.type === 'flag') f2(w.id); else if (w.type === 'area') b2.feed({ type: 'area:entered', id: w.id }); else if (w.type === 'beasts') for (const id of w.ids) b2.feed({ type: 'beast:died', id }); }
+  f2('burl.home'); b2.accept('tower.blade'); assert.ok(b2.statusOf('sq.burl.fire') !== AVAILABLE && b2.statusOf('sq.honey') !== AVAILABLE, 'nothing offered before the first home talk');
+  for (const id of burlSq.map((d) => d.id)) assert.notEqual(b2.statusOf(id), AVAILABLE, id + ' not available before burl.home.met');
+}
+
 // 2. Burl's dialogue: compiled, every errand reachable through its q.<id>.* routes; accept / hand-in act on the real book
 const raw = rd('content/dialogue/bear.dialogue.json');
 const patched = generateForNpc(raw, 'bear', defs, rd('content/dialogue/quest-snippets.json'), { before: ANCHORS.bear });
@@ -59,6 +70,14 @@ function talkBurl(pick = 0) { // run the real dialogue runner to its end; return
   }
   assert.equal(run.state, 'ended');
   return said;
+}
+// BURL-HOME-01: the very FIRST talk at home (burl.home set, met not yet) must play `bear.home` and set s.burl.home.met, even with Rook's quests done
+{ const b3 = newBook(); const f3 = (k) => b3.feed({ type: 'flag:set', key: k, value: true });
+  for (const o of files.questDef.objectives) { const w = o.when; if (w.type === 'flag') f3(w.id); else if (w.type === 'area') b3.feed({ type: 'area:entered', id: w.id }); else if (w.type === 'beasts') for (const id of w.ids) b3.feed({ type: 'beast:died', id }); }
+  f3('burl.home'); const st3 = { 'burl.home': true }, set3 = [], run3 = createDialogueRunner({}), spoken = [];
+  run3.open(dlg, { has: (k) => (k.startsWith('q.') ? b3.hasKey(k) : !!st3[k.replace(/^s./, '')]), set: (k) => { set3.push(k); } });
+  for (let g = 0; g < 40 && run3.state !== 'ended'; g++) { if (run3.line && spoken.at(-1) !== run3.line) spoken.push(run3.line); run3.press(); }
+  assert.ok(set3.includes('s.burl.home.met'), 'first home talk runs bear.home: ' + set3.join(',') + ' / ' + spoken.join('|'));
 }
 // Burl offers the first available errand (sq.tm.nub needs burl.boars done = yes) and accepts it by the choice
 const said = talkBurl(0);

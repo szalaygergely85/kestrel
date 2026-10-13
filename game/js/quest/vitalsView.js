@@ -336,12 +336,23 @@ export function applyDeathFade(rt, vitals, fadeLut) {
 // call, same as every other per-frame draw-state object in this file.
 const _deathCardState = { visible: false, lines: [], cursorOn: false };
 
+// Sea monster / swim death card lines (writer 2026-10-13, docs/story.md "Sea monster"); shown in place of the typed
+// 'fall' line when vitals.deathCause is set. The variant alternates per death (counted on the alive -> dead edge).
+export const DEATH_CAUSE_LINES = {
+  eaten: ['Something rose under me. Then dark.', 'Next time, I stay inside the stakes.'],
+  drown: ['My breath ran out short of the shore.', 'Far above, the light still blinks.'],
+};
+let _deathWasAlive = true, _deathVariant = 0;
+
 export function computeDeathCardState(vitals, style) {
   const out = _deathCardState;
   out.visible = false;
   out.lines.length = 0;
   out.cursorOn = false;
-  if (!vitals || !vitals.dead || !style || !style.deathCard) return out;
+  if (!vitals || !vitals.dead) { _deathWasAlive = true; return out; }
+  if (_deathWasAlive) { _deathWasAlive = false; _deathVariant++; }
+  if (!style || !style.deathCard) return out;
+  const causeLines = vitals.deathCause ? DEATH_CAUSE_LINES[vitals.deathCause] : null;
   const { sinkSteps, fadeSteps } = VITALS_DEFAULTS;
   const total = sinkSteps + fadeSteps;
   if (vitals.deathStep < total) return out; // still sinking/fading - no card yet
@@ -351,7 +362,8 @@ export function computeDeathCardState(vitals, style) {
   let allTypedDone = true;
   for (const def of style.deathCard.lines) {
     if (!def.typed) continue;
-    const text = def.text != null ? def.text : def.placeholder;
+    let text = def.text != null ? def.text : def.placeholder;
+    if (causeLines && def.id === 'fall') text = causeLines[_deathVariant % causeLines.length];
     const cps = def.cps || 30;
     const shown = Math.min(text.length, Math.max(0, Math.floor(remaining * cps)));
     if (shown < text.length) allTypedDone = false;

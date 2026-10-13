@@ -6,6 +6,8 @@
 // (matTable bind, palette/time of day, terrain far-bake version); per frame only uniform words change.
 // The water layer is WG-3e: edge gets waterOn = 0 and a 1x1 dummy WATER texture. ALPHA-01d soft edges are WGSL-only (edge.wgsl.js header, D-044), not in the shipped GLSL
 // (twin: edgePass.js).
+import { meshOutdoorFog } from '../../fogShape.js'; // OB-089
+import { updateUnderState } from '../../underwater.js'; // SWIM-04c
 import { SHADE_BLOCK, SHADE_WGSL, SHADE_LEVEL_WGSL, SHADE_TEXTURES } from '../wgsl/shade.wgsl.js';
 import { EDGE_BLOCK, EDGE_WGSL, EDGE_TEXTURES } from '../wgsl/edge.wgsl.js';
 import { packMaterialTable } from '../ShadeTextures.js';
@@ -32,7 +34,8 @@ const S_SPARSE_ALT = S('fogSparseAlt'), S_HAZE_ALT = S('fogHazeAlt');
 const S_SPARSE_C0 = S('fogSparseCode0'), S_SPARSE_C1 = S('fogSparseCode1'), S_HAZE_C0 = S('fogHazeCode0'), S_HAZE_C1 = S('fogHazeCode1');
 const S_ETA = S('etA'), S_ETID = S('etId'), S_ETC = S('etC'); // 38.23 tint words
 const EMPTY_GRASS = { n: new Uint8Array(1), ramp: new Float64Array(12), glyph: new Uint8Array(5) };
-const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK'), S_SKYCAM = S('skyCam'), S_FOGVIEW = S('fogView'), S_SKYGLOWON = S('skyGlowOn'), S_SKYLINE = S('skyline'), S_GRASS = S('grass');
+const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK'), S_SKYCAM = S('skyCam'), S_FOGVIEW = S('fogView'), S_SKYGLOWON = S('skyGlowOn'), S_SKYLINE = S('skyline'), S_GRASS = S('grass'), S_CLIFF = S('cliff');
+const S_UNDER = S('under'), S_UNDER_TINT = S('underTint'), S_UNDER_CAM = S('underCam'), S_UNDER_CEIL = S('underCeil'), S_UNDER_CAUS = S('underCaus'), S_UNDER_RB = S('underRampB'), S_UNDER_RC = S('underRampC'); // SWIM-04c
 /** 38.23: copy the tint table (fb.entityTints) into the ShadeU words: etA.x = count, etId (u32 view), etC rgb+k. Zero alloc; count 0 and cleared tail when absent. */
 export function writeEntityTints(su, su32, tints) {
   const n = tints && tints.count > 0 ? (tints.count > 8 ? 8 : tints.count) : 0;
@@ -208,6 +211,9 @@ export class WgShadePass {
       if (tu.farRGB) for (let k = 0; k < 3; k++) su[S_TFOG_FAR + k] = tu.farRGB[k];
       eu[E_TFOG_START] = tu.fogStart; eu[E_TFOG_FULL] = tu.fogFull; eu[E_TFOG_CURVE] = tu.fogCurve;
     }
+    // OB-104b2 (38.55): cliff look = recipe rock type id (twin: makeTerrainShadeCtx ctx.cliffType; y = 0 -> off)
+    const rk = recipe && recipe.terrain && recipe.terrain.rock;
+    su[S_CLIFF] = rk ? rk.id : 0; su[S_CLIFF + 1] = rk ? 1 : 0;
     si[S_NEARDETAIL] = tu.nearDetail ? 1 : 0;
     if (tu.nearDetail) { su[S_HANDOVER] = tu.handover[0]; su[S_HANDOVER + 1] = tu.handover[1]; su[S_CLOSEBAND] = tu.closeBand; }
   }
@@ -244,6 +250,7 @@ export class WgShadePass {
     // AUD-45: height fog + sun in-scatter, same gate as the CPU compositor (terrain world with a time-of-day palette).
     const fogShapeOn = useScene && !!p._world.terrain && !!(p._palette && p._palette.timeOfDay);
     su[S_FOGVIEW] = fogShapeOn ? p._cam.z : 0; su[S_FOGVIEW + 1] = fogShapeOn ? 1 : 0;
+    su[S_FOGVIEW + 2] = fogShapeOn && this.terrainU.fogOn && meshOutdoorFog(p._world, p._cam, p._palette) ? 1 : 0; // OB-089: mesh pixels fog like the terrain outdoors
     const liveK = this.palette && this.palette.liveLook; su[S_SKYGLOWON + 1] = liveK && liveK.floorEff > 0 ? liveK.floorEff : 0; // DN-02 night glyph-luminance floor (0 = off)
     su[S_SKYGLOWON] = fogShapeOn ? 1 : 0; // AUD-40: same gate, written every frame (sunDir/sunI are stale outside terrain worlds)
     if (pitched) {
@@ -257,6 +264,17 @@ export class WgShadePass {
     // MAP-06b (38.42): far-terrain fog cap, written every frame (cached record; x = 0 = off, the JS twin's ctx.skyline === null)
     const skl = useScene && p._world.terrain && this.palette ? skylineFor(p._world.terrain, this.palette) : null;
     su[S_SKYLINE] = skl ? skl.fogMax : 0; su[S_SKYLINE + 1] = skl ? skl.fromZ : 0; su[S_SKYLINE + 2] = skl ? skl.seaFogMax : 0; su[S_SKYLINE + 3] = skl ? skl.seaLevel : 0;
+    // SWIM-04c (38.54): underwater look words, written every frame (under.x = 0 = block skipped; fb.under = makeUnderState, absent = dry)
+    const U = useScene && fbT ? fbT.under : null;
+    if (U && p._world.water) updateUnderState(p._world, p._cam.x, p._cam.y, p._cam.z, U); else if (U) U.on = 0;
+    if (U && U.on) {
+      su[S_UNDER] = 1; su[S_UNDER + 1] = U.waterZ; su[S_UNDER + 2] = U.fogM; su[S_UNDER + 3] = U.causticK;
+      su[S_UNDER_TINT] = U.tint[0]; su[S_UNDER_TINT + 1] = U.tint[1]; su[S_UNDER_TINT + 2] = U.tint[2]; su[S_UNDER_TINT + 3] = U.swapAt;
+      su[S_UNDER_CAM] = p._cam.x; su[S_UNDER_CAM + 1] = p._cam.y; su[S_UNDER_CAM + 2] = p._cam.z; su[S_UNDER_CAM + 3] = U.lightK;
+      su[S_UNDER_CEIL] = U.ceil[0]; su[S_UNDER_CEIL + 1] = U.ceil[1]; su[S_UNDER_CEIL + 2] = U.ceil[2];
+      su[S_UNDER_CAUS] = U.causticCol[0]; su[S_UNDER_CAUS + 1] = U.causticCol[1]; su[S_UNDER_CAUS + 2] = U.causticCol[2];
+      for (let k = 0; k < 4; k++) { su[S_UNDER_RB + k] = U.bubble[k]; su[S_UNDER_RC + k] = U.ceilRamp[k]; }
+    } else su[S_UNDER] = 0;
     // OB-073 D2e: carpet variant ramp/glyph table (rewritten only when the carpet config object changes; null = zeros, kind 10 never appears)
     const gcfg = useScene && p._world.carpet && p._world.carpet.cfg ? p._world.carpet.cfg : null;
     if (gcfg !== this.grassCfg) {

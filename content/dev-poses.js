@@ -58,8 +58,8 @@ export const GATE_POSES = [
   { slug: 'towerShadow', name: 'signal tower + its NW shadow, seen from the NNW (ME-15c)', cam: { x: 1474, y: 1006, z: 9.0, yawDeg: 137, pitchDeg: -17, groundEye: true } },
   // NPC-BEAR-01: Burl the bear at (1471, 1029.1), seen from 3.2 m east on the path (he faces east, towards the breach).
   { slug: 'burl', name: 'Burl the bear on the walk-out path (NPC-BEAR-01)', cam: { x: 1474.2, y: 1029.4, z: 1.7, yawDeg: 270, pitchDeg: 4, groundEye: true } },
-  // MAP-14: Glasswater south shore (the leg 10 turn-around, 1237,606), looking north across the lake; perf-pose JS p95 <= 8 ms.
-  { slug: 'lakeEdge', name: 'Glasswater lake edge, looking north over the water (MAP-14 perf pose)', cam: { x: 1237, y: 606, z: 1.7, yawDeg: 0, pitchDeg: 2, groundEye: true } },
+  // MAP-14 / OB-104: Glasswater south shore shelf (ground -57.2, water edge y 540), looking north across the lake; perf-pose JS p95 <= 8 ms. (Was 1237,606 = the bottom of the outlet-cliff notch, ground -77: OB-104.)
+  { slug: 'lakeEdge', name: 'Glasswater lake edge, looking north over the water (MAP-14 perf pose)', cam: { x: 1215, y: 556, z: 1.7, yawDeg: 0, pitchDeg: 2, groundEye: true } },
   // MAP-26: Outwall. `outwall` = just inside the south-east gate looking at the relay on the plaza (perf pose, JS p95 <= 8 ms); `outwallFord` = ford west bank looking at the walled settlement.
   { slug: 'outwall', name: 'Outwall, inside the gate looking at the relay (MAP-26 perf pose)', cam: { x: 937, y: 927, z: 1.7, yawDeg: 314, pitchDeg: 4, groundEye: true } },
   { slug: 'outwallFord', name: 'ford west bank looking at the Outwall palisade (MAP-26 still)', cam: { x: 998, y: 1066, z: 1.7, yawDeg: 217, pitchDeg: 4, groundEye: true } },

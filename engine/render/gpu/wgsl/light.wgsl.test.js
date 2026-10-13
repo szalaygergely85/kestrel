@@ -38,13 +38,13 @@ assert.equal(LIGHT_BLOCK.field('pad30').word, 30);
 // S8-B2-20 (38.17): aoStrength takes the last pad word (31); pitchA stays at word 32.
 assert.equal(LIGHT_BLOCK.field('aoStrength').word, 31);
 assert.equal(LIGHT_BLOCK.field('pitchA').word, 32);
-assert.equal(LIGHT_BLOCK.field('cloudA').word, 316);
-assert.equal(LIGHT_BLOCK.field('cloudB').word, 320);
-assert.equal(LIGHT_BLOCK.field('aoP').word, 324);
-assert.equal(LIGHT_BLOCK.field('pshA').word, 328, 'ME-16d words appended after aoP');
-assert.equal(LIGHT_BLOCK.field('pshO').word, 332); assert.equal(LIGHT_BLOCK.field('pshO').words, 24);
-assert.equal(LIGHT_BLOCK.field('pshSlot').word, 356); assert.equal(LIGHT_BLOCK.field('pshSlot').words, 16);
-assert.equal(LIGHT_BLOCK.sizeBytes, 1488);
+assert.equal(LIGHT_BLOCK.field('cloudA').word, 412);
+assert.equal(LIGHT_BLOCK.field('cloudB').word, 416);
+assert.equal(LIGHT_BLOCK.field('aoP').word, 420);
+assert.equal(LIGHT_BLOCK.field('pshA').word, 424, 'ME-16d words appended after aoP');
+assert.equal(LIGHT_BLOCK.field('pshO').word, 428); assert.equal(LIGHT_BLOCK.field('pshO').words, 24);
+assert.equal(LIGHT_BLOCK.field('pshSlot').word, 452); assert.equal(LIGHT_BLOCK.field('pshSlot').words, 24);
+assert.equal(LIGHT_BLOCK.sizeBytes, 1904);
 assert.ok(LIGHT_WGSL.includes('aoRc(u.aoP.x, u.planeDistY, dist, u.aoP.z)'), 'rc from aoP');
 assert.ok(!/AO_TAP_CELLS|AO_RADIUS_M|AO_BIAS/.test(LIGHT_WGSL), 'legacy AO consts gone');
 

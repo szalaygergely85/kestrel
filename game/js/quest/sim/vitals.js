@@ -50,6 +50,7 @@ export function createVitals(world, events, cfg, hooks) {
 
   const sim = {
     dead: false,
+    deathCause: null, // SWIM-05: 'drown' | 'eaten' (SWIM-06b) | null (combat/fall); cleared on respawn
     deathStep: 0,
     cardReady: false,
     hurtTick: 0,
@@ -90,6 +91,24 @@ export function createVitals(world, events, cfg, hooks) {
     }
   }
 
+  /** SWIM-05: environmental damage (drowning) - ignores the invuln window, still honours godMode. Kills with `cause`. */
+  function hurt(n, cause) {
+    if (sim.godMode || sim.dead || !health || !(n > 0)) return false;
+    health.hp = Math.max(0, health.hp - n);
+    sim.hurtTick = tick; hpSince = 0; hpAcc = 0;
+    if (health.hp === 0) { kill(cause); return true; }
+    return false;
+  }
+
+  /** SWIM-05: instant death with a cause (drown / eaten). No-op while dead, in godMode or before the first step(). */
+  function kill(cause) {
+    if (sim.godMode || sim.dead || !health || !player) return false;
+    health.hp = 0;
+    sim.deathCause = cause || null;
+    enterDead();
+    return true;
+  }
+
   /**
    * US-080b. `n` mp: returns false and records `manaFlashTick` (same pattern as `hurtTick`) without changing
    * mp/pause when short; else spends it and starts the regen pause. Nothing calls this yet (D-021 spells later) -
@@ -118,6 +137,8 @@ export function createVitals(world, events, cfg, hooks) {
         if (d > 1e-9) { dirX = dx / d; dirY = dy / d; }
       }
     }
+    // GOB-03 (38.57): a thrown spear hits along its flight direction (block arc + knock), not thrower -> player.
+    if (p.ranged === 1 && typeof p.dirX === 'number' && typeof p.dirY === 'number') { dirX = p.dirX; dirY = p.dirY; }
     // EQ-A2/EQ-06 (architecture 38.41): a raised shield blocks a frontal hit (needs a source direction): no damage,
     // no invuln, no hurt; the attacker reads `p.blocked` after emit (out field, no re-entrant emit).
     const sh = h.block;
@@ -178,6 +199,7 @@ export function createVitals(world, events, cfg, hooks) {
     health.invuln = cfg.invulnSteps;
     if (mana) mana.mp = mana.max; // US-080b: full mana on respawn, per the US-080 AC
     sim.dead = false;
+    sim.deathCause = null;
     hpSince = 0; hpAcc = 0;
     sim.deathStep = 0;
     sim.cardReady = false;
@@ -208,18 +230,17 @@ export function createVitals(world, events, cfg, hooks) {
       // OB-016: walking down a long slope (tower +2 -> Bend relay -31) left fallDistance > 0 between small step-downs, so the
       // safe spot stayed at the tower and the 30 m void rule snapped the player back. Any grounded step is safe now, and the
       // void rule only fires while actually airborne (falling out of the world), never while walking on ground.
-      // RIVER-04: wading is grounded walking, never a void fall. No safe spot is taken in deep water (body.wadeDeep > 0), and only
-      // `body.wadeRescue` (3 s stuck in deep water, wading.js) teleports back, like the void rule. Both fields are absent without wading.
-      const wadeRescue = !!(body && body.wadeRescue);
-      if (body && body.grounded && !(body.wadeDeep > 0)) {
+      // SWIM-03b (D-070): swimming is never a void fall and there is no deep-water rescue (wadeRescue removed): a deep spawn just swims.
+      // The void rule skips while body.swimming (also covers the first steps of a fall into water, wadeImm > 0).
+      if (body && body.grounded && !body.swimming) {
         if (!lastSafe || tick - lastSafe.tick >= cfg.voidSafeIntervalSteps) {
           lastSafe = { x: t.x, y: t.y, z: t.z, yawDeg: t.yawDeg, tick };
         }
       }
-      if (lastSafe && ((!(body && body.grounded) && t.z < lastSafe.z - cfg.voidFallM && !(body && body.wadeImm > 0)) || wadeRescue)) {
+      if (lastSafe && ((!(body && body.grounded) && t.z < lastSafe.z - cfg.voidFallM && !(body && (body.swimming || body.wadeImm > 0))))) {
         t.x = lastSafe.x; t.y = lastSafe.y; t.z = lastSafe.z;
         if (typeof lastSafe.yawDeg === 'number') t.yawDeg = lastSafe.yawDeg;
-        if (body) { body.vx = 0; body.vy = 0; body.vz = 0; body.grounded = true; body.fallDistance = 0; body.landed = false; body.wadeDeep = 0; body.wadeRescue = false; body.wadeImm = 0; } // no fall damage for the void drop
+        if (body) { body.vx = 0; body.vy = 0; body.vz = 0; body.grounded = true; body.fallDistance = 0; body.landed = false; body.wadeImm = 0; } // no fall damage for the void drop
         health.invuln = cfg.invulnSteps; // no damage, just the invuln window
       }
       if (health.hp === 0) enterDead();
@@ -271,6 +292,7 @@ export function createVitals(world, events, cfg, hooks) {
   // ---- dev (`?debug=1`, game side: main.js binds a free key to each of these - not this file's job) ----
   sim.setGodMode = function setGodMode(on) { sim.godMode = !!on; };
   sim.debugHit = function debugHit() { applyDamage(5); };
+  sim.hurt = hurt; sim.kill = kill; // SWIM-05
   sim.spendMana = spendMana; // US-080b: exposed for D-021 spells later; nothing calls it yet
 
   // Q9 item 1a: drops the `combat:hit` listener - main.js calls this right before creating the next sim on a

@@ -50,7 +50,7 @@ export const LIGHT_BLOCK = defineUniformBlock('LightU', [
   { name: 'aoP', type: 'vec4' },
   // ME-16d (38.22 item 3): point-light shadow maps, appended at the very END (no word moves). pshA = (count n, res, biasM,
   // normalOffTexels); count 0 = off (the old LVIS line runs). pshO[slot] = (origin xyz, far). pshSlot: light i -> slot + 1, 0 = unshadowed
-  // (16 floats = 4 vec4, light i at pshSlot[i >> 2][i & 3]).
+  // (MAX_LIGHTS floats = MAX_LIGHTS/4 vec4, light i at pshSlot[i >> 2][i & 3]).
   { name: 'pshA', type: 'vec4' },
   { name: 'pshO', type: 'vec4', count: PSH_MAX_SLOTS },
   { name: 'pshSlot', type: 'vec4', count: MAX_LIGHTS / 4 },

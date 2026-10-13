@@ -51,6 +51,8 @@ export function createBarks(opt) {
       if (lines === null) begin(id); else queue.push(id);
       return true;
     },
+    /** true when bark `id` exists in the data. */
+    has(id) { return Array.isArray(barks[id]) && barks[id].length > 0; },
     speaker: null,
     /** Fixed-step update. */
     step(dt) {

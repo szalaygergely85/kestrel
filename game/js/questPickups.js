@@ -17,11 +17,18 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
   let ctx = null, props = [], tick = 0, ops = null, opsInv = null;
 
   function pack() { return (ctx && ctx.inventory) || null; }
+  function leftover(id, n) { // same as grantReward's leftover: ground drop at the player's feet (never despawns) + inventory:full
+    const t = ctx && ctx.player && ctx.player.transform, canDrop = !!(t && ctx.world && ctx.world.spawn);
+    if (canDrop) spawnLeftoverDrop(ctx.world, id, n, t.x, t.y, t.z, true);
+    if (ctx && ctx.events) ctx.events.emit('inventory:full', { id, n, dropped: canDrop });
+  }
   function sync() {
     const book = getBook(), inv = pack();
     if (!book || !inv) return;
     if (!ops || opsInv !== inv) { opsInv = inv; ops = { count: (id) => countOf(inv, id), remove: (id, n) => removeItem(inv, id, n),
-      add: (id, n) => { const k = addItem(inv, defs, id, n); if (k > 0 && ctx && ctx.events) ctx.events.emit('inventory:added', { id, n: k }); return k; }, // QL-04: add = giveOnAccept
+      add: (id, n) => { const k = addItem(inv, defs, id, n); if (k > 0 && ctx && ctx.events) ctx.events.emit('inventory:added', { id, n: k });
+        if (k < n && defs[id]) leftover(id, n - k); // CH12-CONTENT-01: full pack must not swallow a handed-over quest item (sq.fc.cog): leftover lies at the feet
+        return k; }, // QL-04: add = giveOnAccept
       equipped: (id) => !!(isWorn && ctx && ctx.player && isWorn(ctx.player.components && ctx.player.components.equipment, id)) }; } // QL-WIRE: EQ-13 requireEquipped
     if (book.packOps !== ops) book.packOps = ops;
     for (const id of book.countedItems()) feed({ type: 'item:count', id, n: countOf(inv, id) });

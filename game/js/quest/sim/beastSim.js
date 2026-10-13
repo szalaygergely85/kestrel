@@ -14,9 +14,10 @@ import { tierMult } from './band.js';
 import { canSee } from './sight.js';
 import { BEAR_TUNING, bearOverrides, isBearEntity } from './bearBrain.js'; // BEAR-01
 import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } from './wolfBrain.js'; // WOLF-01
+import { GOBLIN_TUNING, goblinOverrides, isGoblinEntity } from './goblinBrain.js'; // GOB-01
 import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from '../../../../engine/index.js';
 
-export const MAX_BEASTS = 32; // M5: 18 boars + 5 Outwall wolves (was 16: the wolves got no brain)
+export const MAX_BEASTS = 48; // GOB-01: boars + wolves + bears + goblin camps (was 32; loot.js MAX_SLOTS must match)
 const PATH_SLOTS = 64; // waypoints kept per beast path (truncated, final = the exact goal - see `storePath`)
 
 // ---- states -----------------------------------------------------------------------------------------------------
@@ -34,7 +35,12 @@ export const STATE_CORPSE = 10;  // US-079b: lies at the death point, lootable, 
 export const STATE_SINK = 11;    // US-079b: sinks into the ground (z = deathZ - sinkM*k/30)
 export const STATE_GONE = 12;    // US-079b: hidden, skipped everywhere, back via resetAll
 
-const FIRST_DEAD_STATE = STATE_DYING; // states >= this skip perception/path/steer and run stepDead instead
+export const STATE_EAT = 13; // LIFE-07: a wolf/bear eating its kill (counts as wander for perception)
+const FIRST_DEAD_STATE = STATE_DYING;
+const deadSt = (st) => st >= FIRST_DEAD_STATE && st <= STATE_GONE; // EAT (13) is alive
+const HUNT_PREY = { wolf: ['rabbit', 'deer'], bear: ['deer'] }; // LIFE-07: species-filtered prey (38.56 c)
+const GOAL_ARRIVE_R = 3, ALT_R = 14, ALT_HIT_R = 1.4, ALT_COOLDOWN_S = 6, MAX_ALT = 8; // LIFE-08 (38.56 d): raid goal + villager alt targets
+const HUNT_R = 18, HUNT_CATCH_R = 1.2, HUNT_MAX_S = 6, EAT_S = 8; // states >= this skip perception/path/steer and run stepDead instead
 
 // US-079b: the 2-entry cause table for the `beast:died` payload's `cause` string (sim stores a Uint8 index).
 const CAUSE_STR = ['sword', 'fire'];
@@ -64,6 +70,14 @@ const SCRAPE_FORE_M = 0.45;
  * @param {{nav: {grid:any, astar:any}, rng: any, events: any, cfg?: Partial<typeof BEAST_DEFAULTS>}} opts
  * @returns {null | ReturnType<typeof buildSim>} `null` if no entity in `world` has `components.brain.kind === 'beast'`
  */
+/** LIFE-07: species names -> fauna species-index bitmask (0 when none of them exists). */
+function preyMaskOf(fauna, names) {
+  let m = 0;
+  const sps = fauna.def.species;
+  for (let k = 0; k < sps.length; k++) if (names.indexOf(sps[k].name) >= 0 && k < 31) m |= (1 << k);
+  return m;
+}
+
 export function createBeastSim(world, opts) {
   const { nav, rng, events } = opts;
   const band = opts.band || null; // US-129a: optional createBand() result; absent = every beast tier 1 (x1)
@@ -166,9 +180,24 @@ export function createBeastSim(world, opts) {
     knockV: new Float64Array(MAX_BEASTS),    // US-079b: per-slot stagger clamp speed (replaces shared cfg.staggerKnock)
     wolf: new Uint8Array(MAX_BEASTS),        // WOLF-01: brain.species==='wolf' (per-slot cfg below, pack token, circle, flee)
     bear: new Uint8Array(MAX_BEASTS),        // BEAR-01: brain.species==='bear' (per-slot cfg, fixed 2-heart swipe, light hits don't cancel windup)
+    goblin: new Uint8Array(MAX_BEASTS),      // GOB-01: brain.species==='goblin'
+    group: new Uint8Array(MAX_BEASTS),       // GOB-01: attack-token group 0 boar/bear, 1 wolf, 2 goblin
+    ranged: new Uint8Array(MAX_BEASTS),      // GOB-02: goblin role 'thrower' (distance band, windup -> beast:throw, reload = RECOVER)
+    backT: new Uint16Array(MAX_BEASTS),      // GOB-02: steps a thrower has spent backing off inside cornerR
+    packer: new Uint8Array(MAX_BEASTS),      // GOB-01: wolf or melee goblin (circle while waiting, retreat after the strike)
+    down: new Uint8Array(MAX_BEASTS),        // GOB-01b: setDown(slot, true) -> STATE_GONE until setDown(slot, false) (not hashed/saved)
+    dormant: new Uint8Array(MAX_BEASTS),     // GOB-01: setDormant(slot, true) -> skipped like GONE, state kept
     fleeing: new Uint8Array(MAX_BEASTS),     // WOLF-01: STATE_RETURN that runs away from the player first
+    hunt: new Uint8Array(MAX_BEASTS),        // LIFE-07: 1 = STATE_WANDER leg chasing a fauna prey slot (huntSlot)
+    huntSlot: new Int32Array(MAX_BEASTS), huntT: new Int32Array(MAX_BEASTS), preyMask: new Int32Array(MAX_BEASTS),
+    goalOn: new Uint8Array(MAX_BEASTS), goalTX: new Float64Array(MAX_BEASTS), goalTY: new Float64Array(MAX_BEASTS), // LIFE-08: setGoal override
+    altTgt: new Int32Array(MAX_BEASTS).fill(-1), altCd: new Int32Array(MAX_BEASTS), // LIFE-08: alt chase index / re-hit cooldown (steps)
+    altN: 0, altX: new Float64Array(MAX_ALT), altY: new Float64Array(MAX_ALT),
+    _altPayload: beastEntities.slice(0, count).map((e, k) => ({ slot: k, alt: 0, id: e.id })),
+    fauna: opts.fauna || null, _prey: { x: 0, y: 0 }, _thrX: new Float64Array(16), _thrY: new Float64Array(16),
     scfg: [], ssteps: [],                    // WOLF-01: per-slot cfg / cfgSteps (the shared objects for boars)
-    _px: 0, _py: 0, _tmp: { x: 0, y: 0 },
+    _throwPayload: { id: '', slot: 0, x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0 }, // GOB-02: ONE preallocated beast:throw payload (reused)
+    _pz: 0, _px: 0, _py: 0, _tmp: { x: 0, y: 0 },
     waiting: new Uint8Array(MAX_BEASTS),     // US-079c: CHASE boar holding while another boar is the charger (derived, not saved)
 
     tick: 0,
@@ -200,16 +229,25 @@ export function createBeastSim(world, opts) {
     sim.homeX[i] = home[0];
     sim.homeY[i] = home[1];
     if (isWolfEntity(e)) { // WOLF-01: wolf slot = boar defaults + overrides, own step counts
-      sim.wolf[i] = 1;
+      sim.wolf[i] = 1; sim.group[i] = 1; sim.packer[i] = 1;
       const wc = { ...cfg, ...wolfOverrides(cfg) };
       sim.scfg.push(wc);
       sim.ssteps.push({ ...sim.cfgSteps, windup: toSteps(wc.windupSec), chargeMax: toSteps(wc.chargeMaxSec), recover: toSteps(wc.recoverSec), recoverWall: toSteps(wc.recoverWallSec) });
+    } else if (isGoblinEntity(e)) { // GOB-01: goblin slot = boar defaults + overrides (+ the camp's leashR)
+      sim.goblin[i] = 1; sim.group[i] = 2;
+      sim.ranged[i] = e.components.brain.role === 'thrower' ? 1 : 0;
+      sim.packer[i] = sim.ranged[i] ? 0 : 1;
+      const gc = { ...cfg, ...goblinOverrides(cfg, e.components.brain.role) };
+      if (typeof e.components.brain.leashR === 'number') gc.leashR = e.components.brain.leashR;
+      sim.scfg.push(gc);
+      sim.ssteps.push({ ...sim.cfgSteps, windup: toSteps(gc.windupSec), chargeMax: toSteps(gc.chargeMaxSec), recover: toSteps(gc.recoverSec), recoverWall: toSteps(gc.recoverWallSec) });
     } else if (isBearEntity(e)) { // BEAR-01: bear slot = boar defaults + overrides
       sim.bear[i] = 1;
       const bc = { ...cfg, ...bearOverrides(cfg) };
       sim.scfg.push(bc);
       sim.ssteps.push({ ...sim.cfgSteps, windup: toSteps(bc.windupSec), chargeMax: toSteps(bc.chargeMaxSec), recover: toSteps(bc.recoverSec), recoverWall: toSteps(bc.recoverWallSec) });
     } else { sim.scfg.push(cfg); sim.ssteps.push(sim.cfgSteps); }
+    if (sim.fauna && (sim.wolf[i] || sim.bear[i])) sim.preyMask[i] = preyMaskOf(sim.fauna, HUNT_PREY[sim.wolf[i] ? 'wolf' : 'bear']);
     sim.wary[i] = e.components.brain && e.components.brain.temperament === 'wary' ? 1 : 0;
     sim.homeZ[i] = e.transform.z; // US-079b ARCH: the authored spawn z (restored on resetAll)
     sim.fx[i] = 0; sim.fy[i] = -1; // facing north by default
@@ -242,7 +280,7 @@ export function createBeastSim(world, opts) {
     if (!p) return;
     const i = idSlot[p.target];
     if (i === undefined) return;
-    if (sim.state[i] >= FIRST_DEAD_STATE) return; // 37.16.2 item 1: dead/corpse/sink/gone -> ignore
+    if (deadSt(sim.state[i])) return; // 37.16.2 item 1: dead/corpse/sink/gone -> ignore
     const health = sim.entities[i].components.health;
     if (sim.dmgCd[i] > 0) { // 37.16.2 item 2: ignore damage, still flash/flinch; heavy knockback still applies
       reactToHit(sim, i, p);
@@ -273,13 +311,73 @@ export function createBeastSim(world, opts) {
     const r2 = r * r;
     for (let i = 0; i < sim.entities.length; i++) {
       const st = sim.state[i];
-      if (st === STATE_WANDER || st === STATE_RETURN || st >= FIRST_DEAD_STATE) continue;
+      if (st === STATE_WANDER || st === STATE_EAT || st === STATE_RETURN || deadSt(st)) continue;
       const t = sim.entities[i].transform;
       if (!t) continue;
       const dx = t.x - x, dy = t.y - y;
       if (dx * dx + dy * dy <= r2) return true;
     }
     return false;
+  };
+  /** LIFE-08 (38.56 d): while set, a WANDER beast travels to (x, y) (A* up to TRAVEL_MAX_NODES) and holds there instead of wandering. Player notice and combat work as usual. */
+  sim.setGoal = function setGoal(slot, x, y) {
+    if (slot < 0 || slot >= sim.count) return;
+    sim.goalOn[slot] = 1; sim.goalTX[slot] = x; sim.goalTY[slot] = y;
+    sim.altTgt[slot] = -1; sim.altCd[slot] = 0;
+    if (sim.state[slot] === STATE_WANDER && !sim.hunt[slot]) { sim.timer[slot] = sim.cfgSteps.pauseMin; sim.pathLen[slot] = 0; sim.pathIdx[slot] = 0; sim.pathReq[slot] = 0; }
+  };
+  /** GOB-01: a dormant slot is skipped like GONE (no perceive/path/steer/post, steer agent parked) but keeps its state. */
+  sim.setDormant = function setDormant(slot, on) {
+    if (slot < 0 || slot >= sim.count) return;
+    const d = on ? 1 : 0;
+    if (sim.dormant[slot] === d || deadSt(sim.state[slot])) return;
+    sim.dormant[slot] = d;
+    sim.steer.vx[slot] = 0; sim.steer.vy[slot] = 0;
+    sim.steer.active[slot] = d ? 0 : 1; // parked agents are skipped by steer.step and deOverlap
+    sim.seen[slot] = 0; sim.pathReq[slot] = 0;
+  };
+  /** GOB-01b: on -> slot goes to STATE_GONE (steer agent dropped, hidden, skipped); off -> back alive at home, hp max. */
+  sim.setDown = function setDown(slot, on) {
+    if (slot < 0 || slot >= sim.count) return;
+    if (on) {
+      if (sim.down[slot]) return;
+      sim.down[slot] = 1; sim.dormant[slot] = 0;
+      // park (not remove) a live agent: removeAgent/addAgent hands out the lowest free slot, parking keeps slot ids stable
+      if (sim.steer.active[slot]) { sim.steer.vx[slot] = 0; sim.steer.vy[slot] = 0; sim.steer.active[slot] = 0; sim.down[slot] = 2; }
+      sim.state[slot] = STATE_GONE; sim.pendingDied[slot] = 0; sim.despawnReq[slot] = 0;
+      sim.pathLen[slot] = 0; sim.pathIdx[slot] = 0; sim.pathReq[slot] = 0; sim.seen[slot] = 0; sim.goalOn[slot] = 0;
+    } else if (sim.down[slot]) {
+      if (sim.down[slot] === 2) sim.steer.active[slot] = 1;
+      sim.down[slot] = 0; sim.dormant[slot] = 0;
+      resetSlotSim(sim, slot);
+      resyncLeash(sim);
+    }
+  };
+  sim.isDown = function isDown(slot) { return slot >= 0 && slot < sim.count && sim.down[slot] === 1; };
+  /** GOB-01b: a live slot runs away from the player (last stepped position) like a low-hp wolf/goblin flee. */
+  sim.flee = function flee(slot) {
+    if (slot < 0 || slot >= sim.count || sim.down[slot] || sim.dormant[slot] || deadSt(sim.state[slot])) return;
+    enterFlee(sim, slot, sim._px, sim._py);
+  };
+  sim.isDormant = function isDormant(slot) { return slot >= 0 && slot < sim.count && sim.dormant[slot] === 1; };
+  /** LIFE-08: drop the goal override; a wandering beast walks back home (STATE_RETURN). */
+  sim.clearGoal = function clearGoal(slot) {
+    if (slot < 0 || slot >= sim.count || !sim.goalOn[slot]) return;
+    sim.goalOn[slot] = 0; sim.altTgt[slot] = -1;
+    if (sim.state[slot] === STATE_WANDER) enterReturn(sim, slot);
+  };
+  sim.hasGoal = function hasGoal(slot) { return slot >= 0 && slot < sim.count && sim.goalOn[slot] === 1; };
+  /** LIFE-08: true once a goal beast stands within GOAL_ARRIVE_R of its goal. */
+  sim.atGoal = function atGoal(slot) {
+    if (!sim.hasGoal(slot)) return false;
+    const dx = sim.goalTX[slot] - sim.steer.x[slot], dy = sim.goalTY[slot] - sim.steer.y[slot];
+    return dx * dx + dy * dy <= GOAL_ARRIVE_R * GOAL_ARRIVE_R;
+  };
+  /** LIFE-08: up to 8 extra targets (villager points). A goal beast that finds one nearer than the player chases it; reaching it emits `beast:altHit {slot, alt, id}`. n = 0 clears. */
+  sim.setAltTargets = function setAltTargets(n, xs, ys) {
+    n = Math.min(n | 0, MAX_ALT);
+    for (let k = 0; k < n; k++) { sim.altX[k] = xs[k]; sim.altY[k] = ys[k]; }
+    sim.altN = n > 0 ? n : 0;
   };
   /** US-079b: request a corpse sink (loot emptied the body). True if the slot was DYING/CORPSE (sets despawnReq). */
   sim.despawnCorpse = function despawnCorpse(id) {
@@ -289,7 +387,7 @@ export function createBeastSim(world, opts) {
     return false;
   };
   /** US-079b: true once `slot` is dead (DYING/CORPSE/SINK/GONE). */
-  sim.isDead = function isDead(slot) { return sim.state[slot] >= FIRST_DEAD_STATE; };
+  sim.isDead = function isDead(slot) { return deadSt(sim.state[slot]); };
   /** US-079b: the slot index for a boar id, or -1 when not tracked. */
   sim.slotOf = function slotOf(id) { const i = idSlot[id]; return i === undefined ? -1 : i; };
 
@@ -298,9 +396,12 @@ export function createBeastSim(world, opts) {
 
 // ---- step pipeline (29.1 "Fixed-step order inside step") ----------------------------------------------------
 
+/** GOB-01: a slot that perceives, paths, steers and posts (not dead/GONE, not dormant). */
+const live = (sim, i) => !deadSt(sim.state[i]) && sim.dormant[i] === 0;
+
 function stepSim(sim, px, py, pz) {
   const n = sim.count;
-  sim._px = px; sim._py = py;
+  sim._px = px; sim._py = py; sim._pz = pz;
   // US-079b (37.16.2): `beast:died` goes out at the START of the step after the kill (exactly once), so the sword
   // is never mid-iteration when a loot spawn would rebuild its target list.
   for (let i = 0; i < n; i++) emitPendingDied(sim, i);
@@ -308,17 +409,52 @@ function stepSim(sim, px, py, pz) {
   for (let i = 0; i < n; i++) {
     if (sim.dmgCd[i] > 0) sim.dmgCd[i]--;
     if (sim.hurtT[i] < 9999) sim.hurtT[i]++;
-    if (sim.state[i] >= FIRST_DEAD_STATE) stepDead(sim, i);
+    if (deadSt(sim.state[i])) stepDead(sim, i);
   }
-  for (let i = 0; i < n; i++) if (sim.state[i] < FIRST_DEAD_STATE) { perceiveOne(sim, i, px, py, pz); leashOne(sim, i, px, py); }
-  for (let i = 0; i < n; i++) if (sim.state[i] < FIRST_DEAD_STATE) transitionOne(sim, i, px, py);
+  if (sim.fauna) huntPass(sim);
+  for (let i = 0; i < n; i++) if (live(sim, i)) { perceiveOne(sim, i, px, py, pz); leashOne(sim, i, px, py); }
+  for (let i = 0; i < n; i++) if (live(sim, i)) transitionOne(sim, i, px, py);
   updatePathRequests(sim, px, py);
   servePathRequest(sim, px, py);
-  for (let i = 0; i < n; i++) if (sim.state[i] < FIRST_DEAD_STATE) setSteerTarget(sim, i);
+  for (let i = 0; i < n; i++) if (live(sim, i)) setSteerTarget(sim, i);
   sim.steer.step(SIM_STEP, sim.grid);
   deOverlap(sim); // US-079c (BUG-BOAR-OVERLAP): hard pairwise push-apart, after the soft steer step, before post
-  for (let i = 0; i < n; i++) if (sim.state[i] < FIRST_DEAD_STATE) postOne(sim, i, px, py, pz);
+  for (let i = 0; i < n; i++) if (live(sim, i)) postOne(sim, i, px, py, pz);
   sim.tick++;
+}
+
+/** LIFE-07: feed live beast positions to fauna as threat points; end hunts that left STATE_WANDER. Only runs with fauna. */
+function huntPass(sim) {
+  const n = sim.count, steer = sim.steer;
+  let t = 0;
+  for (let i = 0; i < n; i++) {
+    if (sim.hunt[i] && sim.state[i] !== STATE_WANDER) sim.hunt[i] = 0;
+    if (!deadSt(sim.state[i]) && t < 16) { sim._thrX[t] = steer.x[i]; sim._thrY[t] = steer.y[i]; t++; }
+  }
+  sim.fauna.setThreats(t, sim._thrX, sim._thrY);
+}
+
+/** LIFE-07: a wandering (not walking-to-a-point-noticed) predator looks for prey once a second (staggered). */
+function huntLook(sim, i) {
+  if (!sim.preyMask[i] || sim.tick % 60 !== i % 60) return;
+  const k = sim.fauna.nearestPrey(sim.steer.x[i], sim.steer.y[i], HUNT_R, sim._prey, sim.preyMask[i]);
+  if (k < 0) return;
+  sim.hunt[i] = 1; sim.huntSlot[i] = k; sim.huntT[i] = toSteps(HUNT_MAX_S);
+  sim.pathLen[i] = 0; sim.pathIdx[i] = 0; sim.pathReq[i] = 0;
+  sim.timer[i] = sim.cfgSteps.pauseMin; // not WALKING: no A* request while hunting
+}
+
+/** LIFE-07: chase step (in STATE_WANDER): the player notice pre-empts; catch -> kill + STATE_EAT; timeout -> give up. */
+function huntStep(sim, i, px, py) {
+  if (noticedOf(sim, i, px, py)) { sim.hunt[i] = 0; enterNotice(sim, i); return; }
+  const s = sim.fauna.slots[sim.huntSlot[i]];
+  if (!s || !s.alive || --sim.huntT[i] <= 0) { sim.hunt[i] = 0; enterWander(sim, i); return; }
+  const dx = s.x - sim.steer.x[i], dy = s.y - sim.steer.y[i];
+  if (dx * dx + dy * dy <= HUNT_CATCH_R * HUNT_CATCH_R) {
+    sim.fauna.kill(sim.huntSlot[i]);
+    sim.hunt[i] = 0; sim.state[i] = STATE_EAT; sim.timer[i] = toSteps(EAT_S);
+    sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
+  }
 }
 
 function perceiveOne(sim, i, px, py, pz) {
@@ -361,7 +497,7 @@ function noticedOf(sim, i, px, py) {
 /** BEAST-PERCEIVE-01w: keep the engine leash mode in step with the brain state, then advance it (engaged states only). */
 function leashOne(sim, i, px, py) {
   const ag = sim._lagents[i], def = sim._ldef, st = sim.state[i];
-  if (st === STATE_WANDER) { ag.leashMode = LEASH_HOME; ag.leashT = 0; return; }
+  if (st === STATE_WANDER || st === STATE_EAT) { ag.leashMode = LEASH_HOME; ag.leashT = 0; return; }
   if (st === STATE_RETURN) { if (ag.leashMode !== LEASH_GIVEUP) ag.leashMode = LEASH_RETURN; return; }
   if (ag.leashMode === LEASH_HOME || ag.leashMode === LEASH_RETURN) { ag.leashMode = LEASH_ENGAGE; ag.leashT = 0; }
   if (ag.leashMode === LEASH_GIVEUP) return; // stays given-up until the beast is home (wander resets it)
@@ -376,6 +512,7 @@ function leashOne(sim, i, px, py) {
 function transitionOne(sim, i, px, py) {
   switch (sim.state[i]) {
     case STATE_WANDER: wanderStep(sim, i, px, py); break;
+    case STATE_EAT: eatStep(sim, i, px, py); break;
     case STATE_NOTICE: noticeStep(sim, i); break;
     case STATE_CHASE: checkChaseExit(sim, i, px, py); break;
     case STATE_WINDUP: windupStep(sim, i, px, py); break;
@@ -400,11 +537,49 @@ function flinchStep(sim, i) {
   if (sim.timer[i] <= 0) enterChase(sim, i);
 }
 
+function eatStep(sim, i, px, py) {
+  if (noticedOf(sim, i, px, py)) { enterNotice(sim, i); return; } // the player can still interrupt the meal
+  if (--sim.timer[i] <= 0) enterWander(sim, i);
+}
+
 function wanderStep(sim, i, px, py) {
+  if (sim.goalOn[i]) { goalStep(sim, i, px, py); return; }
+  if (sim.hunt[i]) { huntStep(sim, i, px, py); return; }
   if (noticedOf(sim, i, px, py)) { enterNotice(sim, i); return; }
+  if (sim.fauna && sim.timer[i] !== WALKING) { huntLook(sim, i); if (sim.hunt[i]) return; }
   if (sim.timer[i] === WALKING) return; // following a path; arrival is handled by updatePathRequests/postOne
   sim.timer[i]--;
   if (sim.timer[i] <= 0) pickWanderTarget(sim, i);
+}
+
+/** LIFE-08: raid leg of STATE_WANDER: nearer-than-player alt target -> chase + hit; else player notice; else travel to / hold at the goal. */
+function goalStep(sim, i, px, py) {
+  const steer = sim.steer, sx = steer.x[i], sy = steer.y[i];
+  if (sim.altCd[i] > 0) sim.altCd[i]--;
+  sim.altTgt[i] = -1;
+  if (sim.altCd[i] <= 0 && sim.altN > 0) {
+    let best = -1, bd = ALT_R * ALT_R;
+    for (let k = 0; k < sim.altN; k++) {
+      const dx = sim.altX[k] - sx, dy = sim.altY[k] - sy, d2 = dx * dx + dy * dy;
+      if (d2 < bd) { bd = d2; best = k; }
+    }
+    const pdx = px - sx, pdy = py - sy;
+    if (best >= 0 && bd < pdx * pdx + pdy * pdy) {
+      if (bd <= ALT_HIT_R * ALT_HIT_R) {
+        sim.altCd[i] = toSteps(ALT_COOLDOWN_S);
+        sim.timer[i] = sim.cfgSteps.pauseMin; sim.pathLen[i] = 0; sim.pathIdx[i] = 0; sim.pathReq[i] = 0;
+        const pl = sim._altPayload[i]; pl.alt = best;
+        sim.events.emit('beast:altHit', pl);
+      } else sim.altTgt[i] = best;
+      return;
+    }
+  }
+  if (noticedOf(sim, i, px, py)) { enterNotice(sim, i); return; }
+  if (sim.atGoal(i)) { sim.timer[i] = sim.cfgSteps.pauseMin; sim.pathLen[i] = 0; return; } // hold at the goal
+  if (sim.timer[i] !== WALKING) {
+    sim.goalX[i] = sim.goalTX[i]; sim.goalY[i] = sim.goalTY[i];
+    sim.pathLen[i] = 0; sim.pathIdx[i] = 0; sim.pathReq[i] = 1; sim.timer[i] = WALKING;
+  }
 }
 
 function pickWanderTarget(sim, i) {
@@ -438,9 +613,10 @@ function checkChaseExit(sim, i, px, py) {
   const d2 = dx * dx + dy * dy;
   const lm = sim._lagents[i].leashMode; // leash/give-up wins over everything (even a boar in windup range)
   if (lm === LEASH_RETURN || lm === LEASH_GIVEUP) { sim.waiting[i] = 0; enterReturn(sim, i); return; }
-  if (sim.wolf[i] && shouldFlee(sim, i)) { enterFlee(sim, i, px, py); return; } // WOLF-01
+  if ((sim.wolf[i] || sim.goblin[i]) && shouldFlee(sim, i)) { enterFlee(sim, i, px, py); return; } // WOLF-01
+  if (sim.ranged[i] && rangedChase(sim, i, px, py, d2)) return; // GOB-02
   const wr = sim.scfg[i].windupR;
-  if (d2 <= wr * wr && sim.seen[i]) {
+  if (!sim.ranged[i] && d2 <= wr * wr && sim.seen[i]) {
     // US-079c: only one boar winds up/charges at a time - the first eligible (lowest slot) wins; the rest hold.
     if (hasActiveCharger(sim, i)) sim.waiting[i] = 1;
     else { sim.waiting[i] = 0; enterWindup(sim, i); }
@@ -451,13 +627,47 @@ function checkChaseExit(sim, i, px, py) {
   if (d2 > lr * lr || sim.unseen[i] >= sim.cfgSteps.loseSight) enterReturn(sim, i);
 }
 
+/** GOB-02: thrower distance band. waiting 2 = backing off (< bandMin), 1 = holding in the band (faces the player).
+ * Returns true when it handled the tick (back-off, flee, hold, windup); false = approach (path to the player) and
+ * the normal lose checks. WINDUP needs LOS (cached `seen`), a done reload (it only reaches CHASE after RECOVER) and
+ * fewer than maxWinding throwers already winding up. */
+function rangedChase(sim, i, px, py, d2) {
+  const T = GOBLIN_TUNING;
+  if (d2 < T.bandMin * T.bandMin) {
+    sim.waiting[i] = 2;
+    if (d2 < T.cornerR * T.cornerR) {
+      if (++sim.backT[i] >= T.cornerSec * 60) { sim.backT[i] = 0; sim.waiting[i] = 0; enterFlee(sim, i, px, py); } // cornered: flee
+    } else sim.backT[i] = 0;
+    return true;
+  }
+  sim.backT[i] = 0;
+  if (d2 <= T.bandMax * T.bandMax && sim.seen[i]) {
+    let winding = 0;
+    for (let k = 0; k < sim.count; k++) if (k !== i && sim.ranged[k] && sim.state[k] === STATE_WINDUP) winding++;
+    if (winding < T.maxWinding) { sim.waiting[i] = 0; enterWindup(sim, i); } else sim.waiting[i] = 1;
+    return true;
+  }
+  sim.waiting[i] = 0;
+  return false;
+}
+
+/** GOB-02: the one `beast:throw` at windup end: hand = eye + handUp, target = the player's chest now (no lead). */
+function emitThrow(sim, i, px, py) {
+  const p = sim._throwPayload, steer = sim.steer;
+  p.id = sim.ids[i]; p.slot = i;
+  p.x = steer.x[i]; p.y = steer.y[i]; p.z = zOf(sim, i) + sim.cfg.eyeZ + GOBLIN_TUNING.handUp;
+  p.tx = px; p.ty = py; p.tz = sim._pz + sim.cfg.targetZ;
+  sim.events.emit('beast:throw', p);
+}
+
 /** US-079c: true while any slot is in WINDUP or CHARGE (the single active charger). */
 function hasActiveCharger(sim, me) {
+  let held = 0;
   for (let k = 0; k < sim.count; k++) {
-    if (k === me || sim.wolf[k] !== sim.wolf[me]) continue; // WOLF-01: the token is per species (wolves never block boars)
-    if (sim.state[k] === STATE_WINDUP || sim.state[k] === STATE_CHARGE) return true;
+    if (k === me || sim.group[k] !== sim.group[me]) continue; // WOLF-01/GOB-01: the token is per group (wolves never block boars)
+    if (sim.state[k] === STATE_WINDUP || sim.state[k] === STATE_CHARGE) held++;
   }
-  return false;
+  return held >= (sim.group[me] === 2 ? GOBLIN_TUNING.tokens : 1); // GOB-01: melee goblins share 2 tokens
 }
 
 function windupStep(sim, i, px, py) {
@@ -465,8 +675,11 @@ function windupStep(sim, i, px, py) {
   sim.timer[i]--;
   // US-079c: kick a dust burst at the forefeet at 150/300/450 ms into the windup (boarFx.scrape.kickSteps).
   const elapsed = sim.ssteps[i].windup - sim.timer[i];
-  if (!sim.wolf[i] && elapsed === SCRAPE_KICKS[0] || elapsed === SCRAPE_KICKS[1] || elapsed === SCRAPE_KICKS[2]) emitScrape(sim, i);
-  if (sim.timer[i] <= 0) enterCharge(sim, i, px, py);
+  if (!sim.goblin[i] && (!sim.wolf[i] && elapsed === SCRAPE_KICKS[0] || elapsed === SCRAPE_KICKS[1] || elapsed === SCRAPE_KICKS[2])) emitScrape(sim, i);
+  if (sim.timer[i] <= 0) {
+    if (sim.ranged[i]) { emitThrow(sim, i, px, py); enterRecover(sim, i, false); } // GOB-02: release, then the reload
+    else enterCharge(sim, i, px, py);
+  }
 }
 
 /** US-079c: emits one preallocated `beast:scrape` at the forefeet (z + 0.03), thrown backward - particleHooks
@@ -497,7 +710,7 @@ function recoverStep(sim, i, px, py) {
 function returnStep(sim, i, px, py) {
   if (sim.fleeing[i]) { // WOLF-01: keep running until 30 m from where it started / from the player, then walk home
     const dx = px - sim.steer.x[i], dy = py - sim.steer.y[i], gx = sim.goalX[i] - sim.steer.x[i], gy = sim.goalY[i] - sim.steer.y[i];
-    if (dx * dx + dy * dy >= WOLF_TUNING.fleeM * WOLF_TUNING.fleeM || gx * gx + gy * gy <= 1) { sim.fleeing[i] = 0; enterReturn(sim, i); }
+    if (dx * dx + dy * dy >= fleeMOf(sim, i) * fleeMOf(sim, i) || gx * gx + gy * gy <= 1) { sim.fleeing[i] = 0; enterReturn(sim, i); }
     return;
   }
   if (sim._lagents[i].leashMode !== LEASH_GIVEUP && noticedOf(sim, i, px, py)) { enterNotice(sim, i); return; }
@@ -543,6 +756,7 @@ function enterRecover(sim, i, wall) {
   sim.state[i] = STATE_RECOVER;
   sim.timer[i] = wall ? sim.ssteps[i].recoverWall : sim.ssteps[i].recover;
   sim.steer.accel[i] = DEFAULT_ACCEL;
+  if (sim.goblin[i]) { sim.steer.vx[i] = 0; sim.steer.vy[i] = 0; } // GOB-01: the 8 m/s lunge must not carry it through the player
 }
 
 /** US-078d amendment (D-034) + US-079b (37.16.2): a heavy hit staggers the beast from ANY state (interrupts
@@ -585,22 +799,24 @@ function enterReturn(sim, i) {
 
 /** WOLF-01: a wolf with no other living wolf within packR. */
 function isLone(sim, i) {
-  const st = sim.steer, r2 = WOLF_TUNING.packR * WOLF_TUNING.packR;
+  const st = sim.steer, pr = sim.goblin[i] ? GOBLIN_TUNING.packR : WOLF_TUNING.packR, r2 = pr * pr;
   for (let k = 0; k < sim.count; k++) {
-    if (k === i || !sim.wolf[k] || sim.state[k] >= FIRST_DEAD_STATE) continue;
+    if (k === i || sim.group[k] !== sim.group[i] || deadSt(sim.state[k])) continue; // same pack species (group 1 wolf, 2 goblin)
     const dx = st.x[k] - st.x[i], dy = st.y[k] - st.y[i];
     if (dx * dx + dy * dy <= r2) return false;
   }
   return true;
 }
+/** GOB-01: flee distance per species. */
+const fleeMOf = (sim, i) => (sim.goblin[i] ? GOBLIN_TUNING.fleeM : WOLF_TUNING.fleeM);
 function shouldFlee(sim, i) {
   const h = sim.entities[i].components.health;
-  return h.hp > 0 && h.hp < h.max * WOLF_TUNING.fleeHpFrac && isLone(sim, i);
+  return h.hp > 0 && h.hp < h.max * (sim.goblin[i] ? GOBLIN_TUNING.fleeHpFrac : WOLF_TUNING.fleeHpFrac) && isLone(sim, i);
 }
 /** WOLF-01: run WOLF_TUNING.fleeM straight away from the player (falls back to going home if that spot is a wall). */
 function enterFlee(sim, i, px, py) {
   const steer = sim.steer, t = sim._tmp, S = 0.7071067811865476;
-  awayTarget(steer.x[i], steer.y[i], px, py, WOLF_TUNING.fleeM, t);
+  awayTarget(steer.x[i], steer.y[i], px, py, fleeMOf(sim, i), t);
   // try straight away, then +-45 deg (vector rotation, no trig), then half distance; else just go home
   const ax = t.x - steer.x[i], ay = t.y - steer.y[i];
   let found = false, gx = 0, gy = 0;
@@ -635,6 +851,7 @@ function reactToHit(sim, i, p) {
     enterFlinch(sim, i); // fire with a tiny falloff (knock < 1) -> flinch
     return;
   }
+  if (sim.goblin[i] && st !== STATE_STAGGER) { enterRecover(sim, i, false); return; } // GOB-01: scatter - a damaging hit enters the retreat
   if (st === STATE_WINDUP && !sim.bear[i]) { enterRecover(sim, i, false); return; } // AC: a light hit cancels the charge
   if (st === STATE_CHARGE || st === STATE_STAGGER || (st === STATE_WINDUP && sim.bear[i])) return; // BEAR-01: an arrow doesn't break the bluff          // D-034: only a hard hit stops a charge
   enterFlinch(sim, i);
@@ -714,7 +931,7 @@ function stepDead(sim, i) {
 function updatePathRequests(sim, px, py) {
   const n = sim.count, cfg = sim.cfg;
   for (let i = 0; i < n; i++) {
-    if (sim.state[i] >= FIRST_DEAD_STATE) continue; // US-079b: dead slots don't path
+    if (deadSt(sim.state[i])) continue; // US-079b: dead slots don't path
     if (sim.repathT[i] > 0) sim.repathT[i]--;
     if (sim.pathReq[i]) continue;
     const st = sim.state[i];
@@ -743,7 +960,7 @@ function servePathRequest(sim, px, py) {
   if (n === 0) return;
   for (let k = 1; k <= n; k++) {
     const i = (sim.lastServed + k) % n;
-    if (sim.pathReq[i] && sim.state[i] < FIRST_DEAD_STATE) {
+    if (sim.pathReq[i] && !deadSt(sim.state[i])) {
       computePath(sim, i);
       sim.pathReq[i] = 0;
       sim.repathT[i] = sim.cfgSteps.repath;
@@ -757,7 +974,7 @@ function computePath(sim, i) {
   const grid = sim.grid, astar = sim.astar, steer = sim.steer;
   const sx = grid.cellX(steer.x[i]), sy = grid.cellY(steer.y[i]);
   const gx = grid.cellX(sim.goalX[i]), gy = grid.cellY(sim.goalY[i]);
-  const maxNodes = sim.state[i] === STATE_WANDER ? WANDER_MAX_NODES : TRAVEL_MAX_NODES;
+  const maxNodes = sim.state[i] === STATE_WANDER && !sim.goalOn[i] ? WANDER_MAX_NODES : TRAVEL_MAX_NODES;
   const len = findPath(astar, sx, sy, gx, gy, sim._cellPath, { maxNodes });
   sim.stats.astar++;
   sim.stats.astarNodes += len; // approximation: findPath does not expose expanded-node count (see report deviations)
@@ -801,15 +1018,34 @@ function setSteerTarget(sim, i) {
     return;
   }
 
-  if (sim.wolf[i]) { // WOLF-01: retreat after the leap, circle while another wolf holds the token
+  if (st === STATE_WANDER && sim.hunt[i]) { // LIFE-07: direct steer at the prey (no A*; the NavGrid still blocks)
+    const ps = sim.fauna.slots[sim.huntSlot[i]];
+    steer.setWaypoint(i, ps.x, ps.y, 0);
+    steer.maxSpeed[i] = sim.scfg[i].chase * sim.spdMul[i];
+    return;
+  }
+
+  if (st === STATE_WANDER && sim.goalOn[i] && sim.altTgt[i] >= 0) { // LIFE-08: direct steer at the villager point
+    steer.setWaypoint(i, sim.altX[sim.altTgt[i]], sim.altY[sim.altTgt[i]], 0);
+    steer.maxSpeed[i] = sim.scfg[i].chase * sim.spdMul[i];
+    return;
+  }
+
+  if (sim.ranged[i] && st === STATE_CHASE && sim.waiting[i] === 2) { // GOB-02: back off from the player
+    awayTarget(steer.x[i], steer.y[i], sim._px, sim._py, GOBLIN_TUNING.backoffM, sim._tmp);
+    steer.setWaypoint(i, sim._tmp.x, sim._tmp.y, 0); steer.maxSpeed[i] = sim.scfg[i].chase * GOBLIN_TUNING.backoffSpeedMul * sim.spdMul[i]; return;
+  }
+
+  if (sim.packer[i]) { // WOLF-01/GOB-01: retreat after the leap, circle while another wolf holds the token
     const wc = sim.scfg[i], tmp = sim._tmp;
     if (st === STATE_RECOVER) {
-      awayTarget(steer.x[i], steer.y[i], sim._px, sim._py, WOLF_TUNING.retreatM, tmp);
+      awayTarget(steer.x[i], steer.y[i], sim._px, sim._py, sim.goblin[i] ? GOBLIN_TUNING.retreatM : WOLF_TUNING.retreatM, tmp);
       steer.setWaypoint(i, tmp.x, tmp.y, 0); steer.maxSpeed[i] = wc.chase; return;
     }
     if (st === STATE_CHASE && sim.waiting[i]) {
-      circleTarget(steer.x[i], steer.y[i], sim._px, sim._py, (WOLF_TUNING.circleMin + WOLF_TUNING.circleMax) / 2, (i & 1) ? 1 : -1, tmp);
-      steer.setWaypoint(i, tmp.x, tmp.y, 0); steer.maxSpeed[i] = wc.chase * WOLF_TUNING.circleSpeedMul; return;
+      const CT = sim.goblin[i] ? GOBLIN_TUNING : WOLF_TUNING;
+      circleTarget(steer.x[i], steer.y[i], sim._px, sim._py, (CT.circleMin + CT.circleMax) / 2, (i & 1) ? 1 : -1, tmp);
+      steer.setWaypoint(i, tmp.x, tmp.y, 0); steer.maxSpeed[i] = wc.chase * CT.circleSpeedMul; return;
     }
   }
 
@@ -996,6 +1232,7 @@ function hashSim(sim, h) {
   h.u8Array(sim.pendingDied, 0, n);
   h.u8Array(sim.despawnReq, 0, n);
   h.u8Array(sim.cause, 0, n);
+  if (sim.fauna) { h.u8Array(sim.hunt, 0, n); h.u32Array(sim.huntT, 0, n); }
   sim.steer.hashInto(h);
 }
 
@@ -1056,34 +1293,38 @@ function resyncLeash(sim) {
   for (let i = 0; i < sim.count; i++) {
     const st = sim.state[i], ag = sim._lagents[i];
     ag.leashT = 0;
-    ag.leashMode = st === STATE_WANDER || st >= FIRST_DEAD_STATE ? LEASH_HOME : (st === STATE_RETURN ? LEASH_RETURN : LEASH_ENGAGE);
+    ag.leashMode = st === STATE_WANDER || st === STATE_EAT || deadSt(st) ? LEASH_HOME : (st === STATE_RETURN ? LEASH_RETURN : LEASH_ENGAGE);
   }
 }
 
 function resetAllSim(sim) {
-  for (let i = 0; i < sim.count; i++) {
-    // US-079b: dead steer slots are re-added in ascending order; addAgent hands out the lowest free slot, and the
-    // live slots stay active (slots >= count are never used), so the lowest free slot is always the lowest dead one.
-    if (!sim.steer.active[i]) {
-      const slot = sim.steer.addAgent(sim.homeX[i], sim.homeY[i], sim.cfg.radius, 0, DEFAULT_ACCEL);
-      if (slot !== i) throw new Error(`beastSim.resetAll: re-added dead slot ${i} but addAgent returned ${slot}`);
-    }
-    const health = sim.entities[i].components.health;
-    health.hp = health.max; // US-079b: boars come back alive
-    sim.dmgCd[i] = 0; sim.hurtT[i] = 9999; sim.pendingDied[i] = 0; sim.despawnReq[i] = 0; sim.cause[i] = 0; sim.provoked[i] = 0;
-    sim.steer.x[i] = sim.homeX[i]; sim.steer.y[i] = sim.homeY[i];
-    sim.steer.vx[i] = 0; sim.steer.vy[i] = 0;
-    sim.steer.setIdle(i);
-    sim.steer.accel[i] = DEFAULT_ACCEL;
-    sim.state[i] = STATE_WANDER;
-    sim.timer[i] = sim.cfgSteps.pauseMin;
-    sim.unseen[i] = 0; sim.repathT[i] = 0; sim.seen[i] = 0; sim.pathReq[i] = 0;
-    sim.waiting[i] = 0; sim.fleeing[i] = 0; // US-079c / WOLF-01
-    sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
-    sim.entities[i].transform.x = sim.homeX[i];
-    sim.entities[i].transform.y = sim.homeY[i];
-    sim.entities[i].transform.z = sim.homeZ[i]; // US-079b ARCH: a sunk corpse respawns at the authored z, not 0.3 m low
-  }
+  for (let i = 0; i < sim.count; i++) { sim.down[i] = 0; resetSlotSim(sim, i); }
   resyncLeash(sim);
   sim.events.emit('beasts:reset'); // US-079b: loot clears its corpse state on this
+}
+
+/** One slot back to home, alive, state wander (shared by resetAll and setDown(slot, false)). */
+function resetSlotSim(sim, i) {
+  // US-079b: dead steer slots are re-added in ascending order; addAgent hands out the lowest free slot, and the
+  // live slots stay active (slots >= count are never used), so the lowest free slot is always the lowest dead one.
+  if (!sim.steer.active[i] && !sim.dormant[i]) {
+    const slot = sim.steer.addAgent(sim.homeX[i], sim.homeY[i], sim.cfg.radius, 0, DEFAULT_ACCEL);
+    if (slot !== i) throw new Error(`beastSim.resetAll: re-added dead slot ${i} but addAgent returned ${slot}`);
+  }
+  const health = sim.entities[i].components.health;
+  health.hp = health.max; // US-079b: boars come back alive
+  sim.goalOn[i] = 0; sim.altTgt[i] = -1; sim.altCd[i] = 0; // LIFE-08: raids restart next night
+  sim.hunt[i] = 0; sim.dmgCd[i] = 0; sim.hurtT[i] = 9999; sim.pendingDied[i] = 0; sim.despawnReq[i] = 0; sim.cause[i] = 0; sim.provoked[i] = 0;
+  sim.steer.x[i] = sim.homeX[i]; sim.steer.y[i] = sim.homeY[i];
+  sim.steer.vx[i] = 0; sim.steer.vy[i] = 0;
+  sim.steer.setIdle(i);
+  sim.steer.accel[i] = DEFAULT_ACCEL;
+  sim.state[i] = STATE_WANDER;
+  sim.timer[i] = sim.cfgSteps.pauseMin;
+  sim.unseen[i] = 0; sim.repathT[i] = 0; sim.seen[i] = 0; sim.pathReq[i] = 0;
+  sim.waiting[i] = 0; sim.fleeing[i] = 0; // US-079c / WOLF-01
+  sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
+  sim.entities[i].transform.x = sim.homeX[i];
+  sim.entities[i].transform.y = sim.homeY[i];
+  sim.entities[i].transform.z = sim.homeZ[i]; // US-079b ARCH: a sunk corpse respawns at the authored z, not 0.3 m low
 }

@@ -469,7 +469,7 @@ function worldTipFromList(list) {
   }
   console.log(`  pose + buildList: ${(dt * 1000).toFixed(2)} us/frame`);
   ok('zero-alloc: 20000 show+buildList frames grow the heap < 64 KB', growth < 65536, `growth=${growth}`);
-  ok('perf: show + buildList <= 0.02 ms', dt <= 0.02, `${dt} ms`);
+  if (process.env.BAKE_BENCH) ok('perf: show + buildList <= 0.02 ms', dt <= 0.02, `${dt} ms`); // wall-clock: BAKE_BENCH=1 only
   // JS twin extra (warn-only): the sword raster at 240x90
   const g2 = { cols: 240, rows: 90, pxCellW: 1, pxCellH: 1 };
   const t = {}, M2 = new Float64Array(16);

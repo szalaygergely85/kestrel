@@ -1551,6 +1551,7 @@
     states: ['idle', 'graze', 'move', 'flee', 'alert'],
     animals: {
       rabbit: {
+        fleeFrom: 'predators', // LIFE-07
         models: ['rabbit'],
         clipFor: { idle: 'idle', graze: 'graze', move: 'hop', flee: 'run', alert: 'alert' },
         enter: { alert: 'sitUp' },                     // play once when entering the state, then the state clip
@@ -1573,6 +1574,7 @@
               'not visible). alert = sits up (sitUp once, then alert loop); from alert go to flee or back to idle.'
       },
       deer: {
+        fleeFrom: 'predators', // LIFE-07
         models: ['deer', 'deerBuck'],
         clipFor: { idle: 'idle', graze: 'graze', move: 'walk', flee: 'gallop', alert: 'alert' },
         extra: { trot: 'trot' },                       // a nervous move / the first steps out of a flee
@@ -1601,7 +1603,8 @@
       fox: {
         models: ['fox'],
         kind: 'ground',
-        clipFor: { idle: 'idle', graze: 'sniff', move: 'walk', flee: 'run', alert: 'alert' },
+        hunts: ['rabbit'], huntR: 20, chaseMaxS: 8, eatS: 4, // LIFE-07 (38.56 c); eat clip from voxel_eat_clips.js
+        clipFor: { idle: 'idle', graze: 'sniff', move: 'walk', flee: 'run', alert: 'alert', eat: 'eat' },
         extra: { trot: 'trot', pounce: 'pounce' },     // trot = nervous move / first second of a flee; pounce = mousing
         once: { pounce: 'sniff' },
         gaits: [

@@ -51,7 +51,7 @@ const _psO = new Float64Array(3), _psP = new Float64Array(3), _psN = new Float64
 const aoPar = new Float64Array(14); // per-cell AO tap parameters (cam, dir, plane, horizon, normal, radius, bias)
 const aoAcc = new Float64Array(1); // tap occlusion accumulator (no boxed-double returns across calls)
 
-export const MAX_LIGHTS = 16;
+export const MAX_LIGHTS = 24; // LIGHTS-24-01: was 16 while GLSL was frozen (38.x); WGSL-only since WG-5
 /** EMIS-01b: derived-light candidate list size and the replace margin (38.12 (1)). */
 export const DERIVED_MAX_CAND = 64;
 export const DERIVED_HYSTERESIS = 1.25;

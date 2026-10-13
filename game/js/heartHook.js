@@ -7,7 +7,7 @@ import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
 export const POLL_STEPS = 10;
 
 /** @param {{getCard?: () => any}} o card = the item-get card (chestHook.card) */
-export function createHeartHook({ getCard = () => null } = {}) {
+export function createHeartHook({ getCard = () => null, notify = null } = {}) {
   let ctx = null, tick = 0;
   return {
     onBoot(c) {
@@ -20,8 +20,9 @@ export function createHeartHook({ getCard = () => null } = {}) {
       const health = ctx.player.components && ctx.player.components.health;
       const r = collect(ctx.inventory, health, ctx.world.state);
       if (!r) return;
-      const card = getCard();
-      if (card) card.push('heart.piece', r.n, { count: r.count });
+      // OB-105: with `notify` (main.js toasts.say) a one-line toast, never the item-get card (no pause).
+      if (notify) notify('Looted: Heart piece (' + r.count + '/4)');
+      else { const card = getCard(); if (card) card.push('heart.piece', r.n, { count: r.count }); }
       if (ctx.events) ctx.events.emit('heart:gained', { pieces: r.total, hearts: r.hearts });
     },
   };

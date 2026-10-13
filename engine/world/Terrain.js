@@ -54,6 +54,8 @@ export class Terrain {
     this.mapCell = recipe.map.cell;
     this.mapX0 = recipe.map.x0 || 0; // MAP-01b: far grid origin (default 0,0 = byte-identical)
     this.mapY0 = recipe.map.y0 || 0;
+    // MAP-01b-FU: the WGSL/GLSL farTypeNearest bounds-checks both axes against mapW only
+    if (this.mapW !== this.mapH) throw new Error(`Terrain: far map must be square (map.w ${this.mapW} != map.h ${this.mapH}; shaders only upload mapW)`);
     if (this.mapW > 512 || this.mapH > 512) throw new Error('Terrain: far grid max 512 x 512');
     const tt = typeTables(recipe.terrain);
     this.typeNames = tt.names; this.typeFloorMat = tt.floor;
@@ -134,6 +136,19 @@ export class Terrain {
   typeAt(x, y) {
     this._bindEdits();
     return this.util.typeAt(x, y);
+  }
+
+  /** NAV-PERF-01: central-difference step of `normalAt` and (when equal) of the recipe's typeAt slope; lets a baker on a grid of this cell size reuse one padded height ring. */
+  get normalEps() { return 2; }
+
+  /**
+   * `typeAt` handed the four neighbour heights heightAt(x+e,y)/(x-e,y)/(x,y+e)/(x,y-e), e = `normalEps`, by a caller that already holds them
+   * (saves 4 heightAt). Bit-identical to `typeAt` when the recipe's slopeEps equals `normalEps`; otherwise the hints are ignored.
+   */
+  typeAtWithHeights(x, y, hxp, hxm, hyp, hym) {
+    this._bindEdits();
+    const r = this.recipe.recipe;
+    return (r && r.slopeEps === 2) ? this.util.typeAt(x, y, hxp, hxm, hyp, hym) : this.util.typeAt(x, y);
   }
 
   /** Material key name for a terrain type id (query/physics use only, US-025 - castTerrain itself lands in US-016). */

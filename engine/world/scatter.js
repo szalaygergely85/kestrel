@@ -18,6 +18,7 @@ export function validateScatterConfig(cfg) {
   if (cfg.fill > 1) bad('fill');
   if (!Number.isInteger(cfg.maxTrees) || cfg.maxTrees < 0) bad('maxTrees');
   finite('lodCells', 0, false);
+  if (cfg.maxDistM !== undefined) finite('maxDistM', 0, false); // OB-089: tree draw-distance cut (m)
   if (!Array.isArray(cfg.species) || !cfg.species.length || cfg.species.length > 256) bad('species');
   let maxRc = 0, weight = 0;
   for (let i = 0; i < cfg.species.length; i++) {
@@ -187,6 +188,7 @@ export function scatterTrees(terrain, structures = [], cfg = terrain.recipe.reci
  * speciesDefs:Array<{model?:string,mesh?:string,layer:number,shadow:boolean,sway:boolean,lodCells:number,collider?:DetailCollider}>,
  * tileM:number,tx0:number,ty0:number,tilesX:number,tilesY:number,tileStart:Uint32Array}} DetailSet */
 // MAP-01b (arch 38.42): ids 0-4 fixed, 5-10 appended (sand, snow, reeds, fen, flowers, alpine); 'mud' = fen. Same order as the recipe `terrain` ids.
+// TODO(arch MAP-01b): fixed list; must match the recipe terrain type table (Terrain.typeNames), extend both together.
 const DETAIL_TYPES = ['grass', 'forest', 'water', 'rock', 'path', 'sand', 'snow', 'reeds', 'fen', 'flowers', 'alpine'];
 const detailNormal = { x: 0, y: 0, z: 1 };
 
