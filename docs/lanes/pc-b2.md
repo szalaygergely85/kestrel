@@ -807,3 +807,8 @@ Left: remaining villager max 6-50 ms is sparse GC/OS noise from beast/fauna allo
 - `engine/world/bandAhead.test.js` (22 checks): priority table, 12-zone walk at 6 m/s (12 swaps, 0 misses, 0 band:late, 25 MB <= 32 MB), pins survive a 3 MB cap, cached bundle == fresh bake (near bytes + scatter/detail counts). Bake-active call p50 1.7 / p95 1.9 / p99 2.6 / max 3.7 ms; one-off job-start call (key + overlap copy) max ~5.7 ms (not sliced; open point for arch).
 - Walk test starts after a 10 s idle settle (ring prefilled); pins in world data not set yet (WM-05). Not run: browser, gpucompare.
 - NEEDS B1-main: none. -> arch-review
+
+### WM-03 NAV-TILE (kestrel-4, wm03)
+BandBakeJob phase 4 = nav tile (slope/structure-mask rows time-checked, then one `buildFromArrays` ~2 ms); done is now phase 5 (`BandBakeJob.DONE`; terrainBands.test updated). World never imports engine/nav (rule 14): `world.setNavTiles({create,maxSlopeDeg,maxStepM,blockedTypes,typeCost})` injects the NavGrid factory; `world.nav` + `world:band` payload `ev.nav` swap with the band (pointer flip; a legacy bundle without tile builds once). `bundle.nav` counted in `bundleBytes`. Fixed-area worlds: `navTiles` null, nothing changes (beastSim, NavGrid, bakeParity, terrainGrid, bandCache, bandAhead green).
+Test game/js/quest/sim/navTile.test.js: tile vs buildFromWorld 100.00 % (keep structure cells 84/84), after 2 swaps 100 %, 0 misses. Not wired in game/main.js (WM-04 calls setNavTiles). Open: edited live band re-caches the old tile; swap-0-alloc asserted by code path only (no gc probe). check-deps has pre-existing findings (gfxPresets.test deep import) not from this item.
+-> arch-review

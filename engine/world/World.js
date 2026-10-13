@@ -6,7 +6,7 @@ import { validatePolygon, compilePolygon } from '../physics/bounds.js';
 import { makeGrid, zoneAt, zoneId, best as bandBest, pick as bandPick, marginX as bandMarginX, marginY as bandMarginY } from './bandGrid.js';
 import { loadLevel, isTerrainFloor } from './Level.js';
 import { Terrain } from './Terrain.js';
-import { BandBakeJob } from './bandBake.js';
+import { BandBakeJob, buildNavTile } from './bandBake.js';
 import { BandCache } from './bandCache.js';
 import { aheadOrder, bestOverlap } from './bandAhead.js';
 import { validateCarpetConfig, buildCarpetClassMap, buildCarpetMask, CarpetMaskJob } from './carpet.js';
@@ -291,7 +291,8 @@ export class World {
     // `null` (unbounded - every world before this story). Content, not
     // state; set once by `World.load` from `def.bounds`.
     this.bounds = null;
-    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.bandCache = new BandCache(); this._bandKeys = []; this._bandKeysC = []; this._evBand = { from: null, to: null }; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandMisses = 0; this._ahead = null; this._zoneKeys = new Map(); this._pinKeys = null; this._aheadOrd = []; this._aheadRects = new Float64Array(4 * 64); this._aheadSrc = []; this._aheadPose = null; this.bandId = null; // WS2-01/02
+    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.bandCache = new BandCache(); this._bandKeys = []; this._bandKeysC = []; this._evBand = { from: null, to: null, nav: null }; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandMisses = 0; this._ahead = null; this._zoneKeys = new Map(); this._pinKeys = null; this._aheadOrd = []; this._aheadRects = new Float64Array(4 * 64); this._aheadSrc = []; this._aheadPose = null; this.bandId = null; // WS2-01/02
+    this.nav = null; this.navTiles = null; // WM-03: live nav tile + {create,maxSlopeDeg,maxStepM,blockedTypes,typeCost} (see setNavTiles)
     this.terrainGrid = null; this._gridPick = { i: 0, j: 0 }; // MAP-10 (38.43): generated zone grid; terrainBands = 2 reusable slot zones
     this.terrainBand = null; // WS1-02: authored near-band chunk rect or null (auto 3x3)
     // US-016 D-011 addendum (architecture.md 14.4 item 13): horizon
@@ -1317,7 +1318,7 @@ export class World {
   /** Bundle of the current terrain state as a cache entry (key/zone set by the caller). */
   _currentBundle(key, zone) {
     const col = (id) => { for (let i = 0; i < this.colliders.length; i++) if (this.colliders[i].id === id) return this.colliders[i]; return null; };
-    return { key, zone, near: this.terrain.near, scatter: this.scatter, detail: this.detail, trunks: col('scatter:trunks'), detailCol: col('scatter:detail'), classMap: null, bytes: 0, pinned: false, lastUse: 0 };
+    return { key, zone, near: this.terrain.near, scatter: this.scatter, detail: this.detail, trunks: col('scatter:trunks'), detailCol: col('scatter:detail'), nav: this.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 };
   }
 
   /** Stores `b` and pins authored (non-grid) zones. */
@@ -1335,6 +1336,18 @@ export class World {
     if (collider) cs.push(collider);
   }
 
+  /**
+   * WM-03 (38.59): enables per-band nav tiles (grid worlds without a fixed `nav.area`). `cfg.create(x0,y0,w,h,cell)` returns a NavGrid
+   * (engine/world never imports engine/nav). Builds the live band's tile now (load time); later bands get theirs as BandBakeJob phase 4.
+   */
+  setNavTiles(cfg) {
+    this.navTiles = cfg || null;
+    this.nav = null;
+    if (!cfg) return;
+    this.nav = buildNavTile(this, this.terrain.near);
+    if (this.terrainBands && this._bandCur >= 0) { const b = this.bandCache.get(this._bandKey(this._bandCur)); if (b) b.nav = this.nav; }
+  }
+
   /** Swap frame: only pointer flips + the ground-snap loop; every heavy result was prepared by `_bandJobStep`. */
   _publishBand(to, late) {
     const terrain = this.terrain, z = this.terrainBands[to], from = this.bandId, cache = this.bandCache;
@@ -1343,7 +1356,7 @@ export class World {
     if (!hit) {
       this.bandMisses++; // WM-02: swaps that had no cached bundle (sliced path or sync fallback)
       if (!terrain._bb) { terrain._bb = terrain.newBandState(z.cx0, z.cy0, z.cw, z.ch, terrain.near); terrain.nearBandStep(Infinity); } // evicted/never begun: sync fallback
-      if (!this._bandJob || this._bandJob.phase < 4) this._bandJobStep(Infinity); // sync path (ensureBandFor / band:late)
+      if (!this._bandJob || this._bandJob.phase < BandBakeJob.DONE) this._bandJobStep(Infinity); // sync path (ensureBandFor / band:late)
       j = this._bandJob;
     }
     const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -1360,7 +1373,12 @@ export class World {
       this._setCollider('scatter:trunks', hit ? hit.trunks : j.trunks);
       this._setCollider('scatter:detail', hit ? hit.detailCol : j.detailCol);
     }
-    if (!hit) { bundle = { key, zone: to, near: terrain.near, scatter: j.scatter, detail: j.detailSet, trunks: j.trunks, detailCol: j.detailCol, classMap: null, bytes: 0, pinned: false, lastUse: 0 }; this._cachePut(bundle); }
+    if (!hit) { bundle = { key, zone: to, near: terrain.near, scatter: j.scatter, detail: j.detailSet, trunks: j.trunks, detailCol: j.detailCol, nav: j.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 }; this._cachePut(bundle); }
+    if (this.navTiles) { // WM-03: nav tile swaps with the band (pointer flip; a bundle without one = legacy/cached before setNavTiles -> built once)
+      let nv = src.nav;
+      if (!nv) { nv = buildNavTile(this, terrain.near); src.nav = nv; if (bundle) bundle.nav = nv; }
+      this.nav = nv;
+    }
     let snapped = 0;
     for (const g of this._groundSnap) {
       const e = this._entities.get(g.id);
@@ -1371,7 +1389,7 @@ export class World {
     if (snapped) { this.rebuildPropColliders(); this.renderVersion++; }
     this.lastSwapMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
     if (this.events) {
-      const ev = this._evBand; ev.from = from; ev.to = z.id; // OB109-B2: preallocated payload (consumers must not keep it)
+      const ev = this._evBand; ev.from = from; ev.to = z.id; ev.nav = this.nav; // OB109-B2: preallocated payload (consumers must not keep it)
       this.events.emit('world:band', ev);
       if (late) this.events.emit('band:late', ev);
       this.events.emit('world:scatter', this._evScatter || (this._evScatter = { world: this }));
@@ -1437,7 +1455,7 @@ export class World {
     }
     const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
     let ready = terrain.nearBandStep(msBudget);
-    if (ready && !(this._bandJob && this._bandJob.phase >= 4)) { // scatter + colliders for the pending near, in the leftover budget
+    if (ready && !(this._bandJob && this._bandJob.phase >= BandBakeJob.DONE)) { // scatter + colliders for the pending near, in the leftover budget
       const left = msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
       ready = this._bandJobStep(left > 0 ? left : 0);
     } else if (ready) ready = true;
@@ -1464,7 +1482,7 @@ export class World {
     }
     const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
     let ready = terrain.nearBandStep(msBudget);
-    if (ready && !(this._bandJob && this._bandJob.phase >= 4)) {
+    if (ready && !(this._bandJob && this._bandJob.phase >= BandBakeJob.DONE)) {
       const left = msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
       ready = this._bandJobStep(left > 0 ? left : 0);
     }
