@@ -31,6 +31,7 @@ export function ensureGoblinCamps(world, defs, terrain) {
   let n = 0;
   for (const c of defs) {
     for (const m of c.members) {
+      if (world.get && world.get(m.id)) continue; // WMP-09: a world restored from a save already holds the camp members - add only the missing ones
       const x = c.at[0] + m.at[0], y = c.at[1] + m.at[1];
       const z = terrain && terrain.groundAt ? terrain.groundAt(x, y) : 0;
       world.addEntity({
