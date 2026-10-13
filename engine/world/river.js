@@ -1,6 +1,8 @@
 // engine/world/river.js (OB-019 RIVER-01a, docs/architecture.md 38.45 (1)): the `river` water shape.
 // Pure: a polyline def is validated, then compiled at load into resampled SoA samples + a 16 m bucket grid (CSR);
 // `riverLocate` is the 0-alloc query (nearest segment of the cell's candidates). No rendering / physics here.
+import { WQ } from './waves.js';
+
 export const RIVER_MAX = 4;
 export const RIVER_DS = 2;        // resample spacing along the arc (m)
 export const RIVER_CELL = 16;     // bucket grid cell (m)
@@ -131,7 +133,7 @@ export function compileRiver(id, nd) {
   return {
     id, n, x: X, y: Y, z: Z, hw: HW, sp: SP, tx: TX, ty: TY, s: S, tau: TAU, length: L, feather, clip: nd.clip, draw: nd.draw,
     gx0, gy0, gw, gh, cellStart, segIdx, hmax, zmin, x0: x0 - hmax, y0: y0 - hmax, x1: x1 + hmax, y1: y1 + hmax,
-    loc: new Float64Array(10).fill(NaN), // Float64Array scratch: object double fields boxed (alloc) in V8
+    loc: new Float64Array(12).fill(NaN), // Float64Array scratch: object double fields boxed (alloc) in V8
   
   };
 }
@@ -141,8 +143,23 @@ export function compileRiver(id, nd) {
  * |lat| <= hw (the feather is render-only). Repeating the same (x, y) is a cached no-op. 0 alloc.
  */
 export function riverLocate(rv, x, y) {
+  // tiny wrapper (inlined by V8): the double query goes through the scratch, so the big body is called without boxed double args (0 alloc)
   const loc = rv.loc;
   if (x === loc[7] && y === loc[8]) return loc[9] === 1;
+  loc[10] = x; loc[11] = y;
+  return riverLocateBody(rv);
+}
+
+/** `riverLocate` for the query point in `WQ[0..1]` (no double args at all: used by the big zero-alloc query bodies). */
+export function riverLocateQ(rv) {
+  const loc = rv.loc, x = WQ[0], y = WQ[1];
+  if (x === loc[7] && y === loc[8]) return loc[9] === 1;
+  loc[10] = x; loc[11] = y;
+  return riverLocateBody(rv);
+}
+
+function riverLocateBody(rv) {
+  const loc = rv.loc, x = loc[10], y = loc[11];
   loc[7] = x; loc[8] = y; loc[9] = 0;
   const cx = Math.floor((x - rv.gx0) / RIVER_CELL), cy = Math.floor((y - rv.gy0) / RIVER_CELL);
   if (cx < 0 || cy < 0 || cx >= rv.gw || cy >= rv.gh) return false;
@@ -164,7 +181,7 @@ export function riverLocate(rv, x, y) {
   const hw = rv.hw[i] * u + rv.hw[i + 1] * bt;
   loc[L_S] = rv.s[i] * u + rv.s[i + 1] * bt; loc[L_LAT] = lat; loc[L_HW] = hw;
   loc[L_Z] = rv.z[i] * u + rv.z[i + 1] * bt; loc[L_V] = rv.sp[i] * u + rv.sp[i + 1] * bt;
-  const tx = rv.tx[i] * u + rv.tx[i + 1] * bt, ty = rv.ty[i] * u + rv.ty[i + 1] * bt, tl = Math.hypot(tx, ty) || 1;
+  const tx = rv.tx[i] * u + rv.tx[i + 1] * bt, ty = rv.ty[i] * u + rv.ty[i + 1] * bt, tl = Math.sqrt(tx * tx + ty * ty) || 1;
   loc[L_TX] = tx / tl; loc[L_TY] = ty / tl;
   const inside = Math.abs(lat) <= hw;
   loc[9] = inside ? 1 : 0;

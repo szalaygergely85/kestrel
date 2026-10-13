@@ -138,8 +138,6 @@ for (const [c, r] of [[160, 60], [240, 90], [400, 150], [480, 180], [40, 15], [3
     for (let i = 0; i < 10000; i++) view.draw(g, r, i * 0.016);
     grown = Math.min(grown, process.memoryUsage().heapUsed - before);
   }
-  // GATE-FLAKY-01: with gc exposed draw() really grows ~170 B/draw (was masked by scavenges); known finding, strict only under ALLOC_STRICT=1
-  if (process.env.ALLOC_STRICT || grown < 400000) assert.ok(grown < 400000, `heap grew ${grown}`);
-  else console.log(`WARN known alloc: dialogueView draw grew the heap ${grown} B over 10k draws (strict: ALLOC_STRICT=1)`);
+  assert.ok(grown < 400000, `heap grew ${grown}`);
 }
 console.log('dialogueView: ok');

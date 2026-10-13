@@ -27,9 +27,9 @@ import { pointBlocked, resolvePropPicks } from './interaction.js';
 import { createWind } from './wind.js';
 import { createClothSystem, collectClothDefs } from './cloths.js';
 import { createWater, collectWaterDefs, SEA_STATES } from './water.js';
-import { riverLocate, L_LAT, L_HW, L_TX, L_TY, L_V, L_Z } from './river.js';
+import { riverLocate, riverLocateQ, L_LAT, L_HW, L_TX, L_TY, L_V, L_Z } from './river.js';
 import { createWaterfalls, collectWaterfallDefs } from './waterfalls.js';
-import { waveHeight } from './waves.js';
+import { waveHeight, waveHeightQ, WQ } from './waves.js';
 import { PlacementGrid } from './placementGrid.js';
 import { editLayerFromJSON } from './terrainEdits.js';
 
@@ -1687,12 +1687,22 @@ export class World {
    * @returns {boolean}
    */
   waterAt(x, y, out) {
+    // tiny wrapper (inlined by V8): the double query goes through the WQ scratch, so no boxed double args reach the big body (0 alloc)
+    WQ[0] = x; WQ[1] = y;
+    return this._waterAtQ(out);
+  }
+
+  /** `waterAt` body; reads x, y from `WQ[0..1]`. */
+  _waterAtQ(out) {
+    const x = WQ[0], y = WQ[1];
     const wt = this.water;
-    const i = wt.find(x, y);
+    const i = wt.findQ();
     if (i < 0) return false;
-    const z = wt.zAt(i, x, y); // rect/circle: wt.z[i]; river: local z(s)
-    const h = waveHeight(wt, i, x, y, wt.tick);
-    const surfaceZ = z + h;
+    // rect/circle: wt.z[i]; river: local z(s). Inlined (no zAt call): a double returned from a non-inlined call is boxed (alloc)
+    let z;
+    if (wt.kind[i] === 3) { const rv = wt.rivers[wt.riv[i]]; riverLocateQ(rv); z = rv.loc[L_Z]; } else z = wt.z[i];
+    WQ[0] = x; WQ[1] = y; WQ[3] = wt.tick; waveHeightQ(wt, i);
+    const surfaceZ = z + WQ[2];
     const fz = this.physicsMode === 'mesh' ? this.supportAt(x, y, z + 0.01, false, null).floorH : this.floorAt(x, y);
     const d = fz === fz && fz !== null && fz > FLOOR_NONE ? surfaceZ - fz : 0; // NaN / null / FLOOR_NONE floor = depth 0
     out.surfaceZ = surfaceZ;
@@ -1711,10 +1721,16 @@ export class World {
    * @returns {boolean}
    */
   flowAt(x, y, out) {
-    const wt = this.water;
-    const i = wt.find(x, y);
+    WQ[0] = x; WQ[1] = y; // tiny wrapper (inlined by V8): double query via scratch, no boxed args (0 alloc)
+    return this._flowAtQ(out);
+  }
+
+  /** `flowAt` body; reads x, y from `WQ[0..1]`. */
+  _flowAtQ(out) {
+    const wt = this.water, x = WQ[0], y = WQ[1];
+    const i = wt.findQ();
     if (i < 0) { out[0] = 0; out[1] = 0; return false; }
-    wt.flowInto(i, x, y, out);
+    wt.flowIntoQ(i, out);
     return true;
   }
 

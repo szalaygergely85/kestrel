@@ -217,9 +217,20 @@ export function waveSampleInto(wt, r, x, y, tick, out) {
   return out;
 }
 
-/** Wave height only (no gradient) - the physics/`waterAt` fast path. Zero allocation. */
+/** Scratch for the allocation-free query path: [0]=x, [1]=y, [2]=result h, [3]=tick (V8 boxes double args/returns of non-inlined calls). */
+export const WQ = new Float64Array(4);
+
+/** Wave height only (no gradient) - the physics/`waterAt` fast path. Zero allocation when called via `waveHeightQ`. */
 export function waveHeight(wt, r, x, y, tick) {
-  const t = tick * STEP;
+  WQ[0] = x; WQ[1] = y; WQ[3] = tick;
+  waveHeightQ(wt, r);
+  return WQ[2];
+}
+
+/** `waveHeight` reading x, y, tick from `WQ[0,1,3]` and writing h to `WQ[2]`: no double args or return, so no boxing. */
+export function waveHeightQ(wt, r) {
+  const x = WQ[0], y = WQ[1];
+  const t = WQ[3] * STEP;
   const kbase = r * N * 4;
   const abase = r * N;
   let h = 0;
@@ -233,5 +244,5 @@ export function waveHeight(wt, r, x, y, tick) {
     const aw = w < 0 ? -w : w;
     h += A * 4 * w * (1 - aw);
   }
-  return h;
+  WQ[2] = h;
 }

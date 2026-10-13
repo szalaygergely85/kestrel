@@ -90,7 +90,10 @@ const fl = [0, 0];
   ok('collect: river defs normalised', defs.length === 2 && defs[0].river.path.length === 3 && defs[0].draw === true);
   const w = bare([curved]); const n = 100000;
   let h = 0;
-  const run = (k) => { for (let i = 0; i < k; i++) { if (w.waterAt((i * 7.3) % 130 - 5, (i * 3.1) % 40 - 8, out)) h++; w.flowAt((i * 7.3) % 130, (i * 3.1) % 40, fl); } };
+  // query points precomputed: a double `%` in the loop boxes its result (the probe would allocate itself)
+  const PX = new Float64Array(1000), PY = new Float64Array(1000);
+  for (let i = 0; i < 1000; i++) { PX[i] = (i * 7.3) % 130 - 5; PY[i] = (i * 3.1) % 40 - 8; }
+  const run = (k) => { for (let i = 0; i < k; i++) { const j = i % 1000; if (w.waterAt(PX[j], PY[j], out)) h++; w.flowAt(PX[j], PY[j], fl); } };
   run(20000);
   const t0 = process.hrtime.bigint(); run(n);
   const ms = Number(process.hrtime.bigint() - t0) / 1e6 / n;
@@ -102,9 +105,7 @@ const fl = [0, 0];
     let grown = Infinity;
     run(n); run(n); // warm-up past JIT tier-up (boxing there is not a per-query leak)
     for (let r = 0; r < 5; r++) { globalThis.gc(); globalThis.gc(); const m0 = process.memoryUsage().heapUsed; run(n); grown = Math.min(grown, process.memoryUsage().heapUsed - m0); }
-    // GATE-FLAKY-01: with gc exposed this really grows ~14 B/pair (waterAt/flowAt allocate); known finding, strict only under ALLOC_STRICT=1
-    if (process.env.ALLOC_STRICT || grown < 65536) ok('zero allocation: 100k river queries grow the heap < 64 KB', grown < 65536, `${grown} B`);
-    else console.log(`WARN known alloc: 100k river queries grew the heap ${grown} B (strict: ALLOC_STRICT=1)`);
+    ok('zero allocation: 100k river queries grow the heap < 64 KB', grown < 65536, `${grown} B`);
   }
 }
 console.log(`river.test: ${pass} passed, ${fail} failed`);
