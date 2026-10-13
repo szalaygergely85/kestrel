@@ -45,11 +45,14 @@ export function createOutwall({ world, questFlag }) {
       questFlag(n.metFlag); return true;
     },
     setHome(id, yawDeg) { const e = byId(id); if (e) e.home = yawDeg; },
+    /** LIFE-04: per-NPC yaw ownership. While `on` (villager walking / chatting) the life view writes yawDeg and step skips it. */
+    setOwned(id, on) { const e = byId(id); if (e) e.owned = !!on; },
     step(dt, px, py) {
       if (ow.paused) return;
       const max = MAX_DEG_S * dt;
       for (let i = 0; i < list.length; i++) {
-        const e = list[i], t = e.t, dx = px - t.x, dy = py - t.y, d2 = dx * dx + dy * dy, cur = t.yawDeg || 0;
+        const e = list[i]; if (e.owned) continue;
+        const t = e.t, dx = px - t.x, dy = py - t.y, d2 = dx * dx + dy * dy, cur = t.yawDeg || 0;
         const target = d2 <= FACE_M * FACE_M && d2 > 1e-6 ? yawFromDelta(dx, dy) : e.home;
         const err = wrap180(target - cur);
         t.yawDeg = wrap180(cur + (err > max ? max : err < -max ? -max : err));
