@@ -12,15 +12,20 @@
 // events   = optional bus; `life:npcHit {npc}` (LIFE-08 raids) makes that villager flee home and park for FLEE_STEPS
 // Bands (distance to the player): near < 60 m full 60 Hz; mid 60-150 m moves at 15 Hz (dt x4); far > 150 m: no walking, snaps to its spot.
 import { createSchedule, step as schedStep, current, snap as schedSnap } from './schedule.js';
+import { createAStar } from '../../../engine/index.js';
 import { createMover, setGoal, planFor, stepMover, snapMover, nudgeMover, WALK_SPEED } from './npcMover.js';
 
 export const MAX_VILLAGERS = 24;
 export const NEAR_R = 60, MID_R = 150;
 export const FLEE_SPEED = 3.4, FLEE_STEPS = 1200; // 20 s
+export const TILE_DORMANT_R = 200; // OUT-LIFE-TILE: same radius as beastSim
 export const BAND_NEAR = 0, BAND_MID = 1, BAND_FAR = 2;
 const DT = 1 / 60, FLEE_SCALE = FLEE_SPEED / WALK_SPEED;
 
-export function createVillagers({ life, nav, groundAt = null, hour = 7, dayIndex = 0, events = null, apply = null, isPaused = null, collide = null }) {
+const _astarCache = new WeakMap(); // one A* per nav tile grid (freed with the grid)
+const astarFor = (grid) => { let a = _astarCache.get(grid); if (!a) { a = createAStar(grid); _astarCache.set(grid, a); } return a; };
+
+export function createVillagers({ life, nav, tileNav = false, groundAt = null, hour = 7, dayIndex = 0, events = null, apply = null, isPaused = null, collide = null }) {
   const n = Math.min(life.npcs.length, MAX_VILLAGERS);
   const sched = createSchedule(life, hour, dayIndex);
   sched.n = n;
@@ -32,7 +37,8 @@ export function createVillagers({ life, nav, groundAt = null, hour = 7, dayIndex
   const idIndex = new Map();                 // load-time only
   const push = { x: 0, y: 0 };
   const stats = { astar: 0, maxPerStep: 0, steps: 0 };
-  let tick = 0;
+  let tick = 0, tileMode = !!tileNav;
+  const dormant = new Uint8Array(n);        // OUT-LIFE-TILE: home outside the live nav tile or > 200 m: frozen as-is, re-snapped on return
 
   const ground = (x, y) => (groundAt ? groundAt(x, y) : 0);
   function put(i, hidden) { // publish the mover state to the actor
@@ -82,6 +88,7 @@ export function createVillagers({ life, nav, groundAt = null, hour = 7, dayIndex
     }
     if (reqs > stats.maxPerStep) stats.maxPerStep = reqs;
     for (let i = 0; i < n; i++) {
+      if (dormant[i]) continue;
       const a = actors[i], m = movers[i];
       const dx = m.x - px, dy = m.y - py, d2 = dx * dx + dy * dy;
       const band = d2 < NEAR_R * NEAR_R ? BAND_NEAR : d2 < MID_R * MID_R ? BAND_MID : BAND_FAR;
@@ -113,7 +120,31 @@ export function createVillagers({ life, nav, groundAt = null, hour = 7, dayIndex
     }
   }
 
+  /** OUT-LIFE-TILE: the live nav tile swapped (`world:band` ev.nav = a NavGrid). Walkers re-plan on the new grid; dormancy re-evaluated. */
+  function rebindNav(grid, px, py) {
+    if (!grid || grid === nav.grid) return;
+    tileMode = true;
+    nav = { grid, astar: astarFor(grid) };
+    for (let i = 0; i < n; i++) {
+      const m = movers[i];
+      if (m.walking || m.pending) { m.walking = false; m.arrived = false; m.pending = true; if (!dormant[i]) enqueue(i); }
+    }
+    updateTileDormancy(px, py);
+  }
+  /** Dormant when the home is outside the live tile or > TILE_DORMANT_R from the player (~1 Hz). Waking re-snaps to the schedule spot. */
+  function updateTileDormancy(px, py) {
+    if (!tileMode) return;
+    const g = nav.grid, x1 = g.x0 + g.w * g.cell, y1 = g.y0 + g.h * g.cell, r2 = TILE_DORMANT_R * TILE_DORMANT_R;
+    for (let i = 0; i < n; i++) {
+      const h = life.npcs[i].home, dx = h[0] - px, dy = h[1] - py;
+      const out = h[0] < g.x0 || h[1] < g.y0 || h[0] >= x1 || h[1] >= y1 || dx * dx + dy * dy > r2 ? 1 : 0;
+      if (out === dormant[i]) continue;
+      dormant[i] = out;
+      if (!out) { last[i] = -2; snapTo(i); } // restored: stand on the current spot
+    }
+  }
+
   /** Load / teleport: reset the schedule from the clock and put everyone on their spot. */
   function snapAll(hr, day) { schedSnap(sched, hr, day); for (let i = 0; i < n; i++) { flee[i] = 0; snapTo(i); } }
-  return { n, actors, movers, sched, stats, step, snapAll, dispose() { if (unsub) unsub(); } };
+  return { n, actors, movers, sched, stats, dormant, step, snapAll, rebindNav, updateTileDormancy, dispose() { if (unsub) unsub(); } };
 }

@@ -58,12 +58,12 @@ const wrap180 = (d) => { d -= 360 * Math.round(d / 360); return d; };
  * the routine owns the yaw while walking / chatting, OUT-01 faces the player (or its home yaw) otherwise.
  * @returns {null | {step(dt,hour,px,py):void, draw(ui,t):void, talked(id):void, dispose():void, villagers:object, chat:object, barks:object}}
  */
-export function createOutwallLife({ world, life, nav, events, state, outwall, dialogue, barksData, style, hour, seed = 1 }) {
+export function createOutwallLife({ world, life, nav, events, state, outwall, dialogue, barksData, style, hour, seed = 1, tileNav = false }) {
   const lf = { ...life, npcs: life.npcs.filter((n) => world.get(n.id)) };
   if (!lf.npcs.length || !nav) return null;
   const ents = lf.npcs.map((n) => world.get(n.id));
   const out = {}, xs = new Float64Array(ents.length), ys = new Float64Array(ents.length), player = { x: 0, y: 0 };
-  let talkId = null, talking = null, lastHour = hour;
+  let talkId = null, talking = null, lastHour = hour, domT = 0;
   const idx = (id) => { for (let i = 0; i < lf.npcs.length; i++) if (lf.npcs[i].id === id) return i; return -1; };
   // LIFE-04-COLLIDE: mesh colliders only. Never world.ensureBandFor here (it bakes a terrain band synchronously, 260-1400 ms);
   // outside the resident band groundAt is the coarse height, good enough for a far, LOD-snapped villager.
@@ -95,11 +95,11 @@ export function createOutwallLife({ world, life, nav, events, state, outwall, di
     }
     if (a.hidden !== !!wasHidden || !a.hidden) parked(i, a.hidden);
   }
-  const v = createVillagers({ life: lf, nav, groundAt: (x, y) => world.terrain.groundAt(x, y), collide, hour, dayIndex: state[DAY_KEY] | 0, events, apply,
+  const v = createVillagers({ life: lf, nav, tileNav, groundAt: (x, y) => world.terrain.groundAt(x, y), collide, hour, dayIndex: state[DAY_KEY] | 0, events, apply,
     isPaused: (id) => id === talking || chat.stopped(idx(id)) });
   const barks = createBarks({ world, data: barksData, questFlag: () => {}, dialogue, style });
   const chat = createChat({ schedule: v.sched, x: xs, y: ys, player, barks, data: barksData, seed,
-    talkingToPlayer: (i) => lf.npcs[i].id === talking, canChat: (i) => !v.actors[i].hidden && v.actors[i].anim !== 'walk' && lf.npcs[i].id !== talking });
+    talkingToPlayer: (i) => lf.npcs[i].id === talking, canChat: (i) => !v.dormant[i] && !v.actors[i].hidden && v.actors[i].anim !== 'walk' && lf.npcs[i].id !== talking });
   v.snapAll(hour, state[DAY_KEY] | 0);
   const owned = new Uint8Array(ents.length);
   function face(i, dt) { // yaw: routine while walking, toward the chat partner at 240 deg/s, else OUT-01
@@ -114,12 +114,15 @@ export function createOutwallLife({ world, life, nav, events, state, outwall, di
   return {
     villagers: v, chat, barks,
     talked(id) { talkId = id; },
+    /** OUT-LIFE-TILE: call on `world:band` with ev.nav (NavGrid) and the player xy. */
+    rebindNav(grid, px, py) { v.rebindNav(grid, px, py); },
     step(dt, hr, px, py) {
       player.x = px; player.y = py;
       const dh = wrap180((hr - lastHour) * 15) / 15; lastHour = hr; // game hours; a clock jump (?time=, sleep) re-snaps everyone
       if (dh > 0.25 || dh < -0.25) v.snapAll(hr, state[DAY_KEY] | 0);
       const t = dialogue.open ? talkId : null;
       if (t !== talking) { talking = t; if (t && idx(t) >= 0) chat.interrupt(idx(t)); }
+      if (++domT >= 60) { domT = 0; v.updateTileDormancy(px, py); }
       v.step(hr, state[DAY_KEY] | 0, px, py);
       chat.step();
       for (let i = 0; i < ents.length; i++) face(i, dt);
