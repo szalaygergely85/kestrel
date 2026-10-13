@@ -656,3 +656,9 @@ Stills (AC3, not run): node tools/verify-secrets-outwall.mjs 9660  -> docs/test-
   Tests: errands3 41 pass; filter run 144/144 PASS; validate-content OK; prop-ground-lint 0; coplanar-lint exit 0. NEEDS WRITER: titles/objTexts/returnText placeholders (<= 38 chars), no lines. Not browser-checked (target placement / ground spot by eye).
 - TUFT-01a part 2 (JS twin, branch tuft-01a2, arch-review): tuftHit in render/carpet.js (TUFTS flag, cfg.tufts, 2 sheared planes + atlas, root cull, MASK-c kept), CARPET_DEFAULTS cellM 0.35 + tuftR, overworld_far cellM override removed. tests/cell mean 1.71 calm / 2.07 wind; WGSL twin test pinned to blades (tufts:false, cellM 0.1) until 01b; gpucompare carpetMeadow expected to differ until 01b (baseline untouched).
   Open for 01b/architect: g-cap decides by texel centre, so near hits are quantised to whole texels (~20 mm > 1.25 fp); a sub-texel cap needs a sign/offset bit in g.
+
+### OUT-02 Outwall idle routines (kestrel-3, branch out-02) - po-review
+- `game/js/quest/outwallRoutines.js` + `.test.js` (PASS, `--filter outwallRoutines`; `--scan` suggests free spots). Table ROUTINES: hesk, dorrin (char.kit), sorrel, pell, tam (mesh `NEEDS DESIGNER`, notes in `meshNote`).
+- API: `createRoutineNpc(id,x,y)`, `stepRoutine(npc, hour, dt)` -> `npc.out {x,y,pose idle|walk|work,stop}` (target only; caller moves, e.g. npcWalk / kinematic), `setTalking(npc,on)`. Hour = worldClock.clockHour (300 s per game hour).
+- Test: all stops outside colliders via `world.collideCircle` (2 stops nudged), 24 h loop visits every stop, talk freeze/resume, midnight window wrap.
+- NEEDS B1-main: spawn/wire hesk+dorrin (existing entities) and sorrel/pell/tam (after designer meshes + OUT-01): each fixed step feed npc.x/y from the entity, stepRoutine(npc, clockHour(state), dt), move toward out.x/out.y at ~1.6 m/s, anim from out.pose, setTalking on dialogue open/close.
