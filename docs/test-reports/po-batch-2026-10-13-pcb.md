@@ -94,3 +94,15 @@ e. R6a 30aaa681 - PO OK -> testing. Engine-internal, no owner test.
 f. streamRoute test fix 75abd72a - engine bug fix (test rule now matches placementGrid cutM/keepFar), PO skipped. Noted: 351553 misses were all beyond cutM, no real streaming bug. ARCH OK.
 
 Main-session summary of gates still owed: gpucompare (SWIM-04c underwaterLake + ceiling, WM-06 gridZone, WM-07), browser `?grid=1` pass (WM-04, WM-06 route-walk), bench-life --poses after the WM-07 merge.
+
+## PO batch 3 (2026-10-13c)
+
+Basis: queue rows in docs/pc-b-queue.md plus the architect section "R6 + cache + villagers (2026-10-13c)" (all ARCH OK). No lane entries for these IDs were found in docs/lanes/*.md, so ACs were checked against the queue rows and the verdict text only. Nothing was run.
+
+a. R6b 12d0c21f - PO OK -> testing. Engine-internal, no owner test. Off is byte-identical, band complementary to the dither, cards never cast, 0-alloc scratch. Optional nit: hoist cos/sin of `view*pi/4+yaw` per card in impDecodeTexel. Main-session to-do: confirm the decode uses `decodeImpNormal` byte order (R6a follow-up) and that the 38.60 item 2 text is updated.
+
+b. R6c part 1 3bda29e9 - PO OK -> testing (part 1 scope only). Engine-internal, no owner test. WGSL helpers mirror the twin, impBandBits equals LDT_ACTIVE/LDT_INVERT, JS wiring off unless a species opts in, rows behind `?imp=1`. Open to-dos: the queue ACs "passCull.test LOD-3 counts" and "gpucompare impMid + impBand" are NOT met yet and belong to part 2 (spec in the verdict, items a-c: WgCardPass, cull.wgsl band, atlas, vertex storage-limit guard). The probes are f64 JS translations, so real-GPU parity is proven only by the part 2 gpucompare. Do not close the story before part 2.
+
+c. WM-CACHE-01 eae685ac - PO OK -> testing. Farthest-centre eviction keeps pinned, current, pending and newest; regrow trims the grown bundle. Main-session to-do: re-run map-loop once (cache stays <= 32 MB, 0 misses). Owner walk-test: engine-internal, no owner test.
+
+d. OUT-LIFE-TILE 0cb383eb - PO OK -> testing, conditional on the main.js wiring (`tileNav: !!gridNav` + `world:band` rebind), which the main session added in the kestrel-1 commit after WM-05; the PO could not read that commit, so verify it is present. Browser-only to-dos: with `?grid=1`, villagers keep walking across a band swap and do not freeze; save/load round trip. Owner walk-test: with `?grid=1`, stand in Outwall and watch the villagers keep their routine for a minute. Then walk out beyond about 200 m and return; they resume where they should be.
