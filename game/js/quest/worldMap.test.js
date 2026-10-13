@@ -48,7 +48,7 @@ for (const [cols, rows] of PRESETS) {
   v.updatePose(1300, 1000, 180); ok('yaw 180 -> v', v.position.code === 118);
   v.updatePose(1300, 1000, 270); ok('yaw 270 -> <', v.position.code === 60);
   v.updatePose(1301, 1001, 0);
-  ok('old cell restored when arrow moves', true);
+  ok('old cell restored when arrow moves', v.art.codes[v.index(1300, 1000)] !== 118 && v.art.codes[v.index(1300, 1000)] !== 60 && v.art.codes[v.index(1301, 1001)] === 94);
   ok('off-map pose hides the arrow', v.updatePose(-900, 0, 0) === false && v.position.x === -1);
   v.setTravelPoints([{ id: 'ws_a', name: 'Ford', x: 1000, y: 1050, order: 1 }, { id: 'ws_b', name: 'Bend', x: 1200, y: 1050, order: 2 }]);
   v.setChartPieces();

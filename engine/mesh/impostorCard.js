@@ -65,6 +65,7 @@ export function impTexelOffset(imp, view, mip, u, v) {
 }
 
 const _n = new Float64Array(3);
+let _rView = NaN, _rYaw = NaN, _rC = 1, _rS = 0;
 /**
  * Rules 6 + 7 for one texel. out = {covered, mat, o, nx, ny, nz}: o = depth offset in metres (unscaled), (nx,ny,nz) = WORLD normal.
  * @returns {boolean} covered
@@ -76,7 +77,8 @@ export function impDecodeTexel(imp, view, mip, u, v, yaw, out) {
   const q = b[o + 4] > 127 ? b[o + 4] - 256 : b[o + 4];
   out.o = q / 127 * imp.radius;
   decodeImpNormal(b, o, _n);
-  const th = view * QUARTER_PI + yaw, c = Math.cos(th), s = Math.sin(th);
+  if (view !== _rView || yaw !== _rYaw) { const th = view * QUARTER_PI + yaw; _rView = view; _rYaw = yaw; _rC = Math.cos(th); _rS = Math.sin(th); } // once per card (view/yaw constant across its fragments)
+  const c = _rC, s = _rS;
   out.nx = _n[0] * c - _n[1] * s; out.ny = _n[0] * s + _n[1] * c; out.nz = _n[2];
   return true;
 }

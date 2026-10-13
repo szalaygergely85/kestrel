@@ -20,6 +20,7 @@ export const MAP_LOOP = [
  *  from the Thornwood side (Gate -> Thornwood -> High Pastures -> Thornwood): walking Gate -> High Pastures straight up the fells slope traps the walker (stuck at ~378,824). */
 export const mapLoopFull = () => {
   const back = MAP_LOOP.slice(0, -1).reverse(), hp = back.shift(), i = back.findIndex((w) => w.n.startsWith('Thornwood'));
+  if (i < 0) return MAP_LOOP.concat([hp], back); // no Thornwood stop: plain reversed back leg, no spur
   return MAP_LOOP.concat(back.slice(0, i + 1), [hp, back[i]], back.slice(i + 1));
 };
 /** The 6 save/load poses (stops flagged `pose`). */

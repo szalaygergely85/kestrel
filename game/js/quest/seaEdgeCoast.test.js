@@ -40,8 +40,16 @@ for (let k = 0; k < B.length; k++) {
 }
 assert.ok(seaEdgePts > 50, 'the polygon has a long sea side: ' + seaEdgePts);
 
-// 3) lakes / rivers / land never trigger (only the sea polygon is "wet")
-for (const L of [G.lake, G.lakes, G.river, G.rivers, G.marsh].flat().filter(Boolean)) if (typeof L.x === 'number' && typeof L.y === 'number') assert.equal(st(L.x, L.y).state, 0, 'water body ' + (L.id || L.name));
+// 3) lake / river / marsh never trigger (only the sea polygon is "wet"): lake centre + 8 rim points, river source + mouth-side points
+{
+  const Lk = G.lake, pts = [[Lk.x, Lk.y]];
+  for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4, ex = Lk.rx * Math.cos(a), ey = Lk.ry * Math.sin(a);
+    pts.push([Lk.x + ex * Math.cos(Lk.rot) - ey * Math.sin(Lk.rot), Lk.y + ex * Math.sin(Lk.rot) + ey * Math.cos(Lk.rot)]); }
+  pts.push([G.river.source.x, G.river.source.y], [G.river.mouth.x, G.river.mouth.y]);
+  if (G.marsh && typeof G.marsh.x === 'number') pts.push([G.marsh.x, G.marsh.y]);
+  assert.ok(pts.length >= 11, 'lake/river sample points: ' + pts.length);
+  for (const [x, y] of pts) assert.equal(st(x, y).state, 0, `water body point (${x | 0},${y | 0})`);
+}
 for (let y = 100; y < 1400; y += 90) for (let x = 40; x < 1880; x += 90) assert.equal(st(x, y).state, 0, `inland ${x},${y}`);
 
 // 4) Strand unchanged: beach-only shore gives the identical result on the old fixture line
