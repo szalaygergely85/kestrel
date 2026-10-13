@@ -1175,3 +1175,7 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 ## D-074 - Model approvals 2026-10-13 (owner; recorded by the PC-B main session)
 - **Approved:** sea monster (voxel_seamonster.js), goblin + goblinTorch + goblinSpear (voxel_goblin.js), wolf, black bear, Skip (otter), Crag (goat), Stilt (heron), Slate (tortoise).
 - **Human characters (char.kit / chargen: Hesk, Dorrin, the player body):** owner "I don't like the character, but use them as placeholder" -> keep them in the game as placeholders; a new human character look is open work (owner to say what is wrong / give a reference before a designer pass; OB-083 v8b history).
+
+## D-075 - Performance plan + 'ultra' = RTX only (owner, 2026-10-13; recorded by the PC-B main session)
+- Owner approved the perf/environment plan docs/proposals/perf-environment-2026-10-13.md, top 5 **in that order**, after the OB-109 loading-bar pre-bake: (1) R1 measure rays 1/2/4 at 480x180 on the Intel iGPU (tools/bench-presets.mjs); (2) G1 grass carpet ON per quality preset (finish TUFT-PERF / OB-103b); (3) R2+R4+P4 per-species lodCells / lodScale / shadow-caster distances / detail maxDistM (owner look on the LOD switch); (4) G2+P3 far grass/field glyph tier on the terrain shade; (5) R3 HZB occlusion gate, then R6 tree card impostors (D-039-level, both twins).
+- **'ultra' means RTX only:** ultra keeps rays 4; on the integrated-GPU laptop the player picks a lower preset (high etc.). Presets are NOT auto-tiered by GPU.
