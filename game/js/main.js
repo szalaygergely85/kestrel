@@ -140,6 +140,7 @@ import { createWadeFx } from './quest/sim/wadeFx.js'; // US-055a
 import { createSwimWire } from './quest/swimWire.js'; // SWIM-03c (38.54)
 import { swimUpOf, jumpOf } from './quest/swimInput.js'; // SWIM-04d
 import { createShore } from './quest/seaEdge.js'; // SWIM-HOOKS-01
+import { createSafeSpots } from './quest/sim/safeSpots.js'; // OB-140
 import { createWading } from './quest/sim/wading.js'; // RIVER-04 (38.45 (3)): river wading around the player's integrate
 import { BOW_CFG } from './quest/bowConfig.js'; // EQ-09
 import { createQuickbar, ensureQuickbar, autoFill, assign as qbAssign, clearSlot as qbClear, syncHandSlots, HAND_SLOTS } from './quest/sim/quickbar.js'; // EQ-12 + QB-6
@@ -1182,6 +1183,8 @@ async function runGame(mode, cinematic = null) {
   let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
   let wetStones = null; // QL-19: rebuilt on every 'world:loaded'
   let swimWire = null; // SWIM-03c: water feed + gear gate, rebuilt on every 'world:loaded'
+  const safeWa = { surfaceZ: 0, flatZ: 0, depth: 0, region: '', index: -1, look: 0 };
+  const safeSpots = createSafeSpots(); // OB-140: last safe grounded spots for pause-menu Unstuck
   let wading = null; // RIVER-04: rebuilt on every 'world:loaded' (beasts keep their own nav block, depth >= 0.6: not wired here)
   let equipPlay = null, shieldSim = null, arrowSim = null; // EQ-07/09: rebuilt on every 'world:loaded'
   let quickbar = null, qbView = null, qbTick = 0, qbBlocked = false; // EQ-12: sim rebuilt per world, view per page
@@ -1332,11 +1335,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   // `quest.wakeT` in their initial state (world_m1 - `?level=<name>` adhoc
   // worlds have `state: {}` and skip it, unaffected).
   // WS1-07b: map travel. Callbacks read the live per-world closures; no world state is kept here.
-  travel = createTravel({
-    canTravel: () => !!(vitals && !vitals.dead && !wakeOut.inputLocked && !(dialogueCtl && dialogueCtl.open) && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen()),
-    anchorOf: (id) => (waystoneWire && waystoneWire.sim ? waystoneWire.sim.anchor(id) : null),
-    playerPos: () => playerHandle.data.transform,
-    teleport: (pose) => {
+  const placePlayer = (pose) => { // shared by map travel and OB-140 Unstuck
       const t = playerHandle.data.transform, b = playerHandle.data.components.body;
       t.x = pose.x; t.y = pose.y; t.z = pose.z; t.yawDeg = pose.yawDeg; // anchor = a known-safe spot (the pose at the touch)
       if (b) { b.vx = 0; b.vy = 0; b.vz = 0; b.fallDistance = 0; }
@@ -1346,7 +1345,12 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (targeting) targeting.clear();
       if (look) { look.clearLock(); look.yawDeg = t.yawDeg; look.pitchDeg = t.pitchDeg; }
       if (vitals) vitals.clearSafe();
-    },
+  };
+  travel = createTravel({
+    canTravel: () => !!(vitals && !vitals.dead && !wakeOut.inputLocked && !(dialogueCtl && dialogueCtl.open) && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen()),
+    anchorOf: (id) => (waystoneWire && waystoneWire.sim ? waystoneWire.sim.anchor(id) : null),
+    playerPos: () => playerHandle.data.transform,
+    teleport: placePlayer,
     bandReady: () => bandReady(engine.world), // MAP-13: WS2-05: fade-in waits for the band (ensureBandFor is synchronous, so true at once)
     arrive: (id, pose) => { if (waystoneWire && waystoneWire.sim) waystoneWire.sim.touch(id, pose); }, // respawn point = target (heal + save)
   });
@@ -1554,6 +1558,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // EQ-07/09 (38.41): shield sim + arrow sim + the routing glue; shield/bow items get no-op sims so the router arms them (RMB -> left hand, LMB -> right hand)
       shieldSim = createShieldSim();
       arrowSim = createArrowSim(world, engine.events, BOW_CFG, fbTargets, wadeArrowHit);
+      safeSpots.reset();
       wading = createWading(world);
       swimWire = createSwimWire(world); // SWIM-03c: needs world.waterAt / flowAt
       wetStones = createWetStones(worldDef.structures); // QL-19
@@ -1861,6 +1866,13 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       onResume: () => { if (pauseResume.soft) pauseResume.resume(); else relockPointer(); }, // OB-072: soft pause = lock never lost
       onSettings: () => openSettings({ assets, engine, look }),
       onFullscreen: toggleFullscreen, // OB-072
+      onUnstuck: isCaptureOrBench || params.get('capture') === '1' ? null : () => { // OB-140: newest safe spot >= 3 m away (always allowed, also in combat)
+        const t = playerHandle.data.transform, p = safeSpots.pick(t.x, t.y, t.z);
+        if (!p) return false;
+        placePlayer({ x: p.x, y: p.y, z: p.z, yawDeg: p.yawDeg });
+        if (toasts) toasts.say('Moved to safe ground.', [226, 214, 176]);
+        return true;
+      },
       onSave: () => !!(saveRelay && saveRelay.enabled && gameHooks.ctx.world && (gameHooks.ctx.requestSave(), saveRelay.lastResult && saveRelay.lastResult.op === 'save' && saveRelay.lastResult.ok)), // same path as the waystone save
       onLoad: (slot) => {
         if (!saveRelay) return;
@@ -2078,6 +2090,12 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       }
       if (swimWire) swimWire.before(playerHandle.data); // SWIM-03c: water -> body fields + current, after wading.before (which resets speedScale from `other`)
       integrate(playerHandle.data, dt, controls, engine.world, engine.physics);
+      { // OB-140: sample a safe spot (grounded, alive, not swimming / deep water)
+        const sb = playerHandle.data.components.body, st = playerHandle.data.transform;
+        let dry = !!sb && !sb.swimming;
+        if (dry && typeof engine.world.waterAt === 'function' && engine.world.waterAt(st.x, st.y, safeWa) && safeWa.depth > 0.6) dry = false;
+        safeSpots.step(dt, st.x, st.y, st.z, st.yawDeg, dry && sb.grounded && !(vitals && vitals.dead));
+      }
       if (swimWire) swimWire.afterStep(playerHandle.data, fb ? fb.timeSec : 0); // SWIM-HOOKS-01: stamina/drown + sea monster
       wadeFx.step(playerHandle.data, fb ? fb.timeSec : 0); // deep water (> 1.0 m) is a wall (D-064)
       // CLOTH-1b3/1b5 (33.5): the player capsule pushes cloth; sleep-by-distance reads the eye (presentation-only,

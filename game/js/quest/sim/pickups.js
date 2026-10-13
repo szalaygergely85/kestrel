@@ -66,16 +66,30 @@ export function spawnDrop(world, kind, x, y, z) {
     // which writes `transform.z` every render frame for presentation only) can never feed back into the sim's
     // own collect-distance check below - the sim always measures from the drop point, not the bobbing sprite.
     pickup: { kind, amount: PICKUP_AMOUNT, life: PICKUP_LIFE, baseZ: z },
-    sprite: { model: kind === 'mp' ? 'pickupMp' : 'pickupHp', anim: 'idle', frame: 0 },
+    voxel: { model: pickupModel(kind === 'mp' ? 'potion.mp' : 'potion.hp'), anim: 'idle', loop: true },
   }, id);
   return id;
+}
+
+/** OB-132: voxel model for a drop (design/models/pickups_voxel.js). Unknown item -> pickup.gear.body + one warning. */
+let warnedModel = false;
+function pickupModel(itemId, slot) {
+  const pv = globalThis.ASSETS && globalThis.ASSETS.pickupsVoxel;
+  const m = pv && pv.pickupModelFor(itemId, slot);
+  if (m) return m;
+  if (!warnedModel) { warnedModel = true; console.warn('[pickup] no voxel model for', itemId, '- using pickup.gear.body'); }
+  return 'pickup.gear.body';
+}
+function itemSlot(itemId) {
+  const items = globalThis.ASSETS && globalThis.ASSETS.items;
+  const def = items && items.defs && items.defs[itemId];
+  return def && def.equip && def.equip.slot;
 }
 
 /**
  * EQ-10: a gear drop = a world pickup of kind 'item' (`itemId`, amount 1). Same slot table, life and bob as the
  * orbs. Sprite 'pickupGear' (design/models/m3_props.js; clips idle = worn, sturdy, fine).
  */
-const TIER_ANIM = { worn: 'idle', sturdy: 'sturdy', fine: 'fine' };
 export function spawnItemDrop(world, itemId, x, y, z, tier = 'worn') {
   let id;
   do { id = `pickup_${nextId++}`; } while (world.entity(id));
@@ -83,7 +97,7 @@ export function spawnItemDrop(world, itemId, x, y, z, tier = 'worn') {
   slots[slot] = id;
   world.spawn('pickup', { x, y, z, yawDeg: 0, pitchDeg: 0 }, {
     pickup: { kind: 'item', itemId, amount: 1, life: PICKUP_LIFE, baseZ: z },
-    sprite: { model: 'pickupGear', anim: TIER_ANIM[tier] || 'idle', frame: 0 },
+    voxel: { model: pickupModel(itemId, itemSlot(itemId)), anim: 'idle', loop: true },
   }, id);
   return id;
 }

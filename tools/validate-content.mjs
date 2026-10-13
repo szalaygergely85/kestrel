@@ -78,6 +78,7 @@ const CLASSIC_SCRIPTS = [
   '../design/models/title.js',
   '../design/models/menu_ui.js',
   '../design/models/lantern.js',
+  '../design/models/pickups_voxel.js',
   '../design/models/brazier.js',
   '../design/models/lever.js',
   '../design/models/boulder.js',

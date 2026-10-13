@@ -60,7 +60,7 @@ const e2 = createErrands({ getBook: () => book, questFlag() {}, inspect() {}, no
   for (const [k, t] of Object.entries(texts.texts)) for (const id of t.entities || []) {
     const e = byId.get(id); assert.ok(e, k + ": entity missing in world_m1: " + id);
     const c = e.components || {}; const m = (c.sprite || c.voxel || {}).model;
-    if (id.endsWith("Lamp") || /Lampd$/.test(id)) { assert.ok(c.sprite && !c.voxel && m === "floorLantern", id + ": floorLantern is sprite-only, use components.sprite"); }
+    if (id.endsWith("Lamp") || /Lampd$/.test(id)) { assert.ok(c.voxel && !c.sprite && m === "floorLanternVox", id + ": OB-132 lamps are voxel floorLanternVox"); }
   }
 }
 console.log('errandsInspect.test.js: OK');

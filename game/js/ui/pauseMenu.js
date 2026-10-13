@@ -13,7 +13,10 @@ const IDS = ['resume', 'settings', 'fullscreen', 'save', 'load', 'menu'];
  * @param {{adapter:any, style?:any, onResume:()=>void, onSettings:()=>void, onSave:()=>boolean, onLoad:(slot:number,save:any)=>void,
  *          onMainMenu:()=>void, isDirty?:()=>boolean}} o
  */
-export function createPauseMenu({ adapter, style = null, onResume, onSettings, onFullscreen = () => {}, onSave, onLoad, onMainMenu, isDirty = () => false }) {
+export function createPauseMenu({ adapter, style = null, onResume, onSettings, onFullscreen = () => {}, onUnstuck = null, onSave, onLoad, onMainMenu, isDirty = () => false }) {
+  // OB-140: the Unstuck row exists only when main.js wires it (hidden in capture/bench)
+  const items = onUnstuck ? [...PAUSE_ITEMS.slice(0, 5), 'Unstuck', PAUSE_ITEMS[5]] : PAUSE_ITEMS, ids = onUnstuck ? [...IDS.slice(0, 5), 'unstuck', IDS[5]] : IDS;
+  const MENU_IDX = items.length - 1, LOAD_IDX = items.length - 2;
   const colour = key => (style && (style.hex[key] || style.bg[key])) || TEXT;
   const fg = style ? colour(style.row.normal.fg) : TEXT, bg = style ? style.bg.plate : PLATE;
   const heading = 'PAUSED';
@@ -28,7 +31,7 @@ export function createPauseMenu({ adapter, style = null, onResume, onSettings, o
     else if (mode === 'load') {
       rows = slots.map(s => ({ id: 'slot', slot: s.slot, text: s.label, y: 7 + s.slot * 2, enabled: !!(s.ok && s.meta) }));
       rows.push({ id: 'back', text: 'Back', y: 14, enabled: true });
-    } else rows = PAUSE_ITEMS.map((text, i) => ({ id: IDS[i], text, y: 7 + i * 2, enabled: true }));
+    } else rows = items.map((text, i) => ({ id: ids[i], text, y: 7 + i * 2, enabled: true }));
     for (const r of rows) r.display = (r.text + (r.enabled ? '' : ' (empty)')).slice(0, bounds.w - 6);
     selected = Math.min(selected, rows.length - 1);
   }
@@ -52,23 +55,24 @@ export function createPauseMenu({ adapter, style = null, onResume, onSettings, o
       case 'resume': onResume(); break;
       case 'settings': onSettings(); break;
       case 'fullscreen': onFullscreen(); break;
+      case 'unstuck': { const ok = onUnstuck(); message = ok ? 'Moved to safe ground.' : 'No safe spot yet.'; error = !ok; break; }
       case 'save': { const ok = onSave(); message = ok ? 'Saved.' : 'Could not save.'; error = !ok; break; }
       case 'load': refreshSlots(); go('load', Math.max(0, slots.findIndex(s => s.ok && s.meta))); break;
       case 'menu': if (isDirty()) go('confirm'); else onMainMenu(); break;
-      case 'back': go('main', 4); break;
+      case 'back': go('main', LOAD_IDX); break;
       case 'slot':
         try {
           const r = adapter.readSlot(row.slot);
           if (r.ok && r.save) onLoad(row.slot, r.save); else { message = 'Could not read slot.'; error = true; }
         } catch (e) { message = 'Could not read slot.'; error = true; }
         break;
-      case 'yes': { const ok = onSave(); if (ok) onMainMenu(); else { message = 'Could not save.'; error = true; go('main', 5); } break; }
+      case 'yes': { const ok = onSave(); if (ok) onMainMenu(); else { message = 'Could not save.'; error = true; go('main', MENU_IDX); } break; }
       case 'no': onMainMenu(); break;
     }
     return true;
   }
   function handleKey(code) {
-    if (code === 'Escape') { if (mode === 'main') return false; message = ''; go('main', mode === 'load' ? 4 : 5); return true; }
+    if (code === 'Escape') { if (mode === 'main') return false; message = ''; go('main', mode === 'load' ? LOAD_IDX : MENU_IDX); return true; }
     if (code === 'Enter' || code === 'Space') return activate();
     const d = code === 'ArrowUp' || code === 'KeyW' ? -1 : code === 'ArrowDown' || code === 'KeyS' ? 1 : 0;
     if (!d) return false;
@@ -117,8 +121,8 @@ export function createPauseMenu({ adapter, style = null, onResume, onSettings, o
       }
     }
     if (message) {
-      drawText(ui, bounds.x + 4, bounds.y + 19, message, style ? colour(error ? style.message.error : style.message.info) : fg, bg);
-      if (style) ui.setCell(bounds.x + 2, bounds.y + 19, '>', colour(style.message.prefixFg), bg);
+      drawText(ui, bounds.x + 4, bounds.y + 20, message, style ? colour(error ? style.message.error : style.message.info) : fg, bg);
+      if (style) ui.setCell(bounds.x + 2, bounds.y + 20, '>', colour(style.message.prefixFg), bg);
     }
     const hx = bounds.x + Math.floor((bounds.w - hints.length) / 2);
     drawText(ui, hx, bounds.y + 21, hints, style ? colour(style.keyHints.fg) : fg, bg);
