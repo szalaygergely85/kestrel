@@ -729,6 +729,18 @@ function buildCompareRuns(ctx) {
       real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30,
       before: () => engine.setWorld(detailWorld) });
   }
+  // ENV-01d (38.62): decorGpu rows. Existing rows above stay decor=cpu (world.decorGpu undefined = no mask, identical bytes). These two rows share a world that sets the
+  // plain property `decorGpu` (ENV-01b); the GPU decor pass itself is fed by main.js / the renderer host (NEEDS B1-main). Main session runs them, thresholds unchanged.
+  if (ctx.renderer === 'mesh') {
+    const decorWorld = loadCompareWorld(assets.world('world_m1'), { detail: true, physics: 'mesh' });
+    decorWorld.decorGpu = true; decorWorld.terrain.bakeFarSync();
+    const decorLights = lightsEnabled ? buildLightSet(decorWorld, assets.palette) : null;
+    const dpose = (name, x, y, yawDeg, pitchDeg) => runs.push({ world: decorWorld, lights: decorLights, name,
+      cam: { x, y, z: decorWorld.terrain.groundAt(x, y) + 1.6, yawDeg, pitchDeg }, real: true, meshOnly: true, pitchedDefault: true, decorGpu: true, sun: SUN_135_30,
+      before: () => engine.setWorld(decorWorld) });
+    dpose('world_m1: decorMeadow (ENV-01d, decorGpu, flower meadow, eye 1.6 m: carpet hand-off)', 1474.5, 1025, 270, -15);
+    dpose('world_m1: decorFord (ENV-01d, decorGpu, ford reeds + pebbles)', 1045.96, 1066.69, 246, -11);
+  }
   // Every pose that does not ask for a projection is a shear (dda-vs-mesh parity) pose until ME-19: pin it.
   for (const r of runs) if (!r.pitchedDefault && !r.cam.projection) r.cam = { ...r.cam, projection: 'shear' };
 

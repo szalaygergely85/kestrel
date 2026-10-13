@@ -34,7 +34,7 @@ const OCC_VP = W('vp'), OCC_FWD = W('fwd'), OCC_ON = W('hzbOn'), OCC_W = W('hzbW
 const IMPM = W('impM'); // R6c part 2: impostor mesh-side band (0 = off)
 const SWAYPAD = W('swayPad'), SWAYPAD_S = WS('swayPad'); // S8-B2-05/06: metres added to R (SWAY_MAX while foliage sway is on, else 0)
 
-/** @typedef {{group: any, lod: number, mesh: any, instanceBuffer: any, argsBuffer: any, argsOffset: number, maxInstances: number, parts: any, active: boolean, range?: number}} CullEntry */
+/** @typedef {{group: any, lod: number, mesh: any, instanceBuffer: any, argsBuffer: any, argsOffset: number, maxInstances: number, parts: any, active: boolean, range?: number, instanceOffset?: number}} CullEntry */
 
 /** @param {any} device @param {boolean} [shadow] WG-4b shadow-caster kernel (cullShadow.wgsl.js) @returns {any} the compute pipeline (create once; `device.createComputePipeline` is WebGPU/mock only) */
 export function createCullPipeline(device, shadow = false) {
@@ -215,6 +215,61 @@ export class WgCullPass {
     }
     this.batches.set(g, b);
     return b;
+  }
+
+  /**
+   * ENV-01d (38.62): GPU-GENERATED draws (decor scatter). No rows upload, no cull dispatch (not queued): a compute pass elsewhere (passDecor) appends
+   * instance rows into ONE slab buffer and bumps `instanceCount` of the args slots. `run()` still zeroes every slot's instanceCount in its single args write
+   * (the CPU copy of word 1 is never non-zero), so generated slots are zeroed per frame exactly like cull entries. Drawn like cull entries (drawIndirect).
+   * Slot layout of the contiguous 2*n block: slot = species*2 + lod; rows of slot k = slab rows [k*cap, (k+1)*cap), so `cap` (the lattice size) can never overflow.
+   * @param {any} key identity of the batch (e.g. the decor layer object); persistent across frames, stamped here for the idle sweep
+   * @param {{meshes: [any, any|null], parts: any, group?: any}[]} specs one per species: LOD0/LOD1 draw meshes (null LOD1 = not drawn), parts (raster uniforms), group ({mesh} for the open-draw test)
+   * @param {number} cap rows per (species, LOD) slab
+   * @returns {CullEntry[]} entries[species*2 + lod]; `instanceBuffer` = the slab, `instanceOffset` = byte offset of that slot's rows (device.bind desc.instanceOffset)
+   */
+  addGenerated(key, specs, cap) {
+    if (this.shadow) return EMPTY; // decor never casts shadows
+    let b = this.batches.get(key);
+    if (!b) b = this._createGenerated(key, specs, cap);
+    else if (b.cap !== cap || b.n !== specs.length) throw new Error('WgCullPass.addGenerated: cap / species count changed for a live key (removeBatch first)');
+    b.lastFrame = this._frame;
+    let dirty = false;
+    for (let i = 0; i < b.n; i++) {
+      const m = specs[i].meshes;
+      if (b.m0[i] !== m[0] || b.m1[i] !== (m[1] || null)) { b.m0[i] = m[0]; b.m1[i] = m[1] || null; dirty = true; }
+      if (b.entries[i * 2].parts !== specs[i].parts) { b.entries[i * 2].parts = b.entries[i * 2 + 1].parts = specs[i].parts; b.entries[i * 2].group = b.entries[i * 2 + 1].group = specs[i].group || b.g; }
+    }
+    if (dirty) this._fillGenerated(b);
+    return b.entries;
+  }
+
+  /** First args word of a generated batch's slot 0 (the compute pass indexes `argsBase + slot * 5 + 1`) and its slab; null if unknown. @param {any} key */
+  generatedInfo(key) { const b = this.batches.get(key); return b && b.generated ? b : null; }
+
+  _createGenerated(key, specs, cap) {
+    if (this.batches.size >= this.maxBatches) throw new Error(`WgCullPass: over ${this.maxBatches} batches`);
+    const n = specs.length, d = this.device, g = { mesh: null, parts: null, generated: true };
+    const slot = this._takeBlock(n);
+    const slab = d.createBuffer({ usage: 'storage', bytes: n * 2 * cap * INSTANCE_BYTES });
+    const b = { g, generated: true, n, cap, slot, rc: n, argsBase: slot * ARGS_WORDS, slab, static: true, uploaded: 0, lastFrame: this._frame,
+      m0: new Array(n).fill(null), m1: new Array(n).fill(null), entries: /** @type {CullEntry[]} */ ([]), slot2: -1, occlBuf: null, dst: [slab, slab] };
+    for (let sp = 0; sp < n; sp++) {
+      for (let lod = 0; lod < 2; lod++) {
+        const k = sp * 2 + lod;
+        b.entries.push({ group: specs[sp].group || g, lod, range: 0, mesh: null, instanceBuffer: slab, instanceOffset: k * cap * INSTANCE_BYTES, argsBuffer: this.argsBuffer, argsOffset: (slot + k) * ARGS_BYTES, maxInstances: cap, parts: specs[sp].parts, active: false });
+      }
+    }
+    this.batches.set(key, b);
+    return b;
+  }
+
+  _fillGenerated(b) {
+    for (let k = 0; k < b.n * 2; k++) {
+      const mesh = (k & 1) ? b.m1[k >> 1] : b.m0[k >> 1], e = b.entries[k], o = (b.slot + k) * ARGS_WORDS;
+      const idx = mesh ? mesh.triCount * 3 : 0;
+      e.mesh = mesh; e.active = idx > 0;
+      this.argsCpu[o] = idx; this.argsCpu[o + 1] = 0; this.argsCpu[o + 2] = 0; this.argsCpu[o + 3] = 0; this.argsCpu[o + 4] = 0;
+    }
   }
 
   /** Takes a 2*rc args-slot block: LIFO free pair for rc 1 (38.10a), same-size-only free list for rc > 1 (ALPHA-01f d), else a fresh allocation. @param {number} rc */
@@ -435,6 +490,7 @@ export class WgCullPass {
   removeBatch(group) {
     const b = this.batches.get(group);
     if (!b) return;
+    if (b.generated) { this.device.dispose(b.slab); this._freeBlock(b.slot, b.rc); this.batches.delete(group); return; } // ENV-01d
     this.device.dispose(b.src); this.device.dispose(b.lodPrev); this.device.dispose(b.dst[0]); this.device.dispose(b.dst[1]);
     if (b.occlBuf) { // S8-B2-10c
       this.device.dispose(b.occlBuf); this.device.dispose(b.dst2[0]); this.device.dispose(b.dst2[1]);

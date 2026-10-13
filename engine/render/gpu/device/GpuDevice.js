@@ -90,13 +90,14 @@
  * Entry point default `cs_main` (`src.entry` overrides). WebGPU only.
  * @typedef {Object} ComputePipelineDesc
  * @property {{wgsl: string, entry?: string}} src
- * @property {{uniformBytes: number, buffers: ('read'|'rw')[]}} bindings
+ * @property {{uniformBytes: number, buffers: ('read'|'rw')[], textures?: ('float'|'uint')[]}} bindings - ENV-01d: textures bind after the buffers (binding = buffers.length + i)
  * @property {string} [label]
  */
 
 /**
  * @typedef {Object} ComputeBindDesc
  * @property {{slot: number, buffer: GpuHandle}[]} buffers - every slot of the pipeline; the bind group is cached per distinct handle set
+ * @property {{slot: number, texture: GpuHandle}[]} [textures] - ENV-01d: one per pipeline texture
  * @property {Float32Array|Int32Array|Uint32Array} [uniforms]
  * @property {number} [uniformOffsetBytes]
  */
