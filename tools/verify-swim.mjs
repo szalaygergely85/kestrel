@@ -50,6 +50,10 @@ try {
   for (let i = 0; i < 40; i++) { await pause(250); mon = await evaluate(cdp, '(()=>{const w=__debug.swimWire;const m=w&&w.monster;return m?{state:m.name,x:m.x,y:m.y,z:m.z,clip:m.clip,hidden:!!(m.ent&&m.ent.components&&m.ent.components.voxel&&m.ent.components.voxel.hidden)}:null;})()'); if (mon && mon.state === 'circle') { await shot('swim-monster-circle-' + backend); break; } }
   assert.ok(mon && mon.state === 'circle' && mon.clip === 'circle' && mon.hidden === false, 'sea monster circling in the warn band ' + JSON.stringify({ mon, errors }));
 
+  // STRAND-SIGN-01: still of the warning sign + net stakes from the beach (sign at 1384,1742; stakes ~60 m out, row x 1352..1416). Stand 7 m inland of the sign, face the sea.
+  await evaluate(cdp, '(()=>{const h=__debug.playerHandle,t=h.data.transform;t.x=1384;t.y=1735;t.z=-93;t.yaw=0;h.data.components.body.vz=0;})()');
+  await pause(1500); await shot('strand-sign-' + backend);
+
   console.log(JSON.stringify({ backend, braid: st, ring, mon, under: under || 'eye not under water in the sampled window (still not taken)' }));
   assert.deepEqual(errors, []);
   console.log('Swim: Braid swim + gear stowed' + (under ? ' + under-water still' : '') + ' PASS');

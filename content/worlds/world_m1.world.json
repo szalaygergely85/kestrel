@@ -2035,7 +2035,18 @@
     {"id": "ob91-025", "castShadow": false, "mesh": "quaternius/Bush_Common", "origin": {"x": 1193.98, "y": 1068.88, "z": -51.5}, "scale": 1.04, "yawDeg": 58},
     {"id": "ob91-026", "castShadow": false, "mesh": "quaternius/Bush_Common", "origin": {"x": 1229.89, "y": 1063.15, "z": -40.88}, "scale": 1.19, "yawDeg": 250},
     {"id": "ob91-027", "castShadow": false, "mesh": "quaternius/Bush_Common", "origin": {"x": 1189.03, "y": 1065.83, "z": -52.77}, "scale": 0.89, "yawDeg": 309},
-    {"id": "ob91-028", "castShadow": false, "mesh": "quaternius/Bush_Common", "origin": {"x": 1186.32, "y": 1067.63, "z": -53.69}, "scale": 1.02, "yawDeg": 137}
+    {"id": "ob91-028", "castShadow": false, "mesh": "quaternius/Bush_Common", "origin": {"x": 1186.32, "y": 1067.63, "z": -53.69}, "scale": 1.02, "yawDeg": 137},
+    {"id": "strandSignPost", "collide": false, "mesh": "quaternius/Prop_Support", "origin": {"x": 1384, "y": 1742.22, "z": -95.99}, "yawDeg": 270},
+    {"id": "strandSignPlank", "collide": false, "mesh": "quaternius/Prop_WoodenFence_Single", "origin": {"x": 1382.25, "y": 1742.22, "z": -94.84}, "scale": 0.55, "yawDeg": 270},
+    {"id": "strandStake01", "collide": false, "mesh": "quaternius/Prop_Support", "origin": {"x": 1352, "y": 1802.25, "z": -98.01}, "yawDeg": 0},
+    {"id": "strandStake02", "collide": false, "mesh": "quaternius/Prop_Support", "origin": {"x": 1360, "y": 1803.79, "z": -98.01}, "yawDeg": 47},
+    {"id": "strandStake03", "collide": false, "mesh": "quaternius/Prop_Support", "origin": {"x": 1368, "y": 1805.33, "z": -98.01}, "yawDeg": 94},
+    {"id": "strandStake04", "collide": false, "mesh": "quaternius/Prop_Support", "origin": {"x": 1376, "y": 1806.87, "z": -98.01}, "yawDeg": 141},
+    {"id": "strandStake05", "collide": false, "mesh": "quaternius/Prop_Support", "origin": {"x": 1384, "y": 1808.41, "z": -98.01}, "yawDeg": 188},
+    {"id": "strandStake06", "collide": false, "mesh": "quaternius/Prop_Support", "origin": {"x": 1392, "y": 1809.95, "z": -98.01}, "yawDeg": 235},
+    {"id": "strandStake07", "collide": false, "mesh": "quaternius/Prop_Support", "origin": {"x": 1400, "y": 1811.48, "z": -98.01}, "yawDeg": 282},
+    {"id": "strandStake08", "collide": false, "mesh": "quaternius/Prop_Support", "origin": {"x": 1408, "y": 1813.02, "z": -98.01}, "yawDeg": 329},
+    {"id": "strandStake09", "collide": false, "mesh": "quaternius/Prop_Support", "origin": {"x": 1416, "y": 1814.56, "z": -98.01}, "yawDeg": 16}
   ],
   "entities": [
     {"id": "player", "note": "pose = tower.start (x 17.0, y 9.5, facingDeg 330, pitchDeg 30, eyeH 0.3, lying) + origin -> world (1497.0, 1027.5)", "spawn": {"from": "start", "structure": "tower"}, "type": "player"},
@@ -2156,7 +2167,8 @@
     {"id": "barleySheaf1", "components": {"questPickup": {"item": "barleySheaf", "n": 1}, "sprite": {"anim": "idle", "frame": 0, "model": "pickupGear"}}, "note": "QL-22b sq.ow.barley sheaf at the barley gate (E Pick, stays taken)", "type": "prop", "x": 979, "y": 903.5, "z": "ground"},
     {"id": "owTarget1", "components": {"targetable": {"height": 1.6, "radius": 0.35}, "voxel": {"anim": "idle", "loop": true, "model": "practiceTarget"}}, "note": "QL-22b practice target 1 near owPathPost (sq.ow.range; flag owTarget1.hit)", "type": "prop", "x": 978, "y": 1028, "yawDeg": 20, "z": "ground"},
     {"id": "owTarget2", "components": {"targetable": {"height": 1.6, "radius": 0.35}, "voxel": {"anim": "idle", "loop": true, "model": "practiceTarget"}}, "note": "QL-22b practice target 2 near owPathPost (sq.ow.range; flag owTarget2.hit)", "type": "prop", "x": 985, "y": 1024, "yawDeg": 0, "z": "ground"},
-    {"id": "owTarget3", "components": {"targetable": {"height": 1.6, "radius": 0.35}, "voxel": {"anim": "idle", "loop": true, "model": "practiceTarget"}}, "note": "QL-22b practice target 3 near owPathPost (sq.ow.range; flag owTarget3.hit)", "type": "prop", "x": 992, "y": 1028, "yawDeg": 340, "z": "ground"}
+    {"id": "owTarget3", "components": {"targetable": {"height": 1.6, "radius": 0.35}, "voxel": {"anim": "idle", "loop": true, "model": "practiceTarget"}}, "note": "QL-22b practice target 3 near owPathPost (sq.ow.range; flag owTarget3.hit)", "type": "prop", "x": 992, "y": 1028, "yawDeg": 340, "z": "ground"},
+    {"id": "strandSign", "components": {"inspect": {"text": "note.strand.monster"}}, "note": "STRAND-SIGN-01 (D-070): Long Strand warning sign; stakes strandStake01.. stand at SEA_EDGE_CONFIG.warnM from the beach coast. Outside the walk bounds (beach y~1747, bounds end y~1110): reachable only once the bounds open.", "type": "prop", "x": 1384, "y": 1742.22, "z": "ground"}
   ],
   "horizon": [],
   "state": {
