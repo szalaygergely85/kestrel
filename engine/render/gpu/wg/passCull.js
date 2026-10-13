@@ -104,7 +104,7 @@ export class WgCullPass {
    * Shadow mode (WG-4b): planes = the sun-box planes, eye = camera eye (xy used), `castM` = band 1 radius (instCastM), `hystM` = band hysteresis;
    * the per-batch band-0 radius and group radius come with `add`.
    */
-  _sweepCb(b, g) { if (this._frame - b.lastFrame > CULL_IDLE_FRAMES) (this._stale || (this._stale = [])).push(g); }
+  _sweepCb(b, g) { if (g.removed === true || this._frame - b.lastFrame > CULL_IDLE_FRAMES) (this._stale || (this._stale = [])).push(g); }
 
   begin(f) {
     const fr = this.frame;

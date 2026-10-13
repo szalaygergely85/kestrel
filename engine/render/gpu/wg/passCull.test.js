@@ -212,6 +212,18 @@ const oneRangeMesh = { triCount: 4, bbox: mesh0.bbox, ranges: [{ start: 0, count
   assert.equal(cull.batches.has(g), false, 'idle sweep removes a batch after 601 idle frames');
   cull.dispose();
 }
+// ENV-01 gpucompare order bug: a group removed from InstanceGroups (g.removed) loses its batch at the NEXT begin(), not after 600 idle frames
+// (world swaps leaked batches until the args slots ran out and later groups silently took the non-cull path).
+{
+  const cull = new WgCullPass(d);
+  const ga = makeGroup(4, 0), gb = makeGroup(5, 0);
+  cull.begin({ planes: null }); cull.add(ga, [mesh0, null]); cull.add(gb, [mesh0, null]);
+  ga.removed = true;
+  cull.begin({ planes: null });
+  assert.equal(cull.batches.has(ga), false, 'removed group: batch freed at the next begin()');
+  assert.equal(cull.batches.has(gb), true, 'live group keeps its batch');
+  cull.dispose();
+}
 // releaseAll(): every batch is removed, slots are returned to the free list, no live buffer leaked.
 {
   const cull = new WgCullPass(d);

@@ -477,6 +477,7 @@ export class InstanceGroups {
   remove(g) {
     const i = this.groups.indexOf(g);
     if (i >= 0) this.groups.splice(i, 1);
+    g.removed = true; // ENV-01 gpucompare order bug: the GPU cull pass frees a removed group's batch at the next begin() (it used to keep it ~600 frames and exhaust the args slots)
     releaseGroupImpostor(g); // R6e: card bucket back to the pool (no-op for groups without an impostor)
   }
 
