@@ -69,14 +69,14 @@ export function ensureQuickbar(player, defs) {
   return c.quickbar;
 }
 
-/** Offers a not-yet-seen default hand item (the sword / shield found later in the story) once; it is worn when its hand is empty. */
+/** Offers a not-yet-seen default hand item once. OB-128: only the story sword is worn when its hand is empty (as autoEquipMain does); the shield (off hand) is NEVER auto-worn - the player equips it. */
 export function autoFill(player, defs) {
   const qb = ensureQuickbar(player, defs), c = player.components, seen = c.quickbarSeen;
   for (let i = 0; i < DEFAULT_HANDS.length; i++) {
     const id = DEFAULT_HANDS[i];
     if (seen[id] || !owns(player, id)) continue;
     seen[id] = 1;
-    if (defs && qb[i] === null && c.inventory && c.equipment) { equip(c.inventory, c.equipment, defs, id); syncHandSlots(player); }
+    if (id === 'sword' && defs && qb[i] === null && c.inventory && c.equipment) { equip(c.inventory, c.equipment, defs, id); syncHandSlots(player); }
   }
 }
 

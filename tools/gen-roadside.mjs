@@ -104,7 +104,7 @@ for (const [dx, dy, yw, dz, sc] of [[0, 0, 5, 0, 0.9], [1.0, 0.1, 340, 0, 0.8], 
 // 6. brass lamps on crate posts along the Bend (south verge); static floorLantern sprite on top, no light (one light per lamp is too dear)
 [[1280, 1052], [1246, 1053.5]].forEach(([x, y], i) => {
   const st = put('Prop_Crate', x, y, 15 + i * 40, { scale: 0.5, ext: 0.4 });
-  ents.push({ id: 'rsLamp' + (i + 1), type: 'prop', x, y, z: +(st.origin.z + 0.53 + 0.04).toFixed(2), components: { light: { preset: 'lanternHook', on: true, offset: { down: -0.3 } }, voxel: { anim: 'lit', loop: true, model: 'floorLantern' } }, note: 'M4 lived-in: brass lamp on a crate post at the Bend (gen-roadside.mjs); OB-031: lit with the existing lanternHook point light' });
+  ents.push({ id: 'rsLamp' + (i + 1), type: 'prop', x, y, z: +(st.origin.z + 0.53 + 0.04).toFixed(2), components: { light: { preset: 'lanternHook', on: true, offset: { down: -0.3 } }, sprite: { anim: 'lit', frame: 0, model: 'floorLantern' } }, note: 'M4 lived-in: brass lamp on a crate post at the Bend (gen-roadside.mjs); OB-031: lit with the existing lanternHook point light' });
   put('Rock_Medium_3', x + 1.6, y + 0.9, i * 90, { ext: 0.9 });
 });
 // 7. rotten jetty at the ford's east bank: broken planks running to the water's edge, two mooring bricks, a stuck log

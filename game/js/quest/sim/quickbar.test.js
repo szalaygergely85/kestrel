@@ -21,10 +21,13 @@ const mk = (pack) => { const p = { components: { health: { hp: 10, max: 30 } } }
   assert.deepEqual(ensureQuickbar(p, defs), ['sword', null, null, null, null, null]);
   assert.deepEqual(ensureQuickbar(p, defs), ['sword', null, null, null, null, null], 'idempotent');
   addItem(p.components.inventory, defs, 'shield', 1); autoFill(p, defs);
-  assert.deepEqual(p.components.quickbar, ['sword', 'shield', null, null, null, null], 'a later find is worn once (RMB)');
-  assert.equal(p.components.equipment.off, 'shield');
+  // OB-128: a shield that enters the pack is never worn by itself
+  assert.deepEqual(p.components.quickbar, ['sword', null, null, null, null, null]);
+  assert.equal(p.components.equipment.off, null); assert.equal(p.components.inventory.right, null);
+  assert.equal(countOf(p.components.inventory, 'shield'), 1, 'stays in the pack');
+  autoFill(p, defs); assert.equal(p.components.equipment.off, null, 'offered once, still not worn');
+  assert.equal(assign(p, defs, 1, 'shield'), true); assert.equal(p.components.equipment.off, 'shield', 'explicit assign wears it');
   assert.equal(clearSlot(p, 1, defs), true); assert.equal(p.components.equipment.off, null); assert.equal(countOf(p.components.inventory, 'shield'), 1, 'back in the pack');
-  autoFill(p, defs); assert.equal(p.components.quickbar[1], null, 'a cleared hand is not refilled');
   const q = JSON.parse(JSON.stringify(p.components)); assert.deepEqual(q.quickbar, p.components.quickbar, 'plain JSON (saved)');
 }
 // migration of an old 4-slot save: weapons -> LMB / RMB, the rest keep their digit
