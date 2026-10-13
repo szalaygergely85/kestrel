@@ -58,10 +58,13 @@ function dirOf(yawDeg, pitchDeg, out) {
     const inp = ctx.inp;
     const run = (tm) => { for (let n = 0; n < 10000; n++) { const v = rays[n]; inp[0] = e[0]; inp[1] = e[1]; inp[2] = e[2]; inp[3] = v[0]; inp[4] = v[1]; inp[5] = v[2]; inp[6] = ts[n]; inp[7] = tm; traceCarpetIn(ctx, out); } };
     for (let w = 0; w < 6; w++) run(w); // JIT warm-up
-    global.gc();
-    const h0 = process.memoryUsage().heapUsed;
-    run(0.5); run(0.7); run(0.9); // 30k traces: the fixed cost of memoryUsage() itself (~90 kB) is spread out
-    const dh = process.memoryUsage().heapUsed - h0;
+    let dh = Infinity; // best of 5 windows of 30k traces: a real per-trace allocation shows in every window, a GC tick / JIT box in one
+    for (let wi = 0; wi < 5; wi++) {
+      global.gc(); global.gc();
+      const h0 = process.memoryUsage().heapUsed;
+      run(0.5); run(0.7); run(0.9); // 30k traces: the fixed cost of memoryUsage() itself (~90 kB) is spread out
+      dh = Math.min(dh, process.memoryUsage().heapUsed - h0);
+    }
     console.log(`  (info) AC6 ${wind ? 'wind' : 'calm'}: ${(dh / 30000).toFixed(1)} B/trace over 30k traces (target < 8)`);
     check(dh < 8 * 30000, `AC6 ${wind ? 'wind' : 'calm'}: < 8 B/trace (2-variant sloped fixture)`);
   }

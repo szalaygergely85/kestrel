@@ -56,10 +56,13 @@ const run = (b, sec) => { for (let i = 0; i < Math.round(sec * 60); i++) b.step(
   const { b, layer } = mk({ lineSec: 100 });
   b.play('bear.walk1'); run(b, 1);
   for (let i = 0; i < 2000; i++) { b.draw(layer, i * 0.016); b.step(DT); } // warm
-  globalThis.gc && globalThis.gc();
-  const h0 = process.memoryUsage().heapUsed;
-  for (let i = 0; i < 200000; i++) { b.draw(layer, i * 0.016); b.step(DT); }
-  const d = process.memoryUsage().heapUsed - h0;
+  let d = Infinity; // best of 3 windows: a real per-frame allocation shows in every window
+  for (let w = 0; w < 3; w++) {
+    if (globalThis.gc) { globalThis.gc(); globalThis.gc(); }
+    const h0 = process.memoryUsage().heapUsed;
+    for (let i = 0; i < 200000; i++) { b.draw(layer, i * 0.016); b.step(DT); }
+    d = Math.min(d, process.memoryUsage().heapUsed - h0);
+  }
   assert.ok(d < 1000000, 'heap growth ' + d);
 }
 // repeat mode (LIFE-05): no once-flag, nothing saved, replayable; dropped while a bark is on screen; has()

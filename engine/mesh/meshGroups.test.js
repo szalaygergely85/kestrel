@@ -281,9 +281,9 @@ const place = (w, m, x, y, yaw = 0, over) => World.prototype.placeMesh.call(w, m
   const list = new DrawList(), cache = new MeshDrawCache(), groups = new MeshGroupSet();
   const frame = () => { list.begin(); addMeshStructuresBatched(list, w, cam, cache, idFor, 2000, groups, planes); list.cull(planes); };
   for (let i = 0; i < 2000; i++) frame();
-  global.gc(); const h0 = process.memoryUsage().heapUsed;
+  global.gc(); global.gc(); const h0 = process.memoryUsage().heapUsed;
   for (let i = 0; i < 1000; i++) frame();
-  global.gc(); const grew = process.memoryUsage().heapUsed - h0;
+  global.gc(); global.gc(); const grew = process.memoryUsage().heapUsed - h0;
   ok('scaled: 0 allocation over 1000 batched feeds', grew < 32 * 1024, `grew ${grew}`);
 }
 
@@ -345,9 +345,9 @@ const place = (w, m, x, y, yaw = 0, over) => World.prototype.placeMesh.call(w, m
   const list = new DrawList(), cache = new MeshDrawCache(), groups = new MeshGroupSet();
   const frame = () => { list.begin(); addMeshStructuresBatched(list, w, cam, cache, idFor, 2000, groups, planes); list.cull(planes); };
   for (let i = 0; i < 2000; i++) frame();
-  global.gc(); const h0 = process.memoryUsage().heapUsed;
+  global.gc(); global.gc(); const h0 = process.memoryUsage().heapUsed;
   for (let i = 0; i < 1000; i++) frame();
-  global.gc(); const grew = process.memoryUsage().heapUsed - h0;
+  global.gc(); global.gc(); const grew = process.memoryUsage().heapUsed - h0;
   ok('0 allocation over 1000 batched feeds', grew < 32 * 1024, `grew ${grew}`);
 }
 

@@ -1,7 +1,7 @@
 // MAP-01a (arch 38.42): geography layer composer. Empty list = today's bytes; keep rect is branched out; GeoFields SDF grids.
 // Run: node engine/world/geoLayers.test.js   (needs scratch copy of the pre-change recipe at $GEO_BASE, else skipped parts)
 import { createHash } from 'node:crypto';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -31,8 +31,9 @@ const bankRock = recipe.recipe.river.bankRock; delete recipe.recipe.river.bankRo
 const riverHalfW = recipe.recipe.river.halfWidth; recipe.recipe.river.halfWidth = 10;
 const h0 = { e: hashOf(east()), w: hashOf(west()), f: hashOf(far()) };
 // pre-change recipe = the file at git commit d3be9a62 (MAP-01a parent); GEO_BASE overrides with a file path
-let BASE = process.env.GEO_BASE;
-if (!BASE) { try { BASE = join(tmpdir(), 'geo_base_far.mjs'); writeFileSync(BASE, execSync('git show d3be9a62:design/levels/overworld_far.js', { maxBuffer: 1e8 })); } catch (e) { BASE = null; } }
+let BASE = process.env.GEO_BASE, TMP_BASE = null;
+process.on('exit', () => { if (TMP_BASE) { try { unlinkSync(TMP_BASE); } catch (e) {} } });
+if (!BASE) { try { BASE = join(tmpdir(), `geo_base_far_${process.pid}_${Math.random().toString(36).slice(2)}.mjs`); TMP_BASE = BASE; writeFileSync(BASE, execSync('git show d3be9a62:design/levels/overworld_far.js', { maxBuffer: 1e8 })); } catch (e) { BASE = null; } }
 if (BASE && existsSync(BASE)) {
   const keep = globalThis.ASSETS.levels.overworld_far; delete globalThis.ASSETS.levels.overworld_far;
   await import(pathToFileURL(BASE).href);
@@ -75,6 +76,7 @@ ok('validator: core overlapping keep throws', threw);
 threw = false; try { util.polygonSdf(new Array(33).fill([0, 0])); } catch (e) { threw = true; }
 ok('validator: polygon > 32 verts throws', threw);
 util.setGeoLayers(layers, { d: sd });
+if (global.gc) { global.gc(); global.gc(); } else console.log('SKIP gc before heap probe (no --expose-gc)');
 let s = 0; const heap0 = process.memoryUsage().heapUsed;
 for (let i = 0; i < 100000; i++) s += util.recipeHeight(2000 + (i % 400), 300 + (i % 700));
 const dHeap = process.memoryUsage().heapUsed - heap0;

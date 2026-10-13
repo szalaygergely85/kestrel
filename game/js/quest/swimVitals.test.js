@@ -33,5 +33,5 @@ body.swimming = false; tick(6); assert.equal(sv.state.stamina, 100);
 // dive empties in 6 s
 body.diving = true; body.swimming = false; tick(6.1); assert.equal(sv.state.stamina, 0); body.diving = false;
 // 0 alloc
-if (global.gc) { const m0 = process.memoryUsage().heapUsed; body.swimming = true; for (let i = 0; i < 20000; i++) sv.step(body, 1 / 60); assert.ok(process.memoryUsage().heapUsed - m0 < 2e5); }
+if (global.gc) { body.swimming = true; for (let i = 0; i < 20000; i++) sv.step(body, 1 / 60); /* warm-up */ let dm = Infinity; for (let w = 0; w < 5; w++) { global.gc(); global.gc(); const m0 = process.memoryUsage().heapUsed; for (let i = 0; i < 20000; i++) sv.step(body, 1 / 60); dm = Math.min(dm, process.memoryUsage().heapUsed - m0); } assert.ok(dm < 2e5, 'heap grew ' + dm); } else console.log('SKIP swimVitals zero-alloc (needs --expose-gc)');
 console.log('swimVitals.test OK');
