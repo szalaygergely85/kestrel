@@ -22,7 +22,7 @@ export class WgCardPass {
   constructor(device, cull) {
     this.device = device; this.cull = cull; this.on = false;
     this.species = new Map(); this.active = new Array(MAX_CARD_SPECIES).fill(null); this.nActive = 0;
-    this.atlas = null; this.atlasUsed = 0; this._frame = 0; this._stale = null; this._warned = false;
+    this.atlas = null; this.atlasUsed = 0; this.ranges = new Map(); this._frame = 0; this._stale = null; this._warned = false;
     this.cpipe = null; this.rpipe = null;
     this._free = new Int32Array(MAX_CARD_SPECIES); this._freeTop = 0;
     this._sweepFn = (sp, g) => { if (this._frame - sp.last > CARD_IDLE_FRAMES) (this._stale || (this._stale = [])).push(g); };
@@ -57,12 +57,11 @@ export class WgCardPass {
     const sp = { g, skip: false, last: this._frame, bytes: null, base: 0, baseBytes: 0, slot: -1, dst: null, ub: new ArrayBuffer(IMP_BLOCK.sizeBytes), uf: null, uu: null,
       cbind: null, sto: null, rbind: null };
     this.species.set(g, sp);
-    if (!n || n % 4 || this.atlasUsed + n > CARD_ATLAS_MAX_BYTES) { sp.skip = true; this._log('species skipped (atlas ' + (this.atlasUsed + n) + ' B > ' + CARD_ATLAS_MAX_BYTES + ' B, or bad size)'); return sp; }
+    if (!this._range(bytes)) { sp.skip = true; this._log('species skipped (atlas ' + (this.atlasUsed + n) + ' B > ' + CARD_ATLAS_MAX_BYTES + ' B, or bad size)'); return sp; }
     try {
       if (this._freeTop > 0) sp.slot = this._free[--this._freeTop]; else sp.slot = this.cull._allocSlots(1);
     } catch (e) { sp.skip = true; this._log('args slot capacity exceeded: species skipped'); return sp; }
     if (!this.atlas) this.atlas = this.device.createBuffer({ usage: 'storage', bytes: CARD_ATLAS_MAX_BYTES });
-    sp.baseBytes = this.atlasUsed; sp.base = this.atlasUsed >> 2; this.atlasUsed += n;
     this.cull.argsCpu[sp.slot * ARGS_WORDS] = 6; // vertexCount; instanceCount is zeroed by the existing per-frame args write
     sp.dst = this.device.createBuffer({ usage: 'storage', bytes: g.ib.capacity * INSTANCE_BYTES });
     const v = IMP_BLOCK.createViews(sp.ub); sp.uf = v.f32; sp.uu = v.u32;
@@ -73,7 +72,24 @@ export class WgCardPass {
     return sp;
   }
 
-  _upload(sp, imp) { this.device.writeBuffer(this.atlas, imp.bytes, sp.baseBytes, imp.bytes.byteLength); sp.bytes = imp.bytes; }
+  /** One atlas range per bake (keyed by the bytes object): a re-created group reuses it; a re-bake gets its own. null = bad size / over the cap. */
+  _range(bytes) {
+    let r = this.ranges.get(bytes);
+    if (r) return r;
+    const n = bytes ? bytes.byteLength : 0;
+    if (!n || n % 4 || this.atlasUsed + n > CARD_ATLAS_MAX_BYTES) return null;
+    r = { base: this.atlasUsed >> 2, baseBytes: this.atlasUsed, bytes: n, written: false };
+    this.atlasUsed += n; this.ranges.set(bytes, r);
+    return r;
+  }
+
+  _upload(sp, imp) {
+    const r = this._range(imp.bytes);
+    sp.bytes = imp.bytes; // always: a skipped re-bake must not retry every frame
+    if (!r) { this._log('re-bake skipped (atlas ' + this.atlasUsed + ' B used, cap ' + CARD_ATLAS_MAX_BYTES + ' B): keeping the old range'); return; }
+    if (!r.written) { this.device.writeBuffer(this.atlas, imp.bytes, r.baseBytes, r.bytes); r.written = true; }
+    sp.baseBytes = r.baseBytes; sp.base = r.base;
+  }
 
   /**
    * After cull.run(), outside any pass: one cs_card dispatch per species. `fr` = { w, h (raster samples = cols * n, rows * n), ox, oy (render origin), viewRel (f32
@@ -111,7 +127,7 @@ export class WgCardPass {
     this.species.delete(g); g._cardOk = false;
     if (sp.dst) this.device.dispose(sp.dst);
     if (sp.slot >= 0) { this.cull.argsCpu[sp.slot * ARGS_WORDS + 1] = 0; if (this._freeTop < MAX_CARD_SPECIES) this._free[this._freeTop++] = sp.slot; }
-    // the atlas range is not reclaimed (bump allocator; bounded by 2 MB, species are few)
+    // the atlas range stays in `ranges` (keyed by its bake): a re-created group reuses it, so churn does not grow the atlas
   }
 
   /** Inside the raster pass, after the instanced mesh draws and before the view-model depth clear. @returns {number} draws */

@@ -550,14 +550,30 @@ export class GpuDeviceWebGPU {
       }
     }
     const sto = desc.storageBuffers; // R6c part 2: [{slot, buffer}], same cache rule as the textures
-    if (sto) {
+    let hit = false;
+    if (sto && p.texKinds.length === 0) {
+      // per-desc group cache (N species share one pipeline but each keeps its own group): valid while pipeline + buffers are unchanged
+      const c = desc._grp;
+      if (c && c.p === p && c.n === sto.length) {
+        hit = true;
+        for (let i = 0; i < sto.length; i++) if (c.bufs[i] !== sto[i].buffer) { hit = false; break; }
+      }
+      if (hit) {
+        for (let i = 0; i < sto.length; i++) p.stoCur[sto[i].slot] = sto[i].buffer;
+        p.texGroup = desc._grp.grp; p.texDirty = false;
+      }
+    }
+    if (sto && !hit) {
       for (let i = 0; i < sto.length; i++) {
         const s = sto[i].slot;
         if (p.stoCur[s] !== sto[i].buffer) { p.stoCur[s] = sto[i].buffer; p.texDirty = true; }
       }
     }
     if (p.texKinds.length > 0 || p.nsto > 0) {
-      if (p.texDirty) this._buildTexGroup(p);
+      if (p.texDirty) {
+        this._buildTexGroup(p);
+        if (sto && p.texKinds.length === 0) desc._grp = { p, grp: p.texGroup, n: sto.length, bufs: sto.map((e) => e.buffer) }; // miss only: allocates once per change
+      }
       pass.setBindGroup(0, p.texGroup);
     }
     // uniforms: caller-allocated ring slot (uniformOffsetBytes) or alloc + copy `uniforms` here

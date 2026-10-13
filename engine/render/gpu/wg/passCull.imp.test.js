@@ -94,6 +94,22 @@ assert.equal(cardArgs[1], g.cardCount, 'LOD-3 (card) count == compactGroup card 
   assert.equal(pass.ensure(g2), null); assert.equal(g2._cardOk, false);
   // a group without imp / impM = 0 never registers
   const g3 = makeInstanceGroup('plain', 4); assert.equal(pass.ensure(g3), null);
+  // atlas ranges: one per bake
+  {
+    const wb = []; const dw = d.writeBuffer; d.writeBuffer = (b, data, off, n) => wb.push([off, n]);
+    const used = pass.atlasUsed, base0 = sp.baseBytes;
+    sp.bytes = null; pass.ensure(g); // same bake re-upload: same range, no new space, no rewrite
+    assert.equal(sp.baseBytes, base0); assert.equal(pass.atlasUsed, used); assert.equal(wb.length, 0);
+    const nb = new Uint8Array(1344 * 8 * 4); g.imp.bytes = nb; pass.ensure(g); // different-size re-bake: new range
+    assert.equal(sp.baseBytes, used); assert.equal(pass.atlasUsed, used + nb.byteLength); assert.deepEqual(wb[0], [used, nb.byteLength]);
+    // a dropped + re-created group (same bake) reuses its range: no atlas growth
+    const usedNow = pass.atlasUsed; pass._drop(g); const sp2 = pass.ensure(g);
+    assert.equal(pass.atlasUsed, usedNow); assert.equal(sp2.baseBytes, used);
+    // over the cap: re-bake skipped (kept old range), not retried every frame
+    g.imp.bytes = new Uint8Array(CARD_ATLAS_MAX_BYTES); const wn = wb.length; pass.ensure(g); pass.ensure(g);
+    assert.equal(sp2.baseBytes, used); assert.equal(wb.length, wn); assert.equal(pass.atlasUsed, usedNow);
+    d.writeBuffer = dw;
+  }
   console.warn = warn;
 }
 console.log('passCull.imp.test.js OK: cs_card count/set/flags == compactGroup card bucket, mesh band bits == compactGroup, impM=0 old path, WgCardPass host shape');
