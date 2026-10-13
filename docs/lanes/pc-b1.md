@@ -922,3 +922,8 @@ OB-099 (kestrel-1, ob099-journal): journal lists giver quests only (tower.blade 
   Band 7-14 m: waiting 2 = back off (awayTarget 4 m), 1 = hold, 0 = path in; WINDUP needs cached LOS + <2 throwers winding; ONE preallocated `beast:throw` {id, slot, x, y, z, tx, ty, tz} at windup end (hand eye+0.4, chest = player z + targetZ).
   Cornered (<4 m for 1.5 s while backing off) -> flees (enterFlee); the note named no melee fallback, so flee only. Throwers use no tokens/packer.
   goblinBrain.test 35 checks (band, 0.6 s windup, reload >= 156 steps, no LOS = no throw, max 2 winding, melee unchanged, 0 alloc); goblin,beastSim,wolfBrain PASS. Not wired (GOB-03/07).
+
+### GOB-06 goblin torch raids (kestrel-1, gob-01, uncommitted) -> arch-review
+- Merged gob-03 (one conflict in loot.js MAX_SLOTS comment, resolved). raids.js: def `campId` (pack = camp members via opts.campDefs; no raid while state life.camp.<id>.down), `torches` <=3 swap sim.entities[slot].components.voxel.model to goblinTorch, revert at end/death. 0 alloc. raids.json: def goblinNorth (campNorth, gooseFarm, 22-4, 0.3, cd 3; after wolf def so wolves win ties). lifeWire.createLifeWire takes optional campDefs.
+- Tests: raids.test.js +8 checks; raids/goblin/beastSim/lifeWire suites PASS.
+- LEFT: main.js must pass `campDefs` (goblin camps defs) to createLifeWire (GOB-07; I may not edit main.js) - until then the goblin raid has an empty pack and never starts. Also the LightSet "3 torches + 14 placed lights" AC test is not written (no light code changed; needs lighting API probe). carryTorch clip choice = GOB-07 view.
