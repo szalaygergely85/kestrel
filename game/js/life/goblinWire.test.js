@@ -71,6 +71,17 @@ function rig(playerX, shieldFront) {
   ok('after dispose a throw does nothing and step is a no-op', r.gw.camps === null && (r.gw.step(0, 0, 0), true));
 }
 
+// ---- GOB-07b: the main.js order (source grep)
+{
+  const main = readFileSync(new URL('../main.js', import.meta.url), 'utf8');
+  const at = (re) => main.search(re);
+  const iC = at(/createGoblinWire\(\{/), iB = at(/beasts = createBeastSim\(/), iA = at(/goblinWire\.attach\(beasts/), iL = at(/createLifeWire\(\{ \.\.\.raidDefs, campDefs: goblinWire/);
+  ok('main.js: createGoblinWire < createBeastSim < attach < createLifeWire(campDefs)', iC > 0 && iC < iB && iB < iA && iA < iL, [iC, iB, iA, iL]);
+  const iS = at(/goblinWire\.step\(/), iLs = at(/lifeWire\.step\(clockHour/), iU = at(/goblinWire\.update\(\)/), iP = at(/presentBeasts\(beasts/);
+  ok('main.js: goblinWire.step before lifeWire.step; update before presentBeasts', iS > 0 && iS < iLs && iU > 0 && iU < iP, [iS, iLs, iU, iP]);
+  ok('main.js: dispose on reload + goblinCamps.json fetched + clock.day', /goblinWire\.dispose\(\)/.test(main) && /life\/goblinCamps\.json/.test(main) && /goblinWire\.step\(engine\.world\.state\['clock\.day'\]/.test(main));
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { console.log('FAILURES:\n' + failures.map((x) => '  - ' + x).join('\n')); process.exit(1); }
 console.log('ALL PASS');
