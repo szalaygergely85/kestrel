@@ -43,7 +43,7 @@ import {
 // GPU_COMPARE_POSES moved into game/js/dev/modes/gpucompare.js with the rest
 // of the `?gpucompare=` mode code.
 import { GATE_POSES } from '../../content/dev-poses.js';
-import { prefetchLazyMeshesAtBoot } from './bootPrefetchHook.js'; // MESH-LOAD-01: boot prefetchNear call
+import { prefetchLazyMeshesAtBoot, prefetchAllLazyMeshes } from './bootPrefetchHook.js'; // MESH-LOAD-01: boot prefetchNear call
 import { parseCloudShadowFlag, devCloudShadow, parseAoStrength } from './cloudParam.js'; // S8-B2-12a/S8-B2-20 NEEDS B1 item (2)/(1): `?cloudshadow=1`/`?ao=<0..1>` parse
 import { MODES } from './dev/modes/index.js';
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
@@ -62,7 +62,8 @@ import { createSafeBindings, resolveGameKeys } from './gameKeys.js'; // BINDINGS
 import { loadSettings, saveSettings, getSaveStorage } from './platform/index.js'; // US-060: remembered mute (D-012)
 import { loadBootBundle } from './packBoot.js';
 import { applyLocalOverlay } from './localOverlay.js';
-import { createBootCard } from './bootCard.js'; // boot loading card + ASCII progress bar
+import { createBootCard, createLandCard } from './bootCard.js';
+import { createFarHold } from './farHold.js'; // OB-109: hold boot/world swaps until the far terrain is baked // boot loading card + ASCII progress bar
 import { createBootStageTimer } from './bootStageTimer.js'; // S8-B1-20: per-stage ms (content/adapter/pipelines/world/meshes)
 import { applyPlaytestOverlay } from './dev/playtest.js'; // US-034: editor play-test handoff (docs/architecture.md 24.11)
 import { computeEndCardState, drawEndCard } from './ui/endCard.js';
@@ -1063,6 +1064,7 @@ if (gpuBlocked) {
 }
 
 async function runGame(mode, cinematic = null) {
+  const farHold = createFarHold(); let landCard = null; // OB-109
   const physics = params.get('physics') === 'grid' ? 'grid' : params.get('physics') === 'mesh' || renderer === 'mesh' ? 'mesh' : 'grid';
   // TREES-DEFAULT-01: mesh trees are the default forest; `?trees=voxel` is the dev fallback (design file stays pure data: it carries both species lists)
   { const ft = window.ASSETS.levels.overworld_far.recipe.forest.trees;
@@ -1830,6 +1832,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (waterfallHooks) waterfallHooks.afterStep();
       return;
     }
+    if (farHold.active) { input.consumePressed(); input.consumeMouseDelta(); return; } // OB-109: world swap waiting for the far bake: sim frozen
     // US-090w: title menu up -> the sim stays frozen (wake timeline, autosave and quest poll start after it closes).
     if (menuHost && menuHost.active) {
       if (isSettingsOpen()) updateSettings(dt, input, { assets, engine, look, canOpen: false });
@@ -2247,6 +2250,10 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   function render(alpha) {
     const renderStart = performance.now();
     const bootFirst = !bootPrinted;
+    if (farHold.active) { // OB-109: Continue/Load/back-to-menu swapped in a fresh Terrain: bake at full speed behind a card, no world render
+      if (!farHold.step() && landCard) { landCard.remove(); landCard = null; } else if (landCard) landCard.set(farHold.frac);
+      return;
+    }
     // OWN-REQ-003 (17.4): fresh/transparent every rendered frame, same
     // precedent as the scene's own per-frame overwrite (fillSky paints every
     // cell) - anything not redrawn below (e.g. a hint that just timed out)
@@ -2586,6 +2593,27 @@ stream act ${g.activeCount}/${g.memberCount} warm ${g.warmCount} cells ${g.cellC
   if (playerHandle) await prefetchLazyMeshesAtBoot(bundle.lazyMeshes, engine.world, playerHandle.data.transform);
 
   if (wantAutoQuality && mode === 'world' && !cinematic && resolvedQuality) startAutoBench(resolvedQuality.name, false); // GFX-02
+  // OB-109: "load up everything": every lazy mesh of the world while the bar is up ('props' slice, 60-75 %). `?prefetchall=0` = old near-spawn only.
+  if (bootProg && bundle.lazyMeshes && params.get('prefetchall') !== '0') {
+    bootProg.phase('props'); await bootPaint();
+    const r = await prefetchAllLazyMeshes(bundle.lazyMeshes, engine.world, (d, t) => bootProg.count('props', d, t));
+    window.__prefetchAll = r; await bootPaint();
+  }
+  // OB-109: finish the far terrain behind the boot card ('land' = last 40 % of the bar) so the first frame already has the mountains.
+  // Capture/bench pages have no card and keep the in-frame 1 ms bake. Later world swaps (Continue/Load/menu) hold via farHold in update/render.
+  if (bootProg && params.get('farhold') !== '0' && mode === 'world' && engine.world && engine.world.terrain && farHold.begin(engine.world.terrain)) {
+    const t0 = performance.now();
+    bootProg.phase('land'); await bootPaint();
+    while (farHold.step()) { bootProg.fraction('land', farHold.frac); await bootPaint(); }
+    window.__farHoldMs = performance.now() - t0;
+    console.info(`[boot] far terrain baked behind the card in ${window.__farHoldMs.toFixed(0)} ms (${farHold.slices} slices)`);
+  }
+  window.__farReadyAtBoot = !!(engine.world && engine.world.terrain && engine.world.terrain.farReady);
+  if (bootProg) engine.events.on('world:loaded', ({ world: nw }) => {
+    if (!bootPrinted || !nw || !nw.terrain || !farHold.begin(nw.terrain)) return;
+    if (!landCard) landCard = createLandCard();
+    landCard.set(0);
+  });
   const loop = engine.run({ update, render });
   if (cinematic && params.get('capture') === '1') {
     loop.stop();

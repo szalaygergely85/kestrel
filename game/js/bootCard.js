@@ -26,3 +26,13 @@ export function createBootCard(doc = document) {
   function setStageLines(text) { stageLines = text; render(); }
   return { progress, paint, setStageLines };
 }
+
+/** OB-109: small card for world swaps after boot (Continue / Load / back to menu): bar = far-terrain bake only. */
+export function createLandCard(doc = document) {
+  const el = doc.createElement('pre');
+  el.id = 'landcard';
+  el.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);margin:0;padding:14px 20px;z-index:50;' +
+    'font:16px/1.5 Consolas,"DejaVu Sans Mono",monospace;color:#e8d9a8;background:rgba(10,8,6,.92);border:1px solid #6b5a30;text-align:center;white-space:pre;pointer-events:none';
+  doc.body.appendChild(el);
+  return { set(frac) { el.textContent = `ASCII QUEST\n\n${asciiBar(frac)}\nShaping the land`; }, remove() { el.remove(); } };
+}

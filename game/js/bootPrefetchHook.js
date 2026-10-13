@@ -57,3 +57,22 @@ export async function prefetchLazyMeshesAtBoot(store, world, pos) {
   console.info(`[boot] prefetchNear: ${n} lazy mesh${n === 1 ? '' : 'es'} near spawn in ${ms.toFixed(0)} ms`);
   return n;
 }
+
+/** OB-109: "load up everything" - ensure EVERY lazy mesh of the world (structures + scatter species) behind the boot card, so nothing
+ * streams in during play. Bounded concurrency; `onProgress(done, total)` drives the 'props' bar slice. Same meshes as the lazy path
+ * would load later (no output change). @returns {Promise<{total:number, ms:number}>} */
+export async function prefetchAllLazyMeshes(store, world, onProgress, concurrency = 6) {
+  if (!store || !store.ensure) return { total: 0, ms: 0 };
+  const t0 = bootNow(), want = new Set();
+  for (const m of world.scatterMeshes || []) if (m && m.lazy && m.lazy.store === store) want.add(m);
+  for (const s of world.structures || []) { const m = s.mesh; if (m && m.lazy && m.lazy.store === store) want.add(m); }
+  const list = [...want], total = list.length;
+  let next = 0, done = 0;
+  if (onProgress) onProgress(0, total);
+  const worker = async () => { while (next < total) { const m = list[next++]; await store.ensure(m).catch(() => null); done++; if (onProgress) onProgress(done, total); } };
+  await Promise.all(Array.from({ length: Math.min(concurrency, total) }, worker));
+  const ms = bootNow() - t0;
+  bootSpan(`ALL lazy meshes prefetched (${total})`, t0);
+  console.info(`[boot] prefetchAll: ${total} lazy meshes in ${ms.toFixed(0)} ms`);
+  return { total, ms };
+}
