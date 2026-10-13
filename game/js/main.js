@@ -127,6 +127,7 @@ import { createArrowSim } from './quest/sim/arrows.js'; // EQ-09 (38.41 b)
 import { createWetStones } from './quest/sim/wetStones.js'; // QL-19: wet ford stones + River Boots sure footing
 import { createBand } from './quest/sim/band.js'; // US-129a: level band for beasts + loot
 import { createWadeFx } from './quest/sim/wadeFx.js'; // US-055a
+import { createSwimWire } from './quest/swimWire.js'; // SWIM-03c (38.54)
 import { createWading } from './quest/sim/wading.js'; // RIVER-04 (38.45 (3)): river wading around the player's integrate
 import { BOW_CFG } from './quest/bowConfig.js'; // EQ-09
 import { createQuickbar, ensureQuickbar, autoFill, assign as qbAssign, clearSlot as qbClear, syncHandSlots, HAND_SLOTS } from './quest/sim/quickbar.js'; // EQ-12 + QB-6
@@ -152,7 +153,7 @@ import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-S
 import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
 import { parseGlow } from './glowOpt.js'; // EMIS-03/04: bleed + halo knob
 import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
-import { PHYSICS } from '../../engine/index.js';
+import { PHYSICS, makeUnderState } from '../../engine/index.js';
 import { meshFeedStats, MAX_MESH_DRAWS, MAX_DRAW_ITEMS } from '../../engine/index.js'; // OB-039: F3 mesh draw cap line
 import { createModelPreview, createCharCache } from '../../engine/index.js'; // EQ-03/04: Character tab model preview
 import { composeCharacter, meshCharacter, collapseRig, riggedModelDef } from '../../engine/index.js'; // OB-086: the kit character in the world
@@ -1135,6 +1136,7 @@ async function runGame(mode, cinematic = null) {
   let sword = null; // US-078d (30.1): rebuilt on every 'world:loaded', below
   let hands = null; // HANDS-01b (37.8a): LMB = left-hand item, RMB = right-hand item; rebuilt with the sword sim
   let wetStones = null; // QL-19: rebuilt on every 'world:loaded'
+  let swimWire = null; // SWIM-03c: water feed + gear gate, rebuilt on every 'world:loaded'
   let wading = null; // RIVER-04: rebuilt on every 'world:loaded' (beasts keep their own nav block, depth >= 0.6: not wired here)
   let equipPlay = null, shieldSim = null, arrowSim = null; // EQ-07/09: rebuilt on every 'world:loaded'
   let quickbar = null, qbView = null, qbTick = 0, qbBlocked = false; // EQ-12: sim rebuilt per world, view per page
@@ -1463,6 +1465,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       shieldSim = createShieldSim();
       arrowSim = createArrowSim(world, engine.events, BOW_CFG, fbTargets, wadeArrowHit);
       wading = createWading(world);
+      swimWire = createSwimWire(world); // SWIM-03c: needs world.waterAt / flowAt
       wetStones = createWetStones(worldDef.structures); // QL-19
       if (itemDefs) registerGearItems(hands, itemDefs, () => createStubItemSim());
       equipPlay = createEquipPlay({ hands, shield: shieldSim, arrows: arrowSim, defs: itemDefs || {}, bowCfg: BOW_CFG, swordDamage: SWORD_CFG.light.damage,
@@ -1973,8 +1976,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         if (m < 1) { controls.forward *= m; controls.strafe *= m; }
         if (wetStones.state && wetStones.state.fresh) wadeFx.arrowHit(pt.x, pt.y, pt.z, fb ? fb.timeSec : 0); // QL-19b: splash + ring on the slip step (US-055a fx)
       }
+      if (swimWire) swimWire.before(playerHandle.data); // SWIM-03c: water -> body fields + current, after wading.before (which resets speedScale from `other`)
       integrate(playerHandle.data, dt, controls, engine.world, engine.physics);
-      if (wading) wading.after(playerHandle.data);
       wadeFx.step(playerHandle.data, fb ? fb.timeSec : 0); // deep water (> 1.0 m) is a wall (D-064)
       // CLOTH-1b3/1b5 (33.5): the player capsule pushes cloth; sleep-by-distance reads the eye (presentation-only,
       // never hashed/saved - cloths.js's own doc comment). Approx eye = feet + eyeH (good enough for a sleep radius).
@@ -2007,7 +2010,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         // every step (down = false when it is in no hand).
         if (!uiLocked && !paused && !ending && !vLocked() && input.pressed(gameKeys.swapHands)) hands.swap(); // swap the two hands (owner 2026-10-07: no ?debug=1 needed; not while a menu/pause/death card is up)
         if (itemDefs) stepEquipment(playerHandle.data, itemDefs); // EQ-02/OB-017: hands are derived (left = main/ranged, right = off)
-        const gateOpen = look.locked && !uiLocked && !ending && !paused && !vLocked();
+        const gateOpen = look.locked && !uiLocked && !ending && !paused && !vLocked() && !(swimWire && swimWire.active(playerHandle.data)); // SWIM-03c: gear stowed while swimming (gate shut = hands.step disarms)
         // OB-017: hands.step(player, rawLeftHand, rawRightHand): the LEFT hand (main sword / bow) follows LMB,
         // the RIGHT hand (off: shield) follows RMB. Q swaps the weapon set (0.3 s, buttons held back only for that time).
         const swapHeld = equipPlay ? equipPlay.pre(playerHandle.data, input.pressed(gameKeys.swapSet), gateOpen) : false;
@@ -2189,6 +2192,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     instances: engine.instances, // RE-06 (28.6)
     viewModel: engine.viewModel, // US-078a (30.1): the held sword; both mesh twins draw it when shown
     waterLooks: resolveWaterLooks(window.ASSETS.waterLooks), // US-055a2c (Q12 item 8): JS twin, same table as wgPipeline.setWaterLooks
+    under: makeUnderState(), // SWIM-04b/c: compositor + passShade call updateUnderState(eye vs surface) each frame
     ripples, // S8-B2-13b NEEDS B1-main (38.14): duck-typed {packInto} read by waterComposite.js; owned by the module-scope singleton above
     // US-030a: true once a ready GPU pipeline owns casting - `renderWorld`
     // (compositor.js) reads this and skips its whole CPU sequence; kept in
@@ -2318,8 +2322,9 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (targeting && !cinematic) targeting.present(engine.overlay, ovlStyles); // US-128b (29.2)
       // US-078d (30.1): hidden until the sword is actually taken (US-078a review note); no eyeFeel/bobPhase
       // system exists yet in this codebase, so `simTime` stands in as the walk-bob phase (cosmetic only).
+      const swimGear = !!(swimWire && swimWire.active(playerHandle.data)); // SWIM-03c: gear views hidden while swimming
       if (sword && swordVmH && !cinematic) {
-        if (engine.world.state['tower.sword.taken'] && hands && hands.handOf('sword')) {
+        if (!swimGear && engine.world.state['tower.sword.taken'] && hands && hands.handOf('sword')) {
           const body = playerHandle.data.components.body;
           const swordMoving = !!body && body.grounded && (controls.forward !== 0 || controls.strafe !== 0);
           swordVmH.vm.setHand(swordVmH.h, hands.handOf('sword')); // flag write; the engine mirrors the authored-right model
@@ -2331,14 +2336,14 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (spellVmH) {
         const sbody = playerHandle.data.components.body;
         const spellMoving = !!sbody && sbody.grounded && (controls.forward !== 0 || controls.strafe !== 0);
-        (handFxOn ? presentHandFire : presentSpellHand)(spellVmH, hands && !cinematic && fbOn ? hands.handOf(SPELL_HAND_ITEM) : null, simTime, simTime, spellMoving, fireball);
+        (handFxOn ? presentHandFire : presentSpellHand)(spellVmH, hands && !cinematic && !swimGear && fbOn ? hands.handOf(SPELL_HAND_ITEM) : null, simTime, simTime, spellMoving, fireball);
       }
       if (equipPlay && !cinematic) { // EQ-07/09: first-person shield (right arm) / bow (left arm) + the arrow instances
         const eq7 = playerHandle.data.components.equipment, b7 = playerHandle.data.components.body;
         const mv7 = !!b7 && b7.grounded && (controls.forward !== 0 || controls.strafe !== 0);
         const tk7 = vitals ? vitals.tick : 0;
-        const meleeOut = !!eq7 && eq7.set === 'melee' && eq7.off !== null && equipPlay.swapT === 0;
-        const rangedOut = !!eq7 && eq7.set === 'ranged' && eq7.ranged !== null;
+        const meleeOut = !swimGear && !!eq7 && eq7.set === 'melee' && eq7.off !== null && equipPlay.swapT === 0;
+        const rangedOut = !swimGear && !!eq7 && eq7.set === 'ranged' && eq7.ranged !== null;
         if (presentShield(shieldVmH, meleeOut, shieldSim, tk7, simTime, mv7)) { playShieldClank(); blockSparkAt = simTime; }
         presentBow(bowVmH, rangedOut, equipPlay.bow, equipPlay.swapFrac, equipPlay.bow.tick, simTime, mv7);
         if (arrowView) { const pt7 = playerHandle.data.transform; arrowView.present(arrowSim, pt7.x, pt7.y); }
