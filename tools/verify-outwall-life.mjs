@@ -1,7 +1,7 @@
 // LIFE-04: Outwall villagers at 10:00 (present, walking) and 23:00 (asleep, hidden). Stills + asserts. node tools/verify-outwall-life.mjs 9600
 // (adapted from verify-chest-hook.mjs; real-GPU owner-look capture of the chest hook (interact -> open clip -> item granted -> item-get
 // card), via game/js/chestHook.preview.html. Same CDP approach as tools/verify-item-card.mjs (lane C), reusing
-// capture-browser.mjs's exported helpers - PC-B port range only (9575-9649).
+// capture-browser.mjs's exported helpers - PC-B port range only (9500-9999).
 // Run: node tools/verify-chest-hook.mjs 9500 (webgpu, default)
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
@@ -11,7 +11,7 @@ import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, c
 
 const port = Number(process.argv[2] || 9600);
 validatePort(port);
-if (port < 9575 || port + 1 > 9649) throw new Error('PC-B lane B1 range is 9575-9649 (next port is CDP)');
+if (port < 9500 || port + 1 > 9999) throw new Error('PC-B range is 9500-9999 (next port is CDP)');
 const backend = process.argv[3] || 'webgpu';
 assert.ok(['webgpu'].includes(backend), 'backend must be webgpu');
 

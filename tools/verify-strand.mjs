@@ -31,6 +31,7 @@ try {
   let ready = false;
   for (let i = 0; i < 100; i++) { await pause(400); if (await evaluate(cdp, '!!(window.__debug && window.__debug.engine && window.__debug.engine.world && window.__debug.playerHandle)')) { ready = true; break; } }
   assert.ok(ready, 'game booted ' + JSON.stringify(errors));
+  await evaluate(cdp, 'setInterval(() => { if (window.__debug && window.__debug.look) window.__debug.look.locked = true; }, 30), true'); // headless: no pointer lock -> sim paused (see verify-swim)
   const stops = [[1478, 1100], [1520, 1180], [1590, 1300], [1590, 1500], [1520, 1700], [1470, 1752], [1384, 1745]];
   const rows = [];
   for (const [x, y] of stops) {
