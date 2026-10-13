@@ -21,7 +21,8 @@ export const REGION_RULES = Object.freeze([
 
 export const REGIONAL_BEAST_COUNT = REGION_RULES.reduce((n, r) => n + r.groups * r.size, 0);
 
-const MODEL = { boar: 'boarPlaceholder', wolf: 'boarPlaceholder', bear: 'bearBlack' };
+import { WOLF_MODEL } from './wolfBrain.js';
+const MODEL = { boar: 'boarPlaceholder', wolf: WOLF_MODEL, bear: 'bearBlack' }; // BEAST-02: wolf packs use the real voxel_wolf model ('wolf')
 const BODY = { boar: { height: 0.7, radius: 0.45 }, wolf: { height: 0.7, radius: 0.45 }, bear: { height: 1.1, radius: 0.7 } };
 const EDGE = 12, MIN_GROUP_GAP = 45, AUTHORED_GAP = 40, MAX_SLOPE = 0.3, TRIES = 600;
 
