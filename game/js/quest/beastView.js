@@ -8,7 +8,7 @@
 // so `playing` is false and the engine's `stepAnimations` never double-advances them; `hurt`/`flinch`/state clips
 // are let to play normally (playing true). `hidden` hides the instance at STATE_GONE (the US-079b0 voxel-pool skip).
 import { yawFromDelta } from '../../../engine/index.js';
-import { STATE_EAT, STATE_WINDUP, STATE_RECOVER, STATE_NOTICE, STATE_RETURN, STATE_CHASE, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE } from './sim/beastSim.js';
+import { STATE_WANDER, STATE_EAT, STATE_WINDUP, STATE_RECOVER, STATE_NOTICE, STATE_RETURN, STATE_CHASE, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE } from './sim/beastSim.js';
 
 const STEP_MS = 1000 / 60; // one fixed sim step in ms (die/sink clip t is derived from sim step counters)
 const HURT_STEPS = 10;     // 37.16.2: the view shows `hurt` while hurtT < 10 (the flash + follow-through window)
@@ -112,10 +112,15 @@ export function presentBeasts(sim, world, overlay, styleIds, anim) {
     else if (sim.hurtT[i] < HURT_STEPS) clip = 'hurt';
     else if (st === STATE_FLINCH) clip = 'flinch';
     else clip = st === STATE_EAT ? eatClip(v.model) : (STATE_CLIPS[st] || 'idle'); // LIFE-07: 'eat' where voxel_eat_clips.js extends the model
-    if (v.model === 'wolf') clip = wolfClip(clip, st, sim.fleeing[i]); // WOLF-D1: wolfFx.clipFor names
+    // BEAST-01 (OB-149): gait follows the measured speed, never the intended state: a wander/chase/return beast that is
+    // not actually moving shows idle (STATE_EAT = the clip-mapper's "idle" name, no notice overlay).
+    let vst = st;
+    if (sim.moving && !sim.moving[i] && (st === STATE_WANDER || st === STATE_CHASE || st === STATE_RETURN)
+        && clip !== 'hurt' && clip !== 'flinch') { clip = 'idle'; vst = STATE_EAT; }
+    if (v.model === 'wolf') clip = wolfClip(clip, vst, sim.fleeing[i]); // WOLF-D1: wolfFx.clipFor names
 
     if (v.model === 'goblin' || v.model === 'goblinTorch') { // GOB-07a: goblinFx.clipFor (death / sink / dead stay as decided)
-      if (st !== STATE_DYING && st !== STATE_CORPSE && st !== STATE_SINK) clip = goblinClip(clip, st, i, sim, v);
+      if (st !== STATE_DYING && st !== STATE_CORPSE && st !== STATE_SINK) clip = goblinClip(clip, vst, i, sim, v);
       v.speed = v.model === 'goblinTorch' && (clip === 'carryTorch') && (st === STATE_CHASE || sim.fleeing && sim.fleeing[i] && st === STATE_RETURN) ? 1.6 : 1;
     }
     if (clip !== v.anim) { v.anim = clip; v.frame = 0; v.t = 0; v.loop = undefined; }
