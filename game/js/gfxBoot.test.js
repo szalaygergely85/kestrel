@@ -20,7 +20,7 @@ assert.equal(o.shadowOpts.sun, 'map'); assert.equal(o.shadowOpts.instCastM, 32);
 assert.deepEqual(o.gfx, { scatterDensity: 1, lodScale: 1 });
 
 // every preset
-const expect = { low: [240, 90, 1, 1024, 0.5, 0.6], medium: [240, 90, 2, 1536, 0.75, 0.8], high: [400, 150, 2, 2048, 1, 1], ultra: [480, 180, 4, 2048, 1, 1.25] };
+const expect = { low: [240, 90, 1, 1024, 0.5, 0.6], medium: [240, 90, 2, 1536, 0.75, 0.8], high: [400, 150, 2, 2048, 1, 1], ultra: [480, 180, 4, 2048, 1, 1] };
 for (const [name, [c, r, rays, res, sc, lod]] of Object.entries(expect)) {
   o = boot(`quality=${name}`);
   assert.deepEqual([o.reqCols, o.reqRows, o.rays, o.shadowOpts.res, o.gfx.scatterDensity, o.gfx.lodScale], [c, r, rays, res, sc, lod], name);
@@ -62,7 +62,7 @@ for (const p of ['low', 'medium', 'high', 'ultra']) {
   assert.deepEqual([o.reqCols, o.reqRows, o.rays, o.quality.name], [160, 60, 1, p]);
   gcKnobs[p] = [o.shadowLevel, o.gfx.scatterDensity, o.gfx.lodScale];
 }
-assert.deepEqual(gcKnobs, { low: ['low', 0.5, 0.6], medium: ['mid', 0.75, 0.8], high: ['high', 1, 1], ultra: ['high', 1, 1.25] });
+assert.deepEqual(gcKnobs, { low: ['low', 0.5, 0.6], medium: ['mid', 0.75, 0.8], high: ['high', 1, 1], ultra: ['ultra', 1, 1] });
 o = boot('gpucompare=1', { captureLike: true, geometryCompare: true }); assert.deepEqual([o.quality, o.gfx], [null, undefined]); // no preset = today
 o = boot('bench=1', { captureLike: true, saved: { quality: 'ultra', grid: '480x180' } });
 assert.deepEqual([o.reqCols, o.reqRows, o.rays, o.quality, o.gfx], [240, undefined, 2, null, undefined]);
@@ -78,7 +78,11 @@ console.log('gfxBoot.test.js ok');
 // QUALITY-BOOT-01: a saved Ultra boots with the full Ultra knobs (grid/rays/shadows/scatter/LOD), whatever legacy grid is in the blob.
 for (const grid of ['240x90', '400x150', '480x180']) {
   const u = boot('', { saved: { quality: 'ultra', grid } });
-  assert.deepEqual([u.reqCols, u.reqRows, u.rays, u.shadowLevel, u.gfx.scatterDensity, u.gfx.lodScale], [480, 180, 4, 'high', 1, 1.25], 'saved ultra ' + grid);
+  assert.deepEqual([u.reqCols, u.reqRows, u.rays, u.shadowLevel, u.gfx.scatterDensity, u.gfx.lodScale], [480, 180, 4, 'ultra', 1, 1], 'saved ultra ' + grid);
   assert.equal(u.quality.name, 'ultra'); assert.equal(u.quality.source, 'saved');
 }
 console.log('gfxBoot: saved Ultra applies fully at boot PASS');
+
+{ const u = boot('quality=ultra'), x = boot('quality=extreme'), h = boot('quality=high');
+  assert.deepEqual([u.shadowOpts.meshLod0M, u.shadowOpts.instCastM, x.shadowOpts.meshLod0M, x.shadowOpts.instCastM, x.gfx.lodScale], [16, 32, 16, 32, 1], 'ultra/extreme shadow tier');
+  assert.deepEqual([h.shadowOpts.meshLod0M, h.shadowOpts.instCastM], [25, 32], 'high unchanged'); }

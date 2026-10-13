@@ -439,7 +439,7 @@ function drawMenuSettingsPanel(ui, assets) {
 // the existing pause-panel exports above remain available to legacy callers.
 const FULL_OPTIONS = [
   { id: 'quality', values: ['low', 'medium', 'high', 'ultra', 'extreme', 'auto'], default: 'high' },
-  { id: 'shadows', values: ['off', 'low', 'mid', 'high'], default: 'high' },
+  { id: 'shadows', values: ['off', 'low', 'mid', 'high', 'ultra'], default: 'high' },
   { id: 'grid', values: ['240x90', '320x120', '400x150', '480x180', '560x210'], default: '400x150' },
   { id: 'volume', type: 'range', min: 0, max: 1, step: 0.1, default: 1 },
   { id: 'mute', values: [false, true], default: false },

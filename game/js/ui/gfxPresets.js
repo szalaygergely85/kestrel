@@ -3,7 +3,7 @@ import { GRID_VALUES } from '../settings/options.js';
 
 export const QUALITY_NAMES = Object.freeze(['low', 'medium', 'high', 'ultra', 'extreme']);
 export const QUALITY_CHOICES = Object.freeze([...QUALITY_NAMES, 'auto']);
-export const SHADOW_CHOICES = Object.freeze(['off', 'low', 'mid', 'high']);
+export const SHADOW_CHOICES = Object.freeze(['off', 'low', 'mid', 'high', 'ultra']);
 const KNOBS = ['grid', 'rays', 'shadowQuality', 'scatter', 'lodScale', 'pointShadows', 'carpet'];
 let presets = null;
 
