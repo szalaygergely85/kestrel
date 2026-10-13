@@ -70,7 +70,7 @@
       "Slow walker. Wet boots?"
     ], "next": "rook.ford.2", "speaker": "rook"},
     "rook.ford.2": {"lines": [
-      "The relay here is dead. Its glass is gone."
+      "The waystone here is dead. Its glass is gone."
     ], "next": "rook.ford.3", "speaker": "you"},
     "rook.ford.3": {"clip": "tilt", "lines": [
       "Gone? No. Kept. Kept is different."

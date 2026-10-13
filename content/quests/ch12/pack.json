@@ -602,8 +602,8 @@
             "npc": "bear",
             "to": "relayBend"
           },
-          "objText": "Walk with Burl to the Bend Relay",
-          "journal": "Burl wants to see the Bend Relay blink. Walk with her to it."
+          "objText": "Walk with Burl to the Bend Waystone",
+          "journal": "Burl wants to see the Bend Waystone blink. Walk with her to it."
         }
       ],
       "requires": [
@@ -624,7 +624,7 @@
         ]
       },
       "band": 1,
-      "returnText": "Talk to Burl at the Bend Relay",
+      "returnText": "Talk to Burl at the Bend Waystone",
       "lines": {
         "offer": [
           "The bend stone blinks now, you say. I want to see it.",
@@ -840,7 +840,7 @@
             ]
           },
           "objText": "Wear the buckler to the ford",
-          "journal": "Someone left a buckler at the Bend Relay. Wear it down to the ford."
+          "journal": "Someone left a buckler at the Bend Waystone. Wear it down to the ford."
         }
       ],
       "requires": [
@@ -869,7 +869,7 @@
       "turnIn": "relayFord",
       "abandonable": false,
       "band": 2,
-      "returnText": "Show the buckler at the Ford Relay",
+      "returnText": "Show the buckler at the Ford Waystone",
       "lines": {
         "offer": [
           "TICK. TICK-TICK. A drawer slides out of the mount.",
@@ -898,8 +898,8 @@
           "params": {
             "to": "burl"
           },
-          "objText": "Carry the relay's word to Burl",
-          "journal": "The relay has word for Burl. Carry it back to her slope."
+          "objText": "Carry the waystone's word to Burl",
+          "journal": "The waystone has word for Burl. Carry it back to her slope."
         }
       ],
       "requires": [
@@ -921,7 +921,7 @@
         ]
       },
       "band": 2,
-      "returnText": "Go back to the Bend Relay",
+      "returnText": "Go back to the Bend Waystone",
       "lines": {
         "offer": [
           "TICK. BEAR ON THE SLOPE. KNOWN.",
@@ -961,8 +961,8 @@
               "bendRelay"
             ]
           },
-          "objText": "Come back to the Bend Relay",
-          "journal": "You walked the road. Now come back to the Bend Relay."
+          "objText": "Come back to the Bend Waystone",
+          "journal": "You walked the road. Now come back to the Bend Waystone."
         }
       ],
       "requires": [
@@ -984,7 +984,7 @@
         ]
       },
       "band": 2,
-      "returnText": "Report to the Bend Relay",
+      "returnText": "Report to the Bend Waystone",
       "lines": {
         "offer": [
           "TICK. ROAD CHECK DUE. LAST CHECK: LONG AGO.",
@@ -1041,7 +1041,7 @@
         }
       },
       "band": 4,
-      "returnText": "Report to the Ford Relay",
+      "returnText": "Report to the Ford Waystone",
       "lines": {
         "offer": [
           "TICK. FORD STONES: UNCHECKED.",
@@ -1094,7 +1094,7 @@
         ]
       },
       "band": 5,
-      "returnText": "Report to the Ford Relay",
+      "returnText": "Report to the Ford Waystone",
       "lines": {
         "offer": [
           "TICK. NORTH WATCH DUE. NO WATCHER.",
@@ -1147,7 +1147,7 @@
         ]
       },
       "band": 5,
-      "returnText": "Report to the Ford Relay",
+      "returnText": "Report to the Ford Waystone",
       "lines": {
         "offer": [
           "TICK. CROSSROADS: NO REPORT IN YEARS.",
@@ -1200,7 +1200,7 @@
         ]
       },
       "band": 4,
-      "returnText": "Report to the Ford Relay",
+      "returnText": "Report to the Ford Waystone",
       "lines": {
         "offer": [
           "TICK. FORD CHECK, RETURN LEG. DUE.",
@@ -1413,7 +1413,7 @@
         ]
       },
       "band": 2,
-      "returnText": "Report to the Bend Relay",
+      "returnText": "Report to the Bend Waystone",
       "lines": {
         "offer": [
           "TICK. LAMPS: TWO. LIT: UNKNOWN.",
@@ -1466,7 +1466,7 @@
         ]
       },
       "band": 2,
-      "returnText": "Report to the Bend Relay",
+      "returnText": "Report to the Bend Waystone",
       "lines": {
         "offer": [
           "TICK. ROAD NORTH VERGE: ROCKS. FALLEN LOGS.",
@@ -1496,8 +1496,8 @@
             "count": 1,
             "to": "relayFord"
           },
-          "objText": "Carry the brass to the Ford Relay",
-          "journal": "You carry a brass scrap for the Ford Relay. Bring it there."
+          "objText": "Carry the brass to the Ford Waystone",
+          "journal": "You carry a brass scrap for the Ford Waystone. Bring it there."
         }
       ],
       "requires": [
@@ -1519,7 +1519,7 @@
         ]
       },
       "band": 2,
-      "returnText": "Set the brass at the Ford Relay",
+      "returnText": "Set the brass at the Ford Waystone",
       "lines": {
         "offer": [
           "TICK. BRASS, ONE PIECE. HELD FOR THE FORD.",
@@ -1533,7 +1533,7 @@
           "TEN ARROWS, HELD FOR YOU."
         ],
         "done": [
-          "TICK. BRASS DELIVERED. BEND RELAY: NOTED."
+          "TICK. BRASS DELIVERED. BEND WAYSTONE: NOTED."
         ]
       }
     },
@@ -1979,7 +1979,7 @@
         ]
       },
       "band": 4,
-      "returnText": "Report to the Ford Relay",
+      "returnText": "Report to the Ford Waystone",
       "lines": {
         "offer": [
           "TICK. EAST BANK JETTY: PLANKS. CONDITION: ROT.",
@@ -2009,8 +2009,8 @@
             "count": 1,
             "to": "relayBend"
           },
-          "objText": "Carry the cog to the Bend Relay",
-          "journal": "You carry a cog from the ford. Take it to the Bend Relay."
+          "objText": "Carry the cog to the Bend Waystone",
+          "journal": "You carry a cog from the ford. Take it to the Bend Waystone."
         }
       ],
       "requires": [
@@ -2032,7 +2032,7 @@
         ]
       },
       "band": 5,
-      "returnText": "Set the cog at the Bend Relay",
+      "returnText": "Set the cog at the Bend Waystone",
       "lines": {
         "offer": [
           "TICK. SPARE COG, ONE. HELD FOR THE BEND.",

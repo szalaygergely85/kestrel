@@ -295,9 +295,9 @@
                ['LPddd', ' Ldd ', '  d  '])
   };
   defs['relay.mirror'] = {
-    id: 'relay.mirror', name: 'Relay Glass', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    id: 'relay.mirror', name: 'Waystone Glass', kind: 'key', stackMax: 1, hand: false, inPack: true,
     desc: 'Round, silvered, scratched by claws.',
-    use: { none: 'Quest item - the Ford Relay needs it (mq.ford.mirror)' },
+    use: { none: 'Quest item - the Ford Waystone needs it (mq.ford.mirror)' },
     glyph: { ch: 'o', c: 'mirror' },
     icon: icon([' .-. ', '( o )', " '-' "],
                [' sss ', 's S s', ' sss '])
@@ -311,9 +311,9 @@
                ['hhhhh', 'hqqqh', 'hhhhh'])
   };
   defs['relay.brass'] = {
-    id: 'relay.brass', name: 'Relay Collar', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    id: 'relay.brass', name: 'Brass Collar', kind: 'key', stackMax: 1, hand: false, inPack: true,
     desc: 'A green brass collar, cut with glyphs.',
-    use: { none: 'Quest item - the Outwall Relay needs it (mq.ow.relay)' },
+    use: { none: 'Quest item - the Outwall Waystone needs it' },
     glyph: { ch: '=', c: 'brass' },
     icon: icon([' .=. ', '( o )', " '=' "],
                [' AAA ', 'A J A', ' AAA '])

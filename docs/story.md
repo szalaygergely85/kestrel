@@ -2050,3 +2050,9 @@ Notes:
 - Offers are images, not speech: the relays have no voice of their own in canon, so the "ask" is what the bowl shows. Wick reads it.
 - Strand: the five "thin lines" are the arrows; the journal makes it plain. Hand-in is the Downs Relay, return text unchanged.
 - Signal Hill's done line echoes its wake line on purpose; the pattern itself is not restated.
+
+## Waystones (D-080, OB-146)
+Owner: "remove relays, i like waystones". Player text never says "relay": every regional relay is a Waystone (same model as the tower stone). Internal ids/keys keep "relay".
+- `q.burl.waystones` (Burl, after she sees the crystal, `bear.q.ready.5b`): "Wake the waystones. They heal you, / save your path, and beasts fear / their light."
+- `notice.waystone.first` (first wake of any waystone): "Waystone woken: travel (M), heal + save, new task." (the last part only when a task exists)
+- Names: "Bend Waystone", "Ford Waystone", "Palisade Waystone" ... (place.relay.<id> keys keep their ids); prompts "[E] Touch the waystone", "[E] Look at the waystone".

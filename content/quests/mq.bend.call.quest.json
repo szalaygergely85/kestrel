@@ -6,8 +6,8 @@
   "main": true,
   "requires": [{ "quest": "m1", "step": "relay1" }],
   "objectives": [
-    { "id": "pulse", "text": "Watch the Bend relay pulse", "journal": "A crow named Rook talks too. Watch the Bend relay blink and count.", "when": { "type": "flag", "id": "relay.bend.pulseSeen", "equals": true } },
-    { "id": "knot", "text": "Read the knot on the mount", "journal": "The relay blinks in threes, again and again. Look at the knot on its mount.", "when": { "type": "flag", "id": "lore.knot.read", "equals": true } }
+    { "id": "pulse", "text": "Watch the Bend waystone pulse", "journal": "A crow named Rook talks too. Watch the Bend waystone blink and count.", "when": { "type": "flag", "id": "relay.bend.pulseSeen", "equals": true } },
+    { "id": "knot", "text": "Read the knot on the mount", "journal": "The waystone blinks in threes, again and again. Look at the knot on its mount.", "when": { "type": "flag", "id": "lore.knot.read", "equals": true } }
   ],
   "returnText": "Talk to Rook",
   "reward": { "items": [{ "id": "chart.river", "n": 1 }] },

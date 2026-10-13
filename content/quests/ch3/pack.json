@@ -102,7 +102,7 @@
     },
     {
       "id": "mq.ow.relay",
-      "title": "The Village Relay",
+      "title": "The Village Waystone",
       "main": true,
       "site": "hesk",
       "band": 6,
@@ -115,7 +115,7 @@
             "id": "talk.dorrin",
             "equals": true
           },
-          "journal": "The village relay is dark. Part of it is missing. Ask Dorrin at the forge."
+          "journal": "The village waystone is dark. Part of it is missing. Ask Dorrin at the forge."
         },
         {
           "id": "brass",
@@ -124,17 +124,17 @@
             "type": "item",
             "id": "relay.brass"
           },
-          "journal": "Dorrin took the relay's brass collar for a gate. Pull it off the barley gate."
+          "journal": "Dorrin took the waystone's brass collar for a gate. Pull it off the barley gate."
         },
         {
           "id": "wake",
-          "text": "Fit the collar to the village relay",
+          "text": "Fit the collar to the village waystone",
           "when": {
             "type": "flag",
             "id": "waystone.ws_outwall.woken",
             "equals": true
           },
-          "journal": "You have the brass collar. Fit it to the village relay and wake it."
+          "journal": "You have the brass collar. Fit it to the village waystone and wake it."
         }
       ],
       "requires": [
@@ -144,10 +144,10 @@
         }
       ],
       "abandonable": false,
-      "returnText": "Fit the collar to the village relay",
+      "returnText": "Fit the collar to the village waystone",
       "lines": {
         "offer": [
-          "The old relay in the yard. You came for it, I think.",
+          "The old waystone in the yard. You came for it, I think.",
           "We hear the call too. Nights. The stone here stays dark.",
           "Something's missing from it. Ask Dorrin. At the forge.",
           "He'll look at his boots. Let him. Then ask again."
@@ -179,7 +179,7 @@
             "id": "lore.owBoard.read",
             "equals": true
           },
-          "journal": "The village relay burns teal. In the plaza stands a board of names. Read it."
+          "journal": "The village waystone burns teal. In the plaza stands a board of names. Read it."
         }
       ],
       "requires": [

@@ -40,7 +40,7 @@ function mk(state = {}, wsId = 'ws_roadBend') {
   assert.equal(t.ent.components.light.on, false, 'light waits for the glow event');
   assert.equal(t.world.state['waystone.ws_roadBend.woken'], true);
   assert.deepEqual(t.emits, [['ws_roadBend', 'relay', 10, 20, 3]]);
-  assert.equal(t.rw.toastLeft > 0, true); assert.equal(NOTICE[0], 'BEND RELAY AWAKENED'); assert.equal(t.recs[0].prompt, PROMPT_TOUCH);
+  assert.equal(t.rw.toastLeft > 0, true); assert.equal(NOTICE[0], 'WAYSTONE AWAKENED'); assert.equal(t.recs[0].prompt, PROMPT_TOUCH);
   assert.equal(t.rw.interact('ws_roadBend'), false, 'no replay while waking'); assert.equal(t.hums.length, 1);
   const dt = 1 / 60; let s = 0;
   for (; s < 10; s++) t.rw.step(dt, t.lights); // 0.167 s < 0.25 s
