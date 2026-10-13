@@ -16,7 +16,8 @@ import farTowerMod from '../../../design/models/far_tower.js';
 import ferrumLightsMod from '../../../design/models/ferrum_lights.js';
 import titleMod from '../../../design/models/title.js';
 import voxelWorldMod from '../../../design/models/voxel_world.js';
-import { Events } from '../../../engine/dev.js';
+// minimal event bus (engine/dev.js Events is off limits for game/js outside dev/, check-deps)
+class Events { constructor() { this.m = {}; } on(n, f) { (this.m[n] ||= []).push(f); return () => { this.m[n] = this.m[n].filter((g) => g !== f); }; } emit(n, p) { for (const f of this.m[n] || []) f(p); } }
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 import { ROUTINES, createRoutineNpc, stepRoutine, setTalking, inWindow } from './outwallRoutines.js';
 import assert from 'node:assert/strict';

@@ -667,3 +667,8 @@ Stills (AC3, not run): node tools/verify-secrets-outwall.mjs 9660  -> docs/test-
 - `game/js/life/schedule.js` + `schedule.test.js` (PASS 0.4 s), data `content/life/outwall.life.json` (= `lifeFromRoutines(ROUTINES)`, test checks equality; regenerate if OUT-02 changes). Logic only: no movement, no main.js, no save.
 - API: `createSchedule(life,hour,day)`, `step(s,hour,day)` (60 Hz, NPC i decides at tick%60==i%60, needs drift, 0 alloc), `current(s,i)` -> {kind,x,y,pose}, `resolveAt(life,i,hour,day)`, `snap(s,hour,day)`, `choose`.
 - Choice: sleep window forced, else max(prio + hunger for eat / social for chat), hash tie-break. Prios eat/chat 0.1 (need-driven). Chat refill is -0.8/h while chatting (spec -0.4 after a chat; real pairing is LIFE-05). `resolveAt` is exact only where the choice is need-independent (e.g. 6 h, all asleep); needs are re-derived from the hour, not stepped. Run: `node tools/run-tests.mjs --filter schedule`.
+
+### LIFE-01 (kestrel-3, 2026-10-13) -> arch-review
+- engine/nav/pathFollow.js: `follower.setPath(buf, n)` (reuse, no alloc, keeps yaw). engine/nav/astar.js: `planPath(grid, astar, sx, sy, gx, gy, outBuf, maxNodes=1500)` -> waypoint count (0 = bad start), `astar.partial` for unreachable/capped; uses new `astar.scratch` Int32Array(w*h); waypoints over outBuf capacity are dropped, last one = path end.
+- Tests: pathFollow.test + astar.test extended (around-obstacle, unreachable, maxNodes, capacity, 0 alloc). nav suites 8/8 PASS.
+- check-deps FAILS on existing game/js/quest/outwallRoutines.test.js:19 (imports engine/dev.js), not from this item.
