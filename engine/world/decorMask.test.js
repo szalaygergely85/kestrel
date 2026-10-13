@@ -47,6 +47,15 @@ const gpuNames = cfg0.layers.filter((l) => l.gpu).map((l) => l.name);
 ok('content flags reeds/wildflowers/pebbles gpu', gpuNames.join() === 'reeds,wildflowers,pebbles', gpuNames.join());
 ok('reeds species are grassLike', Object.values(cfg0.layers.find((l) => l.name === 'reeds').ground).every((list) => list.every((s) => s.grassLike === true)));
 
+// ENV-01-WIRE: band keys never mix decor on/off bundles; World defaults to off
+{
+  w._bandKeys.length = 0; w._bandKeysC.length = 0; w.decorGpu = false; const kOff = w._bandKey(0);
+  w._bandKeys.length = 0; w._bandKeysC.length = 0; w.decorGpu = true; const kOn = w._bandKey(0);
+  w._bandKeys.length = 0; w._bandKeysC.length = 0; w.decorGpu = false;
+  ok('band key carries |decor:0/1', kOff.endsWith('|decor:0') && kOn.endsWith('|decor:1') && kOff !== kOn, kOff.slice(-30));
+  ok('World.decor defaults null, decorGpu false', w.decor === null && w.decorGpu === false);
+}
+
 // validator
 const mkCfg = (sp) => ({ layers: [{ name: 'x', gpu: true, seed: 1, cellM: 3, drawM: 30, jitter: 1, fill: 1, maxSlope: 0.3, clearM: 0.5, ground: { grass: [sp] } }] });
 const base = { mesh: 'm', weight: 1, sway: true };

@@ -4,7 +4,7 @@ import { GRID_VALUES } from '../settings/options.js';
 export const QUALITY_NAMES = Object.freeze(['low', 'medium', 'high', 'ultra', 'extreme']);
 export const QUALITY_CHOICES = Object.freeze([...QUALITY_NAMES, 'auto']);
 export const SHADOW_CHOICES = Object.freeze(['off', 'low', 'mid', 'high', 'ultra']);
-const KNOBS = ['grid', 'rays', 'shadowQuality', 'scatter', 'lodScale', 'pointShadows', 'carpet', 'impM', 'impMaxDistM', 'occl'];
+const KNOBS = ['grid', 'rays', 'shadowQuality', 'scatter', 'lodScale', 'pointShadows', 'carpet', 'impM', 'impMaxDistM', 'occl', 'decorDensity'];
 let presets = null;
 
 function validKnob(key, value) {
@@ -18,6 +18,7 @@ function validKnob(key, value) {
   // occl = R3 HZB occlusion switch slot: null = unchanged (R3 decides later), else boolean.
   if (key === 'impM') return Number.isFinite(value) && value >= 0 && value <= 500;
   if (key === 'impMaxDistM') return Number.isFinite(value) && value >= 0 && value <= 2000;
+  if (key === 'decorDensity') return Number.isFinite(value) && value >= 0 && value <= 1; // ENV-01 GPU decor: fraction of the layer keep probability
   if (key === 'occl') return value === null || typeof value === 'boolean';
   return key === 'lodScale' && Number.isFinite(value) && value >= 0.25 && value <= 4;
 }

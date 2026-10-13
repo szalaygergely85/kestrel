@@ -260,6 +260,15 @@ function validateHorizon(list, assets) {
 const RAY_STEP = 0.1, RAY_MAX_SAMPLES = 20, RAY_BISECT = 6;
 const _rayHit = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0, collider: -1 };
 
+/** scatterDetail + the baked decor masks (job.decor) on the result; opts null = plain scatterDetail (byte-identical, no `decor`). */
+function scatterDetailD(terrain, structures, keepOut, cfg, trees, opts) {
+  if (!opts) return scatterDetail(terrain, structures, keepOut, cfg, trees);
+  const job = new DetailScatterJob(terrain, structures, keepOut, cfg, trees, opts);
+  job.step(Infinity);
+  if (job.decor) job.result.decor = job.decor;
+  return job.result;
+}
+
 export class World {
   constructor() {
     this.terrain = null;
@@ -270,6 +279,8 @@ export class World {
     this.decals = []; // DECAL-01: derived wall text, never serialized.
     this.detailMeshes = null; // TREES-LP-c: {meshId: MeshData} for ground-cover species with `mesh`
     this.detail = null; // ENV-01a1: derived ground detail, never serialized.
+    this.decor = null; // ENV-01: baked GPU-decor masks {layers:[{name,mask,ix0,iy0,w,h}]} of the current band (null = decorGpu off), never serialized
+    this.decorGpu = false;
     this._kinCollider = null;
     this._kinSlot = new Map(); // CH1-E2: kinematic entity id -> prism slot in 'npcs:kinematic'
     this._groundSnap = []; // ED-TERRAIN-1b: [{id, x, y}] of `z: 'ground'` props/entities, re-snapped after a terrain stroke.
@@ -570,6 +581,7 @@ export class World {
       }
     }
 
+    w.decorGpu = !!opts.decorGpu; // ENV-01: GPU decor layers (no CPU points, mask baked instead); off = byte-identical
     if (w.terrain?.realTrees && w.terrain.nearReady) w.scatter = scatterTrees(w.terrain, w.structures);
     if (opts.carpet && w.terrain) {
       w._carpetCtx = { cfg: validateCarpetConfig(opts.carpet, w.terrain.typeNames), recipe: w.terrain.recipe };
@@ -593,7 +605,8 @@ export class World {
         if (!assets || !assets.has('mesh', sp.mesh)) throw new Error(`World.load: detail species references unknown mesh "${sp.mesh}"`);
         (w.detailMeshes || (w.detailMeshes = {}))[sp.mesh] = assets.mesh(sp.mesh);
       }
-      w.detail = scatterDetail(w.terrain, w.structures, keepOut, cfg, w.scatter || null);
+      w.detail = scatterDetailD(w.terrain, w.structures, keepOut, cfg, w.scatter || null, w.decorGpu ? { decorGpu: true, carpetCtx: w._carpetCtx } : null);
+      w.decor = w.detail.decor || null;
     }
     if (w.physicsMode === 'mesh' && w.scatter) {
       const trunks = buildTrunkCollider(w.scatter, w.terrain.recipe.recipe.forest.trees);
@@ -1227,7 +1240,7 @@ export class World {
     const z = this.terrainBands[k], ks = this._bandKeys;
     if (!ks[k]) { // side arrays, not zone fields: zones are serialised world data
       ks[k] = nearBandKey(this, z.cx0, z.cy0, z.cw, z.ch) + `|realTrees:${this.terrain.realTrees}`; // = Terrain._nearKey form
-      this._bandKeysC[k] = ks[k] + `|detail:${this._detailCtx ? 1 : 0}`;
+      this._bandKeysC[k] = ks[k] + `|detail:${this._detailCtx ? 1 : 0}|decor:${this.decorGpu ? 1 : 0}`;
     }
     return this._bandKeysC[k];
   }
@@ -1273,7 +1286,7 @@ export class World {
     const id = i * 4096 + j; let k = this._zoneKeys.get(id);
     if (!k) {
       const z = zoneAt(this.terrainGrid, i, j, {});
-      k = nearBandKey(this, z.cx0, z.cy0, z.cw, z.ch) + `|realTrees:${this.terrain.realTrees}|detail:${this._detailCtx ? 1 : 0}`;
+      k = nearBandKey(this, z.cx0, z.cy0, z.cw, z.ch) + `|realTrees:${this.terrain.realTrees}|detail:${this._detailCtx ? 1 : 0}|decor:${this.decorGpu ? 1 : 0}`;
       this._zoneKeys.set(id, k);
     }
     return k;
@@ -1388,13 +1401,13 @@ export class World {
     terrain._nearKey = this._bandKeys[to];
     const src = hit || j;
     if (terrain.realTrees) this.scatter = hit ? hit.scatter : j.scatter;
-    if (this._detailCtx) this.detail = hit ? hit.detail : j.detailSet;
+    if (this._detailCtx) { this.detail = hit ? hit.detail : j.detailSet; this.decor = hit ? hit.decor || null : (j.detail && j.detail.decor) || null; }
     this._rebuildCarpet(true);
     if (this.physicsMode === 'mesh') {
       this._setCollider('scatter:trunks', hit ? hit.trunks : j.trunks);
       this._setCollider('scatter:detail', hit ? hit.detailCol : j.detailCol);
     }
-    if (!hit) { bundle = { key, zone: to, near: terrain.near, scatter: j.scatter, detail: j.detailSet, trunks: j.trunks, detailCol: j.detailCol, nav: j.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 }; this._cachePut(bundle); }
+    if (!hit) { bundle = { key, zone: to, near: terrain.near, scatter: j.scatter, detail: j.detailSet, decor: (j.detail && j.detail.decor) || null, trunks: j.trunks, detailCol: j.detailCol, nav: j.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 }; this._cachePut(bundle); }
     if (this.navTiles) { // WM-03: nav tile swaps with the band (pointer flip; a bundle without one = legacy/cached before setNavTiles -> built once)
       let nv = src.nav;
       if (!nv) { this.navLate++; nv = buildNavTile(this, terrain.near); src.nav = nv; if (bundle) bundle.nav = nv; } // counted fallback (should stay 0 in play)
@@ -1611,7 +1624,8 @@ export class World {
     if (!terrain || !terrain.nearReady) return { ms: 0, trees: 0, detail: 0, snapped: 0 };
     terrain.recomputeBounds();
     if (terrain.realTrees) this.scatter = scatterTrees(terrain, this.structures);
-    if (this._detailCtx) this.detail = scatterDetail(terrain, this.structures, this._detailCtx.keepOut, this._detailCtx.cfg, this.scatter || null);
+    if (this._detailCtx) this.detail = scatterDetailD(terrain, this.structures, this._detailCtx.keepOut, this._detailCtx.cfg, this.scatter || null, this.decorGpu ? { decorGpu: true, carpetCtx: this._carpetCtx } : null);
+    if (this._detailCtx) this.decor = this.detail.decor || null;
     this._rebuildCarpet();
     if (this.physicsMode === 'mesh') {
       const put = (id, collider) => {

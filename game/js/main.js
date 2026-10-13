@@ -7,6 +7,7 @@
 // engine/index.js like everything else (check-deps rule 3).
 
 import { applyImpostorBoot, reapplyRememberedImpostors } from './ui/impostorPreset.js'; // R6-WIRE
+import { parseDecorMode, buildDecorConfig } from './decorHost.js'; // ENV-01-WIRE
 import { loadPresets, resolveQuality, saveQuality, knobsFor, dropStaleOverrides, carpetQualityFor, carpetBuildFor } from './ui/gfxPresets.js';
 import { loadQuestFiles, showBootErrors } from './questBoot.js';
 import { registerRiggedChars } from './quest/charRegister.js';
@@ -1079,6 +1080,17 @@ async function runGame(mode, cinematic = null) {
   const worldLoadOpts = { physics,
     realTrees: renderer === 'mesh' && physics === 'mesh' && params.get('trees') !== '0',
     detail: renderer === 'mesh' && physics === 'mesh' && params.get('scatter') !== '0' }; // ENV-01a2: `?scatter=0` (not `?detail=0`, that is the US-028 v1-shading switch)
+  // ENV-01-WIRE (38.62): GPU decor scatter, only on the WebGPU mesh renderer with the GPU cull; `?decor=cpu` keeps today's CPU layers (decorGpu false = byte-identical)
+  let decorPass = null; const decorDbg = { total: 0, frameErrors: 0 };
+  if (worldLoadOpts.detail && wgPipeline && wgPipeline.ready && rt.backend === 'webgpu' && wgPipeline._rasterPass
+      && ((window.ASSETS.levels.overworld_far?.recipe?.detail?.layers) || []).some((l) => l.gpu) && parseDecorMode(params.get('decor'), true)) {
+    decorPass = wgPipeline._rasterPass.enableDecor(); // null without the GPU cull
+    if (decorPass) {
+      worldLoadOpts.decorGpu = true;
+      const run0 = decorPass.run.bind(decorPass); // cumulative dispatch / error counters for __debug.decorStats
+      decorPass.run = (fr, p) => { try { run0(fr, p); decorDbg.total += decorPass.stats.dispatches; } catch (e) { decorDbg.frameErrors++; throw e; } };
+    }
+  }
   { // OB-073-D2f: the grass carpet (38.52); OB-096 (owner: grass everywhere, square): ON per quality preset (OB-103b/D-075 G1: low = off, medium/high/ultra scale radius+density), `?carpet=0` forces off, `?carpet=1` forces on; ramp palette keys -> 0..255 RGB triplets
     const rcp = window.ASSETS.levels.overworld_far && window.ASSETS.levels.overworld_far.recipe && window.ASSETS.levels.overworld_far.recipe.carpet;
     if (rcp && renderer === 'mesh' && carpetBuildFor(!!bootOpts.quality, params.get('carpet'))) worldLoadOpts.carpet = { ...rcp, variants: rcp.variants.map((v) => ({ ...v, ramp: v.ramp.map((k) => Array.from(hexToRgb(assets.palette.colors[k]))) })) };
@@ -1380,6 +1392,27 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     // OB-073-D2f: hand the GPU carpet pass the class map + near heights on every world load / band swap (version bump re-uploads)
     let carpetVer = 0;
     const pushCarpet = (wIn) => { const w = wIn || engine.world, nb = w && w.terrain && w.terrain.near; if (!wgPipeline || !wgPipeline.setCarpet) return; if (!w || !w.carpet || !nb) { wgPipeline.setCarpet(null, null, 0); return; } wgPipeline.setCarpet(w.carpet, { data: nb.hDraw, w: nb.w, h: nb.h, x0: nb.x0, y0: nb.y0, cell: nb.cell }, ++carpetVer); };
+    // ENV-01-WIRE: configure the decor pass once per world, then hand it the band's baked masks + near heights (re-uploaded only when they change)
+    let decorWorld = null, decorNearSrc = null, decorNearObj = null, decorBad = false;
+    const pushDecor = (wIn) => {
+      if (!decorPass || decorBad) return;
+      const w = wIn || engine.world, nb = w && w.terrain && w.terrain.near;
+      if (!w || !w.decorGpu || !w.decor || !nb) { decorPass.setMasks(null, 0); decorPass.setNear(null, 0); return; }
+      try {
+        if (decorWorld !== w) {
+          const cq = w.carpetQuality, built = buildDecorConfig(w.terrain.recipe.recipe.detail, (id) => assets.mesh(id), {
+            density: resolvedQuality && resolvedQuality.knobs ? resolvedQuality.knobs.decorDensity : 1,
+            carpetRadiusM: w.carpet && cq && cq.on ? (w.carpet.cfg.radiusM || 12) * cq.radiusScale : 0, warn: console.warn });
+          if (!built) { decorBad = true; return; }
+          decorPass.configure(built.cfg); decorWorld = w;
+        }
+        if (decorNearSrc !== nb.hDraw) { decorNearSrc = nb.hDraw; decorNearObj = { data: nb.hDraw, w: nb.w, h: nb.h, x0: nb.x0, y0: nb.y0, cell: nb.cell }; }
+        decorPass.setMasks(w.decor, w.bandId); decorPass.setNear(decorNearObj, decorNearSrc);
+      } catch (e) { decorBad = true; decorPass.setMasks(null, 0); console.warn('[decor] GPU decor disabled: ' + (e && e.message)); }
+    };
+    engine.events.on('world:loaded', (e) => pushDecor(e && e.world)); engine.events.on('world:band', () => pushDecor()); engine.events.on('world:scatter', () => pushDecor());
+    window.__debug = window.__debug || {}; // verify-decor.mjs: count = candidate lattice cells of the last frame (no readback), dispatches/frameErrors cumulative
+    window.__debug.decorStats = () => ({ on: !!(decorPass && decorPass.on), count: decorPass ? decorPass.stats.lastThreads : 0, dispatches: decorDbg.total, frameErrors: decorDbg.frameErrors });
     engine.events.on('world:loaded', (e) => pushCarpet(e && e.world)); engine.events.on('world:band', () => pushCarpet()); engine.events.on('world:scatter', () => pushCarpet()); // review 12d: refreshTerrainScatter rebuilds the carpet too // the event's world: engine.world is not swapped yet when world:loaded fires
     engine.events.on('world:loaded', (evt) => {
       const world = evt.world;
