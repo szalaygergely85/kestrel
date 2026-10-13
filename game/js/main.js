@@ -6,6 +6,7 @@
 // (engine/entities/Player.js, engine/physics/*), so this now comes from
 // engine/index.js like everything else (check-deps rule 3).
 
+import { applyImpostorBoot, reapplyRememberedImpostors } from './ui/impostorPreset.js'; // R6-WIRE
 import { loadPresets, resolveQuality, saveQuality, knobsFor, dropStaleOverrides, carpetQualityFor, carpetBuildFor } from './ui/gfxPresets.js';
 import { loadQuestFiles, showBootErrors } from './questBoot.js';
 import { registerRiggedChars } from './quest/charRegister.js';
@@ -104,6 +105,7 @@ import { stepActionHints, resetActionHints } from './quest/actionHints.js'; // F
 import { createWild } from './wild/wildEnv.js'; // WILD-06: ambient rabbits + deer
 import { createGoblinWire } from './life/goblinWire.js'; // GOB-07b
 import { createLifeWire, prepareRaidDefs, createOutwallLife } from './life/lifeWire.js'; // LIFE-HOOKS-01: wolf raids wiring
+import { bootRegionalBeasts } from './quest/sim/regionalBeastsBoot.js'; // WM-12
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
 import { ensureBears } from './quest/sim/bearBrain.js'; // BEAR-01 (D-069): black bears in Thornwood
@@ -1486,6 +1488,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         world.setNavTiles({ create: (x0, y0, w, h, cell) => new NavGrid({ x0, y0, w, h, cell }), maxSlopeDeg: nc.maxSlopeDeg ?? 30, maxStepM: nc.maxStepM ?? Infinity, blockedTypes: nc.blockedTypes ?? ['water'] });
       }
       const gridNav = world.terrainGrid && world.nav ? { grid: world.nav, astar: createAStar(world.nav) } : null;
+      bootRegionalBeasts(world, window.ASSETS?.levels?.world_geo, params, isCaptureOrBench); // WM-12: regional herds, after World.load, before the sim
       beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null }); // LIFE-07: predators hunt the ambient fauna
       if (goblinWire) goblinWire.attach(beasts, { onClank: () => playShieldClank() }); // GOB-07b: camps + spear sim + view
       if (lifeWire) { lifeWire.dispose(); lifeWire = null; } // LIFE-08: night raids (content/life/raids.json), rebuilt with every beast sim
@@ -2629,6 +2632,12 @@ stream act ${g.activeCount}/${g.memberCount} warm ${g.warmCount} cells ${g.cellC
     while (farHold.step()) { bootProg.fraction('land', farHold.frac); await bootPaint(); }
     window.__farHoldMs = performance.now() - t0;
     console.info(`[boot] far terrain + bands baked behind the card in ${window.__farHoldMs.toFixed(0)} ms (${farHold.slices} slices, bands ${(engine.world.bandCache.bytes / 1048576).toFixed(1)} MB)`);
+  }
+  { // R6-WIRE: card impostors from the quality preset (after the pre-bake; capture/bench pages without a preset stay impostor-free)
+    const fo = window.ASSETS && window.ASSETS.levels && window.ASSETS.levels.overworld_far && window.ASSETS.levels.overworld_far.recipe && window.ASSETS.levels.overworld_far.recipe.forest;
+    if (resolvedQuality && resolvedQuality.knobs && fo && fo.trees) applyImpostorBoot(engine, resolvedQuality.knobs, { species: fo.trees.species, log: console.warn, imp: params.get('imp') });
+    // bindScatterInstances rebuilds the tree groups on both events: reapply the remembered knobs AFTER the engine's own listener (registered earlier)
+    if (resolvedQuality && resolvedQuality.knobs && fo && fo.trees) for (const ev of ['world:scatter', 'world:loaded']) engine.events.on(ev, () => { try { reapplyRememberedImpostors(engine); } catch (e) { console.warn('impostor reapply', e); } });
   }
   window.__farReadyAtBoot = !!(engine.world && engine.world.terrain && engine.world.terrain.farReady);
   if (bootProg) engine.events.on('world:loaded', ({ world: nw }) => {

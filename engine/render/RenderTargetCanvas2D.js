@@ -100,8 +100,8 @@ export class RenderTargetCanvas2D {
     // softness, see D-005).
     // OB-117: fills the whole window like the WebGPU target.
     const css = fitCssRatio(this._aspect, this.pxCellW * this.cols, this.pxCellH * this.rows, dpr, availW, availH);
-    this.canvas.style.width = css.w + 'px';
-    this.canvas.style.height = css.h + 'px';
+    this.canvas.style.width = (css.w > 0 ? css.w : availW) + 'px';
+    this.canvas.style.height = (css.h > 0 ? css.h : availH) + 'px';
     this.canvas.width = this.pxCellW * this.cols;
     this.canvas.height = this.pxCellH * this.rows;
 

@@ -2,6 +2,7 @@ import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   meshFromJSON, meshFromBin, composeCharacter, meshCharacter, collapseRig, riggedModelDef, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks, sunPathFrom, applySunPair, blendLook,
+  bakeImpostor, enableGroupImpostor, resolveGroupLod1, createInstanceBuffer,
   createRipples, defineWadeSplash, wadeSplashAt, validateCarpetConfig, makeUnderState,
 } from '../../../../engine/index.js';
 import {
@@ -681,6 +682,27 @@ function buildCompareRuns(ctx) {
       cam: { x, y, z: swayWindWorld.terrain.groundAt(x, y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: 30 },
       real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, timeSec: 7.3,
       before: () => engine.setWorld(swayWindWorld) });
+    // R6c (38.60 item 8): card impostor rows, NEW, opt-in (`?imp=1`; default gpucompare unchanged until the WebGPU card pass is wired). One tree species
+    // (the densest mesh group of the forest world) is force-enabled: impMid = forestWalk-like pose looking over trees at 60-120 m with impM 60 (cards to
+    // maxDistM); impBand = camera 4 m inside the 8 m dither band of the tree cluster (impM 60, cluster 64 m away). Expected JS == GPU.
+    if (ctx.params.get('imp') === '1') {
+      const enableImp = (impM) => () => {
+        engine.setWorld(forestWorld);
+        const g = engine.instances.groups.filter((q) => q.mesh && q.count > 0).sort((a, b) => b.count - a.count)[0];
+        if (!g) throw new Error('imp row: no tree mesh group in the forest world');
+        const src = resolveGroupLod1(g, engine.instances._meshLookup) || g.mesh;
+        if (!g.imp) enableGroupImpostor(g, bakeImpostor(src.data || src), impM, createInstanceBuffer);
+        g.impM = impM;
+      };
+      runs.push({ world: forestWorld, lights: forestLights, name: 'world_m1: impMid (R6c, one species as cards 60-300 m, forestWalk eye, pitch 5)',
+        cam: { x, y, z: forestWorld.terrain.groundAt(x, y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: 5 },
+        real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, before: enableImp(60) });
+      const bx = sc.x[best] + 64, by = sc.y[best];
+      runs.push({ world: forestWorld, lights: forestLights, name: 'world_m1: impBand (R6c, camera 64 m from the densest cluster = 4 m inside the 60..68 m dither band)',
+        cam: { x: bx, y: by, z: forestWorld.terrain.groundAt(bx, by) + engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 5 },
+        real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, before: enableImp(60) });
+    }
+
     // MAP-12 (arch 38.43): band GRID world, near band at zone g6_9 (cx0 12, cy0 9) - neither the east {8,7} nor the west {6,7} authored zone.
     // Own world instance (terrainBand(s) replaced by terrainGrid, same bake bytes per cell): exercises near type re-upload + band origin at an arbitrary zone.
     const gridDef = { ...assets.world('world_m1'), terrainGrid: { cx0: 0, cy0: 0, cx1: 32, cy1: 32, cw: 5, ch: 3, stepX: 2, stepY: 1, ox: 0, oy: 0 } };

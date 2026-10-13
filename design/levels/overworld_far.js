@@ -42,7 +42,7 @@
   var TREE_SPECIES_MESH = (function () {
   var out = [];
   [[14, 0.5, 2.3], [14, 0.5, 2.8], [12, 0.5, 2.5], [10, 0.5, 5.0], [10, 0.45, 2.3]].forEach(function (t, i) {
-    out.push({ mesh: 'quaternius/CommonTree_' + (i + 1), weight: t[0], trunkR: t[1], trunkH: t[2], sway: true, lodCells: TREE_LODCELLS_BY_MESH['CommonTree_' + (i + 1)] });
+    out.push({ mesh: 'quaternius/CommonTree_' + (i + 1), weight: t[0], trunkR: t[1], trunkH: t[2], sway: true, lodCells: TREE_LODCELLS_BY_MESH['CommonTree_' + (i + 1)], impostor: i < 3 }); // R6d: impostor = card-impostor opt-in (3 most common species by weight)
   });
   [[10, 0.45, 2.1], [10, 0.45, 1.1], [8, 0.45, 3.0], [6, 0.45, 2.4], [6, 0.35, 1.4]].forEach(function (t, i) {
     out.push({ mesh: 'quaternius/Pine_' + (i + 1), weight: t[0], trunkR: t[1], trunkH: t[2], sway: true, lodCells: TREE_LODCELLS_BY_MESH['Pine_' + (i + 1)] });

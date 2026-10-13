@@ -150,8 +150,8 @@ export class RenderTargetWebGPU {
     const css = refAvailW == null
       ? fitCssRatio(this._aspect, this.pxCellW * this.cols, this.pxCellH * this.rows, dpr, availW, availH)
       : fitCssSize(this.cellW * this.cols, this.cellH * this.rows, availW, availH, 1);
-    this.canvas.style.width = css.w + 'px';
-    this.canvas.style.height = css.h + 'px';
+    this.canvas.style.width = (css.w > 0 ? css.w : availW) + 'px';
+    this.canvas.style.height = (css.h > 0 ? css.h : availH) + 'px';
     this.canvas.style.imageRendering = css.smooth ? 'auto' : ''; // BUG-SQUARES-01: '' = page CSS (pixelated) at 1:1
     this.canvas.width = this.pxCellW * this.cols; // the configured context follows the canvas size
     this.canvas.height = this.pxCellH * this.rows;

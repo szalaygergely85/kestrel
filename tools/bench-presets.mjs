@@ -2,6 +2,8 @@
 // Run: node tools/bench-presets.mjs 9575 [--poses roadSouth,meadowDetail,fordDetail,outwall] [--rays 1,2,4] [--grid 480x180] [--seconds 20] [--json]
 // Port range PC-B 9500-9999 (this clone: 9575-9649); port+1 is CDP. Stats source = the F3 "wg pass ms" line:
 // __debug.wgPipeline.stats.{gpuMsP50,gpuMsP95,wgPassMsP50[]} (WG_PASS_NAMES order). If timestamp queries are unavailable
+// R6d (D-075 step 5): --imp off,on runs each pose with card impostors off/on (URL ?imp=0|1, NEEDS B1-main: main.js reads it, see lane note);
+// --quality ultra|high adds &quality= and --gpu rtx|intel picks the gate: RTX ultra <= 7.5 ms total GPU, Intel high <= 10 ms (roadSouth, imp on); printed PASS/FAIL.
 // those are NaN: the table then shows n/a and the frame time (rAF delta) is the only number - said in the footer.
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -19,7 +21,7 @@ export function pct(arr, p) {
 const median = (arr) => pct(arr, 0.5);
 
 export function parseArgs(argv) {
-  const o = { port: NaN, poses: ['roadSouth', 'meadowDetail', 'fordDetail', 'outwall'], rays: [1, 2, 4], grid: '480x180', seconds: 20, json: false };
+  const o = { port: NaN, poses: ['roadSouth', 'meadowDetail', 'fordDetail', 'outwall'], rays: [1, 2, 4], grid: '480x180', seconds: 20, json: false, imp: [null], quality: null, gpu: null };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -27,6 +29,9 @@ export function parseArgs(argv) {
     else if (a === '--poses') o.poses = String(argv[++i]).split(',').filter(Boolean);
     else if (a === '--rays') o.rays = String(argv[++i]).split(',').map(Number);
     else if (a === '--grid') o.grid = String(argv[++i]);
+    else if (a === '--imp') o.imp = String(argv[++i]).split(',').filter(Boolean).map((v) => (v === 'on' || v === '1' ? 1 : 0));
+    else if (a === '--quality') o.quality = String(argv[++i]);
+    else if (a === '--gpu') o.gpu = String(argv[++i]);
     else if (a === '--seconds') o.seconds = Number(argv[++i]);
     else rest.push(a);
   }
@@ -35,11 +40,11 @@ export function parseArgs(argv) {
 }
 
 /** Frame deltas (ms) + GPU sample series -> one table row. gpu = { total:[], passes:{raster:[],...} } of P50 snapshots. */
-export function summarize(pose, rays, grid, frameDeltas, gpu) {
+export function summarize(pose, rays, grid, frameDeltas, gpu, imp = null) {
   const m = /^(\d+)x(\d+)$/.exec(grid);
   const cells = m ? Number(m[1]) * Number(m[2]) : NaN;
   const row = {
-    pose, rays, grid,
+    pose, rays, grid, imp,
     frameP50: pct(frameDeltas, 0.5), frameP95: pct(frameDeltas, 0.95),
     totalGpu: median(gpu.total),
     gbufferMB: cells * rays * GBUFFER_BYTES_PER_SAMPLE / 1048576,
@@ -49,10 +54,24 @@ export function summarize(pose, rays, grid, frameDeltas, gpu) {
   return row;
 }
 
+/** D-075 step 5 gates (total GPU ms at roadSouth, impostors on). Returns {name, limit, ms, pass} or null when not applicable. */
+export const IMP_GATES = { rtx: { quality: 'ultra', limit: 7.5 }, intel: { quality: 'high', limit: 10 } };
+export function gateResult(rows, gpuKind, quality, pose = 'roadSouth') {
+  const g = IMP_GATES[gpuKind];
+  if (!g || quality !== g.quality) return null;
+  const r = rows.find((x) => x.pose === pose && x.imp === 1);
+  if (!r || !r.timers) return { name: `${gpuKind} ${g.quality}`, limit: g.limit, ms: NaN, pass: null };
+  return { name: `${gpuKind} ${g.quality}`, limit: g.limit, ms: r.totalGpu, pass: r.totalGpu <= g.limit };
+}
+export function formatGate(res) {
+  if (!res) return 'GATE: n/a (needs --gpu rtx --quality ultra, or --gpu intel --quality high, with --imp on)';
+  return `GATE ${res.name} <= ${res.limit} ms GPU at roadSouth (imp on): ${Number.isFinite(res.ms) ? res.ms.toFixed(2) + ' ms ' : 'no timers '}${res.pass === null ? 'UNKNOWN' : res.pass ? 'PASS' : 'FAIL'}`;
+}
+
 const f = (v, d = 2) => (Number.isFinite(v) ? v.toFixed(d) : 'n/a');
 export function formatTable(rows) {
-  const head = ['pose', 'rays', 'frame p50', 'frame p95', 'raster', 'resolve', 'shade', 'total GPU', 'gbuf MB'];
-  const body = rows.map((r) => [r.pose, String(r.rays), f(r.frameP50), f(r.frameP95), f(r.raster), f(r.resolve), f(r.shade), f(r.totalGpu), f(r.gbufferMB, 1)]);
+  const head = ['pose', 'rays', 'imp', 'frame p50', 'frame p95', 'raster', 'resolve', 'shade', 'total GPU', 'gbuf MB'];
+  const body = rows.map((r) => [r.pose, String(r.rays), r.imp === null || r.imp === undefined ? '-' : r.imp ? 'on' : 'off', f(r.frameP50), f(r.frameP95), f(r.raster), f(r.resolve), f(r.shade), f(r.totalGpu), f(r.gbufferMB, 1)]);
   const w = head.map((h, i) => Math.max(h.length, ...body.map((b) => b[i].length)));
   const line = (c) => c.map((x, i) => i === 0 ? x.padEnd(w[i]) : x.padStart(w[i])).join('  ');
   const out = [line(head), w.map((n) => '-'.repeat(n)).join('  '), ...body.map(line)];
@@ -76,8 +95,8 @@ async function main() {
     cdp = await connectCdp(o.port + 1, 15000);
     await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false });
-    for (const pose of o.poses) for (const rays of o.rays) {
-      await cdp.send('Page.navigate', { url: `http://127.0.0.1:${o.port}/game/index.html?pose=${pose}&grid=${o.grid}&rays=${rays}&title=0` });
+    for (const pose of o.poses) for (const rays of o.rays) for (const imp of o.imp) {
+      await cdp.send('Page.navigate', { url: `http://127.0.0.1:${o.port}/game/index.html?pose=${pose}&grid=${o.grid}&rays=${rays}${o.quality ? `&quality=${o.quality}` : ''}${imp === null ? '' : `&imp=${imp}`}&title=0` });
       let ready = false;
       for (let i = 0; i < 400; i++) { // up to ~2 min: pipeline ready + far terrain baked
         await pause(300);
@@ -97,7 +116,7 @@ async function main() {
       const raw = JSON.parse(await evaluate(cdp, 'window.__bp.on=false; clearInterval(window.__bpIv); clearInterval(window.__lockIv); JSON.stringify({deltas:window.__bp.deltas,total:window.__bp.total,passes:window.__bp.passes})'));
       const nan = (a) => a.map((v) => (v === null ? NaN : v)); // JSON turns NaN into null
       raw.total = nan(raw.total); for (const k in raw.passes) raw.passes[k] = nan(raw.passes[k]);
-      rows.push(summarize(pose, rays, o.grid, raw.deltas, raw));
+      rows.push(summarize(pose, rays, o.grid, raw.deltas, raw, imp));
     }
   } finally {
     cdp?.close(); if (browser?.pid) killTree(browser.pid); if (server.pid) killTree(server.pid);
@@ -105,7 +124,7 @@ async function main() {
     try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch (e) { console.warn('[cleanup] temp profile left behind:', e.message); }
   }
   if (o.json) console.log(JSON.stringify(rows.map((r) => ({ ...r, frameP50: r.frameP50 || null })), (k, v) => (typeof v === 'number' && !Number.isFinite(v) ? null : v), 2));
-  else console.log(formatTable(rows));
+  else console.log(formatTable(rows) + '\n' + formatGate(gateResult(rows, o.gpu, o.quality)));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

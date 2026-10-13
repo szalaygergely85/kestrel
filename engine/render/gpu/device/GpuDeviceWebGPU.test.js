@@ -393,6 +393,28 @@ await run('webgpu: requestDevice rejects -> throws', {
   ok('dispose(computePipeline) drops it from the tracked list', d2._computePipes.indexOf(p2) < 0);
 }
 
+// R6c part 2: storageBuffers bind groups are cached per desc (2 species share one pipeline, 2 frames -> 2 createBindGroup calls, not 4)
+{
+  const g = mockGpu();
+  g.createBuffer = () => ({ destroy() {} });
+  const c2 = { buf: { ...consts.buf, STORAGE: 32, INDIRECT: 64, COPY_SRC: 128 }, tex: consts.tex, stage: { ...consts.stage, COMPUTE: 4 }, map: consts.map };
+  const d = new GpuDeviceWebGPU(g, { consts: c2, ringSlots: 8 });
+  const a = d.createTexture({ format: 'rgba32ui', width: 4, height: 4 }), dep = d.createTexture({ format: 'depth24', width: 4, height: 4 });
+  const tgt = d.createTarget({ color: [a], depth: dep });
+  const pipe = d.createPipeline({ vertex: { src: { wgsl: 'x' } }, fragment: { src: { wgsl: 'x' }, targets: 1 }, depth: { test: true, write: true },
+    bindings: { uniformBytes: 32, textures: [], buffers: ['read', 'read'] }, targetFormats: ['rgba32ui'], depthFormat: 'depth24' });
+  const atlas = d.createBuffer({ usage: 'storage', bytes: 64 });
+  const mk = () => { const dst = d.createBuffer({ usage: 'storage', bytes: 64 }); return { uniforms: new Float32Array(8), storageBuffers: [{ slot: 0, buffer: dst }, { slot: 1, buffer: atlas }] }; };
+  const s1 = mk(), s2 = mk();
+  const before = g.calls.filter((c) => c === 'createBindGroup').length;
+  for (let f = 0; f < 2; f++) { d.beginPass(tgt, { clear: true }); d.bind(pipe, s1); d.draw(3); d.bind(pipe, s2); d.draw(3); d.endPass(); }
+  ok('2 species x 2 frames -> 2 storage bind groups', g.calls.filter((c) => c === 'createBindGroup').length - before === 2);
+  const s1b = s1.storageBuffers[0].buffer; s1.storageBuffers[0].buffer = d.createBuffer({ usage: 'storage', bytes: 64 });
+  d.beginPass(tgt, { clear: true }); d.bind(pipe, s1); d.draw(3); d.endPass();
+  ok('changed buffer rebuilds that desc group', g.calls.filter((c) => c === 'createBindGroup').length - before === 3 && s1b !== s1.storageBuffers[0].buffer);
+  d.dispose();
+}
+
 console.log(`\n${pass} passed, ${fail} failed.`);
 if (fail > 0) { console.log('Failures:'); for (const f of failures) console.log(`  - ${f}`); process.exit(1); }
 console.log('ALL PASS');
