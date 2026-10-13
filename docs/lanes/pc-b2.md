@@ -865,3 +865,7 @@ New `tools/verify-wm-regions.mjs <port>` (10 stills -> docs/test-reports/wm-regi
 - -> arch-review + owner look
 ### WM-13b relay wake lines (kestrel-3)
 - RELAY_WAKE (10 ws_<region> lines) beside RELAY_TITLES in quest/wire/waystone.js; relayWake showWakeNotice shows the relay's own line as toast (drawHud), old relays unchanged; gen-region-relays.mjs no longer writes NEEDS WRITER. Test added in relayWake.test.js.
+### WMP-01 region errands (kestrel-3)
+- content/quests/regions/pack.json (10 errands sq.reg.<region>, giver = relay_<region>, requires flag waystone.ws_<region>.woken; kill kind boar/wolf/bear by REGION_RULES, strand = deliver 5 arrows to relay_downs), 10 relay sites in sites.json, pack in index.json; test game/js/quest/regionErrands.test.js (91 pass; lists 20 NEEDS WRITER title/journal keys). quest-sim, validate-content OK.
+- NEEDS B1-main: check relay wake sets quest flag waystone.ws_<region>.woken via questFlag (the errands gate on it); relay inspect -> book.inspect for relay_<region> givers (errands.js relayEnt path).
+- -> po-review

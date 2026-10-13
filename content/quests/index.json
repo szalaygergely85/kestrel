@@ -3,7 +3,8 @@
   "packs": [
     "ch12",
     "ch3",
-    "ch3b"
+    "ch3b",
+    "regions"
   ],
   "legacy": [
     "m1",
