@@ -652,6 +652,26 @@ for (const [name, breakFixture, finding] of areaCases) {
   bad('crafting-free fixed ref', (c) => { c.sources.boar.fixed[0].item = 'ghost'; }, 'fixed');
 }
 
+
+// WMP-04: region lint. One fixture per case, each must give exactly its finding; the clean control gives none.
+{
+  const { lintRegions } = await import('./validate-content.mjs');
+  const q = (o = {}) => ({ id: 'sq.reg.aa', title: 'T', returnText: 'Back', site: 'relay_aa', lines: { offer: ['hi'], done: ['bye'] }, steps: [{ journal: 'j', objText: 'o', template: 'kill', params: { kind: 'boar', count: 1 } }], ...o });
+  const base = () => ({ geo: { bounds: { pts: [[0, 0], [100, 0], [100, 100], [0, 100]] }, regions: [{ id: 'aa', r: [10, 10, 60, 60] }] }, quests: [q()], sites: { relay_aa: {}, relay_bb: {} }, relayIds: ['ws_aa'], itemIds: new Set(['arrow']), beastKinds: new Set(['boar']),
+    camps: [{ id: 'campFar.aa', region: 'aa', at: [30, 30], members: [{ id: 'm1', at: [2, 2] }] }] });
+  const one = (name, mut, text) => { const o = base(); mut(o); const e = lintRegions(o); ok('region lint: ' + name, e.length === 1 && e[0].includes(text), JSON.stringify(e)); };
+  ok('region lint: clean control = 0 findings', lintRegions(base()).length === 0, JSON.stringify(lintRegions(base())));
+  one('relay without errand', (o) => { o.relayIds.push('ws_bb'); }, 'ws_bb has no errand');
+  one('unknown kill kind', (o) => { o.quests[0].steps[0].params.kind = 'dragon'; }, "kill kind 'dragon'");
+  one('unknown site', (o) => { o.quests[0].site = 'relay_zz'; }, "site 'relay_zz'");
+  one('unknown deliver-to', (o) => { o.quests[0].steps = [{ journal: 'j', objText: 'o', template: 'deliver', params: { item: 'arrow', to: 'relay_zz', count: 1 } }]; }, "deliver-to 'relay_zz'");
+  one('unknown deliver item', (o) => { o.quests[0].steps = [{ journal: 'j', objText: 'o', template: 'deliver', params: { item: 'ghost', to: 'relay_bb', count: 1 } }]; }, "item 'ghost'");
+  one('camp outside bounds', (o) => { o.camps[0].at = [150, 30]; o.camps[0].members = []; o.geo.regions[0].r = [10, 10, 200, 60]; }, 'outside the bounds polygon');
+  one('camp outside region', (o) => { o.camps[0].at = [80, 80]; o.camps[0].members = []; }, 'outside region aa');
+  one('empty title', (o) => { o.quests[0].title = ''; }, 'title is empty');
+  one('NEEDS WRITER left', (o) => { o.quests[0].steps[0].journal = 'NEEDS WRITER'; }, 'NEEDS WRITER');
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) {
   console.error('FAILURES:');
