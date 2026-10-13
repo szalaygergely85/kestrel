@@ -28,7 +28,7 @@ const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 const { assets } = await loadTestAssets();
 const heapMB = () => { if (globalThis.gc) globalThis.gc(); return process.memoryUsage().heapUsed / 1048576; };
-const def0 = (() => { const d = JSON.parse(JSON.stringify(assets.world('world_m1'))); delete d.terrainBand; delete d.terrainBands; return d; })();
+const def0 = (() => { const d = JSON.parse(JSON.stringify(assets.world('world_m1'))); delete d.terrainBand; delete d.terrainBands; delete d.terrainGrid; return d; })();
 const GRID = { cx0: 0, cy0: 0, cx1: 32, cy1: 32, cw: 5, ch: 3, stepX: 2, stepY: 1, ox: 0, oy: 0 };
 const A = { id: 'east', cx0: 8, cy0: 7, cw: 5, ch: 3 }, B = { id: 'west', cx0: 6, cy0: 7, cw: 5, ch: 3 };
 const mk = (extra, o) => World.load({ ...def0, ...extra }, assets, { detail: true, ...o });

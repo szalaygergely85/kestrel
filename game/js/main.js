@@ -81,7 +81,8 @@ import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-05
 import { createWaystoneTouch } from './waystoneTouch.js'; // WAYSTONE-TOUCH-01
 import { createWaystoneWire } from './quest/wire/waystone.js'; // WAYSTONE-01w
 import { createTravel } from './quest/travel.js'; // WS1-07b: map travel (fade, teleport, reset)
-import { ensureBand, bandReady, placeLoaded, gridEnabled, gridVariant } from './quest/bandPose.js'; // MAP-13: band at any pose + ?grid=1 variant
+import { aspectRatio } from './settings/options.js'; // OB-117: saved picture ratio at boot
+import { ensureBand, bandReady, placeLoaded, gridEnabled, gridVariant, legacyVariant } from './quest/bandPose.js'; // MAP-13: band at any pose; WM-05: grid default, ?grid=0 = legacy bands
 import { createTitleMenuHost, withRelock } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { retintHand, lookOrDefault } from './quest/look/handLook.js'; // CHARGEN-16
@@ -637,6 +638,8 @@ const menuWanted = params.get('title') !== '0' && !isCaptureOrBench && params.ge
 // (small, CPU-side) objects, by the fallback gate below (architect review 1
 // item 2) and by any later live grid change (the `grid:changed` handler).
 let { renderTarget: rt, depthBuffer } = engine;
+// OB-117: apply the saved picture ratio at boot (settings panel applies it live); gpucompare/capture/bench pages keep the reference box.
+if (!isCaptureOrBench && params.get('capture') !== '1' && typeof rt.setAspect === 'function') rt.setAspect(aspectRatio(loadSettings().aspect));
 const { input } = engine;
 if (demo.on) blockFKeys(input); // demo: no F3 / F-key dev overlays
 // DEMO-MODE-01: end card once per run on the waystone done event; Restart wipes the demo save and reloads.
@@ -1349,7 +1352,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       }
       : (() => { // US-034 (24.11): the play-test handoff's `?world=` param
         const wd = assets.world(params.get('world') || 'world_m1');
-        return gridEnabled(params) && wd.terrainBands ? gridVariant(wd, window.ASSETS.levels.world_geo) : wd; // MAP-13: ?grid=1 (default OFF) = terrainGrid + polygon bounds; shipped json untouched
+        if (gridEnabled(params)) return wd.terrainBands ? gridVariant(wd, window.ASSETS.levels.world_geo) : wd; // WM-05: world_m1 ships terrainGrid + polygon bounds (default)
+        return wd.terrainGrid ? legacyVariant(wd) : wd; // ?grid=0: old terrainBands + capsule bounds for one sprint
       })();
 
     // US-017 (7.4 "Restart / world swap"): every runtime rebuild this block
@@ -1362,6 +1366,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     // the 'world:loaded' handler" rule).
     engine.events.on('world:band', (ev) => { // WM-04: the nav tile swapped with the band -> beasts rebind + re-plan, dormancy by tile
       if (beasts && ev && ev.nav && playerHandle) { const pt = playerHandle.data.transform; beasts.rebindNav(ev.nav, pt.x, pt.y); }
+      if (outLife && ev && ev.nav && playerHandle) { const pt = playerHandle.data.transform; outLife.rebindNav(ev.nav, pt.x, pt.y); } // OUT-LIFE-TILE: villagers follow the tile too
     });
     engine.events.on('world:band', () => hzb.invalidate('band')); // WS2-05: near/far seam jumped -> cut the HZB + stable history
     // OB-073-D2f: hand the GPU carpet pass the class map + near heights on every world load / band swap (version bump re-uploads)
@@ -1567,7 +1572,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       outwall = saveEnabled && saveRelay ? createOutwall({ world, questFlag: (k) => saveRelay.quest.questFlag(k) }) : null;
       dialogueCtl.addNpc('hesk'); dialogueCtl.addNpc('dorrin'); // Ch3 Outwall NPCs (world_m1 entities, char.kit model registered at boot; both share the default kit look, no tint)
       if (outLife) outLife.dispose(); // LIFE-04: villagers replace the OUT-02 spawn hook; only with saves live (same gate as OUT-01), never in capture/bench
-      outLife = lifeData && outwall && lifeNav && mode === 'world' ? createOutwallLife({ world, life: lifeData.life, nav: lifeNav, events: engine.events, state: world.state, outwall, dialogue: dialogueCtl, barksData: lifeData.barks, style: window.ASSETS.uiStyle.dialogue, hour: clockHour(world.state, clockCfg) }) : null;
+      outLife = lifeData && outwall && lifeNav && mode === 'world' ? createOutwallLife({ world, life: lifeData.life, nav: lifeNav, tileNav: !!(world.terrainGrid && world.nav && lifeNav === world.nav), events: engine.events, state: world.state, outwall, dialogue: dialogueCtl, barksData: lifeData.barks, style: window.ASSETS.uiStyle.dialogue, hour: clockHour(world.state, clockCfg) }) : null;
       crystal = barks = chapterCard = chapterCard2 = escort = null;
       if (bearTurn) bearTurn.paused = false;
       if (saveEnabled && saveRelay) { // CH1-MOUNT: all three need the quest relay (flags + book)

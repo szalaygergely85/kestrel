@@ -1,6 +1,7 @@
 // MAP-STRAND-01 (D-073): the walk corridor from the south edge (river road) to the Long Strand. Bounds, ground (no void), nav reach, a real walk.
 // Run: node game/js/quest/strandOpen.test.js
 import fs from 'node:fs';
+import { legacyVariant } from './bandPose.js';
 import '../../../design/palette.js';
 import '../../../design/detail-pass.js';
 import '../../../design/levels/overworld_far.js';
@@ -23,7 +24,7 @@ function boundsOvershoot(b, x, y, radius) {
   }
   return best;
 }
-const data = JSON.parse(fs.readFileSync(new URL('../../../content/worlds/world_m1.world.json', import.meta.url), 'utf8'));
+const data = legacyVariant(JSON.parse(fs.readFileSync(new URL('../../../content/worlds/world_m1.world.json', import.meta.url), 'utf8'))); // WM-05: pins the authored corridors (capsule bounds)
 const { assets } = await loadTestAssets();
 const world = World.load(data, assets, { physics: 'mesh' });
 const pts = [];

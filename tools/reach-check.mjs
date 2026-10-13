@@ -9,12 +9,23 @@ const R = 0.3; // player capsule radius
 // Ch2 scenery that is outside the M1 walk bounds by design (footpath north of the ford, MAP-25); not a quest objective.
 const ALLOW = new Set(['hiddenScrawl', 'sealedGate', 'pierStone']) // sealedGate: West Fells pass, outside the M4 walk bounds by design (Part II);
 // Signed distance past the walk bound for a capsule body (<= 0 inside). Local copy of engine/physics/bounds.js (circle / capsule / union;
-// tools may not deep-import the engine). A polygon bound is not supported here.
+// tools may not deep-import the engine). Polygon bound (WM-05) supported.
 function partOver(p, x, y, rad) {
   if (p.shape === 'circle') return Math.hypot(x - p.x, y - p.y) - (p.r - rad);
   if (p.shape === 'capsule') {
     const dx = p.bx - p.ax, dy = p.by - p.ay, t = Math.max(0, Math.min(1, ((x - p.ax) * dx + (y - p.ay) * dy) / (dx * dx + dy * dy)));
     return Math.hypot(x - p.ax - t * dx, y - p.ay - t * dy) - (p.r - rad);
+  }
+  if (p.shape === 'polygon') { // WM-05/D-077: exact signed distance to the polygon (<= 0 inside after the body radius)
+    let inside = false, d = Infinity;
+    const q = p.pts;
+    for (let i = 0, n = q.length; i < n; i++) {
+      const [ax, ay] = q[i], [bx, by] = q[(i + 1) % n], ex = bx - ax, ey = by - ay;
+      const t = Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey)));
+      d = Math.min(d, Math.hypot(x - ax - t * ex, y - ay - t * ey));
+      if ((ay > y) !== (by > y) && x < ax + (y - ay) / (by - ay) * ex) inside = !inside;
+    }
+    return inside ? rad - d : d + rad;
   }
   throw new Error('reach-check: unsupported bounds shape ' + p.shape);
 }

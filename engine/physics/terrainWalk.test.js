@@ -272,8 +272,8 @@ function runSlope(deg, forwardSign, steps = 400) {
 {
   const world = World.load(assets.world('world_m1'), assets, {});
   ok('world_m1 near band ready before the spawn test', world.terrain.nearReady === true);
-  const b = world.bounds && world.bounds.parts ? world.bounds.parts[0] : world.bounds; // WS1-04: world_m1 bounds are a union; spawn inside the tower circle part
-  ok('world_m1 has bounds (23.2 content)', !!b);
+  const b = { x: 1496.5, y: 1024.5, r: 96 }; // WM-05/D-077: world_m1 bounds are now one polygon; spawn disc = the old tower circle (inside the polygon)
+  ok('world_m1 has bounds (23.2 content)', !!world.bounds);
 
   const rand = mulberry32(0xC0FFEE);
   const N_SPAWNS = 1000;

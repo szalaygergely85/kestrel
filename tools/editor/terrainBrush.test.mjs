@@ -38,7 +38,7 @@ ok('manifest registers the terrain edits file', manifest.files.includes(terrainE
 ok('registry serves terrainEdits(key) from the manifest', !!assets.terrainEdits(KEY) && !!bundle.terrainEdits[KEY]);
 ok('shipped edits file is canonical', readFileSync(new URL(`../../content/${terrainEditsPath(KEY)}`, import.meta.url), 'utf8') === stringifyContent({ kind: 'terrainEdits', schema: 1, id: KEY, ...assets.terrainEdits(KEY) }));
 
-const w = World.load(assets.world('world_m1'), assets, {});
+const w = World.load(assets.world('world_m1'), assets, { spawn: { x: 1500, y: 1000 } });
 const T = w.terrain;
 let layer = T.edits;
 ok('World.load gives the terrain a live edit layer from the file', !!layer && layer.cell === 2);
@@ -105,7 +105,7 @@ for (let k = 0; k < recs.length; k++) {
 // ---- determinism + save/load -------------------------------------------------
 {
   const final = states[states.length - 1].json;
-  const w2 = World.load(assets.world('world_m1'), assets, {});
+  const w2 = World.load(assets.world('world_m1'), assets, { spawn: { x: 1500, y: 1000 } });
   const t2 = w2.terrain;
   t2.setEdits(createEditLayer(2, 128));
   const c2 = { layer: t2.edits, terrain: t2, key: KEY };
@@ -120,7 +120,7 @@ for (let k = 0; k < recs.length; k++) {
   // a World built from the saved file bakes the same near band as the live-edited one
   const withFile = Object.create(assets);
   withFile.terrainEdits = (k) => (k === KEY ? JSON.parse(text) : null);
-  const w3 = World.load(withFile.world('world_m1'), withFile, {});
+  const w3 = World.load(withFile.world('world_m1'), withFile, { spawn: { x: 1500, y: 1000 } });
   ok('reloaded world bakes the same near heights as the live edit', sameBytes(w3.terrain.near.height, t2.near.height) && sameBytes(w3.terrain.near.type, t2.near.type));
 }
 

@@ -15,15 +15,15 @@ const band = createBand(globalThis.ASSETS.levels.world_geo.regions);
 
 // --- placement + content rules
 ok('2 active camps, third authored but disabled', defs.length === 2 && json.camps.length === 3 && json.camps[2].enabled === false);
-const bounds = world_m1.bounds.parts;
-function inBounds(x, y) {
-  for (const p of bounds) {
-    if (p.shape === 'circle') { if (Math.hypot(x - p.x, y - p.y) <= p.r) return true; continue; }
-    const dx = p.bx - p.ax, dy = p.by - p.ay;
-    const t = Math.max(0, Math.min(1, ((x - p.ax) * dx + (y - p.ay) * dy) / (dx * dx + dy * dy)));
-    if (Math.hypot(x - p.ax - t * dx, y - p.ay - t * dy) <= p.r) return true;
+// WM-05/D-077: world_m1.bounds is one polygon now (no circle/capsule parts)
+const bpts = world_m1.bounds.pts;
+function inBounds(x, y) { // even-odd point in polygon
+  let c = false;
+  for (let i = 0, n = bpts.length; i < n; i++) {
+    const [ax, ay] = bpts[i], [bx, by] = bpts[(i + 1) % n];
+    if ((ay > y) !== (by > y) && x < ax + (y - ay) / (by - ay) * (bx - ax)) c = !c;
   }
-  return false;
+  return c;
 }
 const modelIds = new Set(['brazier']); // existing prop models; anything else must be listed in needsDesigner
 for (const c of json.camps) {
