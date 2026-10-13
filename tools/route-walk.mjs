@@ -17,6 +17,7 @@ import paletteMod from '../design/palette.js';
 import detailPassMod from '../design/detail-pass.js';
 import terrainDef from '../design/levels/overworld_far.js';
 import geoMod from '../design/levels/world_geo.js';
+import { legacyVariant } from '../game/js/quest/bandPose.js'; // WM-05: world_m1 ships terrainGrid + polygon; these Node legs pin the authored corridors (capsule bounds, 5 bands)
 import { createVitals } from '../game/js/quest/sim/vitals.js';
 import { VITALS_DEFAULTS } from '../game/js/quest/sim/vitalsConfig.js';
 import lanternMod from '../design/models/lantern.js';
@@ -62,7 +63,7 @@ function makePlayer(x, y, z) {
 }
 
 function setup(physics) {
-  const world = World.load(assets.world('world_m1'), assets, { physics, events: new Events() });
+  const world = World.load(legacyVariant(assets.world('world_m1')), assets, { physics, events: new Events() });
   const player = makePlayer(O.x + 17, O.y + 9.5, 0);
   const sim = { physics, world, player, controls: { forward: 0, strafe: 0, run: true, jump: false, yawDeg: 0 }, ms: [], step: 0 };
   return sim;
@@ -386,7 +387,7 @@ function doorClosedProbe(physics) {
 
 // ---- CH1-10 clearance of the NPC walk polylines (read from world_m1 data, not hard-coded).
 function clearance() {
-  const { world } = setup('mesh'), data = assets.world('world_m1'), out = [];
+  const { world } = setup('mesh'), data = legacyVariant(assets.world('world_m1')), out = [];
   const walks = (id) => { const e = data.entities.find((en) => en.components && en.components.walks && en.components.walks[id]); return e.components.walks[id]; };
   const area = data.nav.area;
   const statics = world.colliders.filter((c) => c.id !== 'npcs:kinematic');
@@ -504,7 +505,7 @@ else {
 // two towers and the curtain wall for 20 s each (also running + jumping): the player must never get past the wall line x=240 (west face ~239.2).
 {
   // world_m1's play bounds do not reach the West Fells yet: widen a COPY with a disc round the gate so only the colliders can stop the player
-  const wd = JSON.parse(JSON.stringify(assets.world('world_m1'))); wd.bounds.parts.splice(-1, 1, { shape: 'circle', x: 240, y: 840, r: 150 }); /* MAP-26: bounds are at the 8-part cap, replace the Outwall disc in this copy */
+  const wd = JSON.parse(JSON.stringify(legacyVariant(assets.world('world_m1')))); wd.bounds.parts.splice(-1, 1, { shape: 'circle', x: 240, y: 840, r: 150 }); /* MAP-26: bounds are at the 8-part cap, replace the Outwall disc in this copy */
   const sim = setup('mesh'); sim.world = World.load(wd, assets, { physics: 'mesh', events: new Events() }); sim.stream = true;
   const t = sim.player.transform, b = sim.player.components.body;
   const run = (yaw, y0, jump) => {

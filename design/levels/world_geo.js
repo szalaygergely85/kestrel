@@ -66,12 +66,13 @@
     marsh: { id: 'reedmire', name: 'the Reedmire (P)', x: 1110, y: 1560, rx: 230, ry: 140, rot: 0.55, flatH: 0.8, blend: 0.4,
              pool: { scale: 40, threshold: 0.6 } },
 
-    // ---- walk bounds (MAP-11, 38.43): the enclosed world outline as engine `bounds` {shape:'polygon'}; replaces the capsule
-    // list when `terrainGrid` is set. Clockwise from the NW: mountain foot (north, y 80), the Wall killing ground (x 1880), the
-    // coast pulled 40 m inland of the sea polygon (no swimming), the West Fells foot (x 20). PROPOSED, MAP-00 refines the trace.
-    bounds: { shape: 'polygon', pts: [[20, 80], [1880, 80], [1880, 1690], [1750, 1730], [1600, 1740], [1450, 1720], [1320, 1695], [1230, 1705],
-      [1160, 1690], [1110, 1650], [1040, 1600], [960, 1540], [880, 1460], [800, 1395], [700, 1380], [600, 1400], [470, 1430], [300, 1480],
-      [120, 1460], [20, 1490]] },
+    // ---- walk bounds (MAP-11, WM-05 re-trace 2026-10-13, D-076/D-077): ONE simple polygon (20 verts, <= 128). Clockwise from the NW:
+    // mountain foot (north, y 80), the Wall killing ground (x 1880, in front of the Sealed Gate side / Ferrum wall), then the SEA side =
+    // the coast polyline pushed 110 m out into the sea (seaEdge killM 90 + margin: the sea monster is the limit, not a wall), the West
+    // Fells foot (x 20). The pre-WM-05 capsule union + 5 bands live on as the `?grid=0` fallback (game/js/quest/bandPose.js LEGACY_*).
+    bounds: { shape: 'polygon', pts: [[20, 80], [1880, 80], [1880, 1845], [1770, 1879], [1596, 1890], [1432, 1869], [1316, 1846], [1224, 1856],
+      [1112, 1832], [1044, 1778], [975, 1729], [888, 1663], [806, 1582], [754, 1539], [703, 1532], [623, 1548], [498, 1576], [310, 1632],
+      [123, 1611], [20, 1628]] },
 
     // ---- coast: sea polygon (sea INSIDE). kinds[k] = segment pts[k] -> pts[k+1] ----
     coast: {

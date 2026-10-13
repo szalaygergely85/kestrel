@@ -32,7 +32,8 @@ let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 const { assets } = await loadTestAssets();
-const def = assets.world('world_m1');
+const def = (() => { const d = { ...assets.world('world_m1') }; delete d.terrainGrid; // WM-05: world_m1 ships terrainGrid; this suite pins the 5 authored zones as terrainBands (== the grid pins)
+  d.terrainBands = [{ id: 'east', ch: 3, cw: 5, cx0: 8, cy0: 7 }, { id: 'west', ch: 3, cw: 5, cx0: 6, cy0: 7 }, { id: 'south1', ch: 3, cw: 5, cx0: 8, cy0: 9 }, { id: 'south2', ch: 3, cw: 5, cx0: 8, cy0: 11 }, { id: 'south3', ch: 3, cw: 5, cx0: 8, cy0: 13 }]; return d; })();
 const mk = () => World.load(def, assets, { detail: true, physics: 'mesh' });
 
 // independent deep byte-compare (typed arrays by bytes; `version` ignored: set at publish)
