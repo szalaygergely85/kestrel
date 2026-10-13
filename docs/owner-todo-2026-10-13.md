@@ -47,7 +47,7 @@ Use the normal game link (no `?pose`), New Game.
 
 ## 3. Bug fixes to re-test ("fix in - OWNER TO TEST")
 Most of these come up on the walks; the links go straight to the spot.
-- [ ] **Journal: two panes, accepted quests only, counts only for items/kills, handed-in quests disappear** (OB-097/099/100). Press J during the walk. ->
+- [ ] **Journal: two panes, accepted quests only, counts only for items/kills, handed-in quests disappear** (OB-097/099/100). Press J during the walk. -> good
 - [ ] **[E] only when aimed, whole object works** (OB-084/088): note and gondola in the tower. http://localhost:8000/game/index.html?at=1496.26,1024.19,0,304,-19 ->
 - [ ] **Gondola [E] only on the wreck** (OB-094): http://localhost:8000/game/index.html?pose=crash ->good
 - [ ] **Note "!" small, near the wall** (OB-095): http://localhost:8000/game/index.html?pose=towerInterior ->good, but a little
