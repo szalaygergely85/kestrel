@@ -63,6 +63,7 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null, o
   const enemy = !!(opts && opts.owner === 'enemy');
   const dt = SIM_STEP;
   const NF = cfg.maxFlying, NS = cfg.maxStuck;
+  const fp = { x: 0, y: 0 }, fn = { x: 0, y: 0 }; // floater query scratch (0 alloc)
   let serialNo = 0, tick = 0, flyingCount = 0, stuckCount = 0, floatCount = 0;
   const NW = cfg.maxFloat | 0;
   // RIVER-01b (38.45): arrows that land in river water float and drift with the current for cfg.floatSteps, then vanish
@@ -193,12 +194,12 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null, o
         for (let k = 0; k < NW; k++) {
           if (floaters.alive[k] === 0) continue;
           if (++floaters.age[k] > cfg.floatSteps) { floaters.alive[k] = 0; floatCount--; continue; }
-          const x = floaters.x[k] + 0, y = floaters.y[k];
-          if (!riverWaterAt(world, x, y, wq)) { floaters.alive[k] = 0; floatCount--; stickAt(x, y, floaters.z[k], 0, 0, -1); continue; }
-          world.flowAt(x, y, fv);
-          const nx = x + fv[0] * dt, ny = y + fv[1] * dt;
-          if (riverWaterAt(world, nx, ny, wq)) { floaters.x[k] = nx; floaters.y[k] = ny; floaters.z[k] = wq.surfaceZ - cfg.floatDraft; }
-          else { floaters.alive[k] = 0; floatCount--; stickAt(x, y, floaters.z[k], 0, 0, -1); } // reached the bank: stays
+          fp.x = floaters.x[k]; fp.y = floaters.y[k]; // query point through the hoisted scratch object: a local double passed to the world queries is boxed (alloc)
+          if (!riverWaterAt(world, fp.x, fp.y, wq)) { floaters.alive[k] = 0; floatCount--; stickAt(fp.x, fp.y, floaters.z[k], 0, 0, -1); continue; }
+          world.flowAt(fp.x, fp.y, fv);
+          fn.x = fp.x + fv[0] * dt; fn.y = fp.y + fv[1] * dt;
+          if (riverWaterAt(world, fn.x, fn.y, wq)) { floaters.x[k] = fn.x; floaters.y[k] = fn.y; floaters.z[k] = wq.surfaceZ - cfg.floatDraft; }
+          else { floaters.alive[k] = 0; floatCount--; stickAt(fp.x, fp.y, floaters.z[k], 0, 0, -1); } // reached the bank: stays
         }
       }
       if (stuckCount > 0) {

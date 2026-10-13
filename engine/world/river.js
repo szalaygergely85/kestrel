@@ -1,8 +1,6 @@
 // engine/world/river.js (OB-019 RIVER-01a, docs/architecture.md 38.45 (1)): the `river` water shape.
 // Pure: a polyline def is validated, then compiled at load into resampled SoA samples + a 16 m bucket grid (CSR);
 // `riverLocate` is the 0-alloc query (nearest segment of the cell's candidates). No rendering / physics here.
-import { WQ } from './waves.js';
-
 export const RIVER_MAX = 4;
 export const RIVER_DS = 2;        // resample spacing along the arc (m)
 export const RIVER_CELL = 16;     // bucket grid cell (m)
@@ -143,16 +141,8 @@ export function compileRiver(id, nd) {
  * |lat| <= hw (the feather is render-only). Repeating the same (x, y) is a cached no-op. 0 alloc.
  */
 export function riverLocate(rv, x, y) {
-  // tiny wrapper (inlined by V8): the double query goes through the scratch, so the big body is called without boxed double args (0 alloc)
+  // tiny wrapper (V8 inlines it): the point goes to the big body through the per-river scratch, so no boxed double args reach it
   const loc = rv.loc;
-  if (x === loc[7] && y === loc[8]) return loc[9] === 1;
-  loc[10] = x; loc[11] = y;
-  return riverLocateBody(rv);
-}
-
-/** `riverLocate` for the query point in `WQ[0..1]` (no double args at all: used by the big zero-alloc query bodies). */
-export function riverLocateQ(rv) {
-  const loc = rv.loc, x = WQ[0], y = WQ[1];
   if (x === loc[7] && y === loc[8]) return loc[9] === 1;
   loc[10] = x; loc[11] = y;
   return riverLocateBody(rv);

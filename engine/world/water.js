@@ -3,8 +3,8 @@
 // `level.def.water` (level-local, converted through the structure frame). No rendering here (US-055a2).
 // Regions are flat (one z): axis-aligned rects and circles only (a level yawSteps keeps rects axis-aligned).
 import { localToWorld, localDirToWorld } from '../core/transform.js';
-import { buildWaveTables, createWaveClock, WQ } from './waves.js';
-import { RIVER_MAX, normalizeRiver, compileRiver, riverLocate, riverLocateQ, L_Z, L_LAT, L_HW, L_TX, L_TY, L_V } from './river.js';
+import { buildWaveTables, createWaveClock } from './waves.js';
+import { RIVER_MAX, normalizeRiver, compileRiver, riverLocate, L_Z, L_LAT, L_HW, L_TX, L_TY, L_V } from './river.js';
 export { RIVER_MAX };
 
 export const WATER_MAX = 32; // RIVER-04: back to 32 (the 49 river_NN rects are gone: the river is one `river` shape)
@@ -154,15 +154,9 @@ export function createWater(defs, seaState = 'calm') {
      * US-141a: region `i`'s flow at (x, y) into out[0..1] = `flow` + `flowRadial * unit(p - c)` (circle; 0 at the centre). Zero allocation.
      */
     flowInto(i, x, y, out) {
-      WQ[0] = x; WQ[1] = y; // tiny wrapper (inlined by V8): double query via the scratch, no boxed args
-      this.flowIntoQ(i, out);
-    },
-    /** `flowInto` body; reads x, y from `WQ[0..1]`. */
-    flowIntoQ(i, out) {
-      const x = WQ[0], y = WQ[1];
       if (this.kind[i] === KIND_RIVER) { // 38.45: tangent * v * (1 - 0.5 (lat/hw)^2), faster mid-channel
         const rv = this.rivers[this.riv[i]];
-        riverLocateQ(rv);
+        riverLocate(rv, x, y);
         const l = rv.loc, q = l[L_LAT] / l[L_HW], f = l[L_V] * (1 - 0.5 * q * q);
         out[0] = l[L_TX] * f; out[1] = l[L_TY] * f;
         return;
@@ -177,19 +171,13 @@ export function createWater(defs, seaState = 'calm') {
       out[0] = vx; out[1] = vy;
     },
     find(x, y) {
-      WQ[0] = x; WQ[1] = y; // tiny wrapper (inlined by V8): double query via the scratch, no boxed args
-      return this.findQ();
-    },
-    /** `find` body; reads x, y from `WQ[0..1]`. */
-    findQ() {
-      const x = WQ[0], y = WQ[1];
       let best = -1, bz = -Infinity;
       for (let i = 0; i < this.count; i++) {
         if (x < this.x0[i] || y < this.y0[i]) continue; // AABB reject
         if (this.kind[i] === KIND_RIVER) {
           if (x > this.x1[i] || y > this.y1[i]) continue;
           const rv = this.rivers[this.riv[i]];
-          if (riverLocateQ(rv) && rv.loc[L_Z] > bz) { bz = rv.loc[L_Z]; best = i; }
+          if (riverLocate(rv, x, y) && rv.loc[L_Z] > bz) { bz = rv.loc[L_Z]; best = i; }
           continue;
         }
         const circle = this.kind[i] === KIND_CIRCLE;
