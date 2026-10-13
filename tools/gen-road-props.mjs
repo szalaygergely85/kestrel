@@ -153,6 +153,7 @@ vignette('fenceField', () => { const u = span(140, 230), side = R() < 0.5 ? 1 : 
 vignette('ruinBend', around(1262, 1033, 10, 16), ruin(2, 4, true));
 vignette('ruinFord', around(992, 1079, 10, 17), ruin(2, 3, false));
 // 4. a lone chimney on a brick foundation off the road (the house is gone)
+const chimStart = out.length; // OB-129 (owner): the lone chimney in the meadow is removed (no house); ids kept in the stream so later ids/RNG stay stable
 vignette('chimney', () => { const u = span(200, 330), side = R() < 0.5 ? 1 : -1; const [x, y] = at(u, side * span(16, 28)); return { x, y, yaw: R() * 360 }; }, (a) => {
   const ps = [{ mesh: 'Prop_Chimney2', x: a.x, y: a.y, yaw: a.yaw, pts: [[-0.45, -0.45], [0.45, 0.45], [0.45, -0.45], [-0.45, 0.45]], r: 0.3, sink: 0.1, maxRange: 0.4, cr: 0.8 }];
   for (const [lx, ly] of [[2, 0.5], [2, -1.5]]) { const [ox, oy] = rot(a.yaw, lx, ly); ps.push({ mesh: 'Floor_UnevenBrick', x: a.x + ox, y: a.y + oy, yaw: a.yaw, pts: [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9], [0, 0]], r: 0.1, z: 'low', sink: 0, lift: 0.01, maxRange: 0.35, noShadow: true, optional: true, cr: 1.2 }); }
@@ -160,12 +161,13 @@ vignette('chimney', () => { const u = span(200, 330), side = R() < 0.5 ? 1 : -1;
   for (let k = 0; k < 4; k++) ps.push(brick(a.x + 1, a.y, 1, 3.5));
   return ps;
 });
+const chimEnd = out.length;
 fixVine();
 
 const full = JSON.parse(text);
 full.structures = full.structures.filter((s) => !idRe.test(s.id));
 const last = full.structures.findLastIndex((s) => /^road[SLWN]\d+$/.test(s.id));
-full.structures.splice(last + 1, 0, ...out.filter((s) => !/Prop_Vine/.test(s.mesh))); // OB-047 (owner): no hanging vines; kept in the stream so ids/RNG stay stable
+full.structures.splice(last + 1, 0, ...out.filter((s, i) => !/Prop_Vine/.test(s.mesh) && !(i >= chimStart && i < chimEnd))); // OB-047 (owner): no hanging vines; kept in the stream so ids/RNG stay stable
 const res = stringifyContent(full);
 console.log(`${PREFIX}: ${out.length} props (seed ${SEED}; ground types path ${TYPE_PATH} water ${TYPE_WATER})\n` + log.join('\n'));
 if (!dry) { fs.writeFileSync(FILE, res, 'utf8'); console.log('wrote', FILE, (res.length / 1024).toFixed(1) + ' KB'); }

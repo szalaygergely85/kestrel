@@ -108,17 +108,9 @@ put('Roof_Wooden_2x1', RC[0] + 5.2, RC[1] - 0.6, 160, { collide: false, ext: 1.0
 // OB-060: no Roof_Support2 (crossed X-beams hovered 0.8 m above the ground / leaned out of the slope); removed from world_m1 too
 // rubble ramp: a pile of 2 m stair-block columns running south from the west side of the roof (clear of the 9e line and of the world-bounds
 // edge in the north), each top <= 0.7 m above the previous (jump apex 1.05 m, step-up 0.45), first top ~0.7 m over its ground, the last (against the roof box) exactly DECK.
+// OB-138: a chain of 4 hull-wedge stairs (colliderHull), each rising 1 m toward -y over 2 m, walkable without jumping; last top = DECK.
 const PX = RC[0] - 4.3, stepTops = [], stepYs = [];
-{
-  const Y = (n, i) => RC[1] - 2 + 2 * (n - 1 - i);
-  const N = Math.max(2, Math.ceil((DECK - (low(PX, Y(7, 0), 1.0) + 0.7)) / 0.7) + 1);
-  let top = low(PX, Y(N, 0), 1.0) + 0.7; const inc = (DECK - top) / (N - 1);
-  for (let i = 0; i < N; i++, top += inc) {
-    const y = Y(N, i), g = low(PX, y, 1.0) - 0.04, n = Math.max(1, Math.ceil(top - g - 0.05));
-    for (let k = 0; k < n; k++) put('Stairs_Exterior_Straight', PX + ((i + k) % 4) * 0.03, y, k % 2 ? 180 : 0, { z: +(top - 1 - (n - 1 - k) * Math.max(0.5, Math.min(1, (top - 1 - g) / Math.max(1, n - 1))) + ((k * 5 + i * 3) % 7) * 0.012).toFixed(2), ext: 1.0 }); // +0..9 cm per step: stacked stair meshes share tread planes otherwise (OB-053b)
-    stepTops.push(+top.toFixed(2)); stepYs.push(+y.toFixed(1));
-  }
-}
+for (let i = 0; i < 4; i++) { const y = RC[1] + 4 - 2 * i; put('Stairs_Exterior_Straight', 970.7, y, 180, { z: +(DECK - 4 + i).toFixed(2), ext: 1.0 }); stepTops.push(+(DECK - 3 + i).toFixed(2)); stepYs.push(y); }
 { rubble(PX - 2.1, stepYs[0] - 0.4, 30, 2); rubble(PX - 2.3, stepYs[2], 120, 3); rubble(PX + 2.2, stepYs[1], 75, 4); rubble(PX - 1.9, stepYs[1] + 0.5, 200, 1); } // beside the pile, never on the approach line
 const nestZ = +(DECK + 0.05).toFixed(2);
 // OB-036: Rook's nest = a stick bundle of 5 Roof_Log pieces (the smallest scale the world accepts is 0.25: 2.7 m x 0.29 m, so a true ring of small logs
@@ -164,7 +156,8 @@ anchor('chestBend', 1268, 1014, 'MAP-25 heart-piece chest 2 (Bend Relay ridge, ~
     world.ensureBandFor(tx, ty);
     const ang = (k * 67 + 20) * Math.PI / 180, rt = 0.42 * sc;           // out-direction and approx trunk radius
     const fx = tx + Math.cos(ang) * rt, fy = ty + Math.sin(ang) * rt;
-    put('Mushroom_Laetiporus', fx, fy, (ang * 180 / Math.PI) + 90, { collide: false, noShadow: true, ext: 0.2, scale: 1.0, dz: 0.5 + 0.12 * k });
+    // OB-130 (owner): shelf fungus removed; trunk-foot pickup + ground mushrooms stay
+    // put('Mushroom_Laetiporus', fx, fy, (ang * 180 / Math.PI) + 90, { collide: false, noShadow: true, ext: 0.2, scale: 1.0, dz: 0.5 + 0.12 * k });
     const gx = tx + Math.cos(ang + 0.9) * (rt + 0.5), gy = ty + Math.sin(ang + 0.9) * (rt + 0.5);
     if (k % 2) put('Mushroom_Common', gx, gy, k * 53, { collide: false, noShadow: true, ext: 0.2, scale: 0.9 });
     const px = tx + Math.cos(ang) * (rt + 0.8), py = ty + Math.sin(ang) * (rt + 0.8);

@@ -281,6 +281,22 @@ function routeRun(physics, { reload = false } = {}) {
     if (sim.physics === 'mesh') rk.completed = rk.completed && info.roofZ >= nest.z - 0.6; // the grid has no mesh colliders: there it only has to walk the line without a stuck spot
     if (!rk.completed) process.exitCode = 1; // OB-044: a failing R1 fails the whole route-walk
     legs.push(rk);
+    // OB-138: the stair pile is now a chain of 4 hull-wedge stairs: walk it WITHOUT jumping (street -> top landing), then walk out of the owner's stuck pose in 4 directions.
+    {
+      const tp = (x, y, z) => { const t = sim.player.transform, b = sim.player.components.body; sim.world.ensureBandFor(x, y); t.x = x; t.y = y; t.z = z; b.vx = b.vy = b.vz = 0; b.fallDistance = 0; b.grounded = false; b.peakZ = z; };
+      tp(970.7, cols[0] + 2.6, -86.0); idle(sim, 90);
+      const wu = runLeg(sim, 'R1b OB-138 walk up the stairs (no jump)', [...cols.map((y) => ({ x: PX, y })), { x: PX, y: cols[cols.length - 1] - 0.9 }]);
+      wu.completed = wu.completed && !wu.fell && (sim.physics !== 'mesh' || sim.player.transform.z >= -83.3); legs.push(wu);
+      if (!wu.completed) process.exitCode = 1;
+      const so = { name: 'R1c OB-138 stuck pose walks out N/E/S/W', steps: 0, completed: true, stuckAt: null, fell: false, minGap: Infinity, maxFall: 0, trace: [], end: null };
+      for (const [dx, dy] of [[0, 5], [5, 0], [0, -5], [-5, 0]]) {
+        tp(970.78, 1062.78, -85.8); idle(sim, 60);
+        const o = runLeg(sim, 'out', [{ x: 970.78 + dx, y: 1062.78 + dy }]);
+        const moved = Math.hypot(sim.player.transform.x - 970.78, sim.player.transform.y - 1062.78);
+        if (moved < 4 || o.fell) { so.completed = false; so.stuckAt = { wp: 0, x: sim.player.transform.x, y: sim.player.transform.y, z: sim.player.transform.z, dir: dx + ',' + dy }; }
+      }
+      so.end = { ...sim.player.transform }; legs.push(so); if (!so.completed) process.exitCode = 1;
+    }
   }
   const back = runLeg(sim, '9c ford -> back over the stones -> bend', [{ x: 1008, y: 1069 }, ...W2E, { x: 1046, y: 1069 }, { x: 1090, y: 1070 }, { x: 1180, y: 1062 }, { x: 1260, y: 1045 }, { x: 1310, y: 1048 }], { maxWpSteps: 1500 });
   back.completed = back.completed && !back.fell;
