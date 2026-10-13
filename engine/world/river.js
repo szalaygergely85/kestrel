@@ -131,7 +131,7 @@ export function compileRiver(id, nd) {
   return {
     id, n, x: X, y: Y, z: Z, hw: HW, sp: SP, tx: TX, ty: TY, s: S, tau: TAU, length: L, feather, clip: nd.clip, draw: nd.draw,
     gx0, gy0, gw, gh, cellStart, segIdx, hmax, zmin, x0: x0 - hmax, y0: y0 - hmax, x1: x1 + hmax, y1: y1 + hmax,
-    loc: new Float64Array(10).fill(NaN), // Float64Array scratch: object double fields boxed (alloc) in V8
+    loc: new Float64Array(12).fill(NaN), // Float64Array scratch: object double fields boxed (alloc) in V8
   
   };
 }
@@ -141,8 +141,15 @@ export function compileRiver(id, nd) {
  * |lat| <= hw (the feather is render-only). Repeating the same (x, y) is a cached no-op. 0 alloc.
  */
 export function riverLocate(rv, x, y) {
+  // tiny wrapper (V8 inlines it): the point goes to the big body through the per-river scratch, so no boxed double args reach it
   const loc = rv.loc;
   if (x === loc[7] && y === loc[8]) return loc[9] === 1;
+  loc[10] = x; loc[11] = y;
+  return riverLocateBody(rv);
+}
+
+function riverLocateBody(rv) {
+  const loc = rv.loc, x = loc[10], y = loc[11];
   loc[7] = x; loc[8] = y; loc[9] = 0;
   const cx = Math.floor((x - rv.gx0) / RIVER_CELL), cy = Math.floor((y - rv.gy0) / RIVER_CELL);
   if (cx < 0 || cy < 0 || cx >= rv.gw || cy >= rv.gh) return false;
@@ -164,7 +171,7 @@ export function riverLocate(rv, x, y) {
   const hw = rv.hw[i] * u + rv.hw[i + 1] * bt;
   loc[L_S] = rv.s[i] * u + rv.s[i + 1] * bt; loc[L_LAT] = lat; loc[L_HW] = hw;
   loc[L_Z] = rv.z[i] * u + rv.z[i + 1] * bt; loc[L_V] = rv.sp[i] * u + rv.sp[i + 1] * bt;
-  const tx = rv.tx[i] * u + rv.tx[i + 1] * bt, ty = rv.ty[i] * u + rv.ty[i + 1] * bt, tl = Math.hypot(tx, ty) || 1;
+  const tx = rv.tx[i] * u + rv.tx[i + 1] * bt, ty = rv.ty[i] * u + rv.ty[i + 1] * bt, tl = Math.sqrt(tx * tx + ty * ty) || 1;
   loc[L_TX] = tx / tl; loc[L_TY] = ty / tl;
   const inside = Math.abs(lat) <= hw;
   loc[9] = inside ? 1 : 0;

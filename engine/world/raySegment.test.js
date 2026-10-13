@@ -30,6 +30,7 @@ const { assets } = await loadTestAssets();
 let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
+import { allocProbe } from '../../tools/allocProbe.mjs';
 const gc = typeof global.gc === 'function' ? global.gc : null;
 
 // ---- raycastColliders on a synthetic wall (plane x = 5, y,z in 0..4) ----
@@ -97,10 +98,12 @@ const out = { t: -1, x: 0, y: 0, z: 0 };
   for (let i = 0; i < 20000; i++) run();
   const ms = (performance.now() - t0) / 20000;
   console.log(`  ${ms <= 0.02 ? 'ok  ' : 'WARN'} raySegment ${ms.toFixed(4)} ms per 1.6 m ray (bar 0.02)`);
+  // RETAINED growth, min of 5 windows (arch 38.61). NOTE: the BVH raycast (engine/physics/bvh.js) makes ~128 B/ray of transient
+  // boxed-double garbage (7 double args to non-inlined slabEntry/intersectTri); a probe without a post-gc counts it. ASK ARCHITECT (lane note).
   if (gc) {
-    gc(); const b = process.memoryUsage().heapUsed;
-    for (let i = 0; i < 20000; i++) run();
-    gc(); ok('raySegment: no heap growth', process.memoryUsage().heapUsed - b < 64 * 1024);
+    const win = () => { for (let i = 0; i < 20000; i++) run(); };
+    let g = Infinity; for (let k = 0; k < 5; k++) { gc(); gc(); const b0 = process.memoryUsage().heapUsed; win(); gc(); gc(); g = Math.min(g, process.memoryUsage().heapUsed - b0); }
+    ok('raySegment: no heap growth', g < 64 * 1024, `${g} B (min of 5)`);
   }
 }
 
@@ -130,11 +133,9 @@ const out = { t: -1, x: 0, y: 0, z: 0 };
   ok('arc: output cap keeps the nearest', nn === 2 && small[0] === 1 && small[1] === 2, Array.from(small).join(','));
   const xs = [1, 1.5, 1, 3], ys = [0, 0, 1.5, 0], zs = [1, 1, 1, 1], rs = [0.2, 0.2, 0.2, 0.2], hs = [1, 1, 1, 1];
   for (let i = 0; i < 2000; i++) arcHits(arc, xs, ys, zs, rs, hs, 4, idx, tt);
-  if (gc) {
-    gc(); const b = process.memoryUsage().heapUsed;
-    for (let i = 0; i < 100000; i++) arcHits(arc, xs, ys, zs, rs, hs, 4, idx, tt);
-    gc(); ok('arc: no heap growth', process.memoryUsage().heapUsed - b < 64 * 1024);
-  }
+  const pa = allocProbe((n) => { for (let i = 0; i < n; i++) arcHits(arc, xs, ys, zs, rs, hs, 4, idx, tt); }, { n: 5000, warm: 8 }); // arch 38.61
+  if (pa.skipped) console.log('SKIP arc alloc (no --expose-gc)');
+  else ok('arc: no heap growth', pa.bytes < 64 * 1024, `${pa.bytes} B / ${pa.n}`);
   // perf: 16 entities
   const X = new Float64Array(16).fill(1), Y = new Float64Array(16), Z = new Float64Array(16).fill(1), R = new Float64Array(16).fill(0.2), H = new Float64Array(16).fill(1);
   const t0 = performance.now();

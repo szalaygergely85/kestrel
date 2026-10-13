@@ -168,6 +168,8 @@ export class DrawList {
     /** OB-043: instances summed over this frame's DRAW_INSTANCED items, and instances refused past MAX_LIST_INSTANCES. */
     this.instTotal = 0;
     this.instDropped = 0;
+    /** radius handed to `_addInstancesCore` (double field, see `addGroupInstances`) */
+    this._instR = 0.5;
     /** OB-043: true = throw on overflow (tests / dev probes); false (default, the game path) = degrade: drop + count. */
     this.strict = false;
     /** @type {DrawItem} scratch target of refused pushes (never in `items`, never drawn) */
@@ -219,6 +221,21 @@ export class DrawList {
    * @returns {DrawItem|null} null when count <= 0, the list is full or the item would pass MAX_LIST_INSTANCES (OB-043: counted, not drawn)
    */
   addInstances(mesh, parts, ib, count, Rin) {
+    this._instR = Rin !== undefined ? Rin : (count > 0 ? groupRadius(mesh, parts) : 0);
+    return this._addInstancesCore(mesh, parts, ib, count);
+  }
+
+  /**
+   * `addInstances` for a group object `g` (`g.parts`, `g._R`): the radius travels through the list's `_instR` field, not as a
+   * double argument (a non-inlined call boxes a double arg = 16 B per call; GATE-FLAKY-02a). Zero allocation.
+   * @returns {DrawItem|null}
+   */
+  addGroupInstances(mesh, g, ib, count) {
+    this._instR = g._R;
+    return this._addInstancesCore(mesh, g.parts, ib, count);
+  }
+
+  _addInstancesCore(mesh, parts, ib, count) {
     if (count <= 0) return null;
     if (count > ib.capacity) throw new Error(`DrawList.addInstances: count ${count} > buffer capacity ${ib.capacity}`);
     if (this.instTotal + count > MAX_LIST_INSTANCES) { if (this.strict) throw new Error(`DrawList.addInstances: over ${MAX_LIST_INSTANCES} instances`); this.instDropped += count; return null; }
@@ -232,7 +249,7 @@ export class DrawList {
     // RE-15a (28.13 point 2): factored into instances.js's `groupRadius` so
     // the per-instance cull (InstanceGroups.addToDrawList) shares this exact
     // computation instead of redoing it.
-    const R = Rin !== undefined ? Rin : groupRadius(mesh, parts);
+    const R = this._instR;
     const f = ib.f32;
     let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
     for (let i = 0; i < count; i++) {
@@ -313,12 +330,21 @@ function bboxDistXY(ex, ey, b) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
+const _bd = new Float64Array(2); // [0] = distance, [1] = rank key: results leave the helpers through here (a returned double boxes when the call is not inlined: GATE-FLAKY-02a)
+function bboxDistTo(cam, bbox) {
+  const camX = lodCentreX(cam), camY = lodCentreY(cam);
+  const cx = Math.min(Math.max(camX, bbox.x0), bbox.x1);
+  const cy = Math.min(Math.max(camY, bbox.y0), bbox.y1);
+  const dx = camX - cx, dy = camY - cy;
+  _bd[0] = Math.sqrt(dx * dx + dy * dy);
+}
+
 function bboxDist(cam, bbox) {
   const camX = lodCentreX(cam), camY = lodCentreY(cam); // ortho: focus, not the far-back eye (US-068b3a)
   const cx = Math.min(Math.max(camX, bbox.x0), bbox.x1);
   const cy = Math.min(Math.max(camY, bbox.y0), bbox.y1);
   const dx = camX - cx, dy = camY - cy;
-  return Math.hypot(dx, dy);
+  return Math.sqrt(dx * dx + dy * dy); // not Math.hypot: its variadic call allocates per call (GATE-FLAKY-02a)
 }
 
 /**
@@ -485,8 +511,13 @@ const _mDist = new Float64Array(MAX_MESH_DRAWS);
 const _mKey = new Float64Array(MAX_MESH_DRAWS);
 const MIN_RANK_RADIUS_M = 0.25;
 /** BUG-MESH-MISSING-01: selection key (smaller = kept first) = distance / bbox radius, i.e. inverse projected size: a 6 m dead tree at 30 m (key 10) beats a 0.2 m pebble at 12 m (key 48). Size-first, so a 2 m eye step barely reorders big props. @param {any} b bbox @param {number} d */
+function rankKeyTo(b) { // reads the distance from _bd[0], writes the key to _bd[1]
+  const ex = b.x1 - b.x0, ey = b.y1 - b.y0, ez = b.z1 - b.z0, r = 0.5 * Math.sqrt(ex * ex + ey * ey + ez * ez);
+  _bd[1] = (_bd[0] + 0.5) / (r > MIN_RANK_RADIUS_M ? r : MIN_RANK_RADIUS_M);
+}
+
 function rankKey(b, d) {
-  const r = 0.5 * Math.hypot(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0);
+  const ex = b.x1 - b.x0, ey = b.y1 - b.y0, ez = b.z1 - b.z0, r = 0.5 * Math.sqrt(ex * ex + ey * ey + ez * ez); // sqrt, not hypot (alloc)
   return (d + 0.5) / (r > MIN_RANK_RADIUS_M ? r : MIN_RANK_RADIUS_M);
 }
 
@@ -533,7 +564,8 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
     const i = gl ? gl[q] : q; // grid: ascending active structure indices (same order as 0..N, so ranking ties are unchanged)
     if (structs[i].kind !== 'mesh') continue;
     if (shadowOnly && structs[i].castShadow === false) continue; // MESH-SHADOW-01
-    const d = bEye ? bboxDist(bEye, structs[i].bbox) : bboxDist(cam, structs[i].bbox);
+    if (bEye) bboxDistTo(bEye, structs[i].bbox); else bboxDistTo(cam, structs[i].bbox);
+    const d = _bd[0];
     // per-placement warm radius (reach + warmM) with the grid, else the global load / hold radius
     let rw2 = 0, dg = d; // dg: ONE metric for reach + warm = grid xy distance eye -> placement AABB (placementGrid.js)
     if (gl) { dg = bboxDistXY(gx, gy, structs[i].bbox); const rw = Math.sqrt(gr2[i]) + warmM; rw2 = rw * rw; }
@@ -548,7 +580,8 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
     const bb = structs[i].bbox;
     if (fr && classifyAABB(fr, bb.x0, bb.y0, bb.z0, bb.x1, bb.y1, bb.z1) === CULL_OUT) continue; // OB-039: off-screen singles never take a slot
     requested++;
-    const key = rankKey(bb, d);
+    rankKeyTo(bb);
+    const key = _bd[1];
     if (count < maxKeep) {
       _mOrder[count] = i; _mDist[count] = d; _mKey[count] = key; count++;
     } else if (maxKeep > 0) {

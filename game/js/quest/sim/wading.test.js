@@ -1,8 +1,6 @@
 // RIVER-01b (OB-019, architecture.md 38.45 (3)): body push field, wading slowdown, deep wall, stones dry, arrow drift, 0 alloc.
-// Run: node game/js/quest/sim/wading.test.js  (re-runs itself with --expose-gc for the 0-alloc gate)
+// Run: node game/js/quest/sim/wading.test.js  (0-alloc probes: wading.alloc.test.js)
 // Stub mesh world over the real river water query: bed(x, y) below.
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { createWater, collectWaterDefs, World, integrate, PHYSICS } from '../../../../engine/index.js';
 import { makeOk } from '../../../../engine/test/assert.js';
 import { BOW_CFG } from '../bowConfig.js';
@@ -10,10 +8,6 @@ import { createTargetables } from './targetables.js';
 import { createArrowSim } from './arrows.js';
 import { createWading } from './wading.js';
 
-if (typeof global.gc !== 'function') {
-  const res = spawnSync(process.execPath, ['--expose-gc', fileURLToPath(import.meta.url)], { stdio: 'inherit' });
-  process.exit(res.status ?? 1);
-}
 let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
@@ -54,7 +48,7 @@ const flatBed = (z) => () => z;
   const w3 = mkWorld(flatBed(9.2)), e3 = mkEnt(w3, 5, 0); createWading(w3).before(e3);
   const eA = mkEnt(w, 5, 0); createWading(w).before(eA);
   ok('push scales with depth (imm 0.8 > imm 0.4)', e3.components.body.pushX > eA.components.body.pushX * 1.5);
-  const w4 = mkWorld(flatBed(9.2)); w4.flowAt = (x, y, o) => { o[0] = 40; o[1] = 0; return true; };
+  const w4 = mkWorld(flatBed(9.2)); { const ra = w4.riverAt.bind(w4); w4.riverAt = (x, y, o) => { const r = ra(x, y, o); o.fx = 40; o.fy = 0; return r; }; }
   const e4 = mkEnt(w4, 5, 0); createWading(w4).before(e4);
   ok('push capped at 3 m/s', near(e4.components.body.pushX, 3));
   const w5 = mkWorld(), wd5 = createWading(w5), e5 = mkEnt(w5, 5, 0); e5.transform.y = 20; e5.transform.z = 9.6; // mid vs bank flow: faster mid-channel
@@ -112,7 +106,7 @@ const flatBed = (z) => () => z;
 }
 // ---- arrows ----
 {
-  const w = mkWorld();
+  const w = mkWorld(flatBed(9.6)); // flat bed: the sloped stub bed boxes its own doubles (harness noise)
   w.raySegment = (ax, ay, az, bx, by, bz, out) => { // the river bed as terrain (z = 9.6)
     if (bz > 9.6) return false;
     const t = (az - 9.6) / (az - bz);
@@ -135,20 +129,7 @@ const flatBed = (z) => () => z;
   for (let i = 0; i < 20; i++) sim.step();
   ok('arrow outside the river still sticks', sim.floatCount === 0 && sim.stuckCount === 1);
   for (let r = 0; r < 4; r++) { sim.fire(5, 0, 12, 0, 0, -1, 0, 1); for (let i = 0; i < 500; i++) sim.step(); } // tier-up the float path first
-  sim.fire(5, 0, 12, 0, 0, -1, 0, 1); for (let i = 0; i < 100; i++) sim.step(); // 100 warm-up steps: first-window JIT/IC heap noise (+-30 KB) is not allocation; floater lives 480 steps
-  global.gc(); global.gc(); const m0 = process.memoryUsage().heapUsed; // double gc like engine/test/allocGate.js heapGrowth
-  for (let i = 0; i < 300; i++) sim.step();
-  global.gc(); global.gc(); const dm = process.memoryUsage().heapUsed - m0;
-  ok(`arrow sim with a floater: 0 alloc over 300 steps (${dm} B)`, dm < 4096);
-}
-// ---- 0 alloc: wading + integrate ----
-{
-  const w = mkWorld(), wd = createWading(w), e = mkEnt(w, 5, 5);
-  for (let i = 0; i < 100; i++) step(wd, w, e, walkE);
-  global.gc(); const m0 = process.memoryUsage().heapUsed;
-  for (let i = 0; i < 20000; i++) { e.transform.x = 5 + (i % 100) * 0.5; step(wd, w, e, i % 2 ? walkE : south); }
-  global.gc(); const dm = process.memoryUsage().heapUsed - m0;
-  ok(`wading before/after: 0 alloc over 20000 steps (${dm} B; boxed doubles of the harness objects only, < 16 B/step)`, dm < 20000 * 16);
+  // 0-alloc probes of the floater + wading+integrate live in wading.alloc.test.js (own isolate: this file's mixed body shapes inflate them)
 }
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) { console.log(failures.join('\n')); process.exit(1); }

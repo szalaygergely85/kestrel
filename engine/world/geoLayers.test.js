@@ -1,7 +1,7 @@
 // MAP-01a (arch 38.42): geography layer composer. Empty list = today's bytes; keep rect is branched out; GeoFields SDF grids.
 // Run: node engine/world/geoLayers.test.js   (needs scratch copy of the pre-change recipe at $GEO_BASE, else skipped parts)
 import { createHash } from 'node:crypto';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -31,8 +31,9 @@ const bankRock = recipe.recipe.river.bankRock; delete recipe.recipe.river.bankRo
 const riverHalfW = recipe.recipe.river.halfWidth; recipe.recipe.river.halfWidth = 10;
 const h0 = { e: hashOf(east()), w: hashOf(west()), f: hashOf(far()) };
 // pre-change recipe = the file at git commit d3be9a62 (MAP-01a parent); GEO_BASE overrides with a file path
-let BASE = process.env.GEO_BASE;
-if (!BASE) { try { BASE = join(tmpdir(), 'geo_base_far.mjs'); writeFileSync(BASE, execSync('git show d3be9a62:design/levels/overworld_far.js', { maxBuffer: 1e8 })); } catch (e) { BASE = null; } }
+let BASE = process.env.GEO_BASE, TMP_BASE = null;
+process.on('exit', () => { if (TMP_BASE) { try { unlinkSync(TMP_BASE); } catch (e) {} } });
+if (!BASE) { try { BASE = join(tmpdir(), `geo_base_far_${process.pid}_${Math.random().toString(36).slice(2)}.mjs`); TMP_BASE = BASE; writeFileSync(BASE, execSync('git show d3be9a62:design/levels/overworld_far.js', { maxBuffer: 1e8 })); } catch (e) { BASE = null; } }
 if (BASE && existsSync(BASE)) {
   const keep = globalThis.ASSETS.levels.overworld_far; delete globalThis.ASSETS.levels.overworld_far;
   await import(pathToFileURL(BASE).href);
@@ -75,17 +76,25 @@ ok('validator: core overlapping keep throws', threw);
 threw = false; try { util.polygonSdf(new Array(33).fill([0, 0])); } catch (e) { threw = true; }
 ok('validator: polygon > 32 verts throws', threw);
 util.setGeoLayers(layers, { d: sd });
+if (global.gc) { global.gc(); global.gc(); } else console.log('SKIP gc before heap probe (no --expose-gc)');
 let s = 0; const heap0 = process.memoryUsage().heapUsed;
 for (let i = 0; i < 100000; i++) s += util.recipeHeight(2000 + (i % 400), 300 + (i % 700));
 const dHeap = process.memoryUsage().heapUsed - heap0;
 ok(`100k samples heap delta ${(dHeap / 1e6).toFixed(1)} MB < 8 MB`, dHeap < 8e6);
 
-const med = (f) => { const t = []; for (let k = 0; k < 3; k++) { const a = performance.now(); f(); t.push(performance.now() - a); } return t.sort((a, b) => a - b)[1]; };
+const time1 = (f) => { const a = performance.now(); f(); return performance.now() - a; };
+const med = (f) => { const t = []; for (let k = 0; k < 3; k++) t.push(time1(f)); return t.sort((x, y) => x - y)[1]; };
+// arch 38.61 (5): median of 3, baseline (no layers) and 4 layers INTERLEAVED A,B,A,B,A,B in this process, so machine load hits both alike.
+const tA = [], tB = [], fA = [], fB = [];
+for (let k = 0; k < 3; k++) {
+  util.setGeoLayers([]); tA.push(time1(east)); fA.push(time1(far));
+  util.setGeoLayers(layers, { d: sd }); tB.push(time1(east)); fB.push(time1(far));
+}
+const m3 = (t) => t.sort((x, y) => x - y)[1];
+const tEmpty = m3(fA), tZone0 = m3(tA), tFour = m3(fB), tZone4 = m3(tB);
 util.setGeoLayers([]);
-const tEmpty = med(far), tZone0 = med(east);
 const tBuild = med(() => new util.GeoFields(recipe.geo.world, { d: sd }));
 util.setGeoLayers(layers, { d: sd });
-const tFour = med(far), tZone4 = med(east);
 console.log(`bake ms: far256 empty ${tEmpty.toFixed(1)} / 4 layers ${tFour.toFixed(1)}; near zone empty ${tZone0.toFixed(1)} / 4 layers (in keep) ${tZone4.toFixed(1)}; GeoFields build (1 field, 4096 world) ${tBuild.toFixed(1)} ms`);
 ok('zone bake inside keep +<=10% (noise margin 25%)', tZone4 <= tZone0 * 1.25 + 2);
 console.log(`geoLayers: ${pass} passed, ${fail} failed`);

@@ -1,5 +1,6 @@
 // US-016 Node tests for `shadeTerrain` (docs/architecture.md 14.4 item 5,
 // near-detail extension 23.4).
+import { allocProbe, skipNote } from '../../tools/allocProbe.mjs';
 import { shadeTerrain, hashFast01, perCellHashSize, shadeTerrainCells, groundAlbedo, groundTierOffset, patchNoise, valueNoise, NOISE_CELLS, NOISE_SALT, PATCH_K, shadeGrass, grassTableFor, GRASS_GX_HAS, GRASS_BACKLIGHT_K, CLIFF_NZ, makeFarGrass, farGrassFill } from './terrainShade.js';
 import { Terrain } from '../world/Terrain.js';
 import { GBuffer, KIND_TERRAIN } from './GBuffer.js';
@@ -500,9 +501,8 @@ export function patchShape(shade) {
   console.log('OB-104b golden sweep: ' + changed + ' of 2000 cells changed, ' + steep + ' have N.z < 0.5');
   check('OB-104b only N.z < 0.5 cells change (' + bad + ' flat cells changed)', bad === 0 && changed > 0 && changed <= steep);
   // 0 alloc
-  const h0 = process.memoryUsage().heapUsed;
-  for (let k = 0; k < 200000; k++) shadeTerrain(100, 0, 0.9, k, 7, 0, cc, o, 0, 12.3, 1, 0, 0.1);
-  check('OB-104b 0 alloc (' + (process.memoryUsage().heapUsed - h0) + ' B)', process.memoryUsage().heapUsed - h0 < 500000);
+  const pr = allocProbe((n) => { for (let k = 0; k < n; k++) shadeTerrain(100, 0, 0.9, k, 7, 0, cc, o, 0, 12.3, 1, 0, 0.1); }, { n: 20000 });
+  if (!skipNote(pr, 'OB-104b 0 alloc')) check('OB-104b 0 alloc (' + pr.perCall.toFixed(2) + ' B/call)', pr.perCall <= 1);
 }
 // G2 + P3: far grass tier - nothing inside the carpet radius, ramp colour + level 254 beyond, off = identical
 {

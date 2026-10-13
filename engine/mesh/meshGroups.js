@@ -265,7 +265,7 @@ export class MeshGroupSet {
    */
   push(list, planes, cam = null) {
     const chosen = this.chosen, G = this.groups.length, gd = this._gd;
-    const cx = cam ? cam.x : 0, cy = cam ? cam.y : 0;
+    const cx = cam ? cam.x : -0, cy = cam ? cam.y : -0; // -0 (a double), not 0 (a Smi): a double/Smi phi boxes every call
     let kept = 0, live = 0;
     for (let k = 0; k < G; k++) {
       const g = this.groups[k], mem = g.members, R = g._R;
@@ -309,7 +309,7 @@ export class MeshGroupSet {
     for (let k = 0; k < G; k++) {
       const g = this.groups[k], w = g.drawCount[0];
       if (w <= 0 || (live > budget && !take[k])) continue;
-      const it = list.addInstances(g.draw, g.parts, g.drawIb[0], w, g._R);
+      const it = list.addGroupInstances(g.draw, g, g.drawIb[0], w);
       if (it) it.flags |= (g.masked ? 0 : DRAW_FLAG_ONE_PART) | (g.open ? DRAW_FLAG_NO_CULL : 0);
     }
     this.stats.kept = kept - instDropped;

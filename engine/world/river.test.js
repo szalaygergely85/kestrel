@@ -90,7 +90,10 @@ const fl = [0, 0];
   ok('collect: river defs normalised', defs.length === 2 && defs[0].river.path.length === 3 && defs[0].draw === true);
   const w = bare([curved]); const n = 100000;
   let h = 0;
-  const run = (k) => { for (let i = 0; i < k; i++) { if (w.waterAt((i * 7.3) % 130 - 5, (i * 3.1) % 40 - 8, out)) h++; w.flowAt((i * 7.3) % 130, (i * 3.1) % 40, fl); } };
+  // query points precomputed: a double `%` in the loop boxes its result (the probe would allocate itself)
+  const PX = new Float64Array(1000), PY = new Float64Array(1000);
+  for (let i = 0; i < 1000; i++) { PX[i] = (i * 7.3) % 130 - 5; PY[i] = (i * 3.1) % 40 - 8; }
+  const run = (k) => { for (let i = 0; i < k; i++) { const j = i % 1000; if (w.waterAt(PX[j], PY[j], out)) h++; w.flowAt(PX[j], PY[j], fl); } };
   run(20000);
   const t0 = process.hrtime.bigint(); run(n);
   const ms = Number(process.hrtime.bigint() - t0) / 1e6 / n;
@@ -98,11 +101,7 @@ const fl = [0, 0];
   ok('perf probe hit river', h > 0);
   if (ms > 0.003) console.warn(`WARN river waterAt+flowAt ${ms.toFixed(5)} ms > 0.003`);
   if (process.env.PERF_STRICT) ok('perf: <= 0.003 ms', ms <= 0.003);
-  if (globalThis.gc) {
-    let grown = Infinity;
-    for (let r = 0; r < 3; r++) { globalThis.gc(); const m0 = process.memoryUsage().heapUsed; run(n); grown = Math.min(grown, process.memoryUsage().heapUsed - m0); }
-    ok('zero allocation: 100k river queries grow the heap < 64 KB', grown < 65536, `${grown} B`);
-  }
+  // zero-alloc probe lives in river.alloc.test.js (own isolate, GATE-FLAKY-02a)
 }
 console.log(`river.test: ${pass} passed, ${fail} failed`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

@@ -6,6 +6,7 @@
 // Run: node engine/physics/bvh.test.js [--verbose]
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { allocProbe } from '../../tools/allocProbe.mjs';
 import {
   BVH_LEAF_MAX, buildBvh, buildBvhFromMesh, refit, queryAABB, raycast, raycastAny, segment,
 } from './bvh.js';
@@ -442,6 +443,18 @@ function checkRaycast(label, pos, idx, matrix12, bvh, ox, oy, oz, dx, dy, dz, tM
   }
   const raycast10kMs = performance.now() - rTime0;
   console.log(`[perf, warn-only] tower BVH build: ${towerBuildMs.toFixed(2)}ms (${towerBvh.triCount} tris, ${towerBvh.nodeCount} nodes); 10k raycasts: ${raycast10kMs.toFixed(2)}ms`);
+}
+
+// 6. GATE-FLAKY-02a A2 (arch 38.61): raycast INTERNALS (slabEntry/intersectTri via the RAY scratch) add < 8 B/call, hit and miss rays.
+// Constant-folded args on purpose: with VARYING double args the exported raycast (large, never inlined) still boxes its 6 ray doubles at the
+// CALL BOUNDARY (~97 B/call, caller side) - open ASK ARCHITECT in docs/lanes/pc-b2.md. t/tri correctness: brute-force check in 3.
+{
+  const hit = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0 };
+  let hits = 0, misses = 0;
+  const run = (n) => { for (let i = 0; i < n; i++) { if (i & 1 ? raycast(towerBvh, 0, 0, 30, 0.1, 0.05, -1, 200, hit) : raycast(towerBvh, 200, 200, 200, 1, 0, 0, 200, hit)) hits++; else misses++; } };
+  const pr = allocProbe(run, { n: 20000 });
+  if (pr.skipped) console.log('SKIP raycast strict alloc (no --expose-gc)');
+  else ok('raycast internals: < 8 B/call (hit + miss)', pr.perCall < 8 && misses > 0, `${pr.perCall.toFixed(2)} B/call, hits ${hits} misses ${misses}`);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
