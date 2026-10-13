@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {
   packDecorLayers, decorCell, decorFrame, makeDecorLists, decorHash, jitterCm, decorSide,
-  DECOR_OUT_WORDS, O_SPECIES, O_XCM, O_JQX, O_JQY, O_YAWQ, O_SCALEQ, MASK_CARPET_BIT, FADE_Q8_MIN, FADE_Q8_SPAN, K_FADE, LIST_STRIDE,
+  DECOR_OUT_WORDS, O_SPECIES, O_XCM, O_YCM, O_JQX, O_JQY, O_YAWQ, O_SCALEQ, MASK_CARPET_BIT, FADE_Q8_MIN, FADE_Q8_SPAN, K_FADE, LIST_STRIDE,
 } from './decorScatter.js';
 
 const sp = (weight, extra) => Object.assign({ weight, lodM: 30, maxDistM: 90, scaleMin: 0.8, scaleMax: 1.2 }, extra);
@@ -30,8 +30,8 @@ assert.equal(runHash(), runHash(), 'two runs identical');
 
 // 2. species frequencies within 3 % of the weights over 100k cells; jq range
 {
-  const wide = packDecorLayers({ layers: [{ seed: 7, cellM: 1.5, jitterM: 0.6, drawM: 460, species: [sp(5, { maxDistM: 460 }), sp(3, { maxDistM: 460 }), sp(2, { maxDistM: 460 })] }] });
-  const big = new Int32Array([46000, 46000, 46000]);
+  const wide = packDecorLayers({ layers: [{ seed: 7, cellM: 1.5, jitterM: 0.6, drawM: 320, species: [sp(5, { maxDistM: 320 }), sp(3, { maxDistM: 320 }), sp(2, { maxDistM: 320 })] }] });
+  const big = new Int32Array([32000, 32000, 32000]);
   const cnt = [0, 0, 0]; let n = 0, jMin = 1e9, jMax = -1e9;
   for (let i = 0; i < 100000; i++) {
     const ix = (i % 400) - 200, iy = ((i / 400) | 0) - 125;
@@ -42,12 +42,12 @@ assert.equal(runHash(), runHash(), 'two runs identical');
     assert.ok(out[O_JQX] >= -60 && out[O_JQX] <= 60 && out[O_JQY] >= -60 && out[O_JQY] <= 60, 'jq in [-jit, jit]');
     assert.equal(out[O_XCM], ix * 150 + out[O_JQX]);
   }
-  assert.ok(n > 90000, 'prob 127 keeps ~all (fade at 460 m not hit): ' + n);
+  assert.ok(n > 85000, 'prob 127 keeps ~all inside the 320 m disc: ' + n);
   [0.5, 0.3, 0.2].forEach((p, i) => assert.ok(Math.abs(cnt[i] / n - p) < 0.03, 'species ' + i + ' freq ' + cnt[i] / n));
   assert.ok(jMin <= -55 && jMax >= 55, 'jitter spans the range: ' + jMin + '..' + jMax);
   // keep probability scales: mask 32 of 127 ~ 25 %
   let kept = 0;
-  for (let i = 0; i < 20000; i++) if (decorCell(wide, 0, i % 200, (i / 200) | 0, 32, 0, 0, big, 0, out)) kept++;
+  for (let i = 0; i < 20000; i++) if (decorCell(wide, 0, (i % 200) - 100, (i / 200) | 0, 32, 0, 0, big, 0, out)) kept++;
   assert.ok(Math.abs(kept / 20000 - 32 / 127) < 0.02, 'keep prob ' + kept / 20000);
   assert.equal(decorCell(wide, 0, 3, 3, 0, 0, 0, big, 0, out), 0, 'prob 0 never');
 }
@@ -115,6 +115,38 @@ assert.equal(runHash(), runHash(), 'two runs identical');
   assert.equal(total, ref); assert.ok(total > 0);
   assert.equal(buf.counts.reduce((a, b) => a + b, 0), total);
   assert.ok(LIST_STRIDE === 6 && O_YAWQ !== O_SCALEQ);
+}
+
+// 5b. max drawM (320 m): corner cells + frame vs brute force (i32 wrap regression)
+{
+  const wide = packDecorLayers({ layers: [{ seed: 7, cellM: 1.5, jitterM: 0.6, drawM: 320, species: [sp(1, { maxDistM: 320, lodM: 100 })] }] });
+  const hi = new Int32Array([32000]), side = decorSide(wide, 0), half = (side - 1) / 2;
+  const exact = (ix, iy) => { // BigInt-free exact check: doubles are exact here
+    if (!decorCell(wide, 0, ix, iy, 127, 0, 0, hi, 0, out)) return false;
+    return out[O_XCM] * out[O_XCM] + out[O_YCM] * out[O_YCM] < 32000 * 32000;
+  };
+  let corner = 0, kept = 0;
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (let a = 0; a < 60; a++) for (let b = 0; b < 60; b++) {
+    const ix = sx * (half - a), iy = sy * (half - b);
+    const r = decorCell(wide, 0, ix, iy, 127, 0, 0, hi, 0, out); corner++;
+    if (r) { kept++; assert.ok(out[O_XCM] * out[O_XCM] + out[O_YCM] * out[O_YCM] < 32000 * 32000, 'corner kept beyond draw ' + ix + ',' + iy); }
+  }
+  assert.ok(corner === 14400 && kept === 0, 'frame-corner cells all rejected: ' + kept);
+  // whole frame vs float brute force (exact doubles), eye off-centre
+  const mask = new Uint8Array((side + 4) * (side + 4)).fill(127), buf = makeDecorLists(wide, 0);
+  const ex = 777, ey = -333;
+  const total = decorFrame(wide, 0, mask, -half - 2, -half - 2, side + 4, side + 4, ex, ey, hi, 0, buf, out);
+  let ref = 0;
+  const cx = Math.floor(ex / 150), cy = Math.floor(ey / 150);
+  for (let iy = cy - half; iy <= cy + half; iy++) for (let ix = cx - half; ix <= cx + half; ix++) {
+    if (ix < -half - 2 || ix >= side - half + 2 || iy < -half - 2 || iy >= side - half + 2) continue;
+    if (!decorCell(wide, 0, ix, iy, 127, ex, ey, hi, 0, out)) continue; // mask is all 127
+    const dx = out[O_XCM] - ex, dy = out[O_YCM] - ey;
+    assert.ok(dx * dx + dy * dy < 32000 * 32000, 'kept placement beyond draw');
+    ref++;
+  }
+  assert.equal(total, ref); assert.ok(total > 10000);
+  void exact;
 }
 
 // 6. 0 alloc (needs --expose-gc; recipe 38.61: warm-up, gc, min of 5 windows)
