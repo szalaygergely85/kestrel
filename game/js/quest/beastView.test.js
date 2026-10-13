@@ -3,7 +3,10 @@
 // and the "reset the pose on clip change" contract via presentBeasts.
 import { makeOk } from '../../../engine/test/assert.js';
 import { frameTFromElapsed, DIE_DURATIONS, SINK_DURATIONS, presentBeasts } from './beastView.js';
-import { STATE_DYING, STATE_SINK, STATE_NOTICE } from './sim/beastSim.js';
+import { STATE_DYING, STATE_SINK, STATE_NOTICE, STATE_WANDER, STATE_CHASE, STATE_WINDUP, STATE_CHARGE, STATE_RECOVER, STATE_RETURN, STATE_STAGGER } from './sim/beastSim.js';
+import '../../../design/palette.js';
+import '../../../design/detail-pass.js';
+import '../../../design/models/voxel_goblin.js'; // GOB-07a: ASSETS.goblinFx.clipFor
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -72,6 +75,33 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
   bars.length = 0;
   sim.timer[0] = 36; presentBeasts(sim, {}, overlay, { beastNotice: 7 });
   ok('falls back to beastNotice when beastNoticePop is not provided', bars[0].style === 7, `style=${bars[0].style}`);
+}
+
+// ---- GOB-07a: goblin clip map via ASSETS.goblinFx.clipFor, throw held 400 ms into RECOVER, torch clips ----
+{
+  const mk = (model, ranged) => {
+    const voxel = { anim: 'idle', frame: 0, t: 0, playing: true, hidden: false, model };
+    return { voxel, sim: { count: 1, cfgSteps: { die: 24, sink: 30, notice: 42 }, state: [STATE_WANDER], timer: [0], hurtT: [9999], fx: [0], fy: [-1], ranged: [ranged], fleeing: [0],
+      entities: [{ transform: { x: 0, y: 0, z: 0, yawDeg: 0 }, components: { voxel } }] } };
+  };
+  const clipAt = (g, st, fleeing) => { g.sim.state[0] = st; g.sim.fleeing[0] = fleeing ? 1 : 0; presentBeasts(g.sim, {}, { bar() {} }, { beastNotice: 0 }); return g.voxel.anim; };
+  const g = mk('goblin', 0);
+  ok('goblin: wander walk, chase run, windup attack, charge attack, recover run',
+    clipAt(g, STATE_WANDER) === 'walk' && clipAt(g, STATE_CHASE) === 'run' && clipAt(g, STATE_WINDUP) === 'attack' && clipAt(g, STATE_CHARGE) === 'attack' && clipAt(g, STATE_RECOVER) === 'run');
+  ok('goblin: return walk, fleeing run, stagger flinch', clipAt(g, STATE_RETURN) === 'walk' && clipAt(g, STATE_RETURN, true) === 'run' && clipAt(g, STATE_STAGGER) === 'flinch');
+  const th = mk('goblin', 1);
+  ok('thrower: windup -> throw', clipAt(th, STATE_WINDUP) === 'throw');
+  let held = 0; while (clipAt(th, STATE_RECOVER) === 'throw' && held < 100) held++;
+  ok('thrower: throw keeps playing 400 ms (24 steps) into RECOVER, then run', held === 24 && th.voxel.anim === 'run', `held=${held} anim=${th.voxel.anim}`);
+  const tr = mk('goblinTorch', 0);
+  ok('torch goblin: wander/chase/recover/return/flee -> carryTorch, windup -> attack',
+    clipAt(tr, STATE_WANDER) === 'carryTorch' && clipAt(tr, STATE_CHASE) === 'carryTorch' && clipAt(tr, STATE_RECOVER) === 'carryTorch' && clipAt(tr, STATE_RETURN, true) === 'carryTorch' && clipAt(tr, STATE_WINDUP) === 'attack');
+  clipAt(tr, STATE_CHASE);
+  ok('torch goblin chases at 1.6x clip rate, walks at 1x', tr.voxel.speed === 1.6 && (clipAt(tr, STATE_WANDER), tr.voxel.speed === 1));
+  const gd = mk('goblin', 0); gd.sim.hurtT[0] = 3;
+  ok('goblin: hurt flash wins over the state clip', clipAt(gd, STATE_CHASE) === 'hurt');
+  const dying = mk('goblin', 0); dying.sim.timer[0] = 12;
+  ok('goblin: death timeline unchanged', clipAt(dying, STATE_DYING) === 'die');
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
