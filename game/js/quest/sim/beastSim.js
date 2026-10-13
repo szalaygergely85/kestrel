@@ -182,6 +182,8 @@ export function createBeastSim(world, opts) {
     bear: new Uint8Array(MAX_BEASTS),        // BEAR-01: brain.species==='bear' (per-slot cfg, fixed 2-heart swipe, light hits don't cancel windup)
     goblin: new Uint8Array(MAX_BEASTS),      // GOB-01: brain.species==='goblin'
     group: new Uint8Array(MAX_BEASTS),       // GOB-01: attack-token group 0 boar/bear, 1 wolf, 2 goblin
+    ranged: new Uint8Array(MAX_BEASTS),      // GOB-02: goblin role 'thrower' (distance band, windup -> beast:throw, reload = RECOVER)
+    backT: new Uint16Array(MAX_BEASTS),      // GOB-02: steps a thrower has spent backing off inside cornerR
     packer: new Uint8Array(MAX_BEASTS),      // GOB-01: wolf or melee goblin (circle while waiting, retreat after the strike)
     dormant: new Uint8Array(MAX_BEASTS),     // GOB-01: setDormant(slot, true) -> skipped like GONE, state kept
     fleeing: new Uint8Array(MAX_BEASTS),     // WOLF-01: STATE_RETURN that runs away from the player first
@@ -193,7 +195,8 @@ export function createBeastSim(world, opts) {
     _altPayload: beastEntities.slice(0, count).map((e, k) => ({ slot: k, alt: 0, id: e.id })),
     fauna: opts.fauna || null, _prey: { x: 0, y: 0 }, _thrX: new Float64Array(16), _thrY: new Float64Array(16),
     scfg: [], ssteps: [],                    // WOLF-01: per-slot cfg / cfgSteps (the shared objects for boars)
-    _px: 0, _py: 0, _tmp: { x: 0, y: 0 },
+    _throwPayload: { id: '', slot: 0, x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0 }, // GOB-02: ONE preallocated beast:throw payload (reused)
+    _pz: 0, _px: 0, _py: 0, _tmp: { x: 0, y: 0 },
     waiting: new Uint8Array(MAX_BEASTS),     // US-079c: CHASE boar holding while another boar is the charger (derived, not saved)
 
     tick: 0,
@@ -231,8 +234,9 @@ export function createBeastSim(world, opts) {
       sim.ssteps.push({ ...sim.cfgSteps, windup: toSteps(wc.windupSec), chargeMax: toSteps(wc.chargeMaxSec), recover: toSteps(wc.recoverSec), recoverWall: toSteps(wc.recoverWallSec) });
     } else if (isGoblinEntity(e)) { // GOB-01: goblin slot = boar defaults + overrides (+ the camp's leashR)
       sim.goblin[i] = 1; sim.group[i] = 2;
-      sim.packer[i] = e.components.brain.role === 'thrower' ? 0 : 1;
-      const gc = { ...cfg, ...goblinOverrides(cfg) };
+      sim.ranged[i] = e.components.brain.role === 'thrower' ? 1 : 0;
+      sim.packer[i] = sim.ranged[i] ? 0 : 1;
+      const gc = { ...cfg, ...goblinOverrides(cfg, e.components.brain.role) };
       if (typeof e.components.brain.leashR === 'number') gc.leashR = e.components.brain.leashR;
       sim.scfg.push(gc);
       sim.ssteps.push({ ...sim.cfgSteps, windup: toSteps(gc.windupSec), chargeMax: toSteps(gc.chargeMaxSec), recover: toSteps(gc.recoverSec), recoverWall: toSteps(gc.recoverWallSec) });
@@ -373,7 +377,7 @@ const live = (sim, i) => !deadSt(sim.state[i]) && sim.dormant[i] === 0;
 
 function stepSim(sim, px, py, pz) {
   const n = sim.count;
-  sim._px = px; sim._py = py;
+  sim._px = px; sim._py = py; sim._pz = pz;
   // US-079b (37.16.2): `beast:died` goes out at the START of the step after the kill (exactly once), so the sword
   // is never mid-iteration when a loot spawn would rebuild its target list.
   for (let i = 0; i < n; i++) emitPendingDied(sim, i);
@@ -586,8 +590,9 @@ function checkChaseExit(sim, i, px, py) {
   const lm = sim._lagents[i].leashMode; // leash/give-up wins over everything (even a boar in windup range)
   if (lm === LEASH_RETURN || lm === LEASH_GIVEUP) { sim.waiting[i] = 0; enterReturn(sim, i); return; }
   if ((sim.wolf[i] || sim.goblin[i]) && shouldFlee(sim, i)) { enterFlee(sim, i, px, py); return; } // WOLF-01
+  if (sim.ranged[i] && rangedChase(sim, i, px, py, d2)) return; // GOB-02
   const wr = sim.scfg[i].windupR;
-  if (d2 <= wr * wr && sim.seen[i]) {
+  if (!sim.ranged[i] && d2 <= wr * wr && sim.seen[i]) {
     // US-079c: only one boar winds up/charges at a time - the first eligible (lowest slot) wins; the rest hold.
     if (hasActiveCharger(sim, i)) sim.waiting[i] = 1;
     else { sim.waiting[i] = 0; enterWindup(sim, i); }
@@ -596,6 +601,39 @@ function checkChaseExit(sim, i, px, py) {
   sim.waiting[i] = 0;
   const lr = sim.scfg[i].loseR; // BEAR-01
   if (d2 > lr * lr || sim.unseen[i] >= sim.cfgSteps.loseSight) enterReturn(sim, i);
+}
+
+/** GOB-02: thrower distance band. waiting 2 = backing off (< bandMin), 1 = holding in the band (faces the player).
+ * Returns true when it handled the tick (back-off, flee, hold, windup); false = approach (path to the player) and
+ * the normal lose checks. WINDUP needs LOS (cached `seen`), a done reload (it only reaches CHASE after RECOVER) and
+ * fewer than maxWinding throwers already winding up. */
+function rangedChase(sim, i, px, py, d2) {
+  const T = GOBLIN_TUNING;
+  if (d2 < T.bandMin * T.bandMin) {
+    sim.waiting[i] = 2;
+    if (d2 < T.cornerR * T.cornerR) {
+      if (++sim.backT[i] >= T.cornerSec * 60) { sim.backT[i] = 0; sim.waiting[i] = 0; enterFlee(sim, i, px, py); } // cornered: flee
+    } else sim.backT[i] = 0;
+    return true;
+  }
+  sim.backT[i] = 0;
+  if (d2 <= T.bandMax * T.bandMax && sim.seen[i]) {
+    let winding = 0;
+    for (let k = 0; k < sim.count; k++) if (k !== i && sim.ranged[k] && sim.state[k] === STATE_WINDUP) winding++;
+    if (winding < T.maxWinding) { sim.waiting[i] = 0; enterWindup(sim, i); } else sim.waiting[i] = 1;
+    return true;
+  }
+  sim.waiting[i] = 0;
+  return false;
+}
+
+/** GOB-02: the one `beast:throw` at windup end: hand = eye + handUp, target = the player's chest now (no lead). */
+function emitThrow(sim, i, px, py) {
+  const p = sim._throwPayload, steer = sim.steer;
+  p.id = sim.ids[i]; p.slot = i;
+  p.x = steer.x[i]; p.y = steer.y[i]; p.z = zOf(sim, i) + sim.cfg.eyeZ + GOBLIN_TUNING.handUp;
+  p.tx = px; p.ty = py; p.tz = sim._pz + sim.cfg.targetZ;
+  sim.events.emit('beast:throw', p);
 }
 
 /** US-079c: true while any slot is in WINDUP or CHARGE (the single active charger). */
@@ -614,7 +652,10 @@ function windupStep(sim, i, px, py) {
   // US-079c: kick a dust burst at the forefeet at 150/300/450 ms into the windup (boarFx.scrape.kickSteps).
   const elapsed = sim.ssteps[i].windup - sim.timer[i];
   if (!sim.goblin[i] && (!sim.wolf[i] && elapsed === SCRAPE_KICKS[0] || elapsed === SCRAPE_KICKS[1] || elapsed === SCRAPE_KICKS[2])) emitScrape(sim, i);
-  if (sim.timer[i] <= 0) enterCharge(sim, i, px, py);
+  if (sim.timer[i] <= 0) {
+    if (sim.ranged[i]) { emitThrow(sim, i, px, py); enterRecover(sim, i, false); } // GOB-02: release, then the reload
+    else enterCharge(sim, i, px, py);
+  }
 }
 
 /** US-079c: emits one preallocated `beast:scrape` at the forefeet (z + 0.03), thrown backward - particleHooks
@@ -964,6 +1005,11 @@ function setSteerTarget(sim, i) {
     steer.setWaypoint(i, sim.altX[sim.altTgt[i]], sim.altY[sim.altTgt[i]], 0);
     steer.maxSpeed[i] = sim.scfg[i].chase * sim.spdMul[i];
     return;
+  }
+
+  if (sim.ranged[i] && st === STATE_CHASE && sim.waiting[i] === 2) { // GOB-02: back off from the player
+    awayTarget(steer.x[i], steer.y[i], sim._px, sim._py, GOBLIN_TUNING.backoffM, sim._tmp);
+    steer.setWaypoint(i, sim._tmp.x, sim._tmp.y, 0); steer.maxSpeed[i] = sim.scfg[i].chase * GOBLIN_TUNING.backoffSpeedMul * sim.spdMul[i]; return;
   }
 
   if (sim.packer[i]) { // WOLF-01/GOB-01: retreat after the leap, circle while another wolf holds the token

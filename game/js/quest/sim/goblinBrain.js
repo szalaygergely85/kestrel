@@ -25,21 +25,28 @@ export const GOBLIN_TUNING = Object.freeze({
   fleeM: 20,
   packR: 25,         // m, another living goblin within this = "not lone"
   tokens: 2,         // melee goblins that may be in WINDUP/CHARGE at once, per group
+  // GOB-02 thrower (role 'thrower'): hold 7-14 m, 0.6 s windup (clip `throw`), then ONE `beast:throw`, 2.0 s reload (RECOVER)
+  bandMin: 7, bandMax: 14, throwWindupSec: 0.6, reloadSec: 2.0, maxWinding: 2, // maxWinding = throwers in WINDUP at once
+  backoffM: 4,       // m, back-off waypoint distance (awayTarget)
+  backoffSpeedMul: 0.9,
+  cornerR: 4, cornerSec: 1.5, // backing off for this long and still inside this radius = cornered -> flees (enterFlee)
+  handUp: 0.4,       // m above the eye height: the throwing hand
 });
 
 /** Per-slot cfg overrides for a goblin (merged over the boar defaults at createBeastSim). */
-export function goblinOverrides(base = BEAST_DEFAULTS) {
+export function goblinOverrides(base = BEAST_DEFAULTS, role = 'melee') {
   const T = GOBLIN_TUNING;
+  const thrower = role === 'thrower';
   return {
     hp: Math.max(1, Math.round(base.hp * T.hpMul)),
     chase: base.chase * T.chaseMul,
     walk: T.walk,
     noticeR: T.noticeR, leashR: T.leashR,
-    windupR: T.windupR, windupSec: T.windupSec,
+    windupR: T.windupR, windupSec: thrower ? T.throwWindupSec : T.windupSec,
     charge: T.lungeM / T.lungeSec,
     chargeMaxSec: T.lungeSec,
-    recoverSec: T.retreatSec,
-    recoverWallSec: T.retreatSec,
+    recoverSec: thrower ? T.reloadSec : T.retreatSec,
+    recoverWallSec: thrower ? T.reloadSec : T.retreatSec,
   };
 }
 

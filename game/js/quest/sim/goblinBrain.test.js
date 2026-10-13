@@ -224,6 +224,87 @@ const gz = (sim) => groundZ(sim.world, PX, PY);
   ok('overrides finite', Number.isFinite(goblinOverrides().chase) && GOBLIN_TUNING.tokens === 2);
 }
 
+// 8. GOB-02 throwers
+{
+  const throwsOf = (events) => { const a = []; events.on('beast:throw', (p) => a.push({ obj: p, slot: p.slot, x: p.x, y: p.y, z: p.z, tx: p.tx, ty: p.ty, tz: p.tz })); return a; };
+  const { sim, events } = freshSim([gobEntity('t1', PX - 15, PY, 'thrower')]);
+  const th = throwsOf(events);
+  const state0 = []; const wind0 = [];
+  let wsteps = 0, minD = 99, maxDbandStart = 0, bad = 0, firstBand = -1;
+  const lastWind = { start: -1 }; const gaps = []; let lastEnd = -1; let winMax = 0;
+  for (let t = 0; t < 3000; t++) {
+    const before = th.length;
+    sim.step(PX, PY, gz(sim));
+    const d = Math.hypot(sim.steer.x[0] - PX, sim.steer.y[0] - PY);
+    if (sim.state[0] === STATE_WINDUP) {
+      wsteps++; if (d < 6.5 || d > 14.5) bad++;
+    } else if (sim.state[0] === STATE_CHASE && sim.seen[0] && firstBand < 0 && d <= 14) firstBand = t;
+    if (sim.state[0] !== STATE_WINDUP && wsteps > 0) { wind0.push(wsteps); wsteps = 0; }
+    if (th.length > before) { gaps.push(lastEnd < 0 ? 1e9 : t - lastEnd); lastEnd = t; }
+  }
+  ok('thrower: holds position around 7-14 m while throwing (windups inside 6.5-14.5)', bad === 0 && th.length > 3, `bad ${bad} throws ${th.length}`);
+  ok('thrower: every windup is 0.6 s (36 steps) before a throw', wind0.length >= th.length - 1 && wind0.slice(0, th.length - 1).every((n) => n === 36), JSON.stringify(wind0.slice(0, 5)));
+  ok('thrower: reload respected (>= 36 + 120 steps between throws)', gaps.slice(1).every((g) => g >= 156), JSON.stringify(gaps.slice(0, 5)));
+  ok('beast:throw payload is ONE preallocated object', th.every((q) => q.obj === th[0].obj));
+  const q = th[0];
+  ok('payload: hand at eye+0.4, aims at the chest', Math.abs(q.z - (groundZ(sim.world, q.x, q.y) + 0.9)) < 0.3 && Math.abs(q.tx - PX) < 1e-9 && Math.abs(q.ty - PY) < 1e-9 && Math.abs(q.tz - (gz(sim) + 1.0)) < 1e-9, JSON.stringify({ z: q.z, tz: q.tz }));
+  ok('payload slot 0', q.slot === 0);
+}
+// 8b. back off: player closes in -> distance rises to >= 7 m
+{
+  const { sim } = freshSim([gobEntity('t1', PX - 3, PY, 'thrower')]);
+  sim.state[0] = STATE_CHASE; sim.seen[0] = 1;
+  let maxD = 0;
+  for (let t = 0; t < 300; t++) { sim.step(PX, PY, gz(sim)); maxD = Math.max(maxD, Math.hypot(sim.steer.x[0] - PX, sim.steer.y[0] - PY)); }
+  ok('thrower backs off from 3 m to >= 6 m (or flees when cornered)', maxD >= 6, `maxD ${maxD.toFixed(1)}`);
+}
+// 8c. paths in from far (15.5 m, noticeR 16) up to the band
+{
+  const { sim } = freshSim([gobEntity('t1', PX - 20, PY, 'thrower')]);
+  sim.state[0] = STATE_CHASE; // 20 m is outside noticeR 16: start already chasing
+  let minD = 99;
+  for (let t = 0; t < 600; t++) { sim.step(PX, PY, gz(sim)); minD = Math.min(minD, Math.hypot(sim.steer.x[0] - PX, sim.steer.y[0] - PY)); }
+  ok('thrower approached from 20 m and stayed >= 6 m', minD >= 6 && minD <= 14.5, `minD ${minD.toFixed(1)}`);
+}
+// 8e. direct LOS gate: wall of terrain not available, so use sim.cfg.losEvery huge to freeze cached seen = 0
+{
+  const { sim, events } = freshSim([gobEntity('t1', PX - 10, PY, 'thrower')]);
+  let n = 0; events.on('beast:throw', () => n++);
+  sim.cfg = { ...sim.cfg, losEvery: 1 << 30 }; // perceive never refreshes the cache
+  sim.step(PX, PY, gz(sim)); // tick 0 is the only perceive refresh left
+  sim.state[0] = STATE_CHASE; sim.seen[0] = 0; sim.unseen[0] = 0;
+  let w = 0;
+  for (let t = 0; t < 400; t++) { sim.unseen[0] = 0; sim.step(PX, PY, gz(sim)); if (sim.state[0] === STATE_WINDUP) w++; }
+  ok('no LOS (cached seen 0): no windup, no throw', n === 0 && w === 0, `throws ${n} windup steps ${w}`);
+  sim.seen[0] = 1;
+  let n2 = 0; for (let t = 0; t < 120; t++) { sim.step(PX, PY, gz(sim)); }
+  ok('LOS back -> throws', n > 0, `throws ${n}`);
+}
+// 8f. at most 2 throwers in windup at once
+{
+  const ents = []; for (let k = 0; k < 5; k++) ents.push(gobEntity('t' + k, PX - 10 - k * 0.8, PY + (k - 2) * 2, 'thrower'));
+  const { sim } = freshSim(ents);
+  let mx = 0, thr = 0; sim.events.on('beast:throw', () => thr++);
+  for (let t = 0; t < 1500; t++) { sim.step(PX, PY, gz(sim)); let w = 0; for (let k = 0; k < 5; k++) if (sim.state[k] === STATE_WINDUP) w++; if (w > mx) mx = w; }
+  ok('max 2 throwers winding up', mx <= 2 && mx >= 1 && thr > 3, `max ${mx} throws ${thr}`);
+}
+// 8g. melee goblin never throws; boars untouched; 0 alloc with throwers
+{
+  const { sim, events } = freshSim([gobEntity('m1', PX - 10, PY, 'melee')]);
+  let n = 0; events.on('beast:throw', () => n++);
+  for (let t = 0; t < 600; t++) sim.step(PX, PY, gz(sim));
+  ok('melee goblin emits no beast:throw', n === 0 && sim.ranged[0] === 0 && sim.packer[0] === 1);
+  const ents = []; for (let k = 0; k < 6; k++) ents.push(gobEntity('t' + k, PX - 12 - k, PY + (k - 3) * 2, 'thrower'));
+  const w = freshSim(ents).sim;
+  for (let t = 0; t < 400; t++) w.step(PX, PY, gz(w));
+  if (global.gc) global.gc();
+  const m0 = process.memoryUsage().heapUsed;
+  for (let t = 0; t < 2000; t++) w.step(PX, PY, gz(w));
+  if (global.gc) global.gc();
+  const grown = process.memoryUsage().heapUsed - m0;
+  ok('6 throwers: ~0 alloc per step', global.gc ? grown <= 1e6 : true, `heap +${grown} B`);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
