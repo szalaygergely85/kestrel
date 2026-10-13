@@ -180,7 +180,7 @@ import { createNpcTurn } from './quest/npcBear.js'; // NPC-BEAR-01 (38.28): turn
 import { createOutwall } from './quest/outwall.js'; // OUT-01: Hesk/Dorrin turn + met flags
 import { LOOT_TABLE, LOOT_SEED_SALT } from './quest/sim/lootConfig.js';
 import { createToastView } from './quest/toastView.js';
-import { createInventoryView } from './quest/inventoryView.js'; // US-091b
+import { createInventoryScreen } from './quest/inventoryScreen.js'; // US-091b + OB-112: one inventory screen (I / C / Tab)
 import { createQuestMarkers } from './quest/sim/questMarkers.js'; // QUEST-MARK-01w
 import { registerQuestMarks } from './quest/wire/questMarks.js';
 import { createQuestLogScreen, QUEST_LOG_KEYS } from './ui/questLog.js'; // QG-05
@@ -1600,8 +1600,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         };
       }
       if (invView && invView.isOpen) invView.close();
-      invView = itemDefs && window.ASSETS.uiStyle.inventory ? createInventoryView({
-        style: window.ASSETS.uiStyle.inventory, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
+      invView = itemDefs && window.ASSETS.uiStyle.inventory ? createInventoryScreen({
+        style: window.ASSETS.uiStyle.inventory, tabOpens: false, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
         inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
         isSlotDisabled: (i) => { if (fbOn || !playerHandle) return false; const inv = playerHandle.data.components.inventory, sl = inv && inv.slots[i]; return !!(sl && sl.id && FB_LOCKED_IDS[sl.id]); }, // FB-01: spell + mana potion cells show as locked until unlocked (Items + Character tabs)
         healthOf: () => (playerHandle && playerHandle.data.components.health) || null,

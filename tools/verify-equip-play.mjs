@@ -71,16 +71,16 @@ try {
   assert.ok(bow.flying + bow.stuck >= 1 || bow.n === 4, 'an arrow was loosed');
   // EQ-03/04: C opens the Character tab (pauses like the pack), the lit player model fills the view box, D turns it, C closes.
   await evaluate(cdp, `(() => { const eq = window.__debug.playerHandle.data.components.equipment; eq.head = 'gear.head.hood.sturdy'; return true; })()`);
-  const cells = `(() => { const d = window.__debug, v = d.invView, u = d.getUi(), r = v.character && v.character.rect, c = u.cells; if (!r) return null; let n = 0, h = 0;
+  const cells = `(() => { const d = window.__debug, v = d.invView, u = d.getUi(), r = v.rect, c = u.cells; if (!r) return null; let n = 0, h = 0;
     for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) { const i = y * u.cols + x; if (c.glyphIdx[i] !== 0 || c.bg[i * 4] !== 18 || c.bg[i * 4 + 1] !== 15 || c.bg[i * 4 + 2] !== 12) { n++; h = (Math.imul(h, 31) + c.glyphIdx[i] * 7 + c.fg[i * 4] + c.fg[i * 4 + 1] * 3) | 0; } }
-    return { n, h, open: v.isOpen, tab: v.tab, ok: v.character.previewOk, paused: !!(d.isPaused && d.isPaused()) }; })()`;
+    return { n, h, open: v.isOpen, ok: v.previewOk, paused: !!(d.isPaused && d.isPaused()) }; })()`;
   await key('KeyC', 'c'); await pause(1500);
   const view0 = await evaluate(cdp, cells);
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', code: 'KeyD', key: 'd', text: 'd' }); await pause(700);
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', code: 'KeyD', key: 'd' }); await pause(500);
   const view1 = await evaluate(cdp, cells);
   console.log(JSON.stringify({ view0, view1 }));
-  assert.ok(view0 && view0.open && view0.tab === 1 && view0.ok, 'C opens the Character tab with a working preview');
+  assert.ok(view0 && view0.open && view0.ok, 'C opens the Character tab with a working preview');
   assert.ok(view0.n > 20, 'model cells fill the view box (' + view0.n + ')');
   assert.notEqual(view1.h, view0.h, 'D turns the model (cells change)');
   await key('KeyC', 'c'); await pause(300);
