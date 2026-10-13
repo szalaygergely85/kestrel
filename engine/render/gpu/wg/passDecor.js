@@ -14,8 +14,8 @@ import { DECOR_BLOCK, DECOR_BUFFERS, DECOR_WGSL, DECOR_WORKGROUP } from '../wgsl
 import { decorSide, layerOff, L_NSPECIES } from '../../../mesh/decorScatter.js';
 import { INSTANCE_BYTES } from '../../../mesh/instances.js';
 
-/** 38.62 budget: sum of layer lattice sizes x 2 LODs (checked at configure, throws naming the layer). */
-export const DECOR_MAX_ROWS = 8192;
+/** 38.62 budget: sum over layers of side^2 x 2 LODs x species = real slab rows (checked at configure, throws naming the layer). */
+export const DECOR_MAX_ROWS = 16384;
 const W = (n) => DECOR_BLOCK.field(n).word;
 const PLANES = W('planes'), PARAMS = W('params'), NEAR_ORG = W('nearOrg'), SWAY = W('swayPad'), EYE_X = W('eyeX'), EYE_Y = W('eyeY'), LAYER = W('layer'), SIDE = W('side'), CAP = W('cap'),
   IX0 = W('ix0'), IY0 = W('iy0'), MW = W('mw'), MH = W('mh'), CARPET = W('carpetCut'), ARGS_BASE = W('argsBase'), OBJ = W('objectId'), NEAR_W = W('nearW'), NEAR_H = W('nearH');
@@ -50,7 +50,7 @@ export class WgDecorPass {
     for (let l = 0; l < packed.nLayers; l++) {
       const cap = decorSide(packed, l) ** 2, ns = packed.words[layerOff(l) + L_NSPECIES];
       if (cfg.layers[l].species.length !== ns || cfg.layers[l].fadeCm.length !== ns) throw new Error(`WgDecorPass.configure: layer ${l} species/fadeCm count != packed (${ns})`);
-      rows += cap * 2; slab += cap * 2 * ns;
+      rows += cap * 2 * ns; slab = rows;
       if (rows > DECOR_MAX_ROWS) throw new Error(`WgDecorPass.configure: layer ${l} exceeds DECOR_MAX_ROWS (${rows} > ${DECOR_MAX_ROWS})`);
       for (const sp of cfg.layers[l].species) for (const m of sp.meshes) if (m && m.maskRanges) throw new Error(`WgDecorPass.configure: layer ${l}: masked meshes are not supported`);
     }

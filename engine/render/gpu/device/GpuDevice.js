@@ -81,6 +81,7 @@
  * @property {GpuHandle} [indexBuffer]
  * @property {GpuHandle} [instanceBuffer] - WG-1b1 (38.3): per-instance vertex buffer for `PipelineStageDesc.instanceLayout`
  * @property {GpuHandle[]} [extraBuffers] - WG-2b: buffers for `PipelineStageDesc.extraLayouts`, same order
+ * @property {number} [instanceOffset] - ENV-01d: byte offset into `instanceBuffer` (multiple of 4; WebGPU only, GL2 ignores)
  * @property {number} [uniformOffsetBytes] - WG-1b1 (38.4): dynamic offset of this draw's block in the uniform ring (WebGPU; GL2 ignores)
  */
 

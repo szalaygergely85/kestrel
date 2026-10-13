@@ -36,7 +36,7 @@ export function buildDecorConfig(detailCfg, meshOf, o = {}) {
       const m0 = meshOf(s.mesh); if (!m0) throw new Error(`decor layer ${l.name}: unknown mesh ${s.mesh}`);
       const lod = m0.lods && m0.lods[0] && meshOf(m0.lods[0].mesh) || null;
       const maxM = s.maxDistM > 0 ? Math.min(s.maxDistM, l.drawM) : l.drawM;
-      species.push({ weight: s.weight, lodM: lod ? Math.round(maxM * 0.5) : maxM, maxDistM: maxM, grassLike: !!s.grassLike, scaleMin: 1, scaleMax: 1 });
+      species.push({ weight: s.weight, lodM: lod ? Math.round(maxM * 0.5) : maxM, maxDistM: maxM, grassLike: !!s.grassLike, sway: !!s.sway, sinkM: s.sinkM, scaleMin: 1, scaleMax: 1 });
       hs.push({ meshes: [m0, lod], parts }); fade.push(Math.round(maxM * 100));
       if (m0.radius > radiusM) radiusM = m0.radius;
     }

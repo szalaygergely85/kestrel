@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { makeMockGpuDevice } from '../../../test/assert.js';
 import { WgCullPass } from './passCull.js';
+import { allocProbe, skipNote } from '../../../../tools/allocProbe.mjs';
 import { WgDecorPass, DECOR_MAX_ROWS } from './passDecor.js';
 import { DECOR_BLOCK, DECOR_WORKGROUP } from '../wgsl/decor.wgsl.js';
 import { WG_PASS_SLOT } from '../device/WebGpuTimer.js';
@@ -135,7 +136,13 @@ function frame(cull, dec, eye, p) {
   // 5. budget throws naming the layer
   const big = packDecorLayers({ layers: [{ seed: 1, cellM: 1, jitterM: 0.2, drawM: 60, species: [{ weight: 1, lodM: 20, maxDistM: 60, scaleMin: 1, scaleMax: 1 }] }] });
   assert.throws(() => dec.configure({ packed: big, layers: [{ species: [{ meshes: [mk(3), null], parts }], fadeCm: Int32Array.of(3000) }], carpetRadiusM: 0, objectId: 0, radiusM: 1 }), /layer 0 exceeds DECOR_MAX_ROWS/);
-  assert.equal(DECOR_MAX_ROWS, 8192);
+  assert.equal(DECOR_MAX_ROWS, 16384);
+  { // rows = side^2 x 2 x species: 1 species fits, the same lattice with 3 species exceeds (real slab count)
+    const sp3 = (n) => Array.from({ length: n }, () => ({ weight: 1, lodM: 15, maxDistM: 30, scaleMin: 1, scaleMax: 1 }));
+    const mkc = (n) => ({ packed: packDecorLayers({ layers: [{ seed: 1, cellM: 1, jitterM: 0.2, drawM: 30, species: sp3(n) }] }), layers: [{ species: Array.from({ length: n }, () => ({ meshes: [mk(3), null], parts })), fadeCm: Int32Array.from({ length: n }, () => 3000) }], carpetRadiusM: 0, objectId: 0, radiusM: 1 });
+    dec.configure(mkc(1));
+    assert.throws(() => dec.configure(mkc(3)), /layer 0 exceeds DECOR_MAX_ROWS/);
+  }
   dec.dispose(); assert.equal(cull.batches.size, 0, 'dispose frees the generated batches');
 }
 
@@ -147,15 +154,14 @@ function frame(cull, dec, eye, p) {
   const eye = [1.5, 2.5];
   for (let i = 0; i < 4000; i++) { eye[0] += 0.37; frame(cull, dec, eye); }
   // harness baseline: the eye-double field stores alone (HeapNumber boxes, same pattern as passRaster's _eye.x = cam.x) are not the pass's allocations
-  const N = 4000, base0 = (globalThis.gc(), process.memoryUsage().heapUsed);
-  for (let i = 0; i < N; i++) { eye[0] += 0.37; eye[1] -= 0.11; FR.eye.x = eye[0]; FR.eye.y = eye[1]; }
-  const base = process.memoryUsage().heapUsed - base0;
-  globalThis.gc(); globalThis.gc();
-  const h0 = process.memoryUsage().heapUsed;
-  for (let i = 0; i < N; i++) { eye[0] += 0.37; eye[1] -= 0.11; frame(cull, dec, eye); }
-  const grew = process.memoryUsage().heapUsed - h0 - base;
-  assert.ok(n >= 2 * (N + 4000), 'dispatched every frame');
-  assert.ok(grew / N < 16, `decor frame allocates ${(grew / N).toFixed(1)} B/frame beyond the harness (<16)`);
-  console.log(`  alloc: ${(grew / N).toFixed(2)} B/frame over ${N} frames`);
+  // harness baseline: the eye-double field stores alone (HeapNumber boxes, same pattern as passRaster's _eye.x = cam.x) are not the pass's allocations
+  const body = (n, withPass) => { for (let i = 0; i < n; i++) { eye[0] += 0.37; eye[1] -= 0.11; if (withPass) frame(cull, dec, eye); else { FR.eye.x = eye[0]; FR.eye.y = eye[1]; } } };
+  const N = 4000, r = allocProbe((k) => body(k, true), { n: N }), base = allocProbe((k) => body(k, false), { n: N });
+  assert.ok(n >= 2 * N, 'dispatched every frame');
+  if (!skipNote(r, 'passDecor alloc')) {
+    const per = Math.max(0, r.bytes - base.bytes) / N;
+    assert.ok(per < 1, `decor frame allocates ${per.toFixed(2)} B/frame beyond the harness (<1)`);
+    console.log(`  alloc: ${per.toFixed(2)} B/frame (min of 5 windows x ${N} frames)`);
+  }
 }
 console.log('passDecor.test OK');
