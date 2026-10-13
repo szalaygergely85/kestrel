@@ -2185,8 +2185,8 @@
     "ui.mapCard.opened": false
   },
   "bounds": {
-    "parts": [{"r": 96, "shape": "circle", "x": 1496.5, "y": 1024.5}, {"ax": 1440, "ay": 1034, "bx": 1350, "by": 1048, "r": 40, "shape": "capsule"}, {"ax": 1350, "ay": 1048, "bx": 1240, "by": 1047, "r": 40, "shape": "capsule"}, {"ax": 1240, "ay": 1047, "bx": 1180, "by": 1062, "r": 40, "shape": "capsule"}, {"ax": 1180, "ay": 1062, "bx": 1090, "by": 1070, "r": 40, "shape": "capsule"}, {"ax": 1090, "ay": 1070, "bx": 1000, "by": 1070, "r": 40, "shape": "capsule"}, {"ax": 1000, "ay": 1070, "bx": 950, "by": 960, "r": 30, "shape": "capsule"}, {"r": 100, "shape": "circle", "x": 915, "y": 950}, {"ax": 1480, "ay": 1100, "bx": 1520, "by": 1180, "r": 30, "shape": "capsule"}, {"ax": 1520, "ay": 1180, "bx": 1590, "by": 1300, "r": 30, "shape": "capsule"}, {"ax": 1590, "ay": 1300, "bx": 1590, "by": 1500, "r": 30, "shape": "capsule"}, {"ax": 1590, "ay": 1500, "bx": 1520, "by": 1700, "r": 30, "shape": "capsule"}, {"ax": 1520, "ay": 1700, "bx": 1500, "by": 1740, "r": 30, "shape": "capsule"}, {"ax": 1500, "ay": 1735, "bx": 1380, "by": 1790, "r": 45, "shape": "capsule"}, {"r": 45, "shape": "circle", "x": 1500, "y": 1790}],
-    "shape": "union"
+    "pts": [[20, 80], [1880, 80], [1880, 1845], [1770, 1879], [1596, 1890], [1432, 1869], [1316, 1846], [1224, 1856], [1112, 1832], [1044, 1778], [975, 1729], [888, 1663], [806, 1582], [754, 1539], [703, 1532], [623, 1548], [498, 1576], [310, 1632], [123, 1611], [20, 1628]],
+    "shape": "polygon"
   },
   "triggers": [
     {"id": "hintStone", "hint": "stone", "once": true, "shape": "terrain", "trigger": "hint.show"},
@@ -2233,13 +2233,19 @@
       "waystone"
     ]
   },
-  "terrainBands": [
-    {"id": "east", "ch": 3, "cw": 5, "cx0": 8, "cy0": 7},
-    {"id": "west", "ch": 3, "cw": 5, "cx0": 6, "cy0": 7},
-    {"id": "south1", "ch": 3, "cw": 5, "cx0": 8, "cy0": 9},
-    {"id": "south2", "ch": 3, "cw": 5, "cx0": 8, "cy0": 11},
-    {"id": "south3", "ch": 3, "cw": 5, "cx0": 8, "cy0": 13}
-  ],
+  "terrainGrid": {
+    "ch": 3,
+    "cw": 5,
+    "cx0": 0,
+    "cx1": 32,
+    "cy0": 0,
+    "cy1": 32,
+    "ox": 0,
+    "oy": 0,
+    "pin": [[4, 7], [3, 7], [4, 9], [4, 11], [4, 13]],
+    "stepX": 2,
+    "stepY": 1
+  },
   "water": [
     {"id": "quietPond", "c": [1500, 1010], "look": "pond", "r": 4, "shape": "circle", "z": 2.5},
     {"id": "floodedCellar", "look": "murky", "rect": [1485, 995, 1495, 1005], "shape": "rect", "z": 2.45},

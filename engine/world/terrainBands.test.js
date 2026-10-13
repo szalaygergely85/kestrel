@@ -29,7 +29,7 @@ const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 const { assets } = await loadTestAssets();
 const heapMB = () => { if (globalThis.gc) globalThis.gc(); return process.memoryUsage().heapUsed / 1048576; };
-const def0 = (() => { const d = JSON.parse(JSON.stringify(assets.world('world_m1'))); delete d.terrainBand; delete d.terrainBands; return d; })();
+const def0 = (() => { const d = JSON.parse(JSON.stringify(assets.world('world_m1'))); delete d.terrainBand; delete d.terrainBands; delete d.terrainGrid; return d; })();
 const A = { id: 'east', cx0: 8, cy0: 7, cw: 5, ch: 3 }, B = { id: 'west', cx0: 6, cy0: 7, cw: 5, ch: 3 };
 const mk = (extra, o) => World.load({ ...def0, ...extra }, assets, { detail: true, ...o });
 const throws = (extra, re) => { try { mk(extra); return false; } catch (e) { return re.test(e.message); } };

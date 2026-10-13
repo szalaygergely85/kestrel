@@ -28,10 +28,10 @@ const fake = () => { const w = { terrainBands: [{}, {}], _bandPend: -1, get band
   tr.request('b'); for (let i = 0; i < 60; i++) tr.step(0.05);
   assert.deepEqual(log, ['tp', 'arrive']); assert.equal(w.cur, 1);
   assert.equal(tr.phase, 'in'); w._bandPend = -1; for (let i = 0; i < 60; i++) tr.step(0.05); assert.equal(tr.phase, 'idle'); }
-{ // variant: grid replaces bands, polygon replaces the capsule bounds, input untouched; flag default OFF
+{ // variant: grid replaces bands, polygon replaces the capsule bounds, input untouched; WM-05 default ON, ?grid=0 off
   const def = Object.freeze({ name: 'x', terrainBands: [{ id: 'east' }], bounds: { shape: 'union', parts: [] } });
   const geo = { bounds: poly }, v = gridVariant(def, geo);
   assert.equal(v.terrainBands, undefined); assert.deepEqual(v.terrainGrid, GRID_DEF); assert.equal(v.bounds.shape, 'polygon'); assert.notEqual(v.bounds.pts, poly.pts);
   assert.equal(def.terrainBands.length, 1); assert.equal(gridVariant(def, null).bounds.shape, 'union');
-  assert.equal(gridEnabled(new URLSearchParams('')), false); assert.equal(gridEnabled(new URLSearchParams('grid=1')), true); }
+  assert.equal(gridEnabled(new URLSearchParams('')), true); assert.equal(gridEnabled(new URLSearchParams('grid=0')), false); assert.equal(gridEnabled(new URLSearchParams('grid=1')), true); }
 console.log('bandPose: ok');

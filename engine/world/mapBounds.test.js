@@ -29,7 +29,7 @@ let pass = 0, fail = 0;
 const ok = makeOk(() => pass++, () => fail++, (m) => console.log('FAIL', m));
 const { assets } = await loadTestAssets();
 const geo = globalThis.ASSETS.levels.world_geo;
-const def0 = (() => { const d = JSON.parse(JSON.stringify(assets.world('world_m1'))); delete d.terrainBand; delete d.terrainBands; return d; })();
+const def0 = (() => { const d = JSON.parse(JSON.stringify(assets.world('world_m1'))); delete d.terrainBand; delete d.terrainBands; delete d.terrainGrid; return d; })();
 const GRID = { cx0: 0, cy0: 0, cx1: 16, cy1: 16, cw: 5, ch: 3, stepX: 2, stepY: 1, ox: 0, oy: 0 }; // 16 chunks x 128 m = the 2048 m map rect
 const out = { x: 0, y: 0, nx: 0, ny: 0 };
 
@@ -39,8 +39,8 @@ const w = World.load({ ...def0, terrainGrid: GRID, bounds: polyDef }, assets, { 
 ok('terrainGrid world: bounds is the polygon', w.terrainGrid && w.bounds.shape === 'polygon' && w.bounds.pts.length === geo.bounds.pts.length);
 ok('bounds copy is plain content (no _poly in JSON)', !JSON.stringify(w.bounds).includes('_poly') && w.bounds._poly && w.bounds.pts !== polyDef.pts);
 ok('bad polygon rejected at load', (() => { try { World.load({ ...def0, terrainGrid: GRID, bounds: { shape: 'polygon', pts: [[0, 0], [10, 10], [10, 0], [0, 10]] } }, assets, { detail: false }); return false; } catch (e) { return /self-intersecting|intersect/.test(e.message); } })());
-const capsule = World.load({ ...def0 }, assets, { detail: false });
-ok('old capsule world: bounds shape unchanged', capsule.bounds && capsule.bounds.shape === def0.bounds.shape && !capsule.terrainGrid);
+const capsule = World.load({ ...def0, bounds: { shape: 'union', parts: [{ shape: 'circle', x: 1496.5, y: 1024.5, r: 96 }] } }, assets, { detail: false }); // WM-05: world_m1 itself now ships the polygon
+ok('old capsule world: bounds shape unchanged', capsule.bounds && capsule.bounds.shape === 'union' && !capsule.terrainGrid);
 
 // the map data itself: play area inside, sea / mountains / Wall outside
 const P = geo.bounds, R = 0.4, inside = (x, y) => boundsOvershoot(P, x, y, R) <= 0;
@@ -48,7 +48,7 @@ const rect = geo.protect.rect;
 ok('stage 0-2 play rect corners + tower + Bend + ford + crossroads inside', [[rect[0], rect[1]], [rect[2], rect[1]], [rect[0], rect[3]], [rect[2], rect[3]], [1496.5, 1024.5], [1262, 1033], [992, 1079], [713.8, 1232.1], [905, 940]].every(([x, y]) => inside(x, y)));
 ok('sea (south of the coast), Wall side (x > 1880), mountains (north y < 80), west rim are outside', [[1200, 1900], [1950, 1000], [1000, 30], [-30, 800], [2000, 1750]].every(([x, y]) => !inside(x, y)));
 ok('walking east past the killing ground stops at x 1880 - R', (() => { let x = 1700; for (let i = 0; i < 1500; i++) { x += 14 / 60; if (projectBounds(P, x, 1000, R, out)) x = out.x; } return Math.abs(x - (1880 - R)) < 1e-6; })());
-ok('walking south at the beach stops before the sea polygon', (() => { for (const bx of [800, 1160, 1450, 1750]) { let y = 1300; for (let i = 0; i < 3000; i++) { y += 14 / 60; if (projectBounds(P, bx, y, R, out)) y = out.y; } if (!(y < geo.coast.pts.find((p) => Math.abs(p[0] - bx) < 70)[1])) return false; } return true; })());
+ok('walking south at the beach stops ~110 m out in the sea (coast + 110, WM-05)', (() => { for (const bx of [800, 1160, 1450, 1750]) { let y = 1300; for (let i = 0; i < 3000; i++) { y += 14 / 60; if (projectBounds(P, bx, y, R, out)) y = out.y; } const cy = geo.coast.pts.find((p) => p[0] === bx)[1]; if (!(y > cy + 90 && y < cy + 160)) return false; /* WM-05: polygon = coast + 110 m out (sea monster is the limit) */ } return true; })());
 // every vertex of the outline lies inside the map rect and on land (above the sea polygon's y at that x is checked by the coast test above)
 ok('outline inside the 2048 m map rect', P.pts.every(([x, y]) => x >= 0 && x <= 2048 && y >= 0 && y <= 2048));
 

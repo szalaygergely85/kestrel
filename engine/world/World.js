@@ -548,7 +548,11 @@ export class World {
       // WS1-02 (38.36): authored `terrainBand` rect (absent = the auto-centred 3x3, byte-identical).
       let tb = w.terrainBand;
       if (w.terrainBands) { // WS2-01: start in the best zone for the spawn pose (opts.spawn) or zone 0
-        const sp = opts.spawn;
+        let sp = opts.spawn;
+        if (!(sp && Number.isFinite(sp.x) && Number.isFinite(sp.y))) { // WM-05: no caller pose -> the world's own player spawn (else zone 0 is the wrong place on the whole-map grid)
+          const pe = (def.entities || []).find((e) => e.type === 'player' && e.spawn), st = pe && w.structures.find((q) => q.id === pe.spawn.structure);
+          if (st && st.kind !== 'mesh' && st.level && st.level.start) { localToWorld(st.frame, st.level.start.x, st.level.start.y, 0, tmpW); sp = { x: tmpW.x, y: tmpW.y }; }
+        }
         if (w.terrainGrid) { // MAP-10: initial zone = best for the spawn pose (or (0,0)) in slot 0
           const gp = w._gridPick; gp.i = 0; gp.j = 0;
           if (sp && Number.isFinite(sp.x) && Number.isFinite(sp.y)) bandBest(w.terrainGrid, null, sp.x, sp.y, gp);

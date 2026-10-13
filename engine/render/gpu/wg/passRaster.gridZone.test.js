@@ -25,7 +25,7 @@ import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 globalThis.window = globalThis.window || globalThis;
 paletteMod; detailPassMod; terrainDef; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; voxelPropsMod; m3PropsMod; farTowerMod; ferrumLightsMod;
 const { assets } = await loadTestAssets();
-const def0 = JSON.parse(JSON.stringify(assets.world('world_m1'))); delete def0.terrainBand; delete def0.terrainBands;
+const def0 = JSON.parse(JSON.stringify(assets.world('world_m1'))); delete def0.terrainBand; delete def0.terrainBands; delete def0.terrainGrid;
 const GRID = { cx0: 0, cy0: 0, cx1: 32, cy1: 32, cw: 5, ch: 3, stepX: 2, stepY: 1, ox: 0, oy: 0 };
 const mk = (spawn) => World.load({ ...def0, terrainGrid: GRID }, assets, { detail: true, spawn });
 

@@ -46,6 +46,17 @@ export function segNear(x, y, P) { // nearest point on a polyline + its distance
   return best;
 }
 const partOver = (p, x, y, rad) => {
+  if (p.shape === 'polygon') { // WM-05/D-077: exact signed distance to the polygon (<= 0 inside after the body radius)
+    let inside = false, d = Infinity;
+    const q = p.pts;
+    for (let i = 0, n = q.length; i < n; i++) {
+      const [ax, ay] = q[i], [bx, by] = q[(i + 1) % n], ex = bx - ax, ey = by - ay;
+      const t = Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey)));
+      d = Math.min(d, Math.hypot(x - ax - t * ex, y - ay - t * ey));
+      if ((ay > y) !== (by > y) && x < ax + (y - ay) / (by - ay) * ex) inside = !inside;
+    }
+    return inside ? rad - d : d + rad;
+  }
   if (p.shape === 'circle') return Math.hypot(x - p.x, y - p.y) - (p.r - rad);
   const dx = p.bx - p.ax, dy = p.by - p.ay, t = Math.max(0, Math.min(1, ((x - p.ax) * dx + (y - p.ay) * dy) / (dx * dx + dy * dy)));
   return Math.hypot(x - p.ax - t * dx, y - p.ay - t * dy) - (p.r - rad);
@@ -73,7 +84,7 @@ export async function buildSecrets(data0, seed = SEED, cfg = {}) {
     if (!soft && s.collide !== false) solid.push([s.origin.x, s.origin.y, r + 0.4]);
   }
   for (const e of data.entities) { const x = e.x ?? e.transform?.x, y = e.y ?? e.transform?.y; if (typeof x === 'number') marks.push([x, y, 3]); }
-  const inBounds = (x, y) => data.bounds.parts.some((p) => partOver(p, x, y, 1.0) <= 0);
+  const inBounds = (x, y) => (data.bounds.parts || [data.bounds]).some((p) => partOver(p, x, y, 1.0) <= 0);
   const free = (x, y) => { for (const [sx, sy, r] of solid) if (Math.hypot(sx - x, sy - y) < r) return false; return T.groundTypeAt(x, y) !== TYPE_WATER; };
   function losOk(ax, ay, bx, by) { // terrain line of sight: eye 1.7 m over the road point -> 0.6 m over the chest
     const za = gz(ax, ay) + 1.7, zb = gz(bx, by) + 0.6, n = Math.ceil(Math.hypot(bx - ax, by - ay));
