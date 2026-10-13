@@ -4,7 +4,6 @@ import { createWater, collectWaterDefs, RIVER_MAX } from './water.js';
 import { L_LAT } from './river.js';
 import { World } from './World.js';
 import { makeOk } from '../test/assert.js';
-import { allocProbe, skipNote } from '../../tools/allocProbe.mjs';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -102,8 +101,7 @@ const fl = [0, 0];
   ok('perf probe hit river', h > 0);
   if (ms > 0.003) console.warn(`WARN river waterAt+flowAt ${ms.toFixed(5)} ms > 0.003`);
   if (process.env.PERF_STRICT) ok('perf: <= 0.003 ms', ms <= 0.003);
-  const pr = allocProbe((k) => { run(k); }, { n: 20000 });
-  if (!skipNote(pr, 'river zero-alloc')) ok('zero allocation: river waterAt+flowAt (moving points) < 4 B/query pair', pr.perCall < 4, `${pr.perCall.toFixed(2)} B/pair`);
+  // zero-alloc probe lives in river.alloc.test.js (own isolate, GATE-FLAKY-02a)
 }
 console.log(`river.test: ${pass} passed, ${fail} failed`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
