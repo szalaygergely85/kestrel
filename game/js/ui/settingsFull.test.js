@@ -25,7 +25,7 @@ view.handleKey('ArrowRight');assert.equal(view.snapshot().quality,'high');
 view.handleKey('ArrowDown');assert.equal(view.selectedId(),'shadows');
 view.handleKey('ArrowLeft');assert.equal(view.snapshot().shadows,'low');
 view.handleKey('ArrowLeft');view.handleKey('ArrowLeft');assert.equal(view.snapshot().shadows,'off');
-for(let i=0;i<5;i++)view.handleKey('ArrowRight');assert.equal(view.snapshot().shadows,'high');
+for(let i=0;i<3;i++)view.handleKey('ArrowRight');assert.equal(view.snapshot().shadows,'high');
 view.handleKey('ArrowDown');view.handleKey('ArrowDown');assert.equal(view.selectedId(),'volume');
 view.handleKey('ArrowRight');assert.equal(view.snapshot().volume,0.8);
 for(let i=0;i<20;i++)view.handleKey('ArrowLeft');assert.equal(view.snapshot().volume,0);

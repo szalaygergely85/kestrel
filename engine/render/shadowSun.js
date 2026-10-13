@@ -67,7 +67,7 @@ export function resolveSunShadowOptions(user, renderer) {
 export const SUN_OFF_MATRIX = (() => { const m = new Float64Array(16); m[12] = 4; m[15] = 1; return m; })();
 
 /** The shadow levels of the settings menu (GFX-03; owner 2026-10-07: shadows are their own setting). */
-export const SHADOW_LEVELS = Object.freeze(['off', 'low', 'mid', 'high']);
+export const SHADOW_LEVELS = Object.freeze(['off', 'low', 'mid', 'high', 'ultra']);
 
 /**
  * GFX-03: shadow level -> plain shadow options (spread into `createEngine({ shadows })`). 'high' is exactly today's defaults.
@@ -87,7 +87,10 @@ export function resolveShadowLevel(level) {
     // = SUN_SHADOW_DEFAULTS (bit-identical to today)
     case 'high': return { sun: 'map', res: SUN_SHADOW_DEFAULTS.res, meshLod0M: SUN_SHADOW_DEFAULTS.meshLod0M, instCastM: SUN_SHADOW_DEFAULTS.instCastM,
       meshCastM: SUN_SHADOW_DEFAULTS.meshCastM, meshCastCap: SUN_SHADOW_DEFAULTS.meshCastCap };
-    default: throw new Error(`resolveShadowLevel: unknown level '${level}' (off|low|mid|high)`);
+    // PERF-R4 (D-075): ultra-only caster trim - same map/mesh reach as high, props LOD0 within 16 m, LOD1 casters to 32 m (high keeps 25/48 defaults)
+    case 'ultra': return { sun: 'map', res: SUN_SHADOW_DEFAULTS.res, meshLod0M: 16, instCastM: 32,
+      meshCastM: SUN_SHADOW_DEFAULTS.meshCastM, meshCastCap: SUN_SHADOW_DEFAULTS.meshCastCap };
+    default: throw new Error(`resolveShadowLevel: unknown level '${level}' (off|low|mid|high|ultra)`);
   }
 }
 
