@@ -371,7 +371,10 @@ export function renderWorld(fb, world, cam) {
 
   beginFrame(fb);
   meshPitched = false;
-  const meshWater = ((!!world.water && world.water.count > 0) || (world.waterfalls && world.waterfalls.length > 0)); // US-055a2b
+  // SWIM-04c: a submerged eye (fb.under on) skips the surface composite in BOTH twins (GPU: waterComposite.wgsl underOn); the under look owns the ceiling.
+  let underDone = false;
+  const submerged = !!(fb.under && fb.gbuf && updateUnderState(world, cam.x, cam.y, cam.z, fb.under).on);
+  const meshWater = !submerged && ((!!world.water && world.water.count > 0) || (world.waterfalls && world.waterfalls.length > 0)); // US-055a2b
   meshHashCell = 0;
 
   renderWorldMesh(fb, world, cam);
@@ -419,13 +422,20 @@ export function renderWorld(fb, world, cam) {
     // US-055a2b (35.3): water composite on the surface cells (raw depth), then the edge pass skips opaque-water cells.
     if (meshWater) waterCompositeJS(fb, world, meshTerms, meshPitchTerms, meshPitched, false);
     else if (fb.waterMask) fb.waterMask = null;
+    // SWIM-04c: GPU order is shade -> under -> edge; submerged JS does sky + under here, before the edge pass (edge scales the TINTED colours).
+    if (submerged) {
+      if (!fb.skipSky && !underDone) fillSky(fb, cam, world && world.terrain && fb.palette && fb.palette.timeOfDay ? sunFromWorld(world, fb.palette, skySunScratch) : null);
+      underDone = true;
+      fogShapeCtx.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fogShapeCtx.terms = meshPitched ? meshPitchTerms : meshTerms; fogShapeCtx.camZ = cam.z;
+      underwaterPass(fb.rt, fb.gbuf, fb.depth.depth, cam.x, cam.y, cam.z, fb.timeSec || 0, fb.under);
+    }
     if (fb.detailPass) edgePass(fb.gbuf, fb.depth.depth, fb.rt, fb.detailPass.edges, fb.waterMask || null, fb.matTable ? fb.matTable.soft : null);
   }
 
   if (!fb.skipSky) fillSky(fb, cam, world && world.terrain && fb.palette && fb.palette.timeOfDay ? sunFromWorld(world, fb.palette, skySunScratch) : null); // AUD-40
   if (meshWater && fb.gbuf) waterCompositeJS(fb, world, meshTerms, meshPitchTerms, meshPitched, true); // sky cells (water to the horizon)
   // SWIM-04b (38.54): underwater look, end of the shade chain (after sky). `fb.under` (makeUnderState) absent = untouched frame.
-  if (fb.under && fb.gbuf) {
+  if (fb.under && fb.gbuf && !underDone) {
     updateUnderState(world, cam.x, cam.y, cam.z, fb.under);
     if (fb.under.on) {
       const fsc = fogShapeCtx; // reuse the fog ray context for per-cell view rays

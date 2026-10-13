@@ -3,6 +3,7 @@ import { makeUnderState, underFogK, underShade, underwaterPass, updateUnderState
 import { fogShapeCtx } from './fogShape.js';
 import { CellBuffer } from './CellBuffer.js';
 import { GBuffer } from './GBuffer.js';
+import { readFileSync } from 'node:fs';
 import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
@@ -103,6 +104,17 @@ ok('off: copy', out.fg[0] === 200 && out.bg[2] === 30 && out.glyph === G('#'));
   world.waterAt = (x, y, o) => { o.surfaceZ = -58; o.depth = 0.2; o.look = null; return true; };
   updateUnderState(world, 0, 0, -58.5, S); ok('depth < 0.3 -> off', S.on === 0);
   world.waterAt = () => false; S.on = 1; updateUnderState(world, 0, 0, -59, S); ok('no water -> off', S.on === 0);
+}
+
+// SWIM-04c: both twins skip the water surface composite when submerged (JS: compositor.js `submerged`; GPU: WaterCompositeU.underOn, written by passWater)
+{
+  const rd = (u) => readFileSync(new URL(u, import.meta.url), 'utf8');
+  const comp = rd('./compositor.js'), wgsl = rd('./gpu/wgsl/waterComposite.wgsl.js'), pw = rd('./gpu/wg/passWater.js');
+  ok('JS twin: submerged gates meshWater', /const submerged = .*updateUnderState/.test(comp) && /const meshWater = !submerged &&/.test(comp));
+  ok('JS twin: submerged runs sky + under before edgePass (GPU order shade-under-edge)', comp.indexOf('underDone = true') > 0 && comp.indexOf('underDone = true') < comp.indexOf('if (fb.detailPass) edgePass('));
+  ok('GPU twin: edge waterOn off when submerged', /E_WATER_ON\] = wOn && !\(U && U\.on\)/.test(rd('./gpu/wg/passShade.js')));
+  ok('GPU twin: composite returns early on underOn', /wu\.underOn > 0\.5\) \{ return o; \}/.test(wgsl));
+  ok('GPU twin: passWater writes underOn from fb.under.on', /cu\[C_UNDER_ON\] = fb && fb\.under && fb\.under\.on \? 1 : 0/.test(pw));
 }
 
 console.log(`underwater: ${pass} passed, ${fail} failed`);

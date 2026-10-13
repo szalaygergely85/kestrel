@@ -45,6 +45,7 @@ const C_PA = CF('pitchA'), C_PB = CF('pitchB'), C_PC = CF('pitchC'), C_WL = CF('
 // S8-B2-13b (38.14, the note of record): splash ripples. `rippleCount` (i32), the global `rippleGlyph`/`rippleGain`
 // uniform (fb overrides, else waterLook.js defaults), and `ripple` (8 x vec4: x, y, age, amp per live ring).
 const C_REFLECT = CF('reflectU'), C_SKYLUT = CF('skyLut'); // AUD-42
+const C_UNDER_ON = CF('underOn');
 const C_RIPPLE_COUNT = CF('rippleCount'), C_RIPPLE_GLYPH = CF('rippleGlyph'), C_RIPPLE_GAIN = CF('rippleGain'), C_RIPPLE = CF('ripple');
 
 export class WgWaterPass {
@@ -252,6 +253,7 @@ export class WgWaterPass {
     if (ripN > 0) cu.set(this._rip32, C_RIPPLE);
     ci[C_RIPPLE_GLYPH] = (fb && fb.rippleGlyph != null) ? fb.rippleGlyph : DEFAULT_RIPPLE_GLYPH;
     cu[C_RIPPLE_GAIN] = (fb && fb.rippleGain != null) ? fb.rippleGain : DEFAULT_RIPPLE_GAIN;
+    cu[C_UNDER_ON] = fb && fb.under && fb.under.on ? 1 : 0; // SWIM-04c: shade pass (earlier in the frame) already ran updateUnderState
     const tx = this.compTex;
     tx[0].texture = inp.shadeFg; tx[1].texture = inp.shadeBg; tx[2].texture = inp.gi; tx[3].texture = inp.depth;
     tx[4].texture = this.layer.texture; tx[5].texture = inp.light;
