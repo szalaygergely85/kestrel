@@ -82,13 +82,13 @@
       "It fell. I found it. Then it was mine."
     ], "next": "rook.ford.6", "speaker": "rook"},
     "rook.ford.6": {"lines": [
-      "Old house roof, by the crossing. Take it."
+      "Old house by the crossing. Inside."
     ], "next": "rook.ford.7", "speaker": "rook"},
     "rook.ford.7": {"end": true, "lines": [
       "I have other shinies. Many."
     ], "setFlag": "s.mq.ford.mirror.accept", "speaker": "rook"},
     "rook.mirror.active": {"end": true, "lines": [
-      "Old house roof. By the crossing. Climb."
+      "Old house by the crossing. Look inside."
     ], "speaker": "rook"},
     "rook.mirror.done.1": {"clip": "caw", "lines": [
       "It blinks. Like Bend. Like the far one."

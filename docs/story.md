@@ -1032,9 +1032,9 @@ Notes: `rook.meet` gives the quest (main quest, no choice). `rook.call.ready` is
 | `rook.ford` (3) | ROOK | `Gone? No. Kept. Kept is different.` | 34 |
 | `rook.ford` (4) | YOU | `You took it.` | 12 |
 | `rook.ford` (5) | ROOK | `It fell. I found it. Then it was mine.` | 38 |
-| `rook.ford` (6) | ROOK | `Old house roof, by the crossing. Take it.` | 41 |
+| `rook.ford` (6) | ROOK | `Old house by the crossing. Inside.` | 34 |
 | `rook.ford` (7) | ROOK | `I have other shinies. Many.` | 27 |
-| `rook.mirror.active` | ROOK | `Old house roof. By the crossing. Climb.` | 39 |
+| `rook.mirror.active` | ROOK | `Old house by the crossing. Look inside.` | 39 |
 | `rook.mirror.done` (1) | ROOK | `It blinks. Like Bend. Like the far one.` | 39 |
 | `rook.mirror.done` (2) | ROOK | `My glass, your stone. A fair loan.` | 34 |
 | `rook.ford.repeat` | ROOK | `North, smoke. Fires. People, maybe. Go look.` | 44 |
