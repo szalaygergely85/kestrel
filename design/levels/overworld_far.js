@@ -171,20 +171,20 @@
               return { grass: list, flowers: list, alpine: list };
             })() },
           // reeds in wet ground (fen / reed type), tall common grass stands in for reeds (no reed mesh exists)
-          { name: 'reeds', seed: 38417, cellM: 3.5, jitter: 1.4, fill: 1, biomeOnly: true, maxSlope: 0.3, clearM: 0.8, drawM: 60, lodCells: 4,
-            ground: { fen: [ { mesh: 'quaternius/Grass_Common_Tall', weight: 3, sinkM: 0.05, shadow: false, sway: true, maxDistM: 45 },
-                             { mesh: 'quaternius/Grass_Wispy_Tall', weight: 1, sinkM: 0.05, shadow: false, sway: true, maxDistM: 45 } ],
-                      reeds: [ { mesh: 'quaternius/Grass_Common_Tall', weight: 3, sinkM: 0.05, shadow: false, sway: true, maxDistM: 45 },
-                               { mesh: 'quaternius/Grass_Wispy_Tall', weight: 1, sinkM: 0.05, shadow: false, sway: true, maxDistM: 45 } ] } },
+          { name: 'reeds', gpu: true, seed: 38417, cellM: 3.5, jitter: 1.4, fill: 1, biomeOnly: true, maxSlope: 0.3, clearM: 0.8, drawM: 60, lodCells: 4,
+            ground: { fen: [ { mesh: 'quaternius/Grass_Common_Tall', weight: 3, sinkM: 0.05, shadow: false, sway: true, grassLike: true, maxDistM: 45 },
+                             { mesh: 'quaternius/Grass_Wispy_Tall', weight: 1, sinkM: 0.05, shadow: false, sway: true, grassLike: true, maxDistM: 45 } ],
+                      reeds: [ { mesh: 'quaternius/Grass_Common_Tall', weight: 3, sinkM: 0.05, shadow: false, sway: true, grassLike: true, maxDistM: 45 },
+                               { mesh: 'quaternius/Grass_Wispy_Tall', weight: 1, sinkM: 0.05, shadow: false, sway: true, grassLike: true, maxDistM: 45 } ] } },
           // wild flower clumps + low plants on meadow ground, sparse pebbles on sand / alpine ground
-          { name: 'wildflowers', seed: 38419, cellM: 6, jitter: 2.2, fill: 1, biomeOnly: true, maxSlope: 0.3, clearM: 0.8, drawM: 50, lodCells: 4,
+          { name: 'wildflowers', gpu: true, seed: 38419, cellM: 6, jitter: 2.2, fill: 1, biomeOnly: true, maxSlope: 0.3, clearM: 0.8, drawM: 50, lodCells: 4,
             ground: (function () {
               var list = [ { mesh: 'quaternius/Flower_3_Single', weight: 4, sinkM: 0.03, shadow: false, sway: true, maxDistM: 40 },
                            { mesh: 'quaternius/Plant_7_Big', weight: 3, sinkM: 0.03, shadow: false, sway: true, maxDistM: 40 },
                            { mesh: 'quaternius/Fern_1', weight: 1, sinkM: 0.03, shadow: false, sway: true, maxDistM: 40 } ];
               return { flowers: list, grass: list, alpine: list };
             })() },
-          { name: 'pebbles', seed: 38423, cellM: 5, jitter: 2.0, fill: 1, biomeOnly: true, maxSlope: 0.3, clearM: 0.6, drawM: 40, lodCells: 4,
+          { name: 'pebbles', gpu: true, seed: 38423, cellM: 5, jitter: 2.0, fill: 1, biomeOnly: true, maxSlope: 0.3, clearM: 0.6, drawM: 40, lodCells: 4,
             ground: (function () {
               var list = [ { mesh: 'quaternius/Pebble_Round_1', weight: 1, sinkM: 0.03, shadow: false, maxDistM: 35 },
                            { mesh: 'quaternius/Pebble_Round_3', weight: 1, sinkM: 0.03, shadow: false, maxDistM: 35 },
