@@ -32,7 +32,7 @@ import { SKY_GLOW_WGSL } from '../../skyGlow.js';
 import { FOG_SHAPE_WGSL } from '../../fogShape.js';
 import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
 import { UNDER_WGSL } from '../../underwater.js'; // SWIM-04c (38.54)
-import { CLIFF_NZ, FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, FAR_BLEND_FP0, FAR_BLEND_FP1, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, GRASS_AO_LO, GRASS_TIP_H, GRASS_BASE_H, GRASS_LEAN_G, GRASS_LEVELS, GRASS_ROWS, GRASS_TINT_AMP, GRASS_GX_HAS, GRASS_BACKLIGHT_K } from '../../terrainShade.js';
+import { CLIFF_NZ, FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, FAR_BLEND_FP0, FAR_BLEND_FP1, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, GRASS_AO_LO, GRASS_TIP_H, GRASS_BASE_H, GRASS_LEAN_G, GRASS_LEVELS, GRASS_ROWS, GRASS_TINT_AMP, GRASS_GX_HAS, GRASS_BACKLIGHT_K, FG_SLOPE, FG_GUST, FG_MOD, FG_CODES, FG_TYPES } from '../../terrainShade.js';
 
 
 
@@ -74,6 +74,9 @@ export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'underRampB', type: 'vec4' }, // bubble ramp glyph indices (ascii - 32)
   { name: 'underRampC', type: 'vec4' }, // ceiling ramp glyph indices
   { name: 'cliff', type: 'vec4' }, // OB-104b2 (38.55), APPENDED after grass: x = rock type id (recipe.terrain.rock.id), y = 1 when the cliff look is on (0 = off; twin: ctx.cliffType >= 0)
+  { name: 'fgP', type: 'vec4' }, // G2 + P3 (D-075 step 4), APPENDED: far grass tier. x = on, y = startM (carpet radius), z = fadeM, w = colour mix (terrainShade.js farGrassFill)
+  { name: 'fgW', type: 'vec4' }, // far grass gust phase: dirX, dirY, cycles per second, 1 / travel (m/s)
+  { name: 'fgT', type: 'vec4', count: FG_TYPES }, // far grass per ground type id: rgb bytes (carpet ramp middle), w = strength (0 = type has no far grass)
 ]);
 
 export const SHADE_TEXTURES = Object.freeze([
@@ -124,7 +127,7 @@ fn tsFootprint(t: f32) -> f32 {
 }
 ${TS_PATCH_NOISE_WGSL}
 
-struct TerrainOut { fr: f32, fg: f32, fb: f32, br: f32, bg: f32, bb: f32, glyph: i32 };
+struct TerrainOut { fr: f32, fg: f32, fb: f32, br: f32, bg: f32, bb: f32, glyph: i32, fgw: f32 };
 
 ${SKYLINE_FOG_WGSL}
 fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32, faceMode: i32, z: f32, nrm: vec3f) -> TerrainOut {
@@ -184,6 +187,25 @@ fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32,
   let packedX = i32(gT.x); let packedCount = i32(gT.y);
   var code = pickCodeFromPacked(packedX, packedCount, packedCount >> 1u);
 
+  // G2 + P3 far grass tier (twin: terrainShade.js shadeTerrain, same lines). fgw = weight, > 0 = stable level 254.
+  var fgw = 0.0;
+  if (su.fgP.x > 0.5 && !close) {
+    let fst = su.fgT[typeId].w;
+    if (fst > 0.0) {
+      let fw0 = clamp((t - su.fgP.y) / su.fgP.z, 0.0, 1.0);
+      fgw = fw0 * fw0 * (3.0 - 2.0 * fw0) * fst;
+      if (fgw > 0.0) {
+        var ph = (timeSec - (u * su.fgW.x + v * su.fgW.y) * su.fgW.w) * su.fgW.z; ph = ph - floor(ph);
+        var tri = 1.0 - abs(2.0 * ph - 1.0); tri = tri * tri * (3.0 - 2.0 * tri);
+        let sg = clamp(nP * ${FG_SLOPE.toFixed(4)} + (tri - 0.5) * ${FG_GUST.toFixed(4)}, -1.0, 1.0);
+        if (fgw > 0.5 - 0.4 * sg) { code = select(select(${FG_CODES[1]}, ${FG_CODES[2]}, sg > 0.33), ${FG_CODES[0]}, sg < -0.33); }
+        let km = fgw * su.fgP.w * (1.0 + ${FG_MOD.toFixed(4)} * sg);
+        fr += (su.fgT[typeId].x * gain - fr) * km; fgc += (su.fgT[typeId].y * gain - fgc) * km; fbc += (su.fgT[typeId].z * gain - fbc) * km;
+        br = fr * 0.3; bgc = fgc * 0.3; bbc = fbc * 0.3;
+      }
+    }
+  }
+
   let t3 = textureLoad(uTlook, vec2i(3, base), 0);
 
   // ME-06b: background canopy FACE look: TLOOK texel 3 .z/.w = face glyphs + count (forest only), texel 16 = trunk colour.
@@ -218,7 +240,7 @@ fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32,
   if (f > 0.85) { code = 0; }
 
   var o: TerrainOut;
-  o.fr = fr; o.fg = fgc; o.fb = fbc; o.br = br; o.bg = bgc; o.bb = bbc; o.glyph = code;
+  o.fr = fr; o.fg = fgc; o.fb = fbc; o.br = br; o.bg = bgc; o.bb = bbc; o.glyph = code; o.fgw = fgw;
   return o;
 }
 // OB-073 D2e: kind-10 carpet blade (twin: terrainShade.js shadeGrass). No skyline cap, glyph by h01 / lean, colour = ramp(h01 + tint).
@@ -284,7 +306,7 @@ function buildShadeWgsl(withLevel) {
       stip: ' lvOut = 255u;',
       out: ' o.lvl = lvOut;',
       // OB-073 calm ground: no shimmer branch any more (glint removed), terrain is always level 255 (twin: terrainShade.js LEVEL_NONE)
-      terr: ' o.lvl = 255u;',
+      terr: ' o.lvl = select(255u, 254u, to.fgw > 0.0);', // G2 + P3: far-grass cells animate (twin: terrainShade.js out.level)
       grass: ' o.lvl = gLv;', // OB-073 D2e: kind-10 stable level = ramp position bucket (twin: shadeGrass out.level)
     }
     : { field: '', init: '', vars: '', set: '', stip: '', out: '', terr: '', grass: '' };

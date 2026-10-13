@@ -17,7 +17,8 @@ import { unpackNormalOct } from '../voxel/octNormal.js';
 import { clampByte } from '../core/math.js';
 import { sunFromWorld } from './lighting.js';
 import { WET_DARK, wetGain } from './detailShade.js';
-import { LEVEL_NONE } from './temporalStable.js';
+import { LEVEL_NONE, LEVEL_ANIM } from './temporalStable.js';
+import { STEP } from '../core/loop.js';
 import { skylineFogF } from './skyline.js';
 import { resolveLook } from './look.js';
 
@@ -167,6 +168,43 @@ export function perCellHashSize(t, k, handover) {
   return Math.min(2, Math.max(0.125, Math.pow(2, Math.ceil(Math.log2(Math.max(t * k, 1e-6))))));
 }
 
+// ---- G2 + P3 (D-075 step 4): far grass tier on the terrain shade -------------------------------------------------------------
+// Beyond the carpet radius the grass ground types get the carpet ramp's mid colour (soft, low contrast) and a calm glyph tier
+// `, " '` picked by the band-limited patch noise (+ a slow travelling gust), so the carpet edge hands over to the horizon without a ring.
+// Colour/glyph only, no depth. Cells with a non-zero weight carry stable level 254 (LEVEL_ANIM: the glyph can move with the gust).
+// Data: farGrassFill(rec, cfg, typeNames, quality, windParams) -> rec.types (16 x [r, g, b, strength]) + on/startM/fadeM + wind phase.
+// WGSL twin: shade.wgsl.js shadeTerrain (same constants; uniforms fgP / fgW / fgT). Off (rec.on = 0 / no rec) = bit-identical to before.
+export const FG_MIX = 0.55, FG_GUST = 0.3, FG_FADE_MIN_M = 4, FG_FADE_K = 0.5, FG_SLOPE = 1.5, FG_MOD = 0.2;
+export const FG_CODES = [12, 2, 7]; // ascii - 32 of `,` `"` `'`
+export const FG_TYPES = 16;
+export function makeFarGrass() { return { on: 0, startM: 12, fadeM: 6, mix: FG_MIX, dirX: 1, dirY: 0, cyc: 0, invTravel: 0, types: new Float32Array(FG_TYPES * 4), _cfg: null, _names: null }; }
+/** Fill (no alloc) the far-grass record of a carpet config. Per ground type the variant with the most `areas` wins (no areas = everywhere = wins); colour = ramp middle.
+ *  quality = world.carpetQuality (on, radiusScale, farGrass !== false); windParams = world.wind.params or null (calm: no gust). */
+export function farGrassFill(rec, cfg, typeNames, quality, windParams) {
+  const vs = cfg ? cfg.variants || [] : [], T = rec.types;
+  rec.on = cfg && quality && quality.on !== false && quality.farGrass !== false ? 1 : 0;
+  const radius = (cfg && cfg.radiusM ? cfg.radiusM : 12) * (quality && quality.radiusScale ? quality.radiusScale : 1);
+  rec.startM = radius; rec.fadeM = Math.max(FG_FADE_MIN_M, radius * FG_FADE_K);
+  if (windParams) { rec.dirX = windParams.dirX; rec.dirY = windParams.dirY; rec.cyc = 1 / (STEP * windParams.P); rec.invTravel = windParams.travel > 0 ? 1 / windParams.travel : 0; }
+  else { rec.dirX = 1; rec.dirY = 0; rec.cyc = 0; rec.invTravel = 0; }
+  if (rec._cfg === cfg && rec._names === typeNames) return rec;
+  rec._cfg = cfg; rec._names = typeNames; T.fill(0);
+  if (!cfg || !typeNames) return rec;
+  for (let t = 0; t < typeNames.length && t < FG_TYPES; t++) {
+    let best = -1, bestScore = -1;
+    for (let k = 0; k < vs.length; k++) {
+      if (vs[k].ground.indexOf(typeNames[t]) < 0) continue;
+      const sc = vs[k].areas ? vs[k].areas.length : 1e9;
+      if (sc >= bestScore) { best = k; bestScore = sc; }
+    }
+    if (best < 0) continue;
+    const r = vs[best].ramp, n = r.length, x = 0.5 * (n - 1), i0 = Math.floor(x), i1 = i0 + 1 < n ? i0 + 1 : i0, f = x - i0;
+    for (let c = 0; c < 3; c++) T[t * 4 + c] = r[i0][c] + (r[i1][c] - r[i0][c]) * f;
+    T[t * 4 + 3] = 1;
+  }
+  return rec;
+}
+
 /**
  * @param {number} t - camera distance (m)
  * @param {number} type - terrain type id
@@ -258,6 +296,25 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   const gOff = base + 4 * 4;
   const packedX = TL[gOff], packedCount = TL[gOff + 1];
   let code = pickCodeFromPacked(packedX, packedCount, packedCount >> 1);
+  // G2 + P3: far grass tier (WGSL twin: shadeTerrain, same lines). fgw = weight 0..1, > 0 = stable level 254.
+  let fgw = 0;
+  const FGR = ctx.farGrass;
+  if (FGR !== undefined && FGR.on !== 0 && !close) {
+    const st = FGR.types[type * 4 + 3];
+    if (st > 0) {
+      let w = (t - FGR.startM) / FGR.fadeM; w = w < 0 ? 0 : w > 1 ? 1 : w;
+      fgw = w * w * (3 - 2 * w) * st;
+      if (fgw > 0) {
+        let ph = (timeSec - (fu * FGR.dirX + fv * FGR.dirY) * FGR.invTravel) * FGR.cyc; ph -= Math.floor(ph);
+        let tri = 1 - Math.abs(2 * ph - 1); tri = tri * tri * (3 - 2 * tri);
+        let sg = nP * FG_SLOPE + (tri - 0.5) * FG_GUST; sg = sg < -1 ? -1 : sg > 1 ? 1 : sg;
+        if (fgw > 0.5 - 0.4 * sg) code = FG_CODES[sg < -0.33 ? 0 : sg > 0.33 ? 2 : 1];
+        const km = fgw * FGR.mix * (1 + FG_MOD * sg), o4 = type * 4;
+        fr += (FGR.types[o4] * gain - fr) * km; fg += (FGR.types[o4 + 1] * gain - fg) * km; fb += (FGR.types[o4 + 2] * gain - fb) * km;
+        br = fr * 0.3; bg = fg * 0.3; bb = fb * 0.3;
+      }
+    }
+  }
 
   // ME-06b: background canopy FACE look (overworld_far nearLOD 'Surface vs
   // face' + 'Forest near LOD'): only for a type whose TLOOK row carries face
@@ -298,7 +355,7 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
 
   out.glyph = code;
   // 38.25 amendment C.1: stable-pass level byte of a terrain cell (twin of shade.wgsl's terrain splice): 254 = the shimmer branch (glyph can change next tick), else 255
-  out.level = LEVEL_NONE; // OB-073: no shimmer branch any more
+  out.level = fgw > 0 ? LEVEL_ANIM : LEVEL_NONE; // OB-073: no glint branch; G2: far-grass cells animate (gust)
   out.fg[0] = toByte(fr); out.fg[1] = toByte(fg); out.fg[2] = toByte(fb);
   out.bg[0] = toByte(br); out.bg[1] = toByte(bg); out.bg[2] = toByte(bb);
   return out;
@@ -593,6 +650,10 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
   const sunMapOn = !!(light && !light.uniform && light.sunMapOn);
   const alias = terrainAoAlias(gbuf);
   const grassTab = world && world.carpet && world.carpet.cfg ? grassTableFor(world.carpet.cfg) : null;
+  if (grassTab !== null && terrain.typeNames) { // G2 + P3: far grass record (ctx-owned, filled in place)
+    if (!ctx.farGrass) ctx.farGrass = makeFarGrass();
+    farGrassFill(ctx.farGrass, world.carpet.cfg, terrain.typeNames, world.carpetQuality, world.wind && world.wind.params ? world.wind.params : null);
+  } else if (ctx.farGrass) ctx.farGrass.on = 0;
   for (let i = 0; i < n; i++) {
     const kd = gbuf.kind[i];
     if (kd !== KIND_TERRAIN && !(kd === KIND_GRASS && grassTab !== null)) continue; // OB-073 D2c: kind 10 only with a carpet table
