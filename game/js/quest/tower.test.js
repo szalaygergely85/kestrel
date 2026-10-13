@@ -224,7 +224,7 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
 // ---------------------------------------------------------------------------
 {
   const beaconDef = towerDef.interactables.find((i) => i.id === 'beacon');
-  ok('beacon interactable prompt is "[E] Wake the relay" (D-011 reskin)', beaconDef.prompt === '[E] Wake the relay', beaconDef.prompt);
+  ok('beacon interactable prompt is "[E] Wake the waystone" (D-011 reskin, D-080 name)', beaconDef.prompt === '[E] Wake the waystone', beaconDef.prompt);
   ok('beacon interactable data: once, requires the quest-state key lantern.js writes, light id "beacon"',
     beaconDef.once === true && beaconDef.requires === 'tower.lantern.taken' && beaconDef.interact === 'beacon.light' && beaconDef.light === 'beacon');
 

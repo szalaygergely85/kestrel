@@ -38,7 +38,7 @@ assert.match(talk('hesk')[0], /Hands where I can see them/);
 assert.equal(st('mq.ow.names'), 4, 'accept + talk + auto hand-in in ONE conversation');
 assert.ok(book.lastReward.items.some((i) => /^gear\./.test(i.id)), 'gear T3 reward');
 assert.equal(st('mq.ow.relay'), 1); talk('hesk'); assert.equal(st('mq.ow.relay'), 2, 'Hesk gives the relay job');
-assert.match(talk('dorrin')[0], /brass collar off the top/);
+assert.match(talk('dorrin')[0], /brass collar off it/);
 book.packOps.add('relay.brass', 1); book.feed({ type: 'item:got', id: 'relay.brass' });
 questFlag('waystone.ws_outwall.woken'); er.mainSync(0);
 assert.equal(st('mq.ow.relay'), 4, 'relay done once the Outwall relay wakes'); assert.equal(st('mq.ow.board'), 1);
