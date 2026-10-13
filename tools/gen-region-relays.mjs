@@ -75,7 +75,7 @@ if (!dry && !process.exitCode) {
   for (const f of found) data.entities.push({ id: 'relay_' + f.suffix, type: 'prop', x: f.x, y: f.y, yawDeg: 90, z: 'ground',
     components: { collider: { h: 2.2, r: 0.9 }, light: { offset: { down: -1.1 }, on: false, preset: 'relay' }, voxel: { anim: 'dead', loop: true, model: 'relay' },
       waystone: { id: 'ws_' + f.suffix, kind: 'relay', label: 'place.relay.ws_' + f.suffix, order: f.order } },
-    note: `WM-13: dormant region relay ws_${f.suffix} (${f.regId}); name key place.relay.ws_${f.suffix} = NEEDS WRITER` });
+    note: `WM-13: dormant region relay ws_${f.suffix} (${f.regId}); name key place.relay.ws_${f.suffix} (story.md Region relays)` });
   fs.writeFileSync(FILE, stringifyContent(data));
   console.log('written', found.length);
 }

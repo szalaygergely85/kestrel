@@ -863,3 +863,5 @@ New `tools/verify-wm-regions.mjs <port>` (10 stills -> docs/test-reports/wm-regi
 - `tools/bench-presets.mjs`: `--imp off,on --quality ultra|high --gpu rtx|intel` adds an imp column (URL `&imp=0|1`) and prints GATE PASS/FAIL (RTX ultra <= 7.5 ms, Intel high <= 10 ms, roadSouth imp on). Main session runs it.
 - NEEDS B1-main: (1) after the OB-109 pre-bake / world load: `applyImpostorPreset(engine, quality.knobs, { species: <recipe.forest.trees.species>, log: console.warn });` (2) in the Settings quality-change handler: same call with `knobsFor(name)` (cheap, no re-bake); (3) dev: `?imp=0|1` -> pass `{...knobs, impM: 0}` when 0 (bench uses it). Note card draw needs the R6c part 2 host pass. Tests: `run-tests --filter gfx,impostor,preset,settings` 15/15 PASS; validate-content OK. Not run: browser, bench.
 - -> arch-review + owner look
+### WM-13b relay wake lines (kestrel-3)
+- RELAY_WAKE (10 ws_<region> lines) beside RELAY_TITLES in quest/wire/waystone.js; relayWake showWakeNotice shows the relay's own line as toast (drawHud), old relays unchanged; gen-region-relays.mjs no longer writes NEEDS WRITER. Test added in relayWake.test.js.
