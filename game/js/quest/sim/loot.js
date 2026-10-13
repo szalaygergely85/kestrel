@@ -166,7 +166,8 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
     }
     const orbHit = rng.nextFloat() < tb.orb.chance;
     const orbKind = tb.orb.kinds[rng.int(tb.orb.kinds.length)];
-    if (orbHit) loot.orbHeld[i] = orbKind; // OB-074: held in the corpse until E
+    // OB-120: while the fireball is locked the potion.mp cell is unusable (FB-01), so every potion is hp; same draws either way.
+    if (orbHit) loot.orbHeld[i] = (orbKind === 'mp' && world.state['magic.fireball'] !== true) ? 'hp' : orbKind; // OB-074: held in the corpse until E
     const rec = recs[i];
     rec.x = p.x; rec.y = p.y; rec.z = p.z + CORPSE_LIFT;
     world.state[flagKey[i]] = true;

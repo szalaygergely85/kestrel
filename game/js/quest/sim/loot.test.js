@@ -473,6 +473,24 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   ok('OB-113: full pack -> potion stays in corpse, loot returns false', env.loot.orbOf('boar1') === 'hp' && countOf(inv, 'potion.hp') === before && r === false);
 }
 
+// OB-120: magic locked -> every potion is hp (same draws); unlocked -> hp/mp mix unchanged.
+{
+  let lockedMp = 0, lockedHp = 0, unMp = 0, unHp = 0, same = true;
+  for (let seed = 1; seed <= 24; seed++) {
+    const a = fresh({ seed }), b = fresh({ seed, state: { 'magic.fireball': true } });
+    kill(a); kill(b);
+    const oa = a.loot.orbOf('boar1'), ob = b.loot.orbOf('boar1');
+    if (oa === 'mp') lockedMp++; if (oa === 'hp') lockedHp++;
+    if (ob === 'mp') unMp++; if (ob === 'hp') unHp++;
+    if ((oa === null) !== (ob === null) || (ob === 'hp' && oa !== 'hp') || (ob === 'mp' && oa !== 'hp')) same = false;
+    // stream shape: next draw after the roll is identical
+    if (a.loot.corpseItem && b.loot.corpseItem && Array.from(a.loot.corpseItem).join() !== Array.from(b.loot.corpseItem).join()) same = false;
+  }
+  ok('OB-120: locked -> 0 potion.mp, some hp', lockedMp === 0 && lockedHp > 0, `${lockedMp}/${lockedHp}`);
+  ok('OB-120: unlocked -> mix kept (both kinds appear)', unMp > 0 && unHp > 0, `${unMp}/${unHp}`);
+  ok('OB-120: same corpses/orb hits locked vs unlocked, mp mapped to hp', same);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
