@@ -77,7 +77,7 @@ export class BandBakeJob {
       this.view = Object.create(terrain); this.view.near = st.b;
       this.phase = terrain.realTrees ? 0 : 1;
       if (terrain.realTrees) this.trees = new TreeScatterJob(this.view, w.structures);
-      if (w._detailCtx) this.detail = new DetailScatterJob(this.view, w.structures, w._detailCtx.keepOut, w._detailCtx.cfg);
+      if (w._detailCtx) this.detail = new DetailScatterJob(this.view, w.structures, w._detailCtx.keepOut, w._detailCtx.cfg, null, w.decorGpu ? { decorGpu: true, carpet: w.carpet || null } : null); // ENV-01b: `world.decorGpu` (plain property, default undefined = off)
       if (msBudget < 3) return false; // WM-02b: constructors are one call of their own under a small budget (phase is already set)
     }
     const t0 = now(), mesh = w.physicsMode === 'mesh';
@@ -120,6 +120,6 @@ export class BandBakeJob {
   bundle() {
     if (this.phase < 5) throw new Error('BandBakeJob.bundle: not finished');
     const near = this.world.terrain.finishBandState(this.st);
-    return { key: null, zone: -1, near, scatter: this.scatter, detail: this.detailSet, trunks: this.trunks, detailCol: this.detailCol, nav: this.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 };
+    return { key: null, zone: -1, near, scatter: this.scatter, detail: this.detailSet, decor: this.detail && this.detail.decor || null, trunks: this.trunks, detailCol: this.detailCol, nav: this.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 };
   }
 }

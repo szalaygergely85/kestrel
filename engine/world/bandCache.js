@@ -12,7 +12,7 @@ function sumBytes(o, depth = 0, seen = new Set()) {
   for (const k in o) { const v = o[k]; if (v && typeof v === 'object') n += sumBytes(v, depth + 1, seen); }
   return n;
 }
-export const bundleBytes = (b) => sumBytes(b.near) + sumBytes(b.scatter) + sumBytes(b.detail) + sumBytes(b.trunks) + sumBytes(b.detailCol) + sumBytes(b.nav) + (b.classMap ? b.classMap.byteLength : 0);
+export const bundleBytes = (b) => sumBytes(b.near) + sumBytes(b.scatter) + sumBytes(b.detail) + sumBytes(b.decor) + sumBytes(b.trunks) + sumBytes(b.detailCol) + sumBytes(b.nav) + (b.classMap ? b.classMap.byteLength : 0);
 
 /** Squared distance from a bundle's zone centre (near rect) to a point. */
 function zoneDist2(b, x, y) {
