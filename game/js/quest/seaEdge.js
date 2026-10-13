@@ -7,11 +7,15 @@ export const SEA_EDGE_CONFIG = {
   spawnOutM: 25,    // circling shape sits this far further out to sea than the player
 };
 
-// Build the shore from coast = {pts, kinds}: flat beach segments + the full sea polygon (for the land/sea test).
-export function createShore(coast) {
+export const SHORE_KINDS = ['beach', 'cliff'];
+
+// Build the shore from coast = {pts, kinds}: every coast segment that meets open sea (beach AND cliff; WM-09, whole map) + the full
+// sea polygon (for the land/sea test). 'open' = map-edge closing segments of the polygon, not a shore. Lakes/rivers are never in `poly`.
+// `kinds` = which segment kinds count (default all but 'open'); pass ['beach'] for the old Long-Strand-only shore.
+export function createShore(coast, kinds = SHORE_KINDS) {
   const P = coast.pts, n = P.length, segs = [];
   for (let k = 0; k < n; k++) {
-    if (coast.kinds[k] !== 'beach') continue;
+    if (!kinds.includes(coast.kinds[k])) continue;
     const a = P[k], b = P[(k + 1) % n];
     segs.push(a[0], a[1], b[0], b[1]);
   }
