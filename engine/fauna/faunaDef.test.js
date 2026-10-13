@@ -48,6 +48,19 @@ a = clone(); a.animals.rabbit.bogusKey = 1; a.animals.rabbit.spawn = { wat: 1 };
 compileFaunaDef(a, models, { warn: (m) => warns.push(m) });
 compileFaunaDef(a, models, { warn: (m) => warns.push(m) });
 ok(warns.length === 2 && warns[0].includes('bogusKey') && warns[1].includes('wat'), 'unknown keys warn once each');
+// LIFE-06: hunts / fleeFrom
+{
+  const d0 = compileFaunaDef(FIXTURE_FX, models);
+  ok(d0.preyMask === 0 && d0.species.every((q) => q.huntMask === 0 && !q.fleePred), 'no hunts: defaults inert');
+  a = clone(); a.animals.fox = Object.assign(clone().animals.rabbit, { hunts: ['rabbit'], huntR: 18, eatS: 2 }); a.animals.rabbit.fleeFrom = 'predators';
+  const d1 = compileFaunaDef(a, models);
+  ok(d1.species[2].huntMask === 1 && d1.preyMask === 1 && d1.species[2].huntR === 18 && d1.species[2].eatS === 2 && d1.species[2].chaseMaxS === 8, 'hunts compiled');
+  ok(d1.species[0].fleePred === true, 'fleeFrom predators');
+  a.animals.fox.hunts = ['dragon'];
+  ok(throwsMsg(() => compileFaunaDef(a, models), 'fox', 'hunts', 'dragon'), 'unknown prey rejected');
+  a = clone(); a.animals.rabbit.fleeFrom = 'x';
+  ok(throwsMsg(() => compileFaunaDef(a, models), 'rabbit', 'fleeFrom'), 'bad fleeFrom rejected');
+}
 
 console.log(`faunaDef.test.js: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

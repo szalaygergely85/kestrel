@@ -18,6 +18,8 @@ import { createClipPlayer, clipPlay, clipStep } from '../entities/clipPlayer.js'
 import { pickGait, gaitRate } from '../entities/gait.js';
 
 export const ST_IDLE = 0, ST_GRAZE = 1, ST_MOVE = 2, ST_ALERT = 3, ST_FLEE = 4, ST_RETURN = 5;
+export const ST_HUNT = 6, ST_EAT = 7; // LIFE-06 (38.56 c): predators only
+export const HERD_PULL_M = 8, HUNT_COOLDOWN_S = 6, CATCH_M = 0.6;
 export const GROUP_ALARM_M = 15;
 export const NEAR_MOVECIRCLE_M = 40;
 const DECISION_PERIOD = 6;       // 60 Hz / 6 = 10 Hz
@@ -46,6 +48,7 @@ export function extendGroundSlot(slot) {
   slot.thinkDt = 0; slot.fresh = true; slot.dPlayer = 0;
   slot.zigT = 0; slot.zigSign = 1; slot.yawBias = 0; slot.biasT = 0; slot.stuckT = 0; slot.expect = 0; slot.moved = 0;
   slot.alarmT = 0; slot.despawnReq = false; slot.pounceT = 0;
+  slot.preyIdx = -1; slot.huntCool = 0; slot.fleeX = 0; slot.fleeY = 0;
   return slot;
 }
 
@@ -71,6 +74,7 @@ export function initGroundAnimal(slot, sp, pm) {
   slot.thinkDt = 0; slot.fresh = true; slot.dPlayer = 0;
   slot.zigT = 0; slot.zigSign = 1; slot.yawBias = 0; slot.biasT = 0; slot.stuckT = 0; slot.expect = 0; slot.moved = 0;
   slot.alarmT = 0; slot.despawnReq = false;
+  slot.preyIdx = -1; slot.huntCool = 0; slot.fleeX = 0; slot.fleeY = 0;
   slot.state = -1; slot.stateT = 0; slot.stateDur = 0;
   slot.pounceT = sp.times && sp.times.pounceEveryS ? range(sp.times.pounceEveryS, { nextFloat: () => 0.5 }) : 0; // fox: first pounce mid-range
 }
@@ -100,7 +104,9 @@ function enter(slot, sp, ctx, st) {
     if (e !== undefined) setClip(slot, sp, e, false, c.alert); else setClip(slot, sp, c.alert, true, -1);
   } else if (st === ST_FLEE) {
     slot.stateDur = 0; slot.zigT = 0; slot.zigSign = ctx.rng.nextFloat() < 0.5 ? -1 : 1; slot.hasWander = false;
-  } else slot.stateDur = 0; // MOVE / RETURN: clip follows the gait every step
+  } else if (st === ST_EAT) {
+    slot.stateDur = sp.eatS; setClip(slot, sp, c.eat !== undefined ? c.eat : c.graze, true, -1);
+  } else slot.stateDur = 0; // MOVE / RETURN / HUNT: clip follows the gait every step
 }
 
 function startFlee(slot, sp, ctx) {
@@ -155,6 +161,37 @@ function nextCalm(slot, sp, ctx) {
   else enter(slot, sp, ctx, r < 0.5 ? ST_GRAZE : ST_IDLE);
 }
 
+function isPreyOf(ctx, pred, o) {
+  return o.alive && ctx.sps !== undefined && ((pred.huntMask >> o.species) & 1) === 1;
+}
+
+/** Nearest live prey of `sp` within sp.huntR (linear scan): slot index or -1. */
+function findPrey(slot, sp, ctx) {
+  let best = -1, bd = sp.huntR * sp.huntR;
+  const s = ctx.slots, n = ctx.n;
+  for (let i = 0; i < n; i++) {
+    const o = s[i];
+    if (o === slot || !o.alive || ((sp.huntMask >> o.species) & 1) === 0) continue;
+    const dx = o.x - slot.x, dy = o.y - slot.y, d2 = dx * dx + dy * dy;
+    if (d2 < bd) { bd = d2; best = i; }
+  }
+  return best;
+}
+
+/** Herd cohesion: centroid of the other live same-species group members into _mv; false for a loner. */
+function herdCentroid(slot, ctx) {
+  let sx = 0, sy = 0, c = 0;
+  const s = ctx.slots, n = ctx.n;
+  for (let i = 0; i < n; i++) {
+    const o = s[i];
+    if (o === slot || !o.alive || o.group !== slot.group || o.species !== slot.species) continue;
+    sx += o.x; sy += o.y; c++;
+  }
+  if (c === 0) return false;
+  _mv.x = sx / c; _mv.y = sy / c;
+  return true;
+}
+
 /** One decision tick (10 Hz near, 2 Hz far). `dtd` = time since this animal's previous decision. */
 function decide(slot, sp, ctx, dtd) {
   const env = ctx.env, pl = ctx.player, dd = sp.dist;
@@ -171,7 +208,27 @@ function decide(slot, sp, ctx, dtd) {
   else leashState(slot, slot.leashDef, _target, dtd);
   // flee-override: a threat inside fleeR forces ENGAGE, also during RETURN / GIVEUP (leash.js ignores the target
   // there by design; prey must not)
-  const threat = react && d < fleeR;
+  let threat = react && d < fleeR;
+  // LIFE-06: flee point = the nearest threat among the player (when he threatens), predators and external beasts
+  let fpx = pl.x, fpy = pl.y, fbd = threat ? d * d : 1e18;
+  if (ctx.thrN > 0) {
+    const ar = dd.alert * dd.alert;
+    for (let i = 0; i < ctx.thrN; i++) {
+      const dx = ctx.thrX[i] - slot.x, dy = ctx.thrY[i] - slot.y, d2 = dx * dx + dy * dy;
+      if (d2 < ar && d2 < fbd) { fbd = d2; fpx = ctx.thrX[i]; fpy = ctx.thrY[i]; threat = true; }
+    }
+  }
+  if (sp.fleePred && ctx.sps !== undefined) {
+    const ar = dd.alert * dd.alert, s = ctx.slots, n = ctx.n;
+    for (let i = 0; i < n; i++) {
+      const o = s[i];
+      if (o === slot || !o.alive || o.species < 0 || ((ctx.sps[o.species].huntMask >> slot.species) & 1) === 0) continue;
+      const dx = o.x - slot.x, dy = o.y - slot.y, d2 = dx * dx + dy * dy;
+      if (d2 < ar && d2 < fbd) { fbd = d2; fpx = o.x; fpy = o.y; threat = true; }
+    }
+  }
+  slot.fleeX = fpx; slot.fleeY = fpy;
+  if (slot.huntCool > 0) slot.huntCool -= dtd;
   if (threat) { slot.leashMode = LEASH_ENGAGE; slot.leashT = 0; }
 
   const lm = slot.leashMode;
@@ -179,6 +236,17 @@ function decide(slot, sp, ctx, dtd) {
     startFlee(slot, sp, ctx);
   } else if (slot.state === ST_FLEE) {
     if (lm !== LEASH_ENGAGE) enter(slot, sp, ctx, ST_RETURN); // safe distance / leash reached / gave up
+  } else if (slot.state === ST_HUNT) {
+    const prey = slot.preyIdx >= 0 ? ctx.slots[slot.preyIdx] : null;
+    if (!prey || !isPreyOf(ctx, sp, prey)) { slot.huntCool = HUNT_COOLDOWN_S; slot.preyIdx = -1; enter(slot, sp, ctx, ST_IDLE); }
+    else {
+      const px = prey.x - slot.x, py = prey.y - slot.y;
+      if (slot.stateT > sp.chaseMaxS || px * px + py * py > dd.safe * dd.safe) { // give up
+        slot.huntCool = HUNT_COOLDOWN_S; slot.preyIdx = -1; enter(slot, sp, ctx, ST_IDLE);
+      }
+    }
+  } else if (slot.state === ST_EAT) {
+    if (slot.stateT >= slot.stateDur) enter(slot, sp, ctx, ST_IDLE);
   } else if (react && d < dd.alert) {
     if (slot.state !== ST_ALERT) enter(slot, sp, ctx, ST_ALERT);
     slot.goalYaw = Math.atan2(pl.y - slot.y, pl.x - slot.x);
@@ -190,6 +258,14 @@ function decide(slot, sp, ctx, dtd) {
     slot.goalYaw = Math.atan2(pl.y - slot.y, pl.x - slot.x);
   } else if (lm === LEASH_RETURN || lm === LEASH_GIVEUP) {
     if (slot.state !== ST_RETURN) enter(slot, sp, ctx, ST_RETURN);
+  } else if (sp.huntMask !== 0 && slot.huntCool <= 0 && (slot.preyIdx = findPrey(slot, sp, ctx)) >= 0) {
+    enter(slot, sp, ctx, ST_HUNT);
+  } else if (sp.groupSize[1] > 1 && ctx.sps !== undefined && slot.state !== ST_RETURN && slot.state >= 0 && !slot.watch &&
+      herdCentroid(slot, ctx) && (_mv.x - slot.x) * (_mv.x - slot.x) + (_mv.y - slot.y) * (_mv.y - slot.y) > HERD_PULL_M * HERD_PULL_M) {
+    // a straggler heads for its group centroid (MOVE persists until it arrives)
+    slot.wanderX = _mv.x; slot.wanderY = _mv.y; slot.hasWander = true;
+    if (slot.state !== ST_MOVE) enter(slot, sp, ctx, ST_MOVE);
+    slot.stateDur = 1e9;
   } else {
     if (slot.state === ST_RETURN || slot.state === ST_ALERT || slot.state < 0 || slot.watch) enter(slot, sp, ctx, ST_IDLE);
     else if (slot.stateT >= slot.stateDur) nextCalm(slot, sp, ctx);
@@ -203,10 +279,11 @@ function decide(slot, sp, ctx, dtd) {
 
   // goal heading for moving states + feeler probe
   const st = slot.state;
-  if (st === ST_FLEE) slot.goalYaw = Math.atan2(slot.y - pl.y, slot.x - pl.x);
+  if (st === ST_FLEE) slot.goalYaw = Math.atan2(slot.y - slot.fleeY, slot.x - slot.fleeX);
+  else if (st === ST_HUNT) { const pr = ctx.slots[slot.preyIdx]; slot.goalYaw = Math.atan2(pr.y - slot.y, pr.x - slot.x); }
   else if (st === ST_RETURN) { returnTarget(slot.leashDef, _ret); slot.goalYaw = Math.atan2(_ret.y - slot.y, _ret.x - slot.x); }
   else if (st === ST_MOVE) slot.goalYaw = Math.atan2(slot.wanderY - slot.y, slot.wanderX - slot.x);
-  if (st === ST_FLEE || st === ST_RETURN || st === ST_MOVE) {
+  if (st === ST_FLEE || st === ST_RETURN || st === ST_MOVE || st === ST_HUNT) {
     const look = Math.max(1, slot.speed * 0.5);
     const h = feel(slot, sp, env, slot.goalYaw, look);
     if (h === h) slot.goalYaw = h;
@@ -238,7 +315,7 @@ export function groundStep(slot, sp, ctx) {
     const dtd = slot.thinkDt; slot.thinkDt = 0;
     decide(slot, sp, ctx, dtd);
   }
-  const st = slot.state;
+  let st = slot.state;
 
   let tgt = 0, turn = TURN_DEFAULT;
   if (st === ST_FLEE) {
@@ -249,6 +326,9 @@ export function groundStep(slot, sp, ctx) {
       slot.zigT -= dt;
       if (slot.zigT <= 0) { slot.zigT = sp.flee.zigzagEveryS || 0.5; slot.zigSign = -slot.zigSign; }
     }
+  } else if (st === ST_HUNT) {
+    tgt = sp.speeds.hunt !== undefined ? sp.speeds.hunt : sp.speeds.flee;
+    turn = (sp.flee.turnDegPerS ? sp.flee.turnDegPerS * DEG : TURN_DEFAULT * 2);
   } else if (st === ST_MOVE || st === ST_RETURN) tgt = sp.speeds.wander;
 
   // heading: feeler result + stuck bias + flee zigzag, limited turn rate
@@ -293,6 +373,18 @@ export function groundStep(slot, sp, ctx) {
     slot.stuckT = 0; slot.expect = 0; slot.moved = 0;
   }
 
+  // LIFE-06: the catch is tested every step (a decision tick at 10 Hz would step over a fast prey)
+  if (st === ST_HUNT && slot.preyIdx >= 0) {
+    const pr = ctx.slots[slot.preyIdx];
+    if (isPreyOf(ctx, sp, pr)) {
+      const cx = pr.x - slot.x, cy = pr.y - slot.y;
+      if (cx * cx + cy * cy <= CATCH_M * CATCH_M) {
+        if (ctx.kill) ctx.kill(pr); else pr.alive = false;
+        slot.preyIdx = -1; enter(slot, sp, ctx, ST_EAT); st = ST_EAT; tgt = 0; slot.speed = 0;
+      }
+    }
+  }
+
   // WILD-05 fox: now and then a mousing pounce (extra.pounce, once -> back to the graze clip) while it sniffs
   if (st === ST_GRAZE && sp.extra.pounce !== undefined && sp.times.pounceEveryS) {
     slot.pounceT -= dt;
@@ -303,7 +395,7 @@ export function groundStep(slot, sp, ctx) {
   }
 
   // gait + clip (rate = speed / tunedMps within the gait's rate[])
-  if (st === ST_MOVE || st === ST_RETURN || st === ST_FLEE) {
+  if (st === ST_MOVE || st === ST_RETURN || st === ST_FLEE || st === ST_HUNT) {
     slot.gait = pickGait(sp.gaits, slot.speed, slot.gait);
     setClip(slot, sp, sp.gaits[slot.gait].clip, true, -1);
     slot.clip.rate = gaitRate(sp.gaits[slot.gait], slot.speed);

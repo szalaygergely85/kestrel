@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "raids": [
+    {
+      "id": "gooseFarm",
+      "note": "LIFE-09 (architecture 38.56 d): wolf pack raids the goose pen. Gated by accepting sq.ow.raid at the Outwall board.",
+      "pack": ["wolf1", "wolf2", "wolf3", "wolf4", "wolf5"],
+      "target": "gooseFarm",
+      "from": 21,
+      "to": 5,
+      "chancePerNight": 0.35,
+      "requires": "q.sq.ow.raid.accept",
+      "cooldownDays": 2
+    }
+  ]
+}

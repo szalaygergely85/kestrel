@@ -5,6 +5,9 @@ import { compileFaunaDef } from './faunaDef.js';
 import { FIXTURE_FX, fixtureModels } from './wildlifeFx.fixture.js';
 import { extendGroundSlot, initGroundAnimal, groundStep, ST_IDLE, ST_ALERT, ST_FLEE, ST_RETURN, walkable } from './groundBrain.js';
 import { createFauna } from './fauna.js';
+import { ensureGcChild, heapGrowth } from '../test/allocGate.js';
+import { ST_HUNT, ST_EAT, ST_MOVE } from './groundBrain.js';
+ensureGcChild();
 
 const def = compileFaunaDef(FIXTURE_FX, fixtureModels());
 const rabbit = def.species[0], deer = def.species[1];
@@ -171,4 +174,108 @@ function run(ctx, sp, secs, fn) {
   assert.ok(f.stats.alive > 0, 'something spawned');
   for (const s of f.slots) if (s.alive) assert.ok(s.state >= 0 && s.clip.clip >= 0);
 }
+
+// ---- LIFE-06: predator-prey, threats, herd cohesion (38.56 c) ----
+const FX2 = structuredClone(FIXTURE_FX);
+FX2.animals.rabbit.fleeFrom = 'predators';
+FX2.animals.fox = {
+  models: ['rabbit'], hunts: ['rabbit'], huntR: 20, chaseMaxS: 6, eatS: 3,
+  clipFor: { idle: 'idle', graze: 'graze', move: 'hop', flee: 'run', alert: 'alert' },
+  gaits: FX2.animals.rabbit.gaits, speeds: { wander: 0.7, flee: 7, hunt: 7.5 },
+  dist: { notice: 12, alert: 9, flee: 5, fleeIfRunning: 9, safe: 40 },
+  times: { idle: [2, 6], graze: [4, 12], alert: [1.5, 4], wanderHopM: [0.5, 3] },
+  flee: { turnDegPerS: 540, maxDistM: 200 }, groupSize: [1, 1],
+};
+const def2 = compileFaunaDef(FX2, fixtureModels());
+const R = def2.species[0], FOX = def2.species[2];
+assert.equal(FOX.huntMask, 1); assert.equal(def2.preyMask, 1); assert.equal(rabbit.huntMask, 0);
+function mk2(n, seed = 1) {
+  const ctx = mkctx(makeEnv(), n, seed);
+  ctx.sps = def2.species; ctx.preyMask = def2.preyMask; ctx.player.x = 500;
+  ctx.kill = (s) => { s.alive = false; ctx.killed = (ctx.killed || 0) + 1; };
+  return ctx;
+}
+function sp2(ctx, i, k, x, y, group = 1) { const s = spawn(ctx, i, def2.species[k], x, y, group); s.species = k; return s; }
+function run2(ctx, secs, fn) {
+  const steps = Math.round(secs * 60);
+  for (let i = 0; i < steps; i++) {
+    for (let k = 0; k < ctx.n; k++) if (ctx.slots[k].alive) groundStep(ctx.slots[k], def2.species[ctx.slots[k].species], ctx);
+    ctx.tick++; if (fn) fn(i);
+  }
+}
+// scripted rabbit (frozen: alive, never stepped, so nothing flees) - the fox hunts, catches, eats, then idles
+{
+  const ctx = mk2(2); const fx = sp2(ctx, 0, 2, 0, 0); const rb = sp2(ctx, 1, 0, 12, 0);
+  let hunted = false, ate = false;
+  const step = () => { groundStep(fx, FOX, ctx); ctx.tick++; if (fx.state === ST_HUNT) hunted = true; if (fx.state === ST_EAT) ate = true; };
+  for (let i = 0; i < 60 * 8; i++) step();
+  assert.ok(hunted, 'fox hunted'); assert.ok(ate, 'fox ate'); assert.equal(ctx.killed, 1); assert.equal(rb.alive, false);
+  for (let i = 0; i < 60 * 5; i++) step();
+  assert.notEqual(fx.state, ST_EAT, 'finished eating');
+}
+// the rabbit flees a predator (player far away)
+{
+  const ctx = mk2(2); const fx = sp2(ctx, 0, 2, 0, 0); const rb = sp2(ctx, 1, 0, 7, 0);
+  fx.speed = 0; let fled = false;
+  // freeze the fox (never stepped): the rabbit still sees a predator within alert
+  run2Only(ctx, rb, R, 1.0, () => { if (rb.state === ST_FLEE) fled = true; });
+  assert.ok(fled, 'rabbit flees a predator'); assert.ok(rb.x > 7.5, 'ran away from it');
+}
+function run2Only(ctx, s, spc, secs, fn) { for (let i = 0; i < Math.round(secs * 60); i++) { groundStep(s, spc, ctx); ctx.tick++; if (fn) fn(i); } }
+// give-up: prey outruns the fox (rabbit fleeing faster), the chase ends within chaseMaxS and a cooldown holds
+{
+  const ctx = mk2(2); const fx = sp2(ctx, 0, 2, 0, 0); const rb = sp2(ctx, 1, 0, 15, 0);
+  FOX.speeds.hunt = 3; let maxHunt = 0, t0 = -1, ends = 0, prev = -1;
+  run2(ctx, 14, (i) => {
+    if (fx.state === ST_HUNT) { if (t0 < 0) t0 = i; maxHunt = Math.max(maxHunt, fx.stateT); }
+    if (prev === ST_HUNT && fx.state !== ST_HUNT) ends++;
+    prev = fx.state;
+  });
+  FOX.speeds.hunt = 7.5;
+  assert.ok(maxHunt > 0.5, 'chase started'); assert.ok(maxHunt <= FOX.chaseMaxS + 0.2, `gave up (${maxHunt})`);
+  assert.equal(ctx.killed, undefined, 'never caught'); assert.ok(ends >= 1);
+}
+// threats from outside (beasts) make animals flee, and the nearest one sets the direction
+{
+  const ctx = mk2(1); const rb = sp2(ctx, 0, 0, 0, 0);
+  ctx.thrN = 1; ctx.thrX = new Float64Array([5]); ctx.thrY = new Float64Array([0]);
+  run2(ctx, 1); assert.equal(rb.state, ST_FLEE); assert.ok(rb.x < 0, 'away from the threat');
+  const c2 = mk2(1); const r2 = sp2(c2, 0, 0, 0, 0); run2(c2, 1);
+  assert.notEqual(r2.state, ST_FLEE, 'no threat, no flee');
+}
+// a scattered herd regroups
+{
+  const ctx = mk2(3); const hd = def2.species[1];
+  const a = sp2(ctx, 0, 1, 0, 0, 5), b = sp2(ctx, 1, 1, 3, 0, 5), c = sp2(ctx, 2, 1, 40, 0, 5);
+  a.homeR = b.homeR = c.homeR = 200; c.homeX = 40;
+  const d0 = Math.abs(c.x - (a.x + b.x) / 2);
+  run2(ctx, 25);
+  assert.ok(Math.abs(c.x - (a.x + b.x) / 2) < d0 * 0.6, `herd regrouped ${d0} -> ${Math.abs(c.x - (a.x + b.x) / 2)}`);
+}
+// 0 alloc with hunts + threats + herds
+{
+  const ctx = mk2(30, 11); ctx.thrN = 2; ctx.thrX = new Float64Array([30, -30]); ctx.thrY = new Float64Array([0, 4]);
+  for (let i = 0; i < 30; i++) sp2(ctx, i, i % 10 === 0 ? 2 : (i % 3 === 0 ? 1 : 0), (i % 6) * 4, (i >> 3) * 4, 1 + (i >> 2));
+  const step = () => { for (let k = 0; k < 30; k++) { const s = ctx.slots[k]; if (!s.alive) { sp2(ctx, k, k % 3 === 0 ? 1 : 0, (k % 6) * 4, 2, 1 + (k >> 2)); } groundStep(s, def2.species[s.species], ctx); } ctx.tick++; };
+  ctx.kill = (s) => { s.alive = false; };
+  for (let i = 0; i < 2000; i++) { ctx.player.x = 12 * Math.sin(i / 300); step(); }
+  const g = heapGrowth(() => { for (let i = 0; i < 60000; i++) { if ((i & 63) === 0) ctx.player.x = 400 * Math.sin(i / 3000); step(); } });
+  assert.ok(g < 3e6, `heap grew ${g}`);
+}
+// fauna API: setThreats / nearestPrey / kill
+{
+  const f = createFauna(compileFaunaDef(FX2, fixtureModels()), makeEnv(), { seed: 3, models: fixtureModels() });
+  const cam = { x: 0, y: 0, fx: 1, fy: 0, hfovRad: 1.2 }, pl = { x: 0, y: 0, sprinting: false };
+  for (let i = 0; i < 1200; i++) f.update(1 / 60, pl, cam);
+  const out = { x: 0, y: 0 }; const alive0 = f.stats.alive;
+  let rb = -1; for (let i = 0; i < f.slots.length; i++) if (f.slots[i].alive) { rb = i; break; }
+  assert.ok(rb >= 0, 'something spawned');
+  const mk = 1 << f.slots[rb].species;
+  assert.equal(f.nearestPrey(f.slots[rb].x, f.slots[rb].y, 0.5, out, mk), rb);
+  assert.equal(out.x, f.slots[rb].x);
+  assert.equal(f.nearestPrey(1e5, 1e5, 5, out, mk), -1);
+  f.kill(rb); assert.equal(f.slots[rb].alive, false); assert.equal(f.stats.alive, alive0 - 1);
+  f.setThreats(20, new Float64Array(20), new Float64Array(20)); assert.equal(f.ctx.thrN, 16);
+}
+
 console.log('groundBrain.test.js ok');

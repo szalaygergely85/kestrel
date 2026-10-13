@@ -12,6 +12,8 @@ import { extendGroundSlot, initGroundAnimal, groundStep } from './groundBrain.js
 import { extendFlyerSlot, initFlyerBird, flyerStep } from './flyerBrain.js';
 import { extendClimberSlot, initClimberAnimal, climberStep } from './climberBrain.js';
 
+export const MAX_THREATS = 16;
+
 export function createFauna(def, env, opts) {
   const o = opts || {};
   const seed = (o.seed || 0) >>> 0;
@@ -20,7 +22,10 @@ export function createFauna(def, env, opts) {
   const slots = spawner.slots;
   for (let i = 0; i < slots.length; i++) { extendGroundSlot(slots[i]); extendFlyerSlot(slots[i]); extendClimberSlot(slots[i]); }
   const sps = def.species;
-  const ctx = { env, player: null, rng: createRng(seed ^ 0x57494C45), slots, n: slots.length, tick: 0, dt: 1 / 60 };
+  const ctx = { env, player: null, rng: createRng(seed ^ 0x57494C45), slots, n: slots.length, tick: 0, dt: 1 / 60,
+    // LIFE-06: species table, prey mask, external threat points (setThreats), kill hook
+    sps, preyMask: def.preyMask | 0, thrN: 0, thrX: new Float64Array(MAX_THREATS), thrY: new Float64Array(MAX_THREATS), kill: null };
+  ctx.kill = (s) => spawner.despawn(s, true);
 
   spawner.onSpawn = function onSpawn(slot, spc) {
     if (spc.kind !== 'ground' && spc.kind !== 'flyer' && spc.kind !== 'climber') return;
@@ -50,9 +55,34 @@ export function createFauna(def, env, opts) {
     ctx.tick++;
   };
 
+  /** External threat points (beasts, owned by the game): up to 16, copied. Animals flee them like the player. */
+  fauna.setThreats = function setThreats(n, xs, ys) {
+    const m = n < MAX_THREATS ? n : MAX_THREATS;
+    for (let i = 0; i < m; i++) { ctx.thrX[i] = xs[i]; ctx.thrY[i] = ys[i]; }
+    ctx.thrN = m > 0 ? m : 0;
+  };
+
+  /** Nearest live prey slot (a species some other species hunts, or `mask` = species-index bitmask) within r of
+   *  (x, y): slot index or -1; out.x / out.y filled. No allocation. */
+  fauna.nearestPrey = function nearestPrey(x, y, r, out, mask) {
+    const mk = mask ? mask : ctx.preyMask;
+    let best = -1, bd = r * r;
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      if (!s.alive || !((mk >> s.species) & 1)) continue;
+      const dx = s.x - x, dy = s.y - y, d2 = dx * dx + dy * dy;
+      if (d2 <= bd) { bd = d2; best = i; }
+    }
+    if (best >= 0 && out) { out.x = slots[best].x; out.y = slots[best].y; }
+    return best;
+  };
+
+  /** A beast ate this slot: despawn with the cell cooldown. */
+  fauna.kill = function kill(i) { const s = slots[i]; if (s && s.alive) spawner.despawn(s, true); };
+
   fauna.reset = function reset() {
     spawner.reset();
-    ctx.rng = createRng(seed ^ 0x57494C45); ctx.tick = 0;
+    ctx.rng = createRng(seed ^ 0x57494C45); ctx.tick = 0; ctx.thrN = 0;
   };
   return fauna;
 }

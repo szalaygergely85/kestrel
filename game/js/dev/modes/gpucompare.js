@@ -2,7 +2,7 @@ import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   meshFromJSON, meshFromBin, composeCharacter, meshCharacter, collapseRig, riggedModelDef, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks, sunPathFrom, applySunPair, blendLook,
-  createRipples, defineWadeSplash, wadeSplashAt, validateCarpetConfig,
+  createRipples, defineWadeSplash, wadeSplashAt, validateCarpetConfig, makeUnderState,
 } from '../../../../engine/index.js';
 import {
   runGpuCompare, compareCells, meshCellCap, compareGeometry, compareLight, describeCellNormals, poisonAllCells, unpackReadback,
@@ -475,6 +475,7 @@ function buildCompareRuns(ctx) {
   // are 143). A round pond (r 7 m, 0.9 m deep at the centre: shallow rim = floor glyph tinted, deep centre = ramp glyphs) on the open
   // terrain west of the fpBoxEdge eye, seen grazing (shear) and top-down (pitched default), plus a flooded plain ("sea", 1 m below the
   // eye, 800 x 700 m rect: clipmap rings + skirt + the own fog). Time is frozen (fb.timeSec 0 in both twins). Sun az 135 el 30.
+  const underCompare = makeUnderState(); // SWIM-04c
   const waterEye = { x: 1464.33, y: 1045.5 };
   const poolC = { x: 1456, y: 1045.5 };
   const waterPose = (list) => () => { worldM1.water = createWater(collectWaterDefs({ water: list }, [])); };
@@ -489,6 +490,14 @@ function buildCompareRuns(ctx) {
       cam: { x: poolC.x + 1.5, y: poolC.y, z: groundZ(poolC.x, poolC.y) + 16, yawDeg: 270, pitchDeg: -75 },
       real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30,
       before: waterPose([{ id: `cmp.${look}`, shape: 'circle', c: [poolC.x, poolC.y], r: 7, z: groundZ(poolC.x, poolC.y) + 0.9, look }]) });
+  }
+  // SWIM-04c (38.54): underwaterLake - eye 2 m below the surface of a 30 m round lake (surface 4 m above the ground at the pool centre, so >= 4 m deep
+  // at the eye), looking over the water (yaw 270 pitch 0) and up at the ceiling (pitch 35). Fog, bubble swap, ceiling hash and caustics through both twins.
+  // Explicit coordinates: eye (1456, 1045.5, surface - 2), surface z = groundZ(1456, 1045.5) + 4; sun az 135 el 30; fb.timeSec 0.
+  const lakeSet = waterPose([{ id: 'cmp.underLake', shape: 'circle', c: [poolC.x, poolC.y], r: 30, z: groundZ(poolC.x, poolC.y) + 4, look: 'water' }]);
+  for (const [what, pitchDeg] of [['underwaterLake', 0], ['underwaterLake up (ceiling)', 35]]) {
+    runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: ${what} (SWIM-04c, eye 2 m under a 30 m lake, yaw 270, pitch ${pitchDeg}, sun az 135 el 30)`,
+      cam: { x: poolC.x, y: poolC.y, z: groundZ(poolC.x, poolC.y) + 2, yawDeg: 270, pitchDeg }, real: true, meshOnly: true, sun: SUN_135_30, before: lakeSet, under: true });
   }
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: water sea (US-055a2b, flooded plain 1 m below the eye, shear pitch -3, sun az 135 el 30)',
     cam: { x: waterEye.x, y: waterEye.y, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -3 }, real: true, meshOnly: true, sun: SUN_135_30,
@@ -959,7 +968,7 @@ async function runGpuCompareSceneMode(ctx) {
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose } of poseRuns) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose, under: underPose } of poseRuns) {
     if (world.carpet || world._carpetCtx) { world._carpetCtx = null; world.carpet = null; wg.setCarpet(null, null, 0); } // D2e: carpet poses only
     if (restoreSun) { restoreSun(); restoreSun = null; }
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
@@ -995,6 +1004,7 @@ async function runGpuCompareSceneMode(ctx) {
       compareSceneDim.rects.set(dim.rects.subarray(0, dim.n * 5));
     }
     fbCompare.sceneDim = compareSceneDim;
+    fbCompare.under = underPose ? underCompare : null; // SWIM-04c: underwater look state (both twins read fb.under; null = dry, untouched frame)
     fbCompare.timeSec = poseTime || 0; // US-141a: frozen per-pose clock (flow streaks); 0 for every other pose
     fbCompare.lights = lights;
     if (lights) lights.update(0, world);
