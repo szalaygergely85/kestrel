@@ -16,8 +16,8 @@
     1.98867
   ],
   "ranges": [
-    {"count": 168, "part": "Rock_Medium_1#0:moss_cap", "start": 0},
-    {"count": 68, "part": "Rock_Medium_1#0:rock", "start": 168},
+    {"count": 18, "part": "Rock_Medium_1#0:moss_cap", "start": 0},
+    {"count": 218, "part": "Rock_Medium_1#0:rock", "start": 18},
     {"count": 106, "part": "Rock_Medium_1#0:rock_soft", "start": 236}
   ],
   "matKeys": [
