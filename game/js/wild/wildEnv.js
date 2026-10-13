@@ -251,7 +251,7 @@ export function createWild({ world, pool, fx, seed = 1, hfovRad, events }) {
   const fwd = new Float64Array(2);
   let lx = NaN, ly = NaN;
   return {
-    fauna, env, feed: feeder.feed, stats: fauna.stats, drawn: () => feeder.stats.drawn,
+    fauna, env, species: def.species, feed: feeder.feed, stats: fauna.stats, drawn: () => feeder.stats.drawn,
     /** once per fixed step, after the player moved. A jump > 25 m (waystone / respawn) resets the fauna. */
     step(dt, px, py, run, yawDeg) {
       if (lx === lx && (px - lx) * (px - lx) + (py - ly) * (py - ly) > TELEPORT_M * TELEPORT_M) fauna.reset();
