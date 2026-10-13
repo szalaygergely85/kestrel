@@ -48,7 +48,7 @@ const flatBed = (z) => () => z;
   const w3 = mkWorld(flatBed(9.2)), e3 = mkEnt(w3, 5, 0); createWading(w3).before(e3);
   const eA = mkEnt(w, 5, 0); createWading(w).before(eA);
   ok('push scales with depth (imm 0.8 > imm 0.4)', e3.components.body.pushX > eA.components.body.pushX * 1.5);
-  const w4 = mkWorld(flatBed(9.2)); w4.flowAt = (x, y, o) => { o[0] = 40; o[1] = 0; return true; };
+  const w4 = mkWorld(flatBed(9.2)); { const ra = w4.riverAt.bind(w4); w4.riverAt = (x, y, o) => { const r = ra(x, y, o); o.fx = 40; o.fy = 0; return r; }; }
   const e4 = mkEnt(w4, 5, 0); createWading(w4).before(e4);
   ok('push capped at 3 m/s', near(e4.components.body.pushX, 3));
   const w5 = mkWorld(), wd5 = createWading(w5), e5 = mkEnt(w5, 5, 0); e5.transform.y = 20; e5.transform.z = 9.6; // mid vs bank flow: faster mid-channel

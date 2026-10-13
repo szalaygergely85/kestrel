@@ -1745,8 +1745,8 @@ export class World {
 
   /**
    * RIVER-04 (38.45): the river water at (x, y) as plain numbers, so game code never reads the river scratch (rv.loc, L_* indices).
-   * Fills out {lat (signed, + = left of flow), hw, tx, ty, v, z} and returns true iff the highest water region there is a river. Zero allocation.
-   * @param {number} x @param {number} y @param {{lat:number,hw:number,tx:number,ty:number,v:number,z:number}} out @returns {boolean}
+   * Fills out {lat (signed, + = left of flow), hw, tx, ty, v, z, fx, fy (flow = same math as flowAt kind 3)} and returns true iff the highest water region there is a river. Zero allocation.
+   * @param {number} x @param {number} y @param {{lat:number,hw:number,tx:number,ty:number,v:number,z:number,fx:number,fy:number}} out @returns {boolean}
    */
   riverAt(x, y, out) {
     const wt = this.water, i = wt.find(x, y);
@@ -1755,6 +1755,8 @@ export class World {
     riverLocate(rv, x, y);
     const l = rv.loc;
     out.lat = l[L_LAT]; out.hw = l[L_HW]; out.tx = l[L_TX]; out.ty = l[L_TY]; out.v = l[L_V]; out.z = l[L_Z];
+    const q = out.lat / out.hw, f = out.v * (1 - 0.5 * q * q);
+    out.fx = out.tx * f; out.fy = out.ty * f;
     return true;
   }
 

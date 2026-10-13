@@ -1,27 +1,35 @@
-// GATE-FLAKY-02a (arch 38.61 point 2): river waterAt/riverAt/flowAt, strict < 8 B per query set.
-// Mirrors the REAL consumer call shape (game/js/quest/sim/wading.js before()): coordinates are read from entity
-// transform fields (heap numbers already), module-level helper, hoisted scratch. Own isolate, no shared polymorphism.
+// GATE-FLAKY-02a part B (arch 38.61 (2a)): the REAL per-tick river consumer (wading.before: ONE riverAt) with x AND y varying,
+// all points inside the river, plus a mixed hit/miss window; strict < 8 B/step over the position store (tools/allocProbe.mjs).
 // Run: node --expose-gc engine/world/river.alloc.test.js
 import { createWater, collectWaterDefs } from './water.js';
 import { World } from './World.js';
 import { allocProbe, skipNote } from '../../tools/allocProbe.mjs';
+import { createWading } from '../../game/js/quest/sim/wading.js';
 
 const w = new World();
 w.water = createWater(collectWaterDefs({ water: [{ id: 'c', shape: 'river', path: Array.from({ length: 11 }, (_, i) => [i * 60, 0, 10, 30, 1]) }] }, []));
 w.physicsMode = 'mesh'; const sup = { floorH: -5 }; w.supportAt = () => sup;
-const out = { surfaceZ: 0, flatZ: 0, depth: 0, region: '', index: -1, look: 0 }, kind = { lat: 0, hw: 0, tx: 0, ty: 0, v: 0, z: 0 }, fl = [0, 0];
-// same shape as wading.before: ONE function taking the entity, reading t.x / t.y at each call (no double parameters of its own)
-const before = (world, e) => { const t = e.transform; return world.waterAt(t.x, t.y, out) && world.riverAt(t.x, t.y, kind) && world.flowAt(t.x, t.y, fl); };
-const PX = new Float64Array(1000), PY = new Float64Array(1000);
-for (let i = 0; i < 1000; i++) { PX[i] = (i * 7.3) % 130 + 5; PY[i] = (i * 3.1) % 20 - 10; }
-const e = { transform: { x: 0, y: 0 } }, t = e.transform;
-let hit = 0;
-// the entity's own position store (`t.x = PX[j]` re-boxes a double per tick in ANY consumer: integrate does it too) is subtracted,
-// exactly like wading.alloc.test.js measures "wading.before adds < N B over integrate alone"; the queries themselves must add < 8 B.
-const base = allocProbe((n) => { for (let i = 0; i < n; i++) { const j = i % 1000; t.x = PX[j]; t.y = PY[j]; } }, { n: 20000 });
-const r = allocProbe((n) => { for (let i = 0; i < n; i++) { const j = i % 1000; t.x = PX[j]; t.y = PY[j]; if (before(w, e)) hit++; } }, { n: 20000 });
-if (skipNote(r, 'river alloc')) process.exit(0);
-const add = r.perCall - base.perCall;
-console.log(`river waterAt+riverAt+flowAt: ${add.toFixed(2)} B/call over the position store (${r.perCall.toFixed(1)} vs ${base.perCall.toFixed(1)}, hits ${hit})`);
-if (!(hit > 0) || !(add < 8)) { console.log('FAIL river alloc'); process.exit(1); }
-console.log('ok   river alloc: queries add < 8 B/call');
+let bad = 0; const chk = (n, c, x) => { console.log(`${c ? 'ok  ' : 'FAIL'} ${n} (${x})`); if (!c) bad++; };
+
+// correctness: riverAt fx/fy == flowAt within 1e-12 at 3 river points
+const rq = { lat: 0, hw: 0, tx: 0, ty: 0, v: 0, z: 0, fx: 0, fy: 0 }, fl = [0, 0];
+for (const [x, y] of [[20, 1], [95.5, -3.2], [400, 4.4]]) {
+  const a = w.riverAt(x, y, rq), b = w.flowAt(x, y, fl);
+  chk(`riverAt flow == flowAt at (${x},${y})`, a && b && Math.abs(rq.fx - fl[0]) < 1e-12 && Math.abs(rq.fy - fl[1]) < 1e-12, `${rq.fx},${rq.fy}`);
+}
+
+const N = 1000, IN_X = new Float64Array(N), IN_Y = new Float64Array(N), MX = new Float64Array(N), MY = new Float64Array(N);
+for (let i = 0; i < N; i++) {
+  IN_X[i] = (i * 7.3) % 500 + 5; IN_Y[i] = (i * 3.1) % 20 - 10;      // inside (half width 10... y within +-10)
+  MX[i] = IN_X[i]; MY[i] = i % 3 === 0 ? 80 + (i % 7) : IN_Y[i];       // every 3rd point misses the river
+}
+const wd = createWading(w);
+const e = { transform: { x: 0, y: 0, z: 0 }, components: { body: { radius: 0.3, height: 1.7, eyeH: 1.6 } } }, t = e.transform;
+const base = allocProbe((n) => { for (let i = 0; i < n; i++) { const j = i % N; t.x = IN_X[j]; t.y = IN_Y[j]; } }, { n: 20000 });
+const rIn = allocProbe((n) => { for (let i = 0; i < n; i++) { const j = i % N; t.x = IN_X[j]; t.y = IN_Y[j]; wd.before(e); } }, { n: 20000 });
+if (skipNote(rIn, 'river alloc')) process.exit(bad ? 1 : 0);
+const rMix = allocProbe((n) => { for (let i = 0; i < n; i++) { const j = i % N; t.x = MX[j]; t.y = MY[j]; wd.before(e); } }, { n: 20000 });
+const a1 = rIn.perCall - base.perCall, a2 = rMix.perCall - base.perCall;
+chk('wading.before in-river, x+y varying adds < 8 B/step', a1 < 8, `${a1.toFixed(2)} B (${rIn.perCall.toFixed(1)} vs ${base.perCall.toFixed(1)})`);
+chk('wading.before mixed hit/miss adds < 8 B/step', a2 < 8, `${a2.toFixed(2)} B`);
+if (bad) process.exit(1);
