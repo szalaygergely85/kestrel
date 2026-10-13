@@ -277,3 +277,4 @@ export { compileFaunaDef } from './fauna/faunaDef.js';
 export { createFauna } from './fauna/fauna.js'; // WILD-06
 export { createFaunaFeed, WILD_DRAW_MAX } from './fauna/feed.js';
 export { createSpawner, FAUNA_MAX, CELL_M as FAUNA_CELL_M } from './fauna/spawner.js';
+export { makeUnderState, updateUnderState, UNDER_DEFAULT } from './render/underwater.js'; // SWIM-04c (38.54)

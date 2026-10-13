@@ -17,6 +17,8 @@ import { loadLevel } from '../../../world/Level.js';
 import { shadeCore, shadeDetailFast, wetGain, WET_DARK, levelFromThresholds as jsLevelFromThresholds } from '../../detailShade.js';
 import { SHADE_LEVEL_WGSL, SHADE_LEVEL_TARGETS } from './shade.wgsl.js';
 import { createHash } from 'node:crypto';
+import { UNDER_WGSL, UNDER_DEFAULT, makeUnderState, underShade } from '../../underwater.js';
+import { numericLiterals } from './wgslProbe.js';
 import { shadeTerrain, hashFastU, hashFast01, shadeGrass, grassTableFor, packGrassTable, GRASS_GX_HAS } from '../../terrainShade.js';
 import { blendLook } from '../../look.js';
 import { packMaterialTable, MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH, SET_F_WIDTH, MAX_LEVELS } from '../ShadeTextures.js';
@@ -458,10 +460,11 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
 // --- US-073b (38.25): the stable-glyph level target. OFF = byte-identical to the pre-073b shader; ON = one extra r8ui target. ---
 {
   // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01, DN-02 night floor, MAP-06b skyline cap, OB-073 smooth ground noise, OB-073 calm ground, OB-081 far tier blend + calm faces (41264 chars): the stable-off shader must not move by a single byte.
+  // re-pinned 45683 -> 48155 by SWIM-04c (UNDER_WGSL + shadeCell/fs_main split + 7 appended ShadeU vec4; underwater block is skipped when su.under.x = 0)
   // re-pinned 44782 -> 45683 by MASK-c (shadeGrass ground blend + back-light, packed GA.w word; TS_PATCH_NOISE_WGSL extracted verbatim)
   // re-pinned 41264 -> 44782 by OB-073-D2e (kind-10 shadeGrass + ShadeU.grass table + the kind-10 branch in fs_main; calm-ground code untouched, asserted by the terrain mutation probes above)
-  assert.equal(SHADE_WGSL.length, 45683, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'cdcc906c4e1d30267d8ac214c3bbb4c00e33ab9786b1debdc2de6f7a771f3b67', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  assert.equal(SHADE_WGSL.length, 48155, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'd96d47af240872a69dadd57cd111cd875bbf179bc0183c23d4d2effef1c024bc', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);
@@ -508,7 +511,8 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   assert.equal(SHADE_BLOCK.field('skyCam').word, SHADE_BLOCK.field('etC').word + 32, 'AUD-40 skyCam appended right after the tint table');
   assert.equal(SHADE_BLOCK.field('skyline').word, SHADE_BLOCK.field('skyGlowOn').word + 4, 'MAP-06b skyline appended right after skyGlowOn');
   assert.equal(SHADE_BLOCK.field('grass').word, SHADE_BLOCK.field('skyline').word + 4, 'D2e grass table appended right after skyline');
-  assert.equal(SHADE_BLOCK.sizeBytes, (SHADE_BLOCK.field('grass').word + 320) * 4, 'grass table (OB-073 D2e) is the tail of the block');
+  assert.equal(SHADE_BLOCK.field('grass').words, 320, 'grass table (OB-073 D2e) keeps its size; SWIM-04c fields are appended after it');
+assert.equal(SHADE_BLOCK.sizeBytes, (SHADE_BLOCK.field('grass').word + 320 + 28) * 4, 'SWIM-04c: 7 vec4 after the grass table are the tail of the block');
   assert.equal(SHADE_BLOCK.field('fogView').word, SHADE_BLOCK.field('skyCam').word + 4, 'fogView right after skyCam');
   assert.equal(SHADE_BLOCK.field('skyGlowOn').word, SHADE_BLOCK.field('fogView').word + 4, 'skyGlowOn right after fogView');
   assert.ok(/if \(su\.skyGlowOn\.x > 0\.5\) \{ col255 = skyGlow\(/.test(SHADE_WGSL), 'sky glow gated by skyGlowOn');
@@ -526,6 +530,26 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   const tm = compileFn(mutT, 'tintCh', shims); let bad = 0;
   for (let i = 0; i < 200; i++) { const c = rand() * 255, t = rand(), k = 0.5 + rand() * 0.5; if (Math.abs(tm(c, t, k) - tintChannel(c, t, k)) > 1e-3) bad++; }
   assert.ok(bad > 100, 'mutation: tint formula caught');
+}
+
+
+// --- SWIM-04c (38.54): underwater look. Appended ShadeU words (no earlier word moved) + WGSL == JS twin constants/order. ---
+{
+  let prev = SHADE_BLOCK.field('grass').word + 320;
+  for (const n of ['under', 'underTint', 'underCam', 'underCeil', 'underCaus', 'underRampB', 'underRampC']) {
+    assert.equal(SHADE_BLOCK.field(n).word, prev, n + ' appended in order after grass'); assert.equal(SHADE_BLOCK.field(n).words, 4); prev += 4;
+  }
+  assert.ok(SHADE_WGSL.includes(UNDER_WGSL), 'UNDER_WGSL included verbatim');
+  assert.ok(SHADE_WGSL.includes('fn shadeCell(frag: vec4f) -> FO') && SHADE_WGSL.includes('if (su.under.x < 0.5 || o.bg.a < 0.5) { return o; }'), 'gated: off / passthrough cells return the old result');
+  // same maths as underShade: literal sets (JS nz 0.6 gate has no WGSL literal: the CPU twin passes nz = 1; ramp codes '*' 10, '~' 94)
+  const js = numericLiterals(underShade.toString()), wg = numericLiterals(UNDER_WGSL);
+  const want = new Set([...js].filter((v) => v !== 0.6)); want.add(94); want.add(10);
+  assert.deepEqual([...wg].sort((a, b) => a - b), [...want].sort((a, b) => a - b), 'WGSL literal set == JS underShade (+ glyph codes)');
+  // order of operations (fog -> ceiling/swap -> caustics) and the ShadeU reads
+  const ord = ['underFog(L, su.under.z)', 'Pz >= su.under.y - 0.02', 'su.underRampC[hc & 3u]', 'T * k - c', 'T * 0.35 - bg', 'f >= su.underTint.w', 'su.underRampB[u32(q)]', 'Pz < su.under.y && L < 10.0', '> 1.0 - su.under.w', 'su.underCaus.xyz * (1.0 - f)'];
+  let at = -1; for (const t of ord) { const i = UNDER_WGSL.indexOf(t); assert.ok(i > at, 'order: ' + t); at = i; }
+  assert.ok(!UNDER_WGSL.includes('exp(') && !UNDER_WGSL.includes('Math.random'), 'no exp (32.6 parity rule)');
+  const U = makeUnderState(); assert.equal(U.bubble.length, 4); assert.equal(U.ceilRamp.length, 4); assert.equal(UNDER_DEFAULT.bubbleRamp.length, 4);
 }
 
 console.log(`shade.wgsl.test.js: string/layout rules + ${probes} JS-evaluated probes (hash, shadeCore, glyph pick, shadeTerrain) vs JS twins passed, mutations caught (hash, 5 shadeCore, 2 terrain).`);

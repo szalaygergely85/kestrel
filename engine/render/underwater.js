@@ -112,8 +112,43 @@ export function underwaterPass(rt, gbuf, depth, camX, camY, camZ, timeSec, U) {
   }
 }
 
-/** WGSL twin of underShade's maths (SWIM-04c ports it into passShade; hash = hashFastU). Documented here so the shape stays 1:1. */
+/**
+ * WGSL twin of underShade (SWIM-04c; included by shade.wgsl.js after `su` / hashFastU / fogCellDir). Same order: fog, ceiling / bubble
+ * swap, caustics. Differences by design (JS twin = oracle): nz = 1, caller supplies Px/Py/Pz exactly as underwaterPass does.
+ * ShadeU words: under = (on, waterZ, fogM, causticK), underTint = (rgb, swapAt), underCam = (cam xyz, lightK), underCeil = ceil rgb,
+ * underCaus = causticCol rgb, underRampB = bubble glyph indices, underRampC = ceil glyph indices (ascii - 32, exact in f32).
+ */
 export const UNDER_WGSL = `
+struct UnderOut { fg: vec3f, bg: vec3f, glyph: i32 };
 fn underFog(L: f32, fogM: f32) -> f32 { let s = min(1.0, L / fogM); return s * (2.0 - s); }
-// underShade(fg, bg, glyph, L, Pz, Px, Py, nz, t, U): see engine/render/underwater.js (same order: fog, ceiling/swap, caustics).
+fn underShadeW(fg: vec3f, bg: vec3f, glyph: i32, L: f32, Pz: f32, Px: f32, Py: f32, t: f32) -> UnderOut {
+  let f = underFog(L, su.under.z);
+  let T = su.underTint.xyz; let k = su.underCam.w;
+  let ceiling = Pz >= su.under.y - 0.02;
+  var c = fg; var gl = glyph;
+  if (ceiling) {
+    c = su.underCeil.xyz;
+    let hc = hashFastU(i32(floor(Px * 2.0)), i32(floor(Py * 2.0)), i32(floor(t * 2.0)));
+    gl = i32(su.underRampC[hc & 3u]);
+  }
+  var o: UnderOut;
+  o.fg = c + (T * k - c) * f;
+  o.bg = bg + (T * 0.35 - bg) * f;
+  if (!ceiling) {
+    if (f >= su.underTint.w) {
+      let lum = (0.299 * o.fg.x + 0.587 * o.fg.y + 0.114 * o.fg.z) / 255.0;
+      let q = clamp(i32(floor(lum * 4.0)), 0, 3);
+      gl = i32(su.underRampB[u32(q)]);
+    }
+    if (Pz < su.under.y && L < 10.0) { // nz > 0.6 always true (the JS twin passes nz = 1)
+      let h = hashFastU(i32(floor(Px / 0.7)), i32(floor(Py / 0.7)), i32(floor(t * 3.0)));
+      if (f32(h >> 8u) * (1.0 / 16777216.0) > 1.0 - su.under.w) {
+        gl = select(94, 10, (h & 1u) != 0u); // '*' = 42 - 32, '~' = 126 - 32
+        o.fg += su.underCaus.xyz * (1.0 - f);
+      }
+    }
+  }
+  o.glyph = gl;
+  return o;
+}
 `;

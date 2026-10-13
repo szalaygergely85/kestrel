@@ -31,6 +31,7 @@ import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // 
 import { SKY_GLOW_WGSL } from '../../skyGlow.js';
 import { FOG_SHAPE_WGSL } from '../../fogShape.js';
 import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
+import { UNDER_WGSL } from '../../underwater.js'; // SWIM-04c (38.54)
 import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, FAR_BLEND_FP0, FAR_BLEND_FP1, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, GRASS_AO_LO, GRASS_TIP_H, GRASS_BASE_H, GRASS_LEAN_G, GRASS_LEVELS, GRASS_ROWS, GRASS_TINT_AMP, GRASS_GX_HAS, GRASS_BACKLIGHT_K } from '../../terrainShade.js';
 
 
@@ -64,6 +65,14 @@ export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'skyGlowOn', type: 'vec4' }, // AUD-40 fix, APPENDED: x = 1 when sky glow + horizon haze apply (compositor gate: terrain world + timeOfDay palette), written every frame; DN-02 y = night glyph-luminance floor (liveLook.floorEff, 0 = off)
   { name: 'skyline', type: 'vec4' }, // MAP-06b (38.42), APPENDED: far-terrain fog cap x fogMax (0 = off), y fromZ, z seaFogMax, w seaLevel
   { name: 'grass', type: 'vec4', count: 80 }, // OB-073 D2e, APPENDED: carpet variant table, 16 variants x GRASS_ROWS vec4 (terrainShade.js packGrassTable); all 0 = no carpet
+  // SWIM-04c (38.54), APPENDED after grass: underwater look (underwater.js UNDER_WGSL). under.x = 0 skips the whole block.
+  { name: 'under', type: 'vec4' }, // on, waterZ, fogM, causticK
+  { name: 'underTint', type: 'vec4' }, // tint rgb 0..255, swapAt
+  { name: 'underCam', type: 'vec4' }, // camera x, y, z (cell position = cam + ray * depth), lightK
+  { name: 'underCeil', type: 'vec4' }, // ceil rgb
+  { name: 'underCaus', type: 'vec4' }, // causticCol rgb
+  { name: 'underRampB', type: 'vec4' }, // bubble ramp glyph indices (ascii - 32)
+  { name: 'underRampC', type: 'vec4' }, // ceiling ramp glyph indices
 ]);
 
 export const SHADE_TEXTURES = Object.freeze([
@@ -351,6 +360,7 @@ ${TERRAIN_SHADE_WGSL}
 
 ${SKY_GLOW_WGSL}
 ${FOG_SHAPE_WGSL}
+${UNDER_WGSL}
 // AUD-45: unit view direction of a cell for the standard fog (same rays as the sky: shear basis / pitched / ortho F).
 fn fogCellDir(cell: vec2i, gridSize: vec2i) -> vec3f {
   if (su.projMode == 0) {
@@ -621,8 +631,7 @@ struct FO {
   @location(1) bg: vec4f,${L.field}
 };
 
-@fragment
-fn fs_main(@builtin(position) frag: vec4f) -> FO {
+fn shadeCell(frag: vec4f) -> FO {
   let cell = vec2i(floor(frag.xy));
   let gi = textureLoad(uGI, cell, 0).xy;
   let kindU = giKind(gi.y);
@@ -877,6 +886,25 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
 
   o.fg = vec4f(toByte01(rgbF.x), toByte01(rgbF.y), toByte01(rgbF.z), toByte01(f32(glyphCode)));
   o.bg = vec4f(toByte01(rgbBg.x), toByte01(rgbBg.y), toByte01(rgbBg.z), 1.0);${L.out}
+  return o;
+}
+
+// SWIM-04c: the underwater look runs once per GPU-shaded cell (bg.a = 1; passthrough/masked cells keep the JS layer) at the end of the pass.
+@fragment
+fn fs_main(@builtin(position) frag: vec4f) -> FO {
+  var o = shadeCell(frag);
+  if (su.under.x < 0.5 || o.bg.a < 0.5) { return o; }
+  let cell = vec2i(floor(frag.xy));
+  let gridSize = vec2i(textureDimensions(uGI));
+  let dRaw = bitcast<f32>(textureLoad(uDepth, cell, 0).x);
+  let sky = giKind(textureLoad(uGI, cell, 0).y) == 0u || !(dRaw < 1e8);
+  let fd = fogCellDir(cell, gridSize);
+  var Px = su.underCam.x; var Py = su.underCam.y; var Pz = 1e30; var Lw = 1e9;
+  if (sky) { Px = fd.x * 64.0; Py = fd.y * 64.0; }
+  else { Lw = dRaw; Px += fd.x * Lw; Py += fd.y * Lw; Pz = su.underCam.z + fd.z * Lw; }
+  let r = underShadeW(o.fg.xyz * 255.0, o.bg.xyz * 255.0, i32(o.fg.w * 255.0 + 0.5), Lw, Pz, Px, Py, su.timeSec);
+  o.fg = vec4f(toByte01(r.fg.x), toByte01(r.fg.y), toByte01(r.fg.z), toByte01(f32(r.glyph)));
+  o.bg = vec4f(toByte01(r.bg.x), toByte01(r.bg.y), toByte01(r.bg.z), 1.0);
   return o;
 }
 `;
