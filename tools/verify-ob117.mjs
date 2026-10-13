@@ -26,11 +26,11 @@ try {
     await pause(1500);
     await evaluate(cdp, saved ? `(() => { const s = JSON.parse(window.localStorage.getItem('kestrel.settings') || '{}'); s.aspect = ${JSON.stringify(saved)}; window.localStorage.setItem('kestrel.settings', JSON.stringify(s)); })()` : 'window.localStorage.removeItem("kestrel.settings")');
     await cdp.send('Page.reload');
-    for (let i = 0; i < 100; i++) { await pause(300); if (await evaluate(cdp, '!!window.__kestrel')) break; }
+    for (let i = 0; i < 150; i++) { await pause(300); if (await evaluate(cdp, "(() => { const e = window.__debug && window.__debug.rt; const c = e && e.canvas; return !!(c && c.style.width); })()")) break; } // wait for the game render target canvas to be sized (not a 300x150 helper canvas)
     for (const [w, h, dpr] of [[1280, 720, 1], [1920, 1080, 1], [1366, 768, 1.25], [1326, 638, 1], [900, 900, 1]]) {
       await cdp.send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: dpr, mobile: false });
       await pause(700);
-      const r = await evaluate(cdp, '(() => { const c = document.querySelector("canvas"); const b = c.getBoundingClientRect(); return { iw: innerWidth, ih: innerHeight, cw: b.width, ch: b.height }; })()');
+      const r = await evaluate(cdp, '(() => { const e = window.__debug && window.__debug.rt; const c = (e && e.canvas) || document.querySelector("canvas"); const b = c.getBoundingClientRect(); return { iw: innerWidth, ih: innerHeight, cw: b.width, ch: b.height }; })()');
       const aspect = r.cw / r.ch, want = ratio ?? r.iw / r.ih;
       console.log(`${q}/${saved || 'default'} ${w}x${h}@${dpr}: css ${r.cw.toFixed(1)}x${r.ch.toFixed(1)} aspect ${aspect.toFixed(4)} want ${want.toFixed(4)}`);
       assert.ok(Math.abs(aspect / want - 1) < 0.005, `aspect ${aspect} != ${want}`);
