@@ -49,6 +49,23 @@ function lightDelay(model) {
 }
 
 /**
+ * OB-123: the pick volume covers the WHOLE visible stone (the default 0.3x0.3x0.4 m box at z+1 only matched looking down at its
+ * middle). World AABB from the voxel model (cellM * size, anchor z = cells below the ground point), else the sprite `world`
+ * size, else the entity collider component, else a 1.2 x 1.2 x 2.2 m fallback. Square footprint (yaw-independent), +0.1 m.
+ */
+export function stonePick(e, model) {
+  const t = e.transform, c = e.components || {}, v = model && model.voxel;
+  let w = 1.2, d = 1.2, h = 2.2, below = 0;
+  if (v && Array.isArray(v.size) && typeof v.cellM === 'number') {
+    w = v.size[0] * v.cellM; d = v.size[1] * v.cellM; h = v.size[2] * v.cellM;
+    below = Array.isArray(v.anchor) && typeof v.anchor[2] === 'number' ? v.anchor[2] * v.cellM : 0;
+  } else if (model && model.world && typeof model.world.h === 'number') { w = d = model.world.w || 1.2; h = model.world.h; }
+  else if (c.collider && typeof c.collider.h === 'number') { w = d = (c.collider.r || 0.6) * 2; h = c.collider.h; }
+  const r = Math.max(w, d) * 0.5 + 0.1;
+  return { x0: t.x - r, x1: t.x + r, y0: t.y - r, y1: t.y + r, z0: t.z - below, z1: t.z - below + h };
+}
+
+/**
  * @param {{questFlag?:(k:string)=>void, notice?:{push:(key:string)=>boolean}, world:Object, palette?:Object, emit:(id:string,kind:string,pos:Object)=>void, hum?:()=>void}} o
  *   emit = gameHooks.emitSimple('prop:touched', ...) in main.js; hum defaults to playRelayHum.
  */
@@ -79,7 +96,7 @@ export function createRelayWake(o) {
       const h = world.get(e.id); if (h) h.play('awake');
     }
     r.rec = world.addInteractable({
-      key: stone ? 'stone.' + r.wsId : 'relay.' + r.wsId, requires: r.phase === AWAKE || !stone ? undefined : FLAG_STONE_TOLD, name: 'relay.wake', x: e.transform.x, y: e.transform.y, z: e.transform.z + 1, radius: RADIUS,
+      key: stone ? 'stone.' + r.wsId : 'relay.' + r.wsId, requires: r.phase === AWAKE || !stone ? undefined : FLAG_STONE_TOLD, name: 'relay.wake', x: e.transform.x, y: e.transform.y, z: e.transform.z + 1, radius: RADIUS, pick: stonePick(e, model),
       prompt: r.phase === AWAKE ? PROMPT_TOUCH : PROMPT_WAKE, def: { waystoneId: r.wsId, entityId: e.id },
     });
     relays.push(r);
