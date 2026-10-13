@@ -662,3 +662,8 @@ Stills (AC3, not run): node tools/verify-secrets-outwall.mjs 9660  -> docs/test-
 - API: `createRoutineNpc(id,x,y)`, `stepRoutine(npc, hour, dt)` -> `npc.out {x,y,pose idle|walk|work,stop}` (target only; caller moves, e.g. npcWalk / kinematic), `setTalking(npc,on)`. Hour = worldClock.clockHour (300 s per game hour).
 - Test: all stops outside colliders via `world.collideCircle` (2 stops nudged), 24 h loop visits every stop, talk freeze/resume, midnight window wrap.
 - NEEDS B1-main: spawn/wire hesk+dorrin (existing entities) and sorrel/pell/tam (after designer meshes + OUT-01): each fixed step feed npc.x/y from the entity, stepRoutine(npc, clockHour(state), dt), move toward out.x/out.y at ~1.6 m/s, anim from out.pose, setTalking on dialogue open/close.
+
+### LIFE-02 villager schedules + needs (kestrel-3, branch life-02) - po-review
+- `game/js/life/schedule.js` + `schedule.test.js` (PASS 0.4 s), data `content/life/outwall.life.json` (= `lifeFromRoutines(ROUTINES)`, test checks equality; regenerate if OUT-02 changes). Logic only: no movement, no main.js, no save.
+- API: `createSchedule(life,hour,day)`, `step(s,hour,day)` (60 Hz, NPC i decides at tick%60==i%60, needs drift, 0 alloc), `current(s,i)` -> {kind,x,y,pose}, `resolveAt(life,i,hour,day)`, `snap(s,hour,day)`, `choose`.
+- Choice: sleep window forced, else max(prio + hunger for eat / social for chat), hash tie-break. Prios eat/chat 0.1 (need-driven). Chat refill is -0.8/h while chatting (spec -0.4 after a chat; real pairing is LIFE-05). `resolveAt` is exact only where the choice is need-independent (e.g. 6 h, all asleep); needs are re-derived from the hour, not stepped. Run: `node tools/run-tests.mjs --filter schedule`.
