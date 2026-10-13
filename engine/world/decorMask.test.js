@@ -24,6 +24,7 @@ paletteMod; detailPassMod; terrainDef; lanternMod; leverMod; boulderMod; rubbleM
 farTowerMod; ferrumLightsMod;
 import { BandBakeJob } from './bandBake.js';
 import { BandCache, bundleBytes } from './bandCache.js';
+import { validateCarpetConfig, buildCarpetClassMap } from './carpet.js';
 import { validateDetailConfig, decorRootCm } from './scatter.js';
 
 let pass = 0, fail = 0;
@@ -69,7 +70,9 @@ for (let k = 0; k < zs.length; k++) {
   const off2 = bake(z);
   ok(`decorGpu false == default bytes: ${z.id}`, off2.b.decor === null && ['x', 'y', 'z', 'yawDeg', 'species', 'r2', 'tileStart'].every((f) => eq(off.b.detail[f], off2.b.detail[f])));
   w.decorGpu = true;
+  const tm0 = performance.now();
   const on = bake(z);
+  const onMs = performance.now() - tm0;
   w.decorGpu = false;
   const dOn = on.b.detail, dOff = off.b.detail;
   const gl = new Set(cfg0.layers.map((l, i) => (l.gpu ? i : -1)).filter((i) => i >= 0));
@@ -86,7 +89,7 @@ for (let k = 0; k < zs.length; k++) {
   const maskB = on.b.decor.layers.reduce((n, m) => n + m.mask.byteLength, 0);
   ok(`bundle.decor counted in bundleBytes: ${z.id}`, bundleBytes(on.b) - bundleBytes({ ...on.b, decor: null }) === maskB);
   const mb = (n) => (n / 1048576).toFixed(3);
-  console.log(`${z.id.padEnd(7)} detail: ${dOff.count} pts ${mb(dBytes(dOff))} MB -> ${dOn.count} pts ${mb(dBytes(dOn))} MB | mask ${mb(maskB)} MB | bundle ${mb(bundleBytes(off.b))} -> ${mb(bundleBytes(on.b))} MB`);
+  console.log(`${z.id.padEnd(7)} detail: ${dOff.count} pts ${mb(dBytes(dOff))} MB -> ${dOn.count} pts ${mb(dBytes(dOn))} MB | mask ${mb(maskB)} MB (bake ${onMs.toFixed(1)} ms incl. detail) | bundle ${mb(bundleBytes(off.b))} -> ${mb(bundleBytes(on.b))} MB`);
   tot.before += bundleBytes(off.b); tot.after += bundleBytes(on.b); tot.mask += maskB;
 }
 console.log(`TOTAL bundle ${(tot.before / 1048576).toFixed(3)} -> ${(tot.after / 1048576).toFixed(3)} MB (mask ${(tot.mask / 1048576).toFixed(3)} MB)`);
@@ -121,15 +124,34 @@ console.log(`TOTAL bundle ${(tot.before / 1048576).toFixed(3)} -> ${(tot.after /
   console.log(`mask ${rows[0].z.id}: ${nz} set / ${cells} cells, ${cleared} cleared by structures/exclusions`);
 }
 
-// carpet bit: a synthetic carpet class map marks the roots inside it
+// carpet bit (ENV-01b fix): each band builds its OWN class map from world._carpetCtx; world.carpet (the live band) is never read
 {
-  const z = zs[0], g0 = bake(z).b.near;
-  w.decorGpu = true;
-  w.carpet = { classMap: new Uint8Array(4 * 4).fill(1), x0: g0.x0, y0: g0.y0, w: 4, h: 4, cellM: 64 };
-  const ms = bake(z).b.decor.layers.map((l) => l.mask);
-  w.decorGpu = false; w.carpet = null;
-  let c = 0, nz = 0; for (const m of ms) for (let i = 0; i < m.length; i++) { if (m[i] & 127) nz++; if (m[i] & 128) c++; }
-  ok('carpet bit set for roots inside the class map only', c > 0 && c < nz, `carpet ${c} of ${nz}`);
+  const z = zs[0], other = zs[2]; // bake a band that is NOT the live one: poison world.carpet with an all-carpet map to prove it is ignored
+  const cc = { cfg: validateCarpetConfig({ seed: 5, variants: [{ name: 'g', ground: ['grass'], density: 0.5, heightM: [0.1, 0.2], ramp: ['a', 'b'] }] }, w.terrain.typeNames), recipe: w.terrain.recipe };
+  w.decorGpu = true; w._carpetCtx = null; w.carpet = { classMap: new Uint8Array(16).fill(1), x0: -1e6, y0: -1e6, w: 4, h: 4, cellM: 1e6 };
+  const none = bake(z);
+  w._carpetCtx = cc;
+  const on = bake(z), on2 = bake(other);
+  w.decorGpu = false; w.carpet = null; w._carpetCtx = null;
+  const carp = (r) => { let c = 0, nz = 0; for (const m of r.b.decor.layers) for (let i = 0; i < m.mask.length; i++) { if (m.mask[i] & 127) nz++; if (m.mask[i] & 128) c++; } return { c, nz }; };
+  const n0 = carp(none), n1 = carp(on);
+  ok('carpet bit 0 without carpetCtx (live world.carpet ignored)', n0.c === 0 && n0.nz > 0, `carpet ${n0.c}`);
+  ok('carpet bit set where the band class map says carpet, not everywhere', n1.c > 0 && n1.c < n1.nz, `carpet ${n1.c} of ${n1.nz}`);
+  for (const r of [on, on2]) {
+    const map = buildCarpetClassMap(r.j.view, cc.recipe, cc.cfg, null, w.structures);
+    let bad = 0, set = 0;
+    for (const m of r.b.decor.layers) {
+      const l = cfg0.layers.find((c) => c.name === m.name), cellCm = Math.round(l.cellM * 100), jitCm = Math.round(l.jitter * 100);
+      for (let iy = m.iy0; iy < m.iy0 + m.h; iy++) for (let ix = m.ix0; ix < m.ix0 + m.w; ix++) {
+        const byte = m.mask[(iy - m.iy0) * m.w + (ix - m.ix0)]; if (!(byte & 127)) continue;
+        const rc = decorRootCm(ix, iy, l.seed, cellCm, jitCm), x = rc[0] / 100, y = rc[1] / 100;
+        const i = Math.floor((x - map.x0) / map.cellM), j = Math.floor((y - map.y0) / map.cellM);
+        const want = i >= 0 && j >= 0 && i < map.w && j < map.h && map.classMap[j * map.w + i] !== 0;
+        if (want !== ((byte & 128) !== 0)) bad++; if (byte & 128) set++;
+      }
+    }
+    ok('bit 7 == band class map at the root', bad === 0, `bad ${bad}, set ${set}`);
+  }
 }
 
 // overlapping bands agree on every shared lattice cell whose root (and clearM probes) lie inside both rects

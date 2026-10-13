@@ -1,4 +1,5 @@
 // ME-06c1 (architecture.md 37.2): derived, load-time tree placements.
+import { buildCarpetClassMap } from "./carpet.js";
 import { decorHash, jitterCm, K_JX, K_JY } from "../mesh/decorScatter.js";
 export function hash2(ix, iy, seed) {
   let h = Math.imul(ix | 0, 0x8da6b343) ^ Math.imul(iy | 0, 0xd8163841) ^ seed;
@@ -341,8 +342,13 @@ export class DetailScatterJob {
     const bio = compileBiomes(terrain.recipe, null);
     Object.assign(this, { bio, terrain, cfg, g, x1, y1, tx0, ty0, tilesX, tilesY, structureTiles, speciesDefs, layers,
       points: [], trees, _treeGrid: null, exclusions: cfg.exclude.concat(keepOut), layer: 0, iy: 0, rowInit: false, result: null,
-      decorGpu: !!(opts && opts.decorGpu), carpet: (opts && opts.carpet) || null, decor: null, _mask: null });
-    if (this.decorGpu) this.decor = { layers: [] };
+      decorGpu: !!(opts && opts.decorGpu), carpet: null, decor: null, _mask: null });
+    if (this.decorGpu) {
+      this.decor = { layers: [] };
+      // ENV-01b fix: the band's OWN class map (never world.carpet, which is the live near band and is rewritten in place)
+      const cc = opts && opts.carpetCtx;
+      if (cc && cc.cfg && cc.cfg.variants) this.carpet = buildCarpetClassMap(terrain, cc.recipe, cc.cfg, null, structures);
+    }
   }
   step(msBudget) {
     if (this.result) return true;
