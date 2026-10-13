@@ -280,7 +280,7 @@ export class Terrain {
         }
       } else { ox0 = ox1 = oy0 = oy1 = 0; }
     }
-    return { b, ox0, ox1, oy0, oy1, row: 0, side: 0, ready: false, mn, mx, canopy: can, fid, cx0, cy0, cw, ch };
+    return { b, ox0, ox1, oy0, oy1, row: 0, side: 0, sRow: 0, cur: 0, ce: 0, ready: false, mn, mx, canopy: can, fid, cx0, cy0, cw, ch };
   }
 
   /** True while a back band is baking or waiting to be swapped. */
@@ -306,13 +306,18 @@ export class Terrain {
     const b = st.b, w = b.w, h = b.h, cell = b.cell;
     const canopy = this.realTrees ? 0 : this._canopyM, forestId = this._forestTypeId;
     const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    while (st.row < h) {
-      const r = st.row;
-      const inOv = r >= st.oy0 && r < st.oy1;
-      let cs, ce; // column span [cs, ce) to bake in this slice
-      if (!inOv) { cs = 0; ce = w; st.row++; }
-      else if (st.side === 0) { cs = 0; ce = st.ox0; st.side = 1; }
-      else { cs = st.ox1; ce = w; st.side = 0; st.row++; }
+    while (st.row < h || st.cur < st.ce) {
+      if (st.cur >= st.ce) { // next column span; WM-02: a span is baked in <= 32-cell slices so a 2 ms budget holds (cells are pure: bytes unchanged)
+        const r = st.row;
+        const inOv = r >= st.oy0 && r < st.oy1;
+        if (!inOv) { st.cur = 0; st.ce = w; st.row++; }
+        else if (st.side === 0) { st.cur = 0; st.ce = st.ox0; st.side = 1; }
+        else { st.cur = st.ox1; st.ce = w; st.side = 0; st.row++; }
+        st.sRow = r;
+        if (st.ce <= st.cur) { st.cur = st.ce = 0; continue; }
+      }
+      const r = st.sRow, cs = st.cur, ce = Math.min(st.ce, cs + 32);
+      st.cur = ce; if (st.cur >= st.ce) st.cur = st.ce; // slice end; span done when cur reaches ce
       if (ce > cs) {
         const G = this.util.bake(b.x0 + cs * cell, b.y0 + r * cell, cell, ce - cs, 1);
         const o = r * w + cs;
@@ -326,7 +331,7 @@ export class Terrain {
       }
       if ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 >= msBudget) break;
     }
-    if (st.row >= h) st.ready = true;
+    if (st.row >= h && st.cur >= st.ce) st.ready = true;
     return st.ready;
   }
 

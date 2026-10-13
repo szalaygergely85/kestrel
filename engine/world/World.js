@@ -8,6 +8,7 @@ import { loadLevel, isTerrainFloor } from './Level.js';
 import { Terrain } from './Terrain.js';
 import { BandBakeJob } from './bandBake.js';
 import { BandCache } from './bandCache.js';
+import { aheadOrder, bestOverlap } from './bandAhead.js';
 import { validateCarpetConfig, buildCarpetClassMap, buildCarpetMask, CarpetMaskJob } from './carpet.js';
 import { scatterTrees, scatterDetail, TreeScatterJob, DetailScatterJob } from './scatter.js';
 import { packLevel, updateAnimatedSector } from './packed.js';
@@ -290,7 +291,7 @@ export class World {
     // `null` (unbounded - every world before this story). Content, not
     // state; set once by `World.load` from `def.bounds`.
     this.bounds = null;
-    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.bandCache = new BandCache(); this._bandKeys = []; this._bandKeysC = []; this._evBand = { from: null, to: null }; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandId = null; // WS2-01/02
+    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.bandCache = new BandCache(); this._bandKeys = []; this._bandKeysC = []; this._evBand = { from: null, to: null }; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandMisses = 0; this._ahead = null; this._zoneKeys = new Map(); this._pinKeys = null; this._aheadOrd = []; this._aheadRects = new Float64Array(4 * 64); this._aheadSrc = []; this._aheadPose = null; this.bandId = null; // WS2-01/02
     this.terrainGrid = null; this._gridPick = { i: 0, j: 0 }; // MAP-10 (38.43): generated zone grid; terrainBands = 2 reusable slot zones
     this.terrainBand = null; // WS1-02: authored near-band chunk rect or null (auto 3x3)
     // US-016 D-011 addendum (architecture.md 14.4 item 13): horizon
@@ -451,6 +452,7 @@ export class World {
       const sl = () => ({ id: '', i: 0, j: 0, cx0: 0, cy0: 0, cw: tg.cw, ch: tg.ch });
       w.terrainBands = [sl(), sl()]; // slot k = current / pending zone, filled by _gridFill
       w.bandSwitch = { prefetchM: tg.switch.prefetchX, switchM: tg.switch.switchX };
+      w.bandCache.maxBytes = 32 * 1048576; // WM-02 (38.59): grid cache cap
     } else
     { // WS2-01 (38.38): authored zone list; mutually exclusive with terrainBand
       const tbs = validateTerrainBands(def.terrainBands, def.bandSwitch, def.terrainBand);
@@ -598,7 +600,7 @@ export class World {
 
     if (w.terrainBands && w.terrain?.nearReady && w._bandCur >= 0) { // OB109-B2: the start band is the first cache entry
       w._cachePut(w._currentBundle(w._bandKey(w._bandCur), w._bandCur));
-      w.terrain.onRebake = (x0, y0, x1, y1) => w.bandCache.invalidateRect(x0, y0, x1, y1);
+      w.terrain.onRebake = (x0, y0, x1, y1) => { w.bandCache.invalidateRect(x0, y0, x1, y1); w._zoneKeys.clear(); w._pinKeys = null; w._ahead = null; };
     }
 
     if (!w.sun) {
@@ -1260,6 +1262,58 @@ export class World {
     return out;
   }
 
+  /** WM-02: cache key of grid zone (i, j) (memoised; structures are static between editor rebakes). */
+  _zoneKey(i, j) {
+    const id = i * 4096 + j; let k = this._zoneKeys.get(id);
+    if (!k) {
+      const z = zoneAt(this.terrainGrid, i, j, {});
+      k = nearBandKey(this, z.cx0, z.cy0, z.cw, z.ch) + `|realTrees:${this.terrain.realTrees}|detail:${this._detailCtx ? 1 : 0}`;
+      this._zoneKeys.set(id, k);
+    }
+    return k;
+  }
+  _gridPinKeys() {
+    if (!this._pinKeys) { this._pinKeys = new Set(); for (const p of this.terrainGrid.pin) this._pinKeys.add(this._zoneKey(p[0], p[1])); }
+    return this._pinKeys;
+  }
+
+  /**
+   * WM-02 (38.59 decision 2): idle bake-ahead for the grid. One job at a time, ring zone ahead in the movement heading first,
+   * overlap copied from the cached neighbour with the largest overlap. Never touches the live band, never synchronous.
+   * Call with the leftover frame budget (streamBand does when it returned 0). Returns true while a job is running.
+   */
+  bakeAhead(px, py, msBudget) {
+    const g = this.terrainGrid;
+    if (!g || this._bandCur < 0 || this._bandPend >= 0 || !(msBudget > 0)) return !!this._ahead;
+    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const lp = this._aheadPose || (this._aheadPose = { x: px, y: py, hx: 0, hy: 0 });
+    const dx = px - lp.x, dy = py - lp.y, d = Math.hypot(dx, dy);
+    if (d > 0.5) { lp.hx = lp.hx * 0.8 + (dx / d) * 0.2; lp.hy = lp.hy * 0.8 + (dy / d) * 0.2; lp.x = px; lp.y = py; } // smoothed heading
+    const cur = this.terrainBands[this._bandCur], cache = this.bandCache;
+    let a = this._ahead;
+    if (a && (Math.abs(a.i - cur.i) > 1 || Math.abs(a.j - cur.j) > 1)) a = this._ahead = null; // left the ring: dropped
+    if (!a) {
+      const ord = aheadOrder(g, cur.i, cur.j, lp.hx, lp.hy, px, py, this._aheadOrd);
+      let pick = null;
+      for (let k = 0; k < ord.length && !pick; k++) if (!cache.has(this._zoneKey(ord[k].i, ord[k].j))) pick = ord[k];
+      if (!pick) return false;
+      const z = zoneAt(g, pick.i, pick.j, {}), cs = this.terrain.chunkSize, R = this._aheadRects, srcs = this._aheadSrc;
+      let n = 0; // candidate overlap sources: live band + cached bundles
+      const addSrc = (near) => { if (n >= 64) return; R[n * 4] = near.x0; R[n * 4 + 1] = near.y0; R[n * 4 + 2] = near.x0 + near.w * near.cell; R[n * 4 + 3] = near.y0 + near.h * near.cell; srcs[n++] = near; };
+      addSrc(this.terrain.near);
+      for (const b of cache.map.values()) addSrc(b.near);
+      const bi = bestOverlap(R, n, z.cx0 * cs, z.cy0 * cs, (z.cx0 + z.cw) * cs, (z.cy0 + z.ch) * cs);
+      const src = bi >= 0 ? srcs[bi] : null; srcs.length = 0;
+      a = this._ahead = { i: pick.i, j: pick.j, key: this._zoneKey(pick.i, pick.j), job: BandBakeJob.create(this, z.cx0, z.cy0, z.cw, z.ch, src) };
+    }
+    if (!a.job.step(Math.max(0.2, msBudget - 0.4))) return true; // 0.4 ms reserve: one 32-cell slice overshoots by ~0.15-0.3 ms
+    const b = a.job.bundle(); b.key = a.key; b.zone = a.i * this.terrainGrid.nj + a.j;
+    this._ahead = null;
+    cache.put(b, this._bandKey(this._bandCur), this._bandPend >= 0 ? this._bandKey(this._bandPend) : null);
+    if (this._gridPinKeys().has(b.key)) cache.pin(b.key, true);
+    return false;
+  }
+
   /** Bundle of the current terrain state as a cache entry (key/zone set by the caller). */
   _currentBundle(key, zone) {
     const col = (id) => { for (let i = 0; i < this.colliders.length; i++) if (this.colliders[i].id === id) return this.colliders[i]; return null; };
@@ -1271,6 +1325,7 @@ export class World {
     const c = this.bandCache;
     c.put(b, this._bandKey(this._bandCur));
     if (!this.terrainGrid) c.pin(b.key, true);
+    else if (this._gridPinKeys().has(b.key)) c.pin(b.key, true); // WM-02: terrainGrid.pin zones
   }
 
   /** Indexed collider slot replace (no closure: runs on the swap frame). */
@@ -1286,6 +1341,7 @@ export class World {
     const key = this._bandKey(to), hit = cache.get(key);
     let j = null;
     if (!hit) {
+      this.bandMisses++; // WM-02: swaps that had no cached bundle (sliced path or sync fallback)
       if (!terrain._bb) { terrain._bb = terrain.newBandState(z.cx0, z.cy0, z.cw, z.ch, terrain.near); terrain.nearBandStep(Infinity); } // evicted/never begun: sync fallback
       if (!this._bandJob || this._bandJob.phase < 4) this._bandJobStep(Infinity); // sync path (ensureBandFor / band:late)
       j = this._bandJob;
@@ -1331,6 +1387,10 @@ export class World {
   streamBand(px, py, msBudget) {
     const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const r = this._streamBandCore(px, py, msBudget);
+    if (r === 0 && this.terrainGrid) { // WM-02: idle -> bake-ahead with the leftover budget
+      const left = msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
+      if (left > 0) this.bakeAhead(px, py, left);
+    }
     if (this._maskJob && r !== 2) { // MASK-b: leftover budget of this frame goes to the row-sliced near-band mask build (never in the swap frame)
       const left = msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
       if (left > 0) this.stepCarpetMask(left);
