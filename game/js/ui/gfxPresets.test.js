@@ -55,7 +55,7 @@ console.log('gfxPresets: D-047 data, precedence, independent shadows, validation
 
 // OB-103b (D-075 G1): carpet knob per preset, ?carpet override, live settings path
 {
-  const want = { low: [false, 0.5, 0.6], medium: [true, 0.5, 0.6], high: [true, 1, 1], ultra: [true, 1.4, 1.25], extreme: [true, 1.4, 1.5] };
+  const want = { low: [false, 0.5, 0.6], medium: [true, 0.6, 0.6], high: [true, 1, 1], ultra: [true, 1.4, 1.25], extreme: [true, 1.4, 1.5] };
   for (const [n, [on, r, d]] of Object.entries(want)) assert.deepEqual(carpetQualityFor(knobsFor(n)), { on, radiusScale: r, densScale: d }, 'carpet knob ' + n);
   assert.equal(carpetQualityFor(knobsFor('high'), '0').on, false, '?carpet=0 forces off');
   assert.deepEqual(carpetQualityFor(knobsFor('low'), '1'), { on: true, radiusScale: 0.5, densScale: 0.6 }, '?carpet=1 forces on with the preset knob');
@@ -80,7 +80,7 @@ console.log('gfxPresets: D-047 data, precedence, independent shadows, validation
   // real World: low -> medium switches on live
   const { World } = await import('../../../engine/index.js');
   const w = new World(); applyCarpetPreset('low', w, ''); assert.equal(w.carpetQuality.on, false);
-  applyCarpetPreset('medium', w, ''); assert.deepEqual([w.carpetQuality.on, w.carpetQuality.radiusScale, w.carpetQuality.densScale], [true, 0.5, 0.6]);
+  applyCarpetPreset('medium', w, ''); assert.deepEqual([w.carpetQuality.on, w.carpetQuality.radiusScale, w.carpetQuality.densScale], [true, 0.6, 0.6]);
   assert.deepEqual(w.checkCarpetWindow(), { ok: true, need: 0, have: 0 }, 'no carpet = no window check');
   w.carpet = { cfg: { radiusM: 12, classCellM: 2, classJitterM: 0.8 }, w: 20, h: 20, cellM: 2 }; // half window 20 m
   const warns = []; const ow = console.warn; console.warn = (m) => warns.push(m);
