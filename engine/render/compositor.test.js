@@ -356,6 +356,34 @@ function worldDefFor(origin) {
   ok('mesh renderer: repeated frame gives identical kind map', same);
 }
 
+// --- SWIM-04c (arch batch 2026-10-13 item 8): a submerged frame keeps the under tint on SKY cells (no 2nd fillSky after underwaterPass) ----
+{
+  const { makeUnderState } = await import('./underwater.js');
+  const cellBytes = (rt) => Buffer.concat([Buffer.from(rt.glyphIdx.buffer), Buffer.from(rt.fg.buffer), Buffer.from(rt.bg.buffer)]);
+  const skyWorld = (wet) => {
+    const w = World.load({ terrain: null, structures: [], entities: [] }, assets, {});
+    w.water = {};
+    w.waterAt = wet ? (x, y, o) => { o.surfaceZ = 40; o.depth = 60; o.look = null; return true; } : () => false;
+    return w;
+  };
+  const cam = { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: 0 };
+  const frame = (wet, withUnder) => {
+    const fb = makeFb(); if (withUnder) fb.under = makeUnderState();
+    renderWorld(fb, skyWorld(wet), cam);
+    return fb;
+  };
+  const dry = frame(false, false), dryUnder = frame(false, true), wet = frame(true, true);
+  ok('submerged setup: under look is on', wet.under.on === 1);
+  ok('dry frame with fb.under present is byte-identical to no fb.under', cellBytes(dry.rt).equals(cellBytes(dryUnder.rt)));
+  let skyCells = 0, tinted = 0;
+  for (let i = 0; i < COLS * ROWS; i++) {
+    if (Number.isFinite(wet.depth.depth[i])) continue; // sky cell: no surface hit
+    skyCells++;
+    if (wet.rt.fg[i * 4] !== dry.rt.fg[i * 4] || wet.rt.fg[i * 4 + 1] !== dry.rt.fg[i * 4 + 1] || wet.rt.fg[i * 4 + 2] !== dry.rt.fg[i * 4 + 2] || wet.rt.glyphIdx[i] !== dry.rt.glyphIdx[i]) tinted++;
+  }
+  ok('submerged: sky cells keep the under tint (not repainted untinted)', skyCells > 0 && tinted === skyCells, `${tinted}/${skyCells}`);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

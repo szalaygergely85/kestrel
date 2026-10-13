@@ -85,6 +85,7 @@ export class RenderTargetCanvas2D {
     if (availW <= 0 || availH <= 0) return;
 
     this.dpr = dpr;
+    this._refBox = { availW: refAvailW, availH: refAvailH, dpr: refDpr }; // OB-117: setAspect re-fits with the same box (live window stays live)
     const box = computeCellBox(this._measureCtx, this.cols, this.rows, availW * dpr, availH * dpr, MAX_PX_CELL_H);
     this.fontSize = box.fontPx;
     this.pxCellW = box.pxCellW;
