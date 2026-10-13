@@ -102,6 +102,10 @@ assert.equal(runHash(), runHash(), 'two runs identical');
   assert.equal(decorHash(1, 2, 3, 4), decorHash(1, 2, 3, 4));
   assert.notEqual(decorHash(1, 2, 3, 4), decorHash(1, 2, 3, 5));
   assert.throws(() => packDecorLayers({ layers: [{ seed: 1, cellM: 1, drawM: 500, species: [sp(1)] }] }), /drawM/);
+  assert.throws(() => packDecorLayers({ layers: [{ seed: 1, cellM: 1, drawM: 320.01, species: [sp(1)] }] }), /drawM/);
+  assert.throws(() => packDecorLayers({ layers: [{ seed: 1, cellM: 1, drawM: 100, species: [sp(1, { maxDistM: 321 })] }] }), /maxDistM/);
+  { const q = packDecorLayers({ layers: [{ seed: 1, cellM: 1, drawM: 100, species: [sp(1), sp(1, { sway: true, sinkM: 0.12 })] }] }), b = 2 + 8 + 7;
+    assert.equal(q.words[b - 7 + 6], 5); assert.equal(q.words[b + 6], 12); assert.equal(q.words[b - 7 + 3] & 2, 0); assert.equal(q.words[b + 3] & 2, 2); }
   // frame == per-cell brute force
   const buf = makeDecorLists(packed, 1), side = decorSide(packed, 1), mask = new Uint8Array(40 * 40);
   for (let i = 0; i < mask.length; i++) mask[i] = (i * 37) & 127 | ((i & 3) === 0 ? MASK_CARPET_BIT : 0);

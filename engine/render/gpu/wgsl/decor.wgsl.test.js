@@ -3,9 +3,10 @@
 // node engine/render/gpu/wgsl/decor.wgsl.test.js
 import assert from 'node:assert/strict';
 import { DECOR_WGSL, DECOR_BLOCK, DECOR_BUFFERS, DECOR_WORKGROUP } from './decor.wgsl.js';
+import { INST_FLAG_SWAY } from '../../../mesh/sway.js';
 import { WGSL_MODULES } from './index.js';
 import { compileFn } from './wgslProbe.js';
-import { packDecorLayers, decorCell, decorHash, jitterCm, decorSpecies, DECOR_OUT_WORDS, MAX_DIST_CM, O_SPECIES, O_XCM, O_YCM, O_JQX, O_JQY, O_YAWQ, O_SCALEQ, O_DIST2 } from '../../../mesh/decorScatter.js';
+import { packDecorLayers, decorCell, decorHash, jitterCm, decorSpecies, DECOR_OUT_WORDS, MAX_DIST_CM, SPECIES_WORDS, S_SINK_CM, SP_SWAY, S_FLAGS, SP_GRASS_LIKE, S_SCALE_MAX, L_SPECIES_OFF, LAYER_WORDS, O_SPECIES, O_XCM, O_YCM, O_JQX, O_JQY, O_YAWQ, O_SCALEQ, O_DIST2 } from '../../../mesh/decorScatter.js';
 
 // ---- string rules
 assert.ok(WGSL_MODULES.some((m) => m.name === 'decor' && m.code === DECOR_WGSL), 'registered');
@@ -21,8 +22,8 @@ assert.ok(DECOR_WGSL.includes('if (fadeLim > ' + MAX_DIST_CM + ')'), 'fadeLim cl
 let seed = 4242; const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
 const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
 const cfg = { layers: [
-  { seed: 0x1234abcd, cellM: 3.5, jitterM: 1.2, drawM: 70, species: [{ weight: 3, lodM: 25, maxDistM: 70, grassLike: true, scaleMin: 0.8, scaleMax: 1.3 }, { weight: 1, lodM: 30, maxDistM: 60, scaleMin: 0.5, scaleMax: 1.1 }] },
-  { seed: 0xdeadbeef, cellM: 2.2, jitterM: 0.9, drawM: 45, densityQ8: 384, species: [{ weight: 1, lodM: 15, maxDistM: 40, scaleMin: 0.6, scaleMax: 1.0 }, { weight: 2, lodM: 20, maxDistM: 45, scaleMin: 0.7, scaleMax: 1.4 }, { weight: 1, lodM: 99, maxDistM: 45, grassLike: true, scaleMin: 1, scaleMax: 1 }] },
+  { seed: 0x1234abcd, cellM: 3.5, jitterM: 1.2, drawM: 70, species: [{ weight: 3, lodM: 25, maxDistM: 70, grassLike: true, sway: true, scaleMin: 0.8, scaleMax: 1.3 }, { weight: 1, lodM: 30, maxDistM: 60, sinkM: 0.03, scaleMin: 0.5, scaleMax: 1.1 }] },
+  { seed: 0xdeadbeef, cellM: 2.2, jitterM: 0.9, drawM: 45, densityQ8: 384, species: [{ weight: 1, lodM: 15, maxDistM: 40, sway: true, sinkM: 0.12, scaleMin: 0.6, scaleMax: 1.0 }, { weight: 2, lodM: 20, maxDistM: 45, scaleMin: 0.7, scaleMax: 1.4 }, { weight: 1, lodM: 99, maxDistM: 45, grassLike: true, scaleMin: 1, scaleMax: 1 }] },
   { seed: 7, cellM: 1.4, jitterM: 0.6, drawM: 30, densityQ8: 128, species: [{ weight: 5, lodM: 12, maxDistM: 30, scaleMin: 0.3, scaleMax: 0.9 }] },
 ] };
 const packed = packDecorLayers(cfg);
@@ -101,5 +102,22 @@ assert.ok(stats[0].carpet > 5, 'carpet bit cells reached');
     const z = t(i, j) * (1 - tu) * (1 - tv) + t(i + 1, j) * tu * (1 - tv) + t(i, j + 1) * (1 - tu) * tv + t(i + 1, j + 1) * tu * tv;
     assert.ok(Math.abs(g(x, y) - z) < 1e-3, 'ground within 1 mm');
   }
+}
+// per-species sway flag + sink (S_SINK_CM): WGSL helpers vs the packed twin words, every species of 3 layers, z within 1 mm
+{
+  const flagsFn = compileFn(DECOR_WGSL, 'decorRowFlags', K), sinkFn = compileFn(DECOR_WGSL, 'decorSinkZ', K);
+  let nSway = 0, nNo = 0, nSink = new Set();
+  for (let l = 0; l < 3; l++) {
+    const o = 2 + l * LAYER_WORDS, so = packed.words[o + L_SPECIES_OFF];
+    for (let i = 0; i < cfg.layers[l].species.length; i++) {
+      const sc = cfg.layers[l].species[i], p = so + i * SPECIES_WORDS;
+      assert.equal(packed.words[p + S_SINK_CM], Math.round((sc.sinkM != null ? sc.sinkM : 0.05) * 100), 'sink word');
+      assert.equal((packed.words[p + S_FLAGS] & SP_SWAY) !== 0, !!sc.sway, 'sway bit'); assert.equal((packed.words[p + S_FLAGS] & SP_GRASS_LIKE) !== 0, !!sc.grassLike, 'grass bit kept');
+      const f = flagsFn(p); assert.equal(f !== 0, !!sc.sway, 'row flag only when sway'); if (sc.sway) { assert.equal(f, INST_FLAG_SWAY, 'INST_FLAG_SWAY value'); nSway++; } else nNo++;
+      nSink.add(packed.words[p + S_SINK_CM]);
+      for (let n = 0; n < 700; n++) { const z = rnd() * 60 - 10; assert.ok(Math.abs(Math.fround(sinkFn(Math.fround(z), p)) - (z - packed.words[p + S_SINK_CM] * 0.01)) < 1e-3, 'z = ground - sink'); }
+    }
+  }
+  assert.ok(nSway >= 2 && nNo >= 3 && nSink.size >= 3, 'sway/sink fixture mix');
 }
 console.log('decor.wgsl.test OK');
