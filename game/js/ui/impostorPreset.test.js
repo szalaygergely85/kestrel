@@ -51,6 +51,9 @@ assert.equal(calls.bake, 2, 'baked once per mesh id'); assert.equal(calls.enable
 assert.equal(eng.instances.groups[0].impM, 60); applyImpostorPreset(eng, knobsFor('high'), opts); assert.equal(eng.instances.groups[0].impM, 45);
 // back to off: impM 0 on the group, atlas stays cached
 applyImpostorPreset(eng, knobsFor('medium'), opts); assert.equal(eng.instances.groups[0].impM, 0); assert.equal(impostorCacheBytes(), 2 * 86016);
+// ultra -> medium restores the group's own cut (arch fix)
+applyImpostorPreset(eng, knobsFor('ultra'), opts); assert.equal(eng.instances.groups[0].maxDistM, 300);
+applyImpostorPreset(eng, knobsFor('medium'), opts); assert.equal(eng.instances.groups[0].maxDistM, 0, 'base cut back');
 // 2 MB cap: log + skip
 resetImpostorCache();
 const big = { instances: { groups: Array.from({ length: 30 }, (_, i) => mk('quaternius/CommonTree_1')) } };
@@ -77,4 +80,21 @@ console.log('impostorPreset.test: OK');
   if (r.on) throw new Error('boot with imp=0 must be off');
   if (reapplyImpostorPreset(eng, k).on) throw new Error('reapply keeps imp=0');
   console.log('impostor wire OK');
+}
+
+// R6-WIRE: re-created groups get imp / impM / maxDistM back from the remembered knobs
+{
+  const { applyImpostorBoot, reapplyRememberedImpostors } = await import('./impostorPreset.js');
+  resetImpostorCache();
+  const e2 = { instances: { groups: [mk('quaternius/CommonTree_1')] } };
+  const sp2 = [{ mesh: 'quaternius/CommonTree_1', impostor: true }];
+  applyImpostorBoot(e2, knobsFor('ultra'), { species: sp2, imp: null, log: () => {}, deps });
+  const baked = calls.bake;
+  e2.instances.groups = [mk('quaternius/CommonTree_1')]; // bindScatterInstances rebuilt them
+  assert.equal(e2.instances.groups[0].imp, undefined);
+  reapplyRememberedImpostors(e2);
+  const g2 = e2.instances.groups[0];
+  assert.ok(g2.imp && g2.impM === 60 && g2.maxDistM === 300, 'wired back');
+  assert.equal(calls.bake, baked, 'no re-bake');
+  console.log('impostor rewire OK');
 }

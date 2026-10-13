@@ -33,7 +33,7 @@ export function applyImpostorPreset(world, knobs, opts = {}) {
   const out = { on, groups: 0, baked: 0, skipped: 0, bytes: cacheBytes };
   for (const g of groups) {
     if (!g.mesh) continue;
-    if (!on) { if (g.imp) g.impM = 0; continue; } // off: byte-identical frame (impM 0), the atlas stays cached
+    if (!on) { if (g.imp) { g.impM = 0; if (g._impBaseMaxDistM !== undefined) g.maxDistM = g._impBaseMaxDistM; } continue; } // restore the group's own cut (arch fix R6d) // off: byte-identical frame (impM 0), the atlas stays cached
     const id = groupMeshId(g);
     if (!want.some((w) => matches(id, w))) continue;
     let imp = cache.get(id);
@@ -47,6 +47,7 @@ export function applyImpostorPreset(world, knobs, opts = {}) {
       imp = cache.get(id);
     }
     if (!imp) { out.skipped++; continue; }
+    if (g._impBaseMaxDistM === undefined) g._impBaseMaxDistM = g.maxDistM; // group's own cut, kept for the off path
     if (!g.imp) d.enableGroupImpostor(g, imp, knobs.impM, d.createInstanceBuffer);
     g.impM = knobs.impM;
     g.maxDistM = knobs.impMaxDistM; // 38.60 item 4: the card is drawn out to maxDistM (cut runs first)
@@ -57,7 +58,7 @@ export function applyImpostorPreset(world, knobs, opts = {}) {
 }
 
 // R6-WIRE: boot + Settings glue. `?imp=0` forces impM 0 (bench), `?imp=1` is the normal enable path (preset knobs decide).
-let remembered = { species: [], log: undefined, imp: null };
+let remembered = { species: [], log: undefined, imp: null, knobs: null };
 
 /** Pure: preset knobs, with impM zeroed when the `imp` URL param is '0'. */
 export function impostorKnobs(knobs, impParam) {
@@ -66,13 +67,20 @@ export function impostorKnobs(knobs, impParam) {
 }
 
 /** Boot call (after the OB-109 pre-bake): remembers species/log/imp param for later quality changes, then applies once. */
-export function applyImpostorBoot(engine, knobs, { species, log, imp } = {}) {
-  remembered = { species: species || [], log, imp: imp ?? null };
-  return applyImpostorPreset(engine, impostorKnobs(knobs, remembered.imp), { species: remembered.species, log });
+export function applyImpostorBoot(engine, knobs, { species, log, imp, deps } = {}) {
+  remembered = { species: species || [], log, imp: imp ?? null, knobs: knobs || null, deps };
+  return applyImpostorPreset(engine, impostorKnobs(knobs, remembered.imp), { species: remembered.species, log, deps });
 }
 
 /** Settings quality change: same call with the new preset's knobs (cache hit, no re-bake). No-op before boot applied once. */
 export function reapplyImpostorPreset(engine, knobs) {
   if (!remembered.species.length) return null;
-  return applyImpostorPreset(engine, impostorKnobs(knobs, remembered.imp), { species: remembered.species, log: remembered.log });
+  remembered.knobs = knobs || null;
+  return applyImpostorPreset(engine, impostorKnobs(knobs, remembered.imp), { species: remembered.species, log: remembered.log, deps: remembered.deps });
+}
+
+/** R6-WIRE: re-created groups (world:scatter / world:loaded) get the remembered knobs back (cache hit, no re-bake). */
+export function reapplyRememberedImpostors(engine) {
+  if (!remembered.species.length || !remembered.knobs) return null;
+  return applyImpostorPreset(engine, impostorKnobs(remembered.knobs, remembered.imp), { species: remembered.species, log: remembered.log, deps: remembered.deps });
 }

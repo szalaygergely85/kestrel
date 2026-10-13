@@ -6,7 +6,7 @@
 // (engine/entities/Player.js, engine/physics/*), so this now comes from
 // engine/index.js like everything else (check-deps rule 3).
 
-import { applyImpostorBoot } from './ui/impostorPreset.js'; // R6-WIRE
+import { applyImpostorBoot, reapplyRememberedImpostors } from './ui/impostorPreset.js'; // R6-WIRE
 import { loadPresets, resolveQuality, saveQuality, knobsFor, dropStaleOverrides, carpetQualityFor, carpetBuildFor } from './ui/gfxPresets.js';
 import { loadQuestFiles, showBootErrors } from './questBoot.js';
 import { registerRiggedChars } from './quest/charRegister.js';
@@ -2632,6 +2632,8 @@ stream act ${g.activeCount}/${g.memberCount} warm ${g.warmCount} cells ${g.cellC
   { // R6-WIRE: card impostors from the quality preset (after the pre-bake; capture/bench pages without a preset stay impostor-free)
     const fo = window.ASSETS && window.ASSETS.levels && window.ASSETS.levels.overworld_far && window.ASSETS.levels.overworld_far.recipe && window.ASSETS.levels.overworld_far.recipe.forest;
     if (resolvedQuality && resolvedQuality.knobs && fo && fo.trees) applyImpostorBoot(engine, resolvedQuality.knobs, { species: fo.trees.species, log: console.warn, imp: params.get('imp') });
+    // bindScatterInstances rebuilds the tree groups on both events: reapply the remembered knobs AFTER the engine's own listener (registered earlier)
+    if (resolvedQuality && resolvedQuality.knobs && fo && fo.trees) for (const ev of ['world:scatter', 'world:loaded']) engine.events.on(ev, () => { try { reapplyRememberedImpostors(engine); } catch (e) { console.warn('impostor reapply', e); } });
   }
   window.__farReadyAtBoot = !!(engine.world && engine.world.terrain && engine.world.terrain.farReady);
   if (bootProg) engine.events.on('world:loaded', ({ world: nw }) => {
