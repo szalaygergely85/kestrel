@@ -533,12 +533,12 @@ export function patchShape(shade) {
     shadeTerrain(t, 1, b, u, v, tm, { ...cc, farGrass: r0 }, o0);
     if (t < 20 && (o0.glyph !== ob.glyph || o0.level !== ob.level || o0.fg[0] !== ob.fg[0] || o0.fg[1] !== ob.fg[1] || o0.fg[2] !== ob.fg[2] || o0.bg[1] !== ob.bg[1])) ident = false;
     shadeTerrain(t, 1, b, u, v, tm, { ...cc, farGrass: r6 }, o6);
-    if (t < 20) { n++; if (o6.level === 254) ulGrass++; if (o6.fg[1] > ob.fg[1]) greener++; }
+    if (t < 20) { n++; if (o6.level === 255 && o6.fg[1] !== ob.fg[1]) ulGrass++; if (o6.fg[1] > ob.fg[1]) greener++; }
     shadeTerrain(t, 0, b, u, v, tm, { ...cc, farGrass: r6 }, o6); shadeTerrain(t, 0, b, u, v, tm, cc, ob);   // water: no far-grass entry
     if (o6.glyph !== ob.glyph || o6.fg[1] !== ob.fg[1] || o6.level !== ob.level) waterSame = false;
   }
   check('underlay 0: shade bytes identical to no far grass (inside the radius, close band incl.)', ident);
-  check('underlay 0.6: every grass cell inside the radius carries level 254 (' + ulGrass + '/' + n + ')', ulGrass === n);
+  check('underlay 0.6 (OB-154): every grass cell inside the radius is static (level 255) and tinted (' + ulGrass + '/' + n + ')', ulGrass === n);
   check('underlay 0.6: grass cells are greener than the calm ground (' + greener + '/' + n + ')', greener > n * 0.8);
   check('underlay: types without a far-grass entry untouched', waterSame);
   // calm wind (cyc 0): two frames at different times are byte-identical
@@ -564,11 +564,28 @@ export function patchShape(shade) {
     const u = 1470 + 0.7 * dx / l * t - 0.7 * dy / l * t, v = 1035 + 0.7 * dy / l * t + 0.7 * dx / l * t;
     band++;
     shadeTerrain(t, 0, 0.8, u, v, 0, { ...cc, farGrass: recU }, oc); shadeTerrain(t, 0, 0.8, u, v, 0, { ...cc, farGrass: rec0 }, og);
-    if (oc.level === 254 && oc.fg[1] > og.fg[1]) grass++;
-    if (og.level === 254) grass0++;
+    if (oc.fg[1] > og.fg[1]) grass++;
+    if (og.level === 254 || og.fg[1] > oc.fg[1]) grass0++;
   }
   check('underlay meadow pose: band has cells (' + band + ')', band > 2000);
   check('underlay meadow pose: >= 85 % of the 1.5-6 m cells grass-coloured (' + (100 * grass / band).toFixed(1) + ' %, without underlay ' + (100 * grass0 / band).toFixed(1) + ' %)', grass >= 0.85 * band && grass0 === 0);
+}
+// OB-154: wind ON - the underlay is static: frames 0.33 s apart are byte-identical for every cell in the 1.5-12 m band where the underlay wins
+{
+  const wind = { dirX: 0.8, dirY: 0.6, P: 4, travel: 6 };
+  const cfgU = { radiusM: 20, underlay: 0.6, variants: [{ ground: ['grass'], ramp: [[10, 60, 10], [40, 190, 40], [90, 240, 80]], areas: [1] }] };
+  const recW = farGrassFill(makeFarGrass(), cfgU, ['grass', 'water'], { on: true, radiusScale: 1, farGrass: true }, wind);
+  const cc = { ...ctx, closeBand: 40, farGrass: recW }, mkO = () => ({ glyph: 0, level: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) });
+  const a = mkO(), b = mkO(); let n = 0, changed = 0;
+  for (let k = 0; k < 3000; k++) {
+    const t = 1.5 + (k % 60) * 0.175, u = 1470 + (k * 7) % 53, v = 1035 + (k * 13) % 41; // t up to 12 m < ramp start (20 m)
+    shadeTerrain(t, 0, 0.8, u, v, 10, cc, a); shadeTerrain(t, 0, 0.8, u, v, 10.33, cc, b);
+    n++; if (a.glyph !== b.glyph || a.level !== b.level || a.fg[0] !== b.fg[0] || a.fg[1] !== b.fg[1] || a.fg[2] !== b.fg[2] || a.bg[0] !== b.bg[0] || a.bg[1] !== b.bg[1] || a.bg[2] !== b.bg[2]) changed++;
+  }
+  check('underlay + wind on: 0 changed cells in the 1.5-12 m band over 0.33 s (' + changed + '/' + n + ')', changed === 0);
+  let anim = 0; const far = { ...cc, farGrass: recW };
+  for (let k = 0; k < 300; k++) { const t = 40 + k * 0.1, u = 1500 + k; shadeTerrain(t, 0, 0.8, u, 1035, 10, far, a); shadeTerrain(t, 0, 0.8, u, 1035, 10.33, far, b); if (a.level === 254 && (a.glyph !== b.glyph || a.fg[1] !== b.fg[1])) anim++; }
+  check('beyond the carpet the ramp shimmer still animates with wind (' + anim + ' cells changed)', anim > 0);
 }
 console.log(`terrainShade.test.js: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

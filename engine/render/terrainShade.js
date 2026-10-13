@@ -325,16 +325,22 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   const pcn = packedCount | 0; let pci = pcn >> 1; if (pci >= pcn) pci = pcn - 1; // pickCodeFromPacked inlined: its double arg would box per call
   let code = (packedX >> (8 * pci)) & 0xff;
   // G2 + P3: far grass tier (WGSL twin: shadeTerrain, same lines). fgw = weight 0..1, > 0 = stable level 254.
-  let fgw = 0;
+  let fgw = 0, fgAnim = false;
   const FGR = ctx.farGrass;
   if (FGR !== undefined && FGR.on !== 0 && (!close || FGR.under > 0)) {
     const st = FGR.types[type * 4 + 3];
     if (st > 0) {
       let w = (t - FGR.startM) / FGR.fadeM; w = w < 0 ? 0 : w > 1 ? 1 : w;
-      w = w * w * (3 - 2 * w); fgw = (FGR.under > w ? FGR.under : w) * st; // OB-121b: max(under, ramp)
+      w = w * w * (3 - 2 * w);
+      // OB-121b: max(under, ramp); OB-154: where the underlay wins the cell is STATIC (no gust phase, no time), animated only by the ramp weight
+      const stat = FGR.under > w; fgw = (stat ? FGR.under : w) * st;
       if (fgw > 0) {
-        let ph = (timeSec - (fu * FGR.dirX + fv * FGR.dirY) * FGR.invTravel) * FGR.cyc; ph -= Math.floor(ph);
-        let tri = 1 - Math.abs(2 * ph - 1); tri = tri * tri * (3 - 2 * tri);
+        let tri = 0.5;
+        if (!stat) {
+          let ph = (timeSec - (fu * FGR.dirX + fv * FGR.dirY) * FGR.invTravel) * FGR.cyc; ph -= Math.floor(ph);
+          tri = 1 - Math.abs(2 * ph - 1); tri = tri * tri * (3 - 2 * tri);
+        }
+        fgAnim = !stat;
         let sg = nP * FG_SLOPE + (tri - 0.5) * FG_GUST; sg = sg < -1 ? -1 : sg > 1 ? 1 : sg;
         if (fgw > 0.5 - 0.4 * sg) code = FG_CODES[sg < -0.33 ? 0 : sg > 0.33 ? 2 : 1];
         const km = fgw * FGR.mix * (1 + FG_MOD * sg), o4 = type * 4;
@@ -386,7 +392,7 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
 
   out.glyph = code;
   // 38.25 amendment C.1: stable-pass level byte of a terrain cell (twin of shade.wgsl's terrain splice): 254 = the shimmer branch (glyph can change next tick), else 255
-  out.level = fgw > 0 ? LEVEL_ANIM : LEVEL_NONE; // OB-073: no glint branch; G2: far-grass cells animate (gust)
+  out.level = fgAnim ? LEVEL_ANIM : LEVEL_NONE; // OB-073: no glint branch; G2: far-grass cells animate (gust)
   // toByte inlined (a non-inlined call returning a double boxes it); same clamp + round
   const ofg = out.fg, obg = out.bg;
   ofg[0] = Math.floor((fr < 0 ? 0 : fr > 255 ? 255 : fr) + 0.5); ofg[1] = Math.floor((fg < 0 ? 0 : fg > 255 ? 255 : fg) + 0.5); ofg[2] = Math.floor((fb < 0 ? 0 : fb > 255 ? 255 : fb) + 0.5);
