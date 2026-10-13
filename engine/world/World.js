@@ -6,6 +6,8 @@ import { validatePolygon, compilePolygon } from '../physics/bounds.js';
 import { makeGrid, zoneAt, zoneId, best as bandBest, pick as bandPick, marginX as bandMarginX, marginY as bandMarginY } from './bandGrid.js';
 import { loadLevel, isTerrainFloor } from './Level.js';
 import { Terrain } from './Terrain.js';
+import { BandBakeJob } from './bandBake.js';
+import { BandCache } from './bandCache.js';
 import { validateCarpetConfig, buildCarpetClassMap, buildCarpetMask, CarpetMaskJob } from './carpet.js';
 import { scatterTrees, scatterDetail, TreeScatterJob, DetailScatterJob } from './scatter.js';
 import { packLevel, updateAnimatedSector } from './packed.js';
@@ -288,7 +290,7 @@ export class World {
     // `null` (unbounded - every world before this story). Content, not
     // state; set once by `World.load` from `def.bounds`.
     this.bounds = null;
-    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandId = null; // WS2-01/02
+    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.bandCache = new BandCache(); this._bandKeys = []; this._bandKeysC = []; this._evBand = { from: null, to: null }; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandId = null; // WS2-01/02
     this.terrainGrid = null; this._gridPick = { i: 0, j: 0 }; // MAP-10 (38.43): generated zone grid; terrainBands = 2 reusable slot zones
     this.terrainBand = null; // WS1-02: authored near-band chunk rect or null (auto 3x3)
     // US-016 D-011 addendum (architecture.md 14.4 item 13): horizon
@@ -592,6 +594,11 @@ export class World {
     if (w.physicsMode === 'mesh' && w.detail) {
       const detailCollider = buildDetailCollider(w.detail);
       if (detailCollider) w.colliders.push(detailCollider);
+    }
+
+    if (w.terrainBands && w.terrain?.nearReady && w._bandCur >= 0) { // OB109-B2: the start band is the first cache entry
+      w._cachePut(w._currentBundle(w._bandKey(w._bandCur), w._bandCur));
+      w.terrain.onRebake = (x0, y0, x1, y1) => w.bandCache.invalidateRect(x0, y0, x1, y1);
     }
 
     if (!w.sun) {
@@ -1189,7 +1196,7 @@ export class World {
   }
 
   /** MAP-10: fills slot `k` with grid zone (i, j) (the id string allocates; prefetch/swap only). */
-  _gridFill(k, i, j) { const z = this.terrainBands[k]; zoneAt(this.terrainGrid, i, j, z); z.id = zoneId(z.i, z.j); return z; }
+  _gridFill(k, i, j) { const z = this.terrainBands[k]; zoneAt(this.terrainGrid, i, j, z); z.id = zoneId(z.i, z.j); this._bandKeys[k] = null; return z; }
 
   /** Drops a pending bake and its scatter job. */
   /** WS2-05: index of the terrain band being baked, -1 when none. */
@@ -1202,48 +1209,66 @@ export class World {
    * `terrain.near`. Returns true when all four results are ready. >= 1 unit of progress per call.
    */
   _bandJobStep(msBudget) {
-    let j = this._bandJob;
     const terrain = this.terrain;
-    if (!j) {
-      const view = Object.create(terrain); view.near = terrain._bb.b;
-      j = this._bandJob = { view, phase: terrain.realTrees ? 0 : 1, trees: null, detail: null, scatter: this.scatter, detailSet: this.detail, trunks: null, detailCol: null, ms: 0 };
-      if (terrain.realTrees) j.trees = new TreeScatterJob(view, this.structures);
-      if (this._detailCtx) j.detail = new DetailScatterJob(view, this.structures, this._detailCtx.keepOut, this._detailCtx.cfg);
+    if (!this._bandJob) this._bandJob = new BandBakeJob(this, terrain._bb); // adopts the pending swap's terrain state
+    return this._bandJob.stepScatter(msBudget);
+  }
+
+  /** OB109-B2 (38.58): cache key of terrain band slot `k` (zone object memoises it; `_gridFill` resets it). */
+  _bandKey(k) {
+    const z = this.terrainBands[k], ks = this._bandKeys;
+    if (!ks[k]) { // side arrays, not zone fields: zones are serialised world data
+      ks[k] = nearBandKey(this, z.cx0, z.cy0, z.cw, z.ch) + `|realTrees:${this.terrain.realTrees}`; // = Terrain._nearKey form
+      this._bandKeysC[k] = ks[k] + `|detail:${this._detailCtx ? 1 : 0}`;
     }
-    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const mesh = this.physicsMode === 'mesh';
-    while (j.phase < 4) {
-      const left = msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
-      if (j.phase === 0) { if (j.trees.step(left)) { j.scatter = j.trees.result; j.phase = 1; } }
-      else if (j.phase === 1) { if (!j.detail || j.detail.step(left)) { j.detailSet = j.detail ? j.detail.result : null; j.phase = 2; } }
-      else if (j.phase === 2) { j.trunks = mesh && j.scatter ? buildTrunkCollider(j.scatter, terrain.recipe.recipe.forest.trees) : null; j.phase = 3; }
-      else { j.detailCol = mesh && j.detailSet ? buildDetailCollider(j.detailSet) : null; j.phase = 4; }
-      if (msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) <= 0) break;
-    }
-    return j.phase >= 4;
+    return this._bandKeysC[k];
+  }
+
+  /** Bundle of the current terrain state as a cache entry (key/zone set by the caller). */
+  _currentBundle(key, zone) {
+    const col = (id) => { for (let i = 0; i < this.colliders.length; i++) if (this.colliders[i].id === id) return this.colliders[i]; return null; };
+    return { key, zone, near: this.terrain.near, scatter: this.scatter, detail: this.detail, trunks: col('scatter:trunks'), detailCol: col('scatter:detail'), classMap: null, bytes: 0, pinned: false, lastUse: 0 };
+  }
+
+  /** Stores `b` and pins authored (non-grid) zones. */
+  _cachePut(b) {
+    const c = this.bandCache;
+    c.put(b, this._bandKey(this._bandCur));
+    if (!this.terrainGrid) c.pin(b.key, true);
+  }
+
+  /** Indexed collider slot replace (no closure: runs on the swap frame). */
+  _setCollider(id, collider) {
+    const cs = this.colliders;
+    for (let i = 0; i < cs.length; i++) if (cs[i].id === id) { if (collider) cs[i] = collider; else cs.splice(i, 1); return; }
+    if (collider) cs.push(collider);
   }
 
   /** Swap frame: only pointer flips + the ground-snap loop; every heavy result was prepared by `_bandJobStep`. */
   _publishBand(to, late) {
-    const terrain = this.terrain, z = this.terrainBands[to], from = this.bandId;
-    if (!this._bandJob || this._bandJob.phase < 4) this._bandJobStep(Infinity); // sync path (ensureBandFor / band:late)
-    const j = this._bandJob;
+    const terrain = this.terrain, z = this.terrainBands[to], from = this.bandId, cache = this.bandCache;
+    const key = this._bandKey(to), hit = cache.get(key);
+    let j = null;
+    if (!hit) {
+      if (!terrain._bb) { terrain._bb = terrain.newBandState(z.cx0, z.cy0, z.cw, z.ch, terrain.near); terrain.nearBandStep(Infinity); } // evicted/never begun: sync fallback
+      if (!this._bandJob || this._bandJob.phase < 4) this._bandJobStep(Infinity); // sync path (ensureBandFor / band:late)
+      j = this._bandJob;
+    }
     const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    terrain.swapNearBand();
+    let bundle = hit;
+    if (hit) { terrain._bb = null; terrain.publishBand(hit.near); }
+    else { terrain.swapNearBand(); bundle = null; }
     this._bandCur = to; this._bandPend = -1; this.bandId = z.id; this._bandJob = null;
-    terrain._nearKey = nearBandKey(this, z.cx0, z.cy0, z.cw, z.ch) + `|realTrees:${terrain.realTrees}`;
-    if (terrain.realTrees) this.scatter = j.scatter;
-    if (this._detailCtx) this.detail = j.detailSet;
+    terrain._nearKey = this._bandKeys[to];
+    const src = hit || j;
+    if (terrain.realTrees) this.scatter = hit ? hit.scatter : j.scatter;
+    if (this._detailCtx) this.detail = hit ? hit.detail : j.detailSet;
     this._rebuildCarpet(true);
     if (this.physicsMode === 'mesh') {
-      const put = (id, collider) => {
-        const i = this.colliders.findIndex((c) => c.id === id);
-        if (i >= 0) { if (collider) this.colliders[i] = collider; else this.colliders.splice(i, 1); }
-        else if (collider) this.colliders.push(collider);
-      };
-      put('scatter:trunks', j.trunks);
-      put('scatter:detail', j.detailCol);
+      this._setCollider('scatter:trunks', hit ? hit.trunks : j.trunks);
+      this._setCollider('scatter:detail', hit ? hit.detailCol : j.detailCol);
     }
+    if (!hit) { bundle = { key, zone: to, near: terrain.near, scatter: j.scatter, detail: j.detailSet, trunks: j.trunks, detailCol: j.detailCol, classMap: null, bytes: 0, pinned: false, lastUse: 0 }; this._cachePut(bundle); }
     let snapped = 0;
     for (const g of this._groundSnap) {
       const e = this._entities.get(g.id);
@@ -1254,9 +1279,10 @@ export class World {
     if (snapped) { this.rebuildPropColliders(); this.renderVersion++; }
     this.lastSwapMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
     if (this.events) {
-      this.events.emit('world:band', { from, to: z.id });
-      if (late) this.events.emit('band:late', { from, to: z.id });
-      this.events.emit('world:scatter', { world: this });
+      const ev = this._evBand; ev.from = from; ev.to = z.id; // OB109-B2: preallocated payload (consumers must not keep it)
+      this.events.emit('world:band', ev);
+      if (late) this.events.emit('band:late', ev);
+      this.events.emit('world:scatter', this._evScatter || (this._evScatter = { world: this }));
     }
   }
 
@@ -1306,8 +1332,12 @@ export class World {
     if (this._bandPend !== best) {
       if (this._bandPend >= 0) this._cancelBand();
       const z = zs[best];
-      terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch);
+      if (!this.bandCache.has(this._bandKey(best))) terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch); // 38.58: a cached zone needs no bake
       this._bandPend = best;
+    }
+    if (!terrain._bb) { // cache hit: the swap is a pointer flip
+      if (mc < this.bandSwitch.switchM) { this._publishBand(best, false); return 2; }
+      return 0;
     }
     const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
     let ready = terrain.nearBandStep(msBudget);
@@ -1328,10 +1358,14 @@ export class World {
     if (this._bandPend >= 0 && (zs[this._bandPend].i !== gp.i || zs[this._bandPend].j !== gp.j)) this._cancelBand(); // no longer the target: dropped
     if (this._bandPend < 0) {
       const k = 1 - this._bandCur, z = this._gridFill(k, gp.i, gp.j);
-      terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch);
+      if (!this.bandCache.has(this._bandKey(k))) terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch);
       this._bandPend = k;
     }
     const to = this._bandPend;
+    if (!terrain._bb) { // cache hit
+      if (bandMarginX(g, cur.i, px) < sw.switchX || bandMarginY(g, cur.j, py) < sw.switchY) { this._publishBand(to, false); return 2; }
+      return 0;
+    }
     const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
     let ready = terrain.nearBandStep(msBudget);
     if (ready && !(this._bandJob && this._bandJob.phase >= 4)) {
@@ -1357,7 +1391,7 @@ export class World {
       if (this._bandPend >= 0) this._cancelBand();
       if (gp.i === cur.i && gp.j === cur.j) return false;
       const k = 1 - this._bandCur, z = this._gridFill(k, gp.i, gp.j);
-      terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch); terrain.nearBandStep(Infinity);
+      if (!this.bandCache.has(this._bandKey(k))) { terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch); terrain.nearBandStep(Infinity); }
       this._publishBand(k, false);
       return true;
     }
@@ -1366,8 +1400,7 @@ export class World {
     if (best === this._bandCur) { if (this._bandPend >= 0) this._cancelBand(); return false; }
     if (this._bandPend >= 0) this._cancelBand();
     const z = zs[best];
-    terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch);
-    terrain.nearBandStep(Infinity);
+    if (!this.bandCache.has(this._bandKey(best))) { terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch); terrain.nearBandStep(Infinity); }
     this._publishBand(best, false);
     return true;
   }
@@ -1445,6 +1478,7 @@ export class World {
       if (e.transform.z !== z) { e.transform.z = z; snapped++; }
     }
     if (snapped) { this.rebuildPropColliders(); this.renderVersion++; }
+    if (this.terrainBands && this._bandCur >= 0) this._cachePut(this._currentBundle(this._bandKey(this._bandCur), this._bandCur)); // OB109-B2: re-cache the edited live band
     if (this.events) this.events.emit('world:scatter', { world: this });
     const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
     return { ms, trees: this.scatter ? this.scatter.count : 0, detail: this.detail ? this.detail.count : 0, snapped };

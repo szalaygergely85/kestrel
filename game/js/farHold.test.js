@@ -1,7 +1,7 @@
 // node game/js/farHold.test.js  (OB-109)
 import assert from 'node:assert';
 import { createFarHold, landFraction } from './farHold.js';
-import { createBootProgress } from '../../engine/core/bootProgress.js';
+import { createBootProgress } from '../../engine/index.js';
 // fake terrain: 10 rows, one row per bakeFarStep call
 const mk = () => ({ farReady: false, row: 0, bakeProgress: 0, bakeFarStep() { if (++this.row >= 10) this.farReady = true; this.bakeProgress = this.row / 10; } });
 const t = mk(); const h = createFarHold({ budgetMs: 5 });

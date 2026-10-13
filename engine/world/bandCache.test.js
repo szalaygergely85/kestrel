@@ -1,0 +1,153 @@
+// engine/world/bandCache.test.js (OB109-B1/B2, arch 38.58): BandBakeJob == ensureBandFor bytes per world_m1 zone; BandCache hit path, LRU, alloc, invalidation.
+// Run: node engine/world/bandCache.test.js   (BAKE_BENCH=1 adds wall-clock asserts)
+import { World } from './World.js';
+import { Terrain } from './Terrain.js';
+import { makeOk } from '../test/assert.js';
+import { ensureGcChild } from '../test/allocGate.js';
+ensureGcChild(); // AUD2-01 (ARCH CHANGES 2026-10-13): heap + slice gates need a fresh --expose-gc child
+import paletteMod from '../../design/palette.js';
+import detailPassMod from '../../design/detail-pass.js';
+import terrainDef from '../../design/levels/overworld_far.js';
+import lanternMod from '../../design/models/lantern.js';
+import leverMod from '../../design/models/lever.js';
+import voxelPropsMod from '../../design/models/voxel_props.js';
+import boulderMod from '../../design/models/boulder.js';
+import rubbleMod from '../../design/models/rubble.js';
+import wreckageMod from '../../design/models/wreckage.js';
+import relayMod from '../../design/models/relay.js';
+import swordMod from '../../design/models/sword.js';
+import m3PropsMod from '../../design/models/m3_props.js';
+import farTowerMod from '../../design/models/far_tower.js';
+import ferrumLightsMod from '../../design/models/ferrum_lights.js';
+import { loadTestAssets } from '../../tools/testing/content-node.mjs';
+
+globalThis.window = globalThis.window || globalThis;
+paletteMod; detailPassMod; terrainDef; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; voxelPropsMod; m3PropsMod;
+farTowerMod; ferrumLightsMod;
+import { BandBakeJob } from './bandBake.js';
+import { BandCache } from './bandCache.js';
+import { heapGrowth } from '../test/allocGate.js';
+
+let pass = 0, fail = 0;
+const failures = [];
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
+const { assets } = await loadTestAssets();
+const def = assets.world('world_m1');
+const mk = () => World.load(def, assets, { detail: true, physics: 'mesh' });
+
+// independent deep byte-compare (typed arrays by bytes; `version` ignored: set at publish)
+function deepEq(a, b, path = '') {
+  if (a === b) return null;
+  if (ArrayBuffer.isView(a)) return ArrayBuffer.isView(b) && a.constructor === b.constructor && Buffer.compare(Buffer.from(a.buffer, a.byteOffset, a.byteLength), Buffer.from(b.buffer, b.byteOffset, b.byteLength)) === 0 ? null : path + ' (typed array differs)';
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    const ka = Object.keys(a).filter((k) => k !== 'version'), kb = Object.keys(b).filter((k) => k !== 'version');
+    if (ka.length !== kb.length) return path + ' (key count)';
+    for (const k of ka) { const r = deepEq(a[k], b[k], path + '.' + k); if (r) return r; }
+    return null;
+  }
+  return Number.isNaN(a) && Number.isNaN(b) ? null : path + ` (${String(a)} != ${String(b)})`;
+}
+// independent byte total: every distinct typed array reachable from the bundle
+function reachBytes(o, seen = new Set()) {
+  if (!o || typeof o !== 'object' || seen.has(o)) return 0;
+  seen.add(o);
+  if (ArrayBuffer.isView(o)) return o.byteLength;
+  let n = 0; for (const k of Object.keys(o)) n += reachBytes(o[k], seen);
+  return n;
+}
+const colOf = (w, id) => w.colliders.find((c) => c.id === id) || null;
+const centre = (w, z) => [(z.cx0 + z.cw / 2) * w.terrain.chunkSize, (z.cy0 + z.ch / 2) * w.terrain.chunkSize];
+
+// --- B1: job bytes == ensureBandFor bytes, every zone -------------------------------------
+const w = mk(), zs = w.terrainBands;
+ok('world_m1 has 5 zones, start band cached', zs.length === 5 && w.bandCache.stats().entries === 1);
+let mbTotal = 0;
+const fresh = [];
+const ref = mk(); // reference: ensureBandFor with an empty cache = today's sliced bake path
+for (let k = 0; k < zs.length; k++) {
+  ref.ensureBandFor(...centre(ref, ref.terrainBands[(k + 1) % zs.length]));
+  ref.bandCache.clear();
+  ref.ensureBandFor(...centre(ref, ref.terrainBands[k]));
+  const z = zs[k];
+  const job = BandBakeJob.create(w, z.cx0, z.cy0, z.cw, z.ch, null); job.step(Infinity);
+  const b = job.bundle(); fresh.push(b);
+  const e1 = deepEq(b.near, ref.terrain.near), e2 = deepEq(b.scatter, ref.scatter), e3 = deepEq(b.detail, ref.detail);
+  const e4 = deepEq(b.trunks, colOf(ref, 'scatter:trunks')), e5 = deepEq(b.detailCol, colOf(ref, 'scatter:detail'));
+  ok(`job bytes == ensureBandFor: ${z.id}`, !e1 && !e2 && !e3 && !e4 && !e5, `near ${e1}, scatter ${e2}, detail ${e3}, trunks ${e4}, detailCol ${e5}`);
+  if (k === 1) { const job2 = BandBakeJob.create(w, z.cx0, z.cy0, z.cw, z.ch, w.terrain.near); job2.step(Infinity); // overlap copy from the live near
+    ok(`job with overlap copy == full bake: ${z.id}`, !deepEq(job2.bundle().near, b.near)); }
+  mbTotal += reachBytes({ n: b.near, s: b.scatter, d: b.detail, t: b.trunks, c: b.detailCol }) / 1048576;
+}
+ok('the live band was never touched by the jobs', w.bandId === 'east' && !w.terrain.nearBandPending);
+console.log(`byte identity OK for 5 zones; bundles total ${mbTotal.toFixed(2)} MB`);
+
+// --- B2: cache hit path -------------------------------------------------------------------
+let bakes = 0; const realBake = w.terrain.util.bake;
+w.terrain.util.bake = (...a) => { bakes++; return realBake.apply(w.terrain.util, a); };
+let begins = 0; const realBegin = w.terrain.beginNearBand.bind(w.terrain);
+w.terrain.beginNearBand = (...a) => { begins++; return realBegin(...a); };
+const pts = zs.map((z) => centre(w, z));
+for (let k = 1; k < 5; k++) w.ensureBandFor(...pts[k]); // first visit: misses (sliced path), each put
+w.ensureBandFor(...pts[0]);
+const st = w.bandCache.stats();
+ok('first round: 5 entries, all pinned', st.entries === 5 && [...w.bandCache.map.values()].every((b) => b.pinned), JSON.stringify(st));
+ok('first round baked terrain rows', bakes > 0 && begins === 4, `bakes ${bakes} begins ${begins}`);
+const hitsBefore = st.hits, bakes0 = bakes, begins0 = begins, putBakes = st.bakes;
+const seq = [1, 0, 2, 0, 3, 4, 3, 0, 1, 2];
+let hitOk = true, swapMax = 0, swapSum = 0;
+for (const k of seq) {
+  w.ensureBandFor(...pts[k]);
+  const bd = w.bandCache.map.get(w._bandKey(k));
+  if (w.bandId !== zs[k].id || w.terrain.near !== bd.near || w.scatter !== bd.scatter || w.detail !== bd.detail) hitOk = false;
+  swapMax = Math.max(swapMax, w.lastSwapMs); swapSum += w.lastSwapMs;
+}
+ok('second visit: 0 util.bake / beginNearBand calls, 0 new bakes', bakes === bakes0 && begins === begins0 && w.bandCache.stats().bakes === putBakes, `bakes ${bakes - bakes0}`);
+ok('second visit: every swap was a cache hit publishing the cached objects', hitOk && w.bandCache.stats().hits - hitsBefore >= seq.length);
+ok('near version bumps on republish', w.terrain.near.version > 3);
+console.log(`swap on a hit (JS): avg ${(swapSum / seq.length).toFixed(3)} ms, max ${swapMax.toFixed(3)} ms; cache ${(w.bandCache.stats().bytes / 1048576).toFixed(2)} MB`);
+if (process.env.BAKE_BENCH) ok('swap on hit <= 4 ms', swapMax <= 4, swapMax.toFixed(3));
+{
+  let all = true, sum = 0, why = '';
+  for (let k = 0; k < 5; k++) {
+    const bd = w.bandCache.map.get(w._bandKey(k)), z = zs[k];
+    const f = fresh[k];
+    const e = deepEq({ n: bd.near, s: bd.scatter, d: bd.detail, t: bd.trunks, c: bd.detailCol }, { n: f.near, s: f.scatter, d: f.detail, t: f.trunks, c: f.detailCol });
+    if (e) { all = false; why = z.id + e; }
+    sum += reachBytes({ n: bd.near, s: bd.scatter, d: bd.detail, t: bd.trunks, c: bd.detailCol });
+  }
+  ok('cached bundles byte-identical to a fresh bake', all, why);
+  ok('stats().bytes == summed byteLength', w.bandCache.stats().bytes === sum, `${w.bandCache.stats().bytes} vs ${sum}`);
+}
+{
+  w.ensureBandFor(...pts[0]);
+  const run = () => { for (let i = 0; i < 100; i++) w.ensureBandFor(...pts[i & 1]); };
+  const g = heapGrowth(run);
+  ok('100 east<->west cache-hit swaps: heap growth < 64 KB', g < 65536, `${g} B`);
+}
+
+// --- LRU unit -----------------------------------------------------------------------------
+{
+  const mkB = (key, n, pinned = false) => ({ key, zone: 0, near: { x0: 0, y0: 0, w: 1, h: 1, cell: 1, height: new Uint8Array(n) }, scatter: null, detail: null, trunks: null, detailCol: null, classMap: null, bytes: 0, pinned, lastUse: 0 });
+  const c = new BandCache({ maxBytes: 250 });
+  c.put(mkB('a', 100, true)); c.put(mkB('b', 100)); c.get('b'); c.put(mkB('c', 100));
+  ok('LRU: over the cap evicts the unpinned LRU entry, pinned stays', !c.has('b') && c.has('a') && c.has('c') && c.stats().evictions === 1 && c.stats().bytes === 200, JSON.stringify(c.stats()));
+  c.put(mkB('d', 100), 'c'); c.put(mkB('e', 100), 'd');
+  ok('LRU: protected keys and pinned entries are never evicted', c.has('a') && c.has('e') && c.has('d') && !c.has('c'));
+  c.put(mkB('f', 400, true));
+  ok('LRU: pinned never evicted even over the cap', c.has('f') && c.has('a'));
+}
+
+// --- editor invalidation -----------------------------------------------------------------
+{
+  const n0 = w.bandCache.stats().entries, near = w.terrain.near;
+  const mx = near.x0 + (near.w * near.cell) / 2, my = near.y0 + (near.h * near.cell) / 2;
+  w.terrain.rebakeRect(mx - 2, my - 2, mx + 2, my + 2);
+  const n1 = w.bandCache.stats().entries;
+  ok('terrain edit drops every overlapping cached band (incl. the current one)', n1 < n0 && !w.bandCache.has(w._bandKey(w._bandCur)), `${n0} -> ${n1}`);
+  w.refreshTerrainScatter();
+  ok('refreshTerrainScatter re-caches the edited live band', w.bandCache.has(w._bandKey(w._bandCur)) && w.bandCache.map.get(w._bandKey(w._bandCur)).near === w.terrain.near);
+}
+
+console.log(`${pass} passed, ${fail} failed.`);
+if (fail) { failures.forEach((f2) => console.error('FAIL:', f2)); process.exit(1); }
+console.log('ALL PASS');
