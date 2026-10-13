@@ -1192,6 +1192,8 @@ export class World {
   _gridFill(k, i, j) { const z = this.terrainBands[k]; zoneAt(this.terrainGrid, i, j, z); z.id = zoneId(z.i, z.j); return z; }
 
   /** Drops a pending bake and its scatter job. */
+  /** WS2-05: index of the terrain band being baked, -1 when none. */
+  get bandPending() { return this._bandPend; }
   _cancelBand() { if (this._bandPend >= 0) { this.terrain.cancelNearBand(); this._bandPend = -1; } this._bandJob = null; }
 
   /**

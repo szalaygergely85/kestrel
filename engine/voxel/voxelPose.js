@@ -106,13 +106,18 @@ function transpose3(a, out) {
   out[1] = a10; out[2] = a20; out[3] = a01; out[5] = a21; out[6] = a02; out[7] = a12;
 }
 
-// Builds R(rot) = Rz(rz) * Ry(ry) * Rx(rx) into `out`.
-export function setRot(rx, ry, rz, out) {
-  setRz(rz, _Rz);
-  setRy(ry, _Ry);
-  setRx(rx, _Rx);
+// Builds R(rot) = Rz(rz) * Ry(ry) * Rx(rx) into `out` from the angles in scratch `_ang[0..2]` (shared body).
+const _ang = new Float64Array(3);
+function buildRot(out) {
+  setRz(_ang[2], _Rz);
+  setRy(_ang[1], _Ry);
+  setRx(_ang[0], _Rx);
   matMul3(_Ry, _Rx, _RyRx);
   matMul3(_Rz, _RyRx, out);
+}
+export function setRot(rx, ry, rz, out) {
+  _ang[0] = rx; _ang[1] = ry; _ang[2] = rz;
+  buildRot(out);
 }
 
 /**
@@ -122,17 +127,11 @@ export function setRot(rx, ry, rz, out) {
  */
 const _rotOut = new Float64Array(MAX_VOX_PARTS * 3);
 const _posOut = new Float64Array(MAX_VOX_PARTS * 3);
-// RIG-04b: same as setRot, but the three angles are read from `_rotOut[base..base+2]` instead of being passed: double
-// arguments to the non-inlined setRot are boxed (a HeapNumber per call, ~16 B per posed part with a non-zero rotation).
+// RIG-04b: same as setRot, but the angles are copied from `_rotOut[base..base+2]` (typed array to typed array) instead of being
+// passed: double arguments to a non-inlined function are boxed (a HeapNumber per call). Shares buildRot with setRot.
 function setRotFromPose(base, out) {
-  cosSinDeg(_rotOut[base + 2], _cs);
-  _Rz[0] = _cs[0]; _Rz[1] = -_cs[1]; _Rz[2] = 0; _Rz[3] = _cs[1]; _Rz[4] = _cs[0]; _Rz[5] = 0; _Rz[6] = 0; _Rz[7] = 0; _Rz[8] = 1;
-  cosSinDeg(_rotOut[base + 1], _cs);
-  _Ry[0] = _cs[0]; _Ry[1] = 0; _Ry[2] = _cs[1]; _Ry[3] = 0; _Ry[4] = 1; _Ry[5] = 0; _Ry[6] = -_cs[1]; _Ry[7] = 0; _Ry[8] = _cs[0];
-  cosSinDeg(_rotOut[base], _cs);
-  _Rx[0] = 1; _Rx[1] = 0; _Rx[2] = 0; _Rx[3] = 0; _Rx[4] = _cs[0]; _Rx[5] = -_cs[1]; _Rx[6] = 0; _Rx[7] = _cs[1]; _Rx[8] = _cs[0];
-  matMul3(_Ry, _Rx, _RyRx);
-  matMul3(_Rz, _RyRx, out);
+  _ang[0] = _rotOut[base]; _ang[1] = _rotOut[base + 1]; _ang[2] = _rotOut[base + 2];
+  buildRot(out);
 }
 function sampleInto(pm, clipIdx, frameIn, tMs, rotOut, posOut) {
   const partCount = pm.partCount;

@@ -5,7 +5,7 @@ import { createTravel } from './travel.js';
 
 const poly = { shape: 'polygon', pts: [[0, 0], [1000, 0], [1000, 1000], [0, 1000]] };
 // fake world: zone = floor(x/512); ensureBandFor is synchronous and leaves no pending bake
-const fake = () => { const w = { terrainBands: [{}, {}], _bandPend: -1, bounds: poly, cur: 0, calls: [], ensureBandFor(x, y) { this.calls.push([x, y]); this.cur = Math.floor(x / 512); } }; return w; };
+const fake = () => { const w = { terrainBands: [{}, {}], _bandPend: -1, get bandPending() { return this._bandPend; }, bounds: poly, cur: 0, calls: [], ensureBandFor(x, y) { this.calls.push([x, y]); this.cur = Math.floor(x / 512); } }; return w; };
 
 { const w = fake(); const p = { x: 900, y: 40, z: 5, yawDeg: 0 };
   assert.equal(ensureBand(w, p), p); assert.deepEqual(w.calls, [[900, 40]]); assert.equal(w.cur, 1);

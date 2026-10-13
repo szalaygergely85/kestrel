@@ -656,3 +656,9 @@ Stills (AC3, not run): node tools/verify-secrets-outwall.mjs 9660  -> docs/test-
   Tests: errands3 41 pass; filter run 144/144 PASS; validate-content OK; prop-ground-lint 0; coplanar-lint exit 0. NEEDS WRITER: titles/objTexts/returnText placeholders (<= 38 chars), no lines. Not browser-checked (target placement / ground spot by eye).
 - TUFT-01a part 2 (JS twin, branch tuft-01a2, arch-review): tuftHit in render/carpet.js (TUFTS flag, cfg.tufts, 2 sheared planes + atlas, root cull, MASK-c kept), CARPET_DEFAULTS cellM 0.35 + tuftR, overworld_far cellM override removed. tests/cell mean 1.71 calm / 2.07 wind; WGSL twin test pinned to blades (tufts:false, cellM 0.1) until 01b; gpucompare carpetMeadow expected to differ until 01b (baseline untouched).
   Open for 01b/architect: g-cap decides by texel centre, so near hits are quantised to whole texels (~20 mm > 1.25 fp); a sub-texel cap needs a sign/offset bit in g.
+
+### REVIEW-NITS-01 (kestrel-4, review-nits) - arch-review
+- RIG-01: readRiggedGlb rejects primitive indices >= vertex count (bad() with clear message); gltf.test.js +1 test (corrupt index 99).
+- RIG-04: setRot/setRotFromPose share buildRot(out) via `_ang` scratch; partRot.test.js alloc gate PASS.
+- WILD-05: VoxelPool `get rawCount()`; engine/fauna/feed.js uses it. WS2-05: World `get bandPending()`; game/js/quest/bandPose.js uses it (bandPose.test fake got the getter).
+- Suites PASS: gltf, voxelPool, faunaFeed, partRot, bandPose, travel; check-deps OK. terrainBands.test: 3 timing/heap FAILs (16.9 ms slice, no --expose-gc, loaded PC) - unrelated, only a getter added to World.

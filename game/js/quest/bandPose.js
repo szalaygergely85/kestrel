@@ -14,7 +14,7 @@ export function gridVariant(def, geo) {
 }
 
 /** Fade-in gate: true when no band swap is pending. (ensureBandFor is synchronous, so true at once after it; also true without bands.) */
-export const bandReady = (world) => !(world && world.terrainBands && world._bandPend >= 0);
+export const bandReady = (world) => !(world && world.terrainBands && world.bandPending >= 0);
 
 /** Synchronously wakes the band for (x, y) behind the fade. No-op for worlds without bands. Returns the pose. */
 export function ensureBand(world, pose) {

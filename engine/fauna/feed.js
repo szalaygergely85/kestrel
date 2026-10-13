@@ -8,7 +8,7 @@
 //       fadeMs, fadeT). Without `cp` the animal is drawn in the rest pose.
 // Candidate = alive, d < species.drawM, and in the view cone (hfov/2 + 10 deg) or closer than NEAR_M.
 // Nearest-first via a fixed-array insertion select (like VoxelPool.collect); at most
-// min(drawMax, pool.cap - pool._rawCount - spare) are drawn, so `spare` pool slots stay free for gameplay pushes.
+// min(drawMax, pool.cap - pool.rawCount - spare) are drawn, so `spare` pool slots stay free for gameplay pushes.
 // Zero allocation after createFaunaFeed. Imports engine/fauna/** + engine/entities/clipPlayer.js only.
 
 import { clipFromW } from '../entities/clipPlayer.js';
@@ -45,7 +45,7 @@ export function createFaunaFeed(def, slots, opts) {
   function feed(pool, cam) {
     stats.drawn = 0; stats.candidates = 0;
     if (!pool || !cam || drawMax === 0) return 0;
-    const room = pool.cap - pool._rawCount - spare;
+    const room = pool.cap - pool.rawCount - spare;
     const limit = room < drawMax ? room : drawMax;
     if (limit <= 0) return 0;
     const cx = cam.x, cy = cam.y;
