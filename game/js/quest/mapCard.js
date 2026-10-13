@@ -7,6 +7,7 @@
 import { buildPanelArt, createPanel, hexToRgb, drawPanel } from '../../../engine/index.js';
 import { request as requestHint } from './hints.js';
 import { buildWorldOverlay, AREAS, KINDS } from './mapWorld.js';
+import { createWorldMapCard, worldBox, worldMapSize } from './worldMap.js';
 
 let art = null;   // PanelArt, built once (palette/model are load-time constants)
 let panel = null; // runtime Panel, rebuilt every 'world:loaded' (7.6 item 6)
@@ -256,7 +257,12 @@ export function initMapCard(assets, sceneCols, sceneRows, chartOptions = null) {
   const model = assets.model('mapCard');
   if (!art) art = buildPanelArt(model, assets.palette, 'show');
   const cfg = assets.uiStyle.mapCard;
-  chartView = chartOptions ? createChartCard(chartOptions.chart, assets.palette, chartOptions) : null;
+  // WM-10: `worldMap {geo, names, getSeen}` = the whole-map view (default in the game); else the baked chart card (?map=chart)
+  if (chartOptions?.worldMap) {
+    const wm = chartOptions.worldMap, g = assets.uiStyle.uiGrid, sz = worldMapSize(worldBox(wm.geo), g.cols, g.rows);
+    chartView = createWorldMapCard(wm.geo, wm.names, assets.palette, { getSeen: wm.getSeen, w: sz.w, h: sz.h, travel: chartOptions.travel, travelHeader: chartOptions.travelHeader });
+    for (const m of chartOptions.markers || []) chartView.setMarker(m.x, m.y, m.kind);
+  } else chartView = chartOptions ? createChartCard(chartOptions.chart, assets.palette, chartOptions) : null;
   panel = createPanel(chartView ? chartView.art : art, {
     fadeIn: cfg.fadeIn, fadeOut: cfg.fadeOut,
     sceneMul: cfg.sceneDim.bgMul, plateMul: cfg.plate.bgMul, platePad: cfg.plate.pad,
@@ -287,7 +293,7 @@ export function getMapChart() { return chartView; }
 /** Host draw seam: blank fog cells need an opaque plate too (drawPanel skips spaces). */
 export function drawMapCard(ui,timeMs,lut=null) {
   if(!panel||panel.state==='closed')return;
-  if(chartView?.fog){
+  if(chartView?.fog||chartView?.opaque){
     const a=panel.art;
     for(let y=0;y<a.h;y++)for(let x=0;x<a.w;x++)if(a.codes[y*a.w+x]===32)
       ui.setCellRGB(panel.x0+x,panel.y0+y,0,0,0,0,0,0,0);
