@@ -31,13 +31,15 @@
     { model: 'forestPineSmall',  weight: 20, trunkR: 0.34, trunkH: 1.50, sway: true },   // 6.00 m (raw import, owner 2026-10-04)
     { model: 'forestPineLarge',  weight: 15, trunkR: 0.41, trunkH: 1.80, sway: true }    // 7.20 m (raw import, owner 2026-10-04)
   ];
+  // OB-089 (owner 2026-10-13, 'LOD for dark trees should be closer'): was 150 = LOD1 from ~9 m (rows 100, R 7.7 m: d = R*1.73*rows/lodCells). 50 holds the lit LOD0 to ~27 m.
+  var TREE_LODCELLS = 50;
   var TREE_SPECIES_MESH = (function () {
   var out = [];
   [[14, 0.5, 2.3], [14, 0.5, 2.8], [12, 0.5, 2.5], [10, 0.5, 5.0], [10, 0.45, 2.3]].forEach(function (t, i) {
-    out.push({ mesh: 'quaternius/CommonTree_' + (i + 1), weight: t[0], trunkR: t[1], trunkH: t[2], sway: true, lodCells: 150 });
+    out.push({ mesh: 'quaternius/CommonTree_' + (i + 1), weight: t[0], trunkR: t[1], trunkH: t[2], sway: true, lodCells: TREE_LODCELLS });
   });
   [[10, 0.45, 2.1], [10, 0.45, 1.1], [8, 0.45, 3.0], [6, 0.45, 2.4], [6, 0.35, 1.4]].forEach(function (t, i) {
-    out.push({ mesh: 'quaternius/Pine_' + (i + 1), weight: t[0], trunkR: t[1], trunkH: t[2], sway: true, lodCells: 150 });
+    out.push({ mesh: 'quaternius/Pine_' + (i + 1), weight: t[0], trunkR: t[1], trunkH: t[2], sway: true, lodCells: TREE_LODCELLS });
   });
   return out;
   })();
