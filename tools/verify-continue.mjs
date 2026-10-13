@@ -14,9 +14,13 @@ if (base < 9500 || base + 3 > 9999) throw new Error('PC-B ports 9500-9999 (uses 
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 const READY = '!!(window.__debug && window.__debug.menuHost && window.__debug.world)';
 // Drive the title menu with key edges until the wanted row is selected, then Enter.
-const PICK = (id) => `(() => { const h = __debug.menuHost; const sel = () => { const s = h.menu.snapshot(); return s.rows[s.selected].id; };
-  for (let i = 0; i < 6 && sel() !== ${JSON.stringify(id)}; i++) h.step((c) => c === 'ArrowDown'); if (sel() !== ${JSON.stringify(id)}) return 'row ' + ${JSON.stringify(id)} + ' unavailable';
-  h.step((c) => c === 'Enter'); return 'ok'; })()`;
+const PICK = (id) => `(() => { const h = __debug.menuHost, m = h.menu; const sel = () => { const s = m.snapshot(); return s.rows[s.selected].id; };
+  for (let i = 0; i < 6 && sel() !== ${JSON.stringify(id)}; i++) m.handleKey('ArrowDown'); if (sel() !== ${JSON.stringify(id)}) return 'row ' + ${JSON.stringify(id)} + ' unavailable';
+  m.handleKey('Enter'); h.consume(); return 'ok'; })()`;
+// New game opens the character creation screen: walk down to the 'confirm' row (one key edge per step) and press Enter.
+const CONFIRM_CREATE = `(() => { const h = __debug.menuHost; if (h.menu.snapshot().mode === 'new' && h.menu.snapshot().rows[h.menu.snapshot().selected].slot === 0) { h.menu.handleKey('Enter'); h.consume(); } if (!h.createOpen) return h.active ? 'no create screen ' + JSON.stringify(h.menu.snapshot()).slice(0, 400) : 'ok';
+  const press = (code) => h.step((c) => c === code);
+  for (let i = 0; i < 19; i++) press('KeyS'); press('Enter'); return h.active ? 'still active' : 'ok'; })()`;
 const INGAME = '!!(window.__debug.playerHandle && window.__debug.gameHooks && window.__debug.gameHooks.ctx.state.canSave && !__debug.menuHost.active)';
 const SNAP = `(() => { const D = __debug, t = D.playerHandle.data.transform, ids = [], dup = []; const seen = new Set();
   D.world.forEachEntity((e) => { const id = e.id ?? (e.data && e.data.id); ids.push(id); if (seen.has(id)) dup.push(id); seen.add(id); });
@@ -41,24 +45,30 @@ async function pass(label, port, query) {
     const url = `http://127.0.0.1:${port}/game/index.html${query}`;
     async function waitFor(expr, what, tries = 300) {
       for (let i = 0; i < tries; i++) { await pause(300); if (await evaluate(cdp, expr).catch(() => false)) return; }
-      assert.fail(`${label}: ${what} never happened: ${JSON.stringify(errors)}`);
+      assert.fail(`${label}: ${what} never happened: ${JSON.stringify(errors)} ${await evaluate(cdp, "JSON.stringify({ph: !!__debug.playerHandle, menu: __debug.menuHost && __debug.menuHost.active, wt: __debug.world.state['quest.wakeT'], cs: __debug.gameHooks.ctx.state.canSave, dead: __debug.vitals && __debug.vitals.dead, wl: __debug.wakeOut.inputLocked, en: __debug.gameHooks.ctx.state.ending, cx: Object.keys(__debug.gameHooks.ctx.state).length})").catch((e) => String(e))}`);
     }
     // ---- run 1: new game, move, save ----
     await cdp.send('Page.navigate', { url });
     await waitFor(READY, 'title menu');
     assert.equal(await evaluate(cdp, PICK('new')), 'ok');
+    assert.equal(await evaluate(cdp, CONFIRM_CREATE), 'ok', `${label}: character creation confirm`);
+    await waitFor('!!(window.__debug.playerHandle && !__debug.menuHost.active)', 'new game player');
+    await evaluate(cdp, "__debug.world.state['quest.wakeT'] = 100; __debug.look.locked = true"); // skip the played wake (as verify-m4-exit): else canSave stays false
     await waitFor(INGAME, 'new game in world');
     await pause(1500);
     await evaluate(cdp, `(() => { const D = __debug, t = D.playerHandle.data.transform; t.x += 12; t.z += 0; D.vitals && D.vitals.clearSafe && D.vitals.clearSafe(); return 1; })()`);
     await pause(1500); // land + settle
     await evaluate(cdp, '__debug.gameHooks.ctx.requestSave()');
-    assert.ok(await evaluate(cdp, "(localStorage.getItem('kestrel.save.slot.0') || '').length") > 0, `${label}: slot written`);
+    await pause(500);
+    assert.ok(await evaluate(cdp, "(localStorage.getItem('kestrel.save.slot.0') || '').length") > 0, `${label}: slot written ${await evaluate(cdp, 'JSON.stringify([__debug.saveRelay && __debug.saveRelay.enabled, __debug.saveRelay && __debug.saveRelay.slot, __debug.saveRelay && __debug.saveRelay.lastResult, Object.keys(localStorage)])')}`);
     const before = await evaluate(cdp, SNAP);
     assert.deepEqual(before.dup, [], `${label}: duplicate ids before save`);
     // ---- run 2: reload -> Continue ----
     await cdp.send('Page.navigate', { url });
     await waitFor(READY, 'title menu after reload');
     assert.equal(await evaluate(cdp, PICK('continue')), 'ok', `${label}: Continue available`);
+    await waitFor('!!(window.__debug.playerHandle && !__debug.menuHost.active)', 'Continue player');
+    await evaluate(cdp, '__debug.look.locked = true'); // headless has no pointer lock; isPaused() = !look.locked would freeze the sim
     await waitFor(INGAME, 'Continue world');
     await pause(1500);
     const after = await evaluate(cdp, SNAP);
