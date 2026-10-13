@@ -91,6 +91,7 @@ const CLASSIC_SCRIPTS = [
   '../design/models/sword.js', // US-078c: the ruin-steel sword (content/levels/tower.level.json prop "sword"), same load position as game/index.html.
   '../design/models/voxel_beast.js', // US-079a: the placeholder boar (content/worlds/world_m1.world.json entities "boar1"/"boar2"), same load position as game/index.html.
   '../design/models/voxel_wolf.js', // WOLF-D1: the wolf (WOLF_MODEL 'wolf').
+  '../design/models/voxel_goblin.js', // GOB-D1/07a: goblin, goblinTorch, goblinSpear + ASSETS.goblinFx (game/index.html tag after voxel_wolf.js).
   '../design/models/chest.js', // EQ-10: chestSmall on the world_m1 chest* anchors
   '../design/models/voxel_bear.js', // NPC-BEAR-01: ASSETS.models.bear (world_m1 entity "bear", content/dialogue/bear.dialogue.json clips), same load position as game/index.html.
   '../design/models/voxel_bear_black.js', // BEAR-D1: ASSETS.models.bearBlack (clones ASSETS.models.bear -> must follow voxel_bear.js). game/index.html tag: BEAR-01.
@@ -100,6 +101,8 @@ const CLASSIC_SCRIPTS = [
   '../design/models/voxel_heron.js', // STILT-D1: ASSETS.models.heron + ASSETS.heronFx (Stilt, the heron of the Reedmire; stand-alone). Not in game/index.html / the world yet.
   '../design/models/voxel_tortoise.js', // SLATE-D1: ASSETS.models.tortoise + ASSETS.tortoiseFx (Slate, the ancient tortoise of the Glasswater islet; stand-alone). Not in game/index.html / the world yet.
   '../design/models/voxel_wildlife.js', // QL-06: ASSETS.models.crow (Rook, world_m1 entity "rook"), same load position as game/index.html.
+  '../design/models/voxel_eat_clips.js', // SWIM-ASSETS-01: eat clips, after the model files, same load position as game/index.html.
+  '../design/models/voxel_seamonster.js', // SWIM-ASSETS-01: ASSETS.models.seaMonster (world_m1 entity "seaMonster").
   '../design/models/m3_props.js', // US-078d: the practice target pell (content/levels/tower.level.json prop "practiceTarget"), same load position as game/index.html.
   '../design/models/far_tower.js',
   '../design/models/ferrum_lights.js',

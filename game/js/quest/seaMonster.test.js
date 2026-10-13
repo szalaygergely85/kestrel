@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import '../../../design/levels/world_geo.js';
+import '../../../design/models/voxel_seamonster.js';
 import { createShore, SEA_EDGE_CONFIG } from './seaEdge.js';
 import { createSeaMonster, HIDDEN, CIRCLE, RISE, STRIKE, SEA_MONSTER_CONFIG as C } from './seaMonster.js';
 
@@ -18,15 +19,16 @@ swimTo(SEA_EDGE_CONFIG.warnM + 4); run(15); assert.equal(sm.state, CIRCLE, 'warn
 run(60);
 assert.ok(rip.length >= 2, 'ripples');
 const d = Math.hypot(ent.transform.x - P.x, ent.transform.y - P.y);
-assert.ok(d >= 10 && d <= 14, 'orbit 10-14 m: ' + d); assert.ok(ent.transform.z < P.surfaceZ && ent.clip === 'circle');
+assert.ok(d >= 10 && d <= 14, 'orbit 10-14 m: ' + d); assert.ok(ent.transform.z === P.surfaceZ && ent.clip === 'circle', 'anchor = waterline, no offsets');
 // back inside -> hidden
 swimTo(20); run(15); assert.equal(sm.state, HIDDEN); assert.equal(ent.transform.z, C.hideZ);
 // out again, then kill band -> rise -> strike -> eaten
 swimTo(SEA_EDGE_CONFIG.warnM + 4); run(15); assert.equal(sm.state, CIRCLE);
 swimTo(SEA_EDGE_CONFIG.killM + 6); run(15); assert.equal(sm.state, RISE);
 run(C.riseSteps - 2); assert.equal(sm.state, RISE); run(1); assert.equal(sm.state, STRIKE);
-assert.ok(Math.abs(ent.transform.z - (P.surfaceZ + C.riseTopM)) < 1e-9, 'risen');
-assert.ok(Math.abs(Math.hypot(ent.transform.x - P.x, ent.transform.y - P.y) - C.frontM) < 1e-9, '3 m in front');
+assert.equal(ent.transform.z, P.surfaceZ, 'waterline in strike too');
+const FRONT = globalThis.ASSETS.seaMonsterFx.place.anchorFromPlayerM;
+assert.ok(Math.abs(Math.hypot(ent.transform.x - P.x, ent.transform.y - P.y) - FRONT) < 1e-9, 'anchorFromPlayerM in front');
 assert.equal(vitals.dead, false); run(C.strikeSteps); assert.equal(vitals.dead, true); assert.equal(vitals.cause, 'eaten');
 run(1); assert.equal(sm.state, HIDDEN, 'parked after death');
 // respawn -> hidden even mid-circle
@@ -43,5 +45,20 @@ if (global.gc) {
   sm.reset(); run(100); global.gc(); const h0 = process.memoryUsage().heapUsed;
   for (let i = 0; i < 20000; i++) { sm.step(P, i / 60); if (i % 600 === 599) sm.reset(); } global.gc();
   assert.ok(process.memoryUsage().heapUsed - h0 < 200000, 'alloc');
+}
+// voxel entity: state -> clip + hidden + loop flag
+{
+  const ve = { transform: { x: 0, y: 0, z: -500, yawDeg: 0 }, components: { voxel: { model: 'seaMonster', anim: 'circle', loop: true, hidden: true } } };
+  const m2 = createSeaMonster(vitals, shore, { ent: ve }); vitals.dead = false;
+  assert.equal(ve.components.voxel.hidden, true, 'hidden at start');
+  P.y = 1770 + SEA_EDGE_CONFIG.warnM + 4; for (let i = 0; i < 15; i++) m2.step(P, i / 60);
+  assert.equal(m2.state, CIRCLE); assert.equal(ve.components.voxel.hidden, false); assert.equal(ve.components.voxel.anim, 'circle'); assert.equal(ve.components.voxel.loop, true);
+  P.y = 1770 + SEA_EDGE_CONFIG.killM + 6; for (let i = 0; i < 15; i++) m2.step(P, i / 60);
+  assert.equal(m2.state, RISE); assert.equal(ve.components.voxel.anim, 'rise'); assert.equal(ve.components.voxel.loop, false);
+  const toP = Math.atan2(P.x - ve.transform.x, P.y - ve.transform.y); assert.ok(Number.isFinite(ve.transform.yawDeg) && toP === toP);
+  for (let i = 0; i < C.riseSteps; i++) m2.step(P, i / 60);
+  assert.equal(m2.state, STRIKE); assert.equal(ve.components.voxel.anim, 'strike'); assert.equal(ve.transform.z, P.surfaceZ);
+  for (let i = 0; i < C.strikeSteps; i++) m2.step(P, i / 60);
+  m2.step(P, 0); assert.equal(m2.state, HIDDEN); assert.equal(ve.components.voxel.hidden, true);
 }
 console.log('seaMonster ok');

@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
+import { SEA_EDGE_CONFIG } from '../game/js/quest/seaEdge.js';
 import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, killTree } from './capture-browser.mjs';
 
 const port = Number(process.argv[2] || 9575);
@@ -43,7 +44,17 @@ try {
   await evaluate(cdp, '(()=>{const h=__debug.playerHandle,t=h.data.transform;t.x=1230;t.y=505;t.z=-62;h.data.components.body.vz=0;})()');
   let under = null;
   for (let i = 0; i < 20; i++) { await pause(100); const s2 = await evaluate(cdp, q); if (s2 && s2.swimming && s2.eye < s2.waterZ - 0.05) { under = s2; await shot('swim-under-' + backend); break; } }
-  console.log(JSON.stringify({ backend, braid: st, ring, under: under || 'eye not under water in the sampled window (still not taken)' }));
+  // SWIM-ASSETS-01: sea monster circle still - teleport into the warn band of the south sea (z = sea surface -96), wait for state 'circle'.
+  await evaluate(cdp, `(()=>{const h=__debug.playerHandle,t=h.data.transform;t.x=1525;t.y=${1770 + SEA_EDGE_CONFIG.warnM + 4};t.z=-95;h.data.components.body.vz=0;})()`);
+  let mon = null;
+  for (let i = 0; i < 40; i++) { await pause(250); mon = await evaluate(cdp, '(()=>{const w=__debug.swimWire;const m=w&&w.monster;return m?{state:m.name,x:m.x,y:m.y,z:m.z,clip:m.clip,hidden:!!(m.ent&&m.ent.components&&m.ent.components.voxel&&m.ent.components.voxel.hidden)}:null;})()'); if (mon && mon.state === 'circle') { await shot('swim-monster-circle-' + backend); break; } }
+  assert.ok(mon && mon.state === 'circle' && mon.clip === 'circle' && mon.hidden === false, 'sea monster circling in the warn band ' + JSON.stringify({ mon, errors }));
+
+  // STRAND-SIGN-01: still of the warning sign + net stakes from the beach (sign at 1384,1742; stakes ~60 m out, row x 1352..1416). Stand 7 m inland of the sign, face the sea.
+  await evaluate(cdp, '(()=>{const h=__debug.playerHandle,t=h.data.transform;t.x=1384;t.y=1735;t.z=-93;t.yaw=0;h.data.components.body.vz=0;})()');
+  await pause(1500); await shot('strand-sign-' + backend);
+
+  console.log(JSON.stringify({ backend, braid: st, ring, mon, under: under || 'eye not under water in the sampled window (still not taken)' }));
   assert.deepEqual(errors, []);
   console.log('Swim: Braid swim + gear stowed' + (under ? ' + under-water still' : '') + ' PASS');
 } finally {

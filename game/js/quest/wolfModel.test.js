@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { WOLF_MODEL } from './sim/wolfBrain.js';
 const req = createRequire(import.meta.url);
 const wolf = req('../../../design/models/voxel_wolf.js');
+req('../../../design/models/voxel_eat_clips.js'); // SWIM-ASSETS-01: wolfFx.clipFor.state.eat needs the appended clip
 const boar = req('../../../design/models/voxel_beast.js').boarPlaceholder;
 const cnt = (m) => m.voxel.layers.reduce((n, L) => n + L.reduce((k, r) => k + r.replace(/\./g, '').length, 0), 0);
 assert.equal(WOLF_MODEL, 'wolf');

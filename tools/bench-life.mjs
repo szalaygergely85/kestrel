@@ -33,12 +33,18 @@ import { ROUTINES } from '../game/js/quest/outwallRoutines.js';
 import { lifeFromRoutines } from '../game/js/life/schedule.js';
 import { createVillagers } from '../game/js/life/villagers.js';
 import { createRaids } from '../game/js/life/raids.js';
+import { ensureGoblinCamps, activeCamps, createGoblinCamps } from '../game/js/life/goblinCamps.js'; // GOB-08
+import { createArrowSim, createPlayerTarget, lobVelocity } from '../game/js/quest/sim/arrows.js';
+import { GOBLIN_SPEAR_CFG } from '../game/js/quest/bowConfig.js';
+import { readFileSync } from 'node:fs';
+const readJson = (rel) => JSON.parse(readFileSync(new URL('../' + rel, import.meta.url), 'utf8'));
 
 globalThis.window = globalThis;
 paletteMod; terrainDef; geoMod; detailPassMod; lanternMod; leverMod; voxelPropsMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; m3PropsMod; farTowerMod; ferrumLightsMod; titleMod; voxelWorldMod;
 
 const STEPS_PER_HOUR = 18000; // 300 s per game hour at 60 Hz (D-064: 2 real hours per day)
 const PLAZA = [915, 945];
+const GOBLINS_AWAKE = 20, THROWERS = 6, SPEARS_FLYING = 8; // GOB-08 (38.57 (6))
 const SCENARIOS = [['in Outwall', 0], ['100 m away', 100], ['600 m away', 600]];
 // Budget rows (38.56 e). stat = which statistic is compared with cap.
 const BUDGETS = [
@@ -53,7 +59,7 @@ function parseArgs(argv) {
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--strict') o.strict = true; else if (a === '--json') o.json = true; else if (a === '--quiet') o.quiet = true;
-    else if (a === '--scenarios') o.scenarios = +argv[++i]; else if (a === '--hours') o.hours = +argv[++i]; else if (a === '--start') o.start = +argv[++i];
+    else if (a === '--no-goblin') o.goblin = false; else if (a === '--scenarios') o.scenarios = +argv[++i]; else if (a === '--hours') o.hours = +argv[++i]; else if (a === '--start') o.start = +argv[++i];
   }
   return o;
 }
@@ -72,7 +78,7 @@ function summarize(t, n) {
 }
 
 /** Builds the whole living world once per scenario (fresh state, same seeds). */
-async function build(assets) {
+async function build(assets, goblin = false) {
   const events = new Events();
   const wdef = assets.world('world_m1');
   const world = World.load(wdef, assets, { physics: 'mesh', events });
@@ -91,8 +97,24 @@ async function build(assets) {
   const found = [];
   world.forEachEntity((e) => { if (e.components && e.components.brain && e.components.brain.kind === 'beast') found.push(e); });
   const realBeasts = found.length;
-  for (let n = found.length; n < MAX_BEASTS && found.length; n++) {
-    const src = found[n % realBeasts], t = src.transform;
+  // GOB-08: 2 enabled camps from content/life/goblinCamps.json, padded by clones to 20 goblins (6 throwers) = the 38.57 worst case
+  let campDefs = [], goblinCount = 0;
+  if (goblin) {
+    campDefs = activeCamps(readJson('content/life/goblinCamps.json'));
+    goblinCount = ensureGoblinCamps(world, campDefs, world.terrain);
+    const gobs = []; world.forEachEntity((e) => { if (e.components && e.components.brain && e.components.brain.species === 'goblin') gobs.push(e); });
+    let thr = gobs.filter((e) => e.components.brain.role === 'thrower').length;
+    for (let n = 0; goblinCount < GOBLINS_AWAKE && gobs.length; n++, goblinCount++) {
+      const src = gobs[n % gobs.length], t = src.transform, c = JSON.parse(JSON.stringify(src.components));
+      if (thr < THROWERS) { c.brain.role = 'thrower'; thr++; } else c.brain.role = 'melee';
+      world.spawn(src.type, { ...t, x: t.x + 1.5 + (n % 5), y: t.y - 1 - (n % 3) }, c, `benchGob${n}`);
+    }
+    // drop the thrower surplus (the authored camps may hold more than 6)
+    let seen = 0; world.forEachEntity((e) => { const b = e.components && e.components.brain; if (b && b.species === 'goblin' && b.role === 'thrower' && ++seen > THROWERS) b.role = 'melee'; });
+  }
+  const pad = found.filter((e) => !(e.components.brain.species === 'goblin'));
+  for (let n = found.length + goblinCount; n < MAX_BEASTS && pad.length; n++) {
+    const src = pad[n % pad.length], t = src.transform;
     world.spawn(src.type, { ...t, x: t.x + 2 * n, y: t.y + 1 }, JSON.parse(JSON.stringify(src.components)), `benchBeast${n}`);
   }
   const nav = buildBeastNav(world, wdef.nav);
@@ -104,11 +126,11 @@ async function build(assets) {
   // In the game the band follows the player (streamBand), not the villagers; bake it at load, never inside a step. Load cost is reported.
   const tw = performance.now(); world.ensureBandFor(PLAZA[0], PLAZA[1]); pushOut(PLAZA[0], PLAZA[1], {});
   const warmMs = performance.now() - tw;
-  return { warmMs, events, world, nav, fauna, beasts, life, pushOut, realBeasts, groundAt: (x, y) => world.terrain.groundAt(x, y) };
+  return { warmMs, campDefs, goblinCount, events, world, nav, fauna, beasts, life, pushOut, realBeasts, groundAt: (x, y) => world.terrain.groundAt(x, y) };
 }
 
-async function runScenario(assets, name, dist, opt) {
-  const S = await build(assets);
+async function runScenario(assets, name, dist, opt, goblin = false) {
+  const S = await build(assets, goblin);
   const nav = S.nav;
   const px = PLAZA[0] + dist, py = PLAZA[1];
   const hour0 = opt.start;
@@ -117,16 +139,33 @@ async function runScenario(assets, name, dist, opt) {
   for (let i = 0; i < S.beasts.count; i++) if (S.beasts.wolf[i]) wolves.push(S.beasts.entities[i].id);
   const pack = (wolves.length ? wolves : [S.beasts.entities[0].id]).slice(0, 5);
   const byId = {}; for (let i = 0; i < vill.n; i++) byId[vill.actors[i].id] = vill.actors[i];
+  let raidDefs = [{ id: 'bench', pack, target: 'plaza', from: 21, to: 5, chancePerNight: 1, cooldownDays: 0, alt: Object.keys(byId) }];
+  if (goblin) { // the real goblinNorth torch raid, forced every night (chance 1, no cooldown)
+    const g = readJson('content/life/raids.json').raids.find((r) => r.id === 'goblinNorth');
+    raidDefs = [{ ...g, target: 'plaza', from: 21, to: 5, chancePerNight: 1, cooldownDays: 0, alt: Object.keys(byId) }];
+  }
   const raids = createRaids({
-    defs: [{ id: 'bench', pack, target: 'plaza', from: 21, to: 5, chancePerNight: 1, cooldownDays: 0, alt: Object.keys(byId) }],
+    defs: raidDefs, campDefs: S.campDefs,
     sim: S.beasts, events: S.events, state: {}, anchors: { plaza: [PLAZA[0], PLAZA[1]] },
     npcPos: (id, o) => { const a = byId[id]; if (!a || a.hidden) return false; o.x = a.x; o.y = a.y; return true; },
   });
+  let raidStarts = 0; S.events.on('life:raid:start', () => { raidStarts++; });
+  const camps = goblin ? createGoblinCamps({ defs: S.campDefs, sim: S.beasts, events: S.events, state: {} }) : null;
   const player = { x: px, y: py, sprinting: false }, cam = { x: px, y: py, fx: 0, fy: 1, hfovRad: 1.4 };
+  // GOB-08: enemy spear sim (GOBLIN_SPEAR_CFG on the arrow sim, owner 'enemy') vs a stand-in player; the pool is kept full (8 in flight)
+  let spears = null, lob = { vx: 0, vy: 0, vz: 0 }, throwers = [];
+  if (goblin) {
+    const pent = { data: { transform: { x: px, y: py, z: 0, yaw: 0 }, components: { health: { hp: 1e9, max: 1e9 } } } };
+    const wproxy = { get: (id) => (id === 'player' ? pent : null), raySegment: (...a) => S.world.raySegment(...a), flowAt: (...a) => S.world.flowAt(...a) };
+    spears = createArrowSim(wproxy, S.events, GOBLIN_SPEAR_CFG, createPlayerTarget(wproxy), null, { owner: 'enemy' });
+    S.beasts.step(px, py, 0); // slots exist; collect thrower ids for the keep-full top-up
+    for (let i = 0; i < S.beasts.count; i++) if (S.beasts.ranged[i]) throwers.push(i);
+    S.events.on('beast:throw', (p) => { lobVelocity(p.x, p.y, p.z, p.tx, p.ty, p.tz, GOBLIN_SPEAR_CFG.speedH, GOBLIN_SPEAR_CFG.g, lob); spears.fireVel(p.x, p.y, p.z, lob.vx, lob.vy, lob.vz, 1, p.id); });
+  }
   const total = Math.round(opt.hours * STEPS_PER_HOUR), WARM = Math.min(600, total >> 2);
-  const tv = new Float64Array(total), tr = new Float64Array(total), tf = new Float64Array(total), tb = new Float64Array(total);
+  const ta = new Float64Array(total), tv = new Float64Array(total), tr = new Float64Array(total), tf = new Float64Array(total), tb = new Float64Array(total);
   const pz = S.groundAt(px, py);
-  let alive = 0, aliveSamples = 0, heap0 = 0;
+  let alive = 0, aliveSamples = 0, heap0 = 0, flyMax = 0;
   const gc = globalThis.gc;
   for (let k = 0; k < total; k++) {
     if (k === WARM) { if (gc) gc(); heap0 = process.memoryUsage().heapUsed; }
@@ -139,18 +178,33 @@ async function runScenario(assets, name, dist, opt) {
     S.fauna.update(1 / 60, player, cam);
     t1 = performance.now(); tf[k] = t1 - t0;
     S.beasts.step(px, py, pz);
-    tb[k] = performance.now() - t1;
+    if (goblin) camps.step(day, px, py); // camp dormancy checks count as beastSim goblin extras
+    t0 = performance.now(); tb[k] = t0 - t1;
+    if (goblin) {
+      // top the pool up to 8 in flight: 10 m lobs from the thrower slots around the player (worst case, regardless of the brains' reload)
+      const sx = px + 10 * Math.cos(k * 0.1), sy = py + 10 * Math.sin(k * 0.1);
+      while (spears.flyingCount < SPEARS_FLYING) { lobVelocity(sx, sy, 1.4, px + 6, py, 0.9, GOBLIN_SPEAR_CFG.speedH, GOBLIN_SPEAR_CFG.g, lob); if (!spears.fireVel(sx, sy, 1.4, lob.vx, lob.vy, lob.vz, 1, 'bench')) break; }
+      t1 = performance.now(); spears.step(); ta[k] = performance.now() - t1;
+      if (spears.flyingCount > flyMax) flyMax = spears.flyingCount;
+    }
     if (k % 600 === 0) { alive += S.fauna.spawner.stats.alive ?? S.fauna.slots.filter((s) => s.alive).length; aliveSamples++; }
   }
   let heapGrowth = null;
   if (gc) { gc(); heapGrowth = process.memoryUsage().heapUsed - heap0; }
+  let spearHeap = null;
+  if (goblin && gc) { // enemy projectile alloc: 6000 steps of a full pool, nothing else running
+    for (let k = 0; k < 600; k++) { while (spears.flyingCount < SPEARS_FLYING) { lobVelocity(px + 10, py, 1.4, px, py, 0.9, 13, GOBLIN_SPEAR_CFG.g, lob); if (!spears.fireVel(px + 10, py, 1.4, lob.vx, lob.vy, lob.vz, 1, 'bench')) break; } spears.step(); }
+    gc(); const h0 = process.memoryUsage().heapUsed;
+    for (let k = 0; k < 6000; k++) { while (spears.flyingCount < SPEARS_FLYING) { lobVelocity(px + 10, py, 1.4, px, py, 0.9, 13, GOBLIN_SPEAR_CFG.g, lob); if (!spears.fireVel(px + 10, py, 1.4, lob.vx, lob.vy, lob.vz, 1, 'bench')) break; } spears.step(); }
+    gc(); spearHeap = process.memoryUsage().heapUsed - h0;
+  }
   const life = new Float64Array(total); for (let k = 0; k < total; k++) life[k] = tv[k] + tr[k];
   const n = total - WARM, sub = (a) => a.subarray(WARM);
   const res = {
     scenario: name, dist, steps: total, beasts: S.beasts.count, realBeasts: S.realBeasts, villagers: vill.n, packSize: pack.length,
-    faunaAliveAvg: aliveSamples ? +(alive / aliveSamples).toFixed(1) : 0, raidSeen: raids.isActive(0) || null,
-    warmMs: +S.warmMs.toFixed(1), heapGrowthBytes: heapGrowth, astar: vill.stats.astar, maxAstarPerStep: vill.stats.maxPerStep,
-    sys: { villagers: summarize(sub(tv), n), raids: summarize(sub(tr), n), life: summarize(sub(life), n), fauna: summarize(sub(tf), n), beast: summarize(sub(tb), n) },
+    raidStarts, goblins: S.goblinCount, throwers: throwers.length, flyMax, faunaAliveAvg: aliveSamples ? +(alive / aliveSamples).toFixed(1) : 0, raidSeen: raids.isActive(0) || null,
+    warmMs: +S.warmMs.toFixed(1), heapGrowthBytes: heapGrowth, spearHeap, astar: vill.stats.astar, maxAstarPerStep: vill.stats.maxPerStep,
+    sys: { villagers: summarize(sub(tv), n), raids: summarize(sub(tr), n), life: summarize(sub(life), n), fauna: summarize(sub(tf), n), beast: summarize(sub(tb), n), ...(goblin ? { spears: summarize(sub(ta), n) } : {}) },
   };
   if (S.world.dispose) S.world.dispose();
   return res;
@@ -160,8 +214,12 @@ export async function runBench(opt) {
   const { assets } = await loadTestAssets();
   const results = [];
   for (const [name, dist] of SCENARIOS.slice(0, opt.scenarios || SCENARIOS.length)) results.push(await runScenario(assets, name, dist, opt));
+  // GOB-08: 48 beasts, 20 goblins awake (2 camps + torch raid), 6 throwers, 8 spears in flight, player in Outwall
+  let gob = null;
+  if (opt.goblin !== false) { gob = await runScenario(assets, 'goblins 48 beasts', 0, { ...opt, hours: opt.goblinHours ?? opt.hours }, true); results.push(gob); }
   const rows = [];
   for (const r of results) {
+    if (r === gob) continue;
     for (const b of BUDGETS) {
       const v = r.sys[b.sys][b.stat];
       rows.push({ scenario: r.scenario, label: b.label, value: v, cap: b.cap, verdict: b.cap == null ? 'INFO' : v <= b.cap ? 'PASS' : 'FLAG' });
@@ -170,6 +228,19 @@ export async function runBench(opt) {
     rows.push({ scenario: r.scenario, label: 'villager step p99.9 (ms; max is GC/OS noise from the other systems, see lane note)', value: r.sys.villagers.p999, cap: 4, verdict: r.sys.villagers.p999 <= 4 ? 'PASS' : 'FLAG' });
     rows.push({ scenario: r.scenario, label: 'load-time band warm-up (ms, not per step)', value: r.warmMs, cap: null, verdict: 'INFO' });
     rows.push({ scenario: r.scenario, label: 'A* per step max', value: r.maxAstarPerStep, cap: 1, verdict: r.maxAstarPerStep <= 1 ? 'PASS' : 'FLAG' });
+  }
+  if (gob) {
+    const base = results[0], sc = 'goblins 48 beasts', b = gob.sys.beast, sp = gob.sys.spears;
+    const row = (label, value, cap, verdict) => rows.push({ scenario: sc, label, value, cap, verdict: verdict ?? (cap == null ? 'INFO' : value <= cap ? 'PASS' : 'FLAG') });
+    row(`setup: ${gob.beasts} beasts, ${gob.goblins} goblins, ${gob.throwers} throwers, max ${gob.flyMax} spears in flight`, gob.goblins, null, gob.beasts === 48 && gob.goblins === GOBLINS_AWAKE && gob.throwers === THROWERS && gob.flyMax === SPEARS_FLYING ? 'PASS' : 'FLAG');
+    row('beastSim goblin extras mean (goblin scenario minus the 48-beast "in Outwall" baseline, ms)', b.mean - base.sys.beast.mean, 0.1);
+    row('goblin torch raid started (goblinNorth, forced nightly)', gob.raidStarts, null, gob.raidStarts > 0 ? 'PASS' : 'FLAG');
+    row('beastSim total mean (ms)', b.mean, null);
+    row('enemy projectiles (arrow sim, owner enemy) mean (ms)', sp.mean, 0.03);
+    row('enemy projectiles p99.9 (ms)', sp.p999, null);
+    row('enemy projectile heap growth over 6000 steps (bytes, 0 alloc)', gob.spearHeap, 4096, gob.spearHeap == null ? 'INFO (run with --expose-gc)' : undefined);
+    row('whole-scenario heap growth after warm-up (bytes)', gob.heapGrowthBytes, null, gob.heapGrowthBytes == null ? 'INFO (run with --expose-gc)' : 'INFO');
+    row('goblin raid + camps + villagers life mean (ms)', gob.sys.life.mean, 0.25);
   }
   return { options: opt, chat: 'skipped (game/js/life/chat.js missing on this branch)', results, rows, flags: rows.filter((r) => r.verdict === 'FLAG').length };
 }
@@ -182,9 +253,9 @@ if (import.meta.url === new URL(process.argv[1], 'file:///').href || process.arg
     const f = (v) => v.toFixed(4).padStart(8);
     console.log(`bench-life: ${opt.hours} game h from ${opt.start}:00, fixed 60 Hz step. chat: ${out.chat}`);
     for (const r of out.results) {
-      console.log(`\n[${r.scenario}] ${r.steps} steps, villagers ${r.villagers}, beasts ${r.beasts} (${r.realBeasts} real), raid pack ${r.packSize}, fauna alive avg ${r.faunaAliveAvg}, A* ${r.astar}`);
-      console.log('  system        p50(ms)  p95(ms)  max(ms)  mean(ms)');
-      for (const k of ['villagers', 'raids', 'life', 'fauna', 'beast']) { const s = r.sys[k]; console.log(`  ${k.padEnd(12)} ${f(s.p50)} ${f(s.p95)} ${f(s.max)} ${f(s.mean)}`); }
+      console.log(`\n[${r.scenario}] ${r.steps} steps, villagers ${r.villagers}, beasts ${r.beasts} (${r.realBeasts} real), raid pack ${r.packSize}, goblins ${r.goblins ?? 0}, raid starts ${r.raidStarts}, throwers ${r.throwers ?? 0}, fauna alive avg ${r.faunaAliveAvg}, A* ${r.astar}`);
+      console.log('  system        p50(ms)  p95(ms) p99.9(ms) max(ms) mean(ms)');
+      for (const k of ['villagers', 'raids', 'life', 'fauna', 'beast', 'spears']) { const s = r.sys[k]; if (!s) continue; console.log(`  ${k.padEnd(12)} ${f(s.p50)} ${f(s.p95)} ${f(s.p999)} ${f(s.max)} ${f(s.mean)}`); }
       console.log(`  heap growth after warm-up: ${r.heapGrowthBytes == null ? 'n/a (no --expose-gc)' : (r.heapGrowthBytes / 1024).toFixed(0) + ' KiB'}`);
     }
     console.log('\nbudgets:');

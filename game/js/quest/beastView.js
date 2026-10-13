@@ -8,7 +8,7 @@
 // so `playing` is false and the engine's `stepAnimations` never double-advances them; `hurt`/`flinch`/state clips
 // are let to play normally (playing true). `hidden` hides the instance at STATE_GONE (the US-079b0 voxel-pool skip).
 import { yawFromDelta } from '../../../engine/index.js';
-import { STATE_EAT, STATE_NOTICE, STATE_RETURN, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE } from './sim/beastSim.js';
+import { STATE_EAT, STATE_WINDUP, STATE_RECOVER, STATE_NOTICE, STATE_RETURN, STATE_CHASE, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE } from './sim/beastSim.js';
 
 const STEP_MS = 1000 / 60; // one fixed sim step in ms (die/sink clip t is derived from sim step counters)
 const HURT_STEPS = 10;     // 37.16.2: the view shows `hurt` while hurtT < 10 (the flash + follow-through window)
@@ -28,6 +28,32 @@ function wolfClip(clip, st, fleeing) {
   const name = WOLF_STATE_NAMES[st];
   if (m && name && m[name]) return m[name];
   return clip === 'charge' ? 'run' : clip === 'windup' ? 'crouch' : clip;
+}
+// SWIM-ASSETS-01: ASSETS.eatFx.models (fox/wolf/bear/bearBlack) carry an appended 'eat' clip; other models keep idle.
+function eatClip(model) {
+  const fx = globalThis.ASSETS && globalThis.ASSETS.eatFx;
+  return fx && fx.models && fx.models.indexOf(model) >= 0 ? fx.clip : 'idle';
+}
+// GOB-07a: goblin / goblinTorch clips via ASSETS.goblinFx.clipFor (state map, windupThrower for ranged goblins, torchState for the
+// torch bearers). The thrower keeps showing `throw` for holdIntoRecoverMs into RECOVER (the held javelin must not pop back the
+// frame the thrown one spawns): holdT counts the remaining view steps per slot (grown once, 0 alloc per frame).
+const GOBLIN_STATE_NAMES = ['wander', 'notice', 'chase', 'windup', 'charge', 'recover', 'return', 'stagger'];
+let holdT = new Int32Array(64);
+function goblinClip(clip, st, i, sim, v) {
+  if (clip === 'hurt' || clip === 'flinch') return clip;
+  const fx = globalThis.ASSETS && globalThis.ASSETS.goblinFx;
+  const cf = fx && fx.clipFor;
+  if (!cf) return clip;
+  if (i >= holdT.length) { const n = new Int32Array(Math.max(i + 1, holdT.length * 2)); n.set(holdT); holdT = n; }
+  const thrower = sim.ranged && sim.ranged[i] === 1;
+  if (thrower && st === STATE_WINDUP) { holdT[i] = Math.round((fx.throw.holdIntoRecoverMs || 400) / STEP_MS); return cf.state.windupThrower; }
+  if (thrower && st === STATE_RECOVER && holdT[i] > 0) { holdT[i]--; return cf.state.windupThrower; }
+  holdT[i] = 0;
+  let name = st === STATE_RETURN && sim.fleeing && sim.fleeing[i] ? 'flee' : GOBLIN_STATE_NAMES[st];
+  if (st === STATE_EAT) name = 'idle';
+  if (!name) return clip;
+  if (v.model === 'goblinTorch' && cf.torchState && cf.torchState[name]) return cf.torchState[name];
+  return cf.state[name] || clip;
 }
 const STATE_CLIPS = ['idle', 'idle', 'charge', 'windup', 'charge', 'idle', 'idle', 'flinch'];
 
@@ -85,9 +111,13 @@ export function presentBeasts(sim, world, overlay, styleIds, anim) {
     else if (anim) clip = anim.update(sim, i, 1000 / 60);
     else if (sim.hurtT[i] < HURT_STEPS) clip = 'hurt';
     else if (st === STATE_FLINCH) clip = 'flinch';
-    else clip = st === STATE_EAT ? 'idle' : (STATE_CLIPS[st] || 'idle'); // LIFE-07: NEEDS DESIGNER eat clip -> idle fallback
+    else clip = st === STATE_EAT ? eatClip(v.model) : (STATE_CLIPS[st] || 'idle'); // LIFE-07: 'eat' where voxel_eat_clips.js extends the model
     if (v.model === 'wolf') clip = wolfClip(clip, st, sim.fleeing[i]); // WOLF-D1: wolfFx.clipFor names
 
+    if (v.model === 'goblin' || v.model === 'goblinTorch') { // GOB-07a: goblinFx.clipFor (death / sink / dead stay as decided)
+      if (st !== STATE_DYING && st !== STATE_CORPSE && st !== STATE_SINK) clip = goblinClip(clip, st, i, sim, v);
+      v.speed = v.model === 'goblinTorch' && (clip === 'carryTorch') && (st === STATE_CHASE || sim.fleeing && sim.fleeing[i] && st === STATE_RETURN) ? 1.6 : 1;
+    }
     if (clip !== v.anim) { v.anim = clip; v.frame = 0; v.t = 0; v.loop = undefined; }
     if (anim) { v.blendFrom = anim.prevClip[i]; v.blendW = anim.w[i]; } // cross-fade data; renderer does not consume it yet
 

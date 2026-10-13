@@ -1603,8 +1603,8 @@
       fox: {
         models: ['fox'],
         kind: 'ground',
-        hunts: ['rabbit'], huntR: 20, chaseMaxS: 8, eatS: 4, // LIFE-07 (38.56 c); NEEDS DESIGNER: eat clip for fox (falls back to idle)
-        clipFor: { idle: 'idle', graze: 'sniff', move: 'walk', flee: 'run', alert: 'alert' },
+        hunts: ['rabbit'], huntR: 20, chaseMaxS: 8, eatS: 4, // LIFE-07 (38.56 c); eat clip from voxel_eat_clips.js
+        clipFor: { idle: 'idle', graze: 'sniff', move: 'walk', flee: 'run', alert: 'alert', eat: 'eat' },
         extra: { trot: 'trot', pounce: 'pounce' },     // trot = nervous move / first second of a flee; pounce = mousing
         once: { pounce: 'sniff' },
         gaits: [

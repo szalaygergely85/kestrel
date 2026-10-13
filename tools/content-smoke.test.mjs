@@ -57,6 +57,8 @@ import '../design/models/voxel_tower_crown.js'; // CH1-D1b towerCrown (world_m1 
 import '../design/models/sword.js'; // US-078c: content/levels/tower.level.json prop "sword"
 import '../design/models/voxel_beast.js'; // US-079a: content/worlds/world_m1.world.json entities "boar1"/"boar2"
 import '../design/models/voxel_wolf.js'; // WOLF-D1: WOLF_MODEL 'wolf'
+import '../design/models/voxel_goblin.js'; // GOB-07a: goblin / goblinTorch / goblinSpear
+import '../design/models/voxel_seamonster.js'; // SWIM-ASSETS-01: seaMonster
 import '../design/models/chest.js'; // EQ-10: world_m1 chest* anchors use chestSmall
 import '../design/models/voxel_bear.js'; // NPC-BEAR-01: content/worlds/world_m1.world.json entity "bear"
 import '../design/models/voxel_bear_black.js'; // BEAR-01: world_m1 entities blackBear1..3 (model bearBlack)
@@ -161,6 +163,7 @@ const unaccountedFor = allJsonFiles.filter((rel) => {
   if (rel === 'chart/world_m1.chart.json') return false; // MAP-01b baked data, validated/freshness-checked by bake-chart.test.mjs
   if (rel.startsWith('vox/') && rel.endsWith('.map.json')) return false;
   if (rel.startsWith('meshes/') && rel.endsWith('.mesh.json')) return false;
+  if (/^life\/[^/]+\.json$/.test(rel)) return false; // GOB-07b: standalone life configs (raids, goblinCamps, outwall.life), fetched by main.js, checked by their own tests
   if (rel.startsWith('editor/')) return false; // ED-FOLDERS-01: editor-only data (asset folder layout), never loaded by the game/loadPack
   if (rel.startsWith('packages/')) return false; // KPKG-03: *.pkg.json pack specs, read only by tools/pack.mjs
   if (rel.startsWith('chargen/')) return false; // CHARGEN-01: *.charkit.json character kits, read by engine/chargen + tools/chargen-build-kit.mjs (38.29), not a manifest content kind

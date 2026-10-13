@@ -4,13 +4,18 @@ import { runBench } from './bench-life.mjs';
 let fails = 0;
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } };
 const t0 = performance.now();
-const out = await runBench({ hours: 0.05, start: 21, scenarios: 2 });
+const out = await runBench({ hours: 0.05, start: 21, scenarios: 2, goblinHours: 0.04 });
 const secs = (performance.now() - t0) / 1000;
-ok(out.results.length === 2, '2 distance scenarios (first two; all 3 are in the full bench)');
+ok(out.results.length === 3, '2 distance scenarios (first two; all 3 are in the full bench) + the goblin scenario');
+const gob = out.results[2];
+ok(gob.scenario.startsWith('goblins') && gob.beasts === 48 && gob.goblins === 20 && gob.throwers === 6 && gob.flyMax === 8, 'GOB-08 scenario: 48 beasts, 20 goblins, 6 throwers, 8 spears in flight');
+ok(gob.raidStarts > 0, 'goblin torch raid started');
+ok(gob.sys.spears && gob.sys.spears.p95 >= gob.sys.spears.p50 && gob.sys.spears.max >= gob.sys.spears.p999, 'spears stats shape');
+ok(out.rows.some((r) => r.scenario === gob.scenario && r.label.startsWith('beastSim goblin extras') && r.cap === 0.1), 'goblin extras budget row');
 for (const r of out.results) {
   ok(r.villagers === 5, 'villagers 5');
   ok(r.beasts > 0, 'beasts present');
-  for (const k of ['villagers', 'raids', 'life', 'fauna', 'beast']) {
+  for (const k of ['villagers', 'raids', 'life', 'fauna', 'beast', ...(r === gob ? ['spears'] : [])]) {
     const s = r.sys[k];
     ok(s && s.p50 >= 0 && s.p95 >= s.p50 && s.max >= s.p95 && Number.isFinite(s.mean), `${r.scenario} ${k} stats shape`);
   }

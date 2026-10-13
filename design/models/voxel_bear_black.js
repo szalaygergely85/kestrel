@@ -235,7 +235,7 @@
     clipFor: {
       state: { wander: 'idle', idle: 'idle', move: 'walk', turn: 'turn', return: 'walk', notice: 'idle',
                chase: 'charge', windup: 'windup', telegraph: 'windup', charge: 'charge', swipe: 'swipe', attack: 'swipe',
-               recover: 'idle', stagger: 'flinch' },
+               recover: 'idle', eat: 'eat', stagger: 'flinch' },
       hurt: 'hurt', flinch: 'flinch', die: 'die', dead: 'dead', sink: 'sink',
       note: 'boar clip names (beastView STATE_CLIPS / beastAnim BEAST_ANIM_DEF) work unchanged; `swipe` is new (BEAR-01 ' +
             'plays it at the end of the charge when the player is in reach). sink: dead pose lowered 0.8 m in 0.5 s.'
