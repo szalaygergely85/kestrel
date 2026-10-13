@@ -185,6 +185,7 @@ export function createBeastSim(world, opts) {
     ranged: new Uint8Array(MAX_BEASTS),      // GOB-02: goblin role 'thrower' (distance band, windup -> beast:throw, reload = RECOVER)
     backT: new Uint16Array(MAX_BEASTS),      // GOB-02: steps a thrower has spent backing off inside cornerR
     packer: new Uint8Array(MAX_BEASTS),      // GOB-01: wolf or melee goblin (circle while waiting, retreat after the strike)
+    down: new Uint8Array(MAX_BEASTS),        // GOB-01b: setDown(slot, true) -> STATE_GONE until setDown(slot, false) (not hashed/saved)
     dormant: new Uint8Array(MAX_BEASTS),     // GOB-01: setDormant(slot, true) -> skipped like GONE, state kept
     fleeing: new Uint8Array(MAX_BEASTS),     // WOLF-01: STATE_RETURN that runs away from the player first
     hunt: new Uint8Array(MAX_BEASTS),        // LIFE-07: 1 = STATE_WANDER leg chasing a fauna prey slot (huntSlot)
@@ -334,6 +335,29 @@ export function createBeastSim(world, opts) {
     sim.steer.vx[slot] = 0; sim.steer.vy[slot] = 0;
     sim.steer.active[slot] = d ? 0 : 1; // parked agents are skipped by steer.step and deOverlap
     sim.seen[slot] = 0; sim.pathReq[slot] = 0;
+  };
+  /** GOB-01b: on -> slot goes to STATE_GONE (steer agent dropped, hidden, skipped); off -> back alive at home, hp max. */
+  sim.setDown = function setDown(slot, on) {
+    if (slot < 0 || slot >= sim.count) return;
+    if (on) {
+      if (sim.down[slot]) return;
+      sim.down[slot] = 1; sim.dormant[slot] = 0;
+      // park (not remove) a live agent: removeAgent/addAgent hands out the lowest free slot, parking keeps slot ids stable
+      if (sim.steer.active[slot]) { sim.steer.vx[slot] = 0; sim.steer.vy[slot] = 0; sim.steer.active[slot] = 0; sim.down[slot] = 2; }
+      sim.state[slot] = STATE_GONE; sim.pendingDied[slot] = 0; sim.despawnReq[slot] = 0;
+      sim.pathLen[slot] = 0; sim.pathIdx[slot] = 0; sim.pathReq[slot] = 0; sim.seen[slot] = 0; sim.goalOn[slot] = 0;
+    } else if (sim.down[slot]) {
+      if (sim.down[slot] === 2) sim.steer.active[slot] = 1;
+      sim.down[slot] = 0; sim.dormant[slot] = 0;
+      resetSlotSim(sim, slot);
+      resyncLeash(sim);
+    }
+  };
+  sim.isDown = function isDown(slot) { return slot >= 0 && slot < sim.count && sim.down[slot] === 1; };
+  /** GOB-01b: a live slot runs away from the player (last stepped position) like a low-hp wolf/goblin flee. */
+  sim.flee = function flee(slot) {
+    if (slot < 0 || slot >= sim.count || sim.down[slot] || sim.dormant[slot] || deadSt(sim.state[slot])) return;
+    enterFlee(sim, slot, sim._px, sim._py);
   };
   sim.isDormant = function isDormant(slot) { return slot >= 0 && slot < sim.count && sim.dormant[slot] === 1; };
   /** LIFE-08: drop the goal override; a wandering beast walks back home (STATE_RETURN). */
@@ -1274,30 +1298,33 @@ function resyncLeash(sim) {
 }
 
 function resetAllSim(sim) {
-  for (let i = 0; i < sim.count; i++) {
-    // US-079b: dead steer slots are re-added in ascending order; addAgent hands out the lowest free slot, and the
-    // live slots stay active (slots >= count are never used), so the lowest free slot is always the lowest dead one.
-    if (!sim.steer.active[i] && !sim.dormant[i]) {
-      const slot = sim.steer.addAgent(sim.homeX[i], sim.homeY[i], sim.cfg.radius, 0, DEFAULT_ACCEL);
-      if (slot !== i) throw new Error(`beastSim.resetAll: re-added dead slot ${i} but addAgent returned ${slot}`);
-    }
-    const health = sim.entities[i].components.health;
-    health.hp = health.max; // US-079b: boars come back alive
-    sim.goalOn[i] = 0; sim.altTgt[i] = -1; sim.altCd[i] = 0; // LIFE-08: raids restart next night
-    sim.hunt[i] = 0; sim.dmgCd[i] = 0; sim.hurtT[i] = 9999; sim.pendingDied[i] = 0; sim.despawnReq[i] = 0; sim.cause[i] = 0; sim.provoked[i] = 0;
-    sim.steer.x[i] = sim.homeX[i]; sim.steer.y[i] = sim.homeY[i];
-    sim.steer.vx[i] = 0; sim.steer.vy[i] = 0;
-    sim.steer.setIdle(i);
-    sim.steer.accel[i] = DEFAULT_ACCEL;
-    sim.state[i] = STATE_WANDER;
-    sim.timer[i] = sim.cfgSteps.pauseMin;
-    sim.unseen[i] = 0; sim.repathT[i] = 0; sim.seen[i] = 0; sim.pathReq[i] = 0;
-    sim.waiting[i] = 0; sim.fleeing[i] = 0; // US-079c / WOLF-01
-    sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
-    sim.entities[i].transform.x = sim.homeX[i];
-    sim.entities[i].transform.y = sim.homeY[i];
-    sim.entities[i].transform.z = sim.homeZ[i]; // US-079b ARCH: a sunk corpse respawns at the authored z, not 0.3 m low
-  }
+  for (let i = 0; i < sim.count; i++) { sim.down[i] = 0; resetSlotSim(sim, i); }
   resyncLeash(sim);
   sim.events.emit('beasts:reset'); // US-079b: loot clears its corpse state on this
+}
+
+/** One slot back to home, alive, state wander (shared by resetAll and setDown(slot, false)). */
+function resetSlotSim(sim, i) {
+  // US-079b: dead steer slots are re-added in ascending order; addAgent hands out the lowest free slot, and the
+  // live slots stay active (slots >= count are never used), so the lowest free slot is always the lowest dead one.
+  if (!sim.steer.active[i] && !sim.dormant[i]) {
+    const slot = sim.steer.addAgent(sim.homeX[i], sim.homeY[i], sim.cfg.radius, 0, DEFAULT_ACCEL);
+    if (slot !== i) throw new Error(`beastSim.resetAll: re-added dead slot ${i} but addAgent returned ${slot}`);
+  }
+  const health = sim.entities[i].components.health;
+  health.hp = health.max; // US-079b: boars come back alive
+  sim.goalOn[i] = 0; sim.altTgt[i] = -1; sim.altCd[i] = 0; // LIFE-08: raids restart next night
+  sim.hunt[i] = 0; sim.dmgCd[i] = 0; sim.hurtT[i] = 9999; sim.pendingDied[i] = 0; sim.despawnReq[i] = 0; sim.cause[i] = 0; sim.provoked[i] = 0;
+  sim.steer.x[i] = sim.homeX[i]; sim.steer.y[i] = sim.homeY[i];
+  sim.steer.vx[i] = 0; sim.steer.vy[i] = 0;
+  sim.steer.setIdle(i);
+  sim.steer.accel[i] = DEFAULT_ACCEL;
+  sim.state[i] = STATE_WANDER;
+  sim.timer[i] = sim.cfgSteps.pauseMin;
+  sim.unseen[i] = 0; sim.repathT[i] = 0; sim.seen[i] = 0; sim.pathReq[i] = 0;
+  sim.waiting[i] = 0; sim.fleeing[i] = 0; // US-079c / WOLF-01
+  sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
+  sim.entities[i].transform.x = sim.homeX[i];
+  sim.entities[i].transform.y = sim.homeY[i];
+  sim.entities[i].transform.z = sim.homeZ[i]; // US-079b ARCH: a sunk corpse respawns at the authored z, not 0.3 m low
 }

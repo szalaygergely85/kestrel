@@ -305,6 +305,31 @@ const gz = (sim) => groundZ(sim.world, PX, PY);
   ok('6 throwers: ~0 alloc per step', global.gc ? grown <= 1e6 : true, `heap +${grown} B`);
 }
 
+// 9. GOB-01b: setDown / flee / slotOf for goblinCamps
+{
+  const { sim } = freshSim([gobEntity('d0', PX - 10, PY, 'melee'), gobEntity('d1', PX - 12, PY + 3, 'melee')]);
+  for (let t = 0; t < 60; t++) sim.step(PX, PY, gz(sim));
+  ok('slotOf maps ids', sim.slotOf('d0') === 0 && sim.slotOf('d1') === 1 && sim.slotOf('nope') === -1 && sim.group[0] === 2);
+  sim.setDown(0, true);
+  for (let t = 0; t < 120; t++) sim.step(PX, PY, gz(sim));
+  ok('setDown(true): GONE, isDead, parked; sibling alive', sim.state[0] === STATE_GONE && sim.isDead(0) && !sim.steer.active[0] && !sim.isDead(1));
+  sim.entities[1].components.health.hp = 1;
+  sim.setDown(0, false);
+  ok('setDown(false): alive at home, hp max, wander, agent active', sim.state[0] === STATE_WANDER && !sim.isDead(0) && sim.steer.active[0] === 1
+    && sim.entities[0].components.health.hp === sim.entities[0].components.health.max && sim.steer.x[0] === sim.homeX[0]);
+  sim.setDown(0, false); sim.setDown(1, false); // no-ops on a slot that is not down
+  ok('setDown(false) on an up slot is a no-op', sim.entities[1].components.health.hp === 1);
+  sim.setDown(0, true); sim.setDown(0, true); sim.setDown(0, false);
+  ok('setDown idempotent', sim.state[0] === STATE_WANDER && sim.steer.active[0] === 1);
+  const x0 = sim.steer.x[1], y0 = sim.steer.y[1];
+  sim.flee(1);
+  for (let t = 0; t < 180; t++) sim.step(PX, PY, gz(sim));
+  const d0 = Math.hypot(x0 - PX, y0 - PY), d1 = Math.hypot(sim.steer.x[1] - PX, sim.steer.y[1] - PY);
+  ok('flee(slot): runs away (fleeing set, not closer)', d1 >= d0 - 0.5, `d0 ${d0.toFixed(1)} d1 ${d1.toFixed(1)}`);
+  sim.setDown(1, true); sim.flee(1);
+  ok('flee on a down slot is ignored', sim.state[1] === STATE_GONE);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
