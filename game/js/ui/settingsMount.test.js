@@ -54,6 +54,7 @@ tick('ArrowDown'); tick('ArrowLeft'); assert.ok(['off', 'low', 'mid', 'high'].in
 tick('ArrowDown'); tick('ArrowLeft'); assert.ok(typeof loadSettings().lodScale === 'number', 'lod persisted');
 tick('ArrowDown'); // grid
 const gridBefore = grids.length; tick('ArrowLeft'); assert.equal(grids.length, gridBefore + 1, 'grid row applies live');
+tick('ArrowDown'); tick('ArrowRight'); assert.equal(loadSettings().aspect, '16:10', 'aspect persisted (OB-117)');
 tick('ArrowDown'); tick('ArrowLeft'); assert.ok(loadSettings().volume < 1, 'volume persisted'); assert.ok(getVolume() < 1, 'volume applied live');
 tick('ArrowDown'); tick('Space'); assert.equal(loadSettings().muted, true, 'mute persisted'); assert.equal(isMuted(), true, 'mute live');
 tick('ArrowDown'); tick('ArrowRight'); assert.equal(loadSettings().textSize, 'large', 'text size persisted');
@@ -61,7 +62,7 @@ tick('ArrowDown'); tick('Space'); assert.equal(loadSettings().reduceMotion, true
 
 // refused grid: row disabled, old grid kept, focus kept
 refuse = 480;
-for (let i = 0; i < 4; i++) tick('ArrowUp'); // back to grid row region (reduceMotion->textSize->mute->volume->grid)
+for (let i = 0; i < 5; i++) tick('ArrowUp'); // back to the grid row (reduceMotion->textSize->mute->volume->aspect->grid)
 tick('ArrowRight');
 // whatever the value, a refusal must not throw nor persist the refused grid
 assert.notEqual(loadSettings().grid, '480x180', 'refused grid not saved');

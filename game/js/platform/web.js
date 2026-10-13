@@ -22,7 +22,7 @@
 // falls back to its default the same way an unknown field does - this file
 // stays a thin, generic storage adapter, not a second copy of the option
 // definitions.
-import { GRID_VALUES } from '../settings/options.js';
+import { GRID_VALUES, ASPECT_VALUES } from '../settings/options.js';
 import { QUALITY_CHOICES, SHADOW_CHOICES } from '../ui/gfxPresets.js';
 
 const STORAGE_KEY = 'kestrel.settings';
@@ -131,6 +131,7 @@ export function loadSettings() {
   if (isBoolean(parsed.invertY)) out.invertY = parsed.invertY;
   // GFX-01w: optional quality choice + shadow level (absent = never chosen; unknown values dropped)
   if (QUALITY_CHOICES.includes(parsed.quality)) out.quality = parsed.quality;
+  if (ASPECT_VALUES.includes(parsed.aspect)) out.aspect = parsed.aspect; // OB-117: optional (absent = default 16:9)
   if (SHADOW_CHOICES.includes(parsed.shadowQuality)) out.shadowQuality = parsed.shadowQuality;
   // SETTINGS-MOUNT-01: optional comfort + LOD choices (absent = never chosen)
   if (TEXT_SIZES.includes(parsed.textSize)) out.textSize = parsed.textSize;
@@ -172,6 +173,8 @@ export function saveSettings(partial) {
   const clears = k => k in p && p[k] === undefined;
   const shadowQuality = clears('shadowQuality') ? undefined : SHADOW_CHOICES.includes(p.shadowQuality) ? p.shadowQuality : current.shadowQuality;
   if (shadowQuality !== undefined) next.shadowQuality = shadowQuality;
+  const aspect = ASPECT_VALUES.includes(p.aspect) ? p.aspect : current.aspect;
+  if (aspect !== undefined) next.aspect = aspect;
   const textSize = TEXT_SIZES.includes(p.textSize) ? p.textSize : current.textSize;
   if (textSize !== undefined) next.textSize = textSize;
   const reduceMotion = isBoolean(p.reduceMotion) ? p.reduceMotion : current.reduceMotion;

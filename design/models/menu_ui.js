@@ -220,14 +220,15 @@
   // The GFX-01 Quality row (game/js/ui/gfxPresets.js QUALITY_CHOICES). Writer may reword the notes (S8-A-12).
   S.quality = {
     id: 'quality', control: 'strip',
-    choices: ['low', 'medium', 'high', 'ultra', 'auto'],
-    text: { low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra', auto: 'Auto' },
+    choices: ['low', 'medium', 'high', 'ultra', 'extreme', 'auto'], // OB-118: 'extreme' was missing -> blank strip entry
+    text: { low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra', extreme: 'Extreme', auto: 'Auto' },
     autoResolved: { format: 'Auto ({name})', note: 'when auto is current, its strip text shows the preset it resolved to, e.g. "Auto (High)"' },
     notes: {
       low: 'Fastest. Fewer light rays, short shadows.',
       medium: 'Balanced for laptops.',
       high: 'Full look. Recommended.',
       ultra: 'Every effect on. Needs a fast GPU.',
+      extreme: 'Beyond Ultra. Needs a very fast GPU.',
       auto: 'Picks a preset from a short GPU test.',
       disabled: 'Not available on this device.'
     },
