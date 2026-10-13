@@ -1,7 +1,7 @@
 // STREAM-01c (Node part): route-walk trace tower -> ford -> Outwall on world_m1 (docs/architecture.md 38.51).
 // At every 2 m step every placement whose projected size >= 1 cell at 480 columns must be in grid.activeList and pass its own
 // reach compare (the draw rule the 01b feeds use). Records the resident (active + warm) placement / distinct-mesh counts per leg.
-import { PlacementGrid } from './placementGrid.js';
+import { PlacementGrid, isLandmark } from './placementGrid.js';
 let checks = 0, fails = 0;
 const ok = (c, m) => { checks++; if (!c) { fails++; console.error('FAIL: ' + m); } };
 const { loadTestAssets } = await import('../../tools/testing/content-node.mjs');
@@ -38,7 +38,8 @@ for (const [name, pts] of LEGS) {
       const b = st[i].bbox;
       const dx = x < b.x0 ? b.x0 - x : x > b.x1 ? x - b.x1 : 0, dy = y < b.y0 ? b.y0 - y : y > b.y1 ? y - b.y1 : 0;
       const d = Math.hypot(dx, dy), size = 2 * Math.hypot(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0) * 0.5;
-      if (size / Math.max(d, 0.5) >= CELL_RAD) {
+      const cut = g.opts.cutM > 0 && d > g.opts.cutM && !isLandmark(st[i], g.opts.keepFar); // OB-089: beyond cutM non-landmarks are intentionally inactive
+      if (!cut && size / Math.max(d, 0.5) >= CELL_RAD) {
         const vis = inAct[i] === 1 && d * d <= g.reach2[i] + 1;
         if (!vis) { worst++; if (worst <= 8) if (label.startsWith('reachPerM')) console.error(`  miss ${name} (${x.toFixed(0)},${y.toFixed(0)}) ${st[i].id} d ${d.toFixed(0)} size ${size.toFixed(1)} reach ${Math.sqrt(g.reach2[i]).toFixed(0)} active ${inAct[i]}`); }
       }
