@@ -18,7 +18,7 @@ for (const m of ['lantern', 'lever', 'voxel_props', 'voxel_tower', 'voxel_world'
 import { World, stringifyContent } from '../engine/index.js';
 import { loadTestAssets } from './testing/content-node.mjs';
 
-export const RIVER = { y0: 128, upEnd: 470, lakeOut: 544, shelfEnd: 603, cliffEnd: 605, yEnd: 1480, step: 8, depth: 0.4, bankGap: 0.1, bankOut: 1.5, fordY0: 1058, fordY1: 1088, fordZ: -89.75, /* OB-090: was -90.04 = ford bar level (-90.05): zero depth = a pale foam sheet */
+export const RIVER = { y0: 128, upEnd: 470, lakeOut: 544, shelfEnd: 603, cliffEnd: 605, yEnd: 1480, step: 8, depth: 0.4, bankGap: 0.1, bankOut: 1.5, fordY0: 1058, fordY1: 1088, fordZ: -89.85, /* OB-090 */ /* OB-090: was -90.04 = ford bar level (-90.05): zero depth = a pale foam sheet */
   lakeZ: -58, seaZ: -96, fallsY: 603.5 };
 const FILE = 'content/worlds/world_m1.world.json';
 const dry = process.argv.includes('--dry-run');

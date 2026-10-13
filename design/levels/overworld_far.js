@@ -66,7 +66,7 @@
                  // branched out), so a falling river could not lie on it. bedLine = a monotone channel: h = min(h, bed(y) + lift + bank * max(0, |x-x_r| - flatW)),
                  // bed linear in y between pts, lift 0 inside and `lift` m at both ends over `ramp` m (continuous, carve-only). Starts south of the ford
                  // stone lane (y 1069.6): ford, stones and every authored structure (all at y <= 1088, |dr| >= 13.8 m there) keep their ground.
-                 bedLine: { pts: [[1070, -90.45], [1100, -90.6], [1350, -91.0], [1376, -91.1], [1420, -91.3]], flatW: 8, bank: 0.45, ramp: 8, lift: 50, reach: 40 } },
+                 bedLine: { pts: [[1060, -90.15], [1072, -90.2], [1088, -90.54], [1100, -90.6], [1350, -91.0], [1376, -91.1], [1420, -91.3]], flatW: 8, bank: 0.45, ramp: 8, lift: 50, reach: 40 } },
       valley:  { depth: 22, width: 160 },
       ridge:   { height: 30, x0: 700, x1: 150, scale: 300 },
       path:    { halfWidth: 3.0, points: [[1480, 1025], [1420, 1032], [1350, 1050], [1260, 1045], [1180, 1062], [1090, 1070], [1000, 1066]] },
