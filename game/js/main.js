@@ -100,7 +100,7 @@ import { stepCombatHint } from './quest/combatHint.js'; // COMBAT-HINT-01
 import { createRegionBanner } from './quest/regionBanner.js'; // REGION-01: region-entry banner
 import { stepActionHints, resetActionHints } from './quest/actionHints.js'; // FS-01
 import { createWild } from './wild/wildEnv.js'; // WILD-06: ambient rabbits + deer
-import { createLifeWire, prepareRaidDefs } from './life/lifeWire.js'; // LIFE-HOOKS-01: wolf raids wiring
+import { createLifeWire, prepareRaidDefs, createOutwallLife } from './life/lifeWire.js'; // LIFE-HOOKS-01: wolf raids wiring
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
 import { ensureBears } from './quest/sim/bearBrain.js'; // BEAR-01 (D-069): black bears in Thornwood
@@ -129,6 +129,7 @@ import { createWetStones } from './quest/sim/wetStones.js'; // QL-19: wet ford s
 import { createBand } from './quest/sim/band.js'; // US-129a: level band for beasts + loot
 import { createWadeFx } from './quest/sim/wadeFx.js'; // US-055a
 import { createSwimWire } from './quest/swimWire.js'; // SWIM-03c (38.54)
+import { createShore } from './quest/seaEdge.js'; // SWIM-HOOKS-01
 import { createWading } from './quest/sim/wading.js'; // RIVER-04 (38.45 (3)): river wading around the player's integrate
 import { BOW_CFG } from './quest/bowConfig.js'; // EQ-09
 import { createQuickbar, ensureQuickbar, autoFill, assign as qbAssign, clearSlot as qbClear, syncHandSlots, HAND_SLOTS } from './quest/sim/quickbar.js'; // EQ-12 + QB-6
@@ -1098,6 +1099,9 @@ async function runGame(mode, cinematic = null) {
   let wild = null; // WILD-06: ambient fauna, rebuilt on every 'world:loaded' (= reset on load / new game / restart)
   Object.defineProperty(window.__debug, 'lifeWire', { configurable: true, get: () => lifeWire }); // LIFE-HOOKS-01: verify-raid reads/forces raids through this
   Object.defineProperty(window.__debug, 'wild', { configurable: true, get: () => (wild ? { alive: wild.stats.alive, drawn: wild.drawn ? wild.drawn() : 0 } : null) }); Object.defineProperty(window.__debug, 'wildRaw', { configurable: true, get: () => (wild ? { w: wild, pool: gameVoxelPool } : null) }); // verify-wild steps/feeds through this (headless sim never runs) // WILD-06b: read-only headless hook
+  let outLife = null, lifeNav = null, lifeData = null; // LIFE-04: Outwall villagers + chat
+  Object.defineProperty(window.__debug, 'outLife', { configurable: true, get: () => outLife }); // LIFE-04: tools/verify-outwall-life.mjs
+  try { lifeData = { life: await (await fetch('../content/life/outwall.life.json')).json(), barks: await (await fetch('../content/dialogue/life.barks.json')).json() }; } catch (e) { console.warn('[life] villagers off:', e && e.message); }
   let outwall = null; // OUT-01: Hesk/Dorrin facing + met flags, rebuilt on 'world:loaded'
   let bearTurn = null; // NPC-BEAR-01: Burl's turn-to-player, rebuilt on every 'world:loaded'
   // COMPASS-02 (D-061): golden pocket compass, bottom-right. Resolver maps quest targets to world positions; hide rules are set in update(), drawn in render().
@@ -1455,7 +1459,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (params.get('bench') === 'combat' || (benchActive && params.get('enemies') === '4')) ensureBenchBoars(world); // COMBAT-BENCH-01
       ensureWolves(world); // WOLF-01: turns MAP-26 anchors wolf1..5 into wolf beasts (no-op while they are absent)
       ensureBears(world); // BEAR-01: blackBear1..3 -> bear beasts
-      beasts = createBeastSim(world, { nav: worldDef.nav && buildBeastNav(world, worldDef.nav), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null }); // LIFE-07: predators hunt the ambient fauna
+      beasts = createBeastSim(world, { nav: (lifeNav = worldDef.nav && buildBeastNav(world, worldDef.nav)), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null }); // LIFE-07: predators hunt the ambient fauna
       if (lifeWire) { lifeWire.dispose(); lifeWire = null; } // LIFE-08: night raids (content/life/raids.json), rebuilt with every beast sim
       if (raidDefs && !isCaptureOrBench && mode === 'world') lifeWire = createLifeWire({ ...raidDefs, sim: beasts, events: engine.events, state: world.state, world, book: () => (saveRelay ? saveRelay.quest.book : null) });
       if (telegraphWire) telegraphWire.dispose(); // TELEGRAPH-WIRE-01 part 1
@@ -1500,6 +1504,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           look.yawDeg = t.yawDeg; look.pitchDeg = t.pitchDeg;
         },
       });
+      if (swimWire) { const gg = window.ASSETS.levels.world_geo, sh = world.get('seaMonster'); swimWire.bindVitals(vitals, { shore: gg && gg.coast ? createShore(gg.coast) : null, ripples, ent: sh ? sh.data : null }); window.__debug.swimWire = swimWire; } // SWIM-HOOKS-01: stamina ring + sea monster (entity optional)
       resetPickups(world); // BUG-PICKUP-001: reindex retained drops on every load/restart.
       applyDoorState(world); // DOOR-TOGGLE-01: tower door prop/collider/prompt follow the saved tower.door.open
       removeSwordIfTaken(world); // US-078c: a world with the flag already set shouldn't show a taken sword
@@ -1528,7 +1533,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         jawOpenDeg: window.ASSETS.bearFx && window.ASSETS.bearFx.talk ? window.ASSETS.bearFx.talk.jawMaxDeg : undefined, // jaw hinge: rx opens, 0..jawMaxDeg (voxel_bear.js header)
         book: () => (saveRelay ? saveRelay.quest.book : null), // QG-03: `q.*` dialogue keys -> quest book
         questFlag: saveRelay ? (k) => saveRelay.quest.questFlag(k) : undefined, // CH1-06: `s.*` dialogue keys
-        onTalk: (npcId) => { errands.talked(npcId); if (outwall) outwall.talked(npcId); }, // OUT-01 ow.<npc>.met; QL-WIRE: talk.<site> flag for 'talk' errands
+        onTalk: (npcId) => { errands.talked(npcId); if (outwall) outwall.talked(npcId); if (outLife) outLife.talked(npcId); }, // OUT-01 ow.<npc>.met; QL-WIRE: talk.<site> flag for 'talk' errands
         onFlag: (k, v) => { if (k.charCodeAt(0) !== 113 || k.charCodeAt(1) !== 46) gameHooks.emitSimple('flag:set', 'dlg.' + k, v); } });
       setDialogueApi(dialogueCtl); window.__debug.dialogue = dialogueCtl; // tools/verify-ch12-run.mjs: read-only test hook
       errands.load(world); // QL-WIRE: [E] Inspect on post / notePost
@@ -1538,6 +1543,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       dialogueCtl.addNpc('rook'); // Rook the crow: no-op until the entity exists in the world
       outwall = saveEnabled && saveRelay ? createOutwall({ world, questFlag: (k) => saveRelay.quest.questFlag(k) }) : null;
       dialogueCtl.addNpc('hesk'); dialogueCtl.addNpc('dorrin'); // Ch3 Outwall NPCs (world_m1 entities, char.kit model registered at boot; both share the default kit look, no tint)
+      if (outLife) outLife.dispose(); // LIFE-04: villagers replace the OUT-02 spawn hook; only with saves live (same gate as OUT-01), never in capture/bench
+      outLife = lifeData && outwall && lifeNav && mode === 'world' ? createOutwallLife({ world, life: lifeData.life, nav: lifeNav, events: engine.events, state: world.state, outwall, dialogue: dialogueCtl, barksData: lifeData.barks, style: window.ASSETS.uiStyle.dialogue, hour: clockHour(world.state, clockCfg) }) : null;
       crystal = barks = chapterCard = chapterCard2 = escort = null;
       if (bearTurn) bearTurn.paused = false;
       if (saveEnabled && saveRelay) { // CH1-MOUNT: all three need the quest relay (flags + book)
@@ -1987,6 +1994,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       }
       if (swimWire) swimWire.before(playerHandle.data); // SWIM-03c: water -> body fields + current, after wading.before (which resets speedScale from `other`)
       integrate(playerHandle.data, dt, controls, engine.world, engine.physics);
+      if (swimWire) swimWire.afterStep(playerHandle.data, fb ? fb.timeSec : 0); // SWIM-HOOKS-01: stamina/drown + sea monster
       wadeFx.step(playerHandle.data, fb ? fb.timeSec : 0); // deep water (> 1.0 m) is a wall (D-064)
       // CLOTH-1b3/1b5 (33.5): the player capsule pushes cloth; sleep-by-distance reads the eye (presentation-only,
       // never hashed/saved - cloths.js's own doc comment). Approx eye = feet + eyeH (good enough for a sleep radius).
@@ -2009,7 +2017,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); } // WILD-06: ambient only, never hashed
       if (escort) { const uiHold = uiLocked || !!(dialogueCtl && dialogueCtl.open); /* AUD-06 */ const pt = playerHandle.data.transform; if (escort) { if (burlReopen && !(dialogueCtl && (dialogueCtl.open || dialogueCtl._closing))) { burlReopen = false; const bh = engine.world.get('bear'), bt2 = bh && bh.data.transform; if (bt2 && (bt2.x - pt.x) ** 2 + (bt2.y - pt.y) ** 2 <= 36) dialogueCtl.openFor('bear'); } escort.step(dt, pt.x, pt.y, uiHold); if (bearTurn) bearTurn.paused = escort.busy; } } // CH1-07/08b: before the bear turn
       if (nub) nub.step(dt); // NUB-01: same fixed step as the escort
-      if (outwall) { const pt = playerHandle.data.transform; outwall.step(dt, pt.x, pt.y); } // OUT-01
+      if (outwall) { const pt = playerHandle.data.transform; outwall.step(dt, pt.x, pt.y); if (outLife && simDue) outLife.step(dt, clockHour(engine.world.state, clockCfg), pt.x, pt.y); } // OUT-01 (owns yaw only when idle) + LIFE-04
       if (bearTurn) { const pt = playerHandle.data.transform; bearTurn.step(dt, pt.x, pt.y, !!(dialogueCtl && dialogueCtl.open)); } // NPC-BEAR-01 // US-079a (29.1)
       if (beasts && assets.uiStyle) stepCombatHint(engine.world, assets.uiStyle, beasts); // COMBAT-HINT-01: once-per-save first-fight hint (taken from lane C)
       if (telegraphWire) telegraphWire.step(performance.now());
@@ -2065,7 +2073,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (vitals) {
         const wasDead = vitals.dead;
         vitals.step(playerHandle.data, input.pressed(gameKeys.interact) || (deathFlow.active && deathRespawnDue)); // US-080a1 (30.2); DEATH-FLOW-01: fade end = virtual [E]
-        if (wasDead && !vitals.dead) { deathRespawnDue = false; deathFlow.respawned(performance.now()); }
+        if (wasDead && !vitals.dead) { if (swimWire) swimWire.reset(); deathRespawnDue = false; deathFlow.respawned(performance.now()); }
         deathFlow.step(performance.now());
         hurtFx.step(1000 / 60, vitals.hp, !vitals.dead); // HURT-FX-01
         stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
@@ -2425,6 +2433,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           // Q9 item 2c: hidden on the title (wakeOut.inputLocked covers the wake/title timeline) and map cards too,
           // not just while dead - the end card is already covered by the `!ending` gate around this whole block.
           drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals, fbOn);
+          if (swimWire) swimWire.draw(ui, assets.uiStyle.vitals, playerHandle.data, fb.timeSec); // SWIM-HOOKS-01
           drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals, isReduceMotion());
           if (equipPlay) { // EQ-07/09: block spark + the arrow count next to the hearts while the bow set is out
             const eqH = engine.world.get('player').data.components.equipment, hudOn = !vitals.dead && !wakeOut.inputLocked && !isMapOpen();
@@ -2454,6 +2463,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       drawNotePanel(ui, window.ASSETS.notes, assets.uiStyle);
       if (dialogueCtl) dialogueCtl.draw(ui, fb.timeSec); // DIALOGUE-01b2
       if (barks && !ch1Hidden) barks.draw(ui, fb.timeSec); // CH1-06
+      if (outLife && !(dialogueCtl && dialogueCtl.open)) outLife.draw(ui, fb.timeSec); // LIFE-04 overheard chat
       notice.draw(ui, ch1Hidden); // CH1-04a
       if (chapterCard) chapterCard.draw(ui); if (chapterCard2) chapterCard2.draw(ui); // CH1-09
       if (invView) invView.draw(ui); // US-091b: the pack screen, over HUD + toast
