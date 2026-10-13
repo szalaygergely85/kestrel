@@ -42,6 +42,7 @@ function put(mesh, x, y, yaw, o = {}) {
 // plants the foot; a leaning stake, there is no upright post mesh and meshes take no pitch) with ONE fence plank nailed near its top as the sign.
 const BRACE_FOOT = 1.21, BRACE_TOP = 1.7;   // foot height above the origin, rise from foot to top
 function markerPost(x, y, yaw, plankYaw, plankScale = 0.5) {
+  return;   // OB-143 (owner): no crossed X-beam struts (Prop_Support) - they stood in the air on slopes; marker posts are no longer emitted
   put('Prop_Support', x, y, yaw, { dz: -BRACE_FOOT, ext: 0.3, collide: false });
   const [tx, ty] = rot(yaw, 0, -1.75);   // the high end of the strut lies at local y -1.75
   put('Prop_WoodenFence_Single', x + tx, y + ty, plankYaw, { dz: BRACE_TOP - 0.55, scale: plankScale, ext: 0.3, collide: false });
@@ -189,7 +190,7 @@ ruinEnts.push({ id: 'fordMark', type: 'prop', x: 993.6, y: 1077.4, z: 'ground', 
 [['boarF1', 958, 1078], ['boarF2', 962, 1081]].forEach(([id, x, y]) => { world.ensureBandFor(x, y); if (!free(x, y)) throw new Error(id + ' in water');
   ruinEnts.push({ id, type: 'beast', x, y, z: 'ground', components: { brain: { home: [x, y], kind: 'beast', temperament: 'wary' }, targetable: { height: 0.7, radius: 0.45 }, voxel: { anim: 'idle', loop: true, model: 'boarPlaceholder' } }, note: 'QL-16 wary boar grazing near the ford (DRESS-01 pattern); NOT in the burl.boars quest' }); });
 ruinEnts.push({ id: 'smokeRuin', type: 'prop', x: chimney.origin.x, y: chimney.origin.y, z: +(chimney.origin.z + 3.05).toFixed(2), components: { emitters: [{ preset: 'smoke', offset: { up: 0.1 }, on: true }] }, note: 'OB-031: smoke from the standing chimney of the Rook ruin (existing emitter preset smoke)' });
-ruinEnts.push({ id: 'tradeLamp', type: 'prop', x: +TP_LAMP.x.toFixed(2), y: +TP_LAMP.y.toFixed(2), z: +(low(TP_LAMP.x, TP_LAMP.y, 0.4) + 1.12).toFixed(2), components: { light: { preset: 'lanternHook', on: true, offset: { down: -0.35 } }, voxel: { anim: 'lit', loop: true, model: 'floorLantern' } }, note: 'OB-031: brass lamp on the trade post counter (existing floorLantern + lanternHook light)' });
+ruinEnts.push({ id: 'tradeLamp', type: 'prop', x: +TP_LAMP.x.toFixed(2), y: +TP_LAMP.y.toFixed(2), z: +(low(TP_LAMP.x, TP_LAMP.y, 0.4) + 1.12).toFixed(2), components: { light: { preset: 'lanternHook', on: true, offset: { down: -0.35 } }, sprite: { anim: 'lit', frame: 0, model: 'floorLantern' } }, note: 'OB-031: brass lamp on the trade post counter (existing floorLantern + lanternHook light)' });
 // ---- M4 story quests (QL-09/11/12): gondola inspect giver (tower ground floor, sq.wreck.plate), oilcloth packet at the Bend Relay base
 // (sq.packet), brass scraps brass1..4 (sq.rook.shiny; QL-11 spots). Anchors only: the gondola is the existing wreck dressing, the rest reuses the pickupGear sprite.
 ruinEnts.push({ id: 'gondola', type: 'prop', x: 1496, y: 1024, z: 0, components: { inspect: { text: 'prompt.gondola' } }, note: 'QL-09 Kestrel gondola on the tower ground floor: inspect giver of sq.wreck.plate (fetch boar.hide -> Brass Buckler)' });
