@@ -102,10 +102,11 @@ import { wireTelegraphs, telegraphsEnabled } from './fx/telegraphWire.js'; // TE
 import { stepCombatHint } from './quest/combatHint.js'; // COMBAT-HINT-01
 import { createRegionBanner } from './quest/regionBanner.js'; // REGION-01: region-entry banner
 import { stepActionHints, resetActionHints } from './quest/actionHints.js'; // FS-01
+import { bootRegionAmbient } from './quest/regionAmbientWire.js'; // WMP-03: region ambient life
 import { createWild } from './wild/wildEnv.js'; // WILD-06: ambient rabbits + deer
 import { createGoblinWire } from './life/goblinWire.js'; // GOB-07b
-import { generateFarCamps } from './life/farCamps.js'; // WMP-02
 import { createLifeWire, prepareRaidDefs, createOutwallLife } from './life/lifeWire.js'; // LIFE-HOOKS-01: wolf raids wiring
+import { planWorldLife } from './quest/sim/worldGen.js';
 import { bootRegionalBeasts } from './quest/sim/regionalBeastsBoot.js'; // WM-12
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
@@ -1109,6 +1110,8 @@ async function runGame(mode, cinematic = null) {
   let dialogueCtl = null; // DIALOGUE-01b2 (38.28): rebuilt on every 'world:loaded', below
   let lifeWire = null, raidDefs = null; // LIFE-HOOKS-01
   try { raidDefs = prepareRaidDefs(await (await fetch('../content/life/raids.json')).json()); } catch (e) { console.warn('[life] raids off:', e && e.message); }
+  let regionAmbTable = null, regionAmb = null; // WMP-03: content/life/regionAmbient.json; no audio cue API for birdsong/insects yet -> onCue is a no-op (knownCues [])
+  try { regionAmbTable = await (await fetch('../content/life/regionAmbient.json')).json(); } catch (e) { console.warn('[regionAmbient] off:', e && e.message); }
   let goblinWire = null, goblinJson = null; // GOB-07b: goblin camps + enemy spears (content/life/goblinCamps.json)
   try { goblinJson = await (await fetch('../content/life/goblinCamps.json')).json(); } catch (e) { console.warn('[goblins] off:', e && e.message); }
   Object.defineProperty(window.__debug, 'goblinWire', { configurable: true, get: () => goblinWire }); // verify-goblins
@@ -1474,9 +1477,9 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // US-078d: beastSim now owns a `combat:hit` listener (the stagger behaviour) - drop the old world's one
       // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.
       if (wild && wild.dispose) wild.dispose();
-      wild = null; engine.feedVoxels = null; // WILD-06: off in capture/bench/compare/cinematic, `?at=`/`?pose=` dev poses and `?fauna=0`
+      wild = null; regionAmb = null; engine.feedVoxels = null; // WILD-06: off in capture/bench/compare/cinematic, `?at=`/`?pose=` dev poses and `?fauna=0`
       if (mode === 'world' && !cinematic && params.get('fauna') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !params.has('at') && !params.has('pose')) {
-        try { wild = createWild({ world, pool: gameVoxelPool, fx: window.ASSETS.wildlifeFx, seed: 0x5EED, events: engine.events }); if (wild) engine.feedVoxels = wild.feed; } catch (err) { console.warn('[wild] fauna off:', err && err.message); }
+        try { wild = createWild({ world, pool: gameVoxelPool, fx: window.ASSETS.wildlifeFx, seed: 0x5EED, events: engine.events }); if (wild) engine.feedVoxels = wild.feed; regionAmb = bootRegionAmbient({ table: regionAmbTable, geo: window.ASSETS.levels && window.ASSETS.levels.world_geo, wild }); } catch (err) { console.warn('[wild] fauna off:', err && err.message); }
       }
       if (beasts) beasts.dispose();
       if (params.get('bench') === 'combat' || (benchActive && params.get('enemies') === '4')) ensureBenchBoars(world); // COMBAT-BENCH-01
@@ -1493,8 +1496,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       const gridNav = world.terrainGrid && world.nav ? { grid: world.nav, astar: createAStar(world.nav) } : null;
       bootRegionalBeasts(world, window.ASSETS?.levels?.world_geo, params, isCaptureOrBench); // WM-12: regional herds, after World.load, before the sim
       if (goblinWire && world.terrainGrid && gridEnabled(params)) { // WMP-02: far goblin camps, last in slot order (authored, regional, far camps)
-        const homes = []; world.forEachEntity((e) => { const b = e.components && e.components.brain; if (b && b.kind === 'beast' && b.home) homes.push([b.home[0], b.home[1]]); });
-        goblinWire.addFarCamps(generateFarCamps({ geo: window.ASSETS?.levels?.world_geo, terrain: world.terrain, seed: 12, avoid: homes }));
+        goblinWire.addFarCamps(planWorldLife(world, window.ASSETS?.levels?.world_geo, 12).camps); // WMP-09: authored-only avoid, same defs on Continue
       }
       beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null }); // LIFE-07: predators hunt the ambient fauna
       if (goblinWire) goblinWire.attach(beasts, { onClank: () => playShieldClank() }); // GOB-07b: camps + spear sim + view
@@ -2059,7 +2061,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); if (beasts.tileMode && (++tileDormTick % 60) === 0) beasts.updateTileDormancy(pt.x, pt.y); } // WM-04: 200 m dormancy at ~1 Hz
       if (goblinWire && simDue) { const pt = playerHandle.data.transform; goblinWire.step(engine.world.state['clock.day'] | 0, pt.x, pt.y); } // GOB-07b
       if (lifeWire && simDue) lifeWire.step(clockHour(engine.world.state, clockCfg)); // LIFE-08: raids roll at night
-      if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); } // WILD-06: ambient only, never hashed
+      if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); if (regionAmb) regionAmb.step(dt, pt.x, pt.y); } // WILD-06: ambient only, never hashed
       if (escort) { const uiHold = uiLocked || !!(dialogueCtl && dialogueCtl.open); /* AUD-06 */ const pt = playerHandle.data.transform; if (escort) { if (burlReopen && !(dialogueCtl && (dialogueCtl.open || dialogueCtl._closing))) { burlReopen = false; const bh = engine.world.get('bear'), bt2 = bh && bh.data.transform; if (bt2 && (bt2.x - pt.x) ** 2 + (bt2.y - pt.y) ** 2 <= 36) dialogueCtl.openFor('bear'); } escort.step(dt, pt.x, pt.y, uiHold); if (bearTurn) bearTurn.paused = escort.busy; } } // CH1-07/08b: before the bear turn
       if (nub) nub.step(dt); // NUB-01: same fixed step as the escort
       if (outwall) { const pt = playerHandle.data.transform; outwall.step(dt, pt.x, pt.y); if (outLife && simDue) outLife.step(dt, clockHour(engine.world.state, clockCfg), pt.x, pt.y); } // OUT-01 (owns yaw only when idle) + LIFE-04

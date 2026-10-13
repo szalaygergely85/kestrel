@@ -30,8 +30,8 @@ import { registerQuestBehaviours } from '../game/js/quest/index.js';
 import { gridVariant, placeLoaded } from '../game/js/quest/bandPose.js';
 import { createSaveRelay } from '../game/js/saveRelay.js';
 import { spawnRegionalBeasts } from '../game/js/quest/sim/regionalBeasts.js';
-import { generateFarCamps } from '../game/js/life/farCamps.js';
-import { clearedKey } from '../game/js/life/goblinCamps.js';
+import { planWorldLife } from '../game/js/quest/sim/worldGen.js';
+import { clearedKey, ensureGoblinCamps } from '../game/js/life/goblinCamps.js';
 import { ACTIVE, READY } from '../game/js/quest/sim/questBook.js';
 
 globalThis.window = globalThis.window || globalThis;
@@ -59,9 +59,9 @@ export async function runSweep() {
   ok(packs.errors.length === 0, 'packs expand: ' + packs.errors.join('|'));
   const mem = new Map(), storage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
   const mkWorld = () => World.load(def, assets, { physics: 'mesh', events: new Events() });
-  const addBeasts = (w) => {
-    const list = spawnRegionalBeasts(w, geo, 12);
-    const camps = generateFarCamps({ geo, terrain: w.terrain, seed: 12, avoid: list.map((b) => [b.x, b.y]) });
+  const addBeasts = (w) => { // same order as main.js: shared plan (authored-only avoid), spawn only the missing ids
+    const { herd: list, camps } = planWorldLife(w, geo, 12);
+    spawnRegionalBeasts(w, geo, 12); ensureGoblinCamps(w, camps, w.terrain);
     return { list, camps };
   };
   const sitePose = (g) => { // relay site of the region (geo sites t 'L', st = region id), else the region rect centre
@@ -115,6 +115,10 @@ export async function runSweep() {
     ok(beasts > 0 && bad === 0, `${g.errand}: ${beasts} beasts sane (${bad} bad)`);
     ok(B.deadBeasts.includes(victim.id), g.errand + ': dead beast id kept for applyDeadToBeasts');
     ok(gen2.list.length === gen.list.length && gen2.list.every((b, i) => b.id === gen.list[i].id), g.errand + ': regional beasts regenerate identically');
+    ok(JSON.stringify(gen2.list) === JSON.stringify(gen.list), g.errand + ': herd homes identical fresh vs restored');
+    ok(JSON.stringify(gen2.camps) === JSON.stringify(gen.camps) && gen.camps.length > 0, g.errand + ': every campFar.* position identical fresh vs restored (' + gen.camps.length + ')');
+    for (const b of gen.list) { const e = w2.get(b.id), h = e && e.data.components.brain.home; ok(h && h[0] === b.x && h[1] === b.y, g.errand + ': restored herd home ' + b.id); }
+    for (const c of gen.camps) for (const m of c.members) { const e = w2.get(m.id), h = e && e.data.components.brain.home; ok(h && h[0] === c.at[0] + m.at[0] && h[1] === c.at[1] + m.at[1], g.errand + ': restored camp member ' + m.id); }
     const t2 = w2.get('player').data.transform;
     ok(Math.abs(t2.x - p.x) < 0.5 && Math.abs(t2.y - p.y) < 0.5, `${g.errand}: pose kept (${t2.x.toFixed(1)},${t2.y.toFixed(1)} vs ${p.x},${p.y})`);
     rows.push(`${g.errand} beasts ${beasts} pose ${p.x},${p.y}`);

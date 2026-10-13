@@ -113,8 +113,8 @@ export function createRelayWake(o) {
       hum();
       r.phase = WAKING; r.t = 0; r.rec.prompt = PROMPT_TOUCH;
       world.state[woken(r.wsId)] = true;
+      if (o.questFlag) o.questFlag(woken(r.wsId)); // chain flag (m1 step 'waystone'); BEFORE touch so errands gated on it are offered by the wake touch (WMP-01)
       touch(r);
-      if (o.questFlag) o.questFlag(woken(r.wsId)); // chain flag (m1 step 'waystone')
       r.rec.requires = undefined; // woken: E = plain touch
       showWakeNotice(r);
       return true;

@@ -10,15 +10,17 @@ import '../design/models/rubble.js'; import '../design/models/wreckage.js'; impo
 import '../design/models/sword.js'; import '../design/models/m3_props.js'; import '../design/models/far_tower.js';
 import '../design/models/ferrum_lights.js'; import '../design/models/voxel_beast.js'; import '../design/models/voxel_bear.js';
 import { loadTestAssets } from './testing/content-node.mjs';
-import { generateFarCamps } from '../game/js/life/farCamps.js';
-import { spawnRegionalBeasts } from '../game/js/quest/sim/regionalBeasts.js';
+import { planWorldLife } from '../game/js/quest/sim/worldGen.js';
+import { ensureGoblinCamps, activeCamps } from '../game/js/life/goblinCamps.js';
+import { readFileSync } from 'node:fs';
 
 paletteMod; detailPassMod; terrainMod; geoMod;
 const G = globalThis.ASSETS.levels.world_geo;
 G.util.installGeo(globalThis.ASSETS.levels.overworld_far.util);
 const { assets } = await loadTestAssets();
 const w = World.load(assets.world('world_m1'), assets, { physics: 'grid' });
+// boot like main.js: authored goblin camps first (their homes are authored avoid points), then the shared plan (herd -> far camps)
+const goblinJson = JSON.parse(readFileSync(new URL('../content/life/goblinCamps.json', import.meta.url), 'utf8'));
 const warn = console.warn; console.warn = () => {};
-try { spawnRegionalBeasts(w, G, 12); } finally { console.warn = warn; }
-const homes = []; w.forEachEntity((e) => { const b = e.components?.brain; if (b?.kind === 'beast' && b.home) homes.push([b.home[0], b.home[1]]); });
-process.stdout.write('@@CAMPS@@' + JSON.stringify({ camps: generateFarCamps({ geo: G, terrain: w.terrain, seed: 12, avoid: homes }), bounds: G.bounds, regions: G.regions.map((g) => ({ id: g.id, r: g.r })) }));
+let plan; try { ensureGoblinCamps(w, activeCamps(goblinJson), w.terrain); plan = planWorldLife(w, G, 12); } finally { console.warn = warn; }
+process.stdout.write('@@CAMPS@@' + JSON.stringify({ camps: plan.camps, bounds: G.bounds, regions: G.regions.map((g) => ({ id: g.id, r: g.r })) }));
