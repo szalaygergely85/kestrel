@@ -225,11 +225,12 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
     terrainFogStart: fog.start, terrainFogFull: fog.full, terrainFogCurve: fog.curve,
     terrainFogNearRGB: { x: fog.nearRGB[0], y: fog.nearRGB[1], z: fog.nearRGB[2] }, terrainFogFarRGB: { x: fog.farRGB[0], y: fog.farRGB[1], z: fog.farRGB[2] },
     wetness: wet, // S8-B2-14b
+    cliff: { x: 1, y: 1, z: 0, w: 0 }, // OB-104b2: rock = fixture row 1
     skyGlowOn: { x: 0, y: floorY, z: 0, w: 0 }, // DN-02
   });
   const MAX_F = MAX_FEATURES_PER_TYPE;
   function runTerrain(src, trials, wet = 0, floorY = 0, sky = null) {
-    let bad = 0, n = 0, faces = 0, closeN = 0;
+    let bad = 0, n = 0, faces = 0, closeN = 0, cliffN = 0;
     const h = mkHash(src);
     for (const hashCell of [0, 3, -0.05]) {
       const suT = makeSu(hashCell, wet, floorY, sky);
@@ -247,25 +248,36 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
       base.skylineFogF = compileFn(src, 'skylineFogF', base); // MAP-06b
       for (const fnName of ['tsFootprint', 'tsOctFade', 'tsValueNoise', 'tsPatchNoise']) base[fnName] = compileFn(src, fnName, base); // OB-073 noise helpers
       const st = compileFn(src, 'shadeTerrain', base);
-      const ctx = { tlook, tlookWidth: TLOOK_WIDTH, bands, fog, shading: { ...shadingT, wetness: wet, floorLum: floorY }, closeBand: 40, handover: [40, 90], features: null, hashCell, skyline: sky };
+      const ctx = { tlook, tlookWidth: TLOOK_WIDTH, bands, fog, shading: { ...shadingT, wetness: wet, floorLum: floorY }, closeBand: 40, handover: [40, 90], features: null, hashCell, skyline: sky, cliffType: 1 };
       for (let t = 0; t < trials; t++) {
         const type = Math.floor(rand() * rows), tt = rand() < 0.5 ? rand() * 60 : rand() * 1700;
         const b = rand() * 1.3, u = rand() * 900 - 100, v = rand() * 900 - 100, time = rand() * 20, faceMode = Math.floor(rand() * 3);
         const z = sky ? (rand() < 0.3 ? sky.seaLevel + rand() : rand() * 200 - 20) : 0; // MAP-06b: around fromZ and the sea level
         const o = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3), level: 255 };
-        shadeTerrain(tt, type, b, u, v, time, ctx, o, faceMode, z);
-        const g = st(tt, type, b, u, v, time, faceMode, z);
+        // OB-104b2: random unit normal (N.z spans both sides of CLIFF_NZ 0.5)
+        const nzr = rand(), nph = rand() * 6.2831853, nsn = Math.sqrt(1 - nzr * nzr), nx = nsn * Math.cos(nph), ny = nsn * Math.sin(nph);
+        if (nzr < 0.5) cliffN++;
+        shadeTerrain(tt, type, b, u, v, time, ctx, o, faceMode, z, nx, ny, nzr);
+        const g = st(tt, type, b, u, v, time, faceMode, z, { x: nx, y: ny, z: nzr });
         const q = (x) => Math.floor(Math.min(255, Math.max(0, x)) + 0.5);
         n++; if (tt < 40) closeN++; if (faceMode && type === 2) faces++;
         if (g.glyph !== o.glyph || q(g.fr) !== o.fg[0] || q(g.fg) !== o.fg[1] || q(g.fb) !== o.fg[2] || q(g.br) !== o.bg[0] || q(g.bg) !== o.bg[1] || q(g.bb) !== o.bg[2]) { bad++; if (bad < 10 && src === SHADE_WGSL) console.error("terr", hashCell, JSON.stringify({ type, tt, b, u, v, time, faceMode }), JSON.stringify(g), o.glyph, Array.from(o.fg), Array.from(o.bg)); }
       }
     }
-    return { bad, n, faces, closeN };
+    return { bad, n, faces, closeN, cliffN };
   }
   const base = runTerrain(SHADE_WGSL, 1500);
   assert.ok(base.bad <= base.n * 0.001, `shadeTerrain vs JS: ${base.bad}/${base.n} differ`);
   assert.ok(base.faces > 100 && base.closeN > 300, `terrain coverage faces ${base.faces} close ${base.closeN}`);
   probes += base.n;
+  // OB-104b2 (38.55): cliff look JS == WGSL (random normals), cliff cells covered, + mutations (threshold, axis pick)
+  assert.ok(base.cliffN > 400, `cliff coverage ${base.cliffN}`);
+  {
+    const mc = (a, b) => { const m = SHADE_WGSL.replace(a, b); assert.ok(m !== SHADE_WGSL, 'mutation target present: ' + a); return m; };
+    assert.ok(runTerrain(mc('nrm.z < 0.5000', 'nrm.z < 0.4000'), 800).bad > 5, 'mutation: CLIFF_NZ caught');
+    assert.ok(runTerrain(mc('abs(nrm.x) > abs(nrm.y)', 'abs(nrm.x) < abs(nrm.y)'), 800).bad > 5, 'mutation: wall axis pick caught');
+    assert.ok(runTerrain(mc('v = z;', 'v = vIn;'), 800).bad > 5, 'mutation: v = z caught');
+  }
   // MAP-06b (38.42): skyline fog cap JS twin == WGSL (peaks z > fromZ, sea type 2 at seaLevel), + a mutation
   {
     const SKY = { fogMax: 0.55, fromZ: 80, seaFogMax: 0.7, seaLevel: -96 };
@@ -460,11 +472,12 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
 // --- US-073b (38.25): the stable-glyph level target. OFF = byte-identical to the pre-073b shader; ON = one extra r8ui target. ---
 {
   // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01, DN-02 night floor, MAP-06b skyline cap, OB-073 smooth ground noise, OB-073 calm ground, OB-081 far tier blend + calm faces (41264 chars): the stable-off shader must not move by a single byte.
+  // re-pinned 48155 -> 48644 by OB-104b2 on top of SWIM-04c (cliff branch + nrm param + ShadeU.cliff after the 7 under vec4)
   // re-pinned 45683 -> 48155 by SWIM-04c (UNDER_WGSL + shadeCell/fs_main split + 7 appended ShadeU vec4; underwater block is skipped when su.under.x = 0)
   // re-pinned 44782 -> 45683 by MASK-c (shadeGrass ground blend + back-light, packed GA.w word; TS_PATCH_NOISE_WGSL extracted verbatim)
   // re-pinned 41264 -> 44782 by OB-073-D2e (kind-10 shadeGrass + ShadeU.grass table + the kind-10 branch in fs_main; calm-ground code untouched, asserted by the terrain mutation probes above)
-  assert.equal(SHADE_WGSL.length, 48155, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'd96d47af240872a69dadd57cd111cd875bbf179bc0183c23d4d2effef1c024bc', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  assert.equal(SHADE_WGSL.length, 48644, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '55f719fe72d4c13e4c53b915bb920d620fb3f084f8103457e54ab1200fef1527', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);
@@ -511,8 +524,11 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   assert.equal(SHADE_BLOCK.field('skyCam').word, SHADE_BLOCK.field('etC').word + 32, 'AUD-40 skyCam appended right after the tint table');
   assert.equal(SHADE_BLOCK.field('skyline').word, SHADE_BLOCK.field('skyGlowOn').word + 4, 'MAP-06b skyline appended right after skyGlowOn');
   assert.equal(SHADE_BLOCK.field('grass').word, SHADE_BLOCK.field('skyline').word + 4, 'D2e grass table appended right after skyline');
-  assert.equal(SHADE_BLOCK.field('grass').words, 320, 'grass table (OB-073 D2e) keeps its size; SWIM-04c fields are appended after it');
-assert.equal(SHADE_BLOCK.sizeBytes, (SHADE_BLOCK.field('grass').word + 320 + 28) * 4, 'SWIM-04c: 7 vec4 after the grass table are the tail of the block');
+  assert.equal(SHADE_BLOCK.field('grass').words, 320, 'grass table (OB-073 D2e) keeps its size; SWIM-04c + cliff fields are appended after it');
+  assert.equal(SHADE_BLOCK.field('under').word, SHADE_BLOCK.field('grass').word + 320, 'SWIM-04c under right after the grass table');
+  assert.equal(SHADE_BLOCK.field('cliff').word, SHADE_BLOCK.field('underRampC').word + 4, 'OB-104b2 cliff vec4 appended after the 7 SWIM-04c vec4');
+  assert.equal(SHADE_BLOCK.sizeBytes, (SHADE_BLOCK.field('grass').word + 320 + 28 + 4) * 4, 'cliff is the tail of the block (7 under vec4 + 1 cliff vec4 after grass)');
+  assert.ok(TERRAIN_SHADE_WGSL.includes('0.5000') && /su\.cliff\.y > 0\.5 && nrm\.z < 0\.5000/.test(TERRAIN_SHADE_WGSL), 'OB-104b2 cliff branch with CLIFF_NZ 0.5 literal');
   assert.equal(SHADE_BLOCK.field('fogView').word, SHADE_BLOCK.field('skyCam').word + 4, 'fogView right after skyCam');
   assert.equal(SHADE_BLOCK.field('skyGlowOn').word, SHADE_BLOCK.field('fogView').word + 4, 'skyGlowOn right after fogView');
   assert.ok(/if \(su\.skyGlowOn\.x > 0\.5\) \{ col255 = skyGlow\(/.test(SHADE_WGSL), 'sky glow gated by skyGlowOn');

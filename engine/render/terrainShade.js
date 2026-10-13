@@ -46,6 +46,8 @@ export function hashFast01(x, y, s) {
 // difference) measures N.z 0.67-0.9 (probe on overworld_far), so 0.9 splits
 // them. GLSL literals come from these exports.
 export const FOREST_FACE_NZ = 0.9;
+// OB-104b (38.55): terrain faces steeper than 60 degrees (N.z < 0.5) shade as the recipe's `rock` type, texture laid along the wall + its height.
+export const CLIFF_NZ = 0.5;
 export const FOREST_FACE_K = 0.8;
 export const FOREST_TRUNK_CHANCE = 1 / 3;
 export const FOREST_TRUNK_SALT = 30;
@@ -183,7 +185,16 @@ export function perCellHashSize(t, k, handover) {
  * }} ctx
  * @param {{glyph:number, fg:Uint8Array|number[], bg:Uint8Array|number[]}} out - written in place (fg/bg length 3)
  */
-export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, z = NaN) {
+export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, z = NaN, nx = 0, ny = 0, nz = 1) {
+  // OB-104b (38.55) cliff: steep cell (N.z < CLIFF_NZ) of a type without forest-face glyphs (TLOOK row 3 .w == 0) -> rock type,
+  // biplanar (u, v) = (horizontal axis along the wall, z). Defaults nz = 1 / cliffType unset = off. WGSL twin: same 4 lines.
+  const ct = ctx.cliffType;
+  if (ct >= 0 && nz < CLIFF_NZ && !(ctx.tlook[type * ctx.tlookWidth * 4 + 3 * 4 + 3] > 0)) {
+    type = ct;
+    const wy = v; // world y
+    v = z === z ? z : 0; // NaN z (old callers) -> 0
+    u = (nx < 0 ? -nx : nx) > (ny < 0 ? -ny : ny) ? wy : u;
+  }
   // 23.4 near-detail: inside the near-handover band the world-cell hash is
   // keyed at 2 m (matches the near band's own cell size), else at 8 m (the
   // far grid's cell size) - `nearLOD.rules` ("hash cell 2 m when t < h1,
@@ -457,6 +468,7 @@ export function makeTerrainShadeCtx(recipe, tlookPacked, palette) {
     // switch), both from `recipe.nearLOD` - never literal in engine code.
     closeBand: nearLOD && nearLOD.bands ? nearLOD.bands.close : undefined,
     handover: nearLOD && nearLOD.handover ? nearLOD.handover : undefined,
+    cliffType: recipe.terrain && recipe.terrain.rock ? recipe.terrain.rock.id : -1, // OB-104b: -1 = cliff look off
   };
 }
 
@@ -601,7 +613,7 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
     }
     const bT = b + Math.max(lr, Math.max(lg, lb));
     if (isG) shadeGrass(t, gbuf.mat[i], u, v, gbuf.vao[i], bT, grassTab, ctx, shadeOut, gbuf.grassX[i], sun.sunI);
-    else shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t), gbuf.z[i]); // MAP-06b: z = the rasterised surface height (kind 7: zBase/zRef 0), same value as the GPU's GA.z
+    else shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t), gbuf.z[i], shadeNrm[0], shadeNrm[1], shadeNrm[2]); // MAP-06b: z = the rasterised surface height (kind 7: zBase/zRef 0), same value as the GPU's GA.z
     gbuf.fogF[i] = terrainFogF(t, ctx.fog); // edge pass gate (BUG-GPU-005): never a stale value
     shadeOut.fg[0] = clampByte(shadeOut.fg[0] + lr * 0.5 * 255);
     shadeOut.fg[1] = clampByte(shadeOut.fg[1] + lg * 0.5 * 255);

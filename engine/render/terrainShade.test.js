@@ -1,6 +1,6 @@
 // US-016 Node tests for `shadeTerrain` (docs/architecture.md 14.4 item 5,
 // near-detail extension 23.4).
-import { shadeTerrain, hashFast01, perCellHashSize, shadeTerrainCells, groundAlbedo, groundTierOffset, patchNoise, valueNoise, NOISE_CELLS, NOISE_SALT, PATCH_K, shadeGrass, grassTableFor, GRASS_GX_HAS, GRASS_BACKLIGHT_K } from './terrainShade.js';
+import { shadeTerrain, hashFast01, perCellHashSize, shadeTerrainCells, groundAlbedo, groundTierOffset, patchNoise, valueNoise, NOISE_CELLS, NOISE_SALT, PATCH_K, shadeGrass, grassTableFor, GRASS_GX_HAS, GRASS_BACKLIGHT_K, CLIFF_NZ } from './terrainShade.js';
 import { Terrain } from '../world/Terrain.js';
 import { GBuffer, KIND_TERRAIN } from './GBuffer.js';
 import { CellBuffer } from './CellBuffer.js';
@@ -452,6 +452,57 @@ export function patchShape(shade) {
   check('MASK-c back-light zero at the blade base (h01 = 0)', lum(shadeGrass(50, 1, 0, 0, 0, 0.8, tab, gctx, out(), 255 * 256, 1)) === lum(shadeGrass(50, 1, 0, 0, 0, 0.8, tab, gctx, out(), 0, 1)));
   check('MASK-c back-light capped (sunI 5 == sunI 1)', lum(shadeGrass(50, 1, 0.8, 0, 0, 0.8, tab, gctx, out(), 255 * 256, 5)) === lum(bl));
   check('MASK-c back-light cap constant', GRASS_BACKLIGHT_K > 0 && GRASS_BACKLIGHT_K <= 0.5);
+}
+
+// OB-104b (38.55): steep faces (N.z < CLIFF_NZ) shade as the rock type, texture along the wall and up its height.
+{
+  const cc = { ...ctx, cliffType: 1 };           // row 1 = "rock" in the fixture, row 0 = ground
+  const o = out(), r = out();
+  const sum = (x) => x.glyph + ',' + x.fg[0] + ',' + x.fg[1] + ',' + x.fg[2];
+  const n70 = [Math.sin(70 * Math.PI / 180), 0, Math.cos(70 * Math.PI / 180)]; // 70 deg face, normal +x -> wall runs along y
+  check('OB-104b CLIFF_NZ is 0.5 (60 deg)', CLIFF_NZ === 0.5);
+  shadeTerrain(100, 0, 0.9, 5, 7, 0, cc, o, 0, 12.3, n70[0], n70[1], n70[2]);
+  shadeTerrain(100, 1, 0.9, 7, 12.3, 0, ctx, r, 0);  // reference: rock type at (u, v) = (y, z)
+  check('OB-104b 70 deg face shades as rock at (y, z)', sum(o) === sum(r));
+  // vertical variation: same (x, y), z climbing -> colour/glyph is not constant (no vertical smear)
+  const seen = new Set();
+  for (let k = 0; k < 40; k++) { shadeTerrain(3, 0, 0.5, 5, 7, 0, cc, o, 0, k * 0.5, n70[0], n70[1], n70[2]); seen.add(sum(o)); }
+  check('OB-104b face varies with z (' + seen.size + ' distinct)', seen.size > 1);
+  const seen0 = new Set();
+  for (let k = 0; k < 40; k++) { shadeTerrain(3, 0, 0.5, 5, 7, 0, { ...ctx, cliffType: -1 }, o, 0, k * 0.5, n70[0], n70[1], n70[2]); seen0.add(sum(o)); }
+  check('OB-104b (revert check) smear without the change is constant', seen0.size === 1);
+  // |ny| > |nx| uses x along the wall
+  shadeTerrain(100, 0, 0.9, 5, 7, 0, cc, o, 0, 12.3, 0, n70[0], n70[2]);
+  shadeTerrain(100, 1, 0.9, 5, 12.3, 0, ctx, r, 0);
+  check('OB-104b |ny| > |nx| face lays the texture along x', sum(o) === sum(r));
+  // 50 deg slope unchanged; forest face (TLOOK row 3 .w > 0) unchanged
+  const a50 = Math.cos(50 * Math.PI / 180);
+  shadeTerrain(100, 0, 0.9, 5, 7, 0, cc, o, 0, 12.3, Math.sin(50 * Math.PI / 180), 0, a50);
+  shadeTerrain(100, 0, 0.9, 5, 7, 0, ctx, r, 0);
+  check('OB-104b 50 deg slope unchanged', sum(o) === sum(r));
+  const W = 17, tl = new Float32Array(4 * W * 2);
+  for (let q = 0; q < 2; q++) { const b0 = q * W * 4; [[0.1, 0.2, 0.1], [0.2, 0.4, 0.2], [0.3, 0.6, 0.3]].forEach((c, i) => { tl[b0 + i * 4] = c[0]; tl[b0 + i * 4 + 1] = c[1]; tl[b0 + i * 4 + 2] = c[2]; }); [4, 5, 6, 7].forEach((t) => { tl[b0 + t * 4] = 5; tl[b0 + t * 4 + 1] = 1; }); }
+  tl[3 * 4 + 2] = 6 | (7 << 8); tl[3 * 4 + 3] = 2;
+  const fc = { tlook: tl, tlookWidth: W, bands: { near: 150, mid: 600 }, fog: { start: 50, full: 1500, curve: 0.7, nearRGB: [0, 0, 0], farRGB: [0, 0, 0] }, shading: { fgMin: 0.15, fgGamma: 0.6, fgMaxGain: 1.6 } };
+  shadeTerrain(200, 0, 0.9, 5, 5, 0, { ...fc, cliffType: 1 }, o, 1, 9, 1, 0, 0.2);
+  shadeTerrain(200, 0, 0.9, 5, 5, 0, fc, r, 1, 9);
+  check('OB-104b forest face unchanged', sum(o) === sum(r));
+  // golden sweep: only cells with N.z < 0.5 change; count logged
+  let changed = 0, steep = 0, bad = 0;
+  for (let k = 0; k < 2000; k++) {
+    const ang = (k / 2000) * Math.PI * 0.5, nzv = Math.cos(ang), nxv = Math.sin(ang), x = (k * 37) % 91, y = (k * 53) % 89, zz = (k * 7) % 31;
+    shadeTerrain(100, 0, 0.9, x, y, 0, cc, o, 0, zz, nxv, 0, nzv);
+    shadeTerrain(100, 0, 0.9, x, y, 0, ctx, r, 0, zz);
+    const diff = sum(o) !== sum(r);
+    if (nzv < CLIFF_NZ) steep++; else if (diff) bad++;
+    if (diff) changed++;
+  }
+  console.log('OB-104b golden sweep: ' + changed + ' of 2000 cells changed, ' + steep + ' have N.z < 0.5');
+  check('OB-104b only N.z < 0.5 cells change (' + bad + ' flat cells changed)', bad === 0 && changed > 0 && changed <= steep);
+  // 0 alloc
+  const h0 = process.memoryUsage().heapUsed;
+  for (let k = 0; k < 200000; k++) shadeTerrain(100, 0, 0.9, k, 7, 0, cc, o, 0, 12.3, 1, 0, 0.1);
+  check('OB-104b 0 alloc (' + (process.memoryUsage().heapUsed - h0) + ' B)', process.memoryUsage().heapUsed - h0 < 500000);
 }
 console.log(`terrainShade.test.js: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

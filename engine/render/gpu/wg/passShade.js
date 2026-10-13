@@ -33,7 +33,7 @@ const S_SPARSE_ALT = S('fogSparseAlt'), S_HAZE_ALT = S('fogHazeAlt');
 const S_SPARSE_C0 = S('fogSparseCode0'), S_SPARSE_C1 = S('fogSparseCode1'), S_HAZE_C0 = S('fogHazeCode0'), S_HAZE_C1 = S('fogHazeCode1');
 const S_ETA = S('etA'), S_ETID = S('etId'), S_ETC = S('etC'); // 38.23 tint words
 const EMPTY_GRASS = { n: new Uint8Array(1), ramp: new Float64Array(12), glyph: new Uint8Array(5) };
-const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK'), S_SKYCAM = S('skyCam'), S_FOGVIEW = S('fogView'), S_SKYGLOWON = S('skyGlowOn'), S_SKYLINE = S('skyline'), S_GRASS = S('grass');
+const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK'), S_SKYCAM = S('skyCam'), S_FOGVIEW = S('fogView'), S_SKYGLOWON = S('skyGlowOn'), S_SKYLINE = S('skyline'), S_GRASS = S('grass'), S_CLIFF = S('cliff');
 const S_UNDER = S('under'), S_UNDER_TINT = S('underTint'), S_UNDER_CAM = S('underCam'), S_UNDER_CEIL = S('underCeil'), S_UNDER_CAUS = S('underCaus'), S_UNDER_RB = S('underRampB'), S_UNDER_RC = S('underRampC'); // SWIM-04c
 /** 38.23: copy the tint table (fb.entityTints) into the ShadeU words: etA.x = count, etId (u32 view), etC rgb+k. Zero alloc; count 0 and cleared tail when absent. */
 export function writeEntityTints(su, su32, tints) {
@@ -210,6 +210,9 @@ export class WgShadePass {
       if (tu.farRGB) for (let k = 0; k < 3; k++) su[S_TFOG_FAR + k] = tu.farRGB[k];
       eu[E_TFOG_START] = tu.fogStart; eu[E_TFOG_FULL] = tu.fogFull; eu[E_TFOG_CURVE] = tu.fogCurve;
     }
+    // OB-104b2 (38.55): cliff look = recipe rock type id (twin: makeTerrainShadeCtx ctx.cliffType; y = 0 -> off)
+    const rk = recipe && recipe.terrain && recipe.terrain.rock;
+    su[S_CLIFF] = rk ? rk.id : 0; su[S_CLIFF + 1] = rk ? 1 : 0;
     si[S_NEARDETAIL] = tu.nearDetail ? 1 : 0;
     if (tu.nearDetail) { su[S_HANDOVER] = tu.handover[0]; su[S_HANDOVER + 1] = tu.handover[1]; su[S_CLOSEBAND] = tu.closeBand; }
   }

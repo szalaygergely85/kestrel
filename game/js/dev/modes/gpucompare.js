@@ -201,6 +201,9 @@ function buildCompareRuns(ctx) {
     ...[[270, 'west fells'], [0, 'north whitecombs'], [235, 'south-west sea line']].map(([yawDeg, what]) => ({ world: worldM1, lights: worldM1Lights,
       name: `world_m1: meadowSkyline yaw ${yawDeg} (${what})`,
       cam: { x: 1460, y: 1030, z: (worldM1.terrain ? worldM1.terrain.groundAt(1460, 1030) : 0) + engine.physics.eyeHeight, yawDeg, pitchDeg: 0 }, real: true })),
+    // OB-104b2 (38.55): cliffNotch - the Glasswater outlet notch wall (steep faces N.z < 0.5 shade as rock, cliffType uniform); JS == GPU
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: cliffNotch (OB-104b2 cliff rock, 1237, 606 yaw 0 pitch 2)',
+      cam: { x: 1237, y: 606, z: (worldM1.terrain ? worldM1.terrain.groundAt(1237, 606) : 0) + engine.physics.eyeHeight, yawDeg: 0, pitchDeg: 2 }, real: true },
   ];
 
   // DN-04b (38.39): frozen dusk 19.5 h and night 23 h rows (world_m1). Lit Bend lamps (rsLamp1/2 at 1280,1052 / 1246,1053.5) and the tower, so the

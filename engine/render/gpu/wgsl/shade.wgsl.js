@@ -32,7 +32,7 @@ import { SKY_GLOW_WGSL } from '../../skyGlow.js';
 import { FOG_SHAPE_WGSL } from '../../fogShape.js';
 import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
 import { UNDER_WGSL } from '../../underwater.js'; // SWIM-04c (38.54)
-import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, FAR_BLEND_FP0, FAR_BLEND_FP1, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, GRASS_AO_LO, GRASS_TIP_H, GRASS_BASE_H, GRASS_LEAN_G, GRASS_LEVELS, GRASS_ROWS, GRASS_TINT_AMP, GRASS_GX_HAS, GRASS_BACKLIGHT_K } from '../../terrainShade.js';
+import { CLIFF_NZ, FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, FAR_BLEND_FP0, FAR_BLEND_FP1, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, GRASS_AO_LO, GRASS_TIP_H, GRASS_BASE_H, GRASS_LEAN_G, GRASS_LEVELS, GRASS_ROWS, GRASS_TINT_AMP, GRASS_GX_HAS, GRASS_BACKLIGHT_K } from '../../terrainShade.js';
 
 
 
@@ -73,6 +73,7 @@ export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'underCaus', type: 'vec4' }, // causticCol rgb
   { name: 'underRampB', type: 'vec4' }, // bubble ramp glyph indices (ascii - 32)
   { name: 'underRampC', type: 'vec4' }, // ceiling ramp glyph indices
+  { name: 'cliff', type: 'vec4' }, // OB-104b2 (38.55), APPENDED after grass: x = rock type id (recipe.terrain.rock.id), y = 1 when the cliff look is on (0 = off; twin: ctx.cliffType >= 0)
 ]);
 
 export const SHADE_TEXTURES = Object.freeze([
@@ -126,7 +127,14 @@ ${TS_PATCH_NOISE_WGSL}
 struct TerrainOut { fr: f32, fg: f32, fb: f32, br: f32, bg: f32, bb: f32, glyph: i32 };
 
 ${SKYLINE_FOG_WGSL}
-fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceMode: i32, z: f32) -> TerrainOut {
+fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32, faceMode: i32, z: f32, nrm: vec3f) -> TerrainOut {
+  // OB-104b (38.55) cliff: steep cell (N.z < CLIFF_NZ) of a type without forest-face glyphs -> rock type, (u, v) = (horizontal axis along the wall, z). Twin: terrainShade.js shadeTerrain, same 4 lines.
+  var typeId = typeIdIn; var u = uIn; var v = vIn;
+  if (su.cliff.y > 0.5 && nrm.z < ${CLIFF_NZ.toFixed(4)} && !(textureLoad(uTlook, vec2i(3, typeIdIn), 0).w > 0.0)) {
+    typeId = i32(su.cliff.x);
+    v = z;
+    u = select(uIn, vIn, abs(nrm.x) > abs(nrm.y));
+  }
   // OB-073: band-limited smooth value noise for the patch tier + 0.25 m glyph cell with one per-point switch (twin: terrainShade.js).
   let fp = tsFootprint(t);
   let v8 = tsValueNoise(u * ${(1 / NOISE_CELLS[0]).toFixed(4)}, v * ${(1 / NOISE_CELLS[0]).toFixed(4)}, ${NOISE_SALT});
@@ -714,7 +722,7 @@ fn shadeCell(frag: vec4f) -> FO {
         if (giKind(giDn.y) == ${KIND_TERRAIN}u && i32(giMat(giDn.y)) == typeId && unpackNormalOct(giDn.z).z < FOREST_FACE_NZ) { faceModeT = 1; }
       }
     }
-    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceModeT, bitcast<f32>(gaT.z));
+    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceModeT, bitcast<f32>(gaT.z), Nt);
     let frQ = floor(clamp(to.fr, 0.0, 255.0) + 0.5);
     let fgQ = floor(clamp(to.fg, 0.0, 255.0) + 0.5);
     let fbQ = floor(clamp(to.fb, 0.0, 255.0) + 0.5);
