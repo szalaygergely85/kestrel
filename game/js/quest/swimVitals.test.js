@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { allocProbe } from '../../../tools/allocProbe.mjs';
 import { World } from '../../../engine/index.js';
 import { loadTestAssets } from '../../../tools/testing/content-node.mjs';
 import { createVitals } from './sim/vitals.js';
@@ -33,5 +34,6 @@ body.swimming = false; tick(6); assert.equal(sv.state.stamina, 100);
 // dive empties in 6 s
 body.diving = true; body.swimming = false; tick(6.1); assert.equal(sv.state.stamina, 0); body.diving = false;
 // 0 alloc
-if (global.gc) { const m0 = process.memoryUsage().heapUsed; body.swimming = true; for (let i = 0; i < 20000; i++) sv.step(body, 1 / 60); assert.ok(process.memoryUsage().heapUsed - m0 < 2e5); }
+body.swimming = true;
+{ const pr = allocProbe((n) => { for (let i = 0; i < n; i++) sv.step(body, 1 / 60); }, { n: 20000 }); if (pr.skipped) console.log('SKIP swimVitals zero-alloc (needs --expose-gc)'); else assert.ok(pr.bytes < 2e5, 'heap grew ' + pr.bytes); }
 console.log('swimVitals.test OK');

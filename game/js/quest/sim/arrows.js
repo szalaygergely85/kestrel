@@ -63,13 +63,14 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null, o
   const enemy = !!(opts && opts.owner === 'enemy');
   const dt = SIM_STEP;
   const NF = cfg.maxFlying, NS = cfg.maxStuck;
+  const fp = { x: 0, y: 0 }, fn = { x: 0, y: 0 }; // floater query scratch (0 alloc)
   let serialNo = 0, tick = 0, flyingCount = 0, stuckCount = 0, floatCount = 0;
   const NW = cfg.maxFloat | 0;
   // RIVER-01b (38.45): arrows that land in river water float and drift with the current for cfg.floatSteps, then vanish
   // (at the bank, where water ends, they stick). Rect/circle water keeps today's behaviour.
-  const floaters = { n: NW, alive: new Uint8Array(NW), age: new Int32Array(NW), x: new Float64Array(NW), y: new Float64Array(NW), z: new Float64Array(NW) };
+  const floaters = { n: NW, alive: new Uint8Array(NW), age: new Int32Array(NW), x: new Float64Array(NW), y: new Float64Array(NW), z: new Float64Array(NW), fx: new Float64Array(NW), fy: new Float64Array(NW) };
   const wq = { surfaceZ: 0, flatZ: 0, depth: 0, region: '', index: -1, look: 0 };
-  const fv = [0, 0];
+  const fv = [0, 0], rk = { lat: 0, hw: 0, tx: 0, ty: 0, v: 0, z: 0 };
 
   const flying = {
     n: NF, alive: new Uint8Array(NF), age: new Int32Array(NF), damage: new Float64Array(NF),
@@ -103,10 +104,27 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null, o
     if (NW === 0 || floatCount >= NW || !riverWaterAt(world, x, y, wq) || z > wq.surfaceZ + 0.02) return false;
     let k = 0;
     while (floaters.alive[k] === 1) k++;
-    floaters.alive[k] = 1; floaters.age[k] = 0; floaters.x[k] = x; floaters.y[k] = y; floaters.z[k] = wq.surfaceZ - cfg.floatDraft;
+    floaters.alive[k] = 1; floaters.age[k] = 0; floaters.x[k] = x; floaters.y[k] = y; floaters.z[k] = rk.z - cfg.floatDraft;
+    world.flowAt(x, y, fv); floaters.fx[k] = fv[0]; floaters.fy[k] = fv[1];
     floatCount++;
     if (onWaterHit) onWaterHit(x, y, wq.surfaceZ);
     return true;
+  }
+  /** Drift every floater one step (own small function: stays optimisable and the world queries inline, 0 alloc). */
+  function stepFloaters() {
+    for (let k = 0; k < NW; k++) {
+      if (floaters.alive[k] === 0) continue;
+      if (++floaters.age[k] > cfg.floatSteps) { floaters.alive[k] = 0; floatCount--; continue; }
+      // the current at the floater is cached from the last accepted position (fx/fy); fp/fn are hoisted scratch for the world queries
+      fp.x = floaters.x[k]; fp.y = floaters.y[k];
+      const nx = fp.x + floaters.fx[k] * dt, ny = fp.y + floaters.fy[k] * dt; // locals: one box per coordinate shared by both queries
+      fn.x = nx; fn.y = ny;
+      if (world.riverAt(nx, ny, rk)) { // riverAt = highest water region is a river (surfaceZ = rk.z, rivers have no waves): no waterAt call (a big non-inlined call boxes the doubles) // = riverWaterAt spelled out (and no flowAt): two inlinable queries, no boxed doubles
+        floaters.x[k] = fn.x; floaters.y[k] = fn.y; floaters.z[k] = rk.z - cfg.floatDraft;
+        const q = rk.lat / rk.hw, fl = rk.v * (1 - 0.5 * q * q); // = World#flowAt river formula
+        floaters.fx[k] = rk.tx * fl; floaters.fy[k] = rk.ty * fl;
+      } else { floaters.alive[k] = 0; floatCount--; stickAt(fp.x, fp.y, floaters.z[k], 0, 0, -1); } // reached the bank: stays
+    }
   }
   function kill(s) { flying.alive[s] = 0; flyingCount--; }
   function freeStuck(k) { stuck.alive[k] = 0; stuckCount--; }
@@ -189,18 +207,7 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null, o
           }
         }
       }
-      if (floatCount > 0) {
-        for (let k = 0; k < NW; k++) {
-          if (floaters.alive[k] === 0) continue;
-          if (++floaters.age[k] > cfg.floatSteps) { floaters.alive[k] = 0; floatCount--; continue; }
-          const x = floaters.x[k] + 0, y = floaters.y[k];
-          if (!riverWaterAt(world, x, y, wq)) { floaters.alive[k] = 0; floatCount--; stickAt(x, y, floaters.z[k], 0, 0, -1); continue; }
-          world.flowAt(x, y, fv);
-          const nx = x + fv[0] * dt, ny = y + fv[1] * dt;
-          if (riverWaterAt(world, nx, ny, wq)) { floaters.x[k] = nx; floaters.y[k] = ny; floaters.z[k] = wq.surfaceZ - cfg.floatDraft; }
-          else { floaters.alive[k] = 0; floatCount--; stickAt(x, y, floaters.z[k], 0, 0, -1); } // reached the bank: stays
-        }
-      }
+      if (floatCount > 0) stepFloaters();
       if (stuckCount > 0) {
         for (let k = 0; k < NS; k++) {
           if (stuck.alive[k] === 0) continue;

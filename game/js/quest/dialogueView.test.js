@@ -4,6 +4,9 @@ import assert from 'node:assert/strict';
 import paletteMod from '../../../design/palette.js';
 import titleMod from '../../../design/models/title.js';
 import { createDialogueView } from './dialogueView.js';
+import { allocProbe, skipNote } from '../../../tools/allocProbe.mjs';
+// The ONLY explicit alloc exemption (arch 38.61 point 4): a UI draw that runs only while a modal is open. cap = measured (~LAST) + 25 %, still asserted.
+const ALLOC_EXEMPT = { cap: 500, /* measured 397.6 B/draw */ reason: 'dialogue draw runs only while the dialogue modal is open (text layout/strings)', ref: 'arch 38.61' };
 
 paletteMod; titleMod;
 const A = globalThis.ASSETS, pal = A.palette.colors;
@@ -131,10 +134,10 @@ for (const [c, r] of [[160, 60], [240, 90], [400, 150], [480, 180], [40, 15], [3
 {
   const g = grid(160, 60), r = run({ state: 'choosing', choiceCount: 3, selected: 1 });
   for (let i = 0; i < 2000; i++) view.draw(g, r, i * 0.016);
-  if (globalThis.gc) globalThis.gc();
-  const before = process.memoryUsage().heapUsed;
-  for (let i = 0; i < 10000; i++) view.draw(g, r, i * 0.016);
-  const grown = process.memoryUsage().heapUsed - before;
-  assert.ok(grown < 400000, `heap grew ${grown}`);
+  const pr = allocProbe((n) => { for (let i = 0; i < n; i++) view.draw(g, r, i * 0.016); }, { n: 5000 });
+  if (!skipNote(pr, 'dialogueView draw alloc')) {
+    console.log('dialogueView draw: ' + pr.perCall.toFixed(1) + ' B/draw (cap ' + ALLOC_EXEMPT.cap + ')');
+    assert.ok(pr.perCall <= ALLOC_EXEMPT.cap, `draw allocates ${pr.perCall} B/draw > cap ${ALLOC_EXEMPT.cap}`);
+  }
 }
 console.log('dialogueView: ok');

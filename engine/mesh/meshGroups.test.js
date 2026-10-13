@@ -1,5 +1,6 @@
 // engine/mesh/meshGroups.test.js (MESH-INST-01: CPU batching of repeated placed kind-9 meshes).
 // Run: node engine/mesh/meshGroups.test.js  (re-spawns itself with --expose-gc for the zero-alloc gate)
+import { allocProbe, skipNote } from '../../tools/allocProbe.mjs';
 import { readMeshJSON } from '../test/meshFile.test.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -281,10 +282,8 @@ const place = (w, m, x, y, yaw = 0, over) => World.prototype.placeMesh.call(w, m
   const list = new DrawList(), cache = new MeshDrawCache(), groups = new MeshGroupSet();
   const frame = () => { list.begin(); addMeshStructuresBatched(list, w, cam, cache, idFor, 2000, groups, planes); list.cull(planes); };
   for (let i = 0; i < 2000; i++) frame();
-  global.gc(); const h0 = process.memoryUsage().heapUsed;
-  for (let i = 0; i < 1000; i++) frame();
-  global.gc(); const grew = process.memoryUsage().heapUsed - h0;
-  ok('scaled: 0 allocation over 1000 batched feeds', grew < 32 * 1024, `grew ${grew}`);
+  const pr = allocProbe((n) => { for (let i = 0; i < n; i++) frame(); }, { n: 1000 });
+  if (!skipNote(pr, 'meshGroups alloc')) ok('scaled: 0 allocation over 1000 batched feeds', pr.bytes < 32 * 1024, `grew ${pr.bytes}`);
 }
 
 // ---- 5. shadow feed: groups never used, MESH-SHADOW-02 budget unchanged -----------------------
@@ -345,10 +344,8 @@ const place = (w, m, x, y, yaw = 0, over) => World.prototype.placeMesh.call(w, m
   const list = new DrawList(), cache = new MeshDrawCache(), groups = new MeshGroupSet();
   const frame = () => { list.begin(); addMeshStructuresBatched(list, w, cam, cache, idFor, 2000, groups, planes); list.cull(planes); };
   for (let i = 0; i < 2000; i++) frame();
-  global.gc(); const h0 = process.memoryUsage().heapUsed;
-  for (let i = 0; i < 1000; i++) frame();
-  global.gc(); const grew = process.memoryUsage().heapUsed - h0;
-  ok('0 allocation over 1000 batched feeds', grew < 32 * 1024, `grew ${grew}`);
+  const pr = allocProbe((n) => { for (let i = 0; i < n; i++) frame(); }, { n: 1000 });
+  if (!skipNote(pr, 'meshGroups alloc')) ok('0 allocation over 1000 batched feeds', pr.bytes < 32 * 1024, `grew ${pr.bytes}`);
 }
 
 // ---- OB-043: group items over the list budget -> nearest groups kept, farthest dropped + counted, never throws ----

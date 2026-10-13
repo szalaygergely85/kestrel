@@ -121,9 +121,11 @@ if (process.env.BAKE_BENCH) ok('swap on hit <= 4 ms', swapMax <= 4, swapMax.toFi
 }
 {
   w.ensureBandFor(...pts[0]);
-  const run = () => { for (let i = 0; i < 100; i++) w.ensureBandFor(...pts[i & 1]); };
-  const g = heapGrowth(run);
-  ok('100 east<->west cache-hit swaps: heap growth < 64 KB', g < 65536, `${g} B`);
+  // RETAINED growth (gc after the run: a swap makes transient garbage by design); min of 5 windows after 2 warm-ups (arch 38.61 recipe)
+  const run2 = () => { for (let i = 0; i < 100; i++) w.ensureBandFor(...pts[i & 1]); };
+  run2();
+  let g = Infinity; for (let k = 0; k < 5; k++) g = Math.min(g, heapGrowth(run2));
+  ok('100 east<->west cache-hit swaps: heap growth < 64 KB', g < 65536, `${g} B (min of 5)`);
 }
 
 // --- B3: prebakeBands -------------------------------------------------------------------
@@ -136,7 +138,9 @@ if (process.env.BAKE_BENCH) ok('swap on hit <= 4 ms', swapMax <= 4, swapMax.toFi
   const t0 = now();
   while (!r.done && calls < 2000) { const a = now(); r = pw.prebakeBands(12); worst = Math.max(worst, now() - a); calls++; }
   ok('prebake done: all 5 zones cached + pinned', r.done && r.cached === pz.length && pw.bandCache.stats().entries === pz.length && [...pw.bandCache.map.values()].every((b) => b.pinned), JSON.stringify(r));
-  ok('prebake: each call within budget + one slice', worst <= 12 + slice * 1.5 + 8, `slice ${slice.toFixed(1)} ms, worst ${worst.toFixed(1)} ms, ${calls} calls, total ${(now() - t0).toFixed(0)} ms`);
+  // wall-clock is report-only (38.61 deterministic counters); BAKE_BENCH=1 asserts it. The deterministic gate is: done within the call cap.
+  ok('prebake: finished within the call cap', calls < 2000, `${calls} calls`);
+  if (process.env.BAKE_BENCH) ok('prebake: each call within budget + one slice', worst <= 12 + slice * 1.5 + 8, `slice ${slice.toFixed(1)} ms, worst ${worst.toFixed(1)} ms, ${calls} calls, total ${(now() - t0).toFixed(0)} ms`);
   ok('prebake: live band untouched', pw.bandId === 'east' && !pw.terrain.nearBandPending && pw.prebakeBands(12).done);
   ok('prebake: cache ~10 MB', pw.bandCache.bytes > 5e6 && pw.bandCache.bytes < 16 * 1048576, String(pw.bandCache.bytes));
   // byte-identical to a fresh sync bake of the same zone

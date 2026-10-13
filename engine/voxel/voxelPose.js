@@ -13,6 +13,14 @@ import { MAX_VOX_PARTS, PART_STRIDE } from './VoxelModel.js';
  * 15.1), else Math.cos/sin. GLSL mirrors this with the same %90 branch.
  */
 export function cosSinDeg(deg, out) {
+  _degTmp[0] = deg;
+  csAt(_degTmp, 0, out);
+}
+// Core of cosSinDeg reading the angle from arr[i]: callers pass a typed array, never a double (a double argument to a
+// non-inlined function boxes a HeapNumber per call - arch 38.61, rigPerf).
+const _degTmp = new Float64Array(1);
+function csAt(arr, i, out) {
+  const deg = arr[i];
   const m = ((deg % 90) + 90) % 90;
   if (m === 0) {
     let q = Math.round(deg / 90) % 4;
@@ -56,24 +64,24 @@ const _tmp9 = new Float64Array(9);
  */
 export const FORWARD = new Float64Array(MAX_VOX_PARTS * 12);
 
-function setRz(deg, out) {
-  cosSinDeg(deg, _cs);
+function setRz(arr, i, out) {
+  csAt(arr, i, _cs);
   const c = _cs[0], s = _cs[1];
   out[0] = c; out[1] = -s; out[2] = 0;
   out[3] = s; out[4] = c; out[5] = 0;
   out[6] = 0; out[7] = 0; out[8] = 1;
 }
 
-function setRy(deg, out) {
-  cosSinDeg(deg, _cs);
+function setRy(arr, i, out) {
+  csAt(arr, i, _cs);
   const c = _cs[0], s = _cs[1];
   out[0] = c; out[1] = 0; out[2] = s;
   out[3] = 0; out[4] = 1; out[5] = 0;
   out[6] = -s; out[7] = 0; out[8] = c;
 }
 
-function setRx(deg, out) {
-  cosSinDeg(deg, _cs);
+function setRx(arr, i, out) {
+  csAt(arr, i, _cs);
   const c = _cs[0], s = _cs[1];
   out[0] = 1; out[1] = 0; out[2] = 0;
   out[3] = 0; out[4] = c; out[5] = -s;
@@ -109,9 +117,9 @@ function transpose3(a, out) {
 // Builds R(rot) = Rz(rz) * Ry(ry) * Rx(rx) into `out` from the angles in scratch `_ang[0..2]` (shared body).
 const _ang = new Float64Array(3);
 function buildRot(out) {
-  setRz(_ang[2], _Rz);
-  setRy(_ang[1], _Ry);
-  setRx(_ang[0], _Rx);
+  setRz(_ang, 2, _Rz);
+  setRy(_ang, 1, _Ry);
+  setRx(_ang, 0, _Rx);
   matMul3(_Ry, _Rx, _RyRx);
   matMul3(_Rz, _RyRx, out);
 }
@@ -203,7 +211,8 @@ export function computeVoxelPose(pm, inst, out) {
   const invCellM = 1 / cellM;
   const yawDeg = inst.yawDeg;
 
-  setRz(yawDeg, _RzYaw);
+  _degTmp[0] = yawDeg;
+  setRz(_degTmp, 0, _RzYaw);
   transpose3(_RzYaw, _RzYawInv);
   for (let i = 0; i < 9; i++) _Aw[i] = _RzYaw[i] * cellM;
   _bw[0] = inst.x - (_Aw[0] * pm.anchor[0] + _Aw[1] * pm.anchor[1] + _Aw[2] * pm.anchor[2]);

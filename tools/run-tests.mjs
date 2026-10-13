@@ -129,7 +129,7 @@ function collectSuites(root, filter) {
 function runSuite(file, timeoutMs, warnOnFail) {
   return new Promise((resolve) => {
     const start = Date.now();
-    const child = spawn(process.execPath, [file], { cwd: ROOT });
+    const child = spawn(process.execPath, ["--expose-gc", file], { cwd: ROOT });
     let output = '';
     let settled = false;
     let timedOut = false;
