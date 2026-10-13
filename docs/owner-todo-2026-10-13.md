@@ -26,6 +26,10 @@ When you report a problem: press F3, copy the `world (x, y, z) yaw pitch` line, 
 - [ ] **Burl dialogue rewrite:** OK the writer pass (split the waystone speech, replace the 2nd "That's impossible", add the "old promise" hint)? ->
 - [ ] **Tutorial hints:** let important hints jump the queue? (The fireball hint can wait ~30 s today.) ->
 - [ ] **Minimap (US-131):** a corner minimap, or the chart card only (Zelda-style)? ->
+- [ ] **Dive key:** architect proposes Space = swim up, Left Ctrl = dive (C is crafting). OK? ->
+- [ ] **Swim numbers:** swim 1.8 m/s, fast swim 2.6 m/s; sea monster warns at 60 m from the shore, kills at 90 m. OK as a start? ->
+- [ ] **Wolf raids:** can a raid ever cost something permanent (e.g. a goose lost that changes a quest), or only flavour (architect default)? ->
+- [ ] **Dark trees test (OB-089):** compare http://localhost:8000/game/index.html?pose=roadSouth with http://localhost:8000/game/index.html?pose=roadSouth&shadows=off - do the far trees/buildings turn lit with shadows off? ->
 - [ ] **Backlog cleanup:** go for the janitor/PO pass on ~280 stale rows (report: docs/janitor/backlog-audit-2026-10-13.md)? ->
 
 ## 2. The two walks that close M4
@@ -61,6 +65,7 @@ Most of these come up on the walks; the links go straight to the spot.
 - [ ] Day/night (DN-03): http://localhost:8000/game/index.html?pose=roadBend&time=20 ->
 - [ ] Relay SOS pulse + knot (QL-06/07): on the walk (Bend relay). ->
 - [ ] Animal models: http://localhost:8000/design/preview/otter.html , http://localhost:8000/design/preview/goat.html , http://localhost:8000/design/preview/heron.html , http://localhost:8000/design/preview/tortoise.html , http://localhost:8000/design/preview/black-bear.html , http://localhost:8000/design/preview/wolf.html ->
+- [ ] **Sea monster (new, D-070):** http://localhost:8000/design/preview/seamonster.html - the serpent, its circle / rise / strike clips, views from a swimmer at 10/20/30 m ->
 - [ ] Items + props: http://localhost:8000/design/preview/item-icons.html , http://localhost:8000/design/preview/voxel-props.html ->
 - [ ] Character generator (hands that can grip OB-092, body shape OB-083, Mixamo export OB-070): http://localhost:8000/tools/chargen/index.html ->
 - [ ] Kit character in the game next to Burl (OB-086): http://localhost:8000/game/index.html?pose=burl ->

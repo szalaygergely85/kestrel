@@ -1882,3 +1882,101 @@ Notes:
 - `sq.wreck.plate` and `sq.rook.shiny` list a second HUD step (bring back) in QL-W1, but the pack builds a single `fetch` / `collect` objective. The texts above already point to the return.
 - `sq.honey`, `sq.fc.ask` and `sq.rook.gift` name Rook. They open only after `mq.bend.call`, where Rook gives his name.
 - Assumption: every `explore` step in these packs lists one area, so it builds one objective. If a step lists several areas, its ids get a further digit (`explore1` -> `explore1` + `1`, `2`, ...); reuse the same text for each of them.
+
+## Goblins (D-072)
+
+(PC-B writer 2026-10-13, owner-authorised.) This section uses the D-072 raiders of the west bank (the level 5-10 side). They are the one fantasy people in a world of real animals. Ferrum keeps them as a nursery tale, the same way it keeps magic, so they fit GDD 3 without a canon change. Their origin stays open, and nothing ties them to the SOS (M4). Lines are <= 56 characters, ASCII only.
+
+| key | text | chars |
+|---|---|---|
+| `lore.goblins.1` | `Small, wiry, quick. They come down off the west hills.` | 54 |
+| `lore.goblins.2` | `They want metal more than meat: nails, hinges, brass.` | 53 |
+| `lore.goblins.3` | `Their camps are nests of scrap, lit by stolen fire.` | 51 |
+| `lore.goblins.4` | `The village has iron, fire, geese. They want all three.` | 55 |
+| `lore.goblins.5` | `In Ferrum they are a nursery tale. Out here, they bite.` | 55 |
+| `lore.goblins.6` | `They keep west of the river. Hesk says they won't swim.` | 55 |
+
+Combat barks (D-072 melee, archers and torch raids). They are short, crude and partly not words.
+
+| key | when | text |
+|---|---|---|
+| `bark.goblin.1` | spots the player | `Tall one! Tall one!` |
+| `bark.goblin.2` | group rushes in | `Grak! Grak-grak!` |
+| `bark.goblin.3` | sees metal/loot | `Shiny. Mine-mine.` |
+| `bark.goblin.4` | archer/thrower shoots | `Hup! Eat it!` |
+| `bark.goblin.5` | torch raid | `Burn! Burn the honk-birds!` |
+| `bark.goblin.6` | hurt / flees | `Hnnk... run, run!` |
+
+| key | speaker | text | chars |
+|---|---|---|---|
+| `ow.hesk.goblins.1` | HESK | `Torches on the west hill. Goblins. Bar the pen, Wick.` | 53 |
+| `ow.hesk.goblins.2` | DORRIN | `Barley gate hinge? Goblins. Then I took the brass.` | 50 |
+
+Notes:
+- Dorrin's line fills in his earlier `Barley gate lost its hinge in the first winter` (mq.ow.relay): goblins took the iron, and so the brass came off the relay. Use both lines only after `mq.ow.names` (Hesk says "Wick").
+- `lore.goblins.6`: drop or swap it if goblin AI follows the player across water (D-070 free crossing). Swap: `They keep to the west bank. Nobody knows why.` (45).
+- "honk-birds" is goblin for geese.
+
+## Sea monster (D-070)
+
+(PC-B writer 2026-10-13, owner-authorised.) The sign is a Gullhaven fishers' post from before the Wall Law clearing, and the charcoal line under it came later. The death card uses the voice of section "Death card": first person, present tense, <= 40 characters.
+
+| key | text | chars |
+|---|---|---|
+| `sign.strand.monster.1` | `Carved in a driftwood post, worn salt-white:` | 44 |
+| `sign.strand.monster.2` | `SWIM TO THE STAKES. NOT ONE STROKE PAST.` | 40 |
+| `sign.strand.monster.3` | `Under it, newer, in charcoal: IT CIRCLES FIRST.` | 47 |
+| `hint.sea.monster.1` (BURL) | `Deep water's got a thing in it bigger than me, sky-cub.` | 55 |
+| `death.eaten.1` | `Something rose under me. Then dark.` | 35 |
+| `death.eaten.2` | `Next time, I stay inside the stakes.` | 36 |
+| `death.drown.1` | `My breath ran out short of the shore.` | 37 |
+| `death.drown.2` | `Far above, the light still blinks.` | 34 |
+
+Notes:
+- "STAKES": the designer should place a row of old net stakes at the monster distance so the sign matches what the player sees. Without stakes, read `THE BLACK ROCKS` in sign 2 and death.eaten 2 (`Next time, I stay inside the rocks.`, 35).
+- Villager variant of the hint (if a villager says it, not Burl): `Swim the shallows. Past them, something swims you.` (50).
+
+## Villager chats (LIFE-05)
+
+(PC-B writer 2026-10-13, owner-authorised.) These replace the placeholders `life.chat.any.1..8` in `content/dialogue/life.barks.json`. Each key is a two-turn fragment that the player half-hears in passing: A then B, both `"who":"npc"` (label VILLAGER). No names except Dorrin, who is the smith and well known. Each line is <= 56 characters.
+
+| key | A | B |
+|---|---|---|
+| `life.chat.any.1` | `Frost on the barley again.` | `Then we cut early. Again.` |
+| `life.chat.any.2` | `Wolves sang till dawn.` | `Count the geese twice, then.` |
+| `life.chat.any.3` | `The relay hummed all night.` | `Let it. Better than the quiet.` |
+| `life.chat.any.4` | `Has anyone seen my good knife?` | `Ask the crows. Or Dorrin.` |
+| `life.chat.any.5` | `Wind's off the Wall today. Smell it?` | `Coal smoke. I don't miss it.` |
+| `life.chat.any.6` | `Another nail gone from the fence.` | `Goblins. Or the smith.` |
+| `life.chat.any.7` | `Rain by dusk. Get the hides in.` | `And the bread. Last time it drowned.` |
+| `life.chat.any.8` | `Do you still dream of the Low Wards?` | `Every night. Then I wake here. Better.` |
+
+Hesk + Dorrin pair (`life.chat.hesk.dorrin.1..4`). Each has two turns, with the speaker labels HESK and DORRIN; the first speaker is listed first.
+
+| key | turn 1 | turn 2 |
+|---|---|---|
+| `.1` | HESK `Gate holds?` | DORRIN `On rope. Rope holds. Mostly.` |
+| `.2` | HESK `At that anvil past dark again.` | DORRIN `Cold forge. Nothing to burn but time.` |
+| `.3` | DORRIN `The boy asked about flying again.` | HESK `Then show Pell the sea. It's closer.` |
+| `.4` | HESK `You hear it too? The call.` | DORRIN `Every night. I just stopped saying so.` |
+
+Notes: `life.chat.any.6` needs goblins live (D-072). Until then, use `Wind, or the smith. Probably the smith.` (39). Line `.3` names Pell (quest-roadmap 2b). If Pell is not in the build yet, read `Then show him the sea. It's closer.` (35).
+
+## Defend the Farm (LIFE-09, `sq.ow.raid`)
+
+(PC-B writer 2026-10-13, owner-authorised.) This fills the NEEDS WRITER fields of `sq.ow.raid` in `content/quests/ch3/pack.json` and uses the same board voice as `sq.ow.wolves`: an unsigned caps hand, with no speaker. The raiders are the wolf pack from `raids.json`.
+
+| key / field | text | chars |
+|---|---|---|
+| objective `journal` | `Wolves raid the goose pen by night. Wait there after dark, drive off the pack.` | 78 |
+| board notice (1) | `WOLVES COME FOR THE GEESE AFTER DARK.` | 37 |
+| board notice (2) | `A WHOLE PACK. FIVE, MAYBE MORE.` | 31 |
+| board notice (3) | `WHO CAN HOLD A BLADE, STAND AT THE PEN.` | 39 |
+| `lines.offer` (1) | `A new note, the nail driven deep. The same caps hand:` | 53 |
+| `lines.offer` (2) | `WOLVES COME FOR THE GEESE AFTER DARK. STAND AT THE PEN.` | 55 |
+| `lines.accepted` | `You fold the note into your coat. Wait for dark.` | 48 |
+| `lines.active` | `The folded note: AFTER DARK. GOOSE PEN. THE PACK.` | 49 |
+| `lines.ready` | `On the nail now, tied with twine: two red vials, arrows.` | 56 |
+| `lines.done` | `Chalk under the nail: GEESE COUNTED. ALL HERE. AGAIN.` | 53 |
+
+Notes: the board notice is the read text, for wherever the board shows the full note (`note.owBoard` style). The pack has no `accepted` field yet. If none is added, drop that line, because `active` already works on its own. The objective `text` `Defend the goose pen at night` (29) stays as it is.
