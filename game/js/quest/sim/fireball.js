@@ -40,6 +40,7 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
   // scratch
   const _ray = { t: 0, x: 0, y: 0, z: 0 };
   const _aim = { t: 0, x: 0, y: 0, z: 0 };
+  const _aimSeg = new Float64Array(6); // World.raySegmentRay arg (arch 38.61 2b)
   const hit = { kind: NO_HIT, t: 0, idx: -1, x: 0, y: 0, z: 0 };
   const cand = { count: 0, x: new Float64Array(MAXC), y: new Float64Array(MAXC), z: new Float64Array(MAXC), r: new Float64Array(MAXC), h: new Float64Array(MAXC) };
   const outIdx = new Int32Array(MAXC), outF = new Float64Array(MAXC), outDir = new Float64Array(MAXC * 3);
@@ -119,7 +120,8 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
     // aim point under the crosshair
     const R = cfg.maxRange;
     let px = ex + ax * R, py = ey + ay * R, pz = ez + az * R;
-    if (world.raySegment(ex, ey, ez, px, py, pz, _aim)) { px = _aim.x; py = _aim.y; pz = _aim.z; }
+    _aimSeg[0] = ex; _aimSeg[1] = ey; _aimSeg[2] = ez; _aimSeg[3] = px; _aimSeg[4] = py; _aimSeg[5] = pz;
+    if (world.raySegmentRay(_aimSeg, _aim)) { px = _aim.x; py = _aim.y; pz = _aim.z; }
     let dx = px - ox, dy = py - oy, dz = pz - oz;
     const dl = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (dl < cfg.aimMin) { dx = ax; dy = ay; dz = az; } else { dx /= dl; dy /= dl; dz /= dl; }

@@ -3,7 +3,7 @@
 // (US-137) turns hits into `explosion:hit` events and calls `applyImpulse`.
 
 /**
- * @param {{raySegment:Function}} world  World (mesh or grid)
+ * @param {{raySegmentRay:Function}} world  World (mesh or grid)
  * @param {number} ex @param {number} ey @param {number} ez  blast centre
  * @param {number} radius
  * @param {{count:number,x:ArrayLike<number>,y:ArrayLike<number>,z:ArrayLike<number>,r:ArrayLike<number>,h:ArrayLike<number>}} cand
@@ -21,6 +21,9 @@
  * (so a blast exactly at the centre is never occluded). The exploding prop
  * must be removed by the caller before the query.
  */
+/** Caller-owned segment for World.raySegmentRay (arch 38.61 2b). */
+const _seg = new Float64Array(6);
+
 export function explosionHits(world, ex, ey, ez, radius, cand, outIdx, outF, outDir, ray) {
   const { x, y, z, r, h } = cand;
   const cap = Math.min(outIdx.length, outF.length, Math.floor(outDir.length / 3));
@@ -36,7 +39,7 @@ export function explosionHits(world, ex, ey, ez, radius, cand, outIdx, outF, out
     const mz = zi + hi * 0.5;
     const dx = dx0, dy = dy0, dz = mz - ez;
     const L = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    if (L > 1e-6 && world.raySegment(ex, ey, ez, x[i], y[i], mz, ray) && ray.t * L < L - ri - 0.05) continue;
+    if (L > 1e-6 && (_seg[0] = ex, _seg[1] = ey, _seg[2] = ez, _seg[3] = x[i], _seg[4] = y[i], _seg[5] = mz, world.raySegmentRay(_seg, ray)) && ray.t * L < L - ri - 0.05) continue;
     const o = n * 3;
     if (L < 1e-6) { outDir[o] = 0; outDir[o + 1] = 0; outDir[o + 2] = 1; }
     else { const k = 1 / L; outDir[o] = dx * k; outDir[o + 1] = dy * k; outDir[o + 2] = dz * k; }

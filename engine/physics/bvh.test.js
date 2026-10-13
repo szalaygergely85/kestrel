@@ -498,7 +498,7 @@ const RAYCAST_WRAPPER_CAP = 0.5; // measured ~0.003 B/call (inlined here); cap =
   else {
     ok('raycastRay varying rays: <= 0.5 B/call', p1.perCall <= 0.5, `${p1.perCall.toFixed(3)} B/call`);
     ok('raycastAnyRay varying rays: <= 0.5 B/call', p2.perCall <= 0.5, `${p2.perCall.toFixed(3)} B/call`);
-    // Cold-path wrapper: boxes 7 doubles at the call boundary. cap = measured + 25 % (set after measurement).
+    // Cold-path wrapper: boxes 7 doubles at the call boundary.
     const ALLOC_EXEMPT = { cap: RAYCAST_WRAPPER_CAP, reason: 'boxed-double call boundary, cold-path wrapper', ref: 'arch 38.61' };
     ok(`raycast wrapper (varying args) ALLOC_EXEMPT <= ${ALLOC_EXEMPT.cap} B/call`, p3.perCall <= ALLOC_EXEMPT.cap, `${p3.perCall.toFixed(2)} B/call`);
   }

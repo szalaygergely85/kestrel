@@ -141,7 +141,7 @@ function stepAll(hands, items, p, l, r, gate) {
     const pl = mkPlayer({ pack: [{ id: 'sword', n: 1 }], left: slot === 'left' ? 'sword' : null, right: slot === 'right' ? 'sword' : null });
     const tr = { id: 't', transform: { x: 0, y: 1.0, z: 0.9 }, components: { targetable: { radius: 0.3, height: 1.6 } } };
     const entities = [pl, tr];
-    const world = { state: { 'tower.sword.taken': true }, forEachEntity(fn) { entities.forEach(fn); }, raySegment() { return false; } };
+    const world = { state: { 'tower.sword.taken': true }, forEachEntity(fn) { entities.forEach(fn); }, raySegmentRay() { return false; } };
     const hits = [];
     const ev = { on() { return () => {}; }, emit(n, p) { if (n === 'combat:hit') hits.push(p.target); } };
     const sim = createSwordSim(world, ev, SWORD_CFG);
@@ -158,7 +158,7 @@ function stepAll(hands, items, p, l, r, gate) {
   ok('sword in the RIGHT hand: RMB swing hits', swingHits('right') === 1);
 
   const pl = mkPlayer({ pack: [{ id: 'sword', n: 1 }], left: 'sword', right: null });
-  const world = { state: { 'tower.sword.taken': true }, forEachEntity() {}, raySegment() { return false; } };
+  const world = { state: { 'tower.sword.taken': true }, forEachEntity() {}, raySegmentRay() { return false; } };
   const ev = { on() { return () => {}; }, emit() {} };
   const sim = createSwordSim(world, ev, SWORD_CFG);
   const hands = createHands(ev); hands.register('sword', sim);

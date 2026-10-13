@@ -504,14 +504,13 @@ const _rcHit = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0 };
  * and returns true on a hit; `out` is left untouched on a miss. Zero
  * allocation, not re-entrant (module scratch).
  * @param {MeshCollider[]} colliders @param {number} count
- * @param {number} ox @param {number} oy @param {number} oz
- * @param {number} dx @param {number} dy @param {number} dz
- * @param {number} tMax
+ * @param {Float64Array} ray caller-owned `[ox,oy,oz,dx,dy,dz,tMax]`
  * @param {{t:number, tri:number, u:number, v:number, nx:number, ny:number, nz:number, collider?:number}} out
  * @returns {boolean}
  */
-export function raycastColliders(colliders, count, ox, oy, oz, dx, dy, dz, tMax, out) {
-  let best = tMax;
+export function raycastCollidersRay(colliders, count, ray, out) {
+  const ox = ray[0], oy = ray[1], oz = ray[2], dx = ray[3], dy = ray[4], dz = ray[5];
+  let best = ray[6];
   let found = false;
   for (let ci = 0; ci < count; ci++) {
     const c = colliders[ci];
@@ -544,4 +543,15 @@ export function raycastColliders(colliders, count, ox, oy, oz, dx, dy, dz, tMax,
     }
   }
   return found;
+}
+
+const _rcWrapRay = new Float64Array(7);
+
+/**
+ * Cold-path scalar wrapper (boxes doubles at the call boundary, arch 38.61 2b); hot callers use `raycastCollidersRay`.
+ * ALLOC_EXEMPT: cold path only.
+ */
+export function raycastColliders(colliders, count, ox, oy, oz, dx, dy, dz, tMax, out) {
+  _rcWrapRay[0] = ox; _rcWrapRay[1] = oy; _rcWrapRay[2] = oz; _rcWrapRay[3] = dx; _rcWrapRay[4] = dy; _rcWrapRay[5] = dz; _rcWrapRay[6] = tMax;
+  return raycastCollidersRay(colliders, count, _rcWrapRay, out);
 }

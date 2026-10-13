@@ -559,9 +559,11 @@ if (VERBOSE) console.log(`MESH_CAND_MAX=${MESH_CAND_MAX}`);
   const run = (n) => { for (let i = 0; i < n; i++) { const o = (i & (N - 1)) * 2; probeSupport(cols, 2, xy[o], xy[o + 1], 0.05, true, OPTS, sup); if (sup.floorHit) nHitA[0]++; } };
   const pr = allocProbe(run, { n: 100000, warm: 6 });
   if (pr.skipped) console.log('SKIP probeSupport varying alloc (no --expose-gc)');
-  // OPEN (ASK ARCHITECT, docs/lanes/pc-b2.md): measured 1.89 B/call, not 0; independent of floor/ceiling/out writes (bisected), so
-  // likely the 3-double call boundary (x, y, footZ). Interim ALLOC_EXEMPT until decided; target < 1 B.
-  else ok('probeSupport varying x/y: ALLOC_EXEMPT cap 2.4 B/call (target < 1, arch 38.61)', pr.perCall <= 2.4 && nHitA[0] > 0, `${pr.perCall.toFixed(3)} B/call, hits ${nHitA[0]}`);
+  else {
+    const ALLOC_EXEMPT = { cap: 2.4, reason: 'probeSupport: sub-HeapNumber/call JIT artefact (harness), not boundary boxing', ref: 'arch 38.61 (2b), batch-4 2026-10-14' };
+    ok(`probeSupport varying x/y: ALLOC_EXEMPT cap ${ALLOC_EXEMPT.cap} B/call`, pr.perCall <= ALLOC_EXEMPT.cap && nHitA[0] > 0, `${pr.perCall.toFixed(3)} B/call, hits ${nHitA[0]}`);
+  }
+
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

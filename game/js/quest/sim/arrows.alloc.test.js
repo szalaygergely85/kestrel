@@ -13,7 +13,7 @@ const sup = { floorH: 9.6, ceilH: 'sky', terrain: false, slope: false, nx: 0, ny
 w.supportAt = () => sup; w.floorAt = () => 9.6;
 let bad = 0; const chk = (n, c, x) => { console.log(`${c ? 'ok  ' : 'FAIL'} ${n} (${x})`); if (!c) bad++; };
 // arrow sim with a floater (real consumer of waterAt/flowAt): armed once, floater outlives all windows (~14000 steps x ~0.02 m stay inside the 600 m river)
-w.raySegment = (ax, ay, az, bx, by, bz, out) => { if (bz > 9.6) return false; const t = (az - 9.6) / (az - bz); out.t = t; out.x = ax + (bx - ax) * t; out.y = ay + (by - ay) * t; out.z = 9.6; return true; };
+w.raySegmentRay = (seg, out) => { const ax = seg[0], ay = seg[1], az = seg[2], bx = seg[3], by = seg[4], bz = seg[5]; if (bz > 9.6) return false; const t = (az - 9.6) / (az - bz); out.t = t; out.x = ax + (bx - ax) * t; out.y = ay + (by - ay) * t; out.z = 9.6; return true; };
 w.state = {}; w.forEachEntity = () => {};
 const events = { on() { return () => {}; }, emit() {} };
 const sim = createArrowSim(w, events, { ...BOW_CFG, floatSteps: 1e7 }, createTargetables(w, events));
