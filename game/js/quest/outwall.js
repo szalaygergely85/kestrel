@@ -15,10 +15,10 @@ export const NPCS = {
  *  (the animal files exist in design/models but are not in game/index.html or world_m1; anchors = quest-roadmap 2b / world_m1). */
 export const PENDING = {
   nub:    { status: 'done elsewhere', note: 'already placed in world_m1, follows Burl (NUB-01); no lines by design' },
-  skip:   { status: 'NEEDS REGISTRATION', model: 'voxel_otter.js', note: 'empty fishing village (coast); register ASSETS.models.otter in index.html/main.js + place, then add to NPCS' },
-  stilt:  { status: 'NEEDS REGISTRATION', model: 'voxel_heron.js', note: 'Reedmire; same steps as Skip' },
-  slate:  { status: 'NEEDS REGISTRATION', model: 'voxel_tortoise.js', note: 'Glasswater islet; same steps as Skip' },
-  crag:   { status: 'NEEDS REGISTRATION', model: 'voxel_goat.js', note: 'Signal Head ledges; same steps as Skip' },
+  skip:   { status: 'NEEDS REGISTRATION', model: 'voxel_otter.js', note: 'anchor Gullhaven jetty (1500,1715) is outside walk bounds (y max ~1110); register otter + place when the south opens' },
+  stilt:  { status: 'NEEDS REGISTRATION', model: 'voxel_heron.js', note: 'anchor eel weirs (1210,1660) outside walk bounds; same steps as Skip' },
+  slate:  { status: 'NEEDS REGISTRATION', model: 'voxel_tortoise.js', note: 'anchor Glasswater (1235,505) outside walk bounds; same steps as Skip' },
+  crag:   { status: 'NEEDS REGISTRATION', model: 'voxel_goat.js', note: 'anchor Signal Head (760,1405) outside walk bounds; same steps as Skip' },
   sorrel: { status: 'NEEDS DESIGNER', note: 'Outwall herb-woman, no model (char.kit recolour)' },
   pell:   { status: 'NEEDS DESIGNER', note: 'Outwall child, no model' },
   tam:    { status: 'NEEDS DESIGNER', note: 'old exile singer, no model' },
