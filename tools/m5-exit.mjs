@@ -60,7 +60,10 @@ if (process.argv[1]?.endsWith('m5-exit.mjs')) {
   const argv = process.argv.slice(2), val = (f) => (argv.includes(f) ? argv[argv.indexOf(f) + 1] : null);
   const port = val('--browser'), gpu = val('--gpu') || 'rtx', hours = val('--hours') || '1'; // game hours per pose (24 = full day, ~10x slower)
   let rows = [];
-  rows = rows.concat(mapLoopGates(tryJson(run([root('tools/map-loop.mjs'), '--json']))));
+  // Sequential (never parallel), ONE run, no retry: map-loop swap timing is wall-clock - run m5-exit on an idle machine (no agents/tests in parallel).
+  let ml = null;
+  ml = tryJson(run([root("tools/map-loop.mjs"), "--json"]));
+  rows = rows.concat(mapLoopGates(ml));
   rows = rows.concat(benchLifeGates(tryJson(run(['--expose-gc', root('tools/bench-life.mjs'), '--poses', '--hours', hours, '--scenarios', '0', '--no-goblin', '--json']))));
   if (port) {
     const quality = gpu === 'intel' ? 'high' : 'ultra';
