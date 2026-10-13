@@ -96,6 +96,7 @@ const clampB = (v) => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
 export function underwaterPass(rt, gbuf, depth, camX, camY, camZ, timeSec, U) {
   if (!U.on) return;
   const cols = gbuf.cols, rows = gbuf.rows, kind = gbuf.kind;
+  const cb = rt.cells || rt; // real RenderTargets wrap a shared CellBuffer (rt.cells); a bare CellBuffer has the arrays itself
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x, fi = i * 4, sky = kind[i] === 0 || !(depth[i] < 1e8);
@@ -104,9 +105,9 @@ export function underwaterPass(rt, gbuf, depth, camX, camY, camZ, timeSec, U) {
       const d = fogCellDirJS(x, y);
       if (!sky) { Px = camX + d[0] * L; Py = camY + d[1] * L; Pz = camZ + d[2] * L; }
       else { Px = d[0] * 64; Py = d[1] * 64; } // sky ceiling hash: direction-keyed
-      _in.fg[0] = rt.fg[fi]; _in.fg[1] = rt.fg[fi + 1]; _in.fg[2] = rt.fg[fi + 2];
-      _in.bg[0] = rt.bg[fi]; _in.bg[1] = rt.bg[fi + 1]; _in.bg[2] = rt.bg[fi + 2];
-      underShade(_in.fg, _in.bg, rt.glyphIdx[i], L, Pz, Px, Py, 1, timeSec, U, _out);
+      _in.fg[0] = cb.fg[fi]; _in.fg[1] = cb.fg[fi + 1]; _in.fg[2] = cb.fg[fi + 2];
+      _in.bg[0] = cb.bg[fi]; _in.bg[1] = cb.bg[fi + 1]; _in.bg[2] = cb.bg[fi + 2];
+      underShade(_in.fg, _in.bg, cb.glyphIdx[i], L, Pz, Px, Py, 1, timeSec, U, _out);
       rt.setCellRGB(x, y, _out.glyph, clampB(_out.fg[0]), clampB(_out.fg[1]), clampB(_out.fg[2]), clampB(_out.bg[0]), clampB(_out.bg[1]), clampB(_out.bg[2]));
     }
   }
