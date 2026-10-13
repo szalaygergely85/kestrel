@@ -48,7 +48,7 @@ ok('gate shut + gear hidden (active) every swimming step', gateWhileSwim === 0, 
 ok('gate open every dry step (gear back)', openWhileDry === 0, openWhileDry);
 ok('no rescue teleport; out on the far bank, dry, grounded', tele === 0 && b.wadeRescue === undefined && e.transform.x > cx + 8 && !b.swimming && b.grounded, [tele, e.transform.x, cx]);
 ok('speedScale did not ratchet down', b.speedScale === 1);
-ok('clip placeholder = idle', wire.clipFor(e, true) === 'idle' && wire.clipFor(e, false) === 'idle');
+ok('clip pick: swim / tread / dive', wire.clipFor(e, true) === 'swim' && wire.clipFor(e, false) === 'tread' && wire.clipFor({ transform: { z: -3 }, components: { body: { swimming: true, waterZ: 0, eyeH: 1.6 } } }, true) === 'dive' && wire.clipFor({ transform: { z: -1 }, components: { body: { swimming: true, waterZ: 0, eyeH: 1.6 } } }, true) === 'swim');
 // SWIM-HOOKS-01: bindVitals/afterStep on the real world_m1 + real vitals (bodies set swimming by hand: the feed is covered above)
 {
   const ev = { on() { return () => {}; }, emit() {} };

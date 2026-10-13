@@ -6,6 +6,7 @@ import '../design/palette.js';
 import '../design/detail-pass.js';
 import '../design/models/voxel_bear.js';
 import '../design/models/voxel_bear_black.js';
+import '../design/models/voxel_eat_clips.js'; // SWIM-ASSETS-01: appends animations.eat (clipFor.state.eat)
 import { validateVoxelModel, packVoxelModel, buildVoxelMesh } from '../engine/index.js';
 
 let passed = 0;
@@ -46,7 +47,7 @@ test('same rig as Burl: size, cellM, anchor, parts (boxes, pivots, parents), vox
 
 test('clips: idle / walk / turn identical to Burl; no dialogue clips; BEAR-D2 fight clips exist, none missing', () => {
   assert.deepStrictEqual(Object.keys(DEF.animations).sort(),
-    ['charge', 'dead', 'die', 'flinch', 'hurt', 'idle', 'sink', 'swipe', 'turn', 'walk', 'windup']);
+    ['charge', 'dead', 'die', 'eat', 'flinch', 'hurt', 'idle', 'sink', 'swipe', 'turn', 'walk', 'windup']);
   for (const k of ['idle', 'walk', 'turn']) assert.deepStrictEqual(DEF.animations[k], BURL.animations[k], k);
   for (const k of Object.values(FX.clipFor.state)) assert.ok(DEF.animations[k], 'clipFor ' + k);
   for (const k of ['hurt', 'flinch', 'die', 'dead', 'sink']) assert.ok(DEF.animations[FX.clipFor[k]], 'clipFor.' + k);

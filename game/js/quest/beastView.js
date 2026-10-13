@@ -29,6 +29,11 @@ function wolfClip(clip, st, fleeing) {
   if (m && name && m[name]) return m[name];
   return clip === 'charge' ? 'run' : clip === 'windup' ? 'crouch' : clip;
 }
+// SWIM-ASSETS-01: ASSETS.eatFx.models (fox/wolf/bear/bearBlack) carry an appended 'eat' clip; other models keep idle.
+function eatClip(model) {
+  const fx = globalThis.ASSETS && globalThis.ASSETS.eatFx;
+  return fx && fx.models && fx.models.indexOf(model) >= 0 ? fx.clip : 'idle';
+}
 const STATE_CLIPS = ['idle', 'idle', 'charge', 'windup', 'charge', 'idle', 'idle', 'flinch'];
 
 // US-079b ARCH (37.16.1 amendment): the manually-driven clips' keyframe durations (ms), matching
@@ -85,7 +90,7 @@ export function presentBeasts(sim, world, overlay, styleIds, anim) {
     else if (anim) clip = anim.update(sim, i, 1000 / 60);
     else if (sim.hurtT[i] < HURT_STEPS) clip = 'hurt';
     else if (st === STATE_FLINCH) clip = 'flinch';
-    else clip = st === STATE_EAT ? 'idle' : (STATE_CLIPS[st] || 'idle'); // LIFE-07: NEEDS DESIGNER eat clip -> idle fallback
+    else clip = st === STATE_EAT ? eatClip(v.model) : (STATE_CLIPS[st] || 'idle'); // LIFE-07: 'eat' where voxel_eat_clips.js extends the model
     if (v.model === 'wolf') clip = wolfClip(clip, st, sim.fleeing[i]); // WOLF-D1: wolfFx.clipFor names
 
     if (clip !== v.anim) { v.anim = clip; v.frame = 0; v.t = 0; v.loop = undefined; }

@@ -873,7 +873,7 @@ registerRiggedChars(assets, bundle.models); // RIG-03w: char.<id> from package .
 // OB-086 (owner 2026-10-12: "import 1 char into the game, i wanna see"): the default kit character (human kit v8 shapes) as a
 // world model, stood 2 m east of Burl on every world load (entity id demo.kitChar: never saved, see saveState TRANSIENT_ENTITY).
 if (window.__charKit && !assets.has('model', 'char.kit')) {
-  try { const K = window.__charKit; assets.add('model', 'char.kit', riggedModelDef(collapseRig(meshCharacter(composeCharacter(K, K.defaults)), K.partMap))); }
+  try { const K = window.__charKit; const grid = composeCharacter(K, K.defaults); const sw = window.ASSETS.chargenSwimClips; if (sw) Object.assign(grid.clips, sw.clips); /* SWIM-ASSETS-01: swim/tread/dive, in-game player only */ assets.add('model', 'char.kit', riggedModelDef(collapseRig(meshCharacter(grid), K.partMap))); }
   catch (e) { console.warn('[char.kit] ' + e.message); }
 }
 if (assets.has('model', 'char.kit')) engine.events.on('world:loaded', ({ world: kw }) => {

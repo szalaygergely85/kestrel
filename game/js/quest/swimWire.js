@@ -5,8 +5,8 @@ import { createSwimFeed } from './sim/swimFeed.js';
 import { createSwimVitals } from './swimVitals.js';
 import { createSeaMonster } from './seaMonster.js';
 
-/** Clip names for the player body while swimming. Placeholder: the idle clip until the designer's swim/tread clips land. */
-export const SWIM_CLIPS = Object.freeze({ swim: 'idle', tread: 'idle' });
+/** Clip names for the player body while swimming. design/chargen/human_kit_swim.js clips, merged into the player grid in main.js. */
+export const SWIM_CLIPS = Object.freeze({ swim: 'swim', tread: 'tread', dive: 'dive' });
 
 export function createSwimWire(world) {
   const feed = createSwimFeed(world);
@@ -40,6 +40,10 @@ export function createSwimWire(world) {
     /** Hands gate: the caller's gate AND not swimming. */
     gate(open, entity) { return open && !this.active(entity); },
     /** Clip for the swim state: moving = swim, still = tread (both idle for now). */
-    clipFor(entity, moving) { return moving ? SWIM_CLIPS.swim : SWIM_CLIPS.tread; },
+    clipFor(entity, moving) { // dive (eye under water) > swim (moving) > tread (still)
+      const b = entity && entity.components && entity.components.body;
+      if (b && b.swimming && b.waterZ !== undefined && entity.transform.z + b.eyeH < b.waterZ - 0.05) return SWIM_CLIPS.dive;
+      return moving ? SWIM_CLIPS.swim : SWIM_CLIPS.tread;
+    },
   };
 }
