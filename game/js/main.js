@@ -1366,6 +1366,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     // the 'world:loaded' handler" rule).
     engine.events.on('world:band', (ev) => { // WM-04: the nav tile swapped with the band -> beasts rebind + re-plan, dormancy by tile
       if (beasts && ev && ev.nav && playerHandle) { const pt = playerHandle.data.transform; beasts.rebindNav(ev.nav, pt.x, pt.y); }
+      if (outLife && ev && ev.nav && playerHandle) { const pt = playerHandle.data.transform; outLife.rebindNav(ev.nav, pt.x, pt.y); } // OUT-LIFE-TILE: villagers follow the tile too
     });
     engine.events.on('world:band', () => hzb.invalidate('band')); // WS2-05: near/far seam jumped -> cut the HZB + stable history
     // OB-073-D2f: hand the GPU carpet pass the class map + near heights on every world load / band swap (version bump re-uploads)
@@ -1571,7 +1572,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       outwall = saveEnabled && saveRelay ? createOutwall({ world, questFlag: (k) => saveRelay.quest.questFlag(k) }) : null;
       dialogueCtl.addNpc('hesk'); dialogueCtl.addNpc('dorrin'); // Ch3 Outwall NPCs (world_m1 entities, char.kit model registered at boot; both share the default kit look, no tint)
       if (outLife) outLife.dispose(); // LIFE-04: villagers replace the OUT-02 spawn hook; only with saves live (same gate as OUT-01), never in capture/bench
-      outLife = lifeData && outwall && lifeNav && mode === 'world' ? createOutwallLife({ world, life: lifeData.life, nav: lifeNav, events: engine.events, state: world.state, outwall, dialogue: dialogueCtl, barksData: lifeData.barks, style: window.ASSETS.uiStyle.dialogue, hour: clockHour(world.state, clockCfg) }) : null;
+      outLife = lifeData && outwall && lifeNav && mode === 'world' ? createOutwallLife({ world, life: lifeData.life, nav: lifeNav, tileNav: !!(world.terrainGrid && world.nav && lifeNav === world.nav), events: engine.events, state: world.state, outwall, dialogue: dialogueCtl, barksData: lifeData.barks, style: window.ASSETS.uiStyle.dialogue, hour: clockHour(world.state, clockCfg) }) : null;
       crystal = barks = chapterCard = chapterCard2 = escort = null;
       if (bearTurn) bearTurn.paused = false;
       if (saveEnabled && saveRelay) { // CH1-MOUNT: all three need the quest relay (flags + book)
