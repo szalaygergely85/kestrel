@@ -605,13 +605,13 @@
       "returnText": "Back to the board",
       "lines": {
         "offer": [
-          "NEEDS WRITER: a note on the board, new nail: WOLVES COME AT NIGHT. DEFEND THE GEESE."
+          "NEEDS WRITER: WOLVES COME AT NIGHT. DEFEND THE GEESE."
         ],
         "active": [
-          "NEEDS WRITER: the note: NIGHTS. GOOSE PEN. KILL THE PACK."
+          "NEEDS WRITER: NIGHTS. GOOSE PEN. KILL THE PACK."
         ],
         "ready": [
-          "NEEDS WRITER: under the note, tied with twine: a red vial pair and arrows."
+          "NEEDS WRITER: tied with twine: red vials and arrows."
         ],
         "done": [
           "NEEDS WRITER: GEESE COUNTED. ALL HERE."
