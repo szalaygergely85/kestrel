@@ -310,6 +310,13 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     outAvail.length = a; outReady.length = r;
     if (sideAvail) { sideAvail.length = sa; sideReady.length = sr; }
   };
+  /** OB-124b: main-chain step marks (data: objective.mark = {start?, end?}). The CURRENT m1 step shows a gold '!' at `start` while it
+   *  has one (step available), else a gold '?' at `end` (step active / where it completes). Appends to the main lists; none when done. */
+  book.chainMarks = function chainMarks(outAvail, outReady) {
+    const st = entries[0].state, o = entries[0].def.objectives[st.completed.length];
+    const m = o && o.mark; if (!m) return;
+    if (m.start) outAvail[outAvail.length] = m.start; else if (m.end) outReady[outReady.length] = m.end;
+  };
   /** QL-03: index of the tracked giver quest: the player's pick (main flag `ui.tracked`, saved with the main quest) while it is active/ready, else the most recently accepted one, else -1. */
   book.tracked = function tracked() {
     const pin = entries[0].state.flags['ui.tracked'];

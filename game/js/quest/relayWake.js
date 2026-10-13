@@ -16,6 +16,9 @@ export const HINT_NO_CRYSTAL = { key: 'hint.relay.nocrystal', text: 'Cold stone.
 export const NOTICE = ['BEND RELAY AWAKENED', 'Travel unlocked.', 'You can now travel between', 'awakened Waystones.'];
 export const FLAG_STONE_TOLD = 'dlg.bear.stone.told'; // set by Burl's stone talk (bear.dialogue.json)
 export const PROMPT_STONE = '[E] Hold up the crystal';
+// OB-145: while the wake is blocked the prompt is plain, and E names the missing step (story.md q06, NEEDS WRITER to polish).
+export const PROMPT_LOOK = '[E] Look at the relay';
+export const HINT_NEED_CRYSTAL = "You need Burl's crystal.", HINT_NEED_WAYSTONE = 'Wake the Waystone by the tower first.', HINT_NEED_TALK = 'Ask Burl about the stone.';
 export const RADIUS = 2.2;
 const TOAST_SEC = 4, TOAST_Y = 6, FG = [236, 226, 190], BG = [10, 11, 16];
 const DEAD = 0, WAKING = 1, AWAKE = 2;
@@ -73,7 +76,13 @@ export function createRelayWake(o) {
   const { world, palette, emit } = o, hum = o.hum || playRelayHum;
   const relays = [];
   const toast = { left: 0, line: null };
-  const hint = { left: 0 };
+  const hint = { left: 0, line: null };
+  /** OB-145: the plain-text reason a dormant relay/stone cannot be woken yet, or null when the gate is open. */
+  function blockedHint(r) {
+    if (!world.state[FLAG_ATTUNED]) return HINT_NEED_CRYSTAL;
+    if (r.stone) return world.state[FLAG_STONE_TOLD] ? null : HINT_NEED_TALK;
+    return world.state[woken('waystone')] ? null : HINT_NEED_WAYSTONE;
+  }
   const pos = { x: 0, y: 0, z: 0 };
   world.forEachEntity((e) => {
     const w = e && e.components && e.components.waystone;
@@ -123,8 +132,8 @@ export function createRelayWake(o) {
       const r = find(wsId);
       if (!r || r.phase === WAKING) return false;
       if (r.phase === AWAKE) { touch(r); return true; }
-      if (!world.state[FLAG_ATTUNED] || (r.stone && !world.state[FLAG_STONE_TOLD]) || (!r.stone && !world.state[woken('waystone')])) { hint.left = TOAST_SEC; return false; } // gate: the crystal wakes stones
-      if (r.wsId === FORD_WS && !world.state[FLAG_MIRROR]) { hint.left = TOAST_SEC; return false; } // mq.ford.mirror: the mount is empty until the player holds relay.mirror
+      const why = blockedHint(r); if (why) { hint.line = why; hint.left = TOAST_SEC; return false; } // gate: the crystal wakes stones
+      if (r.wsId === FORD_WS && !world.state[FLAG_MIRROR]) { hint.line = HINT_NO_CRYSTAL.text; hint.left = TOAST_SEC; return false; } // mq.ford.mirror: the mount is empty until the player holds relay.mirror
       const h = world.get(r.entId);
       if (h) h.play('wake');
       hum();
@@ -142,7 +151,7 @@ export function createRelayWake(o) {
       if (hint.left > 0) hint.left -= dt;
       for (let i = 0; i < relays.length; i++) {
         const r = relays[i];
-        if (r.phase === DEAD) continue;
+        if (r.phase === DEAD) { r.rec.prompt = blockedHint(r) ? PROMPT_LOOK : (r.stone ? PROMPT_STONE : PROMPT_WAKE); continue; } // OB-145
         if (r.phase === AWAKE) {
           if (!r.growDone && r.target !== null && lights) {
             const lh = lights.entityHandle.get(r.entId);
@@ -175,10 +184,11 @@ export function createRelayWake(o) {
     },
     get toastLeft() { return toast.left; },
     get hintLeft() { return hint.left; },
+    get hintLine() { return hint.line; },
     drawHud(ui) {
       if (toast.left > 0 && toast.line) plate(ui, toast.line, TOAST_Y);
       else if (toast.left > 0) for (let i = 0; i < NOTICE.length; i++) plate(ui, NOTICE[i], TOAST_Y + i);
-      else if (hint.left > 0) plate(ui, HINT_NO_CRYSTAL.text, TOAST_Y);
+      else if (hint.left > 0) plate(ui, hint.line || HINT_NO_CRYSTAL.text, TOAST_Y);
     },
   };
 }
