@@ -70,7 +70,7 @@ Most of these come up on the walks; the links go straight to the spot.
 - [ ] Animal models: http://localhost:8000/design/preview/otter.html , http://localhost:8000/design/preview/goat.html , http://localhost:8000/design/preview/heron.html , http://localhost:8000/design/preview/tortoise.html , http://localhost:8000/design/preview/black-bear.html , http://localhost:8000/design/preview/wolf.html ->
 - [x] **Sea monster (new, D-070):** APPROVED (D-074) - http://localhost:8000/design/preview/seamonster.html - the serpent, its circle / rise / strike clips, views from a swimmer at 10/20/30 m ->
 - [x] **Goblins (new, D-072):** APPROVED (D-074) - http://localhost:8000/design/preview/goblin.html - goblin, torch-bearer, spear; all clips by day/dusk/night. Design calls: club in the LEFT hand (throws with the right), every goblin carries a javelin + 2 spares on the back - or a melee-only goblin without javelins? ->
-- [ ] Items + props: http://localhost:8000/design/preview/item-icons.html , http://localhost:8000/design/preview/voxel-props.html ->
+- [x] Items + props: icons APPROVED (owner 2026-10-13) - http://localhost:8000/design/preview/item-icons.html , http://localhost:8000/design/preview/voxel-props.html ->
 - [ ] Character generator (hands that can grip OB-092, body shape OB-083, Mixamo export OB-070): http://localhost:8000/tools/chargen/index.html ->
 - [ ] Kit character in the game next to Burl (OB-086): http://localhost:8000/game/index.html?pose=burl ->
 - [ ] Editor (groups, delete assets, autosave OB-028/029/030): http://localhost:8000/tools/editor/index.html ->
