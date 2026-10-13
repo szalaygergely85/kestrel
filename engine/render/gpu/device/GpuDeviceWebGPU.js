@@ -76,6 +76,8 @@ export class GpuDeviceWebGPU {
     /** WG-1c2: for the F3 backend line */
     this.adapterInfo = { vendor: String(info.vendor || ''), architecture: String(info.architecture || ''), description: String(info.description || ''), fallback: this._software };
     this.timer = new WebGpuTimer(gpuDevice, this._c);
+    /** @type {{destroy: () => void}[]} OB-119: disposed while the frame encoder holds commands; destroyed after submit */
+    this._zombies = [];
     this._live = /** @type {{destroy: () => void}[]} */ ([]);
     /** @type {any[]} every computePipeline handle (38.10a: dispose(buffer) prunes their dispatch bind-group caches) */
     this._computePipes = [];
@@ -534,7 +536,7 @@ export class GpuDeviceWebGPU {
   /** FIX-RING: drop a failed frame - end any open pass, drop the encoder, reset the uniform ring. Never throws. */
   resetFrame() {
     this.abortPass();
-    this._encoder = null; 
+    this._encoder = null; this._flushZombies();
     this.uniformRing.reset();
   }
 
@@ -647,6 +649,13 @@ export class GpuDeviceWebGPU {
     this._pass = null; this._curPipeline = null; this._boundTarget = null; this._passStack = null;
   }
 
+  /** OB-119: destroys the resources dispose() deferred while commands were recorded (call after queue.submit). */
+  _flushZombies() {
+    const z = this._zombies;
+    for (let i = 0; i < z.length; i++) z[i].destroy();
+    z.length = 0;
+  }
+
   /** End of frame: one ring `writeBuffer` of the used range, then `queue.submit` (38.4). */
   submit() {
     if (this._pass) throw new Error('GpuDeviceWebGPU.submit: a pass is still open');
@@ -656,6 +665,7 @@ export class GpuDeviceWebGPU {
     if (this._encoder) {
       const timing = this.timer.resolve(this._encoder);
       this.gpu.queue.submit([this._encoder.finish()]); this._encoder = null;
+      this._flushZombies();
       this.timer.collect(timing);
       if (this._pendingMaps.length) this._startPendingMaps();
     } else this.timer.resolve(null);
@@ -798,10 +808,14 @@ export class GpuDeviceWebGPU {
       if (rs) { this._readStaging.delete(handle); rs.gpu.destroy(); }
       const o = handle.gpu;
       const i = this._live.indexOf(o);
-      if (i >= 0) { this._live.splice(i, 1); o.destroy(); }
+      // OB-119: the frame encoder is submitted only in submit(); destroying a resource a recorded dispatch/draw still
+      // references makes queue.submit fail ("used in submit while destroyed"). While commands are recorded, defer the
+      // destroy until after that submit (_zombies); with no open encoder destroy at once.
+      if (i >= 0) { this._live.splice(i, 1); if (this._encoder) this._zombies.push(o); else o.destroy(); }
       return;
     }
     this.timer.dispose();
+    this._flushZombies();
     for (const o of this._live) o.destroy();
     this._live.length = 0;
     for (const pool of this._staging.values()) for (const b of pool) b.destroy();
