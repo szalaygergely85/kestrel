@@ -1162,3 +1162,8 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - **Wildlife:** predator-prey: wolves/foxes/bears hunt rabbits/deer (chase, catch or lose them, prey flees and hides); herds and flocks react to each other and to the player. Extends EP-WILD (38.31) + US-085 perception.
 - **Wolf packs vs humans:** packs can raid villagers/farms (gooseFarm, Outwall edge); the player can help -> side-quest hook ("defend the farm" events), quest on the template pipeline.
 - Next: architect note (EP-LIFE: schedule/needs model, NPC-NPC interaction, predator-prey sim budget + off-screen LOD, pack-vs-NPC combat using beastSim), then PO stories. Order after SWIM-01 note.
+
+## D-072 - Goblins (owner, 2026-10-13; recorded by the PC-B main session)
+- Owner: "fantasy characters little goblins attacking? can be added?" -> yes, as **raiders on the west bank** (levels 5-10 side of the river): small goblin bands with crude weapons, camps that can be cleared, raids on farms and Outwall like the wolf packs. Writer gives them a place in the lore (a fantasy exception to the realistic-animal look; style = the D-053 "realistic things from squares" voxel look, small and wiry).
+- Fighting (owner picks): **melee in groups** (3-5, pack AI like the wolves), **archers / throwers** (stay back, throw spears or shoot; tests the shield), **night raids with torches** (on the LIFE-08 raid system, torch light). Not picked: steal-and-flee.
+- Next: writer lore line, designer model (+ clips: idle, walk, run, attack, throw, hurt, die; torch), architect short note (goblin brain on beastSim/wolf pack + a ranged enemy projectile + camps + torch raids), PO stories.
