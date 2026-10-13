@@ -22,7 +22,15 @@ export function makeGrid(def, chunk = CHUNK) {
   for (const k of ['prefetchX', 'switchX', 'prefetchY', 'switchY']) if (typeof sw[k] !== 'number' || !isFinite(sw[k])) throw new Error(`World.load: terrainGrid.switch.${k} must be a finite number`);
   if (!(sw.switchX > 32 && sw.prefetchX > sw.switchX && sw.switchY > 32 && sw.prefetchY > sw.switchY)) throw new Error('World.load: terrainGrid.switch needs prefetch > switch > 32 on both axes');
   const ni = Math.max(1, Math.ceil((cx1 - cw - ox) / stepX) + 1), nj = Math.max(1, Math.ceil((cy1 - ch - oy) / stepY) + 1);
-  return { cx0, cy0, cx1, cy1, cw, ch, stepX, stepY, ox, oy, switch: sw, ni, nj, chunk };
+  const pin = [];
+  if (def.pin !== undefined) { // WM-02: zones that are never evicted from the band cache
+    if (!Array.isArray(def.pin)) throw new Error('World.load: terrainGrid.pin must be an array of [i, j]');
+    for (const p of def.pin) {
+      if (!Array.isArray(p) || p.length !== 2 || !Number.isInteger(p[0]) || !Number.isInteger(p[1]) || p[0] < 0 || p[1] < 0 || p[0] >= ni || p[1] >= nj) throw new Error('World.load: terrainGrid.pin entries must be [i, j] inside the grid');
+      pin.push([p[0], p[1]]);
+    }
+  }
+  return { cx0, cy0, cx1, cy1, cw, ch, stepX, stepY, ox, oy, switch: sw, ni, nj, chunk, pin };
 }
 
 const zx0 = (g, i) => Math.min(g.ox + i * g.stepX, g.cx1 - g.cw);
