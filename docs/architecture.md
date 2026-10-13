@@ -6611,6 +6611,7 @@ Goal: every region of `world_geo` walkable; the real limits stay (sea monster ou
 
 **Do not:** prebake the whole map (199 MB); build one nav grid for the whole map; run A* across tiles; hand-place props to fill regions; bake synchronously in play; change the bytes of the 5 authored zones.
 
+- WM-12 rule (architect 2026-10-13e): beastSim.save() is not part of the game save; slot order is deterministic (authored, then generated in REGION_RULES order). If beast state ever enters the save it must be keyed by id, never by slot.
 ### 38.60 D-075 step 5: HZB gate (R3) + tree card impostors (R6) (PC-B architect opus 2026-10-13, owner-authorised D-075, PC-A to ratify)
 
 **Facts.** HZB occlusion exists (38.20; `wg/passHzb.js`, `wg/passCull.js` phases 1/2, twin `engine/mesh/occlusion.js`, spans via OCCL-STATS-01), opt-in `?occl=1`, WebGPU only. Kinds 0-10 in `engine/render/GBuffer.js` (9 = KIND_MESH). Trees stop at `maxDistM` 140; OB-089: dark unlit LOD silhouettes beyond the near range are rejected by the owner. Targets (proposal): RTX 4060 ultra <= 7.5 ms GPU with trees to 300 m; Intel (preset high, D-075: ultra = RTX only) <= 10 ms.

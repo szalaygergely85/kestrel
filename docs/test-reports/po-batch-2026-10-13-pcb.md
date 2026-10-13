@@ -106,3 +106,28 @@ b. R6c part 1 3bda29e9 - PO OK -> testing (part 1 scope only). Engine-internal, 
 c. WM-CACHE-01 eae685ac - PO OK -> testing. Farthest-centre eviction keeps pinned, current, pending and newest; regrow trims the grown bundle. Main-session to-do: re-run map-loop once (cache stays <= 32 MB, 0 misses). Owner walk-test: engine-internal, no owner test.
 
 d. OUT-LIFE-TILE 0cb383eb - PO OK -> testing, conditional on the main.js wiring (`tileNav: !!gridNav` + `world:band` rebind), which the main session added in the kestrel-1 commit after WM-05; the PO could not read that commit, so verify it is present. Browser-only to-dos: with `?grid=1`, villagers keep walking across a band swap and do not freeze; save/load round trip. Owner walk-test: with `?grid=1`, stand in Outwall and watch the villagers keep their routine for a minute. Then walk out beyond about 200 m and return; they resume where they should be.
+
+## PO batch 4 (2026-10-13e)
+
+Basis: architect "Batch 2026-10-13e" items 1, 4-8 (all ARCH OK) and the WM-05 lane entry (pc-b1.md). No lane entries exist for R6c part 2, WM-09..12; ACs checked against the verdict text only. Nothing was run. R6d and R6-WIRE are ARCH CHANGES (not in this batch).
+
+a. R6c part 2 6628d131 - PO OK -> testing. Engine-internal, no owner test. Atlas ranges keyed per bake, storage group cached per desc. Open, gating (main session): gpucompare impMid + impBand and the roadSouth bench delta; story R6c stays open until both pass.
+b. WM-09 sea monster whole coast 587bb1b5 - PO OK -> testing. Note: the named-water check in test 3 is mostly vacuous (lake/river data absent); the inland grid covers it. Owner walk-test: walk the Strand and Signal Head coast, then the east shore; the sea monster can appear along the whole coast. It stays in water and does not clip the beach.
+c. WM-10 whole-world M map 7f651ba9 - PO OK -> testing. Optional nit: the "old cell restored" test asserts `true`; make it check `art.codes`. Owner walk-test: press M; the map shows the whole world including the coast and Signal Head cove. Walk, and the arrow moves with the old cell restored (no trail).
+d. WM-11 whole-map gate + region stills tool b03d9e67 - PO OK -> testing. Tool/gate, no owner test. Note: `mapLoopFull` crashes if no Thornwood stop exists; guard it. To-do (main session): re-run map-loop once (Signal Head now covered after WM-05), cache <= 32 MB, 0 band:late.
+e. WM-12 regional beasts 344b7d9d - PO OK -> testing. Slots deterministic; beastSim is not in the save (beasts return alive on load). Rule recorded: if beast state ever enters the save, key by id. Owner walk-test: visit 3 regions (downs, reedmire, heath); each shows its own beasts, which wander and chase. Save/load; beasts reappear, no NaN or frozen ones.
+f. WM-05 map switch 5b067b88 + b7e316e5 - PO OK -> testing. Pins = 5 legacy zones, `?grid=0` = old map, validator covers spawn, sites, relays. Open from lane: browser `node tools/route-walk-browser.mjs --port {port}` + gpucompare gridZone row (main session). Note: the spawn-zone fallback also changes the start zone of other terrainBands worlds loaded without opts.spawn (load-time only). Owner walk-test: open port 8000 and play the whole map (default); cross band borders without hitches, and compare with `?grid=0` if anything looks wrong.
+
+## Owner walk list (consolidated, http://localhost:8000/game/index.html; whole map is now the default, ?grid=0 = old map)
+1. OB-113 / OB-115 / OB-116: kill boars and goblins (potion toast, pack item, no instant heal); the Burl quest counts boars; a swing at 2 m hits on flat, uphill and downhill, and 3+ m or behind a wall misses.
+2. OB-114: meadow boulder by the stone wall; green only on top; say whether the faceting is OK (still open).
+3. OB-118 / OB-117: Settings quality cycle shows a labelled Extreme; pick 4:3, reload, ratio persists (check the boot fix is in).
+4. OB-103b / G2 / PERF-R2P4: cycle low to extreme on a meadow (carpet scales, soft far glyphs, no ring); walk a forest, no tree pop at 15-20 m.
+5. PERF-R4: Shadows ultra; far shadows good, fps holds.
+6. WM-01 / WM-05: walk strand -> keep -> Thornwood -> High Pastures across band borders; no hitches or terrain jumps; beasts keep chasing and villagers in Outwall keep their routine.
+7. WM-07: visit glasswater, downs, reedmire, strand; biome-fitting boulders, ruins, reeds or flowers, no rock inside a trunk.
+8. WM-09: sea monster appears along the whole coast and stays in the water.
+9. WM-10: M shows the whole world; the arrow moves cleanly.
+10. WM-12: each region has its own beasts; save/load keeps them sane.
+11. SWIM-04c: dive in a lake, look up; the tint is even, then the dry view is normal.
+12. Main session owes: gpucompare (all rows + gridZone, impMid/impBand, SWIM-04c, D-039 re-baseline), map-loop re-run, bench-life --poses, roadSouth bench, browser `--grid` route-walk. R6d and R6-WIRE await ARCH CHANGES fixes.
