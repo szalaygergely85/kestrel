@@ -93,4 +93,24 @@ export function fitCssSize(cssW, cssH, availW, availH, maxUp = 1) {
   return { w: cssW * s, h: cssH * s, smooth: s !== 1 };
 }
 
+/**
+ * OB-117 (owner): live-window CSS box = the whole window at every preset/window size (no letterbox, one constant picture
+ * shape). The backing store keeps its integer px cells (non-uniform CSS stretch); `smooth` when CSS != backing (not 1:1).
+ * @returns {{w:number,h:number,smooth:boolean}} CSS pixels
+ */
+export function fitCssFill(backW, backH, dpr, availW, availH) {
+  return { w: availW, h: availH, smooth: Math.abs(availW * dpr - backW) > 1e-6 || Math.abs(availH * dpr - backH) > 1e-6 };
+}
+
+/**
+ * OB-117 (owner): fixed picture ratio (w/h). Largest box of that ratio inside availW x availH (letterbox/pillarbox bars
+ * otherwise). `ratio` null/0 = fill the window (fitCssFill). Live-window path only.
+ */
+export function fitCssRatio(ratio, backW, backH, dpr, availW, availH) {
+  if (!(ratio > 0)) return fitCssFill(backW, backH, dpr, availW, availH);
+  let w = availW, h = w / ratio;
+  if (h > availH) { h = availH; w = h * ratio; }
+  return { w, h, smooth: Math.abs(w * dpr - backW) > 1e-6 || Math.abs(h * dpr - backH) > 1e-6 };
+}
+
 export { FONT_STACK };

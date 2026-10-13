@@ -8,7 +8,7 @@
 // its own cached bind group (no rebuild per frame). The atlas textures are rebuilt only on resize/DPR change.
 
 import { CellBuffer } from './CellBuffer.js';
-import { computeCellBox, fitCssSize } from './glyphMetrics.js';
+import { computeCellBox, fitCssSize, fitCssRatio } from './glyphMetrics.js';
 import { rasterizeGlyphAtlas, glyphAtlasPixels, GLYPH_COUNT } from './glyphAtlas.js';
 import { PRESENT_WGSL, PRESENT_BLOCK, PRESENT_TEXTURES } from './gpu/wgsl/present.wgsl.js';
 import { FRAME_TIMER_SLOT } from './gpu/device/WebGpuTimer.js';
@@ -34,6 +34,7 @@ export class RenderTargetWebGPU {
     this.rows = rows;
     this.cells = new CellBuffer(cols, rows);
     this.cellW = 1; this.cellH = 1;
+    this._aspect = 16 / 9; // OB-117: displayed picture ratio (w/h); null = fill the window. setAspect() changes it live
     this.pxCellW = 1; this.pxCellH = 1;
     this.glyphAscent = 1;
     this.fontSize = 16;
@@ -124,6 +125,13 @@ export class RenderTargetWebGPU {
     this._rebuildUiAtlas();
   }
 
+  /** OB-117: picture ratio (number w/h, e.g. 16/9) or null = fill the window; re-fits the live window at once. */
+  setAspect(ratio) {
+    this._aspect = ratio > 0 ? ratio : null;
+    const rb = this._refBox || {};
+    this.resize(rb.availW, rb.availH, rb.dpr);
+  }
+
   resize(refAvailW, refAvailH, refDpr) {
     const dpr = refDpr != null ? refDpr : (window.devicePixelRatio || 1);
     const availW = refAvailW != null ? refAvailW : window.innerWidth;
@@ -138,7 +146,10 @@ export class RenderTargetWebGPU {
     this.glyphAscent = box.glyphAscent;
     this.cellW = this.pxCellW / dpr;
     this.cellH = this.pxCellH / dpr;
-    const css = fitCssSize(this.cellW * this.cols, this.cellH * this.rows, availW, availH, refAvailW == null ? 2 : 1); // display-only fit (live window may upscale <= 2x so Ultra is never a smaller picture)
+    // OB-117: live window = fixed ratio this._aspect (null = fill the window), see fitCssRatio; the ref-box (gpucompare) path is unchanged.
+    const css = refAvailW == null
+      ? fitCssRatio(this._aspect, this.pxCellW * this.cols, this.pxCellH * this.rows, dpr, availW, availH)
+      : fitCssSize(this.cellW * this.cols, this.cellH * this.rows, availW, availH, 1);
     this.canvas.style.width = css.w + 'px';
     this.canvas.style.height = css.h + 'px';
     this.canvas.style.imageRendering = css.smooth ? 'auto' : ''; // BUG-SQUARES-01: '' = page CSS (pixelated) at 1:1

@@ -23,7 +23,7 @@
 // individually pathological there.
 
 import { CellBuffer } from './CellBuffer.js';
-import { computeCellBox, FONT_STACK } from './glyphMetrics.js';
+import { computeCellBox, fitCssRatio, FONT_STACK } from './glyphMetrics.js';
 import { GLYPH_BG_ALPHA } from '../ui/uiLayer.js'; // UI-XHAIR-01: glyph-only bg-alpha mask (128)
 
 const MAX_PX_CELL_H = 16; // D-005: cap the fallback's backing resolution, CSS-upscale
@@ -38,6 +38,7 @@ export class RenderTargetCanvas2D {
     this.cells = new CellBuffer(cols, rows);
 
     this.cellW = 1; this.cellH = 1;
+    this._aspect = 16 / 9; // OB-117: displayed picture ratio (w/h); null = fill the window. setAspect() changes it live
     this.pxCellW = 1; this.pxCellH = 1;
     this.glyphAscent = 1;
     this.fontSize = 16;
@@ -65,6 +66,13 @@ export class RenderTargetCanvas2D {
   // window-derived box with a fixed one - used ONLY by `?gpucompare=1`/
   // `?gpucompare=shade` (main.js), see RenderTargetGL.resize's header
   // comment. Normal gameplay never passes these.
+  /** OB-117: picture ratio (number w/h, e.g. 16/9) or null = fill the window; re-fits the live window at once. */
+  setAspect(ratio) {
+    this._aspect = ratio > 0 ? ratio : null;
+    const rb = this._refBox || {};
+    this.resize(rb.availW, rb.availH, rb.dpr);
+  }
+
   resize(refAvailW, refAvailH, refDpr) {
     const dpr = refDpr != null ? refDpr : (window.devicePixelRatio || 1);
     const availW = refAvailW != null ? refAvailW : window.innerWidth;
@@ -89,8 +97,10 @@ export class RenderTargetCanvas2D {
     // The backing resolution is capped (MAX_PX_CELL_H) but the element
     // still fills the window via CSS - browsers upscale it (accepted
     // softness, see D-005).
-    this.canvas.style.width = (availW) + 'px';
-    this.canvas.style.height = (availH) + 'px';
+    // OB-117: fills the whole window like the WebGPU target.
+    const css = fitCssRatio(this._aspect, this.pxCellW * this.cols, this.pxCellH * this.rows, dpr, availW, availH);
+    this.canvas.style.width = css.w + 'px';
+    this.canvas.style.height = css.h + 'px';
     this.canvas.width = this.pxCellW * this.cols;
     this.canvas.height = this.pxCellH * this.rows;
 

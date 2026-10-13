@@ -34,7 +34,7 @@
 //    arrows, Esc) is fully implemented; mouse interaction needs an engine
 //    change first.
 import { createPanel } from '../../../engine/index.js';
-import { OPTIONS, findOption, getDefaultValues, stepOptionValue } from '../settings/options.js';
+import { OPTIONS, findOption, getDefaultValues, stepOptionValue, ASPECT_VALUES, DEFAULT_ASPECT, aspectRatio } from '../settings/options.js';
 import { loadSettings, saveSettings } from '../platform/index.js';
 import { setMuted, isMuted, setVolume } from '../audio/synth.js';
 import { knobsFor, saveQuality, applyCarpetPreset } from './gfxPresets.js';
@@ -148,6 +148,14 @@ function applyQuality(name, ctx) {
   if (!m || !ctx.engine || typeof ctx.engine.setGrid !== 'function') return;
   const result = ctx.engine.setGrid(Number(m[1]), Number(m[2]));
   if (result && !result.error) applyValue('grid', `${result.cols}x${result.rows}`, ctx);
+}
+
+/** OB-117: saves the picture ratio and applies it live (RenderTarget.setAspect re-fits the canvas at once). */
+export function applyAspect(name, ctx) {
+  if (!ASPECT_VALUES.includes(name)) return;
+  saveSettings({ aspect: name });
+  const rt = ctx && ctx.engine && ctx.engine.renderTarget;
+  if (rt && typeof rt.setAspect === 'function') rt.setAspect(aspectRatio(name));
 }
 
 function applyStep(dir, ctx) {
@@ -462,12 +470,12 @@ function menuSettingsStyle(style, menu, full = true) {
     section: { ...style.section, color: menu.title.decorFg[0],
       rule: { glyph: menu.separators[0].glyph, color: menu.separators[0].fg, toCol: menu.separators[0].to } },
     layout: [{section:'GRAPHICS',y:4},{id:'quality',y:6},{id:'shadows',y:8},
-      {id:'lodScale',y:10},{id:'grid',y:12},{section:'SOUND',y:15},{id:'volume',y:17},
-      {id:'mute',y:19},{section:'COMFORT',y:22},{id:'textSize',y:24},
+      {id:'lodScale',y:10},{id:'grid',y:12},{id:'aspect',y:14},{section:'SOUND',y:16},{id:'volume',y:18},
+      {id:'mute',y:20},{section:'COMFORT',y:22},{id:'textSize',y:24},
       {id:'reduceMotion',y:26},{id:'back',y:29}],
-    rowOrder: ['quality','shadows','lodScale','grid','volume','mute','textSize','reduceMotion','back'],
-    labels: { ...style.labels, grid: 'Resolution', lodScale: 'LOD distance' },
-    controlOf: { ...style.controlOf, lodScale: 'select' },
+    rowOrder: ['quality','shadows','lodScale','grid','aspect','volume','mute','textSize','reduceMotion','back'],
+    labels: { ...style.labels, grid: 'Resolution', lodScale: 'LOD distance', aspect: 'Aspect ratio' },
+    controlOf: { ...style.controlOf, lodScale: 'select', aspect: 'select' },
     valueText: { ...style.valueText, lodScale: {0.6:'0.6x',0.8:'0.8x',1:'1x',1.25:'1.25x'} },
     notes: { ...style.notes, lodScale: {default:'Restart to apply'} },
     note: { ...style.note, color: menu.keyHints.fg },
@@ -487,7 +495,7 @@ function settingsTitle(style) {
  */
 export function createSettingsView(options = {}, { style, controls, quality, rgb, onChange, isDisabled, menuStyle = globalThis.ASSETS?.uiStyle?.menu } = {}) {
   if (!style || !controls || !quality || !rgb) throw new TypeError('Settings style, controls, quality and rgb required');
-  const optionDefs = menuStyle ? [...FULL_OPTIONS, {id:'lodScale', values:[0.6,0.8,1,1.25], default:1}] : FULL_OPTIONS;
+  const optionDefs = menuStyle ? [...FULL_OPTIONS, {id:'lodScale', values:[0.6,0.8,1,1.25], default:1}, {id:'aspect', values:ASPECT_VALUES, default:DEFAULT_ASPECT}] : FULL_OPTIONS;
   if (menuStyle) {
     style = menuSettingsStyle(style, menuStyle);
     controls = { ...controls, label: {normal:menuStyle.row.normal.fg, focus:menuStyle.row.focus.fg, disabled:menuStyle.row.disabled.fg},
@@ -676,6 +684,7 @@ function buildFullView(assets, over) {
     shadows: saved.shadowQuality || (knobs ? knobs.shadowQuality : 'high'),
     lodScale: nearest(FULL_LODS, saved.lodScale ?? (knobs ? knobs.lodScale : 1)),
     grid: gridChoice(values.grid),
+    aspect: ASPECT_VALUES.includes(saved.aspect) ? saved.aspect : DEFAULT_ASPECT,
     volume: Math.round(Math.min(1, Math.max(0, saved.volume)) * 10) / 10,
     mute: isMuted(),
     textSize: saved.textSize || 'normal',
@@ -691,6 +700,7 @@ function onFullChange(id, v) {
   if (id === 'quality') { applyQuality(v, ctx); fullRebuild = true; } // refused save / new grid: rebuild from `values`
   else if (id === 'shadows') saveSettings({ shadowQuality: v, gfxOverrides: true });
   else if (id === 'lodScale') saveSettings({ lodScale: v, gfxOverrides: true });
+  else if (id === 'aspect') applyAspect(v, ctx); // OB-117
   else if (id === 'grid') {
     const m = /^(\d+)x(\d+)$/.exec(v);
     const r = m && ctx.engine && typeof ctx.engine.setGrid === 'function' ? ctx.engine.setGrid(Number(m[1]), Number(m[2])) : { error: true };
