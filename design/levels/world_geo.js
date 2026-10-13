@@ -178,7 +178,7 @@
     return Math.hypot(ax + dx * t - px, ay + dy * t - py);
   }
   function lineDist(pts, x, y) { var b = 1e9; for (var i = 1; i < pts.length; i++) { var d = segDist(x, y, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]); if (d < b) b = d; } return b; }
-  function ell(o, x, y) { var c = Math.cos(o.rot), s = Math.sin(o.rot), dx = x - o.x, dy = y - o.y, u = (dx * c + dy * s) / o.rx, v = (-dx * s + dy * c) / o.ry; return Math.sqrt(u * u + v * v); }
+  function ell(o, x, y) { if (o._cs === undefined) Object.defineProperty(o, '_cs', { value: [Math.cos(o.rot), Math.sin(o.rot)] }); var c = o._cs[0], s = o._cs[1], dx = x - o.x, dy = y - o.y, u = (dx * c + dy * s) / o.rx, v = (-dx * s + dy * c) / o.ry; return Math.sqrt(u * u + v * v); }
   function interp(p, y) { if (y <= p[0][0]) return p[0][1]; for (var i = 1; i < p.length; i++) if (y <= p[i][0]) { var t = (y - p[i - 1][0]) / (p[i][0] - p[i - 1][0]); return p[i - 1][1] + t * (p[i][1] - p[i - 1][1]); } return p[p.length - 1][1]; }
   function coastSD(x, y) {
     var P = G.coast.pts, n = P.length, inside = false, best = 1e9, kind = 'open';
@@ -191,8 +191,8 @@
   }
   function mask(x, y) {
     var P = G.protect, r = P.rect, dx = Math.max(r[0] - x, 0, x - r[2]), dy = Math.max(r[1] - y, 0, y - r[3]);
-    var m = smooth(0, P.margin, Math.hypot(dx, dy));
-    for (var i = 0; i < P.discs.length; i++) { var D = P.discs[i]; m *= smooth(D.r, D.r + P.margin, Math.hypot(x - D.x, y - D.y)); }
+    var mg = P.margin, m = (dx >= mg || dy >= mg) ? 1 : smooth(0, mg, Math.hypot(dx, dy));   // WM-01: hypot >= max(dx, dy) -> smooth is exactly 1
+    for (var i = 0; i < P.discs.length; i++) { var D = P.discs[i], ex = x - D.x, ey = y - D.y, lim = D.r + mg; if (ex >= lim || -ex >= lim || ey >= lim || -ey >= lim) continue; m *= smooth(D.r, lim, Math.hypot(ex, ey)); }
     return m;
   }
   // Lake bowl height at e<1: deep only inside the water-region rect (floor S-depth(1-e^2)), ramping up to the shelf S+0.8 over `shelf` m before the rect edge.
@@ -352,19 +352,29 @@
   function geoLayers(U, rockSlope) {
     var C = G.coast, L = G.lake, M = G.marsh, T = G.southTilt, sea = G.seaLevel;
     function bbox(o, k) { var r = Math.max(o.rx, o.ry) * k; return [o.x - r, o.y - r, o.x + r, o.y + r]; }
+    var rangeBox = G.ranges.map(function (R) {   // per-range skip box: points farther than 2.6 w (+32 m grid slack) from the polyline bbox
+      var x0 = 1e18, y0 = 1e18, x1 = -1e18, y1 = -1e18, mg = R.w * 2.6 + 32;
+      R.pts.forEach(function (q) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; });
+      return [x0 - mg, y0 - mg, x1 + mg, y1 + mg];
+    });
+    var lakeBox = bbox(L, 1 + L.shore + 0.01), marshBox = bbox(M, 1.01);
+    var inBox = function (b, x, y) { return x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]; };
     return [
       { id: 'ridges', rect: WORLD_RECT, heightFn: function (h0, x, y, F) {       // MAP-03: southern tilt, ranges, peaks, Sealed Gate pass
           var m = mask(x, y); if (m <= 0) return h0;
           var h = h0 - T.drop * smooth(T.y0, T.y1, y), i, e, dr = Math.abs(x - U.riverX(y));
           for (i = 0; i < G.ranges.length; i++) {
-            var R = G.ranges[i], d = F.sdf(R.id, x, y), f = Math.exp(-Math.pow(d / R.w, 2));
+            var R = G.ranges[i], B = rangeBox[i];
+            // WM-01: far from the range (bbox + 2.6 w + 32 m GeoFields slack) f < 0.002 for sure: skip sdf + exp
+            if (x < B[0] || x > B[2] || y < B[1] || y > B[3]) continue;
+            var d = F.sdf(R.id, x, y), f = Math.exp(-Math.pow(d / R.w, 2));
             if (f < 0.002) continue;
             var n = U.fbm(x / R.ridged.scale, y / R.ridged.scale, G.seed + R.seedOff, 4, 0.5, 2), rn = 1 - Math.abs(2 * n - 1);
             var add = R.h * f + R.ridged.amp * rn * rn * Math.exp(-Math.pow(d / (R.w * 0.7), 2));
             if (R.gorge) add *= 1 - (1 - R.gorge.keep) * Math.exp(-Math.pow(dr / R.gorge.width, 2));
             h += add;
           }
-          for (i = 0; i < G.peaks.length; i++) { var p = G.peaks[i]; h += p.h * Math.exp(-Math.pow(Math.hypot(x - p.x, y - p.y) / p.r, 2)); }
+          for (i = 0; i < G.peaks.length; i++) { var p = G.peaks[i], px = x - p.x, py = y - p.y, pl = p.r * 28; if (px > pl || -px > pl || py > pl || -py > pl) continue; h += p.h * Math.exp(-Math.pow(Math.hypot(px, py) / p.r, 2)); }   // beyond 28 r exp underflows to exactly 0
           e = ell(G.gate.pass, x, y); if (e < 1) h += (G.gate.pass.floor - h) * smooth(1, 0.6, e);
           return h0 + m * (h - h0);
         } },
@@ -420,11 +430,13 @@
         } },
       { id: 'terrainTypes', rect: WORLD_RECT, typeFn: function (t, x, y, h, slope) {   // lake/marsh/snow/alpine/flowers
           if (t === 2) return 2;                                          // sea / river water is never repainted (marsh, snow)
-          var e = ell(L, x, y);
-          if (e < 1) return h < L.surface + 0.5 ? 2 : 5;                  // open water only where the ground is under the water sheet; the shelf is sand
-          if (e < 1 + L.shore * 0.6) return 5;
-          if (ell(M, x, y) < 1) return U.fbm(x / M.pool.scale, y / M.pool.scale, G.seed + 53, 2, 0.5, 2) > M.pool.threshold ? 7 : 8;
-          if (h > G.snowLine + 25 * (U.fbm(x / 60, y / 60, G.seed + 81, 2, 0.5, 2) - 0.5) && slope <= rockSlope) return 6;   // steep faces stay rock
+          if (inBox(lakeBox, x, y)) {                                     // WM-01: outside the box e > 1 + shore (ell skipped)
+            var e = ell(L, x, y);
+            if (e < 1) return h < L.surface + 0.5 ? 2 : 5;                // open water only where the ground is under the water sheet; the shelf is sand
+            if (e < 1 + L.shore * 0.6) return 5;
+          }
+          if (inBox(marshBox, x, y) && ell(M, x, y) < 1) return U.fbm(x / M.pool.scale, y / M.pool.scale, G.seed + 53, 2, 0.5, 2) > M.pool.threshold ? 7 : 8;
+          if (h > G.snowLine - 30 && h > G.snowLine + 25 * (U.fbm(x / 60, y / 60, G.seed + 81, 2, 0.5, 2) - 0.5) && slope <= rockSlope) return 6;   // steep faces stay rock (fbm in [0,1]: below snowLine - 30 never snow)
           if (t !== 0) return t;
           if (h > G.alpineLine) return 10;
           var fl = regionAt(x, y).flowers || 0.62;

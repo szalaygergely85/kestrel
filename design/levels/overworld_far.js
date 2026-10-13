@@ -585,7 +585,7 @@
   var TYPE_IDS = { grass: 0, forest: 1, water: 2, rock: 3, path: 4 };
   // ED-TERRAIN-1b: optional hxp/hxm/hyp/hym = heightAt(x+e,y)/(x-e,y)/(x,y+e)/(x,y-e), e = slopeEps, handed in by a
   // baker that already holds those heights (bit-identical to computing them here; saves 4 heightAt per sample).
-  function typeAt(x, y, hxp, hxm, hyp, hym) {
+  function typeAt(x, y, hxp, hxm, hyp, hym, hc) {   // WM-01: hc = heightAt(x, y) when the baker already holds it (geoType would recompute it)
     checkXY('typeAt', x, y);
     var R = DEF.recipe, s = DEF.seed, T = DEF.tower, i;
     var dr = Math.abs(x - riverX(y));
@@ -602,11 +602,11 @@
     if (rockHit && R.river.bankRock && dr < R.river.halfWidth + R.river.bankRock.ring && slope <= R.river.bankRock.slope) rockHit = false;
     var geoOn = GEO_N !== 0 && !inKeep(x, y);
     if (rockHit && !geoOn) return 3;
-    if (rockHit) return geoType(3, x, y, heightAt(x, y), slope);   // MAP-02/03: sea/snow layers may override rock noise
+    if (rockHit) return geoType(3, x, y, hc === undefined ? heightAt(x, y) : hc, slope);   // MAP-02/03: sea/snow layers may override rock noise
     var base = 0;
     if (fbm(x / F.scale + 17, y / F.scale - 9, s + 13, F.octaves, 0.5, 2) > F.threshold && slope < F.maxSlope &&
         dr > F.riverClear && pathDist(x, y) > F.pathClear && dh > F.homeClear) base = 1;
-    if (geoOn) return geoType(base, x, y, heightAt(x, y), slope);
+    if (geoOn) return geoType(base, x, y, hc === undefined ? heightAt(x, y) : hc, slope);
     return base;
   }
 
@@ -621,7 +621,7 @@
       for (j = 0; j < h; j++) for (i = 0; i < w; i++) {
         var q = (i + 1) + (j + 1) * pw;
         height[i + j * w] = H[q];
-        type[i + j * w] = typeAt(x0 + (i + 0.5) * cell, y0 + (j + 0.5) * cell, H[q + 1], H[q - 1], H[q + pw], H[q - pw]);
+        type[i + j * w] = typeAt(x0 + (i + 0.5) * cell, y0 + (j + 0.5) * cell, H[q + 1], H[q - 1], H[q + pw], H[q - pw], H[q]);
       }
     } else for (j = 0; j < h; j++) for (i = 0; i < w; i++) {
       x = x0 + (i + 0.5) * cell; y = y0 + (j + 0.5) * cell;
