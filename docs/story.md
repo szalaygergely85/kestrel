@@ -2028,3 +2028,25 @@ Notes:
 - `Pasture Relay`, not "High Pastures Relay": shorter, same plain voice. Alt `High Pasture Relay` (18).
 - `Heath Relay` vs `Ash Mile` (the burnt heath): if the two sit close, use alt `Heather Relay` (13) to avoid a mix-up.
 - Signal Hill's line repeats the D-013 pattern; "answers" echoes the waystone done line.
+
+## Region errands (WMP-01)
+
+PC-B writer, 2026-10-13. Giver = the region's woken relay. It does not speak words: it shows things in the bowl's light (shapes, pulses), same voice as the WM-13 wake lines. Title <= 24, journal <= 120, offer/done <= 80, ASCII. Relay names as in WM-13.
+
+| id | title | journal | offer | done |
+|---|---|---|---|---|
+| sq.reg.glasswater | `Tusks at the Water` | `The Glasswater bowl showed boars churning the shallows. Drive off three, then come back to the light.` | `The bowl flickers: three boars, mud in the still water.` | `The water goes still. The bowl glows clear and steady.` |
+| sq.reg.northwood | `Wolves Under the Pines` | `Northwood Relay showed three wolves circling its stones. Drive them off, then return to the relay.` | `Teal shapes in the bowl: three wolves, low among the pines.` | `The pines are quiet. The relay hums one long, even note.` |
+| sq.reg.highPastures | `Bears in the High Grass` | `The Pasture Relay flickered with two bears in the high grass. Drive both off, then return.` | `Wind moves in the bowl, and two heavy shapes move through it.` | `The grass lies flat and still. The hum settles, warm.` |
+| sq.reg.ashMile | `Rooting in the Ash` | `Two boars root through the black ash near Ash Mile Relay. Drive them off and come back to the light.` | `Grey light in the bowl: two boars, tusks deep in the ash.` | `The ash settles. The bowl burns a little brighter.` |
+| sq.reg.downs | `Four on the Downs` | `The Downs Relay pulsed four times: four boars loose on the green. Drive them off, then return.` | `Four short pulses. Four dark shapes on the long green.` | `Four short pulses, then one long. The downs are quiet.` |
+| sq.reg.signalHill | `The Hill Pack` | `Wolves prowl Signal Hill and its relay stutters. Drive off three of them, then return to it.` | `The pattern breaks. Three wolves on the slope below.` | `The pattern runs clean again. The hill answers.` |
+| sq.reg.heath | `Boars in the Heather` | `Three boars are tearing up the heather by Heath Relay. Drive them off, then come back.` | `The heather shakes in the bowl. Three boars, rooting.` | `The heather springs back. The hum bends with it.` |
+| sq.reg.reedmire | `Boars in the Reeds` | `Boars wallow in the black water near Reedmire Relay. Drive off three of them, then return.` | `The reeds thrash in the bowl. Three boars, deep in the mire.` | `The reeds hiss and settle. The black water goes still.` |
+| sq.reg.strand | `Arrows for the Downs` | `The Strand light points inland, where the boars run. Carry five arrows to the Downs Relay.` | `The bowl draws five thin lines, all pointing inland.` | `Far inland, the Downs light blinks back. The sea hums.` |
+| sq.reg.whitecombs | `Bears Below the Snow` | `Two bears den on the bare rock below the Whitecombs. Drive them off and return to Combfoot Relay.` | `Snow light in the bowl. Two bears on the rock below it.` | `The rock is clear. The bowl rings like cold glass.` |
+
+Notes:
+- Offers are images, not speech: the relays have no voice of their own in canon, so the "ask" is what the bowl shows. Wick reads it.
+- Strand: the five "thin lines" are the arrows; the journal makes it plain. Hand-in is the Downs Relay, return text unchanged.
+- Signal Hill's done line echoes its wake line on purpose; the pattern itself is not restated.
