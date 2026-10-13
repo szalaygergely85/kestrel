@@ -71,3 +71,7 @@ export { packWaterLook, packRiverLook, riverAlpha, riverStreakHit, WL_STRIDE } f
 
 // ---- test/bench fixtures (INT-1013) ----------------------------------------
 export { FIXTURE_FX, fixtureModels } from './fauna/wildlifeFx.fixture.js';
+
+// ---- WM-07 tools (tools/probe-region-dress.mjs) ----
+export { BandBakeJob } from './world/bandBake.js';
+export { bundleBytes } from './world/bandCache.js';

@@ -32,8 +32,7 @@ World.load(assets.world('world_m1'), assets, { physics: 'mesh', events: new Even
 // WM-07 probe: placements/km^2 per region (dressing species) + bundle bytes at one sample zone per region, and a hash of
 // the scatter + detail of the authored keep zones (must not change when biome rows change).
 // Run: node tools/probe-region-dress.mjs [--hash]
-import { BandBakeJob } from '../engine/world/bandBake.js';
-import { bundleBytes } from '../engine/world/bandCache.js';
+import { BandBakeJob, bundleBytes } from '../engine/dev.js';
 const world = World.load(assets.world('world_m1'), assets, { physics: 'mesh', events: new Events(), realTrees: true, detail: true });
 if (process.argv.includes('--base')) for (const b of Object.values(world.terrain.recipe.geo.biomes)) for (const k of ['boulders', 'ruins', 'reeds', 'wildflowers', 'pebbles']) delete b.detail[k];
 const CH = 128, CW = 5, CHH = 3;

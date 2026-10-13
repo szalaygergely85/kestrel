@@ -61,3 +61,36 @@ A boar 3+ m away is still missed, and a wall between you and the boar still bloc
 9. PERF-R4: Shadows set to ultra; far shadows look good and fps holds.
 10. WM-01: cross band borders (strand -> keep); no hitches and no terrain change.
 11. Main session owes: gpucompare (WM-01, R2P4, R4, G2 with D-039 re-baseline), bench-presets at ultra, verify-ob103b / ob117.
+
+## PO batch 2 (2026-10-13b)
+
+Basis: lane entries (pc-b1.md / pc-b2.md), architect "Re-review 2026-10-13b" (all ARCH OK), 38.59 steps, D-077. Commit messages not readable (no shell); nothing was run. The whole WM chain stays behind `?grid=1` until WM-05, so the owner sees nothing new in the default game yet.
+
+a. WM-02/02b + WM-03 + WM-04 (e6683327, 98165dd7, f1a1285d, 521e0bca, fix b248a5ba) - PO OK -> testing.
+   38.59 Node ACs are met per lane: priority table, 12-zone walk 0 misses / 0 band:late, cache <= 32 MB, pins survive, cached == fresh bytes; the nav tile equals buildFromWorld at 100 %, fixed-area worlds unchanged; WM-04 beastTile 15 checks (chase across a swap, dormancy tile + 200 m, save/load). After the archfix the late check is count-based (<= 1 late unit), not wall-clock.
+   Accepted gaps: job-start call 0.7-1.8 ms (spec <= 1 ms not fully met, under the 2 ms frame budget); the NavTileFill cache may sit a few hundred KB over cap until the next put; "swap 0 alloc" is asserted by code path only.
+   Main-session to-dos: browser pass with `?grid=1` (route-walk leg 10 or verify-goblins; no console errors on band swap, beasts still wander after a swap); the main.js wiring (setNavTiles, rebindNav, dormancy) has no Node test.
+   Owner walk-test: engine-internal behind `?grid=1`, no owner test yet. After WM-05, walk across several band borders and watch that beasts keep chasing and do not freeze.
+
+b. SWIM-04c (5a71ae22 + 8e218d1b, incl. G2 assert and Canvas2D _refBox) - PO OK -> testing.
+   Engine-internal render parity fix; the Node source-order and behavioural tests pass. Open and gating: main session runs gpucompare (underwaterLake rows both PASS, all other rows unchanged, ceiling row included) per the lane's command. If the pitch-0 row still differs, that goes to ASK ARCHITECT, not back to the programmer.
+   Owner walk-test: dive into a lake and look up at the surface and the sky; the water tint is even and nothing flickers.
+   Then surface; the dry view must look as before.
+
+c. WM-06 d29c50e7 - PO OK -> testing.
+   Matches 38.59: map-loop PASS (58 swaps, 0 band:late, 0 sync bakes, max swap 2.6 ms <= 4, cache 31.6 MB <= 32, no fall/stuck, save/load at 6 poses); bench-life northwood/downs/westHeath p95 sum 0.7 ms (cap 8). Accepted: the Signal Head cove is outside today's polygon (skipped until WM-05 widens it); the High Pastures spur is skipped on the return leg.
+   Main-session to-dos: gpucompare rows unchanged + gridZone (not touched by the programmer); browser route-walk `--grid 1 --map-loop 1` (unverified); re-run map-loop once after WM-05 so Signal Head is covered. The cache peak sits at the cap (architect margin policy: keep 32 MB, raise only if a walk misses).
+   Owner walk-test: engine-internal/tool gate, no owner test.
+
+d. WM-07/07b (890b2d41, 3d05332f) - PO OK -> testing.
+   Probe placements/km2 vs target: glasswater 195, northwood 317, highPastures 403, ashMile 151, downs 1229, signalHill 195, heath 195, reedmire 4488, strand 2262, whitecombsFoot 90, all >= target. Band max 4.36 MB (<= 6). Trunk overlap 0 of 632 colliders. Keep zone and layer-0 bytes unchanged. Data-only, rules not hand placement, existing meshes (matches D-077 and the art rule).
+   Gaps: bench-life at the dressed poses was not run for WM-07 (the AC "bench poses still <= 8 ms" rests on WM-06's 0.7 ms, taken on the same branch family). Main session to run `node tools/bench-life.mjs --poses` once after the merge, plus gpucompare. The bandAhead spike question is closed by the archfix.
+   Owner walk-test: with `?grid=1`, visit the stills poses (glasswater 1200,600; downs 1580,1430; reedmire 1090,1510; strand 1590,1720).
+   Each region should show boulders, ruin stubs, reeds or flowers fitting its biome, with no rock inside a tree trunk.
+
+e. R6a 30aaa681 - PO OK -> testing. Engine-internal, no owner test.
+   Impostor atlas bake: 86016 B per species (1.7 MB for 20), byte-identical twice, 2.9 ms warm, 16-bit oct split to meet <= 1/127, not wired. Follow-ups owned by the main session: update 38.60 item 2 (texel layout, own 32x32 raster); R6b decode must use `decodeImpNormal` byte order; loading-bar hook goes in R6d.
+
+f. streamRoute test fix 75abd72a - engine bug fix (test rule now matches placementGrid cutM/keepFar), PO skipped. Noted: 351553 misses were all beyond cutM, no real streaming bug. ARCH OK.
+
+Main-session summary of gates still owed: gpucompare (SWIM-04c underwaterLake + ceiling, WM-06 gridZone, WM-07), browser `?grid=1` pass (WM-04, WM-06 route-walk), bench-life --poses after the WM-07 merge.
