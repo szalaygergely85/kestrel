@@ -125,6 +125,31 @@ if (process.env.BAKE_BENCH) ok('swap on hit <= 4 ms', swapMax <= 4, swapMax.toFi
   ok('100 east<->west cache-hit swaps: heap growth < 64 KB', g < 65536, `${g} B`);
 }
 
+// --- B3: prebakeBands -------------------------------------------------------------------
+{
+  const pw = mk(), pz = pw.terrainBands, now = () => performance.now();
+  ok('prebake: only the start band cached before', pw.bandCache.stats().entries === 1);
+  let calls = 0, worst = 0, r = pw.prebakeBands(0);
+  // one slice = the longest unit a zero-budget step does (collider builds are indivisible)
+  let slice = 0; for (const z of pz) { const j = BandBakeJob.create(pw, z.cx0, z.cy0, z.cw, z.ch, pw.terrain.near); let g = 0, d = false; while (!d && g++ < 5000) { const a = now(); d = j.step(0); slice = Math.max(slice, now() - a); } }
+  const t0 = now();
+  while (!r.done && calls < 2000) { const a = now(); r = pw.prebakeBands(12); worst = Math.max(worst, now() - a); calls++; }
+  ok('prebake done: all 5 zones cached + pinned', r.done && r.cached === pz.length && pw.bandCache.stats().entries === pz.length && [...pw.bandCache.map.values()].every((b) => b.pinned), JSON.stringify(r));
+  ok('prebake: each call within budget + one slice', worst <= 12 + slice * 1.5 + 8, `slice ${slice.toFixed(1)} ms, worst ${worst.toFixed(1)} ms, ${calls} calls, total ${(now() - t0).toFixed(0)} ms`);
+  ok('prebake: live band untouched', pw.bandId === 'east' && !pw.terrain.nearBandPending && pw.prebakeBands(12).done);
+  ok('prebake: cache ~10 MB', pw.bandCache.bytes > 5e6 && pw.bandCache.bytes < 16 * 1048576, String(pw.bandCache.bytes));
+  // byte-identical to a fresh sync bake of the same zone
+  const ref2 = mk(); const k = 1, zz = pz[k];
+  ref2.ensureBandFor(...centre(ref2, ref2.terrainBands[k]));
+  ok('prebaked west == ensureBandFor bytes', deepEq(pw.bandCache.get(pw._bandKey(k)).near, ref2.terrain.near) === null && deepEq(pw.bandCache.get(pw._bandKey(k)).scatter, ref2.scatter) === null);
+  // walk the route legs: 0 bakes, 0 band:late
+  let late = 0, bakes0 = pw.bandCache.stats().bakes; const pub = pw._publishBand.bind(pw); pw._publishBand = (to, l) => { if (l) late++; return pub(to, l); };
+  const legs = [4, 1, 2, 3, 0, 1, 2, 3].map((i) => centre(pw, pz[i % pz.length]));
+  let swaps = 0;
+  for (const [x, y] of legs) { pw.ensureBandFor(x, y); swaps++; for (let f = 0; f < 5; f++) pw.streamBand(x, y, 2); }
+  ok('walk legs after prebake: 0 bakes, 0 band:late, all hits', pw.bandCache.stats().bakes === bakes0 && late === 0, `bakes ${pw.bandCache.stats().bakes - bakes0} late ${late} misses ${pw.bandCache.stats().misses}`);
+}
+
 // --- LRU unit -----------------------------------------------------------------------------
 {
   const mkB = (key, n, pinned = false) => ({ key, zone: 0, near: { x0: 0, y0: 0, w: 1, h: 1, cell: 1, height: new Uint8Array(n) }, scatter: null, detail: null, trunks: null, detailCol: null, classMap: null, bytes: 0, pinned, lastUse: 0 });

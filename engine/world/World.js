@@ -1224,6 +1224,42 @@ export class World {
     return this._bandKeysC[k];
   }
 
+  /**
+   * OB109-B3 (38.58): bake every uncached authored zone into the cache, nearest to the current band first. Loading bar only;
+   * never touches the live band (own BandBakeJob, overlap copied from `terrain.near`). Each call stays within `msBudget` plus one slice.
+   * @returns {{done:boolean,total:number,cached:number,bytes:number}} reused object
+   */
+  prebakeBands(msBudget) {
+    const zs = this.terrainBands, out = this._prebakeOut || (this._prebakeOut = { done: true, total: 0, cached: 0, bytes: 0 });
+    if (!zs || zs.length < 2 || this._bandCur < 0 || this.terrainGrid) { out.done = true; out.total = zs ? zs.length : 0; out.cached = out.total; out.bytes = this.bandCache.bytes; return out; }
+    let pb = this._prebake;
+    if (!pb) {
+      const cs = this.terrain.chunkSize, c = zs[this._bandCur], cx = (c.cx0 + c.cw / 2) * cs, cy = (c.cy0 + c.ch / 2) * cs;
+      const order = zs.map((z, k) => ({ k, d: Math.hypot((z.cx0 + z.cw / 2) * cs - cx, (z.cy0 + z.ch / 2) * cs - cy) })).sort((a, b) => a.d - b.d).map((e) => e.k);
+      pb = this._prebake = { order, job: null, k: -1 };
+    }
+    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()), t0 = now();
+    do {
+      if (!pb.job) { // next uncached zone
+        let k = -1;
+        for (let i = 0; i < pb.order.length; i++) if (!this.bandCache.has(this._bandKey(pb.order[i]))) { k = pb.order[i]; break; }
+        if (k < 0) break;
+        const z = zs[k]; pb.k = k;
+        pb.job = BandBakeJob.create(this, z.cx0, z.cy0, z.cw, z.ch, this.terrain.near);
+      }
+      if (pb.job.step(Math.max(0, msBudget - (now() - t0)))) {
+        const b = pb.job.bundle(); b.key = this._bandKey(pb.k); b.zone = pb.k;
+        this.bandCache.put(b, this._bandKey(this._bandCur)); this.bandCache.pin(b.key, true);
+        pb.job = null;
+      }
+    } while (now() - t0 < msBudget);
+    let cached = 0;
+    for (let i = 0; i < zs.length; i++) if (this.bandCache.has(this._bandKey(i))) cached++;
+    out.total = zs.length; out.cached = cached; out.bytes = this.bandCache.bytes; out.done = cached === zs.length && !pb.job;
+    if (out.done) this._prebake = null;
+    return out;
+  }
+
   /** Bundle of the current terrain state as a cache entry (key/zone set by the caller). */
   _currentBundle(key, zone) {
     const col = (id) => { for (let i = 0; i < this.colliders.length; i++) if (this.colliders[i].id === id) return this.colliders[i]; return null; };

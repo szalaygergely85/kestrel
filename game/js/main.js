@@ -2601,16 +2601,16 @@ stream act ${g.activeCount}/${g.memberCount} warm ${g.warmCount} cells ${g.cellC
   }
   // OB-109: finish the far terrain behind the boot card ('land' = last 40 % of the bar) so the first frame already has the mountains.
   // Capture/bench pages have no card and keep the in-frame 1 ms bake. Later world swaps (Continue/Load/menu) hold via farHold in update/render.
-  if (bootProg && params.get('farhold') !== '0' && mode === 'world' && engine.world && engine.world.terrain && farHold.begin(engine.world.terrain)) {
+  if (bootProg && params.get('farhold') !== '0' && mode === 'world' && engine.world && engine.world.terrain && farHold.begin(engine.world.terrain, params.get('prebake') !== '0' ? engine.world : null)) { // OB109-B3: + band pre-bake as the second half of the bar
     const t0 = performance.now();
     bootProg.phase('land'); await bootPaint();
     while (farHold.step()) { bootProg.fraction('land', farHold.frac); await bootPaint(); }
     window.__farHoldMs = performance.now() - t0;
-    console.info(`[boot] far terrain baked behind the card in ${window.__farHoldMs.toFixed(0)} ms (${farHold.slices} slices)`);
+    console.info(`[boot] far terrain + bands baked behind the card in ${window.__farHoldMs.toFixed(0)} ms (${farHold.slices} slices, bands ${(engine.world.bandCache.bytes / 1048576).toFixed(1)} MB)`);
   }
   window.__farReadyAtBoot = !!(engine.world && engine.world.terrain && engine.world.terrain.farReady);
   if (bootProg) engine.events.on('world:loaded', ({ world: nw }) => {
-    if (!bootPrinted || !nw || !nw.terrain || !farHold.begin(nw.terrain)) return;
+    if (!bootPrinted || !nw || !nw.terrain || !farHold.begin(nw.terrain, params.get('prebake') !== '0' ? nw : null)) return;
     if (!landCard) landCard = createLandCard();
     landCard.set(0);
   });
