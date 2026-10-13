@@ -153,6 +153,8 @@ function resetDrawItem(item) {
  * Preallocated per-frame draw list. `begin()` resets the count only - the
  * `DrawItem`s themselves (and their typed arrays) are never reallocated.
  */
+export const MAX_DRAW_CARDS = 64; // R6c: card-impostor species per frame
+
 export class DrawList {
   /** @param {number} [capacity] */
   constructor(capacity = MAX_DRAW_ITEMS) {
@@ -172,9 +174,20 @@ export class DrawList {
     this.strict = false;
     /** @type {DrawItem} scratch target of refused pushes (never in `items`, never drawn) */
     this._sink = makeDrawItem();
+    /** R6c (38.60): tree card impostor buckets of this frame (rasterCards / the GPU card pass); preallocated, 0 when no species opted in. */
+    this.cardCount = 0;
+    this.cards = new Array(MAX_DRAW_CARDS);
+    for (let i = 0; i < MAX_DRAW_CARDS; i++) this.cards[i] = { ib: null, count: 0, imp: null, eye: null };
   }
 
-  begin() { this.count = 0; this.overflow = 0; this.instTotal = 0; this.instDropped = 0; }
+  begin() { this.count = 0; this.overflow = 0; this.instTotal = 0; this.instDropped = 0; this.cardCount = 0; }
+
+  /** R6c: queue one group's card bucket (compactGroup output); dropped past MAX_DRAW_CARDS (far trees pop out, like the list overflow). */
+  addCards(ib, count, imp, eye) {
+    if (this.cardCount >= MAX_DRAW_CARDS) return;
+    const c = this.cards[this.cardCount++];
+    c.ib = ib; c.count = count; c.imp = imp; c.eye = eye;
+  }
 
   /**
    * @param {import('./MeshData.js').MeshData|null} mesh

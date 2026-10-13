@@ -94,3 +94,64 @@ e. R6a 30aaa681 - PO OK -> testing. Engine-internal, no owner test.
 f. streamRoute test fix 75abd72a - engine bug fix (test rule now matches placementGrid cutM/keepFar), PO skipped. Noted: 351553 misses were all beyond cutM, no real streaming bug. ARCH OK.
 
 Main-session summary of gates still owed: gpucompare (SWIM-04c underwaterLake + ceiling, WM-06 gridZone, WM-07), browser `?grid=1` pass (WM-04, WM-06 route-walk), bench-life --poses after the WM-07 merge.
+
+## PO batch 3 (2026-10-13c)
+
+Basis: queue rows in docs/pc-b-queue.md plus the architect section "R6 + cache + villagers (2026-10-13c)" (all ARCH OK). No lane entries for these IDs were found in docs/lanes/*.md, so ACs were checked against the queue rows and the verdict text only. Nothing was run.
+
+a. R6b 12d0c21f - PO OK -> testing. Engine-internal, no owner test. Off is byte-identical, band complementary to the dither, cards never cast, 0-alloc scratch. Optional nit: hoist cos/sin of `view*pi/4+yaw` per card in impDecodeTexel. Main-session to-do: confirm the decode uses `decodeImpNormal` byte order (R6a follow-up) and that the 38.60 item 2 text is updated.
+
+b. R6c part 1 3bda29e9 - PO OK -> testing (part 1 scope only). Engine-internal, no owner test. WGSL helpers mirror the twin, impBandBits equals LDT_ACTIVE/LDT_INVERT, JS wiring off unless a species opts in, rows behind `?imp=1`. Open to-dos: the queue ACs "passCull.test LOD-3 counts" and "gpucompare impMid + impBand" are NOT met yet and belong to part 2 (spec in the verdict, items a-c: WgCardPass, cull.wgsl band, atlas, vertex storage-limit guard). The probes are f64 JS translations, so real-GPU parity is proven only by the part 2 gpucompare. Do not close the story before part 2.
+
+c. WM-CACHE-01 eae685ac - PO OK -> testing. Farthest-centre eviction keeps pinned, current, pending and newest; regrow trims the grown bundle. Main-session to-do: re-run map-loop once (cache stays <= 32 MB, 0 misses). Owner walk-test: engine-internal, no owner test.
+
+d. OUT-LIFE-TILE 0cb383eb - PO OK -> testing, conditional on the main.js wiring (`tileNav: !!gridNav` + `world:band` rebind), which the main session added in the kestrel-1 commit after WM-05; the PO could not read that commit, so verify it is present. Browser-only to-dos: with `?grid=1`, villagers keep walking across a band swap and do not freeze; save/load round trip. Owner walk-test: with `?grid=1`, stand in Outwall and watch the villagers keep their routine for a minute. Then walk out beyond about 200 m and return; they resume where they should be.
+
+## PO batch 4 (2026-10-13e)
+
+Basis: architect "Batch 2026-10-13e" items 1, 4-8 (all ARCH OK) and the WM-05 lane entry (pc-b1.md). No lane entries exist for R6c part 2, WM-09..12; ACs checked against the verdict text only. Nothing was run. R6d and R6-WIRE are ARCH CHANGES (not in this batch).
+
+a. R6c part 2 6628d131 - PO OK -> testing. Engine-internal, no owner test. Atlas ranges keyed per bake, storage group cached per desc. Open, gating (main session): gpucompare impMid + impBand and the roadSouth bench delta; story R6c stays open until both pass.
+b. WM-09 sea monster whole coast 587bb1b5 - PO OK -> testing. Note: the named-water check in test 3 is mostly vacuous (lake/river data absent); the inland grid covers it. Owner walk-test: walk the Strand and Signal Head coast, then the east shore; the sea monster can appear along the whole coast. It stays in water and does not clip the beach.
+c. WM-10 whole-world M map 7f651ba9 - PO OK -> testing. Optional nit: the "old cell restored" test asserts `true`; make it check `art.codes`. Owner walk-test: press M; the map shows the whole world including the coast and Signal Head cove. Walk, and the arrow moves with the old cell restored (no trail).
+d. WM-11 whole-map gate + region stills tool b03d9e67 - PO OK -> testing. Tool/gate, no owner test. Note: `mapLoopFull` crashes if no Thornwood stop exists; guard it. To-do (main session): re-run map-loop once (Signal Head now covered after WM-05), cache <= 32 MB, 0 band:late.
+e. WM-12 regional beasts 344b7d9d - PO OK -> testing. Slots deterministic; beastSim is not in the save (beasts return alive on load). Rule recorded: if beast state ever enters the save, key by id. Owner walk-test: visit 3 regions (downs, reedmire, heath); each shows its own beasts, which wander and chase. Save/load; beasts reappear, no NaN or frozen ones.
+f. WM-05 map switch 5b067b88 + b7e316e5 - PO OK -> testing. Pins = 5 legacy zones, `?grid=0` = old map, validator covers spawn, sites, relays. Open from lane: browser `node tools/route-walk-browser.mjs --port {port}` + gpucompare gridZone row (main session). Note: the spawn-zone fallback also changes the start zone of other terrainBands worlds loaded without opts.spawn (load-time only). Owner walk-test: open port 8000 and play the whole map (default); cross band borders without hitches, and compare with `?grid=0` if anything looks wrong.
+
+## PO batch 5 (2026-10-13g)
+
+Basis: architect "Re-review R6d/R6-WIRE (2026-10-13f)" and "Batch 6 (2026-10-13g)" (all ARCH OK), lane entries pc-b1.md / pc-b2.md, queue 2026-10-14. Claims only, nothing run.
+
+a. R6d presets + gate (kestrel-3 + wm12-wire fix) - PO OK -> testing. Presets 60/300 ultra+extreme, 45/200 high, off on medium/low; `maxDistM` restored on off; species opt-in for 3 trees. Main-session to-dos: `bench-presets --imp off,on` GATE (RTX ultra <= 7.5 ms, Intel high <= 10 ms), R3-MEASURE re-run, owner look on the band (OB-089). Owner walk-test: Settings quality ultra -> medium -> ultra in a forest; far trees turn to cards and back, no pop at the 45/60 m band.
+b. R6-WIRE (main.js reapply on world:scatter/world:loaded) - PO OK -> testing. `?imp=0` honoured, no re-bake (test). Browser to-do: confirm the Settings quality-change handler calls the preset (lane NEEDS B1-main item 2). Owner walk-test: cross 2 band borders on ultra; the card trees stay on, no hitch.
+c. R6e card-pool - PO OK -> testing. Engine-internal, no owner test (10 swaps x 3 species: constant live buffers, 0 createBuffer).
+d. REVIEW-NITS-1013 - PO OK -> testing. Tool/test nits (worldMap assert, mapLoopFull guard, seaEdge test, impDecodeTexel cache bytes-identical). No owner test. Open: WM-02b left.
+e. WMP-01 region errands - PO OK -> testing (conditional). 10 errands, 1 per relay region, test 91 pass, 20 NEEDS WRITER keys listed (to WMP-10). Gap: the lane says NEEDS B1-main (relay wake must set flag `waystone.ws_<region>.woken`; relay inspect -> book.inspect). Until then the errands may not appear. Browser to-do: verify both. Owner walk-test: wake a far relay, take its errand, finish it; reward arrives. Also fix the quest-sim regex to `/^waystone\..+\.woken$/` when next touched.
+f. WMP-02 far goblin camps - PO OK -> testing. Ash Mile, Signal Hill, Heath (4-5 goblins each), walkable, in bounds, dormant/restore, kill-all saved, slot order authored < regional < far. Limits: `?grid=0` has none; campSouthWest still disabled. Owner walk-test: go to Ash Mile, Signal Hill and Heath; each has a goblin camp; clear one, save/load, it stays cleared.
+g. WMP-03 region ambient - PO OK -> testing, NOT WIRED. Module `regionAmbient.js` + table (9 regions) + test pass, but `createRegionAmbient` / `ra.step` are not called in main.js (B1-main item), and the cue ids (birdsong, insects, windLoop) do not exist (NEEDS AUDIO). No owner test until wired; needs a main.js row (kestrel-1) and an audio stub. Note: file is `quest/regionAmbient.js`, not `ambient.js` as in the AC.
+h. WMP-05 M-map travel - PO OK -> testing. Arrow-select a woken relay, Enter starts the existing travel.request; blocked in combat ("Not with enemies near."). AC gap check: "saved list of woken relays survives reload" relies on the existing waystone save, not tested here; the fade/placeLoaded path is the existing travel. Main session: `node tools/verify-wmp05.mjs {port}` (needs a woken relay). Owner walk-test: wake 2 relays, press M, select one with the arrows, Enter; you fade and arrive. Try it with a wolf near; it refuses.
+i. WMP-07 m5-exit tool - PO OK -> testing. Tool, no owner test. Main session: run `tools/m5-exit.mjs --browser <port>` for the GPU gates (map-loop swap 2.8-5.3 ms vs cap 4 was noise in Node; judge it in the browser run).
+j. WM-13 region relays (10 dormant relays + names + wake lines) - PO OK -> testing. Relays are placed by seeded search, tests green; WM-13b wake lines per region live in `RELAY_WAKE`. Names (`place.relay.ws_<region>`) were NEEDS WRITER in the first lane entry, later gone from the generator; confirm the names exist in story.md. whitecombs relay sits on mountain rock (2.8 m rise in 5 m): owner look. Browser to-do: wake/save with the new ids. Owner walk-test: find a relay in 3 regions; touching it shows the region's own wake line and its name on the map.
+
+## Owner walk list (consolidated, http://localhost:8000/game/index.html; whole map is now the default, ?grid=0 = old map)
+Today's owner-visible items (batch 5), on top of the list below:
+- R6d/R6-WIRE: quality ultra -> medium -> ultra in a forest; far trees are cards, no pop at 45/60 m, still on after a band border.
+- WMP-01/WM-13: wake relays in 3 regions (own wake line, name on the map), take and finish one errand (needs the B1-main wake flag).
+- WMP-02: goblin camps at Ash Mile, Signal Hill, Heath; clear one, save/load, it stays cleared.
+- WMP-05: wake 2 relays, M, pick one with the arrows, Enter; blocked with an enemy near.
+- WMP-03: nothing to hear yet (not wired, no sound ids).
+- whitecombs relay: stands on mountain rock, say if it looks OK.
+
+Earlier list:
+1. OB-113 / OB-115 / OB-116: kill boars and goblins (potion toast, pack item, no instant heal); the Burl quest counts boars; a swing at 2 m hits on flat, uphill and downhill, and 3+ m or behind a wall misses.
+2. OB-114: meadow boulder by the stone wall; green only on top; say whether the faceting is OK (still open).
+3. OB-118 / OB-117: Settings quality cycle shows a labelled Extreme; pick 4:3, reload, ratio persists (check the boot fix is in).
+4. OB-103b / G2 / PERF-R2P4: cycle low to extreme on a meadow (carpet scales, soft far glyphs, no ring); walk a forest, no tree pop at 15-20 m.
+5. PERF-R4: Shadows ultra; far shadows good, fps holds.
+6. WM-01 / WM-05: walk strand -> keep -> Thornwood -> High Pastures across band borders; no hitches or terrain jumps; beasts keep chasing and villagers in Outwall keep their routine.
+7. WM-07: visit glasswater, downs, reedmire, strand; biome-fitting boulders, ruins, reeds or flowers, no rock inside a trunk.
+8. WM-09: sea monster appears along the whole coast and stays in the water.
+9. WM-10: M shows the whole world; the arrow moves cleanly.
+10. WM-12: each region has its own beasts; save/load keeps them sane.
+11. SWIM-04c: dive in a lake, look up; the tint is even, then the dry view is normal.
+12. Main session owes: gpucompare (all rows + gridZone, impMid/impBand, SWIM-04c, D-039 re-baseline), map-loop re-run, bench-life --poses, roadSouth bench, browser `--grid` route-walk. R6d and R6-WIRE await ARCH CHANGES fixes.

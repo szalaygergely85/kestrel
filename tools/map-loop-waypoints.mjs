@@ -16,9 +16,13 @@ export const MAP_LOOP = [
   { n: 'High Pastures (goatherd hut)', x: 520, y: 420 },
   { n: 'Gate garrison ruin', x: 360, y: 880, pose: true, tol: 30 }, // fells slope: within 30 m counts
 ];
-/** Back leg: the same list reversed (back to the tower), minus the turn-around stop. */
-// High Pastures is a dead-end spur off the Thornwood side (the slope above the garrison traps the way back), so the return skips it.
-export const mapLoopFull = () => MAP_LOOP.concat(MAP_LOOP.slice(0, -1).filter((w) => !w.n.startsWith('High Pastures')).reverse());
+/** Back leg: the same list reversed (back to the tower), minus the turn-around stop. WM-11: High Pastures is visited again on the way back, but
+ *  from the Thornwood side (Gate -> Thornwood -> High Pastures -> Thornwood): walking Gate -> High Pastures straight up the fells slope traps the walker (stuck at ~378,824). */
+export const mapLoopFull = () => {
+  const back = MAP_LOOP.slice(0, -1).reverse(), hp = back.shift(), i = back.findIndex((w) => w.n.startsWith('Thornwood'));
+  if (i < 0) return MAP_LOOP.concat([hp], back); // no Thornwood stop: plain reversed back leg, no spur
+  return MAP_LOOP.concat(back.slice(0, i + 1), [hp, back[i]], back.slice(i + 1));
+};
 /** The 6 save/load poses (stops flagged `pose`). */
 export const mapLoopPoses = () => MAP_LOOP.filter((w) => w.pose);
 /** Even-odd point-in-polygon on [[x,y],...]. */

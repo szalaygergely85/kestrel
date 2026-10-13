@@ -4,7 +4,7 @@
 //   palisade ring 60 x 60 m around (912,952), ONE gate gap in the south-east (east wall, y 925.3); 7 house shells + a forge shell inside; relay on the plaza.
 //   goose farm pen (860,990), barley gate (975,900), track from owPathPost (985,1040) to the gate, signArm pickup in the ford shallows, pierStone (1045,1320).
 // Anchor ids (contract for QL-21 / WOLF-01): owGate owBoard owRelay(=relayOutwall) owForge owPathPost gooseFarm barleyGate pierStone signArm wolf1..5.
-// Writes "ow###" structures + the entities listed in ENT_IDS + the walk-bound parts OW_BOUNDS into content/worlds/world_m1.world.json; re-runnable.
+// Writes "ow###" structures + the entities listed in ENT_IDS into content/worlds/world_m1.world.json; re-runnable.
 // Usage: node tools/gen-outwall.mjs [--dry-run]
 globalThis.window = globalThis.window || globalThis;
 import fs from 'node:fs';
@@ -29,10 +29,7 @@ const OW_BOUNDS = [
 const data = JSON.parse(fs.readFileSync(FILE, 'utf8'));
 data.structures = data.structures.filter((s) => !/^ow\d+$/.test(s.id));
 data.entities = data.entities.filter((e) => !ENT_IDS.includes(e.id));
-const owKey = (p) => JSON.stringify(Object.keys(p).sort().map((k) => [k, p[k]]));
-const owKeys = new Set(OW_BOUNDS.map(owKey));
-data.bounds.parts = data.bounds.parts.filter((p) => !owKeys.has(owKey(p)));
-data.bounds.parts.push(...OW_BOUNDS);
+// WM-05/D-077: world bounds are one polygon covering the whole map - the generator no longer touches them (OW_BOUNDS kept only as documentation of the old capsule union)
 const { assets } = await loadTestAssets();
 const world = World.load(data, assets, { physics: 'mesh' });
 const T = world.terrain;

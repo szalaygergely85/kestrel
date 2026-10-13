@@ -273,10 +273,9 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   ok('outsideSector floorH == terrain.groundAt', outSec.floorH === world.terrain.groundAt(outsideX, outsideY));
 
   // -- world.bounds loaded from content, exactly (23.2) --
-  ok('world.bounds loaded from content', !!world.bounds && world.bounds.shape === 'union');
-  const boundsDef = assets.world('world_m1').bounds.parts[0]; // WS1-04: union; part 0 = the old circle
-  const bp0 = world.bounds.parts[0];
-  ok('world.bounds matches content bounds', bp0.x === boundsDef.x && bp0.y === boundsDef.y && bp0.r === boundsDef.r);
+  ok('world.bounds loaded from content', !!world.bounds && world.bounds.shape === 'polygon'); // WM-05: world_m1 ships the ONE polygon outline
+  const boundsDef = assets.world('world_m1').bounds;
+  ok('world.bounds matches content bounds', JSON.stringify(world.bounds.pts) === JSON.stringify(boundsDef.pts));
 
   // -- validateBounds throws on a bad shape/field (mirrors validateHorizon's convention) --
   const baseNoTerrain = { terrain: 'overworld_far', structures: [{ id: 'tower', level: 'tower', origin: { x: 1480, y: 1018, z: 0 } }], entities: [] };
@@ -312,7 +311,7 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   // "hint.show", same as several of the tower's own level triggers, so a
   // name-only check could false-positive on an unrelated real trigger) --
   {
-    const w2 = World.load(assets.world('world_m1'), assets, {});
+    const w2 = World.load({ ...assets.world('world_m1'), bounds: { shape: 'union', parts: [{ shape: 'circle', x: 1496.5, y: 1024.5, r: 96 }] } }, assets, {}) // WM-05: world_m1 now ships a polygon; this checks the circle-part trigger;
     const contentTriggers = assets.world('world_m1').triggers;
     const endDef = contentTriggers.find((t) => t.id === 'end');
     const hintStoneDef = contentTriggers.find((t) => t.id === 'hintStone');

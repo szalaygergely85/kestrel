@@ -20,7 +20,7 @@ const skySunScratch = { dirX: 0, dirY: 0, dirZ: 0, ambientI: 0, sunI: 0 };
 // only hold that way - see 27.15.5a item 6's "Oracle rule").
 import { DrawList, noteListOverflow, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths } from '../mesh/DrawList.js';
 import { MeshGroupSet, addMeshStructuresBatched } from '../mesh/meshGroups.js';
-import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget, clearRasterDepth } from '../mesh/rasterJS.js';
+import { rasterDrawList, rasterCards, copyToGBuffer, createRasterTarget, clearRasterTarget, clearRasterDepth } from '../mesh/rasterJS.js';
 import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
 import { projTerms, shearProjection, createPitchedTerms, pitchedTermsInto, resolveProjection, assertProjectionRenderer, pitchedFogScale, orthoHashCell, isPitchedFamily } from './projection.js';
@@ -305,6 +305,7 @@ function renderWorldMesh(fb, world, cam) {
   meshCtx.maskAtlas = world.maskAtlas || null; // ALPHA-01b
   meshCtx.wind = windCtx(world, fb); // FOLIAGE-SWAY-01: JS twin of the raster wind uniforms
   rasterDrawList(list, target, meshCtx);
+  for (let ci = 0; ci < list.cardCount; ci++) { const c = list.cards[ci]; rasterCards(c.ib, c.count, c.imp, target, meshCtx, c.eye); } // R6c (38.60): tree card impostors after the mesh pass; none unless a species opted in
   // US-078a (architecture.md 30.1): first-person view model, same pass after a depth-only clear (twin of the GPU
   // `_passRaster` tail); off on pitched frames and when nothing is shown.
   const vmList = fb.viewModel ? fb.viewModel.buildList(cam, meshPitched) : null;

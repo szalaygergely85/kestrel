@@ -31,6 +31,7 @@ const WS = (n) => CULL_SHADOW_BLOCK.field(n).word; // WG-4b shadow mode block
 const PLANES = W('planes'), EYE = W('eye'), LODROW = W('lodRow'), PARAMS = W('params'), COUNT = W('count'), LODON = W('lodOn'), SLOT0 = W('slot0'), SLOT1 = W('slot1');
 const RANGECOUNT0 = W('rangeCount0'), RANGECOUNT1 = W('rangeCount1'); // ALPHA-01f (d): mesh ranges sharing each LOD's compacted instances
 const OCC_VP = W('vp'), OCC_FWD = W('fwd'), OCC_ON = W('hzbOn'), OCC_W = W('hzbW'), OCC_H = W('hzbH'), OCC_LEVELS = W('hzbLevels'), OCC_PITCH = W('hzbPitch'), OCC_PHASE = W('phase'), OCC_SLOT2 = W('slot2'), OCC_SLOT3 = W('slot3'); // S8-B2-10c
+const IMPM = W('impM'); // R6c part 2: impostor mesh-side band (0 = off)
 const SWAYPAD = W('swayPad'), SWAYPAD_S = WS('swayPad'); // S8-B2-05/06: metres added to R (SWAY_MAX while foliage sway is on, else 0)
 
 /** @typedef {{group: any, lod: number, mesh: any, instanceBuffer: any, argsBuffer: any, argsOffset: number, maxInstances: number, parts: any, active: boolean, range?: number}} CullEntry */
@@ -334,6 +335,7 @@ export class WgCullPass {
       u[COUNT] = cnt; u[LODON] = lodOn ? 1 : 0; u[SLOT0] = b.slot * ARGS_WORDS; u[SLOT1] = (b.slot + b.rc) * ARGS_WORDS;
       u[RANGECOUNT0] = b.rc; u[RANGECOUNT1] = b.rc; // ALPHA-01f (d): b.rc fixed at _create; 1 = today's single record per LOD (bit-identical)
       f[SWAYPAD] = fr.swayPad; // S8-B2-05/06: metres added to R in the frustum test (cull.wgsl.js aabbOutside)
+      f[IMPM] = g._cardOk === true && g.imp && g.impM > 0 ? g.impM : 0; // R6c part 2: only when the card pass will draw this group's cards (else today's cut)
       const hz = fr.hzb, on = !!hz && !!b.occlBuf;
       this._writeOcc(hz, on, 0, b); // 10c: all-zero words (hzbOn 0) when occlusion is off, no valid HZB (first frame / resize / cut) or no occl buffers
       const bd = this._bind.buffers;
@@ -424,6 +426,7 @@ export class WgCullPass {
     u[COUNT] = cnt; u[LODON] = lodOn ? 1 : 0; u[SLOT0] = b.slot * ARGS_WORDS; u[SLOT1] = (b.slot + b.rc) * ARGS_WORDS;
     u[RANGECOUNT0] = b.rc; u[RANGECOUNT1] = b.rc;
     f[SWAYPAD] = fr.swayPad;
+    f[IMPM] = g._cardOk === true && g.imp && g.impM > 0 ? g.impM : 0;
   }
 
   /** Frees the batch of `group`: disposes its 4 buffers, zeroes its args words (so a stale slot never draws), pushes the

@@ -20,13 +20,16 @@ const _lob = { vx: 0, vy: 0, vz: 0 };
 export function createGoblinWire({ world, events, state, json, terrain, groundAt }) {
   const campDefs = activeCamps(json);
   const added = ensureGoblinCamps(world, campDefs, terrain);
+  let allDefs = campDefs; // authored camps; WMP-02 far camps are appended by addFarCamps (after the regional beasts, so their slots come last)
   let camps = null, spears = null, view = null, offThrow = null, offBlocked = null;
   const gw = {
     campDefs, added,
+    /** WMP-02: far camps (farCamps.generateFarCamps); call after bootRegionalBeasts and BEFORE createBeastSim. campDefs (raids) stays authored-only. */
+    addFarCamps(farDefs) { if (!farDefs || !farDefs.length) return 0; allDefs = campDefs.concat(farDefs); const n = ensureGoblinCamps(world, farDefs, terrain); gw.added += n; return n; },
     get camps() { return camps; }, get spears() { return spears; }, get view() { return view; },
     /** after createBeastSim(world, ...) */
     attach(sim, opts = {}) {
-      camps = createGoblinCamps({ defs: campDefs, sim, events, state });
+      camps = createGoblinCamps({ defs: allDefs, sim, events, state });
       spears = createArrowSim(world, events, GOBLIN_SPEAR_CFG, createPlayerTarget(world), null, { owner: 'enemy' });
       view = createSpearView({ world, sim: spears, groundAt: groundAt || (terrain && terrain.groundAt ? (x, y) => terrain.groundAt(x, y) : undefined) });
       const g = GOBLIN_SPEAR_CFG.g, sp = GOBLIN_SPEAR_CFG.speedH;

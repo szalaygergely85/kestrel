@@ -5,6 +5,7 @@
 // the waystone wire turns that into the sim touch (heal + ONE save + respawn anchor). E on an awake relay = the same touch, no replay.
 // CRYSTAL GATE (D-062, "crystal wakes stones"): waking needs the world flag `aether.attuned` (set by CH1-03). Without it E only shows a hint.
 import { playRelayHum } from '../audio/sfx.js';
+import { RELAY_WAKE } from './wire/waystone.js';
 
 export const FLAG_ATTUNED = 'aether.attuned';
 export const PROMPT_WAKE = '[E] Hold up the crystal'; // story.md q06 prompt.relay.wake
@@ -54,7 +55,7 @@ function lightDelay(model) {
 export function createRelayWake(o) {
   const { world, palette, emit } = o, hum = o.hum || playRelayHum;
   const relays = [];
-  const toast = { left: 0 };
+  const toast = { left: 0, line: null };
   const hint = { left: 0 };
   const pos = { x: 0, y: 0, z: 0 };
   world.forEachEntity((e) => {
@@ -91,7 +92,12 @@ export function createRelayWake(o) {
     emit(r.wsId, r.stone ? 'waystone' : 'relay', pos);
   }
   /** One function so CH1-04a can swap the toast for the notice view. */
-  function showWakeNotice(r) { if (o.notice && o.notice.push(r.notice)) return; toast.left = TOAST_SEC; } // CH1-04a: notice view when injected, toast fallback (tests)
+  function showWakeNotice(r) {
+    const line = RELAY_WAKE[r.wsId]; // WM-13b: a region relay shows its own line (toast); old relays keep the notice/generic toast
+    if (line) { toast.line = line; toast.left = TOAST_SEC; return; }
+    toast.line = null;
+    if (o.notice && o.notice.push(r.notice)) return; toast.left = TOAST_SEC; // CH1-04a: notice view when injected, toast fallback (tests)
+  }
 
   return {
     relays,
@@ -107,8 +113,8 @@ export function createRelayWake(o) {
       hum();
       r.phase = WAKING; r.t = 0; r.rec.prompt = PROMPT_TOUCH;
       world.state[woken(r.wsId)] = true;
+      if (o.questFlag) o.questFlag(woken(r.wsId)); // chain flag (m1 step 'waystone'); BEFORE touch so errands gated on it are offered by the wake touch (WMP-01)
       touch(r);
-      if (o.questFlag) o.questFlag(woken(r.wsId)); // chain flag (m1 step 'waystone')
       r.rec.requires = undefined; // woken: E = plain touch
       showWakeNotice(r);
       return true;
@@ -153,7 +159,8 @@ export function createRelayWake(o) {
     get toastLeft() { return toast.left; },
     get hintLeft() { return hint.left; },
     drawHud(ui) {
-      if (toast.left > 0) for (let i = 0; i < NOTICE.length; i++) plate(ui, NOTICE[i], TOAST_Y + i);
+      if (toast.left > 0 && toast.line) plate(ui, toast.line, TOAST_Y);
+      else if (toast.left > 0) for (let i = 0; i < NOTICE.length; i++) plate(ui, NOTICE[i], TOAST_Y + i);
       else if (hint.left > 0) plate(ui, HINT_NO_CRYSTAL.text, TOAST_Y);
     },
   };

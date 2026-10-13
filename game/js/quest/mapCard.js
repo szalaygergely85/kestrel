@@ -7,6 +7,7 @@
 import { buildPanelArt, createPanel, hexToRgb, drawPanel } from '../../../engine/index.js';
 import { request as requestHint } from './hints.js';
 import { buildWorldOverlay, AREAS, KINDS } from './mapWorld.js';
+import { createWorldMapCard, worldBox, worldMapSize } from './worldMap.js';
 
 let art = null;   // PanelArt, built once (palette/model are load-time constants)
 let panel = null; // runtime Panel, rebuilt every 'world:loaded' (7.6 item 6)
@@ -256,7 +257,12 @@ export function initMapCard(assets, sceneCols, sceneRows, chartOptions = null) {
   const model = assets.model('mapCard');
   if (!art) art = buildPanelArt(model, assets.palette, 'show');
   const cfg = assets.uiStyle.mapCard;
-  chartView = chartOptions ? createChartCard(chartOptions.chart, assets.palette, chartOptions) : null;
+  // WM-10: `worldMap {geo, names, getSeen}` = the whole-map view (default in the game); else the baked chart card (?map=chart)
+  if (chartOptions?.worldMap) {
+    const wm = chartOptions.worldMap, g = assets.uiStyle.uiGrid, sz = worldMapSize(worldBox(wm.geo), g.cols, g.rows);
+    chartView = createWorldMapCard(wm.geo, wm.names, assets.palette, { getSeen: wm.getSeen, w: sz.w, h: sz.h, travel: chartOptions.travel, travelHeader: chartOptions.travelHeader, lockUnseen: !!wm.lockUnseen });
+    for (const m of chartOptions.markers || []) chartView.setMarker(m.x, m.y, m.kind);
+  } else chartView = chartOptions ? createChartCard(chartOptions.chart, assets.palette, chartOptions) : null;
   panel = createPanel(chartView ? chartView.art : art, {
     fadeIn: cfg.fadeIn, fadeOut: cfg.fadeOut,
     sceneMul: cfg.sceneDim.bgMul, plateMul: cfg.plate.bgMul, platePad: cfg.plate.pad,
@@ -267,18 +273,28 @@ export function initMapCard(assets, sceneCols, sceneRows, chartOptions = null) {
 }
 
 const DIGIT_KEYS = ['Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9'];
-/** WS1-07a: digit key with a shown travel point -> onTravel(id), card closes; else false (normal close rule). */
+const SEL_KEYS = [['ArrowRight', 1], ['ArrowDown', 1], ['ArrowLeft', -1], ['ArrowUp', -1]];
+export const TOAST_TRAVEL_BLOCKED = 'Not with enemies near.';
+/** WS1-07a: digit key with a shown travel point -> onTravel(id), card closes; else false (normal close rule).
+ *  WMP-05 (world map only): arrows move a highlight over the woken relays, Enter travels to the highlighted one;
+ *  chartView.travelBlocked() (combat) keeps the card open and shows a notice instead of starting the fade. */
 function pickTravel(input) {
-  for (let n = 1; n <= 9; n++) {
-    if (!input.pressed(DIGIT_KEYS[n-1]) && !input.pressed('Numpad' + n)) continue;
-    const id = chartView.travelIdFor(n);
-    if (id === null) return false;
-    input.consumePressed();
-    panel.close();
-    if (chartView.onTravel) chartView.onTravel(id);
-    return true;
+  let id = null;
+  if (chartView.moveSelection) {
+    for (const [code, d] of SEL_KEYS) if (input.pressed(code)) { input.consumePressed(); chartView.moveSelection(d); return true; }
+    if ((input.pressed('Enter') || input.pressed('NumpadEnter')) && chartView.selectedId() !== null) id = chartView.selectedId();
   }
-  return false;
+  for (let n = 1; n <= 9 && id === null; n++) {
+    if (!input.pressed(DIGIT_KEYS[n-1]) && !input.pressed('Numpad' + n)) continue;
+    id = chartView.travelIdFor(n);
+    if (id === null) return false;
+  }
+  if (id === null) return false;
+  input.consumePressed();
+  if (chartView.travelBlocked && chartView.travelBlocked()) { if (chartView.setNotice) chartView.setNotice(TOAST_TRAVEL_BLOCKED); return true; }
+  panel.close();
+  if (chartView.onTravel) chartView.onTravel(id);
+  return true;
 }
 export function getMapPanel() { return panel; }
 export function isMapOpen() { return !!panel && panel.state !== 'closed'; }
@@ -287,7 +303,7 @@ export function getMapChart() { return chartView; }
 /** Host draw seam: blank fog cells need an opaque plate too (drawPanel skips spaces). */
 export function drawMapCard(ui,timeMs,lut=null) {
   if(!panel||panel.state==='closed')return;
-  if(chartView?.fog){
+  if(chartView?.fog||chartView?.opaque){
     const a=panel.art;
     for(let y=0;y<a.h;y++)for(let x=0;x<a.w;x++)if(a.codes[y*a.w+x]===32)
       ui.setCellRGB(panel.x0+x,panel.y0+y,0,0,0,0,0,0,0);

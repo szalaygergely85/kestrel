@@ -2168,7 +2168,17 @@
     {"id": "owTarget1", "components": {"targetable": {"height": 1.6, "radius": 0.35}, "voxel": {"anim": "idle", "loop": true, "model": "practiceTarget"}}, "note": "QL-22b practice target 1 near owPathPost (sq.ow.range; flag owTarget1.hit)", "type": "prop", "x": 978, "y": 1028, "yawDeg": 20, "z": "ground"},
     {"id": "owTarget2", "components": {"targetable": {"height": 1.6, "radius": 0.35}, "voxel": {"anim": "idle", "loop": true, "model": "practiceTarget"}}, "note": "QL-22b practice target 2 near owPathPost (sq.ow.range; flag owTarget2.hit)", "type": "prop", "x": 985, "y": 1024, "yawDeg": 0, "z": "ground"},
     {"id": "owTarget3", "components": {"targetable": {"height": 1.6, "radius": 0.35}, "voxel": {"anim": "idle", "loop": true, "model": "practiceTarget"}}, "note": "QL-22b practice target 3 near owPathPost (sq.ow.range; flag owTarget3.hit)", "type": "prop", "x": 992, "y": 1028, "yawDeg": 340, "z": "ground"},
-    {"id": "strandSign", "components": {"inspect": {"text": "note.strand.monster"}}, "note": "STRAND-SIGN-01 (D-070): Long Strand warning sign; stakes strandStake01.. stand at SEA_EDGE_CONFIG.warnM from the beach coast. Outside the walk bounds (beach y~1747, bounds end y~1110): reachable only once the bounds open.", "type": "prop", "x": 1384, "y": 1742.22, "z": "ground"}
+    {"id": "strandSign", "components": {"inspect": {"text": "note.strand.monster"}}, "note": "STRAND-SIGN-01 (D-070): Long Strand warning sign; stakes strandStake01.. stand at SEA_EDGE_CONFIG.warnM from the beach coast. Outside the walk bounds (beach y~1747, bounds end y~1110): reachable only once the bounds open.", "type": "prop", "x": 1384, "y": 1742.22, "z": "ground"},
+    {"id": "relay_glasswater", "components": {"collider": {"h": 2.2, "r": 0.9}, "light": {"offset": {"down": -1.1}, "on": false, "preset": "relay"}, "voxel": {"anim": "dead", "loop": true, "model": "relay"}, "waystone": {"id": "ws_glasswater", "kind": "relay", "label": "place.relay.ws_glasswater", "order": 5}}, "note": "WM-13: dormant region relay ws_glasswater (glasswater); name key place.relay.ws_glasswater", "type": "prop", "x": 1183, "y": 662, "yawDeg": 90, "z": "ground"},
+    {"id": "relay_northwood", "components": {"collider": {"h": 2.2, "r": 0.9}, "light": {"offset": {"down": -1.1}, "on": false, "preset": "relay"}, "voxel": {"anim": "dead", "loop": true, "model": "relay"}, "waystone": {"id": "ws_northwood", "kind": "relay", "label": "place.relay.ws_northwood", "order": 6}}, "note": "WM-13: dormant region relay ws_northwood (northwood); name key place.relay.ws_northwood", "type": "prop", "x": 1671, "y": 626, "yawDeg": 90, "z": "ground"},
+    {"id": "relay_highPastures", "components": {"collider": {"h": 2.2, "r": 0.9}, "light": {"offset": {"down": -1.1}, "on": false, "preset": "relay"}, "voxel": {"anim": "dead", "loop": true, "model": "relay"}, "waystone": {"id": "ws_highPastures", "kind": "relay", "label": "place.relay.ws_highPastures", "order": 7}}, "note": "WM-13: dormant region relay ws_highPastures (alpine); name key place.relay.ws_highPastures", "type": "prop", "x": 661, "y": 634, "yawDeg": 90, "z": "ground"},
+    {"id": "relay_ashMile", "components": {"collider": {"h": 2.2, "r": 0.9}, "light": {"offset": {"down": -1.1}, "on": false, "preset": "relay"}, "voxel": {"anim": "dead", "loop": true, "model": "relay"}, "waystone": {"id": "ws_ashMile", "kind": "relay", "label": "place.relay.ws_ashMile", "order": 8}}, "note": "WM-13: dormant region relay ws_ashMile (ashMile); name key place.relay.ws_ashMile", "type": "prop", "x": 1798, "y": 1047, "yawDeg": 90, "z": "ground"},
+    {"id": "relay_downs", "components": {"collider": {"h": 2.2, "r": 0.9}, "light": {"offset": {"down": -1.1}, "on": false, "preset": "relay"}, "voxel": {"anim": "dead", "loop": true, "model": "relay"}, "waystone": {"id": "ws_downs", "kind": "relay", "label": "place.relay.ws_downs", "order": 9}}, "note": "WM-13: dormant region relay ws_downs (downs); name key place.relay.ws_downs", "type": "prop", "x": 1580, "y": 1430, "yawDeg": 90, "z": "ground"},
+    {"id": "relay_signalHill", "components": {"collider": {"h": 2.2, "r": 0.9}, "light": {"offset": {"down": -1.1}, "on": false, "preset": "relay"}, "voxel": {"anim": "dead", "loop": true, "model": "relay"}, "waystone": {"id": "ws_signalHill", "kind": "relay", "label": "place.relay.ws_signalHill", "order": 10}}, "note": "WM-13: dormant region relay ws_signalHill (signalHill); name key place.relay.ws_signalHill", "type": "prop", "x": 689, "y": 1291, "yawDeg": 90, "z": "ground"},
+    {"id": "relay_heath", "components": {"collider": {"h": 2.2, "r": 0.9}, "light": {"offset": {"down": -1.1}, "on": false, "preset": "relay"}, "voxel": {"anim": "dead", "loop": true, "model": "relay"}, "waystone": {"id": "ws_heath", "kind": "relay", "label": "place.relay.ws_heath", "order": 11}}, "note": "WM-13: dormant region relay ws_heath (westHeath); name key place.relay.ws_heath", "type": "prop", "x": 490, "y": 1345, "yawDeg": 90, "z": "ground"},
+    {"id": "relay_reedmire", "components": {"collider": {"h": 2.2, "r": 0.9}, "light": {"offset": {"down": -1.1}, "on": false, "preset": "relay"}, "voxel": {"anim": "dead", "loop": true, "model": "relay"}, "waystone": {"id": "ws_reedmire", "kind": "relay", "label": "place.relay.ws_reedmire", "order": 12}}, "note": "WM-13: dormant region relay ws_reedmire (reedmire); name key place.relay.ws_reedmire", "type": "prop", "x": 1116, "y": 1401, "yawDeg": 90, "z": "ground"},
+    {"id": "relay_strand", "components": {"collider": {"h": 2.2, "r": 0.9}, "light": {"offset": {"down": -1.1}, "on": false, "preset": "relay"}, "voxel": {"anim": "dead", "loop": true, "model": "relay"}, "waystone": {"id": "ws_strand", "kind": "relay", "label": "place.relay.ws_strand", "order": 13}}, "note": "WM-13: dormant region relay ws_strand (strand); name key place.relay.ws_strand", "type": "prop", "x": 1606, "y": 1675, "yawDeg": 90, "z": "ground"},
+    {"id": "relay_whitecombs", "components": {"collider": {"h": 2.2, "r": 0.9}, "light": {"offset": {"down": -1.1}, "on": false, "preset": "relay"}, "voxel": {"anim": "dead", "loop": true, "model": "relay"}, "waystone": {"id": "ws_whitecombs", "kind": "relay", "label": "place.relay.ws_whitecombs", "order": 14}}, "note": "WM-13: dormant region relay ws_whitecombs (whitecombs); name key place.relay.ws_whitecombs", "type": "prop", "x": 202, "y": 239, "yawDeg": 90, "z": "ground"}
   ],
   "horizon": [],
   "state": {
@@ -2185,8 +2195,8 @@
     "ui.mapCard.opened": false
   },
   "bounds": {
-    "parts": [{"r": 96, "shape": "circle", "x": 1496.5, "y": 1024.5}, {"ax": 1440, "ay": 1034, "bx": 1350, "by": 1048, "r": 40, "shape": "capsule"}, {"ax": 1350, "ay": 1048, "bx": 1240, "by": 1047, "r": 40, "shape": "capsule"}, {"ax": 1240, "ay": 1047, "bx": 1180, "by": 1062, "r": 40, "shape": "capsule"}, {"ax": 1180, "ay": 1062, "bx": 1090, "by": 1070, "r": 40, "shape": "capsule"}, {"ax": 1090, "ay": 1070, "bx": 1000, "by": 1070, "r": 40, "shape": "capsule"}, {"ax": 1000, "ay": 1070, "bx": 950, "by": 960, "r": 30, "shape": "capsule"}, {"r": 100, "shape": "circle", "x": 915, "y": 950}, {"ax": 1480, "ay": 1100, "bx": 1520, "by": 1180, "r": 30, "shape": "capsule"}, {"ax": 1520, "ay": 1180, "bx": 1590, "by": 1300, "r": 30, "shape": "capsule"}, {"ax": 1590, "ay": 1300, "bx": 1590, "by": 1500, "r": 30, "shape": "capsule"}, {"ax": 1590, "ay": 1500, "bx": 1520, "by": 1700, "r": 30, "shape": "capsule"}, {"ax": 1520, "ay": 1700, "bx": 1500, "by": 1740, "r": 30, "shape": "capsule"}, {"ax": 1500, "ay": 1735, "bx": 1380, "by": 1790, "r": 45, "shape": "capsule"}, {"r": 45, "shape": "circle", "x": 1500, "y": 1790}],
-    "shape": "union"
+    "pts": [[20, 80], [1880, 80], [1880, 1845], [1770, 1879], [1596, 1890], [1432, 1869], [1316, 1846], [1224, 1856], [1112, 1832], [1044, 1778], [975, 1729], [888, 1663], [806, 1582], [754, 1539], [703, 1532], [623, 1548], [498, 1576], [310, 1632], [123, 1611], [20, 1628]],
+    "shape": "polygon"
   },
   "triggers": [
     {"id": "hintStone", "hint": "stone", "once": true, "shape": "terrain", "trigger": "hint.show"},
@@ -2233,13 +2243,19 @@
       "waystone"
     ]
   },
-  "terrainBands": [
-    {"id": "east", "ch": 3, "cw": 5, "cx0": 8, "cy0": 7},
-    {"id": "west", "ch": 3, "cw": 5, "cx0": 6, "cy0": 7},
-    {"id": "south1", "ch": 3, "cw": 5, "cx0": 8, "cy0": 9},
-    {"id": "south2", "ch": 3, "cw": 5, "cx0": 8, "cy0": 11},
-    {"id": "south3", "ch": 3, "cw": 5, "cx0": 8, "cy0": 13}
-  ],
+  "terrainGrid": {
+    "ch": 3,
+    "cw": 5,
+    "cx0": 0,
+    "cx1": 32,
+    "cy0": 0,
+    "cy1": 32,
+    "ox": 0,
+    "oy": 0,
+    "pin": [[4, 7], [3, 7], [4, 9], [4, 11], [4, 13]],
+    "stepX": 2,
+    "stepY": 1
+  },
   "water": [
     {"id": "quietPond", "c": [1500, 1010], "look": "pond", "r": 4, "shape": "circle", "z": 2.5},
     {"id": "floodedCellar", "look": "murky", "rect": [1485, 995, 1495, 1005], "shape": "rect", "z": 2.45},

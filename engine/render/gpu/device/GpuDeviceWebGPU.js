@@ -112,7 +112,7 @@ export class GpuDeviceWebGPU {
 
   /** @returns {import('./GpuDevice.js').GpuDeviceCaps} */
   get caps() {
-    return { maxColorAttachments: this.gpu.limits ? this.gpu.limits.maxColorAttachments : 4, timerQueries: this.timer.available, softwareRenderer: this._software };
+    return { maxColorAttachments: this.gpu.limits ? this.gpu.limits.maxColorAttachments : 4, timerQueries: this.timer.available, softwareRenderer: this._software, maxStorageBuffersInVertexStage: this.gpu.limits ? this.gpu.limits.maxStorageBuffersInVertexStage : undefined };
   }
 
   // ---- resources ---------------------------------------------------------------------------------------------
@@ -267,6 +267,10 @@ export class GpuDeviceWebGPU {
       samplerBinding.push(b);
       e0.push({ binding: b, visibility: vis, sampler: { type: 'filtering' } });
     });
+    // R6c part 2 (arch 2026-10-13c b): read-only storage buffers after the textures/samplers (card impostor vertex+fragment reads); binding = stoBase + i
+    const stoKinds = bindings.buffers || [];
+    const stoBase = e0.length;
+    for (let i = 0; i < stoKinds.length; i++) e0.push({ binding: stoBase + i, visibility: vis, buffer: { type: 'read-only-storage' } });
     const bgl0 = this.gpu.createBindGroupLayout({ entries: e0 });
     const uBytes = bindings.uniformBytes || 0;
     // group 1 exists only when there is a uniform block: every group in the layout is set before draw (spec)
@@ -311,7 +315,8 @@ export class GpuDeviceWebGPU {
     }
     const handle = {
       kind: 'pipeline', gpu: null, failed: false, label: bootLabel(desc, 'render'), extraBase, bgl0, uniformGroup, uniformBytes: uBytes, texKinds, samplerBinding,
-      texCur: new Array(texKinds.length).fill(null), texGroup: null, texDirty: texKinds.length > 0, indexed: false,
+      texCur: new Array(texKinds.length).fill(null), texGroup: null, texDirty: texKinds.length > 0 || stoKinds.length > 0, indexed: false,
+      stoBase, nsto: stoKinds.length, stoCur: new Array(stoKinds.length).fill(null),
     };
     this._makePipe('createRenderPipeline', pd, handle);
     return handle;
@@ -534,7 +539,7 @@ export class GpuDeviceWebGPU {
     if (p.gpu === null) throw new Error('pipeline still compiling: ' + p.label);
     if (p !== this._curPipeline) {
       pass.setPipeline(p.gpu); this._curPipeline = p;
-      if (p.texKinds.length === 0) pass.setBindGroup(0, this._emptyGroup()); // group 0 is in the layout: always set
+      if (p.texKinds.length === 0 && p.nsto === 0) pass.setBindGroup(0, this._emptyGroup()); // group 0 is in the layout: always set
     }
     // textures: rebuild the cached bind group only when a handle differs (element-wise compare, no alloc)
     const texs = desc.textures;
@@ -544,8 +549,31 @@ export class GpuDeviceWebGPU {
         if (p.texCur[s] !== texs[i].texture) { p.texCur[s] = texs[i].texture; p.texDirty = true; }
       }
     }
-    if (p.texKinds.length > 0) {
-      if (p.texDirty) this._buildTexGroup(p);
+    const sto = desc.storageBuffers; // R6c part 2: [{slot, buffer}], same cache rule as the textures
+    let hit = false;
+    if (sto && p.texKinds.length === 0) {
+      // per-desc group cache (N species share one pipeline but each keeps its own group): valid while pipeline + buffers are unchanged
+      const c = desc._grp;
+      if (c && c.p === p && c.n === sto.length) {
+        hit = true;
+        for (let i = 0; i < sto.length; i++) if (c.bufs[i] !== sto[i].buffer) { hit = false; break; }
+      }
+      if (hit) {
+        for (let i = 0; i < sto.length; i++) p.stoCur[sto[i].slot] = sto[i].buffer;
+        p.texGroup = desc._grp.grp; p.texDirty = false;
+      }
+    }
+    if (sto && !hit) {
+      for (let i = 0; i < sto.length; i++) {
+        const s = sto[i].slot;
+        if (p.stoCur[s] !== sto[i].buffer) { p.stoCur[s] = sto[i].buffer; p.texDirty = true; }
+      }
+    }
+    if (p.texKinds.length > 0 || p.nsto > 0) {
+      if (p.texDirty) {
+        this._buildTexGroup(p);
+        if (sto && p.texKinds.length === 0) desc._grp = { p, grp: p.texGroup, n: sto.length, bufs: sto.map((e) => e.buffer) }; // miss only: allocates once per change
+      }
       pass.setBindGroup(0, p.texGroup);
     }
     // uniforms: caller-allocated ring slot (uniformOffsetBytes) or alloc + copy `uniforms` here
@@ -586,6 +614,11 @@ export class GpuDeviceWebGPU {
       if (!t) throw new Error(`GpuDeviceWebGPU.bind: texture slot ${i} not bound`);
       entries.push({ binding: i, resource: t.view });
       if (p.samplerBinding[i] >= 0) entries.push({ binding: p.samplerBinding[i], resource: t.sampler });
+    }
+    for (let i = 0; i < p.nsto; i++) {
+      const b = p.stoCur[i];
+      if (!b) throw new Error(`GpuDeviceWebGPU.bind: storage slot ${i} not bound`);
+      entries.push({ binding: p.stoBase + i, resource: { buffer: b.gpu } });
     }
     p.texGroup = this._validatedCreate('createBindGroup', { layout: p.bgl0, entries });
     p.texDirty = false;

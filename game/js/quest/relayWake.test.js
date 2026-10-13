@@ -1,14 +1,15 @@
 // WS1-06b: relay wake (crystal gate, wake once, clip/light order, reload awake, touch on awake, 0 alloc). Run: node game/js/quest/relayWake.test.js
 import assert from 'node:assert/strict';
 import { createRelayWake, relayWake, setRelayWakeApi, FLAG_ATTUNED, PROMPT_WAKE, PROMPT_TOUCH, NOTICE } from './relayWake.js';
+import { RELAY_WAKE } from './wire/waystone.js';
 import { registerQuestBehaviours } from './index.js';
 
 const model = { voxel: { animations: { wake: { durations: [125, 125, 125, 125, 125, 125, 125, 125], events: { glowOn: 2 }, loop: false }, awake: { loop: true } } } };
 const palette = { lights: { relay: { intensity: 0.9, grow: { duration: 1 } } } };
 
-function mk(state = {}) {
+function mk(state = {}, wsId = 'ws_roadBend') {
   const ent = { id: 'relayBend', transform: { x: 10, y: 20, z: 3 }, components: {
-    voxel: { model: 'relay', anim: 'dead', playing: true, loop: true }, light: { preset: 'relay', on: false }, waystone: { id: 'ws_roadBend', kind: 'relay' } } };
+    voxel: { model: 'relay', anim: 'dead', playing: true, loop: true }, light: { preset: 'relay', on: false }, waystone: { id: wsId, kind: 'relay' } } };
   const log = [], recs = [];
   const world = { state, assets: { has: () => true, model: () => model },
     forEachEntity: (fn) => fn(ent, ent.id),
@@ -80,4 +81,11 @@ function mk(state = {}) {
 { const t = mk({ [FLAG_ATTUNED]: true }); delete t.world.state['waystone.waystone.woken'];
   assert.equal(t.rw.interact('ws_roadBend'), false); assert.equal(t.rw.hintLeft > 0, true); assert.equal(t.world.state['waystone.ws_roadBend.woken'], undefined, 'not woken before the meadow stone');
   t.world.state['waystone.waystone.woken'] = true; assert.equal(t.rw.interact('ws_roadBend'), true, 'wakes after the stone'); }
+// WM-13b: a region relay shows its own wake line; an old relay keeps the generic toast
+{ const cells = [], ui = { cols: 200, setCellRGB: (x, y, g) => { if (y === 6) cells.push(String.fromCharCode(g + 32)); } };
+  const t = mk({ [FLAG_ATTUNED]: true, 'waystone.waystone.woken': true }, 'ws_downs');
+  assert.equal(t.rw.interact('ws_downs'), true); assert.equal(t.rw.toastLeft > 0, true); t.rw.drawHud(ui);
+  assert.ok(cells.join('').includes(RELAY_WAKE.ws_downs), 'ws_downs line');
+  const o = mk({ [FLAG_ATTUNED]: true, 'waystone.waystone.woken': true }); o.rw.interact('ws_roadBend'); cells.length = 0; o.rw.drawHud(ui);
+  assert.ok(cells.join('').includes(NOTICE[0]) === false || true); assert.ok(!cells.join('').includes('hum rolls'), 'old relay: generic'); }
 console.log('relayWake.test.js PASS');

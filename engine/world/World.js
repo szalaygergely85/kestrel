@@ -7,7 +7,7 @@ import { makeGrid, zoneAt, zoneId, best as bandBest, pick as bandPick, marginX a
 import { loadLevel, isTerrainFloor } from './Level.js';
 import { Terrain } from './Terrain.js';
 import { BandBakeJob, buildNavTile, NavTileFill } from './bandBake.js';
-import { BandCache, bundleBytes } from './bandCache.js';
+import { BandCache } from './bandCache.js';
 import { aheadOrder, bestOverlap } from './bandAhead.js';
 import { validateCarpetConfig, buildCarpetClassMap, buildCarpetMask, CarpetMaskJob } from './carpet.js';
 import { scatterTrees, scatterDetail, TreeScatterJob, DetailScatterJob } from './scatter.js';
@@ -548,7 +548,11 @@ export class World {
       // WS1-02 (38.36): authored `terrainBand` rect (absent = the auto-centred 3x3, byte-identical).
       let tb = w.terrainBand;
       if (w.terrainBands) { // WS2-01: start in the best zone for the spawn pose (opts.spawn) or zone 0
-        const sp = opts.spawn;
+        let sp = opts.spawn;
+        if (!(sp && Number.isFinite(sp.x) && Number.isFinite(sp.y))) { // WM-05: no caller pose -> the world's own player spawn (else zone 0 is the wrong place on the whole-map grid)
+          const pe = (def.entities || []).find((e) => e.type === 'player' && e.spawn), st = pe && w.structures.find((q) => q.id === pe.spawn.structure);
+          if (st && st.kind !== 'mesh' && st.level && st.level.start) { localToWorld(st.frame, st.level.start.x, st.level.start.y, 0, tmpW); sp = { x: tmpW.x, y: tmpW.y }; }
+        }
         if (w.terrainGrid) { // MAP-10: initial zone = best for the spawn pose (or (0,0)) in slot 0
           const gp = w._gridPick; gp.i = 0; gp.j = 0;
           if (sp && Number.isFinite(sp.x) && Number.isFinite(sp.y)) bandBest(w.terrainGrid, null, sp.x, sp.y, gp);
@@ -1293,12 +1297,13 @@ export class World {
    */
   bakeAhead(px, py, msBudget) {
     const g = this.terrainGrid;
+    this.bandCache.setFocus(px, py);
     if (!g || this._bandCur < 0 || this._bandPend >= 0 || !(msBudget > 0)) return !!this._ahead;
     if (this._navQ && (this._navFill || this._navQ.length) && !this._ahead) { // pending nav tiles of pre-setNavTiles bundles: idle slices before new bake-ahead jobs
       if (!this._navFill) { const c = this._navQ.pop(); if (c.nav || !c.near) return true; this._navFill = new NavTileFill(this, c); }
       if (this._navFill.step(Math.max(0.2, msBudget - 0.4))) {
         const c = this._navFill.bundle; this._navFill = null;
-        if (this.bandCache.map.get(c.key) === c) { const nb = bundleBytes(c); this.bandCache.bytes += nb - c.bytes; c.bytes = nb; } // keep the cache byte count honest
+        this.bandCache.regrow(c, this._bandKey(this._bandCur), this._bandPend >= 0 ? this._bandKey(this._bandPend) : null); // WM-CACHE-01: recount + trim under the cap
       }
       return true;
     }
@@ -1428,6 +1433,7 @@ export class World {
    * Zero allocation while idle.
    */
   streamBand(px, py, msBudget) {
+    this.bandCache.setFocus(px, py);
     // timer reads box a double each: skipped while there is no leftover-budget work (bake-ahead quiet, no mask job)
     const timed = !!this._maskJob || (!!this.terrainGrid && !this._aheadQuiet());
     const t0 = timed ? (typeof performance !== 'undefined' ? performance.now() : Date.now()) : 0;

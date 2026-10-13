@@ -6,6 +6,7 @@
 // (engine/entities/Player.js, engine/physics/*), so this now comes from
 // engine/index.js like everything else (check-deps rule 3).
 
+import { applyImpostorBoot, reapplyRememberedImpostors } from './ui/impostorPreset.js'; // R6-WIRE
 import { loadPresets, resolveQuality, saveQuality, knobsFor, dropStaleOverrides, carpetQualityFor, carpetBuildFor } from './ui/gfxPresets.js';
 import { loadQuestFiles, showBootErrors } from './questBoot.js';
 import { registerRiggedChars } from './quest/charRegister.js';
@@ -81,7 +82,8 @@ import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-05
 import { createWaystoneTouch } from './waystoneTouch.js'; // WAYSTONE-TOUCH-01
 import { createWaystoneWire } from './quest/wire/waystone.js'; // WAYSTONE-01w
 import { createTravel } from './quest/travel.js'; // WS1-07b: map travel (fade, teleport, reset)
-import { ensureBand, bandReady, placeLoaded, gridEnabled, gridVariant } from './quest/bandPose.js'; // MAP-13: band at any pose + ?grid=1 variant
+import { aspectRatio } from './settings/options.js'; // OB-117: saved picture ratio at boot
+import { ensureBand, bandReady, placeLoaded, gridEnabled, gridVariant, legacyVariant } from './quest/bandPose.js'; // MAP-13: band at any pose; WM-05: grid default, ?grid=0 = legacy bands
 import { createTitleMenuHost, withRelock } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { retintHand, lookOrDefault } from './quest/look/handLook.js'; // CHARGEN-16
@@ -100,9 +102,12 @@ import { wireTelegraphs, telegraphsEnabled } from './fx/telegraphWire.js'; // TE
 import { stepCombatHint } from './quest/combatHint.js'; // COMBAT-HINT-01
 import { createRegionBanner } from './quest/regionBanner.js'; // REGION-01: region-entry banner
 import { stepActionHints, resetActionHints } from './quest/actionHints.js'; // FS-01
+import { bootRegionAmbient } from './quest/regionAmbientWire.js'; // WMP-03: region ambient life
 import { createWild } from './wild/wildEnv.js'; // WILD-06: ambient rabbits + deer
 import { createGoblinWire } from './life/goblinWire.js'; // GOB-07b
 import { createLifeWire, prepareRaidDefs, createOutwallLife } from './life/lifeWire.js'; // LIFE-HOOKS-01: wolf raids wiring
+import { planWorldLife } from './quest/sim/worldGen.js';
+import { bootRegionalBeasts } from './quest/sim/regionalBeastsBoot.js'; // WM-12
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
 import { ensureBears } from './quest/sim/bearBrain.js'; // BEAR-01 (D-069): black bears in Thornwood
@@ -637,6 +642,8 @@ const menuWanted = params.get('title') !== '0' && !isCaptureOrBench && params.ge
 // (small, CPU-side) objects, by the fallback gate below (architect review 1
 // item 2) and by any later live grid change (the `grid:changed` handler).
 let { renderTarget: rt, depthBuffer } = engine;
+// OB-117: apply the saved picture ratio at boot (settings panel applies it live); gpucompare/capture/bench pages keep the reference box.
+if (!isCaptureOrBench && params.get('capture') !== '1' && typeof rt.setAspect === 'function') rt.setAspect(aspectRatio(loadSettings().aspect));
 const { input } = engine;
 if (demo.on) blockFKeys(input); // demo: no F3 / F-key dev overlays
 // DEMO-MODE-01: end card once per run on the waystone done event; Restart wipes the demo save and reloads.
@@ -1095,12 +1102,16 @@ async function runGame(mode, cinematic = null) {
   const entityTintTable = createEntityTintTable(); // TELEGRAPH-WIRE-01 part 2: one table, reused
   let telegraphWire = null; // TELEGRAPH-WIRE-01: rebuilt on 'world:loaded'
   let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
+  // WMP-05: map travel is refused in combat (aggro beast within 40 m or the hit-invuln window is up); same sim the hp-regen gate reads.
+  const mapTravelBlocked = () => { const t = playerHandle && playerHandle.data.transform; return !!((vitals && vitals.invuln > 0) || (beasts && t && beasts.aggroNear(t.x, t.y, 40))); };
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   let travel = null; // WS1-07b: created once below (after wakeOut)
   let dialogueCtl = null; // DIALOGUE-01b2 (38.28): rebuilt on every 'world:loaded', below
   let lifeWire = null, raidDefs = null; // LIFE-HOOKS-01
   try { raidDefs = prepareRaidDefs(await (await fetch('../content/life/raids.json')).json()); } catch (e) { console.warn('[life] raids off:', e && e.message); }
+  let regionAmbTable = null, regionAmb = null; // WMP-03: content/life/regionAmbient.json; no audio cue API for birdsong/insects yet -> onCue is a no-op (knownCues [])
+  try { regionAmbTable = await (await fetch('../content/life/regionAmbient.json')).json(); } catch (e) { console.warn('[regionAmbient] off:', e && e.message); }
   let goblinWire = null, goblinJson = null; // GOB-07b: goblin camps + enemy spears (content/life/goblinCamps.json)
   try { goblinJson = await (await fetch('../content/life/goblinCamps.json')).json(); } catch (e) { console.warn('[goblins] off:', e && e.message); }
   Object.defineProperty(window.__debug, 'goblinWire', { configurable: true, get: () => goblinWire }); // verify-goblins
@@ -1349,7 +1360,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       }
       : (() => { // US-034 (24.11): the play-test handoff's `?world=` param
         const wd = assets.world(params.get('world') || 'world_m1');
-        return gridEnabled(params) && wd.terrainBands ? gridVariant(wd, window.ASSETS.levels.world_geo) : wd; // MAP-13: ?grid=1 (default OFF) = terrainGrid + polygon bounds; shipped json untouched
+        if (gridEnabled(params)) return wd.terrainBands ? gridVariant(wd, window.ASSETS.levels.world_geo) : wd; // WM-05: world_m1 ships terrainGrid + polygon bounds (default)
+        return wd.terrainGrid ? legacyVariant(wd) : wd; // ?grid=0: old terrainBands + capsule bounds for one sprint
       })();
 
     // US-017 (7.4 "Restart / world swap"): every runtime rebuild this block
@@ -1362,6 +1374,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     // the 'world:loaded' handler" rule).
     engine.events.on('world:band', (ev) => { // WM-04: the nav tile swapped with the band -> beasts rebind + re-plan, dormancy by tile
       if (beasts && ev && ev.nav && playerHandle) { const pt = playerHandle.data.transform; beasts.rebindNav(ev.nav, pt.x, pt.y); }
+      if (outLife && ev && ev.nav && playerHandle) { const pt = playerHandle.data.transform; outLife.rebindNav(ev.nav, pt.x, pt.y); } // OUT-LIFE-TILE: villagers follow the tile too
     });
     engine.events.on('world:band', () => hzb.invalidate('band')); // WS2-05: near/far seam jumped -> cut the HZB + stable history
     // OB-073-D2f: hand the GPU carpet pass the class map + near heights on every world load / band swap (version bump re-uploads)
@@ -1464,9 +1477,9 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // US-078d: beastSim now owns a `combat:hit` listener (the stagger behaviour) - drop the old world's one
       // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.
       if (wild && wild.dispose) wild.dispose();
-      wild = null; engine.feedVoxels = null; // WILD-06: off in capture/bench/compare/cinematic, `?at=`/`?pose=` dev poses and `?fauna=0`
+      wild = null; regionAmb = null; engine.feedVoxels = null; // WILD-06: off in capture/bench/compare/cinematic, `?at=`/`?pose=` dev poses and `?fauna=0`
       if (mode === 'world' && !cinematic && params.get('fauna') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !params.has('at') && !params.has('pose')) {
-        try { wild = createWild({ world, pool: gameVoxelPool, fx: window.ASSETS.wildlifeFx, seed: 0x5EED, events: engine.events }); if (wild) engine.feedVoxels = wild.feed; } catch (err) { console.warn('[wild] fauna off:', err && err.message); }
+        try { wild = createWild({ world, pool: gameVoxelPool, fx: window.ASSETS.wildlifeFx, seed: 0x5EED, events: engine.events }); if (wild) engine.feedVoxels = wild.feed; regionAmb = bootRegionAmbient({ table: regionAmbTable, geo: window.ASSETS.levels && window.ASSETS.levels.world_geo, wild }); } catch (err) { console.warn('[wild] fauna off:', err && err.message); }
       }
       if (beasts) beasts.dispose();
       if (params.get('bench') === 'combat' || (benchActive && params.get('enemies') === '4')) ensureBenchBoars(world); // COMBAT-BENCH-01
@@ -1481,6 +1494,10 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         world.setNavTiles({ create: (x0, y0, w, h, cell) => new NavGrid({ x0, y0, w, h, cell }), maxSlopeDeg: nc.maxSlopeDeg ?? 30, maxStepM: nc.maxStepM ?? Infinity, blockedTypes: nc.blockedTypes ?? ['water'] });
       }
       const gridNav = world.terrainGrid && world.nav ? { grid: world.nav, astar: createAStar(world.nav) } : null;
+      bootRegionalBeasts(world, window.ASSETS?.levels?.world_geo, params, isCaptureOrBench); // WM-12: regional herds, after World.load, before the sim
+      if (goblinWire && world.terrainGrid && gridEnabled(params)) { // WMP-02: far goblin camps, last in slot order (authored, regional, far camps)
+        goblinWire.addFarCamps(planWorldLife(world, window.ASSETS?.levels?.world_geo, 12).camps); // WMP-09: authored-only avoid, same defs on Continue
+      }
       beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null }); // LIFE-07: predators hunt the ambient fauna
       if (goblinWire) goblinWire.attach(beasts, { onClank: () => playShieldClank() }); // GOB-07b: camps + spear sim + view
       if (lifeWire) { lifeWire.dispose(); lifeWire = null; } // LIFE-08: night raids (content/life/raids.json), rebuilt with every beast sim
@@ -1567,7 +1584,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       outwall = saveEnabled && saveRelay ? createOutwall({ world, questFlag: (k) => saveRelay.quest.questFlag(k) }) : null;
       dialogueCtl.addNpc('hesk'); dialogueCtl.addNpc('dorrin'); // Ch3 Outwall NPCs (world_m1 entities, char.kit model registered at boot; both share the default kit look, no tint)
       if (outLife) outLife.dispose(); // LIFE-04: villagers replace the OUT-02 spawn hook; only with saves live (same gate as OUT-01), never in capture/bench
-      outLife = lifeData && outwall && lifeNav && mode === 'world' ? createOutwallLife({ world, life: lifeData.life, nav: lifeNav, events: engine.events, state: world.state, outwall, dialogue: dialogueCtl, barksData: lifeData.barks, style: window.ASSETS.uiStyle.dialogue, hour: clockHour(world.state, clockCfg) }) : null;
+      outLife = lifeData && outwall && lifeNav && mode === 'world' ? createOutwallLife({ world, life: lifeData.life, nav: lifeNav, tileNav: !!(world.terrainGrid && world.nav && lifeNav === world.nav), events: engine.events, state: world.state, outwall, dialogue: dialogueCtl, barksData: lifeData.barks, style: window.ASSETS.uiStyle.dialogue, hour: clockHour(world.state, clockCfg) }) : null;
       crystal = barks = chapterCard = chapterCard2 = escort = null;
       if (bearTurn) bearTurn.paused = false;
       if (saveEnabled && saveRelay) { // CH1-MOUNT: all three need the quest relay (flags + book)
@@ -1718,9 +1735,13 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           if (mapFogHook && mapFogHook.fog) for (const m of markers) mapFogHook.fog.reveal(m.x, m.y);
           chartOptions = { chart: chartData, markers, geo: (window.ASSETS.levels.world_geo && params.get('geo') !== '0') ? { G: window.ASSETS.levels.world_geo, U: window.ASSETS.levels.overworld_far.util } : null, /* MAP-28 */ fog: mapFogHook ? mapFogHook.fog : null, travel: !waystoneWire ? null : { list: () => { const ws = waystoneWire.sim; if (!ws) return []; const l = []; const n = ws.list(l); const out = []; for (let i = 0; i < n; i++) out.push({ id: l[i].id, name: l[i].label, order: l[i].order, touched: l[i].touched, woken: true, x: l[i].x, y: l[i].y }); return out; } } };
         }
+        { // WM-10: the whole-map view is the default M card (?map=chart keeps the baked chart); region.seen drives fog + names
+          const wg = window.ASSETS.levels.world_geo, rbN = window.ASSETS.uiRegionBanner;
+          if (wg && rbN && params.get('map') !== 'chart') chartOptions = Object.assign(chartOptions || { markers: [], travel: null }, { worldMap: { geo: wg, lockUnseen: true, names: rbN.names, getSeen: () => world.state['region.seen'] } });
+        }
         try {
           initMapCard(assets, ui.cols, ui.rows, chartOptions);
-          { const cv = getMapChart(); if (cv) cv.onTravel = (id) => travel.request(id); } // WS1-07b
+          { const cv = getMapChart(); if (cv) { cv.onTravel = (id) => travel.request(id); cv.travelBlocked = () => mapTravelBlocked(); } } // WS1-07b
         } catch (e) {
           console.warn('[map] chart card init failed, falling back to the plain card:', e && e.message);
           initMapCard(assets, ui.cols, ui.rows);
@@ -2040,7 +2061,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); if (beasts.tileMode && (++tileDormTick % 60) === 0) beasts.updateTileDormancy(pt.x, pt.y); } // WM-04: 200 m dormancy at ~1 Hz
       if (goblinWire && simDue) { const pt = playerHandle.data.transform; goblinWire.step(engine.world.state['clock.day'] | 0, pt.x, pt.y); } // GOB-07b
       if (lifeWire && simDue) lifeWire.step(clockHour(engine.world.state, clockCfg)); // LIFE-08: raids roll at night
-      if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); } // WILD-06: ambient only, never hashed
+      if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); if (regionAmb) regionAmb.step(dt, pt.x, pt.y); } // WILD-06: ambient only, never hashed
       if (escort) { const uiHold = uiLocked || !!(dialogueCtl && dialogueCtl.open); /* AUD-06 */ const pt = playerHandle.data.transform; if (escort) { if (burlReopen && !(dialogueCtl && (dialogueCtl.open || dialogueCtl._closing))) { burlReopen = false; const bh = engine.world.get('bear'), bt2 = bh && bh.data.transform; if (bt2 && (bt2.x - pt.x) ** 2 + (bt2.y - pt.y) ** 2 <= 36) dialogueCtl.openFor('bear'); } escort.step(dt, pt.x, pt.y, uiHold); if (bearTurn) bearTurn.paused = escort.busy; } } // CH1-07/08b: before the bear turn
       if (nub) nub.step(dt); // NUB-01: same fixed step as the escort
       if (outwall) { const pt = playerHandle.data.transform; outwall.step(dt, pt.x, pt.y); if (outLife && simDue) outLife.step(dt, clockHour(engine.world.state, clockCfg), pt.x, pt.y); } // OUT-01 (owns yaw only when idle) + LIFE-04
@@ -2620,6 +2641,12 @@ stream act ${g.activeCount}/${g.memberCount} warm ${g.warmCount} cells ${g.cellC
     while (farHold.step()) { bootProg.fraction('land', farHold.frac); await bootPaint(); }
     window.__farHoldMs = performance.now() - t0;
     console.info(`[boot] far terrain + bands baked behind the card in ${window.__farHoldMs.toFixed(0)} ms (${farHold.slices} slices, bands ${(engine.world.bandCache.bytes / 1048576).toFixed(1)} MB)`);
+  }
+  { // R6-WIRE: card impostors from the quality preset (after the pre-bake; capture/bench pages without a preset stay impostor-free)
+    const fo = window.ASSETS && window.ASSETS.levels && window.ASSETS.levels.overworld_far && window.ASSETS.levels.overworld_far.recipe && window.ASSETS.levels.overworld_far.recipe.forest;
+    if (resolvedQuality && resolvedQuality.knobs && fo && fo.trees) applyImpostorBoot(engine, resolvedQuality.knobs, { species: fo.trees.species, log: console.warn, imp: params.get('imp') });
+    // bindScatterInstances rebuilds the tree groups on both events: reapply the remembered knobs AFTER the engine's own listener (registered earlier)
+    if (resolvedQuality && resolvedQuality.knobs && fo && fo.trees) for (const ev of ['world:scatter', 'world:loaded']) engine.events.on(ev, () => { try { reapplyRememberedImpostors(engine); } catch (e) { console.warn('impostor reapply', e); } });
   }
   window.__farReadyAtBoot = !!(engine.world && engine.world.terrain && engine.world.terrain.farReady);
   if (bootProg) engine.events.on('world:loaded', ({ world: nw }) => {

@@ -14,7 +14,9 @@
 import { computeVoxelPose, FORWARD, cosSinDeg } from '../voxel/voxelPose.js';
 import { MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
+import { releaseGroupImpostor } from './impostorCard.js';
 import { lodBandFrac, lodDitherBits } from './lodDither.js';
+import { impBandBits, IMP_BAND_M } from './impostorCard.js';
 import { requestMeshForGroup } from './lazyMesh.js';
 import { DRAW_FLAG_ONE_PART, DRAW_FLAG_NO_CULL, DRAW_FLAG_TWO_SIDED } from './DrawList.js'; // runtime use only (DrawList imports groupRadius from here)
 
@@ -169,6 +171,12 @@ export function compactGroup(g, planes, R, vp, rows, swayPad = 0, eye = null) {
   if (lodOn) k = R * Math.sqrt(vp[1] * vp[1] + vp[5] * vp[5] + vp[9] * vp[9]) * rows;
   const lodPrev = g.lodPrev;
   const Rc = R + swayPad;
+  // R6b: card impostor (rules in impostorCard.js). impOn false = nothing below changes.
+  const impOn = !!(g.imp && g.impM > 0 && eye && g.cardIb);
+  const cardDst = impOn ? g.cardIb.u32 : null;
+  const bandBits = impOn ? (g._bandBits || (g._bandBits = new Uint32Array(g.ib.capacity))) : null;
+  const impFar = impOn ? g.impM + IMP_BAND_M : 0;
+  let wc = 0;
   // QUAT-LOD-01 part 2: near-LOD0 cap, only meaningful with LOD on (there must be an LOD1 bucket to push the excess into).
   // Natural LOD0 survivors are buffered (index + projected `cells`) instead of written straight to dst0, so the top
   // `g.lod0Cap` by `cells` (= nearest by the engine's own LOD metric) can be picked after the loop. `lodPrev` is left as the
@@ -182,6 +190,20 @@ export function compactGroup(g, planes, R, vp, rows, swayPad = 0, eye = null) {
     const tx = srcF[o + 3], ty = srcF[o + 7], tz = srcF[o + 11];
     if (planes && classifyAABB(planes, tx - Rc, ty - Rc, tz - Rc, tx + Rc, ty + Rc, tz + Rc) === CULL_OUT) continue;
     if (md2 > 0) { const dx = tx - eye.x, dy = ty - eye.y, dz = tz - eye.z; if (dx * dx + dy * dy + dz * dz > md2) continue; }
+    let inImpBand = false;
+    if (impOn) {
+      const dx = tx - eye.x, dy = ty - eye.y, dz = tz - eye.z;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      bandBits[i] = 0;
+      if (d >= g.impM) {
+        const co = wc * INSTANCE_STRIDE;
+        for (let c = 0; c < INSTANCE_STRIDE; c++) cardDst[co + c] = srcU[o + c];
+        if (d >= impFar) { wc++; continue; } // card only
+        cardDst[co + 13] = (srcU[o + 13] | impBandBits(d, g.impM, 1)) >>> 0; // band: card copy (inverted) + mesh copy below
+        wc++;
+        bandBits[i] = impBandBits(d, g.impM, 0); inImpBand = true;
+      }
+    }
     let lod = 0;
     let cellsForCap = Infinity; // w <= 1e-6 (behind/at the eye): no projected size, treat as nearest (top cap priority)
     if (lodOn) {
@@ -190,7 +212,7 @@ export function compactGroup(g, planes, R, vp, rows, swayPad = 0, eye = null) {
         const cells = k / cw;
         cellsForCap = cells;
         lod = cells < lo ? 1 : cells > hi ? 0 : lodPrev[i];
-        if (g.lodDither && cells >= lo && cells <= hi) { // S8-B2-07: screen-door crossfade, both copies with complementary coverage bits
+        if (g.lodDither && !inImpBand && cells >= lo && cells <= hi) { // S8-B2-07: screen-door crossfade, both copies with complementary coverage bits
           const f = lodBandFrac(cells, lo, hi);
           for (let c = 0; c < INSTANCE_STRIDE; c++) { dst0[w0 * INSTANCE_STRIDE + c] = srcU[o + c]; dst1[w1 * INSTANCE_STRIDE + c] = srcU[o + c]; }
           dst0[w0 * INSTANCE_STRIDE + 13] = (srcU[o + 13] | lodDitherBits(f, 0)) >>> 0;
@@ -205,19 +227,21 @@ export function compactGroup(g, planes, R, vp, rows, swayPad = 0, eye = null) {
     if (lod) {
       const wo = w1 * INSTANCE_STRIDE;
       for (let c = 0; c < INSTANCE_STRIDE; c++) dst1[wo + c] = srcU[o + c];
+      if (inImpBand) dst1[wo + 13] = (srcU[o + 13] | bandBits[i]) >>> 0;
       w1++;
     } else if (capOn) {
       lod0Idx[nat0] = i; lod0Cells[nat0] = cellsForCap; nat0++;
     } else {
       const wo = w0 * INSTANCE_STRIDE;
       for (let c = 0; c < INSTANCE_STRIDE; c++) dst0[wo + c] = srcU[o + c];
+      if (inImpBand) dst0[wo + 13] = (srcU[o + 13] | bandBits[i]) >>> 0;
       w0++;
     }
   }
   if (capOn) {
     const cap = g.lod0Cap;
     if (nat0 <= cap) {
-      for (let j = 0; j < nat0; j++) { const o = lod0Idx[j] * INSTANCE_STRIDE, wo = w0 * INSTANCE_STRIDE; for (let c = 0; c < INSTANCE_STRIDE; c++) dst0[wo + c] = srcU[o + c]; w0++; }
+      for (let j = 0; j < nat0; j++) { const o = lod0Idx[j] * INSTANCE_STRIDE, wo = w0 * INSTANCE_STRIDE; for (let c = 0; c < INSTANCE_STRIDE; c++) dst0[wo + c] = srcU[o + c]; if (impOn) dst0[wo + 13] = (dst0[wo + 13] | bandBits[lod0Idx[j]]) >>> 0; w0++; }
     } else {
       // Partial selection: the `cap` largest-`cells` entries end up in [0,cap) (order scrambled), the rest in [cap,nat0).
       for (let s = 0; s < cap; s++) {
@@ -230,11 +254,12 @@ export function compactGroup(g, planes, R, vp, rows, swayPad = 0, eye = null) {
       }
       _insertionSortByIdx(lod0Idx, 0, cap); // stable game order within each written bucket
       _insertionSortByIdx(lod0Idx, cap, nat0);
-      for (let j = 0; j < cap; j++) { const o = lod0Idx[j] * INSTANCE_STRIDE, wo = w0 * INSTANCE_STRIDE; for (let c = 0; c < INSTANCE_STRIDE; c++) dst0[wo + c] = srcU[o + c]; w0++; }
-      for (let j = cap; j < nat0; j++) { const o = lod0Idx[j] * INSTANCE_STRIDE, wo = w1 * INSTANCE_STRIDE; for (let c = 0; c < INSTANCE_STRIDE; c++) dst1[wo + c] = srcU[o + c]; w1++; }
+      for (let j = 0; j < cap; j++) { const o = lod0Idx[j] * INSTANCE_STRIDE, wo = w0 * INSTANCE_STRIDE; for (let c = 0; c < INSTANCE_STRIDE; c++) dst0[wo + c] = srcU[o + c]; if (impOn) dst0[wo + 13] = (dst0[wo + 13] | bandBits[lod0Idx[j]]) >>> 0; w0++; }
+      for (let j = cap; j < nat0; j++) { const o = lod0Idx[j] * INSTANCE_STRIDE, wo = w1 * INSTANCE_STRIDE; for (let c = 0; c < INSTANCE_STRIDE; c++) dst1[wo + c] = srcU[o + c]; if (impOn) dst1[wo + 13] = (dst1[wo + 13] | bandBits[lod0Idx[j]]) >>> 0; w1++; }
     }
   }
   g.drawCount[0] = w0; g.drawCount[1] = w1;
+  if (impOn) { g.cardCount = wc; touchInstances(g.cardIb); } else if (g.cardIb) g.cardCount = 0;
   touchInstances(g.drawIb[0]); touchInstances(g.drawIb[1]); // AUD-02: raw compaction writes -> version bump (the GPU upload skips an unchanged version)
   return w0 + w1;
 }
@@ -358,6 +383,8 @@ export function makeInstanceGroup(modelKey, capacity) {
     lodCells: 0, maxDistM: 0, castShadow: true, lodPrev: new Uint8Array(capacity), _R: 0,
     _memoFrameNo: /** @type {number|null} */ (null),
     // QUAT-LOD-01 part 2: near-LOD0 cap (0 = off) + its scratch, and the lazily-resolved LOD1 registry mesh for `g.mesh` groups.
+    // R6b (38.60): tree card impostor, OFF unless the host calls enableGroupImpostor (impostorCard.js). cardIb = engine-owned card bucket.
+    imp: null, impM: 0, cardIb: null, cardCount: 0, _bandBits: null,
     lod0Cap: 0, _mesh1: undefined, _lod0Idx: new Uint32Array(capacity), _lod0Cells: new Float32Array(capacity),
   };
   return g;
@@ -450,6 +477,7 @@ export class InstanceGroups {
   remove(g) {
     const i = this.groups.indexOf(g);
     if (i >= 0) this.groups.splice(i, 1);
+    releaseGroupImpostor(g); // R6e: card bucket back to the pool (no-op for groups without an impostor)
   }
 
   /**
@@ -509,6 +537,7 @@ export class InstanceGroups {
         // ALPHA-01f (b): ONE_PART collapses instancedRanges() to one synthetic whole-mesh range (rasterJS.js rasterInstanced's
         // `onePart` guard then drops per-range masking) - only opaque-only groups get it; a masked group keeps its real
         // mesh.ranges so passRaster.js's instanced-masked draw sees each range's mask rect (JS-twin parity, ALPHA-01f a).
+        if (g.cardCount > 0 && g.imp) list.addCards(g.cardIb, g.cardCount, g.imp, this.eye); // R6c: card bucket (opt-in species only)
         if (g.drawCount[0] > 0) { const it = list.addInstances(draw, g.parts, g.drawIb[0], g.drawCount[0], g._R); if (it && !meshIsMasked(g.mesh)) it.flags |= DRAW_FLAG_ONE_PART; }
         if (draw1 && g.drawCount[1] > 0) {
           const it1 = list.addInstances(draw1, g.parts, g.drawIb[1], g.drawCount[1], g._R);

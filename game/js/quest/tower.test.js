@@ -129,7 +129,7 @@ const towerFull = worldFull.structures.find((s) => s.id === 'tower');
 //    is out of scope until that lands.
 // ---------------------------------------------------------------------------
 {
-  { const c0 = worldM1.bounds && worldM1.bounds.parts ? worldM1.bounds.parts[0] : worldM1.bounds; ok('worlds.world_m1.bounds is (or starts with) a circle with r > 0 (WS1-04 union)', c0 && c0.shape === 'circle' && c0.r > 0); }
+  ok('worlds.world_m1.bounds is a polygon with >= 3 vertices (WM-05/D-077)', worldM1.bounds && worldM1.bounds.shape === 'polygon' && worldM1.bounds.pts.length >= 3);
   const wEnd = (worldM1.triggers || []).find((t) => t.id === 'end');
   ok('worlds.world_m1.triggers has the "end" zone: circle at the waystone, NO behaviour/walkTo (WAYSTONE-NORMAL-01, D-056; quest area "waystone" still points at it)',
     wEnd && wEnd.shape === 'circle' && wEnd.trigger === undefined && wEnd.walkTo === undefined && wEnd.x === 1428 && wEnd.y === 1040);

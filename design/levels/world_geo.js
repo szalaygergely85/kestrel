@@ -66,12 +66,13 @@
     marsh: { id: 'reedmire', name: 'the Reedmire (P)', x: 1110, y: 1560, rx: 230, ry: 140, rot: 0.55, flatH: 0.8, blend: 0.4,
              pool: { scale: 40, threshold: 0.6 } },
 
-    // ---- walk bounds (MAP-11, 38.43): the enclosed world outline as engine `bounds` {shape:'polygon'}; replaces the capsule
-    // list when `terrainGrid` is set. Clockwise from the NW: mountain foot (north, y 80), the Wall killing ground (x 1880), the
-    // coast pulled 40 m inland of the sea polygon (no swimming), the West Fells foot (x 20). PROPOSED, MAP-00 refines the trace.
-    bounds: { shape: 'polygon', pts: [[20, 80], [1880, 80], [1880, 1690], [1750, 1730], [1600, 1740], [1450, 1720], [1320, 1695], [1230, 1705],
-      [1160, 1690], [1110, 1650], [1040, 1600], [960, 1540], [880, 1460], [800, 1395], [700, 1380], [600, 1400], [470, 1430], [300, 1480],
-      [120, 1460], [20, 1490]] },
+    // ---- walk bounds (MAP-11, WM-05 re-trace 2026-10-13, D-076/D-077): ONE simple polygon (20 verts, <= 128). Clockwise from the NW:
+    // mountain foot (north, y 80), the Wall killing ground (x 1880, in front of the Sealed Gate side / Ferrum wall), then the SEA side =
+    // the coast polyline pushed 110 m out into the sea (seaEdge killM 90 + margin: the sea monster is the limit, not a wall), the West
+    // Fells foot (x 20). The pre-WM-05 capsule union + 5 bands live on as the `?grid=0` fallback (game/js/quest/bandPose.js LEGACY_*).
+    bounds: { shape: 'polygon', pts: [[20, 80], [1880, 80], [1880, 1845], [1770, 1879], [1596, 1890], [1432, 1869], [1316, 1846], [1224, 1856],
+      [1112, 1832], [1044, 1778], [975, 1729], [888, 1663], [806, 1582], [754, 1539], [703, 1532], [623, 1548], [498, 1576], [310, 1632],
+      [123, 1611], [20, 1628]] },
 
     // ---- coast: sea polygon (sea INSIDE). kinds[k] = segment pts[k] -> pts[k+1] ----
     coast: {
@@ -281,9 +282,9 @@
   var mix = function (a, b) { var o = {}, k; for (k in a) o[k] = a[k]; for (k in b) o[k] = b[k]; return o; };
   // WM-07 (38.59 item 5): detail.boulders/ruins/reeds/wildflowers/pebbles = per-cell probability of the biomeOnly layers in overworld_far.js (region dressing by rule).
   G.biomes = {
-    1: { name: 'broadleafForest', blendM: 24, forest: { fill: 0.72, species: CT([14, 14, 12, 10, 10]) }, detail: { rocks: 1.2, boulders: 0.12, ruins: 0.02 }, scale: [0.85, 1.2], hueJitter: 0.1 },
-    2: { name: 'pineForest', blendM: 30, forest: { fill: 0.72, species: mix(PN([10, 10, 8, 6, 6]), CT([2, 2, 1, 0, 0])) }, detail: { rocks: 1.0, boulders: 0.22, ruins: 0.03 }, scale: [0.9, 1.4], hueJitter: 0.08 },
-    3: { name: 'twistedWood', blendM: 20, standIn: 'TwistedTree_*', forest: { fill: 0.72, species: mix(CT([0, 0, 6, 14, 14]), PN([0, 0, 8, 0, 0])) }, detail: { rocks: 1.5, boulders: 0.18, ruins: 0.03 }, scale: [1.0, 1.6], hueJitter: 0.12 },
+    1: { name: 'broadleafForest', blendM: 24, forest: { fill: 0.65, species: CT([14, 14, 12, 10, 10]) }, detail: { rocks: 0.04, boulders: 0.12, ruins: 0.02 }, scale: [0.85, 1.2], hueJitter: 0.1 },
+    2: { name: 'pineForest', blendM: 30, forest: { fill: 0.65, species: mix(PN([10, 10, 8, 6, 6]), CT([2, 2, 1, 0, 0])) }, detail: { rocks: 0.04, boulders: 0.22, ruins: 0.03 }, scale: [0.9, 1.4], hueJitter: 0.08 },
+    3: { name: 'twistedWood', blendM: 20, standIn: 'TwistedTree_*', forest: { fill: 0.65, species: mix(CT([0, 0, 6, 14, 14]), PN([0, 0, 8, 0, 0])) }, detail: { rocks: 0.04, boulders: 0.18, ruins: 0.03 }, scale: [1.0, 1.6], hueJitter: 0.12 },
     4: { name: 'ashMile', blendM: 40, standIn: 'DeadTree_*', forest: { fill: 0.13, species: CT([0, 0, 0, 0, 1]) }, detail: { rocks: 0.6, boulders: 0.18, ruins: 0.05 }, scale: [0.8, 1.1], hueJitter: 0.15 },
     5: { name: 'flowerFields', blendM: 30, forest: { fill: 0.04, species: CT([1, 1, 1, 0, 0]) }, detail: { rocks: 0.3, boulders: 0.06, ruins: 0.015, wildflowers: 0.15 }, scale: [0.9, 1.3], hueJitter: 0.4 },
     6: { name: 'grassFields', blendM: 30, forest: { fill: 0.06, species: CT([1, 1, 1, 0, 0]) }, detail: { rocks: 0.3 }, scale: [1.0, 1.5], hueJitter: 0.2 },

@@ -32,7 +32,8 @@ let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 const { assets } = await loadTestAssets();
-const def = assets.world('world_m1');
+const def = (() => { const d = { ...assets.world('world_m1') }; delete d.terrainGrid; // WM-05: world_m1 ships terrainGrid; this suite pins the 5 authored zones as terrainBands (== the grid pins)
+  d.terrainBands = [{ id: 'east', ch: 3, cw: 5, cx0: 8, cy0: 7 }, { id: 'west', ch: 3, cw: 5, cx0: 6, cy0: 7 }, { id: 'south1', ch: 3, cw: 5, cx0: 8, cy0: 9 }, { id: 'south2', ch: 3, cw: 5, cx0: 8, cy0: 11 }, { id: 'south3', ch: 3, cw: 5, cx0: 8, cy0: 13 }]; return d; })();
 const mk = () => World.load(def, assets, { detail: true, physics: 'mesh' });
 
 // independent deep byte-compare (typed arrays by bytes; `version` ignored: set at publish)
@@ -160,6 +161,24 @@ if (process.env.BAKE_BENCH) ok('swap on hit <= 4 ms', swapMax <= 4, swapMax.toFi
   ok('LRU: protected keys and pinned entries are never evicted', c.has('a') && c.has('e') && c.has('d') && !c.has('c'));
   c.put(mkB('f', 400, true));
   ok('LRU: pinned never evicted even over the cap', c.has('f') && c.has('a'));
+}
+
+// --- WM-CACHE-01: farthest-first eviction -------------------------------------------------
+{
+  const mkF = (key, cx, n, pinned = false) => ({ key, zone: 0, near: { x0: cx - 5, y0: -5, w: 10, h: 10, cell: 1, height: new Uint8Array(n) }, scatter: null, detail: null, trunks: null, detailCol: null, classMap: null, bytes: 0, pinned, lastUse: 0 });
+  const c = new BandCache({ maxBytes: 350 });
+  c.setFocus(0, 0);
+  c.put(mkF('far', 1000, 100)); c.put(mkF('mid', 100, 100)); c.get('far'); // 'far' is MRU: LRU would keep it
+  c.put(mkF('near', 10, 100)); c.put(mkF('new', 500, 100));
+  ok('farthest evicted first (not LRU)', !c.has('far') && c.has('mid') && c.has('near') && c.has('new') && c.stats().evictions === 1, JSON.stringify(c.stats()));
+  const d = new BandCache({ maxBytes: 150 }); d.setFocus(0, 0);
+  d.put(mkF('pin', 9000, 100, true)); d.put(mkF('cur', 8000, 100), 'cur'); d.put(mkF('pend', 7000, 100), 'cur', 'pend'); d.put(mkF('n', 1, 100), 'cur', 'pend');
+  ok('pinned / current / pending / newest never evicted though farthest', d.has('pin') && d.has('cur') && d.has('pend') && d.has('n'));
+  const e = new BandCache({ maxBytes: 250 }); e.setFocus(0, 0);
+  e.put(mkF('a', 900, 100)); e.put(mkF('b', 50, 100));
+  e.map.get('b').near.height = new Uint8Array(100); e.map.get('b').near.nav = new Uint8Array(100); // simulated nav fill growth
+  e.regrow(e.map.get('b'), 'b');
+  ok('regrow trims under the cap, farthest first', e.bytes <= 250 && !e.has('a') && e.has('b'), JSON.stringify(e.stats()));
 }
 
 // --- editor invalidation -----------------------------------------------------------------
