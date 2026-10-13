@@ -3,6 +3,8 @@
 import { World } from './World.js';
 import { Terrain } from './Terrain.js';
 import { makeOk } from '../test/assert.js';
+import { ensureGcChild } from '../test/allocGate.js';
+ensureGcChild(); // AUD2-01 (ARCH CHANGES 2026-10-13): heap + slice gates need a fresh --expose-gc child
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
 import terrainDef from '../../design/levels/overworld_far.js';
