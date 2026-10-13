@@ -132,6 +132,11 @@
     "bear.q.ready.5": {"lines": [
       "So that's what they were rooting for.",
       "Keep it close. Old stones like that light."
+    ], "next": "bear.q.ready.5b", "speaker": "burl"},
+    "bear.q.ready.5b": {"lines": [
+      "Wake the waystones. They heal you,",
+      "save your path, and beasts fear",
+      "their light."
     ], "next": "bear.q.ready.6", "speaker": "burl"},
     "bear.q.ready.6": {"clip": "wave", "lines": [
       "You've done an old bear a kindness."

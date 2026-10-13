@@ -379,6 +379,16 @@ function fakeWorld(hp, max, mp, mpMax) {
   ok('half fade: HP row unchanged', f1.r === h1.r && f1.g === h1.g);
   resetVitalsView();
 }
+// OB-137: text drawn earlier on the HP row (the tail 'lay') must not stay glued after '30/30'.
+{
+  resetVitalsView();
+  const ui = fakeUi();
+  for (let i = 0; i < 3; i++) ui.setCellRGB(33 + i, 1, 'lay'.charCodeAt(i) - 32, 255, 255, 255, 0, 0, 0);
+  drawVitals(ui, fakeWorld(30, 30), style, 0, true);
+  ok('number field 30/30 drawn', ui._cells.get('28,1').gi === '3'.charCodeAt(0) - 32 && ui._cells.get('30,1').gi === '/'.charCodeAt(0) - 32);
+  ok('stray text after the number is blanked', [33, 34, 35].every((x) => { const c = ui._cells.get(x + ',1'); return c && c.gi !== 'lay'.charCodeAt(x - 33) - 32; }));
+  resetVitalsView();
+}
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

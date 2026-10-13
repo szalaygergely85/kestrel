@@ -162,6 +162,7 @@ function drawBar(ui, key, value, max, style, def, row, simTime, flashAgeMs = Inf
   const text = def.number.format.replace('{hp}', String(value)).replace('{mp}', String(value)).replace('{max}', String(max));
   const numFg = a > 0 ? lerp3(def.number.fg, def.low.number.fgTo, a) : def.number.fg;
   for (let i = 0; i < text.length; i++) writeChar(ui, numberX + i, row, text[i], numFg, textBg);
+  if (text.length < 8) writeSpaces(ui, numberX + text.length, numberX + 7, row, textBg); // OB-137: blank the rest of the number field (up to the heart-piece marks at +8) so text drawn earlier on this row (e.g. the tail 'lay') never shows glued to '30/30'
 }
 
 /**

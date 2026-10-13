@@ -62,6 +62,7 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
   let world = null, relayEnt = new Map(), pulseT = -1;
   const T = (texts && texts.texts) || {}; // content/dialogue/inspect.json: look-at table (key -> {prompt, title, lines, ...})
   const textOf = new Map(); // entity id -> table key (built at load)
+  const offered = new Set(); // OB-126: relay entity ids whose errand was shown (offer) this session
   const looked = new Set(); // second look at the same anchor shows the `again` variant
   let nestWaiting = [];     // anchors that appear only after their item was taken
   const status = (id) => { const b = getBook(); return b ? b.statusOf(id) : -1; };
@@ -127,7 +128,20 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
     },
     /** gameHooks event: touching an awake relay inspects its errands. */
     onEvent(name, d) {
-      if (name === 'prop:touched' && d && d.kind === 'relay') { const id = relayEnt.get(d.id); if (id) api.inspected(id); }
+      if (name === 'prop:touched' && d && d.kind === 'relay') {
+        const id = relayEnt.get(d.id); if (!id) return;
+        // OB-126: the FIRST touch of a relay that has an errand to give only OFFERS it (banner + the blue '!'); a later touch accepts. Nothing enters the journal unasked.
+        const b = getBook();
+        if (b && !offered.has(id)) for (let i = 1; i < b.count; i++) {
+          const df = b.def(i);
+          if (df.giver && df.giver.npc === id && b.status(i) === 1) { // 1 = AVAILABLE
+            offered.add(id);
+            if (note) note(df.title || id, (df.lines && df.lines.offer) || (df.giver.text ? [df.giver.text] : []));
+            return;
+          }
+        }
+        api.inspected(id);
+      }
     },
     /** Any inspect of entity `id`: sets talk.<site> while an errand wants it, then lets the book act. */
     inspected(id) {
@@ -145,7 +159,12 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
         looked.add(id);
       }
       if (id === 'sealedGate') return; // requireItem gate.key: never satisfied yet (Part II): no book action
-      inspect(id);
+      const res = inspect(id);
+      if (!res && note && !t) { // OB-133: a giver object with nothing to do now (not yet open / already done) still answers E with a line
+        const b = getBook(); let giver = false, done = false;
+        if (b) for (let i = 1; i < b.count; i++) { const g = b.def(i).giver; if (g && (g.npc === id || g.turnIn === id)) { giver = true; if (b.status(i) === 4) done = true; } }
+        if (giver) { const nm = labelOf(id); note(nm.charAt(0).toUpperCase() + nm.slice(1), [done ? 'Nothing more to do here.' : 'Nothing to do with it yet.']); }
+      }
     },
     /** dialogueCtl.onTalk(npcId): talk flag only (the dialogue itself drives accept / hand-in). */
     talked(id) { api.mainSync(0); const f = 'talk.' + siteOf(id); if (wants(f)) questFlag(f, true); api.mainSync(0); }, // 1st sync applies the dialogue's accept flag (Hesk: accept + talk in one conversation)

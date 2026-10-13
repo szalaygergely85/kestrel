@@ -105,7 +105,7 @@ function makeWorld(state) { return { state }; }
   const W = 96, R = 16;
   const chart = { chartVersion: 1, width: W, rows: R, shadeLevels: 16, bounds: { x0: 0, y0: 0, x1: 400, y1: 160 },
     categories: ['grass'], glyphs: Array(R).fill('0'.repeat(W)), shades: Array(R).fill('8'.repeat(W)) };
-  const pts = [{ id: 'waystone', name: 'The Waystone', x: 100, y: 80, order: 1 }, { id: 'ws_roadBend', name: 'Bend Relay', x: 300, y: 80, order: 2 }];
+  const pts = [{ id: 'waystone', name: 'The Waystone', x: 100, y: 80, order: 1 }, { id: 'ws_roadBend', name: 'Bend Waystone', x: 300, y: 80, order: 2 }];
   let src = [pts[0]];
   const travel = { list: () => src };
   initMapCard(assets, 160, 60, { chart, width: 96, rows: 16, markers: [{ x: 100, y: 80, kind: 'waystone' }, { x: 300, y: 80, kind: 'relay' }], travel });
@@ -125,7 +125,7 @@ function makeWorld(state) { return { state }; }
   for (let i = 0; i < 40; i++) stepMapCard(world, assets, 1 / 60, input, 100, 0);
   src = pts; // relay woken
   input._clearFrame(); input._press('KeyM'); stepMapCard(world, assets, 1 / 60, input, 100, 0);
-  ok('two woken: digits 1 and 2, line lists both', cellAt(100, 80) === '1' && cellAt(300, 80) === '2' && cv.travelLine.includes('1 The Waystone  2 Bend Relay'));
+  ok('two woken: digits 1 and 2, line lists both', cellAt(100, 80) === '1' && cellAt(300, 80) === '2' && cv.travelLine.includes('1 The Waystone  2 Bend Waystone'));
   input._clearFrame(); input._press('Digit2'); stepMapCard(world, assets, 1 / 60, input, 100, 0);
   ok('digit 2 emits onTravel(ws_roadBend) and closes', got.length === 1 && got[0] === 'ws_roadBend' && getMapPanel().state === 'closing');
   for (let i = 0; i < 40; i++) stepMapCard(world, assets, 1 / 60, input, 100, 0);

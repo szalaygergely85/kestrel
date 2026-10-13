@@ -59,7 +59,7 @@ const you = (t) => 'YOU: ' + t;
   ok('4 done: follow offer (5 lines) sets s.burl.follow', first(w) === burl('Come along, sky-cub.') && w.said.length === 5 && f.s.has('s.burl.follow'), w.said.length); }
 // 5 ready -> thanks -> follow
 { const f = mk('q.burl.boars.ready'); const w = walk(f, 0);
-  ok('5 ready: 7 after-five lines, thanks (hand-in), then the 5 follow lines', w.said.length === 7 + 1 + 5 && w.said[7] === burl("You've done an old bear a kindness.") && w.said[8] === burl('Come along, sky-cub.'), w.said.length + ' ' + w.said[7]);
+  ok('5 ready: 10 after-five lines, thanks (hand-in), then the 5 follow lines', w.said.length === 10 + 1 + 5 && w.said[10] === burl("You've done an old bear a kindness.") && w.said[11] === burl('Come along, sky-cub.'), w.said.length + ' ' + w.said[7]);
   ok('5 ready: hand-in flag then s.burl.follow', ids(w.events.filter((e) => e.startsWith('flag:'))) === ids(['flag:q.burl.boars.handin', 'flag:s.burl.follow']), w.events.join());
   ok('5 ready: wave clip on the thanks node', w.clips.includes('wave'));
   const g = mk('q.burl.boars.ready'); const r = createDialogueRunner({}); r.open(comp, g);

@@ -40,7 +40,7 @@ function mk(state = {}, wsId = 'ws_roadBend') {
   assert.equal(t.ent.components.light.on, false, 'light waits for the glow event');
   assert.equal(t.world.state['waystone.ws_roadBend.woken'], true);
   assert.deepEqual(t.emits, [['ws_roadBend', 'relay', 10, 20, 3]]);
-  assert.equal(t.rw.toastLeft > 0, true); assert.equal(NOTICE[0], 'BEND RELAY AWAKENED'); assert.equal(t.recs[0].prompt, PROMPT_TOUCH);
+  assert.equal(t.rw.toastLeft > 0, true); assert.equal(NOTICE[0], 'WAYSTONE AWAKENED'); assert.equal(t.recs[0].prompt, PROMPT_TOUCH);
   assert.equal(t.rw.interact('ws_roadBend'), false, 'no replay while waking'); assert.equal(t.hums.length, 1);
   const dt = 1 / 60; let s = 0;
   for (; s < 10; s++) t.rw.step(dt, t.lights); // 0.167 s < 0.25 s
@@ -111,3 +111,13 @@ console.log('relayWake.test.js PASS');
   assert.equal(hit(fx, fy, fz, 270, 0), 'stone.waystone', 'aim at its middle');
   assert.equal(hit(fx, fy, fz, 270 - Math.atan2(1.0 + 0.975, 1.0) * 180 / Math.PI, 0), null, 'aim 1 m beside it');
 }
+
+// OB-145: blocked prompt is plain, E names the missing step, woken path unchanged
+{ const { PROMPT_LOOK, HINT_NEED_CRYSTAL, HINT_NEED_WAYSTONE, PROMPT_WAKE: PW } = await import('./relayWake.js');
+  const t = mk(); t.rw.step(0.016, null); assert.equal(t.recs[0].prompt, PROMPT_LOOK, 'no crystal: neutral prompt');
+  assert.equal(t.rw.interact('ws_roadBend'), false); assert.equal(t.rw.hintLine, HINT_NEED_CRYSTAL);
+  const u = mk({ [FLAG_ATTUNED]: true }); delete u.world.state['waystone.waystone.woken']; u.rw.step(0.016, null);
+  assert.equal(u.recs[0].prompt, PROMPT_LOOK); assert.equal(u.rw.interact('ws_roadBend'), false); assert.equal(u.rw.hintLine, HINT_NEED_WAYSTONE);
+  u.world.state['waystone.waystone.woken'] = true; u.rw.step(0.016, null); assert.equal(u.recs[0].prompt, PW, 'gate open: wake prompt');
+  assert.equal(u.rw.interact('ws_roadBend'), true); }
+console.log('OB-145 ok');

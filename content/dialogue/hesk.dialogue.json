@@ -30,7 +30,7 @@
       "I'm Hesk. Come in, Wick. Keep your blade low."
     ], "setFlag": "s.mq.ow.names.accept", "speaker": "hesk"},
     "hesk.relay.1": {"lines": [
-      "The old relay in the yard. You came for it, I think.",
+      "The old waystone in the yard. You came for it, I think.",
       "We hear the call too. Nights. The stone here stays dark."
     ], "next": "hesk.relay.2", "speaker": "hesk"},
     "hesk.relay.2": {"lines": [
@@ -40,7 +40,7 @@
       "He'll look at his boots. Let him. Then ask again."
     ], "setFlag": "s.mq.ow.relay.accept", "speaker": "hesk"},
     "hesk.relay.active.1": {"end": true, "lines": [
-      "Dorrin. At the forge. Barley gate, then the relay."
+      "Dorrin. At the forge. Barley gate, then the waystone."
     ], "speaker": "hesk"},
     "hesk.after.1": {"end": true, "lines": [
       "Ferrum's dead are busy, Wick. Mind the geese."

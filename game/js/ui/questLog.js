@@ -67,7 +67,14 @@ function wrap(text, w, max) {
  * CH1-09: a DONE main quest (index 0) is listed as `doneTitle` ("Beyond the Wall"); Enter on it closes the log and calls
  * `onJournal(0)` (main.js re-opens the chapter journal). Without `onJournal`, Enter does nothing.
  */
-export function createQuestLogScreen(book, { style = null, text = {}, width = 72, doneTitle = 'Beyond the Wall', onJournal = null, giverName = (id) => id } = {}) {
+/** OB-137: humanise a raw id ('gear.feet.boots.sturdy' -> 'Gear feet boots sturdy', 'signArm' -> 'Sign arm'); warns once per id. */
+const warnedNames = new Set();
+export function humaniseId(id) {
+  const h = String(id).replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[._]+/g, ' ').trim().toLowerCase();
+  if (!warnedNames.has(id)) { warnedNames.add(id); console.warn('[journal] no display name for', id); }
+  return h.charAt(0).toUpperCase() + h.slice(1);
+}
+export function createQuestLogScreen(book, { style = null, text = {}, width = 72, doneTitle = 'Beyond the Wall', onJournal = null, giverName = humaniseId, itemName = humaniseId } = {}) {
   const T = { ...QUEST_LOG_TEXT, ...text };
   const colour = key => (style && (style.hex[key] || style.bg[key])) || '#e8e2d0';
   const fg = style ? colour(style.row.normal.fg) : '#e8e2d0', bg = style ? style.bg.plate : '#0a0b10';
@@ -137,7 +144,7 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
         right.push({ kind: 'step', status: row.status, text: clipped(mark + ascii(row.text), RIGHT_W - c.length) + c });
       }
     }
-    if (def.reward && def.reward.items && def.reward.items.length) right.push({ kind: 'dim', text: clipped(T.reward + def.reward.items.map(it => ascii(it.id) + (it.n > 1 ? ' x' + it.n : '')).join(', '), RIGHT_W) });
+    if (def.reward && def.reward.items && def.reward.items.length) right.push({ kind: 'dim', text: clipped(T.reward + def.reward.items.map(it => ascii(itemName(it.id)) + (it.n > 1 ? ' x' + it.n : '')).join(', '), RIGHT_W) });
     if (i > 0 && !isDone && s !== AVAILABLE && book.track) right.push({ kind: 'head', text: book.tracked() === i ? T.tracked : T.track });
     if (book.canAbandon && book.canAbandon(def.id)) right.push({ kind: 'head', text: sure ? T.abandonSure : T.abandon });
   }

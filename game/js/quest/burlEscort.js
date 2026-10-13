@@ -38,7 +38,7 @@ export function createBurlEscort(o) {
   function atBend() { st['burl.lwp'] = walk.wp; setPhase(PHASE_BEND); questFlag(BEND_FLAG, true); }
   const homeXY = () => { const w = world.get(id), p = w && w.data.components && w.data.components.walks && w.data.components.walks.follow; return p ? p[0] : null; };
   // The [E] Talk interactable is registered once (dialogueCtl.addNpc) at the spot Burl stood then; while he walks (follow / lead to the Bend) it must
-  // follow him, or the Bend hand-in ("Talk to Burl at the Bend Relay") has nothing to press. Interactables read x/y/z live (interaction.js).
+  // follow him, or the Bend hand-in ("Talk to Burl at the Bend Waystone") has nothing to press. Interactables read x/y/z live (interaction.js).
   let talkRec = null;
   function syncTalk() {
     const key = 'npc.' + id, L = world.interactables;
