@@ -68,8 +68,8 @@ Most of these come up on the walks; the links go straight to the spot.
 - [ ] Day/night (DN-03): http://localhost:8000/game/index.html?pose=roadBend&time=20 ->
 - [ ] Relay SOS pulse + knot (QL-06/07): on the walk (Bend relay). ->
 - [ ] Animal models: http://localhost:8000/design/preview/otter.html , http://localhost:8000/design/preview/goat.html , http://localhost:8000/design/preview/heron.html , http://localhost:8000/design/preview/tortoise.html , http://localhost:8000/design/preview/black-bear.html , http://localhost:8000/design/preview/wolf.html ->
-- [ ] **Sea monster (new, D-070):** http://localhost:8000/design/preview/seamonster.html - the serpent, its circle / rise / strike clips, views from a swimmer at 10/20/30 m ->
-- [ ] **Goblins (new, D-072):** http://localhost:8000/design/preview/goblin.html - goblin, torch-bearer, spear; all clips by day/dusk/night. Design calls: club in the LEFT hand (throws with the right), every goblin carries a javelin + 2 spares on the back - or a melee-only goblin without javelins? ->
+- [x] **Sea monster (new, D-070):** APPROVED (D-074) - http://localhost:8000/design/preview/seamonster.html - the serpent, its circle / rise / strike clips, views from a swimmer at 10/20/30 m ->
+- [x] **Goblins (new, D-072):** APPROVED (D-074) - http://localhost:8000/design/preview/goblin.html - goblin, torch-bearer, spear; all clips by day/dusk/night. Design calls: club in the LEFT hand (throws with the right), every goblin carries a javelin + 2 spares on the back - or a melee-only goblin without javelins? ->
 - [ ] Items + props: http://localhost:8000/design/preview/item-icons.html , http://localhost:8000/design/preview/voxel-props.html ->
 - [ ] Character generator (hands that can grip OB-092, body shape OB-083, Mixamo export OB-070): http://localhost:8000/tools/chargen/index.html ->
 - [ ] Kit character in the game next to Burl (OB-086): http://localhost:8000/game/index.html?pose=burl ->

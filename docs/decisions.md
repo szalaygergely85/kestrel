@@ -1170,3 +1170,7 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 
 ## D-073 - Open the world south to the Long Strand first (owner, 2026-10-13; recorded by the PC-B main session)
 - The sea, the Long Strand beach (sign, net stakes, sea monster) and several new spots lie outside today's walk bounds (about x 870-1540, y 850-1110). Owner picked: **widen the walk area from the river south to the beach and sea first** (smallest step that makes today's swim/sea/monster work playable); the whole-map band grid + streaming steps come later.
+
+## D-074 - Model approvals 2026-10-13 (owner; recorded by the PC-B main session)
+- **Approved:** sea monster (voxel_seamonster.js), goblin + goblinTorch + goblinSpear (voxel_goblin.js), wolf, black bear, Skip (otter), Crag (goat), Stilt (heron), Slate (tortoise).
+- **Human characters (char.kit / chargen: Hesk, Dorrin, the player body):** owner "I don't like the character, but use them as placeholder" -> keep them in the game as placeholders; a new human character look is open work (owner to say what is wrong / give a reference before a designer pass; OB-083 v8b history).
