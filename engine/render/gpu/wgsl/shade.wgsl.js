@@ -189,11 +189,11 @@ fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32,
 
   // G2 + P3 far grass tier (twin: terrainShade.js shadeTerrain, same lines). fgw = weight, > 0 = stable level 254.
   var fgw = 0.0;
-  if (su.fgP.x > 0.5 && !close) {
+  if (su.fgP.x > 0.5 && (!close || su.fgP.x > 1.0)) { // OB-121b: fgP.x = on * (1 + underlay)
     let fst = su.fgT[typeId].w;
     if (fst > 0.0) {
       let fw0 = clamp((t - su.fgP.y) / su.fgP.z, 0.0, 1.0);
-      fgw = fw0 * fw0 * (3.0 - 2.0 * fw0) * fst;
+      fgw = max(su.fgP.x - 1.0, fw0 * fw0 * (3.0 - 2.0 * fw0)) * fst;
       if (fgw > 0.0) {
         var ph = (timeSec - (u * su.fgW.x + v * su.fgW.y) * su.fgW.w) * su.fgW.z; ph = ph - floor(ph);
         var tri = 1.0 - abs(2.0 * ph - 1.0); tri = tri * tri * (3.0 - 2.0 * tri);

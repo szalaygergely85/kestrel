@@ -177,13 +177,15 @@ export function perCellHashSize(t, k, handover) {
 export const FG_MIX = 0.55, FG_GUST = 0.3, FG_FADE_MIN_M = 4, FG_FADE_K = 0.5, FG_SLOPE = 1.5, FG_MOD = 0.2;
 export const FG_CODES = [12, 2, 7]; // ascii - 32 of `,` `"` `'`
 export const FG_TYPES = 16;
-export function makeFarGrass() { return { on: 0, startM: 12, fadeM: 6, mix: FG_MIX, dirX: 1, dirY: 0, cyc: 0, invTravel: 0, types: new Float32Array(FG_TYPES * 4), _cfg: null, _names: null }; }
+export function makeFarGrass() { return { on: 0, under: 0, startM: 12, fadeM: 6, mix: FG_MIX, dirX: 1, dirY: 0, cyc: 0, invTravel: 0, types: new Float32Array(FG_TYPES * 4), _cfg: null, _names: null }; }
 /** Fill (no alloc) the far-grass record of a carpet config. Per ground type the variant with the most `areas` wins (no areas = everywhere = wins); colour = ramp middle.
  *  quality = world.carpetQuality (on, radiusScale, farGrass !== false); windParams = world.wind.params or null (calm: no gust). */
 export function farGrassFill(rec, cfg, typeNames, quality, windParams) {
   const vs = cfg ? cfg.variants || [] : [], T = rec.types;
   rec.on = cfg && quality && quality.on !== false && quality.farGrass !== false ? 1 : 0;
   const radius = (cfg && cfg.radiusM ? cfg.radiusM : 12) * (quality && quality.radiusScale ? quality.radiusScale : 1);
+  // OB-121b: near underlay = min far-grass weight everywhere (also inside the close band); 0 = off = bit-identical. WGSL carries it as fgP.x = on * (1 + under).
+  rec.under = cfg && cfg.underlay > 0 ? Math.min(1, cfg.underlay) : 0;
   rec.startM = radius; rec.fadeM = Math.max(FG_FADE_MIN_M, radius * FG_FADE_K);
   if (windParams) { rec.dirX = windParams.dirX; rec.dirY = windParams.dirY; rec.cyc = 1 / (STEP * windParams.P); rec.invTravel = windParams.travel > 0 ? 1 / windParams.travel : 0; }
   else { rec.dirX = 1; rec.dirY = 0; rec.cyc = 0; rec.invTravel = 0; }
@@ -325,11 +327,11 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   // G2 + P3: far grass tier (WGSL twin: shadeTerrain, same lines). fgw = weight 0..1, > 0 = stable level 254.
   let fgw = 0;
   const FGR = ctx.farGrass;
-  if (FGR !== undefined && FGR.on !== 0 && !close) {
+  if (FGR !== undefined && FGR.on !== 0 && (!close || FGR.under > 0)) {
     const st = FGR.types[type * 4 + 3];
     if (st > 0) {
       let w = (t - FGR.startM) / FGR.fadeM; w = w < 0 ? 0 : w > 1 ? 1 : w;
-      fgw = w * w * (3 - 2 * w) * st;
+      w = w * w * (3 - 2 * w); fgw = (FGR.under > w ? FGR.under : w) * st; // OB-121b: max(under, ramp)
       if (fgw > 0) {
         let ph = (timeSec - (fu * FGR.dirX + fv * FGR.dirY) * FGR.invTravel) * FGR.cyc; ph -= Math.floor(ph);
         let tri = 1 - Math.abs(2 * ph - 1); tri = tri * tri * (3 - 2 * tri);

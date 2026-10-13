@@ -264,12 +264,14 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   kill(env);
   const want = [0, 1, 2, 3].map((k) => env.loot.countOf('boar1', k));
   const wantIds = [0, 1, 2, 3].map((k) => env.loot.itemOf('boar1', k));
+  const heldGear = env.loot.gearOf('boar1');
   const heldOrb = env.loot.orbOf('boar1'); // OB-113: the potion item is logged last
   updateInteraction(env.world, {}, eyeAtBody(env), true);
   const inv = env.player.components.inventory;
   ok('E moves meat (+ arrows) into the pack',
     countOf(inv, 'boar.meat') === want[0] && countOf(inv, 'arrow') === want[1], want.join());
   const expectLog = want.map((n, k) => (n > 0 ? `+${n} ${wantIds[k]}` : null)).filter(Boolean);
+  if (heldGear) expectLog.push('+1 ' + heldGear); // OB-064: gear same E, before the potion
   if (heldOrb) expectLog.push('+1 ' + (heldOrb === 'mp' ? 'potion.mp' : 'potion.hp'));
   ok('one inventory:added per kind that moved, in order', env.events.log.join('|') === expectLog.join('|'), env.events.log.join('|'));
   ok('flag cleared after an emptied corpse', !env.world.state['loot.boar1']);
@@ -460,6 +462,22 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   ok('OB-074: no hp/mp orb pickup on the ground after a kill (300 kills)', onGround === 0, onGround);
   ok('OB-113: orbs rolled and given as potion.hp/mp x1 in the pack on E', orbs > 50 && given === orbs, orbs + '/' + given);
   ok('OB-113: no instant heal on E', healed === 0, healed);
+}
+// OB-064 (reopened): gear goes into the pack on the SAME E (tier kept, no world pickup); pack full -> stays in the corpse.
+{
+  const env = fresh({ seed: 7 });
+  const inv = env.player.components.inventory;
+  const gid = 'gear.body.jerkin.sturdy';
+  const pickups = () => { let n = 0; env.world.forEachEntity((e) => { if (e.components && e.components.pickup && e.components.pickup.kind === 'item') n++; }); return n; };
+  kill(env);
+  env.loot.gearHeld[env.beasts.slotOf('boar1')] = gid;
+  env.loot.lootBoar('boar1');
+  ok('OB-064: gear in the pack on the first E, no world pickup, corpse emptied', countOf(inv, gid) === 1 && pickups() === 0 && env.loot.gearOf('boar1') === null);
+  env.beasts.resetAll(); kill(env);
+  for (let n = 0; n < 200; n++) addItem(inv, defs, 'gear.body.jerkin.worn', 1);
+  env.loot.gearHeld[env.beasts.slotOf('boar1')] = gid;
+  const done = env.loot.lootBoar('boar1');
+  ok('OB-064: pack full -> gear stays in the corpse (lootable), nothing on the ground', !done && env.loot.gearOf('boar1') === gid && pickups() === 0 && countOf(inv, gid) === 1); // the 1 is from the first half
 }
 // OB-113: pack full of other items -> the potion stays in the corpse, nothing lost or duplicated.
 {
