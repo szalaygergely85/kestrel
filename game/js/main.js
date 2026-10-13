@@ -173,6 +173,7 @@ import { createBarks } from './quest/barks.js'; // CH1-MOUNT: CH1-06 bark one-li
 import { createChapterCard, CHAPTER2_TEXT, FLAG_DONE_CH2 } from './quest/chapterCard.js'; // CH1-MOUNT: CH1-09 chapter end card
 import { createNoticeView } from './ui/noticeView.js'; // CH1-MOUNT: CH1-04a notice banner
 import { createNpcTurn } from './quest/npcBear.js'; // NPC-BEAR-01 (38.28): turn-to-player
+import { createOutwall } from './quest/outwall.js'; // OUT-01: Hesk/Dorrin turn + met flags
 import { LOOT_TABLE, LOOT_SEED_SALT } from './quest/sim/lootConfig.js';
 import { createToastView } from './quest/toastView.js';
 import { createInventoryView } from './quest/inventoryView.js'; // US-091b
@@ -530,7 +531,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
       { objectiveId: 'leave', targets: ['doorMarker'] }, /* MARK-FOLLOW-01: no mark while following Burl (owner) */ { objectiveId: 'waystone', targets: ['endMarker'] },
       { objectiveId: 'road', targets: ['roadWest'] }, { objectiveId: 'relayFound', targets: ['relayBend'] }, { objectiveId: 'relay1', targets: ['relayBend'] }]);
     const MARK_AREA = { doorMarker: 'towerDoor', roadWest: 'roadWest' }; const MARK_AT = { doorMarker: { x: 1495.5, y: 1030.5 } }; // owner 2026-10-10: the leave marker hangs in the open SW doorway (cell Q), not at the area centre (that sat in the wall) // marker id -> world area trigger id (no entity)
-    const MARK_TOP = { endMarker: 3.0, bear: 1.1, noteKeepLight: 0.14 }; const MARK_DY = { noteKeepLight: -0.1 }; const MARK_SCALE = { noteKeepLight: 0.4 }; // OB-095 (owner: too big, should almost touch the note + wall): the page is z 0.80-1.04 on the wall; a 0.4-scale '!' (0.31 m glyph, 0.14 m float) puts its bottom ~4 cm above the page top, centre 0.1 m off the wall (clears it while spinning). // QUEST-CHAIN-Q-01: the page sits ON the tower wall (y 10.0 local, interior = smaller y): hang the '!' 0.55 m inside so it is not half in / through the wall // prop top above its base z (waystone 24 voxels x 0.125 m; bear 22 voxels x 0.05 m = 1.1 m, glyph floats 0.35 m above); notes would use z + 1.55 (owner 2026-10-10: "!" too high)
+    const MARK_TOP = { endMarker: 3.0, bear: 1.1, noteKeepLight: 0.14 }; const MARK_DY = { noteKeepLight: -0.03 }; const MARK_SCALE = { noteKeepLight: 0.4 }; // OB-095 (owner: too big, should almost touch the note + wall): the page is z 0.80-1.04 on the wall; a 0.4-scale '!' (0.31 m glyph, 0.14 m float) puts its bottom ~4 cm above the page top, centre 0.1 m off the wall (clears it while spinning). // QUEST-CHAIN-Q-01: the page sits ON the tower wall (y 10.0 local, interior = smaller y): hang the '!' 0.55 m inside so it is not half in / through the wall // prop top above its base z (waystone 24 voxels x 0.125 m; bear 22 voxels x 0.05 m = 1.1 m, glyph floats 0.35 m above); notes would use z + 1.55 (owner 2026-10-10: "!" too high)
     gameHooks.setQuestSource((out) => { const st = saveRelay.quest.state; out.done = saveRelay.quest.done; out.id = out.done ? '' : questDef.objectives[st.completed.length].id; out.targets = qm.markerTargets(st); });
     let markN = 0;
     const markHandle = (model) => { // entity handle for one marker; re-spawns itself when a world reload dropped the entity
@@ -1097,6 +1098,7 @@ async function runGame(mode, cinematic = null) {
   let wild = null; // WILD-06: ambient fauna, rebuilt on every 'world:loaded' (= reset on load / new game / restart)
   Object.defineProperty(window.__debug, 'lifeWire', { configurable: true, get: () => lifeWire }); // LIFE-HOOKS-01: verify-raid reads/forces raids through this
   Object.defineProperty(window.__debug, 'wild', { configurable: true, get: () => (wild ? { alive: wild.stats.alive, drawn: wild.drawn ? wild.drawn() : 0 } : null) }); Object.defineProperty(window.__debug, 'wildRaw', { configurable: true, get: () => (wild ? { w: wild, pool: gameVoxelPool } : null) }); // verify-wild steps/feeds through this (headless sim never runs) // WILD-06b: read-only headless hook
+  let outwall = null; // OUT-01: Hesk/Dorrin facing + met flags, rebuilt on 'world:loaded'
   let bearTurn = null; // NPC-BEAR-01: Burl's turn-to-player, rebuilt on every 'world:loaded'
   // COMPASS-02 (D-061): golden pocket compass, bottom-right. Resolver maps quest targets to world positions; hide rules are set in update(), drawn in render().
   const compass = createCompassHud({ style: window.ASSETS && window.ASSETS.uiStyle && window.ASSETS.uiStyle.compass });
@@ -1526,7 +1528,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         jawOpenDeg: window.ASSETS.bearFx && window.ASSETS.bearFx.talk ? window.ASSETS.bearFx.talk.jawMaxDeg : undefined, // jaw hinge: rx opens, 0..jawMaxDeg (voxel_bear.js header)
         book: () => (saveRelay ? saveRelay.quest.book : null), // QG-03: `q.*` dialogue keys -> quest book
         questFlag: saveRelay ? (k) => saveRelay.quest.questFlag(k) : undefined, // CH1-06: `s.*` dialogue keys
-        onTalk: (npcId) => errands.talked(npcId), // QL-WIRE: talk.<site> flag for 'talk' errands
+        onTalk: (npcId) => { errands.talked(npcId); if (outwall) outwall.talked(npcId); }, // OUT-01 ow.<npc>.met; QL-WIRE: talk.<site> flag for 'talk' errands
         onFlag: (k, v) => { if (k.charCodeAt(0) !== 113 || k.charCodeAt(1) !== 46) gameHooks.emitSimple('flag:set', 'dlg.' + k, v); } });
       setDialogueApi(dialogueCtl); window.__debug.dialogue = dialogueCtl; // tools/verify-ch12-run.mjs: read-only test hook
       errands.load(world); // QL-WIRE: [E] Inspect on post / notePost
@@ -1534,6 +1536,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       compassWorld = world; compassBreach = null; compassBookVer = -1; compassTick = 0; // COMPASS-02: re-resolve against the new world
       if (bearTurn) dialogueCtl.addNpc('bear');
       dialogueCtl.addNpc('rook'); // Rook the crow: no-op until the entity exists in the world
+      outwall = saveEnabled && saveRelay ? createOutwall({ world, questFlag: (k) => saveRelay.quest.questFlag(k) }) : null;
       dialogueCtl.addNpc('hesk'); dialogueCtl.addNpc('dorrin'); // Ch3 Outwall NPCs (world_m1 entities, char.kit model registered at boot; both share the default kit look, no tint)
       crystal = barks = chapterCard = chapterCard2 = escort = null;
       if (bearTurn) bearTurn.paused = false;
@@ -2006,6 +2009,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); } // WILD-06: ambient only, never hashed
       if (escort) { const uiHold = uiLocked || !!(dialogueCtl && dialogueCtl.open); /* AUD-06 */ const pt = playerHandle.data.transform; if (escort) { if (burlReopen && !(dialogueCtl && (dialogueCtl.open || dialogueCtl._closing))) { burlReopen = false; const bh = engine.world.get('bear'), bt2 = bh && bh.data.transform; if (bt2 && (bt2.x - pt.x) ** 2 + (bt2.y - pt.y) ** 2 <= 36) dialogueCtl.openFor('bear'); } escort.step(dt, pt.x, pt.y, uiHold); if (bearTurn) bearTurn.paused = escort.busy; } } // CH1-07/08b: before the bear turn
       if (nub) nub.step(dt); // NUB-01: same fixed step as the escort
+      if (outwall) { const pt = playerHandle.data.transform; outwall.step(dt, pt.x, pt.y); } // OUT-01
       if (bearTurn) { const pt = playerHandle.data.transform; bearTurn.step(dt, pt.x, pt.y, !!(dialogueCtl && dialogueCtl.open)); } // NPC-BEAR-01 // US-079a (29.1)
       if (beasts && assets.uiStyle) stepCombatHint(engine.world, assets.uiStyle, beasts); // COMBAT-HINT-01: once-per-save first-fight hint (taken from lane C)
       if (telegraphWire) telegraphWire.step(performance.now());

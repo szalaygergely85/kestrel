@@ -50,6 +50,7 @@ export function createVitals(world, events, cfg, hooks) {
 
   const sim = {
     dead: false,
+    deathCause: null, // SWIM-05: 'drown' | 'eaten' (SWIM-06b) | null (combat/fall); cleared on respawn
     deathStep: 0,
     cardReady: false,
     hurtTick: 0,
@@ -88,6 +89,24 @@ export function createVitals(world, events, cfg, hooks) {
         body.vy = (body.vy || 0) + dirY * cfg.knockbackSpeed;
       }
     }
+  }
+
+  /** SWIM-05: environmental damage (drowning) - ignores the invuln window, still honours godMode. Kills with `cause`. */
+  function hurt(n, cause) {
+    if (sim.godMode || sim.dead || !health || !(n > 0)) return false;
+    health.hp = Math.max(0, health.hp - n);
+    sim.hurtTick = tick; hpSince = 0; hpAcc = 0;
+    if (health.hp === 0) { kill(cause); return true; }
+    return false;
+  }
+
+  /** SWIM-05: instant death with a cause (drown / eaten). No-op while dead, in godMode or before the first step(). */
+  function kill(cause) {
+    if (sim.godMode || sim.dead || !health || !player) return false;
+    health.hp = 0;
+    sim.deathCause = cause || null;
+    enterDead();
+    return true;
   }
 
   /**
@@ -178,6 +197,7 @@ export function createVitals(world, events, cfg, hooks) {
     health.invuln = cfg.invulnSteps;
     if (mana) mana.mp = mana.max; // US-080b: full mana on respawn, per the US-080 AC
     sim.dead = false;
+    sim.deathCause = null;
     hpSince = 0; hpAcc = 0;
     sim.deathStep = 0;
     sim.cardReady = false;
@@ -270,6 +290,7 @@ export function createVitals(world, events, cfg, hooks) {
   // ---- dev (`?debug=1`, game side: main.js binds a free key to each of these - not this file's job) ----
   sim.setGodMode = function setGodMode(on) { sim.godMode = !!on; };
   sim.debugHit = function debugHit() { applyDamage(5); };
+  sim.hurt = hurt; sim.kill = kill; // SWIM-05
   sim.spendMana = spendMana; // US-080b: exposed for D-021 spells later; nothing calls it yet
 
   // Q9 item 1a: drops the `combat:hit` listener - main.js calls this right before creating the next sim on a
