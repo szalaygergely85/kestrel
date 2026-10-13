@@ -266,6 +266,7 @@ function renderWorldMesh(fb, world, cam) {
   if (fb.instances) {
     meshDrawArg.idFor = fb.matTable ? strictMatIdFor(fb.matTable) : null; // TREES-LP-b: kind-9 mesh groups
     meshDrawArg.maskAtlas = world.maskAtlas || null; // ALPHA-01f-fix2
+    fb.instances.eye = cam; // OB-089: per-group draw-distance cut
     fb.instances.addToDrawList(list, sharedVoxelMeshCache, meshFrustumPlanes, fb.frameNo, meshViewProj, rows, meshDrawArg);
     if (fb.loop && fb.loop.stats) {
       fb.loop.stats.instances = fb.instances.stats.instances;
