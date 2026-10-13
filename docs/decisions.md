@@ -1151,6 +1151,7 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - **Swimming is in** ("i wanna swim"). It fixes a record error: D-064 left swimming open (OQ-WS2-3); the 2026-10-11 river note and later plans cited "no swimming, D-064" by mistake. "Deep water blocks" is superseded.
 - **Swim + dive:** Wick swims on the surface and can dive under it (chests/secrets on the bottom). Diving needs an underwater look (architect note).
 - **Stamina + drowning:** a stamina ring drains while swimming/diving; when empty the player loses hearts until death (death screen, normal respawn).
+- **Amendment (owner 2026-10-13): "dont die on swimming, just diving"** - swimming on the surface never drowns you (no drain, unlimited); only diving uses breath: the ring drains under water and refills at the surface; empty breath under water = drowning (lose hearts until death).
 - **Sea edge = sea monster** (owner: "dont let swim too far into the sea, need a sea monster killing there"): past a set distance from the Long Strand shore a sea monster rises and kills the player (instant death, death screen). The boundary is the monster, not an invisible wall; warning signs first (dark shape circling, writer lore line). Designer: monster model + rise/strike clip.
 - **River gate = free crossing** (owner 2026-10-13): swim across anywhere, any time; the level 5-10 side just hits harder (no current wall, no swim item).
 - Still open: gear in the water (assumed stowed); swim speed; monster distance.
