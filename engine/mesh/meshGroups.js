@@ -265,7 +265,7 @@ export class MeshGroupSet {
    */
   push(list, planes, cam = null) {
     const chosen = this.chosen, G = this.groups.length, gd = this._gd;
-    const cx = cam ? cam.x : 0, cy = cam ? cam.y : 0;
+    const cx = cam ? cam.x : -0, cy = cam ? cam.y : -0; // -0 (a double), not 0 (a Smi): a double/Smi phi boxes every call
     let kept = 0, live = 0;
     for (let k = 0; k < G; k++) {
       const g = this.groups[k], mem = g.members, R = g._R;
