@@ -530,15 +530,15 @@
     equip: { slot: 'quiver', tier: 'worn', def: 0 }
   };
   defs['potion.hp'] = {
-    id: 'potion.hp', name: 'Red Draught', kind: 'potion', stackMax: 5, hand: false, inPack: true,
-    desc: 'Heals two hearts. Placeholder copy.',
+    id: 'potion.hp', name: 'Health Potion', kind: 'potion', stackMax: 5, hand: false, inPack: true,
+    desc: 'Heals two hearts.',
     use: { heal: 2, unit: 'hearts', time: 0.6 },
     glyph: { ch: '!', c: 'vital' },
     icon: icon(['  _  ', ' (R) ', ' \\_/ '], ['  g  ', ' cLc ', ' ccc '])
   };
   defs['potion.mp'] = {
-    id: 'potion.mp', name: 'Blue Draught', kind: 'potion', stackMax: 5, hand: false, inPack: true,
-    desc: 'Restores magic. Not dropped yet.',
+    id: 'potion.mp', name: 'Mana Potion', kind: 'potion', stackMax: 5, hand: false, inPack: true,
+    desc: 'Restores magic.',
     use: { mp: 2, unit: 'mana', time: 0.6, dropped: false },
     glyph: { ch: '!', c: 'mana' },
     icon: icon(['  _  ', ' (M) ', ' \\_/ '], ['  g  ', ' qmq ', ' qqq '])
