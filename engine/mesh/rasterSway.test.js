@@ -11,7 +11,7 @@ import { projTerms, shearProjection } from '../render/projection.js';
 import { lodDitherBits } from './lodDither.js';
 import { createWind } from '../world/wind.js';
 import { STEP } from '../core/loop.js';
-import { swayOffset, windSwayOn, packWindUniforms, INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from './sway.js';
+import { swayFade, swayCellsPerMetre, SWAY_FADE_LO, SWAY_FADE_HI, swayOffset, windSwayOn, packWindUniforms, INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from './sway.js';
 import { RASTER_INSTANCED_WGSL, RASTER_INSTANCED_SHADOW_WGSL, RASTER_WGSL, RASTER_BLOCK, SWAY_WGSL } from '../render/gpu/wgsl/raster.wgsl.js';
 import { WIND_AT_WGSL } from '../render/gpu/wgsl/common.wgsl.js';
 import { compileFn } from '../render/gpu/wgsl/wgslProbe.js';
@@ -114,6 +114,32 @@ console.log(`  raster: sway changed ${dA.n} cells (rows ${dA.minRow}..${dA.maxRo
   assert.ok(covered > 300, 'scene covered ' + covered);
   assert.equal(both, 0, 'no cell drawn by both copies'); assert.equal(miss, 0, 'no hole, nothing extra'); assert.equal(wrongDepth, 0);
   console.log('  dither raster: ' + covered + ' covered cells split between the copies');
+}
+// OB-144: distance fade of the sway (JS raster twin + WGSL swayFade probe)
+{
+  const HC = 280; // 560-col grid
+  const one = (x, y, tt) => { const ig = new InstanceGroups(); const g = ig.meshGroup(oak, 1);
+    writeUnitInstance(g.ib, g.count++, x, y, 0, 40, 0xA000, 0); g.ib.u32[13] |= INST_FLAG_SWAY;
+    const l = new DrawList(); l.begin(); ig.addToDrawList(l, null, planes, 1, M, ROWS, { cache: new MeshDrawCache(), idFor: () => 1 }); l.cull(planes);
+    const t = createRasterTarget(COLS, ROWS, 1, {}); rasterDrawList(l, t, { M, terms, snap: true, wind: { field: P, t: tt, halfCols: HC } }); return t; };
+  const cpmAt = (x, y) => swayCellsPerMetre(M, x, y, 0, HC);
+  const farA = one(0, -66, 5), farB = one(0, -66, 5.33);
+  assert.ok(cpmAt(0, -66) < SWAY_FADE_LO, 'tree 80 m away is below the fade floor: ' + cpmAt(0, -66));
+  let covF = 0; for (let i = 0; i < COLS * ROWS; i++) if (farA.kind[i]) covF++;
+  assert.equal(diff(farA, farB).n, 0, 'far tree byte-identical across 0.33 s');
+  const nearA = one(0, 9, 5), nearB = one(0, 9, 5.33);
+  assert.ok(cpmAt(0, 9) >= SWAY_FADE_HI, 'tree 5 m away is past the fade ceiling: ' + cpmAt(0, 9));
+  assert.ok(diff(nearA, nearB).n > 5, 'tree at 5 m still sways ' + diff(nearA, nearB).n);
+  // fade shape + WGSL twin
+  assert.equal(swayFade(SWAY_FADE_LO), 0); assert.equal(swayFade(SWAY_FADE_HI), 1); assert.equal(swayFade(Infinity), 1);
+  const fadeW = compileFn(SWAY_WGSL, 'swayFade', {}, `const SWAY_FADE_LO=${SWAY_FADE_LO}, SWAY_FADE_HI=${SWAY_FADE_HI};`);
+  let e = 0; for (let c = 0; c < 400; c += 0.37) e = Math.max(e, Math.abs(fadeW(c) - swayFade(c)));
+  assert.ok(e < 1e-12, 'swayFade WGSL probe ' + e);
+  assert.ok(RASTER_INSTANCED_WGSL.includes('swayFade(u.windT.w'));
+  // 0 alloc: repeated calls
+  const h0 = process.memoryUsage().heapUsed; let acc = 0; for (let i = 0; i < 1e6; i++) acc += swayFade(swayCellsPerMetre(M, 1, i % 90, 0, HC));
+  assert.ok(process.memoryUsage().heapUsed - h0 < 6e6 && acc >= 0, 'swayFade allocates nothing');
+  console.log(`  fade: far cpm ${cpmAt(0, -66).toFixed(2)} (${covF} cells, identical), near cpm ${cpmAt(0, 9).toFixed(1)} sways, WGSL err ${e}`);
 }
 console.log('rasterSway: ok');
 

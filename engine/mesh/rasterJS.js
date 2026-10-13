@@ -26,7 +26,7 @@ import {
 } from './MeshData.js';
 import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS, DRAW_FLAG_ONE_PART, DRAW_FLAG_NO_CULL, DRAW_FLAG_TWO_SIDED, instancedRanges } from './DrawList.js';
 import { MaskAtlas } from '../render/MaskAtlas.js';
-import { INST_FLAG_SWAY, swayOffset, windSwayOn } from './sway.js';
+import { INST_FLAG_SWAY, swayOffset, windSwayOn, swayFade, swayCellsPerMetre } from './sway.js';
 import { ditherKeep } from './lodDither.js';
 import { impViewPick, impMipPick, impDecodeTexel, IMP_CE, IMP_SE } from './impostorCard.js';
 import { meshHasVertexAo, vertexAoAt } from './vertexAo.js';
@@ -161,6 +161,7 @@ const _instItem = {
 let _atlas = /** @type {MaskAtlas|null} */ (null);
 let _mW = -1, _mX0 = 0, _mY0 = 0, _mH = 0, _mCut = 0;
 // S8-B2-06: foliage sway state of the instance being rasterised (off outside DRAW_INSTANCED / for unflagged instances / zero wind)
+let _swayF2 = 1; // OB-144 per-instance sway factor
 let _swayOn = false, _swayBx = 0, _swayBy = 0, _swayBz = 0, _swayT = 0, _swayF = /** @type {import('./sway.js').SwayWind|null} */ (null);
 const _swayD = { x: 0, y: 0 };
 let _dither = 0; // S8-B2-07: (flags >>> 16) & 0x7ff of the instance being rasterised (0 = not dithered; lodDither.js)
@@ -253,7 +254,7 @@ function transformVertex(mesh, matArr, vIdx, M, outBuf, off) {
   let wx = a00 * px + a01 * py + a02 * pz + tx;
   let wy = a10 * px + a11 * py + a12 * pz + ty;
   const wz = a20 * px + a21 * py + a22 * pz + tz;
-  if (_swayOn) { swayOffset(_swayBx, _swayBy, wz - _swayBz, _swayT, /** @type {import('./sway.js').SwayWind} */ (_swayF), _swayD); wx += _swayD.x; wy += _swayD.y; }
+  if (_swayOn) { swayOffset(_swayBx, _swayBy, wz - _swayBz, _swayT, /** @type {import('./sway.js').SwayWind} */ (_swayF), _swayD); wx += _swayD.x * _swayF2; wy += _swayD.y * _swayF2; }
 
   _nrmScratch[0] = 0; _nrmScratch[1] = 0; _nrmScratch[2] = 1;
   unpackNormalOct(mesh.nrm[vIdx], _nrmScratch);
@@ -682,6 +683,10 @@ function rasterInstanced(mesh, item, target, ctx) {
       _team = (meta >>> 8) & 0xff;
       _dither = (meta >>> 16) & 0x7ff;
       _swayOn = windOn && (meta & INST_FLAG_SWAY) !== 0;
+      if (_swayOn) {
+        _swayF2 = swayFade(swayCellsPerMetre(ctx.M, itx, ity, itz, wind.halfCols || 0));
+        if (_swayF2 <= 0) _swayOn = false;
+      }
       if (_swayOn) { _swayBx = itx; _swayBy = ity; _swayBz = itz; _swayT = wind.t; _swayF = wind.field; }
       rasterRange(mesh, _instItem, target, ctx, range.start, range.count, p, false, partAligned && (meta & 1) !== 0);
     }

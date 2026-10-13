@@ -412,7 +412,7 @@ export class WgRasterPass {
     // S8-B2-05/06: per-frame wind uniforms (zero when sway is off: bit-identical to before) + the cull/instance sway padding.
     this.windOn = windSwayOn(world.wind);
     const fbT = p._fb; let tSec = 0; if (fbT) { const v = fbT.timeSec; if (v) tSec = v; } // no tagged phi: avoids a per-frame HeapNumber
-    packWindUniforms(world.wind, tSec, this.windV, this.windTV, this.windKV);
+    packWindUniforms(world.wind, tSec, this.windV, this.windTV, this.windKV, p.rt && p.rt.cols ? p.rt.cols * 0.5 : 0); // OB-144 halfCols
     if (p._instances) {
       p._instances.swayPad = this.windOn ? SWAY_MAX : 0; p._instances.eye = p._cam || null; // OB-089
       this.meshDrawArg.cache = this.meshCache; this.meshDrawArg.idFor = this.strictMatIdFor || null; this.meshDrawArg.maskAtlas = (world && world.maskAtlas) || null; // ALPHA-01f-fix2: instanced masked groups share the static cache entry
