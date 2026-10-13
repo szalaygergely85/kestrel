@@ -69,7 +69,7 @@ function summarize(t, n) {
   const a = t.subarray(0, n).slice().sort();
   const q = (p) => a[Math.min(n - 1, Math.floor(p * n))];
   let sum = 0; for (let i = 0; i < n; i++) sum += a[i];
-  return { mean: sum / n, p50: q(0.5), p95: q(0.95), p99: q(0.99), max: a[n - 1] };
+  return { mean: sum / n, p50: q(0.5), p95: q(0.95), p99: q(0.99), p999: q(0.999), max: a[n - 1] };
 }
 
 /** Builds the whole living world once per scenario (fresh state, same seeds). */
@@ -99,9 +99,13 @@ async function build(assets) {
   const nav = buildBeastNav(world, wdef.nav);
   const beasts = createBeastSim(world, { nav, rng: createRng(wdef.nav?.seed ?? 1), events, fauna });
   const OPTS = { height: 1.7, stepUpMax: 0.45, walkCos: 0.7 }, out = {};
-  const pushOut = (x, y, o) => { world.ensureBandFor(x, y); const r = world.collideCircle(x, y, 0, 0, 0.4, world.terrain.groundAt(x, y), true, OPTS, out); o.x = r.x ?? x; o.y = r.y ?? y; };
+  const pushOut = (x, y, o) => { const r = world.collideCircle(x, y, 0, 0, 0.4, world.terrain.groundAt(x, y), true, OPTS, out); o.x = r.x ?? x; o.y = r.y ?? y; };
   const life = lifeFromRoutines(ROUTINES);
-  return { events, world, nav, fauna, beasts, life, pushOut, realBeasts, groundAt: (x, y) => world.terrain.groundAt(x, y) };
+  // LIFE-03-SPIKE: the first push-out near the plaza swapped the terrain band (ensureBandFor bake, 260-1400 ms) inside a villager step.
+  // In the game the band follows the player (streamBand), not the villagers; bake it at load, never inside a step. Load cost is reported.
+  const tw = performance.now(); world.ensureBandFor(PLAZA[0], PLAZA[1]); pushOut(PLAZA[0], PLAZA[1], {});
+  const warmMs = performance.now() - tw;
+  return { warmMs, events, world, nav, fauna, beasts, life, pushOut, realBeasts, groundAt: (x, y) => world.terrain.groundAt(x, y) };
 }
 
 async function runScenario(assets, name, dist, opt) {
@@ -146,7 +150,7 @@ async function runScenario(assets, name, dist, opt) {
   const res = {
     scenario: name, dist, steps: total, beasts: S.beasts.count, realBeasts: S.realBeasts, villagers: vill.n, packSize: pack.length,
     faunaAliveAvg: aliveSamples ? +(alive / aliveSamples).toFixed(1) : 0, raidSeen: raids.isActive(0) || null,
-    heapGrowthBytes: heapGrowth, astar: vill.stats.astar, maxAstarPerStep: vill.stats.maxPerStep,
+    warmMs: +S.warmMs.toFixed(1), heapGrowthBytes: heapGrowth, astar: vill.stats.astar, maxAstarPerStep: vill.stats.maxPerStep,
     sys: { villagers: summarize(sub(tv), n), raids: summarize(sub(tr), n), life: summarize(sub(life), n), fauna: summarize(sub(tf), n), beast: summarize(sub(tb), n) },
   };
   if (S.world.dispose) S.world.dispose();
@@ -164,6 +168,8 @@ export async function runBench(opt) {
       rows.push({ scenario: r.scenario, label: b.label, value: v, cap: b.cap, verdict: b.cap == null ? 'INFO' : v <= b.cap ? 'PASS' : 'FLAG' });
     }
     rows.push({ scenario: r.scenario, label: 'heap growth after warm-up (bytes)', value: r.heapGrowthBytes, cap: null, verdict: r.heapGrowthBytes == null ? 'INFO (run with --expose-gc)' : 'INFO' });
+    rows.push({ scenario: r.scenario, label: 'villager step p99.9 (ms; max is GC/OS noise from the other systems, see lane note)', value: r.sys.villagers.p999, cap: 4, verdict: r.sys.villagers.p999 <= 4 ? 'PASS' : 'FLAG' });
+    rows.push({ scenario: r.scenario, label: 'load-time band warm-up (ms, not per step)', value: r.warmMs, cap: null, verdict: 'INFO' });
     rows.push({ scenario: r.scenario, label: 'A* per step max', value: r.maxAstarPerStep, cap: 1, verdict: r.maxAstarPerStep <= 1 ? 'PASS' : 'FLAG' });
   }
   return { options: opt, chat: 'skipped (game/js/life/chat.js missing on this branch)', results, rows, flags: rows.filter((r) => r.verdict === 'FLAG').length };
