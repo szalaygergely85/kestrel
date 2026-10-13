@@ -28,6 +28,7 @@ import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS, DRAW_FLAG
 import { MaskAtlas } from '../render/MaskAtlas.js';
 import { INST_FLAG_SWAY, swayOffset, windSwayOn } from './sway.js';
 import { ditherKeep } from './lodDither.js';
+import { impViewPick, impMipPick, impDecodeTexel, IMP_CE, IMP_SE } from './impostorCard.js';
 import { meshHasVertexAo, vertexAoAt } from './vertexAo.js';
 import { getClipmap, WATER_U_STRIDE, U_KIND, U_Z, U_AABB, U_SHAPE, U_SLOT } from './waterMesh.js';
 
@@ -172,7 +173,7 @@ const _info = {
   mirror: 0, // HANDS-01a: item.mirror (det<0 part matrices) flips the cullBack sign
   kind: 0, face: 0, mat: 0, planeId: 0, aoMode: 0, zRef: 0,
   aux2: 0, aux3: 0, aux4: 0, aux5: 0,
-  dither: 0, zBase: 0, objectId: 0, isTerrain: false, isVoxel: false, isMesh: false,
+  card: false, dither: 0, zBase: 0, objectId: 0, isTerrain: false, isVoxel: false, isMesh: false,
   partAxisAligned: false, kind7Mat: /** @type {((x:number,y:number)=>number)|null} */ (null),
   depthTier: 0, // OB-053 (38.49): item.depthTier; the depth TEST is pulled forward by 2 * tier * DEPTH_TIER (NDC [-1,1]); 0 in depth-bias (shadow) passes
   biasFlag: 0, biasFactor: BIAS_FACTOR, biasUnits: BIAS_UNITS, twoSided: false,
@@ -428,6 +429,16 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
       if (info.depthTier !== 0) zn -= tierShift; // OB-053: compare + zbuf only, the written depth (vD) stays raw
       if (zn > 1) continue;
       if (info.dither !== 0 && !ditherKeep(info.dither, px, py)) continue; // S8-B2-07: the GPU discards before the depth test, so does this
+      if (info.card) { // R6b (impostorCard.js rules 5-7): texel lookup + depth offset; zn becomes the shifted-point depth
+        const iqc = 1 / (l0 * iw0 + l1 * iw1 + l2 * iw2);
+        if (!cardFragment(
+          (l0 * u0a * iw0 + l1 * u1a * iw1 + l2 * u2a * iw2) * iqc, (l0 * v0a * iw0 + l1 * v1a * iw1 + l2 * v2a * iw2) * iqc,
+          (l0 * wx0 * iw0 + l1 * wx1 * iw1 + l2 * wx2 * iw2) * iqc, (l0 * wy0 * iw0 + l1 * wy1 * iw1 + l2 * wy2 * iw2) * iqc,
+          (l0 * wz0 * iw0 + l1 * wz1 * iw1 + l2 * wz2 * iw2) * iqc, ctx.M)) continue;
+        zn = _cF[CF_ZN];
+        if (info.depthTier !== 0) zn -= tierShift;
+        if (zn > 1) continue;
+      }
 
       const idx = rowBase + px;
       if (target.depthOnly) {
@@ -469,6 +480,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
           if (_atlas.sample(info.maskX0, info.maskY0, info.maskW, info.maskH, mU, mV) < info.maskCut) continue;
         }
         if (flipN) { wnx = -wnx; wny = -wny; wnz = -wnz; }
+        if (info.card) { wnx = _cF[CF_NX]; wny = _cF[CF_NY]; wnz = _cF[CF_NZ]; }
 
         let face = info.face, mat = info.mat, outU = u, outV = v;
         if (info.isTerrain) {
@@ -478,6 +490,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
         } else if (info.isVoxel) {
           face = info.partAxisAligned ? roundedFace(wnx, wny, wnz) : FACE_PACKED;
         } else if (info.isMesh) {
+          if (info.card) mat = _cMat;
           // ME-14c2 (37.1 item 1): axis face when the world normal is within ~26 deg of an axis, else packed (face 7).
           face = Math.max(Math.abs(wnx), Math.abs(wny), Math.abs(wnz)) >= 0.9 ? roundedFace(wnx, wny, wnz) : FACE_PACKED;
         }
@@ -495,7 +508,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
         target.vao[idx] = (l0 * ao0 * iw0 + l1 * ao1 * iw1 + l2 * ao2 * iw2) * invq; // ME-20c, perspective-correct like u/v
         target.objectId[idx] = info.objectId;
         // US-068b1 (38.19): ortho has w = 1, so 1/w is a trap: depth = linear z = near + z01 * (far - near) (GPU twin: select(1/pos.w, ..., projMode == 2u))
-        target.depth[idx] = ortho ? PROJ_NEAR + (0.5 * (znRaw + 1)) * (PROJ_FAR - PROJ_NEAR) : invq;
+        target.depth[idx] = info.card ? _cF[CF_D] : ortho ? PROJ_NEAR + (0.5 * (znRaw + 1)) * (PROJ_FAR - PROJ_NEAR) : invq;
         target.zbuf[idx] = zn;
         if (target.writes) target.writes[idx]++;
       }
@@ -675,6 +688,109 @@ function rasterInstanced(mesh, item, target, ctx) {
   }
   _mW = -1; // ALPHA-01f(a): leave the module mask state clean for whatever draws next (mirrors rasterDrawList's static-masked reset)
   _team = 0; _swayOn = false; _dither = 0; _noCull = false; _twoSided = false;
+}
+
+// ---------------------------------------------------------------------------
+// R6b (38.60): card impostors. Rules: impostorCard.js header (the WGSL twin mirrors them). Called by the host after the
+// DrawList pass with the group's engine-owned card bucket (`g.cardIb`, `g.cardCount`, filled by compactGroup). Zero allocation.
+// ---------------------------------------------------------------------------
+let _cImp = /** @type {any} */ (null), _cView = 0, _cMip = 0, _cMat = 0;
+// doubles live in a typed array: module-level `let` doubles are boxed by V8 (one heap number per write = per fragment)
+const _cF = new Float64Array(9); // 0 zn, 1 depth, 2-4 world normal, 5 scale, 6 yaw, 7-8 dir.xy
+const CF_ZN = 0, CF_D = 1, CF_NX = 2, CF_NY = 3, CF_NZ = 4, CF_SCALE = 5, CF_YAW = 6, CF_DX = 7, CF_DY = 8;
+const _cTex = { mat: 0, o: 0, nx: 0, ny: 0, nz: 1 };
+
+/** Per-fragment card work (rules 5-7). true = covered; sets _cF[CF_ZN]/_cF[CF_D]/_cMat/_cN*. */
+function cardFragment(u, v, wx, wy, wz, M) {
+  if (!impDecodeTexel(_cImp, _cView, _cMip, u, v, _cF[CF_YAW], _cTex)) return false;
+  const so = _cTex.o * _cF[CF_SCALE];
+  const px = wx + so * _cF[CF_DX] * IMP_CE, py = wy + so * _cF[CF_DY] * IMP_CE, pz = wz - so * IMP_SE;
+  const zc = M[2] * px + M[6] * py + M[10] * pz + M[14];
+  const wc = M[3] * px + M[7] * py + M[11] * pz + M[15];
+  _cF[CF_ZN] = zc / wc; _cF[CF_D] = wc;
+  _cMat = _cTex.mat; _cF[CF_NX] = _cTex.nx; _cF[CF_NY] = _cTex.ny; _cF[CF_NZ] = _cTex.nz;
+  return true;
+}
+
+function cardVert(off, M, wx, wy, wz, u, v) {
+  buf4(_bufA, off, M, wx, wy, wz);
+  _bufA[off + 7] = u; _bufA[off + 8] = v;
+  _bufA[off + 9] = 0; _bufA[off + 10] = 0; _bufA[off + 11] = 1;
+  _bufA[off + 12] = 0; _bufA[off + 13] = 0; _bufA[off + 14] = 1;
+}
+function buf4(b, off, M, wx, wy, wz) {
+  b[off] = M[0] * wx + M[4] * wy + M[8] * wz + M[12];
+  b[off + 1] = M[1] * wx + M[5] * wy + M[9] * wz + M[13];
+  b[off + 2] = M[2] * wx + M[6] * wy + M[10] * wz + M[14];
+  b[off + 3] = M[3] * wx + M[7] * wy + M[11] * wz + M[15];
+  b[off + 4] = wx; b[off + 5] = wy; b[off + 6] = wz;
+}
+const _cQuad = new Float64Array(12); // 4 corners world xyz
+const _cQU = new Float64Array([-1, 1, 1, -1]);
+
+function cardClipRaster(t0, t1, t2, target, ctx) {
+  let curBuf = _bufA, curCount = 3, otherBuf = _bufB;
+  // triangle t0,t1,t2 already copied into _bufA[0..3*STRIDE)
+  for (let p = 0; p < 5 && curCount > 0; p++) {
+    const outCount = clipAgainstPlane(curBuf, curCount, otherBuf, p);
+    const tmp = curBuf; curBuf = otherBuf; otherBuf = tmp;
+    curCount = outCount;
+  }
+  if (curCount < 3) return;
+  for (let k = 1; k < curCount - 1; k++) rasterFanTri(curBuf, 0, k * STRIDE, (k + 1) * STRIDE, target, ctx, _info);
+}
+
+/**
+ * @param {import('./instances.js').InstanceBuffer} ib @param {number} count
+ * @param {{bytes: Uint8Array, radius: number, vMin: number, vMax: number}} imp
+ * @param {RasterTarget} target @param {RasterCtx} ctx @param {{x:number,y:number,z:number}} eye
+ */
+export function rasterCards(ib, count, imp, target, ctx, eye) {
+  if (count <= 0 || target.depthOnly || ctx.depthBias || ctx.ortho === true || ctx.ortho === 1) return; // cards never cast; perspective only
+  const f = ib.f32, u32 = ib.u32, M = ctx.M, R = imp.radius, vMin = imp.vMin, vMax = imp.vMax;
+  _cImp = imp;
+  _info.card = true; _info.isTerrain = false; _info.isVoxel = false; _info.isMesh = true; _info.kind = KIND_MESH;
+  _info.face = FACE_PACKED; _info.planeId = 0; _info.aoMode = AO_NONE; _info.zRef = 0; _info.cullBack = false; _info.twoSided = false;
+  _info.partAxisAligned = false; _info.kind7Mat = null; _info.biasFlag = 0; _info.maskW = -1; _info.depthTier = 1; _info.mirror = 0;
+  _info.biasFactor = BIAS_FACTOR; _info.biasUnits = BIAS_UNITS;
+  _vaoOn = false;
+  for (let i = 0; i < count; i++) {
+    const b = i * 16;
+    const m00 = f[b], m10 = f[b + 4], tx = f[b + 3], ty = f[b + 7], tz = f[b + 11];
+    const hx0 = tx - eye.x, hy0 = ty - eye.y, hl = Math.sqrt(hx0 * hx0 + hy0 * hy0);
+    if (hl < 1e-6) continue;
+    const hx = hx0 / hl, hy = hy0 / hl;
+    _cF[CF_YAW] = Math.atan2(m10, m00);
+    _cF[CF_SCALE] = Math.sqrt(m00 * m00 + m10 * m10);
+    _cView = impViewPick(eye.x, eye.y, tx, ty, _cF[CF_YAW]);
+    _cF[CF_DX] = hx; _cF[CF_DY] = hy;
+    const s = _cF[CF_SCALE], rx = hy, ry = -hx;
+    // corners (rule 3): u*r + v*up, up = (hx*SE, hy*SE, CE)
+    for (let k = 0; k < 4; k++) {
+      const u = _cQU[k] * R, v = k < 2 ? vMax : vMin;
+      _cQuad[k * 3] = tx + s * (u * rx + v * hx * IMP_SE);
+      _cQuad[k * 3 + 1] = ty + s * (u * ry + v * hy * IMP_SE);
+      _cQuad[k * 3 + 2] = tz + s * (v * IMP_CE);
+    }
+    // mip (rule 4) from corners 0 -> 1 in raster sample px
+    const c0w = M[3] * _cQuad[0] + M[7] * _cQuad[1] + M[11] * _cQuad[2] + M[15];
+    const c1w = M[3] * _cQuad[3] + M[7] * _cQuad[4] + M[11] * _cQuad[5] + M[15];
+    if (c0w < PROJ_NEAR || c1w < PROJ_NEAR) continue; // card straddles the eye plane: far-LOD only, never happens beyond impM
+    const c0x = (M[0] * _cQuad[0] + M[4] * _cQuad[1] + M[8] * _cQuad[2] + M[12]) / c0w, c0y = (M[1] * _cQuad[0] + M[5] * _cQuad[1] + M[9] * _cQuad[2] + M[13]) / c0w;
+    const c1x = (M[0] * _cQuad[3] + M[4] * _cQuad[4] + M[8] * _cQuad[5] + M[12]) / c1w, c1y = (M[1] * _cQuad[3] + M[5] * _cQuad[4] + M[9] * _cQuad[5] + M[13]) / c1w;
+    _cMip = impMipPick(Math.sqrt(((c1x - c0x) * target.W / 2) ** 2 + ((c1y - c0y) * target.H / 2) ** 2));
+    const meta = u32[b + 13];
+    _info.objectId = u32[b + 12]; _info.zBase = tz; _info.dither = (meta >>> 16) & 0x7ff;
+    // two triangles: (0,1,2) (0,2,3)
+    for (let tri = 0; tri < 2; tri++) {
+      const a = 0, bI = tri === 0 ? 1 : 2, cI = tri === 0 ? 2 : 3;
+      cardVert(0, M, _cQuad[a * 3], _cQuad[a * 3 + 1], _cQuad[a * 3 + 2], _cQU[a] * R, a < 2 ? vMax : vMin);
+      cardVert(STRIDE, M, _cQuad[bI * 3], _cQuad[bI * 3 + 1], _cQuad[bI * 3 + 2], _cQU[bI] * R, bI < 2 ? vMax : vMin);
+      cardVert(STRIDE * 2, M, _cQuad[cI * 3], _cQuad[cI * 3 + 1], _cQuad[cI * 3 + 2], _cQU[cI] * R, cI < 2 ? vMax : vMin);
+      cardClipRaster(0, 1, 2, target, ctx);
+    }
+  }
+  _info.card = false; _info.dither = 0; _cImp = null;
 }
 
 /**
