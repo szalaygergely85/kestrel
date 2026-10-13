@@ -112,6 +112,7 @@ ok('off: copy', out.fg[0] === 200 && out.bg[2] === 30 && out.glyph === G('#'));
   const comp = rd('./compositor.js'), wgsl = rd('./gpu/wgsl/waterComposite.wgsl.js'), pw = rd('./gpu/wg/passWater.js');
   ok('JS twin: submerged gates meshWater', /const submerged = .*updateUnderState/.test(comp) && /const meshWater = !submerged &&/.test(comp));
   ok('JS twin: submerged runs sky + under before edgePass (GPU order shade-under-edge)', comp.indexOf('underDone = true') > 0 && comp.indexOf('underDone = true') < comp.indexOf('if (fb.detailPass) edgePass('));
+  ok('JS twin: 2nd fillSky guarded by !underDone (behavioural sky-tint check lives in compositor.test.js)', /if \(!fb\.skipSky && !underDone\) fillSky/.test(comp));
   ok('GPU twin: edge waterOn off when submerged', /E_WATER_ON\] = wOn && !\(U && U\.on\)/.test(rd('./gpu/wg/passShade.js')));
   ok('GPU twin: composite returns early on underOn', /wu\.underOn > 0\.5\) \{ return o; \}/.test(wgsl));
   ok('GPU twin: passWater writes underOn from fb.under.on', /cu\[C_UNDER_ON\] = fb && fb\.under && fb\.under\.on \? 1 : 0/.test(pw));

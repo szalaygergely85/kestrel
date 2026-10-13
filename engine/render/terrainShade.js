@@ -190,6 +190,8 @@ export function farGrassFill(rec, cfg, typeNames, quality, windParams) {
   if (rec._cfg === cfg && rec._names === typeNames) return rec;
   rec._cfg = cfg; rec._names = typeNames; T.fill(0);
   if (!cfg || !typeNames) return rec;
+  // G2: WGSL clamps the type index to FG_TYPES-1, JS would index past the table - fail loudly at load (runs once per cfg/names change)
+  if (typeNames.length > FG_TYPES) throw new Error(`farGrassFill: ${typeNames.length} ground types > FG_TYPES (${FG_TYPES})`);
   for (let t = 0; t < typeNames.length && t < FG_TYPES; t++) {
     let best = -1, bestScore = -1;
     for (let k = 0; k < vs.length; k++) {
