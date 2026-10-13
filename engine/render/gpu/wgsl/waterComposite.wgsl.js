@@ -110,6 +110,7 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
     if (wu.projMode == 0) { floorP = cellRayP(vec2f(cell), grid, wu.posX, wu.posY, wu.eyeH, wu.dirX, wu.dirY, wu.planeX, wu.planeY, wu.horizonRow, wu.planeDistY, raw); }
     else { floorP = cellRayPitched(vec2f(cell), grid, vec3f(wu.posX, wu.posY, wu.eyeH), wu.pitchA.xyz, wu.pitchB.xy, vec3f(wu.pitchB.zw, wu.pitchC.x), vec2f(wu.pitchA.w, wu.pitchC.y), raw, wu.projMode == 2); }
     column = max(0.0, P.z - floorP.z);
+    if (!sheet) { a = clamp(max(raw - dW, column * 4.0) / opaqueAt, 0.0, 1.0); } // OB-111: path floor (twin of waterComposite.js)
   }
   // river ribbon (twin of waterComposite.js / waterLook.js riverAlpha): alpha feather by edge distance e and column; row 7 = (o, streakT, feather, shoreFade)
   var rE = 0.0; var rRapid = 0.0;

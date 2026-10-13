@@ -52,6 +52,7 @@ function byte(v) { return v <= 0 ? 0 : v >= 255 ? 255 : Math.floor(v + 0.5); }
  * @param {any} world @param {any} terms - shear ProjTerms @param {any} pterms - PitchedTerms @param {boolean} pitched
  * @param {boolean} skyPass - false: surface cells (before the edge pass, builds `fb.waterMask`); true: sky cells (after fillSky)
  */
+const WATER_PATH_FLOOR_K = 4; // OB-111: path >= column * 4 (== column / sin 14.5 deg); WGSL twin uses the literal 4.0
 export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
   const wt = fb.water;
   if (!wt) { if (!skyPass) fb.waterMask = null; return; }
@@ -97,6 +98,7 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     if (!isSky) {
       if (pitched) unprojectPitched(pterms, col, row, raw, _floorP); else unprojectCell(terms, col, row, raw, _floorP);
       column = Math.max(0, _p[2] - _floorP[2]);
+      if (!sheet) { a = Math.max(raw - dW, column * WATER_PATH_FLOOR_K) / opaqueAt; a = a < 0 ? 0 : a > 1 ? 1 : a; } // OB-111: a steep ray through a shallow column still counts as column / 0.25 m of water
     }
     // OB-019 RIVER-02 (38.45): ribbon texel word = slot | back<<4 | 1<<6 | rapidQ<<8 | e*1000<<16; alpha feather by edge distance and column.
     let rE = 0, rRapid = 0;

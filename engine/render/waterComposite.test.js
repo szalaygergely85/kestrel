@@ -115,7 +115,10 @@ function expectedHash(px, py, L, time = 0) {
       continue;
     }
     hits++;
-    const dW = wt.depth[i], a = Math.min(1, Math.max(0, (depth[i] - dW) / L.opaqueAt));
+    const dW = wt.depth[i];
+    unprojectCell(terms, i % COLS, (i / COLS) | 0, dW, P); const wz = P[2];
+    unprojectCell(terms, i % COLS, (i / COLS) | 0, depth[i], P);
+    const a = Math.min(1, Math.max(0, Math.max(depth[i] - dW, Math.max(0, wz - P[2]) * 4) / L.opaqueAt)); // OB-111 path floor: column * 4
     if (a >= L.seeThrough) {
       opaque++;
       if (!fb.waterMask || fb.waterMask[i] !== 1) maskBad++;
@@ -138,7 +141,8 @@ function expectedHash(px, py, L, time = 0) {
       if (snap.glyph[i] !== snap0.glyph[i]) seeBad++; // floor glyph stays
     }
   }
-  ok('twin: pool covers cells, both opaque and see-through ones occur', hits > 200 && opaque > 50 && seeThrough > 5, `hits ${hits} opaque ${opaque} see ${seeThrough}`);
+  ok('twin: pool covers cells, both opaque and see-through ones occur', hits > 200 && opaque > 50, // OB-111: the path floor (column * 4) makes this 0.4 m pool opaque everywhere; see-through is now only the shore feather (ob111-water-near.test.mjs covers the near field)
+     `hits ${hits} opaque ${opaque} see ${seeThrough}`);
   ok('twin: cells without water are bit-identical to the no-water render', untouchedOk);
   ok('twin: opaque cells use the ramp glyph from the drifting brick hash - world anchored', formulaBad === 0, `${formulaBad}`);
   ok('twin: see-through (shallow) cells keep the floor glyph (floor visible through shallows)', seeBad === 0, `${seeBad}`);
