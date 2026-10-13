@@ -8,7 +8,7 @@
 // so `playing` is false and the engine's `stepAnimations` never double-advances them; `hurt`/`flinch`/state clips
 // are let to play normally (playing true). `hidden` hides the instance at STATE_GONE (the US-079b0 voxel-pool skip).
 import { yawFromDelta } from '../../../engine/index.js';
-import { STATE_NOTICE, STATE_RETURN, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE } from './sim/beastSim.js';
+import { STATE_EAT, STATE_NOTICE, STATE_RETURN, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE } from './sim/beastSim.js';
 
 const STEP_MS = 1000 / 60; // one fixed sim step in ms (die/sink clip t is derived from sim step counters)
 const HURT_STEPS = 10;     // 37.16.2: the view shows `hurt` while hurtT < 10 (the flash + follow-through window)
@@ -85,7 +85,7 @@ export function presentBeasts(sim, world, overlay, styleIds, anim) {
     else if (anim) clip = anim.update(sim, i, 1000 / 60);
     else if (sim.hurtT[i] < HURT_STEPS) clip = 'hurt';
     else if (st === STATE_FLINCH) clip = 'flinch';
-    else clip = STATE_CLIPS[st] || 'idle';
+    else clip = st === STATE_EAT ? 'idle' : (STATE_CLIPS[st] || 'idle'); // LIFE-07: NEEDS DESIGNER eat clip -> idle fallback
     if (v.model === 'wolf') clip = wolfClip(clip, st, sim.fleeing[i]); // WOLF-D1: wolfFx.clipFor names
 
     if (clip !== v.anim) { v.anim = clip; v.frame = 0; v.t = 0; v.loop = undefined; }
