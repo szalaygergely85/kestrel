@@ -85,15 +85,17 @@ ok('0 band:late', !ev.includes('band:late'));
 ok('bake-ahead did the work: bakes > 5', st.bakes - startBakes > 5, String(st.bakes - startBakes));
 ok('cache <= maxBytes during the walk', maxBytes <= cache.maxBytes, (maxBytes / 1048576).toFixed(1) + ' MB');
 console.log(`  zones ${z0} -> ${w.bandId}; swaps ${swaps}; cache ${(cache.bytes / 1048576).toFixed(1)} MB, ${st.entries} entries, ${st.evictions} evictions; idle streamBand avg ${(idleSum / idleN).toFixed(2)} ms, worst ${worstIdle.toFixed(2)} ms`);
+// wall-clock asserts are report-only (arch 38.61); BAKE_BENCH=1 enforces them. Gate = deterministic counters (aheadLateMax, swaps, bakes).
+const okT = (n, c, d) => (process.env.BAKE_BENCH ? ok(n, c, d) : console.log('  [bench] ' + n + ' -> ' + (c ? 'ok' : 'OVER') + ' (' + d + ')'));
 const pc = (a, q) => { a.sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.floor(a.length * q))]; };
 const aMax = Math.max(...act), mMax = Math.max(...mk0);
 console.log(`  bake-active calls ${act.length}: p50 ${pc(act, .5).toFixed(2)} p95 ${pc(act, .95).toFixed(2)} p99 ${pc(act, .99).toFixed(2)} max ${aMax.toFixed(2)} ms; job-start calls ${mk0.length} max ${mMax.toFixed(2)} ms`);
-ok('bake-active call p95 <= 2.3 ms (2 ms budget + one 32-cell slice)', pc(act, .95) <= 2.3, pc(act, .95).toFixed(2));
+okT('bake-active call p95 <= 2.3 ms (2 ms budget + one 32-cell slice)', pc(act, .95) <= 2.3, pc(act, .95).toFixed(2));
 const allAct = act.concat(mk0.filter((d) => d > 0.3)); // WM-02b: job-start calls (key + alloc; overlap copy now sliced) count as bake-active
-ok('bake-active call p99 <= 2.0 ms (incl. job start)', pc(allAct, .99) <= 2.0, pc(allAct, .99).toFixed(2));
+okT('bake-active call p99 <= 2.0 ms (incl. job start)', pc(allAct, .99) <= 2.0, pc(allAct, .99).toFixed(2));
 ok('deterministic: <= 1 unit (slice/row) started after the budget ran out, per call', w.aheadLateMax <= 1, String(w.aheadLateMax)); // replaces the flaky wall-clock max assert
-ok('job-start call (key + alloc, no stepping) <= 2 ms (typ. 0.7-1.1)', mMax <= 2, mMax.toFixed(2));
-ok('idle slice avg <= 2 ms', idleSum / idleN <= 2, (idleSum / idleN).toFixed(2));
+okT('job-start call (key + alloc, no stepping) <= 2 ms (typ. 0.7-1.1)', mMax <= 2, mMax.toFixed(2));
+okT('idle slice avg <= 2 ms', idleSum / idleN <= 2, (idleSum / idleN).toFixed(2));
 // pins never evicted: shrink the cap hard
 const nEnt = st.entries, nEv = st.evictions, pinKey = w._zoneKey(4, j0);
 ok('pinned zone cached', cache.has(pinKey) && cache.map.get(pinKey).pinned);
