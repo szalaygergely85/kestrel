@@ -2005,3 +2005,26 @@ Notes: the board notice is the read text, for wherever the board shows the full 
 Notes:
 - If the owner picks armour option B (`Relay` for warden), read `Relay Blade` / `Relay Bow` / `Relay Shield` and keep the descs.
 - The trinket fits "They want metal more than meat" (Goblins, D-072): goblins wear what they steal. Alt name `Goblin Charm` (12).
+
+## Region relays (WM-13)
+
+PC-B writer, 2026-10-13. One dormant relay per region (wake = save + respawn + travel). Names follow `Bend Relay` / `Ford Relay`: a plain place word plus "Relay", taken from the chart labels. Name <= 22, wake line <= 60, ASCII. Wake lines name no one and do not say who sends the signal.
+
+| key | name | wake line |
+|---|---|---|
+| `place.relay.ws_glasswater` | `Glasswater Relay` (16) | `Teal light runs out across the still water.` (43) |
+| `place.relay.ws_northwood` | `Northwood Relay` (15) | `The pines go teal to their tips, then dark again.` (49) |
+| `place.relay.ws_highPastures` | `Pasture Relay` (13) | `Wind combs the high grass. The bowl hums with it.` (49) |
+| `place.relay.ws_ashMile` | `Ash Mile Relay` (14) | `Teal light on black ash. The wind carries it off.` (49) |
+| `place.relay.ws_downs` | `Downs Relay` (11) | `The hum rolls out over the long green downs.` (44) |
+| `place.relay.ws_signalHill` | `Signal Hill Relay` (17) | `Three short, three long, three short. The hill answers.` (55) |
+| `place.relay.ws_heath` | `Heath Relay` (11) | `The heather bends away from the hum, then back.` (47) |
+| `place.relay.ws_reedmire` | `Reedmire Relay` (14) | `The reeds hiss. Teal light lies on black water.` (47) |
+| `place.relay.ws_strand` | `Strand Relay` (12) | `The hum goes out over the sand, out to the sea.` (47) |
+| `place.relay.ws_whitecombs` | `Combfoot Relay` (14) | `Bare rock rings. High snow catches the light.` (45) |
+
+Notes:
+- `Combfoot Relay`: it stands at the foot of the Whitecombs, on bare rock. Alt `Whitecomb Relay` (15).
+- `Pasture Relay`, not "High Pastures Relay": shorter, same plain voice. Alt `High Pasture Relay` (18).
+- `Heath Relay` vs `Ash Mile` (the burnt heath): if the two sit close, use alt `Heather Relay` (13) to avoid a mix-up.
+- Signal Hill's line repeats the D-013 pattern; "answers" echoes the waystone done line.
