@@ -211,7 +211,7 @@ export function integrate(entity, dt, controls, world, cfg) {
   const floorH = sector.floorH;
 
   if (swimming) {
-    swimVertical(body, t, dt, P, floorH, sector.ceilH);
+    swimVertical(body, t, dt, P, floorH, sector.ceilH, controls ? controls.swimUp : 0);
     updateEyeFeel(body.feel, dt, body, P);
     return;
   }

@@ -3,7 +3,7 @@
 // world for water. The game writes plain numbers on the body before each
 // step: `body.waterZ` (live surface z, NaN = no water) and
 // `body.waterFloorZ` (floor under the water at x,y). Outputs on the body:
-// `swimming`, `climbedOut` (one step). Diving/onBottom: SWIM-04a.
+// `swimming`, `climbedOut` (one step). `diving`, `onBottom` (SWIM-04a); input `controls.swimUp` -1..1.
 import { PHYSICS_DEFAULTS } from './config.js';
 import { clamp } from '../core/math.js';
 
@@ -69,7 +69,7 @@ function leave(body) {
  * Step 5 replacement while swimming: climb-out, surface lock + buoyancy.
  * `t` = transform, `floorH`/`ceilH` from the support query at the new x,y.
  */
-export function swimVertical(body, t, dt, P, floorH, ceilH) {
+export function swimVertical(body, t, dt, P, floorH, ceilH, swimUp) {
   const S = swimCfg(P);
   const wz = body.waterZ;
   // Climb-out (item 5): a floor above the feet by more than stepUpMax.
@@ -92,13 +92,28 @@ export function swimVertical(body, t, dt, P, floorH, ceilH) {
     floorH = body.waterFloorZ; // the floor under the pre-move position (fed)
   }
   const floatZ = wz - S.floatDepth;
-  body.vz = clamp((floatZ - t.z) * S.buoyK, -S.buoyMaxV, S.buoyMaxV);
-  t.z += body.vz * dt;
-  if (t.z < floorH) { t.z = floorH; if (body.vz < 0) body.vz = 0; }
+  // Diving (SWIM-04a, item 6): swimUp in -1..1, diveSpeed target, accel 4 m/s^2.
+  // At the surface with no dive input the surface lock (buoyancy) runs as before.
+  const up = typeof swimUp !== 'number' || swimUp !== swimUp ? 0 : swimUp > 1 ? 1 : swimUp < -1 ? -1 : swimUp;
+  if (body.diving || up < 0) {
+    const target = up !== 0 ? up * S.diveSpeed : S.buoyRise;
+    const da = 4 * dt;
+    const dv = target - body.vz;
+    body.vz += dv > da ? da : dv < -da ? -da : dv;
+    t.z += body.vz * dt;
+    if (t.z >= floatZ) { t.z = floatZ; body.vz = 0; }
+  } else {
+    body.vz = clamp((floatZ - t.z) * S.buoyK, -S.buoyMaxV, S.buoyMaxV);
+    t.z += body.vz * dt;
+  }
+  if (t.z <= floorH) { t.z = floorH; if (body.vz < 0) body.vz = 0; body.onBottom = true; } else body.onBottom = false;
   if (ceilH !== 'sky') {
     const maxZ = ceilH - P.height;
     if (t.z > maxZ) { t.z = maxZ; if (body.vz > 0) body.vz = 0; }
   }
+  // Diving flag with hysteresis (eye 0.05 under / over the surface).
+  const eyeZ = t.z + (body.eyeH || P.eyeHeight);
+  if (eyeZ < wz - 0.05) body.diving = true; else if (eyeZ > wz + 0.05) body.diving = false;
   body.peakZ = t.z;
   body.fallDistance = 0;
 }

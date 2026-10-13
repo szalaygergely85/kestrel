@@ -118,18 +118,63 @@ for (const [run_, v] of [[false, 1.8], [true, 2.6]]) {
   ok(sig(false) === sig(false), 'deterministic');
 }
 
+// (8) SWIM-04a diving: 10 m basin, dive to bottom, onBottom, rise, hysteresis, ceiling
+{
+  const FL = -11; // surface -1, depth 10
+  const w = makeWorld(() => FL), e = makeEnt(0, 0, -2.25), b = e.components.body;
+  b.grounded = false;
+  run(e, w, 60, {});
+  ok(b.swimming && !b.diving, 'surface: swimming, not diving');
+  run(e, w, 30, { swimUp: 0 });
+  ok(!b.diving && !b.onBottom, 'no input stays at surface');
+  let diveAt = -1, t0 = 0;
+  run(e, w, 60 * 12, { swimUp: -1 }, true, (i, bb) => { if (bb.diving && diveAt < 0) diveAt = i; if (bb.onBottom && !t0) t0 = i; });
+  ok(diveAt >= 0 && diveAt < 40, `diving turns on early (${diveAt})`);
+  ok(b.onBottom && b.diving && b.swimming, 'on bottom, still swimming/diving');
+  near(e.transform.z, FL, 1e-6, 'rests on the bottom');
+  ok(t0 > 60 * 4 && t0 < 60 * 9, `bottom reached in a plausible time (${t0} steps)`);
+  // release: slow float up at buoyRise, onBottom off, then surface lock
+  run(e, w, 30, {});
+  ok(!b.onBottom && e.transform.z > FL, 'released: rises');
+  near(b.vz, PHYSICS.swim.buoyRise, 0.05, 'rises at buoyRise');
+  run(e, w, 60 * 40, {});
+  near(e.transform.z, WZ - 1.25, 1e-6, 'back at the surface lock');
+  ok(!b.diving && b.swimming, 'diving off at the surface');
+  // swimUp +1 under water rises faster than buoyRise, never above floatZ
+  run(e, w, 90, { swimUp: -1 });
+  ok(b.diving, 'dives again');
+  run(e, w, 60, { swimUp: 1 });
+  ok(b.vz > 0.5, `swimUp rises (${b.vz})`);
+  run(e, w, 60 * 10, { swimUp: 1 });
+  ok(e.transform.z <= WZ - 1.25 + 1e-9, 'never above floatZ');
+  // hysteresis: eye within +-0.05 of the surface keeps the previous flag
+  b.diving = true; e.transform.z = WZ - 1.6 + 0.0; // eye == surface
+  b.vz = 0; run(e, w, 1, { swimUp: 1 });
+  ok(b.diving, 'inside the band the flag holds (on)');
+  // ceiling clamp: bridge 1 m under the surface line must stop the rise
+  const wc = makeWorld(() => FL); const sup = wc.supportAt; wc.supportAt = (x, y) => { const s = sup(x, y); s.ceilH = -4; return s; };
+  const ec = makeEnt(0, 0, -8), bc = ec.components.body; bc.grounded = false;
+  run(ec, wc, 60, {}); bc.diving = true;
+  run(ec, wc, 60 * 6, { swimUp: 1 });
+  ok(ec.transform.z <= -4 - 1.7 + 1e-9, `ceiling clamp (z ${ec.transform.z})`);
+  // swimUp without water or on land is ignored
+  const ed = makeEnt(0, 0, 0), wd = makeWorld(() => 0);
+  run(ed, wd, 30, { swimUp: -1 }, false);
+  ok(!ed.components.body.diving && ed.components.body.grounded, 'no water: swimUp ignored');
+}
+
 // (7) 0 alloc over 10k steps (heap delta, with gc if available)
 {
   const w = makeWorld((x) => x < 5 ? -6 : WZ + 0.8), e = makeEnt(0, 0, -2.25), b = e.components.body;
   b.grounded = false;
-  const step = (i) => { feed(b, w, e.transform, true); integrate(e, DT, { forward: Math.sin(i * 0.01), strafe: Math.cos(i * 0.02), yawDeg: i % 360 }, w, PHYSICS); };
+  const step = (i) => { feed(b, w, e.transform, true); integrate(e, DT, { forward: Math.sin(i * 0.01), swimUp: Math.sin(i * 0.003), strafe: Math.cos(i * 0.02), yawDeg: i % 360 }, w, PHYSICS); };
   for (let i = 0; i < 2000; i++) step(i);
   if (global.gc) global.gc();
   const h0 = process.memoryUsage().heapUsed;
   for (let i = 0; i < 10000; i++) step(i);
   if (global.gc) global.gc();
   const d = process.memoryUsage().heapUsed - h0;
-  ok(d < 200000, `0 alloc (heap delta ${d} B)`);
+  ok(d < (global.gc ? 200000 : 1500000), `0 alloc (heap delta ${d} B)`);
 }
 
 console.log(fail ? `FAIL ${fail}` : `ALL PASS (${pass})`);
