@@ -103,6 +103,7 @@ import { wireTelegraphs, telegraphsEnabled } from './fx/telegraphWire.js'; // TE
 import { stepCombatHint } from './quest/combatHint.js'; // COMBAT-HINT-01
 import { createRegionBanner } from './quest/regionBanner.js'; // REGION-01: region-entry banner
 import { stepActionHints, resetActionHints } from './quest/actionHints.js'; // FS-01
+import { addSideMarks } from './quest/markSide.js'; // OB-125: light-blue side-quest markers
 import { bootRegionAmbient } from './quest/regionAmbientWire.js'; // WMP-03: region ambient life
 import { createWild } from './wild/wildEnv.js'; // WILD-06: ambient rabbits + deer
 import { createGoblinWire } from './life/goblinWire.js'; // GOB-07b
@@ -341,6 +342,7 @@ if (window.ASSETS.equipment) { // EQ-07/09: shield + bow + arrows -> ASSETS.mode
 }
 if (window.ASSETS.spellFx) window.ASSETS.spellFx.attach(); // SPELL-01b: fireball sprites -> ASSETS.models (atlas) + presets -> ASSETS.particles, BEFORE the registry/atlas/defineEmitter loop
 bootMark('local overlay applied');
+try { addSideMarks(window.ASSETS); } catch (e) { console.warn('[marks] side variant off:', e && e.message); } // OB-125
 const assets = AssetRegistry.fromJSON(bundle, window.ASSETS);
 bootMark('AssetRegistry built');
 bootStages.enter('adapter');
@@ -565,10 +567,10 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
     const OBJECTIVE_MARKS = false;
     if (OBJECTIVE_MARKS) registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle('questMark') });
     // QG-04: giver markers over Burl: '!' while his quest is available, '?' while ready, none while active/done (book.giverMarks)
-    const gAvail = [], gReady = [];
-    for (const [model, list] of [['questMark', gAvail], ['questMarkReady', gReady]]) {
+    const gAvail = [], gReady = [], sAvail = [], sReady = []; // OB-125: main chain = gold, side quests = light blue (book.isMain, from quest data)
+    for (const [model, list] of [['questMark', gAvail], ['questMarkReady', gReady], ['questMarkSide', sAvail], ['questMarkReadySide', sReady]]) {
       registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle(model),
-        source: (out) => { const b = saveRelay.quest.book; b.giverMarks(gAvail, gReady); out.done = false; out.targets = list; } });
+        source: (out) => { const b = saveRelay.quest.book; b.giverMarks(gAvail, gReady, sAvail, sReady); out.done = false; out.targets = list; } });
     }
   }
   } catch (e) { console.error('[save] relay setup failed:', e); window.__debug.bootErrors.push({ file: 'save relay', message: String(e && e.message) }); showBootErrors(document, [{ file: 'save relay', message: '' }]); }
@@ -1237,9 +1239,10 @@ async function runGame(mode, cinematic = null) {
   // CH1-MOUNT (38.37): notice banner (page lifetime) + crystal grant / barks / chapter card (rebuilt per world; only when saves are live = never in capture/bench/compare/?at=)
   const notice = createNoticeView();
 const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop: accept or hand in, show its short text (banner, never locks)
-  const b = saveRelay && saveRelay.quest.book, r = b && b.inspect(id); if (!r) return;
+  const b = saveRelay && saveRelay.quest.book, r = b && b.inspect(id); if (!r) return null;
   const d = b.def(b.index(r.id)); // QL-WIRE: the writer's def.lines (offer / ready / active) win over the short giver text
-  notice.push(String(d.title || r.id).slice(0, 30), bannerLines(d, r.action, wrapText) || wrapText(r.text || (r.action === 'handin' ? 'Done.' : r.action === 'accept' ? 'Quest accepted.' : 'Not yet.')));
+  notice.push(String(d.title || r.id).slice(0, 30), bannerLines(d, r.action, wrapText) || wrapText(r.text || (r.action === 'handin' ? 'Done.' : r.action === 'accept' ? 'Quest accepted.' : 'Not yet.')));
+  return r;
 };
   // QL-WIRE: Ch1-2 errands: object givers (post / notePost / relays), talk.<site>, target1..3.hit (sword + arrow = combat:hit), escort flag
   const errands = createErrands({ getBook: () => (saveRelay ? saveRelay.quest.book : null), questFlag: (k, v) => saveRelay.quest.questFlag(k, v), inspect: inspectObject, note: (t, l) => notice.push(t, l), texts: inspectTexts });

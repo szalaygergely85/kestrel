@@ -22,5 +22,8 @@ const rw = createRelayWake({ world, questFlag: (k) => flag(k), emit: (id, kind) 
 assert.notEqual(book.statusOf('sq.reg.downs'), AVAILABLE, 'not offered before the wake');
 assert.equal(rw.interact('ws_downs'), true);
 assert.equal(state['waystone.ws_downs.woken'], true, 'quest flag set through questFlag');
-assert.equal(book.statusOf('sq.reg.downs'), ACTIVE, 'wake touch -> inspect(relay_downs) -> errand accepted');
+assert.equal(book.statusOf('sq.reg.downs'), AVAILABLE, 'OB-126: the wake touch only OFFERS the errand');
+for (let i = 0; i < 600; i++) rw.step(0.05, null); // let the wake finish
+assert.equal(rw.interact('ws_downs'), true); // second E on the awake relay = explicit accept
+assert.equal(book.statusOf('sq.reg.downs'), ACTIVE, 'second touch -> inspect(relay_downs) -> errand accepted');
 console.log('regionRelayWire OK');

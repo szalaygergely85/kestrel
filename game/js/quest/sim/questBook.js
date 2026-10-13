@@ -293,14 +293,22 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     }
     return null;
   };
-  book.giverMarks = function giverMarks(outAvail, outReady) {
-    let a = 0, r = 0;
+  // OB-125: a quest is MAIN when its def says `main: true` or the main chain (entries[0], m1) waits on its done flag
+  // (`quest.<id>.done` as a flag objective, e.g. burl.boars / tower.blade); everything else is a side quest.
+  const mainDone = new Set();
+  for (const o of entries[0].def.objectives) if (o.when && o.when.type === 'flag' && typeof o.when.id === 'string') mainDone.add(o.when.id);
+  book.isMain = (i) => entries[i].def.main === true || mainDone.has('quest.' + entries[i].def.id + '.done');
+  /** Giver marks: `outAvail` ('!') / `outReady` ('?') get the main-chain quests; with the optional `sideAvail` / `sideReady` the side
+   *  quests go there instead (OB-125: a different colour), else everything goes to the first two (old behaviour). */
+  book.giverMarks = function giverMarks(outAvail, outReady, sideAvail, sideReady) {
+    let a = 0, r = 0, sa = 0, sr = 0;
     for (let i = 1; i < n; i++) {
-      const s = statusOf(i);
-      if (s === AVAILABLE) outAvail[a++] = entries[i].giver;
-      else if (s === READY) outReady[r++] = entries[i].turnIn; // '?' hangs where the quest is handed in (default: the giver)
+      const s = statusOf(i), side = sideAvail && !book.isMain(i);
+      if (s === AVAILABLE) { if (side) sideAvail[sa++] = entries[i].giver; else outAvail[a++] = entries[i].giver; }
+      else if (s === READY) { if (side) sideReady[sr++] = entries[i].turnIn; else outReady[r++] = entries[i].turnIn; } // '?' hangs where the quest is handed in (default: the giver)
     }
     outAvail.length = a; outReady.length = r;
+    if (sideAvail) { sideAvail.length = sa; sideReady.length = sr; }
   };
   /** QL-03: index of the tracked giver quest: the player's pick (main flag `ui.tracked`, saved with the main quest) while it is active/ready, else the most recently accepted one, else -1. */
   book.tracked = function tracked() {
