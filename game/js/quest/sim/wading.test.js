@@ -134,10 +134,11 @@ const flatBed = (z) => () => z;
   sim.fire(5, 50, 12, 0, 0, -1, 0, 1); // dry land: sticks as before
   for (let i = 0; i < 20; i++) sim.step();
   ok('arrow outside the river still sticks', sim.floatCount === 0 && sim.stuckCount === 1);
-  sim.fire(5, 0, 12, 0, 0, -1, 0, 1); for (let i = 0; i < 10; i++) sim.step();
-  global.gc(); const m0 = process.memoryUsage().heapUsed;
+  for (let r = 0; r < 4; r++) { sim.fire(5, 0, 12, 0, 0, -1, 0, 1); for (let i = 0; i < 500; i++) sim.step(); } // tier-up the float path first
+  sim.fire(5, 0, 12, 0, 0, -1, 0, 1); for (let i = 0; i < 100; i++) sim.step(); // 100 warm-up steps: first-window JIT/IC heap noise (+-30 KB) is not allocation; floater lives 480 steps
+  global.gc(); global.gc(); const m0 = process.memoryUsage().heapUsed; // double gc like engine/test/allocGate.js heapGrowth
   for (let i = 0; i < 300; i++) sim.step();
-  global.gc(); const dm = process.memoryUsage().heapUsed - m0;
+  global.gc(); global.gc(); const dm = process.memoryUsage().heapUsed - m0;
   ok(`arrow sim with a floater: 0 alloc over 300 steps (${dm} B)`, dm < 4096);
 }
 // ---- 0 alloc: wading + integrate ----
