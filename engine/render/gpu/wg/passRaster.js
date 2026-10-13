@@ -14,6 +14,7 @@ import { KIND_MODEL, FACE_PACKED } from '../../GBuffer.js';
 import { projTerms, shearProjection, pitchedTermsInto, createPitchedTerms, resolveProjection, viewProjAtOrigin } from '../../projection.js';
 import { frustumPlanes } from '../../../mesh/culling.js';
 import { WgCullPass } from './passCull.js';
+import { WgCardPass } from './WgCardPass.js'; // R6c part 2
 import { WgHzbPass } from './passHzb.js'; // S8-B2-10c
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 import { windSwayOn, packWindUniforms, SWAY_MAX } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
@@ -132,6 +133,8 @@ export class WgRasterPass {
         // S8-B2-10c: `opts.occl` (default OFF, `?occl=1`) = two-phase HZB occlusion; this.hzb is created lazily with the pass (same device)
         this.cull = new WgCullPass(device, { occl: opts.occl === 2 ? 2 : !!opts.occl, occlStats: !!opts.occlStats });
         if (opts.occl) this.hzb = new WgHzbPass(device);
+        this.card = new WgCardPass(device, this.cull); // R6c part 2: card impostors (off unless a species opts in; guarded by the vertex-stage storage limit)
+        this._cardFr = { w: 0, h: 0, ox: 0, oy: 0, viewRel: this.viewRel, vaoOn: false };
       }
     } catch (e) { this.dispose(); throw e; }
   }
@@ -159,10 +162,16 @@ export class WgRasterPass {
     }
     const eye = this._eye, cam = p._cam; if (cam) { eye.x = cam.x; eye.y = cam.y; eye.z = cam.z; }
     const bf = this._beginArgs; bf.planes = this.planes; bf.viewProj = this.view; bf.rows = p.rows; bf.eye = eye; bf.maxDistM = 0; bf.swayPad = this.windOn ? SWAY_MAX : 0; bf.hzb = hz;
+    const card = this.card;
+    if (card && card.on) for (let i = 0; i < n; i++) card.ensure(this.gpuGroups[i]); // R6c: sets g._cardOk BEFORE the kernel's impM word is written
     cull.begin(bf); // reused arg object: no per-frame literal
     this._phase2 = !!hz;
     for (let i = 0; i < n; i++) { pair[0] = this.gpuM0[i]; pair[1] = this.gpuM1[i]; this.gpuEntries[i] = cull.add(this.gpuGroups[i], pair); }
     cull.run();
+    if (card && card.on) { // R6c: cs_card in the cull span, after the mesh cull wrote the args (instanceCount 0) and the batch rows
+      const cf = this._cardFr; cf.w = p._t.subCols; cf.h = p._t.subRows; cf.ox = this.ox; cf.oy = this.oy; cf.vaoOn = this.vaoOn;
+      card.dispatch(this.gpuGroups, n, cf);
+    }
   }
 
   // ALPHA-01f (d): entries are laid out `[lod*R + r]` (R = entries.length/2, fixed per batch); R = 1 (today's ONE_PART shape) is
@@ -531,6 +540,7 @@ export class WgRasterPass {
           }
         }
         if (this.gpuN) { const gd = this._cullDraw(); instancedDraws += gd; p.stats.gpuCullDraws = gd; } else p.stats.gpuCullDraws = 0;
+        if (this.card && this.gpuN) this.card.draw(); // R6c: after the instanced mesh draws, before the view-model depth clear; shadows never see cards
         p.stats.clothDraws = this._cloths(list);
         p.stats.terrainDraws = this._terrain(list);
       } finally { d.endPass(); }
@@ -573,6 +583,7 @@ export class WgRasterPass {
   }
 
   dispose() {
+    if (this.card) { this.card.dispose(); this.card = null; }
     if (this.hzb) { this.hzb.dispose(); this.hzb = null; }
     this.buffers.dispose();
     for (const pipe of this.pipes) this.device.dispose(pipe);
