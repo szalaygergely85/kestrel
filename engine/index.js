@@ -58,6 +58,7 @@ export { buildTuftAtlas, tuftLookup, tuftPlaneT, texelR, texelG, TUFT_ATLAS_DEFA
 export { sunFromHours, sunPathFrom, SUN_PATH_DEFAULT } from './core/sunPath.js';
 export { AO_DEFAULTS } from './render/horizonAo.js'; // host `?ao=` reads the engine defaults (B1 nit)
 export { swayOffset, packWindUniforms, windSwayOn, INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from './mesh/sway.js'; // S8-B2-06
+export { packDecorLayers, DEFAULT_DENSITY_Q8 } from './mesh/decorScatter.js'; // ENV-01-WIRE: main.js builds the WgDecorPass config (38.62)
 export { shadeTerrain, makeTerrainShadeCtx } from './render/terrainShade.js';
 export { packTerrainTextures, TLOOK_WIDTH } from './render/gpu/TerrainTextures.js';
 export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
