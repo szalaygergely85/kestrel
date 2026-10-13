@@ -22,9 +22,10 @@ const CONFIRM_CREATE = `(() => { const h = __debug.menuHost; if (h.menu.snapshot
   const press = (code) => h.step((c) => c === code);
   for (let i = 0; i < 19; i++) press('KeyS'); press('Enter'); return h.active ? 'still active' : 'ok'; })()`;
 const INGAME = '!!(window.__debug.playerHandle && window.__debug.gameHooks && window.__debug.gameHooks.ctx.state.canSave && !__debug.menuHost.active)';
+const GEN = '/^[A-Za-z]+[.][A-Za-z]+[.][0-9]+$/'; // no backslashes: this source goes through a template literal
 const SNAP = `(() => { const D = __debug, t = D.playerHandle.data.transform, ids = [], dup = [], homes = {}; const seen = new Set();
-  D.world.forEachEntity((e) => { const id = e.id ?? (e.data && e.data.id); ids.push(id); { const b = e.components && e.components.brain; if (b && b.home && /^[A-Za-z]+\.[A-Za-z]+\.\d+$/.test(String(id))) homes[id] = [b.home[0], b.home[1]]; } if (seen.has(id)) dup.push(id); seen.add(id); });
-  return { homes, pos: [t.x, t.y, t.z], n: ids.length, dup, beasts: ids.filter((i) => /^[a-z]+\.[A-Za-z]+\.\d+$/.test(String(i)) && !/^gobF\./.test(i)), farMembers: ids.filter((i) => /^gobF\./.test(String(i))) }; })()`;
+  D.world.forEachEntity((e) => { const id = e.id ?? (e.data && e.data.id); ids.push(id); { const b = e.components && e.components.brain; if (b && b.home && ${GEN}.test(String(id))) homes[id] = [b.home[0], b.home[1]]; } if (seen.has(id)) dup.push(id); seen.add(id); });
+  return { homes, pos: [t.x, t.y, t.z], n: ids.length, dup, beasts: ids.filter((i) => /^[a-z]+[.][A-Za-z]+[.][0-9]+$/.test(String(i)) && !/^gobF[.]/.test(i)), farMembers: ids.filter((i) => /^gobF[.]/.test(String(i))) }; })()`;
 
 async function pass(label, port, query) {
   validatePort(port);
@@ -79,7 +80,7 @@ async function pass(label, port, query) {
     assert.equal(after.farMembers.length, before.farMembers.length, `${label}: far camp members changed`);
     assert.equal(new Set([...after.beasts, ...after.farMembers]).size, after.beasts.length + after.farMembers.length, `${label}: beast/camp ids not unique`);
     // WMP-09: herd homes + far camp (gobF.*) member homes are identical before/after Continue (generators avoid authored entities only)
-    assert.ok(Object.keys(before.homes).length > 0, `${label}: no generated homes found`);
+    if (!query.includes("grid=0")) assert.ok(Object.keys(before.homes).length > 0, `${label}: no generated homes found (herds/far camps are spawned on grid worlds only)`);
     assert.deepEqual(after.homes, before.homes, `${label}: herd / campFar homes changed across Continue`);
     assert.deepEqual(errors, [], `${label}: console errors / exceptions`);
     console.log(`${label}: PASS entities ${before.n}->${after.n}, beasts ${after.beasts.length}, far camp members ${after.farMembers.length}, pose drift ${d.toFixed(2)} m`);
