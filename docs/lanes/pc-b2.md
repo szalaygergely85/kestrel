@@ -656,3 +656,8 @@ Stills (AC3, not run): node tools/verify-secrets-outwall.mjs 9660  -> docs/test-
   Tests: errands3 41 pass; filter run 144/144 PASS; validate-content OK; prop-ground-lint 0; coplanar-lint exit 0. NEEDS WRITER: titles/objTexts/returnText placeholders (<= 38 chars), no lines. Not browser-checked (target placement / ground spot by eye).
 - TUFT-01a part 2 (JS twin, branch tuft-01a2, arch-review): tuftHit in render/carpet.js (TUFTS flag, cfg.tufts, 2 sheared planes + atlas, root cull, MASK-c kept), CARPET_DEFAULTS cellM 0.35 + tuftR, overworld_far cellM override removed. tests/cell mean 1.71 calm / 2.07 wind; WGSL twin test pinned to blades (tufts:false, cellM 0.1) until 01b; gpucompare carpetMeadow expected to differ until 01b (baseline untouched).
   Open for 01b/architect: g-cap decides by texel centre, so near hits are quantised to whole texels (~20 mm > 1.25 fp); a sub-texel cap needs a sign/offset bit in g.
+
+### OB-104b1 (k4, 2026-10-13) JS twin done -> arch-review
+- `engine/render/terrainShade.js`: `CLIFF_NZ = 0.5` export; `shadeTerrain(..., z, nx, ny, nz)` (defaults nz=1 = off); steep cell without forest-face glyphs -> `ctx.cliffType` type, (u,v) = (|nx|>|ny| ? y : x, z); `makeTerrainShadeCtx` sets `cliffType` = `recipe.terrain.rock.id` (-1 if none); `shadeTerrainCells` passes shadeNrm.
+- Tests in `terrainShade.test.js` (104 pass): 70 deg -> rock at (y,z), varies with z (smear constant without), 50 deg + forest face unchanged, sweep 666/2000 changed == all N.z<0.5 cells, 0 alloc.
+- For OB-104b2: WGSL twin = the same 4 lines before the TLOOK lookup in `shadeTerrain` (extra args nx,ny,nz from the unpacked normal; `cliffType` appended to the uniform). No WGSL touched.
