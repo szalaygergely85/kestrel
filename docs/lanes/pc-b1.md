@@ -879,3 +879,8 @@ OB-099 (kestrel-1, ob099-journal): journal lists giver quests only (tower.blade 
 - They already talked (Ch3 dialogue + world_m1 char.kit NPCs); extended, no duplicates. New game/js/quest/outwall.js: data table NPCS (dialogue, metFlag, talkIds, NEEDS WRITER placeholder), turn-to-player within 6 m, `ow.hesk.met`/`ow.dorrin.met` via saveRelay.quest.questFlag on first talk (saved like other quest flags). main.js hook: import, createOutwall on world:loaded, onTalk, step.
 - Test: node game/js/quest/outwall.test.js (table vs world/dialogue, turn, flags once, JSON round trip). No browser check needed (no verify-out01.mjs).
 - OUT-02 seam: `outwall.paused = true` while a routine owns the yaw; `outwall.setHome(id, yawDeg)` to move the home facing; outwallRoutines.js must not write yaw otherwise.
+
+### OUT-03 talk stubs (kestrel-2, branch out-01) - po-review
+- No entity added: none of the 4 animal models (otter/goat/heron/tortoise) is registered in game/index.html or placed in world_m1 (validate-content says "not in the game yet"); the 5 humans have no model. Registering = designer/asset step.
+- outwall.js: exported PENDING table (nub done elsewhere; skip/stilt/slate/crag NEEDS REGISTRATION; sorrel/pell/tam/ama/cobb NEEDS DESIGNER); test checks every approved id is in exactly one table. No dialogue files, no flags (nothing to talk to).
+- ASK ARCHITECT/PO: OK to register the 4 animal models (index.html script tags + main.js assets + world_m1 entities at village/Reedmire/islet/Signal Head anchors)? Then each is a 1-line NPCS row + dialogue json.

@@ -1,7 +1,7 @@
 // OUT-01: table + turn + met flags + save round trip. Run: node game/js/quest/outwall.test.js
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { NPCS, FACE_M, createOutwall } from './outwall.js';
+import { NPCS, PENDING, FACE_M, createOutwall } from './outwall.js';
 
 const root = new URL('../../../', import.meta.url);
 const w = JSON.parse(readFileSync(new URL('content/worlds/world_m1.world.json', root), 'utf8'));
@@ -31,4 +31,12 @@ state = JSON.parse(JSON.stringify(state)); ({ ow, set } = mk(state));
 assert.equal(state['ow.hesk.met'], true); assert.equal(ow.talked('hesk'), false, 'no re-set after load');
 assert.equal(ow.talked('dorrin'), true); assert.equal(state['ow.dorrin.met'], true);
 ow.paused = true; const y = ents.hesk.yawDeg; ow.step(1, 0, 3); assert.equal(ents.hesk.yawDeg, y, 'paused = routines own the yaw');
+// OUT-03: every approved character is either in NPCS or PENDING (never both); PENDING ones have no world entity yet
+const APPROVED = ['nub', 'skip', 'stilt', 'slate', 'crag', 'hesk', 'dorrin', 'sorrel', 'pell', 'tam', 'ama', 'cobb'];
+for (const id of APPROVED) assert.ok((id in NPCS) !== (id in PENDING), id + ' in exactly one table');
+for (const [id, p] of Object.entries(PENDING)) {
+  assert.match(p.status, /^(NEEDS DESIGNER|NEEDS REGISTRATION|done elsewhere)$/);
+  if (p.status !== 'done elsewhere') assert.ok(!w.entities.some((x) => x.id === id), id + ' has no entity yet');
+  if (p.model) assert.ok(readFileSync(new URL('design/models/' + p.model, root), 'utf8').length > 100, p.model + ' exists');
+}
 console.log('outwall.test OK');

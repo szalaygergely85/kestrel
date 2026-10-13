@@ -11,6 +11,20 @@ export const NPCS = {
   hesk:   { dialogue: 'hesk',   metFlag: 'ow.hesk.met',   talkIds: ['hesk.meet.1', 'hesk.names.1'],   placeholder: 'NEEDS WRITER: hesk.meet' },
   dorrin: { dialogue: 'dorrin', metFlag: 'ow.dorrin.met', talkIds: ['dorrin.meet.1', 'dorrin.relay.1'], placeholder: 'NEEDS WRITER: dorrin.meet' },
 };
+/** OUT-03: the other approved characters (D-069). No entity, dialogue or met flag until a model is registered in the game
+ *  (the animal files exist in design/models but are not in game/index.html or world_m1; anchors = quest-roadmap 2b / world_m1). */
+export const PENDING = {
+  nub:    { status: 'done elsewhere', note: 'already placed in world_m1, follows Burl (NUB-01); no lines by design' },
+  skip:   { status: 'NEEDS REGISTRATION', model: 'voxel_otter.js', note: 'empty fishing village (coast); register ASSETS.models.otter in index.html/main.js + place, then add to NPCS' },
+  stilt:  { status: 'NEEDS REGISTRATION', model: 'voxel_heron.js', note: 'Reedmire; same steps as Skip' },
+  slate:  { status: 'NEEDS REGISTRATION', model: 'voxel_tortoise.js', note: 'Glasswater islet; same steps as Skip' },
+  crag:   { status: 'NEEDS REGISTRATION', model: 'voxel_goat.js', note: 'Signal Head ledges; same steps as Skip' },
+  sorrel: { status: 'NEEDS DESIGNER', note: 'Outwall herb-woman, no model (char.kit recolour)' },
+  pell:   { status: 'NEEDS DESIGNER', note: 'Outwall child, no model' },
+  tam:    { status: 'NEEDS DESIGNER', note: 'old exile singer, no model' },
+  ama:    { status: 'NEEDS DESIGNER', note: 'Glasswater fisher, no model' },
+  cobb:   { status: 'NEEDS DESIGNER', note: 'brother of Ama, up the river, no model' },
+};
 const wrap180 = (d) => { d %= 360; return d > 180 ? d - 360 : d <= -180 ? d + 360 : d; };
 
 /** @param {{world:{get:(id:string)=>any, state:object}, questFlag:(k:string)=>void}} o */
