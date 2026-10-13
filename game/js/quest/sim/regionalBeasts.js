@@ -99,6 +99,7 @@ export function spawnRegionalBeasts(world, geo, seed) {
   world.forEachEntity((e) => { const b = e.components && e.components.brain; if (b && b.kind === 'beast' && b.home) avoid.push([b.home[0], b.home[1]]); });
   const list = generateRegionalBeasts({ geo, terrain: world.terrain, seed, avoid });
   for (const b of list) {
+    if (world.get(b.id)) continue; // WMP-09: a world restored from a save already holds the herd (saves keep all entities) - spawn only the missing ones
     const brain = { kind: 'beast', home: [b.x, b.y], temperament: 'wary' };
     if (b.species !== 'boar') brain.species = b.species;
     world.spawn('beast', { x: b.x, y: b.y, z: world.terrain.heightAt(b.x, b.y) },
