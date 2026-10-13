@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
 import { pathToFileURL } from 'node:url';
+import { GATE_POSES } from '../content/dev-poses.js';
 import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluateAsync, killTree } from './capture-browser.mjs';
 
 export const OUT_DIR = path.join(ROOT, 'docs', 'test-reports', 'm4-walk');
@@ -27,19 +28,25 @@ export const STEPS = [
 // npc = stand 1.5 m west of that entity and face it; pose null = the freshly booted page. Coordinates: world_m1.world.json / bugs.md.
 export const STOPS = [
   { n: 1, id: 'title', title: 'Title / boot (560x210 variant too)', pose: null, grid2: '560x210' },
-  { n: 2, id: 'tower-start', title: 'Tower start: canvas bed, I / C, sword left slot', pose: { x: 1497.15, y: 1027.28, yaw: 265 } },
-  { n: 3, id: 'burl-meadow', title: 'Burl and the meadow', npc: 'bear' },
-  { n: 4, id: 'boar', title: 'Fight a boar', pose: { x: 1452, y: 1004, look: [1445.5, 1000.5] } },
-  { n: 5, id: 'bend-relay', title: 'Bend relay on the ground, dusk lamps', pose: { x: 1266, y: 1038, look: [1262, 1033] } },
-  { n: 6, id: 'ford', title: 'Ford: reeds, ferns, rocks, water, deer', pose: { x: 1018, y: 1068, look: [1030, 1068] } },
-  { n: 7, id: 'rook-ruin', title: "Crossroads and Rook's ruin", pose: { x: 981, y: 1063, look: [975, 1058] } },
+  { n: 2, id: 'tower-start', title: 'Tower start: canvas bed, I / C, sword left slot', slug: 'crash' },
+  { n: 3, id: 'burl-meadow', title: 'Burl and the meadow', slug: 'burl' },
+  { n: 4, id: 'boar', title: 'Fight a boar', slug: 'meadowDetail' },
+  { n: 5, id: 'bend-relay', title: 'Bend relay on the ground, dusk lamps', slug: 'roadBend' },
+  { n: 6, id: 'ford', title: 'Ford: reeds, ferns, rocks, water, deer', slug: 'fordDetail' },
+  { n: 7, id: 'rook-ruin', title: "Crossroads and Rook's ruin", slug: 'outwallFord' },
+  // no dev-poses slug looks north at the smoke: estimate kept (975,1030 -> 958,1004)
   { n: 8, id: 'smoke-north', title: 'Smoke north', pose: { x: 975, y: 1030, look: [958, 1004] } },
-  { n: 9, id: 'sealed-gate', title: 'Sealed Gate leaves, F3 dropped meshes', pose: { x: 250, y: 840, look: [240, 840] } },
-  { n: 10, id: 'continue', title: 'Save / quit / Continue (state diff = verify-m4-exit)', pose: { x: 1497.15, y: 1027.28, yaw: 265 } },
+  { n: 9, id: 'sealed-gate', title: 'Sealed Gate leaves, F3 dropped meshes', slug: 'outwall' },
+  { n: 10, id: 'continue', title: 'Save / quit / Continue (state diff = verify-m4-exit)', slug: 'crash' },
 ];
 
 export function yawToward(from, to) { return Math.atan2(to[0] - from.x, -(to[1] - from.y)) * 180 / Math.PI; }
+// slug -> content/dev-poses.js GATE_POSES cam (x, y, yaw, pitch; z left to the floor snap in POSE_JS)
 export function stopPose(stop) {
+  if (stop.slug) {
+    const g = GATE_POSES.find((q) => q.slug === stop.slug); if (!g) throw new Error('unknown dev-poses slug ' + stop.slug);
+    return { x: g.cam.x, y: g.cam.y, z: undefined, yaw: g.cam.yawDeg, pitch: g.cam.pitchDeg };
+  }
   const p = stop.pose; if (!p) return null;
   return { x: p.x, y: p.y, z: p.z, yaw: p.yaw !== undefined ? p.yaw : yawToward(p, p.look) };
 }
@@ -86,7 +93,33 @@ export function renderReport({ date, grid = GRID, steps = [], stops = [], bugs =
 }
 
 // ---- runner ----
+// run-tests step: node gets --expose-gc (idle-heap suites need it, via NODE_OPTIONS so every suite child inherits it);
+// a FAILed/TIMEOUT suite is retried once alone (--filter) before the step is RED. Retried suites are listed in the note.
+export const failedSuites = (report) => report.filter((r) => r.status === 'FAIL' || r.status === 'TIMEOUT').map((r) => r.name);
+/** firstFailed: suite names that failed; retryPassed(name) -> bool. Returns { red: names still failing, retried: all retried names }. */
+export function settleRetries(firstFailed, retryPassed) {
+  return { retried: [...firstFailed], red: firstFailed.filter((n) => !retryPassed(n)) };
+}
+const gcEnv = () => ({ ...process.env, NODE_OPTIONS: ((process.env.NODE_OPTIONS || '') + ' --expose-gc').trim() });
+function runTestsStep(step) {
+  const t0 = Date.now(), json = path.join(os.tmpdir(), `kestrel-m4walk-${process.pid}.json`);
+  const opt = { cwd: ROOT, encoding: 'utf8', maxBuffer: 256 << 20, timeout: 25 * 60 * 1000, windowsHide: true, env: gcEnv() };
+  const script = path.join(ROOT, 'tools', step.script);
+  const r = spawnSync(process.execPath, [script, '--json', json], opt);
+  let note = ((r.stdout || '') + (r.stderr || '')).trim().split('\n').filter(Boolean).pop() || '', status = r.status === 0 ? 'PASS' : 'FAIL';
+  if (r.status !== 0) {
+    let failed = []; try { failed = failedSuites(JSON.parse(readFileSync(json, 'utf8'))); } catch (e) { /* no report: stay RED */ }
+    if (failed.length) {
+      const s = settleRetries(failed, (n) => spawnSync(process.execPath, [script, '--filter', n], opt).status === 0);
+      note = `retried alone: ${s.retried.join(', ')}` + (s.red.length ? `; still RED: ${s.red.join(', ')}` : ' (all passed on retry)');
+      if (!s.red.length) status = 'PASS';
+    } else note = `exit ${r.status}: ` + note;
+  }
+  try { rmSync(json, { force: true }); } catch (e) { /* ignore */ }
+  return { id: step.id, status, secs: (Date.now() - t0) / 1000, note };
+}
 function runStep(step, port) {
+  if (step.id === 'run-tests') return runTestsStep(step);
   const t0 = Date.now();
   const r = spawnSync(process.execPath, [path.join(ROOT, 'tools', step.script), ...step.args, ...(step.port ? [String(port)] : [])], { cwd: ROOT, encoding: 'utf8', maxBuffer: 256 << 20, timeout: 25 * 60 * 1000, windowsHide: true });
   const secs = (Date.now() - t0) / 1000, ok = r.status === 0;
@@ -96,11 +129,11 @@ function runStep(step, port) {
 
 // page side: teleport like real travel (floor height, clear void-rule safe spot, wait for the band), then aim
 const POSE_JS = (p, npc) => `(async () => { const D = window.__debug, w = D.world, t = D.playerHandle.data.transform, c = D.playerHandle.data.components, sl = (ms) => new Promise((r) => setTimeout(r, ms));
-  let x = ${p ? p.x : 'null'}, y = ${p ? p.y : 'null'}, z = ${p && p.z !== undefined ? p.z : 'undefined'}, yaw = ${p ? p.yaw : 'null'};
+  let x = ${p ? p.x : 'null'}, y = ${p ? p.y : 'null'}, z = ${p && p.z !== undefined ? p.z : 'undefined'}, yaw = ${p ? p.yaw : 'null'}, pitch = ${p && p.pitch !== undefined ? p.pitch : -4};
   ${npc ? `const e = w.get(${JSON.stringify(npc)}).data.transform; x = e.x - 1.5; y = e.y; z = undefined; yaw = Math.atan2(e.x - x, -(e.y - y)) * 180 / Math.PI;` : ''}
   let g = w.floorAt(x, y); t.x = x; t.y = y; t.z = z !== undefined ? z : (g == null ? t.z + 3 : g + 0.6); c.body.vx = c.body.vy = c.body.vz = 0; D.vitals.clearSafe(); D.look.locked = true; await sl(1200);
   if (z === undefined) { g = w.floorAt(x, y); if (g != null && Math.abs(t.z - g - 0.6) > 3) t.z = g + 0.6; }
-  D.look.yawDeg = yaw; D.look.pitchDeg = -4; t.yawDeg = yaw; t.pitchDeg = -4; await sl(900); return [t.x, t.y, t.z]; })()`;
+  D.look.yawDeg = yaw; D.look.pitchDeg = pitch; t.yawDeg = yaw; t.pitchDeg = pitch; await sl(900); return [t.x, t.y, t.z]; })()`;
 
 async function takeStills(port, bugs, report) {
   const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-m4-walk-'));
@@ -125,7 +158,7 @@ async function takeStills(port, bugs, report) {
     for (const stop of STOPS) {
       const rec = { n: stop.n, id: stop.id, title: stop.title, files: [] };
       try {
-        if (stop.pose || stop.npc) await goto(stopPose(stop), stop.npc); else await pause(800);
+        if (stop.pose || stop.slug || stop.npc) await goto(stopPose(stop), stop.npc); else await pause(800);
         rec.files.push(await shot(`stop-${String(stop.n).padStart(2, '0')}-${stop.id}`));
         if (stop.grid2) { await open(stop.grid2); rec.files.push(await shot(`stop-${String(stop.n).padStart(2, '0')}-${stop.id}-${stop.grid2}`)); await open(GRID); }
       } catch (e) { report.notes.push(`stop ${stop.n} ${stop.id}: ${short(e.message, 100)}`); }
