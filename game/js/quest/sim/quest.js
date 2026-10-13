@@ -21,7 +21,9 @@ export function validateQuestDefinition(def) {
     seen.add(objective.id);
     const when = objective.when;
     if (!when || !['flag','item','area','beasts','collect','deliver'].includes(when.type)) throw new Error('quest: invalid condition');
-    if (when.type === 'beasts') {
+    if (when.type === 'beasts' && when.kind !== undefined) { // OB-115: any beast of this kind killed after accept (count lives in counts['kill_<kind>']; optional `ids` = authored examples for compass/validation only)
+      if (typeof when.kind !== 'string' || !/^[a-z][a-z0-9]*$/.test(when.kind) || (when.ids !== undefined && (!Array.isArray(when.ids) || !when.ids.every(safeId))) || !Number.isInteger(when.count) || when.count < 1) throw new Error('quest: invalid beast kind objective');
+    } else if (when.type === 'beasts') {
       if (!Array.isArray(when.ids) || !when.ids.length || new Set(when.ids).size !== when.ids.length || !when.ids.every(safeId)
         || !Number.isInteger(when.count) || when.count < 1 || when.count > when.ids.length) throw new Error('quest: invalid beast targets');
     } else {
@@ -36,11 +38,38 @@ export function validateQuestDefinition(def) {
   return def;
 }
 
+const KIND_OF = new Map();
+/** OB-115: beast kind from its id = the leading lowercase run ('boarN1' -> 'boar', 'wolf3' -> 'wolf'). Cached per id (bounded). */
+export function kindOf(id) {
+  let k = KIND_OF.get(id);
+  if (k === undefined) {
+    let n = 0; while (n < id.length) { const c = id.charCodeAt(n); if (c < 97 || c > 122) break; n++; }
+    k = id.slice(0, n);
+    if (KIND_OF.size < 8192) KIND_OF.set(id, k);
+  }
+  return k;
+}
+const KILL_KEYS = new Map();
+/** OB-115: counts key of a kind kill objective (cached: no string concat per kill). */
+export function killKey(kind) { let k = KILL_KEYS.get(kind); if (k === undefined) KILL_KEYS.set(kind, k = 'kill_' + kind); return k; }
+/** OB-115: one beast of `kind` died while the quest is accepted. Counts every kill (capped at the largest target) and advances. */
+export function applyKindKill(state, kind, def) {
+  const key = killKey(kind);
+  let cap = 0;
+  for (let i = 0; i < def.objectives.length; i++) { const w = def.objectives[i].when; if (w.type === 'beasts' && w.kind === kind && w.count > cap) cap = w.count; }
+  const cur = state.counts[key] || 0;
+  if (cur >= cap) return false;
+  state.counts[key] = cur + 1;
+  advance(state, def);
+  return true;
+}
+
 function progress(state, when) {
   if (when.type === 'flag') return Object.hasOwn(state.flags, when.id) && state.flags[when.id] === when.equals ? 1 : 0;
   if (when.type === 'item') return state.items.includes(when.id) ? 1 : 0;
   if (when.type === 'area') return state.areas.includes(when.id) ? 1 : 0;
   if (when.type === 'collect' || when.type === 'deliver') return Math.min(state.counts[when.id] || 0, when.count);
+  if (when.kind !== undefined) return Math.min(state.counts[killKey(when.kind)] || 0, when.count); // OB-115
   let count = 0;
   for (const id of when.ids) if (state.deadBeasts.includes(id)) count++;
   return count;

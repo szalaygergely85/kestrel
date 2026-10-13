@@ -59,7 +59,9 @@ kill(b); toSword(b);
 assert.equal(b.status(1), AVAILABLE);
 b.giverMarks(marksA, marksR); assert.deepEqual(marksA, ['bear']);
 assert.equal(b.accept('burl.boars'), true);
-assert.equal(b.status(1), READY, 'boars killed before accept still count');
+assert.equal(b.status(1), ACTIVE, 'OB-115: boars killed before accept do NOT count');
+kill(b);
+assert.equal(b.status(1), READY, 'kills after accept count');
 assert.deepEqual(log, ['quest:accepted', 'quest:ready']);
 assert.equal(createQuestBook(mainDef, [burl]).accept('burl.boars'), false, 'unavailable before sword');
 

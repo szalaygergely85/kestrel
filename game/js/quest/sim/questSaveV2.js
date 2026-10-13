@@ -2,7 +2,7 @@
 // v2 = {v:2, done:[ids], active:{<id>:{c:<completed count>, a?:1 accepted, s?:accept seq, g?:[{id,n}] given, f?:{flags,items,areas,counts}}}, tracked:<id>|null}
 // Fresh quests are not stored. Dead beasts are NOT stored: they replay from the global `game.deadBeasts` store on load.
 // The runtime/book shape stays the v1 map {id:{quest,accepted,handedIn,given}}; these two functions convert at the save boundary.
-import { createQuest, applyQuestEvent } from './quest.js';
+import { createQuest, applyQuestEvent, applyKindKill, kindOf } from './quest.js';
 
 const hasKeys = o => !!o && Object.keys(o).length > 0;
 
@@ -63,12 +63,25 @@ export function fromQuestSaveV2(v2, defs, deadBeasts = [], warn = console.warn) 
     const dead = new Set(deadBeasts);
     for (const def of defs) {
       const hits = [];
-      for (const o of def.objectives) if (o.when.type === 'beasts') for (const b of o.when.ids) if (dead.has(b)) hits.push(b);
+      for (const o of def.objectives) if (o.when.type === 'beasts' && o.when.ids) for (const b of o.when.ids) if (dead.has(b)) hits.push(b);
       if (!hits.length) continue;
       const e = out[def.id] || (out[def.id] = { quest: state(def, 0), accepted: false, handedIn: false });
       if (e.handedIn) continue;
       const st = createQuest(def, e.quest);
       for (const b of hits) applyQuestEvent(st, { type: 'beast:died', id: b }, def);
+      e.quest = st;
+    }
+  }
+  // OB-115: kind kill objectives count from accept. An OLD save (accepted, no kill_<kind> count stored) seeds the count from the dead set once.
+  for (const def of defs) {
+    const e = out[def.id]; if (!e || !e.accepted || e.handedIn) continue;
+    for (const o of def.objectives) {
+      const w = o.when; if (w.type !== 'beasts' || w.kind === undefined) continue;
+      const st = createQuest(def, e.quest);
+      if (st.flags.kk === true) continue; // accepted under the new rule (book.accept sets kk): counts from accept, no seeding
+      let hit = 0; for (const b of deadBeasts) if (kindOf(b) === w.kind) hit++;
+      for (let k = 0; k < hit; k++) applyKindKill(st, w.kind, def);
+      st.flags.kk = true;
       e.quest = st;
     }
   }

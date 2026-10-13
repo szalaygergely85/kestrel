@@ -1,6 +1,6 @@
 // QG-01 (38.35): giver quests on top of quest.js (unchanged). Pure sim: no world/DOM/clock/random.
 // Status is derived from facts + two booleans; facts count before accept (boars stay dead).
-import { createQuest, applyQuestEvent, questObjectives, stringifyQuest, questHash, validateQuestDefinition } from './quest.js';
+import { createQuest, applyQuestEvent, questObjectives, stringifyQuest, questHash, validateQuestDefinition, applyKindKill, kindOf } from './quest.js';
 
 export const UNAVAILABLE = 0, AVAILABLE = 1, ACTIVE = 2, READY = 3, DONE = 4;
 export const STATUS_NAMES = Object.freeze(['unavailable', 'available', 'active', 'ready', 'done']);
@@ -90,7 +90,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   }
 
   // QL-T3 (38.44 item 9): fact -> listening quests (type -> id -> Int16Array) and quest -> dependents (opensAfter edges).
-  const listen = new Map(), deps = [];
+  const listen = new Map(), deps = [], kindListen = new Map(); // kindListen: kind -> quest indices (OB-115)
   for (let i = 0; i < n; i++) deps.push([]);
   {
     const tmp = new Map();
@@ -100,6 +100,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
       if (w.type === 'flag') add('flag:set', w.id, i);
       else if (w.type === 'item') add('item:got', w.id, i);
       else if (w.type === 'area') add('area:entered', w.id, i);
+      else if (w.type === 'beasts' && w.kind !== undefined) { let l = kindListen.get(w.kind); if (!l) kindListen.set(w.kind, l = []); if (!l.includes(i)) l.push(i); } // OB-115
       else if (w.type === 'beasts') for (const b of w.ids) add('beast:died', b, i);
       else add('item:count', w.id, i); // collect / deliver
     }
@@ -170,6 +171,13 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
         if (applyQuestEvent(entries[i].state, event, entries[i].def)) { changed = true; touchWithDeps(i); }
       }
     }
+    if (kindListen.size && event && event.type === 'beast:died' && typeof event.id === 'string') { // OB-115: kind kill objectives count from accept
+      const l = kindListen.get(kindOf(event.id));
+      if (l !== undefined) for (let k = 0; k < l.length; k++) {
+        const i = l[k];
+        if ((entries[i].accepted || (entries[i].auto && met(i))) && !entries[i].handedIn && applyKindKill(entries[i].state, kindOf(event.id), entries[i].def)) { changed = true; touchWithDeps(i); }
+      }
+    }
     if (changed) { book.version++; settleTouched(); }
     return changed;
   };
@@ -178,6 +186,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     let changed = false;
     if (event && event.type === 'item:count' && typeof event.id === 'string' && Number.isInteger(event.n)) { if (event.n > 0) packCounts.set(event.id, event.n); else packCounts.delete(event.id); }
     for (let i = 0; i < n; i++) if (applyQuestEvent(entries[i].state, event, entries[i].def)) changed = true;
+    if (event && event.type === 'beast:died' && typeof event.id === 'string') for (let i = 1; i < n; i++) if ((entries[i].accepted || (entries[i].auto && met(i))) && !entries[i].handedIn && kindListen.has(kindOf(event.id)) && kindListen.get(kindOf(event.id)).includes(i) && applyKindKill(entries[i].state, kindOf(event.id), entries[i].def)) changed = true;
     if (changed) { book.version++; settle(); }
     return changed;
   };
@@ -186,6 +195,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     if (i === undefined || i === 0 || statusOf(i) !== AVAILABLE) return false;
     const e = entries[i];
     e.accepted = true; e.seq = ++seqCounter; book.version++;
+    if (kindListen.size) for (const o of e.def.objectives) if (o.when.type === 'beasts' && o.when.kind !== undefined) e.state.flags.kk = true; // OB-115: marks the count-from-accept rule (old saves lack it and seed from the dead set)
     e.given = []; // QL-04: items handed over on accept (taken back on abandon)
     if (book.packOps && book.packOps.add) for (const list of [e.def.giveOnAccept, e.def.giveOnTalk]) if (list) for (const it of list) { const k = book.packOps.add(it.id, it.n); if (k > 0) e.given.push({ id: it.id, n: k }); }
     emit('quest:accepted', id);
@@ -347,8 +357,8 @@ export function migrateQuestSave(game, defs) {
     const atFight = !done && afterIdx >= 0 && main.completed.length === afterIdx + 1;
     if (!done && !atFight) continue;
     const q = createQuest(def);
-    for (const id of dead) applyQuestEvent(q, { type: 'beast:died', id }, def);
-    if (done) for (const o of def.objectives) if (o.when.type === 'beasts') for (const id of o.when.ids) applyQuestEvent(q, { type: 'beast:died', id }, def);
+    for (const id of dead) { applyQuestEvent(q, { type: 'beast:died', id }, def); for (const o of def.objectives) if (o.when.type === 'beasts' && o.when.kind !== undefined && kindOf(id) === o.when.kind) applyKindKill(q, o.when.kind, def); } // OB-115: legacy m1 saves seed kind counts from the dead set
+    if (done) for (const o of def.objectives) if (o.when.type === 'beasts' && o.when.ids) for (const id of o.when.ids) applyQuestEvent(q, { type: 'beast:died', id }, def);
     out[def.id] = { quest: JSON.parse(stringifyQuest(q, def)), accepted: true, handedIn: done };
     any = true;
   }
