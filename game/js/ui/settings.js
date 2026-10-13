@@ -37,7 +37,7 @@ import { createPanel } from '../../../engine/index.js';
 import { OPTIONS, findOption, getDefaultValues, stepOptionValue } from '../settings/options.js';
 import { loadSettings, saveSettings } from '../platform/index.js';
 import { setMuted, isMuted, setVolume } from '../audio/synth.js';
-import { knobsFor, saveQuality } from './gfxPresets.js';
+import { knobsFor, saveQuality, applyCarpetPreset } from './gfxPresets.js';
 import { setReduceMotion } from './comfort.js'; // SETTINGS-APPLY-01
 
 let panel = null;          // createPanel()'s fade/open-close state machine (fake `{w,h}` art - see header)
@@ -143,6 +143,7 @@ function applyQuality(name, ctx) {
   if (name === 'auto') return;
   let grid;
   try { grid = knobsFor(name).grid; } catch { return; } // presets not loaded (embed/test): quality saved, grid untouched
+  applyCarpetPreset(name, ctx.engine && ctx.engine.world); // OB-103b: grass carpet radius/density from the preset, live (no reload)
   const m = /^(\d+)x(\d+)$/.exec(grid);
   if (!m || !ctx.engine || typeof ctx.engine.setGrid !== 'function') return;
   const result = ctx.engine.setGrid(Number(m[1]), Number(m[2]));

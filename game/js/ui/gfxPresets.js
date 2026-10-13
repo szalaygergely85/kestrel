@@ -4,7 +4,7 @@ import { GRID_VALUES } from '../settings/options.js';
 export const QUALITY_NAMES = Object.freeze(['low', 'medium', 'high', 'ultra', 'extreme']);
 export const QUALITY_CHOICES = Object.freeze([...QUALITY_NAMES, 'auto']);
 export const SHADOW_CHOICES = Object.freeze(['off', 'low', 'mid', 'high']);
-const KNOBS = ['grid', 'rays', 'shadowQuality', 'scatter', 'lodScale', 'pointShadows'];
+const KNOBS = ['grid', 'rays', 'shadowQuality', 'scatter', 'lodScale', 'pointShadows', 'carpet'];
 let presets = null;
 
 function validKnob(key, value) {
@@ -13,6 +13,7 @@ function validKnob(key, value) {
   if (key === 'shadowQuality') return SHADOW_CHOICES.includes(value);
   if (key === 'scatter') return Number.isFinite(value) && value >= 0 && value <= 1;
   if (key === 'pointShadows') return typeof value === 'boolean'; // AUD-44: preset default for point-light shadows (?pointshadows= still wins)
+  if (key === 'carpet') return !!value && typeof value === 'object' && typeof value.on === 'boolean' && Number.isFinite(value.radiusScale) && value.radiusScale >= 0.25 && value.radiusScale <= 2 && Number.isFinite(value.densScale) && value.densScale >= 0 && value.densScale <= 2; // OB-103b: grass carpet {on, radiusScale, densScale} (World.setCarpetQuality)
   return key === 'lodScale' && Number.isFinite(value) && value >= 0.25 && value <= 4;
 }
 
@@ -28,7 +29,7 @@ export async function loadPresets(data = null, fetcher = globalThis.fetch) {
   for (const name of QUALITY_NAMES) {
     const knobs = data.presets[name];
     if (!knobs || Object.keys(knobs).length !== KNOBS.length || KNOBS.some(key => !validKnob(key, knobs[key]))) throw new Error(`gfx presets: invalid ${name}`);
-    next[name] = Object.freeze({ ...knobs });
+    next[name] = Object.freeze({ ...knobs, carpet: Object.freeze({ ...knobs.carpet }) });
   }
   presets = Object.freeze(next);
   return presets;
@@ -37,7 +38,7 @@ export async function loadPresets(data = null, fetcher = globalThis.fetch) {
 export function knobsFor(name) {
   if (!presets) throw new Error('gfx presets: call loadPresets first');
   if (!QUALITY_NAMES.includes(name)) throw new Error(`gfx presets: unknown ${name}`);
-  return { ...presets[name] };
+  return { ...presets[name], carpet: { ...presets[name].carpet } };
 }
 
 function choice(value) { return typeof value === 'string' ? value.toLowerCase() : value; }
@@ -63,7 +64,7 @@ export function resolveQuality({ param = new URLSearchParams(), saved = null, au
     else warn(`Invalid saved lodScale ${String(savedLod)}; using preset`);
   }
   for (const key of KNOBS) {
-    if (!params.has(key) || key === 'pointShadows') continue; // pointShadows: lowercase ?pointshadows= handled by parsePointShadows
+    if (!params.has(key) || key === 'pointShadows' || key === 'carpet') continue; // pointShadows: lowercase ?pointshadows= handled by parsePointShadows; carpet: ?carpet=0|1 is a force switch (carpetQualityFor)
     const raw = params.get(key);
     const value = ['grid', 'shadowQuality'].includes(key) ? raw : raw.trim() ? Number(raw) : NaN;
     if (validKnob(key, value)) { knobs[key] = value; knobSources[key] = 'param'; }
@@ -93,4 +94,30 @@ export function dropStaleOverrides(settings, adapter) {
   try { adapter.save({ shadowQuality: undefined, lodScale: undefined }); } catch { /* keep going: boot just ignores them below */ }
   const { shadowQuality, lodScale, ...rest } = settings;
   return rest;
+}
+
+/**
+ * OB-103b (D-075 G1): the World.setCarpetQuality() argument for a preset's carpet knob and the `?carpet=` force switch.
+ * `force` '0' = off, '1' = on (preset radius/density kept); anything else = the preset decides. Pure; no preset (knobs null) = `{on: force === '1'}`
+ * so capture/bench pages without ?quality= stay carpet-free exactly as before.
+ * @returns {{on:boolean, radiusScale:number, densScale:number}}
+ */
+export function carpetQualityFor(knobs, force = null) {
+  const c = knobs && knobs.carpet, f = force === null || force === undefined ? '' : String(force).trim();
+  const on = f === '0' ? false : f === '1' ? true : c ? c.on : false;
+  return { on, radiusScale: c ? c.radiusScale : 1, densScale: c ? c.densScale : 1 };
+}
+
+/** Whether main.js must build the carpet data at world load: any preset (so Settings can switch it on live) unless `?carpet=0`; no preset only with `?carpet=1`. */
+export function carpetBuildFor(hasPreset, force = null) {
+  const f = force === null || force === undefined ? '' : String(force).trim();
+  return f === '0' ? false : f === '1' ? true : !!hasPreset;
+}
+
+/** OB-103b: Settings quality change -> running world, live (setCarpetQuality is read per frame by both twins; no reload). `?carpet=0|1` in the page URL still forces. Returns the applied quality or null. */
+export function applyCarpetPreset(name, world, search = (globalThis.location && globalThis.location.search) || '') {
+  if (!world || typeof world.setCarpetQuality !== 'function') return null;
+  const q = carpetQualityFor(knobsFor(name), new URLSearchParams(search).get('carpet'));
+  world.setCarpetQuality(q);
+  return q;
 }

@@ -132,10 +132,10 @@ function dirOf(yawDeg, pitchDeg, out) {
   check(hitsB > 20 && same === n && reroll === 0, `AC2b eye shift 0.1 m: DDA == brute at the new pose on ${same}/${n} sampled rays (${hitsB} hits), ${reroll} re-rolled blades`);
 }
 
-// ---- AC3 + AC4: no hit past fp > 2w or dXY > radius; never a partial trace past NMAX
+// ---- AC3 + AC4: no hit past dXY > radius (OB-103b: the dead fp > 2w check is gone, the fade is density-based now); never a partial trace past NMAX
 {
   const ctx = mk(6), out = makeCarpetHit(), d = [0, 0, 0], e = [0, 0, 0], r = rng(3);
-  let hits = 0, badFp = 0, badR = 0, badSteps = 0, over = 0;
+  let hits = 0, badR = 0, badSteps = 0, over = 0;
   for (let n = 0; n < 20000; n++) {
     e[0] = -6 + r() * 12; e[1] = 3 + r() * 4; e[2] = 0.8 + r() * 1.2;
     dirOf(r() * 360, -90 + r() * 88, d);
@@ -144,12 +144,10 @@ function dirOf(yawDeg, pitchDeg, out) {
     if (out.steps > NMAX) { over++; if (h) badSteps++; }
     if (!h) continue;
     hits++;
-    const w = ctx.bw[out.variant] * 0.5;
-    if (groundFootprint(out.t) > 2 * w * 1.3) badFp++; // 1.3 = W_JIT_LO + W_JIT_RANGE: the blade's own jittered half-width
     if (out.t * Math.hypot(d[0], d[1]) > ctx.radiusM) badR++;
     if (out.steps > NMAX) badSteps++;
   }
-  check(hits > 100 && badFp === 0 && badR === 0, `AC3 ${hits} hits, ${badFp} with fp > 2w, ${badR} beyond radiusM`);
+  check(hits > 100 && badR === 0, `AC3 ${hits} hits, ${badR} beyond radiusM`);
 }
 
 // ---- OB-101: eye 1.7 m over flat meadow with a ~2 m tall-straw layer bound: blades must show at 3 / 6 / 9 m, not only the first 2 m

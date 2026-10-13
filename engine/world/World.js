@@ -1453,6 +1453,20 @@ export class World {
     if (q.radiusScale !== undefined) cq.radiusScale = q.radiusScale;
     if (q.densScale !== undefined) cq.densScale = q.densScale;
     if (q.minWCells !== undefined) cq.minWCells = q.minWCells;
+    if (cq.on && cq.radiusScale > 1) this.checkCarpetWindow();
+  }
+
+  /**
+   * OB-103b (38.52 amendment item 4): the class-map window must cover radiusM * 1.5 + slack around the eye (half the window, band is eye-centred).
+   * Warns once per distinct need when radiusScale > 1 outgrows it. No-op without a carpet. Returns {ok, need, have}.
+   */
+  checkCarpetWindow() {
+    const c = this.carpet;
+    if (!c || !c.cfg || !c.w || !c.h || !c.cellM) return { ok: true, need: 0, have: 0 };
+    const need = (c.cfg.radiusM || 12) * this.carpetQuality.radiusScale * 1.5 + (c.cfg.classCellM || 2) + (c.cfg.classJitterM || 0);
+    const have = Math.min(c.w, c.h) * c.cellM * 0.5, ok = have >= need;
+    if (!ok && this._carpetWinWarn !== need) { this._carpetWinWarn = need; console.warn(`[carpet] class-map window half-size ${have.toFixed(1)} m < needed ${need.toFixed(1)} m for radiusScale ${this.carpetQuality.radiusScale}: far grass may clip`); }
+    return { ok, need, have };
   }
 
   /** OB-073-D2a (38.52): (re)build the carpet class map for the current near band; reuses the buffer. */

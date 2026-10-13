@@ -6,7 +6,7 @@
 // (engine/entities/Player.js, engine/physics/*), so this now comes from
 // engine/index.js like everything else (check-deps rule 3).
 
-import { loadPresets, resolveQuality, saveQuality, knobsFor, dropStaleOverrides } from './ui/gfxPresets.js';
+import { loadPresets, resolveQuality, saveQuality, knobsFor, dropStaleOverrides, carpetQualityFor, carpetBuildFor } from './ui/gfxPresets.js';
 import { loadQuestFiles, showBootErrors } from './questBoot.js';
 import { registerRiggedChars } from './quest/charRegister.js';
 import { resolveBootOptions, describeQuality } from './gfxBoot.js';
@@ -1072,12 +1072,13 @@ async function runGame(mode, cinematic = null) {
   const worldLoadOpts = { physics,
     realTrees: renderer === 'mesh' && physics === 'mesh' && params.get('trees') !== '0',
     detail: renderer === 'mesh' && physics === 'mesh' && params.get('scatter') !== '0' }; // ENV-01a2: `?scatter=0` (not `?detail=0`, that is the US-028 v1-shading switch)
-  { // OB-073-D2f: the grass carpet (38.52); OB-096 (owner: grass everywhere, square): OFF by default, `?carpet=1` on; ramp palette keys -> 0..255 RGB triplets
+  { // OB-073-D2f: the grass carpet (38.52); OB-096 (owner: grass everywhere, square): ON per quality preset (OB-103b/D-075 G1: low = off, medium/high/ultra scale radius+density), `?carpet=0` forces off, `?carpet=1` forces on; ramp palette keys -> 0..255 RGB triplets
     const rcp = window.ASSETS.levels.overworld_far && window.ASSETS.levels.overworld_far.recipe && window.ASSETS.levels.overworld_far.recipe.carpet;
-    if (rcp && renderer === 'mesh' && params.get('carpet') === '1') worldLoadOpts.carpet = { ...rcp, variants: rcp.variants.map((v) => ({ ...v, ramp: v.ramp.map((k) => Array.from(hexToRgb(assets.palette.colors[k]))) })) };
+    if (rcp && renderer === 'mesh' && carpetBuildFor(!!bootOpts.quality, params.get('carpet'))) worldLoadOpts.carpet = { ...rcp, variants: rcp.variants.map((v) => ({ ...v, ramp: v.ramp.map((k) => Array.from(hexToRgb(assets.palette.colors[k]))) })) };
     // MASK-e2 (38.52 OB-096): baked paint layer (content/grassmask/overworld_far.grassMask.json) = how much grass; World takes the layer directly
     const gm = bundle.grassMasks && bundle.grassMasks.overworld_far;
     if (worldLoadOpts.carpet && gm) worldLoadOpts.carpet.mask = grassMaskFromJSON(gm);
+    if (worldLoadOpts.carpet) engine.events.on('world:loaded', (e) => { const w = (e && e.world) || engine.world; if (w && w.setCarpetQuality) w.setCarpetQuality(carpetQualityFor(resolvedQuality && resolvedQuality.knobs, params.get('carpet'))); }); // OB-103b: preset knob -> world (Settings quality change: settings.js applyQuality)
   }
   if (params.get('debug') === '1' || params.get('f3') === '1') overlay.toggle(); // per CLAUDE.md `?debug=1`; ME-08c `?f3=1` = F3 pass times at start
   // US-020a: arms the (one-shot) first-gesture listeners only - creates
