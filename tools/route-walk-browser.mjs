@@ -18,6 +18,7 @@ import os from 'node:os';
 import {
   ROOT, findBrowserBinary, waitForHttp, killTree, connectCdp, evaluate, buildLaunchFlags, validatePort,
 } from './capture-browser.mjs';
+import { mapLoopFull } from './map-loop-waypoints.mjs'; // WM-06
 import { withTimeFreeze, parseTimeArg } from './tool-url.mjs'; // DN-04a
 import { buildFrameTrace, toCSV } from './frameTrace.mjs'; // S8-B1-14: per-frame p50/p95/p99/max per leg + worst-frame list
 
@@ -30,10 +31,13 @@ const preset = args.preset || 'default'; // S8-B1-14: carried into the default -
 const noSkip = args.noskip === '1'; // ME-15d: --noskip 1 forces the shadow map to re-render every frame (worst case row)
 const shadows = args.shadows; // ME-15c: `--shadows map` appends &shadows=map (sun shadow map instead of the sun DDA)
 const query = withTimeFreeze(`voxelbench=0&grid=${grid}${physics ? `&physics=${physics}` : ''}${shadows ? `&shadows=${shadows}` : ''}${args.extra ? `&${args.extra}` : ''}`, parseTimeArg(args.time)); // --extra "shadowres=1536" (ME-15e)
+const mapLoop = args['map-loop'] === '1'; // WM-06: --map-loop 1 --grid 1 appends the whole-map loop leg `mapLoop` after leg 8 (long: ~15 min real time)
+const MAPLOOP_WPS = mapLoop ? mapLoopFull() : [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The in-page driver (runs inside the game page). Returns a Promise resolved with the result object.
 const DRIVER = `(async () => {
+  const MAPLOOP = ${JSON.stringify(MAPLOOP_WPS)};
   const NOSKIP = ${noSkip};
   for (let i = 0; i < 3000 && !(window.__debug && window.__debug.engine); i++) await new Promise((r) => setTimeout(r, 50));
   if (!(window.__debug && window.__debug.engine)) throw new Error('route-walk: window.__debug.engine not ready after 150 s - the game never finished booting (check [boot] console / the Loading overlay; boot normally takes ~4 s)');
@@ -123,6 +127,17 @@ const DRIVER = `(async () => {
   out.info.endT = world().state['quest.endT'];
   out.info.noEnd = !(world().state['quest.endT'] >= 0); // asserted true: no end card / restart
   { const a = T(); await leg('8 move after waystone', [{ x: a.x + 3, y: a.y }], { maxFrames: 600 }); const b = T(); out.info.movedAfterWaystone = Math.hypot(b.x - a.x, b.y - a.y) > 1.5; }
+  // WM-06 (38.59) leg mapLoop (only with --map-loop 1 --grid 1): tower -> ... -> Gate -> back at run speed; a leg stuck at the bound (WM-05 not landed) shows as completed=false.
+  if (MAPLOOP.length) {
+    const w = world(); let late = 0, swaps = 0, maxSwap = 0; const m0 = w.bandMisses || 0, ev = w.events || eng.events;
+    if (ev && ev.on) { ev.on('band:late', () => { late++; }); ev.on('world:band', () => { swaps++; maxSwap = Math.max(maxSwap, w.lastSwapMs || 0); }); }
+    let cacheMax = 0; const cm = setInterval(() => { if (w.bandCache) cacheMax = Math.max(cacheMax, w.bandCache.bytes); }, 250);
+    const legsDone = [];
+    for (let i = 1; i < MAPLOOP.length; i++) legsDone.push(await leg('mapLoop ' + MAPLOOP[i - 1].n + ' -> ' + MAPLOOP[i].n, [{ x: MAPLOOP[i].x, y: MAPLOOP[i].y }], { detour: true, maxFrames: 12000 }));
+    clearInterval(cm);
+    out.info.mapLoop = { legs: legsDone.length, completed: legsDone.every((l) => l.completed), fell: legsDone.some((l) => l.fell), swaps, bandLate: late, syncBakes: (w.bandMisses || 0) - m0, maxSwapMs: +maxSwap.toFixed(2), cacheMB: +(cacheMax / 1048576).toFixed(1),
+      pass: legsDone.every((l) => l.completed && !l.fell) && late === 0 && (w.bandMisses || 0) === m0 && maxSwap <= 4 && cacheMax <= 32 * 1048576 };
+  }
   sampling = false;
   const mean = (a) => { const v = a.filter((x) => Number.isFinite(x)); return v.length ? v.reduce((p, q) => p + q, 0) / v.length : null; };
   out.shadowCpuMean = mean(shc);

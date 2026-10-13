@@ -536,3 +536,14 @@ else {
   for (const l of (r.stdout || '').split('\n').filter(Boolean)) console.log('  ' + l);
   if (r.status !== 0) { console.log('leg 10: FAIL'); process.exitCode = 1; } else console.log('leg 10: PASS');
 }
+
+// WM-06 (38.59) leg `mapLoop`: the whole-map loop tower -> Glasswater -> ... -> Gate -> back, `?grid=1` world, run speed (tools/map-loop.mjs, waypoints in
+// tools/map-loop-waypoints.mjs). Opt-in (~25 s Node): `node tools/route-walk.mjs --map-loop`, or run `node tools/map-loop.mjs` alone. Fails on band:late, sync bake,
+// fall/stuck, swap > 4 ms, cache > 32 MB, or a save/load pose mismatch. Waypoints outside today's polygon are skipped + listed (WM-05 widens it).
+if (process.argv.includes('--map-loop')) {
+  const { spawnSync } = await import('node:child_process');
+  const r = spawnSync(process.execPath, ['--no-warnings', new URL('./map-loop.mjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')], { encoding: 'utf8' });
+  console.log('leg mapLoop whole-map loop (?grid=1 semantics, tools/map-loop.mjs):');
+  for (const l of (r.stdout || '').split('\n').filter(Boolean)) console.log('  ' + l);
+  if (r.status !== 0) { console.log('leg mapLoop: FAIL'); process.exitCode = 1; } else console.log('leg mapLoop: PASS');
+}

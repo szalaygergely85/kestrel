@@ -1,56 +1,63 @@
-# PO batch review 2026-10-13, PC-B (PC-B PO sonnet 2026-10-13)
+# PO batch review 2026-10-13 (PC-B, D-066) - claims-only
 
-Claims-only (arch-batch-review PO rules): nothing was run. Sources: sprint-5 ACs, architecture.md 38.54/38.56 step rows, 2026-10-13 lane entries in kestrel-1..4 (`pc-b1.md`, `pc-b2.md`) and `backlog.md` header.
-Known deviations accepted for this batch: swim/eat/monster clips only just landed from the designer (not wired to entities), villagers Sorrel/Pell/Tam have no entities, `char.kit` has only idle/walk clips (work/talk fall back to idle), raids are flavour-only (owner question open: lost raid has no cost).
-Browser/GPU gaps are explicit owner or main-session to-dos (marked TODO), not passes.
+Sources: lane entries in docs/lanes/pc-b1.md / pc-b2.md, bugs.md OB-103/113..118, decisions D-075..D-077. Commit messages were not readable (no shell in this review); verdicts rest on the lane entries. Nothing was run. OB rows stay "fix in - OWNER TO TEST" until the owner says verified.
 
-Result: 25 PO OK -> testing, 3 PO REJECT (BURL-HOME-01, SWIM-04d, OUT-03).
+## WM-01 184478ea - PO OK -> testing
+Byte-identical geo bake speed-up, 11 pinned hashes, targets met on bake (340 -> 165 ms, 145 -> 73 ms). Not measured: full BandBakeJob incl. scatter. Gate still owed by the main session: gpucompare once.
+Walk-test: walk/run across a band border (e.g. strand -> keep) and watch for hitches. Terrain looks identical to before (no new seams or height jumps).
 
-## Verdicts
+## OB-103b de64208f - PO OK -> testing
+Preset carpet knob (low off ... extreme 1.4/1.5), live switch in Settings, tests pass. Owed: tools/verify-ob103b.mjs, iGPU medium bench, gpucompare, owner look.
+Walk-test: Settings > Quality, cycle low/medium/high/ultra on a meadow; grass carpet is off on low and grows denser and farther on higher presets, with no reload.
+Check that the frame rate stays acceptable on medium.
 
-- CH12-AC3B-01: PO OK -> testing. questSaveV2 now keeps the accept-order `s:<seq>`; test fails with the fix reverted. Walk: accept two quests, save, Continue, check the tracked quest is the last accepted. TODO main session: `node tools/verify-ch12-run.mjs <port>`, AC3b diff must be gone.
-- BURL-HOME-01: PO REJECT: only a WIP on origin/burl-home-talk (d7d4341a), agent stopped at shutdown, not verified, test unfinished, `verify-ch12-run` E1-E6 not run, and there is no 2026-10-13 completion report. Back to programmer.
-- CH12-RUN-02: PO OK -> testing (tools, Node only). The script finds pickups and loot, and AC3b waits are longer. TODO main session: run `verify-ch12-run.mjs`. The open `cog`/`emberpod` bug is covered by CH12-CONTENT-01.
-- CH12-CONTENT-01: PO OK -> testing. Cog and emberpod are valid; the only loss path (full 24-slot pack) now drops the item at the feet with an `inventory:full` toast, tested. Walk: fill the pack, accept the cog quest, and the cog drops at your feet. TODO: browser run shows "pack slots used".
-- OB-104 (pose): PO OK -> testing. The lakeEdge pose moved to the south shore (1215,556); the cliff notch is real geometry, handled by OB-104b (JS and WGSL twins, in arch-review). Walk: open the dev pose lakeEdge. TODO: look at `ob104-lakeEdge.png`; the notch at (1237,606) is still reachable (see OB-104b).
-- OUT-01: PO OK -> testing. Hesk and Dorrin turn to face you within 6 m, and `ow.*.met` flags are saved. Walk: approach Hesk and Dorrin at Outwall and see them turn, talk once, reload and the flag is kept. Placeholder lines are "NEEDS WRITER".
-- OUT-02: PO OK -> testing. The routine table plus test are in; the data file is `outwall.life.json`. Sorrel/Pell/Tam have no mesh (known). Walk: see Hesk and Dorrin move between their stops over a day (live only via LIFE-04).
-- OUT-03: PO REJECT: nothing the player can see or talk to. No entity was placed or registered (4 animal models are not in index.html, 5 humans have no model), and all 4 anchors lie outside world_m1. Only the PENDING table and its test exist. Park as blocked on designer registration and a larger world; back to the backlog, not testing.
-- QL-23: PO OK -> testing. 6 west-bank errands in the ch3b pack (errands2 47 pass, validate-content OK, quest-sim 72/72). Rows needing absent NPCs and items were skipped (accepted). Walk: take the notes at the Outwall board and finish sq.ow.night (kill the 5 wolves) and sq.ow.letters. Prose is "NEEDS WRITER".
-- SWIM-02: PO OK -> testing. The stamina module drains 12 s swim / 6 s dive, refills 25/s, drowns 1 heart per 1.5 s, and is tested. Seen only through SWIM-05.
-- SWIM-06a: PO OK -> testing. Pure sea-edge trigger (warn 60 / kill 90 / hyst 6). Seen only through SWIM-06b. Note: cliff coasts read as kill.
-- SWIM-03b: PO OK -> testing. swimFeed and wading changes tested on the real Braid and Glasswater. Walk: wade into the Braid, you swim, with no rescue or teleport.
-- SWIM-03c: PO OK -> testing. Wired in main.js: gear is stowed and the hand gate shuts while swimming. TODO main session: run `verify-swim.mjs` once (written, not run; the Braid is only 1.44 m deep, so the eye stays above water).
-- SWIM-05: PO OK -> testing. The 12-cell ring, `vitals.kill` and `deathCause 'drown'` are tested, and the main.js hook is in SWIM-HOOKS-01. TODO owner: ring look and position unchecked in the browser.
-- SWIM-06b: PO OK -> testing (logic). Hidden/circle/rise/strike with `vitals.kill('eaten')` is tested on the real sea. Known deviation: the entity is not placed and the model is not registered, so the monster is invisible and you only see ripples and the "eaten" death. TODO designer/B1: register `seaMonster` and place the entity.
-- SWIM-04d: PO REJECT: dive key (`dive` action) and `swimInput.js` exist, but the lane says "NEEDS B1-main" (`controls.swimUp = swimUpOf(...)` per step) and SWIM-03c says swimUp is untouched (0). Nobody has wired it into main.js, so you cannot dive and the lake-bed chest `chestBed` cannot be opened in the game. Wire it (about 3 lines), then resubmit. Also unchecked: no settings or key-hint entry.
-- SWIM-HOOKS-01: PO OK -> testing (Node only, main.js +6 lines). Walk: swim in the Braid for more than 12 s and you drown; swim far out in the sea and you get "eaten"; respawn resets the ring. TODO: the stamina ring look is unverified (`verify-swim.mjs`, not run).
-- LIFE-02: PO OK -> testing. Schedule and needs logic and data are in (0.4 s test). Seen only through LIFE-04.
-- LIFE-03: PO OK -> testing. Villagers move on schedule (A* at most 1 per step, bands, flee on `npcHit`, sleep). The test takes 12-16 s (above the hope). Seen through LIFE-04.
-- LIFE-04: PO OK -> testing. Hesk and Dorrin walk and sleep on a schedule; the others are skipped (known). Walk: stay at Outwall from day to night. Deviation accepted: work/talk use idle.
-- LIFE-04-COLLIDE: PO OK -> testing. `ensureBandFor` is no longer called (spy = 0 calls), and the talk interactable follows the NPC. Walk: talk to Hesk while he walks.
-- LIFE-05: PO OK -> testing. Chat pairs (at most 3 m, social > 0.5, 90 s cooldown, barks within 8 m). Walk: stand 5 m from two chatting villagers and hear or see the bark lines. Lines are all "NEEDS WRITER" (the writer's villager chats exist in story.md and still need wiring).
-- LIFE-07: PO OK -> testing. Wolf and bear hunt rabbit and deer, `STATE_EAT` (8 s), and the fox hunts the rabbit. Wired via LIFE-HOOKS-01. Walk: watch a wolf chase a deer in the woods. The eat clips just landed from the designer, and `beastView` still plays idle (TODO designer/B1).
-- LIFE-08: PO OK -> testing. Goal wolf, alt-target hit, raids with a night roll, save keys. Raids are flavour-only (no cost for a lost raid; owner question open).
-- LIFE-09: PO OK -> testing. `raids.json` (gooseFarm) and the quest `sq.ow.raid` are in. The accept-flag question is answered in HOOKS-01 (`q.<id>.accept` is mapped to `life.gate.<id>`). Deviation: no `area` objective. Walk: accept "Defend the Farm" at the board, wait at night at the goose pen, fight the wolves. Prose is "NEEDS WRITER".
-- LIFE-10: PO OK -> testing. `tools/bench-life.mjs` PASS on all budget rows. Flags noted: beastSim 0.47-0.69 ms (32 beasts), raid extras not separable (INFO), a 24-villager budget is assumed but only 5 are benched. TODO: full 24 h run not done.
-- LIFE-HOOKS-01: PO OK -> testing. main.js +6 lines, lifeWire day counter and gate sync, raids wired with the accept-flag fix. `beastSim.test` timed out under load (60 s) with unchanged code, so rerun it quiet. TODO main session: `verify-raid.mjs` and `verify-outwall-life.mjs` (need `save=1`) not run.
-- M4-WALK-FIX-01: PO OK -> testing (tools only). The run-tests step uses `--expose-gc` and retries failures once; stops take poses from GATE_POSES slugs (stop 8 still an estimate). TODO main session: `node tools/verify-m4-walk.mjs --port <port>` end-to-end.
+## PERF-R2P4 26e117e1 - PO OK -> testing
+Per-species tree lodCells (LOD1 at ~15-20 m), per-species detail maxDistM, 26-check test. Triangle budget down (forestWalk 184k -> 174k). Owed: gpucompare (D-039 note) and the owner look at the LOD switch (D-075 asks for it).
+Walk-test: walk through a forest; trees should not visibly pop or change shape at 15-20 m.
+Logs and stumps may thin out beyond ~50-70 m, which is intended.
 
-## Owner walk-test for today's features (play order)
+## PERF-R4 3ae3802f - PO OK -> testing
+New 'ultra' shadow tier (meshLod0M 16, instCastM 32), ultra/extreme lodScale 1.0, 'high' unchanged, added to the Settings shadows cycle. Tests 16/16. Owed: gpucompare, bench-presets at ultra, owner look at far shadows.
+Walk-test: Settings: set Shadows to ultra (and the Ultra preset) at dusk or dawn with long shadows.
+Far shadows should look sharp and stay stable, and fps should not collapse.
 
-1. Swim: walk into the Braid and Glasswater; you switch to swimming with no teleport, sword/bow/shield vanish, a tint appears under the surface. Climb out on a shelf.
-2. Dive (only after SWIM-04d is wired): hold the dive key (LCtrl), swim to the Glasswater bed (about 1240,505) and open the bed chest (needs bottom, 10 arrows + sturdy gear).
-3. Stamina and drown: stay swimming; the ring under the MP bar drains (12 s swim, 6 s dive), then 1 heart per 1.5 s, death cause "drown"; leaving the water refills it.
-4. Sea monster: swim out from the beach past about 60 m (warning) and 90 m (kill) on the Long Strand; expect ripples, then "eaten" (no monster body until the model is placed).
-5. Outwall by day: Hesk and Dorrin turn to you within 6 m, talk once (first-talk flag, saved), then reload to confirm it is kept.
-6. Outwall day/night: wait or use `?time=`; they walk to their stops, hide and sleep at night, and the talk prompt follows them.
-7. Chats: stay 5-8 m from two villagers and watch them pair, turn and bark (placeholder text).
-8. Wolves hunting: in the woods, watch a wolf hunt a rabbit or deer and eat it; the player noticing pre-empts it.
-9. Defend the Farm: accept sq.ow.raid at the Outwall board, stay at the goose pen from 21:00 to 05:00 (35 % per night, cooldown 2 days), kill the wolves, claim 2 potions + 15 arrows. Also the 6 west-bank errands (QL-23).
-10. Also check Continue keeps the tracked quest (CH12-AC3B-01) and the lakeEdge pose (OB-104).
+## G2 df362bda - PO OK -> testing (pending the gpucompare gate)
+Far grass glyph tier with a WGSL twin and JS==WGSL probes. The zero-alloc item was shown to be a flaky test, not G2 code. Open and accepted: the P3 class-cell tint is NOT done (ASK ARCHITECT, stays in the backlog). Old grass poses beyond 12 m change, so gpucompare needs a D-039 re-baseline.
+Walk-test: stand on a grass meadow with the carpet on (medium or higher) and look to the horizon.
+Beyond ~12 m the ground should show soft grass glyphs (, " ') swaying with the gust, blending smoothly into the carpet with no hard ring.
 
-## Main-session note (2026-10-13)
-- **BURL-HOME-01 reject is a reading error:** the PO read kestrel-1's lane file on the texts-1013 branch, which lacks the entry. The item is finished in commit 22112b0c (kestrel-1, branch burl-home-talk) and the browser gate passed: `verify-ch12-run` re-run = beats 1-14 + E1-E6 PASS (scratchpad ch12-rerun.log). Treat as **PO OK -> testing** (main session, evidence-based).
-- **SWIM-04d** reject stands until the main.js swimUp/jump line lands (queued for the main.js holder).
-- **OUT-03** reject stands: blocked by world bounds (anchors outside world_m1), not a code fault.
+## OB-117 + OB-118 f0d59890 - PO REJECT (one small gap)
+OB-118 is fine (Extreme label and choice added). OB-117: the Settings row, persistence, live `setAspect` and tests exist, but the lane's own "NEEDS B1-main" is still undone. `setAspect` / `aspectRatio` do not appear in game/js/main.js, so a saved non-default ratio (4:3, 21:9, 16:10, Fill) is not applied at boot. It applies only after the row is changed again. D-077 says the picture is fixed to the chosen ratio. Required: in main.js call `engine.renderTarget.setAspect(aspectRatio(loadSettings().aspect))` after the render target exists, import from ./settings/options.js, and run verify-ob117 (4:3 and fill cases). Then PO OK.
+Owner walk (after the fix): Settings > Aspect ratio > 4:3, restart the page, and the picture must still be 4:3 with bars. Also check Quality now lists Extreme with a label.
+
+## OB-113 80a74d63 - PO OK -> testing
+Beast potion goes into the pack as `potion.hp` / `potion.mp` through addItem (normal toast), no instant heal. A full pack keeps the potion in orbHeld, nothing lost. Rolls unchanged. 300-kill test and loot suites 9/9. This matches D-077.
+Walk-test: kill several boars and goblins; a potion toast appears and the potion is in the pack (at full HP too), and nothing is healed on its own.
+Goblin mp orbs give a mana potion. Fill the pack and check you get the "pack full" message.
+
+## OB-114 7e110f12 - PO OK -> testing (partial; row stays open for the facets)
+Green/flat cause found: the Quaternius moss_cap slot covered the underside and lower flanks. Fixed in data (moss only where nz >= 0.5) for Rock_Medium_1..3, tests pass. NOT fixed and recorded as OPEN: the huge flat facets / hard seams (low-poly source, 244-522 tris, rock texture). It is also unconfirmed which placement is the owner's boulder. The owner's second complaint ("rock shader") is therefore not yet answered, so the owner decides whether it is enough or needs a smoothing/detail pass (a designer or ASK ARCHITECT item).
+Walk-test: go to the meadow boulder by the stone wall. Moss/grass colour should be only on the top, with grey rock on the sides and underside. Then say whether the faceting is acceptable. Stills are in docs/test-reports/ob114/.
+
+## OB-115 f2c7b81c - PO OK -> testing
+Kill objectives count any beast of the kind killed after accept (D-077). Applied to burl.boars, sq.ow.boars, the ch3 wolves and ch3b. Old accepted saves are seeded once from the dead set. quest-sim 73/73, 149/150 suites (the one failure is the known flaky wading alloc test), validate-content OK. Note: the Burl boar quest and ch3/ch3b objectives changed to a "kind after accept" count.
+Walk-test: accept the Burl boar quest, then kill boars anywhere (woods, meadow, living-world boars); the journal counter goes up for each one.
+Kills made before accepting do not count. Load an old save with the quest accepted and check the counter is sensible.
+
+## OB-116 fb56d0ff - PO OK -> testing
+Sword reach 2.2 (light) / 2.4 (hard), z band down to ~0.6 m below the feet, and terrain hits no longer count as walls. The Node test with a stub world shows every slope case HIT at 1.0-2.5 m and a miss at 3.2 m. Walls still block. 15/15 sword/combat suites. Browser/real-terrain check is an owner to-do.
+Walk-test: swing at a boar about 2 m away on flat ground, uphill and downhill; the hit lands each time.
+A boar 3+ m away is still missed, and a wall between you and the boar still blocks the hit.
+
+## Owner walk list (http://localhost:8000/game/index.html)
+1. OB-113: kill boars and goblins; a potion toast and a pack item appear, with no instant heal.
+2. OB-115: accept the Burl boar quest, kill boars anywhere; the journal counts each one.
+3. OB-116: swing at a boar 2 m away on flat, uphill and downhill ground; every swing hits, and 3+ m or behind a wall misses.
+4. OB-114: at the meadow boulder by the stone wall, check the green is only on top, then say whether the faceting is OK (still open).
+5. OB-118: Settings quality cycle shows a labelled Extreme.
+6. OB-117: blocked until the main.js boot fix; then pick 4:3, reload, and the ratio must persist.
+7. OB-103b / G2: cycle low to extreme on a meadow; carpet off on low, denser and farther higher up, soft far-grass glyphs beyond ~12 m, no ring.
+8. PERF-R2P4: walk a forest; no visible tree pop at 15-20 m.
+9. PERF-R4: Shadows set to ultra; far shadows look good and fps holds.
+10. WM-01: cross band borders (strand -> keep); no hitches and no terrain change.
+11. Main session owes: gpucompare (WM-01, R2P4, R4, G2 with D-039 re-baseline), bench-presets at ultra, verify-ob103b / ob117.

@@ -690,7 +690,7 @@ export function validateContent(ASSETS, opts = {}) {
         check(itemIds.has(objective.when.id), `${base}.when.id`, `item "${objective.when.id}" not found in item defs or level pickups`);
       }
       if (objective.when.type === 'beasts') {
-        for (const id of objective.when.ids) check(beastIds.has(id), `${base}.when.ids`, `beast "${id}" not found in world entities`);
+        for (const id of objective.when.ids || []) check(beastIds.has(id), `${base}.when.ids`, `beast "${id}" not found in world entities`);
       }
     }
     // QL-02: giver / hand-in ids resolve to a world entity or a level prop; rewards are item ids.

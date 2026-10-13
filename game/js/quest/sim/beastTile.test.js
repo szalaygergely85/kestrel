@@ -82,6 +82,14 @@ for (let i = 0; i < 90; i++) sim.step(px, py, 0); // diverge, then load into a f
 sim.load(saved); sim.updateTileDormancy(px, py);
 ok('save/load round trip: hunter state + west state identical', sim.state[W] === wState && JSON.stringify(sim.save()) === JSON.stringify(saved));
 
+// --- arch fix: tileNav -> dormancy applied at creation, before any rebindNav/swap
+{
+  const s2 = createBeastSim(world, { nav: { grid: A, astar: createAStar(A) }, rng: createRng(1), events, tileNav: true, spawn: { x: 1480, y: 1000 } });
+  const h2 = s2.slotOf('hunter'), w2 = s2.slotOf('west'), e2 = s2.slotOf('east');
+  ok('tileNav: tileMode on at creation, no swap yet', s2.tileMode === true);
+  ok('tileNav: east (outside tile A) dormant before any swap, hunter + west awake', s2.dormTile[e2] === 1 && s2.dormant[e2] === 1 && s2.dormTile[h2] === 0 && s2.dormTile[w2] === 0);
+  ok('default (no tileNav) stays out of tile mode', createBeastSim(world, { nav: { grid: A, astar: createAStar(A) }, rng: createRng(1), events }).tileMode === false);
+}
 // --- fixed-area sim never in tile mode
 ok('tileMode only after rebindNav', sim.tileMode === true);
 console.log(failures.join('\n') || ''); console.log(`beastTile: ${pass} pass, ${fail} fail`); process.exit(fail ? 1 : 0);

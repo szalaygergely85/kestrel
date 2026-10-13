@@ -99,6 +99,7 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
   function stepPos(when, st, world) {
     if (when.type === 'beasts') {
       // first beast (list order) still alive and placed; the host resolver decides what "placed" means
+      if (!when.ids) return false; // OB-115: kind objective, no fixed target
       for (let i = 0; i < when.ids.length; i++) if (!st.deadBeasts.includes(when.ids[i]) && world.resolve('beast', when.ids[i], tmp)) return true;
       return false;
     }

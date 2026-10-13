@@ -5,7 +5,7 @@
   "quests": [
     {
       "id": "sq.ow.night", "title": "The Night Fence", "site": "hesk",
-      "steps": [{ "template": "kill", "params": { "ids": ["wolf1", "wolf2", "wolf3", "wolf4", "wolf5"], "count": 5 }, "objText": "Clear all five wolves off the farm", "journal": "NEEDS WRITER: the wolf pack raids the goose farm after dark. Hesk asks you to help defend it." }],
+      "steps": [{ "template": "kill", "params": { "kind": "wolf", "ids": ["wolf1", "wolf2", "wolf3", "wolf4", "wolf5"], "count": 5 }, "objText": "Clear all five wolves off the farm", "journal": "NEEDS WRITER: the wolf pack raids the goose farm after dark. Hesk asks you to help defend it." }],
       "opensAfter": ["sq.ow.wolves"],
       "reward": { "items": [{ "id": "potion.hp", "n": 2 }, { "id": "arrow", "n": 15 }] },
       "returnText": "Back to Hesk"

@@ -38,13 +38,8 @@
         {
           "template": "kill",
           "params": {
-            "ids": [
-              "wolf1",
-              "wolf2",
-              "wolf3",
-              "wolf4",
-              "wolf5"
-            ],
+            "kind": "wolf",
+"ids": ["wolf1","wolf2","wolf3","wolf4","wolf5"],
             "count": 5
           },
           "objText": "Drive the wolves from the goose pen",
@@ -321,13 +316,8 @@
         {
           "template": "kill",
           "params": {
-            "ids": [
-              "wolf1",
-              "wolf2",
-              "wolf3",
-              "wolf4",
-              "wolf5"
-            ],
+            "kind": "wolf",
+"ids": ["wolf1","wolf2","wolf3","wolf4","wolf5"],
             "count": 3
           },
           "objText": "Drive three wolves from the goose pen",
@@ -373,10 +363,8 @@
         {
           "template": "kill",
           "params": {
-            "ids": [
-              "boarF1",
-              "boarF2"
-            ],
+            "kind": "boar",
+"ids": ["boarF1","boarF2"],
             "count": 2
           },
           "objText": "Drive off two boars on the west bank",

@@ -33,6 +33,18 @@ export function buildNavTile(world, near) {
   return finishNavTile(world, near, cfg, v);
 }
 
+/** Row-sliced nav tile for an already cached bundle (WM-03 arch fix: setNavTiles fills these during idle frames, never on a swap). */
+export class NavTileFill {
+  constructor(world, bundle) { this.world = world; this.bundle = bundle; const b = bundle.near; this.v = { row: 0, slopeOk: new Uint8Array(b.w * b.h), mask: new Uint8Array(b.w * b.h) }; }
+  /** >= 1 row per call; true when `bundle.nav` is set. */
+  step(ms) {
+    const w = this.world, b = this.bundle.near, cfg = w.navTiles, v = this.v, t0 = now();
+    while (v.row < b.h) { fillNavRow(w, b, cfg, v, v.row++); if (now() - t0 >= ms) return false; }
+    this.bundle.nav = finishNavTile(w, b, cfg, v);
+    return true;
+  }
+}
+
 export class BandBakeJob {
   static DONE = 5;
   /**
@@ -72,7 +84,7 @@ export class BandBakeJob {
     while (this.phase < 5) {
       const left = msBudget - (now() - t0);
       if (this.phase === 0) { if (this.trees.step(left)) { this.scatter = this.trees.result; this.phase = 1; } }
-      else if (this.phase === 1) { if (!this.detail || this.detail.step(left)) { this.detailSet = this.detail ? this.detail.result : null; this.phase = 2; } }
+      else if (this.phase === 1) { if (this.detail && this.scatter) this.detail.trees = this.scatter; if (!this.detail || this.detail.step(left)) { this.detailSet = this.detail ? this.detail.result : null; this.phase = 2; } }
       else if (this.phase === 2) { this.trunks = mesh && this.scatter ? buildTrunkCollider(this.scatter, terrain.recipe.recipe.forest.trees) : null; this.phase = 3; }
       else if (this.phase === 3) { this.detailCol = mesh && this.detailSet ? buildDetailCollider(this.detailSet) : null; this.phase = 4; }
       else if (this._navStep(left)) this.phase = 5;

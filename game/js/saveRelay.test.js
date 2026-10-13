@@ -64,7 +64,9 @@ assert.equal(A.quest.objectiveText(), OBJ.beasts, 'boars killed before accept: m
 assert.equal(A.quest.book.statusOf('burl.boars'), 0, 'unavailable until the blade quest is turned in at Burl');
 assert.equal(A.quest.book.accept('tower.blade'), true); assert.equal(A.quest.book.statusOf('tower.blade'), 3, 'blade facts came first -> ready'); assert.ok(A.quest.book.handIn('tower.blade'));
 assert.equal(A.quest.book.statusOf('burl.boars'), 1, 'available');
-assert.equal(A.quest.book.accept('burl.boars'), true); assert.equal(A.quest.book.statusOf('burl.boars'), 3, 'accepted with 5 dead -> ready');
+assert.equal(A.quest.book.accept('burl.boars'), true); assert.equal(A.quest.book.statusOf('burl.boars'), 2, 'OB-115: boars killed before accept do not count -> active');
+for (const id of ['boarN1', 'boarN2', 'boarW1', 'boarW2', 'boarR1']) events.emit('beast:died', { id }); // OB-115: any boar after accept counts
+assert.equal(A.quest.book.statusOf('burl.boars'), 3, 'five boars after accept -> ready');
 assert.equal(A.quest.objectiveText(), burl.returnText);
 assert.deepEqual(A.quest.book.handIn('burl.boars'), { items: [] }); assert.equal(A.quest.state.completed.includes('beasts'), true, 'hand-in completes m1 beasts');
 A.quest.checkSections(); // main.js: stepGame does this each step
@@ -113,7 +115,7 @@ assert.equal(p2.components.health.hp, 3); assert.equal(p2.components.mana.mp, 7)
 assert.equal(p2.components.inventory.right, 'sword');
 assert.equal(w2.state['tower.sword.taken'], true);
 assert.equal(B.quest.done, true, 'quest state survives reload');
-assert.deepEqual(B.deadBeasts.sort(), ['boar1', 'boar2', 'boar3', 'boar4', 'boar5']); assert.deepEqual(B.openedChests, ['chestA']);
+assert.deepEqual(B.deadBeasts.sort(), ['boar1', 'boar2', 'boar3', 'boar4', 'boar5', 'boarN1', 'boarN2', 'boarR1', 'boarW1', 'boarW2']); assert.deepEqual(B.openedChests, ['chestA']);
 assert.equal(B.playTimeSec, 65);
 assert.equal(B.save(w2), true);
 const text2 = mem.get([...mem.keys()][0]);

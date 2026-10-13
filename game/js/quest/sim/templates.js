@@ -48,6 +48,10 @@ function expandStep(src, step, ctx, key, extra) {
       needId(src, p.item, 'fetch.item'); extra.requireItem = p.item;
       return [o('', text('Find the ' + p.item), { type: 'item', id: p.item })];
     case 'kill': {
+      if (p.kind !== undefined) { // OB-115: any beast of the kind, counted from accept
+        if (typeof p.kind !== 'string' || !Number.isInteger(p.count) || p.count < 1) return fail(src, 'kill.kind needs a string kind and count >= 1');
+        return [o('', text('Defeat ' + p.count + ' ' + p.kind), { type: 'beasts', kind: p.kind, count: p.count, ...(Array.isArray(p.ids) ? { ids: [...p.ids] } : {}) })];
+      }
       needIds(src, p.ids, 'kill.ids'); const n = needCount(src, p.count, p.ids.length);
       return [o('', text('Defeat ' + n + ' of ' + p.ids.length), { type: 'beasts', ids: [...p.ids], count: n })];
     }
