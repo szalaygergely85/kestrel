@@ -1723,6 +1723,10 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           if (mapFogHook && mapFogHook.fog) for (const m of markers) mapFogHook.fog.reveal(m.x, m.y);
           chartOptions = { chart: chartData, markers, geo: (window.ASSETS.levels.world_geo && params.get('geo') !== '0') ? { G: window.ASSETS.levels.world_geo, U: window.ASSETS.levels.overworld_far.util } : null, /* MAP-28 */ fog: mapFogHook ? mapFogHook.fog : null, travel: !waystoneWire ? null : { list: () => { const ws = waystoneWire.sim; if (!ws) return []; const l = []; const n = ws.list(l); const out = []; for (let i = 0; i < n; i++) out.push({ id: l[i].id, name: l[i].label, order: l[i].order, touched: l[i].touched, woken: true, x: l[i].x, y: l[i].y }); return out; } } };
         }
+        { // WM-10: the whole-map view is the default M card (?map=chart keeps the baked chart); region.seen drives fog + names
+          const wg = window.ASSETS.levels.world_geo, rbN = window.ASSETS.uiRegionBanner;
+          if (wg && rbN && params.get('map') !== 'chart') chartOptions = Object.assign(chartOptions || { markers: [], travel: null }, { worldMap: { geo: wg, names: rbN.names, getSeen: () => world.state['region.seen'] } });
+        }
         try {
           initMapCard(assets, ui.cols, ui.rows, chartOptions);
           { const cv = getMapChart(); if (cv) cv.onTravel = (id) => travel.request(id); } // WS1-07b
